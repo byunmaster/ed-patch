@@ -11,6 +11,7 @@
 | 영웅전설 1+2 | PS1 (SLPS-01323) | 🔧 리버싱 진행 중 | -        |
 
 완성된 패치는 [Releases](../../releases)에 플랫폼별 태그(`ps1-eiyuu12-v1.0.0` 형식)로 배포됩니다.
+진행 계획과 마일스톤은 [ROADMAP.md](ROADMAP.md) 참조.
 
 ## 저장소 구조
 
@@ -21,6 +22,17 @@ docs/        스크린샷, 패치 적용 가이드
 ```
 
 - [games/ps1-eiyuu12](games/ps1-eiyuu12/) — PS1 영웅전설 1+2
+
+## 소장 컬렉션
+
+이 프로젝트는 아래 소장 원본을 기준으로 진행하며, 정발판(만트라)의 공식 번역을 번역 저본으로 사용합니다.
+
+|                                                       |                                                       |                                                        |
+| ----------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------ |
+| ![정발 패키지](docs/collection/kr-bigbox-series.jpg)  | ![콘솔판](docs/collection/jp-consoles-series.jpg)     | ![신 영웅전설](docs/collection/jp-windows-shin.jpg)    |
+| 정발 영웅전설 시리즈                                  | SFC · 메가드라이브 · PCE-CD · 새턴 · PS1              | 신 영웅전설 — Windows                                  |
+| ![영웅전설 I PC판](docs/collection/jp-retropc-1.jpg)  | ![영웅전설 II PC판](docs/collection/jp-retropc-2.jpg) | ![영웅전설 III·IV](docs/collection/jp-retropc-3-4.jpg) |
+| 영웅전설 I — X68000 · FM TOWNS · MSX2 · PC-88 · PC-98 | 영웅전설 II — FM TOWNS · PC-88 · PC-98                | 영웅전설 III · IV — PC-98                              |
 
 ## 고지
 
