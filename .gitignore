@@ -1,0 +1,22 @@
+# 원본 게임 데이터 — 절대 커밋 금지
+*.bin
+*.cue
+*.img
+*.iso
+*.chd
+*.mdf
+*.mds
+
+# 원본 게임 데이터 사본·번역 저본 (originals/README.md 참조) / 빌드·산출물
+originals/*
+!originals/README.md
+work/
+out/
+
+# 로컬 서드파티 바이너리 — 에뮬레이터·디버거·유틸 (재배포 방지)
+vendor/
+
+# 로컬 잡동사니
+__pycache__/
+.ruff_cache/
+*.pyc
