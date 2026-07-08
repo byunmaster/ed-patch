@@ -1,0 +1,13 @@
+# 텍스트 파일은 저장소·작업 트리 모두 LF (oxfmt/ruff와 일관, 크로스플랫폼)
+*.md text eol=lf
+*.py text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# 폰트 에셋은 바이트 그대로 보존 (개행 변환 금지)
+*.bdf -text
+*.ttf binary
+*.ttc binary
