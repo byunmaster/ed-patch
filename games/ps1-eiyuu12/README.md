@@ -74,6 +74,7 @@ tools/
   hangul_map.py        한글 인코딩 (완성형 2,350자 ↔ 한자 슬롯 SJIS)
   census_syllables.py  DOS 정발판 사용 음절 집계 (번역 저본 분석)
   build_poc_kr.py      풀 파이프라인 PoC (한글 폰트 탑재 + 한국어 대사 빌드)
+  extract_scn.py       PS1 일문 대사 추출 (SCN 블록 → JSON, 라운드트립 무손실)
 ```
 
 실행: `python tools/<스크립트>.py` (Python 3.12+, 표준 라이브러리만 사용).
