@@ -29,6 +29,30 @@ def extract(lba, size, path=ORIG_BIN):
     return bytes(out[:size])
 
 
+# ── MIPS 절대주소 참조 스캐너 (lui+addiu/ori/lw 쌍) ──────────────────────────
+# lui rt,hi 뒤 6워드 내에 rt를 rs로 쓰는 load/addiu가 오면 hi<<16 + lo로 주소 조립.
+# addiu(0x09)·lw(0x23)는 lo 부호확장, ori(0x0D)는 안 함.
+MIPS_LUI, MIPS_ADDIU, MIPS_ORI, MIPS_LW = 0x0F, 0x09, 0x0D, 0x23
+
+
+def iter_lui_pairs(data, load_ops):
+    """lui + (load_ops 중 하나) 쌍을 (imm_off, lui_off, op, addr)로 순회."""
+    words = [int.from_bytes(data[i : i + 4], "little") for i in range(0, len(data) - 3, 4)]
+    recent_lui = {}
+    for idx, w in enumerate(words):
+        op = w >> 26
+        if op == MIPS_LUI:
+            recent_lui[(w >> 16) & 0x1F] = (idx, w & 0xFFFF)
+        elif op in load_ops:
+            rs = (w >> 21) & 0x1F
+            if rs in recent_lui:
+                lui_idx, hi = recent_lui[rs]
+                if idx - lui_idx <= 6:
+                    lo = w & 0xFFFF
+                    addr = (hi << 16) + (lo - 0x10000 if lo >= 0x8000 and op != MIPS_ORI else lo)
+                    yield idx * 4, lui_idx * 4, op, addr
+
+
 def edc_compute(data):
     """Mode2 Form1 EDC (subheader+data = 섹터 16~2071 대상, 2072에 LE 저장)."""
     edc = 0

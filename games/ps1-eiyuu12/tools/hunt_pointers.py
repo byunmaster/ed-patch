@@ -11,7 +11,7 @@ from collections import Counter
 from common import ED1SCN1_LBA as LBA
 from common import ED1SCN1_RAM_BASE as BASE
 from common import ED1SCN1_SIZE as FSIZE
-from common import extract
+from common import MIPS_ADDIU, MIPS_ORI, extract, iter_lui_pairs
 
 TEXT_END = 0x13208
 
@@ -36,27 +36,12 @@ print(f"\n[A] u32 절대주소(0x{BASE:X}+블록시작) 일치: {len(hits_a)}건
 for i, off in hits_a[:15]:
     print(f"    파일 0x{i:06X} → 텍스트 0x{off:05X}")
 
-# B) MIPS lui + addiu/ori 조합
-words = [int.from_bytes(data[i : i + 4], "little") for i in range(0, len(data) - 3, 4)]
-hits_b = []
-recent_lui = {}  # reg → (word_idx, imm)
-for idx, w in enumerate(words):
-    op = w >> 26
-    if op == 0x0F:  # lui rt, imm
-        recent_lui[(w >> 16) & 0x1F] = (idx, w & 0xFFFF)
-    elif op in (0x09, 0x0D):  # addiu / ori
-        rs = (w >> 21) & 0x1F
-        if rs in recent_lui:
-            lui_idx, hi = recent_lui[rs]
-            if idx - lui_idx <= 6:
-                lo = w & 0xFFFF
-                if op == 0x09 and lo >= 0x8000:
-                    addr = (hi << 16) + lo - 0x10000
-                else:
-                    addr = (hi << 16) + lo
-                off = addr - BASE
-                if off in starts:
-                    hits_b.append((idx * 4, off))
+# B) MIPS lui + addiu/ori 조합 (공용 스캐너 재사용)
+hits_b = [
+    (imm_off, addr - BASE)
+    for imm_off, _, _, addr in iter_lui_pairs(data, (MIPS_ADDIU, MIPS_ORI))
+    if addr - BASE in starts
+]
 print(f"\n[B] lui+addiu/ori 조합 일치: {len(hits_b)}건")
 for i, off in hits_b[:15]:
     print(f"    파일 0x{i:06X} (코드영역={i >= TEXT_END}) → 텍스트 0x{off:05X}")
@@ -67,7 +52,7 @@ print(f"\n참조로 커버된 블록: {len(covered)}/{len(starts)}")
 uncov = sorted(starts - covered)
 print(f"미커버 블록 예시: {[hex(u) for u in uncov[:10]]}")
 
-# lui 상위값 분포 (텍스트 주소 대역 확인용)
-lui_his = Counter((w >> 16) & 0xFFFF == 0 for w in words)  # placeholder
+# lui 상위값 분포 (텍스트 주소 대역 0x8016/0x8017 확인용)
+words = [int.from_bytes(data[i : i + 4], "little") for i in range(0, len(data) - 3, 4)]
 his = Counter(w & 0xFFFF for w in words if (w >> 26) == 0x0F and (w & 0xFFFF) in (0x8016, 0x8017))
 print(f"\nlui 0x8016/0x8017 등장: {dict(his)}")

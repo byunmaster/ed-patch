@@ -3,8 +3,8 @@ line-length = 100
 target-version = "py312"
 
 [lint]
-# 기본(E4/E7/E9/F) + import 정렬 + 업그레이드 힌트
-extend-select = ["I", "UP"]
+# 기본(E4/E7/E9/F) + import 정렬 + 업그레이드 힌트 + 버그베어(미사용 루프변수·zip strict 등)
+extend-select = ["I", "UP", "B"]
 # 리버싱 스크립트 특성상 허용: 한 글자 변수, 매직 넘버 성격의 오프셋 상수
 ignore = [
   "E741", # l, O 같은 모호한 변수명 (헥스 작업에서 관용적)

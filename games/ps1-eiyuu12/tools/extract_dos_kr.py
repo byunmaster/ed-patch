@@ -110,7 +110,7 @@ def split_blocks(data, s, e):
         if data[i] == 0x00:  # 종료자 — 뒤에서 절단 (00은 앞 블록에 귀속)
             cuts.add(i + 1)
     edges = sorted(cuts)
-    return [(a, b) for a, b in zip(edges, edges[1:]) if a < b]
+    return [(a, b) for a, b in zip(edges, edges[1:], strict=False) if a < b]
 
 
 def decode(raw):
