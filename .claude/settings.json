@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "kr-patch": {
+      "source": {
+        "source": "github",
+        "repo": "mcpads/create-retro-game-kr-patch"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "create-kr-patch@kr-patch": true
+  }
+}

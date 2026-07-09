@@ -19,9 +19,36 @@
 games/       게임별 패처 코드베이스 (추출·재삽입·빌드 도구 + 리버싱 노트)
 shared/      플랫폼 공용 라이브러리 (SJIS 스캔, ISO9660, 폰트 변환 등)
 docs/        스크린샷, 패치 적용 가이드
+vendor/      로컬 서드파티 (gitignore — emucap 빌드용, 아래 참조)
 ```
 
 - [games/ps1-eiyuu12](games/ps1-eiyuu12/) — PS1 영웅전설 1+2
+
+### 서드파티 도구
+
+**create-kr-patch** — 한글 패치 제작 방법론 Agent Skill (추출·재삽입 전략,
+라운드트립 규약의 단일 진실 원천). Claude Code 플러그인이며 **이 리포의
+`.claude/settings.json`에 프로젝트 스코프로 선언**돼 있다(마켓플레이스 + 활성화).
+따라서 이 리포에서만 로드되고 git으로 따라간다 — 다른 PC에서 리포를 처음 열면
+Claude Code가 설치를 물어보므로 승인하면 된다(수동은 아래 한 줄).
+
+```
+claude plugin install create-kr-patch@kr-patch    # 자동 프롬프트 대신 수동 설치 시
+```
+
+**emucap** — 에뮬레이터 관찰·제어 MCP (메모리·화면·입력·브레이크포인트, 패치
+디버깅·QA 자동화). Rust 빌드가 필요해 플러그인화 불가 — 클론 후 빌드해 등록한다:
+
+```
+git clone https://github.com/mcpads/emucap vendor/emucap
+cd vendor/emucap && cargo build --release \
+  --bin emucap --bin emucap-mcp --bin emucap-track-mcp --bin emucap-broker --bin emucap-mame-pc98-bridge
+claude mcp add emucap-control -- "$(pwd)/target/release/emucap-mcp"
+claude mcp add emucap-track   -- "$(pwd)/target/release/emucap-track-mcp"
+```
+
+PSX 검증은 Mednafen 포크 어댑터를 쓴다(`adapters/mednafen/build.sh`, BIOS
+`scph5500.bin` → `~/.mednafen/firmware/`). BIOS·에뮬레이터 바이너리·원본은 커밋 금지.
 
 ## 소장 컬렉션
 
