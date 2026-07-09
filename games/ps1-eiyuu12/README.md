@@ -84,6 +84,9 @@ tools/
                        PILOT_FIXED=1: 블록별 길이 고정 / PILOT_SCN=ED1SCN3: 특정 씬만
                        PILOT_IDENTITY=1: 번역 0건 라운드트립 검증 모드
                        align_overrides.json으로 사람 검수 교정 우선 적용
+  scan_tim.py          TIM 이미지 인벤토리 — 글자 박힌 그래픽 색출(컨택트 시트)
+  patch_gfx_cards.py   챕터 카드(192x45 TIM) 한글 재작성 — 클린 플레이트+조판+재인코딩
+                       (reinsert 후 실행, 대상 디스크 제자리 패치)
 ```
 
 실행: `python tools/<스크립트>.py` (Python 3.12+, 표준 라이브러리 기본).
