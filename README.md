@@ -74,5 +74,6 @@ PSX 검증은 Mednafen 포크 어댑터를 쓴다(`adapters/mednafen/build.sh`, 
 ## 크레딧
 
 - 리버싱·도구: Claude Code 보조
-- 번역: AI 번역 + 인간 QA
-- 폰트: 오픈소스 한글 비트맵 폰트 (게임별 명시 예정)
+- 번역: 정발판(만트라) 공식 번역 이식 + AI 번역 + 인간 QA
+- 폰트: [Galmuri](https://github.com/quiple/galmuri)(Lee Minseo) ·
+  [Neo둥근모](https://github.com/neodgm/neodgm)(Eunbin Jeong) — SIL OFL 1.1, 라이선스 전문 `shared/fonts/`

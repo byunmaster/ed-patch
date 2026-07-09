@@ -1,4 +1,11 @@
 {
-  "_comment": "사람이 정발판 대조로 확정한 정렬 교정. 의미 정렬(align_semantic.py, LaBSE)이 대부분의 swap을 자동 해결하므로 보통 비어 있다. 의미 정렬도 틀리는 케이스를 review_align.py(out/review/)로 찾아 여기 지정하면 재삽입 시 align보다 우선한다. 키=씬(ED1SCN1), 하위=PS1 entry_id → {table, entry_id, speaker?, note?}.",
-  "ED1SCN1": {}
+ "_comment": "사람이 정발판 대조로 확정한 정렬 교정. 의미 정렬(align_semantic.py, LaBSE)이 대부분의 swap을 자동 해결하므로 보통 비어 있다. 의미 정렬이 놓치거나(저유사도) 정발판 고유 삽입(예: 불법복제 경고)을 특정 PS1 블록에 심을 때 여기 지정한다 — 재삽입 시 align보다 우선. 키=씬(ED1SCN1), 하위=PS1 entry_id → {table, entry_id, speaker?, note?}.",
+ "ED1SCN1": {},
+ "ED1SCN2": {
+  "325": {
+   "table": "ED1/T_100",
+   "entry_id": 16,
+   "speaker": "신부"
+  }
+ }
 }
