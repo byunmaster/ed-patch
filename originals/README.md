@@ -6,11 +6,37 @@
 originals/
   kr/            번역 저본: 국내 정발판(만트라) — 모든 타깃의 공통 기반
                  ED1/ (SINDLL/*.DLL = 대사), ED2/ (SCENA/*.DLL = 대사), ED3/, ED4/
-  ps1-eiyuu12/   PS1 영웅전설 1+2 (SLPS-01323) 타깃 원본 이미지
-                 "Legend of Heroes I & II, The - Eiyuu Densetsu (Japan).bin/.cue"
-                 (단일 트랙 MODE2/2352, 252,498,960 bytes)
+                 윈도우 정발판은 ED3_WIN/·ED4_WIN/·ED5_WIN/ (아래 _WIN 규칙)
+  <platform>-eiyuu<N>/   타깃 원본 이미지 (플랫폼별·작품별 한 폴더)
 ```
 
-- 번역 저본은 `kr/` 아래 판본별 폴더 — DOS판은 `ED1`, 윈도우 정발판은 `ED1_WIN`처럼
-  `_WIN` 포스트픽스(실제 정발 표기 관례를 따름). 타깃 원본은 `games/` 폴더명과 동일하게.
+## 타깃 폴더 규약
+
+타깃 원본은 `games/` 폴더명과 동일한 이름의 폴더에 둔다 — `<플랫폼>-eiyuu<작품번호>`.
+작품번호는 합본이면 이어 붙인다(예: 1+2 = `12`). 현재 소장분:
+
+| 폴더                                      | 게임                                         | 유지 포맷                                     |
+| ----------------------------------------- | -------------------------------------------- | --------------------------------------------- |
+| `ps1-eiyuu12/`                            | PS1 영웅전설 1+2 (SLPS-01323, **활성 타깃**) | `.bin`+`.cue` (MODE2/2352, 252,498,960 bytes) |
+| `ps1-eiyuu3/`                             | PS1 영웅전설 III 하얀 마녀                   | `.bin`+`.cue`                                 |
+| `ps1-eiyuu4/`                             | PS1 영웅전설 IV 붉은 물방울                  | `.bin`+`.cue`                                 |
+| `ss-eiyuu12/`                             | 새턴 영웅전설 1&2                            | `.bin`+`.cue`                                 |
+| `ss-eiyuu3/`                              | 새턴 영웅전설 III (2disc)                    | `.mdf`+`.mds` (+`.m3u`)                       |
+| `pce-eiyuu1/`                             | PCE-CD 영웅전설 (NTSC-U)                     | `.cue`+`.iso`                                 |
+| `pce-eiyuu2/`                             | PCE-CD 영웅전설 2 (NTSC-J)                   | `.cue`+`.iso`                                 |
+| `md-eiyuu1/`·`md-eiyuu2/`                 | 메가드라이브 ED1·ED2                         | `.zip`                                        |
+| `sfc-eiyuu1/`·`sfc-eiyuu2/`               | 슈패 ED1·ED2                                 | `.zip`                                        |
+| `msx-eiyuu1/`                             | MSX2 드래곤슬레이어 6 (ED1)                  | `.zip`                                        |
+| `psp-eiyuu3/`·`psp-eiyuu4/`·`psp-eiyuu5/` | PSP 가가브 트릴로지                          | `.iso`                                        |
+
+- CD 이미지는 **참조되는 트랙 파일만** 남긴다 — `.chd` 등 중복/변환 포맷은 제거
+  (재생성 가능). `.cue`/`.mds`/`.m3u`가 참조하는 데이터 파일과 짝을 맞춰 보관.
+- 파일명은 원본(redump/No-Intro 등) 그대로 유지 — 도구가 정확한 이름을 참조한다
+  (예: `ps1-eiyuu12`는 `common.py`의 `ORIG_BIN`/`ORIG_CUE`가 파일명을 하드코딩).
+- `PSP/`에 남은 `Sora no Kiseki Material`·`Ys VS Sora`는 아직 타깃 미확정 스테이징.
+
+### kr/ 번역 저본 규칙
+
+- 판본별 폴더 — DOS판은 `ED1`, 윈도우 정발판은 `ED1_WIN`처럼 `_WIN` 포스트픽스
+  (실제 정발 표기 관례를 따름).
 - 패치 빌드 출력은 각 게임의 `work/`, 분석 산출물은 `out/` — 여긴 원본만.
