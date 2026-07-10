@@ -128,6 +128,12 @@ def patch(target=TARGET, preview=None):
             tim_len = pix_off + tim["w"] * tim["h"]
             blob = bytearray(buf[off : off + tim_len])
             blob[pix_off : pix_off + tim["w"] * tim["h"]] = new_pix.astype(np.uint8).tobytes()
+            # write_user_data 전제 검증: 섹터 정렬 + 마지막 부분 섹터는 0패딩으로 덮임
+            if off % 2048:
+                raise SystemExit(f"TIM 0x{off:X}: 섹터 비정렬 — write_user_data 사용 불가")
+            tail = buf[off + tim_len : off + (tim_len + 2047) // 2048 * 2048]
+            if any(tail):
+                raise SystemExit(f"TIM 0x{off:X}: 꼬리 섹터 잔여가 0이 아님 — RMW 필요")
             n = write_user_data(f, off // 2048, blob)
             print(f"  0x{off:X} {l1} {l2} → 섹터 {n}개")
             if preview is not None:

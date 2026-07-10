@@ -10,7 +10,8 @@ low_confidence로도 안 걸림). 신호로 못 잡는 이 오류를 사람이 �
  - concept_conflict: JP의 개념어(아침/저녁/식사 등)와 KR이 다른 축으로 어긋남
  - digit_mismatch: 숫자가 서로 다름
  - length_outlier: KR/JP 길이비가 기대(≈0.55)에서 크게 벗어남
- - low_confidence / unmatched: align 단계 플래그 승계
+ - low_sim / low_confidence / unmatched: align 단계 저신뢰 플래그 승계
+   (low_sim = align_semantic.py 의미정렬 0.45~0.60 밴드, low_confidence = align_jp_kr.py)
 
 출력: out/review/<게임>_SCN<n>.md  (씬별, 의심 우선 정렬)
 """
@@ -109,9 +110,10 @@ def review_rows(game, n):
         ratio = len(re.findall(r"[가-힣]", kt)) / jlen
         if ratio and (ratio > 1.6 or ratio < 0.2):
             flags.append(f"len?:{ratio:.1f}")
-        # 의심도: concept > low_conf > digit > len
+        # 의심도: concept > 저신뢰(low_sim/low_confidence) > digit > len
+        # align_semantic.py는 low_sim, align_jp_kr.py는 low_confidence 플래그를 쓴다.
         suspect = (2 if any(f.startswith("concept?") for f in flags) else 0) + (
-            1 if "low_confidence" in flags else 0
+            1 if ("low_sim" in flags or "low_confidence" in flags) else 0
         )
         rows.append(
             {

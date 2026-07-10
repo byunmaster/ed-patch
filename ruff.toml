@@ -9,4 +9,3 @@ extend-select = ["I", "UP", "B"]
 ignore = [
   "E741", # l, O 같은 모호한 변수명 (헥스 작업에서 관용적)
 ]
-

@@ -370,11 +370,13 @@ def load_kr_scene(game, n):
     if not os.path.isdir(dir_):
         return tables
     for fname in sorted(os.listdir(dir_)):
-        if not fname.endswith(".json") or fname.startswith("_"):
+        if not fname.endswith(".json") or fname.startswith(("_", "._")):
             continue
         stem = fname[:-5]
+        # 파일명 숫자부 첫 자리 = 씬 그룹 (ED1 실측 규칙. 한 자리 전제라 씬 10+ 매칭
+        # 불가 — ED2는 파일명 체계(C_00A 등)가 달라 규칙 자체를 재검증해야 함)
         if len(stem) < 3 or not stem[2].isdigit() or int(stem[2]) != n - 1:
-            continue  # 파일명 둘째 자리 숫자 = 씬 그룹
+            continue
         doc = json.load(open(os.path.join(dir_, fname), encoding="utf-8"))
         blocks, cur_spk = [], None
         for e in doc["entries"]:
@@ -397,6 +399,8 @@ def load_kr_scene(game, n):
             )
         if blocks:
             tables[doc["table_id"]] = blocks
+    if not tables:
+        print(f"경고: {game} 씬{n} — 대응 KR 테이블 0건 (씬 규칙 미대응 또는 덤프 누락 확인)")
     return tables
 
 

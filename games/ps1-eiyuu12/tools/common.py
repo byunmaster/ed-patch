@@ -35,15 +35,25 @@ def extract(lba, size, path=ORIG_BIN):
 MIPS_LUI, MIPS_ADDIU, MIPS_ORI, MIPS_LW = 0x0F, 0x09, 0x0D, 0x23
 
 
+MIPS_MEM_LOADS = frozenset((0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26))  # lb/lh/lwl/lw/lbu/lhu/lwr
+
+
 def iter_lui_pairs(data, load_ops):
-    """lui + (load_ops 중 하나) 쌍을 (imm_off, lui_off, op, addr)로 순회."""
+    """lui + (load_ops 중 하나) 쌍을 (imm_off, lui_off, op, addr)로 순회.
+
+    메모리 로드가 레지스터를 덮어쓰면(예: `lw t0,..(t0)` 뒤 `addiu x,t0,imm`) 그
+    레지스터의 lui 상위값이 무효가 되므로 페어링에서 제외 — 스테일 레지스터가
+    우연한 텍스트 주소를 만들어 잘못 패치되는 것을 막는다. R-type 산술
+    (`addu at,at,idx` 인덱싱)은 상위값을 보존하므로 무효화하지 않는다(점프 테이블 패턴).
+    jal은 $ra만 덮으므로 베이스 레지스터에 무해."""
     words = [int.from_bytes(data[i : i + 4], "little") for i in range(0, len(data) - 3, 4)]
     recent_lui = {}
     for idx, w in enumerate(words):
         op = w >> 26
         if op == MIPS_LUI:
             recent_lui[(w >> 16) & 0x1F] = (idx, w & 0xFFFF)
-        elif op in load_ops:
+            continue
+        if op in load_ops:
             rs = (w >> 21) & 0x1F
             if rs in recent_lui:
                 lui_idx, hi = recent_lui[rs]
@@ -51,6 +61,8 @@ def iter_lui_pairs(data, load_ops):
                     lo = w & 0xFFFF
                     addr = (hi << 16) + (lo - 0x10000 if lo >= 0x8000 and op != MIPS_ORI else lo)
                     yield idx * 4, lui_idx * 4, op, addr
+        if op in MIPS_MEM_LOADS:  # rt를 메모리값으로 재정의 → 상위값 소실
+            recent_lui.pop((w >> 16) & 0x1F, None)
 
 
 def edc_compute(data):

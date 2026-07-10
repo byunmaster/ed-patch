@@ -163,7 +163,7 @@ def compute_anchors(data, text_end):
     (2026-07-09 emucap 규명)이 바로 이 테이블이 대사에 밀려 어긋난 것.
     각 lui+lw base에서 오버레이 포인터(또는 null 슬롯)가 이어지는 동안을 테이블로 보고,
     인접 범위는 병합. 큰 쪽으로 근사(테이블을 조금 크게 잡으면 안전, 작으면 위험)."""
-    lo, hi = OVERLAY_RAM_BASE, OVERLAY_RAM_BASE + 0x30000  # 오버레이 전체 범위
+    lo, hi = OVERLAY_RAM_BASE, OVERLAY_RAM_BASE + len(data)  # 오버레이 전체 범위 (파일 크기)
     bases = {
         addr - OVERLAY_RAM_BASE
         for _, _, _, addr in iter_lui_pairs(data, (MIPS_LW,))
@@ -282,10 +282,14 @@ def load_translations(align_name, scn_name):
         entry["speaker"] = ov.get("speaker") or entry.get("speaker")
         try:
             spk, pages = parse_kr(entry)
-            out[int(jp_id_str)] = (ov.get("speaker") or spk, pages)
+            final_spk = ov.get("speaker") or spk
+            if not final_spk:  # 메인 경로와 동일 가드 — 화자 없는 블록은 대사로 승격 불가
+                raise SkipBlock("화자 없음")
+            out[int(jp_id_str)] = (final_spk, pages)
             applied += 1
-        except SkipBlock:
-            pass
+        except SkipBlock as e:
+            # 사람이 지정한 교정이 조용히 사라지면 안 된다 — 반드시 보고
+            print(f"경고: {scn_name} 오버라이드 jp={jp_id_str} 적용 실패 ({e}) — 수정 필요")
     return out, skipped, applied
 
 
@@ -366,7 +370,9 @@ def build_scene(name, lba, size, identity, fixed):
         region, layout = rebuild(entries, data, translations, excluded, anchors, text_end, fixed)
         newoff = {eid: (no, oo) for oo, _, no, _, eid in layout}
         lui_need, conflict = {}, None
-        for _, lui_off, op, addr in refs:
+        for addiu_off, lui_off, op, addr in refs:
+            if addiu_off < text_end or lui_off < text_end:
+                continue  # 텍스트 영역 내 우연 일치 — 패치 단계와 동일 필터 (오탐 충돌 방지)
             (_, eid), delta = owner(addr - OVERLAY_RAM_BASE)
             hi, _ = hi_lo(OVERLAY_RAM_BASE + newoff[eid][0] + delta, op)
             if lui_off in lui_need and lui_need[lui_off][0] != hi:

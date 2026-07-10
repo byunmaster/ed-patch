@@ -179,7 +179,12 @@ def dump_game(game, subdir):
     if not os.path.isdir(src_dir):
         print(f"{game}: {game}/{subdir} 없음 — 건너뜀 (원본 입수 후 재실행)")
         return 0
-    files = sorted(f for f in os.listdir(src_dir) if f.upper().endswith(".DLL"))
+    # "._*" = macOS AppleDouble 잔재 — 섞이면 공용 prefix 계산이 무너짐
+    files = sorted(
+        f for f in os.listdir(src_dir) if f.upper().endswith(".DLL") and not f.startswith("._")
+    )
+    if not files:
+        raise SystemExit(f"{src_dir}: DLL 파일 없음 — 원본 배치 확인")
     datas = {}
     for fname in files:
         with open(os.path.join(src_dir, fname), "rb") as f:
