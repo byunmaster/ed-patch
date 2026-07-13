@@ -81,7 +81,8 @@ def fit_font(text, max_w, start=16, lo=9):
 def render_mask(w, h, cx, panel_w, line1, line2):
     """2줄(장 표기/제목) 마스크. 반환: 본문 mask (bool)."""
     mask = np.zeros((h, w), dtype=bool)
-    for text, size0, ty in ((line1, 15, 3), (line2, 16, 20)):
+    # y +3px: 텍스트 블록(~33px)이 배너(45px) 수직 중앙에 오도록 (원 3/20은 위 3px·아래 9px로 쏠림)
+    for text, size0, ty in ((line1, 15, 6), (line2, 16, 23)):
         f, bb = fit_font(text, panel_w - 12, start=size0)
         tw = bb[2] - bb[0]
         im = Image.new("L", (w, h), 0)

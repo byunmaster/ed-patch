@@ -21,8 +21,7 @@ KR_UI = os.path.join(WORK_DIR, "Eiyuu Densetsu (KR UI).bin")
 
 # 빌드 중간·구 실험 산출물 (최종 하나만 남기고 정리)
 INTERMEDIATES = ["Eiyuu Densetsu (KR Pilot)", "Eiyuu Densetsu (KR UI)"]
-STALE = ["Eiyuu Densetsu (KR OP)", "Eiyuu Densetsu (Len Test)",
-         "Eiyuu Densetsu (Test Patch)"]
+STALE = ["Eiyuu Densetsu (KR OP)", "Eiyuu Densetsu (Len Test)", "Eiyuu Densetsu (Test Patch)"]
 
 
 def run(script):
