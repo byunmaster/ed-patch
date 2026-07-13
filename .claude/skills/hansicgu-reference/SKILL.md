@@ -25,6 +25,7 @@ description: >-
 | 상황·키워드 | 읽을 문서 |
 |---|---|
 | **우리가 직접 발견·검증한 기법** (커뮤니티 자료 아닌 우리 것) | `docs/reference/our-findings.md` |
+| **번역·조판 규약** (한글 출력 표기 규칙 — 부호 뒤 공백 제거 등) | `docs/reference/translation-conventions.md` |
 | **어디부터 볼지 모름 / 특정 게임·플랫폼 자료 목록** | `docs/reference/index-by-platform.md` (720건 플랫폼별 인덱스) |
 | **PS1 / 세가새턴** — 디버거로 폰트 찾기(NO$PSX·루아), 팔레트 추출, mkpsxiso, CD 섹터 구조, 1bpp→4bpp | `docs/reference/ps1-saturn.md` |
 | **SFC / PC98** — ROM 영역 확장·포인터 재계산, 비트→폰트 출력, PC98 3bpp/1bpp 그래픽 | `docs/reference/sfc-pc98.md` |

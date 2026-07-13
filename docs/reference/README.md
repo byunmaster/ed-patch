@@ -11,6 +11,7 @@
 | 파일 | 내용 |
 |---|---|
 | `our-findings.md` | ⭐ **우리 프로젝트가 직접 발견·검증한 기법**(축적용 살아있는 문서 — 새 발견은 여기로) |
+| `translation-conventions.md` | ⭐ **한글 출력 조판/표기 규약**(부호 뒤 공백 제거 등 — 새 규칙은 여기로) |
 | `index-by-platform.md` | 6개 게시판에서 선별한 **플랫폼별 자료 인덱스**(제목·추천·원문링크 — 요약 발췌는 로컬 `_inventory` 참조) |
 | `compression-and-encoding.md` | LZ/LZSS 변종 압축 해제, 압축·암호화 판별, SJIS↔JIS·UTF-8 인코딩 변환, 정규표현 |
 | `fonts-korean.md` | 한글 픽셀폰트 자원(갈무리 등), 7비트 완성형 음절표, 폰트 제작 스크립트 |
