@@ -23,8 +23,10 @@ ED1 이름 소스는 ED.EXE 안의 세 영역(2026-07-14 규명, 참조 구조 �
 import os
 import struct
 
+import battle_text as BT
 import hangul_map as H
 from common import MIPS_ADDIU, MIPS_ORI, WORK_DIR, extract, iter_lui_pairs, write_user_data
+from derive_text import jp_map
 
 ED_LBA, ED_SIZE = 257, 1021952
 TARGET = os.path.join(WORK_DIR, "Eiyuu Densetsu (KR).bin")
@@ -35,6 +37,14 @@ BLOB_EQ = (0x828, 0xDC8)  # 장비·도구 100
 BLOB_MAGIC = (0xDD8, 0xE74)  # 마법 13
 SEC = (0xF8DC4, 0xF8EB8)  # 아이템 17 + 마법 14 (구 8B stride)
 MONSTER = (0x9D58, 0xA8D0)  # 몬스터 208
+# 전투 트랙(2026-07-14 스코핑): 전부 lui/addiu 참조(u32 데이터 포인터 0) — 같은 기법.
+CHAPTER = (0xB9C0, 0xBCD4)  # 챕터 클리어 메시지 13 (해방 공지 + 第N章…完)
+ARENA = (0xBD18, 0xBDCC)  # 격투장 상품 대사 4 (정발 T_204~207 어투)
+BTL_MSG = (0xBDCC, 0xBE48)  # 공격/일격/데미지 6 (뒤 0xBE48~ 포인터 테이블 — 보존)
+BTL_MSG2 = (0xBE60, 0xBEC8)  # 인벤 초과·포기·입수 3
+FRAG_TACHI = (0xF8ED4, 0xF8EEC)  # 승리 보상 문맥 たち — '일행'
+FRAG = (0xF8EEC, 0xF9064)  # 전투 조각(조사·접속사·%포맷) 58
+EVT = (0xF9074, 0xF910C)  # 이벤트 전투 이름(사령관·병사·가르고 등)·방위 21
 RYUNAN = 0x80C  # リュナン 기본 이름(12B 슬롯) — 세리오스(0x800)는 patch_sys_ui가 처리
 
 # JP → 정발 KR. DOS는 이름 필드가 14B(마법 8B)라 긴 이름을 압착했는데(성스러운지팡이
@@ -296,6 +306,13 @@ MONSTERS = {
 }
 _FW = {"Ａ": "A", "Ｂ": "B", "Ｃ": "C", "Ｄ": "D"}
 
+# 전투·챕터·격투장 메시지. %s에 들어갈 이름의 받침을 정적으로 알 수 없어 조사는
+# 병기(은(는)·을(를))·정발 고정형(으로는 — DOS도 고정) 채택. 동적 조사 훅(음절→종성
+# 비트테이블 + 결합 루틴 훅)은 HANDOFF 개선 항목. 챕터 제목은 카드와 동일 정발명.
+# ＢＣＤＥＦＧＨ 등 전각 라틴은 한자 블록 밖이라 원본 유지.
+# {JP → KR} 82종(챕터 클리어 13·격투장 4·전투 알림 등) — textmap/items_battle.json 파생.
+BATTLE = jp_map("items_battle")
+
 
 def monster_kr(jp):
     """몬스터명 번역: 베이스 매핑 + 색상 접미(전각→반각 정규화)."""
@@ -333,8 +350,11 @@ def scan_names(ed, lo, hi):
     return out
 
 
-def repack(ed, lo, hi, label, align=4, tr=None):
-    """영역을 KR로 재packing(tr: JP→KR 변환, 기본 NAMES). 반환: {옛 RAM: 새 RAM}."""
+def repack(ed, lo, hi, label, align=4, tr=None, pools=None):
+    """영역을 KR로 재packing(tr: JP→KR 변환, 기본 NAMES). 반환: {옛 RAM: 새 RAM}.
+
+    pools를 주면 재packing 후 남는 꼬리 (free_lo, hi)를 추가한다(전투 코퍼스
+    재배치용 여유 공간)."""
     tr = tr or NAMES.__getitem__
     names = scan_names(ed, lo, hi)
     moved, cur = {}, lo
@@ -347,6 +367,8 @@ def repack(ed, lo, hi, label, align=4, tr=None):
         packed += kb
         cur += len(kb)
     ed[lo:hi] = packed.ljust(hi - lo, b"\x00")
+    if pools is not None and hi - cur >= 8:
+        pools.append([cur, hi])
     print(f"{label}: {len(names)}개 재packing ({len(packed)}/{hi - lo}B)")
     return moved
 
@@ -376,16 +398,157 @@ def redirect(ed, moved):
     print(f"참조 갱신 {n}곳 ({len(hits)}개 주소)")
 
 
+# ── 전투 코퍼스: 몬스터 행동·조우·상태이상·보스 대사 ~530종 ──
+# 번역은 battle_text.py. **코드 참조가 정본**: 텍스트 휴리스틱은 포인터 테이블 직후
+# (널 구분 없이 붙은) 문자열을 데이터로 오인해 놓치므로(→ 일본어 잔존·재배치 충돌),
+# 대신 lui/addiu가 가리키는 주소 중 실제 텍스트인 것을 전투 문자열로 삼는다.
+# 구조상 데이터 조각(포인터)이 문자열 사이에 섞여 통짜 재packing 불가 → 문자열별
+# 제자리 치환, 슬롯 초과분만 풀 재배치 + 참조 완전 갱신(lui 포함).
+CORPUS = (0x4954, 0x9938)
+CORPUS_SKIP = {0x4E64, 0x4EAC, 0x4ED8, 0x4F00}  # 메모리카드 문구 — patch_sys_ui가 처리
+# 코퍼스 영역 밖 산재 전투 문자열(참조는 있으나 영역 스캔이 못 잡음) — 명시 편입.
+# 골드획득·레벨업, 전투 문맥 캐릭터명 사본(ロー/ゲイル/ソニア/海賊), 레벨업 확인.
+CORPUS_EXTRA = (0x10F4, 0x493C, 0xF8DB4, 0xF8DBC, 0xF9140, 0xF9194, 0xF91A0, 0x9938)
+
+
+def is_battle_string(orig, fo):
+    """참조 대상이 실제 전투 텍스트인가 — 엄격 SJIS + 출력가능 문자.
+
+    포인터 테이블 베이스(제어바이트 포함)와 값 테이블 첫 바이트('d'=100 등 순수
+    ASCII 단일문자)를 걸러낸다."""
+    if fo >= len(orig) or orig[fo] == 0:
+        return False
+    j = orig.find(b"\x00", fo)
+    if j < 0 or j == fo or j - fo > 120:
+        return False
+    try:
+        s = orig[fo:j].decode("shift_jis")
+    except UnicodeDecodeError:
+        return False
+    if all(c < "\x80" for c in s) and "%" not in s:
+        return False  # 값 테이블 조각(예: 'd')
+    return all(c >= " " or c in "\n　" for c in s)
+
+
+def corpus_strings(orig):
+    """전투 문자열 (off, slot_end, jp) 나열 — 코드 참조 정본 + EXTRA."""
+    refd = set()
+    for _imm, _lui, _op, addr in iter_lui_pairs(orig, {MIPS_ADDIU, MIPS_ORI}):
+        fo = addr - 0x80010000 + 0x800
+        if CORPUS[0] <= fo < CORPUS[1] and fo not in CORPUS_SKIP:
+            refd.add(fo)
+    refd.update(CORPUS_EXTRA)
+    out = []
+    for fo in sorted(refd):
+        if not is_battle_string(orig, fo):
+            continue
+        j = orig.index(0, fo)
+        e = j
+        while orig[e] == 0:
+            e += 1
+        out.append((fo, e, orig[fo:j].decode("shift_jis")))
+    return out
+
+
+def battle_kr(jp):
+    """전투 문자열 번역 — B 우선, 표시명은 monster_kr 폴백."""
+    if jp in BT.B:
+        return BT.B[jp]
+    try:
+        return monster_kr(jp)
+    except AssertionError:
+        return None
+
+
+def apply_battle(ed, orig, pools):
+    """코퍼스 치환: 제자리 우선, 초과분은 풀 재배치 + 참조 완전 갱신(lui 포함).
+
+    재배치는 상위 16비트/부호가 바뀔 수 있어 lui까지 갱신한다 — lui를 다른
+    대상과 공유하면 오염되므로 공유 여부를 전수 검사(assert)한다."""
+    strs = corpus_strings(orig)
+    missing = sorted({jp for _, _, jp in strs if battle_kr(jp) is None})
+    assert not missing, f"번역 누락 {len(missing)}건: {missing[:8]}"
+
+    # 참조 인덱스 (ORIG 기준 — 코퍼스 참조 코드는 앞 단계에서 불변)
+    targets = {ram_of(off) for off, _, _ in strs}
+    refs, lui_use = {}, {}
+    for imm_off, lui_off, op, addr in iter_lui_pairs(bytes(ed), {MIPS_ADDIU, MIPS_ORI}):
+        if addr in targets:
+            refs.setdefault(addr, []).append((imm_off, lui_off, op))
+        lui_use.setdefault(lui_off, set()).add(addr)
+
+    # 1패스: 제자리/재배치 분류. 재배치분의 옛 슬롯은 즉시 비우고 풀에 편입
+    # (인접 슬롯은 병합 — 보스 대사처럼 연속 재배치 구간이 큰 연속 풀이 된다).
+    inplace, moves = 0, []
+    for off, slot_end, jp in strs:
+        kb = enc(battle_kr(jp)) + b"\x00"
+        old = ram_of(off)
+        assert refs.get(old), f"0x{off:X} {jp[:12]!r}: 참조 0건"
+        if len(kb) <= slot_end - off:
+            ed[off:slot_end] = kb.ljust(slot_end - off, b"\x00")
+            inplace += 1
+        else:
+            ed[off:slot_end] = b"\x00" * (slot_end - off)
+            pools.append([off, slot_end])
+            moves.append((old, kb, jp))
+    pools.sort()
+    merged = []
+    for lo, hi in pools:
+        if merged and merged[-1][1] == lo:
+            merged[-1][1] = hi
+        else:
+            merged.append([lo, hi])
+    pools[:] = merged
+
+    # 2패스: 큰 것부터 최적적합(best-fit) 할당 — 파편화 최소화
+    for old, kb, jp in sorted(moves, key=lambda m: -len(m[1])):
+        cand = [p for p in pools if p[1] - p[0] >= len(kb)]
+        if not cand:
+            raise SystemExit(f"풀 부족: {jp[:14]!r} ({len(kb)}B)")
+        pool = min(cand, key=lambda p: p[1] - p[0])
+        dst = pool[0]
+        pool[0] += len(kb)
+        ed[dst : dst + len(kb)] = kb
+        new = ram_of(dst)
+        hi = (new >> 16) + (1 if new & 0x8000 else 0)  # addiu 부호확장 보정
+        for imm_off, lui_off, op in refs[old]:
+            others = lui_use[lui_off] - {old}
+            assert not others, f"0x{imm_off:X}: lui 공유({[hex(a) for a in others]}) — 재배치 불가"
+            if op == MIPS_ORI:
+                hi_w, lo_w = new >> 16, new & 0xFFFF
+            else:
+                hi_w, lo_w = hi, new & 0xFFFF
+            w = struct.unpack_from("<I", ed, lui_off)[0]
+            struct.pack_into("<I", ed, lui_off, (w & 0xFFFF0000) | hi_w)
+            w = struct.unpack_from("<I", ed, imm_off)[0]
+            struct.pack_into("<I", ed, imm_off, (w & 0xFFFF0000) | lo_w)
+    left = sum(p[1] - p[0] for p in pools)
+    print(f"전투 코퍼스 {len(strs)}개: 제자리 {inplace} + 재배치 {len(moves)} (풀 잔여 {left}B)")
+
+
 def main():
     if not os.path.exists(TARGET):
         raise SystemExit(f"대상 이미지 없음: {TARGET} — build.py 먼저")
     ed = bytearray(extract(ED_LBA, ED_SIZE, path=TARGET))
+    orig = extract(ED_LBA, ED_SIZE)  # 원본(JP) — 코퍼스 스캔·검증 기준
+    if ed[BLOB_EQ[0]] != orig[BLOB_EQ[0]]:
+        raise SystemExit("이미 패치된 이미지 — build.py로 처음부터 다시 빌드하세요")
 
-    moved = repack(ed, *BLOB_EQ, "이름 블롭(장비·도구100)")
-    moved.update(repack(ed, *BLOB_MAGIC, "이름 블롭(마법13)"))
-    moved.update(repack(ed, *SEC, "전투 테이블(아이템17+마법14)", align=1))
-    moved.update(repack(ed, *MONSTER, "몬스터명(208)", tr=monster_kr))
+    pools = []
+    moved = repack(ed, *BLOB_EQ, "이름 블롭(장비·도구100)", pools=pools)
+    moved.update(repack(ed, *BLOB_MAGIC, "이름 블롭(마법13)", pools=pools))
+    moved.update(repack(ed, *SEC, "전투 테이블(아이템17+마법14)", align=1, pools=pools))
+    moved.update(repack(ed, *MONSTER, "몬스터명(208)", tr=monster_kr, pools=pools))
+    b = BATTLE.__getitem__
+    moved.update(repack(ed, *CHAPTER, "챕터 클리어(13)", align=1, tr=b, pools=pools))
+    moved.update(repack(ed, *ARENA, "격투장(4)", align=1, tr=b, pools=pools))
+    moved.update(repack(ed, *BTL_MSG, "전투 메시지(6)", align=1, tr=b, pools=pools))
+    moved.update(repack(ed, *BTL_MSG2, "전투 메시지(입수3)", align=1, tr=b, pools=pools))
+    moved.update(repack(ed, *FRAG_TACHI, "たち(파티)", align=1, tr=lambda _: "일행", pools=pools))
+    moved.update(repack(ed, *FRAG, "전투 조각(58)", align=1, tr=b, pools=pools))
+    moved.update(repack(ed, *EVT, "이벤트 이름·방위(21)", align=1, tr=b, pools=pools))
     redirect(ed, moved)
+    apply_battle(ed, orig, pools)
 
     # 동료 기본 이름 リュナン(12B 슬롯) — 이름판 그래픽과 동일 표기
     b = enc("류난")
