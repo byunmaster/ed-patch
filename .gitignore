@@ -20,6 +20,10 @@ out/
 # 로컬 서드파티 바이너리 — 에뮬레이터·디버거·유틸 (재배포 방지)
 vendor/
 
+# 카페 게시판 원본 덤프 — 로컬 전용 (타인 게시글 발췌·저작권/약관, 재배포 금지.
+# 재수집 절차는 docs/reference/README.md)
+docs/reference/_inventory/
+
 # emucap 실험 원장
 .emucap/
 
