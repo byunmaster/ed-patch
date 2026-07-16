@@ -45,6 +45,7 @@ def main():
     shutil.copyfile(KR_UI, FINAL)
     write_cue(FINAL_CUE, os.path.basename(FINAL))
     run("patch_items.py")  # ED.EXE 아이템·마법명 (FINAL 제자리 갱신)
+    run("patch_gfx_title.py")  # START.DAT 타이틀 로고·버튼 TIM (FINAL 제자리 갱신)
     run("patch_opening_font.py")  # OPEN1.EXE 오프닝 폰트+텍스트 (FINAL 제자리 갱신)
     for stem in INTERMEDIATES + STALE:
         rm(stem)
