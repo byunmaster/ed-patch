@@ -1,6 +1,458 @@
 {
  "_comment": "사람이 정발판 대조로 확정한 정렬 교정. 의미 정렬(align_semantic.py, LaBSE)이 대부분의 swap을 자동 해결하므로 보통 비어 있다. 의미 정렬이 놓치거나(저유사도) 정발판 고유 삽입(예: 불법복제 경고)을 특정 PS1 블록에 심을 때 여기 지정한다 — 재삽입 시 align보다 우선. 키=씬(ED1SCN1), 하위=PS1 entry_id → {table, entry_id, speaker?, note?}.",
- "ED1SCN1": {},
+ "ED1SCN1": {
+  "560": {
+   "table": "ED1/T_031",
+   "entry_id": 14,
+   "speaker": "갇힌 사람"
+  },
+  "564": {
+   "table": "ED1/T_032",
+   "entry_id": 15,
+   "speaker": "남자"
+  },
+  "438": {
+   "table": "ED1/C_000",
+   "entry_id": 9,
+   "speaker": "병사"
+  },
+  "1355": {
+   "table": "ED1/C_00D",
+   "entry_id": 0,
+   "speaker": "병사"
+  },
+  "290": {
+   "table": "ED1/T_022",
+   "entry_id": 32,
+   "speaker": "염소"
+  },
+  "554": {
+   "table": "ED1/T_022",
+   "entry_id": 15,
+   "speaker": "여행자"
+  },
+  "80": {
+   "table": "ED1/T_010",
+   "entry_id": 12,
+   "speaker": "병사"
+  },
+  "1212": {
+   "table": "ED1/C_005",
+   "entry_id": 5,
+   "speaker": "페리시아"
+  },
+  "145": {
+   "table": "ED1/T_013",
+   "entry_id": 11,
+   "speaker": "노인"
+  },
+  "134": {
+   "table": "ED1/T_012",
+   "entry_id": 6,
+   "speaker": "소니아"
+  },
+  "1184": {
+   "table": "ED1/T_012",
+   "entry_id": 3,
+   "speaker": "병사"
+  },
+  "720": {
+   "table": "ED1/T_044",
+   "entry_id": 0,
+   "speaker": "현자"
+  },
+  "661": {
+   "table": "ED1/T_043",
+   "entry_id": 0,
+   "speaker": "현자"
+  },
+  "254": {
+   "table": "ED1/T_021",
+   "entry_id": 5,
+   "speaker": "당차 보이는 여자"
+  },
+  "697": {
+   "table": "ED1/T_010",
+   "entry_id": 26,
+   "speaker": "류난"
+  },
+  "144": {
+   "table": "ED1/T_015",
+   "entry_id": 9,
+   "speaker": "노인"
+  },
+  "27": {
+   "table": "ED1/T_001",
+   "entry_id": 12,
+   "speaker": "라이아스"
+  },
+  "1041": {
+   "table": "ED1/T_043",
+   "entry_id": 12,
+   "speaker": "여자"
+  },
+  "1351": {
+   "table": "ED1/C_00H",
+   "entry_id": 0,
+   "speaker": "페리시아"
+  },
+  "167": {
+   "table": "ED1/T_014",
+   "entry_id": 9,
+   "speaker": "노인"
+  },
+  "135": {
+   "table": "ED1/C_004",
+   "entry_id": 10,
+   "speaker": "병사"
+  },
+  "1222": {
+   "table": "ED1/C_005",
+   "entry_id": 23,
+   "speaker": "페리시아"
+  },
+  "1129": {
+   "table": "ED1/C_001",
+   "entry_id": 35,
+   "speaker": "노인"
+  },
+  "1139": {
+   "table": "ED1/C_002",
+   "entry_id": 2,
+   "speaker": "아크담"
+  },
+  "204": {
+   "table": "ED1/T_011",
+   "entry_id": 2,
+   "speaker": "무기점"
+  },
+  "390": {
+   "table": "ED1/T_024",
+   "entry_id": 12,
+   "speaker": "농부"
+  },
+  "405": {
+   "table": "ED1/T_024",
+   "entry_id": 22,
+   "speaker": "갇혀있었던 사람"
+  },
+  "1188": {
+   "table": "ED1/C_004",
+   "entry_id": 15,
+   "speaker": "아론"
+  },
+  "668": {
+   "table": "ED1/T_042",
+   "entry_id": 8,
+   "speaker": "밀매상"
+  },
+  "1219": {
+   "table": "ED1/C_005",
+   "entry_id": 8,
+   "speaker": "페리시아"
+  },
+  "1068": {
+   "table": "ED1/T_001",
+   "entry_id": 2
+  },
+  "284": {
+   "table": "ED1/T_022",
+   "entry_id": 31,
+   "speaker": "남자"
+  },
+  "756": {
+   "table": "ED1/T_041",
+   "entry_id": 6,
+   "speaker": "밀매상"
+  },
+  "518": {
+   "table": "ED1/T_031",
+   "entry_id": 19,
+   "speaker": "피토"
+  },
+  "276": {
+   "table": "ED1/T_021",
+   "entry_id": 10,
+   "speaker": "소니아"
+  },
+  "542": {
+   "table": "ED1/T_031",
+   "entry_id": 6,
+   "speaker": "입구의 병사"
+  },
+  "519": {
+   "table": "ED1/T_031",
+   "entry_id": 20,
+   "speaker": "갇힌 사람"
+  },
+  "29": {
+   "table": "ED1/T_001",
+   "entry_id": 13,
+   "speaker": "라이아스"
+  },
+  "1102": {
+   "table": "ED1/C_000",
+   "entry_id": 8,
+   "speaker": "병사"
+  },
+  "1200": {
+   "table": "ED1/C_005",
+   "entry_id": 2
+  },
+  "1297": {
+   "table": "ED1/C_00C",
+   "entry_id": 4,
+   "speaker": "페리시아"
+  },
+  "1213": {
+   "table": "ED1/C_005",
+   "entry_id": 7,
+   "speaker": "페리시아"
+  },
+  "53": {
+   "table": "ED1/T_010",
+   "entry_id": 9,
+   "speaker": "무기점"
+  },
+  "1348": {
+   "table": "ED1/T_011",
+   "entry_id": 29,
+   "speaker": "라우엘"
+  },
+  "69": {
+   "table": "ED1/T_021",
+   "entry_id": 6,
+   "speaker": "아론"
+  },
+  "426": {
+   "table": "ED1/T_026",
+   "entry_id": 1,
+   "speaker": "아론"
+  },
+  "599": {
+   "table": "ED1/T_033",
+   "entry_id": 17,
+   "speaker": "남자"
+  },
+  "213": {
+   "table": "ED1/T_020",
+   "entry_id": 8,
+   "speaker": "여행자"
+  },
+  "1318": {
+   "table": "ED1/C_009",
+   "entry_id": 3,
+   "speaker": "여자"
+  },
+  "1260": {
+   "table": "ED1/C_00E",
+   "entry_id": 3,
+   "speaker": "여자"
+  },
+  "533": {
+   "table": "ED1/T_031",
+   "entry_id": 1,
+   "speaker": "입구의 병사"
+  },
+  "545": {
+   "table": "ED1/T_031",
+   "entry_id": 9,
+   "speaker": "갇힌 사람"
+  },
+  "1194": {
+   "table": "ED1/C_005",
+   "entry_id": 0
+  },
+  "23": {
+   "table": "ED1/T_000",
+   "entry_id": 28,
+   "speaker": "퍼거슨"
+  },
+  "1140": {
+   "table": "ED1/C_002",
+   "entry_id": 3,
+   "speaker": "세리오스"
+  },
+  "1262": {
+   "table": "ED1/C_009",
+   "entry_id": 5,
+   "speaker": "병사"
+  },
+  "1095": {
+   "table": "ED1/C_001",
+   "entry_id": 20,
+   "speaker": "병사"
+  },
+  "1308": {
+   "table": "ED1/C_00H",
+   "entry_id": 4,
+   "speaker": "병사"
+  },
+  "289": {
+   "table": "ED1/T_020",
+   "entry_id": 13,
+   "speaker": "닭"
+  },
+  "1101": {
+   "table": "ED1/C_000",
+   "entry_id": 4,
+   "speaker": "병사"
+  },
+  "444": {
+   "table": "ED1/T_027",
+   "entry_id": 2,
+   "speaker": "닭"
+  },
+  "1246": {
+   "table": "ED1/C_006",
+   "entry_id": 13,
+   "speaker": "병사"
+  },
+  "77": {
+   "table": "ED1/T_010",
+   "entry_id": 30,
+   "speaker": "류난"
+  },
+  "1205": {
+   "table": "ED1/C_005",
+   "entry_id": 3,
+   "speaker": "페리시아"
+  },
+  "1196": {
+   "table": "ED1/C_005",
+   "entry_id": 16,
+   "speaker": "아크담"
+  },
+  "1117": {
+   "table": "ED1/C_001",
+   "entry_id": 12,
+   "speaker": "병사"
+  },
+  "670": {
+   "table": "ED1/T_040",
+   "entry_id": 25,
+   "speaker": "여관주인"
+  },
+  "1306": {
+   "table": "ED1/T_001",
+   "entry_id": 11,
+   "speaker": "세리오스"
+  },
+  "109": {
+   "table": "ED1/T_011",
+   "entry_id": 30,
+   "speaker": "세리오스"
+  },
+  "37": {
+   "table": "ED1/T_010",
+   "entry_id": 13,
+   "speaker": "병사"
+  },
+  "111": {
+   "table": "ED1/T_011",
+   "entry_id": 32,
+   "speaker": "세리오스"
+  },
+  "1165": {
+   "table": "ED1/T_031",
+   "entry_id": 3,
+   "speaker": "입구의 병사"
+  },
+  "91": {
+   "table": "ED1/T_011",
+   "entry_id": 14,
+   "speaker": "남자"
+  },
+  "1256": {
+   "table": "ED1/C_008",
+   "entry_id": 1,
+   "speaker": "병사"
+  },
+  "1314": {
+   "table": "ED1/C_00D",
+   "entry_id": 1,
+   "speaker": "병사"
+  },
+  "483": {
+   "table": "ED1/T_030",
+   "entry_id": 11,
+   "speaker": "피토"
+  },
+  "1131": {
+   "table": "ED1/C_001",
+   "entry_id": 36,
+   "speaker": "노인"
+  },
+  "335": {
+   "table": "ED1/T_023",
+   "entry_id": 1,
+   "speaker": "소니아"
+  },
+  "492": {
+   "table": "ED1/T_030",
+   "entry_id": 5
+  },
+  "224": {
+   "table": "ED1/T_042",
+   "entry_id": 5,
+   "speaker": "밀매상"
+  },
+  "8": {
+   "table": "ED1/T_000",
+   "entry_id": 30,
+   "speaker": "아이 어머니"
+  },
+  "437": {
+   "table": "ED1/T_028",
+   "entry_id": 5,
+   "speaker": "농부"
+  },
+  "150": {
+   "table": "ED1/T_013",
+   "entry_id": 17,
+   "speaker": "라우엘"
+  },
+  "734": {
+   "table": "ED1/T_042",
+   "entry_id": 27,
+   "speaker": "남자"
+  },
+  "76": {
+   "table": "ED1/T_010",
+   "entry_id": 28,
+   "speaker": "라우엘"
+  },
+  "394": {
+   "table": "ED1/T_028",
+   "entry_id": 6,
+   "speaker": "농부"
+  },
+  "1309": {
+   "table": "ED1/C_00C",
+   "entry_id": 16,
+   "speaker": "병사"
+  },
+  "193": {
+   "table": "ED1/T_015",
+   "entry_id": 12,
+   "speaker": "남자"
+  },
+  "639": {
+   "table": "ED1/T_040",
+   "entry_id": 21,
+   "speaker": "여자"
+  },
+  "423": {
+   "table": "ED1/T_026",
+   "entry_id": 0,
+   "speaker": "아론"
+  },
+  "508": {
+   "table": "ED1/T_030",
+   "entry_id": 19,
+   "speaker": "남자"
+  }
+ },
  "ED1SCN2": {
   "325": {
    "table": "ED1/T_100",
