@@ -99,6 +99,17 @@ UI = {
 #    모두 '엘아스타'라 통일(유저 확정 2026-07-13).
 #  - 콜크스 마을: 정발은 '콜크스마을'(12B 컬럼 제약 추정) — 타 'X 마을'과 일관되게 띄움.
 PLACES_BASE, PLACES_STRIDE = 0xBE690, 14
+# HUD 상태이상 라벨 — ED.EXE 0xF91D8부터 **4바이트 stride**(2바이트 글자 + 널 2).
+# 한글 1음절이 2바이트라 슬롯에 그대로 맞는다. 원본이 한 글자 약어라 우리도 한 글자로.
+# (전투 커맨드 `守る`는 0xBE2EC의 별도 문자열로 이미 '수비'로 한글화돼 있다.)
+STATUS_BASE, STATUS_STRIDE = 0xF91D8, 4
+STATUS_LABELS = [
+    ("毒", "독"),  # 중독
+    ("黙", "묵"),  # 침묵
+    ("呪", "주"),  # 저주
+    ("眠", "잠"),  # 수면
+    ("乱", "란"),  # 혼란
+]
 PLACES = [  # (PS1 일본어, 정발 한국어) — JP는 SCN 헤더 치환 키
     ("エルアスタ", "엘아스타"),
     ("ルディア", "루디아"),
@@ -422,6 +433,17 @@ def main():
         assert len(b) < PLACES_STRIDE, f"지명 초과 {kr!r} {len(b)}B"
         ed[off : off + PLACES_STRIDE] = b.ljust(PLACES_STRIDE, b"\x00")
     print(f"지명 재삽입 {len(PLACES)}개 (0x{PLACES_BASE:X}~)")
+
+    # HUD 상태이상 라벨
+    for i, (jp, kr) in enumerate(STATUS_LABELS):
+        off = STATUS_BASE + i * STATUS_STRIDE
+        assert ed[off : off + 2] == jp.encode("cp932"), (
+            f"상태 라벨 슬롯 불일치 @0x{off:X}: {ed[off : off + 2].hex()} != {jp!r}"
+        )
+        b = H.encode_kr(kr)
+        assert len(b) < STATUS_STRIDE, f"상태 라벨 초과 {kr!r} {len(b)}B"
+        ed[off : off + STATUS_STRIDE] = b.ljust(STATUS_STRIDE, b"\x00")
+    print(f"상태이상 라벨 {len(STATUS_LABELS)}개 (0x{STATUS_BASE:X}~)")
 
     # 주인공 기본 이름 (12B 슬롯)
     for off, kr in HERO.items():

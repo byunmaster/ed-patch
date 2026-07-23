@@ -526,6 +526,45 @@ def apply_battle(ed, orig, pools):
     print(f"전투 코퍼스 {len(strs)}개: 제자리 {inplace} + 재배치 {len(moves)} (풀 잔여 {left}B)")
 
 
+
+# 전투 데미지 메시지의 조사 교정 — "세리오스을(를) N의 데미지" → "…에게 N의 데미지"
+# 조합: sprintf(buf, "%c%s%c을(를) ", 2, 이름, 1) + sprintf(t, "%d의 데미지!!\n", dmg) + strcat
+# 그 포맷 문자열(%c%s%c을(를) )은 **참조 9곳으로 공유**돼(…목을 뻗어 ○○을(를) 쪼았다 등)
+# 제자리 변경이 불가하다. → 새 문자열을 코퍼스 여유(0런)에 심고 **데미지 경로 1곳만** 리다이렉트.
+# 데미지 경로는 라이브 디스어셈블로 확정(2026-07-23): lui@0x80069838 + addiu@0x8006983C.
+DMG_LUI, DMG_ADDIU = 0x80069838, 0x8006983C
+CORPUS_LO, CORPUS_HI = 0x4954, 0x9938  # 전투 코퍼스 영역(여유 0런 탐색 범위)
+
+
+def fix_damage_particle(ed):
+    import struct
+
+    nb = b"\x25\x63\x25\x73\x25\x63" + enc("에게") + b"\x20\x00"  # '%c%s%c에게 \0'
+    # 코퍼스 여유(0런)에서 자리 확보 — 4바이트 정렬
+    need = len(nb)
+    dst = None
+    run = 0
+    for i in range(CORPUS_LO, CORPUS_HI):
+        run = run + 1 if ed[i] == 0 else 0
+        if run >= need + 4:
+            dst = (i - need + 1 + 3) & ~3
+            break
+    assert dst is not None, f"데미지 조사: 코퍼스에 {need}B 여유 없음"
+    assert all(ed[dst + k] == 0 for k in range(need)), "데미지 조사: 목적지가 비어있지 않음"
+    ed[dst : dst + need] = nb
+
+    ram = ram_of(dst)
+    hi, lo = ram >> 16, ram & 0xFFFF
+    if lo & 0x8000:  # addiu 부호확장 보정
+        hi += 1
+    for pc, opc in ((DMG_LUI, 0x0F), (DMG_ADDIU, 0x09)):
+        fo = pc - 0x80010000 + 0x800
+        w = struct.unpack_from("<I", ed, fo)[0]
+        assert (w >> 26) == opc, f"0x{pc:X}: 예상 opcode {opc:#x} 아님 ({w:#010x})"
+        struct.pack_into("<I", ed, fo, (w & 0xFFFF0000) | (hi if opc == 0x0F else lo))
+    print(f"데미지 조사 '을(를)'→'에게' (새 문자열 0x{ram:08X}, 참조 1곳만 리다이렉트)")
+
+
 def main():
     if not os.path.exists(TARGET):
         raise SystemExit(f"대상 이미지 없음: {TARGET} — build.py 먼저")
@@ -549,6 +588,7 @@ def main():
     moved.update(repack(ed, *EVT, "이벤트 이름·방위(21)", align=1, tr=b, pools=pools))
     redirect(ed, moved)
     apply_battle(ed, orig, pools)
+    fix_damage_particle(ed)
 
     # 동료 기본 이름 リュナン(12B 슬롯) — 이름판 그래픽과 동일 표기
     b = enc("류난")
