@@ -1,0 +1,207 @@
+"""krwrap 단위 테스트. 실행: `.venv/bin/python shared/text/tests/test_krwrap.py`
+(pytest도 호환: `.venv/bin/python -m pytest shared/text/tests/`)
+"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from text.krwrap import (  # noqa: E402
+    NO_HEAD,
+    is_sentence_end,
+    split_sentences,
+    text_width,
+    wrap,
+    wrap_hard,
+    wrap_page,
+    wrap_pages,
+)
+
+
+def test_basic_greedy():
+    # 폭 6전각: "가나다 라마" (=3+0.5+2=5.5) 한 줄, "바사아" 다음 줄
+    out = wrap("가나다 라마 바사아", width=6)
+    assert out == ["가나다 라마", "바사아"], out
+
+
+def test_no_midword_break():
+    # 어절은 절대 중간에서 안 끊긴다
+    out = wrap("에스텔 브라이트가 인사한다", width=5)
+    for line in out:
+        assert " " not in line or all(
+            w in "에스텔 브라이트가 인사한다".split() for w in line.split()
+        )
+    assert "에스텔" in out[0]
+
+
+def test_strip_after_display():
+    # 같은 줄이면 . , 뒤 공백 제거(표시), 하지만 개행은 . 뒤에서 가능
+    out = wrap("끝. 다음", width=20, strip_after=".,")
+    assert out == ["끝.다음"], out
+
+
+def test_break_allowed_after_period():
+    # 좁으면 . 뒤에서 개행(붙은 토큰 안 생김)
+    out = wrap("끝. 다음문장이다", width=4, strip_after=".,")
+    assert out[0] == "끝." and out[1].startswith("다음"), out
+
+
+def test_comma_space_removed_same_line():
+    out = wrap("사과, 배, 포도", width=20, strip_after=".,")
+    assert out == ["사과,배,포도"], out
+
+
+def test_bang_question_space_kept():
+    # ! ? 뒤 공백은 strip_after에 없으면 유지
+    out = wrap("좋아! 가자", width=20, strip_after=".,")
+    assert out == ["좋아! 가자"], out
+
+
+def test_strip_before_punct():
+    # 부호 앞 공백 제거: `왕자님 ?`→`왕자님?`, `전해라 !`→`전해라!` (뒤 공백은 유지)
+    out = wrap("외출하시옵나이까 왕자님 ?", width=20, strip_before=".,!?", strip_after=".,")
+    assert out == ["외출하시옵나이까 왕자님?"], out
+    out2 = wrap("본때를 보여주지 ! 어서", width=20, strip_before=".,!?", strip_after=".,")
+    assert out2 == ["본때를 보여주지! 어서"], out2
+
+
+def test_no_head_kinsoku():
+    # 닫는 따옴표가 줄 맨 앞에 오지 않게(앞 줄에 붙음)
+    out = wrap("그가 말했다 ”라고", width=6, no_head=NO_HEAD)
+    for line in out:
+        assert line[0] not in NO_HEAD, out
+
+
+def test_avoid_widow():
+    # 마지막 줄이 한 어절(짧은)만 덜렁 남으면 앞 줄에서 하나 내려 회피
+    # "가나 다라 마"(폭5.5): 그리디=[가나 다라][마] → 위도우 회피=[가나][다라 마]
+    out = wrap("가나 다라 마", width=5.5, avoid_widow=True)
+    assert out == ["가나", "다라 마"], out
+    # 회피 불가(앞 줄도 한 어절 + 합치면 폭 초과)면 그대로 둔다
+    out2 = wrap("가나다라 마바사아 자", width=5, avoid_widow=True)
+    assert out2 == ["가나다라", "마바사아", "자"], out2
+
+
+def test_cell_width_halfwidth():
+    # 엔진 슬롯 폭: 공백만 0.5, ASCII 인쇄문자는 전각 승격(인코더)이라 1.0
+    assert text_width("AB") == 2.0
+    assert text_width("가 나") == 2.5
+    assert text_width("왕자님.") == 4.0
+
+
+def test_wrap_hard_honors_breaks():
+    # 원문 줄바꿈(\n)이 폭에 맞으면 그대로 유지
+    src = "왕자님, 외출하시옵나이까?\n잘 다녀오십시오."
+    out = wrap_hard(src, 14, strip_before=".,!?", strip_after=".,")
+    assert out == ["왕자님,외출하시옵나이까?", "잘 다녀오십시오."], out
+
+
+def test_wrap_hard_reflows_overflow():
+    # 폭 넘는 원문 줄만 재줄바꿈, 나머지는 유지
+    src = "짧은 줄.\n이것은 폭을 넘기는 아주 긴 한 줄이라 재줄바꿈 되어야 한다"
+    out = wrap_hard(src, 10, strip_after=".,")
+    assert out[0] == "짧은 줄." and len(out) > 2, out
+
+
+def test_wrap_hard_merges_fragment():
+    # 원문이 어절 중간을 끊어 짧은 조각이 생기면 이웃과 병합
+    src = "저희는 슈미님을 섬깁니다. 슈미\n님을 믿으세요."
+    out = wrap_hard(src, 14, strip_before=".,!?", strip_after=".,")
+    assert all(text_width(ln) > 3 for ln in out), out  # 짧은 조각 없음
+    assert "슈미" in "".join(out) and "믿으세요" in out[-1], out
+
+
+def test_wrap_hard_overflow_cascades_to_next_line():
+    # 넘친 줄의 꼬리(문장 미종결)는 다음 원문 줄에 이어 붙는다 — '무엇보다' 고아 방지
+    src = "훌륭한 왕이 되시기에는 무엇보다\n학문이 중요하옵나이다."
+    out = wrap_hard(src, 14, strip_before=".,!?")
+    assert out == ["훌륭한 왕이 되시기에는", "무엇보다 학문이", "중요하옵나이다."], out
+
+
+def test_wrap_hard_no_cascade_after_sentence_end():
+    # 꼬리가 문장 끝이면 다음 줄로 흘러들지 않는다
+    src = "이 줄은 폭을 넘기는 긴 문장으로 끝난다.\n다음 문장이다."
+    out = wrap_hard(src, 14, strip_before=".,!?")
+    assert out[-1] == "다음 문장이다.", out
+
+
+def test_pagination():
+    pages = wrap_page("가 나 다 라 마 바 사", width=1.5, lines_per_page=3)
+    assert all(len(p) <= 3 for p in pages)
+    flat = [ln for pg in pages for ln in pg]
+    assert flat == ["가", "나", "다", "라", "마", "바", "사"], pages
+
+
+def test_empty():
+    assert wrap("", width=10) == []
+    assert wrap("   ", width=10) == []
+
+
+def test_sentence_end_detection():
+    assert is_sentence_end("아무것도 없습니다.")
+    assert is_sentence_end("정말인가?!")
+    assert is_sentence_end("그럴수가…")
+    assert is_sentence_end("「그렇다.」")
+    assert not is_sentence_end("안에 들어가 봐도")
+    assert not is_sentence_end("빼앗겨 버렸는데,")
+
+
+def test_split_sentences():
+    # 공백 기준 + 부호 뒤 공백이 지워진 텍스트(`.`뒤 한글)도 분리
+    assert split_sentences("간다. 지금 바로!") == ["간다.", "지금 바로!"]
+    assert split_sentences("지하감옥 입니다.왕자님 같은 분께서") == [
+        "지하감옥 입니다.",
+        "왕자님 같은 분께서",
+    ]
+    # 소수점·연속 종결부호는 안 나눔
+    assert split_sentences("무게는 1.5킬로다.") == ["무게는 1.5킬로다."]
+    assert split_sentences("뭐라고?! 정말이냐?") == ["뭐라고?!", "정말이냐?"]
+
+
+def test_wrap_pages_no_straddle():
+    # 짧은 문장 + 3줄짜리 문장: 기계적 3줄 절단이면 두 번째 문장이 창에 걸림 —
+    # 문장 packing은 창1=문장1, 창2=문장2로 나눈다
+    src = "여기는 지하감옥 입구입니다.\n***"
+    pages = wrap_pages(src, 14, 3, strip_before=".,!?", strip_after=".,")
+    assert len(pages) == 2, pages
+    assert pages[0] == ["여기는 지하감옥 입구입니다."], pages
+    for pg in pages:  # 마지막 아닌 창은 문장 끝으로 끝난다
+        assert is_sentence_end(pg[-1]), pages
+
+
+def test_wrap_pages_oversize_sentence_resplit():
+    # {n} 때문에 4줄이 된 두 문장 그룹 → 문장별 재줄바꿈으로 창 걸침 해소
+    src = "왕자님,이곳은 지하감옥\n입니다.***"
+    pages = wrap_pages(src, 14, 3, strip_before=".,!?", strip_after=".,")
+    for pg in pages[:-1]:
+        assert is_sentence_end(pg[-1]), pages
+
+
+def test_wrap_pages_long_sentence_flows():
+    # 창(3줄)을 넘는 외문장은 걸침 불가피 — 창을 채우며 흘러가되 줄 폭은 지킨다
+    src = "이것은 창 하나에 도저히 들어갈 수 없을 만큼 길고 긴 문장이라서 여러 창에 걸쳐 흘러가야만 한다."
+    pages = wrap_pages(src, 10, 3, strip_after=".,")
+    assert len(pages) >= 2, pages
+    assert all(len(pg) <= 3 for pg in pages)
+    assert all(text_width(ln) <= 10 for pg in pages for ln in pg)
+
+
+def _run():
+    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    passed = 0
+    for fn in fns:
+        try:
+            fn()
+            passed += 1
+            print(f"  ok  {fn.__name__}")
+        except AssertionError as e:
+            print(f"  FAIL {fn.__name__}: {e}")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ERR  {fn.__name__}: {type(e).__name__}: {e}")
+    print(f"\n{passed}/{len(fns)} passed")
+    return passed == len(fns)
+
+
+if __name__ == "__main__":
+    sys.exit(0 if _run() else 1)
