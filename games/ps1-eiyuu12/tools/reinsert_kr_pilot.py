@@ -492,6 +492,10 @@ def parse_kr(entry):
     # 릴수→릴 수)도 잡으려면 개행이 공백/붙임으로 확정된 후여야 한다(유저 지적 07-27).
     t = fix_spacing(t)
     t = spell_fix(t)  # 직함 띄어쓰기 등 맞춤법 교정(dos_spelling_fixes.json)
+    # 상점 인사·흐름의 분기 마커(\x07=도구점, {p}\x06=무기점) 뒤 come-again 꼬리 제거 — PS1은
+    # come-again이 별도 블록이라 인사 인라인 노출은 잘못(도구점·무기점 모두, 유저 QA 07-27).
+    # 마커가 있어야 매칭 → 마커 없는 별도 come-again 블록("또 들러 주십시요")은 보존.
+    t = re.sub(r"(?:\{p\})?\\x0[67]또 ?[들와찾][^\\{]*?주십[시쇼][요오]?\.?", "", t)
     # \xNN 제어코드(프롬프트 대기 등)는 공백으로 — 무공백 제거 시 앞뒤 발화가 붙음
     # ("합니다\x07또 들러주십시요"). ⚠ \x03 두 곳은 인라인 플레이스홀더 의심(QA 메모).
     t = t.replace("\\x09", NAME_SENT)  # 이름 주입 자리 보존(아래 일괄 치환보다 먼저)
@@ -784,6 +788,41 @@ def stock_build(raw):
     p1 = "\n".join(wrap_page(NAME_SENT + "는 " + re1)[0])
     p2 = "\n".join(wrap_page(re2)[0])
     return encode_ext(p1) + MC + encode_ext(p2) + MC
+
+
+# ── 상점 가격 확인 프롬프트(정형) ────────────────────────────────────────────
+# `{c}%s{c}は{n}%d Gold になるけど{n}それでも よろしいですか？{n}{c}` — %d가 본문 창
+# 인라인이라 build_from_template 채우기로는 %d가 유실된다. STOCK처럼 %c/%s/%d 순서를 그대로
+# 재현하는 전용 빌더로 KR을 심는다(은(는)은 조사 훅이 아이템명 받침 보고 교정).
+SHOP_PRICE = "__shop_price__"
+_SJIS_NARU = "になるけど".encode("cp932")
+
+
+def is_shop_price(raw):
+    t = raw.rstrip(b"\x00")
+    return PS in t and PD in t and b"Gold" in t and _SJIS_NARU in t and t.count(MC) == 3
+
+
+def shop_price_build(raw):
+    """상점 가격 프롬프트 KR 재조립(%c/%s/%d 순서 = 원본).
+
+    조사 훅은 대사 렌더러(0x800B2054)만 걸려 상점 프롬프트엔 안 탄다(유저 QA 07-27
+    "해독초은 (는)" 병기 노출). %s(아이템명)는 런타임 주입이라 받침을 알 수 없어 은(는)을
+    정적 확정할 수 없다 → 조사를 **고정 단어 '값은'**에 붙여 자연스러움을 살린다(받침 있는
+    '값'에 은 고정이라 아이템 무관). "햇불 값은 %d Gold가 되는데 괜찮으시겠습니까?\""""
+    return (
+        MC
+        + PS
+        + MC
+        + encode_ext(" 값은")
+        + b"\x0a"
+        + PD
+        + encode_ext(" Gold가 되는데")
+        + b"\x0a"
+        + encode_ext("괜찮으시겠습니까?")
+        + b"\x0a"
+        + MC
+    )
 
 
 # ── ED.EXE 도너 공간 — size 퇴출 블록의 이주지 ─────────────────────────────
@@ -1130,6 +1169,9 @@ def build_candidate(raw, t, eid):
         cand, from_tpl = stock_build(raw), True
         if cand is not None:
             cand += b"\x00" * (-len(cand) % 4 or 4)
+    elif t[0] is SHOP_PRICE:  # 상점 가격 프롬프트: %d 인라인 보존 전용 빌더
+        cand, from_tpl = shop_price_build(raw), True
+        cand += b"\x00" * (-len(cand) % 4 or 4)
     elif t[0] is NAMEONLY:
         # 침묵 블록: 빈 페이지로 템플릿 — 본문(・・・)은 JP 통과, 이름창만 화자맵 번역
         try:
@@ -1415,14 +1457,21 @@ def load_translations(align_name, scn_name):
     # ⚠ 정렬 쌍이 이미 잡은 사본도 **덮어쓴다** — DOS 쪽 아이템 주입 자리(\x06\x0E`N)를
     # parse_kr가 재현 못 해 fmt_drop으로 빠지거나 주입 자리가 깨진 채 나가기 때문.
     STOCK_KINDS.clear()
+    n_price = 0
     for e in jp_doc["entries"]:
         if e.get("raw_hex"):
-            kind = stock_kind(bytes.fromhex(e["raw_hex"]))
+            raw = bytes.fromhex(e["raw_hex"])
+            kind = stock_kind(raw)
             if kind:
                 out[e["entry_id"]] = (STOCK,)
                 STOCK_KINDS[e["entry_id"]] = kind
+            elif is_shop_price(raw):  # 상점 가격 프롬프트(%d 인라인) — 전용 빌더
+                out[e["entry_id"]] = (SHOP_PRICE,)
+                n_price += 1
     if STOCK_KINDS:
         print(f"  정형 블록(보물상자) {len(STOCK_KINDS)}건 등록")
+    if n_price:
+        print(f"  상점 가격 프롬프트 {n_price}건 등록")
 
     # 침묵 블록(리터럴 헤더 + 본문 전부 부호/빈 창): 이름창만 번역 등록. 그냥 두면
     # 화자명까지 セリオス로 남는다(유저 QA 07-26). 크기 중립이라 공간 압박 없음.
