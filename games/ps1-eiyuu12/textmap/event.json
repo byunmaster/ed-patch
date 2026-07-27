@@ -1,0 +1,46 @@
+{
+ "class": "event",
+ "entries": [
+  {
+   "k": "52cbba816d",
+   "src": {
+    "f": "SINDLL/F_000.DLL",
+    "o": 19244,
+    "l": 50
+   },
+   "sha": "2c2460e0"
+  },
+  {
+   "k": "a6cf83f2e4",
+   "src": {
+    "f": "SINDLL/F_000.DLL",
+    "o": 19295,
+    "l": 37
+   },
+   "sha": "b0a5537e"
+  },
+  {
+   "k": "bbff47b1fc",
+   "src": {
+    "f": "SINDLL/T_001.DLL",
+    "o": 14391,
+    "l": 66
+   },
+   "sha": "4ec2c644"
+  },
+  {
+   "k": "48796084fe",
+   "src": {
+    "f": "SINDLL/F_000.DLL",
+    "o": 19401,
+    "l": 83
+   },
+   "sha": "0e3b6a0c"
+  },
+  {
+   "k": "fd13efac8a",
+   "ours": "%c남자%c\n왕자님, 힘내십시요!%c",
+   "sha": "038523b1"
+  }
+ ]
+}

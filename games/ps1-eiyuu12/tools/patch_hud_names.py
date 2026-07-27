@@ -36,7 +36,9 @@ NAMES = [
 
 _glyphs, _ascent = hangul_font.load_bdf(hangul_font.GALMURI11_BDF.replace("Galmuri11", "Galmuri9"))
 # 라벨(あと→남다)용 7px 폰트 — 라벨 UV 창이 14px(7×2)라 9px 글리프는 잘림
-_glyphs7, _ascent7 = hangul_font.load_bdf(hangul_font.GALMURI11_BDF.replace("Galmuri11", "Galmuri7"))
+_glyphs7, _ascent7 = hangul_font.load_bdf(
+    hangul_font.GALMURI11_BDF.replace("Galmuri11", "Galmuri7")
+)
 
 
 def render_name(s, pitch=PITCH, font7=False):
@@ -98,8 +100,53 @@ ATO_GLYPHS = [
 ]
 
 
+# HUD 상태이상 그래픽 라벨 — 같은 TIM에 문자열이 아니라 도트로 박혀 있다(필드 HUD가 사용,
+# 유저 기절 스크린샷으로 발견 2026-07-26). 전투 HUD의 문자열판(ED.EXE 0xF91D8)과 별개.
+# 1행 毒黙呪眠乱(빨강 idx24)+守跳(노랑 idx50/16): x110부터 **피치 10**, 잉크 y129~140.
+# 2행 気絶(빨강): 気=x110~119·絶=x121~130, 잉크 y141~148(8행 — 9px 폰트는 잘림 → Galmuri7).
+# 글리프끼리 맞닿아 색으로만 분리 가능 — 빨강/노랑 픽셀만 지우고(프레임·배경 보존) 다시 그린다.
+# 라벨은 patch_sys_ui.STATUS_LABELS와 동일 표기(독·묵·주·잠·란) + 수·도(守=수비, 跳=도약 잠정).
+STATUS_RED, STATUS_YELS = 24, (50, 16)
+STATUS_ROW1 = [  # (x, 글자, 잉크색)
+    (110, "독", 24),
+    (120, "묵", 24),
+    (130, "주", 24),
+    (140, "잠", 24),
+    (150, "란", 24),
+    (160, "수", 50),
+    (170, "도", 50),
+]
+FAINT = {"x": 110, "chars": "기절", "pitch": 10, "ink_top": 141, "y1": 148, "color": 24}
+
+
+def _draw_bm(pix, bm, ox, oy, color, y_max=None, x_max=None):
+    bh, bw = bm.shape
+    for y in range(bh):
+        for x in range(bw):
+            if (
+                bm[y, x]
+                and (y_max is None or oy + y <= y_max)
+                and (x_max is None or ox + x <= x_max)
+            ):
+                pix[oy + y, ox + x] = color
+
+
+def patch_status_labels(pix):
+    # 지우기: 상태 영역의 잉크색만 배경으로(글리프가 맞닿아 사각 인페인트 불가)
+    band1 = pix[128:141, 108:182]
+    band1[np.isin(band1, (STATUS_RED, *STATUS_YELS))] = BG
+    band2 = pix[141:150, 108:136]
+    band2[band2 == STATUS_RED] = BG
+    for x, ch, color in STATUS_ROW1:
+        bm = render_name(ch)  # 11행 셀, 잉크 2~10행
+        _draw_bm(pix, bm, x, 129 - 2, color, y_max=140, x_max=x + 9)
+    f = FAINT
+    bm = render_name(f["chars"], pitch=f["pitch"], font7=True)  # 9행 셀(ascent7), 잉크 2~8행
+    _draw_bm(pix, bm, f["x"], f["ink_top"] - 2, f["color"], y_max=f["y1"])
+
+
 def build_pix(tim):
-    """원본 TIM 픽셀 → 이름 5개 + あと 라벨 교체한 새 인덱스맵."""
+    """원본 TIM 픽셀 → 이름 5개 + あと 라벨 + 상태이상 라벨 교체한 새 인덱스맵."""
     w, h = tim["w"], tim["h"]
     pix = np.frombuffer(tim["pix"], dtype=np.uint8).reshape(h, w).copy()
     for ink_top, _jp, kr in NAMES:
@@ -138,6 +185,8 @@ def build_pix(tim):
         for x in range(bw):
             if bm[y, x] and oy + y <= a["y1"] and a["x"] + x <= a["x1"]:
                 pix[oy + y, a["x"] + x] = ATO_MAIN
+
+    patch_status_labels(pix)  # 상태이상 라벨(독~란·수·도·기절)
     return pix
 
 

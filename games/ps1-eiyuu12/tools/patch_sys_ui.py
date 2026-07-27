@@ -10,6 +10,7 @@
 PS1 오프셋은 ED.EXE(LBA 257) 내 오프셋. UI 영역 0xBE290~0xBE5C6 (scan_sys 참조).
 """
 
+import os
 import shutil
 
 import hangul_map as H
@@ -191,9 +192,15 @@ def enc(s):
 # 필드 커맨드 메뉴(파티 메뉴) — 정발처럼 박스 폭(마법사용=8B)에 맞춰 글자 스프레드.
 # 값 메뉴(시스템/전투설정 창 안 라벨)는 게임이 값을 고정 컬럼 정렬하므로 스프레드 안 함.
 FIELD_MENU = {
-    0xBE290, 0xBE29A, 0xBE2A4, 0xBE2AE, 0xBE2B8, 0xBE2C2,
+    0xBE290,
+    0xBE29A,
+    0xBE2A4,
+    0xBE2AE,
+    0xBE2B8,
+    0xBE2C2,
     0xBE2CC,  # 리더(동료 합류 후 메뉴에 추가) → "리    더"
-    0xBE378, 0xBE382,  # 기타 서브메뉴 항목(시스템→"시 스 템"·전투설정) — SAVE/LOAD 4전각 칸 맞춤
+    0xBE378,
+    0xBE382,  # 기타 서브메뉴 항목(시스템→"시 스 템"·전투설정) — SAVE/LOAD 4전각 칸 맞춤
 }
 FIELD_WIDTH = 8  # 마법사용/도구사용 = 4전각 = 8B
 
@@ -312,8 +319,14 @@ NOTHING_DONOR = (
     "メモリーカードを\n　フォーマットしています\n\nメモリーカードを\n　　　抜かないでください"
 )
 NOTHING_REFS = [  # 何もない(RAM 0x8001BB0C)를 lui/addiu로 로드하는 lui 명령 RAM 주소
-    0x800A5E74, 0x800A5F0C, 0x800A5FA4, 0x800A603C,
-    0x800A8ACC, 0x800A8B64, 0x800A8BFC, 0x800A8C94,
+    0x800A5E74,
+    0x800A5F0C,
+    0x800A5FA4,
+    0x800A603C,
+    0x800A8ACC,
+    0x800A8B64,
+    0x800A8BFC,
+    0x800A8C94,
 ]
 
 
@@ -348,7 +361,9 @@ def relocate_nothing(ed):
                 break
         else:
             raise SystemExit(f"0x{pc:X}: 짝 addiu 못 찾음")
-    print(f"'없음' → {NOTHING_KR!r} 리다이렉트 (새 문자열 RAM 0x{ram:X}, 참조 {len(NOTHING_REFS)}곳)")
+    print(
+        f"'없음' → {NOTHING_KR!r} 리다이렉트 (새 문자열 RAM 0x{ram:X}, 참조 {len(NOTHING_REFS)}곳)"
+    )
 
 
 def patch_msgs(ed):
@@ -393,6 +408,65 @@ def justify(kr, target, avail):
     for i in range(1, len(chars)):
         out += " " * (per + (1 if i <= rem else 0)) + chars[i]
     return H.encode_kr(out)
+
+
+# ── ED.EXE 이벤트 대사 (월드맵 내레이션 등) ─────────────────────────────────
+# 씬 오버레이가 아니라 ED.EXE에 박힌 이벤트 문장들 — 탈출 직후 월드맵 내레이션 클러스터
+# (유저 QA 2026-07-24 발견). 번역은 textmap/event.json에서 파생(신규=ours, 정발 인용=src).
+# JP 원문은 리포에 없음 — 빌드 시 ED.EXE에서 읽어 sha1 키로 조회한다. 슬롯은 다음
+# 문자열 전 0런까지, KR이 넘치면 assert(확장 필요 시 relocate_nothing식 도너로 전환).
+EVENT_OFFS = [0xC058, 0xC090, 0xC0C0, 0xC118, 0xC170]
+
+
+def patch_event_msgs(ed):
+    import os
+    import re
+    import sys
+
+    from derive_text import jp_map
+
+    _repo = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    )
+    sys.path.insert(0, os.path.join(_repo, "shared"))
+    from text.krwrap import wrap_pages
+
+    ev = jp_map("event")
+    n = 0
+    for off in EVENT_OFFS:
+        j = ed.index(0, off)
+        jp = ed[off:j].decode("shift_jis")
+        if jp not in ev:
+            continue  # 번역 없으면 JP 유지
+        e = j
+        while ed[e] == 0:
+            e += 1
+        val = ev[jp].replace("엘아스터", "엘아스타")  # 표기 통일(대사 트랙과 동일 판정)
+        head = b""
+        if val.startswith("\x1e"):  # 정발 화자 헤더(\x1e이름\x04) → %c이름%c
+            nm, _, val = val[1:].partition("\x04")
+            head = b"%c" + enc_msg(nm) + b"%c\n"
+        if "\x01" in val:  # 정발 src 파생 — DOS {n}은 표시 artifact, 우리 폭(14슬롯) 재조판
+            body = re.sub(r"\s+", " ", val.replace("\x01", " ")).strip()
+            body = re.sub(r" +(?=[!?])", "", body)  # 종결부호 앞 공백(대사 규약)
+            pages = wrap_pages(
+                body,
+                14.0,
+                5,
+                break_char="\n",
+                cell_width=lambda ch: 0.5 if ch == " " or ch in ".,!?" else 1.0,
+                strip_before=".,!?",
+                strip_after="",
+            )
+            assert len(pages) == 1, f"이벤트 메시지 페이지 초과 @0x{off:X}"
+            val = "\n".join(pages[0])
+        if jp.endswith("%c") and not val.endswith("%c"):
+            val += "%c"  # 종단 제어(%c=인자 소비)는 구조 — src 파생분에 자동 부여
+        b = head + enc_msg(val)
+        assert len(b) < e - off, f"이벤트 메시지 초과 @0x{off:X}: {len(b)}B ≥ {e - off}B"
+        ed[off:e] = b.ljust(e - off, b"\x00")
+        n += 1
+    print(f"이벤트 대사 재삽입 {n}/{len(EVENT_OFFS)}건")
 
 
 def main():
@@ -454,6 +528,7 @@ def main():
 
     patch_msgs(ed)
     relocate_nothing(ed)
+    patch_event_msgs(ed)
 
     shutil.copyfile(SRC, DST)
     with open(DST, "r+b") as f:
@@ -488,6 +563,20 @@ CHAR_NAMES = [
 ]
 
 
+def _scn_layout():
+    """reinsert가 쓴 재배치 매니페스트(out/scn_layout.json) 반영 — 확장 씬은 LBA·크기가 바뀐다."""
+    import json
+
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "out", "scn_layout.json")
+    if not os.path.exists(p):
+        return SCN_FILES
+    m = json.load(open(p, encoding="utf-8"))
+    return [
+        (name, m[name]["lba"], m[name]["size"]) if name in m else (name, lba, size)
+        for name, lba, size in SCN_FILES
+    ]
+
+
 def patch_scn_headers(f):
     import re
 
@@ -497,7 +586,7 @@ def patch_scn_headers(f):
     for jp, kr in CHAR_NAMES:  # 대사 %s가 주입하는 이름 사본
         jp2kr.setdefault(jp, kr)
     total = 0
-    for name, lba, size in SCN_FILES:
+    for name, lba, size in _scn_layout():
         data = bytearray(extract(lba, size, path=DST))
         n = 0
         for jp, kr in jp2kr.items():
@@ -505,7 +594,13 @@ def patch_scn_headers(f):
             kb = H.encode_kr(kr)
             for m in list(re.finditer(re.escape(jb), bytes(data))):
                 i, e = m.start(), m.end()
-                if (i == 0 or data[i - 1] in (0x80, 0x00)) and e < len(data) and data[e] == 0:
+                # 헤더 판별 ①앞=포인터 꼬리(0x80)/널 ②또는 뒤 널 패딩 ≥4B(단독 널종단 이름).
+                # ②는 블록 종단(%c 00) 뒤 잡바이트가 낀 내부 맵 사본용(여관 ルディア 실측
+                # 2026-07-26, 전 씬 +11곳: 리젤·왕가의 묘·파에트·수정탑 등 전부 내부 맵).
+                # 대사 내 지명은 항상 뒤에 텍스트/%c가 이어져 ②에 안 걸린다.
+                if (i == 0 or data[i - 1] in (0x80, 0x00) or data[e : e + 4] == b"\x00" * 4) and (
+                    e < len(data) and data[e] == 0
+                ):
                     a = e  # 가용 = 이름 + 뒤따르는 널 패딩(다음 데이터 전까지)
                     while a < len(data) and data[a] == 0:
                         a += 1

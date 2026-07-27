@@ -43,6 +43,11 @@ ARENA = (0xBD18, 0xBDCC)  # 격투장 상품 대사 4 (정발 T_204~207 어투)
 BTL_MSG = (0xBDCC, 0xBE48)  # 공격/일격/데미지 6 (뒤 0xBE48~ 포인터 테이블 — 보존)
 BTL_MSG2 = (0xBE60, 0xBEC8)  # 인벤 초과·포기·입수 3
 FRAG_TACHI = (0xF8ED4, 0xF8EEC)  # 승리 보상 문맥 たち — '일행'
+# は逃げ出した。 도주 메시지 오프셋 지정 — 조사 훅 이전엔 솔로 도주(세리오스)에 맞춰 '는'을
+# 정적 고정했으나, **동적 조사 훅 활성화(2026-07-27)로 불필요**해졌다. 병기 '은(는)'를 방출하면
+# 훅이 앞말에 맞게 축약한다(솔로=세리오스는, 파티=류난들은). textmap 기본값이 이미 병기라
+# 오버라이드를 비워 기본 변환에 맡긴다.
+BATTLE_OFF_KR = {}
 FRAG = (0xF8EEC, 0xF9064)  # 전투 조각(조사·접속사·%포맷) 58
 EVT = (0xF9074, 0xF910C)  # 이벤트 전투 이름(사령관·병사·가르고 등)·방위 21
 RYUNAN = 0x80C  # リュナン 기본 이름(12B 슬롯) — 세리오스(0x800)는 patch_sys_ui가 처리
@@ -481,7 +486,7 @@ def apply_battle(ed, orig, pools):
     # (인접 슬롯은 병합 — 보스 대사처럼 연속 재배치 구간이 큰 연속 풀이 된다).
     inplace, moves = 0, []
     for off, slot_end, jp in strs:
-        kb = enc(battle_kr(jp)) + b"\x00"
+        kb = enc(BATTLE_OFF_KR.get(off) or battle_kr(jp)) + b"\x00"
         old = ram_of(off)
         assert refs.get(old), f"0x{off:X} {jp[:12]!r}: 참조 0건"
         if len(kb) <= slot_end - off:
@@ -524,7 +529,6 @@ def apply_battle(ed, orig, pools):
             struct.pack_into("<I", ed, imm_off, (w & 0xFFFF0000) | lo_w)
     left = sum(p[1] - p[0] for p in pools)
     print(f"전투 코퍼스 {len(strs)}개: 제자리 {inplace} + 재배치 {len(moves)} (풀 잔여 {left}B)")
-
 
 
 # 전투 데미지 메시지의 조사 교정 — "세리오스을(를) N의 데미지" → "…에게 N의 데미지"

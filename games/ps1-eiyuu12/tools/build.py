@@ -50,8 +50,7 @@ def main():
     # ②매 문자 분기를 거는 런타임 비용·리스크보다, 화면을 보고 그때그때 텍스트 데이터를
     # 고치는 편이 낫다는 판단(공백→개행 교체 = battle[9·27·345] 방식).
     # 훅 코드는 렌더러 규명 자산이라 참고용으로만 보존한다 — 되살릴 계획 없음.
-    # 동적 조사 훅(patch_josa_hook.py)은 인게임 크래시로 보류 — 병기(은(는)) 유지.
-    # 훅 로직·조립함수 규명은 완료(docs/josa-hook-devlog.md), 크래시 원인만 남음.
+    run("patch_josa_hook.py")  # 동적 조사 훅 — 병기(은(는)) → 정확 조사(2026-07-27 인게임 검증 통과)
     run("patch_gfx_title.py")  # START.DAT 타이틀 로고·버튼 TIM (FINAL 제자리 갱신)
     run("patch_opening_font.py")  # OPEN1.EXE 오프닝 폰트+텍스트 (FINAL 제자리 갱신)
     for stem in INTERMEDIATES + STALE:

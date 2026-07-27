@@ -200,23 +200,24 @@ class Asm:
         self.subu(rd, rd, tmp)  # rs*188
 
 
-def assemble_routine(free_base, table_addr):
-    """josa_fix(a0=str) — t 레지스터만 사용(caller-saved), a0 보존.
+def assemble_routine(free_base, table_addr, pairs_addr):
+    """josa_fix(a0=str) — 데이터 구동 쌍 루프(구 3쌍 언롤 860B → ~360B로 압축, 07-27).
 
-    스캔 상태: t0=cur ptr, t1=prev code(0=없음), t2=cur code, t3/t4=스크래치,
-    t5=테이블 베이스, t6/t7=패턴 비교, t8=쌍 테이블 ptr, t9=시프트용.
-    """
+    클린 0런이 최대 524B라 언롤판이 들어갈 자리가 없다(구판이 크래시한 0x801059A0은
+    런타임 워크램으로 판명 — 덤프 실측 +0x3~+0x101A 기록). 레지스터: t0=ptr, t1=prev,
+    t2=cur, t3/t4/t6=스크래치, t5=테이블, t7=쌍 ptr, t8=A코드, t9=B코드, v1=남은 쌍 수,
+    at=스캔 상한. a0 보존, v0 미사용(훅 복귀 직후 원명령이 재적재).
+    쌍 데이터(pairs_addr): [A_hi A_lo B_hi B_lo]×3 (빅엔디언 바이트 그대로)."""
     a = Asm(free_base)
-    # 쌍 데이터는 루틴 뒤에 붙임: [A hi lo B hi lo]×3 (big-endian 코드 그대로)
     a.lui("t5", table_addr >> 16)
     a.ori("t5", "t5", table_addr & 0xFFFF)
     a.addu("t0", "a0", "zero")
     a.li16("t1", 0)
-    a.addiu("at", "a0", 128)  # 스캔 상한 (조립본 최대 ~64B) — 널 없어도 폭주 방지
+    a.addiu("at", "a0", 64)  # 스캔 상한 = 워크 슬롯 1줄(66B stride) 내
 
     a.label("scan")
-    a.sltu("t3", "t0", "at")  # t0 < 상한?
-    a.beq("t3", "zero", "done")  # 넘으면 종료
+    a.sltu("t3", "t0", "at")
+    a.beq("t3", "zero", "done")
     a.nop()
     a.lbu("t2", 0, "t0")
     a.nop()
@@ -229,13 +230,21 @@ def assemble_routine(free_base, table_addr):
     a.li16("t3", 0x20)
     a.beq("t2", "t3", "adv1")
     a.nop()
-    a.li16("t3", 0x01)
-    a.beq("t2", "t3", "adv1")
+    a.sltiu("t3", "t2", 3)  # 0x01/0x02 (0x00은 위에서 종료)
+    a.bne("t3", "zero", "adv1")
     a.nop()
-    a.li16("t3", 0x02)
-    a.beq("t2", "t3", "adv1")
+    # 반각 숫자(0x30~0x39): 정발이 주문 레벨명(레지나01 등) 뒤 조사를 **무받침으로 통일**한다
+    # (DOSBox 실측 2026-07-27). prev를 '가'(SYL_LO, 받침 0)로 세팅하면 기존 병기 판정이
+    # 자동으로 B(무받침: 는/가/를)를 뽑는다 — 테이블·판정부 무변경. t2는 이미 1바이트값.
+    a.addiu("t3", "t2", -0x30)
+    a.sltiu("t3", "t3", 10)  # 0x30~0x39
+    a.beq("t3", "zero", "notdigit")
     a.nop()
-    a.li16("t1", 0)  # 그 외 1바이트 → prev 리셋
+    a.ori("t1", "zero", SYL_LO)  # 숫자 → '가' 마커(무받침)
+    a.beq("zero", "zero", "adv1")
+    a.nop()
+    a.label("notdigit")
+    a.li16("t1", 0)
     a.label("adv1")
     a.addiu("t0", "t0", 1)
     a.beq("zero", "zero", "scan")
@@ -247,12 +256,10 @@ def assemble_routine(free_base, table_addr):
     a.sll("t2", "t2", 8)
     a.or_("t2", "t2", "t3")  # t2 = cur code
 
-    # 병기 후보? prev가 음절 범위일 때만 검사
+    # prev가 음절 범위일 때만 병기 검사
     a.beq("t1", "zero", "setprev")
     a.nop()
-    # prev in [SYL_LO, SYL_HI]?
-    a.lui("t3", 0)
-    a.ori("t3", "t3", SYL_LO)
+    a.ori("t3", "zero", SYL_LO)
     a.sltu("t4", "t1", "t3")
     a.bne("t4", "zero", "setprev")
     a.nop()
@@ -261,73 +268,82 @@ def assemble_routine(free_base, table_addr):
     a.bne("t4", "zero", "setprev")
     a.nop()
 
-    # 쌍 테이블 순회: pairs = [(A,B)]×3, 루틴 뒤 데이터
-    # (수조립 단순화를 위해 세 쌍을 펼쳐 비교)
-    for k, (pa, pb) in enumerate(PAIRS):
-        a.ori("t3", "zero", pa)
-        a.bne("t2", "t3", f"pair{k}_no")
-        a.nop()
-        # ( B ) 확인 — 괄호는 반각 1바이트
-        a.lbu("t3", 2, "t0")
-        a.ori("t4", "zero", PAREN_L)
-        a.bne("t3", "t4", f"pair{k}_no")
-        a.nop()
-        a.lbu("t3", 3, "t0")
-        a.lbu("t4", 4, "t0")
-        a.sll("t3", "t3", 8)
-        a.or_("t3", "t3", "t4")
-        a.ori("t4", "zero", pb)
-        a.bne("t3", "t4", f"pair{k}_no")
-        a.nop()
-        a.lbu("t3", 5, "t0")
-        a.ori("t4", "zero", PAREN_R)
-        a.bne("t3", "t4", f"pair{k}_no")
-        a.nop()
-        # idx = (prev_hi-0x88)*188 + cell - 94
-        a.srl("t3", "t1", 8)
-        a.addiu("t3", "t3", -0x88)
-        a.mul_188("t4", "t3", "t6")
-        a.andi("t3", "t1", 0xFF)
-        a.addiu("t3", "t3", -0x40)
-        a.sltiu("t6", "t3", 0x40)  # lo-0x40 < 0x40  ↔ lo < 0x80 (0x7F 스킵 전)
-        a.bne("t6", "zero", f"pair{k}_cell")
-        a.nop()
-        a.addiu("t3", "t3", -1)
-        a.label(f"pair{k}_cell")
-        a.addu("t4", "t4", "t3")
-        a.addiu("t4", "t4", -BASE_LIN)
-        # bit = table[idx>>3] >> (idx&7) & 1
-        a.srl("t3", "t4", 3)
-        a.addu("t3", "t5", "t3")
-        a.lbu("t6", 0, "t3")
-        a.andi("t7", "t4", 7)
-        a.srlv("t6", "t6", "t7")
-        a.andi("t6", "t6", 1)
-        # chosen = has받침 ? A : B
-        a.li16("t3", pa >> 8)
-        a.li16("t4", pa & 0xFF)
-        a.bne("t6", "zero", f"pair{k}_write")
-        a.nop()
-        a.li16("t3", pb >> 8)
-        a.li16("t4", pb & 0xFF)
-        a.label(f"pair{k}_write")
-        a.sb("t3", 0, "t0")
-        a.sb("t4", 1, "t0")
-        # 4B 좌시프트: memmove(t0+2, t0+6, strlen+1)
-        a.addiu("t3", "t0", 2)
-        a.label(f"pair{k}_mv")
-        a.lbu("t4", 4, "t3")
-        a.nop()
-        a.sb("t4", 0, "t3")
-        a.bne("t4", "zero", f"pair{k}_mvnext")
-        a.nop()
-        a.beq("zero", "zero", "setprev")
-        a.nop()
-        a.label(f"pair{k}_mvnext")
-        a.addiu("t3", "t3", 1)
-        a.beq("zero", "zero", f"pair{k}_mv")
-        a.nop()
-        a.label(f"pair{k}_no")
+    # 쌍 루프: t7 = pairs, v1 = 3
+    a.lui("t7", pairs_addr >> 16)
+    a.ori("t7", "t7", pairs_addr & 0xFFFF)
+    a.li16("v1", 3)
+    a.label("pairloop")
+    a.lbu("t8", 0, "t7")  # A hi
+    a.lbu("t3", 1, "t7")  # A lo
+    a.sll("t8", "t8", 8)
+    a.or_("t8", "t8", "t3")
+    a.bne("t2", "t8", "nextpair")
+    a.nop()
+    # ( B ) 확인 — 괄호는 반각 1바이트
+    a.lbu("t3", 2, "t0")
+    a.li16("t4", PAREN_L)
+    a.bne("t3", "t4", "nextpair")
+    a.nop()
+    a.lbu("t9", 2, "t7")  # B hi
+    a.lbu("t3", 3, "t7")  # B lo
+    a.sll("t9", "t9", 8)
+    a.or_("t9", "t9", "t3")
+    a.lbu("t3", 3, "t0")
+    a.lbu("t4", 4, "t0")
+    a.sll("t3", "t3", 8)
+    a.or_("t3", "t3", "t4")
+    a.bne("t3", "t9", "nextpair")
+    a.nop()
+    a.lbu("t3", 5, "t0")
+    a.li16("t4", PAREN_R)
+    a.bne("t3", "t4", "nextpair")
+    a.nop()
+    # idx = (prev_hi-0x88)*188 + cell - 94
+    a.srl("t3", "t1", 8)
+    a.addiu("t3", "t3", -0x88)
+    a.mul_188("t4", "t3", "t6")
+    a.andi("t3", "t1", 0xFF)
+    a.addiu("t3", "t3", -0x40)
+    a.sltiu("t6", "t3", 0x40)  # lo-0x40 < 0x40 ↔ lo < 0x80 (0x7F 스킵 전)
+    a.bne("t6", "zero", "cell_ok")
+    a.nop()
+    a.addiu("t3", "t3", -1)
+    a.label("cell_ok")
+    a.addu("t4", "t4", "t3")
+    a.addiu("t4", "t4", -BASE_LIN)
+    # bit = table[idx>>3] >> (idx&7) & 1
+    a.srl("t3", "t4", 3)
+    a.addu("t3", "t5", "t3")
+    a.lbu("t6", 0, "t3")
+    a.andi("t7", "t4", 7)  # t7(쌍 ptr) 재사용 — 치환 후 setprev로 가므로 안전
+    a.srlv("t6", "t6", "t7")
+    a.andi("t6", "t6", 1)
+    a.bne("t6", "zero", "write")  # 받침 → A(t8)
+    a.nop()
+    a.addu("t8", "t9", "zero")  # 무받침 → B
+    a.label("write")
+    a.srl("t3", "t8", 8)
+    a.sb("t3", 0, "t0")
+    a.sb("t8", 1, "t0")  # sb는 하위 8bit만
+    # 4B 좌시프트: memmove(t0+2 ← t0+6, 널 포함)
+    a.addiu("t3", "t0", 2)
+    a.label("mv")
+    a.lbu("t4", 4, "t3")
+    a.nop()
+    a.sb("t4", 0, "t3")
+    a.bne("t4", "zero", "mvnext")
+    a.nop()
+    a.beq("zero", "zero", "setprev")
+    a.nop()
+    a.label("mvnext")
+    a.addiu("t3", "t3", 1)
+    a.beq("zero", "zero", "mv")
+    a.nop()
+    a.label("nextpair")
+    a.addiu("t7", "t7", 4)
+    a.addiu("v1", "v1", -1)
+    a.bne("v1", "zero", "pairloop")
+    a.nop()
 
     a.label("setprev")
     a.addu("t1", "t2", "zero")
@@ -343,71 +359,106 @@ def assemble_routine(free_base, table_addr):
 
 # ── 훅 결합 (ED.EXE 전투 텍스트 조립 함수) ──────────────────────────────────
 # 훅 지점: 0x800B2054 (조립 완료 직후, 렌더 직전 — 워크버퍼에 완성 조립본 존재,
-# 2026-07-20 DuckStation 인게임 확정). 워크버퍼 = 0x801190B0 + idx*66,
-# idx = lh gp+0x440 (게임 계산 복제). 원명령 lh v0,0x16(fp)를 stub 끝에서 실행.
+# 2026-07-20 DuckStation 인게임 확정). 워크 = 0x801190B0 + 줄*66, 최대 6줄.
+# ⚠ 07-27 재설계: 훅을 **2워드**(0x800B2054=j stub, 0x800B2058=nop)로 교체 —
+# 1워드 훅은 다음 명령(lw v1,0x28(fp))이 j의 지연 슬롯으로 선실행되고 복귀 후 재실행됐다
+# (load라 무해였지만 정리). 원명령 2개를 stub 끝에서 재현하고 0x800B205C로 복귀.
 HOOK_ADDR = 0x800B2054
 HOOK_ORIG = 0x87C20016  # lh v0, 0x16(fp)
-HOOK_RESUME = 0x800B2058
+HOOK_ORIG2 = 0x8FC30028  # lw v1, 0x28(fp)
+HOOK_RESUME = 0x800B205C
 WORK_BASE = 0x801190B0
-GP_IDX_OFF = 0x440  # lh gp+0x440 = 현재 렌더 라인 인덱스
+LINE_STRIDE = 66  # 줄 슬롯 stride(HANDOFF 렌더러 실측 — 텍스트 0x40 + 메타 2)
 FP = 30
 GP = 28
 
 
-def assemble_hook_stub(stub_base, josa_addr):
-    """0x800B2054에서 j로 진입. 워크버퍼(0x801190B0 고정) 스캔 후 원명령 실행하고
-    0x800B2058로 복귀.
+def assemble_hook_stub(stub_base, josa_addr, noop=False):
+    """0x800B2054에서 j로 진입. 워크 6줄(0x801190B0 + k*66)을 전부 josa_fix로 스캔 —
+    훅이 줄 조립마다 재진입하므로 멱등 다중 스캔은 무해하고, "현재 줄" 인덱스를 계산할
+    필요가 없다(구판 크래시 1차 원인 = 진입 시점 gp+0x440 미세팅 동적 계산).
 
-    a0=워크버퍼로 josa_fix 호출. sp에 ra 저장/복원(게임 ra 보존). gp/fp/v0 등은
-    josa_fix가 t0~t9만 clobber하므로 안전(진입 시점은 렌더 루프 시작 전).
-    워크 주소는 고정 — DuckStation 실측상 병기 조립본은 항상 0x801190B0(idx=0 슬롯).
-    idx*stride 동적 계산은 진입 시점 gp+0x440이 미세팅이라 폭주(크래시) → 제거."""
+    ra·s0·s1을 sp에 저장/복원. josa_fix는 t*·at·v1만 clobber — v0/v1은 복귀 직후
+    원명령이 재적재하므로 안전. a0는 훅 지점에서 죽은 레지스터(루프B가 재설정).
+
+    noop=True: josa 스캔·프레임을 전부 빼고 **원명령 2개 + 복귀**만 한다. 훅 지점 자체
+    (j 재진입 타겟 0x800B2054 포함 두 경로)와 지연 슬롯 처리가 안전한지 josa_fix와 분리해
+    A/B로 확인하기 위한 진단 스텁(HANDOFF 재개절차 2)."""
+    if noop:
+        a = Asm(stub_base)
+        a.emit(HOOK_ORIG)  # lh v0, 0x16(fp)
+        a.emit(HOOK_ORIG2)  # lw v1, 0x28(fp)
+        a.emit(0x08000000 | ((HOOK_RESUME >> 2) & 0x03FFFFFF))  # j 0x800B205C
+        a.nop()
+        return a.resolve()
     a = Asm(stub_base)
-    a.addiu("sp", "sp", -8)
+    a.addiu("sp", "sp", -16)
     a.emit(_i(0x2B, REG["sp"], REG["ra"], 4))  # sw ra, 4(sp)
-    a.lui("a0", WORK_BASE >> 16)
-    a.ori("a0", "a0", WORK_BASE & 0xFFFF)  # a0 = 0x801190B0
-    # josa_fix(a0)
+    a.emit(_i(0x2B, REG["sp"], REG["s0"], 8))  # sw s0, 8(sp)
+    a.emit(_i(0x2B, REG["sp"], REG["s1"], 12))  # sw s1, 12(sp)
+    a.lui("s0", WORK_BASE >> 16)
+    a.ori("s0", "s0", WORK_BASE & 0xFFFF)  # s0 = 워크 줄 포인터
+    a.li16("s1", 6)  # 줄 수
+    a.label("slot")
+    a.addu("a0", "s0", "zero")
     a.lui("t3", josa_addr >> 16)
     a.ori("t3", "t3", josa_addr & 0xFFFF)
     a.emit(_r(0, REG["t3"], 0, REG["ra"], 0, 9))  # jalr ra, t3
     a.nop()
+    a.addiu("s0", "s0", LINE_STRIDE)
+    a.addiu("s1", "s1", -1)
+    a.bne("s1", "zero", "slot")
+    a.nop()
     a.emit(_i(0x23, REG["sp"], REG["ra"], 4))  # lw ra, 4(sp)
-    a.addiu("sp", "sp", 8)
-    a.emit(HOOK_ORIG)  # 원명령: lh v0, 0x16(fp)
-    # j HOOK_RESUME
-    a.emit(0x08000000 | ((HOOK_RESUME >> 2) & 0x03FFFFFF))
+    a.emit(_i(0x23, REG["sp"], REG["s0"], 8))  # lw s0, 8(sp)
+    a.emit(_i(0x23, REG["sp"], REG["s1"], 12))  # lw s1, 12(sp)
+    a.addiu("sp", "sp", 16)
+    a.emit(HOOK_ORIG)  # lh v0, 0x16(fp)
+    a.emit(HOOK_ORIG2)  # lw v1, 0x28(fp)
+    a.emit(0x08000000 | ((HOOK_RESUME >> 2) & 0x03FFFFFF))  # j 0x800B205C
     a.nop()
     return a.resolve()
 
 
-def build_and_patch(ed: bytearray, place_ram: int):
-    """비트테이블+josa_fix+훅stub을 place_ram에 싣고 0x800B2054를 j stub으로 패치.
+def build_and_patch(ed: bytearray):
+    """조사 훅 결합 — 검증된 클린 0런 2개에 [josa_fix] / [테이블+쌍+stub] 배치 후
+    0x800B2054/58을 j stub/nop으로 패치.
 
-    place_ram: ED.EXE 내 빈(0) 영역 RAM 주소. 레이아웃: [테이블][josa_fix][stub]."""
+    ⚠ 배치 이력: 구판은 0x801059A0(0런처럼 보였으나 **런타임 워크램** — 필드·전투 덤프
+    실측 +0x3~+0x101A 기록)에 놓아 코드가 덮여 크래시했다(07-26 도너 검증에서 규명).
+    현 위치는 3중 검증(파일 0·참조 0건·런타임 덤프 0 유지) 통과한 도너 풀 예약분."""
     table = build_bit_table()
-    josa_addr = place_ram + len(table)
-    josa = assemble_routine(josa_addr, place_ram)
-    stub_addr = josa_addr + len(josa)
-    stub = assemble_hook_stub(stub_addr, josa_addr)
-    blob = table + josa + stub
+    table += b"\x00" * (-len(table) % 4)  # ⚠ 스텁 4정렬 — j 인코딩이 하위 2비트를 버린다
+    pairs = b"".join(struct.pack(">HH", a, b) for a, b in PAIRS)  # 빅엔디언 코드 그대로
+    josa_addr = PLACE_JOSA_RAM
+    table_addr = PLACE_DATA_RAM
+    pairs_addr = table_addr + len(table)
+    josa = assemble_routine(josa_addr, table_addr, pairs_addr)
+    stub_addr = pairs_addr + len(pairs)
+    assert stub_addr % 4 == 0, "스텁 비정렬"
+    noop = os.environ.get("JOSA_NOOP") == "1"  # 진단 A/B: josa 없이 훅 지점 안전성만 검증
+    stub = assemble_hook_stub(stub_addr, josa_addr, noop=noop)
+    assert len(josa) <= 0x0BF7E8 - 0x0BF5DC, f"josa 루틴 {len(josa)}B — 런 초과"
+    assert len(table) + len(pairs) + len(stub) <= 0x0C1268 - 0x0C105C, "데이터+스텁 런 초과"
 
     def fo(ram):
         return ram - 0x80010000 + 0x800
 
-    p = fo(place_ram)
-    assert all(b == 0 for b in ed[p : p + len(blob)]), "배치 영역이 0이 아님"
-    ed[p : p + len(blob)] = blob
-    # 0x800B2054 = j stub_addr
-    jw = 0x08000000 | ((stub_addr >> 2) & 0x03FFFFFF)
+    for ram, blob in ((josa_addr, josa), (table_addr, table + pairs + stub)):
+        p = fo(ram)
+        assert all(b == 0 for b in ed[p : p + len(blob)]), f"배치 영역 0 아님 @0x{ram:08X}"
+        ed[p : p + len(blob)] = blob
     hp = fo(HOOK_ADDR)
-    ed[hp : hp + 4] = struct.pack("<I", jw)
-    return len(blob), josa_addr, stub_addr
+    assert struct.unpack_from("<I", ed, hp)[0] == HOOK_ORIG, "훅 지점 원명령 불일치"
+    assert struct.unpack_from("<I", ed, hp + 4)[0] == HOOK_ORIG2, "훅 지점+4 원명령 불일치"
+    ed[hp : hp + 4] = struct.pack("<I", 0x08000000 | ((stub_addr >> 2) & 0x03FFFFFF))
+    ed[hp + 4 : hp + 8] = struct.pack("<I", 0)  # nop (지연 슬롯 정리)
+    return len(josa) + len(table) + len(pairs) + len(stub), josa_addr, stub_addr
 
 
-# ED.EXE 배치 영역: 0런(0x80105959~, 4203B) 중 lui참조 3건(+3,+7,+3F) 뒤 4정렬 위치.
-# 참조 대상(≤0x80105998)은 보존하고 그 뒤부터 코드/테이블을 싣는다.
-PLACE_RAM = 0x801059A0
+# 배치: 도너 검증(07-26) 통과 클린 0런 2개 — reinsert DONOR_RUNS에서 예약 제외됨.
+PLACE_JOSA_RAM = 0x0BF5DC - 0x800 + 0x80010000  # 루틴 (런 524B)
+PLACE_DATA_RAM = 0x0C105C - 0x800 + 0x80010000  # 테이블 294B + 쌍 12B + 스텁
 
 
 ED_LBA, ED_SIZE = 257, 1021952
@@ -421,14 +472,11 @@ def main():
     if not os.path.exists(target):
         raise SystemExit(f"대상 이미지 없음: {target} — build.py 먼저")
     ed = bytearray(extract(ED_LBA, ED_SIZE, path=target))
-    fo = HOOK_ADDR - 0x80010000 + 0x800
-    if int.from_bytes(ed[fo : fo + 4], "little") != HOOK_ORIG:
-        raise SystemExit(f"훅 지점 0x{HOOK_ADDR:08X} 원명령 불일치 — 이미 패치됐거나 오프셋 오류")
-    size, josa_addr, stub_addr = build_and_patch(ed, PLACE_RAM)
+    size, josa_addr, stub_addr = build_and_patch(ed)
     with open(target, "r+b") as f:
         n = write_user_data(f, ED_LBA, ed)
     print(
-        f"조사 훅: {size}B @ 0x{PLACE_RAM:08X} (josa 0x{josa_addr:08X}, stub 0x{stub_addr:08X}) "
+        f"조사 훅: {size}B (josa 0x{josa_addr:08X}, stub 0x{stub_addr:08X}) "
         f"→ 0x{HOOK_ADDR:08X} 훅, 섹터 {n}개 수정"
     )
 
@@ -440,11 +488,14 @@ if __name__ == "__main__":
         main()
         sys.exit(0)
     table = build_bit_table()
-    josa = assemble_routine(PLACE_RAM + len(table), PLACE_RAM)
-    stub = assemble_hook_stub(PLACE_RAM + len(table) + len(josa), PLACE_RAM + len(table))
-    total = len(table) + len(josa) + len(stub)
+    pairs = b"".join(struct.pack(">HH", a, b) for a, b in PAIRS)
+    pairs_addr = PLACE_DATA_RAM + len(table)
+    josa = assemble_routine(PLACE_JOSA_RAM, PLACE_DATA_RAM, pairs_addr)
+    stub_addr = pairs_addr + len(pairs)
+    stub = assemble_hook_stub(stub_addr, PLACE_JOSA_RAM)
     print(
-        f"테이블 {len(table)}B + josa {len(josa)}B + stub {len(stub)}B = {total}B @ 0x{PLACE_RAM:08X}"
+        f"테이블 {len(table)}B + 쌍 {len(pairs)}B + josa {len(josa)}B + stub {len(stub)}B"
+        f" (런 한도: josa 524B, 데이터+스텁 524B)"
     )
     try:
         from capstone import CS_ARCH_MIPS, CS_MODE_LITTLE_ENDIAN, CS_MODE_MIPS32, Cs

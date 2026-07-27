@@ -27,7 +27,7 @@ TEXTMAP_DIR = os.path.join(ROOT, "textmap")
 DERIVED_DIR = os.path.join(OUT_DIR, "derived")
 DOS_ED1 = os.path.join(ROOT, "..", "..", "originals", "kr", "ED1")
 
-CLASSES = ("battle", "items_battle", "opening")
+CLASSES = ("battle", "items_battle", "opening", "event")
 
 
 def jkey(jp):
