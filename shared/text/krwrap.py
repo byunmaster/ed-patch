@@ -394,8 +394,14 @@ def wrap_pages(
     strip_after: str = "",
     widow_cell: float = 1.0,
     merge_frag: float = 3.0,
+    protect_hard: bool = False,
+    det_orphan: bool = False,
 ) -> list[list[str]]:
     """wrap_hard + 문장 단위 페이지네이션 — 대화창 고아문장 방지의 메인 진입점.
+
+    protect_hard=True면 아래 "문장 단위 조판" 리플로우를 건너뛴다 — 원문 하드개행을
+    가독성 위해 공백으로 되돌리는 기능이, **의도적 개행 override**를 지워버리기 때문
+    (호출부가 override 마커를 감지해 이 창에서만 켠다. 기본 False = 기존 동작 불변).
 
     1. wrap_hard로 줄바꿈(원문 break_char 존중, 폭 초과만 재줄바꿈).
     2. 줄들을 문장 그룹으로 묶고, 창(lines_per_page)을 넘는 그룹만 원문 개행을
@@ -442,7 +448,7 @@ def wrap_pages(
     sent_groups = [
         w for s in split_sentences(text.replace(break_char, " ")) if (w := wrap(s, width, **kw))
     ]
-    if sent_groups:
+    if sent_groups and not protect_hard:
         budget = lines_per_page * (target_pages or len(_pack_groups(groups, lines_per_page)))
         if sum(len(g) for g in sent_groups) <= budget and all(
             len(g) <= lines_per_page for g in sent_groups
@@ -454,4 +460,24 @@ def wrap_pages(
         pages = pack_groups_target(groups, lines_per_page, target_pages)
     if pages is None:  # target 미지정 또는 용량 초과 → 기존 그리디(창 수 초과 감수)
         pages = _pack_groups(groups, lines_per_page)
+    if det_orphan:
+        _pull_det_orphans(pages, width, cell_width)
     return [[_strip_spacing(ln, strip_after) for ln in pg] for pg in pages]
+
+
+# 지시관형사(이/그/저)가 줄 끝에 홀로 남으면(고아) 수식 대상 명사와 갈린다 — 다음 줄로 내려
+# 붙인다. 재배치일 뿐이라 글자·줄 수·바이트 불변(메모리 중립). 줄 끝 홀로 온 '이'는 지시관형사
+# 확정(주격조사 '이'는 앞말에 붙어 홀로 안 온다) → 판정 안전. 다음 줄 폭 초과 시엔 이동 안 함.
+_DET_ORPHAN = ("이", "그", "저")
+
+
+def _pull_det_orphans(pages, width, cell_width):
+    for pg in pages:
+        for i in range(len(pg) - 1):
+            words = pg[i].split()
+            if len(words) >= 2 and words[-1] in _DET_ORPHAN:
+                cand = words[-1] + " " + pg[i + 1]
+                if text_width(cand, cell_width) <= width:
+                    pg[i] = " ".join(words[:-1])
+                    pg[i + 1] = cand
+    return pages

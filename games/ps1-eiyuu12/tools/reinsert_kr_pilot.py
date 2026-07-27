@@ -287,36 +287,72 @@ def _dos_vocab():
 
 
 _BREAK_FIXES = None
+_SPLIT_FIXES = None
+_LINE_OVERRIDES = None
 
 
-def _break_fixes():
-    """사람이 확정한 어절 중간 분리 예외(dos_break_fixes.json) — 자동 판정 보정."""
-    global _BREAK_FIXES
+def _load_break_doc():
+    global _BREAK_FIXES, _SPLIT_FIXES, _LINE_OVERRIDES
     if _BREAK_FIXES is None:
         path = os.path.join(os.path.dirname(OUT_DIR), "dos_break_fixes.json")
         try:
             doc = json.load(open(path, encoding="utf-8"))
-            _BREAK_FIXES = {tuple(p) for p in doc.get("join", [])}
         except FileNotFoundError:
-            _BREAK_FIXES = set()
+            doc = {}
+        _BREAK_FIXES = {tuple(p) for p in doc.get("join", [])}
+        _SPLIT_FIXES = {tuple(p) for p in doc.get("split", [])}
+        # JSON의 "\n"을 의도적 개행 마커(HARD_NL)로 — 일반 페이지 개행과 구분(protect_hard)
+        _LINE_OVERRIDES = [(a, b.replace("\n", HARD_NL)) for a, b in doc.get("line_overrides", [])]
+
+
+def _break_fixes():
+    """사람이 확정한 어절 중간 분리 예외(dos_break_fixes.json) — 자동 판정 보정."""
+    _load_break_doc()
     return _BREAK_FIXES
 
 
+def _split_fixes():
+    """vocab 오판으로 붙는 걸 강제로 띄우는 예외(지시관형사 '이' 등)."""
+    _load_break_doc()
+    return _SPLIT_FIXES
+
+
+def _line_overrides():
+    """특정 대사 개별 개행 교정(고유 구절 → HARD_NL 삽입). 문장 리플로우가 못 지운다."""
+    _load_break_doc()
+    return _LINE_OVERRIDES
+
+
 def resolve_dos_breaks(t):
-    """{n}을 공백 또는 붙임으로 확정한다(정발 표시 줄바꿈 제거)."""
+    """{n}을 공백 또는 붙임으로 확정한다(정발 표시 줄바꿈 제거).
+
+    ⚠ 하드 개행(\\n) 보존 방식은 폐기(유저 결정 07-27): ①DOS는 자동 줄바꿈보다 더 자주
+    끊고 개행 앞 잔여 공백까지 남아 블록마다 수십 바이트씩 커져 빠듯한 버퍼(SCN4/6 ~120B
+    여유, SCN2 1블록 손실)를 초과했고 ②DOS는 조사·명사 경계 어디서나 끊어(왕자님|이) 정작
+    원하는 배치도 안 나온다. → {n}은 공백으로 해소하고 엔진 자동 줄바꿈에 맡긴다. 눈에 띄는
+    대사의 개행은 개별 override로 잡는다(전역 하드개행 금지)."""
     vocab = _dos_vocab()
     fixes = _break_fixes()
+    splits = _split_fixes()
     parts = t.split("{n}")
     out = parts[0]
     for nxt in parts[1:]:
         pa, pb = out.split(), nxt.split()
         a = pa[-1].strip(_TOK_STRIP) if pa else ""
         b = pb[0].strip(_TOK_STRIP) if pb else ""
-        # 합친 형태가 어절 사전에 있거나, 뒤 조각이 **어절 첫머리에 올 수 없는 어미**면
-        # 어절 중간 분리 → 공백 없이 붙인다("말아주시옵"+"소서"는 합친 형태가 코퍼스에
-        # 없어 사전만으론 못 잡는다). 그 외는 어절 경계로 보고 공백(실측 다수).
-        join = a and b and ((a + b) in vocab or b in _ENDING_FRAGS or (a, b) in fixes)
+        # split 예외는 vocab보다 우선 — 합친 형태가 코퍼스에 있어도 강제로 띄운다
+        # (지시관형사 '이'가 조사로 오판돼 "왕자님이"로 붙는 걸 "왕자님 이 비밀탈출구"로).
+        # 그 외: 합친 형태가 어절 사전에 있거나, 뒤 조각이 어절 첫머리에 올 수 없는 어미면
+        # 어절 중간 분리 → 붙임("말아주시옵"+"소서"). 나머지는 어절 경계 = 공백.
+        join = (
+            (a, b) not in splits
+            and a
+            and b
+            and ((a + b) in vocab or b in _ENDING_FRAGS or (a, b) in fixes)
+        )
         out += ("" if join else " ") + nxt
+    for a, b in _line_overrides():  # 특정 대사 개별 개행 교정(고유 구절 → HARD_NL)
+        out = out.replace(a, b)
     return out
 
 
@@ -391,6 +427,49 @@ def fix_spacing(t):
     return t
 
 
+# ── 직함 띄어쓰기 등 맞춤법 교정(dos_spelling_fixes.json) ───────────────────────
+# 정발 문맥·문안은 유지, 문법/맞춤법만 교정(유저 방침 07-27). 인명 뒤 직함은 띄운다
+# (세리오스왕자 → 세리오스 왕자). 인명은 화자맵에서 자동 파생 → 지명/복합어 오탐 자동 배제
+# (세금대신에=instead, 해적선장=역할명은 인명 아니라 손 안 댐).
+_SPELL_RULES = None
+
+
+def _spell_rules():
+    """(직함결합 정규식, space쌍, replace쌍) 컴파일 — 이름은 화자맵에서 파생."""
+    global _SPELL_RULES
+    if _SPELL_RULES is None:
+        path = os.path.join(os.path.dirname(OUT_DIR), "dos_spelling_fixes.json")
+        try:
+            doc = json.load(open(path, encoding="utf-8"))
+        except FileNotFoundError:
+            doc = {}
+        titles = doc.get("titles", [])
+        names = set(doc.get("names_extra", []))
+        for v in _speaker_map().values():  # 화자맵 값에서 인명 파생
+            toks = v.strip().split()
+            if len(toks) >= 2 and toks[-1] in titles:  # "디나 공주" → 디나
+                names.add(" ".join(toks[:-1]))
+            elif len(toks) == 1 and re.fullmatch(r"[가-힣]+", v.strip()):
+                names.add(v.strip())
+        rx = None
+        if names and titles:
+            name_alt = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
+            rx = re.compile(rf"({name_alt})({'|'.join(map(re.escape, titles))})")
+        _SPELL_RULES = (rx, doc.get("space", []), doc.get("replace", []))
+    return _SPELL_RULES
+
+
+def spell_fix(t):
+    rx, space, replace = _spell_rules()
+    if rx:
+        t = rx.sub(r"\1 \2", t)  # 인명+직함 → 띄움
+    for a, b in space:  # 인명 사전으로 못 잡는 명시적 띄어쓰기(어딘가의왕자 등)
+        t = t.replace(a + b, a + " " + b)
+    for a, b in replace:  # 단순 오타/맞춤법 리터럴 치환
+        t = t.replace(a, b)
+    return t
+
+
 def parse_kr(entry):
     t = entry["text"]
     # 표기 통일: 정발 코퍼스의 '엘아스터'(소수 표기)는 전 대사 '엘아스타'로
@@ -398,7 +477,6 @@ def parse_kr(entry):
     t = t.replace("엘아스터", "엘아스타")
     # 'クルスの村' 직역 '크루즈의 마을'은 정발 내부에서도 '크루즈 마을'이 지배적(유저 지적 07-26)
     t = t.replace("크루즈의 마을", "크루즈 마을")
-    t = fix_spacing(t)
     # 선두 화자 마크업(+선행 opcode 노이즈) 제거. ⚠ `^.*?{/spk}`(구현 1기)는 본문 어디든
     # 처음 나오는 {/spk}까지 삼킨다 — 화자 없는 1페이지 뒤에 화자 페이지가 이어지면
     # 1페이지가 통째로 증발한다("고마와. 퍼거슨" 소실, eid 23 화자창 오배정의 진짜 원인).
@@ -410,6 +488,10 @@ def parse_kr(entry):
         if m and not re.search(r"\{[np]\}|[가-힣]", t[: m.start()]):
             t = t[m.end() :]
     t = resolve_dos_breaks(t).replace("{end}", "")  # 정발 표시 줄바꿈 해소(위 주석)
+    # 맞춤법/띄어쓰기 교정은 {n} 해소 **뒤**에 — 어절이 {n} 경계에 걸린 경우("드릴수{n}있"의
+    # 릴수→릴 수)도 잡으려면 개행이 공백/붙임으로 확정된 후여야 한다(유저 지적 07-27).
+    t = fix_spacing(t)
+    t = spell_fix(t)  # 직함 띄어쓰기 등 맞춤법 교정(dos_spelling_fixes.json)
     # \xNN 제어코드(프롬프트 대기 등)는 공백으로 — 무공백 제거 시 앞뒤 발화가 붙음
     # ("합니다\x07또 들러주십시요"). ⚠ \x03 두 곳은 인라인 플레이스홀더 의심(QA 메모).
     t = t.replace("\\x09", NAME_SENT)  # 이름 주입 자리 보존(아래 일괄 치환보다 먼저)
@@ -459,12 +541,21 @@ def cell_w(ch):
     return 0.5 if ch == " " or ch in HALF_PUNCT or (ch.isascii() and ch.isalnum()) else 1.0
 
 
+# 의도적 개행 마커 — line_overrides가 삽입한다. 일반 페이지 경계 개행(\n)과 구분해
+# 이 마커가 있는 창에서만 protect_hard를 켜(문장 리플로우가 override를 지우지 못하게).
+# PUA 문자 사용(제어문자 \x1c~\x1f는 Python regex \s에 걸려 공백 정리 때 사라진다).
+HARD_NL = "\ue000"
+
+
 def wrap_page(text, width=WRAP, target=None, max_lines=None):
     """공통 줄바꿈 유틸(shared/text/krwrap.wrap_pages): 원문 {n} 줄바꿈을 존중하고
     폭(WRAP) 넘는 줄만 재줄바꿈 + 금칙 + 짧은조각 병합, 창(3줄)은 문장 그룹 단위로
     packing해 문장이 창 경계에 반반 걸리지 않게 한다(3줄 초과 문장만 재줄바꿈).
     부호 정리(07-19 갱신): 부호 앞 공백만 제거, 뒤 공백은 유지 — 반각 부호 전환으로
-    "온점·쉼표 뒤 공백 제거" 규칙 폐지. 줄바꿈 v2 + 반각 부호 인게임 검증 완료."""
+    "온점·쉼표 뒤 공백 제거" 규칙 폐지. 줄바꿈 v2 + 반각 부호 인게임 검증 완료.
+    HARD_NL 마커가 있으면 하드개행으로 변환하고 protect_hard를 켠다(개별 개행 override)."""
+    protect = HARD_NL in text
+    text = text.replace(HARD_NL, "\n")
     return kr_wrap_pages(
         text,
         width,
@@ -474,6 +565,8 @@ def wrap_page(text, width=WRAP, target=None, max_lines=None):
         cell_width=cell_w,
         strip_before=".,!?",
         strip_after="",  # 부호 뒤 공백 유지 — 반각 부호 전환으로 공백 제거 규칙 폐지(07-19, 유저 판정)
+        protect_hard=protect,
+        det_orphan=True,  # 줄 끝 홀로 남은 지시관형사(이/그/저)를 다음 줄 명사로 내림(재배치, 바이트 불변)
     )
 
 

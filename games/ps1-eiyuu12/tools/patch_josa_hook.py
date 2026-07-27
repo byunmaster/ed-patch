@@ -233,14 +233,24 @@ def assemble_routine(free_base, table_addr, pairs_addr):
     a.sltiu("t3", "t2", 3)  # 0x01/0x02 (0x00은 위에서 종료)
     a.bne("t3", "zero", "adv1")
     a.nop()
-    # 반각 숫자(0x30~0x39): 정발이 주문 레벨명(레지나01 등) 뒤 조사를 **무받침으로 통일**한다
-    # (DOSBox 실측 2026-07-27). prev를 '가'(SYL_LO, 받침 0)로 세팅하면 기존 병기 판정이
-    # 자동으로 B(무받침: 는/가/를)를 뽑는다 — 테이블·판정부 무변경. t2는 이미 1바이트값.
+    # 반각 숫자(0x30~0x39)·영문자(0x41~0x5A, 0x61~0x7A): 정발이 주문 레벨명(레지나01) 뒤
+    # 조사를 **무받침으로 통일**하고(DOSBox 실측 07-27), 엔진이 동종 몬스터에 붙이는 식별자
+    # (부엉이A/B — 런타임 append)도 알파벳이라 무받침이어야 한다(유저 지적 07-27). prev를
+    # '가'(SYL_LO, 받침 0)로 세팅하면 기존 병기 판정이 자동으로 B(무받침: 는/가/를)를 뽑는다.
     a.addiu("t3", "t2", -0x30)
-    a.sltiu("t3", "t3", 10)  # 0x30~0x39
+    a.sltiu("t3", "t3", 10)  # 0x30~0x39 숫자
+    a.bne("t3", "zero", "alnum")
+    a.nop()
+    a.addiu("t3", "t2", -0x41)
+    a.sltiu("t3", "t3", 26)  # 0x41~0x5A A~Z
+    a.bne("t3", "zero", "alnum")
+    a.nop()
+    a.addiu("t3", "t2", -0x61)
+    a.sltiu("t3", "t3", 26)  # 0x61~0x7A a~z
     a.beq("t3", "zero", "notdigit")
     a.nop()
-    a.ori("t1", "zero", SYL_LO)  # 숫자 → '가' 마커(무받침)
+    a.label("alnum")
+    a.ori("t1", "zero", SYL_LO)  # 숫자/영문 → '가' 마커(무받침)
     a.beq("zero", "zero", "adv1")
     a.nop()
     a.label("notdigit")
