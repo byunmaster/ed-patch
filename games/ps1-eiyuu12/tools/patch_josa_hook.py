@@ -251,9 +251,10 @@ def assemble_routine(free_base, table_addr, pairs_addr):
     a.nop()
     a.sltiu("t3", "t2", 0x81)
     a.beq("t3", "zero", "twobyte")
-    a.nop()
-    # 1바이트: 공백(0x20)·색제어(0x01,0x02)는 prev 유지, 나머지는 prev 무효화
+    # 지연 슬롯 활용(-4B, 07-29 VAB 축소): 조건은 이미 평가됐으므로 t3를 덮어도 되고,
+    # twobyte로 분기해도 그쪽 첫 명령이 t3를 곧바로 재적재하므로 무해하다.
     a.li16("t3", 0x20)
+    # 1바이트: 공백(0x20)·색제어(0x01,0x02)는 prev 유지, 나머지는 prev 무효화
     a.beq("t2", "t3", "adv1")
     a.nop()
     a.sltiu("t3", "t2", 3)  # 0x01/0x02 (0x00은 위에서 종료)
@@ -275,9 +276,8 @@ def assemble_routine(free_base, table_addr, pairs_addr):
     a.label("notdigit")
     a.li16("t1", 0)
     a.label("adv1")
-    a.addiu("t0", "t0", 1)
     a.beq("zero", "zero", "scan")
-    a.nop()
+    a.addiu("t0", "t0", 1)  # 지연 슬롯(-4B) — 무조건 분기라 항상 실행된다
 
     a.label("twobyte")
     a.lbu("t3", 1, "t0")
@@ -387,9 +387,8 @@ def assemble_routine(free_base, table_addr, pairs_addr):
 
     a.label("setprev")
     a.addu("t1", "t2", "zero")
-    a.addiu("t0", "t0", 2)
     a.beq("zero", "zero", "scan")
-    a.nop()
+    a.addiu("t0", "t0", 2)  # 지연 슬롯(-4B) — 무조건 분기라 항상 실행된다
 
     a.label("done")
     a.jr("ra")
@@ -529,8 +528,8 @@ def build_and_patch(ed: bytearray):
     pre_addr = stub_addr + len(stub)
     pre_stub = assemble_prewrap_stub(pre_addr, josa_addr, zero_addr)
     data = table + zero_guard + pairs + stub + pre_stub
-    assert len(josa) <= 0x0BF7E8 - 0x0BF5DC, f"josa 루틴 {len(josa)}B — 런 초과"
-    assert len(data) <= 0x0C1268 - 0x0C105C, f"데이터+스텁 {len(data)}B — 런 초과"
+    assert len(josa) <= JOSA_SAFE, f"josa 루틴 {len(josa)}B — VAB 파형 침범(한계 {JOSA_SAFE}B)"
+    assert len(data) <= DATA_SAFE, f"데이터+스텁 {len(data)}B — VAB 파형 침범(한계 {DATA_SAFE}B)"
 
     def fo(ram):
         return ram - 0x80010000 + 0x800
@@ -552,9 +551,21 @@ def build_and_patch(ed: bytearray):
     return len(josa) + len(data), josa_addr, stub_addr, pre_addr
 
 
-# 배치: 도너 검증(07-26) 통과 클린 0런 2개 — reinsert DONOR_RUNS에서 예약 제외됨.
-PLACE_JOSA_RAM = 0x0BF5DC - 0x800 + 0x80010000  # 루틴 (런 524B)
-PLACE_DATA_RAM = 0x0C105C - 0x800 + 0x80010000  # 테이블 294B + 쌍 12B + 스텁
+# 배치: **VAB 사운드 뱅크(`pBAV`) 헤더의 미사용 0 패딩**.
+#
+# 이 두 0런은 뱅크 *내부*다(reinsert.DONOR_RUNS 폐기 주석 참조 — 같은 계열의 도너 14개가
+# 효과음을 깨뜨렸다). 다만 뱅크는 [헤더(프로그램·톤·VAG 오프셋 테이블, 미사용 슬롯이 0)]
+# + [파형(ADPCM)] 구조이고, **헤더의 0 패딩까지는 덮어도 소리에 영향이 없다** — 실제로
+# 깨진 건 각 VAB **파형의 첫 ADPCM 블록**(첫 16B가 무음이라 0런에 삼켜졌다)을 덮었을 때다.
+#   • 도너 14개: 파형 16~20B 침범 → 효과음 파괴(유저 QA로 확인, 07-29 폐기)
+#   • josa 루틴: 파형 8B 침범이었다 → **지연 슬롯 3곳을 채워 12B 축소해 해소**(07-29)
+#   • 테이블+스텁: 원래부터 헤더 패딩 안에서 끝남(침범 0)
+# ⇒ **파형 시작 직전까지가 실제 한계**(아래 *_SAFE). 런 크기(524B)를 한계로 삼으면 안 된다.
+# 재검증법: `pBAV` 스캔 → 각 뱅크 fsize/헤더크기(32+128*16+512*nprog+512) 계산 → 파형 시작.
+PLACE_JOSA_RAM = 0x0BF5DC - 0x800 + 0x80010000  # 루틴
+PLACE_DATA_RAM = 0x0C105C - 0x800 + 0x80010000  # 테이블 294B + guard + 쌍 12B + 스텁 2개
+JOSA_SAFE = 0x0BF7D8 - 0x0BF5DC  # 508B — VAB@0x0BEBB8 파형 시작 직전까지
+DATA_SAFE = 0x0C1258 - 0x0C105C  # 508B — VAB@0x0C0638 파형 시작 직전까지
 
 
 ED_LBA, ED_SIZE = 257, 1021952
@@ -671,9 +682,10 @@ def _selftest():
     print(
         f"데이터+스텁 {len(data)}B (테이블 {len(table_pad)} + guard 4 + 쌍 {len(pairs)} + "
         f"stub {len(stub)} + prewrap stub {len(pre)}) · josa {len(josa)}B "
-        f"[런 한도 각 524B, 여유 josa {524 - len(josa)}B / 데이터 {524 - len(data)}B]"
+        f"[VAB 파형 직전 한계 josa {JOSA_SAFE}B(여유 {JOSA_SAFE - len(josa)}B) / "
+        f"데이터 {DATA_SAFE}B(여유 {DATA_SAFE - len(data)}B)]"
     )
-    assert len(josa) <= 524 and len(data) <= 524, "런 초과"
+    assert len(josa) <= JOSA_SAFE and len(data) <= DATA_SAFE, "VAB 파형 침범"
 
     # ── 워크슬롯(줄) 모드 케이스: (설명, 입력 줄들) — 각 1회 치환 기대 ──────
     P_L, P_R = bytes([PAREN_L]), bytes([PAREN_R])
