@@ -18,6 +18,8 @@ python3 tools/build.py              # 전 트랙 체인 → work/Eiyuu Densetsu 
 ```
 
 - 테스트 이미지는 `work/Eiyuu Densetsu (KR).bin/.cue` **하나만** 유지.
+- **정발 대조**: `sh shared/dos/run_dos.sh ed1|ed2|ed3|ed4` — DOS 정발판을 DOSBox-X로 실행
+  (원본을 overlay 마운트해 복사 0·무변경). 문안·조판을 눈으로 맞출 때 쓴다.
 - 인게임 확인: emucap MCP(mednafen) 또는 유저 DuckStation. **유저가 직접 확인하는 쪽이
   훨씬 빠름** — 빌드 완료를 알리고 유저 스크린샷으로 검증받는 흐름 권장.
 - ⚠ mednafen은 디스크 캐시 → 빌드 교체 후 reset 무효. 프로세스 kill + 재launch.
@@ -77,10 +79,13 @@ games/ps1-eiyuu12/
   assets/    번역 그래픽 에셋 (title_logo.png 등 — 유저 제작 커밋 OK)
   out/       분석 산출물 (gitignore)
   work/      빌드 결과 디스크 (gitignore)
-shared/      플랫폼 공용 (SJIS 스캔, ISO9660, 폰트 변환)
+shared/      플랫폼 공용 (SJIS 스캔, ISO9660, 폰트 변환, DOS 정발 실행 `dos/run_dos.sh`)
 originals/   원본 디스크·DOS 정발 (gitignore, 소장자 제공)
 vendor/      emucap 등 서드파티 (gitignore, 읽기 전용)
 ```
 
 - ED.EXE = LBA 257. RAM 주소 = file오프셋 − 0x800 + 0x80010000.
+
+```
+
 ```
