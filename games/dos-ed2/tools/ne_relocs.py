@@ -35,7 +35,13 @@ def imported_name(b, h, name_off):
 
 
 def seg_relocs(b, h, seg):
-    """세그먼트의 fixup들을 {seg_offset: label} 로 반환."""
+    """세그먼트의 fixup들을 {seg_offset: (label, atname, additive)} 로 반환.
+
+    additive면 파일에 박힌 placeholder가 **addend**다(로더가 타깃 주소를 더한다).
+    이 게임의 엔진 전역 참조(off16)는 전부 additive라서, `mov bx,[2] -> PL_TOP`은
+    `PL_TOP + 2` 즉 구조체 필드 오프셋을 뜻한다. 반대로 ptr32/seg16은 chained라
+    placeholder(0xffff:0000)는 체인 종료 표시일 뿐 의미가 없다.
+    """
     if not (seg["flags"] & 0x0100):
         return {}
     p = seg["file_off"] + seg["length"]
@@ -67,7 +73,7 @@ def seg_relocs(b, h, seg):
         seen = set()
         while cur != 0xFFFF and cur not in seen and cur + 1 < len(seg_data):
             seen.add(cur)
-            out[cur] = (label, atname)
+            out[cur] = (label, atname, additive)
             if additive:
                 break
             nxt = seg_data[cur] | (seg_data[cur + 1] << 8)
@@ -89,8 +95,9 @@ def main():
         rl = seg_relocs(b, h, seg)
         print(f"\nseg{seg['idx']} relocs: {len(rl)} sites")
         for off in sorted(rl):
-            label, atname = rl[off]
-            print(f"  {off:#06x} [{atname}] -> {label}")
+            label, atname, additive = rl[off]
+            add = "+add" if additive else ""
+            print(f"  {off:#06x} [{atname}{add}] -> {label}")
 
 
 if __name__ == "__main__":

@@ -56,8 +56,15 @@ def main():
         # fixup가 이 명령 바이트 범위 안에 있으면 주석
         for off in range(ins.address, ins.address + ins.size):
             if off in relocs:
-                label, atname = relocs[off]
-                note = f"   ; -> {resolve(label)}"
+                label, atname, additive = relocs[off]
+                sym = resolve(label)
+                # additive off16이면 placeholder가 addend다 → PL_TOP+2 처럼 표기.
+                # (chained ptr32/seg16의 0xffff는 체인 종료 표시일 뿐이라 무시)
+                if additive and atname == "off16" and off + 1 < len(data):
+                    addend = data[off] | (data[off + 1] << 8)
+                    if addend:
+                        sym = f"{sym}+{addend:#x}"
+                note = f"   ; -> {sym}"
                 break
         print(f"{ins.address:04x}: {ins.bytes.hex():<14} {ins.mnemonic:<7} {ins.op_str}{note}")
         n += 1
