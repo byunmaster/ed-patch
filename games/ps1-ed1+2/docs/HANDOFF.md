@@ -224,7 +224,7 @@ ADPCM 패딩**이었다. 뱅크는 통째로 SPU RAM에 전송되므로 우리 �
 ## 빌드 & 테스트
 
 ```bash
-cd games/ps1-eiyuu12
+cd games/ps1-ed1+2
 python3 tools/build.py                 # 전 트랙 체인 → work/Eiyuu Densetsu (KR).bin
 ```
 

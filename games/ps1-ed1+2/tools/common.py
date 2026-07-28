@@ -2,8 +2,8 @@
 
 import os
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # games/ps1-eiyuu12
-ORIG_DIR = os.path.join(ROOT, "..", "..", "originals", "ps1-eiyuu12")  # 원본 이미지 (gitignore)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # games/ps1-ed1+2
+ORIG_DIR = os.path.join(ROOT, "..", "..", "originals", "ps1-ed1+2")  # 원본 이미지 (gitignore)
 WORK_DIR = os.path.join(ROOT, "work")  # 테스트/패치 빌드 (gitignore)
 OUT_DIR = os.path.join(ROOT, "out")  # 분석 산출물 (gitignore)
 

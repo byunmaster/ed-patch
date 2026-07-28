@@ -165,7 +165,7 @@ y33-59(겹치지 않음, y28-33 갭) / 하단 x48-112 y193-217 · x224-288 y193-
 ## 빌드 & 확인
 
 ```bash
-cd games/ps1-eiyuu12 && python3 tools/build.py   # 체인에 patch_gfx_title 포함
+cd games/ps1-ed1+2 && python3 tools/build.py   # 체인에 patch_gfx_title 포함
 ```
 
 - 리드백 크롭: `out/title/RB_*.png`(coll_buttons / ed1_pills_bottom / ed1_pills_bank / ed2).

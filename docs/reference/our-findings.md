@@ -71,7 +71,7 @@
      세로 그라디언트 유지.
   5. **한글은 fill과 분리 합성**: 획 지운 뒤 별도 스프라이트로 버튼 중앙(cx·cy 실측)에 얹고, 좌우
      미세보정은 dx로(fill 영역과 무관). 일본어가 한글보다 넓으면 fill rect를 일본어 실측폭까지 확장.
-- 근거/위치: `games/ps1-eiyuu12/tools/patch_gfx_title.py`(`overwrite_text`·`render_coll_buttons`·
+- 근거/위치: `games/ps1-ed1+2/tools/patch_gfx_title.py`(`overwrite_text`·`render_coll_buttons`·
   `render_buttons`), `docs/title-buttons-handoff.md`(전체 시행착오 이력).
 - 일반화: **TIM/스프라이트 UI를 쓰는 레트로 게임 전반**에 적용. 핵심 재사용 패턴 = ①엔진 blit
   캘리브레이션(추측 금지) ②원본 보존·획만 페인트(외부색 안 씀) ③테두리 inset ④그라디언트는 행별.
@@ -89,7 +89,7 @@
 - 임베드형 테이블을 이 구조로 옮길 땐 `tools/gen_textmap.py`: 테이블을 ast로 읽어 DOS
   코퍼스 역검색(원문 그대로/조판 역변형/미발견=우리 번역)으로 분류 → textmap 생성 →
   파생 라운드트립 == 원 테이블 assert → 소비부를 로더로 치환 → **빌드 바이트 동일** 확인.
-- 위치: `games/ps1-eiyuu12/tools/derive_text.py`·`gen_textmap.py`·`textmap/`.
+- 위치: `games/ps1-ed1+2/tools/derive_text.py`·`gen_textmap.py`·`textmap/`.
 - 일반화: 정발판이 존재하는 모든 한글패치에 그대로 재사용(차기 게임 골격).
 - 날짜: 2026-07-13.
 
@@ -116,8 +116,8 @@
   (여기선 2바이트 엔트리 49개짜리 테이블)은 앵커 탐지(포인터처럼 생긴 워드만 스캔)에도 안 걸려
   대사 패킹에 밀린다 → 절대/상대 접근이 stale. 규칙: **"갱신 가능한 포인터로 참조되지도, 번역되지도
   않는 블록은 이동 금지(핀 고정)"** — 비용 번역 4/947, 위험 이동 0.
-- 근거/위치: `games/ps1-eiyuu12/tools/reinsert_kr_pilot.py`,
-  `games/ps1-eiyuu12/docs/HANDOFF.md`(QA 메모 "1장 탈출→월드맵 먹통").
+- 근거/위치: `games/ps1-ed1+2/tools/reinsert_kr_pilot.py`,
+  `games/ps1-ed1+2/docs/HANDOFF.md`(QA 메모 "1장 탈출→월드맵 먹통").
 - 날짜: 2026-07-22.
 - **추가 확정(2026-07-23): 계약은 `%c` 수만이 아니라 `%s`/`%d` 수까지다.** 1장 밤 습격 이벤트
   정지(대사 ▽에서 입력 무효·음악 지속)의 원인이 **JP 블록의 인라인 화자 `%c%s%c`를 조판기가
@@ -186,7 +186,7 @@
   복귀 후 또 실행된다. load라면 무해하지만 계약이 모호하니 **2워드(j+nop) 교체 + 원명령 2개를
   스텁 말미에서 재현**하는 편이 안전하다. 그리고 훅 지점이 **다른 j의 재진입 타겟**일 수 있으므로
   (ED1 `0x800B2054` ← `0x800B1ED4`) 두 진입 경로 모두 no-op 스텁으로 먼저 A/B할 것.
-- 근거/위치: `games/ps1-eiyuu12/tools/patch_josa_hook.py`, `docs/josa-hook-devlog.md`(07-20 크래시 /
+- 근거/위치: `games/ps1-ed1+2/tools/patch_josa_hook.py`, `docs/josa-hook-devlog.md`(07-20 크래시 /
   07-27 원인 규명·재설계), 도너 3중 검증은 HANDOFF 07-26 밤 절.
 - 일반화: 오버레이·상주 실행 파일을 쓰는 모든 플랫폼에 그대로 적용. 특히 콘솔은 BSS/힙이 파일
   이미지에 0으로 남으므로 "파일 0 = 미사용"이 자주 틀린다.
@@ -220,7 +220,7 @@
     (여기선 4회) 정적 추적보다 훨씬 빠르다. 계층 스위치(`PILOT_NODONOR` 등)와 조합해
     "커밋으로 좁히고 → 스위치로 단독 확정"이 정석. 확정 후 **수정 빌드가 진단 빌드와
     바이트 동일**한지 확인하면 회귀 없이 고쳤음이 증명된다.
-  - 근거/위치: `games/ps1-eiyuu12/tools/reinsert_kr_pilot.py`(`DONOR_RUNS` 폐기 주석·
+  - 근거/위치: `games/ps1-ed1+2/tools/reinsert_kr_pilot.py`(`DONOR_RUNS` 폐기 주석·
     `PILOT_NODONOR`), `patch_josa_hook.py`(`PLACE_*_RAM` 잔여 리스크 주석).
 
 ### 조판 훅은 "누가 폭을 계산하나"가 아니라 "누가 먼저 호출되나"로 고른다 (PS1, 일반)
@@ -244,8 +244,8 @@
   쓰는 명령만 구현한 **미니 인터프리터(~80줄, 지연 슬롯 포함)로 어셈블된 바이트를 실제 실행**해
   시뮬과 바이트 비교하면 그 구멍이 막힌다. 빌드 후 **디스크에서 다시 꺼낸 바이트**로 한 번 더
   돌리면 배치·정렬까지 함께 검증된다.
-- 근거/위치: `games/ps1-eiyuu12/tools/patch_josa_hook.py`(`assemble_prewrap_stub`, `_emulate`,
-  `_selftest`), `games/ps1-eiyuu12/docs/josa-hook-devlog.md`(07-28 절).
+- 근거/위치: `games/ps1-ed1+2/tools/patch_josa_hook.py`(`assemble_prewrap_stub`, `_emulate`,
+  `_selftest`), `games/ps1-ed1+2/docs/josa-hook-devlog.md`(07-28 절).
 - **그리고 훅을 안 거는 선택지를 먼저 볼 것**: 런타임 이름(`%s`) 뒤에 조사가 오지 않게
   **어순·문안을 설계**하면 훅 자체가 필요 없다. ED1 도구점이 그렇게 처리했다 — 살 때는 이름 뒤에
   서술을 바로 붙이고(`…이군요`), 팔 때는 조사를 **고정 명사**에 붙인다(`… 값은 %d Gold가…` —

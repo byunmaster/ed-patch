@@ -1,19 +1,19 @@
 # CLAUDE.md — 작업 규칙
 
 팔콤 『영웅전설』 시리즈 한글 패치 프로젝트. 현재 작업은 **PS1 영웅전설 1+2**
-(`games/ps1-eiyuu12`). 리버싱·도구 제작 + AI 번역 + 인간 검수. 사람용 개요는 README.md.
+(`games/ps1-ed1+2`). 리버싱·도구 제작 + AI 번역 + 인간 검수. 사람용 개요는 README.md.
 
 ## 세션 시작 시
 
-- 작업 대상 게임의 **HANDOFF를 먼저 읽는다**: `games/ps1-eiyuu12/docs/HANDOFF.md`
+- 작업 대상 게임의 **HANDOFF를 먼저 읽는다**: `games/ps1-ed1+2/docs/HANDOFF.md`
   (살아있는 상태 문서 — 세션 끝에 "현재 상태"·"다음 할 일" 갱신).
-- 표기 편차 대장: `games/ps1-eiyuu12/docs/jeongbal-deviations.md` (표기 바꾸면 갱신 의무).
+- 표기 편차 대장: `games/ps1-ed1+2/docs/jeongbal-deviations.md` (표기 바꾸면 갱신 의무).
 - 진행 중 트랙별 상세: `docs/*-handoff.md`, `docs/*-devlog.md`.
 
 ## 빌드 & 테스트
 
 ```bash
-cd games/ps1-eiyuu12
+cd games/ps1-ed1+2
 python3 tools/build.py              # 전 트랙 체인 → work/Eiyuu Densetsu (KR).bin/.cue
 ```
 
@@ -73,7 +73,7 @@ python3 tools/build.py              # 전 트랙 체인 → work/Eiyuu Densetsu 
 ## 저장소 맵
 
 ```
-games/ps1-eiyuu12/
+games/ps1-ed1+2/
   tools/     패처·리버싱 도구 (build.py가 오케스트레이션, common.py 공용 헬퍼)
   docs/      HANDOFF·편차 대장·devlog (트랙별 상태·지식)
   assets/    번역 그래픽 에셋 (title_logo.png 등 — 유저 제작 커밋 OK)

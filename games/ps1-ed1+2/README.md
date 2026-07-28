@@ -2,7 +2,7 @@
 
 PS1 『영웅전설 1+2』(The Legend of Heroes I & II - Eiyuu Densetsu, SLPS-01323) 한글패치 제작 도구.
 
-완성된 패치는 이 리포의 Releases에서 `ps1-eiyuu12-v*` 태그로 배포 예정 (원본 이미지 미포함).
+완성된 패치는 이 리포의 Releases에서 `ps1-ed1+2-v*` 태그로 배포 예정 (원본 이미지 미포함).
 
 ## 대상
 
@@ -53,7 +53,7 @@ PS1 『영웅전설 1+2』(The Legend of Heroes I & II - Eiyuu Densetsu, SLPS-01
 ## 폴더 구성 / 도구
 
 ```
-../../originals/ps1-eiyuu12/  원본 .bin/.cue (gitignore — originals/README.md 참조)
+../../originals/ps1-ed1+2/  원본 .bin/.cue (gitignore — originals/README.md 참조)
 work/      테스트·패치 빌드 출력 (gitignore)
 out/       분석 산출물 (gitignore)
 tools/

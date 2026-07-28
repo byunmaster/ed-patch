@@ -1920,7 +1920,7 @@ def main():
     only = os.environ.get("PILOT_SCN")  # 특정 씬만 (예: ED1SCN1). 미지정=전 씬
     if not os.path.exists(SRC):
         raise SystemExit(
-            "원본 이미지 없음 — originals/ps1-eiyuu12/에 .bin/.cue를 복사한 뒤 재실행\n"
+            "원본 이미지 없음 — originals/ps1-ed1+2/에 .bin/.cue를 복사한 뒤 재실행\n"
             f"  기대 경로: {os.path.relpath(SRC, os.path.dirname(OUT_DIR))}"
         )
     scenes = [s for s in SCN_FILES if not only or s[0] == only]
