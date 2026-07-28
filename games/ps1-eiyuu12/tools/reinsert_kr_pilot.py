@@ -74,6 +74,12 @@ HANGUL = re.compile(r"[가-힣]")
 # 이름이 사라지고("이름은 .") %s 개수가 줄어 씬이 정지한다(2026-07-23).
 NAME_SENT = "\x1a"
 NAME_SLOTS = 4.0  # %s 자리 폭 추정(세리오스=4) — 조판 폭 계산용
+# 조사 병기를 **원자 단위**로 조판하기 위한 마커(STOCK 보물상자). 한 토큰이라 줄 경계에서
+# 안 쪼개진다(훅의 한 줄 스캔 보장). ⚠ 폭은 **병기 전체("은(는)"·"이(가)")** 기준(이름+3) —
+# 엔진의 박스 줄배치는 조사훅 해결 **전**에 일어나 버퍼의 병기 전체(3슬롯)로 배치하므로,
+# 조판 폭을 병기 전체로 맞춰야 엔진이 재줄바꿈(→ 병기 분할)을 안 한다(유저 QA 07-28).
+JOSA_NAME = "\x15"  # [%s]은(는)
+JOSA_ITEM = "\x16"  # [%c%s%c]이(가)
 
 
 class SkipBlock(Exception):
@@ -519,6 +525,13 @@ def parse_kr(entry):
         seg = re.sub(r"[^\S\n]+", " ", seg).strip()  # 개행 외 공백만 정리(줄바꿈 유지)
         m = HANGUL.search(seg)
         if not m:
+            # 침묵 창(점선만 있는 페이지)은 정본 창 — 버리지 말고 보존한다. JP 원본·정발 DOS
+            # 둘 다 라이아스 잔소리에 `............` 창을 창 하나로 두므로(창 수 계약에도 포함),
+            # 한글이 없다고 드롭하면 침묵 연출 유실 + 창 부족이 된다(T_001#8 실측 07-28).
+            # 빈 페이지·opcode 노이즈는 여전히 드롭(부호로만 이뤄진 경우만 예외).
+            bare = re.sub(r"\{n\}|\s", "", seg)
+            if bare and re.fullmatch(r"[.·…]+", bare):
+                pages.append((inline_spk, seg.replace("{n}", "").strip()))
             continue
         # 선두 opcode 잔여 노이즈 절삭 — 단 숫자·부호는 본문이다("10년전"의 10, 이름 창
         # 뒤에 오는 ". 왕자"의 온점이 잘려나간 실측 07-26). 선두 NAME_SENT는 기존대로
@@ -542,6 +555,8 @@ def cell_w(ch):
     """엔진 슬롯 폭 — encode_ext와 1:1 (1바이트=0.5, 2바이트 전각=1)."""
     if ch == NAME_SENT:
         return NAME_SLOTS  # %s는 런타임 이름 — 평균 길이로 근사
+    if ch in (JOSA_NAME, JOSA_ITEM):
+        return NAME_SLOTS + 3  # 이름/아이템 + 병기 전체(은(는)/이(가)=3슬롯) — 엔진 배치와 일치
     return 0.5 if ch == " " or ch in HALF_PUNCT or (ch.isascii() and ch.isalnum()) else 1.0
 
 
@@ -773,18 +788,48 @@ def stock_kind(raw):
     return None
 
 
+# 해설(비대화) 존칭 → 평어체 종결어미 변환. 정발 해설은 평어체(~했다)이고 우리 DOS 소스가
+# 존칭(~했습니다)이라 종결어미만 교정한다(문안은 DOS 유지 = 임베드 아님, 유저 방침 07-28).
+# 과거형(었/았/였/했 + 습니다)은 규칙적이라 안전. 현재형은 불규칙(입니다→이다 등)만 개별 처리.
+# ⚠ 대화가 아닌 **해설 블록에만** 적용 — 대화에 걸면 NPC 존댓말이 반말이 된다.
+def to_plain(t):
+    t = re.sub(r"([었았였])습니다", r"\1다", t)
+    t = t.replace("했습니다", "했다")
+    return t
+
+
 def stock_build(raw):
     """정형 블록 KR 재조립(구조 = 원본과 동일한 %c/%s 순서). 아니면 None."""
     kind = stock_kind(raw)
     if kind is None:
         return None
-    a, b2, re1, re2 = _chest_texts()
+    a, b2, re1, re2 = (to_plain(x) for x in _chest_texts())  # 보물상자 해설 = 평어체
     if kind == "open":
-        # [%s]는 …열었습니다.\n…안에는\n [%c][%s][%c]이(가)\n들어 있었습니다.
+        # [%s]은(는) 보물상자를 열었다.\n상자의 안에는 [%c%s%c]이(가)\n들어 있었다.
+        # 첫 언급 "보물상자"(JP 宝箱·정발 3장), 반복은 "상자"로 축약(정발·ED2 동일, 유저 07-28).
+        # 이름·아이템 뒤 조사는 병기(은(는)/이(가)) — 훅이 받침 보고 해결(단독 "세리오스는"·
+        # 파티 "세리오스들은"·아이템 "레스의 잎이"). JOSA_NAME/JOSA_ITEM 원자 단위로 조판해
+        # 병기가 줄 경계에서 안 쪼개진다(훅 한 줄 스캔 보장). "보물상자의 안에는"→"상자에는"으로
+        # 줄여 "상자에는 레스의 잎이(가)"(12.5≤14)가 한 줄에 들어간다(유저 제안 07-28).
         first, _, rest = a.partition("\n")
-        head = "\n".join(wrap_page(NAME_SENT + "는 " + first)[0])
-        return encode_ext(head + "\n" + rest + "\n") + MC + PS + MC + encode_ext("이(가)\n" + b2)
-    # recheck: [%s]는 상자를 다시 한번\n살펴 보았습니다.[%c]역시…[%c]
+        rest = rest.replace("보물상자의 안에는", "상자에는")
+        # 병기 뒤 하드개행(HARD_NL): "들어 있었다"가 아이템 줄로 딸려 올라가 폭 초과(엔진
+        # 재줄바꿈→병기 분할)하는 걸 막는다. 일반 "\n"은 문장 단위 reflow가 공백으로 지워
+        # 재packing하므로 protect_hard 마커를 써야 한다(유저 QA 07-28).
+        text = JOSA_NAME + " " + first + HARD_NL + rest + " " + JOSA_ITEM + HARD_NL + b2
+        blk = bytearray()
+        for i, ln in enumerate(ln for pg in wrap_page(text) for ln in pg):
+            if i:
+                blk += b"\x0a"
+            for part in re.split(f"([{JOSA_NAME}{JOSA_ITEM}])", ln):
+                if part == JOSA_NAME:
+                    blk += PS + encode_ext("은(는)")
+                elif part == JOSA_ITEM:
+                    blk += MC + PS + MC + encode_ext("이(가)")
+                else:
+                    blk += encode_ext(part)
+        return bytes(blk)
+    # recheck: [%s]는 상자를 다시 한번\n살펴 보았다.[%c]역시…[%c]
     p1 = "\n".join(wrap_page(NAME_SENT + "는 " + re1)[0])
     p2 = "\n".join(wrap_page(re2)[0])
     return encode_ext(p1) + MC + encode_ext(p2) + MC

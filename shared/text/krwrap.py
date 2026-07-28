@@ -57,8 +57,12 @@ def split_sentences(text: str) -> list[str]:
             k = j
             while k < n and text[k] == " ":
                 k += 1
-            if k < n and (k > j or _OPEN_NEXT.match(text[k])):
-                out.append(text[start:j])
+            frag = text[start:j]
+            # 부호-only 조각(선두 "…." 등)은 독립 문장으로 빼지 않고 다음 문장에 붙인다 —
+            # 정발도 "…. 저쪽에 계시는 분은?"을 한 줄로 둔다(유저 QA 07-28). 실내용(한글/영숫자)이
+            # 있을 때만 문장 경계로 분리(그래야 "…." 뒤 공백만으로 자체 줄로 꺾이지 않는다).
+            if k < n and (k > j or _OPEN_NEXT.match(text[k])) and re.search(r"[가-힣A-Za-z0-9]", frag):
+                out.append(frag)
                 start = i = k
                 continue
             i = j
