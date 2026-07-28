@@ -22,15 +22,39 @@
 | `M_` / `P_`         | 맵 데이터(`MAP/*.BZH`와 대응) |
 | `D_` `V_` `H_` `F_` | 컷신·특수 연출류              |
 
-## MZ 헤더 파싱 예 (C_000.DLL)
+## 실제 포맷: outer MZ 스텁 + 내부 NE
+
+트레일러는 **NE(New Executable)** 16비트 세그먼트 실행 형식이다. 두 번째 MZ의
+`e_lfanew`가 NE 헤더를 가리킨다. 예) `T_246.DLL`:
 
 ```
-sig MZ  pages 8  lastpage 349  relocs 1  header 512B
-cs:ip 0x0d:0xa20  ss:sp 0x00:0xc8  reloc off 0x40
-MZ 이미지 3933B / 파일 31248B → 트레일러 27315B = DPMI 16비트 페이로드
+outer MZ(0) + DPMI 스텁(16STUB/PM STUB) → 내부 MZ(0x344) → NE@0xf60
+NE: ver6 flags=0x8009(DLL) segs=4 modrefs=2 align=2^9 autodata=seg2
+seg1: CODE off=0x1200 len=0x15dd   ← 이벤트 로직 (메인 코드)
+seg2: DATA off=0x2c00 len=0x05fe   ← autodata
+seg3: DATA off=0x3400 len=0x0925   ← export thunk 꼬리 포함
+seg4: DATA off=0x4200 len=0x3fe2   ← EUC-KR 대사 문자열
+modrefs: ED2MAIN, KERNEL (import; reloc으로 lcall 0:0xffff 자리를 패치)
 ```
 
-## 미해결
+### export (resident-name + entry table)
 
-- DPMI 페이로드(트레일러) 정확한 포맷(NE/LE/커스텀) 및 export 테이블 구조 확인.
-- 디스어셈블 파이프라인 확정(트레일러 언팩 → 16비트 세그먼트 디스어셈블).
+resident-name table의 ord0은 모듈명(`T_246`), 나머지가 진입점.
+entry table(`NE+enttab`)이 ordinal→(seg:offset) 매핑:
+
+| ord | 이름            | 위치                  | 비고                            |
+| --- | --------------- | --------------------- | ------------------------------- |
+| 1   | `WEP`           | seg1:0x00b4 (movable) |                                 |
+| 2   | `SINAL_INIT`    | seg3:0x05f9           | 이벤트/플래그 초기화 추정       |
+| 3   | `GETDLLDATASEG` | seg3:0x05f0           | 데이터 세그먼트 핸들 반환       |
+| 4   | `SINAL`         | seg3:0x05f4           | **이벤트 핸들러 디스패치 추정** |
+
+`ED2MAIN.EXE`는 `Scenario_Load`로 DLL을 올린 뒤 이 export들을 이름/ordinal로
+호출한다. 스엘 유람선 크래시는 `SINAL`(또는 그것이 호출하는 seg1 코드)에서
+발생할 가능성이 높다.
+
+## 도구
+
+- `tools/ne_info.py <dll>` — NE 헤더·세그먼트·export 덤프.
+- `tools/ne_disasm.py <dll> <seg> [--from HEX] [--count N]` — 세그먼트 16비트
+  디스어셈블(capstone). `.venv` 필요: `pip install -r tools/requirements.txt`.
