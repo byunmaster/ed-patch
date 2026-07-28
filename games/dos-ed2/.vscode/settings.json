@@ -1,0 +1,9 @@
+{
+  "editor.tabSize": 2,
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "oxc.fmt.configPath": ".oxfmtrc.json",
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff"
+  }
+}
