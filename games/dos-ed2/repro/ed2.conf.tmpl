@@ -1,0 +1,49 @@
+# 영전2 만트라 DOS판 크래시 재현용 DOSBox-X 설정 (템플릿)
+# @ROOT@ 는 repro/run.sh 가 리포지토리 절대경로로 치환한다. 직접 편집하지 말 것.
+#
+# ED2.CNF 의 DataDir = F:\ed2\ed2 이므로 work/dosbox 를 F: 로 마운트하고
+# 게임 사본은 work/dosbox/ed2/ed2 에 둔다.
+
+[sdl]
+fullscreen=false
+windowresolution=1280x800
+# opengl 이라야 windowresolution 스케일링이 먹는다
+output=opengl
+# macOS SDL1에서 스캔코드 모드를 쓰면 키 입력이 통째로 죽는다.
+# (로그에 "non-US keyboard detected, set usescancodes=true"가 뜨면 이 증상)
+usescancodes=false
+# 이 게임은 마우스를 안 쓴다. 캡처가 걸렸다 풀렸다 하면서 SDL1이 키보드
+# 포커스를 놓치는 게 간헐적 먹통의 원인이라 캡처 자체를 끈다.
+autolock=false
+priority=highest,highest
+mapperfile=@ROOT@/work/dosbox/mapper.map
+
+[log]
+logfile=@ROOT@/work/dosbox/ed2.log
+
+[dosbox]
+machine=svga_s3
+memsize=16
+captures=@ROOT@/work/dosbox/capture
+
+[cpu]
+core=normal
+cputype=486
+cycles=fixed 20000
+
+[dos]
+xms=true
+ems=true
+umb=true
+
+[sblaster]
+sbtype=sb16
+sbbase=220
+irq=5
+dma=1
+
+[autoexec]
+mount F @ROOT@/work/dosbox
+F:
+cd \ed2\ed2
+gkey.exe -s ed2main.exe
