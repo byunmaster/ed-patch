@@ -531,11 +531,12 @@ def apply_battle(ed, orig, pools):
     print(f"전투 코퍼스 {len(strs)}개: 제자리 {inplace} + 재배치 {len(moves)} (풀 잔여 {left}B)")
 
 
-# 전투 데미지 메시지의 조사 교정 — "세리오스을(를) N의 데미지" → "…에게 N의 데미지"
+# 전투 데미지 메시지의 조사 교정 — "세리오스을(를) N의 데미지" → "…에 N의 데미지"
 # 조합: sprintf(buf, "%c%s%c을(를) ", 2, 이름, 1) + sprintf(t, "%d의 데미지!!\n", dmg) + strcat
 # 그 포맷 문자열(%c%s%c을(를) )은 **참조 9곳으로 공유**돼(…목을 뻗어 ○○을(를) 쪼았다 등)
 # 제자리 변경이 불가하다. → 새 문자열을 코퍼스 여유(0런)에 심고 **데미지 경로 1곳만** 리다이렉트.
 # 데미지 경로는 라이브 디스어셈블로 확정(2026-07-23): lui@0x80069838 + addiu@0x8006983C.
+# 조사는 "에"(정발: 슬라임B에 N의 데미지 — 유저 레퍼런스 07-28. 대상이 몬스터/아군 공통 로케이브).
 DMG_LUI, DMG_ADDIU = 0x80069838, 0x8006983C
 CORPUS_LO, CORPUS_HI = 0x4954, 0x9938  # 전투 코퍼스 영역(여유 0런 탐색 범위)
 
@@ -543,7 +544,7 @@ CORPUS_LO, CORPUS_HI = 0x4954, 0x9938  # 전투 코퍼스 영역(여유 0런 탐
 def fix_damage_particle(ed):
     import struct
 
-    nb = b"\x25\x63\x25\x73\x25\x63" + enc("에게") + b"\x20\x00"  # '%c%s%c에게 \0'
+    nb = b"\x25\x63\x25\x73\x25\x63" + enc("에") + b"\x20\x00"  # '%c%s%c에 \0'
     # 코퍼스 여유(0런)에서 자리 확보 — 4바이트 정렬
     need = len(nb)
     dst = None
@@ -566,7 +567,7 @@ def fix_damage_particle(ed):
         w = struct.unpack_from("<I", ed, fo)[0]
         assert (w >> 26) == opc, f"0x{pc:X}: 예상 opcode {opc:#x} 아님 ({w:#010x})"
         struct.pack_into("<I", ed, fo, (w & 0xFFFF0000) | (hi if opc == 0x0F else lo))
-    print(f"데미지 조사 '을(를)'→'에게' (새 문자열 0x{ram:08X}, 참조 1곳만 리다이렉트)")
+    print(f"데미지 조사 '을(를)'→'에' (새 문자열 0x{ram:08X}, 참조 1곳만 리다이렉트)")
 
 
 def main():
