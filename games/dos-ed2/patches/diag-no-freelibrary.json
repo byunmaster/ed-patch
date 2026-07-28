@@ -1,0 +1,15 @@
+{
+  "name": "진단용: ED2MAIN의 시나리오 모듈 FreeLibrary 무력화",
+  "description": "seg4:0x0c64 는 '직전 시나리오 모듈을 FreeLibrary(KERNEL.#96)로 해제'하는 함수이고, 그 retf에서 폴트가 난다. 조건분기 jbe를 무조건 jmp로 바꿔 해제 호출을 항상 건너뛴다. 크래시가 사라지면 원인이 모듈 해제 경로임이 확정된다. 모듈이 해제되지 않고 쌓이므로 오래 플레이하면 메모리가 모자랄 수 있다 — 진단 전용이다.",
+  "issue": 1,
+  "kind": "diagnostic",
+  "patches": [
+    {
+      "file": "ED2MAIN.EXE",
+      "offset": "0x1047f",
+      "from": "76",
+      "to": "eb",
+      "note": "seg4:0x0c7f  jbe 0xc8a -> jmp 0xc8a (FreeLibrary 호출 스킵)"
+    }
+  ]
+}

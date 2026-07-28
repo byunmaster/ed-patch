@@ -1,0 +1,15 @@
+{
+  "name": "진단용: F_501의 ljmp ENTER_PROG2 -> retf",
+  "description": "크래시가 ENTER_PROG2(엔진 로더 → 이전 모듈 해제) 안쪽인지 그 전인지를 가르는 1바이트 실험. 크래시가 사라지면 원인은 씬 전환 경로에 있고, 그대로 터지면 F_501의 핸들러가 실행되기 전 단계다. 배는 목적지로 넘어가지 않으므로 화면이 멈추거나 이상하게 굴 수 있다 — 크래시 여부만 본다. reloc이 0x6d3(ptr32)에 걸려 로더가 뒤 4바이트를 덮지만 0x6d2에서 멈추므로 실행되지 않는다.",
+  "issue": 1,
+  "kind": "diagnostic",
+  "patches": [
+    {
+      "file": "SCENA/F_501.DLL",
+      "offset": "0x3ad2",
+      "from": "ea",
+      "to": "cb",
+      "note": "seg3:0x6d2 ljmp ED2MAIN.ENTER_PROG2 를 retf로"
+    }
+  ]
+}

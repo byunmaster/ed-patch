@@ -1,0 +1,22 @@
+{
+  "name": "진단용: 모듈 해제 헬퍼의 스택 전환 제거",
+  "description": "seg4:0x0c64는 SS:SP를 전역 [0x2f7c]/[0x2f7e]에 저장하고 전용 스택(seg12:0x2b7b)으로 갈아탄 뒤 FreeLibrary를 부르고 복원한다. 폴트는 그 복원 직후의 retf다. 전환(0x0c74)과 복원(0x0c91)을 NOP으로 들어내면 함수가 호출자 스택을 그대로 유지하므로, 전역이 재진입으로 덮이든 전용 스택이 넘치든 영향을 받지 않는다. 크래시가 사라지면 원인은 스택 전환 메커니즘으로 확정된다. 진입 시 전역 저장(0x0c69)은 그대로 두어 다른 코드와의 정합성을 유지한다. 해당 구간에 relocation이 없음을 확인했다(0x0c72 seg16, 0x0c86 ptr32는 건드리지 않는다).",
+  "issue": 1,
+  "kind": "diagnostic",
+  "patches": [
+    {
+      "file": "ED2MAIN.EXE",
+      "offset": "0x10474",
+      "from": "8ed0bc7b2b",
+      "to": "9090909090",
+      "note": "seg4:0x0c74  mov ss,ax / mov sp,0x2b7b -> nop x5 (전용 스택 전환 제거)"
+    },
+    {
+      "file": "ED2MAIN.EXE",
+      "offset": "0x10491",
+      "from": "8b267c2f8e167e2f",
+      "to": "9090909090909090",
+      "note": "seg4:0x0c91  mov sp,[0x2f7c] / mov ss,[0x2f7e] -> nop x8 (스택 복원 제거)"
+    }
+  ]
+}
