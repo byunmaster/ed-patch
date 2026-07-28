@@ -5,12 +5,15 @@
 종성 유무(비트테이블)로 조사 하나로 축약한다(4B 좌시프트).
 설계·조사 이력: docs/josa-hook-devlog.md. 종성 판정 근거: shared/text/josa.py.
 
-훅은 **두 지점**(둘 다 같은 josa_fix를 부르고, 병기가 없으면 무동작이라 멱등):
+훅은 **세 지점**(전부 같은 josa_fix를 부르고, 병기가 없으면 무동작이라 멱등):
   1. `HOOK_ADDR` 0x800B2054 — 워크슬롯 조립 직후. 줄 단위(64B, cross-line 결합 포함).
   2. `PREWRAP_CALL` 0x800B1D60 — **자동 개행 삽입 전** 평문(128B). 개행 폭 계산이
      미해결 병기(3슬롯)로 이뤄져 줄이 이르게 갈리던 문제를 없앤다(HANDOFF #2/#3).
-배치: ED.EXE의 검증된 클린 0런 2개(PLACE_JOSA_RAM / PLACE_DATA_RAM).
-진단: `JOSA_NOOP=1`(훅 1 무력화) · `JOSA_NOPREWRAP=1`(훅 2만 제외) · `--selftest`.
+  3. `DRAWSTR_ADDR` 0x800A9A60 — **단문 직접 그리기** 진입. 메시지 경로가 둘인데
+     이쪽은 prewrap도 assemble도 안 타서 1·2가 못 닿았다(파티 합류 "류난이(가)").
+배치: ED.EXE의 0런 2개(PLACE_JOSA_RAM / PLACE_DATA_RAM) — **VAB 헤더 패딩**이라
+파형 직전(*_SAFE)까지만 쓴다.
+진단: `JOSA_NOOP=1`(훅 1) · `JOSA_NOPREWRAP=1`(훅 2) · `JOSA_NODRAWSTR=1`(훅 3) · `--selftest`.
 """
 
 import os
@@ -69,8 +72,8 @@ def fix_buffer(buf: bytearray, table: bytes, cross: int | None = 66, limit: int 
     while i < limit and buf[i]:
         b = buf[i]
         if b < 0x81 or b == 0xFF:  # 1바이트(반각·공백·제어)
-            if b in (0x20, 0x01, 0x02):
-                pass  # 공백·색제어 → prev 유지
+            if b == 0x20 or 1 <= b <= 3:
+                pass  # 공백·색제어(1·2·3) → prev 유지
             elif 0x30 <= b <= 0x7A:
                 prev = SYL_LO  # 숫자·영문 → 무받침 마커('가')
             else:
@@ -257,7 +260,11 @@ def assemble_routine(free_base, table_addr, pairs_addr):
     # 1바이트: 공백(0x20)·색제어(0x01,0x02)는 prev 유지, 나머지는 prev 무효화
     a.beq("t2", "t3", "adv1")
     a.nop()
-    a.sltiu("t3", "t2", 3)  # 0x01/0x02 (0x00은 위에서 종료)
+    # 색 제어코드 0x01·0x02·0x03은 prev(앞 음절) 유지 (0x00은 위에서 종료).
+    # ⚠ 0x03을 빠뜨려 **파티 합류 "류난이(가)"가 안 풀렸다**(유저 QA 07-29): sprintf 인자가
+    # 케이스마다 달라 이름 뒤 색 복귀가 `01`(전투·도구사용)일 때도, `03`(SCN 이벤트)일 때도
+    # 있다 — `{c}%s{c}が…` 인자열이 (2, 이름, 3, 1, 6)이라 이름 다음이 3이었다.
+    a.sltiu("t3", "t2", 4)
     a.bne("t3", "zero", "adv1")
     a.nop()
     # 반각 숫자(0x30~0x39)·영문자(0x41~0x5A,0x61~0x7A): 정발이 주문 레벨명(레지나01) 뒤
@@ -430,6 +437,21 @@ PREWRAP_CALL = 0x800B1D60  # 유일 호출 지점 (jal 0x800ACE18, 지연 슬롯
 PREWRAP_CALL_ORIG = 0x0C000000 | ((PREWRAP_ADDR >> 2) & 0x03FFFFFF)
 PREWRAP_LIMIT = 128  # 호출자 스택 버퍼 fp+0x18~fp+0x98
 
+# ── 훅 3: 단문 직접 그리기 경로 — 파티 합류 "류난이(가)" (07-29) ────────────
+# 메시지는 경로가 **둘**이다(ED.EXE `0x800381C8` = 메시지ID→버퍼 획득의 호출자 2곳):
+#   ① 0x8009AC1C → 0x800B1D24(메시지박스) → prewrap → assemble → draw  ← 훅 2·1이 커버
+#   ② 0x8003D5F8 → 0x8003D63C → **0x800A9A60** → 0x800AD3A8            ← 아무 훅도 없었다
+# ②는 prewrap도 assemble도 안 타고 `0x800AD3A8`(글자단위 wrap+draw)로 직행한다. 그래서
+# 파티 합류 `{c}%s{c}이(가) 동료가 되었습니다`가 병기 그대로 나오고, 병기 폭(3슬롯) 때문에
+# 2줄로 갈리기까지 했다(유저 스크린샷 07-29).
+# 훅 지점 = `0x800A9A60` 진입. 여기서 a0 = 문자열이고 `0x800AD3A8`이 자체 strlen을 다시
+# 재므로 축약해도 길이 불일치가 없다 — 개행 결정 전이라 2줄 갈림도 함께 해소된다.
+# ⚠ 호출자가 ~45곳(메뉴·상태창 라벨)이라 전부 스캔을 타지만, 병기가 없으면 무동작이다.
+DRAWSTR_ADDR = 0x800A9A60
+DRAWSTR_ORIG = 0x27BDFFE8  # addiu sp, sp, -0x18
+DRAWSTR_ORIG2 = 0xAFBF0010  # sw ra, 0x10(sp)
+DRAWSTR_RESUME = 0x800A9A68
+
 
 def assemble_hook_stub(stub_base, josa_addr, noop=False):
     """0x800B2054에서 j로 진입. 워크 6줄(0x801190B0 + k*66)을 전부 josa_fix로 스캔 —
@@ -505,6 +527,27 @@ def assemble_prewrap_stub(stub_base, josa_addr, zero_addr):
     return a.resolve()
 
 
+def assemble_drawstr_stub(stub_base, josa_addr, zero_addr):
+    """훅 3 스텁 — `0x800A9A60`(단문 직접 그리기) 진입. 상세는 DRAWSTR_* 상수 주석.
+
+    a0 = 문자열(그대로 josa_fix의 인자). **스택 프레임을 안 만든다** — 진입 시점이라
+    프롤로그(`addiu sp,-0x18`)가 아직 안 돌았고, 데이터 런 여유가 40B뿐이라 최소로 짰다.
+    ra는 `a3`에 대피시킨다: `0x800A9A60`은 a3를 **입력으로 안 받고** 자기가 0x1d로 덮어
+    쓰므로 진입 시점의 a3는 죽은 레지스터이고, josa_fix도 a3를 건드리지 않는다.
+    끝에서 원명령 2개를 재현하고 0x800A9A68로 복귀한다(9워드 = 36B)."""
+    a = Asm(stub_base)
+    a.addu("a3", "ra", "zero")  # ra 대피 (a3 = 진입 시 죽은 레지스터)
+    a.lui("a2", zero_addr >> 16)
+    a.ori("a2", "a2", zero_addr & 0xFFFF)  # cross-line 비활성
+    a.emit(0x0C000000 | ((josa_addr >> 2) & 0x03FFFFFF))  # jal josa_fix
+    a.li16("a1", PREWRAP_LIMIT)  # 지연 슬롯 = 스캔 상한
+    a.addu("ra", "a3", "zero")  # ra 복원
+    a.emit(DRAWSTR_ORIG)  # addiu sp, sp, -0x18   (원명령 1)
+    a.emit(0x08000000 | ((DRAWSTR_RESUME >> 2) & 0x03FFFFFF))  # j 0x800A9A68
+    a.emit(DRAWSTR_ORIG2)  # 지연 슬롯 = sw ra, 0x10(sp)  (원명령 2)
+    return a.resolve()
+
+
 def build_and_patch(ed: bytearray):
     """조사 훅 결합 — 검증된 클린 0런 2개에 [josa_fix] / [테이블+쌍+stub] 배치 후
     0x800B2054/58을 j stub/nop으로 패치.
@@ -527,7 +570,9 @@ def build_and_patch(ed: bytearray):
     stub = assemble_hook_stub(stub_addr, josa_addr, noop=noop)
     pre_addr = stub_addr + len(stub)
     pre_stub = assemble_prewrap_stub(pre_addr, josa_addr, zero_addr)
-    data = table + zero_guard + pairs + stub + pre_stub
+    draw_addr = pre_addr + len(pre_stub)
+    draw_stub = assemble_drawstr_stub(draw_addr, josa_addr, zero_addr)
+    data = table + zero_guard + pairs + stub + pre_stub + draw_stub
     assert len(josa) <= JOSA_SAFE, f"josa 루틴 {len(josa)}B — VAB 파형 침범(한계 {JOSA_SAFE}B)"
     assert len(data) <= DATA_SAFE, f"데이터+스텁 {len(data)}B — VAB 파형 침범(한계 {DATA_SAFE}B)"
 
@@ -548,7 +593,14 @@ def build_and_patch(ed: bytearray):
     assert struct.unpack_from("<I", ed, pp)[0] == PREWRAP_CALL_ORIG, "prewrap 호출 원명령 불일치"
     if os.environ.get("JOSA_NOPREWRAP") != "1":  # 진단 A/B: 훅 2만 빼고 빌드
         ed[pp : pp + 4] = struct.pack("<I", 0x0C000000 | ((pre_addr >> 2) & 0x03FFFFFF))
-    return len(josa) + len(data), josa_addr, stub_addr, pre_addr
+    # 훅 3: 단문 직접 그리기 진입을 2워드(j stub + nop)로 — 원명령 2개는 스텁 말미에서 재현.
+    dp = fo(DRAWSTR_ADDR)
+    assert struct.unpack_from("<I", ed, dp)[0] == DRAWSTR_ORIG, "훅3 원명령 불일치"
+    assert struct.unpack_from("<I", ed, dp + 4)[0] == DRAWSTR_ORIG2, "훅3 원명령+4 불일치"
+    if os.environ.get("JOSA_NODRAWSTR") != "1":  # 진단 A/B: 훅 3만 빼고 빌드
+        ed[dp : dp + 4] = struct.pack("<I", 0x08000000 | ((draw_addr >> 2) & 0x03FFFFFF))
+        ed[dp + 4 : dp + 8] = struct.pack("<I", 0)  # nop (지연 슬롯)
+    return len(josa) + len(data), josa_addr, stub_addr, pre_addr, draw_addr
 
 
 # 배치: **VAB 사운드 뱅크(`pBAV`) 헤더의 미사용 0 패딩**.
@@ -579,13 +631,13 @@ def main():
     if not os.path.exists(target):
         raise SystemExit(f"대상 이미지 없음: {target} — build.py 먼저")
     ed = bytearray(extract(ED_LBA, ED_SIZE, path=target))
-    size, josa_addr, stub_addr, pre_addr = build_and_patch(ed)
+    size, josa_addr, stub_addr, pre_addr, draw_addr = build_and_patch(ed)
     with open(target, "r+b") as f:
         n = write_user_data(f, ED_LBA, ed)
     print(
-        f"조사 훅: {size}B (josa 0x{josa_addr:08X}, stub 0x{stub_addr:08X}, "
-        f"prewrap stub 0x{pre_addr:08X}) → 0x{HOOK_ADDR:08X}·0x{PREWRAP_CALL:08X} 훅, "
-        f"섹터 {n}개 수정"
+        f"조사 훅: {size}B (josa 0x{josa_addr:08X}, stub 0x{stub_addr:08X}, prewrap "
+        f"0x{pre_addr:08X}, drawstr 0x{draw_addr:08X}) → 0x{HOOK_ADDR:08X}·"
+        f"0x{PREWRAP_CALL:08X}·0x{DRAWSTR_ADDR:08X} 훅, 섹터 {n}개 수정"
     )
 
 
@@ -678,10 +730,11 @@ def _selftest():
     stub = assemble_hook_stub(stub_addr, PLACE_JOSA_RAM)
     pre_addr = stub_addr + len(stub)
     pre = assemble_prewrap_stub(pre_addr, PLACE_JOSA_RAM, zero_addr)
-    data = table_pad + zero_guard + pairs + stub + pre
+    draw = assemble_drawstr_stub(pre_addr + len(pre), PLACE_JOSA_RAM, zero_addr)
+    data = table_pad + zero_guard + pairs + stub + pre + draw
     print(
         f"데이터+스텁 {len(data)}B (테이블 {len(table_pad)} + guard 4 + 쌍 {len(pairs)} + "
-        f"stub {len(stub)} + prewrap stub {len(pre)}) · josa {len(josa)}B "
+        f"stub {len(stub)} + prewrap {len(pre)} + drawstr {len(draw)}) · josa {len(josa)}B "
         f"[VAB 파형 직전 한계 josa {JOSA_SAFE}B(여유 {JOSA_SAFE - len(josa)}B) / "
         f"데이터 {DATA_SAFE}B(여유 {DATA_SAFE - len(data)}B)]"
     )
@@ -693,8 +746,13 @@ def _selftest():
         ("받침 O 같은 줄", [_sjis("류난") + _sjis("은") + P_L + _sjis("는") + P_R]),
         ("받침 X 같은 줄", [_sjis("네리아") + _sjis("은") + P_L + _sjis("는") + P_R]),
         (
-            "이름색 제어코드",
+            "이름색 제어코드 01",
             [b"\x02" + _sjis("류난") + b"\x01" + _sjis("이") + P_L + _sjis("가") + P_R],
+        ),
+        # 03도 색 복귀다 — 이걸 빠뜨려 파티 합류 "류난이(가)"가 안 풀렸다(유저 QA 07-29).
+        (
+            "이름색 제어코드 03",
+            [b"\x02" + _sjis("류난") + b"\x03" + _sjis("이") + P_L + _sjis("가") + P_R],
         ),
         ("영문 식별자 → 무받침", [_sjis("부엉이") + b"A" + _sjis("을") + P_L + _sjis("를") + P_R]),
         ("cross-line", [_sjis("눈") + _sjis("을"), P_L + _sjis("를") + P_R + _sjis("사용")]),
@@ -762,7 +820,7 @@ def _selftest():
     from capstone import CS_ARCH_MIPS, CS_MODE_LITTLE_ENDIAN, CS_MODE_MIPS32, Cs
 
     md = Cs(CS_ARCH_MIPS, CS_MODE_MIPS32 | CS_MODE_LITTLE_ENDIAN)
-    for name, blob in (("josa", josa), ("stub", stub), ("prewrap stub", pre)):
+    for name, blob in (("josa", josa), ("stub", stub), ("prewrap", pre), ("drawstr", draw)):
         n = sum(1 for _ in md.disasm(blob, 0))
         assert n == len(blob) // 4, f"{name}: capstone {n}/{len(blob) // 4} — 미디코드 명령"
         print(f"  ✓ capstone {name}: {n}/{len(blob) // 4} instr")

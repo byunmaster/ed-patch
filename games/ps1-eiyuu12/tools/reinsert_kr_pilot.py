@@ -73,7 +73,12 @@ HANGUL = re.compile(r"[가-힣]")
 # 센티널 1글자로 들고 다니다가 encode_ext에서 %s 바이트로 방출한다. 공백으로 지우면
 # 이름이 사라지고("이름은 .") %s 개수가 줄어 씬이 정지한다(2026-07-23).
 NAME_SENT = "\x1a"
-NAME_SLOTS = 4.0  # %s 자리 폭 추정(세리오스=4) — 조판 폭 계산용
+# %s 자리 폭 추정 — 조판 폭 계산용. 4.0(세리오스=최장)은 **훅 이전 시대의 보수적 값**이라
+# 짧은 이름에서 항상 불필요한 개행을 만들었다(파티 합류 "류난이 동료가 ⏎ 되었습니다."가
+# 정발에선 한 줄 — 유저 DOSBox 대조 07-29). 런타임 조사 훅이 세 경로 모두에서 병기를
+# 줄이게 된 지금은 3.0이 현실적이다. 넘치면 엔진 글자단위 개행으로 degrade될 뿐이고
+# (정발에도 있던 현상), 지금처럼 **항상** 한 줄을 잃는 것보다 낫다.
+NAME_SLOTS = 3.0
 # 조사 병기를 **원자 단위**로 조판하기 위한 마커(STOCK 보물상자). 한 토큰이라 줄 경계에서
 # 안 쪼개진다(훅의 한 줄 스캔 보장). ⚠ 폭은 **병기 전체("은(는)"·"이(가)")** 기준(이름+3) —
 # 엔진의 박스 줄배치는 조사훅 해결 **전**에 일어나 버퍼의 병기 전체(3슬롯)로 배치하므로,
@@ -566,6 +571,34 @@ def cell_w(ch):
 HARD_NL = "\ue000"
 
 
+# 조사 병기 — 조판 폭 계산에서는 **런타임 해결 후 폭**(조사 1글자)으로 세어야 한다.
+# 런타임 조사 훅(patch_josa_hook)이 표시 직전에 `이(가)` → `이`로 줄이므로, 빌드 시점에
+# 3슬롯으로 세면 줄이 이르게 갈린 채 굳는다 — 훅이 폭을 되돌려줘도 **하드 개행은 남는다**
+# (파티 합류 "류난이 동료가 ⏎ 되었습니다." 실측, 유저 QA 07-29. 조사 수정 전후로 끊긴
+# 위치가 안 움직인 것이 폭이 아니라 데이터의 0x0A라는 증거였다).
+# 괄호 안엔 공백이 없어 줄바꿈이 그 안에서 일어나지 않으므로, **1슬롯 자리표시자로 접어
+# 조판하고 되돌리면** 줄 배치가 그대로 보존된다.
+_JOSA_PAIR = re.compile(r"은\(는\)|이\(가\)|을\(를\)")
+JOSA_FOLD = "\ue002"  # 병기 1개 = 해결 후 조사 1글자(cell_w에서 1.0슬롯)
+
+
+def _fold_josa(text):
+    """병기를 1슬롯 자리표시자로 접는다. 반환: (접힌 텍스트, 원문 목록 in-order)."""
+    orig = _JOSA_PAIR.findall(text)
+    return (_JOSA_PAIR.sub(JOSA_FOLD, text), orig) if orig else (text, [])
+
+
+def _unfold_josa(pages, orig):
+    """자리표시자를 원래 병기로 복원 — 조판은 문자 순서를 보존하므로 순서대로 매핑된다."""
+    if not orig:
+        return pages
+    it = iter(orig)
+    return [[_JOSA_FOLD_RE.sub(lambda _m: next(it), ln) for ln in pg] for pg in pages]
+
+
+_JOSA_FOLD_RE = re.compile(JOSA_FOLD)
+
+
 def wrap_page(text, width=WRAP, target=None, max_lines=None):
     """공통 줄바꿈 유틸(shared/text/krwrap.wrap_pages): 원문 {n} 줄바꿈을 존중하고
     폭(WRAP) 넘는 줄만 재줄바꿈 + 금칙 + 짧은조각 병합, 창(3줄)은 문장 그룹 단위로
@@ -575,17 +608,21 @@ def wrap_page(text, width=WRAP, target=None, max_lines=None):
     HARD_NL 마커가 있으면 하드개행으로 변환하고 protect_hard를 켠다(개별 개행 override)."""
     protect = HARD_NL in text
     text = text.replace(HARD_NL, "\n")
-    return kr_wrap_pages(
-        text,
-        width,
-        max_lines or LINES_PER_PAGE,
-        target_pages=target,  # 창 수 계약: 지정 시 정확히 target개 창으로 분배
-        break_char="\n",
-        cell_width=cell_w,
-        strip_before=".,!?",
-        strip_after="",  # 부호 뒤 공백 유지 — 반각 부호 전환으로 공백 제거 규칙 폐지(07-19, 유저 판정)
-        protect_hard=protect,
-        det_orphan=True,  # 줄 끝 홀로 남은 지시관형사(이/그/저)를 다음 줄 명사로 내림(재배치, 바이트 불변)
+    text, folded = _fold_josa(text)  # 병기 → 1슬롯(런타임 훅 해결 후 폭)
+    return _unfold_josa(
+        kr_wrap_pages(
+            text,
+            width,
+            max_lines or LINES_PER_PAGE,
+            target_pages=target,  # 창 수 계약: 지정 시 정확히 target개 창으로 분배
+            break_char="\n",
+            cell_width=cell_w,
+            strip_before=".,!?",
+            strip_after="",  # 부호 뒤 공백 유지 — 반각 부호 전환으로 공백 제거 규칙 폐지(07-19, 유저 판정)
+            protect_hard=protect,
+            det_orphan=True,  # 줄 끝 홀로 남은 지시관형사(이/그/저)를 다음 줄 명사로 내림
+        ),
+        folded,
     )
 
 
