@@ -11,7 +11,6 @@ seg_index 미지정 시 세그먼트 목록만 출력. 코드 세그먼트(flags
 import sys
 
 from capstone import CS_ARCH_X86, CS_MODE_16, Cs
-
 from ne_info import find_ne, parse_ne
 
 

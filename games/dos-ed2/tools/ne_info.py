@@ -92,6 +92,7 @@ def parse_ne(b: bytes, ne: int) -> dict:
             dict(idx=i + 1, file_off=so << shift, length=sl or 0x10000 if so else sl, flags=sf)
         )
     h["segments"] = segs
+
     # resident-name table (exports 이름): [len][name][ordinal(2)] ... len==0 종료
     def read_names(off):
         names = []
