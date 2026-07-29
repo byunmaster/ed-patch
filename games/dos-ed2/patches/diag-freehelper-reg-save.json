@@ -1,0 +1,22 @@
+{
+  "name": "후보 수정: 모듈 해제 헬퍼의 SS:SP 저장을 전역 슬롯에서 레지스터로",
+  "description": "seg4의 비공개 함수 5개(0x0a49 Scenario_Load, 0x0bab Scenario_GetFuncPtr, 0x0c64 모듈해제, 0x0c9d Monster_Load, 0x0e4e)가 **[0x2f7c]/[0x2f7e] 단 한 쌍의 전역 슬롯**을 공유하며 각자 전용 스택(seg12:0x2b7b)으로 갈아탄다. 재진입이 일어나면 바깥쪽 함수의 SS:SP가 파괴되고, 복원 직후의 retf가 엉뚱한 프레임으로 복귀한다 — 폴트 지점(0x0c9c)이 정확히 거기다. 해제 헬퍼는 FreeLibrary를 부르고, FreeLibrary는 해제 대상 DLL의 WEP를 부르며, WEP는 또 FreeLibrary를 부른다(DLL seg1:0x00dd) — 재진입 경로가 실재한다. 이 패치는 해제 헬퍼가 전역 슬롯을 아예 쓰지 않게 한다: 옛 SS는 DI에, 옛 SP는 BP(프롤로그의 mov bp,sp)에 담아 복원한다. DI/BP는 16비트 Windows 호출 규약상 KERNEL API와 WEP가 보존한다(F_501 WEP도 push di/pop di 확인). 호출자 쪽 DI 파괴는 무해하다 — 유일한 게임 내 호출자 Scenario_Load(0x0a4d)는 프롤로그 직후에 부르므로 DI가 live 하지 않고, 그 위 seg86:0x594c 래퍼가 pushaw/popaw로 감싼다. 크래시가 사라지면 원인은 전역 슬롯 공유(재진입)로 확정된다. 해당 구간에 relocation이 없음을 확인했다(0x0c72 seg16 / 0x0c86 ptr32는 건드리지 않는다).",
+  "issue": 1,
+  "kind": "candidate-fix",
+  "patches": [
+    {
+      "file": "ED2MAIN.EXE",
+      "offset": "0x10469",
+      "from": "89267c2f8c167e2f",
+      "to": "8cd7909090909090",
+      "note": "seg4:0x0c69  mov [0x2f7c],sp / mov [0x2f7e],ss -> mov di,ss + nop x6 (전역 저장 제거, 옛 SS는 DI로)"
+    },
+    {
+      "file": "ED2MAIN.EXE",
+      "offset": "0x10491",
+      "from": "8b267c2f8e167e2f",
+      "to": "8ed78be590909090",
+      "note": "seg4:0x0c91  mov sp,[0x2f7c] / mov ss,[0x2f7e] -> mov ss,di / mov sp,bp + nop x4 (전역 복원 제거)"
+    }
+  ]
+}

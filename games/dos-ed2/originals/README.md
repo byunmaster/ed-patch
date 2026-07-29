@@ -4,7 +4,7 @@
 
 ```
 originals/
-  kr/ed2/          만트라 DOS 정발판 (ED2MAIN.EXE, SCENA/*.DLL, MAP/, BGM/ ...)
+  ED2/             만트라 DOS 정발판 (ED2MAIN.EXE, SCENA/*.DLL, MAP/, BGM/ ...)
   pc98-eiyuu2/     PC98 일판 원본 (Dragon Slayer: Eiyuu Densetsu II) — 동작 레퍼런스
                    HDI 하드디스크 이미지. PC98 파티션 구조라 별도 파서/툴로 추출.
 ```
@@ -15,7 +15,7 @@ originals/
 심볼릭 링크로 재사용할 수 있다:
 
 ```bash
-ln -s ../../eiyuu-densetsu-kr/originals/kr/ed2            originals/kr/ed2
+ln -s ../../eiyuu-densetsu-kr/originals/kr/ed2            originals/ED2
 ln -s ../../eiyuu-densetsu-kr/originals/pc98-eiyyu2       originals/pc98-eiyuu2
 ```
 

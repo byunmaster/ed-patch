@@ -1,0 +1,50 @@
+{
+  "name": "진단용: 시나리오 로드 경로 3개의 전용 스택 전환 제거",
+  "description": "seg4의 Scenario_Load(0x0a49) / Scenario_GetFuncPtr(0x0bab) / 모듈해제 헬퍼(0x0c64)가 셋 다 똑같은 관용구로 SS:SP를 [0x2f7c]/[0x2f7e]에 저장하고 **seg12:0x2b7b** 전용 스택으로 갈아탄다. 그런데 seg12는 ED2MAIN의 DGROUP(autodata)이고 헤더상 진짜 스택 영역은 0xE9F0~0xFDF0(data 0xd9f0 + heap 0x1000 + stack 0x1400 = limit 0xFDF0, 실측 Limit=FDF0과 일치)이다. 즉 0x2b7b는 스택이 아니라 **전역 데이터 한복판**이고, 거기서 아래로 자라면 [0x26ac](GetFuncPtr 인덱스)·[0x0bfa](모듈 핸들) 같은 엔진 전역을 차례로 짓밟는다. 실측 폴트 시 SP=0x0F98 — 정상 스택 영역이 아니라 0x2b7b에서 7139바이트 아래다. 3차에 헬퍼 하나만 전환을 뺐을 때 0x0C9C 폴트가 사라지고 Scenario_GetFuncPtr 실패로 넘어간 것도 이걸로 설명된다(그때 Scenario_Load/GetFuncPtr는 여전히 0x2b7b를 썼다). 이 패치는 셋 다 전환·복원을 들어내 호출자 스택을 그대로 쓰게 한다. 전역 저장(89 26 7c 2f / 8c 16 7e 2f)은 다른 코드와의 정합성을 위해 남겨 둔다. mov ax,<seg12>(b8 ff ff)에는 relocation이 붙어 있어 건드리지 않는다 — ax가 오염되는 건 원래 동작과 동일하다.",
+  "issue": 1,
+  "kind": "diagnostic",
+  "patches": [
+    {
+      "file": "ED2MAIN.EXE",
+      "offset": "0x1026f",
+      "from": "8ed0bc7b2b",
+      "to": "9090909090",
+      "note": "seg4:0x0a6f  Scenario_Load  mov ss,ax / mov sp,0x2b7b -> nop x5"
+    },
+    {
+      "file": "ED2MAIN.EXE",
+      "offset": "0x1039f",
+      "from": "8b267c2f8e167e2f",
+      "to": "9090909090909090",
+      "note": "seg4:0x0b9f  Scenario_Load  스택 복원 제거"
+    },
+    {
+      "file": "ED2MAIN.EXE",
+      "offset": "0x103ce",
+      "from": "8ed0bc7b2b",
+      "to": "9090909090",
+      "note": "seg4:0x0bce  Scenario_GetFuncPtr  mov ss,ax / mov sp,0x2b7b -> nop x5"
+    },
+    {
+      "file": "ED2MAIN.EXE",
+      "offset": "0x10458",
+      "from": "8b267c2f8e167e2f",
+      "to": "9090909090909090",
+      "note": "seg4:0x0c58  Scenario_GetFuncPtr  스택 복원 제거"
+    },
+    {
+      "file": "ED2MAIN.EXE",
+      "offset": "0x10474",
+      "from": "8ed0bc7b2b",
+      "to": "9090909090",
+      "note": "seg4:0x0c74  모듈 해제 헬퍼  mov ss,ax / mov sp,0x2b7b -> nop x5"
+    },
+    {
+      "file": "ED2MAIN.EXE",
+      "offset": "0x10491",
+      "from": "8b267c2f8e167e2f",
+      "to": "9090909090909090",
+      "note": "seg4:0x0c91  모듈 해제 헬퍼  스택 복원 제거"
+    }
+  ]
+}

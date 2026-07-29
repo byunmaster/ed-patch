@@ -1,12 +1,12 @@
-# 영전2 만트라 DOS판 크래시 재현용 DOSBox-X 설정 (템플릿)
-# @ROOT@ 는 repro/run.sh 가 리포지토리 절대경로로 치환한다. 직접 편집하지 말 것.
+# 영전2 만트라 DOS판 실행용 DOSBox-X 설정 (템플릿)
+# @ROOT@ 는 scripts/dosbox.sh 가 리포지토리 절대경로로 치환한다. 직접 편집하지 말 것.
 #
 # ED2.CNF 의 DataDir = F:\ed2\ed2 이므로 work/dosbox 를 F: 로 마운트하고
 # 게임 사본은 work/dosbox/ed2/ed2 에 둔다.
 
 [sdl]
 fullscreen=false
-windowresolution=1280x800
+windowresolution=800x500
 # opengl 이라야 windowresolution 스케일링이 먹는다
 output=opengl
 # macOS SDL1에서 스캔코드 모드를 쓰면 키 입력이 통째로 죽는다.

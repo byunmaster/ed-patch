@@ -1,9 +1,9 @@
 #!/bin/sh
-# 영전2 만트라 DOS판을 DOSBox-X로 실행한다 (크래시 재현용).
+# 영전2 만트라 DOS판을 DOSBox-X로 실행한다 (패치 검증·크래시 재현용).
 #
-#   repro/run.sh              평범하게 실행  ※ 실제로는 --app 을 권장
-#   repro/run.sh --app        앱 번들로 실행 — macOS에서 키보드가 안정적이다
-#   repro/run.sh --debug      DOSBox-X 디버거 (-break-start). docs/03-debugger.md 참조
+#   scripts/dosbox.sh              평범하게 실행  ※ 실제로는 --app 을 권장
+#   scripts/dosbox.sh --app        앱 번들로 실행 — macOS에서 키보드가 안정적이다
+#   scripts/dosbox.sh --debug      DOSBox-X 디버거 (-break-start). docs/03-debugger.md 참조
 #
 # 처음 실행하면 originals/ED2 를 work/dosbox/ed2/ed2 로 복사한다(쓰기 가능 사본).
 # originals/ 는 절대 건드리지 않는다.
@@ -35,7 +35,7 @@ if [ ! -f "$GAME/ED2MAIN.EXE" ]; then
 fi
 
 mkdir -p "$WORK/capture"
-sed "s|@ROOT@|$ROOT|g" "$ROOT/repro/ed2.conf.tmpl" > "$WORK/ed2.conf"
+sed "s|@ROOT@|$ROOT|g" "$ROOT/dosbox/ed2.conf.tmpl" > "$WORK/ed2.conf"
 rm -f "$WORK/ed2.log"
 
 # -log-con: DOS 콘솔 출력을 로그로 남긴다. 게임이 그래픽 모드라 화면에선 안 보이는
