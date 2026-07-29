@@ -165,6 +165,11 @@ def wrap(
     if cur:
         lines.append(cur)
 
+    # 균형 배분: 줄 수를 그대로 두고 들쭉날쭉함을 최소화한다(그리디는 앞줄만 꽉 채운다).
+    bal = _balance(words, len(lines), width, cell_width, no_head, no_tail)
+    if bal is not None:
+        lines = bal
+
     # 위도우 방지: 마지막 줄이 짧은 한 어절만이면 앞 줄에서 하나 내림
     if avoid_widow and len(lines) >= 2:
         last, prev = lines[-1], lines[-2]
@@ -172,6 +177,57 @@ def wrap(
             lines[-1] = [prev.pop()] + last
 
     return [_strip_spacing(" ".join(wds), strip_after) for wds in lines]
+
+
+def _balance(words, n_lines, width, cell_width, no_head, no_tail):
+    """어절 목록을 **정확히 n_lines줄**로 다시 나눠 들쭉날쭉함(raggedness)을 최소화한다.
+
+    그리디 줄바꿈은 앞줄을 꽉 채우고 뒤로 갈수록 짧아져 `…계시다는 것을`(27) /
+    `…아크담을`(24) / `무찌를 날도`(11) / `멀지 않았사옵니다.`(18)처럼 튄다. 같은 줄 수로
+    22/20/20/18처럼 고르게 나누면 훨씬 읽기 좋다(유저 QA 2026-07-30, 전 대사 공통 현상).
+
+    **줄 수가 그대로라 글자·공백·개행 총량이 안 변한다 = 바이트 중립**(메모리 영향 0).
+    비용은 줄마다 (여백)^2 합 — 마지막 줄도 포함해 전체를 고르게 만든다.
+    금칙(no_head/no_tail)은 그리디와 동일하게 지킨다. 해가 없으면 None(그리디 유지)."""
+    m = len(words)
+    if n_lines < 2 or m < n_lines:
+        return None
+    w = [text_width(x, cell_width) for x in words]
+    sp = text_width(" ", cell_width)
+
+    def line_w(i, j):  # words[i:j] 한 줄 폭
+        return sum(w[i:j]) + sp * (j - i - 1)
+
+    def ok(i, j):  # 폭·금칙 검사
+        if line_w(i, j) > width:
+            return False
+        if i > 0 and words[i][0] in no_head:  # 금칙 문자로 줄 시작 금지
+            return False
+        if j < m and words[j - 1][-1] in no_tail:  # 여는 괄호로 줄 끝 금지
+            return False
+        return True
+
+    INF = float("inf")
+    dp = [[INF] * (m + 1) for _ in range(n_lines + 1)]
+    back = [[-1] * (m + 1) for _ in range(n_lines + 1)]
+    dp[0][0] = 0.0
+    for k in range(1, n_lines + 1):
+        for j in range(1, m + 1):
+            for i in range(k - 1, j):
+                if dp[k - 1][i] == INF or not ok(i, j):
+                    continue
+                cost = dp[k - 1][i] + (width - line_w(i, j)) ** 2
+                if cost < dp[k][j]:
+                    dp[k][j] = cost
+                    back[k][j] = i
+    if dp[n_lines][m] == INF:
+        return None
+    out, j = [], m
+    for k in range(n_lines, 0, -1):
+        i = back[k][j]
+        out.append(words[i:j])
+        j = i
+    return out[::-1]
 
 
 def wrap_hard(
@@ -466,6 +522,7 @@ def wrap_pages(
         pages = _pack_groups(groups, lines_per_page)
     if det_orphan:
         _pull_det_orphans(pages, width, cell_width)
+    _pull_tail_orphans(pages, width, cell_width)
     return [[_strip_spacing(ln, strip_after) for ln in pg] for pg in pages]
 
 
@@ -473,6 +530,32 @@ def wrap_pages(
 # 붙인다. 재배치일 뿐이라 글자·줄 수·바이트 불변(메모리 중립). 줄 끝 홀로 온 '이'는 지시관형사
 # 확정(주격조사 '이'는 앞말에 붙어 홀로 안 온다) → 판정 안전. 다음 줄 폭 초과 시엔 이동 안 함.
 _DET_ORPHAN = ("이", "그", "저")
+
+
+def _pull_tail_orphans(pages, width, cell_width):
+    """창의 **마지막 줄에 어절 하나만 남는 고아**를 없앤다 — 앞 줄의 끝 어절을 내려 붙인다.
+
+    그리디 줄바꿈은 `…무찌를 날도 멀지` / `않았사옵니다.`처럼 서술어만 홀로 떨어뜨린다
+    (유저 QA 2026-07-30). 앞 줄에서 한 어절을 내려 `…무찌를 날도` / `멀지 않았사옵니다.`로
+    만든다. **재배치일 뿐이라 글자·줄 수·바이트 불변**(공백↔개행 자리만 바뀜, 메모리 중립).
+    ⚠ 내린 뒤 폭을 넘거나 앞 줄이 한 어절만 남으면 이동하지 않는다."""
+    for pg in pages:
+        if len(pg) < 2:
+            continue
+        last, prev = pg[-1].split(), pg[-2].split()
+        if len(last) != 1 or len(prev) < 2:
+            continue
+        if prev[-2] in _DET_ORPHAN:  # 내리면 지시관형사가 줄 끝 고아가 된다 — 그대로 둔다
+            continue
+        # 앞 줄이 한 어절만 남을 땐, 그 어절이 짧으면 오히려 더 어색하다
+        # (`폐하를` 홀로 = 나쁨 / `무찌르기에는` 홀로 = 무방). 4음절 이상만 허용.
+        if len(prev) == 2 and len(prev[0]) < 4:
+            continue
+        cand = prev[-1] + " " + pg[-1]
+        if text_width(cand, cell_width) <= width:
+            pg[-2] = " ".join(prev[:-1])
+            pg[-1] = cand
+    return pages
 
 
 def _pull_det_orphans(pages, width, cell_width):

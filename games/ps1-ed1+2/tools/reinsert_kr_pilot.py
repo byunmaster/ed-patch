@@ -73,6 +73,10 @@ HANGUL = re.compile(r"[가-힣]")
 # 센티널 1글자로 들고 다니다가 encode_ext에서 %s 바이트로 방출한다. 공백으로 지우면
 # 이름이 사라지고("이름은 .") %s 개수가 줄어 씬이 정지한다(2026-07-23).
 NAME_SENT = "\x1a"
+# %d(런타임 수치) 자리 센티널 — %s의 NAME_SENT와 같은 이유. 정발 텍스트의 DOS 수치 매크로
+# (`\x156\x0B` 등)를 이 센티널로 바꿔두면 encode_ext가 %d 바이트로 방출해 서식 계약이 지켜진다
+# (그냥 "%d" 문자열을 쓰면 encode_ext가 ％(전각)로 바꿔 fmt_drop — jp302 실측 2026-07-30).
+NUM_SENT = "\x1b"
 # %s 자리 폭 추정 — 조판 폭 계산용. 4.0(세리오스=최장)은 **훅 이전 시대의 보수적 값**이라
 # 짧은 이름에서 항상 불필요한 개행을 만들었다(파티 합류 "류난이 동료가 ⏎ 되었습니다."가
 # 정발에선 한 줄 — 유저 DOSBox 대조 07-29). 런타임 조사 훅이 세 경로 모두에서 병기를
@@ -97,6 +101,8 @@ def encode_ext(text):
     for ch in text:
         if ch == NAME_SENT:  # 이름 주입 자리 → %s 방출
             out += PS
+        elif ch == NUM_SENT:  # 수치 주입 자리 → %d 방출
+            out += PD
         elif ch == " ":
             out.append(0x20)
         elif ch in HALF_PUNCT or ch.isascii() and ch.isalnum():
@@ -213,6 +219,10 @@ def jp_windows(text):
 # 코퍼스에 존재=붙임(214). **기본값 띄움**, 합친 형태가 어휘에 있으면 붙임.
 _VOCAB = None
 _TOK_STRIP = ".,!?\"'()「」…·"
+# {n}/{p}/{spk}·\xNN 같은 마크업은 **조회용 토큰에서만** 제거한다. 안 지우면 페이지 경계에
+# 걸린 어절이 `이죠.{p}`가 돼 join/split 사전 조회가 통째로 빗나간다(`말 이죠` — 유저 QA
+# 2026-07-30). 방출 텍스트는 그대로 두고 판정만 정확해진다.
+_TOK_MARKUP = re.compile(r"\{[^}]*\}|\\x[0-9A-Fa-f]{2}")
 # 어절 첫머리에 올 수 없는 어미·조사 조각 — 이걸로 시작하는 "단어"는 앞 어절의 꼬리다.
 _ENDING_FRAGS = {
     "소서",
@@ -349,8 +359,8 @@ def resolve_dos_breaks(t):
     out = parts[0]
     for nxt in parts[1:]:
         pa, pb = out.split(), nxt.split()
-        a = pa[-1].strip(_TOK_STRIP) if pa else ""
-        b = pb[0].strip(_TOK_STRIP) if pb else ""
+        a = _TOK_MARKUP.sub("", pa[-1]).strip(_TOK_STRIP) if pa else ""
+        b = _TOK_MARKUP.sub("", pb[0]).strip(_TOK_STRIP) if pb else ""
         # split 예외는 vocab보다 우선 — 합친 형태가 코퍼스에 있어도 강제로 띄운다
         # (지시관형사 '이'가 조사로 오판돼 "왕자님이"로 붙는 걸 "왕자님 이 비밀탈출구"로).
         # 그 외: 합친 형태가 어절 사전에 있거나, 뒤 조각이 어절 첫머리에 올 수 없는 어미면
@@ -558,6 +568,8 @@ HALF_PUNCT = ".,!?()"
 
 def cell_w(ch):
     """엔진 슬롯 폭 — encode_ext와 1:1 (1바이트=0.5, 2바이트 전각=1)."""
+    if ch == NUM_SENT:
+        return 1.0  # %d = 보통 1~2자리(반각) ≈ 1슬롯
     if ch == NAME_SENT:
         return NAME_SLOTS  # %s는 런타임 이름 — 평균 길이로 근사
     if ch in (JOSA_NAME, JOSA_ITEM):
@@ -706,6 +718,19 @@ def template_windows(tpl):
     return out
 
 
+def _tpl_name_str(jp_bytes, speaker, first):
+    """_tpl_name과 같은 판정의 **문자열** 결과 — 접힌 이름창의 폭 계산에 쓴다."""
+    try:
+        kr = _speaker_map().get(jp_bytes.decode("cp932"))
+    except UnicodeDecodeError:
+        kr = None
+    if kr:
+        return kr
+    if first and speaker:
+        return speaker
+    raise SkipBlock("이름창 화자 미해결")
+
+
 def _tpl_name(jp_bytes, speaker, first):
     """템플릿 이름창의 KR 이름 바이트. 화자맵(JP 이름→정발명) 우선 — 다중 화자 블록에서
     두 번째 화자를 정렬 화자로 덮어쓰면 오표기가 되므로, 정렬 화자 폴백은 **첫 이름창만**."""
@@ -731,9 +756,38 @@ def _tpl_name(jp_bytes, speaker, first):
 #  ② SCN_ARG_PATCHES — 콜사이트 즉치(0x83/0x5C)를 0x20(공백)으로 바꿔 꼬리 %c%c가
 #     공백 2개(비가시)를 그리게 한다. **해당 블록이 실제 번역될 때만 적용**(JP 유지 시 원본).
 INJECT_PAIRS = {}  # eid → [(off, bytes)] — load_translations가 씬마다 재구축
+# 문장 슬라이스(`"id#p.s"`)로 만든 **연속 창 조각**의 eid — 씬 단위(load_translations 재구축).
+# `%c` 종단이 없는 조각은 다음 블록이 **같은 줄에 이어붙으므로**, 조각 끝에 개행을 보장하지
+# 않으면 경계에서 단어가 쪼개진다(`…입니다. 이 아이` / `는 그 손녀` — 유저 QA 2026-07-30).
+TRAIL_NL = set()
+# 이름창 접기: {eid: {이름창 인덱스: 조사}} — 씬 단위(load_translations 재구축).
+# JP `%c세리오스%c\n가 リーダー…`는 이름을 **헤더 줄**로 띄우는데, 정발은 한 줄로
+# `세리오스가 리더가 되었습니다.`로 뽑는다(유저 정발 대조 2026-07-30). 이름창에 조사+공백을
+# 붙이고 **뒤따르는 개행을 없애면** 같은 줄로 이어진다(%c 개수·순서는 그대로 = 구조 계약 유지).
+FOLD_NAME = {}
+# 블록 전체 색 지정: {eid: (on, off)} — 씬 단위(load_translations 재구축).
+# 색코드를 **텍스트 바이트로 직접** 박는다(`%c` 인자를 안 늘리므로 구조 계약 불변).
+# 원본도 같은 방식을 쓴다(전 씬 블록 텍스트 안 단독 제어바이트 실측: 0x03 15회·0x02 22회 등).
+# 용도: 정발이 색으로 구분하는 **해설(내레이션) = 초록(3)**을 이식(jp303 유저 QA 2026-07-30).
+COLOR_WRAP = {}
 SCN_ARG_PATCHES = {
     # eid 20 개구멍 Q&A: li t2,0x83 / li t0,0x5C → 0x20 (RAM 0x8017D920/24)
     ("ED1SCN1", 20): [(0x13920, 0x240A0020), (0x13924, 0x24080020)],
+    # eid 280 리더 교대: 콜사이트 인자열 `(2,1,8,3,1,0xC)`의 4·5번째 색코드를 바꾼다
+    # (RAM 0x80185728/30). **색코드 실측: 2=주황(화자 이름) · 3=초록 · 1=흰색 복귀.**
+    # 원판은 세리오스=초록·본문=흰색인데, 유저 지정(2026-07-30)에 따라
+    # **세리오스=주황(2) · 뒷문장=초록(3)**으로 바꾼다. 인자 개수·순서는 불변.
+    ("ED1SCN1", 280): [(0x1B728, 0x24020002), (0x1B730, 0x24020003)],
+    # eid 287 크루즈 마을 여자(베르가 광산 괴물 경고): **원판 fall-through 버그 복구**.
+    # 원본은 케이스 287이 종료 점프 없이 케이스 288로 흘러들어가고, 두 sprintf가 **같은
+    # 버퍼(sp+0x20)**를 써서 288(남편 대사)이 287을 덮어쓴다 → 287은 화면에 절대 안 나온다
+    # (BP 트레이스로 실증: 말 한 번에 0x8018602C·0x80186048 연속 히트, 2026-07-30).
+    # 정발(DOS)은 이 대사가 나오므로 "정발에 있는 건 다 이식" 방침에 따라 유저 승인 후 복구.
+    # 자기 sprintf를 버리고 **공용 꼬리(0x80186478: a2=2·a3=1·sprintf→0x801865B0)로 점프**한다
+    # — a0/a1은 앞 3워드가 이미 세팅, 3번째 %c 인자(6=일반 종단)는 지연슬롯에서 넣는다.
+    #   0x80186030 addiu v0,zero,6 / 0x80186034 j 0x80186478 / 0x80186038 sw v0,0x10(sp)
+    # ⚠ 안전 확인: 0x80186030~38로 들어오는 j/jal·점프테이블 워드가 전 오버레이에 0건.
+    ("ED1SCN1", 287): [(0x1C030, 0x24020006), (0x1C034, 0x0806191E), (0x1C038, 0xAFA20010)],
 }
 
 # ── 이름 헤더 스텁 — 원판이 이름 없이 띄우는 콜사이트에 헤더 사본을 물린다 ──
@@ -1002,7 +1056,7 @@ def _tpl_punct_only(seg):
         return False
 
 
-def build_from_template(raw, speaker, pages, max_lines=None):
+def build_from_template(raw, speaker, pages, max_lines=None, fold=None):
     """JP 골격을 그대로 두고 본문 창에 정발 문장을 채워 블록을 만든다.
 
     제어 토큰(%c/%s/%d)은 **바이트 그대로** 방출하므로 구조 충실도가 100%가 되고,
@@ -1044,16 +1098,43 @@ def build_from_template(raw, speaker, pages, max_lines=None):
         return c[0]
 
     def _after_name_inject(k):
-        """직전 창이 인라인 %s 주입 창(텍스트 없는 body) — 이 창의 첫 줄은 주입된 이름과
-        같은 줄에 이어지므로 이름 폭을 조판 계산에 넣어야 한다(동료 합류 온점 고아 실측 07-26)."""
-        return (
-            k > 0
-            and wins[k - 1][0] == "body"
-            and any(t[0] == "s" for t in wins[k - 1][1])
-            and not any(t[0] == "t" for t in wins[k - 1][1])
-        )
+        """직전 창이 인라인 이름 창 — 이 창의 첫 줄은 그 이름과 **같은 줄에 이어지므로**
+        이름 폭을 조판 계산에 넣어야 한다(동료 합류 온점 고아 실측 07-26).
+
+        두 종류 모두 해당: ①`%s` 주입 창(텍스트 없는 body) ②리터럴 이름만 든 body 창
+        (`%cロー%c라는…` — ②를 빼면 `로우라고 불리는 떠돌이옵니다` 뒤 온점만 다음 줄로
+        떨어진다, 유저 QA 2026-07-30)."""
+        if k == 0 or wins[k - 1][0] != "body":
+            return False
+        prev = wins[k - 1][1]
+        if any(t[0] == "s" for t in prev) and not any(t[0] == "t" for t in prev):
+            return True  # ① %s 주입 창
+        # ② 리터럴 이름만 든 창(텍스트 1개뿐 + 개행 없음) — 이름창처럼 다음 창에 이어진다
+        return len(prev) == 1 and prev[0][0] == "t"
+
+    # 접은 이름창 뒤 본문 창은 **이름+조사가 첫 줄을 함께 쓴다** — 폭 계산에 넣지 않으면
+    # 엔진 자동 개행이 꼬리 부호만 다음 줄로 꺾는다(`…되었습니다` / `.`).
+    fold_prefix = {}
+    if fold:
+        ni = 0
+        for k, (kind, seg) in enumerate(wins):
+            if kind != "name":
+                continue
+            if ni in fold:
+                for t in seg:
+                    if t[0] == "t":
+                        fold_prefix[k + 1] = (_tpl_name_str(t[1], speaker, ni == 0), fold[ni])
+            ni += 1
 
     def fill_page(k, pg):
+        if k in fold_prefix:
+            nm, josa = fold_prefix[k]
+            # 이름은 앞 창(자기 색)에 두고 **조사는 본문 쪽에 남긴다** — 조사까지 이름 창에
+            # 넣으면 이름 색으로 물든다(`세리오스가` 전체가 초록 — 유저 QA 2026-07-30).
+            lines = one_page(nm + josa + " " + pg)
+            if lines[0].startswith(nm):
+                lines[0] = lines[0][len(nm) :]
+            return lines
         if _after_name_inject(k):
             lines = one_page(NAME_SENT + pg)  # 이름 폭(NAME_SLOTS)을 첫 줄에 반영
             lines[0] = lines[0].lstrip(NAME_SENT).lstrip()
@@ -1108,17 +1189,21 @@ def build_from_template(raw, speaker, pages, max_lines=None):
             raise SkipBlock(f"창 분배 실패({len(cl)}!={len(fill)})")  # 용량 초과 = 정발 문장이 김
         chunks = dict(zip(fill, cl, strict=True))
 
-    parts, name_i = [], 0
+    parts, name_i, folded_prev = [], 0, False
     for k, (kind, seg) in enumerate(wins):
         b = bytearray()
         if kind == "body" and k in chunks:
             # 이름 헤더 뒤 개행만 골격으로 유지(이름이 창의 1줄 점유). 이름 없는 창의
             # 선두 개행은 빈 첫 줄로 렌더된다(eid 30 "알았어" 실측, 유저 QA 07-24) → 제거.
-            if k in nl_wins:
+            # 접은 이름창 뒤에서는 개행을 없앤다 — 같은 줄로 이어져야 정발 조판이 된다.
+            if folded_prev:
+                pass
+            elif k in nl_wins:
                 b += b"\x0a"
             elif seg and seg[0][0] == "nl" and k > 0 and wins[k - 1][0] == "name":
                 b += b"\x0a"
             b += encode_ext("\n".join(chunks[k]))
+            folded_prev = False
             # 다음 창이 인라인 %s 주입 창(텍스트 없는 body)이면 이름 앞 공백 —
             # 한국어는 "제 이름은 류난"처럼 띄어야 한다(JP는 무공백, eid 1164 실측 07-26)
             if (
@@ -1139,7 +1224,11 @@ def build_from_template(raw, speaker, pages, max_lines=None):
                 elif t[0] == "t":
                     b += _tpl_name(t[1], speaker, name_i == 0) if kind == "name" else t[1]
             if kind == "name":
+                if fold and name_i in fold:  # 이름창 접기: 뒤 개행을 없애 다음 창과 한 줄로
+                    folded_prev = True
                 name_i += 1
+            else:
+                folded_prev = False
         parts.append(bytes(b))
     blk = MC.join(parts)
     pad = 4 - len(blk) % 4 or 4
@@ -1248,6 +1337,24 @@ def compute_anchors(data, text_end):
     return merged
 
 
+def restore_tail_nl(cand, raw):
+    """원본이 `\\n%c`로 끝나면 재조립본에도 그 **꼬리 0x0A**를 복원한다.
+
+    구조 계약은 `%c`/`%s`/`%d` 개수만 보고 **0x0A는 안 본다** — 그래서 조판기가 꼬리 개행을
+    흘려도 아무 가드에 안 걸렸다(전 씬 136블록, 대부분 도구점 구매·판매/마법점/밀매상의
+    **선택 목록을 여는 프롬프트**). 관측 가능한 증상은 아직 없지만(2026-07-30 원판 A/B로
+    밀매상 빈 목록과는 무관함이 확정) 저바이트 제어코드는 흐름 제어일 수 있다는 원칙상
+    원본 골격을 그대로 유지한다. 꼬리 1바이트만 건드리므로 조판·창 배정에 영향 없음."""
+    r = raw.rstrip(b"\x00")
+    if len(r) < 3 or r[-2:] != MC or r[-3] != 0x0A:
+        return cand  # 원본이 `\n%c`로 안 끝남
+    c = cand.rstrip(b"\x00")
+    if len(c) < 2 or c[-2:] != MC or (len(c) >= 3 and c[-3] == 0x0A):
+        return cand  # 재조립본이 %c로 안 끝나거나 이미 개행이 있음
+    c = c[:-2] + b"\x0a" + MC
+    return c + b"\x00" * (-len(c) % 4 or 4)
+
+
 def build_candidate(raw, t, eid):
     """번역 후보 바이트 생성 + 구조 계약 가드. 반환 (cand, None) 또는 (None, 제외사유).
 
@@ -1282,7 +1389,7 @@ def build_candidate(raw, t, eid):
             # 100%가 되고 여분 %c·개행이 없어 바이트도 크게 준다(전 씬 -22%).
             # 용량 초과(정발 문장이 창보다 김)면 기존 재조판으로 폴백해 커버리지를 지킨다.
             try:
-                cand = build_from_template(raw_t, t[0], t[1])
+                cand = build_from_template(raw_t, t[0], t[1], fold=FOLD_NAME.get(eid))
                 from_tpl = True
                 if tails:
                     cand = reinsert_pairs(cand, tails)
@@ -1301,6 +1408,19 @@ def build_candidate(raw, t, eid):
     # **템플릿 성공 블록은 이 가드를 통과한다** — 제어 토큰을 바이트 그대로 방출하므로
     # 구조가 원본과 동일하고, 이름창도 화자맵으로 개별 번역된다(_tpl_name). 가드는
     # build_block 폴백(구조를 재생산하는 쪽)에만 필요하다.
+    if cand is not None:
+        cand = restore_tail_nl(cand, raw)
+    if cand is not None and eid in COLOR_WRAP:
+        on, off = COLOR_WRAP[eid]
+        c = cand.rstrip(b"\x00")
+        i = c.rfind(MC)  # 종단 %c 앞에 복귀색을 넣어 다음 블록에 색이 새지 않게 한다
+        c = bytes([on]) + (c[:i] + bytes([off]) + c[i:] if i >= 0 else c + bytes([off]))
+        cand = c + b"\x00" * (-len(c) % 4 or 4)
+    if cand is not None and eid in TRAIL_NL:
+        c = cand.rstrip(b"\x00")
+        if not c.endswith(MC) and not c.endswith(b"\x0a"):  # 종단 없는 연속 조각만
+            c += b"\x0a"
+            cand = c + b"\x00" * (-len(c) % 4 or 4)
     if cand is not None and not from_tpl:
         n_runs = jp_ctrl_runs(raw)
         _, inline_fmt = jp_inline_fmt_windows(raw)
@@ -1376,6 +1496,28 @@ def reflow_run(region, run, run_start, run_end, translations, excluded, fixed, l
 
 
 # ── 메인 ────────────────────────────────────────────────────────────────────
+_SENT_END = re.compile(r"[.!?]+")
+
+
+def _sentences(t):
+    """정발 페이지 텍스트를 문장 단위로 자른다(구분자는 앞 문장에 붙여 보존).
+
+    종결부호 뒤가 공백/`{n}`/끝일 때만 자른다 — `.....`(말줄임)·`8.5` 같은 중간 점은
+    통째로 한 문장에 남는다. 반환 조각을 이어붙이면 원문이 그대로 복원된다(무손실)."""
+    out, start = [], 0
+    for m in _SENT_END.finditer(t):
+        e = m.end()
+        tail = t[e:]
+        # DOS 제어코드(`\xNN`)도 경계로 본다 — 종결부호 뒤에 바로 붙어 오면 다음 발화다
+        # (`…맡기겠습니다.\x03\x09\x02\x1C`3 동료가 되었습니다.` jp316/317 실측).
+        if tail == "" or tail[0] in " 　" or tail.startswith(("{n}", "\\x")):
+            out.append(t[start:e])
+            start = e
+    if t[start:]:
+        out.append(t[start:])
+    return out
+
+
 def _load_overrides():
     """사람 검수 교정(align_overrides.json). 없으면 빈 dict."""
     path = os.path.join(os.path.dirname(OUT_DIR), "align_overrides.json")
@@ -1422,6 +1564,9 @@ def accept_pair(p):
 def load_translations(align_name, scn_name):
     """정렬 고신뢰 쌍(+ 사람 검수 오버라이드) → {jp_entry_id: (화자, 페이지들)}."""
     INJECT_PAIRS.clear()  # 씬 단위 상태 — 오버라이드 inject_pairs가 재구축
+    TRAIL_NL.clear()
+    FOLD_NAME.clear()
+    COLOR_WRAP.clear()
     align = json.load(open(os.path.join(OUT_DIR, "align", f"{align_name}.json"), encoding="utf-8"))
     jp_doc = json.load(open(os.path.join(OUT_DIR, "scn_jp", f"{scn_name}.json"), encoding="utf-8"))
     # 창 수 계약의 단위는 엔진이 실제로 세는 **raw %c 개수**다(인라인 화자 헤더의 %c 포함).
@@ -1504,12 +1649,30 @@ def load_translations(align_name, scn_name):
     applied = 0
 
     def chain_text(table, item):
-        """체인 항목 → 텍스트. int=엔트리 전체, "id#k"=그 엔트리의 k번째 {p} 페이지만.
-        (페이지 슬라이스는 정발 엔트리 경계가 JP 블록 경계와 어긋날 때 — eid 27 잔소리 서두)"""
-        base, _, pi = str(item).partition("#")
+        """체인 항목 → 텍스트. 형식: `id` | `"id#k"` | `"id#k.s"` | `"id#k.s-"` | `"id#k.s-e"`.
+
+        - `id`      = 엔트리 전체
+        - `id#k`    = k번째 `{p}` 페이지만 (정발 엔트리 경계가 JP 블록 경계와 어긋날 때 —
+                      eid 27 잔소리 서두)
+        - `id#k.s`  = 그 페이지의 **s번째 문장만** (`-`로 범위/끝까지)
+
+        문장 슬라이스는 **정발 페이지 하나가 PS1 블록 여러 개로 쪼개져 있을 때** 쓴다
+        (크루즈 아론 소개 이벤트 실측: 정발 1페이지 = PS1 2블록). 위치(문장 인덱스)로만
+        지정하므로 **정발 문안이 리포에 남지 않는다**(저작권 규칙).
+        ⚠ 이 조각들은 대개 `%c` 종단이 없는 **같은 창의 연속 조각**이라 분할 지점은
+        화면상 보이지 않는다 — 문장 경계가 JP 조각 경계와 정확히 안 맞아도 무해하다."""
+        base, _, rest = str(item).partition("#")
+        pi, _, si = rest.partition(".")
         t = kr_entry(table, int(base))["text"].removesuffix("{end}")
         if pi:
             t = t.split("{p}")[int(pi)]
+        if si:
+            sents = _sentences(t)
+            lo, dash, hi = si.partition("-")
+            a = int(lo)
+            b = (int(hi) + 1 if hi else len(sents)) if dash else a + 1
+            t = "".join(sents[a:b]).lstrip()
+            t = t.removeprefix("{n}").lstrip() if t.startswith("{n}") else t
         return t if t.endswith("{p}") else t + "{p}"
 
     for jp_id_str, ov in _load_overrides().get(scn_name, {}).items():
@@ -1520,12 +1683,20 @@ def load_translations(align_name, scn_name):
         ):  # 오배정 확정인데 올바른 짝이 정발에 없는 블록 — 정렬 쌍 제거(JP 유지)
             out.pop(int(jp_id_str), None)
             continue
+        if "color" in ov:  # 해설 등 블록 전체 색 — [on, off] 또는 on(off 기본 1=흰색)
+            c = ov["color"]
+            COLOR_WRAP[int(jp_id_str)] = tuple(c) if isinstance(c, list) else (int(c), 1)
+        if "fold_name" in ov:  # 이름창 접기 [[이름창 인덱스, 조사], …]
+            FOLD_NAME[int(jp_id_str)] = {int(i): j for i, j in ov["fold_name"]}
         if "inject_pairs" in ov:  # 주입 %c쌍 좌표(사람이 콜사이트 인자로 확정) — 상단 주석 참조
             INJECT_PAIRS[int(jp_id_str)] = [(o, bytes.fromhex(h)) for o, h in ov["inject_pairs"]]
         if "ours" in ov:
             # 정발에 대응 문장이 없는 블록의 신규 번역(우리 문안 — textmap의 ours와 같은 지위).
             entry = {"text": ov["ours"], "speaker": ov.get("speaker")}
         elif "chain" in ov:
+            # 문장 슬라이스 조각은 다음 블록이 같은 창에 이어붙으므로 꼬리 개행을 보장한다.
+            if any("." in str(it).partition("#")[2] for it in ov["chain"]):
+                TRAIL_NL.add(int(jp_id_str))
             entry = dict(kr_entry(ov["table"], ov["entry_id"]))
             # 명시적 체인: 사람이 확정한 엔트리 나열을 {p} 페이지로 이어붙인다.
             # (자동 splice는 빈 엔트리에서 끊겨 다화자 이벤트 체인을 못 잇는다 — T_001#20 실측)
