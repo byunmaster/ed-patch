@@ -18,8 +18,10 @@ python3 tools/build.py              # 전 트랙 체인 → work/Eiyuu Densetsu 
 ```
 
 - 테스트 이미지는 `work/Eiyuu Densetsu (KR).bin/.cue` **하나만** 유지.
-- **정발 대조**: `sh shared/dos/run_dos.sh ed1|ed2|ed3|ed4` — DOS 정발판을 DOSBox-X로 실행
-  (원본을 overlay 마운트해 복사 0·무변경). 문안·조판을 눈으로 맞출 때 쓴다.
+- **정발 대조**: `sh scripts/dosbox.sh ed1|ed2|ed3|ed4` — DOS 정발판을 DOSBox-X로 실행.
+  문안·조판을 눈으로 맞출 때 쓴다. 원본은 읽기만 하고 **본체 사본**(`work/dosbox/<game>`)을
+  실행하므로 DOS 패치 검증도 된다. CD는 읽기 전용이라 사본을 안 뜨고 originals에서 직접
+  마운트한다(용량의 95%가 CD — 4개 전부 떠도 사본 68MB). `--app`·`--debug`·`--refresh` 참조.
 - 인게임 확인: emucap MCP(mednafen) 또는 유저 DuckStation. **유저가 직접 확인하는 쪽이
   훨씬 빠름** — 빌드 완료를 알리고 유저 스크린샷으로 검증받는 흐름 권장.
 - ⚠ mednafen은 디스크 캐시 → 빌드 교체 후 reset 무효. 프로세스 kill + 재launch.
@@ -79,7 +81,9 @@ games/ps1-ed1+2/
   assets/    번역 그래픽 에셋 (title_logo.png 등 — 유저 제작 커밋 OK)
   out/       분석 산출물 (gitignore)
   work/      빌드 결과 디스크 (gitignore)
-shared/      플랫폼 공용 (SJIS 스캔, ISO9660, 폰트 변환, DOS 정발 실행 `dos/run_dos.sh`)
+scripts/     레포 공용 실행 스크립트 (`dosbox.sh` — DOS 정발 실행/패치 검증)
+dosbox/      DOSBox-X conf 템플릿 (`game.conf.tmpl`, 생성물은 work/dosbox)
+shared/      플랫폼 공용 라이브러리 (SJIS 스캔, ISO9660, 폰트 변환, 한글 조판 krwrap)
 originals/   원본 디스크·DOS 정발 (gitignore, 소장자 제공)
 vendor/      emucap 등 서드파티 (gitignore, 읽기 전용)
 ```

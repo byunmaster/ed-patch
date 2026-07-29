@@ -1,19 +1,22 @@
 # 정발(DOS) 영웅전설 실행용 DOSBox-X 설정 **템플릿**.
-# run_dos.sh가 @…@ 자리를 채워 work/dosbox/<game>.conf 로 생성한다(생성물은 gitignore).
-# 경로를 전부 상대로 둔 이유: 이 파일은 커밋되므로 로컬 절대경로를 담을 수 없다
-# (CLAUDE.md). run_dos.sh가 work/dosbox 로 cd 한 뒤 실행하므로 상대경로가 해석된다.
+# scripts/dosbox.sh 가 @…@ 자리를 채워 work/dosbox/<game>.conf 로 생성한다(생성물은 gitignore).
+#
+# 경로를 전부 상대로 둔 이유: 이 파일은 커밋되므로 로컬 절대경로를 담을 수 없다(CLAUDE.md).
+# dosbox.sh 가 work/dosbox 로 cd 한 뒤 실행하므로 상대경로가 그 기준으로 해석된다.
+#   @GAME@ = ed1|ed2|ed3|ed4 — 사본 디렉터리 이름이자 로그 파일 이름
 #
 # macOS 함정(ed2-mantra-restore에서 실측한 것 이식):
 #  - usescancodes=true면 저수준 키보드 경로를 타는데 입력 모니터링 권한이 필요하다.
 #    셸에서 앱 번들 내부 바이너리를 직접 띄우면 권한이 안 붙어 **키보드만 죽는다**.
-#    그래서 꺼둔다. 그래도 안 되면 `run_dos.sh <game> --app` 으로 앱 번들 채널 사용 +
+#    그래서 꺼둔다. 그래도 안 되면 `scripts/dosbox.sh <game> --app` 으로 앱 번들 채널 사용 +
 #    시스템 설정 > 개인정보 보호 및 보안 > 입력 모니터링 에서 dosbox-x 허용.
 #  - 이 게임들은 마우스를 안 쓴다. 마우스 캡처가 걸렸다 풀렸다 하며 SDL1이 키보드
 #    포커스를 놓치는 게 간헐적 먹통의 원인이라 캡처 자체를 끈다.
 
 [sdl]
 fullscreen=false
-windowresolution=1280x800
+windowresolution=640x480
+# opengl 이라야 windowresolution 스케일링이 먹는다
 output=opengl
 usescancodes=false
 autolock=false
@@ -49,8 +52,10 @@ irq=@SBIRQ@
 dma=1
 
 [autoexec]
-mount @DRIVE@ @ORIG@
-mount @DRIVE@ @GAME@-ovl -t overlay
+# 게임 본체는 **원본이 아니라 사본**(work/dosbox/<game>)을 마운트한다 — 세이브·설정은
+# 물론 DOS 패치 파일을 덮어써 가며 검증할 수 있다. CD는 읽기 전용이라 사본을 안 뜨고
+# originals/ 에서 직접 물린다(용량의 95%가 CD다).
+mount @DRIVE@ @GAME@
 @MOUNTCD@
 @DRIVE@:
 @CMD@
