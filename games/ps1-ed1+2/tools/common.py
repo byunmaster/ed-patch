@@ -75,8 +75,50 @@ def edc_compute(data):
     return edc
 
 
+# ── Mode2 Form1 ECC (P/Q Reed-Solomon 패리티) ────────────────────────────────
+# EDC만 고치고 ECC를 두면 에뮬은 넘어가지만(무시) **실기 CD 컨트롤러는 하드웨어 정정을
+# 수행**해서, 스테일 패리티가 멀쩡한 유저 데이터를 "정정"해 오히려 깨뜨릴 수 있다.
+# GF(2^8) 생성다항식 0x11D — ecm/cdrdao 표준 알고리즘.
+_ECC_F = bytearray(256)  # i → i*2 (GF)
+_ECC_B = bytearray(256)  # (i ^ i*2) → i (역룩업)
+for _i in range(256):
+    _j = ((_i << 1) ^ (0x11D if _i & 0x80 else 0)) & 0xFF
+    _ECC_F[_i] = _j
+    _ECC_B[_i ^ _j] = _i
+
+
+def _ecc_block(src, major_count, minor_count, major_mult, minor_inc, dst, dst_off):
+    size = major_count * minor_count
+    for major in range(major_count):
+        idx = (major >> 1) * major_mult + (major & 1)
+        a = b = 0
+        for _ in range(minor_count):
+            t = src[idx]
+            idx += minor_inc
+            if idx >= size:
+                idx -= size
+            a ^= t
+            b ^= t
+            a = _ECC_F[a]
+        a = _ECC_B[_ECC_F[a] ^ b]
+        dst[dst_off + major] = a
+        dst[dst_off + major + major_count] = a ^ b
+
+
+def ecc_update(sec):
+    """섹터(2352B bytearray)의 P(0x81C~)·Q(0x8C8~) 패리티를 제자리 재계산.
+
+    Mode2는 헤더(12~15)를 0으로 두고 계산한다(ecc 대상 = 12~2075의 2064B)."""
+    hdr = bytes(sec[12:16])
+    sec[12:16] = b"\x00\x00\x00\x00"
+    src = memoryview(sec)[12:]
+    _ecc_block(src, 86, 24, 2, 86, sec, 0x81C)  # P
+    _ecc_block(src, 52, 43, 86, 88, sec, 0x8C8)  # Q
+    sec[12:16] = hdr
+
+
 def write_user_data(f, lba, data, nsec=None):
-    """열린 r+b 파일 핸들의 lba부터 유저 데이터를 기록하고 EDC 재계산.
+    """열린 r+b 파일 핸들의 lba부터 유저 데이터를 기록하고 EDC·ECC 재계산.
     반환: 실제로 바뀐 섹터 수."""
     if nsec is None:
         nsec = (len(data) + USER_SIZE - 1) // USER_SIZE
@@ -91,6 +133,7 @@ def write_user_data(f, lba, data, nsec=None):
         assert not (sec[18] & 0x20), f"섹터 {lba + i}는 Form2 — 대상 아님"
         sec[USER_OFF : USER_OFF + USER_SIZE] = chunk
         sec[2072:2076] = edc_compute(bytes(sec[16:2072])).to_bytes(4, "little")
+        ecc_update(sec)
         f.seek(sec_base)
         f.write(sec)
         changed += 1
