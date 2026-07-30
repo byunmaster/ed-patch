@@ -13,15 +13,15 @@
 #                (`originals/kr/<G>/CD/` 와 `originals/kr/<G>/DosBox/CD/` 둘 다 본다).
 #
 # ── 사본 방식 ────────────────────────────────────────────────────────────────
-# 원본 `originals/kr/ED{1,2,3,4}`(gitignore, 소장본)는 **읽기만 한다.** 게임 본체를
-# `work/dosbox/<game>/` 로 복사해 그 사본을 실행하므로, 세이브·설정은 물론 **DOS 쪽
+# 원본 `originals/kr/dos-ed{1,2,3,4}`(gitignore, 소장본)는 **읽기만 한다.** 게임 본체를
+# `.local/dosbox/<game>/` 로 복사해 그 사본을 실행하므로, 세이브·설정은 물론 **DOS 쪽
 # 패치 파일을 덮어써 가며 검증**할 수 있다(ed2-mantra-restore와 같은 방식).
 #
 # ⚠ **CD 이미지는 복사하지 않는다** — 용량의 95%가 CD인데(ED3: 482M 중 471M) 읽기
 # 전용이라 사본이 필요 없다. 원본에서 직접 마운트한다. 덕분에 4개 전부 떠도 사본은
 # ~69MB(ED1 15M + ED2 33M + ED3 11M + ED4 10M)로 끝난다.
 #
-# 로그: work/dosbox/<game>.log (매 실행 초기화) · 스크린샷: work/dosbox/capture
+# 로그: .local/dosbox/<game>.log (매 실행 초기화) · 스크린샷: .local/dosbox/capture
 #
 # ── 게임별 실행 명령 ─────────────────────────────────────────────────────────
 # 두기게임 배포본의 `DosBox/Settings.conf`(UTF-16LE의 `Autoexec=`/`CD=`)와 각 배치 파일에서
@@ -61,10 +61,10 @@ shift
 # SBTYPE/SBIRQ: 게임 CNF(ed1·ed2)와 동봉 드라이버(ed3=sbpro.com, ed4=SB16.COM) 기준.
 # ⚠ ed1/ed2는 CNF가 **IRQ 7**을 쓴다 — 5로 두면 소리가 안 난다.
 case "$GAME" in
-  ed1) SRC=ED1; DRIVE=C; CMD="main.exe"; MARKER=MAIN.EXE;    SBTYPE=sbpro2; SBIRQ=7; WANT_CD= ;;
-  ed2) SRC=ED2; DRIVE=F; CMD="game.bat"; MARKER=ED2MAIN.EXE; SBTYPE=sbpro2; SBIRQ=7; WANT_CD=1 ;;
-  ed3) SRC=ED3; DRIVE=E; CMD="play.bat"; MARKER=ED3.EXE;     SBTYPE=sbpro2; SBIRQ=5; WANT_CD=1 ;;
-  ed4) SRC=ED4; DRIVE=F; CMD="game.bat"; MARKER=ED4.EXE;     SBTYPE=sb16;   SBIRQ=5; WANT_CD=1 ;;
+  ed1) SRC=dos-ed1; DRIVE=C; CMD="main.exe"; MARKER=MAIN.EXE;    SBTYPE=sbpro2; SBIRQ=7; WANT_CD= ;;
+  ed2) SRC=dos-ed2; DRIVE=F; CMD="game.bat"; MARKER=ED2MAIN.EXE; SBTYPE=sbpro2; SBIRQ=7; WANT_CD=1 ;;
+  ed3) SRC=dos-ed3; DRIVE=E; CMD="play.bat"; MARKER=ED3.EXE;     SBTYPE=sbpro2; SBIRQ=5; WANT_CD=1 ;;
+  ed4) SRC=dos-ed4; DRIVE=F; CMD="game.bat"; MARKER=ED4.EXE;     SBTYPE=sb16;   SBIRQ=5; WANT_CD=1 ;;
   *) usage ;;
 esac
 
@@ -87,7 +87,7 @@ done
 ORIG="$REPO/originals/kr/$SRC"
 [ -d "$ORIG" ] || { echo "원본 없음: originals/kr/$SRC (소장본 필요 — originals/README.md)" >&2; exit 1; }
 
-BOX="$REPO/work/dosbox"
+BOX="$REPO/.local/dosbox"
 COPY="$BOX/$GAME"          # 쓰기 가능 사본 (세이브·설정·DOS 패치)
 mkdir -p "$BOX/capture"
 
@@ -95,7 +95,7 @@ mkdir -p "$BOX/capture"
 
 # ── 사본 만들기 (CD·런처 폴더 제외) ─────────────────────────────────────────
 if [ ! -f "$COPY/$MARKER" ]; then
-  echo "사본 생성: originals/kr/$SRC → work/dosbox/$GAME (CD 제외)"
+  echo "사본 생성: originals/kr/$SRC → .local/dosbox/$GAME (CD 제외)"
   rm -rf "$COPY"; mkdir -p "$COPY"
   for item in "$ORIG"/*; do
     [ -e "$item" ] || continue
@@ -120,7 +120,7 @@ fi
 
 # ── CD 마운트 줄 조립 ───────────────────────────────────────────────────────
 # ed2~4는 BGM이 CD 오디오라 드라이브가 없으면 음악 초기화가 실패한다.
-# work/dosbox 기준 **상대경로**로 적어 생성 conf에 절대경로가 안 남게 한다.
+# .local/dosbox 기준 **상대경로**로 적어 생성 conf에 절대경로가 안 남게 한다.
 MOUNTCD=""
 if [ -n "$CD" ]; then
   case "$CD" in
@@ -140,10 +140,10 @@ elif [ -n "$WANT_CD" ]; then
   [ -n "$MOUNTCD" ] || echo "⚠ CD 이미지 없음: originals/kr/$SRC/{CD,DosBox/CD}/*.{cue,iso} — BGM 초기화 실패 가능" >&2
 fi
 
-# ── conf 생성 (템플릿 → work/dosbox/<game>.conf, 생성물은 gitignore) ────────
+# ── conf 생성 (템플릿 → .local/dosbox/<game>.conf, 생성물은 gitignore) ────────
 sed -e "s|@GAME@|$GAME|g" -e "s|@DRIVE@|$DRIVE|g" -e "s|@CMD@|$CMD|g" \
     -e "s|@MOUNTCD@|$MOUNTCD|g" -e "s|@SBTYPE@|$SBTYPE|g" -e "s|@SBIRQ@|$SBIRQ|g" \
-    "$REPO/dosbox/game.conf.tmpl" > "$BOX/$GAME.conf"
+    "$HERE/dosbox/game.conf.tmpl" > "$BOX/$GAME.conf"
 rm -f "$BOX/$GAME.log"
 
 # 상대경로(logfile·captures·mapperfile·mount)가 해석되도록 기준 디렉터리로 이동한다.

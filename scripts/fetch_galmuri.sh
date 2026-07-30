@@ -1,8 +1,8 @@
 #!/bin/sh
 # 갈무리(Galmuri) 픽셀 폰트 원본을 vendor/galmuri/ 로 내려받는다.
 #
-# vendor/ 는 gitignore 라 이건 그냥 캐시다. 커밋되는 건 서브셋 결과(web/fonts.css)와
-# 라이선스 전문(web/LICENSE-Galmuri.txt)뿐이다.
+# vendor/ 는 gitignore 라 이건 그냥 캐시다. 커밋되는 건 서브셋 결과(patcher/fonts.css)와
+# 라이선스 전문(patcher/LICENSE-Galmuri.txt)뿐이다.
 #
 #   scripts/fetch_galmuri.sh          내려받기 (이미 있으면 건너뛴다)
 #   scripts/fetch_galmuri.sh --force  다시 받기
@@ -30,7 +30,7 @@ for f in Galmuri9.woff2 GalmuriMono9.woff2 Galmuri11.woff2 Galmuri11-Bold.woff2 
 done
 
 # 라이선스 전문은 배포물에도 같이 나가야 한다(OFL 조건)
-cp "$DEST/LICENSE.txt" "$ROOT/web/LICENSE-Galmuri.txt"
+cp "$DEST/LICENSE.txt" "$ROOT/patcher/LICENSE-Galmuri.txt"
 
 echo "== 완료: $DEST  (갈무리 $VER)"
-echo "   이제 .venv/bin/python tools/subset_font.py 로 서브셋한다."
+echo "   이제 python3 patcher/subset_font.py 로 서브셋한다."

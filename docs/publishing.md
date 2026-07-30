@@ -1,0 +1,116 @@
+# 공개 전 점검 — 리포에 원본이 남지 않게
+
+이 저장소는 **공개를 전제로** 관리한다. 배포 창구인 `ed-patch`는 이미 공개이고,
+작업 레포도 공개하려면 소스·산출물 어디에도 원저작물의 축자 복제가 없어야 한다.
+
+원칙은 하나다: **원본은 소장자의 디스크에만 있고, 리포에는 "어디를 어떻게 바꾸는지"와
+"제대로 된 원본이 맞는지 확인할 해시"만 둔다.**
+
+## 트랙별로 지키는 방식
+
+### [kr] 번역 문안 — 포인터 + 빌드 시 파생
+
+- 문장급 문안(팔콤 일문 · 만트라 정발 번역)은 **코드·JSON에 임베드하지 않는다.**
+- `games/*/textmap/*.json`은 정발 원본의 **위치 포인터**(`{f, o, l}`)와 우리 번역만
+  담고, `tools/derive_text.py`가 빌드할 때 `originals/kr/dos-ed1`에서 실제 문안을
+  꺼내 온다. 원본이 없으면 빌드가 실패하는 게 정상이다.
+- JP 원문 키는 sha1 해시(`k`, `sha`)라 원문을 복원할 수 없다.
+- 단어 수준 명칭·라벨(아이템·몬스터·지명·메뉴)은 저작권 대상이 아니라 코드에 둬도 된다.
+
+### [fix] 패치 스펙 — 스키마 v2 (원본 바이트 없음)
+
+- `games/*/patches/*.json`은 **우리가 쓴 값(`to`)과 해시만** 담는다. 항목은
+  `{file, offset, to}`, 파일 단위로 `{size, sha1_from, sha1_to}`.
+- 이 JSON은 `patcher/build.py`가 웹 패처 HTML에 **통째로 인라인**해 공개
+  배포한다. 그래서 원본 바이트 필드(`from`)를 되살리면 그 순간 상용 바이너리
+  조각을 재배포하는 게 된다.
+- 검증은 파일 전체 sha1로 한다 — 구간 비교보다 오히려 엄격하다(스펙이 안 건드리는
+  자리가 달라도 잡아낸다).
+- 대신 복원은 차분 역적용이 불가능하므로 **백업 기반**이다(`apply_patch.py`가 적용 시
+  `<파일>.orig`를 남긴다).
+
+> 이력: 2026-07-30 이전 스키마(v1)는 `from`에 원본 바이트를 담았고, 그게 공개
+> 페이지에 822B 실려 나가고 있었다. 스키마 v2로 전환하며 제거했다.
+
+## 패처를 다른 게임으로 넓힐 때 — 경계선
+
+`patcher/build.py`는 `games/*/patches/*.json`을 스캔하므로 게임이 늘면 그 게임의
+`kind == "fix"` 패치가 같은 페이지에 자동으로 실린다. 다만 **아무 패치나 이 형식으로
+담으면 안 된다.**
+
+| 이 형식(스키마 v2 인라인)으로 OK  | 다른 경로가 필요                  |
+| ------------------------------ | --------------------------------- |
+| 파일 단위 · 희소 변경          | 디스크 이미지 · 대량 변경         |
+| `to` 바이트가 **우리가 쓴 값** | `to` 바이트가 **원저작물 파생**   |
+| 예: dos-ed2 [fix], 향후 mod,   | 예: PS1/새턴 이미지 한글패치 [kr] |
+| 정발 윈도우판 `ED3_DT*.dat` 류 |                                   |
+
+PS1 영웅전설 1+2를 실측한 수치(2026-07-30):
+
+```
+252,498,960B 중 다른 바이트 1,235,791B (0.49%) / 연속 구간 3,555개
+→ to 를 hex 로 담으면 스펙만 2.5MB (현재 페이지 전체가 130KB)
+```
+
+세 가지가 걸린다:
+
+1. **크기** — 페이지가 130KB → 3MB 가 된다.
+2. **런타임** — 페이지는 `arrayBuffer()`로 통째로 읽고 `.BAK`를 쓰고 다시 전체를 쓴다.
+   252MB면 RAM 500MB+·I/O 750MB고, WebCrypto 는 스트리밍 digest 가 없어 sha1 검증에
+   전체 버퍼가 필요하다. `.bin` 파일명이 덤프마다 달라 basename 매칭과도 안 맞는다.
+3. **저작권(결정적)** — `patches/*.json`은 **커밋되는 파일**이다. [kr]의 `to` 바이트는
+   파생된 정발 문안 전량이라, textmap + `derive_text.py`로 원문을 리포에 안 남기려는
+   구조를 정면으로 되돌리게 된다.
+
+→ **[kr]은 xdelta/BPS 를 `work/`(gitignore) 빌드 산출물로 만들고, 배포 시점에 페이지가
+그걸 싣는다.** 릴리스물이 번역을 담는 것은 번역패치의 본질이라 문제없지만, git 에는
+들어가지 않는다. UI·폰트 서브셋·sha1 게이트·백업·`ed-patch` 배포 파이프라인은 그대로
+재사용하고 **입력 경로 하나만** 갈린다.
+
+## 공개 전 체크리스트
+
+```bash
+# 1. 패치 스펙에 원본 바이트가 없는지
+grep -rn '"from"' games/*/patches/*.json          # 0건이어야 한다
+
+# 2. 빌드 산출물(공개 페이지)에도 없는지
+python3 patcher/build.py --out work/patcher/index.html
+grep -c '"from"' work/patcher/index.html          # 0 이어야 한다
+
+# 3. 번역 테이블에 원문이 박혀 있지 않은지 (포인터·해시만 있어야 함)
+python3 -c "import json,glob;[print(f, sorted({k for e in json.load(open(f,encoding='utf-8'))['entries'] for k in e})) for f in glob.glob('games/*/textmap/*.json')]"
+
+# 4. 추적되는 파일 중 게임 데이터가 섞였는지
+git ls-files | grep -iE '\.(bin|cue|iso|img|chd|mdf|exe|dll|dat)$'   # 0건이어야 한다
+
+# 5. 로컬 절대경로가 남았는지
+git grep -n "/Users/" -- . ':!docs/publishing.md'  # 0건이어야 한다
+```
+
+## 웹 패처 회귀 확인
+
+스펙 형식을 바꾸면 CLI 패처와 웹 패처를 **둘 다** 확인한다. 원본은 소장본에서
+임시 디렉터리로 복사해 쓰고, originals는 건드리지 않는다.
+
+```bash
+# CLI: 적용 → 멱등 → 복원 한 바퀴
+mkdir -p /tmp/edtest/SCENA && cp originals/kr/dos-ed2/SCENA/F_50{1,2}.DLL /tmp/edtest/SCENA/
+python3 games/dos-ed2/tools/apply_patch.py games/dos-ed2/patches/issue-1-suel-boat-tour.json /tmp/edtest --check
+python3 games/dos-ed2/tools/apply_patch.py games/dos-ed2/patches/issue-1-suel-boat-tour.json /tmp/edtest
+python3 games/dos-ed2/tools/apply_patch.py games/dos-ed2/patches/issue-1-suel-boat-tour.json /tmp/edtest --revert
+
+# 웹: 빌드한 HTML에서 판정 로직을 떼어내 실제 원본으로 돌린다
+#   inspect(원본) == "ready" / inspect(applyTo(원본)) == "applied"
+#   sha1(applyTo(원본)) == sha1_to / 변조본·크기 다름 == "mismatch"
+sh scripts/patcher.sh serve      # 브라우저 확인 (127.0.0.1 — file:// 로는 안 된다)
+```
+
+## 남은 판단거리
+
+- **작업 레포 공개 여부는 미결.** 위 조치로 "원본 축자 복제"는 없앴지만, 리버싱
+  노트(디스어셈블 발췌·오프셋 표)가 얼마나 상세한지는 별도 판단이 필요하다.
+  `games/dos-ed2/docs/*`와 `games/ps1-ed1+2/docs/*`를 공개 전에 한 번 훑는다.
+- 공개하기로 하면 `scripts/patcher.sh`의 `SRC_URL`에 소스 링크를 채운다 — 웹 패처
+  푸터에 바로 반영된다.
+- `docs/reference/_inventory/`(카페 게시판 원본 덤프)는 타인 게시글이라 gitignore
+  상태를 유지한다.

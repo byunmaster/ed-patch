@@ -1,13 +1,21 @@
 {
+  "schema_version": 2,
   "name": "진단용: T_246 ROUTE_NO 8 -> 4",
   "description": "이슈 #1 원인 확정용 실험 패치. 최종 패치가 아니다 — 유람선 전용 연출(F_501의 route 8 전용 키데이터/LOCAL_WORK 오버라이드)이 적용되지 않으므로 연출이 달라질 수 있다. 크래시가 사라지는지만 본다.",
   "issue": 1,
   "kind": "diagnostic",
+  "files": [
+    {
+      "file": "SCENA/T_246.DLL",
+      "size": 33296,
+      "sha1_from": "7202d568c40ffd54c06923a2bf6adc5b64455c74",
+      "sha1_to": "12682daaf0f7ece3f7557fd577f4d415ec0f2809"
+    }
+  ],
   "patches": [
     {
       "file": "SCENA/T_246.DLL",
       "offset": "0x3c19",
-      "from": "08",
       "to": "04",
       "note": "seg3:0x815 mov byte[ROUTE_NO],8 의 즉시값. route 4는 모든 F_ DLL이 유효 엔트리를 가진 예약 슬롯."
     }

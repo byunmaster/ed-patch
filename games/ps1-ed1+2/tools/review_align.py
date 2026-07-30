@@ -20,12 +20,12 @@ import json
 import os
 import re
 
-from common import OUT_DIR
+from common import OUT_DIR, REVIEW_DIR
 
 ALIGN_DIR = os.path.join(OUT_DIR, "align")
 SCN_JP_DIR = os.path.join(OUT_DIR, "scn_jp")
 DOS_KR_DIR = os.path.join(OUT_DIR, "dos_kr")
-REVIEW_DIR = os.path.join(OUT_DIR, "review")
+REVIEW_DIR = REVIEW_DIR
 
 GAMES = {"ED1": 6, "ED2": 13}
 

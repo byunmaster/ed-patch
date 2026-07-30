@@ -11,11 +11,11 @@
 import os
 import re
 
+from common import BUILD_DIR, extract
 from common import ED1SCN1_LBA as LBA
 from common import ED1SCN1_SIZE as FSIZE
-from common import WORK_DIR, extract
 
-LEN = os.path.join(WORK_DIR, "Eiyuu Densetsu (Len Test).bin")
+LEN = os.path.join(BUILD_DIR, "Eiyuu Densetsu (Len Test).bin")
 
 orig = extract(LBA, FSIZE)
 lent = extract(LBA, FSIZE, path=LEN)

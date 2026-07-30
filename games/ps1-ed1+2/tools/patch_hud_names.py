@@ -15,11 +15,11 @@ import struct
 
 import hangul_font
 import numpy as np
-from common import WORK_DIR, write_user_data
+from common import BUILD_DIR, write_user_data
 from scan_tim import parse_tim, to_rgb, user_stream
 
 TIM_OFF = 0x566800  # ED1PARTS.DAT 내, 섹터정렬(LBA 2765)
-TARGET = os.path.join(WORK_DIR, "Eiyuu Densetsu (KR Pilot).bin")
+TARGET = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR Pilot).bin")
 BG, MAIN, SHADOW = 39, 16, 46  # 남색 배경 / 노랑 글자 / 그림자 (실측)
 PITCH = 9  # Galmuri9 글자 간격(원본 카타카나 ~9px)
 NAME_X = 6  # 이름 시작 x (원본과 동일)

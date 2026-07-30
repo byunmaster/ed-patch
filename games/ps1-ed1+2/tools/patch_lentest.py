@@ -11,13 +11,13 @@ import os
 import re
 import shutil
 
+from common import BUILD_DIR, SECTOR, USER_OFF, USER_SIZE, write_cue, write_user_data
 from common import ED1SCN1_LBA as LBA
 from common import ED1SCN1_SIZE as FSIZE
 from common import ORIG_BIN as SRC
-from common import SECTOR, USER_OFF, USER_SIZE, WORK_DIR, write_cue, write_user_data
 
-DST = os.path.join(WORK_DIR, "Eiyuu Densetsu (Len Test).bin")
-DST_CUE = os.path.join(WORK_DIR, "Eiyuu Densetsu (Len Test).cue")
+DST = os.path.join(BUILD_DIR, "Eiyuu Densetsu (Len Test).bin")
+DST_CUE = os.path.join(BUILD_DIR, "Eiyuu Densetsu (Len Test).cue")
 
 DEL_AT = 0x21  # 「ちゃんと」의 ゃ(82 E1) 위치 (파일 내 오프셋)
 SJIS_RUN = re.compile(rb"(?:[\x81-\x9f\xe0-\xef][\x40-\x7e\x80-\xfc]){4,}")

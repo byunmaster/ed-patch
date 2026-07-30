@@ -13,5 +13,5 @@
 from derive_text import jp_map
 
 # {JP문장 → KR문장} 499종 — 문안은 리포에 없음: textmap/battle.json(포인터+우리 번역)
-# + 소장 정발 원본(originals/kr/ED1)에서 빌드 시 파생. 원문 키는 sha1 해시 조회.
+# + 소장 정발 원본(originals/kr/dos-ed1)에서 빌드 시 파생. 원문 키는 sha1 해시 조회.
 B = jp_map("battle")

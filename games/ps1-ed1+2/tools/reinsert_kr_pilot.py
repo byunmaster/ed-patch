@@ -25,11 +25,12 @@ import sys
 
 import hangul_map
 from common import (
+    BUILD_DIR,
     MIPS_ADDIU,
     MIPS_LW,
     MIPS_ORI,
     OUT_DIR,
-    WORK_DIR,
+    ROOT,
     extract,
     iter_lui_pairs,
     write_cue,
@@ -65,8 +66,8 @@ LINES_PER_PAGE = 6  # 창당 줄 **하드 리밋**(2026-07-22 유저 실측): 6�
 # **7줄이면 글자가 대사창을 뚫고 나간다**. 절대 초과 금지 — 담을 곳이 없으면 창 수를
 # 늘려(꼬리 잘림 감수) 넘기지, 한 창에 욱여넣지 않는다.
 
-DST = os.path.join(WORK_DIR, "Eiyuu Densetsu (KR Pilot).bin")
-DST_CUE = os.path.join(WORK_DIR, "Eiyuu Densetsu (KR Pilot).cue")
+DST = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR Pilot).bin")
+DST_CUE = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR Pilot).cue")
 
 HANGUL = re.compile(r"[가-힣]")
 # 인라인 \x09 = 정발의 **이름 주입 자리**(JP의 %s에 대응). 조판 파이프라인을 통과시키려고
@@ -315,7 +316,7 @@ _LINE_OVERRIDES = None
 def _load_break_doc():
     global _BREAK_FIXES, _SPLIT_FIXES, _LINE_OVERRIDES
     if _BREAK_FIXES is None:
-        path = os.path.join(os.path.dirname(OUT_DIR), "dos_break_fixes.json")
+        path = os.path.join(ROOT, "dos_break_fixes.json")
         try:
             doc = json.load(open(path, encoding="utf-8"))
         except FileNotFoundError:
@@ -459,7 +460,7 @@ def _spell_rules():
     """(직함결합 정규식, space쌍, replace쌍) 컴파일 — 이름은 화자맵에서 파생."""
     global _SPELL_RULES
     if _SPELL_RULES is None:
-        path = os.path.join(os.path.dirname(OUT_DIR), "dos_spelling_fixes.json")
+        path = os.path.join(ROOT, "dos_spelling_fixes.json")
         try:
             doc = json.load(open(path, encoding="utf-8"))
         except FileNotFoundError:
@@ -1520,7 +1521,7 @@ def _sentences(t):
 
 def _load_overrides():
     """사람 검수 교정(align_overrides.json). 없으면 빈 dict."""
-    path = os.path.join(os.path.dirname(OUT_DIR), "align_overrides.json")
+    path = os.path.join(ROOT, "align_overrides.json")
     if not os.path.exists(path):
         return {}
     return json.load(open(path, encoding="utf-8"))
@@ -2091,8 +2092,8 @@ def main():
     only = os.environ.get("PILOT_SCN")  # 특정 씬만 (예: ED1SCN1). 미지정=전 씬
     if not os.path.exists(SRC):
         raise SystemExit(
-            "원본 이미지 없음 — originals/ps1-ed1+2/에 .bin/.cue를 복사한 뒤 재실행\n"
-            f"  기대 경로: {os.path.relpath(SRC, os.path.dirname(OUT_DIR))}"
+            "원본 이미지 없음 — originals/jp/ps1-ed1+2/에 .bin/.cue를 복사한 뒤 재실행\n"
+            f"  기대 경로: {os.path.relpath(SRC, ROOT)}"
         )
     scenes = [s for s in SCN_FILES if not only or s[0] == only]
     if not scenes:
@@ -2142,7 +2143,7 @@ def main():
     suffix = " Fixed" if fixed else ""
     dst = DST.replace("Pilot", "Pilot" + suffix) if fixed else DST
     dst_cue = DST_CUE.replace("Pilot", "Pilot" + suffix) if fixed else DST_CUE
-    os.makedirs(WORK_DIR, exist_ok=True)
+    os.makedirs(BUILD_DIR, exist_ok=True)
     shutil.copyfile(SRC, dst)
     with open(dst, "r+b") as f:
         ed = bytearray(extract(ED_LBA, ED_SIZE))

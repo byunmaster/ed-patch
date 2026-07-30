@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """갈무리 픽셀 폰트를 페이지에 실제로 쓰이는 글자만 남겨 서브셋하고, base64 data URI
-로 박은 `web/fonts.css` 를 만든다.
+로 박은 `patcher/fonts.css` 를 만든다.
 
 한글은 완성형 11,172자라 원본 woff2 가 500KB 씩이다. 셋을 그대로 심으면 페이지가
 1.4MB 가 되므로 쓰이는 글자(보통 300자 안팎)만 남긴다 — 셋 합쳐 수십 KB 로 준다.
 
-글자 목록은 `web/index.html.tmpl` 과 `patches/*.json`(kind == "fix")에서 긁는다.
+글자 목록은 `patcher/index.html.tmpl` 과 `games/*/patches/*.json`(kind == "fix")에서 긁는다.
 문구를 고치면 이 스크립트를 다시 돌려야 한다. 빠뜨린 글자는 두부(□)가 되는 게
 아니라 CSS 폰트 스택의 다음 폰트로 떨어지므로, 잊어도 페이지가 깨지지는 않는다.
 
 원본은 `vendor/galmuri/`(gitignore, 내려받기 캐시)에 두고 산출물만 커밋한다.
-  scripts/fetch_galmuri.sh   원본 내려받기
-  tools/subset_font.py       서브셋 → web/fonts.css
+  scripts/fetch_galmuri.sh     원본 내려받기
+  patcher/subset_font.py       서브셋 → patcher/fonts.css
 
 usage:
-  subset_font.py [--out web/fonts.css]
+  subset_font.py [--out patcher/fonts.css]
 """
 
 import base64
@@ -27,7 +27,8 @@ import sys
 from fontTools import subset
 from fontTools.ttLib import TTFont
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))  # patcher/
+ROOT = os.path.dirname(HERE)
 SRC = os.path.join(ROOT, "vendor", "galmuri")
 
 # (CSS family, 원본 파일, font-weight)
@@ -56,12 +57,12 @@ def used_chars():
     """페이지에 실릴 수 있는 글자를 전부 모은다."""
     chars = set(ALWAYS)
 
-    with open(os.path.join(ROOT, "web", "index.html.tmpl"), encoding="utf-8") as f:
+    with open(os.path.join(HERE, "index.html.tmpl"), encoding="utf-8") as f:
         chars |= set(f.read())
 
     # 스펙에서 화면에 나오는 값 — 라벨/이름/파일경로. description 은 안 쓰지만
     # 나중에 노출해도 안전하게 통째로 넣는다(글자 수가 얼마 안 된다).
-    for p in sorted(glob.glob(os.path.join(ROOT, "patches", "*.json"))):
+    for p in sorted(glob.glob(os.path.join(ROOT, "games", "*", "patches", "*.json"))):
         with open(p, encoding="utf-8") as f:
             spec = json.load(f)
         if spec.get("kind") != "fix":
@@ -94,7 +95,7 @@ def subset_face(path, chars):
 
 def main():
     argv = sys.argv[1:]
-    out = argv[argv.index("--out") + 1] if "--out" in argv else os.path.join(ROOT, "web", "fonts.css")
+    out = argv[argv.index("--out") + 1] if "--out" in argv else os.path.join(HERE, "fonts.css")
 
     missing = [f for _, f, _ in FACES if not os.path.exists(os.path.join(SRC, f))]
     if missing:
@@ -109,7 +110,7 @@ def main():
         "   Copyright (c) 2019-2025 Lee Minseo (quiple@quiple.dev)",
         "   https://github.com/quiple/galmuri  |  https://openfontlicense.org",
         "   이 페이지에 쓰이는 글자만 남긴 서브셋이다. 전체 라이선스 전문은 배포물의",
-        "   LICENSE-Galmuri.txt 를 참조. 생성: tools/subset_font.py */",
+        "   LICENSE-Galmuri.txt 를 참조. 생성: patcher/subset_font.py */",
     ]
     total_src = total_sub = 0
     for family, fname, weight in FACES:

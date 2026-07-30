@@ -1,13 +1,21 @@
 {
+  "schema_version": 2,
   "name": "진단용: F_501 SINAL_INIT의 SAVE_FLAG 분기 무력화",
   "description": "F_501 seg3:0x7f7의 유람선 커서 초기화(mov [LOCAL_WORK+2],0x1a6)는 SAVE_FLAG==0 분기의 fall-through로만 도달한다. seg3 어디에도 0x7f7을 가리키는 분기·relocation이 없다. jne를 nop 두 개로 바꿔 이 블록이 항상 실행되게 한다. 크래시가 사라지면 '커서가 설치되지 않아 첫 40-종료 구간에서 jmp ax가 폭주'가 원인으로 확정된다. 세이브 복원 경로에서도 파티 플래그 재초기화와 SET_KEY_DATA가 다시 걸리므로 진단 전용이다.",
   "issue": 1,
   "kind": "diagnostic",
+  "files": [
+    {
+      "file": "SCENA/F_501.DLL",
+      "size": 32784,
+      "sha1_from": "15ccf2186578d3858dbd79e838d47df9293f2dd6",
+      "sha1_to": "2210878b08cb12ea58358040cf8942fd0dca4a6a"
+    }
+  ],
   "patches": [
     {
       "file": "SCENA/F_501.DLL",
       "offset": "0x3be7",
-      "from": "752a",
       "to": "9090",
       "note": "seg3:0x7e7  jne 0x813 -> nop nop"
     }

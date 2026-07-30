@@ -14,7 +14,7 @@
      → 고주소 재배치 금지(검은화면). 각 줄 끝 0x0A 필수(필드클리어 — 없으면 잔상).
   5) 전각 advance 4→3 패치(0x13370/0x13750)로 간격 축소. 줄당 한계 21슬롯.
 
-텍스트는 정발판(originals/kr/ED1/OPENING.EXE) 원문 우선, JP 전용부만 정발 어투 신규 번역.
+텍스트는 정발판(originals/kr/dos-ed1/OPENING.EXE) 원문 우선, JP 전용부만 정발 어투 신규 번역.
 상세 여정: docs/opening-font-devlog.md, 핸드오프: docs/HANDOFF.md.
 전제: build.py(베이스) 후 이 스크립트 적용 → work/Eiyuu Densetsu (KR).bin (제자리 갱신).
 """
@@ -25,15 +25,15 @@ import struct
 
 import hangul_font
 import numpy as np
-from common import WORK_DIR, extract, write_cue, write_user_data
+from common import BUILD_DIR, extract, write_cue, write_user_data
 from derive_text import off_pairs
 from font_map import JIS_KANJI1_INDEX
 
 OP_LBA, OP_SIZE = 69, 96256
 TADDR = 0x80010000
-SRC = f"{WORK_DIR}/Eiyuu Densetsu (KR).bin"
-DST = f"{WORK_DIR}/Eiyuu Densetsu (KR).bin"  # 제자리 갱신
-DST_CUE = f"{WORK_DIR}/Eiyuu Densetsu (KR).cue"
+SRC = f"{BUILD_DIR}/Eiyuu Densetsu (KR).bin"
+DST = f"{BUILD_DIR}/Eiyuu Densetsu (KR).bin"  # 제자리 갱신
+DST_CUE = f"{BUILD_DIR}/Eiyuu Densetsu (KR).cue"
 
 # 안전 위치: 에뮬 RAM 덤프로 오프닝 런타임 내내 0인 영역 확인(0x800254D4~0x8002634C,
 # 3704B). 그 앞 0x8002546A~는 OPEN1이 런타임 작업버퍼로 씀 → 폰트 놓으면 셋업 깨짐.
@@ -136,7 +136,7 @@ def compress_font(glyph_list):
 # 문장부호 → 게임 전각 심볼(SJIS) — BIOS 글리프 그대로 사용(별도 경로)
 PUNC = {",": b"\x81\x43", ".": b"\x81\x44", "…": b"\x81\x63", "!": b"\x81\x49", "?": b"\x81\x48"}
 
-# 내레이션 50줄 — 정발판(originals/kr/ED1/OPENING.EXE) 원문 우선.
+# 내레이션 50줄 — 정발판(originals/kr/dos-ed1/OPENING.EXE) 원문 우선.
 # JP(PS1)에만 있고 정발에 없는 부분(다섯 나라 11~13행·몬스터 습격 확장 26~40행)은
 # 정발 어투로 새로 번역.
 # 표기 규칙(유저 확정): 쉼표 뒤 공백 없음(쉼표도 전각 슬롯이라 공백까지 두면 여백 과대),

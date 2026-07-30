@@ -25,11 +25,11 @@ import struct
 
 import battle_text as BT
 import hangul_map as H
-from common import MIPS_ADDIU, MIPS_ORI, WORK_DIR, extract, iter_lui_pairs, write_user_data
+from common import BUILD_DIR, MIPS_ADDIU, MIPS_ORI, extract, iter_lui_pairs, write_user_data
 from derive_text import jp_map
 
 ED_LBA, ED_SIZE = 257, 1021952
-TARGET = os.path.join(WORK_DIR, "Eiyuu Densetsu (KR).bin")
+TARGET = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
 
 # 0xDC8~0xDD7은 이름이 아닌 데이터 섬(u16 500/1000/2500/5000/10000 — 가격 단계 추정)
 # 이라 보존해야 한다 → 블롭을 둘로 나눠 재packing.

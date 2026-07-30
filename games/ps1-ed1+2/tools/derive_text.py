@@ -1,8 +1,8 @@
-"""문장급 번역 텍스트 파생 — textmap(커밋) + originals/kr/ED1(소장자 제공) → 번역 테이블.
+"""문장급 번역 텍스트 파생 — textmap(커밋) + originals/kr/dos-ed1(소장자 제공) → 번역 테이블.
 
 체계: 저작권 있는 문안(팔콤 일문·만트라 번역문)은 리포에 담지 않는다.
   · 정발(만트라) 문안 → textmap/<class>.json 의 (파일, 오프셋, 길이) 포인터로
-    소장 DOS 원본(originals/kr/ED1)에서 빌드 때마다 추출
+    소장 DOS 원본(originals/kr/dos-ed1)에서 빌드 때마다 추출
   · 우리가 쓴 번역(정발에 없는 문장) → textmap에 직접 수록(우리 저작물이라 커밋 OK)
   · 일본어 원문 → 리포 어디에도 없음. JP 키 딕셔너리는 sha1 해시 키 — 소비자가
     PS1 디스크에서 스캔한 JP 문자열을 jkey()로 해싱해 조회한다(patch_items.battle_kr 등)
@@ -24,8 +24,8 @@ from collections.abc import Mapping
 from common import OUT_DIR, ROOT
 
 TEXTMAP_DIR = os.path.join(ROOT, "textmap")
-DERIVED_DIR = os.path.join(OUT_DIR, "derived")
-DOS_ED1 = os.path.join(ROOT, "..", "..", "originals", "kr", "ED1")
+DERIVED_DIR = os.path.join(OUT_DIR, "text")  # ⚠ 소스 `textmap/`(커밋)과 다르다 — 이건 파생 출력
+DOS_ED1 = os.path.join(ROOT, "..", "..", "originals", "kr", "dos-ed1")
 
 CLASSES = ("battle", "items_battle", "opening", "event")
 
@@ -51,7 +51,7 @@ def _dos_file(rel):
     path = os.path.join(DOS_ED1, rel)
     if not os.path.exists(path):
         raise SystemExit(
-            f"정발 DOS 원본 없음: originals/kr/ED1/{rel}\n"
+            f"정발 DOS 원본 없음: originals/kr/dos-ed1/{rel}\n"
             "문장 번역 테이블은 소장 원본에서 파생됩니다 — originals/README.md 참조."
         )
     with open(path, "rb") as f:

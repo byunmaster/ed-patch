@@ -6,7 +6,7 @@ DOS 정발판(만트라) 대사에서 사용 한글 음절 집계.
 스캔해 게임별 사용 음절과 빈도를 집계한다.
 
 사용: python census_syllables.py [DOS정발판루트]  (기본: ../../originals/kr)
-      (루트 아래 ED1/SINDLL/*.DLL, ED2/SCENA/*.DLL을 읽음)
+      (루트 아래 dos-ed1/SINDLL/*.DLL, dos-ed2/SCENA/*.DLL을 읽음)
 출력: out/syllable_census.txt (음절 목록·빈도), 콘솔 요약
 """
 
@@ -21,8 +21,8 @@ from common import OUT_DIR
 HANGUL_RUN = re.compile(rb"(?:[\xb0-\xc8][\xa1-\xfe]){2,}")
 
 SOURCES = {
-    "ED1": ("ED1", "SINDLL"),
-    "ED2": ("ED2", "SCENA"),
+    "ED1": ("dos-ed1", "SINDLL"),
+    "ED2": ("dos-ed2", "SCENA"),
 }
 
 

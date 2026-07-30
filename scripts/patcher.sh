@@ -4,26 +4,31 @@
 #   scripts/patcher.sh [serve] [옵션]    빌드해서 127.0.0.1 로 띄운다 (기본 동작)
 #       --port N        포트 지정 (기본 8731)
 #       --no-open       브라우저를 자동으로 열지 않는다
-#   scripts/patcher.sh build             work/patcher/index.html 로 빌드만 한다
+#   scripts/patcher.sh build             .local/patcher/index.html 로 빌드만 한다
 #   scripts/patcher.sh deploy [옵션]     공개 리포(ed-patch)에 올린다
 #       --amend         마지막 커밋을 덮어쓴다(기본). 산출물 리포라 히스토리가
 #                       의미 없어 안정화 전까지는 이쪽을 쓴다
 #       --new           새 커밋을 쌓는다
 #       --dry-run       빌드만 하고 커밋·push 하지 않는다
 #       --msg "..."     커밋 메시지(생략 시 기본 문구)
-#       --repo-dir DIR  공개 리포 클론 위치(기본 work/ed-patch, gitignore 안이라 안전)
+#       --repo-dir DIR  공개 리포 클론 위치(기본 .local/ed-patch, gitignore 안이라 안전)
 #
 # 세 갈래가 모두 아래 build() 하나를 거친다. serve 로 본 것이 곧 deploy 되는 것이며,
 # 빌드 인자가 갈래마다 어긋날 수 없다 — 미리보기가 거짓말을 하지 않는다.
 #
-# 이 리포지토리(비공개)에는 소스가, ed-patch(공개)에는 산출물만 올라간다.
-#   web/index.html.tmpl + patches/*.json  --build_patcher.py-->  index.html
+# 이 리포지토리에는 소스가, ed-patch(공개)에는 산출물만 올라간다.
+#   patcher/index.html.tmpl + games/*/patches/*.json  --patcher/build.py-->  index.html
+# 게임이 늘면 그 게임의 kind=="fix" 패치가 같은 페이지에 자동으로 실린다.
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 
+# 폰트 서브셋(fontTools)이 필요하다. venv가 있으면 그걸, 없으면 시스템 python3.
+PY="$ROOT/.venv/bin/python"
+[ -x "$PY" ] || PY=$(command -v python3)
+
 # 페이지 푸터에 걸 소스 링크. 비우면 푸터가 통째로 숨는다.
-# 이 리포는 비공개라 지금은 비워 둔다 — 공개할 소스가 생기면 여기 한 줄만 채우면
-# serve 와 deploy 에 동시에 반영된다.
+# 작업 레포 공개 여부가 아직 미결이라 비워 둔다 — 공개하면 여기 한 줄만 채우면
+# serve 와 deploy 에 동시에 반영된다. 공개 전 점검은 docs/publishing.md.
 SRC_URL=""
 
 # 배포 버전. 디스켓 라벨에 v1.0.0 으로 찍힌다. 비우면 라벨에 버전이 안 나온다.
@@ -39,12 +44,12 @@ DEPLOY_URL=https://github.com/byunmaster/ed-patch.git
 
 # build <출력경로> — 유일한 빌드 경로. 갈래별로 다른 인자를 주지 않는다.
 build() {
-    "$ROOT/.venv/bin/python" "$ROOT/tools/build_patcher.py" \
+    "$PY" "$ROOT/patcher/build.py" \
         --out "$1" ${SRC_URL:+--repo "$SRC_URL"} ${VERSION:+--version "$VERSION"} \
         ${VIDEO:+--video "$VIDEO"}
 }
 
-usage() { sed -n '2,20p' "$0" | sed 's/^#\{1,\} \{0,1\}//'; }
+usage() { sed -n '2,21p' "$0" | sed 's/^#\{1,\} \{0,1\}//'; }
 
 # 하위 명령을 생략하면 serve — 제일 자주 쓰는 갈래이고, 아무것도 망가뜨리지 않는다.
 # 옵션만 준 경우(`patcher.sh --port 9000`)도 serve 로 보고 인자를 그대로 넘긴다.
@@ -59,7 +64,7 @@ case "$CMD" in
 build)
     [ $# -eq 0 ] || { echo "build 는 인자를 받지 않는다: $*" >&2; exit 1; }
     echo "== 빌드"
-    build "$ROOT/work/patcher/index.html"
+    build "$ROOT/.local/patcher/index.html"
     ;;
 
 serve)
@@ -74,7 +79,7 @@ serve)
         shift
     done
 
-    OUT="$ROOT/work/patcher"
+    OUT="$ROOT/.local/patcher"
     echo "== 빌드"
     build "$OUT/index.html"
 
@@ -86,13 +91,13 @@ serve)
     [ "$OPEN" = yes ] && (sleep 1; open "$URL") &
 
     # 서버를 포그라운드로 둔다 — Ctrl+C 한 번에 같이 끝나게
-    exec "$ROOT/.venv/bin/python" -m http.server "$PORT" --bind 127.0.0.1 --directory "$OUT"
+    exec "$PY" -m http.server "$PORT" --bind 127.0.0.1 --directory "$OUT"
     ;;
 
 deploy)
     MODE=amend
     MSG=""
-    REPO_DIR="$ROOT/work/ed-patch"
+    REPO_DIR="$ROOT/.local/ed-patch"
     while [ $# -gt 0 ]; do
         case "$1" in
             --amend)    MODE=amend ;;
@@ -113,7 +118,7 @@ deploy)
     echo "== 빌드"
     build "$REPO_DIR/index.html"
     # 갈무리 폰트를 페이지에 임베드해 배포하므로 OFL 전문도 같이 나가야 한다
-    cp "$ROOT/web/LICENSE-Galmuri.txt" "$REPO_DIR/LICENSE-Galmuri.txt"
+    cp "$ROOT/patcher/LICENSE-Galmuri.txt" "$REPO_DIR/LICENSE-Galmuri.txt"
 
     if [ "$MODE" = dry ]; then
         echo "== --dry-run: 커밋·push 하지 않음"

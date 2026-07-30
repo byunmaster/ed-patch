@@ -16,7 +16,7 @@ import os
 import sys
 
 from align_jp_kr import DOS_KR_DIR, load_jp_scene, norm_body
-from common import OUT_DIR
+from common import OUT_DIR, REVIEW_DIR, ROOT
 
 HI_SIM = 0.55  # 이상 = 회수가능(강한 정발 대응)
 MID_SIM = 0.45  # 이상 = 경계, 미만 = 신규
@@ -64,9 +64,9 @@ def main():
 
     align = json.load(open(os.path.join(OUT_DIR, "align", f"{game}_SCN{n}.json"), encoding="utf-8"))
     # align_overrides로 이미 회수된 블록(빌드엔 번역됨)은 제외 — 진짜 미번역만 분류
-    ov = json.load(
-        open(os.path.join(os.path.dirname(OUT_DIR), "align_overrides.json"), encoding="utf-8")
-    ).get(f"{game}SCN{n}", {})
+    ov = json.load(open(os.path.join(ROOT, "align_overrides.json"), encoding="utf-8")).get(
+        f"{game}SCN{n}", {}
+    )
     ovk = {int(k) for k in ov if k.isdigit()}
     un = {i for i in align["jp_unmatched"] if lo <= i <= hi and i not in ovk}
     covered = sum(1 for i in align["jp_unmatched"] if lo <= i <= hi and i in ovk)
@@ -109,8 +109,8 @@ def main():
         f"신규(<{MID_SIM}): {len(new)}  [그중 cross-scene 회수: {xs}]"
     )
 
-    os.makedirs(os.path.join(OUT_DIR, "review"), exist_ok=True)
-    outp = os.path.join(OUT_DIR, "review", f"unmatched_{game}SCN{n}_{lo}-{hi}.md")
+    os.makedirs(REVIEW_DIR, exist_ok=True)
+    outp = os.path.join(REVIEW_DIR, f"unmatched_{game}SCN{n}_{lo}-{hi}.md")
     with open(outp, "w", encoding="utf-8") as f:
         for title, rows in [("회수가능", rec), ("경계(확인 필요)", mid), ("신규 번역 필요", new)]:
             f.write(f"\n## {title} ({len(rows)})\n\n")

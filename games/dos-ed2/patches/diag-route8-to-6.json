@@ -1,13 +1,21 @@
 {
+  "schema_version": 2,
   "name": "진단용: T_246 ROUTE_NO 8 -> 6 (동작이 확인된 항로)",
   "description": "route 6은 T_300/302/304/306(정상 항구)이 쓰는 값이라 F_501에서 실제로 검증된 경로다. 이걸로 크래시가 사라지면 결함은 route 8 전용 데이터(레코드 0xbe, si 0x5f2, 키데이터 0x1b0, 핸들러 테이블 0x1a6)에 있다는 뜻이고, 그대로 터지면 route와 무관한 곳에 있다는 뜻이다. 목적지는 당연히 엉뚱한 곳이 된다 — 크래시 여부만 본다.",
   "issue": 1,
   "kind": "diagnostic",
+  "files": [
+    {
+      "file": "SCENA/T_246.DLL",
+      "size": 33296,
+      "sha1_from": "7202d568c40ffd54c06923a2bf6adc5b64455c74",
+      "sha1_to": "62df76ebb7c38b8e4ac0226c1281716f4f425f5e"
+    }
+  ],
   "patches": [
     {
       "file": "SCENA/T_246.DLL",
       "offset": "0x3c19",
-      "from": "08",
       "to": "06",
       "note": "seg3:0x815 mov byte[ROUTE_NO],8 의 즉시값"
     }

@@ -3,9 +3,14 @@
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # games/ps1-ed1+2
-ORIG_DIR = os.path.join(ROOT, "..", "..", "originals", "ps1-ed1+2")  # 원본 이미지 (gitignore)
-WORK_DIR = os.path.join(ROOT, "work")  # 테스트/패치 빌드 (gitignore)
-OUT_DIR = os.path.join(ROOT, "out")  # 분석 산출물 (gitignore)
+ORIG_DIR = os.path.join(ROOT, "..", "..", "originals", "jp", "ps1-ed1+2")  # 원본 이미지 (gitignore)
+# 작업 산출물은 전부 `work/` 한 칸 아래로 모은다(gitignore 한 줄로 덮이고, `rm -rf work/`가
+# 곧 리셋이다). 성격이 다르니 칸을 나눈다 —
+WORK_DIR = os.path.join(ROOT, "work")  # 컨테이너
+BUILD_DIR = os.path.join(WORK_DIR, "build")  # 테스트 이미지(BIN/CUE) — 순수 출력
+OUT_DIR = os.path.join(WORK_DIR, "derived")  # 원본에서 파생 — ⚠ **빌드가 읽는다**(입력)
+REVIEW_DIR = os.path.join(WORK_DIR, "review")  # 검토표·페이로드 — ⚠ 원문·정발 문안 포함
+DIST_DIR = os.path.join(WORK_DIR, "dist")  # 배포 차분(xdelta/BPS) — 아직 미사용
 
 ORIG_BIN = os.path.join(ORIG_DIR, "Legend of Heroes I & II, The - Eiyuu Densetsu (Japan).bin")
 ORIG_CUE = os.path.join(ORIG_DIR, "Legend of Heroes I & II, The - Eiyuu Densetsu (Japan).cue")

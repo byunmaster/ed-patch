@@ -8,11 +8,11 @@
 import os
 import shutil
 
+from common import BUILD_DIR, SECTOR, USER_OFF, USER_SIZE, edc_compute, write_cue
 from common import ORIG_BIN as SRC
-from common import SECTOR, USER_OFF, USER_SIZE, WORK_DIR, edc_compute, write_cue
 
-DST = os.path.join(WORK_DIR, "Eiyuu Densetsu (Test Patch).bin")
-DST_CUE = os.path.join(WORK_DIR, "Eiyuu Densetsu (Test Patch).cue")
+DST = os.path.join(BUILD_DIR, "Eiyuu Densetsu (Test Patch).bin")
+DST_CUE = os.path.join(BUILD_DIR, "Eiyuu Densetsu (Test Patch).cue")
 
 # (raw 오프셋, 원본 문자열 앞부분, 교체 문자열) — 바이트 수 동일해야 함
 PATCHES = [

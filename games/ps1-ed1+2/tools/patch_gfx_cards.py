@@ -16,12 +16,12 @@ import os
 import struct
 
 import numpy as np
-from common import ROOT, WORK_DIR, write_user_data
+from common import BUILD_DIR, ROOT, write_user_data
 from PIL import Image, ImageDraw, ImageFont
 from scan_tim import parse_tim, to_rgb, user_stream
 
 FONT = os.path.join(ROOT, "..", "..", "shared", "fonts", "neodgm.ttf")
-TARGET = os.path.join(WORK_DIR, "Eiyuu Densetsu (KR Pilot).bin")
+TARGET = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR Pilot).bin")
 
 # (TIM 오프셋, 장 표기, 제목) — 오프셋은 scan_tim 인벤토리에서.
 # 제목은 DOS 정발판(만트라) 공식 챕터 제목 (2026-07-09 확정).

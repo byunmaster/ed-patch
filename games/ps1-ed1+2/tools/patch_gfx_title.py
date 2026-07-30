@@ -32,7 +32,7 @@ import os
 import struct
 
 import numpy as np
-from common import WORK_DIR, write_user_data
+from common import BUILD_DIR, write_user_data
 from PIL import Image, ImageDraw, ImageFont
 from scan_tim import parse_tim, user_stream
 from scipy.ndimage import (
@@ -44,7 +44,7 @@ from scipy.ndimage import (
 )
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TARGET = os.path.join(WORK_DIR, "Eiyuu Densetsu (KR).bin")
+TARGET = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
 LOGO_PNG = os.path.join(ROOT, "assets", "title_logo.png")
 
 COLL_OFF = 0x50C800  # 컬렉션 타이틀 TIM (스트림=디스크 섹터 오프셋)
@@ -71,7 +71,15 @@ OVERLAY_COLOR = (220, 40, 40)  # 위치 확인용 임시 빨강(OVERLAY_ONLY일 
 PILL_TEXT = [
     (49, 111, 195, 217, "처음부터", 0, (0, 0)),  # 비선택 (iy1=217→높이22=선택과 동일 폰트)
     (225, 287, 195, 218, "이어하기", 0, (0, 0)),  # 비선택
-    (324, 383, 5, 27, "처음부터", 1.5, (0, 2, 0, 0)),  # 선택 — 우측만 살짝 확장(ら 잔여, streak 최소)
+    (
+        324,
+        383,
+        5,
+        27,
+        "처음부터",
+        1.5,
+        (0, 2, 0, 0),
+    ),  # 선택 — 우측만 살짝 확장(ら 잔여, streak 최소)
     (325, 385, 35, 58, "이어하기", 1, (0, 2, 0, 0)),  # 선택
 ]
 # ── 컬렉션 버튼 파라미터(전부 emucap 실측·유저 QA로 확정, 상세 title-buttons-handoff.md) ──

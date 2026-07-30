@@ -1,0 +1,3 @@
+# 웹 패처 폰트 서브셋 의존성 — python3 -m pip install -r tools/requirements.txt
+# (게임별 도구 의존성은 games/<게임>/tools/requirements.txt)
+fonttools[woff]>=4.50

@@ -625,9 +625,9 @@ ED_LBA, ED_SIZE = 257, 1021952
 
 def main():
     """build.py 체인용 — 최종 디스크의 ED.EXE에 조사 훅을 제자리 결합."""
-    from common import WORK_DIR, extract, write_user_data
+    from common import BUILD_DIR, extract, write_user_data
 
-    target = os.path.join(WORK_DIR, "Eiyuu Densetsu (KR).bin")
+    target = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
     if not os.path.exists(target):
         raise SystemExit(f"대상 이미지 없음: {target} — build.py 먼저")
     ed = bytearray(extract(ED_LBA, ED_SIZE, path=target))

@@ -10,12 +10,12 @@ import os
 import shutil
 
 import numpy as np
+from common import BUILD_DIR, OUT_DIR, SECTOR, USER_OFF, USER_SIZE, edc_compute, write_cue
 from common import ORIG_BIN as SRC
-from common import OUT_DIR, SECTOR, USER_OFF, USER_SIZE, WORK_DIR, edc_compute, write_cue
 from PIL import Image, ImageDraw, ImageFont
 
-DST = os.path.join(WORK_DIR, "Eiyuu Densetsu (PoC Hangul).bin")
-DST_CUE = os.path.join(WORK_DIR, "Eiyuu Densetsu (PoC Hangul).cue")
+DST = os.path.join(BUILD_DIR, "Eiyuu Densetsu (PoC Hangul).bin")
+DST_CUE = os.path.join(BUILD_DIR, "Eiyuu Densetsu (PoC Hangul).cue")
 
 # あ 글리프의 (EXE LBA, EXE 내 파일 오프셋) — hunt_font_in_ram.py 결과
 TARGETS = [

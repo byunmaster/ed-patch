@@ -66,7 +66,7 @@ def space_variants(kr, cap=6):
         if not any(mask):
             continue
         s, shift = kr, 0
-        for on, i in zip(mask, spots):
+        for on, i in zip(mask, spots, strict=False):
             if on:
                 s = s[: i + 1 + shift] + " " + s[i + 1 + shift :]
                 shift += 1

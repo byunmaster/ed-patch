@@ -497,13 +497,11 @@ function hexToBytes(h) {
   for (let i = 0; i < n; i++) out[i] = parseInt(h.substr(i * 2, 2), 16);
   return out;
 }
-function eq(buf, off, bytes) {
-  if (off + bytes.length > buf.length) return false;
-  for (let i = 0; i < bytes.length; i++) if (buf[off + i] !== bytes[i]) return false;
-  return true;
-}
+/* 판정은 전적으로 파일 전체 sha1 로 한다. 스펙에 원본 바이트를 담지 않기 때문이고
+   (patches/*.json 은 이 페이지에 통째로 인라인돼 공개 배포된다), 구간 비교보다
+   오히려 엄격하다 — 스펙이 안 건드리는 자리가 달라도 잡아낸다. */
 async function sha1(buf) {
-  if (!crypto.subtle) return null;               // 비보안 컨텍스트에서는 건너뛴다
+  if (!crypto.subtle) return null;               // 비보안 컨텍스트 (아래에서 안내)
   const d = await crypto.subtle.digest("SHA-1", buf);
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -522,15 +520,14 @@ async function inspect(bytes, t) {
     return { state: "mismatch", why: "크기 다름",
              hint: "이름만 같은 다른 파일입니다." };
   const h = await sha1(bytes);
+  if (!h)
+    return { state: "mismatch", why: "확인 불가",
+             hint: "https 로 접속해야 파일을 검사할 수 있습니다." };
   if (h === t.meta.sha1_to)
     return { state: "applied", why: "패치됨" };
-  if (h && h !== t.meta.sha1_from)
+  if (h !== t.meta.sha1_from)
     return { state: "mismatch", why: "판본 다름",
-             hint: "정발판이 맞는지 확인하세요." };
-  for (const p of t.patches)
-    if (!eq(bytes, parseInt(p.offset, 16), hexToBytes(p.from)))
-      return { state: "mismatch", why: "원본 다름",
-               hint: "원본으로 되돌린 뒤 시도하세요." };
+             hint: "정발판 원본이 맞는지 확인하세요." };
   return { state: "ready" };
 }
 function applyTo(bytes, t) {

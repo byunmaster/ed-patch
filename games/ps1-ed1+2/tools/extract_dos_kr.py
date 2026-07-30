@@ -2,7 +2,7 @@
 DOS 정발판(만트라) 한국어 대사 추출기 — 씬별 DLL의 인라인 텍스트를 JSON으로 덤프.
 
 대상 (originals/kr/, gitignore):
- - ED1: SINDLL/*.DLL (225파일)   - ED2: SCENA/*.DLL (파일 입수 시 자동 처리)
+ - ED1: dos-ed1/SINDLL/*.DLL (225파일)   - ED2: dos-ed2/SCENA/*.DLL
 
 DLL 구조 (실측, 2026-07-09):
  - MZ 헤더 + 공용 인터프리터 스텁 (전 파일 공통 prefix, ED1은 0xF64 — 런타임 계산)
@@ -24,7 +24,9 @@ import re
 from common import OUT_DIR, ROOT
 
 KR_DIR = os.path.join(ROOT, "..", "..", "originals", "kr")
-GAMES = {"ED1": "SINDLL", "ED2": "SCENA"}
+# 논리 게임 ID → (originals/kr 하위 폴더, 대사 DLL 폴더).
+# ID("ED1")는 out/ 산출물·정렬 키에 쓰이므로 originals 폴더명과 분리해 둔다.
+GAMES = {"ED1": ("dos-ed1", "SINDLL"), "ED2": ("dos-ed2", "SCENA")}
 
 # KS X 1001 2바이트 런: 한글(B0-C8) + 특수문자행(A1-AF), 2연속 이상
 KR_RUN = re.compile(rb"(?:[\xb0-\xc8\xa1-\xaf][\xa1-\xfe]){2,}")
@@ -174,10 +176,10 @@ def block_fields(raw):
     return speaker, flags
 
 
-def dump_game(game, subdir):
-    src_dir = os.path.join(KR_DIR, game, subdir)
+def dump_game(game, src_sub, subdir):
+    src_dir = os.path.join(KR_DIR, src_sub, subdir)
     if not os.path.isdir(src_dir):
-        print(f"{game}: {game}/{subdir} 없음 — 건너뜀 (원본 입수 후 재실행)")
+        print(f"{game}: kr/{src_sub}/{subdir} 없음 — 건너뜀 (원본 입수 후 재실행)")
         return 0
     # "._*" = macOS AppleDouble 잔재 — 섞이면 공용 prefix 계산이 무너짐
     files = sorted(
@@ -232,7 +234,7 @@ def dump_game(game, subdir):
         doc = {
             "table_id": f"{game}/{stem}",
             "source": {
-                "file": f"{game}/{subdir}/{fname}",
+                "file": f"{src_sub}/{subdir}/{fname}",
                 "size": len(data),
                 "code_end": f"0x{code_end:X}",
                 "text_start": f"0x{text_start:X}",
@@ -258,8 +260,8 @@ def dump_game(game, subdir):
 
 def main():
     total = 0
-    for game, subdir in GAMES.items():
-        total += dump_game(game, subdir)
+    for game, (src_sub, subdir) in GAMES.items():
+        total += dump_game(game, src_sub, subdir)
     print(f"\n총 블록 {total}개 (전 파일 라운드트립 OK)")
 
 

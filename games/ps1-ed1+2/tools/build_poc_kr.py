@@ -14,13 +14,13 @@ import shutil
 
 import hangul_font
 import hangul_map
-from common import ED1SCN1_LBA, ED1SCN1_SIZE, WORK_DIR, extract, write_cue, write_user_data
+from common import BUILD_DIR, ED1SCN1_LBA, ED1SCN1_SIZE, extract, write_cue, write_user_data
 from common import ORIG_BIN as SRC
 
 ED_LBA, ED_SIZE = 257, 1021952
 
-DST = os.path.join(WORK_DIR, "Eiyuu Densetsu (PoC KR).bin")
-DST_CUE = os.path.join(WORK_DIR, "Eiyuu Densetsu (PoC KR).cue")
+DST = os.path.join(BUILD_DIR, "Eiyuu Densetsu (PoC KR).bin")
+DST_CUE = os.path.join(BUILD_DIR, "Eiyuu Densetsu (PoC KR).cue")
 
 DIALOGUE_OFF = 0x1C7  # ED1SCN1.BIN 내 「あ、王子さま…」 시작
 OLD_TEXT = "あ、王子さま いらっしゃい。"

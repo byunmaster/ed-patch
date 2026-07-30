@@ -14,12 +14,12 @@ import os
 import shutil
 
 import hangul_map as H
-from common import WORK_DIR, extract, write_cue, write_user_data
+from common import BUILD_DIR, extract, write_cue, write_user_data
 
 ED_LBA, ED_SIZE = 257, 1021952
-SRC = f"{WORK_DIR}/Eiyuu Densetsu (KR Pilot).bin"
-DST = f"{WORK_DIR}/Eiyuu Densetsu (KR UI).bin"
-DST_CUE = f"{WORK_DIR}/Eiyuu Densetsu (KR UI).cue"
+SRC = f"{BUILD_DIR}/Eiyuu Densetsu (KR Pilot).bin"
+DST = f"{BUILD_DIR}/Eiyuu Densetsu (KR UI).bin"
+DST_CUE = f"{BUILD_DIR}/Eiyuu Densetsu (KR UI).cue"
 
 # ED.EXE 오프셋 → 정발 KR (만트라 ED1MAIN.EXE 공식 표기 기준). 슬롯에 맞춰 길이 조정.
 # 인게임 QA로 확정 대상(대사 승격과 동일 — AI 1차, 사람 QA).
