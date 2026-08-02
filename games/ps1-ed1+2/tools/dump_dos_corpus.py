@@ -79,9 +79,10 @@ def to_lines(t):
     return out
 
 
-def collect(game):
-    """{문장: {"at": [표#엔트리…], "inject": bool}} — 검사 대상 정본."""
-    uniq = {}
+def entries(game):
+    """(표 id, 엔트리 id, [(문장, 주입)]) 순회 — `collect`·`dump` 의 **공통 원천**.
+
+    둘이 같은 순회를 따로 갖고 있었다. 한쪽만 고치면 검사 대상과 검토표가 어긋난다."""
     for f in sorted(glob.glob(os.path.join(DOS_KR_DIR, game, "*.json"))):
         if os.path.basename(f).startswith(("_", ".")):
             continue
@@ -89,33 +90,34 @@ def collect(game):
         for e in doc["entries"]:
             if e["kind"] != "block":
                 continue
-            for s, inj in to_lines(normalize(e["text"])):
-                r = uniq.setdefault(s, {"at": [], "inject": False})
-                r["at"].append(f"{doc['table_id']}#{e['entry_id']}")
-                r["inject"] |= inj
+            lines = to_lines(normalize(e["text"]))
+            if lines:
+                yield doc["table_id"], e["entry_id"], lines
+
+
+def collect(game):
+    """{문장: {"at": [표#엔트리…], "inject": bool}} — 검사 대상 정본."""
+    uniq = {}
+    for tid, eid, lines in entries(game):
+        for s, inj in lines:
+            r = uniq.setdefault(s, {"at": [], "inject": False})
+            r["at"].append(f"{tid}#{eid}")
+            r["inject"] |= inj
     return uniq
 
 
 def dump(game, chunk):
     os.makedirs(os.path.join(OUT, "paste"), exist_ok=True)
     tables, uniq, n_entry = [], {}, 0
-    for f in sorted(glob.glob(os.path.join(DOS_KR_DIR, game, "*.json"))):
-        if os.path.basename(f).startswith(("_", ".")):
-            continue
-        doc = json.load(open(f, encoding="utf-8"))
-        rows = []
-        for e in doc["entries"]:
-            if e["kind"] != "block":
-                continue
-            lines = [s for s, _ in to_lines(normalize(e["text"]))]
-            if not lines:
-                continue
-            n_entry += 1
-            rows.append((e["entry_id"], lines))
-            for s in lines:
-                uniq.setdefault(s, []).append(f"{doc['table_id']}#{e['entry_id']}")
-        if rows:
-            tables.append((doc["table_id"], rows))
+    for tid, eid, lines in entries(game):
+        n_entry += 1
+        txt = [s for s, _ in lines]
+        if tables and tables[-1][0] == tid:
+            tables[-1][1].append((eid, txt))
+        else:
+            tables.append((tid, [(eid, txt)]))
+        for s in txt:
+            uniq.setdefault(s, []).append(f"{tid}#{eid}")
 
     md = [
         f"# {game} 정발 대사 전문 (검수용)",

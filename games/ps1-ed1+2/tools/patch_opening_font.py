@@ -12,7 +12,7 @@
   4) 내레이션 50줄을 저주소 텍스트 영역(0x974~0xEEE, 1402B) 내 재packing + 포인터 갱신.
      ⚠ 스크립트(0x145A0)가 주소 범위로 text(0x8001xxxx)/command(0x80026Dxx)를 구분
      → 고주소 재배치 금지(검은화면). 각 줄 끝 0x0A 필수(필드클리어 — 없으면 잔상).
-  5) 전각 advance 4→3 패치(0x13370/0x13750)로 간격 축소. 줄당 한계 21슬롯.
+  5) 전각 advance 4→3 패치(0x13370/0x13750). 공백·부호는 반각 2유닛 — 필드 64유닛.
 
 텍스트는 정발판(originals/kr/dos-ed1/OPENING.EXE) 원문 우선, JP 전용부만 정발 어투 신규 번역.
 상세 여정: docs/opening-font-devlog.md, 핸드오프: docs/HANDOFF.md.
@@ -56,42 +56,15 @@ DRAW_ROWS = 15
 GALMURI_BDF = hangul_font.GALMURI11_BDF.replace("Galmuri11", "Galmuri9")  # 9px 전용 비트맵(또렷)
 # Galmuri9 dy=1 → 잉크 3~11행(위3/아래3 여백, 무잘림). 압축 3584B로 안전영역에 여유.
 GALMURI_DY = 1
-# 폰트 선택: "galmuri"(전용 BDF, 도트 또렷) | "neodgm"(16px TTF 축소, 거침 — 비추천)
-FONT_MODE = "galmuri"
-NEODGM_TTF = os.path.join(os.path.dirname(__file__), "../../../shared/fonts/neodgm.ttf")
-NEODGM_PX = 12  # 맞는 것 중 최대(3908B). 15행 셀 상단여백 2에서 잉크 2~12
-NEODGM_TOP = 2
+# 폰트는 Galmuri9 전용 BDF. neodgm(16px TTF 축소)도 시험했으나 **도트가 거칠어 기각**했다
+# (12px 가 맞는 것 중 최대, 압축 3908B). 결론만 남기고 코드는 지웠다 — YAGNI.
 STUB_FILE_OFF = 0x15C14  # 저작권 문자열 자리(게임 미사용, 어제 스텁 검증). RAM 0x80025414 = 디코더.
 STUB_RAM = TADDR + (STUB_FILE_OFF - 0x800)  # 0x80025414
 ORIG_PC0 = 0x80021D50
 
 
-def gen_glyphs_neodgm(chars):
-    """음절 → GLYPH바이트. neodgm(16px TTF)을 NEODGM_PX로 렌더(잉크 상단정렬+여백)."""
-    from PIL import Image, ImageDraw, ImageFont
-
-    font = ImageFont.truetype(NEODGM_TTF, NEODGM_PX)
-    out = {}
-    for ch in chars:
-        img = Image.new("L", (16, 16), 0)
-        ImageDraw.Draw(img).text((0, 0), ch, fill=255, font=font)
-        a = np.array(img)
-        ys, xs = np.where(a >= 128)
-        bits = np.zeros((DRAW_ROWS, 16), dtype=np.uint8)
-        if len(ys):
-            y0 = ys.min()
-            for y, x in zip(ys, xs, strict=True):
-                yy = int(y) - int(y0) + NEODGM_TOP
-                if 0 <= yy < DRAW_ROWS and 0 <= x < 16:
-                    bits[yy, x] = 1
-        out[ch] = np.packbits(bits, axis=1).tobytes()
-    return out
-
-
 def gen_glyphs(chars):
-    """음절 → GLYPH바이트(16×DRAW_ROWS) 글리프. FONT_MODE에 따라 Galmuri/neodgm."""
-    if FONT_MODE == "neodgm":
-        return gen_glyphs_neodgm(chars)
+    """음절 → GLYPH바이트(16×DRAW_ROWS) 글리프 (Galmuri9 BDF)."""
     glyphs, ascent = hangul_font.load_bdf(GALMURI_BDF)
     out = {}
     for ch in chars:
@@ -133,18 +106,14 @@ def compress_font(glyph_list):
     return bytes(out)
 
 
-# 문장부호 → 게임 전각 심볼(SJIS) — BIOS 글리프 그대로 사용(별도 경로)
-PUNC = {",": b"\x81\x43", ".": b"\x81\x44", "…": b"\x81\x63", "!": b"\x81\x49", "?": b"\x81\x48"}
-
 # 내레이션 50줄 — 정발판(originals/kr/dos-ed1/OPENING.EXE) 원문 우선.
 # JP(PS1)에만 있고 정발에 없는 부분(다섯 나라 11~13행·몬스터 습격 확장 26~40행)은
 # 정발 어투로 새로 번역.
 # 표기 규칙(유저 확정): 쉼표 뒤 공백 없음(쉼표도 전각 슬롯이라 공백까지 두면 여백 과대),
-# 문장 끝 마침표 일관 추가. 각 줄 ≤MAX_SLOTS(21) — advance 3유닛 기준 필드(64유닛) 한계.
+# 문장 끝 마침표 일관 추가. 줄 폭은 필드 64유닛(전각 3·반각 2) — units() 로 잰다.
 # 바이트 예산이 영역(0x974~0xEEE, 1402B)에 거의 꽉 참(빌드 출력의 '여유' 확인) — 늘릴 땐 다른 줄을 줄여야 함.
 # [(슬롯 오프셋, KR 내레이션)] 50줄 — textmap/opening.json 파생(행별 편차 사유는 note 필드).
 LINES = off_pairs("opening")
-MAX_SLOTS = 21  # 필드 64유닛 ÷ advance 3 = 21전각 (초과 시 앞뒤 잘림)
 FIELD = 64  # 표시 필드 폭(유닛). 폭측정·표시 루프가 같은 단위로 센다
 ADV_WIDE, ADV_NARROW = 3, 2  # 전각 / 반각 advance(유닛)
 # 반각으로 낼 글자 — 렌더러에 **이미 있는 advance 2 경로**를 빌린다. 원본은 전각공백과
