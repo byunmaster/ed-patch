@@ -9,7 +9,7 @@ import os
 import re
 
 import numpy as np
-from common import extract
+from common import OUT_DIR, extract
 from PIL import Image, ImageDraw, ImageFont
 
 FONT = r"C:\Windows\Fonts\msgothic.ttc"
@@ -52,7 +52,7 @@ def scan_file(name, data, results):
 
 
 def main():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "out", "iso_files.txt")
+    path = os.path.join(OUT_DIR, "iso_files.txt")
     results = []
     with open(path, encoding="utf-8") as f:
         next(f)

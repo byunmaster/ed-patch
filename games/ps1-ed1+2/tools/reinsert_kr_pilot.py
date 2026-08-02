@@ -530,6 +530,12 @@ def parse_kr(entry):
     # 종결부호 앞 공백·개행 일괄 제거(유저 승인 2026-07-24): 정발 "어서 !!"식 공백은
     # 14슬롯 폭에서 느낌표만 다음 줄로 넘어가는 고아를 만든다 — 부호를 앞말에 붙인다.
     t = re.sub(r"[ \n]+(?=[!?])", "", t)
+    # 곧은 따옴표 → 곡선 따옴표. PS1 폰트에 `"`·`'` 글리프가 **없어서**(전각 ＂로 변환됐다가
+    # `글리프 범위 밖`) 그 페이지를 무는 블록이 통째로 `encode` 탈락한다. 정발 ED1 에 31곳 있어
+    # 잠재 지뢰였다 — jp681·jp734 가 축소 재배정으로 그 페이지를 물자 실제로 터졌다(2026-07-31).
+    # 여는/닫는 판정은 앞 문자로 — 줄머리·공백 뒤면 여는 쪽. 인용이 엔트리를 넘나들어도 안전하다.
+    t = re.sub(r'(^|[\s(])"', r"\1“", t)
+    t = t.replace('"', "”").replace("'", "’")
     pages = []
     for seg in t.split("{p}"):
         inline_spk = None
@@ -545,14 +551,17 @@ def parse_kr(entry):
             # 둘 다 라이아스 잔소리에 `............` 창을 창 하나로 두므로(창 수 계약에도 포함),
             # 한글이 없다고 드롭하면 침묵 연출 유실 + 창 부족이 된다(T_001#8 실측 07-28).
             # 빈 페이지·opcode 노이즈는 여전히 드롭(부호로만 이뤄진 경우만 예외).
-            bare = re.sub(r"\{n\}|\s", "", seg)
+            bare = re.sub(rf"\{{n\}}|\s|{HARD_NL}", "", seg)  # HARD_NL도 표시 문자가 아니다
             if bare and re.fullmatch(r"[.·…]+", bare):
                 pages.append((inline_spk, seg.replace("{n}", "").strip()))
             continue
         # 선두 opcode 잔여 노이즈 절삭 — 단 숫자·부호는 본문이다("10년전"의 10, 이름 창
         # 뒤에 오는 ". 왕자"의 온점이 잘려나간 실측 07-26). 선두 NAME_SENT는 기존대로
         # 잘라낸다(%s 헤더 블록의 이름자리 중복 — 남기면 %s 초과 방출 = 인자 소비 어긋남).
-        if m.start() < 4 and not re.fullmatch(r"[0-9 .,!?]*", seg[: m.start()]):
+        # ⚠ HARD_NL도 허용해야 한다 — line_overrides가 넣는 **의도적 개행 마커**지 노이즈가
+        # 아니다. 빠뜨리면 `.<HARD_NL>왕자`의 접두사가 통과 못 해 온점과 개행이 함께 잘리고,
+        # 강제개행이 조용히 무시된다(수도사 자기소개 jp1164 실측 2026-07-31).
+        if m.start() < 4 and not re.fullmatch(rf"[0-9 .,!?{HARD_NL}]*", seg[: m.start()]):
             seg = seg[m.start() :]
         pages.append((inline_spk, seg))
     if not pages:
@@ -565,6 +574,8 @@ def parse_kr(entry):
 # 여백이 사라져 "부호 뒤 공백 제거" 조판 규칙은 폐지(공백 유지가 자연스러움 — 유저 판정).
 # ()는 07-26 추가 — 전각 （）의 내부 여백이 "이 (가)"처럼 벌어져 보임(유저 QA, 인게임 검증 대기).
 HALF_PUNCT = ".,!?()"
+# ⚠ `~` 를 넣지 말 것 — SJIS **반각 0x7E 는 물결이 아니라 오버라인(‾)** 이라 윗줄 일자로
+# 렌더된다(2026-08-01 실측). 전각 ～ 가 커 보여도 그게 맞다.
 
 
 def cell_w(ch):
@@ -771,6 +782,19 @@ FOLD_NAME = {}
 # 원본도 같은 방식을 쓴다(전 씬 블록 텍스트 안 단독 제어바이트 실측: 0x03 15회·0x02 22회 등).
 # 용도: 정발이 색으로 구분하는 **해설(내레이션) = 초록(3)**을 이식(jp303 유저 QA 2026-07-30).
 COLOR_WRAP = {}
+# 이름줄 주입: {eid: (색on, 이름, 색off)} — 씬 단위(load_translations 재구축).
+# **원본에 화자 헤더(`%c이름%c`) 자리가 없는데** 화면엔 이름이 떠야 하는 블록용이다
+# (jp314 세리오스 실측 2026-08-01: `%c`=1·헤더 없음이라 헤더 쌍을 못 만든다 — 만들면
+# `%c` 개수가 늘어 구조 계약 위반). COLOR_WRAP 과 같은 수법으로 **색코드+이름+개행을
+# 텍스트 바이트로 직접** 박는다. `%c`·`%s` 개수가 안 변하므로 계약은 그대로다.
+# 색코드 실측: 2=주황(화자 이름) · 3=초록 · 1=흰색 복귀(SCN_ARG_PATCHES 주석 참조).
+NAME_PLATE = {}
+# 창 **뒤** 강제 개행: {eid: {창 인덱스, …}} — 씬 단위(load_translations 재구축).
+# 원본이 **인라인 이름 창 앞에 개행**을 두는데(`…まかせとけって!!\n%cリュナン%c`) 정발의
+# `{n}` 은 조판에서 해소돼 사라진다 — 그러면 이름이 앞 문장 꼬리에 붙는다(jp245 실측
+# 2026-08-01). ⚠ 기존 `nl_wins`(창 **앞** 개행)는 **본문 창에만** 걸려 이름 창엔 못 쓴다 —
+# 그래서 **앞 본문 창의 꼬리**에 넣는다. `%c`·`%s` 개수는 안 변한다(개행 바이트 1개만 추가).
+NL_WINS = {}
 SCN_ARG_PATCHES = {
     # eid 20 개구멍 Q&A: li t2,0x83 / li t0,0x5C → 0x20 (RAM 0x8017D920/24)
     ("ED1SCN1", 20): [(0x13920, 0x240A0020), (0x13924, 0x24080020)],
@@ -1057,7 +1081,7 @@ def _tpl_punct_only(seg):
         return False
 
 
-def build_from_template(raw, speaker, pages, max_lines=None, fold=None):
+def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=()):
     """JP 골격을 그대로 두고 본문 창에 정발 문장을 채워 블록을 만든다.
 
     제어 토큰(%c/%s/%d)은 **바이트 그대로** 방출하므로 구조 충실도가 100%가 되고,
@@ -1156,6 +1180,7 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None):
     complex_blk = jp_ctrl_runs(raw) > 0 and len(fill) >= 2  # 다중 화자·색 전환 = 배정 근거 필수
     # 이름만 번역(NAMEONLY, pages=[]): 본문은 전부 punct/빈 창 통과 — 채울 것 없이 골격 방출.
     chunks, nl_wins = ({}, set()) if not pages else (None, set())
+    nl_after = set(nl)
     for lst in lists:
         targets = body_idx if len(lst) == len(body_idx) else fill if len(lst) == len(fill) else None
         if targets is None or len(body_idx) < 2:
@@ -1204,6 +1229,8 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None):
             elif seg and seg[0][0] == "nl" and k > 0 and wins[k - 1][0] == "name":
                 b += b"\x0a"
             b += encode_ext("\n".join(chunks[k]))
+            if k in nl_after:  # 창 뒤 개행(다음이 인라인 이름 창일 때 원본 레이아웃 복원)
+                b += b"\x0a"
             folded_prev = False
             # 다음 창이 인라인 %s 주입 창(텍스트 없는 body)이면 이름 앞 공백 —
             # 한국어는 "제 이름은 류난"처럼 띄어야 한다(JP는 무공백, eid 1164 실측 07-26)
@@ -1390,7 +1417,9 @@ def build_candidate(raw, t, eid):
             # 100%가 되고 여분 %c·개행이 없어 바이트도 크게 준다(전 씬 -22%).
             # 용량 초과(정발 문장이 창보다 김)면 기존 재조판으로 폴백해 커버리지를 지킨다.
             try:
-                cand = build_from_template(raw_t, t[0], t[1], fold=FOLD_NAME.get(eid))
+                cand = build_from_template(
+                    raw_t, t[0], t[1], fold=FOLD_NAME.get(eid), nl=NL_WINS.get(eid, ())
+                )
                 from_tpl = True
                 if tails:
                     cand = reinsert_pairs(cand, tails)
@@ -1417,6 +1446,11 @@ def build_candidate(raw, t, eid):
         i = c.rfind(MC)  # 종단 %c 앞에 복귀색을 넣어 다음 블록에 색이 새지 않게 한다
         c = bytes([on]) + (c[:i] + bytes([off]) + c[i:] if i >= 0 else c + bytes([off]))
         cand = c + b"\x00" * (-len(c) % 4 or 4)
+    if cand is not None and eid in NAME_PLATE:
+        on, nm, off = NAME_PLATE[eid]
+        c = cand.rstrip(b"\x00")
+        c = bytes([on]) + encode_ext(nm) + bytes([off]) + b"\x0a" + c
+        cand = c + b"\x00" * (-len(c) % 4 or 4)
     if cand is not None and eid in TRAIL_NL:
         c = cand.rstrip(b"\x00")
         if not c.endswith(MC) and not c.endswith(b"\x0a"):  # 종단 없는 연속 조각만
@@ -1441,6 +1475,16 @@ def build_candidate(raw, t, eid):
         or cand.count(b"\x25\x64") < raw.count(b"\x25\x64")
     ):
         return None, "fmt_drop"
+    # ⚠ **넘치는 것도 똑같이 치명적**이다. 위 두 게이트는 오래도록 `<` 만 봤는데, 서식 지정자를
+    # 원본보다 **더** 방출하면 엔진이 **없는 인자를 소비**해 인자열이 통째로 어긋난다 — 화면엔
+    # 쓰레기 글자가 뜨고 대사가 안 넘어간다(jp245 `%cロー%c…%cリュナン%c…` 실측 2026-08-01:
+    # 원본 %s 0개인데 정발의 `\x09`(이름주입)를 %s 로 내보내 1개가 됐다. 유저가 진행 불가 보고).
+    # 원본이 **리터럴 인라인 헤더**를 쓰는 자리에 우리가 %s 를 넣으면 이 조건에 걸린다.
+    if cand is not None and (
+        cand.count(b"\x25\x73") > raw.count(b"\x25\x73")
+        or cand.count(b"\x25\x64") > raw.count(b"\x25\x64")
+    ):
+        return None, "fmt_excess"
     return cand, None
 
 
@@ -1542,6 +1586,24 @@ def _speaker_map():
     return _SPEAKER_MAP
 
 
+_OWN_SPK = {}
+
+
+def _has_own_speaker(table, eid):
+    """정발 엔트리가 **자기 `{spk}`** 를 갖는가(빈 speaker = 앞 엔트리에서 상속)."""
+    if not table:
+        return False
+    if table not in _OWN_SPK:
+        path = os.path.join(OUT_DIR, "dos_kr", f"{table}.json")
+        try:
+            doc = json.load(open(path, encoding="utf-8"))
+        except FileNotFoundError:
+            _OWN_SPK[table] = {}
+        else:
+            _OWN_SPK[table] = {e["entry_id"]: bool(e.get("speaker")) for e in doc["entries"]}
+    return _OWN_SPK[table].get(eid, False)
+
+
 def accept_pair(p):
     """정렬쌍 채택 여부 — **화자 일치가 유사도보다 강한 신호**다(2026-07-23 실측).
 
@@ -1550,15 +1612,28 @@ def accept_pair(p):
     버려지는 쌍이 생긴다(309건). 그래서 화자 대응이 확인되면 그걸 우선한다.
       화자 일치 → low_sim이어도 채택 / 화자 불일치 → 무플래그여도 제외
       화자 정보가 없거나 매핑에 없으면 → 기존 플래그 기준으로 판정
+
+    ⚠ 단 **정발 엔트리가 자기 `{spk}` 를 가질 때만** 그 화자를 증거로 쓴다. 없으면 화자는 앞
+    엔트리에서 물려받은 것이라 이 엔트리에 대한 증거가 아니다. 게다가 우리 정발 추출본엔
+    짝 안 맞는 `{spk}` 잔여가 122블록 있어 상속 사슬 자체가 못 미덥다. 상속 화자를 거부권으로
+    쓰면 **맞는 쌍이 조용히 기각된다** — 실측 174건이 그랬고(2026-08-01 유저 QA로 발견),
+    그중 무플래그 93건은 표본 검증에서 최저 점수(0.60)까지 전부 정답이었다.
+      예) jp234 `おや、王子さま…お休みください` ↔ `T_021#17` '…오늘은 그만 쉬시지요' 가
+          앞 엔트리(#16 소니아) 화자를 물려받아 기각됐다.
     """
     if not p.get("jp"):
         return False
     jp_sp = p["jp"].get("speaker")
-    kr_sp = (p.get("kr") or {}).get("speaker")
+    kr = p.get("kr") or {}
+    kr_sp = kr.get("speaker")
     if jp_sp and kr_sp:
         expect = _speaker_map().get(jp_sp)
         if expect:
-            return expect == kr_sp
+            if expect == kr_sp:
+                return True  # 일치 — 상속 화자여도 **지지** 증거는 된다(low_sim 구제 유지)
+            if _has_own_speaker(kr.get("table"), kr.get("entry_id")):
+                return False  # 자기 화자가 다르다 = 확실한 반증
+            # 상속 화자 불일치 — 거부권으로 쓰지 않는다(위 ⚠ 참조). 플래그 기준으로 내려간다.
     return not p.get("flags")
 
 
@@ -1568,6 +1643,8 @@ def load_translations(align_name, scn_name):
     TRAIL_NL.clear()
     FOLD_NAME.clear()
     COLOR_WRAP.clear()
+    NAME_PLATE.clear()
+    NL_WINS.clear()
     align = json.load(open(os.path.join(OUT_DIR, "align", f"{align_name}.json"), encoding="utf-8"))
     jp_doc = json.load(open(os.path.join(OUT_DIR, "scn_jp", f"{scn_name}.json"), encoding="utf-8"))
     # 창 수 계약의 단위는 엔진이 실제로 세는 **raw %c 개수**다(인라인 화자 헤더의 %c 포함).
@@ -1617,10 +1694,23 @@ def load_translations(align_name, scn_name):
             kr_cache[table] = {e["entry_id"]: e for e in doc["entries"]}
         return kr_cache[table][eid]
 
+    # 이름·지명 단독 블록은 patch_sys_ui 관할 — 정렬이 손대면 그쪽이 못 고친다(is_name_plate 주석).
+    plate = set()
+    if "_SCN" in align_name:
+        g, _, sn = align_name.partition("_SCN")
+        from align_jp_kr import load_jp_scene
+        from patch_sys_ui import is_name_plate
+
+        plate = {b["id"] for b in load_jp_scene(g, int(sn)) if is_name_plate(b["body"])}
+
     out, skipped = {}, {}
     consumed_all, src_of = set(), {}
+    n_plate = 0
     for p in align["pairs"]:
         if not accept_pair(p):
+            continue
+        if p["jp"]["entry_id"] in plate:
+            n_plate += 1
             continue
         entry = dict(kr_entry(p["kr"]["table"], p["kr"]["entry_id"]))
         entry, consumed = splice_placeholder_pages(
@@ -1645,13 +1735,23 @@ def load_translations(align_name, scn_name):
         del out[j]
     if dup:
         print(f"  병합 소비 엔트리의 단독 쌍 {len(dup)}건 제외(중복 방지): jp={dup[:8]}")
+    if n_plate:
+        print(f"  이름·지명 플레이트 {n_plate}건 제외(patch_sys_ui 관할)")
 
     # 사람 검수 오버라이드: align보다 우선 (틀린 짝 교정 or 신규 추가)
     applied = 0
 
-    def chain_text(table, item):
+    def chain_text(table, item, pre=()):
+        """`pre` = **슬라이스 전에** 원문에 적용할 치환쌍(`pre_subs`).
+
+        ⚠ `subs` 는 슬라이스 **뒤에** 걸리므로 `{n}`→`{p}` 처럼 **페이지 경계를 새로 만드는**
+        교정에는 못 쓴다 — 슬라이스가 먼저 돌아 `9#1` 이 빈 문자열이 되고 `본문 없음` 으로
+        조용히 실패한다(jp300 실측 2026-08-01, 경고는 찍혔지만 놓쳤다). 그런 교정은 `pre_subs`.
+        """
         """체인 항목 → 텍스트. 형식: `id` | `"id#k"` | `"id#k.s"` | `"id#k.s-"` | `"id#k.s-e"`.
 
+        - `id~v`    = `\x06` 로 이어 붙은 **상태/화자 변형** 중 v번만 (정발이 한 NPC 의
+                      상태별 대사를 한 엔트리에 몰아둔 것 — PS1 은 블록으로 쪼개 둔다)
         - `id`      = 엔트리 전체
         - `id#k`    = k번째 `{p}` 페이지만 (정발 엔트리 경계가 JP 블록 경계와 어긋날 때 —
                       eid 27 잔소리 서두)
@@ -1663,8 +1763,19 @@ def load_translations(align_name, scn_name):
         ⚠ 이 조각들은 대개 `%c` 종단이 없는 **같은 창의 연속 조각**이라 분할 지점은
         화면상 보이지 않는다 — 문장 경계가 JP 조각 경계와 정확히 안 맞아도 무해하다."""
         base, _, rest = str(item).partition("#")
+        base, _, vi = base.partition("~")  # `eid~v` = \x06 화자/상태 변형 v번만
         pi, _, si = rest.partition(".")
         t = kr_entry(table, int(base))["text"].removesuffix("{end}")
+        for a, b in pre:
+            t = t.replace(a, b)
+        if vi:
+            # 정발은 같은 NPC 의 상태별 대사를 한 엔트리에 `\x06` 으로 이어 붙여 둔다
+            # (T_030#20 은 변형 6개). PS1 은 그걸 **블록으로 쪼개** 두므로 골라 써야 한다 —
+            # 안 고르면 전 변형이 한꺼번에 화면에 쏟아진다(유저 QA 2026-08-01).
+            vs = t.split("\\x06")
+            if int(vi) >= len(vs):
+                raise SkipBlock(f"변형 {vi} 범위 밖(총 {len(vs)})")
+            t = vs[int(vi)].strip()
         if pi:
             t = t.split("{p}")[int(pi)]
         if si:
@@ -1687,6 +1798,11 @@ def load_translations(align_name, scn_name):
         if "color" in ov:  # 해설 등 블록 전체 색 — [on, off] 또는 on(off 기본 1=흰색)
             c = ov["color"]
             COLOR_WRAP[int(jp_id_str)] = tuple(c) if isinstance(c, list) else (int(c), 1)
+        if "name_plate" in ov:  # 헤더 자리 없는 블록에 이름줄 주입 — [색on, 이름, 색off] 또는 이름
+            v = ov["name_plate"]
+            NAME_PLATE[int(jp_id_str)] = tuple(v) if isinstance(v, list) else (2, str(v), 1)
+        if "nl_after" in ov:  # 창 뒤 강제 개행(원본 인라인 이름 창 앞 개행 복원 등)
+            NL_WINS[int(jp_id_str)] = {int(i) for i in ov["nl_after"]}
         if "fold_name" in ov:  # 이름창 접기 [[이름창 인덱스, 조사], …]
             FOLD_NAME[int(jp_id_str)] = {int(i): j for i, j in ov["fold_name"]}
         if "inject_pairs" in ov:  # 주입 %c쌍 좌표(사람이 콜사이트 인자로 확정) — 상단 주석 참조
@@ -1701,7 +1817,8 @@ def load_translations(align_name, scn_name):
             entry = dict(kr_entry(ov["table"], ov["entry_id"]))
             # 명시적 체인: 사람이 확정한 엔트리 나열을 {p} 페이지로 이어붙인다.
             # (자동 splice는 빈 엔트리에서 끊겨 다화자 이벤트 체인을 못 잇는다 — T_001#20 실측)
-            entry["text"] = "".join(chain_text(ov["table"], it) for it in ov["chain"])
+            pre = tuple(map(tuple, ov.get("pre_subs", ())))
+            entry["text"] = "".join(chain_text(ov["table"], it, pre) for it in ov["chain"])
             # 사람 확정 자구 교정(유실 부호 등 — 정발 원문 변경은 유저 승인 기록 필수)
             for a, b in ov.get("subs", ()):
                 entry["text"] = entry["text"].replace(a, b)

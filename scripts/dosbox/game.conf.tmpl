@@ -21,6 +21,9 @@ output=opengl
 usescancodes=false
 autolock=false
 priority=highest,highest
+# ⚠ 부분 매퍼 금지 — 이 파일이 있으면 DOSBox 는 기본 바인딩을 **통째로 대체**한다.
+# 한 줄짜리(터보만)를 깔았다가 나머지 키가 전부 언바인드돼 키보드가 죽었다(2026-07-31).
+# 단축키를 바꾸려면 게임 안에서 매퍼 UI(기본 Ctrl+F1)로 편집·저장해 **전체 파일**을 만든다.
 mapperfile=mapper.map
 
 [log]
@@ -32,6 +35,9 @@ memsize=16
 captures=capture
 
 [cpu]
+# 터보(fast-forward)를 켜두면 기본값은 **키를 누르는 순간 꺼진다** — 플레이 중엔 무용지물이라
+# 끈다(유저 QA 2026-07-31). 메뉴 Main > Turbo 토글이나 매퍼 단축키가 그대로 유지된다.
+stop turbo on key=false
 core=normal
 cputype=486
 cycles=fixed 20000

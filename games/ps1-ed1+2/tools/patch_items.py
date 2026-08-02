@@ -549,10 +549,16 @@ def fix_damage_particle(ed):
     need = len(nb)
     dst = None
     run = 0
+    # ⚠ 런의 **앞**에서 정렬해 잡는다. 예전엔 끝(`i-need+1`)에서 잡고 4B 정렬을 올림했는데,
+    # 그러면 dst+need 가 런을 최대 3B 넘어설 수 있었다(런이 넉넉할 땐 안 드러남). 2026-07-31
+    # 시스템 메시지에 온점을 넣어 런이 2B 짧아지자 `목적지가 비어있지 않음`으로 터졌다.
     for i in range(CORPUS_LO, CORPUS_HI):
         run = run + 1 if ed[i] == 0 else 0
-        if run >= need + 4:
-            dst = (i - need + 1 + 3) & ~3
+        if run < need:
+            continue
+        cand = (i - run + 1 + 3) & ~3  # 런 시작을 4B 정렬로 올림
+        if cand + need <= i + 1:  # 정렬 뒤에도 런 **안**에 들어가야 한다
+            dst = cand
             break
     assert dst is not None, f"데미지 조사: 코퍼스에 {need}B 여유 없음"
     assert all(ed[dst + k] == 0 for k in range(need)), "데미지 조사: 목적지가 비어있지 않음"

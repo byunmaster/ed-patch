@@ -30,11 +30,18 @@ CONFIDENT = 0.60  # 이상이면 고신뢰, 미만은 low_sim flag
 SPK_BONUS, SPK_PENALTY = 0.08, 0.04  # 화자 일치/불일치 가산 (의미가 주, 화자는 보조)
 
 
-def get_model():
+def get_model(device=None):
+    """LaBSE 로더 — 임베딩을 쓰는 도구는 전부 이걸 거친다.
+
+    ⚠ device 기본값이 cpu인 이유: 지정 안 하면 torch가 MPS를 자동선택하는데, Intel Mac +
+    소용량 dGPU에서는 VRAM 상한(~3.4GB)이 LaBSE 배치에 모자라 `MPS backend out of memory`로
+    죽는다. 여유 있는 머신은 `EMB_DEVICE=mps`(또는 cuda)로 올려 쓴다.
+    """
     from sentence_transformers import SentenceTransformer
 
-    print(f"모델 로드: {MODEL_NAME} (최초 1회 다운로드)")
-    return SentenceTransformer(MODEL_NAME)
+    device = device or os.environ.get("EMB_DEVICE", "cpu")
+    print(f"모델 로드: {MODEL_NAME} (device={device}, 최초 1회 다운로드)")
+    return SentenceTransformer(MODEL_NAME, device=device)
 
 
 def align_scene(model, game, n, spk_map):

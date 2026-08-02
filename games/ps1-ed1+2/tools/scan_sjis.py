@@ -4,7 +4,7 @@
  2. 앞부분 헥스 덤프 + PVD 확인
  3. ISO9660 파일 목록 추출 (LBA, 크기)
  4. 전체 .bin에서 연속 SJIS 일본어 문자열 스캔 → 오프셋 + 소속 파일 매핑
-결과: ../out/ 에 sjis_strings.txt, iso_files.txt
+결과: OUT_DIR(work/derived) 에 sjis_strings.txt, iso_files.txt
 """
 
 import mmap

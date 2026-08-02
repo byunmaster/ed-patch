@@ -37,6 +37,11 @@ def rm(stem):
 
 
 def main():
+    # ⚠ 테스트 이미지는 **항상 하나만** 남긴다(CLAUDE.md). 중간 산출물은 체인 끝에서 지우는데,
+    # 도구를 단독 실행하면(예: reinsert 만 돌려 A/B) 그게 남는다 — 시작할 때도 한 번 치운다.
+    for stem in INTERMEDIATES + STALE:
+        rm(stem)
+
     run("reinsert_kr_pilot.py")
     run("patch_gfx_cards.py")
     run("patch_hud_names.py")

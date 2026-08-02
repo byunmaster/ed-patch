@@ -4,6 +4,11 @@
 #   scripts/dosbox.sh ed1|ed2|ed3|ed4 [옵션...] [dosbox 추가인자...]
 #
 #     --app      앱 번들(open -a)로 실행 — macOS에서 키 입력이 안 먹을 때(아래 참조)
+#     --scancodes  usescancodes=true 로 실행. **방향키가 안 먹을 때** 시도한다(수정자키는
+#                되는데 방향키만 죽는 게 전형적 증상). ⚠ 저수준 키보드 경로라 입력 모니터링
+#                권한이 필요하므로 **--app 과 같이** 써야 의미가 있다
+#     --mapper   매퍼 편집기로 시작(-startmapper). 단축키를 바꿔 저장하면 **전체** 매퍼
+#                파일이 .local/dosbox/mapper.map 로 생성된다(부분 매퍼는 키보드를 죽인다)
 #     --debug    DOSBox-X 디버거(-break-start). ⚠ 디버거 UI는 **실행한 터미널**에 뜨므로
 #                --app 과 같이 못 쓰고, -log-con 도 같은 터미널을 두고 부딪혀 뺀다
 #     --refresh  사본을 버리고 원본에서 다시 만든다(세이브·설정·패치 전부 초기화)
@@ -38,6 +43,8 @@
 #   그리고 **BGM이 CD 오디오**라 CD를 안 물리면 "Music System Installation Failed"로 또 죽는다.
 #
 # ── macOS 키보드 함정 ────────────────────────────────────────────────────────
+# ⚠ **입력 소스가 한글이면 방향키가 안 먹는다**(IME 가 가로챈다). Shift·메뉴는 멀쩡해서
+# DOSBox 설정 문제로 오해하기 쉽다 — 영문(ABC)으로 바꾸고 플레이한다. 실행 시 경고한다.
 # SDL1에서 `usescancodes=true`면 저수준 키보드 경로를 타는데 입력 모니터링 권한이 필요하다.
 # 셸에서 앱 번들 **내부 바이너리**를 직접 띄우면 그 권한이 안 붙어 키보드만 죽는다(마우스는
 # 멀쩡). 템플릿에서 껐고, 그래도 안 되면 `--app`으로 앱 번들 채널을 쓴다.
@@ -68,13 +75,15 @@ case "$GAME" in
   *) usage ;;
 esac
 
-APP=0; DEBUG=0; REFRESH=0; SETUP=0; CD=""; ARGS=""
+APP=0; DEBUG=0; REFRESH=0; SETUP=0; SCAN=0; MAPPER=0; CD=""; ARGS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --app) APP=1 ;;
     --debug) DEBUG=1 ;;
     --refresh) REFRESH=1 ;;
     --setup) SETUP=1 ;;
+    --scancodes) SCAN=1 ;;
+    --mapper) MAPPER=1 ;;
     --cd) shift; CD=$1; [ -n "$CD" ] || { echo "--cd 경로 필요" >&2; exit 2; } ;;
     *) ARGS="$ARGS $1" ;;
   esac
@@ -144,11 +153,29 @@ fi
 sed -e "s|@GAME@|$GAME|g" -e "s|@DRIVE@|$DRIVE|g" -e "s|@CMD@|$CMD|g" \
     -e "s|@MOUNTCD@|$MOUNTCD|g" -e "s|@SBTYPE@|$SBTYPE|g" -e "s|@SBIRQ@|$SBIRQ|g" \
     "$HERE/dosbox/game.conf.tmpl" > "$BOX/$GAME.conf"
+# ⚠ 매퍼 파일은 기본 바인딩을 **덮는 게 아니라 통째로 대체**한다 — 한 줄짜리를 깔면
+# 나머지 키가 전부 언바인드돼 **키보드가 죽는다**(2026-07-31 실측). 게임 안 매퍼 UI
+# (Ctrl+F1)로 저장한 **전체 파일**만 유효하다. 손으로 만든 부분 매퍼는 치운다.
+if [ -f "$BOX/mapper.map" ] && [ "$(wc -l < "$BOX/mapper.map")" -lt 20 ]; then
+  echo "⚠ 부분 매퍼 감지 — 키보드가 죽으므로 제거한다: .local/dosbox/mapper.map" >&2
+  rm -f "$BOX/mapper.map"
+fi
 rm -f "$BOX/$GAME.log"
+
+# ── 한글 입력기 경고 ────────────────────────────────────────────────────────
+# ⚠ macOS 입력 소스가 **한글이면 방향키가 DOSBox 에 안 들어온다**(IME 가 먹는다).
+# 조용히 방향키만 죽고 Shift·메뉴는 멀쩡해서 DOSBox 설정 문제로 오해하기 쉽다
+# (2026-07-31 유저가 규명 — usescancodes 도 --app 도 원인이 아니었다).
+if defaults read ~/Library/Preferences/com.apple.HIToolbox.plist AppleSelectedInputSources 2>/dev/null \
+   | grep -qi 'inputmethod\.Korean'; then
+  echo "⚠ 입력 소스가 한글이다 — DOSBox 에서 방향키가 안 먹는다. 영문(ABC)으로 바꾸고 플레이할 것." >&2
+fi
 
 # 상대경로(logfile·captures·mapperfile·mount)가 해석되도록 기준 디렉터리로 이동한다.
 cd "$BOX"
 COMMON="-conf $GAME.conf -fastlaunch"
+[ "$SCAN" = 1 ]   && COMMON="$COMMON -set \"sdl usescancodes=true\""
+[ "$MAPPER" = 1 ] && COMMON="$COMMON -startmapper"
 
 if [ "$DEBUG" = 1 ]; then
   # -log-con 은 뺀다 — 디버거 커서스 UI와 같은 터미널을 두고 부딪힌다.
@@ -158,7 +185,15 @@ fi
 # -log-con: DOS 콘솔 출력을 로그로 남긴다. 그래픽 모드라 화면에선 안 보이는 엔진 진단
 # 메시지("Where : %s" / "What : %s" 등)를 잡기 위한 것.
 if [ "$APP" = 1 ]; then
-  exec open -a "$APPDIR" --args $COMMON -log-con $ARGS
+  # ⚠ `open -a` 는 **cwd 를 물려주지 않는다** — 위에서 cd 해도 앱은 제 작업디렉터리에서 뜬다.
+  # 그래서 상대경로 `-conf ed1.conf` 를 못 찾아 마운트 없이 맨 프롬프트만 나왔다(2026-07-31).
+  # conf 는 절대경로로 주고, conf 안의 상대경로(mount·logfile·captures)는 -defaultdir 로 맞춘다.
+  # (절대경로는 실행 시 계산한 값이라 커밋되는 파일엔 안 남는다.)
+  APPOPT=""
+  [ "$SCAN" = 1 ]   && APPOPT="$APPOPT -set \"sdl usescancodes=true\""
+  [ "$MAPPER" = 1 ] && APPOPT="$APPOPT -startmapper"
+  exec open -a "$APPDIR" --args -conf "$BOX/$GAME.conf" -defaultdir "$BOX" \
+       -fastlaunch -log-con $APPOPT $ARGS
 fi
 [ -x "$DOSBOX" ] || { echo "dosbox-x 없음: $DOSBOX (brew install --cask dosbox-x)" >&2; exit 1; }
 exec "$DOSBOX" $COMMON -log-con $ARGS

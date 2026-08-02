@@ -12,6 +12,8 @@
 - **HANDOFF를 먼저 읽는다**: `docs/HANDOFF.md` (살아있는 상태 문서 — 세션 끝에
   "현재 상태"·"다음 할 일" 갱신).
 - 표기 편차 대장: `docs/jeongbal-deviations.md` (표기 바꾸면 갱신 의무).
+- **대사 텍스트를 손대기 전 `docs/text-pipeline.md`** — 배정(`chain`/`~변형`)·조판·화자·색·
+  조사 훅 장치와 **구조 계약 게이트**를 모은 레퍼런스. 함정이 전부 실측 기반이다.
 - 진행 중 트랙별 상세: `docs/*-handoff.md`, `docs/*-devlog.md`.
 
 ## 빌드

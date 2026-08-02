@@ -17,6 +17,7 @@ import sys
 
 from align_jp_kr import DOS_KR_DIR, load_jp_scene, norm_body
 from common import OUT_DIR, REVIEW_DIR, ROOT
+from scn_maps import block_maps, table_maps
 
 HI_SIM = 0.55  # 이상 = 회수가능(강한 정발 대응)
 MID_SIM = 0.45  # 이상 = 경계, 미만 = 신규
@@ -77,9 +78,9 @@ def main():
         f"오버라이드 기회수 {covered} 제외), 전 {game} 정발 풀 {len(kr)}"
     )
 
-    from sentence_transformers import SentenceTransformer
+    from align_semantic import get_model
 
-    model = SentenceTransformer("sentence-transformers/LaBSE")
+    model = get_model()
     je = model.encode([b["body"] for b in jp_un], normalize_embeddings=True)
     ke = model.encode([b["body"] for b in kr], normalize_embeddings=True)
     sim = je @ ke.T
@@ -88,9 +89,37 @@ def main():
     # 오매칭 위험이 커, 더 높은 문턱(XSCENE_SIM)을 넘겨야 회수로 인정한다.
     XSCENE_SIM = 0.62
     same = [kr[j]["scene"] == n for j in range(len(kr))]
+
+    # ── 맵(지명) 제약 — 씬보다 한 단계 좁다 (scn_maps 참조) ────────────────────
+    # 전 게임 풀에서 찾으면 엉뚱한 맵의 비슷한 문장이 1순위로 올라온다. 블록이 속한 맵의
+    # 테이블 안에서 먼저 찾고, 그 안에 후보가 없을 때만 기존 씬 로직으로 내려간다.
+    # ⚠ 맵 일치는 기각용이지 확인용이 아니다 — 같은 맵 안에서도 오매칭은 난다.
+    bmap = block_maps(game, n)
+    tmap, exempt = table_maps(game)
+    kmap = [tmap.get(kr[j]["table"]) for j in range(len(kr))]
+    kfree = [kr[j]["table"] in exempt for j in range(len(kr))]  # 상점 등 맵무관
+    n_map = sum(1 for b in jp_un if bmap.get(b["id"]))
+    print(
+        f"  맵 제약: 블록 {n_map}/{len(jp_un)}개가 맵 확정 · "
+        f"정발 테이블 {len(tmap)}개 학습(맵무관 {len(exempt)})"
+    )
     rec, mid, new = [], [], []
+    n_bymap = 0
     for i, b in enumerate(jp_un):
         row_sim = sim[i]
+        # ① 같은 맵(또는 맵무관) 후보가 있으면 그 안에서 고른다
+        jm = bmap.get(b["id"])
+        if jm:
+            km = max(
+                range(len(kr)),
+                key=lambda j: row_sim[j] if (kmap[j] == jm or kfree[j]) else -1,
+            )
+            if kmap[km] == jm or kfree[km]:
+                s, kk, xscn = float(row_sim[km]), km, kr[km]["scene"] != n
+                row = (b, s, kr[kk], xscn)
+                (rec if s >= HI_SIM else mid if s >= MID_SIM else new).append(row)
+                n_bymap += 1
+                continue
         ks = max(range(len(kr)), key=lambda j: row_sim[j] if same[j] else -1)
         ss = float(row_sim[ks]) if any(same) else -1
         kg = int(row_sim.argmax())
@@ -103,6 +132,7 @@ def main():
         row = (b, s, kr[kk], xscn)
         (rec if s >= HI_SIM else mid if s >= MID_SIM else new).append(row)
 
+    print(f"  맵 제약으로 선택된 블록 {n_bymap}건 (나머지는 씬 로직)")
     xs = sum(1 for r in rec + mid if r[3])
     print(
         f"  회수가능(≥{HI_SIM}): {len(rec)}  경계({MID_SIM}~{HI_SIM}): {len(mid)}  "

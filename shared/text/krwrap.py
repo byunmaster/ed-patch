@@ -520,9 +520,15 @@ def wrap_pages(
         pages = pack_groups_target(groups, lines_per_page, target_pages)
     if pages is None:  # target 미지정 또는 용량 초과 → 기존 그리디(창 수 초과 감수)
         pages = _pack_groups(groups, lines_per_page)
-    if det_orphan:
-        _pull_det_orphans(pages, width, cell_width)
-    _pull_tail_orphans(pages, width, cell_width)
+    # ⚠ 고아 정리는 **그리디 줄바꿈이 만든 줄**을 다듬는 것이다. protect_hard면 줄 경계가
+    # 작성자가 지정한 것이므로 손대지 않는다 — 안 그러면 어절을 하드 개행 너머로 끌어내려
+    # 지정한 조판이 조용히 뒤집힌다(여관 `하룻밤 10 Gold 입니다.` / `묵으시겠습니까?` 가
+    # `…10 Gold` / `입니다. 묵으시겠습니까?` 로 뒤집힌 실측 2026-07-31).
+    # 511행이 문장 단위 조판을 건너뛰는 것과 같은 규약.
+    if not protect_hard:
+        if det_orphan:
+            _pull_det_orphans(pages, width, cell_width)
+        _pull_tail_orphans(pages, width, cell_width)
     return [[_strip_spacing(ln, strip_after) for ln in pg] for pg in pages]
 
 

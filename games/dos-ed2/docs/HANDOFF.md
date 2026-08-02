@@ -1,6 +1,25 @@
 # 핸드오프 — 이어서 작업하기
 
-마지막 갱신: 2026-07-29(4차). 브랜치 `main`.
+마지막 갱신: 2026-07-30(5차). 브랜치 `main`.
+
+## 2026-07-30 — 레포 통합으로 바뀐 것
+
+`ed2-mantra-restore`가 영웅전설 패치 통합 저장소의 `games/dos-ed2/`로 들어왔다
+(커밋 7개 히스토리 보존). 이 문서의 명령은 전부 갱신해 뒀지만, 손이 기억하는 것과
+다른 부분:
+
+- 저장소 루트가 한 단계 위다 — 명령은 **레포 루트에서** 돌린다
+  (`python3 games/dos-ed2/tools/...`). `.venv` 대신 시스템 `python3`.
+- 원본은 `originals/kr/dos-ed2`, 사본은 `work/dosbox/ed2` (한 단계 얕아졌다).
+- `scripts/`(dosbox.sh·patcher.sh)와 `patcher/`(웹 패처 일체)는 **레포 공용**으로 올라갔다.
+- **패치 포맷이 v2로 바뀌었다** — 원본 바이트(`from`)를 담지 않고 파일 sha1로
+  검증한다. 웹 패처 HTML에 스펙이 통째로 인라인돼 공개 배포되기 때문이다
+  (공개 페이지에 원본 822B가 실려 나가고 있었다). 복원은 백업(`<파일>.orig`) 기반.
+  → `docs/publishing.md`
+- `originals/kr/dos-ed2`의 `F_501`/`F_502`가 패치된 채로 있었다(원본은 `.bak`).
+  **원본으로 되돌렸다** — sha1 확인 완료(`15ccf218…`/`e002c40b…` = 스펙의 `sha1_from`),
+  `.bak`도 정리했다. originals는 읽기 전용이 원칙이니 실험은 반드시
+  `work/dosbox/ed2` 사본에서 한다.
 
 ## 한 줄 요약
 
@@ -11,8 +30,8 @@
 **가이드 나레이션이 정상 출력**됐다. `ED2MAIN.EXE`는 손대지 않는다.
 
 ```bash
-.venv/bin/python tools/ne_add_export.py originals/ED2/SCENA/F_501.DLL ALGO_00 \
-    --model originals/ED2/SCENA/F_500.DLL --out work/dosbox/ed2/ed2/SCENA/F_501.DLL
+python3 games/dos-ed2/tools/ne_add_export.py originals/kr/dos-ed2/SCENA/F_501.DLL ALGO_00 \
+    --model originals/kr/dos-ed2/SCENA/F_500.DLL --out work/dosbox/ed2/SCENA/F_501.DLL
 # F_502 도 동일
 ```
 
@@ -72,17 +91,17 @@ DLL 코드 ─(엔진 API)─> ...
 ### 확정 — 진짜 원인: `F_501`/`F_502`의 `ALGO_00` export 누락
 
 `Scenario_GetFuncPtr`(seg4:0x0bab)의 **호출자 9곳이 넘기는 인덱스**를 전수로
-뽑으면 답이 나온다(인덱스 0=`SINAL_INIT`, 1=`SINAL`, 2=`ALGO_00`, 3~21=`ALGO_01`~`19`):
+뽑으면 답이 나온다(인덱스 0=`SINAL_INIT`, 1=`SINAL`, 2=`ALGO_00`, 3~~21=`ALGO_01`~~`19`):
 
-| 호출자 | 인덱스 | 찾는 export |
-| --- | --- | --- |
-| `FIELD_START` #355 | 0 | `SINAL_INIT` |
-| **`FIELD_MAIN` #354** | **2** | **`ALGO_00`** |
-| `EXEC_EVENT` #353 | 1 | `SINAL` |
-| `TOWN_START` #933 / `UDG_START` #936 / `MG_WARP_SUB` #501 | 0 | `SINAL_INIT` |
-| `SINAL_KEY_IN` #869 | 1 | `SINAL` |
-| `TOWN_ALGO` #667 | `(bx>>1)+2` | `ALGO_xx` (동적) |
-| `_ALGO_00_5..9_MAIN` #533/517/519/572/577 | 7~11 | `ALGO_05`~`09` |
+| 호출자                                                    | 인덱스      | 찾는 export      |
+| --------------------------------------------------------- | ----------- | ---------------- |
+| `FIELD_START` #355                                        | 0           | `SINAL_INIT`     |
+| **`FIELD_MAIN` #354**                                     | **2**       | **`ALGO_00`**    |
+| `EXEC_EVENT` #353                                         | 1           | `SINAL`          |
+| `TOWN_START` #933 / `UDG_START` #936 / `MG_WARP_SUB` #501 | 0           | `SINAL_INIT`     |
+| `SINAL_KEY_IN` #869                                       | 1           | `SINAL`          |
+| `TOWN_ALGO` #667                                          | `(bx>>1)+2` | `ALGO_xx` (동적) |
+| `_ALGO_00_5..9_MAIN` #533/517/519/572/577                 | 7~11        | `ALGO_05`~`09`   |
 
 **`FIELD_MAIN`이 필드 씬 DLL에서 `ALGO_00`을 요구한다.** `F_` 접두는 **Field**고
 유람선은 월드맵 위를 항해하므로 정확히 이 경로다. 그리고 F 계열 12개
@@ -115,10 +134,10 @@ resident-name table / NE 헤더 오프셋을 갱신한다. 세그먼트 뒤 패�
 빌리므로 **파일 크기와 모든 세그먼트 sector 오프셋이 그대로**다.
 
 ```bash
-.venv/bin/python tools/ne_add_export.py originals/ED2/SCENA/F_501.DLL ALGO_00 \
-    --model originals/ED2/SCENA/F_500.DLL --out work/dosbox/ed2/ed2/SCENA/F_501.DLL
-.venv/bin/python tools/ne_add_export.py originals/ED2/SCENA/F_502.DLL ALGO_00 \
-    --model originals/ED2/SCENA/F_500.DLL --out work/dosbox/ed2/ed2/SCENA/F_502.DLL
+python3 games/dos-ed2/tools/ne_add_export.py originals/kr/dos-ed2/SCENA/F_501.DLL ALGO_00 \
+    --model originals/kr/dos-ed2/SCENA/F_500.DLL --out work/dosbox/ed2/SCENA/F_501.DLL
+python3 games/dos-ed2/tools/ne_add_export.py originals/kr/dos-ed2/SCENA/F_502.DLL ALGO_00 \
+    --model originals/kr/dos-ed2/SCENA/F_500.DLL --out work/dosbox/ed2/SCENA/F_502.DLL
 ```
 
 결과: `F_501` seg3 0x819→0x81f, `#5 ALGO_00 @ seg3:0x819`.
@@ -128,11 +147,13 @@ resident-name table / NE 헤더 오프셋을 갱신한다. 세그먼트 뒤 패�
 > 이고 이 게임의 DLL은 전부 `minalloc == length`다. DPMI 로더는 **`minalloc`으로
 > 셀렉터를 만든 뒤 파일에서 `length`만큼 읽어 넣는다.** `length`만 늘리면 로더가
 > 마지막 바이트를 쓰다가 죽는다:
+>
 > ```
 > Limit check 81a+1-1 = 81a > 819 ES:DI
 > UNHANDLED EXCEPTION 0D at 00B7:13EE   ← CS=00B7 은 ED2MAIN도 DLL도 아닌 로더 코드
 > ES = 059F Limit =0819 segment #03 of SCENA\F_501.DLL   DI = 081A  CX = 0005
 > ```
+>
 > `ne_add_export.py`는 둘 다 갱신한다.
 
 ### 검증 (실측 완료)
@@ -144,8 +165,8 @@ PC엔진판 레퍼런스와 일치한다.
 
 패치 소스는 **`patches/issue-1-suel-boat-tour.json` 하나**고, CLI 패처와 웹 패처가
 같은 파일을 읽는다. 그래서 둘이 어긋날 일이 없다. xdelta/IPS는 쓰지 않는다 —
-변경이 연속 구간 5개·748B뿐이라 JSON에 그대로 담기고, `from` 바이트 대조라는
-판본 검증이 공짜로 따라온다(IPS엔 없다).
+변경이 연속 구간 5개·748B뿐이라 JSON에 그대로 담기고, **파일 sha1 판본 검증**이
+공짜로 따라온다(IPS엔 없다). 스펙에 원본 바이트는 담지 않는다(패치 스키마 v2).
 
 ```
 F_501.DLL  32784B  5개 구간  598B (1%)     ← 파일 크기 불변
@@ -154,22 +175,22 @@ F_502.DLL  31760B  5개 구간  150B (0%)
 
 ```bash
 # 1) 수정본 생성 → 스펙 생성 (원본은 절대 건드리지 않는다)
-.venv/bin/python tools/ne_add_export.py originals/ED2/SCENA/F_501.DLL ALGO_00 \
-    --model originals/ED2/SCENA/F_500.DLL --out /tmp/F_501.DLL
-.venv/bin/python tools/gen_patch.py --out patches/issue-1-suel-boat-tour.json \
+python3 games/dos-ed2/tools/ne_add_export.py originals/kr/dos-ed2/SCENA/F_501.DLL ALGO_00 \
+    --model originals/kr/dos-ed2/SCENA/F_500.DLL --out /tmp/F_501.DLL
+python3 games/dos-ed2/tools/gen_patch.py --out games/dos-ed2/patches/issue-1-suel-boat-tour.json \
     --issue 1 --name "..." --desc "..." \
-    --diff SCENA/F_501.DLL originals/ED2/SCENA/F_501.DLL /tmp/F_501.DLL \
-    --diff SCENA/F_502.DLL originals/ED2/SCENA/F_502.DLL /tmp/F_502.DLL
+    --diff SCENA/F_501.DLL originals/kr/dos-ed2/SCENA/F_501.DLL /tmp/F_501.DLL \
+    --diff SCENA/F_502.DLL originals/kr/dos-ed2/SCENA/F_502.DLL /tmp/F_502.DLL
 
 # 2) CLI 적용 (--check / --revert 도 된다)
-.venv/bin/python tools/apply_patch.py patches/issue-1-suel-boat-tour.json work/dosbox/ed2/ed2
+python3 games/dos-ed2/tools/apply_patch.py games/dos-ed2/patches/issue-1-suel-boat-tour.json work/dosbox/ed2
 
 # 3) 웹 패처 확인 → 생성물 하나만 공개 리포지토리에 올린다
-scripts/patcher.sh              # 빌드해서 로컬에 띄워 확인
-scripts/patcher.sh deploy       # ed-patch 로 빌드·커밋·push
+sh scripts/patcher.sh              # 빌드해서 로컬에 띄워 확인
+sh scripts/patcher.sh deploy       # ed-patch 로 빌드·커밋·push
 ```
 
-웹 패처는 `web/index.html.tmpl` + 스펙을 합친 **자립형 HTML 하나**(약 30KB)다.
+웹 패처는 `patcher/index.html.tmpl` + 스펙을 합친 **자립형 HTML 하나**(약 30KB)다.
 외부 요청이 없고 파일이 브라우저 밖으로 나가지 않는다. 486 데스크탑 화면에서
 **디스켓을 드라이브에 넣으면** 게임 폴더를 묻고, File System Access API로
 제자리 수정한 뒤 원본을 `.BAK`으로 남긴다. 진행 상황은 CRT에 DOS 프롬프트로
@@ -180,7 +201,7 @@ scripts/patcher.sh deploy       # ed-patch 로 빌드·커밋·push
 - 디스켓이 슬롯으로 빨려 들어가는 이동량은 JS가 `getBoundingClientRect`로 실측해
   `--dx`/`--dy`에 넣으므로 반응형에서도 정확히 들어간다. `prefers-reduced-motion`
   존중.
-- **이슈 #2가 생기면 디스켓을 여러 장으로** 늘린다. `build_patcher.py`는 이미
+- **이슈 #2가 생기면 디스켓을 여러 장으로** 늘린다. `patcher/build.py`는 이미
   `kind == "fix"` 스펙을 전부 싣지만, 현재 UI는 디스켓 한 장이 전체 스펙을
   처리한다. 스펙별 디스켓으로 나누려면 `SPECS`를 순회해 디스켓을 렌더링하고
   클릭한 디스켓의 스펙만 적용하도록 바꾸면 된다.
@@ -194,72 +215,65 @@ scripts/patcher.sh deploy       # ed-patch 로 빌드·커밋·push
 ## 다음에 할 일
 
 1. 패처 전용 공개 리포지토리 생성 + Pages 활성화, `--repo` 에 그 URL을 넣어 재빌드.
-2. 이슈 #2(그로스토스성 성문 SE 누락) 착수. 스펙이 늘면 `build_patcher.py`가
+2. 이슈 #2(그로스토스성 성문 SE 누락) 착수. 스펙이 늘면 `patcher/build.py`가
    `patches/`의 `kind == "fix"` 스펙을 자동으로 모두 싣는다.
 
 ## 실행 환경 (DOSBox-X)
 
 ```bash
-scripts/dosbox.sh --app     # 반드시 --app. 셸에서 직접 띄우면 키보드가 죽는다
+sh scripts/dosbox.sh ed2 --app     # 반드시 --app. 셸에서 직접 띄우면 키보드가 죽는다
 ```
 
-클론 직후 바로 된다. `scripts/dosbox.sh`가 `originals/ED2` → `work/dosbox/ed2/ed2` 사본을
-자동 생성하고, `dosbox/ed2.conf.tmpl`의 `@ROOT@`를 리포지토리 절대경로로 치환해
-`work/dosbox/ed2.conf`를 만든다. **경로가 달라도 그대로 동작한다.**
+클론 직후 바로 된다. `scripts/dosbox.sh ed2`가 `originals/kr/dos-ed2` → `work/dosbox/ed2` 사본을
+자동 생성하고, `scripts/dosbox/game.conf.tmpl`의 `@GAME@`·`@DRIVE@`·`@CMD@`·`@MOUNTCD@`·
+`@SBTYPE@`·`@SBIRQ@`를 채워 `work/dosbox/ed2.conf`를 만든다. 경로는 전부 상대라
+생성 conf 에 로컬 절대경로가 안 남는다 — **클론 위치가 달라도 그대로 동작한다.**
 
-- `dosbox/ed2.conf.tmpl` — `usescancodes=false`, `autolock=false` 필수
+- `scripts/dosbox/game.conf.tmpl` — `usescancodes=false`, `autolock=false` 필수
   (macOS SDL1 키보드 먹통 원인). 생성물을 직접 고치지 말고 템플릿을 고칠 것
-- `work/dosbox/ed2/ed2/` = `originals/ED2` 쓰기 가능 사본(33M, gitignore).
+- `work/dosbox/ed2/` = `originals/kr/dos-ed2` 쓰기 가능 사본(33M, gitignore).
   `originals/`는 어떤 실험에서도 건드리지 않는다
 - `-log-con` 기본 활성 → DOS 콘솔 출력이 `work/dosbox/ed2.log`에 남는다.
   게임이 그래픽 모드라 엔진의 `Where`/`What` 진단이 화면엔 안 보인다.
 - `--debug`(DOSBox-X 디버거)는 **기동 시 세그폴트가 잦아 실용성 없음**.
   절차는 `03-debugger.md`에 남겨뒀다.
-- 세이브는 사용자 제공분이 `originals/ED2/SAVE/`에 있다.
+- 세이브는 사용자 제공분이 `originals/kr/dos-ed2/SAVE/`에 있다.
 
-### 실행 스크립트 공용화 (계획, 미착수)
+### 실행 스크립트 공용화 (해결 — 2026-07-30 레포 통합)
 
-한글패치 저장소(`../eiyuu-densetsu-kr`)에 `shared/dos/run_dos.sh` +
-`dosbox.conf.in`이 있다. **ED1~4를 모두 다루고 우리보다 구조가 낫다** — 우리
-`dosbox.sh`는 그 부분집합이다. 여기 conf 를 받아 4종으로 일반화한 것이라
-macOS 키보드 설정(`usescancodes=false` 등)은 이미 그쪽에 들어가 있다.
+한글패치 저장소가 이 저장소로 합쳐지면서 두 벌의 DOSBox 하네스도 하나가 됐다.
+정본은 레포 루트의 `scripts/dosbox.sh` + `scripts/dosbox/game.conf.tmpl`이고, 여기서
+쓰던 `scripts/dosbox.sh`·`scripts/dosbox/game.conf.tmpl`은 지웠다.
 
-그쪽이 나은 점:
+정본이 나은 점(그대로 얻은 것):
 
 - **상대경로** — `work/dosbox`로 `cd` 한 뒤 실행해서 conf 에 로컬 절대경로가
-  안 남는다. 우리는 `@ROOT@`로 절대경로를 박는다(커밋되는 파일엔 부적절).
-- **overlay 마운트** — 원본 위에 쓰기 전용 오버레이를 얹는다. 복사 0,
-  원본은 구조적으로 읽기 전용. 우리는 33MB를 통째로 복사한다.
-  패치 워크플로에 특히 맞는다: 패치 → 테스트 → `--refresh`로 즉시 원상복귀.
+  안 남는다(옛 `@ROOT@` 방식은 커밋되는 파일에 부적절했다).
 - **CD 자동 마운트** — `--cd`, 없으면 `originals/…/CD/*.cue` 를 찾아 물린다.
+  아래 "아직 안 물린 것 — CD" 가 이걸로 풀린다.
 - 게임 테이블(ed1~4), `--setup`(SETUP.EXE), `--refresh`, `DOSBOX` 환경변수.
+- macOS 키보드 함정(`usescancodes=false`)은 여기서 실측한 게 이미 반영돼 있다.
 
-가져오기 전에 **정본에서 고쳐야 할 것 둘**:
+사본 경로가 `work/dosbox/ed2/ed2` → **`work/dosbox/ed2`** 로 한 단계 얕아졌다.
+이 문서의 명령들은 갱신해 뒀다.
 
-1. **IRQ/Port/DMA 를 게임 CNF 에서 읽을 것.** 그쪽 테이블은 ed2 를 `IRQ 7`로
-   하드코딩했는데 이건 게임이 아니라 **설치본의 성질**이다. 실측:
+남은 개선 후보 둘:
 
-   | | ED2MAIN.EXE | ED2.CNF |
-   | --- | --- | --- |
-   | 여기 | `a7ac15f3…` | `IRQ = 5`, `DataDir = F:\ed2\ed2` |
-   | kr | `a7ac15f3…` | `IRQ = 7`, `DataDir = A:\ED2` |
-
-   같은 실행 파일인데 SETUP.EXE 가 설치 때 쓴 값이 다르다. CNF 에서 읽으면
-   두 저장소 모두 설정 없이 맞는다(그쪽은 이미 `DataDir`을 CNF에서 읽어 고쳐 쓴다).
-2. **originals 경로 주입** — kr 은 `originals/kr/ED2`, 여기는 `originals/ED2`.
-   환경변수나 저장소 루트의 작은 설정 파일로 받게 할 것.
-
-우리 쪽에 추가로 필요한 것: overlay 로 가면 원본이 읽기 전용이라
-`apply_patch.py`가 쓸 대상이 오버레이에 없다. **패치할 파일만 오버레이에
-미리 심는 단계**가 필요하다(DLL 2개 = 64KB). `--patch <spec.json>` 플래그가 자연스럽다.
-
-공유 방식은 **실물 복사 + 출처 기록**을 권한다. 심볼릭 링크·서브모듈은 이
-저장소를 단독으로 클론해 쓰는 성질을 깨뜨린다. 헤더에 정본 sha 를 남기고
-`scripts/sync_dos.sh`로 가져오면 두 벌이 조용히 갈라지는 것을 막을 수 있다.
+1. **IRQ/Port/DMA 를 게임 CNF 에서 읽을 것.** 정본 테이블은 ed2 를 `IRQ 7`로
+   하드코딩하는데, 이건 게임이 아니라 **설치본의 성질**이다(같은 `ED2MAIN.EXE`
+   `a7ac15f3…` 인데 SETUP.EXE 가 설치 때 쓴 값이 설치본마다 다르다). 지금
+   `originals/kr/dos-ed2/ED2.CNF`는 `IRQ = 7` 이라 우연히 맞지만, 다른 설치본을
+   물리면 소리가 안 난다. `DataDir`은 이미 CNF 에서 읽어 고쳐 쓰므로 같은 자리에
+   IRQ/Port/DMA 도 얹으면 된다.
+2. **overlay 마운트** — 지금은 본체 33MB를 통째로 복사한다. 원본 위에 쓰기 전용
+   오버레이를 얹으면 복사 0에 원본이 구조적으로 읽기 전용이 된다. 다만 그러면
+   `apply_patch.py`가 쓸 대상이 오버레이에 없어서, **패치할 파일만 오버레이에
+   미리 심는 단계**가 필요하다(DLL 2개 = 64KB). `--patch <spec.json>` 플래그가
+   자연스럽다.
 
 ### 아직 안 물린 것 — CD
 
-`originals/ED2/CD/ED2.cue`에 **오디오 트랙이 3개** 있는데 지금 실행 환경은
+`originals/kr/dos-ed2/CD/ED2.cue`에 **오디오 트랙이 3개** 있는데 지금 실행 환경은
 CD 를 마운트하지 않는다. `BGM/`의 `.MUS`/`.INS`(FM 음악)만 나오는 상태다.
 **이슈 #2(성문 SE 누락)는 CD 를 물리고 판정해야 한다** — 안 그러면 CD 오디오로
 트는 소리가 없는 것을 게임 결함으로 오판할 수 있다.
@@ -268,31 +282,33 @@ CD 를 마운트하지 않는다. `BGM/`의 `.MUS`/`.INS`(FM 음악)만 나오�
 
 ## 도구 (`tools/`)
 
-| 도구 | 용도 |
-| --- | --- |
-| `ne_info.py` | NE 헤더/세그먼트/export 덤프 |
-| `ne_relocs.py` | relocation 파싱 (off16은 **additive** = 값이 addend) |
-| `ne_entries.py` | entry table → ordinal:seg:offset. `--near SEG:OFF`로 주소→export 역추적 |
-| `annotate.py` | 엔진 함수명까지 주석 단 디스어셈블 (제일 많이 씀) |
-| `scan_sym.py` | 특정 엔진 심볼을 참조하는 자리를 SCENA 전체에서 수집 |
-| `scan_exports.py` | SCENA 전체 export 구성 집계. **모집단을 잘못 잡으면 정반대 결론이 나온다** — `ALGO_00` 오판 참조 |
-| `scan_scenes.py` | `ENTER_PROG` 씬 참조 전수 검증 (941건 중 938건 정상) |
-| `atime_probe.py` | 파일 접근시간으로 실제 로드된 리소스 추적 (`-log-fileio`가 무용지물이라 대체) |
-| `apply_patch.py` | 원본 바이트 확인 후 패치 적용/복원 (`--check`/`--revert`) |
-| `ne_add_export.py` | **NE DLL에 export 이식** (본보기 DLL에서 thunk+reloc을 뜬다). `length`와 `minalloc`을 함께 갱신 |
-| `gen_patch.py` | 원본/수정본 diff → `apply_patch.py` 스펙(JSON) 생성 |
-| `build_patcher.py` | 스펙 + `web/index.html.tmpl` → 자립형 웹 패처 HTML |
+| 도구               | 용도                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| `ne_info.py`       | NE 헤더/세그먼트/export 덤프                                                                     |
+| `ne_relocs.py`     | relocation 파싱 (off16은 **additive** = 값이 addend)                                             |
+| `ne_entries.py`    | entry table → ordinal:seg:offset. `--near SEG:OFF`로 주소→export 역추적                          |
+| `annotate.py`      | 엔진 함수명까지 주석 단 디스어셈블 (제일 많이 씀)                                                |
+| `scan_sym.py`      | 특정 엔진 심볼을 참조하는 자리를 SCENA 전체에서 수집                                             |
+| `scan_exports.py`  | SCENA 전체 export 구성 집계. **모집단을 잘못 잡으면 정반대 결론이 나온다** — `ALGO_00` 오판 참조 |
+| `scan_scenes.py`   | `ENTER_PROG` 씬 참조 전수 검증 (941건 중 938건 정상)                                             |
+| `atime_probe.py`   | 파일 접근시간으로 실제 로드된 리소스 추적 (`-log-fileio`가 무용지물이라 대체)                    |
+| `apply_patch.py`   | 파일 sha1 검증 후 패치 적용/복원 (`--check`/`--revert`/`--force`)                                |
+| `ne_add_export.py` | **NE DLL에 export 이식** (본보기 DLL에서 thunk+reloc을 뜬다). `length`와 `minalloc`을 함께 갱신  |
+| `gen_patch.py`     | 원본/수정본 diff → `apply_patch.py` 스펙(JSON) 생성                                              |
 
-## 스크립트 (`scripts/`)
+레포 공용 도구는 루트 `tools/` 에 있다 — `patcher/build.py`(스펙 +
+`patcher/index.html.tmpl` → 자립형 웹 패처 HTML), `subset_font.py`(갈무리 폰트 서브셋).
 
-| 스크립트 | 용도 |
-| --- | --- |
-| `dosbox.sh` | 게임 구동. `--app`(권장) / `--debug`. 설정은 `dosbox/ed2.conf.tmpl` |
-| `patcher.sh` | 웹 패처 `build` / `serve` / `deploy`. 하위 명령을 생략하면 `serve` |
+## 스크립트 (레포 루트 `scripts/`)
+
+| 스크립트        | 용도                                                                                                |
+| --------------- | --------------------------------------------------------------------------------------------------- |
+| `dosbox.sh ed2` | 게임 구동. `--app`(macOS 키 입력) / `--debug` / `--refresh`. 설정은 `scripts/dosbox/game.conf.tmpl` |
+| `patcher.sh`    | 웹 패처 `build` / `serve` / `deploy`. 하위 명령을 생략하면 `serve`                                  |
 
 ```bash
-scripts/patcher.sh                       # = serve. 빌드해서 127.0.0.1:8731 로 띄운다
-scripts/patcher.sh deploy --dry-run      # 빌드만 하고 push 하지 않는다
+sh scripts/patcher.sh                       # = serve. 빌드해서 127.0.0.1:8731 로 띄운다
+sh scripts/patcher.sh deploy --dry-run      # 빌드만 하고 push 하지 않는다
 ```
 
 - **`file://`로 열면 안 된다** — `showDirectoryPicker`가 보안 컨텍스트를 요구해서
@@ -303,27 +319,27 @@ scripts/patcher.sh deploy --dry-run      # 빌드만 하고 push 하지 않는�
   숨는다). 이 리포가 비공개라 걸 곳이 없어서다.
 
 ```bash
-.venv/bin/python tools/scan_exports.py originals/ED2/SCENA --lacks ALGO_00
-.venv/bin/python tools/annotate.py originals/ED2/SCENA/F_501.DLL 3 --from 0x630
-.venv/bin/python tools/ne_entries.py originals/ED2/ED2MAIN.EXE --near 4:0c90
-.venv/bin/python tools/atime_probe.py reset  work/dosbox/ed2/ed2   # 실행 전
-.venv/bin/python tools/atime_probe.py report work/dosbox/ed2/ed2   # 크래시 후
+python3 games/dos-ed2/tools/scan_exports.py originals/kr/dos-ed2/SCENA --lacks ALGO_00
+python3 games/dos-ed2/tools/annotate.py originals/kr/dos-ed2/SCENA/F_501.DLL 3 --from 0x630
+python3 games/dos-ed2/tools/ne_entries.py originals/kr/dos-ed2/ED2MAIN.EXE --near 4:0c90
+python3 games/dos-ed2/tools/atime_probe.py reset  work/dosbox/ed2   # 실행 전
+python3 games/dos-ed2/tools/atime_probe.py report work/dosbox/ed2   # 크래시 후
 ```
 
 ## 기각된 가설 (재시도 금지)
 
-| 가설 | 검증 | 결과 |
-| --- | --- | --- |
-| `ROUTE_NO=8` 인덱스 초과 | 8→4, 8→6 패치 | 레지스터까지 동일. 무관 |
-| 크래시가 `ENTER_PROG2` 하류 | `ljmp`→`retf` 1바이트 | 동일 크래시 |
-| 종료 정리 경로 | 게임 정상 종료 | 에러 없음. 배제 |
-| `MAP/C_017.BZH` 결번 | 대역 파일 투입 | 동일. 무관 |
-| 목적지 씬 파일 누락 | `scan_scenes.py` 전수 | 941중 938 정상 |
-| 유람선 커서 미초기화 | `SAVE_FLAG` 분기 NOP | 동일 크래시 |
-| relocation 겹침 | atype 실측 | `F_501:0x62e`는 off16(2B), 안 겹침 |
-| `WEP` 결함 | seg1 sha1 비교 | 모든 DLL 바이트 동일 |
-| 메시지 오프셋 어긋남 | 문자열 시작 대조 | 5개 전부 일치 |
-| 핸들러 테이블 off-by-one | 키데이터 종료바이트 추적 | `40`×5 → `20` 정확히 떨어짐 |
+| 가설                        | 검증                      | 결과                                               |
+| --------------------------- | ------------------------- | -------------------------------------------------- |
+| `ROUTE_NO=8` 인덱스 초과    | 8→4, 8→6 패치             | 레지스터까지 동일. 무관                            |
+| 크래시가 `ENTER_PROG2` 하류 | `ljmp`→`retf` 1바이트     | 동일 크래시                                        |
+| 종료 정리 경로              | 게임 정상 종료            | 에러 없음. 배제                                    |
+| `MAP/C_017.BZH` 결번        | 대역 파일 투입            | 동일. 무관                                         |
+| 목적지 씬 파일 누락         | `scan_scenes.py` 전수     | 941중 938 정상                                     |
+| 유람선 커서 미초기화        | `SAVE_FLAG` 분기 NOP      | 동일 크래시                                        |
+| relocation 겹침             | atype 실측                | `F_501:0x62e`는 off16(2B), 안 겹침                 |
+| `WEP` 결함                  | seg1 sha1 비교            | 모든 DLL 바이트 동일                               |
+| 메시지 오프셋 어긋남        | 문자열 시작 대조          | 5개 전부 일치                                      |
+| 핸들러 테이블 off-by-one    | 키데이터 종료바이트 추적  | `40`×5 → `20` 정확히 떨어짐                        |
 | SS:SP 전역 슬롯 재진입 충돌 | `DI`/`BP`로 복원하는 패치 | SP·BP가 패치 전과 **완전히 동일**. 슬롯은 멀쩡했다 |
 
 `ALGO_00` 부재설을 "356개 중 176개가 없이 정상"으로 기각했던 4차 초반 판단은

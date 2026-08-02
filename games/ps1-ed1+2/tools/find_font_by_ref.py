@@ -8,7 +8,7 @@ import os
 import re
 
 import numpy as np
-from common import extract
+from common import OUT_DIR, extract
 from PIL import Image, ImageDraw, ImageFont
 
 REF_CHARS = ["あ", "王", "永"]
@@ -42,7 +42,7 @@ def scan(data, ref):
 
 def iso_files():
     """iso_files.txt 재사용 (없으면 scan_sjis.py 먼저 실행)."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "out", "iso_files.txt")
+    path = os.path.join(OUT_DIR, "iso_files.txt")
     files = []
     with open(path, encoding="utf-8") as f:
         next(f)
