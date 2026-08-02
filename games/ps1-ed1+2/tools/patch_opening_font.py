@@ -201,6 +201,47 @@ def enc(s, slot):
     return b"".join(struct.pack(">H", slot[ch][0]) for ch in s) + b"\x0a"
 
 
+def verify_asm(words, base):
+    """손인코딩 기계어를 **디스어셈블해 검산**한다.
+
+    이 스텁은 손으로 워드를 적는다(어셈블러를 안 쓴다). 과거 그 오타 둘을 잡느라 반나절을
+    썼다(devlog "디코더 손인코딩 함정"). capstone 이 이미 있으니 최소한 이건 자동으로 본다:
+
+      ① 모든 워드가 유효 명령으로 **끊김 없이** 디코드되는가(중간에 데이터가 끼면 실패)
+      ② 분기·점프의 **지연 슬롯이 비지 않는가**(delay slot 에 분기가 또 오면 정의되지 않음)
+
+    ⚠ 재조립 대조까지는 못 한다(capstone 은 디스어셈블러다). 의미가 맞는지는 사람이 본다."""
+    from capstone import CS_ARCH_MIPS, CS_MODE_LITTLE_ENDIAN, CS_MODE_MIPS32, Cs
+
+    blob = b"".join(struct.pack("<I", w) for w in words)
+    md = Cs(CS_ARCH_MIPS, CS_MODE_MIPS32 | CS_MODE_LITTLE_ENDIAN)
+    ins = list(md.disasm(blob, base))
+    if len(ins) != len(words):
+        bad = base + len(ins) * 4
+        raise SystemExit(
+            f"스텁 디코드 실패 @0x{bad:08X} ({len(ins)}/{len(words)}명령) — 손인코딩 확인"
+        )
+    BR = ("b", "beq", "bne", "beqz", "bnez", "bgtz", "blez", "j", "jr", "jal", "jalr")
+    for a, b in zip(ins, ins[1:], strict=False):
+        if a.mnemonic in BR and b.mnemonic in BR:
+            raise SystemExit(f"지연 슬롯에 분기 @0x{b.address:08X} {b.mnemonic} — 정의되지 않음")
+    print(f"  스텁 검산 OK — {len(ins)}명령 연속 디코드 · 지연 슬롯 정상")
+
+
+def _jp_original():
+    """소장 JP 원본 디스크 — "원본이 어땠는가"를 묻는 읽기는 전부 여기서."""
+    import glob
+
+    c = glob.glob(
+        os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "originals", "jp", "ps1-ed1+2", "*.bin"
+        )
+    )
+    if not c:
+        raise SystemExit("JP 원본 없음 — originals/jp/ps1-ed1+2 확인")
+    return c[0]
+
+
 def w32(op, off, val):
     op[off : off + 4] = struct.pack("<I", val)
 
@@ -234,15 +275,20 @@ def main():
     #     전체 KR < 영역이므로, 49줄을 영역 안에 통째로 다시 깔고 포인터를 갱신하면 다 들어간다.
     #     스크립트(0x145A0)가 주소 범위로 text/command를 가르므로 반드시 저주소(0x8001xxxx) 유지.
     #     원본 배치(표시순=내림차순 주소) 보존 위해 영역 상단부터 아래로 팩. 렌더 lhu 위해 2B 정렬.
+    # ⚠ **원본에서 읽는다.** 아래 둘은 "원본 JP 가 어땠는가"를 묻는 질문이라, 제자리 갱신된
+    #   이미지(SRC=DST)를 다시 읽으면 회차마다 답이 달라진다 — jp_len 은 우리 한국어 길이를
+    #   재고, find_ptr 은 이미 갱신된 포인터를 못 찾는다(실측 2026-08-02).
+    orig = bytes(extract(OP_LBA, OP_SIZE, path=_jp_original()))
+
     def jp_len(o):
         e = o
-        while op[e]:
+        while orig[e]:
             e += 1
         return e - o
 
     def find_ptr(ram):
         for i in range(0x14000, 0x15000, 4):
-            if struct.unpack("<I", op[i : i + 4])[0] == ram:
+            if struct.unpack("<I", orig[i : i + 4])[0] == ram:
                 return i
         return None
 
@@ -331,6 +377,7 @@ def main():
         0x01000008,  # jr   t0
         0x00000000,  # nop
     ]
+    verify_asm(stub, STUB_RAM)
     stub_end = STUB_RAM + len(stub) * 4
     assert stub_end <= 0x800254A4, f"디코더가 setjmp 영역 침범 0x{stub_end:X}"
     for k, ins in enumerate(stub):

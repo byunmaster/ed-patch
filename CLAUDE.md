@@ -62,6 +62,7 @@ games/<게임>/work/
 ```bash
 python3 games/ps1-ed1+2/tools/build.py     # [kr] 전 트랙 체인 → work/build/Eiyuu Densetsu (KR).bin/.cue
 sh scripts/patcher.sh serve                # [fix] 웹 패처를 로컬에서 띄워 확인
+sh scripts/check-updates.sh                # 외부 의존물(emucap·스킬·템플릿) 새 버전 확인
 sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조 · DOS 패치 검증)
 ```
 
@@ -74,6 +75,11 @@ sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조
   훨씬 빠름** — 빌드 완료를 알리고 유저 스크린샷으로 검증받는 흐름 권장.
 
 - ⚠ mednafen은 디스크 캐시 → 빌드 교체 후 reset 무효. 프로세스 kill + 재launch.
+- ⚠ **emucap 어댑터 빌드는 macOS 에서 `flock` 이 필요**하다(0.12부터). 스톡 macOS 엔
+  `flock`·`lockf` 둘 다 없어 `ERROR: lockf or flock is required` 로 즉시 죽는다 —
+  `brew install flock`. `vendor/` 는 읽기 전용이라 스크립트를 고치지 않는다.
+- ⚠ emucap 을 올리면 **MCP 서버(메모리)·어댑터(디스크)·에뮬레이터 바이너리** 셋이 엇갈린다.
+  서버는 Claude Code 재시작, 에뮬레이터는 `adapters/<이름>/build.sh` 로 맞춘다.
 
 ### 트랙을 병행할 때 — git worktree
 
