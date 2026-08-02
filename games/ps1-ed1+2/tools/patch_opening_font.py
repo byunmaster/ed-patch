@@ -145,6 +145,18 @@ PUNC = {",": b"\x81\x43", ".": b"\x81\x44", "…": b"\x81\x63", "!": b"\x81\x49"
 # [(슬롯 오프셋, KR 내레이션)] 50줄 — textmap/opening.json 파생(행별 편차 사유는 note 필드).
 LINES = off_pairs("opening")
 MAX_SLOTS = 21  # 필드 64유닛 ÷ advance 3 = 21전각 (초과 시 앞뒤 잘림)
+FIELD = 64  # 표시 필드 폭(유닛). 폭측정·표시 루프가 같은 단위로 센다
+ADV_WIDE, ADV_NARROW = 3, 2  # 전각 / 반각 advance(유닛)
+# 반각으로 낼 글자 — 렌더러에 **이미 있는 advance 2 경로**를 빌린다. 원본은 전각공백과
+# 좁은 라틴(ｆｉｊｌ) 다섯 코드를 하드코딩 비교해 2유닛만 진행하는데, 그 상수를 우리
+# 글자의 슬롯 SJIS 로 바꿔치면 코드 추가 없이 반각이 된다(트램폴린 불필요).
+# ⚠ 다섯 자리뿐이다. 늘리려면 비교 체인을 새로 짜야 한다.
+NARROW = " .,!?"
+
+
+def units(s):
+    """줄의 표시 폭(유닛). 반각 글자는 2, 그 밖은 3."""
+    return sum(ADV_NARROW if c in NARROW else ADV_WIDE for c in s)
 
 
 def kuten_to_sjis(ku, ten):
@@ -237,27 +249,49 @@ def main():
     line_offs = [off for off, _ in LINES]
     region_lo = min(line_offs)
     region_hi = max(line_offs) + jp_len(max(line_offs)) + 1  # 마지막 null 종료자 포함
+    # 보조 풀 — JP CD 오류문 2개 자리(0x864·0x8CC). CD 읽기 실패 경로(0x80012D08·0x80012DC0·
+    # 0x80012DFC)에서만 참조되고 그 안을 가리키는 다른 참조는 없다(전 명령 lui/addiu 쌍 스캔
+    # 으로 확인 — 대조군 cdrom:\ED.EXE·OPENEND 는 정상 검출됨). 그 시점엔 게임이 이미 죽으므로
+    # 문안을 비우고 본문 공간으로 돌린다. 각 문자열 **선두 4B 는 0으로 남겨** 오류 경로가 빈
+    # 문자열을 읽게 한다(안 그러면 내레이션이 오류창에 뜬다).
+    # ⚠ 늘리지 말 것 — 0x938 부터는 포인터 테이블이다(0x80014xxx 를 가리킨다).
+    POOLS = [(0x868, 0x8CC), (0x8D0, 0x938)]  # 204B
     ptr_pos = {}  # 갱신 전 원주소로 포인터 위치 선수집(신주소가 타 원주소와 충돌 시 오매칭 방지)
     for off in line_offs:
         pi = find_ptr(TADDR + (off - 0x800))
         if pi is None:
             raise SystemExit(f"포인터 못찾음 줄 0x{off:X}")
         ptr_pos[off] = pi
-    for k in range(region_lo, region_hi):  # 영역 전체 클리어(구 JP 데이터 제거)
-        op[k] = 0
-    pos = region_hi
+    # 본영역 + 보조 풀 클리어(구 JP 데이터 제거). ⚠ 두 범위를 **따로** 지운다 — 사이의
+    # 0x938~0x973 은 포인터 테이블이라 통째로 지우면 오프닝이 죽는다(실측 2026-08-02).
+    # 0x864~0x938 전체를 지워야 오류문 선두 4B 도 0이 되어 빈 문자열이 된다.
+    for lo, hi in ((0x864, 0x938), (region_lo, region_hi)):
+        for k in range(lo, hi):
+            op[k] = 0
+    # 본영역을 위에서 아래로 채우고, 모자라면 보조 풀로 넘어간다. 줄마다 포인터가 따로
+    # 있으므로 배치 순서·연속성은 상관없다(스크립트는 값의 주소 대역만 본다 — 전부 0x8001xxxx).
+    # ⚠ 풀을 순서대로 소진하면 전환할 때마다 자투리(최대 한 줄분)가 버려진다. 줄마다
+    # 포인터가 따로라 배치 순서는 자유이므로 **first-fit** 으로 모든 풀을 계속 살려 둔다.
+    pools = [(region_lo, region_hi), *POOLS]
+    cur = [hi for _, hi in pools]  # 풀별 커서(위에서 아래로)
     for off, kr in LINES:  # 표시순(=원본 내림차순 주소) 유지
-        if len(kr) > MAX_SLOTS:
-            raise SystemExit(f"줄 폭 초과({len(kr)}>{MAX_SLOTS}슬롯): '{kr}'")
+        u = units(kr)
+        if u > FIELD:
+            raise SystemExit(f"줄 폭 초과({u}>{FIELD}유닛): '{kr}'")
         b = enc(kr, slot)
-        pos = (pos - len(b) - 1) & ~1  # null 종료자 + 2바이트 정렬
-        if pos < region_lo:
-            raise SystemExit(f"재packing 영역 초과: '{kr}' 0x{pos:X} < 0x{region_lo:X}")
-        op[pos : pos + len(b)] = b  # 뒤 null은 클리어로 이미 0
-        w32(op, ptr_pos[off], TADDR + (pos - 0x800))
+        for pi, (lo, _) in enumerate(pools):
+            npos = (cur[pi] - len(b) - 1) & ~1  # null 종료자 + 2바이트 정렬
+            if npos >= lo:
+                break
+        else:
+            raise SystemExit(f"재packing 공간 부족: '{kr}' (풀 {len(pools)}개 소진)")
+        cur[pi] = npos
+        op[npos : npos + len(b)] = b  # 뒤 null은 클리어로 이미 0
+        w32(op, ptr_pos[off], TADDR + (npos - 0x800))
+    free = sum(c - lo for c, (lo, _) in zip(cur, pools, strict=True))
     print(
-        f"내레이션 {len(LINES)}줄 영역 재packing 0x{pos:X}~0x{region_hi:X} "
-        f"(여유 {pos - region_lo}B, 전 줄 저주소 유지)"
+        f"내레이션 {len(LINES)}줄 재packing — 풀 {len(pools)}개, "
+        f"여유 {free}B (최대 연속 {max(c - lo for c, (lo, _) in zip(cur, pools, strict=True))}B)"
     )
 
     # 2) PC0 진입점 훅: 저작권 문자열 자리에 디코더 스텁을 넣고 헤더 PC0를 스텁으로.
@@ -327,6 +361,23 @@ def main():
     #    에뮬 실측 확인). 글리프 타일은 16px지만 배경 투명 블릿이라 셀 겹침은 무해.
     def fo(ram):
         return 0x800 + (ram - TADDR)
+
+    # 4b) 반각 처리 — 원본의 "좁은 글자 5종" 비교 상수를 우리 공백·부호 슬롯으로 바꾼다.
+    #     원본: 0x8140(전각공백)·0x8286·0x8289·0x828A·0x828C(ｆｉｊｌ)를 만나면 advance 2.
+    #     이 다섯 자리를 우리 글자로 채우면 **코드 한 줄 안 늘리고** 반각을 얻는다.
+    #     ⚠ 폭측정·표시 **양쪽 다** 바꿔야 한다 — 한쪽만 바꾸면 측정≠표시라 중앙정렬이
+    #     밀려 글자가 화면 밖으로 잘린다(advance 4→3 때 실측한 함정과 같은 것).
+    narrow = [c for c in NARROW if c in slot][:5]
+    codes = [slot[c][0] for c in narrow]
+    codes += [codes[0]] * (5 - len(codes))  # 남는 자리는 첫 코드로 채워 무해하게
+    for base in (0x800132E0, 0x80013704):  # 폭측정 / 표시 — ori 5개
+        step = 4 if base == 0x800132E0 else 8  # 표시 쪽은 ori 사이에 beq 가 낀다
+        for k, c in enumerate(codes):
+            a = fo(base + k * step)
+            ins = struct.unpack("<I", op[a : a + 4])[0]
+            assert ins >> 26 == 0x0D, f"ori 아님 @0x{base + k * step:X}: {ins:08X}"
+            w32(op, a, (ins & 0xFFFF0000) | c)
+    print(f"반각 처리: {''.join(narrow)!r} → advance {ADV_NARROW}유닛 (전각 {ADV_WIDE})")
 
     w32(op, fo(0x80013370), 0x24840003)  # addiu a0,a0,3  (폭측정 전각, 원 +4)
     w32(op, fo(0x80013750), 0x26730003)  # addiu s3,s3,3  (표시 전각, 원 +4)

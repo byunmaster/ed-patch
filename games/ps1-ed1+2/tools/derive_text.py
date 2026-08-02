@@ -74,6 +74,11 @@ def derive(cls):
             val = cache[s["f"]][s["o"] : s["o"] + s["l"]].decode("euc-kr")
             if s.get("x"):
                 val = transform(val)
+        # 낱말 단위 교정(맞춤법·띄어쓰기·명칭 통일). ⚠ **낱말까지만** — 문장을 여기에
+        # 적으면 정발 문안이 리포에 박힌다(파생 체계의 존재 이유가 사라진다).
+        # 대사 트랙은 spell_fix 가 같은 일을 하는데 오프닝은 그 경로를 안 타서 따로 둔다.
+        for a, b in e.get("fix", ()):
+            val = val.replace(a, b)
         assert _guard(val) == e["sha"], f"{cls}:{e['k']} 파생 불일치 — 원본/textmap 확인"
         out[e["k"]] = val
     os.makedirs(DERIVED_DIR, exist_ok=True)
