@@ -34,8 +34,16 @@ from reinsert_kr_pilot import HARD_NL, resolve_dos_breaks, spell_fix  # noqa: E4
 
 OUT = os.path.join(REVIEW_DIR, "corpus")
 
-# 제어 마크업: {n} {p} {spk} … 와 \xNN 이스케이프. 문장 판정 전에 걷어낸다.
+# ⚠ 제어코드 일부는 **인자를 감싼다** — `\x0F$\x0D`, `\x10d\x11`. 양끝만 지우면 가운데
+# 인자($ X d)가 본문으로 남아, 외부 맞춤법 검사기가 그걸 낱말로 오해하고 조사까지 붙인다
+# (`` `1 무찌를 `` → `1을 무찌를` 실측 2026-08-02). 감싼 채로 통째로 걷어낸다.
+INJECT = re.compile(r"\\x0F.{0,2}?\\x0D|\\x10.{0,4}?\\x11|`[0-9{]")
+# 그 밖의 마크업: {n} {p} {spk} … 와 단독 \xNN 이스케이프.
 MARKUP = re.compile(r"\{[^}]*\}|\\x[0-9A-Fa-f]{2}")
+# 마크업을 걷어내도 **인자 한 글자가 남는** 코드가 있다(`\xEB&`, `\x0FP`). 홀로 선 ASCII
+# 한 글자는 한국어 대사에 나올 일이 없으니 잔재로 본다 — 줄머리(`( 비 빌어먹을`)와
+# 줄중간(`남자 Q 병사`) 둘 다. `.`(말줄임)와 한글·숫자는 건드리지 않는다.
+RESIDUE = re.compile(r"^[^\s.가-힣0-9]\s+|^[&|}⒳]\s*|(?<=\s)[A-Za-z⒳](?=\s|$)")
 HANGUL = re.compile(r"[가-힣]")
 # 문장 끝 — 종결부호 뒤. 정발은 ` !!` 처럼 부호 앞을 띄우므로 부호를 다 삼킨다.
 SENT_END = re.compile(r"(?<=[.!?…])(?=\s)|(?<=[.!?…])$")
@@ -50,18 +58,42 @@ def normalize(text):
 
 
 def to_lines(t):
-    """정규화된 엔트리 텍스트 → 검수 단위 문장 목록."""
+    """정규화된 엔트리 텍스트 → [(문장, 주입코드였음)] 목록.
+
+    두 번째 값이 참이면 그 문장에는 런타임 주입 자리(이름·낱말)가 있었다 — 검사기
+    제안을 그대로 믿으면 안 된다(사라진 자리의 조사·띄어쓰기를 검사기가 재구성한다)."""
     out = []
     for page in t.split("{p}"):
-        page = MARKUP.sub(" ", page.replace(HARD_NL, " "))
+        page = page.replace(HARD_NL, " ")
+        inj = bool(INJECT.search(page))
+        page = MARKUP.sub(" ", INJECT.sub(" ", page))
         page = re.sub(r"\s+", " ", page).strip()
         if not HANGUL.search(page):
             continue  # 값 테이블·라벨 조각 — 검수 대상 아님
         for s in SENT_END.split(page):
-            s = s.strip()
+            # ⚠ RESIDUE 는 `^` 앵커를 쓰므로 **먼저 strip** 해야 한다(split 조각엔 선행
+            # 공백이 남는다). 연속 잔재(`남자 Q 병사 P`)를 위해 2패스.
+            s = re.sub(r"\s+", " ", RESIDUE.sub(" ", RESIDUE.sub(" ", s.strip()).strip())).strip()
             if s and HANGUL.search(s):
-                out.append(s)
+                out.append((s, inj))
     return out
+
+
+def collect(game):
+    """{문장: {"at": [표#엔트리…], "inject": bool}} — 검사 대상 정본."""
+    uniq = {}
+    for f in sorted(glob.glob(os.path.join(DOS_KR_DIR, game, "*.json"))):
+        if os.path.basename(f).startswith(("_", ".")):
+            continue
+        doc = json.load(open(f, encoding="utf-8"))
+        for e in doc["entries"]:
+            if e["kind"] != "block":
+                continue
+            for s, inj in to_lines(normalize(e["text"])):
+                r = uniq.setdefault(s, {"at": [], "inject": False})
+                r["at"].append(f"{doc['table_id']}#{e['entry_id']}")
+                r["inject"] |= inj
+    return uniq
 
 
 def dump(game, chunk):
@@ -75,7 +107,7 @@ def dump(game, chunk):
         for e in doc["entries"]:
             if e["kind"] != "block":
                 continue
-            lines = to_lines(normalize(e["text"]))
+            lines = [s for s, _ in to_lines(normalize(e["text"]))]
             if not lines:
                 continue
             n_entry += 1
