@@ -1,0 +1,7786 @@
+{
+ "_doc": "인게임에서 확인된 대사의 확정 락. 키=씬, 하위=PS1 entry_id → {sha, src}. sha=문안 sha1 앞 10자(문안 자체는 저작권상 저장 금지), src=배정 좌표(포인터). 빌드가 이 해시를 대조해 달라지면 실패한다. 갱신은 tools/lock_lines.py.",
+ "ED1SCN1": {
+  "1097": {
+   "sha": "c8fc9e462d",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 0
+   }
+  },
+  "1098": {
+   "sha": "62e8890823",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 1
+   }
+  },
+  "1100": {
+   "sha": "cad9b76e1b",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 3
+   }
+  },
+  "1101": {
+   "sha": "5e4e7d4806",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 4
+   }
+  },
+  "1168": {
+   "sha": "96f923eab9",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "1102": {
+   "sha": "85ba4d36e6",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 8,
+    "chain": [
+     "8#0"
+    ]
+   }
+  },
+  "1094": {
+   "sha": "5ac3d7aea0",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 10
+   }
+  },
+  "1256": {
+   "sha": "463b4c275e",
+   "src": {
+    "table": "ED1/C_008",
+    "entry_id": 1
+   }
+  },
+  "152": {
+   "sha": "a2b3b91371"
+  },
+  "1104": {
+   "sha": "f9c329a5c2",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 13,
+    "chain": [
+     "13#0"
+    ]
+   }
+  },
+  "1107": {
+   "sha": "c0e19065a1",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 14
+   }
+  },
+  "1110": {
+   "sha": "8448e43cb5",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 3,
+    "chain": [
+     "3#1"
+    ]
+   }
+  },
+  "1111": {
+   "sha": "dc8b151022",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "1113": {
+   "sha": "91b55c9573",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 6
+   }
+  },
+  "1114": {
+   "sha": "411b033e62",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 7
+   }
+  },
+  "1115": {
+   "sha": "d436349860",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 9
+   }
+  },
+  "1261": {
+   "sha": "2f76a5b258",
+   "src": {
+    "table": "ED1/C_009",
+    "entry_id": 4
+   }
+  },
+  "1117": {
+   "sha": "315d10419e",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 12
+   }
+  },
+  "1320": {
+   "sha": "b3d70310a1",
+   "src": {
+    "table": "ED1/C_00E",
+    "entry_id": 5
+   }
+  },
+  "1119": {
+   "sha": "8cf51427a7",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 16
+   }
+  },
+  "1263": {
+   "sha": "e6624a4e32",
+   "src": {
+    "table": "ED1/C_00E",
+    "entry_id": 6
+   }
+  },
+  "1095": {
+   "sha": "090f194dbe",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 1
+   }
+  },
+  "1123": {
+   "sha": "26ea67be33",
+   "src": {
+    "table": "ED1/C_00E",
+    "entry_id": 8
+   }
+  },
+  "1266": {
+   "sha": "7e7124d229",
+   "src": {
+    "table": "ED1/C_009",
+    "entry_id": 9
+   }
+  },
+  "1267": {
+   "sha": "686790aaa8",
+   "src": {
+    "table": "ED1/C_009",
+    "entry_id": 10
+   }
+  },
+  "1127": {
+   "sha": "3baee624a0",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 30
+   }
+  },
+  "1121": {
+   "sha": "02e2d08f08",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 31
+   }
+  },
+  "1159": {
+   "sha": "22a4e653ac",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 0,
+    "chain": [
+     "0#0"
+    ]
+   }
+  },
+  "1160": {
+   "sha": "f616dcc85e",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 1
+   }
+  },
+  "1139": {
+   "sha": "144cabcb26",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 2
+   }
+  },
+  "1140": {
+   "sha": "0c6f67082f",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 3
+   }
+  },
+  "1142": {
+   "sha": "3dab5c22ee",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 4,
+    "chain": [
+     "4#1"
+    ]
+   }
+  },
+  "1143": {
+   "sha": "9421140bff",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 5,
+    "chain": [
+     "5#0"
+    ]
+   }
+  },
+  "1162": {
+   "sha": "e3f6f2bf01",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 1
+   }
+  },
+  "1163": {
+   "sha": "d29d03e09a",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 3
+   }
+  },
+  "1164": {
+   "sha": "7f229c52b2",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ],
+    "subs": [
+     [
+      "이름은 \\x09{n}.{n}왕자.",
+      "이름은 {p}. 왕자."
+     ]
+    ]
+   }
+  },
+  "1169": {
+   "sha": "c3457d7e02",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 6,
+    "chain": [
+     "6#1"
+    ]
+   }
+  },
+  "1175": {
+   "sha": "fe6ee8f5fa",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 8
+   }
+  },
+  "1180": {
+   "sha": "2e3a938462",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 9
+   }
+  },
+  "1176": {
+   "sha": "5ef2d70c8b",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 10,
+    "chain": [
+     "10#0"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ]
+    ]
+   }
+  },
+  "1178": {
+   "sha": "bd8003e590",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 11,
+    "chain": [
+     "11#0"
+    ]
+   }
+  },
+  "1192": {
+   "sha": "a55877de5a",
+   "src": {
+    "table": "ED1/C_004",
+    "entry_id": 7
+   }
+  },
+  "1191": {
+   "sha": "3780b759a4",
+   "src": {
+    "table": "ED1/C_004",
+    "entry_id": 8
+   }
+  },
+  "138": {
+   "sha": "c46b505961",
+   "src": {
+    "table": "ED1/C_004",
+    "entry_id": 9
+   }
+  },
+  "1184": {
+   "sha": "1385cbc792",
+   "src": {
+    "table": "ED1/C_004",
+    "entry_id": 10
+   }
+  },
+  "1182": {
+   "sha": "65b7d08186",
+   "src": {
+    "table": "ED1/C_004",
+    "entry_id": 13
+   }
+  },
+  "1212": {
+   "sha": "68c36db508",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 5,
+    "chain": [
+     "5#0"
+    ]
+   }
+  },
+  "1211": {
+   "sha": "5bb542c3fd",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 6
+   }
+  },
+  "1219": {
+   "sha": "cacc4f1c08",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 8,
+    "chain": [
+     "8#0"
+    ]
+   }
+  },
+  "1221": {
+   "sha": "8095c5bbc7",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 9
+   }
+  },
+  "1214": {
+   "sha": "f735619a3a",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 10
+   }
+  },
+  "1196": {
+   "sha": "bf795ee6bd",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 16,
+    "chain": [
+     "16#0"
+    ]
+   }
+  },
+  "1222": {
+   "sha": "ac6e7b5ff7",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 23
+   }
+  },
+  "1277": {
+   "sha": "eb2b26de04",
+   "src": {
+    "table": "ED1/C_006",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "1280": {
+   "sha": "d0fbf00ffe",
+   "src": {
+    "table": "ED1/C_006",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "1241": {
+   "sha": "ef8f89ec06",
+   "src": {
+    "table": "ED1/C_00F",
+    "entry_id": 8,
+    "chain": [
+     "8#0"
+    ]
+   }
+  },
+  "1243": {
+   "sha": "d02415b4f1",
+   "src": {
+    "table": "ED1/C_006",
+    "entry_id": 9
+   }
+  },
+  "1245": {
+   "sha": "28e05a3150",
+   "src": {
+    "table": "ED1/C_006",
+    "entry_id": 12,
+    "chain": [
+     "12#0"
+    ]
+   }
+  },
+  "1246": {
+   "sha": "ae0f87579f",
+   "src": {
+    "table": "ED1/C_006",
+    "entry_id": 13,
+    "chain": [
+     "13#0"
+    ]
+   }
+  },
+  "1249": {
+   "sha": "a02bcf9f07",
+   "src": {
+    "table": "ED1/C_006",
+    "entry_id": 14
+   }
+  },
+  "1250": {
+   "sha": "24066ebf0e",
+   "src": {
+    "table": "ED1/C_006",
+    "entry_id": 16,
+    "chain": [
+     "16#0"
+    ]
+   }
+  },
+  "79": {
+   "sha": "782a66bf13",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 17
+   }
+  },
+  "1316": {
+   "sha": "dc8b151022",
+   "src": {
+    "table": "ED1/C_009",
+    "entry_id": 2,
+    "chain": [
+     "2#0"
+    ]
+   }
+  },
+  "1260": {
+   "sha": "d7c4bf4aa8",
+   "src": {
+    "table": "ED1/C_00E",
+    "entry_id": 3
+   }
+  },
+  "1116": {
+   "sha": "204dd122b8",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 10
+   }
+  },
+  "1118": {
+   "sha": "5b1d394570",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 13
+   }
+  },
+  "1120": {
+   "sha": "a625b345a3",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 17
+   }
+  },
+  "1122": {
+   "sha": "8cde776bb3",
+   "src": {
+    "table": "ED1/C_00E",
+    "entry_id": 7
+   }
+  },
+  "1323": {
+   "sha": "26ea67be33",
+   "src": {
+    "table": "ED1/C_009",
+    "entry_id": 8
+   }
+  },
+  "1125": {
+   "sha": "4c9c063220",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 26
+   }
+  },
+  "1126": {
+   "sha": "6f36992f4d",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 29
+   }
+  },
+  "1275": {
+   "sha": "da37f5e09f",
+   "src": {
+    "table": "ED1/C_00A",
+    "entry_id": 0
+   }
+  },
+  "1234": {
+   "sha": "eeed2ca44d",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 4
+   }
+  },
+  "1238": {
+   "sha": "8589386801",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "1341": {
+   "sha": "40945ab5d3",
+   "src": {
+    "table": "ED1/C_006",
+    "entry_id": 7,
+    "chain": [
+     "7#0"
+    ]
+   }
+  },
+  "1285": {
+   "sha": "63ba442a62",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 8
+   }
+  },
+  "1293": {
+   "sha": "016625829d",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 1,
+    "chain": [
+     "1#0"
+    ]
+   }
+  },
+  "1295": {
+   "sha": "06e6cde88a",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 2,
+    "chain": [
+     "2#0"
+    ]
+   }
+  },
+  "1296": {
+   "sha": "264b45b1d9",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 3
+   }
+  },
+  "1297": {
+   "sha": "f677556093",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "1300": {
+   "sha": "734ebc2da7",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 5
+   }
+  },
+  "1301": {
+   "sha": "2b20c8c532",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 7,
+    "chain": [
+     "7#0"
+    ]
+   }
+  },
+  "1311": {
+   "sha": "82920b40db",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 8
+   }
+  },
+  "1289": {
+   "sha": "633ad353bd",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 10,
+    "chain": [
+     "10#0"
+    ]
+   }
+  },
+  "1290": {
+   "sha": "59f4a7d2bd",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 11
+   }
+  },
+  "1291": {
+   "sha": "7e5f2ea825",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 12
+   }
+  },
+  "1292": {
+   "sha": "6687a65353",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 13
+   }
+  },
+  "1307": {
+   "sha": "0726970239",
+   "src": {
+    "table": "ED1/C_00H",
+    "entry_id": 3
+   }
+  },
+  "1308": {
+   "sha": "1567de7a74",
+   "src": {
+    "table": "ED1/C_00H",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "1309": {
+   "sha": "7f1331c7f5",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 16
+   }
+  },
+  "1310": {
+   "sha": "ab2c94db9d",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 17
+   }
+  },
+  "1355": {
+   "sha": "ef38de50b5",
+   "src": {
+    "table": "ED1/C_00D",
+    "entry_id": 0
+   }
+  },
+  "1314": {
+   "sha": "463b4c275e",
+   "src": {
+    "table": "ED1/C_00D",
+    "entry_id": 1
+   }
+  },
+  "1072": {
+   "sha": "68ed235b1c",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 8,
+    "chain": [
+     "8#1"
+    ]
+   }
+  },
+  "1327": {
+   "sha": "08cb95f7e7",
+   "src": {
+    "table": "ED1/C_00E",
+    "entry_id": 0
+   }
+  },
+  "1258": {
+   "sha": "dc8b151022",
+   "src": {
+    "table": "ED1/C_009",
+    "entry_id": 2,
+    "chain": [
+     "2#0"
+    ]
+   }
+  },
+  "1318": {
+   "sha": "d7c4bf4aa8",
+   "src": {
+    "table": "ED1/C_009",
+    "entry_id": 3
+   }
+  },
+  "1319": {
+   "sha": "204dd122b8",
+   "src": {
+    "table": "ED1/C_00E",
+    "entry_id": 4
+   }
+  },
+  "1262": {
+   "sha": "5b1d394570",
+   "src": {
+    "table": "ED1/C_009",
+    "entry_id": 5
+   }
+  },
+  "1321": {
+   "sha": "62a878a15c",
+   "src": {
+    "table": "ED1/C_009",
+    "entry_id": 6
+   }
+  },
+  "1322": {
+   "sha": "8cde776bb3",
+   "src": {
+    "table": "ED1/C_009",
+    "entry_id": 7
+   }
+  },
+  "1265": {
+   "sha": "e6382d45db",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 23
+   }
+  },
+  "1324": {
+   "sha": "b97900e1de",
+   "src": {
+    "table": "ED1/C_00E",
+    "entry_id": 9
+   }
+  },
+  "1334": {
+   "sha": "b30bd13027",
+   "src": {
+    "table": "ED1/C_00F",
+    "entry_id": 2
+   }
+  },
+  "1335": {
+   "sha": "eeed2ca44d",
+   "src": {
+    "table": "ED1/C_00F",
+    "entry_id": 5
+   }
+  },
+  "1338": {
+   "sha": "8589386801",
+   "src": {
+    "table": "ED1/C_00F",
+    "entry_id": 7,
+    "chain": [
+     "7#0"
+    ]
+   }
+  },
+  "1283": {
+   "sha": "ef8f89ec06",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 7,
+    "chain": [
+     "7#0"
+    ]
+   }
+  },
+  "1343": {
+   "sha": "63ba442a62",
+   "src": {
+    "table": "ED1/C_00F",
+    "entry_id": 10
+   }
+  },
+  "1360": {
+   "sha": "82920b40db",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 8
+   }
+  },
+  "1347": {
+   "sha": "e3514e4892",
+   "src": {
+    "table": "ED1/C_00H",
+    "entry_id": 2,
+    "chain": [
+     "2#0"
+    ]
+   }
+  },
+  "1354": {
+   "sha": "5a23bcd3d7",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 14
+   }
+  },
+  "1357": {
+   "sha": "8a3be1b81f",
+   "src": {
+    "table": "ED1/C_00H",
+    "entry_id": 5
+   }
+  },
+  "1358": {
+   "sha": "d0ada03122",
+   "src": {
+    "table": "ED1/C_00H",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "274": {
+   "sha": "da9c14d3d5",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 10,
+    "chain": [
+     "10#0"
+    ]
+   }
+  },
+  "430": {
+   "sha": "9a91361429",
+   "src": {
+    "table": "ED1/T_026",
+    "entry_id": 5
+   }
+  },
+  "16": {
+   "sha": "cbf25c1e98",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 0
+   }
+  },
+  "2": {
+   "sha": "aad81008a3",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 1
+   }
+  },
+  "3": {
+   "sha": "29518ceda9",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 2
+   }
+  },
+  "15": {
+   "sha": "d9bbcefed7",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 4
+   }
+  },
+  "1": {
+   "sha": "a2552acadb",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 5
+   }
+  },
+  "4": {
+   "sha": "2065c30f41",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 6
+   }
+  },
+  "5": {
+   "sha": "090f194dbe",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 1
+   }
+  },
+  "17": {
+   "sha": "a936e20b02",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 8
+   }
+  },
+  "6": {
+   "sha": "43041df536",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 10
+   }
+  },
+  "19": {
+   "sha": "13e4104ca3",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 11,
+    "chain": [
+     11,
+     12
+    ]
+   }
+  },
+  "11": {
+   "sha": "504215e145",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 16
+   }
+  },
+  "12": {
+   "sha": "c10dbe0916",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 17
+   }
+  },
+  "7": {
+   "sha": "a6a6800d9b",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 18
+   }
+  },
+  "10": {
+   "sha": "3afddb14fe",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 19
+   }
+  },
+  "21": {
+   "sha": "353d4e5145",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 24
+   }
+  },
+  "22": {
+   "sha": "dbb21243f2",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 25
+   }
+  },
+  "8": {
+   "sha": "9536f2c7d3",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 30
+   }
+  },
+  "9": {
+   "sha": "c9a68148de",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 31
+   }
+  },
+  "14": {
+   "sha": "fa437e2dde",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 32,
+    "chain": [
+     "32"
+    ]
+   }
+  },
+  "31": {
+   "sha": "1ba0cafac8",
+   "src": {
+    "table": "ED1/T_001",
+    "entry_id": 0
+   }
+  },
+  "32": {
+   "sha": "5340072260",
+   "src": {
+    "table": "ED1/T_001",
+    "entry_id": 1
+   }
+  },
+  "28": {
+   "sha": "a9c5f9bd5e",
+   "src": {
+    "table": "ED1/T_001",
+    "entry_id": 4,
+    "chain": [
+     4,
+     5,
+     6,
+     7
+    ],
+    "subs": [
+     [
+      "피하셔야 합니다",
+      "피하셔야 합니다."
+     ],
+     [
+      "장비하였습니다",
+      "장비했습니다"
+     ]
+    ]
+   }
+  },
+  "26": {
+   "sha": "022a6217dc",
+   "src": {
+    "table": "ED1/T_001",
+    "entry_id": 8
+   }
+  },
+  "29": {
+   "sha": "a9fd2c22af",
+   "src": {
+    "table": "ED1/T_001",
+    "entry_id": 13,
+    "chain": [
+     13,
+     14,
+     15
+    ]
+   }
+  },
+  "1215": {
+   "sha": "12c82c51eb",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 0
+   }
+  },
+  "44": {
+   "sha": "2f375e26a6",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 2
+   }
+  },
+  "189": {
+   "sha": "06cc00da9a",
+   "src": {
+    "table": "ED1/T_015",
+    "entry_id": 9,
+    "chain": [
+     "9#0"
+    ]
+   }
+  },
+  "47": {
+   "sha": "a803131541",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 4
+   }
+  },
+  "40": {
+   "sha": "4788e88d18",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "42": {
+   "sha": "ee2a823400",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 7,
+    "chain": [
+     "7#0"
+    ]
+   }
+  },
+  "49": {
+   "sha": "2bd207f480",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 8,
+    "chain": [
+     "8#0"
+    ]
+   }
+  },
+  "80": {
+   "sha": "f6fc604d0b",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 12
+   }
+  },
+  "37": {
+   "sha": "63093bb35e",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 13
+   }
+  },
+  "38": {
+   "sha": "1fdb5bef17",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 14,
+    "chain": [
+     "14#0"
+    ]
+   }
+  },
+  "637": {
+   "sha": "e20fd5a3ea",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 20,
+    "chain": [
+     "20#0"
+    ]
+   }
+  },
+  "60": {
+   "sha": "8e89ede280",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 19,
+    "chain": [
+     "19#0"
+    ]
+   }
+  },
+  "67": {
+   "sha": "466699b3d0",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 20,
+    "chain": [
+     "20#0"
+    ]
+   }
+  },
+  "68": {
+   "sha": "d250c157bb",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 23,
+    "chain": [
+     "23#0"
+    ]
+   }
+  },
+  "697": {
+   "sha": "5bed324bb1",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 37,
+    "chain": [
+     "37#1"
+    ]
+   }
+  },
+  "75": {
+   "sha": "8cb3453ce5",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 27,
+    "chain": [
+     "27#0"
+    ]
+   }
+  },
+  "76": {
+   "sha": "913b6b5c99",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 28
+   }
+  },
+  "255": {
+   "sha": "556fe4cf1c",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 5,
+    "chain": [
+     "5#1.0"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ]
+    ]
+   }
+  },
+  "77": {
+   "sha": "eef1f7b87c",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 29
+   }
+  },
+  "54": {
+   "sha": "8ac0bf925e",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 11,
+    "chain": [
+     "11#0"
+    ]
+   }
+  },
+  "180": {
+   "sha": "62fa7ab662",
+   "src": {
+    "table": "ED1/T_014",
+    "entry_id": 2
+   }
+  },
+  "154": {
+   "sha": "53af21a11f",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 6
+   }
+  },
+  "95": {
+   "sha": "d478cc35a5",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 10,
+    "chain": [
+     "10#0"
+    ]
+   }
+  },
+  "97": {
+   "sha": "137d5a1419",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 12
+   }
+  },
+  "98": {
+   "sha": "8c9a5045c5",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 13,
+    "chain": [
+     "13#0"
+    ]
+   }
+  },
+  "91": {
+   "sha": "27873ceb5d",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 14,
+    "chain": [
+     "14#0"
+    ]
+   }
+  },
+  "100": {
+   "sha": "a04a7d8b93",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 16
+   }
+  },
+  "101": {
+   "sha": "3688642afb",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 17
+   }
+  },
+  "102": {
+   "sha": "5062e9b220",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 18,
+    "chain": [
+     "18#0"
+    ]
+   }
+  },
+  "94": {
+   "sha": "e62e49ee88",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 21
+   }
+  },
+  "90": {
+   "sha": "cb24d97bb2",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 22
+   }
+  },
+  "104": {
+   "sha": "5110d1f65e",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 25
+   }
+  },
+  "105": {
+   "sha": "cd967108d1",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 28
+   }
+  },
+  "109": {
+   "sha": "8d36b8adba",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 30
+   }
+  },
+  "111": {
+   "sha": "7a8bde74e6",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 32
+   }
+  },
+  "89": {
+   "sha": "2025a3dfa4",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 33
+   }
+  },
+  "116": {
+   "sha": "08a6f126dd",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 35,
+    "chain": [
+     "35#1"
+    ]
+   }
+  },
+  "118": {
+   "sha": "63c78d0008",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 36
+   }
+  },
+  "119": {
+   "sha": "2341889e7f",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 37,
+    "chain": [
+     "37#0"
+    ]
+   }
+  },
+  "1185": {
+   "sha": "c46b505961",
+   "src": {
+    "table": "ED1/C_004",
+    "entry_id": 9
+   }
+  },
+  "135": {
+   "sha": "1385cbc792",
+   "src": {
+    "table": "ED1/C_004",
+    "entry_id": 10
+   }
+  },
+  "134": {
+   "sha": "8a0c1c13d3",
+   "src": {
+    "table": "ED1/T_012",
+    "entry_id": 6
+   }
+  },
+  "122": {
+   "sha": "10168f6697",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 0
+   }
+  },
+  "204": {
+   "sha": "62fa7ab662"
+  },
+  "628": {
+   "sha": "53af21a11f"
+  },
+  "1075": {
+   "sha": "5ffbe488d0",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 4
+   }
+  },
+  "144": {
+   "sha": "b1c6fb6ae9",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 10
+   }
+  },
+  "167": {
+   "sha": "5e2a89b4df",
+   "src": {
+    "table": "ED1/T_014",
+    "entry_id": 9
+   }
+  },
+  "168": {
+   "sha": "ad6dba1f50",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 12
+   }
+  },
+  "147": {
+   "sha": "c3aa14869d",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 13
+   }
+  },
+  "141": {
+   "sha": "c38e4818cf",
+   "src": {
+    "table": "ED1/T_014",
+    "entry_id": 12
+   }
+  },
+  "148": {
+   "sha": "55d3638ccb",
+   "src": {
+    "table": "ED1/T_014",
+    "entry_id": 13
+   }
+  },
+  "746": {
+   "sha": "10168f6697",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 0
+   }
+  },
+  "131": {
+   "sha": "62fa7ab662",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 2
+   }
+  },
+  "1071": {
+   "sha": "94a18df23d",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 6
+   }
+  },
+  "145": {
+   "sha": "fb603c1129",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 11
+   }
+  },
+  "146": {
+   "sha": "464c479beb",
+   "src": {
+    "table": "ED1/T_014",
+    "entry_id": 10
+   }
+  },
+  "163": {
+   "sha": "464c479beb",
+   "src": {
+    "table": "ED1/T_014",
+    "entry_id": 10
+   }
+  },
+  "170": {
+   "sha": "55d3638ccb",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 15
+   }
+  },
+  "151": {
+   "sha": "10168f6697",
+   "src": {
+    "table": "ED1/T_014",
+    "entry_id": 0
+   }
+  },
+  "160": {
+   "sha": "62fa7ab662",
+   "src": {
+    "table": "ED1/T_015",
+    "entry_id": 2
+   }
+  },
+  "1047": {
+   "sha": "43a5f1aec4",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 6
+   }
+  },
+  "188": {
+   "sha": "0fb46c744b",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 31
+   }
+  },
+  "191": {
+   "sha": "81de5bcb46",
+   "src": {
+    "table": "ED1/T_015",
+    "entry_id": 10
+   }
+  },
+  "192": {
+   "sha": "4abde0a128",
+   "src": {
+    "table": "ED1/T_015",
+    "entry_id": 11
+   }
+  },
+  "193": {
+   "sha": "af38a5caf9",
+   "src": {
+    "table": "ED1/T_015",
+    "entry_id": 12
+   }
+  },
+  "142": {
+   "sha": "af38a5caf9"
+  },
+  "185": {
+   "sha": "68208e1a29",
+   "src": {
+    "table": "ED1/T_015",
+    "entry_id": 14
+   }
+  },
+  "194": {
+   "sha": "05642f2ca0",
+   "src": {
+    "table": "ED1/T_015",
+    "entry_id": 15
+   }
+  },
+  "1077": {
+   "sha": "a66e987881",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 0
+   }
+  },
+  "208": {
+   "sha": "4a85fcb431",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 6
+   }
+  },
+  "210": {
+   "sha": "7c83cd71e9",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 7
+   }
+  },
+  "213": {
+   "sha": "f2fe78807c",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 8
+   }
+  },
+  "217": {
+   "sha": "31f01254ec",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 9,
+    "chain": [
+     "9#0"
+    ]
+   }
+  },
+  "220": {
+   "sha": "8acff412cc",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 10
+   }
+  },
+  "221": {
+   "sha": "dc1ef629a0",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 11
+   }
+  },
+  "401": {
+   "sha": "c85e45c746",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 30
+   }
+  },
+  "216": {
+   "sha": "7609be15c6",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 16,
+    "chain": [
+     "16#1"
+    ]
+   }
+  },
+  "247": {
+   "sha": "941ec96d2f",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 0,
+    "chain": [
+     "0#0"
+    ]
+   }
+  },
+  "249": {
+   "sha": "70f3c259d6",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 2,
+    "chain": [
+     "2#0"
+    ]
+   }
+  },
+  "252": {
+   "sha": "14596b1557",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 3,
+    "chain": [
+     "3#1"
+    ]
+   }
+  },
+  "253": {
+   "sha": "de393ede2e",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "254": {
+   "sha": "b0a891bc0c",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 5,
+    "chain": [
+     "5#0"
+    ]
+   }
+  },
+  "263": {
+   "sha": "eeb1e19512",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 8,
+    "chain": [
+     "8#0"
+    ]
+   }
+  },
+  "278": {
+   "sha": "1a0523a8e4",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 11,
+    "chain": [
+     "11#0.0"
+    ]
+   }
+  },
+  "232": {
+   "sha": "1ba9ec1e7e",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 15
+   }
+  },
+  "233": {
+   "sha": "c75496af96",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 16
+   }
+  },
+  "234": {
+   "sha": "ba97dc99e2",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 17
+   }
+  },
+  "235": {
+   "sha": "746c98a786",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 19,
+    "chain": [
+     "19#0"
+    ]
+   }
+  },
+  "240": {
+   "sha": "fe5d923b30",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 20
+   }
+  },
+  "241": {
+   "sha": "b35cf723a7",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 21,
+    "chain": [
+     "21#0"
+    ]
+   }
+  },
+  "244": {
+   "sha": "19e197d9b6",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 23,
+    "chain": [
+     "23#1"
+    ]
+   }
+  },
+  "280": {
+   "sha": "231b1addb1",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 28,
+    "chain": [
+     "28#0",
+     "30#0"
+    ],
+    "subs": [
+     [
+      "{/spk}",
+      ""
+     ]
+    ]
+   }
+  },
+  "222": {
+   "sha": "10168f6697",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 0
+   }
+  },
+  "291": {
+   "sha": "d840d28d19",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 5,
+    "chain": [
+     "5#0"
+    ]
+   }
+  },
+  "295": {
+   "sha": "9230349472",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 7,
+    "chain": [
+     "7#1"
+    ]
+   }
+  },
+  "299": {
+   "sha": "b01a383bf8",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 9,
+    "chain": [
+     "9#0"
+    ]
+   }
+  },
+  "304": {
+   "sha": "d03c99a743",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 13,
+    "chain": [
+     "13#0"
+    ]
+   }
+  },
+  "318": {
+   "sha": "9244d623ab",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 20,
+    "chain": [
+     "20#0"
+    ]
+   }
+  },
+  "320": {
+   "sha": "fd3c0d80c4",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 4,
+    "chain": [
+     "4#1"
+    ]
+   }
+  },
+  "287": {
+   "sha": "eec79da19f",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 28
+   }
+  },
+  "288": {
+   "sha": "4bcb7525f3",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 29
+   }
+  },
+  "283": {
+   "sha": "4727bb4d34",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 30
+   }
+  },
+  "284": {
+   "sha": "bfee93f631"
+  },
+  "212": {
+   "sha": "a34930b213",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 12,
+    "chain": [
+     "12"
+    ]
+   }
+  },
+  "433": {
+   "sha": "c85e45c746",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 33
+   }
+  },
+  "331": {
+   "sha": "9ce747223d",
+   "src": {
+    "table": "ED1/T_023",
+    "entry_id": 0,
+    "chain": [
+     "0#0"
+    ]
+   }
+  },
+  "336": {
+   "sha": "5c3630403d",
+   "src": {
+    "table": "ED1/T_023",
+    "entry_id": 2,
+    "chain": [
+     "2#0"
+    ]
+   }
+  },
+  "649": {
+   "sha": "10168f6697",
+   "src": {
+    "table": "ED1/T_029",
+    "entry_id": 0
+   }
+  },
+  "1051": {
+   "sha": "5ffbe488d0",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 8
+   }
+  },
+  "406": {
+   "sha": "b26f5bf46e",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 7,
+    "chain": [
+     "7#1"
+    ]
+   }
+  },
+  "447": {
+   "sha": "1456179942",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 8
+   }
+  },
+  "389": {
+   "sha": "b7e689cde8",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 11
+   }
+  },
+  "390": {
+   "sha": "07a331bd4b",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 12,
+    "chain": [
+     "12#0"
+    ]
+   }
+  },
+  "392": {
+   "sha": "1ec9bf4b8c",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 14
+   }
+  },
+  "393": {
+   "sha": "33c81a78ee",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "396": {
+   "sha": "894ab2ac99",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 17
+   }
+  },
+  "164": {
+   "sha": "bee44185b0",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 10
+   }
+  },
+  "404": {
+   "sha": "c60ef19364",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 21
+   }
+  },
+  "405": {
+   "sha": "dabebe984b",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 22
+   }
+  },
+  "397": {
+   "sha": "eeafea65ae",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 24
+   }
+  },
+  "165": {
+   "sha": "08c2c4d779",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 10
+   }
+  },
+  "399": {
+   "sha": "42bd39b954",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 27
+   }
+  },
+  "464": {
+   "sha": "44bb7acb88",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 28
+   }
+  },
+  "289": {
+   "sha": "2612416e25",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 13
+   }
+  },
+  "423": {
+   "sha": "bbe127114b",
+   "src": {
+    "table": "ED1/T_026",
+    "entry_id": 0,
+    "chain": [
+     "0#0"
+    ]
+   }
+  },
+  "420": {
+   "sha": "256f8234e0",
+   "src": {
+    "table": "ED1/F_001",
+    "entry_id": 1
+   }
+  },
+  "421": {
+   "sha": "a0bcfce37e",
+   "src": {
+    "table": "ED1/T_026",
+    "entry_id": 3
+   }
+  },
+  "422": {
+   "sha": "ab8f616687",
+   "src": {
+    "table": "ED1/T_026",
+    "entry_id": 4
+   }
+  },
+  "432": {
+   "sha": "dea8e40e06",
+   "src": {
+    "table": "ED1/T_027",
+    "entry_id": 0
+   }
+  },
+  "444": {
+   "sha": "7330e0c5e4",
+   "src": {
+    "table": "ED1/T_027",
+    "entry_id": 2
+   }
+  },
+  "1053": {
+   "sha": "a66e987881",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 0
+   }
+  },
+  "407": {
+   "sha": "d868b9cd25",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "437": {
+   "sha": "5fcc54d700",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 5,
+    "chain": [
+     "5#0"
+    ]
+   }
+  },
+  "466": {
+   "sha": "c60ef19364",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 21
+   }
+  },
+  "187": {
+   "sha": "08c2c4d779",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 10
+   }
+  },
+  "443": {
+   "sha": "729c35ae48",
+   "src": {
+    "table": "ED1/T_029",
+    "entry_id": 9
+   }
+  },
+  "211": {
+   "sha": "c85e45c746",
+   "src": {
+    "table": "ED1/T_029",
+    "entry_id": 11
+   }
+  },
+  "708": {
+   "sha": "10168f6697",
+   "src": {
+    "table": "ED1/T_015",
+    "entry_id": 0
+   }
+  },
+  "468": {
+   "sha": "d868b9cd25",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "460": {
+   "sha": "8950396d22",
+   "src": {
+    "table": "ED1/T_029",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "186": {
+   "sha": "bee44185b0",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 10
+   }
+  },
+  "462": {
+   "sha": "bb806534ea",
+   "src": {
+    "table": "ED1/T_029",
+    "entry_id": 8,
+    "chain": [
+     "8#0"
+    ]
+   }
+  },
+  "400": {
+   "sha": "729c35ae48",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 9
+   }
+  },
+  "467": {
+   "sha": "c85e45c746",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 11
+   }
+  },
+  "490": {
+   "sha": "a18b1134d9",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 2,
+    "chain": [
+     "2#0"
+    ],
+    "subs": [
+     [
+      "뭐냐 네녀석들은?",
+      "음, 뭐냐 네녀석들은?"
+     ]
+    ]
+   }
+  },
+  "491": {
+   "sha": "b0dd042d70",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 3
+   }
+  },
+  "494": {
+   "sha": "490c57c753",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 6,
+    "chain": [
+     "6~0"
+    ]
+   }
+  },
+  "480": {
+   "sha": "c189ac5c30",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 8
+   }
+  },
+  "488": {
+   "sha": "779d2a29a3",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 9,
+    "chain": [
+     "9#0"
+    ]
+   }
+  },
+  "482": {
+   "sha": "1e1eb791a5",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 10
+   }
+  },
+  "483": {
+   "sha": "49d22bdb3d",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 11,
+    "chain": [
+     "11#0.0-2"
+    ]
+   }
+  },
+  "496": {
+   "sha": "b5357119c8",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 15,
+    "chain": [
+     "15#0"
+    ]
+   }
+  },
+  "509": {
+   "sha": "84d3b56b40",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 17
+   }
+  },
+  "508": {
+   "sha": "f0d29d651e",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 19
+   }
+  },
+  "391": {
+   "sha": "54128ae753",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 24,
+    "chain": [
+     "24#0"
+    ]
+   }
+  },
+  "511": {
+   "sha": "8b8eb9b891",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 25,
+    "chain": [
+     "25#0"
+    ]
+   }
+  },
+  "512": {
+   "sha": "5f3d082fb3",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 26,
+    "chain": [
+     "26#0"
+    ]
+   }
+  },
+  "515": {
+   "sha": "d5b6ff80fc",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 27
+   }
+  },
+  "532": {
+   "sha": "0603ff5bdf",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 0
+   }
+  },
+  "533": {
+   "sha": "2253f4abc4",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 1
+   }
+  },
+  "543": {
+   "sha": "b01112ddef",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 7,
+    "chain": [
+     "7#0"
+    ]
+   }
+  },
+  "545": {
+   "sha": "c01e7934f4",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 9,
+    "chain": [
+     "9#0"
+    ]
+   }
+  },
+  "547": {
+   "sha": "463677adb7",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 10,
+    "chain": [
+     "10#0"
+    ]
+   }
+  },
+  "557": {
+   "sha": "8d82d66079",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 11,
+    "chain": [
+     "11#0"
+    ]
+   }
+  },
+  "575": {
+   "sha": "3f813d8ac7",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 10,
+    "chain": [
+     "10#0"
+    ]
+   }
+  },
+  "531": {
+   "sha": "374c9f89b8",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 8,
+    "chain": [
+     "8"
+    ]
+   }
+  },
+  "518": {
+   "sha": "2d5a0c2db7",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 19
+   }
+  },
+  "519": {
+   "sha": "dd78021cf3",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 20
+   }
+  },
+  "520": {
+   "sha": "04e8bd757f",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 23,
+    "chain": [
+     "23#0"
+    ]
+   }
+  },
+  "171": {
+   "sha": "10168f6697",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 0
+   }
+  },
+  "614": {
+   "sha": "888dff7fee",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 2
+   }
+  },
+  "528": {
+   "sha": "3f813d8ac7",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 17,
+    "chain": [
+     "17#0"
+    ]
+   }
+  },
+  "602": {
+   "sha": "374c9f89b8",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 8,
+    "chain": [
+     "8"
+    ]
+   }
+  },
+  "567": {
+   "sha": "04e8bd757f",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 14,
+    "chain": [
+     "14#0"
+    ]
+   }
+  },
+  "564": {
+   "sha": "7c05cdcbcb",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 15,
+    "chain": [
+     "15#0"
+    ]
+   }
+  },
+  "601": {
+   "sha": "a853f7386c",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 16
+   }
+  },
+  "566": {
+   "sha": "efed49bf9d",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 17
+   }
+  },
+  "195": {
+   "sha": "10168f6697",
+   "src": {
+    "table": "ED1/T_034",
+    "entry_id": 0
+   }
+  },
+  "634": {
+   "sha": "f324ad617f",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 2
+   }
+  },
+  "622": {
+   "sha": "374c9f89b8",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 8,
+    "chain": [
+     "8"
+    ]
+   }
+  },
+  "592": {
+   "sha": "228598e440",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 9,
+    "chain": [
+     "9#0"
+    ]
+   }
+  },
+  "595": {
+   "sha": "b74dc93975",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 11
+   }
+  },
+  "596": {
+   "sha": "22e273edfd",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 12
+   }
+  },
+  "597": {
+   "sha": "2833ffe173",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 14,
+    "chain": [
+     "14#1"
+    ]
+   }
+  },
+  "598": {
+   "sha": "107ba31575",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 16
+   }
+  },
+  "599": {
+   "sha": "66adfe9507",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 17
+   }
+  },
+  "603": {
+   "sha": "c394bde624",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 19
+   }
+  },
+  "321": {
+   "sha": "10168f6697",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 0
+   }
+  },
+  "590": {
+   "sha": "eb9987ae1a",
+   "src": {
+    "table": "ED1/T_034",
+    "entry_id": 2
+   }
+  },
+  "578": {
+   "sha": "9d1dcff2a4",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 11
+   }
+  },
+  "616": {
+   "sha": "ca87da2048",
+   "src": {
+    "table": "ED1/T_034",
+    "entry_id": 9
+   }
+  },
+  "617": {
+   "sha": "d98d8196d5",
+   "src": {
+    "table": "ED1/T_034",
+    "entry_id": 10
+   }
+  },
+  "579": {
+   "sha": "a853f7386c",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 16
+   }
+  },
+  "620": {
+   "sha": "b49d544016",
+   "src": {
+    "table": "ED1/T_034",
+    "entry_id": 13
+   }
+  },
+  "623": {
+   "sha": "c394bde624",
+   "src": {
+    "table": "ED1/T_034",
+    "entry_id": 15
+   }
+  },
+  "451": {
+   "sha": "db325f4859",
+   "src": {
+    "table": "ED1/T_333",
+    "entry_id": 2,
+    "chain": [
+     "2#0.0-1"
+    ]
+   }
+  },
+  "644": {
+   "sha": "f055503275",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 10,
+    "chain": [
+     "10#0"
+    ]
+   }
+  },
+  "605": {
+   "sha": "5032868c65",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 10
+   }
+  },
+  "706": {
+   "sha": "53af21a11f"
+  },
+  "639": {
+   "sha": "e87f9944df",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 21,
+    "chain": [
+     "21#0"
+    ]
+   }
+  },
+  "641": {
+   "sha": "ae537ffaa5",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 22
+   }
+  },
+  "667": {
+   "sha": "cc9e29f3d3",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 24
+   }
+  },
+  "625": {
+   "sha": "5032868c65",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 12
+   }
+  },
+  "225": {
+   "sha": "53af21a11f"
+  },
+  "728": {
+   "sha": "1e21865e51",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 24,
+    "chain": [
+     "24#0"
+    ]
+   }
+  },
+  "731": {
+   "sha": "8f9626ed3d",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 26
+   }
+  },
+  "681": {
+   "sha": "754eac7924",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 23,
+    "chain": [
+     "23#2"
+    ]
+   }
+  },
+  "682": {
+   "sha": "3174d001ea",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 26,
+    "chain": [
+     "26#0"
+    ]
+   }
+  },
+  "683": {
+   "sha": "3a2c5f45e3",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 27,
+    "chain": [
+     "27#0"
+    ]
+   }
+  },
+  "685": {
+   "sha": "6145d6f874",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 28,
+    "chain": [
+     "28#1"
+    ]
+   }
+  },
+  "686": {
+   "sha": "dc8a982928",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 31,
+    "chain": [
+     "31#0"
+    ]
+   }
+  },
+  "689": {
+   "sha": "e5853cbba7",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 32,
+    "chain": [
+     "32#0"
+    ]
+   }
+  },
+  "690": {
+   "sha": "d1d4738209",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 33,
+    "chain": [
+     "33#0"
+    ]
+   }
+  },
+  "692": {
+   "sha": "fe77b8864f",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 34,
+    "chain": [
+     "34#0"
+    ]
+   }
+  },
+  "694": {
+   "sha": "8374155097",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 35,
+    "chain": [
+     "35#0"
+    ]
+   }
+  },
+  "701": {
+   "sha": "666e255af9",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 38,
+    "chain": [
+     "38"
+    ],
+    "subs": [
+     [
+      "\\x09\\x02",
+      "{p}"
+     ],
+     [
+      "\\x09",
+      ""
+     ]
+    ]
+   }
+  },
+  "1048": {
+   "sha": "21945f9ad1",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 12,
+    "chain": [
+     "12#0"
+    ]
+   }
+  },
+  "409": {
+   "sha": "10168f6697",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 14
+   }
+  },
+  "324": {
+   "sha": "53af21a11f"
+  },
+  "675": {
+   "sha": "f77d041c71",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 20,
+    "chain": [
+     "20#0"
+    ]
+   }
+  },
+  "678": {
+   "sha": "8f9626ed3d",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 22
+   }
+  },
+  "735": {
+   "sha": "c38485f148",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 28,
+    "chain": [
+     "28#0"
+    ]
+   }
+  },
+  "315": {
+   "sha": "95ec37a0fa",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 16,
+    "chain": [
+     "16#1"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ],
+     [
+      "\\x02",
+      ""
+     ],
+     [
+      "\\x1C",
+      ""
+     ],
+     [
+      "\\x03",
+      ""
+     ]
+    ]
+   }
+  },
+  "1045": {
+   "sha": "0718a8396f",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 19
+   }
+  },
+  "758": {
+   "sha": "ec3e16d11f"
+  },
+  "449": {
+   "sha": "10168f6697",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 8
+   }
+  },
+  "1041": {
+   "sha": "229ae140d7",
+   "src": {
+    "table": "ED1/T_043",
+    "entry_id": 12
+   }
+  },
+  "1042": {
+   "sha": "9f1ae313b6",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 15
+   }
+  },
+  "737": {
+   "sha": "cbec2c08ad",
+   "src": {
+    "table": "ED1/T_043",
+    "entry_id": 16
+   }
+  },
+  "1069": {
+   "sha": "01166956f5",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 33
+   }
+  },
+  "661": {
+   "sha": "560b5f1970",
+   "src": {
+    "table": "ED1/T_043",
+    "entry_id": 0
+   }
+  },
+  "719": {
+   "sha": "9c828a9a6c"
+  },
+  "470": {
+   "sha": "10168f6697",
+   "src": {
+    "table": "ED1/T_043",
+    "entry_id": 6
+   }
+  },
+  "677": {
+   "sha": "a6d660737b",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 14
+   }
+  },
+  "1066": {
+   "sha": "f9af8ef2f5",
+   "src": {
+    "table": "ED1/T_043",
+    "entry_id": 13,
+    "chain": [
+     "13#0"
+    ]
+   }
+  },
+  "1044": {
+   "sha": "cbec2c08ad",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 18
+   }
+  },
+  "738": {
+   "sha": "0e8aab115c",
+   "src": {
+    "table": "ED1/T_043",
+    "entry_id": 17
+   }
+  },
+  "560": {
+   "sha": "1775625569",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 14
+   }
+  },
+  "438": {
+   "sha": "aa661ed30d"
+  },
+  "290": {
+   "sha": "0a23cfa928",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 32
+   }
+  },
+  "720": {
+   "sha": "a4a1927bfa",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 0
+   }
+  },
+  "27": {
+   "sha": "9016627d1b",
+   "src": {
+    "table": "ED1/T_001",
+    "entry_id": 8,
+    "chain": [
+     "8#0",
+     10,
+     11,
+     12
+    ],
+    "subs": [
+     [
+      "남짓\\x07남았는데",
+      "남짓 ............"
+     ]
+    ]
+   }
+  },
+  "30": {
+   "sha": "e936db3f98",
+   "src": {
+    "table": "ED1/T_001",
+    "entry_id": 16,
+    "chain": [
+     16,
+     17,
+     18,
+     19,
+     22
+    ]
+   }
+  },
+  "33": {
+   "sha": "6eed2d345a",
+   "src": {
+    "table": "ED1/T_001",
+    "entry_id": 2
+   }
+  },
+  "1351": {
+   "sha": "5053fff6f9",
+   "src": {
+    "table": "ED1/C_00H",
+    "entry_id": 0,
+    "chain": [
+     "0#1"
+    ]
+   }
+  },
+  "1129": {
+   "sha": "2c5cb57872",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 35,
+    "chain": [
+     "35#1"
+    ]
+   }
+  },
+  "1188": {
+   "sha": "e5dba42663",
+   "src": {
+    "table": "ED1/C_004",
+    "entry_id": 15,
+    "chain": [
+     "15#1"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ]
+    ]
+   }
+  },
+  "668": {
+   "sha": "d145030ea1"
+  },
+  "756": {
+   "sha": "f7eb74d7e9"
+  },
+  "276": {
+   "sha": "1bc7d3d992",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 10,
+    "chain": [
+     "10#2.0"
+    ]
+   }
+  },
+  "542": {
+   "sha": "7fe8dd913e",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 6,
+    "chain": [
+     "6#1"
+    ]
+   }
+  },
+  "1200": {
+   "sha": "3b73e3ba56",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 2,
+    "chain": [
+     "2~0"
+    ],
+    "subs": [
+     [
+      "서두르지 않으면",
+      "앗!? 서두르지 않으면"
+     ]
+    ]
+   }
+  },
+  "1213": {
+   "sha": "0ef5dd8127",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 7,
+    "chain": [
+     "7#1"
+    ]
+   }
+  },
+  "53": {
+   "sha": "a2df3b06c7",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 9,
+    "chain": [
+     "9#1"
+    ]
+   }
+  },
+  "1348": {
+   "sha": "f3bc5bbe3c",
+   "src": {
+    "table": "ED1/C_00H",
+    "entry_id": 2,
+    "chain": [
+     "2#1"
+    ]
+   }
+  },
+  "69": {
+   "sha": "eb9eb750d8",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 23,
+    "chain": [
+     "23#1"
+    ]
+   }
+  },
+  "426": {
+   "sha": "7fb4d88366",
+   "src": {
+    "table": "ED1/T_026",
+    "entry_id": 1,
+    "chain": [
+     "1#0"
+    ]
+   }
+  },
+  "1194": {
+   "sha": "3d1a1c0165",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 0
+   }
+  },
+  "20": {
+   "sha": "7ab783670c",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 21,
+    "chain": [
+     21,
+     22,
+     23
+    ]
+   }
+  },
+  "23": {
+   "sha": "801e9b6e4f",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 27,
+    "chain": [
+     27,
+     28
+    ]
+   }
+  },
+  "1205": {
+   "sha": "726fe7a5ea",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 3,
+    "chain": [
+     "3#1"
+    ]
+   }
+  },
+  "670": {
+   "sha": "8a0c6094d9",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 25,
+    "chain": [
+     "25#1"
+    ]
+   }
+  },
+  "1306": {
+   "sha": "ab05c76fbe",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 7,
+    "chain": [
+     "7#5"
+    ]
+   }
+  },
+  "1165": {
+   "sha": "d6c76b3128",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 5,
+    "chain": [
+     "5#0"
+    ]
+   }
+  },
+  "1131": {
+   "sha": "95ee67fa7f",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 36,
+    "chain": [
+     "36#1"
+    ]
+   }
+  },
+  "335": {
+   "sha": "063fb9ee38",
+   "src": {
+    "table": "ED1/T_023",
+    "entry_id": 1
+   }
+  },
+  "492": {
+   "sha": "06c6d842ee",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 5,
+    "chain": [
+     "5#0"
+    ]
+   }
+  },
+  "224": {
+   "sha": "097a6d5cca",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 5
+   }
+  },
+  "150": {
+   "sha": "37063b407a",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 17,
+    "chain": [
+     "17#1"
+    ]
+   }
+  },
+  "734": {
+   "sha": "081490dee0",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 27,
+    "chain": [
+     "27#2"
+    ]
+   }
+  },
+  "394": {
+   "sha": "94441ef96c",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 6,
+    "chain": [
+     "6#1"
+    ]
+   }
+  },
+  "1096": {
+   "sha": "a03fb105e9",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 9
+   }
+  },
+  "1099": {
+   "sha": "355c482c68",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 2,
+    "chain": [
+     "2#1"
+    ]
+   }
+  },
+  "1103": {
+   "sha": "c5be819143",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 8,
+    "chain": [
+     "8#1"
+    ]
+   }
+  },
+  "1105": {
+   "sha": "cf519b5d8b",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 13,
+    "chain": [
+     "13#1"
+    ]
+   }
+  },
+  "1106": {
+   "sha": "de34ff3659",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 13,
+    "chain": [
+     "13#2"
+    ]
+   }
+  },
+  "1108": {
+   "sha": "1d20220cb3",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 15
+   }
+  },
+  "1141": {
+   "sha": "3945a70679",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "1144": {
+   "sha": "2ae2d816a9",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "1145": {
+   "sha": "95b4833a40",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#1"
+    ]
+   }
+  },
+  "1146": {
+   "sha": "755fb8ebc6",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#2"
+    ]
+   }
+  },
+  "1147": {
+   "sha": "20246d04ea",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#3"
+    ]
+   }
+  },
+  "1148": {
+   "sha": "27cb7cd44a",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#4"
+    ]
+   }
+  },
+  "1149": {
+   "sha": "fdc96e9d7c"
+  },
+  "1150": {
+   "sha": "3e928383e3",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#5"
+    ]
+   }
+  },
+  "1151": {
+   "sha": "b6774e36f6",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#6"
+    ]
+   }
+  },
+  "1152": {
+   "sha": "396d11bf20",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#7"
+    ],
+    "subs": [
+     [
+      "죽인것은",
+      "죽인 것은"
+     ]
+    ]
+   }
+  },
+  "1153": {
+   "sha": "7b1c914167",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#8"
+    ]
+   }
+  },
+  "1154": {
+   "sha": "58b11adb6d",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#9"
+    ]
+   }
+  },
+  "1155": {
+   "sha": "254f5b14cf",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#10"
+    ]
+   }
+  },
+  "1156": {
+   "sha": "a793d473ab",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#11"
+    ],
+    "subs": [
+     [
+      "내것으로",
+      "내 것으로"
+     ]
+    ]
+   }
+  },
+  "1157": {
+   "sha": "893337e74d",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#12"
+    ],
+    "subs": [
+     [
+      "\\x03끌고가라 !!",
+      ""
+     ]
+    ]
+   }
+  },
+  "1158": {
+   "sha": "c8152d8fd7",
+   "src": {
+    "table": "ED1/C_002",
+    "entry_id": 6,
+    "chain": [
+     "6#12"
+    ],
+    "subs": [
+     [
+      "우와하하하하핫...\\x03",
+      ""
+     ]
+    ]
+   }
+  },
+  "1166": {
+   "sha": "b2dc81203b",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 5,
+    "chain": [
+     "5#1"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ]
+    ]
+   }
+  },
+  "1167": {
+   "sha": "7197b8549d",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 5,
+    "chain": [
+     "5#2"
+    ]
+   }
+  },
+  "1170": {
+   "sha": "dfd8c86237",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 6,
+    "chain": [
+     "6#2"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ]
+    ]
+   }
+  },
+  "1171": {
+   "sha": "ea83f9f680",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 7,
+    "chain": [
+     "7#0"
+    ],
+    "subs": [
+     [
+      "{spk}나이프{/spk}",
+      "\u0011나이프\u0012"
+     ]
+    ]
+   }
+  },
+  "1172": {
+   "sha": "b4a25c78ec",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 7,
+    "chain": [
+     "7#1"
+    ]
+   }
+  },
+  "1173": {
+   "sha": "c8343f09a8",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 7,
+    "chain": [
+     "7#2"
+    ]
+   }
+  },
+  "1174": {
+   "sha": "af86e3034c",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 7,
+    "chain": [
+     "7#3"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ],
+     [
+      "`3 동료가 되었습니다.",
+      "이(가) 동료가\n되었습니다."
+     ]
+    ]
+   }
+  },
+  "1177": {
+   "sha": "10a234ea8f",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 10,
+    "chain": [
+     "10#1"
+    ]
+   }
+  },
+  "1179": {
+   "sha": "0f66bd2067",
+   "src": {
+    "table": "ED1/C_003",
+    "entry_id": 11,
+    "chain": [
+     "11#1"
+    ]
+   }
+  },
+  "1183": {
+   "sha": "c767595afb",
+   "src": {
+    "table": "ED1/C_004",
+    "entry_id": 6
+   }
+  },
+  "1187": {
+   "sha": "8a97211c2f",
+   "src": {
+    "table": "ED1/C_004",
+    "entry_id": 15,
+    "chain": [
+     "15#0"
+    ]
+   }
+  },
+  "1189": {
+   "sha": "e1c20f1150",
+   "src": {
+    "table": "ED1/C_004",
+    "entry_id": 15,
+    "chain": [
+     "15#2"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ]
+    ]
+   }
+  },
+  "1190": {
+   "sha": "b71e1035f4",
+   "src": {
+    "table": "ED1/C_004",
+    "entry_id": 15,
+    "chain": [
+     "15#3"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ]
+    ]
+   }
+  },
+  "1195": {
+   "sha": "d42c288ecf",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 14
+   }
+  },
+  "1197": {
+   "sha": "f437af0646",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 16,
+    "chain": [
+     "16#1"
+    ]
+   }
+  },
+  "1198": {
+   "sha": "d953661c79",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 16,
+    "chain": [
+     "16#2"
+    ]
+   }
+  },
+  "1199": {
+   "sha": "cb946d69ed",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 15
+   }
+  },
+  "36": {
+   "sha": "74e992d7b7",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 30,
+    "chain": [
+     "30"
+    ],
+    "subs": [
+     [
+      "떠나십시오.V",
+      "떠나십시오."
+     ]
+    ]
+   }
+  },
+  "39": {
+   "sha": "1c4708bf2e",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 14,
+    "chain": [
+     "14#1"
+    ]
+   }
+  },
+  "41": {
+   "sha": "49daf954bb",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 6,
+    "chain": [
+     "6#1"
+    ]
+   }
+  },
+  "43": {
+   "sha": "86649398ba",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 7,
+    "chain": [
+     "7#1"
+    ]
+   }
+  },
+  "45": {
+   "sha": "da66889e71",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 3,
+    "chain": [
+     "3#0"
+    ]
+   }
+  },
+  "50": {
+   "sha": "cde4bec976",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 8,
+    "chain": [
+     "8#1"
+    ]
+   }
+  },
+  "51": {
+   "sha": "d8f2d1b9be",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 8,
+    "chain": [
+     "8#2"
+    ]
+   }
+  },
+  "52": {
+   "sha": "960b5855c0",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 9,
+    "chain": [
+     "9#0"
+    ]
+   }
+  },
+  "55": {
+   "sha": "c76524f9b2",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 11,
+    "chain": [
+     "11#1"
+    ]
+   }
+  },
+  "56": {
+   "sha": "3f3915be5b",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 11,
+    "chain": [
+     "11#2"
+    ]
+   }
+  },
+  "57": {
+   "sha": "b56a0225c8",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 11,
+    "chain": [
+     "11#3"
+    ]
+   }
+  },
+  "58": {
+   "sha": "9668955bc9",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 11,
+    "chain": [
+     "11#4"
+    ]
+   }
+  },
+  "59": {
+   "sha": "6b7592d6c4",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 11,
+    "chain": [
+     "11#4"
+    ]
+   }
+  },
+  "61": {
+   "sha": "86e2901973",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 19,
+    "chain": [
+     "19#1"
+    ]
+   }
+  },
+  "62": {
+   "sha": "d029ed0971",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 19,
+    "chain": [
+     "19#2"
+    ]
+   }
+  },
+  "63": {
+   "sha": "9645495208",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 19,
+    "chain": [
+     "19#3"
+    ]
+   }
+  },
+  "64": {
+   "sha": "6b079cb8f3",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 19,
+    "chain": [
+     "19#4"
+    ]
+   }
+  },
+  "65": {
+   "sha": "17d7d88b4a",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 19,
+    "chain": [
+     "19#5"
+    ]
+   }
+  },
+  "66": {
+   "sha": "a446729640",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 19,
+    "chain": [
+     "19#6"
+    ]
+   }
+  },
+  "70": {
+   "sha": "0db34f3b8e",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 23,
+    "chain": [
+     "23#2"
+    ]
+   }
+  },
+  "71": {
+   "sha": "c923f1c594",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 23,
+    "chain": [
+     "23#3"
+    ]
+   }
+  },
+  "72": {
+   "sha": "20c6100c65",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 23,
+    "chain": [
+     "23#4"
+    ]
+   }
+  },
+  "74": {
+   "sha": "2facee79f9",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 26
+   }
+  },
+  "78": {
+   "sha": "d152f6831e",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 15
+   }
+  },
+  "125": {
+   "sha": "53af21a11f",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 6
+   }
+  },
+  "174": {
+   "sha": "53af21a11f"
+  },
+  "198": {
+   "sha": "53af21a11f"
+  },
+  "412": {
+   "sha": "53af21a11f"
+  },
+  "452": {
+   "sha": "53af21a11f",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 16
+   }
+  },
+  "473": {
+   "sha": "53af21a11f"
+  },
+  "584": {
+   "sha": "53af21a11f",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 14
+   }
+  },
+  "608": {
+   "sha": "53af21a11f",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 18
+   }
+  },
+  "647": {
+   "sha": "53af21a11f"
+  },
+  "744": {
+   "sha": "53af21a11f"
+  },
+  "1050": {
+   "sha": "53af21a11f"
+  },
+  "1074": {
+   "sha": "53af21a11f"
+  },
+  "127": {
+   "sha": "3813b07553"
+  },
+  "156": {
+   "sha": "3813b07553"
+  },
+  "176": {
+   "sha": "3813b07553"
+  },
+  "200": {
+   "sha": "3813b07553"
+  },
+  "227": {
+   "sha": "3813b07553"
+  },
+  "326": {
+   "sha": "3813b07553"
+  },
+  "414": {
+   "sha": "3813b07553"
+  },
+  "454": {
+   "sha": "3813b07553"
+  },
+  "475": {
+   "sha": "3813b07553"
+  },
+  "586": {
+   "sha": "3813b07553"
+  },
+  "610": {
+   "sha": "3813b07553"
+  },
+  "630": {
+   "sha": "3813b07553"
+  },
+  "650": {
+   "sha": "3813b07553"
+  },
+  "709": {
+   "sha": "3813b07553"
+  },
+  "747": {
+   "sha": "3813b07553"
+  },
+  "1054": {
+   "sha": "3813b07553"
+  },
+  "1078": {
+   "sha": "3813b07553"
+  },
+  "130": {
+   "sha": "b136e09168"
+  },
+  "159": {
+   "sha": "b136e09168"
+  },
+  "179": {
+   "sha": "b136e09168"
+  },
+  "203": {
+   "sha": "b136e09168"
+  },
+  "230": {
+   "sha": "b136e09168"
+  },
+  "329": {
+   "sha": "b136e09168"
+  },
+  "417": {
+   "sha": "b136e09168"
+  },
+  "457": {
+   "sha": "b136e09168"
+  },
+  "478": {
+   "sha": "b136e09168"
+  },
+  "589": {
+   "sha": "b136e09168"
+  },
+  "613": {
+   "sha": "b136e09168"
+  },
+  "633": {
+   "sha": "b136e09168"
+  },
+  "653": {
+   "sha": "b136e09168"
+  },
+  "712": {
+   "sha": "b136e09168"
+  },
+  "750": {
+   "sha": "b136e09168"
+  },
+  "1057": {
+   "sha": "b136e09168"
+  },
+  "1081": {
+   "sha": "b136e09168"
+  },
+  "123": {
+   "sha": "a2b3b91371",
+   "src": {
+    "table": "ED1/C_000",
+    "entry_id": 12
+   }
+  },
+  "172": {
+   "sha": "a2b3b91371"
+  },
+  "196": {
+   "sha": "a2b3b91371"
+  },
+  "223": {
+   "sha": "a2b3b91371"
+  },
+  "322": {
+   "sha": "a2b3b91371"
+  },
+  "410": {
+   "sha": "a2b3b91371"
+  },
+  "450": {
+   "sha": "a2b3b91371"
+  },
+  "471": {
+   "sha": "a2b3b91371"
+  },
+  "582": {
+   "sha": "a2b3b91371"
+  },
+  "606": {
+   "sha": "a2b3b91371"
+  },
+  "626": {
+   "sha": "a2b3b91371"
+  },
+  "645": {
+   "sha": "a2b3b91371"
+  },
+  "704": {
+   "sha": "a2b3b91371"
+  },
+  "742": {
+   "sha": "a2b3b91371"
+  },
+  "126": {
+   "sha": "b609df83a7"
+  },
+  "155": {
+   "sha": "b609df83a7"
+  },
+  "175": {
+   "sha": "b609df83a7"
+  },
+  "199": {
+   "sha": "b609df83a7"
+  },
+  "226": {
+   "sha": "b609df83a7"
+  },
+  "325": {
+   "sha": "b609df83a7"
+  },
+  "413": {
+   "sha": "b609df83a7"
+  },
+  "453": {
+   "sha": "b609df83a7"
+  },
+  "474": {
+   "sha": "b609df83a7"
+  },
+  "585": {
+   "sha": "b609df83a7"
+  },
+  "609": {
+   "sha": "b609df83a7"
+  },
+  "629": {
+   "sha": "b609df83a7"
+  },
+  "648": {
+   "sha": "b609df83a7"
+  },
+  "707": {
+   "sha": "b609df83a7"
+  },
+  "745": {
+   "sha": "b609df83a7"
+  },
+  "129": {
+   "sha": "e0f8f3f643"
+  },
+  "158": {
+   "sha": "e0f8f3f643"
+  },
+  "178": {
+   "sha": "e0f8f3f643"
+  },
+  "202": {
+   "sha": "e0f8f3f643"
+  },
+  "229": {
+   "sha": "e0f8f3f643"
+  },
+  "328": {
+   "sha": "e0f8f3f643"
+  },
+  "416": {
+   "sha": "e0f8f3f643"
+  },
+  "456": {
+   "sha": "e0f8f3f643"
+  },
+  "477": {
+   "sha": "e0f8f3f643"
+  },
+  "588": {
+   "sha": "e0f8f3f643"
+  },
+  "612": {
+   "sha": "e0f8f3f643"
+  },
+  "632": {
+   "sha": "e0f8f3f643"
+  },
+  "652": {
+   "sha": "e0f8f3f643"
+  },
+  "711": {
+   "sha": "e0f8f3f643"
+  },
+  "749": {
+   "sha": "e0f8f3f643"
+  },
+  "1056": {
+   "sha": "e0f8f3f643"
+  },
+  "1080": {
+   "sha": "e0f8f3f643"
+  },
+  "624": {
+   "sha": "43d44839b6"
+  },
+  "580": {
+   "sha": "43d44839b6"
+  },
+  "604": {
+   "sha": "43d44839b6"
+  },
+  "581": {
+   "sha": "5032868c65"
+  },
+  "209": {
+   "sha": "67882cd4d6",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 6
+   }
+  },
+  "214": {
+   "sha": "95da6d38de",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 16,
+    "chain": [
+     "16#0"
+    ],
+    "subs": [
+     [
+      "성의 현자에게",
+      "난 성의 현자에게"
+     ]
+    ]
+   }
+  },
+  "215": {
+   "sha": "901a0cbf61",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 16,
+    "chain": [
+     "16#2"
+    ]
+   }
+  },
+  "662": {
+   "sha": "5ac6a6ff1a"
+  },
+  "664": {
+   "sha": "337ad6cfa1"
+  },
+  "721": {
+   "sha": "5ac6a6ff1a"
+  },
+  "723": {
+   "sha": "337ad6cfa1"
+  },
+  "759": {
+   "sha": "5ac6a6ff1a"
+  },
+  "761": {
+   "sha": "337ad6cfa1"
+  },
+  "763": {
+   "sha": "c113cb12d0"
+  },
+  "1059": {
+   "sha": "5ac6a6ff1a"
+  },
+  "1061": {
+   "sha": "337ad6cfa1"
+  },
+  "1063": {
+   "sha": "c113cb12d0"
+  },
+  "1088": {
+   "sha": "5ac6a6ff1a"
+  },
+  "1090": {
+   "sha": "337ad6cfa1"
+  },
+  "1092": {
+   "sha": "c113cb12d0"
+  },
+  "1133": {
+   "sha": "5ac6a6ff1a"
+  },
+  "1135": {
+   "sha": "337ad6cfa1"
+  },
+  "1137": {
+   "sha": "c113cb12d0"
+  },
+  "1269": {
+   "sha": "5ac6a6ff1a"
+  },
+  "1271": {
+   "sha": "337ad6cfa1"
+  },
+  "1273": {
+   "sha": "c113cb12d0"
+  },
+  "1330": {
+   "sha": "337ad6cfa1"
+  },
+  "655": {
+   "sha": "c9d2c60f70"
+  },
+  "657": {
+   "sha": "8f201382da"
+  },
+  "714": {
+   "sha": "c9d2c60f70"
+  },
+  "716": {
+   "sha": "8f201382da"
+  },
+  "752": {
+   "sha": "c9d2c60f70"
+  },
+  "754": {
+   "sha": "8f201382da"
+  },
+  "1083": {
+   "sha": "c9d2c60f70"
+  },
+  "1085": {
+   "sha": "8f201382da"
+  },
+  "672": {
+   "sha": "0d7e6d9b4a"
+  },
+  "671": {
+   "sha": "bea9697a85"
+  },
+  "687": {
+   "sha": "cb5913fbcc"
+  },
+  "688": {
+   "sha": "b4d5e124ad"
+  },
+  "663": {
+   "sha": "8fe0dd2ddb"
+  },
+  "665": {
+   "sha": "e649093277"
+  },
+  "666": {
+   "sha": "c113cb12d0"
+  },
+  "722": {
+   "sha": "8fe0dd2ddb"
+  },
+  "724": {
+   "sha": "e649093277"
+  },
+  "725": {
+   "sha": "c113cb12d0"
+  },
+  "760": {
+   "sha": "8fe0dd2ddb"
+  },
+  "762": {
+   "sha": "e649093277"
+  },
+  "1060": {
+   "sha": "8fe0dd2ddb"
+  },
+  "1062": {
+   "sha": "e649093277"
+  },
+  "1089": {
+   "sha": "8fe0dd2ddb"
+  },
+  "1091": {
+   "sha": "e649093277"
+  },
+  "1134": {
+   "sha": "8fe0dd2ddb"
+  },
+  "1136": {
+   "sha": "e649093277"
+  },
+  "1270": {
+   "sha": "8fe0dd2ddb"
+  },
+  "1272": {
+   "sha": "e649093277"
+  },
+  "1331": {
+   "sha": "e649093277"
+  },
+  "640": {
+   "sha": "f713f074f6",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 21,
+    "chain": [
+     "21#1"
+    ]
+   }
+  },
+  "642": {
+   "sha": "6475a33ed4",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 23,
+    "chain": [
+     "23#0"
+    ]
+   }
+  },
+  "638": {
+   "sha": "d0d6288e5e",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 20,
+    "chain": [
+     "20#1"
+    ]
+   }
+  },
+  "643": {
+   "sha": "a152657fb9",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 23,
+    "chain": [
+     "23#1"
+    ]
+   }
+  },
+  "659": {
+   "sha": "f7eb74d7e9"
+  },
+  "718": {
+   "sha": "f7eb74d7e9"
+  },
+  "658": {
+   "sha": "82bf4070c1",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 2
+   }
+  },
+  "717": {
+   "sha": "82bf4070c1",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 2
+   }
+  },
+  "755": {
+   "sha": "82bf4070c1",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 2
+   }
+  },
+  "660": {
+   "sha": "9c828a9a6c"
+  },
+  "757": {
+   "sha": "9c828a9a6c"
+  },
+  "218": {
+   "sha": "ccd5f4906a",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 9,
+    "chain": [
+     "9#1"
+    ]
+   }
+  },
+  "219": {
+   "sha": "65373c97b5",
+   "src": {
+    "table": "ED1/T_020",
+    "entry_id": 9,
+    "chain": [
+     "9#2"
+    ]
+   }
+  },
+  "248": {
+   "sha": "e5474ab7ca",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 1,
+    "chain": [
+     "1#0"
+    ]
+   }
+  },
+  "250": {
+   "sha": "7df02c7c44",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 2,
+    "chain": [
+     "2#1"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ]
+    ]
+   }
+  },
+  "251": {
+   "sha": "5b58c2f00f",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 3,
+    "chain": [
+     "3#0"
+    ]
+   }
+  },
+  "256": {
+   "sha": "a2a426a0dd",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 5,
+    "chain": [
+     "5#1.1-"
+    ]
+   }
+  },
+  "257": {
+   "sha": "0f58885c1c",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "258": {
+   "sha": "31a0ebdbfb",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 6,
+    "chain": [
+     "6#1.0"
+    ]
+   }
+  },
+  "259": {
+   "sha": "74adccf279",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 6,
+    "chain": [
+     "6#1.1-"
+    ]
+   }
+  },
+  "260": {
+   "sha": "4efbdcbf1e",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 7,
+    "chain": [
+     "7#0"
+    ]
+   }
+  },
+  "261": {
+   "sha": "46a9241776",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 7,
+    "chain": [
+     "7#1"
+    ]
+   }
+  },
+  "262": {
+   "sha": "f22de6f60f",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 7,
+    "chain": [
+     "7#2"
+    ]
+   }
+  },
+  "264": {
+   "sha": "aa58676775",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 9,
+    "chain": [
+     "9#0"
+    ]
+   }
+  },
+  "265": {
+   "sha": "360496aeb0",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 9,
+    "chain": [
+     "9#1"
+    ]
+   }
+  },
+  "266": {
+   "sha": "58720d1028",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 9,
+    "chain": [
+     "9#2.0"
+    ]
+   }
+  },
+  "267": {
+   "sha": "adba4ecd56",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 9,
+    "chain": [
+     "9#2.1-"
+    ]
+   }
+  },
+  "268": {
+   "sha": "f452b4f1a0",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 9,
+    "chain": [
+     "9#3"
+    ]
+   }
+  },
+  "269": {
+   "sha": "1206e28fd6",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 9,
+    "chain": [
+     "9#4"
+    ]
+   }
+  },
+  "270": {
+   "sha": "b908c10ca4",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 9,
+    "chain": [
+     "9#5"
+    ]
+   }
+  },
+  "271": {
+   "sha": "2e357ef902",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 9,
+    "chain": [
+     "9#6.0"
+    ]
+   }
+  },
+  "272": {
+   "sha": "dc3446ea2e",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 9,
+    "chain": [
+     "9#6.1-"
+    ]
+   }
+  },
+  "273": {
+   "sha": "688cf7915c",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 9,
+    "chain": [
+     "9#7"
+    ]
+   }
+  },
+  "275": {
+   "sha": "42b7091c2f",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 10,
+    "chain": [
+     "10#1"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ]
+    ]
+   }
+  },
+  "277": {
+   "sha": "8729665854",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 10,
+    "chain": [
+     "10#2.1-"
+    ]
+   }
+  },
+  "279": {
+   "sha": "7f04c65a7a",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 11,
+    "chain": [
+     "11#0.1"
+    ]
+   }
+  },
+  "281": {
+   "sha": "96dbecff4c",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 30,
+    "chain": [
+     "30#1"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ],
+     [
+      "\\x02",
+      ""
+     ]
+    ]
+   }
+  },
+  "285": {
+   "sha": "b00ba32301",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 31,
+    "chain": [
+     "31#1"
+    ]
+   }
+  },
+  "286": {
+   "sha": "7f1f5e959f",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 26,
+    "chain": [
+     "26#0"
+    ]
+   }
+  },
+  "292": {
+   "sha": "8ef10cca79",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "293": {
+   "sha": "bfe04fd585",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 6,
+    "chain": [
+     "6#1"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ],
+     [
+      "\\x02",
+      ""
+     ],
+     [
+      "`4",
+      "{spk}로우{/spk}"
+     ]
+    ]
+   }
+  },
+  "294": {
+   "sha": "d8019c093e",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 6,
+    "chain": [
+     "6#2"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ],
+     [
+      "\\x02",
+      ""
+     ],
+     [
+      "\\x12;",
+      ""
+     ]
+    ]
+   }
+  },
+  "296": {
+   "sha": "9f8e6b1228",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 7,
+    "chain": [
+     "7#2.0"
+    ]
+   }
+  },
+  "297": {
+   "sha": "f0ec764060",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 7,
+    "chain": [
+     "7#2.1-"
+    ]
+   }
+  },
+  "301": {
+   "sha": "2bbdb65758",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 11,
+    "chain": [
+     "11#0"
+    ]
+   }
+  },
+  "302": {
+   "sha": "0461f0723b",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 11,
+    "chain": [
+     "11#1"
+    ],
+    "subs": [
+     [
+      "\\x156\\x0B",
+      "\u001b"
+     ]
+    ]
+   }
+  },
+  "303": {
+   "sha": "c3b1bc1cd8",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 11,
+    "chain": [
+     "11#2"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ],
+     [
+      "\\x02",
+      ""
+     ],
+     [
+      "\\x1C",
+      ""
+     ],
+     [
+      "\\x03",
+      ""
+     ],
+     [
+      "가 버렸다.",
+      "가 버렸습니다."
+     ]
+    ]
+   }
+  },
+  "305": {
+   "sha": "b0dbe3de4e",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 13,
+    "chain": [
+     "13#2"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ],
+     [
+      "\\x02",
+      ""
+     ],
+     [
+      "\\x1C",
+      ""
+     ],
+     [
+      "\\x03",
+      ""
+     ],
+     [
+      "\\x15b\\x0B",
+      ""
+     ]
+    ]
+   }
+  },
+  "306": {
+   "sha": "c43ecc8dd1",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 14,
+    "chain": [
+     "14#0"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ],
+     [
+      "\\x02",
+      ""
+     ],
+     [
+      "\\x1C",
+      ""
+     ],
+     [
+      "\\x03",
+      ""
+     ],
+     [
+      "자라셨군요",
+      "자라셨군요."
+     ]
+    ]
+   }
+  },
+  "307": {
+   "sha": "dd460091dd",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 14,
+    "chain": [
+     "14#1.0"
+    ]
+   }
+  },
+  "308": {
+   "sha": "8b5e8a5eb3",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 14,
+    "chain": [
+     "14#1.1-"
+    ]
+   }
+  },
+  "309": {
+   "sha": "908e42d2f7",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 15,
+    "chain": [
+     "15#0"
+    ]
+   }
+  },
+  "310": {
+   "sha": "2fde11230f",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 15,
+    "chain": [
+     "15#1"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ],
+     [
+      "\\x02",
+      ""
+     ],
+     [
+      "\\x1C",
+      ""
+     ],
+     [
+      "\\x03",
+      ""
+     ]
+    ]
+   }
+  },
+  "311": {
+   "sha": "c2d4de6477",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 15,
+    "chain": [
+     "15#2"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ],
+     [
+      "\\x02",
+      ""
+     ],
+     [
+      "\\x1C",
+      ""
+     ],
+     [
+      "\\x03",
+      ""
+     ]
+    ]
+   }
+  },
+  "312": {
+   "sha": "74da13f119",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 15,
+    "chain": [
+     "15#3.0"
+    ]
+   }
+  },
+  "313": {
+   "sha": "b7f07f387c",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 15,
+    "chain": [
+     "15#3.1-"
+    ]
+   }
+  },
+  "314": {
+   "sha": "8a763b1988",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 16,
+    "chain": [
+     "16#0"
+    ]
+   }
+  },
+  "316": {
+   "sha": "551d1bd82d",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 16,
+    "chain": [
+     "16#2.0"
+    ]
+   }
+  },
+  "317": {
+   "sha": "3e9df50b41",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 16,
+    "chain": [
+     "16#2.1-"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ],
+     [
+      "\\x02",
+      ""
+     ],
+     [
+      "\\x1C",
+      ""
+     ],
+     [
+      "\\x03",
+      ""
+     ],
+     [
+      "`3",
+      "{n}{spk}로우{/spk}가"
+     ]
+    ]
+   }
+  },
+  "408": {
+   "sha": "884531f3bf",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 22
+   }
+  },
+  "448": {
+   "sha": "884531f3bf",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 22
+   }
+  },
+  "469": {
+   "sha": "884531f3bf",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 22
+   }
+  },
+  "544": {
+   "sha": "f96b7d946e",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 8
+   }
+  },
+  "505": {
+   "sha": "a1d88e1f11",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 20,
+    "chain": [
+     "20~3"
+    ]
+   }
+  },
+  "506": {
+   "sha": "573604ed16",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 20,
+    "chain": [
+     "20~3"
+    ]
+   }
+  },
+  "510": {
+   "sha": "27025fefe3",
+   "src": {
+    "table": "ED1/T_510",
+    "entry_id": 2,
+    "chain": [
+     "2#0.0"
+    ],
+    "subs": [
+     [
+      "뭐냐 네놈들은?",
+      "음, 뭐냐 네놈들은?"
+     ]
+    ]
+   }
+  },
+  "504": {
+   "sha": "8221fe36c9",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 17,
+    "chain": [
+     "17#0.0",
+     "17#0.1"
+    ]
+   }
+  },
+  "489": {
+   "sha": "65ec1f60e5",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 9,
+    "chain": [
+     "9#1.0-1"
+    ]
+   }
+  },
+  "472": {
+   "sha": "db325f4859",
+   "src": {
+    "table": "ED1/T_333",
+    "entry_id": 2,
+    "chain": [
+     "2#0.0-1"
+    ]
+   }
+  },
+  "120": {
+   "sha": "8a1111f7bc",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 37,
+    "chain": [
+     "37#1"
+    ]
+   }
+  },
+  "463": {
+   "sha": "3dd66fb48f",
+   "src": {
+    "table": "ED1/T_029",
+    "entry_id": 8,
+    "chain": [
+     "8#1"
+    ]
+   }
+  },
+  "495": {
+   "sha": "75d8067847",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 6,
+    "chain": [
+     "6~1"
+    ],
+    "subs": [
+     [
+      "거리나?{n}어서",
+      "거리나?{n}어서 가."
+     ]
+    ]
+   }
+  },
+  "1278": {
+   "sha": "dcd414ecdc",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "1336": {
+   "sha": "dcd414ecdc",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "439": {
+   "sha": "d48f95999c",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 7
+   }
+  },
+  "1229": {
+   "sha": "0cd913db5d",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 20,
+    "subs": [
+     [
+      "\\x0F\\xEC\\x0D남자\\x0F\\xF0\\x0D병사{/spk}",
+      ""
+     ]
+    ]
+   }
+  },
+  "621": {
+   "sha": "a853f7386c",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 16
+   }
+  },
+  "1082": {
+   "sha": "b89523d934",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 2,
+    "chain": [
+     "2#0"
+    ]
+   }
+  },
+  "1227": {
+   "sha": "7e443279e7",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 18,
+    "subs": [
+     [
+      "\\x0F\\xA6\\x0D남자\\x0F\\xAA\\x0D병사{/spk}",
+      ""
+     ]
+    ]
+   }
+  },
+  "1043": {
+   "sha": "84b0de4188",
+   "src": {
+    "table": "ED1/T_043",
+    "entry_id": 13,
+    "chain": [
+     "13#1"
+    ]
+   }
+  },
+  "691": {
+   "sha": "2ef8831de2",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 33,
+    "chain": [
+     "33#1"
+    ]
+   }
+  },
+  "676": {
+   "sha": "a6d660737b",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 14
+   }
+  },
+  "729": {
+   "sha": "a6d660737b",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 14
+   }
+  },
+  "1065": {
+   "sha": "a6d660737b",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 14
+   }
+  },
+  "1239": {
+   "sha": "ba21cdcb73",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 7,
+    "chain": [
+     "7#0"
+    ]
+   }
+  },
+  "1281": {
+   "sha": "ba21cdcb73",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 7,
+    "chain": [
+     "7#0"
+    ]
+   }
+  },
+  "1339": {
+   "sha": "ba21cdcb73",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 7,
+    "chain": [
+     "7#0"
+    ]
+   }
+  },
+  "1240": {
+   "sha": "758b1b33cd",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 7,
+    "chain": [
+     "7#1"
+    ]
+   }
+  },
+  "1282": {
+   "sha": "758b1b33cd",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 7,
+    "chain": [
+     "7#1"
+    ]
+   }
+  },
+  "1340": {
+   "sha": "758b1b33cd",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 7,
+    "chain": [
+     "7#1"
+    ]
+   }
+  },
+  "753": {
+   "sha": "ee9c67c2de",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 5,
+    "chain": [
+     "5#0.0"
+    ]
+   }
+  },
+  "1084": {
+   "sha": "ee9c67c2de",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 5,
+    "chain": [
+     "5#0.0"
+    ]
+   }
+  },
+  "583": {
+   "sha": "db325f4859",
+   "src": {
+    "table": "ED1/T_333",
+    "entry_id": 2,
+    "chain": [
+     "2#0.0-1"
+    ]
+   }
+  },
+  "607": {
+   "sha": "db325f4859",
+   "src": {
+    "table": "ED1/T_333",
+    "entry_id": 2,
+    "chain": [
+     "2#0.0-1"
+    ]
+   }
+  },
+  "627": {
+   "sha": "db325f4859",
+   "src": {
+    "table": "ED1/T_333",
+    "entry_id": 2,
+    "chain": [
+     "2#0.0-1"
+    ]
+   }
+  },
+  "646": {
+   "sha": "db325f4859",
+   "src": {
+    "table": "ED1/T_333",
+    "entry_id": 2,
+    "chain": [
+     "2#0.0-1"
+    ]
+   }
+  },
+  "705": {
+   "sha": "db325f4859",
+   "src": {
+    "table": "ED1/T_333",
+    "entry_id": 2,
+    "chain": [
+     "2#0.0-1"
+    ]
+   }
+  },
+  "743": {
+   "sha": "db325f4859",
+   "src": {
+    "table": "ED1/T_333",
+    "entry_id": 2,
+    "chain": [
+     "2#0.0-1"
+    ]
+   }
+  },
+  "1049": {
+   "sha": "db325f4859",
+   "src": {
+    "table": "ED1/T_333",
+    "entry_id": 2,
+    "chain": [
+     "2#0.0-1"
+    ]
+   }
+  },
+  "1073": {
+   "sha": "db325f4859",
+   "src": {
+    "table": "ED1/T_333",
+    "entry_id": 2,
+    "chain": [
+     "2#0.0-1"
+    ]
+   }
+  },
+  "486": {
+   "sha": "bf22d11516",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 12,
+    "chain": [
+     "12#0"
+    ]
+   }
+  },
+  "487": {
+   "sha": "ee56b6d8d8",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 12,
+    "chain": [
+     "12#1"
+    ],
+    "subs": [
+     [
+      "\\x09\\x02",
+      ""
+     ]
+    ]
+   }
+  },
+  "501": {
+   "sha": "66c6123ed1",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 20,
+    "chain": [
+     "20#0.0-2"
+    ]
+   }
+  },
+  "502": {
+   "sha": "1984713c0e",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 20,
+    "chain": [
+     "20#0.3-4"
+    ],
+    "subs": [
+     [
+      "\\x06",
+      ""
+     ]
+    ]
+   }
+  },
+  "503": {
+   "sha": "d0b1bec34a",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 20,
+    "chain": [
+     "20#0.5-6"
+    ],
+    "subs": [
+     [
+      "\\x06",
+      ""
+     ]
+    ]
+   }
+  },
+  "507": {
+   "sha": "57d174ffcc",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 20,
+    "chain": [
+     "20#0.8-9"
+    ],
+    "subs": [
+     [
+      "\\x06",
+      ""
+     ]
+    ]
+   }
+  },
+  "656": {
+   "sha": "3bd7e5da91",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 5,
+    "chain": [
+     "5#0"
+    ]
+   }
+  },
+  "696": {
+   "sha": "6715ba61f5",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 37,
+    "chain": [
+     "37#0"
+    ]
+   }
+  },
+  "698": {
+   "sha": "91456a52ba",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 37,
+    "chain": [
+     "37#2"
+    ],
+    "subs": [
+     [
+      "\\x09\\x02",
+      ""
+     ]
+    ]
+   }
+  },
+  "699": {
+   "sha": "20fb71108d",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 37,
+    "chain": [
+     "37#3"
+    ],
+    "subs": [
+     [
+      "\\x09\\x02",
+      ""
+     ],
+     [
+      "\\x09",
+      ""
+     ]
+    ]
+   }
+  },
+  "700": {
+   "sha": "0079a0f964",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 37,
+    "chain": [
+     "37#4"
+    ],
+    "subs": [
+     [
+      "\\x09\\x02",
+      ""
+     ]
+    ]
+   }
+  },
+  "702": {
+   "sha": "b6e049b478",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 8,
+    "chain": [
+     "8#0"
+    ]
+   }
+  },
+  "715": {
+   "sha": "3bd7e5da91",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 5,
+    "chain": [
+     "5#0"
+    ]
+   }
+  },
+  "740": {
+   "sha": "b6e049b478",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 8,
+    "chain": [
+     "8#0"
+    ]
+   }
+  },
+  "1086": {
+   "sha": "b85867ba10",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 4,
+    "chain": [
+     "4#2"
+    ]
+   }
+  },
+  "93": {
+   "sha": "881f3167e5",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 20,
+    "chain": [
+     "20"
+    ]
+   }
+  },
+  "112": {
+   "sha": "008827e794",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 34,
+    "chain": [
+     "34#0"
+    ]
+   }
+  },
+  "113": {
+   "sha": "d17d17f3e6",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 34,
+    "chain": [
+     "34#1"
+    ]
+   }
+  },
+  "114": {
+   "sha": "bfc6fe5992",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 34,
+    "chain": [
+     "34#2"
+    ]
+   }
+  },
+  "124": {
+   "sha": "074c1ecc1e",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "136": {
+   "sha": "a339ae9670",
+   "src": {
+    "table": "ED1/T_012",
+    "entry_id": 0,
+    "chain": [
+     "0"
+    ]
+   }
+  },
+  "139": {
+   "sha": "fb6e865676",
+   "src": {
+    "table": "ED1/T_012",
+    "entry_id": 2,
+    "chain": [
+     "2"
+    ]
+   }
+  },
+  "173": {
+   "sha": "6ee8148e3f",
+   "src": {
+    "table": "ED1/T_014",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "190": {
+   "sha": "bc98e7e3a3",
+   "src": {
+    "table": "ED1/T_015",
+    "entry_id": 9,
+    "chain": [
+     "9#1"
+    ]
+   }
+  },
+  "197": {
+   "sha": "7f12164057",
+   "src": {
+    "table": "ED1/T_015",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "1124": {
+   "sha": "3084e2971a",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 32,
+    "chain": [
+     "32"
+    ]
+   }
+  },
+  "1132": {
+   "sha": "d0fa635353",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 0,
+    "chain": [
+     "0#0.0-1"
+    ]
+   }
+  },
+  "1207": {
+   "sha": "3e38e5d847",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "1208": {
+   "sha": "b3e3e5b0f4",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 4,
+    "chain": [
+     "4#1"
+    ]
+   }
+  },
+  "1209": {
+   "sha": "f29bcd69dc",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 4,
+    "chain": [
+     "4#2"
+    ]
+   }
+  },
+  "1216": {
+   "sha": "5c5e5f0826",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 11,
+    "chain": [
+     "11#0"
+    ]
+   }
+  },
+  "1217": {
+   "sha": "ec0f60fe4b",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 11,
+    "chain": [
+     "11#1"
+    ]
+   }
+  },
+  "1224": {
+   "sha": "800131d78c",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 12,
+    "chain": [
+     "12#1"
+    ]
+   }
+  },
+  "1255": {
+   "sha": "8330016560",
+   "src": {
+    "table": "ED1/C_008",
+    "entry_id": 2,
+    "chain": [
+     "2"
+    ]
+   }
+  },
+  "1268": {
+   "sha": "4cf5e7d6ec",
+   "src": {
+    "table": "ED1/C_009",
+    "entry_id": 0,
+    "chain": [
+     "0#0.0-1"
+    ]
+   }
+  },
+  "1302": {
+   "sha": "37a909b37e",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 7,
+    "chain": [
+     "7#1"
+    ]
+   }
+  },
+  "1303": {
+   "sha": "bb376b9e67",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 7,
+    "chain": [
+     "7#2"
+    ]
+   }
+  },
+  "1304": {
+   "sha": "f06c41e2d4",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 7,
+    "chain": [
+     "7#3"
+    ]
+   }
+  },
+  "1305": {
+   "sha": "a19e17ccc6",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 7,
+    "chain": [
+     "7#4"
+    ]
+   }
+  },
+  "1313": {
+   "sha": "8330016560",
+   "src": {
+    "table": "ED1/C_008",
+    "entry_id": 2,
+    "chain": [
+     "2"
+    ]
+   }
+  },
+  "1325": {
+   "sha": "a9a01a82af",
+   "src": {
+    "table": "ED1/C_00E",
+    "entry_id": 10,
+    "chain": [
+     "10#0"
+    ]
+   }
+  },
+  "1326": {
+   "sha": "a95c2322f3",
+   "src": {
+    "table": "ED1/C_00E",
+    "entry_id": 10,
+    "chain": [
+     "10#1"
+    ]
+   }
+  },
+  "1350": {
+   "sha": "da9efb206a",
+   "src": {
+    "table": "ED1/C_00H",
+    "entry_id": 0,
+    "chain": [
+     "0#0"
+    ]
+   }
+  },
+  "1352": {
+   "sha": "351cbfae8f",
+   "src": {
+    "table": "ED1/C_00H",
+    "entry_id": 0,
+    "chain": [
+     "0#2"
+    ]
+   }
+  },
+  "1353": {
+   "sha": "ee4f69c29e",
+   "src": {
+    "table": "ED1/C_00H",
+    "entry_id": 0,
+    "chain": [
+     "0#3"
+    ]
+   }
+  },
+  "594": {
+   "sha": "14830fb914",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 10,
+    "chain": [
+     "10#1"
+    ]
+   }
+  },
+  "534": {
+   "sha": "453778d185",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 5,
+    "chain": [
+     "5#0.0-0"
+    ],
+    "subs": [
+     [
+      "\\x06",
+      ""
+     ]
+    ]
+   }
+  },
+  "535": {
+   "sha": "a296c49178",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 5,
+    "chain": [
+     "5#0.1-1"
+    ],
+    "subs": [
+     [
+      "\\x06",
+      ""
+     ]
+    ]
+   }
+  },
+  "536": {
+   "sha": "2642e696d1",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 5,
+    "chain": [
+     "5#0.2-2"
+    ],
+    "subs": [
+     [
+      "\\x06",
+      ""
+     ]
+    ]
+   }
+  },
+  "537": {
+   "sha": "39904b4bfa",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 3,
+    "chain": [
+     "3#0"
+    ]
+   }
+  },
+  "538": {
+   "sha": "4508086c05",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 5,
+    "chain": [
+     "5#0.3-3"
+    ],
+    "subs": [
+     [
+      "\\x06",
+      ""
+     ]
+    ]
+   }
+  },
+  "539": {
+   "sha": "7bedad1179",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 5,
+    "chain": [
+     "5#0.4-4"
+    ],
+    "subs": [
+     [
+      "\\x06",
+      ""
+     ]
+    ]
+   }
+  },
+  "540": {
+   "sha": "3a974035a0",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 5,
+    "chain": [
+     "5#0.5-5"
+    ],
+    "subs": [
+     [
+      "\\x06",
+      ""
+     ]
+    ]
+   }
+  },
+  "548": {
+   "sha": "1c416157cc",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 10,
+    "chain": [
+     "10#1"
+    ],
+    "subs": [
+     [
+      "\\x09\\x03",
+      "게일"
+     ]
+    ]
+   }
+  },
+  "549": {
+   "sha": "cfa87e45bb",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 10,
+    "chain": [
+     "10#2"
+    ],
+    "subs": [
+     [
+      "\\x09\\x02",
+      ""
+     ]
+    ]
+   }
+  },
+  "550": {
+   "sha": "710b398564",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 10,
+    "chain": [
+     "10#3"
+    ],
+    "subs": [
+     [
+      "\\x09\\x02",
+      ""
+     ]
+    ]
+   }
+  },
+  "551": {
+   "sha": "e7393fb597",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 10,
+    "chain": [
+     "10#4"
+    ],
+    "subs": [
+     [
+      "\\x09\\x02",
+      ""
+     ]
+    ]
+   }
+  },
+  "552": {
+   "sha": "f77550b20c",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 10,
+    "chain": [
+     "10#5"
+    ],
+    "subs": [
+     [
+      "\\x09\\x02",
+      ""
+     ]
+    ]
+   }
+  },
+  "553": {
+   "sha": "967e79a3eb",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 10,
+    "chain": [
+     "10#6"
+    ],
+    "subs": [
+     [
+      "\\x09\\x02",
+      ""
+     ]
+    ]
+   }
+  },
+  "556": {
+   "sha": "e791703b52",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 10,
+    "chain": [
+     "10#9"
+    ],
+    "subs": [
+     [
+      "\\x09\\x02",
+      ""
+     ]
+    ]
+   }
+  },
+  "558": {
+   "sha": "429c0ad6a3",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 13,
+    "chain": [
+     "13#0"
+    ],
+    "subs": [
+     [
+      "로우, 잘 부탁한다.",
+      "네네..{n}로우, 잘 부탁한다."
+     ]
+    ]
+   }
+  },
+  "559": {
+   "sha": "6c7cc0b233",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 13,
+    "chain": [
+     "13#1"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ],
+     [
+      "\\x03",
+      ""
+     ],
+     [
+      "\\x1C",
+      ""
+     ],
+     [
+      "`3",
+      "{n}{spk}게일{/spk}이"
+     ]
+    ]
+   }
+  },
+  "440": {
+   "sha": "94441ef96c",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 15,
+    "chain": [
+     "15#1"
+    ]
+   }
+  },
+  "441": {
+   "sha": "e42ba2c99a",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 15,
+    "chain": [
+     "15#2"
+    ]
+   }
+  },
+  "442": {
+   "sha": "433e53627a",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 8,
+    "chain": [
+     "8"
+    ]
+   }
+  },
+  "445": {
+   "sha": "2ff0a84aab",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 29,
+    "chain": [
+     "29"
+    ]
+   }
+  },
+  "459": {
+   "sha": "ad48e28d4f",
+   "src": {
+    "table": "ED1/T_029",
+    "entry_id": 5,
+    "chain": [
+     "5"
+    ]
+   }
+  },
+  "465": {
+   "sha": "4d01dc0313",
+   "src": {
+    "table": "ED1/T_029",
+    "entry_id": 10,
+    "chain": [
+     "10"
+    ]
+   }
+  },
+  "236": {
+   "sha": "5f1aefbc43",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 19,
+    "chain": [
+     "19#1"
+    ]
+   }
+  },
+  "237": {
+   "sha": "441dbb19e9",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 19,
+    "chain": [
+     "19#2"
+    ]
+   }
+  },
+  "238": {
+   "sha": "5ba494931b",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 19,
+    "chain": [
+     "19#3"
+    ]
+   }
+  },
+  "245": {
+   "sha": "ad01f2485c",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 25,
+    "chain": [
+     "25"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      "{p}"
+     ]
+    ]
+   }
+  },
+  "246": {
+   "sha": "91657814cc",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 26,
+    "chain": [
+     "26"
+    ]
+   }
+  },
+  "323": {
+   "sha": "f9755f910c",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 2,
+    "chain": [
+     "2#0"
+    ]
+   }
+  },
+  "339": {
+   "sha": "1a836aa9c0",
+   "src": {
+    "table": "ED1/T_023",
+    "entry_id": 3,
+    "chain": [
+     "3"
+    ]
+   }
+  },
+  "398": {
+   "sha": "433e53627a",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 8,
+    "chain": [
+     "8"
+    ]
+   }
+  },
+  "402": {
+   "sha": "2ff0a84aab",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 29,
+    "chain": [
+     "29"
+    ]
+   }
+  },
+  "403": {
+   "sha": "cf04b15466",
+   "src": {
+    "table": "ED1/T_024",
+    "entry_id": 20,
+    "chain": [
+     "20"
+    ]
+   }
+  },
+  "298": {
+   "sha": "8b920f9438"
+  },
+  "73": {
+   "sha": "6b65c21e50"
+  },
+  "137": {
+   "sha": "cf3688dc6e"
+  },
+  "1186": {
+   "sha": "cf3688dc6e"
+  },
+  "1242": {
+   "sha": "cf3688dc6e"
+  },
+  "565": {
+   "sha": "d51094ef4c",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 15,
+    "chain": [
+     "15#1"
+    ]
+   }
+  },
+  "1220": {
+   "sha": "d41a53881e",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 8,
+    "chain": [
+     "8#1"
+    ]
+   }
+  },
+  "1298": {
+   "sha": "4f81b30330",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 4,
+    "chain": [
+     "4#1"
+    ]
+   }
+  },
+  "1299": {
+   "sha": "e2963164c8",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 4,
+    "chain": [
+     "4#2"
+    ]
+   }
+  },
+  "1349": {
+   "sha": "59b3db7a3c",
+   "src": {
+    "table": "ED1/C_00H",
+    "entry_id": 2,
+    "chain": [
+     "2#2"
+    ]
+   }
+  },
+  "427": {
+   "sha": "78f89219cd",
+   "src": {
+    "table": "ED1/T_026",
+    "entry_id": 1,
+    "chain": [
+     "1#1"
+    ]
+   }
+  },
+  "428": {
+   "sha": "2282ee6189",
+   "src": {
+    "table": "ED1/T_026",
+    "entry_id": 1,
+    "chain": [
+     "1#2"
+    ]
+   }
+  },
+  "429": {
+   "sha": "fb24ec14d9",
+   "src": {
+    "table": "ED1/T_026",
+    "entry_id": 1,
+    "chain": [
+     "1#3"
+    ]
+   }
+  },
+  "546": {
+   "sha": "d48942ef96",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 9,
+    "chain": [
+     "9#1"
+    ]
+   }
+  },
+  "1247": {
+   "sha": "26e7bddfab",
+   "src": {
+    "table": "ED1/C_006",
+    "entry_id": 13,
+    "chain": [
+     "13#1"
+    ]
+   }
+  },
+  "92": {
+   "sha": "8adcbf1402",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 14,
+    "chain": [
+     "14#1"
+    ]
+   }
+  },
+  "493": {
+   "sha": "fe628d4180",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 5,
+    "chain": [
+     "5#1"
+    ]
+   }
+  },
+  "736": {
+   "sha": "e0ffaec453",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 28,
+    "chain": [
+     "28#1"
+    ]
+   }
+  },
+  "424": {
+   "sha": "43f147b0df",
+   "src": {
+    "table": "ED1/T_026",
+    "entry_id": 0,
+    "chain": [
+     "0#1"
+    ]
+   }
+  },
+  "121": {
+   "sha": "637948f083",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 37,
+    "chain": [
+     "37#2"
+    ]
+   }
+  },
+  "96": {
+   "sha": "add33c1b14",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 10,
+    "chain": [
+     "10#1"
+    ]
+   }
+  },
+  "99": {
+   "sha": "0a513b0a11",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 13,
+    "chain": [
+     "13#1"
+    ]
+   }
+  },
+  "103": {
+   "sha": "6f98925465",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 18,
+    "chain": [
+     "18#1"
+    ]
+   }
+  },
+  "332": {
+   "sha": "87e624bf6f",
+   "src": {
+    "table": "ED1/T_023",
+    "entry_id": 0,
+    "chain": [
+     "0#1"
+    ]
+   }
+  },
+  "333": {
+   "sha": "cc4846af1a",
+   "src": {
+    "table": "ED1/T_023",
+    "entry_id": 0,
+    "chain": [
+     "0#2.0"
+    ]
+   }
+  },
+  "334": {
+   "sha": "07bbac7c24",
+   "src": {
+    "table": "ED1/T_023",
+    "entry_id": 0,
+    "chain": [
+     "0#2.1"
+    ]
+   }
+  },
+  "461": {
+   "sha": "7e85896168",
+   "src": {
+    "table": "ED1/T_029",
+    "entry_id": 6,
+    "chain": [
+     "6#1"
+    ]
+   }
+  },
+  "497": {
+   "sha": "9b5af1871c",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 15,
+    "chain": [
+     "15#1"
+    ]
+   }
+  },
+  "513": {
+   "sha": "ac54ca2cf1",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 26,
+    "chain": [
+     "26#1"
+    ]
+   }
+  },
+  "514": {
+   "sha": "2d8369ac72",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 26,
+    "chain": [
+     "26#2"
+    ]
+   }
+  },
+  "521": {
+   "sha": "719d9150fb",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 23,
+    "chain": [
+     "23#1"
+    ]
+   }
+  },
+  "529": {
+   "sha": "a46bcdb4ea",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 17,
+    "chain": [
+     "17#1.0"
+    ]
+   }
+  },
+  "568": {
+   "sha": "719d9150fb",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 14,
+    "chain": [
+     "14#1"
+    ]
+   }
+  },
+  "576": {
+   "sha": "a46bcdb4ea",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 10,
+    "chain": [
+     "10#1.0"
+    ]
+   }
+  },
+  "730": {
+   "sha": "9b9e8183b9",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 24,
+    "chain": [
+     "24#2"
+    ]
+   }
+  },
+  "1112": {
+   "sha": "a21a41ea4a",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 4,
+    "chain": [
+     "4#1"
+    ]
+   }
+  },
+  "1251": {
+   "sha": "7872a78425",
+   "src": {
+    "table": "ED1/C_006",
+    "entry_id": 16,
+    "chain": [
+     "16#1"
+    ]
+   }
+  },
+  "1294": {
+   "sha": "8066c968c2",
+   "src": {
+    "table": "ED1/C_00C",
+    "entry_id": 1,
+    "chain": [
+     "1#1"
+    ]
+   }
+  },
+  "1342": {
+   "sha": "55b95e2732",
+   "src": {
+    "table": "ED1/C_006",
+    "entry_id": 7,
+    "chain": [
+     "7#1"
+    ]
+   }
+  },
+  "1359": {
+   "sha": "adb341f632",
+   "src": {
+    "table": "ED1/C_00H",
+    "entry_id": 6,
+    "chain": [
+     "6#1"
+    ]
+   }
+  },
+  "106": {
+   "sha": "755ce52d3e",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 29,
+    "chain": [
+     "29#0"
+    ]
+   }
+  },
+  "107": {
+   "sha": "e2d3529a3d",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 29,
+    "chain": [
+     "29#1"
+    ]
+   }
+  },
+  "108": {
+   "sha": "cdfb4413bf",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 29,
+    "chain": [
+     "29#2"
+    ]
+   }
+  },
+  "110": {
+   "sha": "9e5a5e19ab",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 31
+   }
+  },
+  "115": {
+   "sha": "0b29cc467a",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 35,
+    "chain": [
+     "35#0"
+    ]
+   }
+  },
+  "117": {
+   "sha": "fe47e6bb5b",
+   "src": {
+    "table": "ED1/T_011",
+    "entry_id": 35,
+    "chain": [
+     "35#2"
+    ],
+    "subs": [
+     [
+      "\\x09",
+      ""
+     ]
+    ]
+   }
+  },
+  "1259": {
+   "sha": "a21a41ea4a",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 4,
+    "chain": [
+     "4#1"
+    ]
+   }
+  },
+  "1317": {
+   "sha": "a21a41ea4a",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 4,
+    "chain": [
+     "4#1"
+    ]
+   }
+  },
+  "1128": {
+   "sha": "a4bef68d8b",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 35,
+    "chain": [
+     "35#0"
+    ]
+   }
+  },
+  "1130": {
+   "sha": "bba0013ac2",
+   "src": {
+    "table": "ED1/C_001",
+    "entry_id": 36,
+    "chain": [
+     "36#0"
+    ]
+   }
+  },
+  "541": {
+   "sha": "be021719c7",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 6,
+    "chain": [
+     "6#0"
+    ]
+   }
+  },
+  "1204": {
+   "sha": "c543b99708",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 3,
+    "chain": [
+     "3#0"
+    ]
+   }
+  },
+  "1206": {
+   "sha": "b6570389ac",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 3,
+    "chain": [
+     "3#2"
+    ]
+   }
+  },
+  "669": {
+   "sha": "ac94a12772",
+   "src": {
+    "table": "ED1/T_040",
+    "entry_id": 25,
+    "chain": [
+     "25#0"
+    ]
+   }
+  },
+  "149": {
+   "sha": "d38408d1cb",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 17,
+    "chain": [
+     "17#0"
+    ]
+   }
+  },
+  "732": {
+   "sha": "99a000c1de",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 27,
+    "chain": [
+     "27#0"
+    ]
+   }
+  },
+  "733": {
+   "sha": "1ea3f3e43b",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 27,
+    "chain": [
+     "27#1"
+    ]
+   }
+  },
+  "395": {
+   "sha": "e42ba2c99a",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 6,
+    "chain": [
+     "6#2"
+    ]
+   }
+  },
+  "679": {
+   "sha": "99a000c1de",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 23,
+    "chain": [
+     "23#0"
+    ]
+   }
+  },
+  "680": {
+   "sha": "a31d8da11a",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 23,
+    "chain": [
+     "23#1"
+    ]
+   }
+  },
+  "684": {
+   "sha": "8b0a9b945d",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 28,
+    "chain": [
+     "28#0"
+    ]
+   }
+  },
+  "300": {
+   "sha": "b71401e65a",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 9,
+    "chain": [
+     "9#1"
+    ]
+   }
+  },
+  "319": {
+   "sha": "440259190e",
+   "src": {
+    "table": "ED1/T_022",
+    "entry_id": 20,
+    "chain": [
+     "20#1"
+    ]
+   }
+  },
+  "484": {
+   "sha": "25da9400de",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 11,
+    "chain": [
+     "11#0.3"
+    ]
+   }
+  },
+  "485": {
+   "sha": "4949268991",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 11,
+    "chain": [
+     "11#1"
+    ]
+   }
+  },
+  "555": {
+   "sha": "c8e0e6fcce",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 10,
+    "chain": [
+     "10#8"
+    ]
+   }
+  },
+  "530": {
+   "sha": "e58f82149c",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 17,
+    "chain": [
+     "17#1.1"
+    ]
+   }
+  },
+  "527": {
+   "sha": "614f5ce950",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 23,
+    "chain": [
+     "23#3"
+    ]
+   }
+  },
+  "574": {
+   "sha": "614f5ce950",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 14,
+    "chain": [
+     "14#3"
+    ]
+   }
+  },
+  "577": {
+   "sha": "e58f82149c",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 10,
+    "chain": [
+     "10#1.1"
+    ]
+   }
+  },
+  "522": {
+   "sha": "fc7c1870ea",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 23,
+    "chain": [
+     "23#2"
+    ]
+   }
+  },
+  "523": {
+   "sha": "cb952fa596",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 23,
+    "chain": [
+     "23#3"
+    ]
+   }
+  },
+  "524": {
+   "sha": "623bf90a97",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 23,
+    "chain": [
+     "23#4"
+    ]
+   }
+  },
+  "525": {
+   "sha": "822a6419ad",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 23,
+    "chain": [
+     "23#5"
+    ]
+   }
+  },
+  "569": {
+   "sha": "fc7c1870ea",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 14,
+    "chain": [
+     "14#2"
+    ]
+   }
+  },
+  "570": {
+   "sha": "cb952fa596",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 14,
+    "chain": [
+     "14#3"
+    ]
+   }
+  },
+  "571": {
+   "sha": "623bf90a97",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 14,
+    "chain": [
+     "14#4"
+    ]
+   }
+  },
+  "572": {
+   "sha": "822a6419ad",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 14,
+    "chain": [
+     "14#5"
+    ]
+   }
+  },
+  "498": {
+   "sha": "3440898040",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 15,
+    "chain": [
+     "15#2"
+    ]
+   }
+  },
+  "499": {
+   "sha": "f84b2d5ba7",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 15,
+    "chain": [
+     "15#3"
+    ]
+   }
+  },
+  "500": {
+   "sha": "5cf0e08c42",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 15,
+    "chain": [
+     "15#4"
+    ]
+   }
+  },
+  "526": {
+   "sha": "9dbe1949a2",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 23,
+    "chain": [
+     "23#3"
+    ]
+   }
+  },
+  "573": {
+   "sha": "9dbe1949a2",
+   "src": {
+    "table": "ED1/T_032",
+    "entry_id": 14,
+    "chain": [
+     "14#3"
+    ]
+   }
+  },
+  "600": {
+   "sha": "21c5c22e0a",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 17,
+    "chain": [
+     "17#1"
+    ]
+   }
+  },
+  "1201": {
+   "sha": "6aac093031",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 2,
+    "chain": [
+     "2~1"
+    ]
+   }
+  },
+  "1202": {
+   "sha": "b8b7f893b9",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 2,
+    "chain": [
+     "2~2"
+    ]
+   }
+  },
+  "1203": {
+   "sha": "8103828e43",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 2,
+    "chain": [
+     "2~3"
+    ]
+   }
+  },
+  "337": {
+   "sha": "0a5af5fca6",
+   "src": {
+    "table": "ED1/T_023",
+    "entry_id": 2,
+    "chain": [
+     "2#1"
+    ]
+   }
+  },
+  "338": {
+   "sha": "29c38b5d4f",
+   "src": {
+    "table": "ED1/T_023",
+    "entry_id": 2,
+    "chain": [
+     "2#2"
+    ]
+   }
+  },
+  "425": {
+   "sha": "ef90c350a4",
+   "src": {
+    "table": "ED1/T_026",
+    "entry_id": 0,
+    "chain": [
+     "0#2"
+    ]
+   }
+  },
+  "153": {
+   "sha": "6690ffa466",
+   "src": {
+    "table": "ED1/T_034",
+    "entry_id": 4,
+    "chain": [
+     "4#0"
+    ]
+   }
+  },
+  "1076": {
+   "sha": "94a18df23d",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 6
+   }
+  },
+  "1236": {
+   "sha": "e98a17a87f",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 6
+   }
+  },
+  "1218": {
+   "sha": "c6d366c5bf",
+   "src": {
+    "table": "ED1/T_014",
+    "entry_id": 4
+   }
+  },
+  "143": {
+   "sha": "08c2c4d779",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 10
+   }
+  },
+  "166": {
+   "sha": "b1c6fb6ae9",
+   "src": {
+    "table": "ED1/T_013",
+    "entry_id": 10
+   }
+  },
+  "1067": {
+   "sha": "492618d6fb",
+   "src": {
+    "table": "ED1/T_044",
+    "entry_id": 15,
+    "chain": [
+     "15#1"
+    ]
+   }
+  },
+  "411": {
+   "sha": "6690ffa466",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 2,
+    "chain": [
+     "2#0"
+    ]
+   }
+  },
+  "618": {
+   "sha": "9a96ef1be0",
+   "src": {
+    "table": "ED1/T_034",
+    "entry_id": 12
+   }
+  },
+  "619": {
+   "sha": "d98d8196d5",
+   "src": {
+    "table": "ED1/T_034",
+    "entry_id": 10
+   }
+  },
+  "693": {
+   "sha": "fe77b8864f",
+   "src": {
+    "table": "ED1/T_041",
+    "entry_id": 34,
+    "chain": [
+     "34#0"
+    ]
+   }
+  },
+  "741": {
+   "sha": "54ace425a9",
+   "src": {
+    "table": "ED1/T_042",
+    "entry_id": 10
+   }
+  },
+  "1235": {
+   "sha": "03049a71f2",
+   "src": {
+    "table": "ED1/C_006",
+    "entry_id": 4,
+    "chain": [
+     "4#1"
+    ]
+   }
+  },
+  "1237": {
+   "sha": "d1d0ba562e",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 6,
+    "chain": [
+     "6#1"
+    ]
+   }
+  },
+  "695": {
+   "sha": "4cd8233042"
+  },
+  "739": {
+   "sha": "d92d0785c1"
+  },
+  "1328": {
+   "sha": "4495d179bd"
+  },
+  "1329": {
+   "sha": "5fb5c3dc4f"
+  },
+  "1332": {
+   "sha": "3fc3ba2a16"
+  },
+  "1356": {
+   "sha": "884a9d9502"
+  },
+  "1046": {
+   "sha": "d92d0785c1"
+  },
+  "1070": {
+   "sha": "d92d0785c1"
+  },
+  "1087": {
+   "sha": "ec3e16d11f"
+  },
+  "1279": {
+   "sha": "d1d0ba562e",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 6,
+    "chain": [
+     "6#1"
+    ]
+   }
+  },
+  "1337": {
+   "sha": "d1d0ba562e",
+   "src": {
+    "table": "ED1/C_00B",
+    "entry_id": 6,
+    "chain": [
+     "6#1"
+    ]
+   }
+  },
+  "13": {
+   "sha": "a3b774b5f4",
+   "src": {
+    "table": "ED1/T_000",
+    "entry_id": 29
+   }
+  },
+  "554": {
+   "sha": "9f89792601",
+   "src": {
+    "table": "ED1/T_031",
+    "entry_id": 10,
+    "chain": [
+     "10#7"
+    ]
+   }
+  },
+  "593": {
+   "sha": "dc41796735",
+   "src": {
+    "table": "ED1/T_033",
+    "entry_id": 10,
+    "chain": [
+     "10#0"
+    ]
+   }
+  },
+  "239": {
+   "sha": "9e1d4a106b",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 19,
+    "chain": [
+     "19#4"
+    ]
+   }
+  },
+  "242": {
+   "sha": "645dd9541e",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 22,
+    "chain": [
+     "22#0"
+    ]
+   }
+  },
+  "446": {
+   "sha": "6130848c17",
+   "src": {
+    "table": "ED1/T_028",
+    "entry_id": 7
+   }
+  },
+  "48": {
+   "sha": "4ac49e25d6",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 5
+   }
+  },
+  "169": {
+   "sha": "0fd90b2e88",
+   "src": {
+    "table": "ED1/T_014",
+    "entry_id": 11
+   }
+  },
+  "1225": {
+   "sha": "7e5274c8d7",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 13
+   }
+  },
+  "46": {
+   "sha": "6af42884c9",
+   "src": {
+    "table": "ED1/T_010",
+    "entry_id": 3,
+    "chain": [
+     "3#1"
+    ]
+   }
+  },
+  "1223": {
+   "sha": "0147cc6547",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 12,
+    "chain": [
+     "12#0"
+    ]
+   }
+  },
+  "243": {
+   "sha": "000bc0dca3",
+   "src": {
+    "table": "ED1/T_021",
+    "entry_id": 23,
+    "chain": [
+     "23#0"
+    ]
+   }
+  },
+  "481": {
+   "sha": "2253f4abc4",
+   "src": {
+    "table": "ED1/T_030",
+    "entry_id": 21
+   }
+  },
+  "1231": {
+   "sha": "ea52571e21",
+   "src": {
+    "table": "ED1/C_005",
+    "entry_id": 22,
+    "subs": [
+     [
+      "\\x0FM\\x0E남자\\x0FQ\\x0E병사{/spk}",
+      ""
+     ]
+    ]
+   }
+  }
+ }
+}

@@ -20,6 +20,7 @@ import json
 import math
 import os
 import re
+import sys
 
 from common import OUT_DIR
 
@@ -33,6 +34,10 @@ GAMES = {"ED1": ("ED1SCN", 6), "ED2": ("ED2SCN", 13)}
 # ── 화자 매핑 ────────────────────────────────────────────────────────────────
 # 보통명사·의역 이름 수동 사전 (음차로 못 잡는 것들 — 실데이터 기준 수집)
 SPEAKER_DICT = {
+    # 장음 `ー` 는 음차에서 사라져 1음절이 된다 — `ロー`→`로` 라 정발 `로우`와의 유사도가
+    # 임계(0.6) 밑으로 떨어져 미해결로 빠졌다. 그러면 화자창에 음차 `로`가 그대로 나간다
+    # (인게임 지적 2026-08-02). 장음 이름은 사전에 박는다.
+    "ロー": "로우",
     "兵士": "병사",
     "侍女": "시녀",
     "男": "남자",
@@ -42,6 +47,10 @@ SPEAKER_DICT = {
     "武器屋": "무기점",
     "防具屋": "방어구점",
     "神父": "신부",
+    # 遊び人 = 정발 `여행자`(T_020#8·T_022#4 가 화자로 사용). 음차·의미 어느 쪽으로도 안 잡혀
+    # 미해결로 빠졌고, 그러면 화자창이 비거나 임의 표기가 나간다(유저 QA 2026-08-03 — 내가
+    # `건달`로 잘못 넣었던 자리다). 정발이 쓴 말이 정본이다.
+    "遊び人": "여행자",
     "海賊": "해적",
     "盗賊": "도둑",
     "隊長": "대장",
@@ -79,7 +88,9 @@ SPEAKER_DICT = {
     "占い師": "점술사",
     "砂漠の商人": "사막의 상인",
     "奴隷商人": "노예상인",
-    "やみの商人": "밀매상인",
+    # 정발 엔트리마다 `밀매상`/`밀매상인`이 갈리는데 화자창 표기는 `밀매상`이 정본이다
+    # (유저 QA 2026-08-03 — 정발 화면 대조). JP 화자는 `やみの商人` 하나뿐이라 여기서 통일한다.
+    "やみの商人": "밀매상",
     "やみ屋": "밀매상",
     "何でも屋": "뭐든지 가게",
     "農夫": "농부",
@@ -562,6 +573,9 @@ def align_scene(game, n, spk_map):
 
 
 def main():
+    # ⚠ 인자 없이 돌리면 **의미정렬(align_semantic, LaBSE) 결과인 `*_SCN*.json` 을 덮어쓴다**.
+    # 화자맵만 필요하면 `--speakers-only` 를 쓸 것 — 빌드 체인이 쓰는 경로가 이쪽이다.
+    speakers_only = "--speakers-only" in sys.argv
     os.makedirs(ALIGN_DIR, exist_ok=True)
     for game, (_, n_scn) in GAMES.items():
         if not os.path.isdir(os.path.join(DOS_KR_DIR, game)):
@@ -579,10 +593,29 @@ def main():
                 {"map": spk_map, "unresolved_jp": unresolved}, f, ensure_ascii=False, indent=1
             )
         print(f"{game}: 화자 매핑 {len(spk_map)}건, 미해결 {len(unresolved)}건")
+        if speakers_only:
+            continue
 
         for n in range(1, n_scn + 1):
+            # ⚠ 의미정렬(align_semantic) 결과를 **구조 신호 초안으로 덮어쓰지 않는다.**
+            # 이 파일은 두 도구가 공유하는데, 여기(화자·길이·순서)는 같은 화자의 변형 대사를
+            # swap 한다 — 정본을 날리면 인게임에서 "잘 나오던 대사가 딴 대사로" 바뀐다
+            # (2026-08-03 실측: 머신 이동 후 work/derived 복구 중 실제로 밟았다. work/ 는
+            # gitignore 라 정렬이 머신을 안 따라가고, 재생성하면 초안이 된다).
+            out = os.path.join(ALIGN_DIR, f"{game}_SCN{n}.json")
+            if "--force" not in sys.argv and os.path.exists(out):
+                try:
+                    gen = json.load(open(out, encoding="utf-8")).get("generator")
+                except (json.JSONDecodeError, OSError):
+                    gen = None
+                if gen == "align_semantic":
+                    print(
+                        f"  건너뜀 {game}_SCN{n}: 의미정렬(align_semantic) 정본이다 — "
+                        f"덮어쓰려면 --force (권장: `python3 tools/align_semantic.py` 로 재생성)"
+                    )
+                    continue
             doc = align_scene(game, n, spk_map)
-            with open(os.path.join(ALIGN_DIR, f"{game}_SCN{n}.json"), "w", encoding="utf-8") as f:
+            with open(out, "w", encoding="utf-8") as f:
                 json.dump(doc, f, ensure_ascii=False, indent=1)
             pct = 100 * doc["matched"] / doc["kr_blocks"] if doc["kr_blocks"] else 0
             low = sum(1 for p in doc["pairs"] if "low_confidence" in p["flags"])

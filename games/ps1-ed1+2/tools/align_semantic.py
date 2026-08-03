@@ -124,6 +124,10 @@ def main():
             doc = align_scene(model, game, n, spk_map)
             if doc is None:
                 continue
+            # 생성자 표시 — align_jp_kr(구조 신호 초안)가 이 정본을 덮어쓰지 못하게 하는 표식.
+            # 2026-08-03: 다른 머신에서 work/derived 를 복구하며 align_jp_kr 를 인자 없이 돌려
+            # 의미정렬을 통째로 날렸고, 같은 화자의 변형 대사가 swap 돼 하루를 태웠다.
+            doc["generator"] = "align_semantic"
             with open(os.path.join(ALIGN_DIR, f"{game}_SCN{n}.json"), "w", encoding="utf-8") as f:
                 json.dump(doc, f, ensure_ascii=False, indent=1)
             low = sum(1 for p in doc["pairs"] if "low_sim" in p["flags"])

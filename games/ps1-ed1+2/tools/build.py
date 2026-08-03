@@ -25,9 +25,9 @@ INTERMEDIATES = ["Eiyuu Densetsu (KR Pilot)", "Eiyuu Densetsu (KR UI)"]
 STALE = ["Eiyuu Densetsu (KR OP)", "Eiyuu Densetsu (Len Test)", "Eiyuu Densetsu (Test Patch)"]
 
 
-def run(script):
+def run(script, *args):
     print(f"\n=== {script} ===")
-    subprocess.run([sys.executable, os.path.join(TOOLS, script)], check=True, cwd=TOOLS)
+    subprocess.run([sys.executable, os.path.join(TOOLS, script), *args], check=True, cwd=TOOLS)
 
 
 # ── 절대 안 바뀌어야 하는 구간 (파일 오프셋, 반열림) ──────────────────────
@@ -92,6 +92,10 @@ def main():
     for p in glob.glob(os.path.join(BUILD_DIR, "*.failed")):  # 지난 실패 잔재
         os.remove(p)
 
+    # 화자맵(align/*_speakers.json)은 reinsert 의 이름창 입력인데 파생물이라 낡는다 —
+    # SPEAKER_DICT 를 고쳐도 빌드에 안 붙어 `ロー`가 음차 `로`로 나갔다(2026-08-02).
+    # ⚠ `--speakers-only` 필수: 인자 없이 돌리면 의미정렬 `*_SCN*.json` 을 덮어쓴다.
+    run("align_jp_kr.py", "--speakers-only")
     run("reinsert_kr_pilot.py")
     run("patch_gfx_cards.py")
     run("patch_hud_names.py")

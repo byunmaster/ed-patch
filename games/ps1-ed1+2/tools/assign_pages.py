@@ -115,6 +115,9 @@ def used_pages(game):
                 continue
             for it in ch:
                 base, _, rest = str(it).partition("#")
+                # `2~0` = 변형 슬라이스(리더별 4종 등). 엔트리 번호만 떼어 낸다 —
+                # 안 그러면 int() 가 죽는다(jp1200~1203 배정 후 실측 2026-08-03).
+                base = base.partition("~")[0]
                 if not rest:
                     full.add((v["table"], int(base)))
                 elif "." in rest:

@@ -509,11 +509,27 @@ def parse_kr(entry):
         m = re.search(r"\{/spk\}", t)
         if m and not re.search(r"\{[np]\}|[가-힣]", t[: m.start()]):
             t = t[m.end() :]
+        # **조건부 화자**(`\x0FM\x0E남자\x0FQ\x0E병사{/spk}`): 정발은 한 엔트리에 화자를 분기로
+        # 담는데 PS1 은 화자별로 블록이 갈려 있다(jp1226 병사 / jp1227 남자). 위 가드는 앞에
+        # 한글이 있으면 안 자르므로 화자명이 **본문에 그대로 노출**됐다("남자 병사 아크담은…"
+        # — 유저 QA 2026-08-03). 제어코드로 구분된 짧은 화자명 나열만 잘라낸다(본문은 이 형태가
+        # 아니라 안전하다 — 반드시 `{/spk}` 앞이고, 각 토막이 `\xNN` 뒤 8자 이내여야 한다).
+        elif m:
+            head = t[: m.start()]
+            if re.fullmatch(r"(?:\\x[0-9A-Fa-f]{2}[^\\{}]{0,8})+", head):
+                t = t[m.end() :]
     t = resolve_dos_breaks(t).replace("{end}", "")  # 정발 표시 줄바꿈 해소(위 주석)
     # 맞춤법/띄어쓰기 교정은 {n} 해소 **뒤**에 — 어절이 {n} 경계에 걸린 경우("드릴수{n}있"의
     # 릴수→릴 수)도 잡으려면 개행이 공백/붙임으로 확정된 후여야 한다(유저 지적 07-27).
     t = fix_spacing(t)
     t = spell_fix(t)  # 직함 띄어쓰기 등 맞춤법 교정(dos_spelling_fixes.json)
+    # 지명 정본 교정 — 편차 대장(docs/jeongbal-deviations.md)이 정본이다. 대장엔 "ED1 대사 이식 시
+    # 교정 적용"이라 적혀 있었으나 **실제 파이프라인엔 없었다**(2026-08-03 실측: 전 씬 번역문에
+    # `폰 리그` 11 · `폰리그` 2 · `라느라` 36 이 그대로 나가고 있었다. 유저 지적으로 발견).
+    # ⚠ spell_fix **뒤**여야 한다 — `space` 규칙이 `라느라왕국에` 같은 붙은 형태를 먼저 띄운다.
+    # `폰리그`는 ED1 정발의 가타카나 오독(ウォ의 ウ를 フ로 읽음), ED2 정발·오프닝은 `온리크`.
+    for _a, _b in (("폰 리그", "온리크"), ("폰리그", "온리크"), ("라느라", "라누라")):
+        t = t.replace(_a, _b)
     # 상점 인사·흐름의 분기 마커(\x07=도구점, {p}\x06=무기점) 뒤 come-again 꼬리 제거 — PS1은
     # come-again이 별도 블록이라 인사 인라인 노출은 잘못(도구점·무기점 모두, 유저 QA 07-27).
     # 마커가 있어야 매칭 → 마커 없는 별도 come-again 블록("또 들러 주십시요")은 보존.
@@ -522,6 +538,10 @@ def parse_kr(entry):
     # ("합니다\x07또 들러주십시요"). ⚠ \x03 두 곳은 인라인 플레이스홀더 의심(QA 메모).
     t = t.replace("\\x09", NAME_SENT)  # 이름 주입 자리 보존(아래 일괄 치환보다 먼저)
     t = re.sub(r"\\x[0-9A-F]{2}", " ", t)
+    # DOS 주입 자리의 **인자 글자**는 감싼 제어코드가 공백이 되면서 맨몸으로 남는다
+    # (`\x0F$\x0D선장` → ` $ 선장`, 무기점 꼬리 `있습니다.$` 인게임 노출 2026-08-02).
+    # 코퍼스 전수 13건이 전부 이 잔재고 한국어 대사에 `$`가 쓰이는 곳은 없다 → 통째로 지운다.
+    t = t.replace("$", "")
     # 병합으로 들어온 인라인 화자({spk}X{/spk})는 페이지 헤더로 보존 — JP의 %c화자%c 재현
     t = re.sub(r"\{spk\}(.*?)\{/spk\}", "\x11\\1\x12", t)
     # 짝 안 맞는 고아 {spk}/{/spk}(DOS 추출기 마크업 잔여, ED1 122블록)는 제거 —
@@ -529,7 +549,9 @@ def parse_kr(entry):
     t = t.replace("{spk}", " ").replace("{/spk}", " ")
     # 종결부호 앞 공백·개행 일괄 제거(유저 승인 2026-07-24): 정발 "어서 !!"식 공백은
     # 14슬롯 폭에서 느낌표만 다음 줄로 넘어가는 고아를 만든다 — 부호를 앞말에 붙인다.
-    t = re.sub(r"[ \n]+(?=[!?])", "", t)
+    # 쉼표·단일 온점도 같은 이유로 붙인다("왕자님 , 남편을" 인게임 지적 2026-08-02).
+    # ⚠ 말줄임 `...` 앞 공백은 정발의 의도적 호흡이라 건드리지 않는다 — 그래서 `\.(?!\.)`.
+    t = re.sub(r"[ \n]+(?=[!?,]|\.(?!\.))", "", t)
     # 곧은 따옴표 → 곡선 따옴표. PS1 폰트에 `"`·`'` 글리프가 **없어서**(전각 ＂로 변환됐다가
     # `글리프 범위 밖`) 그 페이지를 무는 블록이 통째로 `encode` 탈락한다. 정발 ED1 에 31곳 있어
     # 잠재 지뢰였다 — jp681·jp734 가 축소 재배정으로 그 페이지를 물자 실제로 터졌다(2026-07-31).
@@ -795,9 +817,30 @@ NAME_PLATE = {}
 # 2026-08-01). ⚠ 기존 `nl_wins`(창 **앞** 개행)는 **본문 창에만** 걸려 이름 창엔 못 쓴다 —
 # 그래서 **앞 본문 창의 꼬리**에 넣는다. `%c`·`%s` 개수는 안 변한다(개행 바이트 1개만 추가).
 NL_WINS = {}
+# 이동 금지 구간: {씬: {eid, …}} — 이 eid 가 든 자유 구간은 **블록별 원본 길이 고정**으로
+# 재배치한다(짧으면 00패딩, 넘치면 size 제외). 구간 안에 앵커·미참조 핀으로는 못 잡는
+# 절대참조가 있다는 뜻이다.
+# 실측(2026-08-03, 크루즈 아론 취침 → 아침 기상 이벤트): 331~339 구간을 축소 재배치하면
+# 기상 후 자동이동 목적지가 어긋나고(침대 대신 침대 옆), 축소량이 커지면 진행 차단(책상 위
+# 고정)까지 간다. 이분 4판에서 **축소량에 단조 반응**했고(-12B 정상 / -20B·-24B 목적지
+# 어긋남 / -32B 락), `%c`·`%s`·`%d` 계약은 세 블록 다 원본과 일치했다 — 즉 구조가 아니라
+# **위치**가 계약인 구간이다. 340~ 의 2B 값 테이블(캐릭터 이동 스크립트가 절대주소로 읽는
+# 것 — rebuild 주석의 0x757E)은 이미 핀 고정돼 있으므로 범인은 구간 **안**이다.
+FIXED_RUNS = {"ED1SCN1": frozenset({336, 337, 338})}
 SCN_ARG_PATCHES = {
     # eid 20 개구멍 Q&A: li t2,0x83 / li t0,0x5C → 0x20 (RAM 0x8017D920/24)
     ("ED1SCN1", 20): [(0x13920, 0x240A0020), (0x13924, 0x24080020)],
+    # 소니아 화자창 `ソ` 잔재 — 화자 헤더가 `%c%c%cニア%c` 구조다(`ソ`=0x835C 가 0x5C
+    # 이스케이프라 리터럴로 못 들어가 콜사이트 인자 두 개로 주입된다). 헤더를 우리 이름으로
+    # 바꿔도 주입쌍은 남아 이름 앞에 `ソ`가 붙어 나왔다(유저 QA 2026-08-03).
+    # inject_pairs(오프셋 2) 로 정본을 만들어 화자를 인식시키고, 여기서 콜사이트 즉치
+    # 0x83/0x5C → 0x20(공백)으로 비가시화한다 — 인자 **개수·순서는 불변**이라 계약이 유지된다.
+    # 콜사이트는 각 블록 참조의 +8/+12(`addiu a3,zero,0x83` · `addiu v0,zero,0x5C`), rt 보존.
+    # eid 421 도 같은 구조지만 아직 번역이 없어(JP 그대로 표시) 제외 — 번역할 때 함께 넣는다.
+    ("ED1SCN1", 335): [(0x1CC74, 0x24070020), (0x1CC78, 0x24020020)],
+    ("ED1SCN1", 336): [(0x1CCAC, 0x24070020), (0x1CCB0, 0x24020020)],
+    ("ED1SCN1", 339): [(0x1CD24, 0x24070020), (0x1CD28, 0x24020020)],
+    ("ED1SCN1", 421): [(0x1E1F0, 0x24070020), (0x1E1F4, 0x24020020)],
     # eid 280 리더 교대: 콜사이트 인자열 `(2,1,8,3,1,0xC)`의 4·5번째 색코드를 바꾼다
     # (RAM 0x80185728/30). **색코드 실측: 2=주황(화자 이름) · 3=초록 · 1=흰색 복귀.**
     # 원판은 세리오스=초록·본문=흰색인데, 유저 지정(2026-07-30)에 따라
@@ -1071,6 +1114,21 @@ def donor_alloc(size):
 _PUNCT_WIN = re.compile(r"[\s・･。、．，…‥！？!?ーｰ─\-]*\Z")
 
 
+# 점 전용 창(침묵)은 JP 중점 `・`이 **전각**이라 우리 반각 온점(`...`)과 눈에 띄게 다르다.
+# 본문이 섞인 창은 이미 우리 문안으로 다시 쓰여 `...`로 나가므로 침묵 창만 JP 글리프가 남아
+# 한 게임 안에서 표기가 갈렸다(유저 지적 2026-08-02: "・・・ 를 허용할거면 일괄 허용").
+# 창 수·페이지 대응은 그대로 두고 **글리프만** 바꾼다 — 점 계열만, 사이 공백은 접는다.
+_DOTS = {"・": ".", "･": ".", "…": "...", "‥": "..", ".": ".", "．": "."}
+
+
+def _punct_dots_kr(txt):
+    """점만으로 이뤄진 창이면 반각 온점 문자열, 아니면 None(원문 통과)."""
+    core = "".join(txt.split())
+    if not core or any(c not in _DOTS for c in core):
+        return None
+    return "".join(_DOTS[c] for c in core)
+
+
 def _tpl_punct_only(seg):
     txt = b"".join(t[1] for t in seg if t[0] == "t")
     if not txt:
@@ -1079,6 +1137,15 @@ def _tpl_punct_only(seg):
         return bool(_PUNCT_WIN.fullmatch(txt.decode("cp932")))
     except UnicodeDecodeError:
         return False
+
+
+def _tpl_dots(raw_t):
+    """통과시키는 본문 토큰의 JP 점 글리프만 반각 온점으로. 그 외는 원문 그대로."""
+    try:
+        kr = _punct_dots_kr(raw_t.decode("cp932"))
+    except UnicodeDecodeError:
+        return raw_t
+    return encode_ext(kr) if kr else raw_t
 
 
 def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=()):
@@ -1250,7 +1317,10 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=()):
                 elif t[0] == "d":
                     b += PD
                 elif t[0] == "t":
-                    b += _tpl_name(t[1], speaker, name_i == 0) if kind == "name" else t[1]
+                    if kind == "name":
+                        b += _tpl_name(t[1], speaker, name_i == 0)
+                    else:
+                        b += _tpl_dots(t[1])
             if kind == "name":
                 if fold and name_i in fold:  # 이름창 접기: 뒤 개행을 없애 다음 창과 한 줄로
                     folded_prev = True
@@ -1879,17 +1949,62 @@ def load_translations(align_name, scn_name):
             n_no += 1
     if n_no:
         print(f"  침묵 블록(이름만 번역) {n_no}건 등록")
+    # ── 확정 락 검증 (locked_lines.json) ────────────────────────────────────
+    # 정렬·배정은 매 라운드 **전역 최적**으로 다시 계산돼, 후보 풀이 바뀌면 이미 잘 맞던 짝까지
+    # 다른 블록에게 넘어간다("원래 잘 나오던 대사가 안 나온다" — 2026-08-03 유저 QA 반복 지적).
+    # 인게임에서 확인된 블록은 여기서 못 박고, 문안이 달라지면 **빌드를 실패**시킨다.
+    # ⚠ LOCK_BYPASS=1 은 **락 관리 도구 전용** 우회다. 락이 깨진 상태에서 `lock_lines.py` 가
+    # 현재 문안을 읽으려면 load_translations 를 불러야 하는데, 검증이 여기서 죽으면 복구 도구
+    # 자체가 못 돈다(2026-08-03 실측 — freeze/unlock 이 잠기는 교착이었다).
+    if os.environ.get("LOCK_BYPASS") == "1":
+        bad = []
+    else:
+        try:
+            from lock_lines import verify as _lock_verify
+
+            bad = _lock_verify(scn_name, out)
+        except Exception:
+            bad = []
+    if bad:
+        head = " · ".join(f"jp{e}({a}→{b})" for e, a, b in bad[:8])
+        raise SystemExit(
+            f"{scn_name}: 확정 락 위반 {len(bad)}건 — 인게임 확인된 대사가 바뀌었다.\n"
+            f"  {head}{' …' if len(bad) > 8 else ''}\n"
+            f"  의도한 변경이면 `python3 tools/lock_lines.py --unlock {scn_name} <eid …>` 후 재빌드."
+        )
     return out, skipped, applied
 
 
+def anchor_tail(anchors, off, n):
+    """앵커가 블록 **앞부분만** 덮을 때, 뒤 텍스트의 시작(블록 내 상대). 아니면 None.
+
+    앵커(포인터 테이블)와 대사가 한 블록으로 묶이면 통째로 핀 고정돼 번역이 버려진다
+    (anchor_overlap). 하지만 앵커가 **접두**면 뒤 텍스트만 제자리·같은 길이로 덮어써도
+    절대참조는 앵커를 가리키므로 유효하다(2026-08-03 jp1182 회수 — 아크담 2층 알림)."""
+    ends = [ae for a_s, ae in anchors if off < ae and a_s < off + n and a_s <= off]
+    if not ends:
+        return None
+    k = max(ends) - off
+    return k if 0 < k < n else None
+
+
 def rebuild(
-    scn_entries, data, translations, excluded, anchors, text_end, fixed=False, referenced_eids=None
+    scn_entries,
+    data,
+    translations,
+    excluded,
+    anchors,
+    text_end,
+    fixed=False,
+    referenced_eids=None,
+    fixed_eids=frozenset(),
 ):
     """앵커(테이블) 고정 재배치. 반환: (region, old→new 오프셋 매핑 블록 목록).
 
     앵커와 겹치는 블록은 pinned(원본 위치·바이트 그대로) — 테이블 보존.
     나머지 자유 블록은 앵커 사이 구간에서만 재배치(reflow_run). 앵커는 절대 안 움직여
-    lui+lw 절대참조가 유효하게 유지된다. fixed=True는 블록별 원본 길이 고정."""
+    lui+lw 절대참조가 유효하게 유지된다. fixed=True는 블록별 원본 길이 고정.
+    fixed_eids 에 든 eid 가 낀 구간은 그 구간만 fixed 로 돈다(FIXED_RUNS 참조)."""
     blocks = []
     for e in scn_entries:
         off = int(e["file_offset"], 16)
@@ -1912,8 +2027,16 @@ def rebuild(
             and b["eid"] not in referenced_eids
         )
         b["pinned"] = hits_anchor(b["off"], b["off"] + len(b["raw"])) or unref
+        b["tail"] = None
         if b["pinned"] and b["eid"] in translations:
-            excluded[b["eid"]] = "anchor_overlap"
+            # 꼬리 회수: 앵커 접두 + 꼬리가 **대사**(`%c` 보유)일 때만. `%c` 가 없는 꼬리는
+            # 지명·이름 단독 블록이라 patch_sys_ui 관할이고, 정렬이 손대면 그쪽이 못 고친다
+            # (jp282 실측 2026-08-03: 꼬리가 `クルスの村` 인데 정렬은 '루디아 마을'을 물렸다).
+            k = anchor_tail(anchors, b["off"], len(b["raw"]))
+            if k is not None and MC in b["raw"][k:]:
+                b["tail"] = k
+            else:
+                excluded[b["eid"]] = "anchor_overlap"
 
     region = bytearray(data[:text_end])  # 앵커·pinned는 원본 그대로 유지
     layout = []
@@ -1921,6 +2044,18 @@ def rebuild(
     while i < n:
         if blocks[i]["pinned"]:
             b = blocks[i]
+            if b["tail"] is not None:  # 앵커 접두 블록의 꼬리 대사만 제자리 덮어쓰기
+                room = len(b["raw"]) - b["tail"]
+                cand, reason = build_candidate(
+                    b["raw"][b["tail"] :], translations[b["eid"]], b["eid"]
+                )
+                if cand is not None and len(cand) <= room:
+                    s = b["off"] + b["tail"]
+                    region[s : s + len(cand)] = cand
+                    for p in range(s + len(cand), b["off"] + len(b["raw"])):
+                        region[p] = 0  # 남는 자리는 0패딩 — 블록 경계·앵커 위치 불변
+                else:
+                    excluded[b["eid"]] = reason or "anchor_tail_size"
             layout.append((b["off"], len(b["raw"]), b["off"], len(b["raw"]), b["eid"]))
             i += 1
             continue
@@ -1930,7 +2065,14 @@ def rebuild(
         run = blocks[i:j]
         run_start = run[0]["off"]
         run_end = blocks[j]["off"] if j < n else text_end
-        reflow_run(region, run, run_start, run_end, translations, excluded, fixed, layout)
+        # 구간 안에 이동 금지 eid 가 하나라도 있으면 그 구간 전체를 원본 길이 고정으로 돈다 —
+        # 한 블록만 고정해도 앞 블록이 줄면 같이 당겨지므로 구간 단위여야 위치가 보존된다.
+        # 진단: PILOT_NO_FIXED_RUNS=1 로 이 계층만 끈다(원인 이분용).
+        run_fixed = fixed or (
+            os.environ.get("PILOT_NO_FIXED_RUNS") != "1"
+            and any(b["eid"] in fixed_eids for b in run)
+        )
+        reflow_run(region, run, run_start, run_end, translations, excluded, run_fixed, layout)
         i = j
     return bytes(region), layout
 
@@ -1974,10 +2116,19 @@ def build_scene(name, lba, size, identity, fixed):
                 for i in ids.split(","):
                     excluded[int(i)] = "diag"
     referenced_eids = set()  # addiu/ori(find_refs가 갱신)로 참조되는 블록 = 이동해도 안전
+    blk_by_eid = {e["entry_id"]: e for e in entries if e["kind"] != "gap"}
     for _, _, _, addr in refs:
         (_, eid), delta = owner(addr - OVERLAY_RAM_BASE)
         referenced_eids.add(eid)
         if delta and eid in translations:
+            # 앵커 접두 블록의 **꼬리 시작**을 가리키는 참조는 무해하다 — 그 블록은 핀 고정이라
+            # 안 움직이고 꼬리 회수도 그 지점부터 덮어쓰므로 주소가 그대로다(jp1182·jp1110
+            # 실측 2026-08-03: delta 36 = 꼬리 시작. 이 완화가 없으면 회수분이 되레 탈락한다).
+            e = blk_by_eid.get(eid)
+            if e is not None and delta == anchor_tail(
+                anchors, int(e["file_offset"], 16), len(e["raw_hex"]) // 2
+            ):
+                continue
             excluded[eid] = "mid_block_ref"
 
     # 정형 블록 dedup: size로 퇴출된 보물상자 사본은 내용이 동일한 생존 사본으로 **포인터만
@@ -1998,7 +2149,15 @@ def build_scene(name, lba, size, identity, fixed):
     # 공유 lui 충돌 해소 루프
     for _ in range(5):
         region, layout = rebuild(
-            entries, data, translations, excluded, anchors, text_end, fixed, referenced_eids
+            entries,
+            data,
+            translations,
+            excluded,
+            anchors,
+            text_end,
+            fixed,
+            referenced_eids,
+            FIXED_RUNS.get(name, frozenset()),
         )
         newoff = {eid: (no, oo) for oo, _, no, _, eid in layout}
         stock_alias = compute_stock_alias()
@@ -2195,6 +2354,11 @@ def build_scene(name, lba, size, identity, fixed):
         donor_s = f", 이주 {len(donor_placed)}블록(확장 {n_ext}·ED도너 {n_ed})"
     if ext_used:
         donor_s += f", 파일 +{len(out_file) - len(data)}B"
+    # 제외 블록 대장 — 인게임에서 "왜 이 대사만 일본어지?"를 물을 때 사유부터 본다.
+    # (jp73 침묵 `· · ·`가 큰 점으로 보인 게 실은 제외였다 — 이름만 patch_sys_ui 가 바꿔서
+    #  번역된 것처럼 보였다, 2026-08-02.) 요약만으론 어느 블록인지 알 수 없어 파일로 남긴다.
+    with open(os.path.join(OUT_DIR, f"excluded_{name}.json"), "w", encoding="utf-8") as f:
+        json.dump({str(k): v for k, v in sorted(excluded.items())}, f, ensure_ascii=False, indent=1)
     stats = (
         f"{name}: 재삽입 {n_tr}블록 (후보 {len(translations)}, 제외 {len(excluded)}"
         f"{sorted(set(excluded.values()))}{parse_skip}{ov}{donor_s}, 포인터 {patched}건, "
