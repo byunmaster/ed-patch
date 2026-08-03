@@ -130,11 +130,18 @@ def encode_ext(text):
 def jp_has_header(raw):
     """JP 블록이 화자 헤더(%c이름%c 0x0A)로 시작하는가 — 헤더 유무로 구조가 갈린다.
     ED1SCN1 실측: 헤더 O 514블록(%c 대개 3), 헤더 X 848블록(%c 대개 1, 내레이션류).
-    헤더 없는 블록에 우리가 헤더를 붙이면 %c가 2개 초과 생산돼 꼬리 창이 잘린다."""
+    헤더 없는 블록에 우리가 헤더를 붙이면 %c가 2개 초과 생산돼 꼬리 창이 잘린다.
+
+    ⚠ **이름 안에 개행이 있으면 헤더가 아니다.** `%c본문…\n…%c\n%c` 처럼 본문이 통째로
+    `%c` 두 개 사이에 들어간 블록이 이름표로 오탐돼, 본문이 화자명 취급을 받고 화자맵 조회에
+    실패해 **오버라이드가 조용히 버려졌다**(ED1SCN2 jp933/942/952 · ED2SCN4 jp513 —
+    전 씬 통틀어 이 4건뿐, 2026-08-04 실측)."""
     if raw[:2] != MC:
         return False
     j = raw.find(MC, 2)
-    return j > 0 and j + 2 < len(raw) and raw[j + 2] == 0x0A
+    if not (j > 0 and j + 2 < len(raw) and raw[j + 2] == 0x0A):
+        return False
+    return 0x0A not in raw[2:j]
 
 
 def jp_header_is_fmt(raw):
@@ -1435,6 +1442,55 @@ def compute_anchors(data, text_end):
     return merged
 
 
+def is_table_bytes(raw, data_len):
+    """블록이 통째로 **포인터 테이블**인가 — 모든 워드가 오버레이 포인터/널, 잔여는 0패딩.
+
+    `compute_anchors` 가 테이블을 "큰 쪽으로 근사"하므로 앵커 포함만으로 판정하면 대사를
+    잘못 버릴 수 있다. 바이트를 직접 보는 이 조건을 AND 로 걸어 오검출을 없앤다."""
+    lo, hi = OVERLAY_RAM_BASE, OVERLAY_RAM_BASE + data_len
+    n = len(raw)
+    if n < 8 or any(raw[n - (n % 4) :]):  # 워드 뒤 잔여는 0패딩이어야 한다
+        return False
+    return all(
+        (lambda v: lo <= v < hi or v == 0)(int.from_bytes(raw[i : i + 4], "little"))
+        for i in range(0, n - n % 4, 4)
+    )
+
+
+_TABLE_EIDS = {}  # scn_name → frozenset (씬당 1회 계산 — 원본 재추출 비용 회피)
+
+
+def table_block_eids(scn_name):
+    """**대사가 아닌** 블록(포인터 테이블) 의 entry_id 집합 — 배정 대상에서 뺀다.
+
+    블록 분할은 텍스트 영역을 훑어 나누므로 점프 테이블도 "블록"으로 잡힌다. 거기에 정발
+    문장이 배정되면 회수할 수 없는 채로 제외 목록에만 쌓인다 — `anchor_overlap` 3건이
+    전부 이것이었다(2026-08-04 규명: SCN3 jp60 · SCN5 jp15/46 이 100% 포인터 워드).
+    제외 사유로 남기면 "회수 가능한 잔여"로 오해되므로 **배정 단계에서 걷어낸다.**"""
+    if scn_name in _TABLE_EIDS:
+        return _TABLE_EIDS[scn_name]
+    hit = frozenset()
+    src = next((s for s in SCN_FILES if s[0] == scn_name), None)
+    if src is not None:
+        _, lba, size = src
+        doc = json.load(open(os.path.join(OUT_DIR, "scn_jp", f"{scn_name}.json"), encoding="utf-8"))
+        data = extract(lba, size)
+        anchors = compute_anchors(data, int(doc["source"]["text_end"], 16))
+        hit = frozenset(
+            e["entry_id"]
+            for e in doc["entries"]
+            if e.get("raw_hex")
+            and any(
+                a <= int(e["file_offset"], 16)
+                and int(e["file_offset"], 16) + len(e["raw_hex"]) // 2 <= b
+                for a, b in anchors
+            )
+            and is_table_bytes(bytes.fromhex(e["raw_hex"]), len(data))
+        )
+    _TABLE_EIDS[scn_name] = hit
+    return hit
+
+
 def restore_tail_nl(cand, raw):
     """원본이 `\\n%c`로 끝나면 재조립본에도 그 **꼬리 0x0A**를 복원한다.
 
@@ -1834,9 +1890,12 @@ def load_translations(align_name, scn_name):
 
         plate = {b["id"] for b in load_jp_scene(g, int(sn)) if is_name_plate(b["body"])}
 
+    # 포인터 테이블 블록은 애초에 대사가 아니다 — 배정이 붙어도 회수할 길이 없다.
+    table_blocks = table_block_eids(scn_name)
+
     out, skipped = {}, {}
     consumed_all, src_of = set(), {}
-    n_plate = 0
+    n_plate = n_table = 0
     # 배정 정본(커밋됨)이 있으면 그게 입력이다 — 정렬 파일은 안 읽는다. 재계산이 머신을 타는
     # 문제(동일 JP 중복 대사 → 정확한 동점 → 부동소수가 승자 결정)를 원천에서 없앤다.
     from align_map import scene_map
@@ -1865,6 +1924,9 @@ def load_translations(align_name, scn_name):
         if p["jp"]["entry_id"] in plate:
             n_plate += 1
             continue
+        if p["jp"]["entry_id"] in table_blocks:
+            n_table += 1
+            continue
         entry = dict(kr_entry(p["kr"]["table"], p["kr"]["entry_id"]))
         entry, consumed = splice_placeholder_pages(
             entry, p["kr"]["table"], kr_entry, target=jp_win.get(p["jp"]["entry_id"], (None,))[0]
@@ -1890,6 +1952,8 @@ def load_translations(align_name, scn_name):
         print(f"  병합 소비 엔트리의 단독 쌍 {len(dup)}건 제외(중복 방지): jp={dup[:8]}")
     if n_plate:
         print(f"  이름·지명 플레이트 {n_plate}건 제외(patch_sys_ui 관할)")
+    if n_table:
+        print(f"  포인터 테이블 블록 {n_table}건 배정 해제(대사 아님)")
 
     # 사람 검수 오버라이드: align보다 우선 (틀린 짝 교정 or 신규 추가)
     applied = 0

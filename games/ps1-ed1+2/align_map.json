@@ -3825,11 +3825,6 @@
    "entry_id": 6,
    "speaker": "도구점"
   },
-  "60": {
-   "table": "ED1/T_206",
-   "entry_id": 20,
-   "speaker": null
-  },
   "63": {
    "table": "ED1/T_251",
    "entry_id": 10,
@@ -6369,11 +6364,6 @@
    "entry_id": 10,
    "speaker": "대도 게일"
   },
-  "15": {
-   "table": "ED1/T_429",
-   "entry_id": 7,
-   "speaker": "대도 게일"
-  },
   "32": {
    "table": "ED1/D_401",
    "entry_id": 3,
@@ -6408,11 +6398,6 @@
    "table": "ED1/D_401",
    "entry_id": 15,
    "speaker": null
-  },
-  "46": {
-   "table": "ED1/T_427",
-   "entry_id": 34,
-   "speaker": "대도 게일"
   },
   "48": {
    "table": "ED1/D_402",

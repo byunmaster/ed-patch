@@ -38,6 +38,16 @@ SPEAKER_DICT = {
     # 임계(0.6) 밑으로 떨어져 미해결로 빠졌다. 그러면 화자창에 음차 `로`가 그대로 나간다
     # (인게임 지적 2026-08-02). 장음 이름은 사전에 박는다.
     "ロー": "로우",
+    # `フラート` 는 음차로 정발명이 안 나온다(→'플라트'류). 정발은 같은 대사를 **브라도**가
+    # 한다 — T_220#8 `{spk}브라도{/spk}` + #10 본문이 jp694 와 같은 줄이고, 이미 배정된
+    # `フラート` 헤더 블록 2건도 승계 화자가 브라도다(2026-08-04 교차 확인). 음차를 쓰면
+    # 같은 인물이 블록마다 '브라도'/'플라트'로 갈린다.
+    "フラート": "브라도",
+    # 아래 둘은 **정발 화자 목록에 그대로 있다**(코퍼스 전수 확인 2026-08-04) — 음차가 아니라
+    # 정발 표기다. 자동 매칭이 놓친 건 장음 `ー`·요음 `ャ` 가 음차에서 뭉개져 임계(0.6)를
+    # 못 넘겨서다. ⚠ `アグニージャ`→'아그니자'로 고치지 말 것: 정발이 '아그니쟈'다.
+    "アグニージャ": "아그니쟈",
+    "ギュリゲス": "규리게스",
     "兵士": "병사",
     "侍女": "시녀",
     "男": "남자",
@@ -303,13 +313,35 @@ def name_sim(a, b):
     return 1 - edit_dist(ja, jb) / max(len(ja), len(jb))
 
 
+_ALL_KR_SPK = None
+
+
+def all_kr_speakers():
+    """정발 ED1+ED2 코퍼스 전체의 `{spk}` 이름 집합 — 사전 항목 검증용(씬 범위 밖 포함)."""
+    global _ALL_KR_SPK
+    if _ALL_KR_SPK is None:
+        import glob
+
+        _ALL_KR_SPK = set()
+        for p in glob.glob(os.path.join(OUT_DIR, "dos_kr", "*", "*.json")):
+            with open(p, encoding="utf-8") as f:
+                doc = json.load(f)
+            for e in doc["entries"] if isinstance(doc, dict) else doc:
+                _ALL_KR_SPK.update(re.findall(r"\{spk\}(.*?)\{/spk\}", e.get("text", "")))
+    return _ALL_KR_SPK
+
+
 def build_speaker_map(jp_speakers, kr_speakers):
     """JP 화자 → KR 화자 매핑: 사전 → 접미사 규칙 → 음차 fuzzy (임계 0.6)."""
     mapping, unresolved = {}, []
     kr_list = sorted(kr_speakers)
 
     def resolve(jp):
-        if jp in SPEAKER_DICT and SPEAKER_DICT[jp] in kr_speakers:
+        # ⚠ 사전은 **정발 코퍼스 전체**를 상대로 검증한다. `kr_speakers` 는 그 씬에 매핑된
+        # 테이블의 화자만 담는데, 정발이 다른 테이블에서만 쓰는 이름이 있다(아그니쟈·규리게스는
+        # ED1 코퍼스에 실재하는데 씬 집합엔 없어 사전이 통째로 무시됐다 — 2026-08-04 실측).
+        # 퍼지 매칭 후보는 기존대로 씬 범위를 유지한다(후보 풀을 넓히면 기존 짝이 흔들린다).
+        if jp in SPEAKER_DICT and SPEAKER_DICT[jp] in all_kr_speakers():
             return SPEAKER_DICT[jp]
         for suf_jp, suf_kr in SUFFIX_RULES:
             if jp.endswith(suf_jp):

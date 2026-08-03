@@ -62,9 +62,12 @@ def _current(scn_name):
         return None
     pairs = json.load(open(p, encoding="utf-8"))["pairs"]
     pairs, _ = R.apply_lock_src(pairs, scn_name)  # 확정 락이 이긴다
+    table_blocks = R.table_block_eids(scn_name)  # 포인터 테이블에는 배정하지 않는다
     out = {}
     for pr in pairs:
         if not pr.get("jp") or not pr.get("kr"):
+            continue
+        if pr["jp"]["entry_id"] in table_blocks:
             continue
         if not (pr.get("_locked") or R.accept_pair(pr)):
             continue
