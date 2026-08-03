@@ -1707,6 +1707,64 @@ def accept_pair(p):
     return not p.get("flags")
 
 
+def apply_lock_src(pairs, scn_name):
+    """확정 락에 적힌 배정 좌표(`src`)를 정렬 결과에 **되씌운다**. → (pairs, 되돌린 수)
+
+    락은 원래 문안 해시 **검증만** 했다. 그러면 배정이 흔들릴 때 잡아내되 **고치지는 못한다** —
+    "확정분을 계산에서 빼낸다"는 취지의 절반만 구현된 상태였다(`lock_lines` 독스트링은 처음부터
+    재적용을 약속하고 있었다). 2026-08-03(3) 집↔회사 이동에서 이게 드러났다: `align_semantic`
+    을 새로 돌려도 같은 화자(兵士)의 변형 대사 짝이 **순열로 뒤바뀌어** 락 24건이 계속 터졌다.
+    유사도는 양쪽 다 높아(0.97/0.94) 재계산으로는 회사 배정을 복원할 수 없다 — 좌표가 이미
+    락에 있으니 그걸 되씌우는 게 정답이다.
+
+    ⚠ 오버라이드가 있는 eid 는 건드리지 않는다 — 사람 검수가 더 강한 정본이고 `chain`·`subs`
+    까지 들고 있어 좌표만 바꾸면 어긋난다.
+    """
+    from lock_lines import load_lock
+
+    locked = load_lock().get(scn_name, {})
+    if not locked:
+        return pairs, 0
+    ov = _load_overrides().get(scn_name, {})
+    forced = {}
+    for k, v in locked.items():
+        src = (v or {}).get("src") or {}
+        if k in ov or "table" not in src or "entry_id" not in src:
+            continue
+        forced[int(k)] = (src["table"], src["entry_id"])
+    if not forced:
+        return pairs, 0
+
+    # 좌표 → 그 좌표를 쓰던 kr 딕트. 승계 화자가 정렬 단계 산물이라 새로 못 만든다.
+    by_coord = {}
+    for p in pairs:
+        if p.get("kr"):
+            by_coord.setdefault((p["kr"]["table"], p["kr"]["entry_id"]), p["kr"])
+
+    out, n, taken = [], 0, set()
+    for p in pairs:
+        jp = (p.get("jp") or {}).get("entry_id")
+        want = forced.get(jp)
+        if want and p.get("kr") and (p["kr"]["table"], p["kr"]["entry_id"]) != want:
+            kr = by_coord.get(want)
+            if kr is not None:
+                p = dict(p, kr=dict(kr), flags=[], _locked=True)
+                n += 1
+        if p.get("kr") and forced.get(jp) == (p["kr"]["table"], p["kr"]["entry_id"]):
+            taken.add(want or (p["kr"]["table"], p["kr"]["entry_id"]))
+        out.append(p)
+
+    # 되씌우면서 원래 그 좌표를 쓰던 **락 밖 블록**이 남으면 같은 대사가 두 번 나간다.
+    kept = []
+    for p in out:
+        jp = (p.get("jp") or {}).get("entry_id")
+        if jp not in forced and p.get("kr"):
+            if (p["kr"]["table"], p["kr"]["entry_id"]) in taken:
+                continue
+        kept.append(p)
+    return kept, n
+
+
 def load_translations(align_name, scn_name):
     """정렬 고신뢰 쌍(+ 사람 검수 오버라이드) → {jp_entry_id: (화자, 페이지들)}."""
     INJECT_PAIRS.clear()  # 씬 단위 상태 — 오버라이드 inject_pairs가 재구축
@@ -1715,7 +1773,10 @@ def load_translations(align_name, scn_name):
     COLOR_WRAP.clear()
     NAME_PLATE.clear()
     NL_WINS.clear()
-    align = json.load(open(os.path.join(OUT_DIR, "align", f"{align_name}.json"), encoding="utf-8"))
+    # ⚠ 정렬 파일은 **배정 정본이 없을 때만** 읽는다. 정본이 있으면 LaBSE 파생물 없이도
+    # 빌드가 돌아야 한다(새 머신에 torch 를 안 깔아도 되는 게 이 설계의 요점).
+    align_path = os.path.join(OUT_DIR, "align", f"{align_name}.json")
+    align = None
     jp_doc = json.load(open(os.path.join(OUT_DIR, "scn_jp", f"{scn_name}.json"), encoding="utf-8"))
     # 창 수 계약의 단위는 엔진이 실제로 세는 **raw %c 개수**다(인라인 화자 헤더의 %c 포함).
     # 우리 블록의 %c = parts + 2(화자헤더 2 + 종단 1 - join 1)이므로 target = jp_mc - 2로 잡으면
@@ -1776,8 +1837,30 @@ def load_translations(align_name, scn_name):
     out, skipped = {}, {}
     consumed_all, src_of = set(), {}
     n_plate = 0
-    for p in align["pairs"]:
-        if not accept_pair(p):
+    # 배정 정본(커밋됨)이 있으면 그게 입력이다 — 정렬 파일은 안 읽는다. 재계산이 머신을 타는
+    # 문제(동일 JP 중복 대사 → 정확한 동점 → 부동소수가 승자 결정)를 원천에서 없앤다.
+    from align_map import scene_map
+
+    pinned = scene_map(scn_name)
+    if pinned:
+        pairs = [
+            {
+                "jp": {"entry_id": e, "speaker": None},
+                "kr": {k: v[k] for k in ("table", "entry_id", "speaker")},
+                "flags": [],
+                "_locked": True,
+            }
+            for e, v in sorted(pinned.items())
+        ]
+        print(f"  배정 정본 {len(pairs)}건 적용 (align_map.json — 정렬 재계산 안 씀)")
+    else:
+        # 정본이 없는 씬은 정렬 결과 + 확정 락 되씌우기(과도기 경로).
+        align = json.load(open(align_path, encoding="utf-8"))
+        pairs, n_relock = apply_lock_src(align["pairs"], scn_name)
+        if n_relock:
+            print(f"  확정 락 배정 복원 {n_relock}건 (정렬 재계산이 짝을 옮긴 것을 되돌림)")
+    for p in pairs:
+        if not (p.get("_locked") or accept_pair(p)):
             continue
         if p["jp"]["entry_id"] in plate:
             n_plate += 1
