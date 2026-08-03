@@ -9,12 +9,13 @@
 
 ## 세션 시작 시
 
-- **HANDOFF를 먼저 읽는다**: `docs/HANDOFF.md` (살아있는 상태 문서 — 세션 끝에
+- **진행 현황을 먼저 읽는다**: `docs/status.md` (살아있는 상태 문서 — 세션 끝에
   "현재 상태"·"다음 할 일" 갱신).
-- 표기 편차 대장: `docs/jeongbal-deviations.md` (표기 바꾸면 갱신 의무).
+- 방침·유저 확정 결정: `docs/policy.md` (표기 방침 · 락 운용 절차 · 검증 규율).
+- 표기 편차 대장: `docs/jeongbal-deviations.md` (개별 낱말, 표기 바꾸면 갱신 의무).
 - **대사 텍스트를 손대기 전 `docs/text-pipeline.md`** — 배정(`chain`/`~변형`)·조판·화자·색·
   조사 훅 장치와 **구조 계약 게이트**를 모은 레퍼런스. 함정이 전부 실측 기반이다.
-- 진행 중 트랙별 상세: `docs/*-handoff.md`, `docs/*-devlog.md`.
+- 트랙별 경위(왜 그렇게 했나·무엇에 막혔나): `docs/devlog.md`.
 
 ## ⚠ 빌드는 결정적이어야 한다 — 배정 정본 (align_map.json)
 

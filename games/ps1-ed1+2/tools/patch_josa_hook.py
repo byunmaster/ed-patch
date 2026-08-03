@@ -3,12 +3,12 @@
 런타임 %s 치환 자리(캐릭터·몬스터·아이템 이름)는 빌드 시점에 앞말을 모름 → 병기로 넣어두고,
 표시 경로에서 이 루틴이 버퍼를 1패스 스캔해 [음절][조사A][(][조사B][)] 패턴을 앞 음절의
 종성 유무(비트테이블)로 조사 하나로 축약한다(4B 좌시프트).
-설계·조사 이력: docs/josa-hook-devlog.md. 종성 판정 근거: shared/text/josa.py.
+설계·조사 이력: docs/devlog.md. 종성 판정 근거: shared/text/josa.py.
 
 훅은 **세 지점**(전부 같은 josa_fix를 부르고, 병기가 없으면 무동작이라 멱등):
   1. `HOOK_ADDR` 0x800B2054 — 워크슬롯 조립 직후. 줄 단위(64B, cross-line 결합 포함).
   2. `PREWRAP_CALL` 0x800B1D60 — **자동 개행 삽입 전** 평문(128B). 개행 폭 계산이
-     미해결 병기(3슬롯)로 이뤄져 줄이 이르게 갈리던 문제를 없앤다(HANDOFF #2/#3).
+     미해결 병기(3슬롯)로 이뤄져 줄이 이르게 갈리던 문제를 없앤다(devlog 조사 훅 #2/#3).
   3. `DRAWSTR_ADDR` 0x800A9A60 — **단문 직접 그리기** 진입. 메시지 경로가 둘인데
      이쪽은 prewrap도 assemble도 안 타서 1·2가 못 닿았다(파티 합류 "류난이(가)").
 배치: ED.EXE의 0런 2개(PLACE_JOSA_RAM / PLACE_DATA_RAM) — **VAB 헤더 패딩**이라
@@ -414,12 +414,12 @@ HOOK_ORIG = 0x87C20016  # lh v0, 0x16(fp)
 HOOK_ORIG2 = 0x8FC30028  # lw v1, 0x28(fp)
 HOOK_RESUME = 0x800B205C
 WORK_BASE = 0x801190B0
-LINE_STRIDE = 66  # 줄 슬롯 stride(HANDOFF 렌더러 실측 — 텍스트 0x40 + 메타 2)
+LINE_STRIDE = 66  # 줄 슬롯 stride(렌더러 실측 — 텍스트 0x40 + 메타 2)
 LINE_LIMIT = 64  # 워크슬롯 1줄의 텍스트 바이트(stride − 메타 2)
 FP = 30
 GP = 28
 
-# ── 훅 2: 자동 개행(prewrap) 앞 early-resolve — HANDOFF #2/#3 ────────────────
+# ── 훅 2: 자동 개행(prewrap) 앞 early-resolve — devlog 조사 훅 #2/#3 ────────────────
 # 메시지 박스 경로(정적 RE 07-28, capstone):
 #   0x800B1D50 strcpy(fp+0x18, msg)        ← 호출자 스택 128B 사본(fp+0x18~fp+0x98)
 #   0x800B1D60 jal 0x800ACE18              ← **자동 개행 삽입기**(글자단위, 최대 29열)
@@ -463,7 +463,7 @@ def assemble_hook_stub(stub_base, josa_addr, noop=False):
 
     noop=True: josa 스캔·프레임을 전부 빼고 **원명령 2개 + 복귀**만 한다. 훅 지점 자체
     (j 재진입 타겟 0x800B2054 포함 두 경로)와 지연 슬롯 처리가 안전한지 josa_fix와 분리해
-    A/B로 확인하기 위한 진단 스텁(HANDOFF 재개절차 2)."""
+    A/B로 확인하기 위한 진단 스텁(구 HANDOFF 재개절차 2)."""
     if noop:
         a = Asm(stub_base)
         a.emit(HOOK_ORIG)  # lh v0, 0x16(fp)
