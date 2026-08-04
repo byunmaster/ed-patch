@@ -2097,6 +2097,42 @@ def load_translations(align_name, scn_name):
     if n_no:
         print(f"  침묵 블록(이름만 번역) {n_no}건 등록")
     # ── 확정 락 검증 (locked_lines.json) ────────────────────────────────────
+    # ⚠ **자체번역(`ours`) 가드** — 정본이 이미 배정을 들고 있는 자리를 `ours` 가 덮으면 실패.
+    # "정발에 대응 문장이 없다"는 판정을 정렬기 점수(LaBSE JP↔KR)로 내렸는데, 낮은 점수는
+    # "정발에 없다"가 아니라 **"이 정렬기가 못 찾았다"** 는 뜻일 뿐이었다. 그래서 정본이 정답을
+    # 들고 있는 자리에 자체번역이 덮인 사고가 났다(2026-08-03 6건 — jp9 `아이` 대사를 유저가
+    # 정발 디스크 스샷으로 잡았다). **정발 대조는 유저 몫이고 자체번역은 사전 승인**이 원칙이다
+    # (유저 명시 2026-08-04) — 승인분은 note 에 `유저 QA/확정/확인/승인` 을 남겨 통과시킨다.
+    # ⚠ **막는 건 "지어낸 것"뿐이다.** 정본이 배정을 들고 있어도 그 배정이 오정렬일 수 있어
+    # (상점 사↔파 swap·페이지 병합 실측 2026-08-04) `ours` 가 정당한 교정인 경우가 있다.
+    # 그래서 hard fail 은 note 가 "정발에 대응이 없어서 새로 썼다"고 말하는 것에만 건다.
+    #
+    # **승인의 증거는 확정 락이다.** note 에 남긴 문구는 사람이 적는 것이라 빠뜨리기 쉽고 두
+    # 군데(note·락)가 같은 사실을 따로 말하게 된다. freeze 는 **인게임 확인 뒤에만** 하므로
+    # (policy.md) 락에 들어 있다는 것 자체가 "유저가 화면에서 보고 통과시켰다"는 뜻이다.
+    from lock_lines import load_lock as _load_lock
+
+    _locked = set(_load_lock().get(scn_name, {}))
+    _APPROVED = ("유저 QA", "유저 확정", "유저 확인", "유저 승인")
+    _INVENTED = ("신규 번역", "대응 없", "대응 페이지 없")
+    _ours = [
+        (eid, e.get("note", ""))
+        for eid, e in _load_overrides().get(scn_name, {}).items()
+        if isinstance(e, dict) and "ours" in e and eid.isdigit()
+    ]
+    _ok = lambda eid, n: eid in _locked or any(k in n for k in _APPROVED)  # noqa: E731
+    _bad = [e for e, n in _ours if any(k in n for k in _INVENTED) and not _ok(e, n)]
+    if _bad:
+        raise SystemExit(
+            f"{scn_name}: 승인 없는 자체번역(`ours`) {len(_bad)}건 — "
+            f"jp{' · jp'.join(sorted(_bad, key=int)[:8])}\n"
+            "  '정발에 대응이 없다'는 판정은 정렬기가 못 찾았다는 뜻일 뿐이다. 정발 대조는 유저 몫 —\n"
+            "  `ours` 를 지워 일본어로 두고 QA 에서 확인받을 것(확인 후 freeze 하면 승인으로 잡힌다)."
+        )
+    _warn = [e for e, n in _ours if not _ok(e, n)]
+    if _warn:
+        print(f"  ⚠ 미확인 `ours` {len(_warn)}건 — 인게임 확인 전(확인 후 freeze 하면 사라진다)")
+
     # 정렬·배정은 매 라운드 **전역 최적**으로 다시 계산돼, 후보 풀이 바뀌면 이미 잘 맞던 짝까지
     # 다른 블록에게 넘어간다("원래 잘 나오던 대사가 안 나온다" — 2026-08-03 유저 QA 반복 지적).
     # 인게임에서 확인된 블록은 여기서 못 박고, 문안이 달라지면 **빌드를 실패**시킨다.

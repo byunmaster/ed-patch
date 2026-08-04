@@ -135,7 +135,37 @@ def verify(scn_name, tr):
     return bad
 
 
+SETTLED = "_settled"  # 미번역·제외인데 **판정이 끝난** 블록 (락은 번역된 문안만 지킨다)
+
+
+def settled(scn_name):
+    """{eid: 사유} — 미번역 목록에서 빼야 할 블록."""
+    return load_lock().get(SETTLED, {}).get(scn_name, {})
+
+
+def mark_settled(scn_name, eids, why):
+    """⚠ 락이 못 덮는 자리를 덮는다.
+
+    락은 **번역된 블록의 문안 해시**만 본다. 그래서 "미번역이지만 인게임에서 확인해 보니
+    문제없다"(다른 블록이 덮는다 · 사본이 리타깃된다)나 "이 장에서는 도달하지 않는다"는
+    판정이 어디에도 안 남아, 다음 검토 때 **똑같은 블록이 또 목록에 뜬다**(유저 지적
+    2026-08-04 — 곶의 동굴 보물상자·네리아 현자가 그랬다). 여기 적어 두면 빠진다."""
+    lock = load_lock()
+    d = lock.setdefault(SETTLED, {}).setdefault(scn_name, {})
+    for e in eids:
+        d[str(e)] = why
+    save_lock(lock)
+    print(f"{scn_name}: 판정 완료 {len(eids)}건 기록 — {why}")
+
+
 def main():
+    if "--settled" in sys.argv:
+        i = sys.argv.index("--settled")
+        why = sys.argv[sys.argv.index("--why") + 1] if "--why" in sys.argv else "인게임 확인"
+        args = [a for a in sys.argv[i + 1 :] if not a.startswith("-")]
+        stop = args.index("--why") if "--why" in args else len(args)
+        mark_settled(args[0], args[1:stop], why)
+        return
     if "--freeze" in sys.argv:
         for scn in sys.argv[sys.argv.index("--freeze") + 1 :]:
             if scn.startswith("-"):
@@ -155,7 +185,8 @@ def main():
     for scn, v in lock.items():
         if scn.startswith("_"):
             continue
-        print(f"  {scn:10} 확정 {len(v)}건")
+        s = len(lock.get(SETTLED, {}).get(scn, {}))
+        print(f"  {scn:10} 확정 {len(v)}건" + (f" · 판정완료(미번역) {s}건" if s else ""))
     if len(lock) <= 1:
         print("  (아직 없음 — 인게임 확인 후 `--freeze <씬>`)")
 

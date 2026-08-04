@@ -312,6 +312,27 @@ def main():
             f"\n정답 {tot}건 대비:  일치 {hit} ({hit / tot * 100:.1f}%) · "
             f"불일치 {miss} · 미배정 {none}"
         )
+        # ⚠ 총 정밀도만으로는 **문턱을 못 정한다.** 제안을 그대로 반영할지는 "sim 얼마 위가
+        # 믿을 만한가"의 문제이고, 그건 구간별로 갈린다. 총계만 보고 반영하면 저구간의
+        # 오배정이 딸려 들어와 **일본어보다 나쁜 결과**(그럴듯한 오역은 QA 를 통과한다)가 된다.
+        bands, order = collections.defaultdict(lambda: [0, 0]), (0.90, 0.85, 0.80, 0.75, 0.0)
+        for _m, b, p, s in rows:
+            g = gold.get((b["scn"], b["id"]))
+            if g is None:
+                continue
+            lo = next(x for x in order if s >= x)
+            bands[lo][0 if (p["table"], p["eid"]) == g else 1] += 1
+        print(f"\n{'sim':>10} {'맞음':>5} {'틀림':>5} {'정밀도':>8} {'누적':>8}")
+        cok = cno = 0
+        for lo in order:
+            ok, no = bands[lo]
+            if ok + no == 0:
+                continue
+            cok, cno = cok + ok, cno + no
+            print(
+                f"{f'≥{lo:.2f}' if lo else '<0.75':>10} {ok:5} {no:5} "
+                f"{ok / (ok + no) * 100:7.1f}% {cok / (cok + cno) * 100:7.1f}%"
+            )
         # 제안을 덤프해 둔다 — `llm_assign.py --score --clean` 으로 오염(풀 밖·과다배정)을
         # 뺀 자로 다시 재려면 필요하다. 위 수치는 오염 포함이라 그대로 비교하면 안 된다.
         os.makedirs(REVIEW_DIR, exist_ok=True)
