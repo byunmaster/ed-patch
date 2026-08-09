@@ -43,6 +43,12 @@ from scipy.ndimage import (
     label,
 )
 
+# ⚠ 레이아웃 엔진을 못 박는다 — Pillow 는 Raqm(HarfBuzz)이 있으면 그걸 기본으로 쓰는데,
+# 같은 Pillow·FreeType 이어도 Raqm 유무로 **글자 배치가 달라진다**(macOS 휠 없음 / 리눅스 휠 있음).
+# 그러면 같은 입력에도 머신마다 다른 이미지가 나온다(2026-08-09 실측: START.DAT 8섹터).
+BASIC_LAYOUT = ImageFont.Layout.BASIC
+
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TARGET = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
 LOGO_PNG = os.path.join(ROOT, "assets", "title_logo.png")
@@ -55,7 +61,30 @@ ED2_OFF = 0x541000  # ED2 타이틀
 LOGO_BOX = (8, 310, 62, 141)
 LOGO_SCALE = 0.88  # 한자보다 커서 축소(유저 확정)
 
-FONT_PATH = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+# ⚠ 이 폰트는 배포 불가(Apple 번들)라 레포에 못 넣는다. 그래서 경로를 찾아 쓴다 —
+# 머신마다 자리가 다르면 결정성이 깨지므로 후보를 명시하고, 없으면 조용히 다른 폰트로
+# 갈아타지 말고 실패시킨다(문안·자형이 말없이 바뀌는 게 제일 나쁘다).
+# 근본 해법은 렌더 결과(TIM)를 에셋으로 커밋해 빌드가 재렌더를 안 하는 것 — docs/devlog.md.
+FONT_CANDIDATES = (
+    os.environ.get("EIYUU_TITLE_FONT"),  # 명시 지정이 최우선
+    "/System/Library/Fonts/AppleSDGothicNeo.ttc",  # macOS
+    os.path.expanduser("~/.local/share/fonts/AppleSDGothicNeo.ttc"),  # 리눅스(사용자가 복사)
+)
+
+
+def _resolve_font() -> str:
+    for p in FONT_CANDIDATES:
+        if p and os.path.exists(p):
+            return p
+    raise SystemExit(
+        "타이틀 폰트를 못 찾았다 — AppleSDGothicNeo.ttc 가 필요하다.\n"
+        "  · macOS: /System/Library/Fonts/AppleSDGothicNeo.ttc (기본 제공)\n"
+        "  · 그 외: 위 파일을 ~/.local/share/fonts/ 로 복사하거나 EIYUU_TITLE_FONT 로 지정\n"
+        "⚠ 다른 폰트로 대체하면 타이틀 자형이 바뀐다(인게임 확인 완료분 — 2026-07-16)."
+    )
+
+
+FONT_PATH = _resolve_font()
 FONT_BOLD = 6
 
 # ── 원리(유저 방침): 원본 버튼 보존, 내부 일본어 획만 페인트하고 그 위에 한글을 얹는다 ──
@@ -101,11 +130,11 @@ COLL_TEXT = [
 
 def _fit_font(draw, text, maxw, maxh):
     for sz in range(maxh, 6, -1):
-        f = ImageFont.truetype(FONT_PATH, sz, index=FONT_BOLD)
+        f = ImageFont.truetype(FONT_PATH, sz, index=FONT_BOLD, layout_engine=BASIC_LAYOUT)
         bb = draw.textbbox((0, 0), text, font=f)
         if bb[2] - bb[0] <= maxw and bb[3] - bb[1] <= maxh:
             return f, bb
-    f = ImageFont.truetype(FONT_PATH, 7, index=FONT_BOLD)
+    f = ImageFont.truetype(FONT_PATH, 7, index=FONT_BOLD, layout_engine=BASIC_LAYOUT)
     return f, draw.textbbox((0, 0), text, font=f)
 
 

@@ -19,6 +19,12 @@ import numpy as np
 from common import OUT_DIR
 from PIL import Image, ImageDraw, ImageFont
 
+# ⚠ 레이아웃 엔진을 못 박는다 — Pillow 는 Raqm(HarfBuzz)이 있으면 그걸 기본으로 쓰는데,
+# 같은 Pillow·FreeType 이어도 Raqm 유무로 **글자 배치가 달라진다**(macOS 휠 없음 / 리눅스 휠 있음).
+# 그러면 같은 입력에도 머신마다 다른 이미지가 나온다(2026-08-09 실측: START.DAT 8섹터).
+BASIC_LAYOUT = ImageFont.Layout.BASIC
+
+
 ROWS = 11
 WIDTH = 16  # 저장 폭(비트). 실제 표시는 11~12px
 CELL = 11  # 게임 글리프 유효 셀
@@ -41,7 +47,7 @@ def pack22(bits):
 
 
 def load_font(path, size, index=0):
-    return ImageFont.truetype(path, size, index=index)
+    return ImageFont.truetype(path, size, index=index, layout_engine=BASIC_LAYOUT)
 
 
 # ---- BDF (비트맵 폰트 원본) 파서 — Galmuri 등 도트 무손실 추출 ----

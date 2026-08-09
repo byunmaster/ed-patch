@@ -20,6 +20,12 @@ from common import BUILD_DIR, ROOT, write_user_data
 from PIL import Image, ImageDraw, ImageFont
 from scan_tim import parse_tim, to_rgb, user_stream
 
+# ⚠ 레이아웃 엔진을 못 박는다 — Pillow 는 Raqm(HarfBuzz)이 있으면 그걸 기본으로 쓰는데,
+# 같은 Pillow·FreeType 이어도 Raqm 유무로 **글자 배치가 달라진다**(macOS 휠 없음 / 리눅스 휠 있음).
+# 그러면 같은 입력에도 머신마다 다른 이미지가 나온다(2026-08-09 실측: START.DAT 8섹터).
+BASIC_LAYOUT = ImageFont.Layout.BASIC
+
+
 FONT = os.path.join(ROOT, "..", "..", "shared", "fonts", "neodgm.ttf")
 TARGET = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR Pilot).bin")
 
@@ -70,11 +76,11 @@ def clean_plate(pix, clut):
 def fit_font(text, max_w, start=16, lo=9):
     """폭 max_w에 맞는 최대 폰트 크기."""
     for size in range(start, lo - 1, -1):
-        f = ImageFont.truetype(FONT, size)
+        f = ImageFont.truetype(FONT, size, layout_engine=BASIC_LAYOUT)
         bb = ImageDraw.Draw(Image.new("L", (1, 1))).textbbox((0, 0), text, font=f)
         if bb[2] - bb[0] <= max_w:
             return f, bb
-    f = ImageFont.truetype(FONT, lo)
+    f = ImageFont.truetype(FONT, lo, layout_engine=BASIC_LAYOUT)
     return f, ImageDraw.Draw(Image.new("L", (1, 1))).textbbox((0, 0), text, font=f)
 
 
