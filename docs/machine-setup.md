@@ -132,6 +132,17 @@ npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-co
    done   # 실제 바이너리명은 target/release 를 보고 맞춘다
    ```
 
+   ⚠ **리눅스에서는 `vendor/emucap` 워킹트리가 항상 "수정됨"으로 보인다.**
+   `adapters/desmume-nds/patches/*.patch` 가 그렇다 — `.gitattributes` 가 `eol=lf` 인데
+   저장된 블롭 안에 CRLF 가 섞여 있어, 체크아웃할 때마다 변환돼 원본과 어긋난다. 우리가
+   고친 게 아니고 NDS 어댑터라 우리 경로와도 무관하지만, 이대로 두면 **`--ff-only` 당기기가
+   막힌다**(2026-08-09 실측). 그 경로만 변환을 끄면 영구히 해결된다:
+
+   ```bash
+   printf 'adapters/*/patches/*.patch -text\n' > vendor/emucap/.git/info/attributes
+   git -C vendor/emucap checkout -- adapters/
+   ```
+
    ⚠ **MCP 서버는 Rust 라 rustup 이 따로 필요하다**(어댑터 빌드가 이걸 안 만들어 준다).
    Node 와 마찬가지로 `~/.cargo/bin` 은 비대화형 셸에서 안 잡히니 `/usr/local/bin` 에 링크한다.
    ⚠ 빌드 후 **Claude Code 재시작** — MCP 서버·어댑터·바이너리 셋이 엇갈린다.

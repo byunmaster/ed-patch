@@ -92,6 +92,13 @@ def main():
     for p in glob.glob(os.path.join(BUILD_DIR, "*.failed")):  # 지난 실패 잔재
         os.remove(p)
 
+    # 원본 덤프(derived/scn_jp · derived/dos_kr)도 파생물이라 낡는다. 추출기가 바뀌면
+    # 덤프와 커밋된 정본(align_map·align_overrides)이 어긋나 빌드가 죽는다 — 머신을 옮겨
+    # 낡은 덤프를 안고 왔더니 `T_024#7` 의 `{p}` 페이지가 사라져 chain 이 IndexError 로
+    # 터졌다(2026-08-09). 둘 합쳐 1.3초라 매번 새로 뜬다(결정적, 원본 읽기 전용).
+    run("extract_scn.py")  # JP 대사 덤프
+    run("extract_dos_kr.py")  # 정발 대사 덤프
+
     # 화자맵(align/*_speakers.json)은 reinsert 의 이름창 입력인데 파생물이라 낡는다 —
     # SPEAKER_DICT 를 고쳐도 빌드에 안 붙어 `ロー`가 음차 `로`로 나갔다(2026-08-02).
     # ⚠ `--speakers-only` 필수: 인자 없이 돌리면 의미정렬 `*_SCN*.json` 을 덮어쓴다.
