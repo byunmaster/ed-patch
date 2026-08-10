@@ -182,6 +182,17 @@ PLACES = [  # (PS1 일본어, 정발 한국어) — JP는 SCN 헤더 치환 키
     ("ニルギド", "니르기드"),
 ]
 
+# SCN 플레이트에만 나오는 지명 — **ED.EXE 표에는 없다**(슬롯이 47번 `ニルギド` 에서 끝난다,
+# 실측 2026-08-10). 위 `PLACES` 는 **위치가 곧 슬롯 번호**라 여기 덧붙이면 표 뒤 데이터를
+# 덮는다. 그래서 `patch_scn_headers` 만 쓰는 표로 따로 둔다.
+# ⚠ 정발에 대응 표기가 없다(ED1 대사 코퍼스·ED2 정발 둘 다 0건) — 우리 음역이다.
+# 편차 대장(docs/jeongbal-deviations.md)에 기록한다.
+SCN_PLACES = [
+    ("ギーラの道", "기라의 길"),
+    ("バゼルの塔", "바젤의 탑"),
+    ("バーニス城", "바니스 성"),
+]
+
 # 주인공 기본 이름 (새 게임 시 세이브로 복사, HUD·상태창 표기) — 12B 슬롯.
 # 0x80C リュナン(ED2 주인공)은 ED2 작업 시 결정(DOS 정발 ED2 주인공은 '아트라스') — 미터치.
 HERO = {0x800: "세리오스"}  # セリオス
@@ -641,7 +652,7 @@ def is_name_plate(body):
     body = (body or "").strip()
     if not body:
         return False
-    for nm in {j for j, _ in PLACES} | {j for j, _, plate in CHAR_NAMES if plate}:
+    for nm in {j for j, _ in PLACES + SCN_PLACES} | {j for j, _, plate in CHAR_NAMES if plate}:
         if body == nm or (body.endswith(nm) and len(body) - len(nm) <= 2):
             return True
     return False
@@ -674,7 +685,7 @@ def patch_scn_headers(f):
     import re
 
     jp2kr = {}
-    for jp, kr in PLACES:
+    for jp, kr in PLACES + SCN_PLACES:
         jp2kr.setdefault(jp, kr)
     for jp, kr, _ in CHAR_NAMES:  # 대사 %s가 주입하는 이름 사본
         jp2kr.setdefault(jp, kr)

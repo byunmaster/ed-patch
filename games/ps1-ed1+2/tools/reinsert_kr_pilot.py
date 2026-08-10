@@ -661,9 +661,12 @@ def parse_kr(entry):
         # 빠뜨리면 `3%` 가 통째로 잘려 `를 내게 나눠주게.` 가 된다(jp22·jp51 실측 2026-08-10).
         # 우리 서식(`%s`·`%d`)은 센티널로 들고 다니다 encode_ext 에서 바이트로 나가므로,
         # 파싱 시점의 리터럴 `%` 는 언제나 내용이다.
-        _lead = rf"[0-9%% .,!?\"'{HARD_NL}{NOBREAK_SP}]*"
-        if entry.get("keep_lead_name"):  # 이름·아이템 주입 자리 둘 다 지킨다
-            _lead = rf"[0-9%% .,!?\"'{HARD_NL}{NOBREAK_SP}{NAME_SENT}{ITEM_SENT}]*"
+        # ⚠ **라틴 문자도 본문이다** — `MP가 부족해!` · `Gold` 처럼 창 선두에 온다.
+        # 빠뜨리면 `MP` 가 통째로 잘려 `가 부족해!` 가 된다(SCN5 jp361 실측 2026-08-10).
+        # opcode 잔여는 이 시점에 이미 공백으로 바뀌어 있어 라틴 문자로 남지 않는다.
+        _lead = rf"[0-9A-Za-z%% .,!?\"'{HARD_NL}{NOBREAK_SP}]*"
+        if entry.get("keep_lead_name"):  # 이름·아이템·수치 주입 자리를 다 지킨다
+            _lead = rf"[0-9A-Za-z%% .,!?\"'{HARD_NL}{NOBREAK_SP}{NAME_SENT}{ITEM_SENT}{NUM_SENT}]*"
         if m.start() < 4 and not re.fullmatch(_lead, seg[: m.start()]):
             seg = seg[m.start() :]
         # ⚠ **꼬리 NAME_SENT 도 잘라낸다** — 선두를 자르는 것과 같은 이유다. 정발은 다음

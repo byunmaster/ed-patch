@@ -60,7 +60,9 @@ def sources(game, scn):
                 out[pr["jp"]["entry_id"]] = (kr["table"], kr["entry_id"])
     ov = json.load(open("align_overrides.json", encoding="utf-8")).get(f"{game}SCN{scn}", {})
     for j, v in ov.items():
-        if j.isdigit() and isinstance(v, dict) and "table" in v and not v.get("exclude"):
+        # `ours`(우리가 쓴 문안)는 정발 엔트리를 안 물어 `entry_id` 가 없다 — 볼 게 없으니 건너뛴다
+        ok = j.isdigit() and isinstance(v, dict) and v.get("entry_id") is not None
+        if ok and v.get("table") and not v.get("exclude"):
             out[int(j)] = (v["table"], v["entry_id"])
     return out
 
