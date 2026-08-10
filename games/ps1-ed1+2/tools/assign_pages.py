@@ -26,6 +26,7 @@ import re
 import sys
 
 from align_jp_kr import DOS_KR_DIR, load_jp_scene, norm_body
+from align_map import scene_map
 from common import OUT_DIR, REVIEW_DIR, ROOT
 from scn_maps import block_instances, block_maps, table_instances, table_maps
 
@@ -147,11 +148,21 @@ def jp_open(game):
             for k, v in ov.get(f"{game}SCN{scn}", {}).items()
             if k.isdigit() and not (isinstance(v, dict) and v.get("exclude"))
         }
-        ap = os.path.join(OUT_DIR, "align", f"{game}_SCN{scn}.json")
-        al = json.load(open(ap, encoding="utf-8"))
-        for pr in al["pairs"]:
-            if not pr.get("flags"):
-                taken.add(pr["jp"]["entry_id"])
+        # 빌드와 같은 판정을 쓴다 — **배정 정본(커밋)이 있으면 그게 입력이고 정렬 파일은
+        # 안 읽는다**(`reinsert_kr_pilot.load_translations` 와 같은 규약).
+        # ⚠ 정렬 파일은 `work/derived` 라 새 머신엔 없다(LaBSE·torch 가 있어야 만든다).
+        #   재삽입기는 진작 정본 우선으로 갔는데 이 함수만 안 따라와서, 정렬 파일이 없는
+        #   머신에서는 `status.py` 가 FileNotFoundError 로 죽었다(2026-08-09 홈서버 실측).
+        pinned = scene_map(f"{game}SCN{scn}")
+        if pinned:
+            taken |= set(pinned)
+        else:  # 정본이 없는 씬은 정렬 결과로 갈음한다(과도기 경로 — 있을 때만).
+            ap = os.path.join(OUT_DIR, "align", f"{game}_SCN{scn}.json")
+            if os.path.exists(ap):
+                al = json.load(open(ap, encoding="utf-8"))
+                for pr in al["pairs"]:
+                    if not pr.get("flags"):
+                        taken.add(pr["jp"]["entry_id"])
         for b in load_jp_scene(game, scn):
             if b["id"] in taken or not b["body"].strip():
                 continue

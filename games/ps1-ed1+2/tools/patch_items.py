@@ -455,8 +455,21 @@ def corpus_strings(orig):
     return out
 
 
+# 진단 스위치: `BATTLE_JP=1` 이면 **자체 번역분을 JP 원문 그대로** 되돌린다.
+# 인게임에서 일본어로 보이는 전투 메시지 = 아직 정발 대응이 없는 자리다(유저 제안 2026-08-09).
+# 길이가 원본과 같아 제자리 치환이라 구조에 영향이 없다. 배포 빌드에는 쓰지 않는다.
+_BATTLE_JP = os.environ.get("BATTLE_JP") == "1"
+if _BATTLE_JP:
+    print("⚠ BATTLE_JP=1 — **진단 빌드**다(자체 번역분이 일본어로 나온다). 배포·QA 금지.")
+
+
 def battle_kr(jp):
     """전투 문자열 번역 — B 우선, 표시명은 monster_kr 폴백."""
+    if _BATTLE_JP:
+        from derive_text import jkey, ours_keys
+
+        if jkey(jp) in ours_keys("battle"):
+            return jp
     if jp in BT.B:
         return BT.B[jp]
     try:

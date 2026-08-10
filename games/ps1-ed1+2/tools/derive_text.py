@@ -22,6 +22,7 @@ textmap 엔트리: {"k": <jp-sha1-10 | 슬롯오프셋 hex>,
 import hashlib
 import json
 import os
+import re
 from collections.abc import Mapping
 
 from common import OUT_DIR, ROOT
@@ -42,6 +43,13 @@ def _guard(s):
     return hashlib.sha1(s.encode("utf-8")).hexdigest()[:8]
 
 
+# 부호 앞 공백 제거 — **대사 트랙과 같은 표기 방침**이다(유저 승인 2026-07-24, 재확인 08-09
+# "`!!` 앞에 공백은 없는 것으로 통일하자"). 정발은 `파열했다 !!` 처럼 띄운 자리와 안 띄운
+# 자리가 섞여 있어서, 파생 단계에서 한 번에 맞춘다. ⚠ 말줄임 `...` 앞 공백은 정발의 의도적
+# 호흡이라 건드리지 않는다 — 그래서 `\.(?!\.)`.
+_PUNCT_SP = re.compile(r"[ ]+(?=[!?,]|\.(?!\.))")
+
+
 def transform(s):
     """정발 원문 → 우리 조판(전역 규칙: 온점·쉼표 뒤 공백 제거 — 대장 참조)."""
     for p in (",", ".", "，", "．", "。", "、"):
@@ -59,6 +67,18 @@ def _dos_file(rel):
         )
     with open(path, "rb") as f:
         return f.read()
+
+
+def ours_keys(cls):
+    """`ours` 만으로 만들어지는(= 정발 대응이 아직 없는) 엔트리 키 집합.
+
+    진단용이다 — 이걸 JP 로 되돌려 빌드하면 **인게임에서 일본어로 보이는 자리 = 자체 번역**이
+    된다(유저 제안 2026-08-09). 정발 전환이 어디까지 왔는지 플레이하며 바로 보인다.
+    """
+    tm_path = os.path.join(TEXTMAP_DIR, f"{cls}.json")
+    with open(tm_path, encoding="utf-8") as f:
+        tm = json.load(f)
+    return {e["k"] for e in tm["entries"] if "ours" in e}
 
 
 def derive(cls):
@@ -93,6 +113,7 @@ def derive(cls):
         # 대사 트랙은 spell_fix 가 같은 일을 하는데 오프닝은 그 경로를 안 타서 따로 둔다.
         for a, b in e.get("fix", ()):
             val = val.replace(a, b)
+        val = _PUNCT_SP.sub("", val)
         assert _guard(val) == e["sha"], f"{cls}:{e['k']} 파생 불일치 — 원본/textmap 확인"
         out[e["k"]] = val
     os.makedirs(DERIVED_DIR, exist_ok=True)
