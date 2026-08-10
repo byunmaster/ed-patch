@@ -598,9 +598,27 @@ SCN_FILES = [
 # (인라인 화자 헤더 %c%s%c 등)가 주입하는 소스가 **ED.EXE 0x800이 아니라 이 사본**이다
 # (2026-07-23 실증: 0x800은 '세리오스'로 정상 패치됐는데도 대사창 이름만 일본어로 떴다).
 # 지명과 동일하게 길이 보존 치환 — 슬롯 여유 확인됨(セリオス 8B/슬롯12B, ソニア 6B/슬롯8B).
+#
+# ⚠ 이 사본은 **블록으로 안 잡히는 자리에도 있다**(2026-08-09 emucap 추적). 사본이 포인터
+# 테이블 **바로 뒤**에 붙으면 블록 분할이 테이블 blob 에 통째로 삼켜서 대사 재삽입이 아예
+# 못 본다 — 구엔의 탑 사일레스 이벤트의 `ゲイル`(ED1SCN2 @0x10D84)이 그랬다. 인게임에서
+# 「%s의 마법서에…」의 %s 만 일본어로 떴고, ED.EXE 0xF8DBC·메모리카드·상태창은 전부
+# 한글이라 정적 증거만으로는 못 잡았다. 쓰기 브레이크포인트로 %s 소스가 이 사본임을
+# 확인하고 나서야 자리가 나왔다(전 씬 재스캔: SCN2 @0x3088·@0xFAA0 `ロー` 도 같은 꼴).
+# → 표를 **5인 전원**으로 채운다. 표에 없으면 그 이름은 조용히 일본어로 남는다.
+# 오탐 0 확인: ED1 6오버레이 전수에서 헤더 판별을 통과하는 자리는 아래 주석의 6곳뿐.
+#
+# 셋째 칸 `plate` = **정렬 금지 목록에도 넣을지**(`is_name_plate`). 치환 대상과 정렬 금지
+# 대상은 같지 않다 — `ゲイル`·`ロー` 는 **본문이 그대로 이름인 대사**가 실재한다
+# (`{c}セリオス{c}{n}ゲイル !?{c}` = 리더별 변형). 이걸 금지 목록에 넣으면 멀쩡한 대사가
+# 통째로 빠진다(SCN5 jp485·jp1063 — 5인 전원을 겸용으로 넣었더니 실제로 1블록이 사라졌다,
+# 2026-08-09 관측 대장이 잡았다). 단독 이름 블록이 실재하는 이름만 True.
 CHAR_NAMES = [
-    ("セリオス", "세리오스"),  # ED1SCN1 @0x8C8 (참조O)
-    ("ソニア", "소니아"),  # ED1SCN2 @0x3090 (참조O)
+    ("セリオス", "세리오스", True),  # ED1SCN1 @0x8C8 (참조O)
+    ("リュナン", "류난", False),  # 단독 사본 없음(표 완결용 — 생기면 자동으로 잡힌다)
+    ("ロー", "로우", False),  # ED1SCN2 @0x3088 · @0xFAA0 (테이블 blob 꼬리)
+    ("ゲイル", "게일", False),  # ED1SCN2 @0x10D84 (테이블 blob 꼬리 — 사일레스 %s)
+    ("ソニア", "소니아", True),  # ED1SCN2 @0x3090 (참조O) · @0x613C (테이블 blob 꼬리)
 ]
 
 
@@ -616,13 +634,14 @@ def is_name_plate(body):
 
     그래서 이 표를 **정렬 금지 목록으로 겸용**해 관할을 가른다. 하드코딩을 새로 늘리지 않고
     단일 출처를 유지하는 게 요점 — 표에 이름을 추가하면 치환과 배제가 함께 따라온다.
+    ⚠ 단 CHAR_NAMES 는 `plate=True` 인 것만 본다(그 표의 주석 참조 — 겸용이 항상 옳진 않다).
 
     앞 ≤2글자 여유는 포인터 배열 꼬리가 SJIS로 잘못 풀려 붙는 몫이다(`責勒セリス` 실측).
     """
     body = (body or "").strip()
     if not body:
         return False
-    for nm in {j for j, _ in PLACES} | {j for j, _ in CHAR_NAMES}:
+    for nm in {j for j, _ in PLACES} | {j for j, _, plate in CHAR_NAMES if plate}:
         if body == nm or (body.endswith(nm) and len(body) - len(nm) <= 2):
             return True
     return False
@@ -657,7 +676,7 @@ def patch_scn_headers(f):
     jp2kr = {}
     for jp, kr in PLACES:
         jp2kr.setdefault(jp, kr)
-    for jp, kr in CHAR_NAMES:  # 대사 %s가 주입하는 이름 사본
+    for jp, kr, _ in CHAR_NAMES:  # 대사 %s가 주입하는 이름 사본
         jp2kr.setdefault(jp, kr)
     total = 0
     for name, lba, size in _scn_layout():

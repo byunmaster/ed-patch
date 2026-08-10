@@ -533,6 +533,7 @@ def wrap_pages(
         if det_orphan:
             _pull_det_orphans(pages, width, cell_width)
         _pull_bound_nouns(pages, width, cell_width)
+        _pull_auxiliary(pages, width, cell_width)
         _pull_tail_orphans(pages, width, cell_width)
     return [[_strip_spacing(ln, strip_after) for ln in pg] for pg in pages]
 
@@ -542,7 +543,50 @@ def wrap_pages(
 # 확정(주격조사 '이'는 앞말에 붙어 홀로 안 온다) → 판정 안전. 다음 줄 폭 초과 시엔 이동 안 함.
 # 제/내/네(=저의/나의/너의)도 같은 자리다 — `제` / `손으로 직접…` 이 실제로 나왔다
 # (유저 QA 2026-08-04). 이들도 홀로 오면 관형사 확정이라 판정이 안전하다.
+#
+# **부사도 같은 자리다**(유저 QA 2026-08-09 — `그런데, 로우, 왜` / `이런 짓을 한 건가?`).
+# 홀로 줄 끝에 오면 수식 대상과 갈려 읽는 호흡이 끊긴다. 아래는 **어절 하나로 홀로 설 때
+# 부사가 확정되는 것**만 담는다 — `안`(명사 內)·`못`(명사 못)도 어절 단독으로는 부정부사다.
 _DET_ORPHAN = ("이", "그", "저", "제", "내", "네")
+_ADV_ORPHAN = ("왜", "좀", "더", "잘", "꼭", "곧", "안", "못", "다시", "아직", "벌써", "이미")
+# 수관형사·의문관형사도 같다 — `저택에는 몇` / `명만이 남아…` (단위명사와 갈린다).
+_ADV_ORPHAN += ("몇", "여러", "어떤", "무슨", "온갖")
+
+# 보조용언은 본용언과 한 덩어리다 — 사이에서 끊으면 `괴물들에게 당해` / `가면서 모험을…`
+# 처럼 뜻이 늦게 도착한다(유저 QA 2026-08-09: `당해 가면서` · `사 가는`).
+# 판정은 **둘 다** 맞아야 한다 — ①앞 줄 끝이 `-아/어/여` 활용형(종성 없는 ㅏ/ㅓ/ㅐ/ㅕ 계열)
+# ②줄 첫머리가 아래 보조용언 **활용형 목록**에 있음. 어간 접두 매칭은 `바다`+`가운데` 같은
+# 오탐을 만들어서 안 쓴다 — 닫힌 목록이라 결정적이고 눈으로 검산된다.
+_AUX_HEAD = frozenset(
+    """
+    가 가서 가고 가는 가며 가면 가면서 간다 간 갈 갑니다 갔다 갔습니다 가지 가야 가자
+    와 와서 오는 오며 온다 온 올 옵니다 왔다 왔습니다 오고
+    버려 버려서 버렸다 버렸습니다 버리는 버린 버릴 버립니다 버리고 버리자
+    줘 줘서 주는 준다 준 줄 줍니다 줬다 주고 주세요 주십시오 주시오 주게 주자
+    봐 봐서 보는 본다 본 볼 봅니다 봤다 보자 보라 보고 보시오
+    둬 두는 둔다 둔 둘 뒀다 두고 두자
+    놔 놓는다 놓은 놓을 놓았다 놓고
+    있다 있는 있어 있어서 있었다 있습니다 있는데 있고 있을 있은
+    진다 지는 진 질 졌다 져 져서
+    댄다 대는 댔다 낸다 내는 냈다 내어 난다 나는 났다
+    마 말아 마라 말자 말았다 말아라 말고
+    싶다 싶은 싶어 싶습니다 싶었다 싶지
+    드려 드립니다 드리는 드렸다
+    치웠다 치운다 가지고 가진 가질
+    """.split()
+)
+# ⚠ `ㅔ` 는 뺀다 — 활용 어미가 아니라 **조사 `에`** 가 압도적이라(`안에`·`곁에`) 오탐만 는다.
+_AUX_TAIL_VOWELS = frozenset("ㅏㅓㅐㅕㅘㅙㅝ")
+_JUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
+
+
+def _is_infinitive(word: str) -> bool:
+    """어절이 `-아/어/여` 활용형으로 끝나는가 — 뒤에 보조용언이 올 자리(당해·사·되어)."""
+    ch = word.rstrip(".,!?…~ ")[-1:] or " "
+    if not ("가" <= ch <= "힣"):
+        return False
+    code = ord(ch) - 0xAC00
+    return code % 28 == 0 and _JUNG[(code // 28) % 21] in _AUX_TAIL_VOWELS
 
 # 의존명사는 앞 용언 없이 못 선다 — 줄 첫머리에 오면 `너를 다시 만날` / `수 있을…` 처럼
 # 한 덩어리가 갈린다(유저 QA 2026-08-04). 앞 줄로 **올려** 붙인다. `_pull_det_orphans` 의
@@ -608,9 +652,47 @@ def _pull_det_orphans(pages, width, cell_width):
     for pg in pages:
         for i in range(len(pg) - 1):
             words = pg[i].split()
-            if len(words) >= 2 and words[-1] in _DET_ORPHAN:
+            if len(words) >= 2 and words[-1] in _DET_ORPHAN + _ADV_ORPHAN:
                 cand = words[-1] + " " + pg[i + 1]
                 if text_width(cand, cell_width) <= width:
                     pg[i] = " ".join(words[:-1])
                     pg[i + 1] = cand
+    return pages
+
+
+def _pull_auxiliary(pages, width, cell_width):
+    """본용언(`-아/어`)과 보조용언 사이의 줄바꿈을 없앤다 — 붙는 쪽으로 한 어절 옮긴다.
+
+    ①보조용언을 앞 줄로 **올리고**, 폭이 모자라면 ②본용언을 다음 줄로 **내린다**.
+    둘 다 재배치일 뿐이라 글자·줄 수·바이트 불변(다른 `_pull_*` 과 같은 규약).
+    ⚠ 앞 줄이 문장부호(`.!?`)로 끝나면 문장 경계라 손대지 않는다 — 다음 문장의 첫 어절이
+    우연히 보조용언 꼴일 수 있다(`…했다.` / `보자` 는 붙이면 안 된다).
+    ⚠ **옮겨서 새 위반이 생기면 안 옮긴다.** 판정이 `주어+서술어`(`해가` + `져`)도 물기 때문에,
+    그대로 밀면 진짜 짝을 갈라 놓는다 — `해가` / `져 버릴 거야` 가 `해가 져` / `버릴 거야` 로
+    악화됐다(2026-08-09 검토표에서 잡았다). 이동 후 경계를 같은 규칙으로 다시 본다."""
+
+    def splits(a, b):
+        """어절 a 다음에 줄이 갈리면 보조용언 짝이 끊기는가."""
+        if a[-1] in ".!?…":  # 문장 경계
+            return False
+        b = b.rstrip(".,!?…")
+        if _is_infinitive(a) and b in _AUX_HEAD:
+            return True
+        # `-지 못하다/않다/말다` — `국경의 동굴로 가지` / `못했다고` 처럼 부정이 뒤늦게 온다.
+        return len(a) >= 2 and a.endswith("지") and (b[:1] in ("못", "않") or b[:1] == "마")
+
+    for pg in pages:
+        for i in range(1, len(pg)):
+            prev, words = pg[i - 1].split(), pg[i].split()
+            if not prev or not words or not splits(prev[-1], words[0]):
+                continue
+            if len(words) > 1 and not splits(words[0], words[1]):  # ① 보조용언을 위로
+                cand = pg[i - 1] + " " + words[0]
+                if text_width(cand, cell_width) <= width:
+                    pg[i - 1], pg[i] = cand, " ".join(words[1:])
+                    continue
+            if len(prev) > 1 and not splits(prev[-2], prev[-1]):  # ② 본용언을 아래로
+                cand = prev[-1] + " " + pg[i]
+                if text_width(cand, cell_width) <= width:
+                    pg[i - 1], pg[i] = " ".join(prev[:-1]), cand
     return pages

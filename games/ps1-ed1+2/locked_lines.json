@@ -6250,16 +6250,6 @@
     "entry_id": 0
    }
   },
-  "123": {
-   "sha": "f56095a85a",
-   "src": {
-    "table": "ED1/T_011",
-    "entry_id": 0,
-    "chain": [
-     "0#tail"
-    ]
-   }
-  },
   "125": {
    "sha": "53af21a11f",
    "src": {
