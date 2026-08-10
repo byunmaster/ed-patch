@@ -907,6 +907,11 @@ NAME_PLATE = {}
 # 2026-08-01). ⚠ 기존 `nl_wins`(창 **앞** 개행)는 **본문 창에만** 걸려 이름 창엔 못 쓴다 —
 # 그래서 **앞 본문 창의 꼬리**에 넣는다. `%c`·`%s` 개수는 안 변한다(개행 바이트 1개만 추가).
 NL_WINS = {}
+# 블록 **선두 개행 제거**: {eid} — 씬 단위(load_translations 재구축).
+# 원판이 같은 계열 문구인데 한 블록만 `\n` 으로 시작해 **혼자 한 줄 내려 뜨는** 자리가 있다
+# (동료 합류 5블록 중 jp912 만 선두 개행 — 유저 QA 2026-08-08). `%c`·`%s` 개수는 안 변하고
+# 개행 바이트 하나만 빠지므로 구조 계약은 그대로다.
+LEAD_NL_DROP = set()
 # 이동 금지 구간: {씬: {eid, …}} — 이 eid 가 든 자유 구간은 **블록별 원본 길이 고정**으로
 # 재배치한다(짧으면 00패딩, 넘치면 size 제외). 구간 안에 앵커·미참조 핀으로는 못 잡는
 # 절대참조가 있다는 뜻이다.
@@ -1219,6 +1224,62 @@ def _punct_dots_kr(txt):
     return "".join(_DOTS[c] for c in core)
 
 
+# 리터럴 이름·아이템만 든 창 — `%cゲイル%cが仲間に加わりました。` 의 `ゲイル` 자리.
+# `template_windows` 의 이름창 판정은 **다음 창이 개행으로 시작**할 것을 요구해서, 조사가
+# 바로 붙는 이 꼴을 놓친다. 그러면 본문 창으로 세어 정발 페이지 수와 안 맞고 `ctrl_seq` 로
+# 포기 → 화면에 일본어가 그대로 남는다(유저 QA 2026-08-08 `ゲイルが仲間に加わりました`).
+# ⚠ **순 히라가나 짧은 토큰은 조사다**(`は`·`と`) — 그건 번역 대상이라 빼면 안 된다.
+_KANA_ONLY = re.compile(r"^[\u3040-\u309f]{1,2}$")
+
+
+def _tpl_name_only(seg):
+    """이 창이 리터럴 이름/아이템 하나뿐인가(= 채우지 말고 JP 골격 그대로 통과)."""
+    payload = [t for t in seg if t[0] in ("t", "s", "d")]
+    if len(payload) != 1 or payload[0][0] != "t" or any(t[0] == "nl" for t in seg):
+        return False
+    try:
+        txt = payload[0][1].decode("cp932")
+    except UnicodeDecodeError:
+        return False
+    return bool(txt) and len(txt) <= 8 and not _PUNCT_ANY.search(txt) and not _KANA_ONLY.match(txt)
+
+
+_PUNCT_ANY = re.compile(r"[。、！？!?…．，.,]")
+
+
+_ITEM_KANA = None
+
+
+def _kata(t):
+    """히라가나 → 카타카나(표기 흔들림 흡수용 정규화)."""
+    return "".join(chr(ord(c) + 0x60) if "\u3041" <= c <= "\u3096" else c for c in t)
+
+
+def _tpl_literal_kr(jp_bytes):
+    """리터럴 이름/아이템 창의 한국어 표기(모르면 None → JP 통과).
+
+    이 창은 **채우지 않고 골격 그대로 내보내는** 자리라, 그냥 두면 이름만 일본어로 남는다
+    (`ゲイル이 동료가 되었습니다` — 유저 QA 2026-08-08). 인명은 화자맵, 아이템은
+    `patch_items.NAMES` 가 이미 정본을 갖고 있으니 **그 둘을 재사용**한다."""
+    try:
+        txt = jp_bytes.decode("cp932")
+    except UnicodeDecodeError:
+        return None
+    kr = _speaker_map().get(txt)
+    if kr:
+        return kr
+    from patch_items import NAMES as _ITEM_NAMES
+
+    if txt in _ITEM_NAMES:
+        return _ITEM_NAMES[txt]
+    # ⚠ 같은 아이템을 히라가나로 쓴 자리가 있다(`黄金のかぎ` ↔ 표에는 `黄金のカギ`).
+    # 양쪽 가나를 카타카나로 정규화해 한 번 더 본다.
+    global _ITEM_KANA
+    if _ITEM_KANA is None:
+        _ITEM_KANA = {_kata(k): v for k, v in _ITEM_NAMES.items()}
+    return _ITEM_KANA.get(_kata(txt))
+
+
 def _tpl_punct_only(seg):
     txt = b"".join(t[1] for t in seg if t[0] == "t")
     if not txt:
@@ -1238,7 +1299,7 @@ def _tpl_dots(raw_t):
     return encode_ext(kr) if kr else raw_t
 
 
-def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=()):
+def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), drop_lead_nl=False):
     """JP 골격을 그대로 두고 본문 창에 정발 문장을 채워 블록을 만든다.
 
     제어 토큰(%c/%s/%d)은 **바이트 그대로** 방출하므로 구조 충실도가 100%가 되고,
@@ -1265,7 +1326,10 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=()):
     punct = {
         k
         for k in body_idx
-        if _tpl_punct_only(wins[k][1]) or not any(t[0] == "t" for t in wins[k][1])
+        if _tpl_punct_only(wins[k][1])
+        or not any(t[0] == "t" for t in wins[k][1])
+        # 본문 창이 둘 이상일 때만 — 하나뿐이면 그게 진짜 본문이다
+        or (len(body_idx) > 1 and _tpl_name_only(wins[k][1]))
     }
     fill = [k for k in body_idx if k not in punct]
     if not fill and pages:
@@ -1401,6 +1465,8 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=()):
         else:
             for t in seg:
                 if t[0] == "nl":
+                    if drop_lead_nl and not parts and not b:
+                        continue  # 블록 맨 앞 개행만 버린다(LEAD_NL_DROP)
                     b += b"\x0a"
                 elif t[0] == "s":
                     b += PS
@@ -1410,7 +1476,9 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=()):
                     if kind == "name":
                         b += _tpl_name(t[1], speaker, name_i == 0)
                     else:
-                        b += _tpl_dots(t[1])
+                        # 리터럴 이름·아이템 창은 채우지 않고 통과시키므로 **여기서 번역**한다
+                        kr = _tpl_literal_kr(t[1]) if _tpl_name_only(seg) else None
+                        b += encode_ext(kr) if kr else _tpl_dots(t[1])
             if kind == "name":
                 if fold and name_i in fold:  # 이름창 접기: 뒤 개행을 없애 다음 창과 한 줄로
                     folded_prev = True
@@ -1637,7 +1705,12 @@ def build_candidate(raw, t, eid):
             # 용량 초과(정발 문장이 창보다 김)면 기존 재조판으로 폴백해 커버리지를 지킨다.
             try:
                 cand = build_from_template(
-                    raw_t, t[0], t[1], fold=FOLD_NAME.get(eid), nl=NL_WINS.get(eid, ())
+                    raw_t,
+                    t[0],
+                    t[1],
+                    fold=FOLD_NAME.get(eid),
+                    nl=NL_WINS.get(eid, ()),
+                    drop_lead_nl=eid in LEAD_NL_DROP,
                 )
                 from_tpl = True
                 if tails:
@@ -1927,6 +2000,7 @@ def load_translations(align_name, scn_name):
     COLOR_WRAP.clear()
     NAME_PLATE.clear()
     NL_WINS.clear()
+    LEAD_NL_DROP.clear()
     # ⚠ 정렬 파일은 **배정 정본이 없을 때만** 읽는다. 정본이 있으면 LaBSE 파생물 없이도
     # 빌드가 돌아야 한다(새 머신에 torch 를 안 깔아도 되는 게 이 설계의 요점).
     align_path = os.path.join(OUT_DIR, "align", f"{align_name}.json")
@@ -2149,6 +2223,8 @@ def load_translations(align_name, scn_name):
             NAME_PLATE[int(jp_id_str)] = tuple(v) if isinstance(v, list) else (2, str(v), 1)
         if "nl_after" in ov:  # 창 뒤 강제 개행(원본 인라인 이름 창 앞 개행 복원 등)
             NL_WINS[int(jp_id_str)] = {int(i) for i in ov["nl_after"]}
+        if ov.get("drop_lead_nl"):
+            LEAD_NL_DROP.add(int(jp_id_str))
         if "fold_name" in ov:  # 이름창 접기 [[이름창 인덱스, 조사], …]
             FOLD_NAME[int(jp_id_str)] = {int(i): j for i, j in ov["fold_name"]}
         if "inject_pairs" in ov:  # 주입 %c쌍 좌표(사람이 콜사이트 인자로 확정) — 상단 주석 참조

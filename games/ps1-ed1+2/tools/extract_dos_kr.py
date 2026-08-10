@@ -171,13 +171,19 @@ def gap_text(raw):
     ⚠ **엔트리를 쪼개면 안 된다** — 번호가 밀려 `align_map` 좌표가 통째로 어긋난다."""
     if gap_is_text(raw):
         return raw
-    # ⚠ **마지막 `\x00` 뒤에서** 찾는다 — `\x00` 은 메시지 종료자라 그 앞은 남의 메시지다.
-    tail = raw.rsplit(b"\x00", 1)[-1]
+    # ⚠ **마지막 `\x00` 뒤에서** 찾는다 — `\x00` 은 메시지 종료자라 그 앞은 **남의 메시지**다.
+    head, _, tail = raw.rpartition(b"\x00")
     m = _GAP_TAIL.search(tail)
-    if not m or len(m.group()) < 3:
-        return None
-    # 제어코드만 든 꼬리는 본문이 아니다(gap 이 블록으로 잘못 승격된다)
-    return m.group() if HANGUL_PAIR.search(m.group()) else None
+    if not m or len(m.group()) < 3 or not HANGUL_PAIR.search(m.group()):
+        return None  # 제어코드만 든 꼬리는 본문이 아니다(gap 이 블록으로 잘못 승격된다)
+    # ⚠ 그 **앞 메시지도 본문**인 자리가 있다 — `\x01아 !!\x00응 !?\x01게, `(D_114#16).
+    # 앞을 버리면 그 대사가 통째로 미번역으로 남는다(유저 QA 2026-08-08 `ゲイル あ!!`).
+    # 종료자를 끼워 함께 돌려주면 `decode` 가 `{end}` 로 내보내고, `pre_subs` 로 `{p}` 를
+    # 만들어 두 메시지를 페이지로 가를 수 있다. 전 코퍼스에 2건뿐이다(나머지 하나는 챕터 카드).
+    hm = _GAP_TAIL.search(head)
+    if hm and len(hm.group()) >= 3 and HANGUL_PAIR.search(hm.group()):
+        return hm.group() + b"\x00" + m.group()
+    return m.group()
 
 
 def split_blocks(data, s, e):
