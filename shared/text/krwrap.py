@@ -635,6 +635,11 @@ def split_reason(prev_word: str, next_word: str) -> str | None:
         return "-지 못하다/않다"
     if prev_word in _DET_ORPHAN + _ADV_ORPHAN:
         return "관형사·부사 고아"
+    # 1음절 관형사형이 홀로 줄 끝에 남는 자리도 같다 — `당연히 할` / `일을 했을…`.
+    # ⚠ 목록으로 못 담아 꼴로 판정한다(`_is_adnominal_orphan`). 판정 정본은 여기 하나여야
+    # 하므로 조판기(`_pull_det_orphans`)와 검출기가 같은 함수를 본다.
+    if _is_adnominal_orphan(prev_word):
+        return "관형사형 고아"
     if _BOUND_NOUN.fullmatch(next_word) and _is_adnominal(prev_word):
         return "관형형+의존명사"
     return None
@@ -691,11 +696,34 @@ def _pull_bound_nouns(pages, width, cell_width):
     return pages
 
 
+def _is_adnominal_orphan(word: str) -> bool:
+    """어절 하나가 **관형사형으로 홀로** 섰는가 — 받침 ㄴ/ㄹ 로 끝나는 1음절.
+
+    ⚠ 이름이 비슷한 `_is_adnominal`(관형형 어미 판정, `split_reason` 이 쓴다)과 **다른 함수**다 —
+    한때 같은 이름으로 덮어써서 `미루는`+`것이` 판정이 죽었다(2026-08-10).
+
+    `할`·`볼`·`줄`·`한`·`된` 처럼 뒤 명사를 꾸미는 자리다. 1음절로 좁히는 게 요점 —
+    2음절 이상은 `밭을`·`힘을` 같은 **목적격 조사** 어절이 대부분이라 갈려도 자연스럽다.
+    """
+    w = word.rstrip(".,!?…~")
+    if len(w) != 1 or not ("가" <= w <= "힣"):
+        return False
+    return (ord(w) - 0xAC00) % 28 in (4, 8)  # ㄴ=4 · ㄹ=8
+
+
 def _pull_det_orphans(pages, width, cell_width):
     for pg in pages:
         for i in range(len(pg) - 1):
             words = pg[i].split()
-            if len(words) >= 2 and words[-1] in _DET_ORPHAN + _ADV_ORPHAN:
+            if not words or len(words) < 2:
+                continue
+            # 관형사형 고아도 같은 자리다 — `저희들은 당연히 할` / `일을 했을…`(유저 QA
+            # 2026-08-10, 전 씬 41곳). 지시관형사와 달리 목록으로 못 담아 **꼴로** 판정한다.
+            # ⚠ 문장이 거기서 끝나면 고아가 아니다(`…했을 텐데.` 뒤는 다음 문장이다).
+            orphan = words[-1] in _DET_ORPHAN + _ADV_ORPHAN or (
+                _is_adnominal_orphan(words[-1]) and words[-1][-1] not in ".!?…"
+            )
+            if orphan:
                 cand = words[-1] + " " + pg[i + 1]
                 if text_width(cand, cell_width) <= width:
                     pg[i] = " ".join(words[:-1])

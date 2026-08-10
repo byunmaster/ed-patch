@@ -905,6 +905,10 @@ INJECT_PAIRS = {}  # eid → [(off, bytes)] — load_translations가 씬마다 �
 # `%c` 종단이 없는 조각은 다음 블록이 **같은 줄에 이어붙으므로**, 조각 끝에 개행을 보장하지
 # 않으면 경계에서 단어가 쪼개진다(`…입니다. 이 아이` / `는 그 손녀` — 유저 QA 2026-07-30).
 TRAIL_NL = set()
+# 꼬리 **공백**: {eid} — 씬 단위. `TRAIL_NL` 과 같은 자리를 다루되 개행 대신 공백을 넣는다.
+# 창 종단(`%c`)이 없는 조각은 다음 블록이 **같은 줄에 이어 붙으므로**, 경계에 아무것도
+# 없으면 어절이 붙어 나온다(`없는데바위` — 유저 QA 2026-08-10, 전 씬 20건).
+TRAIL_SP = set()
 # 이름창 접기: {eid: {이름창 인덱스: 조사}} — 씬 단위(load_translations 재구축).
 # JP `%c세리오스%c\n가 リーダー…`는 이름을 **헤더 줄**로 띄우는데, 정발은 한 줄로
 # `세리오스가 리더가 되었습니다.`로 뽑는다(유저 정발 대조 2026-07-30). 이름창에 조사+공백을
@@ -980,6 +984,17 @@ SCN_ARG_PATCHES = {
     #   0x80186030 addiu v0,zero,6 / 0x80186034 j 0x80186478 / 0x80186038 sw v0,0x10(sp)
     # ⚠ 안전 확인: 0x80186030~38로 들어오는 j/jal·점프테이블 워드가 전 오버레이에 0건.
     ("ED1SCN1", 287): [(0x1C030, 0x24020006), (0x1C034, 0x0806191E), (0x1C038, 0xAFA20010)],
+    # eid 627·630 리젤 에릭 「흉터가 없군」: **원판 복붙 버그 복구**. 리더별 대사 셋인데
+    # 화자 이름 인자가 전부 `addiu a3,s2,0x6C`(= 0x801157AC = 세리오스)라 류난·게일이
+    # 리더여도 이름이 세리오스로 뜬다(유저 QA 캡처 2026-08-10).
+    # **정답지는 바로 앞 묶음**이다 — 같은 NPC·같은 씬의 jp613/616/618 이 슬롯을 제대로
+    # 가른다: 0x6C(세리오스) · 0xD8(류난) · 0x1B0(게일). 파티 이름 배열 간격 0x6C 실측
+    # (0x80115740 기준 5슬롯: 세리오스·류난·로우·게일·소니아).
+    # 정발(DOS)은 이름을 리터럴로 박아 정상이므로 "정발에 있는 건 다 이식" 방침에 따라
+    # 유저 승인 후 복구(eid 287 과 같은 자리). 인자 **개수·순서는 불변** = 구조 계약 유지.
+    # ⚠ 전 씬을 훑어 같은 결함은 이 한 그룹뿐이다(`scratchpad/leadername.py`).
+    ("ED1SCN2", 627): [(0x24B84, 0x264700D8)],  # addiu a3,s2,0xD8  → 류난
+    ("ED1SCN2", 630): [(0x24C38, 0x264701B0)],  # addiu a3,s2,0x1B0 → 게일
 }
 
 # ── 이름 헤더 스텁 — 원판이 이름 없이 띄우는 콜사이트에 헤더 사본을 물린다 ──
@@ -1030,6 +1045,30 @@ STOCK_KINDS = {}  # {eid: kind} — 씬 단위(load_translations가 재구축). 
 # 침묵 블록(본문이 ・・・ 뿐)은 본문을 JP 통과시키되 **이름창만 번역**한다 — 그냥 두면
 # 화자명까지 セリオス로 남는다(유저 QA 07-26). 템플릿에 빈 페이지를 넘겨 골격+이름만 재조립.
 NAMEONLY = "__nameonly__"
+# 빈 블록: 원본의 **제어 토큰만** 내보내고 글자는 하나도 안 넣는다(`blank` 오버라이드).
+# 쓰는 자리는 하나 — 여러 변형이 **공유하는 꼬리 블록**이다. 앞 조각들을 각자 완결시키면
+# 그 꼬리는 어느 쪽에도 안 맞아 남의 말이 붙어 나온다(로엘의 집 jp808, 유저 QA 2026-08-10).
+# `%c`·`%s`·`%d` 를 그대로 내보내므로 구조 계약은 정의상 지켜진다.
+BLANK = "__blank__"
+
+
+def blank_build(raw):
+    """제어 토큰(`%c`·`%s`·`%d`)만 남기고 글자를 전부 버린 바이트."""
+    out = bytearray()
+    i = 0
+    body = raw.rstrip(b"\x00")
+    while i < len(body):
+        if body[i] == 0x25 and i + 1 < len(body) and body[i + 1] in b"csd":
+            out += body[i : i + 2]
+            i += 2
+        else:
+            # ⚠ SJIS 반각 가나(0xA1~0xDF)는 **1바이트**다 — 2바이트로 세면 뒤 바이트를
+            #    삼켜 `%c` 를 놓친다(jp808 실측: 종단이 사라져 window_deficit).
+            lead = 0x81 <= body[i] <= 0x9F or 0xE0 <= body[i] <= 0xFC
+            i += 2 if lead else 1
+    return bytes(out) + b"\x00" * (-len(out) % 4 or 4)
+
+
 _CHEST = None
 
 
@@ -1726,6 +1765,8 @@ def build_candidate(raw, t, eid):
     elif t[0] is SHOP_PRICE:  # 상점 가격 프롬프트: %d 인라인 보존 전용 빌더
         cand, from_tpl = shop_price_build(raw), True
         cand += b"\x00" * (-len(cand) % 4 or 4)
+    elif t[0] is BLANK:
+        cand, from_tpl = blank_build(raw), True
     elif t[0] is NAMEONLY:
         # 침묵 블록: 빈 페이지로 템플릿 — 본문(・・・)은 JP 통과, 이름창만 화자맵 번역
         try:
@@ -1777,10 +1818,14 @@ def build_candidate(raw, t, eid):
         c = cand.rstrip(b"\x00")
         c = bytes([on]) + encode_ext(nm) + bytes([off]) + b"\x0a" + c
         cand = c + b"\x00" * (-len(c) % 4 or 4)
-    if cand is not None and eid in TRAIL_NL:
+    if cand is not None and (eid in TRAIL_NL or eid in TRAIL_SP):
         c = cand.rstrip(b"\x00")
         if not c.endswith(MC) and not c.endswith(b"\x0a"):  # 종단 없는 연속 조각만
-            c += b"\x0a"
+            # ⚠ 개행이 아니라 **공백**이어야 하는 자리가 있다 — 원본이 문장 한복판에서
+            # 조각을 나눈 곳(`…못 지나가는데` / `바위 사나이들은…`)은 정발도 같은 줄에
+            # 이어 쓴다. 개행을 넣으면 줄 수가 늘어 창을 넘길 수 있고(초과는 꼬리 잘림이라
+            # 게이트가 조용하다), 무엇보다 원본 조판과 달라진다. 공백이면 krwrap 이 알아서 감는다.
+            c += b"\x20" if eid in TRAIL_SP else b"\x0a"
             cand = c + b"\x00" * (-len(c) % 4 or 4)
     if cand is not None and not from_tpl:
         n_runs = jp_ctrl_runs(raw)
@@ -2030,6 +2075,7 @@ def load_translations(align_name, scn_name):
     """정렬 고신뢰 쌍(+ 사람 검수 오버라이드) → {jp_entry_id: (화자, 페이지들)}."""
     INJECT_PAIRS.clear()  # 씬 단위 상태 — 오버라이드 inject_pairs가 재구축
     TRAIL_NL.clear()
+    TRAIL_SP.clear()
     FOLD_NAME.clear()
     COLOR_WRAP.clear()
     NAME_PLATE.clear()
@@ -2270,12 +2316,22 @@ def load_translations(align_name, scn_name):
             FOLD_NAME[int(jp_id_str)] = {int(i): j for i, j in ov["fold_name"]}
         if "inject_pairs" in ov:  # 주입 %c쌍 좌표(사람이 콜사이트 인자로 확정) — 상단 주석 참조
             INJECT_PAIRS[int(jp_id_str)] = [(o, bytes.fromhex(h)) for o, h in ov["inject_pairs"]]
+        if ov.get("blank"):  # 공유 꼬리 블록 비우기 — 제어 토큰만 내보낸다
+            out[int(jp_id_str)] = (BLANK,)
+            applied += 1
+            continue
         if "ours" in ov:
             # 정발에 대응 문장이 없는 블록의 신규 번역(우리 문안 — textmap의 ours와 같은 지위).
             entry = {"text": ov["ours"], "speaker": ov.get("speaker")}
         elif "chain" in ov:
             # 문장 슬라이스 조각은 다음 블록이 같은 창에 이어붙으므로 꼬리 개행을 보장한다.
-            if any("." in str(it).partition("#")[2] for it in ov["chain"]):
+            # ⚠ **페이지 슬라이스도 문장 한복판에서 끊길 수 있다** — 정발 한 페이지가 PS1
+            # 블록 둘로 갈린 자리다(`…지나갈 수 없는데` / `바위 사나이들은…`). 그때는
+            # `.` 이 없어 이 판정에 안 걸려 **경계에서 어절이 붙어 나온다**(`없는데바위`,
+            # 유저 QA 2026-08-10). 자동으로 못 가르니 오버라이드로 켠다.
+            if ov.get("trail_sp"):
+                TRAIL_SP.add(int(jp_id_str))
+            elif ov.get("trail_nl") or any("." in str(it).partition("#")[2] for it in ov["chain"]):
                 TRAIL_NL.add(int(jp_id_str))
             entry = dict(kr_entry(ov["table"], ov["entry_id"]))
             # 명시적 체인: 사람이 확정한 엔트리 나열을 {p} 페이지로 이어붙인다.
