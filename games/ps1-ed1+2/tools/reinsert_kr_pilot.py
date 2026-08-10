@@ -45,6 +45,11 @@ _REPO = os.path.dirname(
 sys.path.insert(0, os.path.join(_REPO, "shared"))
 from text.krwrap import wrap_pages as kr_wrap_pages  # noqa: E402
 
+# 확정 락 우회 여부는 **여기서 한 번** 확정한다(락 관리 도구가 자기 프로세스에서 켠다).
+# 실행 중 os.environ 을 다시 보면, 도중에 import 되는 도구가 켠 우회에 빌드 검증이 조용히
+# 꺼진다 — 실제로 그렇게 됐다(2026-08-04, `lock_lines` import 만으로 검증 무력화).
+LOCK_BYPASS = os.environ.get("LOCK_BYPASS") == "1"
+
 ED_LBA, ED_SIZE = 257, 1021952  # ED.EXE (폰트 탑재 대상)
 OVERLAY_RAM_BASE = 0x8016A000  # SCN 오버레이 로드 주소 (ED1 전 씬 공통, 참조 커버리지로 검증)
 # ED1 씬별 (이름, LBA, size) — extract_scn.py SCN_FILES. text_end는 scn_jp JSON에서 씬별로.
@@ -499,6 +504,27 @@ def spell_fix(t):
     return t
 
 
+# ── 창 끝 종결부호 보정 ────────────────────────────────────────────────────────
+# 정발은 창 끝 온점을 자주 빠뜨린다(`또 들러주십시요` · `여기는 … 취급합니다`). 인라인일
+# 땐 안 보이지만 **창 하나의 마지막 문장**이 되면 문장이 끝난 티가 안 난다(유저 상시 지시
+# 2026-08-06: "모든 문장에 온점 누락이면 말 안 해도 추가해줘").
+#
+# ⚠ **연결어미를 종결로 착각하면 안 된다** — `…동생 말인데요`(jp1087)는 다음 창으로
+# 이어지는 조각이라 온점을 찍으면 안 된다. 그래서 **`-습니다/-ㅂ니다` 계열 종결형만** 본다.
+# 그 밖의 종결(`…없지`·`…들어 주지`)은 잘린 문장과 구별이 안 돼 손대지 않는다.
+# ⚠ `습니다` 로만 잡으면 `취급합니다`·`파는 곳입니다` 를 놓친다(실측) — `니다$` 로 넓힌다.
+#   `니다` 로 끝나는 한국어는 전부 종결형이라 연결어미와 헷갈릴 일이 없다.
+_CLOSE = re.compile(r"(니다|십시오|십시요|았다|었다|겠다|한다|된다|이다)$")
+
+
+def close_sentence(seg):
+    """창의 마지막이 확실한 종결형인데 종결부호가 없으면 온점을 붙인다."""
+    body = seg.rstrip()
+    if not body or body[-1] in ".!?…~\"'’”)》」":
+        return seg
+    return seg.rstrip() + "." if _CLOSE.search(body) else seg
+
+
 def parse_kr(entry):
     t = entry["text"]
     # 표기 통일: 정발 코퍼스의 '엘아스터'(소수 표기)는 전 대사 '엘아스타'로
@@ -563,8 +589,7 @@ def parse_kr(entry):
     # `글리프 범위 밖`) 그 페이지를 무는 블록이 통째로 `encode` 탈락한다. 정발 ED1 에 31곳 있어
     # 잠재 지뢰였다 — jp681·jp734 가 축소 재배정으로 그 페이지를 물자 실제로 터졌다(2026-07-31).
     # 여는/닫는 판정은 앞 문자로 — 줄머리·공백 뒤면 여는 쪽. 인용이 엔트리를 넘나들어도 안전하다.
-    t = re.sub(r'(^|[\s(])"', r"\1“", t)
-    t = t.replace('"', "”").replace("'", "’")
+    # (곡선 따옴표 변환 폐지 2026-08-04 — 반각 ASCII 경로로 낸다. 위 HALF_PUNCT 주석 참조)
     pages = []
     for seg in t.split("{p}"):
         inline_spk = None
@@ -590,9 +615,30 @@ def parse_kr(entry):
         # ⚠ HARD_NL도 허용해야 한다 — line_overrides가 넣는 **의도적 개행 마커**지 노이즈가
         # 아니다. 빠뜨리면 `.<HARD_NL>왕자`의 접두사가 통과 못 해 온점과 개행이 함께 잘리고,
         # 강제개행이 조용히 무시된다(수도사 자기소개 jp1164 실측 2026-07-31).
-        if m.start() < 4 and not re.fullmatch(rf"[0-9 .,!?{HARD_NL}]*", seg[: m.start()]):
+        # ⚠ 이 절삭은 **창의 첫 줄일 때만** 해야 옳다(유저 지적 2026-08-06) — 앞 블록에
+        #    이어 그려지는 블록에서는 선두 공백이 문장 사이 공백이라 지우면 안 된다.
+        #    파싱 시점엔 창 위치를 몰라 못 가르므로, 지금은 아래 붙임 공백 허용으로 우회한다.
+        # ⚠ NOBREAK_SP 도 허용해야 한다 — **블록 경계에 공백을 넣는 유일한 수단**이다.
+        # 앞 블록이 `왕자님.` 으로 끝나고 이 블록이 `론도행` 으로 시작하면 엔진이 붙여 그려
+        # `왕자님.론도행` 이 된다(유저 QA 2026-08-06 #330). 보통 공백은 `.strip()` 에 지워지고
+        # 선두 HARD_NL 은 빈 줄이 되어 krwrap 이 버린다 — 붙임 공백만 살아남는다.
+        # ⚠ **따옴표도 허용한다** — opcode 잔여가 아니라 본문 부호다. 빠뜨리면 정발이 인용을
+        # `"…"` 로 감싼 자리에서 **여는따옴표만 잘려** 화면에 `…어서 오십시오! "` 처럼 닫는
+        # 것만 남는다(수정 탑 고문서 D_414#9 실측 2026-08-06, 4블록).
+        if m.start() < 4 and not re.fullmatch(
+            rf"[0-9 .,!?\"'{HARD_NL}{NOBREAK_SP}]*", seg[: m.start()]
+        ):
             seg = seg[m.start() :]
-        pages.append((inline_spk, seg))
+        # ⚠ **꼬리 NAME_SENT 도 잘라낸다** — 선두를 자르는 것과 같은 이유다. 정발은 다음
+        # 메시지의 이름자리(`\x09`)를 앞 엔트리 **끝**에 붙여 두는 자리가 있어(`…않겠습니까?\x09`),
+        # 그대로 두면 이 창이 `%s` 를 하나 더 방출해 **fmt_excess 로 통째 탈락**한다 —
+        # 화면엔 일본어가 남는다(전수 5블록: SCN2 jp521·jp622 · SCN3 jp248 · SCN4 jp570 ·
+        # SCN6 jp54, 2026-08-08). 이름자리는 항상 **뒤따르는 글자**를 위한 것이라, 창 끝의
+        # 이름자리는 이 창에서 쓸 데가 없다.
+        seg = re.sub(rf"[\s{NAME_SENT}]+$", "", seg)
+        if not HANGUL.search(seg):
+            continue
+        pages.append((inline_spk, close_sentence(seg)))
     if not pages:
         raise SkipBlock("본문 없음")
     return entry["speaker"], pages
@@ -602,7 +648,11 @@ def parse_kr(entry):
 # 0.5슬롯 렌더 — 대사 렌더러의 1바이트 글리프 지원 스크린샷 검증. 이에 따라 전각 잉크
 # 여백이 사라져 "부호 뒤 공백 제거" 조판 규칙은 폐지(공백 유지가 자연스러움 — 유저 판정).
 # ()는 07-26 추가 — 전각 （）의 내부 여백이 "이 (가)"처럼 벌어져 보임(유저 QA, 인게임 검증 대기).
-HALF_PUNCT = ".,!?()"
+HALF_PUNCT = ".,!?()\"'"
+# 따옴표는 **반각 ASCII 경로**로 낸다(유저 요청 2026-08-04). 전각 곡선따옴표(“ ”)는 1슬롯씩
+# 먹어 `"오늘은 아무것도 없다."` 같은 인용이 창을 잡아먹는다. ⚠ 과거에 `"` 가 탈락한 건
+# **전각 변환 경로**(ASCII→＂→cp932)에서 글리프 범위 밖이었기 때문이고, 1바이트 경로는
+# 숫자·알파벳이 실증된 자리다(jp1172). 인게임에서 글리프를 확인할 것.
 # ⚠ `~` 를 넣지 말 것 — SJIS **반각 0x7E 는 물결이 아니라 오버라인(‾)** 이라 윗줄 일자로
 # 렌더된다(2026-08-01 실측). 전각 ～ 가 커 보여도 그게 맞다.
 
@@ -615,6 +665,8 @@ def cell_w(ch):
         return NAME_SLOTS  # %s는 런타임 이름 — 평균 길이로 근사
     if ch in (JOSA_NAME, JOSA_ITEM):
         return NAME_SLOTS + 3  # 이름/아이템 + 병기 전체(은(는)/이(가)=3슬롯) — 엔진 배치와 일치
+    if ch == NOBREAK_SP:
+        return 0.5  # 보통 공백과 같은 폭(조판 후 공백으로 되돌린다)
     return 0.5 if ch == " " or ch in HALF_PUNCT or (ch.isascii() and ch.isalnum()) else 1.0
 
 
@@ -622,6 +674,15 @@ def cell_w(ch):
 # 이 마커가 있는 창에서만 protect_hard를 켜(문장 리플로우가 override를 지우지 못하게).
 # PUA 문자 사용(제어문자 \x1c~\x1f는 Python regex \s에 걸려 공백 정리 때 사라진다).
 HARD_NL = "\ue000"
+# 붙임 공백 — 조판이 **여기서 줄을 끊지 못하게** 하는 공백. 표기는 띄어 쓰는 게 맞는데
+# 어절이 갈리면 읽기 나쁜 합성 표현에 쓴다(`보물 창고` → `이 보물` / `창고에는` 실측
+# 2026-08-04). 폭은 보통 공백과 같고(0.5) 조판이 끝난 뒤 보통 공백으로 되돌린다.
+# ⚠ PUA 를 쓰는 이유는 HARD_NL 과 같다 — 제어문자는 공백 정리 정규식에 걸려 사라진다.
+NOBREAK_SP = "\ue003"
+# 띄어 쓰되 줄에서 갈리면 안 되는 표현. 낱말 수준이라 저작권 대상이 아니다.
+# ⚠ 조판이 어색하다고 **표기를 바꾸지 않는다** — 붙임 공백으로 묶는다(2026-08-04 `보물 창고`
+# 때 정한 규칙). `다시 생겼으니` 는 `다시` 가 줄 끝에 홀로 떨어졌다(유저 QA 2026-08-06).
+KEEP_TOGETHER = ("보물 창고", "배편이 다시 생겼으니")
 
 
 # 조사 병기 — 조판 폭 계산에서는 **런타임 해결 후 폭**(조사 1글자)으로 세어야 한다.
@@ -661,8 +722,10 @@ def wrap_page(text, width=WRAP, target=None, max_lines=None):
     HARD_NL 마커가 있으면 하드개행으로 변환하고 protect_hard를 켠다(개별 개행 override)."""
     protect = HARD_NL in text
     text = text.replace(HARD_NL, "\n")
+    for kt in KEEP_TOGETHER:  # 어절 갈림 방지 — 조판이 끝나면 되돌린다
+        text = text.replace(kt, kt.replace(" ", NOBREAK_SP))
     text, folded = _fold_josa(text)  # 병기 → 1슬롯(런타임 훅 해결 후 폭)
-    return _unfold_josa(
+    pages = _unfold_josa(
         kr_wrap_pages(
             text,
             width,
@@ -677,6 +740,7 @@ def wrap_page(text, width=WRAP, target=None, max_lines=None):
         ),
         folded,
     )
+    return [[ln.replace(NOBREAK_SP, " ") for ln in pg] for pg in pages]
 
 
 # ── 원본 템플릿 채우기 ──────────────────────────────────────────────────────
@@ -1498,8 +1562,18 @@ def restore_tail_nl(cand, raw):
     흘려도 아무 가드에 안 걸렸다(전 씬 136블록, 대부분 도구점 구매·판매/마법점/밀매상의
     **선택 목록을 여는 프롬프트**). 관측 가능한 증상은 아직 없지만(2026-07-30 원판 A/B로
     밀매상 빈 목록과는 무관함이 확정) 저바이트 제어코드는 흐름 제어일 수 있다는 원칙상
-    원본 골격을 그대로 유지한다. 꼬리 1바이트만 건드리므로 조판·창 배정에 영향 없음."""
+    원본 골격을 그대로 유지한다. 꼬리 1바이트만 건드리므로 조판·창 배정에 영향 없음.
+
+    ⚠ **`%c` 종단 없이 개행으로만 끝나는 조각**도 같이 본다(전 씬 37블록). 그건 다음 블록과
+    **한 창을 나눠 쓰는** 앞조각이라 꼬리 개행이 곧 줄바꿈이다 — 흘리면 두 조각이 글자째
+    붙는다(`아니아니, 이렇게` + `인적 드문 곳까지` → `이렇게인적`, 유저 QA 2026-08-07)."""
     r = raw.rstrip(b"\x00")
+    if r and r[-1] == 0x0A and r[-2:] != MC:
+        c = cand.rstrip(b"\x00")
+        if not c or c[-1] == 0x0A:
+            return cand  # 이미 개행으로 끝남
+        c += b"\x0a"
+        return c + b"\x00" * (-len(c) % 4 or 4)
     if len(r) < 3 or r[-2:] != MC or r[-3] != 0x0A:
         return cand  # 원본이 `\n%c`로 안 끝남
     c = cand.rstrip(b"\x00")
@@ -1706,9 +1780,14 @@ def _speaker_map():
     if _SPEAKER_MAP is None:
         path = os.path.join(OUT_DIR, "align", "ED1_speakers.json")
         try:
-            _SPEAKER_MAP = json.load(open(path, encoding="utf-8"))["map"]
+            _SPEAKER_MAP = dict(json.load(open(path, encoding="utf-8"))["map"])
         except (FileNotFoundError, KeyError):
             _SPEAKER_MAP = {}
+        # ⚠ 위 파일은 `work/derived`(파생물)라 **판단을 담으면 안 된다** — 재생성하면 날아가고
+        # LaBSE 없는 머신에선 아예 안 만들어진다(제1 원칙: 판단은 커밋되는 정본에).
+        # 그래서 `align_overrides.json` 의 `_speakers` 로 덮는다. 실측: `ラルファの道具屋` 가
+        # 접미 때문에 `ラルフ`(랄프)로 잡혀 마스쿤 이벤트 화자가 틀렸다(유저 QA 2026-08-08).
+        _SPEAKER_MAP.update(_load_overrides().get("_speakers", {}))
     return _SPEAKER_MAP
 
 
@@ -1957,6 +2036,7 @@ def load_translations(align_name, scn_name):
 
     # 사람 검수 오버라이드: align보다 우선 (틀린 짝 교정 or 신규 추가)
     applied = 0
+    sub_miss = []  # `subs` 가 원문에 안 맞은 자리(조용한 무변화 방지 — 아래 경고)
 
     def chain_text(table, item, pre=()):
         """`pre` = **슬라이스 전에** 원문에 적용할 치환쌍(`pre_subs`).
@@ -1973,6 +2053,13 @@ def load_translations(align_name, scn_name):
         - `id#k`    = k번째 `{p}` 페이지만 (정발 엔트리 경계가 JP 블록 경계와 어긋날 때 —
                       eid 27 잔소리 서두)
         - `id#k.s`  = 그 페이지의 **s번째 문장만** (`-`로 범위/끝까지)
+        - `id#tail` = 상점 인사 엔트리의 **come-again 꼬리만**(`\x07`/`\x06` 뒤)
+
+        ⚠ `#tail` 이 따로 필요한 이유: 인사 파싱이 그 꼬리를 **먼저 잘라낸다**(위 `parse_kr`
+        의 come-again 제거 — PS1 은 끝인사가 별도 블록이라 인사 인라인 노출이 잘못이다).
+        그래서 페이지·문장 슬라이스로는 영영 닿지 못해 끝인사 블록 15개가 `ours` 로 남아
+        있었다(2026-08-04 노트 "포인터 전환 실패 — 제어코드로 시작해 슬라이스가 빈다").
+        마커(`\x07`)를 떼고 본문만 돌려주므로 `parse_kr` 의 제거 정규식에 다시 안 걸린다.
 
         문장 슬라이스는 **정발 페이지 하나가 PS1 블록 여러 개로 쪼개져 있을 때** 쓴다
         (크루즈 아론 소개 이벤트 실측: 정발 1페이지 = PS1 2블록). 위치(문장 인덱스)로만
@@ -1993,6 +2080,15 @@ def load_translations(align_name, scn_name):
             if int(vi) >= len(vs):
                 raise SkipBlock(f"변형 {vi} 범위 밖(총 {len(vs)})")
             t = vs[int(vi)].strip()
+        if pi == "tail":
+            m = re.search(r"\\x0[67](또 ?[들와찾][^\\{]*?주십[시쇼][요오]?\.?)", t)
+            if not m:
+                raise SkipBlock("come-again 꼬리 없음")
+            # ⚠ 정발은 이 꼬리에 온점을 안 찍은 파일이 있다(`또 들러주십시요`). 인사 안에
+            # 인라인일 땐 안 보였지만 **별도 창의 한 문장**이 되면 종결부호가 있어야 한다
+            # (온점 누락 방침 — docs/status.md).
+            tail = m.group(1)
+            return (tail if tail.endswith((".", "!", "?", "…")) else tail + ".") + "{p}"
         if pi:
             t = t.split("{p}")[int(pi)]
         if si:
@@ -2035,15 +2131,46 @@ def load_translations(align_name, scn_name):
             # 명시적 체인: 사람이 확정한 엔트리 나열을 {p} 페이지로 이어붙인다.
             # (자동 splice는 빈 엔트리에서 끊겨 다화자 이벤트 체인을 못 잇는다 — T_001#20 실측)
             pre = tuple(map(tuple, ov.get("pre_subs", ())))
-            entry["text"] = "".join(chain_text(ov["table"], it, pre) for it in ov["chain"])
-            # 사람 확정 자구 교정(유실 부호 등 — 정발 원문 변경은 유저 승인 기록 필수)
-            for a, b in ov.get("subs", ()):
-                entry["text"] = entry["text"].replace(a, b)
+            # `+` 접두 = **앞 항목에 이어 붙인다**(페이지를 새로 열지 않는다). 체인은 원래
+            # 페이지 단위라 `chain_text` 가 항목마다 `{p}` 를 붙이는데, 정발이 **한 문장을
+            # 여러 엔트리에 걸쳐** 둔 자리가 있다(`T_042#10~12` = `…사시는게` + `좋{n}을 것` +
+            # `입니다.`). 이게 없어서 `subs` 로 문장을 지어 넣고 있었다(2026-08-06).
+            parts = []
+            for it in ov["chain"]:
+                s = str(it)
+                glue = s.startswith("+")
+                txt = chain_text(ov["table"], s[1:] if glue else s, pre)
+                if glue and parts:
+                    parts[-1] = parts[-1].removesuffix("{p}") + txt
+                else:
+                    parts.append(txt)
+            entry["text"] = "".join(parts)
         else:
             entry = dict(kr_entry(ov["table"], ov["entry_id"]))
             entry, _ = splice_placeholder_pages(
                 entry, ov["table"], kr_entry, target=jp_win.get(int(jp_id_str), (None,))[0]
             )
+        # 사람 확정 자구 교정(유실 부호 등 — 정발 원문 변경은 유저 승인 기록 필수).
+        # ⚠ 이 루프는 **세 분기 뒤**에 있어야 한다 — `chain` 안에만 있던 시절엔 chain 없는
+        # 오버라이드의 `subs` 가 **경고 없이 무시**됐다(jp1215 실측 2026-08-04).
+        # ⚠ **안 맞으면 알려야 한다.** 교정(`spell_fix`·`resolve_dos_breaks`)이 이 뒤에
+        # 돌기 때문에 `subs` 는 **교정 전 원문**을 겨냥해야 하는데, 사람은 렌더된 문안을
+        # 보고 쓴다 — `무엇이든지 ` 로 썼는데 원본은 `무엇이{n}든지 ` 라 조용히 아무 일도
+        # 안 일어난다(2026-08-07 두 번 물렸다). 실패는 오류가 아니라 **무변화**라서
+        # 눈으로 렌더를 안 보면 그대로 나간다. 경고로 띄운다.
+        # ⚠ 판정은 **블록 단위**다. 어미 후보를 여러 개 늘어놓고 그중 하나만 맞기를
+        # 노리는 묶음이 실재해서(`파시겠습니까`·`파시려나요`… ) 쌍마다 경고하면 소음이 된다.
+        # 진짜 사고는 **한 쌍도 안 맞아 블록이 통째로 무변화**인 경우다.
+        _pairs = list(ov.get("subs", ()))
+        _hit = 0
+        for a, b in _pairs:
+            if a in entry["text"]:
+                _hit += 1
+            entry["text"] = entry["text"].replace(a, b)
+        # ⚠ `sys_phrases` 가 박는 일원화 치환은 **가드**라 안 맞는 게 정상이다
+        # (그 블록이 이미 표준형이면 바꿀 게 없다). 손으로 쓴 교정만 본다.
+        if _pairs and not _hit and "시스템 문구 일원화" not in (ov.get("note") or ""):
+            sub_miss.append((jp_id_str, _pairs[0][0]))
         entry["speaker"] = ov.get("speaker") or entry.get("speaker")
         try:
             spk, pages = parse_kr(entry)
@@ -2132,6 +2259,12 @@ def load_translations(align_name, scn_name):
     _warn = [e for e, n in _ours if not _ok(e, n)]
     if _warn:
         print(f"  ⚠ 미확인 `ours` {len(_warn)}건 — 인게임 확인 전(확인 후 freeze 하면 사라진다)")
+    if sub_miss:
+        print(
+            f"  ⚠ `subs` 가 원문에 안 맞음 {len(sub_miss)}건 — 아무 일도 안 일어난다(교정 전 원문을 겨냥할 것)"
+        )
+        for j, a in sub_miss[:12]:
+            print(f"      jp{j}: {a[:44]!r}")
 
     # 정렬·배정은 매 라운드 **전역 최적**으로 다시 계산돼, 후보 풀이 바뀌면 이미 잘 맞던 짝까지
     # 다른 블록에게 넘어간다("원래 잘 나오던 대사가 안 나온다" — 2026-08-03 유저 QA 반복 지적).
@@ -2139,15 +2272,15 @@ def load_translations(align_name, scn_name):
     # ⚠ LOCK_BYPASS=1 은 **락 관리 도구 전용** 우회다. 락이 깨진 상태에서 `lock_lines.py` 가
     # 현재 문안을 읽으려면 load_translations 를 불러야 하는데, 검증이 여기서 죽으면 복구 도구
     # 자체가 못 돈다(2026-08-03 실측 — freeze/unlock 이 잠기는 교착이었다).
-    if os.environ.get("LOCK_BYPASS") == "1":
+    # ⚠ 판정은 **이 모듈을 import 한 시점의 값**(LOCK_BYPASS)으로 한다 — 실행 중 os.environ 을
+    # 보면 도중에 import 된 도구가 켠 우회에 검증이 통째로 꺼진다(2026-08-04 실측, 위 주석).
+    # ⚠ 예외를 삼키지 않는다 — 검증기가 터진 것과 위반이 없는 것은 다르다(전엔 둘 다 통과였다).
+    if LOCK_BYPASS:
         bad = []
     else:
-        try:
-            from lock_lines import verify as _lock_verify
+        from lock_lines import verify as _lock_verify
 
-            bad = _lock_verify(scn_name, out)
-        except Exception:
-            bad = []
+        bad = _lock_verify(scn_name, out)
     if bad:
         head = " · ".join(f"jp{e}({a}→{b})" for e, a, b in bad[:8])
         raise SystemExit(

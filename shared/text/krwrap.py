@@ -61,7 +61,11 @@ def split_sentences(text: str) -> list[str]:
             # 부호-only 조각(선두 "…." 등)은 독립 문장으로 빼지 않고 다음 문장에 붙인다 —
             # 정발도 "…. 저쪽에 계시는 분은?"을 한 줄로 둔다(유저 QA 07-28). 실내용(한글/영숫자)이
             # 있을 때만 문장 경계로 분리(그래야 "…." 뒤 공백만으로 자체 줄로 꺾이지 않는다).
-            if k < n and (k > j or _OPEN_NEXT.match(text[k])) and re.search(r"[가-힣A-Za-z0-9]", frag):
+            if (
+                k < n
+                and (k > j or _OPEN_NEXT.match(text[k]))
+                and re.search(r"[가-힣A-Za-z0-9]", frag)
+            ):
                 out.append(frag)
                 start = i = k
                 continue
@@ -528,6 +532,7 @@ def wrap_pages(
     if not protect_hard:
         if det_orphan:
             _pull_det_orphans(pages, width, cell_width)
+        _pull_bound_nouns(pages, width, cell_width)
         _pull_tail_orphans(pages, width, cell_width)
     return [[_strip_spacing(ln, strip_after) for ln in pg] for pg in pages]
 
@@ -535,7 +540,26 @@ def wrap_pages(
 # 지시관형사(이/그/저)가 줄 끝에 홀로 남으면(고아) 수식 대상 명사와 갈린다 — 다음 줄로 내려
 # 붙인다. 재배치일 뿐이라 글자·줄 수·바이트 불변(메모리 중립). 줄 끝 홀로 온 '이'는 지시관형사
 # 확정(주격조사 '이'는 앞말에 붙어 홀로 안 온다) → 판정 안전. 다음 줄 폭 초과 시엔 이동 안 함.
-_DET_ORPHAN = ("이", "그", "저")
+# 제/내/네(=저의/나의/너의)도 같은 자리다 — `제` / `손으로 직접…` 이 실제로 나왔다
+# (유저 QA 2026-08-04). 이들도 홀로 오면 관형사 확정이라 판정이 안전하다.
+_DET_ORPHAN = ("이", "그", "저", "제", "내", "네")
+
+# 의존명사는 앞 용언 없이 못 선다 — 줄 첫머리에 오면 `너를 다시 만날` / `수 있을…` 처럼
+# 한 덩어리가 갈린다(유저 QA 2026-08-04). 앞 줄로 **올려** 붙인다. `_pull_det_orphans` 의
+# 거울상이고, 마찬가지로 재배치일 뿐이라 글자·줄 수·바이트 불변이다.
+# ⚠ 판정은 **앞 줄 끝이 관형형 어미(ㄴ/ㄹ 받침)** 일 때만 — 그래야 의존명사가 확정된다.
+# 그 조건이 없으면 `수(數)`·`때(垢)` 같은 자립명사를 잘못 끌어올린다.
+_BOUND_NOUN = re.compile(
+    r"(수|것|줄|때|뿐|적|바|터|듯|채|편|만큼|나름)(이|가|은|는|을|를|에|의|도|만|과|와|로|으로|이다|입니다)?[.,!?…]*$"
+)
+
+
+def _is_adnominal(word: str) -> bool:
+    """어절이 관형형(…ㄴ/…ㄹ)으로 끝나는가 — 뒤에 의존명사가 올 자리."""
+    ch = word[-1]
+    if not ("가" <= ch <= "힣"):
+        return False
+    return (ord(ch) - 0xAC00) % 28 in (4, 8)  # 종성 ㄴ / ㄹ
 
 
 def _pull_tail_orphans(pages, width, cell_width):
@@ -561,6 +585,22 @@ def _pull_tail_orphans(pages, width, cell_width):
         if text_width(cand, cell_width) <= width:
             pg[-2] = " ".join(prev[:-1])
             pg[-1] = cand
+    return pages
+
+
+def _pull_bound_nouns(pages, width, cell_width):
+    """줄 첫머리 의존명사를 앞 줄로 올려 붙인다(앞 줄이 관형형으로 끝날 때만)."""
+    for pg in pages:
+        for i in range(1, len(pg)):
+            words, prev = pg[i].split(), pg[i - 1].split()
+            if len(words) < 2 or not prev:  # 올리면 그 줄이 비는 경우는 제외
+                continue
+            if not (_BOUND_NOUN.fullmatch(words[0]) and _is_adnominal(prev[-1])):
+                continue
+            cand = pg[i - 1] + " " + words[0]
+            if text_width(cand, cell_width) <= width:
+                pg[i - 1] = cand
+                pg[i] = " ".join(words[1:])
     return pages
 
 

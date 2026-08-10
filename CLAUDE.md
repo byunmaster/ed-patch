@@ -82,6 +82,9 @@ sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조
   훨씬 빠름** — 빌드 완료를 알리고 유저 스크린샷으로 검증받는 흐름 권장.
 
 - ⚠ mednafen은 디스크 캐시 → 빌드 교체 후 reset 무효. 프로세스 kill + 재launch.
+- ⚠ **문안 변경 검증에 세이브스테이트를 쓰지 말 것**(2026-08-06 실측, 다섯 번을 헛돌았다).
+  텍스트는 오버레이로 RAM 에 올라오니 **스테이트가 곧 옛 빌드**다 — 새 이미지로 껐다 켜도
+  스테이트를 로드하면 옛 문안이 그대로 복원된다. 리셋 + **메모리카드에서 정식 로드**.
 - ⚠ **emucap 어댑터 빌드는 macOS 에서 `flock` 이 필요**하다(0.12부터). 스톡 macOS 엔
   `flock`·`lockf` 둘 다 없어 `ERROR: lockf or flock is required` 로 즉시 죽는다 —
   `brew install flock`. `vendor/` 는 읽기 전용이라 스크립트를 고치지 않는다.

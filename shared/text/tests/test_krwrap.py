@@ -20,9 +20,11 @@ from text.krwrap import (  # noqa: E402
 
 
 def test_basic_greedy():
-    # 폭 6전각: "가나다 라마" (=3+0.5+2=5.5) 한 줄, "바사아" 다음 줄
+    # 폭 6전각, 2줄. ⚠ 기대값은 **그리디가 아니라 균형 배분**(`_balance`)의 결과다 —
+    # 그리디 `가나다 라마`(5.5)/`바사아`(3)와 비용이 같고(9.25) DP 가 앞쪽 분할을 잡는다.
+    # (이 테스트는 `_balance` 도입 후 갱신을 안 해 빨간 채로 방치돼 있었다 — 2026-08-04 정정)
     out = wrap("가나다 라마 바사아", width=6)
-    assert out == ["가나다 라마", "바사아"], out
+    assert out == ["가나다", "라마 바사아"], out
 
 
 def test_no_midword_break():
@@ -116,7 +118,10 @@ def test_wrap_hard_overflow_cascades_to_next_line():
     # 넘친 줄의 꼬리(문장 미종결)는 다음 원문 줄에 이어 붙는다 — '무엇보다' 고아 방지
     src = "훌륭한 왕이 되시기에는 무엇보다\n학문이 중요하옵나이다."
     out = wrap_hard(src, 14, strip_before=".,!?")
-    assert out == ["훌륭한 왕이 되시기에는", "무엇보다 학문이", "중요하옵나이다."], out
+    # 요지는 `무엇보다`가 홀로 안 남는 것. 줄 배분은 `_balance` 가 고르게 다시 나눈다
+    # (이 기대값도 `_balance` 도입 후 갱신 누락이었다 — 2026-08-04 정정).
+    assert out == ["훌륭한 왕이", "되시기에는 무엇보다", "학문이 중요하옵나이다."], out
+    assert not any(ln == "무엇보다" for ln in out), out
 
 
 def test_wrap_hard_no_cascade_after_sentence_end():
@@ -185,6 +190,27 @@ def test_wrap_pages_long_sentence_flows():
     assert len(pages) >= 2, pages
     assert all(len(pg) <= 3 for pg in pages)
     assert all(text_width(ln) <= 10 for pg in pages for ln in pg)
+
+
+def test_bound_noun_pulled_up():
+    # 의존명사는 앞 용언과 붙어야 한다 — `만날` / `수 있을…` 로 갈리면 안 된다
+    # (유저 QA 2026-08-04, 정발 자신의 개행도 `만날 수` 뒤였다)
+    pages = wrap_pages("(정발 문안)", 14, 6, strip_after="")
+    assert pages == [["아아, 세리오스.", "너를 다시 만날 수", "있을 줄이야..."]], pages
+
+
+def test_bound_noun_not_pulled_without_adnominal():
+    # 앞 줄이 관형형(ㄴ/ㄹ)이 아니면 의존명사가 아니다 — 끌어올리지 않는다
+    pages = wrap_pages("가나다라마바사아자차 수요일에 만나자", 12, 6, strip_after="")
+    assert pages[0][1].startswith("수요일"), pages
+
+
+def test_det_orphan_je():
+    # 관형사 `제`(=저의)가 줄 끝에 홀로 남으면 수식 대상과 함께 내린다
+    pages = wrap_pages(
+        "***", 14, 6, strip_after="", det_orphan=True
+    )
+    assert all(not pg_ln.endswith(" 제") for pg in pages for pg_ln in pg), pages
 
 
 def _run():

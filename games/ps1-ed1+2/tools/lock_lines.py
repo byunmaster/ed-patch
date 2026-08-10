@@ -35,10 +35,6 @@ import json
 import os
 import sys
 
-# 이 도구는 **락이 깨진 상태에서도** 현재 문안을 읽어야 한다(freeze 갱신·unlock 판단).
-# 빌드의 락 검증이 load_translations 안에 있어 그대로 두면 복구 도구가 잠긴다.
-os.environ.setdefault("LOCK_BYPASS", "1")
-
 from common import OUT_DIR, ROOT
 
 LOCK_PATH = os.path.join(ROOT, "locked_lines.json")
@@ -159,6 +155,12 @@ def mark_settled(scn_name, eids, why):
 
 
 def main():
+    # ⚠ 우회는 **스크립트로 직접 돌 때만** 건다. 모듈 최상단에 두면 이 모듈을 import 하는 것만으로
+    # **빌드 전체의 락 검증이 꺼진다** — 실제로 그렇게 됐다(2026-08-04 실측: `ours` 가드가
+    # `load_lock` 을 import 하면서 같은 프로세스의 검증이 통째로 무력화, 불일치 3건이 통과).
+    # `align_map.py` 가 같은 사고를 낸 자리와 판박이다. **모듈 최상단 env 변경은 하지 않는다.**
+    # 이 도구는 락이 깨진 상태에서도 현재 문안을 읽어야 하므로(freeze 갱신·unlock 판단) 우회가 필요하다.
+    os.environ["LOCK_BYPASS"] = "1"
     if "--settled" in sys.argv:
         i = sys.argv.index("--settled")
         why = sys.argv[sys.argv.index("--why") + 1] if "--why" in sys.argv else "인게임 확인"

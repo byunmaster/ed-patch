@@ -12,7 +12,10 @@
 클래스: battle(battle_text.B) · items_battle(patch_items.BATTLE) · opening(patch_opening_font.LINES).
 
 textmap 엔트리: {"k": <jp-sha1-10 | 슬롯오프셋 hex>,
-                 "src": {"f": 상대경로, "o": 오프셋, "l": 길이, "x": 조판변환 여부} 또는 "ours": <문장>,
+                 "src": {"f": 상대경로, "o": 오프셋, "l": 길이, "x": 조판변환, "nl": \x01→개행}
+                   또는 "ours": <문장>
+                   또는 "parts": [<src 조각> | {"ours": …}, …]  ← 정발+우리 문안 혼합 슬롯,
+                 "fix": [[a, b], …]  낱말 단위 교정(표기 통일 등)
                  "sha": <최종 문자열 sha1-8 가드>}
 """
 
@@ -64,16 +67,27 @@ def derive(cls):
     with open(tm_path, encoding="utf-8") as f:
         tm = json.load(f)
     cache, out = {}, {}
+
+    def piece(s):
+        """{src} 한 조각 → 문자열. `ours` 키면 우리 문안 그대로."""
+        if "ours" in s:
+            return s["ours"]
+        if s["f"] not in cache:
+            cache[s["f"]] = _dos_file(s["f"])
+        v = cache[s["f"]][s["o"] : s["o"] + s["l"]].decode("euc-kr")
+        if s.get("nl"):
+            v = v.replace("\x01", "\n")  # DOS 표시 개행 마커 → 개행
+        return transform(v) if s.get("x") else v
+
     for e in tm["entries"]:
         if "ours" in e:
             val = e["ours"]
+        elif "parts" in e:
+            # 정발 문장 + 우리 문안이 한 슬롯에 섞이는 자리(챕터 클리어: 정발 해방 문구 +
+            # PS1 전용 EP 획득 줄). 정발 몫은 포인터로 두어야 리포에 문안이 안 남는다.
+            val = "".join(piece(s) for s in e["parts"])
         else:
-            s = e["src"]
-            if s["f"] not in cache:
-                cache[s["f"]] = _dos_file(s["f"])
-            val = cache[s["f"]][s["o"] : s["o"] + s["l"]].decode("euc-kr")
-            if s.get("x"):
-                val = transform(val)
+            val = piece(e["src"])
         # 낱말 단위 교정(맞춤법·띄어쓰기·명칭 통일). ⚠ **낱말까지만** — 문장을 여기에
         # 적으면 정발 문안이 리포에 박힌다(파생 체계의 존재 이유가 사라진다).
         # 대사 트랙은 spell_fix 가 같은 일을 하는데 오프닝은 그 경로를 안 타서 따로 둔다.

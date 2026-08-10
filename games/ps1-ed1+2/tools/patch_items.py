@@ -42,7 +42,7 @@ CHAPTER = (0xB9C0, 0xBCD4)  # 챕터 클리어 메시지 13 (해방 공지 + 第
 ARENA = (0xBD18, 0xBDCC)  # 격투장 상품 대사 4 (정발 T_204~207 어투)
 BTL_MSG = (0xBDCC, 0xBE48)  # 공격/일격/데미지 6 (뒤 0xBE48~ 포인터 테이블 — 보존)
 BTL_MSG2 = (0xBE60, 0xBEC8)  # 인벤 초과·포기·입수 3
-FRAG_TACHI = (0xF8ED4, 0xF8EEC)  # 승리 보상 문맥 たち — '일행'
+FRAG_TACHI = (0xF8ED4, 0xF8EEC)  # 파티명 접미 たち — 정발은 '들'(세리오스들은 상자를…)
 # は逃げ出した。 도주 메시지 오프셋 지정 — 조사 훅 이전엔 솔로 도주(세리오스)에 맞춰 '는'을
 # 정적 고정했으나, **동적 조사 훅 활성화(2026-07-27)로 불필요**해졌다. 병기 '은(는)'를 방출하면
 # 훅이 앞말에 맞게 축약한다(솔로=세리오스는, 파티=류난들은). textmap 기본값이 이미 병기라
@@ -594,7 +594,7 @@ def main():
     moved.update(repack(ed, *ARENA, "격투장(4)", align=1, tr=b, pools=pools))
     moved.update(repack(ed, *BTL_MSG, "전투 메시지(6)", align=1, tr=b, pools=pools))
     moved.update(repack(ed, *BTL_MSG2, "전투 메시지(입수3)", align=1, tr=b, pools=pools))
-    moved.update(repack(ed, *FRAG_TACHI, "たち(파티)", align=1, tr=lambda _: "일행", pools=pools))
+    moved.update(repack(ed, *FRAG_TACHI, "たち(파티)", align=1, tr=lambda _: "들", pools=pools))
     moved.update(repack(ed, *FRAG, "전투 조각(58)", align=1, tr=b, pools=pools))
     moved.update(repack(ed, *EVT, "이벤트 이름·방위(21)", align=1, tr=b, pools=pools))
     redirect(ed, moved)
