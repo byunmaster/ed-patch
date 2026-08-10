@@ -41,6 +41,13 @@ SPEAKER = re.compile(rb"\x1e((?:[\xb0-\xc8][\xa1-\xfe]|[\x20-\x7e]){1,24}?)\x04"
 MERGE_GAP = 8  # 이 바이트 수 이하의 코드 갭은 같은 블록으로 병합 (인라인 opcode 흡수)
 MIN_HANGUL = 4  # 클러스터 최소 한글 자수 (미달 시 아래 보조 신호 없으면 코드 오탐으로 드랍)
 CTRL = {0x01: "{n}", 0x05: "{p}", 0x00: "{end}", 0x1E: "{spk}", 0x04: "{/spk}"}
+# 뒤 2바이트를 오퍼랜드(u16 주소)로 먹는 오피코드 — 자세한 근거는 decode() 도크스트링
+OPERAND2 = frozenset({0x0F, 0x10, 0x15})
+# 뒤 1바이트를 오퍼랜드로 먹는 오피코드. ⚠ **뒤가 ASCII 인쇄가능일 때만** 먹는다 —
+# 제어 범위(종료자 `\x00`·개행 `\x01`·페이지 `\x05`)까지 삼키면 메시지가 합쳐진다.
+# 전수 102자리를 눈으로 봤고 전부 오퍼랜드였다(`\x11P`·`\x14=`·`\x12H`·`\x149`).
+# 안 먹으면 화면에 홀로 뜬다 — `맛있다니까.. P 얼마든지`(T_251#15, 유저 QA 2026-08-08).
+OPERAND1_ASCII = frozenset({0x11, 0x12, 0x13, 0x14, 0x16})
 
 # 짧은 클러스터 구제 신호: 한글 뒤 문장부호/공백 (실문장 조각 — '얻었다.' '그럼 ' 등)
 HANGUL_PUNCT = re.compile(rb"[\xb0-\xc8][\xa1-\xfe][ .?!,\x01\x05]")
@@ -141,8 +148,12 @@ def gap_is_text(raw):
     return True
 
 
-# gap 꼬리에 붙은 본문 — 한글쌍·공백·문장부호만으로 이뤄진 **끝자락**
-_GAP_TAIL = re.compile(rb"(?:[\xb0-\xc8\xa1-\xaf][\xa1-\xfe]|[ .,!?])+$")
+# gap 꼬리에 붙은 본문 — 끝자락의 "글자로 읽히는" 런.
+# 한글쌍 · ASCII 인쇄가능 · 개행(01)/페이지(05)/나레이션(1C) 제어까지 본문으로 본다.
+# ⚠ 좁게 잡으면(`한글쌍|[ .,!?]` 만) `조~~오아` 의 `~~`, `제 2 장` 의 숫자, 문장 안 개행에서
+#   끊겨 **앞을 통째로 깎는다** — 전수 127엔트리(2026-08-08). 넓힐 수 있는 근거는 **오퍼랜드
+#   수정(OPERAND2)** 이다: 그 전에는 인자 바이트가 ASCII 로 남아 있어 넓히면 쓰레기까지 물었다.
+_GAP_TAIL = re.compile(rb"(?:[\xb0-\xc8\xa1-\xaf][\xa1-\xfe]|[\x20-\x7e\x01\x05\x1c])+$")
 
 
 def gap_text(raw):
@@ -160,8 +171,13 @@ def gap_text(raw):
     ⚠ **엔트리를 쪼개면 안 된다** — 번호가 밀려 `align_map` 좌표가 통째로 어긋난다."""
     if gap_is_text(raw):
         return raw
-    m = _GAP_TAIL.search(raw)
-    return m.group() if m and len(m.group()) >= 3 else None
+    # ⚠ **마지막 `\x00` 뒤에서** 찾는다 — `\x00` 은 메시지 종료자라 그 앞은 남의 메시지다.
+    tail = raw.rsplit(b"\x00", 1)[-1]
+    m = _GAP_TAIL.search(tail)
+    if not m or len(m.group()) < 3:
+        return None
+    # 제어코드만 든 꼬리는 본문이 아니다(gap 이 블록으로 잘못 승격된다)
+    return m.group() if HANGUL_PAIR.search(m.group()) else None
 
 
 def split_blocks(data, s, e):
@@ -177,12 +193,27 @@ def split_blocks(data, s, e):
 
 
 def decode(raw):
-    """raw → 읽기용 텍스트 (제어코드는 태그, 미해독 바이트는 \\xNN). raw가 정본."""
+    """raw → 읽기용 텍스트 (제어코드는 태그, 미해독 바이트는 \\xNN). raw가 정본.
+
+    ⚠ **오퍼랜드를 먹는 오피코드**(`OPERAND2`)는 뒤 2바이트를 함께 삼킨다. 안 그러면
+    그 바이트가 **본문으로 샌다** — ASCII 범위면 글자로(`\\x0F7` → `7`), 제어 범위면
+    **태그로**(`\\x05` → `{p}`) 나와 **없던 페이지 경계**까지 만든다(2026-08-08).
+
+    근거(실측): 본문 블록 안의 이 세 오피코드 532곳에서 뒤 2바이트를 u16 리틀엔디언으로
+    읽으면 96%가 파일 크기(≈0x8000) 안의 주소이고, 나머지도 2바이트를 삼키면 정확히
+    한글 첫 글자나 알려진 제어코드에 떨어진다. **한글쌍을 삼키는 자리는 단 1곳**인데
+    그마저 `\\x0F장전투후에` — 그 `장` 이 오퍼랜드 잔재라 삼키는 쪽이 옳다."""
     out = []
     i = 0
     while i < len(raw):
         b = raw[i]
-        if b in CTRL:
+        if b in OPERAND2 and i + 2 < len(raw):
+            out.append(f"\\x{b:02X}")  # 오피코드만 남기고 오퍼랜드 2바이트는 버린다
+            i += 3
+        elif b in OPERAND1_ASCII and i + 1 < len(raw) and 0x20 <= raw[i + 1] <= 0x7E:
+            out.append(f"\\x{b:02X}")  # 1바이트 오퍼랜드 — ASCII 일 때만(위 상수 주석)
+            i += 2
+        elif b in CTRL:
             out.append(CTRL[b])
             i += 1
         elif 0xA1 <= b <= 0xC8 and i + 1 < len(raw) and valid_kr(raw[i : i + 2]):

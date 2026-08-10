@@ -25,9 +25,28 @@
   python3 tools/lock_lines.py --freeze ED1SCN1     # 지금 상태를 확정으로 못 박는다
   python3 tools/lock_lines.py --status             # 락 현황
   python3 tools/lock_lines.py --unlock ED1SCN1 331 # 특정 블록 해제(문안을 고칠 때)
+  python3 tools/lock_lines.py --observe            # 관측 대장 갱신(전 씬, 아래)
 
 **언제 freeze 하나** — 유저가 그 구간을 인게임으로 확인한 직후. 확인 전에 뜨면 꼬인 상태를
 확정해 버린다.
+
+## 관측 대장(observed_lines.json) — 락의 짝
+
+락은 **인게임 확인분만** 지킨다. 그래서 아직 QA 안 한 구간은 상류를 건드려도 **아무도 안
+알려준다** — 실제로 2장 QA 중에 추출기를 고치면서, 무엇이 바뀌었는지 보려고 세션 시작
+커밋으로 워크트리를 떠서 렌더를 통째로 비교해야 했다(2026-08-08). 그 과정에서 측정을
+세 번 틀렸다. **손으로 할 일이 아니다.**
+
+그래서 **전 블록 해시**를 대장에 두고 빌드마다 차이를 **보고만** 한다.
+
+| | 대상 | 어긋나면 |
+| --- | --- | --- |
+| 락 `locked_lines.json` | 인게임 확인분 | **빌드 실패** — 승인 없이 못 지나감 |
+| 관측 `observed_lines.json` | **전 블록** | **목록 출력** — 빌드는 그대로 진행 |
+
+⚠ 대장은 **자동 갱신하지 않는다.** `--observe` 로 사람이 받아들일 때만 갱신한다 — 자동이면
+"바뀐 걸 알려준다"는 목적 자체가 사라진다(freeze 와 같은 규율).
+⚠ 여기도 **해시만** 담는다 — 문안을 담으면 저작권 규칙 위반이다.
 """
 
 import hashlib
@@ -38,6 +57,8 @@ import sys
 from common import OUT_DIR, ROOT
 
 LOCK_PATH = os.path.join(ROOT, "locked_lines.json")
+OBS_PATH = os.path.join(ROOT, "observed_lines.json")
+SCENES = [f"ED1SCN{i}" for i in range(1, 7)]
 
 
 def line_sha(t):
@@ -66,6 +87,46 @@ def load_lock():
 
 def save_lock(d):
     json.dump(d, open(LOCK_PATH, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
+
+def load_obs():
+    try:
+        return json.load(open(OBS_PATH, encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+
+
+def obs_diff(scn_name, tr):
+    """대장 대비 (바뀐, 새로 생긴, 사라진) eid 목록. 빌드가 보고용으로 부른다."""
+    old = load_obs().get(scn_name, {})
+    now = {str(e): line_sha(t) for e, t in tr.items() if line_sha(t) is not None}
+    changed = sorted(int(k) for k in now if k in old and old[k] != now[k])
+    added = sorted(int(k) for k in now if k not in old)
+    dropped = sorted(int(k) for k in old if k not in now)
+    return changed, added, dropped
+
+
+def observe():
+    """전 씬 문안 해시를 대장에 굳힌다 — 지금 상태를 '받아들인다'는 선언."""
+    import reinsert_kr_pilot as R
+
+    obs = load_obs()
+    obs["_doc"] = (
+        "관측 대장 — 전 블록의 문안 sha1 앞 10자. 락(locked_lines.json)이 인게임 확인분만 "
+        "지키는 데 반해 이쪽은 **전 블록**을 보되 어긋나도 빌드를 세우지 않고 목록만 낸다. "
+        "문안 자체는 저작권상 저장 금지. 갱신은 `tools/lock_lines.py --observe` 로 사람이 "
+        "받아들일 때만 — 자동 갱신하면 알림의 목적이 사라진다."
+    )
+    tot = ch = ad = dr = 0
+    for scn in SCENES:
+        tr, _, _ = R.load_translations(scn.replace("SCN", "_SCN"), scn)
+        c, a, d = obs_diff(scn, tr)
+        ch, ad, dr = ch + len(c), ad + len(a), dr + len(d)
+        obs[scn] = {str(e): line_sha(t) for e, t in sorted(tr.items()) if line_sha(t) is not None}
+        tot += len(obs[scn])
+    json.dump(obs, open(OBS_PATH, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    open(OBS_PATH, "a", encoding="utf-8").write("\n")
+    print(f"관측 대장 {tot}블록 갱신 (문안 변경 {ch} · 신규 {ad} · 사라짐 {dr}) → {OBS_PATH}")
 
 
 def _assignments(scn_name):
@@ -167,6 +228,9 @@ def main():
         args = [a for a in sys.argv[i + 1 :] if not a.startswith("-")]
         stop = args.index("--why") if "--why" in args else len(args)
         mark_settled(args[0], args[1:stop], why)
+        return
+    if "--observe" in sys.argv:
+        observe()
         return
     if "--freeze" in sys.argv:
         for scn in sys.argv[sys.argv.index("--freeze") + 1 :]:

@@ -323,10 +323,11 @@ def _dos_vocab():
 _BREAK_FIXES = None
 _SPLIT_FIXES = None
 _LINE_OVERRIDES = None
+_OPCODE_PAGES = None
 
 
 def _load_break_doc():
-    global _BREAK_FIXES, _SPLIT_FIXES, _LINE_OVERRIDES
+    global _BREAK_FIXES, _SPLIT_FIXES, _LINE_OVERRIDES, _OPCODE_PAGES
     if _BREAK_FIXES is None:
         path = os.path.join(ROOT, "dos_break_fixes.json")
         try:
@@ -337,6 +338,9 @@ def _load_break_doc():
         _SPLIT_FIXES = {tuple(p) for p in doc.get("split", [])}
         # JSON의 "\n"을 의도적 개행 마커(HARD_NL)로 — 일반 페이지 개행과 구분(protect_hard)
         _LINE_OVERRIDES = [(a, b.replace("\n", HARD_NL)) for a, b in doc.get("line_overrides", [])]
+        _OPCODE_PAGES = {}
+        for tbl, eid, anchor in doc.get("opcode_pages", []):
+            _OPCODE_PAGES.setdefault((tbl, eid), []).append(anchor)
 
 
 def _break_fixes():
@@ -349,6 +353,21 @@ def _split_fixes():
     """vocab 오판으로 붙는 걸 강제로 띄우는 예외(지시관형사 '이' 등)."""
     _load_break_doc()
     return _SPLIT_FIXES
+
+
+def _opcode_pages():
+    """분기 오피코드가 **창 경계**인 자리(dos_break_fixes.json `opcode_pages`).
+
+    `\\x0F`·`\\x10`·`\\x15` 는 오퍼랜드 2바이트를 먹는 분기 명령이다(추출기 `OPERAND2`).
+    DOS 는 여기서 다른 루틴으로 뛰었다 돌아오므로 **앞뒤가 서로 다른 창**인 자리가 있다
+    (밀매상 `…못 가지시겠군요.` → `뭘 가져다 드릴깝쇼?`). 그렇다고 전부 창 경계는 아니라
+    (`우리 드래곤이 알을` + `낳으려 하고 있네` 는 한 문장) **자리를 지목해 둔다.**
+
+    ⚠ 예전엔 오퍼랜드가 `0x05` 일 때만 우연히 `{p}` 로 보여 이 경계가 공짜로 잡혔다.
+    추출기를 고치면서 그 우연이 사라졌고, 그때 어긋난 체인 8건이 확정 락에 걸려 드러났다
+    (2026-08-08). 우연에 기대던 걸 **정본으로 올린 것**이 이 목록이다."""
+    _load_break_doc()
+    return _OPCODE_PAGES
 
 
 def _line_overrides():
@@ -1958,6 +1977,20 @@ def load_translations(align_name, scn_name):
                 open(os.path.join(OUT_DIR, "dos_kr", f"{table}.json"), encoding="utf-8")
             )
             kr_cache[table] = {e["entry_id"]: e for e in doc["entries"]}
+            # 분기 오피코드가 창 경계인 자리를 `{p}` 로 승격 — `_opcode_pages` 도크스트링
+            for (t, i), anchors in _opcode_pages().items():
+                if t != table or i not in kr_cache[table]:
+                    continue
+                e = kr_cache[table][i]
+                for a in anchors:
+                    # ⚠ 치환문을 문자열로 주면 안 된다 — 앵커에 `\x0C` 같은 이스케이프가 있으면
+                    # re 가 치환 템플릿으로 해석해 `bad escape` 로 죽는다(2026-08-08).
+                    e["text"] = re.sub(
+                        re.escape(a) + r"\\x(?:0F|10|15)",
+                        lambda _m, a=a: a + "{p}",
+                        e["text"],
+                        count=1,
+                    )
         return kr_cache[table][eid]
 
     # 이름·지명 단독 블록은 patch_sys_ui 관할 — 정렬이 손대면 그쪽이 못 고친다(is_name_plate 주석).
@@ -2288,6 +2321,23 @@ def load_translations(align_name, scn_name):
             f"  {head}{' …' if len(bad) > 8 else ''}\n"
             f"  의도한 변경이면 `python3 tools/lock_lines.py --unlock {scn_name} <eid …>` 후 재빌드."
         )
+
+    # 관측 대장 — 락의 짝. 락은 **인게임 확인분만** 지켜서, 아직 QA 안 한 구간은 상류를
+    # 건드려도 아무도 안 알려준다. 2장 QA 중에 추출기를 고치면서 무엇이 바뀌었는지 보려고
+    # 워크트리를 떠서 렌더를 통째로 비교해야 했고, 그 과정에서 측정을 세 번 틀렸다
+    # (2026-08-08). 그래서 전 블록 해시를 두고 **보고만** 한다 — 빌드는 안 세운다.
+    from lock_lines import obs_diff as _obs_diff
+
+    ch, ad, dr = _obs_diff(scn_name, out)
+    if ch or dr:
+        head = " ".join(f"jp{e}" for e in (ch + dr)[:12])
+        print(
+            f"  📋 {scn_name}: 문안 변경 {len(ch)}건"
+            + (f" · 사라짐 {len(dr)}건" if dr else "")
+            + (f" · 신규 {len(ad)}건" if ad else "")
+        )
+        print(f"      {head}{' …' if len(ch) + len(dr) > 12 else ''}")
+        print("      확인했으면 `python3 tools/lock_lines.py --observe`")
     return out, skipped, applied
 
 
