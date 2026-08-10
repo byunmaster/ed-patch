@@ -7,9 +7,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from text.krwrap import (  # noqa: E402
+from text.krwrap import (
     NO_HEAD,
     is_sentence_end,
+    split_reason,
     split_sentences,
     text_width,
     wrap,
@@ -32,7 +33,7 @@ def test_no_midword_break():
     out = wrap("에스텔 브라이트가 인사한다", width=5)
     for line in out:
         assert " " not in line or all(
-            w in "에스텔 브라이트가 인사한다".split() for w in line.split()
+            w in ["에스텔", "브라이트가", "인사한다"] for w in line.split()
         )
     assert "에스텔" in out[0]
 
@@ -211,6 +212,32 @@ def test_det_orphan_je():
         "***", 14, 6, strip_after="", det_orphan=True
     )
     assert all(not pg_ln.endswith(" 제") for pg in pages for pg_ln in pg), pages
+
+
+def test_split_reason_names_the_unit():
+    # 판정 정본 — 조판기와 검출기가 같이 쓴다.
+    assert split_reason("눈치채지", "못하는") == "-지 못하다/않다"
+    assert split_reason("구해", "준") == "본용언+보조용언"
+    assert split_reason("좀", "허약하지") == "관형사·부사 고아"
+    assert split_reason("미루는", "것이") == "관형형+의존명사"
+    # ⚠ 문장 경계는 갈려도 된다(유저 확정 2026-08-10) — 붙여쓸 것이 갈리는 쪽이 더 나쁘다.
+    assert split_reason("하옵니다.", "것이") is None
+
+
+def test_balance_avoids_unit_split():
+    # 줄바꿈 지점 선택에서 덩어리 갈림을 피한다 — 어절 하나 옮기기로는 안 되던 자리다.
+    out = wrap_pages("(정발 문안)", width=14, lines_per_page=3)
+    assert not any(
+        split_reason(pg[i - 1].split()[-1], pg[i].split()[0])
+        for pg in out
+        for i in range(1, len(pg))
+    ), out
+
+
+def test_tail_orphan_pull_keeps_units():
+    # 마지막 줄 외톨이를 없애려다 **부사 고아를 새로 만들면 안 된다**(전 씬 2건 실측).
+    out = wrap_pages("(정발 문안)", width=14, lines_per_page=3)
+    assert out == [["왕자 어서!", "아크담은 아직 2층에", "있습니다!!"]], out
 
 
 def _run():

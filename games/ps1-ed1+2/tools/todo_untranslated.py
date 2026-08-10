@@ -5,6 +5,9 @@
 (유저 지적 2026-08-04 — 곶의 동굴 보물상자·네리아 현자가 라운드마다 다시 떴다).
   ① 포인터 테이블(`table_block_eids`) · ② 이름·지명 플레이트(`patch_sys_ui` 관할)
   ③ 원문이 빈 블록(`%c` 만 있는 자리) · ④ **판정이 끝난 블록**(`lock_lines --settled`)
+⚠ **`%c` 없는 블록은 빼지 않는다**(2026-08-10 수정) — 창 종단이 없을 뿐 다음 블록과 한 창에
+그려지는 **대사 앞 조각**이 거기 섞여 있다. 예전 필터가 그걸 통째로 숨겨 SCN4 에서만
+13블록이 일본어로 나가고 있었다(포인터 참조로 화면 출력 확인).
 ④가 핵심이다 — 확정 락은 *번역된* 문안만 지키므로 "미번역이지만 확인 결과 문제없다"나
 "이 장에서는 도달하지 않는다"는 판정은 락으로 남길 수 없다.
 
@@ -14,6 +17,7 @@
 
 import json
 import os
+import re
 import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")
@@ -24,6 +28,10 @@ from common import OUT_DIR  # noqa: E402
 from lock_lines import settled  # noqa: E402
 from patch_sys_ui import is_name_plate  # noqa: E402
 from scn_maps import block_maps  # noqa: E402
+
+# 가나 — "이 블록이 진짜 일본어 대사인가"의 판정자. 지명 플레이트 잔재·그래픽 쓰레기
+# (`怦怦怦…`)에는 가나가 없다.
+KANA = re.compile(r"[\u3041-\u309f\u30a1-\u30fa]")
 
 
 def pending(game, scn):
@@ -40,7 +48,14 @@ def pending(game, scn):
     bm = block_maps(game, scn)
     out = []
     for i in sorted(jp):
-        if i not in raws or R.MC not in raws[i]:
+        if i not in raws:
+            continue
+        # ⚠ **`%c`(창 종단)가 없어도 대사일 수 있다.** 정발 한 문장을 PS1 이 두 블록으로
+        # 끊어 둔 자리가 그렇다 — 앞 조각은 종단 없이 다음 블록과 **한 창**에 이어 그려진다
+        # (`うちの亭主は…けどさあ、` → 다음 블록). 예전엔 `%c` 없는 블록을 통째로 건너뛰어
+        # **목록에 안 뜬 채 일본어로 나가고 있었다**(2026-08-10 발견 — 포인터 참조가 살아
+        # 있어 화면에 실제로 나온다). 가나가 있는 것만 남긴다.
+        if R.MC not in raws[i] and not KANA.search(jp[i]["body"] or ""):
             continue
         if i in tbl or i in plate or str(i) in done:
             continue

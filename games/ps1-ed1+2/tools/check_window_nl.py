@@ -56,6 +56,12 @@ def scan(game="ED1", scenes=None):
                 continue
             if cand is None:
                 continue  # 제외 블록은 JP 가 그대로 나가므로 결손이 아니다
+            # ⚠ `drop_lead_nl` 은 **사람이 QA 로 확정한 편차**다 — 결손이 아니라 결정이다.
+            # (jp912 게일 합류: 원판이 이 블록만 `\n` 으로 시작해 혼자 한 줄 내려 떠서,
+            #  동료 합류 5블록 중 다수 4/5 에 맞췄다 — 유저 QA 2026-08-08.)
+            # 빼지 않으면 라운드마다 같은 블록이 목록에 다시 뜬다(`--settled` 와 같은 교훈).
+            if eid in R.LEAD_NL_DROP:
+                continue
             want, got = raw.count(NL_MC), cand.count(NL_MC)
             if got < want:
                 try:
@@ -100,11 +106,16 @@ def verify(name, eid, wins):
         R.NL_WINS.pop(eid, None) if old is None else R.NL_WINS.__setitem__(eid, old)
     if before is None or after is None:
         return False, False
+
     # ⚠ 패딩까지 비교하면 안 된다 — 개행 1바이트가 늘면 4바이트 정렬이 달라진다.
-    a, b = after.rstrip(b"\x00"), before.rstrip(b"\x00")
-    return after.count(NL_MC) == raw.count(NL_MC), a.replace(b"\x0a", b"") == b.replace(
-        b"\x0a", b""
-    )
+    # ⚠ **창 앞 공백도 무시한다.** `%s` 주입 창 앞 공백(`제 이름은 류난`)은 개행이 들어가면
+    #   빌더가 안 붙인다 — 이름이 새 줄에서 시작하니 띄어쓸 상대가 없다. 그 정당한 차이를
+    #   "본문이 바뀌었다"로 읽어 jp496~499 를 계속 폴백으로 오판했다(2026-08-09).
+    #   창 마커 **바로 앞** 공백만 지우므로 진짜 문안 변화는 그대로 걸린다.
+    def norm(x):
+        return x.rstrip(b"\x00").replace(b"\x0a", b"").replace(b"\x20" + R.MC, R.MC)
+
+    return after.count(NL_MC) == raw.count(NL_MC), norm(after) == norm(before)
 
 
 def main():

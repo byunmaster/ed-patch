@@ -83,6 +83,11 @@ NAME_SENT = "\x1a"
 # (`\x156\x0B` 등)를 이 센티널로 바꿔두면 encode_ext가 %d 바이트로 방출해 서식 계약이 지켜진다
 # (그냥 "%d" 문자열을 쓰면 encode_ext가 ％(전각)로 바꿔 fmt_drop — jp302 실측 2026-07-30).
 NUM_SENT = "\x1b"
+# `%c%s%c`(아이템명 인라인 주입) 자리 센티널. `%c%s%c` **뒤에 `\x0a` 가 오는** 꼴은
+# 인라인 화자 헤더라 `jp_inline_fmt_windows` 가 창 번호로 따로 방출하지만, **문장 한복판**에
+# 박힌 아이템 주입(`%s は %c%s%c を見つけました。`)은 거기 안 걸린다 — 본문에서 직접
+# 내보내야 한다. 조사는 병기로 뒤에 우리가 적는다(훅이 받침 보고 해결).
+ITEM_SENT = "\x17"
 # %s 자리 폭 추정 — 조판 폭 계산용. 4.0(세리오스=최장)은 **훅 이전 시대의 보수적 값**이라
 # 짧은 이름에서 항상 불필요한 개행을 만들었다(파티 합류 "류난이 동료가 ⏎ 되었습니다."가
 # 정발에선 한 줄 — 유저 DOSBox 대조 07-29). 런타임 조사 훅이 세 경로 모두에서 병기를
@@ -109,6 +114,8 @@ def encode_ext(text):
             out += PS
         elif ch == NUM_SENT:  # 수치 주입 자리 → %d 방출
             out += PD
+        elif ch == ITEM_SENT:  # 아이템명 인라인 주입 자리 → %c%s%c 방출
+            out += MC + PS + MC
         elif ch == " ":
             out.append(0x20)
         elif ch in HALF_PUNCT or ch.isascii() and ch.isalnum():
@@ -644,9 +651,20 @@ def parse_kr(entry):
         # ⚠ **따옴표도 허용한다** — opcode 잔여가 아니라 본문 부호다. 빠뜨리면 정발이 인용을
         # `"…"` 로 감싼 자리에서 **여는따옴표만 잘려** 화면에 `…어서 오십시오! "` 처럼 닫는
         # 것만 남는다(수정 탑 고문서 D_414#9 실측 2026-08-06, 4블록).
-        if m.start() < 4 and not re.fullmatch(
-            rf"[0-9 .,!?\"'{HARD_NL}{NOBREAK_SP}]*", seg[: m.start()]
-        ):
+        # ⚠ **본문 `%s` 블록은 선두 이름자리를 지켜야 한다**(`keep_lead_name`). 위 절삭은
+        # `%c%s%c` **헤더** 블록을 전제로 한다 — 거기선 이름이 헤더로 이미 나가니 본문의
+        # 이름자리는 중복이다. 그런데 `%s は …` 처럼 **본문 한복판에 %s 를 두는 블록**도 있고
+        # (국경의 동굴 폭약·수문, 방풍의 동굴 발견), 그 자리에서 잘라 버리면 `%s` 가 하나도
+        # 안 나가 **fmt_drop 으로 블록이 통째 탈락**한다 — 화면엔 일본어가 남는다.
+        # 기본 동작은 그대로 두고(그 5블록 실측 이력이 있다) 오버라이드가 켤 때만 남긴다.
+        # ⚠ **`%` 도 본문이다** — 백분율(`3%를 내게 나눠주게.`)이 창 선두에 올 수 있다.
+        # 빠뜨리면 `3%` 가 통째로 잘려 `를 내게 나눠주게.` 가 된다(jp22·jp51 실측 2026-08-10).
+        # 우리 서식(`%s`·`%d`)은 센티널로 들고 다니다 encode_ext 에서 바이트로 나가므로,
+        # 파싱 시점의 리터럴 `%` 는 언제나 내용이다.
+        _lead = rf"[0-9%% .,!?\"'{HARD_NL}{NOBREAK_SP}]*"
+        if entry.get("keep_lead_name"):  # 이름·아이템 주입 자리 둘 다 지킨다
+            _lead = rf"[0-9%% .,!?\"'{HARD_NL}{NOBREAK_SP}{NAME_SENT}{ITEM_SENT}]*"
+        if m.start() < 4 and not re.fullmatch(_lead, seg[: m.start()]):
             seg = seg[m.start() :]
         # ⚠ **꼬리 NAME_SENT 도 잘라낸다** — 선두를 자르는 것과 같은 이유다. 정발은 다음
         # 메시지의 이름자리(`\x09`)를 앞 엔트리 **끝**에 붙여 두는 자리가 있어(`…않겠습니까?\x09`),
@@ -680,8 +698,8 @@ def cell_w(ch):
     """엔진 슬롯 폭 — encode_ext와 1:1 (1바이트=0.5, 2바이트 전각=1)."""
     if ch == NUM_SENT:
         return 1.0  # %d = 보통 1~2자리(반각) ≈ 1슬롯
-    if ch == NAME_SENT:
-        return NAME_SLOTS  # %s는 런타임 이름 — 평균 길이로 근사
+    if ch in (NAME_SENT, ITEM_SENT):
+        return NAME_SLOTS  # %s는 런타임 이름/아이템명 — 평균 길이로 근사
     if ch in (JOSA_NAME, JOSA_ITEM):
         return NAME_SLOTS + 3  # 이름/아이템 + 병기 전체(은(는)/이(가)=3슬롯) — 엔진 배치와 일치
     if ch == NOBREAK_SP:
@@ -1463,8 +1481,13 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), d
             folded_prev = False
             # 다음 창이 인라인 %s 주입 창(텍스트 없는 body)이면 이름 앞 공백 —
             # 한국어는 "제 이름은 류난"처럼 띄어야 한다(JP는 무공백, eid 1164 실측 07-26)
+            # ⚠ 단 **개행을 방금 넣었으면 붙이지 않는다.** 이름이 새 줄에서 시작하므로
+            #   띄어쓸 상대가 없고, 공백이 줄머리로 가 **한 칸 들여쓴 것처럼 보인다.**
+            #   바이트로도 `\x0a%c` 가 `\x0a\x20%c` 가 돼 창 앞 개행 계약이 깨진다
+            #   (jp496~499 「받아라 / 던졌다!!」 실측 2026-08-09).
             if (
-                k + 1 < len(wins)
+                k not in nl_after
+                and k + 1 < len(wins)
                 and wins[k + 1][0] == "body"
                 and any(t[0] == "s" for t in wins[k + 1][1])
                 and not any(t[0] == "t" for t in wins[k + 1][1])
@@ -2183,8 +2206,15 @@ def load_translations(align_name, scn_name):
         화면상 보이지 않는다 — 문장 경계가 JP 조각 경계와 정확히 안 맞아도 무해하다."""
         base, _, rest = str(item).partition("#")
         base, _, vi = base.partition("~")  # `eid~v` = \x06 화자/상태 변형 v번만
+        # `표/이름:엔트리` = **다른 테이블의 엔트리**. 정발은 한 화면에 나올 문구를 테이블
+        # 둘에 갈라 두는 자리가 있다(복권 수령 jp322 = `T_116#0` 받았습니다 + `D_502#17`
+        # 손에 넣었습니다). 예전엔 체인이 테이블을 못 넘어 그런 자리를 전부 `ours` 로
+        # 새로 써야 했다 — 정발 포인터로 이을 수 있으면 그게 낫다(2026-08-10).
+        tbl = table
+        if ":" in base:
+            tbl, _, base = base.rpartition(":")
         pi, _, si = rest.partition(".")
-        t = kr_entry(table, int(base))["text"].removesuffix("{end}")
+        t = kr_entry(tbl, int(base))["text"].removesuffix("{end}")
         for a, b in pre:
             t = t.replace(a, b)
         if vi:
@@ -2289,12 +2319,19 @@ def load_translations(align_name, scn_name):
         if _pairs and not _hit and "시스템 문구 일원화" not in (ov.get("note") or ""):
             sub_miss.append((jp_id_str, _pairs[0][0]))
         entry["speaker"] = ov.get("speaker") or entry.get("speaker")
+        entry["keep_lead_name"] = bool(ov.get("keep_lead_name"))
         try:
             spk, pages = parse_kr(entry)
             final_spk = resolve_spk(int(jp_id_str), ov.get("speaker") or spk)
-            out[int(jp_id_str)] = (final_spk, pages) + jp_win.get(
-                int(jp_id_str), (None, True, False, set())
-            )
+            win = list(jp_win.get(int(jp_id_str), (None, True, False, set())))
+            # ⚠ 우리가 본문에서 내보내는 `%c%s%c`(ITEM_SENT)만큼 **창 목표를 깎는다.**
+            # 창 수 계약의 단위는 raw `%c` 개수인데, 문장 한복판의 아이템 주입 래퍼도 `%c` 를
+            # 둘 쓴다. 안 깎으면 그 둘이 창 구분으로 세어져 한 문장이 두 창으로 갈린다
+            # (jp786 실측: 원본 `%c` 2 → 재조립 4). 인라인 화자 헤더에 이미 같은 보정이 있다.
+            n_item = sum(p.count(ITEM_SENT) for _, p in pages)
+            if n_item and win[0]:
+                win[0] = max(1, win[0] - 2 * n_item)
+            out[int(jp_id_str)] = (final_spk, pages) + tuple(win)
             applied += 1
         except SkipBlock as e:
             # 사람이 지정한 교정이 조용히 사라지면 안 된다 — 반드시 보고

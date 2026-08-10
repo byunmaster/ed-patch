@@ -192,12 +192,22 @@ def _balance(words, n_lines, width, cell_width, no_head, no_tail):
 
     **줄 수가 그대로라 글자·공백·개행 총량이 안 변한다 = 바이트 중립**(메모리 영향 0).
     비용은 줄마다 (여백)^2 합 — 마지막 줄도 포함해 전체를 고르게 만든다.
-    금칙(no_head/no_tail)은 그리디와 동일하게 지킨다. 해가 없으면 None(그리디 유지)."""
+    금칙(no_head/no_tail)은 그리디와 동일하게 지킨다. 해가 없으면 None(그리디 유지).
+
+    여기에 **덩어리 갈림 벌점**을 얹는다(`splits_unit`). `_pull_*` 후처리는 어절 **하나만**
+    옆줄로 옮겨 보므로 폭이 모자라면 실패하는데(전 씬 75건 실측 2026-08-09), 줄바꿈 지점을
+    고르는 이 단계에서 미리 피하면 **한 번에 여러 줄이 밀려** 대개 들어간다.
+    ⚠ 벌점은 `width²` — 줄 하나가 통째로 비는 것과 맞먹는 값이다. 무한대가 아닌 이유는
+    **갈림 하나 없애자고 조판이 무너지면 안 되기** 때문이다(`어서` / `오세요.` 처럼 한 어절만
+    남는 줄이 생긴다). 갈림을 피하는 값이 여럿이면 기존 균형 비용이 그 중에서 고른다."""
     m = len(words)
     if n_lines < 2 or m < n_lines:
         return None
     w = [text_width(x, cell_width) for x in words]
     sp = text_width(" ", cell_width)
+    # 줄이 words[i] 로 시작하면(= i 앞에서 나누면) 덩어리가 갈리는가 — i 에만 달렸다.
+    split_cost = width * width
+    pen = [split_cost if i and splits_unit(words[i - 1], words[i]) else 0 for i in range(m)]
 
     def line_w(i, j):  # words[i:j] 한 줄 폭
         return sum(w[i:j]) + sp * (j - i - 1)
@@ -220,7 +230,7 @@ def _balance(words, n_lines, width, cell_width, no_head, no_tail):
             for i in range(k - 1, j):
                 if dp[k - 1][i] == INF or not ok(i, j):
                     continue
-                cost = dp[k - 1][i] + (width - line_w(i, j)) ** 2
+                cost = dp[k - 1][i] + (width - line_w(i, j)) ** 2 + pen[i]
                 if cost < dp[k][j]:
                     dp[k][j] = cost
                     back[k][j] = i
@@ -588,6 +598,7 @@ def _is_infinitive(word: str) -> bool:
     code = ord(ch) - 0xAC00
     return code % 28 == 0 and _JUNG[(code // 28) % 21] in _AUX_TAIL_VOWELS
 
+
 # 의존명사는 앞 용언 없이 못 선다 — 줄 첫머리에 오면 `너를 다시 만날` / `수 있을…` 처럼
 # 한 덩어리가 갈린다(유저 QA 2026-08-04). 앞 줄로 **올려** 붙인다. `_pull_det_orphans` 의
 # 거울상이고, 마찬가지로 재배치일 뿐이라 글자·줄 수·바이트 불변이다.
@@ -606,6 +617,34 @@ def _is_adnominal(word: str) -> bool:
     return (ord(ch) - 0xAC00) % 28 in (4, 8)  # 종성 ㄴ / ㄹ
 
 
+def split_reason(prev_word: str, next_word: str) -> str | None:
+    """두 어절 **사이에서 줄을 나누면** 갈리는 덩어리의 이름(안 갈리면 None).
+
+    `_pull_*` 네 규칙이 고치려는 자리와 같은 판정이고, **정본은 여기 하나**다 —
+    줄바꿈 지점을 고르는 `_balance`, 후처리 `_pull_tail_orphans`, 잔여를 세는 검출기
+    (`check_line_breaks`)가 모두 이걸 쓴다. 규칙이 두 벌이면 "고친다는 것"과 "남았다고
+    세는 것"이 어긋난다.
+
+    ⚠ 문장 경계(`.!?…`)는 갈려도 된다 — 유저 확정(2026-08-10): 문장이 꼭 새 줄에서 시작할
+    필요는 없고, **붙여 써야 할 것이 갈리는 쪽이 더 나쁘다.**"""
+    if not prev_word or not next_word or prev_word[-1] in ".!?…":
+        return None
+    if _is_infinitive(prev_word) and next_word.rstrip(".,!?…") in _AUX_HEAD:
+        return "본용언+보조용언"
+    if len(prev_word) >= 2 and prev_word.endswith("지") and next_word[:1] in ("못", "않", "마"):
+        return "-지 못하다/않다"
+    if prev_word in _DET_ORPHAN + _ADV_ORPHAN:
+        return "관형사·부사 고아"
+    if _BOUND_NOUN.fullmatch(next_word) and _is_adnominal(prev_word):
+        return "관형형+의존명사"
+    return None
+
+
+def splits_unit(prev_word: str, next_word: str) -> bool:
+    """두 어절 사이에서 줄을 나누면 한 덩어리가 갈리는가 — `split_reason` 의 불리언 판."""
+    return split_reason(prev_word, next_word) is not None
+
+
 def _pull_tail_orphans(pages, width, cell_width):
     """창의 **마지막 줄에 어절 하나만 남는 고아**를 없앤다 — 앞 줄의 끝 어절을 내려 붙인다.
 
@@ -619,7 +658,11 @@ def _pull_tail_orphans(pages, width, cell_width):
         last, prev = pg[-1].split(), pg[-2].split()
         if len(last) != 1 or len(prev) < 2:
             continue
-        if prev[-2] in _DET_ORPHAN:  # 내리면 지시관형사가 줄 끝 고아가 된다 — 그대로 둔다
+        # 내려 붙이면 줄 경계가 prev[-2]|prev[-1] 로 옮겨 간다 — 거기서 덩어리가 갈리면
+        # 고아 하나를 없애자고 **다른 갈림을 만드는** 셈이라 그대로 둔다.
+        # ⚠ 원래는 지시관형사만 봤는데, 부사 고아(`…해방되어서 다시` / `평화롭게…`)가 그대로
+        #   새로 생겼다(전 씬 2건 실측 2026-08-10). 판정을 `splits_unit` 정본으로 넓혔다.
+        if splits_unit(prev[-2], prev[-1]):
             continue
         # 앞 줄이 한 어절만 남을 땐, 그 어절이 짧으면 오히려 더 어색하다
         # (`폐하를` 홀로 = 나쁨 / `무찌르기에는` 홀로 = 무방). 4음절 이상만 허용.

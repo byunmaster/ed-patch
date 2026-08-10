@@ -36,27 +36,20 @@ from text import krwrap as K  # noqa: E402
 
 
 def bad_breaks(pages):
-    """창의 줄 경계에서 끊긴 덩어리 [(앞 줄, 뒷 줄, 사유)]."""
+    """창의 줄 경계에서 끊긴 덩어리 [(앞 줄, 뒷 줄, 사유)].
+
+    ⚠ 판정 정본은 `krwrap.split_reason` 하나다 — 조판기(`_balance`·`_pull_tail_orphans`)가
+    피하려는 자리와 검출기가 세는 자리가 같아야 한다. 여기 규칙을 따로 두면 "고쳤다"와
+    "남았다"가 어긋난다(실제로 규칙이 두 벌이었다, 2026-08-10 통합)."""
     out = []
     for pg in pages:
         for i in range(1, len(pg)):
             prev, words = pg[i - 1].split(), pg[i].split()
             if not prev or not words:
                 continue
-            a, b = prev[-1], words[0]
-            if a[-1] in ".!?…":  # 문장 경계는 끊겨도 된다
-                continue
-            if K._is_infinitive(a) and b.rstrip(".,!?…") in K._AUX_HEAD:
-                why = "본용언+보조용언"
-            elif len(a) >= 2 and a.endswith("지") and b[:1] in ("못", "않", "마"):
-                why = "-지 못하다/않다"
-            elif a in K._DET_ORPHAN + K._ADV_ORPHAN:
-                why = "관형사·부사 고아"
-            elif K._BOUND_NOUN.fullmatch(b) and K._is_adnominal(a):
-                why = "관형형+의존명사"
-            else:
-                continue
-            out.append((pg[i - 1], pg[i], why))
+            why = K.split_reason(prev[-1], words[0])
+            if why:
+                out.append((pg[i - 1], pg[i], why))
     return out
 
 

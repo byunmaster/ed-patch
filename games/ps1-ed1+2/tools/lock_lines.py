@@ -225,9 +225,12 @@ def main():
     if "--settled" in sys.argv:
         i = sys.argv.index("--settled")
         why = sys.argv[sys.argv.index("--why") + 1] if "--why" in sys.argv else "인게임 확인"
-        args = [a for a in sys.argv[i + 1 :] if not a.startswith("-")]
-        stop = args.index("--why") if "--why" in args else len(args)
-        mark_settled(args[0], args[1:stop], why)
+        # ⚠ `--why` 를 **먼저** 잘라낸 뒤 인자를 모은다. 예전엔 `-` 로 시작하는 토큰을 먼저
+        # 걸러내서 `"--why" in args` 가 영영 거짓이었고, 사유 문구가 eid 로 등록됐다
+        # (SCN1 3건 · SCN3 1건 · SCN4 3건이 그렇게 들어가 있었다 — 2026-08-10 발견·정리).
+        end = sys.argv.index("--why") if "--why" in sys.argv else len(sys.argv)
+        args = [a for a in sys.argv[i + 1 : end] if not a.startswith("-")]
+        mark_settled(args[0], args[1:], why)
         return
     if "--observe" in sys.argv:
         observe()
