@@ -69,6 +69,7 @@ games/<게임>/work/
 ```bash
 python3 games/ps1-ed1+2/tools/build.py     # [kr] 전 트랙 체인 → work/build/Eiyuu Densetsu (KR).bin/.cue
 sh scripts/patcher.sh serve                # [fix] 웹 패처를 로컬에서 띄워 확인
+sh scripts/test.sh                         # 단위·회귀 테스트 (원본 없이 돈다)
 sh scripts/check-updates.sh                # 외부 의존물(emucap·스킬·템플릿) 새 버전 확인
 sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조 · DOS 패치 검증)
 ```
@@ -199,6 +200,23 @@ for r in kr jp us; do ln -sfn "../../../../originals/$r" "originals/$r"; done
 
 세 원칙이 부딪히면 **YAGNI > DRY**다. 미리 뽑아 둔 공통 계층은 대개 두 소비자 어느 쪽에도
 안 맞는다.
+
+## 언어는 플랫폼마다 고른다 (모노레포, 유저 확정 2026-08-11)
+
+**한 언어로 통일하지 않는다.** 게임·플랫폼마다 성격이 달라서, 새 코드베이스를 열 때 그 자리에
+맞는 걸 고른다. 지금 `games/ps1-ed1+2` 는 **Python** 이다.
+
+- **성능은 대개 병목이 아니다** — 실측: EDC+ECC 가 순수 파이썬으로 섹터당 1.69ms 인데, 우리는
+  **바뀐 섹터만**(~1,200) 다시 쓰므로 2초다. 빌드 2분의 대부분은 텍스트 조립이고, 진짜 병목은
+  사람 판단(배정·QA)이다. ⚠ 단 **이미지 전체를 다시 쓰는** 종류의 작업이면 얘기가 다르다
+  (107,443섹터 = 182초) — 그럴 땐 그 함수만 벡터화하거나 네이티브로 뺀다.
+- **탐색 속도·생태계는 Python** — 롬해킹은 9할이 탐색이다(스캔·덤프·가설 폐기). `capstone`·
+  `PIL`·`fontTools` 가 다 파이썬 1급이다.
+- **불변식 강제는 Rust** — `TrackedRom`(mcpads SFC)은 `DerefMut` 을 구현 안 해 `rom[x] = y` 가
+  **컴파일조차 안 된다.** 우리는 래퍼(`common.write_user_data`)로 흉내 냈지만 `f.write()` 를
+  직접 부르는 걸 못 막는다. 조용히 이미지를 망가뜨리는 실수가 잦은 영역이면 값이 크다.
+- **판단 기준**: 이미 있는 코드베이스는 **안 옮긴다**(도구·정본·검출기 이관 비용이 얻는 것보다
+  크다). **새로 시작하는 게임**에서만 다시 고른다.
 
 ## 코드 스타일
 
