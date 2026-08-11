@@ -633,7 +633,7 @@ def main():
     ed = bytearray(extract(ED_LBA, ED_SIZE, path=target))
     size, josa_addr, stub_addr, pre_addr, draw_addr = build_and_patch(ed)
     with open(target, "r+b") as f:
-        n = write_user_data(f, ED_LBA, ed)
+        n = write_user_data(f, ED_LBA, ed, label="조사 훅 (ED.EXE)")
     print(
         f"조사 훅: {size}B (josa 0x{josa_addr:08X}, stub 0x{stub_addr:08X}, prewrap "
         f"0x{pre_addr:08X}, drawstr 0x{draw_addr:08X}) → 0x{HOOK_ADDR:08X}·"

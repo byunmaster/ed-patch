@@ -47,7 +47,7 @@ def main():
         # ED.EXE 패치
         ed = bytearray(extract(ED_LBA, ED_SIZE))
         ed[base_off : base_off + len(block)] = block
-        changed = write_user_data(f, ED_LBA, ed)
+        changed = write_user_data(f, ED_LBA, ed, label="PoC (ED.EXE)")
         print(f"ED.EXE: 섹터 {changed}개 수정 (폰트 블록)")
 
         # ED1SCN1.BIN 패치
@@ -55,7 +55,7 @@ def main():
         cur = bytes(scn[DIALOGUE_OFF : DIALOGUE_OFF + len(old)])
         assert cur == old, f"원본 불일치: {cur.hex()}"
         scn[DIALOGUE_OFF : DIALOGUE_OFF + len(new)] = new
-        changed = write_user_data(f, ED1SCN1_LBA, scn)
+        changed = write_user_data(f, ED1SCN1_LBA, scn, label="PoC (ED1SCN1)")
         print(f"ED1SCN1.BIN: 섹터 {changed}개 수정 (대사)")
 
     write_cue(DST_CUE, "Eiyuu Densetsu (PoC KR).bin")

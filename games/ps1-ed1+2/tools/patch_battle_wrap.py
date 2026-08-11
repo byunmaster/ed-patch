@@ -144,7 +144,7 @@ def main():
         )
     size = build_and_patch(ed, PLACE_RAM)
     with open(target, "r+b") as f:
-        n = write_user_data(f, ED_LBA, ed)
+        n = write_user_data(f, ED_LBA, ed, label="전투 조판 (ED.EXE)")
     print(
         f"줄머리 공백 훅: stub {size}B @ 0x{PLACE_RAM:08X} → 0x{HOOK_ADDR:08X} 훅, 섹터 {n}개 수정"
     )

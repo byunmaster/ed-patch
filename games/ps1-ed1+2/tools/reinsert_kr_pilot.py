@@ -526,6 +526,25 @@ def _spell_rules():
     return _SPELL_RULES
 
 
+# 지명 정본 — 편차 대장(docs/jeongbal-deviations.md)이 정본이고 여기는 그 적용판이다.
+# ⚠ 모듈 상수인 이유: 검색·감사 도구가 **파이프라인과 같은 순서**로 문안을 만들어야 해서다
+# (두 벌이면 어긋난다 — `check_spell_rules` 가 그렇게 5배 과소보고했다).
+PLACE_CANON = (("폰 리그", "온리크"), ("폰리그", "온리크"), ("라느라", "라누라"))
+
+
+def corpus_text(raw):
+    """정발 원문 → **`spell_fix` 를 통과한 뒤의 문안**.
+
+    도구가 화면 문안과 **같은 표기로** 검색·대조하려면 이 순서를 그대로 따라야 한다.
+    `parse_kr` 안에도 같은 순서가 있는데, 거기는 화자 마크업 절삭 등 블록 사정이 섞여 있어
+    통째로 재사용이 안 된다 — 순서만 여기 한 벌 더 둔다."""
+    t = resolve_dos_breaks(raw).replace("{end}", "")
+    t = fix_spacing(t)
+    for a, b in PLACE_CANON:
+        t = t.replace(a, b)
+    return spell_fix(t)
+
+
 def spell_fix(t):
     rx, space, replace = _spell_rules()
     if rx:
@@ -608,7 +627,7 @@ def parse_kr(entry):
     # 문안(`라누라왕국은`)을 보고 규칙을 만드는데 `spell_fix` 가 보는 건 아직 `라느라왕국은`
     # 이라 영영 안 걸린다(2026-08-10 실측 5건). 지명을 먼저 정본화하면 맞춤법 규칙은 **한 가지
     # 표기만** 겨냥하면 된다.
-    for _a, _b in (("폰 리그", "온리크"), ("폰리그", "온리크"), ("라느라", "라누라")):
+    for _a, _b in PLACE_CANON:
         t = t.replace(_a, _b)
     t = spell_fix(t)  # 직함 띄어쓰기 등 맞춤법 교정(dos_spelling_fixes.json)
     # 상점 인사·흐름의 분기 마커(\x07=도구점, {p}\x06=무기점) 뒤 come-again 꼬리 제거 — PS1은
@@ -3085,9 +3104,9 @@ def main():
             ed[off : off + len(cand)] = cand
         if donor_all:
             print(f"도너 블록 {len(donor_all)}개 → ED.EXE 0런")
-        print(f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed)}개 수정 (폰트+도너)")
+        print(f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label="재삽입 폰트·도너 (ED.EXE)")}개 수정 (폰트+도너)")
         for lba, out_file in built.items():
-            print(f"  LBA {lba}: 섹터 {write_user_data(f, lba, out_file)}개 수정")
+            print(f"  LBA {lba}: 섹터 {write_user_data(f, lba, out_file, label="재삽입 씬")}개 수정")
         # 재배치된 씬의 BIN 디렉토리 레코드 패치(LBA·size, 양 엔디언) — 엔진은 ISO 경로로
         # 로드하므로 이거면 커진 파일을 그대로 읽는다(ED.EXE 0xC3F4~ 경로 문자열 실증).
         if dir_moves:
@@ -3107,7 +3126,7 @@ def main():
                     i += bdir[i]
                 assert hit, f"BIN 디렉토리에 {fname} 없음"
                 print(f"  디렉토리 갱신: {fname} → LBA {new_lba}, {new_size}B")
-            write_user_data(f, BIN_DIR_LBA, bdir)
+            write_user_data(f, BIN_DIR_LBA, bdir, label="ISO 디렉터리 엔트리")
     json.dump(
         layout_manifest,
         open(os.path.join(OUT_DIR, "scn_layout.json"), "w", encoding="utf-8"),

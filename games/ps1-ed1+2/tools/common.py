@@ -15,6 +15,17 @@ DIST_DIR = os.path.join(WORK_DIR, "dist")  # 배포 차분(xdelta/BPS) — 아�
 ORIG_BIN = os.path.join(ORIG_DIR, "Legend of Heroes I & II, The - Eiyuu Densetsu (Japan).bin")
 ORIG_CUE = os.path.join(ORIG_DIR, "Legend of Heroes I & II, The - Eiyuu Densetsu (Japan).cue")
 
+# ── 원본 지문 — 이 덤프를 전제로 오프셋이 박혀 있다 ────────────────────────
+# ⚠ **오프셋·LBA 가 전부 이 한 덤프에 결박돼 있다.** 다른 리비전·다른 지역판을 넣으면
+# 조용히 엉뚱한 섹터를 고쳐 쓴다 — 실패하지 않고 **망가진 이미지가 나온다.** mcpads 패처들이
+# README 에 체크섬 넷을 박고 CRC 가 다르면 경고 + 명시적 탈출구를 요구하는 이유가 이것이다.
+# 해시는 저작물이 아니라 지문이라 커밋해도 된다(그쪽도 같은 관용).
+SRC_SIZE = 252_498_960
+SRC_CRC32 = "4BDCBF59"
+SRC_MD5 = "7b7cf3a179cf65adbc62201808fbdd88"
+SRC_SHA1 = "269032ba730f4dbe80b798a2c4c3b415e094f359"
+SRC_SHA256 = "6270aaad9d35c0be4292f6aa10033a55c7e24c1ffbfb62277d54af6b44c2a15c"
+
 SECTOR = 2352  # raw MODE2/2352
 USER_OFF = 24  # sync(12)+header(4)+subheader(8) → Mode2 Form1 유저 데이터
 USER_SIZE = 2048
@@ -22,6 +33,56 @@ USER_SIZE = 2048
 # ED1SCN1.BIN (iso_files.txt) — 자주 쓰는 대상
 ED1SCN1_LBA, ED1SCN1_SIZE = 1183, 206260
 ED1SCN1_RAM_BASE = 0x8016A000  # 오버레이 로드 주소 (no$psx로 검증)
+
+
+def digests(path):
+    """{size, crc32, md5, sha1, sha256} — 배포 표기·원본 확인에 같이 쓴다."""
+    import hashlib
+    import zlib
+
+    h = {n: hashlib.new(n) for n in ("md5", "sha1", "sha256")}
+    crc = size = 0
+    with open(path, "rb") as f:
+        while chunk := f.read(1 << 20):
+            size += len(chunk)
+            crc = zlib.crc32(chunk, crc)
+            for x in h.values():
+                x.update(chunk)
+    return {
+        "size": size,
+        "crc32": f"{crc & 0xFFFFFFFF:08X}",
+        **{k: v.hexdigest() for k, v in h.items()},
+    }
+
+
+def verify_source(path=ORIG_BIN, strict=None):
+    """원본이 오프셋을 박아 둔 그 덤프인지 확인한다.
+
+    `strict` — None 이면 환경변수 `ALLOW_NONCANONICAL_SRC` 로 정한다(1 이면 경고만).
+    ⚠ **크기부터 본다.** 크기가 다르면 해시를 안 재고 바로 실패해도 되고(241MB 읽기 절약),
+    같으면 sha1 로 확정한다.
+    """
+    if strict is None:
+        strict = os.environ.get("ALLOW_NONCANONICAL_SRC") != "1"
+    n = os.path.getsize(path)
+    bad = None
+    if n != SRC_SIZE:
+        bad = f"크기 {n:,} (기대 {SRC_SIZE:,})"
+    else:
+        got = digests(path)["sha1"]
+        if got != SRC_SHA1:
+            bad = f"sha1 {got} (기대 {SRC_SHA1})"
+    if not bad:
+        return True
+    msg = (
+        f"⚠ 원본이 정본 덤프와 다르다 — {bad}\n"
+        f"  오프셋·LBA 가 전부 그 덤프에 결박돼 있어 **엉뚱한 자리를 고쳐 쓸 수 있다**.\n"
+        f"  알고도 계속하려면 `ALLOW_NONCANONICAL_SRC=1`."
+    )
+    if strict:
+        raise SystemExit(msg)
+    print(msg)
+    return False
 
 
 def extract(lba, size, path=ORIG_BIN):
@@ -122,19 +183,94 @@ def ecc_update(sec):
     sec[12:16] = hdr
 
 
-def write_user_data(f, lba, data, nsec=None):
+# ── 절대 안 바뀌어야 하는 구간 (파일 오프셋, 반열림) ──────────────────────
+# 클리어 범위를 잘못 잡아 **남의 자료를 지우는** 사고를 잡는다(2026-08-02 실측:
+# OPEN1 포인터 테이블 0x938~0x973 말소).
+# mode: "bytes" = 통째로 동일 · "script" = 텍스트 포인터 슬롯만 예외(재packing 으로 정당히 바뀜)
+IMMUTABLE = {
+    # (LBA, 크기): [(이름, 시작, 끝, mode), …]
+    (69, 96256): [
+        ("OPEN1 포인터 테이블", 0x938, 0x974, "bytes"),
+        ("OPEN1 ED2 오프닝 내레이션", 0xEF0, 0x1B14, "bytes"),
+        ("OPEN1 표시 스크립트 커맨드", 0x145A0, 0x147BC, "script"),
+    ],
+}
+TEXT_PTR = range(0x80010000, 0x80011000)  # "script" 모드에서 정당히 바뀌는 슬롯
+
+
+def _guards():
+    """[(lo, hi, 이름, mode)] — 유저데이터 **절대** 오프셋(lba*2048 + 파일 안쪽 오프셋)."""
+    out = []
+    for (lba, _size), regions in IMMUTABLE.items():
+        base = lba * USER_SIZE
+        out += [(base + a, base + b, name, mode) for name, a, b, mode in regions]
+    return out
+
+
+class WriteGuard(Exception):
+    """무변경 구간을 바꾸려 했다 — 쓰기를 취소하고 그 자리에서 실패."""
+
+
+def _check_guard(lo, old, new, label):
+    """[lo, lo+len) 구간의 old→new 변경이 무변경 구간을 건드리는지."""
+    for g_lo, g_hi, name, mode in _guards():
+        a, b = max(lo, g_lo), min(lo + len(old), g_hi)
+        if a >= b:
+            continue
+        for o in range(a - lo, b - lo):
+            if old[o] == new[o]:
+                continue
+            if mode == "script":
+                w = (o - (g_lo - lo)) & ~3  # 워드 정렬 (구간 기준)
+                s = (g_lo - lo) + w
+                if int.from_bytes(old[s : s + 4], "little") in TEXT_PTR:
+                    continue  # 텍스트 포인터 슬롯 — 재packing 으로 정당히 바뀐다
+            raise WriteGuard(
+                f"무변경 구간 침범 — `{label}` 이 「{name}」 @0x{lo + o:X}"
+                f"(유저데이터 절대) 를 {old[o]:02X}→{new[o]:02X} 로 바꾸려 했다"
+            )
+
+
+def write_user_data(f, lba, data, nsec=None, *, label, expect=None):
     """열린 r+b 파일 핸들의 lba부터 유저 데이터를 기록하고 EDC·ECC 재계산.
+
+    `label` — 무엇을 쓰는지(필수). 가드에 걸렸을 때 **범인을 바로 알려면** 있어야 한다.
+    `expect` — 쓰기 **사전 조건**. `bytes` 면 대상 범위의 현재 바이트가 정확히 그것이어야
+        하고, `int` 면 전 범위가 그 바이트여야 한다(빈 공간 확인용).
+
+    ⚠ **사후 대조로는 늦다.** `build.py` 가 빌드 끝에 원본과 byte 대조하지만, 그때는 이미
+    이미지가 망가져 있고 누가 언제 지웠는지는 안 나온다. 그래서 mcpads 의 `TrackedRom`
+    (SFC 마도물어 — 모든 쓰기가 라벨 + `Expect` 사전조건을 요구한다)을 이 통로에 옮겼다.
+    ⚠ 가드는 **범위가 아니라 값 변화**를 본다 — 무변경 구간을 품은 파일을 통째로 다시 쓰는
+    건(그 바이트를 그대로 되쓰는) 정상이라 범위로 막으면 오탐이 난다.
+
     반환: 실제로 바뀐 섹터 수."""
     if nsec is None:
         nsec = (len(data) + USER_SIZE - 1) // USER_SIZE
+    if expect is not None:
+        cur = bytearray()
+        for i in range(nsec):
+            f.seek((lba + i) * SECTOR + USER_OFF)
+            cur += f.read(USER_SIZE)
+        n = len(data) if isinstance(expect, bytes) else nsec * USER_SIZE
+        got = bytes(cur[:n])
+        want = expect if isinstance(expect, bytes) else bytes([expect]) * n
+        if got != want:
+            o = next(i for i, (x, y) in enumerate(zip(got, want, strict=True)) if x != y)
+            raise WriteGuard(
+                f"쓰기 사전조건 불일치 — `{label}` @lba {lba}+0x{o:X}: "
+                f"{got[o]:02X} (기대 {want[o]:02X})"
+            )
     changed = 0
     for i in range(nsec):
         chunk = bytes(data[i * USER_SIZE : (i + 1) * USER_SIZE]).ljust(USER_SIZE, b"\x00")
         sec_base = (lba + i) * SECTOR
         f.seek(sec_base)
         sec = bytearray(f.read(SECTOR))
-        if sec[USER_OFF : USER_OFF + USER_SIZE] == chunk:
+        old = bytes(sec[USER_OFF : USER_OFF + USER_SIZE])
+        if old == chunk:
             continue
+        _check_guard((lba + i) * USER_SIZE, old, chunk, label)
         assert not (sec[18] & 0x20), f"섹터 {lba + i}는 Form2 — 대상 아님"
         sec[USER_OFF : USER_OFF + USER_SIZE] = chunk
         sec[2072:2076] = edc_compute(bytes(sec[16:2072])).to_bytes(4, "little")

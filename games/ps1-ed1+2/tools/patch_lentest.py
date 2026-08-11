@@ -59,7 +59,7 @@ def main():
     print("사본 생성 중...")
     shutil.copyfile(SRC, DST)
     with open(DST, "r+b") as f:
-        changed = write_user_data(f, LBA, new, nsec)
+        changed = write_user_data(f, LBA, new, nsec, label="길이 실험")
     print(f"수정 섹터: {changed}/{nsec}")
 
     write_cue(DST_CUE, "Eiyuu Densetsu (Len Test).bin")

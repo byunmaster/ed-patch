@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import sys
 
-from common import BUILD_DIR, ROOT, write_cue
+from common import BUILD_DIR, ORIG_BIN, ROOT, verify_source, write_cue
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 FINAL = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
@@ -30,24 +30,16 @@ def run(script, *args):
     subprocess.run([sys.executable, os.path.join(TOOLS, script), *args], check=True, cwd=TOOLS)
 
 
-# ── 절대 안 바뀌어야 하는 구간 (파일 오프셋, 반열림) ──────────────────────
-# 최종 이미지를 원본과 byte 대조한다. **실패로 끝난 빌드가 남긴 낡은 이미지를 정상으로
-# 오해**하거나, 클리어 범위를 잘못 잡아 남의 자료를 지우는 사고를 잡는다 — 둘 다 실제로
-# 겪었다(2026-08-02: OPEN1 포인터 테이블 0x938~0x973 말소).
-# mode: "bytes" = 통째로 동일 · "script" = 텍스트 포인터 슬롯만 예외(재packing 으로 정당히 바뀜)
-IMMUTABLE = {
-    # (LBA, 크기): [(이름, 시작, 끝, mode), …]
-    (69, 96256): [
-        ("OPEN1 포인터 테이블", 0x938, 0x974, "bytes"),
-        ("OPEN1 ED2 오프닝 내레이션", 0xEF0, 0x1B14, "bytes"),
-        ("OPEN1 표시 스크립트 커맨드", 0x145A0, 0x147BC, "script"),
-    ],
-}
+# ── 절대 안 바뀌어야 하는 구간 ────────────────────────────────────────────
+# ⚠ 표는 `common.IMMUTABLE` 이 정본이다 — **쓰기 시점 가드**(`common.write_user_data`)와
+# 아래 사후 대조가 같은 표를 봐야 한다. 두 벌이면 어긋난다(DRY: 지식은 한 곳).
+# 여기 남은 건 **원본과의 최종 대조**다. 쓰기 가드는 `write_user_data` 를 지나는 경로만
+# 보므로, 그걸 우회하는 쓰기·재배치 사고는 이 대조가 잡는다(두 겹으로 둔다).
 
 
 def check_immutable():
     """선언한 무변경 구간이 원본과 같은지 확인한다(다르면 빌드 실패)."""
-    from common import extract
+    from common import IMMUTABLE, TEXT_PTR, extract
 
     src = glob.glob(os.path.join(ROOT, "..", "..", "originals", "jp", "ps1-ed1+2", "*.bin"))
     if not src:
@@ -64,7 +56,7 @@ def check_immutable():
 
                 for o in range(a, b, 4):
                     ow = struct.unpack("<I", orig[o : o + 4])[0]
-                    if 0x80010000 <= ow < 0x80011000:
+                    if ow in TEXT_PTR:
                         continue
                     if orig[o : o + 4] != now[o : o + 4]:
                         nw = struct.unpack("<I", now[o : o + 4])[0]
@@ -85,6 +77,14 @@ def rm(stem):
 
 
 def main():
+    # ⚠ **원본이 그 덤프인지 먼저 확인한다.** 오프셋·LBA 가 전부 한 덤프에 결박돼 있어
+    # 다른 리비전을 넣으면 실패하지 않고 **망가진 이미지가 나온다**(mcpads 패처들의 CRC 경고
+    # + 명시적 탈출구를 옮겼다). 알고도 계속하려면 `ALLOW_NONCANONICAL_SRC=1`.
+    if os.path.exists(ORIG_BIN):
+        verify_source()
+    else:
+        print("  ⚠ 원본 없음 — 지문 확인 건너뜀")
+
     # ⚠ 테스트 이미지는 **항상 하나만** 남긴다(CLAUDE.md). 중간 산출물은 체인 끝에서 지우는데,
     # 도구를 단독 실행하면(예: reinsert 만 돌려 A/B) 그게 남는다 — 시작할 때도 한 번 치운다.
     for stem in INTERMEDIATES + STALE:
