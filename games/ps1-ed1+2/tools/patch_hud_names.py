@@ -210,7 +210,7 @@ def patch(target=TARGET, preview=None):
     blob = bytearray(buf[TIM_OFF:end])  # 전체 섹터(꼬리 원본 보존)
     blob[pix_off : pix_off + tim["w"] * tim["h"]] = new_pix.astype(np.uint8).tobytes()
     with open(target, "r+b") as f:
-        n = write_user_data(f, TIM_OFF // 2048, blob)
+        n = write_user_data(f, TIM_OFF // 2048, blob, label="HUD 이름 TIM")
     print(
         f"HUD 이름판 {len(NAMES)}명 → 0x{TIM_OFF:X} (섹터 {n}개): "
         + ", ".join(k for _, _, k in NAMES)

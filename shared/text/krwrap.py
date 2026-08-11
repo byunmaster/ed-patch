@@ -609,6 +609,9 @@ _BOUND_NOUN = re.compile(
 )
 
 
+_TIME_BOUND = re.compile(r"(전|후|뒤|동안|사이|무렵)(에|엔|에는|까지|부터)?[.,!?…]*$")
+
+
 def _is_adnominal(word: str) -> bool:
     """어절이 관형형(…ㄴ/…ㄹ)으로 끝나는가 — 뒤에 의존명사가 올 자리."""
     ch = word[-1]
@@ -642,6 +645,13 @@ def split_reason(prev_word: str, next_word: str) -> str | None:
         return "관형사형 고아"
     if _BOUND_NOUN.fullmatch(next_word) and _is_adnominal(prev_word):
         return "관형형+의존명사"
+    # 시간 의존명사는 앞 용언과 한 덩어리다 — `어두워지기` / `전에 돌아오시옵소서.` 로 갈렸다
+    # (유저 QA 2026-08-11). ⚠ 위 규칙에 안 걸린다: `-기` 는 관형형(ㄴ/ㄹ 받침)이 아니고
+    # `전` 은 의존명사 목록에도 없다. 앞이 `-기`나 ㄴ/ㄹ 받침일 때만 본다 — `집 뒤에` 처럼
+    # 위치명사로 쓰는 자리를 거른다. ⚠ **받침 판정은 고유명사도 문다**(`퍼거슨 전에`) —
+    # 그래도 두는 건 그 자리에서 갈리는 것보다 묶이는 쪽이 낫기 때문이다(전수 8건 실측: 악화 0).
+    if _TIME_BOUND.fullmatch(next_word) and (prev_word.endswith("기") or _is_adnominal(prev_word)):
+        return "용언+시간 의존명사"
     return None
 
 

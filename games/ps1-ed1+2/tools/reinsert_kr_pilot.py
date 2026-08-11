@@ -61,6 +61,7 @@ SCN_FILES = [
     ("ED1SCN5", 1555, 171392),
     ("ED1SCN6", 1639, 100270),
 ]
+_FMT_SEQ = re.compile(rb"%[sd]")  # 인자 소비 계약 — 개수만이 아니라 **순서**도 계약이다
 MC = b"\x25\x63"  # %c
 PS = b"\x25\x73"  # %s (런타임 이름 주입)
 PD = b"\x25\x64"  # %d (런타임 수치 주입)
@@ -526,6 +527,25 @@ def _spell_rules():
     return _SPELL_RULES
 
 
+# 지명 정본 — 편차 대장(docs/jeongbal-deviations.md)이 정본이고 여기는 그 적용판이다.
+# ⚠ 모듈 상수인 이유: 검색·감사 도구가 **파이프라인과 같은 순서**로 문안을 만들어야 해서다
+# (두 벌이면 어긋난다 — `check_spell_rules` 가 그렇게 5배 과소보고했다).
+PLACE_CANON = (("폰 리그", "온리크"), ("폰리그", "온리크"), ("라느라", "라누라"))
+
+
+def corpus_text(raw):
+    """정발 원문 → **`spell_fix` 를 통과한 뒤의 문안**.
+
+    도구가 화면 문안과 **같은 표기로** 검색·대조하려면 이 순서를 그대로 따라야 한다.
+    `parse_kr` 안에도 같은 순서가 있는데, 거기는 화자 마크업 절삭 등 블록 사정이 섞여 있어
+    통째로 재사용이 안 된다 — 순서만 여기 한 벌 더 둔다."""
+    t = resolve_dos_breaks(raw).replace("{end}", "")
+    t = fix_spacing(t)
+    for a, b in PLACE_CANON:
+        t = t.replace(a, b)
+    return spell_fix(t)
+
+
 def spell_fix(t):
     rx, space, replace = _spell_rules()
     if rx:
@@ -608,7 +628,7 @@ def parse_kr(entry):
     # 문안(`라누라왕국은`)을 보고 규칙을 만드는데 `spell_fix` 가 보는 건 아직 `라느라왕국은`
     # 이라 영영 안 걸린다(2026-08-10 실측 5건). 지명을 먼저 정본화하면 맞춤법 규칙은 **한 가지
     # 표기만** 겨냥하면 된다.
-    for _a, _b in (("폰 리그", "온리크"), ("폰리그", "온리크"), ("라느라", "라누라")):
+    for _a, _b in PLACE_CANON:
         t = t.replace(_a, _b)
     t = spell_fix(t)  # 직함 띄어쓰기 등 맞춤법 교정(dos_spelling_fixes.json)
     # 상점 인사·흐름의 분기 마커(\x07=도구점, {p}\x06=무기점) 뒤 come-again 꼬리 제거 — PS1은
@@ -745,8 +765,17 @@ HARD_NL = "\ue000"
 NOBREAK_SP = "\ue003"
 # 띄어 쓰되 줄에서 갈리면 안 되는 표현. 낱말 수준이라 저작권 대상이 아니다.
 # ⚠ 조판이 어색하다고 **표기를 바꾸지 않는다** — 붙임 공백으로 묶는다(2026-08-04 `보물 창고`
-# 때 정한 규칙). `다시 생겼으니` 는 `다시` 가 줄 끝에 홀로 떨어졌다(유저 QA 2026-08-06).
-KEEP_TOGETHER = ("보물 창고", "배편이 다시 생겼으니")
+# 때 정한 규칙). ⚠ 다만 **묶으면 줄이 늘어난다** — `배편이 다시 생겼으니`(2026-08-06)를 묶었더니
+# 무기점이 4줄이 되고, 앞 블록과 한 창에 이어져 7줄로 창을 넘었다. 그 자리는 `다시` 가 줄 끝에
+# 오는 쪽을 유저가 택했다(2026-08-11) — **여기 넣기 전에 창 줄 수를 본다**(`check_tail_cut`).
+KEEP_TOGETHER = ("보물 창고",)
+# **금액과 단위는 갈리지 않는다** — `하룻밤 10` / `Gold입니다.` 로 끊겨 값과 단위가 두 줄에
+# 걸쳤다(여관 jp667, 유저 QA 2026-08-11). 낱말 목록으로는 못 잡는다(금액이 자리마다 다르고
+# 런타임 주입(`NUM_SENT`)이면 빌드 시점엔 값도 모른다) → **숫자 + `Gold`** 를 패턴으로 묶는다.
+# ⚠ **「숫자 뒤 아무 어절」로 넓히지 말 것.** 실제로 넓혀 봤더니 `워프 2` / `마법을` 을 갈라
+# 놓고(수사가 앞말에 붙는 자리) `기다리고` / `있게.` 까지 밀어냈다 — 코퍼스에서 숫자 뒤
+# 진짜 단위는 `Gold` 뿐이다(2026-08-11 실측). 다른 단위가 실제로 나오면 그때 넣는다.
+_NUM_UNIT = re.compile(r"(?<=[0-9" + NUM_SENT + r"]) (?=Gold)")
 
 
 # 조사 병기 — 조판 폭 계산에서는 **런타임 해결 후 폭**(조사 1글자)으로 세어야 한다.
@@ -777,6 +806,21 @@ def _unfold_josa(pages, orig):
 _JOSA_FOLD_RE = re.compile(JOSA_FOLD)
 
 
+def _bind_num_unit(text, width):
+    """수치 어절과 그 다음 어절을 붙임 공백으로 묶는다(`10 Gold입니다.` — `_NUM_UNIT`).
+
+    묶인 폭이 줄 폭을 넘으면 안 묶는다 — 못 끊는 덩어리가 폭을 넘으면 조판이 되레 나빠진다.
+    """
+
+    def rep(m):
+        a = max(text.rfind(" ", 0, m.start()), text.rfind("\n", 0, m.start())) + 1
+        b = min((i for i in (text.find(c, m.end()) for c in " \n") if i >= 0), default=len(text))
+        seg = text[a:b]
+        return NOBREAK_SP if sum(cell_w(c) for c in seg) <= width else " "
+
+    return _NUM_UNIT.sub(rep, text)
+
+
 def wrap_page(text, width=WRAP, target=None, max_lines=None):
     """공통 줄바꿈 유틸(shared/text/krwrap.wrap_pages): 원문 {n} 줄바꿈을 존중하고
     폭(WRAP) 넘는 줄만 재줄바꿈 + 금칙 + 짧은조각 병합, 창(3줄)은 문장 그룹 단위로
@@ -788,6 +832,7 @@ def wrap_page(text, width=WRAP, target=None, max_lines=None):
     text = text.replace(HARD_NL, "\n")
     for kt in KEEP_TOGETHER:  # 어절 갈림 방지 — 조판이 끝나면 되돌린다
         text = text.replace(kt, kt.replace(" ", NOBREAK_SP))
+    text = _bind_num_unit(text, width)
     text, folded = _fold_josa(text)  # 병기 → 1슬롯(런타임 훅 해결 후 폭)
     pages = _unfold_josa(
         kr_wrap_pages(
@@ -1426,13 +1471,18 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), d
     if not body_idx:
         raise SkipBlock("본문 창 없음")
     # 채움 제외(JP 통과) 창: 부호 전용(침묵 ・・・) + 토큰 없는 빈 창(종단 %c%c 사이).
+    # ⚠ **배정이 인라인 화자를 명시했으면 `_tpl_name_only` 를 안 쓴다.** 그 창은 아래 ②
+    # 전개 경로가 채울 자리다 — 여기서 빼면 `fill` 이 짧아져 정발 페이지 수와 **우연히**
+    # 맞고, ① 경로가 먼저 잡혀 전개 창 앞 개행(`nl_wins`)이 통째로 사라진다. 장비 3종
+    # (jp28)이 한 문단으로 흘러붙었다(유저 QA 2026-08-11).
+    inline_spk = any(spk for spk, _ in pages)
     punct = {
         k
         for k in body_idx
         if _tpl_punct_only(wins[k][1])
         or not any(t[0] == "t" for t in wins[k][1])
         # 본문 창이 둘 이상일 때만 — 하나뿐이면 그게 진짜 본문이다
-        or (len(body_idx) > 1 and _tpl_name_only(wins[k][1]))
+        or (len(body_idx) > 1 and not inline_spk and _tpl_name_only(wins[k][1]))
     }
     fill = [k for k in body_idx if k not in punct]
     if not fill and pages:
@@ -1895,6 +1945,15 @@ def build_candidate(raw, t, eid):
         or cand.count(b"\x25\x64") > raw.count(b"\x25\x64")
     ):
         return None, "fmt_excess"
+    # ⚠ **개수가 같아도 순서가 다르면 인자가 어긋난다.** 엔진은 인자열을 **스트림 순서로**
+    # 소비하므로 `%s…%d` 를 `%d…%s` 로 내보내면 **이름 자리에 수치가, 수치 자리에 이름이**
+    # 들어간다 — 죽지 않고 조용히 틀린다. 위 두 게이트는 `%s`·`%d` 를 따로 세기만 해서
+    # 이 자리를 못 봤다(2026-08-11 실측: `%s`·`%d` 가 섞인 블록 63개 — 지금 어긋난 건 0이라
+    # 사고는 없었지만, 체인 순서를 뒤집는 배정 하나면 열린다).
+    # ⚠ `%c` 는 여기 안 넣는다 — 꼬리 잘림 자리에서 우리가 종단을 더 낼 수 있어(허용) 순서
+    # 비교가 오탐이 된다. 인자 소비 계약은 `%s`·`%d` 몫이다.
+    if cand is not None and _FMT_SEQ.findall(cand) != _FMT_SEQ.findall(raw):
+        return None, "fmt_order"
     return cand, None
 
 
@@ -2586,6 +2645,72 @@ def load_translations(align_name, scn_name):
     return out, skipped, applied
 
 
+def iter_candidates(scenes=None):
+    """전 씬을 돌며 `(씬, eid, JP raw, 재조립 후보, 번역 항목)` 을 낸다 — **검출기 공용 순회**.
+
+    검출기마다 `_scn_layout` → `scn_jp/*.json` → `load_translations` → `build_candidate`
+    열두 줄을 복붙하고 있었다(셋이 글자까지 같았다, 2026-08-11). 여기 하나로 모은다.
+
+    ⚠ **빌드를 안 세운다** — 후보를 못 만드는 블록은 조용히 건너뛴다. 검사기는 "지금 나가는
+    것"을 보는 도구라 예외 하나로 전수 조사가 멈추면 안 된다. 빌드 쪽 게이트는 따로다.
+    ⚠ `build_candidate` 를 직접 부르므로 **재배치·제외(`size`) 전** 값이다.
+    """
+    from patch_sys_ui import _scn_layout
+
+    for name, _lba, _size in _scn_layout():
+        if scenes and name not in scenes:
+            continue
+        with open(os.path.join(OUT_DIR, "scn_jp", f"{name}.json"), encoding="utf-8") as f:
+            doc = json.load(f)
+        raw = {
+            e["entry_id"]: bytes.fromhex(e["raw_hex"]) for e in doc["entries"] if e.get("raw_hex")
+        }
+        tr, _, _ = load_translations(name.replace("SCN", "_SCN"), name)
+        for eid, t in sorted(tr.items()):
+            if eid not in raw:
+                continue
+            try:
+                cand, _why = build_candidate(raw[eid], t, eid)
+            except Exception:  # noqa: BLE001 — 검사기는 빌드를 안 세운다
+                continue
+            if cand is not None:
+                yield name, eid, raw[eid], cand, t
+
+
+_REV_SYL = None
+
+
+def render_bytes(b, *, ctrl=True):
+    """재조립 **결과 바이트** → 사람이 읽는 문자열. `%c`/`%s`/`%d` 유지, 개행은 `\\n`.
+
+    한글은 커스텀 글리프 코드로 나가므로 역맵으로 되읽는다 — 검출기·검토표가 화면에 나갈
+    문안을 보여주려면 반드시 거쳐야 하는 층이다(페이지 문자열은 인코딩 전이라 다르다).
+    `ctrl=False` 면 제어 토큰을 지운다(문안만 볼 때).
+    """
+    global _REV_SYL
+    if _REV_SYL is None:
+        import hangul_map
+
+        _REV_SYL = {hangul_map.syllable_sjis(ch): ch for ch in hangul_map.SYL_INDEX}
+    out, i = [], 0
+    while i < len(b):
+        c = b[i]
+        if c == 0x25 and i + 1 < len(b) and b[i + 1] in b"csd":
+            out.append(f"%{chr(b[i + 1])}" if ctrl else "")
+            i += 2
+        elif c < 0x20:
+            out.append("\n" if c == 0x0A else "")
+            i += 1
+        elif c >= 0x81:
+            w = int.from_bytes(b[i : i + 2], "big")
+            out.append(_REV_SYL.get(w) or b[i : i + 2].decode("cp932", "replace"))
+            i += 2
+        else:
+            out.append(chr(c))
+            i += 1
+    return "".join(out)
+
+
 def anchor_tail(anchors, off, n):
     """앵커가 블록 **앞부분만** 덮을 때, 뒤 텍스트의 시작(블록 내 상대). 아니면 None.
 
@@ -3065,8 +3190,7 @@ def main():
     import hangul_font  # numpy/PIL 의존 — 빌드 단계에서만 필요
 
     print("Galmuri11 폰트 변환·탑재 중...")
-    glyphs = hangul_font.convert_chars(hangul_map.SYLLABLES)
-    font_block = b"".join(glyphs[ch] for ch in hangul_map.SYLLABLES)
+    font_block = hangul_font.font_block()
     base_off = hangul_map.slot_ed_offset(0)
 
     suffix = " Fixed" if fixed else ""
@@ -3085,9 +3209,13 @@ def main():
             ed[off : off + len(cand)] = cand
         if donor_all:
             print(f"도너 블록 {len(donor_all)}개 → ED.EXE 0런")
-        print(f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed)}개 수정 (폰트+도너)")
+        print(
+            f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label='재삽입 폰트·도너 (ED.EXE)')}개 수정 (폰트+도너)"
+        )
         for lba, out_file in built.items():
-            print(f"  LBA {lba}: 섹터 {write_user_data(f, lba, out_file)}개 수정")
+            print(
+                f"  LBA {lba}: 섹터 {write_user_data(f, lba, out_file, label='재삽입 씬')}개 수정"
+            )
         # 재배치된 씬의 BIN 디렉토리 레코드 패치(LBA·size, 양 엔디언) — 엔진은 ISO 경로로
         # 로드하므로 이거면 커진 파일을 그대로 읽는다(ED.EXE 0xC3F4~ 경로 문자열 실증).
         if dir_moves:
@@ -3107,7 +3235,7 @@ def main():
                     i += bdir[i]
                 assert hit, f"BIN 디렉토리에 {fname} 없음"
                 print(f"  디렉토리 갱신: {fname} → LBA {new_lba}, {new_size}B")
-            write_user_data(f, BIN_DIR_LBA, bdir)
+            write_user_data(f, BIN_DIR_LBA, bdir, label="ISO 디렉터리 엔트리")
     json.dump(
         layout_manifest,
         open(os.path.join(OUT_DIR, "scn_layout.json"), "w", encoding="utf-8"),

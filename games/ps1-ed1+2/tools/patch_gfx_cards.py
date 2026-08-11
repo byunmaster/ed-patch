@@ -141,7 +141,7 @@ def patch(target=TARGET, preview=None):
             tail = buf[off + tim_len : off + (tim_len + 2047) // 2048 * 2048]
             if any(tail):
                 raise SystemExit(f"TIM 0x{off:X}: 꼬리 섹터 잔여가 0이 아님 — RMW 필요")
-            n = write_user_data(f, off // 2048, blob)
+            n = write_user_data(f, off // 2048, blob, label="챕터 카드 TIM")
             print(f"  0x{off:X} {l1} {l2} → 섹터 {n}개")
             if preview is not None:
                 previews.append(build_preview(tim, new_pix))

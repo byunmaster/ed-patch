@@ -403,14 +403,14 @@ def main():
         assert coll and (coll["w"], coll["h"]) == (480, 240), "컬렉션 TIM 오류"
         assert COLL_OFF % 2048 == 0, "TIM 섹터 비정렬"
         pix = render_coll_buttons(coll, render_logo(coll))
-        n = write_user_data(f, COLL_OFF // 2048, tim_bytes(buf, COLL_OFF, pix))
+        n = write_user_data(f, COLL_OFF // 2048, tim_bytes(buf, COLL_OFF, pix), label="타이틀 로고 TIM")
         print(f"타이틀 로고(영웅전설)+선택버튼(영웅전설Ⅰ/Ⅱ) → 섹터 {n}개 수정")
         # ED1·ED2: 게임시작 알약(처음부터/이어하기)
         for off, nm in ((ED1_OFF, "ED1"), (ED2_OFF, "ED2")):
             tim = parse_tim(buf, off)
             assert tim and (tim["w"], tim["h"]) == (390, 240), f"{nm} TIM 오류"
             assert off % 2048 == 0, "TIM 섹터 비정렬"
-            n = write_user_data(f, off // 2048, tim_bytes(buf, off, render_buttons(tim)))
+            n = write_user_data(f, off // 2048, tim_bytes(buf, off, render_buttons(tim)), label="타이틀 버튼 TIM")
             print(f"{nm} 버튼(처음부터/이어하기) → 섹터 {n}개 수정")
 
 

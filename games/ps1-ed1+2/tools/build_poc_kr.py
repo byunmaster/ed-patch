@@ -30,8 +30,7 @@ NEW_TEXT = "어서오세요 왕자님 반가워요 "
 def main():
     # 1) 폰트 블록 구성: 완성형 2,350자 → Galmuri11 22B 글리프
     print("Galmuri11 → 2,350 글리프 변환 중...")
-    glyphs = hangul_font.convert_chars(hangul_map.SYLLABLES)
-    block = b"".join(glyphs[ch] for ch in hangul_map.SYLLABLES)
+    block = hangul_font.font_block()
     assert len(block) == 2350 * 22
     base_off = hangul_map.slot_ed_offset(0)
     print(f"ED.EXE +0x{base_off:X}부터 {len(block):,}바이트 기록 예정")
@@ -47,7 +46,7 @@ def main():
         # ED.EXE 패치
         ed = bytearray(extract(ED_LBA, ED_SIZE))
         ed[base_off : base_off + len(block)] = block
-        changed = write_user_data(f, ED_LBA, ed)
+        changed = write_user_data(f, ED_LBA, ed, label="PoC (ED.EXE)")
         print(f"ED.EXE: 섹터 {changed}개 수정 (폰트 블록)")
 
         # ED1SCN1.BIN 패치
@@ -55,7 +54,7 @@ def main():
         cur = bytes(scn[DIALOGUE_OFF : DIALOGUE_OFF + len(old)])
         assert cur == old, f"원본 불일치: {cur.hex()}"
         scn[DIALOGUE_OFF : DIALOGUE_OFF + len(new)] = new
-        changed = write_user_data(f, ED1SCN1_LBA, scn)
+        changed = write_user_data(f, ED1SCN1_LBA, scn, label="PoC (ED1SCN1)")
         print(f"ED1SCN1.BIN: 섹터 {changed}개 수정 (대사)")
 
     write_cue(DST_CUE, "Eiyuu Densetsu (PoC KR).bin")

@@ -591,7 +591,7 @@ def main():
 
     shutil.copyfile(SRC, DST)
     with open(DST, "r+b") as f:
-        print(f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed)}개 수정")
+        print(f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label="시스템 UI (ED.EXE)")}개 수정")
         patch_scn_headers(f)
     write_cue(DST_CUE, os.path.basename(DST))
     print(f"완료: {DST}")
@@ -738,7 +738,7 @@ def patch_scn_headers(f):
                     assert len(kb) + 1 <= avail, f"{kr!r} {len(kb) + 1}B > 슬롯 {avail}B @0x{i:X}"
                     data[i:a] = kb.ljust(avail, b"\x00")
                     n += 1
-        secs = write_user_data(f, lba, data)
+        secs = write_user_data(f, lba, data, label="시스템 UI (씬)")
         print(f"  {name}: 지명 헤더 {n}곳 (섹터 {secs}개)")
         total += n
     print(f"SCN 지명·캐릭터명 치환 {total}곳")

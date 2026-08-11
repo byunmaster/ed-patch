@@ -402,7 +402,7 @@ def main():
     if SRC != DST:
         shutil.copyfile(SRC, DST)
     with open(DST, "r+b") as f:
-        print(f"OPEN1.EXE: 섹터 {write_user_data(f, OP_LBA, op)}개 수정")
+        print(f"OPEN1.EXE: 섹터 {write_user_data(f, OP_LBA, op, label="오프닝 폰트 (OPEN1)")}개 수정")
     write_cue(DST_CUE, os.path.basename(DST))
     print(f"완료: {DST}")
 

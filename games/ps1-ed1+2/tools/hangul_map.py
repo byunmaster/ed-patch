@@ -26,6 +26,29 @@ def ksx1001_syllables():
 SYLLABLES = ksx1001_syllables()
 SYL_INDEX = {ch: i for i, ch in enumerate(SYLLABLES)}
 
+# ── 글리프 계획 지문 ────────────────────────────────────────────────────────
+# ⚠ **이 순서가 곧 계약이다.** 폰트 블록은 `SYLLABLES` 차례로 굽고, 본문 인코딩은
+# `SYL_INDEX` 로 슬롯을 정하고, 조사 훅 테이블(`patch_josa_hook`)도 같은 차례로 만든다.
+# 순서·내용이 바뀌면 **이미 구운 이미지와 어긋나 글자가 통째로 뒤바뀐다** — 실패하지 않고
+# 조용히 틀린다(mcpads PC-98 패처가 `generation binding` 으로 막는 그 사고).
+#
+# 계획이 **순수 함수**라 한 실행 안에서는 소비자끼리 어긋날 수 없지만, **코드가 바뀌면**
+# 낡은 이미지에 새 계획으로 덧쓰는 길이 열린다(A/B·단독 실행). 그래서 지문을 박아 둔다 —
+# 계획을 고치면 여기서 즉시 죽고, 고치는 사람이 **소비자 전부를 다시 굽게** 만든다.
+PLAN_SHA1 = "3a77baa48584fd36"
+
+
+def plan_sha1():
+    import hashlib
+
+    return hashlib.sha1("".join(SYLLABLES).encode()).hexdigest()[:16]
+
+
+assert plan_sha1() == PLAN_SHA1, (
+    f"글리프 계획이 바뀌었다 ({plan_sha1()} ≠ {PLAN_SHA1}) — 폰트·인코딩·조사 테이블을 "
+    "**전부 다시 구워야** 한다. 확인했으면 PLAN_SHA1 을 갱신할 것."
+)
+
 
 def kuten_to_sjis(ku, ten):
     j1, j2 = ku + 0x20, ten + 0x20

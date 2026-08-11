@@ -18,7 +18,11 @@
    됐고 · 다음에 뭘 하고 · 어떻게 시작하는지"를 여기서 얻는다. 커밋한다(머신을 따라가야 한다).
    ⚠ 여기엔 **현재 상태 + 남은 일만** 둔다. 방침은 `policy.md`, 경위는 `devlog.md`,
    완료 이력은 커밋 히스토리다 — 섞이면 문서가 부풀어 아무도 안 읽는다(실제로 463줄까지 갔다).
-3. **`sh scripts/check-updates.sh`** — 외부 의존물(emucap · 한글패치 스킬 · 패치 템플릿)에
+3. **새 게임을 열거나 빌드·재삽입 파이프라인을 손댄다면
+   [`docs/patcher-checklist.md`](docs/patcher-checklist.md)** — 조용히 틀리는 사고를 막는
+   장치 아홉(입력 지문 · 쓰기 사전조건 · 결정성 · 감사 · 판단 · 대량 변경 · 회귀 테스트 ·
+   세대 결박 · 배포 지문)과 언어 선택 기준. 스킬 `patcher-safety` 로도 라우팅된다.
+4. **`sh scripts/check-updates.sh`** — 외부 의존물(emucap · 한글패치 스킬 · 패치 템플릿)에
    새 버전이 있는지 본다. 있으면 유저에게 알리고 판단을 받는다.
    `--update` 로 emucap·템플릿을 당길 수 있다(⚠ emucap 재빌드 후엔 **Claude Code 재시작**,
    스킬 설치는 **`/plugin`** — 둘 다 유저 손이 필요하다).
@@ -36,6 +40,7 @@ scripts/            진입점 셸 스크립트 — dosbox.sh(정발 DOS 실행) 
 patcher/            웹 패처 일체 — index.html.tmpl · build.py · subset_font.py · fonts.css
                     빌드하면 games/*/patches/*.json 이 인라인된 자립형 HTML 하나가 나온다
 docs/               레퍼런스·공개 체크리스트·소장 컬렉션
+                    └ patcher-checklist.md = **안전장치 아홉**(플랫폼 무관, 새 게임의 출발점)
 originals/<지역>/   원본 디스크·정발판 (gitignore, 소장자 제공 — originals/README.md)
 vendor/             emucap 등 서드파티 (gitignore, 읽기 전용)
 ```
@@ -69,6 +74,7 @@ games/<게임>/work/
 ```bash
 python3 games/ps1-ed1+2/tools/build.py     # [kr] 전 트랙 체인 → work/build/Eiyuu Densetsu (KR).bin/.cue
 sh scripts/patcher.sh serve                # [fix] 웹 패처를 로컬에서 띄워 확인
+sh scripts/test.sh                         # 단위·회귀 테스트 (원본 없이 돈다)
 sh scripts/check-updates.sh                # 외부 의존물(emucap·스킬·템플릿) 새 버전 확인
 sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조 · DOS 패치 검증)
 ```
@@ -199,6 +205,23 @@ for r in kr jp us; do ln -sfn "../../../../originals/$r" "originals/$r"; done
 
 세 원칙이 부딪히면 **YAGNI > DRY**다. 미리 뽑아 둔 공통 계층은 대개 두 소비자 어느 쪽에도
 안 맞는다.
+
+## 언어는 플랫폼마다 고른다 (모노레포, 유저 확정 2026-08-11)
+
+**한 언어로 통일하지 않는다.** 게임·플랫폼마다 성격이 달라서, 새 코드베이스를 열 때 그 자리에
+맞는 걸 고른다. 지금 `games/ps1-ed1+2` 는 **Python** 이다.
+
+- **성능은 대개 병목이 아니다** — 실측: EDC+ECC 가 순수 파이썬으로 섹터당 1.69ms 인데, 우리는
+  **바뀐 섹터만**(~1,200) 다시 쓰므로 2초다. 빌드 2분의 대부분은 텍스트 조립이고, 진짜 병목은
+  사람 판단(배정·QA)이다. ⚠ 단 **이미지 전체를 다시 쓰는** 종류의 작업이면 얘기가 다르다
+  (107,443섹터 = 182초) — 그럴 땐 그 함수만 벡터화하거나 네이티브로 뺀다.
+- **탐색 속도·생태계는 Python** — 롬해킹은 9할이 탐색이다(스캔·덤프·가설 폐기). `capstone`·
+  `PIL`·`fontTools` 가 다 파이썬 1급이다.
+- **불변식 강제는 Rust** — `TrackedRom`(mcpads SFC)은 `DerefMut` 을 구현 안 해 `rom[x] = y` 가
+  **컴파일조차 안 된다.** 우리는 래퍼(`common.write_user_data`)로 흉내 냈지만 `f.write()` 를
+  직접 부르는 걸 못 막는다. 조용히 이미지를 망가뜨리는 실수가 잦은 영역이면 값이 크다.
+- **판단 기준**: 이미 있는 코드베이스는 **안 옮긴다**(도구·정본·검출기 이관 비용이 얻는 것보다
+  크다). **새로 시작하는 게임**에서만 다시 고른다.
 
 ## 코드 스타일
 

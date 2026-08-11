@@ -620,7 +620,7 @@ def main():
     print("동료명 리유난→류난 (0x80C)")
 
     with open(TARGET, "r+b") as f:
-        print(f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed)}개 수정")
+        print(f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label="아이템·몬스터명 (ED.EXE)")}개 수정")
     print(f"완료: {os.path.basename(TARGET)}")
 
 
