@@ -573,6 +573,8 @@ def build_and_patch(ed: bytearray):
     draw_addr = pre_addr + len(pre_stub)
     draw_stub = assemble_drawstr_stub(draw_addr, josa_addr, zero_addr)
     data = table + zero_guard + pairs + stub + pre_stub + draw_stub
+    # ⚠ 한계 자체가 맞는지부터 본다 — 상수는 손으로 계산한 값이라 원본·배치가 바뀌면 거짓이 된다
+    verify_safe_bounds(ed)
     assert len(josa) <= JOSA_SAFE, f"josa 루틴 {len(josa)}B — VAB 파형 침범(한계 {JOSA_SAFE}B)"
     assert len(data) <= DATA_SAFE, f"데이터+스텁 {len(data)}B — VAB 파형 침범(한계 {DATA_SAFE}B)"
 
@@ -616,8 +618,31 @@ def build_and_patch(ed: bytearray):
 # 재검증법: `pBAV` 스캔 → 각 뱅크 fsize/헤더크기(32+128*16+512*nprog+512) 계산 → 파형 시작.
 PLACE_JOSA_RAM = 0x0BF5DC - 0x800 + 0x80010000  # 루틴
 PLACE_DATA_RAM = 0x0C105C - 0x800 + 0x80010000  # 테이블 294B + guard + 쌍 12B + 스텁 2개
-JOSA_SAFE = 0x0BF7D8 - 0x0BF5DC  # 508B — VAB@0x0BEBB8 파형 시작 직전까지
-DATA_SAFE = 0x0C1258 - 0x0C105C  # 508B — VAB@0x0C0638 파형 시작 직전까지
+PLACE_JOSA_OFF, PLACE_DATA_OFF = 0x0BF5DC, 0x0C105C  # 파일 오프셋(위 RAM 과 같은 자리)
+JOSA_SAFE = 0x0BF7D8 - PLACE_JOSA_OFF  # 508B — VAB@0x0BEBB8 파형 시작 직전까지
+DATA_SAFE = 0x0C1258 - PLACE_DATA_OFF  # 508B — VAB@0x0C0638 파형 시작 직전까지
+
+
+def verify_safe_bounds(ed):
+    """박아 둔 한계가 **원본 구조에서 유도한 값과 같은가**(`tools/vab.py`).
+
+    ⚠ 위 두 상수는 손으로 한 번 계산해 박은 것이고, 재검증 절차는 오래 **주석에만** 있었다.
+    산문으로 둔 규칙은 아무도 안 돌린다 — 여기서 실행 가능하게 만든다. 어긋나면 그 자리에서
+    죽는다(원본이 다르거나 배치를 옮겼는데 한계를 안 고친 것이다).
+    """
+    import vab
+
+    for name, off, const in (
+        ("JOSA", PLACE_JOSA_OFF, JOSA_SAFE),
+        ("DATA", PLACE_DATA_OFF, DATA_SAFE),
+    ):
+        got = vab.safe_len(ed, off)
+        assert got is not None, f"{name} 배치 0x{off:X} 가 VAB 뱅크 밖이다 — 전제가 바뀌었다"
+        assert got == const, (
+            f"{name} 안전 한계가 어긋난다 — 구조에서 유도 {got}B ≠ 박아 둔 {const}B. "
+            "원본이 다르거나 배치를 옮겼다."
+        )
+    return True
 
 
 ED_LBA, ED_SIZE = 257, 1021952

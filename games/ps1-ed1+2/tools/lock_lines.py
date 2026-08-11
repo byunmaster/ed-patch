@@ -192,6 +192,7 @@ def verify(scn_name, tr):
     return bad
 
 
+REQUA = "_requa"  # **인게임 확인 뒤 문안이 바뀐 자리** — QA 판정이 무효가 됐다
 SETTLED = "_settled"  # **영영 손댈 것 없음** (락은 번역된 문안만 지킨다)
 PENDING = "_pending"  # **나중에 채운다** — 목록에 계속 뜬다(아래 참조)
 
@@ -229,7 +230,7 @@ def mark_settled(scn_name, eids, why, later=False):
     print(f"{scn_name}: {kind} {len(eids)}건 기록 — {why}")
 
 
-def relock(scn_name, eids=()):
+def relock(scn_name, eids=(), why=""):
     """**이미 잠긴 블록의 해시만** 갱신한다 — 새 블록은 절대 안 잠근다.
 
     맞춤법 일괄 교정처럼 **의도한 상류 변경**은 확인이 끝난 대사까지 같이 바꾼다. 그때
@@ -242,6 +243,7 @@ def relock(scn_name, eids=()):
     lock = load_lock()
     cur = lock.get(scn_name, {})
     n0 = len(cur)
+    moved = []
     todo = [str(e) for e in eids] if eids else sorted(cur, key=int)
     for k in todo:
         if k not in cur:
@@ -249,9 +251,18 @@ def relock(scn_name, eids=()):
         sha = line_sha(tr.get(int(k)))
         if sha and cur[k].get("sha") != sha:
             cur[k]["sha"] = sha
+            moved.append(k)
     assert len(cur) == n0, "relock 이 락 개수를 바꿨다"
+    # ⚠ **relock 은 「인게임 확인한 대사가 바뀌었다」는 뜻이다** — 그 자리의 QA 판정은 무효다.
+    # 해시만 갱신하고 넘어가면 무엇을 다시 봐야 하는지가 사라진다(실제로 2장 QA 뒤 264건이
+    # 조용히 바뀌어 있었고, 알아내려고 옛 커밋으로 워크트리를 떠서 역산해야 했다 — 2026-08-11).
+    if moved:
+        q = lock.setdefault(REQUA, {}).setdefault(scn_name, {})
+        for k in moved:
+            q[k] = why or q.get(k) or "relock"
     save_lock(lock)
-    print(f"{scn_name}: 해시 갱신 (총 {n0}건, 개수 불변)")
+    tail = f" · 재검수 대기 +{len(moved)}" if moved else ""
+    print(f"{scn_name}: 해시 갱신 (총 {n0}건, 개수 불변){tail}")
 
 
 def main():
@@ -282,8 +293,40 @@ def main():
         return
     if "--relock" in sys.argv:
         i = sys.argv.index("--relock")
+        end = sys.argv.index("--why") if "--why" in sys.argv else len(sys.argv)
+        why = sys.argv[sys.argv.index("--why") + 1] if "--why" in sys.argv else ""
+        args = [a for a in sys.argv[i + 1 : end] if not a.startswith("-")]
+        relock(args[0], args[1:], why)
+        return
+    if "--requa" in sys.argv:  # 재검수 대기 목록
+        q = load_lock().get(REQUA, {})
+        n = sum(len(v) for v in q.values())
+        print(f"인게임 확인 뒤 문안이 바뀐 자리 — **재검수 대기 {n}건**")
+        for scn in sorted(q):
+            eids = sorted(q[scn], key=int)
+            print(f"  {scn}: {len(eids)}건")
+            for e in eids[:40]:
+                print(f"      jp{e}  ({q[scn][e]})")
+            if len(eids) > 40:
+                print(f"      … 그 밖 {len(eids) - 40}건")
+        if n:
+            print("\n확인이 끝나면 `--requa-clear <씬> [eid …]`(eid 없으면 그 씬 전부).")
+        return
+    if "--requa-clear" in sys.argv:
+        i = sys.argv.index("--requa-clear")
         args = [a for a in sys.argv[i + 1 :] if not a.startswith("-")]
-        relock(args[0], args[1:])
+        lock = load_lock()
+        q = lock.setdefault(REQUA, {})
+        scn = args[0]
+        if len(args) > 1:
+            for e in args[1:]:
+                q.get(scn, {}).pop(e, None)
+        else:
+            q.pop(scn, None)
+        if not q.get(scn):
+            q.pop(scn, None)
+        save_lock(lock)
+        print(f"{scn}: 재검수 대기에서 뺐다 (남은 {sum(len(v) for v in q.values())}건)")
         return
     if "--unlock" in sys.argv:
         i = sys.argv.index("--unlock")

@@ -61,6 +61,7 @@ SCN_FILES = [
     ("ED1SCN5", 1555, 171392),
     ("ED1SCN6", 1639, 100270),
 ]
+_FMT_SEQ = re.compile(rb"%[sd]")  # 인자 소비 계약 — 개수만이 아니라 **순서**도 계약이다
 MC = b"\x25\x63"  # %c
 PS = b"\x25\x73"  # %s (런타임 이름 주입)
 PD = b"\x25\x64"  # %d (런타임 수치 주입)
@@ -1914,6 +1915,15 @@ def build_candidate(raw, t, eid):
         or cand.count(b"\x25\x64") > raw.count(b"\x25\x64")
     ):
         return None, "fmt_excess"
+    # ⚠ **개수가 같아도 순서가 다르면 인자가 어긋난다.** 엔진은 인자열을 **스트림 순서로**
+    # 소비하므로 `%s…%d` 를 `%d…%s` 로 내보내면 **이름 자리에 수치가, 수치 자리에 이름이**
+    # 들어간다 — 죽지 않고 조용히 틀린다. 위 두 게이트는 `%s`·`%d` 를 따로 세기만 해서
+    # 이 자리를 못 봤다(2026-08-11 실측: `%s`·`%d` 가 섞인 블록 63개 — 지금 어긋난 건 0이라
+    # 사고는 없었지만, 체인 순서를 뒤집는 배정 하나면 열린다).
+    # ⚠ `%c` 는 여기 안 넣는다 — 꼬리 잘림 자리에서 우리가 종단을 더 낼 수 있어(허용) 순서
+    # 비교가 오탐이 된다. 인자 소비 계약은 `%s`·`%d` 몫이다.
+    if cand is not None and _FMT_SEQ.findall(cand) != _FMT_SEQ.findall(raw):
+        return None, "fmt_order"
     return cand, None
 
 
@@ -3084,8 +3094,7 @@ def main():
     import hangul_font  # numpy/PIL 의존 — 빌드 단계에서만 필요
 
     print("Galmuri11 폰트 변환·탑재 중...")
-    glyphs = hangul_font.convert_chars(hangul_map.SYLLABLES)
-    font_block = b"".join(glyphs[ch] for ch in hangul_map.SYLLABLES)
+    font_block = hangul_font.font_block()
     base_off = hangul_map.slot_ed_offset(0)
 
     suffix = " Fixed" if fixed else ""
@@ -3104,9 +3113,13 @@ def main():
             ed[off : off + len(cand)] = cand
         if donor_all:
             print(f"도너 블록 {len(donor_all)}개 → ED.EXE 0런")
-        print(f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label="재삽입 폰트·도너 (ED.EXE)")}개 수정 (폰트+도너)")
+        print(
+            f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label='재삽입 폰트·도너 (ED.EXE)')}개 수정 (폰트+도너)"
+        )
         for lba, out_file in built.items():
-            print(f"  LBA {lba}: 섹터 {write_user_data(f, lba, out_file, label="재삽입 씬")}개 수정")
+            print(
+                f"  LBA {lba}: 섹터 {write_user_data(f, lba, out_file, label='재삽입 씬')}개 수정"
+            )
         # 재배치된 씬의 BIN 디렉토리 레코드 패치(LBA·size, 양 엔디언) — 엔진은 ISO 경로로
         # 로드하므로 이거면 커진 파일을 그대로 읽는다(ED.EXE 0xC3F4~ 경로 문자열 실증).
         if dir_moves:

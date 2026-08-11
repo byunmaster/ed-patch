@@ -18,7 +18,11 @@
    됐고 · 다음에 뭘 하고 · 어떻게 시작하는지"를 여기서 얻는다. 커밋한다(머신을 따라가야 한다).
    ⚠ 여기엔 **현재 상태 + 남은 일만** 둔다. 방침은 `policy.md`, 경위는 `devlog.md`,
    완료 이력은 커밋 히스토리다 — 섞이면 문서가 부풀어 아무도 안 읽는다(실제로 463줄까지 갔다).
-3. **`sh scripts/check-updates.sh`** — 외부 의존물(emucap · 한글패치 스킬 · 패치 템플릿)에
+3. **새 게임을 열거나 빌드·재삽입 파이프라인을 손댄다면
+   [`docs/patcher-checklist.md`](docs/patcher-checklist.md)** — 조용히 틀리는 사고를 막는
+   장치 아홉(입력 지문 · 쓰기 사전조건 · 결정성 · 감사 · 판단 · 대량 변경 · 회귀 테스트 ·
+   세대 결박 · 배포 지문)과 언어 선택 기준. 스킬 `patcher-safety` 로도 라우팅된다.
+4. **`sh scripts/check-updates.sh`** — 외부 의존물(emucap · 한글패치 스킬 · 패치 템플릿)에
    새 버전이 있는지 본다. 있으면 유저에게 알리고 판단을 받는다.
    `--update` 로 emucap·템플릿을 당길 수 있다(⚠ emucap 재빌드 후엔 **Claude Code 재시작**,
    스킬 설치는 **`/plugin`** — 둘 다 유저 손이 필요하다).
@@ -36,6 +40,7 @@ scripts/            진입점 셸 스크립트 — dosbox.sh(정발 DOS 실행) 
 patcher/            웹 패처 일체 — index.html.tmpl · build.py · subset_font.py · fonts.css
                     빌드하면 games/*/patches/*.json 이 인라인된 자립형 HTML 하나가 나온다
 docs/               레퍼런스·공개 체크리스트·소장 컬렉션
+                    └ patcher-checklist.md = **안전장치 아홉**(플랫폼 무관, 새 게임의 출발점)
 originals/<지역>/   원본 디스크·정발판 (gitignore, 소장자 제공 — originals/README.md)
 vendor/             emucap 등 서드파티 (gitignore, 읽기 전용)
 ```

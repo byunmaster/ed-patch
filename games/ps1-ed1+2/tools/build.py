@@ -69,6 +69,36 @@ def check_immutable():
     print(f"무변경 구간 {sum(len(v) for v in IMMUTABLE.values())}곳 확인 — 원본과 동일")
 
 
+def _requa_note():
+    """**인게임 확인 뒤 문안이 바뀐 자리**가 쌓여 있으면 알린다.
+
+    ⚠ `--relock` 은 「확인한 대사가 바뀌었다」는 뜻이라 그 자리의 QA 판정이 무효가 된다.
+    조용히 쌓이면 아무도 안 본다 — 실제로 2장 QA 뒤 264건이 모르는 새 바뀌어 있었다.
+    """
+    import json
+
+    from common import ROOT
+
+    q = json.load(open(os.path.join(ROOT, "locked_lines.json"), encoding="utf-8")).get("_requa", {})
+    n = sum(len(v) for v in q.values())
+    if n:
+        per = " · ".join(f"{k} {len(v)}" for k, v in sorted(q.items()))
+        print(f"\n⚠ 재검수 대기 {n}건 ({per}) — `tools/lock_lines.py --requa`")
+
+
+def check_font_generation():
+    """이미지에 실린 폰트가 **지금 글리프 계획으로 구운 것과 같은가**(세대 결박).
+
+    ⚠ 계획(`hangul_map.SYLLABLES`)은 폰트 블록·본문 인코딩·조사 훅 테이블 **셋의 계약**이다.
+    계획이 순수 함수라 한 실행 안에서는 안 어긋나지만, 단독 실행·A/B 로 이미지를 조각조각
+    갱신하면 낡은 폰트 위에 새 계획으로 덧쓸 수 있다 — 실패하지 않고 글자가 뒤바뀐다.
+    """
+    from hangul_font import verify_image_font
+
+    verify_image_font(FINAL)
+    print("글리프 계획 세대 확인 — 이미지 폰트가 지금 계획과 같다")
+
+
 def rm(stem):
     for ext in (".bin", ".cue"):
         p = os.path.join(BUILD_DIR, stem + ext)
@@ -124,6 +154,8 @@ def main():
     for stem in INTERMEDIATES + STALE:
         rm(stem)
     check_immutable()
+    check_font_generation()
+    _requa_note()
     print(f"\n완료: {FINAL}\n테스트는 이 하나만: {os.path.basename(FINAL_CUE)}")
 
 

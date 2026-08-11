@@ -30,8 +30,7 @@ NEW_TEXT = "어서오세요 왕자님 반가워요 "
 def main():
     # 1) 폰트 블록 구성: 완성형 2,350자 → Galmuri11 22B 글리프
     print("Galmuri11 → 2,350 글리프 변환 중...")
-    glyphs = hangul_font.convert_chars(hangul_map.SYLLABLES)
-    block = b"".join(glyphs[ch] for ch in hangul_map.SYLLABLES)
+    block = hangul_font.font_block()
     assert len(block) == 2350 * 22
     base_off = hangul_map.slot_ed_offset(0)
     print(f"ED.EXE +0x{base_off:X}부터 {len(block):,}바이트 기록 예정")

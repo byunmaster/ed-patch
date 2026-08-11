@@ -238,6 +238,77 @@ def test_proposal_catches_stale_corpus():
     assert any("코퍼스가 승인 시점과 다르다" in b for b in bad), bad
 
 
+# ── 글리프 계획 세대 결박 (`hangul_map` · `hangul_font`) ───────────────────
+def test_glyph_plan_is_pinned():
+    # ⚠ 계획(SYLLABLES 순서)은 폰트 블록·본문 인코딩·조사 테이블 **셋의 계약**이다.
+    # 바뀌면 이미 구운 이미지와 어긋나 글자가 통째로 뒤바뀐다 — 조용히 틀리는 부류.
+    import hangul_map as HM
+
+    assert HM.plan_sha1() == HM.PLAN_SHA1
+    assert len(HM.SYLLABLES) == 2350
+    assert HM.SYL_INDEX[HM.SYLLABLES[0]] == 0
+
+
+def test_font_block_is_single_source():
+    # 폰트 블록을 두 곳에서 따로 만들면 한쪽만 고쳐도 티가 안 난다 — 통로는 하나여야 한다
+    import hangul_font
+
+    assert callable(hangul_font.font_block)
+
+
+# ── VAB 구조 인식 (`vab.py`) ───────────────────────────────────────────────
+def _vab_fixture():
+    """합성 VAB 뱅크 하나 — 원본 없이 돌아야 하므로 헤더를 직접 짓는다."""
+    import struct
+
+    nprog, wave = 1, b"\xab" * 64
+    hdr = bytearray(b"\x00" * (32 + 128 * 16 + 512 * nprog + 512))
+    hdr[0:4] = b"pBAV"
+    struct.pack_into("<I", hdr, 12, len(hdr) + len(wave))  # fsize
+    struct.pack_into("<H", hdr, 18, nprog)
+    return b"\x11" * 16 + bytes(hdr) + wave, 16, 16 + len(hdr)  # (ed, 뱅크 시작, 파형 시작)
+
+
+def test_vab_finds_wave_start():
+    import vab
+
+    ed, off, wav = _vab_fixture()
+    assert [b[0] for b in vab.banks(ed)] == [off]
+    assert vab.wave_start(ed, off + 100) == wav
+    assert vab.safe_len(ed, off + 100) == wav - off - 100
+
+
+def test_vab_flags_wave_overwrite():
+    # ⚠ 2026-07-29 사고 재현 — 헤더 패딩은 덮어도 되지만 **파형은 안 된다**
+    import vab
+
+    ed, _off, wav = _vab_fixture()
+    assert vab.hits_wave(ed, wav, wav + 4)  # 파형 침범 → 잡힌다
+    assert not vab.hits_wave(ed, wav - 8, wav)  # 파형 직전까지는 통과
+
+
+def test_vab_outside_bank_is_none():
+    import vab
+
+    ed, _off, _wav = _vab_fixture()
+    assert vab.wave_start(ed, 0) is None  # 뱅크 밖
+
+
+def test_josa_safe_bounds_are_derived_not_guessed():
+    # ⚠ `JOSA_SAFE`·`DATA_SAFE` 는 손으로 계산해 박은 매직 넘버였고 재검증 절차는
+    # **주석에만** 있었다. 이제 구조에서 유도해 대조한다.
+    import os
+
+    from common import ORIG_BIN
+
+    if not os.path.exists(ORIG_BIN):
+        return  # 원본 없는 머신 — 빌드 쪽이 맡는다
+    import patch_josa_hook as J
+    from common import extract
+
+    assert J.verify_safe_bounds(bytearray(extract(257, 1021952)))
+
+
 def _run():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     passed = 0

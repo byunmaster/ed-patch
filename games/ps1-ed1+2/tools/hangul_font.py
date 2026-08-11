@@ -176,3 +176,38 @@ if __name__ == "__main__":
         preview()
     else:
         print(__doc__)
+
+
+def font_block():
+    """계획(`hangul_map.SYLLABLES`) 차례로 구운 폰트 블록 — **여기서만 만든다.**
+
+    ⚠ 두 곳에서 따로 만들면 한쪽만 고쳐도 티가 안 난다. 계획↔산출물을 묶는 최소 장치다.
+    """
+    import hangul_map
+
+    glyphs = convert_chars(hangul_map.SYLLABLES)
+    return b"".join(glyphs[ch] for ch in hangul_map.SYLLABLES)
+
+
+def verify_image_font(path, ed_lba=257, ed_size=1021952):
+    """이미지에 실린 폰트가 **지금 계획으로 구운 것과 같은가.**
+
+    빌드 끝에 한 번 부른다. 낡은 이미지에 새 계획으로 덧쓴 자리를 잡는다 — 계획은 순수
+    함수라 한 실행 안에서는 안 어긋나지만, 단독 실행·A/B 로 조각조각 갱신하면 어긋난다.
+    """
+    import hashlib
+
+    import hangul_map
+    from common import extract
+
+    blk = font_block()
+    off = hangul_map.slot_ed_offset(0)
+    got = bytes(extract(ed_lba, ed_size, path=path))[off : off + len(blk)]
+    if got != blk:
+        raise SystemExit(
+            f"⚠ 이미지의 폰트가 지금 계획과 다르다 — 계획 {hangul_map.PLAN_SHA1} 로 구운 블록"
+            f"({hashlib.sha1(blk).hexdigest()[:16]}) 과 이미지"
+            f"({hashlib.sha1(got).hexdigest()[:16]}) 가 어긋난다.\n"
+            "  낡은 이미지에 새 계획으로 덧썼을 수 있다 — `build.py` 로 전 체인을 다시 돌 것."
+        )
+    return True
