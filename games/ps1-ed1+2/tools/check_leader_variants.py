@@ -53,7 +53,11 @@ def families(game, scn):
         body = e.get("body") or e.get("text") or ""
         p = _plate(body)
         if p in LEADERS or p == "\\x25\\x73":
-            rows.append((e["entry_id"], p, _core(body)))
+            # 넷째 칸은 **화자 플레이트를 뺀 본문** — 이름이 다르다고 다른 대사는 아니다.
+            # 묶기(유사도)는 종전대로 `_core` 로 하고, 이건 "원판이 같은 문안인가" 판정용이다.
+            rows.append(
+                (e["entry_id"], p, _core(body), _core(body.replace(f"{{c}}{p}{{c}}", "", 1)))
+            )
     out, cur = [], []
     for r in rows:
         if (
@@ -94,13 +98,18 @@ def main():
         hits = []
         for fam in families(game, n):
             total += 1
-            cs = [(eid, p, coord(eid)) for eid, p, _ in fam]
+            cs = [(eid, p, coord(eid)) for eid, p, _, _ in fam]
             miss = [c for c in cs if c[2] is None]
-            seen = {}
-            for _eid, p, c in cs:
+            seen, bodies = {}, {}
+            for (_eid, p, c), (_e2, _p2, _sim, body) in zip(cs, fam, strict=True):
                 if c:
                     seen.setdefault(c, []).append(p)
-            dup = {c: v for c, v in seen.items() if len(v) > 1}
+                    bodies.setdefault(c, set()).add(body)
+            # ⚠ **원판이 이미 같은 문안이면 좌표 공유가 정답**이다. PS1 은 리더별로 블록을
+            # 나눠 두되 어투가 갈리지 않는 대사는 **바이트까지 똑같이** 둔다(세리오스·류난의
+            # `まだだ!!`, 세리오스·류난·소니아의 `ラルフさん!`). 이걸 안 빼면 정상 배정 둘이
+            # 영구 의심으로 남는다(SCN3 jp2~7 · SCN5 jp1020~1023 실측 2026-08-11).
+            dup = {c: v for c, v in seen.items() if len(v) > 1 and len(bodies[c]) > 1}
             # 묶음 안에 서로 다른 좌표가 있는데 일부만 겹친다 = 의심
             suspect = dup and len(seen) > 1
             if miss or suspect:

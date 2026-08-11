@@ -28,10 +28,24 @@ import sys
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R  # noqa: E402
-from common import OUT_DIR  # noqa: E402
+from common import OUT_DIR, ROOT  # noqa: E402
 from llm_assign import _raw  # noqa: E402
 
 MIN_CHARS = 8  # 변형 하나가 '들어 있다'고 볼 최소 글자수(짧은 감탄사 오탐 방지)
+
+
+def _picked(ov):
+    """오버라이드가 **변형을 손으로 골라 이었는가**(`chain` 원소 둘 이상에 `~v`).
+
+    이 도구가 잡으려는 건 "엔트리를 통째로 물어 변형이 쏟아진" 자리다. 정발이 리더별로
+    어미만 다른 대사를 「공통 앞부분 + 리더별 꼬리」로 갈라 둔 자리(`H_210#19`:
+    `…신탁을 받으러` + `들어가는게 아니었나요.`/`들어간다고 하지 않았어.`)는 사람이
+    `~v` 로 두 벌을 짚어 이은 것이라 **의도한 배정**이다 — 겹침이 아니다.
+    실제로 오배정 셋(jp1086·295·296)은 전부 `#page` 로 통째로 문 자리였고, 의도한 조합
+    셋(jp167·168·170)은 전부 `~v` 조합이었다(2026-08-11).
+    """
+    ch = [str(c) for c in (ov.get("chain") or [])]
+    return sum("~" in c for c in ch) >= 2
 
 
 def _plain(s):
@@ -48,7 +62,10 @@ def variants(text):
 
 
 def sources(game, scn):
-    """{jp_id: (table, entry_id)} — 오버라이드와 정렬 쌍을 합친다(오버라이드 우선)."""
+    """{jp_id: (table, entry_id)} — 오버라이드와 정렬 쌍을 합친다(오버라이드 우선).
+
+    ⚠ 사람이 `~v` 로 변형 둘 이상을 짚어 이은 자리는 뺀다(`_picked`).
+    """
     out = {}
     p = os.path.join(OUT_DIR, "align", f"{game}_SCN{scn}.json")
     if os.path.exists(p):
@@ -58,11 +75,15 @@ def sources(game, scn):
             kr = pr.get("kr") or {}
             if kr.get("table") is not None and kr.get("entry_id") is not None:
                 out[pr["jp"]["entry_id"]] = (kr["table"], kr["entry_id"])
-    ov = json.load(open("align_overrides.json", encoding="utf-8")).get(f"{game}SCN{scn}", {})
+    # ⚠ 상대경로면 레포 루트에서 돌릴 때 죽는다 — 경로 정본은 `common.ROOT` 다.
+    p = os.path.join(ROOT, "align_overrides.json")
+    ov = json.load(open(p, encoding="utf-8")).get(f"{game}SCN{scn}", {})
     for j, v in ov.items():
         # `ours`(우리가 쓴 문안)는 정발 엔트리를 안 물어 `entry_id` 가 없다 — 볼 게 없으니 건너뛴다
         ok = j.isdigit() and isinstance(v, dict) and v.get("entry_id") is not None
-        if ok and v.get("table") and not v.get("exclude"):
+        if ok and _picked(v):
+            out.pop(int(j), None)
+        elif ok and v.get("table") and not v.get("exclude"):
             out[int(j)] = (v["table"], v["entry_id"])
     return out
 

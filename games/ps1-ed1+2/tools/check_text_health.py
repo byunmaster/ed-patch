@@ -37,6 +37,17 @@ _END = re.compile(r"(\{end\}|\{p\}|[.!?…」』]\s*$|\\x[0-9A-Fa-f]{2}\s*$)")
 _CONT = re.compile(r"^(입니다|습니다|니다|을 것|것입니다|는데|지만|하고|라고|고요)")
 # JP 본문 비교용 정규화 — 공백·구두점만 다른 건 같은 대사다
 _JPN = re.compile(r"[\s、。，．・…！？!?,.\u3000]+")
+# 선두 화자 플레이트 — **이것도 JP 차이가 아니다.** PS1 은 같은 대사를 「이어지는 말(플레이트
+# 없음)」과 「말 걸었을 때(플레이트 있음)」 두 벌로 두는데, 플레이트를 안 걷으면 그 정상 쌍이
+# 전부 중복으로 걸린다(SCN3 jp282·283 실측 2026-08-11).
+_PLATE = re.compile(r"^\{c\}[^{]*\{c\}(\{n\})?")
+# ⚠ **JP 가 갈리는데 정발이 안 갈라 둔 자리**는 영구 잔여다 — 고치려면 문안을 새로 써야 해서
+# (정발 그대로 원칙에 어긋난다) 판정을 여기 못 박고 목록에서 뺀다. 안 그러면 라운드마다 같은
+# 걸 다시 판단하게 된다(`lock_lines --settled` 와 같은 취지).
+SETTLED_DUPS = {
+    # `…はずですが · · ·`(말끝 흐림) / `…はずです。` — 정발 `T_125#27` 은 한 벌뿐이다
+    ("ED1SCN2", 473, 475),
+}
 
 
 def entry_gaps(game="ED1"):
@@ -79,11 +90,11 @@ def adjacent_dups(game="ED1"):
             # 대사를 `男`·`女`·`老人` 이 돌아가며 하는 정상 블록이 전부 걸리고(48건 중 30건),
             # 공백·구두점을 안 걷으면 `あんな、親不孝者` vs `あんな 親不孝者` 처럼 **쉼표
             # 하나 다른 쌍둥이**가 걸린다(2026-08-06). 이름표도 쉼표도 **JP 가 다른 게 아니다.**
-            if len({_JPN.sub("", jp.get(x, {}).get("body") or "") for x in es}) < 2:
+            if len({_JPN.sub("", _PLATE.sub("", jp.get(x, {}).get("body") or "")) for x in es}) < 2:
                 continue  # JP 본문이 같으면 쌍둥이 — 정상
             es = sorted(es)
             for a, b in zip(es, es[1:], strict=False):
-                if b - a <= 2:
+                if b - a <= 2 and (name, a, b) not in SETTLED_DUPS:
                     out.append((name, a, b, body[:60]))
     return out
 

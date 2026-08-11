@@ -215,6 +215,31 @@ def mark_settled(scn_name, eids, why):
     print(f"{scn_name}: 판정 완료 {len(eids)}건 기록 — {why}")
 
 
+def relock(scn_name, eids=()):
+    """**이미 잠긴 블록의 해시만** 갱신한다 — 새 블록은 절대 안 잠근다.
+
+    맞춤법 일괄 교정처럼 **의도한 상류 변경**은 확인이 끝난 대사까지 같이 바꾼다. 그때
+    `--freeze` 를 쓰면 아직 확인 안 된 블록까지 정본으로 승격시킨다(실측 933 → 935) —
+    검증기를 갱신기로 쓰는 셈이라 락이 지키려던 것을 락 갱신이 무너뜨린다. 이건 개수를
+    바꾸지 않으니 "무엇을 확인했는가"는 그대로 두고 "무엇으로 확인했는가"만 옮긴다."""
+    import reinsert_kr_pilot as R
+
+    tr, _, _ = R.load_translations(scn_name.replace("SCN", "_SCN"), scn_name)
+    lock = load_lock()
+    cur = lock.get(scn_name, {})
+    n0 = len(cur)
+    todo = [str(e) for e in eids] if eids else sorted(cur, key=int)
+    for k in todo:
+        if k not in cur:
+            raise SystemExit(f"jp{k} 는 락에 없다 — 새로 잠그려면 인게임 확인이 먼저다")
+        sha = line_sha(tr.get(int(k)))
+        if sha and cur[k].get("sha") != sha:
+            cur[k]["sha"] = sha
+    assert len(cur) == n0, "relock 이 락 개수를 바꿨다"
+    save_lock(lock)
+    print(f"{scn_name}: 해시 갱신 (총 {n0}건, 개수 불변)")
+
+
 def main():
     # ⚠ 우회는 **스크립트로 직접 돌 때만** 건다. 모듈 최상단에 두면 이 모듈을 import 하는 것만으로
     # **빌드 전체의 락 검증이 꺼진다** — 실제로 그렇게 됐다(2026-08-04 실측: `ours` 가드가
@@ -240,6 +265,11 @@ def main():
             if scn.startswith("-"):
                 break
             freeze(scn)
+        return
+    if "--relock" in sys.argv:
+        i = sys.argv.index("--relock")
+        args = [a for a in sys.argv[i + 1 :] if not a.startswith("-")]
+        relock(args[0], args[1:])
         return
     if "--unlock" in sys.argv:
         i = sys.argv.index("--unlock")

@@ -1042,6 +1042,9 @@ def reinsert_pairs(blk, tails):
 # — stock_kind가 %s 시작 + 정확 구조(%c 2개)만 잡아 자연히 걸러진다.
 STOCK = "__stock__"  # translations 마커 — 핀·제외·통계를 기존 경로에 태우기 위해 등록
 STOCK_KINDS = {}  # {eid: kind} — 씬 단위(load_translations가 재구축). 포인터 dedup용.
+# 선두가 **포인터 테이블**이고 뒤에 정형 텍스트가 붙은 사본: {eid: (본문 delta, kind)}.
+# 블록을 못 옮기고 제자리 재작성도 공간이 모자라 **참조만 대표 사본으로 돌린다**.
+STOCK_MID = {}
 # 침묵 블록(본문이 ・・・ 뿐)은 본문을 JP 통과시키되 **이름창만 번역**한다 — 그냥 두면
 # 화자명까지 セリオス로 남는다(유저 QA 07-26). 템플릿에 빈 페이지를 넘겨 골격+이름만 재조립.
 NAMEONLY = "__nameonly__"
@@ -1162,7 +1165,10 @@ def stock_build(raw):
 # 인라인이라 build_from_template 채우기로는 %d가 유실된다. STOCK처럼 %c/%s/%d 순서를 그대로
 # 재현하는 전용 빌더로 KR을 심는다(은(는)은 조사 훅이 아이템명 받침 보고 교정).
 SHOP_PRICE = "__shop_price__"
-_SJIS_NARU = "になるけど".encode("cp932")
+# ⚠ 어미까지 물면 **사투리 사본을 놓친다** — 스엘 도구점은 `になるけんど` 다(SCN3 3곳이
+# 일본어로 나가고 있었다, 2026-08-10). 다른 조건(`%s`+`%d`+`Gold`+`%c`3개)이 이미
+# 좁으니 어간까지만 본다.
+_SJIS_NARU = "になる".encode("cp932")
 
 
 def is_shop_price(raw):
@@ -1274,7 +1280,10 @@ def donor_alloc(size):
 
 
 # 부호 전용 창(침묵 「・・・」 등) 판정 — 번역할 내용이 없어 JP 바이트를 그대로 통과시킨다.
-_PUNCT_WIN = re.compile(r"[\s・･。、．，…‥！？!?ーｰ─\-]*\Z")
+# ⚠ 코골이 `Ｚ ｚ ｚ ･ ･ ･` 도 부호 전용이다 — 번역할 글자가 아닌데 라틴 문자라 안 걸려
+# **이름창까지 JP 로 남았다**(`%cトッド%c` — SCN4 4곳, 2026-08-10). 부호로 치면
+# `NAMEONLY`(본문 JP 통과 · 이름창만 번역)가 잡는다.
+_PUNCT_WIN = re.compile(r"[\s・･。、．，…‥！？!?ーｰ─\-ＺｚZz]*\Z")
 
 
 # 점 전용 창(침묵)은 JP 중점 `・`이 **전각**이라 우리 반각 온점(`...`)과 눈에 띄게 다르다.
@@ -1297,7 +1306,9 @@ def _punct_dots_kr(txt):
 # 바로 붙는 이 꼴을 놓친다. 그러면 본문 창으로 세어 정발 페이지 수와 안 맞고 `ctrl_seq` 로
 # 포기 → 화면에 일본어가 그대로 남는다(유저 QA 2026-08-08 `ゲイルが仲間に加わりました`).
 # ⚠ **순 히라가나 짧은 토큰은 조사다**(`は`·`と`) — 그건 번역 대상이라 빼면 안 된다.
-_KANA_ONLY = re.compile(r"^[\u3040-\u309f]{1,2}$")
+# ⚠ 앞뒤 공백을 벗기고 본다 — `は ` 처럼 꼬리에 공백이 붙은 조사가 **이름창으로 오인**돼
+# 채움에서 빠지고 일본어가 그대로 나갔다(SCN6 jp256 실측 2026-08-10).
+_KANA_ONLY = re.compile(r"^\s*[\u3040-\u309f]{1,2}\s*$")
 
 
 def _tpl_name_only(seg):
@@ -1446,12 +1457,18 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), d
             # 이름은 앞 창(자기 색)에 두고 **조사는 본문 쪽에 남긴다** — 조사까지 이름 창에
             # 넣으면 이름 색으로 물든다(`세리오스가` 전체가 초록 — 유저 QA 2026-07-30).
             lines = one_page(nm + josa + " " + pg)
-            if lines[0].startswith(nm):
-                lines[0] = lines[0][len(nm) :]
+            lines[0] = lines[0].removeprefix(nm)
             return lines
         if _after_name_inject(k):
             lines = one_page(NAME_SENT + pg)  # 이름 폭(NAME_SLOTS)을 첫 줄에 반영
-            lines[0] = lines[0].lstrip(NAME_SENT).lstrip()
+            # ⚠ 이름창 뒤 `lstrip()` 은 보통 옳다(이름 다음에 조사가 바로 붙는다). 그런데
+            # **아이템명 주입(`%c%s%c`)이 문장 한복판**일 땐 뒤 어절과 띄어야 한다
+            # (`레드젬여기 있습니다` — jp1086 실측 2026-08-11). 정발도 `\x0E ` 로 띄워 두는데
+            # 그 공백이 여기서 죽는다. **붙임 공백으로 명시한 자리만** 되살린다 —
+            # 다른 블록엔 선두 NOBREAK_SP 가 없어 동작이 그대로다.
+            lines[0] = (" " if pg.startswith(NOBREAK_SP) else "") + lines[0].lstrip(
+                NAME_SENT
+            ).lstrip()
             return lines
         return one_page(pg)
 
@@ -1513,9 +1530,7 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), d
             # 접은 이름창 뒤에서는 개행을 없앤다 — 같은 줄로 이어져야 정발 조판이 된다.
             if folded_prev:
                 pass
-            elif k in nl_wins:
-                b += b"\x0a"
-            elif seg and seg[0][0] == "nl" and k > 0 and wins[k - 1][0] == "name":
+            elif k in nl_wins or seg and seg[0][0] == "nl" and k > 0 and wins[k - 1][0] == "name":
                 b += b"\x0a"
             b += encode_ext("\n".join(chunks[k]))
             if k in nl_after:  # 창 뒤 개행(다음이 인라인 이름 창일 때 원본 레이아웃 복원)
@@ -1896,7 +1911,7 @@ def reflow_run(region, run, run_start, run_end, translations, excluded, fixed, l
             # (오버라이드 우선 보호 실험은 역효과 — 자동 블록을 전부 내보내고도 결국 최대
             # 성장 블록을 퇴출해 소블록 100여 개만 잃었다.)
             over = sum(len(x) for x in news) - run_space
-            grow = lambda k: len(news[k]) - len(run[k]["raw"])  # noqa: E731
+            grow = lambda k: len(news[k]) - len(run[k]["raw"])
             fit = [k for k in cands if grow(k) >= over]
             k = min(fit, key=grow) if fit else max(cands, key=grow)
             excluded[run[k]["eid"]] = "size"
@@ -2401,6 +2416,7 @@ def load_translations(align_name, scn_name):
     # ⚠ 정렬 쌍이 이미 잡은 사본도 **덮어쓴다** — DOS 쪽 아이템 주입 자리(\x06\x0E`N)를
     # parse_kr가 재현 못 해 fmt_drop으로 빠지거나 주입 자리가 깨진 채 나가기 때문.
     STOCK_KINDS.clear()
+    STOCK_MID.clear()
     n_price = 0
     for e in jp_doc["entries"]:
         if e.get("raw_hex"):
@@ -2409,6 +2425,13 @@ def load_translations(align_name, scn_name):
             if kind:
                 out[e["entry_id"]] = (STOCK,)
                 STOCK_KINDS[e["entry_id"]] = kind
+            elif (_i := raw.find(PS)) > 0 and (_k := stock_kind(raw[_i:])):
+                # 선두가 **포인터 테이블**이고 뒤에 정형 텍스트가 붙은 사본. 블록을 못
+                # 옮기니(테이블이 절대주소로 읽힌다) 제자리 재작성도 공간이 모자란다
+                # (실측 KR 62B > 남은 60B). 대신 **참조를 대표 사본으로 돌린다** —
+                # `stock_alias` 와 같은 수법인데 저건 delta 0 만 봐서 이 꼴을 놓쳤다
+                # (SCN4 4곳이 일본어로 나가고 있었다, 2026-08-10).
+                STOCK_MID[e["entry_id"]] = (_i, _k)
             elif is_shop_price(raw):  # 상점 가격 프롬프트(%d 인라인) — 전용 빌더
                 out[e["entry_id"]] = (SHOP_PRICE,)
                 n_price += 1
@@ -2424,14 +2447,32 @@ def load_translations(align_name, scn_name):
         if not e.get("raw_hex") or e["entry_id"] in out:
             continue
         raw = bytes.fromhex(e["raw_hex"])
-        if not jp_has_header(raw) or jp_header_is_fmt(raw):
+        if jp_header_is_fmt(raw):
             continue
         try:
             wins = template_windows(parse_template(raw))
         except Exception:
             continue
+        # 헤더 꼴(`%c이름%c\n`)이 아니어도 **순수 이름 플레이트**(`%c이름%c%c`)면 여기 든다 —
+        # 개행이 없어 `jp_has_header` 가 걸러냈고 그대로 일본어로 남았다(SCN6 jp141).
+        # ⚠ 꼴을 좁게 잡는다. `_tpl_name_only` 만 보면 **포인터 테이블 블롭**이 무더기로
+        # 걸린다(전 씬 500건 이상이 후보로 올라와 제외 목록만 부풀었다, 2026-08-10).
+        # 진짜 플레이트는 짧고 개행이 없고 `%c` 가 셋이다.
+        _t = raw.rstrip(b"\x00")
+        if not jp_has_header(raw) and not (
+            len(_t) <= 24
+            and b"\n" not in _t
+            and _t.count(MC) == 3
+            and any(_tpl_name_only(w) for kind, w in wins if kind == "body")
+        ):
+            continue
         body = [w for kind, w in wins if kind == "body"]
-        if body and all(_tpl_punct_only(w) or not any(tk[0] == "t" for tk in w) for w in body):
+        # ⚠ **이름창만 있는 블록**도 여기 든다(`%cドルカスの手下%c%c`) — 채울 본문이 없어
+        # `build_from_template` 이 SkipBlock 을 던지고 일본어로 남았다(SCN6 실측 2026-08-10).
+        if body and all(
+            _tpl_punct_only(w) or _tpl_name_only(w) or not any(tk[0] == "t" for tk in w)
+            for w in body
+        ):
             out[e["entry_id"]] = (NAMEONLY,)
             n_no += 1
     if n_no:
@@ -2460,7 +2501,7 @@ def load_translations(align_name, scn_name):
         for eid, e in _load_overrides().get(scn_name, {}).items()
         if isinstance(e, dict) and "ours" in e and eid.isdigit()
     ]
-    _ok = lambda eid, n: eid in _locked or any(k in n for k in _APPROVED)  # noqa: E731
+    _ok = lambda eid, n: eid in _locked or any(k in n for k in _APPROVED)
     _bad = [e for e, n in _ours if any(k in n for k in _INVENTED) and not _ok(e, n)]
     if _bad:
         raise SystemExit(
@@ -2534,6 +2575,21 @@ def anchor_tail(anchors, off, n):
     return k if 0 < k < n else None
 
 
+def anchor_room(anchors, off, n):
+    """앵커가 블록 **뒷부분만** 덮을 때, 앞쪽에 남는 자리(바이트). 아니면 None.
+
+    `anchor_tail` 의 거울이다. 블록 추출이 4바이트 정렬로 패딩까지 삼키다 보면 **다음
+    포인터 테이블의 앞 몇 바이트**가 블록 꼬리에 묻어 들어온다 — 그러면 통째로 핀 고정돼
+    번역이 버려졌다(SCN4 jp359 `ありがとう。` 실측 2026-08-10: 21바이트 블록의 **마지막 1바이트**만
+    앵커였다). 앵커 시작 전까지는 우리 것이므로 제자리로 덮어쓰면 된다 — 블록 경계도 앵커
+    위치도 안 움직인다."""
+    starts = [a_s for a_s, ae in anchors if off < ae and a_s < off + n]
+    if not starts or min(starts) <= off:  # 접두·전면 겹침은 anchor_tail 관할
+        return None
+    k = min(starts) - off
+    return k if 0 < k < n else None
+
+
 def rebuild(
     scn_entries,
     data,
@@ -2574,7 +2630,10 @@ def rebuild(
         )
         b["pinned"] = hits_anchor(b["off"], b["off"] + len(b["raw"])) or unref
         b["tail"] = None
+        b["room"] = None
         if b["pinned"] and b["eid"] in translations:
+            b["room"] = anchor_room(anchors, b["off"], len(b["raw"]))
+        if b["pinned"] and b["eid"] in translations and b["room"] is None:
             # 꼬리 회수: 앵커 접두 + 꼬리가 **대사**(`%c` 보유)일 때만. `%c` 가 없는 꼬리는
             # 지명·이름 단독 블록이라 patch_sys_ui 관할이고, 정렬이 손대면 그쪽이 못 고친다
             # (jp282 실측 2026-08-03: 꼬리가 `クルスの村` 인데 정렬은 '루디아 마을'을 물렸다).
@@ -2590,7 +2649,15 @@ def rebuild(
     while i < n:
         if blocks[i]["pinned"]:
             b = blocks[i]
-            if b["tail"] is not None:  # 앵커 접두 블록의 꼬리 대사만 제자리 덮어쓰기
+            if b["room"] is not None:  # 앵커 접미 — 앵커 시작 전까지 제자리 덮어쓰기
+                cand, reason = build_candidate(b["raw"], translations[b["eid"]], b["eid"])
+                if cand is not None and len(cand) <= b["room"]:
+                    region[b["off"] : b["off"] + len(cand)] = cand
+                    for p in range(b["off"] + len(cand), b["off"] + b["room"]):
+                        region[p] = 0
+                else:
+                    excluded[b["eid"]] = reason or "anchor_room_size"
+            elif b["tail"] is not None:  # 앵커 접두 블록의 꼬리 대사만 제자리 덮어쓰기
                 room = len(b["raw"]) - b["tail"]
                 cand, reason = build_candidate(
                     b["raw"][b["tail"] :], translations[b["eid"]], b["eid"]
@@ -2690,7 +2757,12 @@ def build_scene(name, lba, size, identity, fixed):
         for s_eid, kind in STOCK_KINDS.items():
             if excluded.get(s_eid) == "size" and kind in masters:
                 alias[s_eid] = masters[kind]
-        return alias
+        mid = {
+            m_eid: (delta, masters[kind])
+            for m_eid, (delta, kind) in STOCK_MID.items()
+            if kind in masters
+        }
+        return alias, mid
 
     # 공유 lui 충돌 해소 루프
     for _ in range(5):
@@ -2706,7 +2778,7 @@ def build_scene(name, lba, size, identity, fixed):
             FIXED_RUNS.get(name, frozenset()),
         )
         newoff = {eid: (no, oo) for oo, _, no, _, eid in layout}
-        stock_alias = compute_stock_alias()
+        stock_alias, stock_mid = compute_stock_alias()
         lui_need, conflict = {}, None
         for addiu_off, lui_off, op, addr in refs:
             if addiu_off < text_end or lui_off < text_end:
@@ -2714,6 +2786,8 @@ def build_scene(name, lba, size, identity, fixed):
             (_, eid), delta = owner(addr - OVERLAY_RAM_BASE)
             if delta == 0 and eid in stock_alias:
                 eid = stock_alias[eid]
+            elif eid in stock_mid and delta == stock_mid[eid][0]:
+                eid, delta = stock_mid[eid][1], 0
             hi, _ = hi_lo(OVERLAY_RAM_BASE + newoff[eid][0] + delta, op)
             if lui_off in lui_need and lui_need[lui_off][0] != hi:
                 conflict = (eid, lui_need[lui_off][1])
@@ -2728,6 +2802,8 @@ def build_scene(name, lba, size, identity, fixed):
         raise SystemExit(f"{name}: 공유 lui 충돌 미수렴")
     if stock_alias:
         print(f"  정형 블록 dedup {len(stock_alias)}건 → 생존 사본으로 리타깃")
+    if stock_mid:
+        print(f"  정형 블록(표머리 사본) {len(stock_mid)}건 → 대표 사본으로 리타깃")
 
     # ── 도너 2단계: size 퇴출 블록을 ED.EXE 도너로 이주 ──────────────────────
     # 오버레이 레이아웃(위에서 수렴 완료)은 건드리지 않는다 — 블록의 원본 JP 바이트는
@@ -2859,6 +2935,8 @@ def build_scene(name, lba, size, identity, fixed):
         (_, eid), delta = owner(addr - OVERLAY_RAM_BASE)
         if delta == 0 and eid in stock_alias:
             eid = stock_alias[eid]
+        elif eid in stock_mid and delta == stock_mid[eid][0]:
+            eid, delta = stock_mid[eid][1], 0
         if delta == 0 and eid in donor_placed:
             kind, off, _c = donor_placed[eid]
             new_addr = (OVERLAY_RAM_BASE + off) if kind == "ext" else (off + ED_EXE_RAM)

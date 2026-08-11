@@ -197,12 +197,21 @@ def main():
         path = os.path.join(ROOT, "align_overrides.json")
         ov = json.load(open(path, encoding="utf-8"))
         n = 0
-        skipped_ours = []
+        skipped_ours, skipped_ov = [], []
         for key, nm, e in plans:
             d = sp[key]
             sc = ov.setdefault(nm, {})
             cur = dict(sc.get(str(e)) or scene_map(nm).get(e) or {})
             if "유저 확정 유지" in (cur.get("note") or ""):
+                continue
+            # ⚠ **남이 쓴 오버라이드는 안 덮는다.** `align_map`(자동 배정)은 덮으라고 있는
+            # 것이지만 `align_overrides.json` 의 항목은 사람·다른 도구가 판단해 박은 정본이라
+            # 더 강하다(reinsert 의 "오버라이드가 있는 eid 는 건드리지 않는다"와 같은 관용).
+            # 이게 없어서 2026-08-10 재실행이 08-07 `check_variants` 결정(마법점 프롬프트를
+            # 이웃 시점 T_040 대신 **자기 시점 사본**으로 돌린 것)을 20블록 되돌렸다.
+            _note = (sc.get(str(e)) or {}).get("note") or ""
+            if _note and not _note.startswith("시스템 문구 일원화"):
+                skipped_ov.append((nm, e, _note))
                 continue
             # ⚠ `ours`(손으로 쓴 문안)는 `chain` 보다 **우선**한다 — 안 걷으면 좌표만 바뀌고
             # 화면은 그대로다(decline 8블록 실측 2026-08-06, 통일했는데 안 바뀌어 있었다).
@@ -239,6 +248,10 @@ def main():
             print(f"  ⛔ `ours` 가 표준안과 달라 건너뜀 {len(skipped_ours)}건:")
             for nm, e, sim, o in skipped_ours:
                 print(f"      {nm} jp{e} ({sim:.2f})  {o[:56]}")
+        if skipped_ov:
+            print(f"  ⛔ 다른 판단이 박힌 오버라이드라 건너뜀 {len(skipped_ov)}건:")
+            for nm, e, note in skipped_ov:
+                print(f"      {nm} jp{e}  {note[:70]}")
     return 0
 
 
