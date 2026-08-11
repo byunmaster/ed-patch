@@ -5,6 +5,9 @@
 (유저 지적 2026-08-04 — 곶의 동굴 보물상자·네리아 현자가 라운드마다 다시 떴다).
   ① 포인터 테이블(`table_block_eids`) · ② 이름·지명 플레이트(`patch_sys_ui` 관할)
   ③ 원문이 빈 블록(`%c` 만 있는 자리) · ④ **판정이 끝난 블록**(`lock_lines --settled`)
+
+⚠ `--settled --later`(`_pending`)로 넣은 「나중에 채움」은 **안 뺀다** — ⏳ 로 계속 보고한다.
+조용히 빠지면 잊힌다(SCN1 여섯이 그렇게 일본어로 남아 있었다, 2026-08-10).
 ⚠ **`%c` 없는 블록은 빼지 않는다**(2026-08-10 수정) — 창 종단이 없을 뿐 다음 블록과 한 창에
 그려지는 **대사 앞 조각**이 거기 섞여 있다. 예전 필터가 그걸 통째로 숨겨 SCN4 에서만
 13블록이 일본어로 나가고 있었다(포인터 참조로 화면 출력 확인).
@@ -25,6 +28,7 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 import reinsert_kr_pilot as R  # noqa: E402
 from align_jp_kr import load_jp_scene  # noqa: E402
 from common import OUT_DIR  # noqa: E402
+from lock_lines import pending as pending_marks  # noqa: E402
 from lock_lines import settled  # noqa: E402
 from patch_sys_ui import is_name_plate  # noqa: E402
 from scn_maps import block_maps  # noqa: E402
@@ -78,10 +82,15 @@ def main():
         rows = pending(game, scn)
         total += len(rows)
         n_settled = len(settled(name))
+        # ⚠ `_pending`(나중에 채움)은 **빼지 않는다** — 조용히 사라지면 잊힌다(2026-08-10).
+        later = pending_marks(name)
         print(
             f"\n{name}: 손이 필요한 블록 **{len(rows)}건**"
             + (f" (판정완료 {n_settled}건 제외)" if n_settled else "")
+            + (f" · ⏳ 나중에 채움 {len(later)}건" if later else "")
         )
+        for k, why in sorted(later.items(), key=lambda x: int(x[0])):
+            print(f"  ⏳ jp{k:<5} {why[:70]}")
         if only:
             for i, mp, spk, body in rows:
                 print(f"  jp{i:<5} [{mp}] {spk:10} {body[:52]}")

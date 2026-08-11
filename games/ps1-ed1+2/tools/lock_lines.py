@@ -192,27 +192,41 @@ def verify(scn_name, tr):
     return bad
 
 
-SETTLED = "_settled"  # 미번역·제외인데 **판정이 끝난** 블록 (락은 번역된 문안만 지킨다)
+SETTLED = "_settled"  # **영영 손댈 것 없음** (락은 번역된 문안만 지킨다)
+PENDING = "_pending"  # **나중에 채운다** — 목록에 계속 뜬다(아래 참조)
 
 
 def settled(scn_name):
-    """{eid: 사유} — 미번역 목록에서 빼야 할 블록."""
+    """{eid: 사유} — 미번역 목록에서 **빼야 할** 블록.
+
+    ⚠ `_pending` 은 여기 안 들어간다. 그게 이 둘을 가른 이유다."""
     return load_lock().get(SETTLED, {}).get(scn_name, {})
 
 
-def mark_settled(scn_name, eids, why):
+def pending(scn_name):
+    """{eid: 사유} — 미번역이지만 **지금 할 일은 아닌** 블록(해당 장 QA 때 채운다)."""
+    return load_lock().get(PENDING, {}).get(scn_name, {})
+
+
+def mark_settled(scn_name, eids, why, later=False):
     """⚠ 락이 못 덮는 자리를 덮는다.
 
     락은 **번역된 블록의 문안 해시**만 본다. 그래서 "미번역이지만 인게임에서 확인해 보니
     문제없다"(다른 블록이 덮는다 · 사본이 리타깃된다)나 "이 장에서는 도달하지 않는다"는
     판정이 어디에도 안 남아, 다음 검토 때 **똑같은 블록이 또 목록에 뜬다**(유저 지적
-    2026-08-04 — 곶의 동굴 보물상자·네리아 현자가 그랬다). 여기 적어 두면 빠진다."""
+    2026-08-04 — 곶의 동굴 보물상자·네리아 현자가 그랬다). 여기 적어 두면 빠진다.
+
+    ⚠ **두 뜻을 가른다**(2026-08-10). 한 표식에 「영영 손댈 것 없음」과 「해당 장 QA 때
+    채운다」가 섞여 있었고, 둘 다 목록에서 조용히 빠지니 **후자가 잊혔다** — SCN1 여섯이
+    그렇게 일본어로 남아 있었다. `later=True`(`--later`)는 `_pending` 으로 들어가
+    **`todo_untranslated` 가 계속 보고**한다. 잊히지 않는 게 요점이다."""
     lock = load_lock()
-    d = lock.setdefault(SETTLED, {}).setdefault(scn_name, {})
+    d = lock.setdefault(PENDING if later else SETTLED, {}).setdefault(scn_name, {})
     for e in eids:
         d[str(e)] = why
     save_lock(lock)
-    print(f"{scn_name}: 판정 완료 {len(eids)}건 기록 — {why}")
+    kind = "나중에 채움" if later else "판정 완료"
+    print(f"{scn_name}: {kind} {len(eids)}건 기록 — {why}")
 
 
 def relock(scn_name, eids=()):
@@ -255,7 +269,7 @@ def main():
         # (SCN1 3건 · SCN3 1건 · SCN4 3건이 그렇게 들어가 있었다 — 2026-08-10 발견·정리).
         end = sys.argv.index("--why") if "--why" in sys.argv else len(sys.argv)
         args = [a for a in sys.argv[i + 1 : end] if not a.startswith("-")]
-        mark_settled(args[0], args[1:], why)
+        mark_settled(args[0], args[1:], why, later="--later" in sys.argv)
         return
     if "--observe" in sys.argv:
         observe()
