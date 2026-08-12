@@ -106,6 +106,65 @@ def rm(stem):
             os.remove(p)
 
 
+def _why_excluded():
+    """탈락 사유를 게이트 메시지에 붙인다 — **원인까지 한 번에 말한다.**
+
+    ⚠ 재삽입기가 `excluded_<씬>.json` 에 사유를 이미 남기는데, 게이트는 「일본어가 남았다」
+    까지만 말했다. 그래서 가운뎃점(`·`) 하나가 `encode` 로 탈락했을 때 파일을 따로 열어야
+    원인이 나왔다(2026-08-12 실측). 사유는 셋이다:
+
+    - `encode` — **폰트에 없는 글자.** `·`(가운뎃점) 가 실제로 그랬다. `,` 나 `~` 로 쓴다
+    - `size`   — 문안이 원본 블록보다 길다. 줄이거나 창을 나눈다
+    - `fmt_drop` — `%s`·`%d` 인자 센티널(`\\x1a`·`\\x1b`)을 잃었다. **보이지 않는 제어문자**다
+    """
+    import json as _json
+
+    from common import OUT_DIR
+
+    rows = []
+    for p in sorted(glob.glob(os.path.join(OUT_DIR, "excluded_*.json"))):
+        scn = os.path.basename(p)[len("excluded_") : -len(".json")]
+        with open(p, encoding="utf-8") as f:
+            for eid, why in _json.load(f).items():
+                rows.append(f"    {scn} jp{eid}: {why}")
+    if not rows:
+        return "  (탈락 기록이 없다 — 원문 잔존은 미이관 블록일 수 있다)"
+    return (
+        "  탈락 사유(encode=폰트에 없는 글자 · size=너무 김 · fmt_drop=인자 유실):\n"
+        + "\n".join(rows)
+    )
+
+
+def check_screen_gates():
+    """**화면에 나가는 바이트**를 보는 게이트 — 빌드가 성공해도 여기서 걸린다.
+
+    ⚠ 이 세션에서 같은 성격의 사고를 두 번 냈다(2026-08-12). **둘 다 빌드는 성공했고
+    단위 테스트도 통과했다** — 블록이 조용히 탈락하고 화면엔 원문이 그대로 남았다:
+
+    - 해설 문체 방침을 시스템 메시지(`to_plain`)까지 적용 → 문안이 두 글자 길어져
+      SCN6 정형 블록 10건이 `size` 로 탈락
+    - `백돌이 ␛개.` 를 다듬다 `␛`(`%d` 인자)를 날림 → 2블록 `fmt_drop` 탈락
+
+    ⇒ **프리커밋이 아니라 빌드에 둔다.** 두 검사 모두 빌드 산출물을 읽어야 하고,
+    커밋은 명시할 때만 하지만 빌드는 매번 돌기 때문이다.
+    """
+    import check_scn_jp_left
+    import script_draft
+    from patch_sys_ui import SCN_FILES
+
+    left = []
+    for name, _lba, _size in SCN_FILES:
+        _n, hits = check_scn_jp_left.scan(name, verbose=False)
+        if hits:
+            left.append(f"{name} {len(hits)}곳")
+    if left:
+        raise SystemExit(
+            "화면에 일본어가 남았다 — 블록이 탈락했다: " + " · ".join(left) + "\n" + _why_excluded()
+        )
+    if script_draft.check_sentinels():
+        raise SystemExit("번역 정본이 `%s`·`%d` 인자를 잃었다 — 그 블록은 fmt_drop 으로 탈락한다")
+
+
 def main():
     # ⚠ **원본이 그 덤프인지 먼저 확인한다.** 오프셋·LBA 가 전부 한 덤프에 결박돼 있어
     # 다른 리비전을 넣으면 실패하지 않고 **망가진 이미지가 나온다**(mcpads 패처들의 CRC 경고
@@ -155,6 +214,7 @@ def main():
         rm(stem)
     check_immutable()
     check_font_generation()
+    check_screen_gates()
     _requa_note()
     print(f"\n완료: {FINAL}\n테스트는 이 하나만: {os.path.basename(FINAL_CUE)}")
 

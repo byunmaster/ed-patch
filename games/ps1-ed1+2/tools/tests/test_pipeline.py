@@ -158,86 +158,9 @@ def test_expect_bytes_matches():
     assert _with_image(go) == 1
 
 
-# ── 검출기 판정 (`check_variants` · `spellcheck_render`) ────────────────────
-def test_picked_variants_are_not_overlap():
-    # 사람이 `~v` 로 둘 이상 짚어 이은 건 **의도한 배정**이다(H_210#19 리더별 꼬리)
-    from check_variants import _picked
-
-    assert _picked({"chain": ["19~7#0", "+19~3#0"]})
-    assert not _picked({"chain": ["4#2.1-"]})
-    assert not _picked({})
-
-
-def test_style_only_keeps_missing_terminal():
-    # 종결부호를 **새로 다는** 제안은 남긴다(정발 온점 결손은 실제로 채워 왔다).
-    # 부호를 **바꾸는** 것만 문체로 본다.
-    from spellcheck_render import style_only
-
-    assert style_only("왕자님", "왕자님,")  # 쉼표 삽입 = 문체
-    assert style_only("기쁘옵니다.", "기쁩니다.")  # 사극체 제거 = 문체
-    assert style_only("요즈음", "요즘")  # 정발 옛 표기 = 유지 확정
-    assert style_only("쟈그리는", "자그니는")  # 고유명사
-    assert style_only("있다.", "있습니다.")  # 존대 등급 올림
-    assert not style_only("오십시오", "오십시오.")  # 종결부호 보완 → 사람이 본다
-
-
-# ── 제안 배치 검증 (`proposal.py`) ─────────────────────────────────────────
-def _batch(**d):
-    base = {"schema_version": 1, "batch_id": "t", "status": "draft", "decisions": []}
-    base.update(d)
-    return base
-
-
-def test_proposal_catches_missing_sibling():
-    # ⚠ 여덟 번 틀린 그 부류 — 같은 원문의 **다른 시점 사본**을 빠뜨린 배치
-    import proposal as P
-
-    c = {"ED1/A#0": "가나다라", "ED1/B#0": "가나다라"}  # 사본 둘
-    bad, _ = P.check(
-        _batch(
-            decisions=[
-                {
-                    "id": "d1",
-                    "kind": "replace",
-                    "before": "가나다",
-                    "after": "가나",
-                    "affected": ["ED1/A#0"],
-                }
-            ]
-        ),
-        c,
-    )
-    assert any("affected 불일치" in b for b in bad), bad
-
-
-def test_proposal_fills_affected():
-    import proposal as P
-
-    c = {"ED1/A#0": "가나다라", "ED1/B#0": "가나다라"}
-    b = _batch(decisions=[{"id": "d1", "kind": "replace", "before": "가나다", "after": "가나"}])
-    _bad, filled = P.check(b, c)
-    assert filled["decisions"][0]["affected"] == ["ED1/A#0", "ED1/B#0"]
-
-
-def test_proposal_catches_token_loss():
-    # `%s` 를 잃으면 구조 계약이 깨진다(fmt_drop → 블록 통째 탈락)
-    import proposal as P
-
-    c = {"ED1/A#0": "%s는 갔다"}
-    bad, _ = P.check(
-        _batch(decisions=[{"id": "d1", "kind": "replace", "before": "%s는", "after": "그는"}]), c
-    )
-    assert any("제어 토큰" in b for b in bad), bad
-
-
-def test_proposal_catches_stale_corpus():
-    # 승인 시점과 반영 시점의 코퍼스가 다르면 멈춘다
-    import proposal as P
-
-    bad, _ = P.check(_batch(corpus_sha="deadbeefdeadbeef"), {"ED1/A#0": "가"})
-    assert any("코퍼스가 승인 시점과 다르다" in b for b in bad), bad
-
-
+# ── 검출기 판정 (`spellcheck_render`) ──────────────────────────────────────
+# ⚠ `check_variants`·`proposal` 테스트는 그 도구와 함께 걷어냈다(2026-08-12) —
+#   정발 배정을 그만두고 번역 정본(`script/`)으로 옮기면서 물음 자체가 없어졌다.
 # ── 글리프 계획 세대 결박 (`hangul_map` · `hangul_font`) ───────────────────
 def test_glyph_plan_is_pinned():
     # ⚠ 계획(SYLLABLES 순서)은 폰트 블록·본문 인코딩·조사 테이블 **셋의 계약**이다.

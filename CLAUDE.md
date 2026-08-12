@@ -74,11 +74,17 @@ games/<게임>/work/
 ```bash
 python3 games/ps1-ed1+2/tools/build.py     # [kr] 전 트랙 체인 → work/build/Eiyuu Densetsu (KR).bin/.cue
 sh scripts/patcher.sh serve                # [fix] 웹 패처를 로컬에서 띄워 확인
+sh scripts/check.sh                        # ⭐ **커밋 전 이것 하나** — 빌드 + 화면 검사 (28초)
 sh scripts/test.sh                         # 단위·회귀 테스트 (원본 없이 돈다)
 sh scripts/check-updates.sh                # 외부 의존물(emucap·스킬·템플릿) 새 버전 확인
 sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조 · DOS 패치 검증)
 ```
 
+- **커밋 전에는 `sh scripts/check.sh`.** 빌드만으로는 절반이다 — 빌드는 구조(무변경 구간·
+  창 수·인자·확정 락)를 보고, **조판·이름창·표기는 못 본다.** 둘을 갈라 두면 한쪽만 돌리게
+  되므로 진입점을 하나로 뒀다.
+  ⚠ 게이트는 **지금 고칠 수 있는 것**만 실패로 친다 — 아직 정본으로 안 옮긴 씬의 후보나
+  옛 번역자의 의역은 「할 일」이지 「실패」가 아니다. 늘 빨간불이면 아무도 안 본다.
 - 테스트 이미지는 `games/ps1-ed1+2/work/build/Eiyuu Densetsu (KR).bin/.cue` **하나만** 유지.
 - `dosbox.sh`는 원본을 읽기만 하고 **본체 사본**(`.local/dosbox/<game>`)을 실행한다 —
   세이브·설정은 물론 DOS 패치 파일을 덮어써 가며 검증할 수 있다. CD는 읽기 전용이라
@@ -108,6 +114,10 @@ sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조
   남의 자료를 지우는 사고를 잡는다(OPEN1 포인터 테이블 말소 실측). `build.py:IMMUTABLE`.
 - **"원본이 어땠는가"를 묻는 읽기는 originals에서 한다** — 제자리 갱신(SRC=DST) 이미지를
   다시 읽으면 비멱등이 되어 회차마다 결과가 달라진다(오프닝 스크립트 실측).
+- **화면에 나가는 바이트를 게이트로 본다** — 블록은 **조용히 탈락한다**(`size`·`fmt_drop`).
+  탈락하면 원문이 그대로 남아 화면에 일본어가 뜨는데, **빌드는 성공하고 단위 테스트도
+  통과한다.** 2026-08-12 하루에 두 번 물렸다(문안을 두 글자 늘려 정형 블록 10건 탈락 ·
+  보이지 않는 `%d` 센티널을 지워 2건 탈락). `build.py:check_screen_gates` 가 자동 실패시킨다.
 - **손인코딩 기계어는 디스어셈블로 검산한다** — 연속 디코드 + 지연 슬롯 확인.
   과거 스텁 오타 둘에 반나절을 썼다. `patch_opening_font.verify_asm`.
 
@@ -185,8 +195,9 @@ for r in kr jp us; do ln -sfn "../../../../originals/$r" "originals/$r"; done
   소스다 — 커밋되는 파일로 올린다.
 - **검증한다** — `python3 games/ps1-ed1+2/tools/check_determinism.py`.
   비결정적 파생물을 치우고 재빌드해 sha1 을 대조한다. 원칙은 문서로만 두면 샌다.
-- ⚠ **머신을 옮긴 직후 정본 갱신기(`align_map.py --update`·`assign_pages`)를 돌리지 말 것** —
-  그 머신의 동점 결과를 정본으로 승격시킨다. `--diff` 로 먼저 본다.
+- ⚠ **머신을 옮긴 직후 정본 갱신기(`align_map.py --update`)를 돌리지 말 것** — 그 머신의
+  동점 결과를 정본으로 승격시킨다. `--diff` 로 먼저 본다. (ps1-ed1+2 는 **번역 정본**
+  `script/` 로 옮겨 가는 중이라 이 위험이 사라진다 — 손으로 쓴 문안엔 동점이 없다.)
 
 ## 설계 원칙 — KISS · DRY · YAGNI
 

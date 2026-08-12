@@ -546,13 +546,22 @@ def corpus_text(raw):
     return spell_fix(t)
 
 
-def spell_fix(t):
+def spell_fix(t, *, punct=True):
+    """맞춤법·띄어쓰기·오타 교정.
+
+    ⚠ `punct=False` 는 **부호를 덧붙이기만 하는 규칙**을 건너뛴다. 그 규칙들은 정발 원문에
+    빠진 온점을 메우려고 넣은 것이라(`허락하여 주시옵소서` → `…소서.`) 이미 온점이 있는
+    우리 문안에 걸면 **온점이 둘로 는다**(`주시옵소서..`, 실측 2026-08-12). 번역 정본은
+    완성형이므로 끄고 들어간다.
+    """
     rx, space, replace = _spell_rules()
     if rx:
         t = rx.sub(r"\1 \2", t)  # 인명+직함 → 띄움
     for a, b in space:  # 인명 사전으로 못 잡는 명시적 띄어쓰기(어딘가의왕자 등)
         t = t.replace(a + b, a + " " + b)
     for a, b in replace:  # 단순 오타/맞춤법 리터럴 치환
+        if not punct and b.startswith(a) and not b[len(a) :].strip(".!?…"):
+            continue  # 부호만 덧붙이는 규칙
         t = t.replace(a, b)
     return t
 
@@ -583,7 +592,34 @@ def close_sentence(seg):
 NAME_CANON = {"젤만": "제르만"}
 
 
+def parse_verbatim(entry):
+    """**번역 정본**(`script/`)을 그대로 페이지로 나눈다 — 정발 정규화를 하나도 안 지난다.
+
+    `parse_kr` 의 처리는 전부 **정발 문안의 결함을 메우려고** 쌓인 것이다(온점 누락 보정 ·
+    화자 마크업 절삭 · opcode 잔여 제거 · 표기 통일 · 줄바꿈 해소). 우리 문안은 처음부터
+    옳게 쓰므로 그 층이 필요 없고, 오히려 **덧칠하면 망가진다** — 실측 왕복에서 온점이 둘로
+    늘고(`주시옵소서..`) 창 앞 개행이 먹혔다(2026-08-12).
+
+    `{p}` 가 창을 가르고 `{n}` 은 **강제 개행**이다. `{n}` 을 안 쓰면 조판기(krwrap)가
+    알아서 접는다 — 문장만 쓰고 줄 나눔은 도구에 맡기는 쪽이 정상 사용법이다.
+
+    ⚠ **맞춤법·띄어쓰기·표기 교정은 여전히 지난다**(유저 확정 2026-08-12 "맞춤법/띄어쓰기/
+    오타 등 교정은 여전히 유효해"). 우리도 오타를 내고, 지명 정본(`PLACE_CANON`)은 손으로
+    쓸 때 더 잘 어긋난다. 건너뛰는 건 **정발 구조 처리**(화자 마크업 절삭 · opcode 잔여 ·
+    `resolve_dos_breaks` · 온점 보정)뿐이다.
+    """
+    pages = []
+    for seg in entry["text"].split("{p}"):
+        seg = fix_spacing(seg)
+        for a, b in PLACE_CANON:
+            seg = seg.replace(a, b)
+        pages.append((False, spell_fix(seg, punct=False).replace("{n}", HARD_NL)))
+    return NAME_CANON.get(entry["speaker"], entry["speaker"]), pages
+
+
 def parse_kr(entry):
+    if entry.get("verbatim"):
+        return parse_verbatim(entry)
     t = entry["text"]
     # 표기 통일: 정발 코퍼스의 '엘아스터'(소수 표기)는 전 대사 '엘아스타'로
     # (JP 원음·ED2 정발·오프닝 근거, 유저 확정 07-13 — 지명 트랙과 동일 판정. 07-26 전수 적용)
@@ -768,7 +804,11 @@ NOBREAK_SP = "\ue003"
 # 때 정한 규칙). ⚠ 다만 **묶으면 줄이 늘어난다** — `배편이 다시 생겼으니`(2026-08-06)를 묶었더니
 # 무기점이 4줄이 되고, 앞 블록과 한 창에 이어져 7줄로 창을 넘었다. 그 자리는 `다시` 가 줄 끝에
 # 오는 쪽을 유저가 택했다(2026-08-11) — **여기 넣기 전에 창 줄 수를 본다**(`check_tail_cut`).
-KEEP_TOGETHER = ("보물 창고",)
+# ⚠ **관형격(`…의`)을 규칙으로 일반화하지 말 것.** `신의` / `아들이실지도` 를 고치려고
+# 「짧은 `…의` 는 줄 끝에 홀로 안 둔다」를 `split_reason` 에 넣어 봤더니 **141블록**이 바뀌고
+# `국왕 폐하의` / `원수를` 이 `국왕` / `폐하의 원수를` 로 갈렸다 — 고아 하나를 없애자고
+# **호칭을 쪼갠다**. 판정이 이름·호칭을 못 가르니 자리마다 붙임 공백으로 묶는다(2026-08-11).
+KEEP_TOGETHER = ("보물 창고", "신의 아들")
 # **금액과 단위는 갈리지 않는다** — `하룻밤 10` / `Gold입니다.` 로 끊겨 값과 단위가 두 줄에
 # 걸쳤다(여관 jp667, 유저 QA 2026-08-11). 낱말 목록으로는 못 잡는다(금액이 자리마다 다르고
 # 런타임 주입(`NUM_SENT`)이면 빌드 시점엔 값도 모른다) → **숫자 + `Gold`** 를 패턴으로 묶는다.
@@ -1187,9 +1227,16 @@ def stock_kind(raw):
 # 과거형(었/았/였/했 + 습니다)은 규칙적이라 안전. 현재형은 불규칙(입니다→이다 등)만 개별 처리.
 # ⚠ 대화가 아닌 **해설 블록에만** 적용 — 대화에 걸면 NPC 존댓말이 반말이 된다.
 def to_plain(t):
+    """**시스템 메시지**를 평어체로 — `~었습니다` → `~었다`.
+
+    ⚠ **해설과 다른 층이다**(유저 정정 2026-08-12). 정발은 보물상자·획득 같은
+    **시스템 메시지는 평어체**로, **해설(내레이션)은 높임말**로 갈랐다. 성격이 달라서다 —
+    시스템 메시지는 반복 노출되는 로그이고, 해설은 화자 없이 이야기를 들려주는 톤이다.
+    2026-08-12 에 「해설은 높임말」 방침을 여기까지 적용했다가 되돌렸다(그때 문안이 길어져
+    SCN6 정형 블록 10건이 `size` 로 탈락하고 **화면에 일본어가 나갔다**).
+    """
     t = re.sub(r"([었았였])습니다", r"\1다", t)
-    t = t.replace("했습니다", "했다")
-    return t
+    return t.replace("했습니다", "했다")
 
 
 def stock_build(raw):
@@ -1197,7 +1244,9 @@ def stock_build(raw):
     kind = stock_kind(raw)
     if kind is None:
         return None
-    a, b2, re1, re2 = (to_plain(x) for x in _chest_texts())  # 보물상자 해설 = 평어체
+    # 보물상자는 **시스템 메시지**라 평어체다(`to_plain`). ⚠ 해설(내레이션)은 반대로
+    # 높임말이다 — 층이 다르니 섞지 말 것(`docs/policy.md` 「해설」 절).
+    a, b2, re1, re2 = (to_plain(x) for x in _chest_texts())
     if kind == "open":
         # [%s]은(는) 보물상자를 열었다.\n상자의 안에는 [%c%s%c]이(가)\n들어 있었다.
         # 첫 언급 "보물상자"(JP 宝箱·정발 3장), 반복은 "상자"로 축약(정발·ED2 동일, 유저 07-28).
@@ -2032,12 +2081,55 @@ def _sentences(t):
     return out
 
 
+# ⭐ **번역 정본** — `script/ED1SCN*.json`. 배정을 걷어내고 **우리 문안**을 직접 담는다
+# (유저 확정 2026-08-12 "억지로 정발 맞추려고 만든 도구나 매핑테이블 같은 건 제거하고
+# 새롭게 시작하자"). 정발은 저본이자 참고 자료로 남고, 정발 추출물은 gitignore 밖으로
+# 안 나간다 — **커밋되는 건 우리가 쓴 문장**이라 저작권 원칙과도 맞는다.
+#
+# 값은 `{"t": 문안, "s": 화자}` 또는 문안 문자열. 창 나눔은 `\n\n`(빈 줄) 이 아니라
+# 기존과 같이 페이지 개념 없이 한 창을 전제한다 — 창이 여럿이면 `{p}` 를 쓴다.
+SCRIPT_DIR = os.path.join(ROOT, "script")
+
+
+def _load_script():
+    """{씬: {블록: {"t":…, "s":…}}} — 없으면 빈 dict(전환 중에는 씬마다 비어 있을 수 있다)."""
+    out = {}
+    if not os.path.isdir(SCRIPT_DIR):
+        return out
+    for name in sorted(os.listdir(SCRIPT_DIR)):
+        if name.endswith(".json"):
+            with open(os.path.join(SCRIPT_DIR, name), encoding="utf-8") as f:
+                out[name[:-5]] = json.load(f)
+    return out
+
+
+# 배정 시대의 필드 — 정본 문안이 있으면 **전부 무효**다(문안이 이미 완성형이니까).
+_ALIGN_KEYS = ("chain", "subs", "pre_subs", "table", "entry_id", "trail_nl", "trail_sp")
+
+
 def _load_overrides():
-    """사람 검수 교정(align_overrides.json). 없으면 빈 dict."""
+    """사람 검수 교정(align_overrides.json) + **번역 정본**(script/).
+
+    정본이 있는 블록은 `ours` 로 올려 오버라이드의 배정 필드를 덮는다 — 기존 파이프라인이
+    `ours` 를 이미 최우선으로 다루므로 이 한 겹이면 전환이 끝난다. 기술 필드
+    (`inject_pairs`·`blank`·`nl_after` 등)는 문안과 무관하니 남긴다.
+    """
     path = os.path.join(ROOT, "align_overrides.json")
-    if not os.path.exists(path):
-        return {}
-    return json.load(open(path, encoding="utf-8"))
+    ov = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
+    for scn, blocks in _load_script().items():
+        dst = ov.setdefault(scn, {})
+        for eid, v in blocks.items():
+            if eid.startswith("_"):
+                continue
+            cur = dict(dst.get(eid) or {})
+            for k in _ALIGN_KEYS:
+                cur.pop(k, None)
+            cur["ours"] = v["t"] if isinstance(v, dict) else v
+            cur["verbatim"] = True
+            if isinstance(v, dict) and v.get("s"):
+                cur["speaker"] = v["s"]
+            dst[eid] = cur
+    return ov
 
 
 _SPEAKER_MAP = None
@@ -2419,8 +2511,12 @@ def load_translations(align_name, scn_name):
             applied += 1
             continue
         if "ours" in ov:
-            # 정발에 대응 문장이 없는 블록의 신규 번역(우리 문안 — textmap의 ours와 같은 지위).
-            entry = {"text": ov["ours"], "speaker": ov.get("speaker")}
+            # 우리 문안. `script/` 에서 온 **번역 정본**은 완성형이라 정발 정규화를 안 지난다.
+            entry = {
+                "text": ov["ours"],
+                "speaker": ov.get("speaker"),
+                "verbatim": ov.get("verbatim", False),
+            }
         elif "chain" in ov:
             # 문장 슬라이스 조각은 다음 블록이 같은 창에 이어붙으므로 꼬리 개행을 보장한다.
             # ⚠ **페이지 슬라이스도 문장 한복판에서 끊길 수 있다** — 정발 한 페이지가 PS1
@@ -2579,10 +2675,14 @@ def load_translations(align_name, scn_name):
     _locked = set(_load_lock().get(scn_name, {}))
     _APPROVED = ("유저 QA", "유저 확정", "유저 확인", "유저 승인")
     _INVENTED = ("신규 번역", "대응 없", "대응 페이지 없")
+    # ⚠ **번역 정본(`script/`)은 이 게이트에서 뺀다.** 게이트는 「정발에 대응이 있는데
+    # 못 찾아 지어냈다」를 막으려던 것인데(옛 방침), 이제는 **우리가 쓰기로 한 것**이라
+    # 지어낸 게 아니다(유저 확정 2026-08-12, `docs/policy.md` 번역 방침). 승인의 증거는
+    # 여전히 확정 락이고, 그건 QA 로 받는다.
     _ours = [
         (eid, e.get("note", ""))
         for eid, e in _load_overrides().get(scn_name, {}).items()
-        if isinstance(e, dict) and "ours" in e and eid.isdigit()
+        if isinstance(e, dict) and "ours" in e and eid.isdigit() and not e.get("verbatim")
     ]
     _ok = lambda eid, n: eid in _locked or any(k in n for k in _APPROVED)
     _bad = [e for e, n in _ours if any(k in n for k in _INVENTED) and not _ok(e, n)]

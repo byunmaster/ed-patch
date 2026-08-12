@@ -332,10 +332,19 @@ def main():
         i = sys.argv.index("--unlock")
         scn, eids = sys.argv[i + 1], sys.argv[i + 2 :]
         lock = load_lock()
-        for e in eids:
-            lock.get(scn, {}).pop(e, None)
+        # eid 를 안 주면 **그 씬 전부** — `--requa-clear` 와 같은 규약이다.
+        # ⚠ 번역 방침이 바뀌면 옛 확인은 근거를 잃는다. 락은 「정발대로 들어갔는가」를
+        # 확인한 것이라, 「정발을 살리되 고친다」로 옮긴 뒤에는 전부 다시 봐야 한다
+        # (유저 지시 2026-08-12 "락 다 풀고 전체대상으로 하자").
+        n = len(eids) if eids else len(lock.get(scn, {}))
+        if eids:
+            for e in eids:
+                lock.get(scn, {}).pop(e, None)
+        else:
+            lock.pop(scn, None)
+            lock.get(REQUA, {}).pop(scn, None)
         save_lock(lock)
-        print(f"{scn}: {len(eids)}건 해제")
+        print(f"{scn}: {n}건 해제")
         return
     lock = load_lock()
     for scn, v in lock.items():
