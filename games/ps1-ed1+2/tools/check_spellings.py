@@ -27,19 +27,54 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R  # noqa: E402
+from check_align_fit import jp_text as _jp_text  # noqa: E402
 from patch_sys_ui import SCN_FILES  # noqa: E402
 
 # (정본 표기, 쓰면 안 되는 표기 …) — 판정 근거는 편차 대장에 있다. 여기는 **검사기**다.
 PAIRS = (
     ("안력마", "마력 안", "마력안"),  # 眼力魔 — 시점 사본에서 뒤집혀 있었다
     ("제르만", "젤만"),  # ジェルマン — 정발이 갈려 씀(유저 확정 2026-08-11)
-    ("프레이아", "후레이아"),  # フレイア
+    ("프레이아", "후레이아", "후레이야", "프레이야"),  # フレイア
     ("온리크", "웬리크", "폰리그"),  # ウォンリーク — ED1 정발이 가타카나를 오독했다
     ("랄파 요새", "랄파 성채"),  # ラルファの砦
     ("엘아스타", "엘아스터"),
     ("라누라", "라느라"),
     ("크루즈 마을", "크루즈의 마을"),
 )
+
+
+# 원문 인명 → 우리 표기. **원문에 이름이 있는데 우리 문안에 없으면** 표기가 갈렸다는 뜻이다.
+# ⚠ 조사 `로` 와 겹치는 `로우` 처럼 **본문 검색으로는 못 세는 이름**을 잡으려고 방향을
+# 뒤집었다(전투 시스템에서 `ロー` 가 `로` 로 나가던 자리가 실제로 있었다 — 유저가 잡았다).
+# 셋째 항목은 **제외할 낱말** — `ローブ`(로브, 옷) 는 인명이 아니다.
+NAME_PAIRS = (
+    ("ロー", "로우", ("ローブ",)),
+    ("セリオス", "세리오스", ()),
+    ("リュナン", "류난", ()),
+    ("ゲイル", "게일", ()),
+    ("ソニア", "소니아", ()),
+    ("ジェルマン", "제르만", ()),
+    ("フレイア", "프레이아", ()),
+    ("アクダム", "아크담", ()),
+)
+
+
+def scan_names():
+    """원문에 인명이 있는데 우리 문안에 그 표기가 없는 블록."""
+    bad = 0
+    for scn, _lba, _size in SCN_FILES:
+        for _s, eid, jp, cand, _t in R.iter_candidates((scn,)):
+            j = _jp_text(jp)
+            kr = R.render_bytes(cand, ctrl=False)
+            for name, ours, skip in NAME_PAIRS:
+                if name not in j or ours in kr:
+                    continue
+                if any(x in j for x in skip):
+                    continue
+                bad += 1
+                print(f"      ⚠ {scn} jp{eid}  원문 [{name}] 인데 문안에 [{ours}] 없음")
+                print(f"           {kr.splitlines()[0][:56] if kr else ''}")
+    return bad
 
 
 def scan():
@@ -71,4 +106,7 @@ def scan():
 
 
 if __name__ == "__main__":
-    sys.exit(1 if scan() else 0)
+    n = scan()
+    print("\n  인명 표기 —")
+    n += scan_names()
+    sys.exit(1 if n else 0)
