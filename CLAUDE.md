@@ -74,11 +74,17 @@ games/<게임>/work/
 ```bash
 python3 games/ps1-ed1+2/tools/build.py     # [kr] 전 트랙 체인 → work/build/Eiyuu Densetsu (KR).bin/.cue
 sh scripts/patcher.sh serve                # [fix] 웹 패처를 로컬에서 띄워 확인
+sh scripts/check.sh                        # ⭐ **커밋 전 이것 하나** — 빌드 + 화면 검사 (28초)
 sh scripts/test.sh                         # 단위·회귀 테스트 (원본 없이 돈다)
 sh scripts/check-updates.sh                # 외부 의존물(emucap·스킬·템플릿) 새 버전 확인
 sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조 · DOS 패치 검증)
 ```
 
+- **커밋 전에는 `sh scripts/check.sh`.** 빌드만으로는 절반이다 — 빌드는 구조(무변경 구간·
+  창 수·인자·확정 락)를 보고, **조판·이름창·표기는 못 본다.** 둘을 갈라 두면 한쪽만 돌리게
+  되므로 진입점을 하나로 뒀다.
+  ⚠ 게이트는 **지금 고칠 수 있는 것**만 실패로 친다 — 아직 정본으로 안 옮긴 씬의 후보나
+  옛 번역자의 의역은 「할 일」이지 「실패」가 아니다. 늘 빨간불이면 아무도 안 본다.
 - 테스트 이미지는 `games/ps1-ed1+2/work/build/Eiyuu Densetsu (KR).bin/.cue` **하나만** 유지.
 - `dosbox.sh`는 원본을 읽기만 하고 **본체 사본**(`.local/dosbox/<game>`)을 실행한다 —
   세이브·설정은 물론 DOS 패치 파일을 덮어써 가며 검증할 수 있다. CD는 읽기 전용이라

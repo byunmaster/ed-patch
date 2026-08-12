@@ -106,7 +106,10 @@ def scan():
 
 
 if __name__ == "__main__":
-    n = scan()
-    print("\n  인명 표기 —")
-    n += scan_names()
-    sys.exit(1 if n else 0)
+    # ⚠ **게이트는 표기 어긋남뿐이다.** 인명 축(`scan_names`)은 「원문에 이름이 있는데
+    # 문안에 없다」라 옛 번역자의 의역(`ジェルマン` → `그분`)도 함께 걸린다 — 판정이
+    # 필요한 **후보**지 실패가 아니다. 늘 빨간불이면 아무도 안 본다.
+    bad = scan()
+    print("\n  인명 표기 후보 — (게이트 아님, 판정용)")
+    scan_names()
+    sys.exit(1 if bad else 0)
