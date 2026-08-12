@@ -19,6 +19,7 @@
   python3 tools/script_draft.py                 # 전 씬 → work/review/draft_*.json
   python3 tools/script_draft.py ED1SCN1         # 한 씬
   python3 tools/script_draft.py --verify ED1SCN1  # 정본이 초안과 같은 바이트를 내는지
+  python3 tools/script_draft.py --sentinels       # 정본이 `%s`·`%d` 인자를 잃지 않았는지
 """
 
 import json
@@ -80,9 +81,45 @@ def verify(scn):
     return d, bad
 
 
+def check_sentinels():
+    """정본이 **인자 센티널을 잃지 않았는가** — 잃으면 블록이 통째로 탈락한다.
+
+    ⚠ `%s`·`%d` 는 정본에 **제어문자**(`NAME_SENT`·`NUM_SENT`·`ITEM_SENT`)로 들어 있어
+    **화면에도 편집기에도 안 보인다.** 문안을 다듬다 지우기 쉬운데, 지우면 `fmt_drop` 으로
+    블록이 빠지고 **화면엔 일본어가 남는다**(SCN2 `jp692`·`jp693` 실측 2026-08-12 —
+    `백돌이 ␛개.` 를 `백돌이 개일세.` 로 고치다 날렸다).
+    """
+    import glob
+
+    SENT = (R.NAME_SENT, R.NUM_SENT, R.ITEM_SENT)
+    bad = 0
+    for path in sorted(glob.glob(os.path.join(R.SCRIPT_DIR, "*SCN*.json"))):
+        scn = os.path.basename(path)[:-5]
+        with open(path, encoding="utf-8") as f:
+            cur = json.load(f)
+        d = os.path.join(REVIEW_DIR, f"draft_{scn}.json")
+        if not os.path.exists(d):
+            continue
+        with open(d, encoding="utf-8") as f:
+            base = json.load(f)
+        for k, v in cur.items():
+            if not k.isdigit() or k not in base:
+                continue
+            a = base[k]["t"] if isinstance(base[k], dict) else base[k]
+            b = v["t"] if isinstance(v, dict) else v
+            for c in SENT:
+                if a.count(c) != b.count(c):
+                    bad += 1
+                    print(f"      ⚠ {scn} jp{k}: 인자 {a.count(c)} → {b.count(c)}개  {b[:40]!r}")
+    print(f"  {'✅ 인자 센티널 보존' if not bad else f'⚠ 인자 유실 {bad}곳'}")
+    return bad
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     scenes = [s for s, _l, _z in SCN_FILES if not args or s in args]
+    if "--sentinels" in sys.argv:
+        sys.exit(1 if check_sentinels() else 0)
     if "--verify" in sys.argv:
         for scn in scenes:
             d, bad = verify(scn)
