@@ -33,10 +33,31 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R  # noqa: E402
 from common import ROOT  # noqa: E402
-from llm_assign import _raw  # noqa: E402
 
 GAME = "ED1"
 CTX = 34  # 앞뒤로 보여 줄 글자 수
+
+
+
+def _raw(game):
+    """{(table, eid): 원문 텍스트} — `kr_pages` 는 `\\x06` 을 지우므로 원문이 따로 필요하다.
+
+    (배정 도구 `llm_assign` 에 있던 것을 옮겼다 — 번역 정본 전환으로 배정 도구를 걷어내면서,
+    쓰는 곳이 여기 하나뿐이라 인라인했다. 2026-08-12)
+    """
+    import glob
+
+    from align_jp_kr import DOS_KR_DIR
+
+    out = {}
+    for f in sorted(glob.glob(os.path.join(DOS_KR_DIR, game, "*.json"))):
+        if os.path.basename(f).startswith(("_", ".")):
+            continue
+        doc = json.load(open(f, encoding="utf-8"))
+        for e in doc["entries"]:
+            if e["kind"] == "block":
+                out[(doc["table_id"], e["entry_id"])] = e["text"]
+    return out
 
 
 def used_map():
