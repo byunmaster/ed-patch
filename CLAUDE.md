@@ -185,8 +185,9 @@ for r in kr jp us; do ln -sfn "../../../../originals/$r" "originals/$r"; done
   소스다 — 커밋되는 파일로 올린다.
 - **검증한다** — `python3 games/ps1-ed1+2/tools/check_determinism.py`.
   비결정적 파생물을 치우고 재빌드해 sha1 을 대조한다. 원칙은 문서로만 두면 샌다.
-- ⚠ **머신을 옮긴 직후 정본 갱신기(`align_map.py --update`·`assign_pages`)를 돌리지 말 것** —
-  그 머신의 동점 결과를 정본으로 승격시킨다. `--diff` 로 먼저 본다.
+- ⚠ **머신을 옮긴 직후 정본 갱신기(`align_map.py --update`)를 돌리지 말 것** — 그 머신의
+  동점 결과를 정본으로 승격시킨다. `--diff` 로 먼저 본다. (ps1-ed1+2 는 **번역 정본**
+  `script/` 로 옮겨 가는 중이라 이 위험이 사라진다 — 손으로 쓴 문안엔 동점이 없다.)
 
 ## 설계 원칙 — KISS · DRY · YAGNI
 
