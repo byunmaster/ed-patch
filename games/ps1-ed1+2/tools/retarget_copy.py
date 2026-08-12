@@ -11,6 +11,13 @@
 정발 파일에 몰린다. 거기 **소수로 끼어든 테이블**이 사본 오선택 후보다. 그 블록이 물고 있는
 정발 엔트리와 **거의 같은 문장**을 주류 테이블에서 찾아 옮긴다.
 
+⚠⚠ **`--apply` 를 함부로 돌리지 말 것**(2026-08-11 실측). 한 맵에 **시점이 둘 이상**이면
+구간 다수결이 그 둘을 한 덩어리로 뭉갠다 — 네리아 항구는 밀매상 **체포 전/후**로 시점이
+갈리는데(정발 `T_043` ↔ `T_044`) 주류를 하나로 잡아 `jp1042` 를 **체포 문안에서 훈방
+문안으로** 바꿔 놓았다. 이벤트 단계가 뒤바뀌는 오배정이다. 되돌렸다.
+⇒ **`--apply` 는 시점이 하나뿐인 구간에서만** 쓰고, 돌린 뒤에는 반드시 재조립 결과를
+전후 대조한다. 후보 목록(`--apply` 없이)은 볼 값어치가 있다.
+
 ⚠ 실패해도 피해가 작다 — 두 사본은 같은 말을 어투만 달리한 것이라, 틀려도 **다른 시점의 정발
 문안**이 나온다(지어낸 한국어가 아니다). 그래서 자동 적용을 허용한다.
 ⚠ 그래도 **주류 테이블에 짝이 없으면 손대지 않는다.** 시점마다 대사가 실제로 추가·삭제된다.
@@ -137,9 +144,15 @@ def main():
 
     if "--apply" in sys.argv and moves:
         sc = ov.setdefault(scn_name, {})
+        skipped = []
         for e, t0, n0, t1, n1, r, _mp in moves:
             cur = dict(sc.get(str(e)) or asg[e])
-            cur.pop("chain", None)  # 엔트리가 바뀌면 페이지 슬라이스는 무효
+            # ⚠ **`chain` 이 있으면 건드리지 않는다.** 사람이 페이지·문장 단위로 맞춰 둔
+            # 자리이고, 엔트리를 갈면 그 슬라이스가 통째로 무효가 된다 — 실제로 하루치
+            # 배정 교정을 되돌릴 뻔했다(2026-08-11). 옮기려면 손으로 chain 을 다시 짠다.
+            if "chain" in cur:
+                skipped.append(e)
+                continue
             cur.update(table=t1, entry_id=n1)
             cur["note"] = (
                 f"정발 사본 교정(retarget_copy 2026-08-04) — {t0}#{n0} → {t1}#{n1} "
@@ -147,7 +160,12 @@ def main():
             )
             sc[str(e)] = cur
         json.dump(ov, open(ov_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-        print(f"  → align_overrides.json 반영 {len(moves)}건")
+        print(f"  → align_overrides.json 반영 {len(moves) - len(skipped)}건")
+        if skipped:
+            print(
+                f"  ⚠ `chain` 이 걸린 {len(skipped)}건은 건너뛴다(사람이 맞춘 슬라이스) — "
+                + " ".join(f"jp{x}" for x in skipped[:12])
+            )
 
 
 if __name__ == "__main__":

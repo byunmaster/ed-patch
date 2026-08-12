@@ -235,7 +235,9 @@ def _anchors(game, scn):
     ap = os.path.join(OUT_DIR, "align", f"{game}_SCN{scn}.json")
     if os.path.exists(ap):
         for p in json.load(open(ap, encoding="utf-8"))["pairs"]:
-            if not p.get("flags"):  # 무플래그 = 고신뢰
+            # ⚠ `kr` 이 없거나 table 이 None 인 쌍이 섞인다(비운 블록 등) — 그대로 넘기면
+            # `table_pool` 이 `None.startswith` 로 죽는다(2026-08-12 실측).
+            if not p.get("flags") and (p.get("kr") or {}).get("table"):
                 out.append((p["jp"]["entry_id"], p["kr"]["table"]))
     return out
 
