@@ -106,6 +106,35 @@ def rm(stem):
             os.remove(p)
 
 
+def _why_excluded():
+    """탈락 사유를 게이트 메시지에 붙인다 — **원인까지 한 번에 말한다.**
+
+    ⚠ 재삽입기가 `excluded_<씬>.json` 에 사유를 이미 남기는데, 게이트는 「일본어가 남았다」
+    까지만 말했다. 그래서 가운뎃점(`·`) 하나가 `encode` 로 탈락했을 때 파일을 따로 열어야
+    원인이 나왔다(2026-08-12 실측). 사유는 셋이다:
+
+    - `encode` — **폰트에 없는 글자.** `·`(가운뎃점) 가 실제로 그랬다. `,` 나 `~` 로 쓴다
+    - `size`   — 문안이 원본 블록보다 길다. 줄이거나 창을 나눈다
+    - `fmt_drop` — `%s`·`%d` 인자 센티널(`\\x1a`·`\\x1b`)을 잃었다. **보이지 않는 제어문자**다
+    """
+    import json as _json
+
+    from common import OUT_DIR
+
+    rows = []
+    for p in sorted(glob.glob(os.path.join(OUT_DIR, "excluded_*.json"))):
+        scn = os.path.basename(p)[len("excluded_") : -len(".json")]
+        with open(p, encoding="utf-8") as f:
+            for eid, why in _json.load(f).items():
+                rows.append(f"    {scn} jp{eid}: {why}")
+    if not rows:
+        return "  (탈락 기록이 없다 — 원문 잔존은 미이관 블록일 수 있다)"
+    return (
+        "  탈락 사유(encode=폰트에 없는 글자 · size=너무 김 · fmt_drop=인자 유실):\n"
+        + "\n".join(rows)
+    )
+
+
 def check_screen_gates():
     """**화면에 나가는 바이트**를 보는 게이트 — 빌드가 성공해도 여기서 걸린다.
 
@@ -130,8 +159,7 @@ def check_screen_gates():
             left.append(f"{name} {len(hits)}곳")
     if left:
         raise SystemExit(
-            "화면에 일본어가 남았다 — 블록이 탈락했을 수 있다(work/derived/excluded_*.json): "
-            + " · ".join(left)
+            "화면에 일본어가 남았다 — 블록이 탈락했다: " + " · ".join(left) + "\n" + _why_excluded()
         )
     if script_draft.check_sentinels():
         raise SystemExit("번역 정본이 `%s`·`%d` 인자를 잃었다 — 그 블록은 fmt_drop 으로 탈락한다")
