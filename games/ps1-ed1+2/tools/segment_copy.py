@@ -110,6 +110,8 @@ def table_pool(game):
     allt = sorted(f[:-5] for f in os.listdir(d) if f.endswith(".json") and not f.startswith("_"))
     seed = collections.defaultdict(set)
     for t, mp in learned.items():
+        if not t:  # ⚠ 비운 블록 등에서 table 이 None 으로 온다(2026-08-12)
+            continue
         if t.startswith(f"{game}/"):
             t = t.split("/", 1)[1]
         seed[mapkey(mp)].add(t[:4])
@@ -223,6 +225,8 @@ def propose(game, scn, drop=()):
         for key, _eids, c in items:
             cand = collections.Counter()
             for t, n in c.items():
+                if not t:  # 비운 블록 등 — table 이 None
+                    continue
                 q = t.split("/", 1)[-1][:4]
                 if q in groups:
                     cand[q] += n
