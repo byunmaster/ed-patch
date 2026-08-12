@@ -28,7 +28,7 @@ echo "  ✅ 통과"
 DONE=$(ls "$ROOT/games/ps1-ed1+2/script/" 2>/dev/null | sed -n 's/\(ED1SCN[0-9]*\)\.json/\1/p' | tr '\n' ' ')
 
 fail=0
-for t in check_tail_cut check_spellings check_forbidden; do
+for t in check_tail_cut check_spellings check_forbidden check_proper_nouns; do
   out=$("$PY" "$G/$t.py" 2>&1) || fail=1
   echo "$out" | tail -3 | sed 's/^/  /'
 done
