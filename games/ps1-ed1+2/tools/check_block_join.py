@@ -13,6 +13,9 @@
   **선두에 남아 들여쓰기처럼 보인다**.
 - **선두 공백** — 앞 블록이 개행으로 끝나는데 뒷 블록이 공백으로 시작한다. 붙음을 막으려고
   넣은 공백이, 나중에 그 경계에 꼬리 개행이 붙으면서 갈 곳을 잃은 것이다.
+- **들여쓰기** — 블록 **안**에서 개행 뒤 줄이 공백으로 시작한다. 이름창(`%c이름%c`) 뒤가
+  대부분이다 — 원문이 이름과 본문을 공백으로 갈라 둔 흔적이고, 시점 사본 중 **일부에만**
+  남아 같은 대사가 캐릭터에 따라 들여쓰였다 갔다 한다(유저 QA 2026-08-13, 8곳).
 
 **고치는 법.** 붙음은 뒷 블록 **선두에 붙임 공백**(`\\ue003`)을 넣는다 — 보통 공백은
 `.strip()` 에 지워지고 선두 개행은 빈 줄이 되어 조판이 버린다(둘 다 실측).
@@ -53,6 +56,7 @@ def scan(scenes=None):
     join = []  # 공백 없이 붙는 경계
     over = []  # 붙고 나서 폭을 넘는 줄
     lead = []  # 개행 뒤인데 선두 공백이 남은 블록
+    indent = []  # 블록 **안**에서 개행 뒤 줄이 공백으로 시작
     for scn, _l, _z in SCN_FILES:
         if scenes and scn not in scenes:
             continue
@@ -62,6 +66,14 @@ def scan(scenes=None):
                 for _s, eid, _jp, c, _t in R.iter_candidates((scn,))
             }
         for eid, raw in rows.items():
+            # ⚠ **블록 안**의 선두 공백은 경계와 별개다. 이름창(`%c이름%c`) 뒤 개행에
+            # 붙임 공백이 남으면 본문 첫 줄만 한 칸 들여쓰기돼 보인다 — 원문이 이름과
+            # 본문을 공백으로 갈라 둔 흔적이라 시점 사본 중 일부에만 남는다
+            # (`%c세리오스%c\n아직이다` 는 멀쩡한데 `%c류난%c\n 아직이다` 만 들여쓰였다,
+            # 유저 QA 2026-08-13). 뒤에 이어 붙는 줄이 아니므로 그냥 지운다.
+            for i, ln in enumerate((raw or "").split("\n")):
+                if i and ln.startswith((" ", NOBREAK_SP)):
+                    indent.append((scn, eid, i, ln[:16]))
             nxt = rows.get(eid + 1)
             if not raw or not nxt:
                 continue
@@ -91,9 +103,11 @@ def scan(scenes=None):
         print(f"  ⚠ {scn} jp{eid}→{eid + 1} 이은 줄이 {w}슬롯(>{WRAP}): …{t!r} + {h!r}")
     for scn, eid, h in lead:
         print(f"  ⚠ {scn} jp{eid} 개행 뒤인데 선두 공백이 남았다: {h!r}")
-    bad = len(join) + len(over) + len(lead)
+    for scn, eid, i, h in indent:
+        print(f"  ⚠ {scn} jp{eid} {i}번째 줄이 공백으로 시작한다(들여쓰기로 보인다): {h!r}")
+    bad = len(join) + len(over) + len(lead) + len(indent)
     print(
-        f"\n{'✅ 블록 경계 이상 없음' if not bad else f'⚠ 붙음 {len(join)} · 넘침 {len(over)} · 선두 공백 {len(lead)}'}"
+        f"\n{'✅ 블록 경계 이상 없음' if not bad else f'⚠ 붙음 {len(join)} · 넘침 {len(over)} · 선두 공백 {len(lead)} · 들여쓰기 {len(indent)}'}"
     )
     return bad
 

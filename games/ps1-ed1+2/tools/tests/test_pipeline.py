@@ -33,8 +33,31 @@ def test_dot_before_bang_is_dropped():
 
 
 def test_ellipsis_is_not_split():
-    # `....` 은 말줄임이지 문장 경계가 아니다 — 공백을 끼우면 안 된다
-    assert R.fix_spacing("글쎄....그런가") == "글쎄....그런가"
+    # `....` 은 말줄임이지 문장 경계가 아니다 — 공백을 끼우면 안 된다.
+    # 길이는 셋으로 모은다(유저 확정 2026-08-13) — 붙여 쓰는 것 자체는 그대로다.
+    assert R.fix_spacing("글쎄....그런가") == "글쎄...그런가"
+
+
+def test_ellipsis_length_is_normalized():
+    assert R.fix_spacing("그렇군.. 알았네") == "그렇군. 알았네"  # 2점은 온점 하나
+    assert R.fix_spacing("노인....") == "노인..."  # 3~9점은 셋
+    assert R.fix_spacing("다섯.....") == "다섯..."
+
+
+def test_silent_window_keeps_its_length():
+    # 10점 이상은 말줄임표가 아니라 **침묵 창**이다 — 원문도 중점을 그만큼 찍는다.
+    # ⚠ 런 전체를 재야 한다: 뒤만 막으면 12점에서 뒤 9점만 잡아 6점으로 만든다(백트래킹).
+    assert R.fix_spacing("..............") == ".............."
+    assert R.fix_spacing("할지............") == "할지............"
+
+
+def test_spell_is_jumun_not_mabeop():
+    # 呪文 = 주문(발동 명령어). 정발이 대부분 「마법」으로 옮겨 놔서 여기서 되돌린다.
+    assert R.fix_spacing("사이레스 마법을 쓰면") == "사이레스 주문을 쓰면"
+    # `呪文の書` 는 ED2 정발 표기인 **주문서**로 간다(ED2 코퍼스 `주문서` 9회 · `마법` 0회)
+    assert R.fix_spacing("누구의 마법책에 써 넣을까?") == "누구의 주문서에 써 넣을까?"
+    # ⚠ 예외 하나 — 원문이 `魔法の品` 인 자리는 진짜 마법이다
+    assert R.fix_spacing("신께서 쓰시던 마법의 물건이") == "신께서 쓰시던 마법의 물건이"
 
 
 # ── 창 끝 종결부호 (`close_sentence`) ───────────────────────────────────────
