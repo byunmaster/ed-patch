@@ -17,6 +17,7 @@
 """
 
 import bisect
+import functools
 import json
 import os
 import re
@@ -490,6 +491,10 @@ def fix_spacing(t):
     # 한 줄에 두 문장이 붙어 나온다. 전수 7건, 전부 이 꼴이었다(2026-08-10).
     # ⚠ 말줄임표(`....돈이`)는 정발이 일부러 붙여 쓰는 어투라 건드리지 않는다 — 단독 부호만 본다.
     t = re.sub(r"(?<![.!?])([.!?])(?=[가-힣])", r"\1 ", t)
+    # 쉼표도 같다 — `에에,지금까지 1승이니까`(해적섬 도박, 유저 QA 2026-08-12). 종결부호와 달리
+    # 창 경계와 무관한 자리에도 있다. ⚠ **숫자 구분 쉼표는 안 걸린다** — 뒤가 숫자라
+    # `10,000Gold` 는 그대로다. 여는 부호 앞(`,"`)도 아니라 한글이 올 때만 본다.
+    t = re.sub(r",(?=[가-힣])", ", ", t)
     # 한 문장에 종결부호가 겹친 자리(`오십시오.!` · `않나.?`) — 앞의 온점은 오타다.
     t = re.sub(r"(?<![.!?])\.(?=[!?])", "", t)
     return t
@@ -808,7 +813,39 @@ NOBREAK_SP = "\ue003"
 # 「짧은 `…의` 는 줄 끝에 홀로 안 둔다」를 `split_reason` 에 넣어 봤더니 **141블록**이 바뀌고
 # `국왕 폐하의` / `원수를` 이 `국왕` / `폐하의 원수를` 로 갈렸다 — 고아 하나를 없애자고
 # **호칭을 쪼갠다**. 판정이 이름·호칭을 못 가르니 자리마다 붙임 공백으로 묶는다(2026-08-11).
-KEEP_TOGETHER = ("보물 창고", "신의 아들")
+# 손으로 적는 자리 — 고유명사가 **아닌데** 갈리면 읽기 나쁜 합성 표현.
+KEEP_MANUAL = ("보물 창고", "신의 아들")
+
+
+@functools.cache
+def keep_together():
+    """붙임 공백으로 묶을 표현 — 손 목록 + **고유명사 정본에서 띄어 쓴 이름 전부**.
+
+    ⚠ 고유명사가 두 줄에 걸리면 한 이름으로 안 읽힌다(`횃불과 워프의` / `깃털은…`,
+    유저 QA 2026-08-12). 자리마다 손으로 적어 오다가는 새 이름이 늘 때마다 샌다 —
+    정본(아이템·마법 · 몬스터 · 인물 · 지명)이 이미 이름을 다 알고 있으니 거기서 받는다.
+
+    ⚠ **붙여 쓴 이름은 넣지 않는다** — 공백이 없으면 조판이 애초에 못 가른다.
+    ⚠ **폭을 넘는 이름도 넣지 않는다** — 한 줄에 못 들어가는데 묶으면 줄이 폭을 넘어
+      엔진이 제 맘대로 꺾는다. 묶어서 얻을 게 없다.
+    """
+    import align_jp_kr
+    import patch_items
+    import patch_sys_ui
+
+    # ⚠ 인물·지명은 **원문이 가타카나 고유명인 것만** — 화자 사전에는 `완고해 보이는 노인`
+    # 같은 역할어가 섞여 있는데 그건 이름이 아니라 묘사다. 묶어 봐야 줄만 늘린다.
+    kata = re.compile(r"[ァ-ヴー]{2,}")
+    names = set(KEEP_MANUAL)
+    names.update(patch_items.NAMES.values())
+    names.update(patch_items.MONSTERS.values())
+    names.update(kr for jp, kr in align_jp_kr.SPEAKER_DICT.items() if kata.search(jp))
+    names.update(kr for jp, kr in patch_sys_ui.PLACES if kata.search(jp))
+    out = [n for n in names if " " in n.strip() and sum(cell_w(c) for c in n) <= WRAP]
+    # 긴 이름부터 — `은의 피리` 를 `피리` 쪽 짧은 항목이 먼저 먹지 않게. 동률은 이름순(결정성).
+    return tuple(sorted(out, key=lambda n: (-len(n), n)))
+
+
 # **금액과 단위는 갈리지 않는다** — `하룻밤 10` / `Gold입니다.` 로 끊겨 값과 단위가 두 줄에
 # 걸쳤다(여관 jp667, 유저 QA 2026-08-11). 낱말 목록으로는 못 잡는다(금액이 자리마다 다르고
 # 런타임 주입(`NUM_SENT`)이면 빌드 시점엔 값도 모른다) → **숫자 + `Gold`** 를 패턴으로 묶는다.
@@ -870,7 +907,7 @@ def wrap_page(text, width=WRAP, target=None, max_lines=None):
     HARD_NL 마커가 있으면 하드개행으로 변환하고 protect_hard를 켠다(개별 개행 override)."""
     protect = HARD_NL in text
     text = text.replace(HARD_NL, "\n")
-    for kt in KEEP_TOGETHER:  # 어절 갈림 방지 — 조판이 끝나면 되돌린다
+    for kt in keep_together():  # 어절 갈림 방지 — 조판이 끝나면 되돌린다
         text = text.replace(kt, kt.replace(" ", NOBREAK_SP))
     text = _bind_num_unit(text, width)
     text, folded = _fold_josa(text)  # 병기 → 1슬롯(런타임 훅 해결 후 폭)
@@ -1027,7 +1064,17 @@ FOLD_NAME = {}
 # 색코드를 **텍스트 바이트로 직접** 박는다(`%c` 인자를 안 늘리므로 구조 계약 불변).
 # 원본도 같은 방식을 쓴다(전 씬 블록 텍스트 안 단독 제어바이트 실측: 0x03 15회·0x02 22회 등).
 # 용도: 정발이 색으로 구분하는 **해설(내레이션) = 초록(3)**을 이식(jp303 유저 QA 2026-07-30).
+# `subs` → `subs_at` 변환기가 켜는 덤프 자리(평소 None — 파이프라인은 안 건드린다).
+_SUBS_DUMP = None
+# 같은 성격의 덤프 훅 — `subs_at` 오프셋을 손으로 잡을 때 배정 원문을 꺼내 본다.
+_TEXT_DUMP = None
 COLOR_WRAP = {}
+# 본문만 색 지정: {eid: (on, off)} — **이름창(`%c%s%c`) 뒤부터** 칠한다.
+# ⚠ `COLOR_WRAP` 은 블록 **맨 앞**에 색코드를 박는데, 그 뒤에 이름창이 있으면 이름창의
+# `%c` 인자가 색을 덮어써서 아무 효과가 없다(복권 수령 jp322 실측 2026-08-12 — 블록 전체가
+# 이름창 색인 노랑으로 나왔다). 아이템 획득 안내처럼 **이름은 제 색을 두고 안내문만**
+# 해설색으로 바꾸려면 이쪽을 쓴다.
+COLOR_BODY = {}
 # 이름줄 주입: {eid: (색on, 이름, 색off)} — 씬 단위(load_translations 재구축).
 # **원본에 화자 헤더(`%c이름%c`) 자리가 없는데** 화면엔 이름이 떠야 하는 블록용이다
 # (jp314 세리오스 실측 2026-08-01: `%c`=1·헤더 없음이라 헤더 쌍을 못 만든다 — 만들면
@@ -1951,6 +1998,15 @@ def build_candidate(raw, t, eid):
         i = c.rfind(MC)  # 종단 %c 앞에 복귀색을 넣어 다음 블록에 색이 새지 않게 한다
         c = bytes([on]) + (c[:i] + bytes([off]) + c[i:] if i >= 0 else c + bytes([off]))
         cand = c + b"\x00" * (-len(c) % 4 or 4)
+    if cand is not None and eid in COLOR_BODY:
+        on, off = COLOR_BODY[eid]
+        c = cand.rstrip(b"\x00")
+        win = MC + b"%s" + MC  # 이름창 — 이 뒤부터 우리 색이다
+        if win in c:
+            c = c.replace(win, win + bytes([on]))
+            i = c.rfind(MC)  # 종단 %c 앞에 복귀색 — 다음 블록으로 색이 새지 않게
+            c = c[:i] + bytes([off]) + c[i:] if i >= 0 else c + bytes([off])
+            cand = c + b"\x00" * (-len(c) % 4 or 4)
     if cand is not None and eid in NAME_PLATE:
         on, nm, off = NAME_PLATE[eid]
         c = cand.rstrip(b"\x00")
@@ -2072,7 +2128,7 @@ def _sentences(t):
         e = m.end()
         tail = t[e:]
         # DOS 제어코드(`\xNN`)도 경계로 본다 — 종결부호 뒤에 바로 붙어 오면 다음 발화다
-        # (`…맡기겠습니다.\x03\x09\x02\x1C`3 동료가 되었습니다.` jp316/317 실측).
+        # (`…맡기겠습니다.\x03\x09\x02\x1C(정발 문안)` jp316/317 실측).
         if tail == "" or tail[0] in " 　" or tail.startswith(("{n}", "\\x")):
             out.append(t[start:e])
             start = e
@@ -2104,7 +2160,11 @@ def _load_script():
 
 
 # 배정 시대의 필드 — 정본 문안이 있으면 **전부 무효**다(문안이 이미 완성형이니까).
-_ALIGN_KEYS = ("chain", "subs", "pre_subs", "table", "entry_id", "trail_nl", "trail_sp")
+# 정본으로 옮긴 블록에서 지울 **배정** 필드 — 문안이 정본에서 오니 배정은 무의미하다.
+# ⚠ `trail_nl`·`trail_sp` 는 **여기 넣지 않는다.** 꼬리 개행·공백은 배정이 아니라 **표시**다 —
+# 이어 그려지는 경계에서 줄이 폭을 넘는지는 문안을 어디서 가져왔든 똑같이 생긴다. 넣어 뒀더니
+# 정본 이관과 동시에 조용히 꺼져서, 엔진이 제멋대로 꺾은 자리가 59곳 남아 있었다(2026-08-12).
+_ALIGN_KEYS = ("chain", "subs", "subs_at", "pre_subs", "table", "entry_id")
 
 
 def _load_overrides():
@@ -2122,10 +2182,16 @@ def _load_overrides():
             if eid.startswith("_"):
                 continue
             cur = dict(dst.get(eid) or {})
-            for k in _ALIGN_KEYS:
-                cur.pop(k, None)
-            cur["ours"] = v["t"] if isinstance(v, dict) else v
-            cur["verbatim"] = True
+            t = v.get("t") if isinstance(v, dict) else v
+            # ⚠ **`t` 가 없는 항목은 배정을 안 덮는다.** 문안이 정발 그대로인 자리는 정본에
+            # 적지 않고 **포인터(배정)로 파생**한다 — 리포에 정발 문장이 남지 않게(저작권,
+            # CLAUDE.md 「[kr] 문장급 문안은 코드에 임베드 금지」). 그런 블록도 화자·표시
+            # 지시는 우리 판단이라 여기 남으므로, 배정 필드를 지우면 문안이 통째로 사라진다.
+            if t is not None:
+                for k in _ALIGN_KEYS:
+                    cur.pop(k, None)
+                cur["ours"] = t
+                cur["verbatim"] = True
             if isinstance(v, dict) and v.get("s"):
                 cur["speaker"] = v["s"]
             dst[eid] = cur
@@ -2268,6 +2334,7 @@ def load_translations(align_name, scn_name):
     TRAIL_SP.clear()
     FOLD_NAME.clear()
     COLOR_WRAP.clear()
+    COLOR_BODY.clear()
     NAME_PLATE.clear()
     NL_WINS.clear()
     LEAD_NL_DROP.clear()
@@ -2454,6 +2521,9 @@ def load_translations(align_name, scn_name):
             tbl, _, base = base.rpartition(":")
         pi, _, si = rest.partition(".")
         t = kr_entry(tbl, int(base))["text"].removesuffix("{end}")
+        # ⚠ `pre_subs` 는 문자열형 그대로 둔다 — 담긴 것이 `볼까\x0A` 같은 **조각·제어**라
+        # 저작권 대상이 아니고, chain 항목마다 따로 적용돼 블록 단위 오프셋으로는 못 편다
+        # (실측 2026-08-13: 항목별 오프셋이 섞여 IndexError).
         for a, b in pre:
             t = t.replace(a, b)
         if vi:
@@ -2495,6 +2565,17 @@ def load_translations(align_name, scn_name):
         if "color" in ov:  # 해설 등 블록 전체 색 — [on, off] 또는 on(off 기본 1=흰색)
             c = ov["color"]
             COLOR_WRAP[int(jp_id_str)] = tuple(c) if isinstance(c, list) else (int(c), 1)
+        # 꼬리 개행·공백 — **정본 블록에도 걸어야 한다.** 아래 체인 경로에도 같은 처리가
+        # 있지만 그건 `chain` 이 달린 배정 블록 전용이라, 정본(`script/*.json`)으로 옮긴 씬은
+        # 못 받는다. 이어 그려지는 경계에서 줄이 폭을 넘으면 엔진이 제멋대로 꺾어 공백을
+        # 줄 선두에 흘린다(`말일세, 현자답지` / ` 못한 짓이라고`, 유저 QA 2026-08-12).
+        if ov.get("trail_sp"):
+            TRAIL_SP.add(int(jp_id_str))
+        elif ov.get("trail_nl"):
+            TRAIL_NL.add(int(jp_id_str))
+        if "color_body" in ov:  # 이름창 뒤부터 색 — [on, off] 또는 on(off 기본 1=흰색)
+            c = ov["color_body"]
+            COLOR_BODY[int(jp_id_str)] = tuple(c) if isinstance(c, list) else (int(c), 1)
         if "name_plate" in ov:  # 헤더 자리 없는 블록에 이름줄 주입 — [색on, 이름, 색off] 또는 이름
             v = ov["name_plate"]
             NAME_PLATE[int(jp_id_str)] = tuple(v) if isinstance(v, list) else (2, str(v), 1)
@@ -2509,6 +2590,12 @@ def load_translations(align_name, scn_name):
         if ov.get("blank"):  # 공유 꼬리 블록 비우기 — 제어 토큰만 내보낸다
             out[int(jp_id_str)] = (BLANK,)
             applied += 1
+            continue
+        # ⚠ **배정이 없는 항목**(`table`·`chain`·`ours` 어느 것도 없는 것)은 표시 지시만
+        # 담은 것이다 — 정형 블록(보물상자)처럼 문안을 전용 빌더가 만드는 자리에도 꼬리
+        # 개행은 걸어야 하는데, 그런 블록엔 걸 배정이 없다. 아래 배정 처리로 내려보내면
+        # `ov["table"]` 에서 죽는다(2026-08-12 실측).
+        if not ({"table", "chain", "ours"} & ov.keys()):
             continue
         if "ours" in ov:
             # 우리 문안. `script/` 에서 온 **번역 정본**은 완성형이라 정발 정규화를 안 지난다.
@@ -2561,11 +2648,32 @@ def load_translations(align_name, scn_name):
         # ⚠ 판정은 **블록 단위**다. 어미 후보를 여러 개 늘어놓고 그중 하나만 맞기를
         # 노리는 묶음이 실재해서(`파시겠습니까`·`파시려나요`… ) 쌍마다 경고하면 소음이 된다.
         # 진짜 사고는 **한 쌍도 안 맞아 블록이 통째로 무변화**인 경우다.
+        # 자구 교정은 **오프셋**으로 적는다(`subs_at`) — 찾을 문자열을 그대로 두면 정발
+        # 원문이 리포에 남는다(저작권, 유저 확정 2026-08-13). 문자열형(`subs`)은 변환기가
+        # 오프셋을 뽑을 때만 쓰는 과도기 입력이다.
+        # ⚠ **적힌 순서대로** 적용한다 — 오프셋은 문자열형을 순차 적용하던 그 시점의 값이라
+        # 앞 항목이 이미 반영돼 있다. 한 쌍이 여러 자리에 걸리던 것은 자리마다 한 줄로 펴 두되
+        # **뒤 자리부터** 적어 두므로(변환기가 그렇게 낸다) 같은 쌍 안에서는 밀리지 않는다.
+        if _TEXT_DUMP is not None:
+            _TEXT_DUMP.setdefault(scn_name, {})[jp_id_str] = entry["text"]
+        for st, ln, b in ov.get("subs_at", ()):
+            entry["text"] = entry["text"][:st] + b + entry["text"][st + ln :]
         _pairs = list(ov.get("subs", ()))
         _hit = 0
         for a, b in _pairs:
             if a in entry["text"]:
                 _hit += 1
+                if _SUBS_DUMP is not None:
+                    # 모든 자리를 **뒤에서부터** 적어 둔다 — 한 쌍이 여러 자리에 걸려도
+                    # 재적용이 서로를 밀지 않는다(`str.replace` 는 전부 바꾼다).
+                    t, offs = entry["text"], []
+                    j = t.find(a)
+                    while j >= 0:
+                        offs.append([j, len(a), b])
+                        j = t.find(a, j + len(a))
+                    _SUBS_DUMP.setdefault(scn_name, {}).setdefault(jp_id_str, []).extend(
+                        reversed(offs)
+                    )
             entry["text"] = entry["text"].replace(a, b)
         # ⚠ `sys_phrases` 가 박는 일원화 치환은 **가드**라 안 맞는 게 정상이다
         # (그 블록이 이미 표준형이면 바꿀 게 없다). 손으로 쓴 교정만 본다.

@@ -106,7 +106,12 @@ def check_sentinels():
             if not k.isdigit() or k not in base:
                 continue
             a = base[k]["t"] if isinstance(base[k], dict) else base[k]
-            b = v["t"] if isinstance(v, dict) else v
+            b = v.get("t") if isinstance(v, dict) else v
+            # ⚠ **문안이 없는 항목은 볼 것이 없다** — 정발 문안 그대로인 자리는 정본에 안 적고
+            # 포인터(배정)로 파생한다(저작권). 화자·표시 지시만 남은 그런 블록은 초안이 곧
+            # 화면 문안이므로 인자 개수가 어긋날 수가 없다.
+            if b is None:
+                continue
             for c in SENT:
                 if a.count(c) != b.count(c):
                     bad += 1

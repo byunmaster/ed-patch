@@ -195,9 +195,10 @@ def test_wrap_pages_long_sentence_flows():
 
 def test_bound_noun_pulled_up():
     # 의존명사는 앞 용언과 붙어야 한다 — `만날` / `수 있을…` 로 갈리면 안 된다
-    # (유저 QA 2026-08-04, 정발 자신의 개행도 `만날 수` 뒤였다)
-    pages = wrap_pages("(정발 문안)", 14, 6, strip_after="")
-    assert pages == [["아아, 세리오스.", "너를 다시 만날 수", "있을 줄이야..."]], pages
+    # (유저 QA 2026-08-04 — 실제 자리도 개행이 `만날 수` 뒤였다)
+    # ⚠ 픽스처는 **우리 문장**이다 — 실제 대사를 그대로 적으면 리포에 원작 문안이 남는다.
+    pages = wrap_pages("이야, 반갑네. 자네를 다시 만날 수 있을 줄이야...", 14, 6, strip_after="")
+    assert pages == [["이야, 반갑네.", "자네를 다시 만날 수", "있을 줄이야..."]], pages
 
 
 def test_bound_noun_not_pulled_without_adnominal():
@@ -226,7 +227,7 @@ def test_split_reason_names_the_unit():
 
 def test_balance_avoids_unit_split():
     # 줄바꿈 지점 선택에서 덩어리 갈림을 피한다 — 어절 하나 옮기기로는 안 되던 자리다.
-    out = wrap_pages("(정발 문안)", width=14, lines_per_page=3)
+    out = wrap_pages("그러면, 저희들을 구해 준 이가 자네들인가?", width=14, lines_per_page=3)
     assert not any(
         split_reason(pg[i - 1].split()[-1], pg[i].split()[0])
         for pg in out
@@ -236,8 +237,8 @@ def test_balance_avoids_unit_split():
 
 def test_tail_orphan_pull_keeps_units():
     # 마지막 줄 외톨이를 없애려다 **부사 고아를 새로 만들면 안 된다**(전 씬 2건 실측).
-    out = wrap_pages("(정발 문안)", width=14, lines_per_page=3)
-    assert out == [["왕자 어서!", "아크담은 아직 2층에", "있습니다!!"]], out
+    out = wrap_pages("촌장 어서! 병사들은 아직 2층에 있습니다!!", width=14, lines_per_page=3)
+    assert out == [["촌장 어서!", "병사들은 아직 2층에", "있습니다!!"]], out
 
 
 def _run():

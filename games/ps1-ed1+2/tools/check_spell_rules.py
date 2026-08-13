@@ -47,13 +47,18 @@ def fired():
     hits = collections.Counter()
     orig = R.spell_fix
 
-    def traced(t):
+    # ⚠ 시그니처를 **본물과 똑같이** 유지한다 — `punct=False`(번역 정본 경로)를 안 받으면
+    # 정본 씬 로드에서 통째로 죽는다(실측 2026-08-12: 전 씬이 정본으로 넘어가며 터졌다).
+    # `punct` 분기도 본물과 같게 재현해야 **정본 경로에서 안 걸리는 규칙**이 발화로 안 세진다.
+    def traced(t, *, punct=True):
         rx, space, replace = R._spell_rules()
         if rx:
             t = rx.sub(r"\1 \2", t)
         for a, b in space:
             t = t.replace(a + b, a + " " + b)
         for a, b in replace:
+            if not punct and b.startswith(a) and not b[len(a) :].strip(".!?…"):
+                continue  # 부호만 덧붙이는 규칙 — 정본은 완성형이라 건너뛴다
             if a in t:
                 hits[(a, b)] += t.count(a)
             t = t.replace(a, b)

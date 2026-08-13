@@ -249,7 +249,7 @@ def test_num_bind_only_for_units():
     import reinsert_kr_pilot as R
 
     assert R._NUM_UNIT.search("하룻밤 10 Gold입니다.")
-    assert not R._NUM_UNIT.search("(정발 문안)")
+    assert not R._NUM_UNIT.search("워프 2 마법을 익혔다.")  # 픽스처는 우리 문장으로 — 정발 인용 금지
 
 
 def test_window_lines_counts_across_blocks():
