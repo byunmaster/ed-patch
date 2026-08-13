@@ -1349,8 +1349,10 @@ def stock_build(raw):
                 else:
                     blk += encode_ext(part)
         return bytes(blk)
-    # recheck: [%s]는 상자를 다시 한번\n살펴 보았다.[%c]역시…[%c]
-    p1 = "\n".join(wrap_page(NAME_SENT + "는 " + re1)[0])
+    # recheck: [%s]은(는) 상자를 다시 한번\n살펴 보았다.[%c]역시…[%c]
+    # ⚠ 조사는 **병기**로 둔다 — 「는」 으로 박으면 받침 있는 이름에서 `류난는`·`게일는` 이
+    #   나간다(실측 2026-08-13). 훅이 이름 받침을 보고 푼다.
+    p1 = "\n".join(wrap_page(NAME_SENT + "은(는) " + re1)[0])
     p2 = "\n".join(wrap_page(re2)[0])
     return encode_ext(p1) + MC + encode_ext(p2) + MC
 
