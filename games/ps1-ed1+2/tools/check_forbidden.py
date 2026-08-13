@@ -106,12 +106,18 @@ def _corpus_lines():
             except Exception:
                 continue
             for seg in re.split(r"\{p\}", t):
-                seg = re.sub(r"\{[^}]*\}", "", seg)
-                seg = re.sub(r"\\x[0-9A-Fa-f]{2}", "", seg).strip()
-                # ⚠ **한글이 없으면 문안이 아니다** — `..............` 같은 부호 덩어리가
-                # 길이만으로 걸려 오탐을 만든다(실측 12곳). 저작권 대상은 표현이지 부호가 아니다.
-                if len(seg) >= MIN_LEN and seg not in ALLOW and re.search(r"[가-힣]{3,}", seg):
-                    out.add(seg)
+                # ⚠ **화자 마크업을 뗀 본문도 코퍼스로 친다.** 코퍼스는 `{spk}병사{/spk} 이봐…`
+                # 인데 우리 정본(`script/*.json`)의 `t` 는 **본문만** 담는다 — 마크업만 지우면
+                # `병사` 가 본문 앞에 눌어붙어, 본문이 정발과 한 글자도 다르지 않아도 축자
+                # 일치가 안 나 **조용히 통과한다**. 실측 4건 보고 → 169건(2026-08-13).
+                for s in {seg, re.sub(r"^\s*\{spk\}[^{}]*\{/spk\}", "", seg)}:
+                    s = re.sub(r"\{[^}]*\}", "", s)
+                    s = re.sub(r"\\x[0-9A-Fa-f]{2}", "", s).strip()
+                    # ⚠ **한글이 없으면 문안이 아니다** — `..............` 같은 부호 덩어리가
+                    # 길이만으로 걸려 오탐을 만든다(실측 12곳). 저작권 대상은 표현이지 부호가
+                    # 아니다.
+                    if len(s) >= MIN_LEN and s not in ALLOW and re.search(r"[가-힣]{3,}", s):
+                        out.add(s)
     return out
 
 

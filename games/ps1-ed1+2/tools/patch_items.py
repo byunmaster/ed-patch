@@ -21,6 +21,7 @@ ED1 이름 소스는 ED.EXE 안의 세 영역(2026-07-14 규명, 참조 구조 �
 """
 
 import os
+import re
 import struct
 
 import battle_text as BT
@@ -463,6 +464,17 @@ if _BATTLE_JP:
     print("⚠ BATTLE_JP=1 — **진단 빌드**다(자체 번역분이 일본어로 나온다). 배포·QA 금지.")
 
 
+def _ellipsis(t):
+    """말줄임표를 3점으로 — 대사와 같은 표기로 맞춘다(유저 확정 2026-08-13).
+
+    ⚠ **대사의 규칙을 그대로 가져오지 않는다.** 대사는 2점을 1점으로 줄이지만
+    (`fix_spacing`), 전투 보스 대사의 2점은 원문이 `･ ･ ･`(3점)이거나 말더듬(`き、きさまら`)
+    이라 성격이 다르다 — 우연히 닮은 코드를 묶으면 한쪽이 틀어진다. 여기서는 **늘어난 점만**
+    3점으로 줄인다(슬롯이 짧아지는 방향이라 재배치도 안 는다).
+    """
+    return re.sub(r"(?<!\.)\.{4,9}(?!\.)", "...", t) if t else t
+
+
 def battle_kr(jp):
     """전투 문자열 번역 — B 우선, 표시명은 monster_kr 폴백."""
     if _BATTLE_JP:
@@ -471,7 +483,7 @@ def battle_kr(jp):
         if jkey(jp) in ours_keys("battle"):
             return jp
     if jp in BT.B:
-        return BT.B[jp]
+        return _ellipsis(BT.B[jp])
     try:
         return monster_kr(jp)
     except AssertionError:

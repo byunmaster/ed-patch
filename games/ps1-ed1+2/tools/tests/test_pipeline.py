@@ -29,12 +29,38 @@ def test_period_before_hangul_gets_space():
 
 
 def test_dot_before_bang_is_dropped():
-    assert R.fix_spacing("뭐야.!!") == "뭐야!!"
+    # ⚠ 느낌표는 **하나로 모인다**(유저 확정 2026-08-13) — JP 원문에 `!!` 가 0개라
+    # 정발이 더한 것을 물려받은 자리였다. 전투 코퍼스는 경로가 달라 `!!` 를 유지한다.
+    assert R.fix_spacing("뭐야.!!") == "뭐야!"
+    assert R.fix_spacing("안돼!! 열어줘!!") == "안돼! 열어줘!"
 
 
 def test_ellipsis_is_not_split():
-    # `....` 은 말줄임이지 문장 경계가 아니다 — 공백을 끼우면 안 된다
-    assert R.fix_spacing("글쎄....그런가") == "글쎄....그런가"
+    # `....` 은 말줄임이지 문장 경계가 아니다 — 공백을 끼우면 안 된다.
+    # 길이는 셋으로 모은다(유저 확정 2026-08-13) — 붙여 쓰는 것 자체는 그대로다.
+    assert R.fix_spacing("글쎄....그런가") == "글쎄...그런가"
+
+
+def test_ellipsis_length_is_normalized():
+    assert R.fix_spacing("그렇군.. 알았네") == "그렇군. 알았네"  # 2점은 온점 하나
+    assert R.fix_spacing("노인....") == "노인..."  # 3~9점은 셋
+    assert R.fix_spacing("다섯.....") == "다섯..."
+
+
+def test_silent_window_keeps_its_length():
+    # 10점 이상은 말줄임표가 아니라 **침묵 창**이다 — 원문도 중점을 그만큼 찍는다.
+    # ⚠ 런 전체를 재야 한다: 뒤만 막으면 12점에서 뒤 9점만 잡아 6점으로 만든다(백트래킹).
+    assert R.fix_spacing("..............") == ".............."
+    assert R.fix_spacing("할지............") == "할지............"
+
+
+def test_spell_is_jumun_not_mabeop():
+    # 呪文 = 주문(발동 명령어). 정발이 대부분 「마법」으로 옮겨 놔서 여기서 되돌린다.
+    assert R.fix_spacing("사이레스 마법을 쓰면") == "사이레스 주문을 쓰면"
+    # `呪文の書` 는 ED2 정발 표기인 **주문서**로 간다(ED2 코퍼스 `주문서` 9회 · `마법` 0회)
+    assert R.fix_spacing("누구의 마법책에 써 넣을까?") == "누구의 주문서에 써 넣을까?"
+    # ⚠ 예외 하나 — 원문이 `魔法の品` 인 자리는 진짜 마법이다
+    assert R.fix_spacing("신께서 쓰시던 마법의 물건이") == "신께서 쓰시던 마법의 물건이"
 
 
 # ── 창 끝 종결부호 (`close_sentence`) ───────────────────────────────────────
@@ -294,3 +320,18 @@ def _run():
 
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
+
+
+def test_proper_noun_needs_word_boundary():
+    """이름은 **낱말로** 있을 때만 잡는다 — 다른 낱말의 일부는 아니다.
+
+    ⚠ `バザール`(바자르, 시장) 안의 `ザール` 이 몬스터 「잘」로 잡혀 후보 2건이 떴다
+    (SCN5 jp339·340, 2026-08-13). 한 자리를 `SKIP_IF` 로 막으면 다음 이름에서 또 난다.
+    """
+    from check_proper_nouns import _name_in
+
+    assert not _name_in("バザールというものが", "ザール")  # 앞이 가타카나 → 다른 낱말
+    assert not _name_in("ザールール", "ザール")  # 뒤가 가타카나
+    assert _name_in("ザールが現れた", "ザール")  # 낱말 선두
+    assert _name_in("あのザールだ", "ザール")  # 앞이 히라가나
+    assert _name_in("アークダムの手から", "アークダム")  # 정상 인명
