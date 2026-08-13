@@ -29,7 +29,10 @@ def test_period_before_hangul_gets_space():
 
 
 def test_dot_before_bang_is_dropped():
-    assert R.fix_spacing("뭐야.!!") == "뭐야!!"
+    # ⚠ 느낌표는 **하나로 모인다**(유저 확정 2026-08-13) — JP 원문에 `!!` 가 0개라
+    # 정발이 더한 것을 물려받은 자리였다. 전투 코퍼스는 경로가 달라 `!!` 를 유지한다.
+    assert R.fix_spacing("뭐야.!!") == "뭐야!"
+    assert R.fix_spacing("안돼!! 열어줘!!") == "안돼! 열어줘!"
 
 
 def test_ellipsis_is_not_split():
