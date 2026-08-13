@@ -3891,8 +3891,8 @@
    "speaker": "신부"
   },
   "87": {
-   "table": "ED1/T_252",
-   "entry_id": 23,
+   "table": "ED1/T_251",
+   "entry_id": 22,
    "speaker": "술집 주인"
   },
   "89": {
@@ -4201,7 +4201,7 @@
    "speaker": null
   },
   "450": {
-   "table": "ED1/T_209",
+   "table": "ED1/T_202",
    "entry_id": 0,
    "speaker": "해적"
   },
