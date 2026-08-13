@@ -92,6 +92,26 @@ def _canon_pairs():
     return rows
 
 
+_KATA = re.compile(r"[ァ-ヶーヽヾ]")
+
+
+def _name_in(hay, needle):
+    """원문에 이름이 **낱말로** 있는가 — 앞뒤가 가타카나면 다른 낱말의 일부다.
+
+    ⚠ 실측: `バザール`(바자르, 시장) 안의 `ザール` 이 몬스터 「잘」로 잡혔다(SCN5 jp339·340,
+    2026-08-13). 같은 부류를 `check_terms` 에서도 물었다(아이템 `배틀 슈츠` 가 금지어 「틀」
+    에 걸린 것) — **한 자리를 `SKIP_IF` 로 막지 않고 경계를 규칙으로 둔다.**
+    """
+    i = hay.find(needle)
+    while i >= 0:
+        before = hay[i - 1] if i else ""
+        after = hay[i + len(needle)] if i + len(needle) < len(hay) else ""
+        if not (_KATA.match(before) or _KATA.match(after)):
+            return True
+        i = hay.find(needle, i + 1)
+    return False
+
+
 def scan(scenes=None, verbose=False):
     pairs = _canon_pairs()
     tot = 0
@@ -116,7 +136,7 @@ def scan(scenes=None, verbose=False):
             kr = flat
             flat = " ".join([flat] + [b[3] for b in blocks[i + 1 : i + 3]])
             for name, ours, kind in pairs:
-                if name not in j or ours in flat:
+                if not _name_in(j, name) or ours in flat:
                     continue
                 if any(x in j for x in SKIP_IF.get(name, ())):
                     continue

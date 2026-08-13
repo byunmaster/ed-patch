@@ -317,3 +317,18 @@ def _run():
 
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
+
+
+def test_proper_noun_needs_word_boundary():
+    """이름은 **낱말로** 있을 때만 잡는다 — 다른 낱말의 일부는 아니다.
+
+    ⚠ `バザール`(바자르, 시장) 안의 `ザール` 이 몬스터 「잘」로 잡혀 후보 2건이 떴다
+    (SCN5 jp339·340, 2026-08-13). 한 자리를 `SKIP_IF` 로 막으면 다음 이름에서 또 난다.
+    """
+    from check_proper_nouns import _name_in
+
+    assert not _name_in("バザールというものが", "ザール")  # 앞이 가타카나 → 다른 낱말
+    assert not _name_in("ザールール", "ザール")  # 뒤가 가타카나
+    assert _name_in("ザールが現れた", "ザール")  # 낱말 선두
+    assert _name_in("あのザールだ", "ザール")  # 앞이 히라가나
+    assert _name_in("アークダムの手から", "アークダム")  # 정상 인명
