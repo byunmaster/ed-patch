@@ -61,35 +61,36 @@ ED2_OFF = 0x541000  # ED2 타이틀
 LOGO_BOX = (8, 310, 62, 141)
 LOGO_SCALE = 0.88  # 한자보다 커서 축소(유저 확정)
 
-# ⚠ 이 폰트는 배포 불가(Apple 번들)라 레포에 못 넣는다. 그래서 경로를 찾아 쓴다 —
-# 머신마다 자리가 다르면 결정성이 깨지므로 후보를 명시하고, 없으면 조용히 다른 폰트로
-# 갈아타지 말고 실패시킨다(문안·자형이 말없이 바뀌는 게 제일 나쁘다).
-# 근본 해법은 렌더 결과(TIM)를 에셋으로 커밋해 빌드가 재렌더를 안 하는 것 — docs/devlog.md.
-FONT_CANDIDATES = (
-    os.environ.get("EIYUU_TITLE_FONT"),  # 명시 지정이 최우선
-    "/System/Library/Fonts/AppleSDGothicNeo.ttc",  # macOS
-    os.path.expanduser("~/.local/share/fonts/AppleSDGothicNeo.ttc"),  # 리눅스(사용자가 복사)
+# ── 타이틀 폰트 = 네오둥근모 (유저 확정 2026-08-14) ─────────────────────────────
+# ⚠ 예전엔 **애플 번들 폰트**(`AppleSDGothicNeo.ttc`)를 시스템 경로에서 찾아 썼다. 두 가지가
+# 걸렸다:
+#   ① **결정성** — 그 폰트가 없는 머신(이 레포의 리눅스 개발기)에선 빌드가 아예 못 돈다.
+#      루트 CLAUDE.md 제1 원칙(같은 입력이면 같은 바이트)이 서지 않는 자리였다.
+#   ② **라이선스** — 애플 폰트로 렌더한 그림을 공개 배포하는 셈이었다.
+# 네오둥근모는 **OFL 이고 레포 안에 있다**(`shared/fonts/neodgm.ttf`) — 둘 다 풀린다.
+# 챕터 카드(`patch_gfx_cards`)가 이미 같은 폰트라 결도 맞는다.
+# ⚠ 자형이 바뀌므로 **타이틀은 다시 인게임 확인이 필요하다**(옛 확인분은 2026-07-16).
+FONT_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "shared", "fonts", "neodgm.ttf"
 )
 
-
-def _resolve_font() -> str:
-    for p in FONT_CANDIDATES:
-        if p and os.path.exists(p):
-            return p
-    raise SystemExit(
-        "타이틀 폰트를 못 찾았다 — AppleSDGothicNeo.ttc 가 필요하다.\n"
-        "  · macOS: /System/Library/Fonts/AppleSDGothicNeo.ttc (기본 제공)\n"
-        "  · 그 외: 위 파일을 ~/.local/share/fonts/ 로 복사하거나 EIYUU_TITLE_FONT 로 지정\n"
-        "⚠ 다른 폰트로 대체하면 타이틀 자형이 바뀐다(인게임 확인 완료분 — 2026-07-16)."
-    )
-
-
-FONT_PATH = _resolve_font()
-FONT_BOLD = 6
+# ⚠ `index` 는 **TTC 안의 굵기 번호**였다(애플 폰트가 컬렉션이라). 네오둥근모는 단일
+# TTF 라 인덱스가 없다 — 굵기는 폰트 자체 하나뿐이다.
 
 # ── 원리(유저 방침): 원본 버튼 보존, 내부 일본어 획만 페인트하고 그 위에 한글을 얹는다 ──
 # 버튼을 다시 그리지 않아 이동·크기변화·테두리 위화감이 원천 소멸. 상세는 overwrite_text 참조.
-TEXT_DARK = (32, 36, 32)  # 한글 글자색(원본 어두운 텍스트 근사)
+# 한글 글자색. ⚠ **이 값이 화면에 그대로 나가진 않는다** — `quantize_region` 이 원본 CLUT 에서
+# 가장 가까운 색으로 갈아 끼운다. 컬렉션 팔레트엔 순검정(idx0)·(8,8,8)·(16,16,16) 이 있는데
+# `(32,36,32)`(합 100)는 그보다 밝은 쪽으로 떨어져 **획이 흐려 보였다**(유저 QA 2026-08-14).
+TEXT_DARK = (8, 8, 8)
+# ⚠ **선명도 보정은 전부 기각**(유저 QA 2026-08-14). 네오둥근모로 바꾼 뒤 글자가 흐려
+# 보인다고 해서 셋을 시험했는데 다 화면에서 더 나빴다 — 결론만 남기고 코드는 지운다(YAGNI):
+#   · `stroke_width` 로 굵히기 → 버튼이 작아 획이 뭉갰다
+#   · 글자색을 더 짙게 → 원본 텍스트 톤과 어긋났다
+#   · 알파 감마·임계 자르기 → 계단이 드러나 오히려 거칠어졌다
+# 흐림의 원인은 **4x 스프라이트를 1x 로 LANCZOS 축소**하면서 1px 획 가장자리가 반투명으로
+# 퍼지는 것이다. 근본 해법은 축소 없이 1x 격자에 직접 굽는 것인데, 그러면 `dx`·`dy`
+# 서브픽셀 배치를 잃는다 — 지금은 배치가 더 중요해 축소를 유지한다.
 # OVERLAY_ONLY=True면 배경 안 지우고 폰트만 얹음(위치 디버깅용, OVERLAY_COLOR로 대비). False가
 # 최종(배경 덮어 일본어 가림, 버튼 밝기 그대로 → 선택 밝음/비선택 짙음 자동 유지).
 OVERLAY_ONLY = False
@@ -120,32 +121,96 @@ COLL_RADIUS = 5  # fill 라운드 코너 반경(버튼 모서리 맵 삼각형 �
 COLL_FILL_INSET = (3, 4)
 # (ix0,ix1,iy0,iy1, 문안, dx). 각 버튼 중앙(cx≈369·cy 실측)에 배치. dx=2(전체): 시각 무게가 왼쪽
 # (굵은 영웅전설)이라 오른쪽으로 보정. Ⅱ는 ix1 확장(→416)+dx3: 説Ⅱ가 우측으로 넓어 오른쪽 잔여 청소.
+# ⚠ `dy` 는 **눈으로 맞추는 값**이다. 상자 중심과 버튼 중심은 실측으로 정확히 같은데
+# (둘 다 셀 안 y16, 원본 버튼 잉크 7~25) 화면에선 글자가 살짝 위로 보였다(유저 QA
+# 2026-08-14). 한글은 일본어보다 아래 여백이 커서 잉크 상자 중앙정렬이 시각 중심과
+# 어긋난다 — 자동 측정으론 셀마다 값이 흔들려(+2.5~-3.5) 안 모였다. 그래서 손잡이를 둔다.
 COLL_TEXT = [
-    (325, 413, 5, 27, "영웅전설Ⅰ", 2),  # cell0 Ⅰsel  중심 y16
-    (325, 413, 35, 57, "영웅전설Ⅰ", 2),  # cell1 Ⅰnorm 중심 y46
-    (325, 416, 65, 87, "영웅전설Ⅱ", 3),  # cell2 Ⅱsel  중심 y76
-    (325, 416, 95, 117, "영웅전설Ⅱ", 3),  # cell3 Ⅱnorm 중심 y106
+    (325, 413, 5, 27, "영웅전설Ⅰ", 2, 0.5),  # cell0 Ⅰsel  중심 y16
+    (325, 413, 35, 57, "영웅전설Ⅰ", 2, 0.5),  # cell1 Ⅰnorm 중심 y46
+    (325, 416, 65, 87, "영웅전설Ⅱ", 3, 0.5),  # cell2 Ⅱsel  중심 y76
+    (325, 416, 95, 117, "영웅전설Ⅱ", 3, 0.5),  # cell3 Ⅱnorm 중심 y106
 ]
 
 
-def _fit_font(draw, text, maxw, maxh):
+# ⚠ **폰트에 없는 글자는 `.notdef`(빈 네모)로 조용히 나간다.** 애플 폰트에서 네오둥근모로
+# 갈면서 `Ⅰ`(U+2160)·`Ⅱ`(U+2161)가 네모로 떴다(유저 QA 2026-08-14) — 픽셀 폰트엔 로마 숫자가
+# 없는 게 보통이다. 아스키로 치환하고, **남은 없는 글자는 빌드를 세운다.**
+GLYPH_SUB = {"Ⅰ": "I", "Ⅱ": "II", "Ⅲ": "III"}
+
+
+def _sub(text):
+    for a, b in GLYPH_SUB.items():
+        text = text.replace(a, b)
+    return text
+
+
+def _assert_glyphs(text):
+    """이 폰트에 없는 글자가 있으면 죽는다 — 네모가 화면에 나가는 것보다 낫다."""
+    import numpy as np
+
+    f = ImageFont.truetype(FONT_PATH, 16, layout_engine=BASIC_LAYOUT)
+
+    def ink(ch):
+        im = Image.new("L", (32, 32), 0)
+        ImageDraw.Draw(im).text((2, 2), ch, font=f, fill=255)
+        return np.array(im) > 110
+
+    notdef = ink("\ue000")  # 사용자 정의 영역 — 어느 폰트에도 없다
+    bad = [c for c in set(text) if c.strip() and np.array_equal(ink(c), notdef)]
+    assert not bad, f"타이틀 폰트에 없는 글자 {bad} — `GLYPH_SUB` 에 치환을 넣거나 폰트를 볼 것"
+
+
+def _fit_font(draw, text, maxw, maxh, pin=None):
+    """상자에 맞는 최대 크기. `pin` 을 주면 그 크기로 고정한다.
+
+    ⚠ **상태(선택/비선택)마다 크기가 달라지면 안 된다.** 상자 높이가 22/23 으로 1px 달라
+    자동맞춤이 갈렸고, 커서를 옮길 때 글자가 미세하게 커졌다 작아졌다 했다(유저 QA
+    2026-08-14). 같은 문안은 **한 크기로 못 박는다**.
+    """
+    if pin:
+        f = ImageFont.truetype(FONT_PATH, pin, layout_engine=BASIC_LAYOUT)
+        return f, draw.textbbox((0, 0), text, font=f)
     for sz in range(maxh, 6, -1):
-        f = ImageFont.truetype(FONT_PATH, sz, index=FONT_BOLD, layout_engine=BASIC_LAYOUT)
+        f = ImageFont.truetype(FONT_PATH, sz, layout_engine=BASIC_LAYOUT)
         bb = draw.textbbox((0, 0), text, font=f)
         if bb[2] - bb[0] <= maxw and bb[3] - bb[1] <= maxh:
             return f, bb
-    f = ImageFont.truetype(FONT_PATH, 7, index=FONT_BOLD, layout_engine=BASIC_LAYOUT)
+    f = ImageFont.truetype(FONT_PATH, 7, layout_engine=BASIC_LAYOUT)
     return f, draw.textbbox((0, 0), text, font=f)
 
 
-def _draw_text(img, text, fill, wfrac=0.80, hfrac=0.62, xoff=0):
+# 문안별 고정 폰트 크기 — 상태(선택/비선택)가 달라도 **같은 글자는 같은 크기**여야 한다.
+# 값은 자동맞춤이 각 상자에서 고르던 것 중 **작은 쪽**(둘 다 안 넘치는 크기)을 쓴다.
+# ⚠ **같은 층의 버튼은 한 크기여야 한다**(유저 지적 2026-08-14). 자동맞춤은 상자마다 다른
+# 값을 골랐다 — 처음부터 49/47 · 이어하기 49/48. 상태를 오갈 때 글자가 커졌다 작아졌고,
+# 두 버튼끼리도 크기가 달랐다.
+#
+# 원인은 폰트가 아니라 **상자 치수**다. 이 상자는 버튼이 아니라 *일본어를 지울 영역*이라
+# 손으로 재 넣은 값이고, 그 과정에서 1px 씩 어긋나 있다(이어하기 쪽이 iy1 이 1 크다).
+# 상자를 다시 재는 대신 **글자 크기를 못 박는다** — 상자는 지우는 용도라 그대로 둬도 된다.
+# 값은 네 상자 전부에서 안 넘치는 최댓값이다(알약 47 · 컬렉션 52, 실측).
+PIN_SIZE = {
+    "처음부터": 47,
+    "이어하기": 47,
+    "영웅전설I": 52,
+    "영웅전설II": 52,
+}
+
+
+def _draw_text(img, text, fill, wfrac=0.80, hfrac=0.62, xoff=0, yoff=0):
     """img 중앙에 글자(폭·높이 프랙션으로 축소해 버튼 안쪽 여백 확보). xoff는 스프라이트(4x) 픽셀
     단위 x 오프셋 — 축소 후 서브픽셀 이동이 된다."""
+    text = _sub(text)
+    _assert_glyphs(text)
     W, H = img.size
     d = ImageDraw.Draw(img)
-    f, bb = _fit_font(d, text, int(W * wfrac), int(H * hfrac))
+    f, bb = _fit_font(d, text, int(W * wfrac), int(H * hfrac), pin=PIN_SIZE.get(text))
     d.text(
-        ((W - (bb[2] - bb[0])) // 2 - bb[0] + xoff, (H - (bb[3] - bb[1])) // 2 - bb[1]),
+        (
+            (W - (bb[2] - bb[0])) // 2 - bb[0] + xoff,
+            (H - (bb[3] - bb[1])) // 2 - bb[1] + yoff,
+        ),
         text,
         fill=fill,
         font=f,
@@ -171,6 +236,7 @@ def overwrite_text(
     wfrac=0.80,
     hfrac=0.60,
     dx=0,
+    dy=0,
     pad=0,
     inset=None,
     radius=None,
@@ -220,7 +286,15 @@ def overwrite_text(
     # 오프셋(xoff) → 축소 후 **서브픽셀 이동 가능**(정수 composite였으면 0.5px 불가).
     color = OVERLAY_COLOR if (OVERLAY_ONLY and OVERLAY_COLOR) else TEXT_DARK
     sp = Image.new("RGBA", ((ix1 - ix0) * 4, (iy1 - iy0) * 4), (0, 0, 0, 0))
-    _draw_text(sp, text, color + (255,), wfrac=wfrac, hfrac=hfrac, xoff=round(dx * 4))
+    _draw_text(
+        sp,
+        text,
+        color + (255,),
+        wfrac=wfrac,
+        hfrac=hfrac,
+        xoff=round(dx * 4),
+        yoff=round(dy * 4),
+    )
     sp = sp.resize((ix1 - ix0, iy1 - iy0), Image.LANCZOS)
     base = Image.fromarray(comp).convert("RGBA")
     base.alpha_composite(sp, (ix0, iy0))
@@ -369,9 +443,9 @@ def render_coll_buttons(tim, pix):
     clut = clut_rgb(tim["clut"])
     comp = clut[pix].astype(np.uint8)
     hp, vp = COLL_PAD
-    for ix0, ix1, iy0, iy1, text, dx in COLL_TEXT:
+    for ix0, ix1, iy0, iy1, text, dx, dy in COLL_TEXT:
         comp = overwrite_text(
-            comp, ix0, ix1, iy0, iy1, text, wfrac=0.72, hfrac=0.68, dx=dx, pad=COLL_PAD
+            comp, ix0, ix1, iy0, iy1, text, wfrac=0.72, hfrac=0.68, dx=dx, dy=dy, pad=COLL_PAD
         )
     newpix = pix.copy()
     for ix0, ix1, iy0, iy1, *_ in COLL_TEXT:  # 재양자화도 pad 포함(페인트한 영역 전부)
@@ -403,14 +477,18 @@ def main():
         assert coll and (coll["w"], coll["h"]) == (480, 240), "컬렉션 TIM 오류"
         assert COLL_OFF % 2048 == 0, "TIM 섹터 비정렬"
         pix = render_coll_buttons(coll, render_logo(coll))
-        n = write_user_data(f, COLL_OFF // 2048, tim_bytes(buf, COLL_OFF, pix), label="타이틀 로고 TIM")
+        n = write_user_data(
+            f, COLL_OFF // 2048, tim_bytes(buf, COLL_OFF, pix), label="타이틀 로고 TIM"
+        )
         print(f"타이틀 로고(영웅전설)+선택버튼(영웅전설Ⅰ/Ⅱ) → 섹터 {n}개 수정")
         # ED1·ED2: 게임시작 알약(처음부터/이어하기)
         for off, nm in ((ED1_OFF, "ED1"), (ED2_OFF, "ED2")):
             tim = parse_tim(buf, off)
             assert tim and (tim["w"], tim["h"]) == (390, 240), f"{nm} TIM 오류"
             assert off % 2048 == 0, "TIM 섹터 비정렬"
-            n = write_user_data(f, off // 2048, tim_bytes(buf, off, render_buttons(tim)), label="타이틀 버튼 TIM")
+            n = write_user_data(
+                f, off // 2048, tim_bytes(buf, off, render_buttons(tim)), label="타이틀 버튼 TIM"
+            )
             print(f"{nm} 버튼(처음부터/이어하기) → 섹터 {n}개 수정")
 
 
