@@ -91,6 +91,8 @@ def _corpus_lines():
 
     out = set()
     for f in glob.glob(os.path.join(OUT_DIR, "dos_kr", "**", "*.json"), recursive=True):
+        # 게임별 교정 규칙까지 태워야 검사 대상이 빌드 출력과 같아진다 — `dos_kr/ED2/…`.
+        game = next((g for g in ("ED1", "ED2") if f"{os.sep}{g}{os.sep}" in f), None)
         try:
             doc = json.load(open(f, encoding="utf-8"))
         except Exception:
@@ -102,7 +104,7 @@ def _corpus_lines():
             if not isinstance(e, dict):
                 continue
             try:
-                t = R.corpus_text(e.get("text", ""))
+                t = R.corpus_text(e.get("text", ""), game)
             except Exception:
                 continue
             for seg in re.split(r"\{p\}", t):

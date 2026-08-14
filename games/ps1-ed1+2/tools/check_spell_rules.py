@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""`dos_spelling_fixes.json` 의 치환 중 **한 번도 안 걸리는 규칙**을 센다.
+"""정발 교정 규칙(`replace`) 중 **한 번도 안 걸리는 것**을 센다.
 
 치환은 목록 **순서대로** 걸린다. 그래서 규칙 하나가 죽는 길이 여럿 있고 **전부 조용하다**:
 
@@ -17,12 +17,19 @@
 실제 배정 경로(`load_translations` 전 씬)를 돌린다** — 이게 화면에 나가는 진짜 발화 횟수다.
 mcpads 패처들의 "fail-closed coverage audit" 과 같은 계열이다.
 
+⚠ **규칙은 게임별로 갈려 있다**(2026-08-11) — 공용/ED1 은 `dos_spelling_fixes.json`,
+ED2 전용은 `dos_spelling_fixes_ED2.json`. 그런데 **ED2 는 아직 재삽입 체인에 없다**
+(`ed2-notes.md`: 등록은 ED1 인게임 QA 뒤). 배정 경로로는 한 줄도 안 지나가니 계측하면
+전부 사문으로 뜬다 — 그래서 **게임 전용 파일은 그 게임 코퍼스로** 잰다. 잣대가 둘인 건
+정확히 이 사정 때문이고, 체인에 오르면 계측 쪽으로 합친다.
+
   python3 tools/check_spell_rules.py          # 요약
   python3 tools/check_spell_rules.py -v       # 안 걸린 규칙 전부
   python3 tools/check_spell_rules.py --new    # HEAD 이후 **새로 넣은** 규칙만 (반영 검산)
 """
 
 import collections
+import glob
 import json
 import os
 import subprocess
@@ -32,7 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R  # noqa: E402
-from common import ROOT  # noqa: E402
+from common import OUT_DIR, ROOT  # noqa: E402
 from patch_sys_ui import _scn_layout  # noqa: E402
 
 SPELL_JSON = os.path.join(ROOT, "dos_spelling_fixes.json")
@@ -50,8 +57,9 @@ def fired():
     # ⚠ 시그니처를 **본물과 똑같이** 유지한다 — `punct=False`(번역 정본 경로)를 안 받으면
     # 정본 씬 로드에서 통째로 죽는다(실측 2026-08-12: 전 씬이 정본으로 넘어가며 터졌다).
     # `punct` 분기도 본물과 같게 재현해야 **정본 경로에서 안 걸리는 규칙**이 발화로 안 세진다.
-    def traced(t, *, punct=True):
-        rx, space, replace = R._spell_rules()
+    # `game` 도 같다 — 안 받으면 게임 전용 규칙을 얹는 자리가 통째로 빠진다.
+    def traced(t, game=None, *, punct=True):
+        rx, space, replace = R._spell_rules(game)
         if rx:
             t = rx.sub(r"\1 \2", t)
         for a, b in space:
@@ -73,6 +81,40 @@ def fired():
     return hits
 
 
+def games():
+    """코퍼스가 있는 게임 목록 — 폴더 이름이 곧 게임(`dos_kr/ED1`, `dos_kr/ED2`)."""
+    root = os.path.join(OUT_DIR, "dos_kr")
+    return sorted(d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d)))
+
+
+def corpus(game):
+    """`parse_kr` 이 `spell_fix` 직전까지 하는 일을 그대로 태운 정발 문장들."""
+    for p in sorted(glob.glob(os.path.join(OUT_DIR, "dos_kr", game, "*.json"))):
+        doc = json.load(open(p, encoding="utf-8"))
+        if not isinstance(doc, dict):
+            continue
+        for e in doc.get("entries", []):
+            t = R.fix_spacing(R.resolve_dos_breaks(e["text"]))
+            for a, b in R.PLACE_CANON:
+                t = t.replace(a, b)
+            yield t
+
+
+def corpus_fired(game, rules):
+    """{(a, b): 발화 횟수} — 그 게임 **코퍼스**에서. 체인 밖 게임을 재는 잣대다.
+
+    ⚠ 계측판(`fired`)보다 **후하다** — 3·4 부류(`subs` 절삭·안 쓰는 엔트리)를 못 본다.
+    체인에 오른 게임은 반드시 `fired()` 로 재야 한다.
+    """
+    hits = collections.Counter()
+    for t in corpus(game):
+        for a, b in rules:
+            if a in t:
+                hits[(a, b)] += t.count(a)
+            t = t.replace(a, b)
+    return hits
+
+
 def added_since(ref="d7922af"):
     """[(a, b)] — 기준 커밋 이후 새로 들어온 치환쌍(없으면 빈 목록)."""
     p = subprocess.run(
@@ -89,6 +131,18 @@ def added_since(ref="d7922af"):
     return [(a, b) for a, b in now if (a, b) not in old]
 
 
+def _report(label, target, hits, verbose):
+    dead = [(a, b) for a, b in target if (a, b) not in hits]
+    print(
+        f"{label} {len(target)} · 실제로 걸림 {len(target) - len(dead)} · **안 걸림 {len(dead)}**"
+    )
+    for a, b in dead[: (None if verbose else 12)]:
+        print(f"  ❌ {a!r} → {b!r}")
+    if not verbose and len(dead) > 12:
+        print(f"  … 그 밖 {len(dead) - 12}건 (-v 로 전부)")
+    return dead
+
+
 def main(argv):
     verbose, only_new = "-v" in argv, "--new" in argv
     rep = [tuple(r) for r in json.load(open(SPELL_JSON, encoding="utf-8"))["replace"]]
@@ -97,19 +151,25 @@ def main(argv):
     if only_new and not target:
         print("기준 커밋을 못 찾았다 — 전체로 돈다")
         target = rep
-    dead = [(a, b) for a, b in target if (a, b) not in hits]
-    kind = "새로 넣은 규칙" if only_new else "replace 규칙"
-    print(f"{kind} {len(target)} · 실제로 걸림 {len(target) - len(dead)} · **안 걸림 {len(dead)}**")
-    for a, b in dead[: (None if verbose else 12)]:
-        print(f"  ❌ {a!r} → {b!r}")
-    if not verbose and len(dead) > 12:
-        print(f"  … 그 밖 {len(dead) - 12}건 (-v 로 전부)")
+    dead = _report("새로 넣은 규칙" if only_new else "replace 규칙", target, hits, verbose)
     if only_new and dead:
         print("\n⚠ **손으로 넣은 규칙이 여기 뜨면 반영이 안 된 것이다** — 앵커가 `subs`/`pre_subs`")
         print(
             "  뒤라 못 닿거나, 앞선 규칙이 이미 그 표기를 바꿨을 수 있다. 그 블록의 렌더를 찍어 볼 것."
         )
         print("  (A급 일괄 채택분은 안 쓰는 엔트리를 겨냥하는 게 정상이라 여기 섞인다)")
+
+    # 게임 전용 파일 — 체인 밖이라 코퍼스로 잰다(위 도크스트링).
+    if not only_new:
+        for game in games():
+            name = f"dos_spelling_fixes_{game}.json"
+            try:
+                with open(os.path.join(ROOT, name), encoding="utf-8") as f:
+                    only = [tuple(r) for r in json.load(f).get("replace", [])]
+            except FileNotFoundError:
+                continue
+            print()
+            _report(f"{name} (코퍼스 기준) replace", only, corpus_fired(game, only), verbose)
     # ⚠ **실패시키지 않는다.** 사문 대부분은 안 쓰는 엔트리를 겨냥한 것이라 무해하고,
     # 게이트로 만들면 A급 일괄 채택 때마다 빌드가 막힌다 — 판단은 사람이 한다.
     return 0

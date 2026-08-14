@@ -52,7 +52,14 @@ from text.krwrap import wrap_pages as kr_wrap_pages  # noqa: E402
 LOCK_BYPASS = os.environ.get("LOCK_BYPASS") == "1"
 
 ED_LBA, ED_SIZE = 257, 1021952  # ED.EXE (폰트 탑재 대상)
-OVERLAY_RAM_BASE = 0x8016A000  # SCN 오버레이 로드 주소 (ED1 전 씬 공통, 참조 커버리지로 검증)
+# SCN 오버레이 로드 주소 — **게임마다 다르다.** 참조 주소에서 도출한 값이고
+# `tools/check_overlay_base.py` 가 매번 다시 도출해 이 표를 지킨다(ED1 은 92~97% 적중으로
+# 재현되고 ED2 는 13씬 만장일치다).
+# 🔴 ED2 를 체인에 올릴 때 **이 표를 타게 고쳐야 한다** — 지금 `OVERLAY_RAM_BASE` 를 그대로
+# 쓰는 자리가 열댓 곳이고 전부 ED1 값이다. ED2 에 ED1 값을 쓰면 모든 포인터가 0x5000
+# (20,480B)씩 어긋나 **소프트락**이다(2026-08-11 도출, 체인에 올리기 전에 잡았다).
+OVERLAY_BASE = {"ED1": 0x8016A000, "ED2": 0x80165000}
+OVERLAY_RAM_BASE = OVERLAY_BASE["ED1"]
 # ED1 씬별 (이름, LBA, size) — extract_scn.py SCN_FILES. text_end는 scn_jp JSON에서 씬별로.
 SCN_FILES = [
     ("ED1SCN1", 1183, 206260),
@@ -508,9 +515,11 @@ def fix_spacing(t):
     _KEEP_GEOT = ("별것", "날것", "들것", "탈것", "빈것")
     t = re.sub(
         r"([가-힣])것",
-        lambda m: m.group(0)
-        if any(m.group(0) == w[-2:] and w in t for w in _KEEP_GEOT)
-        else (m.group(1) + " 것" if _jong(m.group(1)) in _JONG_N_L else m.group(0)),
+        lambda m: (
+            m.group(0)
+            if any(m.group(0) == w[-2:] and w in t for w in _KEEP_GEOT)
+            else (m.group(1) + " 것" if _jong(m.group(1)) in _JONG_N_L else m.group(0))
+        ),
         t,
     )
     t = re.sub(
@@ -540,20 +549,37 @@ def fix_spacing(t):
 # 정발 문맥·문안은 유지, 문법/맞춤법만 교정(유저 방침 07-27). 인명 뒤 직함은 띄운다
 # (세리오스왕자 → 세리오스 왕자). 인명은 화자맵에서 자동 파생 → 지명/복합어 오탐 자동 배제
 # (세금대신에=instead, 해적선장=역할명은 인명 아니라 손 안 댐).
-_SPELL_RULES = None
+#
+# ⚠ **규칙은 게임별로 갈린다**(2026-08-11). 예전엔 파일이 하나라 `spell_fix` 가 넘어온
+# 엔트리가 ED1 인지 ED2 인지 몰랐고, **ED2 를 겨냥한 규칙이 ED1 문안을 조용히 바꿨다**
+# (`한 가운데에`→`한가운데에` 가 ED1 `위험한 가운데에서` 를 붙여 버렸다). ED1 은 인게임
+# QA 를 끝낸 층이라 이 방향이 제일 비싸다. 덤으로 ED1 QA 브랜치와 ED2 작업 브랜치가
+# 3,000쌍짜리 `replace` 배열 **같은 자리에 append** 하던 머지 충돌도 없어진다.
+#   공용/ED1 = `dos_spelling_fixes.json` · ED2 전용 = `dos_spelling_fixes_ED2.json`
+# ⚠ 보호는 **한 방향**이다 — ED2 파일은 ED2 에만 걸리지만 공용 파일은 ED2 에도 걸린다.
+#   정발 두 판이 같은 표기 관행이라 교정 대부분이 양쪽에 유효하고, 되돌릴 수 없는 건
+#   ED2→ED1 방향뿐이다.
+_SPELL_RULES = {}
 
 
-def _spell_rules():
-    """(직함결합 정규식, space쌍, replace쌍) 컴파일 — 이름은 화자맵에서 파생."""
-    global _SPELL_RULES
-    if _SPELL_RULES is None:
-        path = os.path.join(ROOT, "dos_spelling_fixes.json")
-        try:
-            doc = json.load(open(path, encoding="utf-8"))
-        except FileNotFoundError:
-            doc = {}
-        titles = doc.get("titles", [])
-        names = set(doc.get("names_extra", []))
+def _spell_rules(game=None):
+    """(직함결합 정규식, space쌍, replace쌍) 컴파일 — 이름은 화자맵에서 파생.
+
+    `game` 이 주어지면 그 게임 전용 파일을 공용 규칙 **뒤에** 얹는다(뒤가 나중에 돈다).
+    """
+    if game not in _SPELL_RULES:
+        files = ["dos_spelling_fixes.json"]
+        if game:
+            files.append(f"dos_spelling_fixes_{game}.json")
+        docs = []
+        for name in files:
+            try:
+                with open(os.path.join(ROOT, name), encoding="utf-8") as f:
+                    docs.append(json.load(f))
+            except FileNotFoundError:
+                pass
+        titles = [t for d in docs for t in d.get("titles", [])]
+        names = {n for d in docs for n in d.get("names_extra", [])}
         for v in _speaker_map().values():  # 화자맵 값에서 인명 파생
             toks = v.strip().split()
             if len(toks) >= 2 and toks[-1] in titles:  # "디나 공주" → 디나
@@ -564,8 +590,12 @@ def _spell_rules():
         if names and titles:
             name_alt = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
             rx = re.compile(rf"({name_alt})({'|'.join(map(re.escape, titles))})")
-        _SPELL_RULES = (rx, doc.get("space", []), doc.get("replace", []))
-    return _SPELL_RULES
+        _SPELL_RULES[game] = (
+            rx,
+            [p for d in docs for p in d.get("space", [])],
+            [p for d in docs for p in d.get("replace", [])],
+        )
+    return _SPELL_RULES[game]
 
 
 # 지명 정본 — 편차 대장(docs/jeongbal-deviations.md)이 정본이고 여기는 그 적용판이다.
@@ -574,28 +604,35 @@ def _spell_rules():
 PLACE_CANON = (("폰 리그", "온리크"), ("폰리그", "온리크"), ("라느라", "라누라"))
 
 
-def corpus_text(raw):
+def corpus_text(raw, game=None):
     """정발 원문 → **`spell_fix` 를 통과한 뒤의 문안**.
 
     도구가 화면 문안과 **같은 표기로** 검색·대조하려면 이 순서를 그대로 따라야 한다.
     `parse_kr` 안에도 같은 순서가 있는데, 거기는 화자 마크업 절삭 등 블록 사정이 섞여 있어
-    통째로 재사용이 안 된다 — 순서만 여기 한 벌 더 둔다."""
+    통째로 재사용이 안 된다 — 순서만 여기 한 벌 더 둔다.
+
+    ⚠ `game` 을 넘겨야 그 판 전용 교정까지 본다 — 안 넘기면 검사 대상이 빌드 출력과
+    어긋난다(`spell_fix` 도크스트링)."""
     t = resolve_dos_breaks(raw).replace("{end}", "")
     t = fix_spacing(t)
     for a, b in PLACE_CANON:
         t = t.replace(a, b)
-    return spell_fix(t)
+    return spell_fix(t, game)
 
 
-def spell_fix(t, *, punct=True):
-    """맞춤법·띄어쓰기·오타 교정.
+def spell_fix(t, game=None, *, punct=True):
+    """맞춤법·띄어쓰기·오타 교정. `game`("ED1"/"ED2")을 주면 그 판 전용 규칙까지 얹는다.
+
+    ⚠ `game` 을 안 주면 **공용 규칙만** 돈다 — ED2 전용 규칙을 넣었는데 `game` 이 안 흐르면
+    조용히 무변화가 된다. 빌드 경로는 `parse_kr` 이 엔트리에 박힌 게임을 넘긴다
+    (`kr_entry` 가 표 이름 `ED2/C_000` 에서 떼어 stamp 한다).
 
     ⚠ `punct=False` 는 **부호를 덧붙이기만 하는 규칙**을 건너뛴다. 그 규칙들은 정발 원문에
     빠진 온점을 메우려고 넣은 것이라(`허락하여 주시옵소서` → `…소서.`) 이미 온점이 있는
     우리 문안에 걸면 **온점이 둘로 는다**(`주시옵소서..`, 실측 2026-08-12). 번역 정본은
     완성형이므로 끄고 들어간다.
     """
-    rx, space, replace = _spell_rules()
+    rx, space, replace = _spell_rules(game)
     if rx:
         t = rx.sub(r"\1 \2", t)  # 인명+직함 → 띄움
     for a, b in space:  # 인명 사전으로 못 잡는 명시적 띄어쓰기(어딘가의왕자 등)
@@ -707,7 +744,9 @@ def parse_kr(entry):
     # 표기만** 겨냥하면 된다.
     for _a, _b in PLACE_CANON:
         t = t.replace(_a, _b)
-    t = spell_fix(t)  # 직함 띄어쓰기 등 맞춤법 교정(dos_spelling_fixes.json)
+    # 직함 띄어쓰기 등 맞춤법 교정(dos_spelling_fixes.json + 게임 전용 파일).
+    # ⚠ 게임을 넘기는 게 핵심이다 — 안 넘기면 ED2 전용 규칙이 조용히 안 걸린다.
+    t = spell_fix(t, entry.get("game"))
     # 상점 인사·흐름의 분기 마커(\x07=도구점, {p}\x06=무기점) 뒤 come-again 꼬리 제거 — PS1은
     # come-again이 별도 블록이라 인사 인라인 노출은 잘못(도구점·무기점 모두, 유저 QA 07-27).
     # 마커가 있어야 매칭 → 마커 없는 별도 come-again 블록("또 들러 주십시요")은 보존.
@@ -2426,6 +2465,11 @@ def load_translations(align_name, scn_name):
                 open(os.path.join(OUT_DIR, "dos_kr", f"{table}.json"), encoding="utf-8")
             )
             kr_cache[table] = {e["entry_id"]: e for e in doc["entries"]}
+            # 게임 도장(`ED2/C_000` → `ED2`). 엔트리 하나만 봐도 어느 판 문안인지 알아야
+            # `spell_fix` 가 게임 전용 교정 규칙을 고를 수 있다 — 안 박으면 ED2 전용 규칙이
+            # 조용히 무변화가 된다.
+            for e in kr_cache[table].values():
+                e["game"] = table.split("/")[0]
             # 분기 오피코드가 창 경계인 자리를 `{p}` 로 승격 — `_opcode_pages` 도크스트링
             for (t, i), anchors in _opcode_pages().items():
                 if t != table or i not in kr_cache[table]:

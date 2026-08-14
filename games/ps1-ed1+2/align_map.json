@@ -8319,7 +8319,7 @@
    "speaker": "무기상"
   },
   "3": {
-   "table": "ED2/C_011",
+   "table": "ED2/C_015",
    "entry_id": 7,
    "speaker": "시녀"
   },
@@ -8343,19 +8343,34 @@
    "entry_id": 37,
    "speaker": "아이"
   },
+  "14": {
+   "table": "ED2/T_001",
+   "entry_id": 23,
+   "speaker": "무기점"
+  },
+  "15": {
+   "table": "ED2/T_000",
+   "entry_id": 0,
+   "speaker": null
+  },
   "17": {
    "table": "ED2/C_015",
    "entry_id": 10,
    "speaker": "병사"
   },
   "23": {
-   "table": "ED2/C_009",
-   "entry_id": 10,
+   "table": "ED2/C_015",
+   "entry_id": 11,
    "speaker": "병사"
   },
   "24": {
    "table": "ED2/T_000",
    "entry_id": 8,
+   "speaker": null
+  },
+  "25": {
+   "table": "ED2/T_000",
+   "entry_id": 10,
    "speaker": null
   },
   "26": {
@@ -8388,11 +8403,6 @@
    "entry_id": 16,
    "speaker": "파카"
   },
-  "33": {
-   "table": "ED2/C_000",
-   "entry_id": 12,
-   "speaker": "병사"
-  },
   "36": {
    "table": "ED2/T_000",
    "entry_id": 26,
@@ -8413,6 +8423,11 @@
    "entry_id": 11,
    "speaker": "병사"
   },
+  "44": {
+   "table": "ED2/T_000",
+   "entry_id": 39,
+   "speaker": "파카"
+  },
   "45": {
    "table": "ED2/T_000",
    "entry_id": 41,
@@ -8429,8 +8444,8 @@
    "speaker": "파카"
   },
   "50": {
-   "table": "ED2/C_015",
-   "entry_id": 11,
+   "table": "ED2/C_009",
+   "entry_id": 10,
    "speaker": "병사"
   },
   "51": {
@@ -8444,14 +8459,19 @@
    "speaker": "파카"
   },
   "56": {
-   "table": "ED2/C_001",
-   "entry_id": 8,
-   "speaker": "시녀"
+   "table": "ED2/T_001",
+   "entry_id": 3,
+   "speaker": "무기점"
   },
   "57": {
-   "table": "ED2/C_015",
+   "table": "ED2/C_011",
    "entry_id": 7,
    "speaker": "시녀"
+  },
+  "58": {
+   "table": "ED2/T_001",
+   "entry_id": 7,
+   "speaker": "무기점"
   },
   "59": {
    "table": "ED2/T_001",
@@ -8484,14 +8504,19 @@
    "speaker": "파카"
   },
   "68": {
-   "table": "ED2/T_001",
-   "entry_id": 23,
-   "speaker": "무기점"
+   "table": "ED2/T_010",
+   "entry_id": 19,
+   "speaker": "병사"
   },
   "71": {
    "table": "ED2/C_011",
    "entry_id": 6,
    "speaker": "시녀"
+  },
+  "72": {
+   "table": "ED2/T_004",
+   "entry_id": 1,
+   "speaker": "무기상"
   },
   "73": {
    "table": "ED2/T_003",
@@ -8507,11 +8532,6 @@
    "table": "ED2/T_003",
    "entry_id": 7,
    "speaker": "무기상"
-  },
-  "77": {
-   "table": "ED2/T_020",
-   "entry_id": 34,
-   "speaker": "아론"
   },
   "101": {
    "table": "ED2/T_003",
@@ -8589,7 +8609,7 @@
    "speaker": "여자"
   },
   "132": {
-   "table": "ED2/T_006",
+   "table": "ED2/T_004",
    "entry_id": 7,
    "speaker": "아이"
   },
@@ -8609,7 +8629,7 @@
    "speaker": "여자"
   },
   "145": {
-   "table": "ED2/T_004",
+   "table": "ED2/T_006",
    "entry_id": 7,
    "speaker": "아이"
   },
@@ -8618,15 +8638,20 @@
    "entry_id": 8,
    "speaker": "파카"
   },
+  "153": {
+   "table": "ED2/T_020",
+   "entry_id": 31,
+   "speaker": "로"
+  },
   "154": {
    "table": "ED2/T_020",
    "entry_id": 32,
    "speaker": "아론"
   },
   "158": {
-   "table": "ED2/T_000",
-   "entry_id": 10,
-   "speaker": null
+   "table": "ED2/T_020",
+   "entry_id": 34,
+   "speaker": "아론"
   },
   "159": {
    "table": "ED2/T_020",
@@ -8663,10 +8688,15 @@
    "entry_id": 18,
    "speaker": "여자"
   },
+  "179": {
+   "table": "ED2/C_012",
+   "entry_id": 15,
+   "speaker": "병사"
+  },
   "180": {
    "table": "ED2/T_020",
    "entry_id": 20,
-   "speaker": "여자"
+   "speaker": "로"
   },
   "181": {
    "table": "ED2/C_001",
@@ -8676,12 +8706,12 @@
   "182": {
    "table": "ED2/T_020",
    "entry_id": 24,
-   "speaker": "여자"
+   "speaker": "로"
   },
   "183": {
    "table": "ED2/T_020",
    "entry_id": 25,
-   "speaker": "여자"
+   "speaker": "로"
   },
   "186": {
    "table": "ED2/T_020",
@@ -8743,24 +8773,24 @@
    "entry_id": 16,
    "speaker": "피트"
   },
+  "214": {
+   "table": "ED2/C_002",
+   "entry_id": 23,
+   "speaker": null
+  },
   "216": {
-   "table": "ED2/T_011",
-   "entry_id": 15,
-   "speaker": "도구상"
-  },
-  "217": {
-   "table": "ED2/T_034",
-   "entry_id": 11,
-   "speaker": "도구상"
-  },
-  "218": {
-   "table": "ED2/T_011",
+   "table": "ED2/T_032",
    "entry_id": 19,
    "speaker": "도구상"
   },
+  "217": {
+   "table": "ED2/T_041",
+   "entry_id": 35,
+   "speaker": "도구상"
+  },
   "221": {
-   "table": "ED2/T_011",
-   "entry_id": 17,
+   "table": "ED2/T_013",
+   "entry_id": 46,
    "speaker": "도구상"
   },
   "222": {
@@ -8788,48 +8818,48 @@
    "entry_id": 10,
    "speaker": "사내"
   },
+  "241": {
+   "table": "ED2/C_014",
+   "entry_id": 3,
+   "speaker": "병사"
+  },
   "242": {
    "table": "ED2/T_043",
    "entry_id": 60,
    "speaker": "도구상"
   },
   "243": {
-   "table": "ED2/T_030",
-   "entry_id": 26,
-   "speaker": "도구상"
-  },
-  "248": {
-   "table": "ED2/T_030",
-   "entry_id": 28,
+   "table": "ED2/T_011",
+   "entry_id": 17,
    "speaker": "도구상"
   },
   "250": {
-   "table": "ED2/C_002",
-   "entry_id": 24,
-   "speaker": null
+   "table": "ED2/T_041",
+   "entry_id": 25,
+   "speaker": "여관"
   },
   "258": {
    "table": "ED2/T_034",
    "entry_id": 0,
    "speaker": "노인"
   },
-  "264": {
-   "table": "ED2/C_014",
-   "entry_id": 3,
-   "speaker": "병사"
-  },
   "265": {
-   "table": "ED2/T_032",
-   "entry_id": 19,
+   "table": "ED2/T_011",
+   "entry_id": 15,
    "speaker": "도구상"
   },
   "266": {
-   "table": "ED2/T_032",
-   "entry_id": 21,
+   "table": "ED2/T_030",
+   "entry_id": 26,
    "speaker": "도구상"
   },
+  "267": {
+   "table": "ED2/T_010",
+   "entry_id": 31,
+   "speaker": "아론"
+  },
   "273": {
-   "table": "ED2/T_044",
+   "table": "ED2/T_046",
    "entry_id": 37,
    "speaker": "여관"
   },
@@ -8839,23 +8869,28 @@
    "speaker": "노인"
   },
   "286": {
-   "table": "ED2/T_030",
-   "entry_id": 24,
+   "table": "ED2/T_013",
+   "entry_id": 44,
    "speaker": "도구상"
   },
   "287": {
-   "table": "ED2/T_013",
-   "entry_id": 46,
+   "table": "ED2/T_044",
+   "entry_id": 47,
    "speaker": "도구상"
   },
   "288": {
-   "table": "ED2/T_013",
-   "entry_id": 48,
+   "table": "ED2/T_011",
+   "entry_id": 19,
+   "speaker": "도구상"
+  },
+  "292": {
+   "table": "ED2/T_034",
+   "entry_id": 13,
    "speaker": "도구상"
   },
   "294": {
-   "table": "ED2/T_041",
-   "entry_id": 25,
+   "table": "ED2/T_044",
+   "entry_id": 37,
    "speaker": "여관"
   },
   "296": {
@@ -8868,6 +8903,11 @@
    "entry_id": 3,
    "speaker": "아이"
   },
+  "301": {
+   "table": "ED2/T_001",
+   "entry_id": 15,
+   "speaker": "남자"
+  },
   "304": {
    "table": "ED2/T_040",
    "entry_id": 6,
@@ -8876,7 +8916,7 @@
   "307": {
    "table": "ED2/T_040",
    "entry_id": 14,
-   "speaker": "노인"
+   "speaker": "로"
   },
   "309": {
    "table": "ED2/C_009",
@@ -8886,7 +8926,7 @@
   "314": {
    "table": "ED2/T_040",
    "entry_id": 15,
-   "speaker": "노인"
+   "speaker": "로"
   },
   "316": {
    "table": "ED2/T_040",
@@ -8904,13 +8944,18 @@
    "speaker": "사내"
   },
   "323": {
-   "table": "ED2/C_006",
-   "entry_id": 39,
-   "speaker": "교육계 라우엘"
+   "table": "ED2/C_012",
+   "entry_id": 18,
+   "speaker": "병사"
   },
   "328": {
-   "table": "ED2/T_040",
-   "entry_id": 32,
+   "table": "ED2/T_041",
+   "entry_id": 11,
+   "speaker": "사내"
+  },
+  "329": {
+   "table": "ED2/T_044",
+   "entry_id": 5,
    "speaker": "사내"
   },
   "331": {
@@ -8934,8 +8979,8 @@
    "speaker": "여자"
   },
   "339": {
-   "table": "ED2/T_046",
-   "entry_id": 26,
+   "table": "ED2/T_041",
+   "entry_id": 14,
    "speaker": "여자"
   },
   "340": {
@@ -8944,13 +8989,13 @@
    "speaker": "여자"
   },
   "341": {
-   "table": "ED2/T_040",
-   "entry_id": 50,
+   "table": "ED2/T_046",
+   "entry_id": 29,
    "speaker": "여자"
   },
   "342": {
-   "table": "ED2/T_041",
-   "entry_id": 18,
+   "table": "ED2/T_046",
+   "entry_id": 30,
    "speaker": "여자"
   },
   "343": {
@@ -8979,9 +9024,9 @@
    "speaker": "사내"
   },
   "364": {
-   "table": "ED2/C_00A",
-   "entry_id": 21,
-   "speaker": "병사"
+   "table": "ED2/T_040",
+   "entry_id": 30,
+   "speaker": "사내"
   },
   "366": {
    "table": "ED2/T_043",
@@ -8989,8 +9034,8 @@
    "speaker": "사내"
   },
   "367": {
-   "table": "ED2/T_043",
-   "entry_id": 37,
+   "table": "ED2/T_044",
+   "entry_id": 24,
    "speaker": "여자"
   },
   "368": {
@@ -9004,19 +9049,24 @@
    "speaker": "여자"
   },
   "370": {
-   "table": "ED2/T_043",
-   "entry_id": 42,
+   "table": "ED2/T_040",
+   "entry_id": 50,
    "speaker": "여자"
   },
   "371": {
-   "table": "ED2/T_044",
-   "entry_id": 30,
+   "table": "ED2/T_043",
+   "entry_id": 43,
    "speaker": "여자"
   },
   "372": {
-   "table": "ED2/T_044",
-   "entry_id": 31,
+   "table": "ED2/T_041",
+   "entry_id": 19,
    "speaker": "여자"
+  },
+  "374": {
+   "table": "ED2/T_020",
+   "entry_id": 3,
+   "speaker": "사내"
   },
   "376": {
    "table": "ED2/T_046",
@@ -9034,13 +9084,13 @@
    "speaker": "무기상"
   },
   "382": {
-   "table": "ED2/T_014",
-   "entry_id": 13,
+   "table": "ED2/T_041",
+   "entry_id": 33,
    "speaker": "도구상"
   },
   "383": {
-   "table": "ED2/T_043",
-   "entry_id": 62,
+   "table": "ED2/T_032",
+   "entry_id": 21,
    "speaker": "도구상"
   },
   "391": {
@@ -9069,8 +9119,8 @@
    "speaker": "남자"
   },
   "402": {
-   "table": "ED2/T_043",
-   "entry_id": 13,
+   "table": "ED2/T_046",
+   "entry_id": 7,
    "speaker": "사내"
   },
   "403": {
@@ -9104,9 +9154,9 @@
    "speaker": "사내"
   },
   "415": {
-   "table": "ED2/C_00E",
-   "entry_id": 19,
-   "speaker": "교육계 라우엘"
+   "table": "ED2/T_044",
+   "entry_id": 22,
+   "speaker": "사내"
   },
   "417": {
    "table": "ED2/T_046",
@@ -9114,8 +9164,8 @@
    "speaker": "사내"
   },
   "418": {
-   "table": "ED2/T_044",
-   "entry_id": 24,
+   "table": "ED2/T_043",
+   "entry_id": 37,
    "speaker": "여자"
   },
   "419": {
@@ -9134,7 +9184,7 @@
    "speaker": "여자"
   },
   "422": {
-   "table": "ED2/T_046",
+   "table": "ED2/T_044",
    "entry_id": 30,
    "speaker": "여자"
   },
@@ -9142,6 +9192,11 @@
    "table": "ED2/T_040",
    "entry_id": 52,
    "speaker": "여자"
+  },
+  "425": {
+   "table": "ED2/T_020",
+   "entry_id": 19,
+   "speaker": "로"
   },
   "427": {
    "table": "ED2/T_041",
@@ -9154,19 +9209,19 @@
    "speaker": "여관"
   },
   "435": {
-   "table": "ED2/T_013",
-   "entry_id": 44,
+   "table": "ED2/T_030",
+   "entry_id": 24,
    "speaker": "도구상"
   },
   "436": {
-   "table": "ED2/T_041",
-   "entry_id": 35,
+   "table": "ED2/T_034",
+   "entry_id": 11,
    "speaker": "도구상"
   },
   "437": {
-   "table": "ED2/T_010",
-   "entry_id": 31,
-   "speaker": "아론"
+   "table": "ED2/T_013",
+   "entry_id": 48,
+   "speaker": "도구상"
   },
   "441": {
    "table": "ED2/C_006",
@@ -9179,13 +9234,13 @@
    "speaker": "아이"
   },
   "449": {
-   "table": "ED2/T_046",
-   "entry_id": 7,
+   "table": "ED2/T_043",
+   "entry_id": 13,
    "speaker": "사내"
   },
   "450": {
-   "table": "ED2/T_043",
-   "entry_id": 14,
+   "table": "ED2/T_044",
+   "entry_id": 8,
    "speaker": "사내"
   },
   "451": {
@@ -9194,7 +9249,7 @@
    "speaker": "사내"
   },
   "452": {
-   "table": "ED2/T_044",
+   "table": "ED2/T_046",
    "entry_id": 10,
    "speaker": "사내"
   },
@@ -9204,14 +9259,19 @@
    "speaker": "여자"
   },
   "455": {
-   "table": "ED2/T_044",
+   "table": "ED2/T_046",
    "entry_id": 16,
    "speaker": "노인"
   },
-  "459": {
-   "table": "ED2/T_040",
-   "entry_id": 30,
+  "458": {
+   "table": "ED2/T_046",
+   "entry_id": 20,
    "speaker": "사내"
+  },
+  "459": {
+   "table": "ED2/C_00A",
+   "entry_id": 21,
+   "speaker": "병사"
   },
   "461": {
    "table": "ED2/T_044",
@@ -9224,8 +9284,8 @@
    "speaker": "여자"
   },
   "463": {
-   "table": "ED2/T_041",
-   "entry_id": 14,
+   "table": "ED2/T_046",
+   "entry_id": 26,
    "speaker": "여자"
   },
   "464": {
@@ -9234,19 +9294,24 @@
    "speaker": "여자"
   },
   "465": {
-   "table": "ED2/T_046",
-   "entry_id": 29,
+   "table": "ED2/T_041",
+   "entry_id": 17,
    "speaker": "여자"
   },
   "466": {
-   "table": "ED2/T_043",
-   "entry_id": 43,
+   "table": "ED2/T_040",
+   "entry_id": 51,
    "speaker": "여자"
   },
   "467": {
-   "table": "ED2/T_041",
-   "entry_id": 19,
+   "table": "ED2/T_044",
+   "entry_id": 31,
    "speaker": "여자"
+  },
+  "469": {
+   "table": "ED2/C_002",
+   "entry_id": 12,
+   "speaker": null
   },
   "471": {
    "table": "ED2/T_043",
@@ -9259,24 +9324,19 @@
    "speaker": "여관"
   },
   "475": {
-   "table": "ED2/T_041",
-   "entry_id": 33,
-   "speaker": "도구상"
-  },
-  "476": {
    "table": "ED2/T_014",
-   "entry_id": 15,
-   "speaker": "도구상"
-  },
-  "480": {
-   "table": "ED2/T_034",
    "entry_id": 13,
    "speaker": "도구상"
   },
+  "476": {
+   "table": "ED2/T_043",
+   "entry_id": 62,
+   "speaker": "도구상"
+  },
   "482": {
-   "table": "ED2/T_046",
-   "entry_id": 37,
-   "speaker": "여관"
+   "table": "ED2/C_002",
+   "entry_id": 24,
+   "speaker": null
   },
   "485": {
    "table": "ED2/T_044",
@@ -9289,8 +9349,8 @@
    "speaker": "사내"
   },
   "491": {
-   "table": "ED2/T_044",
-   "entry_id": 8,
+   "table": "ED2/T_043",
+   "entry_id": 14,
    "speaker": "사내"
   },
   "493": {
@@ -9299,7 +9359,7 @@
    "speaker": "사내"
   },
   "494": {
-   "table": "ED2/T_046",
+   "table": "ED2/T_044",
    "entry_id": 10,
    "speaker": "사내"
   },
@@ -9309,18 +9369,23 @@
    "speaker": "여자"
   },
   "498": {
-   "table": "ED2/T_046",
+   "table": "ED2/T_044",
    "entry_id": 16,
    "speaker": "노인"
   },
+  "501": {
+   "table": "ED2/T_044",
+   "entry_id": 20,
+   "speaker": "사내"
+  },
   "502": {
-   "table": "ED2/T_046",
-   "entry_id": 22,
+   "table": "ED2/T_041",
+   "entry_id": 10,
    "speaker": "사내"
   },
   "504": {
-   "table": "ED2/T_041",
-   "entry_id": 11,
+   "table": "ED2/T_040",
+   "entry_id": 32,
    "speaker": "사내"
   },
   "505": {
@@ -9339,13 +9404,13 @@
    "speaker": "여자"
   },
   "508": {
-   "table": "ED2/T_041",
-   "entry_id": 17,
+   "table": "ED2/T_043",
+   "entry_id": 42,
    "speaker": "여자"
   },
   "509": {
-   "table": "ED2/T_040",
-   "entry_id": 51,
+   "table": "ED2/T_041",
+   "entry_id": 18,
    "speaker": "여자"
   },
   "510": {
@@ -9369,8 +9434,8 @@
    "speaker": "도구상"
   },
   "519": {
-   "table": "ED2/T_044",
-   "entry_id": 47,
+   "table": "ED2/T_014",
+   "entry_id": 15,
    "speaker": "도구상"
   },
   "520": {
@@ -9387,11 +9452,6 @@
    "table": "ED2/C_000",
    "entry_id": 6,
    "speaker": "병사"
-  },
-  "549": {
-   "table": "ED2/C_00A",
-   "entry_id": 5,
-   "speaker": "디나"
   }
  },
  "ED2SCN2": {

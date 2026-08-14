@@ -38,7 +38,6 @@ GAME = "ED1"
 CTX = 34  # 앞뒤로 보여 줄 글자 수
 
 
-
 def _raw(game):
     """{(table, eid): 원문 텍스트} — `kr_pages` 는 `\\x06` 을 지우므로 원문이 따로 필요하다.
 
@@ -77,7 +76,7 @@ def used_map():
 
 def corpus():
     """{(표, 엔트리): 교정 후 문안}"""
-    return {k: R.corpus_text(v) for k, v in _raw(GAME).items() if v}
+    return {k: R.corpus_text(v, GAME) for k, v in _raw(GAME).items() if v}
 
 
 def siblings(table):

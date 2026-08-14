@@ -6,6 +6,9 @@ PS1 일문 ↔ DOS 정발판 한국어 대사 정렬 테이블 초안 생성기.
 씬 대응 (실측, 2026-07-09): DLL 파일명 둘째 자리 숫자 N ↔ EDxSCN(N+1).
  (T1 폴스↔SCN2 フォルス, T4 대도 게일↔SCN5 大盗賊ゲイル, C3 아도스 국왕↔SCN4 アートス国王)
  접두사 = 역할: T=마을 대화, C=이벤트, D=던전, H=집, A/E/F=보조.
+ ⚠ **이 1:1 규칙은 ED1 에서만 성립한다.** ED2 는 정발 그룹 9개 ↔ PS1 씬 13개라 다대다다
+ (그룹0 = 씬1+2, 그룹2 = 씬4+5+13 …). 정본은 `ed2_scene_tables.json`, 근거는
+ docs/ed2-scene-map.md — `scene_groups()` 참조.
 
 매칭 전략 (초안 — PS1은 리메이크라 블록이 DOS의 2배 이상, 1:1 불가):
  1. 화자 매핑: 수동 사전(보통명사) + 가타카나→한글 음차 + 자모 편집거리 fuzzy
@@ -22,7 +25,7 @@ import os
 import re
 import sys
 
-from common import OUT_DIR
+from common import OUT_DIR, ROOT
 
 SCN_JP_DIR = os.path.join(OUT_DIR, "scn_jp")
 DOS_KR_DIR = os.path.join(OUT_DIR, "dos_kr")
@@ -427,19 +430,45 @@ def load_jp_scene(game, n):
     return blocks
 
 
+_ED2_SCENE_TABLES = None
+
+
+def scene_groups(game, n):
+    """씬 n 이 후보로 삼을 정발 파일명 그룹(셋째 글자) 집합.
+
+    ED1 은 **그룹 = 씬번호 − 1** 이 실측 규칙이라 코드로 충분하다(모듈 독스트링).
+    ED2 는 전제가 깨진다 — 정발 그룹은 9개인데 PS1 씬은 13개다. 정발은 ED1 과 **같은
+    지역 묶음**을 물려받았고(그룹0 = ED1SCN1 지역 …) PS1 은 그것을 **진행 순서로 다시
+    갈랐다**(그룹0 → 씬1+2, 그룹2 → 씬4+5+13). 그래서 ED2 만 정본 파일을 읽는다.
+    근거는 `ed2_scene_tables.json` 의 maps(맵 세그먼트 지명 헤더 전수 스캔)와
+    docs/ed2-scene-map.md.
+
+    ⚠ 옛 규칙은 한 자리 전제라 **씬 10~13 이 항상 0건**이었고(빌드가 계속 경고를 찍었다),
+    씬 1~9 도 한 칸씩 어긋난 그룹을 보고 있었다 — 그 상태로 만든 배정 568건은 폐기했다.
+    ⚠ 이 집합은 **후보를 좁히는 용도**지 배정 정본이 아니다(정본은 align_map.json).
+    넉넉히 잡으면 회수가 늦어질 뿐이지만, 좁게 잡으면 정답이 후보에 없어 영영 안 나온다.
+    """
+    if game != "ED2":
+        return {str(n - 1)}
+    global _ED2_SCENE_TABLES
+    if _ED2_SCENE_TABLES is None:
+        with open(os.path.join(ROOT, "ed2_scene_tables.json"), encoding="utf-8") as f:
+            _ED2_SCENE_TABLES = json.load(f)
+    return set(_ED2_SCENE_TABLES["groups"].get(str(n), ()))
+
+
 def load_kr_scene(game, n):
     """씬 그룹의 DLL들 → {table_id: [{id, speaker, sig}]} (no_speaker는 직전 화자 승계)."""
     dir_ = os.path.join(DOS_KR_DIR, game)
     tables = {}
     if not os.path.isdir(dir_):
         return tables
+    groups = scene_groups(game, n)
     for fname in sorted(os.listdir(dir_)):
         if not fname.endswith(".json") or fname.startswith(("_", "._")):
             continue
         stem = fname[:-5]
-        # 파일명 숫자부 첫 자리 = 씬 그룹 (ED1 실측 규칙. 한 자리 전제라 씬 10+ 매칭
-        # 불가 — ED2는 파일명 체계(C_00A 등)가 달라 규칙 자체를 재검증해야 함)
-        if len(stem) < 3 or not stem[2].isdigit() or int(stem[2]) != n - 1:
+        if len(stem) < 3 or stem[2] not in groups:
             continue
         doc = json.load(open(os.path.join(dir_, fname), encoding="utf-8"))
         blocks, cur_spk = [], None
