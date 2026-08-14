@@ -8722,6 +8722,111 @@
    "table": "ED2/T_030",
    "entry_id": 17,
    "speaker": "男"
+  },
+  "192": {
+   "table": "ED2/T_030",
+   "entry_id": 19,
+   "speaker": "男"
+  },
+  "193": {
+   "table": "ED2/T_030",
+   "entry_id": 21,
+   "speaker": "男"
+  },
+  "195": {
+   "table": "ED2/T_030",
+   "entry_id": 2,
+   "speaker": "老人"
+  },
+  "197": {
+   "table": "ED2/T_030",
+   "entry_id": 3,
+   "speaker": "老人"
+  },
+  "199": {
+   "table": "ED2/T_030",
+   "entry_id": 8,
+   "speaker": "ピート"
+  },
+  "200": {
+   "table": "ED2/T_030",
+   "entry_id": 9,
+   "speaker": "アトラス"
+  },
+  "201": {
+   "table": "ED2/T_030",
+   "entry_id": 10,
+   "speaker": "ピート"
+  },
+  "202": {
+   "table": "ED2/T_030",
+   "entry_id": 11,
+   "speaker": "アトラス"
+  },
+  "208": {
+   "table": "ED2/T_030",
+   "entry_id": 13,
+   "speaker": "アトラス"
+  },
+  "209": {
+   "table": "ED2/T_030",
+   "entry_id": 14,
+   "speaker": "ピート"
+  },
+  "210": {
+   "table": "ED2/T_030",
+   "entry_id": 15,
+   "speaker": "ピート"
+  },
+  "211": {
+   "table": "ED2/T_030",
+   "entry_id": 16,
+   "speaker": "ピート"
+  },
+  "212": {
+   "table": "ED2/T_030",
+   "entry_id": 18,
+   "speaker": "男"
+  },
+  "213": {
+   "table": "ED2/T_030",
+   "entry_id": 20,
+   "speaker": "男"
+  },
+  "214": {
+   "table": "ED2/T_030",
+   "entry_id": 22,
+   "speaker": "武器屋"
+  },
+  "219": {
+   "table": "ED2/T_030",
+   "entry_id": 23,
+   "speaker": "道具屋"
+  },
+  "227": {
+   "table": "ED2/T_030",
+   "entry_id": 16,
+   "speaker": "ピート"
+  },
+  "228": {
+   "table": "ED2/T_030",
+   "entry_id": 17,
+   "speaker": "男"
+  },
+  "229": {
+   "table": "ED2/T_030",
+   "entry_id": 19,
+   "speaker": "男"
+  },
+  "230": {
+   "table": "ED2/T_030",
+   "entry_id": 21,
+   "speaker": "男"
+  },
+  "231": {
+   "table": "ED2/T_030",
+   "entry_id": 3,
+   "speaker": "老人"
   }
  },
  "ED2SCN2": {},

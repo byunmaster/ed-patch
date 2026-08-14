@@ -171,7 +171,7 @@ NAMES = {
     "シレント": "시렌트",
     "パペピア": "파페피아",
     "サイレス": "사이레스",  # ⚠ ED1 정발 `사일레스`, ED2 `사이레스` — ED2 우선(2026-08-12)
-    "インパス": "인퍼스",
+    "インパス": "인파스",  # 원음 in-pa-su · ED2 정발 표기(유저 확정 2026-08-14). ED1 정발 `인퍼스` 는 원음과 어긋난다 — 한 디스크 한 표기라 ED1 화면도 같이 바뀐다
     "テュート": "튜트",
     "リパーク": "리파크",
     "イサイト": "이사이트",
@@ -632,7 +632,9 @@ def main():
     print("동료명 리유난→류난 (0x80C)")
 
     with open(TARGET, "r+b") as f:
-        print(f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label="아이템·몬스터명 (ED.EXE)")}개 수정")
+        print(
+            f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label='아이템·몬스터명 (ED.EXE)')}개 수정"
+        )
     print(f"완료: {os.path.basename(TARGET)}")
 
 

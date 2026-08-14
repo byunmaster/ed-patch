@@ -94,6 +94,57 @@ PLACES_ED2 = {
     "スロット２": "슬롯2",
 }
 
+# ── ED2 아이템·주문 이름 ────────────────────────────────────────────────────
+# ED1 정본(`patch_items.NAMES`·`MONSTERS`)이 153건 중 55건을 덮는다 — 두 편이 무기·방어구·
+# 도구를 공유해서다. 여기엔 **ED2 에만 있는 것**만 적는다.
+#
+# 정발 소재: `originals/kr/dos-ed2/ED2MAIN.EXE 0x14A775` 에 27개짜리 14B stride 표가 있다
+# (은의 플레이트 · 지팡이의 파편 · 투시 안경 · 철 아령 · 변환로의 열쇠 …).
+#
+# ⚠ **보통명사 아이템 둘은 ED2 정발을 따른다**(유저 확정 2026-08-14) — `幅広のつるぎ` 와
+# `くさりかたびら` 는 고유명사가 아니라 원음 판정이 안 서는 자리다. ED1 은 `대형검`·
+# `미늘 갑옷` 을 유지하므로 **두 편이 갈린다** — 의도한 결정이다.
+NAMES_ED2 = {
+    # 주문 (ED1 에 없는 것만)
+    "ストール": "스톨",
+    "ブラムナ": "브람나",
+    "ヒュドナ": "휴도나",
+    "エント": "엔트",
+    "ビス": "비스",
+    "ビスナ": "비스나",
+    "レストナ": "레스토나",
+    # 도구·시나리오 아이템
+    "大笑い袋": "웃음보따리",
+    "透視メガネ": "투시 안경",
+    "鉄アレイ": "철 아령",
+    "フレイアの微笑": "프레이아의 미소",
+    "変換炉のカギ": "변환로의 열쇠",
+    "光の杖": "빛의 지팡이",
+    "切符": "표",
+    "密造酒": "밀조주",
+    "ランプ": "램프",
+    "竜の涙": "용의 눈물",
+    "ビキニ": "비키니",
+    "布の服": "천 옷",
+    # ⚠ ED1 과 갈리는 둘 (위 주석)
+    "幅広のつるぎ": "날 넓은 칼",
+    "くさりかたびら": "쇠사슬옷",
+}
+
+# 이름 구획은 **통째로 다시 채운다**(`repack_names`) — 칸 하나하나에 맞추지 않는다.
+# ⚠ 처음엔 제자리 치환만 해서 칸이 좁은 다섯을 줄여 썼는데(`성지팡이`·`빛의 봉` …),
+# ED2 정발은 `성스러운 지팡이`·`빛의 지팡이`·`얼음의 지팡이`·`용의 눈물` 이다(유저 지적
+# 2026-08-14). 이름을 줄일 게 아니라 **자리를 옮기는 게 맞다** — ED1 도 그렇게 한다.
+# 안전 근거: 이 구획의 이름 **153건이 전부 `lui`/`addiu` 로 참조된다**(참조 0건 0, 실측).
+# 그래서 옮긴 뒤 `patch_items.redirect` 가 참조를 전부 갱신할 수 있다.
+# ⚠ 시나리오 칸은 `0xD4930` 까지면 **16B 모자란다**(필요 208 / 칸 192). 바로 뒤
+# `0xD4934~0xD494F` 가 28B 0런이라 거기까지 넓혔다 — 다음 문자열(`たち` 0xD4950) 전까지다.
+REPACK = ((0x800, 0xF44, "ED2 이름"), (0xD4870, 0xD4950, "ED2 시나리오 아이템"))
+
+# 주문책 — `Xの書` 는 **주문 이름 + 「의 책」**이다(`呪文` 은 「주문」, policy 「표기 방침」).
+# 이름은 ED1 정본에서 끌어오므로 여기 다시 적지 않는다 — 주문 표기를 고치면 책도 따라온다.
+BOOK_SUFFIX = "의 책"
+
 # 워프 메뉴(16B) 접미 — 정발 `F_000` 30곳의 표기를 따른다. 핵심어는 위 표를 쓰고
 # 접미만 여기서 붙인다(같은 지명이 두 표에서 다른 말을 하지 않게).
 SUFFIX = {"の町": "", "の村": "마을", "の港": "항", "の鉱山": "광산", "の城": "성"}
@@ -188,10 +239,18 @@ def plan():
     canon.update(PARTY)
     canon.update(MENU_EXTRA)
     canon.update(PLACES_ED2)
+    canon.update(NAMES_ED2)
+    import patch_items as PI
+
+    canon.update({k: v for k, v in PI.NAMES.items() if k not in canon})
+    canon.update({k: v for k, v in PI.MONSTERS.items() if k not in canon})
+    # `Xの書` 는 주문 이름에서 파생한다 — 한 번 적으면 이름 표기를 고칠 때 같이 움직인다.
+    for jp, kr in list(canon.items()):
+        canon.setdefault(jp + "の書", kr + BOOK_SUFFIX)
 
     by_off, pad = positional()
     rows, over = [], []
-    for lo, hi in ((0x800, 0x830), (0x99C84, 0x9A030), (0x9A030, 0x9A280), (0x9A280, 0x9A550)):
+    for lo, hi in ((0x99C84, 0x9A030), (0x9A030, 0x9A280), (0x9A280, 0x9A550)):
         i = lo
         while i < hi:
             if buf[i] == 0:
@@ -229,11 +288,46 @@ def plan():
     return rows, over
 
 
+def repack_names(buf, canon):
+    """이름 구획을 KR 로 다시 채우고 참조를 갱신한다. 반환: 옮긴 이름 수."""
+    import patch_items as PI
+
+    n = 0
+    for lo, hi, label in REPACK:
+        names = _walk(buf, lo, hi)
+        moved, cur, packed = {}, lo, bytearray()
+        for off, jp in names:
+            kr = canon.get(jp)
+            kb = (_enc(kr) if kr else jp.encode("shift_jis")) + b"\x00"
+            kb += b"\x00" * (-len(kb) % 4)  # 정렬은 관례(코드는 바이트 접근)
+            assert cur + len(kb) <= hi, f"{label}: 예산 초과 @{jp} ({cur - lo}/{hi - lo}B)"
+            moved[PI.ram_of(off)] = PI.ram_of(cur)
+            packed += kb
+            cur += len(kb)
+        buf[lo:hi] = packed.ljust(hi - lo, b"\x00")
+        PI.redirect(buf, moved)
+        print(f"  {label}: {len(names)}개 재packing ({len(packed)}/{hi - lo}B)")
+        n += len(names)
+    return n
+
+
 def apply():
     rows, over = plan()
     for off, jp, kr, slot, enc in over:
         print(f"  ⚠ 슬롯 초과 — {off:#07x} {jp!r} → {kr!r} ({len(enc) + 1}B > {slot}B)")
     buf = bytearray(extract(ED2_LBA, ED2_SIZE, path=IMG))
+    canon = ed1_canon()
+    canon.update(PARTY)
+    canon.update(MENU_EXTRA)
+    canon.update(PLACES_ED2)
+    canon.update(NAMES_ED2)
+    import patch_items as PI
+
+    canon.update({k: v for k, v in PI.NAMES.items() if k not in canon})
+    canon.update({k: v for k, v in PI.MONSTERS.items() if k not in canon})
+    for jp, kr in list(canon.items()):
+        canon.setdefault(jp + "の書", kr + BOOK_SUFFIX)
+    n_names = repack_names(buf, canon)
     for off, _jp, _kr, slot, enc in rows:
         b = enc + b"\x00"
         buf[off : off + slot] = b + b"\x00" * (slot - len(b))
