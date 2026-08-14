@@ -189,25 +189,32 @@ def font_block():
     return b"".join(glyphs[ch] for ch in hangul_map.SYLLABLES)
 
 
-def verify_image_font(path, ed_lba=257, ed_size=1021952):
-    """이미지에 실린 폰트가 **지금 계획으로 구운 것과 같은가.**
+def verify_image_font(path):
+    """이미지에 실린 폰트가 **지금 계획으로 구운 것과 같은가 — 실행파일 둘 다.**
 
     빌드 끝에 한 번 부른다. 낡은 이미지에 새 계획으로 덧쓴 자리를 잡는다 — 계획은 순수
     함수라 한 실행 안에서는 안 어긋나지만, 단독 실행·A/B 로 조각조각 갱신하면 어긋난다.
+
+    ⚠ **ED2.EXE 도 본다**(2026-08-14). 실행파일이 둘이고 각자 폰트를 들고 있어서, 한쪽만
+    검사하면 다른 쪽이 낡은 채로 통과한다 — 증상은 **그 게임에서만 글자가 깨지는 것**이라
+    ED1 만 돌려 보면 영영 안 보인다.
     """
     import hashlib
 
     import hangul_map
     from common import extract
+    from font_map import FONT_BASE
 
     blk = font_block()
-    off = hangul_map.slot_ed_offset(0)
-    got = bytes(extract(ed_lba, ed_size, path=path))[off : off + len(blk)]
-    if got != blk:
-        raise SystemExit(
-            f"⚠ 이미지의 폰트가 지금 계획과 다르다 — 계획 {hangul_map.PLAN_SHA1} 로 구운 블록"
-            f"({hashlib.sha1(blk).hexdigest()[:16]}) 과 이미지"
-            f"({hashlib.sha1(got).hexdigest()[:16]}) 가 어긋난다.\n"
-            "  낡은 이미지에 새 계획으로 덧썼을 수 있다 — `build.py` 로 전 체인을 다시 돌 것."
-        )
+    for game, spec in FONT_BASE.items():
+        off = hangul_map.slot_ed_offset(0, game)
+        size = {"ED1": 1021952, "ED2": 872448}[game]
+        got = bytes(extract(spec["lba"], size, path=path))[off : off + len(blk)]
+        if got != blk:
+            raise SystemExit(
+                f"⚠ {spec['exe']} 의 폰트가 지금 계획과 다르다 — 계획 {hangul_map.PLAN_SHA1} 로"
+                f" 구운 블록({hashlib.sha1(blk).hexdigest()[:16]}) 과 이미지"
+                f"({hashlib.sha1(got).hexdigest()[:16]}) 가 어긋난다.\n"
+                "  낡은 이미지에 새 계획으로 덧썼을 수 있다 — `build.py` 로 전 체인을 다시 돌 것."
+            )
     return True

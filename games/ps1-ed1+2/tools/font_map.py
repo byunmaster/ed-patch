@@ -17,6 +17,24 @@ ED_FILE_BASE = 0x800  # ED.EXE text가 시작하는 파일 오프셋
 
 KANJI_BASE_RAM = 0x800F48A8  # 亜 (JIS 16-1)
 KANA_BASE_RAM = 0x800F1BA0  # 기호·가나 블록
+
+# ── 게임별 폰트 블록 (2026-08-14 실측) ──────────────────────────────────────────
+# 디스크에 실행파일이 둘이고(`ED.EXE` LBA 257 · `ED2.EXE` LBA 756) **각자 폰트를 들고 있다.**
+# 그래서 ED1 에만 한글을 구우면 ED2 는 글자가 안 나온다 — 시스템 UI 도 SCN 대사도.
+#
+# 자리는 추측하지 않고 **바이트로 찾았다** — ED.EXE 원본의 亜 글리프 220B 를 떠서 ED2.EXE
+# 에서 검색하니 한 곳에 걸렸고, 거기서 **68,293B(글리프 3,104자)가 연속 일치**한다.
+# 가나 블록도 같은 방법으로 잡았는데 **두 블록의 오프셋 차이가 정확히 같다**(0x24668) —
+# 폰트 배치가 통째로 그만큼 옮겨져 있을 뿐 구조는 동일하다는 뜻이다.
+#
+# ⚠ **원본에서 읽어야 한다.** 우리 빌드는 그 슬롯을 한글로 덮어쓰므로 산출물에서 뜨면
+# 한글 글리프를 찾는 꼴이 된다(루트 CLAUDE.md 「원본이 어땠는가는 originals 에서」).
+# 두 EXE 다 `t_addr = 0x80010000` · 헤더 0x800B 라 RAM↔파일 변환식은 한 벌로 족하다.
+FONT_BASE = {
+    "ED1": {"exe": "ED.EXE", "lba": 257, "kanji": 0x800F48A8, "kana": 0x800F1BA0},
+    "ED2": {"exe": "ED2.EXE", "lba": 756, "kanji": 0x800D0240, "kana": 0x800CD538},
+}
+GLYPH_FIT = 3104  # 연속 일치가 보장된 글리프 수 — 우리가 쓰는 2,350 슬롯이 든다
 GLYPH_STRIDE = 22  # 11행 × 2바이트
 GLYPH_ROWS = 11
 JIS_KANJI1_INDEX = (16 - 1) * 94  # 亜의 JIS 순차 인덱스 = 1410
@@ -52,10 +70,11 @@ def is_kana_block(sjis):
     return 0x8140 <= sjis <= 0x84BE
 
 
-def kanji_glyph_ram(sjis):
-    """한자 1급 SJIS → 글리프 RAM 주소."""
+def kanji_glyph_ram(sjis, game="ED1"):
+    """한자 1급 SJIS → 글리프 RAM 주소. `game` 으로 실행파일을 고른다."""
     assert is_kanji1(sjis), f"0x{sjis:04X}는 한자 1급 범위 밖"
-    return KANJI_BASE_RAM + (jis_index(sjis) - JIS_KANJI1_INDEX) * GLYPH_STRIDE
+    base = FONT_BASE[game]["kanji"]
+    return base + (jis_index(sjis) - JIS_KANJI1_INDEX) * GLYPH_STRIDE
 
 
 def ram_to_ed_file(ram):
@@ -63,9 +82,9 @@ def ram_to_ed_file(ram):
     return ram - ED_TEXT_ADDR + ED_FILE_BASE
 
 
-def kanji_glyph_ed_offset(sjis):
-    """한자 1급 SJIS → ED.EXE 파일 오프셋 (재삽입기가 쓸 값)."""
-    return ram_to_ed_file(kanji_glyph_ram(sjis))
+def kanji_glyph_ed_offset(sjis, game="ED1"):
+    """한자 1급 SJIS → 그 게임 실행파일 안의 오프셋 (재삽입기가 쓸 값)."""
+    return ram_to_ed_file(kanji_glyph_ram(sjis, game))
 
 
 if __name__ == "__main__":

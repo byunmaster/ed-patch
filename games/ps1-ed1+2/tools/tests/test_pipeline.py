@@ -275,7 +275,9 @@ def test_num_bind_only_for_units():
     import reinsert_kr_pilot as R
 
     assert R._NUM_UNIT.search("하룻밤 10 Gold입니다.")
-    assert not R._NUM_UNIT.search("워프 2 마법을 익혔다.")  # 픽스처는 우리 문장으로 — 정발 인용 금지
+    assert not R._NUM_UNIT.search(
+        "워프 2 마법을 익혔다."
+    )  # 픽스처는 우리 문장으로 — 정발 인용 금지
 
 
 def test_window_lines_counts_across_blocks():
@@ -316,6 +318,47 @@ def _run():
             print(f"  ERR  {fn.__name__}: {type(e).__name__}: {e}")
     print(f"\n{passed}/{len(fns)} passed")
     return passed == len(fns)
+
+
+def test_font_slot_differs_per_exe():
+    """폰트 슬롯은 **실행파일마다 다른 자리**다 — 한 벌로 쓰면 ED2 가 안 나온다.
+
+    ⚠ 실측 2026-08-14: 디스크에 EXE 가 둘인데 각자 폰트를 들고 있다. `slot_ed_offset` 이
+    게임을 안 받던 시절엔 ED1 자리에만 구웠고, ED2 는 문안을 넣어도 글자가 안 떴다.
+    두 블록의 오프셋 차이가 정확히 0x24668 로 일정하다(한자·가나 둘 다).
+    """
+    import hangul_map as H
+    from font_map import FONT_BASE
+
+    assert H.slot_ed_offset(0, "ED1") == 0xE50A8
+    assert H.slot_ed_offset(0, "ED2") == 0xC0A40
+    assert FONT_BASE["ED1"]["kanji"] - FONT_BASE["ED2"]["kanji"] == 0x24668
+    assert FONT_BASE["ED1"]["kana"] - FONT_BASE["ED2"]["kana"] == 0x24668
+    # 게임을 안 주면 ED1 — 기존 호출부가 그대로 돌아야 한다
+    assert H.slot_ed_offset(7) == H.slot_ed_offset(7, "ED1")
+
+
+def test_overlay_base_is_per_game_and_fails_loud():
+    """오버레이 베이스는 **씬마다 세운다** — 안 세우면 죽어야 한다.
+
+    ⚠ 예전엔 `OVERLAY_RAM_BASE` 상수 하나였고 열여덟 자리가 그걸 썼다. 그대로 ED2 를
+    체인에 올렸으면 포인터가 전부 0x5000(20,480B)씩 어긋나 **확정 소프트락**이었다.
+    ED1 값 폴백을 두지 않는 게 요점이다 — 폴백은 조용히 틀리고 증상이 소프트락이라
+    원인이 여기까지 안 온다.
+    """
+    with R.overlay_for("ED1SCN1"):
+        assert R.ov_base() == 0x8016A000
+    with R.overlay_for("ED2SCN1"):
+        assert R.ov_base() == 0x80165000
+        with R.overlay_for("ED1SCN3"):  # 중첩해도 원복한다
+            assert R.ov_base() == 0x8016A000
+        assert R.ov_base() == 0x80165000
+    try:
+        R.ov_base()
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("세우지 않고 불렀는데 안 죽었다 — ED1 값으로 새고 있다")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@
 """
 
 import bisect
+import contextlib
 import functools
 import json
 import os
@@ -52,15 +53,56 @@ from text.krwrap import wrap_pages as kr_wrap_pages  # noqa: E402
 LOCK_BYPASS = os.environ.get("LOCK_BYPASS") == "1"
 
 ED_LBA, ED_SIZE = 257, 1021952  # ED.EXE (폰트 탑재 대상)
+ED2_LBA, ED2_SIZE = 756, 872448  # ED2.EXE — **폰트를 따로 들고 있다**(font_map.FONT_BASE)
 # SCN 오버레이 로드 주소 — **게임마다 다르다.** 참조 주소에서 도출한 값이고
 # `tools/check_overlay_base.py` 가 매번 다시 도출해 이 표를 지킨다(ED1 은 92~97% 적중으로
 # 재현되고 ED2 는 13씬 만장일치다).
-# 🔴 ED2 를 체인에 올릴 때 **이 표를 타게 고쳐야 한다** — 지금 `OVERLAY_RAM_BASE` 를 그대로
+# 🔴 ED2 를 체인에 올릴 때 **이 표를 타게 고쳐야 한다** — 지금 `ov_base()` 를 그대로
 # 쓰는 자리가 열댓 곳이고 전부 ED1 값이다. ED2 에 ED1 값을 쓰면 모든 포인터가 0x5000
 # (20,480B)씩 어긋나 **소프트락**이다(2026-08-11 도출, 체인에 올리기 전에 잡았다).
 OVERLAY_BASE = {"ED1": 0x8016A000, "ED2": 0x80165000}
-OVERLAY_RAM_BASE = OVERLAY_BASE["ED1"]
-# ED1 씬별 (이름, LBA, size) — extract_scn.py SCN_FILES. text_end는 scn_jp JSON에서 씬별로.
+_OV_BASE = None  # 지금 굽고 있는 씬의 베이스 — `overlay_for()` 가 씬마다 세운다
+
+
+def game_of(name):
+    """씬 이름 → 게임(`ED2SCN3` → `ED2`)."""
+    return "ED2" if name.startswith("ED2") else "ED1"
+
+
+def ov_base():
+    """지금 굽고 있는 씬의 오버레이 RAM 베이스.
+
+    ⚠ **상수가 아니다.** 예전엔 `ov_base() = OVERLAY_BASE["ED1"]` 한 줄이었고
+    열여덟 자리가 그걸 그대로 썼다 — 그 상태로 ED2 를 체인에 올렸으면 포인터가 전부
+    0x5000(20,480B)씩 어긋나 **확정 소프트락**이었다.
+
+    안 세우고 부르면 **죽는다.** ED1 값으로 폴백하지 않는 게 요점이다 — 폴백은 조용히
+    틀리고, 그 증상은 소프트락이라 원인이 여기까지 안 온다.
+    """
+    if _OV_BASE is None:
+        raise RuntimeError("오버레이 베이스가 안 세워졌다 — `overlay_for(씬)` 안에서 불러야 한다")
+    return _OV_BASE
+
+
+@contextlib.contextmanager
+def overlay_for(name):
+    """씬 하나를 굽는 동안 베이스를 세운다. 중첩·예외에도 원복한다."""
+    global _OV_BASE
+    old = _OV_BASE
+    _OV_BASE = OVERLAY_BASE[game_of(name)]
+    try:
+        yield _OV_BASE
+    finally:
+        _OV_BASE = old
+
+
+# 재삽입 체인에 오른 씬 (이름, LBA, size) — extract_scn.py SCN_FILES. text_end 는 scn_jp JSON.
+#
+# ⚠ **순서가 곧 DUMMY 할당 순서**다. 커진 씬은 `DUMMY.;1`(LBA 91700) 로 재배치되는데
+# 할당기가 이 목록을 순서대로 소비하므로, **ED1 을 앞에 두면 ED1 의 재배치 LBA 가 안 밀린다.**
+# ED2 는 반드시 뒤에 붙인다(앞에 끼우면 ED1 이미지가 통째로 달라져 sha1 대조가 무의미해진다).
+#
+# ED2 는 씬 하나씩 올린다 — 열셋을 한꺼번에 올리면 소프트락이 나도 원인이 안 좁혀진다.
 SCN_FILES = [
     ("ED1SCN1", 1183, 206260),
     ("ED1SCN2", 1284, 217940),
@@ -68,6 +110,7 @@ SCN_FILES = [
     ("ED1SCN4", 1489, 134184),
     ("ED1SCN5", 1555, 171392),
     ("ED1SCN6", 1639, 100270),
+    ("ED2SCN1", 1688, 94200),
 ]
 _FMT_SEQ = re.compile(rb"%[sd]")  # 인자 소비 계약 — 개수만이 아니라 **순서**도 계약이다
 MC = b"\x25\x63"  # %c
@@ -1488,7 +1531,7 @@ BIN_DIR_LBA = 1182  # \BIN 디렉토리 레코드 섹터
 
 def scn_extra(name, file_size):
     """씬별 확장 바이트 — RAM 상한과 정책 상한의 최소."""
-    cap = (OVERLAY_RAM_LIMIT - OVERLAY_RAM_BASE) - file_size
+    cap = (OVERLAY_RAM_LIMIT - OVERLAY_BASE[game_of(name)]) - file_size
     return max(0, min(cap, SCN_EXTRA_MAX)) & ~3
 
 
@@ -1878,7 +1921,7 @@ def find_refs(data, text_end):
     return [
         (imm_off, lui_off, op, addr)
         for imm_off, lui_off, op, addr in iter_lui_pairs(data, (MIPS_ADDIU, MIPS_ORI))
-        if OVERLAY_RAM_BASE <= addr < OVERLAY_RAM_BASE + text_end
+        if ov_base() <= addr < ov_base() + text_end
     ]
 
 
@@ -1900,11 +1943,11 @@ def compute_anchors(data, text_end):
     (2026-07-09 emucap 규명)이 바로 이 테이블이 대사에 밀려 어긋난 것.
     각 lui+lw base에서 오버레이 포인터(또는 null 슬롯)가 이어지는 동안을 테이블로 보고,
     인접 범위는 병합. 큰 쪽으로 근사(테이블을 조금 크게 잡으면 안전, 작으면 위험)."""
-    lo, hi = OVERLAY_RAM_BASE, OVERLAY_RAM_BASE + len(data)  # 오버레이 전체 범위 (파일 크기)
+    lo, hi = ov_base(), ov_base() + len(data)  # 오버레이 전체 범위 (파일 크기)
     bases = {
-        addr - OVERLAY_RAM_BASE
+        addr - ov_base()
         for _, _, _, addr in iter_lui_pairs(data, (MIPS_LW,))
-        if 0 <= addr - OVERLAY_RAM_BASE < text_end
+        if 0 <= addr - ov_base() < text_end
     }
 
     def is_entry(v):
@@ -1933,7 +1976,7 @@ def is_table_bytes(raw, data_len):
 
     `compute_anchors` 가 테이블을 "큰 쪽으로 근사"하므로 앵커 포함만으로 판정하면 대사를
     잘못 버릴 수 있다. 바이트를 직접 보는 이 조건을 AND 로 걸어 오검출을 없앤다."""
-    lo, hi = OVERLAY_RAM_BASE, OVERLAY_RAM_BASE + data_len
+    lo, hi = ov_base(), ov_base() + data_len
     n = len(raw)
     if n < 8 or any(raw[n - (n % 4) :]):  # 워드 뒤 잔여는 0패딩이어야 한다
         return False
@@ -1961,18 +2004,25 @@ def table_block_eids(scn_name):
         _, lba, size = src
         doc = json.load(open(os.path.join(OUT_DIR, "scn_jp", f"{scn_name}.json"), encoding="utf-8"))
         data = extract(lba, size)
-        anchors = compute_anchors(data, int(doc["source"]["text_end"], 16))
-        hit = frozenset(
-            e["entry_id"]
-            for e in doc["entries"]
-            if e.get("raw_hex")
-            and any(
-                a <= int(e["file_offset"], 16)
-                and int(e["file_offset"], 16) + len(e["raw_hex"]) // 2 <= b
-                for a, b in anchors
+        # ⚠ 앵커 계산이 오버레이 베이스를 탄다 — 씬마다 다르므로 여기서 세운다.
+        # 이 함수는 `load_translations` 를 거쳐 **검출기 전부**가 부르는 길목이라,
+        # 안 세우면 빌드는 되는데 검사기가 통째로 죽는다(실측 2026-08-14).
+        # ⚠ **제너레이터까지 안에 둔다.** `with` 를 `compute_anchors` 한 줄에만 걸었더니
+        # `frozenset(...)` 이 블록 밖에서 평가돼 `is_table_bytes` 가 베이스 없이 불렸다.
+        # 지연 평가는 이런 식으로 컨텍스트를 빠져나간다.
+        with overlay_for(scn_name):
+            anchors = compute_anchors(data, int(doc["source"]["text_end"], 16))
+            hit = frozenset(
+                e["entry_id"]
+                for e in doc["entries"]
+                if e.get("raw_hex")
+                and any(
+                    a <= int(e["file_offset"], 16)
+                    and int(e["file_offset"], 16) + len(e["raw_hex"]) // 2 <= b
+                    for a, b in anchors
+                )
+                and is_table_bytes(bytes.fromhex(e["raw_hex"]), len(data))
             )
-            and is_table_bytes(bytes.fromhex(e["raw_hex"]), len(data))
-        )
     _TABLE_EIDS[scn_name] = hit
     return hit
 
@@ -2279,14 +2329,28 @@ _SPEAKER_MAP = None
 
 
 def _speaker_map():
-    """JP 화자 → 정발 화자 대응표(out/align/ED1_speakers.json). 정렬 채택 판정용."""
+    """JP 화자 → 정발 화자 대응표. 정렬 채택 판정용 · 이름창 렌더용.
+
+    ⚠ **두 게임을 다 싣는다**(2026-08-14). ED1 것만 읽던 시절, ED2SCN1 을 체인에 올리자
+    `教育係 ラウエル` 블록 일곱이 통째로 탈락했다(`encode`) — 화자 이름이 번역이 안 되니
+    한글로 인코딩할 수 없었고, 탈락한 블록은 **원문이 그대로 남아 화면에 일본어가 뜬다.**
+    빌드는 성공하고 게이트도 통과한다.
+    ⚠ 이름이 겹치면 같은 표기여야 한다 — 방침이 「고유명사는 ED1·ED2 가 한 표기」다
+    (policy 「표기 방침」). 그래서 합쳐도 충돌이 사고가 아니라 **검출**이 된다.
+    """
     global _SPEAKER_MAP
     if _SPEAKER_MAP is None:
-        path = os.path.join(OUT_DIR, "align", "ED1_speakers.json")
-        try:
-            _SPEAKER_MAP = dict(json.load(open(path, encoding="utf-8"))["map"])
-        except (FileNotFoundError, KeyError):
-            _SPEAKER_MAP = {}
+        _SPEAKER_MAP = {}
+        # ⚠ **순서가 곧 우선권이다 — ED2 를 먼저 깔고 ED1 로 덮는다.** 반대로 했더니 ED2
+        # 화자맵이 ED1 이름을 덮어 **ED1 씬 셋의 이미지가 바뀌었다**(실측 2026-08-14:
+        # LBA 91717·91824·91873 섹터가 움직였다). ED1 은 인게임 QA 를 끝낸 층이라 이
+        # 방향이 제일 비싸다 — `dos_spelling_fixes` 를 게임별로 가른 것과 같은 사고다.
+        for game in ("ED2", "ED1"):
+            path = os.path.join(OUT_DIR, "align", f"{game}_speakers.json")
+            try:
+                _SPEAKER_MAP.update(json.load(open(path, encoding="utf-8"))["map"])
+            except (FileNotFoundError, KeyError):
+                pass
         # ⚠ 위 파일은 `work/derived`(파생물)라 **판단을 담으면 안 된다** — 재생성하면 날아가고
         # LaBSE 없는 머신에선 아예 안 만들어진다(제1 원칙: 판단은 커밋되는 정본에).
         # 그래서 `align_overrides.json` 의 `_speakers` 로 덮는다. 실측: `ラルファの道具屋` 가
@@ -3133,6 +3197,11 @@ def build_scene(name, lba, size, identity, fixed):
     """한 SCN 오버레이를 번역·재배치·포인터 패치. 반환: (patched_bytes, stats_str).
 
     identity=True면 검증만(원본과 바이트 동일 확인, 반환 bytes=None)."""
+    with overlay_for(name):
+        return _build_scene(name, lba, size, identity, fixed)
+
+
+def _build_scene(name, lba, size, identity, fixed):
     data = extract(lba, size)
     scn = json.load(open(os.path.join(OUT_DIR, "scn_jp", f"{name}.json"), encoding="utf-8"))
     entries = scn["entries"]
@@ -3170,7 +3239,7 @@ def build_scene(name, lba, size, identity, fixed):
     referenced_eids = set()  # addiu/ori(find_refs가 갱신)로 참조되는 블록 = 이동해도 안전
     blk_by_eid = {e["entry_id"]: e for e in entries if e["kind"] != "gap"}
     for _, _, _, addr in refs:
-        (_, eid), delta = owner(addr - OVERLAY_RAM_BASE)
+        (_, eid), delta = owner(addr - ov_base())
         referenced_eids.add(eid)
         if delta and eid in translations:
             # 앵커 접두 블록의 **꼬리 시작**을 가리키는 참조는 무해하다 — 그 블록은 핀 고정이라
@@ -3222,12 +3291,12 @@ def build_scene(name, lba, size, identity, fixed):
         for addiu_off, lui_off, op, addr in refs:
             if addiu_off < text_end or lui_off < text_end:
                 continue  # 텍스트 영역 내 우연 일치 — 패치 단계와 동일 필터 (오탐 충돌 방지)
-            (_, eid), delta = owner(addr - OVERLAY_RAM_BASE)
+            (_, eid), delta = owner(addr - ov_base())
             if delta == 0 and eid in stock_alias:
                 eid = stock_alias[eid]
             elif eid in stock_mid and delta == stock_mid[eid][0]:
                 eid, delta = stock_mid[eid][1], 0
-            hi, _ = hi_lo(OVERLAY_RAM_BASE + newoff[eid][0] + delta, op)
+            hi, _ = hi_lo(ov_base() + newoff[eid][0] + delta, op)
             if lui_off in lui_need and lui_need[lui_off][0] != hi:
                 conflict = (eid, lui_need[lui_off][1])
                 break
@@ -3261,7 +3330,7 @@ def build_scene(name, lba, size, identity, fixed):
         for addiu_off, lui_off, op, addr in refs:
             if addiu_off < text_end or lui_off < text_end:
                 continue
-            (_, r_eid), r_delta = owner(addr - OVERLAY_RAM_BASE)
+            (_, r_eid), r_delta = owner(addr - ov_base())
             lui_owner.setdefault(lui_off, set()).add((r_eid, r_delta == 0))
             if r_delta == 0:
                 eid_refs.setdefault(r_eid, []).append((addiu_off, lui_off, op))
@@ -3325,7 +3394,7 @@ def build_scene(name, lba, size, identity, fixed):
             ext_used += len(blk) + (-len(blk) % 4)
             stub_off = ext_base + ext_used
             ext_used += 14 * 4
-            blk_addr = OVERLAY_RAM_BASE + blk_off
+            blk_addr = ov_base() + blk_off
             lo = blk_addr & 0xFFFF
             hi = ((blk_addr >> 16) + (1 if lo >= 0x8000 else 0)) & 0xFFFF
             np_ = cfg["name_ptr"]
@@ -3349,7 +3418,7 @@ def build_scene(name, lba, size, identity, fixed):
             ext_custom.append(
                 (stub_off - ext_base, b"".join(w.to_bytes(4, "little") for w in words))
             )
-            stub_addr = OVERLAY_RAM_BASE + stub_off
+            stub_addr = ov_base() + stub_off
             stub_patches.append((cfg["call_off"], [0x08000000 | ((stub_addr >> 2) & 0x3FFFFFF), 0]))
             print(
                 f"  이름 스텁: jp{eid} — 헤더 사본@ext+0x{blk_off - ext_base:X}, 진입점 0x{cfg['call_off']:X} 후킹"
@@ -3366,21 +3435,21 @@ def build_scene(name, lba, size, identity, fixed):
         for rel, bs in ext_custom:
             ext_blob[rel : rel + len(bs)] = bs
         out_file += ext_blob
-        assert OVERLAY_RAM_BASE + len(out_file) <= OVERLAY_RAM_LIMIT, f"{name} 확장 RAM 상한 초과"
+        assert ov_base() + len(out_file) <= OVERLAY_RAM_LIMIT, f"{name} 확장 RAM 상한 초과"
     patched = 0
     for addiu_off, lui_off, op, addr in refs:
         if addiu_off < text_end or lui_off < text_end:
             continue  # 텍스트 영역 내 우연 일치는 패치 대상 아님
-        (_, eid), delta = owner(addr - OVERLAY_RAM_BASE)
+        (_, eid), delta = owner(addr - ov_base())
         if delta == 0 and eid in stock_alias:
             eid = stock_alias[eid]
         elif eid in stock_mid and delta == stock_mid[eid][0]:
             eid, delta = stock_mid[eid][1], 0
         if delta == 0 and eid in donor_placed:
             kind, off, _c = donor_placed[eid]
-            new_addr = (OVERLAY_RAM_BASE + off) if kind == "ext" else (off + ED_EXE_RAM)
+            new_addr = (ov_base() + off) if kind == "ext" else (off + ED_EXE_RAM)
         else:
-            new_addr = OVERLAY_RAM_BASE + newoff[eid][0] + delta
+            new_addr = ov_base() + newoff[eid][0] + delta
         if fixed:
             assert new_addr == addr, f"{name} fixed 모드에서 주소 이동: {addr:#x}→{new_addr:#x}"
             continue
@@ -3501,6 +3570,16 @@ def main():
             print(f"도너 블록 {len(donor_all)}개 → ED.EXE 0런")
         print(
             f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label='재삽입 폰트·도너 (ED.EXE)')}개 수정 (폰트+도너)"
+        )
+        # ED2.EXE 에도 같은 폰트를 굽는다 — **각 실행파일이 폰트를 따로 들고 있다**(2026-08-14
+        # 실측, `font_map.FONT_BASE`). ED1 에만 구우면 ED2 는 시스템 UI 도 SCN 대사도 글자가
+        # 안 나온다. 블록 내용은 한 벌이고 **자리만 다르다**(델타 0x24668).
+        # ⚠ 도너는 안 쓴다 — ED.EXE 0런에 기록하는 것이라 ED2 와 무관하다.
+        ed2_base = hangul_map.slot_ed_offset(0, "ED2")
+        ed2 = bytearray(extract(ED2_LBA, ED2_SIZE))
+        ed2[ed2_base : ed2_base + len(font_block)] = font_block
+        print(
+            f"ED2.EXE: 섹터 {write_user_data(f, ED2_LBA, ed2, label='재삽입 폰트 (ED2.EXE)')}개 수정 (폰트)"
         )
         for lba, out_file in built.items():
             print(
