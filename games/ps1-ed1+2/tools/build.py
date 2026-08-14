@@ -203,6 +203,7 @@ def main():
     run(
         "patch_ed2_battle.py"
     )  # ED2.EXE 전투 문안 — 제자리 치환만(재배치 미구현)  # ED2.EXE 시스템 UI·지명 — **ED.EXE 와 사본 관계**라 따로 쓴다
+    run("patch_ed2_monsters.py")  # ED2MON0~5.BIN 몬스터 이름 — 제자리 치환만
     run("patch_items.py")  # ED.EXE 아이템·마법명 (FINAL 제자리 갱신)
     # 줄머리 공백 훅(patch_battle_wrap.py)은 **미채택 확정**(2026-07-23 유저 결정, 보류 아님).
     # 구현·검증까지 끝냈으나 ①differential로 인트로 정지와 무관함이 확인돼 실익이 없었고
