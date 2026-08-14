@@ -118,6 +118,50 @@ def _jp_at(buf, off):
         return None
 
 
+def positional():
+    """{ED2 오프셋: ED1 우리표기} — 두 UI 블록을 **자리로** 짝짓는다.
+
+    ⚠ **문자열로 짝지으면 안 된다.** ED1 은 같은 원문을 문맥마다 다르게 옮겼다 —
+    `強さ` 가 셋(파티 메뉴 `상태` · 전투 커맨드 `능력치` · 능력치 창 `힘`)이고
+    `逃げる` 가 둘(`도망감`/`도망간다`)이다. 첫 값이 전부에 붙어 **능력치 창에
+    「상태 6」이 떴다**(유저 QA 2026-08-14).
+
+    ED2 블록은 ED1 과 같은 순서인데 `ＳＡＶＥ`·`ＬＯＡＤ` 처럼 **더 있는 항목**이 있어
+    단순 zip 이 뒤부터 통째로 밀린다. 그래서 삽입을 견디는 시퀀스 정렬로 맞춘다.
+    """
+    from difflib import SequenceMatcher
+
+    ed = extract(P.ED_LBA, P.ED_SIZE)
+    a = [(o, _jp_at(ed, o), P.UI[o]) for o in sorted(P.UI) if 0xBE290 <= o <= 0xBE5C6]
+    b = _walk(extract(ED2_LBA, ED2_SIZE), 0x99C84, 0x9A030)
+    out, pad = {}, {}
+    sm = SequenceMatcher(None, [x[1] for x in a], [x[1] for x in b], autojunk=False)
+    for i, j, n in sm.get_matching_blocks():
+        for d in range(n):
+            o1, _jp, kr = a[i + d]
+            o2 = b[j + d][0]
+            out[o2] = kr
+            if o1 in P.VALUE_PAD:  # 값 메뉴 — JP 렌더폭에 맞춰야 값 컬럼이 선다
+                pad[o2] = P.VALUE_PAD[o1]
+            if o1 in P.FIELD_MENU:  # SAVE/LOAD 칸에 맞춰 벌려 쓴다
+                pad[o2] = -P.FIELD_WIDTH
+    return out, pad
+
+
+def _walk(buf, lo, hi):
+    out, i = [], lo
+    while i < hi:
+        if buf[i] == 0:
+            i += 1
+            continue
+        e = buf.find(b"\x00", i)
+        s = _jp_at(buf, i)
+        if s:
+            out.append((i, s))
+        i = e + 1
+    return out
+
+
 def ed1_canon():
     """{원본 JP: 우리 표기} — ED1 정본을 **원문으로** 뒤집어 만든다.
 
@@ -145,6 +189,7 @@ def plan():
     canon.update(MENU_EXTRA)
     canon.update(PLACES_ED2)
 
+    by_off, pad = positional()
     rows, over = [], []
     for lo, hi in ((0x800, 0x830), (0x99C84, 0x9A030), (0x9A030, 0x9A280), (0x9A280, 0x9A550)):
         i = lo
@@ -157,7 +202,7 @@ def plan():
             if not jp:
                 i = end + 1
                 continue
-            kr = canon.get(jp)
+            kr = by_off.get(i) or canon.get(jp)
             if kr is None and lo == 0x9A030:  # 워프 메뉴 — 접미를 떼고 다시 본다
                 m = re.match(r"(.+?)(の町|の村|の港|の鉱山|の城)$", jp)
                 if m and m.group(1) in canon:
@@ -171,19 +216,26 @@ def plan():
                 while nxt < hi and buf[nxt] == 0:
                     nxt += 1
                 slot = nxt - i
-                need = len(_enc(kr)) + 1
-                (rows if need <= slot else over).append((i, jp, kr, slot))
+                enc = _enc(kr)
+                t = pad.get(i)
+                if t is not None and t < 0:  # 칸 채움(벌려 쓰기)
+                    enc = P.justify(kr, -t, slot)
+                elif t is not None:  # 값 메뉴 — JP 렌더폭까지 패딩
+                    h = t - P.render_width(kr)
+                    if h > 0:
+                        enc += b"\x81\x40" * (h // 2) + b" " * (h % 2)
+                (rows if len(enc) + 1 <= slot else over).append((i, jp, kr, slot, enc))
             i = end + 1
     return rows, over
 
 
 def apply():
     rows, over = plan()
-    for off, jp, kr, slot in over:
-        print(f"  ⚠ 슬롯 초과 — {off:#07x} {jp!r} → {kr!r} ({len(_enc(kr)) + 1}B > {slot}B)")
+    for off, jp, kr, slot, enc in over:
+        print(f"  ⚠ 슬롯 초과 — {off:#07x} {jp!r} → {kr!r} ({len(enc) + 1}B > {slot}B)")
     buf = bytearray(extract(ED2_LBA, ED2_SIZE, path=IMG))
-    for off, _jp, kr, slot in rows:
-        b = _enc(kr) + b"\x00"
+    for off, _jp, _kr, slot, enc in rows:
+        b = enc + b"\x00"
         buf[off : off + slot] = b + b"\x00" * (slot - len(b))
     with open(IMG, "r+b") as f:
         n = write_user_data(f, ED2_LBA, bytes(buf), label="ED2 시스템 UI (ED2.EXE)")
@@ -197,7 +249,7 @@ def apply():
 if __name__ == "__main__":
     if "--plan" in sys.argv:
         rows, over = plan()
-        for off, jp, kr, slot in rows:
+        for off, jp, kr, slot, _e in rows:
             print(f"  {off:#07x} [{slot:>3}B] {jp:<12} → {kr}")
         print(f"\n쓸 것 {len(rows)}건 · 슬롯 초과 {len(over)}건")
         sys.exit(0)
