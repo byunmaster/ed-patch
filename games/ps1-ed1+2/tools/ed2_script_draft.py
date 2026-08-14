@@ -15,6 +15,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -72,6 +73,43 @@ def _cands(scn):
     return out
 
 
+def fill_dupes(scn):
+    """**같은 원문은 같은 문안** — 이미 쓴 블록과 원문이 같은 자리를 자동으로 채운다.
+
+    ED2 는 NPC 대사가 이야기 단계(지진 직후·몬스터 창궐·소멸·복구)마다 통째로 복제된다.
+    루디아 상점 한 벌이 네 번 되풀이되는 식이라 손으로 옮기면 그만큼 낭비고, 무엇보다
+    **같은 원문에 다른 문안이 붙는 사고**가 난다(ED1 SCN3 도구점 한 벌에서 31곳).
+
+    ⚠ 원문은 제어·공백을 걷어내고 비교한다 — 같은 대사가 줄바꿈 위치만 다른 자리가 많다.
+    """
+    n = int(scn.replace("ED2SCN", ""))
+    done, raw = _script(scn), _raw(scn)
+
+    def key(t):
+        return re.sub(r"\{[^}]*\}|\s|\\x[0-9A-Fa-f]{2}", "", t)
+
+    seen = {}
+    for k, v in done.items():
+        j = raw.get(int(k))
+        if j:
+            seen.setdefault(key(j), v)
+    added = 0
+    for b in load_jp_scene("ED2", n):
+        i = str(b["id"])
+        if i in done or not b.get("body"):
+            continue
+        hit = seen.get(key(raw.get(b["id"], "")))
+        if hit:
+            done[i] = dict(hit)
+            added += 1
+    if added:
+        out = {k: done[k] for k in sorted(done, key=int)}
+        with open(os.path.join(SCRIPT_DIR, f"{scn}.json"), "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=1)
+            f.write("\n")
+    print(f"{scn}: 같은 원문으로 채운 블록 {added}")
+
+
 def status():
     print(f"{'씬':<10}{'블록':>7}{'정본':>7}{'남음':>7}  진행")
     for n in range(1, 14):
@@ -87,9 +125,13 @@ def main():
     ap.add_argument("--from", dest="start", type=int, default=0)
     ap.add_argument("--n", type=int, default=40)
     ap.add_argument("--status", action="store_true")
+    ap.add_argument("--dupes", action="store_true", help="같은 원문 자리를 자동으로 채운다")
     a = ap.parse_args()
     if a.status or not a.scene:
         status()
+        return
+    if a.dupes:
+        fill_dupes(a.scene)
         return
     n = int(a.scene.replace("ED2SCN", ""))
     done, cand, raw = _script(a.scene), _cands(a.scene), _raw(a.scene)
