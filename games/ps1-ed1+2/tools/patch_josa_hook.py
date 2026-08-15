@@ -21,10 +21,10 @@ import struct
 import sys
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-import hangul_map  # noqa: E402
+import hangul_map
 
 sys.path.insert(0, __file__.rsplit("/games/", 1)[0] + "/shared")
-from text.josa import batchim  # noqa: E402
+from text.josa import batchim
 
 # ── 슬롯 코드 상수 ──────────────────────────────────────────────────────────
 SYL_LO, SYL_HI = 0x889F, 0x94FC  # 가~마지막 음절 슬롯 (hangul_map 배치)
@@ -130,8 +130,40 @@ def _i(op, rs, rt, imm):
 REG = {
     n: i
     for i, n in enumerate(
-        "zero at v0 v1 a0 a1 a2 a3 t0 t1 t2 t3 t4 t5 t6 t7 "
-        "s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra".split()
+        [
+            "zero",
+            "at",
+            "v0",
+            "v1",
+            "a0",
+            "a1",
+            "a2",
+            "a3",
+            "t0",
+            "t1",
+            "t2",
+            "t3",
+            "t4",
+            "t5",
+            "t6",
+            "t7",
+            "s0",
+            "s1",
+            "s2",
+            "s3",
+            "s4",
+            "s5",
+            "s6",
+            "s7",
+            "t8",
+            "t9",
+            "k0",
+            "k1",
+            "gp",
+            "sp",
+            "fp",
+            "ra",
+        ]
     )
 }
 
@@ -453,7 +485,55 @@ DRAWSTR_ORIG2 = 0xAFBF0010  # sw ra, 0x10(sp)
 DRAWSTR_RESUME = 0x800A9A68
 
 
-def assemble_hook_stub(stub_base, josa_addr, noop=False):
+# ── 게임별 훅 프로파일 ────────────────────────────────────────────────────────
+# ED2 는 **같은 엔진의 재배치판**이다 — 훅 지점 셋과 워크버퍼를 `tools/check_josa_sites.py`
+# 가 ED1 시그니처로 매번 다시 찾아 이 표와 대조한다(세 지점 다 후보가 하나).
+# ⚠ 원명령이 ED1 과 **바이트까지 같다**(`87c20016`·`8fc30028`·`27bdffe8`·`afbf0010`) —
+# 재컴파일이 아니라 같은 코드가 통째로 옮겨진 것이다. 그래서 스텁 조립 로직을 공유한다.
+# 배치는 ED1 과 같은 수법(VAB 헤더 패딩) — ⚠ ED2.EXE 의 큰 0런 둘(`0xD1C0D`·`0xD4B72`)은
+# **런타임 버퍼**다(가리키는 lui+addiu 가 6곳·132곳). 거기 쓰면 조용히 덮어쓴다.
+SITES = {
+    "ED1": {
+        "lba": 257,
+        "size": 1021952,
+        "hook": 0x800B2054,
+        "prewrap_call": 0x800B1D60,
+        "prewrap": 0x800ACE18,
+        "drawstr": 0x800A9A60,
+        "work": 0x801190B0,
+        "josa_off": 0x0BF5DC,
+        "data_off": 0x0C105C,
+    },
+    "ED2": {
+        "lba": 756,
+        "size": 872448,
+        "hook": 0x80089A8C,
+        "prewrap_call": 0x80089798,
+        "prewrap": 0x800836FC,
+        "drawstr": 0x800805BC,
+        "work": 0x800F1718,
+        "josa_off": 0x09AF74,  # VAB@0x09A550 헤더 패딩 (safe 508B)
+        "data_off": 0x09C9F4,  # VAB@0x09BFD0 헤더 패딩 (safe 508B)
+    },
+}
+
+
+def site(game="ED1"):
+    """게임별 훅 상수 — 파생값(RAM 주소·복귀 지점)까지 채워서 돌려준다."""
+    s = dict(SITES[game])
+    s["hook_resume"] = s["hook"] + 8
+    s["drawstr_resume"] = s["drawstr"] + 8
+    s["prewrap_call_orig"] = 0x0C000000 | ((s["prewrap"] >> 2) & 0x03FFFFFF)
+    # ⚠ 원명령은 **두 게임이 바이트까지 같다**(실측) — 재컴파일이 아니라 옮겨진 코드다.
+    # 그래도 표에 박아 두고 패치 직전에 대조한다(원본이 다르면 거기서 죽는다).
+    s["hook_orig"], s["hook_orig2"] = 0x87C20016, 0x8FC30028  # lh v0,0x16(fp) / lw v1,0x28(fp)
+    s["drawstr_orig"], s["drawstr_orig2"] = 0x27BDFFE8, 0xAFBF0010  # addiu sp,-0x18 / sw ra,0x10
+    s["josa_ram"] = s["josa_off"] - 0x800 + 0x80010000
+    s["data_ram"] = s["data_off"] - 0x800 + 0x80010000
+    return s
+
+
+def assemble_hook_stub(stub_base, josa_addr, noop=False, st=None):
     """0x800B2054에서 j로 진입. 워크 6줄(0x801190B0 + k*66)을 전부 josa_fix로 스캔 —
     훅이 줄 조립마다 재진입하므로 멱등 다중 스캔은 무해하고, "현재 줄" 인덱스를 계산할
     필요가 없다(구판 크래시 1차 원인 = 진입 시점 gp+0x440 미세팅 동적 계산).
@@ -464,11 +544,12 @@ def assemble_hook_stub(stub_base, josa_addr, noop=False):
     noop=True: josa 스캔·프레임을 전부 빼고 **원명령 2개 + 복귀**만 한다. 훅 지점 자체
     (j 재진입 타겟 0x800B2054 포함 두 경로)와 지연 슬롯 처리가 안전한지 josa_fix와 분리해
     A/B로 확인하기 위한 진단 스텁(구 HANDOFF 재개절차 2)."""
+    st = st or site("ED1")
     if noop:
         a = Asm(stub_base)
-        a.emit(HOOK_ORIG)  # lh v0, 0x16(fp)
-        a.emit(HOOK_ORIG2)  # lw v1, 0x28(fp)
-        a.emit(0x08000000 | ((HOOK_RESUME >> 2) & 0x03FFFFFF))  # j 0x800B205C
+        a.emit(st["hook_orig"])  # lh v0, 0x16(fp)
+        a.emit(st["hook_orig2"])  # lw v1, 0x28(fp)
+        a.emit(0x08000000 | ((st["hook_resume"] >> 2) & 0x03FFFFFF))  # j 0x800B205C
         a.nop()
         return a.resolve()
     a = Asm(stub_base)
@@ -476,8 +557,8 @@ def assemble_hook_stub(stub_base, josa_addr, noop=False):
     a.emit(_i(0x2B, REG["sp"], REG["ra"], 4))  # sw ra, 4(sp)
     a.emit(_i(0x2B, REG["sp"], REG["s0"], 8))  # sw s0, 8(sp)
     a.emit(_i(0x2B, REG["sp"], REG["s1"], 12))  # sw s1, 12(sp)
-    a.lui("s0", WORK_BASE >> 16)
-    a.ori("s0", "s0", WORK_BASE & 0xFFFF)  # s0 = 워크 줄 포인터
+    a.lui("s0", st["work"] >> 16)
+    a.ori("s0", "s0", st["work"] & 0xFFFF)  # s0 = 워크 줄 포인터
     a.li16("s1", 6)  # 줄 수
     a.label("slot")
     a.addu("a0", "s0", "zero")
@@ -495,14 +576,14 @@ def assemble_hook_stub(stub_base, josa_addr, noop=False):
     a.emit(_i(0x23, REG["sp"], REG["s0"], 8))  # lw s0, 8(sp)
     a.emit(_i(0x23, REG["sp"], REG["s1"], 12))  # lw s1, 12(sp)
     a.addiu("sp", "sp", 16)
-    a.emit(HOOK_ORIG)  # lh v0, 0x16(fp)
-    a.emit(HOOK_ORIG2)  # lw v1, 0x28(fp)
-    a.emit(0x08000000 | ((HOOK_RESUME >> 2) & 0x03FFFFFF))  # j 0x800B205C
+    a.emit(st["hook_orig"])  # lh v0, 0x16(fp)
+    a.emit(st["hook_orig2"])  # lw v1, 0x28(fp)
+    a.emit(0x08000000 | ((st["hook_resume"] >> 2) & 0x03FFFFFF))  # j 0x800B205C
     a.nop()
     return a.resolve()
 
 
-def assemble_prewrap_stub(stub_base, josa_addr, zero_addr):
+def assemble_prewrap_stub(stub_base, josa_addr, zero_addr, st=None):
     """훅 2 스텁 — `jal 0x800ACE18`(prewrap) 자리에 끼어들어 **평문 병기부터 해결**한 뒤
     원래 대상으로 꼬리 점프한다. 상세 근거는 위 PREWRAP_* 상수 주석.
 
@@ -510,6 +591,7 @@ def assemble_prewrap_stub(stub_base, josa_addr, zero_addr):
     a2=zero guard(cross-line 비활성)로 호출하고 ra를 그대로 유지해 `j 0x800ACE18` —
     prewrap이 호출자(0x800B1D68)에게 직접 복귀한다(스택 프레임 누수 없음).
     a0 저장/복원은 josa_fix가 a0를 보존하더라도 계약을 명시적으로 붙들기 위한 것."""
+    st = st or site("ED1")
     a = Asm(stub_base)
     a.addiu("sp", "sp", -8)
     a.emit(_i(0x2B, REG["sp"], REG["ra"], 4))  # sw ra, 4(sp)
@@ -522,12 +604,12 @@ def assemble_prewrap_stub(stub_base, josa_addr, zero_addr):
     a.emit(_i(0x23, REG["sp"], REG["a0"], 0))  # lw a0, 0(sp)
     a.emit(_i(0x23, REG["sp"], REG["ra"], 4))  # lw ra, 4(sp)
     a.addiu("sp", "sp", 8)
-    a.emit(0x08000000 | ((PREWRAP_ADDR >> 2) & 0x03FFFFFF))  # j 0x800ACE18 (ra 유지 = 꼬리호출)
+    a.emit(0x08000000 | ((st["prewrap"] >> 2) & 0x03FFFFFF))  # j 0x800ACE18 (ra 유지 = 꼬리호출)
     a.nop()
     return a.resolve()
 
 
-def assemble_drawstr_stub(stub_base, josa_addr, zero_addr):
+def assemble_drawstr_stub(stub_base, josa_addr, zero_addr, st=None):
     """훅 3 스텁 — `0x800A9A60`(단문 직접 그리기) 진입. 상세는 DRAWSTR_* 상수 주석.
 
     a0 = 문자열(그대로 josa_fix의 인자). **스택 프레임을 안 만든다** — 진입 시점이라
@@ -535,6 +617,7 @@ def assemble_drawstr_stub(stub_base, josa_addr, zero_addr):
     ra는 `a3`에 대피시킨다: `0x800A9A60`은 a3를 **입력으로 안 받고** 자기가 0x1d로 덮어
     쓰므로 진입 시점의 a3는 죽은 레지스터이고, josa_fix도 a3를 건드리지 않는다.
     끝에서 원명령 2개를 재현하고 0x800A9A68로 복귀한다(9워드 = 36B)."""
+    st = st or site("ED1")
     a = Asm(stub_base)
     a.addu("a3", "ra", "zero")  # ra 대피 (a3 = 진입 시 죽은 레지스터)
     a.lui("a2", zero_addr >> 16)
@@ -542,41 +625,46 @@ def assemble_drawstr_stub(stub_base, josa_addr, zero_addr):
     a.emit(0x0C000000 | ((josa_addr >> 2) & 0x03FFFFFF))  # jal josa_fix
     a.li16("a1", PREWRAP_LIMIT)  # 지연 슬롯 = 스캔 상한
     a.addu("ra", "a3", "zero")  # ra 복원
-    a.emit(DRAWSTR_ORIG)  # addiu sp, sp, -0x18   (원명령 1)
-    a.emit(0x08000000 | ((DRAWSTR_RESUME >> 2) & 0x03FFFFFF))  # j 0x800A9A68
-    a.emit(DRAWSTR_ORIG2)  # 지연 슬롯 = sw ra, 0x10(sp)  (원명령 2)
+    a.emit(st["drawstr_orig"])  # addiu sp, sp, -0x18   (원명령 1)
+    a.emit(0x08000000 | ((st["drawstr_resume"] >> 2) & 0x03FFFFFF))  # j 0x800A9A68
+    a.emit(st["drawstr_orig2"])  # 지연 슬롯 = sw ra, 0x10(sp)  (원명령 2)
     return a.resolve()
 
 
-def build_and_patch(ed: bytearray):
+def build_and_patch(ed: bytearray, game: str = "ED1"):
     """조사 훅 결합 — 검증된 클린 0런 2개에 [josa_fix] / [테이블+쌍+stub] 배치 후
     0x800B2054/58을 j stub/nop으로 패치.
 
     ⚠ 배치 이력: 구판은 0x801059A0(0런처럼 보였으나 **런타임 워크램** — 필드·전투 덤프
     실측 +0x3~+0x101A 기록)에 놓아 코드가 덮여 크래시했다(07-26 도너 검증에서 규명).
     현 위치는 3중 검증(파일 0·참조 0건·런타임 덤프 0 유지) 통과한 도너 풀 예약분."""
+    st = site(game)
     table = build_bit_table()
     table += b"\x00" * (-len(table) % 4)  # ⚠ 스텁 4정렬 — j 인코딩이 하위 2비트를 버린다
     zero_guard = b"\x00\x00\x00\x00"  # cross-line 비활성용 상수 0 (josa_fix a2)
     pairs = b"".join(struct.pack(">HH", a, b) for a, b in PAIRS)  # 빅엔디언 코드 그대로
-    josa_addr = PLACE_JOSA_RAM
-    table_addr = PLACE_DATA_RAM
+    josa_addr = st["josa_ram"]
+    table_addr = st["data_ram"]
     zero_addr = table_addr + len(table)
     pairs_addr = zero_addr + len(zero_guard)
     josa = assemble_routine(josa_addr, table_addr, pairs_addr)
     stub_addr = pairs_addr + len(pairs)
     assert stub_addr % 4 == 0, "스텁 비정렬"
     noop = os.environ.get("JOSA_NOOP") == "1"  # 진단 A/B: josa 없이 훅 지점 안전성만 검증
-    stub = assemble_hook_stub(stub_addr, josa_addr, noop=noop)
+    stub = assemble_hook_stub(stub_addr, josa_addr, noop=noop, st=st)
     pre_addr = stub_addr + len(stub)
-    pre_stub = assemble_prewrap_stub(pre_addr, josa_addr, zero_addr)
+    pre_stub = assemble_prewrap_stub(pre_addr, josa_addr, zero_addr, st=st)
     draw_addr = pre_addr + len(pre_stub)
-    draw_stub = assemble_drawstr_stub(draw_addr, josa_addr, zero_addr)
+    draw_stub = assemble_drawstr_stub(draw_addr, josa_addr, zero_addr, st=st)
     data = table + zero_guard + pairs + stub + pre_stub + draw_stub
     # ⚠ 한계 자체가 맞는지부터 본다 — 상수는 손으로 계산한 값이라 원본·배치가 바뀌면 거짓이 된다
-    verify_safe_bounds(ed)
-    assert len(josa) <= JOSA_SAFE, f"josa 루틴 {len(josa)}B — VAB 파형 침범(한계 {JOSA_SAFE}B)"
-    assert len(data) <= DATA_SAFE, f"데이터+스텁 {len(data)}B — VAB 파형 침범(한계 {DATA_SAFE}B)"
+    safe = verify_safe_bounds(ed, game)
+    assert len(josa) <= safe["josa"], (
+        f"josa 루틴 {len(josa)}B — VAB 파형 침범(한계 {safe['josa']}B)"
+    )
+    assert len(data) <= safe["data"], (
+        f"데이터+스텁 {len(data)}B — VAB 파형 침범(한계 {safe['data']}B)"
+    )
 
     def fo(ram):
         return ram - 0x80010000 + 0x800
@@ -585,20 +673,22 @@ def build_and_patch(ed: bytearray):
         p = fo(ram)
         assert all(b == 0 for b in ed[p : p + len(blob)]), f"배치 영역 0 아님 @0x{ram:08X}"
         ed[p : p + len(blob)] = blob
-    hp = fo(HOOK_ADDR)
-    assert struct.unpack_from("<I", ed, hp)[0] == HOOK_ORIG, "훅 지점 원명령 불일치"
-    assert struct.unpack_from("<I", ed, hp + 4)[0] == HOOK_ORIG2, "훅 지점+4 원명령 불일치"
+    hp = fo(st["hook"])
+    assert struct.unpack_from("<I", ed, hp)[0] == st["hook_orig"], "훅 지점 원명령 불일치"
+    assert struct.unpack_from("<I", ed, hp + 4)[0] == st["hook_orig2"], "훅 지점+4 원명령 불일치"
     ed[hp : hp + 4] = struct.pack("<I", 0x08000000 | ((stub_addr >> 2) & 0x03FFFFFF))
     ed[hp + 4 : hp + 8] = struct.pack("<I", 0)  # nop (지연 슬롯 정리)
     # 훅 2: prewrap 호출 지점의 jal 타깃만 우리 스텁으로 — 원명령 재현이 필요 없는 1워드 패치.
-    pp = fo(PREWRAP_CALL)
-    assert struct.unpack_from("<I", ed, pp)[0] == PREWRAP_CALL_ORIG, "prewrap 호출 원명령 불일치"
+    pp = fo(st["prewrap_call"])
+    assert struct.unpack_from("<I", ed, pp)[0] == st["prewrap_call_orig"], (
+        "prewrap 호출 원명령 불일치"
+    )
     if os.environ.get("JOSA_NOPREWRAP") != "1":  # 진단 A/B: 훅 2만 빼고 빌드
         ed[pp : pp + 4] = struct.pack("<I", 0x0C000000 | ((pre_addr >> 2) & 0x03FFFFFF))
     # 훅 3: 단문 직접 그리기 진입을 2워드(j stub + nop)로 — 원명령 2개는 스텁 말미에서 재현.
-    dp = fo(DRAWSTR_ADDR)
-    assert struct.unpack_from("<I", ed, dp)[0] == DRAWSTR_ORIG, "훅3 원명령 불일치"
-    assert struct.unpack_from("<I", ed, dp + 4)[0] == DRAWSTR_ORIG2, "훅3 원명령+4 불일치"
+    dp = fo(st["drawstr"])
+    assert struct.unpack_from("<I", ed, dp)[0] == st["drawstr_orig"], "훅3 원명령 불일치"
+    assert struct.unpack_from("<I", ed, dp + 4)[0] == st["drawstr_orig2"], "훅3 원명령+4 불일치"
     if os.environ.get("JOSA_NODRAWSTR") != "1":  # 진단 A/B: 훅 3만 빼고 빌드
         ed[dp : dp + 4] = struct.pack("<I", 0x08000000 | ((draw_addr >> 2) & 0x03FFFFFF))
         ed[dp + 4 : dp + 8] = struct.pack("<I", 0)  # nop (지연 슬롯)
@@ -623,26 +713,23 @@ JOSA_SAFE = 0x0BF7D8 - PLACE_JOSA_OFF  # 508B — VAB@0x0BEBB8 파형 시작 직
 DATA_SAFE = 0x0C1258 - PLACE_DATA_OFF  # 508B — VAB@0x0C0638 파형 시작 직전까지
 
 
-def verify_safe_bounds(ed):
-    """박아 둔 한계가 **원본 구조에서 유도한 값과 같은가**(`tools/vab.py`).
+def verify_safe_bounds(ed, game="ED1"):
+    """배치 자리의 안전 한계를 **원본 구조에서 유도**한다(`tools/vab.py`) → {"josa","data"}.
 
-    ⚠ 위 두 상수는 손으로 한 번 계산해 박은 것이고, 재검증 절차는 오래 **주석에만** 있었다.
-    산문으로 둔 규칙은 아무도 안 돌린다 — 여기서 실행 가능하게 만든다. 어긋나면 그 자리에서
-    죽는다(원본이 다르거나 배치를 옮겼는데 한계를 안 고친 것이다).
+    ⚠ 예전엔 손으로 계산한 상수를 박아 두고 재검증 절차는 주석에만 있었다 — 산문으로 둔
+    규칙은 아무도 안 돌린다. 이제 매번 유도하고, 뱅크 밖이면 그 자리에서 죽는다.
+    ⚠ 유도값을 그대로 쓴다(상수와 대조하지 않는다) — 게임마다 패딩 크기가 다르다
+    (ED1 508·508, ED2 508·508 실측이지만 뱅크마다 509 인 자리도 있다).
     """
     import vab
 
-    for name, off, const in (
-        ("JOSA", PLACE_JOSA_OFF, JOSA_SAFE),
-        ("DATA", PLACE_DATA_OFF, DATA_SAFE),
-    ):
+    st = site(game)
+    out = {}
+    for name, off in (("josa", st["josa_off"]), ("data", st["data_off"])):
         got = vab.safe_len(ed, off)
-        assert got is not None, f"{name} 배치 0x{off:X} 가 VAB 뱅크 밖이다 — 전제가 바뀌었다"
-        assert got == const, (
-            f"{name} 안전 한계가 어긋난다 — 구조에서 유도 {got}B ≠ 박아 둔 {const}B. "
-            "원본이 다르거나 배치를 옮겼다."
-        )
-    return True
+        assert got is not None, f"{game} {name} 배치 0x{off:X} 가 VAB 뱅크 밖이다 — 전제가 바뀌었다"
+        out[name] = got
+    return out
 
 
 ED_LBA, ED_SIZE = 257, 1021952
@@ -849,6 +936,17 @@ def _selftest():
         n = sum(1 for _ in md.disasm(blob, 0))
         assert n == len(blob) // 4, f"{name}: capstone {n}/{len(blob) // 4} — 미디코드 명령"
         print(f"  ✓ capstone {name}: {n}/{len(blob) // 4} instr")
+
+    # ── ED2 조립·배치 예행 — **이미지에는 안 쓴다.** 훅을 켜기 전에 「조립되는가 ·
+    # 배치가 VAB 파형을 안 밟는가 · 원명령이 표와 같은가」까지는 정적으로 확인할 수 있다.
+    # ⚠ 여기까지 통과해도 **인게임 확인은 따로다** — 틀리면 증상이 크래시다.
+    from common import extract
+
+    for game in ("ED1", "ED2"):
+        st = site(game)
+        img = bytearray(extract(st["lba"], st["size"]))
+        build_and_patch(img, game)  # 실패하면 assert 로 죽는다
+        print(f"  ✓ {game} 훅 조립·배치 예행 통과 (안전한계 {verify_safe_bounds(img, game)})")
 
 
 if __name__ == "__main__":

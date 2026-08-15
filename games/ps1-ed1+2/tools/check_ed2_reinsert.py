@@ -31,8 +31,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-from common import OUT_DIR  # noqa: E402
+import reinsert_kr_pilot as R
+from common import OUT_DIR
 
 SCENES = [f"ED2SCN{n}" for n in range(1, 14)]
 
