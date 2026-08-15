@@ -84,14 +84,18 @@ DUMMY_LBA = 91700  # 재배치 목적지(DUMMY.;1 시작). 순차 할당.
 | JP 씬 추출       | ✅ `work/derived/scn_jp/ED2SCN1~13.json` (블록 계 7,875)          |
 | 정발 ED2 코퍼스  | ✅ `work/derived/dos_kr/ED2/` **357표**                           |
 | 씬↔정발 표 매칭  | ✅ `ed2_scene_tables.json` ([ed2-scene-map.md](ed2-scene-map.md)) |
-| 배정 제안(LaBSE) | ✅ 13씬 4,372쌍 (2분 39초면 재생성)                               |
-| 배정 정본        | 🌱 `ED2SCN1` 씨앗 229건 — **미검토**                              |
+| 번역 정본(SCN)   | ✅ `script/ED2SCN1~13.json` — 13씬 완주(예행 통과 7,025)          |
+| 오버레이 주소    | ✅ ED2 = `0x80165000` (`check_overlay_base.py` 가 매번 재도출)     |
 | 재삽입           | ⬜ 체인에 안 올림 — **ED1 QA 뒤에**(위 🔴)                        |
 
 **남은 관문:** `patch_sys_ui._scn_layout()` 이 `ED1SCN1~6` 만 돌려준다. 재삽입·검출기가
 전부 이걸 물고 돌므로 ED2 를 넣는 순간 **모든 도구가 ED2 를 같이 본다** — 한꺼번에 켜지 말고
-씬 하나로 먼저 확인할 것. 그리고 그 전에 **`OVERLAY_RAM_BASE` 가 ED2 에서도 맞는지** 봐야
-한다([ed2-status.md](ed2-status.md) 「다음 할 일」).
+씬 하나로 먼저 확인할 것. `OVERLAY_RAM_BASE` 는 이미 게임별 표(`OVERLAY_BASE`)를 타고
+`overlay_for(씬)` 이 씬마다 세운다 — 안 세우고 부르면 죽는다(폴백 없음).
+
+⚠ **국가명 플레이트 셋이 아직 어느 표에도 없다** — `ファーレーン`·`ウォンリーク`·`ラヌーラ`
+(ED2SCN1 jp531~533). 지금은 ED2 가 체인 밖이라 무해하지만, 올리는 날 `patch_sys_ui.PLACES`
+에 넣지 않으면 화면에 일본어로 남는다.
 
 ## 세션 시작 체크리스트
 
