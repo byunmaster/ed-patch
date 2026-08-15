@@ -7,7 +7,32 @@ ORIG_DIR = os.path.join(ROOT, "..", "..", "originals", "jp", "ps1-ed1+2")  # 원
 # 작업 산출물은 전부 `work/` 한 칸 아래로 모은다(gitignore 한 줄로 덮이고, `rm -rf work/`가
 # 곧 리셋이다). 성격이 다르니 칸을 나눈다 —
 WORK_DIR = os.path.join(ROOT, "work")  # 컨테이너
-BUILD_DIR = os.path.join(WORK_DIR, "build")  # 테스트 이미지(BIN/CUE) — 순수 출력
+
+
+def _build_tag():
+    """빌드 산출물을 가르는 꼬리표 — 기본은 **현재 git 브랜치**다.
+
+    ⚠ 한 이미지로 여러 갈래를 동시에 보긴 어렵다(ED1 QA 를 도는 사이 ED2 빌드가 덮어쓴다).
+    그래서 `work/build/<꼬리표>/` 로 칸을 나눈다 — **도구는 하나도 안 고쳐도 된다.**
+    열몇 개가 `BUILD_DIR` 밑의 파일명을 박아 쓰는데, 디렉터리만 갈리면 그대로 따라온다.
+
+    `ED_BUILD_TAG` 로 덮어쓴다(브랜치와 무관한 실험용). 브랜치를 못 읽으면 `local`.
+    """
+    tag = os.environ.get("ED_BUILD_TAG")
+    if not tag:
+        head = os.path.join(ROOT, "..", "..", ".git", "HEAD")
+        try:
+            with open(head, encoding="utf-8") as f:
+                ref = f.read().strip()
+            tag = ref.rsplit("/", 1)[-1] if ref.startswith("ref:") else ref[:7]
+        except OSError:
+            tag = "local"
+    return "".join(c if (c.isalnum() or c in "-_.") else "-" for c in tag) or "local"
+
+
+BUILD_TAG = _build_tag()
+# 테스트 이미지(BIN/CUE) — 순수 출력. ⚠ **꼬리표별로 갈린다**(위 `_build_tag`).
+BUILD_DIR = os.path.join(WORK_DIR, "build", BUILD_TAG)
 OUT_DIR = os.path.join(WORK_DIR, "derived")  # 원본에서 파생 — ⚠ **빌드가 읽는다**(입력)
 REVIEW_DIR = os.path.join(WORK_DIR, "review")  # 검토표·페이로드 — ⚠ 원문·정발 문안 포함
 DIST_DIR = os.path.join(WORK_DIR, "dist")  # 배포 차분(xdelta/BPS) — 아직 미사용

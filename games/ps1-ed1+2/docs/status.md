@@ -60,7 +60,7 @@
 
 ```bash
 cd games/ps1-ed1+2
-python3 tools/build.py        # → work/build/Eiyuu Densetsu (KR).bin/.cue
+python3 tools/build.py        # → work/build/<브랜치>/Eiyuu Densetsu (KR).bin/.cue
 ```
 
 **통과하면 그대로 작업을 시작하면 된다.** 머신이 바뀌었든 파생물이 낡았든 상관없다 —

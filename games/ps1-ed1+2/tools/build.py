@@ -216,7 +216,9 @@ def main():
     check_font_generation()
     check_screen_gates()
     _requa_note()
-    print(f"\n완료: {FINAL}\n테스트는 이 하나만: {os.path.basename(FINAL_CUE)}")
+    from common import BUILD_TAG
+
+    print(f"\n완료: {FINAL}\n꼬리표 [{BUILD_TAG}] — 테스트는 이 하나만: {os.path.basename(FINAL_CUE)}")
 
 
 if __name__ == "__main__":

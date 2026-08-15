@@ -34,18 +34,43 @@ MEMCARDS="$SUPPORT/memcards"
 
 LEAF=ps1-ed1+2                                        # originals/jp/ps1-ed1+2 와 같은 이름
 CARD_PREFIX="Legend of Heroes I & II, The - Eiyuu Densetsu (Japan)"
-BUILD="$REPO/games/ps1-ed1+2/work/build"
-IMAGE="$BUILD/Eiyuu Densetsu (KR).cue"
+# ⚠ 빌드는 **꼬리표(브랜치)별로 갈린다** — `work/build/<꼬리표>/`. 한 이미지로 여러 갈래를
+# 동시에 보기 어려워서다(ED1 QA 를 도는 사이 ED2 빌드가 덮어썼다). 인자를 안 주면 가장
+# 최근에 빌드된 칸을 고른다.
+BUILDS="$REPO/games/ps1-ed1+2/work/build"
+TAG=${ED_BUILD_TAG:-}
+IMAGE=
 
 SYNC=1; PULL=0
 for a in "$@"; do
   case "$a" in
     --no-sync) SYNC=0 ;;
     --pull) PULL=1 ;;
+    --tag=*) TAG=${a#--tag=} ;;
     -*) echo "모르는 옵션: $a" >&2; exit 2 ;;
-    *) IMAGE=$a ;;
+    *.cue|*.bin) IMAGE=$a ;;
+    *) TAG=$a ;;
   esac
 done
+
+if [ -z "$IMAGE" ]; then
+  if [ -z "$TAG" ]; then
+    # 기본은 **현재 브랜치**다(`pull-build.sh` 와 같은 규칙) — 이미지 둘을 동시에 보는
+    # 일이 없으니 그게 가장 단순하다.
+    TAG=$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null | sed 's#.*/##; s#[^A-Za-z0-9._-]#-#g')
+    [ -n "$TAG" ] || { echo "브랜치를 못 읽었다 — 꼬리표를 직접 줘라" >&2; exit 1; }
+    if [ ! -d "$BUILDS/$TAG" ]; then
+      # ⚠ 조용히 다른 칸으로 넘어가지 않는다 — 엉뚱한 이미지를 켜고도 켠 줄 안다.
+      echo "⛔ '$TAG' 빌드가 없다.  있는 것: $(ls "$BUILDS" 2>/dev/null | tr '\n' ' ')" >&2
+      exit 1
+    fi
+    echo "꼬리표: $TAG (현재 브랜치)"
+  fi
+  BUILD="$BUILDS/$TAG"
+  IMAGE="$BUILD/Eiyuu Densetsu (KR).cue"
+else
+  BUILD=$(dirname "$IMAGE")
+fi
 
 # ── 빌드 당겨오기(선택) ─────────────────────────────────────────────────────
 [ "$PULL" = 1 ] && sh "$HERE/pull-build.sh"
