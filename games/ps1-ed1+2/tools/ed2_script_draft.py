@@ -81,6 +81,10 @@ def fill_dupes(scn):
     **같은 원문에 다른 문안이 붙는 사고**가 난다(ED1 SCN3 도구점 한 벌에서 31곳).
 
     ⚠ 원문은 제어·공백을 걷어내고 비교한다 — 같은 대사가 줄바꿈 위치만 다른 자리가 많다.
+
+    **씬을 넘어서도 본다**(2026-08-15). 같은 마을이 씬마다 다시 나오고 항구·상점·검문 대사가
+    통째로 복제된다 — 실측 459블록이 이미 옮긴 문안과 글자까지 같았다. 자기 씬을 먼저 넣어
+    같은 원문이 씬마다 갈리는 일이 없게 한다.
     """
     n = int(scn.replace("ED2SCN", ""))
     done, raw = _script(scn), _raw(scn)
@@ -89,10 +93,16 @@ def fill_dupes(scn):
         return re.sub(r"\{[^}]*\}|\s|\\x[0-9A-Fa-f]{2}", "", t)
 
     seen = {}
-    for k, v in done.items():
-        j = raw.get(int(k))
-        if j:
-            seen.setdefault(key(j), v)
+    for s in [scn] + sorted(
+        os.path.basename(p)[:-5]
+        for p in os.listdir(SCRIPT_DIR)
+        if p.startswith("ED2SCN") and p.endswith(".json")
+    ):
+        r = raw if s == scn else _raw(s)
+        for k, v in _script(s).items():
+            j = r.get(int(k))
+            if j:
+                seen.setdefault(key(j), v)
     added = 0
     for b in load_jp_scene("ED2", n):
         i = str(b["id"])
