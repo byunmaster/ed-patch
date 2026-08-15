@@ -32,6 +32,11 @@ for t in check_tail_cut check_block_join check_terms check_spellings check_forbi
   out=$("$PY" "$G/$t.py" 2>&1) || fail=1
   echo "$out" | tail -3 | sed 's/^/  /'
 done
+# ED2 는 아직 재삽입 체인 밖이라 빌드가 문안을 안 본다 — 예행으로 대신 본다.
+# ⚠ **게이트로 안 세운다**(exit 코드를 안 본다) — 제어런 재현 불가처럼 「지금 못 고치는」
+# 자리가 섞여 있다. 수치가 나빠지면 사람이 본다.
+"$PY" "$G/check_ed2_reinsert.py" -q 2>&1 | tail -1 | sed 's/^/  /'
+
 if [ -n "$DONE" ]; then
   # shellcheck disable=SC2086
   out=$("$PY" "$G/check_speakers.py" $DONE 2>&1) || fail=1
