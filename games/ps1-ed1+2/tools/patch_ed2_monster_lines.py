@@ -21,6 +21,7 @@
   python3 tools/patch_ed2_monster_lines.py          # 이미지에 적용
 """
 
+import hashlib
 import json
 import os
 import re
@@ -154,11 +155,65 @@ def main():
             buf[off : off + slot] = b + b"\x00" * (slot - len(b))
         with open(IMG, "r+b") as f:
             total += write_user_data(f, lba, bytes(buf), label=f"ED2MON{group} 전투 대사")
+    total += _apply_sha_table()
     print(
         f"ED2MON: 섹터 {total}개 수정 — 전투 대사 {len(fit)}건 제자리"
         f" (넘쳐 보류 {len(over)} · 문안 없음 {len(none)})"
     )
     return 0
+
+
+SHA_TABLE = os.path.join(ROOT, "script", "ED2MON_LINES.json")
+
+
+def _apply_sha_table():
+    """`script/ED2MON_LINES.json`(sha1 키) 를 **제자리 치환**한다.
+
+    ⚠ **위 열거가 절반을 못 본다.** 널 구분으로 조각을 뜨는데 대사 앞에 이진이 붙으면
+    조각째 디코드가 깨져 통째로 버려진다(디코드 실패 43,993건 실측 2026-08-16). 그래서
+    이 표는 **빌드 이미지에서 꼬리를 훑어** 원문을 찾는다 — `patch_scn_orphans` 와 같은 수법.
+
+    ⚠ **원문은 리포에 안 남긴다** — 키가 JP sha1 앞 10자다(`monster_lines_ed2.json` 은
+    JP 를 그대로 키로 쓰는 옛 표라, 이 방식으로 옮겨 가야 한다).
+    """
+    if not os.path.exists(SHA_TABLE):
+        return 0
+    with open(SHA_TABLE, encoding="utf-8") as f:
+        table = json.load(f)
+    n = 0
+    with open(IMG, "r+b") as f:
+        for _group, (lba, size) in sorted(MON.items()):
+            data = bytearray(extract(lba, size, path=IMG))
+            here = {}
+            for part in bytes(data).split(b"\x00"):
+                if not (4 <= len(part) <= 1024):
+                    continue
+                for k in range(len(part) - 3):
+                    try:
+                        t = part[k:].decode("cp932")
+                    except UnicodeDecodeError:
+                        continue
+                    here.setdefault(hashlib.sha1(t.encode()).hexdigest()[:10], t)
+            hits = 0
+            for key, kr in table.items():
+                jp = here.get(key)
+                if jp is None:
+                    continue
+                jb, kb = jp.encode("cp932"), _enc(kr)
+                for m in list(re.finditer(re.escape(jb), bytes(data))):
+                    i, e = m.start(), m.end()
+                    nxt = e
+                    while nxt < len(data) and data[nxt] == 0:
+                        nxt += 1
+                    if nxt == e:  # 널종단이 아니면 남의 문자열 한복판이다
+                        continue
+                    if len(kb) + 1 > nxt - i:
+                        continue
+                    data[i:nxt] = (kb + b"\x00").ljust(nxt - i, b"\x00")
+                    hits += 1
+            if hits:
+                n += write_user_data(f, lba, bytes(data), label=f"ED2MON 대사(표) {hits}곳")
+    return n
 
 
 if __name__ == "__main__":
