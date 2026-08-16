@@ -208,6 +208,24 @@ SCN_PLACES = [
     ("竜の卵", "용의 알"),
 ]
 
+
+def _ed2_scn_places():
+    """ED2 씬 플레이트 — 표기 정본은 `patch_ed2_sys.PLACES_ED2` 하나다.
+
+    ⚠ **여기에 한글을 다시 적으면 안 된다.** 같은 지명을 두 표에 적으면 한쪽만 고쳤을 때
+    한 디스크가 두 말을 한다(이 파일이 계속 경계하는 그 사고). 원문 문자열로 끌어온다.
+
+    ED2 씬을 체인에 올리자 **플레이트 200곳이 일본어로 남았다**(2026-08-16). 지명 34개가
+    전부 정본에 있었는데 **SCN 플레이트 표가 ED2 를 안 보고 있었을 뿐**이다.
+    """
+    import re
+
+    from patch_ed2_sys import PLACES_ED2
+
+    # ⚠ 그 표엔 지명 아닌 것도 섞여 있다(`スロット１` → `슬롯1`). 플레이트 인코더는
+    # 완성형만 받으므로(`hangul_map.encode_kr`) **한글·공백뿐인 값만** 쓴다.
+    return [(jp, kr) for jp, kr in PLACES_ED2.items() if not re.search(r"[^가-힣 ]", kr)]
+
 # 주인공 기본 이름 (새 게임 시 세이브로 복사, HUD·상태창 표기) — 12B 슬롯.
 # 0x80C リュナン(ED2 주인공)은 ED2 작업 시 결정(DOS 정발 ED2 주인공은 '아트라스') — 미터치.
 HERO = {0x800: "세리오스"}  # セリオス
@@ -606,14 +624,29 @@ def main():
 # 세그먼트마다 지명이 박혀 있다(ED1 6파일 계 168곳). 헤더 판별: 앞 바이트가 포인터
 # 꼬리(0x80)/널/파일시작이고 뒤가 널. 치환은 동일 길이 유지(KR+널 패딩)라 대사 내
 # 오탐이 있어도 같은 자리 한글화일 뿐 구조 훼손 없음.
-SCN_FILES = [
-    ("ED1SCN1", 1183, 206260),
-    ("ED1SCN2", 1284, 217940),
-    ("ED1SCN3", 1391, 199084),
-    ("ED1SCN4", 1489, 134184),
-    ("ED1SCN5", 1555, 171392),
-    ("ED1SCN6", 1639, 100270),
-]
+# ⚠ **정본은 `reinsert_kr_pilot.SCN_FILES` 하나다**(2026-08-16 통합). 여기 같은 표를 또
+# 두었더니 **ED2SCN1 이 한쪽에만 올라가** 재삽입은 되는데 지명 플레이트·이름 사본 치환은
+# 안 도는 상태가 됐다 — 두 표가 어긋나도 빌드는 성공한다(조용히 틀리는 부류).
+def _scn_files():
+    from reinsert_kr_pilot import SCN_FILES as _S
+
+    return _S
+
+
+class _LazySCN:
+    """`SCN_FILES` 를 정본에서 늦게 끌어온다(순환 import 회피 — reinsert 가 이 모듈을 쓴다)."""
+
+    def __iter__(self):
+        return iter(_scn_files())
+
+    def __len__(self):
+        return len(_scn_files())
+
+    def __getitem__(self, i):
+        return _scn_files()[i]
+
+
+SCN_FILES = _LazySCN()
 
 
 # 캐릭터명 사본 — SCN 오버레이가 들고 있는 **널종단 단독 이름 문자열**. 필드 대사의 %s
@@ -663,7 +696,8 @@ def is_name_plate(body):
     body = (body or "").strip()
     if not body:
         return False
-    for nm in {j for j, _ in PLACES + SCN_PLACES} | {j for j, _, plate in CHAR_NAMES if plate}:
+    allp = PLACES + SCN_PLACES + _ed2_scn_places()
+    for nm in {j for j, _ in allp} | {j for j, _, plate in CHAR_NAMES if plate}:
         if body == nm or (body.endswith(nm) and len(body) - len(nm) <= 2):
             return True
     return False
@@ -696,7 +730,7 @@ def patch_scn_headers(f):
     import re
 
     jp2kr = {}
-    for jp, kr in PLACES + SCN_PLACES:
+    for jp, kr in PLACES + SCN_PLACES + _ed2_scn_places():
         jp2kr.setdefault(jp, kr)
     for jp, kr, _ in CHAR_NAMES:  # 대사 %s가 주입하는 이름 사본
         jp2kr.setdefault(jp, kr)
@@ -728,12 +762,20 @@ def patch_scn_headers(f):
                 # 1B뿐이라 ②④에도 안 걸린다 — 네 슬롯 중 둘만 바뀌고 둘이 일본어로
                 # 남아 있었다(SCN2 구엔의 탑, **포인터가 직접 가리키는 살아있는 자료**다.
                 # 빌드 이미지를 세어 찾았다 — 스크래치패드 `plateleft.py`, 2026-08-10).
+                # ⑥길이가 **정확히 같으면** 앞 조건을 안 본다. 뒤가 널이라 대사가 아닌 게
+                # 이미 보장되고(대사면 본문이 이어진다), 같은 길이면 **바이트가 한 칸도 안
+                # 밀려** 구조를 못 깨뜨린다. ED2 를 올리자 `グロストス城` 4곳이 ①~⑤ 어디에도
+                # 안 걸려 일본어로 남았다(2026-08-16) — 앞이 `40 10`·`35 37` 처럼 자원 표
+                # 한복판이라 「경계」로 볼 바이트가 없다. 앞 조건은 **길이가 바뀔 때만**
+                # 필요한 안전장치였다.
+                same_len = len(kb) == len(jb)
                 if (
                     i == 0
                     or data[i - 1] in (0x80, 0x00, 0xFF)
                     or (i >= 2 and data[i - 2] == 0)
                     or data[e : e + 4] == b"\x00" * 4
                     or data[e : e + 4] == b"\x00\x00\x25\x63"
+                    or same_len
                 ) and (e < len(data) and data[e] == 0):
                     a = e  # 가용 = 이름 + 뒤따르는 널 패딩(다음 데이터 전까지)
                     while a < len(data) and data[a] == 0:

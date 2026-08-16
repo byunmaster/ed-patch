@@ -196,9 +196,11 @@ def main():
     run("patch_gfx_cards.py")
     run("patch_hud_names.py")
     run("patch_sys_ui.py")
-
     shutil.copyfile(KR_UI, FINAL)
     write_cue(FINAL_CUE, os.path.basename(FINAL))
+    # ⚠ 블록으로 안 잡히는 씬 문자열(포인터 테이블 한복판) — 배정·조판 경로 밖이라
+    #   여기서만 잡힌다. 씬 재삽입·플레이트 치환 **뒤** · 최종 이미지 위에서 돈다.
+    run("patch_scn_orphans.py")
     run("patch_ed2_sys.py")
     run(
         "patch_ed2_battle.py"
