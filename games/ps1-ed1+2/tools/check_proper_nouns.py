@@ -39,7 +39,6 @@ import patch_items
 import patch_sys_ui
 import reinsert_kr_pilot as R
 from check_align_fit import jp_text
-from patch_sys_ui import SCN_FILES
 
 # 지명 접미 — 원문/문안 양쪽에서 떼고 핵심어만 본다(`クルスの村` ↔ `크루즈`).
 #
@@ -116,7 +115,7 @@ def scan(scenes=None, verbose=False):
     pairs = _canon_pairs()
     tot = 0
     kinds = collections.Counter()
-    for scn, _l, _z in SCN_FILES:
+    for scn in R.scene_list(scenes):
         if scenes and scn not in scenes:
             continue
         # ⚠ **블록 경계가 원문과 우리가 다르게 갈린다.** 원문 `…アクダムの手から` / `解放…`

@@ -45,7 +45,7 @@ _REPO = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 sys.path.insert(0, os.path.join(_REPO, "shared"))
-from text.krwrap import wrap_pages as kr_wrap_pages  # noqa: E402
+from text.krwrap import wrap_pages as kr_wrap_pages
 
 # 확정 락 우회 여부는 **여기서 한 번** 확정한다(락 관리 도구가 자기 프로세스에서 켠다).
 # 실행 중 os.environ 을 다시 보면, 도중에 import 되는 도구가 켠 우회에 빌드 검증이 조용히
@@ -3004,6 +3004,30 @@ def load_translations(align_name, scn_name):
     return out, skipped, applied
 
 
+ED2_SCENES = [f"ED2SCN{n}" for n in range(1, 14)]
+
+
+def scene_list(scenes=None):
+    """검출기가 돌 씬 목록 — 체인 등록분 + **요청했을 때만** ED2.
+
+    ⚠ **여기가 조용한 초록불의 자리였다**(2026-08-15 실측). 검출기는 씬을 `_scn_layout()`
+    에서 얻는데 그건 **재삽입 체인에 올라간 씬**뿐이라, ED2 씬 이름을 인자로 줘도 루프가
+    한 번도 안 돌고 `✅` 가 떴다 — `check_speakers`·`check_dup_jp`·`check_proper_nouns`
+    셋이 13씬 전수에서 「이상 없음」을 냈는데 **본 블록이 0개**였다. 실패가 아니라
+    **검사 자체가 없었다**는 뜻이라, 통과보다 나쁘다.
+
+    무인자(=게이트로 도는 자리)는 **종전대로 체인 등록분만** 본다. ED2 는 아직 「지금 고칠
+    수 있는 것」이 아닌 자리가 섞여 있어(제어런 재현 불가·체인 등록 때 풀 보물상자 사본)
+    게이트를 늘 빨간불로 만든다 — 루트 `CLAUDE.md` 「게이트는 지금 고칠 수 있는 것만」.
+    """
+    from patch_sys_ui import _scn_layout
+
+    names = [n for n, _l, _z in _scn_layout()]
+    if scenes:
+        names += [n for n in ED2_SCENES if n in scenes and n not in names]
+    return names
+
+
 def iter_candidates(scenes=None):
     """전 씬을 돌며 `(씬, eid, JP raw, 재조립 후보, 번역 항목)` 을 낸다 — **검출기 공용 순회**.
 
@@ -3014,9 +3038,7 @@ def iter_candidates(scenes=None):
     것"을 보는 도구라 예외 하나로 전수 조사가 멈추면 안 된다. 빌드 쪽 게이트는 따로다.
     ⚠ `build_candidate` 를 직접 부르므로 **재배치·제외(`size`) 전** 값이다.
     """
-    from patch_sys_ui import _scn_layout
-
-    for name, _lba, _size in _scn_layout():
+    for name in scene_list(scenes):
         if scenes and name not in scenes:
             continue
         with open(os.path.join(OUT_DIR, "scn_jp", f"{name}.json"), encoding="utf-8") as f:
@@ -3024,16 +3046,19 @@ def iter_candidates(scenes=None):
         raw = {
             e["entry_id"]: bytes.fromhex(e["raw_hex"]) for e in doc["entries"] if e.get("raw_hex")
         }
-        tr, _, _ = load_translations(name.replace("SCN", "_SCN"), name)
-        for eid, t in sorted(tr.items()):
-            if eid not in raw:
-                continue
-            try:
-                cand, _why = build_candidate(raw[eid], t, eid)
-            except Exception:  # noqa: BLE001 — 검사기는 빌드를 안 세운다
-                continue
-            if cand is not None:
-                yield name, eid, raw[eid], cand, t
+        # ⚠ 오버레이 베이스를 씬마다 세운다 — ED2 는 ED1 과 베이스가 다르다(`OVERLAY_BASE`).
+        #   안 세우면 ED2 블록이 ED1 베이스로 조립돼 조용히 다른 바이트가 나온다.
+        with overlay_for(name):
+            tr, _, _ = load_translations(name.replace("SCN", "_SCN"), name)
+            for eid, t in sorted(tr.items()):
+                if eid not in raw:
+                    continue
+                try:
+                    cand, _why = build_candidate(raw[eid], t, eid)
+                except Exception:  # noqa: BLE001 — 검사기는 빌드를 안 세운다
+                    continue
+                if cand is not None:
+                    yield name, eid, raw[eid], cand, t
 
 
 _REV_SYL = None

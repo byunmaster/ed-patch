@@ -123,6 +123,56 @@ def _corpus_lines():
     return out
 
 
+def scan_similar(threshold=0.90, report=0.80):
+    """축자 일치를 피했어도 **정발 문장과 사실상 같은** 자리를 찾는다(ED2 정본 전용).
+
+    **왜.** ED1 은 정발 문안을 `textmap` **포인터**로 쓰므로 리포에 문장이 안 남는다.
+    ED2 는 우리가 직접 쓴 문장이 `script/*.json` 에 그대로 남는다 — 그래서 「우연히 정발과
+    같아지는」 자리가 곧 **정발 문안이 리포에 박히는** 자리다. 짧은 대사는 직역이 최선이라
+    독립 창작이어도 수렴한다(실측 2026-08-15: 축자 일치 0건인데 **50건이 90% 이상 일치**).
+
+    독립 창작임을 나중에 증명할 길이 없으므로 **닮은 자리는 우리 어투로 다시 쓴다.**
+
+    20자 연속 겹침으로 후보를 좁힌 뒤(전수 비교는 O(n·m)이라 못 돈다) `SequenceMatcher`
+    로 잰다. ⚠ 공백을 지우고 비교한다 — 띄어쓰기만 다른 건 같은 문장이다.
+    """
+    import collections
+    import difflib
+    import glob as _glob
+    import json
+
+    from common import ROOT
+
+    lines = [re.sub(r"\s+", "", s) for s in _corpus_lines()]
+    grams = collections.defaultdict(list)
+    for s in lines:
+        for i in range(len(s) - 19):
+            grams[s[i : i + 20]].append(s)
+
+    rows = []
+    for path in sorted(_glob.glob(os.path.join(ROOT, "script", "ED2SCN*.json"))):
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+        for eid, v in doc.items():
+            t = re.sub(r"\s+", "", v.get("t", ""))
+            best = 0.0
+            for i in range(len(t) - 19):
+                for cand in grams.get(t[i : i + 20], ()):
+                    best = max(best, difflib.SequenceMatcher(None, t, cand).ratio())
+            if best >= report:
+                rows.append((best, os.path.basename(path)[:-5], eid))
+    rows.sort(reverse=True)
+    over = [r for r in rows if r[0] >= threshold]
+    for sim, scn, eid in rows[:10]:
+        mark = "❌" if sim >= threshold else "·"
+        print(f"      {mark} {sim:.2f} {scn} jp{eid}")
+    print(
+        f"  {'✅' if not over else '⚠'} 정발과 닮은 ED2 문안: "
+        f"{threshold:.0%}+ {len(over)}건 · {report:.0%}+ {len(rows)}건"
+    )
+    return len(over)
+
+
 def scan_repo(verbose=False):
     """커밋되는 파일에 정발 번역문이 있는가."""
     lines = _corpus_lines()
@@ -197,5 +247,7 @@ def scan(verbose=False):
 
 if __name__ == "__main__":
     v = "-v" in sys.argv
-    # 두 축을 한 진입점에서 본다 — 화면 바이트(`scan`)와 커밋되는 파일(`scan_repo`).
-    sys.exit(1 if (scan(v) + scan_repo(v)) else 0)
+    # 세 축을 한 진입점에서 본다 — 화면 바이트(`scan`) · 커밋되는 파일의 축자 일치
+    # (`scan_repo`) · **정발과 사실상 같은 ED2 문안**(`scan_similar`). 셋째가 없으면
+    # 「축자만 피하면 통과」가 되어 정발 문장이 리포에 남는다(실측 50건).
+    sys.exit(1 if (scan(v) + scan_repo(v) + scan_similar()) else 0)

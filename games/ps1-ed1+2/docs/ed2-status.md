@@ -41,9 +41,23 @@ python3 tools/ed2_script_draft.py ED2SCN4 --dupes   # 같은 원문 자동 채�
 2. **`_scn_layout()`·`reinsert` 등록** — ED1 인게임 QA 가 끝난 뒤. 넣는 순간 ED1 씬 LBA 가
    밀린다.
 3. **재삽입 예행을 통과 상태로 유지한다** — `python3 tools/check_ed2_reinsert.py`.
-   지금 **통과 7,006 · 탈락 6**(제어런 재현 불가 3 + 문안 없는 이진 3). 체인 밖이라 빌드가
+   지금 **통과 7,025 · 탈락 5**(제어런 재현 불가 2 + 보물상자 사본 3). 체인 밖이라 빌드가
    ED2 문안을 안 보므로, 문안을 고칠 때마다 이걸 돌린다.
+   ⚠ 보물상자 3건(`SCN11 jp312` · `SCN13 jp37`·`jp84`)은 **선두에 포인터 테이블이 섞인
+   사본**이라 `stock_kind` 가 안 잡고, 대신 ED2 정발 문안(`C_60B`)이 흘러 들어와
+   `fmt_drop` 이 된다. ED1 이 같은 자리를 `STOCK_MID`(참조만 대표 사본으로 돌리기)로
+   푼 것과 **같은 계열의 일**이고, 포인터를 봐야 하므로 **체인 등록 때 함께** 처리한다.
 4. **인게임 QA** — 화면에 어떻게 나가는지는 등록 뒤에야 볼 수 있다.
+
+⚠ **검출기를 ED2 에 돌릴 땐 씬 이름을 준다** — 무인자는 체인 등록분(ED1)만 본다.
+2026-08-15 까지는 이름을 줘도 루프가 안 돌아 **한 블록도 안 보고 ✅** 가 떴다(devlog).
+
+```bash
+python3 tools/check_jp_leak.py --ed2                     # 색 구간 원문 잔류(축 둘)
+python3 tools/check_speakers.py ED2SCN1 … ED2SCN13       # 이름창
+python3 tools/check_dup_jp.py ED2SCN1 … ED2SCN13         # 같은 원문·다른 문안
+python3 tools/check_proper_nouns.py ED2SCN1 … ED2SCN13   # 정발 표기
+```
 
 ⚠ **번역 정본은 배정이 아니다.** `script/ED2SCN*.json` 에 우리 문안을 직접 쓴다 — 근거는
 §12. 정발 후보는 어투 참고용으로만 옆에 둔다.

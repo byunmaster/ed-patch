@@ -18,8 +18,8 @@ sys.path.insert(0, _TOOLS)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(_TOOLS)), "..", "shared"))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import common as C  # noqa: E402
-import reinsert_kr_pilot as R  # noqa: E402
+import common as C
+import reinsert_kr_pilot as R
 
 
 # ── 부호·띄어쓰기 (`fix_spacing`) ───────────────────────────────────────────
@@ -367,10 +367,6 @@ def test_overlay_base_is_per_game_and_fails_loud():
         raise AssertionError("세우지 않고 불렀는데 안 죽었다 — ED1 값으로 새고 있다")
 
 
-if __name__ == "__main__":
-    sys.exit(0 if _run() else 1)
-
-
 def test_proper_noun_needs_word_boundary():
     """이름은 **낱말로** 있을 때만 잡는다 — 다른 낱말의 일부는 아니다.
 
@@ -384,3 +380,31 @@ def test_proper_noun_needs_word_boundary():
     assert _name_in("ザールが現れた", "ザール")  # 낱말 선두
     assert _name_in("あのザールだ", "ザール")  # 앞이 히라가나
     assert _name_in("アークダムの手から", "アークダム")  # 정상 인명
+
+
+def test_jp_leak_detects_partial_original():
+    """색 구간을 못 채워 **원문이 남은** 결과를 잡는다 — 구조는 멀쩡한데 화면만 깨지는 자리.
+
+    ⚠ `%c切符%cを渡しました。%c` 에 `표를 건넸습니다.` 를 넣으면 `%c자符%c표를…` 이 나온다.
+    `%c` 수도 `%s` 수도 원본과 같아 **모든 게이트가 초록**이고, 깨진 글자는 우리 한글
+    슬롯으로 렌더돼 「오타」처럼 보인다(ED2 49블록 실측 2026-08-15).
+    """
+    from check_jp_leak import leaked, shared_runs
+    from hangul_map import encode_kr
+
+    assert leaked(encode_kr("표를 건넸습니다")) == []  # 순수 한글 — 잔류 없음
+    assert leaked(b"%c" + "切符".encode("cp932") + b"%c") == ["符"]  # 切 는 우리 슬롯 안
+    # ⚠ 그래서 코드만 보면 절반을 놓친다 — **원문 raw 와 대조**하는 축이 나머지를 잡는다.
+    jp = b"%c" + "密造酒".encode("cp932") + b"%c" + "を渡しました。".encode("cp932")
+    assert shared_runs(jp, b"%c" + "密造酒".encode("cp932") + b"%c") == ["密造酒"]
+    assert shared_runs(jp, encode_kr("밀조주를 건넸습니다")) == []  # 우리 문안만 — 잔류 없음
+    # ⚠ 부호는 게임 폰트의 정상 글리프다 — 빼지 않으면 `～` 하나로 79건이 오탐이 된다.
+    assert leaked("～『』".encode("cp932")) == []
+
+
+# ⚠ **`__main__` 블록은 반드시 파일 맨 끝**이다. 예전엔 중간에 있어서 그 뒤에 붙인 테스트가
+# **정의되기 전에 러너가 돌아** 조용히 안 돌았다 — `test_proper_noun_needs_word_boundary`
+# 가 그렇게 죽어 있었고 `28/28 passed` 는 계속 초록이었다(2026-08-15). 테스트를 늘릴 땐
+# 이 블록 **위**에 붙인다.
+if __name__ == "__main__":
+    sys.exit(0 if _run() else 1)
