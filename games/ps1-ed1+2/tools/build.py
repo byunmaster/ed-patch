@@ -217,7 +217,10 @@ def main():
         "patch_josa_hook.py"
     )  # 동적 조사 훅 — 병기(은(는)) → 정확 조사(2026-07-27 인게임 검증 통과)
     run("patch_gfx_title.py")  # START.DAT 타이틀 로고·버튼 TIM (FINAL 제자리 갱신)
-    run("patch_opening_font.py")  # OPEN1.EXE 오프닝 폰트+텍스트 (FINAL 제자리 갱신)
+    # 동영상 EXE — 넷이 내레이션을 한 벌씩 다 들고 각자 자기 몫만 튼다(읽기 BP 실측).
+    # 그래서 파일마다 **자기 슬라이스만** 넣는다. END1·END2 는 세이브가 있어야 확인이 되므로
+    # 인게임 검증 뒤에 붙인다.
+    run("patch_opening_font.py", "OPEN1", "OPEN2")  # 오프닝 폰트+텍스트 (FINAL 제자리 갱신)
     for stem in INTERMEDIATES + STALE:
         rm(stem)
     check_immutable()

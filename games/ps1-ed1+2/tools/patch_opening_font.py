@@ -19,9 +19,11 @@
 전제: build.py(베이스) 후 이 스크립트 적용 → work/Eiyuu Densetsu (KR).bin (제자리 갱신).
 """
 
+import json
 import os
 import shutil
 import struct
+import sys
 
 import hangul_font
 import numpy as np
@@ -61,6 +63,51 @@ GALMURI_DY = 1
 STUB_FILE_OFF = 0x15C14  # 저작권 문자열 자리(게임 미사용, 어제 스텁 검증). RAM 0x80025414 = 디코더.
 STUB_RAM = TADDR + (STUB_FILE_OFF - 0x800)  # 0x80025414
 ORIG_PC0 = 0x80021D50
+
+# ── 게임별 설정 — 동영상 EXE 넷은 **같은 프로그램의 다른 빌드**다 (2026-08-16) ──────
+# 넷이 내레이션 164줄을 통째로 한 벌씩 들고 각자 **자기 몫만** 화면에 낸다(읽기 BP 실측:
+# OPEN1 이 도는 동안 ED2 오프닝 자리 읽기 0건 / 대조군 ED1 자리 179건). 그래서 파일마다
+# **자기 슬라이스만** 손댄다 — 죽은 사본까지 쓰면 재packing 예산과 포인터 위험만 는다.
+#
+# ⚠ **주소를 손으로 적지 않는다.** 여섯 앵커는 `check_movie_anchors.derive` 가 시그니처로
+# 뽑고, 그 도출기는 OPEN1 하드코딩 값을 재현하는 것으로 스스로를 검증한다. 여기 적는 건
+# **도출로 안 나오는 것**뿐이다 — 어느 textmap 을 쓰는지, 보조 풀이 어디인지.
+#
+# 보조 풀 = CD 오류 문자열 자리. 읽기 실패 경로에서만 참조되고 그 시점엔 게임이 이미
+# 죽으므로 본문 공간으로 돌린다. ⚠ 선두 4B 는 0으로 남겨 빈 문자열이 되게 한다.
+# OPEN1 과 OPEN2 는 배치가 **정확히 +4 시프트**다(0x864/0x8CC/0x938 → 0x868/0x8D0/0x93C).
+GAMES = {
+    "OPEN1": {"lba": 69, "cls": "opening", "err": 0x864, "err2": 0x8CC, "ptab": 0x938},
+    "OPEN2": {"lba": 116, "cls": "opening_ed2", "err": 0x868, "err2": 0x8D0, "ptab": 0x93C},
+}
+SIZE = 96256
+# 스텁·폰트는 안전 0런 기준의 **상대 위치**로 잡는다(OPEN1 실측값에서 유도).
+STUB_REL = 0x15C14 - 0x15C69  # 저작권 문자열 자리 — 0런보다 앞이다
+FONT_REL = 0x15CE0 - 0x15C69
+
+
+def _tm_path(cls):
+    return os.path.join(os.path.dirname(__file__), "..", "textmap", f"{cls}.json")
+
+
+def game_cfg(name):
+    """게임 설정 + 도출 앵커. OPEN1 은 하드코딩 값과 대조해 도출기를 검증한다."""
+    import check_movie_anchors as A
+
+    g = dict(GAMES[name])
+    a = A.derive(bytes(extract(g["lba"], SIZE)))
+    if name == "OPEN1":
+        for k, v in A.KNOWN.items():
+            if k in a:  # `stub`·`font` 는 도출값이 아니라 0런 상대 위치로 잡는다(아래)
+                assert a[k] == v, f"앵커 도출 실패 {k}: {a[k]:X} != {v:X}"
+    run_off, run_len = a["zero_run"]
+    g.update(a)
+    g["stub_off"] = run_off + STUB_REL
+    g["font_off"] = run_off + FONT_REL
+    g["font_max"] = (run_off + run_len) - g["font_off"] - 0x20  # 꼬리 여유
+    return g
+
+
 
 
 def gen_glyphs(chars):
@@ -215,7 +262,24 @@ def w32(op, off, val):
     op[off : off + 4] = struct.pack("<I", val)
 
 
-def main():
+def patch_game(name):
+    """동영상 EXE 하나를 한글화한다 — 폰트 임베드 + PC0 스텁 + 내레이션 재packing."""
+    g = game_cfg(name)
+    OP_LBA, OP_SIZE = g["lba"], SIZE
+    LINES = off_pairs(g["cls"])
+    # ⚠ **포인터 테이블이 가리키는데 본 구획 밖에 있는 줄**이 있다(OPEN2 `だが…` @0x17484,
+    # RAM 0x80026C84). 재packing 범위(min~max 오프셋)에 넣으면 그 사이의 **코드·자료를 통째로
+    # 지운다** — 그래서 따로 뺀다. 이런 줄은 원본 슬롯 안에서 **제자리 치환**한다.
+    # 실측(2026-08-16): 이 줄이 표에 없어 화면 한복판에 깨진 `드` 한 글자가 떠 있었다.
+    FAR = {int(e["k"], 16) for e in json.load(open(_tm_path(g["cls"]), encoding="utf-8"))["entries"] if e.get("far")}
+    far_lines = [(o, kr) for o, kr in LINES if o in FAR]
+    LINES = [(o, kr) for o, kr in LINES if o not in FAR]
+    COMP_FONT_FILE_OFF = g["font_off"]
+    COMP_FONT_LOAD = TADDR + (COMP_FONT_FILE_OFF - 0x800)
+    COMP_FONT_MAX = g["font_max"]
+    STUB_FILE_OFF = g["stub_off"]
+    STUB_RAM = TADDR + (STUB_FILE_OFF - 0x800)
+    ORIG_PC0 = g["pc0"]
 
     if not os.path.exists(SRC):
         raise SystemExit(f"KR 이미지 없음 — build.py 먼저 실행\n  기대: {SRC}")
@@ -223,7 +287,7 @@ def main():
 
     # 사용 문자 수집 — 한글뿐 아니라 부호·숫자·공백도 전부 슬롯화(렌더 폭측정 일치).
     syl = set()
-    for _, kr in LINES:
+    for _, kr in LINES + far_lines:  # ⚠ 구획 밖 줄의 글자도 폰트에 있어야 한다
         syl.update(kr)
     slot = build_slots(syl)
     n = len(syl)
@@ -270,7 +334,7 @@ def main():
     # 문안을 비우고 본문 공간으로 돌린다. 각 문자열 **선두 4B 는 0으로 남겨** 오류 경로가 빈
     # 문자열을 읽게 한다(안 그러면 내레이션이 오류창에 뜬다).
     # ⚠ 늘리지 말 것 — 0x938 부터는 포인터 테이블이다(0x80014xxx 를 가리킨다).
-    POOLS = [(0x868, 0x8CC), (0x8D0, 0x938)]  # 204B
+    POOLS = [(g["err"] + 4, g["err2"]), (g["err2"] + 4, g["ptab"])]
     ptr_pos = {}  # 갱신 전 원주소로 포인터 위치 선수집(신주소가 타 원주소와 충돌 시 오매칭 방지)
     for off in line_offs:
         pi = find_ptr(TADDR + (off - 0x800))
@@ -280,7 +344,7 @@ def main():
     # 본영역 + 보조 풀 클리어(구 JP 데이터 제거). ⚠ 두 범위를 **따로** 지운다 — 사이의
     # 0x938~0x973 은 포인터 테이블이라 통째로 지우면 오프닝이 죽는다(실측 2026-08-02).
     # 0x864~0x938 전체를 지워야 오류문 선두 4B 도 0이 되어 빈 문자열이 된다.
-    for lo, hi in ((0x864, 0x938), (region_lo, region_hi)):
+    for lo, hi in ((g["err"], g["ptab"]), (region_lo, region_hi)):
         for k in range(lo, hi):
             op[k] = 0
     # 본영역을 위에서 아래로 채우고, 모자라면 보조 풀로 넘어간다. 줄마다 포인터가 따로
@@ -308,6 +372,31 @@ def main():
         f"내레이션 {len(LINES)}줄 재packing — 풀 {len(pools)}개, "
         f"여유 {free}B (최대 연속 {max(c - lo for c, (lo, _) in zip(cur, pools, strict=True))}B)"
     )
+
+    # 1c) 본 구획 밖 줄 — **풀로 옮기고 포인터를 갱신**한다.
+    # 원 슬롯이 8B(`だが…\n`+널)뿐이라 제자리로는 한 글자도 못 늘린다. 줄마다 포인터가
+    # 따로 있으므로 본 구획 풀에 넣고 포인터만 돌리면 된다.
+    # ⚠ **저주소(0x8001xxxx)로 옮기는 건 안전하다** — 스크립트가 주소 대역으로 text/command
+    # 를 가르는데(0x145A0) 우리 풀은 전부 텍스트 대역이다. 위험한 건 반대 방향(고주소)이다.
+    for off, kr in far_lines:
+        b = enc(kr, slot) + b"\x00"
+        for pi, (lo, _) in enumerate(pools):
+            npos = (cur[pi] - len(b)) & ~1
+            if npos >= lo:
+                break
+        else:
+            raise SystemExit(f"구획 밖 줄 공간 부족: {kr!r}")
+        cur[pi] = npos
+        op[npos : npos + len(b)] = b
+        ptr = find_ptr(TADDR + (off - 0x800))
+        if ptr is None:
+            raise SystemExit(f"구획 밖 줄 포인터 못찾음 0x{off:X}")
+        w32(op, ptr, TADDR + (npos - 0x800))
+        e = off
+        while orig[e]:
+            e += 1
+        op[off : e + 1] = b"\x00" * (e + 1 - off)  # 옛 자리는 비운다(일본어 잔존 제거)
+        print(f"  구획 밖 줄 이설 0x{off:X} → 0x{npos:X} (ptr 0x{ptr:X}) {kr!r}")
 
     # 2) PC0 진입점 훅: 저작권 문자열 자리에 디코더 스텁을 넣고 헤더 PC0를 스텁으로.
     #    (a) 압축 폰트(COMP_FONT_LOAD)를 자유RAM(FONT_RUNTIME)에 네이티브 30B로 전개(행-마스크).
@@ -348,7 +437,8 @@ def main():
     ]
     verify_asm(stub, STUB_RAM)
     stub_end = STUB_RAM + len(stub) * 4
-    assert stub_end <= 0x800254A4, f"디코더가 setjmp 영역 침범 0x{stub_end:X}"
+    setjmp_lo = TADDR + (g["zero_run"][0] - 0x800) + 0x3B
+    assert stub_end <= setjmp_lo, f"디코더가 setjmp 영역 침범 0x{stub_end:X} > 0x{setjmp_lo:X}"
     for k, ins in enumerate(stub):
         w32(op, STUB_FILE_OFF + k * 4, ins)
     w32(op, 0x10, STUB_RAM)  # 헤더 PC0 → 디코더 스텁
@@ -364,7 +454,7 @@ def main():
     hi, lo = (fbase >> 16) & 0xFFFF, fbase & 0xFFFF
     if lo & 0x8000:
         hi = (hi + 1) & 0xFFFF
-    base_be84 = 0x800 + (0x1BE84 - 0x10000)
+    base_be84 = 0x800 + (g["fontbase"] - TADDR)
     w32(op, base_be84 + 0, 0x3C100000 | hi)  # lui s0, hi
     w32(op, base_be84 + 4, 0x26100000 | lo)  # addiu s0, s0, lo
     w32(op, base_be84 + 8, 0x00000000)  # nop
@@ -386,8 +476,8 @@ def main():
     narrow = [c for c in NARROW if c in slot][:5]
     codes = [slot[c][0] for c in narrow]
     codes += [codes[0]] * (5 - len(codes))  # 남는 자리는 첫 코드로 채워 무해하게
-    for base in (0x800132E0, 0x80013704):  # 폭측정 / 표시 — ori 5개
-        step = 4 if base == 0x800132E0 else 8  # 표시 쪽은 ori 사이에 beq 가 낀다
+    for base in (g["narrow_w"], g["narrow_d"]):  # 폭측정 / 표시 — ori 5개
+        step = 4 if base == g["narrow_w"] else 8  # 표시 쪽은 ori 사이에 beq 가 낀다
         for k, c in enumerate(codes):
             a = fo(base + k * step)
             ins = struct.unpack("<I", op[a : a + 4])[0]
@@ -395,15 +485,22 @@ def main():
             w32(op, a, (ins & 0xFFFF0000) | c)
     print(f"반각 처리: {''.join(narrow)!r} → advance {ADV_NARROW}유닛 (전각 {ADV_WIDE})")
 
-    w32(op, fo(0x80013370), 0x24840003)  # addiu a0,a0,3  (폭측정 전각, 원 +4)
-    w32(op, fo(0x80013750), 0x26730003)  # addiu s3,s3,3  (표시 전각, 원 +4)
+    w32(op, fo(g["adv_w"]), 0x24840003)  # addiu a0,a0,3  (폭측정 전각, 원 +4)
+    w32(op, fo(g["adv_d"]), 0x26730003)  # addiu s3,s3,3  (표시 전각, 원 +4)
     print("글자 advance 4→3(16px→12px) — 간격 축소")
 
     if SRC != DST:
         shutil.copyfile(SRC, DST)
     with open(DST, "r+b") as f:
-        print(f"OPEN1.EXE: 섹터 {write_user_data(f, OP_LBA, op, label="오프닝 폰트 (OPEN1)")}개 수정")
+        n_sec = write_user_data(f, OP_LBA, op, label=f"내레이션 폰트 ({name})")
+        print(f"{name}.EXE: 섹터 {n_sec}개 수정")
     write_cue(DST_CUE, os.path.basename(DST))
+
+
+def main():
+    want = [a for a in sys.argv[1:] if not a.startswith("-")] or ["OPEN1"]
+    for name in want:
+        patch_game(name)
     print(f"완료: {DST}")
 
 
