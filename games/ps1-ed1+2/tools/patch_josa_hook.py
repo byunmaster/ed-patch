@@ -736,21 +736,30 @@ ED_LBA, ED_SIZE = 257, 1021952
 
 
 def main():
-    """build.py 체인용 — 최종 디스크의 ED.EXE에 조사 훅을 제자리 결합."""
+    """build.py 체인용 — 최종 디스크의 두 실행파일에 조사 훅을 제자리 결합.
+
+    ⚠ **ED2 도 같이 굽는다**(2026-08-16). 실행파일이 둘이고 각자 같은 코드를 한 벌씩
+    들고 있어서, ED1 만 걸면 ED2 화면엔 병기가 그대로 나간다 — 실측으로 ED2 출력에
+    조사 병기가 **150개**(SCN 대사 135 · ED2.EXE 15) 실려 있었다.
+    자리는 `check_josa_sites.py` 가 매번 시그니처로 재도출해 정본과 대조한다.
+    """
     from common import BUILD_DIR, extract, write_user_data
 
     target = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
     if not os.path.exists(target):
         raise SystemExit(f"대상 이미지 없음: {target} — build.py 먼저")
-    ed = bytearray(extract(ED_LBA, ED_SIZE, path=target))
-    size, josa_addr, stub_addr, pre_addr, draw_addr = build_and_patch(ed)
-    with open(target, "r+b") as f:
-        n = write_user_data(f, ED_LBA, ed, label="조사 훅 (ED.EXE)")
-    print(
-        f"조사 훅: {size}B (josa 0x{josa_addr:08X}, stub 0x{stub_addr:08X}, prewrap "
-        f"0x{pre_addr:08X}, drawstr 0x{draw_addr:08X}) → 0x{HOOK_ADDR:08X}·"
-        f"0x{PREWRAP_CALL:08X}·0x{DRAWSTR_ADDR:08X} 훅, 섹터 {n}개 수정"
-    )
+    for game in ("ED1", "ED2"):
+        st = site(game)
+        ed = bytearray(extract(st["lba"], st["size"], path=target))
+        size, josa_addr, stub_addr, pre_addr, draw_addr = build_and_patch(ed, game)
+        with open(target, "r+b") as f:
+            n = write_user_data(f, st["lba"], ed, label=f"조사 훅 ({game})")
+        print(
+            f"조사 훅 [{game}]: {size}B (josa 0x{josa_addr:08X}, stub 0x{stub_addr:08X}, "
+            f"prewrap 0x{pre_addr:08X}, drawstr 0x{draw_addr:08X}) → "
+            f"0x{st['hook']:08X}·0x{st['prewrap_call']:08X}·0x{st['drawstr']:08X} 훅, "
+            f"섹터 {n}개 수정"
+        )
 
 
 # ── 셀프테스트: MIPS 미니 인터프리터 ────────────────────────────────────────
