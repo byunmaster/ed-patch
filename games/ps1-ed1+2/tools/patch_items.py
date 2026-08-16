@@ -363,11 +363,30 @@ def repack(ed, lo, hi, label, align=4, tr=None, pools=None):
     재배치용 여유 공간)."""
     tr = tr or NAMES.__getitem__
     names = scan_names(ed, lo, hi)
+    # ⚠ **구획 안에 「빈 문자열」을 가리키는 참조가 숨어 있다**(2026-08-16 실측).
+    # 이름이 아니라 그 바이트가 `0x00` 이라 코드가 「아무것도 안 나오는 자리」로 쓴다
+    # (`lui $a1,0x8011; addiu $a1,$a1,-0x7844; jal …`). 재packing 이 그 위를 덮으면
+    # **없어야 할 글자가 화면에 뜬다** — 실패하지 않고 조용히 틀린다. ED1 에 1곳
+    # (`0x0F8FBC` 에 `왼쪽 ` 이 얹혀 있었다), ED2 에 2곳 있었다.
+    # 널이 **한 바이트** 남아 있기만 하면 되므로 그 자리를 건너뛴다.
+    starts = {off for off, _jp in names}
+    reserved = sorted(
+        {
+            addr - 0x80010000 + 0x800
+            for _i, _l, _o, addr in iter_lui_pairs(bytes(ed), {MIPS_ADDIU, MIPS_ORI})
+            if lo <= addr - 0x80010000 + 0x800 < hi
+            and addr - 0x80010000 + 0x800 not in starts
+        }
+    )
     moved, cur = {}, lo
     packed = bytearray()
     for off, jp in names:
         kb = enc(tr(jp)) + b"\x00"
         kb += b"\x00" * (-len(kb) % align)  # 정렬은 관례(코드는 바이트 접근)
+        while any(cur <= r < cur + len(kb) for r in reserved):
+            r = next(r for r in reserved if cur <= r < cur + len(kb))
+            packed += b"\x00" * (r + 1 - cur)
+            cur = r + 1
         assert cur + len(kb) <= hi, f"{label}: 예산 초과 @{jp}"
         moved[ram_of(off)] = ram_of(cur)
         packed += kb

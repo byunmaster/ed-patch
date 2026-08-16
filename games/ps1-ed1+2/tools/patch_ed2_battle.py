@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ED2 전투 문안(ED2.EXE) 한글화 — **제자리 치환만** 한다.
+"""ED2 전투 문안(ED2.EXE) 한글화 — 제자리 치환 + **넘치면 재배치**.
 
 **소재.** 전투 문자열은 코드가 `lui`+`addiu/ori` 로 주소를 만들어 참조한다. 그 쌍을 전수로
 훑어 **코드가 실제로 부르는 문자열**을 모은다(`patch_items.corpus_strings` 와 같은 방법).
@@ -9,27 +9,29 @@ ED2 는 477건이 나온다.
 것**이 78건 있다 — 두 편이 같은 엔진이라 전투 메시지를 공유한다. 그건 다시 번역하지 않고
 그대로 쓴다(표기가 갈릴 여지도 없어진다). ED2 에만 있는 것은 `textmap/battle_ed2.json`.
 
-⚠ **제자리에 안 들어가면 건너뛴다.** ED1 쪽(`patch_items.apply_battle`)은 넘치는 문자열을
-풀로 재배치하고 `lui` 까지 갱신하는데, 그건 참조를 하나라도 놓치면 **엉뚱한 주소를 읽어
-깨진다.** ED2 는 아직 인게임 검증이 얕으므로 위험을 안 진다 — 남는 건 보고만 하고 다음에
-재배치 경로를 붙인다.
+**넘치면 재배치한다**(2026-08-16). 예전엔 건너뛰고 보고만 했는데, 그러면 그 자리에
+**원문이 그대로 남아 화면에 깨진 글자가 나간다**(50건). 풀은 ① 옮기는 문자열이 비우는
+옛 칸 ② 제자리 문안이 남기는 꼬리 — 둘을 합쳐야 예산이 선다(①만으론 184B 부족).
+⚠ 참조를 하나라도 놓치면 엉뚱한 주소를 읽으므로 `lui` 까지 갱신하고, 그 `lui` 를 다른
+주소와 나눠 쓰는지 전수로 확인한다(공유면 즉시 실패).
 
-  python3 tools/patch_ed2_battle.py --plan   # 무엇이 들어가고 무엇이 남는지
+  python3 tools/patch_ed2_battle.py --plan   # 제자리 / 넘침(재배치 대상) / 미번역
   python3 tools/patch_ed2_battle.py          # 이미지에 적용
 """
 
 import os
 import re
+import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import hangul_map as H  # noqa: E402
-from battle_text import B  # noqa: E402
-from common import BUILD_DIR, extract, write_user_data  # noqa: E402
-from derive_text import jp_map  # noqa: E402
-from patch_items import MIPS_ADDIU, MIPS_ORI, iter_lui_pairs  # noqa: E402
+import hangul_map as H
+from battle_text import B
+from common import BUILD_DIR, extract, write_user_data
+from derive_text import jp_map
+from patch_items import MIPS_ADDIU, MIPS_ORI, iter_lui_pairs
 
 ED2_LBA, ED2_SIZE = 756, 872448
 IMG = f"{BUILD_DIR}/Eiyuu Densetsu (KR).bin"
@@ -98,6 +100,99 @@ def plan():
     return fit, over, none
 
 
+MIN_POOL = 8  # 이보다 짧은 꼬리는 조각이라 안 쓴다(파편만 는다)
+
+
+def relocate(buf, fit, over):
+    """제자리로 못 넣는 문안을 **풀에 옮기고 참조를 갱신**한다. 반환: 옮긴 수.
+
+    ⚠ **조사 훅으로는 이 자리가 안 풀린다**(2026-08-16 실측). 훅은 표시할 때 병기를 고르는
+    장치라 **저장된 문자열이 짧아지지 않는다** — 병기를 한 글자로 줄여도 29건이 여전히
+    넘친다. 넘침은 병기가 아니라 **슬롯** 문제이고, 답은 ED1 이 이미 쓰는 재배치다
+    (`patch_items.apply_battle`).
+
+    **풀은 두 곳에서 나온다.** ① 옮기는 문자열이 비우는 옛 칸(993B) ② 제자리로 들어간
+    문안이 남기는 **꼬리**(한국어가 원문보다 짧아서 생긴다). ①만으로는 184B 모자란다.
+
+    ⚠ **`lui` 까지 갱신해야 한다.** 재배치는 구획 안 이동이 아니라 상위 16비트가 바뀌므로
+    `addiu` lo 만 고치면 엉뚱한 주소를 읽는다. 그래서 **그 `lui` 를 다른 주소와 나눠 쓰는지
+    전수로 확인**하고(공유면 오염되니 즉시 실패), 부호확장(`addiu`)도 보정한다.
+    """
+    from patch_items import ram_of
+
+    targets = {ram_of(fo) for fo, _j, _k, _s in over}
+    refs, lui_use = {}, {}
+    for imm_off, lui_off, op, addr in iter_lui_pairs(bytes(buf), {MIPS_ADDIU, MIPS_ORI}):
+        if addr in targets:
+            refs.setdefault(addr, []).append((imm_off, lui_off, op))
+        lui_use.setdefault(lui_off, set()).add(addr)
+
+    # ⚠ **빈 문자열을 가리키는 참조가 꼬리 안에 숨어 있다**(2026-08-16 실측 4곳:
+    # 0x0051F4·0xD4988·0xD49AC·0xD4A40). 코드가 「아무것도 안 나오는 자리」로 그 주소를
+    # 쓰는데, 우리가 거기에 문안을 심으면 **없어야 할 글자가 화면에 뜬다.** 널이 하나
+    # 남아 있기만 하면 되므로 그 **한 바이트를 경계로 풀을 가른다.**
+    old_starts = {fo for fo, _j, _k, _s in over}
+    reserved = sorted(
+        (a - 0x80010000 + 0x800)
+        for a in {addr for _i, _l, _o, addr in iter_lui_pairs(bytes(buf), {MIPS_ADDIU, MIPS_ORI})}
+        if (a - 0x80010000 + 0x800) not in old_starts
+    )
+
+    def _add(pools, lo, hi):
+        """[lo,hi) 에서 예약 바이트를 도려내고 쓸 만한 조각만 넣는다."""
+        for r in reserved:
+            if lo <= r < hi:
+                _add(pools, lo, r)
+                _add(pools, r + 1, hi)
+                return
+        if hi - lo >= MIN_POOL:
+            pools.append([lo, hi])
+
+    pools, moves = [], []
+    for fo, _jp, kr, slot in fit:  # 제자리 + 남는 꼬리를 풀로
+        kb = _enc(kr) + b"\x00"
+        buf[fo : fo + slot] = kb.ljust(slot, b"\x00")
+        _add(pools, fo + len(kb), fo + slot)
+    for fo, jp, kr, slot in over:  # 옛 칸을 비우고 풀에 넣는다
+        buf[fo : fo + slot] = b"\x00" * slot
+        _add(pools, fo, fo + slot)
+        moves.append((ram_of(fo), _enc(kr) + b"\x00", jp))
+
+    pools.sort()
+    merged = []
+    for lo, hi in pools:  # 인접 조각은 붙인다 — 큰 문안이 들어갈 자리가 생긴다
+        if merged and merged[-1][1] == lo:
+            merged[-1][1] = hi
+        else:
+            merged.append([lo, hi])
+    pools = merged
+
+    for old, kb, jp in sorted(moves, key=lambda m: -len(m[1])):  # 큰 것부터 최적적합
+        cand = [p for p in pools if p[1] - p[0] >= len(kb)]
+        if not cand:
+            raise SystemExit(f"풀 부족: {jp[:14]!r} ({len(kb)}B)")
+        pool = min(cand, key=lambda p: p[1] - p[0])
+        dst = pool[0]
+        pool[0] += len(kb)
+        buf[dst : dst + len(kb)] = kb
+        new = ram_of(dst)
+        hi_sx = (new >> 16) + (1 if new & 0x8000 else 0)  # addiu 부호확장 보정
+        assert refs.get(old), f"참조 0건: {jp[:14]!r}"
+        for imm_off, lui_off, op in refs[old]:
+            others = lui_use[lui_off] - {old}
+            assert not others, f"0x{imm_off:X}: lui 공유({[hex(a) for a in others]}) — 재배치 불가"
+            hi_w, lo_w = (new >> 16, new & 0xFFFF) if op == MIPS_ORI else (hi_sx, new & 0xFFFF)
+            w = struct.unpack_from("<I", buf, lui_off)[0]
+            struct.pack_into("<I", buf, lui_off, (w & 0xFFFF0000) | hi_w)
+            w = struct.unpack_from("<I", buf, imm_off)[0]
+            struct.pack_into("<I", buf, imm_off, (w & 0xFFFF0000) | lo_w)
+    left = sum(p[1] - p[0] for p in pools)
+    print(
+        f"  재배치 {len(moves)}건 · 참조 갱신 {sum(len(refs[o]) for o, _, _ in moves)}곳 (풀 잔여 {left}B)"
+    )
+    return len(moves)
+
+
 def main():
     fit, over, none = plan()
     if "--plan" in sys.argv:
@@ -108,14 +203,12 @@ def main():
         print(f"\n제자리 {len(fit)} · 넘침 {len(over)} · 번역 없음 {len(none)}")
         return 0
     buf = bytearray(extract(ED2_LBA, ED2_SIZE, path=IMG))
-    for fo, _jp, kr, slot in fit:
-        b = _enc(kr) + b"\x00"
-        buf[fo : fo + slot] = b + b"\x00" * (slot - len(b))
+    moved = relocate(buf, fit, over)
     with open(IMG, "r+b") as f:
         n = write_user_data(f, ED2_LBA, bytes(buf), label="ED2 전투 문안 (ED2.EXE)")
     print(
-        f"ED2.EXE: 섹터 {n}개 수정 — 전투 문안 {len(fit)}건 제자리"
-        f" (넘쳐 보류 {len(over)} · 미번역 {len(none)})"
+        f"ED2.EXE: 섹터 {n}개 수정 — 전투 문안 {len(fit)}건 제자리 + {moved}건 재배치"
+        f" (미번역 {len(none)})"
     )
     return 0
 

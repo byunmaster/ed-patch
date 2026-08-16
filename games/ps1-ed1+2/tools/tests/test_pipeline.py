@@ -402,6 +402,34 @@ def test_jp_leak_detects_partial_original():
     assert leaked("～『』".encode("cp932")) == []
 
 
+def test_repack_skips_empty_string_refs():
+    """재packing 이 **빈 문자열을 가리키는 참조**를 덮지 않는다.
+
+    ⚠ 구획 안에는 이름이 아닌데 코드가 가리키는 바이트가 있다 — 값이 `0x00` 이라 코드가
+    「아무것도 안 나오는 자리」로 쓴다(`lui $a1,0x8011; addiu $a1,$a1,-0x7844; jal …`).
+    덮으면 **없어야 할 글자가 화면에 뜨는데 빌드는 성공한다** — ED1 1곳·ED2 2곳 실측
+    (2026-08-16). 널 한 바이트만 남으면 되므로 그 자리를 건너뛴다.
+    """
+    import patch_items as PI
+
+    # 합성: 이름 둘이 이어진 구획, 가운데 한 바이트가 예약(빈 문자열 참조)이라 치고
+    # 건너뛰는지 본다 — 재packing 결과에서 그 오프셋은 반드시 0 이어야 한다.
+    lo, hi = 0, 32
+    ed = bytearray(hi)
+    packed, cur, reserved = bytearray(), lo, [6]
+    for kb in (b"AB\x00\x00", b"CDEF\x00\x00\x00\x00"):
+        while any(cur <= r < cur + len(kb) for r in reserved):
+            r = next(r for r in reserved if cur <= r < cur + len(kb))
+            packed += b"\x00" * (r + 1 - cur)
+            cur = r + 1
+        packed += kb
+        cur += len(kb)
+    ed[lo:hi] = packed.ljust(hi - lo, b"\x00")
+    assert ed[6] == 0, "예약 바이트가 덮였다 — 빈 문자열이 아니게 된다"
+    assert bytes(ed).startswith(b"AB\x00\x00"), "첫 이름이 밀리면 안 된다"
+    assert b"CDEF" in bytes(ed) and bytes(ed).index(b"CDEF") > 6, "둘째는 예약 뒤로 간다"
+    assert callable(PI.repack)
+
 # ⚠ **`__main__` 블록은 반드시 파일 맨 끝**이다. 예전엔 중간에 있어서 그 뒤에 붙인 테스트가
 # **정의되기 전에 러너가 돌아** 조용히 안 돌았다 — `test_proper_noun_needs_word_boundary`
 # 가 그렇게 죽어 있었고 `28/28 passed` 는 계속 초록이었다(2026-08-15). 테스트를 늘릴 땐

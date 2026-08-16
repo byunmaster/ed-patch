@@ -28,9 +28,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import hangul_map as H  # noqa: E402
-import patch_sys_ui as P  # noqa: E402
-from common import BUILD_DIR, extract, write_user_data  # noqa: E402
+import hangul_map as H
+import patch_sys_ui as P
+from common import BUILD_DIR, extract, write_user_data
 
 ED2_LBA, ED2_SIZE = 756, 872448
 IMG = f"{BUILD_DIR}/Eiyuu Densetsu (KR).bin"
@@ -134,6 +134,74 @@ NAMES_ED2 = {
     # ⚠ ED1 과 갈리는 둘 (위 주석)
     "幅広のつるぎ": "날 넓은 칼",
     "くさりかたびら": "쇠사슬옷",
+    # ── ED2 전용 장비·도구 53건 (2026-08-16) ──────────────────────────────────
+    # ⚠ **선례가 없다.** ED1 원본(`ED.EXE`)에 `理力`·`不死身`·`バトルスーツ`·`こんぼう`·
+    # `聖剣` 이 하나도 없고, 정발 ED1·ED2 대사에도 「이력·곤봉·성검·불사」가 0건이다
+    # (실측). 그래서 **정발 표기를 옮기는 게 아니라 새로 짓는 자리**다 — 편차 대장 기록.
+    #
+    # 지은 기준은 **ED1 정본의 계열**이다(`patch_items.NAMES`): 재질 수식은 붙이고
+    # (`청동검`·`철창`), 개념·인물 수식은 「~의」를 살린다(`파멸의 검`). 방패·갑옷은
+    # 정본이 이미 띄어 쓴다(`청동 방패`·`철 갑옷`).
+    # ⚠ **우리 SCN 대사에 이미 확정된 것은 그걸 따른다** — 아래 ✅ 표시. 이름 표와 대사가
+    # 갈리면 같은 물건이 화면에서 두 이름을 갖는다(정발이 안에서 갈릴 때와 같은 사고).
+    "鉄球こんぼう": "철구 곤봉",
+    "強者のやり": "강자의 창",
+    "必殺のつるぎ": "필살의 검",
+    "大地のおの": "대지의 도끼",
+    "勇者のつるぎ": "용사의 검",
+    "騎士のやり": "기사의 창",
+    "撃破のつるぎ": "격파의 검",  # ✅ SCN3 대사
+    "理力のつるぎ": "이력의 검",
+    "正義のつるぎ": "정의의 검",
+    "ドラゴンの剣": "드래곤의 검",
+    "太陽の聖剣": "태양의 성검",
+    "炎のやり": "불꽃의 창",
+    "不死身のヨロイ": "불사의 갑옷",
+    "バトルスーツ": "배틀 슈트",
+    "理力のヨロイ": "이력의 갑옷",
+    "自由のヨロイ": "자유의 갑옷",
+    "ドラゴンの鎧": "드래곤의 갑옷",
+    "回復のヨロイ": "회복의 갑옷",
+    "無敵のたて": "무적의 방패",
+    "理力のたて": "이력의 방패",
+    "希望のたて": "희망의 방패",
+    "ドラゴンのたて": "드래곤의 방패",
+    # ⚠ `マホウ`(마법)와 `スペル`(주문)은 **원문이 갈라 놓은 두 낱말**이라 우리도 가른다.
+    # `呪文` = 「주문」 방침(policy)과도 맞는다 — 한쪽으로 뭉치면 반지 둘이 같은 이름이 된다.
+    "マホウのゆびわ": "마법의 반지",
+    "スペルのゆびわ": "주문의 반지",
+    "賢者のゆびわ": "현자의 반지",
+    # ⚠ **같은 물건인데 두 EXE 의 표기가 갈린다** — ED1 은 `オプナの指輪`(한자), ED2 는
+    # `オプナのゆびわ`(가나)다. 정본은 원문 문자열로 짝을 짓기 때문에(`ed1_canon`) 이
+    # 넷이 조용히 안 물려 일본어로 남아 있었다. 표기가 갈리는 자리는 **양쪽 다 적는다.**
+    "オプナのゆびわ": "오프나의 반지",
+    "テュトのゆびわ": "튜트의 반지",
+    "クイクのゆびわ": "퀵의 반지",
+    "幸運のゆびわ": "행운의 반지",
+    "ビスのキノコ": "비스의 버섯",
+    "回復キノコ": "회복 버섯",
+    "レストナキノコ": "레스토나 버섯",
+    "ビスナの実": "비스나의 열매",
+    "眠りタケ": "잠버섯",  # ✅ SCN 대사
+    "災害のお守り": "재해 방지 부적",  # ✅ SCN1 대사
+    "戦士の笛": "전사의 피리",  # ✅ SCN 대사
+    "キノコの王様": "버섯의 왕",  # ✅ SCN 대사
+    "バクヤク": "폭약",  # ✅ SCN 대사
+    "杖のかけら": "지팡이 조각",  # ✅ SCN3 대사
+    "カノンの親書": "카논의 친서",  # ✅ SCN 대사
+    "ランケアの親書": "랑케아의 친서",  # ✅
+    "ハルパの親書": "하르파의 친서",  # ✅
+    "マリスカの親書": "마리스카의 친서",  # ✅
+    "アフル通行証": "아훌 통행증",  # ✅
+    "イズー通行証": "이즈 통행증",  # ✅
+    "キュベラ通行証": "큐베라 통행증",  # ✅
+    "ウイル通行証": "윌 통행증",  # ✅
+    "銀のプレート": "은 플레이트",  # ✅ SCN 대사
+    "金のプレート": "금 플레이트",
+    "銅のプレート": "동 플레이트",
+    "不思議なマント": "신비한 망토",  # `不思議な` = 「신비한」(보물상자 변형과 한 표기)
+    "不思議な箱": "신비한 상자",
+    "シナリオ専用": "시나리오 전용",  # 내부 표식 — 화면에 뜨는지 미확인이나 남기면 일본어다
 }
 
 # 이름 구획은 **통째로 다시 채운다**(`repack_names`) — 칸 하나하나에 맞추지 않는다.
@@ -293,6 +361,25 @@ def plan():
     return rows, over
 
 
+def _reserved_in(buf, lo, hi, names):
+    """구획 안에서 **이름이 아닌데 코드가 가리키는** 오프셋 — 덮으면 안 되는 자리.
+
+    ⚠ 실측(2026-08-16): `0xD4938`·`0xD493B` 가 그랬다. 원본에서 그 바이트는 `0x00`,
+    즉 **빈 문자열**이고 코드는 그걸 「아무것도 안 나오는 자리」로 쓴다
+    (`lui $a0,0x800e; addiu $a0,$a0,0x4138; jal …`). 재packing 이 그 위를 이름으로
+    덮으면 **없어야 할 글자가 화면에 뜬다** — 실패하지 않고 조용히 틀린다.
+    """
+    import patch_items as PI
+
+    starts = {off for off, _jp in names}
+    out = set()
+    for _i, _l, _o, addr in PI.iter_lui_pairs(bytes(buf), {PI.MIPS_ADDIU, PI.MIPS_ORI}):
+        fo = addr - 0x80010000 + 0x800
+        if lo <= fo < hi and fo not in starts:
+            out.add(fo)
+    return sorted(out)
+
+
 def repack_names(buf, canon):
     """이름 구획을 KR 로 다시 채우고 참조를 갱신한다. 반환: 옮긴 이름 수."""
     import patch_items as PI
@@ -300,11 +387,17 @@ def repack_names(buf, canon):
     n = 0
     for lo, hi, label in REPACK:
         names = _walk(buf, lo, hi)
+        reserved = _reserved_in(buf, lo, hi, names)
         moved, cur, packed = {}, lo, bytearray()
         for off, jp in names:
             kr = canon.get(jp)
             kb = (_enc(kr) if kr else jp.encode("shift_jis")) + b"\x00"
             kb += b"\x00" * (-len(kb) % 4)  # 정렬은 관례(코드는 바이트 접근)
+            # 예약 바이트를 밟으면 그 자리를 널로 남기고 뒤로 건너뛴다(위 주석).
+            while any(cur <= r < cur + len(kb) for r in reserved):
+                r = next(r for r in reserved if cur <= r < cur + len(kb))
+                packed += b"\x00" * (r + 1 - cur)
+                cur = r + 1
             assert cur + len(kb) <= hi, f"{label}: 예산 초과 @{jp} ({cur - lo}/{hi - lo}B)"
             moved[PI.ram_of(off)] = PI.ram_of(cur)
             packed += kb
@@ -333,6 +426,12 @@ def apply():
     for jp, kr in list(canon.items()):
         canon.setdefault(jp + "の書", kr + BOOK_SUFFIX)
     n_names = repack_names(buf, canon)
+    # ⚠ **메모리카드·세이브 문구는 ED2.EXE 에도 한 벌 더 있다**(2026-08-16 실측, 13곳).
+    # ED1 쪽만 고쳐 뒀더니 ED2 화면엔 `メモリーカードを 캑べています` 처럼 **가나 + 깨진
+    # 한글**로 나갔다 — 한자 슬롯을 한글로 덮어썼으니 원문 한자가 엉뚱한 한글이 된다.
+    # `patch_sys_ui.MSGS` 는 **원문 문자열로 짝을 짓고 전 사본을 훑는** 표라 버퍼만 바꿔
+    # 그대로 태우면 된다(오프셋을 다시 적으면 두 표가 갈린다 — 이 파일의 제1 관용).
+    P.patch_msgs(buf)
     for off, _jp, _kr, slot, enc in rows:
         b = enc + b"\x00"
         buf[off : off + slot] = b + b"\x00" * (slot - len(b))
