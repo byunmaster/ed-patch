@@ -19,10 +19,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import hangul_map as H  # noqa: E402
-import patch_items as P  # noqa: E402
-import patch_sys_ui as U  # noqa: E402
-from common import BUILD_DIR, extract  # noqa: E402
+import hangul_map as H
+import patch_items as P
+import patch_sys_ui as U
+from common import BUILD_DIR, extract
 
 IMG = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
 ED_LBA, ED_SIZE = 257, 1021952

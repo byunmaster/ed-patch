@@ -41,8 +41,8 @@ from difflib import SequenceMatcher
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-from align_jp_kr import load_jp_scene, load_kr_scene  # noqa: E402
-from common import REVIEW_DIR, ROOT  # noqa: E402
+from align_jp_kr import load_jp_scene, load_kr_scene
+from common import REVIEW_DIR, ROOT
 
 ALIGN_MAP = os.path.join(ROOT, "align_map.json")
 

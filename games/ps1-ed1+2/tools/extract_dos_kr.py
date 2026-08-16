@@ -115,7 +115,7 @@ def cluster_ok(data, s, e):
 
 
 # gap 승격에서 허용하는 저바이트 제어코드(정발 대사에 실제로 섞여 나오는 것들)
-_CTRL_OK = frozenset(range(0x00, 0x11)) | {0x14, 0x1E}
+_CTRL_OK = frozenset(range(0x11)) | {0x14, 0x1E}
 
 
 def gap_is_text(raw):

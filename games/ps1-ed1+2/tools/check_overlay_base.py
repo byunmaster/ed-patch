@@ -31,7 +31,7 @@ from common import MIPS_ADDIU, MIPS_ORI, OUT_DIR, iter_lui_pairs
 from extract_scn import SCN_FILES
 
 # 정본은 **쓰는 쪽**에 둔다 — 값을 검사기에 따로 적으면 둘이 어긋나도 아무도 모른다(DRY).
-from reinsert_kr_pilot import OVERLAY_BASE  # noqa: E402
+from reinsert_kr_pilot import OVERLAY_BASE
 
 MIN_SHARE = 0.25  # 최빈값이 이보다 낮으면 도출 실패로 본다(참조가 너무 적은 씬)
 

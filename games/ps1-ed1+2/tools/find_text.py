@@ -31,8 +31,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-from common import ROOT  # noqa: E402
+import reinsert_kr_pilot as R
+from common import ROOT
 
 GAME = "ED1"
 CTX = 34  # 앞뒤로 보여 줄 글자 수

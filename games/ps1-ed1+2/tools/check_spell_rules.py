@@ -38,9 +38,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-from common import OUT_DIR, ROOT  # noqa: E402
-from patch_sys_ui import _scn_layout  # noqa: E402
+import reinsert_kr_pilot as R
+from common import OUT_DIR, ROOT
+from patch_sys_ui import _scn_layout
 
 SPELL_JSON = os.path.join(ROOT, "dos_spelling_fixes.json")
 

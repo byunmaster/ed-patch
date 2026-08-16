@@ -101,7 +101,7 @@ def derive(d):
     return a
 
 
-def main():  # noqa: C901
+def main():
     rows = {n: derive(extract(l, 96256)) for n, l in FILES}
     keys = ("pc0", "fontbase", "narrow_w", "narrow_d", "adv_w", "adv_d")
     print(f"{'앵커':10} " + "".join(f"{n:>12}" for n, _ in FILES) + "   OPEN1 정답 대조")
@@ -109,7 +109,7 @@ def main():  # noqa: C901
         cells = ""
         for n, _ in FILES:
             v = rows[n].get(k)
-            cells += f"{v:>12X}" if isinstance(v, int) else f"{str(v):>12}"
+            cells += f"{v:>12X}" if isinstance(v, int) else f"{v!s:>12}"
         ok = rows["OPEN1"].get(k) == KNOWN[k]
         mark = "✅ 재현" if ok else f"❌ 불일치 (정답 {KNOWN[k]:X})"
         print(f"{k:10} {cells}   {mark}")

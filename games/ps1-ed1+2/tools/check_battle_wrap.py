@@ -23,7 +23,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import patch_items as P  # noqa: E402
+import patch_items as P
 
 COLS = 29  # 엔진 자동 줄바꿈 폭(반각칼럼) — patch_battle_wrap 규명
 LONGEST = "세리오스"  # 최장 파티명. 이름이 길수록 불리하니 최악으로 잰다

@@ -35,7 +35,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
+import reinsert_kr_pilot as R
 
 HI, LO = 1.9, 0.55  # 이 밖이면 후보 — SCN3 실측에서 6/996 만 걸린다
 MIN_JP, MIN_KR = 10, 8  # 짧은 블록은 비가 요동쳐 못 쓴다

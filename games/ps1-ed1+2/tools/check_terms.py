@@ -34,9 +34,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
+import common
 import reinsert_kr_pilot as R
 from check_align_fit import jp_text
-import common
 from common import OUT_DIR
 from patch_sys_ui import SCN_FILES
 

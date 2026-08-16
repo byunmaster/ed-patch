@@ -33,7 +33,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
+import reinsert_kr_pilot as R
 
 NAME_MAX = 8  # 이름 헤더로 볼 최대 글자 수
 
