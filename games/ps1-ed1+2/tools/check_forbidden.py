@@ -149,6 +149,12 @@ def scan_similar(threshold=0.90, report=0.80):
         for i in range(len(s) - 19):
             grams[s[i : i + 20]].append(s)
 
+    # ⚠ **낱말 나열은 예외다.** 지명·아이템 같은 **단어 수준 라벨은 저작권 대상이 아니고**
+    # (루트 CLAUDE.md), 우리가 정한 표기를 게임이 정한 순서로 늘어놓으면 정발과 닮을 수밖에
+    # 없다 — `ED2SCN2 jp300` 은 워프 목적지 34개를 나열한 표라 0.98 이 나온다.
+    # 자리를 콕 집어 적는다(규칙으로 넓히면 진짜 문장이 빠져나간다).
+    WORDLIST_OK = {("ED2SCN2", "300")}
+
     rows = []
     for path in sorted(_glob.glob(os.path.join(ROOT, "script", "ED2SCN*.json"))):
         with open(path, encoding="utf-8") as f:
@@ -159,8 +165,9 @@ def scan_similar(threshold=0.90, report=0.80):
             for i in range(len(t) - 19):
                 for cand in grams.get(t[i : i + 20], ()):
                     best = max(best, difflib.SequenceMatcher(None, t, cand).ratio())
-            if best >= report:
-                rows.append((best, os.path.basename(path)[:-5], eid))
+            scn = os.path.basename(path)[:-5]
+            if best >= report and (scn, eid) not in WORDLIST_OK:
+                rows.append((best, scn, eid))
     rows.sort(reverse=True)
     over = [r for r in rows if r[0] >= threshold]
     for sim, scn, eid in rows[:10]:

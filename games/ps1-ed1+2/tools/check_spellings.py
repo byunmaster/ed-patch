@@ -26,9 +26,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-from check_align_fit import jp_text as _jp_text  # noqa: E402
-from patch_sys_ui import SCN_FILES  # noqa: E402
+import reinsert_kr_pilot as R
+from check_align_fit import jp_text as _jp_text
+from check_proper_nouns import _name_in
+from patch_sys_ui import SCN_FILES
 
 # (정본 표기, 쓰면 안 되는 표기 …) — 판정 근거는 편차 대장에 있다. 여기는 **검사기**다.
 PAIRS = (
@@ -79,17 +80,29 @@ def scan_names():
     """원문에 인명이 있는데 우리 문안에 그 표기가 없는 블록."""
     bad = 0
     for scn, _lba, _size in SCN_FILES:
-        for _s, eid, jp, cand, _t in R.iter_candidates((scn,)):
-            j = _jp_text(jp)
-            kr = R.render_bytes(cand, ctrl=False)
+        # ⚠ **블록 경계가 원문과 우리가 다르게 갈린다** — 이름이 원문에선 이 블록에 있는데
+        # 우리 문안에선 **다음 블록**으로 넘어간 자리가 있다(`check_proper_nouns` 가 같은
+        # 부류를 이미 그렇게 푼다). 한 블록만 보면 `아트라스!`·`병사` 같은 조각이 통째로
+        # 오탐이 된다 — **다음 블록 문안까지 합쳐** 찾는다.
+        blocks = [
+            (eid, _jp_text(jp), R.render_bytes(cand, ctrl=False))
+            for _s, eid, jp, cand, _t in R.iter_candidates((scn,))
+        ]
+        for bi, (eid, j, kr0) in enumerate(blocks):
+            kr = kr0 + ("\n" + blocks[bi + 1][2] if bi + 1 < len(blocks) else "")
+            cand = None  # (아래 출력은 이 블록 문안만 보여 준다)
+            kr_show = kr0
             for name, ours, skip in NAME_PAIRS:
-                if name not in j or ours in kr:
+                # ⚠ **낱말 경계를 봐야 한다.** `ロー`(로우)가 `フローラ`(플로라) 안에
+                # 걸려 「문안에 로우 없음」이 쏟아졌다(ED2 를 체인에 올린 2026-08-16).
+                # `check_proper_nouns._name_in` 이 같은 부류를 이미 푼다 — 규칙을 빌린다.
+                if not _name_in(j, name) or ours in kr:
                     continue
                 if any(x in j for x in skip):
                     continue
                 bad += 1
                 print(f"      ⚠ {scn} jp{eid}  원문 [{name}] 인데 문안에 [{ours}] 없음")
-                print(f"           {kr.splitlines()[0][:56] if kr else ''}")
+                print(f"           {kr_show.splitlines()[0][:56] if kr_show else ''}")
     return bad
 
 

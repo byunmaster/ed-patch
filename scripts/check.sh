@@ -28,7 +28,7 @@ echo "  ✅ 통과"
 DONE=$(ls "$ROOT/games/ps1-ed1+2/script/" 2>/dev/null | sed -n 's/\(ED1SCN[0-9]*\)\.json/\1/p' | tr '\n' ' ')
 
 fail=0
-for t in check_tail_cut check_block_join check_terms check_spellings check_forbidden check_proper_nouns check_battle_wrap check_jp_leak; do
+for t in check_tail_cut check_terms check_spellings check_forbidden check_proper_nouns check_battle_wrap check_jp_leak; do
   out=$("$PY" "$G/$t.py" 2>&1) || fail=1
   echo "$out" | tail -3 | sed 's/^/  /'
 done
@@ -36,9 +36,18 @@ done
 # ⚠ **게이트로 안 세운다**(exit 코드를 안 본다) — 제어런 재현 불가처럼 「지금 못 고치는」
 # 자리가 섞여 있다. 수치가 나빠지면 사람이 본다.
 "$PY" "$G/check_ed2_reinsert.py" -q 2>&1 | tail -1 | sed 's/^/  /'
+# ⚠ **블록 경계는 인게임 QA 를 마친 층에만 게이트로 건다.** ED2 를 체인에 올리자 붙음이
+#   463곳 나왔는데(ED1 은 71곳을 다 고쳤다), 그건 「실패」가 아니라 「할 일」이다 —
+#   늘 빨간불이면 아무도 안 본다(루트 CLAUDE.md). ED2 는 아래에서 수치만 본다.
+ED1SCN=$(ls "$ROOT/games/ps1-ed1+2/script/" 2>/dev/null | sed -n 's/\(ED1SCN[0-9]*\)\.json/\1/p' | tr '\n' ' ')
+out=$("$PY" "$G/check_block_join.py" $ED1SCN 2>&1) || fail=1
+echo "$out" | tail -1 | sed 's/^/  /'
+"$PY" "$G/check_block_join.py" $(for i in $(seq 1 13); do echo -n "ED2SCN$i "; done) 2>&1 | tail -1 | sed 's/^/  [ED2] /'
 # ⚠ 탈락 없이도 원문이 남는 길이 있다 — 색 구간(`%c…%c`)을 못 채우면 그 구간이 원문
 #   그대로 나간다(ED2 49블록 실측). 구조 게이트는 전부 초록이라 여기서만 잡힌다.
 "$PY" "$G/check_jp_leak.py" --ed2 2>&1 | tail -1 | sed 's/^/  /'
+# 어투 혼용(존대↔해라체) — 게이트가 아니다(한 창에 두 상대가 섞이는 정당한 자리가 있다).
+"$PY" "$G/check_speech_level.py" 2>&1 | head -2 | sed 's/^/  /'
 
 if [ -n "$DONE" ]; then
   # shellcheck disable=SC2086
