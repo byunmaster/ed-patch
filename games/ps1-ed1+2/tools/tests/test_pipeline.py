@@ -430,6 +430,39 @@ def test_repack_skips_empty_string_refs():
     assert b"CDEF" in bytes(ed) and bytes(ed).index(b"CDEF") > 6, "둘째는 예약 뒤로 간다"
     assert callable(PI.repack)
 
+
+def test_font_compression_roundtrips_and_stays_aligned():
+    """압축 폰트를 **스텁과 같은 절차로** 되돌려 원본과 대조한다.
+
+    ⚠ 반각(마스크 비트15)을 넣었을 때 저장 행이 홀수면 다음 글리프의 마스크가 **홀수
+    주소**에 놓인다. 스텁은 마스크를 `lhu` 로 읽는데 MIPS 는 홀수 주소 `lhu` 에서 주소
+    예외로 죽는다 — 화면이 검게 죽고 빌드는 멀쩡했다(2026-08-16 실측). 정렬까지 본다.
+    """
+    import patch_opening_font as PF
+
+    chars = sorted(set("가나다ABC.,~<* 힣"))
+    raw = [PF.gen_glyphs(chars)[c] for c in chars]
+    data = PF.compress_font(raw)
+
+    out, i = [], 0
+    for _ in chars:
+        assert i % 2 == 0, f"마스크가 홀수 주소 0x{i:X} — 스텁의 lhu 가 예외로 죽는다"
+        mask = int.from_bytes(data[i : i + 2], "little")
+        i += 2
+        half = mask & PF.HALF_BIT
+        g = bytearray()
+        for r in range(15):
+            if mask >> r & 1:
+                g += bytes([data[i], 0]) if half else data[i : i + 2]
+                i += 1 if half else 2
+            else:
+                g += b"\x00\x00"
+        out.append(bytes(g))
+        i = (i + 1) & ~1  # 스텁의 정렬 올림
+    assert out == raw, "압축→복원이 원본과 다르다"
+    assert len(data) < len(raw) * PF.GLYPH, "압축이 안 됐다"
+
+
 # ⚠ **`__main__` 블록은 반드시 파일 맨 끝**이다. 예전엔 중간에 있어서 그 뒤에 붙인 테스트가
 # **정의되기 전에 러너가 돌아** 조용히 안 돌았다 — `test_proper_noun_needs_word_boundary`
 # 가 그렇게 죽어 있었고 `28/28 passed` 는 계속 초록이었다(2026-08-15). 테스트를 늘릴 땐
