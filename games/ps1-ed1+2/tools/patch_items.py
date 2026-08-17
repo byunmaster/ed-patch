@@ -94,7 +94,7 @@ NAMES = {
     "青銅のヨロイ": "청동 갑옷",
     "くさりかたびら": "미늘 갑옷",
     "鉄のヨロイ": "철 갑옷",
-    "はがねのヨロイ": "강철의 갑옷",
+    "はがねのヨロイ": "강철 갑옷",
     "銀のヨロイ": "은 갑옷",
     "水晶のヨロイ": "수정 갑옷",
     "いやしのローブ": "치유의 로브",
@@ -638,7 +638,11 @@ def main():
     moved.update(repack(ed, *ARENA, "격투장(4)", align=1, tr=b, pools=pools))
     moved.update(repack(ed, *BTL_MSG, "전투 메시지(6)", align=1, tr=b, pools=pools))
     moved.update(repack(ed, *BTL_MSG2, "전투 메시지(입수3)", align=1, tr=b, pools=pools))
-    moved.update(repack(ed, *FRAG_TACHI, "たち(파티)", align=1, tr=lambda _: "들", pools=pools))
+    # ⚠ 앞에 **본문색(3)** 을 붙인다 — `들` 은 이름 버퍼(`%s`)에 딸려 들어가 **이름색으로
+    # 물든다**(`류난들`이 통째로 주황, 유저 QA 2026-08-15). 이름과 조각이 한 버퍼라 블록
+    # 텍스트로는 가를 수 없어서, 조각 자신이 색을 되돌리게 한다. 이 조각을 쓰는 자리는
+    # 파티명 해설뿐이고(참조 1곳 — lui/addiu 전수 확인) 그 블록들은 전부 본문이 초록이다.
+    moved.update(repack(ed, *FRAG_TACHI, "たち(파티)", align=1, tr=lambda _: "\x03들", pools=pools))
     moved.update(repack(ed, *FRAG, "전투 조각(58)", align=1, tr=b, pools=pools))
     moved.update(repack(ed, *EVT, "이벤트 이름·방위(21)", align=1, tr=b, pools=pools))
     redirect(ed, moved)
