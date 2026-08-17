@@ -463,6 +463,38 @@ def test_font_compression_roundtrips_and_stays_aligned():
     assert len(data) < len(raw) * PF.GLYPH, "압축이 안 됐다"
 
 
+def test_josa_agreement_ignores_adnominal_endings():
+    """조사 받침 검사는 **관형사형 어미를 조사로 오인하면 안 된다**.
+
+    함정(2026-08-17 실측): 받침 규칙을 은/는·과/와까지 넓히면 645건이 걸리는데 **645건 전부
+    오탐**이었다 — `있는`(336) `없는`(75) `않는`(37) 처럼 관형사형 `-는` 이 항상 받침 뒤에
+    오기 때문이다. 어휘만으로는 조사와 어미를 못 가르므로 축을 **을/를 하나로** 좁혔고,
+    거기 남는 오탐(단일 형태소 `마을`)만 STOP 으로 끊는다. 넓히려는 다음 사람을 여기서 막는다.
+    """
+    import check_josa_agreement as J
+
+    for ok in ("먹는 것", "있는 사람", "없는 걸", "책을 폈다", "마을 사람", "나무를 봤다"):
+        assert not [m for m in J.RX_EULREUL.finditer(ok) if _josa_bad(J, m, ok)], f"오탐: {ok}"
+    for bad in ("여러분를 ", "카드을 ", "마스쿤를 "):
+        assert [m for m in J.RX_EULREUL.finditer(bad) if _josa_bad(J, m, bad)], f"놓침: {bad}"
+
+    # 변수 뒤: `이면` 은 받침 양쪽에 다 붙어 통과, 맨 `면` 은 잡혀야 한다.
+    # ⚠ 교체를 왼쪽 우선으로 쓰면 `이` 가 `이면` 을 가려 오탐한다 — 긴 것을 앞에 둔다.
+    hit = lambda s: [m.group(1) for m in J.RX_VAR_JOSA.finditer(s) if m.group(1) not in J.ALWAYS_OK]
+    assert hit("\x1a면 되겠구먼.") == ["면"], "맨 `면` 을 놓쳤다"
+    assert hit("\x1a이면 되겠구먼.") == [], "`이면` 을 오탐했다"
+    assert hit("\x1a은(는) 갔다") == [], "병기를 오탐했다"
+
+
+def _josa_bad(J, m, text):
+    prev, j = m.group(1), m.group(2)
+    b = J.batchim(prev)
+    if b is None or ((b != 0) if j == "을" else (b == 0)):
+        return False
+    w = text[max(0, m.start() - 3) : m.end()]
+    return not any(s in w for s in J.STOP)
+
+
 def test_name_survives_ghost_prefix_from_binary_bytes():
     """앞에 이진 바이트가 붙은 **이름**을 대사로 오인하지 않는다.
 
