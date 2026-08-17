@@ -495,6 +495,44 @@ def _josa_bad(J, m, text):
     return not any(s in w for s in J.STOP)
 
 
+def test_table_phase_catches_misaligned_pointer_table():
+    """위상이 어긋난 포인터 표도 자료로 본다 — 대사는 안 삼킨다.
+
+    함정(2026-08-17 실측): 블록 경계가 워드 경계와 안 맞는 자리가 있다. `ED2SCN13 jp37` 은
+    홀수 주소에서 시작해 워드가 `B6 16 80 2C` 로 읽히는데 3 밀면 `0x8016B62C` — 멀쩡한
+    포인터다. 위상 0 만 보면 이런 블록이 「대사」로 새어 번역할 수 없는 채 탈락으로 쌓인다.
+    """
+    with R.overlay_for("ED2SCN1"):
+        base = R.ov_base()
+        n = 0x20000
+        ptrs = b"".join((base + 0x100 * i).to_bytes(4, "little") for i in range(12))
+        assert R.table_phase(ptrs, n) == 0
+        assert R.table_phase(ptrs[3:] + b"\x00\x00\x00", n) is not None, "위상 3을 놓쳤다"
+        # 대사는 워드가 오버레이 범위에 안 들어온다 — 어느 위상에서도 표가 아니다
+        assert R.table_phase("扉には カギがかかっています。".encode("cp932") * 2, n) is None
+
+
+def test_mid_alias_master_is_the_shortest_copy():
+    """[포인터 표][대사] 사본은 **가장 짧은** 사본을 대표로 잡아야 한다.
+
+    함정(2026-08-17 실측): 먼저 나온 것을 대표로 잡았더니 표 접두가 붙은 긴 사본이 자기
+    자신을 물어 **아무것도 안 이어졌다**. 증상이 「고쳤는데 탈락 수가 그대로」라 조용하다.
+    """
+    with R.overlay_for("ED2SCN1"):
+        base = R.ov_base()
+    text = "%c扉には カギがかかっています。%c%c".encode("cp932")
+    ptrs = b"".join((base + 0x100 * i).to_bytes(4, "little") for i in range(14))
+    doc = {
+        "entries": [
+            {"entry_id": 685, "raw_hex": (ptrs + text + b"\x00" * 5).hex()},  # 긴 사본이 먼저
+            {"entry_id": 752, "raw_hex": (text + b"\x00").hex()},
+        ]
+    }
+    R._register_mid_alias(doc, "ED2SCN1")
+    assert R.MID_ALIAS.get(685) == (len(ptrs), 752), R.MID_ALIAS
+    assert 752 not in R.MID_ALIAS, "대표가 자기 자신을 사본으로 물었다"
+
+
 def test_name_survives_ghost_prefix_from_binary_bytes():
     """앞에 이진 바이트가 붙은 **이름**을 대사로 오인하지 않는다.
 

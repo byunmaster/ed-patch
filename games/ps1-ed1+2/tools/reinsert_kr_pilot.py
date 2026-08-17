@@ -162,6 +162,12 @@ ITEM_SENT = "\x17"
 # 줄이게 된 지금은 3.0이 현실적이다. 넘치면 엔진 글자단위 개행으로 degrade될 뿐이고
 # (정발에도 있던 현상), 지금처럼 **항상** 한 줄을 잃는 것보다 낫다.
 NAME_SLOTS = 3.0
+ITEM_SLOTS = 4.5
+# **아이템명은 인물 이름보다 길다** — 정본 144개 실측: 중앙 4.5 · p75 5.5 · 최장 7.5(`고대의 검의 책`).
+# 인물 3.0 을 아이템에도 쓰니 폭을 2~3슬롯 낮잡아, 우리는 안 꺾고 **엔진이 런타임에 꺾었다** —
+# 그 자리는 어절 경계를 안 보므로 `.` 만 다음 줄로 떨어진다(유저 QA 2026-08-15 `건네주었습니다` /
+# `.`). 중앙값으로 올린다 — 더 올리면 짧은 아이템에서 불필요한 개행이 생긴다(NAME_SLOTS 4.0 이
+# 그래서 3.0 으로 내려온 이력이 있다).
 # 조사 병기를 **원자 단위**로 조판하기 위한 마커(STOCK 보물상자). 한 토큰이라 줄 경계에서
 # 안 쪼개진다(훅의 한 줄 스캔 보장). ⚠ 폭은 **병기 전체("은(는)"·"이(가)")** 기준(이름+3) —
 # 엔진의 박스 줄배치는 조사훅 해결 **전**에 일어나 버퍼의 병기 전체(3슬롯)로 배치하므로,
@@ -731,7 +737,10 @@ def close_sentence(seg):
 
 # 화자 이름 정본 — 정발이 한 인물을 두 표기로 쓰는 자리. 본문은 `parse_kr` 안에서 함께
 # 고치고, **이름창은 DOS 헤더에서 오므로** 여기로 한 번 더 통과시킨다.
-NAME_CANON = {"젤만": "제르만"}
+# 화자 이름 정본 — 화자는 본문이 아니라 **정발 블록 헤더**에서 오므로 치환 규칙이 못 닿는다.
+# ⚠ `정보통/정보상` 은 **정발이 자기 안에서 갈린 자리**다(전수: 정보상 4 · 정보통 2).
+# 원문 `情報屋`(정보를 파는 사람)에 맞고 다수이기도 한 `정보상` 으로 통일한다(2026-08-17).
+NAME_CANON = {"젤만": "제르만", "정보통 토미": "정보상 토미"}
 
 
 def parse_verbatim(entry):
@@ -925,10 +934,13 @@ def cell_w(ch):
     """엔진 슬롯 폭 — encode_ext와 1:1 (1바이트=0.5, 2바이트 전각=1)."""
     if ch == NUM_SENT:
         return 1.0  # %d = 보통 1~2자리(반각) ≈ 1슬롯
-    if ch in (NAME_SENT, ITEM_SENT):
-        return NAME_SLOTS  # %s는 런타임 이름/아이템명 — 평균 길이로 근사
+    if ch == NAME_SENT:
+        return NAME_SLOTS  # %s(인물) — 평균 길이로 근사
+    if ch == ITEM_SENT:
+        return ITEM_SLOTS  # %c%s%c(아이템) — 인물보다 길다(위 주석)
     if ch in (JOSA_NAME, JOSA_ITEM):
-        return NAME_SLOTS + 3  # 이름/아이템 + 병기 전체(은(는)/이(가)=3슬롯) — 엔진 배치와 일치
+        # 이름/아이템 + 병기 전체(은(는)/이(가)=3슬롯) — 엔진 배치와 일치
+        return (NAME_SLOTS if ch == JOSA_NAME else ITEM_SLOTS) + 3
     if ch == NOBREAK_SP:
         return 0.5  # 보통 공백과 같은 폭(조판 후 공백으로 되돌린다)
     return 0.5 if ch == " " or ch in HALF_PUNCT or (ch.isascii() and ch.isalnum()) else 1.0
@@ -1214,6 +1226,20 @@ COLOR_WRAP = {}
 # 이름창 색인 노랑으로 나왔다). 아이템 획득 안내처럼 **이름은 제 색을 두고 안내문만**
 # 해설색으로 바꾸려면 이쪽을 쓴다.
 COLOR_BODY = {}
+# 해설(내레이션) 색: {eid: (이름색, 본문색)} — **선두 `%s`(이름 주입) 앞뒤**에 색코드를 박는다.
+# ⚠ `color`(COLOR_WRAP)로는 안 된다 — 그건 블록 맨 앞에만 넣어서 **주입되는 이름까지** 같은
+# 색이 된다. 시스템 안내는 `%s은(는) …했습니다.` 꼴이라 이름은 주황(2)·본문은 초록(3)으로
+# 갈라야 정발과 같아진다(유저 QA 2026-08-14 왕가의묘 보물상자·문 열기).
+# ⚠ `color_body` 와도 다르다 — 저건 이름창(`%c%s%c`)을 찾는데, `NAME_SENT` 는 `%c` 없는
+# 맨 `%s` 로 나간다(`ITEM_SENT` 만 `%c%s%c`). 찾는 표지가 아예 없어 아무 일도 안 일어난다.
+COLOR_LEAD = {}
+# 아이템 창 색: {eid: (아이템색, 본문색)} — **`%c%s%c` 창 안쪽**에 색코드를 박는다.
+# 획득 안내(`%c%s%c을(를) 받았습니다.`)는 색이 통째로 콜사이트 인자에서 오는데 **그 인자가
+# 자리마다 다르다** — 같은 꼴인데 어떤 블록은 아이템이 주황으로, 어떤 블록은 문장까지 초록으로
+# 나갔다(유저 QA 2026-08-15 황금의 열쇠). 인자는 못 건드리니 **여는 `%c` 바로 뒤**에 아이템색을,
+# 창을 닫은 뒤에 본문색을 박아 인자가 무엇이든 같은 그림이 되게 한다.
+# ⚠ `color_body` 로는 절반뿐이다 — 그건 창 **뒤**만 칠해서 아이템 자체는 인자 색 그대로다.
+COLOR_ITEM = {}
 # 이름줄 주입: {eid: (색on, 이름, 색off)} — 씬 단위(load_translations 재구축).
 # **원본에 화자 헤더(`%c이름%c`) 자리가 없는데** 화면엔 이름이 떠야 하는 블록용이다
 # (jp314 세리오스 실측 2026-08-01: `%c`=1·헤더 없음이라 헤더 쌍을 못 만든다 — 만들면
@@ -1740,13 +1766,24 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), d
         두 종류 모두 해당: ①`%s` 주입 창(텍스트 없는 body) ②리터럴 이름만 든 body 창
         (`%cロー%c라는…` — ②를 빼면 `로우라고 불리는 떠돌이옵니다` 뒤 온점만 다음 줄로
         떨어진다, 유저 QA 2026-07-30)."""
+        return _name_inject_prefix(k) is not None
+
+    def _name_inject_prefix(k):
+        """앞 이름/아이템 창의 **폭 계산용 접두** — 없으면 None.
+
+        리터럴이면 **그 글자 그대로** 준다(추정 대신 실측). 이게 없으면 `%c황금의 열쇠%c` 같은
+        긴 아이템을 `ITEM_SLOTS` 로 낮잡아, 우리는 안 꺾고 **엔진이 런타임에** 꺾는다 —
+        그쪽은 어절을 안 봐서 `.` 만 다음 줄로 떨어진다(유저 QA 2026-08-15).
+        런타임 주입(`%s`)은 글자를 알 수 없으니 센티널(평균 추정)로 남는다."""
         if k == 0 or wins[k - 1][0] != "body":
-            return False
+            return None
         prev = wins[k - 1][1]
         if any(t[0] == "s" for t in prev) and not any(t[0] == "t" for t in prev):
-            return True  # ① %s 주입 창
+            return ITEM_SENT  # ① %s 주입 창(인라인은 아이템명)
         # ② 리터럴 이름만 든 창(텍스트 1개뿐 + 개행 없음) — 이름창처럼 다음 창에 이어진다
-        return len(prev) == 1 and prev[0][0] == "t"
+        if len(prev) == 1 and prev[0][0] == "t":
+            return _tpl_literal_kr(prev[0][1]) or ITEM_SENT
+        return None
 
     # 접은 이름창 뒤 본문 창은 **이름+조사가 첫 줄을 함께 쓴다** — 폭 계산에 넣지 않으면
     # 엔진 자동 개행이 꼬리 부호만 다음 줄로 꺾는다(`…되었습니다` / `.`).
@@ -1771,15 +1808,24 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), d
             lines[0] = lines[0].removeprefix(nm)
             return lines
         if _after_name_inject(k):
-            lines = one_page(NAME_SENT + pg)  # 이름 폭(NAME_SLOTS)을 첫 줄에 반영
+            pre = _name_inject_prefix(k)  # 리터럴이면 실측 폭, %s 면 추정 폭
+            lines = one_page(pre + pg)
             # ⚠ 이름창 뒤 `lstrip()` 은 보통 옳다(이름 다음에 조사가 바로 붙는다). 그런데
             # **아이템명 주입(`%c%s%c`)이 문장 한복판**일 땐 뒤 어절과 띄어야 한다
             # (`레드젬여기 있습니다` — jp1086 실측 2026-08-11). 정발도 `\x0E ` 로 띄워 두는데
             # 그 공백이 여기서 죽는다. **붙임 공백으로 명시한 자리만** 되살린다 —
             # 다른 블록엔 선두 NOBREAK_SP 가 없어 동작이 그대로다.
-            lines[0] = (" " if pg.startswith(NOBREAK_SP) else "") + lines[0].lstrip(
-                NAME_SENT
-            ).lstrip()
+            head = lines[0]
+            if head.startswith(pre):
+                head = head[len(pre) :]
+            # ⚠ **정본 자신의 선두 센티널도 걷어낸다.** 이 자리의 `%s` 는 템플릿이 이미
+            # 주므로 문안이 `\x1a…` 로 시작하면 둘이 되어 `fmt_excess` 로 통째 탈락한다
+            # (ED2 7블록 실측 2026-08-17). 옛 `lstrip(NAME_SENT)` 이 접두와 이걸 **같이**
+            # 떼고 있었는데, ED1 QA 에서 접두만 정확히 떼도록 바꾸며 드러났다.
+            # ⚠ 실패 시 `one_page(pg)` 로 되돌아가는 안전망을 두면 **더 나빠진다** — 그 경로는
+            # 선두 센티널을 안 걷어낸다(내가 그렇게 넣었다가 7블록을 되레 살렸다).
+            head = head.lstrip(NAME_SENT + ITEM_SENT)
+            lines[0] = (" " if pg.startswith(NOBREAK_SP) else "") + head.lstrip()
             return lines
         return one_page(pg)
 
@@ -2007,6 +2053,86 @@ def is_table_bytes(raw, data_len):
     )
 
 
+MID_ALIAS = {}  # eid → (delta, 대표 eid) — 선두가 포인터 표인 사본
+MID_TAIL_KEY = 16  # 대표 색인의 꼬리 길이(전수 대조를 O(n²)로 만들지 않기 위한 색인 키)
+
+
+def _register_mid_alias(jp_doc, scn_name):
+    """**[포인터 표][대사]** 꼴 블록을, 같은 대사를 가진 **깨끗한 사본**에 잇는다.
+
+    `STOCK_MID` 와 같은 수법인데 저건 정형문(보물상자) 종류로만 찾아서 그 밖을 놓쳤다 —
+    `ED2SCN5 jp685·757`(`%c扉には カギがかかっています。%c%c`)이 `ctrl_seq` 로 탈락해 있었다.
+    제자리 재작성은 앞의 표 때문에 못 하지만, **참조를 대표 사본으로 돌리면** 화면엔 한글이
+    나간다. 여기서는 정형 종류가 아니라 **대사 바이트가 같은가**로 대표를 찾는다.
+
+    ⚠ 접두가 진짜 포인터 표일 때만 잇는다(`table_phase`) — 아니면 그냥 「긴 블록과 짧은
+    블록의 꼬리가 우연히 같은」 자리를 잘못 묶는다.
+
+    ⚠ 대표는 **접두가 없는** 사본이어야 한다. 접두가 있는 것끼리 이으면 둘 다 제자리
+    재작성이 안 돼 아무것도 안 풀린다.
+    """
+    MID_ALIAS.clear()
+    src = next((s for s in SCN_FILES if s[0] == scn_name), None)
+    if src is None:
+        return
+    data_len = src[2]
+    blocks = {}
+    for e in jp_doc["entries"]:
+        if e.get("raw_hex"):
+            blocks[e["entry_id"]] = bytes.fromhex(e["raw_hex"]).rstrip(b"\x00")
+    # 대표는 그 꼬리를 가진 것들 중 **가장 짧은** 블록이다. ⚠ 먼저 나온 것을 잡으면
+    # 표 접두가 붙은 긴 사본이 자기 자신을 대표로 물어 아무것도 안 이어진다(실측).
+    master = {}
+    for eid, b in blocks.items():
+        if len(b) < MID_TAIL_KEY:
+            continue
+        k = b[-MID_TAIL_KEY:]
+        if k not in master or len(b) < len(blocks[master[k]]):
+            master[k] = eid
+    # ⚠ `load_translations` 는 오버레이 베이스 밖에서도 불린다(검사기들). `table_phase` 가
+    # 베이스를 요구하므로 여기서 세운다 — `table_block_eids` 와 같은 관용이다.
+    with overlay_for(scn_name):
+        for eid, b in blocks.items():
+            m = master.get(b[-MID_TAIL_KEY:]) if len(b) > MID_TAIL_KEY else None
+            if m is None or m == eid:
+                continue
+            i = len(b) - len(blocks[m])
+            if i > 0 and b.endswith(blocks[m]) and table_phase(b[:i], data_len) is not None:
+                MID_ALIAS[eid] = (i, m)
+    if MID_ALIAS:
+        print(f"  포인터 표 접두 사본 {len(MID_ALIAS)}건 — 대표 사본으로 참조 전환")
+
+
+TABLE_MIN_WORDS = 8  # 이보다 적으면 우연으로 본다
+
+
+def table_phase(raw, data_len):
+    """**위상이 어긋난** 포인터 테이블도 잡는다 — 맞는 위상, 없으면 None.
+
+    ⚠ 블록 경계가 워드 경계와 안 맞는 자리가 있다. `ED2SCN13 jp37` 은 0x981(홀수)에서
+    시작해 워드가 `B6 16 80 2C` 로 읽히는데, 위상을 3 밀면 `0x8016B62C` — 멀쩡한 포인터다.
+    위상 0 만 보던 `is_table_bytes` 는 이걸 대사로 넘겼고, 번역할 수 없으니 **탈락**으로
+    쌓였다(「화면에 일본어가 남는다」로 보고되는데 실은 그려지지도 않는 자료다).
+
+    ⚠ 앵커와 AND 로 묶지 않는다 — 앵커가 이 블록들을 **안 덮거나 더 짧다**(jp37 은 어떤
+    앵커에도 안 들고, `ED2SCN5 jp757` 은 앵커가 블록 끝보다 앞에서 끝난다). 대신 워드 수를
+    {TABLE_MIN_WORDS}개 이상으로 요구해 우연을 막는다 — SJIS 본문은 워드가 오버레이 범위에
+    안 들어오므로(`0x82a982a9`) 이 조건만으로도 대사를 안 삼킨다.
+    """
+    lo, hi = ov_base(), ov_base() + data_len
+
+    def ok(v):
+        return lo <= v < hi or v == 0
+
+    for p in range(4):
+        m = (len(raw) - p) // 4
+        if m < TABLE_MIN_WORDS:
+            continue
+        if all(ok(int.from_bytes(raw[p + i * 4 : p + i * 4 + 4], "little")) for i in range(m)):
+            return p
+    return None
+
+
 _TABLE_EIDS = {}  # scn_name → frozenset (씬당 1회 계산 — 원본 재추출 비용 회피)
 
 
@@ -2037,12 +2163,18 @@ def table_block_eids(scn_name):
                 e["entry_id"]
                 for e in doc["entries"]
                 if e.get("raw_hex")
-                and any(
-                    a <= int(e["file_offset"], 16)
-                    and int(e["file_offset"], 16) + len(e["raw_hex"]) // 2 <= b
-                    for a, b in anchors
+                and (
+                    (
+                        any(
+                            a <= int(e["file_offset"], 16)
+                            and int(e["file_offset"], 16) + len(e["raw_hex"]) // 2 <= b
+                            for a, b in anchors
+                        )
+                        and is_table_bytes(bytes.fromhex(e["raw_hex"]), len(data))
+                    )
+                    # 앵커가 못 덮는 자리 — 바이트만으로 판정한다(`table_phase` 주석)
+                    or table_phase(bytes.fromhex(e["raw_hex"]), len(data)) is not None
                 )
-                and is_table_bytes(bytes.fromhex(e["raw_hex"]), len(data))
             )
     _TABLE_EIDS[scn_name] = hit
     return hit
@@ -2154,6 +2286,31 @@ def build_candidate(raw, t, eid):
             c = c.replace(win, win + bytes([on]))
             i = c.rfind(MC)  # 종단 %c 앞에 복귀색 — 다음 블록으로 색이 새지 않게
             c = c[:i] + bytes([off]) + c[i:] if i >= 0 else c + bytes([off])
+            cand = c + b"\x00" * (-len(c) % 4 or 4)
+    if cand is not None and eid in COLOR_LEAD:
+        nm_c, body_c = COLOR_LEAD[eid]
+        c = cand.rstrip(b"\x00")
+        i = c.find(b"%s")
+        if i >= 0:
+            c = c[:i] + bytes([nm_c]) + c[i : i + 2] + bytes([body_c]) + c[i + 2 :]
+            # 아이템명(`%c%s%c`) 뒤에도 본문색을 되돌린다 — 그 `%c` 인자가 흰색으로
+            # 복귀시켜서 문장 꼬리만 색이 갈린다(`…황금의 열쇠를 사용하여 문을 열었습니다`).
+            win = MC + b"%s" + MC
+            c = c.replace(win, win + bytes([body_c]))
+            j = c.rfind(MC)  # 종단 %c 앞에 흰색 복귀 — 다음 블록으로 색이 새지 않게
+            c = c[:j] + b"\x01" + c[j:] if j >= 0 else c + b"\x01"
+            cand = c + b"\x00" * (-len(c) % 4 or 4)
+    if cand is not None and eid in COLOR_ITEM:
+        item_c, body_c = COLOR_ITEM[eid]
+        c = cand.rstrip(b"\x00")
+        win = MC + b"%s" + MC
+        if win in c:
+            # 여는 `%c` 뒤 = 인자가 칠한 **다음** 자리라 우리 색이 이긴다. 닫는 `%c` 뒤엔
+            # 본문색을 둔다(인자가 흰색으로 되돌리는 자리다). 창이 둘 이상인 블록이 있다
+            # (`…을(를) 받았습니다. …을(를) 손에 넣었습니다.`) — 전부 같게 칠한다.
+            c = c.replace(win, MC + bytes([item_c]) + b"%s" + MC + bytes([body_c]))
+            j = c.rfind(MC)  # 종단 %c 앞에 흰색 복귀 — 다음 블록으로 색이 새지 않게
+            c = c[:j] + b"\x01" + c[j:] if j >= 0 else c + b"\x01"
             cand = c + b"\x00" * (-len(c) % 4 or 4)
     if cand is not None and eid in NAME_PLATE:
         on, nm, off = NAME_PLATE[eid]
@@ -2497,6 +2654,8 @@ def load_translations(align_name, scn_name):
     FOLD_NAME.clear()
     COLOR_WRAP.clear()
     COLOR_BODY.clear()
+    COLOR_LEAD.clear()
+    COLOR_ITEM.clear()
     NAME_PLATE.clear()
     NL_WINS.clear()
     LEAD_NL_DROP.clear()
@@ -2740,6 +2899,12 @@ def load_translations(align_name, scn_name):
             TRAIL_SP.add(int(jp_id_str))
         elif ov.get("trail_nl"):
             TRAIL_NL.add(int(jp_id_str))
+        if "color_lead" in ov:  # 해설 — [이름색, 본문색] (선두 %s 앞뒤에 박는다)
+            c = ov["color_lead"]
+            COLOR_LEAD[int(jp_id_str)] = tuple(c) if isinstance(c, list) else (2, int(c))
+        if "color_item" in ov:  # 획득 안내 — [아이템색, 본문색] (`%c%s%c` 창 안쪽에 박는다)
+            c = ov["color_item"]
+            COLOR_ITEM[int(jp_id_str)] = tuple(c) if isinstance(c, list) else (2, int(c))
         if "color_body" in ov:  # 이름창 뒤부터 색 — [on, off] 또는 on(off 기본 1=흰색)
             c = ov["color_body"]
             COLOR_BODY[int(jp_id_str)] = tuple(c) if isinstance(c, list) else (int(c), 1)
@@ -2893,6 +3058,7 @@ def load_translations(align_name, scn_name):
         print(f"  정형 블록(보물상자) {len(STOCK_KINDS)}건 등록")
     if n_price:
         print(f"  상점 가격 프롬프트 {n_price}건 등록")
+    _register_mid_alias(jp_doc, scn_name)
 
     # 침묵 블록(리터럴 헤더 + 본문 전부 부호/빈 창): 이름창만 번역 등록. 그냥 두면
     # 화자명까지 セリオス로 남는다(유저 QA 07-26). 크기 중립이라 공간 압박 없음.
@@ -3316,6 +3482,12 @@ def _build_scene(name, lba, size, identity, fixed):
             for m_eid, (delta, kind) in STOCK_MID.items()
             if kind in masters
         }
+        # 정형문 밖의 [포인터 표][대사] 사본 — 대표가 실제로 번역돼 살아 있을 때만 잇는다
+        # (`_register_mid_alias` 주석). 정형 쪽이 이미 잡은 자리는 건드리지 않는다.
+        for m_eid, (delta, master) in MID_ALIAS.items():
+            if m_eid in mid or master not in translations or master in excluded:
+                continue
+            mid[m_eid] = (delta, master)
         return alias, mid
 
     # 공유 lui 충돌 해소 루프

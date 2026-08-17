@@ -121,19 +121,23 @@ def scan(scenes=None, verbose=False):
         # ⚠ **블록 경계가 원문과 우리가 다르게 갈린다.** 원문 `…アクダムの手から` / `解放…`
         # 을 우리는 `…생각이옵니다.` / `이제는 루디아를 아크담의…` 로 나눴다 — 앞 블록만
         # 보면 이름이 없다(SCN1 `jp333` 실측). 그래서 **다음 블록 문안까지 합쳐** 찾는다.
+        # ⚠ **화자 이름은 본문에 없는 게 정상이다** — 이름창으로 따로 나간다. 본문만 보면
+        # `{c}情報屋 トミー{c}` 블록이 전부 「이름이 없다」로 뜬다(ED1+ED2 14곳 실측
+        # 2026-08-17). 화자 문자열을 같이 본다.
         blocks = []
-        for _s, eid, jp, cand, _t in R.iter_candidates((scn,)):
+        for spk, eid, jp, cand, _t in R.iter_candidates((scn,)):
             kr = R.render_bytes(cand, ctrl=False)
-            blocks.append((eid, jp, jp_text(jp), kr.replace("\n", " ") if kr else ""))
+            body = kr.replace("\n", " ") if kr else ""
+            blocks.append((eid, jp, jp_text(jp), body, str(spk or "")))
 
         hits = []
-        for i, (eid, jp, j, flat) in enumerate(blocks):
+        for i, (eid, jp, j, flat, spk) in enumerate(blocks):
             # ⚠ **인자 블록은 보지 않는다.** 이름이 `%s` 로 주입되는 자리라
             # (`ワプの翼 を渡しました`) 문안에 이름이 없는 게 정상이다.
             if b"%s" in jp or b"%d" in jp or not flat:
                 continue
             kr = flat
-            flat = " ".join([flat] + [b[3] for b in blocks[i + 1 : i + 3]])
+            flat = " ".join([flat, spk] + [b[3] for b in blocks[i + 1 : i + 3]])
             for name, ours, kind in pairs:
                 if not _name_in(j, name) or ours in flat:
                     continue

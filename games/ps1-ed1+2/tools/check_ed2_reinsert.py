@@ -52,7 +52,15 @@ def run(scene):
     tally, bad = collections.Counter(), []
     with R.overlay_for(scene):
         tr, _, _ = R.load_translations(scene.replace("SCN", "_SCN"), scene)
+        # ⚠ **`STOCK_MID` 는 탈락이 아니다.** 선두가 포인터 표라 제자리 재작성은 못 하지만,
+        # 재삽입이 **참조를 대표 사본으로 돌려** 화면엔 한글이 나간다(`compute_stock_alias`).
+        # 이걸 모르고 세면 「화면에 일본어가 남는다」는 거짓 경보가 된다 — ED2 에서 3건이
+        # 그렇게 잡혀 있었다(2026-08-17). 따로 세어 보고한다(조용히 빼지 않는다).
+        mid = {**R.STOCK_MID, **R.MID_ALIAS}
         for eid, t in sorted(tr.items()):
+            if eid in mid:
+                tally["mid_alias"] += 1
+                continue
             if eid not in raw:
                 tally["no_raw"] += 1
                 continue
@@ -78,13 +86,15 @@ def main():
         total.update(tally)
         all_bad += [(scene, *b) for b in bad]
         if not quiet:
-            drop = sum(v for k, v in tally.items() if k not in ("ok", "no_raw"))
+            drop = sum(v for k, v in tally.items() if k not in ("ok", "no_raw", "mid_alias"))
             print(f"  {scene:<10} 통과 {tally['ok']:>5}   탈락 {drop:>3}")
     if not quiet and all_bad:
         print("\n  탈락 목록 — 이 블록은 **화면에 일본어가 남는다**")
         for scene, why, eid, text in all_bad:
             print(f"    [{why}] {scene} jp{eid}  {text[:56]!r}")
-    drop = sum(v for k, v in total.items() if k not in ("ok", "no_raw"))
+    drop = sum(v for k, v in total.items() if k not in ("ok", "no_raw", "mid_alias"))
+    if total["mid_alias"]:
+        print(f"  ℹ 대표 사본으로 참조를 돌리는 블록 {total['mid_alias']}건 — 탈락 아님")
     print(f"\n  ED2 재삽입 예행: 통과 {total['ok']} · 탈락 {drop} {dict(total)}")
     # ⚠ 게이트로 세우지 않는다 — ED2 는 아직 체인 밖이라 「지금 고칠 수 있는 것」이 아닌
     # 자리가 섞인다(제어런 재현 불가 블록). 수치를 보고 사람이 판단한다.
