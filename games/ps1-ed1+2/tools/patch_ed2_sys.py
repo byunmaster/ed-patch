@@ -48,12 +48,26 @@ PARTY = {
 # ⚠ `呪文` 은 「주문」이다(유저 개념 정정 2026-08-13, policy). 마법이 아니다.
 MENU_EXTRA = {"呪文能力": "주문능력"}
 
+# ⚠ **전투 커맨드를 여기 적지 말 것.** ED1↔ED2 정발이 갈리는 자리(`戦う`·`守る`·`強さ`·
+# `逃げる`)라 한때 여기에 자리 override 를 뒀는데, 유저 판정으로 **ED2 정발로 두 편을
+# 통일**했다(2026-08-17). 통일된 뒤엔 `patch_sys_ui.UI` 한 곳만 고치면 `positional()` 이
+# 자리로 끌어가 ED2 도 따라온다 — 여기 다시 적으면 같은 지식이 두 곳에 갈린다.
+
 # 지명 — **고유명은 ED1 과 한 표기**여야 한다(policy 「표기 방침」). ED1 에 있는 것은
 # `patch_sys_ui.PLACES` 에서 원문으로 끌어오고, ED2 에만 나오는 것만 여기 적는다.
 # 근거는 정발 ED2 코퍼스 실측 — 이슈타(29회) · 이즈(28) · 프로스(25) · 큐베라(15) ·
 # 아훌(9) · 유이시스(8) · 베른(5) · 네사(4) · 사피아(3) · 그로스토스(3) · 테크니카(13) ·
 # 모건(17) · 보아드(55) · 아네스(2). `ウイル` 은 대사에 「윌」로 나온다.
 PLACES_ED2 = {
+    # ⚠ **다섯 나라는 ED2.EXE 안의 표(0x9778~)에 따로 있다**(2026-08-16 실측). 씬 헤더에는
+    # 0곳이라 `patch_sys_ui.PLACES`(ED.EXE 0xBE690 고정 슬롯표)와도 무관하다 — 상태 문서가
+    # 「PLACES 에 넣는다」로 적혀 있었는데 그 표는 다른 자리였다. 널종단이라 제자리 치환이면
+    # 바이트가 안 밀린다. 표기는 편차 대장의 나라 표가 정본이다.
+    "ファーレーン": "파렌",
+    "ウォンリーク": "온리크",
+    "ラヌーラ": "라누라",
+    "ソルディス": "솔디스",
+    "モレストン": "모레스톤",
     "クルス": "크루즈",
     "ベルガ": "베르가",
     "ネリア": "네리아",
@@ -210,9 +224,22 @@ NAMES_ED2 = {
 # 2026-08-14). 이름을 줄일 게 아니라 **자리를 옮기는 게 맞다** — ED1 도 그렇게 한다.
 # 안전 근거: 이 구획의 이름 **153건이 전부 `lui`/`addiu` 로 참조된다**(참조 0건 0, 실측).
 # 그래서 옮긴 뒤 `patch_items.redirect` 가 참조를 전부 갱신할 수 있다.
-# ⚠ 시나리오 칸은 `0xD4930` 까지면 **16B 모자란다**(필요 208 / 칸 192). 바로 뒤
-# `0xD4934~0xD494F` 가 28B 0런이라 거기까지 넓혔다 — 다음 문자열(`たち` 0xD4950) 전까지다.
-REPACK = ((0x800, 0xF44, "ED2 이름"), (0xD4870, 0xD4950, "ED2 시나리오 아이템"))
+REPACK = ((0x800, 0xF44, "ED2 이름"),)
+
+# ── 옮기면 안 되는 표 — 제자리에서만 채운다 ─────────────────────────────────
+# 🔴 **시나리오 아이템 칸(`0xD4870~0xD4950`)은 재packing 하면 안 된다**(2026-08-16 실측).
+# 한동안 `REPACK` 두 번째 구획으로 넣어 뒀는데, 그러면 **ED2 맵 배경이 통째로 검게** 나갔다
+# (첫 맵부터. 캐릭터·HUD·창은 멀쩡하고 배경만 사라진다). 이 224B 만 원본으로 되돌리고
+# 참조 19곳을 원복하니 그 자리에서 정상으로 돌아왔다 — differential 빌드로 확정.
+#
+# 왜 통과했나: **가진 게이트가 전부 초록이었다.** 이름 25개가 `lui`/`addiu` 로 **하나도
+# 빠짐없이 참조**되고(참조 0건 0), `redirect` 의 부호확장 assert 도, `repack_names` 의
+# 예산 assert 도 걸리지 않는다. 「참조가 있으니 옮겨도 된다」가 여기서 깨진다.
+#
+# 진짜 계약은 **간격**이다 — 원본에서 앞 20개(`ナイフ`…`リーフ`)가 정확히 8B 간격으로
+# 놓여 있다. 코드가 포인터로도 부르고 `base + i*8` 로도 읽는 배열이라, 촘촘히 밀어 담으면
+# 포인터 쪽만 맞고 인덱싱 쪽이 어긋난다. 루트 CLAUDE.md 「구조 계약」의 **위치** 항목이다.
+FIXED_SLOTS = ((0xD4870, 0xD4950, "ED2 시나리오 아이템"),)
 
 # 주문책 — `Xの書` 는 **주문 이름 + 「의 책」**이다(`呪文` 은 「주문」, policy 「표기 방침」).
 # 이름은 ED1 정본에서 끌어오므로 여기 다시 적지 않는다 — 주문 표기를 고치면 책도 따라온다.
@@ -380,6 +407,35 @@ def _reserved_in(buf, lo, hi, names):
     return sorted(out)
 
 
+STRIDE_MIN = 8  # 이보다 짧은 연속은 우연으로 본다
+STRIDE_SHARE = 0.6  # 구획의 이 비율 이상을 한 줄이 덮으면 배열이다
+
+
+def assert_not_strided(names, label):
+    """**균일 간격이 구획을 지배하면 재packing 금지** — 배열은 `base + i*간격` 으로도 읽힌다.
+
+    참조가 100% 있어도 안전하다는 뜻이 아니다(`FIXED_SLOTS` 주석의 실측 사고). 포인터는
+    갱신되지만 인덱싱이 어긋나고, **빌드는 성공한다.** 그래서 여기서 죽인다.
+
+    ⚠ 절대 길이로 재면 못 쓴다 — `ED2 이름`(132개)에도 12B 간격이 16개 이어지는 자리가
+    있는데 그건 **이름 길이가 우연히 같아서**고, 그 구획은 재packing 해도 멀쩡하다(실측).
+    가르는 건 **비율**이다: 시나리오 아이템 표는 25개 중 20개(80%)가 한 줄이었다.
+    """
+    offs = [off for off, _jp in names]
+    best = run = 1
+    at = step = 0
+    for i in range(1, len(offs) - 1):
+        run = run + 1 if offs[i + 1] - offs[i] == offs[i] - offs[i - 1] else 1
+        if run > best:
+            best, at, step = run, offs[i - run + 1], offs[i] - offs[i - 1]
+    if best >= STRIDE_MIN and best >= STRIDE_SHARE * len(offs):
+        raise SystemExit(
+            f"⚠ {label}: 0x{at:X} 부터 {best}개(전체 {len(offs)})가 {step}B 균일 간격이다"
+            " — 고정 스트라이드 배열이라 재packing 하면 조용히 깨진다."
+            " `FIXED_SLOTS` 로 옮겨 제자리에서만 채울 것."
+        )
+
+
 def repack_names(buf, canon):
     """이름 구획을 KR 로 다시 채우고 참조를 갱신한다. 반환: 옮긴 이름 수."""
     import patch_items as PI
@@ -387,6 +443,7 @@ def repack_names(buf, canon):
     n = 0
     for lo, hi, label in REPACK:
         names = _walk(buf, lo, hi)
+        assert_not_strided(names, label)
         reserved = _reserved_in(buf, lo, hi, names)
         moved, cur, packed = {}, lo, bytearray()
         for off, jp in names:
@@ -409,6 +466,33 @@ def repack_names(buf, canon):
     return n
 
 
+def fill_fixed(buf, canon):
+    """`FIXED_SLOTS` 를 **제자리에서만** 채운다 — 배치를 한 바이트도 안 바꾼다.
+
+    슬롯은 「이 이름 시작 ~ 다음 이름 시작」이다(원본 간격을 그대로 존중한다).
+    안 들어가는 이름은 **원문을 남기고 보고**한다 — 줄여 쓰거나 옮기지 않는다.
+    옮기면 왜 안 되는지는 `FIXED_SLOTS` 주석.
+    """
+    n = over = 0
+    for lo, hi, label in FIXED_SLOTS:
+        names = _walk(buf, lo, hi)
+        edges = [off for off, _jp in names] + [hi]
+        for i, (off, jp) in enumerate(names):
+            kr = canon.get(jp)
+            if not kr:
+                continue
+            slot = edges[i + 1] - off
+            kb = _enc(kr) + b"\x00"
+            if len(kb) > slot:
+                over += 1
+                print(f"  ⚠ {label} 칸 부족 {off:#07x} {jp!r} → {kr!r} ({len(kb)}>{slot}B)")
+                continue
+            buf[off : off + slot] = kb.ljust(slot, b"\x00")
+            n += 1
+        print(f"  {label}: 제자리 {n}개" + (f" (칸 부족 {over})" if over else ""))
+    return n
+
+
 def apply():
     rows, over = plan()
     for off, jp, kr, slot, enc in over:
@@ -425,7 +509,8 @@ def apply():
     canon.update({k: v for k, v in PI.MONSTERS.items() if k not in canon})
     for jp, kr in list(canon.items()):
         canon.setdefault(jp + "の書", kr + BOOK_SUFFIX)
-    n_names = repack_names(buf, canon)
+    repack_names(buf, canon)
+    fill_fixed(buf, canon)
     # ⚠ **메모리카드·세이브 문구는 ED2.EXE 에도 한 벌 더 있다**(2026-08-16 실측, 13곳).
     # ED1 쪽만 고쳐 뒀더니 ED2 화면엔 `メモリーカードを 캑べています` 처럼 **가나 + 깨진
     # 한글**로 나갔다 — 한자 슬롯을 한글로 덮어썼으니 원문 한자가 엉뚱한 한글이 된다.

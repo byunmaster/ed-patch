@@ -44,6 +44,15 @@ KANA = re.compile(r"[ぁ-んァ-ヴー]")
 # ED1 에서도 `patch_sys_ui` 관할이고, 두 곳에서 쓰면 서로 덮는다.
 SKIP = re.compile(r"メモリーカード|カードには|データが壊れ|フォーマット|セーブ|ロード")
 
+# 휴리스틱(가나 또는 `%`)이 못 잡는 자리를 **오프셋으로 명시 편입**한다.
+# 0xD4974 `ＥＰ ` — 전각 라틴뿐이라 가나도 `%` 도 없다. 전투 승리 줄의 앞머리인데, 안 잡히면
+# **ED1 은 정본을 따르고 ED2 만 원본이 남아 두 편이 조용히 갈린다**(2026-08-17 실측).
+# 지금 값은 정발과 같은 전각 `ＥＰ ` 라 쓰나 마나지만, 표기를 고칠 때 ED2 가 따라오려면
+# 이 경로가 있어야 한다.
+# ⚠ ED1 쪽 정본은 `items_battle.json` 인데 `battle_text.B` 는 `battle.json` 만 싣는다 —
+# 그래서 공용표로도 안 흘러온다. 값이 같아도 `battle_ed2.json` 에 한 줄이 필요하다.
+EXTRA_OFF = (0xD4974,)
+
 
 def _enc(kr):
     """한글은 슬롯 SJIS, 나머지(숫자·영문·부호·개행)는 원래 SJIS."""
@@ -76,6 +85,9 @@ def strings(buf):
         if ("\x80" in s) or not (KANA.search(s) or "%" in s):
             continue
         out[fo] = s
+    for fo in EXTRA_OFF:
+        j = buf.find(b"\x00", fo)
+        out[fo] = buf[fo:j].decode("cp932")
     return out
 
 
@@ -83,11 +95,21 @@ def plan():
     """([(오프셋, JP, KR, 슬롯)], 넘치는 것, 번역 없는 것)."""
     buf = extract(ED2_LBA, ED2_SIZE)
     ed2 = jp_map("battle_ed2")
+    # ⚠ **`battle_text.B` 는 `battle.json` 만 싣는다** — 「공용표」라고 다 공용이 아니다.
+    # 아이템 획득·포기·소지품 초과 문구는 `items_battle.json` 에 있고 ED2 도 **같은 원문**을
+    # 쓰는데, 여기서 안 보면 ED2 에만 일본어가 남는다(2026-08-17 실측 20건 — 그중 셋이
+    # 실제 문장이고 나머지는 `%c%s%c` 같은 서식뿐이라 무해했다. 그래서 여태 안 보였다).
+    items = jp_map("items_battle")
     fit, over, none = [], [], []
     for fo, jp in sorted(strings(buf).items()):
         if SKIP.search(jp):
             continue
-        kr = B.get(jp) or ed2.get(jp)
+        # ⚠ **ED2 정본이 먼저다**(2026-08-17). 두 편은 같은 원문을 쓰지만 **정발이 갈린다** —
+        # `戦いに勝利しました。` 가 ED1 정발 「전투에서 승리했다.」· ED2 정발 「전투에서
+        # 승리하였습니다」이고, 승리 로그 세 줄이 통째로 다르다. ED1 표를 앞에 두면 ED2 화면에
+        # ED1 문안이 나가는데 **빌드는 통과한다**(둘 다 유효한 번역이라 게이트가 못 잡는다).
+        # 공유는 「ED2 정본에 없을 때만」이다.
+        kr = ed2.get(jp) or B.get(jp) or items.get(jp)
         if kr is None:
             none.append((fo, jp))
             continue

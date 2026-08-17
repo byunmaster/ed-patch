@@ -194,7 +194,7 @@ def main():
     run("align_jp_kr.py", "--speakers-only")
     run("reinsert_kr_pilot.py")
     run("patch_gfx_cards.py")
-    run("patch_hud_names.py")
+    run("patch_hud_names.py", "ED1", "ED2")
     run("patch_sys_ui.py")
     shutil.copyfile(KR_UI, FINAL)
     write_cue(FINAL_CUE, os.path.basename(FINAL))
