@@ -17,13 +17,18 @@
 
 ⚠ **넘치면 건너뛴다**(`patch_ed2_battle.py` 와 같은 방침). 뒤가 곧 다음 문자열이다.
 
-🔴 **재packing 하지 말 것 — 두 번 시험하고 접었다**(2026-08-17 실측). 엔진이 문자열을
-**절대 오프셋으로 읽는다**: 내용을 밀어내면 슬라임과 부딪히는 순간 전투 화면이 안 뜨고
-**프리징**한다. 파일 크기·ISO 디렉터리를 원본 그대로 두고 내용만 옮겨도 같다.
-⚠ 정황은 반대로 보였다 — 머리에 포인터 표가 없고(0x0 부터 바로 문자열), 레코드가 가변
-길이며, 문자열 슬롯이 길이에 맞춘 4바이트 정렬이고, 파일·`ED2.EXE` 어디에도 오프셋 표가
-없다(16·32비트 전수 검색 0건). **표가 없다는 건 오프셋이 코드에 박혔다는 뜻이었다.**
-그래서 슬롯이 곧 상한이다 — 안 들어가면 문안을 줄이거나 그 줄을 포기한다.
+🔴 **밀어내기 재packing 은 하지 말 것 — 두 번 시험하고 접었다**(2026-08-17 실측). 이 파일은
+데이터가 아니라 **오버레이(코드+데이터)** 다: `ED2.EXE` 디스패처(`0x8006D3D0`)가
+`jal 0x8014A2DC` 처럼 **파일 안의 주소를 직접 부른다**(적재 = 로더 `0x800959F4` 가
+파일표 13+g 번째를 `0x8014A000` 에 통짜로). 문자열을 밀면 뒤의 **코드가 밀려** 그 jal 들이
+어긋나 전투 진입에서 프리징한다.
+
+**대신 꼬리 재배치는 안전하다**(같은 날 인게임 증명 — devlog). 문자열 참조는 전부
+**오버레이 안의 `lui`+`addiu` 쌍**이므로(파일당 수십 건), 슬롯을 넘는 문안은
+① 파일 꼬리(마지막 섹터 여유)에 새로 쓰고 ② 그 쌍만 갱신한다. 코드는 한 바이트도 안
+움직인다. write_memory 로 재현해 재조우 → 참조 지점 exec BP 에서 `a1 = 새 주소` 를 실측했다.
+⚠ 부호확장: `lo ≥ 0x8000` 이면 `lui` 가 +1 로 박혀 있다(`0x8014A018` 이
+`lui 0x8015; addiu -0x5FE8`). 갱신도 같은 규칙을 따라야 한다.
 
   python3 tools/patch_ed2_monster_lines.py --plan   # 무엇이 들어가고 무엇이 남는지
   python3 tools/patch_ed2_monster_lines.py          # 이미지에 적용
@@ -33,6 +38,7 @@ import hashlib
 import json
 import os
 import re
+import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -40,7 +46,7 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 
 import hangul_map as H
 from common import BUILD_DIR, ROOT, extract, write_user_data
-from ed2_monster_review import MON, SUFFIX, decode_sjis
+from ed2_monster_review import MON, decode_sjis, resolve_name
 
 IMG = f"{BUILD_DIR}/Eiyuu Densetsu (KR).bin"
 NAMES = os.path.join(ROOT, "textmap", "monsters_ed2.json")
@@ -93,7 +99,7 @@ def auto_lines(names):
         for jp2, kr2 in names.items():
             if jp2 != jp:
                 out[f"{jp}と{jp2}が現れた。"] = (
-                    f"{kr}{josa(kr, ('과', '와'))} {kr2}{josa(kr2, ('이', '가'))} 나타났다"
+                    f"{kr}{josa(kr, ('과', '와'))} {kr2}{josa(kr2, ('이', '가'))} 나타났다."
                 )
     return out
 
@@ -105,6 +111,39 @@ def _enc(kr):
     return bytes(out)
 
 
+BASE = 0x8014A000  # 오버레이 적재 주소 — 로더 0x800959F4 의 상수(EXE 에 이 한 곳)
+BIN_DIR_LBA = 1182  # \BIN 디렉토리 레코드 섹터 (reinsert_kr_pilot 과 같은 값)
+MIPS_LUI, MIPS_ADDIU, MIPS_ORI = 0x0F, 0x09, 0x0D
+
+
+def overlay_refs(orig):
+    """오버레이 안에서 자기 자신(BASE+)을 가리키는 `lui`+`addiu/ori` 쌍.
+
+    반환: ({대상 파일오프셋: [(imm_off, lui_off, op)]}, {lui_off: {대상들}}).
+    ⚠ **원본에서 스캔한다** — 우리 빌드는 문자열 슬롯만 바꾸고 코드는 안 건드리므로
+    코드 오프셋은 같지만, 스캔 자체가 한글 바이트를 명령으로 오독하면 안 된다.
+    """
+    refs, lui_use = {}, {}
+    lui_reg = {}  # 레지스터 → (상위16, lui_off)
+    for p in range(0, len(orig) - 4, 4):
+        w = struct.unpack_from("<I", orig, p)[0]
+        op = w >> 26
+        if op == MIPS_LUI:
+            lui_reg[(w >> 16) & 0x1F] = ((w & 0xFFFF) << 16, p)
+        elif op in (MIPS_ADDIU, MIPS_ORI):
+            rs = (w >> 21) & 0x1F
+            if rs in lui_reg:
+                hi, lui_off = lui_reg[rs]
+                imm = w & 0xFFFF
+                if op == MIPS_ADDIU and imm & 0x8000:
+                    imm -= 0x10000
+                addr = hi + imm
+                if BASE <= addr < BASE + len(orig):
+                    refs.setdefault(addr - BASE, []).append((p, lui_off, op))
+                    lui_use.setdefault(lui_off, set()).add(addr - BASE)
+    return refs, lui_use
+
+
 def plan():
     """([(lba, 오프셋, JP, KR, 슬롯)], 넘치는 것, 문안 없는 것)."""
     with open(NAMES, encoding="utf-8") as f:
@@ -114,9 +153,10 @@ def plan():
     table = auto_lines(names)
     table.update(hand)  # 손으로 정한 것이 이긴다
 
-    fit, over, none = [], [], []
+    fit, move, over, none = [], [], [], []
     for group, (lba, size) in sorted(MON.items()):
         buf = bytes(extract(lba, size))
+        refs, _lui_use = overlay_refs(buf)
         i = 0
         while i < len(buf) - 1:
             if buf[i] == 0:
@@ -126,7 +166,9 @@ def plan():
             if j < 0:
                 break
             s = decode_sjis(buf[i:j]) if 2 <= j - i <= 200 else None
-            if s and is_dialog(s) and SUFFIX.sub("", s) not in names:
+            # 이름 판정은 **정렬 후보 전부**를 정본에 걸어 본다 — 한 후보만 보면 유령 접두가
+            # 붙은 자리가 대사로 새어 「문안 없음」이 된다(`resolve_name` 참조).
+            if s and is_dialog(s) and resolve_name(buf[i:j], names) is None:
                 nxt = j
                 while nxt < len(buf) and buf[nxt] == 0:
                     nxt += 1
@@ -135,48 +177,133 @@ def plan():
                 kr = table.get(s)
                 if kr is None:
                     none.append((group, head, s))
+                elif len(_enc(kr)) + 1 <= slot:
+                    fit.append((lba, head, s, kr, slot))
+                elif refs.get(head):
+                    # 슬롯을 넘고 **참조가 있으면 꼬리로 재배치**한다(docstring 의 수법).
+                    move.append((lba, head, s, kr, slot))
                 else:
-                    # ⚠ **온점 한 바이트 때문에 줄을 통째로 버리지 않는다.** 안 들어가면
-                    # 그 줄은 원문이 남아 **화면에 일본어가 나간다** — 온점 유무보다 훨씬
-                    # 나쁘다. 그래서 넘칠 때만 온점을 떼고 다시 재 본다(2026-08-17).
-                    # 지금 15/115 가 이 길로 간다. 근본 해결은 슬롯이 아니라 재배치인데,
-                    # 이 파일은 레코드 구조라 이동이 안전하지 않아 미룬다.
-                    if len(_enc(kr)) + 1 > slot and kr.endswith("."):
-                        kr = kr[:-1]
-                    (fit if len(_enc(kr)) + 1 <= slot else over).append((lba, head, s, kr, slot))
+                    # 참조가 없으면 옮길 수 없다(무참조 = 우리가 모르는 방법으로 읽힌다).
+                    # 온점을 떼서라도 제자리에 넣는다 — 안 들어가면 원문이 남아 일본어가
+                    # 화면에 나가므로 그게 최악이다.
+                    if kr.endswith(".") and len(_enc(kr)) <= slot:
+                        fit.append((lba, head, s, kr[:-1], slot))
+                    else:
+                        over.append((lba, head, s, kr, slot))
             i = j + 1
-    return fit, over, none
+    return fit, move, over, none
+
+
+def _relocate(buf, orig, moves):
+    """`moves` 를 꼬리로 빼고 오버레이 참조를 갱신한다. 반환: (새 buf, 옮긴 수).
+
+    게이트 셋 — 셋 다 실측 사고에서 나왔다:
+    ① 갱신할 명령이 **원본 바이트 그대로**인지 대조(다르면 다른 패치와 충돌).
+    ② `lui` 상위가 바뀌는 경우 그 `lui` 를 **다른 대상과 공유하면 즉시 실패**.
+    ③ 문자열 슬롯·꼬리 밖(= 코드)은 **한 바이트도 안 바뀌었는지** 마지막에 대조.
+    """
+    refs, lui_use = overlay_refs(orig)
+    out = bytearray(buf)
+    touched = []  # 우리가 쓰는 [lo,hi) — 게이트 ③ 이 이 밖을 대조한다
+    cur = (len(out) + 3) & ~3
+    out = out.ljust(cur, b"\x00")
+    for off, _jp, kr, slot in moves:
+        kb = _enc(kr) + b"\x00"
+        dst = len(out)
+        out += kb.ljust((len(kb) + 3) & ~3, b"\x00")
+        touched.append((dst, len(out)))
+        out[off : off + slot] = b"\x00" * slot  # 옛 슬롯은 비운다(참조는 전부 옮긴다)
+        touched.append((off, off + slot))
+        new = BASE + dst
+        lo = new & 0xFFFF
+        for imm_off, lui_off, op in refs[off]:
+            w_imm = struct.unpack_from("<I", orig, imm_off)[0]
+            w_lui = struct.unpack_from("<I", orig, lui_off)[0]
+            assert struct.unpack_from("<I", out, imm_off)[0] == w_imm, hex(imm_off)
+            assert struct.unpack_from("<I", out, lui_off)[0] == w_lui, hex(lui_off)
+            # ori 는 무부호, addiu 는 lo ≥ 0x8000 이면 lui +1 (docstring 의 부호확장 규칙)
+            hi = (new >> 16) if op == MIPS_ORI else (new >> 16) + (1 if lo & 0x8000 else 0)
+            old_hi = w_lui & 0xFFFF
+            if old_hi != hi:
+                others = lui_use[lui_off] - {off}
+                assert not others, (
+                    f"0x{imm_off:X}: lui 공유({[hex(BASE + o) for o in others]}) — 재배치 불가"
+                )
+                struct.pack_into("<I", out, lui_off, (w_lui & 0xFFFF0000) | hi)
+                touched.append((lui_off, lui_off + 4))
+            struct.pack_into("<I", out, imm_off, (w_imm & 0xFFFF0000) | lo)
+            touched.append((imm_off, imm_off + 4))
+    return bytes(out), touched
+
+
+def _update_dir_size(f, group, newsize):
+    """ISO 디렉터리의 크기 필드(양 엔디언) 갱신 — `reinsert_kr_pilot` 과 같은 수법."""
+    bdir = bytearray(extract(BIN_DIR_LBA, 2048, path=IMG))
+    want = f"ED2MON{group}.BIN;1".encode("ascii")
+    i = 0
+    while i < len(bdir) and bdir[i]:
+        nlen = bdir[i + 32]
+        if bdir[i + 33 : i + 33 + nlen] == want:
+            bdir[i + 10 : i + 14] = newsize.to_bytes(4, "little")
+            bdir[i + 14 : i + 18] = newsize.to_bytes(4, "big")
+            write_user_data(f, BIN_DIR_LBA, bytes(bdir), label="ISO 디렉터리 크기")
+            return
+        i += bdir[i]
+    raise SystemExit(f"BIN 디렉토리에 ED2MON{group}.BIN 없음")
 
 
 def main():
-    fit, over, none = plan()
+    fit, move, over, none = plan()
     if "--plan" in sys.argv:
         for _lba, off, jp, kr, slot in fit:
             print(f"  {off:#07x} [{slot:>3}B] {jp} → {kr}")
+        for _lba, off, jp, kr, slot in move:
+            print(f"  ↪ 꼬리 {off:#07x} [{slot}B] {jp} → {kr} ({len(_enc(kr)) + 1}B)")
         for _lba, off, jp, kr, slot in over:
             print(f"  ⚠ 넘침 {off:#07x} [{slot}B] {jp} → {kr} ({len(_enc(kr)) + 1}B)")
         for group, off, jp in none:
             print(f"  ⚠ 문안 없음 ED2MON{group} {off:#07x} {jp}")
-        print(f"\n제자리 {len(fit)} · 넘침 {len(over)} · 문안 없음 {len(none)}")
+        print(
+            f"\n제자리 {len(fit)} · 꼬리 재배치 {len(move)} · 넘침 {len(over)} · 문안 없음 {len(none)}"
+        )
         return 0
 
-    by_lba = {}
+    by_lba, mv_lba = {}, {}
     for lba, off, _jp, kr, slot in fit:
         by_lba.setdefault(lba, []).append((off, kr, slot))
-    total = 0
+    for lba, off, jp, kr, slot in move:
+        mv_lba.setdefault(lba, []).append((off, jp, kr, slot))
+    total = moved = 0
     for group, (lba, size) in sorted(MON.items()):
-        if lba not in by_lba:
+        if lba not in by_lba and lba not in mv_lba:
             continue
+        orig = bytes(extract(lba, size))
         buf = bytearray(extract(lba, size, path=IMG))
-        for off, kr, slot in by_lba[lba]:
+        slots = []
+        for off, kr, slot in by_lba.get(lba, ()):
             b = _enc(kr) + b"\x00"
             buf[off : off + slot] = b + b"\x00" * (slot - len(b))
+            slots.append((off, off + slot))
+        new, touched = _relocate(buf, orig, mv_lba.get(lba, ()))
+        moved += len(mv_lba.get(lba, ()))
+        # 게이트 ③ — 코드 구간 무변경: 우리가 쓴 자리 밖은 빌드 이전과 byte 동일해야 한다
+        touched += slots
+        marks = bytearray(len(new))
+        for lo, hi in touched:
+            for k in range(lo, min(hi, len(marks))):
+                marks[k] = 1
+        base = bytes(extract(lba, size, path=IMG)).ljust(len(new), b"\x00")
+        for k in range(len(new)):
+            assert marks[k] or new[k] == base[k], f"ED2MON{group} 코드 구간 변형 @0x{k:X}"
+        assert (len(new) + 2047) // 2048 == (size + 2047) // 2048, f"ED2MON{group} 섹터 증가"
         with open(IMG, "r+b") as f:
-            total += write_user_data(f, lba, bytes(buf), label=f"ED2MON{group} 전투 대사")
+            total += write_user_data(f, lba, new, label=f"ED2MON{group} 전투 대사")
+            if len(new) != size:
+                _update_dir_size(f, group, len(new))
     total += _apply_sha_table()
     print(
-        f"ED2MON: 섹터 {total}개 수정 — 전투 대사 {len(fit)}건 제자리"
-        f" (넘쳐 보류 {len(over)} · 문안 없음 {len(none)})"
+        f"ED2MON: 섹터 {total}개 수정 — 전투 대사 {len(fit)}건 제자리 + {moved}건 꼬리 재배치"
+        f" (넘침 {len(over)} · 문안 없음 {len(none)})"
     )
     return 0
 
@@ -201,7 +328,11 @@ def _apply_sha_table():
     n = 0
     with open(IMG, "r+b") as f:
         for _group, (lba, size) in sorted(MON.items()):
-            data = bytearray(extract(lba, size, path=IMG))
+            # ⚠ **섹터 정렬 크기로 읽는다** — 원래 크기(size)로 읽고 다시 쓰면 재배치가
+            # 붙인 **꼬리를 0 으로 밀어 버린다**(2026-08-17 실측: 재배치 20건이 조용히
+            # 사라지고 빌드는 통과했다).
+            cap = (size + 2047) // 2048 * 2048
+            data = bytearray(extract(lba, cap, path=IMG))
             here = {}
             for part in bytes(data).split(b"\x00"):
                 if not (4 <= len(part) <= 1024):

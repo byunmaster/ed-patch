@@ -121,7 +121,22 @@ def decode_sjis(raw):
     그대로 통과한다. 후보를 다 만들어 **ASCII 가 안 섞인 쪽**을 고른다 — 이름은 순수
     일본어라 영숫자가 끼면 그건 잡음이 남았다는 뜻이다.
     """
-    best = None
+    c = decode_candidates(raw)
+    return c[0] if c else None
+
+
+def decode_candidates(raw):
+    """정렬 후보를 **점수 순으로 전부** 돌려준다 — `decode_sjis` 는 그 첫째다.
+
+    ⚠ 점수만으로는 정렬이 안 갈리는 자리가 있다. 이진 바이트 둘이 우연히 **깨끗한 한자**로
+    조립되면 진짜 시작점과 점수가 같아지고, 그때 동점을 가르는 `-skip` 이 **덜 건너뛴 쪽**
+    (= 유령 접두가 붙은 쪽)을 고른다. 실측: ED2MON3 0x648 `ff 82 8f 50` + `モーンガーＡ`
+    → `8f 50` 이 `襲` 로 읽혀 `襲モーンガーＡ` 가 이기고 정답 `モーンガーＡ` 가 진다.
+
+    바이트만 봐서는 어느 쪽이 맞는지 알 수 없다 — **정본과 대조해야** 갈린다. 그래서 한
+    후보를 고르지 않고 목록을 내주고, 부르는 쪽이 표를 걸어 고르게 한다(`resolve_name`).
+    """
+    out = []
     for skip in range(5):
         try:
             s = raw[skip:].decode("cp932")
@@ -129,10 +144,23 @@ def decode_sjis(raw):
             continue
         if not s or not JP.match(s):
             continue
-        score = (not re.search(r"[0-9A-Za-z]", s[:-1]), -skip)
-        if best is None or score > best[0]:
-            best = (score, s)
-    return best[1] if best else None
+        out.append(((not re.search(r"[0-9A-Za-z]", s[:-1]), -skip), s))
+    out.sort(key=lambda t: t[0], reverse=True)
+    return [s for _, s in out]
+
+
+def resolve_name(raw, names):
+    """이 바이트열이 **이름**이면 정본 키를, 아니면 None.
+
+    정렬 후보를 전부 대조한다 — 점수가 뽑은 첫 후보가 유령 접두를 달고 있어도(위 참조)
+    올바른 정렬이 후보 안에 있으면 여기서 잡힌다. 이게 없으면 그 자리는 이름인데도
+    대사 취급이 되어 「문안 없음」으로 보고된다(실측 1건, ED2MON3 `モーンガーＡ`).
+    """
+    for s in decode_candidates(raw):
+        base = SUFFIX.sub("", s)
+        if base in names:
+            return base
+    return None
 
 
 def strings(buf, start, end):

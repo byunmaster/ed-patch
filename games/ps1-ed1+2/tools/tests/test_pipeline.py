@@ -463,6 +463,71 @@ def test_font_compression_roundtrips_and_stays_aligned():
     assert len(data) < len(raw) * PF.GLYPH, "압축이 안 됐다"
 
 
+def test_name_survives_ghost_prefix_from_binary_bytes():
+    """앞에 이진 바이트가 붙은 **이름**을 대사로 오인하지 않는다.
+
+    함정(실측 ED2MON3 0x648): 이름 `モーンガーＡ` 앞에 이진 `ff 82 8f 50` 이 있는데,
+    `8f 50` 이 하필 `襲` 로 디코드돼 「ASCII 안 섞인 깨끗한 일본어」가 된다. 점수가 같아지면
+    `decode_sjis` 는 **덜 건너뛴 쪽**을 고르므로 `襲モーンガーＡ` 가 이기고, 접미 `Ａ` 를 떼도
+    정본에 없어 대사로 새어 「문안 없음 1」로 보고됐다. 바이트만 봐선 못 가르니 **정렬 후보
+    전부를 정본에 걸어** 판정한다.
+    """
+    import ed2_monster_review as R
+
+    names = {"モーンガー": "몽거"}
+    raw = b"\xff\x82\x8fP" + "モーンガーＡ".encode("cp932")
+
+    assert R.decode_sjis(raw) == "襲モーンガーＡ", "점수만으론 유령 접두가 이긴다(전제)"
+    assert R.resolve_name(raw, names) == "モーンガー", "정렬 후보 대조가 이름을 못 찾았다"
+    # 대사는 여전히 대사여야 한다 — 이름 대조가 아무거나 삼키면 안 된다.
+    line = "モーンガーＡが現れた。".encode("cp932")
+    assert R.resolve_name(line, names) is None, "대사를 이름으로 오인했다"
+
+
+def test_overlay_tail_relocation_updates_refs_with_sign_extension():
+    """ED2MON 오버레이 꼬리 재배치 — 참조 갱신과 **부호확장** 을 오프라인으로 검증한다.
+
+    함정(2026-08-17 실측): `0x8014A018` 은 `lui 0x8015` + `addiu -0x5FE8` 로 박혀 있다 —
+    lo ≥ 0x8000 이면 lui 가 +1 이다. 갱신이 이 규칙을 안 따르면 0x10000 어긋난 주소를
+    읽고도 **빌드는 통과**한다.
+    """
+    import struct as st
+
+    import patch_ed2_monster_lines as ML
+
+    # 미니 오버레이: [문자열 20B 슬롯][코드: lui+addiu 로 그 문자열 참조]
+    slot = 0x18
+    ov = bytearray(0x40)
+    ov[slot : slot + 6] = b"ABCDE\x00"
+    lui = (0x0F << 26) | (5 << 16) | 0x8015  # lui a1, 0x8015 (부호확장으로 -0x5FE8)
+    addiu = (0x09 << 26) | (5 << 21) | (5 << 16) | ((ML.BASE + slot - 0x80150000) & 0xFFFF)
+    st.pack_into("<I", ov, 0x28, lui)
+    st.pack_into("<I", ov, 0x2C, addiu)
+    orig = bytes(ov)
+    refs, _ = ML.overlay_refs(orig)
+    assert slot in refs and refs[slot] == [(0x2C, 0x28, ML.MIPS_ADDIU)], refs
+
+    new, touched = ML._relocate(bytearray(orig), orig, [(slot, "JP", "가나다라마바사", 8)])
+    # 꼬리에 인코딩이 실렸고 옛 슬롯은 비었다
+    tail = new[len(orig) :]
+    assert tail.rstrip(b"\x00"), "꼬리가 비었다"
+    assert new[slot : slot + 8] == b"\x00" * 8, "옛 슬롯이 안 비워졌다"
+    # 갱신된 쌍이 새 주소를 만든다 (부호확장 포함)
+    w_lui = st.unpack_from("<I", new, 0x28)[0]
+    w_imm = st.unpack_from("<I", new, 0x2C)[0]
+    lo = w_imm & 0xFFFF
+    if lo & 0x8000:
+        lo -= 0x10000
+    got = ((w_lui & 0xFFFF) << 16) + lo
+    assert got == ML.BASE + len(orig), f"참조가 0x{got:X} — 기대 0x{ML.BASE + len(orig):X}"
+    # 코드(참조 명령 밖)는 무변경
+    marks = set()
+    for a, b in touched:
+        marks.update(range(a, b))
+    for k in range(len(orig)):
+        assert k in marks or new[k] == orig[k], f"코드 변형 @0x{k:X}"
+
+
 # ⚠ **`__main__` 블록은 반드시 파일 맨 끝**이다. 예전엔 중간에 있어서 그 뒤에 붙인 테스트가
 # **정의되기 전에 러너가 돌아** 조용히 안 돌았다 — `test_proper_noun_needs_word_boundary`
 # 가 그렇게 죽어 있었고 `28/28 passed` 는 계속 초록이었다(2026-08-15). 테스트를 늘릴 땐
