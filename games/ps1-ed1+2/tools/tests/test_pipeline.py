@@ -671,5 +671,38 @@ def test_gate_rejections_are_returned_not_dropped():
     assert "if ok:" not in src, "게이트에 걸린 후보를 버리고 있다"
 
 
+def test_copyright_gate_sees_sentences_and_ignores_spacing():
+    """저작권 게이트의 **맹점 둘**을 못 박는다(2026-08-18 실측: 1건을 보는 동안 197건이 샜다).
+
+    ① **문장 단위로 색인해야 한다.** 우리 정본의 `t` 는 문장 단위인데(정발 한 페이지가
+       PS1 여러 블록으로 갈린다) 코퍼스를 페이지로만 색인하면 문장 복제가 통째로 빠진다.
+    ② **공백을 무시해야 한다.** 정발은 `{n}` 줄바꿈 자리에 공백이 없다(`있는거야?`) —
+       띄어쓰기만 다듬어 옮겨 적으면 글자는 그대로인데 검사기가 통과시켰다.
+
+    ⚠ 문턱(`MIN_LEN`)은 **부분 문자열 검색의 잡음 하한**이지 창작성 기준이 아니다.
+    문턱을 떼면 흔한 낱말이 전부 걸린다(실측 3,189건). 「같으면 포인터로」는 전체 일치를
+    보는 `scan_canon` 이 맡는다 — 거긴 문턱이 없다.
+    """
+    import inspect
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import check_forbidden as C
+
+    src = inspect.getsource(C._corpus_lines)
+    assert "_sentences" in src, "코퍼스를 문장 단위로 색인하지 않는다"
+    assert re_sub_in(inspect.getsource(C.scan_repo)), "파일 검색이 공백에 민감하다"
+    assert hasattr(C, "scan_canon"), "문안 정본 전체 일치 검사가 없다"
+    assert "MIN_LEN" not in inspect.getsource(C.scan_canon), "전체 일치에 길이 문턱을 두면 안 된다"
+    assert C.ALLOW == set(), "예외 목록이 되살아났다 — 같으면 포인터로 바꾸면 된다"
+
+
+def re_sub_in(src):
+    """공백을 지우고 비교하는가."""
+    return 're.sub(r"\\s+", "", data)' in src or 'sub(r"\\s+", "", data)' in src
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
