@@ -217,10 +217,21 @@ def scan_canon(verbose=False):
     joined = "".join(sorted(flat))
     hits = collections.Counter()
     rows = []
-    for path in sorted(_glob.glob(os.path.join(ROOT, "script", "*SCN*.json"))):
+    # ⚠ **`textmap/` 도 본다.** `script/` 만 훑다가 전투 대사 하나가 `ours` 에 그대로 남아
+    # 있었다(2026-08-18). 문안이 사는 자리는 둘이다 — 한쪽만 보면 반만 지키는 것이다.
+    files = sorted(_glob.glob(os.path.join(ROOT, "script", "*SCN*.json")))
+    files += sorted(_glob.glob(os.path.join(ROOT, "textmap", "*.json")))
+    for path in files:
         scn = os.path.basename(path)[:-5]
-        for eid, v in json.load(open(path, encoding="utf-8")).items():
-            t = (v.get("t") or "").strip()
+        doc = json.load(open(path, encoding="utf-8"))
+        items = doc.items() if "entries" not in doc else [
+            (str(i), pp) for i, e in enumerate(doc["entries"])
+            for pp in ([e] if "ours" in e else e.get("parts", []))
+        ]
+        for eid, v in items:
+            if not isinstance(v, dict):
+                continue
+            t = ((v.get("t") or v.get("ours")) or "").strip()
             if not t or not re.search(r"[가-힣]{2,}", t):
                 continue
             ft = re.sub(r"\s+", "", t)
