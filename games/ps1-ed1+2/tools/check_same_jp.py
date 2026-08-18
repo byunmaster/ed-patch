@@ -34,11 +34,9 @@
 
 import argparse
 import collections
-import io
 import json
 import os
 import sys
-from contextlib import redirect_stdout
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
@@ -51,20 +49,8 @@ from jp_speaker import speakers
 MIN_JP = 12  # 이보다 짧은 JP 는 우연히 같을 수 있다(감탄사·부호)
 
 
-def rendered(scn):
-    """{eid: 화면에 나갈 문안} — 재삽입이 실제로 쓰는 것."""
-    with redirect_stdout(io.StringIO()), R.overlay_for(scn):
-        tr, _, _ = R.load_translations(scn.replace("SCN", "_SCN"), scn)
-    out = {}
-    for eid, v in tr.items():
-        if not isinstance(v, tuple) or len(v) < 2 or not isinstance(v[1], list):
-            continue
-        t = " ".join(
-            it[1] for it in v[1] if isinstance(it, (list, tuple)) and len(it) > 1 and isinstance(it[1], str)
-        ).strip()
-        if t:
-            out[eid] = t
-    return out
+# ⚠ `rendered` 는 `reinsert_kr_pilot` 이 갖는다 — 검출기마다 다시 짜면 조용히 틀린다.
+rendered = R.rendered
 
 
 def scan(games=("ED1",), verbose=False):
@@ -98,7 +84,9 @@ def scan(games=("ED1",), verbose=False):
         (same_spk if len(spks) <= 1 and len(segs) <= 1 else diff_spk).append((j, variants))
 
     n = sum(sum(len(v) for v in var.values()) for _j, var in same_spk)
-    print(f"  {'✅' if not same_spk else '⚠'} 같은 화자·같은 JP 인데 갈린 자리 {len(same_spk)}종 ({n}블록)")
+    print(
+        f"  {'✅' if not same_spk else '⚠'} 같은 화자·같은 JP 인데 갈린 자리 {len(same_spk)}종 ({n}블록)"
+    )
     if diff_spk:
         print(f"  ℹ 화자·시점이 달라 갈린 자리 {len(diff_spk)}종 — 정상(현자 말투 · 시점 사본)")
     if verbose:

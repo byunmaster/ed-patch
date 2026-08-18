@@ -96,6 +96,34 @@ def overlay_for(name):
         _OV_BASE = old
 
 
+def rendered(scn):
+    """{eid: **화면에 나갈 문안**} — 검출기가 공통으로 필요로 하는 것.
+
+    ⚠ **여기 있는 이유**: 검출기를 새로 쓸 때마다 이 스무 줄을 다시 짜고 있었다(2026-08-18
+    하루에 네 번). 다시 짜면 조용히 틀린다 — `overlay_for` 를 빠뜨리면 **다른 게임의 베이스**로
+    읽고, 튜플 모양을 잘못 보면 **빈 문자열**이 나온다. 둘 다 「문제 없음」으로 보인다.
+
+    ⚠ 이건 **문자열이 필요한 쪽**을 위한 것이다. 창·구조를 봐야 하면 `load_translations` 를
+    직접 부른다(`jeongbal_ledger`·`check_ed2_reinsert` 가 그렇다) — 그건 합칠 자리가 아니다.
+    """
+    import io
+
+    with contextlib.redirect_stdout(io.StringIO()), overlay_for(scn):
+        tr, _, _ = load_translations(scn.replace("SCN", "_SCN"), scn)
+    out = {}
+    for eid, v in tr.items():
+        if not isinstance(v, tuple) or len(v) < 2 or not isinstance(v[1], list):
+            continue
+        t = " ".join(
+            it[1]
+            for it in v[1]
+            if isinstance(it, (list, tuple)) and len(it) > 1 and isinstance(it[1], str)
+        ).strip()
+        if t:
+            out[eid] = t
+    return out
+
+
 # 재삽입 체인에 오른 씬 (이름, LBA, size) — extract_scn.py SCN_FILES. text_end 는 scn_jp JSON.
 #
 # ⚠ **순서가 곧 DUMMY 할당 순서**다. 커진 씬은 `DUMMY.;1`(LBA 91700) 로 재배치되는데

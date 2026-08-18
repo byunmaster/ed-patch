@@ -98,6 +98,9 @@ description: >-
 
 ## 같이 볼 것
 
+- **화면 문안이 필요하면 `reinsert_kr_pilot.rendered(scn)`** — 검출기마다 다시 짜면 조용히
+  틀린다(`overlay_for` 를 빠뜨리면 다른 게임 베이스로 읽고, 튜플을 잘못 보면 빈 문자열).
+  창·구조가 필요하면 `load_translations` 를 직접 부른다.
 - 스킬 `patcher-safety` — 절 4-B(검사기 자신의 커버리지) · 4-C(게이트 우회) · 6(대량 변경).
 - [`docs/reference/mistranslation-patterns.md`](../../../docs/reference/mistranslation-patterns.md) — **오역이 나는 자리 유형 대장**. 「어디를 먼저 볼까」를 좁혀 준다.
 - [`games/ps1-ed1+2/docs/text-pipeline.md`](../../../games/ps1-ed1+2/docs/text-pipeline.md) — `chain` 문법·검출기 표.
