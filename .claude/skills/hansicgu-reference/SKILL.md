@@ -18,7 +18,7 @@ description: >-
 
 ## Overview
 
-레트로게임 한글화 커뮤니티 **"한글화하는 사람들의 모임"**(네이버 카페, *한식구*, clubid 16259867)의
+레트로게임 한글화 커뮤니티 **"한글화하는 사람들의 모임"**(네이버 카페, _한식구_, clubid 16259867)의
 공부방&도구·질의응답·AI활용 게시판에서 선별·정리한 재사용 기법 레퍼런스다.
 실제 원천 문서는 이 스킬이 아니라 repo의 **`docs/reference/`** 에 있다 — 이 SKILL.md는 **어떤 상황에 어느 문서를 읽을지 라우팅**만 한다.
 
@@ -26,25 +26,26 @@ description: >-
 
 ## 라우팅 — 무엇이 필요할 때 어느 문서를 읽나
 
-| 상황·키워드 | 읽을 문서 |
-|---|---|
-| **우리가 직접 발견·검증한 기법** (커뮤니티 자료 아닌 우리 것) | `docs/reference/our-findings.md` |
-| **⚠ 재삽입 설계·수정 전 필독 / 먹통·소프트락·이벤트 정지·대사 꼬임 디버깅** — 구조 계약(세그먼트 수·`%s`·제어코드), 미참조 데이터 이동 금지, 소프트락 진단 절차 | `docs/reference/our-findings.md` (⚠ 구조 계약 절) |
-| **번역·조판 규약** (한글 출력 표기 규칙 — 부호 뒤 공백 제거 등) | `docs/reference/translation-conventions.md` |
-| **어디부터 볼지 모름 / 특정 게임·플랫폼 자료 목록** | `docs/reference/index-by-platform.md` (720건 플랫폼별 인덱스) |
-| **PS1 / 세가새턴** — 디버거로 폰트 찾기(NO$PSX·루아), 팔레트 추출, mkpsxiso, CD 섹터 구조, 1bpp→4bpp | `docs/reference/ps1-saturn.md` |
-| **SFC / PC98** — ROM 영역 확장·포인터 재계산, 비트→폰트 출력, PC98 3bpp/1bpp 그래픽 | `docs/reference/sfc-pc98.md` |
-| **PSP / GB·GBC·GBA·NDS** — 내장폰트 확장, prx 하드코딩, 기드라 분석, VRAM 타일, unpack/repack | `docs/reference/psp-and-handhelds.md` |
-| **Windows/PC·유니티·엔진** — SDF 폰트 교체, 엔진별 한글화, 입문 워크플로, DeepL MT | `docs/reference/windows-pc-and-workflow.md` |
-| **압축·인코딩** — LZ/LZSS 변종 해제, 압축·암호화 판별, SJIS↔JIS·UTF-8 변환, 정규표현 | `docs/reference/compression-and-encoding.md` |
-| **한글 폰트·인코딩표** — 갈무리 등 픽셀폰트 자원, 7비트 완성형 음절표, 폰트 제작 스크립트 | `docs/reference/fonts-korean.md` |
-| **AI 활용 한글화** — 번역 프롬프트, VLM OCR 폰트테이블, AI로 LZSS 재압축, Claude+emucap 실전팁, 파라트랜즈+Gemini | `docs/reference/ai-workflow.md` |
-| **막힌 문제의 실전 해법** — 페르소나·SFC 드퀘·PS1 압축·유니티 대사찾기 등 질의응답에서 건진 해법 | `docs/reference/qa-nuggets.md` |
-| **SFC·GB 단계별 실전 walkthrough** — 패트레이버·세일러문·아크맨3·잔쿠로무쌍검 작업일지(분석→폰트/대사 확장→VRAM→압축) | `docs/reference/worklog-sfc-gb.md` |
-| **PS/SS/PSP/PCE 작업후기** — 자막 시스템 구현(령 제로3·악마성), 내장폰트 우회(PSP), 폰트 위치 찾기, 대사 씹힘 해결 | `docs/reference/worklog-consoles.md` |
-| **기초 개념** — 포인터·HEX·고유코드 등 (색인 형태) | `docs/reference/basics-and-hubs.md` |
-| **카페 밖 자료처** — 다른 강좌 블로그·커뮤니티(DCinside·Arca)·국제 레퍼런스(psx-spx 등)·폰트·도구 | `docs/reference/external-sites.md` |
-| **블로그 강좌** — snowyegret(한글화·툴), sunlightface(PS1), mushsooni·ohgoru | `docs/reference/blog-snowyegret.md` · `blog-sunlightface.md` · `blog-etc.md` |
+| 상황·키워드                                                                                                                                                     | 읽을 문서                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **우리가 직접 발견·검증한 기법** (커뮤니티 자료 아닌 우리 것)                                                                                                   | `docs/reference/our-findings.md`                                             |
+| **⚠ 재삽입 설계·수정 전 필독 / 먹통·소프트락·이벤트 정지·대사 꼬임 디버깅** — 구조 계약(세그먼트 수·`%s`·제어코드), 미참조 데이터 이동 금지, 소프트락 진단 절차 | `docs/reference/our-findings.md` (⚠ 구조 계약 절)                            |
+| **번역·조판 규약** (한글 출력 표기 규칙 — 부호 뒤 공백 제거 등)                                                                                                 | `docs/reference/translation-conventions.md`                                  |
+| **옛 번역본을 저본으로 쓸 때 어디서 어긋나나** — 오역 유형 대장(방향·낱말 수준만, 문안은 안 남긴다). 정발 대조 판정 전에 본다                                   | `docs/reference/mistranslation-patterns.md`                                  |
+| **어디부터 볼지 모름 / 특정 게임·플랫폼 자료 목록**                                                                                                             | `docs/reference/index-by-platform.md` (720건 플랫폼별 인덱스)                |
+| **PS1 / 세가새턴** — 디버거로 폰트 찾기(NO$PSX·루아), 팔레트 추출, mkpsxiso, CD 섹터 구조, 1bpp→4bpp                                                            | `docs/reference/ps1-saturn.md`                                               |
+| **SFC / PC98** — ROM 영역 확장·포인터 재계산, 비트→폰트 출력, PC98 3bpp/1bpp 그래픽                                                                             | `docs/reference/sfc-pc98.md`                                                 |
+| **PSP / GB·GBC·GBA·NDS** — 내장폰트 확장, prx 하드코딩, 기드라 분석, VRAM 타일, unpack/repack                                                                   | `docs/reference/psp-and-handhelds.md`                                        |
+| **Windows/PC·유니티·엔진** — SDF 폰트 교체, 엔진별 한글화, 입문 워크플로, DeepL MT                                                                              | `docs/reference/windows-pc-and-workflow.md`                                  |
+| **압축·인코딩** — LZ/LZSS 변종 해제, 압축·암호화 판별, SJIS↔JIS·UTF-8 변환, 정규표현                                                                            | `docs/reference/compression-and-encoding.md`                                 |
+| **한글 폰트·인코딩표** — 갈무리 등 픽셀폰트 자원, 7비트 완성형 음절표, 폰트 제작 스크립트                                                                       | `docs/reference/fonts-korean.md`                                             |
+| **AI 활용 한글화** — 번역 프롬프트, VLM OCR 폰트테이블, AI로 LZSS 재압축, Claude+emucap 실전팁, 파라트랜즈+Gemini                                               | `docs/reference/ai-workflow.md`                                              |
+| **막힌 문제의 실전 해법** — 페르소나·SFC 드퀘·PS1 압축·유니티 대사찾기 등 질의응답에서 건진 해법                                                                | `docs/reference/qa-nuggets.md`                                               |
+| **SFC·GB 단계별 실전 walkthrough** — 패트레이버·세일러문·아크맨3·잔쿠로무쌍검 작업일지(분석→폰트/대사 확장→VRAM→압축)                                           | `docs/reference/worklog-sfc-gb.md`                                           |
+| **PS/SS/PSP/PCE 작업후기** — 자막 시스템 구현(령 제로3·악마성), 내장폰트 우회(PSP), 폰트 위치 찾기, 대사 씹힘 해결                                              | `docs/reference/worklog-consoles.md`                                         |
+| **기초 개념** — 포인터·HEX·고유코드 등 (색인 형태)                                                                                                              | `docs/reference/basics-and-hubs.md`                                          |
+| **카페 밖 자료처** — 다른 강좌 블로그·커뮤니티(DCinside·Arca)·국제 레퍼런스(psx-spx 등)·폰트·도구                                                               | `docs/reference/external-sites.md`                                           |
+| **블로그 강좌** — snowyegret(한글화·툴), sunlightface(PS1), mushsooni·ohgoru                                                                                    | `docs/reference/blog-snowyegret.md` · `blog-sunlightface.md` · `blog-etc.md` |
 
 ## 카페에서 자료를 더 가져와야 할 때
 

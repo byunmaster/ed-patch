@@ -97,7 +97,7 @@ def style_only(x, y):
     """문체만 건드리는 제안이면 사유, 아니면 None.
 
     ⚠ **종결부호를 새로 다는 제안은 남긴다** — 정발에 온점이 빠진 자리는 실제로 채워 왔다
-    (`docs/status.md` 온점 누락 방침). 부호를 **바꾸는** 것만 문체로 본다.
+    (`docs/ed1-status.md` 온점 누락 방침). 부호를 **바꾸는** 것만 문체로 본다.
     """
     if any(p in x and p not in y for p in _PROPER):
         return "고유명사를 사전 낱말로 바꿈"

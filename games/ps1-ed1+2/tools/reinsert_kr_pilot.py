@@ -96,6 +96,34 @@ def overlay_for(name):
         _OV_BASE = old
 
 
+def rendered(scn):
+    """{eid: **화면에 나갈 문안**} — 검출기가 공통으로 필요로 하는 것.
+
+    ⚠ **여기 있는 이유**: 검출기를 새로 쓸 때마다 이 스무 줄을 다시 짜고 있었다(2026-08-18
+    하루에 네 번). 다시 짜면 조용히 틀린다 — `overlay_for` 를 빠뜨리면 **다른 게임의 베이스**로
+    읽고, 튜플 모양을 잘못 보면 **빈 문자열**이 나온다. 둘 다 「문제 없음」으로 보인다.
+
+    ⚠ 이건 **문자열이 필요한 쪽**을 위한 것이다. 창·구조를 봐야 하면 `load_translations` 를
+    직접 부른다(`jeongbal_ledger`·`check_ed2_reinsert` 가 그렇다) — 그건 합칠 자리가 아니다.
+    """
+    import io
+
+    with contextlib.redirect_stdout(io.StringIO()), overlay_for(scn):
+        tr, _, _ = load_translations(scn.replace("SCN", "_SCN"), scn)
+    out = {}
+    for eid, v in tr.items():
+        if not isinstance(v, tuple) or len(v) < 2 or not isinstance(v[1], list):
+            continue
+        t = " ".join(
+            it[1]
+            for it in v[1]
+            if isinstance(it, (list, tuple)) and len(it) > 1 and isinstance(it[1], str)
+        ).strip()
+        if t:
+            out[eid] = t
+    return out
+
+
 # 재삽입 체인에 오른 씬 (이름, LBA, size) — extract_scn.py SCN_FILES. text_end 는 scn_jp JSON.
 #
 # ⚠ **순서가 곧 DUMMY 할당 순서**다. 커진 씬은 `DUMMY.;1`(LBA 91700) 로 재배치되는데
@@ -1816,8 +1844,7 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), d
             # 그 공백이 여기서 죽는다. **붙임 공백으로 명시한 자리만** 되살린다 —
             # 다른 블록엔 선두 NOBREAK_SP 가 없어 동작이 그대로다.
             head = lines[0]
-            if head.startswith(pre):
-                head = head[len(pre) :]
+            head = head.removeprefix(pre)
             # ⚠ **정본 자신의 선두 센티널도 걷어낸다.** 이 자리의 `%s` 는 템플릿이 이미
             # 주므로 문안이 `\x1a…` 로 시작하면 둘이 되어 `fmt_excess` 로 통째 탈락한다
             # (ED2 7블록 실측 2026-08-17). 옛 `lstrip(NAME_SENT)` 이 접두와 이걸 **같이**
@@ -2866,7 +2893,7 @@ def load_translations(align_name, scn_name):
                 raise SkipBlock("come-again 꼬리 없음")
             # ⚠ 정발은 이 꼬리에 온점을 안 찍은 파일이 있다(`또 들러주십시요`). 인사 안에
             # 인라인일 땐 안 보였지만 **별도 창의 한 문장**이 되면 종결부호가 있어야 한다
-            # (온점 누락 방침 — docs/status.md).
+            # (온점 누락 방침 — docs/ed1-status.md).
             tail = m.group(1)
             return (tail if tail.endswith((".", "!", "?", "…")) else tail + ".") + "{p}"
         if pi:

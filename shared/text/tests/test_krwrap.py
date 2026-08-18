@@ -149,7 +149,7 @@ def test_sentence_end_detection():
     assert is_sentence_end("정말인가?!")
     assert is_sentence_end("그럴수가…")
     assert is_sentence_end("「그렇다.」")
-    assert not is_sentence_end("안에 들어가 봐도")
+    assert not is_sentence_end("창고를 뒤져 봐도")
     assert not is_sentence_end("빼앗겨 버렸는데,")
 
 
@@ -168,17 +168,17 @@ def test_split_sentences():
 def test_wrap_pages_no_straddle():
     # 짧은 문장 + 3줄짜리 문장: 기계적 3줄 절단이면 두 번째 문장이 창에 걸림 —
     # 문장 packing은 창1=문장1, 창2=문장2로 나눈다
-    src = "여기는 지하감옥 입구입니다.\n***"
+    src = "여기는 낡은 창고입니다.\n창고를 뒤져 봐도 쓸만한 물건은 하나도 남아있지 않습니다."
     pages = wrap_pages(src, 14, 3, strip_before=".,!?", strip_after=".,")
     assert len(pages) == 2, pages
-    assert pages[0] == ["여기는 지하감옥 입구입니다."], pages
+    assert pages[0] == ["여기는 낡은 창고입니다."], pages
     for pg in pages:  # 마지막 아닌 창은 문장 끝으로 끝난다
         assert is_sentence_end(pg[-1]), pages
 
 
 def test_wrap_pages_oversize_sentence_resplit():
     # {n} 때문에 4줄이 된 두 문장 그룹 → 문장별 재줄바꿈으로 창 걸침 해소
-    src = "왕자님,이곳은 지하감옥\n입니다.***"
+    src = "손님,이곳은 낡은 창고\n입니다.손님 같은 귀하신 분께서 드나들만한 곳이 아닙니다."
     pages = wrap_pages(src, 14, 3, strip_before=".,!?", strip_after=".,")
     for pg in pages[:-1]:
         assert is_sentence_end(pg[-1]), pages
@@ -210,7 +210,7 @@ def test_bound_noun_not_pulled_without_adnominal():
 def test_det_orphan_je():
     # 관형사 `제`(=저의)가 줄 끝에 홀로 남으면 수식 대상과 함께 내린다
     pages = wrap_pages(
-        "***", 14, 6, strip_after="", det_orphan=True
+        "아뇨, 그 상자만은 제 손으로 직접 열어 보겠습니다.", 14, 6, strip_after="", det_orphan=True
     )
     assert all(not pg_ln.endswith(" 제") for pg in pages for pg_ln in pg), pages
 

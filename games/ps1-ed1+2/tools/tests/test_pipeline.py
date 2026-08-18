@@ -463,6 +463,26 @@ def test_font_compression_roundtrips_and_stays_aligned():
     assert len(data) < len(raw) * PF.GLYPH, "압축이 안 됐다"
 
 
+def test_two_gales_do_not_merge():
+    """`게일`(파티)과 `대도 게일`(할아버지)은 **딴사람**이다 — 이름 비교가 뭉개면 안 된다.
+
+    유저 확정(2026-08-17): 파티에 드는 쪽이 `게일` 이고 `대도 게일` 은 그 할아버지다.
+    후보 좁히기에서 둘이 같은 사람으로 묶이면 **손자 대사에 할아버지 문장**이 들어온다.
+    지금은 유사도 0.50 으로 문턱(0.6) 아래라 갈리는데 그건 우연이라, 문턱을 만질 때
+    여기서 걸리게 한다.
+    """
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    from align_jp_kr import SPEAKER_DICT, name_sim
+
+    assert SPEAKER_DICT["ゲイル"] == "게일"
+    assert SPEAKER_DICT["大盗賊 ゲイル"] == "대도 게일"
+    assert name_sim("게일", "대도 게일") < 0.6, "두 게일이 뭉개진다"
+
+
 def test_josa_agreement_ignores_adnominal_endings():
     """조사 받침 검사는 **관형사형 어미를 조사로 오인하면 안 된다**.
 
@@ -602,5 +622,192 @@ def test_overlay_tail_relocation_updates_refs_with_sign_extension():
 # **정의되기 전에 러너가 돌아** 조용히 안 돌았다 — `test_proper_noun_needs_word_boundary`
 # 가 그렇게 죽어 있었고 `28/28 passed` 는 계속 초록이었다(2026-08-15). 테스트를 늘릴 땐
 # 이 블록 **위**에 붙인다.
+def test_match_is_the_only_gate_for_candidates():
+    """🔴 **정발 후보는 장소·시기·화자를 다 통과해야 한다** (유저 확정 2026-08-17, 재확인).
+
+    규칙은 `docs/policy.md` 에도 메모리에도 있었는데, 도구를 새로 짤 때마다 **유사도만 재고
+    화자를 빠뜨렸다** — 2026-08-17 하루에 두 번. 기억에 맡기면 반복되므로 코드로 못 박는다.
+
+    두 가지를 지킨다:
+    ① 후보를 내는 문은 `match()` 하나다 — 그 안에 `axes_ok` 가 있다.
+    ② 저수준 `best_slice` 는 게이트가 없다는 걸 문서에 명시하고, 채택 경로가 직접 쓰지 않는다.
+    """
+    import inspect
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import adopt_jeongbal as A
+
+    for name in ("own_table", "axes_ok", "dos_speaker", "match"):
+        assert hasattr(A, name), f"세 축 게이트가 사라졌다: {name}"
+    assert "axes_ok" in inspect.getsource(A.match), "match() 가 게이트를 안 거친다"
+    assert "axes_ok" in inspect.getsource(A.candidates), "candidates() 가 게이트를 안 거친다"
+    assert "게이트" in (A.best_slice.__doc__ or ""), "best_slice 에 저수준 경고가 없다"
+
+    # 화자가 다르면 잘린다 — 축자 동일은 그걸 덮는다(1급 규칙)
+    ok, why = A.axes_ok("ED1SCN1", 1, "ED1/T_000", 0, ours="가", dos="나")
+    assert isinstance(ok, bool) and why
+
+
+def test_gate_rejections_are_returned_not_dropped():
+    """게이트에 걸린 후보를 **버리지 않는다** — `ok=False` 로 같이 돌려준다.
+
+    화자 축은 정발 쪽 전파가 틀릴 수 있다(정발도 한 엔트리에 여러 사람 대사를 담는다).
+    잘린 걸 조용히 없애면 「다 봤다」로 읽히고, 멀쩡한 짝이 소리 없이 사라진다 —
+    이 리포가 반복해 물린 부류다(`docs/patcher-checklist.md` 「대량 변경」).
+    """
+    import inspect
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import adopt_jeongbal as A
+
+    src = inspect.getsource(A.match)
+    assert "ok=ok" in src, "잘린 후보에 표시를 안 단다"
+    assert "if ok:" not in src, "게이트에 걸린 후보를 버리고 있다"
+
+
+def test_copyright_gate_sees_sentences_and_ignores_spacing():
+    """저작권 게이트의 **맹점 둘**을 못 박는다(2026-08-18 실측: 1건을 보는 동안 197건이 샜다).
+
+    ① **문장 단위로 색인해야 한다.** 우리 정본의 `t` 는 문장 단위인데(정발 한 페이지가
+       PS1 여러 블록으로 갈린다) 코퍼스를 페이지로만 색인하면 문장 복제가 통째로 빠진다.
+    ② **공백을 무시해야 한다.** 정발은 `{n}` 줄바꿈 자리에 공백이 없다(`있는거야?`) —
+       띄어쓰기만 다듬어 옮겨 적으면 글자는 그대로인데 검사기가 통과시켰다.
+
+    ⚠ 문턱(`MIN_LEN`)은 **부분 문자열 검색의 잡음 하한**이지 창작성 기준이 아니다.
+    문턱을 떼면 흔한 낱말이 전부 걸린다(실측 3,189건). 「같으면 포인터로」는 전체 일치를
+    보는 `scan_canon` 이 맡는다 — 거긴 문턱이 없다.
+    """
+    import inspect
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import check_forbidden as C
+
+    src = inspect.getsource(C._corpus_lines)
+    assert "_sentences" in src, "코퍼스를 문장 단위로 색인하지 않는다"
+    assert re_sub_in(inspect.getsource(C.scan_repo)), "파일 검색이 공백에 민감하다"
+    assert hasattr(C, "scan_canon"), "문안 정본 전체 일치 검사가 없다"
+    assert "MIN_LEN" not in inspect.getsource(C.scan_canon), "전체 일치에 길이 문턱을 두면 안 된다"
+    assert C.ALLOW == set(), "예외 목록이 되살아났다 — 같으면 포인터로 바꾸면 된다"
+
+
+def re_sub_in(src):
+    """공백을 지우고 비교하는가."""
+    return 're.sub(r"\\s+", "", data)' in src or 'sub(r"\\s+", "", data)' in src
+
+
+def test_skill_index_matches_checklist():
+    """스킬의 목록은 **색인**이지 정본이 아니다 — 체크리스트 절과 어긋나면 안 된다.
+
+    ⚠ 실제로 어긋났다(2026-08-18): 체크리스트에 절 셋이 늘었는데 `patcher-safety` 스킬은
+    여전히 「말뚝 아홉」을 안내하고 있었다. 스킬을 읽고 온 사람은 **없는 규칙을 지키지 않는다.**
+    같은 지식을 두 곳에 쓰면 어긋난다 — 그래서 한쪽은 색인으로 두고 여기서 묶는다.
+    """
+    import os
+    import re
+
+    root = os.path.dirname(os.path.dirname(os.path.dirname(_TOOLS)))
+    cl = open(os.path.join(root, "docs", "patcher-checklist.md"), encoding="utf-8").read()
+    sk = open(
+        os.path.join(root, ".claude", "skills", "patcher-safety", "SKILL.md"), encoding="utf-8"
+    ).read()
+    nums = [m.group(1) for m in re.finditer(r"^## ([\d\-A-B]+)\.", cl, re.MULTILINE)]
+    assert nums, "체크리스트에서 절 번호를 못 읽었다"
+    for n in nums:
+        # ⚠ 줄머리에 고정하지 않는다 — oxfmt 가 `4-B.` 를 하위 항목으로 들여쓴다(마크다운상 맞다).
+        assert re.search(rf"^\s*{re.escape(n)}\.", sk, re.MULTILINE), (
+            f"스킬 색인에 절 {n} 이 빠졌다"
+        )
+    assert "아홉" not in sk.split("## 정본")[1][:400], "절 수를 본문에 박아 두면 또 어긋난다"
+
+
+def test_tool_index_covers_all_tools():
+    """`tools/README.md` 가 **도구를 하나도 빠뜨리지 않는다**.
+
+    ⚠ 표에 없는 도구는 다음 사람에게 **고아로 보인다** — 실제로 두 번 그렇게 지웠다
+    (2026-08-12 배정 시대 28개 · 08-18 탐색 19개). 둘 다 되살렸다. 지우면 그 도구가 만들던
+    것의 **출처가 끊긴다** — `textmap/*.json` 은 `gen_textmap` 이, `ed1-scene-map.md` 는
+    `segment_copy --map` 이 만들었고 체크리스트는 지금도 `proposal.py` 를 인용한다.
+    """
+    import os
+
+    tools_dir = _TOOLS
+    idx = open(os.path.join(tools_dir, "README.md"), encoding="utf-8").read()
+    missing = [
+        f[:-3]
+        for f in sorted(os.listdir(tools_dir))
+        if f.endswith(".py") and f"`{f[:-3]}`" not in idx
+    ]
+    assert not missing, f"도구 지도에 없는 도구: {missing}"
+
+
+def test_own_table_agrees_with_known_assignments():
+    """🔴 **정답을 아는 자리로 게이트를 검산한다** — 배정이 있는 블록이면 그 배정을 돌려줘야 한다.
+
+    ⚠ 이 검산이 없어서 `str(eid)`/int 키 버그를 **커밋한 뒤에** 발견했다(2026-08-18).
+    게이트가 「표 없음」을 돌려주면 그건 **「정발에 대응이 없다」와 구별이 안 된다** — 조용히
+    후보를 안 내놓는 종류의 오류다. 빌드가 죽고서야 드러났고, 안 죽었으면 계속 믿었을 것이다.
+
+    ⚠ **검출기를 새로 쓰면 커밋 전에 이 꼴의 검산을 먼저 한다**(체크리스트 절 4-B).
+    정답을 아는 입력이 4,870건이나 있는데 안 쓴 것이 문제였다.
+    """
+    import json
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    root = os.path.dirname(_TOOLS)
+    if not os.path.exists(os.path.join(root, "align_map.json")):
+        return
+    import adopt_jeongbal as A
+    from align_map import scene_map
+
+    ov = json.load(open(os.path.join(root, "align_overrides.json"), encoding="utf-8"))
+    bad, n = [], 0
+    for i in range(1, 7):
+        scn = f"ED1SCN{i}"
+        known = {}
+        for k, v in (ov.get(scn) or {}).items():
+            if isinstance(v, dict) and v.get("table"):
+                known[int(k)] = v["table"]
+        for k, v in (scene_map(scn) or {}).items():
+            if isinstance(v, dict) and v.get("table"):
+                known.setdefault(int(k), v["table"])
+        for eid, t in known.items():
+            n += 1
+            got, _how = A.own_table(scn, eid)
+            if got != t:
+                bad.append(f"{scn} jp{eid}: {t} vs {got}")
+    assert n > 1000, f"검산 표본이 너무 적다({n}) — 정본을 못 읽고 있다"
+    assert not bad, f"게이트가 아는 배정을 못 돌려준다 {len(bad)}건: {bad[:5]}"
+
+
+def test_own_table_reads_both_key_types():
+    """`scene_map` 은 **int 키**다 — `str(eid)` 로만 찾으면 배정이 있는데도 「표 없음」이 된다.
+
+    ⚠ 조용히 틀린다(2026-08-18 실측): 게이트가 후보를 안 내놓는데 그건 「정발에 대응이 없다」와
+    구별이 안 된다. 실제로 네 블록이 그래서 `table: None` 로 새 배정에 박혀 빌드가 죽었다.
+    """
+    import inspect
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import adopt_jeongbal as A
+
+    src = inspect.getsource(A.own_table)
+    assert "pin.get(eid)" in src and "pin.get(str(eid))" in src, "키 한 종류만 본다"
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

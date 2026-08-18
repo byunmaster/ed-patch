@@ -57,29 +57,28 @@ BAN = {
 # 기준은 **정발 코퍼스**다(초안이 아니라). 초안은 `work/` 라 머신에 없을 수 있는데 코퍼스는
 # 빌드가 항상 만든다. 코퍼스가 없으면 검사를 건너뛴다(원본 없는 머신에서 게이트가 죽지 않게).
 #
-# ⚠ **관용·상투 표현은 안 센다.** 저작권은 창작적 **표현**을 보호하는데 인사·응대 상투구는
-# 그 선을 못 넘는다 — `왕자님. 어서 오십시오.` 는 원문을 옮기면 누가 해도 그 근처라
-# **표현의 선택지가 없다**. 그런 자리는 우리가 다시 써도 같은 말이 나오므로, 잡아 봐야
-# 고칠 수가 없다(유저 판정 2026-08-13: "관용적인 표현은 코드에 넣고, 번역자의 노력이 들어간
-# 대사만 포인터로").
+# ⚠ **검사 하나에 물음 둘을 섞지 않는다**(2026-08-18 정리). 섞어 뒀더니 문턱 하나로 둘을
+# 같이 맞춰야 해서, 낮추면 오탐이 쏟아지고 높이면 유출이 샜다.
 #
-# ⚠ **20자는 법적 경계가 아니라 기계적 선이다.** 실측으로 그 위아래가 성격이 갈렸다 —
-# 미만은 전부 인사·응대(19건), 이상은 전부 실제 문장(7건)이었다. 애매하면 **사람이 본다**.
+#   A. `scan_canon`  — **문안 정본(`script/*.json` 의 `t`)이 정발과 같은가.**
+#                      전체 일치라 길이 문턱이 필요 없다. 같으면 **포인터로 바꾼다**
+#                      (유저 확정 2026-08-18: "관용적인 표현이라도 일치하면 포인터로
+#                      처리하자. 예외규칙이 많아질수록 더 쉽게 혼란에 빠지는것 같네").
+#   B. `scan_repo`   — **코드·주석·픽스처에 정발 문장이 박혔나.** 부분 문자열 검색이라
+#                      문턱이 없으면 흔한 낱말이 전부 걸린다(실측: 문턱을 떼자 3,189건이
+#                      나왔고 `krwrap.py`·`duckstation.sh` 까지 걸렸다). 20자를 유지한다.
 #
-# ⚠ **낮게 잡으면 게이트가 죽는다.** 12자로 두면 상투구 19건이 영구히 걸려 늘 빨간불이 되고,
-# 그러면 진짜 유출이 섞여도 묻힌다(CLAUDE.md 「늘 빨간불이면 아무도 안 본다」).
+# ⚠ B 의 20자는 「창작성 판정」이 아니라 **부분 일치 검색의 잡음 하한**이다. 예전엔 이걸
+# 창작성 기준으로 적어 뒀는데(「상투구는 안 센다」), 그 해석이 A 까지 오염시켜 상투구를
+# 영영 안 고치게 만들었다.
 MIN_LEN = 20
 SCAN_EXT = (".json", ".py", ".md", ".sh", ".html")
 # ⚠ **레포 상대경로로 비교한다.** 절대경로로 하면 레포가 `/root/work/...` 같은 자리에 있을 때
 # `work` 가 **모든 디렉터리에 매칭돼** 검사가 통째로 건너뛰어진다 — 게이트가 조용히
 # 초록불이 된다(2026-08-13 실측, 일부러 심은 문장을 못 잡아 발견했다).
 SKIP_DIR = (".git", "work", ".local", "originals", "vendor", ".venv", "node_modules")
-# 우리 문안인데 코퍼스에도 있는 자리 — 근거를 적고 통과시킨다.
-ALLOW = {
-    # 아이템 획득 안내는 게임 전역 공용 시스템 문구라 정발과 같은 말이 될 수밖에 없다.
-    "을(를) 손에 넣었습니다.",
-    "는{p}을(를) 발견했습니다.",
-}
+# ⚠ 예외 목록을 두지 않는다 — 같으면 포인터로 바꾸면 되니 통과시킬 이유가 없다.
+ALLOW = set()
 
 
 def _corpus_lines():
@@ -108,18 +107,25 @@ def _corpus_lines():
             except Exception:
                 continue
             for seg in re.split(r"\{p\}", t):
-                # ⚠ **화자 마크업을 뗀 본문도 코퍼스로 친다.** 코퍼스는 `{spk}병사{/spk} 이봐…`
-                # 인데 우리 정본(`script/*.json`)의 `t` 는 **본문만** 담는다 — 마크업만 지우면
-                # `병사` 가 본문 앞에 눌어붙어, 본문이 정발과 한 글자도 다르지 않아도 축자
-                # 일치가 안 나 **조용히 통과한다**. 실측 4건 보고 → 169건(2026-08-13).
-                for s in {seg, re.sub(r"^\s*\{spk\}[^{}]*\{/spk\}", "", seg)}:
-                    s = re.sub(r"\{[^}]*\}", "", s)
-                    s = re.sub(r"\\x[0-9A-Fa-f]{2}", "", s).strip()
-                    # ⚠ **한글이 없으면 문안이 아니다** — `..............` 같은 부호 덩어리가
-                    # 길이만으로 걸려 오탐을 만든다(실측 12곳). 저작권 대상은 표현이지 부호가
-                    # 아니다.
-                    if len(s) >= MIN_LEN and s not in ALLOW and re.search(r"[가-힣]{3,}", s):
-                        out.add(s)
+                # ⚠ **페이지만 색인하면 문장 단위 복제를 통째로 놓친다.** 우리 정본의 `t` 는
+                # **문장 단위**다(정발 한 페이지가 PS1 여러 블록으로 갈리므로 문장으로 잘라
+                # 배정한다) — 페이지 집합에는 그 문장이 없어서, 한 글자도 다르지 않아도
+                # 조용히 통과했다. 실측 2026-08-18: 게이트가 8건을 보는 동안 **35건**이
+                # 새고 있었다. 쪼개는 규칙은 파이프라인 정본(`_sentences`)을 그대로 쓴다.
+                for chunk in [seg, *R._sentences(seg)]:
+                    # ⚠ **화자 마크업을 뗀 본문도 코퍼스로 친다.** 코퍼스는 `{spk}병사{/spk}
+                    # 이봐…` 인데 우리 정본의 `t` 는 **본문만** 담는다 — 마크업만 지우면
+                    # `병사` 가 본문 앞에 눌어붙어, 본문이 정발과 한 글자도 다르지 않아도
+                    # 축자 일치가 안 나 조용히 통과한다. 실측 4건 보고 → 169건(2026-08-13).
+                    for s in {chunk, re.sub(r"^\s*\{spk\}[^{}]*\{/spk\}", "", chunk)}:
+                        s = re.sub(r"\{[^}]*\}", "", s)
+                        s = re.sub(r"\\x[0-9A-Fa-f]{2}", "", s)
+                        s = re.sub(r"\s+", " ", s).strip()
+                        # ⚠ **한글이 없으면 문안이 아니다** — `..............` 같은 부호
+                        # 덩어리가 길이만으로 걸려 오탐을 만든다(실측 12곳). 저작권 대상은
+                        # 표현이지 부호가 아니다.
+                        if len(s) >= MIN_LEN and s not in ALLOW and re.search(r"[가-힣]{3,}", s):
+                            out.add(s)
     return out
 
 
@@ -180,6 +186,70 @@ def scan_similar(threshold=0.90, report=0.80):
     return len(over)
 
 
+def scan_canon(verbose=False):
+    """🔴 **문안 정본이 정발과 글자까지 같은 자리** — 포인터로 바꿔야 한다.
+
+    `script/*.json` 의 `t` 는 **우리가 쓴 번역**이어야 한다. 정발과 같다면 둘 중 하나다 —
+    ① 정발을 보고 옮겨 적었거나(리포에 정발 문안이 남는다) ② 우연히 같아졌거나. 어느 쪽이든
+    **정발을 가리키면 된다**(방침이 정발 우선이고, 그러면 문안이 리포에서 사라진다).
+
+    ⚠ **길이 예외를 두지 않는다**(유저 확정 2026-08-18). 예전엔 「상투구는 창작성이 낮으니
+    통과」로 20자 문턱을 뒀는데, 그 예외가 판단을 흐렸다 — 자리마다 「이건 상투구인가」를
+    다시 물어야 했고 문턱 언저리는 매번 결론이 갈렸다. 규칙은 하나다: **같으면 포인터로.**
+
+    ⚠ **공백을 무시한다.** 정발은 `{n}` 자리에 공백이 없다(`부상자는대체 어디에 있는거야?`)
+    — 띄어쓰기만 다듬어 옮겨 적은 자리가 통째로 빠져나가던 구멍이다(실측 2026-08-18).
+    """
+    import glob as _glob
+    import json
+
+    from common import ROOT
+
+    lines = _corpus_lines()
+    if not lines:
+        print("  ⏭ 정발 코퍼스가 없어 건너뜀")
+        return 0
+    flat = {re.sub(r"\s+", "", s) for s in lines}
+    # ⚠ **반대 방향도 본다.** 정발 엔트리는 문장 끝에 공백이 없는 자리가 많아(`일이야.자네가`)
+    # `_sentences` 가 못 가르고 **한 줄로 뭉친다** — 그러면 우리 `t` 가 그 줄보다 **짧아서**
+    # 전체 일치로는 영영 안 걸린다. 우리 문안이 정발 엔트리의 **일부**인 자리도 유출이다
+    # (실측 2026-08-18: 그렇게 26건이 새고 있었다).
+    joined = "".join(sorted(flat))
+    hits = collections.Counter()
+    rows = []
+    # ⚠ **`textmap/` 도 본다.** `script/` 만 훑다가 전투 대사 하나가 `ours` 에 그대로 남아
+    # 있었다(2026-08-18). 문안이 사는 자리는 둘이다 — 한쪽만 보면 반만 지키는 것이다.
+    files = sorted(_glob.glob(os.path.join(ROOT, "script", "*SCN*.json")))
+    files += sorted(_glob.glob(os.path.join(ROOT, "textmap", "*.json")))
+    for path in files:
+        scn = os.path.basename(path)[:-5]
+        doc = json.load(open(path, encoding="utf-8"))
+        items = doc.items() if "entries" not in doc else [
+            (str(i), pp) for i, e in enumerate(doc["entries"])
+            for pp in ([e] if "ours" in e else e.get("parts", []))
+        ]
+        for eid, v in items:
+            if not isinstance(v, dict):
+                continue
+            t = ((v.get("t") or v.get("ours")) or "").strip()
+            if not t or not re.search(r"[가-힣]{2,}", t):
+                continue
+            ft = re.sub(r"\s+", "", t)
+            if ft in flat or (len(ft) >= 20 and ft in joined):
+                hits[scn] += 1
+                rows.append((scn, eid, t))
+    n = sum(hits.values())
+    print(
+        f"  {'✅ 정본에 정발 축자 없음' if not n else f'⚠ 정본이 정발과 축자 동일 {n}건 — 포인터로 바꾼다'}"
+    )
+    if n:
+        print("      " + " · ".join(f"{k} {v}" for k, v in sorted(hits.items())))
+    if verbose:
+        for scn, eid, t in rows[:40]:
+            print(f"      {scn} jp{eid}: {t[:56]!r}")
+    return n
+
+
 def scan_repo(verbose=False):
     """커밋되는 파일에 정발 번역문이 있는가."""
     lines = _corpus_lines()
@@ -201,7 +271,12 @@ def scan_repo(verbose=False):
                 data = open(path, encoding="utf-8").read()
             except Exception:
                 continue
-            hit = [s for s in lines if s in data]
+            # ⚠ **공백을 무시하고 찾는다.** 정발은 `{n}` 줄바꿈 자리에 공백이 없는데
+            # (`부상자는대체 어디에 있는거야?`) 우리는 띄어 쓴다 — 띄어쓰기만 다듬어 옮겨
+            # 적으면 **글자는 그대로인데 검사기가 통과시킨다**(실측 2026-08-18: 그 부류가
+            # 대부분이었다). 저작권은 표현이 문제지 공백이 문제가 아니다.
+            flat = re.sub(r"\s+", "", data)
+            hit = [s for s in lines if re.sub(r"\s+", "", s) in flat]
             if hit:
                 bad += len(hit)
                 rel = os.path.relpath(path, root)
@@ -254,7 +329,10 @@ def scan(verbose=False):
 
 if __name__ == "__main__":
     v = "-v" in sys.argv
-    # 세 축을 한 진입점에서 본다 — 화면 바이트(`scan`) · 커밋되는 파일의 축자 일치
-    # (`scan_repo`) · **정발과 사실상 같은 ED2 문안**(`scan_similar`). 셋째가 없으면
-    # 「축자만 피하면 통과」가 되어 정발 문장이 리포에 남는다(실측 50건).
-    sys.exit(1 if (scan(v) + scan_repo(v) + scan_similar()) else 0)
+    # 네 축을 한 진입점에서 본다 — 물음이 저마다 다르니 규칙도 저마다 하나씩이다.
+    #   scan          화면에 나가는 바이트에 없어야 할 것이 있나
+    #   scan_canon    **문안 정본이 정발과 글자까지 같나**(전체 일치 · 길이 문턱 없음)
+    #   scan_repo     코드·주석·픽스처에 정발 문장이 박혔나(부분 일치 · 20자 하한)
+    #   scan_similar  축자는 피했지만 사실상 같은 ED2 문안인가(없으면 「축자만 피하면
+    #                 통과」가 되어 정발 문장이 리포에 남는다 — 실측 50건)
+    sys.exit(1 if (scan(v) + scan_canon(v) + scan_repo(v) + scan_similar()) else 0)

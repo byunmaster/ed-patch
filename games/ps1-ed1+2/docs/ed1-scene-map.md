@@ -6,7 +6,7 @@ QA 는 씬이 아니라 **세그먼트(=시점)** 단위로 닫는 게 맞다.
 
 `시점 사본` 은 그 세그먼트가 쓰는 정발 파일이다(`segment_tables.json` 이 정본).
 `고유 화자` 는 **그 씬에서 이 세그먼트에만 나오는** 정발 화자 — 어느 대목인지 가려낸다.
-생성: `python3 tools/segment_copy.py --map > docs/scene-map.md`
+생성: `python3 tools/segment_copy.py --map > docs/ed1-scene-map.md`
 
 ## ED1SCN1
 

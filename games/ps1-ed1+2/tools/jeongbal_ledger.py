@@ -37,7 +37,6 @@
 
 import argparse
 import collections
-import glob
 import json
 import os
 import sys
@@ -45,8 +44,11 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
+from adopt_jeongbal import clean, dos_text, stem_sim
 from align_map import scene_map
 from common import OUT_DIR, ROOT
+
+PROP_OK = 0.35  # 이 아래면 제안이 우리 문안과 아무 관계가 없다
 
 
 def _proposals(scn):
@@ -67,6 +69,7 @@ def _proposals(scn):
             out[str(jp["entry_id"])] = (kr["table"], kr["entry_id"])
     return out
 
+
 LEDGER = os.path.join(ROOT, "jeongbal_audit.json")
 DOC = [
     "정발 전수 대조의 **블록별 판정 장부**. 판정 규칙은 docs/policy.md 「정발 전수 대조」.",
@@ -78,23 +81,53 @@ DOC = [
 
 
 def state():
-    """현재 트리에서 읽어낸 블록별 상태 — {씬: {eid: (판정, 근거)}}."""
+    """블록별 상태 — {씬: {eid: (판정, 근거)}}.
+
+    ⚠ **분모는 「재삽입 대상 전수」다.** `script/` 에서 유도하면 `t` 를 지운 항목이 통째로
+    사라져 **채택할수록 총합이 줄어든다**(실측 2026-08-17: ED1 4,467 → 4,462). 정형 빌더가
+    만드는 블록도 `script/` 에도 배정에도 없어 장부 밖이었다(ED2SCN11·12·13 에서 6건).
+    가변 소스에서 우주를 유도하면 총합이 조용히 어긋난다 — 재삽입이 실제로 무엇을 쓰는지가
+    유일하게 안정된 분모다.
+    """
+    import reinsert_kr_pilot as R
+
     out = {}
-    for p in sorted(glob.glob(os.path.join(ROOT, "script", "*SCN*.json"))):
-        scn = os.path.basename(p)[:-5]
-        canon = json.load(open(p, encoding="utf-8"))
+    for scn, _lba, _size in R.SCN_FILES:
+        p = os.path.join(ROOT, "script", f"{scn}.json")
+        canon = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+        with R.overlay_for(scn):
+            tr, _, _ = R.load_translations(scn.replace("SCN", "_SCN"), scn)
         pin = scene_map(scn) or {}
         prop = _proposals(scn)
         rows = {}
-        for k, v in canon.items():
+        for eid in tr:
+            k = str(eid)
+            v = canon.get(k, {})
             has_t = bool((v.get("t") or "").strip())
             has_pin = bool(pin.get(str(int(k))) or pin.get(int(k)))
-            if not has_t and has_pin:
+            if not has_t and not has_pin:
+                # 정형 블록·상점 프롬프트 등 — 전용 빌더가 **정발 문안에서** 만든다
+                rows[k] = ("정발", "기계:정형빌더")
+            elif not has_t:
                 rows[k] = ("정발", "기계:기본값")
             elif has_t and has_pin:
                 rows[k] = ("자체", "미탐색:배정있음")  # 넣었다 물러난 자리 — 사유를 적어야 한다
             elif has_t:
-                rows[k] = ("자체", "미탐색:제안있음" if str(int(k)) in prop else "미탐색:대응없음")
+                # ⚠ **「제안이 있다」와 「제안이 맞다」는 다르다.** 정렬기 정확도가 62%라
+                # 제안 수를 그대로 「남은 일」로 세면 부풀려진다 — ED1 실측(2026-08-17)에서
+                # 1,059건 중 784건이 최고 페이지와 견줘도 어간 유사도 **0.0** 이었다.
+                # 그건 볼 자리가 아니라 **제안이 틀린 자리**다.
+                m = prop.get(str(int(k)))
+                by = "미탐색:대응없음"
+                if m:
+                    raw = dos_text(*m) or ""
+                    t = (v.get("t") or "").strip()
+                    best = max(
+                        (stem_sim(clean(x), t) for x in str(raw).split("{p}") if clean(x)),
+                        default=0,
+                    )
+                    by = "미탐색:제안있음" if best >= PROP_OK else "미탐색:제안무효"
+                rows[k] = ("자체", by)
         if rows:
             out[scn] = rows
     return out
@@ -143,7 +176,7 @@ def report():
         if scn.startswith("_"):
             continue
         g = scn[:3]
-        for _k, e in rows.items():
+        for e in rows.values():
             tally[(g, e["v"], e["by"])] += 1
     print("  정발 판정 장부")
     for g in ("ED1", "ED2"):
