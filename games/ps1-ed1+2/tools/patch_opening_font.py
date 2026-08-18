@@ -27,6 +27,7 @@ import struct
 import sys
 
 import hangul_font
+import hangul_map as H
 import numpy as np
 from common import BUILD_DIR, extract, write_cue, write_user_data
 from derive_text import off_pairs
@@ -252,20 +253,18 @@ def units(s):
     return sum(ADV_NARROW if c in NARROW else ADV_WIDE for c in norm(s))
 
 
-def kuten_to_sjis(ku, ten):
-    """1-based (구,점) → SJIS 2바이트."""
-    if ku % 2:  # 홀수 구
-        s2 = 0x3F + ten + (1 if ten >= 64 else 0)  # 0x7F 건너뜀
-    else:
-        s2 = 0x9E + ten
-    s1 = 0x81 + (ku - 1) // 2 if ku <= 62 else 0xC1 + (ku - 63) // 2
-    return (s1 << 8) | s2
+# ⚠ **여기 있던 `kuten_to_sjis` 를 `hangul_map` 것으로 합쳤다**(2026-08-18).
+# 쓰는 범위(`ku ≤ 62`, 아래 단언 `0x889F~0x9872`)에서는 두 구현이 **한 자리도 안 달랐다**
+# (실측 62×94 전수). 다른 건 안 쓰는 `ku ≥ 63` 가지뿐이었고 **그쪽이 틀려 있었다** —
+# 표준 SJIS 는 `s1` 이 0xA0 을 넘으면 0x40 을 더해 반각 구간을 건너뛰는데 그 처리가 없었다
+# (표준 대비 정확도 4,899 vs `hangul_map` 6,879). 안 쓰이는 코드가 조용히 틀려 있으면
+# 언젠가 누가 그걸 근거로 쓴다.
 
 
 def index_to_sjis(idx):
     """JIS 선형 인덱스 → SJIS (연속 인덱스용 역변환)."""
     ku, ten = idx // 94 + 1, idx % 94 + 1
-    return kuten_to_sjis(ku, ten)
+    return H.kuten_to_sjis(ku, ten)
 
 
 def build_slots(syllables):
