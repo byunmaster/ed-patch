@@ -749,6 +749,48 @@ def test_tool_index_covers_all_tools():
     assert not missing, f"도구 지도에 없는 도구: {missing}"
 
 
+def test_own_table_agrees_with_known_assignments():
+    """🔴 **정답을 아는 자리로 게이트를 검산한다** — 배정이 있는 블록이면 그 배정을 돌려줘야 한다.
+
+    ⚠ 이 검산이 없어서 `str(eid)`/int 키 버그를 **커밋한 뒤에** 발견했다(2026-08-18).
+    게이트가 「표 없음」을 돌려주면 그건 **「정발에 대응이 없다」와 구별이 안 된다** — 조용히
+    후보를 안 내놓는 종류의 오류다. 빌드가 죽고서야 드러났고, 안 죽었으면 계속 믿었을 것이다.
+
+    ⚠ **검출기를 새로 쓰면 커밋 전에 이 꼴의 검산을 먼저 한다**(체크리스트 절 4-B).
+    정답을 아는 입력이 4,870건이나 있는데 안 쓴 것이 문제였다.
+    """
+    import json
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    root = os.path.dirname(_TOOLS)
+    if not os.path.exists(os.path.join(root, "align_map.json")):
+        return
+    import adopt_jeongbal as A
+    from align_map import scene_map
+
+    ov = json.load(open(os.path.join(root, "align_overrides.json"), encoding="utf-8"))
+    bad, n = [], 0
+    for i in range(1, 7):
+        scn = f"ED1SCN{i}"
+        known = {}
+        for k, v in (ov.get(scn) or {}).items():
+            if isinstance(v, dict) and v.get("table"):
+                known[int(k)] = v["table"]
+        for k, v in (scene_map(scn) or {}).items():
+            if isinstance(v, dict) and v.get("table"):
+                known.setdefault(int(k), v["table"])
+        for eid, t in known.items():
+            n += 1
+            got, _how = A.own_table(scn, eid)
+            if got != t:
+                bad.append(f"{scn} jp{eid}: {t} vs {got}")
+    assert n > 1000, f"검산 표본이 너무 적다({n}) — 정본을 못 읽고 있다"
+    assert not bad, f"게이트가 아는 배정을 못 돌려준다 {len(bad)}건: {bad[:5]}"
+
+
 def test_own_table_reads_both_key_types():
     """`scene_map` 은 **int 키**다 — `str(eid)` 로만 찾으면 배정이 있는데도 「표 없음」이 된다.
 
