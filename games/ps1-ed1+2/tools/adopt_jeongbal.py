@@ -68,8 +68,13 @@ _HDR = re.compile(r"\{c\}([^{]+)\{c\}")
 _SPK = re.compile(r"^\{spk\}([^{]+)\{/spk\}")
 
 
-def own_table(scn, eid):
+def own_table(scn, eid, ignore=None):
     """🔴 **장소·시기** — 그 블록이 쓰는 정발 표. 없으면 `(None, None)`.
+
+    ⚠ `ignore` 는 **믿으면 안 되는 배정**을 거르는 술어다(note 를 받아 True 면 무시).
+    폐기된 규칙이 박아 둔 좌표를 되돌릴 때 이게 없으면 **순환**한다 — 그 블록의 잘못된
+    배정을 「자기 표」로 읽어 제자리를 맴돈다(실측: 같은 가게의 이웃 블록이 `T_333` 과
+    `T_011` 로 갈렸다). 앞 헤더를 거슬러 갈 때도 같은 술어를 태운다 — 이웃도 오염돼 있다.
 
     표가 곧 시점이다(`T_011` 루디아#2 vs `T_013` 루디아#4 — 1장엔 왕자를 못 알아보고
     2장부터 알아본다). 그래서 표만 맞추면 장소와 시기가 같이 맞는다.
@@ -81,7 +86,7 @@ def own_table(scn, eid):
     """
     ov = _overrides()
     e = (ov.get(scn) or {}).get(str(eid))
-    if isinstance(e, dict) and e.get("table"):
+    if isinstance(e, dict) and e.get("table") and not (ignore and ignore(e.get("note") or "")):
         return e["table"], "자기배정"
     m = (scene_map(scn) or {}).get(str(eid))
     if isinstance(m, dict) and m.get("table"):
@@ -89,7 +94,7 @@ def own_table(scn, eid):
     jp = _jp(scn)
     for d in range(1, 40):
         if _HDR.match(jp.get(eid - d, "")):
-            t, _ = own_table(scn, eid - d)
+            t, _ = own_table(scn, eid - d, ignore)
             return (t, "앞 헤더") if t else (None, None)
     return None, None
 
