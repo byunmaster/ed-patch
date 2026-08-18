@@ -300,18 +300,15 @@ JP 가 이름을 헤더 줄로 띄우는데 정발은 한 줄로 뽑을 때. `[[
 | `script_draft --verify` | 초안↔정본 왕복 일치            | 전환 안전판. 불일치는 파이프라인이 정발에만 맞춰 둔 자리다              |
 | 락 / 관측 대장          | 문안 변화                      | **조판은 안 본다**(화자 + 창 본문만 해시) — 줄바꿈을 건드리면 조용하다  |
 
-⚠ **배정 시대 검출기 28개는 걷어냈다**(2026-08-12) — `todo_untranslated` · `check_page_holes` ·
+⚠ ~~**배정 시대 검출기 28개는 걷어냈다**(2026-08-12)~~ → **2026-08-18 에 되살렸다** — `todo_untranslated` · `check_page_holes` ·
 `check_orphan_entries` · `check_text_health` · `check_window_nl` · `check_variants` ·
 `check_shop_verbs` · `segment_copy` · `retarget_copy` · `scn_maps` · `sys_phrases` 등.
 
-⚠ **2026-08-18 에 19개를 더 걷었다**(85 → 66). 성격이 셋이다 — ①**탐색이 끝난 것**
-(`find_font_*` · `find_glyph_routine` · `hunt_font_in_ram` · `verify_jis_layout` · `scan_sjis` ·
-`render_font` · `census_syllables` · `sna_extract`): 폰트 위치·글리프 루틴은 찾았고 수치는
-[devlog](devlog.md)에 있다. ②**파일럿 잔재**(`build_poc_kr` · `patch_poc_hangul` ·
-`patch_test` · `patch_lentest`). ③**폐기된 접근의 작업대**(`ed2_align_review` ·
-`ed2_runfill` · `check_scene_overlap`): ED2 는 블록↔엔트리로 안 묶고 정본에 직접 쓰기로
-했다([ed2-status.md](ed2-status.md) 절 12). 그 도구들이 들고 있던 함정은 스킬
-`jeongbal-matching` 으로 옮겼다(ED2 화자 라벨 승계 어긋남 · 길이비 0.55 · 겹침 판정).
+⚠ **08-18 에 19개를 더 걷었다가 그것도 되살렸다**(→ 113개). 유저 판정: **「아무도 안
+부른다」와 「쓸모없다」는 다르다** — 1회성 도구는 그 산출물의 **출처**다. `textmap/*.json` 은
+`gen_textmap` 이, `ed1-scene-map.md` 는 `segment_copy --map` 이 만들었고, `work/derived/scn_maps/`
+는 `scn_maps` 가 만든다. 체크리스트 절 6은 지금도 `proposal.py verify|apply` 를 인용한다.
+**지울 자격이 있는 건 산출물조차 안 남은 도구뿐이다.** 역할별 지도는 [`tools/README.md`](../tools/README.md).
 
 ⚠ **`align_semantic.py` 는 안 지운다.** 08-12 에 지웠다가 08-14 에 되살린 자리다 —
 ED1 정본을 만든 도구인데 지워 놓고 「배정을 버린다」고 판단할 뻔했다. **도구를 지우면

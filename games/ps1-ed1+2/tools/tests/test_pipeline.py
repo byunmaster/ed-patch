@@ -727,5 +727,25 @@ def test_skill_index_matches_checklist():
     assert "아홉" not in sk.split("## 정본")[1][:400], "절 수를 본문에 박아 두면 또 어긋난다"
 
 
+def test_tool_index_covers_all_tools():
+    """`tools/README.md` 가 **도구를 하나도 빠뜨리지 않는다**.
+
+    ⚠ 표에 없는 도구는 다음 사람에게 **고아로 보인다** — 실제로 두 번 그렇게 지웠다
+    (2026-08-12 배정 시대 28개 · 08-18 탐색 19개). 둘 다 되살렸다. 지우면 그 도구가 만들던
+    것의 **출처가 끊긴다** — `textmap/*.json` 은 `gen_textmap` 이, `ed1-scene-map.md` 는
+    `segment_copy --map` 이 만들었고 체크리스트는 지금도 `proposal.py` 를 인용한다.
+    """
+    import os
+
+    tools_dir = _TOOLS
+    idx = open(os.path.join(tools_dir, "README.md"), encoding="utf-8").read()
+    missing = [
+        f[:-3]
+        for f in sorted(os.listdir(tools_dir))
+        if f.endswith(".py") and f"`{f[:-3]}`" not in idx
+    ]
+    assert not missing, f"도구 지도에 없는 도구: {missing}"
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
