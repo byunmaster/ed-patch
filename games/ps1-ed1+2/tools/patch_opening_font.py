@@ -15,7 +15,7 @@
   5) 전각 advance 4→3 패치(0x13370/0x13750). 공백·부호는 반각 2유닛 — 필드 64유닛.
 
 텍스트는 정발판(originals/kr/dos-ed1/OPENING.EXE) 원문 우선, JP 전용부만 정발 어투 신규 번역.
-상세 여정: docs/devlog.md, 핸드오프: docs/status.md.
+상세 여정: docs/devlog.md, 핸드오프: docs/ed1-status.md.
 전제: build.py(베이스) 후 이 스크립트 적용 → work/Eiyuu Densetsu (KR).bin (제자리 갱신).
 """
 

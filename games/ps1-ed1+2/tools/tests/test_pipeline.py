@@ -463,6 +463,26 @@ def test_font_compression_roundtrips_and_stays_aligned():
     assert len(data) < len(raw) * PF.GLYPH, "압축이 안 됐다"
 
 
+def test_two_gales_do_not_merge():
+    """`게일`(파티)과 `대도 게일`(할아버지)은 **딴사람**이다 — 이름 비교가 뭉개면 안 된다.
+
+    유저 확정(2026-08-17): 파티에 드는 쪽이 `게일` 이고 `대도 게일` 은 그 할아버지다.
+    후보 좁히기에서 둘이 같은 사람으로 묶이면 **손자 대사에 할아버지 문장**이 들어온다.
+    지금은 유사도 0.50 으로 문턱(0.6) 아래라 갈리는데 그건 우연이라, 문턱을 만질 때
+    여기서 걸리게 한다.
+    """
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    from align_jp_kr import SPEAKER_DICT, name_sim
+
+    assert SPEAKER_DICT["ゲイル"] == "게일"
+    assert SPEAKER_DICT["大盗賊 ゲイル"] == "대도 게일"
+    assert name_sim("게일", "대도 게일") < 0.6, "두 게일이 뭉개진다"
+
+
 def test_josa_agreement_ignores_adnominal_endings():
     """조사 받침 검사는 **관형사형 어미를 조사로 오인하면 안 된다**.
 
@@ -602,5 +622,54 @@ def test_overlay_tail_relocation_updates_refs_with_sign_extension():
 # **정의되기 전에 러너가 돌아** 조용히 안 돌았다 — `test_proper_noun_needs_word_boundary`
 # 가 그렇게 죽어 있었고 `28/28 passed` 는 계속 초록이었다(2026-08-15). 테스트를 늘릴 땐
 # 이 블록 **위**에 붙인다.
+def test_match_is_the_only_gate_for_candidates():
+    """🔴 **정발 후보는 장소·시기·화자를 다 통과해야 한다** (유저 확정 2026-08-17, 재확인).
+
+    규칙은 `docs/policy.md` 에도 메모리에도 있었는데, 도구를 새로 짤 때마다 **유사도만 재고
+    화자를 빠뜨렸다** — 2026-08-17 하루에 두 번. 기억에 맡기면 반복되므로 코드로 못 박는다.
+
+    두 가지를 지킨다:
+    ① 후보를 내는 문은 `match()` 하나다 — 그 안에 `axes_ok` 가 있다.
+    ② 저수준 `best_slice` 는 게이트가 없다는 걸 문서에 명시하고, 채택 경로가 직접 쓰지 않는다.
+    """
+    import inspect
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import adopt_jeongbal as A
+
+    for name in ("own_table", "axes_ok", "dos_speaker", "match"):
+        assert hasattr(A, name), f"세 축 게이트가 사라졌다: {name}"
+    assert "axes_ok" in inspect.getsource(A.match), "match() 가 게이트를 안 거친다"
+    assert "axes_ok" in inspect.getsource(A.candidates), "candidates() 가 게이트를 안 거친다"
+    assert "게이트" in (A.best_slice.__doc__ or ""), "best_slice 에 저수준 경고가 없다"
+
+    # 화자가 다르면 잘린다 — 축자 동일은 그걸 덮는다(1급 규칙)
+    ok, why = A.axes_ok("ED1SCN1", 1, "ED1/T_000", 0, ours="가", dos="나")
+    assert isinstance(ok, bool) and why
+
+
+def test_gate_rejections_are_returned_not_dropped():
+    """게이트에 걸린 후보를 **버리지 않는다** — `ok=False` 로 같이 돌려준다.
+
+    화자 축은 정발 쪽 전파가 틀릴 수 있다(정발도 한 엔트리에 여러 사람 대사를 담는다).
+    잘린 걸 조용히 없애면 「다 봤다」로 읽히고, 멀쩡한 짝이 소리 없이 사라진다 —
+    이 리포가 반복해 물린 부류다(`docs/patcher-checklist.md` 「대량 변경」).
+    """
+    import inspect
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import adopt_jeongbal as A
+
+    src = inspect.getsource(A.match)
+    assert "ok=ok" in src, "잘린 후보에 표시를 안 단다"
+    assert "if ok:" not in src, "게이트에 걸린 후보를 버리고 있다"
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

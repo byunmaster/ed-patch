@@ -2866,7 +2866,7 @@ def load_translations(align_name, scn_name):
                 raise SkipBlock("come-again 꼬리 없음")
             # ⚠ 정발은 이 꼬리에 온점을 안 찍은 파일이 있다(`또 들러주십시요`). 인사 안에
             # 인라인일 땐 안 보였지만 **별도 창의 한 문장**이 되면 종결부호가 있어야 한다
-            # (온점 누락 방침 — docs/status.md).
+            # (온점 누락 방침 — docs/ed1-status.md).
             tail = m.group(1)
             return (tail if tail.endswith((".", "!", "?", "…")) else tail + ".") + "{p}"
         if pi:

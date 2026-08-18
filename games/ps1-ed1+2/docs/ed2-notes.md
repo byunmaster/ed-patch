@@ -73,7 +73,7 @@ DUMMY_LBA = 91700  # 재배치 목적지(DUMMY.;1 시작). 순차 할당.
 
 ### 📄 ED2 문서는 따로 쓴다
 
-`docs/status.md` 는 이미 1,200줄이 넘는다. ED2 를 여기 얹으면 아무도 안 읽는다 —
+`docs/ed1-status.md` 는 이미 1,200줄이 넘는다. ED2 를 여기 얹으면 아무도 안 읽는다 —
 현황은 [ed2-status.md](ed2-status.md), 씬 지도는 [ed2-scene-map.md](ed2-scene-map.md),
 주의사항은 이 파일. **주제로 가르는 것**이지 브랜치로 가르는 게 아니다.
 
