@@ -25,13 +25,13 @@ import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-from align_jp_kr import load_jp_scene  # noqa: E402
-from common import OUT_DIR  # noqa: E402
-from lock_lines import pending as pending_marks  # noqa: E402
-from lock_lines import settled  # noqa: E402
-from patch_sys_ui import is_name_plate  # noqa: E402
-from scn_maps import block_maps  # noqa: E402
+import reinsert_kr_pilot as R
+from align_jp_kr import load_jp_scene
+from common import OUT_DIR
+from lock_lines import pending as pending_marks
+from lock_lines import settled
+from patch_sys_ui import is_name_plate
+from scn_maps import block_maps
 
 # 가나 — "이 블록이 진짜 일본어 대사인가"의 판정자. 지명 플레이트 잔재·그래픽 쓰레기
 # (`怦怦怦…`)에는 가나가 없다.

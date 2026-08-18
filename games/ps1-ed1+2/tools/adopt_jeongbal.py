@@ -88,7 +88,10 @@ def own_table(scn, eid, ignore=None):
     e = (ov.get(scn) or {}).get(str(eid))
     if isinstance(e, dict) and e.get("table") and not (ignore and ignore(e.get("note") or "")):
         return e["table"], "자기배정"
-    m = (scene_map(scn) or {}).get(str(eid))
+    # ⚠ `scene_map` 은 **int 키**다 — `str(eid)` 로만 찾으면 배정이 있는데도 「표 없음」이
+    # 된다(2026-08-18 실측: 그래서 게이트가 조용히 후보를 안 냈다). 둘 다 본다.
+    pin = scene_map(scn) or {}
+    m = pin.get(eid) or pin.get(str(eid))
     if isinstance(m, dict) and m.get("table"):
         return m["table"], "자기배정"
     jp = _jp(scn)

@@ -719,11 +719,13 @@ def test_skill_index_matches_checklist():
     sk = open(
         os.path.join(root, ".claude", "skills", "patcher-safety", "SKILL.md"), encoding="utf-8"
     ).read()
-    nums = [m.group(1) for m in re.finditer(r"^## ([\d\-A-B]+)\.", cl, re.M)]
+    nums = [m.group(1) for m in re.finditer(r"^## ([\d\-A-B]+)\.", cl, re.MULTILINE)]
     assert nums, "체크리스트에서 절 번호를 못 읽었다"
     for n in nums:
         # ⚠ 줄머리에 고정하지 않는다 — oxfmt 가 `4-B.` 를 하위 항목으로 들여쓴다(마크다운상 맞다).
-        assert re.search(rf"^\s*{re.escape(n)}\.", sk, re.M), f"스킬 색인에 절 {n} 이 빠졌다"
+        assert re.search(rf"^\s*{re.escape(n)}\.", sk, re.MULTILINE), (
+            f"스킬 색인에 절 {n} 이 빠졌다"
+        )
     assert "아홉" not in sk.split("## 정본")[1][:400], "절 수를 본문에 박아 두면 또 어긋난다"
 
 
@@ -745,6 +747,24 @@ def test_tool_index_covers_all_tools():
         if f.endswith(".py") and f"`{f[:-3]}`" not in idx
     ]
     assert not missing, f"도구 지도에 없는 도구: {missing}"
+
+
+def test_own_table_reads_both_key_types():
+    """`scene_map` 은 **int 키**다 — `str(eid)` 로만 찾으면 배정이 있는데도 「표 없음」이 된다.
+
+    ⚠ 조용히 틀린다(2026-08-18 실측): 게이트가 후보를 안 내놓는데 그건 「정발에 대응이 없다」와
+    구별이 안 된다. 실제로 네 블록이 그래서 `table: None` 로 새 배정에 박혀 빌드가 죽었다.
+    """
+    import inspect
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import adopt_jeongbal as A
+
+    src = inspect.getsource(A.own_table)
+    assert "pin.get(eid)" in src and "pin.get(str(eid))" in src, "키 한 종류만 본다"
 
 
 if __name__ == "__main__":

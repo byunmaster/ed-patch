@@ -154,12 +154,10 @@ def write_md(game, n, rows):
 
         if suspects:
             f.write("## ⚠ 검수 우선 (의미 충돌·저신뢰)\n\n")
-            for r in suspects:
-                f.write(block(r))
+            f.writelines(block(r) for r in suspects)
             f.write("\n")
         f.write("## 나머지 매칭 (PS1 순서)\n\n")
-        for r in rest:
-            f.write(block(r))
+        f.writelines(block(r) for r in rest)
     return len(suspects)
 
 

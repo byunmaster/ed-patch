@@ -36,9 +36,9 @@ import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-from align_map import scene_map  # noqa: E402
-from common import OUT_DIR, REVIEW_DIR, ROOT  # noqa: E402
-from scn_maps import _anchors, segments, table_maps  # noqa: E402
+from align_map import scene_map
+from common import OUT_DIR, REVIEW_DIR, ROOT
+from scn_maps import _anchors, segments, table_maps
 
 SEG_TABLES = os.path.join(ROOT, "segment_tables.json")
 W_OVERRIDE = 4  # 사람이 확정한 오버라이드 표
@@ -178,7 +178,7 @@ def _monotone(n, m, score, reuse):
             if s == NEG:
                 continue
             best, arg = NEG, None
-            for k in range(0, j + 1 if reuse else j):
+            for k in range(j + 1 if reuse else j):
                 if dp[i - 1][k] > best:
                     best, arg = dp[i - 1][k], k
             if arg is None or best == NEG:

@@ -29,8 +29,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-from common import OUT_DIR, ROOT  # noqa: E402
-from patch_sys_ui import _scn_layout  # noqa: E402
+from common import OUT_DIR, ROOT
+from patch_sys_ui import _scn_layout
 
 _PAGE = re.compile(r"^(\d+)(~\d+)?(?:#(\d+))?")
 

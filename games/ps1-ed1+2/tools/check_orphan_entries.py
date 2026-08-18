@@ -20,7 +20,6 @@
   python3 tools/check_orphan_entries.py ED1SCN5    # 한 씬
 """
 
-import json
 import os
 import re
 import sys
@@ -28,9 +27,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import check_page_holes as H  # noqa: E402
-import reinsert_kr_pilot as R  # noqa: E402
-from patch_sys_ui import _scn_layout  # noqa: E402
+import check_page_holes as H
+import reinsert_kr_pilot as R
+from patch_sys_ui import _scn_layout
 
 MAX_FRAG = 24  # 이보다 길면 조각이 아니라 독립 대사로 본다
 _SPK = None

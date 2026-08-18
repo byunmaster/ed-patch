@@ -28,9 +28,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from align_jp_kr import DOS_KR_DIR  # noqa: E402
-from common import REVIEW_DIR  # noqa: E402
-from reinsert_kr_pilot import HARD_NL, resolve_dos_breaks, spell_fix  # noqa: E402
+from align_jp_kr import DOS_KR_DIR
+from common import REVIEW_DIR
+from reinsert_kr_pilot import HARD_NL, resolve_dos_breaks, spell_fix
 
 OUT = os.path.join(REVIEW_DIR, "corpus")
 

@@ -26,10 +26,10 @@ import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-import segment_copy as S  # noqa: E402
-from align_jp_kr import load_jp_scene  # noqa: E402
-from common import OUT_DIR, REVIEW_DIR  # noqa: E402
+import reinsert_kr_pilot as R
+import segment_copy as S
+from align_jp_kr import load_jp_scene
+from common import OUT_DIR, REVIEW_DIR
 
 # 종결로 인정하는 꼬리 — 이걸로 안 끝나면 엔트리가 잘렸을 수 있다
 _END = re.compile(r"(\{end\}|\{p\}|[.!?…」』]\s*$|\\x[0-9A-Fa-f]{2}\s*$)")

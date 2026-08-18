@@ -27,10 +27,10 @@ import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-from common import OUT_DIR, REVIEW_DIR, ROOT  # noqa: E402
-from scn_maps import block_maps  # noqa: E402
-from todo_untranslated import pending  # noqa: E402
+import reinsert_kr_pilot as R
+from common import OUT_DIR, REVIEW_DIR, ROOT
+from scn_maps import block_maps
+from todo_untranslated import pending
 
 
 def entry_pages(table, entry_id):
@@ -190,8 +190,7 @@ def main():
         f.write(f"엔트리 {len(rows)}건 · 후보 블록 {n_cand}건. **판단은 사람이 한다.**\n")
         for tbl, ent, free, pgs, by, cands, _real, _cap, _whole in rows:
             f.write(f"\n## {tbl}#{ent} — 안 쓰인 페이지 {free} (쓰는 블록 {by})\n\n")
-            for i in free:
-                f.write(f"- p{i}: {pgs[i].strip()[:110]}\n")
+            f.writelines(f"- p{i}: {pgs[i].strip()[:110]}\n" for i in free)
             f.write("\n  인접 미번역:\n")
             for e in cands:
                 mp, spk, body = todo[e]

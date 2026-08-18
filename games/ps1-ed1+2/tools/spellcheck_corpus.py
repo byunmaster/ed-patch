@@ -28,9 +28,9 @@ _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 sys.path.insert(0, _HERE)
 sys.path.insert(0, os.path.join(_REPO, "shared"))
 
-from common import REVIEW_DIR, ROOT  # noqa: E402
-from dump_dos_corpus import OUT, collect  # noqa: E402
-from text import spellcheck as sc  # noqa: E402
+from common import REVIEW_DIR, ROOT
+from dump_dos_corpus import OUT, collect
+from text import spellcheck as sc
 
 SPELL_JSON = os.path.join(ROOT, "dos_spelling_fixes.json")
 
@@ -44,7 +44,7 @@ def run(game, chunk, limit, report_only, jobs):
 
     cache_p = os.path.join(OUT, f"{game}_spell_cache.json")
     cache = json.load(open(cache_p, encoding="utf-8")) if os.path.exists(cache_p) else {}
-    save = lambda c: json.dump(c, open(cache_p, "w", encoding="utf-8"), ensure_ascii=False)  # noqa: E731
+    save = lambda c: json.dump(c, open(cache_p, "w", encoding="utf-8"), ensure_ascii=False)
 
     parts = sc.chunks(keys, chunk)
     n_new = len([p for p in parts if "\n".join(p) not in cache])

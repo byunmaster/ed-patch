@@ -23,7 +23,7 @@ from difflib import SequenceMatcher
 os.environ.setdefault("LOCK_BYPASS", "1")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from common import OUT_DIR, REVIEW_DIR  # noqa: E402
+from common import OUT_DIR, REVIEW_DIR
 
 LEADERS = ("セリオス", "リュナン", "ロー", "ゲイル", "ソニア")
 GAP = 6  # 같은 자리로 볼 id 거리

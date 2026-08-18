@@ -25,9 +25,9 @@ import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-from align_map import scene_map  # noqa: E402
-from common import OUT_DIR, ROOT  # noqa: E402
+import reinsert_kr_pilot as R
+from align_map import scene_map
+from common import OUT_DIR, ROOT
 
 NL_MC = b"\x0a" + R.MC  # 개행 뒤 창 시작
 

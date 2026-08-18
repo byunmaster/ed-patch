@@ -35,9 +35,9 @@ from collections import Counter
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-from align_map import scene_map  # noqa: E402
-from common import OUT_DIR, ROOT  # noqa: E402
-from scn_maps import block_maps  # noqa: E402
+from align_map import scene_map
+from common import OUT_DIR, ROOT
+from scn_maps import block_maps
 
 SIM = 0.72  # 사본 간 문장 유사도 문턱 — 사본끼리는 어투만 달라 매우 높게 나온다
 # ⚠ 전체 유사도만으로는 놓친다 — 사본은 **앞부분이 같고 어미만 다른** 경우가 많아서다

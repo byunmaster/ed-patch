@@ -27,8 +27,8 @@ import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-from common import OUT_DIR, ROOT  # noqa: E402
-from scn_maps import block_maps, table_maps  # noqa: E402
+from common import OUT_DIR, ROOT
+from scn_maps import block_maps, table_maps
 
 HIT, MAYBE = 0.62, 0.45  # 정발에 있음 / 확인 필요
 _STRIP = re.compile(r"\{[^}]*\}|\\x[0-9A-Fa-f]{2}")

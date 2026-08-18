@@ -21,10 +21,10 @@ import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-from align_jp_kr import load_jp_scene  # noqa: E402
-from align_map import scene_map  # noqa: E402
-from common import ROOT  # noqa: E402
+import reinsert_kr_pilot as R
+from align_jp_kr import load_jp_scene
+from align_map import scene_map
+from common import ROOT
 
 BUY_JP = ("買って", "買う")  # 플레이어가 산다
 SELL_JP = ("売って", "売る")  # 플레이어가 판다

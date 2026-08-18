@@ -50,10 +50,10 @@ import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import patch_items as P  # noqa: E402
-import reinsert_kr_pilot as R  # noqa: E402
-from common import OUT_DIR, REVIEW_DIR, extract  # noqa: E402
-from derive_text import _PUNCT_SP, DOS_ED1, TEXTMAP_DIR, jkey  # noqa: E402
+import patch_items as P
+import reinsert_kr_pilot as R
+from common import OUT_DIR, REVIEW_DIR, extract
+from derive_text import _PUNCT_SP, DOS_ED1, TEXTMAP_DIR, jkey
 
 # 정발 전투 시스템 문구가 사는 구간. 앞은 메뉴·아이템명(patch_sys_ui 관할), 뒤는 지명 블롭.
 SYS_LO, SYS_HI = 0x23900, 0x27950
@@ -923,8 +923,7 @@ def main():
             for k, ours, jp, best in sorted(rows, key=lambda r: -(r[3][0][0] if r[3] else 0)):
                 f.write(f"\n## {k}  (JP: {jp!r})\n")
                 f.write(f"- 우리: {ours!r}\n")
-                for r, (rel, o, ln, t) in best:
-                    f.write(f"  - {r:.2f}  {rel} @0x{o:X} l={ln}  {t!r}\n")
+                f.writelines(f"  - {r:.2f}  {rel} @0x{o:X} l={ln}  {t!r}\n" for r, (rel, o, ln, t) in best)
         print(f"  → {p}")
 
 

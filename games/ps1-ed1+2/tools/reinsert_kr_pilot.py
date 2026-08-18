@@ -1816,8 +1816,7 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), d
             # 그 공백이 여기서 죽는다. **붙임 공백으로 명시한 자리만** 되살린다 —
             # 다른 블록엔 선두 NOBREAK_SP 가 없어 동작이 그대로다.
             head = lines[0]
-            if head.startswith(pre):
-                head = head[len(pre) :]
+            head = head.removeprefix(pre)
             # ⚠ **정본 자신의 선두 센티널도 걷어낸다.** 이 자리의 `%s` 는 템플릿이 이미
             # 주므로 문안이 `\x1a…` 로 시작하면 둘이 되어 `fmt_excess` 로 통째 탈락한다
             # (ED2 7블록 실측 2026-08-17). 옛 `lstrip(NAME_SENT)` 이 접두와 이걸 **같이**

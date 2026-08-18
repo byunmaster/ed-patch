@@ -44,11 +44,11 @@ import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-import segment_copy as S  # noqa: E402
-from align_map import scene_map  # noqa: E402
-from check_window_nl import raws_of  # noqa: E402
-from common import ROOT  # noqa: E402
+import reinsert_kr_pilot as R
+import segment_copy as S
+from align_map import scene_map
+from check_window_nl import raws_of
+from common import ROOT
 
 SPEC = os.path.join(ROOT, "sys_phrases.json")
 # 이만큼도 안 닮은 현행 문안은 **눈으로 한 번 보라고** 표시만 한다(자동으로 빼지 않는다 —

@@ -26,8 +26,8 @@ import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")  # 관리 도구 — 락 검증 우회(교착 방지)
 
-from align_map import scene_map  # noqa: E402
-from common import OUT_DIR, ROOT  # noqa: E402
+from align_map import scene_map
+from common import OUT_DIR, ROOT
 
 OV_PATH = os.path.join(ROOT, "align_overrides.json")
 NOTE = "쌍둥이 회수 — JP 원문 바이트 동일 블록의 배정 복제"
