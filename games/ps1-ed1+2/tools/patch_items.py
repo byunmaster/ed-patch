@@ -94,7 +94,7 @@ NAMES = {
     "青銅のヨロイ": "청동 갑옷",
     "くさりかたびら": "미늘 갑옷",
     "鉄のヨロイ": "철 갑옷",
-    "はがねのヨロイ": "강철의 갑옷",
+    "はがねのヨロイ": "강철 갑옷",
     "銀のヨロイ": "은 갑옷",
     "水晶のヨロイ": "수정 갑옷",
     "いやしのローブ": "치유의 로브",
@@ -171,7 +171,7 @@ NAMES = {
     "シレント": "시렌트",
     "パペピア": "파페피아",
     "サイレス": "사이레스",  # ⚠ ED1 정발 `사일레스`, ED2 `사이레스` — ED2 우선(2026-08-12)
-    "インパス": "인퍼스",
+    "インパス": "인파스",  # 원음 in-pa-su · ED2 정발 표기(유저 확정 2026-08-14). ED1 정발 `인퍼스` 는 원음과 어긋난다 — 한 디스크 한 표기라 ED1 화면도 같이 바뀐다
     "テュート": "튜트",
     "リパーク": "리파크",
     "イサイト": "이사이트",
@@ -363,11 +363,30 @@ def repack(ed, lo, hi, label, align=4, tr=None, pools=None):
     재배치용 여유 공간)."""
     tr = tr or NAMES.__getitem__
     names = scan_names(ed, lo, hi)
+    # ⚠ **구획 안에 「빈 문자열」을 가리키는 참조가 숨어 있다**(2026-08-16 실측).
+    # 이름이 아니라 그 바이트가 `0x00` 이라 코드가 「아무것도 안 나오는 자리」로 쓴다
+    # (`lui $a1,0x8011; addiu $a1,$a1,-0x7844; jal …`). 재packing 이 그 위를 덮으면
+    # **없어야 할 글자가 화면에 뜬다** — 실패하지 않고 조용히 틀린다. ED1 에 1곳
+    # (`0x0F8FBC` 에 `왼쪽 ` 이 얹혀 있었다), ED2 에 2곳 있었다.
+    # 널이 **한 바이트** 남아 있기만 하면 되므로 그 자리를 건너뛴다.
+    starts = {off for off, _jp in names}
+    reserved = sorted(
+        {
+            addr - 0x80010000 + 0x800
+            for _i, _l, _o, addr in iter_lui_pairs(bytes(ed), {MIPS_ADDIU, MIPS_ORI})
+            if lo <= addr - 0x80010000 + 0x800 < hi
+            and addr - 0x80010000 + 0x800 not in starts
+        }
+    )
     moved, cur = {}, lo
     packed = bytearray()
     for off, jp in names:
         kb = enc(tr(jp)) + b"\x00"
         kb += b"\x00" * (-len(kb) % align)  # 정렬은 관례(코드는 바이트 접근)
+        while any(cur <= r < cur + len(kb) for r in reserved):
+            r = next(r for r in reserved if cur <= r < cur + len(kb))
+            packed += b"\x00" * (r + 1 - cur)
+            cur = r + 1
         assert cur + len(kb) <= hi, f"{label}: 예산 초과 @{jp}"
         moved[ram_of(off)] = ram_of(cur)
         packed += kb
@@ -619,7 +638,11 @@ def main():
     moved.update(repack(ed, *ARENA, "격투장(4)", align=1, tr=b, pools=pools))
     moved.update(repack(ed, *BTL_MSG, "전투 메시지(6)", align=1, tr=b, pools=pools))
     moved.update(repack(ed, *BTL_MSG2, "전투 메시지(입수3)", align=1, tr=b, pools=pools))
-    moved.update(repack(ed, *FRAG_TACHI, "たち(파티)", align=1, tr=lambda _: "들", pools=pools))
+    # ⚠ 앞에 **본문색(3)** 을 붙인다 — `들` 은 이름 버퍼(`%s`)에 딸려 들어가 **이름색으로
+    # 물든다**(`류난들`이 통째로 주황, 유저 QA 2026-08-15). 이름과 조각이 한 버퍼라 블록
+    # 텍스트로는 가를 수 없어서, 조각 자신이 색을 되돌리게 한다. 이 조각을 쓰는 자리는
+    # 파티명 해설뿐이고(참조 1곳 — lui/addiu 전수 확인) 그 블록들은 전부 본문이 초록이다.
+    moved.update(repack(ed, *FRAG_TACHI, "たち(파티)", align=1, tr=lambda _: "\x03들", pools=pools))
     moved.update(repack(ed, *FRAG, "전투 조각(58)", align=1, tr=b, pools=pools))
     moved.update(repack(ed, *EVT, "이벤트 이름·방위(21)", align=1, tr=b, pools=pools))
     redirect(ed, moved)
@@ -632,7 +655,9 @@ def main():
     print("동료명 리유난→류난 (0x80C)")
 
     with open(TARGET, "r+b") as f:
-        print(f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label="아이템·몬스터명 (ED.EXE)")}개 수정")
+        print(
+            f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label='아이템·몬스터명 (ED.EXE)')}개 수정"
+        )
     print(f"완료: {os.path.basename(TARGET)}")
 
 

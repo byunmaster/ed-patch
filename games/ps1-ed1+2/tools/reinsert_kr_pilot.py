@@ -17,6 +17,7 @@
 """
 
 import bisect
+import contextlib
 import functools
 import json
 import os
@@ -44,7 +45,7 @@ _REPO = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 sys.path.insert(0, os.path.join(_REPO, "shared"))
-from text.krwrap import wrap_pages as kr_wrap_pages  # noqa: E402
+from text.krwrap import wrap_pages as kr_wrap_pages
 
 # 확정 락 우회 여부는 **여기서 한 번** 확정한다(락 관리 도구가 자기 프로세스에서 켠다).
 # 실행 중 os.environ 을 다시 보면, 도중에 import 되는 도구가 켠 우회에 빌드 검증이 조용히
@@ -52,8 +53,56 @@ from text.krwrap import wrap_pages as kr_wrap_pages  # noqa: E402
 LOCK_BYPASS = os.environ.get("LOCK_BYPASS") == "1"
 
 ED_LBA, ED_SIZE = 257, 1021952  # ED.EXE (폰트 탑재 대상)
-OVERLAY_RAM_BASE = 0x8016A000  # SCN 오버레이 로드 주소 (ED1 전 씬 공통, 참조 커버리지로 검증)
-# ED1 씬별 (이름, LBA, size) — extract_scn.py SCN_FILES. text_end는 scn_jp JSON에서 씬별로.
+ED2_LBA, ED2_SIZE = 756, 872448  # ED2.EXE — **폰트를 따로 들고 있다**(font_map.FONT_BASE)
+# SCN 오버레이 로드 주소 — **게임마다 다르다.** 참조 주소에서 도출한 값이고
+# `tools/check_overlay_base.py` 가 매번 다시 도출해 이 표를 지킨다(ED1 은 92~97% 적중으로
+# 재현되고 ED2 는 13씬 만장일치다).
+# 🔴 ED2 를 체인에 올릴 때 **이 표를 타게 고쳐야 한다** — 지금 `ov_base()` 를 그대로
+# 쓰는 자리가 열댓 곳이고 전부 ED1 값이다. ED2 에 ED1 값을 쓰면 모든 포인터가 0x5000
+# (20,480B)씩 어긋나 **소프트락**이다(2026-08-11 도출, 체인에 올리기 전에 잡았다).
+OVERLAY_BASE = {"ED1": 0x8016A000, "ED2": 0x80165000}
+_OV_BASE = None  # 지금 굽고 있는 씬의 베이스 — `overlay_for()` 가 씬마다 세운다
+
+
+def game_of(name):
+    """씬 이름 → 게임(`ED2SCN3` → `ED2`)."""
+    return "ED2" if name.startswith("ED2") else "ED1"
+
+
+def ov_base():
+    """지금 굽고 있는 씬의 오버레이 RAM 베이스.
+
+    ⚠ **상수가 아니다.** 예전엔 `ov_base() = OVERLAY_BASE["ED1"]` 한 줄이었고
+    열여덟 자리가 그걸 그대로 썼다 — 그 상태로 ED2 를 체인에 올렸으면 포인터가 전부
+    0x5000(20,480B)씩 어긋나 **확정 소프트락**이었다.
+
+    안 세우고 부르면 **죽는다.** ED1 값으로 폴백하지 않는 게 요점이다 — 폴백은 조용히
+    틀리고, 그 증상은 소프트락이라 원인이 여기까지 안 온다.
+    """
+    if _OV_BASE is None:
+        raise RuntimeError("오버레이 베이스가 안 세워졌다 — `overlay_for(씬)` 안에서 불러야 한다")
+    return _OV_BASE
+
+
+@contextlib.contextmanager
+def overlay_for(name):
+    """씬 하나를 굽는 동안 베이스를 세운다. 중첩·예외에도 원복한다."""
+    global _OV_BASE
+    old = _OV_BASE
+    _OV_BASE = OVERLAY_BASE[game_of(name)]
+    try:
+        yield _OV_BASE
+    finally:
+        _OV_BASE = old
+
+
+# 재삽입 체인에 오른 씬 (이름, LBA, size) — extract_scn.py SCN_FILES. text_end 는 scn_jp JSON.
+#
+# ⚠ **순서가 곧 DUMMY 할당 순서**다. 커진 씬은 `DUMMY.;1`(LBA 91700) 로 재배치되는데
+# 할당기가 이 목록을 순서대로 소비하므로, **ED1 을 앞에 두면 ED1 의 재배치 LBA 가 안 밀린다.**
+# ED2 는 반드시 뒤에 붙인다(앞에 끼우면 ED1 이미지가 통째로 달라져 sha1 대조가 무의미해진다).
+#
+# ED2 는 씬 하나씩 올린다 — 열셋을 한꺼번에 올리면 소프트락이 나도 원인이 안 좁혀진다.
 SCN_FILES = [
     ("ED1SCN1", 1183, 206260),
     ("ED1SCN2", 1284, 217940),
@@ -61,6 +110,23 @@ SCN_FILES = [
     ("ED1SCN4", 1489, 134184),
     ("ED1SCN5", 1555, 171392),
     ("ED1SCN6", 1639, 100270),
+    ("ED2SCN1", 1688, 94200),
+    # ED2SCN2~13 (2026-08-16). ⚠ **반드시 ED1 뒤**다 — 위 주석의 할당 순서 규칙.
+    # 실측으로 확인했다: 뒤에 붙이니 ED1 재배치 LBA 여섯이 하나도 안 움직였고
+    # `ED.EXE` sha1 도 그대로였다(c2a02ada6dc1d253). 「등록하면 ED1 이 밀린다」는
+    # 걱정은 **앞에 끼울 때만** 참이다.
+    ("ED2SCN2", 1734, 116288),
+    ("ED2SCN3", 1791, 195954),
+    ("ED2SCN4", 1887, 164280),
+    ("ED2SCN5", 1968, 138004),
+    ("ED2SCN6", 2036, 89700),
+    ("ED2SCN7", 2080, 106456),
+    ("ED2SCN8", 2132, 102848),
+    ("ED2SCN9", 2183, 101772),
+    ("ED2SCN10", 2233, 79332),
+    ("ED2SCN11", 2272, 105648),
+    ("ED2SCN12", 2324, 97345),
+    ("ED2SCN13", 2372, 72288),
 ]
 _FMT_SEQ = re.compile(rb"%[sd]")  # 인자 소비 계약 — 개수만이 아니라 **순서**도 계약이다
 MC = b"\x25\x63"  # %c
@@ -96,6 +162,12 @@ ITEM_SENT = "\x17"
 # 줄이게 된 지금은 3.0이 현실적이다. 넘치면 엔진 글자단위 개행으로 degrade될 뿐이고
 # (정발에도 있던 현상), 지금처럼 **항상** 한 줄을 잃는 것보다 낫다.
 NAME_SLOTS = 3.0
+ITEM_SLOTS = 4.5
+# **아이템명은 인물 이름보다 길다** — 정본 144개 실측: 중앙 4.5 · p75 5.5 · 최장 7.5(`고대의 검의 책`).
+# 인물 3.0 을 아이템에도 쓰니 폭을 2~3슬롯 낮잡아, 우리는 안 꺾고 **엔진이 런타임에 꺾었다** —
+# 그 자리는 어절 경계를 안 보므로 `.` 만 다음 줄로 떨어진다(유저 QA 2026-08-15 `건네주었습니다` /
+# `.`). 중앙값으로 올린다 — 더 올리면 짧은 아이템에서 불필요한 개행이 생긴다(NAME_SLOTS 4.0 이
+# 그래서 3.0 으로 내려온 이력이 있다).
 # 조사 병기를 **원자 단위**로 조판하기 위한 마커(STOCK 보물상자). 한 토큰이라 줄 경계에서
 # 안 쪼개진다(훅의 한 줄 스캔 보장). ⚠ 폭은 **병기 전체("은(는)"·"이(가)")** 기준(이름+3) —
 # 엔진의 박스 줄배치는 조사훅 해결 **전**에 일어나 버퍼의 병기 전체(3슬롯)로 배치하므로,
@@ -500,17 +572,24 @@ def fix_spacing(t):
     # ⚠ 자리지킴이는 **이스케이프로 적는다** — PUA 를 소스에 직접 넣으면 눈에 안 보여서
     # 편집·복사 과정에서 조용히 사라진다(이 레포에서 세 번 겪었다).
     _keep = "\ue004"
-    t = t.replace("마법의 물건", _keep).replace("마법책", "주문서")
+    t = t.replace("마법의 물건", _keep).replace("마법책", "주문책")
     t = t.replace("마법", "주문").replace(_keep, "마법의 물건")
+    # ⚠ **`呪文の書` 는 「주문책」이다**(유저 지적 2026-08-14). 처음엔 `마법책 → 주문서` 로
+    # 잡았는데, `주문서` 는 「주문을 적은 문서」로도 읽혀 물건 이름 같지가 않고 무엇보다
+    # **ED2 아이템 표기(`프람의 책`·`인파스의 책`)와 한 말이 아니다** — 한 디스크가 두 말을
+    # 하면 안 된다. 정발 문안을 리포에 안 남기려면 여기서 갈아야 포인터 블록까지 덮인다.
+    t = t.replace("주문서", "주문책")
     t = re.sub(r"(?<![가-힣])([내네제])것", r"\1 것", t)  # 받침 없는 대명사(내것→내 것)
     # ⚠ **한 낱말인 `것` 합성어는 띄우면 안 된다** — `별것`·`날것`·`들것` 은 ㄹ받침이라
     #   규칙에 걸린다(소스는 `별것도` 인데 화면에 `별 것도` 로 나갔다, 실측 2026-08-13).
     _KEEP_GEOT = ("별것", "날것", "들것", "탈것", "빈것")
     t = re.sub(
         r"([가-힣])것",
-        lambda m: m.group(0)
-        if any(m.group(0) == w[-2:] and w in t for w in _KEEP_GEOT)
-        else (m.group(1) + " 것" if _jong(m.group(1)) in _JONG_N_L else m.group(0)),
+        lambda m: (
+            m.group(0)
+            if any(m.group(0) == w[-2:] and w in t for w in _KEEP_GEOT)
+            else (m.group(1) + " 것" if _jong(m.group(1)) in _JONG_N_L else m.group(0))
+        ),
         t,
     )
     t = re.sub(
@@ -540,20 +619,37 @@ def fix_spacing(t):
 # 정발 문맥·문안은 유지, 문법/맞춤법만 교정(유저 방침 07-27). 인명 뒤 직함은 띄운다
 # (세리오스왕자 → 세리오스 왕자). 인명은 화자맵에서 자동 파생 → 지명/복합어 오탐 자동 배제
 # (세금대신에=instead, 해적선장=역할명은 인명 아니라 손 안 댐).
-_SPELL_RULES = None
+#
+# ⚠ **규칙은 게임별로 갈린다**(2026-08-11). 예전엔 파일이 하나라 `spell_fix` 가 넘어온
+# 엔트리가 ED1 인지 ED2 인지 몰랐고, **ED2 를 겨냥한 규칙이 ED1 문안을 조용히 바꿨다**
+# (`한 가운데에`→`한가운데에` 가 ED1 `위험한 가운데에서` 를 붙여 버렸다). ED1 은 인게임
+# QA 를 끝낸 층이라 이 방향이 제일 비싸다. 덤으로 ED1 QA 브랜치와 ED2 작업 브랜치가
+# 3,000쌍짜리 `replace` 배열 **같은 자리에 append** 하던 머지 충돌도 없어진다.
+#   공용/ED1 = `dos_spelling_fixes.json` · ED2 전용 = `dos_spelling_fixes_ED2.json`
+# ⚠ 보호는 **한 방향**이다 — ED2 파일은 ED2 에만 걸리지만 공용 파일은 ED2 에도 걸린다.
+#   정발 두 판이 같은 표기 관행이라 교정 대부분이 양쪽에 유효하고, 되돌릴 수 없는 건
+#   ED2→ED1 방향뿐이다.
+_SPELL_RULES = {}
 
 
-def _spell_rules():
-    """(직함결합 정규식, space쌍, replace쌍) 컴파일 — 이름은 화자맵에서 파생."""
-    global _SPELL_RULES
-    if _SPELL_RULES is None:
-        path = os.path.join(ROOT, "dos_spelling_fixes.json")
-        try:
-            doc = json.load(open(path, encoding="utf-8"))
-        except FileNotFoundError:
-            doc = {}
-        titles = doc.get("titles", [])
-        names = set(doc.get("names_extra", []))
+def _spell_rules(game=None):
+    """(직함결합 정규식, space쌍, replace쌍) 컴파일 — 이름은 화자맵에서 파생.
+
+    `game` 이 주어지면 그 게임 전용 파일을 공용 규칙 **뒤에** 얹는다(뒤가 나중에 돈다).
+    """
+    if game not in _SPELL_RULES:
+        files = ["dos_spelling_fixes.json"]
+        if game:
+            files.append(f"dos_spelling_fixes_{game}.json")
+        docs = []
+        for name in files:
+            try:
+                with open(os.path.join(ROOT, name), encoding="utf-8") as f:
+                    docs.append(json.load(f))
+            except FileNotFoundError:
+                pass
+        titles = [t for d in docs for t in d.get("titles", [])]
+        names = {n for d in docs for n in d.get("names_extra", [])}
         for v in _speaker_map().values():  # 화자맵 값에서 인명 파생
             toks = v.strip().split()
             if len(toks) >= 2 and toks[-1] in titles:  # "디나 공주" → 디나
@@ -564,8 +660,12 @@ def _spell_rules():
         if names and titles:
             name_alt = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
             rx = re.compile(rf"({name_alt})({'|'.join(map(re.escape, titles))})")
-        _SPELL_RULES = (rx, doc.get("space", []), doc.get("replace", []))
-    return _SPELL_RULES
+        _SPELL_RULES[game] = (
+            rx,
+            [p for d in docs for p in d.get("space", [])],
+            [p for d in docs for p in d.get("replace", [])],
+        )
+    return _SPELL_RULES[game]
 
 
 # 지명 정본 — 편차 대장(docs/jeongbal-deviations.md)이 정본이고 여기는 그 적용판이다.
@@ -574,28 +674,35 @@ def _spell_rules():
 PLACE_CANON = (("폰 리그", "온리크"), ("폰리그", "온리크"), ("라느라", "라누라"))
 
 
-def corpus_text(raw):
+def corpus_text(raw, game=None):
     """정발 원문 → **`spell_fix` 를 통과한 뒤의 문안**.
 
     도구가 화면 문안과 **같은 표기로** 검색·대조하려면 이 순서를 그대로 따라야 한다.
     `parse_kr` 안에도 같은 순서가 있는데, 거기는 화자 마크업 절삭 등 블록 사정이 섞여 있어
-    통째로 재사용이 안 된다 — 순서만 여기 한 벌 더 둔다."""
+    통째로 재사용이 안 된다 — 순서만 여기 한 벌 더 둔다.
+
+    ⚠ `game` 을 넘겨야 그 판 전용 교정까지 본다 — 안 넘기면 검사 대상이 빌드 출력과
+    어긋난다(`spell_fix` 도크스트링)."""
     t = resolve_dos_breaks(raw).replace("{end}", "")
     t = fix_spacing(t)
     for a, b in PLACE_CANON:
         t = t.replace(a, b)
-    return spell_fix(t)
+    return spell_fix(t, game)
 
 
-def spell_fix(t, *, punct=True):
-    """맞춤법·띄어쓰기·오타 교정.
+def spell_fix(t, game=None, *, punct=True):
+    """맞춤법·띄어쓰기·오타 교정. `game`("ED1"/"ED2")을 주면 그 판 전용 규칙까지 얹는다.
+
+    ⚠ `game` 을 안 주면 **공용 규칙만** 돈다 — ED2 전용 규칙을 넣었는데 `game` 이 안 흐르면
+    조용히 무변화가 된다. 빌드 경로는 `parse_kr` 이 엔트리에 박힌 게임을 넘긴다
+    (`kr_entry` 가 표 이름 `ED2/C_000` 에서 떼어 stamp 한다).
 
     ⚠ `punct=False` 는 **부호를 덧붙이기만 하는 규칙**을 건너뛴다. 그 규칙들은 정발 원문에
     빠진 온점을 메우려고 넣은 것이라(`허락하여 주시옵소서` → `…소서.`) 이미 온점이 있는
     우리 문안에 걸면 **온점이 둘로 는다**(`주시옵소서..`, 실측 2026-08-12). 번역 정본은
     완성형이므로 끄고 들어간다.
     """
-    rx, space, replace = _spell_rules()
+    rx, space, replace = _spell_rules(game)
     if rx:
         t = rx.sub(r"\1 \2", t)  # 인명+직함 → 띄움
     for a, b in space:  # 인명 사전으로 못 잡는 명시적 띄어쓰기(어딘가의왕자 등)
@@ -630,7 +737,10 @@ def close_sentence(seg):
 
 # 화자 이름 정본 — 정발이 한 인물을 두 표기로 쓰는 자리. 본문은 `parse_kr` 안에서 함께
 # 고치고, **이름창은 DOS 헤더에서 오므로** 여기로 한 번 더 통과시킨다.
-NAME_CANON = {"젤만": "제르만"}
+# 화자 이름 정본 — 화자는 본문이 아니라 **정발 블록 헤더**에서 오므로 치환 규칙이 못 닿는다.
+# ⚠ `정보통/정보상` 은 **정발이 자기 안에서 갈린 자리**다(전수: 정보상 4 · 정보통 2).
+# 원문 `情報屋`(정보를 파는 사람)에 맞고 다수이기도 한 `정보상` 으로 통일한다(2026-08-17).
+NAME_CANON = {"젤만": "제르만", "정보통 토미": "정보상 토미"}
 
 
 def parse_verbatim(entry):
@@ -707,7 +817,9 @@ def parse_kr(entry):
     # 표기만** 겨냥하면 된다.
     for _a, _b in PLACE_CANON:
         t = t.replace(_a, _b)
-    t = spell_fix(t)  # 직함 띄어쓰기 등 맞춤법 교정(dos_spelling_fixes.json)
+    # 직함 띄어쓰기 등 맞춤법 교정(dos_spelling_fixes.json + 게임 전용 파일).
+    # ⚠ 게임을 넘기는 게 핵심이다 — 안 넘기면 ED2 전용 규칙이 조용히 안 걸린다.
+    t = spell_fix(t, entry.get("game"))
     # 상점 인사·흐름의 분기 마커(\x07=도구점, {p}\x06=무기점) 뒤 come-again 꼬리 제거 — PS1은
     # come-again이 별도 블록이라 인사 인라인 노출은 잘못(도구점·무기점 모두, 유저 QA 07-27).
     # 마커가 있어야 매칭 → 마커 없는 별도 come-again 블록("또 들러 주십시요")은 보존.
@@ -822,10 +934,13 @@ def cell_w(ch):
     """엔진 슬롯 폭 — encode_ext와 1:1 (1바이트=0.5, 2바이트 전각=1)."""
     if ch == NUM_SENT:
         return 1.0  # %d = 보통 1~2자리(반각) ≈ 1슬롯
-    if ch in (NAME_SENT, ITEM_SENT):
-        return NAME_SLOTS  # %s는 런타임 이름/아이템명 — 평균 길이로 근사
+    if ch == NAME_SENT:
+        return NAME_SLOTS  # %s(인물) — 평균 길이로 근사
+    if ch == ITEM_SENT:
+        return ITEM_SLOTS  # %c%s%c(아이템) — 인물보다 길다(위 주석)
     if ch in (JOSA_NAME, JOSA_ITEM):
-        return NAME_SLOTS + 3  # 이름/아이템 + 병기 전체(은(는)/이(가)=3슬롯) — 엔진 배치와 일치
+        # 이름/아이템 + 병기 전체(은(는)/이(가)=3슬롯) — 엔진 배치와 일치
+        return (NAME_SLOTS if ch == JOSA_NAME else ITEM_SLOTS) + 3
     if ch == NOBREAK_SP:
         return 0.5  # 보통 공백과 같은 폭(조판 후 공백으로 되돌린다)
     return 0.5 if ch == " " or ch in HALF_PUNCT or (ch.isascii() and ch.isalnum()) else 1.0
@@ -1111,6 +1226,20 @@ COLOR_WRAP = {}
 # 이름창 색인 노랑으로 나왔다). 아이템 획득 안내처럼 **이름은 제 색을 두고 안내문만**
 # 해설색으로 바꾸려면 이쪽을 쓴다.
 COLOR_BODY = {}
+# 해설(내레이션) 색: {eid: (이름색, 본문색)} — **선두 `%s`(이름 주입) 앞뒤**에 색코드를 박는다.
+# ⚠ `color`(COLOR_WRAP)로는 안 된다 — 그건 블록 맨 앞에만 넣어서 **주입되는 이름까지** 같은
+# 색이 된다. 시스템 안내는 `%s은(는) …했습니다.` 꼴이라 이름은 주황(2)·본문은 초록(3)으로
+# 갈라야 정발과 같아진다(유저 QA 2026-08-14 왕가의묘 보물상자·문 열기).
+# ⚠ `color_body` 와도 다르다 — 저건 이름창(`%c%s%c`)을 찾는데, `NAME_SENT` 는 `%c` 없는
+# 맨 `%s` 로 나간다(`ITEM_SENT` 만 `%c%s%c`). 찾는 표지가 아예 없어 아무 일도 안 일어난다.
+COLOR_LEAD = {}
+# 아이템 창 색: {eid: (아이템색, 본문색)} — **`%c%s%c` 창 안쪽**에 색코드를 박는다.
+# 획득 안내(`%c%s%c을(를) 받았습니다.`)는 색이 통째로 콜사이트 인자에서 오는데 **그 인자가
+# 자리마다 다르다** — 같은 꼴인데 어떤 블록은 아이템이 주황으로, 어떤 블록은 문장까지 초록으로
+# 나갔다(유저 QA 2026-08-15 황금의 열쇠). 인자는 못 건드리니 **여는 `%c` 바로 뒤**에 아이템색을,
+# 창을 닫은 뒤에 본문색을 박아 인자가 무엇이든 같은 그림이 되게 한다.
+# ⚠ `color_body` 로는 절반뿐이다 — 그건 창 **뒤**만 칠해서 아이템 자체는 인자 색 그대로다.
+COLOR_ITEM = {}
 # 이름줄 주입: {eid: (색on, 이름, 색off)} — 씬 단위(load_translations 재구축).
 # **원본에 화자 헤더(`%c이름%c`) 자리가 없는데** 화면엔 이름이 떠야 하는 블록용이다
 # (jp314 세리오스 실측 2026-08-01: `%c`=1·헤더 없음이라 헤더 쌍을 못 만든다 — 만들면
@@ -1449,7 +1578,7 @@ BIN_DIR_LBA = 1182  # \BIN 디렉토리 레코드 섹터
 
 def scn_extra(name, file_size):
     """씬별 확장 바이트 — RAM 상한과 정책 상한의 최소."""
-    cap = (OVERLAY_RAM_LIMIT - OVERLAY_RAM_BASE) - file_size
+    cap = (OVERLAY_RAM_LIMIT - OVERLAY_BASE[game_of(name)]) - file_size
     return max(0, min(cap, SCN_EXTRA_MAX)) & ~3
 
 
@@ -1637,13 +1766,24 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), d
         두 종류 모두 해당: ①`%s` 주입 창(텍스트 없는 body) ②리터럴 이름만 든 body 창
         (`%cロー%c라는…` — ②를 빼면 `로우라고 불리는 떠돌이옵니다` 뒤 온점만 다음 줄로
         떨어진다, 유저 QA 2026-07-30)."""
+        return _name_inject_prefix(k) is not None
+
+    def _name_inject_prefix(k):
+        """앞 이름/아이템 창의 **폭 계산용 접두** — 없으면 None.
+
+        리터럴이면 **그 글자 그대로** 준다(추정 대신 실측). 이게 없으면 `%c황금의 열쇠%c` 같은
+        긴 아이템을 `ITEM_SLOTS` 로 낮잡아, 우리는 안 꺾고 **엔진이 런타임에** 꺾는다 —
+        그쪽은 어절을 안 봐서 `.` 만 다음 줄로 떨어진다(유저 QA 2026-08-15).
+        런타임 주입(`%s`)은 글자를 알 수 없으니 센티널(평균 추정)로 남는다."""
         if k == 0 or wins[k - 1][0] != "body":
-            return False
+            return None
         prev = wins[k - 1][1]
         if any(t[0] == "s" for t in prev) and not any(t[0] == "t" for t in prev):
-            return True  # ① %s 주입 창
+            return ITEM_SENT  # ① %s 주입 창(인라인은 아이템명)
         # ② 리터럴 이름만 든 창(텍스트 1개뿐 + 개행 없음) — 이름창처럼 다음 창에 이어진다
-        return len(prev) == 1 and prev[0][0] == "t"
+        if len(prev) == 1 and prev[0][0] == "t":
+            return _tpl_literal_kr(prev[0][1]) or ITEM_SENT
+        return None
 
     # 접은 이름창 뒤 본문 창은 **이름+조사가 첫 줄을 함께 쓴다** — 폭 계산에 넣지 않으면
     # 엔진 자동 개행이 꼬리 부호만 다음 줄로 꺾는다(`…되었습니다` / `.`).
@@ -1668,15 +1808,24 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), d
             lines[0] = lines[0].removeprefix(nm)
             return lines
         if _after_name_inject(k):
-            lines = one_page(NAME_SENT + pg)  # 이름 폭(NAME_SLOTS)을 첫 줄에 반영
+            pre = _name_inject_prefix(k)  # 리터럴이면 실측 폭, %s 면 추정 폭
+            lines = one_page(pre + pg)
             # ⚠ 이름창 뒤 `lstrip()` 은 보통 옳다(이름 다음에 조사가 바로 붙는다). 그런데
             # **아이템명 주입(`%c%s%c`)이 문장 한복판**일 땐 뒤 어절과 띄어야 한다
             # (`레드젬여기 있습니다` — jp1086 실측 2026-08-11). 정발도 `\x0E ` 로 띄워 두는데
             # 그 공백이 여기서 죽는다. **붙임 공백으로 명시한 자리만** 되살린다 —
             # 다른 블록엔 선두 NOBREAK_SP 가 없어 동작이 그대로다.
-            lines[0] = (" " if pg.startswith(NOBREAK_SP) else "") + lines[0].lstrip(
-                NAME_SENT
-            ).lstrip()
+            head = lines[0]
+            if head.startswith(pre):
+                head = head[len(pre) :]
+            # ⚠ **정본 자신의 선두 센티널도 걷어낸다.** 이 자리의 `%s` 는 템플릿이 이미
+            # 주므로 문안이 `\x1a…` 로 시작하면 둘이 되어 `fmt_excess` 로 통째 탈락한다
+            # (ED2 7블록 실측 2026-08-17). 옛 `lstrip(NAME_SENT)` 이 접두와 이걸 **같이**
+            # 떼고 있었는데, ED1 QA 에서 접두만 정확히 떼도록 바꾸며 드러났다.
+            # ⚠ 실패 시 `one_page(pg)` 로 되돌아가는 안전망을 두면 **더 나빠진다** — 그 경로는
+            # 선두 센티널을 안 걷어낸다(내가 그렇게 넣었다가 7블록을 되레 살렸다).
+            head = head.lstrip(NAME_SENT + ITEM_SENT)
+            lines[0] = (" " if pg.startswith(NOBREAK_SP) else "") + head.lstrip()
             return lines
         return one_page(pg)
 
@@ -1839,7 +1988,7 @@ def find_refs(data, text_end):
     return [
         (imm_off, lui_off, op, addr)
         for imm_off, lui_off, op, addr in iter_lui_pairs(data, (MIPS_ADDIU, MIPS_ORI))
-        if OVERLAY_RAM_BASE <= addr < OVERLAY_RAM_BASE + text_end
+        if ov_base() <= addr < ov_base() + text_end
     ]
 
 
@@ -1861,11 +2010,11 @@ def compute_anchors(data, text_end):
     (2026-07-09 emucap 규명)이 바로 이 테이블이 대사에 밀려 어긋난 것.
     각 lui+lw base에서 오버레이 포인터(또는 null 슬롯)가 이어지는 동안을 테이블로 보고,
     인접 범위는 병합. 큰 쪽으로 근사(테이블을 조금 크게 잡으면 안전, 작으면 위험)."""
-    lo, hi = OVERLAY_RAM_BASE, OVERLAY_RAM_BASE + len(data)  # 오버레이 전체 범위 (파일 크기)
+    lo, hi = ov_base(), ov_base() + len(data)  # 오버레이 전체 범위 (파일 크기)
     bases = {
-        addr - OVERLAY_RAM_BASE
+        addr - ov_base()
         for _, _, _, addr in iter_lui_pairs(data, (MIPS_LW,))
-        if 0 <= addr - OVERLAY_RAM_BASE < text_end
+        if 0 <= addr - ov_base() < text_end
     }
 
     def is_entry(v):
@@ -1894,7 +2043,7 @@ def is_table_bytes(raw, data_len):
 
     `compute_anchors` 가 테이블을 "큰 쪽으로 근사"하므로 앵커 포함만으로 판정하면 대사를
     잘못 버릴 수 있다. 바이트를 직접 보는 이 조건을 AND 로 걸어 오검출을 없앤다."""
-    lo, hi = OVERLAY_RAM_BASE, OVERLAY_RAM_BASE + data_len
+    lo, hi = ov_base(), ov_base() + data_len
     n = len(raw)
     if n < 8 or any(raw[n - (n % 4) :]):  # 워드 뒤 잔여는 0패딩이어야 한다
         return False
@@ -1902,6 +2051,86 @@ def is_table_bytes(raw, data_len):
         (lambda v: lo <= v < hi or v == 0)(int.from_bytes(raw[i : i + 4], "little"))
         for i in range(0, n - n % 4, 4)
     )
+
+
+MID_ALIAS = {}  # eid → (delta, 대표 eid) — 선두가 포인터 표인 사본
+MID_TAIL_KEY = 16  # 대표 색인의 꼬리 길이(전수 대조를 O(n²)로 만들지 않기 위한 색인 키)
+
+
+def _register_mid_alias(jp_doc, scn_name):
+    """**[포인터 표][대사]** 꼴 블록을, 같은 대사를 가진 **깨끗한 사본**에 잇는다.
+
+    `STOCK_MID` 와 같은 수법인데 저건 정형문(보물상자) 종류로만 찾아서 그 밖을 놓쳤다 —
+    `ED2SCN5 jp685·757`(`%c扉には カギがかかっています。%c%c`)이 `ctrl_seq` 로 탈락해 있었다.
+    제자리 재작성은 앞의 표 때문에 못 하지만, **참조를 대표 사본으로 돌리면** 화면엔 한글이
+    나간다. 여기서는 정형 종류가 아니라 **대사 바이트가 같은가**로 대표를 찾는다.
+
+    ⚠ 접두가 진짜 포인터 표일 때만 잇는다(`table_phase`) — 아니면 그냥 「긴 블록과 짧은
+    블록의 꼬리가 우연히 같은」 자리를 잘못 묶는다.
+
+    ⚠ 대표는 **접두가 없는** 사본이어야 한다. 접두가 있는 것끼리 이으면 둘 다 제자리
+    재작성이 안 돼 아무것도 안 풀린다.
+    """
+    MID_ALIAS.clear()
+    src = next((s for s in SCN_FILES if s[0] == scn_name), None)
+    if src is None:
+        return
+    data_len = src[2]
+    blocks = {}
+    for e in jp_doc["entries"]:
+        if e.get("raw_hex"):
+            blocks[e["entry_id"]] = bytes.fromhex(e["raw_hex"]).rstrip(b"\x00")
+    # 대표는 그 꼬리를 가진 것들 중 **가장 짧은** 블록이다. ⚠ 먼저 나온 것을 잡으면
+    # 표 접두가 붙은 긴 사본이 자기 자신을 대표로 물어 아무것도 안 이어진다(실측).
+    master = {}
+    for eid, b in blocks.items():
+        if len(b) < MID_TAIL_KEY:
+            continue
+        k = b[-MID_TAIL_KEY:]
+        if k not in master or len(b) < len(blocks[master[k]]):
+            master[k] = eid
+    # ⚠ `load_translations` 는 오버레이 베이스 밖에서도 불린다(검사기들). `table_phase` 가
+    # 베이스를 요구하므로 여기서 세운다 — `table_block_eids` 와 같은 관용이다.
+    with overlay_for(scn_name):
+        for eid, b in blocks.items():
+            m = master.get(b[-MID_TAIL_KEY:]) if len(b) > MID_TAIL_KEY else None
+            if m is None or m == eid:
+                continue
+            i = len(b) - len(blocks[m])
+            if i > 0 and b.endswith(blocks[m]) and table_phase(b[:i], data_len) is not None:
+                MID_ALIAS[eid] = (i, m)
+    if MID_ALIAS:
+        print(f"  포인터 표 접두 사본 {len(MID_ALIAS)}건 — 대표 사본으로 참조 전환")
+
+
+TABLE_MIN_WORDS = 8  # 이보다 적으면 우연으로 본다
+
+
+def table_phase(raw, data_len):
+    """**위상이 어긋난** 포인터 테이블도 잡는다 — 맞는 위상, 없으면 None.
+
+    ⚠ 블록 경계가 워드 경계와 안 맞는 자리가 있다. `ED2SCN13 jp37` 은 0x981(홀수)에서
+    시작해 워드가 `B6 16 80 2C` 로 읽히는데, 위상을 3 밀면 `0x8016B62C` — 멀쩡한 포인터다.
+    위상 0 만 보던 `is_table_bytes` 는 이걸 대사로 넘겼고, 번역할 수 없으니 **탈락**으로
+    쌓였다(「화면에 일본어가 남는다」로 보고되는데 실은 그려지지도 않는 자료다).
+
+    ⚠ 앵커와 AND 로 묶지 않는다 — 앵커가 이 블록들을 **안 덮거나 더 짧다**(jp37 은 어떤
+    앵커에도 안 들고, `ED2SCN5 jp757` 은 앵커가 블록 끝보다 앞에서 끝난다). 대신 워드 수를
+    {TABLE_MIN_WORDS}개 이상으로 요구해 우연을 막는다 — SJIS 본문은 워드가 오버레이 범위에
+    안 들어오므로(`0x82a982a9`) 이 조건만으로도 대사를 안 삼킨다.
+    """
+    lo, hi = ov_base(), ov_base() + data_len
+
+    def ok(v):
+        return lo <= v < hi or v == 0
+
+    for p in range(4):
+        m = (len(raw) - p) // 4
+        if m < TABLE_MIN_WORDS:
+            continue
+        if all(ok(int.from_bytes(raw[p + i * 4 : p + i * 4 + 4], "little")) for i in range(m)):
+            return p
+    return None
 
 
 _TABLE_EIDS = {}  # scn_name → frozenset (씬당 1회 계산 — 원본 재추출 비용 회피)
@@ -1922,18 +2151,31 @@ def table_block_eids(scn_name):
         _, lba, size = src
         doc = json.load(open(os.path.join(OUT_DIR, "scn_jp", f"{scn_name}.json"), encoding="utf-8"))
         data = extract(lba, size)
-        anchors = compute_anchors(data, int(doc["source"]["text_end"], 16))
-        hit = frozenset(
-            e["entry_id"]
-            for e in doc["entries"]
-            if e.get("raw_hex")
-            and any(
-                a <= int(e["file_offset"], 16)
-                and int(e["file_offset"], 16) + len(e["raw_hex"]) // 2 <= b
-                for a, b in anchors
+        # ⚠ 앵커 계산이 오버레이 베이스를 탄다 — 씬마다 다르므로 여기서 세운다.
+        # 이 함수는 `load_translations` 를 거쳐 **검출기 전부**가 부르는 길목이라,
+        # 안 세우면 빌드는 되는데 검사기가 통째로 죽는다(실측 2026-08-14).
+        # ⚠ **제너레이터까지 안에 둔다.** `with` 를 `compute_anchors` 한 줄에만 걸었더니
+        # `frozenset(...)` 이 블록 밖에서 평가돼 `is_table_bytes` 가 베이스 없이 불렸다.
+        # 지연 평가는 이런 식으로 컨텍스트를 빠져나간다.
+        with overlay_for(scn_name):
+            anchors = compute_anchors(data, int(doc["source"]["text_end"], 16))
+            hit = frozenset(
+                e["entry_id"]
+                for e in doc["entries"]
+                if e.get("raw_hex")
+                and (
+                    (
+                        any(
+                            a <= int(e["file_offset"], 16)
+                            and int(e["file_offset"], 16) + len(e["raw_hex"]) // 2 <= b
+                            for a, b in anchors
+                        )
+                        and is_table_bytes(bytes.fromhex(e["raw_hex"]), len(data))
+                    )
+                    # 앵커가 못 덮는 자리 — 바이트만으로 판정한다(`table_phase` 주석)
+                    or table_phase(bytes.fromhex(e["raw_hex"]), len(data)) is not None
+                )
             )
-            and is_table_bytes(bytes.fromhex(e["raw_hex"]), len(data))
-        )
     _TABLE_EIDS[scn_name] = hit
     return hit
 
@@ -2044,6 +2286,31 @@ def build_candidate(raw, t, eid):
             c = c.replace(win, win + bytes([on]))
             i = c.rfind(MC)  # 종단 %c 앞에 복귀색 — 다음 블록으로 색이 새지 않게
             c = c[:i] + bytes([off]) + c[i:] if i >= 0 else c + bytes([off])
+            cand = c + b"\x00" * (-len(c) % 4 or 4)
+    if cand is not None and eid in COLOR_LEAD:
+        nm_c, body_c = COLOR_LEAD[eid]
+        c = cand.rstrip(b"\x00")
+        i = c.find(b"%s")
+        if i >= 0:
+            c = c[:i] + bytes([nm_c]) + c[i : i + 2] + bytes([body_c]) + c[i + 2 :]
+            # 아이템명(`%c%s%c`) 뒤에도 본문색을 되돌린다 — 그 `%c` 인자가 흰색으로
+            # 복귀시켜서 문장 꼬리만 색이 갈린다(`…황금의 열쇠를 사용하여 문을 열었습니다`).
+            win = MC + b"%s" + MC
+            c = c.replace(win, win + bytes([body_c]))
+            j = c.rfind(MC)  # 종단 %c 앞에 흰색 복귀 — 다음 블록으로 색이 새지 않게
+            c = c[:j] + b"\x01" + c[j:] if j >= 0 else c + b"\x01"
+            cand = c + b"\x00" * (-len(c) % 4 or 4)
+    if cand is not None and eid in COLOR_ITEM:
+        item_c, body_c = COLOR_ITEM[eid]
+        c = cand.rstrip(b"\x00")
+        win = MC + b"%s" + MC
+        if win in c:
+            # 여는 `%c` 뒤 = 인자가 칠한 **다음** 자리라 우리 색이 이긴다. 닫는 `%c` 뒤엔
+            # 본문색을 둔다(인자가 흰색으로 되돌리는 자리다). 창이 둘 이상인 블록이 있다
+            # (`…을(를) 받았습니다. …을(를) 손에 넣었습니다.`) — 전부 같게 칠한다.
+            c = c.replace(win, MC + bytes([item_c]) + b"%s" + MC + bytes([body_c]))
+            j = c.rfind(MC)  # 종단 %c 앞에 흰색 복귀 — 다음 블록으로 색이 새지 않게
+            c = c[:j] + b"\x01" + c[j:] if j >= 0 else c + b"\x01"
             cand = c + b"\x00" * (-len(c) % 4 or 4)
     if cand is not None and eid in NAME_PLATE:
         on, nm, off = NAME_PLATE[eid]
@@ -2240,14 +2507,28 @@ _SPEAKER_MAP = None
 
 
 def _speaker_map():
-    """JP 화자 → 정발 화자 대응표(out/align/ED1_speakers.json). 정렬 채택 판정용."""
+    """JP 화자 → 정발 화자 대응표. 정렬 채택 판정용 · 이름창 렌더용.
+
+    ⚠ **두 게임을 다 싣는다**(2026-08-14). ED1 것만 읽던 시절, ED2SCN1 을 체인에 올리자
+    `教育係 ラウエル` 블록 일곱이 통째로 탈락했다(`encode`) — 화자 이름이 번역이 안 되니
+    한글로 인코딩할 수 없었고, 탈락한 블록은 **원문이 그대로 남아 화면에 일본어가 뜬다.**
+    빌드는 성공하고 게이트도 통과한다.
+    ⚠ 이름이 겹치면 같은 표기여야 한다 — 방침이 「고유명사는 ED1·ED2 가 한 표기」다
+    (policy 「표기 방침」). 그래서 합쳐도 충돌이 사고가 아니라 **검출**이 된다.
+    """
     global _SPEAKER_MAP
     if _SPEAKER_MAP is None:
-        path = os.path.join(OUT_DIR, "align", "ED1_speakers.json")
-        try:
-            _SPEAKER_MAP = dict(json.load(open(path, encoding="utf-8"))["map"])
-        except (FileNotFoundError, KeyError):
-            _SPEAKER_MAP = {}
+        _SPEAKER_MAP = {}
+        # ⚠ **순서가 곧 우선권이다 — ED2 를 먼저 깔고 ED1 로 덮는다.** 반대로 했더니 ED2
+        # 화자맵이 ED1 이름을 덮어 **ED1 씬 셋의 이미지가 바뀌었다**(실측 2026-08-14:
+        # LBA 91717·91824·91873 섹터가 움직였다). ED1 은 인게임 QA 를 끝낸 층이라 이
+        # 방향이 제일 비싸다 — `dos_spelling_fixes` 를 게임별로 가른 것과 같은 사고다.
+        for game in ("ED2", "ED1"):
+            path = os.path.join(OUT_DIR, "align", f"{game}_speakers.json")
+            try:
+                _SPEAKER_MAP.update(json.load(open(path, encoding="utf-8"))["map"])
+            except (FileNotFoundError, KeyError):
+                pass
         # ⚠ 위 파일은 `work/derived`(파생물)라 **판단을 담으면 안 된다** — 재생성하면 날아가고
         # LaBSE 없는 머신에선 아예 안 만들어진다(제1 원칙: 판단은 커밋되는 정본에).
         # 그래서 `align_overrides.json` 의 `_speakers` 로 덮는다. 실측: `ラルファの道具屋` 가
@@ -2373,6 +2654,8 @@ def load_translations(align_name, scn_name):
     FOLD_NAME.clear()
     COLOR_WRAP.clear()
     COLOR_BODY.clear()
+    COLOR_LEAD.clear()
+    COLOR_ITEM.clear()
     NAME_PLATE.clear()
     NL_WINS.clear()
     LEAD_NL_DROP.clear()
@@ -2426,6 +2709,11 @@ def load_translations(align_name, scn_name):
                 open(os.path.join(OUT_DIR, "dos_kr", f"{table}.json"), encoding="utf-8")
             )
             kr_cache[table] = {e["entry_id"]: e for e in doc["entries"]}
+            # 게임 도장(`ED2/C_000` → `ED2`). 엔트리 하나만 봐도 어느 판 문안인지 알아야
+            # `spell_fix` 가 게임 전용 교정 규칙을 고를 수 있다 — 안 박으면 ED2 전용 규칙이
+            # 조용히 무변화가 된다.
+            for e in kr_cache[table].values():
+                e["game"] = table.split("/")[0]
             # 분기 오피코드가 창 경계인 자리를 `{p}` 로 승격 — `_opcode_pages` 도크스트링
             for (t, i), anchors in _opcode_pages().items():
                 if t != table or i not in kr_cache[table]:
@@ -2611,6 +2899,12 @@ def load_translations(align_name, scn_name):
             TRAIL_SP.add(int(jp_id_str))
         elif ov.get("trail_nl"):
             TRAIL_NL.add(int(jp_id_str))
+        if "color_lead" in ov:  # 해설 — [이름색, 본문색] (선두 %s 앞뒤에 박는다)
+            c = ov["color_lead"]
+            COLOR_LEAD[int(jp_id_str)] = tuple(c) if isinstance(c, list) else (2, int(c))
+        if "color_item" in ov:  # 획득 안내 — [아이템색, 본문색] (`%c%s%c` 창 안쪽에 박는다)
+            c = ov["color_item"]
+            COLOR_ITEM[int(jp_id_str)] = tuple(c) if isinstance(c, list) else (2, int(c))
         if "color_body" in ov:  # 이름창 뒤부터 색 — [on, off] 또는 on(off 기본 1=흰색)
             c = ov["color_body"]
             COLOR_BODY[int(jp_id_str)] = tuple(c) if isinstance(c, list) else (int(c), 1)
@@ -2764,6 +3058,7 @@ def load_translations(align_name, scn_name):
         print(f"  정형 블록(보물상자) {len(STOCK_KINDS)}건 등록")
     if n_price:
         print(f"  상점 가격 프롬프트 {n_price}건 등록")
+    _register_mid_alias(jp_doc, scn_name)
 
     # 침묵 블록(리터럴 헤더 + 본문 전부 부호/빈 창): 이름창만 번역 등록. 그냥 두면
     # 화자명까지 セリオス로 남는다(유저 QA 07-26). 크기 중립이라 공간 압박 없음.
@@ -2891,6 +3186,30 @@ def load_translations(align_name, scn_name):
     return out, skipped, applied
 
 
+ED2_SCENES = [f"ED2SCN{n}" for n in range(1, 14)]
+
+
+def scene_list(scenes=None):
+    """검출기가 돌 씬 목록 — 체인 등록분 + **요청했을 때만** ED2.
+
+    ⚠ **여기가 조용한 초록불의 자리였다**(2026-08-15 실측). 검출기는 씬을 `_scn_layout()`
+    에서 얻는데 그건 **재삽입 체인에 올라간 씬**뿐이라, ED2 씬 이름을 인자로 줘도 루프가
+    한 번도 안 돌고 `✅` 가 떴다 — `check_speakers`·`check_dup_jp`·`check_proper_nouns`
+    셋이 13씬 전수에서 「이상 없음」을 냈는데 **본 블록이 0개**였다. 실패가 아니라
+    **검사 자체가 없었다**는 뜻이라, 통과보다 나쁘다.
+
+    무인자(=게이트로 도는 자리)는 **종전대로 체인 등록분만** 본다. ED2 는 아직 「지금 고칠
+    수 있는 것」이 아닌 자리가 섞여 있어(제어런 재현 불가·체인 등록 때 풀 보물상자 사본)
+    게이트를 늘 빨간불로 만든다 — 루트 `CLAUDE.md` 「게이트는 지금 고칠 수 있는 것만」.
+    """
+    from patch_sys_ui import _scn_layout
+
+    names = [n for n, _l, _z in _scn_layout()]
+    if scenes:
+        names += [n for n in ED2_SCENES if n in scenes and n not in names]
+    return names
+
+
 def iter_candidates(scenes=None):
     """전 씬을 돌며 `(씬, eid, JP raw, 재조립 후보, 번역 항목)` 을 낸다 — **검출기 공용 순회**.
 
@@ -2901,9 +3220,7 @@ def iter_candidates(scenes=None):
     것"을 보는 도구라 예외 하나로 전수 조사가 멈추면 안 된다. 빌드 쪽 게이트는 따로다.
     ⚠ `build_candidate` 를 직접 부르므로 **재배치·제외(`size`) 전** 값이다.
     """
-    from patch_sys_ui import _scn_layout
-
-    for name, _lba, _size in _scn_layout():
+    for name in scene_list(scenes):
         if scenes and name not in scenes:
             continue
         with open(os.path.join(OUT_DIR, "scn_jp", f"{name}.json"), encoding="utf-8") as f:
@@ -2911,16 +3228,19 @@ def iter_candidates(scenes=None):
         raw = {
             e["entry_id"]: bytes.fromhex(e["raw_hex"]) for e in doc["entries"] if e.get("raw_hex")
         }
-        tr, _, _ = load_translations(name.replace("SCN", "_SCN"), name)
-        for eid, t in sorted(tr.items()):
-            if eid not in raw:
-                continue
-            try:
-                cand, _why = build_candidate(raw[eid], t, eid)
-            except Exception:  # noqa: BLE001 — 검사기는 빌드를 안 세운다
-                continue
-            if cand is not None:
-                yield name, eid, raw[eid], cand, t
+        # ⚠ 오버레이 베이스를 씬마다 세운다 — ED2 는 ED1 과 베이스가 다르다(`OVERLAY_BASE`).
+        #   안 세우면 ED2 블록이 ED1 베이스로 조립돼 조용히 다른 바이트가 나온다.
+        with overlay_for(name):
+            tr, _, _ = load_translations(name.replace("SCN", "_SCN"), name)
+            for eid, t in sorted(tr.items()):
+                if eid not in raw:
+                    continue
+                try:
+                    cand, _why = build_candidate(raw[eid], t, eid)
+                except Exception:  # noqa: BLE001 — 검사기는 빌드를 안 세운다
+                    continue
+                if cand is not None:
+                    yield name, eid, raw[eid], cand, t
 
 
 _REV_SYL = None
@@ -3089,6 +3409,11 @@ def build_scene(name, lba, size, identity, fixed):
     """한 SCN 오버레이를 번역·재배치·포인터 패치. 반환: (patched_bytes, stats_str).
 
     identity=True면 검증만(원본과 바이트 동일 확인, 반환 bytes=None)."""
+    with overlay_for(name):
+        return _build_scene(name, lba, size, identity, fixed)
+
+
+def _build_scene(name, lba, size, identity, fixed):
     data = extract(lba, size)
     scn = json.load(open(os.path.join(OUT_DIR, "scn_jp", f"{name}.json"), encoding="utf-8"))
     entries = scn["entries"]
@@ -3126,7 +3451,7 @@ def build_scene(name, lba, size, identity, fixed):
     referenced_eids = set()  # addiu/ori(find_refs가 갱신)로 참조되는 블록 = 이동해도 안전
     blk_by_eid = {e["entry_id"]: e for e in entries if e["kind"] != "gap"}
     for _, _, _, addr in refs:
-        (_, eid), delta = owner(addr - OVERLAY_RAM_BASE)
+        (_, eid), delta = owner(addr - ov_base())
         referenced_eids.add(eid)
         if delta and eid in translations:
             # 앵커 접두 블록의 **꼬리 시작**을 가리키는 참조는 무해하다 — 그 블록은 핀 고정이라
@@ -3157,6 +3482,12 @@ def build_scene(name, lba, size, identity, fixed):
             for m_eid, (delta, kind) in STOCK_MID.items()
             if kind in masters
         }
+        # 정형문 밖의 [포인터 표][대사] 사본 — 대표가 실제로 번역돼 살아 있을 때만 잇는다
+        # (`_register_mid_alias` 주석). 정형 쪽이 이미 잡은 자리는 건드리지 않는다.
+        for m_eid, (delta, master) in MID_ALIAS.items():
+            if m_eid in mid or master not in translations or master in excluded:
+                continue
+            mid[m_eid] = (delta, master)
         return alias, mid
 
     # 공유 lui 충돌 해소 루프
@@ -3178,12 +3509,12 @@ def build_scene(name, lba, size, identity, fixed):
         for addiu_off, lui_off, op, addr in refs:
             if addiu_off < text_end or lui_off < text_end:
                 continue  # 텍스트 영역 내 우연 일치 — 패치 단계와 동일 필터 (오탐 충돌 방지)
-            (_, eid), delta = owner(addr - OVERLAY_RAM_BASE)
+            (_, eid), delta = owner(addr - ov_base())
             if delta == 0 and eid in stock_alias:
                 eid = stock_alias[eid]
             elif eid in stock_mid and delta == stock_mid[eid][0]:
                 eid, delta = stock_mid[eid][1], 0
-            hi, _ = hi_lo(OVERLAY_RAM_BASE + newoff[eid][0] + delta, op)
+            hi, _ = hi_lo(ov_base() + newoff[eid][0] + delta, op)
             if lui_off in lui_need and lui_need[lui_off][0] != hi:
                 conflict = (eid, lui_need[lui_off][1])
                 break
@@ -3217,7 +3548,7 @@ def build_scene(name, lba, size, identity, fixed):
         for addiu_off, lui_off, op, addr in refs:
             if addiu_off < text_end or lui_off < text_end:
                 continue
-            (_, r_eid), r_delta = owner(addr - OVERLAY_RAM_BASE)
+            (_, r_eid), r_delta = owner(addr - ov_base())
             lui_owner.setdefault(lui_off, set()).add((r_eid, r_delta == 0))
             if r_delta == 0:
                 eid_refs.setdefault(r_eid, []).append((addiu_off, lui_off, op))
@@ -3281,7 +3612,7 @@ def build_scene(name, lba, size, identity, fixed):
             ext_used += len(blk) + (-len(blk) % 4)
             stub_off = ext_base + ext_used
             ext_used += 14 * 4
-            blk_addr = OVERLAY_RAM_BASE + blk_off
+            blk_addr = ov_base() + blk_off
             lo = blk_addr & 0xFFFF
             hi = ((blk_addr >> 16) + (1 if lo >= 0x8000 else 0)) & 0xFFFF
             np_ = cfg["name_ptr"]
@@ -3305,7 +3636,7 @@ def build_scene(name, lba, size, identity, fixed):
             ext_custom.append(
                 (stub_off - ext_base, b"".join(w.to_bytes(4, "little") for w in words))
             )
-            stub_addr = OVERLAY_RAM_BASE + stub_off
+            stub_addr = ov_base() + stub_off
             stub_patches.append((cfg["call_off"], [0x08000000 | ((stub_addr >> 2) & 0x3FFFFFF), 0]))
             print(
                 f"  이름 스텁: jp{eid} — 헤더 사본@ext+0x{blk_off - ext_base:X}, 진입점 0x{cfg['call_off']:X} 후킹"
@@ -3322,21 +3653,21 @@ def build_scene(name, lba, size, identity, fixed):
         for rel, bs in ext_custom:
             ext_blob[rel : rel + len(bs)] = bs
         out_file += ext_blob
-        assert OVERLAY_RAM_BASE + len(out_file) <= OVERLAY_RAM_LIMIT, f"{name} 확장 RAM 상한 초과"
+        assert ov_base() + len(out_file) <= OVERLAY_RAM_LIMIT, f"{name} 확장 RAM 상한 초과"
     patched = 0
     for addiu_off, lui_off, op, addr in refs:
         if addiu_off < text_end or lui_off < text_end:
             continue  # 텍스트 영역 내 우연 일치는 패치 대상 아님
-        (_, eid), delta = owner(addr - OVERLAY_RAM_BASE)
+        (_, eid), delta = owner(addr - ov_base())
         if delta == 0 and eid in stock_alias:
             eid = stock_alias[eid]
         elif eid in stock_mid and delta == stock_mid[eid][0]:
             eid, delta = stock_mid[eid][1], 0
         if delta == 0 and eid in donor_placed:
             kind, off, _c = donor_placed[eid]
-            new_addr = (OVERLAY_RAM_BASE + off) if kind == "ext" else (off + ED_EXE_RAM)
+            new_addr = (ov_base() + off) if kind == "ext" else (off + ED_EXE_RAM)
         else:
-            new_addr = OVERLAY_RAM_BASE + newoff[eid][0] + delta
+            new_addr = ov_base() + newoff[eid][0] + delta
         if fixed:
             assert new_addr == addr, f"{name} fixed 모드에서 주소 이동: {addr:#x}→{new_addr:#x}"
             continue
@@ -3457,6 +3788,16 @@ def main():
             print(f"도너 블록 {len(donor_all)}개 → ED.EXE 0런")
         print(
             f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label='재삽입 폰트·도너 (ED.EXE)')}개 수정 (폰트+도너)"
+        )
+        # ED2.EXE 에도 같은 폰트를 굽는다 — **각 실행파일이 폰트를 따로 들고 있다**(2026-08-14
+        # 실측, `font_map.FONT_BASE`). ED1 에만 구우면 ED2 는 시스템 UI 도 SCN 대사도 글자가
+        # 안 나온다. 블록 내용은 한 벌이고 **자리만 다르다**(델타 0x24668).
+        # ⚠ 도너는 안 쓴다 — ED.EXE 0런에 기록하는 것이라 ED2 와 무관하다.
+        ed2_base = hangul_map.slot_ed_offset(0, "ED2")
+        ed2 = bytearray(extract(ED2_LBA, ED2_SIZE))
+        ed2[ed2_base : ed2_base + len(font_block)] = font_block
+        print(
+            f"ED2.EXE: 섹터 {write_user_data(f, ED2_LBA, ed2, label='재삽입 폰트 (ED2.EXE)')}개 수정 (폰트)"
         )
         for lba, out_file in built.items():
             print(

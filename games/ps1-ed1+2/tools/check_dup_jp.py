@@ -25,12 +25,11 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R
 from check_align_fit import jp_text
-from patch_sys_ui import SCN_FILES
 
 
 def scan(scenes=None, verbose=False):
     tot = 0
-    for scn, _l, _z in SCN_FILES:
+    for scn in R.scene_list(scenes):
         if scenes and scn not in scenes:
             continue
         groups = collections.defaultdict(list)

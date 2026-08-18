@@ -29,9 +29,12 @@ from common import OUT_DIR, ROOT
 
 TEXTMAP_DIR = os.path.join(ROOT, "textmap")
 DERIVED_DIR = os.path.join(OUT_DIR, "text")  # ⚠ 소스 `textmap/`(커밋)과 다르다 — 이건 파생 출력
-DOS_ED1 = os.path.join(ROOT, "..", "..", "originals", "kr", "dos-ed1")
+DOS_DIR = os.path.join(ROOT, "..", "..", "originals", "kr")
+# 정발 원본은 게임별로 갈린다. `src` 의 `g` 가 없으면 ED1 — 기존 textmap 을 안 건드리려는
+# 기본값이다(ED1 것만 있던 시절에 만들어졌다).
+DOS_GAME_DIR = {"ED1": "dos-ed1", "ED2": "dos-ed2"}
 
-CLASSES = ("battle", "items_battle", "opening", "event")
+CLASSES = ("battle", "items_battle", "opening", "event", "opening_ed2", "ending_ed1", "ending_ed2")
 
 
 def jkey(jp):
@@ -58,11 +61,12 @@ def transform(s):
     return s
 
 
-def _dos_file(rel):
-    path = os.path.join(DOS_ED1, rel)
+def _dos_file(rel, game="ED1"):
+    sub = DOS_GAME_DIR[game]
+    path = os.path.join(DOS_DIR, sub, rel)
     if not os.path.exists(path):
         raise SystemExit(
-            f"정발 DOS 원본 없음: originals/kr/dos-ed1/{rel}\n"
+            f"정발 DOS 원본 없음: originals/kr/{sub}/{rel}\n"
             "문장 번역 테이블은 소장 원본에서 파생됩니다 — originals/README.md 참조."
         )
     with open(path, "rb") as f:
@@ -92,11 +96,17 @@ def derive(cls):
         """{src} 한 조각 → 문자열. `ours` 키면 우리 문안 그대로."""
         if "ours" in s:
             return s["ours"]
-        if s["f"] not in cache:
-            cache[s["f"]] = _dos_file(s["f"])
-        v = cache[s["f"]][s["o"] : s["o"] + s["l"]].decode("euc-kr")
+        key = (s.get("g", "ED1"), s["f"])
+        if key not in cache:
+            cache[key] = _dos_file(s["f"], s.get("g", "ED1"))
+        v = cache[key][s["o"] : s["o"] + s["l"]].decode("euc-kr")
         if s.get("nl"):
             v = v.replace("\x01", "\n")  # DOS 표시 개행 마커 → 개행
+        if s.get("us"):
+            # ⚠ 정발 ED2 오프닝(`OPENING.EXE`)은 **공백을 `__`(0x5F 둘)로** 저장한다.
+            # 이 변환이 없으면 문안이 글자 그대로 안 맞아 전부 `ours` 로 떨어지는데,
+            # 그러면 **정발 문안이 리포에 박힌다**(파생 체계의 존재 이유가 사라진다).
+            v = v.replace("__", " ")
         return transform(v) if s.get("x") else v
 
     for e in tm["entries"]:

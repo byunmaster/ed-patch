@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from common import BUILD_DIR, ORIG_BIN, digests  # noqa: E402
+from common import BUILD_DIR, ORIG_BIN, digests
 
 FINAL = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
 

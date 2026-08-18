@@ -13,6 +13,12 @@
 ⚠ **게이트가 아니다.** 꼬리가 짧아도 문장에 따라 자연스러운 자리가 있고, 무엇보다 고치려면
 문안을 줄여야 한다 — 사람이 판정한다. `%d` 가 든 조각은 숫자 자릿수가 가변이라 건너뛴다.
 
+⚠ **지금 남은 3건은 「그대로 둔다」로 판정이 끝났다**(유저 확정 2026-08-17). 꼬리는 **잘리는
+게 아니라 다음 줄로 넘어갈 뿐**이고, 전투 로그는 워크슬롯(`0x800F1718`, stride 66)을 도는
+**흐르는 로그**라 줄이 하나 늘어도 잃는 게 없다. 잘림이 걸리는 건 창 줄 수가 고정된 SCN 대사
+쪽이고 그건 `check_tail_cut` 관할이다. 게다가 셋 다 **최장 파티명 기준의 최악값**이라 그
+조합이 실제로 뜰 때만 보인다 — 문안을 깎을 값이 없다. 수가 늘면 그때 다시 본다.
+
   python3 tools/check_battle_wrap.py [-v]
 """
 
@@ -23,7 +29,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import patch_items as P  # noqa: E402
+import patch_items as P
 
 COLS = 29  # 엔진 자동 줄바꿈 폭(반각칼럼) — patch_battle_wrap 규명
 LONGEST = "세리오스"  # 최장 파티명. 이름이 길수록 불리하니 최악으로 잰다

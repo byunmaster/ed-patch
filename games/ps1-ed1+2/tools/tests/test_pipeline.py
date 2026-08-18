@@ -18,8 +18,8 @@ sys.path.insert(0, _TOOLS)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(_TOOLS)), "..", "shared"))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import common as C  # noqa: E402
-import reinsert_kr_pilot as R  # noqa: E402
+import common as C
+import reinsert_kr_pilot as R
 
 
 # ── 부호·띄어쓰기 (`fix_spacing`) ───────────────────────────────────────────
@@ -57,8 +57,14 @@ def test_silent_window_keeps_its_length():
 def test_spell_is_jumun_not_mabeop():
     # 呪文 = 주문(발동 명령어). 정발이 대부분 「마법」으로 옮겨 놔서 여기서 되돌린다.
     assert R.fix_spacing("사이레스 마법을 쓰면") == "사이레스 주문을 쓰면"
-    # `呪文の書` 는 ED2 정발 표기인 **주문서**로 간다(ED2 코퍼스 `주문서` 9회 · `마법` 0회)
-    assert R.fix_spacing("누구의 마법책에 써 넣을까?") == "누구의 주문서에 써 넣을까?"
+    # `呪文の書` 는 **주문책**이다(유저 확정 2026-08-14).
+    # ⚠ **정발이 안에서 갈린다** — ED2 대사 코퍼스는 `주문서` 9회인데 아이템 표
+    # (`ED2MAIN.EXE`)는 `X의책` 이다(실측). 원문 `呪文の書` 는 「주문서」·「주문책」·
+    # 「주문의 책」이 다 되므로 원음으로는 판정이 안 선다 — 그래서 **우리 안의 일관성**이
+    # 기준이 됐다. 우리 ED2 아이템이 `프람의 책`·`인파스의 책` 이니 대사도 「책」으로 간다.
+    assert R.fix_spacing("누구의 마법책에 써 넣을까?") == "누구의 주문책에 써 넣을까?"
+    # 이미 `주문서` 로 적힌 자리도 덮는다 — 포인터 블록이 그렇게 들어온다
+    assert R.fix_spacing("어느 분의 주문서에 써 넣을까요?") == "어느 분의 주문책에 써 넣을까요?"
     # ⚠ 예외 하나 — 원문이 `魔法の品` 인 자리는 진짜 마법이다
     assert R.fix_spacing("신께서 쓰시던 마법의 물건이") == "신께서 쓰시던 마법의 물건이"
 
@@ -275,7 +281,9 @@ def test_num_bind_only_for_units():
     import reinsert_kr_pilot as R
 
     assert R._NUM_UNIT.search("하룻밤 10 Gold입니다.")
-    assert not R._NUM_UNIT.search("워프 2 마법을 익혔다.")  # 픽스처는 우리 문장으로 — 정발 인용 금지
+    assert not R._NUM_UNIT.search(
+        "워프 2 마법을 익혔다."
+    )  # 픽스처는 우리 문장으로 — 정발 인용 금지
 
 
 def test_window_lines_counts_across_blocks():
@@ -318,8 +326,45 @@ def _run():
     return passed == len(fns)
 
 
-if __name__ == "__main__":
-    sys.exit(0 if _run() else 1)
+def test_font_slot_differs_per_exe():
+    """폰트 슬롯은 **실행파일마다 다른 자리**다 — 한 벌로 쓰면 ED2 가 안 나온다.
+
+    ⚠ 실측 2026-08-14: 디스크에 EXE 가 둘인데 각자 폰트를 들고 있다. `slot_ed_offset` 이
+    게임을 안 받던 시절엔 ED1 자리에만 구웠고, ED2 는 문안을 넣어도 글자가 안 떴다.
+    두 블록의 오프셋 차이가 정확히 0x24668 로 일정하다(한자·가나 둘 다).
+    """
+    import hangul_map as H
+    from font_map import FONT_BASE
+
+    assert H.slot_ed_offset(0, "ED1") == 0xE50A8
+    assert H.slot_ed_offset(0, "ED2") == 0xC0A40
+    assert FONT_BASE["ED1"]["kanji"] - FONT_BASE["ED2"]["kanji"] == 0x24668
+    assert FONT_BASE["ED1"]["kana"] - FONT_BASE["ED2"]["kana"] == 0x24668
+    # 게임을 안 주면 ED1 — 기존 호출부가 그대로 돌아야 한다
+    assert H.slot_ed_offset(7) == H.slot_ed_offset(7, "ED1")
+
+
+def test_overlay_base_is_per_game_and_fails_loud():
+    """오버레이 베이스는 **씬마다 세운다** — 안 세우면 죽어야 한다.
+
+    ⚠ 예전엔 `OVERLAY_RAM_BASE` 상수 하나였고 열여덟 자리가 그걸 썼다. 그대로 ED2 를
+    체인에 올렸으면 포인터가 전부 0x5000(20,480B)씩 어긋나 **확정 소프트락**이었다.
+    ED1 값 폴백을 두지 않는 게 요점이다 — 폴백은 조용히 틀리고 증상이 소프트락이라
+    원인이 여기까지 안 온다.
+    """
+    with R.overlay_for("ED1SCN1"):
+        assert R.ov_base() == 0x8016A000
+    with R.overlay_for("ED2SCN1"):
+        assert R.ov_base() == 0x80165000
+        with R.overlay_for("ED1SCN3"):  # 중첩해도 원복한다
+            assert R.ov_base() == 0x8016A000
+        assert R.ov_base() == 0x80165000
+    try:
+        R.ov_base()
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("세우지 않고 불렀는데 안 죽었다 — ED1 값으로 새고 있다")
 
 
 def test_proper_noun_needs_word_boundary():
@@ -335,3 +380,227 @@ def test_proper_noun_needs_word_boundary():
     assert _name_in("ザールが現れた", "ザール")  # 낱말 선두
     assert _name_in("あのザールだ", "ザール")  # 앞이 히라가나
     assert _name_in("アークダムの手から", "アークダム")  # 정상 인명
+
+
+def test_jp_leak_detects_partial_original():
+    """색 구간을 못 채워 **원문이 남은** 결과를 잡는다 — 구조는 멀쩡한데 화면만 깨지는 자리.
+
+    ⚠ `%c切符%cを渡しました。%c` 에 `표를 건넸습니다.` 를 넣으면 `%c자符%c표를…` 이 나온다.
+    `%c` 수도 `%s` 수도 원본과 같아 **모든 게이트가 초록**이고, 깨진 글자는 우리 한글
+    슬롯으로 렌더돼 「오타」처럼 보인다(ED2 49블록 실측 2026-08-15).
+    """
+    from check_jp_leak import leaked, shared_runs
+    from hangul_map import encode_kr
+
+    assert leaked(encode_kr("표를 건넸습니다")) == []  # 순수 한글 — 잔류 없음
+    assert leaked(b"%c" + "切符".encode("cp932") + b"%c") == ["符"]  # 切 는 우리 슬롯 안
+    # ⚠ 그래서 코드만 보면 절반을 놓친다 — **원문 raw 와 대조**하는 축이 나머지를 잡는다.
+    jp = b"%c" + "密造酒".encode("cp932") + b"%c" + "を渡しました。".encode("cp932")
+    assert shared_runs(jp, b"%c" + "密造酒".encode("cp932") + b"%c") == ["密造酒"]
+    assert shared_runs(jp, encode_kr("밀조주를 건넸습니다")) == []  # 우리 문안만 — 잔류 없음
+    # ⚠ 부호는 게임 폰트의 정상 글리프다 — 빼지 않으면 `～` 하나로 79건이 오탐이 된다.
+    assert leaked("～『』".encode("cp932")) == []
+
+
+def test_repack_skips_empty_string_refs():
+    """재packing 이 **빈 문자열을 가리키는 참조**를 덮지 않는다.
+
+    ⚠ 구획 안에는 이름이 아닌데 코드가 가리키는 바이트가 있다 — 값이 `0x00` 이라 코드가
+    「아무것도 안 나오는 자리」로 쓴다(`lui $a1,0x8011; addiu $a1,$a1,-0x7844; jal …`).
+    덮으면 **없어야 할 글자가 화면에 뜨는데 빌드는 성공한다** — ED1 1곳·ED2 2곳 실측
+    (2026-08-16). 널 한 바이트만 남으면 되므로 그 자리를 건너뛴다.
+    """
+    import patch_items as PI
+
+    # 합성: 이름 둘이 이어진 구획, 가운데 한 바이트가 예약(빈 문자열 참조)이라 치고
+    # 건너뛰는지 본다 — 재packing 결과에서 그 오프셋은 반드시 0 이어야 한다.
+    lo, hi = 0, 32
+    ed = bytearray(hi)
+    packed, cur, reserved = bytearray(), lo, [6]
+    for kb in (b"AB\x00\x00", b"CDEF\x00\x00\x00\x00"):
+        while any(cur <= r < cur + len(kb) for r in reserved):
+            r = next(r for r in reserved if cur <= r < cur + len(kb))
+            packed += b"\x00" * (r + 1 - cur)
+            cur = r + 1
+        packed += kb
+        cur += len(kb)
+    ed[lo:hi] = packed.ljust(hi - lo, b"\x00")
+    assert ed[6] == 0, "예약 바이트가 덮였다 — 빈 문자열이 아니게 된다"
+    assert bytes(ed).startswith(b"AB\x00\x00"), "첫 이름이 밀리면 안 된다"
+    assert b"CDEF" in bytes(ed) and bytes(ed).index(b"CDEF") > 6, "둘째는 예약 뒤로 간다"
+    assert callable(PI.repack)
+
+
+def test_font_compression_roundtrips_and_stays_aligned():
+    """압축 폰트를 **스텁과 같은 절차로** 되돌려 원본과 대조한다.
+
+    ⚠ 반각(마스크 비트15)을 넣었을 때 저장 행이 홀수면 다음 글리프의 마스크가 **홀수
+    주소**에 놓인다. 스텁은 마스크를 `lhu` 로 읽는데 MIPS 는 홀수 주소 `lhu` 에서 주소
+    예외로 죽는다 — 화면이 검게 죽고 빌드는 멀쩡했다(2026-08-16 실측). 정렬까지 본다.
+    """
+    import patch_opening_font as PF
+
+    chars = sorted(set("가나다ABC.,~<* 힣"))
+    raw = [PF.gen_glyphs(chars)[c] for c in chars]
+    data = PF.compress_font(raw)
+
+    out, i = [], 0
+    for _ in chars:
+        assert i % 2 == 0, f"마스크가 홀수 주소 0x{i:X} — 스텁의 lhu 가 예외로 죽는다"
+        mask = int.from_bytes(data[i : i + 2], "little")
+        i += 2
+        half = mask & PF.HALF_BIT
+        g = bytearray()
+        for r in range(15):
+            if mask >> r & 1:
+                g += bytes([data[i], 0]) if half else data[i : i + 2]
+                i += 1 if half else 2
+            else:
+                g += b"\x00\x00"
+        out.append(bytes(g))
+        i = (i + 1) & ~1  # 스텁의 정렬 올림
+    assert out == raw, "압축→복원이 원본과 다르다"
+    assert len(data) < len(raw) * PF.GLYPH, "압축이 안 됐다"
+
+
+def test_josa_agreement_ignores_adnominal_endings():
+    """조사 받침 검사는 **관형사형 어미를 조사로 오인하면 안 된다**.
+
+    함정(2026-08-17 실측): 받침 규칙을 은/는·과/와까지 넓히면 645건이 걸리는데 **645건 전부
+    오탐**이었다 — `있는`(336) `없는`(75) `않는`(37) 처럼 관형사형 `-는` 이 항상 받침 뒤에
+    오기 때문이다. 어휘만으로는 조사와 어미를 못 가르므로 축을 **을/를 하나로** 좁혔고,
+    거기 남는 오탐(단일 형태소 `마을`)만 STOP 으로 끊는다. 넓히려는 다음 사람을 여기서 막는다.
+    """
+    import check_josa_agreement as J
+
+    for ok in ("먹는 것", "있는 사람", "없는 걸", "책을 폈다", "마을 사람", "나무를 봤다"):
+        assert not [m for m in J.RX_EULREUL.finditer(ok) if _josa_bad(J, m, ok)], f"오탐: {ok}"
+    for bad in ("여러분를 ", "카드을 ", "마스쿤를 "):
+        assert [m for m in J.RX_EULREUL.finditer(bad) if _josa_bad(J, m, bad)], f"놓침: {bad}"
+
+    # 변수 뒤: `이면` 은 받침 양쪽에 다 붙어 통과, 맨 `면` 은 잡혀야 한다.
+    # ⚠ 교체를 왼쪽 우선으로 쓰면 `이` 가 `이면` 을 가려 오탐한다 — 긴 것을 앞에 둔다.
+    hit = lambda s: [m.group(1) for m in J.RX_VAR_JOSA.finditer(s) if m.group(1) not in J.ALWAYS_OK]
+    assert hit("\x1a면 되겠구먼.") == ["면"], "맨 `면` 을 놓쳤다"
+    assert hit("\x1a이면 되겠구먼.") == [], "`이면` 을 오탐했다"
+    assert hit("\x1a은(는) 갔다") == [], "병기를 오탐했다"
+
+
+def _josa_bad(J, m, text):
+    prev, j = m.group(1), m.group(2)
+    b = J.batchim(prev)
+    if b is None or ((b != 0) if j == "을" else (b == 0)):
+        return False
+    w = text[max(0, m.start() - 3) : m.end()]
+    return not any(s in w for s in J.STOP)
+
+
+def test_table_phase_catches_misaligned_pointer_table():
+    """위상이 어긋난 포인터 표도 자료로 본다 — 대사는 안 삼킨다.
+
+    함정(2026-08-17 실측): 블록 경계가 워드 경계와 안 맞는 자리가 있다. `ED2SCN13 jp37` 은
+    홀수 주소에서 시작해 워드가 `B6 16 80 2C` 로 읽히는데 3 밀면 `0x8016B62C` — 멀쩡한
+    포인터다. 위상 0 만 보면 이런 블록이 「대사」로 새어 번역할 수 없는 채 탈락으로 쌓인다.
+    """
+    with R.overlay_for("ED2SCN1"):
+        base = R.ov_base()
+        n = 0x20000
+        ptrs = b"".join((base + 0x100 * i).to_bytes(4, "little") for i in range(12))
+        assert R.table_phase(ptrs, n) == 0
+        assert R.table_phase(ptrs[3:] + b"\x00\x00\x00", n) is not None, "위상 3을 놓쳤다"
+        # 대사는 워드가 오버레이 범위에 안 들어온다 — 어느 위상에서도 표가 아니다
+        assert R.table_phase("扉には カギがかかっています。".encode("cp932") * 2, n) is None
+
+
+def test_mid_alias_master_is_the_shortest_copy():
+    """[포인터 표][대사] 사본은 **가장 짧은** 사본을 대표로 잡아야 한다.
+
+    함정(2026-08-17 실측): 먼저 나온 것을 대표로 잡았더니 표 접두가 붙은 긴 사본이 자기
+    자신을 물어 **아무것도 안 이어졌다**. 증상이 「고쳤는데 탈락 수가 그대로」라 조용하다.
+    """
+    with R.overlay_for("ED2SCN1"):
+        base = R.ov_base()
+    text = "%c扉には カギがかかっています。%c%c".encode("cp932")
+    ptrs = b"".join((base + 0x100 * i).to_bytes(4, "little") for i in range(14))
+    doc = {
+        "entries": [
+            {"entry_id": 685, "raw_hex": (ptrs + text + b"\x00" * 5).hex()},  # 긴 사본이 먼저
+            {"entry_id": 752, "raw_hex": (text + b"\x00").hex()},
+        ]
+    }
+    R._register_mid_alias(doc, "ED2SCN1")
+    assert R.MID_ALIAS.get(685) == (len(ptrs), 752), R.MID_ALIAS
+    assert 752 not in R.MID_ALIAS, "대표가 자기 자신을 사본으로 물었다"
+
+
+def test_name_survives_ghost_prefix_from_binary_bytes():
+    """앞에 이진 바이트가 붙은 **이름**을 대사로 오인하지 않는다.
+
+    함정(실측 ED2MON3 0x648): 이름 `モーンガーＡ` 앞에 이진 `ff 82 8f 50` 이 있는데,
+    `8f 50` 이 하필 `襲` 로 디코드돼 「ASCII 안 섞인 깨끗한 일본어」가 된다. 점수가 같아지면
+    `decode_sjis` 는 **덜 건너뛴 쪽**을 고르므로 `襲モーンガーＡ` 가 이기고, 접미 `Ａ` 를 떼도
+    정본에 없어 대사로 새어 「문안 없음 1」로 보고됐다. 바이트만 봐선 못 가르니 **정렬 후보
+    전부를 정본에 걸어** 판정한다.
+    """
+    import ed2_monster_review as R
+
+    names = {"モーンガー": "몽거"}
+    raw = b"\xff\x82\x8fP" + "モーンガーＡ".encode("cp932")
+
+    assert R.decode_sjis(raw) == "襲モーンガーＡ", "점수만으론 유령 접두가 이긴다(전제)"
+    assert R.resolve_name(raw, names) == "モーンガー", "정렬 후보 대조가 이름을 못 찾았다"
+    # 대사는 여전히 대사여야 한다 — 이름 대조가 아무거나 삼키면 안 된다.
+    line = "モーンガーＡが現れた。".encode("cp932")
+    assert R.resolve_name(line, names) is None, "대사를 이름으로 오인했다"
+
+
+def test_overlay_tail_relocation_updates_refs_with_sign_extension():
+    """ED2MON 오버레이 꼬리 재배치 — 참조 갱신과 **부호확장** 을 오프라인으로 검증한다.
+
+    함정(2026-08-17 실측): `0x8014A018` 은 `lui 0x8015` + `addiu -0x5FE8` 로 박혀 있다 —
+    lo ≥ 0x8000 이면 lui 가 +1 이다. 갱신이 이 규칙을 안 따르면 0x10000 어긋난 주소를
+    읽고도 **빌드는 통과**한다.
+    """
+    import struct as st
+
+    import patch_ed2_monster_lines as ML
+
+    # 미니 오버레이: [문자열 20B 슬롯][코드: lui+addiu 로 그 문자열 참조]
+    slot = 0x18
+    ov = bytearray(0x40)
+    ov[slot : slot + 6] = b"ABCDE\x00"
+    lui = (0x0F << 26) | (5 << 16) | 0x8015  # lui a1, 0x8015 (부호확장으로 -0x5FE8)
+    addiu = (0x09 << 26) | (5 << 21) | (5 << 16) | ((ML.BASE + slot - 0x80150000) & 0xFFFF)
+    st.pack_into("<I", ov, 0x28, lui)
+    st.pack_into("<I", ov, 0x2C, addiu)
+    orig = bytes(ov)
+    refs, _ = ML.overlay_refs(orig)
+    assert slot in refs and refs[slot] == [(0x2C, 0x28, ML.MIPS_ADDIU)], refs
+
+    new, touched = ML._relocate(bytearray(orig), orig, [(slot, "JP", "가나다라마바사", 8)])
+    # 꼬리에 인코딩이 실렸고 옛 슬롯은 비었다
+    tail = new[len(orig) :]
+    assert tail.rstrip(b"\x00"), "꼬리가 비었다"
+    assert new[slot : slot + 8] == b"\x00" * 8, "옛 슬롯이 안 비워졌다"
+    # 갱신된 쌍이 새 주소를 만든다 (부호확장 포함)
+    w_lui = st.unpack_from("<I", new, 0x28)[0]
+    w_imm = st.unpack_from("<I", new, 0x2C)[0]
+    lo = w_imm & 0xFFFF
+    if lo & 0x8000:
+        lo -= 0x10000
+    got = ((w_lui & 0xFFFF) << 16) + lo
+    assert got == ML.BASE + len(orig), f"참조가 0x{got:X} — 기대 0x{ML.BASE + len(orig):X}"
+    # 코드(참조 명령 밖)는 무변경
+    marks = set()
+    for a, b in touched:
+        marks.update(range(a, b))
+    for k in range(len(orig)):
+        assert k in marks or new[k] == orig[k], f"코드 변형 @0x{k:X}"
+
+
+# ⚠ **`__main__` 블록은 반드시 파일 맨 끝**이다. 예전엔 중간에 있어서 그 뒤에 붙인 테스트가
+# **정의되기 전에 러너가 돌아** 조용히 안 돌았다 — `test_proper_noun_needs_word_boundary`
+# 가 그렇게 죽어 있었고 `28/28 passed` 는 계속 초록이었다(2026-08-15). 테스트를 늘릴 땐
+# 이 블록 **위**에 붙인다.
+if __name__ == "__main__":
+    sys.exit(0 if _run() else 1)

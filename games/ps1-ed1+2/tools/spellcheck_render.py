@@ -33,10 +33,10 @@ sys.path.insert(0, os.path.join(_REPO, "shared"))
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-from common import REVIEW_DIR, ROOT  # noqa: E402
-from patch_sys_ui import _scn_layout  # noqa: E402
-from text import spellcheck as sc  # noqa: E402
+import reinsert_kr_pilot as R
+from common import REVIEW_DIR, ROOT
+from patch_sys_ui import _scn_layout
+from text import spellcheck as sc
 
 OUT = os.path.join(REVIEW_DIR, "corpus")
 SPELL_JSON = os.path.join(ROOT, "dos_spelling_fixes.json")

@@ -31,12 +31,11 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-from common import ROOT  # noqa: E402
+import reinsert_kr_pilot as R
+from common import ROOT
 
 GAME = "ED1"
 CTX = 34  # 앞뒤로 보여 줄 글자 수
-
 
 
 def _raw(game):
@@ -77,7 +76,7 @@ def used_map():
 
 def corpus():
     """{(표, 엔트리): 교정 후 문안}"""
-    return {k: R.corpus_text(v) for k, v in _raw(GAME).items() if v}
+    return {k: R.corpus_text(v, GAME) for k, v in _raw(GAME).items() if v}
 
 
 def siblings(table):

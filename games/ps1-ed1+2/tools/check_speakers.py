@@ -32,8 +32,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-from patch_sys_ui import SCN_FILES  # noqa: E402
+import reinsert_kr_pilot as R
 
 SCRIPT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "script")
 
@@ -82,7 +81,7 @@ def candidates(scn):
 
 def scan(scenes=None, show_all=False):
     tot = 0
-    for scn, _l, _z in SCN_FILES:
+    for scn in R.scene_list(scenes):
         if scenes and scn not in scenes:
             continue
         rows = candidates(scn)

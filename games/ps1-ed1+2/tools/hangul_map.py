@@ -88,9 +88,12 @@ def encode_kr(text):
     return bytes(out)
 
 
-def slot_ed_offset(i):
-    """i번째 음절 슬롯의 ED.EXE 파일 오프셋 (글리프 기록 위치)."""
-    return kanji_glyph_ed_offset(jis_index_to_sjis(JIS_KANJI1_INDEX + i))
+def slot_ed_offset(i, game="ED1"):
+    """i번째 음절 슬롯의 실행파일 오프셋 (글리프 기록 위치).
+
+    ⚠ 두 EXE 가 **각자 폰트를 들고 있다** — `game` 을 안 주면 ED1 자리에 쓴다
+    (`font_map.FONT_BASE`)."""
+    return kanji_glyph_ed_offset(jis_index_to_sjis(JIS_KANJI1_INDEX + i), game)
 
 
 if __name__ == "__main__":

@@ -25,7 +25,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-from common import OUT_DIR, ROOT  # noqa: E402
+from common import OUT_DIR, ROOT
 
 GAME = "ED1"
 SCENES = range(1, 7)

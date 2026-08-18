@@ -12,13 +12,21 @@ EP/HP/MP/Lv/Gold/숫자·프레임은 그대로 둔다. 번역명은 **잠정**(
 
 import os
 import struct
+import sys
 
 import hangul_font
 import numpy as np
 from common import BUILD_DIR, write_user_data
 from scan_tim import parse_tim, to_rgb, user_stream
 
+# ── 게임별 이름판 (2026-08-16) ────────────────────────────────────────────────
+# ED2 도 **같은 크기(220x215)·같은 팔레트·같은 라벨 배치**의 TIM 을 쓴다 —
+# `ED2PARTS.DAT` 0xC000(디스크 LBA 4611 = 0x901800). `あと/EP`·`毒黙呪眠乱守跳`·`気絶`
+# 영역이 ED1 과 픽셀까지 같아, 갈리는 건 **이름 넉 줄뿐**이다(ED2 파티는 4명).
+# ⚠ 폰 QA 에서 HUD 가 `アトラス`·`あと` 로 남아 있었다 — 문자열이 아니라 그림이라
+# SJIS 검출기가 원리상 못 본다(디스크 전 파일 스캔 0곳).
 TIM_OFF = 0x566800  # ED1PARTS.DAT 내, 섹터정렬(LBA 2765)
+TIM_OFF_ED2 = 0x901800  # ED2PARTS.DAT 0xC000, 섹터정렬(LBA 4611)
 TARGET = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR Pilot).bin")
 BG, MAIN, SHADOW = 39, 16, 46  # 남색 배경 / 노랑 글자 / 그림자 (실측)
 PITCH = 9  # Galmuri9 글자 간격(원본 카타카나 ~9px)
@@ -33,6 +41,15 @@ NAMES = [
     (135, "ゲイル", "게일"),
     (178, "ソニア", "소니아"),
 ]
+# ED2 — 잉크 top 실측(6/49/92/135). 순서는 렌더로 확인했다(アトラス→ランドー→フローラ→シンディ).
+NAMES_ED2 = [
+    (6, "アトラス", "아트라스"),
+    (49, "ランドー", "란도"),
+    (92, "フローラ", "플로라"),
+    (135, "シンディ", "신디"),
+]
+GAMES = {"ED1": (TIM_OFF, NAMES), "ED2": (TIM_OFF_ED2, None)}  # None → NAMES_ED2 (아래서 채움)
+GAMES["ED2"] = (TIM_OFF_ED2, NAMES_ED2)
 
 _glyphs, _ascent = hangul_font.load_bdf(hangul_font.GALMURI11_BDF.replace("Galmuri11", "Galmuri9"))
 # 라벨(あと→남다)용 7px 폰트 — 라벨 UV 창이 14px(7×2)라 9px 글리프는 잘림
@@ -116,9 +133,9 @@ STATUS_ROW1 = [  # (x, 글자, 잉크색)
     (120, "묵", 24),
     (130, "주", 24),
     (140, "잠", 24),
-    (150, "란", 24),
+    (150, "혼", 24),  # 乱 — 정발 표기(음차 `란` 아님)
     (160, "수", 50),
-    (170, "도", 50),
+    (170, "반", 50),  # 跳ね返す = 반사(리파크) — 정발 표기
 ]
 FAINT = {"x": 110, "chars": "기절", "pitch": 10, "ink_top": 141, "y1": 148, "color": 24}
 
@@ -149,11 +166,11 @@ def patch_status_labels(pix):
     _draw_bm(pix, bm, f["x"], f["ink_top"] - 2, f["color"], y_max=f["y1"])
 
 
-def build_pix(tim):
+def build_pix(tim, names=None):
     """원본 TIM 픽셀 → 이름 5개 + あと 라벨 + 상태이상 라벨 교체한 새 인덱스맵."""
     w, h = tim["w"], tim["h"]
     pix = np.frombuffer(tim["pix"], dtype=np.uint8).reshape(h, w).copy()
-    for ink_top, _jp, kr in NAMES:
+    for ink_top, _jp, kr in names or NAMES:
         bm = render_name(kr)
         bh, bw = bm.shape
         if NAME_X + bw > NAME_X_MAX:
@@ -194,26 +211,27 @@ def build_pix(tim):
     return pix
 
 
-def patch(target=TARGET, preview=None):
+def patch(target=TARGET, preview=None, game="ED1"):
     if not os.path.exists(target):
         raise SystemExit(f"대상 디스크 없음: {target} — build.py 체인(reinsert→gfx_cards) 먼저")
+    tim_off, names = GAMES[game]
     buf = user_stream()  # 원본에서 TIM 읽기(clean 인페인트 정확성)
-    tim = parse_tim(buf, TIM_OFF)
-    assert tim and (tim["w"], tim["h"]) == (220, 215), f"0x{TIM_OFF:X} TIM 불일치"
-    new_pix = build_pix(tim)
+    tim = parse_tim(buf, tim_off)
+    assert tim and (tim["w"], tim["h"]) == (220, 215), f"0x{tim_off:X} TIM 불일치"
+    new_pix = build_pix(tim, names)
     # 픽셀만 교체, CLUT·헤더 유지. RMW-safe: TIM 시작~다음 섹터경계까지 통째로 blob(꼬리 보존).
-    bsize = struct.unpack_from("<I", buf, TIM_OFF + 8)[0]
+    bsize = struct.unpack_from("<I", buf, tim_off + 8)[0]
     pix_off = 8 + bsize + 12
     tim_len = pix_off + tim["w"] * tim["h"]
-    assert TIM_OFF % 2048 == 0, "TIM 섹터 비정렬 — write_user_data 불가"
-    end = TIM_OFF + (tim_len + 2047) // 2048 * 2048  # 다음 섹터 경계
-    blob = bytearray(buf[TIM_OFF:end])  # 전체 섹터(꼬리 원본 보존)
+    assert tim_off % 2048 == 0, "TIM 섹터 비정렬 — write_user_data 불가"
+    end = tim_off + (tim_len + 2047) // 2048 * 2048  # 다음 섹터 경계
+    blob = bytearray(buf[tim_off:end])  # 전체 섹터(꼬리 원본 보존)
     blob[pix_off : pix_off + tim["w"] * tim["h"]] = new_pix.astype(np.uint8).tobytes()
     with open(target, "r+b") as f:
-        n = write_user_data(f, TIM_OFF // 2048, blob, label="HUD 이름 TIM")
+        n = write_user_data(f, tim_off // 2048, blob, label=f"HUD 이름 TIM ({game})")
     print(
-        f"HUD 이름판 {len(NAMES)}명 → 0x{TIM_OFF:X} (섹터 {n}개): "
-        + ", ".join(k for _, _, k in NAMES)
+        f"HUD 이름판[{game}] {len(names)}명 → 0x{tim_off:X} (섹터 {n}개): "
+        + ", ".join(k for _, _, k in names)
     )
     if preview:
         to_rgb(dict(tim, pix=new_pix.astype(np.uint8).tobytes())).resize((220 * 3, 215 * 3)).save(
@@ -223,4 +241,5 @@ def patch(target=TARGET, preview=None):
 
 
 if __name__ == "__main__":
-    patch()
+    for g in sys.argv[1:] or ["ED1"]:
+        patch(game=g)

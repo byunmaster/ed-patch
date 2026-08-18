@@ -74,8 +74,7 @@ def main():
             f.write(f"\n[{game}] 고유 {len(counter)}자\n")
             f.write("".join(sorted(counter)) + "\n")
         f.write("\n[합계 빈도순]\n")
-        for ch, n in total.most_common():
-            f.write(f"{ch}\t{n}\n")
+        f.writelines(f"{ch}\t{n}\n" for ch, n in total.most_common())
     print(f"저장: {out}")
 
 

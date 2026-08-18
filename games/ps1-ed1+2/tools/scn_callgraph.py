@@ -38,9 +38,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import common  # noqa: E402
-from common import MIPS_ADDIU, MIPS_ORI, OUT_DIR, ROOT  # noqa: E402
-from patch_sys_ui import SCN_FILES  # noqa: E402
+import common
+from common import MIPS_ADDIU, MIPS_ORI, OUT_DIR, ROOT
+from patch_sys_ui import SCN_FILES
 
 # 한 표가 이 **개수** 이상의 함수(맵)에 나타나면 맵을 넘나드는 공용 표로 보고 면제한다.
 # ⚠ 비율(함수 수의 25%)로 뒀더니 씬이 클수록 임계가 올라가 정작 새야 할 게 안 샜다 —

@@ -62,7 +62,11 @@ def scan(scene, verbose):
     data = bytes(extract(lba, size, path=IMG))
     doc = json.load(open(os.path.join(OUT_DIR, "scn_jp", f"{scene}.json"), encoding="utf-8"))
     te = int(doc["source"]["text_end"], 16)
-    refs = sorted({a - R.OVERLAY_RAM_BASE for _, _, _, a in R.find_refs(data, te)})
+    # ⚠ 베이스는 **게임마다 다르다** — 씬 이름으로 세우고 그 안에서 참조를 뜬다
+    # (`R.ov_base()` 는 세워야만 답한다. ED1 값으로 폴백하면 조용히 틀린다).
+    with R.overlay_for(scene):
+        base = R.ov_base()
+        refs = sorted({a - base for _, _, _, a in R.find_refs(data, te)})
     raw = {e["entry_id"]: bytes.fromhex(e["raw_hex"]) for e in doc["entries"] if e.get("raw_hex")}
     tr = ov = am = settled = None
     hits = []

@@ -52,8 +52,23 @@ def _w(s):
     return sum(R.cell_w(c) for c in s.replace("%c", ""))
 
 
+def _is_plate(raw):
+    """앞 블록이 **지명·이름 플레이트**인가 — 뒤 대사에 이어 그려지지 않는다.
+
+    씬 파일에는 대사만 있는 게 아니라 워프 목록·맵 이름 같은 **낱말 블록**이 섞여 있다
+    (`리젤`+`스엘`+`콜크스`, `그로스토스성`+`그로스토스성`). 이어 그려지는 자리가 아닌데
+    경계 규칙에는 걸려서 붙음으로 뜬다 — ED2 전수에서 32곳이 이 부류였다(2026-08-17).
+
+    ⚠ **조용히 빼지 않는다.** 아래에서 따로 세어 보고한다 — 규칙이 진짜 대사를 삼키기
+    시작하면 그 수가 늘어나므로 눈에 띄어야 한다.
+    """
+    s = (raw or "").strip()
+    return bool(s) and len(s) <= 8 and "\n" not in s and "%c" not in s and s[-1] not in ".!?…"
+
+
 def scan(scenes=None):
     join = []  # 공백 없이 붙는 경계
+    plate = []  # 낱말 플레이트라 이어 그려지지 않는 경계
     over = []  # 붙고 나서 폭을 넘는 줄
     lead = []  # 개행 뒤인데 선두 공백이 남은 블록
     indent = []  # 블록 **안**에서 개행 뒤 줄이 공백으로 시작
@@ -93,7 +108,7 @@ def scan(scenes=None):
             if not head or head.startswith("%c"):
                 continue
             if head[0] not in (" ", NOBREAK_SP):
-                join.append((scn, eid, tail[-12:], head[:12]))
+                (plate if _is_plate(raw) else join).append((scn, eid, tail[-12:], head[:12]))
                 continue
             if _w(tail + head) > WRAP:
                 over.append((scn, eid, _w(tail + head), tail[-12:], head[:14]))
@@ -105,6 +120,8 @@ def scan(scenes=None):
         print(f"  ⚠ {scn} jp{eid} 개행 뒤인데 선두 공백이 남았다: {h!r}")
     for scn, eid, i, h in indent:
         print(f"  ⚠ {scn} jp{eid} {i}번째 줄이 공백으로 시작한다(들여쓰기로 보인다): {h!r}")
+    if plate:
+        print(f"  ℹ 낱말 플레이트라 이어 그려지지 않는 경계 {len(plate)}곳 — 제외했다")
     bad = len(join) + len(over) + len(lead) + len(indent)
     print(
         f"\n{'✅ 블록 경계 이상 없음' if not bad else f'⚠ 붙음 {len(join)} · 넘침 {len(over)} · 선두 공백 {len(lead)} · 들여쓰기 {len(indent)}'}"

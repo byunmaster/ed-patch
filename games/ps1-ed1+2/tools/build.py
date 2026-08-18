@@ -194,11 +194,19 @@ def main():
     run("align_jp_kr.py", "--speakers-only")
     run("reinsert_kr_pilot.py")
     run("patch_gfx_cards.py")
-    run("patch_hud_names.py")
+    run("patch_hud_names.py", "ED1", "ED2")
     run("patch_sys_ui.py")
-
     shutil.copyfile(KR_UI, FINAL)
     write_cue(FINAL_CUE, os.path.basename(FINAL))
+    # ⚠ 블록으로 안 잡히는 씬 문자열(포인터 테이블 한복판) — 배정·조판 경로 밖이라
+    #   여기서만 잡힌다. 씬 재삽입·플레이트 치환 **뒤** · 최종 이미지 위에서 돈다.
+    run("patch_scn_orphans.py")
+    run("patch_ed2_sys.py")
+    run(
+        "patch_ed2_battle.py"
+    )  # ED2.EXE 전투 문안 — 제자리 치환만(재배치 미구현)  # ED2.EXE 시스템 UI·지명 — **ED.EXE 와 사본 관계**라 따로 쓴다
+    run("patch_ed2_monsters.py")  # ED2MON0~5.BIN 몬스터 이름 — 제자리 치환만
+    run("patch_ed2_monster_lines.py")  # ED2MON0~5.BIN 전투 대사 — 제자리 치환만
     run("patch_items.py")  # ED.EXE 아이템·마법명 (FINAL 제자리 갱신)
     # 줄머리 공백 훅(patch_battle_wrap.py)은 **미채택 확정**(2026-07-23 유저 결정, 보류 아님).
     # 구현·검증까지 끝냈으나 ①differential로 인트로 정지와 무관함이 확인돼 실익이 없었고
@@ -209,7 +217,10 @@ def main():
         "patch_josa_hook.py"
     )  # 동적 조사 훅 — 병기(은(는)) → 정확 조사(2026-07-27 인게임 검증 통과)
     run("patch_gfx_title.py")  # START.DAT 타이틀 로고·버튼 TIM (FINAL 제자리 갱신)
-    run("patch_opening_font.py")  # OPEN1.EXE 오프닝 폰트+텍스트 (FINAL 제자리 갱신)
+    # 동영상 EXE — 넷이 내레이션을 한 벌씩 다 들고 각자 자기 몫만 튼다(읽기 BP 실측).
+    # 그래서 파일마다 **자기 슬라이스만** 넣는다. END1·END2 는 세이브가 있어야 확인이 되므로
+    # 인게임 검증 뒤에 붙인다.
+    run("patch_opening_font.py", "OPEN1", "OPEN2", "END1", "END2")  # 오프닝·엔딩 (FINAL 제자리)
     for stem in INTERMEDIATES + STALE:
         rm(stem)
     check_immutable()

@@ -30,9 +30,9 @@ import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import reinsert_kr_pilot as R  # noqa: E402
-from common import REVIEW_DIR  # noqa: E402
-from text import krwrap as K  # noqa: E402
+import reinsert_kr_pilot as R
+from common import REVIEW_DIR
+from text import krwrap as K
 
 
 def bad_breaks(pages):

@@ -29,7 +29,7 @@ import struct
 import sys
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from patch_josa_hook import REG, Asm, _i, _r  # noqa: E402
+from patch_josa_hook import REG, Asm, _i, _r
 
 # ── 드로어 좌표 (0x800AD3A8 함수 내부, 정적 디스어셈블 확정) ────────────────
 HOOK_ADDR = 0x800AD604

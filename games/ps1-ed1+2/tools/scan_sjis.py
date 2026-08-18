@@ -119,8 +119,7 @@ def main():
     files.sort(key=lambda x: x[1])
     with open(os.path.join(OUT_DIR, "iso_files.txt"), "w", encoding="utf-8") as fo:
         fo.write(f"{'LBA':>8} {'raw offset':>12} {'size':>12}  path\n")
-        for name, lba, sz in files:
-            fo.write(f"{lba:>8} {lba * SECTOR:>12} {sz:>12,}  {name}\n")
+        fo.writelines(f"{lba:>8} {lba * SECTOR:>12} {sz:>12,}  {name}\n" for name, lba, sz in files)
     print(f"\nISO 파일 수: {len(files)} → iso_files.txt 저장")
 
     # 오프셋 → 파일 매핑용
