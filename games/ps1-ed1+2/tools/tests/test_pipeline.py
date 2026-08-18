@@ -704,5 +704,28 @@ def re_sub_in(src):
     return 're.sub(r"\\s+", "", data)' in src or 'sub(r"\\s+", "", data)' in src
 
 
+def test_skill_index_matches_checklist():
+    """스킬의 목록은 **색인**이지 정본이 아니다 — 체크리스트 절과 어긋나면 안 된다.
+
+    ⚠ 실제로 어긋났다(2026-08-18): 체크리스트에 절 셋이 늘었는데 `patcher-safety` 스킬은
+    여전히 「말뚝 아홉」을 안내하고 있었다. 스킬을 읽고 온 사람은 **없는 규칙을 지키지 않는다.**
+    같은 지식을 두 곳에 쓰면 어긋난다 — 그래서 한쪽은 색인으로 두고 여기서 묶는다.
+    """
+    import os
+    import re
+
+    root = os.path.dirname(os.path.dirname(os.path.dirname(_TOOLS)))
+    cl = open(os.path.join(root, "docs", "patcher-checklist.md"), encoding="utf-8").read()
+    sk = open(
+        os.path.join(root, ".claude", "skills", "patcher-safety", "SKILL.md"), encoding="utf-8"
+    ).read()
+    nums = [m.group(1) for m in re.finditer(r"^## ([\d\-A-B]+)\.", cl, re.M)]
+    assert nums, "체크리스트에서 절 번호를 못 읽었다"
+    for n in nums:
+        # ⚠ 줄머리에 고정하지 않는다 — oxfmt 가 `4-B.` 를 하위 항목으로 들여쓴다(마크다운상 맞다).
+        assert re.search(rf"^\s*{re.escape(n)}\.", sk, re.M), f"스킬 색인에 절 {n} 이 빠졌다"
+    assert "아홉" not in sk.split("## 정본")[1][:400], "절 수를 본문에 박아 두면 또 어긋난다"
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

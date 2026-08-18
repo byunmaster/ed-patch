@@ -19,7 +19,7 @@ description: >-
 > 살림. 아예 의미가 다른 오역은 자체번역. 고유명사·호칭·캐릭터 개성(말투)은 흔들리지 않게.
 > 정발 이스터에그는 살린다. 맞춤법·띄어쓰기는 교정한다.
 
-정본은 [`docs/policy.md`](../../../games/ps1-ed1+2/docs/policy.md) 「정발 전수 대조」.
+정본은 [`games/ps1-ed1+2/docs/policy.md`](../../../games/ps1-ed1+2/docs/policy.md) 「정발 전수 대조」.
 
 ## 🔴 후보는 장소·시기·화자를 다 통과해야 한다
 
@@ -90,5 +90,6 @@ description: >-
 ## 같이 볼 것
 
 - 스킬 `patcher-safety` — 절 4-B(검사기 자신의 커버리지) · 4-C(게이트 우회) · 6(대량 변경).
-- [`docs/text-pipeline.md`](../../../games/ps1-ed1+2/docs/text-pipeline.md) — `chain` 문법·검출기 표.
-- [`docs/jeongbal-deviations.md`](../../../games/ps1-ed1+2/docs/jeongbal-deviations.md) — 표기 편차 대장.
+- [`docs/reference/mistranslation-patterns.md`](../../../docs/reference/mistranslation-patterns.md) — **오역이 나는 자리 유형 대장**. 「어디를 먼저 볼까」를 좁혀 준다.
+- [`games/ps1-ed1+2/docs/text-pipeline.md`](../../../games/ps1-ed1+2/docs/text-pipeline.md) — `chain` 문법·검출기 표.
+- [`games/ps1-ed1+2/docs/jeongbal-deviations.md`](../../../games/ps1-ed1+2/docs/jeongbal-deviations.md) — 표기 편차 대장.
