@@ -1,0 +1,3 @@
+# 이 게임이 읽는 원본 — `scripts/worktree.sh` 가 이 목록만 워크트리에 건다.
+# 규약은 `games/ps1-ed1+2/originals.txt` 머리말 참조.
+kr/dos-ed2        # 복원 대상 (만트라 정발판)

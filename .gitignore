@@ -24,6 +24,10 @@ work/
 
 # 로컬 서드파티 바이너리 — 에뮬레이터·디버거·유틸 (재배포 방지)
 vendor/
+# ⚠ **슬래시 없는 줄도 둔다** — 워크트리에서는 이것들이 **심볼릭 링크**라 `vendor/` 패턴에
+#   안 걸린다(git 은 링크를 디렉터리로 안 본다). 실제로 `vendor` 링크가 커밋에 딸려 들어갔다
+#   (2026-08-18). `originals/originals`·`derived/derived` 와 같은 계열의 함정이다.
+vendor
 
 # 카페 게시판 원본 덤프 — 로컬 전용 (타인 게시글 발췌·저작권/약관, 재배포 금지.
 # 재수집 절차는 docs/reference/README.md)
@@ -31,6 +35,7 @@ docs/reference/_inventory/
 
 # emucap 실험 원장
 .emucap/
+.emucap
 
 # Python
 __pycache__/
@@ -40,6 +45,7 @@ __pycache__/
 .mypy_cache/
 *.egg-info/
 .venv/
+.venv
 venv/
 build/
 dist/

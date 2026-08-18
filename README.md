@@ -43,6 +43,10 @@ docs/               레퍼런스 · 공개 체크리스트 · 소장 컬렉션
 originals/          원본 게임 데이터 (gitignore — 직접 소장본으로 채움)
 ```
 
+브랜치는 **`main` = 공통(`shared/` · `scripts/` · `docs/` · 스킬), `game/<타이틀>` = 각 게임**
+으로 갈립니다. 게임끼리는 디스크 이미지가 달라 독립이라 워크트리로 병행합니다 —
+`sh scripts/worktree.sh <게임>`. 겹치는 건 공용뿐이라, 공용은 `main` 에서만 고칩니다.
+
 원본은 `originals/<지역>/<플랫폼>-ed<번호>/` 규약으로 한 벌만 둡니다
 (`kr/dos-ed2`, `jp/ps1-ed1+2`, `us/pce-ed1`). 자세한 건
 [originals/README.md](originals/README.md).
@@ -53,6 +57,8 @@ originals/          원본 게임 데이터 (gitignore — 직접 소장본으�
 python3 games/ps1-ed1+2/tools/build.py   # [kr] 한글패치 디스크 빌드
 sh scripts/patcher.sh serve              # [fix] 웹 패처를 로컬에서 띄워 확인
 sh scripts/dosbox.sh ed1|ed2|ed3|ed4     # 정발 DOS판 실행 (문안 대조 · 패치 검증)
+sh scripts/worktree.sh ps1-ed1+2         # 게임별 워크트리 (originals 링크까지)
+sh scripts/check.sh                      # 커밋 전 — 빌드 + 화면·조판 검사
 ```
 
 ### 서드파티 도구

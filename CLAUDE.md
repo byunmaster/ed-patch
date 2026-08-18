@@ -11,10 +11,14 @@
 
 ## 세션 시작 시
 
+0. **어디에 서 있는지 본다** — `git branch --show-current`.
+   `main` 이면 **공통**(shared · scripts · skills · docs)만 고친다.
+   `game/<타이틀>` 이면 **자기 게임만** 고친다. 공용이 필요하면 main 에 먼저 넣고 받아 온다
+   (「게임을 병행할 때」 절). ⚠ 이건 규칙이 아니라 `check.sh` 가 매번 확인한다.
 1. **작업할 게임의 `games/<게임>/CLAUDE.md`를 읽는다** — 트랙별 규칙은 거기 있다.
    이 파일에는 트랙과 무관한 공용 규칙만 둔다.
-2. 그 게임의 **진행 현황 문서를 읽는다**(`games/<게임>/docs/status.md` — dos-ed2 는 아직
-   `HANDOFF.md`). **이 문서 하나로 이어서 작업할 수 있어야 한다** — 누가 오든 "지금 어디까지
+2. 그 게임의 **진행 현황 문서를 읽는다** — ps1-ed1+2 는 편마다 갈렸다
+   (`docs/ed1-status.md` · `docs/ed2-status.md`), dos-ed2 는 아직 `HANDOFF.md`. **이 문서 하나로 이어서 작업할 수 있어야 한다** — 누가 오든 "지금 어디까지
    됐고 · 다음에 뭘 하고 · 어떻게 시작하는지"를 여기서 얻는다. 커밋한다(머신을 따라가야 한다).
    ⚠ 여기엔 **현재 상태 + 남은 일만** 둔다. 방침은 `policy.md`, 경위는 `devlog.md`,
    완료 이력은 커밋 히스토리다 — 섞이면 문서가 부풀어 아무도 안 읽는다(실제로 463줄까지 갔다).
@@ -32,10 +36,14 @@
 
 ```
 games/<게임>/       게임별 코드베이스 — tools/ docs/ patches/ textmap/ assets/ + work/
+                    typeset_fingerprint.json = 그 게임의 조판 지문(값은 게임 것)
   ps1-ed1+2/        [kr]  PS1 영웅전설 1+2 한글패치
   dos-ed2/          [fix] 만트라 DOS 영웅전설 II 복원
 shared/             플랫폼 공용 라이브러리 (SJIS 스캔, ISO9660, 폰트 변환, 한글 조판 krwrap)
-scripts/            진입점 셸 스크립트 — dosbox.sh(정발 DOS 실행) · patcher.sh(웹 패처)
+scripts/            진입점 — check.sh(커밋 전) · test.sh · build 진입 · dosbox.sh · patcher.sh
+  worktree.sh       └ 게임별 워크트리 (originals 지역 링크까지 대신한다)
+  typeset_fingerprint.py  └ 조판 지문 — 공용이 다른 게임의 줄바꿈을 흔들면 운다
+  check_shared_scope.py   └ 게임 브랜치가 공용·남의 게임을 건드렸나
   dosbox/           └ DOSBox-X conf 템플릿 (생성물은 .local/dosbox)
 .local/             이 머신 전용 (gitignore) — dosbox 실행 사본 · 패처 빌드 · 배포 레포 클론
 patcher/            웹 패처 일체 — index.html.tmpl · build.py · subset_font.py · fonts.css
@@ -79,6 +87,7 @@ sh scripts/check.sh                        # ⭐ **커밋 전 이것 하나** �
 sh scripts/test.sh                         # 단위·회귀 테스트 (원본 없이 돈다)
 sh scripts/check-updates.sh                # 외부 의존물(emucap·스킬·템플릿) 새 버전 확인
 sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조 · DOS 패치 검증)
+sh scripts/worktree.sh <게임>              # 게임별 워크트리 (originals 링크까지)
 ```
 
 - **커밋 전에는 `sh scripts/check.sh`.** 빌드만으로는 절반이다 — 빌드는 구조(무변경 구간·
@@ -86,6 +95,8 @@ sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조
   되므로 진입점을 하나로 뒀다.
   ⚠ 게이트는 **지금 고칠 수 있는 것**만 실패로 친다 — 아직 정본으로 안 옮긴 씬의 후보나
   옛 번역자의 의역은 「할 일」이지 「실패」가 아니다. 늘 빨간불이면 아무도 안 본다.
+  ⚠ **조판은 락도 관측 대장도 안 본다** — `check.sh` 안의 **조판 지문**이 그 구멍을 메운다.
+  안 건드렸는데 지문이 떴으면 **`shared/` 를 의심한다**(다른 게임 작업이 흘러들어온 것이다).
 - 테스트 이미지는 **꼬리표(브랜치)별로 갈린다** — `work/build/<꼬리표>/Eiyuu Densetsu (KR).bin/.cue`.
   ⚠ 한 칸 안에서는 여전히 **하나만** 유지한다(낡은 이미지를 정상으로 오해하는 사고를 막는다).
   칸을 나눈 이유는 갈래를 동시에 굴리기 때문이다 — ED1 QA 를 도는 사이 ED2 빌드가 덮어썼다
@@ -126,26 +137,64 @@ sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조
 - **손인코딩 기계어는 디스어셈블로 검산한다** — 연속 디코드 + 지연 슬롯 확인.
   과거 스텁 오타 둘에 반나절을 썼다. `patch_opening_font.verify_asm`.
 
-### 트랙을 병행할 때 — git worktree
+## 게임을 병행할 때 — `main` = 공통, `game/<타이틀>` = 각 게임 (유저 확정 2026-08-18)
 
-트랙끼리는 파일 트리·원본·에뮬이 안 겹쳐서 동시에 굴릴 수 있다. 워크트리로 빼면
-`work/`가 분리돼 서로의 빌드·사본을 안 건드리고 커밋도 브랜치별로 갈린다.
-
-자리는 **`.claude/worktrees/<이름>`** — Claude Code가 만드는 워크트리의 기본 위치라
-손으로 만드는 것도 여기 맞춘다(gitignore 처리돼 있다).
+타이틀을 하나씩 끝내면 새턴·PCE 까지 너무 오래 걸린다. **게임마다 워크트리를 열어 병행**한다.
 
 ```bash
-git worktree add -b fix/dos-ed2-se .claude/worktrees/ed2-se
-cd .claude/worktrees/ed2-se
-for r in kr jp us; do ln -sfn "../../../../originals/$r" "originals/$r"; done
+sh scripts/worktree.sh ps1-ed1+2     # 워크트리 + originals 링크까지 한 번에
+sh scripts/worktree.sh --list
 ```
 
-⚠ **`originals/`는 gitignore라 워크트리에 안 따라온다.** 지역 폴더(`kr`/`jp`/`us`)를
-심볼릭 링크로 이어야 도구가 원본을 찾는다 — `originals/README.md`는 추적되는 파일이라
-`originals/` 디렉터리 자체는 이미 있으니 통째로 걸면 `originals/originals`가 된다.
-반드시 그 **안에** 지역별로 건다. 워크트리가 레포 안에 있으므로 링크가 레포 밖을
-가리키지 않아, 레포 폴더를 옮겨도 안 끊긴다.
-`vendor/`·`.emucap/`도 같은 이유로 안 따라온다(필요한 트랙에서만 이어주면 된다).
+### 겹치는 건 게임 트리가 아니라 **공용**이다
+
+게임끼리는 **디스크 이미지가 달라** 물리적으로 독립이다 — `games/<타이틀>/` 이 갈려 있고
+`work/` 도 워크트리마다 나뉘며 `BUILD_TAG`(=브랜치)로 이미지도 안 덮인다.
+⚠ **ED1/ED2 는 예외다** — 합본(SLPS-01323)이라 **같은 이미지**를 공유하므로 한 트리에서
+굴린다(갈랐다 합쳤더니 충돌 9곳이 전부 공용 파이프라인이었다 — 게임 `CLAUDE.md`).
+
+겹치는 자리는 넷뿐이고, 그중 위험한 건 하나다:
+
+```
+shared/          조판(krwrap) · 조사 · SJIS · ISO9660      ← 🔴 여기
+scripts/         진입점
+.claude/skills/  절차
+docs/            체크리스트 · reference
+```
+
+🔴 **락도 관측 대장도 조판을 안 본다**(화자 + 창 본문만 해시). 새턴 작업 중 줄바꿈 규칙을
+한 줄 고치면 **PS1 이미지의 조판이 조용히 바뀐다.**
+
+### 그래서 규칙 하나 — 공용은 `main` 에서만
+
+게임 브랜치에서 공용을 고쳐야 하면 **main 에 먼저 넣고 받아 온다.** 장치 둘이 지킨다
+(둘 다 `check.sh` 에 물려 있다):
+
+| 장치                             | 무엇을                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| `scripts/typeset_fingerprint.py` | 그 게임 문안 전량을 **조판기에 태운 결과**를 해시. 공용이 조판을 흔들면 운다    |
+| `scripts/check_shared_scope.py`  | 게임 브랜치가 공용·남의 게임을 건드렸나 (⚠ 게이트 아님 — 급하면 어길 수 있어야) |
+
+⚠ 지문 값은 **게임 아래**(`games/<게임>/typeset_fingerprint.json`)다 — 루트에 두면 게임이
+갱신할 때마다 공용을 건드리게 된다. 문안을 의도적으로 바꿨을 때만 `--freeze`.
+그래서 `main` 의 작업 트리엔 그 파일이 없는데, **공용을 고치는 자리가 바로 main 이다** —
+없으면 `game/<게임>` 브랜치에서 읽어 온다. 안 그러면 위험한 자리에서만 안 도는 장치가 된다.
+
+⚠ **`originals/` 는 gitignore 라 워크트리에 안 따라온다.** 지역 폴더(`kr`/`jp`/`us`)를 심볼릭
+링크로 이어야 도구가 원본을 찾는데, `originals/README.md` 가 추적돼 디렉터리 자체는 이미
+있으니 **통째로 걸면 `originals/originals` 가 된다.** 반드시 그 **안에** 지역별로 건다 —
+`worktree.sh` 가 대신하므로 손으로 하지 않는다. `vendor/`·`.emucap/` 도 같은 이유로 잇는다.
+
+### ⚠ 병행의 진짜 병목은 판정이다
+
+기계 작업(역공학·폰트·재삽입 파이프라인 구축)은 정말 병행된다. 반대로 **정발 대조·QA 는
+사람 판정이라 직렬**이라, 셋을 동시에 굴려도 속도가 3배가 되지 않는다. **판정이 적은
+구간부터** 나누는 게 이득이 크다.
+
+그래서 **워크트리는 롬분석·기계번역 전용**이고, 본 트리는 지금 굴리는 타이틀이 잡는다
+(유저 확정 2026-08-18). 트리를 나눌지의 기준은 「게임이 둘인가」가 아니라 **「세션이 둘인가」**다 —
+한 트리에서 브랜치를 갈면 그 트리에서 돌던 빌드가 **바뀐 파일을 읽고도 성공한다.**
+세션이 하나면 브랜치로 충분하다(`work/` 는 gitignore + 게임별 경로라 갈아타도 파생물이 산다).
 
 ## Git 정책
 
@@ -153,6 +202,9 @@ for r in kr jp us; do ln -sfn "../../../../originals/$r" "originals/$r"; done
   squash해야 해 번거로움). 작업 자체는 확인 없이 자율 진행하되 **커밋만 게이팅**.
   여러 단계 작업은 한 커밋으로 묶는 걸 선호.
 - **푸시 금지** — 릴리스는 유저가 직접.
+- **브랜치 규약**(유저 확정 2026-08-18) — `main` = 공통, `game/<타이틀>` = 각 게임.
+  게임 작업은 워크트리에서 굴린다(`sh scripts/worktree.sh <게임>`).
+  ⚠ 게임 브랜치에서 **공용을 고치지 않는다** — 다른 게임이 조용히 바뀐다. main 에 먼저.
 - **원본 게임 데이터 커밋 절대 금지** — `originals/` `work/` `out/` `vendor/` `.emucap/`,
   디스크 이미지(*.bin/.cue/.iso …)는 gitignore. BIOS·에뮬 바이너리도 금지.
 - **`vendor/`는 읽기 전용** 서브레포(emucap 등) — 커밋·수정 금지, 빌드해서 도구로만 사용.
