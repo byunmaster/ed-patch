@@ -16,6 +16,7 @@ PY="$ROOT/.venv/bin/python"
 fail=0
 for t in \
   "$ROOT/scripts/tests/test_devices.py" \
+  "$ROOT/shared/glossary/tests/test_glossary.py" \
   "$ROOT/shared/text/tests/test_krwrap.py" \
   "$ROOT/shared/text/tests/test_josa.py" \
   "$ROOT/games/ps1-ed1+2/tools/tests/test_pipeline.py"
