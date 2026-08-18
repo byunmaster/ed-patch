@@ -210,6 +210,11 @@ def scan_canon(verbose=False):
         print("  ⏭ 정발 코퍼스가 없어 건너뜀")
         return 0
     flat = {re.sub(r"\s+", "", s) for s in lines}
+    # ⚠ **반대 방향도 본다.** 정발 엔트리는 문장 끝에 공백이 없는 자리가 많아(`일이야.자네가`)
+    # `_sentences` 가 못 가르고 **한 줄로 뭉친다** — 그러면 우리 `t` 가 그 줄보다 **짧아서**
+    # 전체 일치로는 영영 안 걸린다. 우리 문안이 정발 엔트리의 **일부**인 자리도 유출이다
+    # (실측 2026-08-18: 그렇게 26건이 새고 있었다).
+    joined = "".join(sorted(flat))
     hits = collections.Counter()
     rows = []
     for path in sorted(_glob.glob(os.path.join(ROOT, "script", "*SCN*.json"))):
@@ -218,7 +223,8 @@ def scan_canon(verbose=False):
             t = (v.get("t") or "").strip()
             if not t or not re.search(r"[가-힣]{2,}", t):
                 continue
-            if re.sub(r"\s+", "", t) in flat:
+            ft = re.sub(r"\s+", "", t)
+            if ft in flat or (len(ft) >= 20 and ft in joined):
                 hits[scn] += 1
                 rows.append((scn, eid, t))
     n = sum(hits.values())
