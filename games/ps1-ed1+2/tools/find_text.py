@@ -81,7 +81,7 @@ def corpus():
 
 def siblings(table):
     """같은 방의 시점 사본 표들 — 정발 파일명 규약상 **접두 4글자가 같으면 같은 방**이다
-    (`T_04x`=네리아 · `C_00x`=루디아 성). `segment_copy.table_pool` 이 쓰는 규칙과 같다."""
+    (`T_04x`=네리아 · `C_00x`=루디아 성). 배정 시대의 `segment_copy` 도 같은 규칙을 썼다."""
     stem = table.split("/", 1)[1] if "/" in table else table
     pre = stem[:4]
     return sorted({t for t, _e in corpus() if t.split("/", 1)[1].startswith(pre)})
