@@ -171,6 +171,14 @@ def scan_similar(threshold=0.90, report=0.80):
     # 자리를 콕 집어 적는다(규칙으로 넓히면 진짜 문장이 빠져나간다).
     WORDLIST_OK = {("ED2SCN2", "300")}
 
+    # 🔴 **우연 수렴은 침해가 아니다.** 정발을 한 번도 안 보고 쓴 문안이 정발과 같아질 수
+    #    있다 — 원문이 평범하면 자연스러운 한국어가 한 자리로 모인다. 여기서 「다르게」 쓰면
+    #    **더 나쁜 한국어**가 되고, 그건 오늘 걷어낸 바로 그 함정이다(devlog 2026-08-18).
+    #    그래서 다시 쓰지 않고 **자리를 콕 집어 예외**로 둔다(규칙으로 넓히면 진짜가 샌다).
+    #    ⚠ 등록 조건: ① 정발을 안 보고 쓴 것이 확실하고 ② 원문이 평범해 대안이 부자연스럽다.
+    # 목록은 하나다 — 갈라 두면 한쪽에만 등록돼 다른 검사에서 샌다(2026-08-18 실측)
+    CONVERGED_OK = CANON_CONVERGED_OK
+
     rows = []
     for path in sorted(_glob.glob(os.path.join(ROOT, "script", "ED*SCN*.json"))):
         with open(path, encoding="utf-8") as f:
@@ -182,7 +190,7 @@ def scan_similar(threshold=0.90, report=0.80):
                 for cand in grams.get(t[i : i + 20], ()):
                     best = max(best, difflib.SequenceMatcher(None, t, cand).ratio())
             scn = os.path.basename(path)[:-5]
-            if best >= report and (scn, eid) not in WORDLIST_OK:
+            if best >= report and (scn, eid) not in WORDLIST_OK | CONVERGED_OK:
                 rows.append((best, scn, eid))
     rows.sort(reverse=True)
     over = [r for r in rows if r[0] >= threshold]
@@ -207,6 +215,58 @@ def scan_similar(threshold=0.90, report=0.80):
     elif ed1 < ED1_SIMILAR_BASELINE:
         print(f"  ⬇ ED1 기준선을 내릴 수 있다: {ED1_SIMILAR_BASELINE} → {ed1}")
     return ed2 + max(0, ed1 - ED1_SIMILAR_BASELINE)
+
+
+# 🔴 **우연 수렴 예외** — 정발을 안 보고 썼는데 같아진 자리. 상점·여관 인사 같은 상투 문구는
+#    창작성이 낮아 자연스러운 한국어가 한 자리로 모인다(방침 08-04). 다르게 쓰면 **더 나쁜
+#    한국어**가 되므로 다시 쓰지 않고 자리를 콕 집어 둔다. ⚠ 등록 조건은 둘 — ① 정발을 안 보고
+#    쓴 것이 확실하고 ② 원문이 상투적이라 대안이 어색하다. 스토리 대사는 여기 오지 않는다.
+CANON_CONVERGED_OK = {
+    ("ED1SCN4", "293"),  # `いらっしゃいませ。ここは 武器と防具の 店ですが` — 상점 인사
+    # 아래는 **길 안내·설명 평서문**이다. 원문이 평범해 한국어가 한 가지로 수렴한다
+    # (`ここから西へ行った所に…町がある` → 「여기서 서쪽으로 가면 …마을이 있습니다」).
+    ("ED1SCN2", "143"),
+    ("ED1SCN2", "439"),
+    ("ED1SCN2", "488"),  # 439 의 사본
+    ("ED1SCN2", "983"),
+    ("ED1SCN3", "26"),
+    ("ED1SCN3", "76"),  # 26 의 사본
+    ("ED1SCN3", "705"),
+    # 상점 인사 사본 · 자기소개 — 「저는 파렌 왕국의 세리오스 왕자입니다」는 달리 쓸 길이 없다
+    ("ED1SCN2", "669"),
+    ("ED1SCN2", "972"),
+    ("ED1SCN2", "976"),
+    ("ED1SCN3", "49"),
+    ("ED1SCN3", "99"),
+    ("ED1SCN3", "199"),
+    ("ED1SCN3", "198"),  # 199 와 같은 원문의 사본(같은 원문 = 같은 문안)
+    # SCN5 무기점 인사 — SCN4 293 과 같은 원문의 사본(같은 원문 = 같은 문안)
+    ("ED1SCN5", "77"),
+    ("ED1SCN5", "311"),
+    ("ED1SCN5", "362"),
+    ("ED1SCN4", "319"),  # `やあ、あんたたちか。…卵を生んだんだぜ` — 인사말 + 평서문
+    ("ED1SCN4", "552"),  # `シンシアに会って私のことを伝えてください` — 어순까지 강제된다
+    ("ED1SCN2", "85"),  # `そういえば あんたたちもファーレーンの人だったな`
+    ("ED1SCN2", "271"),  # `す、すみません。ローが来ませんでしたか` — 더듬는 사과 + 질문
+}
+
+
+def _converged_texts():
+    """`CANON_CONVERGED_OK` 로 등록된 블록의 **우리 문안**(공백 제거)."""
+    import json
+
+    from common import ROOT
+
+    out = set()
+    for scn, eid in CANON_CONVERGED_OK:
+        p = os.path.join(ROOT, "script", f"{scn}.json")
+        if not os.path.exists(p):
+            continue
+        with open(p, encoding="utf-8") as f:
+            v = json.load(f).get(eid) or {}
+        if v.get("t"):
+            out.add(re.sub(r"\s+", "", v["t"]))
+    return out
 
 
 def scan_canon(verbose=False):
@@ -258,6 +318,8 @@ def scan_canon(verbose=False):
             if not t or not re.search(r"[가-힣]{2,}", t):
                 continue
             ft = re.sub(r"\s+", "", t)
+            if (scn, eid) in CANON_CONVERGED_OK:
+                continue
             if ft in flat or (len(ft) >= 20 and ft in joined):
                 hits[scn] += 1
                 rows.append((scn, eid, t))
@@ -309,6 +371,13 @@ def scan_repo(verbose=False):
             # 대부분이었다). 저작권은 표현이 문제지 공백이 문제가 아니다.
             flat = re.sub(r"\s+", "", data)
             hit = [s for s in lines if re.sub(r"\s+", "", s) in flat]
+            # 우연 수렴으로 등록된 자리는 뺀다. ⚠ 문자열을 코드에 박지 않고 **정본에서 읽어
+            # 온다** — 박으면 그게 곧 「문안이 코드에 남는 것」이라 체계가 무너진다.
+            # ⚠ **포함 관계로 본다** — 예외는 블록 전체 문안으로 등록되는데 여기서 걸리는 건
+            #   그 안의 **문장 조각**이다(코퍼스가 문장 단위로도 색인된다). 같은지만 보면
+            #   등록해도 계속 운다(2026-08-18 실측).
+            ok = _converged_texts()
+            hit = [h for h in hit if not any(re.sub(r"\s+", "", h) in t for t in ok)]
             if hit:
                 rel = os.path.relpath(path, root)
                 # 🔴 EXE 시스템 문구(`textmap/`)는 **강제 번역**이라 우연 일치가 정상이다 —

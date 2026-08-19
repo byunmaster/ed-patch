@@ -13,9 +13,13 @@
 
 - **대사** — 원문에 감시 낱말이 있는데 우리 문안이 **정본이 아닌 표기**를 쓰면 보고.
 - **UI** — 시스템 라벨에 **정본이 아닌 표기**가 있으면 보고(위 사고의 반대 방향).
-- **ED2 정발**(참고) — 같은 물건을 ED2 가 뭐라 부르는지 센다. **한 디스크에 두 편이 담기고
-  플레이어는 이어서 한다** — 편마다 이름이 달라지면 그게 결함이다([policy.md] 표기 방침).
-  ⚠ 코퍼스는 `work/` 라 없을 수 있다. 없으면 이 축만 건너뛴다.
+- **편 간 일관성**(참고) — **우리** ED1 문안과 **우리** ED2 문안이 같은 말을 쓰는지 센다.
+  **한 디스크에 두 편이 담기고 플레이어는 이어서 한다** — 편마다 이름이 달라지면 그게
+  결함이다([policy.md] 표기 방침).
+  ⚠ **2026-08-19 에 대상을 갈아탔다.** 그전엔 **ED2 정발 코퍼스**를 셌다 — 「정발이 뭐라
+  부르나」를 참고축으로 둔 것인데, 자체 번역으로 바뀐 뒤엔 **답이 필요한 질문이 아니다**
+  (우리 표기를 정발 빈도에 맞출 이유가 없다). 지금은 우리 두 편을 서로 대조한다 — 같은 노력으로
+  실제로 고칠 수 있는 것을 보여 준다.
 
 ⚠ **게이트다** — 표에 든 것은 전부 **유저가 확정한 결정**이라 어긋나면 고칠 자리다.
 새 용어를 넣을 때는 근거(원문 낱말 · 결정 날짜)를 함께 적는다.
@@ -24,7 +28,6 @@
   python3 tools/check_terms.py -v       # 어긋난 자리마다
 """
 
-import collections
 import glob
 import json
 import os
@@ -37,7 +40,7 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 import common
 import reinsert_kr_pilot as R
 from check_align_fit import jp_text
-from common import OUT_DIR
+from common import ROOT
 from patch_sys_ui import SCN_FILES
 
 # 원문 낱말 → (정본 표기, 갈리면 안 되는 다른 표기들, 근거)
@@ -169,40 +172,68 @@ def scan_ui(verbose=False):
     return len(hits)
 
 
-def scan_ed2():
-    """ED2 정발이 같은 것을 뭐라 부르는지 — 참고축(게이트 아님)."""
-    root = os.path.join(OUT_DIR, "dos_kr", "ED2")
-    files = sorted(glob.glob(os.path.join(root, "*.json")))
-    if not files:
-        print("  – ED2 정발 코퍼스가 없다(work/ 라 머신마다 다르다) — 이 축은 건너뛴다")
-        return
+def _ours_by_game():
+    """{게임: [문안]} — 우리 정본 전량. 원천이 둘이다(대사 + textmap)."""
+    out = {"ED1": [], "ED2": []}
+    for p in sorted(glob.glob(os.path.join(ROOT, "script", "ED*SCN*.json"))):
+        game = os.path.basename(p)[:3]
+        with open(p, encoding="utf-8") as f:
+            for v in json.load(f).values():
+                t = (v or {}).get("t")
+                if isinstance(t, str) and t:
+                    out[game].append(t)
+    for p in sorted(glob.glob(os.path.join(ROOT, "textmap", "*.json"))):
+        game = "ED2" if os.path.basename(p)[:-5].endswith("_ed2") else "ED1"
+        with open(p, encoding="utf-8") as f:
+            stack = [json.load(f)]
+        while stack:
+            o = stack.pop()
+            if isinstance(o, dict):
+                t = o.get("ours")
+                if isinstance(t, str) and t:
+                    out[game].append(t)
+                stack.extend(o.values())
+            elif isinstance(o, list):
+                stack.extend(o)
+    return out
+
+
+def scan_between_games():
+    """**우리 ED1 과 우리 ED2 가 같은 말을 쓰는가** — 참고축(게이트 아님).
+
+    ⚠ 게이트가 아닌 이유: 한쪽 편에만 나오는 낱말이 많아(`竜の祭` 는 ED1 전용) 0 을 「갈림」
+    으로 읽으면 오탐이 쏟아진다. **양쪽에 다 나오면서 갈린 자리**만 사람이 본다.
+    """
     # ⚠ **한 글자 낱말은 세지 않는다.** 부분일치라 `본` 이 `본다`·`본인` 에 죄다 걸린다
-    #   (실측: `型` 을 세니 ED2 에서 본 30 · 틀 58 이 나왔는데 **둘 다 이 뜻으로는 0회**였다).
-    #   두 글자 이상만 봐도 갈림은 대부분 잡힌다.
-    words = {w for canon, bad, _ in TERMS.values() for w in (canon, *bad) if len(w) > 1}
-    cnt = collections.Counter()
-    for p in files:
-        doc = json.load(open(p, encoding="utf-8"))
-        rows = doc.get("entries", doc) if isinstance(doc, dict) else doc
-        for e in rows:
-            t = e.get("text", "") if isinstance(e, dict) else str(e)
-            for w in words:
-                cnt[w] += len(re.findall(re.escape(w), t))
-    print(f"  ℹ ED2 정발({len(files)}파일)에서 세어 본 낱말 — 참고축(게이트 아님):")
+    #   (실측: `型` 을 세니 본 30 · 틀 58 이 나왔는데 **둘 다 이 뜻으로는 0회**였다).
+    per = _ours_by_game()
+    print(f"  ℹ 편 간 표기 대조 (우리 문안 ED1 {len(per['ED1'])}줄 · ED2 {len(per['ED2'])}줄):")
+    split = 0
     for term, (canon, bad, _why) in TERMS.items():
         cand = [w for w in (canon, *bad) if len(w) > 1]
         if not cand:
             print(f"      – [{term}] 한 글자라 부분일치 잡음이 커서 안 센다")
             continue
-        row = " · ".join(f"{w} {cnt[w]}" for w in cand)
-        others = [cnt[b] for b in bad if len(b) > 1] or [0]
-        mark = "✅" if len(canon) > 1 and cnt[canon] >= max(others) else "⚠"
-        print(f"      {mark} [{term}] {row}")
+        row = []
+        forms = {}
+        for g in ("ED1", "ED2"):
+            blob = "\n".join(per[g])
+            forms[g] = {w: blob.count(w) for w in cand}
+            row.append(f"{g} " + "/".join(f"{w} {forms[g][w]}" for w in cand))
+        # 양쪽에 다 나오는데 **우세한 표기가 다르면** 갈린 것이다
+        top = {g: max(forms[g], key=lambda w, g=g: forms[g][w]) for g in ("ED1", "ED2")}
+        both = all(sum(forms[g].values()) for g in ("ED1", "ED2"))
+        mark = "⚠" if both and top["ED1"] != top["ED2"] else "✅"
+        if mark == "⚠":
+            split += 1
+        print(f"      {mark} [{term}] " + " · ".join(row))
+    if split:
+        print(f"      ⚠ 편마다 우세 표기가 다른 낱말 {split} — 정본을 정해 양쪽을 맞춘다")
 
 
 if __name__ == "__main__":
     v = "-v" in sys.argv
     bad = scan_dialog(v) + scan_ui(v)
-    scan_ed2()
+    scan_between_games()
     print(f"\n{'✅ 용어가 한 표기다' if not bad else f'⚠ 용어가 갈린 곳 {bad}'}")
     sys.exit(1 if bad else 0)

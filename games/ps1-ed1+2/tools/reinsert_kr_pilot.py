@@ -1295,8 +1295,16 @@ LEAD_NL_DROP = set()
 # 어긋남 / -32B 락), `%c`·`%s`·`%d` 계약은 세 블록 다 원본과 일치했다 — 즉 구조가 아니라
 # **위치**가 계약인 구간이다. 340~ 의 2B 값 테이블(캐릭터 이동 스크립트가 절대주소로 읽는
 # 것 — rebuild 주석의 0x757E)은 이미 핀 고정돼 있으므로 범인은 구간 **안**이다.
+# 「저자 `{p}` 경계 → 창」이 안 맞아 재조판으로 넘어간 블록 (build_block 이 채운다).
+# ⚠ 게이트가 아니라 **계측**이다 — 인라인 이름창 블록엔 정당한 불일치가 있다.
+WINDOW_REFIT = []
 FIXED_RUNS = {
-    "ED1SCN1": frozenset({336, 337, 338}),
+    # jp28 왕가의 검·갑옷·방패 장비 이벤트(오프닝 탈출) — **번역해서 짧아지자 깨졌다**
+    # (유저 QA 2026-08-19). 창 14·개행 5·`%c` 배열이 JP 와 **완전히 일치**하는데도 첫 창만
+    # 뜨고 다음 두 창은 효과음만 나고 안 나온다. 정본으로 올리기 전(=일본어 그대로,
+    # 255B)엔 셋 다 나왔고, 우리 문안은 233B 로 **22B 짧다** — 구조가 아니라 길이(위치)다.
+    # 아래 336~338·ED1SCN2 470 과 같은 부류(our-findings 「구조가 다 맞는데 깨지면 위치」).
+    "ED1SCN1": frozenset({28, 336, 337, 338}),
     # 마스쿤 폴스 보고 이벤트(jp464~) — 이 구간이 앞으로 당겨지면 **스크립트가 쓰레기 주소로
     # 점프한다**(유저 QA 소프트락 2026-08-09). emucap 로 재현해 잡았다: ExcCode 4(AdEL) ·
     # EPC=BadVAddr=0x9420C50A(정렬도 안 맞음) · BIOS A0(0x40) SystemError 루프.
@@ -1978,11 +1986,28 @@ def build_block(speaker, pages, target=None, header=True, hdr_fmt=False, inline_
         body_lines -= 1  # 인라인 화자 줄 확보(해당 블록 전체에 보수적으로 적용)
     has_inline = any(spk for spk, _ in pages)
     if target and not has_inline:
-        text = "\n".join(pg for _, pg in pages)  # {p} 경계 → 개행(정발 호흡 힌트)
-        parts = [
-            encode_ext("\n".join(lines))
-            for lines in wrap_page(text, target=target, max_lines=body_lines)
-        ]
+        # ⭐ **저자가 찍은 `{p}` 경계가 이미 창 수 계약을 만족하면 그걸 그대로 쓴다**
+        # (2026-08-19). 아래 재조판은 정발 조각을 PS1 창에 끼워 맞추던 시절의 것이라
+        # `{p}` 를 개행 힌트로 강등하는데, **자체 번역에서는 번역이가 JP 창에 맞춰 `{p}`
+        # 를 정확히 찍어 준다** — 그걸 버리고 탐욕적으로 다시 채우면 내용이 앞 창으로
+        # 밀린다. 실측(유저 QA): ED1SCN1 jp26 라이아스 잔소리에서 침묵 창의 점선이 앞
+        # 창 꼬리로 새어 **「......」가 두 번** 보였다. 창 수는 여기서도 target 과 같으니
+        # 소프트락·꼬리 잘림 위험은 그대로 0이다.
+        authored = [ln for _, pg in pages for ln in wrap_page(pg, max_lines=body_lines)]
+        if len(authored) != target:
+            # 🔴 **저자가 찍은 `{p}` 가 창에 안 들어간다** — 아래 재조판이 내용을 앞 창으로
+            # 민다. 유저 QA 로만 잡혔던 사고라(ED1SCN1 jp26: 침묵 창의 점선이 앞 창 꼬리로
+            # 새어 「......」가 두 번 보였다) 여기서 센다. 대개 **세그먼트 하나가 한 창을
+            # 넘친 것**이니 그 문안을 줄이면 풀린다.
+            WINDOW_REFIT.append((target, len(authored)))
+        if len(authored) == target:
+            parts = [encode_ext("\n".join(lines)) for lines in authored]
+        else:
+            text = "\n".join(pg for _, pg in pages)  # {p} 경계 → 개행(정발 호흡 힌트)
+            parts = [
+                encode_ext("\n".join(lines))
+                for lines in wrap_page(text, target=target, max_lines=body_lines)
+            ]
     else:
         parts = []
         for inline_spk, page in pages:
@@ -2788,12 +2813,22 @@ def load_translations(align_name, scn_name):
             for e, v in sorted(pinned.items())
         ]
         print(f"  배정 정본 {len(pairs)}건 적용 (align_map.json — 정렬 재계산 안 씀)")
-    else:
+    elif os.path.exists(align_path):
         # 정본이 없는 씬은 정렬 결과 + 확정 락 되씌우기(과도기 경로).
         align = json.load(open(align_path, encoding="utf-8"))
         pairs, n_relock = apply_lock_src(align["pairs"], scn_name)
         if n_relock:
             print(f"  확정 락 배정 복원 {n_relock}건 (정렬 재계산이 짝을 옮긴 것을 되돌림)")
+    else:
+        # 🔴 **정렬 파일이 없어도 죽지 않는다**(2026-08-19). `work/derived/align/*_SCN*.json` 은
+        # `build.py` 가 안 만든다(체인은 `--speakers-only` 만 돈다) — 그래서 `rm -rf work/` 가
+        # 빌드를 깼고 `check_determinism` 도 못 돌았다. 게다가 그 파일은 **다시 만들면 내용이
+        # 달라지는 판단물**이라(LaBSE 의미정렬 산출물) 빌드 입력으로 두는 것 자체가 제1 원칙
+        # 위반이었다. 지금은 화면 블록의 문안이 전부 **번역 정본**(`script/`)에서 오므로
+        # 없는 채로 도는 것이 정상이다.
+        # ⚠ 조용히 비지 않는다 — 정본이 안 덮은 씬이면 원문이 그대로 남고, 그건 빌드의
+        #   화면 게이트(`check_screen_gates` 「화면에 일본어가 남았다」)가 실패로 잡는다.
+        pairs = []
     for p in pairs:
         if not (p.get("_locked") or accept_pair(p)):
             continue
@@ -3736,8 +3771,10 @@ def _build_scene(name, lba, size, identity, fixed):
     #  번역된 것처럼 보였다, 2026-08-02.) 요약만으론 어느 블록인지 알 수 없어 파일로 남긴다.
     with open(os.path.join(OUT_DIR, f"excluded_{name}.json"), "w", encoding="utf-8") as f:
         json.dump({str(k): v for k, v in sorted(excluded.items())}, f, ensure_ascii=False, indent=1)
+    refit = f", ⚠창밀림 {len(WINDOW_REFIT)}" if WINDOW_REFIT else ""
+    WINDOW_REFIT.clear()
     stats = (
-        f"{name}: 재삽입 {n_tr}블록 (후보 {len(translations)}, 제외 {len(excluded)}"
+        f"{name}: 재삽입 {n_tr}블록 (후보 {len(translations)}, 제외 {len(excluded)}{refit}"
         f"{sorted(set(excluded.values()))}{parse_skip}{ov}{donor_s}, 포인터 {patched}건, "
         f"사용 0x{used:X}/0x{text_end:X})"
     )

@@ -849,5 +849,32 @@ def test_similarity_gate_covers_ed1_with_a_ratchet():
     assert isinstance(F.ED1_SIMILAR_BASELINE, int)
 
 
+def test_align_file_is_optional_so_work_can_be_wiped():
+    """🔴 빌드는 `work/derived/align/*_SCN*.json` 없이도 돌아야 한다.
+
+    실측(2026-08-19): ED2 를 재삽입 체인에 올린 뒤로 **`rm -rf work/` 가 빌드를 깼다** —
+    `build.py` 는 `align_jp_kr.py --speakers-only` 만 돌려 화자맵만 만드는데, 배정 정본
+    (`align_map.json`)이 빈 씬은 그 파일을 열려다 `FileNotFoundError` 로 죽었다.
+    `check_determinism.py` 도 같은 이유로 못 돌았다 — **결정성 검사가 결정성 구멍에
+    막혀 있었다.**
+
+    더 나쁜 쪽은 그 파일이 **다시 만들면 내용이 달라지는 판단물**이라는 것이다(LaBSE
+    의미정렬 산출물). 빌드 입력으로 두는 한 「집 빌드 ≠ 회사 빌드」가 열려 있다 —
+    레포 제1 원칙. 지금은 화면 블록 문안이 전부 번역 정본(`script/`)에서 오므로
+    없는 채로 도는 것이 정상이고, 그래서 **없으면 빈 배정으로 진행**한다.
+
+    ⚠ 조용히 비는 게 아니다 — 정본이 안 덮은 씬이면 원문이 남고, 빌드의 화면 게이트
+    (`build.check_screen_gates`)가 「화면에 일본어가 남았다」로 실패시킨다.
+    """
+    import inspect
+
+    src = inspect.getsource(R.load_translations)
+    assert "os.path.exists(align_path)" in src, (
+        "정렬 파일을 무조건 연다 — `rm -rf work/` 가 다시 빌드를 깬다"
+    )
+    _, _, tail = src.partition("os.path.exists(align_path)")
+    assert "pairs = []" in tail, "파일이 없을 때의 폴백(빈 배정)이 없다"
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

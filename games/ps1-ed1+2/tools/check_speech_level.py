@@ -92,8 +92,21 @@ def mixed_in_block():
     return out
 
 
-def vs_original():
-    """원문은 경어체인데 우리는 해라체뿐인 자리."""
+def _by_jp(hon_side):
+    """원문 어투와 우리 어투가 **반대**인 자리.
+
+    `hon_side=True`  — 원문 경어체인데 우리는 해라체뿐(높여야 할 자리를 낮췄다).
+    `hon_side=False` — 원문 반말·거친 말투인데 우리는 존대뿐(**낮춰야 할 자리를 높였다**).
+
+    ⚠ 뒤쪽 축은 2026-08-19 에 붙였다. 자체 번역을 대량으로 쓰면 **모르는 자리를 일단
+    높여 쓰는 쪽으로 쏠린다** — NPC 의 거친 말투(`だぜ`·`やがる`·`きさま`)가 통째로
+    공손해지면 캐릭터가 뭉개진다. 앞쪽 축만으로는 그 방향이 안 보였다.
+
+    ⚠ **해요체와 합쇼체를 못 가른다** — `HON` 이 둘을 한 묶음으로 본다. 마을 사람이
+    `~가세요`(친근한 존대)로 말해도 원문이 `だい` 면 여기 뜬다. 그래서 이 축은 목록이지
+    게이트가 아니다 — 뜬 자리에서 볼 것은 「존대냐」가 아니라 **「격식이 원문보다
+    높은가」**다.
+    """
     out = []
     for scn, d in _scripts():
         jp_path = os.path.join(OUT_DIR, "scn_jp", f"{scn}.json")
@@ -110,24 +123,40 @@ def vs_original():
             if not r:
                 continue
             jp = r.decode("cp932", "ignore")
-            if not JP_HON.search(jp) or JP_PLAIN.search(jp):
+            if hon_side:
+                if not JP_HON.search(jp) or JP_PLAIN.search(jp):
+                    continue
+            elif not JP_PLAIN.search(jp) or JP_HON.search(jp):
                 continue
             h, p = registers(v.get("t") or "")
-            if p >= 2 and h == 0:
+            hit = (p >= 2 and h == 0) if hon_side else (h >= 2 and p == 0)
+            if hit:
                 out.append((scn, eid, v.get("s") or "", (v.get("t") or "").replace("\n", " ")[:70]))
     return out
 
 
+def vs_original():
+    return _by_jp(True)
+
+
+def vs_original_plain():
+    return _by_jp(False)
+
+
 def main():
     verbose = "-v" in sys.argv
-    a, b = mixed_in_block(), vs_original()
-    for label, rows in (("한 창 안에서 존대↔해라체 혼용", a), ("원문 경어 → 우리 해라체", b)):
+    a, b, c2 = mixed_in_block(), vs_original(), vs_original_plain()
+    for label, rows in (
+        ("한 창 안에서 존대↔해라체 혼용", a),
+        ("원문 경어 → 우리 해라체", b),
+        ("원문 반말 → 우리 존대", c2),
+    ):
         print(f"  {'✅' if not rows else '⚠'} {label}: {len(rows)}곳")
         if rows and verbose:
             for scn, eid, spk, t in rows:
                 print(f"      {scn} jp{eid} [{spk}] {t!r}")
-    if a or b:
-        c = collections.Counter(r[0] for r in a + b)
+    if a or b or c2:
+        c = collections.Counter(r[0] for r in a + b + c2)
         print("      씬별:", dict(sorted(c.items())))
     print(
         "  ⚠ 게이트가 아니다 — 적에겐 반말·왕에겐 존대처럼 **한 창에 두 상대**가 섞이는"
