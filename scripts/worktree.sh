@@ -87,16 +87,20 @@ if [ "${1:-}" = "--shared" ]; then
   # 🔴 **허브(main 트리)도 파생물을 봐야 한다** — 회귀 테스트 하나가 JP 덤프를 읽는다.
 #    배치를 뒤집어 본 트리가 main 이 되면(유저 확정 2026-08-18) 그 트리엔 `work/` 가 없다.
 #    게임 트리 것을 **링크로** 되비춘다(쓰는 쪽은 게임 트리 하나뿐이라 충돌이 없다).
+# 🔴 **`build` 도 같이 잇는다**(2026-08-19). `scripts/pull-build.sh` 는 **허브 경로**를 보는데
+#    빌드는 워크트리 안에 생긴다 — 유저가 QA 이미지를 받으려다 「원격에 꼬리표가 없다」로
+#    막혔고, 허브에 남아 있던 **8/18 낡은 이미지**를 대신 받을 뻔했다(이 레포의 1급 사고).
 HUB="$ROOT/games/$GAME/work"
-if [ -d "$WT/games/$GAME/work/derived" ]; then
+for sub in derived build; do
+  [ -d "$WT/games/$GAME/work/$sub" ] || continue
   mkdir -p "$HUB"
-  if [ -L "$HUB/derived" ] || [ ! -e "$HUB/derived" ]; then
-    ln -sfn "$WT/games/$GAME/work/derived" "$HUB/derived"
-    echo "  (허브) games/$GAME/work/derived → 워크트리 것을 본다"
+  if [ -L "$HUB/$sub" ] || [ ! -e "$HUB/$sub" ]; then
+    ln -sfn "$WT/games/$GAME/work/$sub" "$HUB/$sub"
+    echo "  (허브) games/$GAME/work/$sub → 워크트리 것을 본다"
   else
-    echo "  ⚠ 허브에 실물 games/$GAME/work/derived 가 있다 — 링크하지 않았다"
+    echo "  ⚠ 허브에 실물 games/$GAME/work/$sub 가 있다 — 링크하지 않았다(지우고 다시 돌려라)"
   fi
-fi
+done
 
 cat <<EOF
 

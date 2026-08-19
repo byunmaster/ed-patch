@@ -36,10 +36,14 @@
 
 ```
 games/<게임>/       게임별 코드베이스 — tools/ docs/ patches/ textmap/ assets/ + work/
+                    check.sh = **그 게임의 커밋 전 게이트**(scripts/check.sh 가 부른다)
                     typeset_fingerprint.json = 그 게임의 조판 지문(값은 게임 것)
   ps1-ed1+2/        [kr]  PS1 영웅전설 1+2 한글패치
   dos-ed2/          [fix] 만트라 DOS 영웅전설 II 복원
-shared/             플랫폼 공용 라이브러리 (SJIS 스캔, ISO9660, 폰트 변환, 한글 조판 krwrap)
+shared/             플랫폼 공용 라이브러리 — `text/`(한글 조판 krwrap · 조사 · KSC 스캔 ·
+                    맞춤법) · `glossary/`(고유명사 정본) · `fonts/`(Galmuri BDF)
+                    ⚠ ISO9660·SJIS 스캔은 **여기 없다** — 게임의 `tools/common.py` 몫이다
+                    (플랫폼마다 섹터 규격이 달라 아직 둘째 소비자가 없다)
 scripts/            진입점 — check.sh(커밋 전) · test.sh · build 진입 · dosbox.sh · patcher.sh
   worktree.sh       └ 게임별 워크트리 (originals 지역 링크까지 대신한다)
   typeset_fingerprint.py  └ 조판 지문 — 공용이 다른 게임의 줄바꿈을 흔들면 운다
@@ -83,16 +87,23 @@ games/<게임>/work/
 ```bash
 python3 games/ps1-ed1+2/tools/build.py     # [kr] 전 트랙 체인 → work/build/Eiyuu Densetsu (KR).bin/.cue
 sh scripts/patcher.sh serve                # [fix] 웹 패처를 로컬에서 띄워 확인
-sh scripts/check.sh                        # ⭐ **커밋 전 이것 하나** — 빌드 + 화면 검사 (28초)
+sh scripts/check.sh                        # ⭐ **커밋 전 이것 하나** — 전역 검사 + 게임 게이트 위임
+sh scripts/check.sh --all                  #    게이트가 있는 게임 전부
 sh scripts/test.sh                         # 단위·회귀 테스트 (원본 없이 돈다)
 sh scripts/check-updates.sh                # 외부 의존물(emucap·스킬·템플릿) 새 버전 확인
 sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조 · DOS 패치 검증)
 sh scripts/worktree.sh <게임>              # 게임별 워크트리 (originals 링크까지)
 ```
 
-- **커밋 전에는 `sh scripts/check.sh`.** 빌드만으로는 절반이다 — 빌드는 구조(무변경 구간·
-  창 수·인자·확정 락)를 보고, **조판·이름창·표기는 못 본다.** 둘을 갈라 두면 한쪽만 돌리게
-  되므로 진입점을 하나로 뒀다.
+- **커밋 전에는 `sh scripts/check.sh`.** 이건 **얇은 진입점**이다 — 레포 전역 검사(회귀
+  테스트 · 브랜치 범위)를 돌리고 **게임 게이트(`games/<게임>/check.sh`)에 위임**한다.
+  어느 게임인지는 브랜치(`game/<타이틀>`)에서 유도하고 인자로 덮어쓴다(`--all` 은 전부).
+  ⚠ **게임 얘기를 이 파일에 쓰지 않는다** — 08-19 까지 78줄 중 3줄만 공용이고 나머지가
+  전부 ps1 전용이었다. 그 탓에 dos-ed2 는 게이트가 **아예 없었고**, ps1 브랜치에서 자기
+  검사기를 늘리려면 공용을 고쳐야 해서 못 늘렸다.
+- **게임 게이트에서 빌드만으로는 절반이다** — 빌드는 구조(무변경 구간 · 창 수 · 인자 ·
+  확정 락)를 보고 **조판·이름창·표기는 못 본다.** 둘을 갈라 두면 한쪽만 돌리게 되므로
+  게임 게이트가 둘을 묶는다.
   ⚠ 게이트는 **지금 고칠 수 있는 것**만 실패로 친다 — 아직 정본으로 안 옮긴 씬의 후보나
   옛 번역자의 의역은 「할 일」이지 「실패」가 아니다. 늘 빨간불이면 아무도 안 본다.
   ⚠ **조판은 락도 관측 대장도 안 본다** — `check.sh` 안의 **조판 지문**이 그 구멍을 메운다.

@@ -16,6 +16,7 @@
 ## 실행 · 검증
 
 ```bash
+sh scripts/check.sh                      # ⭐ **커밋 전 이것 하나** (게이트: games/dos-ed2/check.sh)
 sh scripts/dosbox.sh ed2                 # 사본(work/dosbox/ed2)을 만들어 실행
 sh scripts/dosbox.sh ed2 --refresh       # 사본을 버리고 원본에서 다시 (패치 초기화)
 sh scripts/dosbox.sh ed2 --debug         # DOSBox-X 디버거
@@ -25,6 +26,12 @@ python3 games/dos-ed2/tools/apply_patch.py \
     games/dos-ed2/patches/<spec>.json work/dosbox/ed2
 ```
 
+- **커밋 전에는 `sh scripts/check.sh`.** ⚠ 2026-08-19 까지 **이 트랙엔 게이트가 없었다** —
+  `scripts/check.sh` 가 사실상 ps1-ed1+2 전용이었다. 지금은 게임마다 `check.sh` 를 갖고
+  진입점이 위임한다. 여기 게이트가 보는 것은 둘이다:
+  - 🔴 **패치 스펙에 원본 바이트가 없나**(`tools/check_patches.py`). 이 JSON 은 웹 패처
+    HTML 에 **통째로 인라인돼 공개 배포된다** — 한 번 새면 원저작물 조각을 배포하는 셈이다.
+  - 웹 패처가 실제로 빌드되나 (스펙이 유효해도 인라인 단계에서 깨지는 자리가 있다)
 - **originals는 절대 건드리지 않는다.** 실험은 전부 `work/dosbox/ed2` 사본에.
 - 웹 패처 미리보기: `sh scripts/patcher.sh serve` (127.0.0.1 — `file://`로 열면
   `showDirectoryPicker`가 보안 컨텍스트를 요구해 동작하지 않는다).
