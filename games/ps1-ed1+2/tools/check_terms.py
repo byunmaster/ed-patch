@@ -198,6 +198,32 @@ def _ours_by_game():
     return out
 
 
+def scan_item_tables():
+    """**ED1·ED2 이름표가 같은 물건을 같은 말로 부르는가** — 게이트다.
+
+    🔴 아무도 안 보던 자리다(2026-08-19 실측). 이 파일의 다른 축은 **대사**만 보는데 아이템
+    이름은 `patch_items.NAMES`(ED1)·`patch_ed2_sys.NAMES_ED2`(ED2) 라는 **별개 표**에 있어서,
+    겹치는 셋이 **셋 다 다른 표기**였다(`幅広のつるぎ` 대형검/날 넓은 칼 · `くさりかたびら`
+    미늘 갑옷/쇠사슬옷 · `布の服` 헝겊 옷/천 옷).
+
+    ⚠ **대사에 한 번도 안 나와서 다른 게이트가 못 봤다** — 장비·상점 화면에는 나간다.
+    한 디스크에서 이어 하는 플레이어에겐 같은 장비가 편마다 다른 이름으로 보인다
+    (「고유명사는 ED1·ED2 가 한 표기」 — policy 2026-08-12).
+    """
+    from patch_ed2_sys import NAMES_ED2
+    from patch_items import MONSTERS, NAMES
+
+    bad = []
+    for tbl, what in ((NAMES, "아이템"), (MONSTERS, "몬스터")):
+        for k in sorted(set(tbl) & set(NAMES_ED2)):
+            if tbl[k] != NAMES_ED2[k]:
+                bad.append((what, k, tbl[k], NAMES_ED2[k]))
+    print(f"  {'✅' if not bad else '❌'} ED1·ED2 이름표가 한 표기다 (갈린 것 {len(bad)})")
+    for what, k, a, b in bad:
+        print(f"      {what} {k}  ED1={a!r}  ED2={b!r}")
+    return len(bad)
+
+
 def scan_between_games():
     """**우리 ED1 과 우리 ED2 가 같은 말을 쓰는가** — 참고축(게이트 아님).
 
@@ -233,7 +259,7 @@ def scan_between_games():
 
 if __name__ == "__main__":
     v = "-v" in sys.argv
-    bad = scan_dialog(v) + scan_ui(v)
+    bad = scan_dialog(v) + scan_ui(v) + scan_item_tables()
     scan_between_games()
     print(f"\n{'✅ 용어가 한 표기다' if not bad else f'⚠ 용어가 갈린 곳 {bad}'}")
     sys.exit(1 if bad else 0)

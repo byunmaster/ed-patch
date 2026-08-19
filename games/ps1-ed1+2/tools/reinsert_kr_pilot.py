@@ -1688,10 +1688,18 @@ def _tpl_name_only(seg):
         txt = payload[0][1].decode("cp932")
     except UnicodeDecodeError:
         return False
+    # 🔴 **조사로 끝나면 이름이 아니라 문장 조각이다**(2026-08-19). `宝箱の中には`(6자·부호
+    # 없음·가나만 아님)가 이름창으로 잡혀 **채움에서 빠지고 일본어가 그대로 나갔다**
+    # (ED2SCN12 jp153·155 실측 — 「宝箱の中には + 에릭서 + 가 들어 있었다.」). 이름은 조사로
+    # 안 끝나므로 이 한 줄이면 갈린다. ⚠ `の` 는 뺀다 — 이름 안에 흔하고(`王家の…`) 끝에
+    # 오는 이름이 실재할 수 있어 오탐이 더 비싸다.
+    if _TAIL_JOSA.search(txt):
+        return False
     return bool(txt) and len(txt) <= 8 and not _PUNCT_ANY.search(txt) and not _KANA_ONLY.match(txt)
 
 
 _PUNCT_ANY = re.compile(r"[。、！？!?…．，.,]")
+_TAIL_JOSA = re.compile(r"[はがをにへとでもや]$")
 
 
 _ITEM_KANA = None
@@ -1715,15 +1723,26 @@ def _tpl_literal_kr(jp_bytes):
     kr = _speaker_map().get(txt)
     if kr:
         return kr
+    # 🔴 **ED1·ED2 표를 둘 다 본다**(2026-08-19). `patch_items.NAMES` 만 보던 시절엔 ED2
+    # 전용 아이템이 리터럴 창에 박히면 **통째로 일본어로 남았다**(`キノコの王様` — ED2SCN10
+    # jp78·82 실측). 화면에 나가는데 어떤 게이트도 안 잡는 자리다(창 골격은 멀쩡하다).
+    # ⚠ 순서는 **ED1 이 이긴다** — 화자맵과 같은 관용이고, 겹치면 ED1 표기가 정본이다
+    # (「고유명사는 ED1·ED2 가 한 표기」).
     from patch_items import NAMES as _ITEM_NAMES
 
-    if txt in _ITEM_NAMES:
-        return _ITEM_NAMES[txt]
+    try:
+        from patch_ed2_sys import NAMES_ED2 as _ED2_NAMES
+    except (ImportError, AttributeError):
+        _ED2_NAMES = {}
+    for tbl in (_ITEM_NAMES, _ED2_NAMES):
+        if txt in tbl:
+            return tbl[txt]
     # ⚠ 같은 아이템을 히라가나로 쓴 자리가 있다(`黄金のかぎ` ↔ 표에는 `黄金のカギ`).
     # 양쪽 가나를 카타카나로 정규화해 한 번 더 본다.
     global _ITEM_KANA
     if _ITEM_KANA is None:
-        _ITEM_KANA = {_kata(k): v for k, v in _ITEM_NAMES.items()}
+        _ITEM_KANA = {_kata(k): v for k, v in _ED2_NAMES.items()}
+        _ITEM_KANA.update({_kata(k): v for k, v in _ITEM_NAMES.items()})
     return _ITEM_KANA.get(_kata(txt))
 
 
