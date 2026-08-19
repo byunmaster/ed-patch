@@ -29,7 +29,7 @@ echo "     ✅ 통과"
 SCN=$(ls "$G/script/" 2>/dev/null | sed -n 's/\(ED1SCN[0-9]*\)\.json/\1/p' | tr '\n' ' ')
 
 fail=0
-for t in check_tail_cut check_terms check_spellings check_forbidden check_proper_nouns check_battle_wrap; do
+for t in check_tail_cut check_terms check_spellings check_forbidden check_proper_nouns check_battle_wrap check_punct check_name_echo; do
   out=$("$PY" "$T/$t.py" 2>&1) || fail=1
   echo "$out" | tail -3 | sed 's/^/     /'
 done

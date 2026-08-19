@@ -184,6 +184,11 @@ NUM_SENT = "\x1b"
 # 박힌 아이템 주입(`%s は %c%s%c を見つけました。`)은 거기 안 걸린다 — 본문에서 직접
 # 내보내야 한다. 조사는 병기로 뒤에 우리가 적는다(훅이 받침 보고 해결).
 ITEM_SENT = "\x17"
+# 🔴 **꼴은 아이템(`%c%s%c`)인데 들어오는 값이 사람 이름**인 자리 — 폭만 다르다.
+# `ITEM_SLOTS`(4.5, 아이템명 중앙값)로 세면 파티 합류가 늘 한 줄을 잃는다(실측 2026-08-19:
+# `\x17이(가) 동료가 되었습니다.` = 15.0슬롯 → 꺾임. 이름 폭 3.0 이면 13.5 로 한 줄).
+# ⚠ 바이트는 `ITEM_SENT` 와 **똑같이** `%c%s%c` 를 낸다 — 구조 계약은 그대로다.
+NAME_INLINE = "\ue004"
 # %s 자리 폭 추정 — 조판 폭 계산용. 4.0(세리오스=최장)은 **훅 이전 시대의 보수적 값**이라
 # 짧은 이름에서 항상 불필요한 개행을 만들었다(파티 합류 "류난이 동료가 ⏎ 되었습니다."가
 # 정발에선 한 줄 — 유저 DOSBox 대조 07-29). 런타임 조사 훅이 세 경로 모두에서 병기를
@@ -216,7 +221,7 @@ def encode_ext(text):
             out += PS
         elif ch == NUM_SENT:  # 수치 주입 자리 → %d 방출
             out += PD
-        elif ch == ITEM_SENT:  # 아이템명 인라인 주입 자리 → %c%s%c 방출
+        elif ch in (ITEM_SENT, NAME_INLINE):  # 인라인 주입 자리 → %c%s%c 방출
             out += MC + PS + MC
         elif ch == " ":
             out.append(0x20)
@@ -964,6 +969,8 @@ def cell_w(ch):
         return 1.0  # %d = 보통 1~2자리(반각) ≈ 1슬롯
     if ch == NAME_SENT:
         return NAME_SLOTS  # %s(인물) — 평균 길이로 근사
+    if ch == NAME_INLINE:
+        return NAME_SLOTS  # 꼴은 아이템이나 값은 사람 이름이다(위 주석)
     if ch == ITEM_SENT:
         return ITEM_SLOTS  # %c%s%c(아이템) — 인물보다 길다(위 주석)
     if ch in (JOSA_NAME, JOSA_ITEM):
@@ -1286,6 +1293,8 @@ NL_WINS = {}
 # (동료 합류 5블록 중 jp912 만 선두 개행 — 유저 QA 2026-08-08). `%c`·`%s` 개수는 안 변하고
 # 개행 바이트 하나만 빠지므로 구조 계약은 그대로다.
 LEAD_NL_DROP = set()
+# 인라인 `%s` 가 **사람 이름**인 블록(`inline_name` 오버라이드) — 폭을 이름 기준으로 센다.
+INLINE_NAME = set()
 # 이동 금지 구간: {씬: {eid, …}} — 이 eid 가 든 자유 구간은 **블록별 원본 길이 고정**으로
 # 재배치한다(짧으면 00패딩, 넘치면 size 제외). 구간 안에 앵커·미참조 핀으로는 못 잡는
 # 절대참조가 있다는 뜻이다.
@@ -1765,7 +1774,9 @@ def _tpl_dots(raw_t):
     return encode_ext(kr) if kr else raw_t
 
 
-def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), drop_lead_nl=False):
+def build_from_template(
+    raw, speaker, pages, max_lines=None, fold=None, nl=(), drop_lead_nl=False, inline_name=False
+):
     """JP 골격을 그대로 두고 본문 창에 정발 문장을 채워 블록을 만든다.
 
     제어 토큰(%c/%s/%d)은 **바이트 그대로** 방출하므로 구조 충실도가 100%가 되고,
@@ -1834,7 +1845,9 @@ def build_from_template(raw, speaker, pages, max_lines=None, fold=None, nl=(), d
             return None
         prev = wins[k - 1][1]
         if any(t[0] == "s" for t in prev) and not any(t[0] == "t" for t in prev):
-            return ITEM_SENT  # ① %s 주입 창(인라인은 아이템명)
+            # ① `%s` 주입 창 — 기본은 아이템명이다. ⚠ 사람 이름인 자리는 폭이 달라
+            #    `inline_name` 오버라이드로 가른다(파티 합류 등, 위 `NAME_INLINE` 주석).
+            return NAME_INLINE if inline_name else ITEM_SENT
         # ② 리터럴 이름만 든 창(텍스트 1개뿐 + 개행 없음) — 이름창처럼 다음 창에 이어진다
         if len(prev) == 1 and prev[0][0] == "t":
             return _tpl_literal_kr(prev[0][1]) or ITEM_SENT
@@ -2438,6 +2451,7 @@ def build_candidate(raw, t, eid):
                     fold=FOLD_NAME.get(eid),
                     nl=NL_WINS.get(eid, ()),
                     drop_lead_nl=eid in LEAD_NL_DROP,
+                    inline_name=eid in INLINE_NAME,
                 )
                 from_tpl = True
                 if tails:
@@ -2850,6 +2864,7 @@ def load_translations(align_name, scn_name):
     NAME_PLATE.clear()
     NL_WINS.clear()
     LEAD_NL_DROP.clear()
+    INLINE_NAME.clear()
     # ⚠ 정렬 파일은 **배정 정본이 없을 때만** 읽는다. 정본이 있으면 LaBSE 파생물 없이도
     # 빌드가 돌아야 한다(새 머신에 torch 를 안 깔아도 되는 게 이 설계의 요점).
     align_path = os.path.join(OUT_DIR, "align", f"{align_name}.json")
@@ -3116,6 +3131,8 @@ def load_translations(align_name, scn_name):
             NL_WINS[int(jp_id_str)] = {int(i) for i in ov["nl_after"]}
         if ov.get("drop_lead_nl"):
             LEAD_NL_DROP.add(int(jp_id_str))
+        if ov.get("inline_name"):
+            INLINE_NAME.add(int(jp_id_str))
         if "fold_name" in ov:  # 이름창 접기 [[이름창 인덱스, 조사], …]
             FOLD_NAME[int(jp_id_str)] = {int(i): j for i, j in ov["fold_name"]}
         if "inject_pairs" in ov:  # 주입 %c쌍 좌표(사람이 콜사이트 인자로 확정) — 상단 주석 참조
