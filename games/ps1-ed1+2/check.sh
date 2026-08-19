@@ -34,8 +34,10 @@ for t in check_tail_cut check_terms check_spellings check_forbidden check_proper
   echo "$out" | tail -3 | sed 's/^/     /'
 done
 
-# 일본어 잔존 — ⚠ 탈락 없이도 원문이 남는 길이 있다. 색 구간(`%c…%c`)을 못 채우면 그 구간이
-# 원문 그대로 나간다(ED2 49블록 실측). 구조 게이트는 전부 초록이라 여기서만 잡힌다.
+# 일본어 잔존 — ⚠ 탈락 없이도 원문이 남는 길이 **둘** 있다. ① 색 구간(`%c…%c`)을 못 채우면
+# 그 구간이 원문 그대로 나간다(ED2 49블록 실측). ② **정본에 항목조차 없는 블록** — 순회가
+# 번역표를 돌아 아예 안 보였다(8블록 실측 2026-08-19). 둘 다 구조 게이트는 초록이라 여기서만
+# 잡힌다. ⚠ 요약은 검사기가 **맨 끝 한 줄**로 합쳐 낸다(중간에 진행 출력이 끼어든다).
 out=$("$PY" "$T/check_jp_leak.py" 2>&1) || fail=1
 echo "$out" | tail -1 | sed 's/^/     /'
 "$PY" "$T/check_jp_leak.py" --ed2 2>&1 | tail -1 | sed 's/^/     [ED2] /'
@@ -73,7 +75,7 @@ echo "$out" | grep -E '✅|❌' | sed 's/^/     /'
 if [ -n "$SCN" ]; then
   # shellcheck disable=SC2086
   out=$("$PY" "$T/check_speakers.py" $SCN 2>&1) || fail=1
-  echo "$out" | tail -2 | sed 's/^/     /'
+  echo "$out" | tail -1 | sed 's/^/     /'
   echo "     (이름창은 정본 씬만: $SCN)"
 fi
 

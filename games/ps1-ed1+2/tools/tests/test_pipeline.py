@@ -844,7 +844,7 @@ def test_similarity_gate_covers_ed1_with_a_ratchet():
     import check_forbidden as F
 
     src = inspect.getsource(F.scan_similar)
-    assert 'ED*SCN*.json' in src, "ED2 만 본다 — ED1 이 빠졌다"
+    assert "ED*SCN*.json" in src, "ED2 만 본다 — ED1 이 빠졌다"
     assert "ED1_SIMILAR_BASELINE" in src, "래칫이 없다 (늘 빨간불이거나, 늘어도 안 운다)"
     assert isinstance(F.ED1_SIMILAR_BASELINE, int)
 
@@ -874,6 +874,37 @@ def test_align_file_is_optional_so_work_can_be_wiped():
     )
     _, _, tail = src.partition("os.path.exists(align_path)")
     assert "pairs = []" in tail, "파일이 없을 때의 폴백(빈 배정)이 없다"
+
+
+def test_untranslated_axis_sees_nameplate_blocks():
+    """정본에 **항목조차 없는** 대사 블록을 잡는 축 — 2026-08-19 ED2 검수가 찾은 사각.
+
+    `check_jp_leak.scan` 은 `iter_candidates` 를 도는데 그건 **번역표**를 돈다. 항목이
+    아예 없는 블록은 순회에 안 들어오므로, 원문이 그대로 화면에 나가는데도 초록이었다
+    (여덟 블록 실측 — 전부 포인터 표 접두라 눈으로도 안 띄었다).
+
+    ⚠ 판정을 넓히면 못 쓴다 — 지명 헤더·값 표까지 잡혀 560건이 된다(실측).
+    그래서 **이름창 + 개행**이거나 **가나 6자 + 종결 부호**만 대사로 센다.
+    """
+    import check_jp_leak as L
+
+    # 실제로 샜던 자리 — 이름창이 붙은 대사
+    assert L.is_dialogue("{c}男{c}{n}ここは もう 確保しました。{n}先を急いでください。{c}")
+    assert L.is_dialogue(
+        "{c}%s{c}{n}ふー 助かった · · ·{c}"
+    )  # 종결 부호가 없어도 이름창이면 잡는다
+    # 지명 헤더 — 잡히면 안 된다(전부 patch_sys_ui 관할이다)
+    assert not L.is_dialogue("。{n}グロストス城")
+    assert not L.is_dialogue("{n}ファエトの村")
+    assert not L.is_dialogue("エルアスタ")
+
+
+def test_untranslated_axis_skips_pointer_prefix():
+    """포인터 표 접두는 **꼬리만** 본다 — 앞쪽 바이트가 우연히 가나로 읽히면 오탐이 된다."""
+    import check_jp_leak as L
+
+    s = "\\x34\\x9C\\x17\\x80惧\\x17\\x80{c}男{c}{n}さあ早く 先に進んでください。{c}"
+    assert L._tail(s) == "{c}男{c}{n}さあ早く 先に進んでください。{c}"
 
 
 if __name__ == "__main__":
