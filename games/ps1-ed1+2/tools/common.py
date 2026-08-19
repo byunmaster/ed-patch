@@ -17,15 +17,22 @@ def _build_tag():
     열몇 개가 `BUILD_DIR` 밑의 파일명을 박아 쓰는데, 디렉터리만 갈리면 그대로 따라온다.
 
     `ED_BUILD_TAG` 로 덮어쓴다(브랜치와 무관한 실험용). 브랜치를 못 읽으면 `local`.
+
+    ⚠ **워크트리에서는 `.git` 이 디렉터리가 아니라 파일**이다(`gitdir: …` 한 줄). 그대로
+    `.git/HEAD` 를 열면 실패해 전부 `local` 로 떨어지는데, 갈래를 가르려고 만든 장치가
+    **정작 갈래를 굴리는 자리에서만 안 도는** 꼴이 된다(2026-08-18 실측). 따라간다.
     """
     tag = os.environ.get("ED_BUILD_TAG")
     if not tag:
-        head = os.path.join(ROOT, "..", "..", ".git", "HEAD")
+        git = os.path.join(ROOT, "..", "..", ".git")
         try:
-            with open(head, encoding="utf-8") as f:
+            if os.path.isfile(git):  # 워크트리 — `gitdir: <실제 경로>`
+                with open(git, encoding="utf-8") as f:
+                    git = f.read().strip().split(":", 1)[1].strip()
+            with open(os.path.join(git, "HEAD"), encoding="utf-8") as f:
                 ref = f.read().strip()
             tag = ref.rsplit("/", 1)[-1] if ref.startswith("ref:") else ref[:7]
-        except OSError:
+        except (OSError, IndexError):
             tag = "local"
     return "".join(c if (c.isalnum() or c in "-_.") else "-" for c in tag) or "local"
 

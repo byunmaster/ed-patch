@@ -72,13 +72,13 @@ tools/
   patch_poc_hangul.py  한글 출력 개념증명 (あ→가 글리프 교체)
   hangul_font.py       한글 폰트 변환 (Galmuri11 BDF → 22B 글리프)
   hangul_map.py        한글 인코딩 (완성형 2,350자 ↔ 한자 슬롯 SJIS)
-  census_syllables.py  DOS 정발판 사용 음절 집계 (번역 저본 분석)
+  census_syllables.py  DOS 정발판 사용 음절 집계 (폰트 음절 범위 산정)
   build_poc_kr.py      풀 파이프라인 PoC (한글 폰트 탑재 + 한국어 대사 빌드)
   extract_scn.py       PS1 일문 대사 추출 (SCN 블록 → JSON, 라운드트립 무손실)
-  extract_dos_kr.py    DOS 정발판 한국어 대사 추출 (SINDLL/SCENA DLL → JSON)
+  extract_dos_kr.py    DOS 정발판 대사 추출 — ⚠ **대조용**(check_forbidden), 저본 아님
   align_jp_kr.py       구조 신호 정렬(화자·길이·순서) — 초안/폴백
   align_semantic.py    의미 정렬 — 다국어 임베딩(LaBSE)으로 번역쌍 매칭 (권장)
-  review_align.py      정렬 검수 목록 생성 (사람이 정발판 대조)
+  review_align.py      정렬 검수 목록 생성 — ⚠ 정발 저본 시절의 도구다
   reinsert_kr_pilot.py 재삽입 — ED1 전 씬(SCN1~6) 한국어 빌드 + 폰트 탑재
                        기본: 앵커(테이블) 고정 재배치 + lui/addiu 패치 — 인게임 검증
                        PILOT_FIXED=1: 블록별 길이 고정 / PILOT_SCN=ED1SCN3: 특정 씬만

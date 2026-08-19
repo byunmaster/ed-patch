@@ -784,5 +784,70 @@ def test_own_table_reads_both_key_types():
     assert "pin.get(eid)" in src and "pin.get(str(eid))" in src, "키 한 종류만 본다"
 
 
+def test_tool_tables_match_shared_glossary():
+    """🔴 고유명사 정본(`shared/glossary`)과 도구 표가 어긋나면 안 된다.
+
+    **왜 공용에 두나.** 정발 문안을 옮기던 시절엔 저본이 표기를 대신 맞춰 줬다. 자체 번역으로
+    돌아서면(유저 확정 2026-08-18) 그 역할을 할 게 없어지고, 같은 세계관인 새턴·PCE 가 이
+    표를 그대로 물려받는다.
+
+    **왜 사본을 남기나.** 도구 표에는 **판정 근거 주석**이 붙어 있다(`치유의 로브` — 정발
+    「천민의 옷」은 卑しい 오독 · `사이레스` — ED1/ED2 표기 충돌에서 ED2 우선). 그 지식은
+    JSON 으로 옮기면 죽는다. 그래서 데이터는 공용, 근거는 도구에 두고 **여기서 묶는다** —
+    한쪽만 고치면 이 테스트가 운다(스킬 색인 ↔ 체크리스트와 같은 방식).
+    """
+    import os
+    import sys
+
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(_TOOLS)))
+    sys.path.insert(0, os.path.join(repo, "shared"))
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import align_jp_kr
+    import glossary as G
+    import patch_items
+    import patch_sys_ui
+
+    pairs = {
+        "item": dict(patch_items.NAMES),
+        "monster": dict(patch_items.MONSTERS),
+        "person": dict(align_jp_kr.SPEAKER_DICT),
+        "place": dict(patch_sys_ui.PLACES),
+    }
+    # ⚠ **정본은 상위집합이다**(2026-08-18). 내레이션에만 나오는 이름(이셀하사·론윌섬)은
+    #    어느 패치 표에도 없지만 표기는 하나여야 한다. 그래서 「같다」가 아니라
+    #    **「도구 표의 모든 항목이 정본과 일치한다」**를 본다 — 도구가 정본에 없는 표기를
+    #    쓰거나, 같은 JP 를 다르게 읽으면 실패다.
+    for cat, tool in pairs.items():
+        canon = G.table(cat)
+        missing = sorted(set(tool) - set(canon))
+        assert not missing, f"{cat}: 도구에만 있는 이름 {missing[:5]} — 정본에 등재한다"
+        diff = {jp: (kr, canon[jp]) for jp, kr in tool.items() if canon[jp] != kr}
+        assert not diff, f"{cat}: 도구와 정본의 표기가 다르다 {list(diff.items())[:3]}"
+
+
+def test_similarity_gate_covers_ed1_with_a_ratchet():
+    """🔴 유사도 게이트가 ED1 을 봐야 한다 — 축자만 보면 **낱말 하나 지우기**에 뚫린다.
+
+    실측(2026-08-18): 오프닝 9줄이 `세계가 있어, [거기에] 자연의 혜택을 듬뿍` 처럼 어절
+    하나만 지운 정발 문장이었는데 축자 게이트를 그냥 통과했다. 자체 번역으로 돌아서면서
+    ED1 정본이 우리 문장으로 채워지므로 이제 ED1 이 본무대다.
+
+    ⚠ 기준선(래칫)이 없으면 늘 빨간불이라 아무도 안 본다 — **늘면 실패, 줄이면 내린다.**
+    """
+    import inspect
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import check_forbidden as F
+
+    src = inspect.getsource(F.scan_similar)
+    assert 'ED*SCN*.json' in src, "ED2 만 본다 — ED1 이 빠졌다"
+    assert "ED1_SIMILAR_BASELINE" in src, "래칫이 없다 (늘 빨간불이거나, 늘어도 안 운다)"
+    assert isinstance(F.ED1_SIMILAR_BASELINE, int)
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

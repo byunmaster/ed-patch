@@ -129,13 +129,23 @@ def _corpus_lines():
     return out
 
 
-def scan_similar(threshold=0.90, report=0.80):
-    """축자 일치를 피했어도 **정발 문장과 사실상 같은** 자리를 찾는다(ED2 정본 전용).
+# ED1 자체 번역 전환 중의 기준선 — **늘면 실패, 줄이면 내린다**.
+# 32(08-18 실측) → **0**: 걸린 32건을 JP 원문에서 다시 썼다. 이제 하나만 늘어도 운다.
+ED1_SIMILAR_BASELINE = 0
 
-    **왜.** ED1 은 정발 문안을 `textmap` **포인터**로 쓰므로 리포에 문장이 안 남는다.
-    ED2 는 우리가 직접 쓴 문장이 `script/*.json` 에 그대로 남는다 — 그래서 「우연히 정발과
-    같아지는」 자리가 곧 **정발 문안이 리포에 박히는** 자리다. 짧은 대사는 직역이 최선이라
-    독립 창작이어도 수렴한다(실측 2026-08-15: 축자 일치 0건인데 **50건이 90% 이상 일치**).
+
+def scan_similar(threshold=0.90, report=0.80):
+    """축자 일치를 피했어도 **정발 문장과 사실상 같은** 자리를 찾는다(ED1·ED2 정본).
+
+    **왜.** 우리가 직접 쓴 문장은 `script/*.json` 에 그대로 남는다 — 그래서 「정발과 닮은」
+    자리가 곧 **정발 문안이 리포에 박히는** 자리다. 짧은 대사는 직역이 최선이라 독립
+    창작이어도 수렴한다(실측 2026-08-15: 축자 일치 0건인데 **50건이 90% 이상 일치**).
+
+    ⚠ **2026-08-18 부터 ED1 도 본다.** 전엔 「ED1 은 정발을 포인터로 쓰니 리포에 안 남는다」로
+    빼 뒀는데, **자체 번역으로 돌아서면서 ED1 정본이 우리 문장으로 채워진다.** 게다가 빼 둔
+    동안 실제로 새 나갔다 — 오프닝 9줄이 **어절 하나를 지운 정발 문장**이라 축자 게이트를
+    그냥 통과했다(`세계가 있어, [거기에] 자연의 혜택을 듬뿍`). 축자만 보는 게이트는
+    「낱말 하나 지우기」 앞에서 무력하다.
 
     독립 창작임을 나중에 증명할 길이 없으므로 **닮은 자리는 우리 어투로 다시 쓴다.**
 
@@ -162,7 +172,7 @@ def scan_similar(threshold=0.90, report=0.80):
     WORDLIST_OK = {("ED2SCN2", "300")}
 
     rows = []
-    for path in sorted(_glob.glob(os.path.join(ROOT, "script", "ED2SCN*.json"))):
+    for path in sorted(_glob.glob(os.path.join(ROOT, "script", "ED*SCN*.json"))):
         with open(path, encoding="utf-8") as f:
             doc = json.load(f)
         for eid, v in doc.items():
@@ -179,11 +189,24 @@ def scan_similar(threshold=0.90, report=0.80):
     for sim, scn, eid in rows[:10]:
         mark = "❌" if sim >= threshold else "·"
         print(f"      {mark} {sim:.2f} {scn} jp{eid}")
+    ed1 = sum(1 for r in over if r[1].startswith("ED1"))
+    # 🔴 **래칫** — ED1 은 아직 정발에서 문안이 오는 자리가 1,800 넘게 남아 있다(자체 번역
+    #    전환 중). 지금 걸린 것들을 전부 실패로 치면 **늘 빨간불**이라 아무도 안 본다.
+    #    그래서 기준선을 박고 **늘면 실패**한다 — 줄이면 이 숫자를 내린다(되돌릴 수 없다).
+    #    ⚠ 이건 면죄부가 아니라 **작업 목록**이다: `--report` 로 뽑아 재작성한다.
+    ed2 = len(over) - ed1
     print(
-        f"  {'✅' if not over else '⚠'} 정발과 닮은 ED2 문안: "
-        f"{threshold:.0%}+ {len(over)}건 · {report:.0%}+ {len(rows)}건"
+        f"  {'✅' if not over else '⚠'} 정발과 닮은 문안: "
+        f"{threshold:.0%}+ {len(over)}건(ED1 {ed1}) · {report:.0%}+ {len(rows)}건"
     )
-    return len(over)
+    if ed1 > ED1_SIMILAR_BASELINE:
+        print(
+            f"  ❌ ED1 닮은 문안이 기준선을 넘었다: {ed1} > {ED1_SIMILAR_BASELINE}"
+            " — 새로 쓴 문안이 정발을 베꼈다는 뜻이다"
+        )
+    elif ed1 < ED1_SIMILAR_BASELINE:
+        print(f"  ⬇ ED1 기준선을 내릴 수 있다: {ED1_SIMILAR_BASELINE} → {ed1}")
+    return ed2 + max(0, ed1 - ED1_SIMILAR_BASELINE)
 
 
 def scan_canon(verbose=False):
@@ -238,12 +261,21 @@ def scan_canon(verbose=False):
             if ft in flat or (len(ft) >= 20 and ft in joined):
                 hits[scn] += 1
                 rows.append((scn, eid, t))
-    n = sum(hits.values())
+    # 🔴 **방향이 바뀌었다**(유저 확정 2026-08-18: 자체 번역). 예전 규칙은 「정발과 같으면
+    #    포인터로」였는데, 이제 문안은 우리가 쓴다 — **우연히 같아지는 것은 침해가 아니다.**
+    #    다만 자리를 가른다:
+    #      · 대사(`script/*SCN*.json`) — 창작성이 있다. 긴 문장이 축자로 같으면 **베낀 것**이다.
+    #      · EXE 시스템 문구(`textmap/*.json`) — 「〜が現れた。」는 누가 옮겨도 같다. **강제
+    #        번역**이라 우연 일치가 정상이고, 다르게 쓰면 나빠진다(방침 08-04: 기능적 문구는
+    #        `ours` 허용). 세되 **실패로 치지 않는다.**
+    sys_hits = sum(v for k, v in hits.items() if not k.startswith("ED"))
+    n = sum(hits.values()) - sys_hits
     print(
-        f"  {'✅ 정본에 정발 축자 없음' if not n else f'⚠ 정본이 정발과 축자 동일 {n}건 — 포인터로 바꾼다'}"
+        f"  {'✅ 대사 정본에 정발 축자 없음' if not n else f'⚠ 대사 정본이 정발과 축자 동일 {n}건'}"
+        + (f" · 시스템 문구 {sys_hits}건(강제 번역 — 실패 아님)" if sys_hits else "")
     )
     if n:
-        print("      " + " · ".join(f"{k} {v}" for k, v in sorted(hits.items())))
+        print("      " + " · ".join(f"{k} {v}" for k, v in sorted(hits.items()) if k.startswith("ED")))
     if verbose:
         for scn, eid, t in rows[:40]:
             print(f"      {scn} jp{eid}: {t[:56]!r}")
@@ -278,8 +310,14 @@ def scan_repo(verbose=False):
             flat = re.sub(r"\s+", "", data)
             hit = [s for s in lines if re.sub(r"\s+", "", s) in flat]
             if hit:
-                bad += len(hit)
                 rel = os.path.relpath(path, root)
+                # 🔴 EXE 시스템 문구(`textmap/`)는 **강제 번역**이라 우연 일치가 정상이다 —
+                #    「〜が現れた。」는 누가 옮겨도 「〜이(가) 나타났다.」다(방침 08-18 · 08-04).
+                #    세되 실패로 치지 않는다. 대사(`script/`)는 그대로 실패다.
+                if os.sep + "textmap" + os.sep in path:
+                    print(f"      ℹ {rel}: 시스템 문구 {len(hit)}건 (강제 번역 — 실패 아님)")
+                    continue
+                bad += len(hit)
                 print(f"      ⚠ {rel}: 정발 번역문 {len(hit)}건")
                 for h in hit[:3] if verbose else hit[:1]:
                     print(f"           {h[:56]!r}")
