@@ -14,6 +14,8 @@
 | ↳ 짝: `../patcher-checklist.md` | ⭐ 위 발견을 **플랫폼 무관 체크리스트**로 정리(새 게임의 출발점 · 스킬 `patcher-safety`)                                                                         |
 | `mistranslation-patterns.md`    | ⭐ **오역이 나는 자리 — 유형 대장**(옛 번역본을 저본으로 쓸 때. 게임 무관 — 다음 프로젝트에서 볼 자리를 좁힌다) |
 | `translation-conventions.md`    | ⭐ **한글 출력 조판/표기 규약**(부호 뒤 공백 제거 등 — 새 규칙은 여기로)                                                                                         |
+| `eiyuu-setting.md`              | ⭐ **영웅전설 세계관·인물 관계**(플랫폼 무관 — 새턴·PC88 도 그대로 쓴다). ⚠ 출처가 팬 위키라 **정본이 아니다** — 원문과 어긋나면 원문이 이긴다 |
+| `manual-items-spells.md`        | ⭐ **아이템·주문·몬스터 매뉴얼** — `shared/glossary` 를 펼친 것(`scripts/dump_manual.py`). **플랫폼이 달라도 표기는 하나다** |
 | `index-by-platform.md`          | 6개 게시판에서 선별한 **플랫폼별 자료 인덱스**(제목·추천·원문링크 — 요약 발췌는 로컬 `_inventory` 참조)                                                          |
 | `compression-and-encoding.md`   | LZ/LZSS 변종 압축 해제, 압축·암호화 판별, SJIS↔JIS·UTF-8 인코딩 변환, 정규표현                                                                                   |
 | `fonts-korean.md`               | 한글 픽셀폰트 자원(갈무리 등), 7비트 완성형 음절표, 폰트 제작 스크립트                                                                                           |
