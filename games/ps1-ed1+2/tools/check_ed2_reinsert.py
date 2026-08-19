@@ -24,6 +24,7 @@ QA 가 끝나야 올린다 — `docs/ed2-notes.md`). 그래서 **빌드가 ED2 �
 """
 
 import collections
+import functools
 import json
 import os
 import sys
@@ -32,9 +33,45 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R
-from common import OUT_DIR
+from common import OUT_DIR, extract
+from patch_sys_ui import SCN_FILES
 
 SCENES = [f"ED2SCN{n}" for n in range(1, 14)]
+
+
+@functools.lru_cache(maxsize=None)
+def _tails(scene):
+    """`{eid: 꼬리 시작}` — **빌드가 실제로 덮어쓰는 범위**다.
+
+    🔴 **이 검사기가 거짓말을 하고 있었다**(2026-08-19). 블록을 **통째로**
+    `build_candidate` 에 넣어 시뮬레이션했는데, `rebuild` 는 앵커가 접두인 블록의 **꼬리만**
+    넣는다(`build_candidate(b["raw"][b["tail"]:], …)`). 그래서 화면엔 멀쩡히 한글이 나가는
+    `ED2SCN1 jp534`(`[포인터 표 20B][이름창+대사]`, `anchor_tail=20`)를 「탈락 — 화면에
+    일본어가 남는다」로 계속 울렸다.
+
+    ⚠ 거짓 경보는 그냥 노이즈가 아니다. 그 한 줄을 쫓아 **파이프라인에 없어도 될 길을
+    내다가**(참조 델타를 꼬리로 삼는 코드) 빌드 sha1 이 그대로인 죽은 코드를 만들었다.
+    CLAUDE.md 의 「늘 빨간불이면 아무도 안 본다」가 이렇게 물린다.
+    """
+    src = next((x for x in SCN_FILES if x[0] == scene), None)
+    if src is None:
+        return {}
+    _, lba, size = src
+    with open(os.path.join(OUT_DIR, "scn_jp", f"{scene}.json"), encoding="utf-8") as f:
+        doc = json.load(f)
+    data = extract(lba, size)
+    text_end = int(doc["source"]["text_end"], 16)
+    with R.overlay_for(scene):
+        anchors = R.compute_anchors(data, text_end)
+    out = {}
+    for e in doc["entries"]:
+        if e["kind"] == "gap" or not e.get("raw_hex"):
+            continue
+        n = len(e["raw_hex"]) // 2
+        k = R.anchor_tail(anchors, int(e["file_offset"], 16), n)
+        if k is not None and R.MC in bytes.fromhex(e["raw_hex"])[k:]:
+            out[e["entry_id"]] = k
+    return out
 
 
 def run(scene):
@@ -50,6 +87,7 @@ def run(scene):
             ours = json.load(f)
 
     tally, bad = collections.Counter(), []
+    tails = _tails(scene)
     with R.overlay_for(scene):
         tr, _, _ = R.load_translations(scene.replace("SCN", "_SCN"), scene)
         # ⚠ **`STOCK_MID` 는 탈락이 아니다.** 선두가 포인터 표라 제자리 재작성은 못 하지만,
@@ -64,8 +102,13 @@ def run(scene):
             if eid not in raw:
                 tally["no_raw"] += 1
                 continue
+            k = tails.get(eid)
             try:
-                cand, why = R.build_candidate(raw[eid], t, eid)
+                # 앵커 접두 블록은 빌드도 꼬리만 다시 쓴다 — 같은 범위로 시뮬레이션해야
+                # 결과가 맞는다(`_tails` 주석). 남는 자리도 꼬리 길이로 잰다.
+                cand, why = R.build_candidate(raw[eid][k:] if k else raw[eid], t, eid)
+                if cand is not None and k and len(cand) > len(raw[eid]) - k:
+                    cand, why = None, "anchor_tail_size"
             except Exception as e:  # noqa: BLE001 — 검사기는 빌드를 안 세운다
                 tally["exc"] += 1
                 bad.append(("exc:" + type(e).__name__, eid, repr(e)[:60]))

@@ -34,6 +34,15 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R
 
+
+def _canon_persons():
+    """고유명사 정본의 인물 표 — `shared/glossary` 하나가 정본이다."""
+    sys.path.insert(0, os.path.join(R.ROOT, "..", "..", "shared"))
+    import glossary as G
+
+    return dict(G.table("person"))
+
+
 SCRIPT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "script")
 
 
@@ -103,6 +112,58 @@ def scan(scenes=None, show_all=False):
     return tot
 
 
+def scan_canon(verbose=False):
+    """🔴 **이름창에 나가는 이름이 정본과 같은가** — 화자맵과 `s` 를 정본에 대조한다.
+
+    **왜 이게 따로 필요한가.** 위 `scan` 은 「원문 화자와 우리 화자가 같은 사람인가」를 본다.
+    같은 사람이면 **표기가 갈려도 통과**한다 — 그 시절엔 표기 정본이 없었기 때문이다.
+    2026-08-19 에 `shared/glossary` 가 인물 220 · 지명 97 로 채워지면서 기준이 생겼다.
+
+    ⚠ **정본이 없던 동안 실제로 갈렸다**(2026-08-19 실측, 131블록 13종) — `盗賊` 이
+    도둑/도적, `ピート` 가 피토/피트, `フォルス` 가 폴스/훨스, `町長` 이 촌장/시장.
+    ED2 주인공 `アトラス` 조차 정본에 없었으니 **아무도 지켜 주지 않았다.**
+
+    🔴 **화면을 그리는 것은 `s` 가 아니라 화자맵이다**(`reinsert_kr_pilot._tpl_name` —
+    맵을 먼저 보고 없을 때만 `s` 로 떨어진다). 그래서 두 층을 다 본다:
+
+    - **화자맵** — 화면에 나가는 값. 정본과 다르면 **실패**.
+    - **`s`** — 폴백이자 사람이 읽는 자리. 어긋나면 **실패**(맵이 비면 이게 화면이 된다).
+
+    ⚠ 정본에 **없는** 이름은 실패로 치지 않는다 — 정본은 상위집합이지만 맵에는 `%s` 템플릿
+    화자처럼 이름이 아닌 것도 섞인다. 「할 일」로 보여만 준다.
+    """
+    canon = _canon_persons()
+    bad, unknown = [], set()
+    for jp, kr in sorted(R._speaker_map().items()):
+        if jp not in canon:
+            unknown.add(jp)
+        elif canon[jp] != kr:
+            bad.append(("화자맵", jp, kr, canon[jp]))
+    for scn in R.scene_list(None):
+        d = _script(scn)
+        for _s, eid, jp, _c, _t in R.iter_candidates((scn,)):
+            k = str(eid)
+            ent = d.get(k) or {}
+            ours = (ent.get("s") or "").strip()
+            if not ours or ent.get("sx") or not R.jp_has_header(jp) or R.jp_header_is_fmt(jp):
+                continue
+            try:
+                name = jp[2 : jp.find(R.MC, 2)].decode("cp932")
+            except (UnicodeDecodeError, ValueError):
+                continue
+            if name in canon and canon[name] != ours:
+                bad.append((scn, name, ours, canon[name]))
+    print(f"  {'✅' if not bad else '❌'} 이름창 표기가 정본과 같다 (어긋남 {len(bad)})")
+    if bad and verbose:
+        for where, jp, ours, want in bad[:40]:
+            print(f"      {where:<9} {jp} — {ours} → {want}")
+    if unknown:
+        print(f"      ℹ 정본에 없는 화자 {len(unknown)} — 이름이 아닌 것(`%s` 템플릿)이 섞인다")
+    return len(bad)
+
+
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    sys.exit(1 if scan(set(args) if args else None, "--all" in sys.argv) else 0)
+    n = scan(set(args) if args else None, "--all" in sys.argv)
+    n += scan_canon(verbose=True)
+    sys.exit(1 if n else 0)

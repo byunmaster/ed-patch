@@ -44,12 +44,15 @@ for scn, tbl in per.items():
     with open(p, encoding="utf-8") as f:
         d = json.load(f)
     for eid, t in tbl.items():
-        # ⚠ **빈 문안은 안 받는다**(2026-08-19). 이름판만 있는 블록(`{c}이름{c}{c}`)에
-        #    에이전트가 빈 문자열을 내면 조판기가 「창은 있는데 줄이 0」에서 죽는다
-        #    (`krwrap.pack_groups_target` 의 `max()` 가 빈 리스트를 받는다). 그런 블록은
-        #    애초에 `t` 를 두지 않는 게 맞다 — 이름창은 다른 층이 그린다.
-        if not t or not t.strip():
-            print(f"  ⚠ {scn}:{eid} 빈 문안 — 건너뛴다(이름판 전용 블록으로 보인다)")
+        # ⚠ **빈 문자열은 안 받는다**(2026-08-19). 이름판만 있는 블록(`{c}이름{c}{c}`)에
+        #    에이전트가 `""` 를 내면 조판기가 「창은 있는데 줄이 0」에서 죽는다
+        #    (`krwrap.pack_groups_target` 의 `max()` 가 빈 리스트를 받는다).
+        # ⚠ 단 **공백 한 칸은 받는다**(2026-08-19 좁혔다). 처음엔 `not t.strip()` 으로
+        #    막았는데, 그러면 이름판 전용 블록의 **정본 값 자체가 못 들어온다** —
+        #    `script/ED2SCN4.json` 302(`{"s": "바바라", "t": " "}`)가 그 꼴로 이미
+        #    커밋돼 빌드를 통과해 왔다. 죽는 건 「줄이 0」이지 「내용이 공백」이 아니다.
+        if not t:
+            print(f"  ⚠ {scn}:{eid} 빈 문자열 — 건너뛴다(이름판 전용 블록으로 보인다)")
             continue
         d.setdefault(eid, {})["t"] = t
     with open(p, "w", encoding="utf-8") as f:

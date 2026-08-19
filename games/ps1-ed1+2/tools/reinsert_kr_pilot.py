@@ -2279,6 +2279,122 @@ def restore_tail_nl(cand, raw):
     return c + b"\x00" * (-len(c) % 4 or 4)
 
 
+_JOSA_STATIC = None
+
+
+def _josa_static():
+    """(병기 6바이트 패턴, 받침용 2바이트, 무받침용 2바이트) 목록 + 슬롯→글자 역표."""
+    global _JOSA_STATIC
+    if _JOSA_STATIC is None:
+        import hangul_map as _H
+
+        sys.path.insert(0, os.path.join(ROOT, "..", "..", "shared"))
+        from text.josa import batchim as _bat
+
+        pairs = []
+        for a, b in (("은", "는"), ("이", "가"), ("을", "를")):
+            A = _H.syllable_sjis(a).to_bytes(2, "big")
+            B = _H.syllable_sjis(b).to_bytes(2, "big")
+            pairs.append((A + b"\x28" + B + b"\x29", A, B))
+        rev = {_H.syllable_sjis(ch).to_bytes(2, "big"): ch for ch in _H.SYL_INDEX}
+        _JOSA_STATIC = (pairs, rev, _bat)
+    return _JOSA_STATIC
+
+
+def resolve_static_josa(cand):
+    """앞말이 **빌드 시점에 아는 글자**면 병기(`을(를)`)를 그 자리에서 하나로 줄인다.
+
+    🔴 **런타임 조사 훅이 못 닿는 자리가 있다**(2026-08-19 실측). 훅은 버퍼에서
+    `[음절][조사A][(][조사B][)]` 를 찾는데, 아이템·인물 이름이 **색 코드로 감싸여 있으면**
+    (`%c왕가의 검%c을(를)`) 음절과 조사 사이에 `%c` 가 끼어 **패턴이 안 맞는다.**
+    ED1SCN1 의 병기 19자리가 **하나도 안 풀리고 있었다** — 화면에 반각 괄호가 그대로 나간다.
+
+    ⚠ 그런데 그 자리들은 애초에 **훅이 필요 없다.** 앞말이 런타임 주입(`%s`)이 아니라
+    템플릿이 채운 **리터럴**이라 빌드 시점에 종성을 안다. 훅은 「앞말을 모를 때」의 장치고
+    (`patch_josa_hook` 머리말), 아는데도 병기를 내보내는 건 그냥 결함이다.
+
+    ⚠ `%s` 를 만나면 **그대로 둔다** — 그건 진짜 런타임 주입이라 훅 몫이다.
+    ⚠ 4바이트 정렬은 다시 맞춘다(줄면 블록이 짧아진다 — 자리 고정은 `FIXED_RUNS` 몫).
+    """
+    if not cand:
+        return cand
+    pairs, rev, batchim = _josa_static()
+    out = bytes(cand)
+    for pat, A, B in pairs:
+        i = 0
+        while True:
+            i = out.find(pat, i)
+            if i < 0:
+                break
+            j = i
+            while j >= 2 and out[j - 2 : j] == MC:  # 색 코드는 건너뛴다
+                j -= 2
+            prev = out[j - 2 : j] if j >= 2 else b""
+            ch = rev.get(prev)
+            if ch is None:  # %s(런타임 주입)이거나 글자가 아니다 — 훅 몫으로 남긴다
+                i += len(pat)
+                continue
+            out = out[:i] + (A if batchim(ch) else B) + out[i + len(pat) :]
+            i += 2
+    if out != cand:
+        c = out.rstrip(b"\x00")
+        out = c + b"\x00" * (-len(c) % 4 or 4)
+    return out
+
+
+@functools.lru_cache(maxsize=1)
+def _fixed_eids_all():
+    """`FIXED_RUNS` 전 씬 합집합 — 창별 채움 대상."""
+    out = set()
+    for v in FIXED_RUNS.values():
+        out |= set(v)
+    return frozenset(out)
+
+
+def pad_windows(cand, raw, eid):
+    """창(`%c` 구간)마다 **원본 길이까지 공백으로 채운다** — `FIXED_RUNS` 블록만.
+
+    🔴 **길이가 창 단위로 물린다**(유저 QA 2026-08-19, `qa-diag3` 로 확정). 왕가의 검·갑옷·
+    방패 장비 이벤트에서 **첫 창만 뜨고 나머지 둘은 효과음만 나던** 자리다. 죽은 가설이 넷이나
+    있었다 — 블록 총길이(`FIXED_RUNS` 로 맞춰도 안 됐다) · 창 수(원문과 같다) · 본문 총길이
+    (`qa-diag2` 로 늘려도 안 됐다) · 블록 중간 절대참조(`find_refs` 델타 0뿐). 앞 대사 두 창을
+    **창별로** 원문 바이트에 맞추자 셋 다 나왔다.
+
+    ⚠ 뒤에 붙이는 공백은 창 끝이라 화면에 안 보인다(다음 창은 `%c` 로 갈린다).
+    ⚠ `FIXED_RUNS` 로 좁힌다 — 그 표가 곧 「이 블록은 자리가 값이다」라는 선언이다. 전 블록에
+      걸면 안 그래도 되는 자리까지 늘어나 공간을 먹는다.
+    ⚠ 원본보다 **긴** 창은 그대로 둔다 — 줄일 방법이 없고, 넘치면 뒤 게이트가 잡는다.
+    """
+    if not cand:
+        return cand
+    jw, kw = raw.rstrip(b"\x00").split(MC), cand.rstrip(b"\x00").split(MC)
+    if len(jw) != len(kw):
+        return cand
+    segs = []
+    for j, k in zip(jw, kw):
+        body = k.rstrip(b"\x0a")
+        # 🔴 **문장이 끝나는 창만 채운다.** 그 창의 꼬리는 **줄 끝**이라 공백도 개행도 안
+        #   보인다. 반대로 아이템 이름 창(`왕가의 검`)은 **한 줄 안에서 다음 창과 이어 그려져**
+        #   거기 채우면 화면에 그대로 나온다(유저 QA 2026-08-19 「왕가의 검␣␣␣을 장비했습니다」).
+        # ⚠ 근거는 `qa-diag3` 이다 — **대사 두 창만** 원문 길이로 맞추고 장비 창 셋은 짧은
+        #   채로 뒀는데 셋 다 떴다. 창마다 다 맞출 필요는 없고 **앞이 안 밀리면** 된다.
+        # ⚠ 마지막 1바이트는 **개행**으로 쓴다 — 문장이 끝났으니 다음 창은 새 줄에서 시작해야
+        #   한다. 원문은 한 줄 폭을 꽉 채워 저절로 넘어가는데 우리 문안은 짧아 붙어 버린다
+        #   (유저 QA 2026-08-19). 문안에 `{n}` 을 적는 길은 막혀 있다 — 창 끝의 빈 줄은
+        #   krwrap 이 버린다. 그래서 표시 계층인 여기서 낸다.
+        # ⚠ 공백을 **개행 앞**에 둔다. 뒤면 새 줄의 들여쓰기가 된다(`check_block_join`).
+        need = max(0, len(j) - len(k))
+        if not need or body.rstrip(b" ")[-1:] not in (b".", b"!", b"?"):
+            pad = b""
+        elif len(body) < len(k):  # 이미 개행으로 끝난다 — 공백만 그 앞에 넣는다
+            pad = b" " * need
+        else:
+            pad = b" " * (need - 1) + b"\x0a"
+        segs.append(body + pad + k[len(body) :])
+    out = MC.join(segs)
+    return out + b"\x00" * (-len(out) % 4 or 4)
+
+
 def build_candidate(raw, t, eid):
     """번역 후보 바이트 생성 + 구조 계약 가드. 반환 (cand, None) 또는 (None, 제외사유).
 
@@ -2343,6 +2459,10 @@ def build_candidate(raw, t, eid):
     # build_block 폴백(구조를 재생산하는 쪽)에만 필요하다.
     if cand is not None:
         cand = restore_tail_nl(cand, raw)
+    if cand is not None:
+        cand = resolve_static_josa(cand)
+    if cand is not None and eid in _fixed_eids_all():
+        cand = pad_windows(cand, raw, eid)
     if cand is not None and eid in COLOR_WRAP:
         on, off = COLOR_WRAP[eid]
         c = cand.rstrip(b"\x00")
