@@ -1,12 +1,20 @@
 {
   "enabledPlugins": {
-    "create-kr-patch@kr-patch": true
+    "create-kr-patch@kr-patch": true,
+    "kr-patch-qa@kr-patch-qa": true
   },
   "extraKnownMarketplaces": {
     "kr-patch": {
       "source": {
         "source": "github",
         "repo": "mcpads/create-retro-game-kr-patch"
+      },
+      "autoUpdate": true
+    },
+    "kr-patch-qa": {
+      "source": {
+        "source": "github",
+        "repo": "gagnonjung/kr-patch-qa"
       },
       "autoUpdate": true
     }

@@ -62,6 +62,21 @@ for k,v in d.items():
   fi
 fi
 
+# ── QA 규약 스킬 (Claude Code 플러그인) ───────────────────────────────
+# ⚠ `create-kr-patch`(제작 방법론)와 **다른 스킬**이다 — 이쪽은 정적 우선 QA 규약이다.
+QA="$HOME/.claude/plugins/marketplaces/kr-patch-qa"
+if [ -d "$QA/.git" ]; then
+  n=$(behind "$QA" || echo "?")
+  if [ "$n" = "0" ]; then
+    echo "  kr-patch-qa   최신"
+  else
+    [ "$UPDATE" = "1" ] && git -C "$QA" pull --quiet --ff-only origin main 2>/dev/null
+    echo "  kr-patch-qa   ${n}커밋 뒤짐 — ⚠ 갱신은 \`/plugin\`"
+  fi
+else
+  echo "  kr-patch-qa   미설치 — \`/plugin\` 에서 kr-patch-qa 마켓플레이스를 켠다"
+fi
+
 # ── 패치 템플릿 (참고용 클론) ─────────────────────────────────────────
 TPL="$ROOT/.local/ref/kr-patch-template"
 TPL_URL=https://github.com/mcpads/create-kr-patch-template
