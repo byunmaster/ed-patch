@@ -59,6 +59,10 @@ def _is_plate(raw):
     (`리젤`+`스엘`+`콜크스`, `그로스토스성`+`그로스토스성`). 이어 그려지는 자리가 아닌데
     경계 규칙에는 걸려서 붙음으로 뜬다 — ED2 전수에서 32곳이 이 부류였다(2026-08-17).
 
+    ⚠ **양쪽을 다 본다**(2026-08-20). 처음엔 앞 블록만 봤는데, **뒤 블록이 맵 헤더**인
+    자리를 놓쳤다 — 보물상자 문구(`…들어 있었다.`) 다음에 지명(`그로스토스성`)이 오는
+    꼴로 ED2 에서 다섯이 그랬다. 헤더는 앞 대사에 이어 그려지지 않으므로 경계가 아니다.
+
     ⚠ **조용히 빼지 않는다.** 아래에서 따로 세어 보고한다 — 규칙이 진짜 대사를 삼키기
     시작하면 그 수가 늘어나므로 눈에 띄어야 한다.
     """
@@ -108,7 +112,8 @@ def scan(scenes=None):
             if not head or head.startswith("%c"):
                 continue
             if head[0] not in (" ", NOBREAK_SP):
-                (plate if _is_plate(raw) else join).append((scn, eid, tail[-12:], head[:12]))
+                bucket = plate if (_is_plate(raw) or _is_plate(nxt)) else join
+                bucket.append((scn, eid, tail[-12:], head[:12]))
                 continue
             if _w(tail + head) > WRAP:
                 over.append((scn, eid, _w(tail + head), tail[-12:], head[:14]))
