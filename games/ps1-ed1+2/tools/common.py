@@ -1,6 +1,16 @@
 """공용: 경로, 섹터 상수, 추출/EDC 헬퍼. 모든 도구가 여기서 가져다 쓴다."""
 
+import atexit
+import hashlib
+import json
 import os
+
+# 이 실행이 이미지에 **쓰려 한 것**의 지문 — 되읽기 대조의 기준(`_flush_write_log`).
+# ⚠ **섹터 단위**여야 한다. 쓰기 단위로 잡으면 같은 파일을 뒤에서 조금만 덧칠해도(패처들이
+#   실제로 그런다) 앞의 큰 쓰기가 통째로 검증 밖으로 밀려난다 — 실측으로 커버리지가 38%
+#   였고 **대사 씬 열아홉이 전부** 그 밖이었다. 섹터로 잡으면 마지막 쓴 사람이 자연히 이긴다.
+WRITE_SECTORS = {}  # lba → [sha1(유저 2048B), 라벨]
+WRITE_LOG = []  # 통계·라벨용(무엇을 몇 번 썼나)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # games/ps1-ed1+2
 ORIG_DIR = os.path.join(ROOT, "..", "..", "originals", "jp", "ps1-ed1+2")  # 원본 이미지 (gitignore)
@@ -276,9 +286,18 @@ def write_user_data(f, lba, data, nsec=None, *, label, expect=None):
     ⚠ 가드는 **범위가 아니라 값 변화**를 본다 — 무변경 구간을 품은 파일을 통째로 다시 쓰는
     건(그 바이트를 그대로 되쓰는) 정상이라 범위로 막으면 오탐이 난다.
 
+    ⚠ **여기서 지문을 남긴다** — 「쓰려 한 것」을 기록해야 나중에 되읽어 대조할 수 있다.
+    빌드가 끝난 뒤 이미지를 다시 읽어도 **의도를 모르면 비교 대상이 없다**(실측: 층 하나만
+    재현해 맞대 봤더니 19씬 전부 어긋났는데, 정작 원인은 뒤 단계의 고아 문자열·폰트였다).
+    공용 QA 규약 §8.9 의 readback 이 요구하는 게 이 짝이다 — `check_readback.py`.
+
     반환: 실제로 바뀐 섹터 수."""
     if nsec is None:
         nsec = (len(data) + USER_SIZE - 1) // USER_SIZE
+    WRITE_LOG.append({"lba": lba, "nsec": nsec, "label": label, "len": len(data)})
+    for i in range(nsec):
+        _c = bytes(data[i * USER_SIZE : (i + 1) * USER_SIZE]).ljust(USER_SIZE, b"\x00")
+        WRITE_SECTORS[lba + i] = [hashlib.sha1(_c).hexdigest(), label]
     if expect is not None:
         cur = bytearray()
         for i in range(nsec):
@@ -311,6 +330,35 @@ def write_user_data(f, lba, data, nsec=None, *, label, expect=None):
         f.write(sec)
         changed += 1
     return changed
+
+
+WRITE_MANIFEST = None  # 늦게 채운다 — OUT_DIR 이 아래에서 정의된다
+
+
+def _flush_write_log():
+    """이 프로세스가 **쓰려 한 것**을 지문표에 덧붙인다 — 되읽기 대조의 기준.
+
+    ⚠ **덧붙이기**여야 한다. 빌드는 패처들을 **자식 프로세스로** 돌리므로 프로세스마다
+    자기 몫만 안다 — 덮어쓰면 마지막 패처 것만 남는다. 표를 비우는 건 `build.py` 몫이다.
+    ⚠ 안 쓰는 도구(검사기)는 `WRITE_LOG` 가 비어 있어 아무것도 안 남긴다.
+    """
+    if not WRITE_SECTORS:
+        return
+    path = WRITE_MANIFEST or os.path.join(OUT_DIR, "write_manifest.json")
+    old = {"sectors": {}, "writes": []}
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                old = json.load(f)
+        except (OSError, ValueError):
+            pass
+    old["sectors"].update({str(k): v for k, v in WRITE_SECTORS.items()})
+    old["writes"] += WRITE_LOG
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(old, f)
+
+
+atexit.register(_flush_write_log)
 
 
 def write_cue(cue_path, bin_name):

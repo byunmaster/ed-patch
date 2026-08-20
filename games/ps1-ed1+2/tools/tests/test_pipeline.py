@@ -907,5 +907,116 @@ def test_untranslated_axis_skips_pointer_prefix():
     assert L._tail(s) == "{c}男{c}{n}さあ早く 先に進んでください。{c}"
 
 
+def test_onomatopoeia_table_separates_by_mora_and_sokuon():
+    """웃음소리는 **인물을 가르는 표지**다 — 원문 꼴이 다르면 우리 꼴도 달라야 한다.
+
+    2026-08-20 에 `フォッフォッフォ`(노인)를 「훠훠훠」로 통일하다가 실피의 `ホッホッホッ`
+    까지 같은 그물에 걸어 네 블록을 잘못 고쳤다. **원문이 다른 낱말인데 우리 문안이 같아서**
+    일괄 치환에 삼켜진 것이다. 표가 그 둘을 갈라 놓는지 지킨다.
+    """
+    import check_onomatopoeia as O
+
+    # 마디 수·촉음이 다르면 우리 꼴도 달라야 한다
+    assert O.CANON["ハハハ"] != O.CANON["ハッハッハ"] != O.CANON["ハッハッハッ"]
+    assert O.CANON["ハッハッハッハ"] != O.CANON["ハッハッハッ"]
+    assert O.CANON["ふっふっふ"] != O.CANON["ふっふっふっ"]
+    # 🔴 실피(여성) ↔ 노인 — 이걸 뭉갠 게 그날의 사고다
+    assert O.CANON["ホッホッホッ"] != O.CANON["フォッフォッフォ"]
+    # 긴 꼴이 짧은 꼴에 먹히면 안 된다
+    assert O.jp_tokens("ハッハッハッハ · ·") == ["ハッハッハッハ"]
+    assert O.jp_tokens("うわっはっはっはっはっ") == ["うわっはっはっはっはっ"]
+
+
+def test_pointer_table_axis_needs_empty_tail():
+    """포인터 표에 문안을 넣으면 **표가 지워진다** — 2026-08-20 `ED2SCN2:300` 실측.
+
+    판정 신호를 두 번 틀렸다. 두 실수를 그대로 테스트로 굳힌다:
+
+    1. 비율만 보면 **표 접두 + 대사 꼬리**(anchor_tail)까지 걸린다 — 66건이 그랬다.
+       그건 재삽입기가 꼬리만 다시 쓰므로 **정상**이다.
+    2. 표는 워드 경계에서 시작하지 않는다 — `ED2SCN2:300` 은 **offset 3** 에서 맞는다.
+    """
+    import check_pointer_tables as P
+
+    tbl = b"\x00\x00\x00" + b"".join((0x80175F2C + i * 4).to_bytes(4, "little") for i in range(20))
+    assert P.pointer_ratio(tbl) > 0.9, "정렬 0~3 을 다 봐야 한다(이 표는 offset 3)"
+    assert P.pointer_ratio(b"\x41" * 80) < 0.5, "평범한 바이트를 표로 보면 안 된다"
+
+    # 꼬리에 대사가 있으면 anchor_tail — 잡으면 안 된다
+    assert P.tail_text("\\x34\\x9C\\x17\\x80{c}男{c}{n}ここは もう 確保しました。")
+    assert not P.tail_text("\\x34\\x9C\\x17\\x80\\xF8\\x5F\\x17\\x80")
+
+
+def test_iso_layout_reads_records_across_sector_gaps():
+    """디렉터리 레코드는 **섹터를 넘지 않는다** — 길이 0 을 만나면 다음 섹터 머리로 건너뛴다.
+
+    그걸 빼먹으면 파일 목록이 중간에서 끊기고, 끊긴 뒤의 파일이 밀려도 **초록으로 뜬다.**
+    배치 검사기가 조용히 거짓말하는 가장 쉬운 길이라 여기서 막는다.
+    """
+    import check_iso_layout as L
+
+    def rec(name, lba, size):
+        nb = name.encode()
+        ln = 33 + len(nb) + ((33 + len(nb)) % 2)
+        b = bytearray(ln)
+        b[0] = ln
+        b[2:6] = lba.to_bytes(4, "little")
+        b[10:14] = size.to_bytes(4, "little")
+        b[32] = len(nb)
+        b[33 : 33 + len(nb)] = nb
+        return bytes(b)
+
+    first = rec("A.;1", 100, 2048)
+    data = bytearray(4096)
+    data[: len(first)] = first  # 앞 섹터엔 하나만 두고 나머지는 0(= 섹터 끝 표식)
+    second = rec("B.;1", 200, 2048)
+    data[2048 : 2048 + len(second)] = second
+
+    got = L.read_root.__wrapped__(data) if hasattr(L.read_root, "__wrapped__") else None
+    assert got is None  # read_root 는 파일을 읽으므로 파서만 따로 재현해 확인한다
+
+    out, i = [], 0
+    while i < len(data):
+        ln = data[i]
+        if ln == 0:
+            i = (i // 2048 + 1) * 2048
+            continue
+        r = data[i : i + ln]
+        out.append(r[33 : 33 + r[32]].decode())
+        i += ln
+    assert out == ["A.;1", "B.;1"], "섹터 경계를 못 넘으면 뒤 파일을 통째로 놓친다"
+
+
+def test_write_log_records_every_sector():
+    """되읽기 지문은 **섹터 단위**여야 한다 — 쓰기 단위로 잡으면 커버리지가 무너진다.
+
+    실측(2026-08-20): 쓰기 단위로 「뒤에 겹친 게 있으면 앞엣것은 검증 제외」로 잡았더니
+    커버리지가 **38%** 였고 하필 **대사 씬 열아홉이 전부** 그 밖이었다(패처가 같은 파일을
+    뒤에서 조금만 덧칠하기 때문). 섹터로 잡으면 마지막 쓴 사람이 자연히 이긴다.
+    """
+    import hashlib
+
+    import common as C
+
+    C.WRITE_SECTORS.clear()
+    C.WRITE_LOG.clear()
+    try:
+        data = bytes(range(256)) * 24  # 6144B = 3섹터
+        # 쓰기 없이 기록부만 확인한다 — `write_user_data` 의 기록 구간과 같은 계산
+        nsec = (len(data) + C.USER_SIZE - 1) // C.USER_SIZE
+        for i in range(nsec):
+            chunk = data[i * C.USER_SIZE : (i + 1) * C.USER_SIZE].ljust(C.USER_SIZE, b"\x00")
+            C.WRITE_SECTORS[100 + i] = [hashlib.sha1(chunk).hexdigest(), "테스트"]
+        assert nsec == 3
+        assert sorted(C.WRITE_SECTORS) == [100, 101, 102], "쓴 섹터를 하나도 빠뜨리면 안 된다"
+        # 뒤에 겹쳐 쓰면 그 섹터의 주인이 바뀐다(= 마지막 쓴 사람이 이긴다)
+        C.WRITE_SECTORS[101] = ["deadbeef", "나중"]
+        assert C.WRITE_SECTORS[101][1] == "나중"
+        assert C.WRITE_SECTORS[100][1] == "테스트", "안 겹친 섹터는 그대로 남아야 한다"
+    finally:
+        C.WRITE_SECTORS.clear()
+        C.WRITE_LOG.clear()
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import sys
 
-from common import BUILD_DIR, ORIG_BIN, ROOT, verify_source, write_cue
+from common import BUILD_DIR, ORIG_BIN, OUT_DIR, ROOT, verify_source, write_cue
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 FINAL = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
@@ -119,8 +119,6 @@ def _why_excluded():
     """
     import json as _json
 
-    from common import OUT_DIR
-
     rows = []
     for p in sorted(glob.glob(os.path.join(OUT_DIR, "excluded_*.json"))):
         scn = os.path.basename(p)[len("excluded_") : -len(".json")]
@@ -185,6 +183,12 @@ def main():
     # 덤프와 커밋된 정본(align_map·align_overrides)이 어긋나 빌드가 죽는다 — 머신을 옮겨
     # 낡은 덤프를 안고 왔더니 `T_024#7` 의 `{p}` 페이지가 사라져 chain 이 IndexError 로
     # 터졌다(2026-08-09). 둘 합쳐 1.3초라 매번 새로 뜬다(결정적, 원본 읽기 전용).
+    # ⚠ 쓰기 지문표를 비우고 시작한다 — 패처들이 **자식 프로세스**라 각자 덧붙인다
+    #   (`common._flush_write_log`). 안 비우면 지난 빌드 것이 섞여 되읽기 대조가 거짓말한다.
+    _wm = os.path.join(OUT_DIR, "write_manifest.json")
+    if os.path.exists(_wm):
+        os.remove(_wm)
+
     run("extract_scn.py")  # JP 대사 덤프
     run("extract_dos_kr.py")  # 정발 대사 덤프
 
@@ -229,7 +233,9 @@ def main():
     _requa_note()
     from common import BUILD_TAG
 
-    print(f"\n완료: {FINAL}\n꼬리표 [{BUILD_TAG}] — 테스트는 이 하나만: {os.path.basename(FINAL_CUE)}")
+    print(
+        f"\n완료: {FINAL}\n꼬리표 [{BUILD_TAG}] — 테스트는 이 하나만: {os.path.basename(FINAL_CUE)}"
+    )
 
 
 if __name__ == "__main__":
