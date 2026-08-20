@@ -1018,5 +1018,42 @@ def test_write_log_records_every_sector():
         C.WRITE_LOG.clear()
 
 
+def test_proper_noun_report_keeps_control_codes():
+    """보고에 찍는 문안은 **`ctrl=True`** 여야 한다 — 안 그러면 띄어쓰기 오류로 읽힌다.
+
+    실측(2026-08-20): 찾기용 `ctrl=False` 렌더는 `%c` 와 **그 자리의 공백을 같이 지운다**.
+    `'아트라스, 세리오스 공은'` 이 `'아트라스,세리오스공은'` 으로 보여 오타로 오판했다.
+    문안은 멀쩡했다. 찾기는 `%c` 를 넘어야 하니 `ctrl=False` 가 맞고, **보여주기만**
+    `ctrl=True` 로 갈라야 한다.
+    """
+    import inspect
+
+    import check_proper_nouns as C
+
+    src = inspect.getsource(C.scan)
+    assert "render_bytes(cand, ctrl=False)" in src, "찾기는 %c 를 넘어야 한다"
+    assert "render_bytes(cand, ctrl=True)" in src, "보여주기는 %c 를 남겨야 한다"
+    assert "hits.append((eid, name, ours, kind, shown))" in src, (
+        "보고에 찾기용 평문(kr)을 찍으면 %c 자리가 띄어쓰기 오류로 읽힌다"
+    )
+
+
+def test_untranslated_axis_does_not_filter_by_tail():
+    """🔴 **「꼬리가 같은 번역본이 있으면 제외」를 되살리면 안 된다**(2026-08-20 실측).
+
+    한 번 그렇게 걸렀다 — 재삽입기가 대표 사본으로 참조를 돌리니 사본은 안 샐 거라고 본
+    것이다. **틀렸다.** 그 필터가 여덟을 숨겼고, 최종 이미지를 열어 보니 원문 그대로였다
+    (`ED1SCN4:735` 는 `宝혭を낙けました` 로 깨져 나가고 있었다). 별칭이 도는지는 꼬리가
+    같다고 알 수 없다.
+    """
+    import inspect
+
+    import check_jp_leak as L
+
+    src = inspect.getsource(L.untranslated)
+    assert "done = " not in src, "꼬리 기준 제외를 되살리면 안 된다 — 여덟을 숨겼다"
+    assert "if t in done" not in src
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

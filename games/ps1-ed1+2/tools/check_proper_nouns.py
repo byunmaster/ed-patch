@@ -23,6 +23,18 @@
 - **부분 인용** — 원문이 `クルスの村` 인데 문안이 `크루즈` 로만 받는 자리. 정상이다.
   그래서 지명은 **접미(마을·항구·성…)를 떼고** 핵심어로만 본다.
 
+🔴 **보고에 뜨는 문안을 「화면에 나가는 그대로」로 읽지 마라**(2026-08-20 실측).
+찾기는 `ctrl=False` 로 한다 — 이름이 `%c` 로 갈린 자리(`아트라스,%c세리오스%c공은`)를
+넘어 찾아야 하기 때문이다. 그런데 그 렌더는 **`%c` 와 그 자리의 공백을 같이 지운다**:
+
+    정본 t     '아트라스, 세리오스 공은 따라잡았느냐?'
+    ctrl=True  '아트라스,%c세리오스%c공은 따라잡았느냐?'
+    ctrl=False '아트라스,세리오스공은 따라잡았느냐?'   ← 띄어쓰기 오류로 보인다
+
+실제로 이 출력을 보고 「쉼표 뒤 공백 없음 · 띄어쓰기 빠짐」으로 오판했다. **문안은
+멀쩡했다.** 그래서 지금은 보고에 `ctrl=True` 렌더를 찍는다 — `%c` 가 보이면 그 자리는
+띄어쓰기가 아니라 창·색 전환이다.
+
 ⚠ **게이트가 아니다.** 판정이 필요한 후보를 보여 줄 뿐이다.
 
   python3 tools/check_proper_nouns.py            # 전 씬 요약
@@ -130,12 +142,17 @@ def scan(scenes=None, verbose=False):
         # 2026-08-17). 화자 문자열을 같이 본다.
         blocks = []
         for spk, eid, jp, cand, _t in R.iter_candidates((scn,)):
+            # ⚠ **찾기와 보여주기의 렌더가 다르다.** 찾기는 `ctrl=False` — 이름이 `%c` 로
+            #   갈린 자리를 넘어야 한다. 보여주기는 `ctrl=True` — `ctrl=False` 는 `%c` 와
+            #   그 자리의 공백을 같이 지워 **띄어쓰기 오류처럼 보인다**(실제로 오판했다,
+            #   2026-08-20). 둘을 같이 들고 다닌다.
             kr = R.render_bytes(cand, ctrl=False)
             body = kr.replace("\n", " ") if kr else ""
-            blocks.append((eid, jp, jp_text(jp), body, str(spk or "")))
+            shown = (R.render_bytes(cand, ctrl=True) or "").replace("\n", " ")
+            blocks.append((eid, jp, jp_text(jp), body, str(spk or ""), shown))
 
         hits = []
-        for i, (eid, jp, j, flat, spk) in enumerate(blocks):
+        for i, (eid, jp, j, flat, spk, shown) in enumerate(blocks):
             # ⚠ **인자 블록은 보지 않는다.** 이름이 `%s` 로 주입되는 자리라
             # (`ワプの翼 を渡しました`) 문안에 이름이 없는 게 정상이다.
             if b"%s" in jp or b"%d" in jp or not flat:
@@ -147,7 +164,7 @@ def scan(scenes=None, verbose=False):
                     continue
                 if any(x in j for x in SKIP_IF.get(name, ())):
                     continue
-                hits.append((eid, name, ours, kind, kr))
+                hits.append((eid, name, ours, kind, shown))
                 kinds[kind] += 1
                 break  # 한 블록에 여러 개면 첫 하나만 — 고치면 다시 뜬다
         tot += len(hits)
