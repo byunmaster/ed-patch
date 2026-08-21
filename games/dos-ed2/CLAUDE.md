@@ -17,9 +17,9 @@
 
 ```bash
 sh scripts/check.sh                      # ⭐ **커밋 전 이것 하나** (게이트: games/dos-ed2/check.sh)
-sh scripts/dosbox.sh ed2                 # 사본(work/dosbox/ed2)을 만들어 실행
-sh scripts/dosbox.sh ed2 --refresh       # 사본을 버리고 원본에서 다시 (패치 초기화)
-sh scripts/dosbox.sh ed2 --debug         # DOSBox-X 디버거
+sh scripts/emu/dosbox.sh ed2                 # 사본(work/dosbox/ed2)을 만들어 실행
+sh scripts/emu/dosbox.sh ed2 --refresh       # 사본을 버리고 원본에서 다시 (패치 초기화)
+sh scripts/emu/dosbox.sh ed2 --debug         # DOSBox-X 디버거
 
 # 패치를 사본에 적용해 인게임 확인
 python3 games/dos-ed2/tools/apply_patch.py \

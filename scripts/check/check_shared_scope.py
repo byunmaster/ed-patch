@@ -21,8 +21,8 @@
 ⚠ **게이트가 아니다** — 급할 땐 어길 수 있어야 한다(그리고 어긴 걸 알아야 한다).
 수치만 보고하고, 어겼으면 무엇을 왜 고쳤는지 커밋 메시지에 남긴다.
 
-  python3 scripts/check_shared_scope.py            # 현재 브랜치가 main 대비 무엇을 건드렸나
-  python3 scripts/check_shared_scope.py --base X   # 기준을 바꾼다
+  python3 scripts/check/check_shared_scope.py            # 현재 브랜치가 main 대비 무엇을 건드렸나
+  python3 scripts/check/check_shared_scope.py --base X   # 기준을 바꾼다
 """
 
 import argparse
@@ -30,7 +30,8 @@ import os
 import subprocess
 import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# scripts/check/ 아래라 세 번 올라가야 레포 루트다
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SHARED = ("shared/", "scripts/", ".claude/", "docs/", "CLAUDE.md")
 
 

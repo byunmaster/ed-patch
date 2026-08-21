@@ -17,7 +17,7 @@
 # ⚠ pytest 를 안 쓴다 — 이 머신 `.venv` 에 없고, 테스트 파일이 직접 실행되게 돼 있다.
 #
 # 목록을 손으로 들지 않는다 — **자리로 찾는다**(새 게임·새 테스트가 저절로 딸려 온다):
-#   공용   scripts/tests/test_*.py · shared/*/tests/test_*.py
+#   공용   scripts/*/tests/test_*.py · shared/*/tests/test_*.py
 #   게임   games/<게임>/tools/tests/test_*.py
 set -eu
 
@@ -35,11 +35,13 @@ run() {
   "$PY" "$1" || fail=1
 }
 
-for t in "$ROOT"/scripts/tests/test_*.py "$ROOT"/shared/*/tests/test_*.py; do
+# ⚠ 목록을 손으로 들지 않는다 — **자리로** 찾는다. `scripts/*/tests/` 까지 보는 이유는
+#   테스트가 **검사 대상 옆**에 살기 때문이다(check/tests · 나중에 emu/tests …).
+for t in "$ROOT"/scripts/*/tests/test_*.py "$ROOT"/shared/*/tests/test_*.py; do
   run "$t"
 done
 
-for g in $(sh "$ROOT/scripts/which_game.sh" "$@"); do
+for g in $(sh "$ROOT/scripts/check/which_game.sh" "$@"); do
   for t in "$ROOT/games/$g"/tools/tests/test_*.py; do
     run "$t"
   done

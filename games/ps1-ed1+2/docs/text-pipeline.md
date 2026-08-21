@@ -334,7 +334,7 @@ ED1 정본을 만든 도구인데 지워 놓고 「배정을 버린다」고 판
 3. 인게임 먹통·메뉴 잠김 등은 코드 추적보다 **differential 빌드로 이분**한다:
    `PILOT_FIXED=1`(블록 무이동 — 재배치 격리) → `PILOT_TEXT_IDENTITY=1`(대사만 끔) →
    `PILOT_IDENTITY=1`(번역 0건). `PILOT_SCN=ED1SCNn` 으로 씬을 좁힌다.
-4. 어투가 흔들리면 **DOS 정발을 띄워 참고한다**(`scripts/dosbox.sh ed1`). ⚠ 이제 정발은
+4. 어투가 흔들리면 **DOS 정발을 띄워 참고한다**(`scripts/emu/dosbox.sh ed1`). ⚠ 이제 정발은
    저본이 아니라 **참고 자료**다 — 맞춰야 할 대상이 아니라 향수의 기준이다.
 
 ## 10. 외부 맞춤법 검사기로 전수 교정

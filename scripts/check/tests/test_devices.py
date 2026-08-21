@@ -8,8 +8,12 @@
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(ROOT, "scripts"))
+# scripts/check/tests/ 아래라 네 번 올라가야 레포 루트다
+ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
+# 검사 장치는 `scripts/check/` 에 산다(`scripts/` 는 입구만 둔다 — 저장소 맵 참조)
+sys.path.insert(0, os.path.join(ROOT, "scripts", "check"))
 
 
 def _read(*parts):
@@ -37,14 +41,14 @@ def test_fingerprint_freeze_does_not_copy_another_branch():
 
     폴백은 **읽기 전용**이다 — 베끼면 그 게임을 빌드해 보지도 않고 정본을 세우게 된다.
     """
-    src = _read("scripts", "typeset_fingerprint.py")
+    src = _read("scripts", "check", "typeset_fingerprint.py")
     body = src[src.index("if a.freeze:") :]
     assert '!= "작업 트리"' in body[:400], "freeze 경로에 남의 브랜치 값 차단이 없다"
 
 
 def test_shared_scope_watches_worktree_not_only_commits():
     """⚠ 커밋 *전에* 도는 검사가 커밋된 것만 보면 한 발 늦는다 — 작업 트리도 봐야 한다."""
-    src = _read("scripts", "check_shared_scope.py")
+    src = _read("scripts", "check", "check_shared_scope.py")
     assert "status" in src and "--porcelain" in src, "작업 트리를 안 본다"
 
 

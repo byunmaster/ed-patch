@@ -288,8 +288,8 @@ raw     → draft      → review     → human            → done
 - **브랜치가 자기 영역만 만졌는지 본다** — 게이트로 세우지 않는다(급하면 어겨야 한다).
   ⚠ **작업 트리도 봐야 한다** — 커밋 전에 도는 검사가 커밋된 것만 보면 한 발 늦는다.
 
-> 우리: `scripts/typeset_fingerprint.py` · `scripts/check_shared_scope.py`(둘 다 `check.sh`).
-> 공용 장치의 회귀는 **공용 자리에서 돈다** — `scripts/tests/`(게임 테스트에 두면 그 게임
+> 우리: `scripts/check/typeset_fingerprint.py` · `scripts/check/check_shared_scope.py`(둘 다 `check.sh`).
+> 공용 장치의 회귀는 **공용 자리에서 돈다** — `scripts/check/tests/`(게임 테스트에 두면 그 게임
 > 브랜치에서만 돈다).
 > ⚠ 지문을 세우고 **일부러 조판을 흔들어 봤다** — `wrap()` 본문에 `width - 1` 을 심으니
 > 19씬 전부 잡혔다. 그 전에 **시그니처 기본값만 바꿨을 땐 안 잡혔다**(호출자가 늘 넘겨서

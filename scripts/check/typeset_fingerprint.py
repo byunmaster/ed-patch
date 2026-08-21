@@ -16,8 +16,8 @@
 값이 바뀌므로, **문안 작업 중에는 갱신하며 간다**(`--freeze`). 값이 말하는 것은
 「내가 안 건드린 게임의 조판이 그대로인가」다 — 그래서 **공용 변경 전후로 비교**한다.
 
-  python3 scripts/typeset_fingerprint.py            # 지금 지문 (정본과 대조)
-  python3 scripts/typeset_fingerprint.py --freeze   # 정본 갱신 (문안을 의도적으로 바꿨을 때)
+  python3 scripts/check/typeset_fingerprint.py            # 지금 지문 (정본과 대조)
+  python3 scripts/check/typeset_fingerprint.py --freeze   # 정본 갱신 (문안을 의도적으로 바꿨을 때)
 
 ⚠ **자동 갱신하지 않는다.** 자동이면 알림이 무의미해진다(락·관측과 같은 규율).
 
@@ -36,7 +36,8 @@ import subprocess
 import sys
 from contextlib import redirect_stdout
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# scripts/check/ 아래라 세 번 올라가야 레포 루트다
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 # ⚠ **값은 게임 것**이다 — 루트에 두면 게임 브랜치가 갱신할 때마다 공용 파일을 건드리게

@@ -15,12 +15,12 @@ NPC에게 말을 걸고 배에 탄다. 배가 마을 밖으로 나가 **월드�
 ## 재현 환경
 
 DOSBox-X 2026.07.02 + `originals/ED2` 사본 + 사용자 제공 세이브.
-설정은 `scripts/dosbox/`, 실행 스크립트는 `scripts/`에 있고, 게임 사본·로그는
+설정은 `scripts/emu/dosbox/`, 실행 스크립트는 `scripts/`에 있고, 게임 사본·로그는
 `work/dosbox/`(gitignore).
 100% 재현되고 레지스터까지 매번 동일하다.
 
 ```bash
-scripts/dosbox.sh --app      # --app(앱 번들)이라야 키보드 입력이 안정적
+scripts/emu/dosbox.sh --app      # --app(앱 번들)이라야 키보드 입력이 안정적
 ```
 
 ## 확정된 사실
@@ -76,7 +76,7 @@ AX=000D BX=1396 CX=0001 DX=004C SI=2200 DI=34CE BP=0FA6 SP=0F98
 
 ### 엔진이 감지한 오류가 아니다 (동적 확인)
 
-`scripts/dosbox.sh`는 `-log-con`으로 DOS 콘솔 출력을 로그에 남긴다. 크래시 재현 시
+`scripts/emu/dosbox.sh`는 `-log-con`으로 DOS 콘솔 출력을 로그에 남긴다. 크래시 재현 시
 로그에는 예외 덤프만 있고 그 앞에 **`Where`/`What` 메시지가 없다**. 즉 엔진 에러
 핸들러는 돌지 않았고, 생짜 GP fault다. (`FreeLibrary`를 막았을 때 나온
 `Scenario_GetFuncPtr` 메시지는 그 패치가 만든 별개 현상이었다.)

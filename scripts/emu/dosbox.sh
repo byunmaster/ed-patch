@@ -1,7 +1,7 @@
 #!/bin/sh
 # 정발(DOS) 영웅전설 1~4를 DOSBox-X로 실행한다 — 정발 대조·패치 검증용.
 #
-#   scripts/dosbox.sh ed1|ed2|ed3|ed4 [옵션...] [dosbox 추가인자...]
+#   scripts/emu/dosbox.sh ed1|ed2|ed3|ed4 [옵션...] [dosbox 추가인자...]
 #
 #     --app      앱 번들(open -a)로 실행 — macOS에서 키 입력이 안 먹을 때(아래 참조)
 #     --scancodes  usescancodes=true 로 실행. **방향키가 안 먹을 때** 시도한다(수정자키는
@@ -17,6 +17,41 @@
 #                `imgmount`). 미지정이면 배포본 동봉 이미지를 **자동으로 찾는다**
 #                (`originals/kr/<G>/CD/` 와 `originals/kr/<G>/DosBox/CD/` 둘 다 본다).
 #     --no-sync  세이브 동기화를 끈다(아래 참조). 기본은 켜짐.
+#     --engine E DOSBox 구현을 고른다: x(기본) · staging. `DOSBOX_ENGINE` 로도 준다.
+#     --core C   CPU 코어: normal(기본, 인터프리터) · dynamic(재컴파일 — **훨씬 빠르다**).
+#                ⚠ 기본이 normal 인 건 호환성 때문이다. dynamic 은 같은 사이클을 몇 배 싸게
+#                  돌려 빨리감기 천장을 올려 주지만, 자기수정 코드·타이밍 트릭을 쓰는 게임에서
+#                  드물게 깨진다. **정발 DOS 판에서 확인되면 그때 기본값으로 올린다.**
+#     --cycles N 에뮬 CPU 성능(기본 20000 ≈ 486). **DOSBox 의 속도는 배수가 아니라 이것**이다 —
+#                터보는 그 위에서 프레임 제한을 풀 뿐이라, 게임이 CPU 를 다 쓰면 별로 안 빨라진다.
+#                ⚠ 「fps 가 낮다」의 원인을 가르는 손잡이이기도 하다: 올려서 fps 가 오르면
+#                  에뮬 한계, 안 오르면 **게임 자체가 그 속도**다(DOS RPG 는 원래 느리다).
+#
+# ── 엔진 둘 (유저 요청 2026-08-21) ───────────────────────────────────────────
+# 기본은 **DOSBox Staging** 이고 X 도 그대로 산다. 「어차피 둘 다 앱 번들 아니냐」가 맞다 —
+# **formula 는 둘 다 있고**(dosbox-x · dosbox-staging) 지금 이 맥엔 **둘 다 앱 번들**로 깔려
+# 있다. 그러니 「formula 라 OS 천장에 안 걸린다」는 둘을 가르는 근거가 못 된다(2026-08-22 정정).
+# 실제로 갈리는 건 이것들이다:
+#   staging  ✅ SDL2 — **한글 입력 소스에서도 키가 먹는다**(X 는 SDL1 이라 방향키가 죽는다)
+#            ✅ 활발한 유지보수 · 셰이더        ❌ 디버거 없음 · DOS 콘솔 로그 없음 · turbo 홀드 전용
+#   X        ✅ `-break-start` 디버거 · `-log-con`(게임이 찍는 DOS 메시지 — ED4 진단에 실제로 썼다)
+#            ✅ turbo 가 토글                   ❌ SDL1 한글 IME 함정 · 상류가 최신 macOS API 를 부르면 막힌다
+# 🔴 그런데 **ED4 가 staging 에서 안 뜬다**(2026-08-22 실측 · X 에서는 뜬다). 타깃 넷 중 하나가
+#   안 도는 엔진을 기본으로 둘 이유가 없어 **기본을 X 로 되돌렸다**(유저 확정). staging 은
+#   `--engine staging` 으로 남는다 — 한글 입력 소스에서 X 의 방향키가 죽을 때 쓰는 길이고,
+#   나중에 X 가 macOS 새 버전에서 막히면 그때 다시 뒤집으면 된다.
+# 빨리감기(X) — **매퍼 이벤트 둘의 정체를 실측으로 확정했다**(2026-08-22, 문서엔 없다):
+#   hand_speedlock   = **버스트(누르는 동안)**  → Tab   (SDL1 키심 9)
+#   hand_speedlock2  = **토글**                 → `     (SDL1 키심 96)
+#   mednafen 과 손가락이 같아진다(` 토글 · Tab 홀드). 한 번 뒤집어 봤다가 되돌린 결과다 —
+#   이름만 보고 speedlock 을 토글로 짐작하면 정확히 반대다.
+# ⚠ 이 배치는 `.local/dosbox/mapper.map`(머신 전용)에 있다. 그 파일이 날아가면 `--mapper` 로
+#   매퍼 UI 를 열어 다시 잡는다(부분 매퍼는 금물 — 전체 파일이라야 한다).
+# ⚠ X 를 쓰면 **`-log-con` 이 살아난다** — 게임이 찍는 DOS 메시지가 로그에 남는다(ED4 를
+#   그걸로 진단했다). 진단 능력만 보면 X 가 낫다.
+# ⚠ **`--debug` 는 DOSBox-X 만 된다** — `-break-start` 디버거가 X 에만 있고, fix 트랙의
+#   역공학이 거기 걸려 있다. `--debug` 를 주면 말없이 X 로 돌린다(알린다).
+# ⚠ `--app`·`--scancodes` 도 X 전용이다(앱 번들 채널 + SDL1 저수준 키보드).
 #
 # ── 사본 방식 ────────────────────────────────────────────────────────────────
 # 원본 `originals/kr/dos-ed{1,2,3,4}`(gitignore, 소장본)는 **읽기만 한다.** 게임 본체를
@@ -43,7 +78,7 @@
 # ed2 기준 324KB** — 이것만 옮기면 0.2초다. 그래서 무거운 쪽(게임)을 로컬에 두고
 # 가벼운 쪽(세이브)만 오간다.
 #
-# **기전·정본 자리·안전장치는 `scripts/sync-saves.sh` 가 정본이다**(기종 무관 공용 —
+# **기전·정본 자리·안전장치는 `scripts/emu/sync-saves.sh` 가 정본이다**(기종 무관 공용 —
 # PS1 메모리카드도 같은 걸 쓴다). 여기서는 무엇을 어디로 보낼지만 정한다:
 # leaf 는 `originals/` 규약을 그대로 쓴 `dos-ed1`~`dos-ed4`, 대상은 게임별 `$SAVES` 다.
 #
@@ -73,9 +108,51 @@
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-REPO=$(cd "$HERE/.." && pwd)
-DOSBOX=${DOSBOX:-/Applications/dosbox-x.app/Contents/MacOS/dosbox-x}  # 환경변수로 교체 가능
+REPO=$(cd "$HERE/../.." && pwd)   # scripts/emu → 레포 루트
+# ⚠ **CLI 바이너리를 먼저 찾는다 — 앱 번들은 폴백이다**(유저 요청 2026-08-21). brew formula
+# (`brew install dosbox-x`)는 **이 맥에서 소스로 빌드**돼 OS 천장에 안 걸리는 반면, 받아 쓰는
+# 앱 번들은 상류가 최신 macOS API 를 부르는 순간 그냥 못 뜬다 — Geargrafx 가 SDL3 의
+# macOS 14 API 때문에 Ventura 인 이 맥에서 실행 자체가 안 됐다(같은 날 실측). 같은 함정을
+# DOS 쪽에도 두지 않는다.
+# ⚠ `|| true` 가 없으면 **`set -e` 아래에서 여기서 죽는다** — 바이너리가 PATH 에 없을 때
+#   command -v 가 1 을 반환하고, 그게 대입문의 종료코드가 된다(2026-08-21 실측: 이 한 줄로
+#   DOS 실행이 통째로 막혔다).
+# ⚠ 둘 다 **`return 0` 으로 닫는다** — 못 찾았을 때 non-zero 로 끝나면 `DOSBOX=$(staging_bin)`
+#   이 그걸 물려받아 set -e 가 조용히 스크립트를 죽인다(위 command -v 주석과 같은 함정).
+staging_bin() {
+  b=$(command -v dosbox-staging 2>/dev/null || true); if [ -n "$b" ]; then printf '%s' "$b"; return 0; fi
+  b=$(command -v dosbox 2>/dev/null || true);         if [ -n "$b" ]; then printf '%s' "$b"; return 0; fi
+  b="/Applications/DOSBox Staging.app/Contents/MacOS/dosbox"
+  [ -x "$b" ] && printf '%s' "$b"
+  return 0
+}
+x_bin() {
+  b=$(command -v dosbox-x 2>/dev/null || true); if [ -n "$b" ]; then printf '%s' "$b"; return 0; fi
+  b=/Applications/dosbox-x.app/Contents/MacOS/dosbox-x
+  [ -x "$b" ] && printf '%s' "$b"
+  return 0
+}
+ENGINE=${DOSBOX_ENGINE:-auto}
 APPDIR=${DOSBOX_APP:-/Applications/dosbox-x.app}
+
+# 어느 구현으로 뜰지 정한다. `--which` 로 밖에서도 물어볼 수 있다 — **`emu.sh` 목록의
+# 라벨이 이 답을 쓴다.** 값을 두 벌로 들면 엔진을 바꿨을 때 목록만 옛말을 한다
+# (실제로 그랬다: staging 으로 돌리는데 목록엔 dosbox-x 라고 떴다 — 유저 지적 2026-08-21).
+resolve_engine() {
+  case "$ENGINE" in
+    auto)    DOSBOX=$(x_bin); if [ -n "$DOSBOX" ]; then ENGINE=x; else DOSBOX=$(staging_bin); ENGINE=staging; fi ;;
+    staging) DOSBOX=$(staging_bin) ;;
+    x)       DOSBOX=$(x_bin) ;;
+    *) echo "모르는 엔진: $ENGINE (staging|x)" >&2; exit 2 ;;
+  esac
+  DOSBOX=${DOSBOX_BIN:-$DOSBOX}
+}
+
+if [ "${1:-}" = --which ]; then
+  resolve_engine
+  printf 'dosbox-%s\n' "$ENGINE"
+  exit 0
+fi
 
 usage() {
   echo "사용법: $0 ed1|ed2|ed3|ed4 [--app|--debug] [--refresh] [--setup] [--cd P] [dosbox 인자...]" >&2
@@ -101,6 +178,8 @@ case "$GAME" in
 esac
 
 APP=0; DEBUG=0; REFRESH=0; SETUP=0; SCAN=0; MAPPER=0; CD=""; ARGS=""
+CYCLES=${DOSBOX_CYCLES:-20000}
+CORE=${DOSBOX_CORE:-normal}
 SYNC=${DOSBOX_SYNC:-1}
 DEV_HOST=${DEV_HOST:-dev}                    # pull-build.sh 와 같은 관례
 DEV_SAVES=${DEV_SAVES:-save}                 # dev 홈 기준 상대 — 레포 밖이다(헤더 참조)
@@ -113,6 +192,9 @@ while [ $# -gt 0 ]; do
     --scancodes) SCAN=1 ;;
     --mapper) MAPPER=1 ;;
     --no-sync) SYNC=0 ;;
+    --cycles) shift; CYCLES=$1; [ -n "$CYCLES" ] || { echo "--cycles N" >&2; exit 2; } ;;
+    --core) shift; CORE=$1; [ -n "$CORE" ] || { echo "--core normal|dynamic" >&2; exit 2; } ;;
+    --engine) shift; ENGINE=$1; [ -n "$ENGINE" ] || { echo "--engine staging|x" >&2; exit 2; } ;;
     --cd) shift; CD=$1; [ -n "$CD" ] || { echo "--cd 경로 필요" >&2; exit 2; } ;;
     *) ARGS="$ARGS $1" ;;
   esac
@@ -121,6 +203,22 @@ done
 [ "$SETUP" = 1 ] && CMD="setup.exe"
 [ "$APP" = 1 ] && [ "$DEBUG" = 1 ] && {
   echo "--app 과 --debug 는 같이 못 쓴다(디버거 UI는 터미널에 뜬다)" >&2; exit 2; }
+
+# X 전용 기능이 걸려 있으면 엔진을 되돌린다. 조용히 다른 걸 띄우지 않고 이유를 말한다.
+for need_x in "$DEBUG:--debug(디버거는 X 전용)" "$APP:--app(앱 번들 채널은 X 전용)" \
+              "$SCAN:--scancodes(SDL1 저수준 키보드는 X 전용)"; do
+  # ⚠ `[ … ] && echo` 로 쓰면 조건이 거짓일 때 **set -e 가 여기서 죽인다**(같은 함정을
+  #   오늘 이미 한 번 밟았다 — 위 command -v 주석 참조). if 로 쓴다.
+  case "$need_x" in
+    1:*)
+      if [ "$ENGINE" = staging ]; then echo "⚠ ${need_x#1:} — DOSBox-X 로 돌린다" >&2; fi
+      ENGINE=x
+      ;;
+  esac
+done
+resolve_engine
+# 매퍼는 엔진마다 형식이 달라 파일을 가른다(template 헤더 참조).
+if [ "$ENGINE" = staging ]; then MAPPERFILE=mapper-staging.map; else MAPPERFILE=mapper.map; fi
 
 ORIG="$REPO/originals/kr/$SRC"
 [ -d "$ORIG" ] || { echo "원본 없음: originals/kr/$SRC (소장본 필요 — originals/README.md)" >&2; exit 1; }
@@ -181,13 +279,67 @@ fi
 # ── conf 생성 (템플릿 → .local/dosbox/<game>.conf, 생성물은 gitignore) ────────
 sed -e "s|@GAME@|$GAME|g" -e "s|@DRIVE@|$DRIVE|g" -e "s|@CMD@|$CMD|g" \
     -e "s|@MOUNTCD@|$MOUNTCD|g" -e "s|@SBTYPE@|$SBTYPE|g" -e "s|@SBIRQ@|$SBIRQ|g" \
+    -e "s|@MAPPERFILE@|$MAPPERFILE|g" -e "s|@CYCLES@|$CYCLES|g" -e "s|@CORE@|$CORE|g" \
     "$HERE/dosbox/game.conf.tmpl" > "$BOX/$GAME.conf"
+# 템플릿은 DOSBox-X 기준이다. staging 은 여섯 키를 거부하는데(실측) 전부 경고로 넘어가긴
+# 하지만, 로그가 지저분하면 진짜 경고를 놓친다 — 여기서 갈아 준다.
+#   usescancodes·autolock·stop turbo on key  없는 설정  → 뺀다
+#   priority=highest,highest                 형식이 다르다 → 뺀다(기본값이면 충분)
+#   [log] logfile=                           X 전용     → 뺀다(대신 stdout 을 파일로 받는다)
+#   captures= / cycles=fixed N               이름·형식이 바뀜 → [capture] capture_dir /
+#                                            cpu_cycles=N (⚠ `fixed` 를 남기면 파싱에 실패해
+#                                            **3000 사이클로 떨어진다** — 게임이 기어간다)
+# ⚠ `glshader=none` 을 박는다 — staging 은 기본으로 CRT 셰이더를 자동 적용하는데(실측
+#   `crt/vga-1080p`), **문안 QA 에서 글자가 흐려지면 우리 조판 탓인지 셰이더 탓인지 못 가른다.**
+# ── staging 매퍼 만들기 ─────────────────────────────────────────────────────
+# 빨리감기를 **Tab** 에 둔다 — mednafen 쪽 「Tab = 홀드」와 같은 키다(유저 확정 2026-08-22).
+# staging 의 speedlock 은 **누르는 동안만**이고 토글 설정이 없어서, 토글이 필요하면 mednafen 의
+# ` 쪽을 쓴다(거기선 `fast_forward` 가 토글, `slow_forward` 를 전용해 Tab 이 홀드다).
+# staging 기본값은 Alt+F12 다.
+# ⚠ Tab 은 DOS 키이기도 하다(`key_tab`). 영웅전설 1~4 는 Tab 을 안 쓰지만, 쓰는 게임을
+#   붙일 땐 여기를 옮긴다.
+#
+# ⚠ **한 줄만 적은 매퍼는 못 쓴다** — 파일이 있으면 기본 바인딩을 통째로 대체해서 나머지
+#   키가 전부 죽는다(오늘 ED3 에서 실제로 겪었다). 그래서 **전체 파일**을 만들어야 하는데,
+#   보통은 게임 안 매퍼 UI 에서 저장해야 나온다.
+# 그런데 staging 이 번들한 매퍼 186개를 대조해 보니 **스틱 바인딩만 빼면 185개가 완전히
+# 동일**했다 — 그게 곧 기본 세트다. 그걸 밑절미로 스틱을 걷어내고 speedlock 만 바꾼다.
+# 없으면 그냥 안 만든다(기본 바인딩으로 돈다 — 빨리감기만 Alt+F12 로 남는다).
+if [ "$ENGINE" = staging ] && [ ! -f "$BOX/$MAPPERFILE" ]; then
+  for _m in "/Applications/DOSBox Staging.app/Contents/Resources/mapperfiles/xbox/d.map" \
+            "$(brew --prefix 2>/dev/null)/share/dosbox-staging/mapperfiles/xbox/d.map"; do
+    [ -f "$_m" ] || continue
+    # 스틱 제거 → speedlock 을 ` (SDL 스캔코드 53) 로
+    sed -e 's/"stick[^"]*"//g' -e 's/ *$//' \
+        -e 's|^hand_speedlock .*|hand_speedlock "key 43"|' "$_m" > "$BOX/$MAPPERFILE"
+    echo "매퍼 생성: $MAPPERFILE (빨리감기 홀드 = Tab — mednafen 과 같은 키)"
+    break
+  done
+fi
+
+if [ "$ENGINE" = staging ]; then
+  sed -e '/^usescancodes=/d' -e '/^autolock=/d' -e '/^stop turbo on key=/d' \
+      -e '/^priority=/d' \
+      -e '/^\[log\]/d' -e '/^logfile=/d' \
+      -e '/^captures=/d' \
+      -e 's/^cycles=fixed /cpu_cycles=/' \
+      "$BOX/$GAME.conf" > "$BOX/$GAME.conf.tmp"
+  {
+    echo ""
+    echo "[render]"
+    echo "glshader=none"
+    echo ""
+    echo "[capture]"
+    echo "capture_dir=capture"
+  } >> "$BOX/$GAME.conf.tmp"
+  mv "$BOX/$GAME.conf.tmp" "$BOX/$GAME.conf"
+fi
 # ⚠ 매퍼 파일은 기본 바인딩을 **덮는 게 아니라 통째로 대체**한다 — 한 줄짜리를 깔면
 # 나머지 키가 전부 언바인드돼 **키보드가 죽는다**(2026-07-31 실측). 게임 안 매퍼 UI
 # (Ctrl+F1)로 저장한 **전체 파일**만 유효하다. 손으로 만든 부분 매퍼는 치운다.
-if [ -f "$BOX/mapper.map" ] && [ "$(wc -l < "$BOX/mapper.map")" -lt 20 ]; then
-  echo "⚠ 부분 매퍼 감지 — 키보드가 죽으므로 제거한다: .local/dosbox/mapper.map" >&2
-  rm -f "$BOX/mapper.map"
+if [ -f "$BOX/$MAPPERFILE" ] && [ "$(wc -l < "$BOX/$MAPPERFILE")" -lt 20 ]; then
+  echo "⚠ 부분 매퍼 감지 — 키보드가 죽으므로 제거한다: .local/dosbox/$MAPPERFILE" >&2
+  rm -f "$BOX/$MAPPERFILE"
 fi
 rm -f "$BOX/$GAME.log"
 
@@ -195,13 +347,11 @@ rm -f "$BOX/$GAME.log"
 # ⚠ macOS 입력 소스가 **한글이면 방향키가 DOSBox 에 안 들어온다**(IME 가 먹는다).
 # 조용히 방향키만 죽고 Shift·메뉴는 멀쩡해서 DOSBox 설정 문제로 오해하기 쉽다
 # (2026-07-31 유저가 규명 — usescancodes 도 --app 도 원인이 아니었다).
-if defaults read ~/Library/Preferences/com.apple.HIToolbox.plist AppleSelectedInputSources 2>/dev/null \
-   | grep -qi 'inputmethod\.Korean'; then
-  echo "⚠ 입력 소스가 한글이다 — DOSBox 에서 방향키가 안 먹는다. 영문(ABC)으로 바꾸고 플레이할 것." >&2
-fi
+. "$HERE/ime.sh"
+warn_ime
 
 # ── 세이브 동기화 ───────────────────────────────────────────────────────────
-# 기전은 `scripts/sync-saves.sh` 에 있다(기종 무관 공용 — PS1 메모리카드도 같은 걸 쓴다).
+# 기전은 `scripts/emu/sync-saves.sh` 에 있다(기종 무관 공용 — PS1 메모리카드도 같은 걸 쓴다).
 # 여기서는 **무엇을 어디로** 만 정한다. leaf 는 originals 규약대로 `$SRC`(=dos-ed2)다.
 SYNCSH="$HERE/sync-saves.sh"
 
@@ -220,12 +370,33 @@ fi
 
 # 상대경로(logfile·captures·mapperfile·mount)가 해석되도록 기준 디렉터리로 이동한다.
 cd "$BOX"
-COMMON="-conf $GAME.conf -fastlaunch"
+# ⚠ staging 은 `-fastlaunch` 가 없고, **자기 기본 설정 파일을 먼저 읽는다** — 그대로 두면
+#   이 맥의 개인 설정이 섞여 결과가 환경을 탄다(레포 제1 원칙). `--noprimaryconf` 로 끊는다.
+if [ "$ENGINE" = staging ]; then
+  COMMON="-conf $GAME.conf --noprimaryconf"
+else
+  COMMON="-conf $GAME.conf -fastlaunch"
+fi
 [ "$SCAN" = 1 ]   && COMMON="$COMMON -set \"sdl usescancodes=true\""
 [ "$MAPPER" = 1 ] && COMMON="$COMMON -startmapper"
 
 have_dosbox() {
-  [ -x "$DOSBOX" ] || { echo "dosbox-x 없음: $DOSBOX (brew install --cask dosbox-x)" >&2; exit 1; }
+  [ -n "$DOSBOX" ] && [ -x "$DOSBOX" ] && return 0
+  if [ "$ENGINE" = staging ]; then
+    echo "DOSBox Staging 없음 — brew install dosbox-staging (또는 --engine x)" >&2
+  else
+    echo "dosbox-x 없음 — brew install dosbox-x" >&2
+  fi
+  exit 1
+}
+# staging 은 `-log-con` 이 없다. 로그는 stdout 으로 나오니 그걸 파일로 받는다 —
+# 그래픽 모드라 화면에 안 보이는 엔진 진단 메시지를 잡는 게 이 로그의 목적이다.
+run_engine() {                      # $@ = 추가 인자
+  if [ "$ENGINE" = staging ]; then
+    "$DOSBOX" $COMMON "$@" $ARGS >>"$BOX/$GAME.log" 2>&1
+  else
+    "$DOSBOX" $COMMON -log-con "$@" $ARGS
+  fi
 }
 # ⚠ `open -a` 는 **cwd 를 물려주지 않는다** — 위에서 cd 해도 앱은 제 작업디렉터리에서 뜬다.
 # 그래서 상대경로 `-conf ed1.conf` 를 못 찾아 마운트 없이 맨 프롬프트만 나왔다(2026-07-31).
@@ -247,7 +418,7 @@ run_dosbox() {
     open ${1:+-W} -a "$APPDIR" --args -conf "$BOX/$GAME.conf" -defaultdir "$BOX" \
          -fastlaunch -log-con $APPOPT $ARGS
   else
-    have_dosbox; "$DOSBOX" $COMMON -log-con $ARGS
+    have_dosbox; run_engine
   fi
 }
 
@@ -258,7 +429,7 @@ if [ "$SYNC" != 1 ]; then
     exec open -a "$APPDIR" --args -conf "$BOX/$GAME.conf" -defaultdir "$BOX" \
          -fastlaunch -log-con $APPOPT $ARGS
   fi
-  have_dosbox; exec "$DOSBOX" $COMMON -log-con $ARGS
+  have_dosbox; run_engine; exit $?
 fi
 
 # ⚠ Ctrl+C 로 끊거나 DOSBox 가 비정상 종료해도 세이브는 올려야 한다 — 진행분을 잃는 게

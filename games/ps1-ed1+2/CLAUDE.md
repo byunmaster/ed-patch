@@ -126,7 +126,7 @@ sh ../../scripts/test.sh   # 단위·회귀 테스트 (원본 없이 돈다 — 
 문서에만 적어 두면 다음 사람이 같은 자리를 다시 밟는다 — 실제로 하루에 셋을 새로 만났다
 (`subs` 순서 · 낱말 경계 · 이름창 canon, 2026-08-11).
 
-정발 문안·조판을 눈으로 맞출 때는 레포 공용 `sh scripts/dosbox.sh ed1|ed2|ed3|ed4`.
+정발 문안·조판을 눈으로 맞출 때는 레포 공용 `sh scripts/emu/dosbox.sh ed1|ed2|ed3|ed4`.
 
 ## 번역 정책
 

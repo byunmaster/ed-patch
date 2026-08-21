@@ -56,7 +56,7 @@ originals/          원본 게임 데이터 (gitignore — 직접 소장본으�
 ```bash
 python3 games/ps1-ed1+2/tools/build.py   # [kr] 한글패치 디스크 빌드
 sh scripts/patcher.sh serve              # [fix] 웹 패처를 로컬에서 띄워 확인
-sh scripts/dosbox.sh ed1|ed2|ed3|ed4     # 정발 DOS판 실행 (문안 대조 · 패치 검증)
+sh scripts/emu/dosbox.sh ed1|ed2|ed3|ed4     # 정발 DOS판 실행 (문안 대조 · 패치 검증)
 sh scripts/worktree.sh ps1-ed1+2         # 게임별 워크트리 (originals 링크까지)
 sh scripts/check.sh                      # 커밋 전 — 빌드 + 화면·조판 검사
 ```

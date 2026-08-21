@@ -1,9 +1,9 @@
 #!/bin/sh
 # 세이브 정본을 작업 머신(dev)에 두고 실행 머신과 오간다 — 기종 무관 공용 기전.
 #
-#   sh scripts/sync-saves.sh probe
-#   sh scripts/sync-saves.sh pull <leaf> <로컬디렉터리>
-#   sh scripts/sync-saves.sh push <leaf> <로컬디렉터리> <파일명>...
+#   sh scripts/emu/sync-saves.sh probe
+#   sh scripts/emu/sync-saves.sh pull <leaf> <로컬디렉터리>
+#   sh scripts/emu/sync-saves.sh push <leaf> <로컬디렉터리> <파일명>...
 #
 #     leaf      정본 폴더명. **`originals/` 규약(`<플랫폼>-ed<N>`)을 그대로 쓴다** —
 #               `dos-ed2` · `ps1-ed1+2` · `win-ed3`. 세이브 폴더가 원본 폴더와 1:1 로 읽힌다.

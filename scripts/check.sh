@@ -19,8 +19,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PY="$ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY=python3
 
-# 어느 게임인가 — 정본은 `scripts/which_game.sh` 다(테스트도 같은 답을 써야 한다).
-GAMES=$(sh "$ROOT/scripts/which_game.sh" "$@")
+# 어느 게임인가 — 정본은 `scripts/check/which_game.sh` 다(테스트도 같은 답을 써야 한다).
+GAMES=$(sh "$ROOT/scripts/check/which_game.sh" "$@")
 
 # ⚠ 테스트도 **자기 게임 것만** 본다(유저 확정 2026-08-21). 게이트는 갈라 놓고 테스트만
 #   전역이면, 원본을 안 링크한 워크트리에서 남의 게임 때문에 늘 빨간불이 된다(실측:
@@ -46,7 +46,7 @@ done
 # 게임 브랜치가 공용·남의 게임을 건드렸나 — 게이트가 아니다(급하면 어길 수 있어야 한다).
 # 공용은 `main` 에서 고치고 받아 온다 — 게임 브랜치에서 고치면 다른 게임이 조용히 바뀐다.
 echo "── 브랜치 범위"
-"$PY" "$ROOT/scripts/check_shared_scope.py" 2>&1 | tail -4 | sed 's/^/  /'
+"$PY" "$ROOT/scripts/check/check_shared_scope.py" 2>&1 | tail -4 | sed 's/^/  /'
 
 [ "$fail" -eq 0 ] || { printf '\n⚠ 검사 중 실패가 있다 — 위 출력을 본다\n'; exit 1; }
 printf '\n✅ 커밋해도 되는 상태\n'

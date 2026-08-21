@@ -47,12 +47,20 @@ shared/             플랫폼 공용 라이브러리 — `text/`(한글 조판 k
                     맞춤법) · `glossary/`(고유명사 정본) · `fonts/`(Galmuri BDF)
                     ⚠ ISO9660·SJIS 스캔은 **여기 없다** — 게임의 `tools/common.py` 몫이다
                     (플랫폼마다 섹터 규격이 달라 아직 둘째 소비자가 없다)
-scripts/            진입점 — check.sh(커밋 전) · test.sh · build 진입 · dosbox.sh · patcher.sh
-  which_game.sh     └ 「지금 어느 게임인가」 정본 — check.sh·test.sh 가 같은 답을 쓴다
+scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test.sh · emu.sh(실행) ·
+                    check-updates.sh · pull-build.sh · patcher.sh · worktree.sh.
+                    부품은 아래 폴더로 내린다(emu/ · check/ · lib/ · tests/)
+  emu.sh            └ **게임 실행은 여기 하나로** — 게임 이름만 주면 알맞은 실행기로
+                       띄우고 세이브까지 동기화한다(인자 없으면 목록에서 고른다)
+  emu/              └ 그 아래 실행기·기전 — dosbox.sh(DOS 본체) · sync-saves.sh(세이브
+                       동기화, 기종 무관) · ps1-card.sh(메모리카드 이사) ·
+                       emucap-mednafen.sh(에이전트 세션 래퍼) · dosbox/(conf 템플릿)
+  check/            └ 검사 부품 — which_game.sh(「지금 어느 게임인가」 정본, check.sh·
+                       test.sh 가 같은 답을 쓴다) · typeset_fingerprint.py(조판 지문 —
+                       공용이 다른 게임의 줄바꿈을 흔들면 운다) · check_shared_scope.py
+                       (게임 브랜치가 공용·남의 게임을 건드렸나)
+  lib/select.sh     └ 화살표 키 선택 UI (에뮬 전용이 아니라 여기 둔다)
   worktree.sh       └ 게임별 워크트리 (originals 지역 링크까지 대신한다)
-  typeset_fingerprint.py  └ 조판 지문 — 공용이 다른 게임의 줄바꿈을 흔들면 운다
-  check_shared_scope.py   └ 게임 브랜치가 공용·남의 게임을 건드렸나
-  dosbox/           └ DOSBox-X conf 템플릿 (생성물은 .local/dosbox)
 .local/             이 머신 전용 (gitignore) — dosbox 실행 사본 · 패처 빌드 · 배포 레포 클론
 patcher/            웹 패처 일체 — index.html.tmpl · build.py · subset_font.py · fonts.css
                     빌드하면 games/*/patches/*.json 이 인라인된 자립형 HTML 하나가 나온다
@@ -95,15 +103,17 @@ sh scripts/check.sh                        # ⭐ **커밋 전 이것 하나** �
 sh scripts/check.sh --all                  #    게이트가 있는 게임 전부
 sh scripts/test.sh                         # 단위·회귀 테스트 (공용 + 지금 게임, 원본 없이 돈다)
 sh scripts/check-updates.sh                # 외부 의존물(emucap·스킬·템플릿) 새 버전 확인
-sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조 · DOS 패치 검증)
+sh scripts/emu.sh                          # ⭐ **게임 실행** — 목록에서 고른다
+sh scripts/emu.sh ss-ed1+2                 #    바로 (플랫폼만 주면 그 목록만: `emu.sh ps1`)
+sh scripts/emu/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (emu.sh dos-ed2 가 여기로 위임)
 sh scripts/worktree.sh <게임>              # 게임별 워크트리 (originals 링크까지)
 ```
 
 - **커밋 전에는 `sh scripts/check.sh`.** 이건 **얇은 진입점**이다 — 공용 검사(회귀 테스트 ·
   브랜치 범위)를 돌리고 **게임 게이트(`games/<게임>/check.sh`)에 위임**한다.
   어느 게임인지는 브랜치(`game/<타이틀>`)에서 유도하고 인자로 덮어쓴다(`--all` 은 전부) —
-  판정 정본은 `scripts/which_game.sh` 다.
-  ⚠ **테스트도 자기 게임 것만 돈다**(유저 확정 2026-08-21). 공용(`scripts/tests/` ·
+  판정 정본은 `scripts/check/which_game.sh` 다.
+  ⚠ **테스트도 자기 게임 것만 돈다**(유저 확정 2026-08-21). 공용(`scripts/check/tests/` ·
   `shared/*/tests/`)은 늘 돌고, 게임 것은 `games/<게임>/tools/tests/test_*.py` 를 **자리로**
   찾는다(목록을 손으로 안 든다 → 새 게임·새 테스트가 저절로 딸려 온다).
   🔴 전역으로 돌리면 **원본을 안 링크한 워크트리가 늘 빨간불**이 된다 — 실측: 새턴 트리의
@@ -194,8 +204,8 @@ docs/            체크리스트 · reference
 
 | 장치                             | 무엇을                                                                          |
 | -------------------------------- | ------------------------------------------------------------------------------- |
-| `scripts/typeset_fingerprint.py` | 그 게임 문안 전량을 **조판기에 태운 결과**를 해시. 공용이 조판을 흔들면 운다    |
-| `scripts/check_shared_scope.py`  | 게임 브랜치가 공용·남의 게임을 건드렸나 (⚠ 게이트 아님 — 급하면 어길 수 있어야) |
+| `scripts/check/typeset_fingerprint.py` | 그 게임 문안 전량을 **조판기에 태운 결과**를 해시. 공용이 조판을 흔들면 운다    |
+| `scripts/check/check_shared_scope.py`  | 게임 브랜치가 공용·남의 게임을 건드렸나 (⚠ 게이트 아님 — 급하면 어길 수 있어야) |
 
 ⚠ 지문 값은 **게임 아래**(`games/<게임>/typeset_fingerprint.json`)다 — 루트에 두면 게임이
 갱신할 때마다 공용을 건드리게 된다. 문안을 의도적으로 바꿨을 때만 `--freeze`.
@@ -334,4 +344,8 @@ docs/            체크리스트 · reference
 - Python: **ruff** (`python3 -m ruff check --fix` + `python3 -m ruff format`). 설정 `ruff.toml`
   (line 100, py312, I/UP/B). 리버싱 관용상 한 글자 변수·매직 오프셋 상수 허용.
 - Markdown: **oxfmt**로 정리.
+- 셸(`set -e`): **값을 정하는 자리에서 실패할 수 있는 명령을 쓰지 않는다.**
+  `X=$(command -v foo)` · `X=$(bar_bin)` 처럼 못 찾으면 non-zero 로 끝나는 걸 대입하면
+  **그 줄에서 아무 메시지 없이 죽는다.** `|| true` 를 붙이거나 해석 함수를 `return 0` 으로
+  닫는다. 2026-08-21 하루에 셋을 밟았다(DOS 실행 전면 불통 · PSP 갈래 무반응 · 엔진 폴백).
 - 주변 코드의 주석 밀도·명명·관용을 따른다(도구 스크립트는 한국어 주석 + 헥스 오프셋 상수).

@@ -222,15 +222,15 @@ sh scripts/patcher.sh deploy       # ed-patch 로 빌드·커밋·push
 ## 실행 환경 (DOSBox-X)
 
 ```bash
-sh scripts/dosbox.sh ed2 --app     # 반드시 --app. 셸에서 직접 띄우면 키보드가 죽는다
+sh scripts/emu/dosbox.sh ed2 --app     # 반드시 --app. 셸에서 직접 띄우면 키보드가 죽는다
 ```
 
-클론 직후 바로 된다. `scripts/dosbox.sh ed2`가 `originals/kr/dos-ed2` → `work/dosbox/ed2` 사본을
-자동 생성하고, `scripts/dosbox/game.conf.tmpl`의 `@GAME@`·`@DRIVE@`·`@CMD@`·`@MOUNTCD@`·
+클론 직후 바로 된다. `scripts/emu/dosbox.sh ed2`가 `originals/kr/dos-ed2` → `work/dosbox/ed2` 사본을
+자동 생성하고, `scripts/emu/dosbox/game.conf.tmpl`의 `@GAME@`·`@DRIVE@`·`@CMD@`·`@MOUNTCD@`·
 `@SBTYPE@`·`@SBIRQ@`를 채워 `work/dosbox/ed2.conf`를 만든다. 경로는 전부 상대라
 생성 conf 에 로컬 절대경로가 안 남는다 — **클론 위치가 달라도 그대로 동작한다.**
 
-- `scripts/dosbox/game.conf.tmpl` — `usescancodes=false`, `autolock=false` 필수
+- `scripts/emu/dosbox/game.conf.tmpl` — `usescancodes=false`, `autolock=false` 필수
   (macOS SDL1 키보드 먹통 원인). 생성물을 직접 고치지 말고 템플릿을 고칠 것
 - `work/dosbox/ed2/` = `originals/kr/dos-ed2` 쓰기 가능 사본(33M, gitignore).
   `originals/`는 어떤 실험에서도 건드리지 않는다
@@ -243,8 +243,8 @@ sh scripts/dosbox.sh ed2 --app     # 반드시 --app. 셸에서 직접 띄우면
 ### 실행 스크립트 공용화 (해결 — 2026-07-30 레포 통합)
 
 한글패치 저장소가 이 저장소로 합쳐지면서 두 벌의 DOSBox 하네스도 하나가 됐다.
-정본은 레포 루트의 `scripts/dosbox.sh` + `scripts/dosbox/game.conf.tmpl`이고, 여기서
-쓰던 `scripts/dosbox.sh`·`scripts/dosbox/game.conf.tmpl`은 지웠다.
+정본은 레포 루트의 `scripts/emu/dosbox.sh` + `scripts/emu/dosbox/game.conf.tmpl`이고, 여기서
+쓰던 `scripts/emu/dosbox.sh`·`scripts/emu/dosbox/game.conf.tmpl`은 지웠다.
 
 정본이 나은 점(그대로 얻은 것):
 
@@ -304,7 +304,7 @@ CD 를 마운트하지 않는다. `BGM/`의 `.MUS`/`.INS`(FM 음악)만 나오�
 
 | 스크립트        | 용도                                                                                                |
 | --------------- | --------------------------------------------------------------------------------------------------- |
-| `dosbox.sh ed2` | 게임 구동. `--app`(macOS 키 입력) / `--debug` / `--refresh`. 설정은 `scripts/dosbox/game.conf.tmpl` |
+| `dosbox.sh ed2` | 게임 구동. `--app`(macOS 키 입력) / `--debug` / `--refresh`. 설정은 `scripts/emu/dosbox/game.conf.tmpl` |
 | `patcher.sh`    | 웹 패처 `build` / `serve` / `deploy`. 하위 명령을 생략하면 `serve`                                  |
 
 ```bash

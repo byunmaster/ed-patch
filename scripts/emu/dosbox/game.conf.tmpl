@@ -1,5 +1,5 @@
 # 정발(DOS) 영웅전설 실행용 DOSBox-X 설정 **템플릿**.
-# scripts/dosbox.sh 가 @…@ 자리를 채워 .local/dosbox/<game>.conf 로 생성한다(생성물은 gitignore).
+# scripts/emu/dosbox.sh 가 @…@ 자리를 채워 .local/dosbox/<game>.conf 로 생성한다(생성물은 gitignore).
 #
 # 경로를 전부 상대로 둔 이유: 이 파일은 커밋되므로 로컬 절대경로를 담을 수 없다(CLAUDE.md).
 # dosbox.sh 가 .local/dosbox 로 cd 한 뒤 실행하므로 상대경로가 그 기준으로 해석된다.
@@ -8,7 +8,7 @@
 # macOS 함정(ed2-mantra-restore에서 실측한 것 이식):
 #  - usescancodes=true면 저수준 키보드 경로를 타는데 입력 모니터링 권한이 필요하다.
 #    셸에서 앱 번들 내부 바이너리를 직접 띄우면 권한이 안 붙어 **키보드만 죽는다**.
-#    그래서 꺼둔다. 그래도 안 되면 `scripts/dosbox.sh <game> --app` 으로 앱 번들 채널 사용 +
+#    그래서 꺼둔다. 그래도 안 되면 `scripts/emu/dosbox.sh <game> --app` 으로 앱 번들 채널 사용 +
 #    시스템 설정 > 개인정보 보호 및 보안 > 입력 모니터링 에서 dosbox-x 허용.
 #  - 이 게임들은 마우스를 안 쓴다. 마우스 캡처가 걸렸다 풀렸다 하며 SDL1이 키보드
 #    포커스를 놓치는 게 간헐적 먹통의 원인이라 캡처 자체를 끈다.
@@ -21,10 +21,14 @@ output=opengl
 usescancodes=false
 autolock=false
 priority=highest,highest
+# ⚠ **매퍼 파일은 엔진 사이에 호환되지 않는다** — DOSBox-X(SDL1)와 Staging(SDL2)이 형식이
+# 다르다. 실측 2026-08-21: X 가 만든 `[SDL1]` 매퍼를 staging 이 읽자 바인딩을 하나도 못 찾고
+# (`Can't find key binding for …`) **키보드가 통째로 죽었다**(소리는 났다). 그래서 dosbox.sh 가
+# 엔진별로 다른 파일을 준다 — mapper.map(X) · mapper-staging.map.
 # ⚠ 부분 매퍼 금지 — 이 파일이 있으면 DOSBox 는 기본 바인딩을 **통째로 대체**한다.
 # 한 줄짜리(터보만)를 깔았다가 나머지 키가 전부 언바인드돼 키보드가 죽었다(2026-07-31).
 # 단축키를 바꾸려면 게임 안에서 매퍼 UI(기본 Ctrl+F1)로 편집·저장해 **전체 파일**을 만든다.
-mapperfile=mapper.map
+mapperfile=@MAPPERFILE@
 
 [log]
 logfile=@GAME@.log
@@ -38,9 +42,9 @@ captures=capture
 # 터보(fast-forward)를 켜두면 기본값은 **키를 누르는 순간 꺼진다** — 플레이 중엔 무용지물이라
 # 끈다(유저 QA 2026-07-31). 메뉴 Main > Turbo 토글이나 매퍼 단축키가 그대로 유지된다.
 stop turbo on key=false
-core=normal
+core=@CORE@
 cputype=486
-cycles=fixed 20000
+cycles=fixed @CYCLES@
 
 [dos]
 xms=true

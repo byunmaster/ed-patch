@@ -46,12 +46,12 @@ docs/       디스어셈블 분석 노트, 크래시 재현 로그
 patches/    패치 스펙(JSON) — 바뀐 값과 검증 해시만. 원본 바이트 미포함
 ```
 
-원본(`originals/kr/dos-ed2`), 실행 하네스(`scripts/dosbox.sh`), 웹 패처
+원본(`originals/kr/dos-ed2`), 실행 하네스(`scripts/emu/dosbox.sh`), 웹 패처
 (`patcher/`)는 **레포 공용**이다.
 
 ```bash
-sh scripts/dosbox.sh ed2                 # 게임 실행 (사본 work/dosbox/ed2 를 만들어 띄운다)
-sh scripts/dosbox.sh ed2 --app           # macOS에서 키 입력이 안 먹을 때
+sh scripts/emu/dosbox.sh ed2                 # 게임 실행 (사본 work/dosbox/ed2 를 만들어 띄운다)
+sh scripts/emu/dosbox.sh ed2 --app           # macOS에서 키 입력이 안 먹을 때
 sh scripts/patcher.sh serve              # 웹 패처를 로컬에서 띄워 확인
 sh scripts/patcher.sh deploy             # 공개 리포(ed-patch)로 빌드·배포
 

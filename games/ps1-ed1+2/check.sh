@@ -65,7 +65,7 @@ echo "$out" | grep -E '✅|❌' | sed 's/^/     /'
 # 건드리면 이미지는 바뀌는데 아무 알림도 안 뜬다. 플랫폼을 병행하면 그 구멍이 사고가 된다 —
 # 다른 게임 작업 중 `shared/text/krwrap.py` 한 줄이 이 게임의 조판을 조용히 바꾼다.
 # 게이트가 아니다(문안을 바꾸면 당연히 바뀐다) — **안 바꿨는데 뜨면 `shared/` 를 의심한다.**
-"$PY" "$ROOT/scripts/typeset_fingerprint.py" 2>&1 | tail -3 | sed 's/^/     /'
+"$PY" "$ROOT/scripts/check/typeset_fingerprint.py" 2>&1 | tail -3 | sed 's/^/     /'
 
 # 어투 혼용(존대↔해라체) — 게이트가 아니다(한 창에 두 상대가 섞이는 정당한 자리가 있다).
 "$PY" "$T/check_speech_level.py" 2>&1 | head -2 | sed 's/^/     /'

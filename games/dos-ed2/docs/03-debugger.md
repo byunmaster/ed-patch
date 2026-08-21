@@ -9,7 +9,7 @@
 터미널에서 직접 띄워야 한다.
 
 ```bash
-scripts/dosbox.sh --debug      # -break-start 로 부팅 직후 디버거 진입
+scripts/emu/dosbox.sh --debug      # -break-start 로 부팅 직후 디버거 진입
 ```
 
 키보드가 불안정하면 `ed2.conf`의 `usescancodes=false` / `autolock=false`가
@@ -116,5 +116,5 @@ F5
 ## 주의
 
 - 게임은 그래픽 모드라 엔진의 `Where`/`What` 진단 메시지가 화면에 안 보인다.
-  `scripts/dosbox.sh`가 `-log-con`을 켜두므로 `work/dosbox/ed2.log`에서 확인한다.
+  `scripts/emu/dosbox.sh`가 `-log-con`을 켜두므로 `work/dosbox/ed2.log`에서 확인한다.
 - `MEMDUMP`으로 스택 주변을 떠두면 나중에 정적으로 대조하기 좋다.
