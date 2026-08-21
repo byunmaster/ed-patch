@@ -19,23 +19,15 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PY="$ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY=python3
 
-# 어느 게임인가 — **새 규약을 만들지 않는다.** `common.BUILD_TAG` 가 이미 쓰는 방식 그대로:
-# 브랜치(`game/<타이틀>`)에서 유도하고, 인자로 덮어쓴다. main 이면 골라잡을 수 없으니 전부.
-GAMES=""
-case "${1:-}" in
-  --all) GAMES=$(ls "$ROOT/games") ;;
-  "")
-    br=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
-    case "$br" in
-      game/*) GAMES=${br#game/} ;;
-      *) GAMES=$(ls "$ROOT/games") ;;
-    esac
-    ;;
-  *) GAMES="$1" ;;
-esac
+# 어느 게임인가 — 정본은 `scripts/which_game.sh` 다(테스트도 같은 답을 써야 한다).
+GAMES=$(sh "$ROOT/scripts/which_game.sh" "$@")
 
-echo "── 단위·회귀 테스트 (전 게임)"
-sh "$ROOT/scripts/test.sh" >/dev/null || { echo "❌ 테스트 실패 — sh scripts/test.sh"; exit 1; }
+# ⚠ 테스트도 **자기 게임 것만** 본다(유저 확정 2026-08-21). 게이트는 갈라 놓고 테스트만
+#   전역이면, 원본을 안 링크한 워크트리에서 남의 게임 때문에 늘 빨간불이 된다(실측:
+#   새턴 트리에서 ps1 의 정발 DOS 의존으로 실패). 늘 빨간불인 게이트는 아무도 안 본다.
+echo "── 단위·회귀 테스트 (공용 + $(echo "$GAMES" | tr '\n' ' '))"
+sh "$ROOT/scripts/test.sh" $GAMES >/dev/null \
+  || { echo "❌ 테스트 실패 — sh scripts/test.sh $(echo "$GAMES" | tr '\n' ' ')"; exit 1; }
 echo "  ✅ 통과"
 
 fail=0

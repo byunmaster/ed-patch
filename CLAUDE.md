@@ -48,6 +48,7 @@ shared/             플랫폼 공용 라이브러리 — `text/`(한글 조판 k
                     ⚠ ISO9660·SJIS 스캔은 **여기 없다** — 게임의 `tools/common.py` 몫이다
                     (플랫폼마다 섹터 규격이 달라 아직 둘째 소비자가 없다)
 scripts/            진입점 — check.sh(커밋 전) · test.sh · build 진입 · dosbox.sh · patcher.sh
+  which_game.sh     └ 「지금 어느 게임인가」 정본 — check.sh·test.sh 가 같은 답을 쓴다
   worktree.sh       └ 게임별 워크트리 (originals 지역 링크까지 대신한다)
   typeset_fingerprint.py  └ 조판 지문 — 공용이 다른 게임의 줄바꿈을 흔들면 운다
   check_shared_scope.py   └ 게임 브랜치가 공용·남의 게임을 건드렸나
@@ -92,15 +93,22 @@ python3 games/ps1-ed1+2/tools/build.py     # [kr] 전 트랙 체인 → work/bui
 sh scripts/patcher.sh serve                # [fix] 웹 패처를 로컬에서 띄워 확인
 sh scripts/check.sh                        # ⭐ **커밋 전 이것 하나** — 전역 검사 + 게임 게이트 위임
 sh scripts/check.sh --all                  #    게이트가 있는 게임 전부
-sh scripts/test.sh                         # 단위·회귀 테스트 (원본 없이 돈다)
+sh scripts/test.sh                         # 단위·회귀 테스트 (공용 + 지금 게임, 원본 없이 돈다)
 sh scripts/check-updates.sh                # 외부 의존물(emucap·스킬·템플릿) 새 버전 확인
 sh scripts/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (문안 대조 · DOS 패치 검증)
 sh scripts/worktree.sh <게임>              # 게임별 워크트리 (originals 링크까지)
 ```
 
-- **커밋 전에는 `sh scripts/check.sh`.** 이건 **얇은 진입점**이다 — 레포 전역 검사(회귀
-  테스트 · 브랜치 범위)를 돌리고 **게임 게이트(`games/<게임>/check.sh`)에 위임**한다.
-  어느 게임인지는 브랜치(`game/<타이틀>`)에서 유도하고 인자로 덮어쓴다(`--all` 은 전부).
+- **커밋 전에는 `sh scripts/check.sh`.** 이건 **얇은 진입점**이다 — 공용 검사(회귀 테스트 ·
+  브랜치 범위)를 돌리고 **게임 게이트(`games/<게임>/check.sh`)에 위임**한다.
+  어느 게임인지는 브랜치(`game/<타이틀>`)에서 유도하고 인자로 덮어쓴다(`--all` 은 전부) —
+  판정 정본은 `scripts/which_game.sh` 다.
+  ⚠ **테스트도 자기 게임 것만 돈다**(유저 확정 2026-08-21). 공용(`scripts/tests/` ·
+  `shared/*/tests/`)은 늘 돌고, 게임 것은 `games/<게임>/tools/tests/test_*.py` 를 **자리로**
+  찾는다(목록을 손으로 안 든다 → 새 게임·새 테스트가 저절로 딸려 온다).
+  🔴 전역으로 돌리면 **원본을 안 링크한 워크트리가 늘 빨간불**이 된다 — 실측: 새턴 트리의
+  `check.sh` 가 ps1 의 `patch_opening_font`(임포트 시점에 정발 DOS 원본을 읽는다) 때문에
+  실패했다. 늘 빨간불인 게이트는 아무도 안 본다.
   ⚠ **게임 얘기를 이 파일에 쓰지 않는다** — 08-19 까지 78줄 중 3줄만 공용이고 나머지가
   전부 ps1 전용이었다. 그 탓에 dos-ed2 는 게이트가 **아예 없었고**, ps1 브랜치에서 자기
   검사기를 늘리려면 공용을 고쳐야 해서 못 늘렸다.
@@ -234,7 +242,7 @@ docs/            체크리스트 · reference
   3. **다듬는 건 올리기 전에, 게임 브랜치 안에서.** WIP·삽질·되돌린 커밋은 의미 단위로
      묶는다. 「정리해서 스쿼시」의 제자리가 **여기**지 main 이 아니다 — main 에서 뭉개면
      이력이 없어지고, 여기서 묶으면 **읽을 만한 이력이 남는다.**
-  ⚠ **볼 때는 `git log --first-parent main`** — 「main 에 무슨 일이 있었나」만 읽는다.
+     ⚠ **볼 때는 `git log --first-parent main`** — 「main 에 무슨 일이 있었나」만 읽는다.
 - **원본 게임 데이터 커밋 절대 금지** — `originals/` `work/` `out/` `vendor/` `.emucap/`,
   디스크 이미지(*.bin/.cue/.iso …)는 gitignore. BIOS·에뮬 바이너리도 금지.
 - **`vendor/`는 읽기 전용** 서브레포(emucap 등) — 커밋·수정 금지, 빌드해서 도구로만 사용.
