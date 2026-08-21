@@ -30,6 +30,14 @@ has_tty() { { : </dev/tty; } 2>/dev/null && { : >/dev/tty; } 2>/dev/null; }
 
 _sel_key() { dd bs=1 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n'; }
 
+# ⚠ **파일 스코프에 둔다.** select_option 안에 두면 select_multi 에서 `command not found` 로
+#   터미널이 에코 꺼진 채 남는다(2026-08-22 실측).
+_sel_restore() {
+  tput cnorm >/dev/tty 2>/dev/null || true
+  [ -n "${_sold:-}" ] && stty "$_sold" </dev/tty 2>/dev/null || true
+  trap - INT TERM
+}
+
 _sel_default_row() {
   if [ "$3" = 1 ]; then printf '\033[36m❯ %s\033[0m\n' "$2"
   else                  printf '  %s\n' "$2"; fi
@@ -91,11 +99,6 @@ select_option() {
     done
   }
 
-  _sel_restore() {
-    tput cnorm >/dev/tty 2>/dev/null || true
-    [ -n "$_sold" ] && stty "$_sold" </dev/tty 2>/dev/null || true
-    trap - INT TERM
-  }
 
   printf '%s \033[2m(↑↓ 이동, Enter 선택, Esc 뒤로, q 취소)\033[0m\n' "$_sp" >/dev/tty
 
@@ -165,4 +168,118 @@ confirm_yes() {
       *) printf '  \033[2m(y 또는 n)\033[0m\n' >/dev/tty ;;
     esac
   done
+}
+
+# 체크박스 다중 선택 — space 토글 · ↑↓/kj 이동 · Enter 확정 · Esc 뒤로(3) · q 취소(1).
+# 고른 항목을 **줄바꿈으로** stdout 에 뱉는다. 줄 모양은 SELECT_RENDER 를 그대로 쓴다
+# (앞에 체크박스만 붙인다). 시작 커서는 SELECT_INDEX.
+#
+# ⚠ 원본(zsh 판 `select_multi`)은 **기본 전체 선택**인데 여기선 **기본 무선택**이다 —
+#   저쪽은 터널 열기라 전부가 흔한 답이지만, 이쪽은 하나가 수백 MB 라 전부가 사고다.
+# ⚠ 아무것도 안 고르고 Enter 를 치면 **커서 항목 하나**로 친다. 스페이스를 모르는 채로
+#   써도 종전(단일 선택)과 똑같이 동작하게 하려는 것이다.
+select_multi() {
+  _sp=$1; shift
+  [ $# -eq 0 ] && return 1
+  # 하나뿐이면 묻지 않는다(select_option 과 같은 규칙) — 비대화형에서도 그대로 흐른다.
+  [ $# -eq 1 ] && { printf '%s\n' "$1"; return 0; }
+  has_tty || return 2
+  _rows=$(stty size </dev/tty 2>/dev/null | cut -d' ' -f1)
+  [ -n "$_rows" ] || _rows=24
+  [ $(($# + 2)) -gt "${_rows:-24}" ] && { _sel_numbered_multi "$_sp" "$@"; return $?; }
+
+  _srender=${SELECT_RENDER:-_sel_default_row}
+  _stotal=$#
+  _ssel=${SELECT_INDEX:-1}
+  { [ "$_ssel" -ge 1 ] && [ "$_ssel" -le $# ]; } 2>/dev/null || _ssel=1
+  _chk=" "                                  # 고른 번호를 " 1 3 " 처럼 담는다
+
+  _sel_mdraw() {
+    _rd=$1; shift
+    [ "$_rd" = 1 ] && printf '\033[%dA' "$_stotal" >/dev/tty
+    _i=0
+    for _it in "$@"; do
+      _i=$((_i + 1))
+      printf '\033[2K' >/dev/tty
+      case "$_chk" in *" $_i "*) printf '\033[32m[✓]\033[0m' >/dev/tty ;; *) printf '[ ]' >/dev/tty ;; esac
+      if [ "$_i" = "$_ssel" ]; then "$_srender" "$_i" "$_it" 1 >/dev/tty
+      else                          "$_srender" "$_i" "$_it" 0 >/dev/tty; fi
+    done
+  }
+
+  printf '%s \033[2m(space 토글, ↑↓ 이동, Enter 확정, Esc 뒤로, q 취소)\033[0m\n' "$_sp" >/dev/tty
+  _sold=$(stty -g </dev/tty 2>/dev/null) || _sold=
+  stty -echo -icanon isig min 1 time 0 </dev/tty 2>/dev/null || true
+  tput civis >/dev/tty 2>/dev/null || true
+  trap '_sel_restore; exit 130' INT TERM
+  _sel_mdraw 0 "$@"
+  while :; do
+    _k=$(_sel_key </dev/tty)
+    case "$_k" in
+      1b) _k2=$(_sel_key </dev/tty)
+          if [ "$_k2" = 5b ] || [ "$_k2" = 4f ]; then
+            _k3=$(_sel_key </dev/tty)
+            case "$_k3" in
+              41) [ "$_ssel" -gt 1 ] && _ssel=$((_ssel - 1)) ;;
+              42) [ "$_ssel" -lt "$_stotal" ] && _ssel=$((_ssel + 1)) ;;
+            esac
+            _sel_mdraw 1 "$@"
+          else _srft=3; break; fi ;;
+      6b) [ "$_ssel" -gt 1 ] && _ssel=$((_ssel - 1)); _sel_mdraw 1 "$@" ;;
+      6a) [ "$_ssel" -lt "$_stotal" ] && _ssel=$((_ssel + 1)); _sel_mdraw 1 "$@" ;;
+      20) case "$_chk" in                       # space
+            *" $_ssel "*) _chk=$(printf '%s' "$_chk" | sed "s/ $_ssel / /") ;;
+            *) _chk="$_chk$_ssel " ;;
+          esac
+          _sel_mdraw 1 "$@" ;;
+      0d|0a) _srft=0; break ;;
+      71|51|03|'') _srft=1; break ;;
+    esac
+  done
+  _sel_restore
+  printf '\r\033[%dA\033[J' "$((_stotal + 1))" >/dev/tty
+  if [ "${_srft:-1}" != 0 ]; then
+    [ "$_srft" = 3 ] && printf '%s: \033[2m← 뒤로\033[0m\n' "$_sp" >/dev/tty \
+                     || printf '%s: \033[2m취소\033[0m\n' "$_sp" >/dev/tty
+    return "$_srft"
+  fi
+  [ "$_chk" = " " ] && _chk=" $_ssel "        # 아무것도 안 골랐으면 커서 항목
+  _i=0; _n=0
+  for _it in "$@"; do
+    _i=$((_i + 1))
+    case "$_chk" in *" $_i "*)
+      printf '%s\n' "$_it"
+      _n=$((_n + 1))
+      printf '%s: \033[36m%s\033[0m\n' "$_sp" "$_it" >/dev/tty ;;
+    esac
+  done
+  [ "$_n" -gt 0 ] || return 1
+  return 0
+}
+
+# 화면이 짧을 때 — 번호를 여러 개 받는다(`1 3` · `1,3`).
+_sel_numbered_multi() {
+  _sp=$1; _srender=${SELECT_RENDER:-_sel_default_row}; shift
+  _i=0
+  for _it in "$@"; do
+    _i=$((_i + 1))
+    printf '%2d)' "$_i" >/dev/tty
+    "$_srender" "$_i" "$_it" 0 >/dev/tty
+  done
+  printf '%s [번호 여럿 가능: 1 3, b=뒤로, q=취소]: ' "$_sp" >/dev/tty
+  read -r _sel </dev/tty || return 1
+  case "$_sel" in b|B) return 3 ;; ''|q|Q) return 1 ;; esac
+  _sel=$(printf '%s' "$_sel" | tr ',' ' ')
+  _n=0
+  for _s in $_sel; do
+    case "$_s" in *[!0-9]*) continue ;; esac
+    { [ "$_s" -ge 1 ] && [ "$_s" -le $# ]; } || continue
+    _i=0
+    for _it in "$@"; do
+      _i=$((_i + 1))
+      [ "$_i" = "$_s" ] && { printf '%s\n' "$_it"; _n=$((_n + 1)); }
+    done
+  done
+  [ "$_n" -gt 0 ] || return 1
+  return 0
 }
