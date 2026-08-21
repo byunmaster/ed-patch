@@ -1055,5 +1055,33 @@ def test_untranslated_axis_does_not_filter_by_tail():
     assert "if t in done" not in src
 
 
+def test_line_dict_key_is_platform_neutral():
+    """사전 키는 **덤퍼 표기를 타면 안 된다** — 이 사전이 타이틀을 넘어가는 유일한 창구다.
+
+    실측(2026-08-20): PS1 은 `{c}…{c}{n}`, 새턴은 `%c…%c\n` 로 같은 원문을 다르게 적는다.
+    키가 그걸 타고 있어 새턴 적중이 **1.3%** 였다(중립화 뒤 76%).
+    """
+    from export_line_dict import key
+
+    ps1 = "{c}ライアス{c}{n}王子、ちゃんと いすに 座って{n}待っていて くだされ。"
+    sat = "%cライアス%c\n王子、ちゃんと いすに 座って\n待っていて くだされ。"
+    assert key(ps1) == key(sat), "마크업 표기가 다르면 같은 원문도 다른 키가 된다"
+    assert key("あ･あ") == key("あ・あ"), "가운뎃점 세 꼴을 통일해야 한다"
+    assert key("よし\x21\x21") == key("よし!!"), "이식판은 `!!` 를 문자로 쓰기도 한다"
+    assert key("スライム") != key("ドラゴン"), "다른 원문이 같은 키가 되면 안 된다"
+
+
+def test_resolve_handles_port_only_shapes():
+    """이식판에만 있는 꼴은 **규칙으로** 푼다 — 사전에 다 박으면 14,000 항목이 는다."""
+    from export_line_dict import key, resolve
+
+    lines = {key("スライム"): {"t": "슬라임"}, key("ドラゴン"): {"t": "드래곤"}}
+    assert resolve("スライムＡ", lines) == "슬라임Ａ", "개체 구분자는 떼고 찾는다"
+    assert resolve("スライムとドラゴンが現れた。", lines) == "슬라임과 드래곤이 나타났다."
+    assert resolve("ドラゴンとスライムが現れた。", lines) == "드래곤과 슬라임이 나타났다."
+    # ⚠ 조사는 **앞말 받침**으로 고른다 — 처음엔 「와」로 박아 두어 「슬라임와」가 나왔다
+    assert resolve("まったく知らない敵", lines) is None, "모르면 None 이어야 한다"
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
