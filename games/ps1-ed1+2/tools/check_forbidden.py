@@ -296,6 +296,38 @@ TEXTMAP_HOMAGE_OK = {
 MOVIE_TEXTMAPS = {"opening.json", "opening_ed2.json", "ending_ed1.json", "ending_ed2.json"}
 
 
+def check_movie_src():
+    """🔴 **동영상 층에 정발 포인터가 있으면 실패.**
+
+    `src` 자체는 위반이 아니다 — 시스템 문구(`〜が現れた。`)는 정발 유래가 허용된다
+    (battle 층에 92건). 그런데 **오프닝·엔딩은 창작 서사**라 한 줄도 있으면 안 된다.
+
+    ⚠ 이 검사가 없으면 **아무도 못 본다.** `scan_repo` 는 커밋된 우리 문안을 정발과 맞대는데
+    `src` 엔트리엔 우리 문안이 **아예 없다** — 맞댈 것이 없으니 조용히 통과한다. 실제로
+    「정발 유래 0」으로 닫은 뒤에도 ED1 엔딩에 둘이 남아 있었고, 그 값이 정발과 글자까지
+    같은 채로 화면에 나갔다(2026-08-22 발각).
+    ⚠ 코퍼스 대조로는 못 잡는다 — 그 `src` 가 가리키던 구간이 코퍼스 11,213문장에
+    **없었다**(실측). 「어디를 가리키나」가 아니라 **「가리키고 있다는 사실」**을 본다.
+    """
+    import json
+
+    from common import ROOT
+
+    bad = []
+    for fn in sorted(MOVIE_TEXTMAPS):
+        p = os.path.join(ROOT, "textmap", fn)
+        if not os.path.exists(p):
+            continue
+        with open(p, encoding="utf-8") as f:
+            for e in json.load(f)["entries"]:
+                if "ours" not in e:
+                    bad.append((fn, e["k"]))
+    print(f"  {'✅' if not bad else '❌'} 동영상 층에 정발 포인터 없음 ({len(bad)}건)")
+    for fn, k in bad[:8]:
+        print(f"      {fn} {k} — 우리 문안으로 다시 쓴다(`ours`)")
+    return len(bad)
+
+
 def _homage_texts():
     """`TEXTMAP_HOMAGE_OK` 로 등록된 자리의 **우리 문안**(공백 제거)."""
     import json
@@ -520,4 +552,6 @@ if __name__ == "__main__":
     #   scan_repo     코드·주석·픽스처에 정발 문장이 박혔나(부분 일치 · 20자 하한)
     #   scan_similar  축자는 피했지만 사실상 같은 ED2 문안인가(없으면 「축자만 피하면
     #                 통과」가 되어 정발 문장이 리포에 남는다 — 실측 50건)
-    sys.exit(1 if (scan(v) + scan_canon(v) + scan_repo(v) + scan_similar()) else 0)
+    sys.exit(
+        1 if (scan(v) + scan_canon(v) + scan_repo(v) + check_movie_src() + scan_similar()) else 0
+    )
