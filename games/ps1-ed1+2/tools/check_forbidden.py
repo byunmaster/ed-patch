@@ -89,6 +89,19 @@ def _corpus_lines():
     from common import OUT_DIR
 
     out = set()
+    # 🔴 **동영상 정발도 코퍼스에 넣는다**(2026-08-21). `dos_kr/` 은 정발 **대사**(SINDLL·
+    #    SCENA) 추출분이라 오프닝·엔딩 EXE 가 **통째로 빠져 있었다** — 즉 동영상 층은
+    #    「축자 동일 0」이 아니라 **애초에 비교를 안 하고 있었다.**
+    #    ⚠ 「게이트가 초록이다」를 근거로 삼기 전에 **그 게이트가 그 자리를 보는지** 본다.
+    try:
+        import dump_movie_text as _M
+
+        for _rel in _M.KR_SPANS:
+            for _o, _l, _t in _M.kr_lines(_rel):
+                if len(re.sub(r"\s+", "", _t)) >= 6:
+                    out.add(_t.strip())
+    except Exception:  # 원본이 없는 머신 — 위 dos_kr 과 같은 취급
+        pass
     for f in glob.glob(os.path.join(OUT_DIR, "dos_kr", "**", "*.json"), recursive=True):
         # 게임별 교정 규칙까지 태워야 검사 대상이 빌드 출력과 같아진다 — `dos_kr/ED2/…`.
         game = next((g for g in ("ED1", "ED2") if f"{os.sep}{g}{os.sep}" in f), None)
@@ -251,6 +264,62 @@ CANON_CONVERGED_OK = {
 }
 
 
+# 🔴 **의도적 오마주 예외** — 위 「우연 수렴」과 **이름을 갈라 둔다.** 여기는 정발 문구인 걸
+#    **알면서 남긴** 자리다(유저 판단 2026-08-21). 섞으면 위 목록의 등록 조건 ①(「정발을 안
+#    보고 쓴 것이 확실」)이 거짓이 되고, 그 목록을 보는 다음 사람이 **기준을 잘못 배운다.**
+#    목록의 신뢰도가 이 레포의 저작권 방어선이라 한 줄 지키자고 흔들지 않는다.
+#    ⚠ 등록 조건 — ① 유저가 **출처를 알고** 남기기로 한 것 ② 짧은 상투 문구라 실질 위험이
+#    없다고 판단한 것. 스토리 대사·문단은 여기 오지 않는다.
+#    ⚠ 문자열을 코드에 박지 않는다 — **좌표로 건다**(박으면 그게 곧 「문안이 코드에 남는 것」).
+# ⚠ **너무 짧아 판정이 안 서는 조각**은 따로 둔다. 「그러던 어느 날」·「지금까지처럼」 같은
+#    6~8자 부사구는 누가 옮겨도 같아서 창작성을 논할 자리가 아니다(방침 08-04 의 연장).
+#    ⚠ 문장이 아니라 **조각**만 여기 온다 — 문장은 위 두 목록으로 간다.
+CORPUS_STOCK_FRAGMENTS = {"그러던 어느 날", "지금까지 처럼", "지금까지처럼"}
+
+# 🔴 **좌표(인덱스)로 걸지 않는다 — 원문 sha 로 건다.** 2026-08-21 에 실제로 물렸다:
+#    역수출로 줄 순서를 고치자 등록 좌표 21 이 밀려 **엉뚱한 줄이 대신 면제**됐고, 정작
+#    등록하려던 줄은 게이트에 걸렸다. 좌표 예외는 **조용히 옮겨 붙는다** — 걸리는 건
+#    시끄럽지만 **잘못 면제되는 건 아무 소리도 안 난다.**
+# ⚠ 그 자리를 `sha` 로 잡았다가 **다시 틀렸다**(2026-08-22) — 이 `sha` 는 JP 원문이 아니라
+#    **우리 문안의 지문**이라, 그 줄을 한 글자만 고쳐도 예외가 깨진다. 안정된 건 `k`,
+#    즉 **ROM 오프셋**이다. 순서가 바뀌어도 문안을 고쳐도 따라간다.
+TEXTMAP_HOMAGE_OK = {
+    # ED2 오프닝 마지막 반전. 유저: 「정발 스타일이고 어릴 때 인상적이었다」.
+    # 9글자짜리 평범한 서술문이라 실질 위험 0 으로 보고 남긴다.
+    ("opening_ed2.json", "0x17484"),
+}
+
+# 🔴 **동영상 내레이션은 `textmap/` 에 살지만 시스템 문구가 아니다.** `scan_repo` 가
+#    `textmap/` 안의 일치를 전부 「강제 번역」으로 통과시키던 탓에 **오프닝·엔딩이 검사에서
+#    통째로 빠져 있었다**(2026-08-21 발각). 「〜が現れた。」 같은 EXE 문구와 달리 여기는
+#    **창작 서사**라 `script/` 와 같이 실패로 친다.
+MOVIE_TEXTMAPS = {"opening.json", "opening_ed2.json", "ending_ed1.json", "ending_ed2.json"}
+
+
+def _homage_texts():
+    """`TEXTMAP_HOMAGE_OK` 로 등록된 자리의 **우리 문안**(공백 제거)."""
+    import json
+
+    from common import ROOT
+
+    out = set()
+    for fn, key in TEXTMAP_HOMAGE_OK:
+        p = os.path.join(ROOT, "textmap", fn)
+        if not os.path.exists(p):
+            continue
+        with open(p, encoding="utf-8") as f:
+            E = json.load(f)["entries"]
+        hit = [e for e in E if e.get("k") == key and e.get("ours")]
+        # ⚠ 등록한 자리가 사라졌으면 **조용히 넘어가지 않는다** — 면제가 증발한 것도,
+        #   엉뚱한 데 붙은 것도 둘 다 사고다. 문안은 안 찍고 좌표만 알린다.
+        assert len(hit) <= 1, f"{fn}: k={key} 가 {len(hit)}건 — 예외를 다시 잡는다"
+        if not hit:
+            print(f"      ⚠ 오마주 등록 자리가 없다: {fn} k={key} (좌표가 바뀌었나)")
+            continue
+        out.add(re.sub(r"\s+", "", hit[0]["ours"]))
+    return out
+
+
 def _converged_texts():
     """`CANON_CONVERGED_OK` 로 등록된 블록의 **우리 문안**(공백 제거)."""
     import json
@@ -307,10 +376,15 @@ def scan_canon(verbose=False):
     for path in files:
         scn = os.path.basename(path)[:-5]
         doc = json.load(open(path, encoding="utf-8"))
-        items = doc.items() if "entries" not in doc else [
-            (str(i), pp) for i, e in enumerate(doc["entries"])
-            for pp in ([e] if "ours" in e else e.get("parts", []))
-        ]
+        items = (
+            doc.items()
+            if "entries" not in doc
+            else [
+                (str(i), pp)
+                for i, e in enumerate(doc["entries"])
+                for pp in ([e] if "ours" in e else e.get("parts", []))
+            ]
+        )
         for eid, v in items:
             if not isinstance(v, dict):
                 continue
@@ -337,7 +411,9 @@ def scan_canon(verbose=False):
         + (f" · 시스템 문구 {sys_hits}건(강제 번역 — 실패 아님)" if sys_hits else "")
     )
     if n:
-        print("      " + " · ".join(f"{k} {v}" for k, v in sorted(hits.items()) if k.startswith("ED")))
+        print(
+            "      " + " · ".join(f"{k} {v}" for k, v in sorted(hits.items()) if k.startswith("ED"))
+        )
     if verbose:
         for scn, eid, t in rows[:40]:
             print(f"      {scn} jp{eid}: {t[:56]!r}")
@@ -376,14 +452,16 @@ def scan_repo(verbose=False):
             # ⚠ **포함 관계로 본다** — 예외는 블록 전체 문안으로 등록되는데 여기서 걸리는 건
             #   그 안의 **문장 조각**이다(코퍼스가 문장 단위로도 색인된다). 같은지만 보면
             #   등록해도 계속 운다(2026-08-18 실측).
-            ok = _converged_texts()
+            ok = _converged_texts() | _homage_texts()
+            stock = {re.sub(r"\s+", "", t) for t in CORPUS_STOCK_FRAGMENTS}
+            hit = [h for h in hit if re.sub(r"\s+", "", h) not in stock]
             hit = [h for h in hit if not any(re.sub(r"\s+", "", h) in t for t in ok)]
             if hit:
                 rel = os.path.relpath(path, root)
                 # 🔴 EXE 시스템 문구(`textmap/`)는 **강제 번역**이라 우연 일치가 정상이다 —
                 #    「〜が現れた。」는 누가 옮겨도 「〜이(가) 나타났다.」다(방침 08-18 · 08-04).
                 #    세되 실패로 치지 않는다. 대사(`script/`)는 그대로 실패다.
-                if os.sep + "textmap" + os.sep in path:
+                if os.sep + "textmap" + os.sep in path and f not in MOVIE_TEXTMAPS:
                     print(f"      ℹ {rel}: 시스템 문구 {len(hit)}건 (강제 번역 — 실패 아님)")
                     continue
                 bad += len(hit)

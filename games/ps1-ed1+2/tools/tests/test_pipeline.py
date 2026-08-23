@@ -1083,5 +1083,140 @@ def test_resolve_handles_port_only_shapes():
     assert resolve("まったく知らない敵", lines) is None, "모르면 None 이어야 한다"
 
 
+# ── 오프닝 폰트 행 사전 코덱 + 디코더 스텁 (2026-08-21) ──────────────────────
+def _mips_run(words, base, mem, maxsteps=4_000_000):
+    """스텁을 **정말 실행한다** — 손인코딩 기계어의 유일한 정적 검증.
+
+    ⚠ `verify_asm`(디스어셈)은 「명령으로 디코드되는가 · 지연 슬롯에 분기가 없는가」만 본다.
+    분기 오프셋이 한 칸 어긋나도, 로드 지연을 어겨도 **통과한다** — 둘 다 2026-08-21 에
+    실제로 냈다(분기 셋이 전부 +1 어긋나 있었다). 그래서 여기서 돌려 본다.
+    MIPS I 로드 지연도 흉내 낸다(로드 결과는 **다음 명령이 끝난 뒤** 반영).
+    """
+    r = [0] * 32
+    pc, pend, steps = base, None, 0
+    while steps < maxsteps:
+        steps += 1
+        w = words[(pc - base) // 4]
+        op, rs, rt = w >> 26, (w >> 21) & 31, (w >> 16) & 31
+        rd, sa, fn, imm = (w >> 11) & 31, (w >> 6) & 31, w & 63, w & 0xFFFF
+        simm = imm - 0x10000 if imm & 0x8000 else imm
+        nxt, land = pc + 4, None
+        if op == 0 and fn == 8:  # jr
+            return r, mem
+        elif op == 0 and fn == 0:  # sll
+            r[rd] = (r[rt] << sa) & 0xFFFFFFFF
+        elif op == 0 and fn == 2:  # srl
+            r[rd] = (r[rt] & 0xFFFFFFFF) >> sa
+        elif op == 0 and fn == 0x21:  # addu
+            r[rd] = (r[rs] + r[rt]) & 0xFFFFFFFF
+        elif op == 0 and fn == 0x23:  # subu
+            r[rd] = (r[rs] - r[rt]) & 0xFFFFFFFF
+        elif op == 0x09:  # addiu
+            r[rt] = (r[rs] + simm) & 0xFFFFFFFF
+        elif op == 0x0C:  # andi
+            r[rt] = r[rs] & imm
+        elif op == 0x0D:  # ori
+            r[rt] = r[rs] | imm
+        elif op == 0x0F:  # lui
+            r[rt] = (imm << 16) & 0xFFFFFFFF
+        elif op == 0x24:  # lbu — 지연 로드
+            land = (rt, mem[(r[rs] + simm) & 0xFFFFFFFF])
+        elif op == 0x25:  # lhu
+            a = (r[rs] + simm) & 0xFFFFFFFF
+            assert a % 2 == 0, f"홀수 주소 lhu @0x{a:08X} — 실기는 주소 예외로 죽는다"
+            land = (rt, mem[a] | (mem[a + 1] << 8))
+        elif op == 0x29:  # sh
+            a = (r[rs] + simm) & 0xFFFFFFFF
+            assert a % 2 == 0, f"홀수 주소 sh @0x{a:08X}"
+            mem[a], mem[a + 1] = r[rt] & 0xFF, (r[rt] >> 8) & 0xFF
+        elif op in (0x04, 0x05):  # beq / bne
+            take = (r[rs] == r[rt]) if op == 0x04 else (r[rs] != r[rt])
+            if take:
+                nxt = pc + 4 + simm * 4
+            # 지연 슬롯을 먼저 실행한다 — 재귀 대신 한 칸 미룬다
+            dl = words[(pc + 4 - base) // 4]
+            assert dl >> 26 not in (0x04, 0x05) and dl != 0x01000008, "지연 슬롯에 분기"
+            # ⚠ 지연 슬롯을 **먼저** 실행하고 나서 착지한다. 분기 자체는 로드가 아니므로
+            #   앞선 로드의 지연은 여기서 반영된다(분기 조건은 **옛 값**으로 판정 — MIPS I).
+            if pend:
+                r[pend[0]] = pend[1]
+                pend = None
+            _mips_step_simple(words, base, mem, r, pc + 4)
+            pc = nxt if take else pc + 8
+            continue
+        else:
+            raise AssertionError(f"모르는 명령 0x{w:08X} @0x{pc:08X}")
+        if pend:
+            r[pend[0]] = pend[1]
+        pend = land
+        r[0] = 0
+        pc = nxt
+    raise AssertionError("스텁이 안 끝난다 — 무한 루프")
+
+
+def _mips_step_simple(words, base, mem, r, pc):
+    """지연 슬롯 한 칸(분기·로드가 아닌 명령만)."""
+    w = words[(pc - base) // 4]
+    op, rs, rt = w >> 26, (w >> 21) & 31, (w >> 16) & 31
+    rd, sa, fn, imm = (w >> 11) & 31, (w >> 6) & 31, w & 63, w & 0xFFFF
+    simm = imm - 0x10000 if imm & 0x8000 else imm
+    if w == 0:
+        return
+    if op == 0 and fn == 2:
+        r[rd] = (r[rt] & 0xFFFFFFFF) >> sa
+    elif op == 0x09:
+        r[rt] = (r[rs] + simm) & 0xFFFFFFFF
+    else:
+        raise AssertionError(f"지연 슬롯에 모르는 명령 0x{w:08X}")
+    r[0] = 0
+
+
+def test_opening_dict_codec_roundtrips():
+    """행 사전 압축 ↔ 파이썬 기준 디코더."""
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import patch_opening_font as PF
+
+    chars = sorted(set("영웅전설세리오스많읽꽃뷁 ABC.,!?"))
+    gl = [PF.gen_glyphs(chars)[c] for c in chars]
+    blob, nd = PF.compress_font_dict(gl)
+    assert PF.decode_font_dict(blob, nd, len(gl)) == [g[: PF.GLYPH] for g in gl]
+
+
+def test_opening_decoder_stub_actually_decodes():
+    """🔴 **스텁을 실행해** 파이썬 기준과 바이트로 맞댄다.
+
+    ⚠ 이게 없으면 「빌드도 되고 디스어셈도 깨끗한데 화면만 검은」 사고가 그대로 나간다.
+    실제로 2026-08-21 첫 판은 분기 오프셋 셋이 **전부 한 칸씩** 어긋나 있었고
+    `verify_asm` 은 셋 다 통과시켰다.
+    """
+    import collections
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import patch_opening_font as PF
+
+    chars = sorted(set("영웅전설세리오스많읽꽃뷁 ABC.,!?가나다"))
+    gl = [PF.gen_glyphs(chars)[c] for c in chars]
+    blob, nd = PF.compress_font_dict(gl)
+
+    SRC, DST, PC0 = 0x80025500, 0x80080000, 0x80021D50
+    mem = collections.defaultdict(int)
+    for i, b in enumerate(blob):
+        mem[SRC + i] = b
+    words = PF.build_decoder_stub(DST, SRC, nd * 2 + (nd * 2 & 1), len(gl), PC0)
+    PF.verify_asm(words, 0x80025400)
+    _mips_run(words, 0x80025400, mem)
+
+    want = PF.decode_font_dict(blob, nd, len(gl))
+    got = bytes(mem[DST + i] for i in range(len(gl) * PF.GLYPH))
+    assert got == b"".join(want), "스텁 출력이 기준 디코더와 다르다"
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

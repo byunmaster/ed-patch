@@ -233,9 +233,55 @@ def main():
     _requa_note()
     from common import BUILD_TAG
 
+    movie_swap()
     print(
         f"\n완료: {FINAL}\n꼬리표 [{BUILD_TAG}] — 테스트는 이 하나만: {os.path.basename(FINAL_CUE)}"
     )
+
+
+def movie_swap():
+    """🔬 **검증 전용** — 동영상 EXE 구획을 통째로 갈아 **부팅 직후 엔딩을 본다**.
+
+        ED_BUILD_TAG=ps1-ending-qa ED_MOVIE_SWAP="OPEN1=END1,OPEN2=END2" python3 tools/build.py
+
+    **왜 문안 치환(`ED_OPENING_TEXT_AS`)으로는 부족한가.** 그건 글자만 갈아끼우므로 **배경이
+    오프닝 것**이다(유저 지적 2026-08-22). 엔딩 그림 위에서 봐야 잡히는 게 있고 — 밝은 배경의
+    가독성 · 그림과 겹치는 자리 — 게다가 오프닝 슬롯이 50뿐이라 ED1 엔딩 59줄 중 **9줄이
+    아예 안 보였다.** 구획째 얹으면 둘 다 없어진다.
+
+    네 파일이 **같은 크기(96,256B = 47섹터)** 라 자리를 그대로 맞바꿀 수 있다.
+    ⚠ 한글 패치가 **끝난 뒤** 복사한다 — 원본 END1 을 얹으면 일본어 엔딩을 보게 된다.
+    🔴 배포 빌드에 절대 켜지 않는다. 환경변수라 커밋물에 안 남고, 꼬리표를 갈라 짓는다.
+    """
+    spec = os.environ.get("ED_MOVIE_SWAP", "")
+    pairs = [kv.split("=", 1) for kv in spec.split(",") if "=" in kv]
+    if not pairs:
+        return
+    import common
+    from patch_opening_font import GAMES, SIZE
+
+    for dst, src in pairs:
+        assert dst in GAMES and src in GAMES, f"모르는 동영상 EXE: {dst}={src}"
+        lba = GAMES[dst]["lba"]
+        data = common.extract(GAMES[src]["lba"], SIZE, FINAL)
+        # ⚠ 이 파일은 **통째로** 갈리므로 자기 무변경 구간(OPEN1 포인터 표 등)도 당연히
+        #   바뀐다. 가드를 약하게 만들지 않고 **그 파일의 선언만 이 순간 내려놓는다** —
+        #   쓰기 경로는 그대로고(EDC/ECC·지문·되읽기 대장 다 탄다), 다른 구간 가드는 산다.
+        #   🔴 이게 「게이트 우회」가 아닌 이유: 우회는 **검사만 끄고 같은 일을 하는 것**이고,
+        #      여기는 **하는 일 자체가 다르다**(패치가 아니라 파일 교체). 그래서 범위를
+        #      교체 대상 하나로 좁히고, 무엇을 내려놓았는지 찍고, 끝나면 되돌린다.
+        #   ⚠ 선언이 **없는** 파일도 있다(OPEN2) — 없는 걸 찾으려다 터졌다. 있으면 내려놓는다.
+        key = next((k for k in common.IMMUTABLE if k[0] == lba), None)
+        held = common.IMMUTABLE.pop(key) if key else []
+        if held:
+            print(f"  🔬 {dst} 무변경 선언 {len(held)}건을 이 쓰기 동안만 내려놓는다")
+        try:
+            with open(FINAL, "r+b") as f:
+                n = common.write_user_data(f, lba, data, label=f"🔬 {dst} ← {src}")
+        finally:
+            if key:
+                common.IMMUTABLE[key] = held
+        print(f"  🔬 동영상 구획 교체: {dst}(LBA {lba}) ← {src} — 섹터 {n}")
 
 
 if __name__ == "__main__":
