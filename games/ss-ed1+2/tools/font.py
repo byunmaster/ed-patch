@@ -27,6 +27,28 @@ GLYPH_STRIDE = 22
 GLYPH_ROWS = 11
 GLYPH_CELL = 11  # 실제 획이 차지하는 폭(열 12~15 는 전부 0)
 KANJI_GLYPHS = 4375
+
+# ── 폰트가 둘이고 쓰는 자리가 다르다 (2026-08-21) ─────────────────────────────
+# 본편 대사는 `11KANJI.FON`(16×11), **타이틀·오프닝·엔딩은 `KANJI.FON`(16×16)** 이다.
+# 색인 규칙은 같고(`(구-1)*94 + (점-1)`) 스트라이드와 글리프 수만 다르다.
+# ⚠ **원본이 쓰는 글자가 서로 다르다** — 본편은 `scn_jp/*.json`, 타이틀은 `title_jp.json`.
+#   한쪽 기준으로 빈 슬롯을 고르면 다른 쪽 글자를 덮어쓴다.
+FONTS = {
+    "11kanji": {
+        "path": FON_KANJI,
+        "stride": 22,
+        "glyphs": 4375,
+        "src": "scn_jp",  # work/derived/scn_jp/*.json
+        "what": "본편 대사 (16×11 · Galmuri11)",
+    },
+    "kanji": {
+        "path": "/KANJI.FON",
+        "stride": 32,
+        "glyphs": 7806,  # 94 × 83구
+        "src": "title",  # work/derived/title_jp.json
+        "what": "타이틀·오프닝·엔딩 (16×16 · Neo둥근모)",
+    },
+}
 KANJI_KU = 16  # JIS 1급 한자가 시작하는 구 — 이 앞은 기호·가나·미정의
 LOAD_KANJI = 0x20280000
 LOAD_ASCII = 0x20298000
@@ -76,19 +98,35 @@ def game_index(b):
     return (ku - 1) * 94 + (ten - 1)
 
 
-def used_indices():
+def _source_chars(src):
+    """그 폰트를 쓰는 원본 텍스트의 글자들."""
+    if src == "scn_jp":
+        for p in glob.glob(os.path.join(common.OUT_DIR, "scn_jp", "*.json")):
+            with open(p, encoding="utf-8") as f:
+                for e in json.load(f)["entries"]:
+                    yield from e["text"]
+        return
+    path = os.path.join(common.OUT_DIR, "title_jp.json")
+    if not os.path.exists(path):
+        raise SystemExit(f"{path} 가 없다 — 먼저 dump_title.py")
+    with open(path, encoding="utf-8") as f:
+        for v in json.load(f).values():
+            for t in v["lines"]:
+                yield from t
+
+
+def used_indices(name="11kanji"):
     """원본 텍스트가 실제로 쓰는 글리프 인덱스 — 덮어쓰면 안 되는 슬롯."""
+    cfg = FONTS[name]
     used = set()
-    for p in glob.glob(os.path.join(common.OUT_DIR, "scn_jp", "*.json")):
-        for e in json.load(open(p))["entries"]:
-            for ch in e["text"]:
-                i = jis_index(ch)
-                if i is not None and 0 <= i < KANJI_GLYPHS:
-                    used.add(i)
+    for ch in _source_chars(cfg["src"]):
+        i = jis_index(ch)
+        if i is not None and 0 <= i < cfg["glyphs"]:
+            used.add(i)
     return used
 
 
-def free_slots():
+def free_slots(name="11kanji"):
     """한글을 넣을 수 있는 슬롯. 원본이 쓰는 글자는 무조건 보존한다.
 
     **한자 구간(ku≥16)을 먼저 준다.** 빈 글리프가 더 많은 쪽은 ku 6~8·10~15 인데
@@ -96,20 +134,10 @@ def free_slots():
     경로(창 폭 계산·반각 판정)가 그 코드를 어떻게 보는지 **미검증**이다.
     한자 구간은 원본이 이미 쓰던 코드라 그 경로들이 통과를 보장한다.
     """
-    f, mm = common.open_image()
-    try:
-        for path, lba, size in common.iso_files(mm):
-            if path == FON_KANJI:
-                data = common.read_extent(mm, lba, size)
-                break
-        else:
-            raise SystemExit("11KANJI.FON 을 못 찾았다")
-    finally:
-        mm.close()
-        f.close()
-    used = used_indices()
+    cfg = FONTS[name]
+    used = used_indices(name)
     kanji, other = [], []
-    for i in range(KANJI_GLYPHS):
+    for i in range(cfg["glyphs"]):
         if i in used:
             continue
         (kanji if i // 94 + 1 >= KANJI_KU else other).append(i)
@@ -118,17 +146,25 @@ def free_slots():
 
 def main():
     common.verify_source()
-    used = used_indices()
-    slots = free_slots()
-    safe = sum(1 for i in slots if i // 94 + 1 >= KANJI_KU)
-    print(f"11KANJI.FON: {KANJI_GLYPHS} 글리프, 원본 사용 {len(used)}, 여유 {len(slots)}")
-    print(f"  그중 한자 구간(권장) {safe} · 미정의/기호 구간 {len(slots) - safe}")
-    print(f"파일 뒤 여유 {HEADROOM}B = 글리프 {HEADROOM // GLYPH_STRIDE}자 (크기 유지 권장)")
+    for name, cfg in FONTS.items():
+        try:
+            used = used_indices(name)
+        except SystemExit as e:  # 덤프가 아직 없을 수 있다 — 그 폰트만 건너뛴다
+            print(f"{cfg['path']}: 건너뜀 — {e}")
+            continue
+        slots = free_slots(name)
+        safe = sum(1 for i in slots if i // 94 + 1 >= KANJI_KU)
+        print(
+            f"{cfg['path']} ({cfg['stride']}B/글리프) — {cfg['what']}\n"
+            f"  {cfg['glyphs']} 글리프 · 원본 사용 {len(used)} · 여유 {len(slots)}\n"
+            f"  그중 한자 구간(권장) {safe} · 미정의/기호 구간 {len(slots) - safe}"
+        )
+    print(
+        f"11KANJI.FON 파일 뒤 여유 {HEADROOM}B = 글리프 {HEADROOM // GLYPH_STRIDE}자 (크기 유지 권장)"
+    )
 
     bad = [i for i in range(KANJI_GLYPHS) if game_index(sjis_of_index(i)) != i]
     print(f"게임 루틴 대조: 불일치 {len(bad)} / {KANJI_GLYPHS}")
-    ex = slots[0]
-    print(f"예: 슬롯 {ex} → SJIS {sjis_of_index(ex).hex()}")
 
 
 if __name__ == "__main__":
