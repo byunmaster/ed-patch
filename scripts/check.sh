@@ -5,6 +5,12 @@
 #   sh scripts/check.sh ps1-ed1+2      # 게임을 골라서
 #   sh scripts/check.sh --all          # 게이트가 있는 게임 전부
 #
+# ⚠ **main 에서는 게임 게이트를 안 돌린다**(유저 지적 2026-08-24). main 은 공용을 고치는
+#   자리이고 그 트리엔 **원본도 파생물도 없는 게 정상**이다 — 남의 게임 빌드를 돌리면
+#   늘 빨간불이 된다(실측: ps1 의 `derived/align/*` 이 없어 main 커밋이 매번 막혔다).
+#   공용이 게임을 깨뜨리는지는 **조판 지문**과 각 게임 브랜치의 게이트가 잡는다.
+#   정말 전부 보고 싶으면 `--all` 로 **명시**한다 — 그때만 돈다.
+#
 # ⚠ **여기엔 게임 얘기를 쓰지 않는다.** 2026-08-19 까지 이 파일은 78줄이었는데 그중 3줄만
 #   공용이고 나머지는 전부 ps1-ed1+2 전용 검사기였다 — 「공용 진입점」이 아니라 **한 게임의
 #   게이트가 공용 자리를 점유한 것**이었다. 값을 두 번 치렀다: dos-ed2 는 커밋 전 게이트가
@@ -21,6 +27,9 @@ PY="$ROOT/.venv/bin/python"
 
 # 어느 게임인가 — 정본은 `scripts/check/which_game.sh` 다(테스트도 같은 답을 써야 한다).
 GAMES=$(sh "$ROOT/scripts/check/which_game.sh" "$@")
+# 그 목록을 **어떻게** 정했나 — `--all`·이름 지정(explicit) / 게임 브랜치(branch) /
+# main 에서 그냥 모르는 것(fallback). 셋을 못 가르면 위 ⚠ 의 사고가 난다.
+WHY=$(sh "$ROOT/scripts/check/which_game.sh" --why "$@")
 
 # ⚠ 테스트도 **자기 게임 것만** 본다(유저 확정 2026-08-21). 게이트는 갈라 놓고 테스트만
 #   전역이면, 원본을 안 링크한 워크트리에서 남의 게임 때문에 늘 빨간불이 된다(실측:
@@ -31,6 +40,12 @@ sh "$ROOT/scripts/test.sh" $GAMES >/dev/null \
 echo "  ✅ 통과"
 
 fail=0
+if [ "$WHY" = "fallback" ]; then
+  echo "── 게임 게이트"
+  echo "  ⏭ main 이다 — 게임 게이트는 건너뛴다(원본·파생물이 없는 게 정상이다)"
+  echo "     전부 보려면: sh scripts/check.sh --all   ·  하나만: sh scripts/check.sh <게임>"
+  GAMES=""
+fi
 for g in $GAMES; do
   gate="$ROOT/games/$g/check.sh"
   if [ ! -f "$gate" ]; then

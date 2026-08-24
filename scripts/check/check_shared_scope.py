@@ -4,19 +4,25 @@
 ## 왜
 
 게임 트리(`games/<타이틀>/`)끼리는 안 겹친다 — 디스크 이미지가 다르니 물리적으로 독립이다.
-겹치는 건 **공용**뿐이다:
+겹치는 건 **공용**뿐인데, 공용이 다 같은 무게는 아니다:
 
-    shared/          조판(krwrap) · 조사 · SJIS · ISO9660
-    scripts/         진입점
-    .claude/skills/  절차
-    docs/            체크리스트 · reference
+    shared/          조판(krwrap) · 조사 · SJIS · ISO9660   ← 🔴 바이트를 만든다
+    scripts/         진입점                                  ← 🔴 바이트를 만든다
+    docs/            체크리스트 · reference                  ← 글
+    CLAUDE.md        작업 규칙                               ← 글
+    .claude/skills/  절차                                    ← 글
 
-여기를 게임 브랜치에서 고치면 **다른 게임이 조용히 바뀐다.** 조판 지문이 잡긴 하지만
+앞의 둘을 게임 브랜치에서 고치면 **다른 게임이 조용히 바뀐다.** 조판 지문이 잡긴 하지만
 그건 **사후**다 — 다른 게임 세션이 자기 지문이 깨진 걸 보고서야 안다.
 
-## 규칙 (유저 확정 2026-08-18)
+뒤의 셋은 **바이트를 안 만든다.** 틀리면 사람이 읽고 반박하고, 충돌이 나도 산문 충돌이라
+잘못 풀어도 이미지가 안 깨진다. **조용히 틀리지 않는 것**이 기준이다.
 
-**공용은 `main` 에서만 고친다.** 게임 브랜치에서 필요하면 main 에 먼저 넣고 받아 온다.
+## 규칙 (유저 확정 2026-08-18 · 문서 분리 2026-08-24)
+
+**`shared/`·`scripts/` 는 `main` 에서만 고친다.** 게임 브랜치에서 필요하면 main 에 먼저
+넣고 받아 온다. **`docs/`·`CLAUDE.md`·`.claude/` 는 게임 브랜치에서 고쳐도 된다** —
+머지로 올라오면 `--first-parent main` 에서 한 줄이 되므로 main 이 오히려 읽기 좋아진다.
 
 ⚠ **게이트가 아니다** — 급할 땐 어길 수 있어야 한다(그리고 어긴 걸 알아야 한다).
 수치만 보고하고, 어겼으면 무엇을 왜 고쳤는지 커밋 메시지에 남긴다.
@@ -32,7 +38,10 @@ import sys
 
 # scripts/check/ 아래라 세 번 올라가야 레포 루트다
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SHARED = ("shared/", "scripts/", ".claude/", "docs/", "CLAUDE.md")
+# 🔴 게임 브랜치에서 고치면 **조용히** 다른 게임의 바이트가 바뀐다 — main 에서만
+CODE = ("shared/", "scripts/")
+# 글 — 게임 브랜치에서 고쳐도 된다(2026-08-24). 세어서 보여만 주고 ⚠ 는 안 띄운다.
+PROSE = ("docs/", "CLAUDE.md", ".claude/")
 
 
 def main():
@@ -62,21 +71,26 @@ def main():
             f = ln[3:].split(" -> ")[-1].strip()
             if f and f not in files:
                 files.append(f)
-    hit = [f for f in files if f.startswith(SHARED)]
+    hit = [f for f in files if f.startswith(CODE)]
+    prose = [f for f in files if f.startswith(PROSE)]
     game = [f for f in files if f.startswith("games/")]
     own = f"games/{br[len('game/') :]}/"
     other = [f for f in game if not f.startswith(own)]
     print(f"  브랜치 {br} — 바뀐 파일 {len(files)} (자기 게임 {len(game) - len(other)})")
     if hit:
-        print(f"  ⚠ **공용 영역 {len(hit)}건** — 공용은 `main` 에서 고치고 받아 온다")
+        print(
+            f"  ⚠ **공용 코드 {len(hit)}건** — `shared/`·`scripts/` 는 main 에서 고치고 받아 온다"
+        )
         for f in hit[:8]:
             print(f"      {f}")
+    if prose:
+        print(f"  ℹ 공용 문서 {len(prose)}건 — 브랜치에서 고쳐도 된다(머지로 올라간다)")
     if other:
         print(f"  🔴 **남의 게임 {len(other)}건** — 이건 거의 사고다")
         for f in other[:5]:
             print(f"      {f}")
     if not hit and not other:
-        print("  ✅ 자기 게임만 만졌다")
+        print("  ✅ 공용 코드는 안 건드렸다")
     return 0
 
 

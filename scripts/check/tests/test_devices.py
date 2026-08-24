@@ -53,13 +53,24 @@ def test_shared_scope_watches_worktree_not_only_commits():
 
 
 def test_shared_scope_covers_every_shared_path():
-    """공용으로 선언한 자리가 실제 디렉터리와 어긋나면 구멍이 난다."""
+    """공용으로 선언한 자리가 실제 디렉터리와 어긋나면 구멍이 난다.
+
+    ⚠ 2026-08-24 에 바구니를 **둘로 갈랐다**(코드 = main 에서만 / 글 = 브랜치 OK).
+    가르고 나면 실패 모드가 하나 는다 — **어느 바구니에도 없는 공용 경로**는 아무도 안 본다.
+    그래서 ① 둘 다 실재하는가 ② 위험한 둘이 **코드 쪽**인가 ③ 겹치지 않는가 를 다 본다.
+    특히 ②는 `shared/` 를 글 바구니로 옮기는 실수를 막는다 — 그러면 ⚠ 가 안 떠서
+    **다른 게임이 조용히 바뀌는 걸 아무도 모른다.**
+    """
     import check_shared_scope as C
 
-    for p in C.SHARED:
+    for p in C.CODE + C.PROSE:
         assert os.path.exists(os.path.join(ROOT, p.rstrip("/"))), f"공용 경로 없음: {p}"
-    for d in ("shared", "scripts", "docs"):
-        assert any(s.startswith(d) for s in C.SHARED), f"{d}/ 가 공용 목록에 없다"
+    for d in ("shared/", "scripts/"):
+        assert d in C.CODE, f"{d} 는 바이트를 만든다 — 코드 바구니여야 한다"
+        assert not any(s.startswith(d) for s in C.PROSE), f"{d} 가 글 바구니에 있다"
+    for d in ("docs/", "CLAUDE.md", ".claude/"):
+        assert d in C.PROSE, f"{d} 가 글 목록에 없다"
+    assert not set(C.CODE) & set(C.PROSE), "두 바구니가 겹친다"
 
 
 def test_worktree_links_only_declared_originals():
@@ -76,11 +87,21 @@ def test_worktree_links_only_declared_originals():
 
 
 def test_every_game_declares_its_originals():
-    """목록이 없으면 워크트리에 원본이 하나도 안 걸린다 — 게임마다 있어야 한다."""
+    """목록이 없으면 워크트리에 원본이 하나도 안 걸린다 — 게임마다 있어야 한다.
+
+    ⚠ **디렉터리 목록이 아니라 추적되는 파일로 센다**(2026-08-24). `games/<게임>/work/` 는
+    gitignore 라 그 트리에서 한 번 빌드하면 **껍데기 디렉터리가 남는다.** 목록으로 세면
+    그게 게임으로 잡혀 `originals.txt` 를 내놓으라고 하는데, 그 브랜치에 안 딸려온 게
+    정상이다 — 실측으로 `main` 의 게이트가 `games/ss-ed3/work/` 하나 때문에 늘 빨간불이었다.
+    """
+    import subprocess
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "games/"], cwd=ROOT, capture_output=True, text=True, check=False
+    ).stdout.split("\n")
+    names = sorted({f.split("/")[1] for f in tracked if f.startswith("games/") and "/" in f[6:]})
     games = os.path.join(ROOT, "games")
-    for g in sorted(os.listdir(games)):
-        if not os.path.isdir(os.path.join(games, g)):
-            continue
+    for g in names:
         man = os.path.join(games, g, "originals.txt")
         assert os.path.exists(man), f"games/{g}/originals.txt 가 없다"
         items = [ln.split("#")[0].strip() for ln in _read("games", g, "originals.txt").split("\n")]

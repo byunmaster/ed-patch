@@ -44,6 +44,13 @@ fi
 #   세션(에이전트 포함)이 파일을 읽고 있으면 **바뀐 파일을 읽고도 성공한다**(2026-08-18 실제로
 #   백그라운드 에이전트 셋이 도는 중에 갈아탔다).
 if [ "${1:-}" = "--shared" ]; then
+  # ⚠ **배치를 뒤집은 뒤로(본 트리 = main) 이 갈래는 설 자리가 없다** — git 은 한 브랜치를
+  #   두 트리에 못 건다("'main' is already used by worktree at ..."). 공용은 **본 트리에서**
+  #   고친다. 되살릴 일은 본 트리를 다시 게임으로 되돌릴 때뿐이다.
+  if git -C "$ROOT" symbolic-ref -q HEAD | grep -qx "refs/heads/main"; then
+    echo "본 트리가 이미 main 이다 — 공용은 여기서 고친다 (--shared 는 필요 없다)."
+    exit 0
+  fi
   WT="$DIR/shared"
   if [ -d "$WT" ]; then
     echo "이미 있다: $WT"
@@ -84,23 +91,6 @@ if [ "${1:-}" = "--shared" ]; then
       echo "  ⚠ games/$g/work/derived 가 실물 디렉터리다 — 링크하지 않았다(지우고 다시 돌려라)"
     fi
   done
-  # 🔴 **허브(main 트리)도 파생물을 봐야 한다** — 회귀 테스트 하나가 JP 덤프를 읽는다.
-#    배치를 뒤집어 본 트리가 main 이 되면(유저 확정 2026-08-18) 그 트리엔 `work/` 가 없다.
-#    게임 트리 것을 **링크로** 되비춘다(쓰는 쪽은 게임 트리 하나뿐이라 충돌이 없다).
-# 🔴 **`build` 도 같이 잇는다**(2026-08-19). `scripts/pull-build.sh` 는 **허브 경로**를 보는데
-#    빌드는 워크트리 안에 생긴다 — 유저가 QA 이미지를 받으려다 「원격에 꼬리표가 없다」로
-#    막혔고, 허브에 남아 있던 **8/18 낡은 이미지**를 대신 받을 뻔했다(이 레포의 1급 사고).
-HUB="$ROOT/games/$GAME/work"
-for sub in derived build; do
-  [ -d "$WT/games/$GAME/work/$sub" ] || continue
-  mkdir -p "$HUB"
-  if [ -L "$HUB/$sub" ] || [ ! -e "$HUB/$sub" ]; then
-    ln -sfn "$WT/games/$GAME/work/$sub" "$HUB/$sub"
-    echo "  (허브) games/$GAME/work/$sub → 워크트리 것을 본다"
-  else
-    echo "  ⚠ 허브에 실물 games/$GAME/work/$sub 가 있다 — 링크하지 않았다(지우고 다시 돌려라)"
-  fi
-done
 
 cat <<EOF
 
@@ -177,6 +167,27 @@ elif [ -d "$SRC_DERIVED" ]; then
 elif [ ! -d "$DST_DERIVED" ]; then
   echo "  ℹ work/derived 없음 — 아직 파생 단계가 없는 게임이다(롬분석·기계번역엔 필요 없다)"
 fi
+
+# 🔴 **허브(본 트리)도 워크트리의 `work/` 를 봐야 한다.** 배치를 뒤집어 본 트리가 main 이
+#    되면서(유저 확정 2026-08-18) 그 트리엔 `work/` 가 없다 — 게임 트리 것을 **링크로**
+#    되비춘다(쓰는 쪽은 게임 트리 하나뿐이라 충돌이 없다).
+#    · `derived` — 회귀 테스트 하나가 JP 덤프를 읽는다.
+#    · `build`   — `scripts/pull-build.sh` 가 **허브 경로**를 보는데 빌드는 워크트리 안에
+#                  생긴다. 유저가 QA 이미지를 받으려다 「원격에 꼬리표가 없다」로 막혔고,
+#                  허브에 남아 있던 **8/18 낡은 이미지**를 대신 받을 뻔했다(이 레포의 1급 사고).
+# ⚠ 이 블록은 한동안 **`--shared` 갈래 안에 잘못 들어가 있었다** — 거기선 `$GAME` 이 안 잡혀
+#   `set -u` 로 즉시 죽고(=`--shared` 전면 불통), 정작 게임 갈래에서는 **한 번도 안 돌았다.**
+HUB="$ROOT/games/$GAME/work"
+for sub in derived build; do
+  [ -d "$WT/games/$GAME/work/$sub" ] || continue
+  mkdir -p "$HUB"
+  if [ -L "$HUB/$sub" ] || [ ! -e "$HUB/$sub" ]; then
+    ln -sfn "$WT/games/$GAME/work/$sub" "$HUB/$sub"
+    echo "  (허브) games/$GAME/work/$sub → 워크트리 것을 본다"
+  else
+    echo "  ⚠ 허브에 실물 games/$GAME/work/$sub 가 있다 — 링크하지 않았다(지우고 다시 돌려라)"
+  fi
+done
 
 # ⚠ `.venv` 는 워크트리에 안 따라온다 — `check.sh`·`test.sh` 가 `$ROOT/.venv` 를 찾는다.
 #   없으면 스톡 python3 로 떨어져 빌드 한복판에서 죽는다(실측 2026-08-18: 빌드는 직접
