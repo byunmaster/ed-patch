@@ -49,8 +49,14 @@ REVIEW = os.path.join(common.REVIEW_DIR, "scr")
 #    게임이 **NBG0 비트맵**(숫자·게이지를 그리는 그 층)에 라벨을 그린다 — 그 원본이 여기다.
 #    실기에서 EP 표시를 「남다」로 바꾼 뒤 NBG0 에서 화소를 떠 디스크 전량에서 찾아 짚었다.
 #    `/FRAME.DAT` 은 HUD 스프라이트 시트다(숫자 두 벌 · 상태이상 한자 · 게이지 · `あと`).
+# 🔴 **같은 스프라이트가 파일 둘에 있다**(2026-08-24, 유저 QA 로 발각). `/FRAME.DAT` 만
+#    고쳤더니 화면은 그대로 `あと` 였다 — 필드 HUD 가 읽는 건 `/STAT.DAT` 쪽이다.
+#    「한 자리를 고쳤다」는 「그 그림이 사라졌다」가 아니다 — 아래 `sweep_ato()` 가
+#    **넣은 이미지 전량에서 원본 그림이 남아 있나**를 훑어 자동 실패시킨다.
 FRAME = "/FRAME.DAT"
-ATO_OFF = 0x1080  # 블록 머리 (파일 오프셋)
+STAT = "/STAT.DAT"
+ATO_SITES = ((FRAME, 0x1080), (STAT, 0x0000))
+ATO_OFF = ATO_SITES[0][1]  # 도트를 뜨는 기준 자리 (둘은 바이트까지 같다)
 ATO_STRIDE = 16  # 한 행 16B — 쓰는 건 앞 12B
 ATO_W, ATO_H = 12, 10  # 12×10, 0행은 빈 줄이라 잉크는 1~9행(9행)
 ATO_TOP = 1
@@ -207,9 +213,9 @@ def draw_status(old, kr, bdf):
     return out, int((out != old).sum())
 
 
-def ato_block(d):
-    """`/FRAME.DAT` 에서 `あと` 블록을 (10, 12) 로 떠 온다."""
-    rows = [d[ATO_OFF + y * ATO_STRIDE : ATO_OFF + y * ATO_STRIDE + ATO_W] for y in range(ATO_H)]
+def ato_block(d, off=ATO_OFF):
+    """`あと` 블록을 (10, 12) 로 떠 온다."""
+    rows = [d[off + y * ATO_STRIDE : off + y * ATO_STRIDE + ATO_W] for y in range(ATO_H)]
     return np.frombuffer(b"".join(rows), np.uint8).reshape(ATO_H, ATO_W)
 
 
@@ -231,9 +237,9 @@ def draw_ato(old):
     return out, int((out != old).sum())
 
 
-def ato_bytes(px, d):
+def ato_bytes(px, d, off=ATO_OFF):
     """(10, 12) → 파일에 쓸 연속 바이트(스트라이드 16 · 뒤 4B 는 원본 그대로)."""
-    buf = bytearray(d[ATO_OFF : ATO_OFF + ATO_STRIDE * ATO_H])
+    buf = bytearray(d[off : off + ATO_STRIDE * ATO_H])
     for y in range(ATO_H):
         buf[y * ATO_STRIDE : y * ATO_STRIDE + ATO_W] = px[y].tobytes()
     return bytes(buf)
@@ -247,10 +253,10 @@ def main():
     bdf = galmuri(FONT)
 
     raw = {}
-    for path in {p for p, _s, _n in PANELS} | {FRAME}:
+    for path in {p for p, _s, _n in PANELS} | {FRAME, STAT}:
         lba, size = files[path]
         raw[path] = common.read_extent(mm, lba, size)
-    parsed = {p: dump_scr.parse(d) for p, d in raw.items() if p != FRAME}
+    parsed = {p: dump_scr.parse(d) for p, d in raw.items() if p not in (FRAME, STAT)}
 
     dst = os.path.join(common.BUILD_DIR, os.path.basename(common.ORIG_BIN))
     if apply and not os.path.exists(dst):
@@ -270,20 +276,23 @@ def main():
         off = dump_scr.cell_base(raw[path]) + start * 64
         write(dst, lba, size, off, px_to_cells(new), px_to_cells(old), f"{path} HUD 패널")
 
-    # ── 잔량 라벨 `あと` → 남다
+    # ── 잔량 라벨 `あと` → 남다 (파일 둘 — 위 ATO_SITES 주석)
     old_ato = ato_block(raw[FRAME])
     new_ato, n = draw_ato(old_ato)
-    print(f"  {FRAME} 0x{ATO_OFF:X}  あと → 남다 · 화소 {n} 변경")
-    if apply:
-        lba, size = files[FRAME]
+    for path, off in ATO_SITES:
+        assert np.array_equal(ato_block(raw[path], off), old_ato), f"{path} 0x{off:X}: 원본이 다르다"
+        print(f"  {path} 0x{off:X}  あと → 남다 · 화소 {n} 변경")
+        if not apply:
+            continue
+        lba, size = files[path]
         write(
             dst,
             lba,
             size,
-            ATO_OFF,
-            ato_bytes(new_ato, raw[FRAME]),
-            raw[FRAME][ATO_OFF : ATO_OFF + ATO_STRIDE * ATO_H],
-            f"{FRAME} 잔량 라벨",
+            off,
+            ato_bytes(new_ato, raw[path], off),
+            raw[path][off : off + ATO_STRIDE * ATO_H],
+            f"{path} 잔량 라벨",
         )
 
     # ── 상태이상 라벨 일곱
@@ -351,14 +360,45 @@ def verify(dst, files, made, ato, stat=None):
             cache[path] = dump_scr.parse(common.read_extent(mm2, lba, size))
         got = panel_px(cache[path]["cells"], start)
         assert np.array_equal(got, new), f"{path} 셀{start}: 되읽기 불일치"
+    for path, off in ATO_SITES:
+        lba, size = files[path]
+        got = ato_block(common.read_extent(mm2, lba, size), off)
+        assert np.array_equal(got, ato), f"{path} 0x{off:X} 잔량 라벨: 되읽기 불일치"
     lba, size = files[FRAME]
     dfr = common.read_extent(mm2, lba, size)
-    assert np.array_equal(ato_block(dfr), ato), "잔량 라벨: 되읽기 불일치"
     for (off, jp, _kr), want in zip(STATUS, stat or [], strict=True):
         got = box(dfr, off, STATUS_BOX, STATUS_BOX)
         assert np.array_equal(got, want), f"상태 라벨 {jp}: 되읽기 불일치"
     mm2.close()
-    print(f"되읽기 확인 — HUD 패널 {len(made)}장 + 잔량 라벨 + 상태 라벨 {len(stat or [])}")
+    print(f"되읽기 확인 — HUD 패널 {len(made)}장 + 잔량 라벨 {len(ATO_SITES)}곳 + 상태 라벨 {len(stat or [])}")
+    sweep(dst)
+
+
+def sweep(dst):
+    """🔴 **원본 그림이 어디에도 남으면 안 된다.**
+
+    자리를 하나 고치고 「됐다」로 넘어갔다가 화면에 그대로 `あと` 가 떴다(유저 QA
+    2026-08-24). 같은 스프라이트가 `/FRAME.DAT` 과 `/STAT.DAT` 둘에 있었기 때문이다.
+    개별 자리의 되읽기는 **그 자리만** 보므로 이 사고를 영원히 못 잡는다 —
+    그래서 넣은 이미지의 **전 파일**에서 원본 지문을 찾는다.
+    """
+    _f, mm0 = common.open_image()
+    fr = common.extract(FRAME, mm0)
+    mm0.close()
+    # 지문은 **잉크가 있는 행만** 잇는다(0행은 빈 줄이라 남의 스프라이트와도 맞는다).
+    sigs = {"あと": fr[ATO_OFF + ATO_STRIDE : ATO_OFF + ATO_STRIDE * ATO_H]}
+    for off, jp, _kr in STATUS:
+        sigs[jp] = fr[off + ATO_STRIDE : off + ATO_STRIDE * STATUS_BOX]
+    _f2, mm = common.open_image(dst)
+    left = []
+    for name, lba, size in common.iso_files(mm):
+        if not 0 < size <= 8 << 20:
+            continue
+        blob = common.read_extent(mm, lba, size)
+        left += [f"{jp}@{name}" for jp, sig in sigs.items() if blob.find(sig) >= 0]
+    mm.close()
+    assert not left, f"원본 라벨이 남았다 — {left}"
+    print(f"전량 훑기 — 원본 라벨 {len(sigs)}종 잔존 0")
 
 
 if __name__ == "__main__":

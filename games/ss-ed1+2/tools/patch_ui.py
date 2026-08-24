@@ -529,6 +529,7 @@ def sys_rows(mm):
                             base = o
                             break
                     ptrs = _ptrs_to(d, base)
+                    _no_jp_prefix(path, base, d[base : i + k], jp)
                     seen.add(sys_key(jp))
                     out.append(
                         (
@@ -546,6 +547,22 @@ def sys_rows(mm):
     missing = [k for k in canon if k not in seen]
     assert not missing, f"디스크에서 못 찾은 시스템 메시지 {len(missing)}: {missing[:4]}"
     return out
+
+
+def _no_jp_prefix(path, base, pre, jp):
+    """🔴 **접미만 맞으면 앞말이 일본어로 남는다.**
+
+    정본에 짧은 조각(`が現れた。`)을 넣으면 이름이 구워진 자리(`スライムが現れた。`)도
+    같이 걸린다 — 앞말은 보존되므로 화면에 **「スライム이(가) 나타났다.」** 가 뜬다.
+    빌드는 성공하고 되읽기도 통과한다(자리마다 따로 보니까). 그래서 여기서 막는다:
+    **보존되는 앞말에 일본어가 있으면 실패**. 그런 자리는 조각이 아니라 **통짜로** 적는다.
+    ⚠ 앞말이 「같은 런에 붙은 남의 문자열」이면 `base` 가 그 뒤를 가리키므로 여기 안 온다.
+    """
+    if any(0x81 <= b <= 0x9F or 0xA1 <= b <= 0xDF or 0xE0 <= b <= 0xEF for b in pre):
+        raise SystemExit(
+            f"시스템 정본 {jp!r} 이 {path} 0x{base:X} 의 앞말을 일본어로 남긴다 "
+            f"— 조각 말고 통짜로 적는다"
+        )
 
 
 def sys_pack(sysm, ntabs, plan):
@@ -719,8 +736,21 @@ def write_file(f, path, lba, size, patch, label):
     ⚠ `min~max` 를 한 덩어리로 쓰지 않는다. `ED2.BIN` 은 HUD 표와 메뉴 풀이 190KB 넘게
       떨어져 있어 그 사이 원본 바이트를 통째로 다시 깔게 되고, 그러면 **다른 패처가 같은
       파일에 넣은 것을 조용히 되돌린다**(실측: 199,580B/98섹터 → 848B/2섹터).
+    🔴 **틈을 메우는 바이트는 원본이 아니라 「지금 이미지」에서 읽는다**(2026-08-24).
+      64B 문턱은 되돌림을 **줄일** 뿐 못 막는다 — 시스템 메시지 풀 두 덩이(0x26C64·0x26CA4)가
+      25B 떨어져 한 런이 되면서, 그 사이에 있던 `없음`(0x26C8B, 앞 단계가 쓴 것)이
+      **원본 일본어로 되돌아갔다.** 빌드는 성공했고 되읽기가 잡았다.
+      ⚠ 이건 「원본이 어땠나」를 묻는 읽기가 아니라 「지금 무엇이 있나」를 묻는 읽기다 —
+        레포 규율(제자리 갱신 이미지를 되읽지 말 것)이 말하는 비멱등과 반대 방향이다.
+        값은 전부 원본에서 유도했고, 여기서 읽는 건 **안 건드릴 틈**뿐이라 멱등이다.
     """
-    orig = common.extract(path)
+    f.flush()
+    _fd, mmd = common.open_image(f.name)
+    try:
+        orig = common.extract(path, mmd)
+    finally:
+        mmd.close()
+        _fd.close()
     runs, cur = [], []
     for at in sorted(patch):
         if cur and at - (cur[-1] + len(patch[cur[-1]])) > 64:
