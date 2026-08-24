@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import sys
+import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(
@@ -301,6 +302,137 @@ def msg_rows(mm, msgs):
     return out
 
 
+# ── 고유명사 표 — 아이템 · 주문 · 몬스터 (2026-08-24) ─────────────────────────
+# 🔴 **문안은 공용 고유명사 정본이 낸다**(`shared/glossary`). 여기엔 **자리만** 적는다 —
+#    두 이식판이 같은 이름을 쓰게 하는 유일한 길이다.
+# 자리는 `(파일키, 시작 오프셋, 개수, 첫 문자열, 무엇)` — 앵커와 개수가 어긋나면 실패한다.
+NAME_TABLES = [
+    ("ED", 0x000CD4, 114, "ナイフ", "아이템"),
+    ("ED", 0x002494, 30, "フラム", "주문"),
+    ("ED", 0x01B734, 223, "スライムＢ", "몬스터"),
+    ("ED2", 0x000B3C, 119, "ナイフ", "아이템"),
+    ("ED2", 0x002324, 33, "フラム", "주문"),
+]
+# ⚠ **손대지 않는 것** — 내부 자리표시자다. 번역하면 오히려 틀린다.
+NAME_SKIP = {"ＭＧ１４", "ＭＧ１５", "ＭＧ２２"}
+NAME_PTR_BASE = 0x06028000  # `ED.BIN`·`ED2.BIN` 의 적재 주소 (`dump_scn.BASES`)
+
+
+def _nname(s):
+    """이름 대조용 정규화 — 반각 가나·중점·공백을 지운다.
+
+    ⚠ 표엔 같은 이름이 **반각 가나**(`ｷｬﾘｵﾝ ｸﾛｰﾗｰ`)나 **중점 표기**(`ﾃﾞｽ･ｶﾞｰﾃﾞｨｱﾝ`)로도
+      들어 있다. 정본은 한 꼴만 들고 있으므로 맞출 때만 눕힌다(쓸 때는 원문 그대로 안 쓴다).
+    """
+    t = unicodedata.normalize("NFKC", s)
+    for ch in ("･", "・", " ", "\u3000"):
+        t = t.replace(ch, "")
+    return t
+
+
+def name_kr(jp, canon):
+    """JP 이름 → KR. 못 찾으면 None(부르는 쪽이 실패로 친다)."""
+    if jp in canon:
+        return canon[jp]
+    n = _nname(jp)
+    if n in canon:
+        return canon[n]
+    # 🔴 **변종 접미**(Ａ~Ｅ)는 정본에 안 넣는다 — 같은 몸이 넷씩 늘어 표가 네 배가 된다.
+    #   `スライムＢ` = `スライム` + `B`. 붙일 때는 반각으로 붙인다(1바이트라 칸이 산다).
+    if n[-1:] in "ABCDE" and n[:-1] in canon:
+        return canon[n[:-1]] + n[-1]
+    # `〜の書`(주문서)도 파생이다 — 밑말이 주문 이름이라 정본에 따로 안 둔다.
+    if n.endswith("の書") and n[:-2] in canon:
+        return canon[n[:-2]] + "의 서"
+    return None
+
+
+def name_rows(mm):
+    """고유명사 표 다섯 — `[{key,path,lba,size,off,what,recs,room}]`.
+
+    🔴 **칸을 늘려 쓴다(재배치).** 한 칸씩 제자리에 맞추면 34칸이 넘친다(`궁극의 지팡이`
+       15B > 12B 등). 그런데 표는 **포인터 참조**라(칸마다 BE32 하나) 표 전체를 다시 깔고
+       포인터를 고치면 된다 — 총량은 표마다 57~658B 남는다(실측).
+    ⚠ 포인터 값 = `0x06028000 + 파일 오프셋`(BE32). 파일 전체를 훑어 그 값을 쓰는 자리를
+      모은다 — 한 칸을 두 곳에서 가리키는 경우가 있어 **전부** 고친다.
+    ⚠ 칸 사이 채움에 `\t`(0x09)가 섞여 있다. **포인터는 그 뒤를 가리키므로** 이름의 일부가
+      아니다(실측: `0xCEB`(\t)를 가리키는 포인터는 없고 `0xCEC` 를 가리킨다). 다시 깔 때는
+      0 으로 채운다.
+    """
+    canon = {}
+    for cat in ("item", "monster", "person", "place"):
+        for k, v in table(cat).items():
+            canon.setdefault(k, v)
+            canon.setdefault(_nname(k), v)
+    out, miss = [], []
+    for key, off, n, anchor, what in NAME_TABLES:
+        path = dump_ui.FILES[key]
+        lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
+        d = common.read_extent(mm, lba, size)
+        recs, i, got, end = [], off, 0, off
+        while got < n:
+            while i < len(d) and d[i] < 0x20:  # 칸 사이 채움(0x00·0x09)
+                i += 1
+            j = i
+            while j < len(d) and d[j] != 0:
+                j += 1
+            jp = d[i:j].decode("cp932")
+            if got == 0:
+                assert jp == anchor, f"{path} 0x{off:06X} {what}: 첫 칸이 {jp!r} (기대 {anchor!r})"
+            kr = None if jp in NAME_SKIP else name_kr(jp, canon)
+            if kr is None and jp not in NAME_SKIP:
+                miss.append(jp)
+            recs.append((i, jp, kr, _ptrs_to(d, i)))
+            i, end, got = j, j + 1, got + 1
+        while end < len(d) and d[end] < 0x20:  # 마지막 칸 뒤 채움까지가 우리 자리
+            end += 1
+        out.append(
+            {
+                "key": key,
+                "path": path,
+                "lba": lba,
+                "size": size,
+                "off": off,
+                "what": what,
+                "recs": recs,
+                "room": end - off,
+            }
+        )
+    assert not miss, f"정본에 없는 고유명사 {len(miss)}: {miss[:8]}"
+    return out
+
+
+def _ptrs_to(d, at):
+    """파일 안에서 `at` 을 가리키는 BE32 포인터들의 오프셋."""
+    pat = (NAME_PTR_BASE + at).to_bytes(4, "big")
+    out, i = [], 0
+    while True:
+        j = d.find(pat, i)
+        if j < 0:
+            return out
+        out.append(j)
+        i = j + 1
+
+
+def name_pack(t, plan):
+    """표 하나 → `(새 바이트, {포인터 오프셋: 새 값})`. 안 넣는 칸은 원문을 그대로 옮긴다."""
+    buf, moves = bytearray(), {}
+    for _at, jp, kr, ptrs in t["recs"]:
+        new_at = t["off"] + len(buf)
+        body = (
+            b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
+            if kr
+            else jp.encode("cp932")
+        )
+        buf += body + b"\x00"
+        if len(buf) & 1:  # 2바이트 정렬 — 원본도 짝수 자리에 깐다
+            buf += b"\x00"
+        for p in ptrs:
+            moves[p] = NAME_PTR_BASE + new_at
+    assert len(buf) <= t["room"], f"{t['path']} {t['what']}: {len(buf)}B > 자리 {t['room']}B"
+    return bytes(buf) + b"\x00" * (t["room"] - len(buf)), moves
+
+
 def needed(krs):
     """슬롯을 먹어야 하는 글자 — cp932 로 안 되는 것(=한글)만."""
     need = set()
@@ -456,6 +588,8 @@ def main():
     scn = scn_rows(mm0)
     cards = card_rows(mm0, load_canon()[2])
     msgs = msg_rows(mm0, load_canon()[4])
+    ntabs = name_rows(mm0)
+    names = [r[2] for t in ntabs for r in t["recs"] if r[2]]
     mm0.close()
     _f0.close()
     n_kr = sum(1 for r in rs if r[6])
@@ -464,6 +598,10 @@ def main():
         f"씬 지명 헤더 {len(scn)}곳 · {len({r[0] for r in scn})}파일 · {len({r[5] for r in scn})}종"
     )
     print(f"챕터 카드 {len(cards)}장 · SAVE/LOAD 문구 {len(msgs)}자리")
+    print(
+        f"고유명사 {len(names)}칸 — "
+        + " · ".join(f"{t['key']} {t['what']} {len(t['recs'])}" for t in ntabs)
+    )
     bad = check(rs)
     for path, _l, _s, at, fl, jp, kr, _t in scn:
         if rec_len(kr) > fl:
@@ -485,7 +623,7 @@ def main():
         raise SystemExit(f"먼저 자막을 넣는다(patch_title.py --apply) — {dst} 가 없다")
 
     plan = slot_plan(
-        [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs],
+        [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs] + names,
         refresh="--refresh" in sys.argv,
     )
     print(f"  한글 슬롯 {len(plan)}자")
@@ -528,9 +666,27 @@ def main():
             csec += nsec
         print(f"  챕터 카드 {len(cards)}장 + 문구 {len(msgs)}자리 · 섹터 {csec}")
 
+        # ── 고유명사 표 — **다시 깔고 포인터를 고친다**(칸 하나씩으로는 34칸이 넘친다)
+        nsec = 0
+        for t in ntabs:
+            blob, moves = name_pack(t, plan)
+            nsec += common.write_at(
+                f, t["lba"], t["size"], t["off"], blob, label=f"{t['path']} {t['what']} 표"
+            )
+            pt = {at: v.to_bytes(4, "big") for at, v in moves.items()}
+            _r, _b, ps = write_file(
+                f, t["path"], t["lba"], t["size"], pt, f"{t['path']} {t['what']} 포인터"
+            )
+            nsec += ps
+            print(
+                f"  {t['path']} {t['what']}: {len(t['recs'])}칸 · {len(blob)}B/{t['room']}B"
+                f" · 포인터 {len(moves)}"
+            )
+        print(f"  고유명사 표 {len(ntabs)}개 · 섹터 {nsec}")
+
         # ── 반각 폰트 — 원본에 없는 글리프만 채운다(온점 등)
         gaps = ascii_gaps(
-            [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs],
+            [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs] + names,
             common.extract(FON_ASCII),
         )
         if gaps:
@@ -552,6 +708,7 @@ def main():
         print(f"  폰트 {FON}: 글리프 {len(glyphs)}자 구움")
 
     verify(dst, rs, scn, cards + msgs, plan, files)
+    verify_names(dst, ntabs, plan, files)
     print(f"  → {dst}")
 
 
@@ -614,6 +771,28 @@ def verify(dst, rs, scn, cards, plan, files):
         f"  ✅ 되읽기 {sum(1 for r in rs if r[6])}칸 + 씬 헤더 {len(scn)}곳 + "
         f"카드 {len(cards)}장 + 글리프 {len(plan)}자"
     )
+
+
+def verify_names(dst, ntabs, plan, files):
+    """되읽기 — 고유명사 표는 **포인터를 따라가** 읽는다(자리가 움직였으니 그게 정본이다)."""
+    inv = {sjis: ch for ch, (sjis, _i) in plan.items()}
+    _f2, mm2 = common.open_image(dst)
+    n = 0
+    for t in ntabs:
+        d = common.read_extent(mm2, t["lba"], t["size"])
+        for _at, jp, kr, ptrs in t["recs"]:
+            assert ptrs, f"{t['path']} {jp}: 포인터가 없다"
+            at = int.from_bytes(d[ptrs[0] : ptrs[0] + 4], "big") - NAME_PTR_BASE
+            j = at
+            while j < len(d) and d[j] != 0:
+                j += 1
+            got = decode(d[at:j], inv)
+            want = kr or jp
+            assert got == want, f"{t['path']} {jp}: 되읽기 {got!r} ≠ {want!r}"
+            n += 1
+    mm2.close()
+    _f2.close()
+    print(f"  ✅ 되읽기 고유명사 {n}칸 (포인터 추적)")
 
 
 if __name__ == "__main__":
