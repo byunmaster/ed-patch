@@ -252,8 +252,11 @@ def card_rows(mm, cards):
                 seen.add(hit)
                 out.append((path, lba, size, i, nxt - i, t, _card_text(t, *want[hit])))
             i = j
-    missing = [jp for jp in want if jp not in seen]
-    assert not missing, f"디스크에서 못 찾은 챕터 카드: {missing}"
+    # ⚠ 정본 열둘은 **장 목록**이다 — 문자열 카드는 열뿐이고 ED2 의 序章·終章 은 그림 판으로만
+    #   있다(`patch_gfx_cards.py`). 그래서 「정본에 있는데 디스크에 없다」는 실패가 아니다.
+    #   반대 방향(디스크에 있는데 정본에 없다)은 위에서 여전히 막는다 — 그쪽이 사고다.
+    only_gfx = [jp for jp in want if jp not in seen]
+    assert len(only_gfx) <= 2, f"문자열 카드가 너무 많이 빈다: {only_gfx}"
     return out
 
 

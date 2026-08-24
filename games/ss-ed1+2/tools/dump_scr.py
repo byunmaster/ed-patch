@@ -4,31 +4,33 @@
    화면이 안 바뀌어서 알았다(2026-08-24) — 디스크 어디에도 그 낱말의 SJIS 가 없고 실행 중
    RAM 에도 없다. 전부 여기 들어 있다.
 
-## 파일 꼴 (실측)
+## 파일 꼴 (실측 — VDP2 VRAM 대조로 확정, 2026-08-24)
 
-    0x00  "SEGA SATURN SCR\\0"
+    0x00  "SEGA SATURN SCR\\0" + BE32 1 + BE32 0 + BE16 0x1200(문자 번호 바탕) + 0…
     0x20~ 구획 표 — 16B 씩 `[오프셋 BE32][크기 BE32][0 8B]`, 네 칸
 
     구획0  패턴 네임 테이블 : 16B 머리 + 64×64 × BE16
-    구획1  문자 데이터      : 16B 머리 + **4bpp · 8×16 문자**(8×8 셀 둘을 세로로)
+    구획1  문자 데이터      : 16B 머리 + **8bpp · 8×8 셀**(셀 하나 64B)
     구획2  팔레트           : 16B 머리 + 256색 RGB555 BE (⚠ **R 이 하위 5비트**)
     구획3  0 으로 찬 칸     : 미사용
 
-⚠ **4bpp 다.** 8bpp 로 읽어도 글자가 읽혀서 한참 속았다 — 가로가 절반으로 눌릴 뿐이라
-  「읽히니까 맞겠지」로 넘어가기 쉽다. 패턴 색인이 **2씩 뛴다**는 게 단서였다(문자 하나가
-  셀 둘). 확증은 조립해서 「Dragon Slayer」 워터마크가 제대로 읽히는지로 했다.
-⚠ 그래서 **8bpp 셀 하나(64B)와 4bpp 문자 하나가 같은 64B** 다 — 색인이 우연히 일치한다.
+⚠ **한때 4bpp 라고 적어 두었는데 틀렸다**(2026-08-24 정정). 4bpp 로 조립해도 워터마크가
+  읽혀서 확증했다고 믿었지만, 실기 VDP2 는 이 층을 **8bpp·8×8** 로 읽는다
+  (`get_video_state` → NBG1 `color_mode 8bpp` · `char_size 8x8`). 패턴 색인이 2씩 뛰는 건
+  4bpp 라서가 아니라 **문자 번호 단위가 32B 인데 8bpp 셀이 64B** 라서다.
+  🔴 교훈 — 「조립해 보니 읽힌다」는 포맷의 증거가 못 된다. **실기 레지스터가 정본이다.**
 
-## 어디에 뭐가 있나 (SCR1 = ED1 필드 화면)
+## 어디에 뭐가 있나 (SCR1 = ED1 필드 화면, SCR2 = ED2. 팔레트는 둘이 같다)
 
-    문자   0~ 375   기본 맵이 쓰는 것 — 금색 프레임 · 우측 패널 · 판 바탕
-    문자 240~1007   **챕터 판 여섯 장**(第１章…終章). 판마다 24×3 문자
-    문자1008~1457   **HUD 패널** — 인명(セリオス·リュナン·ロー·ソニア·ゲイル)과
-                    `Lv`·`EP`·`HP`·`MP`·`Gold` 가 **미리 합성된 채로** 들어 있다
-    ⚠ 기본 맵은 238 자만 쓴다. 나머지는 게임이 **런타임에 패턴 이름을 바꿔 끼운다.**
+    셀   0~ 255   기본 맵이 쓰는 것 — 금색 프레임 · 우측 패널 · 판 바탕
+    셀 256~1023   **챕터 판 여섯 장** — 판 하나가 24×5 셀(192×40), **스트라이드 128**
+                  (뒤 8 셀은 안 쓴다). 시작 셀 = 256 · 384 · 512 · 640 · 768 · 896
+    셀1024~       **HUD 패널** — 인명과 `Lv`·`EP`·`HP`·`MP`·`Gold` 가 미리 합성돼 있다
+    ⚠ 기본 맵은 일부만 쓴다. 나머지는 게임이 **런타임에 패턴 이름을 바꿔 끼운다.**
 
     python3 tools/dump_scr.py            # 구획 요약
-    python3 tools/dump_scr.py --sheet    # 문자 시트 PNG → work/review/scr/
+    python3 tools/dump_scr.py --sheet    # 셀 시트 PNG → work/review/scr/
+    python3 tools/dump_scr.py --plates   # 챕터 판 여섯 장 PNG → work/review/scr/
 """
 
 import os
@@ -42,7 +44,13 @@ FILES = ("/SCR1.2D", "/SCR2.2D")
 MAGIC = b"SEGA SATURN SCR\x00"
 SEC_TABLE = 0x20
 SEC_HEAD = 16  # 각 구획 앞머리
-CHAR_BYTES = 64  # 4bpp 8×16 = 8×8 셀 둘
+CELL_BYTES = 64  # 8bpp 8×8
+
+# ── 챕터 판 — 판 하나가 24×5 셀, 스트라이드 128 (실측) ─────────────────────────
+PLATE_COLS, PLATE_ROWS = 24, 5
+PLATE_W, PLATE_H = PLATE_COLS * 8, PLATE_ROWS * 8  # 192 × 40
+PLATE_CELLS = PLATE_COLS * PLATE_ROWS  # 120
+PLATE_STARTS = (256, 384, 512, 640, 768, 896)
 
 
 def sections(d):
@@ -56,22 +64,38 @@ def sections(d):
     return out
 
 
+def cell_base(d):
+    """문자 데이터 첫 셀의 **파일 오프셋** — 재삽입이 쓰는 좌표계."""
+    return sections(d)[1][0] + SEC_HEAD
+
+
 def parse(d):
-    """`{map, chars, palette}` — 각각 numpy 배열."""
+    """`{map, cells, pal}` — 각각 numpy 배열."""
     import numpy as np
 
     sec = sections(d)
     assert len(sec) >= 3, f"구획이 {len(sec)}개뿐이다"
     (mo, ms), (co, cs), (po, _ps) = sec[0], sec[1], sec[2]
     nt = np.frombuffer(d[mo + SEC_HEAD : mo + ms], ">u2")
-    n = (cs - SEC_HEAD) // CHAR_BYTES
-    raw = np.frombuffer(d[co + SEC_HEAD : co + SEC_HEAD + n * CHAR_BYTES], np.uint8)
-    px = np.empty(raw.size * 2, np.uint8)
-    px[0::2], px[1::2] = raw >> 4, raw & 15
-    chars = px.reshape(n, 16, 8)  # 세로 두 셀이 이어져 8×16 이 된다
+    n = (cs - SEC_HEAD) // CELL_BYTES
+    raw = np.frombuffer(d[co + SEC_HEAD : co + SEC_HEAD + n * CELL_BYTES], np.uint8)
     pal = np.frombuffer(d[po + SEC_HEAD : po + SEC_HEAD + 512], ">u2").astype(np.uint32)
     rgb = np.stack([pal & 31, (pal >> 5) & 31, (pal >> 10) & 31], 1).astype(np.uint8) * 8
-    return {"map": nt.reshape(64, 64), "chars": chars, "pal": rgb}
+    return {"map": nt.reshape(64, 64), "cells": raw.reshape(n, 8, 8), "pal": rgb}
+
+
+def plate_px(cells, start):
+    """셀 `start` 부터 24×5 를 **화면 배치대로** 이어 붙인다 → (40, 192) 색인 배열."""
+    blk = cells[start : start + PLATE_CELLS].reshape(PLATE_ROWS, PLATE_COLS, 8, 8)
+    return blk.transpose(0, 2, 1, 3).reshape(PLATE_H, PLATE_W)
+
+
+def px_to_cells(px):
+    """(40, 192) 색인 배열 → 셀 순서 바이트열(120 × 64B). `plate_px` 의 역."""
+    import numpy as np
+
+    a = np.asarray(px, np.uint8).reshape(PLATE_ROWS, 8, PLATE_COLS, 8)
+    return a.transpose(0, 2, 1, 3).reshape(PLATE_CELLS * 64).tobytes()
 
 
 def main():
@@ -85,24 +109,33 @@ def main():
         lba, size = files[path]
         d = common.read_extent(mm, lba, size)
         r = parse(d)
-        used = sorted({int(v) >> 1 for v in r["map"].flatten()})
+        used = sorted({int(v) & 0x3FFF for v in r["map"].flatten()})
         print(f"{path} {size:,}B · 구획 {[(hex(o), s) for o, s in sections(d)]}")
-        print(f"   문자 {len(r['chars'])} · 기본 맵이 쓰는 문자 {len(used)} (최대 {used[-1]})")
+        print(f"   셀 {len(r['cells'])} · 기본 맵이 쓰는 문자번호 {len(used)} (최대 {used[-1]})")
+        if "--sheet" in sys.argv or "--plates" in sys.argv:
+            os.makedirs(out, exist_ok=True)
         if "--sheet" in sys.argv:
             import numpy as np
 
-            os.makedirs(out, exist_ok=True)
-            n = len(r["chars"])
-            w = 48
+            n = len(r["cells"])
+            w = 24  # 판 폭과 같게 두면 챕터 판이 시트에서도 바로 읽힌다
             h = (n + w - 1) // w
-            sheet = np.zeros((h * 16, w * 8), np.uint8)
-            for i, c in enumerate(r["chars"]):
+            sheet = np.zeros((h * 8, w * 8), np.uint8)
+            for i, c in enumerate(r["cells"]):
                 y, x = divmod(i, w)
-                sheet[y * 16 : y * 16 + 16, x * 8 : x * 8 + 8] = c
-            # ⚠ 뱅크가 블록마다 달라 한 팔레트로는 다 안 보인다 — 대비만 주는 램프를 쓴다
-            ramp = (np.arange(16) * 17).astype(np.uint8)
-            p = os.path.join(out, os.path.basename(path).replace(".2D", "_chars.png"))
-            Image.fromarray(ramp[sheet]).resize((w * 8 * 2, h * 16 * 2), Image.NEAREST).save(p)
+                sheet[y * 8 : y * 8 + 8, x * 8 : x * 8 + 8] = c
+            p = os.path.join(out, os.path.basename(path).replace(".2D", "_cells.png"))
+            Image.fromarray(r["pal"][sheet]).resize((w * 8 * 2, h * 8 * 2), Image.NEAREST).save(p)
+            print(f"   → {p}")
+        if "--plates" in sys.argv:
+            import numpy as np
+
+            sheet = np.zeros((PLATE_H * len(PLATE_STARTS), PLATE_W), np.uint8)
+            for i, s in enumerate(PLATE_STARTS):
+                sheet[i * PLATE_H : (i + 1) * PLATE_H] = plate_px(r["cells"], s)
+            p = os.path.join(out, os.path.basename(path).replace(".2D", "_plates.png"))
+            im = Image.fromarray(r["pal"][sheet])
+            im.resize((im.width * 2, im.height * 2), Image.NEAREST).save(p)
             print(f"   → {p}")
 
 
