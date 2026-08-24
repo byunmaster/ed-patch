@@ -222,8 +222,8 @@ def routine(base, table_at, draw, pairs):
         .long L_9F   0x9F
         .long L_E0   0xE0
         .long L_EF   0xEF
-        .long L_LO   {josa.CODE_LO}
-        .long L_HI   {josa.CODE_HI}
+        .long L_LO   {josa.code_span()[0]}
+        .long L_HI   {josa.code_span()[1]}
         .long L_P1   {(a[0] << 16) | a[1]}
         .long L_P2   {(b[0] << 16) | b[1]}
         .long L_P3   {(c[0] << 16) | c[1]}

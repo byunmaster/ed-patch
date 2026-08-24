@@ -9,7 +9,7 @@
   2. **파이썬 시뮬레이터** `fix_buffer` — 기계어와 **같은 의미**. 회귀 테스트의 기준이고,
      기계어를 고칠 때마다 여기에 먼저 맞춘다.
 
-⚠ 표는 **코드 구간 하나**를 덮는다(0x88A0~0x8C5D → 958칸). 슬롯 인덱스가 불연속이라
+⚠ 표는 **코드 구간 하나**를 덮는다(정본에서 유도 — 지금 0x88A0~0x8C5F). 슬롯 인덱스가 불연속이라
   인덱스로 잡으면 표가 4배가 된다 — 코드로 잡는 게 싸다.
 🔴 **비트맵이 아니라 바이트 표다.** SH-2 엔 **가변 시프트가 없어**(`shld` 는 SH-3+)
    `표[i>>3] >> (i&7)` 을 못 한다. 1바이트/코드면 `mov.b @(r0,rTab),r1` 한 줄이다.
@@ -39,8 +39,20 @@ from text.josa import batchim
 
 HMAP = os.path.join(common.GAME_DIR, "hangul_map_11kanji.json")
 
-CODE_LO, CODE_HI = 0x88A0, 0x8C5D  # 우리 슬롯이 실제로 쓰는 코드 구간(실측)
-TABLE_BYTES = CODE_HI - CODE_LO + 1  # 1바이트/코드
+# 🔴 **구간을 상수로 박지 않는다** — 슬롯 정본에서 유도한다. 새 글자 하나가 늘면 코드가
+#    구간 밖으로 나가는데(실측: `근` 이 0x8C5F 로 붙어 0x8C5D 상한을 넘겼다), 상수로 두면
+#    그때마다 손으로 고쳐야 하고 **안 고치면 그 글자만 조용히 받침 판정을 못 받는다.**
+_SPAN = None  # (lo, hi) — 처음 부를 때 정본에서 잰다
+
+
+def code_span():
+    global _SPAN
+    if _SPAN is None:
+        v = slot_codes().values()
+        _SPAN = (min(v), max(v))
+        assert _SPAN[1] - _SPAN[0] < 0x2000, f"코드 구간이 너무 넓다: {_SPAN}"
+    return _SPAN
+
 
 PAREN_L, PAREN_R = 0x28, 0x29  # 반각 괄호 — 병기는 `[조사A]([조사B])`
 JOSA_PAIRS = (("은", "는"), ("이", "가"), ("을", "를"))
@@ -54,13 +66,14 @@ def slot_codes():
 
 
 def build_table(codes=None):
-    """받침 표 — `표[code - CODE_LO]` 가 0/1. 기계어가 `mov.b @(r0,rTab)` 로 한 번에 읽는다."""
+    """받침 표 — `표[code - lo]` 가 0/1. 기계어가 `mov.b @(r0,rTab)` 로 한 번에 읽는다."""
     codes = codes or slot_codes()
-    tab = bytearray(TABLE_BYTES)
+    lo, hi = code_span()
+    tab = bytearray(hi - lo + 1)
     for ch, code in codes.items():
-        assert CODE_LO <= code <= CODE_HI, f"{ch!r} 코드 0x{code:04X} 가 표 밖이다"
+        assert lo <= code <= hi, f"{ch!r} 코드 0x{code:04X} 가 표 밖이다"
         if batchim(ch):
-            tab[code - CODE_LO] = 1
+            tab[code - lo] = 1
     return bytes(tab)
 
 
@@ -71,9 +84,10 @@ def pairs(codes=None):
 
 
 def has_batchim(code, table):
-    if not CODE_LO <= code <= CODE_HI:
+    lo, hi = code_span()
+    if not lo <= code <= hi:
         return False
-    return bool(table[code - CODE_LO])
+    return bool(table[code - lo])
 
 
 def _lead(b):
@@ -91,6 +105,7 @@ def fix_buffer(buf, table=None, codes=None):
     ⚠ 병기가 없으면 아무것도 안 한다 — **멱등**이라 어느 경로에 걸어도 안전하다.
     """
     table = table if table is not None else build_table(codes)
+    lo, hi = code_span()
     pr = pairs(codes)
     i, prev, n = 0, 0, 0
     while i < len(buf) and buf[i]:
@@ -112,7 +127,7 @@ def fix_buffer(buf, table=None, codes=None):
                 buf.extend(b"\x00" * 4)  # 길이를 지킨다(꼬리는 널)
                 prev, i, n = keep, i + 2, n + 1
                 continue
-            if CODE_LO <= code <= CODE_HI:
+            if lo <= code <= hi:
                 prev = code
             i += 2
         else:

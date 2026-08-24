@@ -49,12 +49,16 @@ class Josa(unittest.TestCase):
         return dec(buf, self.codes), n
 
     def test_table_size_and_range(self):
-        """🔴 **바이트 표다** — SH-2 엔 가변 시프트가 없어 비트맵을 못 읽는다."""
-        self.assertEqual(len(self.table), josa.CODE_HI - josa.CODE_LO + 1)
-        self.assertEqual(len(self.table), 958)
+        """🔴 **바이트 표다** — SH-2 엔 가변 시프트가 없어 비트맵을 못 읽는다.
+
+        ⚠ 구간은 **정본에서 유도한다** — 상수로 박았더니 새 글자 하나(`근` 0x8C5F)가
+          상한을 넘겨 깨졌다. 안 고치면 그 글자만 조용히 받침 판정을 못 받는다.
+        """
+        lo, hi = josa.code_span()
+        self.assertEqual(len(self.table), hi - lo + 1)
         self.assertTrue(set(self.table) <= {0, 1})
         for ch, code in self.codes.items():
-            self.assertTrue(josa.CODE_LO <= code <= josa.CODE_HI, ch)
+            self.assertTrue(lo <= code <= hi, ch)
 
     def test_batchim_picks_the_right_particle(self):
         """받침 있으면 앞쪽(은·이·을), 없으면 뒤쪽(는·가·를)."""
@@ -99,9 +103,10 @@ class Josa(unittest.TestCase):
         want = {("은", "는"), ("이", "가"), ("을", "를")}
         got = {(a, b) for a, b in josa.JOSA_PAIRS}
         self.assertEqual(got, want)
+        lo, hi = josa.code_span()
         for a, b in josa.pairs(self.codes):
-            self.assertTrue(josa.CODE_LO <= a <= josa.CODE_HI)
-            self.assertTrue(josa.CODE_LO <= b <= josa.CODE_HI)
+            self.assertTrue(lo <= a <= hi)
+            self.assertTrue(lo <= b <= hi)
 
 
 if __name__ == "__main__":
