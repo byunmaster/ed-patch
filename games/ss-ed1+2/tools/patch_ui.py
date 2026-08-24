@@ -18,6 +18,7 @@
 ⚠ 16px 쪽 정본은 `hangul_map.json` 이다 — 폰트가 다르니 슬롯 공간도 따로다.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -43,6 +44,7 @@ from fonts import convert_chars
 from glossary import lookup, table
 
 CANON = os.path.join(common.GAME_DIR, "script", "ui.json")
+SYS_CANON = os.path.join(common.GAME_DIR, "script", "system.json")
 HMAP = os.path.join(common.GAME_DIR, "hangul_map_11kanji.json")
 FON = "/11KANJI.FON"
 FON_ASCII = "/11ASCII.FON"
@@ -430,7 +432,163 @@ def name_pack(t, plan):
         for p in ptrs:
             moves[p] = NAME_PTR_BASE + new_at
     assert len(buf) <= t["room"], f"{t['path']} {t['what']}: {len(buf)}B > 자리 {t['room']}B"
+    t["used"] = len(buf)  # 뒤 여유는 시스템 메시지의 도너로 쓴다(`sys_pack`)
     return bytes(buf) + b"\x00" * (t["room"] - len(buf)), moves
+
+
+# ── 시스템 메시지 — 전투·보상·상태 (2026-08-24) ──────────────────────────────
+# 🔴 **정본은 sha1 키다**(`script/system.json`) — 원문 평문을 커밋에 안 남긴다
+#    (루트 CLAUDE.md 「저작권」). 그래서 **자리도 손으로 안 적는다** — 파일의 문자열을
+#    훑어 해시로 붙인다. 배치가 바뀌어도 따라온다.
+# ⚠ 이름 표(`NAME_TABLES`) 범위는 건너뛴다 — 거기는 `name_rows` 몫이다.
+
+
+def sys_key(jp):
+    return hashlib.sha1(jp.encode("utf-8")).hexdigest()[:16]
+
+
+def _sys_match(run, canon):
+    """런 안에서 정본과 맞는 **접미**를 찾는다 → `(앞 바이트 수, JP)`.
+
+    🔴 **접미로 맞춘다.** 문구 앞에 포인터·다른 문자열이 0 없이 붙어 한 런을 이루는 자리가
+       있다(문구 표가 같은 이유로 그렇게 한다). 통째 비교로는 조용히 놓친다 — 실측 4건.
+    ⚠ 자르는 자리는 **SJIS 경계**여야 한다. 2바이트 문자 가운데를 자르면 엉뚱한 글자가 되어
+      해시가 우연히 맞을 일은 없지만, 디코드가 깨져 그 런을 통째로 버리게 된다.
+    """
+    k = 0
+    while k < len(run):
+        if run[k] < 0x20:  # 앞 채움·제어 바이트는 건너뛰며 경계를 잡는다
+            k += 1
+            continue
+        try:
+            jp = run[k:].decode("cp932")
+        except UnicodeDecodeError:
+            k += 1
+            continue
+        if sys_key(jp) in canon:
+            return k, jp
+        b = run[k]
+        k += 2 if (0x81 <= b <= 0x9F or 0xE0 <= b <= 0xEF) else 1
+    return None
+
+
+def sys_rows(mm):
+    """시스템 메시지 — `[(파일, lba, size, 오프셋, 여유, 앞바이트, KR)]` (문구 표와 같은 꼴)."""
+    with open(SYS_CANON, encoding="utf-8") as f:
+        canon = json.load(f)["lines"]
+    skip = {}
+    for key, off, n, _a, _w in NAME_TABLES:
+        skip.setdefault(dump_ui.FILES[key], []).append((off, n))
+    # 🔴 **고정폭 표가 가진 자리는 손대지 않는다.** 그 표는 포인터가 첫 칸만 가리키고 나머지는
+    #   코드가 색인으로 집는다 — 재배치하면 메뉴가 통째로 밀린다. 상태 약어를 정본에 넣었다가
+    #   `verify` 가 잡았다(2026-08-24). 여기서 아예 못 잡히게 막는다.
+    fixed = {}
+    for key, path in dump_ui.FILES.items():
+        col = 0 if key == "ED" else 1
+        for _name, ed, ed2, stride, n, n2 in dump_ui.TABLES:
+            off, cnt = (ed, ed2)[col], (n, n2)[col]
+            if off and cnt:
+                fixed.setdefault(path, []).append((off, off + stride * cnt))
+    out, seen = [], set()
+    for path in dump_ui.FILES.values():
+        lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
+        d = common.read_extent(mm, lba, size)
+        # 이름 표가 차지한 구간 — 여기 문자열은 건너뛴다
+        holes = []
+        for off, n in skip.get(path, []):
+            i, got = off, 0
+            while got < n:
+                while i < len(d) and d[i] < 0x20:
+                    i += 1
+                j = i
+                while j < len(d) and d[j] != 0:
+                    j += 1
+                i, got = j, got + 1
+            holes.append((off, i))
+        i = 0
+        while i < len(d):
+            if d[i] == 0:
+                i += 1
+                continue
+            j = i
+            while j < len(d) and d[j] != 0:
+                j += 1
+            if not any(a <= i < b for a, b in holes + fixed.get(path, [])):
+                hit = _sys_match(d[i:j], canon)
+                if hit:
+                    k, jp = hit
+                    nxt = j
+                    while nxt < len(d) and d[nxt] == 0:
+                        nxt += 1
+                    # 🔴 **재배치 단위는 「포인터가 가리키는 자리」다.** 한 런에 문자열이 둘
+                    #   이상 붙어 있고(0 없이) 포인터가 그 중간을 가리키는 자리가 있다.
+                    #   우리 글 앞에서 **가장 가까운 포인터 대상**을 잡아야 앞말을 안 끌고 간다.
+                    base = i
+                    for o in range(i + k, i - 1, -1):
+                        if _ptrs_to(d, o):
+                            base = o
+                            break
+                    ptrs = _ptrs_to(d, base)
+                    seen.add(sys_key(jp))
+                    out.append(
+                        (
+                            path,
+                            lba,
+                            size,
+                            base,
+                            nxt - base,
+                            d[base : i + k],
+                            canon[sys_key(jp)],
+                            ptrs,
+                        )
+                    )
+            i = j
+    missing = [k for k in canon if k not in seen]
+    assert not missing, f"디스크에서 못 찾은 시스템 메시지 {len(missing)}: {missing[:4]}"
+    return out
+
+
+def sys_pack(sysm, ntabs, plan):
+    """시스템 메시지를 **자리 풀에 다시 깐다** → `{파일: ({오프셋: 바이트}, {포인터: 값})}`.
+
+    🔴 **제자리로는 안 들어간다.** 조사를 병기하면(`은(는)`) 일본어 두 글자가 여덟 바이트가
+       되어 29자리가 넘친다. 전부 포인터 참조라(런 안 포인터까지 훑어 확정) 자리를 옮길 수
+       있고, **자기 칸 전부 + 이름 표를 다시 깔고 남은 꼬리**를 한 풀로 묶으면 들어간다
+       (실측 ED 773/1,548 · ED2 666/837).
+    ⚠ **먼저 풀 전체를 0 으로 덮는다** — 옮긴 자리에 옛 일본어가 남으면 다른 포인터가
+      그걸 가리키고 있을 때 조용히 살아난다.
+    ⚠ 큰 것부터 넣는다(first-fit decreasing). 작은 것부터면 큰 게 갈 데가 없어진다.
+    """
+    out = {}
+    for path in {r[0] for r in sysm}:
+        recs = [r for r in sysm if r[0] == path]
+        pool = [(r[3], r[4]) for r in recs]
+        for t in ntabs:
+            if t["path"] == path and t["room"] > t["used"]:
+                pool.append((t["off"] + t["used"], t["room"] - t["used"]))
+        pool.sort()
+        body = {}
+        for at, n in pool:
+            body[at] = bytearray(n)
+        free = sorted(pool, key=lambda b: -b[1])
+        moves = {}
+        want = sorted(recs, key=lambda r: -(len(r[5]) + rec_len(r[6]) + 1))
+        for _p, _l, _s, _at, _span, pre, kr, ptrs in want:
+            blob = pre + b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
+            blob += b"\x00"
+            i = next((k for k, (_o, n) in enumerate(free) if n >= len(blob)), None)
+            assert i is not None, f"{path}: 자리가 모자란다 — {kr!r} {len(blob)}B"
+            o, n = free.pop(i)
+            blk = max(a for a, _n in pool if a <= o)
+            body[blk][o - blk : o - blk + len(blob)] = blob
+            new_at = o + len(pre)  # 포인터는 **앞 바이트 다음**을 가리킨다(원본과 같게)
+            for q in ptrs:
+                moves[q] = NAME_PTR_BASE + (o if len(pre) == 0 else new_at - len(pre))
+            if n - len(blob) >= 2:
+                free.append((o + len(blob), n - len(blob)))
+                free.sort(key=lambda b: -b[1])
+        out[path] = ({a: bytes(b) for a, b in body.items()}, moves)
+    return out
 
 
 def needed(krs):
@@ -590,6 +748,7 @@ def main():
     msgs = msg_rows(mm0, load_canon()[4])
     ntabs = name_rows(mm0)
     names = [r[2] for t in ntabs for r in t["recs"] if r[2]]
+    sysm = sys_rows(mm0)
     mm0.close()
     _f0.close()
     n_kr = sum(1 for r in rs if r[6])
@@ -598,6 +757,7 @@ def main():
         f"씬 지명 헤더 {len(scn)}곳 · {len({r[0] for r in scn})}파일 · {len({r[5] for r in scn})}종"
     )
     print(f"챕터 카드 {len(cards)}장 · SAVE/LOAD 문구 {len(msgs)}자리")
+    print(f"시스템 메시지 {len(sysm)}자리 · 고유 {len({r[6] for r in sysm})}종")
     print(
         f"고유명사 {len(names)}칸 — "
         + " · ".join(f"{t['key']} {t['what']} {len(t['recs'])}" for t in ntabs)
@@ -623,7 +783,7 @@ def main():
         raise SystemExit(f"먼저 자막을 넣는다(patch_title.py --apply) — {dst} 가 없다")
 
     plan = slot_plan(
-        [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs] + names,
+        [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs + sysm] + names,
         refresh="--refresh" in sys.argv,
     )
     print(f"  한글 슬롯 {len(plan)}자")
@@ -684,9 +844,22 @@ def main():
             )
         print(f"  고유명사 표 {len(ntabs)}개 · 섹터 {nsec}")
 
+        # ── 시스템 메시지 — 자리 풀에 다시 깐다(제자리로는 29자리가 넘친다)
+        ssec = 0
+        for path, (body, moves) in sys_pack(sysm, ntabs, plan).items():
+            lba, size = files[path]
+            _r, _b, a = write_file(f, path, lba, size, body, f"{path} 시스템 메시지")
+            pt = {at: v.to_bytes(4, "big") for at, v in moves.items()}
+            _r, _b, b2 = write_file(f, path, lba, size, pt, f"{path} 시스템 포인터")
+            ssec += a + b2
+            print(
+                f"  {path} 시스템: {sum(1 for r in sysm if r[0] == path)}자리 · 포인터 {len(moves)}"
+            )
+        print(f"  시스템 메시지 · 섹터 {ssec}")
+
         # ── 반각 폰트 — 원본에 없는 글리프만 채운다(온점 등)
         gaps = ascii_gaps(
-            [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs] + names,
+            [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs + sysm] + names,
             common.extract(FON_ASCII),
         )
         if gaps:
@@ -709,6 +882,7 @@ def main():
 
     verify(dst, rs, scn, cards + msgs, plan, files)
     verify_names(dst, ntabs, plan, files)
+    verify_sys(dst, sysm, plan, files)
     print(f"  → {dst}")
 
 
@@ -793,6 +967,27 @@ def verify_names(dst, ntabs, plan, files):
     mm2.close()
     _f2.close()
     print(f"  ✅ 되읽기 고유명사 {n}칸 (포인터 추적)")
+
+
+def verify_sys(dst, sysm, plan, files):
+    """되읽기 — 시스템 메시지도 **포인터를 따라가** 읽는다(자리를 옮겼으니 그게 정본이다)."""
+    inv = {sjis: ch for ch, (sjis, _i) in plan.items()}
+    _f2, mm2 = common.open_image(dst)
+    cache, n = {}, 0
+    for path, lba, size, _at, _span, pre, kr, ptrs in sysm:
+        if path not in cache:
+            cache[path] = common.read_extent(mm2, lba, size)
+        d = cache[path]
+        a = int.from_bytes(d[ptrs[0] : ptrs[0] + 4], "big") - NAME_PTR_BASE
+        j = a + len(pre)
+        while j < len(d) and d[j] != 0:
+            j += 1
+        got = decode(d[a + len(pre) : j], inv)
+        assert got == kr, f"{path} 0x{a:06X}: 되읽기 {got!r} ≠ {kr!r}"
+        n += 1
+    mm2.close()
+    _f2.close()
+    print(f"  ✅ 되읽기 시스템 메시지 {n}자리 (포인터 추적)")
 
 
 if __name__ == "__main__":
