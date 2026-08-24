@@ -44,6 +44,60 @@ from glossary import lookup
 
 REVIEW = os.path.join(common.REVIEW_DIR, "scr")
 
+# ── HUD 잔량 라벨 `あと` → 「남다」 (2026-08-24) ───────────────────────────────
+# 🔴 **`SCR*.2D` 가 아니라 `/FRAME.DAT` 이다.** 패널엔 `EP` 가 구워져 있지만 표시를 바꾸면
+#    게임이 **NBG0 비트맵**(숫자·게이지를 그리는 그 층)에 라벨을 그린다 — 그 원본이 여기다.
+#    실기에서 EP 표시를 「남다」로 바꾼 뒤 NBG0 에서 화소를 떠 디스크 전량에서 찾아 짚었다.
+#    `/FRAME.DAT` 은 HUD 스프라이트 시트다(숫자 두 벌 · 상태이상 한자 · 게이지 · `あと`).
+FRAME = "/FRAME.DAT"
+ATO_OFF = 0x1080  # 블록 머리 (파일 오프셋)
+ATO_STRIDE = 16  # 한 행 16B — 쓰는 건 앞 12B
+ATO_W, ATO_H = 12, 10  # 12×10, 0행은 빈 줄이라 잉크는 1~9행(9행)
+ATO_TOP = 1
+ATO_BG, ATO_MAIN, ATO_SHADOW = 39, 35, 37  # 남색 / 청록 / 음영 — 원본 실측
+# 🔴 **도트는 PS1 과 같은 것을 쓴다**(`ps1-ed1+2/tools/patch_hud_names.py:ATO_GLYPHS`).
+#    창이 12px 라 6px/자 전용 도트가 필요한데, PS1 이 이미 그려 두었다. 두 이식판이 같은
+#    라벨을 다르게 그릴 이유가 없다 — 인명 자리에서 따로 풀었다가 어긋난 전례가 있다.
+# ── 상태이상 라벨 — 같은 시트의 10×10 한 글자 블록들 (2026-08-24) ──────────────
+# 색은 블록마다 하나뿐이다(148 빨강 = 이상, 146 노랑 = 이로움). 바탕은 0(투명), 음영 없음.
+# 표기는 **PS1 과 같다**(`ps1-ed1+2:STATUS_ROW1`) — 같은 게임의 같은 라벨이다.
+# ⚠ `気絶` 은 여기 없다. 0x2480 의 16×15 는 글자가 아니라 디더 무늬였다(실측).
+STATUS = [
+    (0x2080, "毒", "독"),
+    (0x2180, "黙", "묵"),
+    (0x2600, "呪", "주"),
+    (0x1E80, "眠", "잠"),
+    (0x1F80, "乱", "혼"),  # 정발 표기 — 음차 「란」이 아니다
+    (0x2280, "守", "수"),
+    (0x2380, "跳", "반"),  # 跳ね返す = 반사
+]
+STATUS_BOX = 10  # 10×10 · 스트라이드는 `ATO_STRIDE` 와 같다
+
+ATO_GLYPHS = [
+    [  # 남
+        "#...#.",
+        "#...#.",
+        "#...##",
+        "###.#.",
+        "......",
+        ".####.",
+        ".#..#.",
+        ".#..#.",
+        ".####.",
+    ],
+    [  # 다
+        "###.#.",
+        "#...#.",
+        "#...##",
+        "#...#.",
+        "#...#.",
+        "#...#.",
+        "#...#.",
+        "###.#.",
+        "....#.",
+    ],
+]
+
 # (파일, 시작 셀, JP 이름) — 순서는 파티 순서. 시작 셀은 프레임 대조로 찾았다.
 PANELS = [
     ("/SCR1.2D", 1038, "セリオス"),
@@ -124,6 +178,67 @@ def draw(px, kr, bdf):
     return out, int((out != px).sum())
 
 
+def box(d, off, h, w):
+    """`/FRAME.DAT` 에서 (h, w) 블록을 떠 온다(스트라이드 16B)."""
+    rows = [d[off + y * ATO_STRIDE : off + y * ATO_STRIDE + w] for y in range(h)]
+    return np.frombuffer(b"".join(rows), np.uint8).reshape(h, w)
+
+
+def box_bytes(px, d, off):
+    """블록 → 파일에 쓸 연속 바이트(스트라이드 16B · 남는 열은 원본 그대로)."""
+    h, w = px.shape
+    buf = bytearray(d[off : off + ATO_STRIDE * h])
+    for y in range(h):
+        buf[y * ATO_STRIDE : y * ATO_STRIDE + w] = px[y].tobytes()
+    return bytes(buf)
+
+
+def draw_status(old, kr, bdf):
+    """10×10 칸에 한 글자. 색은 **그 칸이 쓰던 색 하나**를 그대로 쓴다."""
+    used = {int(v) for v in np.unique(old)} - {0}
+    assert len(used) == 1, f"상태 라벨 색이 하나가 아니다: {sorted(used)}"
+    colr = used.pop()
+    n = STATUS_BOX
+    out = np.zeros_like(old)
+    g = bdf.bits(kr, rows=GLYPH_H, width=GLYPH_W, dy=GLYPH_H - bdf.ascent)
+    oy, ox = (n - GLYPH_H) // 2, (n - GLYPH_W) // 2
+    ys, xs = np.nonzero(g)
+    out[oy + ys, ox + xs] = colr
+    return out, int((out != old).sum())
+
+
+def ato_block(d):
+    """`/FRAME.DAT` 에서 `あと` 블록을 (10, 12) 로 떠 온다."""
+    rows = [d[ATO_OFF + y * ATO_STRIDE : ATO_OFF + y * ATO_STRIDE + ATO_W] for y in range(ATO_H)]
+    return np.frombuffer(b"".join(rows), np.uint8).reshape(ATO_H, ATO_W)
+
+
+def draw_ato(old):
+    """`あと` 자리를 지우고 「남다」를 그린다(음영 +1,+1, 창 밖은 자른다)."""
+    out = old.copy()
+    out[:] = ATO_BG
+    bits = np.zeros((len(ATO_GLYPHS[0]), ATO_W), bool)
+    for i, g in enumerate(ATO_GLYPHS):
+        for y, row in enumerate(g):
+            for x, ch in enumerate(row):
+                if ch == "#":
+                    bits[y, i * 6 + x] = True
+    ys, xs = np.nonzero(bits)
+    for dy, dx, colr in ((1, 1, ATO_SHADOW), (0, 0, ATO_MAIN)):
+        yy, xx = ATO_TOP + ys + dy, xs + dx
+        ok = (yy < ATO_H) & (xx < ATO_W)  # 창 밖은 자른다 — 옆 스프라이트를 물지 않게
+        out[yy[ok], xx[ok]] = colr
+    return out, int((out != old).sum())
+
+
+def ato_bytes(px, d):
+    """(10, 12) → 파일에 쓸 연속 바이트(스트라이드 16 · 뒤 4B 는 원본 그대로)."""
+    buf = bytearray(d[ATO_OFF : ATO_OFF + ATO_STRIDE * ATO_H])
+    for y in range(ATO_H):
+        buf[y * ATO_STRIDE : y * ATO_STRIDE + ATO_W] = px[y].tobytes()
+    return bytes(buf)
+
+
 def main():
     apply = "--apply" in sys.argv
     common.verify_source()
@@ -132,10 +247,10 @@ def main():
     bdf = galmuri(FONT)
 
     raw = {}
-    for path in {p for p, _s, _n in PANELS}:
+    for path in {p for p, _s, _n in PANELS} | {FRAME}:
         lba, size = files[path]
         raw[path] = common.read_extent(mm, lba, size)
-    parsed = {p: dump_scr.parse(d) for p, d in raw.items()}
+    parsed = {p: dump_scr.parse(d) for p, d in raw.items() if p != FRAME}
 
     dst = os.path.join(common.BUILD_DIR, os.path.basename(common.ORIG_BIN))
     if apply and not os.path.exists(dst):
@@ -153,22 +268,61 @@ def main():
             continue
         lba, size = files[path]
         off = dump_scr.cell_base(raw[path]) + start * 64
-        want, was = px_to_cells(new), px_to_cells(old)
-        with open(dst, "r+b") as f:
-            # ⚠ 원본이거나 이미 우리 것 — 둘 다 아니면 배치가 밀린 것이다(챕터 판과 같은 규칙).
-            cur = common.read_extent(common.open_image(dst)[1], lba, size)[off : off + len(want)]
-            if cur not in (was, want):
-                raise SystemExit(f"{path} 셀{start}: 패널 자리가 원본도 우리 것도 아니다")
-            ns = common.write_at(f, lba, size, off, want, label=f"{path} HUD 패널", expect=cur)
-        print(f"      → 0x{off:X} · 섹터 {ns}")
-    preview(made, parsed)
+        write(dst, lba, size, off, px_to_cells(new), px_to_cells(old), f"{path} HUD 패널")
+
+    # ── 잔량 라벨 `あと` → 남다
+    old_ato = ato_block(raw[FRAME])
+    new_ato, n = draw_ato(old_ato)
+    print(f"  {FRAME} 0x{ATO_OFF:X}  あと → 남다 · 화소 {n} 변경")
     if apply:
-        verify(dst, files, made)
+        lba, size = files[FRAME]
+        write(
+            dst,
+            lba,
+            size,
+            ATO_OFF,
+            ato_bytes(new_ato, raw[FRAME]),
+            raw[FRAME][ATO_OFF : ATO_OFF + ATO_STRIDE * ATO_H],
+            f"{FRAME} 잔량 라벨",
+        )
+
+    # ── 상태이상 라벨 일곱
+    stat = []
+    for off, jp, kr in STATUS:
+        old_s = box(raw[FRAME], off, STATUS_BOX, STATUS_BOX)
+        new_s, n = draw_status(old_s, kr, bdf)
+        stat.append(new_s)
+        print(f"  {FRAME} 0x{off:X}  {jp} → {kr} · 화소 {n} 변경")
+        if apply:
+            lba, size = files[FRAME]
+            write(
+                dst,
+                lba,
+                size,
+                off,
+                box_bytes(new_s, raw[FRAME], off),
+                raw[FRAME][off : off + ATO_STRIDE * STATUS_BOX],
+                f"{FRAME} 상태 라벨 {jp}",
+            )
+
+    preview(made, parsed, new_ato, stat)
+    if apply:
+        verify(dst, files, made, new_ato, stat)
     else:
         print("  (미리보기만 — 실제로 넣으려면 `--apply`)")
 
 
-def preview(made, parsed):
+def write(dst, lba, size, off, want, was, label):
+    """⚠ 원본이거나 이미 우리 것 — 둘 다 아니면 배치가 밀린 것이다(챕터 판과 같은 규칙)."""
+    with open(dst, "r+b") as f:
+        cur = common.read_extent(common.open_image(dst)[1], lba, size)[off : off + len(want)]
+        if cur not in (was, want):
+            raise SystemExit(f"{label}: 자리가 원본도 우리 것도 아니다 @0x{off:X}")
+        ns = common.write_at(f, lba, size, off, want, label=label, expect=cur)
+    print(f"      → 0x{off:X} · 섹터 {ns}")
+
+
+def preview(made, parsed, ato, stat):
     from PIL import Image
 
     os.makedirs(REVIEW, exist_ok=True)
@@ -177,10 +331,17 @@ def preview(made, parsed):
     im = Image.fromarray(pal[sheet])
     p = os.path.join(REVIEW, "hud_names_kr.png")
     im.resize((im.width * 3, im.height * 3), Image.NEAREST).save(p)
-    print(f"미리보기 → {p}")
+    q = os.path.join(REVIEW, "hud_ato_kr.png")
+    strip = np.zeros((max(ato.shape[0], STATUS_BOX), ato.shape[1] + 2 + len(stat) * 12), np.uint8)
+    strip[: ato.shape[0], : ato.shape[1]] = ato
+    for k, sb in enumerate(stat):
+        strip[:STATUS_BOX, ato.shape[1] + 2 + k * 12 : ato.shape[1] + 2 + k * 12 + STATUS_BOX] = sb
+    ia = Image.fromarray(pal[strip])
+    ia.resize((ia.width * 10, ia.height * 10), Image.NEAREST).save(q)
+    print(f"미리보기 → {p} · {q}")
 
 
-def verify(dst, files, made):
+def verify(dst, files, made, ato, stat=None):
     """되읽기 — 넣은 이미지에서 패널을 다시 뜯어 우리가 그린 것과 대조한다."""
     _f2, mm2 = common.open_image(dst)
     cache = {}
@@ -190,8 +351,14 @@ def verify(dst, files, made):
             cache[path] = dump_scr.parse(common.read_extent(mm2, lba, size))
         got = panel_px(cache[path]["cells"], start)
         assert np.array_equal(got, new), f"{path} 셀{start}: 되읽기 불일치"
+    lba, size = files[FRAME]
+    dfr = common.read_extent(mm2, lba, size)
+    assert np.array_equal(ato_block(dfr), ato), "잔량 라벨: 되읽기 불일치"
+    for (off, jp, _kr), want in zip(STATUS, stat or [], strict=True):
+        got = box(dfr, off, STATUS_BOX, STATUS_BOX)
+        assert np.array_equal(got, want), f"상태 라벨 {jp}: 되읽기 불일치"
     mm2.close()
-    print(f"되읽기 확인 — HUD 패널 {len(made)}장")
+    print(f"되읽기 확인 — HUD 패널 {len(made)}장 + 잔량 라벨 + 상태 라벨 {len(stat or [])}")
 
 
 if __name__ == "__main__":
