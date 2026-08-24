@@ -332,6 +332,22 @@ def _nname(s):
     return t
 
 
+def name_canon(what):
+    """`{JP: KR}` — **그 표의 범주를 먼저 본다**.
+
+    🔴 범주를 무시하고 합쳐 읽으면 **같은 원문이 범주에 따라 다른 것을 가리키는** 자리가
+       조용히 틀린다 — `カース` 는 아이템이 「커스」, 몬스터가 「카스」다(정본 머리말).
+       합쳐 읽던 동안 몬스터 표에 아이템 이름이 들어가 있었다(2026-08-24).
+    """
+    first = {"몬스터": "monster", "아이템": "item", "주문": "item"}[what]
+    canon = {}
+    for cat in (first, "item", "monster", "person", "place"):
+        for k, v in table(cat).items():
+            canon.setdefault(k, v)
+            canon.setdefault(_nname(k), v)
+    return canon
+
+
 def name_kr(jp, canon):
     """JP 이름 → KR. 못 찾으면 None(부르는 쪽이 실패로 친다)."""
     if jp in canon:
@@ -339,9 +355,10 @@ def name_kr(jp, canon):
     n = _nname(jp)
     if n in canon:
         return canon[n]
-    # 🔴 **변종 접미**(Ａ~Ｅ)는 정본에 안 넣는다 — 같은 몸이 넷씩 늘어 표가 네 배가 된다.
+    # 🔴 **변종 접미**(Ａ~）는 정본에 안 넣는다 — 같은 몸이 넷씩 늘어 표가 네 배가 된다.
     #   `スライムＢ` = `スライム` + `B`. 붙일 때는 반각으로 붙인다(1바이트라 칸이 산다).
-    if n[-1:] in "ABCDE" and n[:-1] in canon:
+    #   ⚠ **Ｅ 에서 끊지 않는다** — 소환 목록은 `毒大ガエルＨ` 까지 간다(2026-08-24).
+    if len(n) > 1 and "A" <= n[-1:] <= "Z" and n[:-1] in canon:
         return canon[n[:-1]] + n[-1]
     # `〜の書`(주문서)도 파생이다 — 밑말이 주문 이름이라 정본에 따로 안 둔다.
     if n.endswith("の書") and n[:-2] in canon:
@@ -361,13 +378,9 @@ def name_rows(mm):
       아니다(실측: `0xCEB`(\t)를 가리키는 포인터는 없고 `0xCEC` 를 가리킨다). 다시 깔 때는
       0 으로 채운다.
     """
-    canon = {}
-    for cat in ("item", "monster", "person", "place"):
-        for k, v in table(cat).items():
-            canon.setdefault(k, v)
-            canon.setdefault(_nname(k), v)
     out, miss = [], []
     for key, off, n, anchor, what in NAME_TABLES:
+        canon = name_canon(what)
         path = dump_ui.FILES[key]
         lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
         d = common.read_extent(mm, lba, size)
