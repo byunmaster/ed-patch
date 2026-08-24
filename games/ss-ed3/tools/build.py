@@ -27,6 +27,7 @@ import build_font
 import common as C
 import hangul_map as H
 import reinsert as R
+import reinsert_sys as RS
 
 from shared.disc import mode1
 
@@ -41,9 +42,19 @@ def out_paths(disc):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--disc", type=int, default=1, choices=C.DISCS)
+    ap.add_argument("--disc", type=int, default=None, choices=C.DISCS, help="한 장만 (기본: 두 장)")
     a = ap.parse_args()
 
+    # 🔴 **두 장이 기본이다.** 게임 데이터가 같은 한 벌이라(`common.check_discs`) 문안도 한
+    #    벌인데, 한 장만 구우면 **디스크를 갈아 끼우는 순간 원문으로 돌아간다.** 확인용으로
+    #    한 장만 굽고 싶으면 `--disc` 로 **명시**한다.
+    for disc in ([a.disc] if a.disc else list(C.DISCS)):
+        build_one(disc)
+
+
+def build_one(a_disc):
+    a = argparse.Namespace(disc=a_disc)
+    print(f"\n── disc{a.disc}")
     C.verify_source(a.disc)
     os.makedirs(C.BUILD_DIR, exist_ok=True)
     dst, cue = out_paths(a.disc)
@@ -68,22 +79,30 @@ def main():
                     touched_lbas.append((name, lba, size))
 
             print("[3/5] 문안 재삽입 (길이 보존)")
-            done = 0
+            done = nsys = 0
+            systbl = RS.table()
             for name, lba, size in files:
-                if not (name.startswith("/MAP/") and name.endswith(".BIN")):
+                b = None
+                if name.startswith("/MAP/") and name.endswith(".BIN"):
+                    stem = os.path.basename(name).rsplit(".", 1)[0]
+                    if not R.load_script(stem):
+                        continue
+                    b = d.read_extent(lba, size)
+                    new, k, bad = R.patch_blocks(b, stem, table)
+                    done += k
+                elif name == "/0.BIN" and systbl:
+                    b = d.read_extent(lba, size)
+                    new, k, bad = RS.patch(b, name, systbl)
+                    nsys += k
+                else:
                     continue
-                stem = os.path.basename(name).rsplit(".", 1)[0]
-                if not R.load_script(stem):
-                    continue
-                b = d.read_extent(lba, size)
-                new, k, bad = R.patch_blocks(b, stem, table)
                 if bad:
-                    raise SystemExit(f"{stem}: {bad[:3]}")
+                    raise SystemExit(f"{name}: {bad[:3]}")
                 assert len(new) == size, (len(new), size)
-                mode1.write_at(f, lba, size, 0, new, label=name, expect=b)
-                touched_lbas.append((name, lba, size))
-                done += k
-            print(f"      블록 {done} 개")
+                if new != b:
+                    mode1.write_at(f, lba, size, 0, new, label=name, expect=b)
+                    touched_lbas.append((name, lba, size))
+            print(f"      대사 블록 {done} · 시스템 문자열 {nsys}")
 
         print("[4/5] 섹터 무결성 자기검증")
         bad = mode1.selftest(dst, lbas=[l for _, l, _ in touched_lbas] or [16])
