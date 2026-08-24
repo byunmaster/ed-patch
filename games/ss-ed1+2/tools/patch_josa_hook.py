@@ -300,6 +300,19 @@ def main():
         if not apply:
             continue
         lba, fsize = files[fname]
+        # ⚠ **다시 돌려도 돌아야 한다** — 게이트(`games/ss-ed1+2/check.sh`)가 체인을 통째로
+        #   돌리므로 이미 넣은 이미지 위에서 또 실행된다. 참조는 그때 이미 우리 것이라
+        #   `expect=원본` 으로 박아 두면 **두 번째 실행이 죽는다**(2026-08-24).
+        #   그래서 사전조건을 「원본이거나 이미 우리 것」으로 둔다 — 챕터 판·HUD 와 같은 규칙.
+        _fd, mmd = common.open_image(dst)
+        cur = {p: bytes(common.read_extent(mmd, lba, fsize)[p : p + 4]) for p in refs}
+        mmd.close()
+        _fd.close()
+        want, was = ram.to_bytes(4, "big"), draw.to_bytes(4, "big")
+        for p, c in cur.items():
+            assert c in (was, want), (
+                f"{fname} 참조 0x{LOAD_BASE + p:X}: 원본도 우리 것도 아니다 (0x{c.hex()})"
+            )
         with open(dst, "r+b") as f:
             common.write_at(f, lba, fsize, at, blob, label=f"{fname} 조사 훅")
             for p in refs:
@@ -308,9 +321,9 @@ def main():
                     lba,
                     fsize,
                     p,
-                    ram.to_bytes(4, "big"),
+                    want,
                     label=f"{fname} 그리기 참조 0x{LOAD_BASE + p:X}",
-                    expect=draw.to_bytes(4, "big"),
+                    expect=cur[p],
                 )
         print(f"   → 넣음 · 참조 {len(refs)}곳을 0x{ram:08X} 로")
     if apply:
