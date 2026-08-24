@@ -17,6 +17,7 @@ ORIG_CUE = os.path.join(ORIG_DIR, "The_Legend_of_Heroes_I&II.cue")
 
 WORK_DIR = os.path.join(GAME_DIR, "work")
 OUT_DIR = os.path.join(WORK_DIR, "derived")  # 원본에서 파생 — 빌드가 읽는 입력
+REVIEW_DIR = os.path.join(WORK_DIR, "review")  # 검토표·시트 — ⚠ 원문 포함, 커밋 금지
 
 # 테스트 이미지 — ⚠ **꼬리표별로 갈린다**(`shared/build_tag.py`). ps1 과 같은 모양이라야
 # 루트에서 산출물을 훑는 쪽이 게임마다 다른 규칙을 안 들고 있어도 된다.
