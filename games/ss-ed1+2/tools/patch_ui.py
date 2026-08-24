@@ -549,6 +549,30 @@ def sys_rows(mm):
     return out
 
 
+def _no_double_owner(inplace, sysm):
+    """🔴 **한 자리에 주인이 둘이면 안 된다.**
+
+    카드·문구는 **제자리**에 쓰고 시스템 메시지는 **풀에 다시 깐다**. 같은 문자열을 양쪽
+    정본에 적으면 두 번 쓰이고, 나중 쪽이 앞엣것을 덮는다 — 24자리가 그렇게 깨졌다
+    (2026-08-24, 되읽기가 잡았다). 겹치면 **시스템 정본에서 빼는 게 맞다**(카드·문구가
+    자리를 안다).
+    """
+    spans = {}
+    for path, _l, _s, at, span, _pre, _kr in inplace:
+        spans.setdefault(path, []).append((at, at + span))
+    bad = []
+    for path, _l, _s, at, span, _pre, kr, _p in sysm:
+        if any(at < b and a < at + span for a, b in spans.get(path, [])):
+            bad.append(f"{path} 0x{at:06X} {kr!r}")
+    if bad:
+        for b in bad[:6]:
+            print(f"  ❌ {b}")
+        raise SystemExit(
+            f"카드·문구가 이미 가진 자리를 시스템 정본이 또 가졌다 ({len(bad)}자리) "
+            f"— system.json 에서 뺀다"
+        )
+
+
 def _no_jp_prefix(path, base, pre, jp):
     """🔴 **접미만 맞으면 앞말이 일본어로 남는다.**
 
@@ -584,12 +608,46 @@ def sys_pack(sysm, ntabs, plan):
             if t["path"] == path and t["room"] > t["used"]:
                 pool.append((t["off"] + t["used"], t["room"] - t["used"]))
         pool.sort()
+        # 🔴 **붙어 있는 칸은 하나로 합친다**(2026-08-24). 배정은 칸을 넘지 못하므로,
+        #   합치지 않으면 총량이 남는데도 조각이 다 작아 큰 문안이 갈 데가 없어진다 —
+        #   실측 ED2 는 256B 가 남은 채 25B 하나를 못 넣고 죽었다. 레코드의 span 은
+        #   「다음 자료가 시작하는 자리」까지라 **연속 레코드는 원래 맞닿아 있다.**
+        merged = []
+        for at, n in pool:
+            if merged and merged[-1][0] + merged[-1][1] == at:
+                merged[-1][1] += n
+            else:
+                merged.append([at, n])
+        pool = [(a, n) for a, n in merged]
         body = {}
         for at, n in pool:
             body[at] = bytearray(n)
         free = sorted(pool, key=lambda b: -b[1])
         moves = {}
-        want = sorted(recs, key=lambda r: -(len(r[5]) + rec_len(r[6]) + 1))
+        # 🔴 **포인터가 없는 자리는 못 옮긴다** — 코드가 절대주소로 집는다. 제자리에 박고
+        #   자리에서 뺀다. 넘치면 문안을 줄이는 수밖에 없다(2026-08-24, ED.BIN 0x26CF8).
+        for _p, _l, _s, at, span, pre, kr, ptrs in recs:
+            if ptrs:
+                continue
+            blob = pre + b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
+            blob += b"\x00"
+            assert len(blob) <= span, (
+                f"{path} 0x{at:X}: 포인터가 없어 못 옮기는데 {len(blob)}B > {span}B — "
+                f"문안을 줄인다: {kr!r}"
+            )
+            blk = max(a for a, _n in pool if a <= at)
+            body[blk][at - blk : at - blk + len(blob)] = blob
+            free = [(o, n) for o, n in free if not (o <= at < o + n)] + [
+                x
+                for o, n in free
+                if o <= at < o + n
+                for x in ((o, at - o), (at + len(blob), o + n - at - len(blob)))
+                if x[1] >= 2
+            ]
+            free.sort(key=lambda b: -b[1])
+        want = sorted(
+            (r for r in recs if r[7]), key=lambda r: -(len(r[5]) + rec_len(r[6]) + 1)
+        )
         for _p, _l, _s, _at, _span, pre, kr, ptrs in want:
             blob = pre + b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
             blob += b"\x00"
@@ -787,6 +845,7 @@ def main():
         f"씬 지명 헤더 {len(scn)}곳 · {len({r[0] for r in scn})}파일 · {len({r[5] for r in scn})}종"
     )
     print(f"챕터 카드 {len(cards)}장 · SAVE/LOAD 문구 {len(msgs)}자리")
+    _no_double_owner(cards + msgs, sysm)
     print(f"시스템 메시지 {len(sysm)}자리 · 고유 {len({r[6] for r in sysm})}종")
     print(
         f"고유명사 {len(names)}칸 — "
@@ -1004,11 +1063,12 @@ def verify_sys(dst, sysm, plan, files):
     inv = {sjis: ch for ch, (sjis, _i) in plan.items()}
     _f2, mm2 = common.open_image(dst)
     cache, n = {}, 0
-    for path, lba, size, _at, _span, pre, kr, ptrs in sysm:
+    for path, lba, size, at, _span, pre, kr, ptrs in sysm:
         if path not in cache:
             cache[path] = common.read_extent(mm2, lba, size)
         d = cache[path]
-        a = int.from_bytes(d[ptrs[0] : ptrs[0] + 4], "big") - NAME_PTR_BASE
+        # 포인터가 없는 자리는 제자리에 박았다 — 그 자리를 그대로 읽는다.
+        a = int.from_bytes(d[ptrs[0] : ptrs[0] + 4], "big") - NAME_PTR_BASE if ptrs else at
         j = a + len(pre)
         while j < len(d) and d[j] != 0:
             j += 1
