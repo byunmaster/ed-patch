@@ -60,7 +60,10 @@ ATO_OFF = ATO_SITES[0][1]  # 도트를 뜨는 기준 자리 (둘은 바이트까
 ATO_STRIDE = 16  # 한 행 16B — 쓰는 건 앞 12B
 ATO_W, ATO_H = 12, 10  # 12×10, 0행은 빈 줄이라 잉크는 1~9행(9행)
 ATO_TOP = 1
-ATO_BG, ATO_MAIN, ATO_SHADOW = 39, 35, 37  # 남색 / 청록 / 음영 — 원본 실측
+ATO_BG, ATO_MAIN, ATO_SHADOW = 39, 35, 37  # 남색 바탕 / 밝은 파랑 획 / 음영
+# 🔴 **음영은 가로다**(유저 지적 2026-08-24). 같은 줄의 `ＨＰ`·`ＭＰ` 는 밝은 획(35) 오른쪽
+#    칸에만 어두운 색(37)이 붙는다 — 세로 성분이 없다(실측 `SCR1.2D` 패널). `+1,+1` 은
+#    대각선이라 입체가 과하게 보인다. 인명 쪽도 같은 이유로 가로다(`draw()`).
 # 🔴 **도트는 PS1 과 같은 것을 쓴다**(`ps1-ed1+2/tools/patch_hud_names.py:ATO_GLYPHS`).
 #    창이 12px 라 6px/자 전용 도트가 필요한데, PS1 이 이미 그려 두었다. 두 이식판이 같은
 #    라벨을 다르게 그릴 이유가 없다 — 인명 자리에서 따로 풀었다가 어긋난 전례가 있다.
@@ -163,7 +166,13 @@ def name_band(px):
 
 
 def draw(px, kr, bdf):
-    """이름 칸을 지우고 한글을 그린다(그림자 +1,+1 먼저). 반환: (새 배열, 바뀐 화소 수)."""
+    """이름 칸을 지우고 한글을 그린다(그림자 먼저). 반환: (새 배열, 바뀐 화소 수).
+
+    🔴 **그림자는 가로다**(유저 지적 2026-08-24 · 원본 실측). 원본 `セリオス` 는 글자(16)
+       오른쪽 칸에만 음영(46)이 붙는다 — 세로 성분이 없다. `+1,+1` 로 깔면 대각선이라
+       획이 굵어 보이고 같은 줄의 `ＨＰ`·`ＭＰ` 와도 어긋난다.
+       ⚠ **PS1 도 같은 자리가 대각선이다**(`ps1-ed1+2:patch_hud_names.py`) — 거기도 고쳐야 한다.
+    """
     x0, x1 = NAME_X
     y0, y1 = name_band(px)
     out = px.copy()
@@ -179,8 +188,8 @@ def draw(px, kr, bdf):
         g = bdf.bits(ch, rows=GLYPH_H, width=GLYPH_W, dy=GLYPH_H - bdf.ascent)
         bits[:, i * PITCH : i * PITCH + GLYPH_W] |= g.astype(bool)
     ys, xs = np.nonzero(bits)
-    for dy, dx, col in ((1, 1, SH), (0, 0, FG)):
-        out[y0 + ys + dy, NAME_X0 + xs + dx] = col
+    for dx, col in ((1, SH), (0, FG)):  # 가로 음영 — 위 주석
+        out[y0 + ys, NAME_X0 + xs + dx] = col
     return out, int((out != px).sum())
 
 
@@ -220,7 +229,7 @@ def ato_block(d, off=ATO_OFF):
 
 
 def draw_ato(old):
-    """`あと` 자리를 지우고 「남다」를 그린다(음영 +1,+1, 창 밖은 자른다)."""
+    """`あと` 자리를 지우고 「남다」를 그린다(가로 음영, 창 밖은 자른다)."""
     out = old.copy()
     out[:] = ATO_BG
     bits = np.zeros((len(ATO_GLYPHS[0]), ATO_W), bool)
@@ -230,8 +239,8 @@ def draw_ato(old):
                 if ch == "#":
                     bits[y, i * 6 + x] = True
     ys, xs = np.nonzero(bits)
-    for dy, dx, colr in ((1, 1, ATO_SHADOW), (0, 0, ATO_MAIN)):
-        yy, xx = ATO_TOP + ys + dy, xs + dx
+    for dx, colr in ((1, ATO_SHADOW), (0, ATO_MAIN)):  # 가로 음영 — 위 주석
+        yy, xx = ATO_TOP + ys, xs + dx
         ok = (yy < ATO_H) & (xx < ATO_W)  # 창 밖은 자른다 — 옆 스프라이트를 물지 않게
         out[yy[ok], xx[ok]] = colr
     return out, int((out != old).sum())

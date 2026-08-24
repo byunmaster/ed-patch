@@ -694,7 +694,7 @@ def slot_plan(krs, refresh=False):
         assert len(need) <= len(free), f"슬롯 부족 {len(need)}>{len(free)}"
         # 이미 배정된 글자는 **자리를 지킨다** — 재배정하면 낡은 이미지의 폰트와 어긋난다.
         keep = {c: i for c, i in old.items() if c in need}
-        taken = set(keep.values())
+        taken = set(keep.values()) | reserved_slots(krs)
         pool = [i for i in free if i not in taken]
         old = dict(keep)
         for c in need:
@@ -715,6 +715,42 @@ def slot_plan(krs, refresh=False):
     missing = [c for c in need if c not in old]
     assert not missing, f"정본에 없는 글자 {len(missing)}자 — `--refresh`: {''.join(missing[:12])}"
     return {c: (font.sjis_of_index(i), i) for c, i in old.items()}
+
+
+def kanji_gaps(krs, orig_kanji):
+    """우리가 쓰는 **전각 글자 중 원본 폰트에 글리프가 없는 것** — `ascii_gaps` 의 전각판.
+
+    🔴 없으면 **조용히 빈칸으로 나간다**(반각 온점과 같은 부류). 실측 2026-08-24:
+      말줄임표 `…`(SJIS 0x8163 · 슬롯 35) 가 통째로 비어 있다 — PS1 문안을 맞추며 들어왔다.
+    ⚠ 자리는 **게임 자신의 계산**으로 잡는다(`font.game_index`) — 우리 식이 어긋나면
+      엉뚱한 글자가 나오는데 빌드도 되읽기도 통과한다.
+    """
+    need = set()
+    for kr in krs:
+        for ch in kr or "":
+            if "가" <= ch <= "힣" or ch.isascii() or ch.isspace():
+                continue  # ⚠ 전각 공백(`\u3000`)은 빈 글리프가 정답이다 — 반각 0x20 과 같다
+            try:
+                b = ch.encode("cp932")
+            except UnicodeEncodeError:
+                continue  # 한글은 위에서 걸렀다 — 여기 오는 건 슬롯을 받은 글자다
+            if len(b) == 2:
+                need.add(ch)
+    out = []
+    for ch in sorted(need):
+        i = font.game_index(ch.encode("cp932"))
+        if not any(orig_kanji[i * font.GLYPH_STRIDE :][: font.GLYPH_STRIDE]):
+            out.append(ch)
+    return out
+
+
+def reserved_slots(krs):
+    """전각 구멍을 메울 슬롯 — 한글 배정에서 **빼야 한다**.
+
+    `font.free_slots()` 는 **원본** 기준으로 「빈 글리프」를 세므로, 우리가 구우려는 자리도
+    비어 있다고 본다. 안 빼면 한글이 늘었을 때 말줄임표 위에 음절이 얹힌다.
+    """
+    return {font.game_index(c.encode("cp932")) for c in kanji_gaps(krs, common.extract(FON))}
 
 
 def ascii_gaps(krs, orig_ascii):
@@ -958,6 +994,26 @@ def main():
                     f, alba, asize, ord(ch) * ASCII_STRIDE, g, label=f"{FON_ASCII} {ch!r}"
                 )
             print(f"  반각 폰트 {FON_ASCII}: 원본에 없던 {''.join(gaps)!r} 구움")
+
+        # ── 전각 폰트의 구멍 — 원본에 글리프가 없는 전각 글자(말줄임표 등)
+        kgaps = kanji_gaps(
+            [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs + sysm] + names,
+            common.extract(FON),
+        )
+        if kgaps:
+            kg, kmiss = convert_chars("".join(kgaps))
+            assert not kmiss, f"Galmuri11 에 없는 전각 글자: {''.join(kmiss)}"
+            kflba, kfsize = files[FON]
+            for ch in kgaps:
+                common.write_at(
+                    f,
+                    kflba,
+                    kfsize,
+                    font.game_index(ch.encode("cp932")) * font.GLYPH_STRIDE,
+                    kg[ch],
+                    label=f"{FON} 전각 {ch!r}",
+                )
+            print(f"  전각 폰트 {FON}: 원본에 없던 {''.join(kgaps)!r} 구움")
 
         # ── 폰트 — 계획대로 글리프를 굽는다
         glyphs, missing = convert_chars("".join(plan))
