@@ -26,10 +26,34 @@ CELL = 11  # 게임 글리프 유효 셀
 
 
 def pack22(bits, rows=ROWS):
-    """(rows, ≥16) 0/1 → 행당 2B, MSB 우선. 22B(11행) 격자의 정본."""
+    """(rows, ≥16) 0/1 → 행당 2B, MSB 우선. 22B(11행) 격자의 정본.
+
+    ⚠ **행마다 바이트 경계에 맞춘다** — 11비트를 16비트 칸에 넣고 남는 5비트는 버린다.
+    밀착 패킹인 `pack18` 과 여기가 갈린다.
+    """
     padded = np.zeros((rows, 16), dtype=np.uint8)
     padded[:, : bits.shape[1]] = bits[:, :16]
     return np.packbits(padded, axis=1).tobytes()
+
+
+def pack18(bits, rows=12, cell=12):
+    """(rows, ≥cell) 0/1 → 18B. **밀착 패킹**(12행 × 12비트 = 144비트) 격자의 정본.
+
+    새턴 ED3 `KANJI12.FON` 의 기하다. `pack22` 와 달리 **행이 바이트 경계를 안 지킨다** —
+    둘째 행은 1번 바이트 한복판(다섯째 자리)에서 시작한다. 그래서 행 단위로 자르면
+    조용히 글자가 밀린다.
+    """
+    grid = np.zeros((rows, cell), dtype=np.uint8)
+    h, w = min(rows, bits.shape[0]), min(cell, bits.shape[1])
+    grid[:h, :w] = bits[:h, :w]
+    return np.packbits(grid.reshape(-1)).tobytes()
+
+
+def unpack18(buf, index=0, rows=12, cell=12):
+    """`pack18` 의 역 — 회귀 검증과 원본 글리프 읽기에 쓴다."""
+    stride = rows * cell // 8
+    g = buf[index * stride : (index + 1) * stride]
+    return np.unpackbits(np.frombuffer(g, dtype=np.uint8))[: rows * cell].reshape(rows, cell)
 
 
 def load_bdf(path):
@@ -103,16 +127,18 @@ def galmuri(name="Galmuri11"):
     return _CACHE[name]
 
 
-def convert_chars(chars, bdf=None, dy=GALMURI11_DY, rows=ROWS):
-    """문자 집합 → `{문자: 22바이트 글리프}`. 재삽입기의 폰트 빌드 입력.
+def convert_chars(chars, bdf=None, dy=GALMURI11_DY, rows=ROWS, packer=pack22, width=WIDTH):
+    """문자 집합 → `{문자: 게임 글리프 bytes}`. 재삽입기의 폰트 빌드 입력.
+
+    `packer` 로 격자를 고른다 — `pack22`(16×11, PS1·새턴 ED1+2) · `pack18`(12×12, 새턴 ED3).
 
     ⚠ 잉크가 없는 글리프는 **조용히 빈칸이 된다** — 부르는 쪽이 판단하도록 이름을 돌려준다.
     """
     bdf = bdf or galmuri()
     out, missing = {}, []
     for ch in chars:
-        bits = bdf.bits(ch, dy=dy, rows=rows)
+        bits = bdf.bits(ch, dy=dy, rows=rows, width=width)
         if not bits.any() and not ch.isspace():
             missing.append(ch)
-        out[ch] = pack22(bits, rows=rows)
+        out[ch] = packer(bits, rows=rows)
     return out, missing
