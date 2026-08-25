@@ -55,7 +55,9 @@ scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test
                        띄우고 세이브까지 동기화한다(인자 없으면 목록에서 고른다)
   emu/              └ 그 아래 실행기·기전 — dosbox.sh(DOS 본체) · sync-saves.sh(세이브
                        동기화, 기종 무관) · ps1-card.sh(메모리카드 이사) ·
-                       emucap-mednafen.sh(에이전트 세션 래퍼) · dosbox/(conf 템플릿)
+                       emucap-mednafen.sh(에이전트 세션 래퍼) · dosbox/(conf 템플릿) ·
+                       ss_gameid.py(새턴 세이브 이름 = 이미지 해시 — 빌드를 갈면 세이브가
+                       조용히 안 읽힌다. `emu.sh` 가 실행 직전에 자동으로 맞춘다)
   check/            └ 검사 부품 — which_game.sh(「지금 어느 게임인가」 정본, check.sh·
                        test.sh 가 같은 답을 쓴다) · typeset_fingerprint.py(조판 지문 —
                        공용이 다른 게임의 줄바꿈을 흔들면 운다) · check_shared_scope.py

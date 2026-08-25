@@ -55,6 +55,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
 HELPERS="$HERE/emu"                   # 실행기 본체·기전은 여기 모여 있다
 SYNCSH="$HELPERS/sync-saves.sh"
+PY_BIN="$REPO/.venv/bin/python"       # ⚠ 여기서 실패할 수 있는 명령을 쓰지 않는다(set -e)
+[ -x "$PY_BIN" ] || PY_BIN=python3
 . "$HERE/lib/select.sh"        # 화살표 키 선택 UI
 . "$HERE/emu/ime.sh"           # 한글 입력 소스 함정 (기종 무관)
 
@@ -396,6 +398,16 @@ if [ "$SYNC" = 1 ]; then
     echo "⚠ dev 에 못 붙는다 — 로컬 세이브로 진행한다(종료 후에도 안 올라간다)" >&2
     SYNC=0
   fi
+fi
+
+# 🔴 **새턴은 세이브 이름에 이미지 해시가 박힌다** — 그래서 **빌드를 갈면 세이브가 조용히
+#   안 읽힌다**(타이틀에 `Continue` 가 안 뜨고 그냥 New Game 이 시작된다). 원판으로 모은
+#   세이브를 한글패치 빌드에서 못 쓰는 것도 같은 이유다.
+#   `ss_gameid.py` 가 그 해시를 **계산해서**(mednafen `ss/ss.cpp:CalcGameID` 그대로) 지금
+#   이미지의 이름으로 사본을 만든다. ⚠ 옛 이름은 **안 지운다** — 되돌아갔을 때 필요하다.
+#   ⚠ **반드시 실행 전에** 한다. mednafen 은 종료할 때 백업 RAM 을 덮어쓴다.
+if [ "$MOD" = ss ]; then
+  "$PY_BIN" "$HELPERS/ss_gameid.py" --fit "$SAVEDIR" "$IMAGE" || true
 fi
 
 # ── 실행 ────────────────────────────────────────────────────────────────────
