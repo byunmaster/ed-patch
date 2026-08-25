@@ -638,11 +638,14 @@ def main():
     moved.update(repack(ed, *ARENA, "격투장(4)", align=1, tr=b, pools=pools))
     moved.update(repack(ed, *BTL_MSG, "전투 메시지(6)", align=1, tr=b, pools=pools))
     moved.update(repack(ed, *BTL_MSG2, "전투 메시지(입수3)", align=1, tr=b, pools=pools))
-    # ⚠ 앞에 **본문색(3)** 을 붙인다 — `들` 은 이름 버퍼(`%s`)에 딸려 들어가 **이름색으로
+    # ⚠ 앞에 **색 복귀 코드**를 붙인다 — `들` 은 이름 버퍼(`%s`)에 딸려 들어가 **이름색으로
     # 물든다**(`류난들`이 통째로 주황, 유저 QA 2026-08-15). 이름과 조각이 한 버퍼라 블록
-    # 텍스트로는 가를 수 없어서, 조각 자신이 색을 되돌리게 한다. 이 조각을 쓰는 자리는
-    # 파티명 해설뿐이고(참조 1곳 — lui/addiu 전수 확인) 그 블록들은 전부 본문이 초록이다.
-    moved.update(repack(ed, *FRAG_TACHI, "たち(파티)", align=1, tr=lambda _: "\x03들", pools=pools))
+    # 텍스트로는 가를 수 없어서, 조각 자신이 색을 되돌리게 한다.
+    # ⚠ **초록(3)이 아니라 흰색(1)이다**(유저 QA 2026-08-24 정정). 08-15 에는 「이 조각을 쓰는
+    #   블록은 본문이 전부 초록」으로 보고 3 을 박았는데, 실제 화면은 `세리오스`(주황) +
+    #   `들`(초록) + `은 보물상자를…`(흰색)로 **셋이 갈렸다**. 본문이 흰색이라 복귀도 흰색이다.
+    #   색 코드 실측표는 `reinsert_kr_pilot.NAME_PLATE` 주석 — 2=주황(이름) · 3=초록 · 1=흰색.
+    moved.update(repack(ed, *FRAG_TACHI, "たち(파티)", align=1, tr=lambda _: "\x01들", pools=pools))
     moved.update(repack(ed, *FRAG, "전투 조각(58)", align=1, tr=b, pools=pools))
     moved.update(repack(ed, *EVT, "이벤트 이름·방위(21)", align=1, tr=b, pools=pools))
     redirect(ed, moved)

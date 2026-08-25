@@ -31,7 +31,9 @@ TARGET = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR Pilot).bin")
 BG, MAIN, SHADOW = 39, 16, 46  # 남색 배경 / 노랑 글자 / 그림자 (실측)
 PITCH = 9  # Galmuri9 글자 간격(원본 카타카나 ~9px)
 NAME_X = 6  # 이름 시작 x (원본과 동일)
-NAME_X_MAX = 43  # EP 라벨(x44+) 앞 한계 — 인페인트/폭 상한
+# ⚠ 43 이었는데 **실측하니 EP 는 x46 부터**다(x41~45 는 두 TIM 다 비어 있다 — 자간을
+#   비례로 바꾸며 `아트라스`(39px)가 안 들어가 다시 쟀다, 2026-08-25). 인페인트도 같이 넓힌다.
+NAME_X_MAX = 46  # EP 라벨(x46+) 앞 한계 — 인페인트/폭 상한
 
 # (이름 잉크 top y, 일본어 원문, 한글 잠정). ink_top은 scan 검출값. 배치 oy=ink_top-2(11행 baseline).
 NAMES = [
@@ -92,32 +94,71 @@ def render_name(s, pitch=PITCH, font7=False):
 # 테두리를 배경으로 덮는다 — 시트에서 그 자리가 로우 패널 구간이라 **인게임에서 로우 칸만
 # 오른쪽 테두리가 사라졌다**(유저 QA 2026-08-04). 원본은 x108/109 전 행이 테두리 단색이고
 # あと 글자는 x110 부터다.
-ATO = {"y0": 109, "y1": 118, "x0": 110, "x1": 125, "ink_top": 110, "x": 110}
+# ⚠ `ink_top` 이 110 이었다 — **창은 109 부터인데 한 줄을 비워 두고 있었다.** 원본 `あと` 는
+#   9행이지만 바로 아래 `ＥＰ` 는 **10행**(y119~128)이라 나란히 놓으면 잔량만 작아 보인다
+#   (유저 지적 2026-08-25). 109 로 올려 10행을 다 쓴다.
+ATO = {"y0": 109, "y1": 118, "x0": 110, "x1": 125, "ink_top": 109, "x": 110}
 ATO_MAIN, ATO_SHADOW = 35, 37
-# 남·다 6×9 커스텀 도트 — UV 12px 창 전용. 세로는 창 높이(9행) 꽉 채워 HP/MP와 비슷한 키로.
+# 남·다 **6×10** 커스텀 도트 — UV 12px 창 전용. `(잉크, 음영)` 한 쌍씩.
+# 🔴 **음영을 유도하지 않고 손으로 적는다**(2026-08-25, 새턴과 같은 규약). 「안쪽」이 어디인지는
+#    자모마다 다르다 — 원본 `ＥＰ` 가 **테두리는 밝고 속이 어두운** 2px 획이라 맨 아래 획엔
+#    아래쪽 음영이 없다. 자모별 규칙(유저 확정):
+#      ㄴ: 세로 오른쪽만(가로 위는 뺀다) · ㄷ: 아래·오른·위 · ㅁ: **좌우만**(위아래는 뺀다)
+#      · ㅏ: 가지 아래만 — **ㅣ 에는 안 넣는다**(오른쪽 한 열이 차면 옆 글자와 붙어 보인다)
+# ⚠ **ㅏ 의 가지는 세로줄 오른쪽**이다 — 왼쪽에 붙이면 ㅓ 가 되어 「남다」가 「넘더」로 읽힌다.
 ATO_GLYPHS = [
-    [  # 남
-        "#...#.",
-        "#...#.",
-        "#...##",
-        "###.#.",
-        "......",
-        ".####.",
-        ".#..#.",
-        ".#..#.",
-        ".####.",
-    ],
-    [  # 다
-        "###.#.",
-        "#...#.",
-        "#...##",
-        "#...#.",
-        "#...#.",
-        "#...#.",
-        "#...#.",
-        "###.#.",
-        "....#.",
-    ],
+    (  # 남
+        (
+            "#...#.",
+            "#...#.",
+            "#...##",
+            "#...#.",
+            "###.#.",
+            "......",
+            "#####.",
+            "#...#.",
+            "#...#.",
+            "#####.",
+        ),
+        (
+            ".+....",
+            ".+....",
+            ".+....",
+            ".+...+",
+            "......",
+            "......",
+            "......",
+            ".+.+..",
+            ".+.+..",
+            "......",
+        ),
+    ),
+    (  # 다
+        (
+            "###.#.",
+            "#...#.",
+            "#...##",
+            "#...#.",
+            "#...#.",
+            "#...#.",
+            "#...#.",
+            "#...#.",
+            "#...#.",
+            "###.#.",
+        ),
+        (
+            "......",
+            ".++...",
+            ".+....",
+            ".+...+",
+            ".+....",
+            ".+....",
+            ".+....",
+            ".+....",
+            ".++...",
+            "......",
+        ),
+    ),
 ]
 
 
@@ -166,21 +207,56 @@ def patch_status_labels(pix):
     _draw_bm(pix, bm, f["x"], f["ink_top"] - 2, f["color"], y_max=f["y1"])
 
 
+def inner_shadow(bits):
+    """`bits` → **속으로만 들어가는 음영 좌표**(한 칸 아래).
+
+    🔴 원본 `ＥＰ`·`ＨＰ`·`ＭＰ` 는 획이 2px 라 **바깥 테두리가 밝고 속이 어둡다**.
+       그래서 **맨 아래 획에는 아래쪽 음영이 없다**(유저 지적 2026-08-25). 1px 획으로
+       그 관계를 흉내 내는 규칙은 하나다 — 한 칸 아래에 음영을 넣되, **그 열에 아직 더
+       아래쪽 잉크가 남아 있을 때만.** `+1,+1` 대각선으로 깔면 글자 아래로 한 줄이 삐져나온다.
+    """
+    last = np.where(bits.any(0), bits.shape[0] - 1 - bits[::-1].argmax(0), -1)
+    ys, xs = np.nonzero(bits)
+    m = ys + 1 < last[xs]
+    return ys[m] + 1, xs[m]
+
+
+def pack_name(s, font7=False):
+    """이름 → bool 비트맵. **자간은 「잉크 폭 + 1」**이다(고정 피치가 아니다).
+
+    🔴 Galmuri9 한글은 글자마다 잉크 폭이 다르다 — `세`·`오`·`스` 는 9px 인데 `리` 는 8px 다.
+       피치를 고정하면 **`리` 뒤만 틈이 2px** 가 되어 「리 오」 사이가 벌어져 보인다
+       (유저 지적 2026-08-25).
+    """
+    cells = []
+    for ch in s:
+        one = render_name(ch, pitch=PITCH, font7=font7)
+        cols = np.nonzero(one.any(0))[0]
+        cells.append(one[:, cols.min() : cols.max() + 1] if cols.size else one[:, :1])
+    width = sum(c.shape[1] for c in cells) + (len(cells) - 1)
+    bm = np.zeros((cells[0].shape[0], width), dtype=bool)
+    at = 0
+    for c in cells:
+        bm[:, at : at + c.shape[1]] = c
+        at += c.shape[1] + 1
+    return bm
+
+
 def build_pix(tim, names=None):
     """원본 TIM 픽셀 → 이름 5개 + あと 라벨 + 상태이상 라벨 교체한 새 인덱스맵."""
     w, h = tim["w"], tim["h"]
     pix = np.frombuffer(tim["pix"], dtype=np.uint8).reshape(h, w).copy()
     for ink_top, _jp, kr in names or NAMES:
-        bm = render_name(kr)
+        bm = pack_name(kr)
         bh, bw = bm.shape
         if NAME_X + bw > NAME_X_MAX:
             print(f"경고: {kr!r}({bw}px) 이름칸 초과 — EP 라벨 침범 가능")
         oy = ink_top - 2  # 11행 셀 잉크가 y=ink_top부터 오도록
         pix[oy : oy + 13, 2:NAME_X_MAX] = BG  # 인페인트(원 카타카나 지움)
-        for y in range(bh):  # 그림자 먼저(+1,+1)
-            for x in range(bw):
-                if bm[y, x] and oy + y + 1 < h and NAME_X + x + 1 < w:
-                    pix[oy + y + 1, NAME_X + x + 1] = SHADOW
+        sy, sx = inner_shadow(bm)  # 음영 먼저 — 「안쪽으로만」(위 주석)
+        for y, x in zip(sy, sx, strict=True):
+            if oy + y < h and NAME_X + x < w:
+                pix[oy + y, NAME_X + x] = SHADOW
         for y in range(bh):  # 본문 노랑
             for x in range(bw):
                 if bm[y, x] and oy + y < h and NAME_X + x < w:
@@ -190,22 +266,14 @@ def build_pix(tim, names=None):
     # 잉크는 원본과 같은 y(ink_top)에서 시작 — UV 크롭이 딱 맞아도 잘리지 않게.
     a = ATO
     pix[a["y0"] : a["y1"] + 1, a["x0"] : a["x1"] + 1] = BG
-    bm = np.zeros((len(ATO_GLYPHS[0]), 12), dtype=bool)  # 남다 6px×2 커스텀 도트
-    for ci, rows in enumerate(ATO_GLYPHS):
-        for ry, row in enumerate(rows):
-            for rx, ch in enumerate(row):
-                if ch == "#":
-                    bm[ry, ci * 6 + rx] = True
     oy = a["ink_top"]  # 커스텀 도트는 셀 여백 없이 ink_top부터
-    bh, bw = bm.shape
-    for y in range(bh):  # 음영(+1,+1) — 라벨 창(y1) 밖은 스킵
-        for x in range(bw):
-            if bm[y, x] and oy + y + 1 <= a["y1"] and a["x"] + x + 1 <= a["x1"]:
-                pix[oy + y + 1, a["x"] + x + 1] = ATO_SHADOW
-    for y in range(bh):  # 본문 청록
-        for x in range(bw):
-            if bm[y, x] and oy + y <= a["y1"] and a["x"] + x <= a["x1"]:
-                pix[oy + y, a["x"] + x] = ATO_MAIN
+    for ci, (ink, sh) in enumerate(ATO_GLYPHS):
+        for layer, colr in ((sh, ATO_SHADOW), (ink, ATO_MAIN)):
+            for ry, row in enumerate(layer):
+                for rx, ch in enumerate(row):
+                    x = a["x"] + ci * 6 + rx
+                    if ch != "." and oy + ry <= a["y1"] and x <= a["x1"]:
+                        pix[oy + ry, x] = colr
 
     patch_status_labels(pix)  # 상태이상 라벨(독~란·수·도·기절)
     return pix

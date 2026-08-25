@@ -1084,6 +1084,22 @@ def _bind_num_unit(text, width):
     return _NUM_UNIT.sub(rep, text)
 
 
+def bake_ellipsis(exe, game):
+    """말줄임표 `…` 를 베이스라인으로 내려 다시 굽는다 (2026-08-24 유저 인게임 판정).
+
+    대사의 `...`(반각 온점 셋 = 1.5슬롯)를 전각 `…`(1슬롯)로 옮기면서 걸린 것 —
+    원본 글리프는 점 셋이 `・` 와 같은 **중간 높이**라, 베이스라인에 찍히는 우리 온점과
+    한 문장 안에서 어긋나 보인다. 가로 간격(x=1·5·9)은 원본이 이미 고르므로 **세로만** 내린다.
+    수법은 오프닝과 같다 — **표기는 `…` 하나로 두고 그림만 고친다**(`patch_opening_font`).
+    ⚠ 두 실행파일이 각자 폰트를 들고 있어 **둘 다** 구워야 한다(ED2 도 SCN 대사를 낸다).
+    """
+    import font_map
+
+    font_map.verify_ellipsis(exe, game)  # 덮기 전에 그 자리가 정말 `…` 인지 모양으로 검산
+    o = font_map.ku1_glyph_ed_offset(font_map.ELLIPSIS_SJIS, game)
+    exe[o : o + font_map.GLYPH_STRIDE] = font_map.ellipsis_baseline_glyph(exe, game)
+
+
 def wrap_page(text, width=WRAP, target=None, max_lines=None):
     """공통 줄바꿈 유틸(shared/text/krwrap.wrap_pages): 원문 {n} 줄바꿈을 존중하고
     폭(WRAP) 넘는 줄만 재줄바꿈 + 금칙 + 짧은조각 병합, 창(3줄)은 문장 그룹 단위로
@@ -1319,7 +1335,11 @@ FIXED_RUNS = {
     # EPC=BadVAddr=0x9420C50A(정렬도 안 맞음) · BIOS A0(0x40) SystemError 루프.
     # `PILOT_FIXED=1` 로 전 블록을 원본 길이에 묶으면 **안 멈춘다** → 길이(위치) 계층 확정.
     # 크루즈 아침 자동이동과 같은 부류다(our-findings 「구조가 다 맞는데 깨지면 위치를 의심」).
-    "ED1SCN2": frozenset({470}),
+    # 구엔의 탑 석비(jp866~925) — 유저 QA 프리징 2026-08-24(비석 앞에서 멈춤, 로드 후 통과).
+    # 🔴 **아직 확정이 아니다.** 구조(`%c`/`%s`/`%d`)는 전량 일치하고(대조 완료) 길이만
+    #   −4~−24 씩 준다 — 위 470 · ED1SCN1 28 과 **같은 지문**이라 자리를 묶어 둔다.
+    #   재현이 잡히면 이 줄을 근거로 승격하고, 무관하다고 밝혀지면 되돌린다.
+    "ED1SCN2": frozenset({470, 866, 898, 919}),
 }
 SCN_ARG_PATCHES = {
     # eid 20 개구멍 Q&A: li t2,0x83 / li t0,0x5C → 0x20 (RAM 0x8017D920/24)
@@ -2700,7 +2720,15 @@ def _load_overrides():
             if t is not None:
                 for k in _ALIGN_KEYS:
                     cur.pop(k, None)
-                cur["ours"] = t
+                # 🔴 **정본의 `\n` 은 「여기서 줄을 끊어라」다** — 하드 개행 마커로 바꾼다
+                # (2026-08-24 유저 QA). 그냥 두면 `krwrap.wrap` 이 `text.split()` +
+                # `" ".join()` 으로 **모든 공백을 ASCII 하나로 정규화**해 조용히 사라진다
+                # (text-pipeline.md 「함정 셋」③). 실측: 게일 낙서 열 곳이 판돌 배치를
+                # 적어 뒀는데도 두 줄로 뭉개졌고, `핫핫핫하` 가 뒷문장에 붙었다.
+                # ⚠ 마커가 있으면 그 블록만 `protect_hard` 가 켜져 **고아 정리·문장 시작
+                # 분리도 같이 꺼진다.** 그래서 `\n` 은 「의도한 배치」에만 쓴다 — DOS 잔재로
+                # 남은 것은 문안에서 뺀다(상점 `값은\n%d Gold` 셋을 그렇게 걷어냈다).
+                cur["ours"] = t.replace("\n", HARD_NL)
                 cur["verbatim"] = True
             if isinstance(v, dict) and v.get("s"):
                 cur["speaker"] = v["s"]
@@ -3984,6 +4012,7 @@ def main():
         print(f"도너 사용 {used_d}/{cap}B ({len(donor_all)}블록)")
 
     # 폰트 + 이미지 기록 (전 씬 + ED.EXE 폰트를 한 이미지에)
+    import font_map
     import hangul_font  # numpy/PIL 의존 — 빌드 단계에서만 필요
 
     print("Galmuri11 폰트 변환·탑재 중...")
@@ -3998,6 +4027,13 @@ def main():
     with open(dst, "r+b") as f:
         ed = bytearray(extract(ED_LBA, ED_SIZE))
         ed[base_off : base_off + len(font_block)] = font_block
+        # 전각 로마자를 갈무리로 덮는다 — 문안은 그대로, 그림만(`hangul_font.latin_block`)
+        latin = hangul_font.latin_block()
+        font_map.verify_latin(ed, "ED1")  # 덮기 전에 원본이 로마자인지 모양으로 검산
+        for ch, g in latin.items():
+            o = font_map.latin_glyph_ed_offset(ch, "ED1")
+            ed[o : o + len(g)] = g
+        bake_ellipsis(ed, "ED1")
         # 도너 블록 기록 — 대상 구간이 원본에서 0인지 확인(다른 패치와의 충돌 가드)
         for off, cand in sorted(donor_all.items()):
             assert all(b == 0 for b in ed[off : off + len(cand)]), (
@@ -4016,6 +4052,11 @@ def main():
         ed2_base = hangul_map.slot_ed_offset(0, "ED2")
         ed2 = bytearray(extract(ED2_LBA, ED2_SIZE))
         ed2[ed2_base : ed2_base + len(font_block)] = font_block
+        font_map.verify_latin(ed2, "ED2")
+        for ch, g in latin.items():
+            o = font_map.latin_glyph_ed_offset(ch, "ED2")
+            ed2[o : o + len(g)] = g
+        bake_ellipsis(ed2, "ED2")
         print(
             f"ED2.EXE: 섹터 {write_user_data(f, ED2_LBA, ed2, label='재삽입 폰트 (ED2.EXE)')}개 수정 (폰트)"
         )

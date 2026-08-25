@@ -107,8 +107,11 @@ def fix_buffer(buf: bytearray, table: bytes, cross: int | None = 66, limit: int 
                 j = pb  # 4B 좌시프트: memmove(pb ← pb+4, 널 포함)
                 while True:
                     src = j + 4
-                    buf[j] = buf[src] if src < len(buf) else 0
-                    if buf[j] == 0 and (src >= len(buf) or buf[src] == 0):
+                    v = buf[src] if src < len(buf) else 0
+                    if src < len(buf):
+                        buf[src] = 0  # 읽은 자리를 지운다 — asm 의 `sb zero,4(t3)` 와 같다
+                    buf[j] = v
+                    if v == 0:
                         break
                     j += 1
                 fixed += 1
@@ -405,10 +408,17 @@ def assemble_routine(free_base, table_addr, pairs_addr):
     a.sb("t3", 0, "t0")
     a.sb("t8", 1, "t0")  # sb는 하위 8bit만
     # 4B 좌시프트: memmove(pb ← pb+4, 널 포함) — pb는 괄호 시작(같은 줄 t0+2 또는 다음 줄 a0+66)
+    # ⚠ **읽은 자리를 곧바로 지운다**(2026-08-24). 안 지우면 시프트가 끝난 뒤 **널 뒤에 옛
+    #   꼬리 4B 가 그대로 남고**, 그 자리를 pre-shift 길이로 그리는 경로(전투 메시지)가
+    #   그걸 글리프로 뿌린다 — `사용했다.` 옆 깨진 글자(유저 QA 2026-08-24). 시뮬레이터로
+    #   확정: 널 뒤가 `d7 2e 0a 00`(`다.` 의 하위 바이트 + 온점 + 개행)이라 완성형 밖이다.
+    # 지운 자리는 **뒤 회차가 목적지로 덮어쓰므로** 마지막 4B 만 0 으로 남는다(=옛 꼬리).
+    # ⚠ 명령을 늘릴 수 없다 — 루틴이 504B 이고 VAB 파형까지 여유가 4B 다. 그래서 `lbu` 의
+    #   **로드 지연 슬롯 nop 을 그대로 쓴다**(t4 를 안 건드리니 지연 규칙에 어긋나지 않는다).
     a.addu("t3", "v0", "zero")
     a.label("mv")
     a.lbu("t4", 4, "t3")
-    a.nop()
+    a.sb("zero", 4, "t3")  # ← 지연 슬롯 재활용: 읽은 원본 바이트를 즉시 0으로
     a.sb("t4", 0, "t3")
     a.bne("t4", "zero", "mvnext")
     a.nop()

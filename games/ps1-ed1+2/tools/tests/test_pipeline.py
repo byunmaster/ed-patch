@@ -1218,5 +1218,47 @@ def test_opening_decoder_stub_actually_decodes():
     assert got == b"".join(want), "스텁 출력이 기준 디코더와 다르다"
 
 
+def test_josa_shift_leaves_no_stale_tail():
+    """조사 병기를 줄인 **뒤 꼬리에 옛 바이트가 남으면 안 된다** (유저 QA 2026-08-24).
+
+    `을(를)` → `을` 은 4B 좌시프트라 널이 4B 앞으로 온다. 그런데 옛 꼬리 4B 를 안 지우면
+    거기 `d7 2e 0a 00`(`다.` 의 하위 바이트 + 온점 + 개행)이 남고, **pre-shift 길이로 그리는
+    경로**(전투 메시지)가 그걸 글리프로 뿌린다 — `사용했다.` 옆 깨진 글자. `d7 2e` 는
+    완성형 밖이라 무슨 글자가 나올지도 모른다.
+
+    ⚠ asm 쪽 대응은 `lbu` 의 **로드 지연 슬롯 nop 을 `sb zero,4(t3)` 로 바꾼 것**이다 —
+    루틴이 504B 이고 VAB 파형까지 여유가 4B 라 명령을 못 늘린다. 그래서 이 테스트는
+    **크기가 안 늘었는지도 함께** 본다(늘면 파형을 침범해 효과음이 조용히 깨진다).
+    """
+    import hangul_map as H
+    import patch_josa_hook as J
+
+    def enc(t):
+        out = bytearray()
+        for ch in t:
+            if ch == " ":
+                out.append(0x20)
+            elif ch == "\n":
+                out.append(0x0A)
+            elif ch.isascii():
+                out.append(ord(ch))
+            else:
+                out += H.syllable_sjis(ch).to_bytes(2, "big")
+        return bytes(out)
+
+    tbl = J.build_bit_table()
+    for line in ("잎을(를) 사용했다.\n", "류난은(는) 동료가 되었습니다.\n"):
+        buf = bytearray(enc(line) + b"\x00" + enc("이전메시지"))
+        buf = buf[:66].ljust(66, b"\x00")
+        assert J.fix_buffer(buf, tbl, cross=None, limit=64) == 1, line
+        z = bytes(buf).find(b"\x00")
+        assert bytes(buf[z + 1 : z + 5]) == b"\x00" * 4, (
+            f"시프트 꼬리에 찌꺼기: {bytes(buf[z + 1 : z + 5]).hex(' ')} — {line!r}"
+        )
+
+    n = len(J.assemble_routine(0x80100000, 0x80101000, 0x80101100))
+    assert n <= 504, f"josa 루틴이 {n}B 로 늘었다 — VAB 파형 여유가 4B 뿐이다"
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
