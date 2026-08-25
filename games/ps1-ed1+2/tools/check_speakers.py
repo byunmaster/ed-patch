@@ -88,6 +88,44 @@ def candidates(scn):
     return out
 
 
+def scan_runtime_labels(scenes=None, verbose=False):
+    """**런타임 이름창(`%s`)인데 라벨이 박혀 있는가** — 화면이 아니라 **도구**가 오염된다.
+
+    이름창이 `{c}%s{c}` 인 블록은 **엔진이 런타임에 리더 이름을 꽂는다.** 우리 `s` 는 화면에
+    안 나가므로 위 `scan` 이 `jp_header_is_fmt` 로 건너뛴다 — 화면 검사로는 그게 옳다.
+
+    🔴 **그런데 라벨이 남아 있으면 화자 기준으로 도는 것들이 전부 틀린 답을 본다.**
+    실측(2026-08-25): 86블록에 라벨이 박혀 있었고 **대개 듣는 쪽 이름**이었다(앞 창에서
+    상속된 것이다) — 일행이 문지기에게 하는 말 셋이 `입구의 병사` 로, 세리오스가 게일을
+    꾸짖는 말이 `게일` 로 달려 있었다. 그 상태로 인물별 대사를 뽑아 검수를 돌렸더니
+    **소니아 표에 세리오스 대사 셋이 섞여** 「합류 장면에서 소니아가 반말을 쓴다」는 가짜
+    신호가 났다. `check_speech_level` 도 같은 것을 본다.
+
+    ⚠ 고치는 방법은 **라벨을 지우는 것**이다(맞는 이름으로 바꾸는 게 아니다) — 화자가
+    런타임 리더라 **고정 이름은 무엇을 넣어도 거짓**이다. 지워도 화면은 안 바뀐다
+    (2026-08-25 실증: 86건을 지우고 재빌드해 **이미지 sha1 동일**).
+    """
+    bad = []
+    for scn in R.scene_list(scenes):
+        if scenes and scn not in scenes:
+            continue
+        d = _script(scn)
+        for _s, eid, jp, _c, _t in R.iter_candidates((scn,)):
+            k = str(eid)
+            if not R.jp_has_header(jp) or not R.jp_header_is_fmt(jp):
+                continue
+            ent = d.get(k) or {}
+            if ent.get("s"):
+                bad.append((scn, eid, ent["s"]))
+    print(f"  {'✅' if not bad else '⚠'} 런타임 이름창(`%s`)에 박힌 라벨 {len(bad)}곳")
+    if bad and verbose:
+        for scn, eid, s in bad[:20]:
+            print(f"      {scn} jp{eid}: [{s}] ← 화자는 런타임 리더다")
+    if bad:
+        print("      ⚠ 라벨을 **지운다**(바꾸는 게 아니다) — 화면은 안 바뀌고 도구만 바로잡힌다.")
+    return len(bad)
+
+
 def scan(scenes=None, show_all=False):
     tot = 0
     for scn in R.scene_list(scenes):
@@ -166,4 +204,5 @@ if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     n = scan(set(args) if args else None, "--all" in sys.argv)
     n += scan_canon(verbose=True)
+    n += scan_runtime_labels(set(args) if args else None, verbose=True)
     sys.exit(1 if n else 0)
