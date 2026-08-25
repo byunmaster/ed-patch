@@ -4,6 +4,7 @@
 #   sh scripts/pull-build.sh          # 원격 빌드를 목록에서 고른다(space 로 여러 개)
 #   sh scripts/pull-build.sh ps1      # 걸러서 (게임·꼬리표 어느 쪽에 걸려도 된다)
 #   sh scripts/pull-build.sh --all    # 원격에 있는 것 전부
+#   sh scripts/pull-build.sh --all -j1  # 하나씩 (기본은 넷씩 동시에)
 #
 # ── 목록이 한 겹인 이유 (유저 확정 2026-08-21) ────────────────────────────────
 # `emu.sh` 는 게임 → 이미지로 두 겹인데 여기는 **처음부터 빌드 목록**이다. 원격에 빌드가
@@ -36,6 +37,22 @@
 #   (루트 CLAUDE.md 「빌드 규율」) 두 가지를 같이 본다:
 #     · `*.failed` 가 있으면 **그 칸은 통째로 거부한다** — 실패한 빌드는 산출물을 무효화한다
 #     · 받은 뒤 `.bin` 마다 sha1 을 대조한다
+#
+# ⚠ **하나가 실패해도 나머지는 계속 받는다**(유저 확정 2026-08-25). 종전엔 칸 하나가 실패하면
+#   `exit 1` 로 그 자리에서 죽어, 여럿을 골라 놓고 자리를 비운 사이 **뒤엣것이 통째로 안 받아진
+#   채** 돌아오는 일이 났다. 이제 칸마다 서브셸에서 돌리고 실패는 모아 뒀다 **끝에 요약**한다
+#   (하나라도 실패하면 종료 코드는 1 이다 — CI 에서 조용히 성공으로 보이면 안 된다).
+#   ⚠ 실패를 **덮지는 않는다** — 실패한 칸의 로컬 산출물은 「받다 만 것」이라 믿으면 안 된다.
+#     요약이 그 칸을 이름으로 찍는다.
+#
+# ⚠ **기본이 병렬이다** — `-j4`(유저 확정 2026-08-25). `-j1` 이면 예전처럼 하나씩,
+#   `--jobs 8` 로 올릴 수도 있다(숫자를 빼면 4).
+#     · 병목은 대개 대역폭이라 2~4 면 충분하다. ssh 세션도 칸마다 셋(ls·rsync·sha1sum)이라
+#       크게 올리면 원격 `MaxSessions`(기본 10)에 걸린다.
+#     · **진행률은 칸마다 한 줄씩 동시에 보인다**(상태판). rsync 출력을 그냥 섞으면 `\r` 이
+#       엉켜 못 읽으므로, 칸마다 **마지막 진행률 줄만** 파일에 흘려 두고 부모가 그 줄들을
+#       0.3초마다 덮어 그린다. 자세한 로그(밑절미·sha1·오류)는 **칸이 끝난 뒤 순서대로** 뱉는다.
+#     · 비대화형(파이프·CI)이면 상태판을 안 그린다 — 이스케이프가 로그에 남으면 못 읽는다.
 set -eu
 
 HOST=${DEV_HOST:-dev}
@@ -46,13 +63,20 @@ TAB=$(printf '\t')
 
 ALL=0
 FILTER=""
-for a in "$@"; do
-  case "$a" in
+JOBS=4
+while [ $# -gt 0 ]; do
+  case "$1" in
     --all) ALL=1 ;;
-    -*) echo "모르는 옵션: $a" >&2; exit 2 ;;
-    *) FILTER=$a ;;
+    # ⚠ `-j` 는 숫자가 붙어도(-j4) 떨어져도(-j 4) 되고, 아예 없으면 4 다.
+    -j|--jobs) case "${2:-}" in ([0-9]*) JOBS=$2; shift ;; (*) JOBS=4 ;; esac ;;
+    -j[0-9]*) JOBS=${1#-j} ;;
+    --jobs=*) JOBS=${1#--jobs=} ;;
+    -*) echo "모르는 옵션: $1" >&2; exit 2 ;;
+    *) FILTER=$1 ;;
   esac
+  shift
 done
+[ "$JOBS" -ge 1 ] 2>/dev/null || { echo "⛔ -j 는 1 이상의 수: $JOBS" >&2; exit 2; }
 
 # 원격 빌드 칸 전부 — 최신순. `게임<탭>꼬리표<탭>원격경로` 로 뱉는다.
 # ⚠ 글로브는 **원격 셸**이 편다(그래서 따옴표로 감싸지 않는다).
@@ -150,24 +174,61 @@ if rsync --help 2>&1 | grep -q -- '--secluded-args'; then Q=''; else Q="'"; fi
 HAVE_COPY_DEST=0
 rsync --help 2>&1 | grep -q -- '--copy-dest' && HAVE_COPY_DEST=1
 
-OLDIFS=$IFS
-IFS='
+NL='
 '
-# shellcheck disable=SC2086
-for e in $ENTRIES; do
-  IFS=$OLDIFS
-  GAME=${e%%"$TAB"*}; _r=${e#*"$TAB"}; TAG=${_r%%"$TAB"*}
-  REMOTE_BUILD=${_r#*"$TAB"}                 # 원격 경로는 목록이 준 것을 그대로 쓴다
+OLDIFS=$IFS; IFS=$NL
+# shellcheck disable=SC2046
+set -- $ENTRIES
+IFS=$OLDIFS
+
+# 칸마다 로그(`<i>.log`)·진행률 한 줄(`<i>.stat`)·rsync 종료 상태(`<i>.rc`)를 여기 둔다.
+TMPD=$(mktemp -d "${TMPDIR:-/tmp}/pull-build.XXXXXX")
+trap 'rm -rf "$TMPD"' EXIT HUP INT TERM
+BOARD=0; [ -t 1 ] && BOARD=1   # 비대화형이면 상태판을 안 그린다
+COLS=$(tput cols 2>/dev/null || echo 80)
+
+# ── 칸 하나 받기 ────────────────────────────────────────────────────────────
+# **백그라운드 서브셸**에서 돈다. 안의 `exit 1` 은 이 칸만 끝내고, 부모가 `wait` 로 그 상태를
+# 받아 실패 목록에 적는다.
+# ⚠ `if pull_one …` 로 부르면 안 된다 — 조건 자리에서는 `set -e` 가 **함수 안까지 통째로**
+#   꺼져서 rsync 가 죽어도 뒤의 sha1 대조까지 마저 돌아 「성공」으로 보인다(POSIX).
+stat_set() { printf '%s\n' "$1" > "$STATF"; }
+
+# rsync 를 돌리되 **진행률은 상태판으로, 나머지는 로그로** 가른다.
+# ⚠ 파이프의 종료 상태는 마지막 명령의 것이라 rsync 의 실패가 묻힌다. `pipefail` 은 dash 에
+#   없으므로 상태를 파일로 넘긴다. `set +e` 는 **파이프 성분 서브셸 안**이라 부모의 errexit 을
+#   안 건드린다 — 안 끄면 rsync 가 죽는 순간 그 서브셸이 상태를 못 적는다.
+# ⚠ 가르는 일을 `tr | while read` 로 하면 **상태판이 뭉텅이로 늦는다** — tr 은 출력이 터미널이
+#   아니면 블록 버퍼라 진행률이 몇 초씩 고여 있다가 한꺼번에 나온다(macOS 엔 `stdbuf` 도 없다).
+#   awk 하나로 갈라 매 판마다 `fflush`·`close` 한다. RS 는 한 글자만 되는 awk(맥 기본)가 있어
+#   `\r` 로 끊고 그 안의 줄은 손으로 쪼갠다.
+run_rsync() {
+  { set +e; rsync -a --progress "$@" 2>&1; echo $? > "$RCF"; } \
+  | awk -v f="$STATF" 'BEGIN { RS = "\r" }
+      { n = split($0, a, "\n"); last = ""
+        for (i = 1; i <= n; i++) if (a[i] ~ /[^ \t]/) last = a[i]
+        if (last == "") next
+        print last > f; close(f)                       # 상태판 — 늘 마지막 한 줄만
+        for (i = 1; i <= n; i++)                       # 로그 — 진행률 아닌 줄만
+          if (a[i] ~ /[^ \t]/ && a[i] !~ /%/) print a[i]
+        fflush() }'
+  read -r _s < "$RCF"
+  [ "$_s" = 0 ] || { echo "⛔ rsync 실패(종료 $_s)" >&2; exit 1; }
+}
+
+pull_one() {
+  GAME=$1; TAG=$2; REMOTE_BUILD=$3
+  STATF="$TMPD/$4.stat"; RCF="$TMPD/$4.rc"
   LOCAL_BUILDS="$ROOT/games/$GAME/work/build"
   LOCAL_BUILD="$LOCAL_BUILDS/$TAG"
   echo "── $GAME · $TAG [$(origin_of "$REMOTE_BUILD")]"
   echo "   원격: $REMOTE_BUILD"
 
-  IFS='
-'
+  stat_set "원격 칸을 훑는다"
+  _old=$IFS; IFS=$NL
   # shellcheck disable=SC2046
   set -- $(ssh "$HOST" "ls '$REMOTE_BUILD'" 2>/dev/null)
-  IFS=$OLDIFS
+  IFS=$_old
   [ $# -gt 0 ] || { echo "⛔ 원격 칸이 비었다: $REMOTE_BUILD" >&2; exit 1; }
   for f in "$@"; do
     case "$f" in
@@ -191,13 +252,15 @@ for e in $ENTRIES; do
     fi
     # ⚠ 파일당 한 번씩 부른다. `host:a host:b` 로 원격 소스를 둘 이상 주는 건 GNU rsync 3.0+
     #   문법이라 스톡 macOS 의 2.6.9 에서 usage error 로 죽는다(실측).
+    stat_set "$f 받는 중"
     # shellcheck disable=SC2086
-    rsync -a --progress $BASIS "$HOST:$Q$REMOTE_BUILD/$f$Q" "$LOCAL_BUILD/"
+    run_rsync $BASIS "$HOST:$Q$REMOTE_BUILD/$f$Q" "$LOCAL_BUILD/"
   done
 
   # ⚠ 받은 뒤 sha1 을 찍는다 — 같은 이름으로 다른 빌드가 나올 수 있다(`BATTLE_JP=1`).
   for f in "$@"; do
     case "$f" in *.bin) ;; *) continue ;; esac
+    stat_set "$f sha1 대조"
     R=$(ssh "$HOST" "sha1sum '$REMOTE_BUILD/$f'" | cut -d' ' -f1)
     L=$(shasum -a 1 "$LOCAL_BUILD/$f" | cut -d' ' -f1)
     if [ "$R" != "$L" ]; then
@@ -208,5 +271,95 @@ for e in $ENTRIES; do
     fi
     echo "   sha1 ✅ $f"
   done
+  stat_set "끝"
   echo "✅ $LOCAL_BUILD"
+}
+
+# ── 상태판 ──────────────────────────────────────────────────────────────────
+# 배치가 도는 동안 **따로 띄운 프로세스**가 그린다. 부모는 그동안 `wait` 만 하므로 둘이
+# 같은 화면에 겹쳐 쓸 일이 없고, 종료 상태는 `wait` 에서 그대로 받는다(`.done` 파일 같은
+# 우회가 필요 없다 — 그 우회는 서브셸의 errexit 을 다시 꺼 놓게 된다).
+# ⚠ 줄이 넘치면 되감기 계산이 깨진다 — 폭을 잘라 그린다(한글은 두 칸이라 넉넉히 뺀다).
+board_run() {
+  _drawn=0
+  while [ ! -f "$TMPD/stop" ]; do
+    board_draw
+    sleep 0.3
+  done
+  board_draw                                   # 마지막 상태를 한 번 더
+  [ "$_drawn" = 0 ] || {                       # 지운다 — 자세한 로그는 부모가 뱉는다
+    printf '\033[%dA' "$_drawn"
+    _i=0; while [ "$_i" -lt "$_drawn" ]; do printf '\033[2K\n'; _i=$((_i + 1)); done
+    printf '\033[%dA' "$_drawn"
+  }
+}
+board_draw() {
+  [ "$_drawn" = 0 ] || printf '\033[%dA' "$_drawn"
+  _drawn=0
+  _o=$IFS; IFS=$NL
+  for _j in $BATCH; do
+    IFS=$_o
+    _r=${_j#* }; _ji=${_r%% *}; _lab=${_r#* }
+    _s=…
+    [ ! -f "$TMPD/$_ji.stat" ] || _s=$(cat "$TMPD/$_ji.stat" 2>/dev/null || echo …)
+    printf '\033[2K   \033[2m%s\033[0m\n' "$(printf '%s  %s' "$_lab" "$_s" | cut -c1-$((COLS - 12)))"
+    _drawn=$((_drawn + 1))
+    IFS=$NL
+  done
+  IFS=$_o
+}
+
+# 띄워 둔 배치를 기다린다. 로그는 **띄운 순서대로** 뱉는다(끝난 순서가 아니다 — 목록 순서와
+# 어긋나면 어느 칸 얘긴지 못 읽는다).
+flush_batch() {
+  [ -n "$BATCH" ] || return 0
+  BPID=
+  if [ "$BOARD" = 1 ]; then rm -f "$TMPD/stop"; board_run & BPID=$!; fi
+  _o=$IFS; IFS=$NL
+  for _j in $BATCH; do
+    IFS=$_o
+    _pid=${_j%% *}; _r=${_j#* }; _ji=${_r%% *}; _lab=${_r#* }
+    if wait "$_pid"; then _st=0; else _st=1; fi
+    eval "ST_$_ji=$_st"
+    IFS=$NL
+  done
+  IFS=$_o
+  if [ -n "$BPID" ]; then : > "$TMPD/stop"; wait "$BPID" 2>/dev/null || true; fi
+  _o=$IFS; IFS=$NL
+  for _j in $BATCH; do
+    IFS=$_o
+    _r=${_j#* }; _ji=${_r%% *}; _lab=${_r#* }
+    eval "_st=\$ST_$_ji"
+    cat "$TMPD/$_ji.log"
+    if [ "$_st" = 0 ]; then
+      OKN=$((OKN + 1))
+    else
+      FAILN=$((FAILN + 1)); FAILED="$FAILED  · $_lab$NL"
+      echo "⛔ 실패: $_lab — 넘어간다" >&2
+    fi
+    IFS=$NL
+  done
+  IFS=$_o
+  BATCH=""; NJOB=0
+}
+
+BATCH=""    # "<pid> <idx> <라벨>" 줄들
+NJOB=0; IDX=0; OKN=0; FAILN=0; FAILED=""
+
+for e in "$@"; do
+  GAME=${e%%"$TAB"*}; _r=${e#*"$TAB"}; TAG=${_r%%"$TAB"*}
+  REMOTE_BUILD=${_r#*"$TAB"}                 # 원격 경로는 목록이 준 것을 그대로 쓴다
+  IDX=$((IDX + 1))
+  pull_one "$GAME" "$TAG" "$REMOTE_BUILD" "$IDX" >"$TMPD/$IDX.log" 2>&1 &
+  BATCH="$BATCH$! $IDX $GAME · $TAG$NL"
+  NJOB=$((NJOB + 1))
+  [ "$NJOB" -lt "$JOBS" ] || flush_batch
 done
+flush_batch
+
+if [ -n "$FAILED" ]; then
+  printf '\n⛔ 실패 %d 칸 · 성공 %d 칸\n%s' "$FAILN" "$OKN" "$FAILED" >&2
+  echo "   ⚠ 실패한 칸은 **받다 만 것**일 수 있다 — 다시 받기 전엔 쓰지 않는다." >&2
+  exit 1
+fi
+[ "$OKN" -le 1 ] || echo "✅ $OKN 칸 전부 받았다"

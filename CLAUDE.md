@@ -48,7 +48,8 @@ shared/             플랫폼 공용 라이브러리 — `text/`(한글 조판 k
                     ⚠ ISO9660·SJIS 스캔은 **여기 없다** — 게임의 `tools/common.py` 몫이다
                     (플랫폼마다 섹터 규격이 달라 아직 둘째 소비자가 없다)
 scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test.sh · emu.sh(실행) ·
-                    check-updates.sh · pull-build.sh · patcher.sh · worktree.sh.
+                    check-updates.sh · pull-build.sh · clean-build.sh · patcher.sh ·
+                    worktree.sh.
                     부품은 아래 폴더로 내린다(emu/ · check/ · lib/ · tests/)
   emu.sh            └ **게임 실행은 여기 하나로** — 게임 이름만 주면 알맞은 실행기로
                        띄우고 세이브까지 동기화한다(인자 없으면 목록에서 고른다)
@@ -106,6 +107,7 @@ sh scripts/check-updates.sh                # 외부 의존물(emucap·스킬·�
 sh scripts/emu.sh                          # ⭐ **게임 실행** — 목록에서 고른다
 sh scripts/emu.sh ss-ed1+2                 #    바로 (플랫폼만 주면 그 목록만: `emu.sh ps1`)
 sh scripts/emu/dosbox.sh ed1|ed2|ed3|ed4       # 정발 DOS판 실행 (emu.sh dos-ed2 가 여기로 위임)
+sh scripts/clean-build.sh                 # 낡은 빌드 칸 정리 (목록에서 space 로 고른다)
 sh scripts/worktree.sh <게임>              # 게임별 워크트리 (originals 링크까지)
 ```
 
@@ -187,6 +189,16 @@ sh scripts/worktree.sh --list
 2026-08-22). 워크트리끼리 간섭이 없는 게 낫고, 사본을 만들면 「사본이 낡은 채로 정상으로
 오해되는」 이 레포의 단골 사고가 하나 더 는다. 대신 **보는 쪽을 넓혔다** —
 `scripts/pull-build.sh` 가 메인 트리와 `.claude/worktrees/*` 를 같이 훑는다.
+대신 **칸이 계속 는다** — 갈래를 옮겨 다니면 꼬리표마다 이미지가 남는다(하나에 240~770MB).
+`sh scripts/clean-build.sh` 로 치운다 — `pull-build.sh` 와 같은 목록 UI 로 **space 토글해
+고르고**, 고른 뒤 한 번 더 묻는다(`--stale` 은 안 굴리는 갈래를 묻지 않고 전부 ·
+`--failed` 는 실패 산출물(`*.failed`)만 — 같은 칸의 정상 이미지는 안 건드린다 ·
+`--remote` 는 dev 에서 같은 걸 돌린다).
+⚠ 한 칸에 성공·실패가 섞이면 **줄을 가른다** — 예전엔 한 줄에 `실패` 딱지만 붙고 지우기는
+칸 통째라, 실패분만 치우려다 정상 이미지까지 날아갔다(2026-08-26).
+🔴 **메인 트리의 `games/<게임>/work/build` 가 워크트리로 가는 심볼릭 링크일 수 있다**
+(dev 실측 2026-08-25 — 셋 다 그랬다). 링크를 안 풀고 훑으면 같은 칸이 두 줄로 보이고
+「main 것」을 지우면 **지금 굴리는 워크트리 이미지가 날아간다.** 정리 스크립트는 푼다.
 꼬리표가 겹치면(메인 트리에서 그 브랜치로 빌드한 흔적 등) **워크트리가 이긴다** — 지금
 굴리는 쪽이 그것이다.
 
