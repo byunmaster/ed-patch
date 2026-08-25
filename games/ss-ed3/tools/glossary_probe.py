@@ -26,6 +26,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
+import param as P
 from kana_kr import candidates
 
 KR_DIR = os.path.join(C.ROOT, "originals", "kr", "dos-ed3")
@@ -33,10 +34,9 @@ KATA = re.compile(r"^[ァ-ヴー・＝=]+$")
 # 한자가 붙은 이름은 **가타카나 몸통만** 판정한다 — `ラグピック村` 의 `村`(마을)은
 # 음차가 아니라 번역이고, 몸통 표기는 그대로 쓰인다.
 BODY = re.compile(r"^([ァ-ヴー・＝=]{2,})(.*)$")
-# `PARAM.BIN` 은 표 **둘**이 이어져 있다 — 경계를 못 보면 서로를 밀고 들어가 목록이 오염된다
-# (실측: 적을 끝까지 밀었더니 아이템 설명과 쓰레기가 섞여 144 개가 나왔다).
-PARAM_ENEMY = (0xE8, 0x4C, 94)  # 적    — base, stride, count
-PARAM_ITEM = (0xE8 + 0x4C * 94, 0x44, None)  # 아이템 — 0x1CD0 부터 파일 끝까지
+# `PARAM.BIN` 의 표 경계는 `param.py` 가 정본이다 — 여기서 다시 세지 않는다.
+# ⚠ 예전엔 아이템을 「파일 끝까지」로 뒀는데, 그 뒤가 **설명문 영역**이라 표에 없는 것이
+#   섞여 들어온다(실측: 적을 끝까지 밀었더니 이름 아닌 144 개가 나왔다).
 
 
 _KR_RUN = re.compile(rb"(?:[\xb0-\xc8][\xa1-\xfe])+")
@@ -148,21 +148,12 @@ def jp_names():
         if 0x76C60 <= s["off"] < 0x76D20 and s["text"] not in out["person"]:
             out["person"].append(s["text"])
 
-    with C.open_disc(1) as d:
-        b = d.read("/SYSTEM/PARAM.BIN")
     # ⚠ **레코드를 건너뛰되 멈추지 않는다** — 표 중간에 이름이 빈 칸이 있다(적 94 중 20).
-    for key, (base, stride, count) in (("monster", PARAM_ENEMY), ("item", PARAM_ITEM)):
-        n = count if count else (len(b) - base) // stride
-        for k in range(n):
-            off = base + k * stride
-            e = b.find(b"\x00", off, off + 24)
-            if e <= off:
-                continue
-            try:
-                nm = b[off:e].decode("shift_jis")
-            except UnicodeDecodeError:
-                continue
-            if nm and nm not in out[key]:
+    #   `names()` 가 빈 칸과 경계 표식(`reserve`·`Sentinel`)을 함께 걸러 준다.
+    b = P.load()
+    for key, tbl in (("monster", P.ENEMY), ("item", P.ITEM)):
+        for nm in P.names(b, tbl):
+            if nm not in out[key]:
                 out[key].append(nm)
     return out
 

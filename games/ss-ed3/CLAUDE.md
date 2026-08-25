@@ -54,8 +54,20 @@ python3 games/ss-ed3/tools/hangul_map.py        # 한글 배정 (--freeze 로만
 python3 games/ss-ed3/tools/build_font.py        # KANJI12.FON 에 한글 굽기
 python3 games/ss-ed3/tools/reinsert.py --check  # 문안이 길이 보존으로 들어가나
 python3 games/ss-ed3/tools/build.py             # ⭐ 테스트 이미지 (1.9초)
+python3 scripts/emu/ss_gameid.py --fit \
+  ~/.local/share/emucap/mednafen/47801/sav \
+  "games/ss-ed3/work/build/$(git branch --show-current | sed 's|.*/||')/Shiroki Majo (KR) (Disc 1).cue"
+                                                # 🔴 세이브를 지금 빌드 이름으로 (아래 ⚠)
 sh games/ss-ed3/check.sh                        # 이 게임의 커밋 전 게이트
 ```
+
+🔴 **빌드를 새로 구우면 세이브가 안 읽힌다** — 새턴은 세이브 이름에 **이미지 해시**가 박히고,
+그 해시가 **앞 512 섹터**로 만들어지는데 우리가 고치는 게 죄다 그 안이다(`/0.BIN` LBA 48 ·
+`KANJI12.FON` 358 · `PARAM.BIN` 431). 타이틀에 `Continue` 가 안 뜨고 그냥 New Game 이
+시작된다. `emu.sh` 로 띄우면 **자동으로 맞춰 주고**, emucap 으로 직접 띄울 때만 위 명령을
+손으로 한 번 돌린다. ⚠ **에뮬이 꺼진 상태에서** — 종료할 때 백업 RAM 을 덮어쓴다.
+자세한 건 `docs/reference/our-findings.md` 의 「세이브가 빌드를 갈면 안 읽히는」 항목.
+⚠ 대사(`MAP*.BIN` 3203+)만 고치면 해시가 안 바뀐다 — 그래서 여태 안 보였다.
 
 🔴 **`hangul_map.json` 은 파생물이 아니라 정본이다.** 소재를 더 열면 빈 슬롯이 밀려
 **이미 넣은 문안이 전부 다른 글자로 읽힌다.** `--freeze` 로만 갱신하고 그때 다시 굽는다.

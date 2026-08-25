@@ -27,6 +27,7 @@ import build_font
 import common as C
 import hangul_map as H
 import reinsert as R
+import reinsert_desc as RD
 import reinsert_sys as RS
 
 from shared.disc import mode1
@@ -79,8 +80,11 @@ def build_one(a_disc):
                     touched_lbas.append((name, lba, size))
 
             print("[3/5] 문안 재삽입 (길이 보존)")
-            done = nsys = 0
+            done = nsys = ndesc = 0
             systbl = RS.table()
+            # ⚠ **설명문 재삽입은 아직 기본이 아니다** — 조각 색인 계약을 못 밝혔다.
+            #    화면에서 문안이 어긋난다(2026-08-25, `docs/devlog.md`). 조사용으로만 켠다.
+            desctbl = RD.table() if os.environ.get("ED_DESC") else {}
             for name, lba, size in files:
                 b = None
                 if name.startswith("/MAP/") and name.endswith(".BIN"):
@@ -94,6 +98,10 @@ def build_one(a_disc):
                     b = d.read_extent(lba, size)
                     new, k, bad = RS.patch(b, name, systbl)
                     nsys += k
+                elif name == "/SYSTEM/PARAM.BIN" and desctbl:
+                    b = d.read_extent(lba, size)
+                    new, k, bad = RD.patch(b, table, desctbl)
+                    ndesc += k
                 else:
                     continue
                 if bad:
@@ -102,7 +110,7 @@ def build_one(a_disc):
                 if new != b:
                     mode1.write_at(f, lba, size, 0, new, label=name, expect=b)
                     touched_lbas.append((name, lba, size))
-            print(f"      대사 블록 {done} · 시스템 문자열 {nsys}")
+            print(f"      대사 블록 {done} · 시스템 문자열 {nsys} · 설명문 {ndesc}")
 
         print("[4/5] 섹터 무결성 자기검증")
         bad = mode1.selftest(dst, lbas=[l for _, l, _ in touched_lbas] or [16])

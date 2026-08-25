@@ -125,5 +125,40 @@ class TestPadding(unittest.TestCase):
         self.assertEqual(T.overflows(out), [])
 
 
+
+class DescWindow(unittest.TestCase):
+    """설명 창(9전각 × 4행) — 대사창(17×3) 과 **다른 창**이다."""
+
+    def test_wraps_on_word_boundaries(self):
+        # 일본어 원문엔 공백이 없어 손으로 끊었지만 한국어는 어절로 끊어야 읽힌다.
+        # 「아주 평범한 단검」은 전각 8 + 반각공백 2 = **9 칸**이라 한 줄에 딱 들어간다.
+        self.assertEqual(T.wrap_desc("아주 평범한 단검"), ["아주 평범한 단검"])
+        # 한 칸만 넘겨도 **어절 단위로** 접힌다 — 글자 단위로 끊으면 안 읽힌다.
+        self.assertEqual(T.wrap_desc("아주 평범한 단검이다"), ["아주 평범한", "단검이다"])
+
+    def test_long_word_is_split_not_dropped(self):
+        # ⚠ 폭보다 긴 어절을 그냥 두면 줄이 통째로 사라진다.
+        rs = T.wrap_desc("가나다라마바사아자차카타파하")
+        self.assertEqual(rs, ["가나다라마바사아자", "차카타파하"])
+
+    def test_overflow_reports_rows_and_width(self):
+        over, n, w = T.desc_overflows("짧다")
+        self.assertFalse(over)
+        self.assertEqual((n, w), (1, 2.0))
+        over, n, _ = T.desc_overflows(" ".join(["아홉글자짜리단어"] * 6))
+        self.assertTrue(over)
+        self.assertGreater(n, T.DESC_ROWS)
+
+    def test_newline_marker_is_fullwidth(self):
+        # 제어 바이트로 찾으면 못 찾는다 — `＄` 는 전각 문자다.
+        self.assertEqual(len(T.DESC_NL.encode("shift_jis")), 2)
+
+    def test_engine_wrap_is_wider_than_the_visible_window(self):
+        # 🔴 실측: 엔진은 16 에서 접는데 창은 ~10 자만 보여 준다.
+        #    그 사이(10~16)는 **그려지고도 안 보인다** — 검사를 통과하고 화면에서만 사라진다.
+        #    조판 폭은 반드시 엔진 상한보다 좁아야 한다.
+        self.assertLess(T.DESC_COLS, T.DESC_ENGINE_WRAP)
+
+
 if __name__ == "__main__":
     unittest.main()
