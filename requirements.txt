@@ -1,0 +1,36 @@
+# 이 레포 도구가 쓰는 파이썬 의존물.
+#
+#   python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
+#
+# 🔴 **Python 3.12 다.** `ruff.toml`(target-version=py312) · `games/ps1-ed1+2/README.md` 가
+#    이미 그렇게 적고 있고, 실제로 3.12 문법을 쓰는 파일이 있다(`patch_sys_ui.py:637` 의
+#    중첩 따옴표 f-string — 3.11 에선 **임포트가 SyntaxError 로 죽는다**).
+#    ⚠ 3.13 이상으로 올리지 말 것 — 아래 `torch`·`numpy` 핀이 통째로 떨어진다.
+#      인텔 맥(x86_64) 휠이 **cp312 에서 끊긴다**(2026-08-26 PyPI 실조회):
+#        torch 2.2.2 → cp38~cp312 까지만 (그 뒤 판은 인텔 맥 빌드 자체가 없다)
+#        numpy 1.26.4 → cp39~cp312
+#
+# ⚠ **직접 쓰는 것만 적는다.** 전량 freeze 를 뜨면 남이 끌어온 것까지 박혀 왜 있는지
+#    아무도 모르게 된다 — 실제로 이 머신 venv 엔 레포가 안 쓰는 typer·httpx·click·
+#    websocket-client 가 굴러다녔다(다른 도구가 이 venv 에 깔린 흔적).
+
+# ── 빌드·재삽입 (전 게임)
+numpy==1.26.4        # ⚠ 2.x 로 못 올린다 — torch 2.2.2 가 numpy<2 를 요구한다
+scipy==1.17.1        # 로고 인페인트·라벨링 (shared/gfx)
+pillow==12.3.0       # 폰트 렌더·TIM 스캔
+capstone==5.0.9      # 디스어셈블 — 손인코딩 기계어를 검산한다(MIPS·x86-16)
+
+# ── 웹 패처
+fonttools==4.63.0    # 🔴 이게 venv 에 **빠져 있었다**(2026-08-26 발견). `scripts/patcher.sh`
+                     #    는 venv 를 먼저 집으므로 폰트 서브셋이 조용히 안 돌았다
+
+# ── 코드 스타일
+ruff==0.15.20
+
+# ── 의미정렬 (레거시 — 없어도 빌드·테스트는 다 돈다)
+# 🔴 임포트하는 파일이 **하나뿐**이고(`align_semantic.py:52`, 함수 안 지연 임포트) 그 경로는
+#    이미 걷어낸 것이다 — 배정은 커밋되는 정본(`align_map.json` 등)이 정하고 빌드는 정본만
+#    읽는다(제1 원칙: LaBSE 동점이 머신마다 갈려 빌드가 달라졌다, 2026-08-03).
+#    새 머신을 세울 땐 **이 둘을 건너뛰어도 된다**(torch 만 2GB 다).
+sentence-transformers==2.7.0
+torch==2.2.2         # 🔴 인텔 맥 마지막 판이다 — 더 올릴 수 없다

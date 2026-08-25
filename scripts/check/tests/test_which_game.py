@@ -21,6 +21,18 @@ def run(*args):
     return [x for x in out.split("\n") if x]
 
 
+def game_dirs():
+    """`games/` 아래 게임 목록 — **정본(`which_game.sh`)이 하는 것과 똑같이** 센다.
+
+    정본은 `ls "$ROOT/games"` 라 **숨김 파일만** 빠진다. 여기서 그보다 엄격하게(예: 디렉터리만)
+    세면 정본이 낼 답을 테스트가 틀렸다고 하게 된다 — 어긋나는 쪽이 어디든 결과는 같다.
+    ⚠ 날 `os.listdir` 로 대면 Finder 가 떨군 `games/.DS_Store` 하나에 게이트가 빨간불이 된다
+    (2026-08-26 실측). 늘 빨간불인 게이트는 아무도 안 본다.
+    """
+    d = os.path.join(ROOT, "games")
+    return sorted(x for x in os.listdir(d) if not x.startswith("."))
+
+
 def branch():
     return subprocess.run(
         ["git", "-C", ROOT, "rev-parse", "--abbrev-ref", "HEAD"],
@@ -32,7 +44,7 @@ def branch():
 
 class TestWhichGame(unittest.TestCase):
     def test_all_은_games_아래_전부(self):
-        self.assertEqual(run("--all"), sorted(os.listdir(os.path.join(ROOT, "games"))))
+        self.assertEqual(run("--all"), game_dirs())
 
     def test_이름을_주면_그대로(self):
         self.assertEqual(run("ss-ed3"), ["ss-ed3"])
@@ -53,7 +65,7 @@ class TestWhichGame(unittest.TestCase):
         if why == "branch":
             self.assertEqual(games, [branch()[len("game/") :]])
         else:
-            self.assertEqual(games, sorted(os.listdir(os.path.join(ROOT, "games"))))
+            self.assertEqual(games, game_dirs())
 
     def test_why_는_목록을_안_섞는다(self):
         """`--why` 는 근거 한 줄만 낸다 — 게임 이름이 같이 나오면 부르는 쪽이 오해한다."""
