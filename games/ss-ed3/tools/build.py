@@ -88,7 +88,7 @@ def build_one(a_disc):
                 b = None
                 if name.startswith("/MAP/") and name.endswith(".BIN"):
                     stem = os.path.basename(name).rsplit(".", 1)[0]
-                    if not R.load_script(stem):
+                    if not R.load_script(stem)[0]:
                         continue
                     b = d.read_extent(lba, size)
                     new, k, bad = R.patch_blocks(b, stem, table)
