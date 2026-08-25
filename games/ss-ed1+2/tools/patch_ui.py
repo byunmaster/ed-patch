@@ -465,23 +465,28 @@ def _sys_match(run, canon):
 
     🔴 **접미로 맞춘다.** 문구 앞에 포인터·다른 문자열이 0 없이 붙어 한 런을 이루는 자리가
        있다(문구 표가 같은 이유로 그렇게 한다). 통째 비교로는 조용히 놓친다 — 실측 4건.
-    ⚠ 자르는 자리는 **SJIS 경계**여야 한다. 2바이트 문자 가운데를 자르면 엉뚱한 글자가 되어
-      해시가 우연히 맞을 일은 없지만, 디코드가 깨져 그 런을 통째로 버리게 된다.
+    🔴 **두 번 훑는다 — 문자 폭으로, 그 다음 바이트 단위로.** 앞이 포인터 바이트면 그 안에
+       SJIS 선두 바이트처럼 생긴 값이 섞여 있어서, 문자 폭으로 걸으면 **이름 시작을 건너뛴다.**
+       실측(2026-08-25): 전투 메시지의 `ｻﾝﾀﾞｰﾊｳﾝﾄﾞ`·`ヘルニルド`·`アクダム` 가 그렇게 빠져
+       화면에 일본어로 남아 있었다. 빠른 길로 먼저 보고, 못 찾으면 한 칸씩 다시 본다.
+    ⚠ 바이트 단위라도 **디코드가 되고 해시가 맞아야** 한다 — 우연히 맞을 확률은 없다시피 하고,
+      보존되는 앞말은 `_no_jp_prefix()` 가 따로 본다.
     """
-    k = 0
-    while k < len(run):
-        if run[k] < 0x20:  # 앞 채움·제어 바이트는 건너뛰며 경계를 잡는다
-            k += 1
-            continue
-        try:
-            jp = run[k:].decode("cp932")
-        except UnicodeDecodeError:
-            k += 1
-            continue
-        if sys_key(jp) in canon:
-            return k, jp
-        b = run[k]
-        k += 2 if (0x81 <= b <= 0x9F or 0xE0 <= b <= 0xEF) else 1
+    for step_by_char in (True, False):
+        k = 0
+        while k < len(run):
+            if run[k] < 0x20:
+                k += 1
+                continue
+            try:
+                jp = run[k:].decode("cp932")
+            except UnicodeDecodeError:
+                k += 1
+                continue
+            if sys_key(jp) in canon:
+                return k, jp
+            b = run[k]
+            k += (2 if (0x81 <= b <= 0x9F or 0xE0 <= b <= 0xEF) else 1) if step_by_char else 1
     return None
 
 
@@ -730,35 +735,27 @@ def slot_plan(krs, refresh=False):
     return {c: (font.sjis_of_index(i), i) for c, i in old.items()}
 
 
-# 씬 헤더는 「지명 + 접미」로 **조립**된다 — 접미는 시스템 정본에 있다.
-SCN_SUFFIX = ("入口", "付近", "北", "南", "東", "西")
+def scn_suffix_fit(scn, canon=None):
+    """지명이 **원문보다 길어지지 않았나** → 넘치는 `[(지명, 우리B, 원문, 원문B)]`.
 
-
-def scn_suffix_fit(scn, canon):
-    """지명 + 접미가 **레코드 폭에 드나** → 넘치는 `[(지명, 폭, 접미, 필요)]`.
-
-    🔴 **헤더는 지명 레코드 자리(`fl`, 대개 12B)에 접미를 이어 붙여 그린다**(실기 실측
-       2026-08-25, RAM 을 두 번 떠서 확인). 넘치면 그냥 잘린다 —
-         · `엘아스타`(8B) + `근처`(4B) = 12B → **딱 맞는다** ✅
-         · `엘아스타` + `　근처`(전각 공백) = 14B → `엘아스타　입` 처럼 **뒤가 날아간다**
-         · `엘아스타` + ` 근처`(반각 공백) = 13B → 12B 에서 잘려 `처`(0x8C61)의 **앞 바이트만**
-           남아 엉뚱한 글리프가 된다 — 이게 유저가 본 **`엘아스타 근틀`** 이다.
-       바이트는 멀쩡히 들어가고 되읽기도 통과한다. 여기서 세지 않으면 화면을 봐야만 안다.
-    ⚠ **원문도 넘는 자리가 있다**(87종 중 53종 — `エルアスタ`+`付近`=14B > 12). 원판이
-      어떻게 보이는지는 안 재 봤다 — 그래서 **게이트로 안 세우고** 수치만 보고한다.
-      우리가 늘린 것만 아니면 원판과 같은 그림이다.
+    🔴 **헤더 창의 정확한 규칙은 아직 모른다**(2026-08-25). 모델을 두 번 세웠다 두 번 다
+       반증됐다 — 「레코드 폭(`fl`)」은 원문 87종 중 53종이 넘겨서, 「전각 칸 홀짝」은
+       전각 공백(짝수)이 잘려서. 실측만 남았다:
+         · 원판 `エルアスタ入口`(14B) 온전 ✅
+         · 우리 `엘아스타근처`(12B) 온전 ✅
+         · 우리 `엘아스타 근처`(13B)·`엘아스타　입구`(14B) → 둘 다 12B 로 잘림 ❌
+    💡 **그래서 규칙 대신 불변식을 지킨다 — 「우리 지명이 원문보다 길지 않다」.**
+       원판이 그 자리를 멀쩡히 그리는 걸 봤으니, 더 길게만 안 만들면 **원판과 같은 그림**이다.
+       엔진 규칙을 몰라도 안전한 쪽으로 남는다. 접미는 원문·우리 것이 둘 다 4B 라 같다.
+    ⚠ 그래서 **접미에 공백을 넣지 못한다** — 한 바이트라도 늘면 이 불변식이 깨진다.
     """
-    sufs = [canon[sys_key(j)] for j in SCN_SUFFIX if sys_key(j) in canon]
-    seen, bad = set(), []
-    for _p, _l, _s, _at, fl, _jp, kr, _t in scn:
-        if (kr, fl) in seen:
-            continue
-        seen.add((kr, fl))
-        for suf in sufs:
-            need = (rec_len(kr) - 1) + (rec_len(suf) - 1)
-            if need > fl:
-                bad.append((kr, fl, suf, need))
-                break
+    seen, bad = {}, []
+    for _p, _l, _s, _at, _fl, jp, kr, _t in scn:
+        seen.setdefault(kr, jp)
+    for kr, jp in seen.items():
+        ours, orig = rec_len(kr) - 1, len(jp.encode("cp932"))
+        if ours > orig:
+            bad.append((kr, ours, jp, orig))
     return bad
 
 
@@ -925,12 +922,11 @@ def main():
     print(
         f"씬 지명 헤더 {len(scn)}곳 · {len({r[0] for r in scn})}파일 · {len({r[5] for r in scn})}종"
     )
-    with open(SYS_CANON, encoding="utf-8") as _f:
-        _over = scn_suffix_fit(scn, json.load(_f)["lines"])
+    _over = scn_suffix_fit(scn)
     if _over:
-        print(f"  ⚠ 접미를 붙이면 칸을 넘는 지명 {len(_over)}종 — 그 자리는 마지막 글자가 잘린다")
-        for kr, fl, suf, need in _over[:5]:
-            print(f"      {kr!r}+{suf!r} = {need}B > 폭 {fl}")
+        print(f"  ⚠ 원문보다 길어진 지명 {len(_over)}종 — 접미를 붙이면 잘릴 수 있다")
+        for kr, ours, jp, orig in _over[:5]:
+            print(f"      {kr!r} {ours}B > {jp!r} {orig}B")
     print(f"챕터 카드 {len(cards)}장 · SAVE/LOAD 문구 {len(msgs)}자리")
     _no_double_owner(cards + msgs, sysm)
     print(f"시스템 메시지 {len(sysm)}자리 · 고유 {len({r[6] for r in sysm})}종")

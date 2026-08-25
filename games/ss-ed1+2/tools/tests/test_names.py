@@ -93,33 +93,28 @@ class VariantSuffix(unittest.TestCase):
 
 
 class ScnSuffix(unittest.TestCase):
-    """🔴 **헤더는 지명 레코드 자리(`fl`)에 접미를 이어 붙여 그린다**(실기 실측 2026-08-25).
+    """🔴 **헤더 창의 규칙은 아직 모른다 — 대신 불변식을 지킨다**(2026-08-25 실기 실측).
 
-    넘치면 잘린다. 반각 공백을 넣었더니 `엘아스타 근처` 가 13B 가 되어 12B 에서 잘리고
-    `처`(0x8C61)의 앞 바이트만 남아 **`엘아스타 근틀`** 로 떴다. 전각 공백(14B)도 뒤가
-    날아간다. 바이트는 멀쩡히 들어가고 되읽기도 통과하는 부류다.
+    실측: 원판 `エルアスタ入口`(14B)는 온전한데 우리 `엘아스타 근처`(13B)·`엘아스타　입구`(14B)는
+    둘 다 12B 로 잘렸다. 총 길이가 원인이 아니라 규칙을 아직 못 밝혔다.
+    그래서 **「우리 지명이 원문보다 길지 않다」**만 지킨다 — 원판이 멀쩡히 그리는 걸 봤으니
+    더 길게만 안 만들면 같은 그림이다. 접미에 공백을 못 넣는 이유도 이것이다.
     """
 
-    def _rows(self, kr, fl=12):
-        return [("/X", 0, 0, 0, fl, "ジェイ", kr, 0)]
+    def _rows(self, kr, jp):
+        return [("/X", 0, 0, 0, 12, jp, kr, 0)]
 
-    def _canon(self, suf):
-        return {patch_ui.sys_key("付近"): suf}
+    def test_shorter_than_original_is_fine(self):
+        # 엘아스타(8B) ≤ エルアスタ(10B)
+        self.assertEqual(patch_ui.scn_suffix_fit(self._rows("엘아스타", "エルアスタ")), [])
 
-    def test_exact_fit_is_fine(self):
-        # 엘아스타(8B) + 근처(4B) = 12B — 폭 12 에 딱
-        self.assertEqual(patch_ui.scn_suffix_fit(self._rows("엘아스타"), self._canon("근처")), [])
+    def test_same_length_is_fine(self):
+        # 크루즈마을(10B) = クルスの村(10B) — 원판이 `クルスの村入口` 를 온전히 그린다
+        self.assertEqual(patch_ui.scn_suffix_fit(self._rows("크루즈마을", "クルスの村")), [])
 
-    def test_halfwidth_space_overflows(self):
-        bad = patch_ui.scn_suffix_fit(self._rows("엘아스타"), self._canon(" 근처"))
-        self.assertEqual([(b[0], b[3]) for b in bad], [("엘아스타", 13)])
-
-    def test_fullwidth_space_overflows(self):
-        bad = patch_ui.scn_suffix_fit(self._rows("엘아스타"), self._canon("　근처"))
-        self.assertEqual([(b[0], b[3]) for b in bad], [("엘아스타", 14)])
-
-    def test_wider_record_has_room(self):
-        self.assertEqual(patch_ui.scn_suffix_fit(self._rows("엘아스타", 16), self._canon("　근처")), [])
+    def test_longer_than_original_is_flagged(self):
+        bad = patch_ui.scn_suffix_fit(self._rows("엘아스타시티", "エルアスタ"))
+        self.assertEqual([(b[0], b[1], b[3]) for b in bad], [("엘아스타시티", 12, 10)])
 
 
 if __name__ == "__main__":
