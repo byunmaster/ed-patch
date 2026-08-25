@@ -3,3 +3,5 @@
 jp/ss-ed3
 # 고유명사 **표기**만 뽑는다 — 대사 저본이 아니다(games/ss-ed3/CLAUDE.md).
 kr/dos-ed3
+# 윈도 정발 — 표기가 만트라 DOS 와 갈리는지 대조용(유저 기억: 필로·칼리·냅).
+kr/win-ed3
