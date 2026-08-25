@@ -131,10 +131,17 @@ class DescWindow(unittest.TestCase):
 
     def test_wraps_on_word_boundaries(self):
         # 일본어 원문엔 공백이 없어 손으로 끊었지만 한국어는 어절로 끊어야 읽힌다.
-        # 「아주 평범한 단검」은 전각 8 + 반각공백 2 = **9 칸**이라 한 줄에 딱 들어간다.
-        self.assertEqual(T.wrap_desc("아주 평범한 단검"), ["아주 평범한 단검"])
+        # 🔴 어절 공백은 **전각**이다 — 반각(0x20)을 섞으면 화면에서 개행이 깨진다.
+        S = T.DESC_SPACE
+        # 「아주 평범한 단검」은 글자 8 + 전각공백 2 = **9 칸**이라 한 줄에 딱 들어간다.
+        self.assertEqual(T.wrap_desc("아주 평범한 단검"), [f"아주{S}평범한{S}단검"])
         # 한 칸만 넘겨도 **어절 단위로** 접힌다 — 글자 단위로 끊으면 안 읽힌다.
-        self.assertEqual(T.wrap_desc("아주 평범한 단검이다"), ["아주 평범한", "단검이다"])
+        self.assertEqual(T.wrap_desc("아주 평범한 단검이다"), [f"아주{S}평범한", "단검이다"])
+
+    def test_never_emits_a_halfwidth_space(self):
+        # 🔴 실측: 반각 공백이 섞이면 `＄` 가 개행되지 않고 `$` 글자로 찍힌다.
+        for s in ("아주 평범한 단검", "체력을 조금 회복하는 약", "가나 다라 마바 사아 자차"):
+            self.assertNotIn(" ", T.DESC_NL.join(T.wrap_desc(s)))
 
     def test_long_word_is_split_not_dropped(self):
         # ⚠ 폭보다 긴 어절을 그냥 두면 줄이 통째로 사라진다.

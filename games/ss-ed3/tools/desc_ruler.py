@@ -55,6 +55,44 @@ def payload(b, area):
     return bytes(seg), n
 
 
+def index_payload(b, area):
+    """조각마다 **앞 두 글자를 제 번호(전각 2 자리)로** 갈아 끼운다 → `(bytes, 바꾼 수)`.
+
+    🔴 **어느 아이템이 몇 번 조각을 읽는지**를 화면에서 직접 읽으려는 것이다. 우리는
+    「빈 조각·ASCII 더미를 빼고 센 번호」를 색인으로 쓰는데 엔진이 다르게 셀 수 있고,
+    그 어긋남이 재삽입이 화면에서 밀리는 원인으로 남아 있다(2026-08-25).
+
+    ⚠ 길이는 그대로 둔다 — 앞 4B 만 덮고 뒤는 원문이다. 그래서 화면엔 `０７のろい…`
+    처럼 **번호 + 원문**이 뜬다. 100 이상은 두 자리가 겹치므로 원문으로 가른다.
+    """
+    FW = "０１２３４５６７８９"
+    seg = bytearray(b[area[0] : area[1]])
+    parts = bytes(seg).split(b"\x00")
+    out = bytearray()
+    n = idx = 0
+    for raw in parts[:-1]:
+        if not raw:
+            out += b"\x00"
+            continue
+        try:
+            txt = raw.decode("shift_jis")
+        except UnicodeDecodeError:
+            out += raw + b"\x00"
+            continue
+        if txt.isascii() or len(raw) < 4:
+            out += raw + b"\x00"
+            if not txt.isascii():
+                idx += 1
+            continue
+        tag = (FW[(idx // 10) % 10] + FW[idx % 10]).encode("shift_jis")
+        out += tag + raw[4:] + b"\x00"
+        idx += 1
+        n += 1
+    out += parts[-1]
+    assert len(out) == len(seg), (len(out), len(seg))
+    return bytes(out), n
+
+
 def anchor(b, area):
     """RAM 에서 로드 베이스를 잡을 **닻** → `(파일오프셋, hex패턴, 원문)`.
 
@@ -73,15 +111,21 @@ def anchor(b, area):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--spell", action="store_true", help="마법 설명 쪽 (기본은 아이템)")
+    ap.add_argument(
+        "--index",
+        action="store_true",
+        help="눈금 대신 **조각 번호**를 박는다 — 어느 아이템이 몇 번을 읽는지 역추적",
+    )
     ap.add_argument("-o", "--out", help="페이로드를 쓸 경로 (기본 work/review/)")
     a = ap.parse_args()
     area = P.DESC_SPELL if a.spell else P.DESC_ITEM
     label = "마법" if a.spell else "아이템"
 
     b = P.load()
-    data, n = payload(b, area)
+    data, n = (index_payload if a.index else payload)(b, area)
     off, pat, txt = anchor(b, area)
-    out = a.out or os.path.join(C.REVIEW_DIR, f"ruler_{'spell' if a.spell else 'item'}.bin")
+    kind = ("index_" if a.index else "ruler_") + ("spell" if a.spell else "item")
+    out = a.out or os.path.join(C.REVIEW_DIR, f"{kind}.bin")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "wb") as f:
         f.write(data)

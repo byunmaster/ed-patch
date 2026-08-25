@@ -230,6 +230,10 @@ DESC_COLS = 9
 DESC_ROWS = 4
 DESC_ENGINE_WRAP = 16  # 엔진이 실제로 접는 자리 — **넘으면 잘린다는 걸 아는 용도**다
 DESC_NL = "＄"  # 화면 개행 — 제어코드가 아니라 **전각 문자**다
+# 🔴 **어절 공백은 전각이다.** 반각 공백(0x20)을 섞으면 **개행 파싱이 깨진다** — `＄` 가
+#    개행되지 않고 `$` 글자로 찍히고 줄이 통째로 어긋난다(2026-08-25 실기 실측).
+#    원문 설명문에 반각이 **한 자도 없는** 이유이기도 하다.
+DESC_SPACE = "　"
 
 
 def wrap_desc(text, width=DESC_COLS):
@@ -248,8 +252,8 @@ def wrap_desc(text, width=DESC_COLS):
             w = w[int(width) :]
         if not cur:
             cur = w
-        elif cols(cur + " " + w) <= width:
-            cur += " " + w
+        elif cols(cur + DESC_SPACE + w) <= width:
+            cur += DESC_SPACE + w
         else:
             rows.append(cur)
             cur = w

@@ -54,14 +54,18 @@ def budget(data, s):
     return len(s["raw"]) + max(0, pad - 1)
 
 
-_LEAD = re.compile(r"^(?:<[0-9A-F]{2}>|[ \u3000])+")
+_LEAD = re.compile(r"^(?:<[0-9A-F]{2}>)+")
 
 
 def split_lead(text):
-    """선행 서식(`<09>` · 들여쓰기 공백)과 몸통을 가른다.
+    """선행 **제어 표기**(`<09>` 등)와 몸통을 가른다. 제어는 그대로 두고 몸통만 바꾼다.
 
     ⚠ 이게 없으면 **한 자리를 조용히 놓친다** — 최종장이 `<09>最終章…` 꼴이라 표의 키와
-    안 맞았다(실측 7/8). 서식은 그대로 두고 몸통만 갈아 끼운다.
+    안 맞았다(실측 7/8).
+    🔴 **들여쓰기 공백은 몸통에 남긴다**(2026-08-25). 안내 문구는 앞 공백으로 **중앙 정렬**을
+    하는데, 한국어는 길이가 달라 원문 들여쓰기를 그대로 쓰면 정렬이 틀어진다. 게다가
+    예산이 빡빡해(여유 1B 인 자리도 있다) **들여쓰기를 줄여 몸통을 늘려야** 하는 경우가
+    있다 — 그러려면 공백이 우리 손에 있어야 한다. 그래서 키도 값도 **공백을 포함**한다.
     """
     m = _LEAD.match(text)
     return (m.group(0), text[m.end() :]) if m else ("", text)
@@ -71,21 +75,55 @@ def patch(data, name, tbl):
     """`(새 bytes, 넣은 수, [(JP, 사유)])` — 파일 크기 불변."""
     out = bytearray(data)
     done, bad = 0, []
+    seen = set()
     for s in S.strings(data, S.LOAD_BASE.get(name)):
         lead, jp = split_lead(S.text_of(s["raw"]))
         kr = tbl.get(jp)
         if kr is None:
             continue
+        seen.add(jp)
         raw = H.encode_kr(lead + kr)
         b = budget(data, s)
         if len(raw) > b:
             bad.append((jp, f"예산 {b}B 를 {len(raw) - b}B 넘는다"))
             continue
-        # 남는 자리는 NUL 로 덮는다 — 원문 꼬리가 남으면 화면에 붙어 나온다
-        out[s["off"] : s["off"] + len(s["raw"]) + 1] = raw + b"\x00" * (
-            len(s["raw"]) + 1 - len(raw)
-        )
+        # 남는 자리는 NUL 로 덮는다 — 원문 꼬리가 남으면 화면에 붙어 나온다.
+        # ⚠ **덮는 구간은 예산 전체(`b`) + 종료자**다. `len(raw)+1` 만 덮으면 문안이 그보다
+        #   길 때 뒤를 밀어내 **파일이 커진다**(실측 2026-08-25: 3B 늘어 단언이 울었다).
+        span = b + 1
+        out[s["off"] : s["off"] + span] = raw + b"\x00" * (span - len(raw))
         done += 1
+    # ── 파서가 못 본 자리를 한 번 더 ────────────────────────────────────────────
+    # ⚠ `strtab` 은 **NUL 로 끊고 선행 제어를 벗기는** 파서라, 앞에 길이 바이트(`0x06` 등)가
+    #   붙은 표를 지나친다(실측: 스탯의 `経験値`). 「몇 바이트 넘기고 다시 본다」로 파서를
+    #   넓히는 건 **이미 재 보고 버린 길**이다 — 마커 0.6% 얻고 쓰레기 2,633 개를 얻는다
+    #   (`docs/status.md` 3 절). 그래서 파서는 그대로 두고, **표에 있는데 못 찾은 것만**
+    #   그 바이트열 그대로 뒤져 넣는다. 찾는 대상이 이미 정해져 있으니 오탐이 안 는다.
+    for jp, kr in tbl.items():
+        if jp in seen:
+            continue
+        # ⚠ 종료자는 NUL 만이 아니다 — 메시지 계열은 0x10(끝) · 0x0F(페이지)로
+        #   닫는다. 그래서 **키에 종료자까지 적고** 여기서는 그 바이트열 그대로 찾는다.
+        pat = jp.encode("shift_jis")
+        if not pat.endswith((b"\x00", b"\x10", b"\x0f")):
+            pat += b"\x00"
+        raw = H.encode_kr(kr)
+        at = out.find(pat)
+        while at >= 0:
+            pad = 0
+            while at + len(pat) + pad < len(out) and out[at + len(pat) + pad] == 0:
+                pad += 1
+            span = len(pat) + pad  # 이 만큼이 우리 자리(종료자 + 뒤 패딩까지)
+            room = span - 1  # 종료자 한 개는 남긴다
+            if len(raw) <= room:
+                # ⚠ **교체 길이는 `span` 이다** — 예산(`room`)만 보고 `len(pat)` 만큼 덮으면
+                #   문안이 그보다 길 때 파일이 늘어난다(실측: 3B 늘어 단언이 울었다).
+                out[at : at + span] = raw + b"\x00" * (span - len(raw))
+                done += 1
+            else:
+                bad.append((jp, f"예산 {room}B 를 {len(raw) - room}B 넘는다"))
+            at = out.find(pat, at + span)
+
     assert len(out) == len(data), (len(out), len(data))
     return bytes(out), done, bad
 

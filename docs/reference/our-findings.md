@@ -1090,3 +1090,28 @@ PS1 영웅전설 1+2 의 메시지는 `sprintf(dst, fmt, …)` 한 곳으로 모
 
 ⚠ 정적 분석이라 인자가 레지스터·메모리에서 오면 못 읽는다. **못 읽은 몫을 같이 보고한다** —
 「전수」라고 말하려면 분모와 빠진 수를 밝혀야 한다.
+
+## ⚠ Sega FILM(CPK)의 8bit 스테레오 음성은 **planar + signed** 다 (2026-08-25, 새턴 · 기종 일반)
+
+무비에서 음성만 뽑아 자막 대본을 받아쓰려 할 때 처음 밟는 함정이다.
+
+**증상.** 소리는 나는데 「필터를 씌운 것 같다」 — 완전히 깨지지 않아서 **그냥 넘어가기 쉽다.**
+
+**원인.** 한 오디오 블록이 `[왼쪽 표본 전체][오른쪽 표본 전체]`(planar)로 저장되는데
+인터리브로 읽으면 좌우가 섞인다. 표본은 **signed 8bit** 이라 부호를 안 뒤집으면 잡음이 얹힌다.
+
+    for off, size, info1, _ in stab:
+        if info1 != 0xFFFFFFFF:      # 오디오 샘플 표식
+            continue
+        blk  = data[hdr + off : hdr + off + size]
+        half = len(blk) // 2
+        L, R = blk[:half], blk[half:]          # ← planar
+        pcm += bytes(v for i in range(half)
+                     for v in ((L[i] + 128) & 0xFF, (R[i] + 128) & 0xFF))   # ← signed→unsigned
+
+⚠ **「이상하지만 들리는」 상태는 포맷 오해를 의심한다.** 완전히 깨졌으면 바로 알아차렸을
+것을, 어중간하게 들려서 「원본 음질이 나쁜가 보다」로 넘길 뻔했다. 청취로 갈렸다.
+
+ⓘ 컨테이너: `'FILM'` + 헤더크기(BE32) + 버전, 그 안에 `FDSC`(코덱·해상도·오디오 제원)와
+`STAB`(base_freq · 샘플 수 · `[offset, size, info1, info2]` × N). `offset` 은 **헤더 끝 기준**이고
+`info1 == 0xFFFFFFFF` 면 오디오, 아니면 영상 프레임이다. 도구는 `games/ss-ed3/tools/cpk.py`.
