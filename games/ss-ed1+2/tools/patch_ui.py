@@ -514,9 +514,19 @@ def _sys_match(run, canon):
 
 
 def sys_rows(mm):
-    """시스템 메시지 — `[(파일, lba, size, 오프셋, 여유, 앞바이트, KR)]` (문구 표와 같은 꼴)."""
+    """시스템 메시지 — `[(파일, lba, size, 오프셋, 여유, 앞바이트, KR)]` (문구 표와 같은 꼴).
+
+    🔴 **`exact` 는 「통짜일 때만 맞는」 표시다.** 홑조사(`に`·`は`)처럼 짧은 정본은 접미
+       매칭 탓에 **아직 일본어인 문장의 끝**과도 맞는다(실측: `に` 가 `/ED2.BIN` 0x18006 의
+       미번역 대사 끝에 걸렸다). 그렇다고 못 넣으면 조사만 든 자리가 영영 일본어로 남는다.
+       그래서 이 표시가 붙은 정본은 **앞말이 일본어인 자리를 실패가 아니라 건너뛴다** —
+       통짜인 자리에서만 쓰인다.
+    ⚠ 표시가 없는 정본은 예전대로 **앞말이 일본어면 실패**다(`_no_jp_prefix`). 조각을
+      함부로 넣는 사고를 막는 장치라 기본값을 바꾸지 않는다.
+    """
     with open(SYS_CANON, encoding="utf-8") as f:
-        canon = json.load(f)["lines"]
+        doc = json.load(f)
+    canon, exact = doc["lines"], set(doc.get("exact", []))
     skip = {}
     for key, off, n, _a, _w in NAME_TABLES:
         skip.setdefault(dump_ui.FILES[key], []).append((off, n))
@@ -570,7 +580,11 @@ def sys_rows(mm):
                             base = o
                             break
                     ptrs = _ptrs_to(d, base)
-                    _no_jp_prefix(path, base, d[base : i + k], jp)
+                    pre = d[base : i + k]
+                    if sys_key(jp) in exact and _jp_bytes(pre):
+                        i = j  # 통짜인 자리에서만 쓴다 — 위 독스트링
+                        continue
+                    _no_jp_prefix(path, base, pre, jp)
                     seen.add(sys_key(jp))
                     out.append(
                         (
@@ -614,6 +628,11 @@ def _no_double_owner(inplace, sysm):
         )
 
 
+def _jp_bytes(pre):
+    """보존되는 앞말에 일본어 바이트가 있나(SJIS 선두·반각 가나)."""
+    return any(0x81 <= b <= 0x9F or 0xA1 <= b <= 0xDF or 0xE0 <= b <= 0xEF for b in pre)
+
+
 def _no_jp_prefix(path, base, pre, jp):
     """🔴 **접미만 맞으면 앞말이 일본어로 남는다.**
 
@@ -623,7 +642,7 @@ def _no_jp_prefix(path, base, pre, jp):
     **보존되는 앞말에 일본어가 있으면 실패**. 그런 자리는 조각이 아니라 **통짜로** 적는다.
     ⚠ 앞말이 「같은 런에 붙은 남의 문자열」이면 `base` 가 그 뒤를 가리키므로 여기 안 온다.
     """
-    if any(0x81 <= b <= 0x9F or 0xA1 <= b <= 0xDF or 0xE0 <= b <= 0xEF for b in pre):
+    if _jp_bytes(pre):
         raise SystemExit(
             f"시스템 정본 {jp!r} 이 {path} 0x{base:X} 의 앞말을 일본어로 남긴다 "
             f"— 조각 말고 통짜로 적는다"
