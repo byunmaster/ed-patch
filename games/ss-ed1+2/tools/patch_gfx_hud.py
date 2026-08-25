@@ -76,14 +76,20 @@ ATO_BG, ATO_MAIN, ATO_SHADOW = 39, 35, 37  # 남색 바탕 / 밝은 파랑 획 /
 # 색은 블록마다 하나뿐이다(148 빨강 = 이상, 146 노랑 = 이로움). 바탕은 0(투명), 음영 없음.
 # 표기는 **PS1 과 같다**(`ps1-ed1+2:STATUS_ROW1`) — 같은 게임의 같은 라벨이다.
 # ⚠ `気絶` 은 여기 없다. 0x2480 의 16×15 는 글자가 아니라 디더 무늬였다(실측).
-STATUS = [
-    (0x2080, "毒", "독"),
-    (0x2180, "黙", "묵"),
-    (0x2600, "呪", "주"),
-    (0x1E80, "眠", "잠"),
-    (0x1F80, "乱", "혼"),  # 정발 표기 — 음차 「란」이 아니다
-    (0x2280, "守", "수"),
-    (0x2380, "跳", "반"),  # 跳ね返す = 반사
+# 🔴 **여기도 파일이 둘이다**(2026-08-26, 유저 QA 로 발각 — `あと` 와 판박이).
+#    `/FRAME.DAT` 만 고쳤더니 **전투 HUD 에 `守` 가 그대로 떴다.** 필드 HUD 는 `/STAT.DAT`
+#    쪽을 읽는다. ⚠ 두 사본은 **바이트가 다르다** — 스트라이드가 16 대 24 이고 배경이
+#    0(투명) 대 39(패널 남색)다. 그래서 `sweep()` 의 **바이트 지문 훑기가 못 잡았다**
+#    (원본 지문이 그대로 남아 있나만 보니까). 아래 `sweep_shape()` 가 그 구멍을 메운다.
+STATUS_STRIDE = {FRAME: ATO_STRIDE, STAT: 24}
+STATUS = [  # (FRAME 오프셋, STAT 오프셋, 원문, 우리 표기)
+    (0x2080, 0x0C00, "毒", "독"),
+    (0x2180, 0x0D80, "黙", "묵"),
+    (0x2600, 0x1380, "呪", "주"),
+    (0x1E80, 0x0900, "眠", "잠"),
+    (0x1F80, 0x0A80, "乱", "혼"),  # 정발 표기 — 음차 「란」이 아니다
+    (0x2280, 0x0F00, "守", "수"),
+    (0x2380, 0x1080, "跳", "반"),  # 跳ね返す = 반사
 ]
 STATUS_BOX = 10  # 10×10 · 스트라이드는 `ATO_STRIDE` 와 같다
 
@@ -282,28 +288,39 @@ def draw(px, kr, bdf):
     return out, int((out != px).sum())
 
 
-def box(d, off, h, w):
-    """`/FRAME.DAT` 에서 (h, w) 블록을 떠 온다(스트라이드 16B)."""
-    rows = [d[off + y * ATO_STRIDE : off + y * ATO_STRIDE + w] for y in range(h)]
+def box(d, off, h, w, stride=ATO_STRIDE):
+    """시트에서 (h, w) 블록을 떠 온다. ⚠ **스트라이드는 파일마다 다르다**(FRAME 16 · STAT 24)."""
+    rows = [d[off + y * stride : off + y * stride + w] for y in range(h)]
     return np.frombuffer(b"".join(rows), np.uint8).reshape(h, w)
 
 
-def box_bytes(px, d, off):
-    """블록 → 파일에 쓸 연속 바이트(스트라이드 16B · 남는 열은 원본 그대로)."""
+def box_bytes(px, d, off, stride=ATO_STRIDE):
+    """블록 → 파일에 쓸 연속 바이트(남는 열은 원본 그대로)."""
     h, w = px.shape
-    buf = bytearray(d[off : off + ATO_STRIDE * h])
+    buf = bytearray(d[off : off + stride * h])
     for y in range(h):
-        buf[y * ATO_STRIDE : y * ATO_STRIDE + w] = px[y].tobytes()
+        buf[y * stride : y * stride + w] = px[y].tobytes()
     return bytes(buf)
 
 
 def draw_status(old, kr, bdf):
-    """10×10 칸에 한 글자. 색은 **그 칸이 쓰던 색 하나**를 그대로 쓴다."""
-    used = {int(v) for v in np.unique(old)} - {0}
-    assert len(used) == 1, f"상태 라벨 색이 하나가 아니다: {sorted(used)}"
-    colr = used.pop()
+    """10×10 칸에 한 글자. 색은 **그 칸이 쓰던 두 값**에서 유도한다.
+
+    ⚠ 배경을 0 으로 못 박지 않는다 — `/FRAME.DAT` 은 0(투명)인데 `/STAT.DAT` 은
+      39(패널 남색)다.
+    🔴 **개수로 가르지 않는다.** 이 라벨들은 잉크와 배경이 **정확히 50:50** 이라
+       `argmax`/`argmin` 이 같은 값을 골라 **글자가 배경색으로 그려진다**(2026-08-26
+       실측 — 화면이 통째로 비었다). **테두리**로 가른다: 글자는 10×10 칸 안에 들어가
+       테두리를 안 물므로, 테두리에서 많은 쪽이 배경이다.
+    """
+    vals = np.unique(old)
+    assert len(vals) == 2, f"상태 라벨 색이 둘이 아니다: {vals.tolist()}"
+    edge = np.concatenate([old[0], old[-1], old[1:-1, 0], old[1:-1, -1]])
+    bg = int(np.bincount(edge).argmax())
+    colr = int(vals[0] if int(vals[0]) != bg else vals[1])
+    assert colr != bg, f"잉크와 배경이 같다: {vals.tolist()}"
     n = STATUS_BOX
-    out = np.zeros_like(old)
+    out = np.full_like(old, bg)
     g = bdf.bits(kr, rows=GLYPH_H, width=GLYPH_W, dy=GLYPH_H - bdf.ascent)
     oy, ox = (n - GLYPH_H) // 2, (n - GLYPH_W) // 2
     ys, xs = np.nonzero(g)
@@ -390,26 +407,31 @@ def main():
             f"{path} 잔량 라벨",
         )
 
-    # ── 상태이상 라벨 일곱
-    stat = []
-    for off, jp, kr in STATUS:
-        old_s = box(raw[FRAME], off, STATUS_BOX, STATUS_BOX)
-        new_s, n = draw_status(old_s, kr, bdf)
-        stat.append(new_s)
-        print(f"  {FRAME} 0x{off:X}  {jp} → {kr} · 화소 {n} 변경")
-        if apply:
-            lba, size = files[FRAME]
-            write(
-                dst,
-                lba,
-                size,
-                off,
-                box_bytes(new_s, raw[FRAME], off),
-                raw[FRAME][off : off + ATO_STRIDE * STATUS_BOX],
-                f"{FRAME} 상태 라벨 {jp}",
-            )
+    # ── 상태이상 라벨 일곱 × **파일 둘** (`/FRAME.DAT` · `/STAT.DAT`)
+    stat, shown = [], []
+    for fo, so, jp, kr in STATUS:
+        for path, off in ((FRAME, fo), (STAT, so)):
+            stride = STATUS_STRIDE[path]
+            old_s = box(raw[path], off, STATUS_BOX, STATUS_BOX, stride)
+            new_s, n = draw_status(old_s, kr, bdf)
+            stat.append((path, off, stride, new_s))
+            if path == FRAME:
+                shown.append(new_s)
+            assert n, f"{path} 0x{off:X} {jp}: 바뀐 화소가 0이다"
+            print(f"  {path} 0x{off:X}  {jp} → {kr} · 화소 {n} 변경")
+            if apply:
+                lba, size = files[path]
+                write(
+                    dst,
+                    lba,
+                    size,
+                    off,
+                    box_bytes(new_s, raw[path], off, stride),
+                    raw[path][off : off + stride * STATUS_BOX],
+                    f"{path} 상태 라벨 {jp}",
+                )
 
-    preview(made, parsed, new_ato, stat)
+    preview(made, parsed, new_ato, shown)
     if apply:
         verify(dst, files, made, new_ato, stat)
     else:
@@ -459,15 +481,16 @@ def verify(dst, files, made, ato, stat=None):
         lba, size = files[path]
         got = ato_block(common.read_extent(mm2, lba, size), off)
         assert np.array_equal(got, ato), f"{path} 0x{off:X} 잔량 라벨: 되읽기 불일치"
-    lba, size = files[FRAME]
-    dfr = common.read_extent(mm2, lba, size)
-    for (off, jp, _kr), want in zip(STATUS, stat or [], strict=True):
-        got = box(dfr, off, STATUS_BOX, STATUS_BOX)
-        assert np.array_equal(got, want), f"상태 라벨 {jp}: 되읽기 불일치"
+    read = {}
+    for path in (FRAME, STAT):
+        lba, size = files[path]
+        read[path] = common.read_extent(mm2, lba, size)
+    for path, off, stride, want in stat or []:
+        got = box(read[path], off, STATUS_BOX, STATUS_BOX, stride)
+        assert np.array_equal(got, want), f"{path} 상태 라벨 0x{off:X}: 되읽기 불일치"
+    nst = len(stat or [])
     mm2.close()
-    print(
-        f"되읽기 확인 — HUD 패널 {len(made)}장 + 잔량 라벨 {len(ATO_SITES)}곳 + 상태 라벨 {len(stat or [])}"
-    )
+    print(f"되읽기 확인 — HUD 패널 {len(made)}장 + 잔량 라벨 {len(ATO_SITES)}곳 + 상태 라벨 {nst}")
     sweep(dst)
 
 
@@ -484,8 +507,8 @@ def sweep(dst):
     mm0.close()
     # 지문은 **잉크가 있는 행만** 잇는다(0행은 빈 줄이라 남의 스프라이트와도 맞는다).
     sigs = {"あと": fr[ATO_OFF + ATO_STRIDE : ATO_OFF + ATO_STRIDE * ATO_H]}
-    for off, jp, _kr in STATUS:
-        sigs[jp] = fr[off + ATO_STRIDE : off + ATO_STRIDE * STATUS_BOX]
+    for fo, _so, jp, _kr in STATUS:
+        sigs[jp] = fr[fo + ATO_STRIDE : fo + ATO_STRIDE * STATUS_BOX]
     _f2, mm = common.open_image(dst)
     left = []
     for name, lba, size in common.iso_files(mm):
@@ -495,7 +518,79 @@ def sweep(dst):
         left += [f"{jp}@{name}" for jp, sig in sigs.items() if blob.find(sig) >= 0]
     mm.close()
     assert not left, f"원본 라벨이 남았다 — {left}"
-    print(f"전량 훑기 — 원본 라벨 {len(sigs)}종 잔존 0")
+    n2 = sweep_shape(dst)
+    print(f"전량 훑기 — 원본 라벨 {len(sigs)}종 잔존 0 · 모양 훑기 {n2}종 잔존 0")
+
+
+def _anchor(m):
+    """모양에서 **가장 긴 가로 잉크 런** → `(행, 길이, 시작열)`. 훑기의 닻이다."""
+    best = (0, 0, 0)
+    for y in range(m.shape[0]):
+        run = 0
+        for x in range(m.shape[1] + 1):
+            if x < m.shape[1] and m[y, x]:
+                run += 1
+            else:
+                if run > best[1]:
+                    best = (y, run, x - run)
+                run = 0
+    return best
+
+
+def sweep_shape(dst, min_run=6, strides=(10, 11, 12, 14, 16, 20, 24, 32, 40, 48)):
+    """🔴 **바이트 지문 훑기의 사각을 메운다 — 모양으로 훑는다.**
+
+    `sweep()` 은 「원본 바이트가 그대로 남아 있나」를 본다. 그런데 **같은 그림이 파일마다
+    다른 바이트로 들어 있다** — `/FRAME.DAT` 은 스트라이드 16 · 배경 0, `/STAT.DAT` 은
+    **스트라이드 24 · 배경 39** 다. 그래서 `守` 사본이 통째로 빠져나가 **전투 HUD 에
+    일본어가 그대로 떴다**(2026-08-26, 유저 QA). 바이트가 아니라 **잉크 배치**로 찾는다.
+
+    ⚠ **닻이 필요하다** — 잉크가 `min_run` 이상 이어지는 행이 있는 라벨만 훑는다
+      (`跳` 는 최대 4라 빠진다). 라벨 일곱은 **한 시트에 같이 산다**는 실측에 기대는 것이라,
+      셋만 걸려도 시트째로 잡힌다. 혼자 떨어져 사는 사본이 생기면 이 가정이 깨진다.
+    ⚠ 색은 안 본다(값 둘이면 된다) — 사본마다 팔레트가 다르기 때문이다.
+    """
+    _f, mm0 = common.open_image()
+    fr = common.extract(FRAME, mm0)
+    mm0.close()
+    n = STATUS_BOX
+    want = {}
+    for fo, _so, jp, _kr in STATUS:
+        m = box(fr, fo, n, n) != 0
+        a = _anchor(m)
+        if a[1] >= min_run:
+            want[jp] = (m, a)
+    _f2, mm = common.open_image(dst)
+    left = []
+    for name, lba, size in common.iso_files(mm):
+        if not 0 < size <= 8 << 20:
+            continue
+        a = np.frombuffer(common.read_extent(mm, lba, size), np.uint8)
+        if a.size < 64:
+            continue
+        for jp, (m, (ay, run, ax)) in want.items():
+            w = a.size - run + 1
+            same = np.ones(w, bool)
+            for k in range(1, run):
+                same &= a[k : w + k] == a[:w]
+            idx = np.flatnonzero(same)
+            if idx.size:  # 런이 **딱 그 길이**여야 한다 — 패딩을 걸러 낸다
+                keep = (idx == 0) | (a[np.maximum(idx - 1, 0)] != a[idx])
+                e = idx + run
+                keep &= (e >= a.size) | (a[np.minimum(e, a.size - 1)] != a[idx])
+                idx = idx[keep]
+            for i in idx:
+                ink = int(a[i])
+                for st in strides:
+                    s0 = i - ay * st - ax
+                    if s0 < 0 or s0 + (n - 1) * st + n > a.size:
+                        continue
+                    blk = np.stack([a[s0 + k * st : s0 + k * st + n] for k in range(n)])
+                    if len(np.unique(blk)) == 2 and np.array_equal(blk == ink, m):
+                        left.append(f"{jp}@{name}+0x{s0:X}/{st}")
+    mm.close()
+    assert not left, f"원본 라벨 모양이 남았다 — {left}"
+    return len(want)
 
 
 if __name__ == "__main__":
