@@ -58,12 +58,17 @@ STAT = "/STAT.DAT"
 ATO_SITES = ((FRAME, 0x1080), (STAT, 0x0000))
 ATO_OFF = ATO_SITES[0][1]  # 도트를 뜨는 기준 자리 (둘은 바이트까지 같다)
 ATO_STRIDE = 16  # 한 행 16B — 쓰는 건 앞 12B
-ATO_W, ATO_H = 12, 10  # 12×10, 0행은 빈 줄이라 잉크는 1~9행(9행)
-ATO_TOP = 1
+# 🔴 **창은 13칸이다**(실기 실측 2026-08-25). 원본 `あと` 가 12칸만 쓰길래 12 로 잡고
+#    있었는데, 「다」를 col7 로 밀어 col12 까지 써 봤더니 **그대로 그려졌다.**
+#    ⚠ 「원본이 안 썼다」는 「못 쓴다」가 아니다 — PS1 도 같은 자리에서 한 줄을 놀리고 있었다.
+ATO_W, ATO_H = 13, 10  # 12×10 = (5px 글리프 + 틈 1) × 2
+# 🔴 **10행을 다 쓴다**(유저 지적 2026-08-24). 원본 `あと` 는 1~9행(9행)만 쓰는데, 같은 줄의
+#    `ＥＰ`·`ＨＰ`·`ＭＰ` 는 **1~10행(10행)**이라 나란히 놓으면 잔량 라벨만 작아 보인다.
 ATO_BG, ATO_MAIN, ATO_SHADOW = 39, 35, 37  # 남색 바탕 / 밝은 파랑 획 / 음영
-# 🔴 **음영은 가로다**(유저 지적 2026-08-24). 같은 줄의 `ＨＰ`·`ＭＰ` 는 밝은 획(35) 오른쪽
-#    칸에만 어두운 색(37)이 붙는다 — 세로 성분이 없다(실측 `SCR1.2D` 패널). `+1,+1` 은
-#    대각선이라 입체가 과하게 보인다. 인명 쪽도 같은 이유로 가로다(`draw()`).
+# 🔴 **음영은 상하다 — 엠보싱**(유저 확정 2026-08-25). 원본 `ＥＰ`·`ＨＰ`·`ＭＰ` 는 획이
+#    2px 라 **바깥 테두리가 밝고(35) 속이 어둡다(37)** — 가로획이면 위가 밝고 아래가 어둡다.
+#    우리 획은 1px 이라 그 관계를 **아래 한 칸**으로 흉내 낸다(밝은 획 + 그 아래 어두운 칸).
+#    ⚠ 대각선(`+1,+1`)도 가로(`+1,0`)도 아니다 — 둘 다 한 번씩 해 보고 유저가 바로잡았다.
 # 🔴 **도트는 PS1 과 같은 것을 쓴다**(`ps1-ed1+2/tools/patch_hud_names.py:ATO_GLYPHS`).
 #    창이 12px 라 6px/자 전용 도트가 필요한데, PS1 이 이미 그려 두었다. 두 이식판이 같은
 #    라벨을 다르게 그릴 이유가 없다 — 인명 자리에서 따로 풀었다가 어긋난 전례가 있다.
@@ -82,30 +87,72 @@ STATUS = [
 ]
 STATUS_BOX = 10  # 10×10 · 스트라이드는 `ATO_STRIDE` 와 같다
 
+# `(x, 잉크, 음영)` — **오른쪽으로 한 칸 밀어** `ＨＰ`·`ＭＰ` 와 세로줄을 맞춘다
+# (유저 지적 2026-08-25: 잔량 라벨만 1px 왼쪽이었다).
+# 🔴 **그 한 칸 값으로 「남」이 5px 이 됐다.** 12px 에 6+6 을 넣고 있었으니 밀 자리가 없다 —
+#    ㄷ 은 가로바가 둘이라 3px 이 꼭 필요하고 ㄴ 은 하나라 2px 로 버틴다. 좁힐 쪽을 골랐다.
+# 🔴 **음영을 유도하지 않고 손으로 적는다.** 「안쪽」이 어디인지는 자모마다 다르다.
+#    ㄴ: 세로 오른쪽만(가로 위는 뺀다) · ㄷ: 아래·오른·위 · ㅁ: **좌우만**(위아래는 뺀다)
+#    · ㅏ: 가지 아래만(ㅣ 에는 안 넣는다 — 오른쪽 한 열이 차면 옆 글자와 붙어 보인다).
+# ⚠ **ㅏ 의 가지는 세로줄 오른쪽**이다 — 왼쪽에 붙이면 ㅓ 가 되어 「남다」가 「넘더」로 읽힌다.
+# ⚠ 「남」의 ㅏ 가지와 「다」의 ㄷ 세로가 2행에서 한 칸 맞닿는다 — 12px 엔 틈이 안 남는다.
 ATO_GLYPHS = [
-    [  # 남
-        "#...#.",
-        "#...#.",
-        "#...##",
-        "###.#.",
-        "......",
-        ".####.",
-        ".#..#.",
-        ".#..#.",
-        ".####.",
-    ],
-    [  # 다
-        "###.#.",
-        "#...#.",
-        "#...##",
-        "#...#.",
-        "#...#.",
-        "#...#.",
-        "#...#.",
-        "###.#.",
-        "....#.",
-    ],
+    (
+        1,  # 남 — 6px
+        (
+            "#...#.",
+            "#...#.",
+            "#...##",
+            "#...#.",
+            "###.#.",
+            "......",
+            "#####.",
+            "#...#.",
+            "#...#.",
+            "#####.",
+        ),
+        (
+            ".+....",
+            ".+....",
+            ".+....",
+            ".+...+",
+            "......",
+            "......",
+            "......",
+            ".+.+..",
+            ".+.+..",
+            "......",
+        ),
+    ),
+    (
+        7,  # 다 — 6px (ㄷ 가로바 3px) ·  와 같은 x
+        (
+            "###.#.",
+            "#...#.",
+            "#...##",
+            "#...#.",
+            "#...#.",
+            "#...#.",
+            "#...#.",
+            "#...#.",
+            "#...#.",
+            "###.#.",
+        ),
+        (
+            "......",
+            ".++...",
+            ".+....",
+            ".+...+",
+            ".+....",
+            ".+....",
+            ".+....",
+            ".+....",
+            ".++...",
+            "......",
+        ),
+    ),
 ]
+
 
 # (파일, 시작 셀, JP 이름) — 순서는 파티 순서. 시작 셀은 프레임 대조로 찾았다.
 PANELS = [
@@ -127,7 +174,11 @@ NAME_X = (4, 45)  # 이름 칸 — 왼쪽 테두리(x 0~2) 다음부터, `EP` �
 #   ⚠ 넉 자를 advance 10 으로 그리면 `EP` 에 닿아서 그 둘만 왼쪽으로 밀었더니 **왼 여백이
 #   판마다 달라졌다**(유저 QA 2026-08-24). 피치를 9 로 좁히면 아홉이 같은 자리에 선다.
 NAME_X0 = 6  # 이름 시작 x — 아홉 판 공통
-PITCH = 9  # 글자 간격. 넉 자 = 36px 로 원본(x 7~41)과 같은 폭에 든다
+# 🔴 **글자 사이에 1px 틈이 있어야 한다**(유저 지적 2026-08-24). Galmuri9 한글은 9px 폭을
+#    꽉 채워서, 피치가 9 면 「세리오스」의 `오`(ㅗ)와 `스`(ㅡ)가 **한 획으로 이어져 보인다.**
+#    넉 자 기준 (4-1)×10+9 = 39px 로 칸(x 6~45, 40px)에 딱 든다 — 다섯 자는 안 들어간다.
+GAP = 1  # 글자 사이 틈 — 자간은 「잉크 폭 + 이 값」이다(`draw()` 주석)
+BAR = 5  # 이만큼 이어진 가로획은 「바」로 본다 — 바끼리 만나면 틈을 2px 로 (`kern()`)
 # ⚠ 세로도 끊어야 한다 — 같은 x 대역 아래쪽에 `Lv`(y 30 언저리)가 있고, 위 두 줄(y 0~1)은
 #   패널 테두리다. 그 사이만 보면 「BG 아닌 것 = 이름」이 성립한다.
 NAME_Y = (2, 19)
@@ -137,6 +188,25 @@ SH = 46  # 그림자 (80,64,96) — PS1 과 같다. 피치 9 에서 글자끼리
 FONT = "Galmuri9"
 GLYPH_H = 9
 GLYPH_W = 9  # Galmuri9 한글 글리프 폭
+
+
+def inner_shadow(bits):
+    """`bits` → **속으로만 들어가는 음영 마스크**(같은 모양, 한 칸 아래).
+
+    🔴 원본 `ＥＰ`·`ＨＰ`·`ＭＰ` 는 획이 2px 라 **바깥 테두리가 밝고(35) 속이 어둡다(37)**.
+       그래서 **맨 아래 획에는 아래쪽 음영이 없다** — 거기선 어두운 칸이 위에 붙는다
+       (유저 지적 2026-08-25). 1px 획으로 그 관계를 흉내 내는 규칙은 하나다:
+
+           한 칸 아래에 음영을 넣되, **그 열에 아직 더 아래쪽 잉크가 남아 있을 때만.**
+
+       E 로 검산하면 — 윗줄·가운뎃줄 아래엔 음영이 들어가고(아래에 아랫줄이 있다),
+       아랫줄 아래엔 안 들어간다(더 없다). 원본과 같은 그림이 된다.
+    ⚠ 그냥 `dy=+1` 로 깔면 글자 아래로 한 줄이 삐져나와 **글자가 물에 잠긴 것처럼** 보인다.
+    """
+    last = np.where(bits.any(0), bits.shape[0] - 1 - bits[::-1].argmax(0), -1)
+    ys, xs = np.nonzero(bits)
+    m = ys + 1 < last[xs]
+    return ys[m] + 1, xs[m]
 
 
 def panel_px(cells, start):
@@ -165,13 +235,48 @@ def name_band(px):
     return y0, y1
 
 
-def draw(px, kr, bdf):
-    """이름 칸을 지우고 한글을 그린다(그림자 먼저). 반환: (새 배열, 바뀐 화소 수).
+def _run(row, x):
+    """`row[x]` 를 품은 **가로로 이어진 잉크**의 길이."""
+    n, i = 1, x - 1
+    while i >= 0 and row[i]:
+        n, i = n + 1, i - 1
+    i = x + 1
+    while i < len(row) and row[i]:
+        n, i = n + 1, i + 1
+    return n
 
-    🔴 **그림자는 가로다**(유저 지적 2026-08-24 · 원본 실측). 원본 `セリオス` 는 글자(16)
-       오른쪽 칸에만 음영(46)이 붙는다 — 세로 성분이 없다. `+1,+1` 로 깔면 대각선이라
-       획이 굵어 보이고 같은 줄의 `ＨＰ`·`ＭＰ` 와도 어긋난다.
-       ⚠ **PS1 도 같은 자리가 대각선이다**(`ps1-ed1+2:patch_hud_names.py`) — 거기도 고쳐야 한다.
+
+def trim_bars(bits, joints):
+    """가로바끼리 **1px 을 두고 마주친 자리**에서 왼쪽 바를 한 칸 깎는다.
+
+    🔴 틈을 1px 로 똑같이 줘도 가로바끼리는 붙어 보인다 — `오`의 ㅗ 와 `스`의 ㅡ 는 둘 다
+       9px 라 1px 을 두고 만나면 **19px 짜리 한 줄**로 읽힌다. 그렇다고 **틈을 2px 로 벌리면
+       이번엔 그 자리만 헐거워 보인다**(유저 지적 2026-08-25 — 둘 다 겪었다).
+       그래서 **자간은 건드리지 않고**(이름 폭이 그대로다) 맞닿는 **그 행에서만** 왼쪽 바를
+       한 칸 줄인다 — 그 행의 틈이 2px 이 되고 나머지 행은 그대로다. 체감상 「반 칸」이다.
+    ⚠ 세로획끼리 만나는 자리는 안 건드린다 — 거긴 1px 로도 충분히 갈린다.
+    """
+    for j in joints:  # j = 왼쪽 글자의 마지막 열
+        for y in range(bits.shape[0]):
+            if (
+                bits[y, j]
+                and j + 2 < bits.shape[1]
+                and bits[y, j + 2]
+                and _run(bits[y], j) >= BAR
+                and _run(bits[y], j + 2) >= BAR
+            ):
+                bits[y, j] = False
+
+
+def draw(px, kr, bdf):
+    """이름 칸을 지우고 한글을 그린다. 반환: (새 배열, 바뀐 화소 수).
+
+    🔴 **자간은 고정 피치가 아니라 「잉크 폭 + 틈 1」이다**(유저 지적 2026-08-25).
+       Galmuri9 한글은 글자마다 잉크 폭이 다르다 — `세`·`오`·`스` 는 9px 인데 `리` 는 8px 다.
+       피치를 고정하면 **`리` 뒤만 틈이 2px** 가 되어 「리 오」 사이가 벌어져 보인다.
+       그래서 글자마다 잉크 범위를 재서 붙인다 — 틈이 어디서나 1px 이다.
+    ⚠ 가로바끼리 만나는 이음매는 2px 로 벌린다() — 넉 자 최악( 40px)이
+      칸(x 6~45)에 **딱** 든다.
     """
     x0, x1 = NAME_X
     y0, y1 = name_band(px)
@@ -180,16 +285,28 @@ def draw(px, kr, bdf):
     ya, yb = NAME_Y
     left = np.unique(out[ya : yb + 1, x0 : x1 + 1])
     assert left.tolist() == [BG], f"칸에 원문 잔재가 남았다 — 색인 {left.tolist()}"
-    need = (len(kr) - 1) * PITCH + GLYPH_W
-    assert NAME_X0 + need <= x1, f"이름이 칸을 넘는다: {kr!r} → x {NAME_X0 + need - 1} > {x1}"
-    bits = np.zeros((GLYPH_H, need), bool)
-    for i, ch in enumerate(kr):
+    glyphs = []
+    for ch in kr:
         assert bdf.has(ch), f"{FONT} 에 없는 글자: {ch!r}"
-        g = bdf.bits(ch, rows=GLYPH_H, width=GLYPH_W, dy=GLYPH_H - bdf.ascent)
-        bits[:, i * PITCH : i * PITCH + GLYPH_W] |= g.astype(bool)
+        g = bdf.bits(ch, rows=GLYPH_H, width=GLYPH_W, dy=GLYPH_H - bdf.ascent).astype(bool)
+        cols = np.nonzero(g.any(0))[0]
+        assert cols.size, f"잉크가 없는 글자: {ch!r}"
+        glyphs.append(g[:, cols.min() : cols.max() + 1])
+    need = sum(g.shape[1] for g in glyphs) + GAP * (len(glyphs) - 1)
+    assert NAME_X0 + need <= x1 + 1, f"이름이 칸을 넘는다: {kr!r} → x {NAME_X0 + need - 1} > {x1}"
+    bits = np.zeros((GLYPH_H, need), bool)
+    at, joints = 0, []
+    for i, g in enumerate(glyphs):
+        bits[:, at : at + g.shape[1]] = g
+        at += g.shape[1]
+        if i < len(glyphs) - 1:
+            joints.append(at - 1)
+            at += GAP
+    trim_bars(bits, joints)
+    sy, sx = inner_shadow(bits)
+    out[y0 + sy, NAME_X0 + sx] = SH
     ys, xs = np.nonzero(bits)
-    for dx, col in ((1, SH), (0, FG)):  # 가로 음영 — 위 주석
-        out[y0 + ys, NAME_X0 + xs + dx] = col
+    out[y0 + ys, NAME_X0 + xs] = FG
     return out, int((out != px).sum())
 
 
@@ -229,20 +346,15 @@ def ato_block(d, off=ATO_OFF):
 
 
 def draw_ato(old):
-    """`あと` 자리를 지우고 「남다」를 그린다(가로 음영, 창 밖은 자른다)."""
+    """`あと` 자리를 지우고 「남다」를 그린다 — 도트와 음영을 **적힌 대로** 찍는다."""
     out = old.copy()
     out[:] = ATO_BG
-    bits = np.zeros((len(ATO_GLYPHS[0]), ATO_W), bool)
-    for i, g in enumerate(ATO_GLYPHS):
-        for y, row in enumerate(g):
-            for x, ch in enumerate(row):
-                if ch == "#":
-                    bits[y, i * 6 + x] = True
-    ys, xs = np.nonzero(bits)
-    for dx, colr in ((1, ATO_SHADOW), (0, ATO_MAIN)):  # 가로 음영 — 위 주석
-        yy, xx = ATO_TOP + ys, xs + dx
-        ok = (yy < ATO_H) & (xx < ATO_W)  # 창 밖은 자른다 — 옆 스프라이트를 물지 않게
-        out[yy[ok], xx[ok]] = colr
+    for x, ink, sh in ATO_GLYPHS:
+        for layer, colr in ((sh, ATO_SHADOW), (ink, ATO_MAIN)):
+            for y, row in enumerate(layer):
+                for dx, ch in enumerate(row):
+                    if ch != "." and y < ATO_H and x + dx < ATO_W:
+                        out[y, x + dx] = colr
     return out, int((out != old).sum())
 
 
@@ -289,7 +401,9 @@ def main():
     old_ato = ato_block(raw[FRAME])
     new_ato, n = draw_ato(old_ato)
     for path, off in ATO_SITES:
-        assert np.array_equal(ato_block(raw[path], off), old_ato), f"{path} 0x{off:X}: 원본이 다르다"
+        assert np.array_equal(ato_block(raw[path], off), old_ato), (
+            f"{path} 0x{off:X}: 원본이 다르다"
+        )
         print(f"  {path} 0x{off:X}  あと → 남다 · 화소 {n} 변경")
         if not apply:
             continue
@@ -379,7 +493,9 @@ def verify(dst, files, made, ato, stat=None):
         got = box(dfr, off, STATUS_BOX, STATUS_BOX)
         assert np.array_equal(got, want), f"상태 라벨 {jp}: 되읽기 불일치"
     mm2.close()
-    print(f"되읽기 확인 — HUD 패널 {len(made)}장 + 잔량 라벨 {len(ATO_SITES)}곳 + 상태 라벨 {len(stat or [])}")
+    print(
+        f"되읽기 확인 — HUD 패널 {len(made)}장 + 잔량 라벨 {len(ATO_SITES)}곳 + 상태 라벨 {len(stat or [])}"
+    )
     sweep(dst)
 
 
