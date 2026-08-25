@@ -45,18 +45,33 @@ def jp_stamp(body):
     return hashlib.sha1(body).hexdigest()[:8]
 
 
-def fit(text, budget):
+def fit(text, budget, jp_over=None, jp_text=None):
     """우리 문안을 원문 바이트 예산에 맞춘다 — `(맞춘 문안, 사유)`.
+
+    ⚠ `jp_over` 는 **원문이 이미 넘치는 페이지**다(`typeset.overflows` 의 결과).
+    `0F` 가 창을 비우지 않고 한 줄씩 스크롤하는 물건이라(2026-08-25 실측) 원문에도
+    3 줄을 넘는 구간이 있다 — 저자가 그렇게 쓴 자리다. **원문만큼은 봐준다.**
+    「지금 고칠 수 있는 것만 실패로 친다」(CLAUDE.md) — 원문이 그런 걸 우리가 못 고친다.
 
     ⚠ `ED_RULER=1` 이면 **창 계약 검사를 건너뛴다** — 눈금자를 심어 창을 재는 용도다
     (긴 줄을 일부러 넣어 「어디서 접히나 · 3 줄을 넘으면 어떻게 되나」를 화면에 묻는다).
     실측용이므로 **평소에는 켜지 않는다.**
     """
-    if not os.environ.get("ED_RULER") and T.overflows(text):
-        return None, "창 계약을 넘는다(17×3)"
-    out = T.pad_to_budget(text, budget)
+    over = [] if os.environ.get("ED_RULER") else T.overflows(text)
+    if over and jp_over:
+        allow = dict(jp_over)
+        over = [(i, n) for i, n in over if n > max(T.WIN_ROWS, allow.get(i, 0))]
+    if over:
+        return None, f"창 계약을 넘는다(17×{T.WIN_ROWS}) — 페이지 {over}"
+    # ⚠ 채우는 폭은 **원문이 쓴 만큼**까지 연다. 저자가 17 칸을 넘겨 한 줄로 쓴 자리가
+    #   있는데(엔진이 접는다) 거기서 17 칸까지만 채우면 자리가 모자라 재삽입이 통째로
+    #   거부된다 — 문안이 예산보다 **짧은데도** 실패한다(2026-08-25 세 블록에서 물렸다).
+    width = T.SCREEN_COLS if T.is_narration(text) else T.WIN_COLS
+    if jp_text:
+        width = max(width, *(int(T.cols(x)) for x in T.lines(jp_text) or [T.WIN_COLS]))
+    out = T.pad_to_budget(text, budget, width)
     if out is None:
-        out = T.pad_to_budget(text, budget, keep_last=False)
+        out = T.pad_to_budget(text, budget, width, keep_last=False)
     if out is None:
         have = T.body_bytes(text)
         return None, f"예산 {budget}B 에 못 맞춘다(문안 {have}B)"
@@ -78,12 +93,16 @@ def patch_blocks(data, stem, table):
             bad.append((key, f"블록 색인이 범위 밖({len(blocks)})"))
             continue
         blk = blocks[i]
+        if M.suspect_head(blk):
+            bad.append((key, "블록 시작이 밀렸다 — 먹힌 글자가 문안 앞에 남는다"))
+            continue
         want = stamps.get(key)
         if want and want != jp_stamp(blk["body"]):
             bad.append((key, f"원문 지문이 다르다 — 블록이 밀렸다(기대 {want})"))
             continue
         budget = len(blk["body"])
-        fitted, why = fit(kr, budget)
+        jp = M.text_of(blk["body"])
+        fitted, why = fit(kr, budget, T.overflows(jp), jp)
         if fitted is None:
             bad.append((key, why))
             continue

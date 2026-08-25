@@ -52,7 +52,9 @@ def tally(disc=1):
         n = c = dn = dc = 0
         for i, x in enumerate(bl):
             t = M.text_of(x["body"])
-            if not t.strip():
+            # ⚠ 시작이 밀린 블록은 애초에 번역 대상이 아니다(`mapfile.suspect_head`) —
+            #   분모에 넣으면 다 옮긴 파일이 영영 100% 가 안 된다.
+            if not t.strip() or M.suspect_head(x):
                 continue
             n += 1
             c += len(t)
@@ -73,6 +75,8 @@ def todo(stem, disc=1):
             t = M.text_of(x["body"])
             if not t.strip() or str(i) in kr:
                 continue
+            if M.suspect_head(x):
+                continue  # 시작이 밀린 블록 — 번역하면 먹힌 글자가 앞에 남는다
             items[str(i)] = {
                 "jp": t,
                 "budget": len(x["body"]),  # 우리 문안이 들어갈 바이트 예산

@@ -342,7 +342,9 @@ def pad_to_budget(text, budget, width=WIN_COLS, keep_last=True):
             #    줄을 넘기고, 그 뒤의 `0D` 가 **빈 줄을 하나 더** 만든다. 그러면 페이지가
             #    한 줄 늘어 3줄을 넘고, **화자 줄이 스크롤로 밀려 사라진다**(실기 실측
             #    2026-08-24: 첫 줄을 17칸으로 채웠더니 「クリスの母」가 없어졌다).
-            room = int(width * 2 - cols(pg[li]) * 2) - 1
+            #    ⚠ 단 **뒤에 `0D` 가 없는 줄**(그 페이지의 마지막 줄)은 그 사고가 없다 —
+            #    거기까지 반칸을 유보하면 채울 자리가 모자라 재삽입이 통째로 거부된다.
+            room = int(width * 2 - cols(pg[li]) * 2) - (0 if li == len(pg) - 1 else 1)
             if room > 0:
                 slots.append((pi, li, room))
     if sum(r for _, _, r in slots) < need:
