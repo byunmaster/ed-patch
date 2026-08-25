@@ -730,6 +730,38 @@ def slot_plan(krs, refresh=False):
     return {c: (font.sjis_of_index(i), i) for c, i in old.items()}
 
 
+# 씬 헤더는 「지명 + 접미」로 **조립**된다 — 접미는 시스템 정본에 있다.
+SCN_SUFFIX = ("入口", "付近", "北", "南", "東", "西")
+
+
+def scn_suffix_fit(scn, canon):
+    """지명 + 접미가 **레코드 폭에 드나** → 넘치는 `[(지명, 폭, 접미, 필요)]`.
+
+    🔴 **헤더는 지명 레코드 자리(`fl`, 대개 12B)에 접미를 이어 붙여 그린다**(실기 실측
+       2026-08-25, RAM 을 두 번 떠서 확인). 넘치면 그냥 잘린다 —
+         · `엘아스타`(8B) + `근처`(4B) = 12B → **딱 맞는다** ✅
+         · `엘아스타` + `　근처`(전각 공백) = 14B → `엘아스타　입` 처럼 **뒤가 날아간다**
+         · `엘아스타` + ` 근처`(반각 공백) = 13B → 12B 에서 잘려 `처`(0x8C61)의 **앞 바이트만**
+           남아 엉뚱한 글리프가 된다 — 이게 유저가 본 **`엘아스타 근틀`** 이다.
+       바이트는 멀쩡히 들어가고 되읽기도 통과한다. 여기서 세지 않으면 화면을 봐야만 안다.
+    ⚠ **원문도 넘는 자리가 있다**(87종 중 53종 — `エルアスタ`+`付近`=14B > 12). 원판이
+      어떻게 보이는지는 안 재 봤다 — 그래서 **게이트로 안 세우고** 수치만 보고한다.
+      우리가 늘린 것만 아니면 원판과 같은 그림이다.
+    """
+    sufs = [canon[sys_key(j)] for j in SCN_SUFFIX if sys_key(j) in canon]
+    seen, bad = set(), []
+    for _p, _l, _s, _at, fl, _jp, kr, _t in scn:
+        if (kr, fl) in seen:
+            continue
+        seen.add((kr, fl))
+        for suf in sufs:
+            need = (rec_len(kr) - 1) + (rec_len(suf) - 1)
+            if need > fl:
+                bad.append((kr, fl, suf, need))
+                break
+    return bad
+
+
 def kanji_gaps(krs, orig_kanji):
     """우리가 쓰는 **전각 글자 중 원본 폰트에 글리프가 없는 것** — `ascii_gaps` 의 전각판.
 
@@ -893,6 +925,12 @@ def main():
     print(
         f"씬 지명 헤더 {len(scn)}곳 · {len({r[0] for r in scn})}파일 · {len({r[5] for r in scn})}종"
     )
+    with open(SYS_CANON, encoding="utf-8") as _f:
+        _over = scn_suffix_fit(scn, json.load(_f)["lines"])
+    if _over:
+        print(f"  ⚠ 접미를 붙이면 칸을 넘는 지명 {len(_over)}종 — 그 자리는 마지막 글자가 잘린다")
+        for kr, fl, suf, need in _over[:5]:
+            print(f"      {kr!r}+{suf!r} = {need}B > 폭 {fl}")
     print(f"챕터 카드 {len(cards)}장 · SAVE/LOAD 문구 {len(msgs)}자리")
     _no_double_owner(cards + msgs, sysm)
     print(f"시스템 메시지 {len(sysm)}자리 · 고유 {len({r[6] for r in sysm})}종")

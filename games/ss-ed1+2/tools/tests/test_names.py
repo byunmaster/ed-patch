@@ -92,5 +92,35 @@ class VariantSuffix(unittest.TestCase):
             self.assertEqual(patch_ui.name_kr(f"毒大ガエル{suf}", c), f"큰독개구리{suf}")
 
 
+class ScnSuffix(unittest.TestCase):
+    """🔴 **헤더는 지명 레코드 자리(`fl`)에 접미를 이어 붙여 그린다**(실기 실측 2026-08-25).
+
+    넘치면 잘린다. 반각 공백을 넣었더니 `엘아스타 근처` 가 13B 가 되어 12B 에서 잘리고
+    `처`(0x8C61)의 앞 바이트만 남아 **`엘아스타 근틀`** 로 떴다. 전각 공백(14B)도 뒤가
+    날아간다. 바이트는 멀쩡히 들어가고 되읽기도 통과하는 부류다.
+    """
+
+    def _rows(self, kr, fl=12):
+        return [("/X", 0, 0, 0, fl, "ジェイ", kr, 0)]
+
+    def _canon(self, suf):
+        return {patch_ui.sys_key("付近"): suf}
+
+    def test_exact_fit_is_fine(self):
+        # 엘아스타(8B) + 근처(4B) = 12B — 폭 12 에 딱
+        self.assertEqual(patch_ui.scn_suffix_fit(self._rows("엘아스타"), self._canon("근처")), [])
+
+    def test_halfwidth_space_overflows(self):
+        bad = patch_ui.scn_suffix_fit(self._rows("엘아스타"), self._canon(" 근처"))
+        self.assertEqual([(b[0], b[3]) for b in bad], [("엘아스타", 13)])
+
+    def test_fullwidth_space_overflows(self):
+        bad = patch_ui.scn_suffix_fit(self._rows("엘아스타"), self._canon("　근처"))
+        self.assertEqual([(b[0], b[3]) for b in bad], [("엘아스타", 14)])
+
+    def test_wider_record_has_room(self):
+        self.assertEqual(patch_ui.scn_suffix_fit(self._rows("엘아스타", 16), self._canon("　근처")), [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
