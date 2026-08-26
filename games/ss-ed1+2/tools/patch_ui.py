@@ -38,6 +38,7 @@ sys.path.insert(
 )
 
 import common
+import dump_scn
 import dump_ui
 import font
 from fonts import convert_chars
@@ -93,6 +94,20 @@ SUFFIXED_TABLE = "지명"
 WIDE_SP = "\u3000"
 
 
+def _internal_key(jp):
+    """**반각 가나가 섞인** 항목 — 게임 내부 키다(화면에 안 나온다).
+
+    🔴 건드리면 자료를 부순다. 지명 표에 `ｴﾙｱｽﾀ`·`ﾙﾃﾞｨｱT`·`ｲｼｭ/ｲｽ`·`ﾘｭｳE` 처럼 섞여
+       있는데, 글자가 지명처럼 보인다고 번역하면 그 키로 찾는 코드가 못 찾는다.
+    ⚠ 정본에 없으니 `assert kr` 로도 걸리지만, 그러면 **표를 통째로 못 등록한다** —
+      ED2 셋째 묶음(103칸)은 화면 지명과 내부 키가 한 표에 섞여 있다(2026-08-27).
+    ⚠ 두 번 헛짚었다(2026-08-27). 「반각 가나·ASCII 만」으로 재면 `ｲｼｭﾀ～ｲｽﾞｰ` 의 **전각
+      물결**(U+FF5E)에 걸리고, 「전각 가나·한자가 있나」로 재면 `ｳｲﾙ～城` 의 **한자**에 걸린다.
+      화면에 나가는 지명은 **원본이 전부 전각**이므로, 반각 가나가 하나라도 섞였으면 키다.
+    """
+    return any("\uff66" <= c <= "\uff9f" for c in jp)
+
+
 def rows():
     """`(파일키, 표이름, 색인, 오프셋, stride, JP, KR|None)` — 원본에서 읽어 정본과 짝짓는다."""
     tables, pad, _cards, pad_to_jp, _msgs = load_canon()
@@ -134,6 +149,8 @@ def rows():
             for i, (jp, at, _slack) in enumerate(dump_ui.read_table(buf, off, stride, cnt)):
                 if not jp:  # 빈 칸 — 원본이 안 쓰는 자리다
                     continue
+                if _internal_key(jp):
+                    continue  # 반각 내부 키 — 화면에 안 나온다(아래 헬퍼 주석)
                 kr = lookup(jp, cat)
                 # 🔴 조용히 건너뛰지 않는다 — 한 칸만 일본어로 남으면 화면에서 바로 튄다.
                 assert kr, f"{key}/{name}[{i}] 0x{at:06x}: 정본에 없는 {cat} {jp!r}"
@@ -253,7 +270,8 @@ def card_rows(mm, cards):
     """`[(파일, lba, size, 오프셋, 여유, JP, KR)]`."""
     want = {jp: (ch, ti) for jp, ch, ti in cards}
     out, seen = [], set()
-    for path in dump_ui.FILES.values():
+    have = {p for p, _l, _s in common.iso_files(mm)}
+    for path in list(dump_ui.FILES.values()) + [p for p in SYS_EXTRA_FILES if p in have]:
         lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
         d = common.read_extent(mm, lba, size)
         i = 0
@@ -298,7 +316,8 @@ def msg_rows(mm, msgs):
     want = sorted(((jp, kr) for jp, kr in msgs), key=lambda x: -len(x[0]))
     enc = [(jp, kr, jp.encode("cp932")) for jp, kr in want]
     out, seen = [], set()
-    for path in dump_ui.FILES.values():
+    have = {p for p, _l, _s in common.iso_files(mm)}
+    for path in list(dump_ui.FILES.values()) + [p for p in SYS_EXTRA_FILES if p in have]:
         lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
         d = common.read_extent(mm, lba, size)
         i = 0
@@ -341,6 +360,31 @@ NAME_TABLES = [
 # ⚠ **손대지 않는 것** — 내부 자리표시자다. 번역하면 오히려 틀린다.
 NAME_SKIP = {"ＭＧ１４", "ＭＧ１５", "ＭＧ２２"}
 NAME_PTR_BASE = 0x06028000  # `ED.BIN`·`ED2.BIN` 의 적재 주소 (`dump_scn.BASES`)
+
+# 🔴 **ED2 의 전투 문안은 본체가 아니라 몬스터 파일에 있다**(2026-08-27 — 유저 캡처에서
+#    「スライムが現れた。」가 일본어로 남았다). ED1 은 같은 문안이 `ED.BIN` 안이라 진작
+#    들어갔는데, ED2 는 `/BIN/ED2MON*.BIN` 이라 **파일 목록에서 통째로 빠져 있었다.**
+#    ⚠ `dump_ui.FILES` 를 늘리지 않는다 — 그건 표 색인(`col = 0 if key == "ED" else 1`)에
+#      쓰여서 편이 셋이 되면 깨진다. 시스템 메시지 순회만 넓힌다.
+#    ⚠ **아직 못 켠다** — 그 파일의 등장 문구는 `<ED2 몬스터>が現れた。` 꼴인데 ED2 몬스터
+#      **96종이 통째로 정본(`shared/glossary` monster)에 없다.** 켜면 정본이 낸 조각
+#      (`スライムが現れた。`)이 `ヨークスライム…` 의 접미와 맞아 **앞말이 일본어로 남는다**
+#      — `_no_jp_prefix` 가 실패로 잡는다(그게 맞는 동작이다).
+#      → ED2 몬스터명을 정본에 올린 뒤 이 목록을 채운다. 아래 한 줄만 되돌리면 된다:
+#          SYS_EXTRA_FILES = [f"/BIN/ED2MON{i:02d}.BIN" for i in range(1, 11)]
+SYS_EXTRA_FILES = []
+
+
+def ptr_base(path):
+    """그 파일의 **적재 주소**. 🔴 파일군마다 다르다 — 상수로 쓰면 포인터를 못 찾는다.
+
+    `ED.BIN`·`ED2.BIN` 0x06028000 vs **`ED2MON*.BIN` 0x060E0000**. 상수를 쓰던 동안
+    ED2MON 은 포인터가 **0곳**으로 잡혀, 코드와 NUL 없이 붙은 런의 앞말을 통째로
+    끌고 가려다 「앞말이 일본어」로 막혔다(2026-08-27).
+    """
+    b = dump_scn.base_for(os.path.basename(path))
+    assert b, f"적재 주소를 모르는 파일: {path}"
+    return b
 
 
 def _nname(s):
@@ -440,9 +484,9 @@ def name_rows(mm):
     return out
 
 
-def _ptrs_to(d, at):
+def _ptrs_to(d, at, base=NAME_PTR_BASE):
     """파일 안에서 `at` 을 가리키는 BE32 포인터들의 오프셋."""
-    pat = (NAME_PTR_BASE + at).to_bytes(4, "big")
+    pat = (base + at).to_bytes(4, "big")
     out, i = [], 0
     while True:
         j = d.find(pat, i)
@@ -541,7 +585,8 @@ def sys_rows(mm):
             if off and cnt:
                 fixed.setdefault(path, []).append((off, off + stride * cnt))
     out, seen = [], set()
-    for path in dump_ui.FILES.values():
+    have = {p for p, _l, _s in common.iso_files(mm)}
+    for path in list(dump_ui.FILES.values()) + [p for p in SYS_EXTRA_FILES if p in have]:
         lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
         d = common.read_extent(mm, lba, size)
         # 이름 표가 차지한 구간 — 여기 문자열은 건너뛴다
@@ -574,12 +619,13 @@ def sys_rows(mm):
                     # 🔴 **재배치 단위는 「포인터가 가리키는 자리」다.** 한 런에 문자열이 둘
                     #   이상 붙어 있고(0 없이) 포인터가 그 중간을 가리키는 자리가 있다.
                     #   우리 글 앞에서 **가장 가까운 포인터 대상**을 잡아야 앞말을 안 끌고 간다.
+                    pb = ptr_base(path)
                     base = i
                     for o in range(i + k, i - 1, -1):
-                        if _ptrs_to(d, o):
+                        if _ptrs_to(d, o, pb):
                             base = o
                             break
-                    ptrs = _ptrs_to(d, base)
+                    ptrs = _ptrs_to(d, base, pb)
                     pre = d[base : i + k]
                     if sys_key(jp) in exact and _jp_bytes(pre):
                         i = j  # 통짜인 자리에서만 쓴다 — 위 독스트링
@@ -716,7 +762,7 @@ def sys_pack(sysm, ntabs, plan):
             body[blk][o - blk : o - blk + len(blob)] = blob
             new_at = o + len(pre)  # 포인터는 **앞 바이트 다음**을 가리킨다(원본과 같게)
             for q in ptrs:
-                moves[q] = NAME_PTR_BASE + (o if len(pre) == 0 else new_at - len(pre))
+                moves[q] = ptr_base(path) + (o if len(pre) == 0 else new_at - len(pre))
             if n - len(blob) >= 2:
                 free.append((o + len(blob), n - len(blob)))
                 free.sort(key=lambda b: -b[1])
@@ -1204,7 +1250,7 @@ def verify_sys(dst, sysm, plan, files):
             cache[path] = common.read_extent(mm2, lba, size)
         d = cache[path]
         # 포인터가 없는 자리는 제자리에 박았다 — 그 자리를 그대로 읽는다.
-        a = int.from_bytes(d[ptrs[0] : ptrs[0] + 4], "big") - NAME_PTR_BASE if ptrs else at
+        a = int.from_bytes(d[ptrs[0] : ptrs[0] + 4], "big") - ptr_base(path) if ptrs else at
         j = a + len(pre)
         while j < len(d) and d[j] != 0:
             j += 1
