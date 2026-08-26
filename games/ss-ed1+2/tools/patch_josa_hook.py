@@ -70,12 +70,21 @@ SPLIT_REFS_EXPECTED = 1  # 두 편 다 한 곳에서만 부른다(실측)
 DRY_SITES = set(os.environ.get("JOSA_DRY", "").split(",")) - {""}  # 실험용 — 무동작 진입점
 SCAN_LIMIT = 256  # 한 버퍼에서 훑을 최대 바이트 — 한 창이 29B×6줄이라 넉넉하다
 WORKRAM_TOP = 0x06100000  # 워크램 하이의 끝 — 이 위는 유효한 버퍼가 아니다
-IMAGE_END = 0x060B0000  # 적재 이미지 끝(0x060AF560) 위로 올림 — 이 위면 워크 버퍼다
+
+# 🔴 **적재 이미지 끝은 편마다 다르다 — 상수로 박지 않는다.**
+#    ED.BIN 0x875E4 → 0x060AF5E4 · ED2.BIN 0x6CFC8 → **0x06094FC8**. ED1 기준 상수
+#    (0x060B0000)를 두 편에 같이 쓰는 바람에 **ED2 는 훅이 통째로 무동작**했다
+#    — 메시지 버퍼가 그 상수 아래라 「원본이다」로 걸러졌다(2026-08-27 유저 캡처:
+#    「아트라스은(는)」·「레스을(를)」이 병기 그대로 화면에 떴다).
+#    파일 크기에서 유도하고 4KB 로 올린다.
+def image_end(d):
+    """`d`(그 편의 본체 파일) 가 적재됐을 때의 끝 — 이 위면 워크 버퍼다."""
+    return (LOAD_BASE + len(d) + 0xFFF) & ~0xFFF
 
 PAREN_L, PAREN_R = 0x28, 0x29
 
 
-def routine(base, table_at, back, pairs, *, arg="r6", pad=True, dry=False):
+def routine(base, table_at, back, pairs, *, arg="r6", pad=True, dry=False, end=None):
     """훅 루틴 어셈블리. `base` 에 놓이고 `table_at` 의 받침 표를 읽는다.
 
     `back` 은 일을 마친 뒤 꼬리 점프할 원 함수, `arg` 는 그 함수가 문자열을 받는 레지스터.
@@ -276,7 +285,7 @@ def routine(base, table_at, back, pairs, *, arg="r6", pad=True, dry=False):
         jmp   @r0                   ; 꼬리 점프 — PR 그대로라 호출자로 바로 돌아간다
         nop
 
-        .long L_END  {IMAGE_END}
+        .long L_END  {end}
         .long L_TAB  {table_at}
         .long L_81   0x81
         .long L_9F   0x9F
@@ -327,7 +336,7 @@ def find_sites(d):
     }
 
 
-def build(fname, table, sites):
+def build(fname, table, sites, end):
     """`(코드+표 바이트, 파일 오프셋, {이름: (루틴 주소, 디스어셈블)})`.
 
     ⚠ 루틴을 **둘** 굽는다(나누기·그리기). 인자 레지스터도 돌아갈 곳도 다르다.
@@ -343,7 +352,7 @@ def build(fname, table, sites):
         for name in order:
             back, _refs, arg, pad = sites[name]
             code, body = routine(
-                cur, tab_at, back, josa.pairs(), arg=arg, pad=pad, dry=(name in DRY_SITES)
+                cur, tab_at, back, josa.pairs(), arg=arg, pad=pad, dry=(name in DRY_SITES), end=end
             )
             blobs[name] = (code, body)
             ram[name] = cur
@@ -373,8 +382,9 @@ def main():
         d = common.read_extent(mm, *files[fname])
         assert not any(d[off : off + size]), f"{fname} 0x{off:X}: 0런이 아니다"
         sites = find_sites(d)
-        blob, at, dis = build(fname, table, sites)
-        print(f"{fname}: 루틴 {len(sites)}벌 {len(blob)}B (표 {len(table)}B)")
+        end = image_end(d)
+        blob, at, dis = build(fname, table, sites, end)
+        print(f"{fname}: 루틴 {len(sites)}벌 {len(blob)}B (표 {len(table)}B · 적재 끝 0x{end:08X})")
         for name, (back, refs, arg, pad) in sites.items():
             ram, lines = dis[name]
             print(
@@ -434,8 +444,9 @@ def verify(dst, files, table):
     """되읽기 — 루틴 바이트와 바꾼 참조가 그대로 들어갔나."""
     _f2, mm2 = common.open_image(dst)
     for fname in FREE:
-        sites = find_sites(common.extract(fname))  # 원본에서 원래 주소를 얻는다
-        blob, at, dis = build(fname, table, sites)
+        d = common.extract(fname)  # 원본에서 원래 주소를 얻는다
+        sites = find_sites(d)
+        blob, at, dis = build(fname, table, sites, image_end(d))
         d = common.read_extent(mm2, *files[fname])
         assert d[at : at + len(blob)] == blob, f"{fname}: 루틴 되읽기 불일치"
         n = 0

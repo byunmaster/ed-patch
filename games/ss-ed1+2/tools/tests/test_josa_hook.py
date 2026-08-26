@@ -23,6 +23,7 @@ BUF = 0x060C0000  # 시험용 버퍼 — 적재 이미지 밖(훅이 도는 조�
 TAB = 0x060A7000  # 시험용 표 자리
 CODE = 0x060A6748
 DRAW = 0x0607D504  # 시험용 — 꼬리 점프 목적지(실기 값과 같을 필요는 없다)
+END = 0x060B0000  # 시험용 적재 끝 — `BUF` 가 이 위라 훅이 돈다 (실기 값은 편마다 유도한다)
 
 
 class Sh2:
@@ -145,7 +146,7 @@ class Hook(unittest.TestCase):
     def setUpClass(cls):
         cls.codes = josa.slot_codes()
         cls.table = josa.build_table(cls.codes)
-        cls.code, cls.body = H.routine(CODE, TAB, DRAW, josa.pairs(cls.codes))
+        cls.code, cls.body = H.routine(CODE, TAB, DRAW, josa.pairs(cls.codes), end=END)
 
     def enc(self, s):
         out = bytearray()
@@ -208,8 +209,9 @@ class Hook(unittest.TestCase):
         import common
 
         for fname, (_off, size) in H.FREE.items():
-            sites = H.find_sites(common.extract(fname))
-            blob, _at, _dis = H.build(fname, self.table, sites)
+            d = common.extract(fname)
+            sites = H.find_sites(d)
+            blob, _at, _dis = H.build(fname, self.table, sites, H.image_end(d))
             self.assertLessEqual(len(blob) + 2 * H.MARGIN, size, fname)
 
     def test_both_signatures_are_unique_per_file(self):
@@ -228,6 +230,28 @@ class Hook(unittest.TestCase):
                 self.assertEqual(len(refs), want[name][0], f"{fname} {name}")
                 self.assertEqual(arg, want[name][1], f"{fname} {name}")
                 self.assertTrue(0x06028000 < ent < 0x060B0000, f"{fname} {name}")
+
+    def test_image_end_is_per_file_not_a_constant(self):
+        """🔴 **적재 끝은 편마다 다르다.** ED1 기준 상수를 두 편에 같이 썼다가 ED2 는 훅이
+        통째로 무동작했다(2026-08-27 — 병기가 화면에 그대로 떴다).
+
+            ED.BIN  0x875E4 → 0x060AF5E4 → 0x060B0000
+            ED2.BIN 0x6CFC8 → 0x06094FC8 → **0x06095000**
+        """
+        import common
+
+        ends = {}
+        for fname in H.FREE:
+            d = common.extract(fname)
+            e = H.image_end(d)
+            ends[fname] = e
+            self.assertGreaterEqual(e, H.LOAD_BASE + len(d), fname)
+            self.assertLess(e, H.LOAD_BASE + len(d) + 0x1000, f"{fname}: 너무 멀리 올렸다")
+            self.assertEqual(e & 0xFFF, 0, f"{fname}: 4KB 정렬이 아니다")
+            self.assertLess(e, H.WORKRAM_TOP, fname)
+        self.assertNotEqual(
+            ends["/ED.BIN"], ends["/ED2.BIN"], "두 편의 적재 끝이 같다 — 상수로 돌아갔나?"
+        )
 
     def test_split_entry_does_not_pad(self):
         """🔴 나누기 진입점은 **꼬리를 안 채운다** — 채우면 예산을 되찾은 의미가 없다.
