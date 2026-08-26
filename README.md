@@ -41,6 +41,7 @@ patcher/            웹 패처 일체 — 템플릿 · 빌드 · 폰트 서브�
                     빌드하면 games/*/patches/*.json 이 인라인된 자립형 HTML 하나
 docs/               레퍼런스 · 공개 체크리스트 · 소장 컬렉션
 originals/          원본 게임 데이터 (gitignore — 직접 소장본으로 채움)
+.local/             이 머신 전용 — 바깥 서비스 열쇠도 여기 ([.local/README.md](.local/README.md))
 ```
 
 브랜치는 **`main` = 공통(`shared/` · `scripts/` · `docs/` · 스킬), `game/<타이틀>` = 각 게임**
