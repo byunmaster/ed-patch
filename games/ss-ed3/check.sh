@@ -31,6 +31,13 @@ echo "  ── 원본 지문 · 2디스크 계약"
 echo "  ── 번역이 그 블록의 것인가 (원문 지문)"
 "$PY" "$G/tools/stamp_script.py" --check 2>&1 | sed 's/^/   /' || fail=1
 
+echo "  ── 말투 (한 블록 안에서 높임과 반말이 섞였나)"
+# ⚠ 경고지 실패가 아니다 — 한 블록 안에서 말 상대가 바뀌는 자리가 실제로 있다
+"$PY" "$G/tools/check_speech.py" 2>&1 | tail -3 | sed 's/^/   /' || true
+
+echo "  ── 원문에 있던 것이 사라지지 않았나 (숫자 · 고유명사)"
+"$PY" "$G/tools/check_fidelity.py" 2>&1 | tail -3 | sed 's/^/   /' || true
+
 echo "  ── 덤프 라운드트립 (대사 · 시스템 · 두 디스크)"
 for n in 1 2; do
   "$PY" "$G/tools/dump_map.py" --disc "$n" --check 2>&1 | sed 's/^/   /' || fail=1

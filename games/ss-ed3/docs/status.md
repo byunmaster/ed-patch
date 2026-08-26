@@ -312,6 +312,8 @@ MAP019 0x12D82  　　　　　　第１章　テグラの宝石　完
    ⚠ `MAP000` 은 디버그 맵이라 손대지 않는다(`GOSUB〜RETURN 테스트` · 개발자 이름).
    흐름: `progress.py --todo MAP0XX` 로 남은 블록을 검토표로 뽑고(⚠ 원문이라 `work/review`,
    커밋 금지) → 번역 → 예산·조판 검사 → `script/MAP0XX.json` → `stamp_script.py` → 빌드.
+   🔑 **말투 정본은 [`docs/voice.md`](voice.md)** — 화자별 화계와 「높임·반말을 섞지 않는다」.
+   잴 수 있는 부분은 `tools/check_speech.py` 가 매번 본다(`check.sh` 에 물려 있다).
    ⚠ **상점·수량 대사는 문장 조각**이다(`でいいよ。` = 「(금액)이면 되겠어」). 앞에 인자가
    붙으므로 조사를 타지 않는 표현으로 쓰고, 실기에서 한 번 본다.
 2. **인게임 확인 경로** — ✅ **뚫렸다**. emucap `system=saturn`(mednafen) 으로 부팅부터

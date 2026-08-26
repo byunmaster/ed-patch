@@ -93,8 +93,14 @@ RULES = """너는 세가새턴 RPG 『백의 마녀 — 또 하나의 영웅전�
   (예: `でいいよ。` → 「(금액)이면 되겠어」) 이런 자리는 **조사를 타지 않게** 쓴다.
   「을/를」·「이/가」·「은/는」이 앞말 받침에 따라 갈리는 표현을 피하고, 쉼표로 끊거나
   받침과 무관한 표현을 쓴다. (좋은 예: `を手に入れた。` → 「, 손에 넣었다.」)
-[말투] 화자에 맞춘다. 쥬리오(소년, 반말) · 크리스(소녀, 반말) · 어른/촌장/현자(하게체·하십시오체) ·
-  병사(거친 반말). 존댓말과 반말을 한 항목 안에서 섞지 않는다.
+[말투] 🔴 **한 항목 안에서 높임과 반말을 섞지 마라.** 「~습니다/~요」로 시작했으면 끝까지,
+  「~야/~어」로 시작했으면 끝까지다. 한 문장만 새도 기계가 뱉은 것으로 읽힌다.
+  (예외는 한 항목 안에서 말 상대가 실제로 바뀌는 자리뿐이다.)
+  화자별로 말투를 지킨다 — 쥬리오(소년, 반말·순한 편) · 크리스(소녀, 반말·야무지고 톡 쏘는 편) ·
+  촌장/노인/현자(하게체·하십시오체, 「~하게」 「~거라」 「~하시게」) · 상인(친근한 높임) ·
+  병사(거친 반말·명령조) · 어부/시골 사람(사투리 어미 「~여」 「~당께」 「~이여」).
+[맞춤법] 한국어 맞춤법과 **띄어쓰기**를 지킨다. 조사는 앞말에 붙이고, 의존명사(것·수·때·뿐)는
+  띄운다. 어미를 임의로 줄이거나 늘려 글자 수를 맞추지 마라 — 길이는 낱말 선택으로 맞춘다.
 [표기] 아래 고유명사 표는 **그대로** 쓴다.
 
 출력은 **JSON 배열 하나만**. 설명·머리말·코드펜스를 붙이지 마라.
@@ -210,6 +216,10 @@ def main():
     ap.add_argument("--batch", type=int, default=120)
     ap.add_argument("--limit", type=int, default=0, help="이만큼만(시험용)")
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument(
+        "--emit", action="store_true", help="프롬프트를 파일로 뽑는다(손으로 붙여 넣을 때)"
+    )
+    ap.add_argument("--ingest", action="store_true", help="붙여 넣어 받은 답을 검증해 거둔다")
     a = ap.parse_args()
 
     todo_p = os.path.join(C.REVIEW_DIR, f"todo_{a.stem}.json")
@@ -218,6 +228,66 @@ def main():
     with open(todo_p, encoding="utf-8") as f:
         todo = json.load(f)
     out_p = os.path.join(C.REVIEW_DIR, f"mt_{a.stem}.json")
+
+    if a.emit:
+        keys = [k for k in sorted(todo, key=int) if k not in R.load_script(a.stem)[0]][
+            : a.limit or None
+        ]
+        if not keys:
+            print(f"{a.stem} — 남은 블록이 없다")
+            return
+        gloss = glossary_for("".join(todo[k]["jp"] for k in keys))
+        pp = os.path.join(C.REVIEW_DIR, f"prompt_{a.stem}.txt")
+        with open(pp, "w", encoding="utf-8") as f:
+            f.write(build_prompt({k: todo[k] for k in keys}, gloss))
+        print(f"{a.stem} — 블록 {len(keys)} · 고유명사 {len(gloss)} → {pp}")
+        print(
+            f"  ① 통째로 복사해 붙여 넣는다  ② 답을 {os.path.join(C.REVIEW_DIR, f'reply_{a.stem}.txt')} 로 저장"
+        )
+        print(f"  ③ mt_draft.py {a.stem} --ingest")
+        return
+
+    if a.ingest:
+        rp = os.path.join(C.REVIEW_DIR, f"reply_{a.stem}.txt")
+        if not os.path.exists(rp):
+            raise SystemExit(f"답이 없다 — 붙여 넣은 결과를 {rp} 로 저장한다")
+        with open(rp, encoding="utf-8") as f:
+            txt = f.read()
+        i, j = txt.find("["), txt.rfind("]")
+        if i < 0 or j < 0:
+            raise SystemExit(
+                "JSON 배열을 못 찾았다 — 코드펜스 안이라도 배열 전체가 들어 있어야 한다"
+            )
+        got = {x["id"]: x["kr"] for x in json.loads(txt[i : j + 1]) if x.get("id")}
+        ok, bad = {}, {}
+        for k, v in got.items():
+            if k not in todo:
+                continue
+            why, _ = verify(v, todo[k])
+            (bad if why else ok)[k] = why or v
+        op = os.path.join(C.REVIEW_DIR, f"mt_{a.stem}.json")
+        old = {}
+        if os.path.exists(op):
+            with open(op, encoding="utf-8") as f:
+                old = json.load(f)
+        old.update(ok)
+        with open(op, "w", encoding="utf-8") as f:
+            json.dump(old, f, ensure_ascii=False, indent=1)
+        print(f"{a.stem} — 받은 것 {len(got)} · 통과 {len(ok)} · 걸린 것 {len(bad)}")
+        if bad:
+            # 걸린 것만 다시 물을 프롬프트를 만들어 둔다 — 회차가 이렇게 돈다
+            gloss = glossary_for("".join(todo[k]["jp"] for k in bad))
+            note = "아래 항목이 규칙을 어겼다. **더 짧게** 다시 써라:\n" + "\n".join(
+                f"  {k}: {w}" for k, w in bad.items()
+            )
+            pp = os.path.join(C.REVIEW_DIR, f"prompt_{a.stem}.txt")
+            with open(pp, "w", encoding="utf-8") as f:
+                f.write(build_prompt({k: todo[k] for k in bad}, gloss, note))
+            for k, w in list(bad.items())[:8]:
+                print(f"    {k}: {w}")
+            print(f"  → 다시 물을 프롬프트: {pp}")
+        print(f"  반영하려면: mt_draft.py {a.stem} --apply")
+        return
 
     if a.apply:
         with open(out_p, encoding="utf-8") as f:
