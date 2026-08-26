@@ -56,31 +56,96 @@ LOAD_BASE = 0x06028000  # `ED.BIN`·`ED2.BIN` 적재 주소
 #    — 두 바이트씩 SJIS 를 조립하는 자리라 파일 안에서 유일하다.
 DRAW_SIG = bytes.fromhex("61804618611c2fb6")
 DRAW_REFS_EXPECTED = 6  # 두 편 다 여섯 곳에서 부른다(실측)
+
+# 🔴 **줄 나누기**(ED 0x0607CD64 · ED2 0x06064158) — **그리기보다 앞이다.**
+#    여기에도 거는 이유는 「길이」다. 그리기에서만 접으면 게임은 **접기 전 길이로 줄을
+#    나눈 뒤**라 병기(6B)가 한 줄 예산(29B)을 4B 씩 헛먹는다(2026-08-26 실측: 버퍼1 끝에
+#    훅이 넣은 공백 넷이 그대로 보였다). 나누기 진입점에서 먼저 접으면 **나누기가 접힌
+#    길이를 본다** — 예산이 정확해지고 꼬리를 채울 일도 없다.
+#    시그니처: `mov r4,r11 · mov.l r5,@r14 · mov #29,r12 · mov #0,r8`
+#    (`#29` 가 곧 한 줄 예산이라 이 함수가 「나누는 자리」라는 증거다)
+SPLIT_SIG = bytes.fromhex("6b432e52ec1de800")
+SPLIT_REFS_EXPECTED = 1  # 두 편 다 한 곳에서만 부른다(실측)
+
+DRY_SITES = set(os.environ.get("JOSA_DRY", "").split(",")) - {""}  # 실험용 — 무동작 진입점
+SCAN_LIMIT = 256  # 한 버퍼에서 훑을 최대 바이트 — 한 창이 29B×6줄이라 넉넉하다
+WORKRAM_TOP = 0x06100000  # 워크램 하이의 끝 — 이 위는 유효한 버퍼가 아니다
 IMAGE_END = 0x060B0000  # 적재 이미지 끝(0x060AF560) 위로 올림 — 이 위면 워크 버퍼다
 
 PAREN_L, PAREN_R = 0x28, 0x29
 
 
-def routine(base, table_at, draw, pairs):
-    """훅 루틴 어셈블리. `base` 에 놓이고 `table_at` 의 받침 표를 읽는다."""
+def routine(base, table_at, back, pairs, *, arg="r6", pad=True, dry=False):
+    """훅 루틴 어셈블리. `base` 에 놓이고 `table_at` 의 받침 표를 읽는다.
+
+    `back` 은 일을 마친 뒤 꼬리 점프할 원 함수, `arg` 는 그 함수가 문자열을 받는 레지스터.
+    ⚠ **두 자리에 건다** — 그리기(`r6`)와 줄 나누기(`r4`). 인자 레지스터도 돌아갈 곳도
+      다르므로 루틴을 둘 굽는다(표는 하나를 같이 본다).
+
+    `pad` 는 접고 남은 네 바이트를 반각 공백으로 채울지다.
+      · 나누기 진입점(`pad=False`): 나누기가 **접힌 길이**를 보므로 채울 이유가 없다.
+      · 그리기 진입점(`pad=True`): 나누기를 안 거치고 바로 그려지는 경로의 안전망.
+        여기까지 병기가 살아 왔다면 이미 옛 길이로 자리가 잡힌 뒤라 폭을 되돌려야 한다.
+    """
     a, b, c = pairs  # 각각 (조사A, 조사B)
+    PAD = (
+        """        ; 🔴 **꼬리를 NUL 이 아니라 반각 공백 넷으로 채운다.** r1 은 방금 옮겨 적은 종단이다.
+        ;    여기까지 병기가 살아 왔다면 자리는 **접기 전 길이**로 잡힌 뒤다 — 줄어든 두 칸에
+        ;    글리프 0 이 찍혀 화면에 **흰 네모**가 남았다(2026-08-26 실기, 원판엔 없다).
+        ;    공백 넷(=전각 두 칸)으로 폭을 되돌리고 **종단은 원래 자리**에 둔다.
+        mov   #0x20,r0
+        mov.b r0,@r1
+        add   #1,r1
+        mov.b r0,@r1
+        add   #1,r1
+        mov.b r0,@r1
+        add   #1,r1
+        mov.b r0,@r1
+        add   #1,r1
+        mov   #0,r0
+        mov.b r0,@r1                ; 원래 종단 자리에 NUL — 길이가 그대로다
+"""
+        if pad
+        else ""
+    )
+    DRY = "        bra   done\n        nop\n" if dry else ""
     src = f"""
-        ; ── 들어올 때: r4~r7 = 원 함수 인자, r6 = 문자열 포인터
+        ; ── 들어올 때: r4~r7 = 원 함수 인자
         mov.l r8,@-r15
         mov.l r9,@-r15
         mov.l r10,@-r15
         mov.l r11,@-r15
-        mov   r6,r8                 ; p
+        mov.l r12,@-r15
+        mov   {arg},r8              ; p
+{DRY}        ; 🔴 **순회 상한.** 버퍼가 NUL 종단이라는 보장이 없는 자리에도 건다 — 없으면
+        ;    워크램을 끝까지 훑다가 게임이 선다(2026-08-26 실측: 나누기 진입점에서 물렸다).
+        mov   r8,r12
+        mov.l @(L_LIM,pc),r1
+        add   r1,r12                ; r12 = 훑기 끝
         mov.l @(L_END,pc),r0
         cmp/hs r0,r8                ; p >= 적재 이미지 끝?
-        bf    done                  ; 아니면 원본이다 — 손대지 않는다
+        bt    chk_top               ; 아니면 원본이다 — 손대지 않는다
+        bra   done                  ; (`bf done` 은 8비트 변위 밖이라 못 쓴다)
+        nop
+    chk_top:
+        ; 🔴 **위쪽 경계도 막는다.** 가드가 아래쪽 하나뿐이면 **워크램 밖 쓰레기 포인터가
+        ;    그대로 통과한다**(unsigned 비교라 0x25A32A40 같은 값이 「더 크다」로 잡힌다).
+        ;    나누기 진입점의 `r4` 는 아직 안 채워진 회차가 있어 실제로 물렸다(2026-08-26).
+        mov.l @(L_TOP,pc),r0
+        cmp/hs r0,r8                ; p >= 워크램 끝?
+        bf    inrange                ; (`bt done` 은 8비트 변위 밖이라 못 쓴다)
+        bra   done
+        nop
+    inrange:
         mov   #0,r9                 ; prev = 0
         mov.l @(L_TAB,pc),r10
     loop:
+        cmp/hs r12,r8               ; 상한을 넘었나
+        bt    out
         mov.b @r8,r0
         extu.b r0,r0
         tst   r0,r0
-        bt    done                  ; NUL
+        bt    out                   ; NUL
         mov.l @(L_81,pc),r1
         cmp/hs r1,r0                ; r0 >= 0x81
         bf    single
@@ -177,24 +242,12 @@ def routine(base, table_at, draw, pairs):
         bra   shift
         nop
     shifted:
-        ; 🔴 **꼬리를 NUL 이 아니라 반각 공백 넷으로 채운다.** r1 은 방금 옮겨 적은 종단이다.
-        ;    게임은 **접기 전 길이만큼** 그려서, 줄어든 두 칸을 글리프 0 으로 찍는다
-        ;    — 화면에 **흰 네모**가 남았다(2026-08-26 실기, 원판엔 없다).
-        ;    공백 넷(=전각 두 칸)으로 폭을 되돌리고 **종단은 원래 자리**에 둔다.
-        mov   #0x20,r0
-        mov.b r0,@r1                ; 종단 자리를 공백으로
-        add   #1,r1
-        mov.b r0,@r1
-        add   #1,r1
-        mov.b r0,@r1
-        add   #1,r1
-        mov.b r0,@r1
-        add   #1,r1
-        mov   #0,r0
-        mov.b r0,@r1                ; 원래 종단 자리에 NUL — 길이가 그대로다
-        mov   r2,r9                 ; prev = 고른 조사
+{PAD}        mov   r2,r9                 ; prev = 고른 조사
         add   #2,r8
         bra   loop
+        nop
+    out:                            ; ⚠ `bt` 는 8비트 변위뿐이라 끝까지 못 간다 — 중계한다
+        bra   done
         nop
     notpair:
         mov.l @(L_LO,pc),r1
@@ -214,11 +267,12 @@ def routine(base, table_at, draw, pairs):
         bra   loop
         nop
     done:
+        mov.l @r15+,r12
         mov.l @r15+,r11
         mov.l @r15+,r10
         mov.l @r15+,r9
         mov.l @r15+,r8
-        mov.l @(L_DRAW,pc),r0
+        mov.l @(L_BACK,pc),r0
         jmp   @r0                   ; 꼬리 점프 — PR 그대로라 호출자로 바로 돌아간다
         nop
 
@@ -228,57 +282,81 @@ def routine(base, table_at, draw, pairs):
         .long L_9F   0x9F
         .long L_E0   0xE0
         .long L_EF   0xEF
+        .long L_TOP  {WORKRAM_TOP}
+        .long L_LIM  {SCAN_LIMIT}
         .long L_LO   {josa.code_span()[0]}
         .long L_HI   {josa.code_span()[1]}
         .long L_P1   {(a[0] << 16) | a[1]}
         .long L_P2   {(b[0] << 16) | b[1]}
         .long L_P3   {(c[0] << 16) | c[1]}
-        .long L_DRAW {draw}
+        .long L_BACK {back}
     """
     return sh2.assemble(src.splitlines(), base)
 
 
-def find_draw(d):
-    """`(그리기 루틴 주소, [리터럴 참조 파일오프셋])` — 시그니처로 찾는다."""
+def find_fn(d, sig, expect, what):
+    """`(함수 주소, [리터럴 참조 파일오프셋])` — 시그니처로 찾는다."""
     import struct
 
-    i = d.find(DRAW_SIG)
-    assert i >= 0, "그리기 루프 시그니처를 못 찾았다"
-    assert d.find(DRAW_SIG, i + 1) < 0, "시그니처가 둘 이상이다 — 더 좁혀야 한다"
+    i = d.find(sig)
+    assert i >= 0, f"{what} 시그니처를 못 찾았다"
+    assert d.find(sig, i + 1) < 0, f"{what} 시그니처가 둘 이상이다 — 더 좁혀야 한다"
     ent = None
     for k in range(i, i - 0x400, -2):  # 함수 시작 = `mov.l Rm,@-r15` 연속의 첫 줄
         w = struct.unpack(">H", d[k : k + 2])[0]
         if (w & 0xFF0F) == 0x2F06 and (struct.unpack(">H", d[k - 2 : k])[0] & 0xFF0F) != 0x2F06:
             ent = LOAD_BASE + k
             break
-    assert ent, "그리기 루틴 시작을 못 찾았다"
+    assert ent, f"{what} 시작을 못 찾았다"
     pat = ent.to_bytes(4, "big")
     refs, j = [], 0
     while (k := d.find(pat, j)) >= 0:
         refs.append(k)
         j = k + 1
-    assert len(refs) == DRAW_REFS_EXPECTED, f"참조가 {len(refs)}곳이다 (기대 {DRAW_REFS_EXPECTED})"
+    assert len(refs) == expect, f"{what} 참조가 {len(refs)}곳이다 (기대 {expect})"
     return ent, refs
 
 
-def build(fname, table, draw):
-    """`(코드+표 바이트, 파일 오프셋, 루틴 RAM 주소, 디스어셈블)`."""
+def find_sites(d):
+    """`{이름: (원 함수 주소, [참조 오프셋], 인자 레지스터, 꼬리 채움)}`."""
+    draw, dref = find_fn(d, DRAW_SIG, DRAW_REFS_EXPECTED, "그리기")
+    split, sref = find_fn(d, SPLIT_SIG, SPLIT_REFS_EXPECTED, "줄 나누기")
+    return {
+        "나누기": (split, sref, "r4", False),
+        "그리기": (draw, dref, "r6", True),
+    }
+
+
+def build(fname, table, sites):
+    """`(코드+표 바이트, 파일 오프셋, {이름: (루틴 주소, 디스어셈블)})`.
+
+    ⚠ 루틴을 **둘** 굽는다(나누기·그리기). 인자 레지스터도 돌아갈 곳도 다르다.
+      표는 하나를 같이 본다 — 1,319B 라 두 벌 뜨면 자리가 모자란다.
+    """
     off, size = FREE[fname]
     at = off + MARGIN
-    code_ram = LOAD_BASE + at
-    # 표는 루틴 뒤에 붙인다 — 길이를 알아야 하니 두 번 조립한다(주소가 안 바뀔 때까지).
-    tab_at = code_ram
+    order = list(sites)
+    # 표는 루틴들 뒤에 붙는다 — 길이를 알아야 하니 주소가 안 바뀔 때까지 다시 조립한다.
+    tab_at = LOAD_BASE + at
     for _ in range(4):
-        code, body = routine(code_ram, tab_at, draw, josa.pairs())
-        new = code_ram + len(code)
-        if new == tab_at:
+        blobs, ram, cur = {}, {}, LOAD_BASE + at
+        for name in order:
+            back, _refs, arg, pad = sites[name]
+            code, body = routine(
+                cur, tab_at, back, josa.pairs(), arg=arg, pad=pad, dry=(name in DRY_SITES)
+            )
+            blobs[name] = (code, body)
+            ram[name] = cur
+            cur += len(code)
+        if cur == tab_at:
             break
-        tab_at = new
+        tab_at = cur
     else:
         raise SystemExit("루틴/표 배치가 안 수렴한다")
-    blob = code + table
+    blob = b"".join(blobs[n][0] for n in order) + table
     assert len(blob) + 2 * MARGIN <= size, f"{fname}: {len(blob)}B > 자리 {size - 2 * MARGIN}B"
-    return blob, at, code_ram, sh2.verify(code, code_ram, body)
+    dis = {n: (ram[n], sh2.verify(blobs[n][0], ram[n], blobs[n][1])) for n in order}
+    return blob, at, dis
 
 
 def main():
@@ -294,15 +372,18 @@ def main():
     for fname, (off, size) in FREE.items():
         d = common.read_extent(mm, *files[fname])
         assert not any(d[off : off + size]), f"{fname} 0x{off:X}: 0런이 아니다"
-        draw, refs = find_draw(d)
-        blob, at, ram, dis = build(fname, table, draw)
-        print(
-            f"{fname}: 그리기 0x{draw:08X} · 참조 {len(refs)}곳 · "
-            f"루틴 0x{ram:08X} {len(blob)}B (표 {len(table)}B · 명령 {len(dis)})"
-        )
-        if "--dis" in sys.argv:
-            for ln in dis:
-                print("   ", ln)
+        sites = find_sites(d)
+        blob, at, dis = build(fname, table, sites)
+        print(f"{fname}: 루틴 {len(sites)}벌 {len(blob)}B (표 {len(table)}B)")
+        for name, (back, refs, arg, pad) in sites.items():
+            ram, lines = dis[name]
+            print(
+                f"   {name}: 원 함수 0x{back:08X}({arg}) · 참조 {len(refs)}곳 · "
+                f"루틴 0x{ram:08X} 명령 {len(lines)}{' · 꼬리 채움' if pad else ''}"
+            )
+            if "--dis" in sys.argv:
+                for ln in lines:
+                    print("      ", ln)
         if not apply:
             continue
         lba, fsize = files[fname]
@@ -311,27 +392,38 @@ def main():
         #   `expect=원본` 으로 박아 두면 **두 번째 실행이 죽는다**(2026-08-24).
         #   그래서 사전조건을 「원본이거나 이미 우리 것」으로 둔다 — 챕터 판·HUD 와 같은 규칙.
         _fd, mmd = common.open_image(dst)
-        cur = {p: bytes(common.read_extent(mmd, lba, fsize)[p : p + 4]) for p in refs}
+        cur = {}
+        for _back, refs, _arg, _pad in sites.values():
+            for pp in refs:
+                cur[pp] = bytes(common.read_extent(mmd, lba, fsize)[pp : pp + 4])
         mmd.close()
         _fd.close()
-        want, was = ram.to_bytes(4, "big"), draw.to_bytes(4, "big")
-        for p, c in cur.items():
-            assert c in (was, want), (
-                f"{fname} 참조 0x{LOAD_BASE + p:X}: 원본도 우리 것도 아니다 (0x{c.hex()})"
-            )
+        lo_ram, hi_ram = LOAD_BASE + off, LOAD_BASE + off + size
         with open(dst, "r+b") as f:
             common.write_at(f, lba, fsize, at, blob, label=f"{fname} 조사 훅")
-            for p in refs:
-                common.write_at(
-                    f,
-                    lba,
-                    fsize,
-                    p,
-                    want,
-                    label=f"{fname} 그리기 참조 0x{LOAD_BASE + p:X}",
-                    expect=cur[p],
-                )
-        print(f"   → 넣음 · 참조 {len(refs)}곳을 0x{ram:08X} 로")
+            for name, (back, refs, _arg, _pad) in sites.items():
+                ram = dis[name][0]
+                want, was = ram.to_bytes(4, "big"), back.to_bytes(4, "big")
+                for pp in refs:
+                    # ⚠ 사전조건은 「원본이거나 **우리 자리 안**」이다 — 「원본이거나 지금 이
+                    #   루틴 주소」로 박으면 **루틴 배치를 바꾼 날 재실행이 죽는다**(실측
+                    #   2026-08-26: 진입점을 둘로 늘렸더니 옛 주소가 남아 있어 막혔다).
+                    got = int.from_bytes(cur[pp], "big")
+                    assert cur[pp] == was or lo_ram <= got < hi_ram, (
+                        f"{fname} {name} 참조 0x{LOAD_BASE + pp:X}: "
+                        f"원본도 우리 자리도 아니다 (0x{cur[pp].hex()})"
+                    )
+                    common.write_at(
+                        f,
+                        lba,
+                        fsize,
+                        pp,
+                        want,
+                        label=f"{fname} {name} 참조 0x{LOAD_BASE + pp:X}",
+                        expect=cur[pp],
+                    )
+        n = sum(len(v[1]) for v in sites.values())
+        print(f"   → 넣음 · 참조 {n}곳")
     if apply:
         verify(dst, files, table)
     else:
@@ -342,14 +434,20 @@ def verify(dst, files, table):
     """되읽기 — 루틴 바이트와 바꾼 참조가 그대로 들어갔나."""
     _f2, mm2 = common.open_image(dst)
     for fname in FREE:
-        draw, refs = find_draw(common.extract(fname))  # 원본에서 원래 주소를 얻는다
-        blob, at, ram, _dis = build(fname, table, draw)
+        sites = find_sites(common.extract(fname))  # 원본에서 원래 주소를 얻는다
+        blob, at, dis = build(fname, table, sites)
         d = common.read_extent(mm2, *files[fname])
         assert d[at : at + len(blob)] == blob, f"{fname}: 루틴 되읽기 불일치"
-        for p in refs:
-            got = int.from_bytes(d[p : p + 4], "big")
-            assert got == ram, f"{fname} 참조 0x{LOAD_BASE + p:X}: 0x{got:08X} ≠ 0x{ram:08X}"
-        print(f"  ✅ 되읽기 {fname} — 루틴 {len(blob)}B · 참조 {len(refs)}곳")
+        n = 0
+        for name, (_back, refs, _arg, _pad) in sites.items():
+            ram = dis[name][0]
+            for pp in refs:
+                got = int.from_bytes(d[pp : pp + 4], "big")
+                assert got == ram, (
+                    f"{fname} {name} 참조 0x{LOAD_BASE + pp:X}: 0x{got:08X} ≠ 0x{ram:08X}"
+                )
+                n += 1
+        print(f"  ✅ 되읽기 {fname} — 루틴 {len(blob)}B · 참조 {n}곳")
     mm2.close()
     _f2.close()
 

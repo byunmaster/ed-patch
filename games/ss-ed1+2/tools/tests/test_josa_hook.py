@@ -204,18 +204,42 @@ class Hook(unittest.TestCase):
         self.assertEqual(cpu.r[15], 0x060FF000, "스택을 복구해야 한다")
 
     def test_fits_the_free_space(self):
+        """⚠ 루틴이 **둘**이라 자리가 빠듯하다 — 표(1.3KB)를 두 벌 뜨면 안 들어간다."""
+        import common
+
         for fname, (_off, size) in H.FREE.items():
-            blob, _at, _ram, _dis = H.build(fname, self.table, DRAW)
+            sites = H.find_sites(common.extract(fname))
+            blob, _at, _dis = H.build(fname, self.table, sites)
             self.assertLessEqual(len(blob) + 2 * H.MARGIN, size, fname)
 
-    def test_draw_signature_is_unique_per_file(self):
-        """🔴 자리를 손으로 적었다가 ED2 에 **참조 0곳**으로 조용히 통과할 뻔했다."""
+    def test_both_signatures_are_unique_per_file(self):
+        """🔴 자리를 손으로 적었다가 ED2 에 **참조 0곳**으로 조용히 통과할 뻔했다.
+
+        ⚠ 자리가 **둘**이다 — 그리기(6곳)와 **줄 나누기**(1곳). 나누기에도 거는 이유는
+          길이다: 그리기에서만 접으면 게임은 이미 **접기 전 길이로 줄을 나눈 뒤**다.
+        """
         import common
 
         for fname in H.FREE:
-            ent, refs = H.find_draw(common.extract(fname))
-            self.assertEqual(len(refs), H.DRAW_REFS_EXPECTED, fname)
-            self.assertTrue(0x06028000 < ent < 0x060B0000, fname)
+            sites = H.find_sites(common.extract(fname))
+            self.assertEqual(set(sites), {"나누기", "그리기"}, fname)
+            want = {"나누기": (H.SPLIT_REFS_EXPECTED, "r4"), "그리기": (H.DRAW_REFS_EXPECTED, "r6")}
+            for name, (ent, refs, arg, _pad) in sites.items():
+                self.assertEqual(len(refs), want[name][0], f"{fname} {name}")
+                self.assertEqual(arg, want[name][1], f"{fname} {name}")
+                self.assertTrue(0x06028000 < ent < 0x060B0000, f"{fname} {name}")
+
+    def test_split_entry_does_not_pad(self):
+        """🔴 나누기 진입점은 **꼬리를 안 채운다** — 채우면 예산을 되찾은 의미가 없다.
+
+        그리기 진입점은 반대로 채운다(나누기를 안 거치고 바로 그려지는 경로의 안전망).
+        """
+        import common
+
+        for fname in H.FREE:
+            sites = H.find_sites(common.extract(fname))
+            self.assertFalse(sites["나누기"][3], f"{fname}: 나누기가 꼬리를 채운다")
+            self.assertTrue(sites["그리기"][3], f"{fname}: 그리기가 꼬리를 안 채운다")
 
 
 if __name__ == "__main__":
