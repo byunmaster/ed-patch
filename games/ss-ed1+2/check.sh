@@ -42,6 +42,8 @@ step "타이틀 그림" "$T/patch_gfx_title.py" --apply
 step "메뉴 그림" "$T/patch_gfx_menu.py" --apply
 step "챕터 판" "$T/patch_gfx_cards.py" --apply
 step "HUD" "$T/patch_gfx_hud.py" --apply
+echo "  ── 회심/통한 복사 루프 (14B 고정 → NUL 종단)"
+step "회심 복사" "$T/patch_crit_copy.py" --apply
 echo "  ── 동적 조사 훅 (SH-2 디스어셈블 검산 + 참조 되읽기)"
 step "조사 훅" "$T/patch_josa_hook.py" --apply
 
