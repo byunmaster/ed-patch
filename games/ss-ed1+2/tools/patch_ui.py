@@ -366,13 +366,15 @@ NAME_PTR_BASE = 0x06028000  # `ED.BIN`·`ED2.BIN` 의 적재 주소 (`dump_scn.B
 #    들어갔는데, ED2 는 `/BIN/ED2MON*.BIN` 이라 **파일 목록에서 통째로 빠져 있었다.**
 #    ⚠ `dump_ui.FILES` 를 늘리지 않는다 — 그건 표 색인(`col = 0 if key == "ED" else 1`)에
 #      쓰여서 편이 셋이 되면 깨진다. 시스템 메시지 순회만 넓힌다.
-#    ⚠ **아직 못 켠다** — 그 파일의 등장 문구는 `<ED2 몬스터>が現れた。` 꼴인데 ED2 몬스터
-#      **96종이 통째로 정본(`shared/glossary` monster)에 없다.** 켜면 정본이 낸 조각
-#      (`スライムが現れた。`)이 `ヨークスライム…` 의 접미와 맞아 **앞말이 일본어로 남는다**
-#      — `_no_jp_prefix` 가 실패로 잡는다(그게 맞는 동작이다).
-#      → ED2 몬스터명을 정본에 올린 뒤 이 목록을 채운다. 아래 한 줄만 되돌리면 된다:
-#          SYS_EXTRA_FILES = [f"/BIN/ED2MON{i:02d}.BIN" for i in range(1, 11)]
-SYS_EXTRA_FILES = []
+#    ⚠ **포인터 베이스가 다르다** — `ED2MON*` 은 0x060E0000 이다(`ptr_base()`).
+#      상수를 쓰던 동안 포인터가 0곳으로 잡혀 앞말을 통째로 끌고 가려다 막혔다.
+SYS_EXTRA_FILES = [f"/BIN/ED2MON{i:02d}.BIN" for i in range(1, 11)]
+
+# 🔴 **그 파일에서는 출현 문구만 건드린다.** 몬스터 파일에는 이름 자체(`スライムＡ`)도 있는데
+#    그건 **고정 폭 표**라 재배치하면 코드가 색인으로 집는 자리가 밀린다. 열어 두면 시스템
+#    메시지 경로가 이름까지 옮기려 든다(실측 2026-08-27: `/BIN/ED2MON01.BIN` 0x974).
+#    이름은 별도 축이다 — `NAME_TABLES` 로 다뤄야 한다.
+SYS_EXTRA_SUFFIX = "が現れた。"
 
 
 def ptr_base(path):
@@ -535,10 +537,16 @@ def _sys_match(run, canon):
     🔴 **두 번 훑는다 — 문자 폭으로, 그 다음 바이트 단위로.** 앞이 포인터 바이트면 그 안에
        SJIS 선두 바이트처럼 생긴 값이 섞여 있어서, 문자 폭으로 걸으면 **이름 시작을 건너뛴다.**
        실측(2026-08-25): 전투 메시지의 `ｻﾝﾀﾞｰﾊｳﾝﾄﾞ`·`ヘルニルド`·`アクダム` 가 그렇게 빠져
-       화면에 일본어로 남아 있었다. 빠른 길로 먼저 보고, 못 찾으면 한 칸씩 다시 본다.
+       화면에 일본어로 남아 있었다.
+    🔴 **둘 다 보고 「더 앞선」 것을 고른다 — 먼저 찾은 것을 쓰지 않는다.** 문자 폭 걷기가
+       어긋나면 이름 시작을 지나쳐 **더 뒤의 짧은 정본**(`が現れた。`)을 먼저 잡고, 그러면
+       이름이 앞말로 남아 일본어가 된다(실측 2026-08-27: `チャンタラーが現れた。` 가
+       k=31 에 있는데 문자 폭 패스가 31 을 건너뛰고 k=43 을 물었다).
+       앞선 매칭 = 앞말이 가장 적게 남는 매칭이다.
     ⚠ 바이트 단위라도 **디코드가 되고 해시가 맞아야** 한다 — 우연히 맞을 확률은 없다시피 하고,
       보존되는 앞말은 `_no_jp_prefix()` 가 따로 본다.
     """
+    best = None
     for step_by_char in (True, False):
         k = 0
         while k < len(run):
@@ -551,10 +559,12 @@ def _sys_match(run, canon):
                 k += 1
                 continue
             if sys_key(jp) in canon:
-                return k, jp
+                if best is None or k < best[0]:
+                    best = (k, jp)
+                break
             b = run[k]
             k += (2 if (0x81 <= b <= 0x9F or 0xE0 <= b <= 0xEF) else 1) if step_by_char else 1
-    return None
+    return best
 
 
 def sys_rows(mm):
@@ -611,6 +621,8 @@ def sys_rows(mm):
                 j += 1
             if not any(a <= i < b for a, b in holes + fixed.get(path, [])):
                 hit = _sys_match(d[i:j], canon)
+                if hit and path in SYS_EXTRA_FILES and not hit[1].endswith(SYS_EXTRA_SUFFIX):
+                    hit = None  # 위 SYS_EXTRA_SUFFIX 주석 — 이름 표를 건드리지 않는다
                 if hit:
                     k, jp = hit
                     nxt = j
@@ -627,6 +639,13 @@ def sys_rows(mm):
                             break
                     ptrs = _ptrs_to(d, base, pb)
                     pre = d[base : i + k]
+                    # 🔴 **몬스터 파일은 통짜만 건드린다.** 자리가 빠듯해 못 넣은 줄이 있고
+                    #    (`derive_encounters.py` 가 목록으로 보고한다), 그 자리에 짧은 정본
+                    #    (`が現れた。` = `이(가) 나타났다.`)이 **접미로 걸린다.** 그러면 이름이
+                    #    앞말로 남아 일본어가 된다 — 실패가 아니라 **손대지 않는 게 맞다**.
+                    if path in SYS_EXTRA_FILES and pre:
+                        i = j
+                        continue
                     if sys_key(jp) in exact and _jp_bytes(pre):
                         i = j  # 통짜인 자리에서만 쓴다 — 위 독스트링
                         continue
@@ -752,6 +771,14 @@ def sys_pack(sysm, ntabs, plan):
             ]
             free.sort(key=lambda b: -b[1])
         want = sorted((r for r in recs if r[7]), key=lambda r: -(len(r[5]) + rec_len(r[6]) + 1))
+        # ⚠ **몬스터 파일은 자리가 빠듯하다.** 그 파일들은 꽉 차 있어 기존 0런이 사실상
+        #   없고(ED2MON01·02 는 **0바이트**), 풀은 「우리 레코드 자리」가 전부다. 우리 문안은
+        #   원문보다 줄마다 2바이트쯤 길어서(원문 `が現れた。` 10B vs `이(가) 나타났다.` 12B —
+        #   한국어는 띄어쓰기가 있다) **총량이 원본보다 커진다.**
+        #   → 들어가는 줄만 정본에 넣는다. 거르는 건 `derive_encounters.py` 몫이고, 여기서는
+        #     넘치면 예전대로 죽는다(조용히 넘기지 않는다).
+        #   ⚠ 문안을 줄여 맞추지 않는다 — PS1 도 `이(가) 나타났다.` 라, 여기서만 줄이면
+        #     **두 이식판의 표기가 갈린다**(2026-08-27 확인).
         for _p, _l, _s, _at, _span, pre, kr, ptrs in want:
             blob = pre + b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
             blob += b"\x00"
