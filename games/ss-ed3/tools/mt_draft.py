@@ -19,7 +19,8 @@
 
 🔴 **무료 등급은 호출 수가 자원이다.** 실측(2026-08-25): API 키 모드의 free tier 는
    `limit: 20` 이고 소진되면 「exhausted your **daily** quota」가 나온다 — 분당이 아니라
-   **하루**다. 그래서 배치를 크게 잡아 **맵 하나를 한두 번에** 끝낸다(`--batch` 기본 120).
+   **하루**다. 그렇다고 배치를 마냥 키울 수도 없다 — 100 블록은 응답이 900 초를 넘겨
+   타임아웃이었다. `--batch` 기본을 **40** 으로 둔 것이 그 사이다.
    한도를 늘리려면 CLI 를 **OAuth 로그인**으로 돌리거나(Code Assist 무료 등급이 훨씬 크다)
    AI Studio 에서 키를 새로 받아 `GEMINI_API_KEY` 로 준다. ⚠ 로그인은 브라우저가 필요하다.
 """
@@ -221,8 +222,10 @@ def main():
     ap.add_argument("stem")
     # 🔴 **호출 수가 곧 한도다.** 무료 등급은 하루 한도가 낮아서(실측 2026-08-25:
     #   `limit: 20`, 「exhausted your daily quota」) 블록을 잘게 나눠 던지면 맵 하나도
-    #   못 끝낸다. 배치를 크게 잡아 **맵 하나를 한두 번에** 끝내는 쪽이 맞다.
-    ap.add_argument("--batch", type=int, default=120)
+    #   못 끝낸다. 그렇다고 마냥 키울 수도 없다 — **100 블록은 응답이 900 초를 넘겨
+    #   타임아웃**이었다(실측 2026-08-26). 40 이 그 사이다. 웹에 붙여 넣을 때도 같다:
+    #   긴 응답은 중간에 잘린다.
+    ap.add_argument("--batch", type=int, default=40)
     ap.add_argument("--limit", type=int, default=0, help="이만큼만(시험용)")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument(

@@ -24,6 +24,14 @@ import typeset as T
 SCRIPT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "script")
 
 
+def fits(budget, jp):
+    """`이 예산에 몇 자` 를 사람 말로 — 제어 바이트를 뺀 나머지를 글자로 환산한다."""
+    ctrl = jp.count("\n") + jp.count("\f")
+    body = budget - ctrl
+    full = body // 2  # 어절 공백 없이 전각만 쓸 때
+    return f"{full}자 (공백 하나당 +0.5자)"
+
+
 def script_of(stem):
     """`script/<stem>.json` 의 번역 — 없으면 빈 dict."""
     p = os.path.join(SCRIPT_DIR, f"{stem}.json")
@@ -78,8 +86,18 @@ def todo(stem, disc=1):
             if M.suspect_head(x):
                 continue  # 시작이 밀린 블록 — 번역하면 먹힌 글자가 앞에 남는다
             items[str(i)] = {
+                # 🔴 **머리가 화자를 가른다**(2026-08-26 실측). 같은 인물의 대사는 같은
+                #   `02 XX` 를 쓴다 — `0200` 쥬리오 · `0201` 크리스로 전 대사의 25%다.
+                #   화자를 문맥으로 추측하지 않아도 되니 말투가 흔들릴 자리가 준다.
+                #   표는 `docs/voice.md`.
+                "who": x["head"],
                 "jp": t,
                 "budget": len(x["body"]),  # 우리 문안이 들어갈 바이트 예산
+                # 🔴 **바이트를 글자로 미리 환산해 둔다.** 예산이 바이트로만 있으면 옮기는
+                #   쪽이 매번 눈대중으로 나누게 되고, 그 어긋남이 곧 「4 바이트 넘는다」는
+                #   되던지기가 된다(배치마다 5~15 건이었다). 한글·한자는 2 바이트,
+                #   어절 공백(반각)은 1 바이트 — 그래서 `공백 N 개면 N 자 더` 가 성립한다.
+                "fits": fits(len(x["body"]), t),
                 "rows": [len(l) for l in t.replace("\f", "\n").split("\n")],
                 "narration": T.is_narration(t),
             }
@@ -96,16 +114,24 @@ def main():
     ap.add_argument("--disc", type=int, default=1)
     ap.add_argument("--files", action="store_true")
     ap.add_argument("--todo")
+    ap.add_argument("--by-who", action="store_true", help="검토표를 화자(머리)별로 묶어 보여 준다")
     a = ap.parse_args()
 
     if a.todo:
         p, n = todo(a.todo, a.disc)
         print(f"남은 블록 {n} → {p}")
+        if a.by_who:
+            import collections
+
+            with open(p, encoding="utf-8") as f:
+                d = json.load(f)
+            g = collections.Counter(v["who"] for v in d.values())
+            print("  화자(머리)별:", "  ".join(f"{h}×{n}" for h, n in g.most_common(10)))
         return
 
     rows = tally(a.disc)
     if a.files:
-        for stem, n, dn, c, dc in rows:
+        for stem, _n, _dn, c, dc in rows:
             bar = "█" * int(dc / c * 20) if c else ""
             print(f"  {stem}  {dc:>6,}/{c:>6,}자 {dc / c * 100 if c else 0:5.1f}%  {bar}")
     N = sum(r[1] for r in rows)
@@ -113,7 +139,9 @@ def main():
     Cc = sum(r[3] for r in rows)
     DC = sum(r[4] for r in rows)
     done = sum(1 for r in rows if r[3] and r[3] == r[4])
-    print(f"\n대사 {DC:,}/{Cc:,}자 ({DC / Cc * 100:.2f}%) · 블록 {DN:,}/{N:,} · 파일 {done}/{len(rows)}")
+    print(
+        f"\n대사 {DC:,}/{Cc:,}자 ({DC / Cc * 100:.2f}%) · 블록 {DN:,}/{N:,} · 파일 {done}/{len(rows)}"
+    )
 
 
 if __name__ == "__main__":
