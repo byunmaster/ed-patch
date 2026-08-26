@@ -177,7 +177,12 @@ def routine(base, table_at, draw, pairs):
         bra   shift
         nop
     shifted:
-        mov   #0,r0                 ; 당긴 만큼(4B) 꼬리를 지운다 — 옛 일본어가 남지 않게
+        ; 🔴 **꼬리를 NUL 이 아니라 반각 공백 넷으로 채운다.** r1 은 방금 옮겨 적은 종단이다.
+        ;    게임은 **접기 전 길이만큼** 그려서, 줄어든 두 칸을 글리프 0 으로 찍는다
+        ;    — 화면에 **흰 네모**가 남았다(2026-08-26 실기, 원판엔 없다).
+        ;    공백 넷(=전각 두 칸)으로 폭을 되돌리고 **종단은 원래 자리**에 둔다.
+        mov   #0x20,r0
+        mov.b r0,@r1                ; 종단 자리를 공백으로
         add   #1,r1
         mov.b r0,@r1
         add   #1,r1
@@ -185,7 +190,8 @@ def routine(base, table_at, draw, pairs):
         add   #1,r1
         mov.b r0,@r1
         add   #1,r1
-        mov.b r0,@r1
+        mov   #0,r0
+        mov.b r0,@r1                ; 원래 종단 자리에 NUL — 길이가 그대로다
         mov   r2,r9                 ; prev = 고른 조사
         add   #2,r8
         bra   loop

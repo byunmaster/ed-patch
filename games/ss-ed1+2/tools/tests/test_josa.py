@@ -44,9 +44,31 @@ class Josa(unittest.TestCase):
         self.table = josa.build_table(self.codes)
 
     def run_fix(self, s):
+        """접은 결과 → `(문자열, 접은 횟수)`. ⚠ **꼬리 공백은 떼고 돌려준다** —
+        접을 때마다 반각 넷이 붙는데(길이를 지키려고), 문안 비교에 잡음이라 여기서 벗긴다.
+        붙었는지 자체는 `test_length_is_preserved_with_spaces` 가 따로 본다."""
         buf = bytearray(enc(s, self.codes) + b"\x00")
         n = josa.fix_buffer(buf, self.table, self.codes)
-        return dec(buf, self.codes), n
+        return dec(buf, self.codes).rstrip(" "), n
+
+    def test_length_is_preserved_with_spaces(self):
+        """🔴 **줄어든 4바이트를 반각 공백으로 메운다 — NUL 이 아니다.**
+
+        게임은 **접기 전 길이만큼** 그린다. NUL 로 채웠더니 줄어든 두 칸을 글리프 0 으로
+        찍어 **화면에 흰 네모**가 남았다(2026-08-26 실기 · 원판엔 없다 · 훅을 램에서 꺼서
+        사라지는 것까지 확인). 공백 넷 = 전각 두 칸이라 폭이 정확히 되돌아간다.
+        """
+        for s, folds in (("류난은(는) 잠에서 깼다.", 1), ("류난은(는) 소니아을(를) 보았다.", 2)):
+            with self.subTest(s=s):
+                raw = enc(s, self.codes) + b"\x00"
+                buf = bytearray(raw)
+                self.assertEqual(josa.fix_buffer(buf, self.table, self.codes), folds)
+                self.assertEqual(len(buf), len(raw), "버퍼 길이가 변했다")
+                t = buf.index(0)
+                self.assertEqual(t, len(raw) - 1, "종단이 앞으로 당겨졌다 — 길이가 줄었다")
+                self.assertEqual(
+                    bytes(buf[t - 4 * folds : t]), b" " * (4 * folds), "꼬리가 공백이 아니다"
+                )
 
     def test_table_size_and_range(self):
         """🔴 **바이트 표다** — SH-2 엔 가변 시프트가 없어 비트맵을 못 읽는다.

@@ -103,6 +103,11 @@ def fix_buffer(buf, table=None, codes=None):
     ⚠ ASCII·제어 바이트는 `prev` 를 **지우지 않는다** — 이름과 조사 사이에 `%c` 색 코드가
       낀다(원문이 `%c%s%c은(는)…` 꼴이다). 지우면 이름을 못 보고 늘 무받침을 고른다.
     ⚠ 병기가 없으면 아무것도 안 한다 — **멱등**이라 어느 경로에 걸어도 안전하다.
+    🔴 **줄어든 4바이트를 반각 공백으로 메운다 — 길이가 그대로여야 한다.**
+       게임은 **접기 전 길이만큼** 그린다. NUL 로 채웠더니 줄어든 두 칸을 글리프 0 으로
+       찍어 **화면에 흰 네모**가 남았다(2026-08-26 실기 · 원판엔 없다 · 훅을 램에서 꺼서
+       사라지는 것까지 확인). 공백 넷 = 전각 두 칸이라 폭이 정확히 되돌아간다.
+       ⚠ **종단은 원래 자리**에 둔다 — 안 그러면 길이가 여전히 줄어든다.
     """
     table = table if table is not None else build_table(codes)
     lo, hi = code_span()
@@ -121,10 +126,17 @@ def fix_buffer(buf, table=None, codes=None):
                 and buf[i + 5] == PAREN_R
             ):
                 keep = hit[0] if has_batchim(prev, table) else hit[1]
+                t = i
+                while t < len(buf) and buf[t]:
+                    t += 1  # 종단 자리 — **여기가 안 움직인다**
                 buf[i] = keep >> 8
                 buf[i + 1] = keep & 0xFF
-                del buf[i + 2 : i + 6]
-                buf.extend(b"\x00" * 4)  # 길이를 지킨다(꼬리는 널)
+                tail = bytes(buf[i + 6 : t])
+                buf[i + 2 : i + 2 + len(tail)] = tail
+                j = i + 2 + len(tail)
+                buf[j : j + 4] = b"    "  # 🔴 **NUL 이 아니라 반각 공백 넷** — 아래 주석
+                if j + 4 < len(buf):
+                    buf[j + 4] = 0
                 prev, i, n = keep, i + 2, n + 1
                 continue
             if lo <= code <= hi:
