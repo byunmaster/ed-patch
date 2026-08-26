@@ -58,3 +58,58 @@ def kanji_start(ku=KANJI_KU):
     보는 구현도 있다(새턴 ED1+2 에서 실제로 걸린 논점이다).
     """
     return (ku - 1) * KU_LEN
+
+
+# ── 역방향: 바이트 → 사람이 읽는 문안 ────────────────────────────────────────
+# 🔴 **이게 없어서 열다섯 번을 손으로 짰다**(2026-08-26, 새턴 ED1+2 전투 QA).
+#    디버깅의 9할이 「이 바이트가 화면에 뭘로 나오나」인데, 슬롯 코드는 cp932 로 풀면
+#    엉뚱한 한자가 나와서 **매번 인라인 디코더를 다시 썼다.** 인코더만 공용에 있고
+#    디코더가 없던 게 이유다 — 짝을 맞춘다.
+# ⚠ 게임의 슬롯 정본(`hangul_map*.json`)을 받아서 쓴다. 공용은 계산만 안다.
+
+
+def by_code(table):
+    """`{문자: 색인}` → `{SJIS 2바이트(int): 문자}`. 디코더가 쓰는 역인덱스."""
+    return {int.from_bytes(sjis_of_index(i), "big"): ch for ch, i in table.items()}
+
+
+def is_lead(b):
+    """SJIS 2바이트 문자의 선행 바이트인가."""
+    return 0x81 <= b <= 0x9F or 0xE0 <= b <= 0xEF
+
+
+def decode(data, table=None, *, stop_at_nul=True, raw="<{:02x}>"):
+    """바이트 → 문안. 우리 슬롯이면 그 글자, 아니면 cp932, 그것도 아니면 `raw` 로 찍는다.
+
+    `table` 은 `{문자: 색인}`(게임 슬롯 정본) 또는 이미 뒤집힌 `{코드: 문자}` 둘 다 받는다.
+
+    ⚠ **제어 바이트를 버리지 않는다** — `%c` 색코드가 1바이트로 들어앉는 자리가 있어,
+      지우면 「왜 색이 갈리나」를 못 본다. `<01>` 처럼 그대로 보여 준다.
+    ⚠ `stop_at_nul=False` 로 두면 종단 뒤까지 읽는다 — 「뒤에 뭐가 붙어 있나」를 볼 때 쓴다.
+    """
+    if table and isinstance(next(iter(table)), str):
+        table = by_code(table)
+    codes = table or {}
+    out, i = [], 0
+    while i < len(data):
+        b = data[i]
+        if b == 0:
+            if stop_at_nul:
+                break
+            out.append(raw.format(b))
+            i += 1
+            continue
+        if is_lead(b) and i + 1 < len(data):
+            code = (b << 8) | data[i + 1]
+            ch = codes.get(code)
+            if ch is None:
+                try:
+                    ch = data[i : i + 2].decode("cp932")
+                except UnicodeDecodeError:
+                    ch = raw.format(b) + raw.format(data[i + 1])
+            out.append(ch)
+            i += 2
+        else:
+            out.append(chr(b) if 0x20 <= b < 0x7F else raw.format(b))
+            i += 1
+    return "".join(out)

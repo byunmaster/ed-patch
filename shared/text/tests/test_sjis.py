@@ -9,7 +9,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from shared.text.sjis import jis_index, kanji_start, ku_ten, sjis_of_index
+from shared.text.sjis import decode, jis_index, kanji_start, ku_ten, sjis_of_index
 
 
 class TestIndex(unittest.TestCase):
@@ -65,3 +65,33 @@ class TestSjis(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Decode(unittest.TestCase):
+    """🔴 **인코더의 짝**. 디코더가 없어서 디버깅 때마다 인라인으로 다시 짰다(2026-08-26)."""
+
+    def setUp(self):
+        self.TABLE = {"가": kanji_start(), "나": kanji_start() + 1}
+
+    def test_round_trip_through_slots(self):
+        """문자 → 슬롯 SJIS → 문자. 왕복이 안 맞으면 화면에만 엉뚱한 글자가 나온다."""
+        for ch, idx in self.TABLE.items():
+            b = sjis_of_index(idx)
+            self.assertEqual(decode(b, self.TABLE), ch)
+
+    def test_falls_back_to_cp932(self):
+        """슬롯에 없는 2바이트는 원문 그대로 읽는다 — 미번역 자리를 눈으로 가른다."""
+        self.assertEqual(decode("の攻撃".encode("cp932"), self.TABLE), "の攻撃")
+
+    def test_keeps_control_bytes_visible(self):
+        """⚠ `%c` 색코드가 1바이트로 들어앉는다 — 지우면 색이 갈리는 이유를 못 본다."""
+        self.assertEqual(decode(b"\x01A\x02", self.TABLE), "<01>A<02>")
+
+    def test_stops_at_nul_by_default(self):
+        b = sjis_of_index(self.TABLE["가"]) + b"\x00" + b"XY"
+        self.assertEqual(decode(b, self.TABLE), "가")
+        self.assertEqual(decode(b, self.TABLE, stop_at_nul=False), "가<00>XY")
+
+    def test_works_without_a_table(self):
+        """표가 없어도 cp932 로는 읽힌다 — 원본만 볼 때 쓴다."""
+        self.assertEqual(decode("の".encode("cp932")), "の")
