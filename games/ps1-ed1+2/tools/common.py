@@ -19,6 +19,70 @@ ORIG_DIR = os.path.join(ROOT, "..", "..", "originals", "jp", "ps1-ed1+2")  # 원
 WORK_DIR = os.path.join(ROOT, "work")  # 컨테이너
 
 
+
+# ── 바깥 서비스 열쇠 ────────────────────────────────────────────────────────
+# ⚠ **`ss-ed3/tools/common.py` 와 같은 몸**이다(2026-08-26). 둘째 소비자가 생겼으니
+#   `shared/` 로 올릴 자리인데, **공용 코드는 main 에서만 고친다**(루트 CLAUDE.md)라
+#   여기서는 게임 쪽에 둔다. main 작업 때 옮긴다.
+
+def secrets_path():
+    """`.local/secrets.env` 를 **위로 올라가며** 찾는다 — 없으면 있을 자리를 돌려준다.
+
+    ⚠ 열쇠는 `.local/` 에 둔다 — 이 레포가 이미 「머신 전용」으로 쓰는 자리이고
+    `.gitignore` 에 들어 있다. **새 `.env` 규약을 만들지 않는다.**
+    ⚠ **워크트리에는 `.local/` 이 따라오지 않는다** — 워크트리 루트에서 시작해 메인
+    트리까지 거슬러 올라간다.
+    """
+    d = ROOT
+    fallback = None
+    for _ in range(6):
+        p = os.path.join(d, ".local", "secrets.env")
+        if os.path.exists(p):
+            return p
+        if fallback is None and os.path.isdir(os.path.join(d, ".local")):
+            fallback = p
+        nd = os.path.dirname(d)
+        if nd == d:
+            break
+        d = nd
+    return fallback or os.path.join(ROOT, ".local", "secrets.env")
+
+
+def secret(name):
+    """바깥 서비스 열쇠 — **환경변수 → `.local/secrets.env`** 순. 없으면 빈 문자열.
+
+    열쇠가 느는 자리가 이미 둘이다(`DEEPL_API_KEY` · `GEMINI_API_KEY`). 도구마다 읽는
+    법을 따로 쓰면 곧 갈리므로 여기 하나로 둔다.
+    ⚠ 값을 로그·오류 메시지에 찍지 않는다 — 있는지 없는지만 말한다.
+    """
+    v = os.environ.get(name)
+    if v:
+        return v
+    p = secrets_path()
+    if not os.path.exists(p):
+        return ""
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith(f"{name}=") and not line.startswith("#"):
+                return line.split("=", 1)[1].strip().strip("\"'")
+    return ""
+
+
+def need_secret(name, how):
+    """없으면 **어디에 어떻게 두는지** 알려주고 멈춘다."""
+    v = secret(name)
+    if v:
+        return v
+    raise SystemExit(
+        f"{name} 가 없다. 둘 중 하나로 준다:\n"
+        f"  ① {secrets_path()} 에\n"
+        f"       {name}=여기에키\n"
+        "     (`.local/` 은 gitignore 라 커밋되지 않는다. 권한은 600 으로)\n"
+        f"  ② {name}=... 로 환경변수\n"
+        f"  ⓘ {how}"
+    )
+
 def _build_tag():
     """빌드 산출물을 가르는 꼬리표 — 기본은 **현재 git 브랜치**다.
 
