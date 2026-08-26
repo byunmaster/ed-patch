@@ -79,6 +79,10 @@ scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test
   lib/select.sh     └ 화살표 키 선택 UI (에뮬 전용이 아니라 여기 둔다)
   worktree.sh       └ 게임별 워크트리 (originals 지역 링크까지 대신한다)
 .local/             이 머신 전용 (gitignore) — dosbox 실행 사본 · 패처 빌드 · 배포 레포 클론
+  secrets.env       └ **바깥 서비스 열쇠는 여기 하나로** (DeepL · Gemini …). 새 `.env`
+                       규약을 만들지 않는다 — `.local/` 이 이미 그 자리다. 도구는
+                       `common.secret(이름)` 으로 읽고 **환경변수가 이긴다**.
+                       ⚠ 워크트리엔 `.local/` 이 안 따라오므로 메인 트리 것을 거슬러 찾는다
 patcher/            웹 패처 일체 — index.html.tmpl · build.py · subset_font.py · fonts.css
                     빌드하면 games/*/patches/*.json 이 인라인된 자립형 HTML 하나가 나온다
 docs/               레퍼런스·공개 체크리스트·소장 컬렉션

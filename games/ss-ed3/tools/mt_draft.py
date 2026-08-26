@@ -24,6 +24,13 @@
    AI Studio 에서 키를 새로 받아 `GEMINI_API_KEY` 로 준다. ⚠ 로그인은 브라우저가 필요하다.
 """
 
+EPILOG = """열쇠는 `.local/secrets.env` 하나에 모은다(환경변수가 이긴다):
+
+  GEMINI_API_KEY=...   # 있으면 REST + 구조화 출력, 없으면 gemini-cli 로 폴백
+
+⚠ 워크트리엔 `.local/` 이 안 따라온다 — 메인 트리에 한 번만 두면 거슬러 올라가 찾는다.
+자세한 것은 `.local/README.md`."""
+
 import argparse
 import json
 import os
@@ -41,7 +48,7 @@ import typeset as T
 
 GEMINI = os.environ.get("GEMINI_BIN", "gemini")
 MODEL = os.environ.get("GEMINI_MODEL", "")  # 비우면 각 경로의 기본 모델
-API_KEY = os.environ.get("GEMINI_API_KEY", "")
+API_KEY = C.secret("GEMINI_API_KEY")  # 열쇠는 `.local/secrets.env` 하나에 모은다
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
 GAME = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAX_ROUNDS = 3
@@ -208,7 +215,9 @@ def verify(kr, item):
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(
+        epilog=EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("stem")
     # 🔴 **호출 수가 곧 한도다.** 무료 등급은 하루 한도가 낮아서(실측 2026-08-25:
     #   `limit: 20`, 「exhausted your daily quota」) 블록을 잘게 나눠 던지면 맵 하나도

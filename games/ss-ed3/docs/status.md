@@ -312,6 +312,10 @@ MAP019 0x12D82  　　　　　　第１章　テグラの宝石　完
    ⚠ `MAP000` 은 디버그 맵이라 손대지 않는다(`GOSUB〜RETURN 테스트` · 개발자 이름).
    흐름: `progress.py --todo MAP0XX` 로 남은 블록을 검토표로 뽑고(⚠ 원문이라 `work/review`,
    커밋 금지) → 번역 → 예산·조판 검사 → `script/MAP0XX.json` → `stamp_script.py` → 빌드.
+   🔎 **검수기 셋** — `check_speech.py`(높임·반말 혼용) · `check_fidelity.py`(숫자·고유명사
+   빠짐)는 `check.sh` 에 물려 매번 돈다. `backtrans.py` 는 우리 문안을 일본어로 **되돌려
+   원문과 맞춰** 뜻이 미끄러진 자리를 순위로 뽑는다(DeepL 무료 API · `DEEPL_API_KEY` 필요 ·
+   2,836 블록 6.3만 자로 월 한도의 12%). 네트워크가 드니 게이트가 아니라 **손으로 돌린다.**
    🔑 **말투 정본은 [`docs/voice.md`](voice.md)** — 화자별 화계와 「높임·반말을 섞지 않는다」.
    잴 수 있는 부분은 `tools/check_speech.py` 가 매번 본다(`check.sh` 에 물려 있다).
    ⚠ **상점·수량 대사는 문장 조각**이다(`でいいよ。` = 「(금액)이면 되겠어」). 앞에 인자가
