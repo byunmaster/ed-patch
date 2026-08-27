@@ -38,6 +38,12 @@ NAME_OFF = PTR_OFF + PTR_N * 4  # 0xA4
 CTRL_NL = 0x0D  # 개행
 CTRL_PAGE = 0x0F  # 페이지 넘김
 BODY_CTRL = (CTRL_NL, CTRL_PAGE)
+#   🔴 **반각 숫자는 본문 한복판에 온다** — `あれはまだ10歳のころじゃないか。` 처럼.
+#     이걸 런 밖으로 보면 거기서 블록이 끊겨 **앞쪽 일본어가 어느 블록에도 안 들어간다.**
+#     그러면 번역해도 화면엔 `あれはまだ１０그럴 나이였잖아.` 로 반만 한글이 된다
+#     (2026-08-27 유저 스크린샷으로 잡혔다. 71 블록 · 146 자가 그렇게 새고 있었다).
+#     ⚠ 런을 **시작**하지는 못한다 — 숫자만 있는 데이터를 텍스트로 오인하면 안 된다.
+BODY_ASCII = frozenset(range(0x30, 0x3A))  # 0-9
 
 # 블록 뒤에 올 수 있는 바이트 — 이 밖이면 그래픽 오탐으로 본다
 TERM_OK = frozenset({0x10, 0x0E, 0x00, 0x09, 0xFF, 0xFE})
@@ -116,7 +122,7 @@ def blocks(b):
             i += 2
             nch += 1
             continue
-        if st is not None and b[i] in BODY_CTRL:
+        if st is not None and (b[i] in BODY_CTRL or b[i] in BODY_ASCII):
             i += 1
             continue
         if st is not None:
@@ -135,7 +141,7 @@ def _run(b, i):
         if is_sjis_pair(b, i):
             i += 2
             n += 1
-        elif n and b[i] in BODY_CTRL:
+        elif n and (b[i] in BODY_CTRL or b[i] in BODY_ASCII):
             i += 1
         else:
             break
@@ -185,6 +191,9 @@ def text_of(body):
         elif body[i] == CTRL_PAGE:
             out.append("\f")
             i += 1
+        elif body[i] in BODY_ASCII:
+            out.append(chr(body[i]))
+            i += 1
         else:
             out.append(f"<{body[i]:02X}>")
             i += 1
@@ -208,6 +217,8 @@ def encode_text(s, char=None):
             out.append(CTRL_NL)
         elif c == "\f":
             out.append(CTRL_PAGE)
+        elif "0" <= c <= "9":
+            out.append(ord(c))
         elif c == "<" and i + 3 < len(s) and s[i + 3] == ">":
             out.append(int(s[i + 1 : i + 3], 16))
             i += 4

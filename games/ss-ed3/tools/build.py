@@ -31,6 +31,7 @@ import reinsert as R
 import reinsert_book as RB
 import reinsert_desc as RD
 import reinsert_gfx as RG
+import reinsert_param as RP
 import reinsert_sys as RS
 
 from shared.disc import mode1
@@ -91,9 +92,10 @@ def build_one(a_disc):
                     touched_lbas.append((name, lba, size))
 
             print("[3/5] 문안 재삽입 (길이 보존)")
-            done = nsys = ndesc = nbook = ngfx = 0
+            done = nsys = ndesc = nbook = ngfx = nname = 0
             systbl = RS.table()
             desctbl = RD.table()
+            paramtbl = RP.table()
             for name, lba, size in files:
                 b = None
                 if name.startswith("/MAP/") and name.endswith(".BIN"):
@@ -120,10 +122,15 @@ def build_one(a_disc):
                     new, _ = RG.apply(b)
                     ngfx += 1 if new != b else 0
                     bad = []
-                elif name == "/SYSTEM/PARAM.BIN" and desctbl:
+                elif name == "/SYSTEM/PARAM.BIN":
+                    #   ⚠ 한 파일에 **설명문과 이름 표**가 같이 있다 — 둘을 이어서 넣는다.
+                    #     이름 표가 빠져 있어 장비창에 일본어가 떴다(2026-08-27 유저 실측).
                     b = d.read_extent(lba, size)
-                    new, k, bad = RD.patch(b, table, desctbl)
+                    new, k, bad = (b, 0, []) if not desctbl else RD.patch(b, table, desctbl)
                     ndesc += k
+                    new, k2, bad2 = RP.patch(new, None, paramtbl)
+                    nname += k2
+                    bad += bad2
                 else:
                     continue
                 if bad:
@@ -133,7 +140,7 @@ def build_one(a_disc):
                     mode1.write_at(f, lba, size, 0, new, label=name, expect=b)
                     touched_lbas.append((name, lba, size))
             print(
-                f"      대사 블록 {done} · 시스템 문자열 {nsys} · 설명문 {ndesc} · "
+                f"      대사 블록 {done} · 시스템 문자열 {nsys} · 설명문 {ndesc} · 이름 {nname} · "
                 f"읽을거리 {nbook} · 화면 그림 {ngfx}"
             )
 
