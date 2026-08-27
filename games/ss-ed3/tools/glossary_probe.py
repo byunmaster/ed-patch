@@ -270,7 +270,8 @@ def main():
                     "_doc": [
                         "ED3 고유명사 표기 — **정발 코퍼스가 판정한 자동분**. 근거는 그 표기가",
                         "정발에서 쓰인 횟수다(`glossary_probe.py`). ⚠ 아직 후보다 —",
-                        "유저가 훑은 뒤 `shared/glossary/` 로 올린다(자리가 main 이라 확인을 받는다).",
+                        "유저가 훑은 뒤 `glossary_manual.json` 으로 옮긴다. ⚠ 정본은 **당분간 게임 아래**다 —",
+                        "`shared/glossary/eiyuu3.json` 승격은 이 브랜치를 main 에 머지할 때 한다(2026-08-27).",
                         "⚠ 단어 표기만 담는다. 문안은 여기 오지 않는다(루트 「저작권」).",
                     ],
                     "categories": {k: dict(sorted(v.items())) for k, v in sorted(res.items())},
