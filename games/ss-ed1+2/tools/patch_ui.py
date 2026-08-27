@@ -590,8 +590,17 @@ def sys_rows(mm):
     fixed = {}
     for key, path in dump_ui.FILES.items():
         col = 0 if key == "ED" else 1
+        # ⚠ **지명 표도 넣는다**(`GLOSSARY_TABLES`). 빠뜨렸더니 같은 지명을 정본에 넣었을 때
+        #   표와 **두 주인**이 되어 되읽기가 18건 울었다(2026-08-27:
+        #   `'보아드해운' ≠ '보아드해운　'` — 표는 접미 공백까지 붙인다).
+        #   그 표들은 정본이 `shared/glossary` 라 시스템 메시지가 건드릴 자리가 아니다.
         for _name, ed, ed2, stride, n, n2 in dump_ui.TABLES:
             off, cnt = (ed, ed2)[col], (n, n2)[col]
+            if off and cnt:
+                fixed.setdefault(path, []).append((off, off + stride * cnt))
+        for _name, ed, ed2, stride, n, n2, _cat in dump_ui.GLOSSARY_TABLES:
+            off = (ed, ed2)[col]
+            cnt = (n2 if (col == 1 and n2) else n) or 0
             if off and cnt:
                 fixed.setdefault(path, []).append((off, off + stride * cnt))
     out, seen = [], set()
@@ -628,6 +637,13 @@ def sys_rows(mm):
                     nxt = j
                     while nxt < len(d) and d[nxt] == 0:
                         nxt += 1
+                    # 🔴 **자리는 고정 폭 표 앞에서 멈춘다.** 자리(span)는 「다음 자료가
+                    #    시작하는 데」까지인데, 표를 스캔에서만 빼고 여기서 안 막으면 그 앞
+                    #    레코드의 자리가 **표를 삼킨다** — 그리고 풀에 들어가 덮인다
+                    #    (실측 2026-08-27: `ED/지명[0] '큰독개구리C' ≠ '엘아스타　'`).
+                    for a, _b in fixed.get(path, []):
+                        if i < a < nxt:
+                            nxt = a
                     # 🔴 **재배치 단위는 「포인터가 가리키는 자리」다.** 한 런에 문자열이 둘
                     #   이상 붙어 있고(0 없이) 포인터가 그 중간을 가리키는 자리가 있다.
                     #   우리 글 앞에서 **가장 가까운 포인터 대상**을 잡아야 앞말을 안 끌고 간다.
