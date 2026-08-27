@@ -155,6 +155,23 @@ class Scn(unittest.TestCase):
                 return
         self.skipTest("조건에 맞는 구간이 없다")
 
+    def test_writes_only_the_changed_bytes(self):
+        """🔴 **구간을 통째로 쓰면 남이 넣은 한국어가 원문으로 돌아간다.**
+
+        같은 파일을 `patch_ui`(시스템 메시지) · `patch_mon_names`(이름 칸)와 나눠 갖는데,
+        구간 전체를 쓰면 우리가 안 건드린 블록 자리에 **원문 JP 를 다시 깐다**.
+        실측 2026-08-27: `/BIN/ED2MON*` 에서 69자리가 그렇게 되돌아가 있었고, 게이트는
+        patch_ui 가 **먼저** 돌아 자기 되읽기를 통과한 뒤라 아무도 못 봤다.
+        """
+        self.assertEqual(S._diffs(b"abcd", b"abcd"), [])
+        self.assertEqual(S._diffs(b"aXcd", b"abcd"), [(1, 2)])
+        self.assertEqual(S._diffs(b"aXXd", b"abcd"), [(1, 3)])
+        self.assertEqual(S._diffs(b"XbcX", b"abcd"), [(0, 1), (3, 4)])
+        # 안 바뀐 자리는 **한 바이트도** 쓰지 않는다 — 그게 이 시험의 전부다
+        new, old = b"\x01\x02\x03\x04\x05", b"\x01\xff\x03\xff\x05"
+        touched = {i for a, b in S._diffs(new, old) for i in range(a, b)}
+        self.assertEqual(touched, {1, 3})
+
     def test_runs_never_swallow_code(self):
         """구간이 코드를 삼키면 안 된다 — 빈틈이 `MAX_GAP` 을 넘으면 끊는다."""
         for path in self.files[:12]:

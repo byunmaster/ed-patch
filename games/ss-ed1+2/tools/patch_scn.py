@@ -140,6 +140,28 @@ def owned_elsewhere(path):
        이름 패처가 이겨서 화면은 멀쩡했지만, **두 주인은 순서 하나로 뒤집힌다.**
     ⚠ 늦게 부른다 — `patch_mon_names` 가 `patch_ui` 를 거쳐 우리를 부른다(순환).
     """
+    return _mon_slots(path) | _sys_slots(path)
+
+
+_SYS = None
+
+
+def _sys_slots(path):
+    """`patch_ui` 가 시스템 메시지로 쓰는 자리 — 씬은 거기에 안 넣는다(두 주인 금지)."""
+    global _SYS
+    if _SYS is None:
+        import patch_ui
+
+        _f, mm = common.open_image()
+        _SYS = {}
+        for r in patch_ui.sys_rows(mm):
+            _SYS.setdefault(r[0], set()).add(r[3])
+        mm.close()
+        _f.close()
+    return frozenset(_SYS.get(path, ()))
+
+
+def _mon_slots(path):
     if not path.startswith("/BIN/ED2MON"):
         return frozenset()
     import patch_mon_names
@@ -296,18 +318,41 @@ def _encode(kr, plan=None):
     return bytes(out)
 
 
+def _diffs(new, old):
+    """`[(시작, 끝)]` — 두 바이트열이 **다른 구간들**. 남의 자리를 안 밟게 여기로만 쓴다."""
+    out, i = [], 0
+    n = len(new)
+    while i < n:
+        if new[i] == old[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and new[j] != old[j]:
+            j += 1
+        out.append((i, j))
+        i = j
+    return out
+
+
 def apply_runs(dst, path, lba, size, base, plans):
     """구간 바이트 + **바뀐 포인터**를 쓴다 → 쓴 포인터 수.
 
     🔴 **포인터를 안 고치면 옮긴 블록을 아무도 못 찾는다.** 구간 안에서 앞 블록이 짧아지면
        뒤가 통째로 당겨지므로, 옮겨진 블록마다 `ptr_at` 의 BE32 를 새 주소로 바꾼다.
+    🔴 **구간을 통째로 쓰지 않는다 — 바뀐 토막만 쓴다.** 구간 안에는 우리가 안 건드리는
+       블록도 있는데, 통째로 쓰면 그 자리에 **원문 JP 를 다시 깔아** 앞 단계가 넣어 둔
+       한국어를 되돌린다. 실측 2026-08-27: `/BIN/ED2MON*` 에서 `patch_ui` 가 넣은 시스템
+       메시지 **69줄이 일본어로 돌아가 있었다.** 게이트는 patch_ui 가 **먼저** 돌아 자기
+       되읽기를 통과한 뒤라 아무도 못 봤다 — 체인은 순서만으로 안 지켜진다.
     ⚠ 안 바뀐 것은 안 쓴다 — 되읽기 대장이 「무엇이 실제로 움직였나」를 그대로 비춘다.
     """
     n = 0
     with open(dst, "r+b") as f:
         for start, blob, moves, orig in plans:
-            if blob != orig:
-                common.write_at(f, lba, size, start, blob, label=f"{path} 씬 구간 0x{start:X}")
+            for a, b in _diffs(blob, orig):
+                common.write_at(
+                    f, lba, size, start + a, blob[a:b], label=f"{path} 씬 0x{start + a:X}"
+                )
             for ptrs, at in moves:
                 want = (base + at).to_bytes(4, "big")
                 for q in ptrs:
@@ -333,9 +378,12 @@ def verify(dst, checks):
     for path, lba, size, base, plans in checks:
         d = bytes(common.read_extent(mm2, lba, size))
         for start, blob, moves, orig in plans:
-            if blob != orig:
-                got = d[start : start + len(blob)]
-                assert got == blob, f"{path} 0x{start:X}: 되읽기가 다르다"
+            # ⚠ **우리가 쓴 토막만** 본다 — 구간 전체를 대조하면 안 건드린 블록에서
+            #   남이 넣은 한국어를 「어긋났다」고 부른다(`apply_runs` 주석).
+            for a, b in _diffs(blob, orig):
+                assert d[start + a : start + b] == blob[a:b], (
+                    f"{path} 0x{start + a:X}: 되읽기가 다르다"
+                )
                 nb += 1
             for ptrs, at in moves:
                 want = (base + at).to_bytes(4, "big")
