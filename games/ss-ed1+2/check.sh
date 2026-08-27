@@ -42,6 +42,8 @@ step "타이틀 그림" "$T/patch_gfx_title.py" --apply
 step "메뉴 그림" "$T/patch_gfx_menu.py" --apply
 step "챕터 판" "$T/patch_gfx_cards.py" --apply
 step "HUD" "$T/patch_gfx_hud.py" --apply
+echo "  ── ED2 몬스터 이름 (제자리 우선 · 넘치면 칸끼리 재배치)"
+step "몬스터 이름" "$T/patch_mon_names.py" --apply
 echo "  ── 회심/통한 복사 루프 (14B 고정 → NUL 종단)"
 step "회심 복사" "$T/patch_crit_copy.py" --apply
 echo "  ── 고정 길이 복사 전수 (칸에 맞나 · 빌드 이미지 기준)"

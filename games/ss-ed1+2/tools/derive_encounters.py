@@ -1,7 +1,10 @@
-"""출현 문구를 **정본에서 유도한다** — `<몬스터>が現れた。` → `<이름>이(가) 나타났다.`
+"""ED2 전투 문안을 **정본에서 유도한다** — 몬스터 **이름**과 **출현 문구**.
 
     python3 tools/derive_encounters.py           # 유도 결과만 보여 준다
     python3 tools/derive_encounters.py --write   # `script/system.json` 에 넣는다
+
+    <몬스터>が現れた。   → <이름>이(가) 나타났다.
+    スライムＡ          → 슬라임A            (전투 메시지의 `%s` 가 여기서 온다)
 
 ## 왜 손으로 안 적나
 
@@ -69,6 +72,12 @@ FILES = [f"/BIN/ED2MON{i:02d}.BIN" for i in range(1, 11)]
 SUFFIX = "が現れた。"
 GROUP = "の群れ" + SUFFIX  # `<이름>の群れが現れた。`
 
+# 🔴 **개체 접미는 반각으로 낸다** — 원본은 전각(`スライムＡ`)이지만 우리는 반각이다
+#    (유저 방침: 메시지 창의 알파벳은 전부 반각). 덤으로 한 글자에 1B 를 아낀다.
+#    ⚠ 원본에 **반각으로 든 것도 있다**(`ブラムナドッグA`) — 둘 다 받는다.
+MARKS = "ＡＢＣＤＥＦABCDEF"
+HALF = {c: chr(ord(c) - 0xFEE0) if "Ａ" <= c <= "Ｚ" else c for c in MARKS}
+
 
 def targets(path):
     """그 파일에서 **포인터가 가리키는** 문자열 전량 (cp932 로 읽히는 것만)."""
@@ -89,6 +98,45 @@ def targets(path):
         except UnicodeDecodeError:
             pass
     return seen
+
+
+def split_mark(jp, mon):
+    """`(KR 이름, 반각 접미)`. 정본에 없으면 `(None, ...)`.
+
+    ⚠ **통짜부터 본다** — `ゴドウィン２世` 처럼 끝 글자가 접미처럼 생긴 이름이 있다.
+    """
+    if jp in mon:
+        return mon[jp], ""
+    if jp and jp[-1] in MARKS and jp[:-1] in mon:
+        return mon[jp[:-1]], HALF[jp[-1]]
+    return None, ""
+
+
+def monster_names(mon):
+    """`{JP: KR}` — ED2MON 파일들의 몬스터 이름 칸. 못 찾은 것은 `None` 으로 담는다."""
+    out = {}
+    for path in FILES:
+        d = bytes(common.extract(path))
+        base = dump_scn.base_for(os.path.basename(path))
+        tgt = set()
+        for o in range(0, len(d) - 3, 2):
+            v = struct.unpack(">I", d[o : o + 4])[0]
+            if base <= v < base + len(d):
+                tgt.add(v - base)
+        for t in sorted(tgt):
+            j = t
+            while j < len(d) and d[j] != 0:
+                j += 1
+            if not (2 <= j - t <= 20):
+                continue
+            try:
+                jp = d[t:j].decode("cp932")
+            except UnicodeDecodeError:
+                continue
+            kr, mark = split_mark(jp, mon)
+            if kr:
+                out[jp] = kr + mark
+    return out
 
 
 def render(jp, mon):
@@ -153,6 +201,18 @@ def main():
 
     add, have, skip, miss = {}, 0, [], {}
     tight = []
+    # ── 몬스터 이름 (전투 메시지의 `%s` 가 여기서 온다)
+    nm = monster_names(mon)
+    for jp, kr in sorted(nm.items()):
+        k = sys_key(jp)
+        if k in canon:
+            have += 1
+            continue
+        add[k] = kr
+    print(f"몬스터 이름 {len(nm)}칸 — 새로 유도 {len(add)}")
+    for jp, kr in sorted(nm.items())[:8]:
+        print(f"   {jp!r} → {kr!r}")
+
     for jp in sorted(jps):
         kr, bad = render(jp, mon)
         if bad:
