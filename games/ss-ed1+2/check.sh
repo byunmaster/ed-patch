@@ -22,12 +22,38 @@ PY="$ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY=python3
 T="$G/tools"
 
+# 🔴 **실패한 빌드는 산출물을 무효화한다**(루트 CLAUDE.md 「빌드 규율」). 남은 낡은 이미지를
+#    정상으로 오해하고 조사하면 엉뚱한 결론이 나온다 — 이 레포의 1급 사고다.
+#    ⚠ 헤더엔 예전부터 그렇게 적혀 있었는데 **실제로는 안 하고 있었다**(2026-08-27 실측).
+# ⚠ `set -e` 아래라 **값을 정하는 자리에서 실패할 수 있는 명령을 쓰지 않는다** — 못 구하면
+#    빈 값으로 두고 아래에서 건너뛴다(루트 CLAUDE.md 「코드 스타일」 셸 절).
+BUILD=$("$PY" -c "import sys;sys.path.insert(0,'$T');import common as C;print(C.BUILD_DIR)" 2>/dev/null) || BUILD=""
+
+invalidate() {
+  [ -n "$BUILD" ] && [ -d "$BUILD" ] || return 0
+  n=0
+  for p in "$BUILD"/*.bin "$BUILD"/*.cue "$BUILD"/*.m3u; do
+    [ -f "$p" ] || continue
+    mv "$p" "$p.failed"
+    n=$((n + 1))
+  done
+  [ "$n" -gt 0 ] && echo "  ⚠ 산출물 ${n}개를 *.failed 로 무효화했다 ($BUILD)"
+  return 0
+}
+
+# ⚠ **지난 표식은 시작할 때 지운다.** 「성공했을 때」가 아니다 — 체인이 중간에 죽으면
+#    성공 시점을 못 밟아 표식이 또 남고, `scripts/pull-build.sh` 가 정상 이미지가 있는
+#    칸까지 통째로 거부한다(유저 실측 2026-08-27). 시작에 지워야 「이 칸의 `.failed` 는
+#    **직전 실행의 결과만** 뜻한다」가 선다.
+[ -n "$BUILD" ] && rm -f "$BUILD"/*.failed
+
 step() {   # step <설명> <스크립트> [인자…]
   d=$1
   shift
   out=$("$PY" "$@" 2>&1) || {
     echo "  ❌ $d — $PY $*"
     echo "$out" | tail -12 | sed 's/^/     /'
+    invalidate
     exit 1
   }
   echo "$out" | grep -E '✅|되읽기|훑기|ℹ' | tail -4 | sed "s|^|     |"

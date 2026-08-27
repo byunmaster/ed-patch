@@ -48,6 +48,16 @@ import common
 import dump_scn
 
 # 늘릴 파일군 — (패턴, 그 파일들이 올라가는 주소). 같은 주소면 「최대 원본 크기」가 상한이다.
+# 🔴 **실기로 잰 상한**(2026-08-27). 안전 조건 ②는 「원판도 이미 올리는 크기」를 상한으로
+#    쓰는데, 그러면 **그 파일군의 최대 파일 자신은 한 바이트도 못 는다.** `ED2MON06`
+#    (0x5C58 = 그 군의 최대)이 정확히 그 경우였고 출현 문구 39줄이 갈 곳을 잃었다.
+#    ⇒ 그 위가 정말 비는지 **재서** 열었다 — 계측 절차와 수치는 `docs/devlog.md` (20):
+#      · 정적: 12개 바이너리에 0x060E5C58~0x060E6000 을 가리키는 절대 주소 **0개**
+#      · 실기: 그 936B 에 표식을 심고 **ED2 전투를 끝까지** 돌렸다(파렌 근처 슬라임전,
+#        `/BIN/ED2MON01.BIN` 적재). 전투 내내 **쓰기 감시 0건**, 표식 936B **바이트 동일**.
+#    ⚠ 여기 값은 **추측이면 안 된다.** 재지 않은 군은 이 표에 넣지 않는다 — 조건 ②로 남는다.
+MEASURED_CAP = {"ED2MON": 0x060E6000 - 0x060E0000}
+
 GROUPS = [
     re.compile(r"^/BIN/ED2MON\d+\.BIN$"),
     # 🔴 **씬 파일도 연다**(2026-08-27). 칸을 넘는 대사 1,304블록에 갈 자리가 필요한데
@@ -112,6 +122,10 @@ def plan(mm):
         grp = [(p, lba, size) for p, lba, size in files if pat.match(p)]
         assert grp, f"패턴에 걸리는 파일이 없다: {pat.pattern}"
         cap = max(size for _p, _l, size in grp)  # ② 원판도 이 크기까지는 올린다
+        # 실기로 잰 군은 그 값이 이긴다(위 MEASURED_CAP 주석)
+        key = next((k for k in MEASURED_CAP if k in pat.pattern), None)
+        if key:
+            cap = max(cap, MEASURED_CAP[key])
         for p, lba, size in grp:
             sectors = -(-size // USER)
             room = sectors * USER

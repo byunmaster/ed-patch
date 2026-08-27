@@ -58,12 +58,32 @@ class Expand(unittest.TestCase):
                 self.assertLessEqual(lba + sectors, after, p)
 
     def test_never_exceeds_what_the_original_already_loads(self):
-        """② 원판이 이미 올리는 크기를 넘지 않는다 — 그게 「뒤가 비었다」는 유일한 증거다."""
+        """② 원판이 이미 올리는 크기를 넘지 않는다 — 그게 「뒤가 비었다」는 기본 증거다.
+
+        ⚠ **실기로 잰 군만 예외**다(`E.MEASURED_CAP`). 조건 ②를 그대로 두면 그 파일군의
+          **최대 파일 자신은 한 바이트도 못 는다** — `ED2MON06` 이 그 경우였다. 재서 연
+          자리는 상한을 그 값으로 올린다. 재지 않은 군은 예외가 없다(아래 시험이 지킨다).
+        """
         for pat in E.GROUPS:
             cap = max(s for p, _l, s in self.files if pat.match(p))
+            key = next((k for k in E.MEASURED_CAP if k in pat.pattern), None)
+            if key:
+                cap = max(cap, E.MEASURED_CAP[key])
             for p, _at, _d, _lba, _old, new in self.rows:
                 if pat.match(p):
-                    self.assertLessEqual(new, cap, f"{p}: {new} > 원판 최대 {cap}")
+                    self.assertLessEqual(new, cap, f"{p}: {new} > 상한 {cap}")
+
+    def test_measured_cap_only_where_it_was_measured(self):
+        """🔴 **잰 자리에만 예외를 준다.** 예외를 추측으로 넓히면 조건 ②가 무의미해진다.
+
+        지금 잰 것은 `ED2MON` 하나뿐이다(2026-08-27 실기: 936B 표식이 ED2 전투 내내
+        무사, 쓰기 감시 0건 — devlog 20). 새 군을 넣으려면 **그 군에서 다시 재야** 한다.
+        """
+        self.assertEqual(set(E.MEASURED_CAP), {"ED2MON"})
+        # 잰 값은 그 군이 실제로 올라가는 주소 위에 있어야 한다
+        self.assertGreater(
+            E.MEASURED_CAP["ED2MON"], max(s for p, _l, s in self.files if "ED2MON" in p)
+        )
 
     def test_size_is_not_hardcoded(self):
         """③ 크기·섹터 수가 코드에 박혀 있으면 늘려도 소용없다."""
