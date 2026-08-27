@@ -273,6 +273,8 @@ def card_rows(mm, cards):
     have = {p for p, _l, _s in common.iso_files(mm)}
     for path in list(dump_ui.FILES.values()) + [p for p in SYS_EXTRA_FILES if p in have]:
         lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
+        # ⚠ 파일을 늘렸으면 **늘어난 크기**를 들고 다닌다 — 뒤의 배치·되읽기가 이 값을 쓴다
+        size = _tails().get(path, (0, size))[1] or size
         d = common.read_extent(mm, lba, size)
         i = 0
         while i < len(d):
@@ -319,6 +321,8 @@ def msg_rows(mm, msgs):
     have = {p for p, _l, _s in common.iso_files(mm)}
     for path in list(dump_ui.FILES.values()) + [p for p in SYS_EXTRA_FILES if p in have]:
         lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
+        # ⚠ 파일을 늘렸으면 **늘어난 크기**를 들고 다닌다 — 뒤의 배치·되읽기가 이 값을 쓴다
+        size = _tails().get(path, (0, size))[1] or size
         d = common.read_extent(mm, lba, size)
         i = 0
         while i < len(d):
@@ -607,6 +611,8 @@ def sys_rows(mm):
     have = {p for p, _l, _s in common.iso_files(mm)}
     for path in list(dump_ui.FILES.values()) + [p for p in SYS_EXTRA_FILES if p in have]:
         lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
+        # ⚠ 파일을 늘렸으면 **늘어난 크기**를 들고 다닌다 — 뒤의 배치·되읽기가 이 값을 쓴다
+        size = _tails().get(path, (0, size))[1] or size
         d = common.read_extent(mm, lba, size)
         # 이름 표가 차지한 구간 — 여기 문자열은 건너뛴다
         holes = []
@@ -659,7 +665,10 @@ def sys_rows(mm):
                     #    (`derive_encounters.py` 가 목록으로 보고한다), 그 자리에 짧은 정본
                     #    (`が現れた。` = `이(가) 나타났다.`)이 **접미로 걸린다.** 그러면 이름이
                     #    앞말로 남아 일본어가 된다 — 실패가 아니라 **손대지 않는 게 맞다**.
-                    if path in SYS_EXTRA_FILES and pre:
+                    if path in SYS_EXTRA_FILES and _jp_bytes(pre):
+                        # ⚠ 앞말이 **일본어면** 손대지 않는다 — 못 넣은 줄에 짧은 정본이
+                        #   접미로 걸린 것이다. `%c%s%c` 같은 제어·인자는 통과시킨다
+                        #   (런타임 이름 + `が現れた。` 꼴 — 조사는 훅이 접는다).
                         i = j
                         continue
                     if sys_key(jp) in exact and _jp_bytes(pre):
@@ -730,6 +739,22 @@ def _no_jp_prefix(path, base, pre, jp):
         )
 
 
+_TAILS = None
+
+
+def _tails():
+    """`{경로: (원 크기, 새 크기)}` — 파일 확장으로 생긴 꼬리. 한 번만 잰다."""
+    global _TAILS
+    if _TAILS is None:
+        import expand_files
+
+        _f, mm = common.open_image()
+        _TAILS = expand_files.tails(mm)
+        mm.close()
+        _f.close()
+    return _TAILS
+
+
 def sys_pack(sysm, ntabs, plan):
     """시스템 메시지를 **자리 풀에 다시 깐다** → `{파일: ({오프셋: 바이트}, {포인터: 값})}`.
 
@@ -742,9 +767,17 @@ def sys_pack(sysm, ntabs, plan):
     ⚠ 큰 것부터 넣는다(first-fit decreasing). 작은 것부터면 큰 게 갈 데가 없어진다.
     """
     out = {}
+    _tails()
     for path in {r[0] for r in sysm}:
         recs = [r for r in sysm if r[0] == path]
         pool = [(r[3], r[4]) for r in recs]
+        # 🔴 **파일을 늘려 만든 꼬리도 풀이다**(`tools/expand_files.py`, 2026-08-27).
+        #    ED2MON 은 꽉 차 있어 우리 레코드 자리만으로는 모자랐다 — 꼬리 섹터를 크기
+        #    필드로 열어 ~10KB 를 얻었다. ⚠ `patch_mon_names` 는 이름 칸 안에서만 노므로
+        #    이 꼬리는 여기 전용이다(둘이 안 겹친다).
+        if path in _TAILS:
+            old, new = _TAILS[path]
+            pool.append((old, new - old))
         for t in ntabs:
             if t["path"] == path and t["room"] > t["used"]:
                 pool.append((t["off"] + t["used"], t["room"] - t["used"]))
@@ -1083,7 +1116,11 @@ def main():
     print(f"  한글 슬롯 {len(plan)}자")
 
     _f, mm = common.open_image(dst)
-    files = {p: (lba, size) for p, lba, size in common.iso_files(mm)}
+    # ⚠ **크기는 늘어난 쪽을 쓴다** — `expand_files` 가 꼬리 섹터를 열었으므로 원본 크기로
+    #   보면 그 꼬리에 못 쓰고 되읽기도 짧게 읽는다(실측 2026-08-27: `되읽기 ''`).
+    files = {
+        p: (lba, _tails().get(p, (0, size))[1] or size) for p, lba, size in common.iso_files(mm)
+    }
     mm.close()
     _f.close()
 

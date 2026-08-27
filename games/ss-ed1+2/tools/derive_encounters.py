@@ -1,10 +1,11 @@
-"""ED2 전투 문안을 **정본에서 유도한다** — 몬스터 **이름**과 **출현 문구**.
+"""ED2 **출현 문구**를 정본에서 유도한다 — `<몬스터>が現れた。` → `<이름>이(가) 나타났다.`
 
     python3 tools/derive_encounters.py           # 유도 결과만 보여 준다
     python3 tools/derive_encounters.py --write   # `script/system.json` 에 넣는다
 
     <몬스터>が現れた。   → <이름>이(가) 나타났다.
-    スライムＡ          → 슬라임A            (전투 메시지의 `%s` 가 여기서 온다)
+
+⚠ **이름 칸 자체**(`スライムＡ` → `슬라임A`)는 여기가 아니라 `tools/patch_mon_names.py` 다.
 
 ## 왜 손으로 안 적나
 
@@ -201,17 +202,8 @@ def main():
 
     add, have, skip, miss = {}, 0, [], {}
     tight = []
-    # ── 몬스터 이름 (전투 메시지의 `%s` 가 여기서 온다)
-    nm = monster_names(mon)
-    for jp, kr in sorted(nm.items()):
-        k = sys_key(jp)
-        if k in canon:
-            have += 1
-            continue
-        add[k] = kr
-    print(f"몬스터 이름 {len(nm)}칸 — 새로 유도 {len(add)}")
-    for jp, kr in sorted(nm.items())[:8]:
-        print(f"   {jp!r} → {kr!r}")
+    # ⚠ **이름은 여기서 안 낸다** — `tools/patch_mon_names.py` 몫이다. 정본이 파일을 안
+    #   가려 `ED.BIN` 의 고정 폭 몬스터 표와 두 주인이 나기 때문이다(2026-08-27).
 
     for jp in sorted(jps):
         kr, bad = render(jp, mon)
@@ -225,12 +217,9 @@ def main():
         if k in canon:
             have += 1
             continue
-        span = max((r.get(jp, 0) for r in room.values()), default=0)
-        need = len(kr.encode("utf-8")) // 3 * 2 + sum(1 for c in kr if c.isascii()) + 1
-        need = sum(1 if c.isascii() else 2 for c in kr) + 1
-        if span and need > span:
-            tight.append((jp, kr, need, span))
-            continue
+        # 🔴 **자리는 여기서 안 잰다**(2026-08-27). `tools/expand_files.py` 가 파일을 꼬리
+        #    섹터까지 늘려 ~10KB 를 확보하므로, 넘치는지는 재삽입 쪽(`patch_ui.sys_pack`)이
+        #    풀 배치로 판단하고 정말 모자라면 거기서 실패한다. 두 곳에서 재면 어긋난다.
         add[k] = kr
 
     print(f"출현 문구 {len(jps)}종 — 이미 정본 {have} · 새로 유도 {len(add)} · 건너뜀 {len(skip)}")

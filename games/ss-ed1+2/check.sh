@@ -35,6 +35,8 @@ step() {   # step <설명> <스크립트> [인자…]
 
 echo "  ── 자막 (빌드 사본을 만든다)"
 step "자막" "$T/patch_title.py" --apply
+echo "  ── 파일 확장 (꼬리 섹터를 자리로 — LBA 불변)"
+step "파일 확장" "$T/expand_files.py" --apply
 echo "  ── 표·헤더·카드·고유명사·시스템 메시지 (되읽기 + 가드 넷)"
 step "UI" "$T/patch_ui.py" --apply
 echo "  ── 그림 (타이틀 · 메뉴 · 챕터 판 · HUD)"
