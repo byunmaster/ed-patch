@@ -103,6 +103,23 @@ class Index:
         return v / (nq * self.nrm[i]), self.L[i]
 
 
+_NEG = re.compile(r"안\s|못\s|없|말고|마라|아니|않")
+_NUM = re.compile(r"[0-9０-９]+")
+
+
+def _diverge(a, b):
+    """두 문안이 **다른 말을 하고 있나** — 부정 · 숫자 · 물음이 한쪽에만 있으면 그렇다.
+
+    ⚠ 표현 차이(어미·존대·낱말 선택)는 걸러 낸다. 그건 우리가 **일부러** 다르게 쓴 것이고
+    (정발은 기준이 아니다), 만 줄을 넘어 사람이 못 본다.
+    """
+    return (
+        bool(_NEG.search(a)) != bool(_NEG.search(b))
+        or _NUM.findall(a) != _NUM.findall(b)
+        or ("?" in a) != ("?" in b)
+    )
+
+
 def our_lines(stem):
     """`(블록, 우리 줄)` — 제어코드로 자른다(정발 쪽 줄 경계와 결이 같다)."""
     p = os.path.join(C.GAME_DIR, "script", f"{stem}.json")
@@ -129,6 +146,10 @@ def main():
     ap.add_argument("--lo", type=float, default=0.45, help="이보다 낮으면 짝이 틀렸다고 본다")
     ap.add_argument("--hi", type=float, default=0.80, help="이보다 높으면 거의 같은 문장이라 뺀다")
     ap.add_argument("--show", type=int, default=40)
+    #   🔴 띠 안이 만 줄을 넘어 사람이 못 본다(실측 16,352). 대부분은 **뜻은 같고 표현만
+    #     다른** 것이라 볼 값이 없다. `--diverge` 는 **뜻이 갈릴 만한 신호**만 남긴다 —
+    #     부정 · 숫자 · 물음. 셋 다 한쪽에만 있으면 문장이 다른 말을 하고 있다는 뜻이다.
+    ap.add_argument("--diverge", action="store_true", help="뜻이 갈릴 만한 자리만")
     a = ap.parse_args()
 
     stems = (
@@ -147,6 +168,9 @@ def main():
         for blk, ln in our_lines(s):
             n += 1
             sc, hit = ix.best(ln)
+            if a.diverge and sc >= a.lo and not _diverge(ln, hit):
+                found += 1
+                continue
             if sc >= a.lo:
                 found += 1
                 if sc <= a.hi:
