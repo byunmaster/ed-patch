@@ -20,10 +20,31 @@
 
     `%cライアス%c\\n본문%c`  →  텍스트 ['', 'ライアス', '\\n본문', '']  ·  마크업 ['c','c','c']
 
-- **화자** — 앞이 `%c…%c` 꼴이면 그 사이가 화자다. 이름이라 **정본으로 번역**한다
-  (`shared/glossary` person·monster·place). ⚠ `%c%s%c` 는 런타임 이름이라 그대로 둔다.
-- **본문** — 화자를 뺀 텍스트 자리 중 **가장 긴 것**. 여기에 우리 문안을 넣는다.
-- 나머지 자리는 **비운다**(원문에서도 대개 비어 있다).
+- **본문** — 텍스트 자리 중 **가장 긴 것**. 여기에 우리 문안을 넣는다.
+- **나머지 자리는 이름이다** — `shared/glossary`(person·monster·place·**item**)로 번역한다.
+  ⚠ `%c%s%c` 는 런타임 이름이라 그대로 둔다.
+- 🔴 **비우지 않는다**(2026-08-27 정정). 「나머지는 대개 비어 있다」로 비웠더니 이름이
+  둘 이상인 블록 176 곳에서 **이름이 화면에서 사라졌다**(`%cゲイル%cは%c目玉の付いた靴%c…`).
+  정본에 없는 이름이 남으면 **그 블록을 통째로 버린다** — 우리 문안이 이미 그 이름을
+  품고 있으면 두 번 나오기 때문이다. 다만 **화자 자리만은 원문을 남긴다**(뒤에 이유).
+
+## 🔴 저본은 **PS1 표기**로 마크업을 품고 있다
+
+「순수 문안」이 아니다(2026-08-27 실측 — 사전 18,146 중 308). 그대로 넣으면 화면에
+`{p}` 가 글자로 찍힌다(실제로 89블록이 그랬다). 새턴 표기로 옮긴다:
+
+    {n} · \x0a  →  개행        \x1a · \x17  →  %s (이름·아이템 주입)
+    {p}         →  %c (창 넘김)  \x1b         →  %d (수치 주입)
+
+옮기고 나면 개수가 달라지는 블록이 나오는데, 그건 **계약 검사가 걸러 낸다**(우리가 판단
+하지 않는다). 남는 제어문자가 하나라도 있으면 **버린다** — 화면에 그대로 나가기 때문이다.
+
+## 🔴 화자와 본문 사이의 개행을 지운다 = 본문이 화자 줄에 붙는다
+
+원문은 `%c화자%c\n본문` 이고, **화자 블록 5,576 중 5,461(97.9%)** 이 그 개행을 갖는다.
+반대로 화자 없는 블록은 5,766/6,352 가 개행 없이 시작한다 — 즉 그 개행은 조판이 아니라
+**화자와 본문을 가르는 구분자**다. 초판이 이걸 버려 8,657 블록이 원문과 달라져 있었다.
+⇒ 본문 자리의 **앞 개행은 원문 그대로 살린다**(2026-08-27).
 
 실측(저본이 붙는 12,091 블록): `c` 5,013 · `ccc` 4,961 · 없음 755 · `cscc` 704 · `cc` 402
 — **상위 다섯이 97.9%** 다.
@@ -53,6 +74,7 @@ sys.path.insert(
 
 import common
 from glossary import table
+from text.line_key import key as line_key
 
 MARK = re.compile(r"(%[csd])")
 COLS = 15  # 창 한 줄 = 전각 15자 (status 6절, 실측)
@@ -60,9 +82,13 @@ ROWS = 5  # 본문 5행 (창 6행 중 화자가 1행)
 
 
 def _names():
-    """이름 정본 하나로 합친 것 — 화자는 사람·몬스터·지명 어디서든 온다."""
+    """이름 정본 하나로 합친 것 — 이름 자리는 사람·몬스터·지명·**아이템** 어디서든 온다.
+
+    ⚠ `item` 을 빠뜨렸더니 `%cナイフ%c을(를) 장비했다.` 처럼 **아이템 이름만 일본어**로
+      남았다(2026-08-27). 216칸이 이미 정본에 있는데 안 읽고 있었다.
+    """
     out = {}
-    for cat in ("person", "monster", "place"):
+    for cat in ("person", "monster", "place", "item"):
         out.update(table(cat))
     return out
 
@@ -83,12 +109,17 @@ def split(jp):
     return parts[0::2], [p[1] for p in parts[1::2]]
 
 
-def speaker_slot(marks):
+def speaker_slot(texts, marks):
     """화자가 든 텍스트 자리의 번호. 없으면 None.
 
+    🔴 **`%c…%c` 꼴만으로는 부족하다.** `%cソニア%cが 仲間になりました。` 처럼 **문장 속
+       이름**도 같은 꼴이라, 개수만 보면 본문을 화자로 오인한다(203블록이 그래서 조용히
+       탈락했다). 진짜 화자는 **바로 뒤가 개행**이다 — 실측 5,461/5,576.
     ⚠ `%c%s%c`(런타임 이름)는 **화자 자리가 아니다** — 인자라 우리가 손댈 게 없다.
     """
-    return 1 if marks[:2] == ["c", "c"] else None
+    if marks[:2] != ["c", "c"] or len(texts) < 3:
+        return None
+    return 1 if texts[2].startswith("\n") else None
 
 
 def body_slot(texts, skip):
@@ -102,25 +133,88 @@ def body_slot(texts, skip):
     return cand[0][1]
 
 
+def _looks_like_name(t):
+    """화자 자리에 든 게 **이름꼴**인가 — 정본에 없을 때 원문을 남길지 가른다.
+
+    🔴 길이를 안 보면 **문장이 두 번 나온다.** `%c『두 번 다시 …』%c\n…라고 말씀하셨습니다%c`
+       처럼 인용문이 그 자리에 드는 블록이 있는데, 우리 본문이 이미 그 인용을 품고 있어
+       원문을 남기면 일본어 인용 + 한국어 인용이 나란히 뜬다(실측 2026-08-27).
+    """
+    return "\n" not in t and len(t) <= 12
+
+
+def _lead_nl(t):
+    """앞 개행 묶음 — 화자와 본문을 가르는 구분자다(모듈 주석)."""
+    i = 0
+    while i < len(t) and t[i] == "\n":
+        i += 1
+    return t[:i]
+
+
+# PS1 표기 → 새턴 표기. ⚠ **하나라도 남기면 화면에 글자로 찍힌다**(모듈 주석).
+_PS1_MARKUP = [
+    ("{n}", "\n"),
+    ("\x0a", "\n"),
+    ("{p}", "%c"),
+    ("\x1a", "%s"),
+    ("\x17", "%s"),
+    ("\x1b", "%d"),
+]
+_HALFW = {
+    c: c - 0xFEE0
+    for c in list(range(0xFF21, 0xFF3B)) + list(range(0xFF41, 0xFF5B)) + list(range(0xFF10, 0xFF1A))
+}
+_LEFTOVER = re.compile(r"\{[a-z]+\}|[\x00-\x09\x0b-\x1f\x7f]")
+
+
+def to_saturn(kr):
+    """저본 마크업을 새턴 표기로. 남는 게 있으면 `None`(그 블록은 버린다).
+
+    ⚠ **전각 영숫자는 반각으로** — 메시지 창의 알파벳은 전부 반각이 이 게임의 방침이다
+      (`patch_mon_names` 도 개체 접미를 그렇게 깐다). 저본은 PS1 표기라 전각이 섞여 들어와
+      **같은 몬스터가 대사에선 `카자즘Ｂ`, 전투에선 `카자즘B`** 로 갈렸다(19건 실측).
+    """
+    for a, b in _PS1_MARKUP:
+        kr = kr.replace(a, b)
+    kr = kr.translate(_HALFW)
+    return None if _LEFTOVER.search(kr) else kr
+
+
 def typeset(jp, kr, names):
     """`(우리 블록, 못 한 이유)` — 원문 마크업을 그대로 두고 텍스트만 간다."""
+    kr = to_saturn(kr)
+    if kr is None:
+        return None, "저본 마크업이 남는다"
     texts, marks = split(jp)
     if not marks:
         return kr, None  # 마크업이 없다 — 그대로 쓴다
-    sp = speaker_slot(marks)
+    sp = speaker_slot(texts, marks)
     bi = body_slot(texts, sp)
     if bi is None:
         return None, "본문 자리를 못 고른다"
     if not fits(kr):
         return None, "창을 넘는다"
+    # 🔴 **인자가 겹치는 자리** — 원문이 `%s は …` 이고 저본이 `\x1a은(는) …` 이면 옮긴 뒤
+    #    `%s%s` 가 된다(18블록 실측). 앞 마크업과 같은 인자면 저본 쪽을 뗀다.
+    if bi > 0 and kr[:2] in ("%s", "%d") and kr[1] == marks[bi - 1]:
+        kr = kr[2:]
     out = list(texts)
-    for i in range(len(out)):
-        if i == sp:
-            out[i] = names.get(texts[i], texts[i])  # 화자 — 정본 표기로
-        elif i == bi:
-            out[i] = kr
+    for i, t in enumerate(out):
+        if i == bi:
+            # 🔴 앞 개행은 원문 그대로 — 화자와 본문을 가르는 구분자다(모듈 주석)
+            out[i] = _lead_nl(t) + kr
+        elif not t.strip():
+            # 🔴 **공백만 든 자리도 비우지 않는다** — 그 공백이 개행 하나면 그게 화자와
+            #    본문을 가르는 구분자다(`%cリュナン%c\n%cロー%c…`). 비웠더니 붙었다.
+            out[i] = t
+        elif t in names:
+            out[i] = names[t]  # 이름 — 정본 표기로
+        elif i == sp and _looks_like_name(t):
+            out[i] = t  # 화자만은 정본에 없어도 원문을 남긴다(빈 이름표보다 낫다)
         else:
-            out[i] = ""  # 나머지 자리는 비운다
+            # 🔴 이름인지 문장인지 모르는 자리다. 우리 문안이 이미 그걸 품고 있으면
+            #    두 번 나온다 — 버린다(모듈 주석).
+            return None, "정본에 없는 이름 자리가 있다"
     built = "".join(a + ("%" + m if m else "") for a, m in zip(out, marks + [""], strict=True))
     return built, None
 
@@ -143,7 +237,9 @@ def main():
             continue
         for e in got[1]:
             jp = e.get("text", "")
-            kr = P._canon_get(canon, jp)
+            # ⚠ **`_canon_get` 을 쓰면 안 된다** — 그건 이미 조판된 것을 준다. 여기서 다시
+            #   태우면 조판된 블록이 통째로 본문 자리에 들어가 계약이 터진다(실측 11,127).
+            kr = canon.get(line_key(jp))
             if not kr:
                 continue
             built, bad = typeset(jp, kr, names)

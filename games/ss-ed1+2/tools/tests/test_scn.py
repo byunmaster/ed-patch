@@ -88,6 +88,8 @@ class Scn(unittest.TestCase):
           자리가 많다(`00 00 00 09` 182건). 당기면 그 마커가 통째로 어긋난다.
         ⚠ 이걸 안 보면 「항등은 통과하는데 문안을 얹으면 깨지는」 도구가 된다 — 항등은
           바뀌는 게 없어서 치환 경로를 한 번도 안 탄다.
+        ⚠ **첫 구간을 붙잡지 않는다** — 조판기가 못 받는 꼴(이름 자리가 정본에 없는 등)이면
+          바뀌는 게 없어 시험이 헛돈다. 실제로 바뀐 첫 구간을 찾을 때까지 넘긴다.
         """
         for path in self.files:
             got = S.load(path)
@@ -108,7 +110,8 @@ class Scn(unittest.TestCase):
                     continue
                 start = run[0][0]
                 base0 = d[start : start + len(blob)]
-                self.assertNotEqual(blob, base0, "아무것도 안 바뀌었다 — 시험이 무의미하다")
+                if blob == base0:
+                    continue  # 조판기가 이 꼴을 안 받는다 — 다음 구간으로
                 # ① 구간 길이 불변 ② 둘째 블록부터는 자리도 내용도 그대로
                 self.assertEqual(len(blob), len(base0))
                 a = run[1][0] - start

@@ -131,7 +131,24 @@ def _gap(prev, off):
     return off - (prev[0] + prev[1])
 
 
-def rebuild(run, canon, d):
+def owned_elsewhere(path):
+    """그 파일에서 **다른 패처가 주인인 오프셋** — 우리는 비켜 준다.
+
+    🔴 `/BIN/ED2MON*` 의 **몬스터 이름 칸은 `patch_mon_names` 것**이다. 씬 덤프에도 같은
+       자리가 블록으로 잡혀 저본이 붙는데(186칸 실측 2026-08-27), 그쪽 표기는 접미가
+       **전각**(`불꽃의기사Ａ`)이라 전투 화면(반각 `A`)과 갈린다. 체인 순서상 뒤에 도는
+       이름 패처가 이겨서 화면은 멀쩡했지만, **두 주인은 순서 하나로 뒤집힌다.**
+    ⚠ 늦게 부른다 — `patch_mon_names` 가 `patch_ui` 를 거쳐 우리를 부른다(순환).
+    """
+    if not path.startswith("/BIN/ED2MON"):
+        return frozenset()
+    import patch_mon_names
+    from glossary import table
+
+    return frozenset(t for t, _jp, _kr in patch_mon_names.slots(path, table("monster")))
+
+
+def rebuild(run, canon, d, skip_offs=frozenset()):
     """`(새 바이트, [(ptr_at, 새 주소 오프셋)], [건너뛴 이유])` — 구간을 다시 깐다.
 
     ⚠ **구간 총 길이는 원본 그대로**다. 남으면 0 으로 채운다(계약 ④).
@@ -152,7 +169,7 @@ def rebuild(run, canon, d):
         span = (run[idx + 1][0] - off) if idx + 1 < len(run) else n
         raw = bytes.fromhex(e["raw_hex"])
         jp = e.get("text", "")
-        kr = _canon_get(canon, jp)
+        kr = None if off in skip_offs else _canon_get(canon, jp)
         use = raw
         if kr is not None:
             if contract(kr) != contract(jp):
@@ -356,11 +373,14 @@ def main():
         lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
         d = bytes(common.read_extent(mm, lba, size))
         files += 1
+        mine = owned_elsewhere(path) if canon else frozenset()
         plans = []
         for run in runs(entries, size):
             blocks += len(run)
-            matched += sum(1 for _o, _n, e in run if _canon_get(canon, e.get("text", "")))
-            blob, moves, skip = rebuild(run, canon, d)
+            matched += sum(
+                1 for o, _n, e in run if o not in mine and _canon_get(canon, e.get("text", ""))
+            )
+            blob, moves, skip = rebuild(run, canon, d, mine)
             start = run[0][0]
             orig = d[start : start + len(blob)]
             if blob == orig:
