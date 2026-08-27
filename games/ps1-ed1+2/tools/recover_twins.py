@@ -66,7 +66,15 @@ def collect(R, ov):
         state[name] = (raws, done, _skip_eids(R, name))
         # 배정 좌표의 출처: 오버라이드가 정본보다 우선(reinsert 와 같은 순서)
         canon = scene_map(name)
-        for eid in done:
+        # 🔴 **집합을 그냥 돌면 안 된다**(레포 제1원칙). 바로 아래 `raw in src_by_raw` 는
+        #    **먼저 만난 쪽이 이기는** 구조라, 같은 원문 바이트에 좌표가 갈리는 자리에서
+        #    **어느 쌍둥이의 배정을 복제할지가 순회 순서로 정해진다.** 그 좌표는 `--apply`
+        #    로 `align_overrides.json`(커밋되는 빌드 입력)에 박히므로 이미지까지 간다.
+        #    실측 2026-08-27: 좌표가 갈리는 원문이 **388개**다.
+        #    ⚠ `done` 이 정수 집합이라 같은 내용이면 순서가 안 흔들려 눈에 안 띄었는데,
+        #    집합 크기가 바뀌면 해시 배치가 재배열돼 무관한 자리까지 승자가 바뀐다.
+        #    `sorted` 로 **가장 작은 eid 가 이긴다**를 못 박는다.
+        for eid in sorted(done):
             raw = raws.get(eid)
             if raw is None or raw in src_by_raw:
                 continue

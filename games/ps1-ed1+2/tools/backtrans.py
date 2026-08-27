@@ -69,6 +69,16 @@ def _strip_jp(s):
     return re.sub(r"\{[cnp]\}", " ", _JP_HEAD.sub("", s))
 
 
+# 🔴 **원문이 텍스트가 아닌 블록이 섞여 있다.** 추출기가 포인터 표를 대사로 잡은 자리로,
+# `¬æôæ4ç|çÈç…` 처럼 일본어가 아니다(전 씬 84블록 실측 2026-08-27). 그대로 두면 최악
+# 목록을 통째로 점령한다 — 우리 문안은 멀쩡한데 대조 상대가 쓰레기라 점수가 0 이 된다.
+_JP_CH = re.compile(r"[ぁ-んァ-ヶ一-龠ー、。！？]")
+
+
+def looks_japanese(s, floor=0.5):
+    return s and sum(1 for c in s if _JP_CH.match(c)) / len(s) >= floor
+
+
 def collect(scenes):
     """`[(키, 원문, 우리 문안)]` — 번역 정본이 있는 블록 전부. 키는 `ED1SCN3:152`."""
     out = []
@@ -88,8 +98,41 @@ def collect(scenes):
                 continue
             src = strip_ctrl(_strip_jp(jp.get(int(k), "")))
             ko = strip_ctrl(v["t"])
-            if len(src) >= MIN_JP and len(ko) >= MIN_KO:
+            if len(src) >= MIN_JP and len(ko) >= MIN_KO and looks_japanese(src):
                 out.append((f"{scn}:{k}", src, ko))
+    return out
+
+
+def semantic(scored, batch=256):
+    """`[(뜻점수, 글자점수, 키, 원문, 우리, 되돌림)]` — **뜻이 어긋난 순**.
+
+    🔴 **글자 유사도만으로는 이 코퍼스에서 못 쓴다.** 되돌린 일본어는 기계번역이라
+    **표준 정중체**로 나오는데 원문은 팔콤의 구어·사투리다 — 뜻이 같아도 낱말이 안 겹쳐
+    점수가 0.1 아래로 깔린다(실측 2026-08-27: 최악 22개가 **전부 정확한 번역**이었다.
+    `酒ぐせが悪く` ↔ 되돌림 `酒癖がひどい` 가 0.09).
+
+    되돌림과 원문은 **둘 다 일본어**다 — 그러니 같은 언어끼리 **뜻으로** 재면 그 잡음이
+    걷힌다. 모델은 로컬 LaBSE 라 망도 한도도 안 든다.
+
+    ⚠ 글자 점수는 버리지 않고 둘째 축으로 남긴다 — **뜻은 같은데 표현이 멀다**와
+    **둘 다 멀다**는 층이 다르다.
+    """
+    import torch
+    from sentence_transformers import SentenceTransformer
+
+    model = SentenceTransformer("sentence-transformers/LaBSE", device="cpu")
+    uniq = {}
+    for _sim, _k, jp, _ko, back in scored:
+        for t in (jp, back):
+            uniq.setdefault(t, len(uniq))
+    texts = [t for t, _ in sorted(uniq.items(), key=lambda x: x[1])]
+    emb = model.encode(texts, batch_size=batch, convert_to_tensor=True, normalize_embeddings=True)
+    out = []
+    for sim, k, jp, ko, back in scored:
+        sem = float(emb[uniq[jp]] @ emb[uniq[back]])
+        out.append((sem, sim, k, jp, ko, back))
+    out.sort(key=lambda x: x[0])
+    del torch
     return out
 
 
@@ -102,6 +145,7 @@ def main():
     ap.add_argument("--worst", type=int, default=25)
     ap.add_argument("--limit", type=int, default=0, help="이만큼만 되돌린다(한도를 아낀다)")
     ap.add_argument("--short", action="store_true", help="짧아서 점수를 못 믿는 것만 본다")
+    ap.add_argument("--sem", action="store_true", help="뜻으로 잰다(로컬 LaBSE, 일↔일) — 권장")
     ap.add_argument(
         "--min", type=int, default=0, help="원문이 이 글자 이상인 것만 (긴 문장에 오역이 숨는다)"
     )
@@ -136,15 +180,27 @@ def main():
     if not scored:
         print("대조할 것이 없다 — `--report` 를 빼고 한 번 돌린다")
         return
-    print(f"\n대조 {len(scored)} 블록 · 어긋난 순 {min(a.worst, len(scored))} 개")
-    print("⚠ 점수는 순위로 읽는다 — 사투리·조사 병기·이스터에그도 깎인다\n")
-    for sim, k, jp, ko, back in scored[: a.worst]:
-        print(f"  [{sim:.2f}] {k}")
-        print(f"    원문   {jp[:58]}")
-        print(f"    우리   {ko[:58]}")
-        print(f"    되돌림 {back[:58]}")
-    lo = sum(1 for x in scored if x[0] < 0.35)
-    print(f"\n0.35 미만 {lo} · 중앙값 {scored[len(scored) // 2][0]:.2f}")
+    if a.sem:
+        rows = semantic(scored)
+        print(f"\n대조 {len(rows)} 블록 · **뜻이** 어긋난 순 {min(a.worst, len(rows))} 개")
+        print("⚠ 글자 점수는 둘째 축이다 — 낮다고 오역이 아니라 표현이 다른 것이다\n")
+        for sem, sim, k, jp, ko, back in rows[: a.worst]:
+            print(f"  [뜻 {sem:.2f} · 글자 {sim:.2f}] {k}")
+            print(f"    원문   {jp[:58]}")
+            print(f"    우리   {ko[:58]}")
+            print(f"    되돌림 {back[:58]}")
+        lo = sum(1 for x in rows if x[0] < 0.70)
+        print(f"\n뜻 0.70 미만 {lo} · 뜻 중앙값 {rows[len(rows) // 2][0]:.2f}")
+    else:
+        print(f"\n대조 {len(scored)} 블록 · 어긋난 순 {min(a.worst, len(scored))} 개")
+        print("⚠ 글자 대조는 이 코퍼스에서 잡음이 크다 — `--sem` 을 쓴다\n")
+        for sim, k, jp, ko, back in scored[: a.worst]:
+            print(f"  [{sim:.2f}] {k}")
+            print(f"    원문   {jp[:58]}")
+            print(f"    우리   {ko[:58]}")
+            print(f"    되돌림 {back[:58]}")
+        lo = sum(1 for x in scored if x[0] < 0.35)
+        print(f"\n0.35 미만 {lo} · 중앙값 {scored[len(scored) // 2][0]:.2f}")
     if not a.short:
         n_short = sum(1 for _k, jp, ko in pairs if ko in cache and B.is_short(jp, cache[ko]))
         print(f"⚠ 짧아서 뺀 것 {n_short} — 보려면 `--short`")
