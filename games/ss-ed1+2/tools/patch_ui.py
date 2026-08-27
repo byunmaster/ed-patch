@@ -641,7 +641,8 @@ def sys_rows(mm):
                     hit
                     and path in SYS_EXTRA_FILES
                     and path not in _tails()
-                    and not hit[1].endswith(SYS_EXTRA_SUFFIX)
+                    # ⚠ 꼬리 개행까지 받는다 — 실제 문자열은 `…が現れた。\n` 인 것이 있다
+                    and not hit[1].rstrip("\n").endswith(SYS_EXTRA_SUFFIX)
                 ):
                     hit = None
                 if hit:

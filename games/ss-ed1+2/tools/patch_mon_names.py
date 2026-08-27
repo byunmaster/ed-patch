@@ -52,17 +52,32 @@ from glossary import table
 from patch_ui import slot_plan
 
 FILES = [f"/BIN/ED2MON{i:02d}.BIN" for i in range(1, 11)]
-MARKS = "ＡＢＣＤＥＦABCDEF"
+# 🔴 **A~F 로는 모자란다**(2026-08-27 실측) — `ニュートハニーJ` 처럼 **Ｊ까지** 가고,
+#    분열하는 몬스터는 **프라임**이 붙는다(`赤スライムA'` · `赤スライムＡ''`).
+#    좁게 잡아 두면 그 이름들만 조용히 일본어로 남는다.
+MARKS = "ＡＢＣＤＥＦＧＨＩＪABCDEFGHIJ"
+PRIME = "'’"
 HALF = {c: (chr(ord(c) - 0xFEE0) if "Ａ" <= c <= "Ｚ" else c) for c in MARKS}
+HALF.update({"’": "'", "'": "'"})
 MAXNAME = 20
 
 
 def split_mark(jp, mon):
-    """`(KR 이름, 반각 접미)` 또는 `(None, "")`."""
+    """`(KR 이름, 반각 접미)` 또는 `(None, "")`.
+
+    ⚠ **통짜부터 본다** — `ゴドウィン２世` 처럼 끝 글자가 접미처럼 생긴 이름이 있다.
+    ⚠ 프라임은 개체 번호가 아니라 **분열체 표시**라 개수까지 지킨다(`A''` 는 둘째 분열).
+    """
     if jp in mon:
         return mon[jp], ""
-    if len(jp) > 1 and jp[-1] in MARKS and jp[:-1] in mon:
-        return mon[jp[:-1]], HALF[jp[-1]]
+    body = jp
+    prime = ""
+    while len(body) > 1 and body[-1] in PRIME:
+        body, prime = body[:-1], HALF[body[-1]] + prime
+    if body in mon:  # 접미 없이 프라임만 붙는 꼴
+        return mon[body], prime
+    if len(body) > 1 and body[-1] in MARKS and body[:-1] in mon:
+        return mon[body[:-1]], HALF[body[-1]] + prime
     return None, ""
 
 

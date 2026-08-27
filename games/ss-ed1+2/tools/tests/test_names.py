@@ -12,6 +12,7 @@
 import os
 import sys
 import unittest
+from typing import ClassVar
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOOLS)
@@ -90,6 +91,39 @@ class VariantSuffix(unittest.TestCase):
         c = patch_ui.name_canon("몬스터")
         for suf in "ABCDEFGH":
             self.assertEqual(patch_ui.name_kr(f"毒大ガエル{suf}", c), f"큰독개구리{suf}")
+
+
+class MonsterCellSuffix(unittest.TestCase):
+    """전투 이름 칸의 접미 — **Ｊ 까지 가고, 분열체엔 프라임이 붙는다**(2026-08-27 실측).
+
+    좁게 잡아 두면 그 이름들만 조용히 일본어로 남는다(`ニュートハニーJ` · `赤スライムA'`).
+    """
+
+    MON: ClassVar = {"赤スライム": "붉은슬라임", "ゴドウィン２世": "고드윈2세"}
+
+    def test_suffix_reaches_j(self):
+        import patch_mon_names as M
+
+        for a, b in (("Ａ", "A"), ("Ｇ", "G"), ("J", "J")):
+            self.assertEqual(M.split_mark(f"赤スライム{a}", self.MON), ("붉은슬라임", b))
+
+    def test_prime_marks_are_kept(self):
+        import patch_mon_names as M
+
+        self.assertEqual(M.split_mark("赤スライムA'", self.MON), ("붉은슬라임", "A'"))
+        self.assertEqual(M.split_mark("赤スライムＡ''", self.MON), ("붉은슬라임", "A''"))
+        self.assertEqual(M.split_mark("赤スライム'", self.MON), ("붉은슬라임", "'"))
+
+    def test_whole_name_wins_over_suffix(self):
+        """🔴 통짜부터 본다 — 끝 글자가 접미처럼 생긴 이름이 있다."""
+        import patch_mon_names as M
+
+        self.assertEqual(M.split_mark("ゴドウィン２世", self.MON), ("고드윈2세", ""))
+
+    def test_unknown_is_none(self):
+        import patch_mon_names as M
+
+        self.assertEqual(M.split_mark("知らない名前Ａ", self.MON), (None, ""))
 
 
 class ScnSuffix(unittest.TestCase):

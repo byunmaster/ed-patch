@@ -65,6 +65,7 @@ sys.path.insert(
 
 import common
 import dump_scn
+import expand_files
 from glossary import table
 from text.josa import josa
 
@@ -141,9 +142,22 @@ def monster_names(mon):
 
 
 def render(jp, mon):
-    """`(우리 문안, 못 찾은 이름들)`. 유도가 안 되면 문안은 None."""
+    """`(우리 문안, 못 찾은 이름들)`. 유도가 안 되면 문안은 None.
+
+    🔴 **꼬리 개행을 먼저 뗀다**(2026-08-27). 실제 문자열은 `…が現れた。\n` 인 것이 많은데
+       접미를 개행 없이 맞추다 **조합 꼴 87종이 통째로 안 잡혔다.** 뗀 개행은 그대로 붙여
+       돌려준다 — 원문의 줄 구조는 우리가 정할 것이 아니다.
+    """
     if "%" in jp:  # 런타임 인자 — 조사를 정적으로 못 고른다
         return None, []
+    tail = ""
+    while jp.endswith("\n"):
+        jp, tail = jp[:-1], tail + "\n"
+    kr, miss = _render1(jp, mon)
+    return (kr + tail if kr else None), miss
+
+
+def _render1(jp, mon):
     if jp.endswith(GROUP):
         name = jp[: -len(GROUP)]
         kr = mon.get(name)
@@ -173,9 +187,22 @@ def main():
     with open(SYS_CANON, encoding="utf-8") as f:
         doc = json.load(f)
     canon = doc["lines"]
+    # 🔴 **못 늘리는 파일은 후보에서 뺀다.** 자리를 여기서 재지는 않지만(아래 주석),
+    #    「꼬리가 0 이라 애초에 늘 자리가 없다」는 **구조적 사실**이라 여기서 안다.
+    #    실측 2026-08-27: `/BIN/ED2MON06.BIN` 은 크기가 이미 섹터 배수라 꼬리가 없는데,
+    #    새 출현 문구 넷을 얹었더니 `sys_pack` 이 「자리가 모자란다」로 빌드를 세웠다.
+    _f0, mm0 = common.open_image()
+    tails = set(expand_files.tails(mm0))
+    mm0.close()
+    _f0.close()
+    where = {}
     jps = set()
     for path in FILES:
-        jps |= {s for s in targets(path) if s.endswith(SUFFIX)}
+        # ⚠ 꼬리 개행까지 받는다 — 실제 문자열은 `…が現れた。\n` 인 것이 많다(`render` 주석)
+        got = {s for s in targets(path) if s.rstrip("\n").endswith(SUFFIX)}
+        jps |= got
+        for s_ in got:
+            where.setdefault(s_, set()).add(path)
 
     from patch_ui import sys_key
 
@@ -217,6 +244,12 @@ def main():
         if k in canon:
             have += 1
             continue
+        # ⚠ **이미 정본에 있는 줄에는 이 규칙을 걸지 않는다.** 그것들은 빌드가 초록인 채로
+        #   자리에 들어가 있다는 뜻이라, 뺐다가 되레 7줄을 일본어로 되돌렸다(실측).
+        #   여기서 막는 것은 **새로 얹는 줄**뿐이다 — 그건 늘 총량을 늘린다.
+        if not (where.get(jp, set()) & tails):
+            tight.append((jp, kr, 0, 0))
+            continue
         # 🔴 **자리는 여기서 안 잰다**(2026-08-27). `tools/expand_files.py` 가 파일을 꼬리
         #    섹터까지 늘려 ~10KB 를 확보하므로, 넘치는지는 재삽입 쪽(`patch_ui.sys_pack`)이
         #    풀 배치로 판단하고 정말 모자라면 거기서 실패한다. 두 곳에서 재면 어긋난다.
@@ -230,9 +263,9 @@ def main():
     if skip:
         print(f"  ⏭ 런타임 인자라 건너뜀: {skip}")
     if tight:
-        print(f"  ⚠ 자리에 안 들어가 뺀 줄 {len(tight)}개 (그 줄은 일본어로 남는다):")
-        for jp, kr, need, span in sorted(tight, key=lambda x: -(x[2] - x[3])):
-            print(f"     +{need - span}B  {kr!r}  ({need}B > {span}B)  ← {jp!r}")
+        print(f"  ⚠ 늘릴 수 없는 파일이라 뺀 줄 {len(tight)}개 (그 줄은 일본어로 남는다):")
+        for jp, kr, _n, _s in tight:
+            print(f"     {kr!r}  ← {jp!r} ({sorted(where.get(jp, ()))})")
     if miss:
         print(f"  ❌ 정본에 없는 이름 {len(miss)}종 — 그 줄은 안 넣었다:")
         for names, lines in miss.items():
