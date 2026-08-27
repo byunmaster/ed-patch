@@ -51,7 +51,7 @@ def main():
     # 🔴 **두 장이 기본이다.** 게임 데이터가 같은 한 벌이라(`common.check_discs`) 문안도 한
     #    벌인데, 한 장만 구우면 **디스크를 갈아 끼우는 순간 원문으로 돌아간다.** 확인용으로
     #    한 장만 굽고 싶으면 `--disc` 로 **명시**한다.
-    for disc in ([a.disc] if a.disc else list(C.DISCS)):
+    for disc in [a.disc] if a.disc else list(C.DISCS):
         build_one(disc)
 
 
@@ -142,12 +142,31 @@ def build_one(a_disc):
             f.write(
                 f'FILE "{os.path.basename(dst)}" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n'
             )
+        write_m3u()
         ok = True
         print(f"\n✅ {dst}")
     finally:
         if not ok and os.path.exists(dst):
             os.replace(dst, dst + ".failed")
             print(f"\n❌ 빌드 실패 — 산출물을 무효화했다: {os.path.basename(dst)}.failed")
+
+
+def write_m3u():
+    """두 장이 다 구워져 있으면 `.m3u` 로 묶는다 — **에뮬에서 한 파일로 연다.**
+
+    ⚠ 새턴 게임은 디스크를 갈아 끼워야 하는데(제2장 이후가 디스크2 다), `.m3u` 로 묶으면
+    에뮬이 두 장을 한 묶음으로 알아 **교체가 에뮬 안에서** 된다(mednafen 1.32 확인).
+    ⓘ `chd` 는 mednafen 이 안 받는다 — 받는 건 `cue`·`ccd`·`toc`·`m3u` 넷이다.
+    """
+    cues = [out_paths(d)[1] for d in C.DISCS]
+    if not all(os.path.exists(c) for c in cues):
+        return
+    path = os.path.join(
+        C.BUILD_DIR, f"{C.TITLE_KR}.m3u" if hasattr(C, "TITLE_KR") else "Shiroki Majo (KR).m3u"
+    )
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("".join(os.path.basename(c) + "\n" for c in cues))
+    print(f"      두 장을 묶었다 → {os.path.basename(path)}")
 
 
 def compare(src, dst, touched, chunk=1 << 22):
