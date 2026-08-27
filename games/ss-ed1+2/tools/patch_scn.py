@@ -41,10 +41,34 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        ),
+        "shared",
+    ),
+)
 
 import common
+from text.line_key import key as line_key
 
 DUMP = os.path.join(common.OUT_DIR, "scn_jp")
+# 🔴 저본은 **PS1 이 만드는 사전** 하나뿐이다 — `script/` 는 43%(ED1)·93%(ED2)가 정발
+#    유래라 못 쓴다(status 4절). 키는 공용(`shared/text/line_key`)이라 덤퍼 표기가 달라도
+#    붙는다 — 실측 84.2%(ED1SCN 95.6% · ED2SCN 96.0%).
+#    ⚠ 그 파일은 **PS1 게임 트리**에 있다. 아직 main 에 안 올라와 이 브랜치에서는 안 보이므로
+#      **워크트리도 본다** — 순서는 「이 트리 먼저, 없으면 PS1 워크트리」다.
+#      PS1 이 main 에 올리면 첫째가 잡히고 둘째는 저절로 안 쓰인다.
+_ROOT = os.path.dirname(os.path.dirname(common.GAME_DIR))
+LINE_DICT_PATHS = [
+    os.path.join(_ROOT, "games", "ps1-ed1+2", "line_dict.json"),
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(_ROOT))),
+        ".claude/worktrees/ps1-ed1+2/games/ps1-ed1+2/line_dict.json",
+    ),
+]
 SCN_RE = re.compile(r"^/BIN/(ED1SCN|ED2SCN|ED2MON)\d+\.BIN$")
 FMT = re.compile(r"%[csd]")
 
@@ -128,13 +152,16 @@ def rebuild(run, canon, d):
         span = (run[idx + 1][0] - off) if idx + 1 < len(run) else n
         raw = bytes.fromhex(e["raw_hex"])
         jp = e.get("text", "")
-        kr = canon.get(jp)
+        kr = _canon_get(canon, jp)
         use = raw
         if kr is not None:
             if contract(kr) != contract(jp):
                 skipped.append((off, "구조 계약이 다르다", jp[:18]))
-            elif len(_encode(kr)) > span - 1:
-                skipped.append((off, f"칸을 넘는다 {len(_encode(kr))}B > {span - 1}B", jp[:18]))
+            elif len(_encode(kr)) > n:
+                # 🔴 한계는 칸(span)이 아니라 **원문 바이트 수(n)** 다 — 칸 꼬리에는 다음
+                #    블록의 시작 마커(`0x09`)가 들어 있어 그만큼은 못 쓴다. `span-1` 로
+                #    쟀다가 꼬리가 2B 인 자리에서 1B 넘쳤다(실측 ED1SCN12 0x4854).
+                skipped.append((off, f"칸을 넘는다 {len(_encode(kr))}B > {n}B", jp[:18]))
             else:
                 use = _encode(kr)
         moves.append((e.get("ptr_at", []), start + len(blob)))
@@ -147,6 +174,28 @@ def rebuild(run, canon, d):
     return bytes(blob), moves, skipped
 
 
+def load_canon():
+    """`{JP 원문: 우리 문안}` — 사전을 **원문 그대로** 못 들고 있으므로 키로 붙인다.
+
+    ⚠ 사전은 다른 게임 트리(`games/ps1-ed1+2/line_dict.json`)에 있다. 없으면 빈 것을
+      돌려준다 — 그 트리를 안 받은 워크트리에서도 항등 검증은 돌아야 한다.
+    """
+    for p in LINE_DICT_PATHS:
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                lines = json.load(f)["lines"]
+            got = {k: v["t"] for k, v in lines.items() if isinstance(v, dict) and v.get("t")}
+            print(f"  저본 {len(got):,}원문 — {p}")
+            return got
+    print("  ⚠ 저본을 못 찾았다 — 원문 그대로 둔다 (PS1 의 `line_dict.json`)")
+    return {}
+
+
+def _canon_get(canon, jp):
+    """원문 → 우리 문안. 키는 **공용 규칙**이다(덤퍼 표기 중립화)."""
+    return canon.get(line_key(jp)) if canon else None
+
+
 def _moved(entries, ptrs, at):
     """그 포인터가 가리키던 자리가 실제로 바뀌었나 — 안 바뀌었으면 쓰지 않는다."""
     if not ptrs:
@@ -157,9 +206,24 @@ def _moved(entries, ptrs, at):
     return True
 
 
-def _encode(kr):
-    """우리 문안 → 바이트. 슬롯 코드는 `patch_ui` 의 계획을 쓴다(여기선 아직 원문만)."""
-    return kr.encode("cp932")
+_PLAN = None
+
+
+def _encode(kr, plan=None):
+    """우리 문안 → 바이트. 한글은 **슬롯 SJIS**, 나머지는 cp932.
+
+    🔴 한글은 cp932 로 인코딩이 안 된다 — 안 쓰는 글리프 슬롯에 배정하고 **그 슬롯의
+       SJIS 코드**로 적는다(`hangul_map_11kanji.json`, 이 게임의 근간). `patch_ui` 와
+       **같은 계획**을 써야 폰트와 어긋나지 않는다.
+    """
+    plan = plan if plan is not None else _PLAN
+    out = bytearray()
+    for c in kr:
+        if plan and c in plan:
+            out += plan[c][0]
+        else:
+            out += c.encode("cp932")
+    return bytes(out)
 
 
 def apply_runs(dst, path, lba, size, base, plans):
@@ -189,9 +253,16 @@ def main():
     common.verify_source()
     _f, mm = common.open_image()
     targets = [p for p, _l, _s in common.iso_files(mm) if SCN_RE.match(p)]
-    canon = {}  # 🔴 저본은 아직 없다 — 항등 검증에서는 비운다(원문 그대로)
+    canon = {} if check else load_canon()  # 항등 검증에서는 비운다(원문 그대로)
+    if canon:
+        # ⚠ 슬롯 계획은 **`patch_ui` 와 같은 것**을 쓴다 — 따로 뽑으면 폰트와 어긋난다.
+        #   여기서 계획을 **늘리지 않는다**(`--refresh` 는 `patch_ui` 몫).
+        from patch_ui import slot_plan
 
-    files = ok = blocks = pinned = wrote = 0
+        global _PLAN
+        _PLAN = slot_plan(list(canon.values()))
+
+    files = ok = blocks = pinned = wrote = matched = 0
     bad, skipped = [], []
     for path in targets:
         got = load(path)
@@ -204,6 +275,7 @@ def main():
         plans = []
         for run in runs(entries, size):
             blocks += len(run)
+            matched += sum(1 for _o, _n, e in run if _canon_get(canon, e.get("text", "")))
             blob, moves, skip = rebuild(run, canon, d)
             start = run[0][0]
             orig = d[start : start + len(blob)]
@@ -236,7 +308,9 @@ def main():
             raise SystemExit(f"항등 재삽입이 {len(bad)}구간에서 어긋난다 — 도구가 범인이다")
         print("  ✅ 원문을 그대로 다시 깔아 **바이트 동일** — 자르기·재배치가 맞다")
     else:
-        print("  (지금은 저본이 없다 — `--check` 로 파이프라인만 검증한다)")
+        n = sum(1 for _o, why, _jp in skipped if "칸을" in why)
+        print(f"  넣을 수 있는 블록 {matched} · 칸을 넘어 건너뛴 것 {n}")
+        print("  (`--apply` 로 넣는다 · `--check` 는 원문 항등만 본다)")
     mm.close()
     _f.close()
 

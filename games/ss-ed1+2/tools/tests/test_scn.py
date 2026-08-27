@@ -16,9 +16,11 @@ import unittest
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOOLS)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(TOOLS)), "..", "shared"))
 
 import common
 import patch_scn as S
+from text.line_key import key as line_key
 
 
 def ready():
@@ -101,7 +103,7 @@ class Scn(unittest.TestCase):
                 short = jp[:-1] if len(jp) > 1 and jp[-1] not in "%csd" else jp
                 if not jp or short == jp or S.contract(short) != S.contract(jp):
                     continue
-                blob, moves, skip = S.rebuild(run, {jp: short}, d)
+                blob, moves, skip = S.rebuild(run, {line_key(jp): short}, d)
                 if skip:
                     continue
                 start = run[0][0]
@@ -131,7 +133,7 @@ class Scn(unittest.TestCase):
                 if not jp:
                     continue
                 long = jp + "あ" * 40  # 칸을 확실히 넘긴다 (⚠ `_encode` 가 아직 cp932 다)
-                blob, _m, skip = S.rebuild(run, {jp: long}, d)
+                blob, _m, skip = S.rebuild(run, {line_key(jp): long}, d)
                 self.assertTrue(skip, "칸을 넘는데 안 건너뛰었다")
                 self.assertIn("칸을 넘는다", skip[0][1])
                 a = run[0][0]
