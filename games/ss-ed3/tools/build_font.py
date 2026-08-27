@@ -28,6 +28,24 @@ from shared import fonts
 
 OUT = os.path.join(C.OUT_DIR, "KANJI12.FON")
 DY = -3  # 원본 잉크 0~10행에 맞춘 Galmuri11 보정
+DX = 1  # 🔴 **왼쪽으로 한 칸 붙어 있던 걸 띄운다.**
+#   Galmuri11 은 12 칸을 왼쪽부터 채워 **2,350 자 전부 왼쪽 여백이 0** 이었다(실측
+#   2026-08-27). 원본 한자는 왼쪽에 한 칸을 비워 두므로, 창 안쪽 경계에 글자가 닿아
+#   **잘린 것처럼 보인다**(유저가 스탯 창에서 짚었다). 오른쪽 여백은 1 칸이 46% ·
+#   2 칸이 54% 라 **한 칸 밀어도 잘리지 않는다.**
+#   ⚠ 슬롯 배정(`hangul_map.json`)은 안 건드리므로 이미 넣은 문안이 안 깨진다.
+
+
+def shift_right(g, width, rows, stride, dx=DX):
+    """글리프 비트를 오른쪽으로 `dx` 칸 민다 — 폭은 그대로다."""
+    bits = "".join(f"{b:08b}" for b in g)
+    out = []
+    for r in range(rows):
+        row = bits[r * width : (r + 1) * width]
+        out.append("0" * dx + row[: width - dx])
+    s = "".join(out)
+    s += "0" * (stride * 8 - len(s))
+    return bytes(int(s[i : i + 8], 2) for i in range(0, stride * 8, 8))
 
 
 def build(disc=1):
@@ -39,7 +57,7 @@ def build(disc=1):
     )
     out = bytearray(base)
     for ch, idx in table.items():
-        g = glyphs[ch]
+        g = shift_right(glyphs[ch], F.CELL, F.ROWS, F.STRIDE)
         assert len(g) == F.STRIDE, (ch, len(g))
         out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = g
     assert len(out) == len(base), (len(out), len(base))
