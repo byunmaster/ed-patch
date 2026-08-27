@@ -29,6 +29,7 @@ import hangul_map as H
 import reinsert as R
 import reinsert_book as RB
 import reinsert_desc as RD
+import reinsert_gfx as RG
 import reinsert_sys as RS
 
 from shared.disc import mode1
@@ -81,7 +82,7 @@ def build_one(a_disc):
                     touched_lbas.append((name, lba, size))
 
             print("[3/5] 문안 재삽입 (길이 보존)")
-            done = nsys = ndesc = nbook = 0
+            done = nsys = ndesc = nbook = ngfx = 0
             systbl = RS.table()
             desctbl = RD.table()
             for name, lba, size in files:
@@ -105,6 +106,11 @@ def build_one(a_disc):
                     b = d.read_extent(lba, size)
                     new, k, bad = RB.patch(b, stem, booktbl, table)
                     nbook += k
+                elif name == RG.TARGETS[0][0]:
+                    b = d.read_extent(lba, size)
+                    new, _ = RG.apply(b)
+                    ngfx += 1 if new != b else 0
+                    bad = []
                 elif name == "/SYSTEM/PARAM.BIN" and desctbl:
                     b = d.read_extent(lba, size)
                     new, k, bad = RD.patch(b, table, desctbl)
@@ -117,7 +123,10 @@ def build_one(a_disc):
                 if new != b:
                     mode1.write_at(f, lba, size, 0, new, label=name, expect=b)
                     touched_lbas.append((name, lba, size))
-            print(f"      대사 블록 {done} · 시스템 문자열 {nsys} · 설명문 {ndesc} · 읽을거리 {nbook}")
+            print(
+                f"      대사 블록 {done} · 시스템 문자열 {nsys} · 설명문 {ndesc} · "
+                f"읽을거리 {nbook} · 화면 그림 {ngfx}"
+            )
 
         print("[4/5] 섹터 무결성 자기검증")
         bad = mode1.selftest(dst, lbas=[l for _, l, _ in touched_lbas] or [16])
