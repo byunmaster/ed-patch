@@ -172,6 +172,34 @@ class Scn(unittest.TestCase):
         touched = {i for a, b in S._diffs(new, old) for i in range(a, b)}
         self.assertEqual(touched, {1, 3})
 
+    def test_migrate_leaves_the_original_cell_alone(self):
+        """🔴 이주는 **참조만** 옮긴다 — 원본 칸을 건드리면 다음 블록의 마커가 어긋난다.
+
+        PS1 이 쓴 2단계 그대로다: 자리엔 JP 를 남기고 새 주소에 우리 문안을 쓴다.
+        """
+        e = {"ptr_at": ["100", "200"]}
+        over = [(0x10, "칸을 넘는다 9B > 4B", "jp", e, b"ABCDEFGH")]
+        puts, ptrs, left = S.migrate(over, 0x06000000, 0x1000, 0x1400)
+        self.assertEqual(puts, [(0x1000, b"ABCDEFGH\x00")])  # NUL 종단까지
+        self.assertEqual(sorted(ptrs), [(0x100, 0x06001000), (0x200, 0x06001000)])
+        self.assertEqual(left, [])
+        # 🔴 원본 칸(0x10)은 어디에도 안 나온다 — 그게 이 시험의 전부다
+        self.assertTrue(all(at >= 0x1000 for at, _b in puts))
+
+    def test_migrate_never_runs_past_the_tail(self):
+        """자리가 모자라면 **남긴다** — 넘겨 쓰면 다음 파일을 밟는다."""
+        mk = lambda o, n: (o, "칸을 넘는다", "jp", {"ptr_at": []}, b"x" * n)
+        puts, _p, left = S.migrate([mk(1, 8), mk(2, 8)], 0, 0x100, 0x100 + 10)
+        self.assertEqual(len(puts), 1)
+        self.assertEqual(len(left), 1)
+
+    def test_migrate_is_deterministic(self):
+        """오프셋 순으로 깐다 — 입력 순서가 달라도 같은 배치가 나와야 한다(제1원칙)."""
+        mk = lambda o: (o, "칸을 넘는다", "jp", {"ptr_at": []}, b"y" * 4)
+        a = S.migrate([mk(3), mk(1), mk(2)], 0, 0, 0x100)[0]
+        b = S.migrate([mk(1), mk(2), mk(3)], 0, 0, 0x100)[0]
+        self.assertEqual(a, b)
+
     def test_runs_never_swallow_code(self):
         """구간이 코드를 삼키면 안 된다 — 빈틈이 `MAX_GAP` 을 넘으면 끊는다."""
         for path in self.files[:12]:

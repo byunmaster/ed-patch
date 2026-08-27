@@ -48,7 +48,15 @@ import common
 import dump_scn
 
 # 늘릴 파일군 — (패턴, 그 파일들이 올라가는 주소). 같은 주소면 「최대 원본 크기」가 상한이다.
-GROUPS = [re.compile(r"^/BIN/ED2MON\d+\.BIN$")]
+GROUPS = [
+    re.compile(r"^/BIN/ED2MON\d+\.BIN$"),
+    # 🔴 **씬 파일도 연다**(2026-08-27). 칸을 넘는 대사 1,304블록에 갈 자리가 필요한데
+    #    씬 파일에는 0런이 **한 바이트도 없다**(실측) — 꼬리 섹터가 유일한 자리다.
+    #    ⚠ 파일 사이에 **빈 섹터도 없다**(틈 0) — 그래서 LBA 를 안 바꾸는 한 상한은
+    #      「섹터 올림」이다. 그걸로 87파일 중 54가 맞고 31이 26,912B 모자란다.
+    re.compile(r"^/BIN/ED1SCN\d+\.BIN$"),
+    re.compile(r"^/BIN/ED2SCN\d+\.BIN$"),
+]
 USER = common.USER_SIZE
 
 

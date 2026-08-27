@@ -69,7 +69,11 @@ LINE_DICT_PATHS = [
         ".claude/worktrees/ps1-ed1+2/games/ps1-ed1+2/line_dict.json",
     ),
 ]
-SCN_RE = re.compile(r"^/BIN/(ED1SCN|ED2SCN|ED2MON)\d+\.BIN$")
+# 🔴 **본체 둘도 대사를 갖는다** — ED2 오프닝 프롤로그가 `/ED2.BIN` 안에 있다(실측: 저본이
+#    ED.BIN 419 · ED2.BIN 145 블록에 붙는다). 씬 파일이 아니라고 빼 두면 그만큼이 영영
+#    일본어로 남는다. 대신 그 둘은 **주인이 여럿**이라(시스템 메시지 · 표 · 고유명사 ·
+#    자막 · 훅) 「이미 쓰인 자리엔 안 쓴다」 장치가 필수다(`already_written`).
+SCN_RE = re.compile(r"^(/BIN/(ED1SCN|ED2SCN|ED2MON)\d+|/ED2?)\.BIN$")
 FMT = re.compile(r"%[csd]")
 
 # 🔴 **구간을 어디서 끊나** — 블록 사이 빈틈으로 가른다. 실측 분포가 깨끗하게 둘로 갈린다:
@@ -170,7 +174,7 @@ def _mon_slots(path):
     return frozenset(t for t, _jp, _kr in patch_mon_names.slots(path, table("monster")))
 
 
-def rebuild(run, canon, d, skip_offs=frozenset()):
+def rebuild(run, canon, d, skip_offs=frozenset(), built=None):
     """`(새 바이트, [(ptr_at, 새 주소 오프셋)], [건너뛴 이유])` — 구간을 다시 깐다.
 
     ⚠ **구간 총 길이는 원본 그대로**다. 남으면 0 으로 채운다(계약 ④).
@@ -195,14 +199,28 @@ def rebuild(run, canon, d, skip_offs=frozenset()):
         use = raw
         if kr is not None:
             if contract(kr) != contract(jp):
-                skipped.append((off, "구조 계약이 다르다", jp[:18]))
+                skipped.append((off, "구조 계약이 다르다", jp[:18], e, None))
             elif len(_encode(kr)) > n:
                 # 🔴 한계는 칸(span)이 아니라 **원문 바이트 수(n)** 다 — 칸 꼬리에는 다음
                 #    블록의 시작 마커(`0x09`)가 들어 있어 그만큼은 못 쓴다. `span-1` 로
                 #    쟀다가 꼬리가 2B 인 자리에서 1B 넘쳤다(실측 ED1SCN12 0x4854).
-                skipped.append((off, f"칸을 넘는다 {len(_encode(kr))}B > {n}B", jp[:18]))
+                # ⚠ 인코딩을 **여기서 들고 나간다** — 확장 영역으로 이주할 쪽이 다시
+                #   조판·인코딩하면 두 곳에서 갈릴 수 있다(같은 문안을 두 번 만들지 않는다).
+                enc = _encode(kr)
+                skipped.append((off, f"칸을 넘는다 {len(enc)}B > {n}B", jp[:18], e, enc))
             else:
                 use = _encode(kr)
+        # 🔴 **남이 이미 쓴 자리엔 안 넣는다** — 본체 둘은 시스템 메시지·표·고유명사·자막이
+        #    같은 파일을 나눠 갖는다. 주인 목록을 손으로 들면 새 패처가 생길 때마다 조용히
+        #    새므로 **구조로 묻는다**: 빌드가 원본과 다르고 **우리 것도 아니면** 남의 것이다.
+        #    ⚠ 「우리 것도 아니면」이 핵심이다. 빌드 사본은 회차 사이에 남으므로(patch_title 은
+        #      없을 때만 복사한다) 그 조건을 빼면 **지난 회차의 우리 문안까지** 남의 것으로
+        #      보고 전부 비켜 간다 — 실측 2026-08-27: 삽입이 997 → 5 로 내려앉았다.
+        if built is not None:
+            cur = built[off : off + n]
+            if cur != raw and cur != use + b"\x00" * (n - len(use)):
+                use = raw
+                skipped.append((off, "남이 이미 쓴 자리다", jp[:18], e, None))
         moves.append((e.get("ptr_at", []), start + len(blob)))
         # 칸 = [내용][NUL 채움][원본 꼬리]. 🔴 꼬리를 **끝에 붙여야** 마커가 제자리다 —
         # `d[off+len(use):]` 로 이어 붙이면 짧아진 만큼 원본이 밀려 들어와 **아무것도 안
@@ -318,6 +336,29 @@ def _encode(kr, plan=None):
     return bytes(out)
 
 
+def migrate(over, base, tail_at, tail_end):
+    """칸을 넘는 블록을 **확장 영역으로 이주**한다 → `([(꼬리 오프셋, 바이트)], [(ptr, 새 주소)], 남은 것)`.
+
+    🔴 **원본 칸은 손대지 않는다.** PS1 이 쓴 2단계 그대로다 — 자리엔 JP 를 남기고 **참조만**
+       새 주소로 돌린다. 칸을 늘려 뒤를 밀면 다음 블록의 시작 마커(`0x09`)가 어긋난다.
+    ⚠ 자리는 **파일마다 따로**다. 같은 파일군이 같은 주소에 올라가지만 한 번에 하나만
+      올라가므로, 어느 블록의 새 주소는 **자기 파일 안**이어야 한다.
+    ⚠ 긴 것부터 넣지 않는다 — 오프셋 순으로 넣어야 결과가 결정적이다(제1원칙).
+    """
+    puts, ptrs, left = [], [], []
+    at = tail_at
+    for off, _why, jp, e, enc in sorted(over):
+        blob = enc + b"\x00"
+        if at + len(blob) > tail_end:
+            left.append((off, jp))
+            continue
+        puts.append((at, blob))
+        for q in e.get("ptr_at", []):
+            ptrs.append((int(q, 16) if isinstance(q, str) else q, base + at))
+        at += len(blob)
+    return puts, ptrs, left
+
+
 def _diffs(new, old):
     """`[(시작, 끝)]` — 두 바이트열이 **다른 구간들**. 남의 자리를 안 밟게 여기로만 쓴다."""
     out, i = [], 0
@@ -334,7 +375,7 @@ def _diffs(new, old):
     return out
 
 
-def apply_runs(dst, path, lba, size, base, plans):
+def apply_runs(dst, path, lba, size, base, plans, puts=(), mptrs=()):
     """구간 바이트 + **바뀐 포인터**를 쓴다 → 쓴 포인터 수.
 
     🔴 **포인터를 안 고치면 옮긴 블록을 아무도 못 찾는다.** 구간 안에서 앞 블록이 짧아지면
@@ -359,6 +400,14 @@ def apply_runs(dst, path, lba, size, base, plans):
                     q = int(q, 16) if isinstance(q, str) else q
                     n += 1
                     common.write_at(f, lba, size, q, want, label=f"{path} 씬 포인터 0x{q:X}")
+        # 이주분 — 꼬리에 새로 쓰고 참조만 돌린다(`migrate`)
+        for at, blob in puts:
+            common.write_at(f, lba, size, at, blob, label=f"{path} 이주 0x{at:X}")
+        for q, addr in mptrs:
+            n += 1
+            common.write_at(
+                f, lba, size, q, addr.to_bytes(4, "big"), label=f"{path} 이주 포인터 0x{q:X}"
+            )
     return n
 
 
@@ -374,8 +423,8 @@ def verify(dst, checks):
       것」을 실패로 부른다(실측 2026-08-27: ED2MON02 0x3B8).
     """
     _f2, mm2 = common.open_image(dst)
-    nb = np = 0
-    for path, lba, size, base, plans in checks:
+    nb = np = nm = 0
+    for path, lba, size, base, plans, puts, mptrs in checks:
         d = bytes(common.read_extent(mm2, lba, size))
         for start, blob, moves, orig in plans:
             # ⚠ **우리가 쓴 토막만** 본다 — 구간 전체를 대조하면 안 건드린 블록에서
@@ -391,9 +440,17 @@ def verify(dst, checks):
                     q = int(q, 16) if isinstance(q, str) else q
                     assert d[q : q + 4] == want, f"{path} 포인터 0x{q:X}: 되읽기가 다르다"
                     np += 1
+        # 이주분 — **새 자리의 바이트 + 그리로 도는 참조**를 둘 다 본다.
+        # 🔴 원본 칸은 **안 건드렸는지**도 본다. 손대면 다음 블록의 시작 마커가 어긋난다.
+        for at, blob in puts:
+            assert d[at : at + len(blob)] == blob, f"{path} 이주 0x{at:X}: 되읽기가 다르다"
+            nm += 1
+        for q, addr in mptrs:
+            assert d[q : q + 4] == addr.to_bytes(4, "big"), f"{path} 이주 포인터 0x{q:X}"
+            np += 1
     mm2.close()
     _f2.close()
-    print(f"  ✅ 되읽기 씬 구간 {nb:,} · 포인터 {np:,}곳")
+    print(f"  ✅ 되읽기 씬 구간 {nb:,} · 이주 {nm:,} · 포인터 {np:,}곳")
 
 
 def main():
@@ -411,7 +468,16 @@ def main():
         global _PLAN
         _PLAN = slot_plan(all_texts(mm))  # ⚠ 저본 전량이 아니라 **실제로 넣을 것**만
 
-    files = ok = blocks = pinned = wrote = matched = 0
+    # 🔴 **빌드 이미지를 같이 연다** — 「이미 누가 쓴 자리인가」를 구조로 묻기 위해서다
+    #    (`already_written`). 없으면(항등 검증·첫 계산) 그 장치 없이 돈다.
+    dst = os.path.join(common.BUILD_DIR, os.path.basename(common.ORIG_BIN))
+    _fb = mmb = None
+    built_files = {}
+    if canon and os.path.exists(dst):
+        _fb, mmb = common.open_image(dst)
+        built_files = {p: (lba, sz) for p, lba, sz in common.iso_files(mmb)}
+
+    files = ok = blocks = pinned = wrote = matched = moved = nofit = 0
     bad, skipped, checks = [], [], []
     for path in targets:
         got = load(path)
@@ -422,37 +488,50 @@ def main():
         d = bytes(common.read_extent(mm, lba, size))
         files += 1
         mine = owned_elsewhere(path) if canon else frozenset()
+        built = None
+        if canon and built_files and path in built_files:
+            built = bytes(common.read_extent(mmb, *built_files[path]))
+        # 확장 영역(꼬리) — `expand_files` 가 연 자리. 원본 크기부터 새 크기까지가 우리 것이다.
+        bsize = built_files.get(path, (0, size))[1]
+        over = []
         plans = []
         for run in runs(entries, size):
             blocks += len(run)
             matched += sum(
                 1 for o, _n, e in run if o not in mine and _canon_get(canon, e.get("text", ""))
             )
-            blob, moves, skip = rebuild(run, canon, d, mine)
+            blob, moves, dropped = rebuild(run, canon, d, mine, built)
             start = run[0][0]
             orig = d[start : start + len(blob)]
             if blob == orig:
                 ok += 1
             else:
                 bad.append((path, start, len(blob)))
-            skipped.extend(skip)
+            skipped.extend(dropped)
+            over.extend(r for r in dropped if "칸을" in r[1])
             # 자리가 안 바뀐 포인터는 쓸 이유가 없다
             plans.append((start, blob, [(p, a) for p, a in moves if _moved(entries, p, a)], orig))
         pinned += sum(1 for e in entries if not e.get("ptr_at"))
+        puts, mptrs, left = (
+            migrate(over, _base, size, bsize) if (canon and bsize > size) else ([], [], over)
+        )
+        moved += len(puts)
+        nofit += len(left)
         if apply:
-            dst = os.path.join(common.BUILD_DIR, os.path.basename(common.ORIG_BIN))
             if not os.path.exists(dst):
                 raise SystemExit(f"먼저 다른 패처를 돌린다 — {dst} 가 없다")
-            wrote += apply_runs(dst, path, lba, size, _base, plans)
-            checks.append((path, lba, size, _base, plans))
+            wrote += apply_runs(dst, path, lba, bsize, _base, plans, puts, mptrs)
+            checks.append((path, lba, bsize, _base, plans, puts, mptrs))
 
     print(f"씬 파일 {files}개 · 블록 {blocks} · 핀(참조 없음) {pinned}")
     if skipped:
         print(f"  ⏭ 구조 계약이 달라 건너뛴 블록 {len(skipped)}")
-        for off, why, jp in skipped[:6]:
+        for off, why, jp, _e, _enc in skipped[:6]:
             print(f"     0x{off:X} {why} — {jp!r}")
     if apply:
-        print(f"  → 넣음 · 옮겨서 고친 포인터 {wrote}곳")
+        print(f"  → 넣음 · 고친 포인터 {wrote}곳")
+    print(f"  이주(확장 영역) {moved:,} · 자리가 없어 남은 것 {nofit:,}")
+    if apply:
         verify(dst, checks)
     if check:
         print(f"  항등 구간 {ok} · 어긋난 구간 {len(bad)}")
@@ -462,11 +541,14 @@ def main():
             raise SystemExit(f"항등 재삽입이 {len(bad)}구간에서 어긋난다 — 도구가 범인이다")
         print("  ✅ 원문을 그대로 다시 깔아 **바이트 동일** — 자르기·재배치가 맞다")
     else:
-        n = sum(1 for _o, why, _jp in skipped if "칸을" in why)
+        n = sum(1 for r in skipped if "칸을" in r[1])
         print(f"  넣을 수 있는 블록 {matched} · 칸을 넘어 건너뛴 것 {n}")
         print("  (`--apply` 로 넣는다 · `--check` 는 원문 항등만 본다)")
     mm.close()
     _f.close()
+    if mmb is not None:
+        mmb.close()
+        _fb.close()
 
 
 if __name__ == "__main__":

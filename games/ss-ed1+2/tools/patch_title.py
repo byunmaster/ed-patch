@@ -309,10 +309,14 @@ def main():
 
     os.makedirs(BUILD, exist_ok=True)
     dst = os.path.join(BUILD, os.path.basename(common.ORIG_BIN))
-    if not os.path.exists(dst):
-        print(f"  원본 복사 → {dst}")
-        shutil.copy2(common.ORIG_BIN, dst)
-        shutil.copy2(common.ORIG_CUE, os.path.join(BUILD, os.path.basename(common.ORIG_CUE)))
+    # 🔴 **늘 새로 뜬다 — 「없을 때만」이 아니다**(2026-08-27). 사본이 회차 사이에 남으면
+    #    **낡은 도구 버전이 쓴 바이트가 그대로 산다.** 실측: 같은 소스로 지은 이미지가
+    #    이어 지으면 `f361990d`, 새로 지으면 `b54e5533` 로 갈렸다 — 오늘 세션 동안 조판기를
+    #    고쳐 가며 얹은 옛 문안이 남아 있었다. 제1원칙(빌드는 결정적)이 여기서 샌다.
+    #    ⚠ 사본은 2초면 뜬다(484MB, 실측) — 체인 2분에 견주면 값이 안 나간다.
+    print(f"  원본 복사 → {dst}")
+    shutil.copy2(common.ORIG_BIN, dst)
+    shutil.copy2(common.ORIG_CUE, os.path.join(BUILD, os.path.basename(common.ORIG_CUE)))
 
     _f2, mm2 = common.open_image(dst)
     files = {p_: (l, s_) for p_, l, s_ in common.iso_files(mm2)}
