@@ -639,6 +639,7 @@ python3 games/ss-ed1+2/tools/expand_files.py        # 꼬리 섹터 확장 계�
 python3 games/ss-ed1+2/tools/patch_mon_names.py     # ED2 몬스터 이름 (`--apply` 로 삽입)
 python3 games/ss-ed1+2/tools/scan_untranslated.py --all   # ⭐ 남은 일본어 전수 (빌드 기준)
 python3 games/ss-ed1+2/tools/check_text.py -v       # ⭐ 문안 정적 QA (조사·부호·정본)
+python3 games/ss-ed1+2/tools/audit_nuance.py        # 뜻이 미끄러진 자리 (LaBSE, 13분 · 후보만)
 ```
 
 **빌드 한 벌 = `sh games/ss-ed1+2/check.sh`** 다. 순서가 계약이라(앞이 빌드 사본을 만들고
