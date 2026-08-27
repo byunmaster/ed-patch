@@ -153,7 +153,11 @@ def collect():
         mine = set(era.get(scn, {}).get("A 작업 중", ())) | set(
             era.get(scn, {}).get("B 자체번역", ())
         )
-        for eid in mine:
+        # 🔴 **집합을 그냥 돌면 비결정적이다**(레포 제1원칙). 파일 순서가 흔들리는 건
+        #    둘째고, 아래 「같은 원문에 두 문안」은 **먼저 만난 쪽이 이기므로** 회차마다
+        #    승자가 갈린다 — 다음 플랫폼으로 넘길 사전의 내용이 머신을 타게 된다.
+        #    (실측 2026-08-27: 두 번 돌려 18,347줄이 달라졌다.)
+        for eid in sorted(mine, key=lambda x: int(x) if x.isdigit() else -1):
             s, t = jp.get(eid, ""), (cur.get(eid) or {}).get("t")
             if not s or not t:
                 continue
@@ -231,7 +235,9 @@ def main():
 
     d, plain, split = collect()
     with open(OUT, "w", encoding="utf-8") as f:
-        json.dump({"_doc": __doc__.split("\n")[0], "lines": d}, f, ensure_ascii=False, indent=1)
+        # 키도 정렬해 둔다 — 차분이 「무엇이 바뀌었나」만 보이게
+        lines = {k: d[k] for k in sorted(d)}
+        json.dump({"_doc": __doc__.split("\n")[0], "lines": lines}, f, ensure_ascii=False, indent=1)
     blocks = sum(e["n"] for e in d.values())
     fmt = sum(1 for e in d.values() if e.get("fmt"))
     print(f"  고유 원문 {len(d)} · 블록 {blocks} · 인자 포함 {fmt} → {os.path.relpath(OUT, ROOT)}")
