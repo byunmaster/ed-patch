@@ -155,9 +155,23 @@ def build_one(a_disc):
         ok = True
         print(f"\n✅ {dst}")
     finally:
-        if not ok and os.path.exists(dst):
-            os.replace(dst, dst + ".failed")
-            print(f"\n❌ 빌드 실패 — 산출물을 무효화했다: {os.path.basename(dst)}.failed")
+        if not ok:
+            #   ⚠ `.bin` 만 무효화하면 **`.cue`·`.m3u` 가 살아남는다** — 에뮬에 그걸 물리면
+            #     「이미지가 없다」로 죽으니 조용히 틀리진 않지만, 칸에 성공물과 실패물이
+            #     섞여 `pull-build.sh` 가 그 칸을 정상으로 센다. **남아 있는 건 전부 성공한
+            #     산출물**이어야 규율이 선다. 둘 다 지운다(성공하면 다시 만든다).
+            if os.path.exists(dst):
+                os.replace(dst, dst + ".failed")
+                print(f"\n❌ 빌드 실패 — 산출물을 무효화했다: {os.path.basename(dst)}.failed")
+            for gone in (cue, m3u_path()):
+                if os.path.exists(gone):
+                    os.remove(gone)
+
+
+def m3u_path():
+    return os.path.join(
+        C.BUILD_DIR, f"{C.TITLE_KR}.m3u" if hasattr(C, "TITLE_KR") else "Shiroki Majo (KR).m3u"
+    )
 
 
 def write_m3u():
@@ -170,9 +184,7 @@ def write_m3u():
     cues = [out_paths(d)[1] for d in C.DISCS]
     if not all(os.path.exists(c) for c in cues):
         return
-    path = os.path.join(
-        C.BUILD_DIR, f"{C.TITLE_KR}.m3u" if hasattr(C, "TITLE_KR") else "Shiroki Majo (KR).m3u"
-    )
+    path = m3u_path()
     with open(path, "w", encoding="utf-8") as f:
         f.write("".join(os.path.basename(c) + "\n" for c in cues))
     print(f"      두 장을 묶었다 → {os.path.basename(path)}")
