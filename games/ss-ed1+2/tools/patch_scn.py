@@ -1,0 +1,245 @@
+"""씬 대사 재삽입 — **자유 구간 안에서 다시 깔고 포인터를 고친다**.
+
+    python3 tools/patch_scn.py --check     # 🔴 항등 검증: 원문을 그대로 다시 깔아 바이트 동일인가
+    python3 tools/patch_scn.py             # 우리 문안으로 계획·검산만
+    python3 tools/patch_scn.py --apply     # 빌드 이미지에 넣는다
+
+⚠ 순서상 **UI 다음**이다 — 씬 파일은 UI 가 지명 헤더를 이미 고쳤다.
+
+## 🔴 착수 전에 읽은 것 — 「구조 계약」(`docs/reference/our-findings.md`)
+
+PS1 에서 이 층은 **소프트락을 여러 번** 냈다. 새턴도 같은 팔콤 툴체인이고, 오늘 나누기
+함수에서 **`%c` 가 이미 1바이트 제어코드로 치환된 것**을 봤다 — 즉 여기도 sprintf 구조다.
+그래서 PS1 의 계약 넷을 그대로 가져온다:
+
+    ① 창 수      — 재조립본의 `%c` 가 원본보다 **적으면 소프트락**(엔진이 원본 개수만큼 읽는다)
+    ② 인자 수·순서 — `%s`·`%d` 는 인자 소비 스텝이다. 줄면 뒤 인자가 전부 밀린다
+    ③ 미참조 핀   — 「포인터로 참조되지도, 번역되지도 않는 블록」은 **이동 금지**
+    ④ 위치       — 구조가 같아도 **블록이 줄어 뒤가 당겨지면** 이벤트가 깨진다(실측: −12B 정상,
+                   −20B 목적지 어긋남, −32B 락). 그래서 **자유 구간 단위로 원본 길이를 고정**한다
+
+## 이 도구가 지금 하는 일 — **항등 검증까지**
+
+번역 저본이 아직 없다(`line_dict.json` 은 PS1 재작성 대기 — status 「남은 일」 1).
+그래서 먼저 **파이프라인의 정확성**을 못 박는다:
+
+    원문을 그대로 다시 깔았을 때 **이미지가 바이트 하나 안 틀리면**,
+    자르기·재배치·포인터 갱신이 전부 맞다는 뜻이다.
+
+이게 통과해야 문안을 얹을 수 있다. 통과 못 하면 **번역이 아니라 도구가 범인**이다.
+
+## 자리 — 자유 구간
+
+씬 파일은 `[지명 헤더 12B][SH-2 코드][텍스트]` 가 지역 단위로 반복된다(status 3절).
+**텍스트 구간만** 다시 깐다. 구간의 경계는 **포인터가 가리키는 블록들의 앞뒤**이고,
+구간 길이는 **원본 그대로 유지**한다(계약 ④) — 짧으면 0 으로 채운다.
+"""
+
+import json
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import common
+
+DUMP = os.path.join(common.OUT_DIR, "scn_jp")
+SCN_RE = re.compile(r"^/BIN/(ED1SCN|ED2SCN|ED2MON)\d+\.BIN$")
+FMT = re.compile(r"%[csd]")
+
+# 🔴 **구간을 어디서 끊나** — 블록 사이 빈틈으로 가른다. 실측 분포가 깨끗하게 둘로 갈린다:
+#    **1~4B**(널 종단 + 4바이트 정렬, 925건)와 **64B 초과**(사이에 SH-2 코드가 낀 자리, 83건).
+#    그 사이 값은 6B 하나뿐이다. 그래서 8B 를 경계로 둔다 — 넘으면 **다른 구간**이다.
+#    ⚠ 이걸 안 가르면 구간이 파일 전체가 되어 **코드까지 덮어쓴다**(첫 시도가 그랬다).
+MAX_GAP = 8
+
+
+def contract(text):
+    """구조 계약 지문 — `('%c%s%d…' 순서열, 개수)`. 이게 어긋나면 넣지 않는다."""
+    seq = "".join(m.group(0)[1] for m in FMT.finditer(text))
+    return seq, len(seq)
+
+
+def load(path):
+    """그 파일의 덤프 → `(base, [entry])`. 없으면 None."""
+    name = os.path.basename(path).replace(".BIN", ".json")
+    p = os.path.join(DUMP, name)
+    if not os.path.exists(p):
+        return None
+    with open(p, encoding="utf-8") as f:
+        d = json.load(f)
+    return int(d["source"]["base"], 16), d["entries"]
+
+
+def runs(entries, size):
+    """**자유 구간** — 포인터로 참조되는 블록들이 이어진 덩어리.
+
+    🔴 구간 단위로 **원본 길이를 고정**한다(계약 ④). 한 블록만 고정하면 소용없다 —
+       앞 블록이 줄면 같이 당겨진다.
+    ⚠ `ptr_at` 이 빈 항목은 **핀**이다(계약 ③). 구간을 거기서 끊어 절대 안 옮긴다.
+    """
+    items = []
+    for e in entries:
+        off = int(e["file_offset"], 16)
+        raw = bytes.fromhex(e["raw_hex"])
+        items.append((off, len(raw), e))
+    items.sort()
+    out, cur = [], []
+    for off, n, e in items:
+        pinned = not e.get("ptr_at")
+        if pinned:
+            if cur:
+                out.append(cur)
+                cur = []
+            continue
+        if cur and not (0 <= _gap(cur[-1], off) <= MAX_GAP):
+            out.append(cur)  # 사이에 코드가 낀다 — 여기서 끊는다(위 MAX_GAP 주석)
+            cur = []
+        cur.append((off, n, e))
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _gap(prev, off):
+    """앞 블록 끝과 다음 블록 시작 사이의 빈틈(널 패딩). 구간을 끊지 않는다."""
+    return off - (prev[0] + prev[1])
+
+
+def rebuild(run, canon, d):
+    """`(새 바이트, [(ptr_at, 새 주소 오프셋)], [건너뛴 이유])` — 구간을 다시 깐다.
+
+    ⚠ **구간 총 길이는 원본 그대로**다. 남으면 0 으로 채운다(계약 ④).
+    """
+    start = run[0][0]
+    end = run[-1][0] + run[-1][1]
+    room = end - start
+    blob = bytearray()
+    moves, skipped = [], []
+    for idx, (off, n, e) in enumerate(run):
+        # 🔴 **블록은 자기 칸에 머문다 — 당기지 않는다.** 칸은 `(내용+NUL)` 을 4바이트
+        #    올린 크기인데(실측 676/676), 그 **꼬리 마지막 바이트가 `0x09` 인 자리가 많다**
+        #    (`00 00 00 09` 182건 · `00 00 09` 138건). 그건 패딩이 아니라 **다음 블록의
+        #    시작 마커**다 — 블록을 앞으로 당기면 이 마커가 통째로 어긋난다.
+        #    ⇒ 꼬리는 **원본 바이트를 그대로** 두고, 내용만 칸 안에서 바꾼다.
+        #    ⚠ 그래서 이 도구는 「칸 안에서만」이다. 칸을 넘는 문안은 **확장 영역 이주**가
+        #      따로 필요하다(PS1 이 쓴 2단계 — 원본 자리엔 JP 를 남기고 참조만 새 주소로).
+        span = (run[idx + 1][0] - off) if idx + 1 < len(run) else n
+        raw = bytes.fromhex(e["raw_hex"])
+        jp = e.get("text", "")
+        kr = canon.get(jp)
+        use = raw
+        if kr is not None:
+            if contract(kr) != contract(jp):
+                skipped.append((off, "구조 계약이 다르다", jp[:18]))
+            elif len(_encode(kr)) > span - 1:
+                skipped.append((off, f"칸을 넘는다 {len(_encode(kr))}B > {span - 1}B", jp[:18]))
+            else:
+                use = _encode(kr)
+        moves.append((e.get("ptr_at", []), start + len(blob)))
+        # 칸 = [내용][NUL 채움][원본 꼬리]. 🔴 꼬리를 **끝에 붙여야** 마커가 제자리다 —
+        # `d[off+len(use):]` 로 이어 붙이면 짧아진 만큼 원본이 밀려 들어와 **아무것도 안
+        # 바뀐 것처럼** 된다(합성 시험이 잡았다).
+        tail = d[off + n : off + span]
+        blob += use + b"\x00" * (span - len(use) - len(tail)) + tail
+    assert len(blob) == room, f"구간 0x{start:X}: {len(blob)}B ≠ {room}B"
+    return bytes(blob), moves, skipped
+
+
+def _moved(entries, ptrs, at):
+    """그 포인터가 가리키던 자리가 실제로 바뀌었나 — 안 바뀌었으면 쓰지 않는다."""
+    if not ptrs:
+        return False
+    for e in entries:
+        if e.get("ptr_at") == ptrs:
+            return int(e["file_offset"], 16) != at
+    return True
+
+
+def _encode(kr):
+    """우리 문안 → 바이트. 슬롯 코드는 `patch_ui` 의 계획을 쓴다(여기선 아직 원문만)."""
+    return kr.encode("cp932")
+
+
+def apply_runs(dst, path, lba, size, base, plans):
+    """구간 바이트 + **바뀐 포인터**를 쓴다 → 쓴 포인터 수.
+
+    🔴 **포인터를 안 고치면 옮긴 블록을 아무도 못 찾는다.** 구간 안에서 앞 블록이 짧아지면
+       뒤가 통째로 당겨지므로, 옮겨진 블록마다 `ptr_at` 의 BE32 를 새 주소로 바꾼다.
+    ⚠ 안 바뀐 것은 안 쓴다 — 되읽기 대장이 「무엇이 실제로 움직였나」를 그대로 비춘다.
+    """
+    n = 0
+    with open(dst, "r+b") as f:
+        for start, blob, moves, orig in plans:
+            if blob != orig:
+                common.write_at(f, lba, size, start, blob, label=f"{path} 씬 구간 0x{start:X}")
+            for ptrs, at in moves:
+                want = (base + at).to_bytes(4, "big")
+                for q in ptrs:
+                    q = int(q, 16) if isinstance(q, str) else q
+                    n += 1
+                    common.write_at(f, lba, size, q, want, label=f"{path} 씬 포인터 0x{q:X}")
+    return n
+
+
+def main():
+    check = "--check" in sys.argv
+    apply = "--apply" in sys.argv
+    common.verify_source()
+    _f, mm = common.open_image()
+    targets = [p for p, _l, _s in common.iso_files(mm) if SCN_RE.match(p)]
+    canon = {}  # 🔴 저본은 아직 없다 — 항등 검증에서는 비운다(원문 그대로)
+
+    files = ok = blocks = pinned = wrote = 0
+    bad, skipped = [], []
+    for path in targets:
+        got = load(path)
+        if not got:
+            continue
+        _base, entries = got
+        lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
+        d = bytes(common.read_extent(mm, lba, size))
+        files += 1
+        plans = []
+        for run in runs(entries, size):
+            blocks += len(run)
+            blob, moves, skip = rebuild(run, canon, d)
+            start = run[0][0]
+            orig = d[start : start + len(blob)]
+            if blob == orig:
+                ok += 1
+            else:
+                bad.append((path, start, len(blob)))
+            skipped.extend(skip)
+            # 자리가 안 바뀐 포인터는 쓸 이유가 없다
+            plans.append((start, blob, [(p, a) for p, a in moves if _moved(entries, p, a)], orig))
+        pinned += sum(1 for e in entries if not e.get("ptr_at"))
+        if apply:
+            dst = os.path.join(common.BUILD_DIR, os.path.basename(common.ORIG_BIN))
+            if not os.path.exists(dst):
+                raise SystemExit(f"먼저 다른 패처를 돌린다 — {dst} 가 없다")
+            wrote += apply_runs(dst, path, lba, size, _base, plans)
+
+    print(f"씬 파일 {files}개 · 블록 {blocks} · 핀(참조 없음) {pinned}")
+    if skipped:
+        print(f"  ⏭ 구조 계약이 달라 건너뛴 블록 {len(skipped)}")
+        for off, why, jp in skipped[:6]:
+            print(f"     0x{off:X} {why} — {jp!r}")
+    if apply:
+        print(f"  → 넣음 · 옮겨서 고친 포인터 {wrote}곳")
+    if check:
+        print(f"  항등 구간 {ok} · 어긋난 구간 {len(bad)}")
+        for path, start, n in bad[:8]:
+            print(f"     ❌ {path} 0x{start:X} ({n}B)")
+        if bad:
+            raise SystemExit(f"항등 재삽입이 {len(bad)}구간에서 어긋난다 — 도구가 범인이다")
+        print("  ✅ 원문을 그대로 다시 깔아 **바이트 동일** — 자르기·재배치가 맞다")
+    else:
+        print("  (지금은 저본이 없다 — `--check` 로 파이프라인만 검증한다)")
+    mm.close()
+    _f.close()
+
+
+if __name__ == "__main__":
+    main()
