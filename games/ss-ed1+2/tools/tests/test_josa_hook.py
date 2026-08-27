@@ -101,6 +101,16 @@ class Sh2:
             R[n] = (R[n] << 16) & 0xFFFFFFFF
         elif op & 0xF0FF == 0x4019:  # shlr8
             R[n] = (R[n] & 0xFFFFFFFF) >> 8
+        elif op & 0xF0FF == 0x4001:  # shlr
+            R[n] = (R[n] & 0xFFFFFFFF) >> 1
+        elif op & 0xF0FF == 0x4009:  # shlr2
+            R[n] = (R[n] & 0xFFFFFFFF) >> 2
+        elif op & 0xFF00 == 0xC900:  # and #imm,r0
+            R[0] &= d8
+        elif op & 0xFF00 == 0xC800:  # tst #imm,r0
+            self.t = int((R[0] & d8) == 0)
+        elif op & 0xF00F == 0x2009:  # and Rm,Rn
+            R[n] &= R[m]
         elif op & 0xFF00 == 0x8900:  # bt
             if self.t:
                 self.pc = pc + 4 + s8 * 2

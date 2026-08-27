@@ -174,7 +174,38 @@ def rebuild(run, canon, d):
     return bytes(blob), moves, skipped
 
 
-def load_canon():
+def all_texts(mm=None):
+    """조판까지 끝난 **씬 문안 전량** — 슬롯 계획을 세우는 쪽(`patch_ui`)이 부른다.
+
+    🔴 슬롯 계획은 **모든 소비자를 한 번에** 받아야 한다. 씬 문안만으로 `--refresh` 를
+       돌렸다가 UI 글자 10자가 밀려났다(2026-08-27) — `slot_plan` 은 `need` 에 없는
+       글자를 버린다.
+    ⚠ 여기서 `patch_ui` 를 import 하지 않는다(순환) — 계획은 저쪽이 만들고 우리는 읽는다.
+    """
+    canon = load_canon(quiet=True)
+    if not canon:
+        return []
+    close = mm is None
+    if close:
+        _f, mm = common.open_image()
+    out = []
+    for path, _lba, _size in common.iso_files(mm):
+        if not SCN_RE.match(path):
+            continue
+        got = load(path)
+        if not got:
+            continue
+        for e in got[1]:
+            kr = _canon_get(canon, e.get("text", ""))
+            if kr:
+                out.append(kr)
+    if close:
+        mm.close()
+        _f.close()
+    return out
+
+
+def load_canon(quiet=False):
     """`{JP 원문: 우리 문안}` — 사전을 **원문 그대로** 못 들고 있으므로 키로 붙인다.
 
     ⚠ 사전은 다른 게임 트리(`games/ps1-ed1+2/line_dict.json`)에 있다. 없으면 빈 것을
@@ -185,15 +216,37 @@ def load_canon():
             with open(p, encoding="utf-8") as f:
                 lines = json.load(f)["lines"]
             got = {k: v["t"] for k, v in lines.items() if isinstance(v, dict) and v.get("t")}
-            print(f"  저본 {len(got):,}원문 — {p}")
+            if not quiet:
+                print(f"  저본 {len(got):,}원문 — {p}")
             return got
-    print("  ⚠ 저본을 못 찾았다 — 원문 그대로 둔다 (PS1 의 `line_dict.json`)")
+    if not quiet:
+        print("  ⚠ 저본을 못 찾았다 — 원문 그대로 둔다 (PS1 의 `line_dict.json`)")
     return {}
 
 
+_NAMES = None
+
+
 def _canon_get(canon, jp):
-    """원문 → 우리 문안. 키는 **공용 규칙**이다(덤퍼 표기 중립화)."""
-    return canon.get(line_key(jp)) if canon else None
+    """원문 → **조판까지 끝난** 우리 블록. 없거나 조판이 안 되면 None.
+
+    🔴 사전은 **문안만** 담는다(화자·창 전환·개행이 없다). 그대로 넣으면 구조 계약이
+       깨져 소프트락이 나므로 `typeset_scn` 이 원문 마크업을 다시 입힌다.
+    """
+    if not canon:
+        return None
+    kr = canon.get(line_key(jp))
+    if kr is None:
+        return None
+    global _NAMES
+    if _NAMES is None:
+        import typeset_scn
+
+        _NAMES = typeset_scn._names()
+    import typeset_scn
+
+    built, _bad = typeset_scn.typeset(jp, kr, _NAMES)
+    return built
 
 
 def _moved(entries, ptrs, at):
@@ -247,6 +300,37 @@ def apply_runs(dst, path, lba, size, base, plans):
     return n
 
 
+def verify(dst, checks):
+    """되읽기 — **쓴 자리와 포인터를 빌드 이미지에서 다시 읽는다.**
+
+    🔴 이 단계만 되읽기가 없었다(2026-08-27). 체인의 다른 패처는 전부 갖고 있어 게이트
+       출력에 `✅` 가 뜨는데 여기만 조용히 지나갔다 — 「돌았다」와 「들어갔다」는 다른 말이다
+       (체크리스트 4 · 10-B). 씬은 13,314블록으로 가장 크니 구멍이 여기 있으면 안 된다.
+    ⚠ **우리가 쓴 자리만** 본다. 안 바뀐 구간(`blob == orig`)은 안 쓰는데, 그 바이트의
+      주인은 우리가 아니다 — `/BIN/ED2MON*` 은 이름 칸(`patch_mon_names`)과 시스템
+      메시지(`patch_ui`)가 같은 파일을 나눠 갖는다. 거기까지 대조하면 「남이 정당하게 쓴
+      것」을 실패로 부른다(실측 2026-08-27: ED2MON02 0x3B8).
+    """
+    _f2, mm2 = common.open_image(dst)
+    nb = np = 0
+    for path, lba, size, base, plans in checks:
+        d = bytes(common.read_extent(mm2, lba, size))
+        for start, blob, moves, orig in plans:
+            if blob != orig:
+                got = d[start : start + len(blob)]
+                assert got == blob, f"{path} 0x{start:X}: 되읽기가 다르다"
+                nb += 1
+            for ptrs, at in moves:
+                want = (base + at).to_bytes(4, "big")
+                for q in ptrs:
+                    q = int(q, 16) if isinstance(q, str) else q
+                    assert d[q : q + 4] == want, f"{path} 포인터 0x{q:X}: 되읽기가 다르다"
+                    np += 1
+    mm2.close()
+    _f2.close()
+    print(f"  ✅ 되읽기 씬 구간 {nb:,} · 포인터 {np:,}곳")
+
+
 def main():
     check = "--check" in sys.argv
     apply = "--apply" in sys.argv
@@ -260,10 +344,10 @@ def main():
         from patch_ui import slot_plan
 
         global _PLAN
-        _PLAN = slot_plan(list(canon.values()))
+        _PLAN = slot_plan(all_texts(mm))  # ⚠ 저본 전량이 아니라 **실제로 넣을 것**만
 
     files = ok = blocks = pinned = wrote = matched = 0
-    bad, skipped = [], []
+    bad, skipped, checks = [], [], []
     for path in targets:
         got = load(path)
         if not got:
@@ -292,6 +376,7 @@ def main():
             if not os.path.exists(dst):
                 raise SystemExit(f"먼저 다른 패처를 돌린다 — {dst} 가 없다")
             wrote += apply_runs(dst, path, lba, size, _base, plans)
+            checks.append((path, lba, size, _base, plans))
 
     print(f"씬 파일 {files}개 · 블록 {blocks} · 핀(참조 없음) {pinned}")
     if skipped:
@@ -300,6 +385,7 @@ def main():
             print(f"     0x{off:X} {why} — {jp!r}")
     if apply:
         print(f"  → 넣음 · 옮겨서 고친 포인터 {wrote}곳")
+        verify(dst, checks)
     if check:
         print(f"  항등 구간 {ok} · 어긋난 구간 {len(bad)}")
         for path, start, n in bad[:8]:

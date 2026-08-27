@@ -1115,8 +1115,17 @@ def main():
     if not os.path.exists(dst):
         raise SystemExit(f"먼저 자막을 넣는다(patch_title.py --apply) — {dst} 가 없다")
 
+    # 🔴 **씬 문안까지 한 번에 받는다.** `slot_plan` 은 `need` 에 없는 글자를 버리므로
+    #    소비자를 하나라도 빠뜨리면 그 글자가 정본에서 밀려난다(2026-08-27 실측: 씬 문안만
+    #    주고 `--refresh` 를 돌렸더니 UI 글자 10자가 날아갔다).
+    import patch_scn
+
     plan = slot_plan(
-        [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs + sysm] + names,
+        [r[6] for r in rs]
+        + [r[6] for r in scn]
+        + [r[6] for r in cards + msgs + sysm]
+        + names
+        + patch_scn.all_texts(),  # ⚠ 인자 없이 — 이 시점엔 `mm0` 이 이미 닫혀 있다
         refresh="--refresh" in sys.argv,
     )
     print(f"  한글 슬롯 {len(plan)}자")

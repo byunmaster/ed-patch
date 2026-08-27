@@ -10,6 +10,7 @@ import unittest
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOOLS)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(TOOLS)), "..", "shared"))
 
 import josa
 
@@ -71,16 +72,29 @@ class Josa(unittest.TestCase):
                 )
 
     def test_table_size_and_range(self):
-        """🔴 **바이트 표다** — SH-2 엔 가변 시프트가 없어 비트맵을 못 읽는다.
+        """🔴 **니블 표다** — 한 바이트에 두 글자. 바이트 하나씩 쓰다 자리를 넘겼다(2026-08-27).
 
         ⚠ 구간은 **정본에서 유도한다** — 상수로 박았더니 새 글자 하나(`근` 0x8C5F)가
           상한을 넘겨 깨졌다. 안 고치면 그 글자만 조용히 받침 판정을 못 받는다.
+        ⚠ 비트맵(1/8)은 안 쓴다 — SH-2 엔 가변 시프트가 없어 8분기가 붙는다.
         """
         lo, hi = josa.code_span()
-        self.assertEqual(len(self.table), hi - lo + 1)
-        self.assertTrue(set(self.table) <= {0, 1})
+        self.assertEqual(len(self.table), ((hi - lo) >> 1) + 1)
+        self.assertTrue(set(self.table) <= {0x00, 0x01, 0x10, 0x11}, "니블이 아닌 값이 있다")
         for ch, code in self.codes.items():
             self.assertTrue(lo <= code <= hi, ch)
+
+    def test_nibble_packing_round_trips(self):
+        """🔴 **홀수·짝수 자리가 안 섞여야** 한다 — 섞이면 옆 글자의 받침을 읽는다."""
+        lo, _hi = josa.code_span()
+        for ch, code in self.codes.items():
+            from text.josa import batchim
+
+            self.assertEqual(
+                josa.has_batchim(code, self.table),
+                bool(batchim(ch)),
+                f"{ch!r} 0x{code:04X} (자리 {(code - lo) & 1})",
+            )
 
     def test_batchim_picks_the_right_particle(self):
         """받침 있으면 앞쪽(은·이·을), 없으면 뒤쪽(는·가·를)."""

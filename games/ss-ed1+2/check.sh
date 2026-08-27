@@ -44,6 +44,8 @@ step "타이틀 그림" "$T/patch_gfx_title.py" --apply
 step "메뉴 그림" "$T/patch_gfx_menu.py" --apply
 step "챕터 판" "$T/patch_gfx_cards.py" --apply
 step "HUD" "$T/patch_gfx_hud.py" --apply
+echo "  ── 본편 대사 (저본 → 조판 → 칸 안에서 치환)"
+step "씬 대사" "$T/patch_scn.py" --apply
 echo "  ── ED2 몬스터 이름 (제자리 우선 · 넘치면 칸끼리 재배치)"
 step "몬스터 이름" "$T/patch_mon_names.py" --apply
 echo "  ── 회심/통한 복사 루프 (14B 고정 → NUL 종단)"

@@ -66,14 +66,23 @@ def slot_codes():
 
 
 def build_table(codes=None):
-    """받침 표 — `표[code - lo]` 가 0/1. 기계어가 `mov.b @(r0,rTab)` 로 한 번에 읽는다."""
+    """받침 표 — **니블 하나가 한 글자**다. `표[(code-lo)>>1]` 의 하위/상위 4비트.
+
+    🔴 **바이트 하나씩 쓰다가 자리를 넘겼다**(2026-08-27). 씬 대사가 들어오며 슬롯이
+       630 → 1,104 자로 늘자 코드 구간이 2,563B 가 됐고, 코드까지 3,279B 라 놓을 자리
+       (2,432B)를 넘었다. **니블로 반으로 줄인다** — 1,282B.
+    ⚠ 비트맵(1/8)이면 321B 지만 SH-2 엔 **가변 시프트가 없어**(`shld` 는 SH-3+) 비트를
+      꺼내려면 8분기가 붙는다. 니블은 `shlr2` 두 번이면 되고 지금 자리로 충분하다.
+      ⚠ 슬롯이 더 늘어 또 넘치면 그때 비트맵으로 간다.
+    """
     codes = codes or slot_codes()
     lo, hi = code_span()
-    tab = bytearray(hi - lo + 1)
+    tab = bytearray(((hi - lo) >> 1) + 1)
     for ch, code in codes.items():
         assert lo <= code <= hi, f"{ch!r} 코드 0x{code:04X} 가 표 밖이다"
         if batchim(ch):
-            tab[code - lo] = 1
+            i = code - lo
+            tab[i >> 1] |= 0x10 if (i & 1) else 0x01  # 홀수 = 상위 니블
     return bytes(tab)
 
 
@@ -84,10 +93,12 @@ def pairs(codes=None):
 
 
 def has_batchim(code, table):
+    """🔴 **기계어와 같은 의미**여야 한다 — 니블로 읽는다(위 `build_table` 주석)."""
     lo, hi = code_span()
     if not lo <= code <= hi:
         return False
-    return bool(table[code - lo])
+    i = code - lo
+    return bool(table[i >> 1] & (0x10 if (i & 1) else 0x01))
 
 
 def _lead(b):

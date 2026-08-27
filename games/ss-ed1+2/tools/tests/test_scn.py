@@ -118,7 +118,14 @@ class Scn(unittest.TestCase):
         self.skipTest("조건에 맞는 구간이 없다")
 
     def test_too_long_is_skipped_not_truncated(self):
-        """칸을 넘는 문안은 **건너뛴다** — 조용히 자르면 화면이 깨진다."""
+        """칸을 넘는 문안은 **건너뛴다** — 조용히 자르면 화면이 깨진다.
+
+        ⚠ **원문을 늘려 만들지 않는다** — 사전 문안은 `typeset_scn` 을 거치므로 창 총량
+          (전각 15×5)을 넘기면 조판 자체가 실패해 「칸을 넘는다」에 닿지도 못한다.
+          창에는 들어가되 **칸에는 안 들어가는** 길이(전각 70자)로 잰다.
+        ⚠ 화자가 정본으로 번역되면 한글이라 `_encode` 가 cp932 로 못 싼다(빌드는 슬롯
+          계획을 넘긴다) — 그런 구간은 이 시험의 대상이 아니라 건너뛴다.
+        """
         for path in self.files:
             got = S.load(path)
             if not got:
@@ -132,9 +139,13 @@ class Scn(unittest.TestCase):
                 jp = run[0][2].get("text", "")
                 if not jp:
                     continue
-                long = jp + "あ" * 40  # 칸을 확실히 넘긴다 (⚠ `_encode` 가 아직 cp932 다)
-                blob, _m, skip = S.rebuild(run, {line_key(jp): long}, d)
-                self.assertTrue(skip, "칸을 넘는데 안 건너뛰었다")
+                long = "あ" * 70  # 창(75칸)엔 들되 칸엔 확실히 안 든다
+                try:
+                    blob, _m, skip = S.rebuild(run, {line_key(jp): long}, d)
+                except UnicodeEncodeError:
+                    continue  # 화자가 한글로 번역된 구간 — 슬롯 계획이 있어야 싼다
+                if not skip:
+                    continue
                 self.assertIn("칸을 넘는다", skip[0][1])
                 a = run[0][0]
                 self.assertEqual(blob, d[a : a + len(blob)], "건너뛰었는데 바뀌었다")

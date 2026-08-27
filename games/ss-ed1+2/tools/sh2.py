@@ -123,6 +123,10 @@ class Asm:
         self.emit(0x3002 | (_n(d) << 8) | (_n(s) << 4))
 
     def _tst(self, s, d):
+        if s.startswith("#"):  # ⚠ `tst #imm` 도 **r0 전용**이다
+            assert _n(d) == 0, "tst #imm 는 r0 만"
+            self.emit(0xC800 | (int(s[1:], 0) & 0xFF))
+            return
         self.emit(0x2008 | (_n(d) << 8) | (_n(s) << 4))
 
     def _or(self, s, d):
@@ -133,6 +137,20 @@ class Asm:
 
     def _shll16(self, d):
         self.emit(0x4028 | (_n(d) << 8))
+
+    def _shlr(self, d):
+        self.emit(0x4001 | (_n(d) << 8))
+
+    def _shlr2(self, d):
+        self.emit(0x4009 | (_n(d) << 8))
+
+    def _and(self, s, d):
+        # ⚠ `and #imm` 는 **r0 전용**이다(SH-2). 다른 레지스터면 그쪽으로 옮겨 놓고 부른다.
+        if s.startswith("#"):
+            assert _n(d) == 0, "and #imm 는 r0 만"
+            self.emit(0xC900 | (int(s[1:], 0) & 0xFF))
+        else:
+            self.emit(0x2009 | (_n(d) << 8) | (_n(s) << 4))
 
     def _shlr8(self, d):
         self.emit(0x4019 | (_n(d) << 8))

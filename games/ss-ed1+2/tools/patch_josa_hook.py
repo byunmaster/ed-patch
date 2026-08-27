@@ -223,8 +223,22 @@ def routine(base, table_at, back, pairs, *, arg="r6", pad=True, dry=False, end=N
         bf    picked
         mov.l @(L_LO,pc),r1
         sub   r1,r0
-        mov.b @(r0,r10),r3          ; 받침 표
+        ; 🔴 **받침 표는 니블이다** — 한 바이트에 두 글자(짝수 자리 = 하위 4비트).
+        ;    바이트 하나씩 쓰다 씬 대사가 들어오며 자리를 넘겼다(2026-08-27).
+        ;    ⚠ SH-2 엔 가변 시프트가 없어 비트맵(1/8)은 8분기가 붙는다 — 니블이 값싸다.
+        mov   r0,r1                 ; r1 = 자리 번호(홀짝 판정용)
+        shlr  r0                    ; r0 = 자리 >> 1  (바이트 색인)
+        mov.b @(r0,r10),r3
         extu.b r3,r3
+        mov   r1,r0
+        tst   #1,r0                 ; 짝수면 T=1 → 하위 니블 그대로
+        bt    lownib
+        shlr2 r3
+        shlr2 r3                    ; 홀수 → 상위 니블을 내린다
+    lownib:
+        mov   r3,r0
+        and   #1,r0
+        mov   r0,r3
     picked:
         tst   r3,r3
         bt    write                 ; 무받침 → r2(조사B) 그대로
