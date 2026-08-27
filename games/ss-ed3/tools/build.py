@@ -15,6 +15,7 @@
 """
 
 import argparse
+import glob
 import os
 import shutil
 import sys
@@ -61,6 +62,14 @@ def build_one(a_disc):
     C.verify_source(a.disc)
     os.makedirs(C.BUILD_DIR, exist_ok=True)
     dst, cue = out_paths(a.disc)
+    # 🔴 **지난 실패 표식은 빌드를 **시작할 때** 지운다.** 안 지우면 한 번 실패한 칸은
+    #    그 뒤 성공해도 `.failed` 가 남고, `scripts/pull-build.sh` 가 **그 칸을 통째로
+    #    거부한다**(정상 이미지가 있는데도). 유저 실측 2026-08-27.
+    #    ⚠ 「성공했을 때 지운다」가 아니라 **시작할 때**다 — 빌드가 중간에 죽으면(예외·
+    #    Ctrl-C) 성공 시점을 못 밟아 표식이 또 남는다. 시작에 지워야 「이 칸의 `.failed` 는
+    #    **직전 빌드의 결과만** 뜻한다」가 불변식으로 선다. ps1-ed1+2 의 규약과 같다.
+    for stale in glob.glob(os.path.join(C.BUILD_DIR, "*.failed")):
+        os.remove(stale)
     ok = False
     try:
         print(f"[1/5] 원본 사본 → {os.path.basename(dst)}")

@@ -8,6 +8,7 @@
 번역 정본은 `games/ss-ed3/script/<맵>.json` — 키는 블록 색인, 값은 우리 문안이다.
 """
 
+import argparse
 import hashlib
 import json
 import os
@@ -116,7 +117,14 @@ def patch_blocks(data, stem, table):
 
 
 def main():
-    check = "--check" in sys.argv
+    #   🔴 예전엔 `sys.argv` 에서 `--check` 만 보고 **맵 이름을 통째로 무시**했다. 에이전트를
+    #     여럿 굴리니 「내 맵을 검사했더니 **남이 지금 고치는 맵**이 실패로 뜬다」가 됐고,
+    #     종료 코드까지 1 이라 남의 실패를 자기 것으로 알고 헛돌았다(2026-08-27 실측).
+    ap = argparse.ArgumentParser()
+    ap.add_argument("stems", nargs="*", help="MAP016 … (없으면 전부)")
+    ap.add_argument("--check", action="store_true", help="쓰지 않고 계약만 본다")
+    a = ap.parse_args()
+    check = a.check
     table = H.load()
     total = done = 0
     bad = []
@@ -125,6 +133,8 @@ def main():
             if not (n.startswith("/MAP/") and n.endswith(".BIN")):
                 continue
             stem = os.path.basename(n).rsplit(".", 1)[0]
+            if a.stems and stem not in a.stems:
+                continue
             if not load_script(stem)[0]:
                 continue
             b = d.read_extent(lba, size)

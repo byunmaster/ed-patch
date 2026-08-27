@@ -19,6 +19,7 @@
 """
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -34,7 +35,9 @@ import typeset as T
 #   되어 반말로 오판된다(실측: 오탐 7 중 5). 개행·대기점은 공백으로 이어 붙인다.
 _END = re.compile(r"[^.!?…]+[.!?…]+")
 # 대답·맞장구는 화계를 안 가른다 — 「네.」의 `네` 가 종결어미 「~네」로 잡히던 자리다.
-_SHORT = re.compile(r"^(네|예|응|어|아|아니|아니요|그래|왜|뭐|음|흠)[.!?…]*$")
+# ⚠ **거듭한 것도 맞장구다** — 말을 더듬는 자리의 「네, 네.」가 반말로 잡히던 걸 같이 막는다.
+_INTERJ = r"(?:네|예|응|어|아|아니|아니요|그래|왜|뭐|음|흠)"
+_SHORT = re.compile(rf"^{_INTERJ}(?:\s*,\s*{_INTERJ})*[.!?…]*$")
 
 # 하십시오체 · 해요체
 HIGH = re.compile(
@@ -63,9 +66,32 @@ def sentences(text):
     return out
 
 
+def _names():
+    """정본의 우리 표기 — **긴 것부터**(짧은 이름이 긴 이름 안에 먹히지 않게)."""
+    with open(os.path.join(C.GAME_DIR, "glossary_manual.json"), encoding="utf-8") as f:
+        cats = json.load(f)["categories"]
+    out = {v for c in cats.values() for v in c.values() if isinstance(v, str) and len(v) >= 2}
+    return sorted(out, key=len, reverse=True)
+
+
+_NAMES = None
+
+
 def level(s):
-    """`'high'` · `'low'` · `None`(가릴 수 없음)."""
+    """`'high'` · `'low'` · `None`(가릴 수 없음).
+
+    🔴 **고유명사를 먼저 지운다.** 이름의 끝 글자가 종결어미로 읽히는 자리가 있다 —
+    「고죠」의 `죠`(해요체) · 「루레」의 `레` · 「그러네」의 `네`. 실측 2026-08-27 에
+    「제１시합은 바닷트와 **고죠**.」가 높임으로 잡혀 뒤의 반말과 혼용 판정이 났다.
+    문안을 비틀어 피하면 **이름이 나올 때마다 다시 물린다.**
+    """
+    global _NAMES
+    if _NAMES is None:
+        _NAMES = _names()
     s = s.rstrip()
+    for nm in _NAMES:
+        if nm in s:
+            s = s.replace(nm, "○")
     if NEUTRAL.search(s):
         return None
     if HIGH.search(s):

@@ -22,6 +22,10 @@ import reinsert as R
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true")
+    #   🔴 **굴리는 중인 맵을 건드리면 안 된다.** 이 도구는 **전 맵을 다시 쓴다** — 에이전트가
+    #     그 맵을 옮기는 중이면 「읽고 → 옮기고 → 쓴다」 사이에 끼어들어 서로를 덮는다
+    #     (2026-08-27 실측: MAP021 이 작업 중 딴 맵 문안으로 바뀌었다). `--skip` 으로 뺀다.
+    ap.add_argument("--skip", nargs="*", default=[], help="지금 누가 굴리는 맵 — 건드리지 않는다")
     a = ap.parse_args()
 
     seen = {}
@@ -31,6 +35,8 @@ def main():
                 if not (n.startswith("/MAP/") and n.endswith(".BIN")):
                     continue
                 stem = os.path.basename(n)[:-4]
+                if stem in a.skip:
+                    continue
                 if stem in seen:
                     continue
                 seen[stem] = M.blocks(d.read_extent(lba, size))

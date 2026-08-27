@@ -51,9 +51,63 @@ def numbers(s):
     return sorted(n for n in _NUM.findall(T.visible(s).translate(_DIGIT)) if int(n) >= _MIN)
 
 
+_KATA = re.compile(r"[ァ-ヴー]")
+#   ⚠ 지명 뒤의 보통명사는 **한국어에서 활용한다** — `ルピナス湖`=「루피나스 호수」인데
+#     본문은 「루피나스 **호숫가**」다(사이시옷). 뒷말을 빼고 **앞의 고유부만** 센다.
+_PLACE_TAIL = ("湖", "川", "島", "城", "山地", "街道", "関所", "砦", "塔", "村", "海岸", "海岸線", "森")
+
+
+def _standalone(j, jp):
+    """`j` 가 `jp` 안에 **낱말로** 있나.
+
+    ⚠ 가타카나 이름은 **더 긴 가타카나 낱말의 일부**로 걸린다 — `コル`(콜)이 `コルク`(코르크,
+    「병뚜껑」)에 먹혀 「콜이 빠졌다」고 울었다(실측). 정본 안에서만 겹침을 보는 걸로는
+    못 잡는다(`コルク` 는 고유명사가 아니라 정본에 없다). 그래서 **앞뒤가 가타카나면 뺀다.**
+
+    ⚠ **숫자 바로 뒤의 가타카나는 이름이 아니라 단위다** — `３ベン回る`(3 번 돌다)의 `ベン`
+    이 인물 `ベン`(벤)으로 걸려 「벤이 빠졌다」고 울었다(MAP037 실측 2026-08-27). 이름이
+    수 바로 뒤에 조사 없이 붙는 자리는 없으므로 그 자리는 뺀다.
+    """
+    kata = all(_KATA.match(c) for c in j)
+    i = jp.find(j)
+    while i >= 0:
+        if not kata:
+            return True
+        a = jp[i - 1] if i else ""
+        b = jp[i + len(j) : i + len(j) + 1]
+        digit = a.translate(_DIGIT).isdigit() if a else False
+        if not digit and not _KATA.match(a or " ") and not _KATA.match(b or " "):
+            return True
+        i = jp.find(j, i + 1)
+    return False
+
+
+def _need(jp, kr):
+    """문안에 있어야 할 최소 조각.
+
+    ⚠ 지명은 **고유부만** 본다 — 뒷말이 한국어에서 활용한다(`ルピナス湖`=「루피나스 호수」
+    인데 본문은 「루피나스 **호숫가**」).
+    """
+    return kr.split()[0] if jp.endswith(_PLACE_TAIL) and " " in kr else kr
+
+
+def _has(kr, v):
+    """문안 `v` 에 이름 `kr` 이 있나.
+
+    ⚠ **관형격 「의」는 칸이 좁으면 떨어진다** — 아이템 이름 「진홍의 불꽃」(11B)이 선택지
+    라벨 칸 8B 에 안 들어가 「진홍불꽃」이 됐다(MAP041 실측). 둘은 **같은 것으로 읽히므로**
+    이름이 갈린 게 아니다(「파도길」/「물결소리 길」과 다르다). 줄인 꼴도 있는 것으로 친다.
+    """
+    return kr in v or (" " in kr and kr.replace("의 ", "").replace(" ", "") in v)
+
+
 def load_gloss():
     with open(os.path.join(GAME, "glossary_manual.json"), encoding="utf-8") as f:
-        cats = json.load(f)["categories"]
+        raw = json.load(f)
+    cats = raw["categories"]
+    #   ⚠ 일반 낱말과 겹치는 이름은 「빠졌다」가 늘 거짓이다 — `チップ` 는 칩이자 팁이고
+    #     `リッチ` 는 인물이자 「풍족한」이다. 표기는 정본에 남기고 **강제만 뺀다.**
+    skip = set(raw.get("no_check", ()))
     out = {}
     for name, c in cats.items():
         # ⚠ 기술명은 **일반 동사와 겹친다**(`投げる` = 「던지기」). 대사에 그 동사가 나올
@@ -62,7 +116,7 @@ def load_gloss():
             continue
         for jp, kr in c.items():
             v = kr if isinstance(kr, str) else kr.get("kr")
-            if v and len(jp) >= 2:
+            if v and len(jp) >= 2 and jp not in skip:
                 out[jp] = v
     return out
 
@@ -105,7 +159,12 @@ def main():
                     print(f"    {jp[:40]!r}")
                     print(f"    {v[:40]!r}")
 
-            miss = [f"{j}→{g}" for j, g in gloss.items() if j in jp and g not in v]
+            # ⚠ **긴 이름에 먹힌 짧은 이름**을 빼지 않으면 영원히 우는 자리가 생긴다 —
+            #   `ティラスイール`(티라스일) 안에 별개 인물 `イール`(이르)가 들어 있어,
+            #   원문에 나라 이름만 나와도 「이르가 빠졌다」고 울었다(실측 8건).
+            hit = [j for j in gloss if _standalone(j, jp)]
+            hit = [j for j in hit if not any(o != j and j in o and o in jp for o in hit)]
+            miss = [f"{j}→{gloss[j]}" for j in hit if not _has(_need(j, gloss[j]), v)]
             if miss:
                 n_name += 1
                 if not a.quiet:

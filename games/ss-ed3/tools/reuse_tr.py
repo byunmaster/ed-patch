@@ -46,6 +46,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("stems", nargs="*")
     ap.add_argument("--dry", action="store_true")
+    #   🔴 **굴리는 중인 맵을 건드리면 안 된다.** 이 도구는 **전 맵을 다시 쓴다** — 에이전트가
+    #     그 맵을 옮기는 중이면 「읽고 → 옮기고 → 쓴다」 사이에 끼어들어 서로를 덮는다
+    #     (2026-08-27 실측: MAP021 이 작업 중 딴 맵 문안으로 바뀌었다). `--skip` 으로 뺀다.
+    ap.add_argument("--skip", nargs="*", default=[], help="지금 누가 굴리는 맵 — 건드리지 않는다")
     a = ap.parse_args()
 
     maps = {}
@@ -55,6 +59,8 @@ def main():
                 if not (n.startswith("/MAP/") and n.endswith(".BIN")):
                     continue
                 stem = os.path.basename(n)[:-4]
+                if stem in a.skip:
+                    continue
                 if stem not in maps:
                     maps[stem] = M.blocks(d.read_extent(lba, size))
 
@@ -80,7 +86,11 @@ def main():
         if a.dry:
             continue
         p = os.path.join(R.SCRIPT_DIR, f"{stem}.json")
-        d = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as fh:
+                d = json.load(fh)
+        else:
+            d = {}
         d.update(add)
         out = {k: d[k] for k in sorted((x for x in d if not x.startswith("_")), key=int)}
         out["_jp"] = d.get("_jp", {})
