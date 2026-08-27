@@ -636,8 +636,14 @@ def sys_rows(mm):
                 j += 1
             if not any(a <= i < b for a, b in holes + fixed.get(path, [])):
                 hit = _sys_match(d[i:j], canon)
-                if hit and path in SYS_EXTRA_FILES and not hit[1].endswith(SYS_EXTRA_SUFFIX):
-                    hit = None  # 위 SYS_EXTRA_SUFFIX 주석 — 이름 표를 건드리지 않는다
+                # 위 SYS_EXTRA_SUFFIX 주석 — 못 늘린 파일은 자리가 0 이라 출현 문구만
+                if (
+                    hit
+                    and path in SYS_EXTRA_FILES
+                    and path not in _tails()
+                    and not hit[1].endswith(SYS_EXTRA_SUFFIX)
+                ):
+                    hit = None
                 if hit:
                     k, jp = hit
                     nxt = j

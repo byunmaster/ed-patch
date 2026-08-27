@@ -52,20 +52,28 @@ def _internal_key(s):
 
 
 def strings(d, base):
-    """`{오프셋: 문자열}` — **포인터가 가리키는 자리**만."""
+    """`{포인터 오프셋: (대상 오프셋, 문자열)}` — **포인터가 가리키는 자리**만.
+
+    🔴 **키가 포인터 자리다.** 재삽입은 문자열을 옮기고 **포인터를 갱신**하므로, 빌드에서
+       같은 걸 보려면 **그 포인터를 다시 읽어** 따라가야 한다. 원본 오프셋을 그대로 읽으면
+       옮겨 간 자리의 **원문 잔재**를 보고 「아직 일본어」로 오보한다(실측 2026-08-27:
+       329줄 중 상당수가 그랬다).
+    """
     out = {}
+    seen = set()
     for o in range(0, len(d) - 3, 2):
         v = struct.unpack(">I", d[o : o + 4])[0]
         if not (base <= v < base + len(d)):
             continue
         t = v - base
-        if t in out:
+        if t in seen:
             continue
+        seen.add(t)
         j = t
         while j < len(d) and d[j] != 0 and j - t < MAXLEN:
             j += 1
         try:
-            out[t] = d[t:j].decode("cp932")
+            out[o] = (t, d[t:j].decode("cp932"))
         except UnicodeDecodeError:
             pass
     return out
@@ -78,12 +86,15 @@ def scan(path, mm, files):
     built = bytes(common.read_extent(mm, *files[path]))
     orig = bytes(common.extract(path))
     left = []
-    for t, _s in sorted(strings(orig, base).items()):
+    for o, (t, _jp) in sorted(strings(orig, base).items()):
+        # ⚠ **빌드에서 포인터를 다시 읽는다** — 재삽입이 자리를 옮겼으면 그게 지금 자리다
+        nv = struct.unpack(">I", bytes(built[o : o + 4]))[0]
+        t = nv - base if base <= nv < base + len(built) else t
         j = t
         while j < len(built) and built[j] != 0 and j - t < MAXLEN:
             j += 1
         try:
-            now = built[t:j].decode("cp932")
+            now = bytes(built[t:j]).decode("cp932")
         except UnicodeDecodeError:
             continue  # 우리 슬롯 코드가 들어갔다 — 번역된 자리다
         if not _has_kana(now) or _internal_key(now):
