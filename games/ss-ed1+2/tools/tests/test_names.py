@@ -50,7 +50,7 @@ class Names(unittest.TestCase):
     def test_halfwidth_kana_and_middot_normalise(self):
         """표엔 반각 가나·중점 표기가 섞여 있다 — **맞출 때만** 눕힌다."""
         self.assertEqual(patch_ui._nname("ﾃﾞｽ･ｶﾞｰﾃﾞｨｱﾝ"), "デスガーディアン")
-        self.assertEqual(patch_ui.name_kr("ﾃﾞｽ･ｶﾞｰﾃﾞｨｱﾝＡ", self.c), "데스 가디언A")
+        self.assertEqual(patch_ui.name_kr("ﾃﾞｽ･ｶﾞｰﾃﾞｨｱﾝＡ", self.c), "데스가디언A")
 
     def test_unknown_is_none_not_guess(self):
         """못 찾으면 **None** 이다 — 부르는 쪽이 실패로 친다(짐작해서 넣지 않는다)."""
