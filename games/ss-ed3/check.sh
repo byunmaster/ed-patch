@@ -39,6 +39,10 @@ echo "  ── 이름표가 자리마다 다르게 옮겨졌나"
 # 🔴 게이트다 — 라벨은 판단이 들어갈 자리가 없다(같은 사람이 두 이름으로 보인다)
 "$PY" "$G/tools/check_label.py" 2>&1 | tail -12 | sed 's/^/   /' || fail=1
 
+echo "  ── 고유명사 뒤 조사가 받침과 맞나"
+# 🔴 게이트다 — **표기를 바꾸면 조사가 안 따라온다**(「라우아르가」→「라우알가」)
+"$PY" "$G/tools/check_josa.py" 2>&1 | tail -10 | sed 's/^/   /' || fail=1
+
 echo "  ── 원문에 있던 것이 사라지지 않았나 (숫자 · 고유명사)"
 "$PY" "$G/tools/check_fidelity.py" 2>&1 | tail -3 | sed 's/^/   /' || true
 
