@@ -301,11 +301,27 @@ def load_canon(quiet=False):
     got = {k: v["t"] for k, v in lines.items() if isinstance(v, dict) and v.get("t")}
     # 🔴 **새턴 전용 문안을 덮어 얹는다** — PS1 사전이 영영 못 채우는 자리다(781블록:
     #    이식판이 갈린 문안 763 + 저작권 분류로 막힌 19). 겹치면 우리 것이 이긴다.
+    # ⚠ **정본 이름과 통째로 같은 블록**은 사전을 안 거친다 — 아이템·지명이 한 블록으로
+    #   따로 놓인 자리다(실측: ED2 마법서 23종 `フラムの書`). 사전은 문장을 담으니 여기엔
+    #   영영 안 온다. 규칙 한 줄로 잇는다 — 정본이 곧 답이다.
+    #   🔴 사전을 **안 덮는다** — 같은 원문이 문장으로도 쓰이면 문장 쪽이 옳다.
+    named = {line_key(jp): kr for jp, kr in _names().items()}
+    add = {k: v for k, v in named.items() if k not in got}
+    got.update(add)
     ours = load_ours()
     got.update(ours)
     if not quiet:
-        print(f"  저본 {len(got):,}원문 — {where} + 새턴 전용 {len(ours):,}")
+        print(
+            f"  저본 {len(got):,}원문 — {where} + 정본 이름 {len(add):,} + 새턴 전용 {len(ours):,}"
+        )
     return got
+
+
+def _names():
+    """고유명사 정본 — ⚠ `typeset_scn` 이 임포트 시점에 우리를 부르므로 여기서 늦게 읽는다."""
+    from typeset_scn import _names as f
+
+    return f()
 
 
 SCN_CANON = os.path.join(common.GAME_DIR, "script", "scn.json")
