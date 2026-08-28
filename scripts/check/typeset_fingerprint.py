@@ -61,13 +61,26 @@ def load_canon(game):
 
 
 # 게임마다 「문안을 조판기에 통과시키는 법」이 다르다 — 그 게임 도구가 안다.
+#
+# 🔴 **새 게임은 여기 적지 말고 `games/<게임>/tools/typeset_fp.py` 를 든다**(아래 `fingerprint`).
+#    조판법은 게임 지식이라 공용에 두면 게임 얘기가 공용으로 샌다 — PS1 은 우리가 개행을 다
+#    넣고(krwrap 14슬롯) 새턴은 **엔진이 글자 단위로 접어** 조판기 자체가 다르다.
+#    이 표는 아직 안 옮긴 PS1 몫으로만 남는다.
 GAMES = {
     "ps1-ed1+2": ("games/ps1-ed1+2/tools", "reinsert_kr_pilot"),
 }
 
 
 def fingerprint(game):
-    """{씬: 조판 결과 sha1} — 그 게임의 화면 문안 전량을 조판기에 태운다."""
+    """{구역: 조판 결과 sha1} — 그 게임의 화면 문안 전량을 조판기에 태운다.
+
+    게임이 자기 지문기를 들면 그것을 쓴다 — 구역을 무엇으로 가를지도 게임이 정한다
+    (새턴은 씬 92 + UI 6 + 몬스터 2 = 99구역이다).
+    """
+    impl = os.path.join(REPO, "games", game, "tools")
+    if os.path.exists(os.path.join(impl, "typeset_fp.py")):
+        sys.path.insert(0, impl)
+        return __import__("typeset_fp").fingerprint()
     rel, mod = GAMES[game]
     sys.path.insert(0, os.path.join(REPO, rel))
     os.environ.setdefault("LOCK_BYPASS", "1")
@@ -111,7 +124,7 @@ def main():
             ],
         )
         json.dump(canon, open(CANON, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-        print(f"  조판 지문 갱신 ({a.game}) — {len(now)}씬")
+        print(f"  조판 지문 갱신 ({a.game}) — {len(now)}구역")
         return 0
     if not old:
         print(f"  ⏭ {a.game} 정본 없음 — `--freeze` 로 세운다")

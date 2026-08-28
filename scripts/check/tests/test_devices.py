@@ -9,9 +9,7 @@ import os
 import sys
 
 # scripts/check/tests/ 아래라 네 번 올라가야 레포 루트다
-ROOT = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 # 검사 장치는 `scripts/check/` 에 산다(`scripts/` 는 입구만 둔다 — 저장소 맵 참조)
 sys.path.insert(0, os.path.join(ROOT, "scripts", "check"))
 
@@ -44,6 +42,20 @@ def test_fingerprint_freeze_does_not_copy_another_branch():
     src = _read("scripts", "check", "typeset_fingerprint.py")
     body = src[src.index("if a.freeze:") :]
     assert '!= "작업 트리"' in body[:400], "freeze 경로에 남의 브랜치 값 차단이 없다"
+
+
+def test_fingerprint_prefers_the_games_own_typesetter():
+    """게임마다 조판법이 다르니 **지문기는 게임이 든다** — 공용은 대조·동결만 안다.
+
+    PS1 은 우리가 개행을 다 넣고(krwrap 14슬롯) 새턴은 **엔진이 글자 단위로 접는다**.
+    이 지식을 공용 표에 박으면 새 게임이 늘 때마다 공용을 고치게 되고, 그게 바로
+    루트 `CLAUDE.md` 가 막는 「게임 얘기가 공용으로 새는」 자리다.
+    """
+    src = _read("scripts", "check", "typeset_fingerprint.py")
+    body = src[src.index("def fingerprint(") :]
+    assert "typeset_fp.py" in body[: body.index("GAMES[game]")], (
+        "게임 몫 지문기(`games/<게임>/tools/typeset_fp.py`)를 안 찾는다 — 표에 박게 된다"
+    )
 
 
 def test_shared_scope_watches_worktree_not_only_commits():
