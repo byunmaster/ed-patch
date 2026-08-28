@@ -85,6 +85,25 @@ def test_shared_scope_covers_every_shared_path():
     assert not set(C.CODE) & set(C.PROSE), "두 바구니가 겹친다"
 
 
+def test_glossary_is_a_carve_out_from_code_not_a_prose_bucket():
+    """⚠ 정본은 **코드 바구니 안의 예외**다 — 글 바구니로 옮기면 경고가 사라진다.
+
+    `shared/glossary/` 는 브랜치에서 고쳐도 되지만(2026-08-29) **바이트는 만든다** —
+    이름이 길어지면 칸을 넘고, 표기를 바꾸면 문안에 박힌 자리가 따라와야 한다(실측
+    2026-08-28: 21종을 붙이자 새턴 문안 42줄을 같이 고쳤다). 그래서 ⚠ 를 띄운다.
+    글 바구니(`PROSE`)에 넣으면 「고쳐도 된다」만 남고 뒤처리 상기가 없어진다.
+    """
+    import check_shared_scope as C
+
+    assert C.DATA, "정본 바구니가 비었다"
+    for d in C.DATA:
+        assert os.path.exists(os.path.join(ROOT, d.rstrip("/"))), f"경로 없음: {d}"
+        assert d.startswith(C.CODE), f"{d} 는 코드 바구니 안의 예외여야 한다"
+        assert not any(d.startswith(s) for s in C.PROSE), f"{d} 가 글 바구니에 들어갔다"
+    src = _read("scripts", "check", "check_shared_scope.py")
+    assert "startswith(DATA)" in src, "정본을 공용 코드 경고에서 빼지 않는다"
+
+
 def test_worktree_links_only_declared_originals():
     """⚠ 그 게임이 **선언한 원본만** 건다(유저 요청 2026-08-18).
 
