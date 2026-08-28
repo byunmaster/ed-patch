@@ -35,6 +35,10 @@ echo "  ── 말투 (한 블록 안에서 높임과 반말이 섞였나)"
 # ⚠ 경고지 실패가 아니다 — 한 블록 안에서 말 상대가 바뀌는 자리가 실제로 있다
 "$PY" "$G/tools/check_speech.py" 2>&1 | tail -3 | sed 's/^/   /' || true
 
+echo "  ── 이름표가 자리마다 다르게 옮겨졌나"
+# 🔴 게이트다 — 라벨은 판단이 들어갈 자리가 없다(같은 사람이 두 이름으로 보인다)
+"$PY" "$G/tools/check_label.py" 2>&1 | tail -12 | sed 's/^/   /' || fail=1
+
 echo "  ── 원문에 있던 것이 사라지지 않았나 (숫자 · 고유명사)"
 "$PY" "$G/tools/check_fidelity.py" 2>&1 | tail -3 | sed 's/^/   /' || true
 
