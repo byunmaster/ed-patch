@@ -40,14 +40,31 @@ PX0, PW, PH = 40, 40, 8  # 이름판 왼쪽 끝 · 폭 · 높이
 #   🔴 **밝은 판에 어두운 글자다**(유저 지적 2026-08-29). 처음엔 뒤집어 그렸다 —
 #     원본을 값으로 보면 배경이 9(밝은 회색)고 획이 1~5(어두움)다. 획 안쪽이 2 로 가장 흔하다.
 PLATE = 9  # 판 바탕 (밝은 회색)
-INK = 2  # 글자 획 (어두움)
+#   ⚠ **값이 클수록 어둡다**(CRAM 실측) — 1=밝기224 · 2=200 · 4=144 · 5=117 · 9=89.
+#     즉 원문은 **어두운 판에 밝은 글자**다. 미리보기를 `값×17` 로 그리면 명암이 뒤집혀
+#     보이니, 확인은 반드시 **CRAM 팔레트를 씌워** 한다(2026-08-29 이걸로 한참 헤맸다).
+INK = 2  # 글자 획 (밝다)
 BAR_TOP = 4  # 이 행부터 아래는 **바처럼 꽉 채운다** (원본도 rows 4~7 이 꽉 찼다)
 PAD = 1  # 글자를 왼쪽에서 한 칸 띄운다 — 원문도 판 왼쪽에 한 칸이 있다(유저 지적)
 GAP = 1  # 글자 사이 (잉크 폭에 붙여 준다 — 고정 간격을 쓰면 좁은 글자 뒤가 벌쭉해진다)
-#   ⚠ **안티앨리어싱은 흉내내지 않는다**(2026-08-29 시도했다가 되돌렸다). 원문 획 둘레엔
-#     1~5 의 중간 값이 깔려 있는데, 그건 **큰 글꼴을 줄이면서 생긴 것**이다. 우리 획은
-#     Galmuri7 이라 **1px 두께**여서, 「맞닿은 바탕 한 칸」을 중간 값으로 낮추면 바탕이
-#     거의 전부 중간 값이 돼 **글자가 뭉갠다**(실측). 흉내내려면 더 큰 글꼴을 줄여야 한다.
+#   🔴 **바탕은 Galmuri7 을 쓰고, 안 읽히는 글자만 손으로 덮는다**(유저 확정 2026-08-29).
+#     칸이 7×7 뿐이라 기성 글꼴이 힘든데, 그렇다고 전부 손으로 그릴 일도 아니다 —
+#     대부분은 Galmuri7 이 잘 나오고 **몇 자만 획이 뭉갠다.**
+#     ⚠ Galmuri9 는 안 된다 — 잉크가 1~9 행이라 8 행 칸에서 **글자마다 2~9px 이 잘린다**
+#       (`오`·`로`·`알`·`프` 는 9px). 「잉크가 는다」만 보고 고르면 이 함정에 빠진다.
+FONT, FONT_DY, CELLW = "Galmuri7", -1, 8
+
+#   ⚠ **글자를 손으로 덮는 길을 냈다가 걷었다**(유저 확정 2026-08-29). `로`·`휘`·`알` 이
+#     안 읽힌다고 보고 7×7 로 직접 그렸는데, 견줘 보니 **Galmuri7 이 대체로 낫다** —
+#     `로`·`알` 의 ㄹ 은 `루`·`르`·`젤` 과 **같은 꼴**이라 손으로 그리면 그 자리만 튄다.
+#     「폰트가 그렇게 세팅된 이유가 있다」는 판단이다. 장치는 남겨 두되 **비워 둔다** —
+#     정말 못 쓸 글자가 나오면 여기 한 줄이면 된다.
+#     ⓘ 표는 `{글자: (GH 줄, 각 줄 같은 폭)}` 이고 `#` 이 획이다. `GY` 행부터 그린다.
+GH, GY = 7, 1
+GLYPHS = {}
+for _ch, _g in GLYPHS.items():
+    assert len(_g) == GH and len({len(r) for r in _g}) == 1, _ch
+
 TAIL = (0, 0, 0, 0, 7, 2, 5, 9)  # 꼬리 몸통 한 열
 TAIL_CAP = (  # 마지막 네 열 (36~39)
     (0, 0, 0, 0, 7, 2, 4, 9),
@@ -56,8 +73,8 @@ TAIL_CAP = (  # 마지막 네 열 (36~39)
     (0, 0, 0, 0, 0, 0, 7, 7),
 )
 
-#   🔴 **눈으로 읽어 확신이 서는 것만 넣는다.** 판 7~13 은 아직 못 읽었다 —
-#     엉뚱한 이름을 넣느니 원문을 두는 게 낫다(유저 확인 대기).
+#   이름판 열넷 = 파티원. 판독은 **대사 빈도로 검산**했다(그 이름이 실제로 쓰이는가) —
+#   눈으로만 읽으면 틀린다(`ジョアンナ` 를 `ジョアッキーノ`, `バダット` 를 `バラッド` 로 봤다).
 #   ⓘ 표기는 `glossary_manual.json` 정본을 따른다.
 NAMES = {
     0: "쥬리오",
@@ -67,6 +84,13 @@ NAMES = {
     4: "로디",
     5: "휘리",
     6: "알프",
+    7: "모리슨",
+    8: "죠안나",
+    9: "스텔라",
+    10: "바다트",
+    11: "방방",
+    12: "듀르젤",
+    13: "루레",
 }
 
 
@@ -93,17 +117,22 @@ def draw_plate(atlas, n, word, bdf):
     ink = [[False] * PW for _ in range(PH)]
     x = PAD
     for ch in word:
-        #   ⚠ `dy=-1 · rows=8` 이 자리다 — 잉크가 최대(20)로 온전히 담기면서
-        #     **획이 1~7 행에 앉아 원문과 같은 줄**이 된다(원문도 1~7 행, 유저 지적).
-        #     `dy=-2` 면 0~6 행이라 한 줄 떠 보이고, `dy=-3` 은 잉크가 깎인다(20→15).
-        bits = bdf.bits(ch, dy=-1, rows=PH, width=8)
-        cols = [c for c in range(8) if any(bits[y][c] for y in range(PH))]
-        for yy in range(PH):
-            for xx in range(8):
-                if bits[yy][xx] and x + xx < PW:
-                    ink[yy][x + xx] = True
+        if ch in GLYPHS:  # 손으로 덮은 글자
+            g = GLYPHS[ch]
+            gw = len(g[0])
+            cols = [c for c in range(gw) if any(g[y][c] == "#" for y in range(GH))]
+            for yy in range(GH):
+                for xx in range(gw):
+                    if g[yy][xx] == "#" and x + xx < PW:
+                        ink[GY + yy][x + xx] = True
+        else:  # 나머지는 글꼴에서
+            b = bdf.bits(ch, dy=FONT_DY, rows=PH, width=CELLW)
+            cols = [c for c in range(CELLW) if any(b[y][c] for y in range(PH))]
+            for yy in range(PH):
+                for xx in range(CELLW):
+                    if b[yy][xx] and x + xx < PW:
+                        ink[yy][x + xx] = True
         #   🔴 **글자마다 폭이 달라 고정 간격을 쓰면 사이가 벌쭉해진다**(유저 지적) —
-        #     `리`·`디`·`휘` 는 6px 인데 나머지는 7px 이라, 8px 로 고정하면 그 뒤만 2px 가 뜬다.
         #     잉크 폭 + 1 로 붙여 **사이를 늘 1px** 로 만든다.
         x += (max(cols) + 1 if cols else 3) + GAP
     #   ② 바탕을 만든다 — 원본을 따라 셋을 지킨다(유저 지적 2026-08-29):
@@ -116,10 +145,11 @@ def draw_plate(atlas, n, word, bdf):
             if yy >= BAR_TOP:
                 plate[yy][xx] = True
             elif not ink[yy][xx]:
+                #   🔴 **십자(4 이웃)로 부풀린다** — 네모(8 이웃)로 부풀리면 모서리가
+                #     각져 판이 투박해 보인다(유저 지적 2026-08-29).
                 plate[yy][xx] = any(
                     ink[yy + dy][xx + dx]
-                    for dy in (-1, 0, 1)
-                    for dx in (-1, 0, 1)
+                    for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1))
                     if 0 <= yy + dy < PH and 0 <= xx + dx < PW
                 )
     #   ⓒ 바깥에서 물을 부어 **닿지 않는 빈칸 = 구멍**을 찾아 메운다.
@@ -146,6 +176,10 @@ def draw_plate(atlas, n, word, bdf):
         for xx in range(PW):
             if ink[yy][xx]:
                 _set(atlas, PX0 + xx, y0 + yy, INK)
+    #   🔴 **바가 시작하는 행의 왼쪽 끝 한 칸을 깎는다**(유저 지적) — 안 깎으면 판이
+    #     거기서 직각으로 튀어나와 투박하다. 위쪽에 잉크가 없을 때만 깎는다.
+    if _get(atlas, PX0, y0 + BAR_TOP) == PLATE and _get(atlas, PX0, y0 + BAR_TOP - 1) == 0:
+        _set(atlas, PX0, y0 + BAR_TOP, 0)
     #   꼬리 — **바로 이어 붙인다**(사이를 띄우면 바가 끊겨 보인다)
     start = min(x, PW - len(TAIL_CAP))
     for c in range(start, PW - len(TAIL_CAP)):
@@ -165,7 +199,7 @@ def patch(bank):
     off, size, stream = ents[ENTRY]
     atlas, _end = lzss.decode(bank, stream)
     atlas = bytearray(atlas)
-    bdf = fonts.galmuri("Galmuri7")
+    bdf = fonts.galmuri(FONT)
     n = 0
     for idx, word in sorted(NAMES.items()):
         draw_plate(atlas, idx, word, bdf)
