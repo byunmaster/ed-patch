@@ -38,6 +38,7 @@ PS1 에서 이 층은 **소프트락을 여러 번** 냈다. 새턴도 같은 �
 import json
 import os
 import re
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -58,17 +59,19 @@ DUMP = os.path.join(common.OUT_DIR, "scn_jp")
 # 🔴 저본은 **PS1 이 만드는 사전** 하나뿐이다 — `script/` 는 43%(ED1)·93%(ED2)가 정발
 #    유래라 못 쓴다(status 4절). 키는 공용(`shared/text/line_key`)이라 덤퍼 표기가 달라도
 #    붙는다 — 실측 84.2%(ED1SCN 95.6% · ED2SCN 96.0%).
-#    ⚠ 그 파일은 **PS1 게임 트리**에 있다. 아직 main 에 안 올라와 이 브랜치에서는 안 보이므로
-#      **워크트리도 본다** — 순서는 「이 트리 먼저, 없으면 PS1 워크트리」다.
-#      PS1 이 main 에 올리면 첫째가 잡히고 둘째는 저절로 안 쓰인다.
+#    ⚠ 그 파일은 **PS1 게임 트리**에 있고 아직 main 에 안 올라와 이 브랜치에서는 안 보인다.
+#      그래서 **그쪽 브랜치의 커밋된 blob** 을 읽는다(`git show`).
+#
+# 🔴 **PS1 워크트리의 파일을 직접 읽지 않는다**(2026-08-29 전환). 그건 남의 세션이 **저장할
+#    때마다** 우리 이미지를 바꾼다 — 실측으로 한 시간 사이 사전이 18,146→18,251 이 되며
+#    저본 미비가 1,440→1,422 로 움직였다. 레포 **제1 원칙(빌드는 결정적이어야 한다)** 에
+#    정면으로 걸리고, 저장 중인 반쪽짜리 파일을 읽을 위험도 있다. 커밋 단위면 그 둘이 없어진다.
+#    (조판 지문 도구가 남의 브랜치 값을 읽는 방식과 같다 — `scripts/check/typeset_fingerprint.py`)
+# ⚠ 완전한 못박기(커밋 sha 고정)까지는 안 간다 — 그쪽 인게임 QA 의 문안 수정이 안 들어와
+#   손해가 크다. 대신 **어느 커밋을 읽었는지 찍는다**(수치를 적을 때 같이 적는다).
 _ROOT = os.path.dirname(os.path.dirname(common.GAME_DIR))
-LINE_DICT_PATHS = [
-    os.path.join(_ROOT, "games", "ps1-ed1+2", "line_dict.json"),
-    os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(_ROOT))),
-        ".claude/worktrees/ps1-ed1+2/games/ps1-ed1+2/line_dict.json",
-    ),
-]
+LINE_DICT = os.path.join(_ROOT, "games", "ps1-ed1+2", "line_dict.json")
+LINE_DICT_REF = "game/ps1-ed1+2:games/ps1-ed1+2/line_dict.json"
 # 🔴 **본체 둘도 대사를 갖는다** — ED2 오프닝 프롤로그가 `/ED2.BIN` 안에 있다(실측: 저본이
 #    ED.BIN 419 · ED2.BIN 145 블록에 붙는다). 씬 파일이 아니라고 빼 두면 그만큼이 영영
 #    일본어로 남는다. 대신 그 둘은 **주인이 여럿**이라(시스템 메시지 · 표 · 고유명사 ·
@@ -271,20 +274,34 @@ def all_texts(mm=None):
 def load_canon(quiet=False):
     """`{JP 원문: 우리 문안}` — 사전을 **원문 그대로** 못 들고 있으므로 키로 붙인다.
 
-    ⚠ 사전은 다른 게임 트리(`games/ps1-ed1+2/line_dict.json`)에 있다. 없으면 빈 것을
-      돌려준다 — 그 트리를 안 받은 워크트리에서도 항등 검증은 돌아야 한다.
+    ⚠ 사전은 다른 게임 트리(`games/ps1-ed1+2/line_dict.json`)에 있다. 이 트리에 있으면
+      그걸 쓰고(=main 에 올라왔다), 없으면 **PS1 브랜치의 커밋된 blob** 을 읽는다.
+      둘 다 없으면 빈 것을 돌려준다 — 사전 없이도 항등 검증은 돌아야 한다.
     """
-    for p in LINE_DICT_PATHS:
-        if os.path.exists(p):
-            with open(p, encoding="utf-8") as f:
-                lines = json.load(f)["lines"]
-            got = {k: v["t"] for k, v in lines.items() if isinstance(v, dict) and v.get("t")}
+    if os.path.exists(LINE_DICT):
+        with open(LINE_DICT, encoding="utf-8") as f:
+            raw, where = f.read(), "이 트리"
+    else:
+        r = subprocess.run(
+            ["git", "show", LINE_DICT_REF], cwd=_ROOT, capture_output=True, text=True, check=False
+        )
+        if r.returncode or not r.stdout.strip():
             if not quiet:
-                print(f"  저본 {len(got):,}원문 — {p}")
-            return got
+                print("  ⚠ 저본을 못 찾았다 — 원문 그대로 둔다 (PS1 의 `line_dict.json`)")
+            return {}
+        sha = subprocess.run(
+            ["git", "rev-parse", "--short", "game/ps1-ed1+2"],
+            cwd=_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        raw, where = r.stdout, f"game/ps1-ed1+2 {sha}"
+    lines = json.loads(raw)["lines"]
+    got = {k: v["t"] for k, v in lines.items() if isinstance(v, dict) and v.get("t")}
     if not quiet:
-        print("  ⚠ 저본을 못 찾았다 — 원문 그대로 둔다 (PS1 의 `line_dict.json`)")
-    return {}
+        print(f"  저본 {len(got):,}원문 — {where}")
+    return got
 
 
 _NAMES = None

@@ -85,6 +85,34 @@ class Typeset(unittest.TestCase):
         self.assertIsNone(bad)
         self.assertEqual(got, "%c점토 거푸집을 건넸다.%c%c")
 
+    def test_args_split_the_sentence_across_slots(self):
+        """🔴 **인자가 문장을 가른 블록** — 저본을 인자에서 잘라 나눠 담는다(100블록).
+
+        통째로 한 자리에 넣으면 남은 자리의 일본어 조각이 화면에 같이 뜨고, 비우면
+        인자 개수가 어긋나 계약이 깨진다. 실측에서 가장 흔한 꼴이 보물상자 94블록이다.
+        """
+        jp = "%s は 宝箱を開けました。\n宝箱の中には%c%s%cが入っていました。"
+        kr = "%s은(는) 보물상자를 열었다.\n보물상자 안에는 %s이(가) 들어 있었다."
+        got, bad = self.t(jp, kr)
+        self.assertIsNone(bad)
+        self.assertEqual(
+            got, "%s은(는) 보물상자를 열었다.\n보물상자 안에는 %c%s%c이(가) 들어 있었다."
+        )
+
+    def test_args_path_needs_the_same_arg_sequence(self):
+        """⚠ 인자 열이 어긋나면 어느 조각이 어느 자리인지 근거가 없다 — 손대지 않는다."""
+        jp = "%s は 宝箱を開けました。\n宝箱の中には%c%s%cが入っていました。"
+        got, bad = self.t(jp, "%s은(는) 보물상자를 열었다.")
+        self.assertIsNone(got)
+        self.assertEqual(bad, "정본에 없는 이름 자리가 있다")
+
+    def test_args_path_refuses_two_texts_in_one_group(self):
+        """한 묶음에 글이 둘 이상이면 버린다 — 어느 조각이 어느 자리인지 근거가 없다."""
+        jp = "%s前だ%c後だ%cが %sを 拾った。%c"
+        got, bad = self.t(jp, "%s앞이다뒤다가 %s을(를) 주웠다.")
+        self.assertIsNone(got)
+        self.assertEqual(bad, "정본에 없는 이름 자리가 있다")
+
     def test_over_window_is_rejected(self):
         """창 총량(전각 15×5)을 넘으면 뒷줄이 잘린다 — 넣지 않는다."""
         got, bad = self.t("%c兵士%c\n本文。%c", "가" * 80)
