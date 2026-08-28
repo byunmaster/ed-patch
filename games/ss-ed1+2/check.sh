@@ -80,6 +80,8 @@ echo "  ── 고정 길이 복사 전수 (칸에 맞나 · 빌드 이미지 �
 step "고정 복사" "$T/check_fixed_copy.py"
 echo "  ── 포인터 정렬 (두 바이트 고정으로 읽는 화면이 있다)"
 step "포인터 정렬" "$T/check_ptr_align.py"
+echo "  ── 정본 (같은 원문이 두 표기로 갈렸나)"
+step "정본" "$T/check_glossary.py"
 echo "  ── 문안 (조사·부호·정본 — 「한국어가 맞나」)"
 step "문안" "$T/check_text.py"
 echo "  ── 동적 조사 훅 (SH-2 디스어셈블 검산 + 참조 되읽기)"

@@ -650,13 +650,14 @@ python3 games/ss-ed1+2/tools/patch_mon_names.py     # ED2 몬스터 이름 (`--a
 python3 games/ss-ed1+2/tools/scan_untranslated.py --all   # ⭐ 남은 일본어 전수 (빌드 기준)
 python3 games/ss-ed1+2/tools/check_text.py -v       # ⭐ 문안 정적 QA (조사·부호·정본)
 python3 games/ss-ed1+2/tools/check_ptr_align.py     # ⭐ 옮긴 문자열이 짝수 주소인가
+python3 games/ss-ed1+2/tools/check_glossary.py      # ⭐ 정본이 자기 안에서 갈렸나
 python3 games/ss-ed1+2/tools/audit_nuance.py        # 뜻이 미끄러진 자리 (LaBSE, 13분 · 후보만)
 ```
 
 **빌드 한 벌 = `sh games/ss-ed1+2/check.sh`** 다. 순서가 계약이라(앞이 빌드 사본을 만들고
 뒤가 그 위에 얹는다) **정본을 그 스크립트 하나로 둔다** — 여기 순서를 다시 적으면 어긋난다
 (DRY, 루트 CLAUDE.md). 지금 열 단계다: 자막 → 파일 확장 → UI → 그림 넷 → **씬 대사** →
-몬스터 이름 → 회심 복사 → 고정 복사 검사 → **포인터 정렬** → **문안** → 조사 훅.
+몬스터 이름 → 회심 복사 → 고정 복사 검사 → **포인터 정렬** → **정본** → **문안** → 조사 훅.
 
 #### 12. 시스템 메시지 — ✅ **전투 문안 전량** (540종 / 686자리, 2026-08-24)
 
