@@ -107,6 +107,76 @@ def main():
         build_one(disc)
 
 
+def patched(disc):
+    """이 소스가 만드는 **그 디스크의 패치 결과 전량** — `(이름, lba, size, 원본, 새것, {갈래: 수})`.
+
+    🔴 **빌드와 검사기가 같은 코드를 쓰게 하려고 뺐다.** 갈래를 양쪽에 따로 적어 두면
+    둘이 조용히 어긋나고, 그러면 검사기가 「빌드가 맞다」고 보증하는 뜻이 없어진다.
+    ⓘ 폰트는 통째로 갈아 끼우므로 **원본을 안 읽는다**(`원본 is None` 이 그 표식이다).
+    """
+    fon, missing = build_font.build(disc)
+    if missing:
+        raise SystemExit(f"글리프가 없는 글자 {len(missing)}: {''.join(missing[:20])}")
+    asc, npad = build_font.build_ascii(disc)
+    table = H.load()
+    systbl, desctbl, paramtbl = RS.table(), RD.table(), RP.table()
+
+    with C.open_disc(disc) as d:
+        files = d.files()
+        for name, lba, size in files:
+            if name == "/SYSTEM/KANJI12.FON":
+                assert len(fon) == size, (len(fon), size)
+                yield name, lba, size, None, fon, {}
+            elif name == "/SYSTEM/ASCII.FON":
+                assert len(asc) == size, (len(asc), size)
+                yield name, lba, size, None, asc, {"ascii": npad}
+
+        for name, lba, size in files:
+            b = None
+            if C.is_map_file(name)[0]:
+                stem = C.is_map_file(name)[1]
+                if not R.load_script(stem)[0]:
+                    continue
+                b = d.read_extent(lba, size)
+                new, k, bad = R.patch_blocks(b, stem, table)
+                cnt = {"map": k}
+            elif name in ("/0.BIN", "/RLTPRG.BIN", "/BLACK.BIN") and systbl:
+                #   🔴 **미니게임 실행 파일에도 화면 문구가 있다**(실측 2026-08-28) —
+                #     `/RLTPRG.BIN`(룰렛) 「当たったー/どんなもんだい！！」 ·
+                #     `/BLACK.BIN`(블랙잭) 「ブラックジャックを終了しますか？」.
+                #     `/0.BIN` 만 고치고 있어 여태 일본어로 남아 있었다.
+                #   ⓘ `reinsert_sys` 의 **원바이트 폴백**이 `LOAD_BASE` 없는 파일도 받는다.
+                b = d.read_extent(lba, size)
+                new, k, bad = RS.patch(b, name, systbl)
+                cnt = {"sys": k}
+            elif name.startswith("/SYSTEM/BOOK") and name.endswith(".BIN"):
+                stem = os.path.basename(name)[:-4]
+                booktbl = RB.table(stem)
+                if not booktbl:
+                    continue
+                b = d.read_extent(lba, size)
+                new, k, bad = RB.patch(b, stem, booktbl, table)
+                cnt = {"book": k}
+            elif name == RG.TARGETS[0][0]:
+                b = d.read_extent(lba, size)
+                new, _ = RG.apply(b)
+                bad, cnt = [], {"gfx": 1 if new != b else 0}
+            elif name == "/SYSTEM/PARAM.BIN":
+                #   ⚠ 한 파일에 **설명문과 이름 표**가 같이 있다 — 둘을 이어서 넣는다.
+                #     이름 표가 빠져 있어 장비창에 일본어가 떴다(2026-08-27 유저 실측).
+                b = d.read_extent(lba, size)
+                new, k, bad = (b, 0, []) if not desctbl else RD.patch(b, table, desctbl)
+                new, k2, bad2 = RP.patch(new, None, paramtbl)
+                bad = bad + bad2
+                cnt = {"desc": k, "name": k2}
+            else:
+                continue
+            if bad:
+                raise SystemExit(f"{name}: {bad[:3]}")
+            assert len(new) == size, (len(new), size)
+            yield name, lba, size, b, new, cnt
+
+
 def build_one(a_disc):
     a = argparse.Namespace(disc=a_disc)
     print(f"\n── disc{a.disc}")
@@ -127,82 +197,28 @@ def build_one(a_disc):
         shutil.copyfile(C.DISC_BIN[a.disc], dst)
 
         print("[2/5] 폰트 — 한글 글리프 주입 + 반각 부호 여백")
-        fon, missing = build_font.build(a.disc)
-        if missing:
-            raise SystemExit(f"글리프가 없는 글자 {len(missing)}: {''.join(missing[:20])}")
-        asc, npad = build_font.build_ascii(a.disc)
-
-        table = H.load()
         touched_lbas = []
-        with C.open_disc(a.disc) as d, open(dst, "r+b") as f:
-            files = d.files()
-            for name, lba, size in files:
-                if name == "/SYSTEM/KANJI12.FON":
-                    assert len(fon) == size, (len(fon), size)
-                    mode1.write_at(f, lba, size, 0, fon, label=name)
+        n = {}
+        stage = "font"
+        with open(dst, "r+b") as f:
+            for name, lba, size, old, new, cnt in patched(a.disc):
+                for kind, k in cnt.items():
+                    n[kind] = n.get(kind, 0) + k
+                if "ascii" in cnt:
+                    print(f"      반각 여백 {cnt['ascii']}자 ({''.join(build_font.ASCII_PAD)})")
+                if stage == "font" and old is not None:
+                    stage = "text"
+                    print("[3/5] 문안 재삽입 (길이 보존)")
+                if old is None:  # 폰트 — 통째로 갈아 끼운다
+                    mode1.write_at(f, lba, size, 0, new, label=name)
                     touched_lbas.append((name, lba, size))
-                elif name == "/SYSTEM/ASCII.FON":
-                    assert len(asc) == size, (len(asc), size)
-                    mode1.write_at(f, lba, size, 0, asc, label=name)
-                    touched_lbas.append((name, lba, size))
-                    print(f"      반각 여백 {npad}자 ({''.join(build_font.ASCII_PAD)})")
-
-            print("[3/5] 문안 재삽입 (길이 보존)")
-            done = nsys = ndesc = nbook = ngfx = nname = 0
-            systbl = RS.table()
-            desctbl = RD.table()
-            paramtbl = RP.table()
-            for name, lba, size in files:
-                b = None
-                if C.is_map_file(name)[0]:
-                    stem = C.is_map_file(name)[1]
-                    if not R.load_script(stem)[0]:
-                        continue
-                    b = d.read_extent(lba, size)
-                    new, k, bad = R.patch_blocks(b, stem, table)
-                    done += k
-                elif name in ("/0.BIN", "/RLTPRG.BIN", "/BLACK.BIN") and systbl:
-                    #   🔴 **미니게임 실행 파일에도 화면 문구가 있다**(실측 2026-08-28) —
-                    #     `/RLTPRG.BIN`(룰렛) 「当たったー/どんなもんだい！！」 ·
-                    #     `/BLACK.BIN`(블랙잭) 「ブラックジャックを終了しますか？」.
-                    #     `/0.BIN` 만 고치고 있어 여태 일본어로 남아 있었다.
-                    #   ⓘ `reinsert_sys` 의 **원바이트 폴백**이 `LOAD_BASE` 없는 파일도 받는다.
-                    b = d.read_extent(lba, size)
-                    new, k, bad = RS.patch(b, name, systbl)
-                    nsys += k
-                elif name.startswith("/SYSTEM/BOOK") and name.endswith(".BIN"):
-                    stem = os.path.basename(name)[:-4]
-                    booktbl = RB.table(stem)
-                    if not booktbl:
-                        continue
-                    b = d.read_extent(lba, size)
-                    new, k, bad = RB.patch(b, stem, booktbl, table)
-                    nbook += k
-                elif name == RG.TARGETS[0][0]:
-                    b = d.read_extent(lba, size)
-                    new, _ = RG.apply(b)
-                    ngfx += 1 if new != b else 0
-                    bad = []
-                elif name == "/SYSTEM/PARAM.BIN":
-                    #   ⚠ 한 파일에 **설명문과 이름 표**가 같이 있다 — 둘을 이어서 넣는다.
-                    #     이름 표가 빠져 있어 장비창에 일본어가 떴다(2026-08-27 유저 실측).
-                    b = d.read_extent(lba, size)
-                    new, k, bad = (b, 0, []) if not desctbl else RD.patch(b, table, desctbl)
-                    ndesc += k
-                    new, k2, bad2 = RP.patch(new, None, paramtbl)
-                    nname += k2
-                    bad += bad2
-                else:
-                    continue
-                if bad:
-                    raise SystemExit(f"{name}: {bad[:3]}")
-                assert len(new) == size, (len(new), size)
-                if new != b:
-                    mode1.write_at(f, lba, size, 0, new, label=name, expect=b)
+                elif new != old:
+                    mode1.write_at(f, lba, size, 0, new, label=name, expect=old)
                     touched_lbas.append((name, lba, size))
             print(
-                f"      대사 블록 {done} · 시스템 문자열 {nsys} · 설명문 {ndesc} · 이름 {nname} · "
-                f"읽을거리 {nbook} · 화면 그림 {ngfx}"
+                f"      대사 블록 {n.get('map', 0)} · 시스템 문자열 {n.get('sys', 0)} · "
+                f"설명문 {n.get('desc', 0)} · 이름 {n.get('name', 0)} · "
+                f"읽을거리 {n.get('book', 0)} · 화면 그림 {n.get('gfx', 0)}"
             )
 
         print("[4/5] 섹터 무결성 자기검증")

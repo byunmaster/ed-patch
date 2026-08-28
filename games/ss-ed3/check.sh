@@ -52,6 +52,13 @@ for n in 1 2; do
   "$PY" "$G/tools/dump_sys.py" --disc "$n" --check 2>&1 | sed 's/^/   /' || fail=1
 done
 
+# 🔴 **구워 둔 이미지가 지금 소스의 것인가 · 두 장이 같은 세대인가.**
+#    `build.py` 는 두 장을 차례로 굽는다 — 굽는 **도중에** 소스를 고치면 앞장만 낡는데
+#    빌드는 성공하고 게이트도 초록이었다(유저 실측 2026-08-28: disc2 만 한 판 뒤처졌다).
+#    ⚠ 이미지가 없으면 건너뛴다 — 안 구운 트리에서 늘 빨간불이면 아무도 안 본다.
+echo "  ── 구워 둔 이미지가 지금 소스의 것인가 (두 장 대조)"
+"$PY" "$G/tools/check_build_discs.py" 2>&1 | sed 's/^/   /' || fail=1
+
 if [ "$fail" -ne 0 ]; then
   echo "  ❌ [ss-ed3] 게이트 실패"
   exit 1
