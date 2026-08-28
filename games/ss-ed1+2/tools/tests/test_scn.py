@@ -173,11 +173,13 @@ class Scn(unittest.TestCase):
         self.assertEqual(touched, {1, 3})
 
     def test_migrate_leaves_the_original_cell_alone(self):
-        """🔴 이주는 **참조만** 옮긴다 — 원본 칸을 건드리면 다음 블록의 마커가 어긋난다.
+        """🔴 이주는 **참조만** 옮긴다 — 원본 칸을 앞으로 당기면 다음 블록의 마커가 어긋난다.
 
-        PS1 이 쓴 2단계 그대로다: 자리엔 JP 를 남기고 새 주소에 우리 문안을 쓴다.
+        ⚠ **비워진 칸 자체는 풀로 돌아간다**(2026-08-27) — 참조를 옮긴 순간 그 자리를
+          가리키는 건 아무것도 없다. 여기서는 칸이 4B 라 자기 블록(9B)이 못 들어가므로
+          꼬리로 간다. 「당기지 않는다」와 「비운 자리를 다시 쓴다」는 다른 얘기다.
         """
-        e = {"ptr_at": ["100", "200"]}
+        e = {"ptr_at": ["100", "200"], "raw_hex": "00" * 4}
         over = [(0x10, "칸을 넘는다 9B > 4B", "jp", e, b"ABCDEFGH")]
         puts, ptrs, left = S.migrate(over, 0x06000000, 0x1000, 0x1400)
         self.assertEqual(puts, [(0x1000, b"ABCDEFGH\x00")])  # NUL 종단까지
@@ -188,17 +190,33 @@ class Scn(unittest.TestCase):
 
     def test_migrate_never_runs_past_the_tail(self):
         """자리가 모자라면 **남긴다** — 넘겨 쓰면 다음 파일을 밟는다."""
-        mk = lambda o, n: (o, "칸을 넘는다", "jp", {"ptr_at": []}, b"x" * n)
+        mk = lambda o, n: (o, "칸을 넘는다", "jp", {"ptr_at": [], "raw_hex": ""}, b"x" * n)
         puts, _p, left = S.migrate([mk(1, 8), mk(2, 8)], 0, 0x100, 0x100 + 10)
         self.assertEqual(len(puts), 1)
         self.assertEqual(len(left), 1)
 
     def test_migrate_is_deterministic(self):
         """오프셋 순으로 깐다 — 입력 순서가 달라도 같은 배치가 나와야 한다(제1원칙)."""
-        mk = lambda o: (o, "칸을 넘는다", "jp", {"ptr_at": []}, b"y" * 4)
+        mk = lambda o: (o, "칸을 넘는다", "jp", {"ptr_at": [], "raw_hex": ""}, b"y" * 4)
         a = S.migrate([mk(3), mk(1), mk(2)], 0, 0, 0x100)[0]
         b = S.migrate([mk(1), mk(2), mk(3)], 0, 0, 0x100)[0]
         self.assertEqual(a, b)
+
+    def test_measured_free_only_where_it_was_measured(self):
+        """🔴 **잰 자리에만 넣는다.** 본체의 0런은 「0 이라서」가 아니라 「재서」 쓰는 것이다.
+
+        실측 2026-08-28: 두 본체 모두 **가장 큰 0런(1,301B)은 살아 있는 버퍼**였다 —
+        필드·전투 중 쉬지 않고 쓰이고, 표식을 심었더니 게임이 그 자리에서 멎었다.
+        그 다음 셋은 필드 이동 + 전투 내내 쓰기 0건이었다. 표를 넓히려면 다시 잰다.
+        """
+        self.assertEqual(set(S.MEASURED_FREE), {"/ED.BIN", "/ED2.BIN"})
+        for path, runs in S.MEASURED_FREE.items():
+            d = bytes(common.extract(path))
+            for a, n in runs:
+                self.assertEqual(d[a : a + n], b"\x00" * n, f"{path} 0x{a:X}: 원본이 0 이 아니다")
+            # 🔴 살아 있는 버퍼(각 파일의 최대 0런)는 표에 들어오면 안 된다
+            live = 0x074A13 if path == "/ED.BIN" else 0x05A70F
+            self.assertNotIn(live, [a for a, _n in runs], f"{path}: 살아 있는 버퍼가 표에 있다")
 
     def test_runs_never_swallow_code(self):
         """구간이 코드를 삼키면 안 된다 — 빈틈이 `MAX_GAP` 을 넘으면 끊는다."""

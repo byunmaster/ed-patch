@@ -174,10 +174,14 @@ def _mon_slots(path):
     return frozenset(t for t, _jp, _kr in patch_mon_names.slots(path, table("monster")))
 
 
-def rebuild(run, canon, d, skip_offs=frozenset(), built=None):
+def rebuild(run, canon, d, skip_offs=frozenset(), built=None, spare=None):
     """`(새 바이트, [(ptr_at, 새 주소 오프셋)], [건너뛴 이유])` — 구간을 다시 깐다.
 
     ⚠ **구간 총 길이는 원본 그대로**다. 남으면 0 으로 채운다(계약 ④).
+
+    ⚠ `spare` 에 리스트를 주면 **문안이 짧아져 남는 칸 뒷부분**을 `(오프셋, 크기)` 로 담아
+      준다. 그 자리는 살아 있는 칸 안이지만 **종단 NUL 뒤라 엔진이 안 읽고**, 포인터가
+      안쪽을 가리키는 칸도 없다(실측 0건). 이주 풀의 셋째 원천이다 — 82,003B.
     """
     start = run[0][0]
     end = run[-1][0] + run[-1][1]
@@ -225,6 +229,8 @@ def rebuild(run, canon, d, skip_offs=frozenset(), built=None):
         # 칸 = [내용][NUL 채움][원본 꼬리]. 🔴 꼬리를 **끝에 붙여야** 마커가 제자리다 —
         # `d[off+len(use):]` 로 이어 붙이면 짧아진 만큼 원본이 밀려 들어와 **아무것도 안
         # 바뀐 것처럼** 된다(합성 시험이 잡았다).
+        if spare is not None and use is not raw and n - len(use) - 1 >= 4:
+            spare.append((off + len(use) + 1, n - len(use) - 1))
         tail = d[off + n : off + span]
         blob += use + b"\x00" * (span - len(use) - len(tail)) + tail
     assert len(blob) == room, f"구간 0x{start:X}: {len(blob)}B ≠ {room}B"
@@ -336,26 +342,63 @@ def _encode(kr, plan=None):
     return bytes(out)
 
 
-def migrate(over, base, tail_at, tail_end):
-    """칸을 넘는 블록을 **확장 영역으로 이주**한다 → `([(꼬리 오프셋, 바이트)], [(ptr, 새 주소)], 남은 것)`.
+# 🔴 **실기로 잰 「본체 안의 빈 자리」**(2026-08-28). `/ED.BIN`·`/ED2.BIN` 은 다음 파일이
+#    바로 붙어 있어 꼬리가 사실상 없다(+540B·+56B). 대신 **파일 안의 0런**이 4,626B 씩
+#    남아 있는데(조사 훅이 쓰고 남은 것), 0 이라고 빈 자리가 아니므로 **재서** 골랐다.
+#    ⚠ 두 파일 모두 **가장 큰 0런(1,301B)은 살아 있는 버퍼**다 — 필드·전투 중 쉬지 않고
+#      쓰인다(ED2 `pc=0x06085B30` 외 · ED1 `pc=0x0609E244` 외, 각각 4,096건 + 드롭 수십만).
+#      표식을 심었더니 게임이 그 자리에서 멎었다. **여기 넣으면 안 된다.**
+#    ✅ 그 다음 셋은 필드 이동 + 전투를 통째로 도는 동안 **쓰기 0건 · 드롭 0**이었다.
+#       (#1 을 빼고 다시 재야 한다 — 그 폭주가 다른 감시의 이벤트를 가린다.)
+#    ⚠ 재지 않은 자리는 여기 넣지 않는다. 늘리려면 그 자리에서 다시 잰다.
+MEASURED_FREE = {
+    "/ED.BIN": [(0x07AA83, 961), (0x087300, 736), (0x07EF45, 451)],
+    "/ED2.BIN": [(0x05B437, 961), (0x06CCE4, 736), (0x064505, 451)],
+}
 
-    🔴 **원본 칸은 손대지 않는다.** PS1 이 쓴 2단계 그대로다 — 자리엔 JP 를 남기고 **참조만**
-       새 주소로 돌린다. 칸을 늘려 뒤를 밀면 다음 블록의 시작 마커(`0x09`)가 어긋난다.
-    ⚠ 자리는 **파일마다 따로**다. 같은 파일군이 같은 주소에 올라가지만 한 번에 하나만
-      올라가므로, 어느 블록의 새 주소는 **자기 파일 안**이어야 한다.
-    ⚠ 긴 것부터 넣지 않는다 — 오프셋 순으로 넣어야 결과가 결정적이다(제1원칙).
+
+def migrate(over, base, tail_at, tail_end, spare=()):
+    """칸을 넘는 블록을 옮긴다 → `([(오프셋, 바이트)], [(ptr, 새 주소)], 남은 것)`.
+
+    🔴 **원본 칸을 앞으로 당기지 않는다.** PS1 이 쓴 2단계다 — 참조만 새 주소로 돌린다.
+       칸을 늘려 뒤를 밀면 다음 블록의 시작 마커(`0x09`)가 어긋난다.
+
+    ## 자리는 둘이다 — 꼬리 **와 비워진 칸**
+
+    🔴 **참조를 옮긴 순간 원본 칸을 가리키는 건 아무것도 없다.** 처음엔 거기 JP 를 그냥
+       남겨 뒀는데, 그건 자리를 버리는 것이었다(실측 2026-08-27: **63,699B**). 꼬리만
+       쓰면 85파일 중 31이 26,912B 모자라 509블록이 화면에 일본어로 남았다. 비워진 칸을
+       풀에 넣으면 **모자란 파일이 7 · 부족 688B** 로 줄어든다.
+    ⇒ `patch_mon_names` 가 이름 칸에 쓰는 것과 같은 기법이다(칸을 풀로 묶어 다시 깔기).
+
+    ⚠ **칸의 글자 자리(`n`)만 우리 것**이다. 그 뒤 꼬리에는 다음 블록의 시작 마커가 들어
+      있어 건드리면 안 된다.
+    ⚠ 자리는 **파일마다 따로**다 — 같은 군이 같은 주소에 올라가도 한 번에 하나만 올라간다.
+    ⚠ **긴 것부터 넣는다**(first-fit decreasing). 작은 것부터 깔면 큰 게 갈 데가 없어진다.
+      ⚠ 그래도 **결정적**이다 — 같은 길이는 오프셋 순으로 갈린다(제1원칙).
     """
+    # 풀 = [꼬리] + [비워질 칸] + [짧아져 남은 칸 뒷부분]. 칸은 자기 글자 자리만 낸다.
+    free = [[tail_at, tail_end - tail_at]] if tail_end > tail_at else []
+    free += [[a, n] for a, n in spare]
+    for off, _why, _jp, e, _enc in over:
+        n = len(bytes.fromhex(e["raw_hex"]))
+        if n > 0:
+            free.append([off, n])
     puts, ptrs, left = [], [], []
-    at = tail_at
-    for off, _why, jp, e, enc in sorted(over):
+    for off, _why, jp, e, enc in sorted(over, key=lambda r: (-len(r[4]), r[0])):
         blob = enc + b"\x00"
-        if at + len(blob) > tail_end:
+        free.sort(key=lambda h: (-h[1], h[0]))
+        i = next((k for k, (_a, n) in enumerate(free) if n >= len(blob)), None)
+        if i is None:
             left.append((off, jp))
             continue
-        puts.append((at, blob))
+        a, n = free.pop(i)
+        puts.append((a, blob))
         for q in e.get("ptr_at", []):
-            ptrs.append((int(q, 16) if isinstance(q, str) else q, base + at))
-        at += len(blob)
+            ptrs.append((int(q, 16) if isinstance(q, str) else q, base + a))
+        if n - len(blob) >= 4:  # 남는 조각은 다시 풀로
+            free.append([a + len(blob), n - len(blob)])
+    puts.sort()
     return puts, ptrs, left
 
 
@@ -426,10 +469,18 @@ def verify(dst, checks):
     nb = np = nm = 0
     for path, lba, size, base, plans, puts, mptrs in checks:
         d = bytes(common.read_extent(mm2, lba, size))
+        # ⚠ **이주가 덮은 자리는 구간 대조에서 뺀다** — 그 바이트는 `blob`(구간 재조립 결과)이
+        #   아니라 `puts` 가 주인이다. 안 빼면 「짧아져 남은 자리에 다른 블록을 깐」 곳마다
+        #   운다. 이주분은 바로 아래에서 따로 되읽는다.
+        covered = set()
+        for at, blob_ in puts:
+            covered.update(range(at, at + len(blob_)))
         for start, blob, moves, orig in plans:
             # ⚠ **우리가 쓴 토막만** 본다 — 구간 전체를 대조하면 안 건드린 블록에서
             #   남이 넣은 한국어를 「어긋났다」고 부른다(`apply_runs` 주석).
             for a, b in _diffs(blob, orig):
+                if any(i in covered for i in range(start + a, start + b)):
+                    continue
                 assert d[start + a : start + b] == blob[a:b], (
                     f"{path} 0x{start + a:X}: 되읽기가 다르다"
                 )
@@ -494,13 +545,14 @@ def main():
         # 확장 영역(꼬리) — `expand_files` 가 연 자리. 원본 크기부터 새 크기까지가 우리 것이다.
         bsize = built_files.get(path, (0, size))[1]
         over = []
+        spare = []
         plans = []
         for run in runs(entries, size):
             blocks += len(run)
             matched += sum(
                 1 for o, _n, e in run if o not in mine and _canon_get(canon, e.get("text", ""))
             )
-            blob, moves, dropped = rebuild(run, canon, d, mine, built)
+            blob, moves, dropped = rebuild(run, canon, d, mine, built, spare)
             start = run[0][0]
             orig = d[start : start + len(blob)]
             if blob == orig:
@@ -513,7 +565,9 @@ def main():
             plans.append((start, blob, [(p, a) for p, a in moves if _moved(entries, p, a)], orig))
         pinned += sum(1 for e in entries if not e.get("ptr_at"))
         puts, mptrs, left = (
-            migrate(over, _base, size, bsize) if (canon and bsize > size) else ([], [], over)
+            migrate(over, _base, size, bsize, list(spare) + MEASURED_FREE.get(path, []))
+            if canon
+            else ([], [], over)
         )
         moved += len(puts)
         nofit += len(left)
