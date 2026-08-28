@@ -161,7 +161,12 @@ def build_one(a_disc):
                     b = d.read_extent(lba, size)
                     new, k, bad = R.patch_blocks(b, stem, table)
                     done += k
-                elif name == "/0.BIN" and systbl:
+                elif name in ("/0.BIN", "/RLTPRG.BIN", "/BLACK.BIN") and systbl:
+                    #   🔴 **미니게임 실행 파일에도 화면 문구가 있다**(실측 2026-08-28) —
+                    #     `/RLTPRG.BIN`(룰렛) 「当たったー/どんなもんだい！！」 ·
+                    #     `/BLACK.BIN`(블랙잭) 「ブラックジャックを終了しますか？」.
+                    #     `/0.BIN` 만 고치고 있어 여태 일본어로 남아 있었다.
+                    #   ⓘ `reinsert_sys` 의 **원바이트 폴백**이 `LOAD_BASE` 없는 파일도 받는다.
                     b = d.read_extent(lba, size)
                     new, k, bad = RS.patch(b, name, systbl)
                     nsys += k
