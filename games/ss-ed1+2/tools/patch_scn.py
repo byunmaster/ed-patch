@@ -299,9 +299,24 @@ def load_canon(quiet=False):
         raw, where = r.stdout, f"game/ps1-ed1+2 {sha}"
     lines = json.loads(raw)["lines"]
     got = {k: v["t"] for k, v in lines.items() if isinstance(v, dict) and v.get("t")}
+    # 🔴 **새턴 전용 문안을 덮어 얹는다** — PS1 사전이 영영 못 채우는 자리다(781블록:
+    #    이식판이 갈린 문안 763 + 저작권 분류로 막힌 19). 겹치면 우리 것이 이긴다.
+    ours = load_ours()
+    got.update(ours)
     if not quiet:
-        print(f"  저본 {len(got):,}원문 — {where}")
+        print(f"  저본 {len(got):,}원문 — {where} + 새턴 전용 {len(ours):,}")
     return got
+
+
+SCN_CANON = os.path.join(common.GAME_DIR, "script", "scn.json")
+
+
+def load_ours():
+    """`{키: 우리 문안}` — 새턴 전용 씬 문안(`script/scn.json`)."""
+    if not os.path.exists(SCN_CANON):
+        return {}
+    with open(SCN_CANON, encoding="utf-8") as f:
+        return {k: v for k, v in json.load(f)["lines"].items() if v}
 
 
 _NAMES = None

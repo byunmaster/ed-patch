@@ -221,6 +221,11 @@ def _join(out, marks):
     return "".join(a + ("%" + m if m else "") for a, m in zip(out, marks + [""], strict=True))
 
 
+def contract(t):
+    """구조 계약 지문 — `%c%s%d` 의 순서열. 어긋나면 소프트락이다(모듈 주석)."""
+    return "".join(m.group(0)[1] for m in MARK.finditer(t))
+
+
 # PS1 표기 → 새턴 표기. ⚠ **하나라도 남기면 화면에 글자로 찍힌다**(모듈 주석).
 _PS1_MARKUP = [
     ("{n}", "\n"),
@@ -290,7 +295,19 @@ def typeset(jp, kr, names):
             #    ⚠ 저본은 **손대기 전 것**을 준다(위에서 겹치는 인자를 뗐다).
             out = place_by_args(texts, marks, whole, names, sp)
             return (_join(out, marks), None) if out else (None, "정본에 없는 이름 자리가 있다")
-    return _join(out, marks), None
+    built = _join(out, marks)
+    # 🔴 **조판기가 자기 계약을 본다.** 본문 자리에 통째로 넣었더니 계약이 깨지는 꼴이 있다 —
+    #    `%c%s%c\n본문` 처럼 **런타임 화자**가 앞에 붙는 블록에서, 저본이 그 인자를 문장
+    #    안에 품고 있으면 `%s` 가 둘이 된다(파일럿 6줄 실측 2026-08-29). 바로 위의 겹침
+    #    제거는 **바로 앞 마크업**만 보므로 빈 자리가 끼면 안 걸린다(`%c%s%c` 는 빈 자리 셋).
+    # ⇒ 그럴 땐 **인자를 경계로 나눠 담는 길**로 간다. 그쪽은 인자를 구조에서 내보내므로
+    #   저본이 인자를 품고 있어도 개수가 안 는다.
+    # ⚠ 계약이 맞는 블록은 손대지 않는다 — 이 갈래는 **이미 버려질 블록**만 건진다.
+    if contract(built) != contract(jp):
+        alt = place_by_args(texts, marks, whole, names, sp)
+        if alt is not None and contract(_join(alt, marks)) == contract(jp):
+            return _join(alt, marks), None
+    return built, None
 
 
 def main():

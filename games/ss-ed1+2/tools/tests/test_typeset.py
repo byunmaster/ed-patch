@@ -113,6 +113,19 @@ class Typeset(unittest.TestCase):
         self.assertIsNone(got)
         self.assertEqual(bad, "정본에 없는 이름 자리가 있다")
 
+    def test_typeset_checks_its_own_contract(self):
+        """🔴 **조판기가 자기 계약을 본다** — `%c%s%c` 런타임 화자 블록(파일럿 6줄).
+
+        저본이 그 인자를 문장 안에 품고 있으면 본문 자리에 통째로 넣을 때 `%s` 가 둘이
+        된다. 바로 앞 마크업만 보는 겹침 제거는 **빈 자리가 끼면** 못 잡는다.
+        그대로 내보내면 빌드에서 조용히 탈락하고 화면엔 일본어가 남는다.
+        """
+        jp = "%c%s%c\n ･ ･ ローが いない !?%c"
+        got, bad = self.t(jp, "%s… 로우가 없다니!?")
+        self.assertIsNone(bad)
+        self.assertEqual(T.contract(got), T.contract(jp))
+        self.assertEqual(got, "%c%s%c\n… 로우가 없다니!?%c")
+
     def test_over_window_is_rejected(self):
         """창 총량(전각 15×5)을 넘으면 뒷줄이 잘린다 — 넣지 않는다."""
         got, bad = self.t("%c兵士%c\n本文。%c", "가" * 80)
