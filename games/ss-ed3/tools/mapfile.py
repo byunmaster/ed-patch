@@ -45,6 +45,14 @@ BODY_CTRL = (CTRL_NL, CTRL_PAGE)
 #     ⚠ 런을 **시작**하지는 못한다 — 숫자만 있는 데이터를 텍스트로 오인하면 안 된다.
 BODY_ASCII = frozenset(range(0x30, 0x3A))  # 0-9
 
+CTRL_INJECT = 0x01  # 런타임 주입 — `01 <번호>` 두 바이트가 한 토큰이다
+#   🔴 **본문 한복판에 온다** — `ジュリオは\n<01><87>を手に入れました。` 처럼 아이템 이름이
+#     여기 끼어든다. 한 바이트짜리 제어로 보면 **거기서 런이 끊겨** 앞쪽(`ジュリオは`)이
+#     어느 블록에도 안 들어가고, 뒤쪽만 블록이 된다 — 그래서 우리 문안이 「, 손에 넣었다.」
+#     처럼 **쉼표로 시작**하고 있었다. 화면엔 `ジュリオは` 가 일본어로 남는다
+#     (2026-08-28 유저 스크린샷으로 잡혔다. 40 블록이 그렇게 잘려 있었다).
+#     ⚠ 런을 **시작**하지는 못한다 — 데이터 한복판의 `01` 을 텍스트로 오인하면 안 된다.
+
 # 블록 뒤에 올 수 있는 바이트 — 이 밖이면 그래픽 오탐으로 본다
 TERM_OK = frozenset({0x10, 0x0E, 0x00, 0x09, 0xFF, 0xFE})
 MIN_CHARS = 2
@@ -122,6 +130,9 @@ def blocks(b):
             i += 2
             nch += 1
             continue
+        if st is not None and b[i] == CTRL_INJECT and i + 1 < n:
+            i += 2
+            continue
         if st is not None and (b[i] in BODY_CTRL or b[i] in BODY_ASCII):
             i += 1
             continue
@@ -146,6 +157,8 @@ def _run(b, i):
         if is_sjis_pair(b, i):
             i += 2
             n += 1
+        elif n and b[i] == CTRL_INJECT and i + 1 < len(b):
+            i += 2
         elif n and (b[i] in BODY_CTRL or b[i] in BODY_ASCII):
             i += 1
         else:
@@ -213,6 +226,13 @@ def text_of(body):
     out = []
     i = 0
     while i < len(body):
+        #   🔴 **주입 토큰이 먼저다.** `01 <번호>` 를 한 바이트씩 보면 파라미터가 **옆 바이트와
+        #     짝지어져** SJIS 로 읽힌다 — `01 87 82 F0`(=`<01><87>` + `を`)이 `<01>` + `87 82`(짝
+        #     실패) + `<F0>` 가 됐다. 그러면 뒤 글자가 통째로 어긋난다.
+        if body[i] == CTRL_INJECT and i + 1 < len(body):
+            out.append(f"<{body[i]:02X}><{body[i + 1]:02X}>")
+            i += 2
+            continue
         if is_sjis_pair(body, i):
             # ⚠ SJIS 자리에 있어도 **표준 표에 없는 짝**이 있다(게임 전용 글자로 보인다).
             #   `replace` 로 뭉개면 되돌릴 수 없다 — 바이트 그대로 남긴다.
