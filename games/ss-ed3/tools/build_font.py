@@ -93,6 +93,45 @@ def shift_right(g, width, rows, stride, dx=DX):
     return bytes(int(s[i : i + 8], 2) for i in range(0, stride * 8, 8))
 
 
+#   🔴 **글리프 여섯 칸이 사실은 「그림」이다**(2026-08-29). `KANJI12.FON` 의 α~ζ 자리
+#     (**색인 502~507**, JIS 구6 점33~38)에 원판이 **「カートリッジRAM」 72×12 스트립**을
+#     통째로 구워 뒀다. 기록 화면의 그 라벨은 문자열을 조판하는 게 아니라 **이 여섯 칸을
+#     이어 찍는 것**이다 — `/0.BIN` 0x208D0 의 문자열이 `83bf…83c4`(= `αβγδεζ`)인 이유다.
+#   ⚠ **그래서 SJIS `カートリッジ` 검색이 디스크·RAM·BIOS 어디서도 0 건이었다.**
+#     글리프 검색으로도 못 찾았는데, `KANJI12` 가 **행마다 12 비트 밀착 패킹**이라
+#     바이트 정렬 검색으로는 원리적으로 안 걸린다(행이 바이트 경계를 안 지킨다).
+#   ⓘ 뒤 24px(`RAM` 석 자)은 **원본 그대로 둔다** — 픽셀이 그대로면 원판과 같아 보인다.
+#   ⓘ 한글 넉 자 × 12px = 48 + 24 = **72px 로 정확히 맞는다.**
+LABEL_STRIPS = {502: "카트리지"}
+
+
+def bake_label_strips(out, base):
+    """글리프 칸에 구워진 **그림 라벨**을 한글로 다시 굽는다 — `(갈아 낀 칸 수)`.
+
+    ⚠ 칸 수·크기는 안 건드린다. 앞의 한글만 덮고 나머지 열은 원본 픽셀을 남긴다.
+    """
+    import numpy as np
+
+    bdf = fonts.galmuri()
+    n = 0
+    for start, word in LABEL_STRIPS.items():
+        span = -(-len(word) * F.CELL // F.CELL)  # 한글 한 자에 칸 하나
+        cells = 6  # 스트립이 차지하는 칸 수 (72px / 12)
+        strip = np.concatenate([F.unpack(base, start + i) for i in range(cells)], axis=1)
+        for k, ch in enumerate(word):
+            bits = bdf.bits(ch, dy=DY, rows=F.ROWS, width=F.CELL)
+            cell = np.zeros((F.ROWS, F.CELL), np.uint8)
+            cell[:, DX:] = bits[:, : F.CELL - DX]
+            strip[:, k * F.CELL : (k + 1) * F.CELL] = cell
+        for i in range(cells):
+            g = fonts.pack18(strip[:, i * F.CELL : (i + 1) * F.CELL], rows=F.ROWS)
+            assert len(g) == F.STRIDE, len(g)
+            out[(start + i) * F.STRIDE : (start + i + 1) * F.STRIDE] = g
+            n += 1
+        assert span <= cells, (span, cells)
+    return n
+
+
 def build(disc=1):
     """`(새 폰트 bytes, 못 찾은 글자)` — 원본과 크기가 같다."""
     base, _ = F.load(disc)
@@ -105,6 +144,7 @@ def build(disc=1):
         g = shift_right(glyphs[ch], F.CELL, F.ROWS, F.STRIDE)
         assert len(g) == F.STRIDE, (ch, len(g))
         out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = g
+    bake_label_strips(out, base)
     assert len(out) == len(base), (len(out), len(base))
     return bytes(out), missing
 
