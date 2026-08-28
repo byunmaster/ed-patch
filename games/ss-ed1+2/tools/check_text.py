@@ -121,7 +121,13 @@ def axis_style(rows):
             bad.append((path, off, "전각 영숫자", body[:40]))
         if HALFKANA.search(body):
             bad.append((path, off, "반각 가나", body[:40]))
-        if typeset_scn.width(body.replace("\n", "")) > typeset_scn.COLS * typeset_scn.ROWS:
+        # 🔴 **창마다 잰다**(2026-08-29). 예전엔 블록 하나를 창 하나로 보고 통째로 쟀는데,
+        #    조판기가 **창 여럿에 나눠 담게** 되면서 그 전제가 깨졌다 — 세 창짜리 대사가
+        #    합쳐서 75슬롯을 넘었다고 울었다(실측: 라이아스↔세리오스 3창, 창마다 21.5·11·32.5).
+        #    ⚠ `%c` 는 창 넘김이자 이름칸 구분이라 조각이 잘게 갈리지만, **한 조각이 창을
+        #      넘을 수는 없으므로** 조각마다 재면 진짜 초과는 그대로 잡힌다.
+        over = max((typeset_scn.width(seg.replace("\n", "")) for seg in kr.split("%c")), default=0)
+        if over > typeset_scn.COLS * typeset_scn.ROWS:
             bad.append((path, off, "창 총량 초과", body[:40]))
     return bad
 

@@ -57,6 +57,7 @@
 ⚠ 「대충 넣고 나중에 고친다」가 안 되는 층이다. 계약 위반은 **오타가 아니라 소프트락**이다.
 """
 
+import itertools
 import os
 import re
 import sys
@@ -154,38 +155,6 @@ def _lead_nl(t):
 MARKS_ONLY = re.compile(r"%([csd])")
 
 
-def align_marks(kr_marks, jp_marks):
-    """저본 마크업 열을 원문 마크업 열의 **부분열**로 맞춘다 — `[원문 마크 번호…]`.
-
-    저본은 원문보다 마크업이 **적을 수 있다.** 실측 138블록:
-
-        원문  … %s は\n %d …          (인자 둘 — 물건 이름 + 값)
-        저본  `값은\n%d Gold가 되는데…`  (인자 하나 — 우리 문안은 이름을 안 부른다)
-
-    ⚠ **유일한 맞춤이 아니면 버린다.** 왼쪽부터 맞춘 것과 오른쪽부터 맞춘 것이 다르면
-      어느 자리인지 근거가 없다(원문 `%d…%d` 에 저본 `%d` 하나 같은 꼴). 이 층은
-      「대충 넣고 나중에」가 안 된다.
-    """
-    left, j = [], 0
-    for m in kr_marks:
-        while j < len(jp_marks) and jp_marks[j] != m:
-            j += 1
-        if j >= len(jp_marks):
-            return None
-        left.append(j)
-        j += 1
-    right, j = [], len(jp_marks) - 1
-    for m in reversed(kr_marks):
-        while j >= 0 and jp_marks[j] != m:
-            j -= 1
-        if j < 0:
-            return None
-        right.append(j)
-        j -= 1
-    right.reverse()
-    return left if left == right else None
-
-
 def place_by_marks(texts, marks, kr, names, sp):
     """**마크업이 문장을 슬롯 여럿으로 가른 블록** — 저본을 마크업에서 잘라 나눠 담는다.
 
@@ -204,14 +173,30 @@ def place_by_marks(texts, marks, kr, names, sp):
 
     ⚠ 한 묶음에 글이 **둘 이상**이면 버린다. 이름은 정본으로 갈아 끼우고 세지 않는다.
     """
-    jp_marks = list(marks)
     kr_marks = MARKS_ONLY.findall(kr)
-    at = align_marks(kr_marks, jp_marks)
-    if at is None:
-        return None
     pieces = MARKS_ONLY.split(kr)[0::2]  # 마크업 사이의 글 조각
+    # 🔴 **맞춤을 하나로 못 고르면 배치로 고른다**(2026-08-29). 저본이 `%c` 를 품고 원문에
+    #    `%c` 가 여럿이면 왼쪽·오른쪽 greedy 가 갈린다(`뭐냐 너희들은?%c썩 저리 물러가라!!`
+    #    에 원문 `cccc`). 예전엔 거기서 버렸는데 91블록 중 77이 **배치까지 보면 답이 하나**다 —
+    #    묶음마다 「글이 든 자리」가 하나여야 한다는 조건이 대부분의 맞춤을 떨어뜨린다.
+    #    ⚠ **둘 이상 살아남으면 여전히 버린다** — 근거가 없다. 다만 조각 순서가 보존되므로
+    #      대개 하나로 수렴한다(회귀로 못 만들어 봤다) — **방어용 갈래**로 남긴다.
+    done = []
+    for at in itertools.combinations(range(len(marks)), len(kr_marks)):
+        if [marks[j] for j in at] != kr_marks:
+            continue
+        got = _lay(texts, marks, pieces, at, names, sp)
+        if got is not None and _join(got, marks) not in done:
+            done.append(_join(got, marks))
+        if len(done) > 1:
+            return None
+    return None if len(done) != 1 else list(MARK.split(done[0]))[0::2]
+
+
+def _lay(texts, marks, pieces, at, names, sp):
+    """맞춤 하나(`at`)로 조각을 깐다 — 묶음마다 글이 든 자리 하나. 안 되면 None."""
     groups, prev = [], -1
-    for j in at + [len(jp_marks)]:
+    for j in list(at) + [len(marks)]:
         groups.append(list(range(prev + 1, j + 1)))
         prev = j
     if len(pieces) != len(groups):
@@ -236,6 +221,11 @@ def place_by_marks(texts, marks, kr, names, sp):
             if piece.strip():
                 return None
             continue
+        # 🔴 **빈 조각으로 글이 든 자리를 지우지 않는다**(2026-08-29). 저본이 원문의 일부만
+        #    덮을 때 맞춤을 넓히면 「빈 조각을 일본어 자리에 깔아 지우는」 배치가 유효해
+        #    보인다 — 계약도 맞고 창에도 든다. 그런데 그건 **원문을 소리 없이 버리는 것**이다.
+        if not piece.strip() and texts[free[0]].strip():
+            return None
         out[free[0]] = _lead_nl(texts[free[0]]) + piece
     return out
 

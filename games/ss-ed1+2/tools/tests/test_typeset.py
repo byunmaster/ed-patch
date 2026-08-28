@@ -99,8 +99,12 @@ class Typeset(unittest.TestCase):
             got, "%s은(는) 보물상자를 열었다.\n보물상자 안에는 %c%s%c이(가) 들어 있었다."
         )
 
-    def test_marks_path_needs_a_unique_alignment(self):
-        """⚠ 인자 열이 어긋나면 어느 조각이 어느 자리인지 근거가 없다 — 손대지 않는다."""
+    def test_partial_canon_must_not_blank_the_rest(self):
+        """🔴 **빈 조각으로 글이 든 자리를 지우지 않는다.**
+
+        저본이 원문의 일부만 덮을 때, 맞춤을 넓히면 「빈 조각을 일본어 자리에 깔아 지우는」
+        배치가 유효해 보인다 — 계약도 맞고 창에도 든다. 그건 **원문을 소리 없이 버리는 것**이다.
+        """
         jp = "%s は 宝箱を開けました。\n宝箱の中には%c%s%cが入っていました。"
         got, bad = self.t(jp, "%s은(는) 보물상자를 열었다.")
         self.assertIsNone(got)
@@ -125,10 +129,18 @@ class Typeset(unittest.TestCase):
         self.assertIsNone(bad)
         self.assertEqual(T.contract(got), T.contract(jp))
 
-    def test_alignment_must_be_unique(self):
-        """⚠ 맞춤이 유일하지 않으면 버린다 — 어느 자리인지 근거가 없다."""
-        self.assertIsNone(T.align_marks(["d"], ["d", "d"]))
-        self.assertEqual(T.align_marks(["d"], ["s", "d"]), [1])
+    def test_ambiguous_alignment_is_settled_by_placement(self):
+        """🔴 맞춤이 여럿이면 **배치**로 고른다 — 답이 하나면 받고, 둘이면 버린다.
+
+        저본이 `%c` 를 품고 원문에 `%c` 가 여럿이면 어느 자리에 맞출지가 안 정해진다.
+        예전엔 거기서 버렸는데, **묶음마다 「글이 든 자리」가 하나여야 한다**는 조건이
+        대부분의 맞춤을 떨어뜨려 91블록 중 77이 답 하나로 좁혀졌다(실측 2026-08-29).
+        """
+        jp = "%c兵士%c\n本文だ。%c\nもう一つ。%c"
+        got, bad = self.t(jp, "본문이다.%c하나 더.")
+        self.assertIsNone(bad)
+        self.assertEqual(T.contract(got), T.contract(jp))
+        self.assertEqual(got, "%c병사%c\n본문이다.%c\n하나 더.%c")
 
     def test_typeset_checks_its_own_contract(self):
         """🔴 **조판기가 자기 계약을 본다** — `%c%s%c` 런타임 화자 블록(파일럿 6줄).
