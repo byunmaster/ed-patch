@@ -28,6 +28,7 @@ import build_font
 import common as C
 import hangul_map as H
 import reinsert as R
+import reinsert_battle as RBT
 import reinsert_book as RB
 import reinsert_desc as RD
 import reinsert_gfx as RG
@@ -149,6 +150,12 @@ def patched(disc):
                 b = d.read_extent(lba, size)
                 new, k, bad = RS.patch(b, name, systbl)
                 cnt = {"sys": k}
+            elif name == RBT.PATH:
+                #   🔴 **HP 창 이름은 문자열이 아니라 그림이다** — `status.spr` 안의
+                #     프리렌더 이름판 아틀라스를 다시 그린다(`reinsert_battle`).
+                b = d.read_extent(lba, size)
+                new, k, bad = RBT.patch(b)
+                cnt = {"plate": k}
             elif name.startswith("/SYSTEM/BOOK") and name.endswith(".BIN"):
                 stem = os.path.basename(name)[:-4]
                 booktbl = RB.table(stem)
@@ -218,7 +225,7 @@ def build_one(a_disc):
             print(
                 f"      대사 블록 {n.get('map', 0)} · 시스템 문자열 {n.get('sys', 0)} · "
                 f"설명문 {n.get('desc', 0)} · 이름 {n.get('name', 0)} · "
-                f"읽을거리 {n.get('book', 0)} · 화면 그림 {n.get('gfx', 0)}"
+                f"읽을거리 {n.get('book', 0)} · 화면 그림 {n.get('gfx', 0)} · 이름판 {n.get('plate', 0)}"
             )
 
         print("[4/5] 섹터 무결성 자기검증")
