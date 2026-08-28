@@ -9,6 +9,7 @@
   사전조건(`rows()` 의 assert)이 매번 본다.
 """
 
+import itertools
 import json
 import os
 import sys
@@ -18,6 +19,7 @@ TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOOLS)
 
 import dump_ui
+import patch_ui
 from patch_ui import CANON, PAD, rec_len
 
 
@@ -71,3 +73,57 @@ class TestUiCanon(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PinnedInPlace(unittest.TestCase):
+    """🔴 **포인터가 있어도 못 옮기는 자리가 있다**(2026-08-28 실기).
+
+    `ED.BIN` 0x44BC8 의 HUD 접미 표(`入口`·`付近`·`北`·`南`·`東`·`西`)는 조립 루틴이
+    **4B 간격의 표로** 집는다. 참조를 갱신해도 표가 흩어지면 깨진다 — 시스템 메시지가
+    늘자 배치기가 여섯을 옮겼고 화면에 `メ§電 リ…처` 가 떴다.
+    ⚠ 「포인터가 없으면 못 옮긴다」만으로는 부족하다. 코드가 그 주소를 쓰는지는
+      **포인터 유무로 안 갈린다.**
+    """
+
+    def test_table_is_four_byte_strided(self):
+        """표라는 근거 — 여섯이 4B(앞 둘은 8B) 간격으로 붙어 있다."""
+        pin = patch_ui.PINNED_INPLACE["/ED.BIN"]
+        self.assertEqual(len(pin), 6)
+        self.assertEqual(pin, tuple(sorted(pin)))
+        self.assertEqual([b - a for a, b in itertools.pairwise(pin)], [8, 8, 4, 4, 4])
+
+    def test_korean_fits_the_original_slot(self):
+        """제자리에 박으므로 **원문 칸을 넘으면 안 된다** — 넘으면 표가 밀린다."""
+        for kr, room in (("입구", 4), ("근처", 4), ("북", 2), ("남", 2), ("동", 2), ("서", 2)):
+            self.assertLessEqual(len(kr) * 2, room, kr)
+
+
+class TablesAreNotRelocated(unittest.TestCase):
+    """🔴 **표는 색인으로 집힌다 — 한 칸도 못 옮긴다**(2026-08-28 실기).
+
+    시스템 메시지 스캔이 지명 표의 첫 칸(`エルアスタ`)을 「옮길 수 있는 문자열」로 보고
+    옮겼고, 그 자리를 가리키던 **표 베이스 포인터**까지 새 주소로 바꿨다. 루틴은 거기에
+    `색인×14` 를 더해 집으므로 첫 칸만 맞고 나머지는 **코드 바이트를 이름으로 읽었다**
+    (화면에 `A!A!A!B근처`).
+    ⚠ 런 시작만 막으면 모자란다 — 표 앞에서 시작한 런이 표 안까지 삼킨다. **맞은 자리**를
+      봐야 한다.
+    """
+
+    def test_no_system_message_inside_a_table(self):
+        import common
+
+        _f, mm = common.open_image()
+        try:
+            spans = {}
+            for r in patch_ui.rows():
+                path = dump_ui.FILES[r[0]]
+                spans.setdefault(path, []).append((int(r[3]), int(r[3]) + int(r[4])))
+            bad = [
+                (r[0], int(r[3]))
+                for r in patch_ui.sys_rows(mm)
+                if any(a <= int(r[3]) < b for a, b in spans.get(r[0], ()))
+            ]
+        finally:
+            mm.close()
+            _f.close()
+        self.assertEqual(bad, [], f"표 안에 시스템 메시지 레코드가 있다: {bad[:4]}")

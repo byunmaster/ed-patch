@@ -78,6 +78,8 @@ echo "  ── 회심/통한 복사 루프 (14B 고정 → NUL 종단)"
 step "회심 복사" "$T/patch_crit_copy.py" --apply
 echo "  ── 고정 길이 복사 전수 (칸에 맞나 · 빌드 이미지 기준)"
 step "고정 복사" "$T/check_fixed_copy.py"
+echo "  ── 포인터 정렬 (두 바이트 고정으로 읽는 화면이 있다)"
+step "포인터 정렬" "$T/check_ptr_align.py"
 echo "  ── 문안 (조사·부호·정본 — 「한국어가 맞나」)"
 step "문안" "$T/check_text.py"
 echo "  ── 동적 조사 훅 (SH-2 디스어셈블 검산 + 참조 되읽기)"

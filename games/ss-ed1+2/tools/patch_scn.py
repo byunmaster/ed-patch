@@ -351,6 +351,9 @@ def _encode(kr, plan=None):
 #    ✅ 그 다음 셋은 필드 이동 + 전투를 통째로 도는 동안 **쓰기 0건 · 드롭 0**이었다.
 #       (#1 을 빼고 다시 재야 한다 — 그 폭주가 다른 감시의 이벤트를 가린다.)
 #    ⚠ 재지 않은 자리는 여기 넣지 않는다. 늘리려면 그 자리에서 다시 잰다.
+# 🔴 이보다 작은 칸은 비워도 안 쓴다 — 표일 수 있다(위 `migrate` 주석).
+VACATE_MIN = 8
+
 MEASURED_FREE = {
     "/ED.BIN": [(0x07AA83, 961), (0x087300, 736), (0x07EF45, 451)],
     "/ED2.BIN": [(0x05B437, 961), (0x06CCE4, 736), (0x064505, 451)],
@@ -382,22 +385,36 @@ def migrate(over, base, tail_at, tail_end, spare=()):
     free += [[a, n] for a, n in spare]
     for off, _why, _jp, e, _enc in over:
         n = len(bytes.fromhex(e["raw_hex"]))
-        if n > 0:
+        # 🔴 **작은 칸은 안 비운다**(2026-08-28). 「참조를 옮기면 그 칸은 아무도 안 본다」는
+        #    **포인터로만 읽는 자리에서만** 참이다. 코드가 그 주소에서 직접 집으면 참조를
+        #    옮겨도 원래 자리를 읽는다.
+        #    실측: `/ED.BIN` 0x44BC8 의 HUD 접미 표(`入口`·`付近`·`北`·`南`·`東`·`西`)는
+        #    2~4B 블록이고 **포인터도 있는데**, 조립 루틴(0x44BE8)은 그 자리에서 4B 를
+        #    직접 집는다. 비워서 남에게 내줬더니 화면에 `メ§電 リ…처` 가 떴다.
+        #    ⇒ **표는 잘고 산문은 길다**를 경계로 쓴다. 대사 한 줄이 8B 미만일 수는 없다.
+        if n >= VACATE_MIN:
             free.append([off, n])
     puts, ptrs, left = [], [], []
     for off, _why, jp, e, enc in sorted(over, key=lambda r: (-len(r[4]), r[0])):
         blob = enc + b"\x00"
         free.sort(key=lambda h: (-h[1], h[0]))
-        i = next((k for k, (_a, n) in enumerate(free) if n >= len(blob)), None)
+        # 🔴 **짝수 주소에만 놓는다**(2026-08-28). 어떤 화면은 두 바이트를 한 글자로 **고정**
+        #    해 읽어서, 홀수 자리에 놓으면 거기서만 통째로 밀려 깨진다(`patch_ui` 같은 사고).
+        i = next((k for k, (a_, n_) in enumerate(free) if n_ - (a_ & 1) >= len(blob)), None)
         if i is None:
             left.append((off, jp))
             continue
         a, n = free.pop(i)
+        if a & 1:
+            a, n = a + 1, n - 1
         puts.append((a, blob))
         for q in e.get("ptr_at", []):
             ptrs.append((int(q, 16) if isinstance(q, str) else q, base + a))
-        if n - len(blob) >= 4:  # 남는 조각은 다시 풀로
-            free.append([a + len(blob), n - len(blob)])
+        ro, rn = a + len(blob), n - len(blob)
+        if ro & 1:  # 남는 조각도 짝수에서 시작하게
+            ro, rn = ro + 1, rn - 1
+        if rn >= 4:  # 남는 조각은 다시 풀로
+            free.append([ro, rn])
     puts.sort()
     return puts, ptrs, left
 

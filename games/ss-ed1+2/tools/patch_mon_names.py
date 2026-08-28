@@ -166,17 +166,25 @@ def main():
         writes, ptrmoves = [], {}
         for t, jp, kr in sorted(rows, key=lambda r: -len(encode(r[2], plan))):
             blob = encode(kr, plan) + b"\x00"
-            i = next((k for k, (_a, n) in enumerate(free) if n >= len(blob)), None)
+            # 🔴 **짝수 주소에만 놓는다**(2026-08-28) — 두 바이트를 한 글자로 고정해 읽는
+            #    화면이 있어(HUD) 홀수 자리는 거기서만 통째로 밀려 깨진다. 같은 사고를
+            #    `patch_ui`·`patch_scn` 에서 먼저 밟았다.
+            i = next((k for k, (a_, n_) in enumerate(free) if n_ - (a_ & 1) >= len(blob)), None)
             assert i is not None, f"{path}: 자리가 모자란다 — {kr!r} {len(blob)}B ({jp!r})"
             a, n = free.pop(i)
+            if a & 1:
+                a, n = a + 1, n - 1
             blk = max(x for x, _n in merged if x <= a)
             body[blk][a - blk : a - blk + len(blob)] = blob
             if a != t:
                 moved += 1
                 for q in _ptrs_to(d, t, base):
                     ptrmoves[q] = base + a
-            if n - len(blob) >= 3:
-                free.append([a + len(blob), n - len(blob)])
+            ro, rn = a + len(blob), n - len(blob)
+            if ro & 1:
+                ro, rn = ro + 1, rn - 1
+            if rn >= 3:
+                free.append([ro, rn])
                 free.sort(key=lambda b: -b[1])
             placed.setdefault(path, {})[jp] = (a, kr)
         for a, _n in merged:

@@ -90,6 +90,14 @@ def _pad_to(kr, target):
 #    12B 에서 잘린다고 봤던 앞선 진단은 틀렸다(반각 공백이 만든 착시였다).
 # ⚠ 안 들어가는 칸은 **그냥 붙여 쓴다**(실측: ED2 `그로스토스성` 12B+2B+NUL=15B > 14B).
 #    성·탑처럼 긴 지명은 원래 접미가 안 붙는 자리다.
+# 🔴 **포인터가 있어도 못 옮기는 자리**(2026-08-28 실기). 위 주석의 접미 표가 그것이다 —
+#    조립 루틴(`ED.BIN` 0x44BE8)이 **4B 간격의 표로** 집으므로, 참조를 갱신해도 표가 흩어지면
+#    깨진다. 실제로 시스템 메시지가 늘자 배치기가 여섯을 옮겼고 화면에 `メ§電 リ…처` 가 떴다.
+#    ⚠ 「포인터가 없으면 못 옮긴다」만으로는 부족하다 — **포인터가 있는데도 못 옮기는 자리**가
+#      있다. 코드가 그 주소를 쓰는지 여부는 포인터 유무로 안 갈린다.
+#    ⚠ `ED2.BIN` 에는 이 표가 없다(원문 `入口`·`付近`·`南` 이 아예 없다).
+PINNED_INPLACE = {"/ED.BIN": (0x44BC8, 0x44BD0, 0x44BD8, 0x44BDC, 0x44BE0, 0x44BE4)}
+
 SUFFIXED_TABLE = "지명"
 WIDE_SP = "\u3000"
 
@@ -607,6 +615,17 @@ def sys_rows(mm):
             cnt = (n2 if (col == 1 and n2) else n) or 0
             if off and cnt:
                 fixed.setdefault(path, []).append((off, off + stride * cnt))
+    # 🔴 **우리가 쓰는 표는 전부 막는다 — 목록을 손으로 안 든다**(2026-08-28).
+    #    위 둘(`TABLES`·`GLOSSARY_TABLES`)엔 **지명 표가 없었다.** 그래서 시스템 메시지가
+    #    그 표의 첫 칸(`エルアスタ`)을 「옮길 수 있는 문자열」로 보고 옮겼고, 그 자리를
+    #    가리키던 **표 베이스 포인터(0x44E6C)** 까지 새 주소로 바꿨다. 루틴은 그 포인터에
+    #    `색인×14` 를 더해 집으므로, 첫 칸만 맞고 나머지는 **코드 바이트를 이름으로 읽는다**
+    #    (화면에 `A!A!A!B근처`). ⇒ `rows()` 가 아는 표 구간을 **그대로** 보호 범위로 쓴다.
+    #    ⚠ 「어느 표가 위험한가」를 사람이 고르지 않는다 — 표는 다 색인으로 집힌다.
+    for r in rows():
+        rpath = dump_ui.FILES[r[0]]
+        off, stride = int(r[3]), int(r[4])
+        fixed.setdefault(rpath, []).append((off, off + stride))
     out, seen = [], set()
     have = {p for p, _l, _s in common.iso_files(mm)}
     for path in list(dump_ui.FILES.values()) + [p for p in SYS_EXTRA_FILES if p in have]:
@@ -644,6 +663,12 @@ def sys_rows(mm):
                     # ⚠ 꼬리 개행까지 받는다 — 실제 문자열은 `…が現れた。\n` 인 것이 있다
                     and not hit[1].rstrip("\n").endswith(SYS_EXTRA_SUFFIX)
                 ):
+                    hit = None
+                if hit and any(a <= i + hit[0] < b for a, b in fixed.get(path, [])):
+                    # 🔴 **맞은 자리도 본다** — 런 시작만 보면 표 앞에서 시작한 런이 표
+                    #    안까지 삼킨다. 실측 2026-08-28: `エルアスタ`(지명 표 첫 칸)가 이렇게
+                    #    잡혀 옮겨졌고, 그 자리를 가리키던 **표 베이스 포인터**까지 바뀌어
+                    #    HUD 가 `색인×14` 로 코드 바이트를 읽었다(`A!A!A!B근처`).
                     hit = None
                 if hit:
                     k, jp = hit
@@ -804,11 +829,27 @@ def sys_pack(sysm, ntabs, plan):
         for at, n in pool:
             body[at] = bytearray(n)
         free = sorted(pool, key=lambda b: -b[1])
+        # 🔴 **못 박은 자리는 풀에서 뺀다.** 제자리에 쓰는 것만으로는 부족하다 — 그 자리가
+        #   풀에 남아 있으면 배치기가 **다른 문안을 거기 얹는다**(실측: 접미 표 위에
+        #   `%c%s%c은(는) ` 이 깔렸다). 앞뒤 조각은 다시 풀로 돌린다.
+        for pa in PINNED_INPLACE.get(path, ()):
+            pn = next((sp for _p2, _l2, _s2, a2, sp, *_r in recs if a2 == pa), 4)
+            free = [(o, n) for o, n in free if not (o <= pa < o + n)] + [
+                x
+                for o, n in free
+                if o <= pa < o + n
+                for x in ((o, pa - o), (pa + pn, o + n - pa - pn))
+                if x[1] >= 2
+            ]
+        free.sort(key=lambda b: -b[1])
         moves = {}
-        # 🔴 **포인터가 없는 자리는 못 옮긴다** — 코드가 절대주소로 집는다. 제자리에 박고
-        #   자리에서 뺀다. 넘치면 문안을 줄이는 수밖에 없다(2026-08-24, ED.BIN 0x26CF8).
+        # 🔴 **못 옮기는 자리는 제자리에 박는다** — 코드가 절대주소로 집는다. 자리에서 빼고,
+        #   넘치면 문안을 줄이는 수밖에 없다(2026-08-24, ED.BIN 0x26CF8).
+        #   ⚠ 못 옮기는 조건은 **둘**이다 — 포인터가 없거나, `PINNED_INPLACE` 이거나
+        #     (포인터가 있어도 표로 집히는 자리, 위 주석).
+        pin = PINNED_INPLACE.get(path, ())
         for _p, _l, _s, at, span, pre, kr, ptrs in recs:
-            if ptrs:
+            if ptrs and at not in pin:
                 continue
             blob = pre + b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
             blob += b"\x00"
@@ -826,7 +867,10 @@ def sys_pack(sysm, ntabs, plan):
                 if x[1] >= 2
             ]
             free.sort(key=lambda b: -b[1])
-        want = sorted((r for r in recs if r[7]), key=lambda r: -(len(r[5]) + rec_len(r[6]) + 1))
+        want = sorted(
+            (r for r in recs if r[7] and r[3] not in pin),
+            key=lambda r: -(len(r[5]) + rec_len(r[6]) + 1),
+        )
         # ⚠ **몬스터 파일은 자리가 빠듯하다.** 그 파일들은 꽉 차 있어 기존 0런이 사실상
         #   없고(ED2MON01·02 는 **0바이트**), 풀은 「우리 레코드 자리」가 전부다. 우리 문안은
         #   원문보다 줄마다 2바이트쯤 길어서(원문 `が現れた。` 10B vs `이(가) 나타났다.` 12B —
@@ -838,16 +882,29 @@ def sys_pack(sysm, ntabs, plan):
         for _p, _l, _s, _at, _span, pre, kr, ptrs in want:
             blob = pre + b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
             blob += b"\x00"
-            i = next((k for k, (_o, n) in enumerate(free) if n >= len(blob)), None)
+            # 🔴 **짝수 주소에만 놓는다**(2026-08-28). 이 게임의 어떤 화면은 두 바이트를
+            #    한 글자로 **고정**해 읽는다(HUD 지명). 홀수 자리에 놓으면 그 화면에서만
+            #    통째로 밀려 깨진다 — SJIS 선행 바이트를 보는 렌더러는 멀쩡해서 **메뉴는
+            #    정상인데 HUD 만 깨진다.** 실측: `엘아스타` 가 0x2C6A1 로 가 있었고, 그
+            #    포인터 하나가 HUD 조립 루틴의 리터럴 풀(0x44E6C)에 있었다.
+            #    ⚠ 홀수는 문안에 **반각이 섞이면** 자연히 생긴다(`전투 직전으로` 13B).
+            i = next(
+                (k for k, (o_, n_) in enumerate(free) if n_ - (o_ & 1) >= len(blob)), None
+            )
             assert i is not None, f"{path}: 자리가 모자란다 — {kr!r} {len(blob)}B"
             o, n = free.pop(i)
+            if o & 1:  # 앞의 한 바이트는 버린다 — 짝수로 맞춘다
+                o, n = o + 1, n - 1
             blk = max(a for a, _n in pool if a <= o)
             body[blk][o - blk : o - blk + len(blob)] = blob
             new_at = o + len(pre)  # 포인터는 **앞 바이트 다음**을 가리킨다(원본과 같게)
             for q in ptrs:
                 moves[q] = ptr_base(path) + (o if len(pre) == 0 else new_at - len(pre))
-            if n - len(blob) >= 2:
-                free.append((o + len(blob), n - len(blob)))
+            rest_o, rest_n = o + len(blob), n - len(blob)
+            if rest_o & 1:  # 남는 조각도 짝수에서 시작하게
+                rest_o, rest_n = rest_o + 1, rest_n - 1
+            if rest_n >= 2:
+                free.append((rest_o, rest_n))
                 free.sort(key=lambda b: -b[1])
         out[path] = ({a: bytes(b) for a, b in body.items()}, moves)
     return out
@@ -1345,8 +1402,9 @@ def verify_sys(dst, sysm, plan, files):
         if path not in cache:
             cache[path] = common.read_extent(mm2, lba, size)
         d = cache[path]
-        # 포인터가 없는 자리는 제자리에 박았다 — 그 자리를 그대로 읽는다.
-        a = int.from_bytes(d[ptrs[0] : ptrs[0] + 4], "big") - ptr_base(path) if ptrs else at
+        # 제자리에 박은 자리(포인터가 없거나 `PINNED_INPLACE`)는 그 자리를 그대로 읽는다.
+        movable = ptrs and at not in PINNED_INPLACE.get(path, ())
+        a = int.from_bytes(d[ptrs[0] : ptrs[0] + 4], "big") - ptr_base(path) if movable else at
         j = a + len(pre)
         while j < len(d) and d[j] != 0:
             j += 1
