@@ -147,7 +147,7 @@ def owned_elsewhere(path):
        이름 패처가 이겨서 화면은 멀쩡했지만, **두 주인은 순서 하나로 뒤집힌다.**
     ⚠ 늦게 부른다 — `patch_mon_names` 가 `patch_ui` 를 거쳐 우리를 부른다(순환).
     """
-    return _mon_slots(path) | _sys_slots(path)
+    return _mon_slots(path) | _sys_slots(path) | _tab_slots(path)
 
 
 _SYS = None
@@ -166,6 +166,39 @@ def _sys_slots(path):
         mm.close()
         _f.close()
     return frozenset(_SYS.get(path, ()))
+
+
+_TAB = None
+
+
+def _tab_slots(path):
+    """`patch_ui` 의 **고정폭 UI 표**가 쓰는 자리 — 메뉴·전투 명령·능력치 라벨이다.
+
+    🔴 이게 빠져 있었다(2026-08-29). 그 표는 `patch_ui.rows()` 가 **정본을 강제**해
+       (없으면 assert) 한글을 쓰는데, 우리 쪽 「남의 자리」 목록에 없어서 **씬 스캐너가
+       「저본에 없는 일본어」로 세고 있었다.** 실측: `戦う`·`強さ`·`買いたい` 등 일곱이
+       이미 번역돼 있는데 번역 대상으로 페이로드에 실렸다 — 하마터면 **이미 있는 것을
+       또 번역**할 뻔했다(파일럿에서 잡은 사고와 같은 종류다).
+    ⚠ 스트라이드 안의 **첫 바이트만** 담는다 — 씬 덤프도 그 자리를 블록 시작으로 잡는다.
+    """
+    global _TAB
+    if _TAB is None:
+        import dump_ui
+        import patch_ui  # noqa: F401  (표 정의는 dump_ui 가 든다)
+
+        _TAB = {}
+        for key, fpath in dump_ui.FILES.items():
+            buf = common.extract(fpath)
+            col = 0 if key == "ED" else 1
+            for _name, ed, ed2, stride, n, n2 in dump_ui.TABLES:
+                off = (ed, ed2)[col]
+                if off is None:
+                    continue
+                cnt = n2 if (col == 1 and n2) else n
+                for jp, at, _slack in dump_ui.read_table(buf, off, stride, cnt):
+                    if jp:
+                        _TAB.setdefault(fpath, set()).add(at)
+    return frozenset(_TAB.get(path, ()))
 
 
 def _mon_slots(path):
