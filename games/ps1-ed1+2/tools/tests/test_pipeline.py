@@ -796,6 +796,7 @@ def test_tool_tables_match_shared_glossary():
     JSON 으로 옮기면 죽는다. 그래서 데이터는 공용, 근거는 도구에 두고 **여기서 묶는다** —
     한쪽만 고치면 이 테스트가 운다(스킬 색인 ↔ 체크리스트와 같은 방식).
     """
+    import json
     import os
     import sys
 
@@ -814,6 +815,13 @@ def test_tool_tables_match_shared_glossary():
         "person": dict(align_jp_kr.SPEAKER_DICT),
         "place": dict(patch_sys_ui.PLACES),
     }
+    # 🔴 **ED2 몬스터 표도 여기 묶는다**(2026-08-29). 118종을 `textmap/monsters_ed2.json` 이
+    # 따로 드는데 이 테스트가 안 보고 있었다 — 새턴 세션이 공용 정본을 고치자 셋이 갈렸고
+    # (`인크랍`·`팡크스`·`워무드`) **아무 게이트도 안 울었다.** 표가 하나 늘 때마다 여기
+    # 등재하지 않으면 그 표는 정본 밖으로 새어 나간다.
+    with open(os.path.join(os.path.dirname(_TOOLS), "textmap", "monsters_ed2.json")) as f:
+        ed2 = json.load(f)
+    pairs["monster"] = {**pairs["monster"], **ed2}
     # ⚠ **정본은 상위집합이다**(2026-08-18). 내레이션에만 나오는 이름(이셀하사·론윌섬)은
     #    어느 패치 표에도 없지만 표기는 하나여야 한다. 그래서 「같다」가 아니라
     #    **「도구 표의 모든 항목이 정본과 일치한다」**를 본다 — 도구가 정본에 없는 표기를
@@ -1344,7 +1352,6 @@ def test_hang_slots_matches_the_engine_hook():
     🔴 어긋나면 조용히 나빠진다 — 조판기가 내보낸 줄을 엔진이 또 꺾어 부호가 다음 줄로
     간다(2026-07-19 실측이 그 상태였다). 값이 두 파일에 있으므로 여기서 묶는다."""
     import patch_hang_punct as H
-
     import reinsert_kr_pilot as R
 
     assert R.HANG_SLOTS == 0.5 * (1 + H.OVER), (
