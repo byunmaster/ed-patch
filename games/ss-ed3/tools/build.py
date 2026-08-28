@@ -45,6 +45,56 @@ def out_paths(disc):
     return os.path.join(C.BUILD_DIR, name + ".bin"), os.path.join(C.BUILD_DIR, name + ".cue")
 
 
+def track_path(disc, n):
+    """트랙 1 은 우리가 구운 `.bin`, 나머지는 원본을 그대로 옮겨 놓은 사본."""
+    return (
+        out_paths(disc)[0]
+        if n == 1
+        else os.path.join(C.BUILD_DIR, f"Shiroki Majo (KR) (Disc {disc}) (Track {n}).bin")
+    )
+
+
+def write_cue(disc):
+    """🔴 **트랙을 전부 적는다.** 트랙 1 만 적던 것을 2026-08-28 고쳤다 —
+    disc2 는 **ISO 가 트랙 1 을 넘어가서**(파일 18 개: `END00~16.GRP` · `V20.SAP`)
+    트랙 2 를 빼면 **엔딩 그림과 그 음성이 통째로 없다.** 타이틀·초반만 봐서 안 드러났다.
+    ⓘ 인덱스는 원본 `.cue` 규약을 따른다 — 데이터 트랙은 `INDEX 01` 하나,
+      뒤따르는 트랙은 `INDEX 00`(프리갭) + `INDEX 01`.
+    """
+    lines = []
+    for n, mode, _src in C.disc_tracks(disc):
+        lines.append(f'FILE "{os.path.basename(track_path(disc, n))}" BINARY')
+        lines.append(f"  TRACK {n:02d} {mode}")
+        if n == 1:
+            lines.append("    INDEX 01 00:00:00")
+        else:
+            lines.append("    INDEX 00 00:00:00")
+            lines.append("    INDEX 01 00:0{}:00".format(3 if mode.startswith("MODE") else 2))
+    with open(out_paths(disc)[1], "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def copy_extra_tracks(disc):
+    """트랙 2 이후를 빌드 칸에 그대로 복사한다 — `(옮긴 수, 바이트)`.
+
+    ⚠ **하드링크·심볼릭 링크로 때우지 않는다.** originals 는 어떤 트랙에서도 읽기 전용인데,
+      링크를 걸면 빌드 칸에 쓰는 실수 하나가 **원본을 망친다**(루트 「originals」).
+    ⓘ 이미 있고 크기가 같으면 건너뛴다 — 다시 구울 때 159MB 를 매번 복사하지 않는다.
+    """
+    n = b = 0
+    for num, _mode, src in C.disc_tracks(disc):
+        if num == 1:
+            continue
+        dst = track_path(disc, num)
+        size = os.path.getsize(src)
+        if os.path.exists(dst) and os.path.getsize(dst) == size:
+            continue
+        shutil.copyfile(src, dst)
+        n += 1
+        b += size
+    return n, b
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--disc", type=int, default=None, choices=C.DISCS, help="한 장만 (기본: 두 장)")
@@ -160,10 +210,10 @@ def build_one(a_disc):
         if diff:
             raise SystemExit(f"건드린다고 선언 안 한 자리가 바뀌었다: {diff[:5]}")
 
-        with open(cue, "w", encoding="utf-8") as f:
-            f.write(
-                f'FILE "{os.path.basename(dst)}" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n'
-            )
+        nt, nb = copy_extra_tracks(a.disc)
+        if nt:
+            print(f"      트랙 {nt} 개를 옮겼다 ({nb / 1e6:.0f}MB) — 트랙1 밖의 파일이 여기 있다")
+        write_cue(a.disc)
         write_m3u()
         ok = True
         print(f"\n✅ {dst}")
@@ -179,6 +229,12 @@ def build_one(a_disc):
             for gone in (cue, m3u_path()):
                 if os.path.exists(gone):
                     os.remove(gone)
+            #   ⚠ 딸린 트랙 사본도 같이 치운다 — `.cue` 가 없으면 쓸 데가 없고, 남겨 두면
+            #     실패한 칸이 정상 크기로 보인다.
+            for num, _m, _s in C.disc_tracks(a.disc)[1:]:
+                q = track_path(a.disc, num)
+                if os.path.exists(q):
+                    os.remove(q)
 
 
 def m3u_path():

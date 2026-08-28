@@ -95,6 +95,23 @@ _D = "Shiroki Majo - Mou Hitotsu no Eiyuu Densetsu (Japan) (Disc %d) (Track 1).b
 DISCS = (1, 2)
 DISC_BIN = {n: os.path.join(ORIG_DIR, _D % n) for n in DISCS}
 
+# 🔴 **디스크는 트랙이 여럿이고, 디스크2 는 ISO 가 트랙 1 을 넘어간다**(실측 2026-08-28).
+#    disc2 트랙1 은 200,805 섹터인데 파일 18 개(`END00~16.GRP` · `V20.SAP` 45.9MB)의 LBA 가
+#    그 너머다 — **트랙 2 를 빼면 엔딩 그림과 그 음성이 통째로 없다.** 트랙1 만 담은 `.cue`
+#    로 여태 구웠고, 타이틀·초반만 봐서 안 드러났다.
+#    ⚠ 우리가 고치는 것은 **트랙 1 뿐**이므로 나머지는 원본을 그대로 복사해 옆에 둔다.
+_TRACKS = {  # 디스크 → [(트랙 번호, 모드, 파일명 꼬리)]
+    1: [(1, "MODE1/2352", "(Track 1)"), (2, "AUDIO", "(Track 2)")],
+    2: [(1, "MODE1/2352", "(Track 1)"), (2, "MODE2/2352", "(Track 2)"), (3, "AUDIO", "(Track 3)")],
+}
+_DT = "Shiroki Majo - Mou Hitotsu no Eiyuu Densetsu (Japan) (Disc %d) %s.bin"
+
+
+def disc_tracks(disc):
+    """`[(번호, 모드, 원본 경로)]` — 트랙 1 이 늘 첫 항목이다."""
+    return [(n, m, os.path.join(ORIG_DIR, _DT % (disc, tail))) for n, m, tail in _TRACKS[disc]]
+
+
 # 입력 지문 — 2026-08-24 실측 (patcher-checklist 1)
 SRC = {
     1: {"size": 334_245_072, "sha1": "17de3ba500a6c62cf3755a58dbccf466e3d4479e"},
