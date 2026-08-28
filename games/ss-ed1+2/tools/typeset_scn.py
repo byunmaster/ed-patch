@@ -151,46 +151,69 @@ def _lead_nl(t):
     return t[:i]
 
 
-ARGS = re.compile(r"%[sd]")
+MARKS_ONLY = re.compile(r"%([csd])")
 
 
-def arg_groups(texts, marks):
-    """인자(`%s`·`%d`)를 경계로 슬롯을 묶는다 — `[[슬롯 번호…], …]`."""
-    groups, cur = [], []
-    for i in range(len(texts)):
-        cur.append(i)
-        if i < len(marks) and marks[i] in "sd":
-            groups.append(cur)
-            cur = []
-    groups.append(cur)
-    return groups
+def align_marks(kr_marks, jp_marks):
+    """저본 마크업 열을 원문 마크업 열의 **부분열**로 맞춘다 — `[원문 마크 번호…]`.
+
+    저본은 원문보다 마크업이 **적을 수 있다.** 실측 138블록:
+
+        원문  … %s は\n %d …          (인자 둘 — 물건 이름 + 값)
+        저본  `값은\n%d Gold가 되는데…`  (인자 하나 — 우리 문안은 이름을 안 부른다)
+
+    ⚠ **유일한 맞춤이 아니면 버린다.** 왼쪽부터 맞춘 것과 오른쪽부터 맞춘 것이 다르면
+      어느 자리인지 근거가 없다(원문 `%d…%d` 에 저본 `%d` 하나 같은 꼴). 이 층은
+      「대충 넣고 나중에」가 안 된다.
+    """
+    left, j = [], 0
+    for m in kr_marks:
+        while j < len(jp_marks) and jp_marks[j] != m:
+            j += 1
+        if j >= len(jp_marks):
+            return None
+        left.append(j)
+        j += 1
+    right, j = [], len(jp_marks) - 1
+    for m in reversed(kr_marks):
+        while j >= 0 and jp_marks[j] != m:
+            j -= 1
+        if j < 0:
+            return None
+        right.append(j)
+        j -= 1
+    right.reverse()
+    return left if left == right else None
 
 
-def place_by_args(texts, marks, kr, names, sp):
-    """**인자가 문장을 슬롯 여럿으로 가른 블록** — 저본을 인자에서 잘라 나눠 담는다.
+def place_by_marks(texts, marks, kr, names, sp):
+    """**마크업이 문장을 슬롯 여럿으로 가른 블록** — 저본을 마크업에서 잘라 나눠 담는다.
 
-    본문 자리 하나에 통째로 넣는 길이 안 통하는 꼴이 있다(184블록 중 100). 실측 표본:
+    본문 자리 하나에 통째로 넣는 길이 안 통하는 꼴이 있다. 실측 표본:
 
         JP  ['', ' は 宝箱を開けました。\n宝箱の中には', '', '', 'が入っていました。']
             marks ['s','c','s','c']
         KR  `%s은(는) 보물상자를 열었다.\n보물상자 안에는 %s이(가) 들어 있었다.`
 
-    저본이 **블록 전체**를 담고 있고 인자가 그 사이에 낀다. 통째로 한 자리에 넣으면
-    남은 자리의 일본어 조각(`が入っていました。`)이 화면에 같이 뜨고, 그렇다고 비우면
-    인자 개수가 어긋나 **계약이 깨진다**(소프트락).
+    저본이 **블록 전체**를 담고 마크업이 그 사이에 낀다. 통째로 한 자리에 넣으면 남은
+    자리의 일본어 조각(`が入っていました。`)이 화면에 같이 뜨고, 그렇다고 비우면 마크업
+    개수가 어긋나 **계약이 깨진다**(소프트락).
 
-    ⇒ 인자를 **경계**로 본다. 저본을 인자에서 자르면 조각 수가 슬롯 묶음 수와 같아지고,
+    ⇒ 마크업을 **경계**로 본다. 저본을 그 자리에서 자르면 조각 수가 슬롯 묶음 수와 같아지고,
       묶음마다 「글이 든 자리 하나」에 그 조각을 넣으면 구조가 그대로 남는다.
 
-    ⚠ **인자 열이 저본과 원문에서 같아야 한다**(개수도 종류도). 다르면 어느 조각이 어느
-      자리인지 근거가 없으므로 손대지 않는다 — 이 층은 「대충 넣고 나중에」가 안 된다.
-    ⚠ 한 묶음에 글이 **둘 이상**이면 버린다(7블록). 이름은 정본으로 갈아 끼우고 세지 않는다.
+    ⚠ 한 묶음에 글이 **둘 이상**이면 버린다. 이름은 정본으로 갈아 끼우고 세지 않는다.
     """
-    jp_args = ["%" + m for m in marks if m in "sd"]
-    if not jp_args or ARGS.findall(kr) != jp_args:
+    jp_marks = list(marks)
+    kr_marks = MARKS_ONLY.findall(kr)
+    at = align_marks(kr_marks, jp_marks)
+    if at is None:
         return None
-    pieces = ARGS.split(kr)
-    groups = arg_groups(texts, marks)
+    pieces = MARKS_ONLY.split(kr)[0::2]  # 마크업 사이의 글 조각
+    groups, prev = [], -1
+    for j in at + [len(jp_marks)]:
+        groups.append(list(range(prev + 1, j + 1)))
+        prev = j
     if len(pieces) != len(groups):
         return None
     out = list(texts)
@@ -269,7 +292,7 @@ def typeset(jp, kr, names):
         return None, "창을 넘는다"
     if bi is None:
         # 본문 자리가 하나로 안 잡히는 꼴 — 인자가 문장을 가른 블록일 수 있다
-        out = place_by_args(texts, marks, kr, names, sp)
+        out = place_by_marks(texts, marks, kr, names, sp)
         return (_join(out, marks), None) if out else (None, "본문 자리를 못 고른다")
     whole = kr  # ⚠ 아래에서 겹치는 인자를 떼기 **전** — 조각 배치는 온전한 저본이 필요하다
     # 🔴 **인자가 겹치는 자리** — 원문이 `%s は …` 이고 저본이 `\x1a은(는) …` 이면 옮긴 뒤
@@ -293,7 +316,7 @@ def typeset(jp, kr, names):
             # 🔴 이름인지 문장인지 모르는 자리다. 우리 문안이 이미 그걸 품고 있으면
             #    두 번 나온다. 다만 **인자가 문장을 가른 꼴**이면 조각을 나눠 담을 수 있다 —
             #    ⚠ 저본은 **손대기 전 것**을 준다(위에서 겹치는 인자를 뗐다).
-            out = place_by_args(texts, marks, whole, names, sp)
+            out = place_by_marks(texts, marks, whole, names, sp)
             return (_join(out, marks), None) if out else (None, "정본에 없는 이름 자리가 있다")
     built = _join(out, marks)
     # 🔴 **조판기가 자기 계약을 본다.** 본문 자리에 통째로 넣었더니 계약이 깨지는 꼴이 있다 —
@@ -304,7 +327,7 @@ def typeset(jp, kr, names):
     #   저본이 인자를 품고 있어도 개수가 안 는다.
     # ⚠ 계약이 맞는 블록은 손대지 않는다 — 이 갈래는 **이미 버려질 블록**만 건진다.
     if contract(built) != contract(jp):
-        alt = place_by_args(texts, marks, whole, names, sp)
+        alt = place_by_marks(texts, marks, whole, names, sp)
         if alt is not None and contract(_join(alt, marks)) == contract(jp):
             return _join(alt, marks), None
     return built, None

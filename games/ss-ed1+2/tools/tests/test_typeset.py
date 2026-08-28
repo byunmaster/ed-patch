@@ -85,7 +85,7 @@ class Typeset(unittest.TestCase):
         self.assertIsNone(bad)
         self.assertEqual(got, "%c점토 거푸집을 건넸다.%c%c")
 
-    def test_args_split_the_sentence_across_slots(self):
+    def test_marks_split_the_sentence_across_slots(self):
         """🔴 **인자가 문장을 가른 블록** — 저본을 인자에서 잘라 나눠 담는다(100블록).
 
         통째로 한 자리에 넣으면 남은 자리의 일본어 조각이 화면에 같이 뜨고, 비우면
@@ -99,19 +99,36 @@ class Typeset(unittest.TestCase):
             got, "%s은(는) 보물상자를 열었다.\n보물상자 안에는 %c%s%c이(가) 들어 있었다."
         )
 
-    def test_args_path_needs_the_same_arg_sequence(self):
+    def test_marks_path_needs_a_unique_alignment(self):
         """⚠ 인자 열이 어긋나면 어느 조각이 어느 자리인지 근거가 없다 — 손대지 않는다."""
         jp = "%s は 宝箱を開けました。\n宝箱の中には%c%s%cが入っていました。"
         got, bad = self.t(jp, "%s은(는) 보물상자를 열었다.")
         self.assertIsNone(got)
         self.assertEqual(bad, "정본에 없는 이름 자리가 있다")
 
-    def test_args_path_refuses_two_texts_in_one_group(self):
+    def test_marks_path_refuses_two_texts_in_one_group(self):
         """한 묶음에 글이 둘 이상이면 버린다 — 어느 조각이 어느 자리인지 근거가 없다."""
         jp = "%s前だ%c後だ%cが %sを 拾った。%c"
         got, bad = self.t(jp, "%s앞이다뒤다가 %s을(를) 주웠다.")
         self.assertIsNone(got)
         self.assertEqual(bad, "정본에 없는 이름 자리가 있다")
+
+    def test_canon_may_use_fewer_args_than_the_original(self):
+        """🔴 저본이 원문보다 마크업이 **적을 수 있다** — 부분열로 맞춘다(138블록).
+
+        원문은 물건 이름(`%s`)과 값(`%d`)을 둘 다 내보내는데 우리 문안은 이름을 안 부른다.
+        개수가 같아야 한다고 보면 이 138이 통째로 버려진다.
+        """
+        jp = "%c%s は\n%d Gold に なりますが よろしいですか？%c"
+        kr = "값은\n%d Gold가 되는데 괜찮으시겠습니까?"
+        got, bad = self.t(jp, kr)
+        self.assertIsNone(bad)
+        self.assertEqual(T.contract(got), T.contract(jp))
+
+    def test_alignment_must_be_unique(self):
+        """⚠ 맞춤이 유일하지 않으면 버린다 — 어느 자리인지 근거가 없다."""
+        self.assertIsNone(T.align_marks(["d"], ["d", "d"]))
+        self.assertEqual(T.align_marks(["d"], ["s", "d"]), [1])
 
     def test_typeset_checks_its_own_contract(self):
         """🔴 **조판기가 자기 계약을 본다** — `%c%s%c` 런타임 화자 블록(파일럿 6줄).
