@@ -17,6 +17,25 @@ PY="$ROOT/.venv/bin/python"
 
 fail=0
 
+# 🔴 **파이프는 종료 코드를 먹는다.** `cmd | sed || fail=1` 은 **sed 의** 결과를 보므로
+#    검사기가 1 로 죽어도 `fail` 이 안 선다 — 이 게이트는 그렇게 **한동안 아무 것도 못
+#    잡고 있었다**(2026-08-29 실측: `check_build_discs` 가 🔴 를 찍었는데 「통과」가 떴다).
+#    POSIX sh 엔 `pipefail` 이 없으니, **출력을 먼저 받고** 종료 코드를 따로 본다.
+#    ⚠ 값을 정하는 자리라 `|| rc=$?` 로 닫는다(루트 CLAUDE.md 「셸」).
+#    `run`   = 실패하면 게이트가 죽는다 · `warn` = 찍기만 한다 · 인자 `-N` 은 tail.
+#    ⚠ 변수 이름에 `_` 를 붙인다 — **POSIX sh 엔 지역 변수가 없어** 함수가 부르는 쪽의
+#      이름을 덮는다. 처음엔 `n` 을 썼다가 `for n in 1 2` 루프를 갈아엎어 `--disc 0` 이
+#      됐다(2026-08-29 실측 — 고친 게이트가 그 자리에서 이걸 잡아냈다).
+_run() {
+  _gate=$1; _tail=$2; shift 2
+  _out=$("$@" 2>&1) && _rc=0 || _rc=$?
+  if [ "$_tail" -gt 0 ]; then printf '%s\n' "$_out" | tail -"$_tail" | sed 's/^/   /'
+  else printf '%s\n' "$_out" | sed 's/^/   /'; fi
+  [ "$_rc" -eq 0 ] || [ "$_gate" = warn ] || fail=1
+}
+run()  { _run gate "$@"; }
+warn() { _run warn "$@"; }
+
 # 원본이 없는 트리(다른 워크트리·CI)에서는 **건너뛴다.** 늘 빨간불인 게이트는 아무도 안 본다.
 if [ ! -d "$ROOT/originals/jp/ss-ed3" ]; then
   echo "  ⏭ originals/jp/ss-ed3 가 없다 — 원본이 필요한 검사는 건너뛴다"
@@ -24,32 +43,32 @@ if [ ! -d "$ROOT/originals/jp/ss-ed3" ]; then
 fi
 
 echo "  ── 원본 지문 · 2디스크 계약"
-"$PY" "$G/tools/common.py" 2>&1 | sed 's/^/   /' || fail=1
+run 0 "$PY" "$G/tools/common.py"
 
 # 🔴 **덤프 라운드트립** — 경계가 한 칸이라도 밀리면 재삽입이 옆 바이트를 먹는다.
 #    두 디스크 다 본다(같은 한 벌이라는 계약을 텍스트 층에서도 다시 확인하는 셈이다).
 echo "  ── 번역이 그 블록의 것인가 (원문 지문)"
-"$PY" "$G/tools/stamp_script.py" --check 2>&1 | sed 's/^/   /' || fail=1
+run 0 "$PY" "$G/tools/stamp_script.py" --check
 
 echo "  ── 말투 (한 블록 안에서 높임과 반말이 섞였나)"
 # ⚠ 경고지 실패가 아니다 — 한 블록 안에서 말 상대가 바뀌는 자리가 실제로 있다
-"$PY" "$G/tools/check_speech.py" 2>&1 | tail -3 | sed 's/^/   /' || true
+warn 3 "$PY" "$G/tools/check_speech.py"
 
 echo "  ── 이름표가 자리마다 다르게 옮겨졌나"
 # 🔴 게이트다 — 라벨은 판단이 들어갈 자리가 없다(같은 사람이 두 이름으로 보인다)
-"$PY" "$G/tools/check_label.py" 2>&1 | tail -12 | sed 's/^/   /' || fail=1
+run 12 "$PY" "$G/tools/check_label.py"
 
 echo "  ── 고유명사 뒤 조사가 받침과 맞나"
 # 🔴 게이트다 — **표기를 바꾸면 조사가 안 따라온다**(「라우아르가」→「라우알가」)
-"$PY" "$G/tools/check_josa.py" 2>&1 | tail -10 | sed 's/^/   /' || fail=1
+run 10 "$PY" "$G/tools/check_josa.py"
 
 echo "  ── 원문에 있던 것이 사라지지 않았나 (숫자 · 고유명사)"
-"$PY" "$G/tools/check_fidelity.py" 2>&1 | tail -3 | sed 's/^/   /' || true
+warn 3 "$PY" "$G/tools/check_fidelity.py"
 
 echo "  ── 덤프 라운드트립 (대사 · 시스템 · 두 디스크)"
 for n in 1 2; do
-  "$PY" "$G/tools/dump_map.py" --disc "$n" --check 2>&1 | sed 's/^/   /' || fail=1
-  "$PY" "$G/tools/dump_sys.py" --disc "$n" --check 2>&1 | sed 's/^/   /' || fail=1
+  run 0 "$PY" "$G/tools/dump_map.py" --disc "$n" --check
+  run 0 "$PY" "$G/tools/dump_sys.py" --disc "$n" --check
 done
 
 # 🔴 **구워 둔 이미지가 지금 소스의 것인가 · 두 장이 같은 세대인가.**
@@ -57,7 +76,7 @@ done
 #    빌드는 성공하고 게이트도 초록이었다(유저 실측 2026-08-28: disc2 만 한 판 뒤처졌다).
 #    ⚠ 이미지가 없으면 건너뛴다 — 안 구운 트리에서 늘 빨간불이면 아무도 안 본다.
 echo "  ── 구워 둔 이미지가 지금 소스의 것인가 (두 장 대조)"
-"$PY" "$G/tools/check_build_discs.py" 2>&1 | sed 's/^/   /' || fail=1
+run 0 "$PY" "$G/tools/check_build_discs.py"
 
 if [ "$fail" -ne 0 ]; then
   echo "  ❌ [ss-ed3] 게이트 실패"
