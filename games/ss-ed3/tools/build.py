@@ -154,8 +154,8 @@ def build_one(a_disc):
             paramtbl = RP.table()
             for name, lba, size in files:
                 b = None
-                if name.startswith("/MAP/") and name.endswith(".BIN"):
-                    stem = os.path.basename(name).rsplit(".", 1)[0]
+                if C.is_map_file(name)[0]:
+                    stem = C.is_map_file(name)[1]
                     if not R.load_script(stem)[0]:
                         continue
                     b = d.read_extent(lba, size)

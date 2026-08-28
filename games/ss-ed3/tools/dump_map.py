@@ -23,7 +23,12 @@ OUT = os.path.join(C.OUT_DIR, "map_jp")
 
 
 def dump_one(b):
-    ptrs, name = M.parse_header(b)
+    #   ⚠ **헤더가 없는 맵이 하나 있다** — `MAP077` 은 데이터가 `.FON` 에 있고(`common.MAP_EXTRA`)
+    #     그 파일엔 매직·포인터표가 없다. 헤더는 「있으면 적는다」로 두고 **블록은 그대로 뜬다.**
+    try:
+        ptrs, name = M.parse_header(b)
+    except ValueError:
+        ptrs, name = [], ""
     bl = M.blocks(b)
     return {
         "size": len(b),
@@ -58,7 +63,7 @@ def main():
     nb = nfile = nchar = 0
     fails = []
     with C.open_disc(a.disc) as d:
-        files = [(n, l, s) for n, l, s in d.files() if n.startswith("/MAP/") and n.endswith(".BIN")]
+        files = [(n, l, s) for n, l, s in d.files() if C.is_map_file(n)[0]]
         for n, l, s in files:
             b = d.read_extent(l, s)
             try:
@@ -73,7 +78,7 @@ def main():
             nb += len(bl)
             nchar += sum(len(x["text"]) for x in rec["blocks"])
             if not a.check:
-                stem = os.path.basename(n).rsplit(".", 1)[0]
+                stem = C.is_map_file(n)[1]
                 with open(os.path.join(OUT, f"{stem}.json"), "w", encoding="utf-8") as f:
                     json.dump(rec, f, ensure_ascii=False, indent=1)
 

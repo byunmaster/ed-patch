@@ -56,9 +56,9 @@ def main():
     for disc in (1, 2):
         with C.open_disc(disc) as d:
             for n, lba, size in sorted(d.files()):
-                if not (n.startswith("/MAP/") and n.endswith(".BIN")):
+                if not C.is_map_file(n)[0]:
                     continue
-                stem = os.path.basename(n)[:-4]
+                stem = C.is_map_file(n)[1]
                 if stem in a.skip:
                     continue
                 if stem not in maps:

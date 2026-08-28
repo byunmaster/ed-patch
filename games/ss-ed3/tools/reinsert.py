@@ -130,9 +130,9 @@ def main():
     bad = []
     with C.open_disc(1) as d:
         for n, lba, size in d.files():
-            if not (n.startswith("/MAP/") and n.endswith(".BIN")):
+            if not C.is_map_file(n)[0]:
                 continue
-            stem = os.path.basename(n).rsplit(".", 1)[0]
+            stem = C.is_map_file(n)[1]
             if a.stems and stem not in a.stems:
                 continue
             if not load_script(stem)[0]:

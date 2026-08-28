@@ -107,6 +107,23 @@ _TRACKS = {  # 디스크 → [(트랙 번호, 모드, 파일명 꼬리)]
 _DT = "Shiroki Majo - Mou Hitotsu no Eiyuu Densetsu (Japan) (Disc %d) %s.bin"
 
 
+#   🔴 **맵 하나는 데이터가 `.BIN` 이 아니라 `.FON` 에 있다**(실측 2026-08-28).
+#     `/MAP/MAP077.BIN` 은 8,044B 껍데기로 **블록이 0** 이고, 서장 라그픽 마을 장면
+#     64 블록(이름표 `ジュリオの父`·`クリスの母` 포함)이 **`MAP077.FON`** 에 들어 있다.
+#     ⚠ `.FON` 은 이름과 달리 폰트가 아니다 — 나머지 87 개는 순수 그래픽이라 블록이 0 이고,
+#     이 하나만 예외다. 「`/MAP/*.BIN` 만」으로 훑는 바람에 이 맵이 통째로 빠져 있었다.
+MAP_EXTRA = {"/MAP/MAP077.FON": "MAP077F"}
+
+
+def is_map_file(name):
+    """대사 맵인가 — `(맵인가, 꼬리표)`. 꼬리표가 `script/<꼬리표>.json` 이 된다."""
+    if name in MAP_EXTRA:
+        return True, MAP_EXTRA[name]
+    if name.startswith("/MAP/") and name.endswith(".BIN"):
+        return True, os.path.basename(name)[:-4]
+    return False, None
+
+
 def disc_tracks(disc):
     """`[(번호, 모드, 원본 경로)]` — 트랙 1 이 늘 첫 항목이다."""
     return [(n, m, os.path.join(ORIG_DIR, _DT % (disc, tail))) for n, m, tail in _TRACKS[disc]]
