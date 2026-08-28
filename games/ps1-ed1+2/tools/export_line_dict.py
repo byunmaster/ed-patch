@@ -25,7 +25,6 @@
 
 import argparse
 import glob
-import hashlib
 import json
 import os
 import re
@@ -39,6 +38,14 @@ import audit_provenance as A
 from common import OUT_DIR, REVIEW_DIR
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 🔴 **열쇠는 공용 하나다**(2026-08-29). 여기 사본을 들고 있다가 새턴이 공용을 고쳐도
+#    (`\x3F` 폄 추가) **우리 export 는 옛 열쇠를 그대로 박았다** — 물음표가 든 줄이 통째로
+#    안 붙어 384줄이 사전에 있는데도 새턴이 다시 번역할 뻔했다. 사본을 지우고 공용을 쓴다.
+#    ⚠ 공용 쪽 회귀 테스트가 「두 곳에 있는 동안은 같은 답이어야 한다」고 경고하고 있었는데,
+#      그 테스트가 이 워크트리에선 **skip** 이라(PS1 경로를 못 찾는다) 못 울었다.
+sys.path.insert(0, os.path.join(ROOT, "..", "..", "shared"))
+from text import line_key as _LK
+
 OUT = os.path.join(ROOT, "line_dict.json")
 # 인자 센티널 — 담되 **표시**한다. 자리가 플랫폼마다 달라 그대로는 못 붙인다.
 FMT = re.compile(r"[\x17\x1a\x1b]")
@@ -46,35 +53,19 @@ FMT = re.compile(r"[\x17\x1a\x1b]")
 
 # 마크업·부호를 **플랫폼 중립꼴**로 되돌리는 표. 덤퍼마다 표기가 다르다 —
 # PS1 은 `{c}`·`{n}`·`\x25\x73`, 새턴은 `%c`·진짜 개행·`%s`. 가운뎃점도 세 꼴이 있다.
-_NEUTRAL = [
-    ("{c}", "\x01"),
-    ("%c", "\x01"),  # 창·색 전환
-    ("{n}", ""),  # 개행 — 어차피 공백과 함께 지운다
-    ("\\x25\\x73", "\x02"),
-    ("%s", "\x02"),  # 이름 인자
-    ("\\x25\\x64", "\x03"),
-    ("%d", "\x03"),  # 수치 인자
-    ("\\x21", "!"),  # 이식판이 문자로 쓰는 자리가 있다
-]
-_DOTS = str.maketrans({"･": "·", "・": "·", "｡": "。"})
+_DOTS = str.maketrans({"･": "·", "・": "·", "｡": "。"})  # (호환용 — 아래 key 는 공용을 쓴다)
 
 
 def key(jp):
-    """JP 원문 → sha1 앞 16자.
+    """JP 원문 → sha1 앞 16자 — **`shared/text/line_key` 가 정본**이다.
 
-    ⚠ 공백을 지우고 잰다 — 이식판은 줄나눔이 다르다.
-    🔴 **마크업 표기도 지운다**(2026-08-20). 이 사전은 「타이틀을 넘어가는 유일한 창구」인데
-    (루트 `docs/patcher-checklist.md` 10-D) 키가 **PS1 덤퍼의 표기를 타고 있었다** —
-    PS1 `{c}ライアス{c}{n}…` ↔ 새턴 `%cライアス%c\n…` 은 같은 원문인데 키가 달라진다.
-    실측: 새턴 15,468 문자열 중 붙는 게 **1.3%** 였고, 중립화하니 **71.9%** 다
-    (ED1SCN 84% · ED2SCN 91%). 사전이 있어도 못 쓰고 있었던 셈이다.
-
-    ⚠ 인자는 **자리만 표시**하고 값은 안 담는다 — 플랫폼마다 자리가 달라 그대로는 못 붙인다.
+    이 사전은 「타이틀을 넘어가는 유일한 창구」라(루트 `docs/patcher-checklist.md` 10-D)
+    열쇠가 갈리면 **사전이 있어도 안 붙는다.** 실측 이력이 둘이다:
+      · 마크업을 안 지워 새턴 적중이 1.3% (2026-08-20, 중립화로 71.9%)
+      · `\x3f` 를 안 펴 물음표가 든 줄이 통째로 안 붙음 (2026-08-29, 384줄)
+    둘 다 **표를 두 곳에 두어** 생긴 일이다. 그래서 위임만 한다.
     """
-    s = jp
-    for a, b in _NEUTRAL:
-        s = s.replace(a, b)
-    return hashlib.sha1(re.sub(r"\s+", "", s.translate(_DOTS)).encode("utf-8")).hexdigest()[:16]
+    return _LK.key(jp)
 
 
 def _josa(w, pair):
