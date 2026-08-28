@@ -1260,5 +1260,122 @@ def test_josa_shift_leaves_no_stale_tail():
     assert n <= 504, f"josa 루틴이 {n}B 로 늘었다 — VAB 파형 여유가 4B 뿐이다"
 
 
+
+
+# ── 온점 매달기 훅 — 조립된 바이트를 실제로 돌려 판정표와 대조한다 ──────────────
+# ⚠ 파이썬 모델만 맞고 **인코딩이 틀리면 통과해버리는** 구멍을 막는다(조사 훅과 같은 이유).
+def _run_prewrap_stub(col, ch, nxt):
+    """스텁을 실행해 「끊는다(1) / 안 끊는다(0)」를 돌려준다."""
+    import struct
+
+    import patch_hang_punct as H
+    from patch_josa_hook import REG
+
+    BASE, RESUME, STR = 0x80100000, 0x800ACF08, 0x1000
+    code = H.stub_prewrap(BASE, RESUME)
+    mem = {STR: ch, STR + 1: nxt, STR + 2: nxt}
+    r = [0] * 32
+    r[REG["s1"]], r[REG["s0"]], r[REG["s3"]] = col, 0, STR
+    r[REG["s6"]] = H.COL_LIMIT  # 실행파일에 새로 박는 한계값(30)
+    pc, pending, steps = BASE, None, 0
+    while pc != RESUME:
+        steps += 1
+        assert steps < 500, "무한 루프"
+        w = struct.unpack_from("<I", code, pc - BASE)[0]
+        op, rs, rt, rd, sh, fn = w >> 26, (w >> 21) & 31, (w >> 16) & 31, (w >> 11) & 31, (w >> 6) & 31, w & 63
+        imm = w & 0xFFFF
+        simm = imm - 0x10000 if imm >= 0x8000 else imm
+        nxt_pc, target = pc + 4, None
+        if op == 0:
+            if fn == 0x00:
+                r[rd] = (r[rt] << sh) & 0xFFFFFFFF
+            elif fn == 0x03:
+                v = r[rt] & 0xFFFFFFFF
+                r[rd] = ((v - (1 << 32)) if v >> 31 else v) >> sh & 0xFFFFFFFF
+            elif fn == 0x21:
+                r[rd] = (r[rs] + r[rt]) & 0xFFFFFFFF
+            elif fn == 0x23:
+                r[rd] = (r[rs] - r[rt]) & 0xFFFFFFFF
+            elif fn == 0x25:
+                r[rd] = r[rs] | r[rt]
+            elif fn == 0x06:  # srlv
+                r[rd] = (r[rt] & 0xFFFFFFFF) >> (r[rs] & 31)
+            elif fn == 0x2A:  # slt
+                a = r[rs] - (1 << 32) if r[rs] >> 31 else r[rs]
+                b = r[rt] - (1 << 32) if r[rt] >> 31 else r[rt]
+                r[rd] = int(a < b)
+            else:
+                raise AssertionError(f"미구현 SPECIAL 0x{fn:02X}")
+        elif op == 0x02:
+            target = (w & 0x03FFFFFF) << 2 | 0x80000000
+        elif op == 0x04:
+            target = pc + 4 + simm * 4 if r[rs] == r[rt] else None
+        elif op == 0x05:
+            target = pc + 4 + simm * 4 if r[rs] != r[rt] else None
+        elif op == 0x09:
+            r[rt] = (r[rs] + simm) & 0xFFFFFFFF
+        elif op == 0x0A:
+            a = r[rs] - (1 << 32) if r[rs] >> 31 else r[rs]
+            r[rt] = int(a < simm)
+        elif op == 0x0B:
+            r[rt] = int((r[rs] & 0xFFFFFFFF) < (simm & 0xFFFFFFFF))
+        elif op == 0x0C:
+            r[rt] = r[rs] & imm
+        elif op == 0x0D:  # ori
+            r[rt] = r[rs] | imm
+        elif op == 0x0F:  # lui
+            r[rt] = (imm << 16) & 0xFFFFFFFF
+        elif op == 0x24:
+            r[rt] = mem.get((r[rs] + simm) & 0xFFFFFFFF, 0)
+        else:
+            raise AssertionError(f"미구현 op 0x{op:02X}")
+        r[0] = 0
+        if pending is not None:
+            nxt_pc, pending = pending, None
+        elif target is not None:
+            pending = target
+        pc = nxt_pc
+    return r[REG["v0"]]
+
+
+def test_hang_slots_matches_the_engine_hook():
+    """조판기가 주는 여유와 **훅이 지키는 한계가 같아야** 한다.
+
+    🔴 어긋나면 조용히 나빠진다 — 조판기가 내보낸 줄을 엔진이 또 꺾어 부호가 다음 줄로
+    간다(2026-07-19 실측이 그 상태였다). 값이 두 파일에 있으므로 여기서 묶는다."""
+    import patch_hang_punct as H
+
+    import reinsert_kr_pilot as R
+
+    assert R.HANG_SLOTS == 0.5 * (1 + H.OVER), (
+        f"조판기 여유 {R.HANG_SLOTS} 슬롯 vs 훅 한계 {H.FRAME + H.OVER}열 — 어긋났다"
+    )
+    assert R.HANG_TAIL == H.HANG_TAIL, "꼬리 부호 집합이 갈렸다"
+
+
+def test_hang_punct_stub_decision_table():
+    """틀(29열)의 **마지막 한 칸을 반각에도 연다**. 부호가 30열(틀 밖)로 밀리면 미리 끊는다.
+
+    🔴 셋이 한 몸이다 — 이 훅 + 드로어 훅 + `reinsert_kr_pilot._hang_merge`.
+    하나만 켜면 엔진이 부호만 다음 줄로 꺾어 **지금보다 나빠진다**(2026-07-19 실측).
+    """
+    FW, HW, DOT = 0x82, 0x41, 0x2E  # 전각 리드바이트 · 반각 'A' · 온점
+    cases = [
+        (1, FW, FW, 0, "줄 앞 — 끊을 이유가 없다"),
+        (27, FW, DOT, 0, "전각이 28열에서 끝난다 — 온점은 29열에 매달린다"),
+        (28, FW, FW, 0, "전각이 29열에서 끝난다 — 다음 글자는 뒤에서 끊긴다"),
+        (28, FW, DOT, 1, "🔴 온점이 30열(틀 밖)로 밀린다 — 금칙: 한 글자 앞에서 끊는다"),
+        (29, FW, FW, 1, "전각은 29열에서 시작 못 한다 — 30열까지 먹는다"),
+        (29, HW, FW, 0, "⭐ 반각은 29열에 앉는다 — 이게 매달기다"),
+        (29, DOT, 0, 0, "⭐ 꼬리 온점이 29열에 앉는다"),
+        (29, DOT, DOT, 1, "온점 둘 — 뒤엣것이 30열로 밀린다"),
+        (30, HW, FW, 1, "30열은 틀 밖이다 — 아무것도 안 앉는다"),
+    ]
+    for col, ch, nxt, want, why in cases:
+        got = _run_prewrap_stub(col, ch, nxt)
+        assert got == want, f"열 {col} 0x{ch:02X}→0x{nxt:02X}: {got} != {want} — {why}"
+
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

@@ -1100,6 +1100,47 @@ def bake_ellipsis(exe, game):
     exe[o : o + font_map.GLYPH_STRIDE] = font_map.ellipsis_baseline_glyph(exe, game)
 
 
+# 매달 수 있는 꼬리 부호 — **반각 1열**이라 29열에 앉는다(`patch_hang_punct.py`).
+HANG_TAIL = ".,!?)\"'"
+# 꼬리 부호에 더 주는 폭(슬롯). 🔴 `patch_hang_punct.FRAME/OVER` 와 **같은 값**이어야 한다 —
+# 조판기가 내보낸 줄을 엔진이 또 꺾으면 되레 나빠진다. 어긋나면 회귀 테스트가 잡는다.
+HANG_SLOTS = 0.5
+
+
+def _hang_merge(pages, width, protect):
+    """온점 매달기 — 꼬리 부호 하나 때문에 갈린 줄을 도로 붙인다.
+
+    창 틀은 **29열**(전각 2열·반각 1열)인데 코드 두 자리가 글자 폭을 안 보고 마지막 열을
+    통째로 예약해 우리 폭이 `WRAP=14.0슬롯`(=28열)에 묶여 있었다. `patch_hang_punct.py`
+    가 「29열에서 시작하는 글자가 **전각일 때만** 막는다」로 바꾸므로, 꼬리가 반각 부호면
+    **14.5슬롯(29열)까지** 한 줄이다. 실측 287개행이 없어진다(195자리).
+    ⚠ **30열(틀 밖)까지는 안 연다** — 엔진이 29를 전제하는 자리가 넷이라 층마다 사고가
+    났다(테두리 갉힘 · 빈 줄). 경위는 `patch_hang_punct.OVER` 주석.
+
+    ⚠ **엔진 훅과 한 몸이다** — 훅 없이 이 병합만 켜면 엔진이 부호만 다음 줄로 꺾어
+    되레 나빠진다(2026-07-19 실측이 그 상태였다). 훅을 빼면 이것도 빼야 한다.
+    ⚠ `protect`(HARD_NL) 창은 건너뛴다 — 사람이 일부러 넣은 개행을 되돌리면 안 된다.
+    """
+    if protect:
+        return pages
+    out = []
+    for pg in pages:
+        merged, i = [], 0
+        while i < len(pg):
+            if i + 1 < len(pg):
+                j = f"{pg[i]} {pg[i + 1]}"
+                w = sum(cell_w(c) for c in j)
+                # 틀의 마지막 열(29)까지 · 그 열을 차지하는 글자가 **반각 꼬리 부호**여야 한다
+                if width < w <= width + HANG_SLOTS and j[-1] in HANG_TAIL and cell_w(j[-1]) == 0.5:
+                    merged.append(j)
+                    i += 2
+                    continue
+            merged.append(pg[i])
+            i += 1
+        out.append(merged)
+    return out
+
+
 def wrap_page(text, width=WRAP, target=None, max_lines=None):
     """공통 줄바꿈 유틸(shared/text/krwrap.wrap_pages): 원문 {n} 줄바꿈을 존중하고
     폭(WRAP) 넘는 줄만 재줄바꿈 + 금칙 + 짧은조각 병합, 창(3줄)은 문장 그룹 단위로
@@ -1114,17 +1155,21 @@ def wrap_page(text, width=WRAP, target=None, max_lines=None):
     text = _bind_num_unit(text, width)
     text, folded = _fold_josa(text)  # 병기 → 1슬롯(런타임 훅 해결 후 폭)
     pages = _unfold_josa(
-        kr_wrap_pages(
-            text,
+        _hang_merge(
+            kr_wrap_pages(
+                text,
+                width,
+                max_lines or LINES_PER_PAGE,
+                target_pages=target,  # 창 수 계약: 지정 시 정확히 target개 창으로 분배
+                break_char="\n",
+                cell_width=cell_w,
+                strip_before=".,!?",
+                strip_after="",  # 부호 뒤 공백 유지 — 반각 부호 전환으로 공백 제거 규칙 폐지(07-19, 유저 판정)
+                protect_hard=protect,
+                det_orphan=True,  # 줄 끝 홀로 남은 지시관형사(이/그/저)를 다음 줄 명사로 내림
+            ),
             width,
-            max_lines or LINES_PER_PAGE,
-            target_pages=target,  # 창 수 계약: 지정 시 정확히 target개 창으로 분배
-            break_char="\n",
-            cell_width=cell_w,
-            strip_before=".,!?",
-            strip_after="",  # 부호 뒤 공백 유지 — 반각 부호 전환으로 공백 제거 규칙 폐지(07-19, 유저 판정)
-            protect_hard=protect,
-            det_orphan=True,  # 줄 끝 홀로 남은 지시관형사(이/그/저)를 다음 줄 명사로 내림
+            protect,
         ),
         folded,
     )

@@ -223,6 +223,9 @@ def main():
     run(
         "patch_josa_hook.py"
     )  # 동적 조사 훅 — 병기(은(는)) → 정확 조사(2026-07-27 인게임 검증 통과)
+    # 온점 매달기 — 엔진의 29열 중 마지막 한 열을 **반각 부호에만** 연다(훅 둘).
+    # ⚠ `reinsert_kr_pilot._hang_merge` 와 **한 몸**이다 — 하나만 켜면 되레 나빠진다.
+    run("patch_hang_punct.py")
     run("patch_gfx_title.py")  # START.DAT 타이틀 로고·버튼 TIM (FINAL 제자리 갱신)
     # 동영상 EXE — 넷이 내레이션을 한 벌씩 다 들고 각자 자기 몫만 튼다(읽기 BP 실측).
     # 그래서 파일마다 **자기 슬라이스만** 넣는다. END1·END2 는 세이브가 있어야 확인이 되므로
