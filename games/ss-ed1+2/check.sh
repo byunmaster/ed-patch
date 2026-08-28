@@ -87,4 +87,12 @@ step "문안" "$T/check_text.py"
 echo "  ── 동적 조사 훅 (SH-2 디스어셈블 검산 + 참조 되읽기)"
 step "조사 훅" "$T/patch_josa_hook.py" --apply
 
+# 조판 지문 — ⚠ **게이트가 아니라 보고다**(문안을 바꾸면 당연히 바뀐다).
+# 새턴이 `shared/` 에 닿는 면은 셋이다 — `glossary`(이름) · `text.line_key`(저본 열쇠) ·
+# `text.josa`(조우 문구). 갈래 셋이 같은 파일을 미는 국면이라, 다른 게임 작업 중의 한 줄이
+# 이 게임의 문안을 조용히 바꿀 수 있는데 **락도 관측 대장도 그걸 안 본다.**
+# **안 바꿨는데 뜨면 `shared/` 를 의심한다.** 의도한 변화면 `--freeze` 로 다시 찍는다.
+echo "  ── 조판 지문 (공용이 우리 문안을 흔들었나 — 보고)"
+"$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game ss-ed1+2 2>&1 | tail -3 | sed 's/^/     /'
+
 echo "  ✅ 체인 통과 — work/build/<꼬리표>/ 에 이미지가 있다"
