@@ -151,5 +151,34 @@ class ScnSuffix(unittest.TestCase):
         self.assertEqual([(b[0], b[1], b[3]) for b in bad], [("엘아스타시티", 12, 10)])
 
 
+class PlaceSpacing(unittest.TestCase):
+    """🔴 **place 정본은 「슬롯 표」쪽 표기다 — 붙여 쓴다**(유저 확정 2026-08-29).
+
+    지명은 **자리에 따라 표기가 갈린다**:
+
+      · 대사·내레이션      `크루즈 마을` · `용의 알` · `베르가 광산`   ← 띄운다
+      · 슬롯 표(이 정본)   `크루즈마을`  · `용의알`  · `베르가광산`    ← 붙인다
+        (필드 HUD · 워프의 날개 목록 · 마을 헤더)
+
+    갈린 게 아니라 **자리가 다른 것**이다 — 실측으로 대사 블록의 이름 자리에 지명이 드는
+    경우가 0건이라 이 정본이 대사로 새지 않는다.
+
+    붙이는 이유는 바이트다. 마을 헤더는 **원문보다 길어질 수 없고**(`fl`, 뒤가 곧바로 SH-2
+    코드) — `竜の卵`(6B)을 `용의 알`(7B)로 띄웠다가 `patch_ui.scn_suffix_fit` 이 잡았다 —
+    필드 HUD 는 14B 레코드에 접미 4B 를 이어 붙인다.
+    ⚠ **접미와의 띄어쓰기는 정본에 넣지 않는다** — `patch_ui` 가 자리를 보고 전각 공백을
+      넣는다(94/95칸. `그로스토스성` 만 13B 라 못 띄운다).
+
+    ⚠ `scn_suffix_fit` 은 **원본 디스크가 있어야** 돌고 헤더에 쓰이는 지명만 본다.
+    여기선 정본 전량을 원본 없이 본다 — 아직 안 쓰이는 지명이 나중에 헤더로 올라와도 산다.
+    """
+
+    def test_place_names_have_no_space(self):
+        from glossary import table
+
+        bad = {jp: kr for jp, kr in table("place").items() if " " in kr}
+        assert not bad, f"슬롯 표 지명에 공백이 있다 — HUD 에서 잘린다: {bad}"
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
