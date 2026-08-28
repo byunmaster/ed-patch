@@ -40,6 +40,7 @@ import os
 import re
 import subprocess
 import sys
+import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(
@@ -287,6 +288,7 @@ def all_texts(mm=None):
     close = mm is None
     if close:
         _f, mm = common.open_image()
+    canon = augment_names(canon, mm)  # 슬롯 계획도 그 이름들의 글자를 받아야 한다
     out = []
     for path, _lba, _size in common.iso_files(mm):
         if not SCN_RE.match(path):
@@ -338,7 +340,7 @@ def load_canon(quiet=False):
     #   따로 놓인 자리다(실측: ED2 마법서 23종 `フラムの書`). 사전은 문장을 담으니 여기엔
     #   영영 안 온다. 규칙 한 줄로 잇는다 — 정본이 곧 답이다.
     #   🔴 사전을 **안 덮는다** — 같은 원문이 문장으로도 쓰이면 문장 쪽이 옳다.
-    named = {line_key(jp): kr for jp, kr in _names().items()}
+    named = name_keys()
     add = {k: v for k, v in named.items() if k not in got}
     got.update(add)
     ours = load_ours()
@@ -355,6 +357,93 @@ def _names():
     from typeset_scn import _names as f
 
     return f()
+
+
+_MARK = {chr(0xFF21 + i): chr(65 + i) for i in range(10)}  # 전각 Ａ~Ｊ → 반각
+_TRIM = re.compile(r"[\s\u3000・]")
+
+
+def _bare(s):
+    """이름 대조용 꼴 — **반각 가나를 펴고 공백·중점을 뗀다**.
+
+    🔴 같은 이름이 자리마다 다르게 적혀 있다(실측 2026-08-29). ED2 본체·씬의 몬스터 칸은
+       **반각 가나**에 **폭 맞춤용 공백·중점**이 끼어 있다:
+
+           원문 `ﾃﾞｽ･ｶﾞｰﾃﾞｨｱﾝＢ` · `ｽﾃｨ ﾝｸﾞﾋﾞｰﾄﾙ♀` · `ﾌﾞﾗﾑﾅ ｸｲｰﾝ`
+           정본 `デスガーディアン`   · `スティングビートル♀` · `ブラムナクイーン`
+
+    ⚠ **표를 손으로 들지 않는다** — NFKC 가 반각 가나(탁점 포함)를 편다. 표로 접다가
+      작은 모음(`ｧｨｩｪｫ`)을 빠뜨려 절반이 안 붙었다. 열쇠 규칙에서 배운 것과 같다.
+    """
+    return _TRIM.sub("", unicodedata.normalize("NFKC", s))
+
+
+_NAMEKEY = None
+
+
+def name_keys():
+    """`{열쇠: 우리 표기}` — 정본 이름과 **통째로 같은 블록**을 잇는다.
+
+    사전은 문장을 담으니 이름 한 덩어리인 블록엔 영영 안 온다(마법서 23종 · 항로 라벨 ·
+    반각 가나 몬스터 칸). ⚠ 개체 접미(`Ａ`~`Ｊ`·`♀♂`)는 떼어 밑말로 찾고 **반각**으로 다시
+    붙인다 — 전각으로 붙이면 전투 화면(반각)과 갈린다(`patch_mon_names` 와 같은 규약).
+    """
+    global _NAMEKEY
+    if _NAMEKEY is None:
+        names = _names()
+        bare = {_bare(jp): kr for jp, kr in names.items()}
+        out = {}
+        for jp, kr in names.items():
+            out[line_key(jp)] = kr
+        # 반각·공백 변종을 정본에 붙인다 — 원문 쪽 변종은 이미지에서 찾는다
+        _NAMEKEY = (out, bare)
+    return _NAMEKEY[0]
+
+
+def augment_names(canon, mm):
+    """이미지의 **이름 한 덩어리 블록**을 정본에 붙여 `canon` 을 불린다 — 새 사전을 돌려준다.
+
+    🔴 여기서 하는 이유: `_canon_get`·`rebuild` 는 **인자로 받은 사전만** 봐야 한다.
+       거기서 정본을 직접 들추면 같은 입력에 다른 답이 나오고, 합성 시험(원본 없이 도는
+       회귀)이 진짜 정본을 끌어와 깨진다(실측 2026-08-29).
+    ⚠ 이미지 쪽 변종은 **열거할 수 없다**(폭 맞춤 공백이 임의로 낀다). 그래서 정본에서
+      변종을 만들어 내는 게 아니라 **이미지의 문자열을 정규화해 정본에 붙인다.**
+    """
+    add = {}
+    for path, _lba, _size in common.iso_files(mm):
+        if not SCN_RE.match(path):
+            continue
+        got = load(path)
+        if not got:
+            continue
+        for e in got[1]:
+            jp = e.get("text", "")
+            if not jp:
+                continue
+            k = line_key(jp)
+            if k in canon or k in add:
+                continue
+            kr = name_for(jp)
+            if kr:
+                add[k] = kr
+    if add:
+        canon = dict(canon)
+        canon.update(add)
+    return canon
+
+
+def name_for(jp):
+    """원문 한 덩어리 → 우리 표기. 반각·공백·개체 접미를 흡수한다. 없으면 None."""
+    name_keys()
+    bare = _NAMEKEY[1]
+    w = _bare(jp)
+    if w in bare:
+        return bare[w]
+    if w and (w[-1] in _MARK or w[-1] in "ABCDEFGHIJ♀♂"):
+        base, sfx = w[:-1], _MARK.get(w[-1], w[-1])
+        if base in bare:
+            return bare[base] + sfx
+    return None
 
 
 SCN_CANON = os.path.join(common.GAME_DIR, "script", "scn.json")
@@ -610,6 +699,7 @@ def main():
     targets = [p for p, _l, _s in common.iso_files(mm) if SCN_RE.match(p)]
     canon = {} if check else load_canon()  # 항등 검증에서는 비운다(원문 그대로)
     if canon:
+        canon = augment_names(canon, mm)  # 이미지의 이름 한 덩어리 블록을 정본에 붙인다
         # ⚠ 슬롯 계획은 **`patch_ui` 와 같은 것**을 쓴다 — 따로 뽑으면 폰트와 어긋난다.
         #   여기서 계획을 **늘리지 않는다**(`--refresh` 는 `patch_ui` 몫).
         from patch_ui import slot_plan
