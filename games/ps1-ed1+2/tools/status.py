@@ -20,6 +20,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -32,12 +33,36 @@ SCENES = range(1, 7)
 SCRIPT_DIR = os.path.join(ROOT, "script")
 
 
-def scn_blocks(scn):
-    """{entry_id} — 그 씬의 대사 블록(원문 바이트가 있는 것)."""
+# 🔴 **분모는 「화면에 나가는 대사」다**(2026-08-29). 예전엔 「원문 바이트가 있는 블록」을
+#    전부 셌는데, 씬 파일에는 **포인터 표·제어 블록**이 대사와 섞여 있어 분모가 부풀었다 —
+#    실측: 남음 887 중 **1,644가 표·제어**고 진짜 문장은 **1**이었다. 같은 게이트가 「화면에
+#    나가는 원문 0」이라고 하는데 진행률만 85% 로 떠서 **서로 어긋나 보였다.**
+#    ⚠ 「그게 풀리면 얼마가 풀리나」를 안 적으면 병목이 아닌 걸 병목으로 들고 있게 된다.
+_KANA = re.compile(r"[ぁ-んァ-ヶ]")  # 가나 = 진짜 일본어 문장의 표지
+_ESC = re.compile(r"\\x[0-9A-Fa-f]{2}")  # 이스케이프가 섞이면 바이너리(표·제어)다
+
+
+def scn_blocks(scn, _skipped=None):
+    """{entry_id} — 그 씬의 **대사** 블록. 표·제어는 뺀다.
+
+    ⚠ 한자만 있는 블록도 뺀다 — 포인터 표의 바이트가 한자로 디코드되는 일이 흔해
+    (`慓\x17\x80…`) 한자를 표지로 쓰면 표가 대사로 섞인다. **가나**를 표지로 쓴다.
+    """
     p = os.path.join(OUT_DIR, "scn_jp", f"{GAME}SCN{scn}.json")
     with open(p, encoding="utf-8") as f:
         doc = json.load(f)
-    return {e["entry_id"] for e in doc["entries"] if e.get("raw_hex")}
+    keep, drop = set(), 0
+    for e in doc["entries"]:
+        if not e.get("raw_hex"):
+            continue
+        t = e.get("text", "")
+        if _KANA.search(t) and not _ESC.search(t):
+            keep.add(e["entry_id"])
+        else:
+            drop += 1
+    if _skipped is not None:
+        _skipped[0] += drop
+    return keep
 
 
 def done(scn):
@@ -59,12 +84,19 @@ def _reinserted():
         return {}
 
 
+def _texts(scn):
+    p = os.path.join(OUT_DIR, "scn_jp", f"{GAME}SCN{scn}.json")
+    with open(p, encoding="utf-8") as f:
+        return {e["entry_id"]: e.get("text", "") for e in json.load(f)["entries"]}
+
+
 def by_scene():
     stats = _reinserted()
     tot = ok = 0
+    skipped = [0]
     print(f"  {'씬':10} {'총':>6} {'정본':>7} {'남음':>7}  진행")
     for scn in SCENES:
-        blocks, d = scn_blocks(scn), done(scn)
+        blocks, d = scn_blocks(scn, skipped), done(scn)
         n, k = len(blocks), len(blocks & d)
         tot += n
         ok += k
@@ -72,6 +104,17 @@ def by_scene():
         pct = k / max(n, 1) * 100
         print(f"  {GAME}SCN{scn:<5} {n:>6} {k:>7} {n - k:>7}  {bar:<20} {pct:5.1f}%")
     print(f"  {'계':10} {tot:>6} {ok:>7} {tot - ok:>7}  {ok / max(tot, 1) * 100:5.1f}%")
+    # ⚠ 뺀 수를 같이 찍는다 — 분모를 좁혔다는 걸 감추면 그것대로 거짓말이 된다.
+    print(f"  (표·제어 블록 {skipped[0]}개는 분모에서 뺐다 — 화면에 나가는 대사가 아니다)")
+    # 남은 것이 전부 짧은 고유명사면 그건 **플레이트**라 `script/` 몫이 아니다 —
+    # 그걸 안 적으면 「아직 21블록이 남았다」로 읽힌다.
+    plates = [
+        t for scn in SCENES for i, t in _texts(scn).items() if i in (scn_blocks(scn) - done(scn))
+    ]
+    if plates and all(len(t) <= 8 and "{" not in t for t in plates):
+        print(
+            f"  ⇒ 남은 {len(plates)}은 **전부 이름·지명 플레이트**다(`patch_sys_ui` 관할). 대사는 0."
+        )
     if stats:
         print(f"\n  지난 빌드 재삽입 {sum(stats.values())}블록")
     return tot - ok

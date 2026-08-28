@@ -45,6 +45,7 @@ _REPO = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 sys.path.insert(0, os.path.join(_REPO, "shared"))
+from text.krwrap import _strip_before as _kr_strip_before
 from text.krwrap import wrap_pages as kr_wrap_pages
 
 # 확정 락 우회 여부는 **여기서 한 번** 확정한다(락 관리 도구가 자기 프로세스에서 켠다).
@@ -1155,6 +1156,13 @@ def wrap_page(text, width=WRAP, target=None, max_lines=None):
     text = text.replace(HARD_NL, "\n")
     for kt in keep_together():  # 어절 갈림 방지 — 조판이 끝나면 되돌린다
         text = text.replace(kt, kt.replace(" ", NOBREAK_SP))
+    # 🔴 **부호 앞 공백은 여기서 지운다** — `wrap_pages` 에 넘겨도 안 듣는다(2026-08-29 실측).
+    #    `wrap()` 은 `strip_before` 를 적용하는데 `wrap_pages()` 는 안쪽 호출의 `kw` 에 그걸
+    #    **안 담는다.** 우리가 쓰는 건 `wrap_pages` 쪽이라 가드가 조용히 안 돌고 있었다
+    #    (실측 1곳: `텐데… !?` 가 공백을 단 채 화면까지 나갔다).
+    #    ⚠ `shared/` 는 main 몫이라 여기서 못 고친다 — **의존을 끊는다.** 사본을 만들지 않고
+    #    같은 함수를 부르므로 규칙이 두 곳에 생기지는 않는다.
+    text = _kr_strip_before(text, ".,!?")
     text = _bind_num_unit(text, width)
     text, folded = _fold_josa(text)  # 병기 → 1슬롯(런타임 훅 해결 후 폭)
     pages = _unfold_josa(
