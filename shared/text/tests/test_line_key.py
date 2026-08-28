@@ -17,7 +17,8 @@ from shared.text.line_key import key, neutral
 _REPO = os.path.dirname(  # shared/text/tests → shared/text → shared → 레포 뿌리
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
-PS1 = os.path.join(_REPO, ".claude/worktrees/ps1-ed1+2/games/ps1-ed1+2/tools")
+REPO = _REPO
+LINE_KEY = os.path.join(_REPO, "shared", "text", "line_key.py")
 
 SAMPLES = [
     "%cライアス%c\nなんだよ これ !?",
@@ -53,36 +54,53 @@ class Key(unittest.TestCase):
         self.assertTrue(all(c in "0123456789abcdef" for c in k))
         self.assertNotIn("ライアス", neutral(SAMPLES[0])[:0] or "")
 
-    @unittest.skipUnless(os.path.isdir(PS1), "PS1 워크트리가 없다")
-    def test_matches_the_ps1_implementation(self):
-        """⚠ 두 곳에 있는 동안은 **같은 답**이어야 한다. 갈라지면 사전이 조용히 안 붙는다."""
-        sys.path.insert(0, PS1)
-        try:
-            import export_line_dict as E
-        except Exception as exc:  # noqa: BLE001
-            self.skipTest(f"PS1 도구를 못 읽는다: {exc}")
-        for s in SAMPLES:
-            self.assertEqual(key(s), E.key(s), s[:20])
+    def test_nobody_keeps_a_private_copy_of_the_rule(self):
+        """🔴 **중립화 표를 사본으로 들면 언젠가 갈린다** — 이 사전에서만 두 번 물렸다.
+
+        2026-08-20 마크업을 안 접어 적중 1.3% · 2026-08-29 `\\x3F` 를 빠뜨려 384줄.
+        뒤엣것의 뿌리는 `export_line_dict.py` 가 표를 **자기 사본으로 들고 있어** 공용을
+        고쳐도 아무 일이 안 일어난 것이었다(PS1 세션 실측).
+
+        ⚠ 예전엔 「두 구현이 같은 답인가」를 봤는데, 그 테스트는 **PS1 워크트리를 못 찾으면
+          skip** 이라 **정작 갈릴 수 있는 자리에서만 안 돌았다.** 그래서 대조를 그만두고
+          **사본의 존재 자체**를 막는다 — 이건 어느 트리에서나 돈다.
+        """
+        bad = []
+        for sub in ("shared", "scripts", "games"):
+            for root, _d, files in os.walk(os.path.join(REPO, sub)):
+                for fn in files:
+                    if not fn.endswith(".py"):
+                        continue
+                    path = os.path.join(root, fn)
+                    # ⚠ 이 파일 자신은 뺀다 — 사본을 찾으려고 이름을 적어 두었을 뿐이다
+                    if os.path.abspath(path) in (
+                        os.path.abspath(LINE_KEY),
+                        os.path.abspath(__file__),
+                    ):
+                        continue
+                    with open(path, encoding="utf-8", errors="replace") as f:
+                        src = f.read()
+                    if "_NEUTRAL" in src or "\ndef neutral(" in src:
+                        bad.append(os.path.relpath(path, REPO))
+        assert not bad, "중립화 표 사본이 있다 — `shared/text/line_key` 에 위임해라: " + str(bad)
+
+    def test_dumper_escapes_are_unfolded(self):
+        """🔴 덤퍼가 안 편 `\\xNN` 을 열쇠가 편다 — 안 펴면 물음표가 든 줄이 통째로 안 붙는다.
+
+        실측 2026-08-29: 새턴의 「저본 없음」 781줄 중 403이 PS1 과 같은 줄이었고, 그중
+        384는 사전에 우리 문안이 이미 있었다. `\\x21`(`!`)만 표로 접고 `\\x3F`(`?`)를
+        빠뜨린 탓이다. ⚠ 표로 하나씩 접는 방식이 뿌리다 — **규칙으로 편다.**
+        """
+        ss = "%c\uff30%c\n\u8b01\u898b\u306e\u9593\u3060\u3068 !?%c"  # 새턴 — 진짜 글자
+        ps1 = "{c}\uff30{c}{n}\u8b01\u898b\u306e\u9593\u3060\u3068 \\x21\\x3F{c}"  # PS1
+        self.assertEqual(key(ss), key(ps1), "같은 원문인데 열쇠가 갈린다")
+
+    def test_escape_unfolding_is_a_superset_of_the_old_table(self):
+        """⚠ 기존 열쇠가 안 깨져야 한다 — `\\x21` 은 옛 표로도 새 폄으로도 `!` 다."""
+        self.assertEqual(neutral("\\x21"), "!")
+        self.assertEqual(neutral("\\x25\\x73"), neutral("%s"))
+        self.assertEqual(neutral("\\x25\\x64"), neutral("%d"))
 
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-
-
-def test_dumper_escapes_are_unfolded():
-    """🔴 덤퍼가 안 편 `\\xNN` 을 열쇠가 편다 — 안 펴면 **물음표가 든 줄이 통째로 안 붙는다**.
-
-    실측 2026-08-29: 새턴의 「저본 없음」 781줄 중 403이 PS1 과 같은 줄이었고, 그중 384는
-    사전에 우리 문안이 이미 있었다. `\\x21`(`!`)만 표로 접고 `\\x3F`(`?`)를 빠뜨린 탓이다.
-    ⚠ 표로 하나씩 접는 방식이 이 사고의 뿌리다 — **규칙으로 편다.**
-    """
-    ss = "%c\uff30%c\n\u8b01\u898b\u306e\u9593\u3060\u3068 !?%c"  # 새턴 — 진짜 글자
-    ps1 = "{c}\uff30{c}{n}\u8b01\u898b\u306e\u9593\u3060\u3068 \\x21\\x3F{c}"  # PS1 — 이스케이프
-    assert key(ss) == key(ps1), "같은 원문인데 열쇠가 갈린다"
-
-
-def test_escape_unfolding_is_a_superset_of_the_old_table():
-    """⚠ 기존 열쇠가 안 깨져야 한다 — `\\x21` 은 옛 표로도 새 폄으로도 `!` 다."""
-    assert neutral("\\x21") == "!"
-    assert neutral("\\x25\\x73") == neutral("%s")
-    assert neutral("\\x25\\x64") == neutral("%d")
