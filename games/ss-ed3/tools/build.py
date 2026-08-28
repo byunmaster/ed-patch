@@ -37,7 +37,7 @@ import reinsert_sys as RS
 from shared.disc import mode1
 
 # 우리가 건드린다고 선언한 것 — 이 밖은 원본과 바이트 동일해야 한다
-TOUCHED = ("/SYSTEM/KANJI12.FON",)
+TOUCHED = ("/SYSTEM/KANJI12.FON", "/SYSTEM/ASCII.FON")
 
 
 def out_paths(disc):
@@ -76,10 +76,11 @@ def build_one(a_disc):
         print(f"[1/5] 원본 사본 → {os.path.basename(dst)}")
         shutil.copyfile(C.DISC_BIN[a.disc], dst)
 
-        print("[2/5] 폰트 — 한글 글리프 주입")
+        print("[2/5] 폰트 — 한글 글리프 주입 + 반각 부호 여백")
         fon, missing = build_font.build(a.disc)
         if missing:
             raise SystemExit(f"글리프가 없는 글자 {len(missing)}: {''.join(missing[:20])}")
+        asc, npad = build_font.build_ascii(a.disc)
 
         table = H.load()
         touched_lbas = []
@@ -90,6 +91,11 @@ def build_one(a_disc):
                     assert len(fon) == size, (len(fon), size)
                     mode1.write_at(f, lba, size, 0, fon, label=name)
                     touched_lbas.append((name, lba, size))
+                elif name == "/SYSTEM/ASCII.FON":
+                    assert len(asc) == size, (len(asc), size)
+                    mode1.write_at(f, lba, size, 0, asc, label=name)
+                    touched_lbas.append((name, lba, size))
+                    print(f"      반각 여백 {npad}자 ({''.join(build_font.ASCII_PAD)})")
 
             print("[3/5] 문안 재삽입 (길이 보존)")
             done = nsys = ndesc = nbook = ngfx = nname = 0

@@ -1,4 +1,6 @@
-"""`KANJI12.FON` 에 한글 글리프를 굽는다 — 크기 불변, 안 쓰는 슬롯만 덮는다.
+"""폰트 두 벌을 굽는다 — `KANJI12.FON` 에 한글, `ASCII.FON` 에 반각 부호 여백.
+
+크기는 둘 다 불변이고, 덮는 자리는 정본(`hangul_map.json`)과 아래 `ASCII_PAD` 뿐이다.
 
     python3 games/ss-ed3/tools/build_font.py            # work/derived/KANJI12.FON
     python3 games/ss-ed3/tools/build_font.py --preview 가한글
@@ -27,6 +29,7 @@ import hangul_map as H
 from shared import fonts
 
 OUT = os.path.join(C.OUT_DIR, "KANJI12.FON")
+OUT_ASCII = os.path.join(C.OUT_DIR, "ASCII.FON")
 DY = -2  # 🔴 **한 줄 내린다** — 원본은 0~10 행인데 우리는 1~11 행에 앉힌다.
 #   창이 **첫 줄의 0 행을 자른다**(유저가 스탯 창에서 짚었다 2026-08-27). 원본도 같이
 #   잘리지만 티가 안 난다 — `攻` 의 0 행은 **1 픽셀**인데 `공` 의 0 행은 **9 픽셀**(ㄱ 의
@@ -41,6 +44,35 @@ DX = 1  # 🔴 **왼쪽으로 한 칸 붙어 있던 걸 띄운다.**
 #   **잘린 것처럼 보인다**(유저가 스탯 창에서 짚었다). 오른쪽 여백은 1 칸이 46% ·
 #   2 칸이 54% 라 **한 칸 밀어도 잘리지 않는다.**
 #   ⚠ 슬롯 배정(`hangul_map.json`)은 안 건드리므로 이미 넣은 문안이 안 깨진다.
+
+
+# 반각 부호에 **좌우 여백**을 준다 — 열 만큼 오른쪽으로 민다.
+#   🔴 원본 반각은 전부 **열 0~4 왼쪽 붙임**이라(`font.ASCII_*` 주석) `.`·`,` 처럼 잉크가
+#     열 0~1 인 글자는 **왼쪽 여백이 0** 이다. 원문 대사는 반각을 한 자도 안 써서
+#     (`docs/status.md`) 이 자리가 여태 안 드러났는데, 우리는 문장부호를 한국식 반각으로
+#     쓰기 시작하면서 「`.` 이 앞 글자에 붙는다」가 됐다(유저 실측 2026-08-27).
+#   advance 가 6px 이니 2px 밀면 **좌 2 · 우 2** 로 대칭이 된다. 점 사이 간격(4px)은
+#   셀 폭이 정하는 것이라 안 변한다 — `...` 의 모양은 그대로고 양 끝만 떨어진다.
+ASCII_PAD = {".": 2, ",": 2}
+
+
+def pad_ascii(asc, pad=None):
+    """`(새 bytes, 민 글자 수)` — 크기 불변. 잉크가 advance 밖으로 나가면 단언에 걸린다."""
+    pad = ASCII_PAD if pad is None else pad
+    out = bytearray(asc)
+    n = 0
+    for ch, dx in pad.items():
+        code = ord(ch)
+        cols = F.ascii_cols(asc, code)
+        assert cols, ch
+        assert max(cols) + dx < F.ASCII_ADV, (ch, cols, dx)  # advance 밖으로 밀지 않는다
+        g = asc[code * F.ASCII_STRIDE : (code + 1) * F.ASCII_STRIDE]
+        out[code * F.ASCII_STRIDE : (code + 1) * F.ASCII_STRIDE] = shift_right(
+            g, F.ASCII_CELL, F.ASCII_ROWS, F.ASCII_STRIDE, dx
+        )
+        n += 1
+    assert len(out) == len(asc), (len(out), len(asc))
+    return bytes(out), n
 
 
 def shift_right(g, width, rows, stride, dx=DX):
@@ -71,6 +103,12 @@ def build(disc=1):
     return bytes(out), missing
 
 
+def build_ascii(disc=1):
+    """`(새 ASCII.FON bytes, 민 글자 수)`."""
+    _, asc = F.load(disc)
+    return pad_ascii(asc)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--disc", type=int, default=1, choices=C.DISCS)
@@ -78,6 +116,7 @@ def main():
     a = ap.parse_args()
 
     data, missing = build(a.disc)
+    asc, npad = build_ascii(a.disc)
     if a.preview:
         table = H.load()
         rows = [F.unpack(data, table[ch]) for ch in a.preview]
@@ -87,7 +126,10 @@ def main():
     os.makedirs(C.OUT_DIR, exist_ok=True)
     with open(OUT, "wb") as f:
         f.write(data)
+    with open(OUT_ASCII, "wb") as f:
+        f.write(asc)
     print(f"한글 {len(H.load()):,}자 주입 · 크기 {len(data):,}B (불변) → {OUT}")
+    print(f"반각 여백 {npad}자({''.join(ASCII_PAD)}) · 크기 {len(asc):,}B (불변) → {OUT_ASCII}")
     if missing:
         print(f"⚠ 글리프가 없는 글자 {len(missing)}: {''.join(missing[:20])}")
         raise SystemExit(1)

@@ -5,7 +5,10 @@
     /SYSTEM/KANJI12.FON  140,544B = **7,808 글리프 × 18B**
                          12행 × 12비트를 **바이트 경계에 안 맞추고 밀착 패킹**(144비트)
                          색인 = `(구-1)*94 + (점-1)` — JIS X 0208 순차
-    /SYSTEM/ASCII.FON      4,096B = 256 × 16B (8×16) — 반각, 평문
+    /SYSTEM/ASCII.FON      4,096B = **341 글리프 × 12B**(8×12) — 반각, 평문
+                         색인 = **문자 코드 그대로**(`ord`), 행마다 1바이트
+                         ⚠ 예전 주석의 「256 × 16B (8×16)」은 **오진**이었다(2026-08-28).
+                         stride 16 으로 읽으면 어긋나 `A` 가 `W` 로 그려진다.
 
 🔴 **「압축 추정」은 오진이었다.** 루트 `docs/ports-survey.md` 의 첫 측정이 stride
    22/24/32/48 만 보고 18 을 안 봤다. あ·い·ア·亜·一 을 렌더해 확인했고, 그래서 ED3 의
@@ -32,6 +35,31 @@ ROWS = 12
 CELL = 12  # 실제 획 폭(비트)
 GLYPHS = 7808  # 140,544 / 18
 KANJI_KU = 16  # JIS 1급 한자가 시작하는 구
+
+# 반각(ASCII.FON) — 셀은 8비트인데 **화면 advance 는 6px**(전각의 0.5칸, 실기 확정).
+#   그래서 글자는 전부 **열 0~4 에 왼쪽 붙임**으로 그려져 있고 열 5 하나가 자간이다
+#   (실측 2026-08-28: 열 4 까지 쓰는 글자 75 · 열 5 까지는 `#` 하나뿐).
+ASCII_STRIDE = 12
+ASCII_ROWS = 12
+ASCII_CELL = 8  # 셀 폭(비트) — 그리는 자리는 앞 6칸뿐이다
+ASCII_ADV = 6  # 실제 advance
+ASCII_GLYPHS = 341
+
+
+def ascii_unpack(asc, code):
+    """반각 글리프 → `(12, 8)` 0/1 배열. 색인은 **문자 코드 그대로**다."""
+    g = asc[code * ASCII_STRIDE : (code + 1) * ASCII_STRIDE]
+    return np.unpackbits(np.frombuffer(g, dtype=np.uint8)).reshape(ASCII_ROWS, ASCII_CELL)
+
+
+def ascii_render(asc, code, on="█", off="·"):
+    return ["".join(on if v else off for v in row) for row in ascii_unpack(asc, code)]
+
+
+def ascii_cols(asc, code):
+    """잉크가 든 열 목록 — 여백을 재는 자리다."""
+    a = ascii_unpack(asc, code)
+    return [c for c in range(ASCII_CELL) if a[:, c].any()]
 
 
 def jis_index(ch):
@@ -137,7 +165,7 @@ def free_slots(used=None):
 def main():
     fon, asc = load()
     print(f"KANJI12 {len(fon):,}B = {len(fon) // STRIDE:,} 글리프 × {STRIDE}B")
-    print(f"ASCII   {len(asc):,}B = {len(asc) // 16} 글리프 × 16B (8×16)")
+    print(f"ASCII   {len(asc):,}B = {len(asc) // ASCII_STRIDE} 글리프 × {ASCII_STRIDE}B (8×12)")
     blank = sum(1 for i in range(GLYPHS) if is_blank(fon, i))
     print(f"빈 글리프 {blank:,} / {GLYPHS:,}  (← 자리는 여기서 못 고른다)")
     used = used_indices()
