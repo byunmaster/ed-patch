@@ -255,7 +255,15 @@ def encode_text(s, char=None):
             out.append(CTRL_PAGE)
         elif "0" <= c <= "9":
             out.append(ord(c))
-        elif c == "<" and i + 3 < len(s) and s[i + 3] == ">":
+        elif (
+            c == "<"
+            and i + 3 < len(s)
+            and s[i + 3] == ">"
+            #   ⚠ **16진 두 자리일 때만** 이스케이프로 읽는다. 그냥 `<두 글자>` 로 보면
+            #     `<추가>` 같은 우리 문안이 `int("추가", 16)` 에서 죽는다(에이전트 실측
+            #     2026-08-28 — `<덧붙임>` 으로 피해 갔다). 표제·말머리에 꺾쇠를 쓸 수 있어야 한다.
+            and all(x in "0123456789abcdefABCDEF" for x in s[i + 1 : i + 3])
+        ):
             out.append(int(s[i + 1 : i + 3], 16))
             i += 4
             continue
