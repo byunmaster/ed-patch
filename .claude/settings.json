@@ -1,4 +1,29 @@
 {
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "레트로 게임 한글패치 저장소다. 파이썬은 저장소 루트의 `.venv` 로 실행한다(시스템 python3 아님).",
+      "게임 작업은 `.claude/worktrees/<게임>` 워크트리에서 돈다 — 워크트리가 여럿이라 상대경로를 쓰면 남의 브랜치를 고친다. 절대경로를 쓴다.",
+      "커밋 전 게이트는 `sh scripts/check.sh` 하나다. 빌드까지 돌아 2분 남짓 걸리니 백그라운드로 돌린다.",
+      "빌드 산출물은 수백 MB 짜리 디스크 이미지이고 `games/<게임>/work/build/<브랜치꼬리표>/` 아래에만 둔다.",
+      "인게임 확인은 사람이 한다. 기계로 닫을 수 있는 축을 먼저 다 닫고 넘긴다."
+    ],
+    "hard_deny": [
+      "$defaults",
+      "`originals/` 아래에 쓰거나 지우는 것 — 소장자가 제공한 원본이고 모든 트랙에서 읽기 전용이다.",
+      "원본 게임 데이터를 커밋하는 것 — 디스크 이미지(*.bin/*.cue/*.iso), BIOS, 에뮬레이터 바이너리, `originals/` `work/` `vendor/` `.emucap/` 아래의 것.",
+      "`work/review/` 를 커밋하는 것 — 원문과 정발 문안이 들어 있다(저작권).",
+      "`vendor/` 를 고치는 것 — 읽기 전용 서드파티 서브레포다. 빌드해서 도구로만 쓴다."
+    ],
+    "soft_deny": [
+      "$defaults",
+      "`git push` — 릴리스는 사람이 직접 한다.",
+      "`.local/` 아래의 파일을 지우는 것 — 사람이 넣어 둔 자료가 섞여 있고 되돌릴 수 없다(실제로 유저 공략본을 날린 적이 있다).",
+      "`games/*/work/derived/` 를 지우는 것 — 산출물처럼 보이지만 **빌드가 읽는 입력**이라 지우면 빌드가 아예 안 돈다.",
+      "게임 브랜치(`game/*`)에서 `shared/` 나 `scripts/` 의 **코드**를 고치는 것 — 다른 게임의 조판이 조용히 바뀐다. main 에 먼저 넣고 받아 온다. (`docs/`·`CLAUDE.md`·`.claude/`·`shared/glossary/` 는 브랜치에서 고쳐도 된다.)",
+      "확정 락·조판 지문·배정 정본(`locked_lines.json`·`typeset_fingerprint.json`·`align_map.json`)을 사람 확인 없이 갱신하는 것 — 검증기를 갱신기로 쓰는 꼴이 된다."
+    ]
+  },
   "enabledPlugins": {
     "create-kr-patch@kr-patch": true,
     "kr-patch-qa@kr-patch-qa": true
