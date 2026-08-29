@@ -11,6 +11,9 @@
 #   줄 모양을 바꾸려면 부르기 전에 SELECT_RENDER 에 함수 이름을 넣는다:
 #     SELECT_RENDER=my_row   # my_row <번호> <항목> <선택됨?0|1>
 #   커서를 처음부터 특정 줄에 놓으려면 SELECT_INDEX (1-based).
+#   고르고 나서 남기는 **한 줄 요약**(`게임: ss-ed3`)이 필요 없으면 SELECT_QUIET=1.
+#     ⚠ 요약이 기본인 이유는 목록을 지우고 나면 **뭘 골랐는지가 화면에서 사라지기** 때문이다.
+#       부르는 쪽이 곧바로 같은 걸 다시 찍는다면(pull-build 의 결과 표) 그때만 끈다.
 #
 # ── 왜 zsh 판을 그대로 안 쓰나 ───────────────────────────────────────────────
 # 원본은 `sellernote-infra/scripts/lib/select.sh`(zsh) 이고 연출은 그걸 따랐다 — ❯ 마커,
@@ -147,7 +150,7 @@ select_option() {
   for _it in "$@"; do
     _i=$((_i + 1))
     if [ "$_i" = "$_ssel" ]; then
-      printf '%s: \033[36m%s\033[0m\n' "$_sp" "$_it" >/dev/tty
+      [ "${SELECT_QUIET:-0}" = 1 ] || printf '%s: \033[36m%s\033[0m\n' "$_sp" "$_it" >/dev/tty
       printf '%s' "$_it"
       return 0
     fi
@@ -250,7 +253,7 @@ select_multi() {
     case "$_chk" in *" $_i "*)
       printf '%s\n' "$_it"
       _n=$((_n + 1))
-      printf '%s: \033[36m%s\033[0m\n' "$_sp" "$_it" >/dev/tty ;;
+      [ "${SELECT_QUIET:-0}" = 1 ] || printf '%s: \033[36m%s\033[0m\n' "$_sp" "$_it" >/dev/tty ;;
     esac
   done
   [ "$_n" -gt 0 ] || return 1
