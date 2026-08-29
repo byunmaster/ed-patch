@@ -1128,6 +1128,35 @@ HANG_TAIL = ".,!?)\"'"
 # 조판기가 내보낸 줄을 엔진이 또 꺾으면 되레 나빠진다. 어긋나면 회귀 테스트가 잡는다.
 HANG_SLOTS = 0.5
 
+# 창 틀을 꽉 채운 줄 뒤에는 **우리 개행을 넣지 않는다** (유저 확정 2026-08-30).
+# 🔴 온점 매달기가 만든 회귀다. 매달기 전엔 줄이 최대 `WRAP`(=28열)이라 29열이 늘 비어
+#    있었는데, 꼬리 부호를 29열에 앉히면서 줄이 **틀을 꽉 채우게** 됐다. 꽉 찬 줄에서는
+#    **엔진이 스스로 줄을 넘기므로** 우리 개행이 얹히면 빈 줄이 된다
+#    (유저 QA 2026-08-30 `게일`·`대도 게일` 창 · 정적 실측 122곳, 전부 매달린 꼬리였다).
+# ⚠ 08-28 에 30열을 닫아(`patch_hang_punct.OVER=0`) 대부분 없앴지만 **정확히 29열**인
+#    경우가 남았다. 그땐 매달린 줄이 드물어 화면에 안 드러났다 — 같은 사고의 잔여다.
+# ⚠ 판정을 폭만으로 하지 않고 **꼬리가 매달린 반각 부호인가**까지 본다. 14.5슬롯에 닿는
+#    길이 그것뿐이고(실측 100%), 센티널이 우연히 그 폭이 되는 자리를 배제한다.
+FRAME_SLOTS = WRAP + HANG_SLOTS  # 14.5슬롯 = 29열 = 창 틀
+
+
+def _fills_frame(ln):
+    """이 줄이 창 틀을 꽉 채우는가 — 그렇다면 엔진이 알아서 줄을 넘긴다."""
+    t = ln.rstrip()
+    if not t or t[-1] not in HANG_TAIL or cell_w(t[-1]) != 0.5:
+        return False
+    return abs(sum(cell_w(c) for c in ln) - FRAME_SLOTS) < 1e-9
+
+
+def join_lines(lines):
+    """페이지의 줄들을 잇는다 — 틀을 꽉 채운 줄 뒤에는 개행을 빼고 잇는다."""
+    out = []
+    for i, ln in enumerate(lines):
+        if i and not _fills_frame(lines[i - 1]):
+            out.append("\n")
+        out.append(ln)
+    return "".join(out)
+
 
 def _hang_merge(pages, width, protect):
     """온점 매달기 — 꼬리 부호 하나 때문에 갈린 줄을 도로 붙인다.
@@ -2050,7 +2079,7 @@ def build_from_template(
                 pass
             elif k in nl_wins or seg and seg[0][0] == "nl" and k > 0 and wins[k - 1][0] == "name":
                 b += b"\x0a"
-            b += encode_ext("\n".join(chunks[k]))
+            b += encode_ext(join_lines(chunks[k]))
             if k in nl_after:  # 창 뒤 개행(다음이 인라인 이름 창일 때 원본 레이아웃 복원)
                 b += b"\x0a"
             folded_prev = False
@@ -2127,18 +2156,18 @@ def build_block(speaker, pages, target=None, header=True, hdr_fmt=False, inline_
             # 넘친 것**이니 그 문안을 줄이면 풀린다.
             WINDOW_REFIT.append((target, len(authored)))
         if len(authored) == target:
-            parts = [encode_ext("\n".join(lines)) for lines in authored]
+            parts = [encode_ext(join_lines(lines)) for lines in authored]
         else:
             text = "\n".join(pg for _, pg in pages)  # {p} 경계 → 개행(정발 호흡 힌트)
             parts = [
-                encode_ext("\n".join(lines))
+                encode_ext(join_lines(lines))
                 for lines in wrap_page(text, target=target, max_lines=body_lines)
             ]
     else:
         parts = []
         for inline_spk, page in pages:
             for j, lines in enumerate(wrap_page(page, max_lines=body_lines)):
-                seg = encode_ext("\n".join(lines))
+                seg = encode_ext(join_lines(lines))
                 if j == 0 and inline_spk:
                     seg = MC + encode_ext(inline_spk) + MC + b"\x0a" + seg
                 parts.append(seg)

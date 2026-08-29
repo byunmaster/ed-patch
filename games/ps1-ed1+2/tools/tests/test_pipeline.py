@@ -1268,8 +1268,6 @@ def test_josa_shift_leaves_no_stale_tail():
     assert n <= 504, f"josa 루틴이 {n}B 로 늘었다 — VAB 파형 여유가 4B 뿐이다"
 
 
-
-
 # ── 온점 매달기 훅 — 조립된 바이트를 실제로 돌려 판정표와 대조한다 ──────────────
 # ⚠ 파이썬 모델만 맞고 **인코딩이 틀리면 통과해버리는** 구멍을 막는다(조사 훅과 같은 이유).
 def _run_prewrap_stub(col, ch, nxt):
@@ -1290,7 +1288,14 @@ def _run_prewrap_stub(col, ch, nxt):
         steps += 1
         assert steps < 500, "무한 루프"
         w = struct.unpack_from("<I", code, pc - BASE)[0]
-        op, rs, rt, rd, sh, fn = w >> 26, (w >> 21) & 31, (w >> 16) & 31, (w >> 11) & 31, (w >> 6) & 31, w & 63
+        op, rs, rt, rd, sh, fn = (
+            w >> 26,
+            (w >> 21) & 31,
+            (w >> 16) & 31,
+            (w >> 11) & 31,
+            (w >> 6) & 31,
+            w & 63,
+        )
         imm = w & 0xFFFF
         simm = imm - 0x10000 if imm >= 0x8000 else imm
         nxt_pc, target = pc + 4, None
@@ -1382,6 +1387,27 @@ def test_hang_punct_stub_decision_table():
         got = _run_prewrap_stub(col, ch, nxt)
         assert got == want, f"열 {col} 0x{ch:02X}→0x{nxt:02X}: {got} != {want} — {why}"
 
+
+def test_frame_full_line_drops_our_newline():
+    """틀을 꽉 채운 줄 뒤에는 **우리 개행을 안 넣는다** — 넣으면 화면에 빈 줄이 생긴다.
+
+    🔴 온점 매달기의 회귀다(유저 QA 2026-08-30 `게일` 창). 매달기 전엔 줄이 최대
+    `WRAP`(=28열)이라 29열이 늘 비었는데, 꼬리 부호를 29열에 앉히면서 줄이 틀을 꽉 채우게
+    됐다. 꽉 찬 줄에서는 **엔진이 스스로 줄을 넘기므로** 우리 개행이 얹히면 두 번 넘어간다.
+    정적 실측 122곳이었고 전부 매달린 꼬리로 끝났다.
+    """
+    full = "그런 놈들한테 맡길 순 없잖아."  # 14.5슬롯 = 29열
+    assert abs(sum(R.cell_w(c) for c in full) - R.FRAME_SLOTS) < 1e-9, "예시가 틀을 안 채운다"
+    assert R._fills_frame(full)
+    assert R.join_lines([full, "우리가 모셔다 드리지."]) == full + "우리가 모셔다 드리지."
+
+    # ⚠ 안 찬 줄은 그대로 개행으로 잇는다
+    short = "짧은 줄."
+    assert not R._fills_frame(short)
+    assert R.join_lines([short, "다음 줄."]) == short + "\n다음 줄."
+
+    # ⚠ 폭만 보지 않는다 — 꼬리가 매달린 반각 부호일 때만이다(센티널 오판 방지)
+    assert not R._fills_frame("가" * 14 + "나"[:0] + "가")  # 전각만으로는 14.5가 안 된다
 
 
 if __name__ == "__main__":
