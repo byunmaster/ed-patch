@@ -36,7 +36,7 @@ from collections import Counter
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 from align_map import scene_map
-from common import OUT_DIR, ROOT
+from common import MARKUP, OUT_DIR, ROOT
 from scn_maps import block_maps
 
 SIM = 0.72  # 사본 간 문장 유사도 문턱 — 사본끼리는 어투만 달라 매우 높게 나온다
@@ -47,7 +47,9 @@ PREFIX_MIN = 10  # 공통 접두 최소 글자
 PREFIX_FRAC = 0.5  # 짧은 쪽 대비 접두 비율
 SIM_FLOOR = 0.5  # 접두로 붙일 때의 전체 유사도 하한
 GAP = 6  # eid 가 이만큼 벌어지면 다른 인스턴스 구간으로 본다
-_STRIP = re.compile(r"\{[^}]*\}|\\x[0-9A-Fa-f]{2}")
+# 마크업 한 벌은 **`common.MARKUP` 이 정본**이다 — 사본을 두면 조용히 갈린다
+# (2026-08-29 통합: 여섯 파일 중 둘이 대문자 헥스만 봤다).
+_STRIP = MARKUP
 _NORM = re.compile(r"[\s.,!?~…·\-'\"]+")
 
 

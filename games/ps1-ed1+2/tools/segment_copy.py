@@ -37,7 +37,7 @@ import sys
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 from align_map import scene_map
-from common import OUT_DIR, REVIEW_DIR, ROOT
+from common import MARKUP, OUT_DIR, REVIEW_DIR, ROOT
 from scn_maps import _anchors, segments, table_maps
 
 SEG_TABLES = os.path.join(ROOT, "segment_tables.json")
@@ -48,7 +48,9 @@ PIN_SHARE = 0.6  # 확신 세그먼트 최소 점유율
 HEAD = 10  # 머리글 비교 길이
 HEAD_SIM = 0.45  # 머리글 최소 유사도 — 이보다 낮으면 사본 짝으로 안 본다
 SIM = 0.62  # 사본 간 엔트리 대응 문턱 — 사본끼리는 어투만 달라 높게 나온다
-_STRIP = re.compile(r"\{[^}]*\}|\\x[0-9A-Fa-f]{2}")
+# 마크업 한 벌은 **`common.MARKUP` 이 정본**이다 — 사본을 두면 조용히 갈린다
+# (2026-08-29 통합: 여섯 파일 중 둘이 대문자 헥스만 봤다).
+_STRIP = MARKUP
 _NORM = re.compile(r"[\s.,!?~…·\-'\"]+")
 _SCENES = tuple(range(1, 7))
 # ⚠ 화자 태그는 **문안이 아니다.** 정발은 같은 대사를 파일마다 화자를 붙이거나 뺀 채 써 두는데

@@ -194,7 +194,7 @@ if __name__ == "__main__":
     for s in scenes:
         rows = propose(s) + (twins(s) if "--twins" in a else [])
         if not rows:
-            print(f"{s}: 뻗을 자리 없음 — 앵커가 없다(먼저 `ed2_align_review.py` 로 찍는다)")
+            print(f"{s}: 뻗을 자리 없음 — 앵커가 없다(먼저 `past_ed2_align_review.py` 로 찍는다)")
             continue
         report(s, rows, verbose="--check" in a)
         if "--apply" in a:

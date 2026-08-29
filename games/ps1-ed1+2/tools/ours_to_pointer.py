@@ -31,11 +31,13 @@ import sys
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R
-from common import OUT_DIR, ROOT
+from common import MARKUP, OUT_DIR, ROOT
 from scn_maps import block_maps, table_maps
 
 OV_PATH = os.path.join(ROOT, "align_overrides.json")
-_STRIP = re.compile(r"\{[^}]*\}|\\x[0-9A-Fa-f]{2}")
+# 마크업 한 벌은 **`common.MARKUP` 이 정본**이다 — 사본을 두면 조용히 갈린다
+# (2026-08-29 통합: 여섯 파일 중 둘이 대문자 헥스만 봤다).
+_STRIP = MARKUP
 _NORM = re.compile(r"[\s.,!?~…·\-'\"]+")
 
 

@@ -25,7 +25,7 @@ import os
 import re
 import sys
 
-from common import OUT_DIR, ROOT
+from common import MARKUP, OUT_DIR, ROOT
 
 SCN_JP_DIR = os.path.join(OUT_DIR, "scn_jp")
 DOS_KR_DIR = os.path.join(OUT_DIR, "dos_kr")
@@ -416,7 +416,9 @@ def build_speaker_map(jp_speakers, kr_speakers):
 
 
 # ── 블록 로드·시그니처 ──────────────────────────────────────────────────────
-TAG = re.compile(r"\{[^}]*\}|\\x[0-9A-F]{2}")
+# 마크업 한 벌은 **`common.MARKUP` 이 정본**이다 — 사본을 두면 조용히 갈린다
+# (2026-08-29 통합: 여섯 파일 중 둘이 대문자 헥스만 봤다).
+TAG = MARKUP
 JP_SPK = re.compile(r"^\{c\}(.*?)\{c\}")
 DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
 

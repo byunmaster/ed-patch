@@ -20,7 +20,7 @@ import json
 import os
 import re
 
-from common import OUT_DIR, REVIEW_DIR
+from common import MARKUP, OUT_DIR, REVIEW_DIR
 
 ALIGN_DIR = os.path.join(OUT_DIR, "align")
 SCN_JP_DIR = os.path.join(OUT_DIR, "scn_jp")
@@ -42,7 +42,9 @@ AXES = [
     ("귀가", ("帰って", "戻って"), ("돌아오", "귀가")),
 ]
 CJK = re.compile(r"[぀-ヿ一-鿿]")
-TAG = re.compile(r"\{[^}]*\}|\\x[0-9A-F]{2}")
+# 마크업 한 벌은 **`common.MARKUP` 이 정본**이다 — 사본을 두면 조용히 갈린다
+# (2026-08-29 통합: 여섯 파일 중 둘이 대문자 헥스만 봤다).
+TAG = MARKUP
 DIGITS_Z = str.maketrans("０１２３４５６７８９", "0123456789")
 
 

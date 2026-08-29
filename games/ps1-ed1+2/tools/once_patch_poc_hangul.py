@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 DST = os.path.join(BUILD_DIR, "Eiyuu Densetsu (PoC Hangul).bin")
 DST_CUE = os.path.join(BUILD_DIR, "Eiyuu Densetsu (PoC Hangul).cue")
 
-# あ 글리프의 (EXE LBA, EXE 내 파일 오프셋) — hunt_font_in_ram.py 결과
+# あ 글리프의 (EXE LBA, EXE 내 파일 오프셋) — once_hunt_font_in_ram.py 결과
 TARGETS = [
     ("ED.EXE", 257, 0xE35AC),
     ("ED2.EXE", 756, 0xBEF44),
