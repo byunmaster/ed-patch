@@ -146,6 +146,28 @@ def _tm_path(cls):
     return os.path.join(os.path.dirname(__file__), "..", "textmap", f"{cls}.json")
 
 
+# 🔴 **0런을 「0으로 차 있다」로 믿지 않는다 — 구조로 확인한다.**
+# 이 레포는 그 근거로 두 번 물렸다: 사운드 뱅크 VAB(0런이 파형 첫 무음 블록이라 효과음이
+# 조용히 깨졌다) · 새턴 세션 2026-08-30(「필드·전투를 도는 동안 쓰기 0건」으로 잡은 자리가
+# **프롤로그에서는 살아 있는 오버레이 코드**였다 — 게이트는 전부 초록이었고 화면만 죽었다).
+# ⇒ 「안 쓰는 걸 봤다」는 **「아직 안 봤다」와 구별이 안 된다.** 자리는 구조로만 얻는다.
+#
+# 실측(2026-08-30, OPEN1·OPEN2·END1·END2 **넷 다 동일**): 이 0런은 문자열 풀 끝과 포인터 표
+# 사이의 틈이다 — `[… "All Rights Reserved."][0런 4,203B][RAM 포인터 표(0x8001…)]`.
+# 그 양끝을 확인해 「가장 긴 0런」이 엉뚱한 데를 짚는 경우를 막는다.
+_RUN_HEAD = b"All Rights Reserved."
+
+
+def _verify_run_structure(buf, off, ln):
+    """고른 0런이 **문자열 풀과 포인터 표 사이**인지 확인한다(위 주석)."""
+    head = bytes(buf[off - len(_RUN_HEAD) : off])
+    assert head == _RUN_HEAD, f"0런 앞이 문자열 풀이 아니다 @0x{off:X}: {head!r}"
+    nxt = int.from_bytes(bytes(buf[off + ln : off + ln + 4]), "little")
+    assert 0x80010000 <= nxt < 0x80200000, (
+        f"0런 뒤가 포인터 표가 아니다 @0x{off + ln:X}: {nxt:#010x}"
+    )
+
+
 def game_cfg(name):
     """게임 설정 + 도출 앵커. OPEN1 은 하드코딩 값과 대조해 도출기를 검증한다."""
     import check_movie_anchors as A
@@ -161,6 +183,7 @@ def game_cfg(name):
             if k in a:  # `stub`·`font` 는 도출값이 아니라 0런 상대 위치로 잡는다(아래)
                 assert a[k] == v, f"앵커 도출 실패 {k}: {a[k]:X} != {v:X}"
     run_off, run_len = a["zero_run"]
+    _verify_run_structure(buf, run_off, run_len)
     g.update(a)
     g["stub_off"] = run_off + STUB_REL
     g["font_off"] = run_off + FONT_REL
