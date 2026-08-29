@@ -230,5 +230,71 @@ class Scn(unittest.TestCase):
                     self.assertLessEqual(o2 - (o1 + n1), S.MAX_GAP, f"{path} 0x{o1:X}")
 
 
+class NameRules(unittest.TestCase):
+    """🔴 **이름 규칙은 `names.py` 한 곳이다** — 사본이 생기면 조용히 갈린다.
+
+    실측 2026-08-29에 셋이 갈려 있었다:
+      · 개체 접미 표가 셋(`Ｇ`~`Ｊ` 를 한쪽만 알았다) → 한 화면만 이름이 붙었다
+      · 대조 정규화가 셋(`＝` 를 한쪽만 뗐다)
+      · `internal_key` 가 `patch_ui` 에만 있어 `patch_scn` 이 **내부 키 19곳을 번역했다**
+
+    ⚠ 「두 구현이 같은 답인가」로 묶으면 **두 곳이 다 보여야** 돌고, 한쪽이 사라지면
+      테스트가 무의미해진다(오늘 main 에서 같은 실패를 고쳤다). 그래서 **사본의 존재
+      자체**를 막는다 — 이건 한 곳만 보여도 돈다.
+    """
+
+    def test_nobody_keeps_a_private_copy(self):
+        import glob
+        import os
+        import re
+
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # 정본이 든 이름과, 「사본이면 반드시 나오는」 표식
+        # ⚠ 표식은 **사본이면 반드시 나오는 관용**으로 잡는다. 처음에 `\\uff66` 로 쟀더니
+        #   `check_glossary` 의 **가타카나 범위 정규식**에 걸렸다 — 그건 사본이 아니다.
+        SIGN = {
+            "MARKS = ": "개체 접미 표",
+            "plan[c][0]": "문안 인코딩 규칙",
+            '<= c <= "\\uff9f"': "내부 키 판정",
+        }
+        bad = []
+        for f in glob.glob(os.path.join(here, "*.py")):
+            if os.path.basename(f) in ("names.py", "font.py"):
+                continue
+            with open(f, encoding="utf-8") as fh:
+                src = fh.read()
+            body = re.sub(r'"""(?:.|\n)*?"""', "", src)  # 주석·독스트링은 뺀다
+            for sign, what in SIGN.items():
+                if sign in body:
+                    bad.append(f"{os.path.basename(f)}: {what}")
+        assert not bad, "이름 규칙 사본이 있다 — `names.py` 에 위임해라: " + str(bad)
+
+    def test_encoders_agree(self):
+        """⚠ 인코더 넷이 같은 답을 내는가 — 감싸는 규칙은 달라도 **글자 하나**는 같다.
+
+        실측 2026-08-29: `plan[c][0] if c in plan else c.encode("cp932")` 가 **일곱 곳**에
+        손으로 적혀 있었다. 지금은 같은 답이지만 한 곳만 바뀌면 표가 다른 인코딩으로
+        깔리고, 그건 **화면에서만** 드러난다.
+        """
+        import font
+        import patch_mon_names
+
+        plan = {"가": (b"\x88\x9f", 0), "나": (b"\x88\xa0", 0)}
+        for t in ("가나", "가A1 나", "ABC"):
+            assert patch_mon_names.encode(t, plan) == font.to_bytes(t, plan), t
+            assert font.byte_len(t) == len(font.to_bytes(t, plan)), t
+
+    def test_delegates_agree(self):
+        """⚠ 위임이 실제로 같은 답을 내는가 — 얇은 껍데기라도 오타는 난다."""
+        import names
+        import patch_scn
+        import patch_ui
+
+        for t in ("ｴﾙｱｽﾀ", "ﾃﾞｽ･ｶﾞｰﾃﾞｨｱﾝＢ", "ｳｲﾙ～城", "くぐつ戦士Ｇ", "エルアスタ", "竜の卵"):
+            assert patch_scn._internal_key(t) == names.internal_key(t), t
+            assert patch_ui._internal_key(t) == names.internal_key(t), t
+            assert patch_ui._nname(t) == names.bare(t), t
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

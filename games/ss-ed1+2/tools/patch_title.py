@@ -26,6 +26,7 @@ import sys
 import common
 import font
 from dump_title import LABELS, PREFIX, _load, runs
+from font import byte_len, to_bytes  # noqa: F401  🔴 인코딩 규칙 정본
 
 TITLE = "/TITLE.BIN"
 BUILD = common.BUILD_DIR  # ⚠ 꼬리표별로 갈린다 — `common.BUILD_TAG`
@@ -219,7 +220,7 @@ def encode(text, width, nbytes, left, plan=None):
     if plan is None:
         body = padded.encode("cp932")
     else:
-        body = b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in padded)
+        body = to_bytes(padded, plan)
     out = (PREFIX + body) if nbytes == len(body) + 2 else body
     assert len(out) == nbytes, f"레코드 {len(out)}B ≠ {nbytes}B: {text!r}"
     return out

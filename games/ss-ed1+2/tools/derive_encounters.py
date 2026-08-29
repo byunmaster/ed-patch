@@ -67,6 +67,7 @@ import common
 import dump_scn
 import expand_files
 from glossary import table
+from names import HALF, MARKS, split_mark  # noqa: F401
 from text.josa import josa
 
 SYS_CANON = os.path.join(common.GAME_DIR, "script", "system.json")
@@ -77,8 +78,6 @@ GROUP = "の群れ" + SUFFIX  # `<이름>の群れが現れた。`
 # 🔴 **개체 접미는 반각으로 낸다** — 원본은 전각(`スライムＡ`)이지만 우리는 반각이다
 #    (유저 방침: 메시지 창의 알파벳은 전부 반각). 덤으로 한 글자에 1B 를 아낀다.
 #    ⚠ 원본에 **반각으로 든 것도 있다**(`ブラムナドッグA`) — 둘 다 받는다.
-MARKS = "ＡＢＣＤＥＦABCDEF"
-HALF = {c: chr(ord(c) - 0xFEE0) if "Ａ" <= c <= "Ｚ" else c for c in MARKS}
 
 
 def targets(path):
@@ -100,18 +99,6 @@ def targets(path):
         except UnicodeDecodeError:
             pass
     return seen
-
-
-def split_mark(jp, mon):
-    """`(KR 이름, 반각 접미)`. 정본에 없으면 `(None, ...)`.
-
-    ⚠ **통짜부터 본다** — `ゴドウィン２世` 처럼 끝 글자가 접미처럼 생긴 이름이 있다.
-    """
-    if jp in mon:
-        return mon[jp], ""
-    if jp and jp[-1] in MARKS and jp[:-1] in mon:
-        return mon[jp[:-1]], HALF[jp[-1]]
-    return None, ""
 
 
 def monster_names(mon):

@@ -167,5 +167,38 @@ def main():
     print(f"게임 루틴 대조: 불일치 {len(bad)} / {KANJI_GLYPHS}")
 
 
+# ── 문안 → 바이트 ─────────────────────────────────────────────────────────────
+# 🔴 **한 줄짜리 규칙인데 네 곳에 손으로 적혀 있었다**(2026-08-29) — `patch_ui.encode` ·
+#    `patch_ui.scn_encode` · `patch_scn._encode` · `patch_mon_names.encode` ·
+#    `patch_title.encode`. 지금은 넷이 같은 답을 내지만(검산했다) **한 곳만 바뀌면 조용히
+#    갈린다** — 표가 다른 인코딩으로 깔리면 화면에서만 드러난다.
+# ⚠ 감싸는 규칙(널·채움·폭 검사)은 자리마다 다르니 그건 각자 둔다. 여기 있는 건 **글자
+#   하나를 어떻게 바이트로 적나** 하나뿐이다.
+
+
+def to_bytes(kr, plan):
+    """우리 문안 → 바이트. 한글은 **슬롯 SJIS**, 나머지는 cp932.
+
+    🔴 한글은 cp932 로 인코딩이 안 된다 — 안 쓰는 글리프 슬롯에 배정하고 **그 슬롯의
+       SJIS 코드**로 적는다(`hangul_map_11kanji.json`, 이 게임의 근간).
+    """
+    return b"".join(plan[c][0] if plan and c in plan else c.encode("cp932") for c in kr)
+
+
+def byte_len(kr):
+    """바이트 수 — 슬롯에 든 글자는 전각 2B, 나머지는 cp932 길이.
+
+    ⚠ `to_bytes` 와 **답이 같아야 한다**(회귀가 본다). 계획 없이도 재려고 근사하는데,
+      슬롯 코드가 전부 2B 라 지금은 정확하다(실측 2026-08-29: 1,120자 전부 2B).
+    """
+    n = 0
+    for ch in kr:
+        try:
+            n += len(ch.encode("cp932"))
+        except UnicodeEncodeError:
+            n += 2
+    return n
+
+
 if __name__ == "__main__":
     main()

@@ -1,5 +1,9 @@
 """덤프한 텍스트를 「무엇을 번역해야 하나」 관점으로 집계한다.
 
+⛔ **끝난 1회성 조사다**(`done_` 접두). 「무엇을 번역해야 하나」는 지금
+   `scan_untranslated.py`(빌드에 남은 일본어)와 `translate_payload.py`(번역 대상)가
+   답한다 — 그 둘이 소유권·조판 실패까지 보므로 이쪽보다 정확하다.
+
 work/derived/scn_jp/*.json → work/review/inventory.md + inventory.json
 ⚠ 원문을 담으므로 review/ 아래다(커밋 금지).
 
@@ -35,7 +39,10 @@ def cat_of(tid):
 
 def main():
     src = os.path.join(common.OUT_DIR, "scn_jp")
-    docs = [json.load(open(p)) for p in sorted(glob.glob(f"{src}/*.json"))]
+    docs = []
+    for q in sorted(glob.glob(f"{src}/*.json")):
+        with open(q, encoding="utf-8") as fh:
+            docs.append(json.load(fh))
     if not docs:
         raise SystemExit(f"덤프가 없다 — 먼저 dump_scn.py. ({src})")
 

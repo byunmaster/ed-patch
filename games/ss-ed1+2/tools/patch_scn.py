@@ -40,7 +40,6 @@ import os
 import re
 import subprocess
 import sys
-import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(
@@ -88,8 +87,14 @@ MAX_GAP = 8
 
 
 def contract(text):
-    """구조 계약 지문 — `('%c%s%d…' 순서열, 개수)`. 이게 어긋나면 넣지 않는다."""
-    seq = "".join(m.group(0)[1] for m in FMT.finditer(text))
+    """구조 계약 지문 — `('%c%s%d…' 순서열, 개수)`. 이게 어긋나면 넣지 않는다.
+
+    🔴 **규칙은 `typeset_scn` 이 정본이다** — 조판기가 자기 계약을 보는 그 함수와 같아야
+       한다. 여기서 따로 세면 「조판기는 통과시키고 재삽입이 거절하는」 어긋남이 생긴다.
+    """
+    from typeset_scn import contract as seq_of
+
+    seq = seq_of(text)
     return seq, len(seq)
 
 
@@ -359,25 +364,6 @@ def _names():
     return f()
 
 
-_MARK = {chr(0xFF21 + i): chr(65 + i) for i in range(10)}  # 전각 Ａ~Ｊ → 반각
-_TRIM = re.compile(r"[\s\u3000・]")
-
-
-def _bare(s):
-    """이름 대조용 꼴 — **반각 가나를 펴고 공백·중점을 뗀다**.
-
-    🔴 같은 이름이 자리마다 다르게 적혀 있다(실측 2026-08-29). ED2 본체·씬의 몬스터 칸은
-       **반각 가나**에 **폭 맞춤용 공백·중점**이 끼어 있다:
-
-           원문 `ﾃﾞｽ･ｶﾞｰﾃﾞｨｱﾝＢ` · `ｽﾃｨ ﾝｸﾞﾋﾞｰﾄﾙ♀` · `ﾌﾞﾗﾑﾅ ｸｲｰﾝ`
-           정본 `デスガーディアン`   · `スティングビートル♀` · `ブラムナクイーン`
-
-    ⚠ **표를 손으로 들지 않는다** — NFKC 가 반각 가나(탁점 포함)를 편다. 표로 접다가
-      작은 모음(`ｧｨｩｪｫ`)을 빠뜨려 절반이 안 붙었다. 열쇠 규칙에서 배운 것과 같다.
-    """
-    return _TRIM.sub("", unicodedata.normalize("NFKC", s))
-
-
 _NAMEKEY = None
 
 
@@ -390,14 +376,8 @@ def name_keys():
     """
     global _NAMEKEY
     if _NAMEKEY is None:
-        names = _names()
-        bare = {_bare(jp): kr for jp, kr in names.items()}
-        out = {}
-        for jp, kr in names.items():
-            out[line_key(jp)] = kr
-        # 반각·공백 변종을 정본에 붙인다 — 원문 쪽 변종은 이미지에서 찾는다
-        _NAMEKEY = (out, bare)
-    return _NAMEKEY[0]
+        _NAMEKEY = {line_key(jp): kr for jp, kr in _names().items()}
+    return _NAMEKEY
 
 
 def augment_names(canon, mm):
@@ -424,7 +404,12 @@ def augment_names(canon, mm):
             if k in canon or k in add:
                 continue
             kr = name_for(jp)
-            if kr:
+            # 🔴 **반각 가나가 섞인 것은 내부 키다 — 건드리면 자료를 부순다.**
+            #    `patch_ui._internal_key` 가 이미 못 박아 둔 규칙인데 우리가 안 보고
+            #    번역했다(실측 2026-08-29: 19곳. `ｴﾙｱｽﾀ` · `ﾃﾞｽ･ｶﾞｰﾃﾞｨｱﾝＢ` …).
+            #    화면에 나가는 이름은 **원본이 전부 전각**이라, 반각 가나가 하나라도
+            #    섞였으면 그건 코드가 찾는 열쇠다.
+            if kr and not _internal_key(jp):
                 add[k] = kr
     if add:
         canon = dict(canon)
@@ -432,18 +417,22 @@ def augment_names(canon, mm):
     return canon
 
 
+def _internal_key(jp):
+    """**게임 내부 키**인가 — 🔴 규칙은 `names.internal_key` 가 정본이다."""
+    from names import internal_key
+
+    return internal_key(jp)
+
+
 def name_for(jp):
-    """원문 한 덩어리 → 우리 표기. 반각·공백·개체 접미를 흡수한다. 없으면 None."""
-    name_keys()
-    bare = _NAMEKEY[1]
-    w = _bare(jp)
-    if w in bare:
-        return bare[w]
-    if w and (w[-1] in _MARK or w[-1] in "ABCDEFGHIJ♀♂"):
-        base, sfx = w[:-1], _MARK.get(w[-1], w[-1])
-        if base in bare:
-            return bare[base] + sfx
-    return None
+    """원문 한 덩어리 → 우리 표기. 반각·공백·개체 접미를 흡수한다. 없으면 None.
+
+    🔴 규칙은 `names.py` 가 정본이다 — 여기·`patch_mon_names`·`derive_encounters` 가 각자
+       표를 들다 **답이 갈렸다**(2026-08-29). 우리는 조회만 한다.
+    """
+    from names import lookup
+
+    return lookup(jp, _names())
 
 
 SCN_CANON = os.path.join(common.GAME_DIR, "script", "scn.json")
@@ -496,20 +485,13 @@ _PLAN = None
 
 
 def _encode(kr, plan=None):
-    """우리 문안 → 바이트. 한글은 **슬롯 SJIS**, 나머지는 cp932.
+    """우리 문안 → 바이트 — 🔴 규칙은 `font.to_bytes` 가 정본이다.
 
-    🔴 한글은 cp932 로 인코딩이 안 된다 — 안 쓰는 글리프 슬롯에 배정하고 **그 슬롯의
-       SJIS 코드**로 적는다(`hangul_map_11kanji.json`, 이 게임의 근간). `patch_ui` 와
-       **같은 계획**을 써야 폰트와 어긋나지 않는다.
+    ⚠ `patch_ui` 와 **같은 계획**을 써야 폰트와 어긋나지 않는다(계획은 저쪽이 만든다).
     """
-    plan = plan if plan is not None else _PLAN
-    out = bytearray()
-    for c in kr:
-        if plan and c in plan:
-            out += plan[c][0]
-        else:
-            out += c.encode("cp932")
-    return bytes(out)
+    from font import to_bytes
+
+    return to_bytes(kr, plan if plan is not None else _PLAN)
 
 
 # 🔴 **실기로 잰 「본체 안의 빈 자리」**(2026-08-28). `/ED.BIN`·`/ED2.BIN` 은 다음 파일이

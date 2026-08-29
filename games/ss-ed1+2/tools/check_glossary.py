@@ -28,7 +28,6 @@ import collections
 import os
 import re
 import sys
-import unicodedata
 
 sys.path.insert(
     0,
@@ -46,8 +45,10 @@ KATA = re.compile(r"^[\u30a0-\u30ff\u31f0-\u31ff\uff66-\uff9f\u3000 =\uff1d\u30f
 
 
 def fold(s):
-    """반각 가나·중점·등호·공백을 눕힌 꼴 — 같은 이름을 같게 본다."""
-    return unicodedata.normalize("NFKC", s).replace("=", "").replace("\u30fb", "").replace(" ", "")
+    """같은 이름을 같게 보는 꼴 — 🔴 규칙은 `names.bare` 가 정본이다."""
+    from names import bare
+
+    return bare(s)
 
 
 def same_source_split(t):

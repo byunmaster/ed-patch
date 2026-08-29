@@ -24,7 +24,6 @@ import os
 import re
 import shutil
 import sys
-import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(
@@ -41,6 +40,7 @@ import common
 import dump_scn
 import dump_ui
 import font
+from font import byte_len, to_bytes
 from fonts import convert_chars
 from glossary import lookup, table
 
@@ -103,17 +103,13 @@ WIDE_SP = "\u3000"
 
 
 def _internal_key(jp):
-    """**반각 가나가 섞인** 항목 — 게임 내부 키다(화면에 안 나온다).
+    """**게임 내부 키**인가 — 🔴 규칙은 `names.internal_key` 가 정본이다.
 
-    🔴 건드리면 자료를 부순다. 지명 표에 `ｴﾙｱｽﾀ`·`ﾙﾃﾞｨｱT`·`ｲｼｭ/ｲｽ`·`ﾘｭｳE` 처럼 섞여
-       있는데, 글자가 지명처럼 보인다고 번역하면 그 키로 찾는 코드가 못 찾는다.
-    ⚠ 정본에 없으니 `assert kr` 로도 걸리지만, 그러면 **표를 통째로 못 등록한다** —
-      ED2 셋째 묶음(103칸)은 화면 지명과 내부 키가 한 표에 섞여 있다(2026-08-27).
-    ⚠ 두 번 헛짚었다(2026-08-27). 「반각 가나·ASCII 만」으로 재면 `ｲｼｭﾀ～ｲｽﾞｰ` 의 **전각
-      물결**(U+FF5E)에 걸리고, 「전각 가나·한자가 있나」로 재면 `ｳｲﾙ～城` 의 **한자**에 걸린다.
-      화면에 나가는 지명은 **원본이 전부 전각**이므로, 반각 가나가 하나라도 섞였으면 키다.
+    여기에만 있던 탓에 `patch_scn` 이 모르고 내부 키 19곳을 번역했다(2026-08-29).
     """
-    return any("\uff66" <= c <= "\uff9f" for c in jp)
+    from names import internal_key
+
+    return internal_key(jp)
 
 
 def rows():
@@ -402,15 +398,10 @@ def ptr_base(path):
 
 
 def _nname(s):
-    """이름 대조용 정규화 — 반각 가나·중점·공백을 지운다.
+    """이름 대조용 정규화 — 🔴 규칙은 `names.bare` 가 정본이다(셋이 갈려 있었다)."""
+    from names import bare
 
-    ⚠ 표엔 같은 이름이 **반각 가나**(`ｷｬﾘｵﾝ ｸﾛｰﾗｰ`)나 **중점 표기**(`ﾃﾞｽ･ｶﾞｰﾃﾞｨｱﾝ`)로도
-      들어 있다. 정본은 한 꼴만 들고 있으므로 맞출 때만 눕힌다(쓸 때는 원문 그대로 안 쓴다).
-    """
-    t = unicodedata.normalize("NFKC", s)
-    for ch in ("･", "・", " ", "\u3000"):
-        t = t.replace(ch, "")
-    return t
+    return bare(s)
 
 
 def name_canon(what):
@@ -515,11 +506,7 @@ def name_pack(t, plan):
     buf, moves = bytearray(), {}
     for _at, jp, kr, ptrs in t["recs"]:
         new_at = t["off"] + len(buf)
-        body = (
-            b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
-            if kr
-            else jp.encode("cp932")
-        )
+        body = to_bytes(kr, plan) if kr else jp.encode("cp932")
         buf += body + b"\x00"
         if len(buf) & 1:  # 2바이트 정렬 — 원본도 짝수 자리에 깐다
             buf += b"\x00"
@@ -851,7 +838,7 @@ def sys_pack(sysm, ntabs, plan):
         for _p, _l, _s, at, span, pre, kr, ptrs in recs:
             if ptrs and at not in pin:
                 continue
-            blob = pre + b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
+            blob = pre + to_bytes(kr, plan)
             blob += b"\x00"
             assert len(blob) <= span, (
                 f"{path} 0x{at:X}: 포인터가 없어 못 옮기는데 {len(blob)}B > {span}B — "
@@ -880,7 +867,7 @@ def sys_pack(sysm, ntabs, plan):
         #   ⚠ 문안을 줄여 맞추지 않는다 — PS1 도 `이(가) 나타났다.` 라, 여기서만 줄이면
         #     **두 이식판의 표기가 갈린다**(2026-08-27 확인).
         for _p, _l, _s, _at, _span, pre, kr, ptrs in want:
-            blob = pre + b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
+            blob = pre + to_bytes(kr, plan)
             blob += b"\x00"
             # 🔴 **짝수 주소에만 놓는다**(2026-08-28). 이 게임의 어떤 화면은 두 바이트를
             #    한 글자로 **고정**해 읽는다(HUD 지명). 홀수 자리에 놓으면 그 화면에서만
@@ -888,9 +875,7 @@ def sys_pack(sysm, ntabs, plan):
             #    정상인데 HUD 만 깨진다.** 실측: `엘아스타` 가 0x2C6A1 로 가 있었고, 그
             #    포인터 하나가 HUD 조립 루틴의 리터럴 풀(0x44E6C)에 있었다.
             #    ⚠ 홀수는 문안에 **반각이 섞이면** 자연히 생긴다(`전투 직전으로` 13B).
-            i = next(
-                (k for k, (o_, n_) in enumerate(free) if n_ - (o_ & 1) >= len(blob)), None
-            )
+            i = next((k for k, (o_, n_) in enumerate(free) if n_ - (o_ & 1) >= len(blob)), None)
             assert i is not None, f"{path}: 자리가 모자란다 — {kr!r} {len(blob)}B"
             o, n = free.pop(i)
             if o & 1:  # 앞의 한 바이트는 버린다 — 짝수로 맞춘다
@@ -1042,25 +1027,20 @@ def bake_ascii(chars):
 
 
 def rec_len(kr):
-    """레코드 바이트 수 — 한글은 슬롯 SJIS 2B, **반각은 1B**, 끝에 널 1B.
+    """레코드 바이트 수 — 본문 + 널 1B. 🔴 세는 규칙은 `font.byte_len` 이 정본이다.
 
     🔴 낱말 사이는 **반각 공백**이다. 전각으로 두면 `마지막 들른 마을로` 가 21B 로 한 칸을
       넘긴다(PS1 도 같은 자리에서 물려 `에` 를 뺐다 — 유저 확정 2026-08-01). 이 렌더러엔
       반각짝 `/11ASCII.FON` 이 있고 **원본 레코드도 이미 반각을 쓴다**(`ＨＰ    ` ·
       `残り    ` · `ﾏﾆｭｱﾙ `) — 16px 타이틀(`patch_title.py`)과 갈리는 지점이다.
     """
-    n = 0
-    for ch in kr:
-        try:
-            n += len(ch.encode("cp932"))
-        except UnicodeEncodeError:
-            n += 2  # 슬롯 배정 = 전각 2B
-    return n + 1
+
+    return byte_len(kr) + 1
 
 
 def encode(kr, stride, plan):
     """레코드 바이트 — 본문 + 널 + 0 채움. 넘치면 실패한다."""
-    body = b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
+    body = to_bytes(kr, plan)
     assert len(body) + 1 <= stride, f"{kr!r} 이 {len(body) + 1}B 로 stride {stride} 를 넘는다"
     return body + b"\x00" * (stride - len(body))
 
@@ -1080,7 +1060,7 @@ def check(rs):
 
 def scn_encode(kr, fl, tail, plan):
     """헤더 필드 — 우리 이름 + 널 채움 + **원본 꼬리 바이트 그대로**."""
-    body = b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
+    body = to_bytes(kr, plan)
     assert len(body) < fl, f"{kr!r} 이 {len(body)}B 로 헤더 {fl}B 에 안 든다"
     return body + b"\x00" * (fl - 1 - len(body)) + bytes([tail])
 
@@ -1222,7 +1202,7 @@ def main():
         bycard = {}
         for path, lba, size, at, span, pre, kr in cards + msgs:
             head = pre if isinstance(pre, bytes) else b""
-            body = head + b"".join(plan[c][0] if c in plan else c.encode("cp932") for c in kr)
+            body = head + to_bytes(kr, plan)
             bycard.setdefault((path, lba, size), {})[at] = body + b"\x00" * (span - len(body))
         csec = 0
         for (path, lba, size), patch in bycard.items():

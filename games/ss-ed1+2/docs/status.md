@@ -39,7 +39,7 @@
 ### 2. 텍스트가 사는 곳 — 93 파일, 44.5만 자
 
 `tools/dump_scn.py` 가 전부 덤프한다 → `work/derived/scn_jp/*.json`.
-집계는 `tools/inventory.py` → `work/review/inventory.md`(⚠ 원문 포함, 커밋 금지).
+집계는 `tools/done_inventory.py` → `work/review/inventory.md`(⚠ 원문 포함, 커밋 금지).
 
 | 소재                   | 파일 | 대사블록 | 문자열 | 문자수  |
 | ---------------------- | ---- | -------- | ------ | ------- |
@@ -197,7 +197,7 @@ PS1 파이프라인 `games/ps1-ed1+2/tools/hangul_font.py` 의 `convert_chars()`
 ### 6. 조판 — **전각 15자 × 본문 5행, 엔진이 접는다** (실측)
 
 ⚠ PS1 값(14슬롯·6줄)을 옮겨 오면 안 된다. 원문 대사 5,485블록(줄 9,730)을 직접 재서
-**파이프라인의 전제 자체가 다르다**는 것이 나왔다(2026-08-20 실측, `tools/typeset_probe.py`).
+**파이프라인의 전제 자체가 다르다**는 것이 나왔다(2026-08-20 실측, `tools/done_typeset_probe.py`).
 
 **PS1 은 우리가 개행을 전부 넣는다.** 조판기(krwrap)가 14슬롯에서 끊어 넣고 엔진은
 받아 적기만 한다. 새턴은 그게 아니다 — 근거 셋:
@@ -604,11 +604,18 @@ HUD 인명·`あと`·하단 챕터 판이 **전부 여기 그림으로** 들어
      줄 알았는데 **171칸 전부 포인터가 있어** 옮길 수 있었다. 제자리 우선, 넘치면 이름
      칸들끼리 자리를 바꾼다(`炎の騎士Ａ` 10B → `불꽃의기사A` 11B 처럼 긴 것이 있다).
 
-3. **남은 일본어 158줄**(`tools/scan_untranslated.py --all` 실측 2026-08-29) —
-   본체 157(ED.BIN 9 · ED2.BIN 148) · `ED2MON03` 1. `ED2MON*` 264줄은 닫혔다.
-   - 본체 157 은 **저본에 없다** — 새로 쓰면 두 벌이 되고 정발 오염 위험도 그대로다.
-     통로는 열어 뒀으니 PS1 사전이 차면 따라 들어온다.
-   - `ED2MON03` 한 줄은 **자리를 못 찾는다**(`\n%c%s%cは宙に浮いた。` — 앞선 개행 탓).
+3. ✅ **남은 일본어 0줄**(`tools/scan_untranslated.py --all` 실측 2026-08-29).
+
+   ⚠ **이 도구가 세는 것과 아래 3-B 가 세는 것은 다르다** — 갈린 게 아니라 물음이 다르다:
+
+   | 도구                | 무엇을 세나                                          |
+   | ------------------- | ---------------------------------------------------- |
+   | `scan_untranslated` | 빌드 이미지에서 **포인터가 가리키는** 가나 문자열    |
+   | 3-B 의 블록 집계    | 씬 덤프의 **모든 블록**(오독·내부 키·고정폭 표 포함) |
+
+   그래서 3-B 의 「저본에 없다」에 남는 16종(바이너리 오독 12 · 고정폭 상태 약어 2 ·
+   개발용 폰트 테스트 1 · 내부 키)은 **화면에 안 나온다** — `scan_untranslated` 가 0 이라는 게
+   그 근거다. 🔴 **둘 중 화면의 정본은 `scan_untranslated`** 다.
 
 3-B. **씬 블록 15,468 의 내역** (저본 `game/ps1-ed1+2 7aa229c` + 새턴 전용 264):
 
@@ -658,11 +665,15 @@ PS1 에 있는 것을 없다고 했고(402), 고정폭 UI 표를 「남의 자�
 
 ## 도구
 
+⛔ **`done_` 접두는 끝난 1회성이다**(2026-08-29) — 계측·초기 조사라 다시 돌릴 일이 드물다.
+목록에서 눈에 덜 걸리게 이름으로 표시한다. 지우지는 않는다 — **도구를 지우면 그 도구가 만들던 것도 같이 지워진다**(PS1 실측).
+
 ```bash
 python3 games/ss-ed1+2/tools/dump_scn.py    # 텍스트 전량 덤프 → work/derived/scn_jp/
-python3 games/ss-ed1+2/tools/inventory.py   # 번역 대상 집계 → work/review/
+python3 games/ss-ed1+2/tools/scan_untranslated.py --all  # 빌드에 남은 일본어
+python3 games/ss-ed1+2/tools/translate_payload.py        # 번역 대상 → work/review/translate/
 python3 games/ss-ed1+2/tools/font.py        # 폰트 슬롯 여유·SJIS 배정 확인
-python3 games/ss-ed1+2/tools/typeset_probe.py  # 조판 계약 — 엔진 개행 여부·폭별 창 줄 수
+python3 games/ss-ed1+2/tools/check_ps1_parity.py         # PS1 과 문안이 갈렸나 (보고)
 python3 games/ss-ed1+2/tools/dump_title.py     # 오프닝·엔딩·스태프롤 자막 → work/derived/title_jp.json
 python3 games/ss-ed1+2/tools/patch_title.py --check   # 자막 재삽입 항등 검증 (넣기 전 안전판)
 python3 games/ss-ed1+2/tools/dump_ui.py        # HUD·시스템 메뉴 원문 + 자리·여유 → work/derived/ui_jp.json
