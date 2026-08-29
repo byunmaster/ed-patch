@@ -202,21 +202,43 @@ class Scn(unittest.TestCase):
         b = S.migrate([mk(1), mk(2), mk(3)], 0, 0, 0x100)[0]
         self.assertEqual(a, b)
 
-    def test_measured_free_only_where_it_was_measured(self):
-        """🔴 **잰 자리에만 넣는다.** 본체의 0런은 「0 이라서」가 아니라 「재서」 쓰는 것이다.
+    def test_scene_never_shares_the_hook_run(self):
+        """🔴 **조사 훅과 같은 0런을 나눠 쓰면 게임이 죽는다** (2026-08-30 사고).
 
-        실측 2026-08-28: 두 본체 모두 **가장 큰 0런(1,301B)은 살아 있는 버퍼**였다 —
-        필드·전투 중 쉬지 않고 쓰이고, 표식을 심었더니 게임이 그 자리에서 멎었다.
-        그 다음 셋은 필드 이동 + 전투 내내 쓰기 0건이었다. 표를 넓히려면 다시 잰다.
+        훅 루틴이 2,045B → 2,051B 로 자라며 `(0x07EF45, 451)` 과 **6B 겹쳤고**(ED2 는 9B)
+        ED1·ED2 둘 다 오프닝 뒤에 **널로 점프해 죽었다**(PC=0). 두 도구가 같은 0런을
+        **각자 표로** 들고 있었던 것이 뿌리다 — 훅이 자라도 이쪽 표는 그대로였다.
+        ⚠ 게이트는 하나도 안 울었다. 되읽기·포인터·계약·조판 지문 전부 통과한다 —
+          **각자 자기가 쓴 것만** 되읽으니까.
         """
-        self.assertEqual(set(S.MEASURED_FREE), {"/ED.BIN", "/ED2.BIN"})
-        for path, runs in S.MEASURED_FREE.items():
-            d = bytes(common.extract(path))
-            for a, n in runs:
-                self.assertEqual(d[a : a + n], b"\x00" * n, f"{path} 0x{a:X}: 원본이 0 이 아니다")
-            # 🔴 살아 있는 버퍼(각 파일의 최대 0런)는 표에 들어오면 안 된다
-            live = 0x074A13 if path == "/ED.BIN" else 0x05A70F
-            self.assertNotIn(live, [a for a, _n in runs], f"{path}: 살아 있는 버퍼가 표에 있다")
+        for path in S._MEASURED_RAW:
+            span = S._hook_span(path)
+            assert span, f"{path}: 훅 자리를 못 읽었다 — 그러면 겹침을 못 막는다"
+            for a, n in S._measured_free(path):
+                assert not (max(a, span[0]) < min(a + n, span[1])), (
+                    f"{path} 0x{a:X}+{n} 이 훅 자리 0x{span[0]:X}~0x{span[1]:X} 와 겹친다"
+                )
+
+    def test_no_measured_free_runs(self):
+        """🔴 **본체 파일 안의 0런을 「계측했으니 빈 자리」로 쓰지 않는다** (2026-08-30).
+
+        2026-08-28 에 「필드 이동 + 전투 내내 쓰기 0건」을 근거로 셋을 자리로 삼았는데,
+        그 셋이 **프롤로그·타이틀 국면에서 살아 있었다** — 시작 메뉴에 선 채로 workramh 를
+        되읽으니 0x7AA83 뒤쪽에 SH-2 오버레이 코드, 0x87300 에 포인터 표가 있었다.
+        우리 문안이 그 위에 깔려 ED1·ED2 둘 다 **프롤로그 뒤 화면이 검게 죽었다**.
+
+        ⚠ 뿌리는 「국면이 좁았다」가 아니라 **「계측으로는 못 센다」**다 — 안 밟은 국면이
+          하나라도 있으면 초록불이 「없다」가 아니라 「아직 안 봤다」다(체크리스트 4-B).
+          국면을 넓혀도 다음 사고를 못 막으므로 **표 자체를 닫는다.**
+        ⇒ 자리는 「안 쓰는 걸 봤다」가 아니라 **「구조가 우리 것이다」**로만 얻는다 —
+          ISO 꼬리 섹터·비워진 칸·짧아져 남은 칸.
+        """
+        assert not S._MEASURED_RAW, (
+            "본체 0런을 다시 자리로 넣었다 — 계측은 근거가 못 된다. "
+            "자리가 더 필요하면 파일 확장·LBA 재배치로 얻는다"
+        )
+        for path in ("/ED.BIN", "/ED2.BIN"):
+            assert S._measured_free(path) == []
 
     def test_runs_never_swallow_code(self):
         """구간이 코드를 삼키면 안 된다 — 빈틈이 `MAX_GAP` 을 넘으면 끊는다."""

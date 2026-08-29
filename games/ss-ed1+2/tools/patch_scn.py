@@ -494,22 +494,71 @@ def _encode(kr, plan=None):
     return to_bytes(kr, plan if plan is not None else _PLAN)
 
 
-# 🔴 **실기로 잰 「본체 안의 빈 자리」**(2026-08-28). `/ED.BIN`·`/ED2.BIN` 은 다음 파일이
-#    바로 붙어 있어 꼬리가 사실상 없다(+540B·+56B). 대신 **파일 안의 0런**이 4,626B 씩
-#    남아 있는데(조사 훅이 쓰고 남은 것), 0 이라고 빈 자리가 아니므로 **재서** 골랐다.
-#    ⚠ 두 파일 모두 **가장 큰 0런(1,301B)은 살아 있는 버퍼**다 — 필드·전투 중 쉬지 않고
-#      쓰인다(ED2 `pc=0x06085B30` 외 · ED1 `pc=0x0609E244` 외, 각각 4,096건 + 드롭 수십만).
-#      표식을 심었더니 게임이 그 자리에서 멎었다. **여기 넣으면 안 된다.**
-#    ✅ 그 다음 셋은 필드 이동 + 전투를 통째로 도는 동안 **쓰기 0건 · 드롭 0**이었다.
-#       (#1 을 빼고 다시 재야 한다 — 그 폭주가 다른 감시의 이벤트를 가린다.)
-#    ⚠ 재지 않은 자리는 여기 넣지 않는다. 늘리려면 그 자리에서 다시 잰다.
+# 🔴 **본체 파일 안의 0런은 자리로 쓰지 않는다** — 계측으로는 안전을 증명할 수 없다.
+#
+#    2026-08-28 에 실기로 재서 셋을 골랐었다(`/ED.BIN` 0x7AA83·0x87300·0x7EF45, ED2 대응).
+#    「필드 이동 + 전투를 통째로 도는 동안 쓰기 0건」이 근거였다. **틀렸다.**
+#    2026-08-30 실측: 그 셋은 **프롤로그·타이틀 국면에서 살아 있다** — 시작 메뉴에 선 채로
+#    workramh 를 되읽으니 0x7AA83 뒤쪽 ~510B 에 **SH-2 코드**(오버레이)가, 0x87300 에는
+#    **포인터 표**(0x0609xxxx·0x060Afxxx)가, 0x7EF45 에는 비트맵성 자료가 들어 있었다.
+#    ⇒ 우리 문안이 그 위에 깔리면 **프롤로그 뒤 화면이 검게 죽는다**(유저 보고, ED1·ED2 둘 다).
+#
+#    🔴 **뿌리는 「계측 국면이 좁았다」가 아니라 「계측으로는 못 센다」다.** 안 밟은 국면이
+#       하나라도 있으면 초록불이 「없다」가 아니라 「아직 안 봤다」가 된다
+#       (`docs/patcher-checklist.md` 4-B). 국면을 넓혀도 다음 사고를 못 막는다 —
+#       세이브 직후·엔딩·특정 이벤트를 전부 도는 계측은 사실상 불가능하다.
+#    ⇒ **자리는 「안 쓰는 걸 봤다」가 아니라 「구조가 우리 것이다」로만 얻는다** —
+#       ISO 꼬리 섹터(`expand_files.py`) · 비워진 칸 · 짧아져 남은 칸.
+#    대가는 **자리 없음 73 → 115 블록**(42블록)이다. 늘리려면 계측이 아니라
+#       **파일 확장·LBA 재배치**로 얻는다.
+#
 # 🔴 이보다 작은 칸은 비워도 안 쓴다 — 표일 수 있다(위 `migrate` 주석).
 VACATE_MIN = 8
 
-MEASURED_FREE = {
-    "/ED.BIN": [(0x07AA83, 961), (0x087300, 736), (0x07EF45, 451)],
-    "/ED2.BIN": [(0x05B437, 961), (0x06CCE4, 736), (0x064505, 451)],
-}
+# ⚠ **비어 있다.** 위 주석이 이유다 — 다시 채우려면 계측이 아니라 구조적 근거가 필요하다.
+#   회귀 테스트 `test_no_measured_free_runs` 가 이 표가 다시 차는 것을 막는다.
+_MEASURED_RAW = {}
+_MFREE = None
+
+
+def _hook_span(path):
+    """조사 훅이 실제로 차지하는 `(시작, 끝)` — 없으면 `None`.
+
+    ⚠ 훅 모듈에서 **자리와 실제 길이를 물어본다.** 상수로 베끼면 훅이 자랄 때 또 겹친다.
+    🔴 2026-08-30 사고: 훅 루틴이 2,045B → 2,051B 로 자라며 옛 `_MEASURED_RAW` 의
+       `(0x07EF45, 451)` 과 **6B 겹쳤고**(ED2 는 9B) 게임이 ED1·ED2 둘 다 오프닝 뒤에
+       **널로 점프해 죽었다**(PC=0). 두 도구가 같은 0런을 **각자 표로** 들고 있었던 것이
+       뿌리다. 표는 지금 비었지만(위) 다시 채운다면 이 뺄셈이 다시 살아 있어야 한다.
+    """
+    try:
+        import patch_josa_hook as H
+    except Exception:  # noqa: BLE001  (훅이 없어도 재삽입은 돌아야 한다)
+        return None
+    got = H.FREE.get(path)
+    if not got:
+        return None
+    off, size = got
+    return off, off + size  # 🔴 **0런 전체**를 훅 것으로 본다 — 길이는 문안 따라 자란다
+
+
+def _measured_free(path):
+    """실측 0런에서 **훅이 쓰는 구간을 뺀** 나머지."""
+    global _MFREE
+    if _MFREE is None:
+        _MFREE = {}
+        for p, runs in _MEASURED_RAW.items():
+            span = _hook_span(p)
+            out = []
+            for a, n in runs:
+                b = a + n
+                if span and max(a, span[0]) < min(b, span[1]):
+                    a2 = max(a, span[1])  # 훅 뒤로 민다
+                    if a2 >= b:
+                        continue
+                    a, n = a2, b - a2
+                out.append((a, n))
+            _MFREE[p] = out
+    return _MFREE.get(path, [])
 
 
 def migrate(over, base, tail_at, tail_end, spare=()):
@@ -735,7 +784,7 @@ def main():
             plans.append((start, blob, [(p, a) for p, a in moves if _moved(entries, p, a)], orig))
         pinned += sum(1 for e in entries if not e.get("ptr_at"))
         puts, mptrs, left = (
-            migrate(over, _base, size, bsize, list(spare) + MEASURED_FREE.get(path, []))
+            migrate(over, _base, size, bsize, list(spare) + _measured_free(path))
             if canon
             else ([], [], over)
         )
