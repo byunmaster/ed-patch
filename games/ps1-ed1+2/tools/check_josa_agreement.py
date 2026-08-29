@@ -67,6 +67,11 @@ RX_VAR_JOSA = re.compile(
 )
 
 RX_BYUNGI = re.compile(r"은\(는\)|이\(가\)|을\(를\)")
+# textmap 전용 — 주입은 `%s`·`%d` 와 센티널뿐이다(`%c` 는 창·색 표식이라 뺀다).
+RX_VAR_JOSA_TM = re.compile(
+    f"(?:[{R.NAME_SENT}{R.NUM_SENT}{R.ITEM_SENT}]|%[sd])"
+    rf"(?:%c)?({'|'.join(ALWAYS_OK)}|은|는|이|가|을|를|과|와|으로|로|면)(?!\()"
+)
 RX_VAR_TAIL = re.compile(f"(?:{VAR})[^가-힣]*$")
 
 
@@ -79,17 +84,73 @@ def batchim(ch):
 RX_MARKUP = re.compile(r"\{[^}]*\}|\\x[0-9A-Fa-f]{2}|[\x00-\x1f\ue000-\uf8ff]")
 
 
+_JP_KEY = re.compile(r"[ぁ-んァ-ヶ一-龥]")  # 평탄 사전의 키 = JP 원문
+
+
 def _walk_ours(o, name, game):
-    """textmap 은 중첩이라 재귀로 `ours` 를 다 긁는다."""
+    """textmap 은 중첩이라 재귀로 `ours` 를 다 긁는다.
+
+    🔴 **평탄한 `{JP: KR}` 사전도 본다**(2026-08-29). `monster_lines_ed2.json`(34) ·
+    `monsters_ed2.json`(118)은 `ours` 키가 없는 평탄 사전이라 **파일이 통째로 안 보였다** —
+    새턴 세션이 그 안에서 「변수 뒤 고정 조사」 둘을 찾아 줬는데 우리 게이트는 내내 ✅였다.
+    ⚠ **로더가 못 보는 자료는 검사기가 아무리 많아도 안 걸린다.** 축을 늘리기 전에
+    「그 축이 무엇을 읽는가」를 먼저 본다.
+    """
     if isinstance(o, dict):
         t = o.get("ours")
         if isinstance(t, str) and t:
             yield game, name, RX_MARKUP.sub(" ", t)
-        for v in o.values():
-            yield from _walk_ours(v, name, game)
+        for k, v in o.items():
+            # 평탄 사전: 키가 일본어(원문)이고 값이 문자열이면 그 값이 우리 문안이다.
+            # ⚠ `_`·`_doc` 같은 머리말과 `sha`·`k` 같은 메타는 뺀다.
+            if (
+                k not in ("ours", "_", "_doc", "note", "sha", "k", "class")
+                and isinstance(v, str)
+                and v
+                and _JP_KEY.search(k)
+            ):
+                yield game, name, RX_MARKUP.sub(" ", v)
+            else:
+                yield from _walk_ours(v, name, game)
     elif isinstance(o, list):
         for v in o:
             yield from _walk_ours(v, name, game)
+
+
+def _ours_raw():
+    """textmap 문안을 **마크업을 지우지 않고** 준다 — 축 ②는 `%s` 표식으로 판정한다.
+
+    🔴 축 ②③(`scan_screen`)은 `_scn_layout()`(씬 파일)만 돌아서 **`textmap/` 을 아예 안
+    봤다**(2026-08-29). ED2 몬스터 전투 대사(`monster_lines_ed2`)가 그 사각에 있었고,
+    새턴 세션이 거기서 「변수 뒤 고정 조사」 둘을 찾아 줬는데 우리 게이트는 내내 ✅였다.
+    ⚠ **축을 늘리기 전에 「그 축이 무엇을 읽는가」를 먼저 본다.**
+    """
+    for p in sorted(glob.glob(os.path.join(ROOT, "textmap", "*.json"))):
+        name = os.path.splitext(os.path.basename(p))[0]
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+
+        def walk(o):
+            if isinstance(o, dict):
+                t = o.get("ours")
+                if isinstance(t, str) and t:
+                    yield t
+                for k, v in o.items():
+                    if (
+                        k not in ("ours", "_", "_doc", "note", "sha", "k", "class")
+                        and isinstance(v, str)
+                        and v
+                        and _JP_KEY.search(k)
+                    ):
+                        yield v
+                    else:
+                        yield from walk(v)
+            elif isinstance(o, list):
+                for v in o:
+                    yield from walk(v)
+
+        for t in walk(d):
+            yield name, t
 
 
 def _ours_lines():
@@ -165,6 +226,18 @@ def scan_screen():
                     k = (name, pre[-1:], m.group(0))
                     waste[k] += 1
                     ww.setdefault(k, (eid, page[max(0, m.start() - 14) : m.end() + 8]))
+    # 🔴 **textmap 도 본다** — 위 루프는 씬 파일만 돈다(2026-08-29 구멍).
+    # ⚠ 여기서는 **`%c` 를 변수로 치지 않는다.** 씬 경로는 `load_translations` 가 `%c` 를
+    #   창·색 표식으로 풀어 주지만 textmap 원문에는 글자 그대로 남아, `%c레이시아%c가`
+    #   처럼 **리터럴 이름**까지 주입으로 오인한다(실측 22건 중 20이 그 꼴이었다).
+    #   진짜 주입은 `%s`·`%d` 다.
+    for name, t in _ours_raw():
+        for m in RX_VAR_JOSA_TM.finditer(t):
+            if m.group(1) in ALWAYS_OK:
+                continue
+            k = (name, m.group(1))
+            bare[k] += 1
+            bw.setdefault(k, ("-", t[max(0, m.start() - 12) : m.end() + 12]))
     return (bare, bw), (waste, ww)
 
 
