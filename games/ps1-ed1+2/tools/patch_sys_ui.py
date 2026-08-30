@@ -634,7 +634,7 @@ def main():
 
     shutil.copyfile(SRC, DST)
     with open(DST, "r+b") as f:
-        print(f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label="시스템 UI (ED.EXE)")}개 수정")
+        print(f"ED.EXE: 섹터 {write_user_data(f, ED_LBA, ed, label='시스템 UI (ED.EXE)')}개 수정")
         patch_scn_headers(f)
     write_cue(DST_CUE, os.path.basename(DST))
     print(f"완료: {DST}")

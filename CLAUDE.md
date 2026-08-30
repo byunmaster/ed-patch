@@ -49,8 +49,8 @@ shared/             플랫폼 공용 라이브러리 — `text/`(한글 조판 k
                     (플랫폼마다 섹터 규격이 달라 아직 둘째 소비자가 없다)
 scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test.sh · emu.sh(실행) ·
                     check-updates.sh · pull-build.sh · clean-build.sh · patcher.sh ·
-                    worktree.sh.
-                    부품은 아래 폴더로 내린다(emu/ · check/ · lib/ · tests/)
+                    worktree.sh · cafe.sh.
+                    부품은 아래 폴더로 내린다(emu/ · check/ · cafe/ · lib/ · tests/)
   emu.sh            └ **게임 실행은 여기 하나로** — 게임 이름만 주면 알맞은 실행기로
                        띄우고 세이브까지 동기화한다(인자 없으면 목록에서 고른다)
   emu/              └ 그 아래 실행기·기전 — dosbox.sh(DOS 본체) · sync-saves.sh(세이브
@@ -62,6 +62,10 @@ scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test
                        test.sh 가 같은 답을 쓴다) · typeset_fingerprint.py(조판 지문 —
                        공용이 다른 게임의 줄바꿈을 흔들면 운다) · check_shared_scope.py
                        (게임 브랜치가 공용·남의 게임을 건드렸나)
+  cafe.sh           └ **레퍼런스 수집** — 로그인된 크롬에 CDP 로 붙어 네이버 카페 API 를
+                       부른다(`chrome`·`list`·`fetch`·`body`·`probe`). 카페 좌표는
+                       `cafe/sources.json`, 수집물은 docs/reference/_inventory/(gitignore).
+                       ⚠ 자격증명은 레포에 없다 — 인증은 크롬 프로필이 든다
   lib/select.sh     └ 화살표 키 선택 UI (에뮬 전용이 아니라 여기 둔다)
   worktree.sh       └ 게임별 워크트리 (originals 지역 링크까지 대신한다)
 .local/             이 머신 전용 (gitignore) — dosbox 실행 사본 · 패처 빌드 · 배포 레포 클론

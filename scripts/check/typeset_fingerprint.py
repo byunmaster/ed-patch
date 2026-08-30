@@ -53,10 +53,18 @@ def load_canon(game):
     path = canon_path(game)
     if os.path.exists(path):
         return json.load(open(path, encoding="utf-8")), "작업 트리"
-    ref = f"game/{game}:games/{game}/typeset_fingerprint.json"
-    r = subprocess.run(["git", "show", ref], cwd=REPO, capture_output=True, text=True, check=False)
-    if r.returncode == 0 and r.stdout.strip():
-        return json.loads(r.stdout), f"브랜치 game/{game}"
+    # ⚠ 로컬 브랜치가 **없는 클론**이 있다(막 받은 머신 · 게임은 워크트리로만 굴리는 트리).
+    #   그러면 `game/<게임>` 이 안 잡혀 장치가 조용히 눈이 먼다 — 원격 추적 ref 까지 본다.
+    for br in (f"game/{game}", f"origin/game/{game}"):
+        r = subprocess.run(
+            ["git", "show", f"{br}:games/{game}/typeset_fingerprint.json"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return json.loads(r.stdout), f"브랜치 {br}"
     return {}, None
 
 
