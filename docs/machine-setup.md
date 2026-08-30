@@ -22,7 +22,7 @@ PS1 은 같은 자로 250fps(4.2배). 즉 **맥에서 새턴 인게임 QA 가 �
 빌드·배치 같은 기계 작업 쪽이지 「맥에서 새턴이 안 돈다」가 아니다.
 · 재는 법: `sh scripts/emu.sh ss-ed1+2` → `Shift+F1` 로 FPS 표시.
 · 빨리감기 배속은 **코어 한계**다 — `ffspeed 8` 은 상한일 뿐이고, 영상(softfb↔opengl·확대
-  배율)·오디오(`ffnosound`)·블릿 대기(`video.blit_timesync`)를 다 바꿔도 숫자가 안 움직였다.
+배율)·오디오(`ffnosound`)·블릿 대기(`video.blit_timesync`)를 다 바꿔도 숫자가 안 움직였다.
 
 ⚠ 옮기기 전에 호스트에서 확인할 것:
 
@@ -65,6 +65,19 @@ apt install -y git build-essential python3 python3-venv python3-pip pkg-config r
 ```
 
 - 뒤쪽 여섯은 **mednafen 빌드 의존성**이다.
+
+**PC-98 을 돌리려면 넷을 더 깐다**(2026-08-30 추가):
+
+```bash
+apt install -y dosbox-x xvfb xdotool imagemagick
+```
+
+- `dosbox-x` 의 `machine=pc98` 은 **머신 ROM 없이 뜬다** — MAME 쪽 길(pc9801rs 롬셋 전량)과
+  달리 소장본 말고 필요한 게 없다. 실측: Debian 13 의 2025.02.01 로 영웅전설 PC-98 이 떴다.
+- 나머지 셋은 **헤드리스 검증**용이다. dev 엔 화면이 없어서 `Xvfb` 로 띄우고 `xdotool` 로
+  창을 찾아 `import`(ImageMagick)로 찍는다 — `scripts/emu/pc98.sh --shot` 이 그 절차다.
+  🔴 **루트 창을 찍으면 안 된다** — Xvfb 의 루트는 지난 실행 화면을 그대로 들고 있어서
+  옛 화면을 찍는다(실측으로 세 번 속았다). 창을 지정해 찍는다.
 - ⚠ macOS 에서 필요하던 `flock` 은 **리눅스 기본이라 불필요**하다(루트 `CLAUDE.md` 의 경고는
   macOS 한정이다).
 

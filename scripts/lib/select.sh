@@ -11,6 +11,17 @@
 #   줄 모양을 바꾸려면 부르기 전에 SELECT_RENDER 에 함수 이름을 넣는다:
 #     SELECT_RENDER=my_row   # my_row <번호> <항목> <선택됨?0|1>
 #   커서를 처음부터 특정 줄에 놓으려면 SELECT_INDEX (1-based).
+#
+#   ── 가로축 하나 더 (SELECT_SIDE) ──────────────────────────────────────────
+#   목록(↑↓) 과 **함께 고를 것**이 하나 더 있을 때 쓴다. 화면을 두 번 띄우는 대신
+#   **목록 위** 한 줄로 붙고 **←→ 로 바꾼다**(유저 요청 2026-09-03 — pc98 의 시작 디스크).
+#   안내 줄에도 `←→ <라벨>` 이 저절로 들어간다.
+#     SELECT_SIDE='이어하기\n오프닝부터'   # 개행으로 나눈 항목들
+#     SELECT_SIDE_LABEL='시작 디스크'      # 그 줄 앞에 붙일 이름 (없어도 된다)
+#     SELECT_SIDE_INDEX=1                  # 1-based 초깃값
+#   🔴 **결과는 stdout 에 두 줄로 나온다** — 첫 줄이 목록 항목, 둘째 줄이 가로축 값이다.
+#      `$(...)` 는 subshell 이라 변수로는 못 돌려준다(전역에 써 봐야 호출자에 안 간다).
+#      SELECT_SIDE 를 안 주면 예전처럼 **한 줄**이라 기존 호출자는 그대로다.
 #   고르고 나서 남기는 **한 줄 요약**(`게임: ss-ed3`)이 필요 없으면 SELECT_QUIET=1.
 #     ⚠ 요약이 기본인 이유는 목록을 지우고 나면 **뭘 골랐는지가 화면에서 사라지기** 때문이다.
 #       부르는 쪽이 곧바로 같은 걸 다시 찍는다면(pull-build 의 결과 표) 그때만 끈다.
@@ -82,17 +93,48 @@ select_option() {
   #   화면이 넉넉해도 번호 입력으로 떨어진다(실측). tty 를 직접 물어본다.
   _rows=$(stty size </dev/tty 2>/dev/null | cut -d' ' -f1)
   [ -n "$_rows" ] || _rows=24
-  [ $(($# + 2)) -gt "${_rows:-24}" ] && { _sel_numbered "$_sp" "$@"; return $?; }
+  _sside0=0; [ -n "${SELECT_SIDE:-}" ] && _sside0=1
+  if [ $(($# + 2 + _sside0)) -gt "${_rows:-24}" ]; then
+    # 번호 폴백에는 가로축을 못 그린다 — **기본값을 그대로 낸다**(호출자 파싱은 유지된다).
+    _snum=$(_sel_numbered "$_sp" "$@") || return $?
+    printf '%s' "$_snum"
+    [ "$_sside0" = 1 ] && printf '\n%s' "$(printf '%s\n' "$SELECT_SIDE" | sed -n "${SELECT_SIDE_INDEX:-1}p")"
+    return 0
+  fi
 
   _srender=${SELECT_RENDER:-_sel_default_row}
   _stotal=$#
   _ssel=${SELECT_INDEX:-1}
   { [ "$_ssel" -ge 1 ] && [ "$_ssel" -le $# ]; } 2>/dev/null || _ssel=1
 
+  # 가로축(선택) — 있으면 목록 아래 한 줄을 더 그린다.
+  _sside=0; _ssidx=1; _ssn=0
+  if [ -n "${SELECT_SIDE:-}" ]; then
+    _sside=1
+    _ssn=$(printf '%s\n' "$SELECT_SIDE" | wc -l | tr -d ' ')
+    _ssidx=${SELECT_SIDE_INDEX:-1}
+    { [ "$_ssidx" -ge 1 ] && [ "$_ssidx" -le "$_ssn" ]; } 2>/dev/null || _ssidx=1
+  fi
+  _sel_side_val() { printf '%s\n' "$SELECT_SIDE" | sed -n "${_ssidx}p"; }
+  _sel_side_draw() {
+    printf '\033[2K' >/dev/tty
+    if [ "$_ssn" -gt 1 ]; then
+      # ⚠ 여기에 `(←→)` 를 또 적지 않는다 — 안내 줄이 이미 말한다(중복은 눈에 걸린다).
+      printf '  \033[2m%s\033[0m \033[2m‹\033[0m \033[36m%s\033[0m \033[2m›\033[0m\n' \
+        "${SELECT_SIDE_LABEL:-}" "$(_sel_side_val)" >/dev/tty
+    else
+      printf '  \033[2m%s\033[0m \033[36m%s\033[0m\n' "${SELECT_SIDE_LABEL:-}" "$(_sel_side_val)" >/dev/tty
+    fi
+  }
+
   # $1=1 이면 이전에 그린 만큼 커서를 올려 제자리에 다시 그린다(지웠다 그리면 깜빡인다).
+  # ⚠ 가로축은 **목록 위**에 그린다(유저 확정 2026-09-03). 줄 옆에 붙이면 ⑴ 「이 줄만의
+  #   설정」으로 읽히고 ⑵ 줄 길이가 제각각이라 ‹ › 위치가 커서를 따라 춤춘다. 위에 두면
+  #   **무엇을 고르든 함께 적용된다**는 게 모양으로 드러나고, 자리도 안 흔들린다.
   _sel_draw() {
     _rd=$1; shift
-    [ "$_rd" = 1 ] && printf '\033[%dA' "$_stotal" >/dev/tty
+    [ "$_rd" = 1 ] && printf '\033[%dA' "$((_stotal + _sside))" >/dev/tty
+    [ "$_sside" = 1 ] && _sel_side_draw
     _i=0
     for _it in "$@"; do
       _i=$((_i + 1))
@@ -100,10 +142,13 @@ select_option() {
       if [ "$_i" = "$_ssel" ]; then "$_srender" "$_i" "$_it" 1 >/dev/tty
       else                          "$_srender" "$_i" "$_it" 0 >/dev/tty; fi
     done
+    return 0
   }
 
 
-  printf '%s \033[2m(↑↓ 이동, Enter 선택, Esc 뒤로, q 취소)\033[0m\n' "$_sp" >/dev/tty
+  _shelp='↑↓ 이동'
+  [ "$_sside" = 1 ] && [ "$_ssn" -gt 1 ] && _shelp="$_shelp, ←→ ${SELECT_SIDE_LABEL:-바꾸기}"
+  printf '%s \033[2m(%s, Enter 선택, Esc 뒤로, q 취소)\033[0m\n' "$_sp" "$_shelp" >/dev/tty
 
   _sold=$(stty -g </dev/tty 2>/dev/null) || _sold=
   # ⚠ `isig` 를 남긴다 — raw 로 다 끄면 **Ctrl+C 로 못 빠져나온다.** 커서도 되돌려야 하므로
@@ -124,6 +169,8 @@ select_option() {
            case "$_k3" in
              41) [ "$_ssel" -gt 1 ] && _ssel=$((_ssel - 1)) ;;          # ↑
              42) [ "$_ssel" -lt "$_stotal" ] && _ssel=$((_ssel + 1)) ;; # ↓
+             43) [ "$_sside" = 1 ] && [ "$_ssidx" -lt "$_ssn" ] && _ssidx=$((_ssidx + 1)) ;; # →
+             44) [ "$_sside" = 1 ] && [ "$_ssidx" -gt 1 ] && _ssidx=$((_ssidx - 1)) ;;       # ←
            esac
            _sel_draw 1 "$@"
          else
@@ -133,6 +180,8 @@ select_option() {
          fi ;;
       6b) [ "$_ssel" -gt 1 ] && _ssel=$((_ssel - 1)); _sel_draw 1 "$@" ;;            # k
       6a) [ "$_ssel" -lt "$_stotal" ] && _ssel=$((_ssel + 1)); _sel_draw 1 "$@" ;;   # j
+      68) { [ "$_sside" = 1 ] && [ "$_ssidx" -gt 1 ]; } && _ssidx=$((_ssidx - 1)); _sel_draw 1 "$@" ;;     # h
+      6c) { [ "$_sside" = 1 ] && [ "$_ssidx" -lt "$_ssn" ]; } && _ssidx=$((_ssidx + 1)); _sel_draw 1 "$@" ;; # l
       0d|0a) _srft=0; break ;;               # Enter
       71|51|03|'') _srft=1; break ;;         # q · Q · Ctrl+C · EOF
     esac
@@ -140,7 +189,7 @@ select_option() {
   _sel_restore
 
   # 목록을 지우고 **한 줄 요약**만 남긴다 — 고르고 나면 후보는 소음이다(zsh 판과 같은 연출).
-  printf '\r\033[%dA\033[J' "$((_stotal + 1))" >/dev/tty
+  printf '\r\033[%dA\033[J' "$((_stotal + _sside + 1))" >/dev/tty
   if [ "${_srft:-1}" != 0 ]; then
     [ "$_srft" = 3 ] && printf '%s: \033[2m← 뒤로\033[0m\n' "$_sp" >/dev/tty \
                      || printf '%s: \033[2m취소\033[0m\n' "$_sp" >/dev/tty
@@ -150,8 +199,13 @@ select_option() {
   for _it in "$@"; do
     _i=$((_i + 1))
     if [ "$_i" = "$_ssel" ]; then
-      [ "${SELECT_QUIET:-0}" = 1 ] || printf '%s: \033[36m%s\033[0m\n' "$_sp" "$_it" >/dev/tty
+      # ⚠ 요약엔 **탭 앞부분만** 쓴다 — 항목이 `이름\t경로` 인 호출자가 여럿이라,
+      #   그대로 찍으면 고른 뒤 화면에 절대경로가 남는다.
+      _stab=$(printf '\t'); _slbl=${_it%%"$_stab"*}
+      if [ "$_sside" = 1 ]; then _slbl="$_slbl · $(_sel_side_val)"; fi
+      [ "${SELECT_QUIET:-0}" = 1 ] || printf '%s: \033[36m%s\033[0m\n' "$_sp" "$_slbl" >/dev/tty
       printf '%s' "$_it"
+      [ "$_sside" = 1 ] && printf '\n%s' "$(_sel_side_val)"
       return 0
     fi
   done

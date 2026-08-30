@@ -6,6 +6,8 @@
 #   sh scripts/emu.sh ss-ed1+2            # 바로 실행 (mednafen ss)
 #   sh scripts/emu.sh pce-ed1 --orig      # 빌드는 빼고 원본만 (문안 대조)
 #   sh scripts/emu.sh dos-ed2             # DOSBox-X 로 위임
+#   sh scripts/emu.sh pc98-ed1            # DOSBox-X 의 PC-98 모드로 위임 (머신 ROM 불필요)
+#                                         #   원본·빌드는 pc98.sh 가 목록으로 묻는다
 #   sh scripts/emu.sh <게임> <파일>       # 이미지를 직접 지정
 #   sh scripts/emu.sh --list              # 목록만 (비대화형)
 #
@@ -79,7 +81,8 @@ runner_of() {
     pce) echo "mednafen pce" ;;
     sfc) echo "mednafen snes" ;;
     md)  echo "mednafen md" ;;
-    dos) echo "${DOSENGINE:-dosbox}" ;;
+    dos)  echo "${DOSENGINE:-dosbox}" ;;
+    pc98) echo "dosbox-x pc98" ;;
     psp) echo "ppsspp" ;;
     *)   echo "— 미정 ($(blocked_by "$1"))" ;;
   esac
@@ -87,15 +90,27 @@ runner_of() {
 
 # 「왜 아직 못 붙였나」를 붙여 둔다 — 목록에서 고르면 튕겨 나오는데, 이유를 안 적으면
 # 스크립트가 덜 된 건지 원래 안 되는 건지 사람이 알 수가 없다(유저 지적 2026-08-21).
-# ⚠ 아래 넷은 **스크립트로 못 여는 게 아니라 머신 ROM(BIOS)이 있어야** 열린다. 우리가
+# ⚠ 아래 셋은 **스크립트로 못 여는 게 아니라 머신 ROM(BIOS)이 있어야** 열린다. 우리가
 #   배포할 수 없는 물건이라 소장본에서 손으로 놓기 전에는 붙여도 안 뜬다.
+# 🔴 **pc98 은 여기 있다가 나갔다**(2026-08-30) — 「MAME 머신 ROM 필요」가 맞는 말이었지만
+#   **그 길만 있는 게 아니었다.** DOSBox-X 의 `machine=pc98` 은 롬셋 없이 뜬다(실측: 영웅전설
+#   PC-98 오프닝). 「ROM 이 필요하다」는 **그 에뮬레이터의 사정**이지 기종의 사정이 아니다 —
+#   나머지 넷도 다시 볼 값이 있다.
+# ✅ **그 「다시 보기」를 했다 — DOSBox-X 로는 넷 다 안 된다**(2026-09-03, dosbox-x 2026.08.02).
+#   ⑴ `-machine` 이 아는 기종에 **pc88·msx·x68k 는 아예 없다.** 전부 PC/AT 계열 + pc98 이다
+#      (amstrad · hercules · mcga · pcjr · tandy · vgaonly · svga_* · pc98/pc9801/pc9821 · fm_towns).
+#   ⑵ `fm_towns` 는 이름만 있다 — 바이너리가 스스로 이렇게 말한다:
+#      "FM Towns emulation not yet implemented. It's currently just a stub for future development."
+#   ⇒ pc98 이 롬 없이 뜬 건 **DOSBox-X 가 PC-98 BIOS 를 합성해 주기 때문**이지 일반화되는
+#     성질이 아니었다. 넷은 여전히 아래 에뮬 + 그 기종 ROM 이 있어야 한다.
+# ⚠ fmt 는 ROM 말고 **덤프 형식**도 걸린다 — 소장본이 `*.mfm`(HxC) · KryoFlux `*.raw` 라
+#   플럭스 덤프다. 어느 에뮬도 그대로는 안 읽고 먼저 이미지로 변환해야 한다.
 blocked_by() {
   case "$1" in
     msx)  echo "openMSX — MSX2 BIOS 필요(번들 C-BIOS 는 디스크 부팅 불가) · 디스크 5장" ;;
-    pc98) echo "MAME pc98 — 머신 ROM 필요" ;;
     pc88) echo "quasi88 · MAME — PC-8801 ROM 필요" ;;
     x68k) echo "MAME x68000 — IPL/폰트 ROM 필요" ;;
-    fmt)  echo "Tsugaru · MAME — FM TOWNS BIOS 필요" ;;
+    fmt)  echo "Tsugaru · MAME — FM TOWNS BIOS 필요 · 소장본이 플럭스 덤프(mfm/raw)라 변환도 든다" ;;
     win)  echo "Wine — brew cask 가 2026-09-01 비활성 예정, UTM VM 검토" ;;
     *)    echo "실행기 미정" ;;
   esac
@@ -289,6 +304,19 @@ while :; do
   fi
   PLAT=${GAME%%-*}
 
+  # ── PC-98 도 통째로 위임한다 ───────────────────────────────────────────────
+  # 디스크가 3장이고 **파일 시스템이 없어**(`-fs none` · 드라이브 번호) 마운트 규약이
+  # mednafen 계열과 아예 다르다. 사본·헤드리스·스크린샷까지 pc98.sh 가 안다.
+  if [ "$PLAT" = pc98 ]; then
+    # ⚠ `--orig` 를 **넘겨야 한다** — 위 인자 고리가 그걸 ORIG 로 먹어 EXTRA 에 안 남긴다.
+    #   그래서 종전엔 `emu.sh pc98-ed1 --orig` 이 조용히 아무 일도 안 했다(2026-08-31).
+    # ⚠ 「실행:」 줄은 pc98.sh 가 무엇을 띄우는지까지 알고 찍는다 — 여기서 또 찍지 않는다.
+    set -- "$GAME"
+    [ "$ORIG" = 1 ] && set -- "$@" --orig
+    # shellcheck disable=SC2086
+    exec sh "$HELPERS/pc98.sh" "$@" $EXTRA
+  fi
+
   # ── DOS 는 통째로 위임한다 ─────────────────────────────────────────────────
   # 사본 방식·CD 마운트·CNF 재작성까지 dosbox.sh 가 이미 다 한다. 흉내 내면 두 벌이 된다.
   if [ "$PLAT" = dos ]; then
@@ -367,7 +395,8 @@ if [ -n "$FW" ]; then
 fi
 
 need_tool mednafen mednafen
-warn_ime
+# 🔴 한글 입력기는 mednafen 에서도 글자 키를 먹는다 — 경고가 아니라 바꿔 준다(ime.sh).
+ensure_ascii_input
 
 # ⚠ **키 배치를 실행 직전에 맞춘다**(유저 요청 2026-08-21). mednafen 은 종료할 때 cfg 를 다시
 #   쓰고 게임 안 입력설정이 그 기종 배치를 통째로 덮는데, 여기서 맞춰 두면 **다음 실행에
