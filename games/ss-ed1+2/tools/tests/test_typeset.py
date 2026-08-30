@@ -202,6 +202,25 @@ class Typeset(unittest.TestCase):
         self.assertIsNone(bad)
         self.assertEqual(T.contract(got), T.contract(jp))
 
+    def test_second_speaker_named_by_the_canon_is_not_a_dead_end(self):
+        """🔴 **한 블록에 화자가 둘**인 꼴 — 저본이 그 이름을 품는다(실측 4블록 2026-08-30).
+
+        `%c란도%c대사1%c아트라스%c대사2%c` 에서 저본은 `대사1{p}아트라스{p}대사2` 다.
+        원문의 `アトラス` 자리가 정본으로 번역되면 그 묶음의 「글 넣을 자리」가 비는데
+        조각(`아트라스`)은 남는다 — 예전엔 거기서 **버렸다**(화면에 일본어로 남았다).
+        ⚠ **같은 이름일 때만** 통과다. 다르면 우리가 모르는 구조라 그대로 버린다.
+        """
+        jp = "%cランドー%c\n下品 !?%cアトラス%c\nランドー !!%c"
+        nm = {"ランドー": "란도", "アトラス": "아트라스"}
+        got, bad = self.t(jp, "천박하다니!?{p}아트라스{p}란도!!", nm)
+        self.assertIsNone(bad)
+        self.assertEqual(got, "%c란도%c\n천박하다니!?%c아트라스%c\n란도!!%c")
+        self.assertEqual(T.contract(got), T.contract(jp))
+        # 다른 이름이면 여전히 버린다 — 근거가 없다
+        got2, bad2 = self.t(jp, "천박하다니!?{p}보아드{p}란도!!", nm)
+        self.assertIsNone(got2)
+        self.assertEqual(bad2, "정본에 없는 이름 자리가 있다")
+
     def test_nudge_is_the_only_copy_of_the_rule(self):
         """⛔ 접기·금칙 규칙의 정본은 조판기다 — 계측기가 사본을 들면 갈린다(4-D)."""
         import check_engine_wrap as W

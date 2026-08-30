@@ -330,8 +330,14 @@ def _lay(texts, marks, pieces, at, names, sp):
         if len(free) > 1:
             return None
         if not free:
-            # 자리가 없는데 넣을 글이 있으면 그건 우리가 모르는 구조다
+            # 🔴 **저본이 이름을 명시한 자리**는 이미 놓인 것이다(2026-08-30). 한 블록에
+            #    화자가 둘인 꼴(`%c란도%c대사1%c아트라스%c대사2%c`)에서 저본도 그 이름을
+            #    품는다 — `…영감탱이가…{p}아트라스{p}란도!!`. 원문 자리가 정본으로 번역돼
+            #    `free` 가 비는데 조각은 남으니 예전엔 여기서 버렸다(실측 4블록).
+            #    ⚠ **같은 이름일 때만** 통과시킨다 — 다르면 우리가 모르는 구조다.
             if piece.strip():
+                if piece.strip() in {out[i].strip() for i in g}:
+                    continue
                 return None
             continue
         # 🔴 **빈 조각으로 글이 든 자리를 지우지 않는다**(2026-08-29). 저본이 원문의 일부만
