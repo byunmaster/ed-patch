@@ -747,8 +747,9 @@ def main():
         _fb, mmb = common.open_image(dst)
         built_files = {p: (lba, sz) for p, lba, sz in common.iso_files(mmb)}
 
-    files = ok = blocks = pinned = wrote = matched = moved = nofit = 0
+    files = ok = blocks = pinned = wrote = matched = moved = nofit = nofit_b = 0
     bad, skipped, checks = [], [], []
+    shortfall = {}
     for path in targets:
         got = load(path)
         if not got:
@@ -761,8 +762,13 @@ def main():
         built = None
         if canon and built_files and path in built_files:
             built = bytes(common.read_extent(mmb, *built_files[path]))
-        # 확장 영역(꼬리) — `expand_files` 가 연 자리. 원본 크기부터 새 크기까지가 우리 것이다.
-        bsize = built_files.get(path, (0, size))[1]
+        # 🔴 **원본으로 읽고 빌드로 쓴다** — 둘의 LBA 가 다를 수 있다.
+        #    `expand_files` 는 크기만 바꿔(LBA 불변) 원본 LBA 로 써도 맞았지만,
+        #    `relocate_files` 가 파일을 **뒤로 밀면서** LBA 가 갈렸다. 크기만 빌드 것으로
+        #    가져오고 LBA 를 원본 것으로 두었더니 **엉뚱한 섹터에 쓰고 되읽기가 터졌다**
+        #    (2026-08-31 실측: `/BIN/ED1SCN03.BIN 이주 0x77BC: 되읽기가 다르다`).
+        # ⚠ 확장 영역(꼬리)은 원본 크기부터 빌드 크기까지 — 그게 우리 자리다.
+        blba, bsize = built_files.get(path, (lba, size))
         over = []
         spare = []
         plans = []
@@ -790,11 +796,18 @@ def main():
         )
         moved += len(puts)
         nofit += len(left)
+        # 🔴 **얼마나 모자라나**를 같이 센다 — 자리를 늘릴지 판단하는 값이다.
+        #    ⚠ 여기서 재야 한다. 밖에서 `migrate` 를 다시 부르면 꼬리 확장분을 안 넘겨
+        #      과다 계상된다(2026-08-31 실측: 116 을 466 으로 셌다).
+        gap = sum(len(enc) + 1 for _o, _w, _j, _e, enc in over if _o in {x[0] for x in left})
+        nofit_b += gap
+        if gap:
+            shortfall[path] = gap
         if apply:
             if not os.path.exists(dst):
                 raise SystemExit(f"먼저 다른 패처를 돌린다 — {dst} 가 없다")
-            wrote += apply_runs(dst, path, lba, bsize, _base, plans, puts, mptrs)
-            checks.append((path, lba, bsize, _base, plans, puts, mptrs))
+            wrote += apply_runs(dst, path, blba, bsize, _base, plans, puts, mptrs)
+            checks.append((path, blba, bsize, _base, plans, puts, mptrs))
 
     print(f"씬 파일 {files}개 · 블록 {blocks} · 핀(참조 없음) {pinned}")
     if skipped:
@@ -803,7 +816,7 @@ def main():
             print(f"     0x{off:X} {why} — {jp!r}")
     if apply:
         print(f"  → 넣음 · 고친 포인터 {wrote}곳")
-    print(f"  이주(확장 영역) {moved:,} · 자리가 없어 남은 것 {nofit:,}")
+    print(f"  이주(확장 영역) {moved:,} · 자리가 없어 남은 것 {nofit:,} ({nofit_b:,}B · {nofit_b / 2048:.1f}섹터)")
     if apply:
         verify(dst, checks)
     if check:
@@ -817,6 +830,12 @@ def main():
         n = sum(1 for r in skipped if "칸을" in r[1])
         print(f"  넣을 수 있는 블록 {matched} · 칸을 넘어 건너뛴 것 {n}")
         print("  (`--apply` 로 넣는다 · `--check` 는 원문 항등만 본다)")
+    if shortfall:
+        # 🔴 **자리를 늘릴 도구가 읽는 값**(`relocate_files.py`). 파생물이라 `work/` 에 둔다 —
+        #    같은 입력이면 같은 값이 나온다(제1원칙).
+        os.makedirs(common.OUT_DIR, exist_ok=True)
+        with open(os.path.join(common.OUT_DIR, "scn_shortfall.json"), "w") as fh:
+            json.dump(dict(sorted(shortfall.items())), fh, indent=1)
     mm.close()
     _f.close()
     if mmb is not None:

@@ -70,6 +70,11 @@ step "타이틀 그림" "$T/patch_gfx_title.py" --apply
 step "메뉴 그림" "$T/patch_gfx_menu.py" --apply
 step "챕터 판" "$T/patch_gfx_cards.py" --apply
 step "HUD" "$T/patch_gfx_hud.py" --apply
+echo "  ── 파일 재배치 (모자란 씬 파일을 뒤로 밀어 1섹터씩 준다 — LBA 가 바뀐다)"
+# ⚠ **`patch_scn` 이 남긴 부족 목록**(`work/derived/scn_shortfall.json`)을 읽는다. 그래서
+#   첫 회차엔 목록이 없어 아무것도 안 하고, **다음 회차부터** 자리를 연다.
+#   🔴 그러니 이 게이트는 **두 번 돌려야 수렴한다** — 아래 씬 대사가 그 자리를 쓴다.
+step "파일 재배치" "$T/relocate_files.py" --apply
 echo "  ── 본편 대사 (저본 → 조판 → 칸 안에서 치환)"
 step "씬 대사" "$T/patch_scn.py" --apply
 echo "  ── ED2 몬스터 이름 (제자리 우선 · 넘치면 칸끼리 재배치)"

@@ -116,7 +116,15 @@ def main():
     if apply and not os.path.exists(dst):
         raise SystemExit(f"먼저 다른 패처를 돌린다 — {dst} 가 없다")
     _f, mm = common.open_image()
+    # 🔴 **읽기는 원본, 쓰기는 빌드** — 둘의 LBA 가 다를 수 있다(`relocate_files` 가 민다).
+    #    원본 LBA 로 빌드에 쓰면 **엉뚱한 섹터**를 고친다 — 2026-08-31 실측: 재배치를 넣자
+    #    ED2MON 열 파일이 통째로 원문으로 남아 화면의 일본어가 22 → 255줄이 됐다.
     files = {p: (lba, s) for p, lba, s in common.iso_files(mm)}
+    if apply and os.path.exists(dst):
+        _fb, mmb = common.open_image(dst)
+        files = {p: (lba, s) for p, lba, s in common.iso_files(mmb)}
+        mmb.close()
+        _fb.close()
 
     total, moved = 0, 0
     placed = {}
