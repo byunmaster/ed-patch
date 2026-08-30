@@ -29,6 +29,10 @@
    조용히 먹는다.
 """
 
+import json
+import os
+import re
+
 MAGIC = b"ED3WW MAPDATbin\x1a"
 BASE = 0x00200000  # LWRAM — 포인터가 가리키는 기준
 PTR_OFF = 0x10
@@ -54,7 +58,26 @@ CTRL_INJECT = 0x01  # 런타임 주입 — `01 <번호>` 두 바이트가 한 �
 #     ⚠ 런을 **시작**하지는 못한다 — 데이터 한복판의 `01` 을 텍스트로 오인하면 안 된다.
 
 # 블록 뒤에 올 수 있는 바이트 — 이 밖이면 그래픽 오탐으로 본다
-TERM_OK = frozenset({0x10, 0x0E, 0x00, 0x09, 0xFF, 0xFE})
+#   ⚠ 이 자가 좁으면 **블록이 조용히 사라진다.** 덤프에 아예 안 실리니 진척률에도 안 잡히고
+#     (분모가 「파서가 찾은 것」이라 99.95% 로 보였다) 화면에만 일본어가 남는다.
+#     빌드 이미지를 SJIS 로 훑어 되짚었더니 `MAP*.BIN` 에 **4,301자**가 그렇게 빠져 있었다
+#     (2026-08-29). 종료 바이트별로 세어 위 넷을 더하니 **3,079자·260 블록**이 돌아왔다.
+#   🔴 남은 1,222자는 **더하면 안 된다** — 종료가 `0xA5`·`0xA1`·`0x9D` 같은 SJIS 첫 바이트라
+#     그래픽 한복판이다(런 몸통이 `焜焜焜焜` 꼴로 나온다). 이 자를 넓히는 판단은 **글자수가
+#     아니라 몸통이 문장인가**로 한다.
+#   ⚠ 넓히면 **블록 색인이 밀린다**(실측 7,148 건). `script/MAP*.json` 의 `_jp` 지문으로
+#     재배치하고 `stamp_script.py --check` 로 확인한다 — 색인만 믿으면 번역이 엉뚱한 대사
+#     자리에 조용히 들어간다.
+#   ⓘ **2 차로 다섯을 더 열었다**(같은 날) — 남은 1,222자를 종료 바이트별로 **전량 눈으로**
+#     확인해 갈랐다. `0x08`(16 런) · `0x28`(3) · `0x29`(4) · `0x2E`(1) 은 **전부 진짜**였고,
+#     `0xA4`(7) 만 진짜 셋 + 그래픽 넷이 섞였다 — 그래픽 넷은 블록으로 잡히되 안 옮긴다
+#     (`査烙ヨ` · `怎…` · `壕レ`×2). `0x07` 은 개발자 테스트 맵 전용이라 안 열었다.
+TERM_OK = frozenset(
+    #   3 차 — 남은 것을 다시 전량 확인해 넷을 더 열었다. `0x2C`·`0x5B`·`0xB6` 은 진짜뿐이고,
+    #   `0xA1` 은 16 중 진짜 셋이라 **깨진 바이트 자**(`_MOJIBAKE`)를 같이 세웠다.
+    {0x10, 0x0E, 0x00, 0x09, 0xFF, 0xFE, 0x06, 0x02, 0x19, 0x0A,
+     0x08, 0x28, 0x29, 0x2E, 0xA4, 0x2C, 0x5B, 0xB6, 0xA1}
+)
 MIN_CHARS = 2
 
 _HIRA = (0x829F, 0x82F1)
@@ -78,6 +101,58 @@ def has_kana(body):
             if _HIRA[0] <= c <= _HIRA[1] or _KATA[0] <= c <= _KATA[1]:
                 return True
     return False
+
+
+#   가나 없이도 성립하는 자리 둘. 가나 필터는 그래픽 오탐을 거르는 **거친 자**라서,
+#   진짜 문장까지 같이 버린다 — 실측 533 런·2,731자(2026-08-29).
+#   ⚠ 통째로 열면 안 된다. 버려진 것의 대부분은 **연속 JIS 코드**(`巨拒朽求`)나 같은 글자
+#     반복(`埴埴場壌`)이라 사람이 보면 바로 갈리지만 기계는 못 가른다.
+_PUNCT = set("・。、！？…「」『』〜ー　．，")
+
+
+def _punct_only(s):
+    """부호만으로 된 「침묵」 대사인가 — `・・・・・。` 부류(실측 172 런)."""
+    core = s.replace("\r", "").replace("\x0f", "")
+    return bool(core) and all(c in _PUNCT for c in core)
+
+
+#   🔴 **거꾸로도 샌다** — 그래픽 바이트가 가나로 디코드돼 필터를 통과한다. 그때 몸통엔
+#     **키릴·그리스 자모**가 섞인다(`隻硯…ヤBВ`) — 이 게임 문안엔 그런 글자가 없다.
+#   ⚠ **U+FFFD(디코드 실패)는 자로 쓰면 안 된다** — 이 게임엔 `0x8540` 처럼 표준 SJIS 에
+#     없는 **게임 전용 짝**이 진짜 대사 안에 실재한다(`tests/test_mapfile.py`).
+#     처음에 U+FFFD 를 넣었다가 그 테스트가 바로 울렸다.
+_MOJIBAKE = re.compile("[\u0370-\u03ff\u0400-\u04ff]")
+
+KANA_FREE = "kana_free_blocks.json"
+_LISTS = None
+
+
+def _load_lists():
+    """가나 자를 넘어야/못 넘어야 하는 자리의 정본 — 이름표(`侍女`) · 장 표시(`弐章`).
+
+    🔴 판단이 담긴 자료라 커밋되는 파일이다(루트 CLAUDE.md 「제1 원칙」).
+    늘리려면 **사람이 눈으로 보고** 고른다 — 자동 판정은 아직 없다.
+    """
+    p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), KANA_FREE)
+    if not os.path.exists(p):
+        return frozenset(), frozenset()
+    with open(p, encoding="utf-8") as f:
+        d = json.load(f)
+    return frozenset(d.get("text", ())), frozenset(d.get("not_text", ()))
+
+
+def is_text(body):
+    """이 런을 대사로 볼 것인가 — 가나가 있거나, 부호만이거나, 정본에 있거나."""
+    global _LISTS
+    if _LISTS is None:
+        _LISTS = _load_lists()
+    ok, no = _LISTS
+    s = body.decode("cp932", "replace")
+    if s in no or _MOJIBAKE.search(s):
+        return False
+    if has_kana(body):
+        return True
+    return _punct_only(s) or s in ok
 
 
 def parse_header(b):
@@ -171,7 +246,7 @@ def _emit(b, out, st, end, nch):
     if nch < MIN_CHARS or term not in TERM_OK:
         return
     body = bytes(b[st:end])
-    if not has_kana(body):
+    if not is_text(body):
         return
     out.append({"off": st, "head": bytes(b[max(0, st - 2) : st]).hex(), "body": body, "term": term})
 
