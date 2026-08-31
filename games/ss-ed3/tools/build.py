@@ -27,6 +27,8 @@ sys.path.insert(
 import build_font
 import common as C
 import hangul_map as H
+import movie_hardsub as MV
+import patch_josa_hook as JOSA
 import reinsert as R
 import reinsert_battle as RBT
 import reinsert_book as RB
@@ -121,6 +123,14 @@ def patched(disc):
     asc, npad = build_font.build_ascii(disc)
     table = H.load()
     systbl, desctbl, paramtbl = RS.table(), RD.table(), RP.table()
+    #   ⓘ 무비는 **미리 구워 둔 것만** 넣는다 — 굽는 데 편당 몇 분이라 빌드를 세우지 않는다
+    #     (`movie_hardsub.py --all`). 안 구운 편은 세어서 알린다.
+    movietbl, movie_pend = MV.table(disc)
+    if movie_pend:
+        print(
+            f"      ⓘ 자막을 안 구운 무비 {len(movie_pend)}: {' '.join(movie_pend)}"
+            f" — `movie_hardsub.py --all` 로 구우면 다음 빌드에 들어간다"
+        )
 
     with C.open_disc(disc) as d:
         files = d.files()
@@ -150,6 +160,12 @@ def patched(disc):
                 b = d.read_extent(lba, size)
                 new, k, bad = RS.patch(b, name, systbl)
                 cnt = {"sys": k}
+                if name == "/0.BIN":
+                    #   🔴 **동적 조사 훅** — 문안에 넣은 병기(`을(를)`)를 표시 직전에
+                    #     하나로 줄인다. `%s` 에 꽂히는 건 아이템·인물 이름이라 빌드 때
+                    #     앞말을 모른다. 훅이 안 돌면 병기 그대로 보인다(안 틀린다).
+                    new, hk = JOSA.patch(new)
+                    cnt["josa"] = hk
             elif name == RBT.PATH:
                 #   🔴 **HP 창 이름은 문자열이 아니라 그림이다** — `status.spr` 안의
                 #     프리렌더 이름판 아틀라스를 다시 그린다(`reinsert_battle`).
@@ -164,6 +180,13 @@ def patched(disc):
                 b = d.read_extent(lba, size)
                 new, k, bad, _sq = RB.patch(b, stem, booktbl, table)
                 cnt = {"book": k}
+            elif name in movietbl:
+                #   🔴 **하드섭이다** — 자막을 영상에 태워 굽는다(`movie_hardsub.py`).
+                #     엔진에 그리게 하려던 소프트섭은 접었다: 엔진의 텍스트 그리기가
+                #     VDP1 스프라이트 VRAM 을 덮는 걸 실측으로 잡았다(`devlog.md`).
+                b = d.read_extent(lba, size)
+                new, bad = movietbl[name], []
+                cnt = {"movie": 1}
             elif name == RG.TARGETS[0][0]:
                 b = d.read_extent(lba, size)
                 new, _ = RG.apply(b)
@@ -225,7 +248,8 @@ def build_one(a_disc):
             print(
                 f"      대사 블록 {n.get('map', 0)} · 시스템 문자열 {n.get('sys', 0)} · "
                 f"설명문 {n.get('desc', 0)} · 이름 {n.get('name', 0)} · "
-                f"읽을거리 {n.get('book', 0)} · 화면 그림 {n.get('gfx', 0)} · 이름판 {n.get('plate', 0)}"
+                f"읽을거리 {n.get('book', 0)} · 화면 그림 {n.get('gfx', 0)} · 이름판 {n.get('plate', 0)} · "
+                f"무비 자막 {n.get('movie', 0)}"
             )
 
         print("[4/5] 섹터 무결성 자기검증")
