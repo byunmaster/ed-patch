@@ -545,6 +545,7 @@ def wrap_pages(
         _pull_bound_nouns(pages, width, cell_width)
         _pull_auxiliary(pages, width, cell_width)
         _pull_tail_orphans(pages, width, cell_width)
+        _merge_lone_lines(pages, width, cell_width)
     return [[_strip_spacing(ln, strip_after) for ln in pg] for pg in pages]
 
 
@@ -663,6 +664,46 @@ def split_reason(prev_word: str, next_word: str) -> str | None:
 def splits_unit(prev_word: str, next_word: str) -> bool:
     """두 어절 사이에서 줄을 나누면 한 덩어리가 갈리는가 — `split_reason` 의 불리언 판."""
     return split_reason(prev_word, next_word) is not None
+
+
+def _merge_lone_lines(pages, width, cell_width):
+    """창 **가운데**에 어절 하나만 있는 줄을 이웃과 합친다 — 문장이 토막나 보인다.
+
+    위 정리기 넷은 **낱말 부류**(지시관형사·의존명사·보조용언·꼬리 고아)를 보는데, 이건
+    **줄 구조**를 본다. `avoid_widow`(마지막 줄이 짧으면 앞 줄에서 하나 내림)가 문장마다
+    돌고 나서 뒷문장이 붙으면, 내려온 어절이 **가운데에 홀로** 남는다:
+
+        그러면 나도 어깨가 / 으쓱해질 / 게다. 왓핫하.   ← `으쓱해질` 이 고아
+        오오, 류난. / 기다리고 / 있었네. 수고했네.       ← `기다리고` 가 고아
+
+    ⚠ **아래로 먼저 붙인다.** 고아는 뒷줄과 **같은 문장**이라(문장 종결로 안 끝났다) 뒤와
+    합쳐야 뜻이 이어진다. 위로 올리면 `오오, 류난. 기다리고` / `있었네…` 처럼 이번엔
+    **다른 어절이 갈린다**(실측). 폭이 모자랄 때만 위로 올린다.
+
+    💡 병합은 줄 경계를 **없애기만** 한다 — 새 경계를 안 만드니 `splits_unit` 가드가 필요
+    없다(다른 정리기는 어절을 옮겨 경계를 이동시키므로 그 가드가 있다). 줄 수는 하나 줄어
+    드는데, **줄이 주는 방향은 넘침을 못 만든다**.
+
+    ⚠ 문장 종결로 끝나는 홀로 줄은 **건드리지 않는다** — `마스쿤을…` / `마을을…` 이나
+    `프…` / `프레이아…` 처럼 **의도한 토막**이 그 꼴이다(전수 89 중 59가 이 부류였다).
+    """
+    for pg in pages:
+        i = 1
+        while i < len(pg) - 1:
+            cur = pg[i]
+            if len(cur.split()) != 1 or is_sentence_end(cur):
+                i += 1
+                continue
+            if text_width(f"{cur} {pg[i + 1]}", cell_width) <= width:  # ↓ 같은 문장과
+                pg[i + 1] = f"{cur} {pg[i + 1]}"
+                del pg[i]
+                continue
+            if text_width(f"{pg[i - 1]} {cur}", cell_width) <= width:  # ↑ 차선
+                pg[i - 1] = f"{pg[i - 1]} {cur}"
+                del pg[i]
+                continue
+            i += 1
+    return pages
 
 
 def _pull_tail_orphans(pages, width, cell_width):

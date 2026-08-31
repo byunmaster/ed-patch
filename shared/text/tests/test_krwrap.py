@@ -241,6 +241,25 @@ def test_tail_orphan_pull_keeps_units():
     assert out == [["촌장 어서!", "병사들은 아직 2층에", "있습니다!!"]], out
 
 
+def test_lone_line_merges_down_into_its_sentence():
+    # 위도우 방지가 내린 어절이 뒷문장이 붙으면서 **가운데 고아**로 남던 자리
+    # (유저 QA 2026-08-31 `으쓱해질` 이 홀로 한 줄). 같은 문장인 뒷줄에 붙인다.
+    out = wrap_pages("그러면 나도 어깨가 으쓱해질 게다. 왓핫하.", width=14, lines_per_page=6)
+    assert out == [["그러면 나도 어깨가", "으쓱해질 게다. 왓핫하."]], out
+
+
+def test_lone_line_merges_up_when_down_does_not_fit():
+    # 아래로 붙이면 폭을 넘는다(`보물창고에`+`무슨 볼일이시옵니까?` = 15.5) → 위로 올린다.
+    out = wrap_pages("어라 왕자님. 보물창고에 무슨 볼일이시옵니까?", width=14, lines_per_page=3)
+    assert out == [["어라 왕자님. 보물창고에", "무슨 볼일이시옵니까?"]], out
+
+
+def test_lone_line_kept_when_sentence_ends():
+    # ⚠ 문장 종결로 끝나는 홀로 줄은 **의도한 토막**이다 — 건드리면 안 된다.
+    out = wrap_pages("마스쿤을… 마을을… 구해 주시오!", width=14, lines_per_page=3)
+    assert out == [["마스쿤을…", "마을을…", "구해 주시오!"]], out
+
+
 def _run():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     passed = 0
