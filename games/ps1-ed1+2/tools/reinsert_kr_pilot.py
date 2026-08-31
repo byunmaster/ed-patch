@@ -2719,10 +2719,27 @@ def build_candidate(raw, t, eid):
             #    나갔고, 주입형만 주황이라 같은 화면이 둘로 갈렸다(유저 QA 2026-09-01).
             #    ⚠ 닫는 `%c` 가 줄 안에 있어야 한다 — 문장 전체가 한 구간인 꼴
             #    (`%c태양의 돌을 받았다.%c`)은 이름만 칠할 수가 없어 건너뛴다.
-            j = c.find(MC, 2)
-            if j > 2 and b"\x0a" not in c[2:j]:
-                c = c[:2] + bytes([item_c]) + c[2:j] + MC + bytes([body_c]) + c[j + 2 :]
-                k = c.rfind(MC)
+            # ⚠ **구간이 여럿인 블록이 있다** — `%c성스러운 검%c을 건넸다.%c성스러운 갑옷%c…`
+            #    처럼 한 창에 아이템 셋이 든다(`ED2SCN3:333`). 첫 구간만 칠하면 그 블록
+            #    안에서 색이 갈린다(실측 2026-09-01). 주입형(`%s`)은 `replace` 라 전부
+            #    칠하는데 리터럴 경로만 하나로 끝내고 있었다.
+            out, i, hit = bytearray(), 0, False
+            while True:
+                a = c.find(MC, i)
+                if a < 0:
+                    break
+                j = c.find(MC, a + 2)
+                # 여는 `%c`~닫는 `%c` 사이가 **한 줄짜리 이름**일 때만 칠한다
+                if j < 0 or j == a + 2 or b"\x0a" in c[a + 2 : j]:
+                    out += c[i : a + 2]
+                    i = a + 2
+                    continue
+                out += c[i : a + 2] + bytes([item_c]) + c[a + 2 : j] + MC + bytes([body_c])
+                i, hit = j + 2, True
+            if hit:
+                out += c[i:]
+                c = bytes(out)
+                k = c.rfind(MC)  # 종단 %c 앞에 흰색 복귀 — 다음 블록으로 색이 새지 않게
                 c = c[:k] + b"\x01" + c[k:] if k >= 0 else c + b"\x01"
                 cand = c + b"\x00" * (-len(c) % 4 or 4)
         elif win in c:
