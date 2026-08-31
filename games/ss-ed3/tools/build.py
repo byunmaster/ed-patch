@@ -162,7 +162,7 @@ def patched(disc):
                 if not booktbl:
                     continue
                 b = d.read_extent(lba, size)
-                new, k, bad = RB.patch(b, stem, booktbl, table)
+                new, k, bad, _sq = RB.patch(b, stem, booktbl, table)
                 cnt = {"book": k}
             elif name == RG.TARGETS[0][0]:
                 b = d.read_extent(lba, size)

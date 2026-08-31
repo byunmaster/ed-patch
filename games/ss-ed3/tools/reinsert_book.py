@@ -34,17 +34,29 @@ def patch(data, stem, tbl, hg):
         return data, 0, []
     # ⚠ **덤프가 아니라 파일에서 읽는다** — 덤프 JSON 에는 `raw` 가 없어 칸 길이를 모른다.
     #   `book.load_lines` 는 눈으로 훑는 용도고, 되끼울 땐 원본 바이트가 필요하다.
-    lines = [dict(s, text=S.text_of(s["raw"])) for s in S.strings(data)]
+    lines = [
+        dict(s, text=S.text_of(s["raw"]))
+        for s in S.strings(data, S.load_base(f"/SYSTEM/{stem}.BIN"))
+    ]
     if not lines:
         return data, 0, []
     out = bytearray(data)
-    done, bad = 0, []
+    done, bad, squeezed = 0, [], 0
     for pi, (at, rows) in enumerate(B.paragraphs(lines)):
         kr = tbl.get(str(pi))
         if kr is None:
             continue
         widths = [len(x["raw"]) for x in lines[at : at + len(rows)]]
-        new, ok = B.split_to(kr, widths)
+        #   🔴 **전각으로 바꾸고 넣는다** — 반각이 하나만 끼어도 책 화면은 그 뒤를 통째로
+        #     뭉갠다(`book.FULLWIDTH` 의 설명). 부호에 붙는 공백은 여기서 뺀다.
+        base = B.tidy_spaces(B.to_fullwidth(kr))
+        kr2, dropped = B.fit_spaces(base, widths)
+        if not B.split_to(kr2, widths)[1] and "|" in base:
+            #   ⚠ `|` 는 **옛 어절 배분의 낭비를 우회하려던 표식**이라, 글자 단위로 채우는
+            #     지금은 오히려 줄을 버린다. 안 들어가면 하드 브레이크를 풀고 다시 채운다.
+            kr2, dropped = B.fit_spaces(B.tidy_spaces(base.replace("|", "　")), widths)
+        squeezed += bool(dropped)
+        new, ok = B.split_to(kr2, widths)
         if not ok:
             bad.append(f"{stem}[{pi}]: 원문 {sum(widths)}칸에 안 들어간다 — {kr[:24]}…")
             continue
@@ -55,17 +67,27 @@ def patch(data, stem, tbl, hg):
                 bad.append(f"{stem}[{pi}] {k}번째 줄: {len(raw)}B > {room}B")
                 break
             raw += "　".encode("shift_jis") * ((room - len(raw)) // 2)
-            raw += b" " * (room - len(raw))
+            #   ⚠ 여백이 홀수로 남으면 **반각 한 칸**이 끼어 그 줄이 깨진다 — 못 넘어간다.
+            if (room - len(raw)) % 2:
+                bad.append(f"{stem}[{pi}] {k}번째 줄: 칸이 홀수로 남는다 ({room}B)")
+                break
+            #   ⚠ **두 바이트씩 걷어 선두 바이트만 본다** — SJIS 트레일 바이트는 `0x40`
+            #     처럼 0x80 미만인 게 정상이라, 바이트를 통째로 보면 멀쩡한 줄을 퇴짜 놓는다.
+            if any(
+                not (0x81 <= raw[x] <= 0x9F or 0xE0 <= raw[x] <= 0xEF) for x in range(0, room, 2)
+            ):
+                bad.append(f"{stem}[{pi}] {k}번째 줄: 전각이 아닌 자리가 있다")
+                break
             out[s["off"] : s["off"] + room] = raw
         else:
             done += 1
     assert len(out) == len(data), (len(out), len(data))
-    return bytes(out), done, bad
+    return bytes(out), done, bad, squeezed
 
 
 def main():
     hg = H.load()
-    total = nbad = 0
+    total = nbad = nsq = 0
     with C.open_disc(1) as d:
         for name, lba, size in d.files():
             if not (name.startswith("/SYSTEM/BOOK") and name.endswith(".BIN")):
@@ -75,13 +97,14 @@ def main():
             if not tbl:
                 continue
             b = d.read_extent(lba, size)
-            new, n, bad = patch(b, stem, tbl, hg)
+            _new, n, bad, sq = patch(b, stem, tbl, hg)
             total += n
             nbad += len(bad)
+            nsq += sq
             print(f"  {stem}: 문단 {n} 넣음" + (f" · 문제 {len(bad)}" if bad else ""))
             for e in bad[:4]:
                 print(f"     ❌ {e}")
-    print(f"\n문단 {total} 넣음 · 문제 {nbad}")
+    print(f"\n문단 {total} 넣음 · 띄어쓰기를 줄인 문단 {nsq} · 문제 {nbad}")
 
 
 if __name__ == "__main__":

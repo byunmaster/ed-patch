@@ -24,6 +24,58 @@ import common as C
 COLS = 12  # 한 줄 전각 수 (실측)
 INDENT = "　"  # 문단 시작 표식
 
+# 🔴 **읽을거리는 전각만 쓴다 — 반각이 하나라도 끼면 그 줄 뒤가 통째로 뭉갠다.**
+#    책 화면(`/BOOKPRG.BIN`)은 텍스트를 **2 바이트씩 고정으로** 읽는다. 원문 38 권에는
+#    반각이 **하나도 없어서**(실측) 그 전제가 성립했는데, 우리 한글은 어절 공백이 반각(1B)
+#    이라 그 뒤로 정렬이 한 바이트 밀린다. 유저 스크린샷 3 장이 **전부 첫 공백에서** 깨졌다
+#    (`＜순례자의` 까지 멀쩡 → 그 뒤 잡음). 대사창은 반각을 처리하므로 이 함정은 책에만 있다.
+FULLWIDTH = {
+    " ": "　",
+    "!": "！",
+    '"': "”",
+    "'": "’",
+    "(": "（",
+    ")": "）",
+    ",": "，",
+    "-": "−",
+    ".": "．",
+    "/": "／",
+    ":": "：",
+    ";": "；",
+    "<": "＜",
+    ">": "＞",
+    "?": "？",
+    "~": "〜",
+    **{chr(0x30 + i): chr(0xFF10 + i) for i in range(10)},  # ０-９
+    **{chr(0x41 + i): chr(0xFF21 + i) for i in range(26)},  # Ａ-Ｚ
+    **{chr(0x61 + i): chr(0xFF41 + i) for i in range(26)},  # ａ-ｚ
+}
+# 전각 부호 뒤(앞)의 공백은 뺀다 — 부호에 여백이 붙어 있어 한글 조판에서도 안 넣는 자리다.
+_SP_AFTER = set("．，！？』）〟”〜−…。、")
+_SP_BEFORE = set("『（“〝")
+
+
+def to_fullwidth(text):
+    """반각을 전각으로 — 남는 반각이 있으면 **실패시킨다**(조용히 깨지느니 멈춘다)."""
+    #   ⓘ `|` 는 번역자가 줄을 직접 가르는 표식이라 남긴다(`split_to` 가 걷어낸다).
+    out = "".join(c if c == "|" else FULLWIDTH.get(c, c) for c in text)
+    bad = {c for c in out if ord(c) < 0x80 and c != "|"}
+    if bad:
+        raise SystemExit(f"읽을거리에 옮길 수 없는 반각 글자: {sorted(bad)} — {text[:30]!r}")
+    return out
+
+
+def tidy_spaces(text):
+    """전각 부호에 붙는 공백을 뺀다 — 조판 관례이자 칸을 아끼는 자리다."""
+    out = []
+    for i, c in enumerate(text):
+        if c == "　":
+            nxt = text[i + 1] if i + 1 < len(text) else ""
+            if (out and out[-1] in _SP_AFTER) or nxt in _SP_BEFORE:
+                continue
+        out.append(c)
+    return "".join(out)
+
 
 def load_lines(stem):
     """`work/derived/sys_jp/SYSTEM_<stem>.json` → 줄 목록."""
@@ -78,41 +130,68 @@ def split_to(text, widths):
     def nb(s):
         return sum(1 if ord(c) < 0x80 else 2 for c in s)
 
-    # ⚠ `|` 로 **줄을 직접 가를 수 있다.** 자동 배분은 어절 경계만 보므로 원문 줄 폭이
-    #   들쭉날쭉하면(예: 22B·8B·12B) 첫 줄에 8B 만 들어가는 식으로 낭비된다. 그럴 때
-    #   번역자가 `|` 로 끊는다.
-    if "|" in text:
-        parts = [x.strip() for x in text.split("|")]
-        parts += [""] * (len(widths) - len(parts))
-        fits = len(parts) <= len(widths) and all(
-            sum(1 if ord(c) < 0x80 else 2 for c in r) <= w for r, w in zip(parts, widths)
-        )
-        return parts[: len(widths)], fits
-
-    rows, i = [], 0
-    words = text.split(" ")
-    for w_i, room in enumerate(widths):
-        cur = ""
-        last = w_i == len(widths) - 1
-        while i < len(words):
-            w = words[i]
-            cand = w if not cur else cur + " " + w
-            if nb(cand) <= room:
-                cur = cand
+    # ⚠ `|` 로 **줄을 직접 가를 수 있다** — 표제와 본문을 붙이지 않으려는 자리에 쓴다.
+    #   ⓘ 예전엔 「어절 배분이 줄 끝을 낭비하니 손으로 끊는다」는 용도였는데, 아래처럼
+    #     글자 단위로 채우게 되면서 그 이유는 없어졌다. 그래도 **하드 브레이크**로는 남긴다.
+    #
+    # 🔴 **글자 단위로 꽉 채운다 — 어절 경계를 안 본다**(2026-08-31 전환).
+    #   ① 원문이 그렇다 — 일본어는 어절 구분이 없어 줄 끝에서 그냥 꺾인다.
+    #   ② 이 게임 엔진 자체가 그렇다(대사창도 「엔진은 어절을 안 본다」).
+    #   ③ 어절 단위로 배분하면 줄 끝마다 칸이 남아, 전각으로 바꾸자 **129 문단이 넘쳤다.**
+    #     글자 단위로 채우니 **문안을 한 줄도 안 줄이고** 들어간다.
+    #   ⚠ 줄 첫머리에 오는 공백은 버린다 — 칸만 먹고 안 보인다.
+    rows = []
+    wi = 0
+    for seg in text.split("|"):
+        seg = seg.strip()
+        i = 0
+        first = True
+        while i < len(seg) or first:
+            if wi >= len(widths):
+                return rows, False
+            while i < len(seg) and seg[i] == "　" and not (first and not rows):
+                i += 1  # 줄머리 공백 버리기 (맨 첫 줄의 문단 들여쓰기는 남긴다)
+            room = widths[wi]
+            cur, used = "", 0
+            while i < len(seg) and used + nb(seg[i]) <= room:
+                cur += seg[i]
+                used += nb(seg[i])
                 i += 1
-                continue
-            if not cur:  # 한 어절이 줄보다 길다 — 잘라 넣는다
-                k = 0
-                while k < len(w) and nb(w[: k + 1]) <= room:
-                    k += 1
-                if k:
-                    cur, words[i] = w[:k], w[k:]
-            break
-        rows.append(cur)
-        if i >= len(words) and not last:
-            rows += [""] * (len(widths) - len(rows))
-            break
-    return rows, i >= len(words)
+            rows.append(cur)
+            wi += 1
+            first = False
+            if not cur and i < len(seg):
+                return rows, False  # 한 글자도 못 넣는 칸 — 못 들어간다
+    rows += [""] * (len(widths) - len(rows))
+    return rows[: len(widths)], True
+
+
+def fit_spaces(text, widths):
+    """칸에 안 들어가면 **띄어쓰기를 필요한 만큼만** 줄인다 → `(문안, 뺀 개수)`.
+
+    🔴 원문 일본어엔 띄어쓰기가 아예 없다 — 한 칸이 곧 한 글자다. 우리 한글은 어절 공백이
+    칸을 먹으므로 같은 내용이 원문보다 길어진다. 문안을 줄이는 대신 **공백부터** 줄인다.
+    ⓘ 빼는 차례는 **뒤에 오는 낱말이 짧은 자리부터**다(「감춘 지」→「감춘지」처럼 붙여도
+      읽히는 자리). 같은 길이면 뒤쪽부터 — 앞머리 조판을 덜 흔든다.
+    ⚠ 그래도 안 들어가면 그대로 돌려준다. 문안을 줄여야 하는 자리라 **게이트가 잡아야 한다.**
+    """
+    if split_to(text, widths)[1]:
+        return text, 0
+    ch = list(text)
+    cand = []
+    for i, c in enumerate(ch):
+        if c != "　":
+            continue
+        j = i + 1
+        while j < len(ch) and ch[j] not in ("　", "|"):
+            j += 1
+        cand.append((j - i - 1, -i, i))  # 뒤 낱말이 짧은 것 · 뒤쪽 먼저
+    for _, _, i in sorted(cand):
+        ch[i] = ""
+        t = "".join(ch)
+        if split_to(t, widths)[1]:
+            return t, sum(1 for x in ch if x == "")
+    return "".join(ch), sum(1 for x in ch if x == "")
 
 
 def split_cols(text, cols=COLS):
