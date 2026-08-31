@@ -187,13 +187,26 @@ class Typeset(unittest.TestCase):
         for ln in T.lines(got)[1:]:
             self.assertFalse(ln and ln[0] in T.HEAD_BAN, got)
 
-    def test_nudge_never_adds_a_line(self):
-        """🔴 **줄이 늘면 안 민다.** 무조건 밀면 부호 491→43 인데 6행 초과가 0→33 이 된다 —
-        미관을 고치려다 화면이 잘린다."""
+    def test_nudge_never_overflows_and_never_orphans(self):
+        """🔴 밀어내기가 지키는 것 둘 — **창을 안 넘고, 고아 줄을 안 늘린다.**
+
+        ⚠ 처음엔 「줄이 늘면 안 민다」로 뒀다가 두 번 헛디뎠다:
+        ① 조건을 `> max(rows0, WIN_ROWS)` 로 써서 「창 이내면 늘어도 된다」가 됐고,
+           밀어내기가 **고아 줄을 스스로 만들었다**(19건). 그러고도 부호는 줄머리에
+           그대로라 **순손실**이었다.
+        ② 반대로 「한 줄도 늘면 금지」로 조이니 밀 수 있는 자리를 놓쳤다(부호 28 vs 21).
+        ⇒ 막을 것은 「줄이 느는 것」이 아니라 **창 초과**와 **고아**다.
+        """
         for n in range(1, 90):
-            seg = "가" * n + "."
-            before, after = len(T.lines(seg)), len(T.lines(T.nudge(seg)))
-            self.assertLessEqual(after, max(before, T.WIN_ROWS), f"{n}자에서 줄이 늘었다")
+            for seg in ("가" * n + ".", "가" * n + "!!", "1" * n + "."):
+                got = T.nudge(seg)
+                ls, ls0 = T.lines(got), T.lines(seg)
+                self.assertLessEqual(len(ls), T.WIN_ROWS, f"{seg[:3]}×{n}: 창을 넘었다")
+                self.assertLessEqual(
+                    sum(1 for x in ls if len(x.strip()) == 1),
+                    sum(1 for x in ls0 if len(x.strip()) == 1),
+                    f"{seg[:3]}×{n}: 고아 줄을 만들었다 — {got!r}",
+                )
 
     def test_nudge_keeps_the_contract(self):
         """개행만 넣는다 — `%c`·`%s`·`%d` 의 개수와 순서는 그대로다(계약)."""

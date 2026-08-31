@@ -181,16 +181,28 @@ def nudge(seg):
     엔진에는 금칙 처리가 없어 「…불러들였다 / .」처럼 부호만 다음 줄로 떨어진다
     (실측 2026-08-30: 조판된 13,733블록에 **491곳**).
 
-    🔴 **줄 수가 늘면 안 민다.** 무조건 밀면 부호는 491→43 으로 줄지만 **6행을 넘는 창이
-       0→33** 이 된다 — 미관을 고치려다 화면이 잘린다. 조건을 걸면 43 · 0 이다.
+    🔴 **막는 것은 「줄이 느는 것」이 아니라 「고아 줄」과 「창 초과」다**(2026-08-30 정정).
+       무조건 밀면 창이 넘치고(잘린다), 반대로 「줄이 한 줄이라도 늘면 금지」로 조이면
+       밀 수 있는 자리까지 놓친다. 실측 — 부호 **28 → 21**, 창 초과는 둘 다 0:
+
+           줄이 늘면 금지      부호 28
+           고아를 늘리면 금지   부호 21   ← 이것
+
+    ⚠ **고아 줄**(글자 하나만 있는 줄)을 막는 게 핵심이다. 안 막았을 때 밀어내기가
+      스스로 고아를 만들었다(19건) — 그러고도 부호는 여전히 줄머리에 있어 **순손실**이었다:
+
+          …………………(14자)        ………………(13자)
+          !! 이 굼벵이 자식!!   →   아               ← 고아
+                                    !! 이 굼벵이 자식!!
     🔴 우리가 넣는 개행은 **엔진 접기 지점보다 앞**이라 「엔진 개행 + 내 개행 = 빈 줄」
        함정(PS1 세션 실측 2026-08-30)이 구조적으로 안 난다.
     ⚠ 개행만 넣으므로 **구조 계약**(`%c`·`%s`·`%d` 의 개수와 순서)은 안 바뀐다.
     """
-    out, rows0 = seg, len(lines(seg))
+    out = seg
     for _ in range(40):  # 한 번 내리면 뒤가 밀려 새 위반이 날 수 있다
         ws = wrap(out)
         inner = _mark_inner(out)
+        base = _orphans([ln for ln, _a in ws])
         for i, (ln, _at) in enumerate(ws[1:], 1):
             prev, pat = ws[i - 1]
             if not (ln and ln[0] in HEAD_BAN and prev):
@@ -202,14 +214,20 @@ def nudge(seg):
             #    소프트락이다(실측 2026-08-30: 안 막았더니 건너뛴 블록이 38 늘었다).
             if at in inner or not 0 < at < len(out) or out[at - 1] == "\n":
                 continue
-            cand = out[:at] + "\n" + out[at:]
-            if len(lines(cand)) > max(rows0, WIN_ROWS):
-                continue  # 줄이 는다 — 이 자리는 그냥 둔다
-            out = cand
+            cand = lines(out[:at] + "\n" + out[at:])
+            # 🔴 창을 넘기거나 **고아를 늘리면** 안 민다 — 안 민 것보다 나빠진다(위 주석)
+            if len(cand) > WIN_ROWS or _orphans(cand) > base:
+                continue
+            out = out[:at] + "\n" + out[at:]
             break
         else:
             return out
     return out
+
+
+def _orphans(ls):
+    """글자 하나만 있는 줄의 수 — 밀어내기가 이걸 **늘리면** 안 된다."""
+    return sum(1 for x in ls if len(x.strip()) == 1)
 
 
 def _mark_inner(t):
