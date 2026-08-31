@@ -107,6 +107,14 @@ def scan(scenes=None):
                 continue
             tail = raw.split("\n")[-1]
             head = nxt.split("\n")[0]
+            # 🔴 **꽉 찬 줄(29열) 뒤는 경계가 아니다** — 엔진이 거기서 스스로 줄을 넘긴다.
+            #    그래서 뒷 블록은 다음 행에서 시작하고, 붙지도 넘치지도 않는다. 이 규칙은
+            #    `join_lines`/`_fills_frame` 가 이미 쓰던 것이고 **인게임으로 확인됐다**
+            #    (2026-08-30 유저 QA: 꽉 찬 줄 뒤에 커서가 2행에 있어 빈 줄이 났다).
+            #    ⚠ 이 줄이 없으면 `drop_frame_full_nl` 이 지운 군더더기 개행을 검출기가
+            #    「붙음」으로 오탐한다(실측 10곳).
+            if abs(_w(tail) - R.FRAME_SLOTS) < 1e-9:
+                continue
             # ⚠ 뒷 블록이 `%c` 로 시작하면 **이름창·색 전환이 새로 열린다** — 앞 줄에 안 붙는다.
             # (`…무사하겠지!!` + `%c류난%c` 는 화자가 바뀌는 자리지 문장이 이어지는 자리가 아니다.)
             if not head or head.startswith("%c"):

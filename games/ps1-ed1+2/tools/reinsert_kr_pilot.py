@@ -2426,6 +2426,48 @@ def table_block_eids(scn_name):
     return hit
 
 
+def _tail_fills_frame(cand):
+    """재조립본의 **마지막 줄이 창 틀(29열)을 꽉 채우는가.**
+
+    꽉 찬 줄 뒤에는 **엔진이 이미 자동 개행**해 커서를 다음 행에 둔다. 거기에 우리가 꼬리
+    개행을 더 얹으면 행이 하나 더 내려가 **빈 줄**이 된다(유저 QA 2026-08-31 아토스 국왕
+    `아, 아니 딱히 그런 일은 없다.` = 정확히 29열). `join_lines` 가 줄 **사이**에서 쓰는
+    규칙(`_fills_frame`)과 같은 것을, 블록 **꼬리**에 적용하는 것이다.
+
+    ⚠ `%s`·`%d` 가 든 줄은 판정하지 않는다 — 주입값의 폭이 런타임에 정해져 열 수를 못 센다.
+
+    ⚠ **개행은 `restore_tail_nl` 만 붙이는 게 아니다** — 조판 단계에서 이미 붙어 오는 쪽이
+    절반이라(22곳 중 11), 「안 붙이기」로는 절반만 잡힌다. 그래서 **떼는** 쪽으로 짠다.
+    """
+    try:
+        txt = render_bytes(cand.rstrip(b"\x00"), ctrl=True)
+    except Exception:  # noqa: BLE001 — 되읽기 실패는 판정 불가로 본다
+        return False
+    body = txt[:-2] if txt.endswith("%c") else txt
+    last = body.rstrip("\n").split("\n")[-1]
+    if not last or "%s" in last or "%d" in last:
+        return False
+    return abs(sum(cell_w(c) for c in last) - FRAME_SLOTS) < 1e-9
+
+
+def drop_frame_full_nl(cand):
+    """꽉 찬 줄 뒤의 **군더더기 꼬리 개행**을 뗀다 — 그 자리는 엔진이 이미 넘겼다.
+
+    `_tail_fills_frame` 판정이 서면 `…\n` 도 `…\n%c` 도 그 개행 하나를 지운다. 지워도
+    두 블록이 붙지 않는다 — **줄이 이미 꽉 차서 엔진이 자동으로 넘기기 때문**이고,
+    그게 이 함수를 쓸 수 있는 유일한 근거다(안 찬 줄에서 지우면 곧장 붙음이 된다)."""
+    if not _tail_fills_frame(cand):
+        return cand
+    c = cand.rstrip(b"\x00")
+    if c.endswith(MC) and len(c) >= 3 and c[-3] == 0x0A:
+        c = c[:-3] + MC
+    elif c.endswith(b"\x0a"):
+        c = c[:-1]
+    else:
+        return cand
+    return c + b"\x00" * (-len(c) % 4 or 4)
+
+
 def restore_tail_nl(cand, raw):
     """원본이 `\\n%c`로 끝나면 재조립본에도 그 **꼬리 0x0A**를 복원한다.
 
@@ -2671,7 +2713,19 @@ def build_candidate(raw, t, eid):
         item_c, body_c = COLOR_ITEM[eid]
         c = cand.rstrip(b"\x00")
         win = MC + b"%s" + MC
-        if win in c:
+        if win not in c and c.startswith(MC):
+            # ⚠ **이름이 글자로 박힌 꼴**(`%c용의 피리%c를 받았다.`)도 같은 획득 안내다.
+            #    `%s` 만 보던 탓에 이쪽 96블록이 통째로 빠져 **콜사이트 색(초록)** 그대로
+            #    나갔고, 주입형만 주황이라 같은 화면이 둘로 갈렸다(유저 QA 2026-09-01).
+            #    ⚠ 닫는 `%c` 가 줄 안에 있어야 한다 — 문장 전체가 한 구간인 꼴
+            #    (`%c태양의 돌을 받았다.%c`)은 이름만 칠할 수가 없어 건너뛴다.
+            j = c.find(MC, 2)
+            if j > 2 and b"\x0a" not in c[2:j]:
+                c = c[:2] + bytes([item_c]) + c[2:j] + MC + bytes([body_c]) + c[j + 2 :]
+                k = c.rfind(MC)
+                c = c[:k] + b"\x01" + c[k:] if k >= 0 else c + b"\x01"
+                cand = c + b"\x00" * (-len(c) % 4 or 4)
+        elif win in c:
             # 여는 `%c` 뒤 = 인자가 칠한 **다음** 자리라 우리 색이 이긴다. 닫는 `%c` 뒤엔
             # 본문색을 둔다(인자가 흰색으로 되돌리는 자리다). 창이 둘 이상인 블록이 있다
             # (`…을(를) 받았습니다. …을(를) 손에 넣었습니다.`) — 전부 같게 칠한다.
@@ -2693,6 +2747,11 @@ def build_candidate(raw, t, eid):
             # 게이트가 조용하다), 무엇보다 원본 조판과 달라진다. 공백이면 krwrap 이 알아서 감는다.
             c += b"\x20" if eid in TRAIL_SP else b"\x0a"
             cand = c + b"\x00" * (-len(c) % 4 or 4)
+    # 🔴 **꼬리 개행 정리는 맨 마지막이다** — 개행을 붙이는 자리가 셋(조판기 · `restore_tail_nl`
+    # · `TRAIL_NL` 오버라이드)이라 중간에서 지우면 뒤에서 다시 붙는다(실측: 앞에 두었더니
+    # 22곳 중 11곳만 잡혔다).
+    if cand is not None:
+        cand = drop_frame_full_nl(cand)
     if cand is not None and not from_tpl:
         n_runs = jp_ctrl_runs(raw)
         _, inline_fmt = jp_inline_fmt_windows(raw)
