@@ -96,7 +96,7 @@ def paragraphs(lines):
     start = 0
     for i, s in enumerate(lines):
         t = s["text"]
-        head = t.startswith(INDENT) or t.startswith("＜")
+        head = t.startswith((INDENT, "＜"))
         if head and cur:
             out.append((start, cur))
             cur, start = [], i
@@ -114,49 +114,46 @@ def join_text(rows):
     return body
 
 
-def split_to(text, widths):
-    """번역문을 **원문 각 줄의 폭**(`widths`)에 맞춰 나눈다 → 줄 목록.
+def _nb(t):
+    """바이트 폭 — 전각 2B · 반각 1B."""
+    return sum(1 if ord(c) < 0x80 else 2 for c in t)
 
-    🔴 줄마다 칸이 다르다 — 문단 끝 줄은 짧고, 드물게 13 자짜리도 있다. 균등하게 12 자로
-    나누면 **짧은 줄에서 넘친다**(실측: 8B 칸에 18B 를 넣으려 했다). 그래서 원문 줄 폭을
-    그대로 따라간다.
 
-    ⚠ 어절 경계를 지키되, 어절이 그 줄 폭보다 길면 잘라 넣는다(안 그러면 줄이 사라진다).
-    """
-
-    # 🔴 재는 단위는 **칸이 아니라 바이트**다. 전각 2B · 반각 1B 이고 폭은 언제나
-    #    `바이트/2` 칸이므로, 바이트만 맞추면 화면 폭도 저절로 맞는다. 한국어 어절 공백은
-    #    반각(1B)이라 칸으로 세면 과대 계산이 된다(실측: 11 칸 줄에 들어갈 문안을 퇴짜 놓았다).
-    def nb(s):
-        return sum(1 if ord(c) < 0x80 else 2 for c in s)
-
-    # ⚠ `|` 로 **줄을 직접 가를 수 있다** — 표제와 본문을 붙이지 않으려는 자리에 쓴다.
-    #   ⓘ 예전엔 「어절 배분이 줄 끝을 낭비하니 손으로 끊는다」는 용도였는데, 아래처럼
-    #     글자 단위로 채우게 되면서 그 이유는 없어졌다. 그래도 **하드 브레이크**로는 남긴다.
-    #
-    # 🔴 **글자 단위로 꽉 채운다 — 어절 경계를 안 본다**(2026-08-31 전환).
-    #   ① 원문이 그렇다 — 일본어는 어절 구분이 없어 줄 끝에서 그냥 꺾인다.
-    #   ② 이 게임 엔진 자체가 그렇다(대사창도 「엔진은 어절을 안 본다」).
-    #   ③ 어절 단위로 배분하면 줄 끝마다 칸이 남아, 전각으로 바꾸자 **129 문단이 넘쳤다.**
-    #     글자 단위로 채우니 **문안을 한 줄도 안 줄이고** 들어간다.
-    #   ⚠ 줄 첫머리에 오는 공백은 버린다 — 칸만 먹고 안 보인다.
+def _split(text, widths, words):
+    """`split_to` 의 알맹이 — `words` 면 **어절 경계**에서만 꺾는다."""
     rows = []
     wi = 0
-    for seg in text.split("|"):
-        seg = seg.strip()
+    for si, seg in enumerate(text.split("|")):
+        #   🔴 **앞의 전각 공백을 지우지 않는다.** `strip()` 은 `　`(U+3000)까지 먹는데,
+        #     읽을거리에서 그건 **가운데 맞춤**이다(`　　　＜검사교본＞`). 지웠더니 제목이
+        #     통째로 왼쪽에 붙었다(유저 스크린샷 2026-08-31).
+        seg = seg.rstrip() if si == 0 else seg.strip()
         i = 0
         first = True
         while i < len(seg) or first:
             if wi >= len(widths):
                 return rows, False
             while i < len(seg) and seg[i] == "　" and not (first and not rows):
-                i += 1  # 줄머리 공백 버리기 (맨 첫 줄의 문단 들여쓰기는 남긴다)
+                i += 1  # 줄머리 공백 버리기 (맨 첫 줄의 들여쓰기·가운데 맞춤은 남긴다)
             room = widths[wi]
             cur, used = "", 0
-            while i < len(seg) and used + nb(seg[i]) <= room:
+            while i < len(seg) and used + _nb(seg[i]) <= room:
                 cur += seg[i]
-                used += nb(seg[i])
+                used += _nb(seg[i])
                 i += 1
+            #   🔴 **어절 한복판에서 끊겼으면 마지막 공백까지 물린다 — 단 여유가 있을 때만.**
+            #     「어절 모드/글자 모드」를 통째로 가르면 한 줄이 빠듯한 문단은 **전부**
+            #     글자 단위로 떨어진다(실측: 「무너지/지」 한 자 때문에 문단 전체가 갈렸다).
+            #     그래서 물릴 때마다 **남은 칸에 나머지가 들어가는지** 재고 결정한다.
+            if words and i < len(seg) and seg[i] != "　" and cur and cur[-1] != "　":
+                back = cur.rfind("　")
+                #   ⚠ **줄이 확 짧아지면 안 물린다** — 낱말 하나를 살리려다 줄 절반이
+                #     비면 그게 더 안 읽힌다(실측: 「　『필살의」 한 줄이 났다).
+                if back > 0 and _nb(cur[:back]) * 4 >= room * 3:
+                    rest = _nb(seg[i - (len(cur) - back) :].lstrip("　"))
+                    if rest <= sum(widths[wi + 1 :]):
+                        i -= len(cur) - back
+                        cur = cur[:back]
             rows.append(cur)
             wi += 1
             first = False
@@ -164,6 +161,28 @@ def split_to(text, widths):
                 return rows, False  # 한 글자도 못 넣는 칸 — 못 들어간다
     rows += [""] * (len(widths) - len(rows))
     return rows[: len(widths)], True
+
+
+def split_to(text, widths):
+    """번역문을 **원문 각 줄의 폭**(`widths`)에 맞춰 나눈다 → `(줄 목록, 들어갔나)`.
+
+    🔴 줄마다 칸이 다르다 — 문단 끝 줄은 짧고, 드물게 13 자짜리도 있다. 균등하게 12 자로
+    나누면 **짧은 줄에서 넘친다**(실측: 8B 칸에 18B 를 넣으려 했다). 그래서 원문 줄 폭을
+    그대로 따라간다. 재는 단위는 **칸이 아니라 바이트**다(전각 2B · 반각 1B).
+
+    ⚠ `|` 로 줄을 직접 가를 수 있다 — 표제와 본문을 안 붙이려는 자리에 쓴다.
+
+    🔴 **어절 경계를 먼저 시도하고, 안 들어가면 글자 단위로 떨어진다**(2026-08-31 유저 지적).
+      · 글자 단위로만 채웠더니 「그때까지 각/자 정진하도록」·「그럼『검/사교본」처럼
+        낱말이 갈려 안 읽혔다.
+      · 그렇다고 어절 단위만 쓰면 줄 끝마다 칸이 남아 **129 문단이 넘친다**(그래서 한때
+        글자 단위로 돌렸었다). ⇒ 줄마다 **남은 칸을 재서** 여유가 있을 때만 어절로 물리고,
+        그래도 안 들어가면 문단 전체를 글자 단위로 다시 떨어뜨린다(마지막 보루).
+    """
+    rows, ok = _split(text, widths, words=True)
+    if ok:
+        return rows, ok
+    return _split(text, widths, words=False)
 
 
 def fit_spaces(text, widths):

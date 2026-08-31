@@ -136,29 +136,67 @@ def patch(data, name, tbl):
     return bytes(out), done, bad
 
 
+FILES = ("/0.BIN", "/RLTPRG.BIN", "/BLACK.BIN")
+
+
+def terminator_mismatch(tbl):
+    """**원문은 있는데 종결 바이트가 안 맞아** 안 붙는 키들.
+
+    🔴 이게 없으면 키 하나가 **조용히 안 붙는다.** 실측 2026-08-31:
+      `経験値%dと\r%dゴアを手に入れた！` 에 `\x10` 을 빼먹었더니 폴백이 찾는 바이트열이
+      `…！\x00` 이 되어 못 찾았고, 그 문자열을 **품고 있던 짧은 키**
+      (`%dゴアを手に入れた！\x10`)가 뒷부분만 먹어 화면에 **「経験値２０と / 7 고아를
+      얻었다!」** 로 나왔다. 빌드도 게이트도 초록이었다 — 「넣음 N」만 세고
+      **무엇이 안 들어갔는지**를 안 봤기 때문이다.
+
+    ⓘ 「어디에도 없는 키」는 안 센다 — `chapter_line`·`word` 처럼 **MAP 쪽 문안**이
+      같은 파일에 섞여 있어 늘 빨간불이 된다. 여기서 보는 건 **이 파일에 원문이
+      분명히 있는데 안 붙는** 자리뿐이다.
+    """
+    out = []
+    with C.open_disc(1) as d:
+        raws = {}
+        for n, lba, size in d.files():
+            if n in FILES:
+                raws[n] = d.read_extent(lba, size)
+    for jp in tbl:
+        _, body = split_lead(jp)
+        try:
+            txt = body.encode("shift_jis")
+        except UnicodeEncodeError:
+            continue
+        pat = txt if txt[-1:] in (b"\x00", b"\x10", b"\x0f") else txt + b"\x00"
+        #   ⚠ **어느 파일에서도** 정확 일치가 없을 때만 운다 — 한 파일에 긴 낱말의
+        #     일부로만 들어 있는 경우가 있다(`ルーレ` ⊂ `ルーレット`).
+        where = [n for n, b in raws.items() if txt in b]
+        if where and not any(pat in b for b in raws.values()):
+            out.append((where[0], jp))
+    return out
+
+
 def main():
     tbl = table()
     if not tbl:
         print("⏭ 넣을 문안이 없다 (script/system.json)")
         return
-    total = done = 0
+    done = 0
     bad = []
     with C.open_disc(1) as d:
         for n, lba, size in d.files():
-            if n != "/0.BIN":
+            if n not in FILES:
                 continue
             b = d.read_extent(lba, size)
             _, k, err = patch(b, n, tbl)
             done += k
             bad += err
-    total = len(tbl)
-    print(f"문안 {total}  넣음 {done}  실패 {len(bad)}")
+    miss = terminator_mismatch(tbl)
+    print(f"문안 {len(tbl)}  넣음 {done}  실패 {len(bad)}  종결 안 맞음 {len(miss)}")
     for jp, why in bad:
-        print(f"  ❌ {jp} — {why}")
-    if bad or done < total:
-        if done < total and not bad:
-            print(f"  ⚠ {total - done} 개는 `/0.BIN` 에서 그 문자열을 못 찾았다")
-        raise SystemExit(1 if bad else 0)
+        print(f"  ❌ {jp!r} — {why}")
+    for n, jp in miss:
+        print(f"  ❌ {n} 에 원문은 있는데 안 붙는다 (종결 바이트) — {jp!r}")
+    if bad or miss:
+        raise SystemExit(1)
     print("✅ 전부 들어간다")
 
 

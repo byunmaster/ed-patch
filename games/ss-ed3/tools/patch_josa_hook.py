@@ -82,6 +82,10 @@ NBITS = None  # 표 비트 수
 
 # 병기 쌍 (받침용, 무받침용)
 PAIR_CHARS = (("은", "는"), ("이", "가"), ("을", "를"))
+
+#   반각 숫자로 끝나는 이름의 받침 — 0 영·1 일·3 삼·6 육·7 칠·8 팔 은 있고 2·4·5·9 는 없다.
+#   비트 N = 숫자 N 에 받침이 있나. 실측 계기: 「검사교본 1」(2026-08-31 유저 스크린샷).
+DIGIT_BITS = 0b0111001011
 PAREN_L, PAREN_R = ord("("), ord(")")  # 반각 — 정본이 그렇게 쓴다
 
 
@@ -128,17 +132,39 @@ def syl_index(code):
 
 
 # ── 파이썬 모의 — 스텁과 **같은 뜻**이어야 한다 ──────────────────────────────
+def batchim_of(arg: bytes, bits: bytes):
+    """이름의 **마지막 글자**에 받침이 있나 → `0/1`, 못 정하면 `None`.
+
+    🔴 「뒤 2 바이트」로 잡으면 안 된다 — 이름이 **반각으로 끝날 수 있다**
+      (실측: 「검사교본 1」). 앞에서부터 훑어 마지막 글자를 찾고,
+      반각이면 **숫자 읽는 소리**로 본다(`DIGIT_BITS`). 스텁과 같은 규칙이다.
+    """
+    p, last = 0, None
+    while p < len(arg) and arg[p]:
+        last = p
+        p += 2 if arg[p] >= 0x80 else 1
+    if last is None:
+        return None
+    c1 = arg[last]
+    if c1 < 0x80:
+        d = c1 - 0x30
+        return (DIGIT_BITS >> d) & 1 if 0 <= d < 10 else 0
+    if last + 1 >= len(arg):
+        return None
+    idx = syl_index((c1 << 8) | arg[last + 1])
+    if idx is None:
+        return None
+    return (bits[idx >> 3] >> (idx & 7)) & 1
+
+
 def collapse(fmt: bytearray, at: int, arg: bytes, bits: bytes, pairs: bytes) -> bool:
     """`fmt[at:]` 의 병기를 `arg` 의 종성으로 줄인다 → 고쳤나.
 
     `at` 은 `'s'` 를 가리킨다. 병기는 그 다음부터 `[A][(][B][)]` 6 바이트다.
     """
-    if len(arg) < 2:
+    has = batchim_of(arg, bits)
+    if has is None:
         return False
-    idx = syl_index((arg[-2] << 8) | arg[-1])
-    if idx is None:
-        return False
-    has = (bits[idx >> 3] >> (idx & 7)) & 1
 
     p = at + 1
     if p + 6 > len(fmt) or fmt[p + 2] != PAREN_L or fmt[p + 5] != PAREN_R:
@@ -328,7 +354,7 @@ def routine(free, tbl_addr, dbg=None):
     ⓘ 쌍(을/를·은/는·이/가)인지까지는 안 본다 — 바로 뒤가 `(`…`)` 인 여섯 바이트 꼴은
       우리 병기 말고 나올 데가 없다.
     """
-    LIT = 0x100
+    LIT = 0x140  # 상수 자리 (코드가 이 앞에 들어간다)
     a = Asm(free)
     lit = free + LIT
 
@@ -347,22 +373,65 @@ def routine(free, tbl_addr, dbg=None):
     a.tst(6, 6)
     a.bt("out")
 
-    # ── 마지막 두 바이트 → r1=c1, r2=c2
-    a.mov(6, 0)
+    #   ── 마지막 **글자**를 앞에서부터 훑어 찾는다
+    #     🔴 「뒤 2 바이트」로 잡으면 안 된다 — 이름이 **반각으로 끝날 수 있다**
+    #       (실측 2026-08-31: 「검사교본 1」 → 마지막이 `1`(0x31)이라 슬롯이 음수가 되어
+    #       판정을 포기하고 「검사교본 1을(를)」이 그대로 화면에 나왔다).
+    a.mov(6, 0)  # p
+    a.movi(0, 5)  # 마지막 글자 자리
     a.label("scan")
     a.movbl(0, 1)
     a.extub(1, 1)
     a.tst(1, 1)
     a.bt("scanned")
+    a.mov(0, 5)
+    a.movi(0x80, 3)
+    a.extub(3, 3)
+    a.cmphs(3, 1)  # 0x80 이상이면 2 바이트
+    a.bf("one")
+    a.addi(2, 0)
+    a.bra("scan")
+    a.nop()
+    a.label("one")
     a.addi(1, 0)
     a.bra("scan")
     a.nop()
     a.label("scanned")
-    a.addi(-2, 0)
-    a.cmphs(6, 0)
-    a.bf("out")
-    a.movbl(0, 1)
+    a.tst(5, 5)
+    a.bt("out")
+    a.movbl(5, 1)
     a.extub(1, 1)
+    a.movi(0x80, 3)
+    a.extub(3, 3)
+    a.cmphs(3, 1)
+    a.bt("two")
+
+    #   ── 반각으로 끝난다 — **숫자면 읽는 소리로** 받침을 본다
+    #     0 영·1 일·3 삼·6 육·7 칠·8 팔 은 받침이 있고 2·4·5·9 는 없다 → 0x01CB
+    #     숫자가 아닌 반각(영문·부호)은 받침 없음으로 떨어뜨린다.
+    a.mov(1, 0)
+    a.addi(-0x30, 0)
+    a.cmppz(0)
+    a.bf("nobat")
+    a.movi(10, 3)
+    a.cmphs(3, 0)
+    a.bt("nobat")
+    a.movl_pc(1, lit + 24)
+    a.label("dsh")
+    a.tst(0, 0)
+    a.bt("gotbit")
+    a.shlr(1)
+    a.addi(-1, 0)
+    a.bra("dsh")
+    a.nop()
+    a.label("nobat")
+    a.movi(0, 1)
+    a.bra("gotbit")
+    a.nop()
+
+    #   ── 두 바이트로 끝난다 — r1=c1, r2=c2
+    a.label("two")
+    a.mov(5, 0)
     a.addi(1, 0)
     a.movbl(0, 2)
     a.extub(2, 2)
@@ -407,12 +476,12 @@ def routine(free, tbl_addr, dbg=None):
     a.extub(1, 1)
     a.label("sh")
     a.tst(7, 7)
-    a.bt("shdone")
+    a.bt("gotbit")
     a.shlr(1)
     a.addi(-1, 7)
     a.bra("sh")
     a.nop()
-    a.label("shdone")
+    a.label("gotbit")
     a.movi(1, 3)
     a.and_(3, 1)
 
@@ -479,7 +548,9 @@ def routine(free, tbl_addr, dbg=None):
     code = a.bytes()
     assert len(code) <= LIT, f"코드가 상수 자리를 넘었다 ({len(code)}B > {LIT}B)"
     code += b"\x00" * (LIT - len(code))
-    return code + struct.pack(">IIIIII", SLOT0, NBITS, tbl_addr, FRAME_FMT, HOOK_RET, dbg or 0)
+    return code + struct.pack(
+        ">IIIIIII", SLOT0, NBITS, tbl_addr, FRAME_FMT, HOOK_RET, dbg or 0, DIGIT_BITS
+    )
 
 
 # ── 자리 (실측으로 고른 셋) ─────────────────────────────────────────────────
