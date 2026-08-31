@@ -64,10 +64,10 @@ def targets(d):
 
 
 def dump_one(b, name):
-    st = S.strings(b, S.LOAD_BASE.get(name))
+    st = S.strings(b, S.load_base(name))
     return {
         "size": len(b),
-        "load_base": S.LOAD_BASE.get(name),
+        "load_base": S.load_base(name),
         "strings": [{"off": x["off"], "by": x["by"], "text": S.text_of(x["raw"])} for x in st],
     }, st
 

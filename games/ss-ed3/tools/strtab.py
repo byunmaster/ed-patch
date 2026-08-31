@@ -37,12 +37,33 @@ import mapfile as M
 # (틀린 베이스를 주면 포인터가 안 잡히는 게 아니라 **엉뚱한 자리를 확인해 준다**).
 LOAD_BASE = {"/0.BIN": 0x06004000}
 
+# 🔴 **읽을거리(`BOOK*.BIN`)는 포인터가 파일 상대다** — 베이스가 0 이다(실측 2026-08-31:
+#    BOOK06 의 줄 오프셋 31 개가 **전부** 파일 안 BE32 로 가리켜진다).
+#    이걸 안 주면 구 제한(`MAX_KU`, JIS 1수준)에 걸려 **2수준 한자가 든 줄이 통째로 빠진다** —
+#    책 산문엔 逞·踵·悸·拗·囁·惧 같은 글자가 실제로 나온다. 실측으로 9 권 10 줄이 빠졌고,
+#    그 줄만 일본어로 남아 **본문이 깨져 보였다**(유저 보고 2026-08-30).
+#    ⚠ 구 제한은 `/0.BIN` 같은 **코드 파일**에는 여전히 필요하다 — 거기선 코드 바이트가
+#      희귀 한자로 디코드되는 게 쓰레기의 주범이다. 그래서 **파일 갈래로** 가른다.
+
+
+def load_base(name):
+    """그 파일의 포인터 베이스 — 모르면 `None`(휴리스틱만 쓴다)."""
+    if name and name.startswith("/SYSTEM/BOOK") and name.endswith(".BIN"):
+        return 0
+    return LOAD_BASE.get(name)
+
 MAX_KU = 47  # JIS 제1수준까지
 MIN_CHARS = 2
 
 # 문자열 **안에** 들어오는 서식 제어 — 실측: 안내문이 `00 00 09 20 20 20 …` 꼴로 늘어선다
 # (NUL 종료 + 패딩 + TAB + 공백 들여쓰기). 이걸 거부하면 세가새턴 저장 안내가 통째로 빠진다.
-ALLOWED_CTRL = (0x09, 0x0A, 0x0D)
+#   🔴 `0x10` = **메시지 끝 표식**이다(창을 닫고 다음을 기다린다). 이걸 안 받으면
+#     그 표식이 붙은 문자열이 통째로 「글이 아니다」로 떨어진다 — 실측 2026-08-31:
+#     **전투 보상 `経験値%dと…` · 레벨업 `%sのレベルが%dになった。` · 빈 보물상자** 등
+#     아홉이 덤프에서 빠져 있었고, 정본에 없으니 화면에 일본어로 나왔다(유저 인게임 확인).
+#     `0x0F` 은 **페이지 넘김**이다(`typeset.PAGE`) — 이걸 막으면 `%sを<0F>売りました。`
+#     같이 **앞뒤가 갈린 문안**이 안 잡혀, 뒤만 번역되고 앞은 일본어로 남는다.
+ALLOWED_CTRL = (0x09, 0x0A, 0x0D, 0x0F, 0x10)
 
 
 def ptr_targets(b, base):
@@ -105,6 +126,12 @@ def _shape(seg):
     return (nch, jp) if nch else None
 
 
+def _blank(seg):
+    """보이는 글자가 공백뿐인가 — 전각 공백(`81 40`)·반각 공백·서식 제어만."""
+    t = text_of(seg)
+    return not t.strip().strip("　")
+
+
 def strings(b, base=None):
     """`[{off, raw, by}]` — `by` 는 `ptr`(포인터 확인) 또는 `heur`(구 제한 휴리스틱).
 
@@ -118,11 +145,34 @@ def strings(b, base=None):
             sh = _shape(seg)
             if sh and sh[1]:
                 nch, _ = sh
-                if off in targets:
+                heur = nch >= MIN_CHARS and _max_ku(seg) <= MAX_KU
+                #   🔴 **포인터는 「더하기」로만 쓴다** — 휴리스틱이 잡던 줄을 빼면
+                #     `book.paragraphs()` 의 문단 색인이 밀려 **기존 번역이 엉뚱한 문단에
+                #     붙는다**(실측 2026-08-31: 빈 줄 셋을 빼자 BOOK11·13 이 통째로 −1 밀렸다).
+                #     그래서 포인터로만 잡히는 것 중 **공백뿐이 아닌 줄**만 더한다.
+                if off in targets and (heur or not _blank(seg)):
                     out.append({"off": off, "raw": seg, "by": "ptr"})
-                elif nch >= MIN_CHARS and _max_ku(seg) <= MAX_KU:
+                elif heur:
                     out.append({"off": off, "raw": seg, "by": "heur"})
         off += len(seg) + 1
+
+    #   🔴 **포인터가 조각 한복판을 가리키는 자리도 담는다**(2026-08-31).
+    #     `/0.BIN` 은 포인터 표 바로 뒤에 문자열을 붙여 놓은 자리가 있어, NUL 로만 가르면
+    #     앞의 포인터 바이트가 섞여 조각 전체가 「글이 아니다」로 탈락한다. 그 바람에
+    #     **상점 금액 `%dピア` 와 전투 보상 `経験値%dと…` 이 통째로 안 잡혔다**
+    #     (유저 인게임 실측 2026-08-31 — 화면에 일본어로 떴다).
+    #   ⚠ 이미 담은 문자열 **안쪽**을 가리키는 포인터는 버린다 — 겹쳐 쓰면 서로 먹는다.
+    spans = [(s["off"], s["off"] + len(s["raw"])) for s in out]
+    for t in sorted(targets):
+        if t >= len(b) or any(a <= t < z for a, z in spans):
+            continue
+        e = b.find(b"\x00", t)
+        seg = b[t : e if e >= 0 else len(b)]
+        sh = _shape(seg)
+        if seg and sh and sh[1] and not _blank(seg):
+            out.append({"off": t, "raw": seg, "by": "ptr"})
+            spans.append((t, t + len(seg)))
+    out.sort(key=lambda s: s["off"])
     return out
 
 

@@ -76,7 +76,7 @@ def patch(data, name, tbl):
     out = bytearray(data)
     done, bad = 0, []
     seen = set()
-    for s in S.strings(data, S.LOAD_BASE.get(name)):
+    for s in S.strings(data, S.load_base(name)):
         lead, jp = split_lead(S.text_of(s["raw"]))
         kr = tbl.get(jp)
         if kr is None:
@@ -99,7 +99,10 @@ def patch(data, name, tbl):
     #   넓히는 건 **이미 재 보고 버린 길**이다 — 마커 0.6% 얻고 쓰레기 2,633 개를 얻는다
     #   (`docs/status.md` 3 절). 그래서 파서는 그대로 두고, **표에 있는데 못 찾은 것만**
     #   그 바이트열 그대로 뒤져 넣는다. 찾는 대상이 이미 정해져 있으니 오탐이 안 는다.
-    for jp, kr in tbl.items():
+    #   🔴 **긴 것부터 넣는다.** 짧은 항목이 먼저 들어가면 그것을 품는 **긴 문자열이
+    #     더는 안 걸린다** — 실측 2026-08-31: `売りました。` 가 먼저 박혀
+    #     `%sを<0D>売りました。` 가 못 붙었고, 화면에 **「약초を 팔았습니다.」** 로 나왔다.
+    for jp, kr in sorted(tbl.items(), key=lambda kv: -len(kv[0])):
         #   🔴 **`seen` 으로 거르면 안 된다.** 앞 단계가 그 문자열을 **한 자리에서** 바꿨다고
         #     해서 다른 자리까지 바뀐 게 아니다 — 같은 이름이 표 여럿에 들어 있다.
         #     실측 2026-08-27: `/0.BIN` 0x76c60 의 이름 목록에서 `クリス`·`シャーラ` 는
