@@ -161,6 +161,55 @@ class Typeset(unittest.TestCase):
         self.assertIsNone(got)
         self.assertEqual(bad, "창을 넘는다")
 
+    # ── 엔진 접기 · 금칙 밀어내기 (인게임 실측 2026-08-30)
+
+    def test_line_is_fourteen_full_width_cells(self):
+        """🔴 한 줄 = **전각 14 = 반각 28** (RAM 눈금자 실측 2026-08-30).
+
+        대사 블록을 바이트 길이를 유지한 채 눈금자로 덮어쓰고 화면을 읽었다.
+        두 극단이 같은 값(14.0)을 낸다 — 이게 이 규칙의 유일한 토대다.
+
+        ⚠ **전각만 보면 틀린 규칙도 통과한다.** 처음엔 「`COLS`(15) 이상이면 넘김」이었고
+          전각 14 는 맞혔지만 반각이 **29** 였다. 그래서 두 극단을 **둘 다** 못 박는다.
+        """
+        self.assertEqual(len(T.lines("가" * 40)[0]), 14, "전각은 14자")
+        self.assertEqual(len(T.lines("1" * 90)[0]), 28, "반각은 28자")
+        # 14.0 까지는 들어가고, 넘으면 나간다
+        self.assertEqual(T.lines("가" * 13 + ".."), ["가" * 13 + ".."])
+        self.assertEqual(T.lines("가" * 13 + "..."), ["가" * 13 + "..", "."])
+
+    def test_head_ban_symbol_is_pulled_down_with_its_neighbour(self):
+        """🔴 부호만 줄머리에 떨어지면 앞 글자와 **함께** 내린다(실측 491곳)."""
+        # 전각 14 를 채우고 부호가 오면 그 부호만 다음 줄로 떨어진다
+        seg = "가" * 14 + "."
+        self.assertEqual(T.lines(seg), ["가" * 14, "."])
+        got = T.nudge(seg)
+        for ln in T.lines(got)[1:]:
+            self.assertFalse(ln and ln[0] in T.HEAD_BAN, got)
+
+    def test_nudge_never_adds_a_line(self):
+        """🔴 **줄이 늘면 안 민다.** 무조건 밀면 부호 491→43 인데 6행 초과가 0→33 이 된다 —
+        미관을 고치려다 화면이 잘린다."""
+        for n in range(1, 90):
+            seg = "가" * n + "."
+            before, after = len(T.lines(seg)), len(T.lines(T.nudge(seg)))
+            self.assertLessEqual(after, max(before, T.WIN_ROWS), f"{n}자에서 줄이 늘었다")
+
+    def test_nudge_keeps_the_contract(self):
+        """개행만 넣는다 — `%c`·`%s`·`%d` 의 개수와 순서는 그대로다(계약)."""
+        jp = "%c兵士%c\n" + "あ" * 13 + "だ。%c"
+        got, bad = self.t(jp, "가" * 13 + "나다.")
+        self.assertIsNone(bad)
+        self.assertEqual(T.contract(got), T.contract(jp))
+
+    def test_nudge_is_the_only_copy_of_the_rule(self):
+        """⛔ 접기·금칙 규칙의 정본은 조판기다 — 계측기가 사본을 들면 갈린다(4-D)."""
+        import check_engine_wrap as W
+
+        self.assertIs(W.lines, T.lines)
+        self.assertIs(W.HEAD_BAN, T.HEAD_BAN)
+        self.assertIs(W.WIN_ROWS, T.WIN_ROWS)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

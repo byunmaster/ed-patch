@@ -78,7 +78,7 @@ from glossary import table
 from text.line_key import key as line_key
 
 MARK = re.compile(r"(%[csd])")
-COLS = 15  # 창 한 줄 = 전각 15자 (status 6절, 실측)
+COLS = 14  # 창 한 줄 = **전각 14자** (RAM 눈금자 실측 2026-08-30, status 6-0절)
 ROWS = 5  # 본문 5행 (창 6행 중 화자가 1행)
 
 
@@ -110,6 +110,111 @@ def fits(body):
       수는 없으므로** 조각마다 재면 진짜 초과는 그대로 잡힌다(`check_text` ④ 와 같은 규약).
     """
     return all(width(seg.replace("\n", "")) <= COLS * ROWS for seg in body.split("%c"))
+
+
+# 🔴 **창은 7행까지 간다** — 원문 실측(2026-08-30). 위 `ROWS`(=5)는 「본문 5행」이라
+#    뜻이 다르다. 화면 행을 세는 자리에서는 **화자 줄까지 포함한** 값이 한계다
+#    (본문 자리가 `\n` 으로 시작하는 꼴 `%c화자%c\n본문` 에서 그 앞 개행은 빈 줄이 아니라
+#    화자 줄의 끝이라 줄 세기에 이미 들어간다).
+#
+#    원문 전량을 이 접기 규칙에 태운 분포 — **8행이 하나도 없다**:
+#
+#        1행 10,681 · 2행 3,798 · 3행 3,968 · 4행 3,043 · 5행 1,129 · 6행 145 · 7행 3
+#
+#    ⚠ 처음엔 6 으로 뒀는데 **근거가 없었다**. 폭을 14 로 고치자 우리 문안 4건이 7행이 되어
+#      「잘린다」로 잡혔는데, 그중 하나는 **원문도 7행**이었다(ED1SCN14). 원저작자가 쓰는
+#      값을 우리가 못 쓸 이유가 없다.
+#    ⚠ 이건 **하한**이다 — 「원문이 안 넘긴 값이 곧 엔진 한계」는 아니다
+#      (`docs/reference/our-findings.md` 「창 폭·줄 수는 RAM 에 「눈금자」를 심어 잰다」).
+#      8행을 쓰고 싶어지면 그때 눈금자로 재라. 지금은 **원문 이내**라 안전하다.
+WIN_ROWS = 7
+
+# 🔴 줄머리에 오면 안 되는 글자(금칙) — 한국어 조판의 관례다.
+HEAD_BAN = set("。、．，.,!?！？」』）)]〕》〉…‥·:;~")
+
+
+def lines(seg):
+    """엔진이 접은 뒤의 줄들 — 글자 단위, 누적 폭이 `COLS`(14전각)를 **넘으면** 넘긴다.
+
+    🔴 **RAM 눈금자로 확정했다**(2026-08-30). 대사 블록을 바이트 길이를 유지한 채 눈금자로
+       덮어쓰고 화면을 읽는다(`docs/reference/our-findings.md` 「창 폭·줄 수는 RAM 에
+       「눈금자」를 심어 잰다」). 두 극단이 **같은 값**을 낸다:
+
+        전각 `１２３４５６７８９０…`  →  **14자 / 줄**   (= 14.0)
+        반각 `1234567890…`          →  **28자 / 줄**   (= 14.0)
+
+    ⚠ **전각만 보면 틀린 규칙도 맞아떨어진다.** 처음엔 인게임 표본 넷을 역산해
+      「`COLS`(15) **이상**이면 넘김」으로 뒀는데, 그러면 반각이 **29자**여야 한다.
+      반각 눈금자가 28을 내면서 드러났다 — 한계는 **14.0 이하**이고 비교는 `>` 다.
+    ⚠ 08-18 정찰의 「원문 전량을 폭 15 로 접으면 초과 0」은 **원문 JP** 기준이라 하한만
+      말한다(일본어엔 낱말 사이 공백이 없어 반 칸이 안 흐른다).
+    """
+    return [ln for ln, _at in wrap(seg)]
+
+
+def wrap(seg):
+    """`(줄, 그 줄이 시작하는 인덱스)` 들 — 접기의 **정본**.
+
+    ⚠ 인덱스를 같이 내는 이유: 자동 접기 자리엔 **개행 문자가 없다.** 줄 길이만으로
+      원문 위치를 되짚으면 어긋난다(실측 2026-08-30 — `nudge` 가 엉뚱한 자리를 잘랐다).
+    """
+    out, cur, w, start = [], "", 0.0, 0
+    for i, ch in enumerate(seg):
+        if ch == "\n":
+            out.append((cur, start))
+            cur, w, start = "", 0.0, i + 1
+            continue
+        cw = width(ch)
+        if w + cw > COLS:  # 🔴 «초과» — 14.0 까지는 들어간다(전각 14 = 반각 28)
+            out.append((cur, start))
+            cur, w, start = ch, cw, i
+        else:
+            cur += ch
+            w += cw
+    out.append((cur, start))
+    return out
+
+
+def nudge(seg):
+    """줄머리에 올 부호를 **앞 글자와 함께** 내린다 — 개행을 넣어 미리 끊는다.
+
+    엔진에는 금칙 처리가 없어 「…불러들였다 / .」처럼 부호만 다음 줄로 떨어진다
+    (실측 2026-08-30: 조판된 13,733블록에 **491곳**).
+
+    🔴 **줄 수가 늘면 안 민다.** 무조건 밀면 부호는 491→43 으로 줄지만 **6행을 넘는 창이
+       0→33** 이 된다 — 미관을 고치려다 화면이 잘린다. 조건을 걸면 43 · 0 이다.
+    🔴 우리가 넣는 개행은 **엔진 접기 지점보다 앞**이라 「엔진 개행 + 내 개행 = 빈 줄」
+       함정(PS1 세션 실측 2026-08-30)이 구조적으로 안 난다.
+    ⚠ 개행만 넣으므로 **구조 계약**(`%c`·`%s`·`%d` 의 개수와 순서)은 안 바뀐다.
+    """
+    out, rows0 = seg, len(lines(seg))
+    for _ in range(40):  # 한 번 내리면 뒤가 밀려 새 위반이 날 수 있다
+        ws = wrap(out)
+        inner = _mark_inner(out)
+        for i, (ln, _at) in enumerate(ws[1:], 1):
+            prev, pat = ws[i - 1]
+            if not (ln and ln[0] in HEAD_BAN and prev):
+                continue
+            if len(prev) < 2:
+                continue
+            at = pat + len(prev) - 1  # 앞 줄 **마지막 글자**의 자리 — 부호와 함께 내린다
+            # 🔴 **마크업 한복판에서 자르면 계약이 깨진다** — `%s` 를 `%`/`\n`/`s` 로 가르면
+            #    소프트락이다(실측 2026-08-30: 안 막았더니 건너뛴 블록이 38 늘었다).
+            if at in inner or not 0 < at < len(out) or out[at - 1] == "\n":
+                continue
+            cand = out[:at] + "\n" + out[at:]
+            if len(lines(cand)) > max(rows0, WIN_ROWS):
+                continue  # 줄이 는다 — 이 자리는 그냥 둔다
+            out = cand
+            break
+        else:
+            return out
+    return out
+
+
+def _mark_inner(t):
+    """마크업(`%c`·`%s`·`%d`) **내부**의 자리들 — 여기서 자르면 계약이 깨진다."""
+    return {i for m in MARK.finditer(t) for i in range(m.start() + 1, m.end())}
 
 
 def split(jp):
@@ -277,7 +382,19 @@ def to_saturn(kr):
 
 
 def typeset(jp, kr, names):
-    """`(우리 블록, 못 한 이유)` — 원문 마크업을 그대로 두고 텍스트만 간다."""
+    """`(우리 블록, 못 한 이유)` — 원문 마크업을 그대로 두고 텍스트만 간다.
+
+    ⚠ 마지막에 **금칙 밀어내기**를 건다(`nudge`) — 엔진이 접은 뒤 부호가 줄머리에
+      떨어지는 자리를 미리 끊는다. 개행만 넣으므로 구조 계약은 그대로다.
+    """
+    built, why = _typeset(jp, kr, names)
+    if built is None:
+        return None, why
+    return "%c".join(nudge(seg) for seg in built.split("%c")), None
+
+
+def _typeset(jp, kr, names):
+    """조판 본체 — 밀어내기 전."""
     kr = to_saturn(kr)
     if kr is None:
         return None, "저본 마크업이 남는다"

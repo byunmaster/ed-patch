@@ -1,8 +1,14 @@
 """**빌드 이미지에 남은 일본어**를 전수로 훑는다 — 「무엇이 아직 안 됐나」의 정본.
 
     python3 tools/scan_untranslated.py            # 본체 둘 (ED.BIN · ED2.BIN)
-    python3 tools/scan_untranslated.py --all      # 몬스터 파일까지
-    python3 tools/scan_untranslated.py --scn      # 씬 파일까지 (본편 대사 — 아직 통째로 일본어다)
+    python3 tools/scan_untranslated.py --mon      # + 몬스터 파일
+    python3 tools/scan_untranslated.py --scn      # + 씬 파일 (본편 대사)
+    python3 tools/scan_untranslated.py --all      # ⭐ **전부** — 화면에 나가는 것의 정본
+
+🔴 **`--all` 이 「전부」를 안 뜻하던 시절이 있었다**(~2026-08-30). 본체 + 몬스터까지만이고
+   **씬 파일 93개(본편 대사)를 안 봤는데**, 그 상태로 낸 「합계 0줄」이 status 에 「✅ 남은
+   일본어 0줄」로 올라가 **다 끝난 것처럼 읽혔다.** `--scn` 으로 돌리니 **31줄**이 나왔다.
+   ⇒ 이름이 커버리지를 속이면 아무도 의심하지 않는다(체크리스트 4-B). `--all` 은 전부다.
 
 ## 왜 필요한가
 
@@ -106,9 +112,10 @@ def scan(path, mm, files):
 def main():
     common.verify_source()
     paths = list(MAIN)
-    if "--all" in sys.argv or "--scn" in sys.argv:
+    every = "--all" in sys.argv
+    if every or "--scn" in sys.argv or "--mon" in sys.argv:
         paths += MON
-    if "--scn" in sys.argv:
+    if every or "--scn" in sys.argv:
         _f0, mm0 = common.open_image()
         paths += sorted(p for p, _l, _s in common.iso_files(mm0) if "SCN" in p)
         mm0.close()
