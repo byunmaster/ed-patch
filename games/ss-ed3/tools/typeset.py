@@ -136,6 +136,63 @@ def overflows(text, width=WIN_COLS, rows=WIN_ROWS):
     return bad
 
 
+# ── 부호 고아 ────────────────────────────────────────────────────────────────
+#   🔴 **엔진은 어절을 안 본다** — 폭이 차면 글자 한복판에서 자른다. 그래서 「전각 17 자 +
+#     반각 부호」(17.5 슬롯)인 줄은 **부호 하나만 다음 줄로 밀린다**(유저 실측 2026-08-30).
+#     넘겨서 붙일 방법은 없다(폭은 엔진 것이다). 대신 **마지막 공백을 개행으로 바꾸면**
+#     어절 경계에서 접혀 부호가 제 낱말과 함께 남는다 — 공백 1B → 개행 1B 라 **길이가 안 변해서**
+#     길이 보존 재삽입(`reinsert.fit`)을 안 깨뜨린다.
+ORPHAN_PUNCT = "、。，．,.!?！？…」』）)·:;：；~〜"
+
+
+def fold(line, width=WIN_COLS):
+    """엔진이 접는 대로 — **글자 단위**로 자른 줄 목록."""
+    out, cur, c = [], "", 0.0
+    for ch in visible(line):
+        cw = 0.5 if ord(ch) < 0x80 else 1.0
+        if c + cw > width:
+            out.append(cur)
+            cur, c = "", 0.0
+        cur += ch
+        c += cw
+    if cur:
+        out.append(cur)
+    return out
+
+
+def rewrap(line, width=WIN_COLS):
+    """공백을 개행으로 바꿔 **어절 경계에서** 접은 줄 — 줄 수가 늘면 `None`.
+
+    ⓘ 길이는 안 변한다(공백 ↔ 개행). 줄 수가 늘면 창 계약(3 줄)을 깨뜨릴 수 있어 거른다.
+    """
+    words = visible(line).split(" ")
+    if any(cols(w) > width for w in words):
+        return None
+    out, cur = [], ""
+    for w in words:
+        t = w if not cur else cur + " " + w
+        if cols(t) > width:
+            out.append(cur)
+            cur = w
+        else:
+            cur = t
+    if cur:
+        out.append(cur)
+    return None if len(out) > len(fold(line, width)) else "\n".join(out)
+
+
+def orphans(text, width=WIN_COLS):
+    """부호만 남은 줄이 생기는 줄 `[(줄, 접힌 결과)]`. 나레이션은 재지 않는다."""
+    if is_narration(text):
+        return []
+    out = []
+    for ln in lines(text):
+        rows = fold(ln, width)
+        if any(r.strip() and all(c in ORPHAN_PUNCT for c in r.strip()) for r in rows[1:]):
+            out.append((ln, rows))
+    return out
+
+
 def measure(pattern=None):
     """덤프에서 계약 수치를 **다시 잰다** — 문서의 숫자가 코드로 재현돼야 한다."""
     import collections
