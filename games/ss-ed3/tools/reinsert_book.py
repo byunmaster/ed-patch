@@ -41,7 +41,7 @@ def patch(data, stem, tbl, hg):
     if not lines:
         return data, 0, []
     out = bytearray(data)
-    done, bad, squeezed = 0, [], 0
+    done, bad, squeezed, cut = 0, [], 0, 0
     for pi, (at, rows) in enumerate(B.paragraphs(lines)):
         kr = tbl.get(str(pi))
         if kr is None:
@@ -57,6 +57,9 @@ def patch(data, stem, tbl, hg):
             kr2, dropped = B.fit_spaces(B.tidy_spaces(base.replace("|", "　")), widths)
         squeezed += bool(dropped)
         new, ok = B.split_to(kr2, widths)
+        #   🟡 **낱말이 갈린 줄을 센다** — 실패가 아니라 「문안을 줄여야 하는 자리」의 크기다.
+        #     조판으로 풀 수 있는 몫은 `book.split_to` 의 DP 가 이미 가져갔다(362→279).
+        cut += B.word_cuts(kr2, new)
         if not ok:
             bad.append(f"{stem}[{pi}]: 원문 {sum(widths)}칸에 안 들어간다 — {kr[:24]}…")
             continue
@@ -82,12 +85,12 @@ def patch(data, stem, tbl, hg):
         else:
             done += 1
     assert len(out) == len(data), (len(out), len(data))
-    return bytes(out), done, bad, squeezed
+    return bytes(out), done, bad, squeezed, cut
 
 
 def main():
     hg = H.load()
-    total = nbad = nsq = 0
+    total = nbad = nsq = ncut = 0
     with C.open_disc(1) as d:
         for name, lba, size in d.files():
             if not (name.startswith("/SYSTEM/BOOK") and name.endswith(".BIN")):
@@ -97,14 +100,17 @@ def main():
             if not tbl:
                 continue
             b = d.read_extent(lba, size)
-            _new, n, bad, sq = patch(b, stem, tbl, hg)
+            _new, n, bad, sq, cut = patch(b, stem, tbl, hg)
             total += n
             nbad += len(bad)
             nsq += sq
+            ncut += cut
             print(f"  {stem}: 문단 {n} 넣음" + (f" · 문제 {len(bad)}" if bad else ""))
             for e in bad[:4]:
                 print(f"     ❌ {e}")
     print(f"\n문단 {total} 넣음 · 띄어쓰기를 줄인 문단 {nsq} · 문제 {nbad}")
+    #   🟡 경고이지 실패가 아니다 — 조판이 아니라 **문안 길이**가 만드는 자국이다.
+    print(f"🟡 낱말이 갈린 줄 {ncut} — 문안을 줄여야 없어진다(조판 몫은 DP 가 이미 가져갔다)")
 
 
 if __name__ == "__main__":

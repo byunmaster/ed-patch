@@ -180,7 +180,7 @@ def patched(disc):
                 if not booktbl:
                     continue
                 b = d.read_extent(lba, size)
-                new, k, bad, _sq = RB.patch(b, stem, booktbl, table)
+                new, k, bad, _sq, _cut = RB.patch(b, stem, booktbl, table)
                 cnt = {"book": k}
                 #   🔴 **표지는 글자가 아니라 그림이다** — 폰트로는 안 바뀐다.
                 #     정본(`script/book/covers.json`)에 적힌 것만 다시 그린다.

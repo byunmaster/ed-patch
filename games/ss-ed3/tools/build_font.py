@@ -18,6 +18,8 @@ import argparse
 import os
 import sys
 
+import numpy as np
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -90,6 +92,33 @@ def pad_ascii(asc, pad=None):
 #   ⚠ 한글을 올리는 쪽은 안 된다 — 창이 첫 줄 0 행을 자르는데 한글은 초성 가로획이
 #     통째로 날아간다(2026-08-27 에 그래서 내려 앉힌 것이다).
 ASCII_DY = 2
+
+#   🔴 **숫자는 반각으로 써도 전각 글리프로 그려진다**(실측 2026-09-01). 대사창에 반각
+#     `1`(0x31)을 넣었는데 화면엔 `KANJI12` 의 전각 `１`(SJIS 0x8250)이 12px 칸을 먹고 나왔다
+#     — 렌더러가 ASCII 숫자를 전각 자리로 옮겨 그린다. 그래서 `ASCII_DY` 는 숫자에 안 닿는다.
+#   ⇒ 전각 숫자 열을 따로 내린다. 원본은 **행 0~9**(가나 1~9 · 한자 0~10)라 한글(1~11)보다
+#     한 행 높고 두 행 짧아, 「１０피아」가 한글보다 떠 보였다(유저 지적 2026-09-01).
+#     아래 두 행이 비어 있으니 **2 행 내려 2~11 행**에 앉히면 한글과 밑이 맞는다.
+#   ⚠ HUD 의 `70 Pia / 0 Goa` 는 게임이 자기 `ASCII.FON` 으로 직접 그린다(실측: 행 3~11 =
+#     `ASCII_DY` 가 먹은 자리) — 여기 안 걸린다.
+DIGIT_DY = 2
+FULLWIDTH_DIGITS = tuple(range(0x824F, 0x8259))  # ０~９
+
+
+def digit_slots():
+    """전각 숫자 열의 글리프 색인 — `font.sjis_of_index` 의 역을 훑어서 찾는다."""
+    want = {v.to_bytes(2, "big") for v in FULLWIDTH_DIGITS}
+    out = [i for i in range(F.GLYPHS) if F.sjis_of_index(i) in want]
+    assert len(out) == 10, out
+    return out
+
+
+def shift_down12(g, dy):
+    """`KANJI12` 글리프(12행 × 12비트 밀착)를 아래로 `dy` 행 민다."""
+    grid = np.zeros((F.ROWS, F.CELL), dtype=np.uint8)
+    src = F.unpack(g + bytes(F.STRIDE), 0)
+    grid[dy:] = src[: F.ROWS - dy]
+    return F.pack18(grid)
 
 
 def shift_down(g, rows, stride, dy):
@@ -165,6 +194,10 @@ def build(disc=1):
         g = shift_right(glyphs[ch], F.CELL, F.ROWS, F.STRIDE)
         assert len(g) == F.STRIDE, (ch, len(g))
         out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = g
+    for idx in digit_slots():
+        out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = shift_down12(
+            bytes(out[idx * F.STRIDE : (idx + 1) * F.STRIDE]), DIGIT_DY
+        )
     bake_label_strips(out, base)
     assert len(out) == len(base), (len(out), len(base))
     return bytes(out), missing

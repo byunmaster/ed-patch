@@ -119,48 +119,36 @@ def _nb(t):
     return sum(1 if ord(c) < 0x80 else 2 for c in t)
 
 
-def _split(text, widths, words):
-    """`split_to` 의 알맹이 — `words` 면 **어절 경계**에서만 꺾는다."""
-    rows = []
-    wi = 0
-    for si, seg in enumerate(text.split("|")):
-        #   🔴 **앞의 전각 공백을 지우지 않는다.** `strip()` 은 `　`(U+3000)까지 먹는데,
-        #     읽을거리에서 그건 **가운데 맞춤**이다(`　　　＜검사교본＞`). 지웠더니 제목이
-        #     통째로 왼쪽에 붙었다(유저 스크린샷 2026-08-31).
-        seg = seg.rstrip() if si == 0 else seg.strip()
-        i = 0
-        first = True
-        while i < len(seg) or first:
-            if wi >= len(widths):
-                return rows, False
-            while i < len(seg) and seg[i] == "　" and not (first and not rows):
-                i += 1  # 줄머리 공백 버리기 (맨 첫 줄의 들여쓰기·가운데 맞춤은 남긴다)
-            room = widths[wi]
-            cur, used = "", 0
-            while i < len(seg) and used + _nb(seg[i]) <= room:
-                cur += seg[i]
-                used += _nb(seg[i])
-                i += 1
-            #   🔴 **어절 한복판에서 끊겼으면 마지막 공백까지 물린다 — 단 여유가 있을 때만.**
-            #     「어절 모드/글자 모드」를 통째로 가르면 한 줄이 빠듯한 문단은 **전부**
-            #     글자 단위로 떨어진다(실측: 「무너지/지」 한 자 때문에 문단 전체가 갈렸다).
-            #     그래서 물릴 때마다 **남은 칸에 나머지가 들어가는지** 재고 결정한다.
-            if words and i < len(seg) and seg[i] != "　" and cur and cur[-1] != "　":
-                back = cur.rfind("　")
-                #   ⚠ **줄이 확 짧아지면 안 물린다** — 낱말 하나를 살리려다 줄 절반이
-                #     비면 그게 더 안 읽힌다(실측: 「　『필살의」 한 줄이 났다).
-                if back > 0 and _nb(cur[:back]) * 4 >= room * 3:
-                    rest = _nb(seg[i - (len(cur) - back) :].lstrip("　"))
-                    if rest <= sum(widths[wi + 1 :]):
-                        i -= len(cur) - back
-                        cur = cur[:back]
-            rows.append(cur)
-            wi += 1
-            first = False
-            if not cur and i < len(seg):
-                return rows, False  # 한 글자도 못 넣는 칸 — 못 들어간다
-    rows += [""] * (len(widths) - len(rows))
-    return rows[: len(widths)], True
+PUNCT = "，．？！、。」』）〉》…・：；"  # 뒤에서 끊겨도 읽히는 부호
+OPEN = "「『（〈《＜"  # 앞에서 끊겨도 읽히는 부호
+
+
+def _breaks_word(text, k):
+    """`k` 자리에서 줄을 끊으면 **낱말이 갈리나**."""
+    if k <= 0 or k >= len(text):
+        return False
+    if text[k] == "　" or text[k - 1] == "　":
+        return False
+    return not (text[k - 1] in PUNCT or text[k] in PUNCT or text[k - 1] in OPEN)
+
+
+def word_cuts(text, rows):
+    """`split_to` 가 낸 줄들 중 **낱말 한복판에서 끊긴 이음매** 수.
+
+    ⚠ 「줄 끝 글자 + 다음 줄 첫 글자」를 원문에서 `find` 로 찾으면 **같은 두 글자가 앞에
+      또 있으면 엉뚱한 자리를 잰다**. 그래서 줄을 원문에 대고 **차례로 물려 가며** 센다.
+    """
+    i, n = 0, 0
+    for r in rows[:-1]:
+        if not r:
+            continue
+        while i < len(text) and not text.startswith(r, i):
+            i += 1
+        if i >= len(text):
+            break
+        i += len(r)
+        n += _breaks_word(text, i)
+    return n
 
 
 def split_to(text, widths):
@@ -172,17 +160,68 @@ def split_to(text, widths):
 
     ⚠ `|` 로 줄을 직접 가를 수 있다 — 표제와 본문을 안 붙이려는 자리에 쓴다.
 
-    🔴 **어절 경계를 먼저 시도하고, 안 들어가면 글자 단위로 떨어진다**(2026-08-31 유저 지적).
-      · 글자 단위로만 채웠더니 「그때까지 각/자 정진하도록」·「그럼『검/사교본」처럼
-        낱말이 갈려 안 읽혔다.
-      · 그렇다고 어절 단위만 쓰면 줄 끝마다 칸이 남아 **129 문단이 넘친다**(그래서 한때
-        글자 단위로 돌렸었다). ⇒ 줄마다 **남은 칸을 재서** 여유가 있을 때만 어절로 물리고,
-        그래도 안 들어가면 문단 전체를 글자 단위로 다시 떨어뜨린다(마지막 보루).
+    🔴 **줄마다 최적을 찾는다**(2026-09-01). 예전엔 「어절 모드로 해 보고 안 되면 문단 전체를
+      글자 단위로」였는데, 둘 다 **한 줄만 보고 욕심껏 채우는** 방식이라 손해가 컸다 —
+      어절 모드 안에도 「물리면 줄이 3/4 밑으로 짧아지니 그냥 끊자」는 규칙이 있어,
+      들어가는 문단에서도 낱말이 갈렸다(실측: 「무너지│지」).
+      ⇒ **낱말이 갈리는 자리 수를 최소로** 하는 배분을 DP 로 고른다. 한 줄을 덜 채워서라도
+      뒤가 좋아지면 그쪽을 고른다. 실측 2026-09-01: 낱말 갈림 **362 → 279**(-23%),
+      나빠진 문단 0. 남은 279 는 **문안이 칸보다 길어** 조판으로는 못 푸는 자리다.
+    ⓘ 부호 앞뒤(「，．」·여는 괄호)는 갈려도 읽히므로 비용을 안 매긴다.
     """
-    rows, ok = _split(text, widths, words=True)
-    if ok:
-        return rows, ok
-    return _split(text, widths, words=False)
+    n, ln = len(text), len(widths)
+    INF = 1 << 20
+    memo = {}
+
+    def f(i, j):
+        while j < n and text[j] == "　" and not (i == 0 and j == 0):
+            j += 1
+        while j < n and text[j] == "|":
+            j += 1
+        if j >= n:
+            return 0, ()
+        if i >= ln:
+            return INF, ()
+        key = (i, j)
+        if key in memo:
+            return memo[key]
+        best = (INF, ())
+        used, k = 0, j
+        while k < n:
+            if text[k] == "|":  # 번역자가 직접 가른 자리 — 여기서 줄을 닫는다
+                sub, rows = f(i + 1, k + 1)
+                if sub < best[0]:
+                    best = (sub, (text[j:k],) + rows)
+                break
+            w = _nb(text[k])
+            if used + w > widths[i]:
+                break
+            used += w
+            k += 1
+            sub, rows = f(i + 1, k)
+            cost = sub + _breaks_word(text, k)
+            if cost < best[0]:
+                best = (cost, (text[j:k],) + rows)
+        memo[key] = best
+        return best
+
+    cost, rows = f(0, 0)
+    rows = list(rows)
+    if cost >= INF:
+        #   못 들어간다 — 앞에서부터 최대한 채워 **어디서 넘치는지** 보이게 돌려준다.
+        out, i, j = [], 0, 0
+        while i < ln and j < n:
+            used, k = 0, j
+            while k < n and text[k] != "|" and used + _nb(text[k]) <= widths[i]:
+                used += _nb(text[k])
+                k += 1
+            out.append(text[j:k])
+            j = k + (1 if k < n and text[k] == "|" else 0)
+            while j < n and text[j] == "　":
+                j += 1
+            i += 1
+        return out + [""] * (ln - len(out)), False
+    return rows + [""] * (ln - len(rows)), True
 
 
 def fit_spaces(text, widths):
