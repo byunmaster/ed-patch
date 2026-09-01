@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 )
+import book_cover as BCV
 import build_font
 import common as C
 import hangul_map as H
@@ -123,6 +124,7 @@ def patched(disc):
     asc, npad = build_font.build_ascii(disc)
     table = H.load()
     systbl, desctbl, paramtbl = RS.table(), RD.table(), RP.table()
+    covertbl = BCV.table()
     #   ⓘ 무비는 **미리 구워 둔 것만** 넣는다 — 굽는 데 편당 몇 분이라 빌드를 세우지 않는다
     #     (`movie_hardsub.py --all`). 안 구운 편은 세어서 알린다.
     movietbl, movie_pend = MV.table(disc)
@@ -180,6 +182,11 @@ def patched(disc):
                 b = d.read_extent(lba, size)
                 new, k, bad, _sq = RB.patch(b, stem, booktbl, table)
                 cnt = {"book": k}
+                #   🔴 **표지는 글자가 아니라 그림이다** — 폰트로는 안 바뀐다.
+                #     정본(`script/book/covers.json`)에 적힌 것만 다시 그린다.
+                new, kc = BCV.patch(new, stem, covertbl)
+                if kc:
+                    cnt["cover"] = kc
             elif name in movietbl:
                 #   🔴 **하드섭이다** — 자막을 영상에 태워 굽는다(`movie_hardsub.py`).
                 #     엔진에 그리게 하려던 소프트섭은 접었다: 엔진의 텍스트 그리기가
