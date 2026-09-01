@@ -58,18 +58,19 @@ DRAW_SIG = bytes.fromhex("61804618611c2fb6")
 DRAW_REFS_EXPECTED = 6  # 두 편 다 여섯 곳에서 부른다(실측)
 
 # 🔴 **줄 나누기**(ED 0x0607CD64 · ED2 0x06064158) — **그리기보다 앞이다.**
-#    여기에도 거는 이유는 「길이」다. 그리기에서만 접으면 게임은 **접기 전 길이로 줄을
-#    나눈 뒤**라 병기(6B)가 한 줄 예산(29B)을 4B 씩 헛먹는다(2026-08-26 실측: 버퍼1 끝에
-#    훅이 넣은 공백 넷이 그대로 보였다). 나누기 진입점에서 먼저 접으면 **나누기가 접힌
-#    길이를 본다** — 예산이 정확해지고 꼬리를 채울 일도 없다.
+#    ⚠ **여기엔 안 건다**(`SKIP_SITES`, 2026-09-01). 찾기만 하고 시그니처 검산에 쓴다.
 #    시그니처: `mov r4,r11 · mov.l r5,@r14 · mov #29,r12 · mov #0,r8`
 #    (`#29` 가 곧 한 줄 예산이라 이 함수가 「나누는 자리」라는 증거다)
+#    💡 안 걸어서 이 함수는 **병기를 그대로** 재는데, 그게 오히려 맞다 — 우리 조판기
+#    (`typeset_scn.COLS = 14` 전각 = 28B ≤ 29B)도 병기를 그대로 세기 때문이다. 걸었을
+#    때가 불일치였다(엔진은 접힌 2B, 우리는 6B ⇒ 우리 쪽이 늘 보수적).
 SPLIT_SIG = bytes.fromhex("6b432e52ec1de800")
 SPLIT_REFS_EXPECTED = 1  # 두 편 다 한 곳에서만 부른다(실측)
 
-DRY_SITES = set(os.environ.get("JOSA_DRY", "").split(",")) - {""}  # 실험용 — 무동작 진입점
+DRY_SITES = set(os.environ.get("JOSA_DRY", "나누기").split(",")) - {""}  # 🔴 나누기는 무동작 (위)
 SCAN_LIMIT = 256  # 한 버퍼에서 훑을 최대 바이트 — 한 창이 29B×6줄이라 넉넉하다
 WORKRAM_TOP = 0x06100000  # 워크램 하이의 끝 — 이 위는 유효한 버퍼가 아니다
+
 
 # 🔴 **적재 이미지 끝은 편마다 다르다 — 상수로 박지 않는다.**
 #    ED.BIN 0x875E4 → 0x060AF5E4 · ED2.BIN 0x6CFC8 → **0x06094FC8**. ED1 기준 상수
@@ -81,10 +82,11 @@ def image_end(d):
     """`d`(그 편의 본체 파일) 가 적재됐을 때의 끝 — 이 위면 워크 버퍼다."""
     return (LOAD_BASE + len(d) + 0xFFF) & ~0xFFF
 
+
 PAREN_L, PAREN_R = 0x28, 0x29
 
 
-def routine(base, table_at, back, pairs, *, arg="r6", pad=True, dry=False, end=None):
+def routine(base, table_at, half_at, back, pairs, *, arg="r6", pad=True, dry=False, end=None):
     """훅 루틴 어셈블리. `base` 에 놓이고 `table_at` 의 받침 표를 읽는다.
 
     `back` 은 일을 마친 뒤 꼬리 점프할 원 함수, `arg` 는 그 함수가 문자열을 받는 레지스터.
@@ -217,10 +219,10 @@ def routine(base, table_at, back, pairs, *, arg="r6", pad=True, dry=False, end=N
         mov.l @(L_LO,pc),r1
         mov   r9,r0
         cmp/hs r1,r0                ; prev >= LO
-        bf    picked
+        bf    half                  ; 우리 슬롯 구간 밖 — 반각 표를 본다
         mov.l @(L_HI,pc),r1
         cmp/hs r0,r1                ; prev <= HI
-        bf    picked
+        bf    half
         mov.l @(L_LO,pc),r1
         sub   r1,r0
         ; 🔴 **받침 표는 니블이다** — 한 바이트에 두 글자(짝수 자리 = 하위 4비트).
@@ -239,6 +241,13 @@ def routine(base, table_at, back, pairs, *, arg="r6", pad=True, dry=False, end=N
         mov   r3,r0
         and   #1,r0
         mov   r0,r3
+        bra   picked
+        nop
+        ; ⚠ 반각 표 조회는 **루틴 끝**에 뒀다 — 여기 두면 `loop` 의 `bt out` 이 8비트 변위를
+        ;   넘는다(실측 d=131). 중계 한 칸이 싸다.
+    half:
+        bra   halftab
+        nop
     picked:
         tst   r3,r3
         bt    write                 ; 무받침 → r2(조사B) 그대로
@@ -272,6 +281,21 @@ def routine(base, table_at, back, pairs, *, arg="r6", pad=True, dry=False, end=N
     out:                            ; ⚠ `bt` 는 8비트 변위뿐이라 끝까지 못 간다 — 중계한다
         bra   done
         nop
+    single:
+        ; ⚠ **숫자·대문자만** prev 를 갱신한다. 나머지 반각·제어는 **건드리지 않는다** —
+        ;   이름과 조사 사이엔 `%c` 색 코드가 늘 껴서(`%c%s%c은(는)`), 지우면 이름을 못 보고
+        ;   전부 무받침이 된다. 색 코드는 이 구간 밖이라 안 걸린다.
+        mov   #{josa.HALF_LO},r1
+        cmp/hs r1,r0
+        bf    adv1
+        mov   #{josa.HALF_HI},r1
+        cmp/hs r0,r1
+        bf    adv1
+        mov   r0,r9                 ; prev = 이 반각 한 글자
+    adv1:
+        add   #1,r8
+        bra   loop
+        nop
     notpair:
         mov.l @(L_LO,pc),r1
         mov   r11,r0
@@ -285,9 +309,23 @@ def routine(base, table_at, back, pairs, *, arg="r6", pad=True, dry=False, end=N
         add   #2,r8
         bra   loop
         nop
-    single:
-        add   #1,r8
-        bra   loop
+        ; 🔴 **반각으로 끝나는 이름** — 개체 접미(`슬라임A`)가 그렇다. 한글 표는 우리 슬롯
+        ;    코드 구간만 덮으므로 여기서 따로 본다. 한 바이트에 한 글자(43B) — 니블로 접어도
+        ;    21B 를 아낄 뿐인데 홀짝 분기가 붙는다(**명령 수가 공간보다 비싸다**).
+    halftab:
+        mov   #{josa.HALF_LO},r1
+        cmp/hs r1,r0                ; prev >= '0'
+        bf    hdone
+        mov   #{josa.HALF_HI},r1
+        cmp/hs r0,r1                ; prev <= 'Z'
+        bf    hdone
+        mov   #{josa.HALF_LO},r1
+        sub   r1,r0                 ; r0 = 표 자리
+        mov.l @(L_HTAB,pc),r1
+        mov.b @(r0,r1),r3
+        extu.b r3,r3
+    hdone:
+        bra   picked
         nop
     done:
         mov.l @r15+,r12
@@ -301,6 +339,7 @@ def routine(base, table_at, back, pairs, *, arg="r6", pad=True, dry=False, end=N
 
         .long L_END  {end}
         .long L_TAB  {table_at}
+        .long L_HTAB {half_at}
         .long L_81   0x81
         .long L_9F   0x9F
         .long L_E0   0xE0
@@ -340,14 +379,49 @@ def find_fn(d, sig, expect, what):
     return ent, refs
 
 
+# 🔴 **나누기 진입점에는 안 건다** (2026-09-01 확정) — **같은 자리에서 두 번 물렸다.**
+#    이 자리의 `r4` 는 **아직 안 채워진 회차가 있다**. 그래서 「워크램 안이고 적재 이미지
+#    위」라는 범위 가드를 세워도 **남의 버퍼가 그대로 통과한다** — 가드는 주소가 유효한지만
+#    보지 그게 우리 문안인지는 못 본다.
+#      · 2026-08-26 — 워크램을 끝까지 훑다가 게임이 섰다 (상한 256B 로 막았다)
+#      · 2026-09-01 — 본편 BGM 이 통째로 안 나왔다 (사운드 자료를 밟은 것으로 본다)
+#    빌드 이분으로 범인을 좁혔다: 훅 없음 ✅ · 설치만 하고 무동작 ✅ · 나누기만 무동작 ✅ ·
+#    둘 다 동작 ❌ ⇒ **나누기 진입점의 동작**이 유일한 차이였다.
+#    ⇒ 상한을 더 줄이는 건 확률을 낮출 뿐 성질을 안 바꾼다. **이 자리에서 훑지 않는다.**
+#
+# ✅ **그리기 진입점만으로 기능은 산다.** 조사는 화면에 나가기 직전에 접히고, `pad` 가 줄어든
+#    두 칸을 반각 공백 넷으로 되돌려 폭을 지킨다. 나누기를 안 거치면 줄 나눔이 **병기 길이**
+#    (`은(는)` = 접힌 뒤보다 길다) 기준이 되는데, 이건 **보수적**이라 줄이 넘치지 않는다 —
+#    일찍 넘길 뿐이다. 병기가 남는 자리는 `%s` 뒤뿐이라(이름이 런타임에 들어와 조사를 미리
+#    못 정하는 자리) 영향 범위도 거기까지다.
+#
+# 🔴 **그런데 「안 건다」가 아니라 「걸되 즉시 되돌린다」여야 한다**(2026-09-01 실기, 유저 확인).
+#    설치 자체를 빼면 BGM 이 **다시** 죽는다 — 원본에 더 가까운 쪽이 죽으므로 설명이 안 된다:
+#
+#        나누기 설치 안 함   c998b0452638 · 1ec7dfcfe3b9   BGM ❌
+#        나누기 설치 + 무동작 2c0ee330b3ef                  BGM ✅   (다른 건 전부 같다)
+#
+#    ⚠ 빌드는 결정적이다 — 전체 체인과 「훅만 덧씌움」이 **같은 해시**를 냈다. 즉 변수는
+#      이 하나뿐이었다. 아직 **왜인지 모른다.** 가설은 훅 자리(0런 2,560B)가 진짜 빈 공간이
+#      아니라는 것이다(`docs/reference/our-findings.md` 「빈 공간의 VAB 함정」) — 설치하면
+#      루틴이 424B 더 차서 그 자리를 덮는데, 그 차이가 소리를 가른다.
+#    ⇒ 모르는 채로 두지 말고 **실측을 따른다.** 되돌리려면 BGM 을 실기로 보이고 함께 지운다.
+SKIP_SITES = set(os.environ.get("JOSA_SKIP", "").split(",")) - {""}  # 진단용 — 기본은 안 뺀다
+
+
 def find_sites(d):
-    """`{이름: (원 함수 주소, [참조 오프셋], 인자 레지스터, 꼬리 채움)}`."""
+    """`{이름: (원 함수 주소, [참조 오프셋], 인자 레지스터, 꼬리 채움)}`.
+
+    ⚠ **찾기는 둘 다 한다** — 시그니처가 그대로인지가 이미지 검산이라, 안 거는 자리도 찾아
+      두면 원본이 바뀌었을 때 여기서 먼저 운다. 거는 자리만 `SKIP_SITES` 로 거른다.
+    """
     draw, dref = find_fn(d, DRAW_SIG, DRAW_REFS_EXPECTED, "그리기")
     split, sref = find_fn(d, SPLIT_SIG, SPLIT_REFS_EXPECTED, "줄 나누기")
-    return {
+    sites = {
         "나누기": (split, sref, "r4", False),
         "그리기": (draw, dref, "r6", True),
     }
+    return {k: v for k, v in sites.items() if k not in SKIP_SITES}
 
 
 def build(fname, table, sites, end):
@@ -361,12 +435,21 @@ def build(fname, table, sites, end):
     order = list(sites)
     # 표는 루틴들 뒤에 붙는다 — 길이를 알아야 하니 주소가 안 바뀔 때까지 다시 조립한다.
     tab_at = LOAD_BASE + at
+    half = josa.build_half_table()
     for _ in range(4):
         blobs, ram, cur = {}, {}, LOAD_BASE + at
         for name in order:
             back, _refs, arg, pad = sites[name]
             code, body = routine(
-                cur, tab_at, back, josa.pairs(), arg=arg, pad=pad, dry=(name in DRY_SITES), end=end
+                cur,
+                tab_at,
+                tab_at + len(table),  # 반각 표는 한글 표 바로 뒤
+                back,
+                josa.pairs(),
+                arg=arg,
+                pad=pad,
+                dry=(name in DRY_SITES),
+                end=end,
             )
             blobs[name] = (code, body)
             ram[name] = cur
@@ -376,7 +459,7 @@ def build(fname, table, sites, end):
         tab_at = cur
     else:
         raise SystemExit("루틴/표 배치가 안 수렴한다")
-    blob = b"".join(blobs[n][0] for n in order) + table
+    blob = b"".join(blobs[n][0] for n in order) + table + half
     assert len(blob) + 2 * MARGIN <= size, f"{fname}: {len(blob)}B > 자리 {size - 2 * MARGIN}B"
     dis = {n: (ram[n], sh2.verify(blobs[n][0], ram[n], blobs[n][1])) for n in order}
     return blob, at, dis

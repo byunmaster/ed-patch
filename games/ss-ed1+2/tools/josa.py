@@ -57,6 +57,41 @@ def code_span():
 PAREN_L, PAREN_R = 0x28, 0x29  # 반각 괄호 — 병기는 `[조사A]([조사B])`
 JOSA_PAIRS = (("은", "는"), ("이", "가"), ("을", "를"))
 
+# 🔴 **반각으로 끝나는 이름이 있다** — 몬스터 개체 접미가 `슬라임A`~`니어트허니J` 다
+#    (171칸, `patch_mon_names`). 앞말이 반각이면 우리 슬롯 코드가 아니라 받침 표에 없고,
+#    `prev` 는 **직전 한글 음절**에 머문다 ⇒ `슬라임A` 가 「임」으로 판정돼 **「슬라임A을」**
+#    이 나왔다(2026-09-01 실기, 4배 확대로 확인).
+# ⚠ 그렇다고 「반각을 만나면 prev 를 지운다」로 가면 **더 크게 깨진다** — 이름과 조사 사이엔
+#   `%c` 색 코드가 늘 끼어서(`%c%s%c은(는)`) 전부 무받침이 된다(아래 `fix_buffer` 주석).
+# ⇒ **숫자·대문자만** prev 를 갱신한다. 색 코드는 이 구간 밖이라 안 걸린다.
+HALF_LO, HALF_HI = 0x30, 0x5A  # '0' ~ 'Z'
+
+# 알파벳·숫자를 **한국어로 읽은 소리**가 정본이다 — 받침은 거기서 유도한다. 값을 손으로
+# 적으면 「왜 L 만 1 인가」를 아무도 모른다. ⚠ 실제로 A~J 는 **전부 무받침**이라 개체
+# 접미가 붙은 이름은 모두 「를/는/가」다.
+HALF_READING = {
+    "0": "영", "1": "일", "2": "이", "3": "삼", "4": "사",
+    "5": "오", "6": "육", "7": "칠", "8": "팔", "9": "구",
+    "A": "에이", "B": "비", "C": "씨", "D": "디", "E": "이",
+    "F": "에프", "G": "지", "H": "에이치", "I": "아이", "J": "제이",
+    "K": "케이", "L": "엘", "M": "엠", "N": "엔", "O": "오",
+    "P": "피", "Q": "큐", "R": "아르", "S": "에스", "T": "티",
+    "U": "유", "V": "브이", "W": "더블유", "X": "엑스", "Y": "와이",
+    "Z": "제트",
+}  # fmt: skip
+
+
+def build_half_table():
+    """반각 받침 표 — `표[코드 - HALF_LO]` 가 0/1. **한 바이트에 한 글자**다.
+
+    ⚠ 한글 표와 달리 니블로 안 접는다 — 43B 뿐이라 접어도 21B 를 아낄 뿐인데 루틴엔
+      홀짝 분기가 붙는다. **명령 수가 공간보다 비싸다**(위 `build_table` 과 같은 이유).
+    """
+    tab = bytearray(HALF_HI - HALF_LO + 1)
+    for ch, reading in HALF_READING.items():
+        tab[ord(ch) - HALF_LO] = 1 if batchim(reading[-1]) else 0
+    return bytes(tab)
+
 
 def slot_codes():
     """`{글자: SJIS 코드(int)}` — 커밋된 슬롯 정본에서."""
@@ -92,8 +127,25 @@ def pairs(codes=None):
     return [(codes[a], codes[b]) for a, b in JOSA_PAIRS]
 
 
-def has_batchim(code, table):
-    """🔴 **기계어와 같은 의미**여야 한다 — 니블로 읽는다(위 `build_table` 주석)."""
+_HALF = None
+
+
+def half_table():
+    global _HALF
+    if _HALF is None:
+        _HALF = build_half_table()
+    return _HALF
+
+
+def has_batchim(code, table, half=None):
+    """🔴 **기계어와 같은 의미**여야 한다 — 니블로 읽는다(위 `build_table` 주석).
+
+    ⚠ `code` 는 우리 한글 슬롯(2바이트)일 수도 **반각 한 바이트**일 수도 있다 — 이름이
+      개체 접미로 끝나는 자리가 그렇다(`슬라임A`). 반각은 별도 표를 본다.
+    """
+    half = half if half is not None else half_table()
+    if HALF_LO <= code <= HALF_HI:
+        return bool(half[code - HALF_LO])
     lo, hi = code_span()
     if not lo <= code <= hi:
         return False
@@ -154,5 +206,9 @@ def fix_buffer(buf, table=None, codes=None):
                 prev = code
             i += 2
         else:
-            i += 1  # ASCII·제어 — prev 유지
+            # ⚠ 숫자·대문자만 `prev` 를 갱신한다 — 개체 접미(`슬라임A`)를 보기 위해서다.
+            #   나머지 ASCII·제어는 **유지**한다(색 코드 `%c` 가 늘 끼므로 위 주석).
+            if HALF_LO <= b <= HALF_HI:
+                prev = b
+            i += 1
     return n
