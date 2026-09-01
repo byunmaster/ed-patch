@@ -81,6 +81,27 @@ def pad_ascii(asc, pad=None):
     return bytes(out), n
 
 
+#   🔴 **반각을 두 행 내린다 — 한글과 기준선을 맞춘다**(유저 지적 2026-09-01).
+#     실측: 원본 반각은 **1~9 행**, 원본 한자는 **0~10 행**, 우리 한글은 **1~11 행**이다
+#     (한글은 창이 0 행을 잘라서 일부러 한 줄 내렸다 — `DY` 주석).
+#     그래서 「10 Pia로」처럼 섞어 쓰면 숫자·알파벳만 **2 px 떠 보인다.**
+#   ⇒ 반각을 2 행 내려 **3~11 행**에 앉힌다. 셀이 12 행이라 안 잘리고, 11 행은 원본 글자
+#     146 개가 이미 쓰는 자리라 아래도 안 잘린다(`DY` 주석의 실측).
+#   ⚠ 한글을 올리는 쪽은 안 된다 — 창이 첫 줄 0 행을 자르는데 한글은 초성 가로획이
+#     통째로 날아간다(2026-08-27 에 그래서 내려 앉힌 것이다).
+ASCII_DY = 2
+
+
+def shift_down(g, rows, stride, dy):
+    """글리프 비트를 아래로 `dy` 행 민다 — 셀 높이는 그대로다."""
+    bits = "".join(f"{b:08b}" for b in g)
+    W = F.ASCII_CELL
+    out = ["0" * W] * dy + [bits[r * W : (r + 1) * W] for r in range(rows - dy)]
+    s = "".join(out)
+    s += "0" * (stride * 8 - len(s))
+    return bytes(int(s[i : i + 8], 2) for i in range(0, stride * 8, 8))
+
+
 def shift_right(g, width, rows, stride, dx=DX):
     """글리프 비트를 오른쪽으로 `dx` 칸 민다 — 폭은 그대로다."""
     bits = "".join(f"{b:08b}" for b in g)
@@ -150,9 +171,24 @@ def build(disc=1):
 
 
 def build_ascii(disc=1):
-    """`(새 ASCII.FON bytes, 민 글자 수)`."""
+    """`(새 ASCII.FON bytes, 민 글자 수)` — 여백 조정 + **한글 기준선에 맞춰 2 행 내림**."""
     _, asc = F.load(disc)
-    return pad_ascii(asc)
+    out, n = pad_ascii(asc)
+    if ASCII_DY:
+        buf = bytearray(out)
+        for code in range(0x20, 0x80):
+            g = out[code * F.ASCII_STRIDE : (code + 1) * F.ASCII_STRIDE]
+            if not g.strip(b"\x00"):
+                continue
+            rows = [r for r in range(F.ASCII_ROWS) if F.ascii_unpack(out, code)[r].any()]
+            #   ⚠ 아래로 밀다 셀 밖으로 나가면 그 글자는 그대로 둔다(잘리느니 안 맞는 게 낫다)
+            if rows and max(rows) + ASCII_DY >= F.ASCII_ROWS:
+                continue
+            buf[code * F.ASCII_STRIDE : (code + 1) * F.ASCII_STRIDE] = shift_down(
+                g, F.ASCII_ROWS, F.ASCII_STRIDE, ASCII_DY
+            )
+        out = bytes(buf)
+    return out, n
 
 
 def main():
