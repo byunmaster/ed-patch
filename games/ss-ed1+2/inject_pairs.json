@@ -1,0 +1,38 @@
+{
+ "_doc": [
+  "**주입 `%c` 쌍의 정본** — `tools/inject_pairs.py --freeze` 가 찍는다.",
+  "둘째 바이트가 0x5C 인 SJIS 글자를 콜사이트 인자로 넘기는 자리다(모듈 주석).",
+  "🔴 제안이 아니라 정본이다 — 빌드는 이 값과 이미지가 아직 같은지 대조한다.",
+  "⚠ 원문은 안 담는다 — 파일·블록 오프셋·마크업 번호·글자 하나·명령 워드뿐이다."
+ ],
+ "/BIN/ED1SCN01.BIN@0xc58": {
+  "file": "/BIN/ED1SCN01.BIN",
+  "at": "0xc58",
+  "glyphs": {"3": "ソ", "7": "ソ"},
+  "words": {"0x10c2": ["0xe35c", "0xe320"], "0x10c6": ["0x9232", "0xe220"]}
+ },
+ "/BIN/ED1SCN03.BIN@0x3f40": {
+  "file": "/BIN/ED1SCN03.BIN",
+  "at": "0x3f40",
+  "glyphs": {"1": "ソ"},
+  "words": {"0x40f2": ["0x974a", "0xe720"], "0x40fe": ["0xe15c", "0xe120"]}
+ },
+ "/BIN/ED1SCN03.BIN@0x3fa0": {
+  "file": "/BIN/ED1SCN03.BIN",
+  "at": "0x3fa0",
+  "glyphs": {"1": "ソ"},
+  "words": {"0x4112": ["0x973a", "0xe720"], "0x411e": ["0xe15c", "0xe120"]}
+ },
+ "/BIN/ED1SCN03.BIN@0x4054": {
+  "file": "/BIN/ED1SCN03.BIN",
+  "at": "0x4054",
+  "glyphs": {"1": "ソ"},
+  "words": {"0x4150": ["0x971b", "0xe720"], "0x415a": ["0xe15c", "0xe120"]}
+ },
+ "/BIN/ED1SCN03.BIN@0x576c": {
+  "file": "/BIN/ED1SCN03.BIN",
+  "at": "0x576c",
+  "glyphs": {"1": "ソ"},
+  "words": {"0x5a20": ["0x9761", "0xe720"], "0x5a2c": ["0xe15c", "0xe120"]}
+ }
+}

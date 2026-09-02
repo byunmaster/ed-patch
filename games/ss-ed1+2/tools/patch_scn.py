@@ -216,7 +216,7 @@ def _mon_slots(path):
     return frozenset(t for t, _jp, _kr in patch_mon_names.slots(path, table("monster")))
 
 
-def rebuild(run, canon, d, skip_offs=frozenset(), built=None, spare=None):
+def rebuild(run, canon, d, skip_offs=frozenset(), built=None, spare=None, sites=None, done=None):
     """`(새 바이트, [(ptr_at, 새 주소 오프셋)], [건너뛴 이유])` — 구간을 다시 깐다.
 
     ⚠ **구간 총 길이는 원본 그대로**다. 남으면 0 으로 채운다(계약 ④).
@@ -241,7 +241,8 @@ def rebuild(run, canon, d, skip_offs=frozenset(), built=None, spare=None):
         span = (run[idx + 1][0] - off) if idx + 1 < len(run) else n
         raw = bytes.fromhex(e["raw_hex"])
         jp = e.get("text", "")
-        kr = None if off in skip_offs else _canon_get(canon, jp)
+        site = (sites or {}).get(off)
+        kr = None if off in skip_offs else canon_of(canon, jp, site)
         use = raw
         if kr is not None:
             if contract(kr) != contract(jp):
@@ -256,6 +257,8 @@ def rebuild(run, canon, d, skip_offs=frozenset(), built=None, spare=None):
                 skipped.append((off, f"칸을 넘는다 {len(enc)}B > {n}B", jp[:18], e, enc))
             else:
                 use = _encode(kr)
+                if done is not None:
+                    done.append(off)
         # 🔴 **남이 이미 쓴 자리엔 안 넣는다** — 본체 둘은 시스템 메시지·표·고유명사·자막이
         #    같은 파일을 나눠 갖는다. 주인 목록을 손으로 들면 새 패처가 생길 때마다 조용히
         #    새므로 **구조로 묻는다**: 빌드가 원본과 다르고 **우리 것도 아니면** 남의 것이다.
@@ -267,6 +270,8 @@ def rebuild(run, canon, d, skip_offs=frozenset(), built=None, spare=None):
             if cur != raw and cur != use + b"\x00" * (n - len(use)):
                 use = raw
                 skipped.append((off, "남이 이미 쓴 자리다", jp[:18], e, None))
+                if done is not None and done and done[-1] == off:
+                    done.pop()
         moves.append((e.get("ptr_at", []), start + len(blob)))
         # 칸 = [내용][NUL 채움][원본 꼬리]. 🔴 꼬리를 **끝에 붙여야** 마커가 제자리다 —
         # `d[off+len(use):]` 로 이어 붙이면 짧아진 만큼 원본이 밀려 들어와 **아무것도 안
@@ -301,8 +306,9 @@ def all_texts(mm=None):
         got = load(path)
         if not got:
             continue
+        sites = sites_for(path)
         for e in got[1]:
-            kr = _canon_get(canon, e.get("text", ""))
+            kr = canon_of(canon, e.get("text", ""), sites.get(int(e["file_offset"], 16)))
             if kr:
                 out.append(kr)
     if close:
@@ -449,11 +455,14 @@ def load_ours():
 _NAMES = None
 
 
-def _canon_get(canon, jp):
+def _canon_get(canon, jp, jp_mark=None):
     """원문 → **조판까지 끝난** 우리 블록. 없거나 조판이 안 되면 None.
 
     🔴 사전은 **문안만** 담는다(화자·창 전환·개행이 없다). 그대로 넣으면 구조 계약이
        깨져 소프트락이 나므로 `typeset_scn` 이 원문 마크업을 다시 입힌다.
+    ⚠ **찾는 원문과 조판하는 원문이 다를 수 있다**(`jp_mark`). 주입 `%c` 쌍이 든 블록은
+      사전 열쇠가 **쌍이 든 꼴**이고(PS1 덤프도 같다), 조판은 **글자를 되살린 꼴**로 해야
+      이름칸이 정본에 붙는다(`inject_pairs`).
     """
     if not canon:
         return None
@@ -467,8 +476,40 @@ def _canon_get(canon, jp):
         _NAMES = typeset_scn._names()
     import typeset_scn
 
-    built, _bad = typeset_scn.typeset(jp, kr, _NAMES)
+    built, _bad = typeset_scn.typeset(jp_mark or jp, kr, _NAMES)
     return built
+
+
+_SITES = None
+
+
+def sites_for(path):
+    """그 파일의 **주입 `%c` 쌍** 정본 → `{블록 오프셋: 자리}`. 없으면 빈 것."""
+    global _SITES
+    if _SITES is None:
+        from inject_pairs import load_canon as _load
+
+        _SITES = {}
+        for v in _load().values():
+            _SITES.setdefault(v["file"], {})[int(v["at"], 16)] = v
+    return _SITES.get(path, {})
+
+
+def canon_of(canon, jp, site=None):
+    """조판까지 끝난 우리 블록 — 주입 쌍이 있으면 되살렸다 되돌린다.
+
+    🔴 **`_canon_get` 을 직접 부르지 않는다.** 부르는 자리가 넷인데(재삽입 · 슬롯 계획 ·
+       집계 · 이주) 한 곳만 빠뜨리면 **그 자리에서만 이름이 일본어**가 되거나 글리프가
+       계획에서 빠진다(화면에서 글자가 사라진다).
+    """
+    if not site:
+        return _canon_get(canon, jp)
+    import inject_pairs as ip
+
+    pairs = sorted((int(i), ch) for i, ch in site["glyphs"].items())
+    jp_mark, tails = ip.restore(jp, pairs)
+    kr = _canon_get(canon, jp, jp_mark)
+    return None if kr is None else ip.reinsert(kr, tails)
 
 
 def _moved(entries, ptrs, at):
@@ -636,7 +677,7 @@ def _diffs(new, old):
     return out
 
 
-def apply_runs(dst, path, lba, size, base, plans, puts=(), mptrs=()):
+def apply_runs(dst, path, lba, size, base, plans, puts=(), mptrs=(), codes=()):
     """구간 바이트 + **바뀐 포인터**를 쓴다 → 쓴 포인터 수.
 
     🔴 **포인터를 안 고치면 옮긴 블록을 아무도 못 찾는다.** 구간 안에서 앞 블록이 짧아지면
@@ -669,6 +710,11 @@ def apply_runs(dst, path, lba, size, base, plans, puts=(), mptrs=()):
             common.write_at(
                 f, lba, size, q, addr.to_bytes(4, "big"), label=f"{path} 이주 포인터 0x{q:X}"
             )
+        # 주입 `%c` 쌍의 인자를 공백으로 — **그 블록을 실제로 번역했을 때만** 온다
+        for at, word in codes:
+            common.write_at(
+                f, lba, size, at, word.to_bytes(2, "big"), label=f"{path} 주입 인자 0x{at:X}"
+            )
     return n
 
 
@@ -684,8 +730,8 @@ def verify(dst, checks):
       것」을 실패로 부른다(실측 2026-08-27: ED2MON02 0x3B8).
     """
     _f2, mm2 = common.open_image(dst)
-    nb = np = nm = 0
-    for path, lba, size, base, plans, puts, mptrs in checks:
+    nb = np = nm = nc = 0
+    for path, lba, size, base, plans, puts, mptrs, codes in checks:
         d = bytes(common.read_extent(mm2, lba, size))
         # ⚠ **이주가 덮은 자리는 구간 대조에서 뺀다** — 그 바이트는 `blob`(구간 재조립 결과)이
         #   아니라 `puts` 가 주인이다. 안 빼면 「짧아져 남은 자리에 다른 블록을 깐」 곳마다
@@ -717,9 +763,12 @@ def verify(dst, checks):
         for q, addr in mptrs:
             assert d[q : q + 4] == addr.to_bytes(4, "big"), f"{path} 이주 포인터 0x{q:X}"
             np += 1
+        for at, word in codes:
+            assert d[at : at + 2] == word.to_bytes(2, "big"), f"{path} 주입 인자 0x{at:X}"
+            nc += 1
     mm2.close()
     _f2.close()
-    print(f"  ✅ 되읽기 씬 구간 {nb:,} · 이주 {nm:,} · 포인터 {np:,}곳")
+    print(f"  ✅ 되읽기 씬 구간 {nb:,} · 이주 {nm:,} · 포인터 {np:,} · 주입 인자 {nc}곳")
 
 
 def main():
@@ -747,7 +796,7 @@ def main():
         _fb, mmb = common.open_image(dst)
         built_files = {p: (lba, sz) for p, lba, sz in common.iso_files(mmb)}
 
-    files = ok = blocks = pinned = wrote = matched = moved = nofit = nofit_b = 0
+    files = ok = blocks = pinned = wrote = matched = moved = nofit = nofit_b = injected = 0
     bad, skipped, checks = [], [], []
     shortfall = {}
     for path in targets:
@@ -759,6 +808,12 @@ def main():
         d = bytes(common.read_extent(mm, lba, size))
         files += 1
         mine = owned_elsewhere(path) if canon else frozenset()
+        # 주입 `%c` 쌍 — 🔴 정본이 **아직 이미지와 맞는지** 먼저 본다(체크리스트 1).
+        isites = sites_for(path) if canon else {}
+        if isites:
+            import inject_pairs as _ip
+
+            _ip.verify_sites(d, entries, isites, path)
         built = None
         if canon and built_files and path in built_files:
             built = bytes(common.read_extent(mmb, *built_files[path]))
@@ -772,12 +827,15 @@ def main():
         over = []
         spare = []
         plans = []
+        done = []  # 실제로 우리 문안이 들어간 블록 오프셋 — 주입 인자 패치의 조건이다
         for run in runs(entries, size):
             blocks += len(run)
             matched += sum(
-                1 for o, _n, e in run if o not in mine and _canon_get(canon, e.get("text", ""))
+                1
+                for o, _n, e in run
+                if o not in mine and canon_of(canon, e.get("text", ""), isites.get(o))
             )
-            blob, moves, dropped = rebuild(run, canon, d, mine, built, spare)
+            blob, moves, dropped = rebuild(run, canon, d, mine, built, spare, isites, done)
             start = run[0][0]
             orig = d[start : start + len(blob)]
             if blob == orig:
@@ -803,11 +861,22 @@ def main():
         nofit_b += gap
         if gap:
             shortfall[path] = gap
+        # 🔴 **이주한 블록도 「넣었다」**이다 — 원본 칸엔 JP 가 남지만 참조가 새 자리를 보므로
+        #    화면에 나가는 것은 우리 문안이다. 여기서 안 세면 그 블록의 주입 인자가 그대로
+        #    남아 이름 앞에 `ソ` 가 붙는다(PS1 이 실제로 그렇게 새어 나왔다).
+        moved_offs = {o for o, _w, _j, _e, _enc in over} - {o for o, *_ in left}
+        put = sorted(set(done) | moved_offs)
+        codes = []
+        for o in put:
+            site = isites.get(o)
+            if site:
+                codes.extend((int(a, 16), int(w[1], 16)) for a, w in site["words"].items())
+        injected += len(codes) // 2
         if apply:
             if not os.path.exists(dst):
                 raise SystemExit(f"먼저 다른 패처를 돌린다 — {dst} 가 없다")
-            wrote += apply_runs(dst, path, blba, bsize, _base, plans, puts, mptrs)
-            checks.append((path, blba, bsize, _base, plans, puts, mptrs))
+            wrote += apply_runs(dst, path, blba, bsize, _base, plans, puts, mptrs, codes)
+            checks.append((path, blba, bsize, _base, plans, puts, mptrs, codes))
 
     print(f"씬 파일 {files}개 · 블록 {blocks} · 핀(참조 없음) {pinned}")
     if skipped:
@@ -816,7 +885,11 @@ def main():
             print(f"     0x{off:X} {why} — {jp!r}")
     if apply:
         print(f"  → 넣음 · 고친 포인터 {wrote}곳")
-    print(f"  이주(확장 영역) {moved:,} · 자리가 없어 남은 것 {nofit:,} ({nofit_b:,}B · {nofit_b / 2048:.1f}섹터)")
+    if injected:
+        print(f"  주입 %c 쌍 되살림 {injected}자리 — 콜사이트 인자를 공백으로")
+    print(
+        f"  이주(확장 영역) {moved:,} · 자리가 없어 남은 것 {nofit:,} ({nofit_b:,}B · {nofit_b / 2048:.1f}섹터)"
+    )
     if apply:
         verify(dst, checks)
     if check:

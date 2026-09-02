@@ -25,7 +25,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import common
 import patch_scn
-import typeset_scn
 
 # 🔴 **규칙의 정본은 조판기다** — 여기서 다시 쓰지 않는다(체크리스트 4-D).
 #    `lines`(엔진 접기) · `HEAD_BAN`(금칙) · `WIN_ROWS`(창 6행) · `nudge`(밀어내기)가
@@ -51,7 +50,6 @@ def main():
     canon = patch_scn.load_canon()
     _f, mm = common.open_image()
     canon = patch_scn.augment_names(canon, mm)
-    names = typeset_scn._names()
     blocks = over = head = 0
     ex_over, ex_head = [], []
     for path in (p for p, _l, _s in common.iso_files(mm) if patch_scn.SCN_RE.match(p)):
@@ -59,12 +57,11 @@ def main():
         if not got:
             continue
         _base, entries = got
+        sites = patch_scn.sites_for(path)
         for e in entries:
             jp = e.get("text", "")
-            kr = patch_scn._canon_get(canon, jp)
-            if not kr:
-                continue
-            built, _bad = typeset_scn.typeset(jp, kr, names)
+            # ⚠ 주입 `%c` 쌍이 든 블록은 **되살린 원문**으로 조판해야 이름칸이 붙는다.
+            built = patch_scn.canon_of(canon, jp, sites.get(int(e["file_offset"], 16)))
             if not built:
                 continue
             blocks += 1

@@ -62,6 +62,10 @@ def _scenes(mm, out):
             continue
         _base, ents = got
         mine = S.owned_elsewhere(path)
+        # ⚠ 주입 `%c` 쌍이 든 블록은 **되살린 원문**으로 조판해야 이름칸이 붙는다.
+        #   여기서 빠뜨리면 지문이 그 블록을 안 보게 되고, 공용이 그 조판을 흔들어도
+        #   초록불이 뜬다(체크리스트 4-B — 초록불은 「없다」가 아니라 「안 봤다」다).
+        sites = S.sites_for(path)
         acc = []
         for e in ents:
             jp = e.get("text", "")
@@ -71,7 +75,11 @@ def _scenes(mm, out):
             raw = canon.get(line_key(jp))
             if raw is None:
                 continue
-            built, bad = T.typeset(jp, raw, names)
+            site = sites.get(off)
+            if site:
+                built, bad = S.canon_of(canon, jp, site), None
+            else:
+                built, bad = T.typeset(jp, raw, names)
             # ⚠ 실패 사유도 담는다 — 「조판이 되던 게 안 된다」도 조판 변화다
             acc.append(f"{off:x}\x00{bad or built}")
         if acc:

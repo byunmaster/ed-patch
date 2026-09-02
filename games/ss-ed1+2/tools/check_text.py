@@ -74,11 +74,12 @@ def corpus():
         if not got:
             continue
         mine = patch_scn.owned_elsewhere(path)
+        sites = patch_scn.sites_for(path)
         for e in got[1]:
             jp, off = e.get("text", ""), int(e["file_offset"], 16)
             if off in mine:
                 continue
-            kr = patch_scn._canon_get(canon, jp)
+            kr = patch_scn.canon_of(canon, jp, sites.get(off))
             if kr and patch_scn.contract(kr) == patch_scn.contract(jp):
                 out.append((path, off, jp, kr))
     mm.close()
