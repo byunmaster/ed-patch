@@ -38,7 +38,12 @@ def _build_tag():
     tag = os.environ.get("ED_BUILD_TAG")
     if not tag:
         try:
-            with open(os.path.join(REPO, ".git", "HEAD"), encoding="utf-8") as f:
+            # ⚠ 워크트리에서는 `.git` 이 **파일**이라 `.git/HEAD` 가 없다 — gitdir 를 따라간다.
+            g = os.path.join(REPO, ".git")
+            if os.path.isfile(g):
+                with open(g, encoding="utf-8") as f:
+                    g = f.read().strip().split(":", 1)[1].strip()
+            with open(os.path.join(g, "HEAD"), encoding="utf-8") as f:
                 ref = f.read().strip()
             tag = ref.rsplit("/", 1)[-1] if ref.startswith("ref:") else ref[:7]
         except OSError:
