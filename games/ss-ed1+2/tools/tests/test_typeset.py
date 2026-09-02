@@ -176,6 +176,25 @@ class Typeset(unittest.TestCase):
         self.assertEqual(len(T.lines("1" * 90)[0]), 28, "반각은 28자")
         # 14.0 까지는 들어가고, 넘으면 나간다
         self.assertEqual(T.lines("가" * 13 + ".."), ["가" * 13 + ".."])
+
+    def test_a_glyph_starting_inside_the_line_is_drawn(self):
+        """🔴 판정은 **시작 위치**다 — 커서가 13.5 면 전각 하나가 더 들어간다(줄 = 29 반각).
+
+        눈금자 둘(전각 14 · 반각 28)은 두 규칙이 같은 값을 내서 이걸 못 가른다. 반각이
+        섞여 커서가 **0.5 눈금**에 서는 실기 화면 넷이 갈랐다(2026-09-03, devlog):
+
+            「…지난번에 부탁해」 / 「 둔 개구멍은…」   ← `해` 가 13.5 에서 시작한다
+            「…왕자님. 라」      / 「이아스…」
+            「…남짓 남았사옵」   / 「니다.」
+
+        ⚠ 이 테스트가 깨지면 **모델이 다시 28 로 돌아간 것**이다. 되돌리려면 실기 화면이
+          필요하다 — 위 넷을 반증해야 한다.
+        """
+        # 반각 하나로 커서를 0.5 로 밀면, 그 줄에 전각이 14개 들어간다(= 14.5 전각)
+        seg = "." + "가" * 14 + "나"
+        self.assertEqual(T.lines(seg), ["." + "가" * 14, "나"])
+        # 커서가 14.0 이면 안 들어간다 — 「뒀습니다 / 요.」 쪽
+        self.assertEqual(T.lines("가" * 14 + "나"), ["가" * 14, "나"])
         self.assertEqual(T.lines("가" * 13 + "..."), ["가" * 13 + "..", "."])
 
     def test_head_ban_symbol_is_pulled_down_with_its_neighbour(self):
