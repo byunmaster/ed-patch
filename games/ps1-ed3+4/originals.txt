@@ -1,0 +1,9 @@
+# 이 게임이 읽는 원본만 적는다 (scripts/worktree.sh 가 이 목록만 링크한다).
+# 지역을 통째로 걸지 않는 이유는 그 스크립트 머리말에 있다.
+jp/ps1-ed3        # 타깃 — SLPS-01201 『白き魔女 もうひとつの英雄たちの物語』
+jp/ps1-ed4        # 타깃 — SLPS-01540 『朱紅い雫』
+# 아래는 **고유명사 표기 대조용**이다 — 대사 저본이 아니다(patcher-checklist 10-D).
+kr/dos-ed3
+kr/dos-ed4
+kr/win-ed3
+kr/win-ed4
