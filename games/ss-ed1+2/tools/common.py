@@ -136,6 +136,36 @@ def extract(path_in_iso, mm=None):
             f.close()
 
 
+def dst_files(dst=None, mm=None):
+    """**쓰기 대상**의 `{경로: (LBA, 크기)}` — 빌드 이미지가 정본이고, 없으면 원본 것.
+
+    🔴 **원본으로 읽고 빌드로 쓴다.** 「원본이 어땠는가」는 원본에서 묻지만(비멱등 방지),
+       **쓰는 자리**는 빌드 이미지가 정한다. `relocate_files` 가 파일을 뒤로 밀면 둘의
+       LBA 가 갈리고, 원본 LBA 로 빌드에 쓰면 **엉뚱한 섹터를 밟는다** — 실측 2026-08-31
+       에 `patch_scn` 이 이걸로 터졌다(`ED1SCN03 이주 0x77BC: 되읽기가 다르다`).
+       크기도 같다 — `expand_files` 가 꼬리를 늘리면 빌드 쪽이 크다.
+    ⚠ 그래서 **재배치 대상이 아닌 파일도 여기로 묻는다.** 「지금은 안 옮기니까 괜찮다」는
+      다음에 옮길 때 조용히 틀리는 자리가 된다.
+    """
+    dst = dst or os.path.join(BUILD_DIR, os.path.basename(ORIG_BIN))
+    if os.path.exists(dst):
+        f2, mm2 = open_image(dst)
+        try:
+            return {p: (lba, size) for p, lba, size in iso_files(mm2)}
+        finally:
+            mm2.close()
+            f2.close()
+    close = mm is None
+    if close:
+        f, mm = open_image()
+    try:
+        return {p: (lba, size) for p, lba, size in iso_files(mm)}
+    finally:
+        if close:
+            mm.close()
+            f.close()
+
+
 # ── MODE1/2352 쓰기 (2026-08-21) ──────────────────────────────────────────────
 # ⚠ **PS1 것을 그대로 못 쓴다.** 저 쪽은 MODE2 Form1 이고 여기는 **MODE1** 이라 두 군데가
 # 다르다: EDC 범위(여기는 섹터 **0~2063**, 저기는 16~2071)와 **ECC 계산 시 헤더 처리**

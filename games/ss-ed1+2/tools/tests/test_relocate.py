@@ -29,21 +29,21 @@ class Canon(unittest.TestCase):
             self.assertTrue(p.startswith("/BIN/") and "SCN" in p, f"{p}: 씬 파일이 아니다")
             self.assertNotIn(p, ("/ED.BIN", "/ED2.BIN"))
 
-    def test_others_may_still_write_by_original_lba(self):
-        """🔴 **의존을 못 박는다.** `patch_crit_copy`·`patch_josa_hook` 은 원본 LBA 로 빌드에
-        쓴다. 대상이 본체 둘뿐이라 지금은 맞지만, 본체를 옮기기로 하면 **그 둘부터** 고쳐야
-        한다. 여기서 걸리면 그 신호다.
+    def test_writers_take_their_extent_from_the_build(self):
+        """🔴 **쓰기 자리는 빌드 이미지가 정한다** — 규칙은 `common.dst_files` 가 정본이다.
 
         ⚠ `patch_mon_names` 가 실제로 이 함정에 빠졌다 — ED2MON 이 밀리는데 옛 LBA 로 써서
-          화면의 일본어가 22 → 255줄이 됐다.
+          화면의 일본어가 22 → 255줄이 됐다(2026-08-31).
+        ⚠ 그래서 **재배치 대상이 아닌 파일을 쓰는 도구도** 여기로 묻는다(2026-09-03).
+          「지금은 안 옮기니까 맞다」는 다음에 옮길 때 조용히 틀리는 자리였다 — 본체 둘이
+          정확히 그 상태였다.
         """
-        for name in ("patch_crit_copy", "patch_josa_hook"):
+        for name in ("patch_crit_copy", "patch_josa_hook", "patch_mon_names"):
             src = _read(os.path.join(TOOLS, f"{name}.py"))
-            if "iso_files(mm)" not in src:
-                continue  # 이미 빌드 기준으로 고쳤다면 이 의존이 없다
-            self.assertFalse(
-                R.targets() & {"/ED.BIN", "/ED2.BIN"},
-                f"{name} 이 원본 LBA 로 쓰는데 본체를 옮기려 한다",
+            self.assertIn("common.dst_files(", src, f"{name}: `common.dst_files` 를 안 쓴다")
+            bad = re.search(r"files\s*=\s*\{[^}]*common\.iso_files\(mm\)", src)
+            self.assertIsNone(
+                bad, f"{name} 이 **원본** 목록으로 쓰기 자리를 정한다 — `common.dst_files` 를 쓴다"
             )
 
     def test_pregap_is_kept(self):
@@ -63,10 +63,8 @@ class Canon(unittest.TestCase):
         a = sh.index("relocate_files.py")
         b = sh.index("patch_scn.py")
         self.assertLess(a, b, "재배치가 씬 대사 뒤에 있다 — 늘린 자리를 아무도 안 쓴다")
-        # 그리고 몬스터 이름은 재배치 **뒤**라 빌드 LBA 를 써야 한다
-        src = _read(os.path.join(TOOLS, "patch_mon_names.py"))
-        self.assertIn("open_image(dst)", src, "patch_mon_names 가 빌드 LBA 를 안 읽는다")
-        self.assertTrue(re.search(r"iso_files\(mmb\)", src), "빌드 목록으로 안 덮어쓴다")
+        # 그리고 몬스터 이름은 재배치 **뒤**라 빌드 LBA 를 써야 한다 —
+        # 그건 위 `test_writers_take_their_extent_from_the_build` 가 본다.
 
 
 if __name__ == "__main__":

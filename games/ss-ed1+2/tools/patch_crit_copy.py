@@ -132,8 +132,9 @@ def main():
     apply = "--apply" in sys.argv
     common.verify_source()
     _f, mm = common.open_image()
-    files = {p: (lba, size) for p, lba, size in common.iso_files(mm)}
     dst = os.path.join(common.BUILD_DIR, os.path.basename(common.ORIG_BIN))
+    # 🔴 **쓰기 자리는 빌드 이미지가 정한다** — 규칙은 `common.dst_files` 가 정본이다.
+    files = common.dst_files(dst, mm)
     if apply and not os.path.exists(dst):
         raise SystemExit(f"먼저 다른 패처를 돌린다 — {dst} 가 없다")
 
