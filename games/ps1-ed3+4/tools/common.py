@@ -212,7 +212,7 @@ class ArchiveError(Exception):
 def arc_parse(data):
     """(unit, [(이름, 오프셋, 크기)]) — 단위는 파일 전체가 성립하는 것으로 고른다."""
     ents = []
-    for i in range(0, len(data), 32):
+    for i in range(0, len(data) - 31, 32):
         nm = data[i : i + 20].rstrip(b"\x00")
         if not nm or nm[0] == 0:
             break
