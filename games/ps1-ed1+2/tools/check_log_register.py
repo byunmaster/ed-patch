@@ -59,7 +59,9 @@ def main():
     t1, bad1 = scan("ED1")
     t2, bad2 = scan("ED2")
     if bad1:
-        print(f"  ❌ ED1 로그 부류 {t1}블록 중 {len(bad1)}곳이 해라체 — 원문은 이 부류에서 정중이다")
+        print(
+            f"  ❌ ED1 로그 부류 {t1}블록 중 {len(bad1)}곳이 해라체 — 원문은 이 부류에서 정중이다"
+        )
         for s, k, t in bad1:
             print(f"       {s}:{k}  {t!r}")
     else:
