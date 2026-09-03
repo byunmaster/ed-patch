@@ -32,6 +32,7 @@ import common
 import exetext
 import font
 import glossary
+import graphics
 import hangul_map
 import script as script_canon
 import scriptmap
@@ -207,6 +208,7 @@ def main():
         chars.update(row["kr"])
     chars = {c for c in chars if c in table}
 
+    gfx_files, gfx_arcs = graphics.apply(a.disc)
     fs = common.iso_files(a.disc)
     exe_lba, exe_size = fs[font.FONTS[a.disc]["exe"]]
     exe = bytearray(common.read_lba(a.disc, exe_lba, exe_size))
@@ -215,13 +217,16 @@ def main():
     report["skipped"] += ui_skip
     reinsert_names(exe, a.disc, table, report)
     arcs = reinsert_script(a.disc, canon, table, report)
+    for path, data in gfx_arcs.items():  # 그림이 든 파일도 같이 쓴다
+        arcs.setdefault(path, data)
 
     lines = sum(len(v) for v in canon.values())
     skipped = report["skipped"] + report["skipped_names"]
     left = report.get("names_left", [])
     print(
         f"{a.disc}: 대사 {lines:,}줄 / 멤버 {report['members']} (남는 자리 {report['slack']:,}B) · "
-        f"낱말 {report['names']}/{report['names'] + len(left)} · UI {ui_put} · 글리프 {baked}"
+        f"낱말 {report['names']}/{report['names'] + len(left)} · UI {ui_put} · "
+        f"그림 {gfx_files} · 글리프 {baked}"
     )
     if a.test:
         print("  🔴 **시험 빌드다** — 안 옮긴 문안은 엉뚱한 글자로 나온다. 배포물이 아니다.")

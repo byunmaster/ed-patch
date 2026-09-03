@@ -169,3 +169,112 @@ def find_all(data):
             i = t["end"]
         else:
             i += 4
+
+
+# ── 되쓰기 ──────────────────────────────────────────────────────────────────
+def color15(r, g, b, a):
+    """(r,g,b,a) → 15비트 BGR+STP. 투명은 `0x0000` 이다(STP=0 & 색=0)."""
+    if a == 0:
+        return 0
+    c = (b >> 3) << 10 | (g >> 3) << 5 | (r >> 3)
+    # 🔴 **불투명한 검정은 `0x8000`(STP 켠 검정)이다.** 그냥 0 으로 두면 투명이 된다 —
+    #    화면에서 그 자리만 뚫린다. PS1 규약이 그렇다(psx-spx).
+    return c if c else 0x8000
+
+
+def palette_of(t, palette=None):
+    """[15비트 색] — 그 TIM 의 팔레트 한 벌."""
+    if t["clut"] is None:
+        return []
+    n = 16 if t["bpp"] == 4 else 256
+    base = (best_palette(t) if palette is None else palette) * n * 2
+    return [
+        struct.unpack_from("<H", t["clut"], base + i * 2)[0]
+        for i in range(min(n, (len(t["clut"]) - base) // 2))
+    ]
+
+
+def from_image(t, img):
+    """(새 픽셀 바이트, 새 CLUT 바이트|None) — **크기·bpp 는 그대로**여야 한다.
+
+    🔴 크기·bpp 를 바꾸면 블록 크기가 달라져 **멤버가 밀린다.** 그래서 여기서 막는다.
+       (같은 크기·bpp 면 바이트 수가 원본과 정확히 같아 그대로 갈아끼운다 — 이 게임의
+       그림 멤버는 압축이 아니라서 아카이브 재배치도 없다.)
+
+    ⚠ **바이트까지 같아지지는 않는다.** 원본이 같은 색을 여러 색인에 두는 일이 흔해
+       (실측: 팔레트가 `7FFF,7FFF,0000…` 이고 흰색을 1번으로 썼다) 색→색인 되짚기가
+       원본 배정과 갈릴 수 있다. **보장하는 건 그려지는 그림이 같다는 것**이고,
+       안 바꾼 그림은 애초에 안 건드리므로 무변경 구간은 그대로다.
+
+    🔴 **팔레트는 되도록 원본 것을 그대로 쓴다.** 그림의 색이 전부 원본 팔레트에 있으면
+       팔레트를 안 건드리고 색인만 다시 쓴다 — 그러면 **안 바꾼 그림은 바이트까지 같아진다**
+       (무변경 구간을 넓게 지킨다). 새 색이 필요할 때만 팔레트를 다시 만든다.
+    ⚠ 투명은 알파 0 으로 준다 — 마스크 그림은 그게 배경이다.
+    """
+    w, h = int(width(t)), t["h"]
+    if img.size != (w, h):
+        raise TimError(f"크기가 다르다 {img.size} (원본 {w}x{h})")
+    img = img.convert("RGBA")
+    px = img.load()
+
+    if t["bpp"] == 16:
+        out = bytearray()
+        for y in range(h):
+            for x in range(w):
+                out += struct.pack("<H", color15(*px[x, y]))
+        return bytes(out), None
+
+    n = 16 if t["bpp"] == 4 else 256
+    want = []
+    for y in range(h):
+        row = [color15(*px[x, y]) for x in range(w)]
+        want.append(row)
+    colors = {c for row in want for c in row}
+
+    old = palette_of(t)
+    idx = {}
+    clut = None
+    if old and colors <= set(old):
+        for i, c in enumerate(old):  # 먼저 나온 색인을 쓴다 — 원본과 같은 배정이 된다
+            idx.setdefault(c, i)
+    else:
+        seen = sorted(colors, key=lambda c: (c != 0, c))  # 투명을 0번으로
+        if len(seen) > n:
+            raise TimError(f"색이 넘친다 {len(seen)} > {n}")
+        idx = {c: i for i, c in enumerate(seen)}
+        clut = bytearray()
+        for i in range(n):
+            clut += struct.pack("<H", seen[i] if i < len(seen) else 0)
+        clut = bytes(clut)
+
+    out = bytearray()
+    for row in want:
+        line = [idx[c] for c in row]
+        if t["bpp"] == 4:
+            packed = bytearray()
+            for i in range(0, w, 2):
+                packed.append((line[i] & 0xF) | ((line[i + 1] & 0xF) if i + 1 < w else 0) << 4)
+            out += packed
+        else:
+            out += bytes(line)
+    need = t["w"] * h * 2
+    if len(out) != need:
+        raise TimError(f"픽셀 바이트가 안 맞는다 {len(out)} (원본 {need})")
+    return bytes(out), clut
+
+
+def replace(data, t, img):
+    """블롭 안의 그 TIM 하나를 새 그림으로 바꾼 **같은 길이의** 바이트열."""
+    pix, clut = from_image(t, img)
+    out = bytearray(data)
+    end = t["end"]
+    pix_start = end - len(pix)
+    out[pix_start:end] = pix
+    if clut is not None and t["clut"] is not None:
+        cs = t["start"] + 8 + 12
+        if len(clut) != len(t["clut"]):
+            raise TimError("팔레트 길이가 달라졌다")
+        out[cs : cs + len(clut)] = clut
+    if len(out) != len(data):
+        raise TimError("길이가 달라졌다")
+    return bytes(out)
