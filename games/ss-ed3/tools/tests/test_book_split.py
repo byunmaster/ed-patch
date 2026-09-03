@@ -34,6 +34,15 @@ class Split(unittest.TestCase):
         for w in used[:-1]:
             self.assertGreaterEqual(w * 2, 24, f"줄이 절반도 안 찼다: {rows}")
 
+    def test_no_dangling_open_bracket(self):
+        #   여는 낫표가 줄 끝에 홀로 남으면 안 된다 — 뒷 줄에 붙는 게 읽힌다
+        text = B.tidy_spaces(B.to_fullwidth("가나다라마바사. 「아자차카타파하"))
+        rows, ok = B.split_to(text, [20, 20])
+        self.assertTrue(ok)
+        for r in rows:
+            if r:
+                self.assertNotIn(r[-1], B.OPEN, f"여는 부호가 줄 끝에 남았다: {rows}")
+
     def test_word_cut_still_wins(self):
         #   🔴 미관 때문에 낱말을 가르지 않는다 — 갈림 0 이 되는 배분이 있으면 그걸 고른다
         text = B.tidy_spaces(B.to_fullwidth("가나다라마바 사아자차카타"))
