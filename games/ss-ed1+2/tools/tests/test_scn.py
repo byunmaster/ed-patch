@@ -188,6 +188,95 @@ class Scn(unittest.TestCase):
         # 🔴 원본 칸(0x10)은 어디에도 안 나온다 — 그게 이 시험의 전부다
         self.assertTrue(all(at >= 0x1000 for at, _b in puts))
 
+    def test_a_block_that_stays_keeps_its_cell(self):
+        """🔴 **못 옮긴 블록의 칸은 풀이 아니다**(2026-09-03).
+
+        「참조를 옮기면 그 칸은 아무도 안 본다」는 **옮겨졌을 때만** 참이다. 자리를 못 얻은
+        블록은 포인터가 제자리를 가리킨 채 남는데, 그 칸을 남에게 내주면 화면에 **딴 문장**이
+        뜬다. 증상이 「일본어가 남았다」가 아니라 「한국어인데 다른 대사」라 스캐너가 못 본다 —
+        실측으로 **32블록**이 그 상태였다(ED2 프롤로그·아이템 이름).
+        """
+        big = {"ptr_at": ["10"], "raw_hex": "00" * 20}  # 20B 칸
+        small = {"ptr_at": ["20"], "raw_hex": "00" * 20}
+        over = [
+            (0x100, "칸을 넘는다", "못 옮길 것", big, b"x" * 100),  # 어디에도 안 들어간다
+            (0x200, "칸을 넘는다", "옮길 것", small, b"y" * 19),  # 0x100 의 칸이면 들어간다
+        ]
+        puts, _ptrs, left = S.migrate(over, 0, 0, 0)  # 꼬리 없음 · spare 없음
+        stay = {o for o, _jp in left}
+        self.assertIn(0x100, stay, "못 옮긴 블록이 left 에 없다")
+        for at, blob in puts:
+            for o in stay:
+                self.assertFalse(at <= o < at + len(blob), f"제자리에 남는 0x{o:X} 를 덮었다")
+
+    def test_run_is_repacked_only_when_a_cell_overflows(self):
+        """🔴 **넘치는 구간만 통째로 다시 깐다**(2026-09-04).
+
+        블록을 제 칸에 두면 남는 자리가 **칸마다 조각**으로 갈려, 총량이 남는데도 큰 문안이
+        갈 데가 없다 — 실측: ED2 프롤로그 구간(145블록)은 우리 문안이 원본보다 **1,007B
+        작은데도** 넷이 못 들어갔다. ⚠ 반대로 **안 넘치는 구간은 손대지 않는다** — 옮길
+        이유가 없는데 옮기면 포인터만 흔든다.
+        """
+        run = [(0x10, 8, {"ptr_at": ["1"], "raw_hex": "00" * 8, "text": "가"})]
+        # 저본이 없으면 넘칠 일도 없다
+        self.assertFalse(S._needs_pack(run, {}, b"", frozenset(), None, None))
+
+    def test_a_stride_table_is_never_moved(self):
+        """🔴 **같은 간격으로 이어지는 블록은 표다** — 코드가 색인으로 집는다.
+
+        실측 2026-08-28: `/ED.BIN` 0x44BC8 의 HUD 접미 표는 포인터가 있는데도 조립 루틴이
+        그 자리에서 4B 를 직접 집었다. 비워 내줬더니 화면에 `メ§電 リ…처` 가 떴다.
+        잘기까지 해서 `VACATE_MIN` 이 먼저 걸렀지만, **길고 규칙적인 표**도 있을 수 있다.
+        """
+        run = [(0x10 + 0x20 * i, 16, {"ptr_at": ["1"], "raw_hex": "00" * 16}) for i in range(5)]
+        table = S._stride_table(run)
+        self.assertEqual(len(table), 5, "같은 간격 다섯이 표로 안 잡힌다")
+        for off, n, e in run:
+            self.assertFalse(S._movable(off, n, e, table), f"0x{off:X} 를 옮기려 한다")
+        # 간격이 들쭉날쭉하면 표가 아니다
+        run2 = [(0x10, 16, {}), (0x40, 16, {}), (0x58, 16, {}), (0xA0, 16, {})]
+        self.assertEqual(S._stride_table(run2), set())
+
+    def test_a_name_table_entry_is_never_moved(self):
+        """🔴 **마크업이 없으면 표다** — 코드가 색인으로 집는다(2026-09-04 실기).
+
+        구간 압축을 넣자 `/ED.BIN` 의 아이템·몬스터 **이름 칸**이 통째로 밀려 인벤토리에
+        「디논A」가 떴다 — 「오디논A」를 **두 바이트 뒤부터** 읽은 것이다. 대사 블록은 창
+        종단 `%c` 를 갖는데 이름 칸은 맨 이름뿐이라, 그걸로 가른다.
+        ⚠ 08-28 의 「표는 잘고 산문은 길다」(`VACATE_MIN`)로는 안 걸린다 — 이름 칸이 8~14B 다.
+        """
+        name = {"ptr_at": ["1"], "raw_hex": "00" * 12, "text": "革のたて"}
+        talk = {"ptr_at": ["2"], "raw_hex": "00" * 12, "text": "%c마을 사람%c\n어서 오게.%c"}
+        self.assertFalse(S._movable(0x10, 12, name), "이름 칸을 옮기려 한다")
+        self.assertTrue(S._movable(0x20, 12, talk), "대사 블록을 안 옮긴다")
+
+    def test_pool_uses_the_cell_tail(self):
+        """🔴 **칸 꼬리도 풀이다**(2026-09-04). 꼬리(NUL + 0 채움 + 이따금 `0x09`)를 빼고 세면
+        조각이 1~4B 씩 잘려 나가 **총량이 남는데도 못 넣는** 상태가 된다.
+
+        `0x09` 가 무엇인지 실기로 쳤다 — `ED1SCN01` 의 꼬리 `09` 열둘을 0 으로 지우고 오프닝을
+        끝까지 돌렸더니 **그 바로 뒤 블록 다섯이 전부 정상**이었다(병사·퍼거슨 포함).
+        본문에 `0x09` 가 든 블록도, `0x09` 를 가리키는 포인터도 **하나도 없다**(전수).
+        """
+        e = {"ptr_at": ["100"], "raw_hex": "00" * 8}  # 글자 자리 8B
+        over = [(0x10, "칸을 넘는다", "jp", e, b"x" * 9)]  # 10B 필요 — 꼬리를 써야 들어간다
+        puts, _p, left = S.migrate(over, 0, 0, 0, spans={0x10: 12})
+        self.assertEqual(left, [], "꼬리를 안 쓰면 갈 데가 없다")
+        self.assertEqual(puts, [(0x10, b"x" * 9 + b"\x00")])
+
+    def test_touching_chunks_merge(self):
+        """🔴 **맞닿은 조각은 합친다** — 안 합치면 총량이 남는데도 큰 문안이 갈 데가 없다.
+
+        꼬리를 풀에 넣으면 칸들이 실제로 맞닿으므로 여기서 비로소 효과가 난다
+        (`patch_ui.sys_pack` 이 먼저 물린 함정이다).
+        """
+        e = {"ptr_at": [], "raw_hex": "00" * 8}
+        over = [(0x10, "칸을 넘는다", "jp", e, b"z" * 14)]  # 15B 필요
+        # 비우는 칸 8B(0x10~) 과 짧아져 남은 칸 8B(0x18~) 가 **맞닿아 있다**
+        puts, _p, left = S.migrate(over, 0, 0, 0, spare=[(0x18, 8)], spans={0x10: 8})
+        self.assertEqual(left, [], "합쳐진 16B 에 15B 가 안 들어갔다")
+        self.assertEqual(puts, [(0x10, b"z" * 14 + b"\x00")])
+
     def test_migrate_never_runs_past_the_tail(self):
         """자리가 모자라면 **남긴다** — 넘겨 쓰면 다음 파일을 밟는다."""
         mk = lambda o, n: (o, "칸을 넘는다", "jp", {"ptr_at": [], "raw_hex": ""}, b"x" * n)

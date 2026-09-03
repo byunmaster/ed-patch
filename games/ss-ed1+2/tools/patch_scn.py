@@ -216,7 +216,68 @@ def _mon_slots(path):
     return frozenset(t for t, _jp, _kr in patch_mon_names.slots(path, table("monster")))
 
 
-def rebuild(run, canon, d, skip_offs=frozenset(), built=None, spare=None, sites=None, done=None):
+# 🔴 **옮기면 안 되는 자리** — 코드가 포인터가 아니라 **절대주소로 집는** 칸이 있다.
+#    실측 2026-08-28: `/ED.BIN` 0x44BC8 의 HUD 접미 표(`入口`·`付近`·`北`…)는 2~4B 이고
+#    포인터도 있는데, 조립 루틴이 그 자리에서 4B 를 직접 집는다. 비워서 남에게 내줬더니
+#    화면에 `メ§電 リ…처` 가 떴다. **표는 잘고 산문은 길다**를 경계로 쓴다(`VACATE_MIN`).
+#    ⚠ 여기에 하나 더 — **같은 간격으로 이어지는 블록은 표로 본다**(색인으로 집힌다).
+STRIDE_RUN = 4  # 같은 간격이 이만큼 이어지면 표
+
+
+def _stride_table(run):
+    """같은 간격으로 이어지는 블록들의 오프셋 — **표**라 안 옮긴다."""
+    out = set()
+    i = 0
+    while i < len(run) - 1:
+        step = run[i + 1][0] - run[i][0]
+        j = i + 1
+        while j < len(run) - 1 and run[j + 1][0] - run[j][0] == step:
+            j += 1
+        if j - i + 1 >= STRIDE_RUN:
+            out.update(run[k][0] for k in range(i, j + 1))
+        i = max(j, i + 1)
+    return out
+
+
+def _movable(off, n, e, table=frozenset()):
+    """그 블록을 **옮겨도 되나** — 포인터가 있고, 잘지 않고, 표가 아니어야 한다.
+
+    🔴 **마크업이 없으면 표로 본다**(2026-09-04). 대사 블록은 창 종단 `%c` 를 갖는데
+       아이템·몬스터 **이름 칸**은 맨 이름뿐이다. 그리고 그 이름들은 코드가 **색인으로**
+       집는다 — 옮기면 포인터를 고쳐도 화면이 **한 글자 밀려** 읽는다.
+       실측 2026-09-04: 구간 압축을 넣자 `/ED.BIN` 의 아이템·몬스터 이름 표가 통째로
+       밀려 인벤토리에 「디논A」(= 「오디논A」의 뒤 세 글자)가 떴다.
+    ⚠ 이건 08-28 에 세운 「표는 잘고 산문은 길다」(`VACATE_MIN`)의 확장이다 — 그때는
+      2~4B 라 길이로 갈렸는데, 이름 칸은 8~14B 라 길이로는 안 갈린다.
+    """
+    return (
+        bool(e.get("ptr_at"))
+        and n >= VACATE_MIN
+        and off not in table
+        and "%c" in e.get("text", "")
+    )
+
+
+def _needs_pack(run, canon, d, skip_offs, built, sites):
+    """이 구간에 **제 칸을 넘는 블록**이 있나 — 있으면 구간을 통째로 다시 깐다."""
+    if not canon:
+        return False
+    for idx, (off, n, e) in enumerate(run):
+        if off in skip_offs:
+            continue
+        span = (run[idx + 1][0] - off) if idx + 1 < len(run) else n
+        jp = e.get("text", "")
+        kr = canon_of(canon, jp, (sites or {}).get(off))
+        if kr is None or contract(kr) != contract(jp):
+            continue
+        if len(_encode(kr)) + 1 > span:
+            return True
+    return False
+
+
+def rebuild(
+    run, canon, d, skip_offs=frozenset(), built=None, spare=None, sites=None, done=None, spans=None
+):
     """`(새 바이트, [(ptr_at, 새 주소 오프셋)], [건너뛴 이유])` — 구간을 다시 깐다.
 
     ⚠ **구간 총 길이는 원본 그대로**다. 남으면 0 으로 채운다(계약 ④).
@@ -230,6 +291,15 @@ def rebuild(run, canon, d, skip_offs=frozenset(), built=None, spare=None, sites=
     room = end - start
     blob = bytearray()
     moves, skipped = [], []
+    # 🔴 **한 칸이라도 넘치면 그 구간은 통째로 다시 깐다**(2026-09-04). 블록을 제 칸에 두면
+    #    남는 자리가 **칸마다 조각**으로 갈려, 총량이 남는데도 큰 문안이 갈 데가 없다 —
+    #    실측: ED2 프롤로그 구간(145블록)은 우리 문안이 원본보다 **1,007B 작은데도** 넷이
+    #    못 들어갔다(각자 제 칸에서 2~11B 씩 넘쳐서).
+    #    ⇒ 넘치는 구간만 **모든 옮길 수 있는 블록**을 이주 풀에 넘긴다. 배치는 `migrate` 가
+    #      한다(FFD · 짝수 주소 · 인접 병합 · 못 놓은 것의 칸은 안 내주는 고정점).
+    #    ⚠ **안 넘치는 구간은 손대지 않는다** — 옮길 이유가 없는데 옮기면 포인터만 흔든다.
+    packed = _needs_pack(run, canon, d, skip_offs, built, sites)
+    table = _stride_table(run) if packed else frozenset()
     for idx, (off, n, e) in enumerate(run):
         # 🔴 **블록은 자기 칸에 머문다 — 당기지 않는다.** 칸은 `(내용+NUL)` 을 4바이트
         #    올린 크기인데(실측 676/676), 그 **꼬리 마지막 바이트가 `0x09` 인 자리가 많다**
@@ -255,6 +325,9 @@ def rebuild(run, canon, d, skip_offs=frozenset(), built=None, spare=None, sites=
                 #   조판·인코딩하면 두 곳에서 갈릴 수 있다(같은 문안을 두 번 만들지 않는다).
                 enc = _encode(kr)
                 skipped.append((off, f"칸을 넘는다 {len(enc)}B > {n}B", jp[:18], e, enc))
+            elif packed and _movable(off, n, e, table):
+                # 구간을 다시 깐다 — 자리는 `migrate` 가 정하고 여기선 원본을 남긴다
+                skipped.append((off, "구간을 다시 깐다", jp[:18], e, _encode(kr)))
             else:
                 use = _encode(kr)
                 if done is not None:
@@ -276,8 +349,13 @@ def rebuild(run, canon, d, skip_offs=frozenset(), built=None, spare=None, sites=
         # 칸 = [내용][NUL 채움][원본 꼬리]. 🔴 꼬리를 **끝에 붙여야** 마커가 제자리다 —
         # `d[off+len(use):]` 로 이어 붙이면 짧아진 만큼 원본이 밀려 들어와 **아무것도 안
         # 바뀐 것처럼** 된다(합성 시험이 잡았다).
-        if spare is not None and use is not raw and n - len(use) - 1 >= 4:
-            spare.append((off + len(use) + 1, n - len(use) - 1))
+        # 🔴 **남는 자리는 칸 꼬리까지다**(2026-09-04). 꼬리(NUL + 0 채움 + 이따금 `0x09`)를
+        #    빼고 세면 조각이 1~4B 씩 잘려 나가 **총량이 남는데도 못 넣는** 상태가 된다.
+        #    `0x09` 가 무의미하다는 건 실기로 확인했다 — 「그 바이트가 무엇인가」 절.
+        if spare is not None and use is not raw and span - len(use) - 1 >= 2:
+            spare.append((off + len(use) + 1, span - len(use) - 1))
+        if spans is not None:
+            spans[off] = span
         tail = d[off + n : off + span]
         blob += use + b"\x00" * (span - len(use) - len(tail)) + tail
     assert len(blob) == room, f"구간 0x{start:X}: {len(blob)}B ≠ {room}B"
@@ -602,7 +680,7 @@ def _measured_free(path):
     return _MFREE.get(path, [])
 
 
-def migrate(over, base, tail_at, tail_end, spare=()):
+def migrate(over, base, tail_at, tail_end, spare=(), spans=None):
     """칸을 넘는 블록을 옮긴다 → `([(오프셋, 바이트)], [(ptr, 새 주소)], 남은 것)`.
 
     🔴 **원본 칸을 앞으로 당기지 않는다.** PS1 이 쓴 2단계다 — 참조만 새 주소로 돌린다.
@@ -622,6 +700,25 @@ def migrate(over, base, tail_at, tail_end, spare=()):
     ⚠ **긴 것부터 넣는다**(first-fit decreasing). 작은 것부터 깔면 큰 게 갈 데가 없어진다.
       ⚠ 그래도 **결정적**이다 — 같은 길이는 오프셋 순으로 갈린다(제1원칙).
     """
+    # 🔴 **자리를 못 얻어 제자리에 남는 블록의 칸은 풀이 아니다**(2026-09-03).
+    #    「참조를 옮기면 그 칸은 아무도 안 본다」는 **옮겨졌을 때만** 참이다. 못 옮긴 블록은
+    #    포인터가 제자리를 가리킨 채 남는데, 그 칸을 남에게 내주면 **화면에 딴 문장이 뜬다.**
+    #    ⚠ 증상이 「일본어가 남았다」가 아니라 **「한국어인데 다른 대사」**라 스캐너가 못 본다
+    #      — 실측 2026-09-03: 32블록이 그 상태였다(ED2 프롤로그·아이템 이름 포함).
+    #    ⇒ 「누가 남나」와 「어디에 놓나」가 서로를 물고 있으니 **고정점까지 돈다.**
+    #      풀이 줄면 남는 것은 늘기만 하므로(단조) 반드시 멈춘다.
+    blocked = set()
+    for _ in range(len(over) + 1):
+        puts, ptrs, left = _place(over, base, tail_at, tail_end, spare, blocked, spans or {})
+        now = {o for o, _jp in left}
+        if now == blocked:
+            break
+        blocked = now
+    return puts, ptrs, left
+
+
+def _place(over, base, tail_at, tail_end, spare, blocked, spans):
+    """`migrate` 의 한 회차 — `blocked` 의 칸은 풀에 안 넣는다."""
     # 풀 = [꼬리] + [비워질 칸] + [짧아져 남은 칸 뒷부분]. 칸은 자기 글자 자리만 낸다.
     free = [[tail_at, tail_end - tail_at]] if tail_end > tail_at else []
     free += [[a, n] for a, n in spare]
@@ -634,8 +731,20 @@ def migrate(over, base, tail_at, tail_end, spare=()):
         #    2~4B 블록이고 **포인터도 있는데**, 조립 루틴(0x44BE8)은 그 자리에서 4B 를
         #    직접 집는다. 비워서 남에게 내줬더니 화면에 `メ§電 リ…처` 가 떴다.
         #    ⇒ **표는 잘고 산문은 길다**를 경계로 쓴다. 대사 한 줄이 8B 미만일 수는 없다.
-        if n >= VACATE_MIN:
-            free.append([off, n])
+        if n >= VACATE_MIN and off not in blocked:
+            # 비우는 칸도 **꼬리까지** 낸다(위 `rebuild` 주석과 같은 이유)
+            free.append([off, spans.get(off, n)])
+    # 🔴 **맞닿은 조각은 합친다** — 안 합치면 총량이 남는데도 조각이 작아 큰 문안이 갈 데가
+    #    없다(`patch_ui.sys_pack` 이 먼저 물린 함정이다). 꼬리를 풀에 넣으면 칸들이 실제로
+    #    맞닿으므로 여기서 비로소 효과가 난다.
+    free.sort()
+    merged = []
+    for a, n in free:
+        if merged and merged[-1][0] + merged[-1][1] == a:
+            merged[-1][1] += n
+        else:
+            merged.append([a, n])
+    free = merged
     puts, ptrs, left = [], [], []
     for off, _why, jp, e, enc in sorted(over, key=lambda r: (-len(r[4]), r[0])):
         blob = enc + b"\x00"
@@ -655,7 +764,7 @@ def migrate(over, base, tail_at, tail_end, spare=()):
         ro, rn = a + len(blob), n - len(blob)
         if ro & 1:  # 남는 조각도 짝수에서 시작하게
             ro, rn = ro + 1, rn - 1
-        if rn >= 4:  # 남는 조각은 다시 풀로
+        if rn >= 2:  # 남는 조각은 다시 풀로
             free.append([ro, rn])
     puts.sort()
     return puts, ptrs, left
@@ -828,6 +937,7 @@ def main():
         spare = []
         plans = []
         done = []  # 실제로 우리 문안이 들어간 블록 오프셋 — 주입 인자 패치의 조건이다
+        spans = {}  # 블록 오프셋 → 칸 전체 길이(꼬리 포함) — 이주 풀이 꼬리까지 쓴다
         for run in runs(entries, size):
             blocks += len(run)
             matched += sum(
@@ -835,7 +945,7 @@ def main():
                 for o, _n, e in run
                 if o not in mine and canon_of(canon, e.get("text", ""), isites.get(o))
             )
-            blob, moves, dropped = rebuild(run, canon, d, mine, built, spare, isites, done)
+            blob, moves, dropped = rebuild(run, canon, d, mine, built, spare, isites, done, spans)
             start = run[0][0]
             orig = d[start : start + len(blob)]
             if blob == orig:
@@ -843,12 +953,13 @@ def main():
             else:
                 bad.append((path, start, len(blob)))
             skipped.extend(dropped)
-            over.extend(r for r in dropped if "칸을" in r[1])
+            # 이주로 넘길 것 = **인코딩을 들고 나온** 것(칸을 넘었거나, 구간을 다시 깐다)
+            over.extend(r for r in dropped if r[4] is not None)
             # 자리가 안 바뀐 포인터는 쓸 이유가 없다
             plans.append((start, blob, [(p, a) for p, a in moves if _moved(entries, p, a)], orig))
         pinned += sum(1 for e in entries if not e.get("ptr_at"))
         puts, mptrs, left = (
-            migrate(over, _base, size, bsize, list(spare) + _measured_free(path))
+            migrate(over, _base, size, bsize, list(spare) + _measured_free(path), spans)
             if canon
             else ([], [], over)
         )
@@ -879,9 +990,10 @@ def main():
             checks.append((path, blba, bsize, _base, plans, puts, mptrs, codes))
 
     print(f"씬 파일 {files}개 · 블록 {blocks} · 핀(참조 없음) {pinned}")
-    if skipped:
-        print(f"  ⏭ 구조 계약이 달라 건너뛴 블록 {len(skipped)}")
-        for off, why, jp, _e, _enc in skipped[:6]:
+    real = [r for r in skipped if r[4] is None]  # 진짜 건너뛴 것 (이주 대상은 뺀다)
+    if real:
+        print(f"  ⏭ 구조 계약이 달라 건너뛴 블록 {len(real)}")
+        for off, why, jp, _e, _enc in real[:6]:
             print(f"     0x{off:X} {why} — {jp!r}")
     if apply:
         print(f"  → 넣음 · 고친 포인터 {wrote}곳")
@@ -901,7 +1013,8 @@ def main():
         print("  ✅ 원문을 그대로 다시 깔아 **바이트 동일** — 자르기·재배치가 맞다")
     else:
         n = sum(1 for r in skipped if "칸을" in r[1])
-        print(f"  넣을 수 있는 블록 {matched} · 칸을 넘어 건너뛴 것 {n}")
+        pk = sum(1 for r in skipped if r[1] == "구간을 다시 깐다")
+        print(f"  넣을 수 있는 블록 {matched} · 칸을 넘어 건너뛴 것 {n} · 구간을 다시 깐 것 {pk}")
         print("  (`--apply` 로 넣는다 · `--check` 는 원문 항등만 본다)")
     if shortfall:
         # 🔴 **자리를 늘릴 도구가 읽는 값**(`relocate_files.py`). 파생물이라 `work/` 에 둔다 —
