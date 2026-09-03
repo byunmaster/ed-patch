@@ -42,6 +42,14 @@ def cstr(d, off):
     return d[off:end] if end >= 0 else b""
 
 
+# 🔴 **전각 공백은 「출력 가능」이 아니다** — 파이썬의 `str.isprintable()` 은 U+3000 을
+#    구분자(Zs)로 보아 **False** 를 준다. 이 게임은 폭을 맞추느라 전각 공백을 잔뜩 쓰므로,
+#    그대로 두면 그런 문자열이 통째로 「데이터」로 걸러진다 — 실측 2026-09-03: 33개가
+#    덤프에서 빠져 있었고 그중 **ED1SCN27 셋은 화면에 일본어로 남아 있었다.**
+#    ⚠ 초록불이 「없다」가 아니라 「안 봤다」였던 자리다(체크리스트 4-B).
+PRINTABLE_EXTRA = "\n\t\u3000"
+
+
 def plausible_text(raw):
     """SJIS 로 온전히 디코드되고 출력 가능한 문자 위주인가 — 본체(ED.BIN)의
     코드/데이터 포인터를 걸러낸다. 대사·지명·서식 문자열만 남기는 게 목적."""
@@ -51,7 +59,7 @@ def plausible_text(raw):
         s = raw.decode("cp932")
     except UnicodeDecodeError:
         return False
-    ok = sum(1 for c in s if c.isprintable() or c in "\n\t")
+    ok = sum(1 for c in s if c.isprintable() or c in PRINTABLE_EXTRA)
     return ok >= len(s) * 0.9 and any(ord(c) > 0x7F or c.isalpha() for c in s)
 
 

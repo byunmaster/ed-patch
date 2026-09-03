@@ -57,6 +57,27 @@ def _internal_key(s):
     return any("ｦ" <= c <= "ﾟ" for c in s)
 
 
+def _decode(raw, capped):
+    """cp932 로 읽는다. 못 읽으면 None — **우리 슬롯 코드가 들어간 자리**라는 뜻이다.
+
+    🔴 **길이 상한에서 자른 것은 예외다**(2026-09-03). `MAXLEN` 에서 끊으면 두 바이트
+       글자의 한복판일 수 있고, 그러면 **일본어가 그대로인 자리를 「번역됐다」로 넘긴다.**
+       실측: `ED1SCN27` 0x5A9C(127B)가 96B 에서 잘려 조용히 빠져 있었다 — 화면엔
+       「クリスタル水族館へ ようこそ !」가 그대로 떠 있는데 검사기는 0줄이라고 했다.
+    ⚠ SJIS 는 최대 2바이트라 **한 바이트만 물러서면** 충분하다.
+    """
+    try:
+        return raw.decode("cp932")
+    except UnicodeDecodeError:
+        pass
+    if not capped:
+        return None
+    try:
+        return raw[:-1].decode("cp932")
+    except UnicodeDecodeError:
+        return None
+
+
 def strings(d, base):
     """`{포인터 오프셋: (대상 오프셋, 문자열)}` — **포인터가 가리키는 자리**만.
 
@@ -78,10 +99,9 @@ def strings(d, base):
         j = t
         while j < len(d) and d[j] != 0 and j - t < MAXLEN:
             j += 1
-        try:
-            out[o] = (t, d[t:j].decode("cp932"))
-        except UnicodeDecodeError:
-            pass
+        got = _decode(bytes(d[t:j]), j - t >= MAXLEN)
+        if got is not None:
+            out[o] = (t, got)
     return out
 
 
@@ -99,9 +119,8 @@ def scan(path, mm, files):
         j = t
         while j < len(built) and built[j] != 0 and j - t < MAXLEN:
             j += 1
-        try:
-            now = bytes(built[t:j]).decode("cp932")
-        except UnicodeDecodeError:
+        now = _decode(bytes(built[t:j]), j - t >= MAXLEN)
+        if now is None:
             continue  # 우리 슬롯 코드가 들어갔다 — 번역된 자리다
         if not _has_kana(now) or _internal_key(now):
             continue
