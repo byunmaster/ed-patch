@@ -37,6 +37,8 @@ import reinsert_desc as RD
 import reinsert_gfx as RG
 import reinsert_param as RP
 import reinsert_sys as RS
+import subtitle_stub as SS
+import voice_sub as VS
 
 from shared.disc import mode1
 
@@ -134,6 +136,11 @@ def patched(disc):
             f" — `movie_hardsub.py --all` 로 구우면 다음 빌드에 들어간다"
         )
 
+    voicetbl = VS.by_map()
+    #   ⚠ 디렉터리 섹터는 **파일들을 다 돈 뒤** 한 번에 낸다 — 한 섹터에 레코드가 여럿이라
+    #     파일마다 따로 내면 둘째 쓰기의 사전조건(원본 바이트)이 어긋난다.
+    dirsec = {}
+
     with C.open_disc(disc) as d:
         files = d.files()
         for name, lba, size in files:
@@ -148,11 +155,23 @@ def patched(disc):
             b = None
             if C.is_map_file(name)[0]:
                 stem = C.is_map_file(name)[1]
-                if not R.load_script(stem)[0]:
+                if not R.load_script(stem)[0] and stem not in voicetbl:
                     continue
                 b = d.read_extent(lba, size)
                 new, k, bad = R.patch_blocks(b, stem, table)
                 cnt = {"map": k}
+                if stem in voicetbl:
+                    #   🔴 **음성 자막** — 칸 + 글자 표를 파일 끝 섹터 여백에 붙인다.
+                    #     파일이 **길어지므로** 원본도 그 여백(0)까지 같이 들어 사전조건이
+                    #     서고, 디렉터리 레코드의 크기를 늘려야 엔진이 그만큼 읽는다.
+                    new, kv = VS.patch(new, stem, voicetbl[stem], table)
+                    cnt["voice"] = kv
+                    b = d.read_extent(lba, len(new))
+                    assert not any(b[size:]), f"{name}: 섹터 여백이 0 이 아니다"
+                    drl, dro = VS.dir_record(d, name)
+                    sec = dirsec.setdefault(drl, [d.read_extent(drl, 2048)] * 2)
+                    sec[1] = VS.resize_record(sec[1], dro, size, len(new))
+                    size = len(new)
             elif name in ("/0.BIN", "/RLTPRG.BIN", "/BLACK.BIN") and systbl:
                 #   🔴 **미니게임 실행 파일에도 화면 문구가 있다**(실측 2026-08-28) —
                 #     `/RLTPRG.BIN`(룰렛) 「当たったー/どんなもんだい！！」 ·
@@ -168,6 +187,11 @@ def patched(disc):
                     #     앞말을 모른다. 훅이 안 돌면 병기 그대로 보인다(안 틀린다).
                     new, hk = JOSA.patch(new)
                     cnt["josa"] = hk
+                    #   🔴 **음성 자막 렌더러** — 컷신 위에 우리 창을 그리는 스텁과 훅.
+                    #     조사 스텁 뒤 같은 문자열 구역을 쓰므로 그 다음에 넣는다.
+                    if voicetbl:
+                        new = SS.patch(new)
+                        cnt["voice_stub"] = 1
             elif name == RBT.PATH:
                 #   🔴 **HP 창 이름은 문자열이 아니라 그림이다** — `status.spr` 안의
                 #     프리렌더 이름판 아틀라스를 다시 그린다(`reinsert_battle`).
@@ -212,6 +236,8 @@ def patched(disc):
                 raise SystemExit(f"{name}: {bad[:3]}")
             assert len(new) == size, (len(new), size)
             yield name, lba, size, b, new, cnt
+        for drl, (old, new) in sorted(dirsec.items()):
+            yield f"디렉터리 @{drl}", drl, 2048, old, new, {}
 
 
 def build_one(a_disc):
@@ -256,7 +282,7 @@ def build_one(a_disc):
                 f"      대사 블록 {n.get('map', 0)} · 시스템 문자열 {n.get('sys', 0)} · "
                 f"설명문 {n.get('desc', 0)} · 이름 {n.get('name', 0)} · "
                 f"읽을거리 {n.get('book', 0)} · 화면 그림 {n.get('gfx', 0)} · 이름판 {n.get('plate', 0)} · "
-                f"무비 자막 {n.get('movie', 0)}"
+                f"무비 자막 {n.get('movie', 0)} · 음성 자막 칸 {n.get('voice', 0)}"
             )
 
         print("[4/5] 섹터 무결성 자기검증")

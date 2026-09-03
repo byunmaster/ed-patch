@@ -1,7 +1,9 @@
-"""인게임 음성 자막 — **트램펄린**으로 대사창을 끼운다.
+"""인게임 음성 자막 — 스크립트에 **칸**을 끼우고, 그리기는 `subtitle_stub` 이 한다.
 
     python3 games/ss-ed3/tools/voice_sub.py --plan          # 무엇을 어디에 넣나 (안 굽는다)
-    python3 games/ss-ed3/tools/voice_sub.py --apply         # 구운 이미지에 적용
+
+빌드에 물려 있다 — `build.py` 가 맵마다 `patch()` 를 부르고, `/0.BIN` 에는
+`subtitle_stub.patch()` 로 스텁·훅을 넣는다. 이 파일은 **맵 쪽**(칸 + 글자 표)만 안다.
 
 🔴 **길이를 안 늘리고 포인터도 안 옮긴다.** 스크립트에 흐름 제어가 있어서 가능하다
    (`/0.BIN` 디스패치 표 `0x0600ce20`, 갈래 `0xFD`):
@@ -10,19 +12,47 @@
        FD 01 <BE32>   CALL     복귀주소를 스택에 밀고 점프       6바이트
        FD 02          RETURN   스택에서 꺼내 PC 로               2바이트
 
-   후킹 지점의 명령 하나(≥6바이트)를 `FD 00 <우리블록>` 으로 덮고, 우리 블록에서
-   **밀어낸 명령을 그대로 실행한 뒤** 자막을 띄우고 `FD 00` 으로 돌아온다.
+   후킹 지점의 명령 하나(≥6바이트)를 `FD 00 <우리칸>` 으로 덮고, 우리 칸에서 **밀어낸
+   명령을 그대로 실행한 뒤** 한 프레임 쉬고 `FD 00` 으로 돌아온다.
    ⇒ 원래 동작을 하나도 안 잃고, 스크립트 길이가 1바이트도 안 변한다.
 
-🔴 **자막은 파일 끝 「섹터 여백」에 붙인다.** MAP076.BIN 은 119,008B 인데 디스크에서
+🔴 **칸은 32B 정렬**이다 — 스텁이 스크립트 PC 전역(`0x0609408C`)을 읽어 `PC & ~31` 을
+   칸으로 삼고, 칸+24 의 서명(`SUB!`)이 맞으면 칸+28 의 포인터가 가리키는 글자를 띄운다
+   (`subtitle_stub.MAGIC_OFF`·`PTR_OFF`). ⚠ 트램펄린은 한 프레임에 지나가므로 `FF 35 0001`
+   (한 프레임 대기)로 **PC 를 칸 안에 머물게** 한다. 열세 칸이면 13 프레임(0.2 초)이다.
+   ⇒ 스텁은 맵을 모른다. 워크램에 값을 쓰는 옵코드를 찾을 필요도 없다.
+
+       [밀어낸 옵코드 ≤14B][FF 35 00 01][FD 00 <복귀>][0…][SUB!][글자 포인터]   = 32B
+
+🔴 **글자는 파일 끝 「섹터 여백」에 붙인다.** MAP076.BIN 은 119,008B 인데 디스크에서
    59섹터(120,832B)를 차지한다 — 그 1,824B 는 자기 익스텐트 안의 패딩이라 앞뒤 파일과
    안 겹친다(실측: MAP075.FON 이 LBA 22610 에서 끝나고 MAP076.ED3 가 22669 에서 시작).
    ⚠ 파일 **안**의 0런(12.5KB)은 쓰지 않는다 — 「0런 3중 검증을 통과해도 사운드 뱅크
      안이라 효과음이 조용히 깨진」 전례가 있다. 섹터 여백은 그 위험이 없다.
-   ⇒ 대신 **ISO 디렉터리 레코드의 크기**를 같이 늘려야 엔진이 그만큼 읽어 온다.
+   ⇒ 대신 **ISO 디렉터리 레코드의 크기**를 같이 늘려야 엔진이 그만큼 읽어 온다
+     (`dir_record()` — `build.py` 가 그 섹터를 같이 고친다).
 
-✅ **인게임에서 확인했다**(2026-08-30, MAP076 순례의 아침). 자막은 대사창으로 뜨고,
-   **입력으로 안 닫히며 정한 시간이 지나면 저절로 닫힌다** — 아래 `TERM_NOWAIT` 절 참조.
+   글자 한 벌 = `<표시 프레임 수 BE16> <얼굴 BE16> <표정 BE16>` + `이름\\0` + `줄\\0줄\\0…\\0`.
+   **짝수 정렬**(스텁이 `mov.w` 로 읽는다). 첫 줄이 비어 있으면(`lines: []`) **닫는 칸**이다.
+   얼굴은 `speaker` 에서 온다 — 0x14 미만(전역 인물)이면 그 번호, 아니면 없음(0xFFFF).
+   이름은 `who` 다(엔진 대사창처럼 첫 줄에 색 14 로 — 그래서 본문은 두 줄까지).
+
+🔴 **얼굴은 음성 전에 미리 싣는다** — `"preload": true` 후킹 하나가 장면의 얼굴 전부를
+   `<0xFFFF> <얼굴 표정>… <0xFFFF 0>` 목록으로 스텁에 넘긴다(`by_map()` 이 장면에서 모은다).
+   얼굴 그림은 CD 에서 오는데 음성(`FF 42`)이 흐르는 동안은 CD 가 음성 것이라 로드가 영영
+   안 끝난다(2026-09-05 실측). 스텁은 목록을 한 장씩 켰다 캐시에 실리는 순간 꺼서 **그리지
+   않고 캐시만** 채운다(`subtitle_stub`). 자리는 **음성 앞의 긴 대기**(V01: `0x1bc1a` 의
+   `FF 35 003c`, 61 프레임)에 걸어 그 대기 동안 싣는다 — 얼굴 한 장에 ~12 프레임이다.
+
+✅ **인게임에서 확인했다**(2026-09-04, MAP076 순례의 아침). 창은 컷신 위에 뜨고 입력으로
+   안 닫힌다 — 표시 시간이 지나면 저절로 사라진다(아래 「표시 시간」).
+
+🔴 **같은 화자가 이어지면 창을 새로 안 띄운다**(유저 요청 2026-09-06, 인게임 확인 뒤) —
+   엔진 대사창처럼 줄을 밀어 올려 **이어 붙인다**(`link()`). 스텁은 안 고쳤다: 칸마다 앞
+   칸의 줄을 함께 실어 보내고 앞 칸을 「다음 칸까지」(프레임 0)로 붙잡을 뿐이다.
+   화제가 바뀌어 새로 띄우고 싶으면 그 칸에 `"new": true`. `--plan` 이 「↳ 이어 붙인다」·
+   「⤒붙잡음」으로 보여 준다 — ⚠ **붙잡은 창은 다음 칸까지 안 닫히므로**, 사이가 길게
+   비는 자리(몇 초 침묵)라면 `new` 를 준다.
 """
 
 import argparse
@@ -36,147 +66,320 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import common as C
 import hangul_map as H
-
-from shared.disc import mode1
+import subtitle_stub as SS
+import typeset as T
 
 SCRIPT = os.path.join(C.GAME_DIR, "script", "voice.json")
 BASE = 0x200000  # 스크립트 포인터 기준 (mapfile.BASE 와 같다)
 SECTOR = 2048
 GOTO = b"\xfd\x00"
+WAIT1 = b"\xff\x35\x00\x01"  # 한 프레임 대기 — 스텁이 PC 를 볼 시간
+SLOT = SS.SLOT
+FPS = 60
+#   ⚠ 글자 버퍼가 216px(`subtitle_stub.BUF_STRIDE`) 이라 한 줄 18 전각이 물리 한계다.
+#     대사창(17)보다 한 칸 넓지만 여백이 없다 — 넘으면 조용히 잘린다.
+MAX_COLS = SS.BUF_STRIDE * 2 // 12
+MAX_LINES = SS.MAX_LINES  # 이름 줄까지 — 본문은 이름이 있으면 하나 적다
+NO_FACE = 0xFFFF
+GLOBAL_CAST = 0x14  # 이 미만의 `speaker` 가 전역 인물(얼굴이 있다)
+PRELOAD = 0xFFFF  # 프레임 자리에 이것이 오면 미리 싣기 목록
 
 
-def goto(file_off):
-    return GOTO + struct.pack(">I", BASE + file_off)
+#   ── 표시 시간 ────────────────────────────────────────────────────────────
+#   🔴 **`FF 35` 로 붙잡아 시간을 주면 안 된다** — 그만큼 장면이 늘어지는데 음성은 제
+#     속도로 흐른다(2026-08-31). 창은 스텁이 **프레임 수를 세서** 스스로 닫는다 — 스크립트는
+#     1 프레임만 머물고 지나가므로 장면에 더해지는 시간은 칸당 1 프레임뿐이다.
+#   ⓘ 시간은 글자 수로 어림한다 — 음성 구간(VAD)을 직접 재는 것보다 거칠지만 **다음 칸이
+#     오면 어차피 갈아 끼우므로** 길게 잡아도 겹치지 않는다. 짧은 침묵에는 창이 사라진다.
+#     정본에 `dur`(초)를 적으면 그걸 쓴다. `dur: 0` 은 「다음 칸까지」다.
+#   🔴 **장면의 마지막 칸은 0 이면 안 된다** — 뒤에 갈아 끼울 칸이 없어 창이 다음 맵까지
+#     남는다(`plan()` 이 막는다).
+DUR_BASE, DUR_PER_CHAR = 0.9, 0.22
 
 
-#   🔴 **대사 한 칸은 `02 <화자ID>` 만으로는 안 뜬다.** 앞에 창을 여는 옵코드 둘이 붙는다 —
-#     실측(MAP076 블록 #59, `0x1ba0c`): `FF 02 00 02` · `FF 00` · `02 16` · 본문 · `16`.
-#     ⚠ 이걸 빼고 넣었더니 **스크립트는 멀쩡히 지나가는데 화면에 아무것도 안 나왔다**
-#       (에뮬 램에 직접 얹어 확인, 2026-08-30). 빌드도 검사도 다 통과하는 부류의 사고다.
-#     `FF 00`·`FF 02` 는 창 상태(`0x06093f20` & 63)를 보고 조건이 안 맞으면 `PC -= 2` 로
-#     되돌려 **다음 프레임에 다시 시도**한다.
-#
-#   🔴 **창 종류를 잘못 고르면 컷신이 깨진다** — `FF 02 <종류>` 의 값이 갈린다(실측 2026-08-31):
-#
-#       00 02  위쪽 큰 창   🔴 배우가 복제되고 **그 뒤 스크립트가 아예 안 이어진다**
-#       00 01  아래쪽 창    ✅ 이름칸·얼굴 그림 다 나오고 컷신도 정상 (실제 스크립트도 132 회 쓴다)
-#       00 00  닫기
-#
-#     ⚠ `00 02` 로 넣었을 때 배우가 둘로 보이고 뒤 대사가 통째로 안 나왔다. 원인을
-#       한참 「트램펄린」·「죽은 코드」로 오해했는데, **창 종류 한 바이트**였다.
-#     ⓘ `FF 87`(위쪽 얇은 띠)도 컷신을 안 깨뜨리지만 **한 줄 22 자**에 이름칸이 없다.
-WIN_OPEN = b"\xff\x02\x00\x01\xff\x00"
+def duration(h):
+    """초 — 정본의 `dur` 가 우선, 없으면 글자 수 어림."""
+    if "dur" in h:
+        return float(h["dur"])
+    return DUR_BASE + DUR_PER_CHAR * sum(len(t) for t in h["lines"])
 
 
-#   🔴 **화자 ID 는 이름표의 색인이다.** 아무 값이나 쓰면 창은 열리는데 **글자가 안 그려진다** —
-#     실측으로 `02 01` 이 그랬다(빈 창만 떴다 닫혔다). 실제 대사가 쓰는 값이어야 한다.
-#   이름표는 맵 안의 **32 바이트 간격 표**다. MAP076 은 `0x1a0ae` + 색인×0x20:
-#     0x14 쥬리오아빠 · 0x15 쥬리오엄마 · 0x16 크리스아빠 · 0x17 크리스엄마 · 0x18 톨타 촌장 ·
-#     0x19 로그 · 0x1a 픽 · 0x1b 치아나 · 0x1c 스콜 · 0x1d 페르나부인 · 0x1e 도구점 테르노 · 0x1f 키리
-#   ⚠ **맵마다 표가 다르다** — 다른 장면에 넣을 땐 그 맵의 표를 다시 읽는다.
-SPEAKER = 0x15  # 쥬리오엄마 — V01 장면의 화자
-
-#   🔴 **자막은 「입력으로 안 닫히고 시간이 지나면 저절로 닫히는」 창이어야 한다**(유저 확정).
-#     음성이 흐르는 동안 떠 있어야 하고, 플레이어가 무심코 누른 버튼에 사라지면 안 된다.
-#     실측으로 끝맺음 바이트가 그걸 가른다(2026-08-30):
-#
-#       본문 뒤 `10 00`  → **입력 대기**. 진짜 대사가 쓰는 것이고, C 를 누르면 닫힌다.
-#       본문 뒤 `00`     → 대기 없음. 그대로 두면 **안 닫히니** 시간과 닫기를 우리가 준다.
-#
-#     ⚠ mapfile 의 `term`(`0x16`·`0x14`)은 **끝맺음이 아니다** — 그건 그저 블록 뒤 바이트다.
-#       그걸 끝맺음으로 넣었더니 메시지 처리기가 상위 니블만 보고(`and #240`) 본문으로 여겨
-#       계속 읽어 나갔다(읽기 브레이크포인트로 확인).
-#     ⚠ 창은 **`FF 02 00 00` 이 닫는다** — 진짜 대사도 끝맺음 뒤에 늘 이게 온다.
-TERM_NOWAIT = b"\x00"  # 입력 대기 없음
-WIN_CLOSE = b"\xff\x02\x00\x00"
+def face(h):
+    """`(얼굴, 표정)` — `face` 가 있으면 그것, 없으면 `speaker` 가 전역 인물일 때만."""
+    if "face" in h:
+        return (NO_FACE, 0) if h["face"] is None else (int(h["face"]), int(h.get("expr", 0)))
+    sp = h.get("speaker")
+    if sp is None or sp >= GLOBAL_CAST:
+        return NO_FACE, 0
+    return int(sp), int(h.get("expr", 0))
 
 
-#   🔴 **유지 시간을 우리가 주면 안 된다.** `FF 35` 로 붙잡으면 그만큼 **장면이 늘어지는데
-#     음성은 제 속도로 흐른다** — 줄이 늘수록 어긋난다(2026-08-31).
-#   ⇒ 대신 **열어 둔 채 다음 후킹에서 닫고 새로 연다.** 끝맺음이 `00` 이면 창은 저절로
-#     안 닫히므로, 자막이 떠 있는 시간 = **원작이 그 자리에 둔 `FF 35` 대기**가 된다.
-#     그 대기가 음성과 맞는다는 건 실측으로 확인했다(V01: 다섯 자리가 ±0.8 초).
-#   ⇒ 장면에 더해지는 시간은 **0** 이고, 싱크를 우리가 계산할 일도 없다.
-#   🔴 **자막을 게임 대사창으로 그리면 컷신과 얽힌다.** 창 열기는 창이 준비될 때까지
-#     스크립트를 멈추는데(`PC -= 2` 되돌림) 배우 태스크는 계속 돌아, 걸어 들어오던 배우가
-#     둘로 남는다. 창 종류를 바꿔도(`00 01`·`00 02`) 마찬가지였다(실측 2026-08-31).
-#     ⓘ 레퍼런스의 선례 둘도 **게임 대사 시스템을 안 쓴다** — PS2 「제로3」은 프레임버퍼
-#       스왑을 후킹해 매 프레임 직접 그리고, PC엔진 「악마성」은 스프라이트로 직접 그린다
-#       (`docs/reference/worklog-consoles.md`). 최종형은 그쪽이다.
-#   ⇒ 그 전 단계로 **`FF 87`(위쪽 얇은 띠)** 를 쓴다 — 엔진의 「알림」 계통이라 대사창과
-#     경로가 다르고, 실측에서 복제가 안 났다.
-#     ⚠ **한 줄 22 자**다. 넘으면 통째로 안 그려진다(잘리지 않는다).
-BAND = b"\xff\x87\x00\x00"
-BAND_END = b"\x00\x09"
-BAND_MAX = 22
+def entry(h, table=None):
+    """글자 한 벌 — `<프레임> <얼굴> <표정>` + 이름 + 줄들(NUL 종결) + NUL. 짝수 길이.
 
-
-def band(body):
-    """위쪽 띠 자막 — `FF 87` + 본문 + 끝맺음. 화자 이름칸은 없다."""
-    if len(body) > BAND_MAX:
-        raise SystemExit(f"띠 한 줄은 {BAND_MAX}자까지다({len(body)}자): {body!r}")
-    if "\n" in body:
-        raise SystemExit(f"띠는 한 줄만 된다: {body!r}")
-    return BAND + H.encode_kr(body) + BAND_END
-
-
-def block(body, speaker=SPEAKER, hold=None):
-    """자막 한 칸 — 앞 창을 닫고 · 새 창을 열고 · 본문(입력 대기 없음).
-
-    ⚠ **닫기를 여기서 안 한다.** 다음 자막이 닫는다.
-    ⚠ 단 **장면의 마지막 자막**은 뒤에 후킹할 자리가 없어 그대로 남는다 — 그때만
-      `hold`(초)를 줘서 `FF 35` + 닫기를 붙인다. 한 번뿐이라 늘어지는 시간이 무해하다.
+    `preload` 후킹이면 `<0xFFFF>` + `_faces` 쌍들 + `<0xFFFF 0>` 목록이다.
     """
-    out = WIN_CLOSE + WIN_OPEN + bytes((0x02, speaker)) + H.encode_kr(body) + TERM_NOWAIT
-    if hold:
-        out += b"\xff\x35" + struct.pack(">H", max(1, min(0xFFFF, round(hold * 60)))) + WIN_CLOSE
-    return out
+    if h.get("preload"):
+        if h.get("lines") or h.get("delay"):
+            raise SystemExit(f"{h['off']:#x}: 미리 싣기 칸엔 글자도 `delay` 도 못 둔다")
+        out = struct.pack(">H", PRELOAD)
+        out += b"".join(struct.pack(">HH", *p) for p in h.get("_faces", ()))
+        return out + struct.pack(">HH", NO_FACE, 0)
+    lines = h.get("_body", h["lines"])
+    who = h.get("who", "") if lines else ""
+    room = MAX_LINES - (1 if who else 0)
+    if len(lines) > room:
+        raise SystemExit(f"{h['off']:#x}: 줄이 {room} 을 넘는다({len(lines)}) — 이름 줄 몫을 뺀다")
+    for t in [who, *lines]:
+        if "\n" in t:
+            raise SystemExit(f"{h['off']:#x}: 줄 안에 개행 — `lines` 를 나눠 적는다: {t!r}")
+        if T.cols(t) > MAX_COLS:
+            raise SystemExit(f"{h['off']:#x}: 한 줄 {MAX_COLS} 칸까지다({T.cols(t)}): {t!r}")
+    #   같은 화자가 이어지면 **창을 안 닫는다** — 다음 칸이 갈아 끼울 때까지 붙잡는다(0).
+    frames = 0 if not lines or h.get("_hold") else round(duration(h) * FPS)
+    if not 0 <= frames < PRELOAD:
+        raise SystemExit(f"{h['off']:#x}: 표시 시간이 범위 밖이다 ({frames} 프레임)")
+    fid, expr = face(h) if lines else (NO_FACE, 0)
+    out = struct.pack(">HHH", frames, fid, expr)
+    out += H.encode_kr(who, table) + b"\x00"
+    out += b"".join(H.encode_kr(t, table) + b"\x00" for t in lines) + b"\x00"
+    return out + b"\x00" * (len(out) % 2)
 
 
 #   🔴 **후킹 지점의 길이는 「그 처리기가 PC 에 쓰는 자리를 전부」 보고 정한다.**
 #     표를 믿지 말 것 — 자리마다 길이가 다른 옵코드가 실재한다(`FF 36`·`FF 0A`,
-#     `script_ops.py` 참조). 지금 쓰는 `FF 07`(`0x1bc7c`)은 처리기 `0x06011608` 안에서
-#     PC 저장이 **`0x0601170c` 한 곳뿐이고 거기서 항상 `+12`** 라 분기와 무관하게
-#     2+12=14 고정이다(2026-08-30 확인). 다른 자리로 옮길 땐 같은 검산을 다시 한다.
-def plan_one(raw, hooks):
-    """`(붙일 바이트, [(오프셋, 덮을 바이트)])` — 트램펄린 **여러 벌**.
+#     `script_ops.py` 참조). 예컨대 `FF 07` 은 처리기 `0x06011608` 안에서 PC 저장이
+#     `0x0601170c` 한 곳뿐이고 거기서 항상 `+12` 라 분기와 무관하게 2+12=14 고정이다
+#     (2026-08-30 확인). 자리를 새로 잡을 땐 같은 검산을 다시 한다(`script_ops.py --path`).
+def slot(orig, ret_off, txt_off):
+    """칸 32B — 밀어낸 옵코드 · 한 프레임 대기 · 복귀 · 서명 · 글자 포인터."""
+    return _slot(orig + WAIT1, BASE + ret_off, txt_off)
 
-    자막이 한 줄이 아니라 장면 내내 여러 번 뜨므로, 후킹도 대사마다 하나씩 건다.
-    붙이는 블록은 **옛 파일 끝부터 차례로** 쌓고, 각 후킹은 자기 블록으로 점프한다.
+
+def _slot(body, goto, txt_off=None):
+    """칸 32B — `body` 뒤에 `FD 00 <goto>`, 글자가 있으면 끝에 서명 + 포인터."""
+    blk = body + GOTO + struct.pack(">I", goto)
+    if len(blk) > SS.MAGIC_OFF:
+        raise SystemExit(f"칸에 안 든다({len(blk)}B) — 밀어낸 옵코드가 길다")
+    blk = blk.ljust(SS.MAGIC_OFF, b"\x00")
+    if txt_off is None:
+        blk = blk.ljust(SLOT, b"\x00")
+    else:
+        assert txt_off % 2 == 0
+        blk += struct.pack(">II", SS.MAGIC, BASE + txt_off)
+    assert len(blk) == SLOT
+    return blk
+
+
+#   ── 대기 한복판에 넣기 ───────────────────────────────────────────────────
+#   🔴 **음성은 옵코드 경계에 안 맞춰 온다.** V01 실측(2026-09-04): 대사 19 마디 중 옵코드
+#     디스패치에 걸리는 건 넷뿐이고 나머지는 `FF 35 <n>`(n+1 프레임 대기) **한복판**에서
+#     시작한다(7 초짜리 대기 안에 두 마디가 든다). 그래서 대기를 **쪼갠다** —
+#     같은 `off` 의 후킹 여럿이 `delay`(디스패치로부터 프레임)로 갈려 **칸 사슬**이 된다:
+#
+#       자리: [앞 옵코드들][FF 35 n]…   →   칸0 [앞 옵코드들][FF 35 d1-1][FD 00 칸1]
+#                                          칸1 [FF 35 d2-d1-1][FD 00 칸2] +서명+글자1
+#                                          칸2 [FF 35 W-d2-1 ][FD 00 복귀] +서명+글자2
+#
+#     총 대기 W 는 그대로다(`FF 35 n` = n+1 프레임이라 조각마다 1 을 뺀다). 서명 칸은 최소
+#     한 프레임 머문다(스텁이 PC 를 볼 시간). 뒤 옵코드 `FF 35` 만 쪼갠다 — `FF 37` 은
+#     뜻이 아직 안 읽혀서 안 건드린다.
+#   ⚠ 스텁은 **같은 포인터를 다시 안 켠다**(`subtitle_stub`) — 그래서 서명 칸에서 표시
+#     시간이 다 돼 꺼져도 다음 프레임에 도로 켜지지 않는다.
+WAIT = b"\xff\x35"
+
+
+def split_waits(orig):
+    """`(앞 옵코드들, 뒤 `FF 35` 대기들의 프레임 합)` — 뒤에서부터 `FF 35 nn nn` 을 벗긴다."""
+    pre, total = orig, 0
+    while len(pre) >= 4 and pre[-4:-2] == WAIT:
+        total += struct.unpack(">H", pre[-2:])[0] + 1
+        pre = pre[:-4]
+    return pre, total
+
+
+def wait(frames):
+    assert frames >= 1
+    return WAIT + struct.pack(">H", frames - 1)
+
+
+def chain(orig, ret_off, subs, txt_offs):
+    """같은 자리의 후킹 사슬 → 칸들(bytes 목록). `subs` 는 `delay` 오름차순, 첫 칸이 입구."""
+    pre, total = split_waits(orig)
+    ds = [int(h.get("delay", 0)) for h in subs]
+    if len(subs) == 1 and ds[0] == 0:
+        return [slot(orig, ret_off, txt_offs[0])]
+    off = subs[0]["off"]
+    if not total:
+        raise SystemExit(f"{off:#x}: `delay` 를 쓰려면 자리 뒤가 `FF 35` 대기여야 한다")
+    if any(b <= a for a, b in pairwise(ds)) or ds[0] < 0:
+        raise SystemExit(f"{off:#x}: `delay` 는 오름차순이어야 한다: {ds}")
+    if ds[-1] >= total:
+        raise SystemExit(f"{off:#x}: `delay` {ds[-1]} 이 대기 {total} 프레임을 넘는다")
+    #   칸 주소는 아직 모른다 — 자리표시자로 두고 `plan()` 이 채운다. 여기선 (본문, 글자) 만
+    parts = []  # [(본문, 글자 오프셋 또는 None)]
+    if pre or ds[0] > 0:
+        parts.append((pre + (wait(ds[0]) if ds[0] > 0 else b""), None))
+    for i, d in enumerate(ds):
+        nxt = ds[i + 1] if i + 1 < len(ds) else total
+        parts.append((wait(max(nxt - d, 1)), txt_offs[i]))
+    return parts
+
+
+#   ── 같은 화자는 창을 새로 안 띄운다 (유저 요청 2026-09-06) ───────────────
+#   🔴 **창을 닫았다 여는 게 눈에 띈다** — 인게임 확인에서 「다음 대사가 이어지면 창이
+#     닫히고 새로 뜬다」는 지적이 나왔다. 엔진 대사창처럼 **줄을 밀어 올려 이어 붙인다.**
+#   방법은 자료 쪽뿐이다(스텁을 안 고친다) — 칸마다 **앞 칸의 줄을 함께** 실어 보내고,
+#   앞 칸의 표시 프레임을 **0(다음 칸까지)** 으로 바꿔 그 사이에 창이 안 닫히게 한다.
+#     ⇒ 스텁은 여전히 「칸 하나 = 창 한 벌」만 안다. 스크롤은 **우리가 미리 굴려 둔 그림**이다.
+#   판정은 **화자(`who`) + 얼굴**이 같고 바로 다음 칸일 때. 화제가 바뀌어 새로 띄우고
+#   싶으면 그 칸에 `"new": true` 를 적는다.
+#   ⚠ 창은 이름 줄을 빼면 두 줄이라, 세 줄째가 오면 **맨 위가 밀려 나간다**(그게 스크롤이다).
+def link(hooks, order):
+    """`_body`(이어 붙인 본문) · `_hold`(앞 칸을 다음 칸까지 붙잡기) 를 매긴다."""
+    prev = None
+    for i in order:
+        h = hooks[i]
+        if h.get("preload") or not h.get("lines"):
+            prev = None  # 닫는 칸·미리 싣기에서 사슬이 끊긴다
+            continue
+        same = (
+            prev is not None
+            and not h.get("new")
+            and h.get("who", "")
+            and h.get("who") == prev.get("who")
+            and face(h) == face(prev)
+        )
+        if same:
+            room = MAX_LINES - (1 if h.get("who") else 0)
+            h["_body"] = (prev["_body"] + h["lines"])[-room:]
+            prev["_hold"] = True
+        else:
+            h["_body"] = list(h["lines"])
+        prev = h
+
+
+def plan(raw, hooks, table=None):
+    """`(붙일 꼬리, [(오프셋, 덮을 6B)])` — 칸들 뒤에 글자 표.
+
+    꼬리는 **옛 파일 끝을 32B 로 올린 자리**부터 시작한다(칸 정렬). 각 후킹은 자기 칸으로
+    점프하고, 칸의 포인터는 그 뒤 글자 표의 제 벌을 가리킨다. 같은 `off` 의 후킹들은
+    `delay` 순으로 **칸 사슬**이 된다(위 「대기 한복판에 넣기」).
     """
+    if not hooks:
+        return b"", []
     n = len(raw)
-    pad_room = (-n) % SECTOR
-    tail, patches = bytearray(), []
-    for h in hooks:
+    start = -(-n // SLOT) * SLOT
+    #   보이는 차례 = (자리, `delay`) — 칸 사슬 안 순서까지 맞춘다
+    link(
+        hooks,
+        sorted(range(len(hooks)), key=lambda i: (hooks[i]["off"], int(hooks[i].get("delay", 0)))),
+    )
+    texts = [entry(h, table) for h in hooks]
+    if hooks[-1].get("lines") and texts[-1][:2] == b"\x00\x00":
+        raise SystemExit(
+            f"{hooks[-1]['off']:#x}: 마지막 칸은 `dur` 가 0 이면 안 된다 — 창이 남는다"
+        )
+    #   자리별로 묶는다 — 같은 자리는 길이가 같아야 한다
+    sites = []
+    for i, h in enumerate(hooks):
         if h["len"] < len(GOTO) + 4:
             raise SystemExit(f"{h['off']:#x}: 후킹 지점이 짧다({h['len']}B) — GOTO 6B 가 안 든다")
-        here = n + len(tail)  # 이 벌이 놓일 자리
-        tail += raw[h["off"] : h["off"] + h["len"]]  # 밀어낸 명령 그대로
-        if not h["lines"]:
-            tail += WIN_CLOSE  # 마지막 자막을 닫는 자리
-        for j, t in enumerate(h["lines"]):
-            last = j == len(h["lines"]) - 1
-            if h.get("style", "band") == "band":
-                tail += band(t)
-            else:
-                tail += block(t, h.get("speaker", SPEAKER), h.get("hold") if last else None)
-        tail += goto(h["off"] + h["len"])  # 밀어낸 명령 **뒤**로 복귀
-        patches.append((h["off"], goto(here)))
-    if len(tail) > pad_room:
-        raise SystemExit(f"여백 부족: 필요 {len(tail)}B · 여유 {pad_room}B")
+        if sites and hooks[sites[-1][0]]["off"] == h["off"]:
+            if hooks[sites[-1][0]]["len"] != h["len"]:
+                raise SystemExit(f"{h['off']:#x}: 같은 자리의 후킹은 `len` 이 같아야 한다")
+            sites[-1].append(i)
+        else:
+            sites.append([i])
     #   ⚠ 후킹끼리 겹치면 서로를 덮는다 — 6 바이트씩 잡아 두고 본다
-    seen = sorted((h["off"], h["off"] + len(GOTO) + 4) for h in hooks)
+    seen = sorted((hooks[s[0]]["off"], hooks[s[0]]["off"] + len(GOTO) + 4) for s in sites)
     for (a1, b1), (a2, _) in pairwise(seen):
         if a2 < b1:
             raise SystemExit(f"후킹 지점이 겹친다: {a1:#x} 와 {a2:#x}")
+    #   글자 표는 칸들 뒤 — 칸 수를 먼저 센다
+    chains = []
+    nslots = 0
+    for idxs in sites:
+        idxs = sorted(idxs, key=lambda i: int(hooks[i].get("delay", 0)))
+        chains.append(idxs)
+        h0 = hooks[idxs[0]]
+        if len(idxs) == 1 and not h0.get("delay"):
+            nslots += 1
+        else:
+            pre, _ = split_waits(raw[h0["off"] : h0["off"] + h0["len"]])
+            nslots += len(idxs) + (1 if pre or int(h0.get("delay", 0)) > 0 else 0)
+    txt_at = {}
+    at = start + SLOT * nslots
+    for i, t in enumerate(texts):
+        txt_at[i] = at
+        at += len(t)
+    tail = bytearray(b"\x00" * (start - n))
+    patches = []
+    here = start
+    for idxs in chains:
+        h0 = hooks[idxs[0]]
+        orig = raw[h0["off"] : h0["off"] + h0["len"]]
+        ret = h0["off"] + h0["len"]
+        parts = chain(orig, ret, [hooks[i] for i in idxs], [txt_at[i] for i in idxs])
+        patches.append((h0["off"], GOTO + struct.pack(">I", BASE + here)))
+        if isinstance(parts[0], bytes):  # 홑칸
+            tail += parts[0]
+            here += SLOT
+            continue
+        for k, (body, txt) in enumerate(parts):
+            nxt = here + SLOT if k + 1 < len(parts) else None
+            tail += _slot(body, BASE + nxt if nxt else BASE + ret, txt)
+            here += SLOT
+    assert here == start + SLOT * nslots, (here, start, nslots)
+    for t in texts:
+        tail += t
+    #   ⓘ 섹터 여백에 맞추지 않는다 — 꼬리가 붙은 맵은 `relocate.py` 가 트랙 1 끝의 새
+    #     자리로 옮기므로 길이 제한이 없다(2026-09-05. 13/19 장면이 여백에 안 들었다).
     return bytes(tail), patches
 
 
 def load_plan():
     if not os.path.exists(SCRIPT):
-        raise SystemExit(f"자막 정본이 없다: {SCRIPT}")
+        return {}
     with open(SCRIPT, encoding="utf-8") as f:
         return json.load(f)
+
+
+def by_map(doc=None):
+    """`{맵 stem: [후킹…]}` — 한 맵에 장면이 여럿이면 오프셋 순으로 잇는다.
+
+    장면마다 쓰는 얼굴을 모아 그 장면의 `preload` 후킹에 `_faces` 로 붙인다. 얼굴을 쓰는데
+    미리 싣기 자리가 없으면 실패한다 — 음성 중엔 얼굴이 CD 를 못 타서 영영 안 뜬다.
+    """
+    doc = load_plan() if doc is None else doc
+    out = {}
+    for key, ent in sorted(doc.items()):
+        if key.startswith("_"):
+            continue
+        hooks = [dict(h, _scene=key) for h in ent["hooks"]]
+        faces = sorted({face(h) for h in hooks if h.get("lines")} - {(NO_FACE, 0)})
+        pres = [h for h in hooks if h.get("preload")]
+        if len(pres) > 1:
+            raise SystemExit(f"{key}: 미리 싣기 후킹은 장면에 하나다")
+        if faces and not pres:
+            raise SystemExit(f"{key}: 얼굴 {faces} 을 쓰는데 `preload` 후킹이 없다")
+        for h in pres:
+            if any(o["off"] == h["off"] for o in hooks if o is not h):
+                raise SystemExit(f"{key}: 미리 싣기 칸 {h['off']:#x} 은 혼자여야 한다")
+            h["_faces"] = faces
+        out.setdefault(ent["map"], []).extend(hooks)
+    for hooks in out.values():
+        hooks.sort(key=lambda h: h["off"])
+    return out
+
+
+def patch(data, stem, hooks, table=None):
+    """맵 바이트 → `(후킹이 덮인 본문 + 꼬리, 칸 수)`. 꼬리만큼 **길어진다**."""
+    tail, patches = plan(data, hooks, table)
+    out = bytearray(data)
+    for off, by in patches:
+        out[off : off + len(by)] = by
+    return bytes(out) + tail, len(hooks)
 
 
 def dir_record(d, path_in_iso):
@@ -215,60 +418,54 @@ def dir_record(d, path_in_iso):
     raise KeyError(path_in_iso)
 
 
+def resize_record(sector, off, old_size, new_size):
+    """디렉터리 섹터 안 레코드의 크기(양끝 엔디언 8B)를 늘린 새 섹터."""
+    rec = sector[off : off + 34]
+    want = struct.pack("<I", old_size) + struct.pack(">I", old_size)
+    assert rec[10:18] == want, rec[10:18].hex()
+    out = bytearray(sector)
+    out[off + 10 : off + 18] = struct.pack("<I", new_size) + struct.pack(">I", new_size)
+    return bytes(out)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--plan", action="store_true")
-    ap.add_argument("--apply", action="store_true")
     ap.add_argument("--disc", type=int, default=1)
     a = ap.parse_args()
-    if not (a.plan or a.apply):
-        ap.error("--plan 또는 --apply")
-
-    doc = load_plan()
+    if not a.plan:
+        ap.error("--plan")
     with C.open_disc(a.disc) as d:
-        for key, ent in sorted(doc.items()):
-            if key.startswith("_"):
-                continue
-            iso = f"/MAP/{ent['map']}.BIN"
+        for stem, hooks in sorted(by_map().items()):
+            iso = f"/MAP/{stem}.BIN"
             _, lba, size = d.find(iso)
             raw = d.read_extent(lba, size)
-            hooks = ent.get("hooks") or [{**ent["hook"], "lines": ent["lines"]}]
-            tail, patches = plan_one(raw, hooks)
-            print(f"── {key}  {iso}  {size:,}B → {size + len(tail):,}B  (여백 {(-size) % SECTOR}B)")
-            at = size
-            for h in hooks:
-                print(f"   후킹 {h['off']:#07x} ({h['len']}B) → {at:#07x}")
-                for t in h["lines"]:
-                    print(f"        {t!r}")
-                at += (
-                    h["len"]
-                    + sum(
-                        len(band(t) if h.get("style", "band") == "band" else block(t))
-                        for t in h["lines"]
-                    )
-                    + (14 if h.get("hold") else 0)
-                    + (len(WIN_CLOSE) if not h["lines"] else 0)
-                    + len(GOTO)
-                    + 4
+            tail, _patches = plan(raw, hooks)
+            start = -(-size // SLOT) * SLOT
+            print(f"── {iso}  {size:,}B → {size + len(tail):,}B  (여백 {(-size) % SECTOR}B)")
+            at = start + SLOT * len(hooks)
+            for i, h in enumerate(hooks):
+                e = entry(h)
+                fr, fid, _ = struct.unpack(">HHH", e[:6])
+                tag = (
+                    f"미리 싣기 {h.get('_faces')}"
+                    if fr == PRELOAD
+                    else f"{fr / FPS:4.1f}초"
+                    + ("  ⤒붙잡음" if h.get("_hold") else "")
+                    + (f"  얼굴 {fid}" if fid != NO_FACE else "")
                 )
-            if not a.apply:
-                continue
-            img = os.path.join(C.BUILD_DIR, f"Shiroki Majo (KR) (Disc {a.disc}).bin")
-            if not os.path.exists(img):
-                raise SystemExit(f"{img} 가 없다 — 먼저 build.py")
-            drl, dro = dir_record(d, iso)
-            with open(img, "r+b") as f:
-                for off, by in patches:
-                    mode1.write_at(f, lba, size, off, by, label=f"{key} 후킹")
-                mode1.write_at(f, lba, size + len(tail), size, tail, label=f"{key} 자막")
-                #   디렉터리 레코드의 크기(양끝 엔디언 8바이트)를 늘린다
-                rec = d.read_extent(drl, SECTOR)[dro : dro + 34]  # 그 섹터 하나만 읽는다
-                new = struct.pack("<I", size + len(tail)) + struct.pack(">I", size + len(tail))
-                assert rec[10:18] == struct.pack("<I", size) + struct.pack(">I", size), rec[
-                    10:18
-                ].hex()
-                mode1.write_at(f, drl, SECTOR, dro + 10, new, label=f"{key} 디렉터리")
-            print("   ✅ 적용")
+                print(
+                    f"   {h['_scene']} 후킹 {h['off']:#07x} ({h['len']:2}B) → 칸 {start + SLOT * i:#07x}"
+                    f"  글자 {at:#07x} {len(e):3}B  {tag}"
+                )
+                if h.get("who") and h.get("lines"):
+                    carry = len(h.get("_body", ())) - len(h["lines"])
+                    print(
+                        f"        [{h['who']}]" + ("  ↳ 앞 창에 이어 붙인다" if carry > 0 else "")
+                    )
+                for t in h.get("_body", h.get("lines", ())):
+                    print(f"        {t!r}")
+                at += len(e)
     return 0
 
 

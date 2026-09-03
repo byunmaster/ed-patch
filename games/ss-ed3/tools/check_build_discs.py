@@ -56,6 +56,7 @@ def survey(disc):
         return None, None
     got = {}
     for name, lba, size, _old, new, _cnt in build.patched(disc):
+        #   ⓘ 음성 자막이 붙은 맵은 `size` 가 원본보다 길다(섹터 여백에 꼬리) — 그 길이로 읽는다
         got[name] = (sha(new), sha(read_extent(path, lba, size)))
     return path, got
 
@@ -65,7 +66,7 @@ def main():
     stale = []
     per_disc = {}
     for disc in C.DISCS:
-        path, got = survey(disc)
+        _path, got = survey(disc)
         if got is None:
             print(f"   disc{disc} — 이미지가 없다 (건너뛴다)")
             continue

@@ -3,6 +3,7 @@
     python3 games/ss-ed3/tools/script_ops.py --table      # 길이표
     python3 games/ss-ed3/tools/script_ops.py --walk MAP076 0x1bbc4   # 그 자리부터 해독
     python3 games/ss-ed3/tools/script_ops.py --path MAP076 trace.json 0x1bc74  # 실측 경로로 해독
+    python3 games/ss-ed3/tools/script_ops.py --timeline MAP014 0x1779a  # FF 42 뒤 정적 시각표(초안 배치용)
 
 🔴 **이 표가 있어야 스크립트를 안전하게 건드린다.** 길이를 모르면 삽입 지점을 잘못 잡아
    인자 한복판을 옵코드로 오해한다.
@@ -144,8 +145,10 @@ def table():
     return out
 
 
-def walk(name, start, count=40, quiet=False):
-    """그 자리부터 옵코드를 이어 읽는다 — 정렬이 깨지면 거기서 멈춘다.
+def ops(name, start, count=40):
+    """그 자리부터 옵코드를 이어 읽는다 — `(오프셋, 꼬리표, 인자 길이, 비고)` 를 낸다.
+
+    정렬이 깨지거나 길이를 모르는 옵코드를 만나면 비고에 이유를 적고 멈춘다(인자 길이 None).
 
     ⚠ **대사 본문은 옵코드가 아니라 데이터다.** `02 <화자>` 블록과 `FF 87` 뒤 장 제목이
       스크립트 한복판에 그대로 박혀 있어서, 안 건너뛰면 거기서 매번 이탈한다.
@@ -173,8 +176,7 @@ def walk(name, start, count=40, quiet=False):
             ln = {0: 4, 1: 4, 2: 0, 5: 0}.get(b[i + 1])
             tag = f"FD {b[i + 1]:02X}"
         elif b[i] == 0xFF and b[i + 1] == 0xFF:
-            if not quiet:
-                print(f"  {i:#07x}  FF FF  (무동작)")
+            yield i, "FF FF", 0, "무동작"
             i += 2
             ok += 1
             continue
@@ -185,25 +187,84 @@ def walk(name, start, count=40, quiet=False):
                 ln = 4
             tag = f"FF {b[i + 1]:02X}"
         elif i in spans:
-            if not quiet:
-                t = b[i : spans[i] - 1].decode("cp932", "replace").lstrip("\x00\x02")
-                print(f"  {i:#07x}  [본문 {spans[i] - i}B] {t[:28]}")
+            t = b[i : spans[i] - 1].decode("cp932", "replace").lstrip("\x00\x02")
+            yield i, "본문", spans[i] - i - 2, t[:28]
             i = spans[i]
             ok += 1
             continue
         else:
-            if not quiet:
-                print(f"  {i:#07x}  ✗ 옵코드 아님 ({b[i]:02x}) — 정렬 이탈")
-            return ok
+            yield i, f"{b[i]:02x}", None, "옵코드 아님 — 정렬 이탈"
+            return
         if ln is None:
-            if not quiet:
-                print(f"  {i:#07x}  {tag}  ← 길이 모름")
-            return ok
-        if not quiet:
-            print(f"  {i:#07x}  {tag} +{ln:<2} {b[i + 2 : i + 2 + ln].hex(' ')}")
+            yield i, tag, None, "길이 모름"
+            return
+        yield i, tag, ln, b[i + 2 : i + 2 + ln].hex(" ")
         i += 2 + ln
         ok += 1
-    return ok
+
+
+def walk(name, start, count=40):
+    """`ops()` 를 찍는다 — 몇 개를 이어 읽었나를 돌려준다."""
+    n = 0
+    for o, tag, ln, note in ops(name, start, count):
+        if ln is None:
+            print(f"  {o:#07x}  {tag}  ← {note}")
+        elif tag == "본문":
+            print(f"  {o:#07x}  [본문 {ln + 2}B] {note}")
+            n += 1
+        elif tag == "FF FF":
+            print(f"  {o:#07x}  FF FF  (무동작)")
+            n += 1
+        else:
+            print(f"  {o:#07x}  {tag} +{ln:<2} {note}")
+            n += 1
+    return n
+
+
+def timeline(name, start, count=400):
+    """`FF 42` 뒤를 **정적으로** 걸어 `FF 35` 누적 시각과 후킹 가능 자리를 낸다.
+
+    `--path` 와 같은 셈(시각 = `FF 35` 프레임 합)을 추적 없이 한다 — 음성 장면은 `FF 42`
+    뒤가 대체로 곧게 흐르므로(V01 실측: 실제 후킹 자리 전부가 정적 걸음 위에 있었다)
+    **초안 배치**엔 이걸로 족하고, 조건분기(`FD 03`)에서 멈춘 뒤는 추적으로 잇는다.
+    ⚠ 실행 여부는 보장 못 한다 — 정본에 올리기 전 인게임에서 본다.
+
+    후킹 자리 = 옵코드 하나가 6B 이상이거나, 뒤에 `FF 35` 가 붙어 합쳐 6B 이상인 것.
+    뒤에 붙은 대기는 `delay` 로 쪼갤 수 있다(`voice_sub.chain`).
+    """
+    import struct
+
+    rows = list(ops(name, start, count))
+    t = 0
+    out = []  # (프레임, 오프셋, 길이, 대기 프레임, 설명)
+    i = 0
+    while i < len(rows):
+        o, tag, ln, note = rows[i]
+        if ln is None:
+            print(f"  {t / 60:6.1f}초  {o:#07x}  {tag}  ← {note} — 여기서 멈춘다")
+            break
+        if tag == "본문":
+            print(f"  {t / 60:6.1f}초  {o:#07x}  [본문] {note}")
+            i += 1
+            continue
+        size = 2 + ln
+        #   뒤따르는 FF 35 를 이 자리에 붙인다(대기 한복판 `delay` 자리)
+        w, j = 0, i + 1
+        while j < len(rows) and rows[j][1] == "FF 35":
+            w += struct.unpack(">H", bytes.fromhex(rows[j][3]))[0] + 1
+            size += 4
+            j += 1
+        if tag == "FF 35":
+            w += struct.unpack(">H", bytes.fromhex(note))[0] + 1
+        if size >= 6 and tag != "FF FF":
+            mark = f"후킹 {size}B" + (f" · 대기 {w}f({w / 60:.1f}초)" if w else "")
+            print(f"  {t / 60:6.1f}초  {o:#07x}  {tag} {note[:20]:20} ← {mark}")
+            out.append((t, o, size, w, tag))
+        elif w:
+            print(f"  {t / 60:6.1f}초  {o:#07x}  {tag} 대기 {w}f")
+        t += w
+        i = j
+    return out
 
 
 def path(name, trace_json, start):
@@ -252,6 +313,12 @@ def main():
     ap.add_argument(
         "--path", nargs=3, metavar=("MAP", "TRACE", "START"), help="실측 경로(읽기 추적)로 해독"
     )
+    ap.add_argument(
+        "--timeline",
+        nargs=2,
+        metavar=("MAP", "OFF"),
+        help="FF 42 뒤를 정적으로 걸어 시각·후킹 자리",
+    )
     a = ap.parse_args()
     if a.table:
         T = table()
@@ -269,11 +336,13 @@ def main():
     if a.walk:
         n = walk(a.walk[0], int(a.walk[1], 0))
         print(f"\n연속 해독 {n}개")
+    if a.timeline:
+        timeline(a.timeline[0], int(a.timeline[1], 0))
     if a.path:
         name, trace, start = a.path
         path(name, trace, int(start, 0))
-    if not (a.table or a.walk or a.path):
-        ap.error("--table · --walk · --path 중 하나")
+    if not (a.table or a.walk or a.path or a.timeline):
+        ap.error("--table · --walk · --path · --timeline 중 하나")
     return 0
 
 

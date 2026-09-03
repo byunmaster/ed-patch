@@ -3,6 +3,13 @@
     python3 games/ss-ed3/tools/transcribe.py M02        # 한 편
     python3 games/ss-ed3/tools/transcribe.py --all      # 19 편 전부
     python3 games/ss-ed3/tools/transcribe.py --list     # 이미 받아쓴 것
+    python3 games/ss-ed3/tools/transcribe.py V02 --segs # 인게임 음성: 에너지 구간마다 따로
+
+🔴 **인게임 음성(`V**`)은 `--segs` 로 받는다** — Whisper 의 마디 시각은 **못 쓴다**(2026-09-04
+   실측, V01: 마디 여럿을 한 덩어리로 묶고 시작을 앞으로 당긴다 — 어절 모드도 마찬가지).
+   대신 **에너지 포락선으로 발화 구간을 먼저 자르고** 구간마다 Whisper 를 따로 돌린다.
+   구간 시작이 곧 자막 시각(`voice.json` 의 `_t`)이고, 스크립트의 `FF 42` 복귀 프레임이 0 초다.
+   ⚠ 구간은 초벌이다 — 붙은 두 마디·긴 숨은 사람이 가른다(V01 은 21 구간 → 18 마디).
 
 🔴 **초벌이다. 그대로 쓰지 않는다.** 1998년 게임의 **8bit 22kHz** 음성이고 BGM·효과음이
    같이 실려 있어, 사람 이름·고유명사는 거의 틀린다(`ジュリオ`→`ゆりを` 부류).
@@ -148,6 +155,56 @@ def transcribe(name, disc=None, words=False):
     return segs
 
 
+#   ── 에너지 구간 (인게임 음성) ──────────────────────────────────────────────
+#   50ms RMS 포락선 → 바닥(하위 20%)의 2.5 배를 넘는 자리가 「말」, 0.5 초 이상 조용하면 끊는다.
+#   V01 로 맞췄다(발화 18 중 16 이 ±0.3 초, 나머지 둘은 여리게 시작하는 마디라 0.4~0.8 초 늦다).
+#   ⚠ 앞 7 초의 환경음(새·바람)이 1.6 배에선 통째로 한 구간이 됐다 — BGM 이 깔린 편은 다시 잰다.
+SEG_HOP, SEG_RISE, SEG_GAP, SEG_MIN = 0.05, 2.5, 0.5, 0.2
+SEG_PAD = 0.15  # Whisper 에 줄 때 앞뒤로 더 주는 여유(초) — 첫 자음이 잘리지 않게
+
+
+def segments(a, sr=SR):
+    """`[(시작, 끝)]` 초 — 에너지 포락선으로 자른 발화 구간."""
+    import numpy as np
+
+    hop = int(sr * SEG_HOP)
+    env = np.array([np.sqrt((a[i : i + hop] ** 2).mean()) for i in range(0, len(a) - hop, hop)])
+    on = env > np.percentile(env, 20) * SEG_RISE
+    out, s, gap = [], None, 0
+    for i, v in enumerate(on):
+        if v:
+            s, gap = (i if s is None else s), 0
+        elif s is not None:
+            gap += 1
+            if gap * SEG_HOP >= SEG_GAP:
+                out.append((s, i - gap))
+                s = None
+    if s is not None:
+        out.append((s, len(on)))
+    return [
+        (round(x * SEG_HOP, 2), round(y * SEG_HOP, 2))
+        for x, y in out
+        if (y - x) * SEG_HOP >= SEG_MIN
+    ]
+
+
+def transcribe_segments(name):
+    """`V01` → `[{start, end, jp}]` — 구간마다 Whisper 를 따로 돌린다(시각은 구간 것)."""
+    if not name.startswith("V"):
+        raise SystemExit("--segs 는 인게임 음성(V**) 용이다")
+    wav = os.path.join(C.REVIEW_DIR, "sap", f"{name}.wav")
+    if not os.path.exists(wav):
+        sap.to_wav(name)
+    a, sr = load_wav(wav)
+    a = resample(a, sr)
+    segs = []
+    for s, e in segments(a):
+        i0, i1 = int(max(0.0, s - SEG_PAD) * SR), int((e + SEG_PAD) * SR)
+        out = pipe()(a[i0:i1], generate_kwargs={"language": "japanese", "task": "transcribe"})
+        segs.append({"start": s, "end": e, "jp": (out.get("text") or "").strip()})
+    return segs
+
+
 def _chunks(out, off):
     """파이프라인 결과 → `[{start, end, jp}]`. `off` 만큼 시각을 민다."""
     segs = []
@@ -165,6 +222,7 @@ def main():
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--words", action="store_true", help="어절 단위 타임스탬프 (싱크용)")
+    ap.add_argument("--segs", action="store_true", help="인게임 음성: 에너지 구간마다 따로 받는다")
     a = ap.parse_args()
 
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -172,7 +230,7 @@ def main():
         for f in sorted(os.listdir(OUT_DIR)):
             if f.endswith(".json"):
                 d = json.load(open(os.path.join(OUT_DIR, f), encoding="utf-8"))
-                print(f"  {f[:-5]}  마디 {len(d['segments']):3}  {d.get('model','')}")
+                print(f"  {f[:-5]}  마디 {len(d['segments']):3}  {d.get('model', '')}")
         return 0
 
     names = a.names
@@ -182,12 +240,13 @@ def main():
         ap.error("편 이름을 주거나 --all")
 
     for n in names:
-        p = os.path.join(OUT_DIR, f"{n}.words.json" if a.words else f"{n}.json")
+        kind = "segs" if a.segs else "words" if a.words else None
+        p = os.path.join(OUT_DIR, f"{n}.{kind}.json" if kind else f"{n}.json")
         if os.path.exists(p):
             print(f"  {n} 건너뜀 (이미 있다 — 다시 하려면 지운다)")
             continue
         print(f"── {n}", flush=True)
-        segs = transcribe(n, words=a.words)
+        segs = transcribe_segments(n) if a.segs else transcribe(n, words=a.words)
         json.dump(
             {"movie": n, "model": WORDS_MODEL if a.words else MODEL, "segments": segs},
             open(p, "w", encoding="utf-8"),
