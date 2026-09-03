@@ -20,6 +20,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
 import font
+import hangul_map
 import scriptmap
 import textenc
 
@@ -101,16 +102,17 @@ def exe_poc(a, exe, exe_lba):
             )
         print(f"  확인 @0x{off:06X} ({n}코드) 「{got}」 → 「{kr}」")
 
-    need = [ch for ch in dict.fromkeys("".join(kr for _, _, kr in plan)) if ch not in rev]
-    slots = _free_slots(exe, a.disc, len(need))
-    assign = dict(zip(need, slots, strict=True))
-    print("배정:", " ".join(f"{ch}→0x{c:03X}" for ch, c in assign.items()))
-    for ch, code in assign.items():
-        font.write_glyph(exe, code, font.hangul_glyph(ch), a.disc)
+    # 🔴 **자리는 정본에서 온다**(`hangul_map_<disc>.json`). 그때그때 「빈 자리 앞에서부터」로
+    #    잡으면 소재를 하나 더 열 때마다 자리가 밀려 **이미 넣은 문안이 다른 글자로 읽힌다.**
+    table = hangul_map.load(a.disc)
+    need = dict.fromkeys(ch for _, _, kr in plan for ch in kr if ch in table)
+    for ch in need:
+        font.write_glyph(exe, table[ch], font.hangul_glyph(ch), a.disc)
     for off, _, kr in plan:
-        codes = [assign.get(ch) or rev[ch] for ch in kr]
+        codes = hangul_map.encode(kr, a.disc, table)
         struct.pack_into(f"<{len(codes)}H", exe, off, *codes)
-    print(f"글리프 {len(assign)}개 구움")
+    print("배정(정본):", " ".join(f"{ch}→0x{table[ch]:03X}" for ch in need))
+    print(f"글리프 {len(need)}개 구움")
 
     if a.dry_run:
         print("(dry-run)")
