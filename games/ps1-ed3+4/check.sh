@@ -76,5 +76,12 @@ run 4 "$PY" "$G/tools/check_script.py" --disc ed3
 # **표만 다시 계산**하면 되고, 그래서 규격 멤버 전부가 길이 자유다.
 run 4 "$PY" "$G/tools/check_script.py" --disc ed4
 
+echo "  ── 실행파일 낱말 표 (항등 재구축이 바이트 동일한가)"
+# 🔴 게이트다 — 이 표는 **이름·메뉴·아이템이 사는 자리**다. 파서가 구조를 잘못 읽으면
+#    문안을 넣는 순간 조용히 깨진다. 빈틈(표가 안 가리키는 문자열)을 넘어 움직이지 않는지도
+#    여기서 같이 본다.
+run 6 "$PY" "$G/tools/exetext.py" --disc ed3 --check
+run 6 "$PY" "$G/tools/exetext.py" --disc ed4 --check
+
 if [ "$fail" -eq 0 ]; then echo "  ✅ 통과"; else echo "  🔴 실패"; fi
 exit "$fail"
