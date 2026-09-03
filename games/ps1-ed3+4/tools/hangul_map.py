@@ -137,6 +137,19 @@ def used_codes(disc, after_patch=True):
     return used
 
 
+def test_slots(disc):
+    """[코드] — **시험 빌드용**. 원본이 쓰든 말든 폰트 자리를 전부 빌린다.
+
+    🔴 이 자리로 구운 이미지는 **배포물이 아니다.** 안 옮긴 문안이 엉뚱한 글자로 나온다.
+       쓰는 이유는 하나 — 지금 보려는 것(메뉴·HUD·타이틀)을 **오늘 화면에서 확인**하려고.
+       본 빌드는 `free_slots` 를 쓴다(원본과 안 부딪히는 자리만).
+    """
+    exe, _, _ = font.exe_bytes(disc)
+    first = max(textenc.kana_map(disc)) + 1
+    n = font.font_end(exe, disc)
+    return [c for c in range(first, n) if font.read_glyph(exe, c, disc).any()]
+
+
 def free_slots(disc, used=None):
     """[코드] — 안 쓰는데 **그림이 있는** 자리. 카나 끝 다음부터."""
     used = used_codes(disc) if used is None else used
@@ -147,21 +160,38 @@ def free_slots(disc, used=None):
 
 
 def needed_chars(disc):
-    """우리 문안이 실제로 쓰는 글자 — 번역 정본 + 고유명사 정본에서 모은다.
+    """[글자] — 자리를 받아야 하는 것, **급한 순서대로**.
 
-    ⚠ 코드표에 이미 있는 글자(숫자·부호)는 빼고, **자리를 받아야 하는 것만** 남긴다.
+    🔴 순서가 곧 우선순위다. 자리가 모자랄 때 **뒤가 잘리기 때문**이다:
+      ① 공백 ② 대사 정본(많이 쓰는 것부터) ③ UI 문안 ④ 고유명사 정본.
+      대사가 먼저인 이유는 **자리를 비워 주는 쪽이 대사**이기 때문이다 — 대사를 옮겨야
+      한자가 물러나고, 그래야 나머지가 들어갈 자리가 생긴다.
+
+    ⚠ 코드표에 이미 있는 글자(숫자·부호)는 뺀다.
     """
+    import collections
+
     import glossary
     import script as script_canon
+    import uitext
 
     have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values())
-    out = set(EXTRA)
+    freq = collections.Counter()
     for lines in script_canon.load(disc).values():
         for row in lines.values():
-            out.update(row["kr"])
+            freq.update(row["kr"])
+    ui = collections.Counter()
+    for row in uitext.load(disc).values():
+        ui.update(row["kr"])
+    names = set()
     for kr in glossary.flat(disc).values():
-        out.update(kr)
-    return sorted(ch for ch in out if ch not in have)
+        names.update(kr)
+
+    out = list(EXTRA)
+    for src in (freq, ui):
+        out += [ch for ch, _ in src.most_common() if ch not in have and ch not in out]
+    out += sorted(ch for ch in names if ch not in have and ch not in out)
+    return out
 
 
 def assign(disc, free=None, chars=None, keep=None):

@@ -92,6 +92,12 @@ echo "  ── 번역 정본 (원문 지문 · 조판)"
 run 6 "$PY" "$G/tools/script.py" --disc ed3 --check
 run 6 "$PY" "$G/tools/script.py" --disc ed4 --check
 
+echo "  ── UI 문안 (원문 지문 · 길이)"
+# 🔴 게이트다 — 표가 없는 자리는 **길이 고정**이라, 넘치면 그 문안이 통째로 안 들어간다.
+#    ⚠ 진행률은 실패로 안 친다.
+run 6 "$PY" "$G/tools/uitext.py" --disc ed3 --check
+run 6 "$PY" "$G/tools/uitext.py" --disc ed4 --check
+
 echo "  ── 글리프 자리 정본이 원본과 부딪히나"
 # 🔴 게이트다 — 배정한 자리를 원본도 쓰면 **그 글자가 화면에서 바뀐다.**
 #    ⚠ 「지금 계산한 배정과 정본이 다르다」는 경고지 실패가 아니다 — 다시 박으려면

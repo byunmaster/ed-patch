@@ -37,11 +37,15 @@ import script as script_canon
 import scriptmap
 import textenc
 import typeset
+import uitext
 
 
-def bake_font(exe, disc, chars):
-    """쓰는 글자만 굽는다 — 안 쓰는 자리는 원본 그대로 둔다(무변경 구간을 넓게 지킨다)."""
-    table = hangul_map.load(disc)
+def bake_font(exe, disc, chars, table):
+    """쓰는 글자만 굽는다 — 안 쓰는 자리는 원본 그대로 둔다(무변경 구간을 넓게 지킨다).
+
+    ⚠ **배정은 인자로 받는다.** 안에서 정본을 다시 읽으면 시험 빌드(`--test`)가 정본 자리에
+      구워져 화면이 안 나온다 — 실제로 그렇게 한 번 헛돌았다.
+    """
     baked = 0
     for ch in sorted(chars):
         if ch not in table:
@@ -122,10 +126,31 @@ def reinsert_names(exe, disc, table, report):
             cur.append(codes)
         if not changed:
             continue
-        try:
-            new, _ = exetext.rebuild(bytes(exe), tbl, base, n, cur)
-        except exetext.ExeTextError as e:
-            raise SystemExit(f"🔴 낱말 표 0x{tbl:06X}: {e}") from None
+        # 🔴 예산을 넘으면 **긴 것부터 되돌린다** — 표 하나를 통째로 버리면 이름 133개가
+        #    같이 날아간다. 되돌린 자리는 원문 그대로 남고 개수를 찍는다.
+        orig = []
+        for x in ents:
+            codes, _ = exetext.raw_string(bytes(exe), base + x)
+            orig.append(codes or [])
+        over = sorted(
+            (i for i in range(n) if len(cur[i]) > len(orig[i])),
+            key=lambda i: len(orig[i]) - len(cur[i]),
+        )
+        while True:
+            try:
+                new, _ = exetext.rebuild(bytes(exe), tbl, base, n, cur)
+                break
+            except exetext.ExeTextError:
+                if not over:
+                    new = None
+                    break
+                i = over.pop(0)
+                cur[i] = orig[i]
+                changed -= 1
+                report["over_budget"] += 1
+        if new is None:
+            report["over_budget"] += changed
+            continue
         exe[:] = bytearray(new)
         report["names"] += changed
     # 🔴 **표가 없는 구역은 아직 못 넣는다** — 화면에 일본어가 남는다는 뜻이라 세어서 알린다.
@@ -138,17 +163,38 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--disc", choices=common.DISC_NAMES, default="ed3")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--test",
+        action="store_true",
+        help="🔴 시험 빌드 — 폰트 자리를 전부 빌린다(안 옮긴 문안이 깨진다). 배포물이 아니다",
+    )
     a = ap.parse_args()
     common.verify_source(a.disc)
 
     canon = script_canon.load(a.disc)
-    if not os.path.exists(hangul_map.map_path(a.disc)):
+    if a.test:
+        # 🔴 시험 빌드 — 「지금 보려는 것만 제대로 나오면 된다」. 안 옮긴 문안은 깨진다.
+        #    자리가 닭·달걀이라(대사를 옮겨야 한자가 물러난다) 이게 없으면 초반에
+        #    **아무것도 화면에서 확인할 수 없다.**
+        need = list(hangul_map.EXTRA) + hangul_map.needed_chars(a.disc)
+        table, short = hangul_map.assign(a.disc, hangul_map.test_slots(a.disc), chars=need)
+        if short:
+            print(f"  ⬜ 시험 빌드에서도 자리가 모자라다 {len(short)}자")
+    elif not os.path.exists(hangul_map.map_path(a.disc)):
         raise SystemExit(
             f"⏭ {a.disc}: 글리프 자리 정본이 없다 — 쓸 수 있는 자리가 모자라 아직 못 박았다.\n"
-            f"   폰트 배열을 넓히는 게 선행 과제다(docs/status.md)."
+            f"   `--test` 로 시험 빌드는 지금도 구울 수 있다(배포물은 아니다)."
         )
-    table = hangul_map.load(a.disc)
-    report = {"members": 0, "slack": 0, "names": 0, "skipped": 0, "skipped_names": 0}
+    else:
+        table = hangul_map.load(a.disc)
+    report = {
+        "members": 0,
+        "slack": 0,
+        "names": 0,
+        "skipped": 0,
+        "skipped_names": 0,
+        "over_budget": 0,
+    }
 
     # 굽을 글자 — 대사 + 낱말에 실제로 쓰인 것만
     chars = set()
@@ -157,12 +203,16 @@ def main():
             chars.update(row["kr"])
     for kr in glossary.flat(a.disc).values():
         chars.update(kr)
+    for row in uitext.load(a.disc).values():
+        chars.update(row["kr"])
     chars = {c for c in chars if c in table}
 
     fs = common.iso_files(a.disc)
     exe_lba, exe_size = fs[font.FONTS[a.disc]["exe"]]
     exe = bytearray(common.read_lba(a.disc, exe_lba, exe_size))
-    baked = bake_font(exe, a.disc, chars)
+    baked = bake_font(exe, a.disc, chars, table)
+    ui_put, ui_skip = uitext.apply(exe, a.disc, lambda kr: hangul_map.encode(kr, a.disc, table))
+    report["skipped"] += ui_skip
     reinsert_names(exe, a.disc, table, report)
     arcs = reinsert_script(a.disc, canon, table, report)
 
@@ -171,11 +221,18 @@ def main():
     left = report.get("names_left", [])
     print(
         f"{a.disc}: 대사 {lines:,}줄 / 멤버 {report['members']} (남는 자리 {report['slack']:,}B) · "
-        f"낱말 {report['names']}/{report['names'] + len(left)} · 글리프 {baked}"
+        f"낱말 {report['names']}/{report['names'] + len(left)} · UI {ui_put} · 글리프 {baked}"
     )
+    if a.test:
+        print("  🔴 **시험 빌드다** — 안 옮긴 문안은 엉뚱한 글자로 나온다. 배포물이 아니다.")
     if left:
         print(f"  ⬜ 아직 못 넣는 낱말 {len(left)} (표가 없는 구역 — 길이 고정)")
         print("     " + " · ".join(left[:10]))
+    if report["over_budget"]:
+        print(
+            f"  ⬜ 칸 예산을 넘어 되돌린 낱말 {report['over_budget']} (원문 그대로 남는다)\n"
+            f"     ⚠ 표기를 줄이거나, 같은 칸의 다른 이름을 줄여 자리를 만든다."
+        )
     if skipped:
         print(
             f"  ⬜ 글리프 자리가 없어 건너뛴 것 — 대사 {report['skipped']} · 낱말 "
@@ -188,6 +245,8 @@ def main():
 
     os.makedirs(common.BUILD_DIR, exist_ok=True)
     out = common.build_bin(a.disc)
+    if a.test:  # 이름으로 갈라 둔다 — 시험물을 정상으로 오해하는 사고가 이 레포의 단골이다
+        out = out.replace(".bin", " (TEST).bin")
     tmp = out + ".part"
     shutil.copyfile(common.orig_bin(a.disc), tmp)
     try:
@@ -200,7 +259,10 @@ def main():
         os.replace(tmp, out + ".failed")  # 🔴 실패한 빌드는 산출물을 무효화한다
         raise
     os.replace(tmp, out)
-    common.write_cue(common.build_cue(a.disc), os.path.basename(out))
+    cue = common.build_cue(a.disc)
+    if a.test:
+        cue = cue.replace(".cue", " (TEST).cue")
+    common.write_cue(cue, os.path.basename(out))
     print(f"바뀐 섹터 {n:,}\n→ {out}")
     return 0
 
