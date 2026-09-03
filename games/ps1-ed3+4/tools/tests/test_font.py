@@ -44,9 +44,24 @@ class TestFontGeometry(unittest.TestCase):
         self.assertEqual(bytes(buf[o + 18 :]), before[o + 18 :])
         self.assertEqual(bytes(buf[o : o + 18]), b"\xff" * 18)
 
+    def test_pair_swap_is_self_inverse(self):
+        """열 쌍 교환은 자기 역함수 — 읽기·쓰기가 같은 함수를 쓴다."""
+        rnd = np.random.default_rng(3)
+        g = rnd.integers(0, 2, size=(12, 12), dtype=np.uint8)
+        self.assertTrue((font._swap_pairs(font._swap_pairs(g)) == g).all())
+
+    def test_pair_swap_moves_the_right_columns(self):
+        """🔴 실측 계약 — 비트 0 은 **1열**로, 비트 11 은 **10열**로 간다(탐침 글리프)."""
+        g = np.zeros((12, 12), dtype=np.uint8)
+        g[0, 0] = 1
+        self.assertEqual(font._swap_pairs(g)[0].tolist(), [0, 1] + [0] * 10)
+        g = np.zeros((12, 12), dtype=np.uint8)
+        g[0, 11] = 1
+        self.assertEqual(font._swap_pairs(g)[0].tolist(), [0] * 10 + [1, 0])
+
     def test_hangul_glyph_fits_cell(self):
         g = font.hangul_glyph("한")
-        self.assertEqual(g.shape, (12, 12))
+        self.assertEqual(g.shape, (12, font.HANGUL_W))
         self.assertGreater(int(g.sum()), 10)  # 빈 글리프가 아니다
         self.assertLess(int(g.sum()), 120)
 

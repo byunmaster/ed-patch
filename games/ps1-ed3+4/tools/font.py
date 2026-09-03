@@ -37,7 +37,11 @@ from shared import fonts
 EXE_TADDR = 0x80010000  # PS-EXE t_addr (양쪽 같다)
 EXE_HDR = 0x800  # 파일 앞 헤더
 GLYPH_BYTES = 18
-ROWS = CELL = 12
+ROWS = CELL = 12  # 저장 격자 — 18B = 12행 × 12비트 밀착 패킹
+# 12열이 전부 그려진다 — 다만 **이웃한 두 열이 짝으로 뒤바뀌어 저장된다**(`_swap_pairs`).
+DRAW_W = 12
+HANGUL_W = 11  # Galmuri11 의 폭 — 12칸 안에 왼쪽 정렬하면 오른쪽 1px 가 자간이 된다
+PITCH = 12  # 화면에서 한 글자가 차지하는 가로 칸 (원본 일본어 줄에서 실측)
 
 # 디스크마다 실행파일과 폰트 베이스가 다르다 — **둘 다 디스어셈블로 읽었다.**
 #   ED3: 0x80018AB4  `코드×18 + 0x8009E170`
@@ -60,16 +64,43 @@ def exe_bytes(disc="ed3"):
     return common.read_lba(disc, lba, size), lba, size
 
 
+def _swap_pairs(bits):
+    """🔴 **이웃한 두 열이 짝을 지어 뒤바뀌어 저장된다** (0↔1, 2↔3, …, 10↔11).
+
+    탐침으로 실측했다(2026-09-03). 빈 글리프에 비트 하나씩만 켜고 화면을 봤다:
+
+        비트 0        → 1열        비트 11 → 10열
+        비트 12       → **1행** 1열 (⇒ 행 간격 12비트)
+        비트 0~10     → 0~9열 + 11열 (10열은 꺼짐)
+        비트 0~11     → 0~11열 깨끗이
+
+    4bpp 로 펼칠 때 니블 순서가 뒤집히는 흔한 자국이다. 이 변환을 넣으니 원본 다섯 글자가
+    VRAM 실물과 **차이 0/660 픽셀**로 맞았다(넣기 전엔 76).
+
+    ⚠ 이걸 모르면 **한글 획이 한 칸씩 옆으로 튄다.** 한자는 획이 두꺼워 티가 안 나서
+      오래 못 봤다 — 「원본과 11% 다른데 글자는 읽힌다」가 그 증상이었다.
+    자기 역함수라 읽기·쓰기가 같은 함수를 쓴다.
+    """
+    b = np.array(bits, dtype=np.uint8, copy=True)
+    for c in range(0, CELL, 2):
+        b[:, [c, c + 1]] = b[:, [c + 1, c]]
+    return b
+
+
 def read_glyph(exe, code, disc="ed3"):
-    """(12,12) 0/1 — 원본 글리프."""
+    """(12,12) 0/1 — 원본 글리프(꼬리 두 열을 되돌려 **화면에 나오는 그대로**)."""
     off = font_off(disc)
-    return fonts.unpack18(exe[off : off + (code + 1) * GLYPH_BYTES], code, ROWS, CELL)
+    raw = fonts.unpack18(exe[off : off + (code + 1) * GLYPH_BYTES], code, ROWS, CELL)
+    return _swap_pairs(raw)
 
 
 def write_glyph(buf, code, bits, disc="ed3"):
-    """bytearray 안의 글리프 하나를 덮어쓴다."""
+    """bytearray 안의 글리프 하나를 덮어쓴다(꼬리 두 열을 게임 규약으로 바꿔서)."""
     o = font_off(disc) + code * GLYPH_BYTES
-    buf[o : o + GLYPH_BYTES] = fonts.pack18(np.asarray(bits, dtype=np.uint8), ROWS, CELL)
+    grid = np.zeros((ROWS, CELL), dtype=np.uint8)
+    src = np.asarray(bits, dtype=np.uint8)
+    grid[: src.shape[0], : src.shape[1]] = src[:ROWS, :CELL]
+    buf[o : o + GLYPH_BYTES] = fonts.pack18(_swap_pairs(grid), ROWS, CELL)
 
 
 def glyph_count(exe, disc="ed3"):
@@ -90,18 +121,23 @@ def glyph_count(exe, disc="ed3"):
     return n
 
 
-def render(bits):
-    return "\n".join("".join("█" if v else "·" for v in row) for row in bits)
+def render(bits, width=DRAW_W):
+    """화면에 나오는 그대로(12칸)."""
+    return "\n".join("".join("█" if v else "·" for v in row[:width]) for row in bits)
 
 
-def hangul_glyph(ch, dy=fonts.GALMURI11_DY + 1):
+def hangul_glyph(ch, dy=fonts.GALMURI11_DY):
     """한글 한 글자 → (12,12) 0/1. Galmuri11 BDF 에서 무손실로 뽑는다.
 
     ⚠ TTF 렌더를 안 쓰는 이유는 `shared/fonts/__init__.py` 머리말에 있다(머신마다 배치가
       달라져 빌드가 비결정적이 된다).
+
+    🔴 **dy 는 `fonts.GALMURI11_DY`(=-3) 다.** 한 칸 내렸다가(-2) 한글만 **베이스라인이
+       1픽셀 아래로 밀렸다** — 원본 글리프는 0~10행을 쓴다(실측). 같은 줄에 일본어가 섞이면
+       바로 보인다.
     """
     f = fonts.galmuri("Galmuri11")
-    return f.bits(ch, dy=dy, rows=ROWS, width=CELL)
+    return f.bits(ch, dy=dy, rows=ROWS, width=HANGUL_W)
 
 
 if __name__ == "__main__":
