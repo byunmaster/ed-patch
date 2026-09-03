@@ -72,6 +72,9 @@ echo "  ── 재삽입 구조 (포인터가 다 풀리고 항등 재구축이 
 # 🔴 게이트다 — 항등 재구축이 깨지면 우리 파서가 구조를 잘못 읽는 것이고,
 #    그 상태로 문안을 넣으면 **조용히** 깨진다.
 run 4 "$PY" "$G/tools/check_script.py" --disc ed3
+# ED4 는 규격이 다르다 — 오프셋 표를 낀다(`scriptmap.LAYOUT_TABLE`). 색인이 그대로라
+# **표만 다시 계산**하면 되고, 그래서 규격 멤버 전부가 길이 자유다.
+run 4 "$PY" "$G/tools/check_script.py" --disc ed4
 
 if [ "$fail" -eq 0 ]; then echo "  ✅ 통과"; else echo "  🔴 실패"; fi
 exit "$fail"

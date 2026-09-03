@@ -26,6 +26,16 @@ import textenc
 ARCHIVE = "/SCE0/SC000.DAT"
 MEMBER = "..\\DATA\\FT0000.BIN"
 
+# ED4 는 **실행파일 안 문자열**로 잰다 — 타이틀 화면 메뉴라 부팅하면 바로 보인다.
+# ⇒ 씬을 찾아 들어갈 필요가 없어 「폰트 저장 규약이 맞나」만 딱 떼어 물을 수 있다.
+# ⚠ 실행파일 문자열은 **길이 고정**이다(표가 연속으로 붙어 있다) — 같은 코드 수로만 바꾼다.
+EXE_PLAN = {
+    "ed4": [
+        (0x06DC72, "最初から始める", "처음부터 시작"),
+        (0x06DC82, "続きから始める", "계속해서 시작"),
+    ],
+}
+
 # (런 오프셋, 원문(사전조건), 우리 문안) — **총 코드 수는 원본과 같아야 한다**(아래 단언).
 # 63·64 는 첫 대사창의 1·2행이다. 20+14 를 24+10 으로 옮겨 「경계를 움직여도 되나」를 잰다.
 PLAN = [
@@ -51,17 +61,85 @@ def encode(text, disc, assign, rev):
     return [assign.get(ch) or rev[ch] for ch in text]
 
 
+def _rev(disc):
+    m = textenc.charmap(disc)
+    rev = {v: k for k, v in m.items()}
+    for code, ch in textenc.CONTROL.items():
+        rev.setdefault(ch, code)
+    return rev
+
+
+def _free_slots(exe, disc, n, used=()):
+    """대본이 안 쓰고 그림도 없는 글리프 자리 n 개."""
+    out = []
+    for c in range(0x100, 0x900):
+        if c in used or font.read_glyph(exe, c, disc).sum() == 0:
+            continue
+        out.append(c)
+        if len(out) >= n:
+            return out
+    raise SystemExit("빈 글리프 자리가 모자라다")
+
+
+def exe_poc(a, exe, exe_lba):
+    """실행파일 문자열만 바꾸는 PoC — **길이 고정**(같은 코드 수).
+
+    🔴 이 PoC 가 묻는 건 하나다: **ED4 의 폰트 저장 규약(`font.LAYOUT`)이 맞나.**
+       ED3 과 달라서(열 짝 교환 X · 몸통 1~11행) 글리프 대조로 유도만 해 뒀다 —
+       화면으로 확인하기 전에는 한글을 본 빌드에 굽지 않는다(체크리스트 10-B 도달성).
+    """
+    rev = _rev(a.disc)
+    plan = EXE_PLAN[a.disc]
+    for off, expect, kr in plan:
+        n = len(expect)
+        got = textenc.decode(struct.unpack_from(f"<{n}H", exe, off), a.disc)
+        if got != expect:
+            raise SystemExit(f"@0x{off:06X}: 원문이 다르다 — 「{got}」 (기대 「{expect}」)")
+        if len(kr) != n:
+            raise SystemExit(
+                f"@0x{off:06X}: 길이가 다르다 {len(kr)} (원본 {n}) — 실행파일은 고정이다"
+            )
+        print(f"  확인 @0x{off:06X} ({n}코드) 「{got}」 → 「{kr}」")
+
+    need = [ch for ch in dict.fromkeys("".join(kr for _, _, kr in plan)) if ch not in rev]
+    slots = _free_slots(exe, a.disc, len(need))
+    assign = dict(zip(need, slots, strict=True))
+    print("배정:", " ".join(f"{ch}→0x{c:03X}" for ch, c in assign.items()))
+    for ch, code in assign.items():
+        font.write_glyph(exe, code, font.hangul_glyph(ch), a.disc)
+    for off, _, kr in plan:
+        codes = [assign.get(ch) or rev[ch] for ch in kr]
+        struct.pack_into(f"<{len(codes)}H", exe, off, *codes)
+    print(f"글리프 {len(assign)}개 구움")
+
+    if a.dry_run:
+        print("(dry-run)")
+        return
+    os.makedirs(common.BUILD_DIR, exist_ok=True)
+    out = common.build_bin(a.disc)
+    tmp = out + ".part"
+    print(f"원본 복사 → {out}")
+    shutil.copyfile(common.orig_bin(a.disc), tmp)
+    with open(tmp, "r+b") as f:
+        n1 = common.write_user_data(f, a.disc, exe_lba, bytes(exe), label="폰트+문안")
+    os.replace(tmp, out)
+    common.write_cue(common.build_cue(a.disc), os.path.basename(out))
+    print(f"바뀐 섹터: {n1}\n→ {out}")
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--disc", default="ed3", choices=("ed3",))
+    ap.add_argument("--disc", default="ed3", choices=("ed3", "ed4"))
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     common.verify_source(a.disc)
 
     fs = common.iso_files(a.disc)
     exe_lba, exe_size = fs[font.FONTS[a.disc]["exe"]]
-    sc_lba, sc_size = fs[ARCHIVE]
     exe = bytearray(common.read_lba(a.disc, exe_lba, exe_size))
+    if a.disc in EXE_PLAN:
+        return exe_poc(a, exe, exe_lba)
+    sc_lba, sc_size = fs[ARCHIVE]
     sc = bytearray(common.read_lba(a.disc, sc_lba, sc_size))
     _, ents = common.arc_parse(bytes(sc))
     mbase, msize = {n: (o, s_) for n, o, s_ in ents}[MEMBER]
