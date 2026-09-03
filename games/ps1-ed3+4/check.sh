@@ -55,5 +55,10 @@ run 0 "$PY" "$G/tools/check_coverage.py" --disc ed3 --min 99.0
 # ED4 는 아직 표가 없다 — 있으면 재고 없으면 알린다(늘 빨간불이 되지 않게)
 warn 0 "$PY" "$G/tools/check_coverage.py" --disc ed4 --min 0
 
+echo "  ── 재삽입 구조 (포인터가 다 풀리고 항등 재구축이 바이트 동일한가)"
+# 🔴 게이트다 — 항등 재구축이 깨지면 우리 파서가 구조를 잘못 읽는 것이고,
+#    그 상태로 문안을 넣으면 **조용히** 깨진다.
+run 4 "$PY" "$G/tools/check_script.py" --disc ed3
+
 if [ "$fail" -eq 0 ]; then echo "  ✅ 통과"; else echo "  🔴 실패"; fi
 exit "$fail"
