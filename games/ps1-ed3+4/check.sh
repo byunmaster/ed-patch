@@ -62,6 +62,12 @@ echo "  ── 폰트 레이아웃 (모양이 계산되는 글자로 검산)"
 run 0 "$PY" "$G/tools/check_font.py" --disc ed3
 run 0 "$PY" "$G/tools/check_font.py" --disc ed4
 
+echo "  ── 고유명사 정본이 원본과 맞나"
+# 🔴 게이트다 — 「원본에 없는 항목」과 「한 표기가 원문 둘에」는 판단이 안 드는 사고다.
+#    ⚠ 아직 안 옮긴 낱말은 **실패로 안 친다**(할 일이지 실패가 아니다).
+run 0 "$PY" "$G/tools/check_glossary.py" --disc ed3
+run 0 "$PY" "$G/tools/check_glossary.py" --disc ed4
+
 echo "  ── 재삽입 구조 (포인터가 다 풀리고 항등 재구축이 바이트 동일한가)"
 # 🔴 게이트다 — 항등 재구축이 깨지면 우리 파서가 구조를 잘못 읽는 것이고,
 #    그 상태로 문안을 넣으면 **조용히** 깨진다.
