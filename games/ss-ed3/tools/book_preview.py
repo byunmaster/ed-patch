@@ -39,11 +39,17 @@ SQ = ((0, 1), (1, 2), (3, 4), (4, 5), (6, 7), (7, 8), (9, 10), (10, 11))
 CELL, LINE = 8, 24  # 화면 칸 폭 · 줄 간격
 TONE = ((184, 176, 152), (120, 112, 88), (0, 0, 0))  # 종이 · 옅은 먹 · 진한 먹 (실측)
 
-#   ── 책 화면 기하 (352×240 캡처 실측 2026-09-02) ─────────────────────────────
+#   ── 책 화면 기하 (352×240 캡처 실측 2026-09-02~03) ──────────────────────────
+#   🔴 **줄 간격은 고정이 아니다 — 엔진이 줄 수에 맞춰 편다**(2026-09-03 `book_swap` 실측).
+#     검사교본은 6 줄에 24px, 여검사 사피는 **13 줄에 12px** 인데 둘 다 같은 띠를 채운다.
+#     ⇒ 간격 = `min(24, 띠 / (칸수-1))`, 첫 줄은 늘 43. 문단 사이는 **간격의 절반**이다
+#     (검사교본이 43 이 아니라 55 에서 시작한 건 그 앞이 문단 경계였기 때문이다).
+#   ⚠ 첫 펼침은 **오른쪽 쪽부터**다 — 왼쪽은 비어 있다(속표지).
 PAGE_X = (60, 196)  # 왼쪽·오른쪽 쪽의 글자 시작 열
-TOP = 55  # 첫 줄 잉크 윗머리
-PARA_GAP = 12  # 문단 사이에 더 벌어지는 px
-SLOTS = 7  # 한 쪽에 들어가는 줄 수
+TOP = 43  # 첫 줄 잉크 윗머리
+BAND = 154  # 첫 줄부터 마지막 줄 윗머리까지 쓸 수 있는 높이
+MAX_PITCH = 24  # 줄이 적으면 여기까지만 벌린다
+SLOTS = 13  # 한 쪽에 들어가는 줄 수 (간격이 12 까지 좁아진다)
 IDX_OF = {F.sjis_of_index(i): i for i in range(94 * 94)}
 
 
@@ -90,6 +96,14 @@ def page(rows, fon, hg, cols=13):
     return img
 
 
+def pitch_of(paras):
+    """그 쪽의 **줄 간격** — 칸을 채우도록 편다(위 주석의 실측 규칙)."""
+    units = sum(len(p) for p in paras) + 0.5 * (len(paras) - 1)
+    if units <= 1:
+        return MAX_PITCH
+    return max(1, min(MAX_PITCH, int(BAND / (units - 1))))
+
+
 def paginate(paras):
     """문단 목록 → 쪽 목록. 한 쪽은 `SLOTS` 줄, 문단 사이는 반 줄 더 벌린다."""
     pages, cur, used = [], [], 0
@@ -100,10 +114,10 @@ def paginate(paras):
         if len(p) > SLOTS:
             todo.insert(0, p[SLOTS:])
             p = p[:SLOTS]
-        need = LINE * len(p) + (PARA_GAP if cur else 0)
-        if cur and used + need > LINE * SLOTS:
+        need = len(p) + (0.5 if cur else 0)
+        if cur and used + need > SLOTS:
             pages.append(cur)
-            cur, used, need = [], 0, LINE * len(p)
+            cur, used, need = [], 0, len(p)
         cur.append(p)
         used += need
     if cur:
@@ -130,6 +144,9 @@ def spread(left, right, fon, hg):
         t = 1 - abs(x - 176) / 8
         im[28:212, x] = (np.array((184, 176, 152)) * (1 - 0.65 * t)).astype(np.uint8)
     for side, paras in ((0, left), (1, right)):
+        if not paras:
+            continue
+        pitch = pitch_of(paras)
         y = TOP
         for p in paras:
             g = page(p, fon, hg)
@@ -139,8 +156,8 @@ def spread(left, right, fon, hg):
                     ys, xs = (band == lv).nonzero()
                     ok = (y + ys < 211) & (PAGE_X[side] + xs < 352)
                     im[y + ys[ok], PAGE_X[side] + xs[ok]] = TONE[lv]
-                y += LINE
-            y += PARA_GAP
+                y += pitch
+            y += pitch // 2
     return im
 
 
@@ -175,9 +192,11 @@ def main():
             paras = final_lines(stem, d.read_extent(lba, size))
             pages = paginate(paras)
             #   ⓘ **책은 두 쪽씩 펼쳐진다** — 쪽을 둘씩 묶어 한 장으로 낸다
+            #   ⚠ 첫 펼침은 **오른쪽부터** — 왼쪽은 비어 있다(속표지). 실측 2026-09-03.
+            seq = [[]] + pages
             sheets = []
-            for k in range(0, len(pages), 2):
-                sheets.append(spread(pages[k], pages[k + 1] if k + 1 < len(pages) else [], fon, hg))
+            for k in range(0, len(seq), 2):
+                sheets.append(spread(seq[k], seq[k + 1] if k + 1 < len(seq) else [], fon, hg))
             im = Image.fromarray(np.concatenate(sheets, axis=0))
             p = os.path.join(out, f"{stem}.png")
             im.resize((im.width * a.scale, im.height * a.scale), Image.NEAREST).save(p)

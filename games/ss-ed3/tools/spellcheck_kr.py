@@ -40,8 +40,69 @@ import check_fidelity as CF
 import common as C
 from text import spellcheck as sc
 
-SEG = re.compile(r"[\n\f]")
+#   ⚠ 읽을거리는 `|`(번역자가 가른 줄)로도 조각난다 — 안 가르면 한 문장이 두 줄로 붙어
+#     검사기에 가고, 돌아온 제안이 그 경계에 공백을 만든다.
+SEG = re.compile(r"[\n\f|]")
 SCRIPT = os.path.join(C.GAME_DIR, "script")
+
+
+SCOPE = "all"  # all · map · book — `--scope` 가 정한다
+
+
+def fetch_slow(parts, cache, save, delay=40.0, retry=8):
+    """청크를 **한 번에 하나씩, 쉬어 가며** 받는다 — `--jobs 1` 일 때.
+
+    🔴 **이 검사기는 시험용이라 몰아치면 400 을 준다**(2026-09-03 실측: 같은 문장을 5 초
+      간격으로 다섯 번 보내면 1·2 회는 200, 3 회부터 400. 길이·내용과 무관하다).
+      공용 `sc.fetch` 는 `HTTPError` 를 재시도 대상으로 안 봐서 그대로 죽는다.
+      ⇒ 여기서 **간격을 스스로 맞춘다** — 막히면 늘리고(×1.6, 최대 180 초), 통하면 조금씩
+        줄인다(×0.9, 최소 15 초). 공용은 main 에서만 고치므로 게임 쪽에 둔다.
+    ⚠ 오래 걸린다(청크당 수십 초). 뒤에 걸어 두고 다른 일을 한다.
+    """
+    import time
+    import urllib.error
+
+    wait = delay
+    done = 0
+    for i, part in enumerate(parts, 1):
+        key = "\n".join(part)
+        if key in cache:
+            continue
+        for k in range(retry):
+            try:
+                cache[key] = sc.call(key, retry=1, timeout=60)
+                done += 1
+                wait = max(15.0, wait * 0.9)
+                break
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
+                wait = min(180.0, wait * 1.6)
+                print(
+                    f"    {i}/{len(parts)} 막힘 {k + 1}/{retry} ({type(e).__name__}) → {wait:.0f}s",
+                    flush=True,
+                )
+                time.sleep(wait)
+        else:
+            print(f"    {i}/{len(parts)} 포기", flush=True)
+            continue
+        save(cache)
+        print(f"    {i}/{len(parts)} 받음 (다음 {wait:.0f}s)", flush=True)
+        time.sleep(wait)
+    print(f"  → 새로 받은 청크 {done}", flush=True)
+
+
+def sources():
+    """검사할 정본 파일들 — 대사(`MAP*`)와 **읽을거리(`book/BOOK*`)**.
+
+    🔴 **읽을거리가 오래 빠져 있었다**(2026-09-03까지). `MAP*.json` 만 긁는 바람에 314 문단이
+      통째로 검사 밖이었고, `마을 풍습에`·`미혹의숲` 같은 게 눈으로만 잡혔다.
+    ⚠ **`--scope` 로 갈라 돌릴 수 있다.** 청크는 문장 목록을 정렬해 묶으므로, 코퍼스에
+      문장을 더하면 **경계가 밀려 캐시가 통째로 빗나간다** — 새 몫만 볼 때는 그쪽만 돌린다.
+    """
+    m = sorted(glob.glob(os.path.join(SCRIPT, "MAP*.json")))
+    b = sorted(glob.glob(os.path.join(SCRIPT, "book", "BOOK*.json")))
+    return {"map": m, "book": b}.get(SCOPE, m + b)
+
+
 CACHE = os.path.join(C.REVIEW_DIR, "spell_cache.json")
 REPORT = os.path.join(C.REVIEW_DIR, "spell_report.md")
 ACCEPT = os.path.join(C.GAME_DIR, "spell_accept.json")
@@ -50,7 +111,7 @@ ACCEPT = os.path.join(C.GAME_DIR, "spell_accept.json")
 def collect():
     """`{문장: {"n": 등장 수, "inject": 주입코드 있나}}` — 블록을 개행으로 쪼갠 조각."""
     uniq = {}
-    for f in sorted(glob.glob(os.path.join(SCRIPT, "MAP*.json"))):
+    for f in sources():
         with open(f, encoding="utf-8") as fh:
             d = json.load(fh)
         for k, v in d.items():
@@ -111,7 +172,7 @@ def sentence_fixes(changed, ok):
 def apply_fixes(fix):
     """`script/` 에 문장 치환을 반영 — `(고친 블록 수, 파일 수)`."""
     nb = nf = 0
-    for f in sorted(glob.glob(os.path.join(SCRIPT, "MAP*.json"))):
+    for f in sources():
         with open(f, encoding="utf-8") as fh:
             d = json.load(fh)
         ch = False
@@ -147,7 +208,11 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="요청 청크 수 제한(시험용)")
     ap.add_argument("--report", action="store_true", help="API 호출 없이 캐시로 보고서만")
     ap.add_argument("--apply", action="store_true", help="A급 문장을 script 에 반영")
+    ap.add_argument("--scope", default="all", choices=("all", "map", "book"), help="검사 범위")
+    ap.add_argument("--delay", type=float, default=40.0, help="`--jobs 1` 일 때 첫 간격(초)")
     a = ap.parse_args()
+    global SCOPE
+    SCOPE = a.scope
 
     os.makedirs(C.REVIEW_DIR, exist_ok=True)
     uniq = collect()
@@ -171,7 +236,11 @@ def main():
         f"  청크 {len(parts)} · 캐시 {len(parts) - len(todo)} · 요청 {0 if a.report else len(todo)}"
     )
     if not a.report:
-        sc.fetch(parts[: a.limit] if a.limit else parts, cache, jobs=a.jobs, on_save=save)
+        sel = parts[: a.limit] if a.limit else parts
+        if a.jobs <= 1:
+            fetch_slow(sel, cache, save, delay=a.delay)
+        else:
+            sc.fetch(sel, cache, jobs=a.jobs, on_save=save)
 
     changed, pairs, skewed = sc.collate(parts, cache, meta)
     auto, manual, dropped = sc.classify(pairs)

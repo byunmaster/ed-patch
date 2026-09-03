@@ -167,8 +167,15 @@ def split_to(text, widths):
       ⇒ **낱말이 갈리는 자리 수를 최소로** 하는 배분을 DP 로 고른다. 한 줄을 덜 채워서라도
       뒤가 좋아지면 그쪽을 고른다. 실측 2026-09-01: 낱말 갈림 **362 → 279**(-23%),
       나빠진 문단 0. 남은 279 는 **문안이 칸보다 길어** 조판으로는 못 푸는 자리다.
-    ⓘ 부호 앞뒤(「，．」·여는 괄호)는 갈려도 읽히므로 비용을 안 매긴다.
+    ⓘ 부호 앞뒤(「，．」·여는 괄호)는 갈려도 읽히므로 **낱말 갈림 비용**을 안 매긴다.
+    🔴 다만 **비용이 낱말 갈림 하나뿐이면 조판이 이상해진다**(2026-09-03 인게임 실측).
+      문안을 줄여 여유가 생기자 DP 가 남는 자리를 아무 데나 흘려, `．` 만 홀로 선 줄과
+      두 글자짜리 줄이 나왔다. ⇒ 값이 낮은 벌점 둘을 더한다:
+        · **줄 첫 글자가 닫는 부호**(`．，」…`) — 앞 줄에 붙는 게 읽힌다
+        · **절반도 못 채운 줄**(마지막 줄은 뺀다) — 앞뒤가 들쭉날쭉해 보인다
+      ⚠ 낱말 갈림보다 **싸게** 매긴다(10 : 5 : 2) — 미관 때문에 갈림을 늘리면 본말전도다.
     """
+    CUT, ORPHAN, SHORT = 10, 5, 2
     n, ln = len(text), len(widths)
     INF = 1 << 20
     memo = {}
@@ -199,7 +206,15 @@ def split_to(text, widths):
             used += w
             k += 1
             sub, rows = f(i + 1, k)
-            cost = sub + _breaks_word(text, k)
+            #   다음 줄이 실제로 어디서 시작하나 — 공백·`|` 는 건너뛴다
+            k2 = k
+            while k2 < n and (text[k2] == "　" or text[k2] == "|"):
+                k2 += 1
+            cost = sub + CUT * _breaks_word(text, k)
+            if k2 < n and text[k2] in PUNCT:
+                cost += ORPHAN
+            if k2 < n and used * 2 < widths[i]:
+                cost += SHORT
             if cost < best[0]:
                 best = (cost, (text[j:k],) + rows)
         memo[key] = best
