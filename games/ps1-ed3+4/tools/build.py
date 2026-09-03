@@ -73,7 +73,13 @@ def reinsert_script(disc, canon, table, report):
             for i, row in sorted(lines.items()):
                 jp = textenc.decode(info["segments"][i][1], disc)
                 kr = typeset.wrap(row["kr"], disc, jp=jp)
-                segs[i] = hangul_map.encode(kr, disc, table)
+                try:
+                    segs[i] = hangul_map.encode(kr, disc, table)
+                except KeyError:
+                    # ⬜ 아직 자리를 못 받은 글자가 있다 — **원문 그대로 두고 센다.**
+                    #    조용히 빼면 화면에서 그 줄만 사라진다(이 레포의 단골 사고).
+                    report["skipped"] += 1
+                    continue
             newmem, _ = scriptmap.rebuild(mem, segs)
             if len(newmem) > sz:
                 raise SystemExit(
@@ -111,8 +117,8 @@ def reinsert_names(exe, disc, table, report):
                     cur.append(hangul_map.encode(kr, disc, table))
                     changed += 1
                     continue
-                except KeyError as e:
-                    raise SystemExit(f"🔴 낱말 「{jp}」→「{kr}」: {e}") from None
+                except KeyError:
+                    report["skipped_names"] += 1
             cur.append(codes)
         if not changed:
             continue
@@ -142,7 +148,7 @@ def main():
             f"   폰트 배열을 넓히는 게 선행 과제다(docs/status.md)."
         )
     table = hangul_map.load(a.disc)
-    report = {"members": 0, "slack": 0, "names": 0}
+    report = {"members": 0, "slack": 0, "names": 0, "skipped": 0, "skipped_names": 0}
 
     # 굽을 글자 — 대사 + 낱말에 실제로 쓰인 것만
     chars = set()
@@ -161,6 +167,7 @@ def main():
     arcs = reinsert_script(a.disc, canon, table, report)
 
     lines = sum(len(v) for v in canon.values())
+    skipped = report["skipped"] + report["skipped_names"]
     left = report.get("names_left", [])
     print(
         f"{a.disc}: 대사 {lines:,}줄 / 멤버 {report['members']} (남는 자리 {report['slack']:,}B) · "
@@ -169,6 +176,12 @@ def main():
     if left:
         print(f"  ⬜ 아직 못 넣는 낱말 {len(left)} (표가 없는 구역 — 길이 고정)")
         print("     " + " · ".join(left[:10]))
+    if skipped:
+        print(
+            f"  ⬜ 글리프 자리가 없어 건너뛴 것 — 대사 {report['skipped']} · 낱말 "
+            f"{report['skipped_names']} (원문 그대로 남는다)\n"
+            f"     ⚠ 대사를 더 옮기면 한자가 물러나 자리가 는다 → `hangul_map.py --freeze`"
+        )
     if a.dry_run:
         print("(dry-run)")
         return 0

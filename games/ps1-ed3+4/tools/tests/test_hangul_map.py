@@ -23,7 +23,7 @@ def _canon(disc):
 
     if not os.path.exists(hangul_map.map_path(disc)):
         raise unittest.SkipTest(f"{disc}: 글리프 자리 정본이 아직 없다")
-    return _canon(disc)
+    return hangul_map.load(disc)
 
 
 class TestHangulMap(unittest.TestCase):
