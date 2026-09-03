@@ -49,6 +49,16 @@
 - 🔴 **「무엇이 빠졌나」를 눈대중으로 정하지 않는다.** 처음에 가타카나 탈락을 손으로
   가정했다가 주인공 이름이 「ジヤラオ」로 읽혔다(2026-09-03). 닻으로 유도하면 안 틀린다.
 
+## 한글 폰트 — Galmuri11 · `dy=-3` (유저 확정 2026-09-03)
+
+후보 다섯을 원본과 **한 줄에 섞어** 굽고 골랐다(`tools/font_test.py`). Galmuri11 만 원본
+일본어와 획 굵기·높이가 같다 — Bold 는 굵고, Condensed 는 자간이 뜨고, 9 는 작다.
+이 레포의 다른 게임(PS1 ED1+2 · PC98 ED1)도 갈무리라 **표기가 한 벌로 간다.**
+
+🔴 저장 규약 둘을 반드시 거친다(`tools/font.py`) — 어기면 **한글만** 무너진다:
+- **`_swap_pairs`** — 이웃한 두 열이 짝으로 뒤바뀌어 저장된다(0↔1 … 10↔11).
+- **`dy=-3`** — 원본 잉크가 0~10행이다. 한 칸 밀면 같은 줄의 일본어와 어긋난다.
+
 ## 도구
 
 ```bash
@@ -56,6 +66,9 @@ python3 tools/dump_arc.py    --disc ed3 --list   # 아카이브·멤버 목록
 python3 tools/dump_script.py --disc ed3          # 대본 런 → work/derived/<disc>/script/
 python3 tools/solve_charmap.py --disc ed3 --fill-jis --write   # 코드표 정본 갱신(제안 단계)
 python3 tools/coverage.py    --disc ed3          # 표가 대본의 몇 %를 읽나
+python3 tools/font_test.py                       # 폰트 후보 × 시험 문장 (굽기 전에 본다)
+python3 tools/symbol_sheet.py                    # 부호 대역 연락처 — 눈으로 라벨링
+python3 tools/probe_font.py                      # 탐침 빌드 — 「비트가 어느 픽셀이 되나」
 sh check.sh                                      # 이 게임의 커밋 전 게이트
 ```
 
