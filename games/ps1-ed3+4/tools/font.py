@@ -50,6 +50,18 @@ FONTS = {
     "ed3": {"exe": "/ED3.EXE", "ram": 0x8009E170, "site": 0x80018AB4},
     "ed4": {"exe": "/SLPS_015.40", "ram": 0x80070BD4, "site": 0x800164F0},
 }
+
+# 🔴 **저장 규약이 디스크마다 다르다** (2026-09-03 실측).
+#   ED3: 열 짝 교환 O · 글자 몸통이 0~10행    ← 인게임 VRAM 과 0/660 픽셀로 검증됨
+#   ED4: 열 짝 교환 X · 글자 몸통이 1~11행    ← ED3 글리프와 **바이트 완전일치**로 유도
+#   ⇒ 두 조합 중 ED4 의 것만이 ED3 의 활자와 1,595자 완전일치를 낸다. 다른 조합(생·전치·
+#     교환)에서는 공통 글리프가 16자뿐이었다 — 우연으로 나올 수가 없는 차이다.
+#   ⚠ ED4 쪽은 **아직 인게임으로 확인 안 했다.** 읽기(코드표 유도)엔 이걸로 충분하지만,
+#     한글을 **굽기 전에는** ED3 때처럼 탐침 글리프로 화면을 봐야 한다.
+LAYOUT = {
+    "ed3": {"swap": True, "top": 0},
+    "ed4": {"swap": False, "top": 1},
+}
 EXE_PATH = FONTS["ed3"]["exe"]  # 하위 호환
 FONT_RAM = FONTS["ed3"]["ram"]
 FONT_OFF = FONT_RAM - EXE_TADDR + EXE_HDR  # 0x08E970
@@ -88,19 +100,30 @@ def _swap_pairs(bits):
 
 
 def read_glyph(exe, code, disc="ed3"):
-    """(12,12) 0/1 — 원본 글리프(꼬리 두 열을 되돌려 **화면에 나오는 그대로**)."""
+    """(12,12) 0/1 — **화면에 나오는 그대로**(저장 규약을 되돌린 뒤 윗줄을 맞춘다).
+
+    두 디스크의 결과를 **같은 틀**로 돌려 주므로 글리프끼리 바로 대조할 수 있다
+    (`solve_charmap_glyph.py` 의 로제타가 이걸 쓴다).
+    """
+    lay = LAYOUT[disc]
     off = font_off(disc)
     raw = fonts.unpack18(exe[off : off + (code + 1) * GLYPH_BYTES], code, ROWS, CELL)
-    return _swap_pairs(raw)
+    g = _swap_pairs(raw) if lay["swap"] else np.array(raw, dtype=np.uint8, copy=True)
+    if lay["top"]:
+        g = np.roll(g, -lay["top"], axis=0)
+        g[-lay["top"] :] = 0
+    return g
 
 
 def write_glyph(buf, code, bits, disc="ed3"):
-    """bytearray 안의 글리프 하나를 덮어쓴다(꼬리 두 열을 게임 규약으로 바꿔서)."""
+    """bytearray 안의 글리프 하나를 덮어쓴다(그 디스크의 저장 규약으로 되돌려서)."""
+    lay = LAYOUT[disc]
     o = font_off(disc) + code * GLYPH_BYTES
     grid = np.zeros((ROWS, CELL), dtype=np.uint8)
     src = np.asarray(bits, dtype=np.uint8)
-    grid[: src.shape[0], : src.shape[1]] = src[:ROWS, :CELL]
-    buf[o : o + GLYPH_BYTES] = fonts.pack18(_swap_pairs(grid), ROWS, CELL)
+    h = min(src.shape[0], ROWS - lay["top"])
+    grid[lay["top"] : lay["top"] + h, : src.shape[1]] = src[:h, :CELL]
+    buf[o : o + GLYPH_BYTES] = fonts.pack18(_swap_pairs(grid) if lay["swap"] else grid, ROWS, CELL)
 
 
 def glyph_count(exe, disc="ed3"):

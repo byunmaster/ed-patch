@@ -19,11 +19,11 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(HERE))))
-import common  # noqa: E402
-import font as F  # noqa: E402
-import textenc  # noqa: E402
+import common
+import font as F
+import textenc
 
-from shared import fonts  # noqa: E402
+from shared import fonts
 
 CANDIDATES = [
     ("Galmuri11 dy=-3  (원본과 같은 자리 0~10행)", "Galmuri11", -3),

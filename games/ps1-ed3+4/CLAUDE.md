@@ -55,16 +55,23 @@
 일본어와 획 굵기·높이가 같다 — Bold 는 굵고, Condensed 는 자간이 뜨고, 9 는 작다.
 이 레포의 다른 게임(PS1 ED1+2 · PC98 ED1)도 갈무리라 **표기가 한 벌로 간다.**
 
-🔴 저장 규약 둘을 반드시 거친다(`tools/font.py`) — 어기면 **한글만** 무너진다:
-- **`_swap_pairs`** — 이웃한 두 열이 짝으로 뒤바뀌어 저장된다(0↔1 … 10↔11).
+🔴 저장 규약을 반드시 거친다(`tools/font.py` — `LAYOUT`) — 어기면 **한글만** 무너진다:
 - **`dy=-3`** — 원본 잉크가 0~10행이다. 한 칸 밀면 같은 줄의 일본어와 어긋난다.
+- **디스크마다 저장이 다르다.** ED3 은 이웃한 두 열이 짝으로 뒤바뀌고(`_swap_pairs`,
+  0↔1 … 10↔11) 몸통이 0~10행, ED4 는 **교환이 없고** 몸통이 1~11행이다.
+  ⚠ ED3 규약으로 ED4 를 읽으면 **글자가 그럭저럭 보이는 채로** 틀린다 — 그 상태에서
+  「ED4 카나를 폰트 렌더로 확인했다」고 적어 두고 있었다(2026-09-03에 바로잡음).
+  규약을 맞추자 두 활자가 **1,595자 비트 완전일치**로 붙었고, 그게 곧 ED4 코드표의
+  로제타가 됐다(`tools/solve_charmap_glyph.py`).
+  ⚠ ED4 쪽 규약은 아직 **인게임으로 확인 안 했다** — 굽기 전에 탐침으로 화면을 본다.
 
 ## 도구
 
 ```bash
 python3 tools/dump_arc.py    --disc ed3 --list   # 아카이브·멤버 목록
 python3 tools/dump_script.py --disc ed3          # 대본 런 → work/derived/<disc>/script/
-python3 tools/solve_charmap.py --disc ed3 --fill-jis --write   # 코드표 정본 갱신(제안 단계)
+python3 tools/solve_charmap.py --disc ed3 --fill-jis --write   # ED3 코드표 (새턴 평문 로제타)
+python3 tools/solve_charmap_glyph.py --fill-jis --write         # ED4 코드표 (활자 로제타)
 python3 tools/coverage.py    --disc ed3          # 표가 대본의 몇 %를 읽나
 python3 tools/font_test.py                       # 폰트 후보 × 시험 문장 (굽기 전에 본다)
 python3 tools/symbol_sheet.py                    # 부호 대역 연락처 — 눈으로 라벨링
@@ -73,4 +80,5 @@ sh check.sh                                      # 이 게임의 커밋 전 게�
 ```
 
 ⚠ `solve_charmap.py` 는 **비결정적 제안**이다(새턴 ED3 JP 덤프가 있어야 돈다).
-빌드는 `charmap_<disc>.json` 정본만 읽는다 — 로제타가 없는 머신에서도 같은 바이트가 나온다.
+`solve_charmap_glyph.py` 는 비트 완전일치라 판단이 안 들지만, 산출물의 자리는 같다 —
+빌드는 `charmap_<disc>.json` 정본만 읽는다(로제타가 없는 머신에서도 같은 바이트가 나온다).

@@ -10,16 +10,14 @@
 import argparse
 import os
 import shutil
-import struct
 import sys
 
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import common  # noqa: E402
-import font  # noqa: E402
-import scriptmap  # noqa: E402
-import textenc  # noqa: E402
+import common
+import font
+import scriptmap
 
 ARCHIVE = "/SCE0/SC000.DAT"
 MEMBER = "..\\DATA\\FT0000.BIN"

@@ -15,9 +15,9 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import common  # noqa: E402
-import font  # noqa: E402
-import textenc  # noqa: E402
+import common
+import font
+import textenc
 
 
 def check(disc):

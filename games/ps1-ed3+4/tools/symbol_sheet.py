@@ -18,9 +18,9 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import common  # noqa: E402
-import font as F  # noqa: E402
-import textenc  # noqa: E402
+import common
+import font as F
+import textenc
 
 LO, HI = 0x02, 0x3F
 PER_ROW = 12

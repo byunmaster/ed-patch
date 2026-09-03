@@ -68,3 +68,33 @@ class TestFontGeometry(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDiscLayout(unittest.TestCase):
+    """🔴 **저장 규약이 디스크마다 다르다** — ED3 은 열 짝 교환, ED4 는 몸통이 한 행 아래.
+
+    ED3 규약으로 ED4 를 읽으면 글자가 **그럭저럭 보이는 채로** 틀린다(획이 한 칸 튄다).
+    실제로 그 상태에서 「ED4 카나를 폰트 렌더로 확인했다」고 적어 두고 있었다.
+    그걸 바로잡자 두 활자가 **1,595자 비트 완전일치**로 붙었다(2026-09-03).
+    """
+
+    def test_layout_table(self):
+        self.assertEqual(font.LAYOUT["ed3"], {"swap": True, "top": 0})
+        self.assertEqual(font.LAYOUT["ed4"], {"swap": False, "top": 1})
+
+    def test_roundtrip_each_disc(self):
+        """디스크마다 쓰고 되읽으면 그대로 나온다 (ED4 는 몸통이 11행)."""
+        rnd = np.random.default_rng(11)
+        for disc in font.LAYOUT:
+            rows = 12 - font.LAYOUT[disc]["top"]
+            for _ in range(20):
+                bits = rnd.integers(0, 2, size=(rows, 12), dtype=np.uint8)
+                buf = bytearray(font.font_off(disc) + 18 * 4)
+                font.write_glyph(buf, 1, bits, disc)
+                back = font.read_glyph(bytes(buf), 1, disc)
+                self.assertTrue((back[:rows] == bits).all(), disc)
+                self.assertFalse(back[rows:].any(), disc)
+
+    def test_ed4_is_not_read_with_ed3_rules(self):
+        """규약이 갈렸다는 것 자체를 박는다 — 같아지면 위 실측이 무너진 것이다."""
+        self.assertNotEqual(font.LAYOUT["ed3"], font.LAYOUT["ed4"])
