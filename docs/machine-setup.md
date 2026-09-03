@@ -103,7 +103,7 @@ python3 -m venv .venv && .venv/bin/pip install pillow capstone numpy scipy
 ```
 
 - **포매터도 여기 있어야 한다** — `pip install ruff`(레포 규약: `ruff check --fix` + `format`).
-  마크다운용 `oxfmt` 는 npm global 이다(아래 Node 절 — `/usr/local/bin` 링크까지 해야 한다).
+  마크다운 포매터는 없다(2026-09-03 에 oxfmt 를 걷어냈다).
 - **torch·LaBSE(`sentence_transformers`)는 깔지 않는다** — `align_semantic.py` 는 제안
   생성기고 빌드는 커밋된 정본(`align_map.json`)만 읽는다. 없어도 빌드가 도는 걸 검증해
   뒀다(2026-08-04).

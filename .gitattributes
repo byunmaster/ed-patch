@@ -1,4 +1,4 @@
-# 텍스트 파일은 저장소·작업 트리 모두 LF (oxfmt/ruff와 일관, 크로스플랫폼)
+# 텍스트 파일은 저장소·작업 트리 모두 LF (ruff 와 일관, 크로스플랫폼)
 *.md text eol=lf
 *.py text eol=lf
 *.json text eol=lf

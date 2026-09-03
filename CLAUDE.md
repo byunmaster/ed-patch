@@ -404,7 +404,7 @@ first-parent 104 중 머지는 **5**뿐이라, 트렁크가 「타이틀이 닫�
 
 - Python: **ruff** (`python3 -m ruff check --fix` + `python3 -m ruff format`). 설정 `ruff.toml`
   (line 100, py312, I/UP/B). 리버싱 관용상 한 글자 변수·매직 오프셋 상수 허용.
-- Markdown: **oxfmt**로 정리.
+- Markdown: **포매터를 쓰지 않는다**(유저 결정 2026-09-03 — oxfmt 를 걷어냈다). 손으로 쓴다.
 - 셸(`set -e`): **값을 정하는 자리에서 실패할 수 있는 명령을 쓰지 않는다.**
   `X=$(command -v foo)` · `X=$(bar_bin)` 처럼 못 찾으면 non-zero 로 끝나는 걸 대입하면
   **그 줄에서 아무 메시지 없이 죽는다.** `|| true` 를 붙이거나 해석 함수를 `return 0` 으로
