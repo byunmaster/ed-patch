@@ -76,6 +76,11 @@ run 4 "$PY" "$G/tools/check_script.py" --disc ed3
 # **표만 다시 계산**하면 되고, 그래서 규격 멤버 전부가 길이 자유다.
 run 4 "$PY" "$G/tools/check_script.py" --disc ed4
 
+echo "  ── 대사 VM opcode 표"
+# 🔴 게이트다 — 표가 달라졌다는 건 원본이 그 덤프가 아니거나 트리 해독이 바뀌었다는 뜻이다.
+#    ⚠ 이건 **메시지 VM** 이다. 스크립트 구간의 데이터를 가진 **이벤트 VM** 은 아직 미지다.
+run 3 "$PY" "$G/tools/opcodes.py" --disc ed3 --check
+
 echo "  ── 조판 상수가 원본을 담나"
 # 🔴 게이트다 — 상한이 원본보다 좁으면 우리 문안도 창 밖으로 나간다.
 run 0 "$PY" "$G/tools/typeset.py" --disc ed3 --check
