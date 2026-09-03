@@ -128,21 +128,46 @@ def write_glyph(buf, code, bits, disc="ed3"):
 
 
 def glyph_count(exe, disc="ed3"):
-    """폰트가 몇 글리프까지 이어지나 — **연속으로 비지 않은** 마지막 자리까지.
+    """🔴 **쓰지 말 것** — 빈칸 연속으로 끝을 추정하면 폰트를 한참 지나친다.
 
-    ⚠ 이건 상한 추정이지 계약이 아니다. 뒤쪽은 다른 자료가 이어질 수 있으니
-      **덮어쓰기 전에 그 코드가 대본에 안 쓰이는지**를 따로 확인한다.
+    실측 2026-09-03: 이 함수가 ED3 5,413 · ED4 5,699 를 뱉었는데 **진짜 폰트는 ~1,900**
+    이다. 그 뒤는 낱말 표와 문자열 풀이다 — 그 자리에 한글을 구우면 **이름·아이템 표를
+    통째로 덮어쓴다.** 「빈 글리프가 64개 이어지면 끝」이라는 가정이 틀렸다(폰트 뒤의
+    자료에도 0 이 드물다).
+
+    ⇒ 자리를 셀 때는 `font_end` 를 쓴다. 이 함수는 옛 호출부를 위해 남겨 두고 상한만 준다.
     """
-    off = font_off(disc)
-    n = 0
-    blanks = 0
-    while off + (n + 1) * GLYPH_BYTES <= len(exe):
-        g = exe[off + n * GLYPH_BYTES : off + (n + 1) * GLYPH_BYTES]
-        blanks = blanks + 1 if not any(g) else 0
-        if blanks > 64:
-            return n - 64
-        n += 1
-    return n
+    return font_end(exe, disc)
+
+
+def _glyphy(exe, code, disc):
+    """이 자리가 글리프다운가 — 잉크가 상식적이고 **마지막 행이 비어 있다**.
+
+    원본 글리프는 12행 중 0~10 행만 쓴다(실측). 폰트 밖 자료는 이 둘을 거의 못 맞춘다.
+    """
+    g = read_glyph(exe, code, disc)
+    ink = int(g.sum())
+    return 8 <= ink <= 100 and not g[ROWS - 1].any()
+
+
+def font_end(exe, disc="ed3", gap=24, limit=3000):
+    """폰트 배열이 끝나는 자리(마지막 글리프 색인 + 1).
+
+    **글리프다운 자리가 `gap` 개 연속으로 끊기면** 거기서 끝난 것으로 본다.
+    ⚠ 이것도 추정이다 — 그래서 `hangul_map` 은 여기에 더해 **원본이 쓰는 코드**를 빼고,
+      게이트가 「배정한 자리를 원본도 쓰나」를 매번 다시 본다.
+    """
+    last, run = -1, 0
+    for c in range(limit):
+        if font_off(disc) + (c + 1) * GLYPH_BYTES > len(exe):
+            break
+        if _glyphy(exe, c, disc):
+            last, run = c, 0
+        else:
+            run += 1
+            if run >= gap:
+                break
+    return last + 1
 
 
 def render(bits, width=DRAW_W):

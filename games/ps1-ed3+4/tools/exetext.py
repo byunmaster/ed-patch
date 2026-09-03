@@ -52,6 +52,21 @@ def is_term(w):
     return w in (TERM_ZERO, TERM_FFFF) or bool(w & 0x8000)
 
 
+def is_start(data, off, pool):
+    """그 자리가 **문자열의 시작**인가 — 풀의 첫 자리이거나, 바로 앞이 종결이거나.
+
+    🔴 이게 빠지면 **가짜 표가 통과한다.** 문자열 한복판을 가리켜도 「거기서부터 읽으면
+       종결이 나온다」는 늘 참이기 때문이다. 실측(2026-09-03): ED3 실행파일에서 그렇게
+       걸린 표가 하나 있었는데, 항목들이 「ち切りの剣」·「の指輪」처럼 **꼬리만** 가리켰다.
+       항등 재구축은 통과한다(같은 걸 도로 쓰니까) — **게이트가 엉뚱한 이유로 초록**이었다.
+    """
+    if off == pool:
+        return True
+    if off < 2 or off - 2 < pool:
+        return False
+    return is_term(struct.unpack_from("<H", data, off - 2)[0])
+
+
 def raw_string(data, off, limit=64):
     """(코드열, 종결값) — **코드표를 안 본다.** 미해독 한자가 껴도 문자열은 문자열이다.
 
@@ -121,6 +136,8 @@ def table_at(data, base, cm, min_n=4):
     good = 0
     for x in ent:
         if base + x >= len(data) or string_end(data, base + x) is None:
+            return None
+        if not is_start(data, base + x, base + ent[0]):
             return None
         if read_string(data, base + x, cm)[0] is not None:
             good += 1

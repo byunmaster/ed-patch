@@ -13,9 +13,16 @@
 🔴 **디스크마다 따로 든다.** ED3·ED4 는 코드표가 다르고(카나 탈락이 다르다) 쓰는 한자도
    달라서, 한 벌로 묶으면 한쪽이 남의 글자를 덮는다.
 
-⚠ **자리는 「그림이 있는」 것만 쓴다.** 폰트 배열의 끝은 `font.glyph_count` 가 빈 칸 연속으로
-   **추정**한 값이라, 그 근처는 폰트가 아닐 수 있다. 그림이 있으면 그 자리가 폰트 안이라는
-   증거다(빈 칸을 덮으면 뭘 덮는지 모른다).
+🔴 **자리가 아주 적다 — ED3 ~120 · ED4 ~116.** 폰트 배열은 ~1,900 글리프에서 끝나고
+   그 중 1,780(ED4 1,874)을 원본이 쓴다. **완성형 2,350 은 못 들어간다.**
+   ⇒ 그래서 이 표는 「완성형 전량」이 아니라 **우리 문안이 실제로 쓰는 글자**만 담는다.
+     번역이 늘면 `--freeze` 로 **덧붙인다**(이미 있는 배정은 절대 안 옮긴다).
+   ⚠ 전면 번역을 하려면 **폰트 배열을 넓혀야 한다**(자리를 옮기고 베이스 상수를 패치).
+     그 전까지는 이 표에 담기는 글자 수가 곧 한계다.
+
+⚠ **폰트 끝은 `font.font_end` 로 잰다.** 옛 `glyph_count`(빈 칸 연속 추정)는 ED3 를 5,413 로
+   봤는데 **진짜는 1,900** 이다 — 그 뒤는 낱말 표와 문자열 풀이라, 거기 구우면 이름·아이템
+   표를 통째로 덮어쓴다. 하마터면 그렇게 구울 뻔했다(2026-09-03).
 
 ⚠ **카나·기호 대역(0x00~카나 끝)은 안 건드린다** — 시스템이 우리 덤프 밖에서 쓸 수 있다.
 """
@@ -107,17 +114,55 @@ def free_slots(disc, used=None):
     used = used_codes(disc) if used is None else used
     exe, _, _ = font.exe_bytes(disc)
     first = max(textenc.kana_map(disc)) + 1
-    n = font.glyph_count(exe, disc)
+    n = font.font_end(exe, disc)
     return [c for c in range(first, n) if c not in used and font.read_glyph(exe, c, disc).any()]
 
 
-def assign(disc, free=None):
-    """{글자: 코드} — 빈 자리 앞에서부터, **공백 먼저 그다음 가나다순**."""
-    chars = list(EXTRA) + ksc_syllables()
+def needed_chars(disc):
+    """우리 문안이 실제로 쓰는 글자 — 번역 정본 + 고유명사 정본에서 모은다.
+
+    ⚠ 코드표에 이미 있는 글자(숫자·부호)는 빼고, **자리를 받아야 하는 것만** 남긴다.
+    """
+    import glossary
+    import script as script_canon
+
+    have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values())
+    out = set(EXTRA)
+    for lines in script_canon.load(disc).values():
+        for row in lines.values():
+            out.update(row["kr"])
+    for kr in glossary.flat(disc).values():
+        out.update(kr)
+    return sorted(ch for ch in out if ch not in have)
+
+
+def assign(disc, free=None, chars=None, keep=None):
+    """{글자: 코드} — **이미 배정된 것은 안 옮기고** 새 글자만 빈 자리에 덧붙인다.
+
+    🔴 옮기면 이미 구운 이미지의 문안이 통째로 다른 글자로 읽힌다. 그래서 `keep`(정본)이
+       먼저고, 새 글자는 남은 자리에서 **가나다순**으로 가져간다.
+    """
+    chars = needed_chars(disc) if chars is None else sorted(chars)
+    keep = keep or {}
     free = sorted(free if free is not None else free_slots(disc))
-    if len(free) < len(chars):
-        raise SystemExit(f"{disc}: 빈 자리가 모자라다 {len(free)} < {len(chars)}")
-    return dict(zip(chars, free[: len(chars)], strict=True))
+    taken = set(keep.values())
+    pool = [c for c in free if c not in taken]
+    out = dict(keep)
+    short = []
+    for ch in chars:
+        if ch in out:
+            continue
+        if not pool:
+            short.append(ch)
+            continue
+        out[ch] = pool.pop(0)
+    if short:
+        raise SystemExit(
+            f"{disc}: 빈 자리가 모자라다 — {len(short)}자를 못 넣는다 "
+            f"(자리 {len(free)} · 이미 쓴 것 {len(taken)})\n"
+            f"   ⇒ 폰트 배열을 넓혀야 한다. 못 넣는 글자 예: {''.join(short[:20])}"
+        )
+    return out
 
 
 def load(disc):
@@ -159,15 +204,18 @@ def main():
     common.verify_source(a.disc)
     used = used_codes(a.disc)
     free = free_slots(a.disc, used)
-    table = assign(a.disc, free)
-    chars = list(table)
+    keep = load(a.disc) if os.path.exists(map_path(a.disc)) else {}
+    if a.check and not os.path.exists(map_path(a.disc)):
+        print(f"⏭ {a.disc}: 글리프 자리 정본이 아직 없다 (쓸 수 있는 자리 {len(free)})")
+        return 0
+    table = assign(a.disc, free, keep=keep)
+    chars = sorted(table, key=lambda c: table[c])
     print(f"{a.disc}: 글자 {len(chars):,} · 원본이 쓰는 코드 {len(used):,} · 빈 자리 {len(free):,}")
     print(
         f"  배정 0x{table[chars[0]]:03X} ~ 0x{table[chars[-1]]:03X} · 남는 자리 {len(free) - len(chars):,}"
     )
-    for ch in (" ", "가", "한", "글", "힣"):
-        if ch in table:
-            print(f"    {ch!r} → 0x{table[ch]:03X}")
+    for ch in list(table)[:6]:
+        print(f"    {ch!r} → 0x{table[ch]:03X}")
     if a.check:
         # 🔴 **부딪힘이 1급이다** — 배정한 자리를 원본도 쓰면 그 글자가 화면에서 바뀐다.
         #    반대로 「지금 계산한 배정과 정본이 다르다」는 경고다: 새 소재를 찾았다는 뜻이고,
