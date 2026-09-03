@@ -45,6 +45,25 @@ def table():
     return out
 
 
+def chapter_keys():
+    """메뉴 맨 위 **챕터 바**에 나가는 JP 키 — 여기만 기본(원판 자리) 글리프를 쓴다."""
+    if not os.path.exists(SYSTEM):
+        return set()
+    with open(SYSTEM, encoding="utf-8") as f:
+        return set(json.load(f).get("chapter", {}))
+
+
+#   🔴 **시스템 표는 0 행을 자르는 창(스탯)에 나간다** — 그래서 기본이 아니라 **한 행 내린
+#     판**으로 인코딩한다(`hangul_map.LOW_PATH`). 안 그러면 초성 윗 가로획이 날아간다.
+#   ⚠ **챕터 바만 예외다** — 그 창은 0 행을 안 자른다(2026-09-03 실측). 내린 판을 쓰면
+#     거기서만 글자가 아래 테두리에 붙는다. 그래서 그 아홉 줄은 기본 글리프로 간다.
+def encoder(jp, low=None, chapters=None):
+    """그 문자열을 인코딩하는 함수 — 챕터 바만 기본, 나머지는 내린 판."""
+    if low and jp not in (chapters or ()):
+        return lambda t: H.encode_kr(t, table={**H.load(), **low})
+    return H.encode_kr
+
+
 def budget(data, s):
     """그 문자열이 쓸 수 있는 바이트 — 뒤따르는 NUL 패딩까지, 종료자 1개는 남긴다."""
     e = s["off"] + len(s["raw"])
@@ -76,13 +95,14 @@ def patch(data, name, tbl):
     out = bytearray(data)
     done, bad = 0, []
     seen = set()
+    low, chapters = H.load_low(), chapter_keys()
     for s in S.strings(data, S.load_base(name)):
         lead, jp = split_lead(S.text_of(s["raw"]))
         kr = tbl.get(jp)
         if kr is None:
             continue
         seen.add(jp)
-        raw = H.encode_kr(lead + kr)
+        raw = encoder(jp, low, chapters)(lead + kr)
         b = budget(data, s)
         if len(raw) > b:
             bad.append((jp, f"예산 {b}B 를 {len(raw) - b}B 넘는다"))
@@ -115,7 +135,7 @@ def patch(data, name, tbl):
         pat = jp.encode("shift_jis")
         if not pat.endswith((b"\x00", b"\x10", b"\x0f")):
             pat += b"\x00"
-        raw = H.encode_kr(kr)
+        raw = encoder(jp, low, chapters)(kr)
         at = out.find(pat)
         while at >= 0:
             pad = 0

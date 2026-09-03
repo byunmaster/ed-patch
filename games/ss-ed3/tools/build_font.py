@@ -32,14 +32,16 @@ from shared import fonts
 
 OUT = os.path.join(C.OUT_DIR, "KANJI12.FON")
 OUT_ASCII = os.path.join(C.OUT_DIR, "ASCII.FON")
-DY = -2  # 🔴 **한 줄 내린다** — 원본은 0~10 행인데 우리는 1~11 행에 앉힌다.
-#   창이 **첫 줄의 0 행을 자른다**(유저가 스탯 창에서 짚었다 2026-08-27). 원본도 같이
-#   잘리지만 티가 안 난다 — `攻` 의 0 행은 **1 픽셀**인데 `공` 의 0 행은 **9 픽셀**(ㄱ 의
-#   가로획)이라 통째로 날아간다. 한글은 초성 ㄱ·ㅁ·ㅂ·ㅍ·ㅈ 이 죄다 윗변이 가로획이라
-#   손해가 원본과 비교가 안 된다.
-#   ⚠ 11 행은 **원본 글자 146 개가 이미 쓰는 자리**라 아래가 잘리지 않는다(실측).
-#   ⚠ 대신 문장부호(`。`·`・`)와 숫자는 원본 자리 그대로라 한글만 1 픽셀 내려앉는다 —
-#     실기로 보고 어색하면 되돌린다(이 상수 하나다).
+DY = -3  # 🔴 **원판 한자와 같은 자리**(0~10 행)에 앉힌다.
+#   ⚠ 창 하나가 **글리프의 0 행을 버린다** — 스탯 창이다(유저가 짚었다 2026-08-27).
+#     원본도 같이 잘리는데 티가 안 난다: 실측 1,841 자 중 89% 가 0 행에 잉크가 있지만
+#     **평균 3.0 · 중앙값 2 화소**뿐이다(攻 1 · 力 1 · 知 1). 한글은 초성 ㄱ·ㅁ·ㅂ·ㅍ·ㅈ 의
+#     윗변이 **가로획**이라 공 9 · 구 9 · 마 8 · 지 8 화소가 통째로 날아간다.
+#   ⓘ **종전에는 전역으로 한 행 내려**(`DY=-2`) 그 창을 피했다. 그러면 안 자르는 창
+#     전부에서 1 px 씩 손해를 보는데, 메뉴 맨 위 **챕터 바**에서 글자가 아래 테두리에
+#     붙는 것으로 드러났다(2026-09-03 실측: 흰 띠 14 행 · 잉크 11 행이 위 3 · 아래 0).
+#   ⇒ 뒤집었다 — 기본은 원판 자리, **자르는 창에 나가는 문안만** 한 행 내린 판으로
+#     인코딩한다(`hangul_map.LOW_PATH` · `bake_low`).
 DX = 1  # 🔴 **왼쪽으로 한 칸 붙어 있던 걸 띄운다.**
 #   Galmuri11 은 12 칸을 왼쪽부터 채워 **2,350 자 전부 왼쪽 여백이 0** 이었다(실측
 #   2026-08-27). 원본 한자는 왼쪽에 한 칸을 비워 두므로, 창 안쪽 경계에 글자가 닿아
@@ -91,7 +93,7 @@ def pad_ascii(asc, pad=None):
 #     146 개가 이미 쓰는 자리라 아래도 안 잘린다(`DY` 주석의 실측).
 #   ⚠ 한글을 올리는 쪽은 안 된다 — 창이 첫 줄 0 행을 자르는데 한글은 초성 가로획이
 #     통째로 날아간다(2026-08-27 에 그래서 내려 앉힌 것이다).
-ASCII_DY = 2
+ASCII_DY = 1
 
 #   🔴 **숫자는 반각으로 써도 전각 글리프로 그려진다**(실측 2026-09-01). 대사창에 반각
 #     `1`(0x31)을 넣었는데 화면엔 `KANJI12` 의 전각 `１`(SJIS 0x8250)이 12px 칸을 먹고 나왔다
@@ -101,7 +103,7 @@ ASCII_DY = 2
 #     아래 두 행이 비어 있으니 **2 행 내려 2~11 행**에 앉히면 한글과 밑이 맞는다.
 #   ⚠ HUD 의 `70 Pia / 0 Goa` 는 게임이 자기 `ASCII.FON` 으로 직접 그린다(실측: 행 3~11 =
 #     `ASCII_DY` 가 먹은 자리) — 여기 안 걸린다.
-DIGIT_DY = 2
+DIGIT_DY = 1
 FULLWIDTH_DIGITS = tuple(range(0x824F, 0x8259))  # ０~９
 
 
@@ -182,6 +184,33 @@ def bake_label_strips(out, base):
     return n
 
 
+#   🔴 **0 행을 자르는 창에만 쓰는 한 벌** — 같은 글자를 **한 행 내려** 빈 슬롯에 굽는다.
+#     기본 글리프는 원판 자리(0~10 행)라 그 창에서 초성 윗획이 날아간다. 그 창에 나가는
+#     문안(`hangul_map.lowered_chars`)만 이 슬롯으로 인코딩한다.
+#   ⚠ 숫자는 안 넣는다 — 원본 자리가 0~9 행이라 0 행을 버려도 잉크가 안 준다.
+LOW_DY = DY + 1
+
+
+def bake_low(out):
+    """자르는 창 전용 글리프를 굽는다 — `(구운 칸 수)`. 배정이 없으면 아무것도 안 한다."""
+    table = H.load_low()
+    if not table:
+        return 0
+    import numpy as np
+
+    bdf = fonts.galmuri()
+    n = 0
+    for ch, idx in table.items():
+        bits = bdf.bits(ch, dy=LOW_DY, rows=F.ROWS, width=F.CELL)
+        cell = np.zeros((F.ROWS, F.CELL), np.uint8)
+        cell[:, DX:] = bits[:, : F.CELL - DX]
+        g = fonts.pack18(cell, rows=F.ROWS)
+        assert len(g) == F.STRIDE, (ch, len(g))
+        out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = g
+        n += 1
+    return n
+
+
 def build(disc=1):
     """`(새 폰트 bytes, 못 찾은 글자)` — 원본과 크기가 같다."""
     base, _ = F.load(disc)
@@ -198,6 +227,7 @@ def build(disc=1):
         out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = shift_down12(
             bytes(out[idx * F.STRIDE : (idx + 1) * F.STRIDE]), DIGIT_DY
         )
+    bake_low(out)
     bake_label_strips(out, base)
     assert len(out) == len(base), (len(out), len(base))
     return bytes(out), missing

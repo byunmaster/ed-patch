@@ -23,6 +23,19 @@ import param as P
 AREAS = (("아이템", P.ITEM), ("적", P.ENEMY), ("마법", P.SPELL))
 
 
+#   🔴 이름은 **스탯·장비 창**에 나간다 — 그 창은 글리프의 0 행을 버려서(`build_font.DY`)
+#     기본 글리프(원판 자리)로 넣으면 초성 윗 가로획이 날아간다. ⇒ **한 행 내린 판**으로.
+_LOW = None
+
+
+def low_table():
+    """기본 배정 + 내린 판을 얹은 표(한 번만 읽는다)."""
+    global _LOW
+    if _LOW is None:
+        _LOW = {**H.load(), **H.load_low()}
+    return _LOW
+
+
 def table():
     """`{JP 이름: 우리 표기}` — 정본 전부를 한 사전으로."""
     with open(os.path.join(C.GAME_DIR, "glossary_manual.json"), encoding="utf-8") as f:
@@ -68,7 +81,7 @@ def patch(b, tbl, table_kr):
             if not kr:
                 continue
             try:
-                raw = H.encode_kr(kr)
+                raw = H.encode_kr(kr, low_table())
             except KeyError as e:
                 bad.append((jp, f"{name}: {e}"))
                 continue

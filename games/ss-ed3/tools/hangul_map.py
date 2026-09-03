@@ -30,6 +30,16 @@ from shared.text import sjis
 
 MAP_PATH = os.path.join(C.GAME_DIR, "hangul_map.json")
 
+#   🔴 **0 행을 자르는 창 전용 배정** — 같은 글자를 **한 행 내려 그린 글리프**를 따로 든다.
+#     기본 글리프는 원판 한자와 같은 자리(0~10 행)에 앉힌다. 그런데 **스탯 창은 글리프의
+#     0 행을 버린다**(2026-08-27 실측) — 한자는 0 행이 1~2 화소라 티가 안 나지만
+#     한글은 초성 윗변이 **가로획**이라 7~9 화소가 통째로 날아간다(공·구·마·지·정).
+#     ⇒ 그 창에 나가는 문안만 **한 행 내린 판**으로 인코딩한다.
+#   ⓘ 종전에는 반대로 했다 — 전역으로 한 행 내려 두고(`DY=-2`) 안 자르는 창에서 1 px 씩
+#     손해를 봤다. 챕터 바에서 글자가 아래 테두리에 붙는 것으로 드러났다(2026-09-03).
+#   ⚠ 이것도 정본이다(`--freeze-low`). 빈 슬롯 목록이 밀리면 이미 넣은 문안이 딴 글자가 된다.
+LOW_PATH = os.path.join(C.GAME_DIR, "lowered_map.json")
+
 
 def ksc_syllables():
     """완성형(KS X 1001) 한글 음절 2,350자 — **가나다순**.
@@ -66,6 +76,46 @@ def load():
     return {ch: i for ch, i in zip(doc["syllables"], doc["slots"], strict=True)}
 
 
+def lowered_chars():
+    """한 행 내린 판이 필요한 글자 — **0 행을 자르는 창에 나갈 수 있는 문안 전량**.
+
+    갈래 셋이다: `/0.BIN` 시스템 표(`system.json`, ⚠ 챕터 바는 뺀다 — 거긴 안 자른다) ·
+    이름 정본(`glossary_manual.json`) · 설명문(`desc_*.json`).
+    ⚠ **한글만** 든다. 반각·전각 숫자는 원본 자리가 0~9 행이라 0 행을 버려도 안 잘린다.
+    """
+    out = set()
+
+    def take(txt):
+        out.update(c for c in txt if "가" <= c <= "힣")
+
+    with open(os.path.join(C.GAME_DIR, "script", "system.json"), encoding="utf-8") as f:
+        doc = json.load(f)
+    for k, v in doc.items():
+        if k.startswith("_") or k == "chapter" or not isinstance(v, dict):
+            continue
+        for x in v.values():
+            take(x)
+    with open(os.path.join(C.GAME_DIR, "glossary_manual.json"), encoding="utf-8") as f:
+        for tbl in json.load(f)["categories"].values():
+            for x in tbl.values():
+                take(x)
+    for n in ("desc_item", "desc_spell"):
+        with open(os.path.join(C.GAME_DIR, "script", f"{n}.json"), encoding="utf-8") as f:
+            for x in json.load(f).values():
+                if isinstance(x, str):
+                    take(x)
+    return sorted(out)
+
+
+def load_low():
+    """자르는 창 전용 배정. 없으면 빈 표 — **없어도 빌드는 돈다**(기본 자리로 그려진다)."""
+    if not os.path.exists(LOW_PATH):
+        return {}
+    with open(LOW_PATH, encoding="utf-8") as f:
+        doc = json.load(f)
+    return {ch: i for ch, i in zip(doc["chars"], doc["slots"], strict=True)}
+
+
 def encode_kr(text, table=None):
     """문안 → 게임 바이트열. 한글은 슬롯 SJIS 로, 나머지는 그대로 SJIS 로.
 
@@ -78,10 +128,12 @@ def encode_kr(text, table=None):
     table = table if table is not None else load()
 
     def one(ch):
-        if "가" <= ch <= "힣":
-            if ch not in table:
-                raise KeyError(f"배정에 없는 음절: {ch!r}")
+        #   ⚠ **표를 한글 밖에도 본다** — 챕터 줄은 전각 숫자까지 대체 슬롯으로 간다.
+        #     기본 표에는 한글밖에 없으니 여기서 달라지는 건 대체 표를 준 자리뿐이다.
+        if ch in table:
             return sjis.sjis_of_index(table[ch])
+        if "가" <= ch <= "힣":
+            raise KeyError(f"배정에 없는 음절: {ch!r}")
         try:
             return ch.encode("shift_jis")
         except UnicodeEncodeError:
@@ -94,12 +146,38 @@ def encode_kr(text, table=None):
     return M.encode_text(text, char=one)
 
 
+def freeze_low(free):
+    """자르는 창 전용 배정을 정본으로 박는다 — **본 배정이 쓰고 남은 빈 슬롯 앞에서부터**."""
+    chars = lowered_chars()
+    rest = [i for i in sorted(free) if i not in set(load().values())]
+    if len(rest) < len(chars):
+        raise SystemExit(f"빈 슬롯이 모자란다: {len(rest)} < {len(chars)}")
+    table = dict(zip(chars, rest[: len(chars)], strict=True))
+    with open(LOW_PATH, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "_doc": "0 행을 자르는 창 전용 글리프 배정(한 행 내려 그린 같은 글자). "
+                "🔴 파생물이 아니라 정본이다 — 자세한 건 tools/hangul_map.py 의 LOW_PATH 주석",
+                "chars": chars,
+                "slots": [table[c] for c in chars],
+            },
+            f,
+            ensure_ascii=False,
+            indent=1,
+        )
+    print(f"✅ 내려앉은 배정 {len(chars)}자 → {LOW_PATH}")
+    print(f"   남은 빈 슬롯 {len(rest) - len(chars):,}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--freeze", action="store_true", help="배정을 정본으로 박는다")
+    ap.add_argument("--freeze-low", action="store_true", help="자르는 창 전용 배정을 박는다")
     a = ap.parse_args()
     used = F.used_indices()
     free = F.free_slots(used)
+    if a.freeze_low:
+        return freeze_low(free)
     table = assign(free)
     syl = list(table)
     print(f"음절 {len(syl):,}  쓰는 글리프 {len(used):,}  빈 슬롯 {len(free):,}")

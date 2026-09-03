@@ -166,7 +166,9 @@ def patch(b, tbl, kr_tables=None, want_over=False):
 
 def main():
     b = P.load()
-    tbl = H.load()
+    #   🔴 설명문은 **도구·마법 창**에 나간다 — 스탯 창과 같은 계열이라 0 행이 잘릴 수
+    #     있다. 안전한 쪽(한 행 내린 판)으로 넣는다(`hangul_map.LOW_PATH`).
+    tbl = {**H.load(), **H.load_low()}
     new, n, bad, over = patch(b, tbl, want_over=True)
     print(f"설명문 {n} 건 재삽입 · 크기 {len(new):,}B (원본 {len(b):,}B)")
     for name, area in AREAS:
