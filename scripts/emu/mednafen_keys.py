@@ -5,7 +5,8 @@
     python3 scripts/emu/mednafen_keys.py --check    # 지금 상태만 보여준다
 
 `scripts/emu.sh` 가 mednafen 을 띄우기 직전에 `--quiet` 로 부른다 — 덮여도 다음 실행에
-되돌아온다. 끄려면 `emu.sh --no-keys`.
+되돌아온다. 끄려면 `emu.sh --no-keys`. 기전(cfg 되돌리기)은 `mednafen_cfg.py` — 영상 규격을
+맞추는 `mednafen_video.py` 와 같은 것을 쓴다.
 
 왜 스크립트인가 — mednafen 은 **종료할 때 cfg 를 다시 쓰고**, 게임 안 입력설정
 (Alt+Shift+1)을 한 번 돌리면 그 기종 배치가 통째로 덮인다. 61개를 손으로 다시 넣는 건
@@ -26,8 +27,11 @@
 """
 
 import argparse
-import pathlib
-import re
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import mednafen_cfg  # noqa: E402
 
 # SDL 스캔코드
 KEY = {
@@ -118,11 +122,13 @@ SETTINGS = {
 }
 
 
-def cfg_path() -> pathlib.Path:
-    import os
-
-    base = os.environ.get("MEDNAFEN_HOME") or (pathlib.Path.home() / ".mednafen")
-    return pathlib.Path(base) / "mednafen.cfg"
+def settings() -> dict:
+    """「이름 → 값」한 벌로 편다. 배치는 위 LAYOUT·SETTINGS 가 정본이다."""
+    out = dict(SETTINGS)
+    for prefix, buttons in LAYOUT.items():
+        for btn, key in buttons.items():
+            out[f"{prefix}.{btn}"] = f"keyboard 0x0 {KEY[key]}"
+    return out
 
 
 def main() -> int:
@@ -130,53 +136,7 @@ def main() -> int:
     ap.add_argument("--check", action="store_true", help="바꾸지 않고 현재 값만 본다")
     ap.add_argument("--quiet", action="store_true", help="바뀐 게 있을 때만 말한다")
     args = ap.parse_args()
-
-    p = cfg_path()
-    if not p.exists():
-        print(f"⛔ cfg 가 없다: {p} — mednafen 을 한 번 실행하면 생긴다")
-        return 1
-
-    text = p.read_text()
-    changed = same = missing = 0
-
-    def apply(name: str, want_value: str) -> str:
-        """설정 한 줄을 정본 값으로. 바뀐 것·같은 것·없는 것을 센다."""
-        nonlocal changed, same, missing, text
-        want = f"{name} {want_value}"
-        m = re.search(rf"^{re.escape(name)} .*$", text, re.M)
-        if not m:
-            # ⚠ 조용히 넘기지 않는다 — 설정 이름이 바뀌면 여기서만 티가 난다.
-            print(f"⚠ 설정이 없다: {name}")
-            missing += 1
-        elif m.group(0) == want:
-            same += 1
-        elif args.check:
-            print(f"  {name}: {m.group(0)[len(name) + 1 :]} → {want_value}")
-            changed += 1
-        else:
-            text = text[: m.start()] + want + text[m.end() :]
-            changed += 1
-        return text
-
-    for name, value in SETTINGS.items():
-        apply(name, value)
-    for prefix, buttons in LAYOUT.items():
-        for btn, key in buttons.items():
-            apply(f"{prefix}.{btn}", f"keyboard 0x0 {KEY[key]}")
-
-    if args.check:
-        print(f"\n맞음 {same} · 다름 {changed} · 없음 {missing}")
-        return 0
-    if changed:
-        p.write_text(text)
-    # ⚠ 조용히 되돌리지 않는다 — 게임 안에서 일부러 바꿔 둔 걸 이 스크립트가 덮을 수도 있어서,
-    #   **덮었을 때는 반드시 말한다.** 바뀐 게 없으면 --quiet 로 입을 다문다(매 실행 붙는다).
-    if changed or not args.quiet:
-        print(
-            f"키 배치: 바꿈 {changed} · 이미 맞음 {same}"
-            + (f" · 없음 {missing}" if missing else "")
-        )
-    return 0
+    return mednafen_cfg.run(settings(), label="키 배치", check=args.check, quiet=args.quiet)
 
 
 if __name__ == "__main__":
