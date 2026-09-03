@@ -92,6 +92,27 @@
 🔴 **표마다 종결이 다르다** — 인물·아이템은 `0xFFFF`/`0x0000` 인데 **마법·몬스터·지명은
 `0x8002`** 다. 앞의 둘만 보고 훑어 「실행파일에 마법·몬스터·지명이 없다」로 한 번 결론이 났다.
 
+## 번역 정본 — 원문은 커밋하지 않는다
+
+```
+script/<disc>/<아카이브>_<멤버>.json   {"lines": {"63": {"jp": "지문8자", "kr": "우리 문안"}}}
+```
+
+색인은 그 멤버의 **조각 순서**(ED3=풀 순서 · ED4=표 순서)이고, `jp` 는 **원문 sha1 앞 8자**다.
+🔴 파서를 고치거나 원본이 바뀌어 색인이 밀리면 **번역이 남의 자리에 붙는데**, 그 사고를
+이 지문 하나가 잡는다(`script.py --check`). 새턴 ED3 이 같은 장치를 쓴다.
+
+번역은 **`work/review/` 에서 하고 정본으로 옮긴다** — 검토표엔 원문이 들어 있어 커밋 금지다.
+
+```bash
+python3 tools/script.py --disc ed3 --review   # 검토표 (원문 + 조판 예산)
+python3 tools/script.py --disc ed3 --sync     # 검토표 → 정본
+```
+
+⚠ **조판 예산은 그 조각의 원문이 쓴 만큼**이다(`typeset.budget`). 상한(ED3 30칸 · ED4 35칸)은
+그 위의 뚜껑일 뿐 — 창은 자리마다 달라서 상한으로 넓게 잡으면 글자가 창 밖으로 나간다.
+⚠ 공백은 **1슬롯**이다(공용 기본값은 0.5 — 그건 ED1+2 규격이다).
+
 ## 도구
 
 ```bash
@@ -107,6 +128,10 @@ python3 tools/dump_names.py   --disc ed3 --write  # 실행파일 안 낱말 표 
 python3 tools/kr_corpus.py    --disc ed3 --find 쥬리오  # 정발이 그 표기를 몇 번 썼나
 python3 tools/match_glossary.py --disc ed4 --kind place # 정발 표기 후보 (제안 단계)
 python3 tools/check_glossary.py --disc ed3        # 고유명사 정본이 원본과 맞나
+python3 tools/hangul_map.py   --disc ed3 --check  # 글리프 자리 정본 (--freeze 로만 갱신)
+python3 tools/exetext.py      --disc ed3 --check  # 실행파일 낱말 표 (항등 재구축)
+python3 tools/typeset.py      --disc ed3 --check  # 조판 상수가 원본을 담나
+python3 tools/script.py       --disc ed3 --check  # 번역 정본 (원문 지문 · 조판)
 sh check.sh                                      # 이 게임의 커밋 전 게이트
 ```
 

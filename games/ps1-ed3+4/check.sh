@@ -76,6 +76,17 @@ run 4 "$PY" "$G/tools/check_script.py" --disc ed3
 # **표만 다시 계산**하면 되고, 그래서 규격 멤버 전부가 길이 자유다.
 run 4 "$PY" "$G/tools/check_script.py" --disc ed4
 
+echo "  ── 조판 상수가 원본을 담나"
+# 🔴 게이트다 — 상한이 원본보다 좁으면 우리 문안도 창 밖으로 나간다.
+run 0 "$PY" "$G/tools/typeset.py" --disc ed3 --check
+run 0 "$PY" "$G/tools/typeset.py" --disc ed4 --check
+
+echo "  ── 번역 정본 (원문 지문 · 조판)"
+# 🔴 게이트다 — 색인이 밀리면 **번역이 남의 자리에 붙는다.** 원문 지문이 그걸 잡는다.
+#    ⚠ 진행률은 실패로 안 친다(할 일이지 실패가 아니다).
+run 6 "$PY" "$G/tools/script.py" --disc ed3 --check
+run 6 "$PY" "$G/tools/script.py" --disc ed4 --check
+
 echo "  ── 글리프 자리 정본이 원본과 부딪히나"
 # 🔴 게이트다 — 배정한 자리를 원본도 쓰면 **그 글자가 화면에서 바뀐다.**
 #    ⚠ 「지금 계산한 배정과 정본이 다르다」는 경고지 실패가 아니다 — 다시 박으려면
