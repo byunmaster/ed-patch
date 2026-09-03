@@ -1,0 +1,264 @@
+{
+ "_doc": [
+  "그림에 박힌 글자의 자리표 — **좌표와 갈래만** 담는다(그림 자체는 커밋 금지).",
+  "`kind`: title=타이틀 화면 · opening=오프닝 내레이션 · ending=엔딩 내레이션 ·",
+  "        credits=엔딩 크레딧 · sign=맵 간판 · frame=액자(글자 없음)",
+  "🔴 대부분 **「흰 잉크 + 투명」 1비트 마스크**다 — 흰 바탕에 그리면 아무것도 안 보인다.",
+  "   미리보기는 어두운 바탕에 올린다(`dump_tim.py`).",
+  "⚠ 자리는 `member` 안의 **몇 번째 TIM 인가**다. 압축을 푼 뒤 매직으로 훑은 순서라,",
+  "   `gmfz`·`tim` 을 고치면 밀릴 수 있다 — 그래서 `--catalog` 가 크기까지 대조한다."
+ ],
+ "disc": "ed3",
+ "images": [
+  {
+   "member": "/M01.DAT!DATA5.BIN",
+   "index": 0,
+   "w": 290,
+   "h": 204,
+   "bpp": 8,
+   "kind": "frame",
+   "note": "타이틀 액자"
+  },
+  {
+   "member": "/M01.DAT!DATA5.BIN",
+   "index": 1,
+   "w": 174,
+   "h": 24,
+   "bpp": 8,
+   "kind": "title",
+   "note": "「冒険の続きをする」 버튼"
+  },
+  {
+   "member": "/M01.DAT!DATA5.BIN",
+   "index": 2,
+   "w": 174,
+   "h": 24,
+   "bpp": 8,
+   "kind": "title",
+   "note": "「はじめから冒険をする」 버튼"
+  },
+  {
+   "member": "/M01.DAT!DATA5.BIN",
+   "index": 3,
+   "w": 260,
+   "h": 76,
+   "bpp": 8,
+   "kind": "title",
+   "note": "로고 — The Legend of Heroes III / 白き魔女"
+  },
+  {
+   "member": "/M01.DAT!DATA5.BIN",
+   "index": 4,
+   "w": 176,
+   "h": 20,
+   "bpp": 8,
+   "kind": "title",
+   "note": "저작권 표기 (Falcom / GMF) — 안 건드린다"
+  },
+  {
+   "member": "/M01.DAT!DATA5.BIN",
+   "index": 9,
+   "w": 160,
+   "h": 32,
+   "bpp": 4,
+   "kind": "title",
+   "note": "글자판(용도 미확인)"
+  },
+  {
+   "member": "/M01.DAT!DATA3.BIN",
+   "index": 0,
+   "w": 512,
+   "h": 256,
+   "bpp": 4,
+   "kind": "opening",
+   "note": "내레이션 — 「この物語は、ガガーブの先に…」"
+  },
+  {
+   "member": "/M01.DAT!DATA3.BIN",
+   "index": 1,
+   "w": 512,
+   "h": 256,
+   "bpp": 4,
+   "kind": "opening",
+   "note": "내레이션 — 「神話、英雄伝、寓話…」"
+  },
+  {
+   "member": "/M01.DAT!DATA3.BIN",
+   "index": 6,
+   "w": 256,
+   "h": 240,
+   "bpp": 4,
+   "kind": "opening"
+  },
+  {
+   "member": "/M01.DAT!DATA3.BIN",
+   "index": 7,
+   "w": 256,
+   "h": 240,
+   "bpp": 4,
+   "kind": "opening"
+  },
+  {
+   "member": "/M01.DAT!DATA3.BIN",
+   "index": 8,
+   "w": 256,
+   "h": 240,
+   "bpp": 4,
+   "kind": "opening"
+  },
+  {
+   "member": "/M01.DAT!DATA2.BIN",
+   "index": 3,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "opening"
+  },
+  {
+   "member": "/M01.DAT!DATA2.BIN",
+   "index": 4,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "opening"
+  },
+  {
+   "member": "/M01.DAT!DATA2.BIN",
+   "index": 5,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "opening"
+  },
+  {
+   "member": "/M01.DAT!DATA2.BIN",
+   "index": 6,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "opening"
+  },
+  {
+   "member": "/M01.DAT!DATA2.BIN",
+   "index": 7,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "opening"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 1,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 3,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 4,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 5,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 6,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 7,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 8,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 9,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA2.BIN",
+   "index": 1,
+   "w": 384,
+   "h": 33,
+   "bpp": 4,
+   "kind": "ending",
+   "note": "「白き魔女と呼ばれる娘が…」"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA3.BIN",
+   "index": 9,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "credits"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA3.BIN",
+   "index": 10,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "credits"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA3.BIN",
+   "index": 12,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "credits"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA3.BIN",
+   "index": 13,
+   "w": 256,
+   "h": 366,
+   "bpp": 4,
+   "kind": "credits"
+  },
+  {
+   "member": "/SCE2/SC203.DAT!..\\TIM\\C_241.TI3",
+   "index": 0,
+   "w": 256,
+   "h": 32,
+   "bpp": 8,
+   "kind": "sign",
+   "note": "맵 간판"
+  }
+ ]
+}

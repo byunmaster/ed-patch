@@ -92,6 +92,11 @@ echo "  ── 번역 정본 (원문 지문 · 조판)"
 run 6 "$PY" "$G/tools/script.py" --disc ed3 --check
 run 6 "$PY" "$G/tools/script.py" --disc ed4 --check
 
+echo "  ── 그림 자리표 (글자가 박힌 그림이 그 자리인가)"
+# 🔴 게이트다 — 자리는 「멤버 안 몇 번째 TIM 인가」라 `gmfz`·`tim` 을 고치면 밀린다.
+#    밀린 채로 그리면 **엉뚱한 그림에 한글이 박힌다.** 크기까지 대조한다.
+run 3 "$PY" "$G/tools/dump_tim.py" --disc ed3 --catalog
+
 echo "  ── UI 문안 (원문 지문 · 길이)"
 # 🔴 게이트다 — 표가 없는 자리는 **길이 고정**이라, 넘치면 그 문안이 통째로 안 들어간다.
 #    ⚠ 진행률은 실패로 안 친다.
