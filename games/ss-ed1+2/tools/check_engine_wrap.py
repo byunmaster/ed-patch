@@ -47,6 +47,8 @@ def scan(body):
 
 def main():
     show = int(sys.argv[sys.argv.index("--show") + 1]) if "--show" in sys.argv else 0
+    # ⚠ **계측용**이다 — 「왜 못 밀었나」를 사유별로 센다. 무엇을 할지는 사람이 정한다.
+    why = {} if "--why" in sys.argv else None
     canon = patch_scn.load_canon()
     _f, mm = common.open_image()
     canon = patch_scn.augment_names(canon, mm)
@@ -61,7 +63,8 @@ def main():
         for e in entries:
             jp = e.get("text", "")
             # ⚠ 주입 `%c` 쌍이 든 블록은 **되살린 원문**으로 조판해야 이름칸이 붙는다.
-            built = patch_scn.canon_of(canon, jp, sites.get(int(e["file_offset"], 16)))
+            w = [] if why is not None else None
+            built = patch_scn.canon_of(canon, jp, sites.get(int(e["file_offset"], 16)), w)
             if not built:
                 continue
             blocks += 1
@@ -70,6 +73,9 @@ def main():
             head += len(h)
             ex_over += [(path, *x) for x in o]
             ex_head += [(path, *x) for x in h]
+            if w:
+                for reason, _ln in w:
+                    why[reason] = why.get(reason, 0) + 1
     mm.close()
     _f.close()
 
@@ -80,6 +86,10 @@ def main():
         print(f"     [{n}행] {path} {seg[:60]!r}")
     for _path, ch, prev, ln in ex_head[:show]:
         print(f"     [{ch}] …{prev[-14:]!r} / {ln[:14]!r}")
+    if why:
+        print("  ── 밀어내기가 포기한 사유 (`--why`)")
+        for k, v in sorted(why.items(), key=lambda x: -x[1]):
+            print(f"     {v:5,}  {k}")
     return 1 if over else 0
 
 

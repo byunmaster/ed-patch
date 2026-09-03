@@ -16,7 +16,7 @@ import unittest
 _T = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _T)
 
-import inject_pairs as I  # noqa: E402
+import inject_pairs as I
 
 
 def callsite(lead=0x83, low=0x5C):
@@ -124,7 +124,7 @@ class Words(unittest.TestCase):
         pairs = I.pairs_of("%c%c%cニア%c\nテスト%c", args)
         got = I.arg_words(d, args, pairs)
         self.assertEqual(got, [(0x00, 0x9709, 0xE720), (0x0C, 0xE15C, 0xE120)])
-        for off, old, new in got:
+        for _off, old, new in got:
             self.assertEqual(len(struct.pack(">H", old)), len(struct.pack(">H", new)))
 
     def test_shared_producer_is_refused(self):

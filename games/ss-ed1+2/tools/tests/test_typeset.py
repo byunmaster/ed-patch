@@ -3,6 +3,7 @@
 전부 2026-08-27 정적 QA 가 빌드 이미지에서 **실제로 잡아낸 것**이다.
 """
 
+import itertools
 import os
 import sys
 import unittest
@@ -176,6 +177,30 @@ class Typeset(unittest.TestCase):
         self.assertEqual(len(T.lines("1" * 90)[0]), 28, "반각은 28자")
         # 14.0 까지는 들어가고, 넘으면 나간다
         self.assertEqual(T.lines("가" * 13 + ".."), ["가" * 13 + ".."])
+
+    def test_nudge_drops_two_chars_when_one_would_orphan(self):
+        """🔴 **한 글자로 안 되면 두 글자**를 내린다(2026-09-03).
+
+        한 글자만 내리면 앞 줄이 고아가 되어 포기하던 자리가 있었다 — 실측으로 그게
+        포기 사유의 **전부**(37건)였다. 둘까지 내리게 하니 37 → 21 이 되고 고아 수는
+        **그대로**다(158). 셋 이상은 오히려 나빠진다(22) — `NUDGE_BACK` 주석의 표.
+        """
+        self.assertEqual(T.NUDGE_BACK, (1, 2), "표를 다시 재지 않고 바꾸지 않는다")
+
+        def heads(x):
+            ls = T.lines(x)
+            return sum(1 for a, b in itertools.pairwise(ls) if b and b[0] in T.HEAD_BAN and a)
+
+        # 한 글자만 내리면 고아가 나서 포기하고, 두 글자면 되는 자리(합성 탐색으로 찾았다)
+        seg = "아아사자자자사차라아사가자다!가라차나다사자나나나차라마자"
+        self.assertEqual(heads(seg), 1, "표본이 금칙을 안 만든다")
+        try:
+            T.NUDGE_BACK = (1,)
+            self.assertEqual(heads(T.nudge(seg)), 1, "한 글자로도 되면 표본이 무의미하다")
+            T.NUDGE_BACK = (1, 2)
+            self.assertEqual(heads(T.nudge(seg)), 0, "두 글자로도 못 민다")
+        finally:
+            T.NUDGE_BACK = (1, 2)
 
     def test_a_glyph_starting_inside_the_line_is_drawn(self):
         """🔴 판정은 **시작 위치**다 — 커서가 13.5 면 전각 하나가 더 들어간다(줄 = 29 반각).

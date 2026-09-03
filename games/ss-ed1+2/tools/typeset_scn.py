@@ -188,11 +188,32 @@ def wrap(seg):
     return out
 
 
-def nudge(seg):
+# 🔴 **밀어낼 때 내려 보는 글자 수** — 위 표가 정본이다. 늘리면 오히려 나빠진다.
+NUDGE_BACK = (1, 2)
+
+
+def _log(why, reason, line):
+    """왜 못 밀었나 — ⚠ **계측용이다.** `why` 가 None 이면 아무 일도 안 한다."""
+    if why is not None:
+        why.append((reason, line[:16]))
+
+
+def nudge(seg, why=None):
     """줄머리에 올 부호를 **앞 글자와 함께** 내린다 — 개행을 넣어 미리 끊는다.
 
     엔진에는 금칙 처리가 없어 「…불러들였다 / .」처럼 부호만 다음 줄로 떨어진다
     (실측 2026-08-30: 조판된 13,733블록에 **491곳**).
+
+    🔴 **몇 글자를 내리나 — 하나로 안 되면 둘**(2026-09-03). 전량 실측(13,822블록):
+
+        최대 1글자   줄머리 부호 37 · 고아 158 · 창 초과 0   ← 그전
+        최대 2글자   줄머리 부호 **21** · 고아 158 · 창 초과 0   ← 이것 (순이득)
+        최대 3글자   줄머리 부호 22 · 고아 158 · 창 초과 0
+        고아 허용    줄머리 부호 25 · 고아 **182** · 창 초과 0   ← 부호 하나에 고아 둘, 손해
+
+    ⚠ **고아 제한을 푸는 건 손해다**(위 넷째 줄) — 08-30 의 판단이 접기 모델을 고친
+      뒤에도 그대로 맞다. 이득은 「제한을 푸는 것」이 아니라 **「더 내릴 수 있게 하는 것」**에
+      있었다. 셋 이상은 오히려 나빠진다(내린 글자가 다음 줄머리에 새 부호를 만든다).
 
     🔴 **막는 것은 「줄이 느는 것」이 아니라 「고아 줄」과 「창 초과」다**(2026-08-30 정정).
        무조건 밀면 창이 넘치고(잘린다), 반대로 「줄이 한 줄이라도 늘면 금지」로 조이면
@@ -220,18 +241,32 @@ def nudge(seg):
             prev, pat = ws[i - 1]
             if not (ln and ln[0] in HEAD_BAN and prev):
                 continue
-            if len(prev) < 2:
+            # 🔴 **한 글자로 안 되면 두 글자를 내린다**(2026-09-03). 한 글자만 내리면 앞
+            #    줄이 고아가 되어 포기하던 자리가 많았다 — 실측으로 그게 **포기 사유의
+            #    전부**(37건 100%)였다. 두 글자면 앞 줄이 두 글자로 남아 고아가 아니다.
+            reason = "앞 줄이 짧다"
+            for back in NUDGE_BACK:
+                if len(prev) < back + 1:
+                    continue
+                at = pat + len(prev) - back  # 앞 줄 **꼬리 글자들** — 부호와 함께 내린다
+                # 🔴 **마크업 한복판에서 자르면 계약이 깨진다** — `%s` 를 `%`/`\n`/`s` 로
+                #    가르면 소프트락이다(실측 2026-08-30: 건너뛴 블록이 38 늘었다).
+                if at in inner or not 0 < at < len(out) or out[at - 1] == "\n":
+                    reason = "마크업 한복판이라 못 자른다"
+                    continue
+                cand = lines(out[:at] + "\n" + out[at:])
+                # 🔴 창을 넘기거나 **고아를 늘리면** 안 민다 — 안 민 것보다 나빠진다
+                if len(cand) > WIN_ROWS:
+                    reason = "밀면 창이 넘친다"
+                    continue
+                if _orphans(cand) > base:
+                    reason = "밀면 고아가 는다"
+                    continue
+                out = out[:at] + "\n" + out[at:]
+                break
+            else:
+                _log(why, reason, ln)
                 continue
-            at = pat + len(prev) - 1  # 앞 줄 **마지막 글자**의 자리 — 부호와 함께 내린다
-            # 🔴 **마크업 한복판에서 자르면 계약이 깨진다** — `%s` 를 `%`/`\n`/`s` 로 가르면
-            #    소프트락이다(실측 2026-08-30: 안 막았더니 건너뛴 블록이 38 늘었다).
-            if at in inner or not 0 < at < len(out) or out[at - 1] == "\n":
-                continue
-            cand = lines(out[:at] + "\n" + out[at:])
-            # 🔴 창을 넘기거나 **고아를 늘리면** 안 민다 — 안 민 것보다 나빠진다(위 주석)
-            if len(cand) > WIN_ROWS or _orphans(cand) > base:
-                continue
-            out = out[:at] + "\n" + out[at:]
             break
         else:
             return out
@@ -418,16 +453,18 @@ def to_saturn(kr):
     return None if _LEFTOVER.search(kr) else kr
 
 
-def typeset(jp, kr, names):
+def typeset(jp, kr, names, why=None):
     """`(우리 블록, 못 한 이유)` — 원문 마크업을 그대로 두고 텍스트만 간다.
 
     ⚠ 마지막에 **금칙 밀어내기**를 건다(`nudge`) — 엔진이 접은 뒤 부호가 줄머리에
       떨어지는 자리를 미리 끊는다. 개행만 넣으므로 구조 계약은 그대로다.
+    ⚠ `why` 에 리스트를 주면 **밀어내기가 포기한 사유**가 담긴다(계측용 — `check_engine_wrap`).
+      실패 사유(둘째 반환값)와는 다른 것이다.
     """
-    built, why = _typeset(jp, kr, names)
+    built, bad = _typeset(jp, kr, names)
     if built is None:
-        return None, why
-    return "%c".join(nudge(seg) for seg in built.split("%c")), None
+        return None, bad
+    return "%c".join(nudge(seg, why) for seg in built.split("%c")), None
 
 
 def _typeset(jp, kr, names):

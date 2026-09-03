@@ -455,7 +455,7 @@ def load_ours():
 _NAMES = None
 
 
-def _canon_get(canon, jp, jp_mark=None):
+def _canon_get(canon, jp, jp_mark=None, why=None):
     """원문 → **조판까지 끝난** 우리 블록. 없거나 조판이 안 되면 None.
 
     🔴 사전은 **문안만** 담는다(화자·창 전환·개행이 없다). 그대로 넣으면 구조 계약이
@@ -476,7 +476,7 @@ def _canon_get(canon, jp, jp_mark=None):
         _NAMES = typeset_scn._names()
     import typeset_scn
 
-    built, _bad = typeset_scn.typeset(jp_mark or jp, kr, _NAMES)
+    built, _bad = typeset_scn.typeset(jp_mark or jp, kr, _NAMES, why)
     return built
 
 
@@ -495,7 +495,7 @@ def sites_for(path):
     return _SITES.get(path, {})
 
 
-def canon_of(canon, jp, site=None):
+def canon_of(canon, jp, site=None, why=None):
     """조판까지 끝난 우리 블록 — 주입 쌍이 있으면 되살렸다 되돌린다.
 
     🔴 **`_canon_get` 을 직접 부르지 않는다.** 부르는 자리가 넷인데(재삽입 · 슬롯 계획 ·
@@ -503,12 +503,12 @@ def canon_of(canon, jp, site=None):
        계획에서 빠진다(화면에서 글자가 사라진다).
     """
     if not site:
-        return _canon_get(canon, jp)
+        return _canon_get(canon, jp, why=why)
     import inject_pairs as ip
 
     pairs = sorted((int(i), ch) for i, ch in site["glyphs"].items())
     jp_mark, tails = ip.restore(jp, pairs)
-    kr = _canon_get(canon, jp, jp_mark)
+    kr = _canon_get(canon, jp, jp_mark, why)
     return None if kr is None else ip.reinsert(kr, tails)
 
 
