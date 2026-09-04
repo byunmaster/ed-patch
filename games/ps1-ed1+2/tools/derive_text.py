@@ -61,6 +61,16 @@ def transform(s):
     return s
 
 
+def dos_dir(game="ED1"):
+    """정발 원본 폴더 — **디렉터리를 훑어야 하는 소비자**용(`_dos_file` 은 파일 하나를 읽는다).
+
+    ⚠ 예전엔 `DOS_ED1` 상수를 내보냈는데, ED2 착수(`f095d7a3`)로 원본이 게임별로 갈리면서
+    사라졌다. 그때 `gen_textmap`·`past_battle_jeongbal` 이 남겨져 **임포트조차 안 되는 상태**로
+    한 달 있었다(2026-09-04 발견). 상수를 되살리면 같은 자리에서 또 갈리므로 접근자로 둔다.
+    """
+    return os.path.join(DOS_DIR, DOS_GAME_DIR[game])
+
+
 def _dos_file(rel, game="ED1"):
     sub = DOS_GAME_DIR[game]
     path = os.path.join(DOS_DIR, sub, rel)

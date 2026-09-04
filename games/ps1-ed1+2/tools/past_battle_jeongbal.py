@@ -53,7 +53,7 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 import patch_items as P
 import reinsert_kr_pilot as R
 from common import OUT_DIR, REVIEW_DIR, extract
-from derive_text import _PUNCT_SP, DOS_ED1, TEXTMAP_DIR, jkey
+from derive_text import _PUNCT_SP, TEXTMAP_DIR, _dos_file, jkey
 
 # 정발 전투 시스템 문구가 사는 구간. 앞은 메뉴·아이템명(patch_sys_ui 관할), 뒤는 지명 블롭.
 SYS_LO, SYS_HI = 0x23900, 0x27950
@@ -119,7 +119,7 @@ def jeongbal_strings(paths=("ED1MAIN.EXE",)):
     """정발 실행 파일의 한글 문자열 [(파일, 오프셋, 바이트길이, 텍스트)]."""
     out = []
     for rel in paths:
-        b = open(os.path.join(DOS_ED1, rel), "rb").read()
+        b = _dos_file(rel)
         for m in _KR_RUN.finditer(b):
             if not (SYS_LO <= m.start() <= SYS_HI):
                 continue
