@@ -53,6 +53,19 @@ SUB_FONT = _local("fonts", "YeonSung-Regular.ttf")
 
 W, H, TOP = 260, 76, 25  # 금판 0~24 는 **원본 픽셀 그대로** 쓴다
 BIG_W, BIG_H = 252, 34  # 큰 글자 칸 (원본 258×34)
+# ⚠ 로고가 **둘**이다 — 타이틀 화면(260×76)과 **오프닝 끝(400×118)**. 오프닝 쪽을 놓쳐서
+#   번역이 안 된 채로 떴다(유저 지적 2026-09-04). 자리 값은 원본에서 잰 것이다.
+OP = {
+    "src": "title_DATA5_3_260x76_8bpp.png",
+    "w": 400,
+    "h": 118,
+    "top": 35,
+    "big_w": 392,
+    "big_h": 67,
+    "sub_rows": 16,
+    "sub_ink": 12,
+    "sub_bottom": 117,
+}
 SUB_TEXT = "또 하나의 영웅들의 이야기"
 SUB_BOTTOM = 69  # 부제 아래를 원본(68행)에 맞춘다
 SS = 8  # 글자는 8배로 찍고 줄인다
@@ -352,6 +365,60 @@ def make_logo():
     ), f"자간 {gap} · 큰 글자 폭 {big_w} · 부제 폭 {sub.width} · 색 {n}"
 
 
+def make_logo_op():
+    """오프닝 끝의 큰 로고(400×118) — 금판은 **그 그림 것**을 그대로 쓴다."""
+    src = np.asarray(ai_big_title())
+    a = src[..., 3] > 0
+    col = src[..., :3].copy()
+    a2 = ndimage.binary_dilation(a, _disk(src.shape[1] / OP["big_w"]))
+    col[a2 & ~a] = 255
+    b = Image.fromarray(np.dstack([col, (a2 * 255).astype(np.uint8)]), "RGBA").resize(
+        (OP["big_w"], OP["big_h"]), Image.LANCZOS
+    )
+    arr = np.asarray(b).astype(np.float32)
+    m = arr[..., 3] >= 128
+    arr[m & ~ndimage.binary_erosion(m, np.ones((3, 3)))] = (255, 255, 255, 255)
+    arr[..., :3] = _soften_edge(arr[..., :3], m, EDGE)
+    arr = np.clip(arr, 0, 255).astype(np.uint8)
+    arr[~m] = 0
+    arr[..., 3] = m * 255
+    rr = _runs(arr[..., 3] > 0)
+    widths = [e - s for s, e in rr]
+    gap = max(1, round((OP["big_w"] - sum(widths)) / (len(rr) - 1)))
+    big_w = sum(widths) + gap * (len(rr) - 1)
+    laid = np.zeros((OP["big_h"], big_w, 4), np.uint8)
+    x = 0
+    for s, e in rr:
+        laid[:, x : x + (e - s)] = arr[:, s:e]
+        x += (e - s) + gap
+    sub = subtitle(rows=OP["sub_rows"], ink_rows=OP["sub_ink"], width=OP["w"] - 8)
+    plate = np.asarray(op_plate())
+    cv = Image.new("RGBA", (OP["w"], OP["h"]), (0, 0, 0, 0))
+    cv.alpha_composite(Image.fromarray(laid, "RGBA"), ((OP["w"] - big_w) // 2, OP["top"]))
+    cv.alpha_composite(sub, ((OP["w"] - sub.width) // 2, OP["sub_bottom"] - sub.height))
+    a2 = np.asarray(cv).copy()
+    a2[: OP["top"]] = plate[: OP["top"]]  # 금판은 색 줄이기 **전에** 붙인다
+    out, _ = _fit_palette(a2, first=185)
+    out[: OP["top"]] = plate[: OP["top"]]  # …그리고 뒤에 다시 (색이 흔들리지 않게)
+    return Image.fromarray(
+        out, "RGBA"
+    ), f"자간 {gap} · 큰 글자 폭 {big_w} · 부제 폭 {sub.width} · 색 {_colors(out)}"
+
+
+def op_plate():
+    """오프닝 로고의 금판 — 원본 그림에서 그대로 떠 온다."""
+    import dump_tim
+    import tim as timmod
+
+    lba, size = common.iso_files("ed3")["/M01.DAT"]
+    data = common.read_lba("ed3", lba, size)
+    _, ents = common.arc_parse(data)
+    m = {e[0]: (e[1], e[2]) for e in ents}
+    off, sz = m[next(k for k in m if k.endswith("OP_MAIN.BIN"))]
+    _, ts = dump_tim.images(bytes(data[off : off + sz]))
+    return timmod.to_image(ts[19][1]).convert("RGBA")
+
+
 # ── 버튼 ────────────────────────────────────────────────────────────────────
 def _btn_src(idx):
     return Image.open(f"{SPEC}/title_DATA5_{idx}_174x24_8bpp.png").convert("RGBA")
@@ -481,6 +548,7 @@ def main():
     jobs = []
     if os.path.exists(AI_SRC):
         jobs.append(("title_logo.png", make_logo))
+        jobs.append(("title_logo_op.png", make_logo_op))
     else:
         print(f"⬜ 로고는 건너뛴다 — {AI_SRC} 가 없다(머신 전용). 커밋된 PNG 가 정본이다.")
     for idx, txt, name in BUTTONS:
