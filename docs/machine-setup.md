@@ -104,7 +104,7 @@ python3 -m venv .venv && .venv/bin/pip install pillow capstone numpy scipy
 
 - **포매터도 여기 있어야 한다** — `pip install ruff`(레포 규약: `ruff check --fix` + `format`).
   마크다운 포매터는 없다(2026-09-03 에 oxfmt 를 걷어냈다).
-- **torch·LaBSE(`sentence_transformers`)는 깔지 않는다** — `align_semantic.py` 는 제안
+- **torch·LaBSE(`sentence_transformers`)는 깔지 않는다** — `past_align_semantic.py` 는 제안
   생성기고 빌드는 커밋된 정본(`align_map.json`)만 읽는다. 없어도 빌드가 도는 걸 검증해
   뒀다(2026-08-04).
 - ⚠ `scipy` 를 빠뜨리기 쉽다 — `patch_gfx_title.py` 가 `scipy.ndimage` 로 인페인트를 한다.
@@ -214,7 +214,7 @@ python3 games/ps1-ed1+2/tools/build.py
 `work/derived` 가 통째로 없으면 덤프 둘만 만들면 된다(`extract_scn.py` · `extract_dos_kr.py`).
 
 > ⚠⚠ **이 대조를 통과하기 전에는 정본 갱신기를 절대 돌리지 말 것** —
-> `align_map.py --update` · `assign_pages` · `lock_lines.py --freeze`.
+> `align_map.py --update` · `past_assign_pages` · `lock_lines.py --freeze`.
 > **그 머신의 동점 결과를 정본으로 승격시킨다**(루트 `CLAUDE.md` 제1 원칙). 검증기를
 > 갱신기로 쓰는 셈이고, 회사 빌드와 집 빌드가 갈렸던 사고(2026-08-03)의 재발 경로다.
 

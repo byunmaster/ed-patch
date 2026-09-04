@@ -21,9 +21,9 @@
 ⚠ 배정 결과는 **커밋되는 정본**(`segment_tables.json`)에 박는다. 빌드는 정본만 읽는다 —
 제1원칙(빌드 결정성).
 
-  python3 tools/segment_copy.py ED1SCN1              # 배정 제안 보기
-  python3 tools/segment_copy.py ED1SCN1 --apply      # segment_tables.json 갱신
-  python3 tools/segment_copy.py ED1SCN1 --retarget   # 정본에 맞춰 블록 배정을 옮긴다
+  python3 tools/past_segment_copy.py ED1SCN1              # 배정 제안 보기
+  python3 tools/past_segment_copy.py ED1SCN1 --apply      # segment_tables.json 갱신
+  python3 tools/past_segment_copy.py ED1SCN1 --retarget   # 정본에 맞춰 블록 배정을 옮긴다
 """
 
 import bisect
@@ -143,7 +143,7 @@ def _resolve_pins(pin):
 
     ⚠ **제자리와 역행은 성격이 다르다.**
     · 제자리(연속 두 세그먼트가 같은 파일을 확신) = **사본 번짐**이 굳은 자국이다.
-      `recover_twins` 가 앞 세그먼트의 배정을 뒤로 복제해 놓은 것이라 **뒤쪽 핀을 푼다**
+      `past_recover_twins` 가 앞 세그먼트의 배정을 뒤로 복제해 놓은 것이라 **뒤쪽 핀을 푼다**
       (루디아 마을 실측: `#4`·`#5` 가 나란히 `T_013` 87%·72% → `#5` 를 풀면 DP 가
       `T_014`·`T_015` 로 대각선을 세운다. 안 풀면 마을 6세그먼트가 통째로 배정을 잃었다).
     · 역행 = 시점 순서가 아니라는 뜻이니 그 맵은 통째로 건너뛴다.
@@ -416,7 +416,7 @@ def scene_map_doc(game, scenes=_SCENES):
         "",
         "`시점 사본` 은 그 세그먼트가 쓰는 정발 파일이다(`segment_tables.json` 이 정본).",
         "`고유 화자` 는 **그 씬에서 이 세그먼트에만 나오는** 정발 화자 — 어느 대목인지 가려낸다.",
-        "생성: `python3 tools/segment_copy.py --map > docs/scene-map.md`",
+        "생성: `python3 tools/past_segment_copy.py --map > docs/scene-map.md`",
         "",
     ]
     seg = load_seg_tables()
@@ -502,7 +502,7 @@ def audit(game, scenes=_SCENES):
                 if "unify_common_lines" in (o.get("note") or ""):
                     tally["🛒 상투 문구 공통(완료)"] += 1
                     continue
-                # 시스템 문구 일원화(`sys_phrases`)도 **일부러** 한 엔트리를 공유한다 —
+                # 시스템 문구 일원화(`past_sys_phrases`)도 **일부러** 한 엔트리를 공유한다 —
                 # 세그먼트 밖을 가리키는 게 의도다. 안 빼면 감사가 10→53 으로 뛴다(2026-08-06,
                 # 전부 `어느 것을/어느것을` 같은 표기 흔들림 — 통일이 없애려던 바로 그것).
                 if "시스템 문구 일원화" in (o.get("note") or ""):
@@ -685,7 +685,7 @@ def twins(game, scn, rows):
     재조준은 이동 151건 중 129건이 확정 락과 부딪혔다(2026-08-05).
 
     진짜 표적은 **같은 JP 가 시점별로 반복되는 블록**이다 — 상점 인사·여관·현자처럼
-    `recover_twins`(JP 동일 → 배정 복제)가 한 시점의 문안을 전 시점에 퍼뜨린 자리.
+    `past_recover_twins`(JP 동일 → 배정 복제)가 한 시점의 문안을 전 시점에 퍼뜨린 자리.
     유사도로는 원리적으로 못 가르고, 세그먼트가 정하면 답이 하나로 떨어진다.
     """
     from align_jp_kr import load_jp_scene
@@ -836,7 +836,7 @@ def retarget(game, scn, scn_name):
             cur.update(table=t, entry_id=m)
             if chain is not None:
                 cur["chain"] = chain
-            cur["note"] = f"시점 사본 정본(segment_copy 2026-08-05) — {s}#{n} → {t}#{m}"
+            cur["note"] = f"시점 사본 정본(past_segment_copy 2026-08-05) — {s}#{n} → {t}#{m}"
             sc[str(e)] = cur
         json.dump(ov, open(ov_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         print(f"  → align_overrides.json 반영 {len(moves)}건")

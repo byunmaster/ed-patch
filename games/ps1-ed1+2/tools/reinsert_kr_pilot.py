@@ -105,7 +105,7 @@ def rendered(scn):
     읽고, 튜플 모양을 잘못 보면 **빈 문자열**이 나온다. 둘 다 「문제 없음」으로 보인다.
 
     ⚠ 이건 **문자열이 필요한 쪽**을 위한 것이다. 창·구조를 봐야 하면 `load_translations` 를
-    직접 부른다(`jeongbal_ledger`·`check_ed2_reinsert` 가 그렇다) — 그건 합칠 자리가 아니다.
+    직접 부른다(`past_jeongbal_ledger`·`check_ed2_reinsert` 가 그렇다) — 그건 합칠 자리가 아니다.
     """
     import io
 
@@ -3056,7 +3056,7 @@ def apply_lock_src(pairs, scn_name):
 
     락은 원래 문안 해시 **검증만** 했다. 그러면 배정이 흔들릴 때 잡아내되 **고치지는 못한다** —
     "확정분을 계산에서 빼낸다"는 취지의 절반만 구현된 상태였다(`lock_lines` 독스트링은 처음부터
-    재적용을 약속하고 있었다). 2026-08-03(3) 집↔회사 이동에서 이게 드러났다: `align_semantic`
+    재적용을 약속하고 있었다). 2026-08-03(3) 집↔회사 이동에서 이게 드러났다: `past_align_semantic`
     을 새로 돌려도 같은 화자(兵士)의 변형 대사 짝이 **순열로 뒤바뀌어** 락 24건이 계속 터졌다.
     유사도는 양쪽 다 높아(0.97/0.94) 재계산으로는 회사 배정을 복원할 수 없다 — 좌표가 이미
     락에 있으니 그걸 되씌우는 게 정답이다.
@@ -3483,7 +3483,7 @@ def load_translations(align_name, scn_name):
                         reversed(offs)
                     )
             entry["text"] = entry["text"].replace(a, b)
-        # ⚠ `sys_phrases` 가 박는 일원화 치환은 **가드**라 안 맞는 게 정상이다
+        # ⚠ `past_sys_phrases` 가 박는 일원화 치환은 **가드**라 안 맞는 게 정상이다
         # (그 블록이 이미 표준형이면 바꿀 게 없다). 손으로 쓴 교정만 본다.
         if _pairs and not _hit and "시스템 문구 일원화" not in (ov.get("note") or ""):
             sub_miss.append((jp_id_str, _pairs[0][0]))

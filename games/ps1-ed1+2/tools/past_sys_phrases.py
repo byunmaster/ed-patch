@@ -29,11 +29,11 @@
    처음엔 그걸로 걸렀는데, 걸린 65건이 전부 *바꿔야 할* 것들이었다: 같은 문구의 다른 변형
    (`어느 걸 사시려나요?` 0.44)이거나 **지금 문안이 틀린 자리**(`무엇을 찾으십니까?` 0.33 — JP 는
    `売ってくれますか`인데 첫인사가 나가고 있었다, 24블록). 그래서 KR 분포는 **보고만** 한다.
-3. **표준안 문안을 코드에 안 적는다** — 정발 포인터(`sys_phrases.json`)로 두고 빌드 때 파생.
+3. **표준안 문안을 코드에 안 적는다** — 정발 포인터(`past_sys_phrases.json`)로 두고 빌드 때 파생.
    JP 표지는 낱말 수준이라 코드에 둔다(`SHOP_PRICE` 의 `になるけど` 선례).
 
-  python3 tools/sys_phrases.py             # 후보·현행 문안 분포(동질성 포함)
-  python3 tools/sys_phrases.py --apply     # align_overrides.json 에 표준안 기록
+  python3 tools/past_sys_phrases.py             # 후보·현행 문안 분포(동질성 포함)
+  python3 tools/past_sys_phrases.py --apply     # align_overrides.json 에 표준안 기록
 """
 
 import difflib
@@ -45,12 +45,12 @@ import sys
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R
-import segment_copy as S
+import past_segment_copy as S
 from align_map import scene_map
 from check_window_nl import raws_of
 from common import ROOT
 
-SPEC = os.path.join(ROOT, "sys_phrases.json")
+SPEC = os.path.join(ROOT, "past_sys_phrases.json")
 # 이만큼도 안 닮은 현행 문안은 **눈으로 한 번 보라고** 표시만 한다(자동으로 빼지 않는다 —
 # 위 2번 참조: 걸리는 건 대개 "지금이 틀린 자리"라 오히려 통일이 고친다).
 ODD = 0.30
@@ -119,7 +119,7 @@ def canon(d):
     """표준안 KR — 정발 엔트리에서 파생한다(문안을 커밋 파일에 안 남기기 위함).
 
     ⚠ `chain_text` 는 `load_translations` 안의 중첩 함수라 밖에서 못 부른다 —
-    슬라이스 의미론은 `segment_copy.slice_text` 가 그대로 흉내 낸다."""
+    슬라이스 의미론은 `past_segment_copy.slice_text` 가 그대로 흉내 낸다."""
     src = d["src"]
     raw = S.entries(src["table"]).get(src["entry_id"], ("", "", ""))[2]
     # `pre_subs` 는 **슬라이스 전**에 걸린다 — 정발이 페이지를 `\x0A` 로 나눠 둔 자리를
@@ -239,7 +239,7 @@ def main():
                 cur["pre_subs"] = [list(x) for x in d["src"]["pre_subs"]]
             else:
                 cur.pop("pre_subs", None)
-            cur["note"] = f"시스템 문구 일원화 `{key}`(sys_phrases 2026-08-06)"
+            cur["note"] = f"시스템 문구 일원화 `{key}`(past_sys_phrases 2026-08-06)"
             sc[str(e)] = cur
             n += 1
         json.dump(ov, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

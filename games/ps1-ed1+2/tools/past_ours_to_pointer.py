@@ -16,9 +16,9 @@
 ⚠ 전환 뒤에는 **렌더 결과를 원래 문안과 대조**한다. 맞춤법 규칙이 이제 걸리므로 글자가
 달라질 수 있는데, 그건 의도된 개선이라 따로 보고한다.
 
-  python3 tools/ours_to_pointer.py            # 찾기만(기본)
-  python3 tools/ours_to_pointer.py --apply    # align_overrides.json 에 반영
-  python3 tools/ours_to_pointer.py --min 0.995   # 일치 기준(기본 축자)
+  python3 tools/past_ours_to_pointer.py            # 찾기만(기본)
+  python3 tools/past_ours_to_pointer.py --apply    # align_overrides.json 에 반영
+  python3 tools/past_ours_to_pointer.py --min 0.995   # 일치 기준(기본 축자)
 """
 
 import difflib

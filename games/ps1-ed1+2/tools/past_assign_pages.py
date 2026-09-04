@@ -15,8 +15,8 @@
 빼앗는다. 전역 배정은 둘 다 구조적으로 막는다.
 
 usage:
-  assign_pages.py ED1 --validate 크루즈 마을   확정 매핑을 정답으로 홀드아웃 검증
-  assign_pages.py ED1                          전 맵 배정 → out/review/assign_*.md|json
+  past_assign_pages.py ED1 --validate 크루즈 마을   확정 매핑을 정답으로 홀드아웃 검증
+  past_assign_pages.py ED1                          전 맵 배정 → out/review/assign_*.md|json
 """
 
 import collections
@@ -239,7 +239,7 @@ def main():
             f"안 쓰인 정발 조각 {len(avail):,} · 미번역 블록 {len(blocks):,} · 맵 {len(buckets)}개"
         )
 
-    from align_semantic import get_model
+    from past_align_semantic import get_model
 
     tinst = table_instances(game, min_share=0.50)
     model = get_model()
@@ -344,7 +344,7 @@ def main():
                 f"{f'≥{lo:.2f}' if lo else '<0.75':>10} {ok:5} {no:5} "
                 f"{ok / (ok + no) * 100:7.1f}% {cok / (cok + cno) * 100:7.1f}%"
             )
-        # 제안을 덤프해 둔다 — `llm_assign.py --score --clean` 으로 오염(풀 밖·과다배정)을
+        # 제안을 덤프해 둔다 — `past_llm_assign.py --score --clean` 으로 오염(풀 밖·과다배정)을
         # 뺀 자로 다시 재려면 필요하다. 위 수치는 오염 포함이라 그대로 비교하면 안 된다.
         os.makedirs(REVIEW_DIR, exist_ok=True)
         dump = {f"{b['scn']}:{b['id']}": f"{p['table']}#{p['eid']}" for _m, b, p, _s in rows}

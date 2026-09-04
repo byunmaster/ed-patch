@@ -3,7 +3,7 @@
 
 ## 왜 도구인가
 
-`sys_phrases` 가 상점·현자의 시스템 문구 369블록을 **한 표**(`T_011` 루디아 도구점 ·
+`past_sys_phrases` 가 상점·현자의 시스템 문구 369블록을 **한 표**(`T_011` 루디아 도구점 ·
 `T_040` 네리아 현자)로 몰아 놨다. 유저가 그 규칙을 폐기했는데 **데이터는 그대로였다** —
 문서는 「통일하지 않는다」인데 배정은 통일하고 있었다. 이 도구가 그 369건의 출처다.
 
@@ -20,8 +20,8 @@
 가게 대사는 `{c}道具屋{c}` 인사 바로 뒤에 붙으므로 이게 가장 국소적이다(실측 369 중 244).
 ⚠ 시점을 넓게 추정하지 말 것 — `ed1-scene-map.md` 의 시점 열은 54%만 맞는다.
 
-  python3 tools/undo_sys_phrases.py --dry    # 무엇이 어디로 가는지만
-  python3 tools/undo_sys_phrases.py          # 적용
+  python3 tools/past_undo_sys_phrases.py --dry    # 무엇이 어디로 가는지만
+  python3 tools/past_undo_sys_phrases.py          # 적용
 """
 
 import argparse

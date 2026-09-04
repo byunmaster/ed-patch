@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """쌍둥이 회수 — **JP 원문이 바이트까지 같은** 블록에 이미 붙은 배정을 그대로 복제한다.
 
-**왜 이게 안전한가.** 유사도 배정(`assign_pages`)은 홀드아웃 검증에서 정밀도 79% 였고
+**왜 이게 안전한가.** 유사도 배정(`past_assign_pages`)은 홀드아웃 검증에서 정밀도 79% 였고
 구간을 갈라도 안전한 문턱이 없었다(0.85~0.90 구간이 66.7% 로 오히려 최악 — 2026-08-04 실측).
 **틀린 한국어는 일본어보다 나쁘다** — 일본어는 스스로 티가 나는데 그럴듯한 오역은 QA 를
 통과한다. 반면 여기 쓰는 신호는 추정이 아니라 **동일성**이다: 원문 바이트가 같으면 같은
@@ -15,9 +15,9 @@
 ⚠ 이름·지명 플레이트와 포인터 테이블 블록은 건너뛴다. 오버라이드는 정렬 단계의 그 필터들을
    지나쳐 적용되므로, 여기서 안 걸러내면 `patch_sys_ui` 관할을 침범한다.
 
-  python3 tools/recover_twins.py            # 현황만(기본, 파일 안 건드림)
-  python3 tools/recover_twins.py --apply    # align_overrides.json 에 반영
-  python3 tools/recover_twins.py --scn ED1SCN2 --apply   # 특정 씬만
+  python3 tools/past_recover_twins.py            # 현황만(기본, 파일 안 건드림)
+  python3 tools/past_recover_twins.py --apply    # align_overrides.json 에 반영
+  python3 tools/past_recover_twins.py --scn ED1SCN2 --apply   # 특정 씬만
 """
 
 import json

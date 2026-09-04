@@ -309,15 +309,15 @@ JP 가 이름을 헤더 줄로 띄우는데 정발은 한 줄로 뽑을 때. `[[
 
 ⚠ ~~**배정 시대 검출기 28개는 걷어냈다**(2026-08-12)~~ → **2026-08-18 에 되살렸다** — `todo_untranslated` · `check_page_holes` ·
 `check_orphan_entries` · `check_text_health` · `check_window_nl` · `check_variants` ·
-`check_shop_verbs` · `segment_copy` · `retarget_copy` · `scn_maps` · `sys_phrases` 등.
+`check_shop_verbs` · `past_segment_copy` · `past_retarget_copy` · `scn_maps` · `past_sys_phrases` 등.
 
 ⚠ **08-18 에 19개를 더 걷었다가 그것도 되살렸다**(→ 113개). 유저 판정: **「아무도 안
 부른다」와 「쓸모없다」는 다르다** — 1회성 도구는 그 산출물의 **출처**다. `textmap/*.json` 은
-`gen_textmap` 이, `ed1-scene-map.md` 는 `segment_copy --map` 이 만들었고, `work/derived/scn_maps/`
+`gen_textmap` 이, `ed1-scene-map.md` 는 `past_segment_copy --map` 이 만들었고, `work/derived/scn_maps/`
 는 `scn_maps` 가 만든다. 체크리스트 절 6은 지금도 `proposal.py verify|apply` 를 인용한다.
 **지울 자격이 있는 건 산출물조차 안 남은 도구뿐이다.** 역할별 지도는 [`tools/README.md`](../tools/README.md).
 
-⚠ **`align_semantic.py` 는 안 지운다.** 08-12 에 지웠다가 08-14 에 되살린 자리다 —
+⚠ **`past_align_semantic.py` 는 안 지운다.** 08-12 에 지웠다가 08-14 에 되살린 자리다 —
 ED1 정본을 만든 도구인데 지워 놓고 「배정을 버린다」고 판단할 뻔했다. **도구를 지우면
 그 도구가 만들던 것도 같이 지워진다.**
 「정발 어디에 맞는 문안이 있나」를 찾던 도구들이고, **번역 정본으로 옮기면서 물음 자체가

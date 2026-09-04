@@ -17,10 +17,10 @@ SCN 대사는 `adopt_jeongbal.match()` 가 장소·시기·화자로 좁힌다. 
 `--verify` 는 **이미 포인터인 항목**을 정답셋으로 쓴다 — 그 문안을 매칭기에 주면 같은
 좌표를 돌려줘야 한다. 정답을 아는 입력이 리포에 있는데 안 쓰면, 버그를 커밋한 뒤에 만난다.
 
-  python3 tools/textmap_match.py --verify              # 매칭기 검산 (먼저)
-  python3 tools/textmap_match.py                      # 후보 (기본 = battle)
-  python3 tools/textmap_match.py -c opening --verify  # 다른 코퍼스
-  python3 tools/textmap_match.py --all                # 코퍼스 전부 (검산 → 후보)
+  python3 tools/past_textmap_match.py --verify              # 매칭기 검산 (먼저)
+  python3 tools/past_textmap_match.py                      # 후보 (기본 = battle)
+  python3 tools/past_textmap_match.py -c opening --verify  # 다른 코퍼스
+  python3 tools/past_textmap_match.py --all                # 코퍼스 전부 (검산 → 후보)
 
 ⚠ **검산이 안 되는 코퍼스가 있다** — 포인터가 하나도 없으면 정답셋이 없다(`opening` 이
 그렇다). 그럴 땐 후보를 **사람이 원문과 대조해** 판정한다. 검산 결과가 「0건 통과」인 것을

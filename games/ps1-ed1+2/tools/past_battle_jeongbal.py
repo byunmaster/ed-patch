@@ -31,15 +31,15 @@
 (`전투에서 승리했다.` 등). 그대로 두면 정발 문안이 리포에 박힌 채 남는다 — 파생 체계를
 만든 이유가 사라진다.
 
-  python3 tools/battle_jeongbal.py            # 요약
-  python3 tools/battle_jeongbal.py --report   # → work/review/battle_jeongbal.md
-  python3 tools/battle_jeongbal.py --apply    # 글자 동일분만 포인터로 승격
-  python3 tools/battle_jeongbal.py --mondll   # 몬스터별 메시지 — 표기 차이만 자동
-  python3 tools/battle_jeongbal.py --table    # **결정표** → work/review/battle_table.md
-  python3 tools/battle_jeongbal.py --stitch   # **조각 잇기**(앞은 우리 몫, 뒤는 정발 포인터)
-  python3 tools/battle_jeongbal.py --bulk 0.7 # **일괄 채택**(위험 표시 없는 것) + 확인표
-  python3 tools/battle_jeongbal.py --pick     # **터미널에서 한 행씩** 고른다(중간 저장)
-  python3 tools/battle_jeongbal.py --accept work/review/battle_table.md   # 표의 `선택` 칸 반영
+  python3 tools/past_battle_jeongbal.py            # 요약
+  python3 tools/past_battle_jeongbal.py --report   # → work/review/past_battle_jeongbal.md
+  python3 tools/past_battle_jeongbal.py --apply    # 글자 동일분만 포인터로 승격
+  python3 tools/past_battle_jeongbal.py --mondll   # 몬스터별 메시지 — 표기 차이만 자동
+  python3 tools/past_battle_jeongbal.py --table    # **결정표** → work/review/battle_table.md
+  python3 tools/past_battle_jeongbal.py --stitch   # **조각 잇기**(앞은 우리 몫, 뒤는 정발 포인터)
+  python3 tools/past_battle_jeongbal.py --bulk 0.7 # **일괄 채택**(위험 표시 없는 것) + 확인표
+  python3 tools/past_battle_jeongbal.py --pick     # **터미널에서 한 행씩** 고른다(중간 저장)
+  python3 tools/past_battle_jeongbal.py --accept work/review/battle_table.md   # 표의 `선택` 칸 반영
 """
 
 import difflib
@@ -523,7 +523,7 @@ def write_table():
         f.write("**후보 열은 채택했을 때 실제로 나갈 문안**이다(맞춤법·띄어쓰기 교정 적용 후).\n")
         f.write("**맨 왼쪽 `선택` 칸에 1·2·3 을 적고** 이 파일을 그대로 `--accept` 에 넘긴다:\n\n")
         f.write(
-            "```\npython3 tools/battle_jeongbal.py --accept work/review/battle_table.md\n```\n\n"
+            "```\npython3 tools/past_battle_jeongbal.py --accept work/review/battle_table.md\n```\n\n"
         )
         f.write("빈 칸은 건너뛴다(자체 번역 유지). 터미널에서 하나씩 고르려면 `--pick`.\n\n")
         f.write("| 선택 | 키 | 유사 | JP 원문 | 우리 번역 | ① 정발(최종) | ② | ③ |\n")
@@ -649,7 +649,7 @@ def pick(min_ratio=0.60, out_path=None):
         print()
     f.close()
     print(f"\n채택 {n}건 → {out_path}")
-    print(f"반영: python3 tools/battle_jeongbal.py --accept {out_path}")
+    print(f"반영: python3 tools/past_battle_jeongbal.py --accept {out_path}")
     return n
 
 
@@ -916,7 +916,7 @@ def main():
     print(f"정발 시스템 문구 코퍼스 {len(cands)}개 (ED1MAIN.EXE 0x{SYS_LO:X}~0x{SYS_HI:X})")
     if "--report" in sys.argv:
         os.makedirs(REVIEW_DIR, exist_ok=True)
-        p = os.path.join(REVIEW_DIR, "battle_jeongbal.md")
+        p = os.path.join(REVIEW_DIR, "past_battle_jeongbal.md")
         with open(p, "w", encoding="utf-8") as f:
             f.write(f"# 전투 문안 정발 짝 후보 — 자체 번역 {len(rows)}건 중 {hit}건 유망\n\n")
             f.write("`src` 로 승격할 때는 **서식(`%c`/`%s`/`%d`) 개수·순서**를 반드시 맞춘다.\n")

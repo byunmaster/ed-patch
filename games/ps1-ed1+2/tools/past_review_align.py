@@ -11,7 +11,7 @@ low_confidence로도 안 걸림). 신호로 못 잡는 이 오류를 사람이 �
  - digit_mismatch: 숫자가 서로 다름
  - length_outlier: KR/JP 길이비가 기대(≈0.55)에서 크게 벗어남
  - low_sim / low_confidence / unmatched: align 단계 저신뢰 플래그 승계
-   (low_sim = align_semantic.py 의미정렬 0.45~0.60 밴드, low_confidence = align_jp_kr.py)
+   (low_sim = past_align_semantic.py 의미정렬 0.45~0.60 밴드, low_confidence = align_jp_kr.py)
 
 출력: out/review/<게임>_SCN<n>.md  (씬별, 의심 우선 정렬)
 """
@@ -113,7 +113,7 @@ def review_rows(game, n):
         if ratio and (ratio > 1.6 or ratio < 0.2):
             flags.append(f"len?:{ratio:.1f}")
         # 의심도: concept > 저신뢰(low_sim/low_confidence) > digit > len
-        # align_semantic.py는 low_sim, align_jp_kr.py는 low_confidence 플래그를 쓴다.
+        # past_align_semantic.py는 low_sim, align_jp_kr.py는 low_confidence 플래그를 쓴다.
         suspect = (2 if any(f.startswith("concept?") for f in flags) else 0) + (
             1 if ("low_sim" in flags or "low_confidence" in flags) else 0
         )

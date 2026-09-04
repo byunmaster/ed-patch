@@ -41,7 +41,7 @@ CTX = 34  # 앞뒤로 보여 줄 글자 수
 def _raw(game):
     """{(table, eid): 원문 텍스트} — `kr_pages` 는 `\\x06` 을 지우므로 원문이 따로 필요하다.
 
-    (배정 도구 `llm_assign` 에 있던 것을 옮겼다 — 번역 정본 전환으로 배정 도구를 걷어내면서,
+    (배정 도구 `past_llm_assign` 에 있던 것을 옮겼다 — 번역 정본 전환으로 배정 도구를 걷어내면서,
     쓰는 곳이 여기 하나뿐이라 인라인했다. 2026-08-12)
     """
     import glob
@@ -81,7 +81,7 @@ def corpus():
 
 def siblings(table):
     """같은 방의 시점 사본 표들 — 정발 파일명 규약상 **접두 4글자가 같으면 같은 방**이다
-    (`T_04x`=네리아 · `C_00x`=루디아 성). `segment_copy.table_pool` 이 쓰는 규칙과 같다."""
+    (`T_04x`=네리아 · `C_00x`=루디아 성). `past_segment_copy.table_pool` 이 쓰는 규칙과 같다."""
     stem = table.split("/", 1)[1] if "/" in table else table
     pre = stem[:4]
     return sorted({t for t, _e in corpus() if t.split("/", 1)[1].startswith(pre)})

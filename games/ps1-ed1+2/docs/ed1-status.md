@@ -71,7 +71,7 @@ python3 tools/build.py        # → work/build/<브랜치>/Eiyuu Densetsu (KR).b
 오므로 **정렬 파일이 없으면 빈 배정으로 진행**한다(있으나 없으나 sha1 동일 — 실측).
 회귀 테스트: `test_align_file_is_optional_so_work_can_be_wiped`.
 
-⚠ `align_jp_kr.py`(전체)·`align_semantic.py` 는 이제 **제안 도구 전용**이다 — 돌리면
+⚠ `align_jp_kr.py`(전체)·`past_align_semantic.py` 는 이제 **제안 도구 전용**이다 — 돌리면
 그 파일들이 생기지만 빌드는 안 읽는다.
 
 빌드가 **확정 락 위반**으로 멈췄다면 문안이 바뀐 것이다. 절차는 [policy.md](policy.md).

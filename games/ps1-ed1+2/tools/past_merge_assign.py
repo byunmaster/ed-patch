@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """서브에이전트 배정 결과 → `align_overrides.json` 병합 (검증 먼저, 기본 dry-run).
 
-`llm_assign.py --split` 이 떨군 인스턴스 파일을 에이전트가 처리해 `OUT_*.json` 으로 돌려준다.
+`past_llm_assign.py --split` 이 떨군 인스턴스 파일을 에이전트가 처리해 `OUT_*.json` 으로 돌려준다.
 그걸 그대로 믿고 병합하면 안 된다 — **빌드는 `%c`/`%s` 수만 보므로 제어바이트가 남거나 엉뚱한
 엔트리를 가리켜도 통과한다**(구 HANDOFF jp495 사례(git 이력)). 여기서 미리 걸러낸다.
 
@@ -14,9 +14,9 @@
   6. **신뢰도** — `low` 는 기본 제외(`--low` 로 포함)
 
 usage:
-  merge_assign.py ED1 1              검증만(dry-run) — 무엇이 병합될지 표로 보여준다
-  merge_assign.py ED1 1 --apply      align_overrides.json 에 실제로 쓴다
-  merge_assign.py ED1 1 --low        low 신뢰도도 포함
+  past_merge_assign.py ED1 1              검증만(dry-run) — 무엇이 병합될지 표로 보여준다
+  past_merge_assign.py ED1 1 --apply      align_overrides.json 에 실제로 쓴다
+  past_merge_assign.py ED1 1 --low        low 신뢰도도 포함
 """
 
 import collections
@@ -46,7 +46,7 @@ OV = os.path.join(ROOT, "align_overrides.json")
 
 def _pipeline_text(table, eid, chain, subs):
     """reinsert_kr_pilot 과 같은 경로로 최종 문자열을 만든다 — 감사는 반드시 실제 경로로."""
-    from llm_assign import _raw
+    from past_llm_assign import _raw
     from reinsert_kr_pilot import _sentences, parse_kr
 
     raw = _raw("ED1").get((table, eid))
@@ -126,7 +126,7 @@ def main():
     # 기존 배정이 **통째로** 물고 있는 엔트리 — 여기에 페이지 슬라이스를 새로 물리면
     # 그 문장이 게임에 두 번 나온다(앞 블록을 같이 축소해야 안전하다). 근거가 맞아도
     # 자동 병합 대상이 아니다 — 축소와 짝지어 사람이 처리한다.
-    from assign_pages import used_pages
+    from past_assign_pages import used_pages
 
     held_full, _held_pg = used_pages(game)
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """인스턴스 단위 배정 페이로드 — 정렬을 유사도가 아니라 '읽고 배정'으로 푼다.
 
-`assign_pages.py`는 LaBSE 코사인 + 양방향 최선으로 배정한다. 홀드아웃 실측 정밀도가
+`past_assign_pages.py`는 LaBSE 코사인 + 양방향 최선으로 배정한다. 홀드아웃 실측 정밀도가
 81.9~88.2%에서 천장을 치는데, 감사에서 나온 오배정이 **전부 유사도로는 원리적으로 못 잡는
 종류**였다 — `jp284` 의미 반대 · `jp554` 화자 반대, 둘 다 맵은 맞았다. 코사인은 "뜻이
 반대"를 낮은 점수로 주지 않는다.
@@ -12,7 +12,7 @@
   · 그 맵에 걸린 정발 페이지 조각 전량 (테이블 · 화자 · 페이지 분할)
   · 인스턴스 실제 메시지 수 vs 정발 엔트리 수 (개수 대조)
 
-후보와 타깃을 동시에 보면 이건 이분 매칭이고, `assign_pages`의 양방향 최선은 그걸 국소적으로
+후보와 타깃을 동시에 보면 이건 이분 매칭이고, `past_assign_pages`의 양방향 최선은 그걸 국소적으로
 근사할 뿐이다. 전량을 읽으면 대화 흐름·화자 일관성·의미 반대까지 근거로 쓸 수 있다.
 인스턴스는 이미 정발 테이블 1~3개에 대응하므로(≈NPC 단위) 후보 풀도 충분히 좁다.
 
@@ -22,9 +22,9 @@
    내보내지 말 것.**
 
 usage:
-  llm_assign.py ED1 --map "크루즈 마을" --holdout   확정 매핑을 정답으로 두고 페이로드 생성
-  llm_assign.py ED1 --map "크루즈 마을"             미번역 블록 대상 페이로드 생성
-  llm_assign.py ED1 --score out/review/assign_llm_<맵>.json   제안을 정답과 대조
+  past_llm_assign.py ED1 --map "크루즈 마을" --holdout   확정 매핑을 정답으로 두고 페이로드 생성
+  past_llm_assign.py ED1 --map "크루즈 마을"             미번역 블록 대상 페이로드 생성
+  past_llm_assign.py ED1 --score out/review/assign_llm_<맵>.json   제안을 정답과 대조
 """
 
 import collections
@@ -35,7 +35,7 @@ import re
 import sys
 
 from align_jp_kr import load_jp_scene, norm_body
-from assign_pages import kr_pages, used_keys
+from past_assign_pages import kr_pages, used_keys
 from common import OUT_DIR, REVIEW_DIR
 from scn_maps import block_instances, block_maps, msg_ids, table_maps
 
@@ -98,7 +98,7 @@ def build(game, mapname, holdout):
     used = used_keys(game)
 
     # 후보 풀: 이 맵으로 학습된 테이블 + 맵무관(상점 등). 검증 모드에서는 정답이 풀에
-    # 있어야 하므로 '이미 쓰인 것' 제외를 하지 않는다(assign_pages --validate 와 동일).
+    # 있어야 하므로 '이미 쓰인 것' 제외를 하지 않는다(past_assign_pages --validate 와 동일).
     pool = [p for p in kr_pages(game) if learned.get(p["table"]) == mapname or p["table"] in exempt]
     if not holdout:
         pool = [p for p in pool if (p["table"], p["eid"]) not in used]
@@ -335,7 +335,7 @@ def scan(game):
 
 
 def score(game, mapname, path, clean=False):
-    """제안 {jp: ref} 를 확정 매핑과 대조한다. assign_pages --validate 와 같은 자."""
+    """제안 {jp: ref} 를 확정 매핑과 대조한다. past_assign_pages --validate 와 같은 자."""
     g = gold(game, mapname)
     if clean:
         outside, dup = contaminated(game, mapname, g)
@@ -372,7 +372,7 @@ def split(game, scn):
     프롬프트에 페이로드를 인라인하면 팔콤 일문·정발 문안이 대화에 떠다닌다. 파일 경로만
     넘기고 읽게 하면 `out/review/`(gitignore) 밖으로 안 나간다.
     """
-    from assign_pages import jp_open
+    from past_assign_pages import jp_open
 
     maps = sorted({b["map"] for b in jp_open(game) if b["scn"] == scn and b["map"]})
     d = os.path.join(REVIEW_DIR, "inst")

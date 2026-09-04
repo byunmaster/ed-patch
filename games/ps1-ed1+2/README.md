@@ -77,8 +77,8 @@ tools/
   extract_scn.py       PS1 일문 대사 추출 (SCN 블록 → JSON, 라운드트립 무손실)
   extract_dos_kr.py    DOS 정발판 대사 추출 — ⚠ **대조용**(check_forbidden), 저본 아님
   align_jp_kr.py       구조 신호 정렬(화자·길이·순서) — 초안/폴백
-  align_semantic.py    의미 정렬 — 다국어 임베딩(LaBSE)으로 번역쌍 매칭 (권장)
-  review_align.py      정렬 검수 목록 생성 — ⚠ 정발 저본 시절의 도구다
+  past_align_semantic.py    의미 정렬 — 다국어 임베딩(LaBSE)으로 번역쌍 매칭 (권장)
+  past_review_align.py      정렬 검수 목록 생성 — ⚠ 정발 저본 시절의 도구다
   reinsert_kr_pilot.py 재삽입 — ED1 전 씬(SCN1~6) 한국어 빌드 + 폰트 탑재
                        기본: 앵커(테이블) 고정 재배치 + lui/addiu 패치 — 인게임 검증
                        PILOT_FIXED=1: 블록별 길이 고정 / PILOT_SCN=ED1SCN3: 특정 씬만
@@ -91,7 +91,7 @@ tools/
 
 실행: `python tools/<스크립트>.py` (Python 3.12+, 표준 라이브러리 기본).
 추가 의존성(레포 비포함, `pip install --user`):
-`hangul_font.py`/빌드 = numpy·Pillow, `align_semantic.py` = sentence-transformers
+`hangul_font.py`/빌드 = numpy·Pillow, `past_align_semantic.py` = sentence-transformers
 (LaBSE 최초 1회 ~1.8GB 다운로드).
 
 에뮬레이터: 관찰·디버깅은 no$psx(Windows)로 진행했으나, **정적 파일 패치 방식이라
@@ -179,7 +179,7 @@ ED.EXE의 변환 함수(RAM 0x800AE6C8~) 디스어셈블(`find_glyph_routine.py`
     이식(SCN1 233·2 227·3 164·4 147·5 179·6 74), 전 씬 아이덴티티 통과.
   - **사람 검수 오버라이드**(`align_overrides.json`): 자동매칭이 틀린 짝(시녀
     깨우기↔저녁식사 swap 등)을 사람이 확정한 DOS 블록으로 교정 → align보다 우선.
-    인게임 확인(시녀 첫 대사 정정). review_align.py 검수 결과를 여기 반영.
+    인게임 확인(시녀 첫 대사 정정). past_review_align.py 검수 결과를 여기 반영.
   - 남은 과제: 정렬 의미 기반화(swap 근절), size/anchor 제외분 회수, ED2 확대.
 
 ### 한글 출력 개념증명 성공 (2026-07-09)

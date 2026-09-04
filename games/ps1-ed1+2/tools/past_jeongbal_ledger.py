@@ -31,8 +31,8 @@
 `check_terms` …)가 한다 — 장부까지 게이트로 세우면 「고치기 전에 장부부터」가 되어
 작업이 막힌다.
 
-  python3 tools/jeongbal_ledger.py --sync    # 현재 상태를 장부에 반영
-  python3 tools/jeongbal_ledger.py           # 현황(미판정·사유 없는 자체)
+  python3 tools/past_jeongbal_ledger.py --sync    # 현재 상태를 장부에 반영
+  python3 tools/past_jeongbal_ledger.py           # 현황(미판정·사유 없는 자체)
 """
 
 import argparse

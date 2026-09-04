@@ -713,7 +713,7 @@ def test_tool_index_covers_all_tools():
     ⚠ 표에 없는 도구는 다음 사람에게 **고아로 보인다** — 실제로 두 번 그렇게 지웠다
     (2026-08-12 배정 시대 28개 · 08-18 탐색 19개). 둘 다 되살렸다. 지우면 그 도구가 만들던
     것의 **출처가 끊긴다** — `textmap/*.json` 은 `gen_textmap` 이, `ed1-scene-map.md` 는
-    `segment_copy --map` 이 만들었고 체크리스트는 지금도 `proposal.py` 를 인용한다.
+    `past_segment_copy --map` 이 만들었고 체크리스트는 지금도 `proposal.py` 를 인용한다.
     """
     import os
 

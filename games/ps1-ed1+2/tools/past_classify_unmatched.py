@@ -3,11 +3,11 @@
 크루즈 구간처럼 '아직 일본어'인 미매칭 블록을 플레이 QA 전에 갈라둔다. 각 미매칭 JP를
 정발 KR 풀에 LaBSE로 재임베딩해 best-match 코사인으로 판정한다.
 
-**전-게임 풀 대조**: 씬 풀(align_semantic이 쓰는 same-scene 제약)만 보면, 정발 대사가 다른
+**전-게임 풀 대조**: 씬 풀(past_align_semantic이 쓰는 same-scene 제약)만 보면, 정발 대사가 다른
 씬 테이블에 들어간 경우(파일명 씬규칙 오귀속·리메이크 재배치)를 '신규'로 오분류한다. 그래서
 전 ED1 테이블을 후보로 놓고, 회수처가 다른 씬이면 [cross-scene]으로 표시한다.
 
-사용: python3 tools/classify_unmatched.py ED1 1 36 566
+사용: python3 tools/past_classify_unmatched.py ED1 1 36 566
 출력: out/review/unmatched_<game>SCN<n>_<lo>-<hi>.md (+ 요약 stdout)
 """
 
@@ -78,7 +78,7 @@ def main():
         f"오버라이드 기회수 {covered} 제외), 전 {game} 정발 풀 {len(kr)}"
     )
 
-    from align_semantic import get_model
+    from past_align_semantic import get_model
 
     model = get_model()
     je = model.encode([b["body"] for b in jp_un], normalize_embeddings=True)

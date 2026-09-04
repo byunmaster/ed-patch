@@ -11,13 +11,13 @@
 
 ⚠ 산출물은 정발 문안을 담으므로 **REVIEW_DIR(work/review, gitignore)** 로만 나간다.
 
-  python3 tools/find_page_gaps.py ED1SCN2          # 후보 목록 → work/review/page_gaps_ED1SCN2.md
-  python3 tools/find_page_gaps.py ED1SCN2 --near 5 # 인접 판정 범위(기본 3)
-  python3 tools/find_page_gaps.py ED1SCN2 --apply  # **모호하지 않은 것만** 정본에 반영
+  python3 tools/past_find_page_gaps.py ED1SCN2          # 후보 목록 → work/review/page_gaps_ED1SCN2.md
+  python3 tools/past_find_page_gaps.py ED1SCN2 --near 5 # 인접 판정 범위(기본 3)
+  python3 tools/past_find_page_gaps.py ED1SCN2 --apply  # **모호하지 않은 것만** 정본에 반영
 
 ⚠ `--apply` 는 **딱 붙은 자리만** 건드린다 — 안 쓰인 페이지가 k개이고, 그 엔트리를 쓰는
 마지막 블록 **바로 다음 k개**가 전부 미번역이고 같은 맵일 때만. 하나라도 어긋나면 건너뛴다.
-추정이 아니라 **순서 대응**이라 `recover_twins`(바이트 동일)보다는 약하고 유사도 배정보다는
+추정이 아니라 **순서 대응**이라 `past_recover_twins`(바이트 동일)보다는 약하고 유사도 배정보다는
 훨씬 강하다. 그래도 최종 확인은 인게임이다.
 """
 
@@ -107,14 +107,14 @@ def apply_unambiguous(scn_name, rows, todo, bm):
                 "table": tbl,
                 "entry_id": ent,
                 "chain": [f"{ent}#{p}" for p in real[:cap]],
-                "note": f"페이지 갭 회수(find_page_gaps 2026-08-04) — 뒷페이지를 jp{want[0]}~ 로 넘기고 앞 {cap}페이지만 유지",
+                "note": f"페이지 갭 회수(past_find_page_gaps 2026-08-04) — 뒷페이지를 jp{want[0]}~ 로 넘기고 앞 {cap}페이지만 유지",
             }
         for e, p in zip(want, free, strict=True):
             scn[str(e)] = {
                 "table": tbl,
                 "entry_id": ent,
                 "chain": [f"{ent}#{p}"],
-                "note": f"페이지 갭 회수(find_page_gaps 2026-08-04) — jp{anchor} 가 문 {tbl}#{ent} 의 남은 p{p}",
+                "note": f"페이지 갭 회수(past_find_page_gaps 2026-08-04) — jp{anchor} 가 문 {tbl}#{ent} 의 남은 p{p}",
             }
             applied.append(e)
     json.dump(ov, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
@@ -148,11 +148,11 @@ def main():
     tr, _, _ = R.load_translations(scn_name.replace("SCN", "_SCN"), scn_name)
     wins = {e: (t[2] if len(t) > 2 and isinstance(t[2], int) else 1) for e, t in tr.items()}
 
-    # 시스템 문구 일원화(`sys_phrases`)가 표준안으로 쓰는 엔트리는 **일부러 여러 블록이
+    # 시스템 문구 일원화(`past_sys_phrases`)가 표준안으로 쓰는 엔트리는 **일부러 여러 블록이
     # 공유**한다 — "안 쓰인 페이지"가 남는 게 정상이라 후보로 내면 안 된다. 안 빼면 상점·현자
     # 흐름 엔트리(T_011#4·T_011#6·T_033#6·T_040#0·T_333#2)가 근처 미번역을 전부 끌어모아
     # 보고서가 읽을 수 없게 된다(2026-08-06 실측 — 진짜 후보가 그 사이에 묻혔다).
-    from sys_phrases import spec as _sys_spec
+    from past_sys_phrases import spec as _sys_spec
 
     sys_src = {(d["src"]["table"], d["src"]["entry_id"]) for d in _sys_spec().values()}
 

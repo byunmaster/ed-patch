@@ -683,7 +683,7 @@ def align_scene(game, n, spk_map):
 
 
 def main():
-    # ⚠ 인자 없이 돌리면 **의미정렬(align_semantic, LaBSE) 결과인 `*_SCN*.json` 을 덮어쓴다**.
+    # ⚠ 인자 없이 돌리면 **의미정렬(past_align_semantic, LaBSE) 결과인 `*_SCN*.json` 을 덮어쓴다**.
     # 화자맵만 필요하면 `--speakers-only` 를 쓸 것 — 빌드 체인이 쓰는 경로가 이쪽이다.
     speakers_only = "--speakers-only" in sys.argv
     os.makedirs(ALIGN_DIR, exist_ok=True)
@@ -707,7 +707,7 @@ def main():
             continue
 
         for n in range(1, n_scn + 1):
-            # ⚠ 의미정렬(align_semantic) 결과를 **구조 신호 초안으로 덮어쓰지 않는다.**
+            # ⚠ 의미정렬(past_align_semantic) 결과를 **구조 신호 초안으로 덮어쓰지 않는다.**
             # 이 파일은 두 도구가 공유하는데, 여기(화자·길이·순서)는 같은 화자의 변형 대사를
             # swap 한다 — 정본을 날리면 인게임에서 "잘 나오던 대사가 딴 대사로" 바뀐다
             # (2026-08-03 실측: 머신 이동 후 work/derived 복구 중 실제로 밟았다. work/ 는
@@ -718,10 +718,10 @@ def main():
                     gen = json.load(open(out, encoding="utf-8")).get("generator")
                 except (json.JSONDecodeError, OSError):
                     gen = None
-                if gen == "align_semantic":
+                if gen == "past_align_semantic":
                     print(
-                        f"  건너뜀 {game}_SCN{n}: 의미정렬(align_semantic) 정본이다 — "
-                        f"덮어쓰려면 --force (권장: `python3 tools/align_semantic.py` 로 재생성)"
+                        f"  건너뜀 {game}_SCN{n}: 의미정렬(past_align_semantic) 정본이다 — "
+                        f"덮어쓰려면 --force (권장: `python3 tools/past_align_semantic.py` 로 재생성)"
                     )
                     continue
             doc = align_scene(game, n, spk_map)

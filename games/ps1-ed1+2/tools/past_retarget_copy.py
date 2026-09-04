@@ -4,7 +4,7 @@
 **왜(2026-08-04 실측, 유저 QA 다섯 번).** 정발은 **같은 방을 시점별 파일로 복제**해 두고
 문구를 조금씩 손봤다(루디아 성 `C_001`(2장)↔`C_009`(후반), 마을 `T_013`↔`T_014`,
 보물창고 `C_006`↔`C_00B`↔`C_00F`). PS1 도 인스턴스가 여럿인데 **정렬기는 이 사본들을 원리적으로
-못 가른다** — JP 가 서로 같기 때문이다. 게다가 `recover_twins`(JP 동일 → 배정 복제)가
+못 가른다** — JP 가 서로 같기 때문이다. 게다가 `past_recover_twins`(JP 동일 → 배정 복제)가
 그 배분을 적극적으로 뭉갠다. 결과로 2장에서 후반 문구가 나온다.
 
 **판정은 구간의 다수결로 한다.** PS1 블록을 맵·연속성으로 자르면 한 구간은 대체로 한두 개
@@ -22,8 +22,8 @@
 문안**이 나온다(지어낸 한국어가 아니다). 그래서 자동 적용을 허용한다.
 ⚠ 그래도 **주류 테이블에 짝이 없으면 손대지 않는다.** 시점마다 대사가 실제로 추가·삭제된다.
 
-  python3 tools/retarget_copy.py ED1SCN1            # 후보 보기
-  python3 tools/retarget_copy.py ED1SCN1 --apply    # 반영
+  python3 tools/past_retarget_copy.py ED1SCN1            # 후보 보기
+  python3 tools/past_retarget_copy.py ED1SCN1 --apply    # 반영
 """
 
 import difflib
@@ -157,7 +157,7 @@ def main():
                 continue
             cur.update(table=t1, entry_id=n1)
             cur["note"] = (
-                f"정발 사본 교정(retarget_copy 2026-08-04) — {t0}#{n0} → {t1}#{n1} "
+                f"정발 사본 교정(past_retarget_copy 2026-08-04) — {t0}#{n0} → {t1}#{n1} "
                 f"(구간 주류 테이블, 유사도 {r:.2f})"
             )
             sc[str(e)] = cur

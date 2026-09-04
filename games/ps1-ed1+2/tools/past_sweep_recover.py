@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """정발 회수 1차 스윕 — 미매칭 블록을 고유 본문으로 묶고, 위험군을 자동으로 갈라낸다.
 
-`classify_unmatched.py`가 "정발 후보가 있다"까지 말해주면, 이 도구는 **구조적으로 위험한
+`past_classify_unmatched.py`가 "정발 후보가 있다"까지 말해주면, 이 도구는 **구조적으로 위험한
 것을 먼저 걷어내고** 남은 것을 사람이 읽고 판정할 수 있는 표로 만든다.
 
 ⚠ **구조통과 = 적용 가능이 아니다.** 여기 필터는 `%c`/`%s` 계약과 배정 충돌만 본다.
@@ -24,8 +24,8 @@ SCN1 43건을 손으로 판정하며 드러난 위험 셋이 전부 구조로 �
 (레포 루트 `docs/publishing.md`).
 
 usage:
-  sweep_recover.py ED1 1            검토표 + 오버라이드 초안 생성
-  sweep_recover.py ED1 1 --bucket 경계
+  past_sweep_recover.py ED1 1            검토표 + 오버라이드 초안 생성
+  past_sweep_recover.py ED1 1 --bucket 경계
 """
 
 import collections
@@ -106,7 +106,7 @@ def main():
 
     rep = os.path.join(REVIEW_DIR, f"unmatched_{game}SCN{scn}_0-99999.md")
     if not os.path.exists(rep):
-        sys.exit(f"{rep} 없다 — classify_unmatched.py {game} {scn} 0 99999 를 먼저 돌려라")
+        sys.exit(f"{rep} 없다 — past_classify_unmatched.py {game} {scn} 0 99999 를 먼저 돌려라")
 
     B = jp_blocks(game, scn)
     rows = parse_report(rep, bucket)

@@ -53,7 +53,7 @@ def claims(game):
 def main(game="ED2", verbose=False):
     by_kr, stats = claims(game)
     if not stats:
-        print(f"{game}: 정렬 파일 없음 — `python3 tools/align_semantic.py` 먼저")
+        print(f"{game}: 정렬 파일 없음 — `python3 tools/past_align_semantic.py` 먼저")
         return 0
 
     print(f"{'씬':>3} {'JP':>6} {'KR후보':>7} {'매칭':>6} {'JP회수율':>9}")

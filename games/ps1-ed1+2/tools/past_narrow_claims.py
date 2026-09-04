@@ -3,7 +3,7 @@
 
 회수를 가장 크게 막는 건 정밀도가 아니라 **축소(narrowing)** 다. 정발 1엔트리가 P페이지인데
 PS1 이 그걸 여러 블록으로 쪼갠 경우, 앞 블록의 배정이 `chain` 없이 엔트리를 **통째로** 물면
-나머지 P-1 장이 어느 후보 풀에도 안 나온다(`assign_pages.used_pages` 주석 참조). 실측
+나머지 P-1 장이 어느 후보 풀에도 안 나온다(`past_assign_pages.used_pages` 주석 참조). 실측
 2026-07-31: SCN1 만 97건이 통째 점유 + 다중페이지고 그 뒤에 107장이 가려져 있었다.
 
 **축소는 공짜가 아니다.** 페이지 수가 창 수와 다르면 재삽입기는 전 페이지를 창에 욱여넣는다
@@ -23,16 +23,16 @@ PS1 이 쪼갠 그 지점이다.
   4. 이미 페이지 단위(`eid#page`)로 물고 있으면 건드리지 않는다
 
 축소만으로는 회수가 늘지 않는다. **푸는 것까지가 절반**이고, 풀린 페이지는 기존 배정
-파이프라인(`llm_assign` → 서브에이전트 → `merge_assign`)이 가져간다. 그래서 `merge_assign`
+파이프라인(`past_llm_assign` → 서브에이전트 → `past_merge_assign`)이 가져간다. 그래서 `past_merge_assign`
 이 "기존 통째점유와 충돌 — 축소 먼저"로 막아둔 제안들이 이 뒤에 통과하게 된다.
 
 ⚠ 검증은 반드시 빌드 A/B 로 한다 — 좁힌 블록이 창을 못 채우면 `창 분배 실패`로 **탈락**한다.
 총 재삽입 수가 줄거나 제외 사유가 늘면 되돌린다.
 
 usage:
-  narrow_claims.py ED1 1          검토(dry-run) — 무엇이 좁혀지고 몇 장이 풀리는지
-  narrow_claims.py ED1 1 --apply  align_overrides.json 에 chain 을 써넣는다
-  narrow_claims.py ED1 all        전 씬 검토
+  past_narrow_claims.py ED1 1          검토(dry-run) — 무엇이 좁혀지고 몇 장이 풀리는지
+  past_narrow_claims.py ED1 1 --apply  align_overrides.json 에 chain 을 써넣는다
+  past_narrow_claims.py ED1 all        전 씬 검토
 """
 
 import collections
@@ -97,7 +97,7 @@ def claims(game, scn, ov):
 
 def plan(game, scn):
     """축소 후보 목록 + 통계."""
-    from llm_assign import _raw
+    from past_llm_assign import _raw
 
     raw = _raw(game)
     ov = json.load(open(OV, encoding="utf-8"))
@@ -105,7 +105,7 @@ def plan(game, scn):
     blocks = {b["id"]: b for b in load_jp_scene(game, scn)}
 
     # 미번역(열린) 블록 — 축소가 실재한다는 증거이자 풀린 페이지의 수요처
-    from assign_pages import jp_open
+    from past_assign_pages import jp_open
 
     opens = {b["id"] for b in jp_open(game) if b["scn"] == scn}
 
@@ -147,14 +147,14 @@ def pair(game, scn, sim_min):
     순서대로 쪼갠 것이니 당연한 결과다. 다만 규칙만 믿지 않고 **LaBSE 로 JP 본문 ↔ 정발 페이지
     유사도를 재서** 문턱을 넘는 짝만 채택한다(오프바이원·중간에 낀 블록 방어).
     """
-    from align_semantic import get_model
-    from llm_assign import _raw
+    from past_align_semantic import get_model
+    from past_llm_assign import _raw
     from reinsert_kr_pilot import parse_kr
 
     raw = _raw(game)
     ov = json.load(open(OV, encoding="utf-8"))
     blocks = {b["id"]: b for b in load_jp_scene(game, scn)}
-    from assign_pages import jp_open
+    from past_assign_pages import jp_open
 
     opens = {b["id"] for b in jp_open(game) if b["scn"] == scn}
 
@@ -228,8 +228,8 @@ def fix_offsets(game, scns, margin=0.08):
     그래서 시작 페이지를 가정하지 않는다 — JP 본문과 각 페이지의 유사도를 재서 argmax 를
     시작점으로 잡고, 거기서 W장을 연속으로 문다. 여유(margin) 미만이면 손대지 않는다.
     """
-    from align_semantic import get_model
-    from llm_assign import _raw
+    from past_align_semantic import get_model
+    from past_llm_assign import _raw
     from reinsert_kr_pilot import parse_kr
 
     raw = _raw(game)

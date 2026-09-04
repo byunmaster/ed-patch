@@ -25,7 +25,7 @@ LaBSE는 번역쌍 찾기(bitext mining) 전용 다국어 모델.
  5. 임계 미만·저유사도는 flags — align_jp_kr와 동일 스키마
 
 의존성(레포 비포함): pip install --user sentence-transformers
-출력: out/align/<게임>_SCN<n>.json (재삽입기·review_align이 그대로 소비)
+출력: out/align/<게임>_SCN<n>.json (재삽입기·past_review_align이 그대로 소비)
 """
 
 import json
@@ -119,7 +119,7 @@ def align_scene(model, game, n, spk_map):
 
 
 def main():
-    """`python3 tools/align_semantic.py [ED2 …]` — 인자로 **게임을 제한**한다.
+    """`python3 tools/past_align_semantic.py [ED2 …]` — 인자로 **게임을 제한**한다.
 
     ⚠ 인자를 안 주면 전 게임을 다시 만든다. ED1 은 배정 정본(`align_map.json`)이 커밋돼
     있어 빌드가 여기를 안 읽지만, 그래도 **한 트랙 작업이 다른 트랙 파생물을 갈아엎는 일은
@@ -148,7 +148,7 @@ def main():
             # 생성자 표시 — align_jp_kr(구조 신호 초안)가 이 정본을 덮어쓰지 못하게 하는 표식.
             # 2026-08-03: 다른 머신에서 work/derived 를 복구하며 align_jp_kr 를 인자 없이 돌려
             # 의미정렬을 통째로 날렸고, 같은 화자의 변형 대사가 swap 돼 하루를 태웠다.
-            doc["generator"] = "align_semantic"
+            doc["generator"] = "past_align_semantic"
             with open(os.path.join(ALIGN_DIR, f"{game}_SCN{n}.json"), "w", encoding="utf-8") as f:
                 json.dump(doc, f, ensure_ascii=False, indent=1)
             low = sum(1 for p in doc["pairs"] if "low_sim" in p["flags"])

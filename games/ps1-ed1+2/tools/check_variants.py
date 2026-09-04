@@ -29,7 +29,7 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R
 from common import OUT_DIR, ROOT
-from llm_assign import _raw
+from past_llm_assign import _raw
 
 MIN_CHARS = 8  # 변형 하나가 '들어 있다'고 볼 최소 글자수(짧은 감탄사 오탐 방지)
 
