@@ -26,7 +26,8 @@
    "h": 24,
    "bpp": 8,
    "kind": "title",
-   "note": "「冒険の続きをする」 버튼"
+   "note": "「冒険の続きをする」 버튼",
+   "file": "title_btn_continue.png"
   },
   {
    "member": "/M01.DAT!DATA5.BIN",
@@ -35,7 +36,8 @@
    "h": 24,
    "bpp": 8,
    "kind": "title",
-   "note": "「はじめから冒険をする」 버튼"
+   "note": "「はじめから冒険をする」 버튼",
+   "file": "title_btn_new.png"
   },
   {
    "member": "/M01.DAT!DATA5.BIN",
@@ -44,7 +46,8 @@
    "h": 76,
    "bpp": 8,
    "kind": "title",
-   "note": "로고 — The Legend of Heroes III / 白き魔女"
+   "note": "로고 — The Legend of Heroes III / 白き魔女",
+   "file": "title_logo.png"
   },
   {
    "member": "/M01.DAT!DATA5.BIN",
