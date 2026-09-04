@@ -160,6 +160,27 @@ def reinsert_names(exe, disc, table, report):
     return report
 
 
+def sweep(d, keep):
+    """🔴 **칸에는 이미지 하나만 남긴다**(유저 확정 2026-09-04).
+
+    빌드가 끝날 때마다 이 칸의 다른 이미지를 지운다 — 정상·시험(`(TEST)`)·실패(`*.failed`)·
+    다른 디스크 것까지 전부. 남겨 두면 **낡은 것을 정상으로 오해하고 조사하는** 이 레포의
+    단골 사고가 난다(실측 2026-09-04: 한 칸에 넷 1.9GB 가 쌓여 있었다).
+    ⚠ 지우는 건 **성공한 뒤**다. 실패하면 옛 이미지가 남아야 손에 아무것도 없는 상태를 면한다.
+    """
+    keep = {os.path.abspath(p) for p in keep}
+    gone = []
+    for name in os.listdir(d):
+        f = os.path.join(d, name)
+        if os.path.abspath(f) in keep or not os.path.isfile(f):
+            continue
+        if not name.endswith((".bin", ".cue", ".iso", ".img", ".failed", ".part")):
+            continue
+        os.remove(f)
+        gone.append(name)
+    return gone
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--disc", choices=common.DISC_NAMES, default="ed3")
@@ -268,7 +289,10 @@ def main():
     if a.test:
         cue = cue.replace(".cue", " (TEST).cue")
     common.write_cue(cue, os.path.basename(out))
+    dropped = sweep(common.BUILD_DIR, {out, cue})
     print(f"바뀐 섹터 {n:,}\n→ {out}")
+    if dropped:
+        print(f"  🧹 낡은 산출물 {len(dropped)}개를 지웠다 — " + " · ".join(sorted(dropped)))
     return 0
 
 
