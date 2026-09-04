@@ -164,7 +164,7 @@ def main():
             bad += 1
             print(f"  🔴 {note}")
             for ln, wid in over:
-                print(f"       칸을 넘는다({wid}>{g['w']}): {ln}")
+                print(f"       칸을 넘는다({wid}px + 왼쪽 {g.get('left', 0)} > {g['w']}): {ln}")
             if used > room:
                 print(f"       줄이 판을 넘는다: {used} > {room}")
             continue
