@@ -6,7 +6,11 @@
   "🔴 대부분 **「흰 잉크 + 투명」 1비트 마스크**다 — 흰 바탕에 그리면 아무것도 안 보인다.",
   "   미리보기는 어두운 바탕에 올린다(`dump_tim.py`).",
   "⚠ 자리는 `member` 안의 **몇 번째 TIM 인가**다. 압축을 푼 뒤 매직으로 훑은 순서라,",
-  "   `gmfz`·`tim` 을 고치면 밀릴 수 있다 — 그래서 `--catalog` 가 크기까지 대조한다."
+  "   `gmfz`·`tim` 을 고치면 밀릴 수 있다 — 그래서 `--catalog` 가 크기까지 대조한다.",
+  "⚠ `kind` 가 `opening`·`ending` 이어도 **글자가 없는 장이 섞여 있다** — 별밭 3장과",
+  "   빈 칸 1장은 실측으로 `bg` 로 내렸다(잉크 22~43px · 0px).",
+  "🔴 내레이션 글은 `narration_ed3.json` 이 정본이고 `tools/narration.py` 가 그린다 —",
+  "   여기 `file` 은 그 결과를 가리킬 뿐이다."
  ],
  "disc": "ed3",
  "images": [
@@ -74,7 +78,8 @@
    "h": 256,
    "bpp": 4,
    "kind": "opening",
-   "note": "내레이션 — 「この物語は、ガガーブの先に…」"
+   "note": "내레이션 — 「この物語は、ガガーブの先に…」",
+   "file": "narr_op_intro.png"
   },
   {
    "member": "/M01.DAT!DATA3.BIN",
@@ -83,7 +88,8 @@
    "h": 256,
    "bpp": 4,
    "kind": "opening",
-   "note": "내레이션 — 「神話、英雄伝、寓話…」"
+   "note": "내레이션 — 「神話、英雄伝、寓話…」",
+   "file": "narr_op_legend.png"
   },
   {
    "member": "/M01.DAT!DATA3.BIN",
@@ -91,7 +97,8 @@
    "w": 256,
    "h": 240,
    "bpp": 4,
-   "kind": "opening"
+   "kind": "bg",
+   "note": "별밭 — 글자 없음"
   },
   {
    "member": "/M01.DAT!DATA3.BIN",
@@ -99,7 +106,8 @@
    "w": 256,
    "h": 240,
    "bpp": 4,
-   "kind": "opening"
+   "kind": "bg",
+   "note": "별밭 — 글자 없음"
   },
   {
    "member": "/M01.DAT!DATA3.BIN",
@@ -107,7 +115,8 @@
    "w": 256,
    "h": 240,
    "bpp": 4,
-   "kind": "opening"
+   "kind": "bg",
+   "note": "별밭 — 글자 없음"
   },
   {
    "member": "/M01.DAT!DATA2.BIN",
@@ -115,7 +124,8 @@
    "w": 256,
    "h": 512,
    "bpp": 4,
-   "kind": "opening"
+   "kind": "opening",
+   "file": "narr_op_scroll1a.png"
   },
   {
    "member": "/M01.DAT!DATA2.BIN",
@@ -123,7 +133,8 @@
    "w": 256,
    "h": 512,
    "bpp": 4,
-   "kind": "opening"
+   "kind": "opening",
+   "file": "narr_op_scroll1b.png"
   },
   {
    "member": "/M01.DAT!DATA2.BIN",
@@ -131,7 +142,8 @@
    "w": 256,
    "h": 512,
    "bpp": 4,
-   "kind": "opening"
+   "kind": "bg",
+   "note": "완전히 검정 — 글자 없음(두루마리 사이 빈 칸)"
   },
   {
    "member": "/M01.DAT!DATA2.BIN",
@@ -139,7 +151,8 @@
    "w": 256,
    "h": 512,
    "bpp": 4,
-   "kind": "opening"
+   "kind": "opening",
+   "file": "narr_op_scroll2a.png"
   },
   {
    "member": "/M01.DAT!DATA2.BIN",
@@ -147,7 +160,8 @@
    "w": 256,
    "h": 512,
    "bpp": 4,
-   "kind": "opening"
+   "kind": "opening",
+   "file": "narr_op_scroll2b.png"
   },
   {
    "member": "/M02.DAT!ENDDATA1.BIN",
@@ -155,7 +169,8 @@
    "w": 432,
    "h": 108,
    "bpp": 4,
-   "kind": "ending"
+   "kind": "ending",
+   "file": "narr_ed_1.png"
   },
   {
    "member": "/M02.DAT!ENDDATA1.BIN",
@@ -163,7 +178,8 @@
    "w": 432,
    "h": 108,
    "bpp": 4,
-   "kind": "ending"
+   "kind": "ending",
+   "file": "narr_ed_3.png"
   },
   {
    "member": "/M02.DAT!ENDDATA1.BIN",
@@ -171,7 +187,8 @@
    "w": 432,
    "h": 108,
    "bpp": 4,
-   "kind": "ending"
+   "kind": "ending",
+   "file": "narr_ed_4.png"
   },
   {
    "member": "/M02.DAT!ENDDATA1.BIN",
@@ -179,7 +196,8 @@
    "w": 432,
    "h": 108,
    "bpp": 4,
-   "kind": "ending"
+   "kind": "ending",
+   "file": "narr_ed_5.png"
   },
   {
    "member": "/M02.DAT!ENDDATA1.BIN",
@@ -187,7 +205,8 @@
    "w": 432,
    "h": 108,
    "bpp": 4,
-   "kind": "ending"
+   "kind": "ending",
+   "file": "narr_ed_6.png"
   },
   {
    "member": "/M02.DAT!ENDDATA1.BIN",
@@ -195,7 +214,8 @@
    "w": 432,
    "h": 108,
    "bpp": 4,
-   "kind": "ending"
+   "kind": "ending",
+   "file": "narr_ed_7.png"
   },
   {
    "member": "/M02.DAT!ENDDATA1.BIN",
@@ -203,7 +223,8 @@
    "w": 432,
    "h": 108,
    "bpp": 4,
-   "kind": "ending"
+   "kind": "ending",
+   "file": "narr_ed_8.png"
   },
   {
    "member": "/M02.DAT!ENDDATA1.BIN",
@@ -211,7 +232,8 @@
    "w": 432,
    "h": 108,
    "bpp": 4,
-   "kind": "ending"
+   "kind": "ending",
+   "file": "narr_ed_9.png"
   },
   {
    "member": "/M02.DAT!ENDDATA2.BIN",
@@ -220,7 +242,8 @@
    "h": 33,
    "bpp": 4,
    "kind": "ending",
-   "note": "「白き魔女と呼ばれる娘が…」"
+   "note": "「白き魔女と呼ばれる娘が…」",
+   "file": "narr_ed_frame.png"
   },
   {
    "member": "/M02.DAT!ENDDATA3.BIN",
