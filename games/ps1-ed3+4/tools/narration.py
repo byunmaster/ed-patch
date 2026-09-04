@@ -81,6 +81,25 @@ def _bdf_line(txt, name):
     return m, m.shape[1]
 
 
+def thicken_h(m):
+    """**가로획만** 한 픽셀 굵힌다 (아래로).
+
+    🔴 게임 오프닝은 **512×240 모드**라 픽셀이 가로로 절반이다 — 13×13 글자가 화면에선
+       13 높이 × 6.5 폭으로 보이고, **1px 짜리 가로획이 먼저 뭉갠다**(「는」의 ㄴ, 실측).
+       원본 일본어도 같은 조건이지만 한글은 획이 많아 먼저 드러난다.
+    ⚠ 세로 기둥은 안 건드린다 — 좌우 이웃이 **둘 다** 있는 픽셀만 가로획으로 본다.
+       2px 세로 기둥은 왼쪽 칸에 왼 이웃이 없어 걸리지 않는다.
+    """
+    left = np.zeros_like(m)
+    right = np.zeros_like(m)
+    left[:, 1:] = m[:, :-1]
+    right[:, :-1] = m[:, 1:]
+    horiz = m & left & right
+    out = m.copy()
+    out[1:] |= horiz[:-1]
+    return out
+
+
 def render_line(txt, font):
     if font.startswith("Galmuri"):
         return _bdf_line(txt, font)
@@ -92,7 +111,7 @@ def _ink_top(m):
     return int(ys.min()) if len(ys) else 0
 
 
-def draw_block(lines, w, h, font, align, left, top, pitch, gap):
+def draw_block(lines, w, h, font, align, left, top, pitch, gap, bold_h=False):
     """줄들을 판에 앉힌다 — 빈 줄은 **문단 사이**(gap)로 친다."""
     out = np.zeros((h, w), bool)
     y, over = top, []
@@ -101,6 +120,8 @@ def draw_block(lines, w, h, font, align, left, top, pitch, gap):
             y += gap - pitch
             continue
         m, wid = render_line(ln, font)
+        if bold_h:
+            m = thicken_h(m)
         m = m[_ink_top(m) :]
         x = (w - wid) // 2 if align == "center" else left
         if x < 0 or x + wid > w:
@@ -133,6 +154,7 @@ def build_group(g):
         g["top"],
         g["pitch"],
         g["gap"],
+        g.get("bold_h", False),
     )
     outs = {}
     for t in g["targets"]:
