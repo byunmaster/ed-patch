@@ -41,11 +41,11 @@ def parse_dir(buf: bytes):
             return None
     if not ents or i >= len(buf) or buf[i] != DIR_END:
         return None
-    prev = i
+    # ⚠ src 는 단조증가가 아니다 — rel 1,444 의 마지막 항목이 앞을 되가리킨다(블록 공유).
+    #   「디렉터리 끝보다 뒤」만 본다. 단조 규칙을 두면 게임이 참조하는 컨테이너 하나를 놓친다.
     for _id, src, ln in ents:
-        if src <= prev or ln == 0 or ln > MAX_BLOCK:
+        if src <= i or ln == 0 or ln > MAX_BLOCK:
             return None
-        prev = src
     if ents[0][1] - (i + 1) > 64:
         return None
     return ents, i + 1
@@ -127,7 +127,30 @@ def stats(found: list[dict]) -> dict:
 
 
 # 실측 지문 — 스캐너·디코더가 흔들리면 여기서 운다(check.sh).
-EXPECT = {"containers": 23, "blocks": 318, "unique_blocks": 214, "sjis_chars": 127725}
+EXPECT = {"containers": 24, "blocks": 332, "unique_blocks": 220, "sjis_chars": 132834}
+
+
+# 🔴 분모 — 본 프로그램(rel 34 ×96 섹터, 뱅크 0x68~)의 **씬 컨테이너 표**. 뱅크 0x6A(=rel 42) 의
+# $6BF4 부터 3B 항목 `rec_lo rec_hi 섹터수`(rec 는 **rel − 34**, 로더 $56D8 가 0x22 를 더한다).
+# 장($C1B6)별 시작이 $6BE8 의 포인터 6개, 장 안 지역($C010)이 항목 번호다. 실측 44항목 · 고유 24.
+# 스캔(모양)과 이 표(참조)가 같아야 「전부 찾았다」가 선다 — 한쪽만 믿으면 rel 1,444 처럼 놓친다.
+REF_BANK_REL = 42
+REF_TABLE_OFF = 0xBF4
+REF_BASES_OFF = 0xBE8
+REF_ENTRIES = 44
+REC_BASE = 34
+
+
+def referenced() -> list[tuple[int, int]]:
+    """게임이 참조하는 (rel, 섹터수) 44개 — 순서는 표 순서(장·지역)."""
+    b = common.track_data(REF_BANK_REL, 4)
+    bases = [b[REF_BASES_OFF + i] | b[REF_BASES_OFF + i + 1] << 8 for i in range(0, 12, 2)]
+    assert bases[0] == 0x6000 + REF_TABLE_OFF, bases
+    out = []
+    for i in range(REF_ENTRIES):
+        e = b[REF_TABLE_OFF + i * 3 : REF_TABLE_OFF + i * 3 + 3]
+        out.append((REC_BASE + (e[0] | e[1] << 8), e[2]))
+    return out
 
 
 def main() -> None:
@@ -141,6 +164,14 @@ def main() -> None:
     print("컨테이너", st)
     if a.check and st != EXPECT:
         raise SystemExit(f"컨테이너 지문 불일치: 기대 {EXPECT}")
+    refs = referenced()
+    ref_set = {r for r, _ in refs}
+    scanned = {c["rel"] for c in found}
+    if ref_set != scanned:
+        raise SystemExit(
+            f"참조표와 스캔이 어긋난다: 참조만 {sorted(ref_set - scanned)} 스캔만 {sorted(scanned - ref_set)}"
+        )
+    print(f"참조표 {len(refs)}항목 · 고유 {len(ref_set)} = 스캔 결과와 일치")
     if a.dump:
         out = common.OUT_DIR / "text"
         out.mkdir(parents=True, exist_ok=True)
