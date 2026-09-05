@@ -2619,6 +2619,34 @@ def pad_windows(cand, raw, eid):
     return out + b"\x00" * (-len(out) % 4 or 4)
 
 
+def drop_extra_tail_mc(cand, raw):
+    """원본이 종단 `%c` 로 **안 끝나면 우리도 붙이지 않는다.**
+
+    🔴 `build_block` 은 꼬리 `%c` 를 **무조건** 붙이는데(`blk = head + body + MC`), 원본이
+    그걸 안 쓰는 블록이 있다(ED1 7개 — 보물상자 부류). `%c` 는 **인자 하나를 소비해 한
+    글자를 찍는** 변환이라, 콜사이트가 안 주는 `%c` 는 **스택의 쓰레기 값을 글자로 찍는다.**
+    화면에 `+` 가 떴다(유저 QA 2026-09-05 종장 보물상자).
+
+    ⚠ 예전 주석은 「꼬리 잘림 자리에서 종단을 더 내도 **허용**」이라고 적어 두고 `%c` 를
+    계약에서 뺐다. 그 전제가 틀렸다 — 남는 `%c` 는 잘림이 아니라 **글자를 만든다.**
+    ⚠ **부족한 쪽은 안 건드린다** — 종단을 못 만나면 뒤 데이터를 읽어 소프트락이 된다.
+    """
+    j, c = raw.rstrip(b"\x00"), cand.rstrip(b"\x00")
+    if c.count(MC) <= j.count(MC):
+        return cand  # 부족·동수는 건드리지 않는다
+    out = c
+    while out.count(MC) > j.count(MC):
+        # ⚠ 꼬리 `%c` 뒤에 **개행이 붙어 있는 꼴**도 본다 — 이름표만 있는 블록은
+        #   `%c이름%c\n` + `%c\n`(빈 창)이 되어 여분이 맨 끝이 아니다(ED2 5건 실측).
+        m = re.search(rb"%c\n*\Z", out)
+        if not m:
+            break
+        out = out[: m.start()]
+    if out is c:
+        return cand
+    return out + b"\x00" * (-len(out) % 4 or 4)
+
+
 def build_candidate(raw, t, eid):
     """번역 후보 바이트 생성 + 구조 계약 가드. 반환 (cand, None) 또는 (None, 제외사유).
 
@@ -2781,6 +2809,8 @@ def build_candidate(raw, t, eid):
     # 22곳 중 11곳만 잡혔다).
     if cand is not None:
         cand = drop_frame_full_nl(cand)
+    if cand is not None:
+        cand = drop_extra_tail_mc(cand, raw)
     if cand is not None and not from_tpl:
         n_runs = jp_ctrl_runs(raw)
         _, inline_fmt = jp_inline_fmt_windows(raw)
@@ -2815,8 +2845,10 @@ def build_candidate(raw, t, eid):
     # 들어간다 — 죽지 않고 조용히 틀린다. 위 두 게이트는 `%s`·`%d` 를 따로 세기만 해서
     # 이 자리를 못 봤다(2026-08-11 실측: `%s`·`%d` 가 섞인 블록 63개 — 지금 어긋난 건 0이라
     # 사고는 없었지만, 체인 순서를 뒤집는 배정 하나면 열린다).
-    # ⚠ `%c` 는 여기 안 넣는다 — 꼬리 잘림 자리에서 우리가 종단을 더 낼 수 있어(허용) 순서
-    # 비교가 오탐이 된다. 인자 소비 계약은 `%s`·`%d` 몫이다.
+    # ⚠ `%c` 는 **순서** 비교에서만 뺀다(창 수가 달라 자리가 어긋난다). **개수**는 이제
+    # `drop_extra_tail_mc` 가 맞추고 `build.py` 가 게이트로 센다 — 예전엔 「종단을 더 내도
+    # 허용」이라 적어 두고 안 셌는데, **남는 `%c` 는 인자를 소비해 쓰레기 글자를 찍는다**
+    # (유저 QA 2026-09-05: 화면에 `+`). 인자 소비 계약은 `%s`·`%d` 와 `%c` **개수**다.
     if cand is not None and _FMT_SEQ.findall(cand) != _FMT_SEQ.findall(raw):
         return None, "fmt_order"
     return cand, None
