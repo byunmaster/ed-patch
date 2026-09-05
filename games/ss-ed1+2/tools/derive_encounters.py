@@ -72,6 +72,13 @@ from text.josa import josa
 
 SYS_CANON = os.path.join(common.GAME_DIR, "script", "system.json")
 FILES = [f"/BIN/ED2MON{i:02d}.BIN" for i in range(1, 11)]
+
+# 🔴 **훑기만 하는 자리** — ED1 의 출현 문구 86줄은 `/ED.BIN` 안에 있다. 여기엔 **새로 얹지
+#    않는다**(본체 둘은 늘릴 수 없다 — `docs/status.md` 1-C). 그래도 **정본과 어긋났는지는
+#    봐야 한다**: 실측 2026-09-06, PS1 머지로 몬스터 여섯의 표기가 바뀌었는데 이 줄들이 옛
+#    표기로 남아 있었고 검사기가 하나도 안 울었다. 스캔이 `ED2MON*` 뿐이라 **사각지대**였다
+#    — 초록불이 「없다」가 아니라 「안 봤다」였던 것이다(체크리스트 4-B).
+AUDIT_FILES = ["/ED.BIN", "/ED2.BIN"]
 SUFFIX = "が現れた。"
 GROUP = "の群れ" + SUFFIX  # `<이름>の群れが現れた。`
 
@@ -125,6 +132,37 @@ def monster_names(mon):
             kr, mark = split_mark(jp, mon)
             if kr:
                 out[jp] = kr + mark
+    return out
+
+
+def audit_lines():
+    """훑기 전용 파일들의 `<…>が現れた。` 문자열 전량 — 앞 NUL 까지 거슬러 시작을 잡는다.
+
+    ⚠ 포인터를 안 따라간다(실행파일이라 상수 조립이 섞인다). 어긋남을 **보고**만 하므로
+      한둘을 놓쳐도 손해가 없고, 반대로 못 읽는 바이트를 억지로 문자열로 보지도 않는다.
+    """
+    pat = SUFFIX.encode("cp932")
+    out = set()
+    for path in AUDIT_FILES:
+        d = bytes(common.extract(path))
+        at = d.find(pat)
+        while at >= 0:
+            end = at + len(pat)
+            while end < len(d) and d[end : end + 1] == b"\n":
+                end += 1
+            start = d.rfind(b"\x00", 0, at) + 1
+            if 0 < end - start <= 80:
+                try:
+                    raw = d[start:end].decode("cp932")
+                except UnicodeDecodeError:
+                    raw = None
+                if raw:
+                    # ⚠ **머리 제어문자를 뗀 꼴도 같이 낸다.** 실측: `\tバルガーが現れた。`
+                    #    처럼 앞에 탭이 붙은 줄이 있는데 정본 열쇠는 **탭 없는 꼴**이라,
+                    #    생 런만 내면 그 줄이 조용히 안 잡힌다(둘 중 정본에 있는 쪽을 쓴다).
+                    out.add(raw)
+                    out.add(raw.lstrip("\t\n\u3000"))
+            at = d.find(pat, end)
     return out
 
 
@@ -214,7 +252,7 @@ def main():
             except UnicodeDecodeError:
                 pass
 
-    add, have, skip, miss = {}, 0, [], {}
+    add, have, skip, miss, stale = {}, 0, [], {}, []
     tight = []
     # ⚠ **이름은 여기서 안 낸다** — `tools/patch_mon_names.py` 몫이다. 정본이 파일을 안
     #   가려 `ED.BIN` 의 고정 폭 몬스터 표와 두 주인이 나기 때문이다(2026-08-27).
@@ -230,6 +268,13 @@ def main():
         k = sys_key(jp)
         if k in canon:
             have += 1
+            # 🔴 **있다고 맞는 건 아니다.** 정본(`shared/glossary`)의 이름 표기가 바뀌면
+            #    이미 적어 둔 이 줄들은 **아무도 안 본다** — 실측 2026-09-06: PS1 이 머지되며
+            #    몬스터 여섯의 표기가 바뀌었는데 여기 아홉 줄이 옛 표기로 남아 있었고,
+            #    grep 으로만 찾았다(`docs/naming.md` 「잡히지 않는 건 문안이다」).
+            #    ⚠ 고치지는 않는다 — 자리를 다시 재야 하므로 **보고까지**가 여기 몫이다.
+            if canon[k] != kr:
+                stale.append((k, canon[k], kr))
             continue
         # ⚠ **이미 정본에 있는 줄에는 이 규칙을 걸지 않는다.** 그것들은 빌드가 초록인 채로
         #   자리에 들어가 있다는 뜻이라, 뺐다가 되레 7줄을 일본어로 되돌렸다(실측).
@@ -242,7 +287,24 @@ def main():
         #    풀 배치로 판단하고 정말 모자라면 거기서 실패한다. 두 곳에서 재면 어긋난다.
         add[k] = kr
 
-    print(f"출현 문구 {len(jps)}종 — 이미 정본 {have} · 새로 유도 {len(add)} · 건너뜀 {len(skip)}")
+    # 훑기 전용 파일(본체 둘)은 **얹지 않고 어긋남만** 본다.
+    seen = set(jps)
+    for jp in sorted(audit_lines()):
+        if jp in seen:
+            continue
+        kr, bad = render(jp, mon)
+        if bad or kr is None:
+            continue
+        k = sys_key(jp)
+        if k in canon and canon[k] != kr:
+            stale.append((k, canon[k], kr))
+
+    print(
+        f"출현 문구 {len(jps)}종 — 이미 정본 {have} · 새로 유도 {len(add)} · "
+        f"건너뜀 {len(skip)}" + (f" · 🔴 정본과 어긋남 {len(stale)}" if stale else "")
+    )
+    for k, cur, want in stale:
+        print(f"   🔴 {k}\n      지금 {cur!r}\n      규칙 {want!r}")
     for k, v in list(add.items())[:12]:
         print(f"   {k} → {v!r}")
     if len(add) > 12:

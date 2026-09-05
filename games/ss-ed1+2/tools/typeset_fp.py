@@ -132,5 +132,13 @@ def fingerprint():
 
 
 if __name__ == "__main__":
+    # 🔴 **인자를 안 받는다 — 그런데 조용히 삼키면 안 된다.** 실측 2026-09-06:
+    #    `tools/typeset_fp.py --freeze` 를 돌리고 값이 얼린 줄 알았는데, 여기엔 인자 처리가
+    #    아예 없어 **보여 주기만 하고 끝났다.** 얼리는 자리는 공용 진입점이다.
+    if len(sys.argv) > 1:
+        sys.exit(
+            f"  ⛔ 이 파일은 인자를 안 받는다 ({' '.join(sys.argv[1:])}) — 값을 보여 줄 뿐이다.\n"
+            "     얼리려면: python3 scripts/check/typeset_fingerprint.py --game ss-ed1+2 --freeze"
+        )
     for k, v in fingerprint().items():
         print(f"  {v}  {k}")
