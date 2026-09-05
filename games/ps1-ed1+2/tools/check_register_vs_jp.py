@@ -135,17 +135,13 @@ def main():
             print(f"       [{c}] {j!r} → {o!r}")
         return 1 if bad else 0
     rows = scan_scenes()
-    ed1 = [r for r in rows if r[0].startswith("ED1")]
-    ed2 = [r for r in rows if r[0].startswith("ED2")]
-    if ed1:
-        print(f"  ❌ 원문 정중인데 우리가 평어체: {len(ed1)}곳 (화자 없는 블록만 셌다)")
-        for n, e, j, k in ed1[:20]:
+    if rows:
+        print(f"  ❌ 원문 정중인데 우리가 평어체: {len(rows)}곳 (화자 없는 블록만 셌다)")
+        for n, e, j, k in rows[:20]:
             print(f"       {n}:{e}  JP …{j}  KR …{k}")
     else:
-        print("  ✅ 화자 없는 블록의 문체가 원문과 같다 (ED1)")
-    if ed2:
-        print(f"     ℹ ED2 {len(ed2)}곳 — 인게임 QA 전에 맞춘다 («할 일»)")
-    return 1 if ed1 else 0
+        print("  ✅ 화자 없는 블록의 문체가 원문과 같다 (ED1·ED2)")
+    return 1 if rows else 0
 
 
 if __name__ == "__main__":
