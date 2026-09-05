@@ -35,6 +35,8 @@ python3 games/pce-ed1/tools/common.py              # 원본 지문 + IPL + 트�
 python3 games/pce-ed1/tools/containers.py --check  # 컨테이너 24 · 블록 332 · 고유 220 · 13.3만 자 + 참조표 분모
 python3 games/pce-ed1/tools/containers.py --dump   # work/derived/text/ 에 블록(.bin)·대본 덤프
 python3 games/pce-ed1/tools/lz.py encode <in> <out>
+python3 games/pce-ed1/tools/build.py [--edits work/edits_poc.json]   # work/build/<꼬리표>/ed1.iso+cue
+python3 games/pce-ed1/tools/ram_map.py <dump>...       # 워크 RAM 빈 자리(덤프 겹치기)
 sh games/pce-ed1/check.sh                          # ⭐ 이 게임의 커밋 전 게이트
 ```
 
