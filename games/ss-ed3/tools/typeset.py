@@ -92,9 +92,17 @@ def visible(s):
     return _CTRL.sub("", s)
 
 
+#   🔴 **숫자는 반각으로 써도 전각으로 그려진다**(2026-09-01 실측 — 화면의 `１` 이 전각
+#     글리프였고 칸 간격이 12px 였다. devlog 「숫자가 한글보다 높다」). 그래서 폭을 셀 때
+#     ASCII 숫자만 1.0 이다. 나머지 반각(부호·로마자)은 그대로 0.5 다.
+def char_cols(c):
+    """그 글자가 먹는 슬롯 — 반각 0.5 · 전각 1.0 · **ASCII 숫자는 1.0**."""
+    return 0.5 if ord(c) < 0x80 and not c.isdigit() else 1.0
+
+
 def cols(s):
     """전각 슬롯 폭. 반각은 0.5 로 세지만 **본편 대사엔 반각이 없다**(실측)."""
-    return sum(0.5 if ord(c) < 0x80 else 1.0 for c in visible(s))
+    return sum(char_cols(c) for c in visible(s))
 
 
 def lines(text):
@@ -149,7 +157,7 @@ def fold(line, width=WIN_COLS):
     """엔진이 접는 대로 — **글자 단위**로 자른 줄 목록."""
     out, cur, c = [], "", 0.0
     for ch in visible(line):
-        cw = 0.5 if ord(ch) < 0x80 else 1.0
+        cw = char_cols(ch)
         if c + cw > width:
             out.append(cur)
             cur, c = "", 0.0
