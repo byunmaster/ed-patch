@@ -370,12 +370,30 @@ def make_logo_op():
     src = np.asarray(ai_big_title())
     a = src[..., 3] > 0
     col = src[..., :3].copy()
-    # 🔴 400×118 은 축소가 2.8배뿐이라(작은 로고는 13.6배) **흰 테가 얇게 남는다.**
-    #    게다가 획이 만나는 **오목한 모서리**가 계단으로 패여 「이빨 빠진」 것처럼 보인다
-    #    (유저 지적 2026-09-05) ⇒ 부풀린 뒤 **닫기로 오목한 자리를 메운다.**
-    #    ⚠ 닫기 반지름을 더 키우면 글자끼리 흰 테로 붙는다(실측: 3.0 에서 ㅏ·야 가 붙었다).
+    # 🔴 400×118 은 원천이 1090px 라 축소가 **2.8배뿐**이다(작은 로고는 13.6배).
+    #    그래서 흰 테가 얇게 남고, 획이 만나는 **오목한 모서리**가 계단으로 패여
+    #    「이빨 빠진」 것처럼 보인다(유저 지적 2026-09-05).
+    #    ⇒ 실루엣을 **3배로 키워 흐린 뒤 자르고**(계단이 사라진다) **닫기로 오목한 자리를
+    #      메운 다음** 테를 두른다. 흐림 값이 곧 매끈함이다.
+    #    ⚠ 더 키우면 획이 뭉갠다(실측: 흐림 1.2 · 닫기 3.0 에서 「ㅎ」 윗획과 「마」의 ㅁ).
     k = src.shape[1] / OP["big_w"]
-    a2 = ndimage.binary_closing(ndimage.binary_dilation(a, _disk(k * 1.5)), _disk(k * 2.5))
+    up = 3
+    f = (
+        np.asarray(
+            Image.fromarray((a * 255).astype(np.uint8)).resize(
+                (a.shape[1] * up, a.shape[0] * up), Image.LANCZOS
+            )
+        ).astype(np.float32)
+        / 255
+    )
+    sil = ndimage.binary_closing(ndimage.gaussian_filter(f, 0.8 * up) >= 0.5, _disk(k * 2.5 * up))
+    rim = ndimage.binary_dilation(sil, _disk(k * 1.5 * up))
+    a2 = (
+        np.asarray(
+            Image.fromarray((rim * 255).astype(np.uint8)).resize(a.shape[1::-1], Image.LANCZOS)
+        )
+        >= 128
+    )
     col[a2 & ~a] = 255
     b = Image.fromarray(np.dstack([col, (a2 * 255).astype(np.uint8)]), "RGBA").resize(
         (OP["big_w"], OP["big_h"]), Image.LANCZOS
