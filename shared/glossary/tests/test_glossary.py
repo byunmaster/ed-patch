@@ -40,6 +40,37 @@ def test_table_keeps_canon_order():
     assert t == raw
 
 
+# 🔴 **음차+번역**이라 띄우는 게 맞는 이름 — 여기 있는 것만 공백이 허용된다.
+#    새로 추가하려면 **왜 번역인지**를 같이 적는다(`naming.md` 「외래어 이름은 공백을 뗀다」).
+SPACED_OK = {
+    "レストナキノコ": "`キノコ` 를 음차(`키노코`)하지 않고 **버섯**으로 번역했다 — 고유명+보통명사",
+}
+
+
+def test_katakana_names_are_joined():
+    """🔴 **가타카나 한 덩어리는 붙여 쓴다**(유저 확정 2026-08-29 · 2026-09-06 보강).
+
+    가르는 기준은 「원문이 가타카나인가」가 아니라 **「우리가 음차했는가」**다 —
+    음차+음차는 붙이고(`배틀슈트`), 음차+번역한 보통명사는 띄운다(`레스토나 버섯`).
+
+    ⚠ **이 규칙을 지키는 장치가 없어서 넷이 샜다**(2026-09-06 실측: `배틀 슈트`·사본·
+    `피코 해머`·`타이슨 펀치`). 규칙만 문서에 적고 검사기를 안 만들면 다음에 또 샌다 —
+    `オークホーン` 이 08-12 붙임 → 08-27 띄움 → 08-29 붙임으로 두 번 뒤집힌 것과 같은 자리다.
+    """
+    import re
+
+    kata = re.compile(r"^[ァ-ヴーｦ-ﾟ・]+$")
+    bad = [
+        (cat, jp, kr)
+        for cat, jp, kr in G.all_names()
+        if kata.match(jp) and " " in kr and jp not in SPACED_OK
+    ]
+    assert not bad, (
+        "가타카나 한 덩어리인데 우리 표기에 공백이 있다 — 붙이거나 `SPACED_OK` 에 근거와 함께 올린다:\n  "
+        + "\n  ".join(f"{c} {j} → {k!r}" for c, j, k in bad)
+    )
+
+
 # ⚠ 새 테스트는 이 줄 위에.
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
