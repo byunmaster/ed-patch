@@ -70,8 +70,9 @@ OP = {
 SUB_TEXT = "또 하나의 영웅들의 이야기"
 # 🔴 부제는 세로로 1.85배 눌리므로 **가로로 뚫린 속**이 먼저 메워진다.
 #    「들」의 ㄷ 이 그래서 덩어리로 보였다(유저 지적 2026-09-05) ⇒ 그 글자만 속을 넓힌다.
-#    값은 눌리기 **전** 해상도의 줄 수다. 크면 획이 얇아져 되레 흐려진다(실측: 16).
-SUB_OPEN = {"들": 12}
+#    값은 눌리기 **전** 해상도로 (위, 아래) 몇 줄씩 넓힐지다.
+#    ⚠ **위는 건드리지 않는다** — ㄷ 의 윗획을 깎으면 **ㄴ 으로 보인다**(유저 지적).
+SUB_OPEN = {"들": (0, 4)}
 SUB_BOTTOM = 69  # 부제 아래를 원본(68행)에 맞춘다
 SS = 8  # 글자는 8배로 찍고 줄인다
 
@@ -239,8 +240,8 @@ def _fit_font(txt, path, rows, width, track):
     return best
 
 
-def _open_counter(big, x0, x1, k):
-    """글자의 **가로로 뚫린 속**을 위아래로 k 줄 넓힌다 (제자리 수정).
+def _open_counter(big, x0, x1, up, dn):
+    """글자의 **가로로 뚫린 속**을 위로 up · 아래로 dn 줄 넓힌다 (제자리 수정).
 
     🔴 부제는 세로로 1.85배 눌리므로 가로 속이 먼저 메워진다 — 「들」의 ㄷ 이 그랬다.
     첫 덩어리(글자 맨 위 = 초성)에서 **획이 가장 얇은 줄들**을 속으로 보고, 그 위아래로
@@ -258,11 +259,21 @@ def _open_counter(big, x0, x1, k):
     ys = np.nonzero(dm.any(axis=1))[0]
     cnt = dm.sum(axis=1)
     thin = [y for y in range(ys.min(), ys.max() + 1) if 0 < cnt[y] <= cnt[ys].max() * 0.30]
-    if not thin:
+    # 🔴 **이어진 줄로 묶어야 한다.** 얇은 줄은 획의 뾰족한 끝에도 있어서, 그냥 min/max 를
+    #    잡으면 **ㄷ 통째**가 속이 되고 오른쪽이 다 지워져 **ㄴ 이 된다**(실측 2026-09-05).
+    runs = []
+    for y in thin:
+        if runs and y == runs[-1][-1] + 1:
+            runs[-1].append(y)
+        else:
+            runs.append([y])
+    runs = [r for r in runs if ys.min() not in r and ys.max() not in r]  # 끝에 닿은 건 획이다
+    if not runs:
         return
-    y0, y1 = min(thin), max(thin)
+    hole = max(runs, key=len)
+    y0, y1 = hole[0], hole[-1]
     stem_r = np.nonzero(dm[(y0 + y1) // 2])[0].max() + 2
-    sl = slice(max(0, y0 - k), y1 + 1 + k)
+    sl = slice(max(0, y0 - up), y1 + 1 + dn)
     big[sl, x0 + stem_r : x1] = np.where(dm[sl, stem_r:], 0, big[sl, x0 + stem_r : x1])
 
 
@@ -307,7 +318,7 @@ def subtitle(
     big = np.asarray(img).copy()
     for ch, k in SUB_OPEN.items():
         if ch in boxes:
-            _open_counter(big, *boxes[ch], k)
+            _open_counter(big, *boxes[ch], *k)
     ry, rx = max(1, round((SS + halo) * squash / 2)), max(1, round((SS + halo) / 2))
     yy, xx = np.ogrid[-ry : ry + 1, -rx : rx + 1]
     ringbig = ndimage.grey_dilation(big, footprint=(yy / ry) ** 2 + (xx / rx) ** 2 <= 1.0)
