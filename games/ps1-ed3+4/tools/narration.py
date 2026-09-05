@@ -52,58 +52,114 @@ NEODGM = os.path.join(common.REPO, "shared", "fonts", "neodgm.ttf")
 
 
 # ── 글자 찍기 ───────────────────────────────────────────────────────────────
-def _ttf_line(txt, size):
-    """(마스크, 폭) — neodgm 은 **제 크기(16px)** 로만 쓴다."""
+ELLIPSIS = {"…": 3, "‥": 2}  # 말줄임표는 **바닥에** 찍는다 (아래 `_dots`)
+
+
+def _ttf_rows(size):
+    return size * 3
+
+
+def _ttf_text(txt, size):
+    """(마스크, 폭) — neodgm 은 **제 크기(16px)** 로만 쓴다. 행 기하는 고정(size*3)."""
     f = ImageFont.truetype(NEODGM, size)
     w = int(ImageDraw.Draw(Image.new("L", (8, 8))).textlength(txt, font=f)) + 4
-    img = Image.new("L", (max(w, 8), size * 3), 0)
+    img = Image.new("L", (max(w, 8), _ttf_rows(size)), 0)
     ImageDraw.Draw(img).text((0, size // 2), txt, font=f, fill=255)
     m = np.asarray(img) > 100
     if not m.any():
-        return np.zeros((1, 1), bool), 0
+        return np.zeros((_ttf_rows(size), max(1, int(w))), bool), max(1, int(w))
     xs = np.nonzero(m.any(axis=0))[0]
     return m[:, xs.min() : xs.max() + 1], int(xs.max() - xs.min() + 1)
 
 
+def _baseline(font):
+    """말줄임표를 앉힐 줄 — **온점(`.`)의 아랫줄**이다.
+
+    ⚠ 「가」의 아랫줄이 아니다 — neodgm 은 받침이 온점보다 2줄 더 내려간다(실측).
+       그걸 기준으로 삼으면 점이 바닥 **아래로** 빠진다.
+    """
+    if font.startswith("Galmuri"):
+        f = galmuri(font)
+        cell = _cell(font)
+        b = f.bits(".", dy=cell, rows=cell * 3, width=cell + 8)
+        return int(np.nonzero(b.any(axis=1))[0].max())
+    m, _ = _ttf_text(".", int(font.split()[-1]))
+    return int(np.nonzero(m.any(axis=1))[0].max())
+
+
+def _cell(font):
+    if font.startswith("Galmuri"):
+        return int("".join(c for c in font if c.isdigit()))
+    return int(font.split()[-1])
+
+
+def _dots(ch, font):
+    """말줄임표를 **직접 찍는다** — 전각 한 칸에 바닥 점 셋.
+
+    🔴 폰트의 `…` 는 **글자 가운데 높이**에 있다(일본식). 한국어는 바닥이다.
+       Galmuri11 실측: `…` 은 바닥에서 5줄 위, `.` 은 바닥.
+    """
+    cell, rows = (
+        _cell(font),
+        (_cell(font) * 3 if font.startswith("Galmuri") else _ttf_rows(_cell(font))),
+    )
+    base = _baseline(font)
+    n = ELLIPSIS[ch]
+    thick = 1 if cell <= 12 else 2
+    m = np.zeros((rows, cell), bool)
+    for k in range(n):
+        x = round(cell * (k + 0.5) / n) - thick // 2
+        m[base - thick + 1 : base + 1, max(0, x) : max(0, x) + thick] = True
+    return m, cell
+
+
 def _bdf_line(txt, name):
-    """BDF 는 도트가 파일에 박혀 있어 크기를 안 탄다 — 칸 폭(이름의 숫자)으로 흘린다."""
+    """BDF 는 도트가 파일에 박혀 있어 크기를 안 탄다 — 칸 폭(이름의 숫자)으로 흘린다.
+
+    ⚠ **아스키는 반각이다** — 쉼표·온점·공백을 전각 칸에 넣으면 문장이 헐거워진다
+       (유저 지적 2026-09-05). Galmuri 는 아스키를 반각으로 그린 폰트다.
+    """
     f = galmuri(name)
-    cell = int("".join(ch for ch in name if ch.isdigit()))
+    cell = _cell(name)
     cols = []
     for ch in txt:
         if ch == " ":
-            cols.append(np.zeros((cell * 3, cell // 2 + 1), bool))
+            cols.append(np.zeros((cell * 3, cell // 2), bool))
             continue
         if not f.has(ch):
             raise SystemExit(f"🔴 글리프 없음: {ch!r} ({name})")
-        cols.append(f.bits(ch, dy=cell, rows=cell * 3, width=cell + 8)[:, :cell].astype(bool))
+        wide = cell if ord(ch) >= 0x80 else cell // 2  # 아스키는 반각
+        cols.append(f.bits(ch, dy=cell, rows=cell * 3, width=cell + 8)[:, :wide].astype(bool))
     m = np.concatenate(cols, axis=1) if cols else np.zeros((cell * 3, 1), bool)
     return m, m.shape[1]
 
 
-def thicken_h(m):
-    """**가로획만** 한 픽셀 굵힌다 (아래로).
-
-    🔴 게임 오프닝은 **512×240 모드**라 픽셀이 가로로 절반이다 — 13×13 글자가 화면에선
-       13 높이 × 6.5 폭으로 보이고, **1px 짜리 가로획이 먼저 뭉갠다**(「는」의 ㄴ, 실측).
-       원본 일본어도 같은 조건이지만 한글은 획이 많아 먼저 드러난다.
-    ⚠ 세로 기둥은 안 건드린다 — 좌우 이웃이 **둘 다** 있는 픽셀만 가로획으로 본다.
-       2px 세로 기둥은 왼쪽 칸에 왼 이웃이 없어 걸리지 않는다.
-    """
-    left = np.zeros_like(m)
-    right = np.zeros_like(m)
-    left[:, 1:] = m[:, :-1]
-    right[:, :-1] = m[:, 1:]
-    horiz = m & left & right
-    out = m.copy()
-    out[1:] |= horiz[:-1]
-    return out
-
-
 def render_line(txt, font):
-    if font.startswith("Galmuri"):
-        return _bdf_line(txt, font)
-    return _ttf_line(txt, int(font.split()[-1]))
+    """말줄임표만 따로 찍어 이어 붙인다 — 나머지는 폰트가 그대로 흘린다."""
+    segs, buf = [], ""
+    for ch in txt:
+        if ch in ELLIPSIS:
+            if buf:
+                segs.append(("t", buf))
+                buf = ""
+            segs.append(("e", ch))
+        else:
+            buf += ch
+    if buf:
+        segs.append(("t", buf))
+    parts = []
+    for kind, seg in segs:
+        if kind == "e":
+            parts.append(_dots(seg, font))
+        elif font.startswith("Galmuri"):
+            parts.append(_bdf_line(seg, font))
+        else:
+            parts.append(_ttf_text(seg, _cell(font)))
+    if not parts:
+        return np.zeros((1, 1), bool), 0
+    h = max(p[0].shape[0] for p in parts)
+    m = np.concatenate([np.pad(p[0], ((0, h - p[0].shape[0]), (0, 0))) for p in parts], axis=1)
+    return m, m.shape[1]
 
 
 def _ink_top(m):
@@ -111,7 +167,7 @@ def _ink_top(m):
     return int(ys.min()) if len(ys) else 0
 
 
-def draw_block(lines, w, h, font, align, left, top, pitch, gap, bold_h=False):
+def draw_block(lines, w, h, font, align, left, top, pitch, gap):
     """줄들을 판에 앉힌다 — 빈 줄은 **문단 사이**(gap)로 친다."""
     out = np.zeros((h, w), bool)
     y, over = top, []
@@ -120,8 +176,6 @@ def draw_block(lines, w, h, font, align, left, top, pitch, gap, bold_h=False):
             y += gap - pitch
             continue
         m, wid = render_line(ln, font)
-        if bold_h:
-            m = thicken_h(m)
         m = m[_ink_top(m) :]
         x = (w - wid) // 2 if align == "center" else left
         if x < 0 or x + wid > w:
@@ -154,7 +208,6 @@ def build_group(g):
         g["top"],
         g["pitch"],
         g["gap"],
-        g.get("bold_h", False),
     )
     outs = {}
     for t in g["targets"]:
