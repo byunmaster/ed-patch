@@ -2,7 +2,8 @@
 
 **트랙: [kr]** — 일본 원판(HCD1020, Hudson 1991) 한글 번역 패치. 공용 규칙은 루트
 [`CLAUDE.md`](../../CLAUDE.md), 진행 현황은 [`docs/status.md`](docs/status.md),
-경위·삽질은 [`docs/devlog.md`](docs/devlog.md).
+**번역·표기 방침은 [`docs/policy.md`](docs/policy.md)**, 경위·삽질은 [`docs/devlog.md`](docs/devlog.md).
+🔴 대사 문안을 쓰거나 검수하기 전에 스킬 `rpg-translate` 와 `docs/policy.md` 를 연다.
 
 ## 이 게임이 다른 점
 

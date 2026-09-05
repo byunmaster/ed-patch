@@ -85,3 +85,39 @@ class Parse(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FullLine(unittest.TestCase):
+    """틀을 꽉 채운 줄 뒤에는 개행을 안 넣는다(our-findings 2026-08-30)."""
+
+    def test_꽉_찬_줄_뒤_개행_없음(self):
+        import font
+        import translate
+        import typeset
+
+        table, _bank = font.build_table("가나다라마바사아자차카타파하")
+        text = "가나다라마바사아자차카타파 하나"  # 첫 줄이 13칸을 꽉 채운다
+        pages = typeset.pages(text, speaker=False)
+        self.assertEqual(len(pages[0][0]), typeset.WIDTH, pages)
+        msg = M.Message(0, 4, None, None, [("op", 0x00)])
+        out = translate.compose(msg, {"t": text}, table, {})
+        first = font.encode(pages[0][0], table)
+        self.assertTrue(out.startswith(first))
+        self.assertNotEqual(out[len(first)], translate.NL)
+
+    def test_안_찬_줄_뒤엔_개행(self):
+        import font
+        import translate
+        import typeset
+
+        table, _bank = font.build_table("가나다라마바사아자차카타파하")
+        text = "가나다라마바사아 자차카타파하가나다"  # 첫 줄 8칸(틀 미만) → 개행이 붙는다
+        pages = typeset.pages(text, speaker=False)
+        self.assertLess(len(pages[0][0]), typeset.WIDTH, pages)
+        msg = M.Message(0, 4, None, None, [("op", 0x00)])
+        out = translate.compose(msg, {"t": text}, table, {})
+        self.assertIn(bytes([translate.NL]), out)
+
+
+if __name__ == "__main__":
+    unittest.main()

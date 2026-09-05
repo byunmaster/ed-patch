@@ -53,7 +53,9 @@ def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str,
         if i:
             out.append(PAGE)
         for j, line in enumerate(pg):
-            if j:
+            # 🔴 **틀을 꽉 채운 줄 뒤에는 개행을 안 넣는다** — 인터프리터가 열 ≥ $99(13)에서 스스로
+            #    넘기므로 우리 `01` 이 얹히면 **빈 줄**이 된다(our-findings 2026-08-30, PS1 이 122곳).
+            if j and len(pg[j - 1]) < typeset.WIDTH:
                 out.append(NL)
             out += font.encode(line, table)
     if m.terminated:

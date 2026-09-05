@@ -369,9 +369,16 @@ def init_stub() -> bytes:
         a.op("LDA", "imm", GLYPH_BANK0 + i)
         a.op("TAM", "tam", 6)
         a.tii(0xA000, 0xC000, 0x2000)
+        # 🔴 **옮긴 뒤 원본 자리를 0 으로 되돌린다.** 뱅크 0x7C~0x7E 는 게임의 워크 영역이고
+        #    (전투 중 덤프에서 게임이 덮어쓴 걸 봤다) 원판은 0 으로 실린다. 우리 글리프를 남겨 두면
+        #    「0 으로 초기화된 자리」를 가정하는 코드가 다른 초기값을 본다 — 체크리스트 「빈 자리의 근거」.
+        a.op("STZ", "abs", 0xA000)
+        a.tii(0xA000, 0xA001, 0x1FFF)  # 겹침 복사로 0 을 뱅크 전체에 전파
     a.op("LDA", "imm", 0x7F)
     a.op("TAM", "tam", 5)
     a.tii(0xA000, HOOK_ADDR, PAYLOAD_LEN)
+    a.op("STZ", "abs", 0xA000)
+    a.tii(0xA000, 0xA001, 0x1FFF)
     a.op("PLA")
     a.op("TAM", "tam", 6)
     a.op("PLA")
