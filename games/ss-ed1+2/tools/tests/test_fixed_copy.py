@@ -55,7 +55,25 @@ class Sites(unittest.TestCase):
         """⚠ 우리 것이 짧은 건 결함이 아니다 — NUL 이 함께 복사돼 목적지가 끊긴다."""
         # (원본 8B · 칸 8B) 자리에 4B 를 넣어도 통과해야 한다
         orig = bytearray(16)
-        self.assertEqual(C.check("x", orig, orig, skip=set()), [])
+        bad, unread = C.check("x", orig, orig, skip=set())
+        self.assertEqual(bad, [])
+        self.assertEqual(unread, [])
+
+    def test_unmeasurable_is_reported_not_skipped(self):
+        """🔴 **「못 쟀다」와 「볼 게 없다」를 가른다**(2026-09-05).
+
+        `MAXLEN` 안에 NUL 이 없어 길이를 못 재면 예전엔 **조용히 건너뛰었다** — 초록불이
+        「없다」가 아니라 「안 봤다」가 되는 자리다(`scan_untranslated` 에서 실제로 물렸다).
+        지금은 0건이라 실패로 안 치고 **세어 보고**한다.
+        """
+        # 계약: `check` 는 **둘**을 돌려준다 — 어긋난 것과 **못 잰 것**
+        got = C.check("x", bytearray(16), bytearray(16), skip=set())
+        self.assertEqual(len(got), 2, "못 잰 자리를 안 돌려준다")
+        # `_strlen` 은 상한 안에 NUL 이 없으면 None 이다 — 그게 「못 쟀다」의 신호다
+        d = bytearray(b"\xff" * (C.MAXLEN + 8))
+        self.assertIsNone(C._strlen(d, C.LOAD_BASE))
+        d[C.MAXLEN - 1] = 0
+        self.assertEqual(C._strlen(d, C.LOAD_BASE), C.MAXLEN - 1)
 
 
 if __name__ == "__main__":

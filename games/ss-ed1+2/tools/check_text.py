@@ -133,6 +133,33 @@ def axis_style(rows):
     return bad
 
 
+def axis_joint():
+    """⑥ **조각이 이어 붙는 자리의 공백** — 조사로 끝나는데 꼬리 공백이 없는 정본.
+
+    🔴 이 게임의 시스템 문구는 **조각을 이어 붙여** 한 줄을 만든다(`最大HPが` + `%d` +
+       `ポイントあがった`). 일본어는 전각이라 공백이 없어도 붙는데, 한국어는 붙으면
+       **「최대 HP가56포인트」**가 된다 — 실측 2026-09-04 레벨업 화면에서 봤다.
+       ⚠ 바로 아랫줄 `최대 MP가 ` 는 공백이 있어 **짝이 어긋나 있었다.**
+
+    ⚠ **게이트가 아니라 보고**다 — 조각이 무엇과 이어 붙는지는 코드가 정하므로 여기서
+      단정할 수 없다(문장 끝인 조각도 있다). 사람이 화면에서 보고 정한다.
+    """
+    import json
+
+    p = os.path.join(common.GAME_DIR, "script", "system.json")
+    if not os.path.exists(p):
+        return []
+    with open(p, encoding="utf-8") as f:
+        d = json.load(f)
+    lines = d.get("lines", d)
+    out = [
+        (k, v)
+        for k, v in lines.items()
+        if isinstance(v, str) and v and v[-1] in "은는이가을를" and not v.endswith(" ")
+    ]
+    return sorted(out, key=lambda x: x[1])
+
+
 def axis_names(rows):
     """⑤ 고유명사 정본 — **후보만** 낸다(게이트 아님)."""
     names = typeset_scn._names()
@@ -173,6 +200,11 @@ def main():
         print(f"  ❌ {title}: {len(hits)}건")
         for row in hits[: (None if a.verbose else 8)]:
             print("     " + " · ".join(str(x) for x in row[2:]) + f"  ({row[0]} 0x{row[1]:X})")
+
+    joints = axis_joint()
+    print(f"  ℹ ⑥ 조사로 끝나는 조각의 꼬리 공백 {len(joints)}건 (판정은 사람)")
+    for k, v in joints[: (None if a.verbose else 10)]:
+        print(f"     {k}  {v!r}")
 
     miss = axis_names(rows)
     print(f"  ℹ ⑤ 고유명사 정본 후보 {sum(miss.values())}건 / {len(miss)}종 (판정은 사람)")

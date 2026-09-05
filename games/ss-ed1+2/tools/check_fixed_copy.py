@@ -91,8 +91,8 @@ def sites(d):
 
 
 def check(fname, orig, built, skip):
-    """`[(리터럴, 원본길이, 우리길이, 복사길이, 왜)]` — 어긋난 것만."""
-    bad = []
+    """`([(리터럴, 원본길이, 우리길이, 복사길이, 왜)], [못 잰 리터럴]) — 어긋난 것만."""
+    bad, unread = [], []
     for at, cap, srcs in sites(orig):
         if at in skip:
             continue
@@ -101,6 +101,14 @@ def check(fname, orig, built, skip):
             nv = struct.unpack(">I", bytes(built[off : off + 4]))[0]
             our = _strlen(built, nv)
             if our is None:
+                # 🔴 **「못 쟀다」와 「볼 게 없다」를 가른다**(2026-09-04). 주소가 파일 밖이면
+                #    문자열이 아니라 볼 게 없는 것이지만, `MAXLEN` 안에 NUL 이 없어서 못 쟀다면
+                #    그건 **검사를 건너뛴 것**이다. 조용히 넘기면 초록불이 「없다」가 아니라
+                #    「안 봤다」가 된다(체크리스트 4-B — 같은 꼴을 `scan_untranslated` 에서
+                #    실제로 물렸다). 지금은 0건이라 실패로 안 치고 세어 보고만 한다.
+                o2 = nv - LOAD_BASE
+                if 0 <= o2 < len(built) - 1 and bytes(built[o2 : o2 + MAXLEN]).find(0) < 0:
+                    unread.append(lit)
                 continue
             # 🔴 기준은 **원본이 그 칸에 어떻게 맞았나**다.
             #    ⚠ 「우리 것이 짧다」는 결함이 아니다 — 짧으면 NUL 이 함께 복사돼 목적지가
@@ -111,7 +119,7 @@ def check(fname, orig, built, skip):
                     bad.append((lit, ln, our, cap, "종단이 잘린다 — 직전 내용이 이어진다"))
             elif our > cap:  # 원본이 NUL 없이 꽉 채우던 고정 폭 필드
                 bad.append((lit, ln, our, cap, "칸을 넘는다 — 뒤가 잘린다"))
-    return bad
+    return bad, unread
 
 
 def main():
@@ -145,8 +153,11 @@ def main():
             continue
         n = len(sites(orig))
         total += n
-        bad = check(fname, orig, common.read_extent(mm, *files[fname]), skip)
+        bad, unread = check(fname, orig, common.read_extent(mm, *files[fname]), skip)
         fails += len(bad)
+        if unread:
+            # ⚠ 「못 쟀다」는 실패가 아니라 **안 본 것**이다 — 조용히 넘기지 않는다
+            print(f"  ⚠ {fname}: 길이를 못 잰 자리 {len(unread)}곳 (MAXLEN {MAXLEN}B 안에 NUL 이 없다)")
         if bad:
             print(f"  ❌ {fname}: 고정 복사 {len(bad)}곳이 어긋난다")
             for lit, ln, our, cap, why in bad:
