@@ -100,6 +100,33 @@ def same_fragment_split(t, minlen=3):
     return sorted(out, key=lambda r: (-len(r[1]), r[1]))
 
 
+def cross_category_split():
+    """③ **범주를 가로질러 갈린 자리** → `[(원문, [(범주, 표기)], 화면에 나가는 표기)]`.
+
+    🔴 ① 은 **범주 안**만 본다(`for cat in categories()`), 그래서 같은 원문이 범주마다 다른
+       자리는 **구조적으로 안 보인다.** 그런데 대사의 이름 자리는 범주를 모른 채
+       `typeset_scn._names()` 로 **뭉쳐서** 찾으므로 **뒤 범주가 이긴다** — 화면엔 한쪽만 나온다.
+
+    ⚠ **실패로 안 친다** — 갈림이 **의도된 것도 있다.** 정본 `_doc` 이 못 박아 뒀다:
+      「같은 JP 가 범주에 따라 다른 것을 가리킨다(`カース` = 아이템 커스 / 몬스터 카스)」.
+      유저 확정 2026-09-05: `カース` 는 구분하려고 다르게 쓴 것이고, `ブラムナ`(주문 프람나 /
+      몬스터 브람나퀸·브람나독)도 같은 꼴이다.
+    ⇒ 그러니 여기서 물을 것은 「갈렸나」가 아니라 **「화면에 나가는 쪽이 맞나」**다.
+    """
+    from typeset_scn import _names
+
+    per = collections.defaultdict(dict)
+    for cat in glossary.categories():
+        for jp, kr in glossary.table(cat).items():
+            per[jp][cat] = kr
+    merged = _names()
+    out = []
+    for jp, d in per.items():
+        if len(set(d.values())) > 1:
+            out.append((jp, sorted(d.items()), merged.get(jp)))
+    return sorted(out)
+
+
 def main():
     bad = 0
     for cat in glossary.categories():
@@ -116,6 +143,11 @@ def main():
         print(
             "  \u2705 \uac19\uc740 \uc6d0\ubb38\uc774 \ub450 \ud45c\uae30\ub85c \uac08\ub9b0 \uc790\ub9ac\ub294 \uc5c6\ub2e4"
         )
+    cross = cross_category_split()
+    print(f"  ℹ 범주를 가로질러 갈린 자리 {len(cross)} (판정은 사람)")
+    for jp, per, win in cross:
+        print(f"     {jp} → " + " · ".join(f"{c}:{k}" for c, k in per) + f"   ⇒ 화면 {win!r}")
+
     frag = same_fragment_split(glossary.table("monster"))
     print(
         f"  \u2139 \uac19\uc740 \uc870\uac01\uc778\ub370 \ud45c\uae30\uac00 \uac08\ub9b0 \ud6c4\ubcf4 {len(frag)} (\ud310\uc815\uc740 \uc0ac\ub78c)"
