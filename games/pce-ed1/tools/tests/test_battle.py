@@ -86,3 +86,43 @@ class Patch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Messages(unittest.TestCase):
+    def blk(self, tail: bytes) -> bytes:
+        """레코드 하나 + 종단 + 꼬리(코드·문구)."""
+        return rec(SJ("スライムＡ") + b"\x06") + b"\xff\xff\xff\xff" + b"\0" * 60 + tail
+
+    def test_문구_범위와_종단(self):
+        d = self.blk(SJ("スライムが現れた。") + b"\x07")
+        u = B.msg_units(d)
+        self.assertEqual(len(u), 1)
+        self.assertEqual(B.render(u[0]["body"]), "スライムが現れた。")
+        self.assertEqual(u[0]["term"], 0x07)
+        self.assertEqual(u[0]["room"], len(SJ("スライムが現れた。")) + 1)
+
+    def test_낀_제어코드는_먹고_흐름_옵코드는_끊는다(self):
+        """🔴 `0F` 는 뒤에 주소 2B 를 달고 다닌다 — 글자로 먹으면 되쓸 때 점프 주소를 덮는다."""
+        d = self.blk(SJ("あいう") + b"\x01" + SJ("えお") + b"\x0f\x34\xc5" + SJ("かきく") + b"\x07")
+        got = [B.render(u["body"]) for u in B.msg_units(d)]
+        self.assertEqual(got, ["あいう{01}えお", "かきく"])
+
+    def test_포인터_표는_글자가_아니다(self):
+        """`40 C5 46 C5 …` 는 유효한 리드/트레일이지만 SJIS 로 안 풀린다 — 코드가 문구에 안 섞여야 한다."""
+        d = self.blk(b"\x40\xc5\x46\xc5\x47\xc5\x49\xc5" + SJ("あいう") + b"\x07")
+        got = [B.render(u["body"]) for u in B.msg_units(d)]
+        self.assertEqual(got, ["あいう"])
+
+    def test_참조가_조각을_끊는다(self):
+        """코드가 덩이 중간을 가리키면 공유 조각이다 — 거기서 갈라야 문안이 남의 자리로 안 샌다."""
+        body = SJ("あいう") + b"\x01" + SJ("えおか") + b"\x07"
+        tail = b"\xa9\x00\x85\x20\xa9\x00\x85\x21"  # 자리표시자(뒤에서 주소를 채운다)
+        d = bytearray(self.blk(body + tail))
+        start = len(B.records(bytes(d))) * B.REC
+        off = d.index(body, start)
+        at = d.index(tail, start)
+        mid = off + 7  # 「えお」 앞(あいう 6B + 개행 1B)
+        d[at + 1] = (B.LOAD_ADDR + mid) & 0xFF
+        d[at + 5] = (B.LOAD_ADDR + mid) >> 8
+        got = [B.render(u["body"]) for u in B.msg_units(bytes(d))]
+        self.assertEqual(got, ["あいう{01}", "えおか"])

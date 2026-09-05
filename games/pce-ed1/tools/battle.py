@@ -14,7 +14,9 @@
 바뀌므로 컨테이너를 다시 깐다 — 그래서 `pack()` 이 디렉터리까지 새로 쓴다.
 """
 
+import itertools
 import json
+import re
 import sys
 import unicodedata
 from pathlib import Path
@@ -23,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import common
 import lz
+import messages as M
 
 BASE = 0x6000  # 컨테이너가 올라가는 논리 주소
 REC = 64  # 몬스터 레코드
@@ -184,10 +187,11 @@ def kr_names(extra: dict[str, str] | None = None) -> tuple[dict[str, str], list[
 
 
 def patch_blocks(rel: int, kr: dict[str, str], table, errors: list[str]) -> tuple[list[dict], int]:
-    """컨테이너 하나의 블록들에 우리 이름을 박는다. (블록, 갈아 끼운 칸 수)"""
+    """컨테이너 하나의 블록들에 우리 이름·문구를 박는다. (블록, 갈아 끼운 칸 수)"""
     import font
 
     blocks = parse(rel)
+    msgs = _msgs()
     hit = 0
     for b in blocks:
         data = bytearray(b["data"])
@@ -218,6 +222,7 @@ def patch_blocks(rel: int, kr: dict[str, str], table, errors: list[str]) -> tupl
                 continue
             data[off : off + len(enc)] = enc
             hit += 1
+        hit += patch_msgs(data, msgs, table, errors, f"rel{rel} blk")
         b["data"] = bytes(data)
     return blocks, hit
 
@@ -290,8 +295,210 @@ def verify(iso: Path, table, extra: dict[str, str] | None = None) -> int:
     return checked
 
 
+TOKEN = re.compile(r"\{([0-9A-F]{2})\}")
+
+
+def _msgs() -> dict[str, str]:
+    f = common.GAME_DIR / "script" / "sys" / "battle.json"
+    return json.loads(f.read_text()).get("messages", {}) if f.exists() else {}
+
+
+def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], where: str) -> int:
+    """전투 문구를 **제자리**로 갈아 끼운다. 자리를 안 옮기고, 남는 꼬리는 원본 바이트로 둔다.
+
+    꼬리를 원본대로 두는 까닭: 참조 스캔이 **분할 즉치만** 본다(`code_refs`). 못 본 참조가 조각
+    중간을 가리켜도 그 자리엔 **원문 일본어**가 남지, 우리 바이트 한복판이 걸리지 않는다.
+    ⚠ 제어코드는 원문과 **같은 차례로 같은 것**이어야 한다 — `{02}`(행위자 이름)를 빠뜨리면
+    이름이 통째로 안 나온다.
+    """
+    n = 0
+    for u in msg_units(bytes(data)):
+        kr = msgs.get(msg_key(u["body"]))
+        if not kr:
+            continue
+        jp_tok = TOKEN.findall(render(u["body"]))
+        if TOKEN.findall(kr) != jp_tok:
+            errors.append(f"{where} +{u['off']:04X} 「{kr}」 제어코드가 원문과 다르다 {jp_tok}")
+            continue
+        from sysbuild import encode_tokens
+
+        enc = encode_tokens(kr, table)
+        if u["term"] is not None:
+            enc += bytes([u["term"]])
+        if len(enc) > u["room"]:
+            errors.append(f"{where} +{u['off']:04X} 「{kr}」 {len(enc)}B > {u['room']}B")
+            continue
+        data[u["off"] : u["off"] + len(enc)] = enc
+        n += 1
+    return n
+
+
 def glyph_chars(extra: dict[str, str] | None = None) -> set[str]:
     import font
 
     kr, _ = kr_names(extra)
-    return {c for v in kr.values() for c in v if font.needs_glyph(c)}
+    chars = {c for v in kr.values() for c in v if font.needs_glyph(c)}
+    for v in _msgs().values():
+        chars |= {c for c in TOKEN.sub("", v) if font.needs_glyph(c)}
+    return chars
+
+
+# ─── 전투 문구 ─────────────────────────────────────────────────────────────
+# 레코드 표 뒤에는 전투 코드와 씬 문법 문구(「…が現れた。」)가 섞여 있다. 경계를 어떻게 잡나:
+#
+#   **범위**는 탐욕 스캔이 준다 — 글자(≥0x24, 2B)와 사이에 낀 제어코드를 먹다가,
+#   다음이 글자가 아닌 제어코드를 만나면 그것이 **종단**이다.
+#   **자르는 자리**는 코드가 가리키는 주소가 준다 — 한 덩이 안을 가리키는 참조가 있으면
+#   거기서 끊는다(공유 조각이다. sysmsg 의 `0F` 이어쓰기와 같은 사정).
+#
+# ⚠ 참조 스캔은 **분할 즉치만** 본다(`LDA #lo / STA / LDA #hi / STA`). 표·계산으로 가리키는
+#   자리는 못 본다 — 그래서 되쓰기는 **자리를 안 옮긴다**. 못 본 참조가 있어도 최악이
+#   「그 조각만 일본어로 남는다」이지 깨지지 않는다.
+SPLIT_PTR = re.compile(rb"\xa9(.)(?:\x85(.)|\x8d(..))\xa9(.)(?:\x85(.)|\x8d(..))", re.DOTALL)
+MSG_TERM = 0x24  # 이 값 미만은 제어코드
+# 글자 사이에 낄 수 있는 제어코드 — **피연산자가 없는 것만**이다.
+# 🔴 `0F/10/11/12/13/14/15` 는 뒤에 주소 2B 를 달고 다닌다. 그걸 낀 제어코드로 보면 **주소 바이트가
+#    글자로 읽혀** 문구에 딸려 들어오고, 되쓰면 점프 주소를 덮는다(실측: 「の左{0F}鞍」).
+INLINE_OPS = frozenset(
+    {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0A, 0x0B, 0x0E, 0x1E, 0x1F, 0x20, 0x22}
+)
+
+
+def is_char(data: bytes, i: int) -> bool:
+    """전각 SJIS 두 바이트인가.
+
+    ⚠ 인터프리터 자체는 「≥0x24 면 2바이트 글자」로만 보지만 **스캔에는 그 규칙을 못 쓴다** —
+    포인터 표(`40 C5 46 C5 …`)가 글자로 읽혀 코드가 문구에 딸려 들어온다(실측: 792단위 중
+    391이 그런 쓰레기였다). 스캔은 **유효한 전각 코드**만 글자로 센다.
+    """
+    if i + 1 >= len(data):
+        return False
+    a, b = data[i], data[i + 1]
+    if not ((0x81 <= a <= 0x9F or 0xE0 <= a <= 0xEF) and 0x40 <= b <= 0xFC and b != 0x7F):
+        return False
+    try:  # 유효한 리드/트레일 안에도 **미정의 코드**가 있다 — 그게 걸리면 글자 시작이 한 칸 밀린 것이다
+        data[i : i + 2].decode("cp932")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def code_refs(data: bytes) -> set[int]:
+    """블록 코드가 분할 즉치로 가리키는, **글자로 시작하는** 블록 안 오프셋."""
+    out = set()
+    for m in SPLIT_PTR.finditer(data):
+        lo, hi = m.group(1)[0], m.group(4)[0]
+        z1 = m.group(2)[0] if m.group(2) else (m.group(3)[0] | m.group(3)[1] << 8)
+        z2 = m.group(5)[0] if m.group(5) else (m.group(6)[0] | m.group(6)[1] << 8)
+        if z2 != z1 + 1:
+            continue
+        off = (lo | hi << 8) - LOAD_ADDR
+        if 0 <= off < len(data) - 1 and is_char(data, off):
+            out.add(off)
+    return out
+
+
+def text_runs(data: bytes, start: int) -> list[tuple[int, int, int | None]]:
+    """(시작, 본문 끝, 종단바이트|None) — start 부터 훑는다."""
+    out = []
+    i = start
+    n = len(data)
+    while i < n - 1:
+        if not is_char(data, i):
+            i += 1
+            continue
+        j, chars = i, 0
+        while j < n - 1:
+            if is_char(data, j):
+                j += 2
+                chars += 1
+                continue
+            if chars and data[j] in INLINE_OPS and is_char(data, j + 1):  # 낀 제어코드
+                j += 1
+                continue
+            break
+        if chars >= 3:
+            term = data[j] if j < n and data[j] < MSG_TERM else None
+            out.append((i, j, term))
+            i = j + 1
+        else:
+            i += 1
+    return out
+
+
+def msg_units(data: bytes) -> list[dict]:
+    """전투 문구 단위. 탐욕 범위를 **코드 참조에서 끊어** 공유 조각을 지킨다."""
+    start = len(records(data)) * REC
+    refs = code_refs(data)
+    out = []
+    for a, b, term in text_runs(data, start):
+        cuts = sorted({a} | {r for r in refs if a < r < b}) + [b]
+        for k, (lo, hi) in enumerate(itertools.pairwise(cuts)):
+            last = k == len(cuts) - 2
+            out.append(
+                {
+                    "off": lo,
+                    "body": data[lo:hi],
+                    "term": term if last else None,
+                    "room": (hi - lo) + (1 if last and term is not None else 0),
+                }
+            )
+    return out
+
+
+def render(body: bytes) -> str:
+    """본문 → 사람이 읽는 꼴. 제어코드는 `{XX}` 로 둔다(sysbuild.encode_tokens 와 짝)."""
+    out = []
+    i = 0
+    while i < len(body):
+        if body[i] >= MSG_TERM:
+            out.append(body[i : i + 2].decode("cp932", errors="replace"))
+            i += 2
+        else:
+            out.append(f"{{{body[i]:02X}}}")
+            i += 1
+    return "".join(out)
+
+
+def msg_key(body: bytes) -> str:
+    """문구 열쇠 — **제어코드를 포함한** 원문의 해시(`shared/text/line_key`).
+
+    ⚠ 원문은 정본에 안 담는다(루트 「저작권」) — 그래서 열쇠가 정본의 키다.
+    ⚠ sysmsg 는 토큰을 뺀 원문으로 열쇠를 만드는데 **여기선 포함**한다. 같은 글이라도 `{02}`(행위자
+    이름)·`{01}`(개행) 자리가 다른 단위가 있어서, 토큰을 빼면 320개로 뭉쳐 **한 문안이 다른 자리에
+    쓰이며 토큰을 잃는다**(실측: 337 → 320). 타이틀 공용 사전과는 열쇠가 갈리지만 그 재사용률은
+    3.2% 라 정확성을 택했다.
+    """
+    return M.jp_key(render(body))
+
+
+def msg_jp(body: bytes) -> str:
+    """열쇠를 만들 때 쓰는 「토큰 없는 원문」. 덤프에만 쓴다(커밋 금지)."""
+    out = []
+    i = 0
+    while i < len(body):
+        if is_char(body, i):
+            out.append(body[i : i + 2].decode("cp932"))
+            i += 2
+        else:
+            i += 1
+    return "".join(out)
+
+
+def dump_messages() -> int:
+    """열쇠↔원문 대조표를 `work/derived/battle/` 로 — ⚠ 원문이라 커밋하지 않는다."""
+    out_dir = common.OUT_DIR / "battle"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rows = {}
+    for c in scan():
+        for k, b in enumerate(c["blocks"]):
+            for u in msg_units(b["data"]):
+                jp = msg_jp(u["body"])
+                key = msg_key(u["body"])
+                r = rows.setdefault(
+                    key, {"jp": jp, "tokens": render(u["body"]), "room": u["room"], "at": []}
+                )
+                r["room"] = min(r["room"], u["room"])
+                r["at"].append(f"{c['rel']}:{k}:{u['off']:04X}")
+    (out_dir / "messages.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1))
+    return len(rows)
