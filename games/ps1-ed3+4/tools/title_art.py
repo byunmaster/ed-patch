@@ -370,15 +370,20 @@ def make_logo_op():
     src = np.asarray(ai_big_title())
     a = src[..., 3] > 0
     col = src[..., :3].copy()
-    a2 = ndimage.binary_dilation(a, _disk(src.shape[1] / OP["big_w"]))
+    # 🔴 400×118 은 축소가 2.8배뿐이라(작은 로고는 13.6배) **흰 테가 얇게 남는다.**
+    #    게다가 획이 만나는 **오목한 모서리**가 계단으로 패여 「이빨 빠진」 것처럼 보인다
+    #    (유저 지적 2026-09-05) ⇒ 부풀린 뒤 **닫기로 오목한 자리를 메운다.**
+    #    ⚠ 닫기 반지름을 더 키우면 글자끼리 흰 테로 붙는다(실측: 3.0 에서 ㅏ·야 가 붙었다).
+    k = src.shape[1] / OP["big_w"]
+    a2 = ndimage.binary_closing(ndimage.binary_dilation(a, _disk(k * 1.5)), _disk(k * 2.5))
     col[a2 & ~a] = 255
     b = Image.fromarray(np.dstack([col, (a2 * 255).astype(np.uint8)]), "RGBA").resize(
         (OP["big_w"], OP["big_h"]), Image.LANCZOS
     )
     arr = np.asarray(b).astype(np.float32)
     m = arr[..., 3] >= 128
-    arr[m & ~ndimage.binary_erosion(m, np.ones((3, 3)))] = (255, 255, 255, 255)
-    arr[..., :3] = _soften_edge(arr[..., :3], m, EDGE)
+    arr[m & (ndimage.distance_transform_edt(m) <= 2)] = (255, 255, 255, 255)  # 바깥 2겹 순백
+    arr[..., :3] = _soften_edge(arr[..., :3], m, 0.4)
     arr = np.clip(arr, 0, 255).astype(np.uint8)
     arr[~m] = 0
     arr[..., 3] = m * 255
