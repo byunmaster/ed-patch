@@ -195,12 +195,24 @@ def load():
         return json.load(f)
 
 
+# 🔴 **화면이 안 그리는 열이 있다.** 512폭 오프닝 카드는 **254·255** 를 버린다 —
+#    게임이 반씩 두 번 찍는데 오른쪽 반이 2px 왼쪽에 얹힌다. 그 열에 걸친 획은
+#    **조용히 사라진다**(「무」의 ㅁ 왼쪽 세로획이 없어져 ㄱ 으로 읽혔다 — 유저 지적).
+#    ⇒ 글자를 **510폭으로 짜고** 그 자리에 **빈 열 둘을 끼워** 512로 늘린다.
+#    근거 둘 — ① 에뮬 화면과 대조해 254 에서 어긋남이 최소(26px, 전부 별)
+#              ② **원본 일본어 두 장 다 254·255 가 정확히 비어 있다**(원작도 피해 그렸다).
+#    ⚠ 자리마다 다르므로 **잰 곳만** 정본에 `seam` 을 적는다 — 432폭 엔딩은 원본에
+#      그런 빈 열이 없어 아직 모른다(건드리지 않는다).
+SEAM_W = 2
+
+
 def build_group(g):
     """(파일이름 → RGBA 배열, 넘친 줄, 쓴 높이)."""
     canvas_h = g.get("canvas_h", g["h"])
+    seam = g.get("seam")
     ink, used, over = draw_block(
         g["lines"],
-        g["w"],
+        g["w"] - SEAM_W * (seam is not None),
         canvas_h,
         g["font"],
         g["align"],
@@ -209,6 +221,8 @@ def build_group(g):
         g["pitch"],
         g["gap"],
     )
+    if seam is not None:  # 안 그려지는 열 둘을 끼워 넣는다
+        ink = np.insert(ink, [seam] * SEAM_W, False, axis=1)
     outs = {}
     for t in g["targets"]:
         off = t.get("offset", 0)
@@ -239,7 +253,8 @@ def main():
             bad += 1
             print(f"  🔴 {note}")
             for ln, wid in over:
-                print(f"       칸을 넘는다({wid}px + 왼쪽 {g.get('left', 0)} > {g['w']}): {ln}")
+                w = g["w"] - SEAM_W * (g.get("seam") is not None)
+                print(f"       칸을 넘는다({wid}px + 왼쪽 {g.get('left', 0)} > {w}): {ln}")
             if used > room:
                 print(f"       줄이 판을 넘는다: {used} > {room}")
             continue
