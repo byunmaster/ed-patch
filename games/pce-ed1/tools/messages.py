@@ -247,7 +247,16 @@ def load_translations(scene_id: int) -> dict[str, dict]:
 
 
 def load_speakers() -> dict[str, str]:
-    return json.loads(SPEAKERS.read_text()) if SPEAKERS.exists() else {}
+    """화자 이름 = **`shared/glossary` 가 정본**이고 `script/speakers.json` 은 보충·덮어쓰기.
+
+    역할군(兵士·神父·道具屋…)까지 정본에 들어 있어 따로 적을 필요가 없다(2026-09-06 확인).
+    """
+    import sysbuild  # 지연 임포트 — 순환을 피한다
+
+    out = dict(sysbuild.glossary())
+    if SPEAKERS.exists():
+        out.update(json.loads(SPEAKERS.read_text()))
+    return out
 
 
 # ─── 재삽입 ──────────────────────────────────────────────────────────────────
@@ -255,8 +264,12 @@ def splice(block: bytes, edits: list[tuple[Message, bytes]]) -> bytes:
     """메시지들을 제자리에 쓰고, 넘치면 `0F` 로 블록 끝에 잇는다. 기존 주소는 하나도 안 움직인다."""
     out = bytearray(block)
     for m, new in edits:
-        if m.pinned or m.complex:
-            raise ValueError(f"메시지 +{m.start:#06x} 는 pinned/complex — 자리 규칙으로 못 넣는다")
+        if m.pinned:
+            raise ValueError(
+                f"메시지 +{m.start:#06x} 는 pinned(안쪽 참조) — 자리 규칙으로 못 넣는다"
+            )
+        # ⚠ complex(텍스트 밖 옵코드 앞에서 끊긴 조각)는 넣을 수 있다 — 종료가 없으니 `0F` 로 원래
+        #   옵코드 자리(m.end)에 잇는다. 그 옵코드부터 실행이 그대로 이어진다.
         room = m.end - m.start
         if not m.terminated:
             nxt = BASE + m.end
