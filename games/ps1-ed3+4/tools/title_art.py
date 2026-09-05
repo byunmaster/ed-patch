@@ -70,9 +70,11 @@ OP = {
 SUB_TEXT = "또 하나의 영웅들의 이야기"
 # 🔴 부제는 세로로 1.85배 눌리므로 **가로로 뚫린 속**이 먼저 메워진다.
 #    「들」의 ㄷ 이 그래서 덩어리로 보였다(유저 지적 2026-09-05) ⇒ 그 글자만 속을 넓힌다.
-#    값은 눌리기 **전** 해상도로 (위, 아래) 몇 줄씩 넓힐지다.
-#    ⚠ **위는 건드리지 않는다** — ㄷ 의 윗획을 깎으면 **ㄴ 으로 보인다**(유저 지적).
-SUB_OPEN = {"들": (0, 4)}
+#    값은 눌리기 **전** 해상도로 (속을 위·아래로 몇 줄 넓힐지, 윗획·아랫획을 오른쪽으로
+#    몇 칸 늘일지)다. 속만 트면 획이 짧아 여전히 아리송하다 ⇒ **획도 같이 늘인다.**
+#    ⚠ **속을 위로 넓히지 않는다** — ㄷ 의 윗획을 깎으면 **ㄴ 으로 보인다**(유저 지적).
+#    ⚠ 아랫획을 더 늘이면 바로 아래 ㅡ 와 붙어 다시 덩어리가 된다.
+SUB_OPEN = {"들": (0, 4, 16, 24)}
 SUB_BOTTOM = 69  # 부제 아래를 원본(68행)에 맞춘다
 SS = 8  # 글자는 8배로 찍고 줄인다
 
@@ -240,8 +242,9 @@ def _fit_font(txt, path, rows, width, track):
     return best
 
 
-def _open_counter(big, x0, x1, up, dn):
-    """글자의 **가로로 뚫린 속**을 위로 up · 아래로 dn 줄 넓힌다 (제자리 수정).
+def _open_counter(big, x0, x1, up, dn, ext_up, ext_dn):
+    """글자의 **가로로 뚫린 속**을 위로 up · 아래로 dn 줄 넓히고, 위아래 획을 오른쪽으로
+    ext_up · ext_dn 칸 늘인다 (제자리 수정).
 
     🔴 부제는 세로로 1.85배 눌리므로 가로 속이 먼저 메워진다 — 「들」의 ㄷ 이 그랬다.
     첫 덩어리(글자 맨 위 = 초성)에서 **획이 가장 얇은 줄들**을 속으로 보고, 그 위아래로
@@ -275,6 +278,12 @@ def _open_counter(big, x0, x1, up, dn):
     stem_r = np.nonzero(dm[(y0 + y1) // 2])[0].max() + 2
     sl = slice(max(0, y0 - up), y1 + 1 + dn)
     big[sl, x0 + stem_r : x1] = np.where(dm[sl, stem_r:], 0, big[sl, x0 + stem_r : x1])
+    # 획을 오른쪽으로 늘인다 — 짧으면 속을 터도 무슨 자음인지 안 읽힌다
+    for (ra, rb), ext in (((ys.min(), y0 - up), ext_up), ((y1 + 1 + dn, ys.max() + 1), ext_dn)):
+        for y in range(ra, rb) if ext else ():
+            xr = np.nonzero(big[y, x0:x1] > 128)[0]
+            if len(xr):
+                big[y, x0 + xr.max() : min(x1, x0 + xr.max() + ext)] = 255
 
 
 def subtitle(
