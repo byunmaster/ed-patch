@@ -27,6 +27,7 @@
 
 import argparse
 import collections
+import json
 import os
 import re
 import sys
@@ -178,6 +179,68 @@ def axis_names(rows):
     return miss
 
 
+_NAME_HEAD = re.compile(r"^%c([^%]+)%c")
+
+
+def axis_hardcoded_names(_rows=None):
+    """⑦ **손으로 박은 이름 자리가 정본과 갈렸나** → `[(파일, 오프셋, 지금, 정본)]`.
+
+    🔴 `%c<이름>%c…` 꼴은 **이름 정본**(`shared/glossary`)이 대야 하는데, 그 블록 전체를
+       `script/system.json`·`ui.json` 에 손으로 적어 두면 **정본을 가린다.** 정본을 고쳐도
+       그 자리만 옛 표기로 남는다.
+    ⚠ 실측 2026-09-06: 일곱이 갈려 있었다 — `카자줌`(정본 카자즘) 넷 · 전각 `Ａ`/`Ｂ`
+      (우리는 반각) 둘 · `고드윈2세 황제`(정본 「황제 고드윈 2세」) 하나. 같은 인물이
+      **화면마다 다른 이름**으로 나오고 있었다.
+
+    🔴 **`corpus()` 로는 못 본다** — 거기서 「다른 패처가 주인인 자리」를 빼는데 이 일곱이
+       정확히 거기다. 그래서 여기서는 **원문 쪽에서 훑고 `system.json`·`ui.json` 을 직접
+       조회한다.** (붙였다가 0건이 떠서 알았다 — 검사기의 모집단을 먼저 본다.)
+    ⇒ 실패로 친다. 이름은 판단이 아니라 정본이다.
+    """
+    import patch_ui
+
+    sysd, uim = {}, {}
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for fn, into in (("system.json", sysd), ("ui.json", uim)):
+        fp = os.path.join(base, "script", fn)
+        if not os.path.exists(fp):
+            continue
+        with open(fp, encoding="utf-8") as f:
+            d = json.load(f)
+        into.update(d.get("lines", {}))
+        for jp2, kr2 in d.get("msgs", []) or []:
+            if jp2 and kr2:
+                into[patch_ui.sys_key(jp2)] = kr2
+
+    out, seen = [], set()
+    _f, mm = common.open_image()
+    try:
+        for path, _lba, _size in common.iso_files(mm):
+            if not patch_scn.SCN_RE.match(path):
+                continue
+            got = patch_scn.load(path)
+            if not got:
+                continue
+            for e in got[1]:
+                jp = e.get("text")
+                if not jp or not e.get("ptr_at") or jp in seen:
+                    continue
+                m = _NAME_HEAD.match(jp)
+                if not m:
+                    continue
+                seen.add(jp)
+                k = patch_ui.sys_key(jp)
+                kr = sysd.get(k) or uim.get(k)
+                want = patch_scn.name_for(m.group(1))
+                got_name = _NAME_HEAD.match(kr) if isinstance(kr, str) else None
+                if want and got_name and got_name.group(1) != want:
+                    out.append((path, int(e["file_offset"], 16), got_name.group(1), want))
+    finally:
+        mm.close()
+        _f.close()
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -192,6 +255,7 @@ def main():
         ("② 변수 뒤 고정 조사", axis_var_josa(rows)),
         ("③ 고정 명사 뒤 병기", axis_waste(rows)),
         ("④ 부호·표기 규약", axis_style(rows)),
+        ("⑦ 손으로 박은 이름이 정본과 갈렸다", axis_hardcoded_names()),
     ):
         if not hits:
             print(f"  ✅ {title}: 0건")
