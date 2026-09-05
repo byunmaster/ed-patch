@@ -88,7 +88,9 @@ def main():
     #   두 장 대조 — 게임 데이터가 한 벌이니 패치 결과도 한 벌이어야 한다.
     if len(per_disc) == 2:
         a, b = (per_disc[d] for d in sorted(per_disc))
-        common = set(a) & set(b)
+        #   ⓘ ISO 구조(PVD · 디렉터리)는 장마다 다른 게 맞다 — 옮긴 맵의 새 자리가 트랙 1
+        #     끝이라 두 장에서 LBA 가 다르고, 디스크 2 는 트랙 2 파일 레코드까지 민다(relocate.py).
+        common = {n for n in set(a) & set(b) if n != "PVD" and not n.startswith("디렉터리")}
         split = sorted(n for n in common if a[n][1] != b[n][1])
         if split:
             print(f"   🔴 두 장이 갈렸다 — 공통 {len(common)} 중 {len(split)}")
