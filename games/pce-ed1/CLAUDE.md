@@ -39,10 +39,12 @@ python3 games/pce-ed1/tools/build.py [--edits work/edits_poc.json]   # work/buil
 python3 games/pce-ed1/tools/ram_map.py <dump>...       # 워크 RAM 빈 자리(덤프 겹치기)
 python3 games/pce-ed1/tools/hook.py                    # 후킹 루틴·스텁 바이트(미니 어셈블러)
 python3 games/pce-ed1/tools/font.py                    # 글리프 표·코드 배정 확인
+python3 games/pce-ed1/tools/messages.py                # 메시지 파싱 → work/derived/messages/ (열쇠↔원문)
 sh games/pce-ed1/check.sh                          # ⭐ 이 게임의 커밋 전 게이트
 ```
 
 ⚠ **덤프는 `work/derived/` 로 나가고 커밋하지 않는다** — 원문이다(루트 「저작권」).
+번역 정본은 `script/`(scnNNN.json · speakers.json) — 형식·재삽입 규칙은 `docs/status.md` 10절.
 
 ## 좌표 규약 — **데이터 트랙 상대 섹터(rel)** 기준이다
 

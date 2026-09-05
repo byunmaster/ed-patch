@@ -75,8 +75,19 @@ def build_table(chars) -> tuple[dict[str, bytes], bytes]:
     return table, bank
 
 
+def needs_glyph(ch: str) -> bool:
+    """우리 글리프가 필요한 글자 — SJIS 전각 2바이트로 못 적는 것 전부(한글 · ASCII 부호·숫자·라틴)."""
+    if ch in (" ", "\n", "\f"):
+        return False
+    try:
+        b = ch.encode("cp932")
+    except UnicodeEncodeError:
+        return True
+    return len(b) != 2 or b[0] < 0x24
+
+
 def encode(text: str, table: dict[str, bytes]) -> bytes:
-    """우리 문안 → 게임 바이트. 한글은 표로, 나머지는 SJIS 전각으로. 못 잡는 글자는 실패."""
+    """우리 문안 → 게임 바이트. 표에 있는 글자는 우리 코드, 나머지는 SJIS 전각. 못 잡는 글자는 실패."""
     out = bytearray()
     for ch in text:
         if ch in table:
@@ -85,11 +96,10 @@ def encode(text: str, table: dict[str, bytes]) -> bytes:
             out.append(0x01)
         elif ch == " ":
             out += b"\x81\x40"  # 공백은 전각 한 칸 — 반각은 이 창에 없다(3절)
+        elif needs_glyph(ch):
+            raise ValueError(f"글리프 표에 없는 글자: {ch!r} — 정본에서 모은 집합이 아니다")
         else:
-            b = ch.encode("cp932")
-            if len(b) != 2 or b[0] < 0x24:
-                raise ValueError(f"대사에 못 넣는 글자: {ch!r} (전각만 된다)")
-            out += b
+            out += ch.encode("cp932")
     return bytes(out)
 
 

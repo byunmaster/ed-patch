@@ -25,6 +25,7 @@ import containers
 import font
 import hook
 import lz
+import translate
 
 from shared.disc import mode1
 
@@ -68,16 +69,12 @@ def assemble(entries: list[tuple[int, bytes]]) -> bytes:
     return out
 
 
-def load_edits(path: Path):
-    """PoC 편집 입력: [{rel, id, find_hex, replace_hex | replace_text}].
+def load_edits(path: Path, table: dict[str, bytes]):
+    """PoC 편집 입력: [{rel, id, find_hex, replace_hex | replace_text}] → {(rel,id): [(find, replace)]}.
 
-    `replace_text` 는 우리 문안(한글 + 전각). 문안이 쓰는 음절 집합에서 글리프 표를 **결정적으로** 뽑아
-    (font.build_table) 인코딩한다 — 표를 따로 편집하지 않는다(폰트 전략 §3.2).
-    → ({(rel,id): [(find, replace)]}, 코드표, 글리프 뱅크)
+    `replace_text` 는 우리 문안(한글 + 전각) — 글리프 표는 빌드가 정본 전체에서 뽑아 넘긴다.
     """
     raw = json.loads(path.read_text())
-    chars = {ch for e in raw for ch in e.get("replace_text", "") if "가" <= ch <= "힣"}
-    table, bank = font.build_table(chars)
     out: dict[tuple[int, int], list[tuple[bytes, bytes]]] = {}
     for e in raw:
         rep = (
@@ -86,7 +83,7 @@ def load_edits(path: Path):
             else font.encode(e["replace_text"], table)
         )
         out.setdefault((e["rel"], e["id"]), []).append((bytes.fromhex(e["find_hex"]), rep))
-    return out, table, bank
+    return out
 
 
 # ─── 코드 패치(rel:offset, 기대 바이트 → 새 바이트) ─────────────────────────────────────
@@ -188,9 +185,12 @@ def _build(edits_path, iso: Path, cue: Path):
     # 원본 cue 의 FILE 줄은 대문자 파일명 — 위 치환이 안 먹으면 여기서 죽는다
     if "ed1.iso" not in cue.read_text():
         raise BuildError("cue 의 FILE 이름을 못 바꿨다")
-    edits, _table, glyph_bank = (
-        load_edits(edits_path) if edits_path else ({}, {}, font.build_table("")[1])
-    )
+    # 글리프 표 = 번역 정본 전체 + PoC 편집의 음절(결정적). 표를 따로 두지 않는다(폰트 전략 §3.2)
+    chars = translate.all_glyph_chars()
+    raw = json.loads(edits_path.read_text()) if edits_path else []
+    chars |= {ch for e in raw for ch in e.get("replace_text", "") if font.needs_glyph(ch)}
+    table, glyph_bank = font.build_table(chars)
+    edits = load_edits(edits_path, table) if edits_path else {}
     found = containers.scan()
     by_rel = {c["rel"]: c for c in found}
     touched: list[tuple[int, int]] = []  # (첫 파일 섹터, 섹터 수)
@@ -199,15 +199,23 @@ def _build(edits_path, iso: Path, cue: Path):
     slot_of = {r: n for r, n in refs}  # 참조표가 말하는 섹터 수
     with open(iso, "r+b") as f:
         apply_code_patches(f, glyph_bank, touched)
+        translated_ids = {int(p.stem[3:]) for p in translate.M.SCRIPT_DIR.glob("scn*.json")}
+        n_msgs = 0
         for rel, c in sorted(by_rel.items()):
-            hit = {k for k in edits if k[0] == rel}
+            hit = {k for k in edits if k[0] == rel} or {
+                b["id"] for b in c["blocks"]
+            } & translated_ids
             if not hit:
                 continue
             entries = []
             for b in c["blocks"]:
                 blk = b["data"]
+                if b["id"] in translated_ids:
+                    blk, n = translate.translate_block(b["id"], blk, table)
+                    n_msgs += n
                 if (rel, b["id"]) in edits:
                     blk = apply_edits(blk, edits[(rel, b["id"])], f"rel {rel} id {b['id']}")
+                if blk != b["data"]:
                     intended[(rel, b["id"])] = blk
                 entries.append((b["id"], blk))
             data = assemble(entries)
@@ -224,6 +232,7 @@ def _build(edits_path, iso: Path, cue: Path):
             print(
                 f"  컨테이너 rel {rel}: {len(entries)}블록 → {len(data.rstrip(b'\0'))}B / {slot}B"
             )
+    print(f"  번역 메시지 {n_msgs}건(컨테이너마다 다시 셈) · 글리프 {len(chars)}자")
     verify_immutable(iso, touched)
     verify_readback(iso, intended, found)
     bad = mode1.selftest(
