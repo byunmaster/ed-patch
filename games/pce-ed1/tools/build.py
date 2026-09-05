@@ -129,7 +129,9 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
     return p
 
 
-def apply_code_patches(f, glyph_bank: bytes, touched: list[tuple[int, int]]):
+def apply_code_patches(
+    f, glyph_bank: bytes, table: dict[str, bytes], touched: list[tuple[int, int]]
+):
     for label, rel, off, old, new in code_patches():
         assert len(old) == len(new), label
         lba = common.T2_SECTOR + rel
@@ -141,10 +143,22 @@ def apply_code_patches(f, glyph_bank: bytes, touched: list[tuple[int, int]]):
     lba = common.T2_SECTOR + 114
     mode1.write_user_data(f, lba, glyph_bank, label="glyph banks", expect=b"\0" * len(glyph_bank))
     touched.append((lba, 12))
-    routine = hook.hook_routine()
+    # 루틴 + 조사 오프셋표 + 받침 비트맵 둘 — 스텁이 통째로 $3B00 으로 옮긴다(0x300B)
+    payload = bytearray(hook.hook_routine())
+    payload += b"\0" * (hook.JOSA_OFF_ADDR - hook.HOOK_ADDR - len(payload))
+    payload += font.josa_offsets(table)
+    payload += b"\0" * (hook.BATCHIM_ADDR - hook.HOOK_ADDR - len(payload))
+    has, rieul = font.batchim_tables(font.build_table.order)
+    payload += has
+    payload += b"\0" * (hook.RIEUL_ADDR - hook.HOOK_ADDR - len(payload))
+    payload += rieul
+    payload += b"\0" * (0x300 - len(payload))
     lba = common.T2_SECTOR + 126
-    mode1.write_user_data(f, lba, routine, label="hook routine", expect=b"\0" * len(routine))
+    mode1.write_user_data(
+        f, lba, bytes(payload), label="hook routine + josa tables", expect=b"\0" * len(payload)
+    )
     touched.append((lba, 1))
+    routine = payload
     print(
         f"  코드 패치 {len(code_patches())}곳 + 글리프 {len(glyph_bank.rstrip(b'\0'))}B + 루틴 {len(routine.rstrip(b'\0'))}B"
     )
@@ -199,7 +213,7 @@ def _build(edits_path, iso: Path, cue: Path):
     refs = containers.referenced()
     slot_of = {r: n for r, n in refs}  # 참조표가 말하는 섹터 수
     with open(iso, "r+b") as f:
-        apply_code_patches(f, glyph_bank, touched)
+        apply_code_patches(f, glyph_bank, table, touched)
         print("  시스템 문구:", sysbuild.apply(f, table, touched))
         translated_ids = {int(p.stem[3:]) for p in translate.M.SCRIPT_DIR.glob("scn*.json")}
         n_msgs = 0

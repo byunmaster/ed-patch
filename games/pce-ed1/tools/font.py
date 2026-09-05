@@ -20,6 +20,12 @@ PER_LEAD = 220
 LEAD0 = 0xF0
 TRAIL0 = 0x24
 MAX_GLYPHS = 3 * 0x2000 // GLYPH_BYTES  # 1,024
+# 🔴 리드 F9 는 **동적 조사** 전용으로 예약한다(글리프 배정에서 뺀다) — `F9 (0x24+종류)`.
+#    후킹 루틴이 **직전에 그린 글자**의 받침을 보고 두 글리프 중 하나를 낸다(status.md 12절).
+JOSA_LEAD = 0xF9
+MAX_LEADS = JOSA_LEAD - LEAD0  # 9 → 1,980 자리, 뱅크 셋(1,024)이 먼저 찬다
+JOSA_PAIRS = ["은/는", "이/가", "을/를", "과/와", "으로/로", "아/야", "이랑/랑"]
+JOSA_CHARS = sorted({c for p in JOSA_PAIRS for part in p.split("/") for c in part})
 
 _cache: dict[int, tuple[int, int, int, int, list[int]]] | None = None
 
@@ -61,17 +67,60 @@ def glyph(ch: str) -> bytes:
 def code_of(idx: int) -> bytes:
     if idx >= MAX_GLYPHS:
         raise ValueError(f"글리프 {idx} — 뱅크 셋(1,024자)을 넘는다")
-    return bytes([LEAD0 + idx // PER_LEAD, TRAIL0 + idx % PER_LEAD])
+    lead = LEAD0 + idx // PER_LEAD
+    if lead >= JOSA_LEAD:
+        raise ValueError("리드가 조사 예약(F9)에 닿았다")
+    return bytes([lead, TRAIL0 + idx % PER_LEAD])
+
+
+def josa_code(pair: str) -> bytes:
+    return bytes([JOSA_LEAD, TRAIL0 + JOSA_PAIRS.index(pair)])
+
+
+def batchim_tables(order: list[str]) -> tuple[bytes, bytes]:
+    """글리프 순서 → (받침 비트맵, ㄹ받침 비트맵) 각 128B. 비트 1 = 받침 있음."""
+    has = bytearray(MAX_GLYPHS // 8)
+    rieul = bytearray(MAX_GLYPHS // 8)
+    for i, ch in enumerate(order):
+        if "가" <= ch <= "힣":
+            f = (ord(ch) - 0xAC00) % 28
+            if f:
+                has[i >> 3] |= 1 << (i & 7)
+                if f == 8:
+                    rieul[i >> 3] |= 1 << (i & 7)
+    return bytes(has), bytes(rieul)
+
+
+def josa_offsets(table: dict[str, bytes]) -> bytes:
+    """조사 종류별 (받침용, 무받침용) 글리프 오프셋 2B × 2 × 7 = 28B.
+
+    ⚠ 두 글자짜리 조사(으로·이랑)는 **첫 글자만** 표에 넣고 둘째 글자는 문안이 그대로 들고 있는다 —
+    루틴이 글리프 하나만 낼 수 있어서다(`으로/로` → 문안에 `{으로/로}로` 로 쓰지 않는다,
+    encode 가 첫 글자를 조사 코드로 두 번째를 보통 글자로 낸다).
+    """
+    out = bytearray()
+    for pair in JOSA_PAIRS:
+        a, b = pair.split("/")
+        for part in (a, b):
+            idx = _index_of(part[0], table)
+            out += (idx * GLYPH_BYTES).to_bytes(2, "little")
+    return bytes(out)
+
+
+def _index_of(ch: str, table: dict[str, bytes]) -> int:
+    c = table[ch]
+    return (c[0] - LEAD0) * PER_LEAD + (c[1] - TRAIL0)
 
 
 def build_table(chars) -> tuple[dict[str, bytes], bytes]:
-    """음절 집합 → (글자→2B 코드, 글리프 뱅크 바이트(24KB, 0 패딩))."""
-    order = sorted(set(chars))
+    """음절 집합 → (글자→2B 코드, 글리프 뱅크 바이트(24KB, 0 패딩)). 조사 글자는 늘 포함한다."""
+    order = sorted(set(chars) | set(JOSA_CHARS))
     if len(order) > MAX_GLYPHS:
         raise ValueError(f"음절 {len(order)}자 — 상한 {MAX_GLYPHS}. 결정 B 재검토(status.md 8절)")
     table = {ch: code_of(i) for i, ch in enumerate(order)}
     bank = b"".join(glyph(ch) for ch in order)
     bank += b"\0" * (3 * 0x2000 - len(bank))
+    build_table.order = order  # 받침 표를 만들 때 쓴다
     return table, bank
 
 
@@ -86,9 +135,28 @@ def needs_glyph(ch: str) -> bool:
     return len(b) != 2 or b[0] < 0x24
 
 
+JOSA_TOKEN = re.compile("|".join(re.escape(p) for p in JOSA_PAIRS))
+
+
 def encode(text: str, table: dict[str, bytes]) -> bytes:
-    """우리 문안 → 게임 바이트. 표에 있는 글자는 우리 코드, 나머지는 SJIS 전각. 못 잡는 글자는 실패."""
+    """우리 문안 → 게임 바이트.
+
+    `은/는`·`이/가`·`을/를`·`과/와`·`으로/로`·`아/야`·`이랑/랑` 은 **동적 조사 토큰**이다 —
+    앞말이 런타임에 정해지는 자리(이름·아이템)에 그대로 쓴다. 두 글자 조사는 첫 글자만 토큰이 되고
+    둘째 글자는 보통 글자로 나간다(`으로/로` → `F9 28` + `로`).
+    """
     out = bytearray()
+    pos = 0
+    for m in JOSA_TOKEN.finditer(text):
+        out += encode(text[pos : m.start()], table) if m.start() > pos else b""
+        pair = m.group()
+        out += josa_code(pair)
+        rest = pair.split("/")[0][1:]  # 받침용의 둘째 글자(으로→로, 이랑→랑)
+        if rest:
+            out += table[rest[0]]
+        pos = m.end()
+    if pos:
+        return bytes(out) + encode(text[pos:], table)
     for ch in text:
         if ch in table:
             out += table[ch]

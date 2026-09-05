@@ -17,6 +17,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import font
 
 HOOK_ADDR = 0x3B00
+# 워크 RAM 배치($3B00~$3DFF, 768B — 쓰기 0회 확인 구간): 루틴 · 조사표 · 받침 비트맵 · 직전 글자
+JOSA_OFF_ADDR = 0x3C80  # 조사 오프셋표 28B (루틴 자리는 $3B00~$3C7F, 384B)
+BATCHIM_ADDR = 0x3CA0  # 받침 비트맵 128B
+RIEUL_ADDR = 0x3D20  # ㄹ받침 비트맵 128B
+PAYLOAD_LEN = 0x300  # 루틴 + 조사표 + 비트맵 둘 — 스텁이 통째로 옮긴다
+#   ⚠ 이 값을 안 맞추면 **뒤쪽 표만 안 옮겨져** 리드 F1 대역 글자가 조용히 다른 글자로 나온다(실측)
+LAST_ADDR = 0x3DA0  # 직전 글자 코드 2B(리드·트레일)
+BITCNT_ADDR = 0x3DA2  # 비트 위치 임시
+HASBAT_ADDR = 0x3DA3  # 받침 판정 임시
+# ⚠ 임시값은 워크 RAM 에 둔다 — 게임 ZP 를 빌리면 어느 자리가 비는지 증명해야 한다($EC~$EE 는
+#   BIOS 가 쓰는 스크래치라 그대로 쓴다).
 STUB_ADDR = 0x7852  # 뱅크 0x69 +0x1852
 ORIG_INIT = 0x5798
 GLYPH_WINDOW_HI = 0x60  # 글리프 뱅크를 MPR3($6000) 에 잠깐 건다
@@ -35,6 +46,22 @@ OPS = {
     ("STZ", "zp"): 0x64,
     ("CMP", "imm"): 0xC9,
     ("CPY", "imm"): 0xC0,
+    ("BEQ", "rel"): 0xF0,
+    ("BRA", "rel"): 0x80,
+    ("LDA", "absy"): 0xB9,
+    ("LDX", "abs"): 0xAE,
+    ("LDY", "imm"): 0xA0,
+    ("TAY", "imp"): 0xA8,
+    ("TYA", "imp"): 0x98,
+    ("TXA", "imp"): 0x8A,
+    ("AND", "zp"): 0x25,
+    ("INX", "imp"): 0xE8,
+    ("DEX", "imp"): 0xCA,
+    ("LSR", "zp"): 0x46,
+    ("ROR", "zp"): 0x66,
+    ("STZ", "abs"): 0x9C,
+    ("STA", "absx"): 0x9D,
+    ("INC", "imp"): 0x1A,
     ("BCC", "rel"): 0x90,
     ("BCS", "rel"): 0xB0,
     ("BNE", "rel"): 0xD0,
@@ -95,7 +122,7 @@ class Asm:
         elif mode == "rel":
             self.fix.append((len(self.out), arg, "rel"))
             self.out.append(0)
-        elif mode in ("abs", "absx"):
+        elif mode in ("abs", "absx", "absy"):
             if isinstance(arg, str):
                 self.fix.append((len(self.out), arg, "abs"))
                 self.out += b"\0\0"
@@ -126,48 +153,40 @@ class Asm:
 
 
 def hook_routine() -> bytes:
+    """EX_GETFNT 대체 — 우리 코드면 글리프를 내고, 조사 코드면 **직전 글자의 받침**으로 고른다.
+
+    · 리드 < F0 또는 > F9 → `JMP $E060`(BIOS)
+    · 리드 F9 → 조사: 종류 k = 트레일−0x24, 직전 글자(LAST)가 우리 코드면 받침 비트맵 조회,
+      아니면 받침 있음으로 본다(숫자·일본어 뒤). `으로/로` 는 ㄹ 비트맵을 한 번 더 본다.
+    · 그 밖(F0~F8) → 글리프 인덱스 계산 후 복사하고 **LAST 를 갱신**한다.
+    """
     a = Asm(HOOK_ADDR)
     a.op("LDA", "zp", 0xF9)
     a.op("CMP", "imm", font.LEAD0)
     a.op("BCC", "rel", "bios")
-    a.op("CMP", "imm", font.LEAD0 + 10)
+    a.op("CMP", "imm", font.JOSA_LEAD + 1)
     a.op("BCC", "rel", "ours")
     a.label("bios")
-    a.op("JMP", "abs", 0xE060)  # 리드가 우리 범위 밖 — BIOS 그대로(_dh 는 호출부가 이미 세웠다)
+    a.op("JMP", "abs", 0xE060)  # 우리 범위 밖 — BIOS 그대로(_dh 는 호출부가 이미 세웠다)
     a.label("ours")
     a.op("PHP")
     a.op("SEI")
     a.op("PHX")
     a.op("PHY")
-    # off = base[lead] + (trail-0x24)*24 → $EC/$ED
-    a.op("SEC")
-    a.op("SBC", "imm", font.LEAD0)
-    a.op("ASL")
-    a.op("TAX")  # X = lead*2 (안 쓰지만 base 표 인덱스용)
+    a.op("CMP", "imm", font.JOSA_LEAD)
+    a.op("BNE", "rel", "normal")  # 조사 블록은 복사 블록 뒤라 짧은 분기로 못 간다
+    a.op("JMP", "abs", "josa")
+    a.label("normal")
+    # ─ 보통 글자: off = (lead−F0)×220×24 + (trail−0x24)×24 ─
+    a.op("LDA", "zp", 0xF9)
+    a.op("STA", "abs", LAST_ADDR)
     a.op("LDA", "zp", 0xF8)
+    a.op("STA", "abs", LAST_ADDR + 1)
     a.op("SEC")
     a.op("SBC", "imm", font.TRAIL0)
     a.op("STA", "zp", 0xEC)
     a.op("STZ", "zp", 0xED)
-    for _ in range(3):  # ×8
-        a.op("ASL", "zp", 0xEC)
-        a.op("ROL", "zp", 0xED)
-    a.op("LDA", "zp", 0xEC)
-    a.op("PHA")
-    a.op("LDA", "zp", 0xED)
-    a.op("PHA")  # ×8 보관
-    a.op("ASL", "zp", 0xEC)
-    a.op("ROL", "zp", 0xED)  # ×16
-    a.op("PLA")
-    a.op("STA", "zp", 0xEE)  # hi8
-    a.op("PLA")
-    a.op("CLC")
-    a.op("ADC", "zp", 0xEC)
-    a.op("STA", "zp", 0xEC)
-    a.op("LDA", "zp", 0xEE)
-    a.op("ADC", "zp", 0xED)
-    a.op("STA", "zp", 0xED)  # ×24
-    # X = lead (0..9) 로 base 표
+    _mul24(a)
     a.op("LDA", "zp", 0xF9)
     a.op("SEC")
     a.op("SBC", "imm", font.LEAD0)
@@ -179,7 +198,9 @@ def hook_routine() -> bytes:
     a.op("LDA", "zp", 0xED)
     a.op("ADC", "absx", "base_hi")
     a.op("STA", "zp", 0xED)
-    # bank = 0x85 + (off>>13) ; MPR3 저장 후 걸기
+    a.op("BRA", "rel", "copy_setup")  # 보통 글자는 바로 복사로
+    # ─ 글리프 복사: 뱅크 = 0x85 + (off>>13), MPR3 창 ─
+    a.label("copy_setup")
     a.op("TMA", "tma", 3)
     a.op("STA", "zp", 0xEE)
     a.op("LDA", "zp", 0xED)
@@ -212,13 +233,128 @@ def hook_routine() -> bytes:
     a.op("PLP")
     a.op("CLA")
     a.op("RTS")
+    # ─ 조사: 직전 글자의 받침으로 고른다 ─
+    a.label("josa")
+    a.op("LDA", "abs", LAST_ADDR)  # 직전 리드
+    a.op("CMP", "imm", font.LEAD0)
+    a.op("BCC", "rel", "assume_batchim")  # 우리 글자가 아니면(숫자·일본어) 받침 있음으로 본다
+    a.op("CMP", "imm", font.JOSA_LEAD)
+    a.op("BCC", "rel", "calc")
+    a.label("assume_batchim")
+    a.op("LDA", "imm", 1)
+    a.op("STA", "abs", HASBAT_ADDR)
+    a.op("BRA", "rel", "decide")
+    a.label("calc")
+    # 인덱스 = (리드−F0)×220 + (트레일−0x24) → $EC/$ED
+    a.op("SEC")
+    a.op("SBC", "imm", font.LEAD0)
+    a.op("TAX")
+    a.op("LDA", "absx", "idx_lo")
+    a.op("STA", "zp", 0xEC)
+    a.op("LDA", "absx", "idx_hi")
+    a.op("STA", "zp", 0xED)
+    a.op("LDA", "abs", LAST_ADDR + 1)
+    a.op("SEC")
+    a.op("SBC", "imm", font.TRAIL0)
+    a.op("CLC")
+    a.op("ADC", "zp", 0xEC)
+    a.op("STA", "zp", 0xEC)
+    a.op("CLA")
+    a.op("ADC", "zp", 0xED)
+    a.op("STA", "zp", 0xED)
+    # 비트 = idx&7, 바이트 = idx>>3
+    a.op("LDA", "zp", 0xEC)
+    a.op("AND", "imm", 0x07)
+    a.op("STA", "abs", BITCNT_ADDR)
+    for _ in range(3):
+        a.op("LSR", "zp", 0xED)
+        a.op("ROR", "zp", 0xEC)
+    _bit(a, BATCHIM_ADDR, "has")
+    a.op("STA", "abs", HASBAT_ADDR)
+    # `으로/로`(종류 4)는 ㄹ 받침이면 「로」 — 받침 있음에서 도로 뺀다
+    a.op("LDA", "zp", 0xF8)
+    a.op("SEC")
+    a.op("SBC", "imm", font.TRAIL0)
+    a.op("CMP", "imm", 4)
+    a.op("BNE", "rel", "decide")
+    _bit(a, RIEUL_ADDR, "ri")
+    a.op("BEQ", "rel", "decide")
+    a.op("STZ", "abs", HASBAT_ADDR)
+    a.label("decide")
+    a.op("LDA", "abs", HASBAT_ADDR)
+    a.op("BNE", "rel", "has_batchim")
+    # 받침 없음 → 표의 둘째 항목: (k×2+1)×2 = k×4+2
+    a.op("LDA", "zp", 0xF8)
+    a.op("SEC")
+    a.op("SBC", "imm", font.TRAIL0)
+    a.op("ASL")
+    a.op("INC")
+    a.op("BRA", "rel", "josa_lookup")
+    a.label("has_batchim")
+    a.op("LDA", "zp", 0xF8)
+    a.op("SEC")
+    a.op("SBC", "imm", font.TRAIL0)
+    a.op("ASL")
+    a.label("josa_lookup")
+    a.op("ASL")
+    a.op("TAX")  # 받침 k×4 · 무받침 k×4+2
+    a.op("LDA", "absx", JOSA_OFF_ADDR)
+    a.op("STA", "zp", 0xEC)
+    a.op("LDA", "absx", JOSA_OFF_ADDR + 1)
+    a.op("STA", "zp", 0xED)
+    a.op("JMP", "abs", "copy_setup")
     a.label("base_lo")
     a.data(font.base_table()[:10])
     a.label("base_hi")
     a.data(font.base_table()[10:])
+    a.label("idx_lo")
+    a.data(bytes((i * font.PER_LEAD) & 0xFF for i in range(10)))
+    a.label("idx_hi")
+    a.data(bytes((i * font.PER_LEAD) >> 8 & 0xFF for i in range(10)))
     b = a.bytes()
-    assert len(b) <= 256, len(b)
-    return b + b"\0" * (256 - len(b))
+    assert len(b) <= JOSA_OFF_ADDR - HOOK_ADDR, len(b)
+    return b + b"\0" * (JOSA_OFF_ADDR - HOOK_ADDR - len(b))
+
+
+def _bit(a: "Asm", table_addr: int, tag: str) -> None:
+    """비트맵[$EC] 의 BITCNT 번째 비트를 A(0/1)로. X·Y 를 쓴다."""
+    a.op("LDA", "zp", 0xEC)
+    a.op("TAY")
+    a.op("LDA", "absy", table_addr)
+    a.op("STA", "zp", 0xEE)
+    a.op("LDA", "abs", BITCNT_ADDR)
+    a.op("TAX")
+    a.label(f"{tag}_shift")
+    a.op("TXA")
+    a.op("BEQ", "rel", f"{tag}_done")
+    a.op("LSR", "zp", 0xEE)
+    a.op("DEX")
+    a.op("BRA", "rel", f"{tag}_shift")
+    a.label(f"{tag}_done")
+    a.op("LDA", "zp", 0xEE)
+    a.op("AND", "imm", 1)
+
+
+def _mul24(a: "Asm") -> None:
+    """$EC/$ED ×= 24 (×8 + ×16)."""
+    for _ in range(3):
+        a.op("ASL", "zp", 0xEC)
+        a.op("ROL", "zp", 0xED)
+    a.op("LDA", "zp", 0xEC)
+    a.op("PHA")
+    a.op("LDA", "zp", 0xED)
+    a.op("PHA")
+    a.op("ASL", "zp", 0xEC)
+    a.op("ROL", "zp", 0xED)
+    a.op("PLA")
+    a.op("STA", "zp", 0xEE)
+    a.op("PLA")
+    a.op("CLC")
+    a.op("ADC", "zp", 0xEC)
+    a.op("STA", "zp", 0xEC)
+    a.op("LDA", "zp", 0xEE)
+    a.op("ADC", "zp", 0xED)
+    a.op("STA", "zp", 0xED)
 
 
 def init_stub() -> bytes:
@@ -235,7 +371,7 @@ def init_stub() -> bytes:
         a.tii(0xA000, 0xC000, 0x2000)
     a.op("LDA", "imm", 0x7F)
     a.op("TAM", "tam", 5)
-    a.tii(0xA000, HOOK_ADDR, 0x100)
+    a.tii(0xA000, HOOK_ADDR, PAYLOAD_LEN)
     a.op("PLA")
     a.op("TAM", "tam", 6)
     a.op("PLA")
