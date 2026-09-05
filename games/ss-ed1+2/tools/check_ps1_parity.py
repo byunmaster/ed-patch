@@ -25,6 +25,7 @@
 """
 
 import argparse
+import collections
 import json
 import os
 import re
@@ -140,6 +141,24 @@ def ours():
     return get
 
 
+def pending():
+    """**PS1 에 맞출 것 — 아직 안 했다.** `script/ps1_pending.json`. 열쇠는 원문 sha1.
+
+    🔴 **정본은 PS1 이다**(유저 확정 2026-09-05) — 이 자리들은 PS1 에서 결정한 표기이고
+       **새턴이 따라가야 한다.** 「의도된 갈림」이 아니라 **미룬 할 일**이다.
+    ⏳ 시점은 **PS1 이 main 에 머지된 뒤**다 — 그전엔 아직 움직이는 값을 좇게 된다.
+    ⚠ 그때까지 「갈렸다」에서 갈라 세는 이유는 하나다 — 목록이 늘 같은 18로 차면
+      **새로 갈린 자리가 묻힌다**(늘 빨간불이면 아무도 안 본다 — 루트 CLAUDE.md).
+    """
+    p = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "script", "ps1_pending.json"
+    )
+    if not os.path.exists(p):
+        return {}
+    with open(p, encoding="utf-8") as f:
+        return json.load(f).get("pending", {})
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -149,16 +168,27 @@ def main():
         print("  ⏭ PS1 워크트리가 없다 — 건너뜀")
         return 0
     get = ours()
-    same, diff, miss = 0, [], []
+    todo = pending()
+    same, diff, later, miss = 0, [], [], []
     for jp, theirs in sorted(pairs.items()):
         mine, src = get(jp)
         if mine is None:
             miss.append((jp, theirs))
         elif WS.sub("", theirs) == WS.sub("", mine):
             same += 1
+        elif U.sys_key(jp) in todo:
+            later.append((jp, todo[U.sys_key(jp)]))
         else:
             diff.append((jp, theirs, mine, src))
-    print(f"  PS1 표 {len(pairs):,} — 같다 {same:,} · 갈렸다 {len(diff)} · 새턴에 없다 {len(miss)}")
+    print(
+        f"  PS1 표 {len(pairs):,} — 같다 {same:,} · 갈렸다 {len(diff)} · "
+        f"PS1 에 맞출 것 {len(later)} · 새턴에 없다 {len(miss)}"
+    )
+    if later:
+        print("  🔵 아래는 **PS1 이 main 에 머지된 뒤** 새턴을 맞춘다 (미룬 할 일)")
+        why = collections.Counter(w for _j, w in later)
+        for w, n in why.most_common():
+            print(f"     ℹ {n:2}  {w}")
     for jp, theirs, mine, src in diff:
         print(f"     {jp[:26]!r}")
         print(f"        PS1  {theirs[:56]!r}")
