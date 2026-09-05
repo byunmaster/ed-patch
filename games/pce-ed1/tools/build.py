@@ -13,7 +13,6 @@
 """
 
 import argparse
-import hashlib
 import json
 import shutil
 import sys
@@ -23,7 +22,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import common
 import containers
+import font
+import hook
 import lz
+
 from shared.disc import mode1
 
 SLOT_SECTORS = 16  # 컨테이너 한 칸(실측: 참조표 간격 16섹터 = 32KB)
@@ -66,12 +68,88 @@ def assemble(entries: list[tuple[int, bytes]]) -> bytes:
     return out
 
 
-def load_edits(path: Path) -> dict[tuple[int, int], list[tuple[bytes, bytes]]]:
-    """PoC 편집 입력: [{rel, id, find_hex, replace_hex}] → {(rel,id): [(find, replace)]}."""
+def load_edits(path: Path):
+    """PoC 편집 입력: [{rel, id, find_hex, replace_hex | replace_text}].
+
+    `replace_text` 는 우리 문안(한글 + 전각). 문안이 쓰는 음절 집합에서 글리프 표를 **결정적으로** 뽑아
+    (font.build_table) 인코딩한다 — 표를 따로 편집하지 않는다(폰트 전략 §3.2).
+    → ({(rel,id): [(find, replace)]}, 코드표, 글리프 뱅크)
+    """
+    raw = json.loads(path.read_text())
+    chars = {ch for e in raw for ch in e.get("replace_text", "") if "가" <= ch <= "힣"}
+    table, bank = font.build_table(chars)
     out: dict[tuple[int, int], list[tuple[bytes, bytes]]] = {}
-    for e in json.loads(path.read_text()):
-        out.setdefault((e["rel"], e["id"]), []).append((bytes.fromhex(e["find_hex"]), bytes.fromhex(e["replace_hex"])))
-    return out
+    for e in raw:
+        rep = (
+            bytes.fromhex(e["replace_hex"])
+            if "replace_hex" in e
+            else font.encode(e["replace_text"], table)
+        )
+        out.setdefault((e["rel"], e["id"]), []).append((bytes.fromhex(e["find_hex"]), rep))
+    return out, table, bank
+
+
+# ─── 코드 패치(rel:offset, 기대 바이트 → 새 바이트) ─────────────────────────────────────
+# 좌표는 전부 rel:offset(유저 데이터 2048B 안). 뱅크 → rel 은 본 프로그램(rel 34, 뱅크 0x68 부터 4섹터씩).
+def _main(bank: int, off: int) -> tuple[int, int]:
+    return 34 + (bank - 0x68) * 4 + off // common.USER, off % common.USER
+
+
+ONLY: set[str] | None = None  # 진단용 — 패치 그룹 부분집합("cache" · "font")만 건다
+
+
+def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
+    """(라벨, rel, offset, 기대, 새값). 기대가 어긋나면 그 자리에서 죽는다(쓰기 사전조건)."""
+    p = []
+    want = lambda g: ONLY is None or g in ONLY
+    # 1. 본 프로그램 진입: JSR $5798 → JSR 스텁
+    if want("font"):
+        p.append(
+            (
+                "entry JSR→stub",
+                *_main(0x68, 0x000F),
+                b"\x20\x98\x57",
+                b"\x20" + hook.STUB_ADDR.to_bytes(2, "little"),
+            )
+        )
+        # 2. 스텁(뱅크 0x69 패딩)
+        stub = hook.init_stub()
+        p.append(("init stub", *_main(0x69, 0x1852), b"\0" * len(stub), stub))
+    if want("cache"):
+        # 3. 할당기: 캐시 16 → 13 슬롯 (뱅크 0x85~0x87 을 글리프에 내준다) — status 9절
+        p.append(("cache init free=13", *_main(0x68, 0x14FB), b"\xa9\x90", b"\xa9\x8d"))
+        for off in (0x151F, 0x15D1, 0x15F2, 0x163A, 0x1783):
+            p.append((f"cache CPX 13 @{off:04X}", *_main(0x68, off), b"\xe0\x10", b"\xe0\x0d"))
+        p.append(("cache LDA 13 @15FC", *_main(0x68, 0x15FC), b"\xa9\x10", b"\xa9\x0d"))
+    if want("hook"):
+        # 4. EX_GETFNT 호출부(본 프로그램 4곳) → $3B00
+        tgt = hook.HOOK_ADDR.to_bytes(2, "little")
+        p.append(("dialog JMP $7044", *_main(0x6C, 0x1044), b"\x4c\x60\xe0", b"\x4c" + tgt))
+        p.append(("name JMP $93A3", *_main(0x6D, 0x13A3), b"\x4c\x60\xe0", b"\x4c" + tgt))
+        p.append(("JSR 6C+0F5A", *_main(0x6C, 0x0F5A), b"\x20\x60\xe0", b"\x20" + tgt))
+        p.append(("JSR 78+0932", *_main(0x78, 0x0932), b"\x20\x60\xe0", b"\x20" + tgt))
+    return p
+
+
+def apply_code_patches(f, glyph_bank: bytes, touched: list[tuple[int, int]]):
+    for label, rel, off, old, new in code_patches():
+        assert len(old) == len(new), label
+        lba = common.T2_SECTOR + rel
+        mode1.write_at(f, lba, common.USER, off, new, label=label, expect=old)
+        touched.append((lba, 1))
+    # 5. 글리프 뱅크 → rel 114~125(뱅크 0x7C~0x7E 적재분, 원본 0), 후킹 루틴 → rel 126 앞 256B
+    if ONLY is not None and "font" not in ONLY:
+        return
+    lba = common.T2_SECTOR + 114
+    mode1.write_user_data(f, lba, glyph_bank, label="glyph banks", expect=b"\0" * len(glyph_bank))
+    touched.append((lba, 12))
+    routine = hook.hook_routine()
+    lba = common.T2_SECTOR + 126
+    mode1.write_user_data(f, lba, routine, label="hook routine", expect=b"\0" * len(routine))
+    touched.append((lba, 1))
+    print(
+        f"  코드 패치 {len(code_patches())}곳 + 글리프 {len(glyph_bank.rstrip(b'\0'))}B + 루틴 {len(routine.rstrip(b'\0'))}B"
+    )
 
 
 def apply_edits(block: bytes, edits: list[tuple[bytes, bytes]], where: str) -> bytes:
@@ -79,7 +157,9 @@ def apply_edits(block: bytes, edits: list[tuple[bytes, bytes]], where: str) -> b
     for find, rep in edits:
         n = b.count(find)
         if n != 1:
-            raise BuildError(f"{where}: 찾는 바이트가 {n}번 나온다(정확히 1번이어야) — {find.hex()}")
+            raise BuildError(
+                f"{where}: 찾는 바이트가 {n}번 나온다(정확히 1번이어야) — {find.hex()}"
+            )
         b = b.replace(find, rep)
     return b
 
@@ -108,7 +188,9 @@ def _build(edits_path, iso: Path, cue: Path):
     # 원본 cue 의 FILE 줄은 대문자 파일명 — 위 치환이 안 먹으면 여기서 죽는다
     if "ed1.iso" not in cue.read_text():
         raise BuildError("cue 의 FILE 이름을 못 바꿨다")
-    edits = load_edits(edits_path) if edits_path else {}
+    edits, _table, glyph_bank = (
+        load_edits(edits_path) if edits_path else ({}, {}, font.build_table("")[1])
+    )
     found = containers.scan()
     by_rel = {c["rel"]: c for c in found}
     touched: list[tuple[int, int]] = []  # (첫 파일 섹터, 섹터 수)
@@ -116,6 +198,7 @@ def _build(edits_path, iso: Path, cue: Path):
     refs = containers.referenced()
     slot_of = {r: n for r, n in refs}  # 참조표가 말하는 섹터 수
     with open(iso, "r+b") as f:
+        apply_code_patches(f, glyph_bank, touched)
         for rel, c in sorted(by_rel.items()):
             hit = {k for k in edits if k[0] == rel}
             if not hit:
@@ -130,16 +213,28 @@ def _build(edits_path, iso: Path, cue: Path):
             data = assemble(entries)
             slot = slot_of[rel] * common.USER
             if len(data) > slot:
-                raise BuildError(f"컨테이너 rel {rel}: {len(data)}B > 칸 {slot}B(참조표 {slot_of[rel]}섹터)")
+                raise BuildError(
+                    f"컨테이너 rel {rel}: {len(data)}B > 칸 {slot}B(참조표 {slot_of[rel]}섹터)"
+                )
             data = data + b"\0" * (slot - len(data))
             orig = common.track_data(rel, slot_of[rel])
             lba = common.T2_SECTOR + rel
             mode1.write_user_data(f, lba, data, label=f"container rel {rel}", expect=orig)
             touched.append((lba, slot_of[rel]))
-            print(f"  컨테이너 rel {rel}: {len(entries)}블록 → {len(data.rstrip(b'\0'))}B / {slot}B")
+            print(
+                f"  컨테이너 rel {rel}: {len(entries)}블록 → {len(data.rstrip(b'\0'))}B / {slot}B"
+            )
     verify_immutable(iso, touched)
     verify_readback(iso, intended, found)
-    bad = mode1.selftest(iso, lbas=(common.T2_SECTOR + 2, common.T2_SECTOR + 34, common.T2_SECTOR + 1252, common.T22_SECTOR + 1))
+    bad = mode1.selftest(
+        iso,
+        lbas=(
+            common.T2_SECTOR + 2,
+            common.T2_SECTOR + 34,
+            common.T2_SECTOR + 1252,
+            common.T22_SECTOR + 1,
+        ),
+    )
     if bad:
         raise BuildError(f"EDC/ECC 자기검증 실패: {bad}")
     print(f"빌드 OK: {iso}  sha1 {common.sha1_of(iso)}")
@@ -160,8 +255,13 @@ def verify_immutable(iso: Path, touched: list[tuple[int, int]]):
                 break
             if x != y:
                 for i in range(0, len(x), common.RAW):
-                    if x[i : i + common.RAW] != y[i : i + common.RAW] and (lba + i // common.RAW) not in allowed:
-                        raise BuildError(f"무변경 구간이 바뀌었다: 파일 섹터 {lba + i // common.RAW}")
+                    if (
+                        x[i : i + common.RAW] != y[i : i + common.RAW]
+                        and (lba + i // common.RAW) not in allowed
+                    ):
+                        raise BuildError(
+                            f"무변경 구간이 바뀌었다: 파일 섹터 {lba + i // common.RAW}"
+                        )
             lba += chunk // common.RAW
     print(f"  무변경 대조 OK (허용 {len(allowed)}섹터 밖 동일)")
 
@@ -169,7 +269,12 @@ def verify_immutable(iso: Path, touched: list[tuple[int, int]]):
 def verify_readback(iso: Path, intended, found_orig):
     data = iso.read_bytes()
     track = b"".join(
-        data[(common.T2_SECTOR + r) * common.RAW + common.USER_OFF : (common.T2_SECTOR + r) * common.RAW + common.USER_OFF + common.USER]
+        data[
+            (common.T2_SECTOR + r) * common.RAW + common.USER_OFF : (common.T2_SECTOR + r)
+            * common.RAW
+            + common.USER_OFF
+            + common.USER
+        ]
         for r in range(common.T2_LEN)
     )
     got = containers.scan(track)
@@ -190,7 +295,11 @@ def verify_readback(iso: Path, intended, found_orig):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--edits", type=Path, help="PoC 편집 입력 JSON (work/ 아래, 커밋 안 함)")
+    ap.add_argument("--only", help="진단용: 패치 그룹만(cache,font,hook 쉼표 구분)")
     a = ap.parse_args()
+    global ONLY
+    if a.only:
+        ONLY = set(a.only.split(","))
     build(a.edits)
 
 

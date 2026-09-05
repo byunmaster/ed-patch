@@ -37,6 +37,8 @@ python3 games/pce-ed1/tools/containers.py --dump   # work/derived/text/ 에 블�
 python3 games/pce-ed1/tools/lz.py encode <in> <out>
 python3 games/pce-ed1/tools/build.py [--edits work/edits_poc.json]   # work/build/<꼬리표>/ed1.iso+cue
 python3 games/pce-ed1/tools/ram_map.py <dump>...       # 워크 RAM 빈 자리(덤프 겹치기)
+python3 games/pce-ed1/tools/hook.py                    # 후킹 루틴·스텁 바이트(미니 어셈블러)
+python3 games/pce-ed1/tools/font.py                    # 글리프 표·코드 배정 확인
 sh games/pce-ed1/check.sh                          # ⭐ 이 게임의 커밋 전 게이트
 ```
 

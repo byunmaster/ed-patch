@@ -12,7 +12,13 @@ import lz
 
 class Assemble(unittest.TestCase):
     def test_왕복과_공유(self):
-        a = b"\x1f" + "侍女".encode("cp932") + b"\x04\x01" + "おはよう".encode("cp932") * 20 + b"\x00"
+        a = (
+            b"\x1f"
+            + "侍女".encode("cp932")
+            + b"\x04\x01"
+            + "おはよう".encode("cp932") * 20
+            + b"\x00"
+        )
         b = b"\x4c\x10\xa0" + bytes(range(64)) + b"\x00" * 50
         out = build.assemble([(0, a), (7, b), (9, a)])  # 9 는 0 과 같은 블록
         ents, dend = containers.parse_dir(out[:2048])
