@@ -20,7 +20,7 @@
 않는다(`ですます` 로 말하는 병사가 한국어로 반말일 수 있다). **화자 이름표가 없는
 블록**(시스템·해설·행동 로그)만 본다 — 거기서는 원문 종결이 곧 우리 종결이어야 한다.
 
-⚠ **ED2 는 보고만 한다** — 아직 정발 유래라 통째로 재작성 대기다. 지금 못 고치는 걸
+⚠ **ED2 는 보고만 한다** — 인게임 QA 를 아직 안 돌아 문안이 흔들릴 수 있다. 지금 못 고치는 걸
 실패로 치면 게이트가 늘 빨간불이 되고, 늘 빨간불인 검사는 아무도 안 본다.
 
 ⚠ `--textmap` 은 **원본 이미지를 훑는다**(전투·아이템 코퍼스는 JP 를 저장하지 않는다 —
@@ -104,13 +104,14 @@ def scan_textmap():
     if not src:
         print("  ⚠ 원본 이미지가 없다 — `--textmap` 은 건너뛴다")
         return []
-    data = open(src[0], "rb").read()
+    with open(src[0], "rb") as f:
+        data = f.read()
     pat = re.compile(rb"(?:%[csd]|[\x81-\x9f\xe0-\xef][\x40-\xfc]|[\x20-\x7e\x0a]){3,60}")
     seen, out = {}, []
     for m in pat.finditer(data):
         try:
             t = m.group().decode("cp932")
-        except Exception:  # noqa: BLE001 — SJIS 아닌 바이트열은 그냥 건너뛴다
+        except Exception:  # noqa: BLE001, S112 — SJIS 아닌 바이트열은 **일부러** 건너뛴다
             continue
         k = jkey(t)
         if k in keys and k not in seen:
@@ -130,7 +131,7 @@ def main():
     if "--textmap" in sys.argv:
         bad = scan_textmap()
         print(f"  {'❌' if bad else '✅'} 전투·아이템 코퍼스 — 원문 정중인데 평어체: {len(bad)}")
-        for c, k, j, o in bad:
+        for c, _k, j, o in bad:
             print(f"       [{c}] {j!r} → {o!r}")
         return 1 if bad else 0
     rows = scan_scenes()
@@ -143,7 +144,7 @@ def main():
     else:
         print("  ✅ 화자 없는 블록의 문체가 원문과 같다 (ED1)")
     if ed2:
-        print(f"     ℹ ED2 {len(ed2)}곳 — 정발 유래라 재작성 때 같이 («할 일»)")
+        print(f"     ℹ ED2 {len(ed2)}곳 — 인게임 QA 전에 맞춘다 («할 일»)")
     return 1 if ed1 else 0
 
 
