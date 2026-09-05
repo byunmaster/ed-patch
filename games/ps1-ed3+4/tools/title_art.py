@@ -48,6 +48,7 @@ def _local(*parts):
 SPEC = os.path.join(common.ROOT, "work", "review", "tim", "ed3", "_spec")
 ASSETS = os.path.join(common.ROOT, "assets", "graphics", "ed3")
 AI_SRC = _local("ed3_title.png")
+RIM_SRC = _local("ed3-title-new.png")  # 유저가 AI 로 5.4배 키운 것 — **실루엣만** 쓴다
 NEODGM = os.path.join(common.REPO, "shared", "fonts", "neodgm.ttf")
 SUB_FONT = _local("fonts", "YeonSung-Regular.ttf")
 
@@ -67,6 +68,10 @@ OP = {
     "sub_bottom": 117,
 }
 SUB_TEXT = "또 하나의 영웅들의 이야기"
+# 🔴 부제는 세로로 1.85배 눌리므로 **가로로 뚫린 속**이 먼저 메워진다.
+#    「들」의 ㄷ 이 그래서 덩어리로 보였다(유저 지적 2026-09-05) ⇒ 그 글자만 속을 넓힌다.
+#    값은 눌리기 **전** 해상도의 줄 수다. 크면 획이 얇아져 되레 흐려진다(실측: 16).
+SUB_OPEN = {"들": 12}
 SUB_BOTTOM = 69  # 부제 아래를 원본(68행)에 맞춘다
 SS = 8  # 글자는 8배로 찍고 줄인다
 
@@ -234,6 +239,33 @@ def _fit_font(txt, path, rows, width, track):
     return best
 
 
+def _open_counter(big, x0, x1, k):
+    """글자의 **가로로 뚫린 속**을 위아래로 k 줄 넓힌다 (제자리 수정).
+
+    🔴 부제는 세로로 1.85배 눌리므로 가로 속이 먼저 메워진다 — 「들」의 ㄷ 이 그랬다.
+    첫 덩어리(글자 맨 위 = 초성)에서 **획이 가장 얇은 줄들**을 속으로 보고, 그 위아래로
+    넓히되 **기둥 오른쪽만** 지운다. 바깥 실루엣은 그대로 두려는 것이다.
+    """
+    g = big[:, x0:x1] > 128
+    if not g.any():
+        return
+    lab, _ = ndimage.label(g)
+    top = np.nonzero(g.any(axis=1))[0].min()
+    row = np.nonzero(g[top + 2])[0]
+    if not len(row):
+        return
+    dm = lab == lab[top + 2, row[0]]
+    ys = np.nonzero(dm.any(axis=1))[0]
+    cnt = dm.sum(axis=1)
+    thin = [y for y in range(ys.min(), ys.max() + 1) if 0 < cnt[y] <= cnt[ys].max() * 0.30]
+    if not thin:
+        return
+    y0, y1 = min(thin), max(thin)
+    stem_r = np.nonzero(dm[(y0 + y1) // 2])[0].max() + 2
+    sl = slice(max(0, y0 - k), y1 + 1 + k)
+    big[sl, x0 + stem_r : x1] = np.where(dm[sl, stem_r:], 0, big[sl, x0 + stem_r : x1])
+
+
 def subtitle(
     txt=SUB_TEXT,
     path=SUB_FONT,
@@ -267,10 +299,15 @@ def subtitle(
     _, b, _, e = d.textbbox((0, 0), txt, font=f)
     x = (img.width - (sum(ws) + track * SS * (len(txt) - 1))) / 2
     y = (img.height - (e - b)) / 2 - b
+    boxes = {}
     for ch, cw in zip(txt, ws, strict=True):
         d.text((x, y), ch, font=f, fill=255)
+        boxes[ch] = (int(x), int(x + cw) + 4)
         x += cw + track * SS
-    big = np.asarray(img)
+    big = np.asarray(img).copy()
+    for ch, k in SUB_OPEN.items():
+        if ch in boxes:
+            _open_counter(big, *boxes[ch], k)
     ry, rx = max(1, round((SS + halo) * squash / 2)), max(1, round((SS + halo) / 2))
     yy, xx = np.ogrid[-ry : ry + 1, -rx : rx + 1]
     ringbig = ndimage.grey_dilation(big, footprint=(yy / ry) ** 2 + (xx / rx) ** 2 <= 1.0)
@@ -365,6 +402,50 @@ def make_logo():
     ), f"자간 {gap} · 큰 글자 폭 {big_w} · 부제 폭 {sub.width} · 색 {n}"
 
 
+def op_rim_from_upscale(body):
+    """오프닝 로고의 흰 테 실루엣을 **유저의 업스케일 그림에서 빌려 온다**.
+
+    🔴 원천(`AI_SRC`)이 1090px 라 400 으로 줄이는 배율이 **2.8배뿐**이다(작은 로고는 13.6배)
+       — 계단이 그대로 살아남아 흰 테가 파여 보인다. 업스케일본은 2172px(5.4배)라 매끈하다.
+    ⚠ **그 그림을 그대로 쓰지 않는다** — 글자 모양과 정렬이 어긋나 있다(유저 판정 2026-09-05).
+       빌리는 건 **바깥 실루엣뿐**이고, 글자마다 우리 자리(`body`)의 칸에 맞춰 늘여 붙인다.
+    ⚠ 그래도 어긋나므로 마지막에 **우리 몸통과 합집합**을 잡는다 — 몸통이 테 밖으로 새면
+       글자에 구멍이 뚫린 것처럼 보인다.
+    없으면(다른 머신) None — 부르는 쪽이 흐림 방식으로 돌아간다.
+    """
+    if not os.path.exists(RIM_SRC):
+        return None
+    up = np.asarray(Image.open(RIM_SRC).convert("RGB")).astype(int).max(axis=2) > 28
+    rows = np.nonzero(up.any(axis=1))[0]
+    # 금판 아래 · 부제 위 = 큰 글자 띠 (빈 줄로 갈린다)
+    blank = [y for y in range(rows.min(), rows.max() + 1) if not up[y].any()]
+    cuts = [y for i, y in enumerate(blank) if i == 0 or y - blank[i - 1] > 1]
+    band = ndimage.binary_fill_holes(up[cuts[0] : cuts[1]])
+    xs = np.nonzero(band.any(axis=0))[0]
+    X0, X1 = xs.min(), xs.max() + 1
+    sil = np.zeros(body.shape, bool)
+    runs = [(a, b) for a, b in _runs(body) if b - a > 10]
+    for i, (a, b) in enumerate(runs):
+        u0, u1 = X0 + (X1 - X0) * a / body.shape[1], X0 + (X1 - X0) * b / body.shape[1]
+        # 그쪽은 글자끼리 테가 닿아 붙어 있다 — 경계는 **가장 가는 자리**로 잡는다
+        for j, u in ((0, u0), (1, u1)):
+            if 0 < i + j < len(runs):
+                lo = int(u - 60)
+                u = lo + int(np.argmin(band[:, lo : int(u) + 60].sum(axis=0)))
+                u0, u1 = (u, u1) if j == 0 else (u0, u)
+        one = band[:, int(u0) : int(u1)]
+        cy = np.nonzero(one.any(axis=1))[0]
+        cx = np.nonzero(one.any(axis=0))[0]
+        one = one[cy.min() : cy.max() + 1, cx.min() : cx.max() + 1]
+        my = np.nonzero(body[:, a:b].any(axis=1))[0]
+        h = my.max() - my.min() + 1
+        r = np.asarray(
+            Image.fromarray((one * 255).astype(np.uint8)).resize((b - a, h), Image.LANCZOS)
+        )
+        sil[my.min() : my.min() + h, a:b] |= r >= 128
+    return sil | body
+
+
 def make_logo_op():
     """오프닝 끝의 큰 로고(400×118) — 금판은 **그 그림 것**을 그대로 쓴다."""
     src = np.asarray(ai_big_title())
@@ -400,6 +481,19 @@ def make_logo_op():
     )
     arr = np.asarray(b).astype(np.float32)
     m = arr[..., 3] >= 128
+    # 흰 테 실루엣은 업스케일본에서 빌린다 — 색·질감은 위에서 만든 것 그대로 쓴다
+    body = (
+        np.asarray(
+            Image.fromarray((a * 255).astype(np.uint8)).resize(
+                (OP["big_w"], OP["big_h"]), Image.LANCZOS
+            )
+        )
+        >= 128
+    )
+    sil = op_rim_from_upscale(body)
+    if sil is not None:
+        arr[sil & ~m, :3] = 255  # 넓어진 자리는 흰 테
+        m = sil
     arr[m & (ndimage.distance_transform_edt(m) <= 2)] = (255, 255, 255, 255)  # 바깥 2겹 순백
     arr[..., :3] = _soften_edge(arr[..., :3], m, 0.4)
     arr = np.clip(arr, 0, 255).astype(np.uint8)
@@ -569,11 +663,13 @@ def main():
     ap.add_argument("--check", action="store_true", help="커밋된 PNG 와 바이트 대조만")
     a = ap.parse_args()
     jobs = []
-    if os.path.exists(AI_SRC):
+    # ⚠ 둘 다 있어야 한다 — 하나만 있으면 **다른 그림이 나오고** `--check` 가 헛돈다
+    missing = [f for f in (AI_SRC, RIM_SRC) if not os.path.exists(f)]
+    if not missing:
         jobs.append(("title_logo.png", make_logo))
         jobs.append(("title_logo_op.png", make_logo_op))
     else:
-        print(f"⬜ 로고는 건너뛴다 — {AI_SRC} 가 없다(머신 전용). 커밋된 PNG 가 정본이다.")
+        print(f"⬜ 로고는 건너뛴다 — {missing[0]} 가 없다(머신 전용). 커밋된 PNG 가 정본이다.")
     for idx, txt, name in BUTTONS:
         jobs.append((name, lambda i=idx, t=txt: make_button(i, t)))
 
