@@ -63,6 +63,9 @@ OP = {
     "top": 35,
     "big_w": 392,
     "big_h": 67,
+    # 🔴 글자가 띠를 꽉 채우면 **흰 테의 위아래가 잘린다**(유저 지적 2026-09-05) ⇒
+    #    글자를 이만큼 눌러 넣고 위아래로 여백을 남긴다. 옆은 원래 여유가 있다.
+    "pad": 3,
     "sub_rows": 16,
     "sub_ink": 12,
     "sub_bottom": 117,
@@ -278,12 +281,19 @@ def _open_counter(big, x0, x1, up, dn, ext_up, ext_dn):
     stem_r = np.nonzero(dm[(y0 + y1) // 2])[0].max() + 2
     sl = slice(max(0, y0 - up), y1 + 1 + dn)
     big[sl, x0 + stem_r : x1] = np.where(dm[sl, stem_r:], 0, big[sl, x0 + stem_r : x1])
-    # 획을 오른쪽으로 늘인다 — 짧으면 속을 터도 무슨 자음인지 안 읽힌다
+    # 획을 오른쪽으로 늘인다 — 짧으면 속을 터도 무슨 자음인지 안 읽힌다.
+    # 🔴 **줄마다 잉크 폭에 비례해서** 늘인다. 통째로 늘이면 획의 **뾰족한 첫 줄**까지 넓어져
+    #    그 위 후광이 솟는다 — 「들」 위에 흰 혹이 생겼다(유저 지적 2026-09-05).
     for (ra, rb), ext in (((ys.min(), y0 - up), ext_up), ((y1 + 1 + dn, ys.max() + 1), ext_dn)):
-        for y in range(ra, rb) if ext else ():
+        if not ext:
+            continue
+        wide = [int(np.count_nonzero(big[y, x0:x1] > 128)) for y in range(ra, rb)]
+        top = max(wide) or 1
+        for y, wd in zip(range(ra, rb), wide, strict=True):
             xr = np.nonzero(big[y, x0:x1] > 128)[0]
             if len(xr):
-                big[y, x0 + xr.max() : min(x1, x0 + xr.max() + ext)] = 255
+                e = round(ext * wd / top)
+                big[y, x0 + xr.max() : min(x1, x0 + xr.max() + e)] = 255
 
 
 def subtitle(
@@ -463,7 +473,9 @@ def op_rim_from_upscale(body):
             Image.fromarray((one * 255).astype(np.uint8)).resize((b - a, h), Image.LANCZOS)
         )
         sil[my.min() : my.min() + h, a:b] |= r >= 128
-    return sil | body
+    # ⚠ 빌린 실루엣이 몸통에 바싹 붙는 자리가 있다(위아래 16열이 1px) ⇒ 테를 **두 겹은**
+    #    보장한다. 안 그러면 눌러 넣어 여백을 남겨도 그 자리는 여전히 잘린 듯 보인다.
+    return sil | ndimage.binary_dilation(body, _disk(2))
 
 
 def make_logo_op():
@@ -497,7 +509,7 @@ def make_logo_op():
     )
     col[a2 & ~a] = 255
     b = Image.fromarray(np.dstack([col, (a2 * 255).astype(np.uint8)]), "RGBA").resize(
-        (OP["big_w"], OP["big_h"]), Image.LANCZOS
+        (OP["big_w"], OP["big_h"] - 2 * OP["pad"]), Image.LANCZOS
     )
     arr = np.asarray(b).astype(np.float32)
     m = arr[..., 3] >= 128
@@ -505,7 +517,7 @@ def make_logo_op():
     body = (
         np.asarray(
             Image.fromarray((a * 255).astype(np.uint8)).resize(
-                (OP["big_w"], OP["big_h"]), Image.LANCZOS
+                (OP["big_w"], OP["big_h"] - 2 * OP["pad"]), Image.LANCZOS
             )
         )
         >= 128
@@ -523,7 +535,7 @@ def make_logo_op():
     widths = [e - s for s, e in rr]
     gap = max(1, round((OP["big_w"] - sum(widths)) / (len(rr) - 1)))
     big_w = sum(widths) + gap * (len(rr) - 1)
-    laid = np.zeros((OP["big_h"], big_w, 4), np.uint8)
+    laid = np.zeros((OP["big_h"] - 2 * OP["pad"], big_w, 4), np.uint8)
     x = 0
     for s, e in rr:
         laid[:, x : x + (e - s)] = arr[:, s:e]
@@ -531,7 +543,9 @@ def make_logo_op():
     sub = subtitle(rows=OP["sub_rows"], ink_rows=OP["sub_ink"], width=OP["w"] - 8)
     plate = np.asarray(op_plate())
     cv = Image.new("RGBA", (OP["w"], OP["h"]), (0, 0, 0, 0))
-    cv.alpha_composite(Image.fromarray(laid, "RGBA"), ((OP["w"] - big_w) // 2, OP["top"]))
+    cv.alpha_composite(
+        Image.fromarray(laid, "RGBA"), ((OP["w"] - big_w) // 2, OP["top"] + OP["pad"])
+    )
     cv.alpha_composite(sub, ((OP["w"] - sub.width) // 2, OP["sub_bottom"] - sub.height))
     a2 = np.asarray(cv).copy()
     a2[: OP["top"]] = plate[: OP["top"]]  # 금판은 색 줄이기 **전에** 붙인다
