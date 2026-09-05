@@ -1,7 +1,7 @@
 {
  "ss-ed1+2": {
-  "/ED2.BIN": "c3bf09605506",
-  "/ED.BIN": "46067c295ef6",
+  "/ED2.BIN": "f6a5ace776db",
+  "/ED.BIN": "2b940fdb394a",
   "/BIN/ED1SCN08.BIN": "245625e6036c",
   "/BIN/ED1SCN02.BIN": "390aa2e1b38a",
   "/BIN/ED1SCN03.BIN": "fd103326be43",
@@ -91,12 +91,12 @@
   "/BIN/ED2SCN45.BIN": "5f543b52e63c",
   "/BIN/ED2SCN46.BIN": "8e9ade7c1890",
   "/BIN/ED2SCN47.BIN": "7b7e864ddcec",
-  "UI/표": "1b75d369474e",
-  "UI/이름": "a99723298684",
-  "UI/시스템": "665641731ec1",
+  "UI/표": "5c6497bf3575",
+  "UI/이름": "fa2935fcea2c",
+  "UI/시스템": "5acdb767f136",
   "UI/카드": "60ccccb28c2b",
-  "UI/메시지": "fb7eaf9f6c45",
-  "UI/씬머리": "c336d1b9b91a",
+  "UI/메시지": "8caa5e9d950c",
+  "UI/씬머리": "7f1a8140a6f1",
   "몬스터/이름": "cef4d05dbd15",
   "몬스터/조우": "300f27cb5322"
  },

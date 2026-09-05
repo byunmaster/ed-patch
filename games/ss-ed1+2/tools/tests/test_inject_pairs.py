@@ -22,13 +22,25 @@ import inject_pairs as I
 def callsite(lead=0x83, low=0x5C):
     """합성 콜사이트 — 「`ソ` 를 인자 둘로 주입하는」 실제 꼴을 그대로 흉내 낸다.
 
-        mov.w @(9,pc),r7   ; r7 = lead      (0x16 의 워드)
-        mov.l @(5,pc),r5   ; r5 = 서식      (0x18 의 롱)
-        mov #6,r1 · push · mov #1,r1 · push · mov #low,r1 · push
-        mov #2,r6
-        jsr @r11 · nop
+    mov.w @(9,pc),r7   ; r7 = lead      (0x16 의 워드)
+    mov.l @(5,pc),r5   ; r5 = 서식      (0x18 의 롱)
+    mov #6,r1 · push · mov #1,r1 · push · mov #low,r1 · push
+    mov #2,r6
+    jsr @r11 · nop
     """
-    w = [0x9709, 0xD505, 0xE106, 0x2F16, 0xE101, 0x2F16, 0xE100 | low, 0x2F16, 0xE602, 0x4B0B, 0x0009]
+    w = [
+        0x9709,
+        0xD505,
+        0xE106,
+        0x2F16,
+        0xE101,
+        0x2F16,
+        0xE100 | low,
+        0x2F16,
+        0xE602,
+        0x4B0B,
+        0x0009,
+    ]
     d = b"".join(struct.pack(">H", x) for x in w)
     d += struct.pack(">H", lead)  # 0x16 워드 리터럴
     d += struct.pack(">I", 0x060D3F40)  # 0x18 서식 포인터

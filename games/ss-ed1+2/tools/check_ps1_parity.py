@@ -142,21 +142,23 @@ def ours():
 
 
 def pending():
-    """**PS1 에 맞출 것 — 아직 안 했다.** `script/ps1_pending.json`. 열쇠는 원문 sha1.
+    """갈린 자리의 대장 — `(미룬 할 일, 옮길 것이 아닌 것)`. `script/ps1_divergence.json`.
 
-    🔴 **정본은 PS1 이다**(유저 확정 2026-09-05) — 이 자리들은 PS1 에서 결정한 표기이고
-       **새턴이 따라가야 한다.** 「의도된 갈림」이 아니라 **미룬 할 일**이다.
-    ⏳ 시점은 **PS1 이 main 에 머지된 뒤**다 — 그전엔 아직 움직이는 값을 좇게 된다.
-    ⚠ 그때까지 「갈렸다」에서 갈라 세는 이유는 하나다 — 목록이 늘 같은 18로 차면
+    🔴 **정본은 PS1 이다**(유저 확정 2026-09-05) — 새턴이 따라간다.
+    둘을 가르는 이유는 **뜻이 달라서**다:
+      `pending` 은 **아직 안 옮긴 것**이라 언젠가 0 이 된다(⏳ PS1 머지 뒤).
+      `split` 은 **옮길 것이 아니다** — 정본이 범주별로 갈라 둔 것을 평탄 대조가 못 본다.
+    ⚠ 「갈렸다」에서 갈라 세는 이유는 하나다 — 목록이 늘 같은 수로 차면
       **새로 갈린 자리가 묻힌다**(늘 빨간불이면 아무도 안 본다 — 루트 CLAUDE.md).
     """
     p = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "script", "ps1_pending.json"
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "script", "ps1_divergence.json"
     )
     if not os.path.exists(p):
-        return {}
+        return {}, {}
     with open(p, encoding="utf-8") as f:
-        return json.load(f).get("pending", {})
+        d = json.load(f)
+    return d.get("pending", {}), d.get("split", {})
 
 
 def main():
@@ -168,8 +170,8 @@ def main():
         print("  ⏭ PS1 워크트리가 없다 — 건너뜀")
         return 0
     get = ours()
-    todo = pending()
-    same, diff, later, miss = 0, [], [], []
+    todo, split = pending()
+    same, diff, later, kept, miss = 0, [], [], [], []
     for jp, theirs in sorted(pairs.items()):
         mine, src = get(jp)
         if mine is None:
@@ -178,17 +180,21 @@ def main():
             same += 1
         elif U.sys_key(jp) in todo:
             later.append((jp, todo[U.sys_key(jp)]))
+        elif U.sys_key(jp) in split:
+            kept.append((jp, split[U.sys_key(jp)]))
         else:
             diff.append((jp, theirs, mine, src))
     print(
         f"  PS1 표 {len(pairs):,} — 같다 {same:,} · 갈렸다 {len(diff)} · "
-        f"PS1 에 맞출 것 {len(later)} · 새턴에 없다 {len(miss)}"
+        f"PS1 에 맞출 것 {len(later)} · 범주별이라 갈린다 {len(kept)} · 새턴에 없다 {len(miss)}"
     )
     if later:
         print("  🔵 아래는 **PS1 이 main 에 머지된 뒤** 새턴을 맞춘다 (미룬 할 일)")
         why = collections.Counter(w for _j, w in later)
         for w, n in why.most_common():
             print(f"     ℹ {n:2}  {w}")
+    for jp, why in kept:
+        print(f"     ℹ {jp[:20]!r} — {why[:72]}")
     for jp, theirs, mine, src in diff:
         print(f"     {jp[:26]!r}")
         print(f"        PS1  {theirs[:56]!r}")

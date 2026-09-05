@@ -157,7 +157,9 @@ def main():
         fails += len(bad)
         if unread:
             # ⚠ 「못 쟀다」는 실패가 아니라 **안 본 것**이다 — 조용히 넘기지 않는다
-            print(f"  ⚠ {fname}: 길이를 못 잰 자리 {len(unread)}곳 (MAXLEN {MAXLEN}B 안에 NUL 이 없다)")
+            print(
+                f"  ⚠ {fname}: 길이를 못 잰 자리 {len(unread)}곳 (MAXLEN {MAXLEN}B 안에 NUL 이 없다)"
+            )
         if bad:
             print(f"  ❌ {fname}: 고정 복사 {len(bad)}곳이 어긋난다")
             for lit, ln, our, cap, why in bad:

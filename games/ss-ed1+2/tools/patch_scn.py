@@ -251,10 +251,7 @@ def _movable(off, n, e, table=frozenset()):
       2~4B 라 길이로 갈렸는데, 이름 칸은 8~14B 라 길이로는 안 갈린다.
     """
     return (
-        bool(e.get("ptr_at"))
-        and n >= VACATE_MIN
-        and off not in table
-        and "%c" in e.get("text", "")
+        bool(e.get("ptr_at")) and n >= VACATE_MIN and off not in table and "%c" in e.get("text", "")
     )
 
 
