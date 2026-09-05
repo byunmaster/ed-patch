@@ -182,3 +182,34 @@ class PlaceSpacing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class SplitWinner(unittest.TestCase):
+    """③ 범주를 가로질러 갈린 원문의 **화면 승자**가 못 박은 값과 같은가.
+
+    대사의 이름 자리는 `typeset_scn._names()` 를 타는데, 그 표는 네 범주를 겹쳐
+    **뒤 범주가 이긴다.** 지금 맞는 것은 순서 덕이라 **우연**이다 — 순서를 바꾸거나 앞
+    범주에 같은 원문이 하나 더 생기면 조용히 뒤집힌다. 여기서 계약으로 못 박는다.
+
+    ⚠ **게이트(`check_glossary`)에도 같은 검사가 있다.** 여기 두는 이유는 원본 없이
+      돌기 때문이다 — 원본을 안 링크한 트리에서도 이 못은 살아 있어야 한다.
+    """
+
+    def test_pinned_winners_hold(self):
+        import check_glossary as G
+        from typeset_scn import _names
+
+        merged = _names()
+        for jp, (cat, want) in G.SPLIT_WINNER.items():
+            self.assertEqual(merged.get(jp), want, f"{jp} 의 화면 표기 (못: {cat}:{want})")
+
+    def test_pins_are_not_stale(self):
+        """못 박은 원문이 **정말 범주를 가로질러 갈려 있어야** 한다."""
+        import check_glossary as G
+
+        for jp, (cat, want) in G.SPLIT_WINNER.items():
+            seen = {
+                c: table(c)[jp] for c in ("item", "monster", "person", "place") if jp in table(c)
+            }
+            self.assertGreater(len(set(seen.values())), 1, f"{jp} 는 이제 안 갈린다 — 못을 뺀다")
+            self.assertEqual(seen.get(cat), want, f"{jp} 의 {cat} 표기가 바뀌었다")

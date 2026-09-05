@@ -100,6 +100,24 @@ def same_fragment_split(t, minlen=3):
     return sorted(out, key=lambda r: (-len(r[1]), r[1]))
 
 
+# 🔴 **범주를 가로질러 갈린 원문의 「화면에 나가는 쪽」을 못 박는다.**
+#
+#    대사의 이름 자리는 `typeset_scn._names()` 를 타는데, 그 표는 네 범주를
+#    `out.update()` 로 겹쳐 **뒤 범주가 이긴다**(`person → monster → place → item`).
+#    그래서 지금 맞는 것은 **순서 덕이지 계약이 아니다** — 순서를 바꾸거나 앞 범주에
+#    같은 원문이 하나 더 생기면 **조용히 뒤집힌다.**
+#
+#    실측 2026-09-06(`カース`): 화면에 나가는 자리가 일곱인데 갈래가 제자리를 찾고 있다.
+#      /ED.BIN 0x24E8   주문 표(이그나·휴르… 사이)  → `_names()` 를 탄다  ⇒ **커스**
+#      0x1BA1B 외 5곳   몬스터 이름 표 · 조우 문구   → `patch_mon_names` 가 **범주를 알고** 쓴다 ⇒ 카스
+#    ⇒ `_names()` 가 내야 하는 값은 **item 쪽**이다. 그것을 여기 적고 어긋나면 **실패**시킨다.
+#
+#    ⚠ 여기 없는 갈림은 여전히 **보고만** 한다 — 어느 쪽이 맞는지는 사람이 정한다.
+SPLIT_WINNER = {
+    "カース": ("item", "커스"),
+}
+
+
 def cross_category_split():
     """③ **범주를 가로질러 갈린 자리** → `[(원문, [(범주, 표기)], 화면에 나가는 표기)]`.
 
@@ -127,6 +145,9 @@ def cross_category_split():
     return sorted(out)
 
 
+_UNSPLIT = object()
+
+
 def main():
     bad = 0
     for cat in glossary.categories():
@@ -144,9 +165,33 @@ def main():
             "  \u2705 \uac19\uc740 \uc6d0\ubb38\uc774 \ub450 \ud45c\uae30\ub85c \uac08\ub9b0 \uc790\ub9ac\ub294 \uc5c6\ub2e4"
         )
     cross = cross_category_split()
-    print(f"  ℹ 범주를 가로질러 갈린 자리 {len(cross)} (판정은 사람)")
+    pinned = {jp for jp, _p, _w in cross if jp in SPLIT_WINNER}
+    print(
+        f"  ℹ 범주를 가로질러 갈린 자리 {len(cross)}"
+        f" (못 박은 것 {len(pinned)} · 판정 기다리는 것 {len(cross) - len(pinned)})"
+    )
     for jp, per, win in cross:
-        print(f"     {jp} → " + " · ".join(f"{c}:{k}" for c, k in per) + f"   ⇒ 화면 {win!r}")
+        tail = ""
+        if jp in SPLIT_WINNER:
+            _cat, want = SPLIT_WINNER[jp]
+            tail = f"   [못 박음 {_cat}:{want}]" if win == want else ""
+        print(f"     {jp} → " + " · ".join(f"{c}:{k}" for c, k in per) + f"   ⇒ 화면 {win!r}{tail}")
+    # 🔴 못 박은 자리는 **계약**이다 — 어긋나면 실패.
+    win = {j: w for j, _p, w in cross}
+    for jp, (cat, want) in SPLIT_WINNER.items():
+        got = win.get(jp, _UNSPLIT)
+        if got is _UNSPLIT:
+            # 갈림이 사라졌다(정본을 합쳤거나 한쪽을 뺐다) — 못이 낡았다.
+            bad += 1
+            print(
+                f"  ❌ 못 박은 {jp} 가 이제 범주를 가로질러 갈리지 않는다 — SPLIT_WINNER 에서 뺀다"
+            )
+        elif got != want:
+            bad += 1
+            print(
+                f"  ❌ {jp} 의 화면 표기가 {got!r} 다 — {cat}:{want!r} 로 못 박아 뒀다.\n"
+                f"     `typeset_scn._names()` 의 범주 순서를 보라(뒤 범주가 이긴다)."
+            )
 
     frag = same_fragment_split(glossary.table("monster"))
     print(
@@ -155,9 +200,9 @@ def main():
     for kind, f, grp in frag[:12]:
         print(f"     [{kind} {f}] " + " \u00b7 ".join(f"{j}\u2192{k}" for j, k in grp))
     if bad:
-        raise SystemExit(
-            f"\uc815\ubcf8\uc774 \uc790\uae30 \uc548\uc5d0\uc11c \uac08\ub838\ub2e4 ({bad}\uac74)"
-        )
+        # ⚠ ① 은 「정본이 자기 안에서 갈렸다」, ③ 은 「못 박은 승자와 어긋났다」다 —
+        #    사유가 다르니 뭉뚱그리지 않는다.
+        raise SystemExit(f"정본 검사 실패 ({bad}건) — 위 ❌ 를 보라")
 
 
 if __name__ == "__main__":
