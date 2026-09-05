@@ -40,6 +40,7 @@ python3 games/pce-ed1/tools/ram_map.py <dump>...       # 워크 RAM 빈 자리(�
 python3 games/pce-ed1/tools/hook.py                    # 후킹 루틴·스텁 바이트(미니 어셈블러)
 python3 games/pce-ed1/tools/font.py                    # 글리프 표·코드 배정 확인
 python3 games/pce-ed1/tools/messages.py                # 메시지 파싱 → work/derived/messages/ (열쇠↔원문)
+python3 games/pce-ed1/tools/sysstrings.py              # 시스템 문구 가족 덤프 → work/derived/sys/
 sh games/pce-ed1/check.sh                          # ⭐ 이 게임의 커밋 전 게이트
 ```
 

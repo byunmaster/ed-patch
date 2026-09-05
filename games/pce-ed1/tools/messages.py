@@ -159,10 +159,9 @@ def _parse_from(block: bytes, s: int) -> Message | None:
             tokens.append(("op", b))
             i += 1
             return Message(s, i, speaker, common, tokens, complex_)
-        if b == 0x1F or b == 0x09:
-            if tokens or speaker is not None or common is not None:
-                # 화자 전환 — 여기서 메시지를 가른다(종료 없음). 다음 메시지가 이 열개에서 시작한다
-                return Message(s, i, speaker, common, tokens, complex_, terminated=False)
+        if (b == 0x1F or b == 0x09) and (tokens or speaker is not None or common is not None):
+            # 화자 전환 — 여기서 메시지를 가른다(종료 없음). 다음 메시지가 이 열개에서 시작한다
+            return Message(s, i, speaker, common, tokens, complex_, terminated=False)
         if b == 0x1F:
             in_speaker = True
             i += 1
@@ -189,7 +188,7 @@ REF_OPS = {
     0x20,
 }  # 6502 JMP/JSR. ⚠ 스크립트 옵코드(0F·10…)의 피연산자는 코드 안의 `STA $10` 같은 바이트와 겹쳐 소음이라 뺐다 — 메시지 안을 가리키는 스크립트 점프는 v0 가 못 본다(status.md)
 SPLIT_PTR = re.compile(
-    rb"(?=\xa9(.)\x85(.)\xa9(.)\x85(.))", re.S
+    rb"(?=\xa9(.)\x85(.)\xa9(.)\x85(.))", re.DOTALL
 )  # LDA #lo; STA zp; LDA #hi; STA zp+1 (겹침 허용)
 
 

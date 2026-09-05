@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import messages as M
 
-SJ = lambda s: s.encode("cp932")  # noqa: E731
+SJ = lambda s: s.encode("cp932")
 
 
 class Parse(unittest.TestCase):

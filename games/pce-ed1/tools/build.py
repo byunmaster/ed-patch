@@ -25,6 +25,7 @@ import containers
 import font
 import hook
 import lz
+import sysbuild
 import translate
 
 from shared.disc import mode1
@@ -186,7 +187,7 @@ def _build(edits_path, iso: Path, cue: Path):
     if "ed1.iso" not in cue.read_text():
         raise BuildError("cue 의 FILE 이름을 못 바꿨다")
     # 글리프 표 = 번역 정본 전체 + PoC 편집의 음절(결정적). 표를 따로 두지 않는다(폰트 전략 §3.2)
-    chars = translate.all_glyph_chars()
+    chars = translate.all_glyph_chars() | sysbuild.all_glyph_chars()
     raw = json.loads(edits_path.read_text()) if edits_path else []
     chars |= {ch for e in raw for ch in e.get("replace_text", "") if font.needs_glyph(ch)}
     table, glyph_bank = font.build_table(chars)
@@ -199,6 +200,7 @@ def _build(edits_path, iso: Path, cue: Path):
     slot_of = {r: n for r, n in refs}  # 참조표가 말하는 섹터 수
     with open(iso, "r+b") as f:
         apply_code_patches(f, glyph_bank, touched)
+        print("  시스템 문구:", sysbuild.apply(f, table, touched))
         translated_ids = {int(p.stem[3:]) for p in translate.M.SCRIPT_DIR.glob("scn*.json")}
         n_msgs = 0
         for rel, c in sorted(by_rel.items()):
