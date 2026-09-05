@@ -8,6 +8,10 @@
     labels    0x6D+0x15F6~0x182F  00 구분 목록(메뉴 라벨) — 코드가 **절대주소**로 하나씩 가리킨다(분할 즉치 141곳)
     sysmsg    0x6D+0x182F~0x1F1A  씬 인터프리터 메시지(전투·세이브·아이템 문구) — 역시 절대주소 참조
     files     0x78+0x13FB  12B × 52     파일 선택 화면 지명(전각 공백 패딩)
+    places    0x74+0x1C1E  12B × 50     **HUD 이름칸** 지명 — `이름 06` + 00 패딩. 12B 를 꽉 채우면 06 이 없다
+                                        (렌더러 `$92A0` 가 06 까지 스캔하고 짧으면 전각 공백으로 채운다)
+    screens   0x78+0x01E3~0x0330 · 0x78+0x049E~0x0558   부팅(백업 메모리 경고·안내)·파일 선택 화면
+                                        `col row <SJIS> 00` 레코드가 이어지고 `FF` 로 화면이 끝난다
 
 ⚠ 재삽입 규칙: **주소를 안 옮긴다.** 고정폭은 폭 안에서, labels 는 원래 길이 안에서(라벨 렌더러는 점프를
 모른다), sysmsg 는 제자리 + 넘치면 `0F` 로 뱅크 0x74 의 빈 화자 슬롯 영역(+0x430~+0x1170, $C430~)에 잇는다 —
@@ -45,9 +49,11 @@ def _pad_right_align(name: bytes, width: int, pad: bytes) -> bytes:
 # ─── 고정폭 표 ─────────────────────────────────────────────────────────────
 FIXED = {
     # name: (bank, base, stride, name_width, count, pad, tail)
+    #   pad `\x06` = 「이름 06 + 00 패딩」 꼴(HUD 이름칸) — 12B 를 꽉 채우면 06 을 안 쓴다
     "items": (0x74, 0x11A4, 20, 14, 117, b" ", 6),
     "spells": (0x74, 0x1AC8, 11, 8, 29, b" ", 3),
     "files": (0x78, 0x13FB, 12, 12, 52, b"\x81\x40", 0),
+    "places": (0x74, 0x1C1E, 12, 12, 50, b"\x06", 0),
 }
 
 
@@ -59,7 +65,9 @@ def read_fixed(name: str):
         e = b[base + k * stride : base + (k + 1) * stride]
         raw = e[:w]
         txt = raw.lstrip(b" ")
-        if pad == b"\x81\x40":
+        if pad == b"\x06":
+            txt = raw.split(b"\x06")[0]
+        elif pad == b"\x81\x40":
             txt = raw.rstrip(b"\x81\x40") if raw.endswith(b"\x81\x40") else raw
             while txt.startswith(b"\x81\x40"):
                 txt = txt[2:]
@@ -191,6 +199,40 @@ def read_sysmsg():
     return out
 
 
+# ─── 부팅·파일 선택 화면 ────────────────────────────────────────────────────
+# `col row <SJIS…> 00` 레코드가 이어지고 `FF` 가 화면 끝. 코드가 **화면 머리를 절대주소로** 가리키므로
+# 화면 총 길이를 지킨다 — 안에서 줄끼리 길이를 옮기는 건 자유다(레코드가 스스로 경계를 든다).
+# ⚠ col·row 는 8px 타일 단위로 보인다(원본 최장 줄이 col2+19자 = 21칸). 폭 상한은 그 실측을 그대로 쓴다.
+SCREENS = ((0x78, 0x01E3, 0x0330), (0x78, 0x049E, 0x0558))
+SCREEN_COLS = 21  # col(칸) + 글자 수 상한 — 원본 최장 줄에서 잰 값
+
+
+def read_screens():
+    out = []
+    for bank, lo, hi in SCREENS:
+        b = bank_bytes(bank)
+        i = lo
+        while i < hi:
+            start, lines = i, []
+            while i < hi and b[i] != 0xFF:
+                col, row = b[i], b[i + 1]
+                j = b.index(0, i + 2)
+                lines.append({"col": col, "row": row, "jp": b[i + 2 : j].decode("cp932")})
+                i = j + 1
+            if i < hi and b[i] == 0xFF:
+                i += 1
+            out.append(
+                {
+                    "key": f"{bank:02X}:{start:04X}",
+                    "bank": bank,
+                    "off": start,
+                    "room": i - start,
+                    "lines": lines,
+                }
+            )
+    return out
+
+
 def read_labels():
     """메뉴 라벨: 00 구분 + 코드 참조 주소에서도 가른다(『…逃げる 06 ＳＡＶＥ』처럼 06 뒤에 참조되는 라벨이 붙어 있다)."""
     b = bank_bytes(0x6D)
@@ -224,6 +266,7 @@ def dump_all():
         "chapter": read_chapter(),
         "labels": read_labels(),
         "sysmsg": read_sysmsg(),
+        "screens": read_screens(),
     }
     for k in FIXED:
         fams[k] = read_fixed(k)

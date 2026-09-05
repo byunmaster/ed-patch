@@ -5,6 +5,7 @@
                             — 사전(shared/glossary/eiyuu.json)이 정본이고 여기는 **덮어쓰기/보충**(폭 초과·미등재)
     script/sys/labels.json  {JP(토큰 포함 원문): KR(토큰 포함)}   메뉴 라벨
     script/sys/sysmsg.json  {열쇠: KR(토큰 포함)}                시스템 메시지 본문(앞뒤 옵코드는 도구가 보존)
+    script/sys/screens.json {"뱅크:오프셋": [줄…]}              부팅·파일 선택 화면(줄 수는 원본 그대로)
 
 규칙(2026-09-05): 주소를 안 옮긴다.
     고정폭 표 — 폭 안에서 원래 패딩 방식으로(아이템·주문 0x20 오른쪽 정렬 · 파일 지명 전각 공백)
@@ -81,6 +82,9 @@ def all_glyph_chars() -> set[str]:
         chars |= {c for c in TOK.sub("", v) if font.needs_glyph(c)}
     for v in _load("sysmsg.json").get("messages", {}).values():
         chars |= {c for c in TOK.sub("", v) if font.needs_glyph(c)}
+    for k, v in _load("screens.json").items():
+        if not k.startswith("_"):
+            chars |= {c for line in v for c in line if font.needs_glyph(c)}
     return chars
 
 
@@ -125,11 +129,14 @@ def apply(f, table, touched) -> dict:
             if len(enc) > w:
                 errors.append(f"{fam} 「{r['jp']}」→「{kr}」 {len(enc)}B > {w}B")
                 continue
-            new = (
-                S._pad_right_align(enc, w, pad)
-                if fam != "files"
-                else enc + pad * ((w - len(enc)) // 2)
-            )
+            if fam == "files":
+                new = enc + pad * ((w - len(enc)) // 2)
+            elif fam == "places":
+                # HUD 이름칸: 「이름 06」 + 00 패딩. 12B 를 꽉 채우면 06 을 안 쓴다
+                # (렌더러 `$92A0` 가 06 까지 스캔하고, 없으면 12B 를 끝으로 본다)
+                new = enc if len(enc) == w else enc + b"\x06" + b"\0" * (w - len(enc) - 1)
+            else:
+                new = S._pad_right_align(enc, w, pad)
             off = base + r["i"] * stride
             _write(f, bank, off, new, b[off : off + w], f"{fam}[{r['i']}]", touched)
             cnt += 1
@@ -231,6 +238,51 @@ def apply(f, table, touched) -> dict:
         _write(f, 0x6D, r["off"], new, orig, f"sysmsg {r['addr']:04X}", touched)
         cnt += 1
     stats["sysmsg"] = cnt
+    # 부팅·파일 선택 화면 — 화면 총 길이를 지킨다(코드가 화면 머리를 절대주소로 가리킨다).
+    # 줄 수·col·row 는 원본 그대로 쓰고, 남는 자리는 마지막 줄 뒤에 전각 공백으로 채운다.
+    screens = _load("screens.json")
+    cnt = 0
+    for sc in S.read_screens():
+        kr = screens.get(sc["key"])
+        if kr is None:
+            continue
+        if len(kr) != len(sc["lines"]):
+            errors.append(f"screen {sc['key']} 줄 수 {len(kr)} ≠ 원본 {len(sc['lines'])}")
+            continue
+        enc = [font.encode(t, table) for t in kr]
+        for ln, t, e in zip(sc["lines"], kr, enc, strict=True):
+            if ln["col"] + len(e) // 2 > S.SCREEN_COLS:
+                errors.append(
+                    f"screen {sc['key']} col{ln['col']} 「{t}」 {ln['col'] + len(e) // 2}칸 > {S.SCREEN_COLS}칸"
+                )
+        total = sum(3 + len(e) for e in enc) + 1
+        if total > sc["room"]:
+            errors.append(f"screen {sc['key']} {total}B > {sc['room']}B")
+            continue
+        enc[-1] += b"\x81\x40" * ((sc["room"] - total) // 2)
+        if (sc["room"] - total) % 2:
+            errors.append(
+                f"screen {sc['key']} 남는 {sc['room'] - total}B 가 홀수 — 전각 공백으로 못 채운다"
+            )
+            continue
+        new = b"".join(
+            bytes([ln["col"], ln["row"]]) + e + b"\0"
+            for ln, e in zip(sc["lines"], enc, strict=True)
+        )
+        new += b"\xff"
+        assert len(new) == sc["room"], sc["key"]
+        b78 = S.bank_bytes(sc["bank"])
+        _write(
+            f,
+            sc["bank"],
+            sc["off"],
+            new,
+            b78[sc["off"] : sc["off"] + sc["room"]],
+            f"screen {sc['key']}",
+            touched,
+        )
+        cnt += 1
+    stats["screens"] = cnt
     if errors:
         raise SysError(
             "시스템 문구 " + str(len(errors)) + "건이 자리를 넘는다:\n  " + "\n  ".join(errors)
