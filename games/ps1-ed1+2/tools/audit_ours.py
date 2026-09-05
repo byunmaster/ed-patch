@@ -27,11 +27,13 @@ import sys
 
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-from common import OUT_DIR, ROOT
+from common import MARKUP, OUT_DIR, ROOT
 from scn_maps import block_maps, table_maps
 
 HIT, MAYBE = 0.62, 0.45  # 정발에 있음 / 확인 필요
-_STRIP = re.compile(r"\{[^}]*\}|\\x[0-9A-Fa-f]{2}")
+# 마크업 한 벌은 **`common.MARKUP` 이 정본**이다 — 사본을 두면 조용히 갈린다
+# (2026-08-29 통합: 여섯 파일 중 둘이 대문자 헥스만 봤다).
+_STRIP = MARKUP
 _NORM = re.compile(r"[\s.,!?~…·\-'\"]+")
 
 

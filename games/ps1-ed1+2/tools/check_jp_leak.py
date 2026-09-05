@@ -23,10 +23,17 @@
 실측(2026-08-15): ED1 체인 등록분 **0건**, ED2 **49건**. ED2 만 걸린 건 우연이 아니라
 **ED2 가 재삽입 피드백 루프 밖에 있었기** 때문이다(체인 미등록 → 빌드가 문안을 안 본다).
 
+🔴 **축이 하나 더 있다 — 「정본에 항목조차 없는 블록」**(2026-08-19, ED2 검수가 찾았다).
+위 둘은 **재조립 후보를 만들 수 있는 블록**만 본다(`iter_candidates` 는 번역표를 돈다).
+번역표에 아예 없는 블록은 순회 자체에 안 들어와 **원문이 그대로 화면에 나가는데도 초록**이다.
+실제로 여덟 블록이 그렇게 새고 있었다(`ED2SCN10:67` · `ED2SCN11:222·225` · `ED2SCN12:123·158` …).
+전부 **포인터 표 접두**(anchor_tail)라 눈으로도 안 띄었다 — `untranslated()` 가 이 구멍을 메운다.
+
   python3 tools/check_jp_leak.py            # 체인 등록분(ED1)
   python3 tools/check_jp_leak.py --ed2      # ED2 씬까지
 """
 
+import json
 import re
 import sys
 
@@ -93,6 +100,84 @@ def shared_runs(jp, cand, chars=2):
     return out
 
 
+# 「문장인가」를 가르는 두 표 — 지명 헤더·값 표를 걸러 낸다(안 걸러 내면 560건 오탐, 실측).
+_KANA = re.compile(r"[ぁ-ゟァ-ヺ]")
+_PLATE = re.compile(r"\{c\}[^{}]+\{c\}\{n\}")  # 이름창 + 개행 = 대사다
+_TERM = re.compile(r"[。？！]")
+
+
+def _tail(s):
+    """포인터 표 접두를 지난 **실제 텍스트**만. 추출기가 비텍스트를 이스케이프로 흘려 둔다."""
+    i = s.rfind("\\x80")
+    return s[i + 4 :] if i >= 0 else s
+
+
+def is_dialogue(t):
+    """이 꼬리 텍스트가 **화면에 나가는 대사**인가 — 지명 헤더·값 표와 가른다.
+
+    좁게 잡는다(넓히면 560건이 쏟아진다, 실측):
+
+    - **이름창 + 개행**이 있으면 대사다 → 무조건 참
+    - 아니면 **가나 6자 이상 + 종결 부호**를 요구한다 (`グロストス城` 은 5자라 빠진다)
+    """
+    return bool(_PLATE.search(t) or (len(_KANA.findall(t)) >= 6 and _TERM.search(t)))
+
+
+def untranslated(scenes=None, verbose=False):
+    """번역표에 **항목조차 없는데** 화면에는 대사가 나가는 블록.
+
+    ⚠ 「재조립 결과에 남은 원문 0」은 「번역이 다 됐다」가 아니다 — `iter_candidates` 는
+    번역표를 돌기 때문에 **항목이 없으면 순회에 안 들어온다.** 그 사각을 여기서 본다.
+
+    🔴 **「꼬리가 같은 번역본이 있으면 제외」를 쓰면 안 된다**(2026-08-20 실측).
+    처음엔 그렇게 걸렀다 — 재삽입기가 대표 사본으로 참조를 돌리니(`_register_mid_alias`)
+    사본은 원문이 안 나갈 거라고 본 것이다. **틀렸다.** 그 걸러 낸 자리에서 여덟이
+    실제로 새고 있었다:
+
+    - `ED1SCN4:735·740·743·748` — 보물상자 정형. 최종 이미지를 열어 보니 원문 그대로였고,
+      한자가 우리 한글 슬롯이라 **`宝혭を낙けました` 로 깨져** 나간다
+    - `ED2SCN2:510·564·614·734` — 대사 하나와 이름창만 있는 블록 셋
+
+    별칭이 도는지는 **꼬리가 같다고 알 수 없다**(등록 조건이 따로 있다). 그래서 지금은
+    안 거른다 — 사본이면 문안을 채우는 값이 0 이고, 사본이 아니면 화면이 깨진다.
+
+    ⚠ **이 축은 `check_scn_jp_left` 보다 넓게 잡는다.** 둘은 세는 것이 다르다:
+
+    | 도구 | 무엇을 | 한계 |
+    | --- | --- | --- |
+    | `check_scn_jp_left`(빌드에 물려 있다) | 이미지에서 **참조되는** 블록의 가나 | 코드가 절대주소로 가리키는 블록을 못 본다 |
+    | 여기(`untranslated`) | **정본에 항목이 없는** 대사 블록 | 참조 여부를 안 본다 → **죽은 사본도 센다** |
+
+    🔴 **여기가 울고 `check_scn_jp_left` 가 0 이면 「죽은 사본」이다** — 화면에는 안 나간다.
+    그래도 채워 두는 게 맞다(값이 0 이고, 절대주소 참조라면 깨짐을 막는다). 실측
+    2026-08-20: 여덟이 그 자리였고, 되돌려 빌드해도 화면 일본어는 0 이었다.
+    ⚠ 그때 `scn_jp` 의 `file_offset` 으로 이미지를 읽어 「깨져 나간다」고 단정했는데
+    **재배치로 블록이 밀려 그 오프셋은 빌드 뒤에 안 맞는다.** 판정은 참조를 따라가는 도구로 한다.
+    """
+    rows = []
+    for name in dict.fromkeys(R.scene_list(scenes) if scenes is None else scenes):
+        with open(os.path.join(R.OUT_DIR, "scn_jp", f"{name}.json"), encoding="utf-8") as f:
+            txt = {e["entry_id"]: (e.get("text") or "") for e in json.load(f)["entries"]}
+        with R.overlay_for(name):
+            try:
+                tr, _, _ = R.load_translations(name.replace("SCN", "_SCN"), name)
+            except Exception:  # noqa: BLE001,S112 — 체인 밖 씬은 셀 수 없다
+                continue
+        for eid, s in sorted(txt.items()):
+            if eid in tr or not s:
+                continue
+            t = _tail(s)
+            if is_dialogue(t):
+                rows.append((name, eid, t[:46]))
+    for name, eid, t in rows if verbose or rows else []:
+        print(f"    ⚠ {name} jp{eid}  정본에 항목이 없다  {t!r}")
+    print(
+        f"  {'✅' if not rows else '❌'} 정본에 항목이 없는 대사 블록: {len(rows)}"
+        + ("" if not rows else "  ← 화면에 원문이 그대로 나간다")
+    )
+    return len(rows)
+
+
 def scan(scenes=None, verbose=False):
     rows = []
     for scn, eid, jp, cand, _t in R.iter_candidates(scenes):
@@ -110,4 +195,9 @@ def scan(scenes=None, verbose=False):
 
 if __name__ == "__main__":
     sc = R.ED2_SCENES if "--ed2" in sys.argv else None
-    sys.exit(1 if scan(sc, "-v" in sys.argv) else 0)
+    v = "-v" in sys.argv
+    a, b = scan(sc, v), untranslated(sc, v)
+    # ⚠ 두 축의 요약을 **맨 끝 한 줄**로 다시 낸다 — 사이에 `load_translations` 의 진행
+    #   출력이 끼어 `check.sh` 의 `tail -1` 이 요약을 놓친다(실측 2026-08-19).
+    print(f"  {'✅' if not (a + b) else '❌'} 화면에 나가는 원문: 재조립 잔존 {a} · 정본 밖 {b}")
+    sys.exit(1 if a + b else 0)

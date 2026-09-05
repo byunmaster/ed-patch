@@ -30,20 +30,25 @@ FONT = os.path.join(ROOT, "..", "..", "shared", "fonts", "neodgm.ttf")
 TARGET = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR Pilot).bin")
 
 # (TIM 오프셋, 장 표기, 제목) — 오프셋은 scan_tim 인벤토리에서.
-# 제목은 DOS 정발판(만트라) 공식 챕터 제목 (2026-07-09 확정).
+# 🔴 **제목은 원문 번역이다**(유저 확정 2026-08-24). 정발 표기(만트라 DOS)를 쓰다가 자체
+#   번역 방침에 맞춰 갈아탔다 — 열둘 중 일곱이 바뀌었다. 바뀐 까닭은 각 줄 주석에.
+# ⚠ **새턴도 같이 바꾼다** — `ss-ed1+2/script/ui.json` 의 `cards`. 새턴은 카드가 문자열이라
+#   수법만 다르고 문안은 하나여야 한다.
 CARDS = [
-    (0x57F800, "제1장", "여행의 시작"),  # 王子の旅立ち
+    (0x57F800, "제1장", "왕자의 여행"),  # 王子の旅立ち — 정발은 「왕자」가 빠져 있었다.
+    # ⚠ 旅立ち 는 「길을 나섬」이라 엄밀히는 「여행길」에 가깝다. 유저가 짧은 쪽을 골랐다(08-24)
     (0x582000, "제2장", "침묵의 주문"),  # 沈黙の呪文
-    (0x584800, "제3장", "국왕의 증명"),  # 王家のあかし
-    (0x587000, "제4장", "홀려버린 국왕"),  # 魅せられた国王
-    (0x589800, "제5장", "요상한 빛의 탑"),  # 妖しき光の塔
+    (0x584800, "제3장", "국왕의 증표"),  # 国王のあかし — あかし = 증표. ⚠ 옛 주석의 「王家」는 오기
+    (0x587000, "제4장", "매혹된 국왕"),  # 魅せられた国王 — 魅せられた = 매혹된
+    (0x589800, "제5장", "요사한 빛의 탑"),  # 妖しき光の塔 — 妖しき는 구어가 아니다
     (0x58C000, "종장", "그리고 영웅들의 전설"),  # そして英雄たちの伝説
-    (0x918800, "서장", "평화로운 날"),  # 平和な日々
-    (0x91B000, "제1장", "열려진 나락"),  # 開かれた奈落
+    (0x918800, "서장", "평화로운 나날"),  # 平和な日々 — 日々 = 나날
+    (0x91B000, "제1장", "열려버린 나락"),  # 開かれた奈落 — 정발 「열려진」은 이중피동.
+    # ⚠ 원문엔 〜てしまった 가 없어 「열린」이 축자다. 유저가 어감을 살리는 쪽을 골랐다(08-24)
     (0x91D800, "제2장", "영웅들의 행방"),  # 英雄たちの行方
     (0x920000, "제3장", "용의 알"),  # 竜の卵
     (0x922800, "제4장", "암흑의 지배자"),  # 暗黒の支配者
-    (0x925000, "종장", "기원, 그리고 희망"),  # 祈り、そして希望
+    (0x925000, "종장", "기도, 그리고 희망"),  # 祈り、そして希望 — 祈り = 기도
 ]
 WHITE = 1  # 흰 글자 팔레트 인덱스 (192x45 챕터 카드 공통, 실측)
 
@@ -53,24 +58,71 @@ def rgb_of(clut, i):
     return ((v & 31) << 3, ((v >> 5) & 31) << 3, ((v >> 10) & 31) << 3)
 
 
-def clean_plate(pix, clut):
-    """빨강 배너 안의 비-빨강(글자/그림자)을 같은 행 최근접 빨강으로 채움."""
-    h, w = pix.shape
+# ── 클린 플레이트 — 카드 여섯 장이 서로의 지우개다 (2026-08-24 재작성) ──────────
+# 🔴 옛 방식(같은 행 최근접 빨강으로 메우기)은 두 가지를 망쳤다:
+#   1. 배너 안쪽의 **가는 금색 테두리를 통째로 지웠다** — 금색은 「빨강」이 아니라 메움
+#      대상이었다. 원본에 있는 선이 열두 장 전부에서 없어져 있었다.
+#   2. 대각 결 무늬를 가로로 끌어 **흐릿한 줄 자국**이 남았다(카드끼리 1,579화소가 어긋난다).
+# 지금은 새턴 챕터 판과 같은 수법을 쓴다 — **같은 CLUT 을 쓰는 카드 여섯 장의 최빈값**.
+# 글자 자리가 서로 다르니 배너가 그대로 복원된다.
+CORE_LUM = 600  # 이 밝기 위 = 이견 없는 글자 본색
+INK_NEAR = 2  # 잉크 둘레 몇 px 까지를 「곁」으로 보나
+INK_RATIO = 0.7  # 그 안에서만 나오면 잉크 부속. 실측 분포는 0.49 아래 / 0.88 위로 갈린다
 
-    def is_red(i):
-        r, g, b = rgb_of(clut, i)
-        return r > 55 and g < 55 and b < 55
 
-    out = pix.copy()
+def ink_indices(stack, clut):
+    """잉크 색인을 **데이터에서** 뽑는다 — 흰 글자 둘레에서만 나오는 색이 잉크 부속이다."""
+    from scipy.ndimage import binary_dilation
+
+    lum = [sum(rgb_of(clut, i)) for i in range(256)]
+    core = np.isin(stack, [i for i in range(256) if lum[i] > CORE_LUM])
+    near = np.stack([binary_dilation(m, iterations=INK_NEAR) for m in core])
+    got = set()
+    for v in np.unique(stack):
+        m = stack == v
+        if (m & near).sum() / m.sum() >= INK_RATIO:
+            got.add(int(v))
+    return got
+
+
+def clean_plate(pix_list, clut):
+    """같은 CLUT 카드 여러 장 → 글자 없는 배너 하나.
+
+    ⚠ 잉크만 빼고 최빈값을 잡으면 **글자 둘레 자국이 남는다** — 여러 장이 같은 자리에
+      `第`·`章` 을 쓰기 때문이다. 마스크를 2px 부풀리고, 표본이 없으면 부풀리기 전으로
+      물러선다(테두리가 글자에 닿는 자리). 그래도 없으면 최근접으로 메운다.
+    """
+    from scipy.ndimage import binary_dilation, distance_transform_edt
+
+    stack = np.stack(pix_list)
+    inks = ink_indices(stack, clut)
+    ink = np.isin(stack, sorted(inks))
+    grown = np.stack([binary_dilation(m, iterations=INK_NEAR) for m in ink])
+    h, w = stack.shape[1:]
+    bg = np.zeros((h, w), np.uint8)
+    tier = np.zeros((h, w), np.uint8)
+
+    def mode(v):
+        val, cnt = np.unique(v, return_counts=True)
+        return val[np.lexsort((val, -cnt))[0]]  # 동점은 작은 색인 — 결정성
+
     for y in range(h):
-        reds = [x for x in range(w) if is_red(int(pix[y, x]))]
-        if not reds:
-            continue
-        redset = set(reds)
-        for x in range(min(reds), max(reds) + 1):
-            if x not in redset:
-                out[y, x] = pix[y, min(reds, key=lambda rx: abs(rx - x))]
-    return out, (min(reds) if reds else 0)
+        for x in range(w):
+            for t, m in ((1, grown), (2, ink)):
+                v = stack[~m[:, y, x], y, x]
+                if v.size:
+                    bg[y, x], tier[y, x] = mode(v), t
+                    break
+            else:
+                tier[y, x] = 3
+    hole = tier == 3
+    if hole.any():
+        _, idx = distance_transform_edt(hole, return_indices=True)
+        bg[hole] = bg[idx[0][hole], idx[1][hole]]
+    left = sorted({int(v) for v in np.unique(bg)} & inks)
+    if left:
+        raise SystemExit(f"배너에 잉크 색인이 남았다 — {left}")
+    return bg, int((tier == 2).sum()), int(hole.sum())
 
 
 def fit_font(text, max_w, start=16, lo=9):
@@ -97,12 +149,32 @@ def render_mask(w, h, cx, panel_w, line1, line2):
     return mask
 
 
-def build_card(tim, line1, line2):
-    """원본 TIM(dict) → 새 픽셀 인덱스 (clean plate + 한글)."""
+def banners(buf):
+    """CLUT 별로 카드를 모아 깨끗한 배너를 하나씩 만든다 → `{clut 바이트: 배너}`.
+
+    ED1·ED2 가 CLUT 이 달라 두 벌이 나온다. ⚠ **자리로 가르지 않는다** — CLUT 이 기준이다.
+    """
+    groups = {}
+    for off, _l1, _l2 in CARDS:
+        tim = parse_tim(buf, off)
+        key = bytes(np.asarray(tim["clut"]).tobytes())
+        h, w = tim["h"], tim["w"]
+        groups.setdefault(key, (tim["clut"], []))[1].append(
+            np.frombuffer(tim["pix"], dtype=np.uint8).reshape(h, w)
+        )
+    out = {}
+    for key, (clut, px) in groups.items():
+        bg, fell, filled = clean_plate(px, clut)
+        out[key] = bg
+        print(f"  배너 복원 — 카드 {len(px)}장 최빈값 · 물러섬 {fell} · 최근접 {filled}")
+    return out
+
+
+def build_card(tim, line1, line2, clean):
+    """원본 TIM(dict) + 깨끗한 배너 → 새 픽셀 인덱스."""
     w, h, clut = tim["w"], tim["h"], tim["clut"]
     pix = np.frombuffer(tim["pix"], dtype=np.uint8).reshape(h, w).copy()
     shadow = min(range(256), key=lambda i: sum((a - 32) ** 2 for a in rgb_of(clut, i)))
-    clean, _ = clean_plate(pix, clut)
 
     def is_red(i):
         r, g, b = rgb_of(clut, i)
@@ -123,12 +195,13 @@ def patch(target=TARGET, preview=None):
     if not os.path.exists(target):
         raise SystemExit(f"대상 디스크 없음: {target} — 먼저 reinsert_kr_pilot.py 실행")
     buf = user_stream()  # 원본에서 카드 TIM 읽기 (clean plate 정확성)
+    bg = banners(buf)
     previews = []
     with open(target, "r+b") as f:
         for off, l1, l2 in CARDS:
             tim = parse_tim(buf, off)
             assert tim and (tim["w"], tim["h"]) == (192, 45), f"0x{off:X} TIM 오류"
-            new_pix = build_card(tim, l1, l2)
+            new_pix = build_card(tim, l1, l2, bg[bytes(np.asarray(tim["clut"]).tobytes())])
             # 원본 TIM 바이트에서 픽셀만 교체 후 write-back (CLUT 유지)
             bsize = struct.unpack_from("<I", buf, off + 8)[0]
             pix_off = 8 + bsize + 12

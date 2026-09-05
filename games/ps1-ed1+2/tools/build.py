@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import sys
 
-from common import BUILD_DIR, ORIG_BIN, ROOT, verify_source, write_cue
+from common import BUILD_DIR, ORIG_BIN, OUT_DIR, ROOT, verify_source, write_cue
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 FINAL = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
@@ -119,8 +119,6 @@ def _why_excluded():
     """
     import json as _json
 
-    from common import OUT_DIR
-
     rows = []
     for p in sorted(glob.glob(os.path.join(OUT_DIR, "excluded_*.json"))):
         scn = os.path.basename(p)[len("excluded_") : -len(".json")]
@@ -185,6 +183,12 @@ def main():
     # 덤프와 커밋된 정본(align_map·align_overrides)이 어긋나 빌드가 죽는다 — 머신을 옮겨
     # 낡은 덤프를 안고 왔더니 `T_024#7` 의 `{p}` 페이지가 사라져 chain 이 IndexError 로
     # 터졌다(2026-08-09). 둘 합쳐 1.3초라 매번 새로 뜬다(결정적, 원본 읽기 전용).
+    # ⚠ 쓰기 지문표를 비우고 시작한다 — 패처들이 **자식 프로세스**라 각자 덧붙인다
+    #   (`common._flush_write_log`). 안 비우면 지난 빌드 것이 섞여 되읽기 대조가 거짓말한다.
+    _wm = os.path.join(OUT_DIR, "write_manifest.json")
+    if os.path.exists(_wm):
+        os.remove(_wm)
+
     run("extract_scn.py")  # JP 대사 덤프
     run("extract_dos_kr.py")  # 정발 대사 덤프
 
@@ -201,6 +205,9 @@ def main():
     # ⚠ 블록으로 안 잡히는 씬 문자열(포인터 테이블 한복판) — 배정·조판 경로 밖이라
     #   여기서만 잡힌다. 씬 재삽입·플레이트 치환 **뒤** · 최종 이미지 위에서 돈다.
     run("patch_scn_orphans.py")
+    # ⚠ 창 제어값 교정 — **원판이 안 그리고 넘어가는 창**을 되살린다(문안이 아니라 기계어).
+    #   씬 재삽입 뒤 최종 이미지 위에서 돈다. 코드는 재삽입해도 안 움직여 오프셋이 안정하다.
+    run("patch_scn_msgctl.py")
     run("patch_ed2_sys.py")
     run(
         "patch_ed2_battle.py"
@@ -216,6 +223,9 @@ def main():
     run(
         "patch_josa_hook.py"
     )  # 동적 조사 훅 — 병기(은(는)) → 정확 조사(2026-07-27 인게임 검증 통과)
+    # 온점 매달기 — 엔진의 29열 중 마지막 한 열을 **반각 부호에만** 연다(훅 둘).
+    # ⚠ `reinsert_kr_pilot._hang_merge` 와 **한 몸**이다 — 하나만 켜면 되레 나빠진다.
+    run("patch_hang_punct.py")
     run("patch_gfx_title.py")  # START.DAT 타이틀 로고·버튼 TIM (FINAL 제자리 갱신)
     # 동영상 EXE — 넷이 내레이션을 한 벌씩 다 들고 각자 자기 몫만 튼다(읽기 BP 실측).
     # 그래서 파일마다 **자기 슬라이스만** 넣는다. END1·END2 는 세이브가 있어야 확인이 되므로
@@ -229,7 +239,55 @@ def main():
     _requa_note()
     from common import BUILD_TAG
 
-    print(f"\n완료: {FINAL}\n꼬리표 [{BUILD_TAG}] — 테스트는 이 하나만: {os.path.basename(FINAL_CUE)}")
+    movie_swap()
+    print(
+        f"\n완료: {FINAL}\n꼬리표 [{BUILD_TAG}] — 테스트는 이 하나만: {os.path.basename(FINAL_CUE)}"
+    )
+
+
+def movie_swap():
+    """🔬 **검증 전용** — 동영상 EXE 구획을 통째로 갈아 **부팅 직후 엔딩을 본다**.
+
+        ED_BUILD_TAG=ps1-ending-qa ED_MOVIE_SWAP="OPEN1=END1,OPEN2=END2" python3 tools/build.py
+
+    **왜 문안 치환(`ED_OPENING_TEXT_AS`)으로는 부족한가.** 그건 글자만 갈아끼우므로 **배경이
+    오프닝 것**이다(유저 지적 2026-08-22). 엔딩 그림 위에서 봐야 잡히는 게 있고 — 밝은 배경의
+    가독성 · 그림과 겹치는 자리 — 게다가 오프닝 슬롯이 50뿐이라 ED1 엔딩 59줄 중 **9줄이
+    아예 안 보였다.** 구획째 얹으면 둘 다 없어진다.
+
+    네 파일이 **같은 크기(96,256B = 47섹터)** 라 자리를 그대로 맞바꿀 수 있다.
+    ⚠ 한글 패치가 **끝난 뒤** 복사한다 — 원본 END1 을 얹으면 일본어 엔딩을 보게 된다.
+    🔴 배포 빌드에 절대 켜지 않는다. 환경변수라 커밋물에 안 남고, 꼬리표를 갈라 짓는다.
+    """
+    spec = os.environ.get("ED_MOVIE_SWAP", "")
+    pairs = [kv.split("=", 1) for kv in spec.split(",") if "=" in kv]
+    if not pairs:
+        return
+    import common
+    from patch_opening_font import GAMES, SIZE
+
+    for dst, src in pairs:
+        assert dst in GAMES and src in GAMES, f"모르는 동영상 EXE: {dst}={src}"
+        lba = GAMES[dst]["lba"]
+        data = common.extract(GAMES[src]["lba"], SIZE, FINAL)
+        # ⚠ 이 파일은 **통째로** 갈리므로 자기 무변경 구간(OPEN1 포인터 표 등)도 당연히
+        #   바뀐다. 가드를 약하게 만들지 않고 **그 파일의 선언만 이 순간 내려놓는다** —
+        #   쓰기 경로는 그대로고(EDC/ECC·지문·되읽기 대장 다 탄다), 다른 구간 가드는 산다.
+        #   🔴 이게 「게이트 우회」가 아닌 이유: 우회는 **검사만 끄고 같은 일을 하는 것**이고,
+        #      여기는 **하는 일 자체가 다르다**(패치가 아니라 파일 교체). 그래서 범위를
+        #      교체 대상 하나로 좁히고, 무엇을 내려놓았는지 찍고, 끝나면 되돌린다.
+        #   ⚠ 선언이 **없는** 파일도 있다(OPEN2) — 없는 걸 찾으려다 터졌다. 있으면 내려놓는다.
+        key = next((k for k in common.IMMUTABLE if k[0] == lba), None)
+        held = common.IMMUTABLE.pop(key) if key else []
+        if held:
+            print(f"  🔬 {dst} 무변경 선언 {len(held)}건을 이 쓰기 동안만 내려놓는다")
+        try:
+            with open(FINAL, "r+b") as f:
+                n = common.write_user_data(f, lba, data, label=f"🔬 {dst} ← {src}")
+        finally:
+            if key:
+                common.IMMUTABLE[key] = held
+        print(f"  🔬 동영상 구획 교체: {dst}(LBA {lba}) ← {src} — 섹터 {n}")
 
 
 if __name__ == "__main__":

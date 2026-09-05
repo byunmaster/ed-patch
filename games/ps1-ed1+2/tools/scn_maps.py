@@ -265,7 +265,7 @@ def table_maps(game, scenes=_SCENES):
             exempt.add(tbl)  # 상점처럼 여러 맵에 실제로 등장
         elif os.environ.get("EXEMPT_UNLEARNED"):
             # ⚠ 아래 '제약 없이 내려간다'는 주석과 소비자 구현이 어긋나 있다. 소비자는
-            # `learned.get(t)==맵 or t in exempt` 로 풀을 만들므로(assign_pages.main),
+            # `learned.get(t)==맵 or t in exempt` 로 풀을 만들므로(past_assign_pages.main),
             # 미학습 테이블은 무제약이 아니라 **모든 맵의 풀에서 빠진다** — 그 엔트리를
             # 정답으로 가진 블록은 어떤 배정기도 못 맞힌다(전 씬 실측 202건 중 102건).
             #

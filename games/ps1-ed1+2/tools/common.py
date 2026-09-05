@@ -1,6 +1,17 @@
 """공용: 경로, 섹터 상수, 추출/EDC 헬퍼. 모든 도구가 여기서 가져다 쓴다."""
 
+import atexit
+import hashlib
+import json
 import os
+import re
+
+# 이 실행이 이미지에 **쓰려 한 것**의 지문 — 되읽기 대조의 기준(`_flush_write_log`).
+# ⚠ **섹터 단위**여야 한다. 쓰기 단위로 잡으면 같은 파일을 뒤에서 조금만 덧칠해도(패처들이
+#   실제로 그런다) 앞의 큰 쓰기가 통째로 검증 밖으로 밀려난다 — 실측으로 커버리지가 38%
+#   였고 **대사 씬 열아홉이 전부** 그 밖이었다. 섹터로 잡으면 마지막 쓴 사람이 자연히 이긴다.
+WRITE_SECTORS = {}  # lba → [sha1(유저 2048B), 라벨]
+WRITE_LOG = []  # 통계·라벨용(무엇을 몇 번 썼나)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # games/ps1-ed1+2
 ORIG_DIR = os.path.join(ROOT, "..", "..", "originals", "jp", "ps1-ed1+2")  # 원본 이미지 (gitignore)
@@ -8,6 +19,70 @@ ORIG_DIR = os.path.join(ROOT, "..", "..", "originals", "jp", "ps1-ed1+2")  # 원
 # 곧 리셋이다). 성격이 다르니 칸을 나눈다 —
 WORK_DIR = os.path.join(ROOT, "work")  # 컨테이너
 
+
+
+# ── 바깥 서비스 열쇠 ────────────────────────────────────────────────────────
+# ⚠ **`ss-ed3/tools/common.py` 와 같은 몸**이다(2026-08-26). 둘째 소비자가 생겼으니
+#   `shared/` 로 올릴 자리인데, **공용 코드는 main 에서만 고친다**(루트 CLAUDE.md)라
+#   여기서는 게임 쪽에 둔다. main 작업 때 옮긴다.
+
+def secrets_path():
+    """`.local/secrets.env` 를 **위로 올라가며** 찾는다 — 없으면 있을 자리를 돌려준다.
+
+    ⚠ 열쇠는 `.local/` 에 둔다 — 이 레포가 이미 「머신 전용」으로 쓰는 자리이고
+    `.gitignore` 에 들어 있다. **새 `.env` 규약을 만들지 않는다.**
+    ⚠ **워크트리에는 `.local/` 이 따라오지 않는다** — 워크트리 루트에서 시작해 메인
+    트리까지 거슬러 올라간다.
+    """
+    d = ROOT
+    fallback = None
+    for _ in range(6):
+        p = os.path.join(d, ".local", "secrets.env")
+        if os.path.exists(p):
+            return p
+        if fallback is None and os.path.isdir(os.path.join(d, ".local")):
+            fallback = p
+        nd = os.path.dirname(d)
+        if nd == d:
+            break
+        d = nd
+    return fallback or os.path.join(ROOT, ".local", "secrets.env")
+
+
+def secret(name):
+    """바깥 서비스 열쇠 — **환경변수 → `.local/secrets.env`** 순. 없으면 빈 문자열.
+
+    열쇠가 느는 자리가 이미 둘이다(`DEEPL_API_KEY` · `GEMINI_API_KEY`). 도구마다 읽는
+    법을 따로 쓰면 곧 갈리므로 여기 하나로 둔다.
+    ⚠ 값을 로그·오류 메시지에 찍지 않는다 — 있는지 없는지만 말한다.
+    """
+    v = os.environ.get(name)
+    if v:
+        return v
+    p = secrets_path()
+    if not os.path.exists(p):
+        return ""
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith(f"{name}=") and not line.startswith("#"):
+                return line.split("=", 1)[1].strip().strip("\"'")
+    return ""
+
+
+def need_secret(name, how):
+    """없으면 **어디에 어떻게 두는지** 알려주고 멈춘다."""
+    v = secret(name)
+    if v:
+        return v
+    raise SystemExit(
+        f"{name} 가 없다. 둘 중 하나로 준다:\n"
+        f"  ① {secrets_path()} 에\n"
+        f"       {name}=여기에키\n"
+        "     (`.local/` 은 gitignore 라 커밋되지 않는다. 권한은 600 으로)\n"
+        f"  ② {name}=... 로 환경변수\n"
+        f"  ⓘ {how}"
+    )
 
 def _build_tag():
     """빌드 산출물을 가르는 꼬리표 — 기본은 **현재 git 브랜치**다.
@@ -17,15 +92,22 @@ def _build_tag():
     열몇 개가 `BUILD_DIR` 밑의 파일명을 박아 쓰는데, 디렉터리만 갈리면 그대로 따라온다.
 
     `ED_BUILD_TAG` 로 덮어쓴다(브랜치와 무관한 실험용). 브랜치를 못 읽으면 `local`.
+
+    ⚠ **워크트리에서는 `.git` 이 디렉터리가 아니라 파일**이다(`gitdir: …` 한 줄). 그대로
+    `.git/HEAD` 를 열면 실패해 전부 `local` 로 떨어지는데, 갈래를 가르려고 만든 장치가
+    **정작 갈래를 굴리는 자리에서만 안 도는** 꼴이 된다(2026-08-18 실측). 따라간다.
     """
     tag = os.environ.get("ED_BUILD_TAG")
     if not tag:
-        head = os.path.join(ROOT, "..", "..", ".git", "HEAD")
+        git = os.path.join(ROOT, "..", "..", ".git")
         try:
-            with open(head, encoding="utf-8") as f:
+            if os.path.isfile(git):  # 워크트리 — `gitdir: <실제 경로>`
+                with open(git, encoding="utf-8") as f:
+                    git = f.read().strip().split(":", 1)[1].strip()
+            with open(os.path.join(git, "HEAD"), encoding="utf-8") as f:
                 ref = f.read().strip()
             tag = ref.rsplit("/", 1)[-1] if ref.startswith("ref:") else ref[:7]
-        except OSError:
+        except (OSError, IndexError):
             tag = "local"
     return "".join(c if (c.isalnum() or c in "-_.") else "-" for c in tag) or "local"
 
@@ -208,6 +290,14 @@ def ecc_update(sec):
     sec[12:16] = hdr
 
 
+# ── 마크업 한 벌 ─────────────────────────────────────────────────────────────
+# `{…}` 태그와 `\xNN` 이스케이프. **정본은 여기 하나다**(2026-08-29 통합).
+# ⚠ 예전엔 여섯 파일이 사본을 들었고 그중 둘(`past_review_align`·`align_jp_kr`)은 **대문자
+#   헥스만** 봤다(`[0-9A-F]`). 지금 덤프가 전부 대문자라 안 샜을 뿐, 덤퍼가 소문자를
+#   내는 순간 그 둘만 조용히 갈린다 — 같은 규칙의 사본은 이렇게 갈린다.
+MARKUP = re.compile(r"\{[^}]*\}|\\x[0-9A-Fa-f]{2}")
+
+
 # ── 절대 안 바뀌어야 하는 구간 (파일 오프셋, 반열림) ──────────────────────
 # 클리어 범위를 잘못 잡아 **남의 자료를 지우는** 사고를 잡는다(2026-08-02 실측:
 # OPEN1 포인터 테이블 0x938~0x973 말소).
@@ -269,9 +359,18 @@ def write_user_data(f, lba, data, nsec=None, *, label, expect=None):
     ⚠ 가드는 **범위가 아니라 값 변화**를 본다 — 무변경 구간을 품은 파일을 통째로 다시 쓰는
     건(그 바이트를 그대로 되쓰는) 정상이라 범위로 막으면 오탐이 난다.
 
+    ⚠ **여기서 지문을 남긴다** — 「쓰려 한 것」을 기록해야 나중에 되읽어 대조할 수 있다.
+    빌드가 끝난 뒤 이미지를 다시 읽어도 **의도를 모르면 비교 대상이 없다**(실측: 층 하나만
+    재현해 맞대 봤더니 19씬 전부 어긋났는데, 정작 원인은 뒤 단계의 고아 문자열·폰트였다).
+    공용 QA 규약 §8.9 의 readback 이 요구하는 게 이 짝이다 — `check_readback.py`.
+
     반환: 실제로 바뀐 섹터 수."""
     if nsec is None:
         nsec = (len(data) + USER_SIZE - 1) // USER_SIZE
+    WRITE_LOG.append({"lba": lba, "nsec": nsec, "label": label, "len": len(data)})
+    for i in range(nsec):
+        _c = bytes(data[i * USER_SIZE : (i + 1) * USER_SIZE]).ljust(USER_SIZE, b"\x00")
+        WRITE_SECTORS[lba + i] = [hashlib.sha1(_c).hexdigest(), label]
     if expect is not None:
         cur = bytearray()
         for i in range(nsec):
@@ -304,6 +403,35 @@ def write_user_data(f, lba, data, nsec=None, *, label, expect=None):
         f.write(sec)
         changed += 1
     return changed
+
+
+WRITE_MANIFEST = None  # 늦게 채운다 — OUT_DIR 이 아래에서 정의된다
+
+
+def _flush_write_log():
+    """이 프로세스가 **쓰려 한 것**을 지문표에 덧붙인다 — 되읽기 대조의 기준.
+
+    ⚠ **덧붙이기**여야 한다. 빌드는 패처들을 **자식 프로세스로** 돌리므로 프로세스마다
+    자기 몫만 안다 — 덮어쓰면 마지막 패처 것만 남는다. 표를 비우는 건 `build.py` 몫이다.
+    ⚠ 안 쓰는 도구(검사기)는 `WRITE_LOG` 가 비어 있어 아무것도 안 남긴다.
+    """
+    if not WRITE_SECTORS:
+        return
+    path = WRITE_MANIFEST or os.path.join(OUT_DIR, "write_manifest.json")
+    old = {"sectors": {}, "writes": []}
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                old = json.load(f)
+        except (OSError, ValueError):
+            pass
+    old["sectors"].update({str(k): v for k, v in WRITE_SECTORS.items()})
+    old["writes"] += WRITE_LOG
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(old, f)
+
+
+atexit.register(_flush_write_log)
 
 
 def write_cue(cue_path, bin_name):

@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""**고유명사가 정발 표기대로 들어갔는가** — 원문에 있는 이름을 우리 문안에서 찾는다.
+"""**고유명사가 정본 표기대로 들어갔는가** — 원문에 있는 이름을 우리 문안에서 찾는다.
 
-**왜.** 「고유명사는 정발 표기를 따른다」가 방침인데(유저 확정 2026-08-12,
-[policy.md](../docs/policy.md) 표기 방침), 정본이 **네 군데로 흩어져 있다** —
+⚠ **정본의 출처가 2026-08-18 에 바뀌었다.** 그전엔 「고유명사는 **정발 표기**를 따른다」가
+방침이었고(유저 확정 2026-08-12) 이 도구의 이름표도 그랬다. 자체 번역으로 전환한 뒤
+정본은 **우리가 정한 표기**다(`shared/glossary/eiyuu.json` + 아래 네 곳). **검사 내용은
+그대로다** — 「정본과 우리 문안이 맞나」를 보는 것이고, 바뀐 건 정본이 누구 것이냐뿐이다.
+
+**왜.** 정본이 **네 군데로 흩어져 있다** —
 아이템·마법은 `patch_items.NAMES`, 몬스터는 `patch_items.MONSTERS`, 인물은
 `align_jp_kr.SPEAKER_DICT`, 지명은 `patch_sys_ui.PLACES`. 대사 문안은 그 어느 것도
 안 지나므로 **손으로 쓰다 얼마든지 어긋난다**(`은의 피리` 를 `은피리` 로 붙여 쓴 자리가
@@ -18,6 +22,18 @@
   게 맞지만, 문맥이 이미 그 사람을 가리키면 그대로 두는 게 자연스럽다. **사람이 판정한다.**
 - **부분 인용** — 원문이 `クルスの村` 인데 문안이 `크루즈` 로만 받는 자리. 정상이다.
   그래서 지명은 **접미(마을·항구·성…)를 떼고** 핵심어로만 본다.
+
+🔴 **보고에 뜨는 문안을 「화면에 나가는 그대로」로 읽지 마라**(2026-08-20 실측).
+찾기는 `ctrl=False` 로 한다 — 이름이 `%c` 로 갈린 자리(`아트라스,%c세리오스%c공은`)를
+넘어 찾아야 하기 때문이다. 그런데 그 렌더는 **`%c` 와 그 자리의 공백을 같이 지운다**:
+
+    정본 t     '아트라스, 세리오스 공은 따라잡았느냐?'
+    ctrl=True  '아트라스,%c세리오스%c공은 따라잡았느냐?'
+    ctrl=False '아트라스,세리오스공은 따라잡았느냐?'   ← 띄어쓰기 오류로 보인다
+
+실제로 이 출력을 보고 「쉼표 뒤 공백 없음 · 띄어쓰기 빠짐」으로 오판했다. **문안은
+멀쩡했다.** 그래서 지금은 보고에 `ctrl=True` 렌더를 찍는다 — `%c` 가 보이면 그 자리는
+띄어쓰기가 아니라 창·색 전환이다.
 
 ⚠ **게이트가 아니다.** 판정이 필요한 후보를 보여 줄 뿐이다.
 
@@ -48,7 +64,7 @@ from check_align_fit import jp_text
 # 대사 `늑대의 입`)도 같다. 그래서 지명은 **가타카나 고유명 부분만** 본다 — 접미와
 # 보통명사 합성은 대사 쪽 관용을 따르는 게 맞고, 이 도구가 판정할 일이 아니다.
 JP_SUFFIX = re.compile(r"(の(村|町|港|城|国|里|塔|山|洞窟|鉱山|王国|公国|共和国))$")
-KR_SUFFIX = re.compile(r"\s*(마을|거리|항구|성|나라|왕국|공국|공화국|탑|산|동굴|광산)$")
+KR_SUFFIX = re.compile(r"\s*(마을|거리|항구|항|성|나라|왕국|공국|공화국|탑|산|동굴|광산)$")
 KATAKANA = re.compile(r"[ァ-ヴー]{2,}")
 
 # ⚠ 이 이름들은 **짧아서 딴 낱말에 먹힌다** — 원문에 이 낱말이 함께 있으면 건너뛴다.
@@ -98,7 +114,7 @@ def _name_in(hay, needle):
     """원문에 이름이 **낱말로** 있는가 — 앞뒤가 가타카나면 다른 낱말의 일부다.
 
     ⚠ 실측: `バザール`(바자르, 시장) 안의 `ザール` 이 몬스터 「잘」로 잡혔다(SCN5 jp339·340,
-    2026-08-13). 같은 부류를 `check_terms` 에서도 물었다(아이템 `배틀 슈츠` 가 금지어 「틀」
+    2026-08-13). 같은 부류를 `check_terms` 에서도 물었다(아이템 `배틀 슈트` 가 금지어 「틀」
     에 걸린 것) — **한 자리를 `SKIP_IF` 로 막지 않고 경계를 규칙으로 둔다.**
     """
     i = hay.find(needle)
@@ -126,12 +142,17 @@ def scan(scenes=None, verbose=False):
         # 2026-08-17). 화자 문자열을 같이 본다.
         blocks = []
         for spk, eid, jp, cand, _t in R.iter_candidates((scn,)):
+            # ⚠ **찾기와 보여주기의 렌더가 다르다.** 찾기는 `ctrl=False` — 이름이 `%c` 로
+            #   갈린 자리를 넘어야 한다. 보여주기는 `ctrl=True` — `ctrl=False` 는 `%c` 와
+            #   그 자리의 공백을 같이 지워 **띄어쓰기 오류처럼 보인다**(실제로 오판했다,
+            #   2026-08-20). 둘을 같이 들고 다닌다.
             kr = R.render_bytes(cand, ctrl=False)
             body = kr.replace("\n", " ") if kr else ""
-            blocks.append((eid, jp, jp_text(jp), body, str(spk or "")))
+            shown = (R.render_bytes(cand, ctrl=True) or "").replace("\n", " ")
+            blocks.append((eid, jp, jp_text(jp), body, str(spk or ""), shown))
 
         hits = []
-        for i, (eid, jp, j, flat, spk) in enumerate(blocks):
+        for i, (eid, jp, j, flat, spk, shown) in enumerate(blocks):
             # ⚠ **인자 블록은 보지 않는다.** 이름이 `%s` 로 주입되는 자리라
             # (`ワプの翼 を渡しました`) 문안에 이름이 없는 게 정상이다.
             if b"%s" in jp or b"%d" in jp or not flat:
@@ -143,7 +164,7 @@ def scan(scenes=None, verbose=False):
                     continue
                 if any(x in j for x in SKIP_IF.get(name, ())):
                     continue
-                hits.append((eid, name, ours, kind, kr))
+                hits.append((eid, name, ours, kind, shown))
                 kinds[kind] += 1
                 break  # 한 블록에 여러 개면 첫 하나만 — 고치면 다시 뜬다
         tot += len(hits)

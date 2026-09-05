@@ -45,7 +45,7 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R
 from common import REVIEW_DIR, ROOT
-from llm_assign import _raw
+from past_llm_assign import _raw
 
 SPELL_JSON = os.path.join(ROOT, "dos_spelling_fixes.json")
 PROPOSAL_DIR = os.path.join(REVIEW_DIR, "proposals")

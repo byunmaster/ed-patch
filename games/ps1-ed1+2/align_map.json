@@ -3738,7 +3738,7 @@
   "8": {
    "table": "ED1/T_250",
    "entry_id": 2,
-   "speaker": "오크 혼"
+   "speaker": "오크혼"
   },
   "12": {
    "table": "ED1/T_207",
@@ -4038,7 +4038,7 @@
   "279": {
    "table": "ED1/C_201",
    "entry_id": 15,
-   "speaker": "브라도"
+   "speaker": "보아드"
   },
   "283": {
    "table": "ED1/H_200",
@@ -4448,17 +4448,17 @@
   "694": {
    "table": "ED1/T_220",
    "entry_id": 10,
-   "speaker": "브라도"
+   "speaker": "프라토"
   },
   "715": {
    "table": "ED1/T_220",
    "entry_id": 16,
-   "speaker": "브라도"
+   "speaker": "프라토"
   },
   "716": {
    "table": "ED1/T_220",
    "entry_id": 17,
-   "speaker": "브라도"
+   "speaker": "류난"
   },
   "719": {
    "table": "ED1/T_220",

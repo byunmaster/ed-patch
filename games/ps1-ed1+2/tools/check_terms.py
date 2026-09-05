@@ -13,9 +13,13 @@
 
 - **대사** — 원문에 감시 낱말이 있는데 우리 문안이 **정본이 아닌 표기**를 쓰면 보고.
 - **UI** — 시스템 라벨에 **정본이 아닌 표기**가 있으면 보고(위 사고의 반대 방향).
-- **ED2 정발**(참고) — 같은 물건을 ED2 가 뭐라 부르는지 센다. **한 디스크에 두 편이 담기고
-  플레이어는 이어서 한다** — 편마다 이름이 달라지면 그게 결함이다([policy.md] 표기 방침).
-  ⚠ 코퍼스는 `work/` 라 없을 수 있다. 없으면 이 축만 건너뛴다.
+- **편 간 일관성**(참고) — **우리** ED1 문안과 **우리** ED2 문안이 같은 말을 쓰는지 센다.
+  **한 디스크에 두 편이 담기고 플레이어는 이어서 한다** — 편마다 이름이 달라지면 그게
+  결함이다([policy.md] 표기 방침).
+  ⚠ **2026-08-19 에 대상을 갈아탔다.** 그전엔 **ED2 정발 코퍼스**를 셌다 — 「정발이 뭐라
+  부르나」를 참고축으로 둔 것인데, 자체 번역으로 바뀐 뒤엔 **답이 필요한 질문이 아니다**
+  (우리 표기를 정발 빈도에 맞출 이유가 없다). 지금은 우리 두 편을 서로 대조한다 — 같은 노력으로
+  실제로 고칠 수 있는 것을 보여 준다.
 
 ⚠ **게이트다** — 표에 든 것은 전부 **유저가 확정한 결정**이라 어긋나면 고칠 자리다.
 새 용어를 넣을 때는 근거(원문 낱말 · 결정 날짜)를 함께 적는다.
@@ -24,7 +28,6 @@
   python3 tools/check_terms.py -v       # 어긋난 자리마다
 """
 
-import collections
 import glob
 import json
 import os
@@ -37,7 +40,7 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 import common
 import reinsert_kr_pilot as R
 from check_align_fit import jp_text
-from common import OUT_DIR
+from common import ROOT
 from patch_sys_ui import SCN_FILES
 
 # 원문 낱말 → (정본 표기, 갈리면 안 되는 다른 표기들, 근거)
@@ -60,6 +63,12 @@ TERMS = {
     # 편차 대장은 `사이레스` 로 확정했는데(ED2 16곳 · 원음) ED1 정발은 `사일레스` 를 쓰고,
     # 교정 규칙도 게이트도 없어 **같은 석비 문안이 마을마다 갈려 나갔다**.
     "サイレス": ("사이레스", ("사일레스",), "편차 대장 확정 — ED2 16곳·원음(2026-08-12)"),
+    # ⚠ **음차로는 판정이 안 서는 자리다.** PS1 원반은 주문표(0x1b31d8)·주문책표(0x1b30e8)
+    # 도 몬스터도 전부 `ブラムナ`(ブ)인데, 주문은 `フラム`(프람)의 광역이라 계열을 살려
+    # `프람나` 로 간다(유저 확정 2026-08-15). 정발도 같은 판단을 했다 — 주문은 `T_*.DLL`
+    # 에서 `프람나` 14건, 몬스터는 `M_*.DLL` 에서 `브람나` 8건으로 **갈라 부른다.**
+    # 그런데 이름표만 고쳐 놓고 **대사 여섯 곳이 `브람나` 로 남아 있었다**(2026-08-19 실측).
+    "ブラムナ": ("프람나", ("브람나",), "주문은 프람나 · 몬스터는 브람나(유저 확정 2026-08-15)"),
     "旅": ("여행", ("모험",), "SCN2 에서 한 대사 안에 둘이 섞여 있었다(2026-08-13)"),
     "型": ("본", ("틀",), "「본을 뜨다」가 바른 표현(유저 2026-08-13)"),
     "勇者": ("용사", ("용자",), "전 씬 용사 9 · 용자 2 로 갈려 있었다(2026-08-13)"),
@@ -74,13 +83,15 @@ TERMS = {
 # ⚠ **금지어가 다른 뜻으로 정당하게 쓰이는 자리** — 원문이 달라서 그렇다.
 ALLOW = {
     "마법의 물건",  # 원문 `魔法の品`(용의 알) — 이건 진짜 마법이다
+    "브람나퀸",  # 원문 `ブラムナクイーン` — 주문이 아니라 몬스터다(위 `ブラムナ` 주석)
+    "브람나독",  # 원문 `ブラムナドッグ`
 }
 
 
 def _has(word, text):
     """낱말이 **낱말로서** 있는가.
 
-    ⚠ 한 글자 낱말은 부분일치로 오탐이 쏟아진다 — 아이템 `배틀 슈츠` 가 `型`의 금지어
+    ⚠ 한 글자 낱말은 부분일치로 오탐이 쏟아진다 — 아이템 `배틀 슈트` 가 `型`의 금지어
     `틀` 에 걸렸다(실측 2026-08-13). 앞이 한글이면 딴 낱말 속이라 뺀다(`배틀`·`일본`).
     두 글자 이상은 그대로 본다(`마법책` 처럼 접미가 붙어 나오기 때문).
     """
@@ -169,40 +180,94 @@ def scan_ui(verbose=False):
     return len(hits)
 
 
-def scan_ed2():
-    """ED2 정발이 같은 것을 뭐라 부르는지 — 참고축(게이트 아님)."""
-    root = os.path.join(OUT_DIR, "dos_kr", "ED2")
-    files = sorted(glob.glob(os.path.join(root, "*.json")))
-    if not files:
-        print("  – ED2 정발 코퍼스가 없다(work/ 라 머신마다 다르다) — 이 축은 건너뛴다")
-        return
+def _ours_by_game():
+    """{게임: [문안]} — 우리 정본 전량. 원천이 둘이다(대사 + textmap)."""
+    out = {"ED1": [], "ED2": []}
+    for p in sorted(glob.glob(os.path.join(ROOT, "script", "ED*SCN*.json"))):
+        game = os.path.basename(p)[:3]
+        with open(p, encoding="utf-8") as f:
+            for v in json.load(f).values():
+                t = (v or {}).get("t")
+                if isinstance(t, str) and t:
+                    out[game].append(t)
+    for p in sorted(glob.glob(os.path.join(ROOT, "textmap", "*.json"))):
+        game = "ED2" if os.path.basename(p)[:-5].endswith("_ed2") else "ED1"
+        with open(p, encoding="utf-8") as f:
+            stack = [json.load(f)]
+        while stack:
+            o = stack.pop()
+            if isinstance(o, dict):
+                t = o.get("ours")
+                if isinstance(t, str) and t:
+                    out[game].append(t)
+                stack.extend(o.values())
+            elif isinstance(o, list):
+                stack.extend(o)
+    return out
+
+
+def scan_item_tables():
+    """**ED1·ED2 이름표가 같은 물건을 같은 말로 부르는가** — 게이트다.
+
+    🔴 아무도 안 보던 자리다(2026-08-19 실측). 이 파일의 다른 축은 **대사**만 보는데 아이템
+    이름은 `patch_items.NAMES`(ED1)·`patch_ed2_sys.NAMES_ED2`(ED2) 라는 **별개 표**에 있어서,
+    겹치는 셋이 **셋 다 다른 표기**였다(`幅広のつるぎ` 대형검/날 넓은 칼 · `くさりかたびら`
+    미늘 갑옷/쇠사슬옷 · `布の服` 헝겊 옷/천 옷).
+
+    ⚠ **대사에 한 번도 안 나와서 다른 게이트가 못 봤다** — 장비·상점 화면에는 나간다.
+    한 디스크에서 이어 하는 플레이어에겐 같은 장비가 편마다 다른 이름으로 보인다
+    (「고유명사는 ED1·ED2 가 한 표기」 — policy 2026-08-12).
+    """
+    from patch_ed2_sys import NAMES_ED2
+    from patch_items import MONSTERS, NAMES
+
+    bad = []
+    for tbl, what in ((NAMES, "아이템"), (MONSTERS, "몬스터")):
+        for k in sorted(set(tbl) & set(NAMES_ED2)):
+            if tbl[k] != NAMES_ED2[k]:
+                bad.append((what, k, tbl[k], NAMES_ED2[k]))
+    print(f"  {'✅' if not bad else '❌'} ED1·ED2 이름표가 한 표기다 (갈린 것 {len(bad)})")
+    for what, k, a, b in bad:
+        print(f"      {what} {k}  ED1={a!r}  ED2={b!r}")
+    return len(bad)
+
+
+def scan_between_games():
+    """**우리 ED1 과 우리 ED2 가 같은 말을 쓰는가** — 참고축(게이트 아님).
+
+    ⚠ 게이트가 아닌 이유: 한쪽 편에만 나오는 낱말이 많아(`竜の祭` 는 ED1 전용) 0 을 「갈림」
+    으로 읽으면 오탐이 쏟아진다. **양쪽에 다 나오면서 갈린 자리**만 사람이 본다.
+    """
     # ⚠ **한 글자 낱말은 세지 않는다.** 부분일치라 `본` 이 `본다`·`본인` 에 죄다 걸린다
-    #   (실측: `型` 을 세니 ED2 에서 본 30 · 틀 58 이 나왔는데 **둘 다 이 뜻으로는 0회**였다).
-    #   두 글자 이상만 봐도 갈림은 대부분 잡힌다.
-    words = {w for canon, bad, _ in TERMS.values() for w in (canon, *bad) if len(w) > 1}
-    cnt = collections.Counter()
-    for p in files:
-        doc = json.load(open(p, encoding="utf-8"))
-        rows = doc.get("entries", doc) if isinstance(doc, dict) else doc
-        for e in rows:
-            t = e.get("text", "") if isinstance(e, dict) else str(e)
-            for w in words:
-                cnt[w] += len(re.findall(re.escape(w), t))
-    print(f"  ℹ ED2 정발({len(files)}파일)에서 세어 본 낱말 — 참고축(게이트 아님):")
+    #   (실측: `型` 을 세니 본 30 · 틀 58 이 나왔는데 **둘 다 이 뜻으로는 0회**였다).
+    per = _ours_by_game()
+    print(f"  ℹ 편 간 표기 대조 (우리 문안 ED1 {len(per['ED1'])}줄 · ED2 {len(per['ED2'])}줄):")
+    split = 0
     for term, (canon, bad, _why) in TERMS.items():
         cand = [w for w in (canon, *bad) if len(w) > 1]
         if not cand:
             print(f"      – [{term}] 한 글자라 부분일치 잡음이 커서 안 센다")
             continue
-        row = " · ".join(f"{w} {cnt[w]}" for w in cand)
-        others = [cnt[b] for b in bad if len(b) > 1] or [0]
-        mark = "✅" if len(canon) > 1 and cnt[canon] >= max(others) else "⚠"
-        print(f"      {mark} [{term}] {row}")
+        row = []
+        forms = {}
+        for g in ("ED1", "ED2"):
+            blob = "\n".join(per[g])
+            forms[g] = {w: blob.count(w) for w in cand}
+            row.append(f"{g} " + "/".join(f"{w} {forms[g][w]}" for w in cand))
+        # 양쪽에 다 나오는데 **우세한 표기가 다르면** 갈린 것이다
+        top = {g: max(forms[g], key=lambda w, g=g: forms[g][w]) for g in ("ED1", "ED2")}
+        both = all(sum(forms[g].values()) for g in ("ED1", "ED2"))
+        mark = "⚠" if both and top["ED1"] != top["ED2"] else "✅"
+        if mark == "⚠":
+            split += 1
+        print(f"      {mark} [{term}] " + " · ".join(row))
+    if split:
+        print(f"      ⚠ 편마다 우세 표기가 다른 낱말 {split} — 정본을 정해 양쪽을 맞춘다")
 
 
 if __name__ == "__main__":
     v = "-v" in sys.argv
-    bad = scan_dialog(v) + scan_ui(v)
-    scan_ed2()
+    bad = scan_dialog(v) + scan_ui(v) + scan_item_tables()
+    scan_between_games()
     print(f"\n{'✅ 용어가 한 표기다' if not bad else f'⚠ 용어가 갈린 곳 {bad}'}")
     sys.exit(1 if bad else 0)

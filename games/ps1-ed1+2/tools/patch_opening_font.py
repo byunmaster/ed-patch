@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import shutil
+import string
 import struct
 import sys
 
@@ -57,11 +58,24 @@ FONT_RUNTIME = 0x80080000  # 자유 RAM(오프닝 내내 0, PC0 클리어 0x8002
 # (0x80082000)로 옮기면 command로 오인돼 검은화면(과거 RELOCATE_OVERFLOW 실패의 진짜 원인).
 GLYPH = 30  # 16×15 네이티브(BIOS 한자와 동일 셀). 원본 렌더 그대로 → 크기·행수·shadow 패치 불필요
 DRAW_ROWS = 15
-GALMURI_BDF = hangul_font.GALMURI11_BDF.replace("Galmuri11", "Galmuri9")  # 9px 전용 비트맵(또렷)
+# ⚠ 오프닝·엔딩만 **Neo둥근모 16px** 이다 — 인게임 대사는 그대로 Galmuri11(11×11 셀).
+# 원작도 이 자리는 PS1 BIOS 한자폰트(16×15)를 썼으니 **원작 크기로 돌아가는 것**이다.
+# 셀(16×15)에 잉크 13행이 여유 있게 들어가고, 예산은 행 사전 코덱이 열어 줬다
+# (옛 행-그대로 코덱으로는 5,472B 로 탈락했다 — `compress_font_dict` 주석).
+NEODGM_TTF = os.path.join(hangul_font.REPO_ROOT, "shared", "fonts", "neodgm.ttf")
+GALMURI_BDF = hangul_font.GALMURI11_BDF.replace("Galmuri11", "Galmuri9")  # 압축 비교용으로만 남긴다
 # Galmuri9 dy=1 → 잉크 3~11행(위3/아래3 여백, 무잘림). 압축 3584B로 안전영역에 여유.
 GALMURI_DY = 1
-# 폰트는 Galmuri9 전용 BDF. neodgm(16px TTF 축소)도 시험했으나 **도트가 거칠어 기각**했다
-# (12px 가 맞는 것 중 최대, 압축 3908B). 결론만 남기고 코드는 지웠다 — YAGNI.
+# 폰트는 Galmuri9 전용 BDF. neodgm(둥근모꼴 계열 16px)은 **공간이 안 나와서 기각**이다.
+# ⚠ 예전 주석이 「도트가 거칠어 기각」이라고만 적어 둬서 2026-08-21 에 「advance 를 원본
+# 16px 로 되돌리고 네이티브로 쓰면 되지 않나」로 한 번 헛돌았다 — **1순위 사유는 크기다.**
+# 214자 실측(압축 후, 안전영역 COMP_FONT_MAX = 4064B):
+#     Galmuri9      3498B ✅      neodgm 12px  4320B ❌
+#     neodgm 15px   5142B ❌      neodgm 16px  5472B ❌ (35% 초과)
+# 셀(16×15)에 **수납은 된다**(neodgm 16px 잉크 13행). 안 되는 건 압축 블롭이다 — 16px 도트는
+# 잉크가 많아 행-마스크 압축이 안 먹는다. 영역은 못 넓힌다(앞 포인터배열·뒤 참조 중 TIM명).
+# 도트가 거친 건 그 다음 문제다: 12px 로 줄이면 16px 설계의 그리드가 깨져 받침이 뭉갠다.
+# 결론만 남기고 코드는 지웠다 — YAGNI.
 STUB_FILE_OFF = 0x15C14  # 저작권 문자열 자리(게임 미사용, 어제 스텁 검증). RAM 0x80025414 = 디코더.
 STUB_RAM = TADDR + (STUB_FILE_OFF - 0x800)  # 0x80025414
 ORIG_PC0 = 0x80021D50
@@ -132,6 +146,28 @@ def _tm_path(cls):
     return os.path.join(os.path.dirname(__file__), "..", "textmap", f"{cls}.json")
 
 
+# 🔴 **0런을 「0으로 차 있다」로 믿지 않는다 — 구조로 확인한다.**
+# 이 레포는 그 근거로 두 번 물렸다: 사운드 뱅크 VAB(0런이 파형 첫 무음 블록이라 효과음이
+# 조용히 깨졌다) · 새턴 세션 2026-08-30(「필드·전투를 도는 동안 쓰기 0건」으로 잡은 자리가
+# **프롤로그에서는 살아 있는 오버레이 코드**였다 — 게이트는 전부 초록이었고 화면만 죽었다).
+# ⇒ 「안 쓰는 걸 봤다」는 **「아직 안 봤다」와 구별이 안 된다.** 자리는 구조로만 얻는다.
+#
+# 실측(2026-08-30, OPEN1·OPEN2·END1·END2 **넷 다 동일**): 이 0런은 문자열 풀 끝과 포인터 표
+# 사이의 틈이다 — `[… "All Rights Reserved."][0런 4,203B][RAM 포인터 표(0x8001…)]`.
+# 그 양끝을 확인해 「가장 긴 0런」이 엉뚱한 데를 짚는 경우를 막는다.
+_RUN_HEAD = b"All Rights Reserved."
+
+
+def _verify_run_structure(buf, off, ln):
+    """고른 0런이 **문자열 풀과 포인터 표 사이**인지 확인한다(위 주석)."""
+    head = bytes(buf[off - len(_RUN_HEAD) : off])
+    assert head == _RUN_HEAD, f"0런 앞이 문자열 풀이 아니다 @0x{off:X}: {head!r}"
+    nxt = int.from_bytes(bytes(buf[off + ln : off + ln + 4]), "little")
+    assert 0x80010000 <= nxt < 0x80200000, (
+        f"0런 뒤가 포인터 표가 아니다 @0x{off + ln:X}: {nxt:#010x}"
+    )
+
+
 def game_cfg(name):
     """게임 설정 + 도출 앵커. OPEN1 은 하드코딩 값과 대조해 도출기를 검증한다."""
     import check_movie_anchors as A
@@ -147,6 +183,7 @@ def game_cfg(name):
             if k in a:  # `stub`·`font` 는 도출값이 아니라 0런 상대 위치로 잡는다(아래)
                 assert a[k] == v, f"앵커 도출 실패 {k}: {a[k]:X} != {v:X}"
     run_off, run_len = a["zero_run"]
+    _verify_run_structure(buf, run_off, run_len)
     g.update(a)
     g["stub_off"] = run_off + STUB_REL
     g["font_off"] = run_off + FONT_REL
@@ -157,27 +194,61 @@ def game_cfg(name):
     return g
 
 
+def _ellipsis_bits(ft):
+    """말줄임표를 **셀 폭에 고르게** 다시 그린다.
+
+    폰트의 `…` 는 점 셋이 가운데 몰려 있어 한 글자처럼 뭉쳐 보인다 — 유저는 온점 셋(`...`)
+    쪽이 읽힌다고 했다(2026-08-22). 그런데 `...` 로 통일하면 **새턴이 깨진다**(16px 고정
+    격자라 점마다 한 칸을 먹어 16px 씩 벌어진다). 그래서 **표기는 `…` 하나로 두고 그림만**
+    온점 셋처럼 벌린다 — 두 판이 같은 문안을 쓰면서 둘 다 읽힌다.
+
+    ⚠ 점의 **모양·높이는 폰트의 온점에서 가져온다**. 손으로 찍으면 본문 온점과 굵기·기준선이
+    어긋나 그 줄만 다른 폰트처럼 보인다.
+    """
+    from PIL import Image, ImageDraw
+
+    dot = Image.new("L", (16, DRAW_ROWS), 0)
+    ImageDraw.Draw(dot).text((0, 0), ".", fill=255, font=ft)
+    d = (np.array(dot) >= 128).astype(np.uint8)
+    ys, xs = np.nonzero(d)
+    assert len(xs), "온점 글리프가 비었다"
+    w = xs.max() - xs.min() + 1
+    stamp = d[:, xs.min() : xs.max() + 1]
+    out = np.zeros((DRAW_ROWS, 16), np.uint8)
+    # 셀 좌우에 1px 만 남기고 점 셋을 고르게 — `.` 하나 폭이 2px 이면 1 / 7 / 13 이 된다.
+    span = 16 - 2 - w
+    for k in range(3):
+        x = 1 + round(span * k / 2)
+        out[:, x : x + w] |= stamp
+    return out
+
+
 def gen_glyphs(chars):
-    """음절 → GLYPH바이트(16×DRAW_ROWS) 글리프 (Galmuri9 BDF)."""
-    glyphs, ascent = hangul_font.load_bdf(GALMURI_BDF)
+    """렌더 단위 → GLYPH바이트(16×DRAW_ROWS) 글리프 (**Neo둥근모 16px 네이티브**).
+
+    단위는 1글자(한글·부호)이거나 **로마자 2글자**다 — 로마자가 8px 라 둘이 한 셀에 맞는다.
+
+    ⚠ **축소하지 않는다.** 16px 설계를 줄이면 정수배가 아니라 획이 서로 먹어 받침이
+    뭉갠다(`오`·`스` 는 멀쩡한데 `영`·`웅`·`많`·`읽` 이 무너진다). 16px 그대로 찍으면
+    잉크가 13행이라 셀(16×15)에 그냥 들어간다. 기준은 `shared/fonts/README.md`.
+    ⚠ 레이아웃 엔진을 BASIC 으로 못 박는다 — Raqm 유무로 배치가 달라져 빌드가 환경을 탄다.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+
+    ft = ImageFont.truetype(NEODGM_TTF, 16, layout_engine=hangul_font.BASIC_LAYOUT)
     out = {}
     for ch in chars:
-        g = glyphs.get(ord(ch))
-        bits = np.zeros((DRAW_ROWS, 16), dtype=np.uint8)
-        if not g:
+        im = Image.new("L", (16, DRAW_ROWS), 0)
+        # ⚠ 짝을 못 찾은 로마자 한 글자(8px)는 **셀 가운데**로 민다 — 왼쪽에 붙이면 뒤에만
+        #   8px 가 비어 「고작 6 살.」 처럼 한쪽으로 벌어진다.
+        dx = 4 if len(ch) == 1 and ch in PAIRABLE else 0
+        ImageDraw.Draw(im).text((dx, 0), ch, fill=255, font=ft)
+        bits = (np.array(im) >= 128).astype(np.uint8)
+        if ch == "…":
+            bits = _ellipsis_bits(ft)
+        if not bits.any() and not ch.isspace():
             print(f"경고: {ch!r} 글리프 없음")
-        else:
-            w, h, xo, yo, rows = g
-            top = ascent - (yo + h) + GALMURI_DY
-            nb = ((w + 7) // 8) * 8
-            for r, v in enumerate(rows):
-                y = top + r
-                if 0 <= y < DRAW_ROWS:
-                    for x in range(w):
-                        if v & (1 << (nb - 1 - x)):
-                            px = x + xo
-                            if 0 <= px < 16:
-                                bits[y, px] = 1
+        assert ft.getlength(ch) <= 16, f"{ch!r} 이 셀(16px)을 넘는다 — {ft.getlength(ch)}px"
         out[ch] = np.packbits(bits, axis=1).tobytes()  # DRAW_ROWS*2 = GLYPH
     return out
 
@@ -224,12 +295,22 @@ def compress_font(glyph_list):
 # [(슬롯 오프셋, KR 내레이션)] 50줄 — textmap/opening.json 파생(행별 편차 사유는 note 필드).
 LINES = off_pairs("opening")
 FIELD = 64  # 표시 필드 폭(유닛). 폭측정·표시 루프가 같은 단위로 센다
-ADV_WIDE, ADV_NARROW = 3, 2  # 전각 / 반각 advance(유닛)
+# ⚠ 전각 4 = 16px = **원작 그대로**다. Galmuri9 를 쓰던 동안만 3(12px)으로 좁혔었는데
+#   (잉크폭 9px라 셀 여백이 넓어 성겨 보였다), Neo둥근모 16px 는 잉크가 16px 라 되돌린다.
+#   좁힌 채로 두면 글자끼리 4px 겹친다.
+ADV_WIDE, ADV_NARROW = 4, 2  # 전각 / 반각 advance(유닛)
 # 반각으로 낼 글자 — 렌더러에 **이미 있는 advance 2 경로**를 빌린다. 원본은 전각공백과
 # 좁은 라틴(ｆｉｊｌ) 다섯 코드를 하드코딩 비교해 2유닛만 진행하는데, 그 상수를 우리
 # 글자의 슬롯 SJIS 로 바꿔치면 코드 추가 없이 반각이 된다(트램폴린 불필요).
 # ⚠ 다섯 자리뿐이다. 늘리려면 비교 체인을 새로 짜야 한다.
-NARROW = " .,!?"
+# ⚠ **다섯 칸뿐이다.** 원본이 「좁은 글자 5종」 비교(`ori` 상수 다섯)를 이미 갖고 있어
+#   그 자리를 우리 글자로 바꿔 쓰는 것이라, 코드를 한 줄도 안 늘리는 대신 **정확히 5개**다.
+#   앞에서부터 「그 EXE 문안에 실제로 있는 것」 5개가 뽑힌다(`narrow[:5]`).
+#   `()` 는 스태프롤 이름 뒤 괄호용이다 — 넷 다 재 보니 `!?` 는 한 번도 안 나와서 두 칸이
+#   비어 있었다(2026-08-21 실측). ⚠ 늘리려면 등가비교 다섯을 **범위 비교**로 바꿔야 하는데
+#   폭측정·표시 루프를 EXE 넷에서 각각 고쳐야 한다 — 로마자 34종 74회(대부분 스태프롤)에
+#   견주면 값이 안 맞아 안 한다.
+NARROW = " .,()!?"
 
 
 # ── 스크립트 제어문자 · 들여쓰기 빈칸 (2026-08-16 원본 대조) ───────────────────────
@@ -248,9 +329,90 @@ def norm(s):
     return "".join(" " if c == BLANK_CH else c for c in s if c not in CTRL_RAW)
 
 
+# ── 로마자 두 글자를 한 글리프에 (2026-08-21) ─────────────────────────────────
+# **왜.** 한 글자가 전각 셀 하나를 먹어 `S A L  L a b o r a t o r y` 처럼 늘어졌다.
+# 진짜 반각을 얻으려면 원본의 「좁은 글자 5종」 비교를 **범위 비교로** 바꿔야 하는데,
+# 폭측정·표시 루프를 EXE 넷에서 각각 고치는 일이라 값이 안 맞았다(유저와 검토 2026-08-21).
+#
+# 대신 **두 글자를 한 셀에 굽는다.** Neo둥근모는 로마자가 정확히 8px 이고 한글이 16px 라
+# (실측 `getlength('Co') == 16.0`) `Co` 를 그대로 16×15 셀에 그리면 **딱 맞는다.**
+# 🔴 **코드를 한 줄도 안 고친다** — 게임은 그냥 전각 글리프 하나로 본다.
+#
+# 곁가지 이득 둘: 폭이 절반이라 **줄 예산이 남고**, 두 글자가 슬롯 하나라 **바이트도 준다.**
+# 대가는 **조합마다 슬롯 하나**를 먹는 것 — 실측치는 빌드 출력에 찍는다.
+#
+# ⚠ 제어문자(`!*~<`)와 이미 반각인 것(`NARROW`)은 절대 안 묶는다. 앞의 것은 화면에 찍히고,
+#   뒤의 것은 이미 8px 이라 묶으면 오히려 넓어진다.
+PAIRABLE = frozenset(string.ascii_letters + string.digits + "-&'")
+# 홀수로 남은 로마자가 끌어올 수 있는 **반각** — 공백과 문장부호. 셀 하나에 같이 담긴다.
+# ⚠ 제어문자(`!*~<` 중 제어로 쓰이는 것)는 여기 넣지 않는다 — 화면에 안 찍히는 것들이다.
+PULLABLE = frozenset(" .,)")
+# 잇달으면 한 셀에 같이 굽는 부호. ⚠ 공백은 넣지 않는다 — 공백끼리 묶으면 줄머리 들여쓰기가
+# 셀 단위로 뭉쳐 원본 배치가 어긋난다.
+PUNCT_PAIR = frozenset(".,")
+
+
+def render_units(s):
+    """문자열 → **렌더 단위** 목록. 로마자 연속열은 두 글자씩 묶인다.
+
+    묶음 규칙 — 묶음은 로마자로 **시작하고 끝난다**. 가운데 공백은 함께 묶어 낱말 사이가
+    벌어지지 않게 하고, 홀수로 남으면 **뒤따르는 공백 하나를 끌어와** 짝을 맞춘다
+    (`Corporation` 11자 → `Co rp or at io n_`). 못 맞추면 마지막 한 글자는 그냥 한 셀이다.
+
+    >>> render_units("(주) Co.,Ltd.")
+    ['(', '주', ')', ' ', 'Co', '.', ',', 'Lt', 'd', '.']
+    """
+    out, i, n = [], 0, len(s)
+    while i < n:
+        # 부호가 잇달으면 **둘을 한 셀에** 굽는다 — `Co.,` 의 `.,` 가 그렇다(유저 QA
+        # 2026-08-22). 폭은 어차피 같지만(반각 2유닛 × 2 = 전각 1셀), 한 글리프로 구우면
+        # 두 부호 사이 간격을 우리가 정할 수 있다.
+        if s[i] in PUNCT_PAIR and i + 1 < n and s[i + 1] in PUNCT_PAIR:
+            out.append(s[i : i + 2])
+            i += 2
+            continue
+        if s[i] not in PAIRABLE:
+            out.append(s[i])
+            i += 1
+            continue
+        j = i  # 로마자로 끝나는 최장 구간 (가운데 공백 허용)
+        k, last = i, i
+        while k < n and (s[k] in PAIRABLE or s[k] == " "):
+            if s[k] in PAIRABLE:
+                last = k
+            k += 1
+        j = last + 1
+        run = s[i:j]
+        # 홀수면 **뒤에 오는 반각 하나를 끌어와** 짝을 맞춘다 — 공백이든 부호든.
+        # ⚠ 부호까지 끌어오는 이유: `Ltd.` 가 `Lt` + `d`(홀수라 셀 가운데) + `.` 로 갈려
+        #   「Lt d.」 처럼 벌어졌다(유저 QA 2026-08-22, `GMF` 와 같은 증상).
+        #   `d.` 를 한 셀에 담으면 잉크 16px 가 셀 16px 를 꽉 채워 폭 계산도 그림도 맞는다.
+        if len(run) % 2 and j < n and s[j] in PULLABLE:
+            run, j = s[i : j + 1], j + 1
+        for t in range(0, len(run) - 1, 2):
+            out.append(run[t : t + 2])
+        if len(run) % 2:
+            # ⚠ 홀수로 남은 한 글자는 셀 **가운데**로 밀리는데(`gen_glyphs`), 뒤에 아무것도
+            #   없으면 그게 곧 앞 글자와 벌어져 보인다 — `GMF` 가 「GM F」 로 나왔다
+            #   (유저 QA 2026-08-22). 끝이거나 개행 앞이면 **공백과 묶어** 왼쪽에 붙인다.
+            #   ⚠ 뒤에 글자가 오는 자리(`6명`)까지 붙이면 반대로 뒤가 벌어진다 — 거기는 그대로.
+            tail = run[-1]
+            out.append(tail + " " if j >= n or s[j] == "\n" else tail)
+        i = j
+    return out
+
+
+NARROW_SET = frozenset(NARROW)
+
+
 def units(s):
-    """줄의 표시 폭(유닛). 반각 글자는 2, 그 밖은 3. 제어문자는 안 센다(폭 0)."""
-    return sum(ADV_NARROW if c in NARROW else ADV_WIDE for c in norm(s))
+    """줄의 표시 폭(유닛). 반각 글자는 2, 그 밖은 4. 제어문자는 안 센다(폭 0).
+
+    ⚠ **세는 단위는 글자가 아니라 렌더 단위**다 — 로마자 두 글자가 한 셀이므로
+    `render_units` 를 거치지 않으면 측정폭 > 표시폭이 되어 중앙정렬이 밀린다.
+    ⚠ `u in NARROW` 은 **부분문자열 검사**라 두 글자 단위가 걸릴 수 있다 — 집합으로 본다.
+    """
+    return sum(ADV_NARROW if u in NARROW_SET else ADV_WIDE for u in render_units(norm(s)))
 
 
 # ⚠ **여기 있던 `kuten_to_sjis` 를 `hangul_map` 것으로 합쳤다**(2026-08-18).
@@ -291,11 +453,11 @@ def enc(s, slot):
     줄 뒤 필드를 클리어한다. 이게 없으면 짧은 줄이 이전(더 긴) 줄의 잔여 픽셀을 못 덮어
     오른쪽에 유령 글자가 남는다("파렌, 온리크,"→뒤에 "는"). DuckStation/mednafen 실측 확인."""
     out = bytearray()
-    for ch in s:
-        if ch in CTRL_RAW:
-            out += ch.encode("ascii")  # 제어코드 — 글리프로 바꾸면 화면에 찍힌다
+    for u in render_units(s):
+        if u in CTRL_RAW and len(u) == 1:
+            out += u.encode("ascii")  # 제어코드 — 글리프로 바꾸면 화면에 찍힌다
         else:
-            out += struct.pack(">H", slot[" " if ch == BLANK_CH else ch][0])
+            out += struct.pack(">H", slot[" " if u == BLANK_CH else u][0])
     return bytes(out) + b"\x0a"
 
 
@@ -434,6 +596,36 @@ def patch_game(name):
     g = game_cfg(name)
     OP_LBA, OP_SIZE = g["lba"], SIZE
     LINES = [(o + g["delta"], kr) for o, kr in off_pairs(g["cls"])]
+    # ⚠ **검증 전용 치환** — 엔딩·ED2 오프닝은 게임을 끝까지 가야 보인다. 그래서 문안만
+    #   다른 클래스 것으로 갈아끼워 **오프닝 자리에 띄워** 눈으로 본다(유저 요청 2026-08-21).
+    #   ⚠ 오프셋은 반드시 **이 EXE 것**을 쓴다 — 남의 클래스 오프셋을 쓰면 엉뚱한 주소에
+    #   쓴다(엔딩 오프셋 0x1A6C 는 END1.EXE 의 것이지 OPEN1.EXE 의 것이 아니다).
+    #   🔴 배포 빌드에 절대 켜지 않는다. 환경변수라 커밋물에 안 남는다.
+    #      ED_OPENING_TEXT_AS="OPEN1=ending_ed1" python3 tools/build.py
+    _as = dict(
+        kv.split("=", 1) for kv in os.environ.get("ED_OPENING_TEXT_AS", "").split(",") if "=" in kv
+    )
+    if name in _as:
+        # `클래스[:시작줄]` — ⚠ **잘리는 뒤를 볼 길이 있어야 한다.** ED1 엔딩은 59줄인데
+        #   오프닝 슬롯이 50뿐이라 9줄이 조용히 안 보였다. 「검수했다」가 실은 「앞만 봤다」가
+        #   되는 자리라, 두 번째 회차로 뒤를 띄운다:
+        #      ED_OPENING_TEXT_AS="OPEN1=ending_ed1:50"
+        spec = _as[name]
+        cls_as, _, start = spec.partition(":")
+        start = int(start or 0)
+        src_txt = [kr for _, kr in off_pairs(cls_as)][start:]
+        n_show = min(len(LINES), len(src_txt))
+        rest = len(src_txt) - n_show
+        print(
+            f"  🔬 검증 치환: {name} 자리에 {cls_as} 문안 {n_show}줄"
+            + (f" ({start}번부터)" if start else "")
+            + (
+                f"  ⚠ 뒤 {rest}줄은 슬롯이 모자라 안 보인다 — `{cls_as}:{start + n_show}` 로 이어 본다"
+                if rest
+                else ""
+            )
+        )
+        LINES = [(o, src_txt[i]) for i, (o, _) in enumerate(LINES[:n_show])]
     # ⚠ **포인터 테이블이 가리키는데 본 구획 밖에 있는 줄**이 있다(OPEN2 `だが…` @0x17484,
     # RAM 0x80026C84). 재packing 범위(min~max 오프셋)에 넣으면 그 사이의 **코드·자료를 통째로
     # 지운다** — 그래서 따로 뺀다. 이런 줄은 원본 슬롯 안에서 **제자리 치환**한다.
@@ -471,9 +663,9 @@ def patch_game(name):
             staff = json.load(f)
     syl = set()
     for _, kr in LINES + far_lines:  # ⚠ 구획 밖 줄의 글자도 폰트에 있어야 한다
-        syl.update(norm(kr))
+        syl.update(render_units(norm(kr)))
     for kr in staff.values():  # 스태프롤 글자도 폰트에 있어야 한다
-        syl.update(norm(kr))
+        syl.update(render_units(norm(kr)))
     slot = build_slots(syl)
     n = len(syl)
     print(f"고유 음절 {n}, 네이티브 폰트 {n * GLYPH}B(raw)")
@@ -481,11 +673,17 @@ def patch_game(name):
     # 1) 폰트를 네이티브 30B로 생성 → 행-마스크 압축 → 안전 0영역에 임베드.
     #    (raw 5730B는 안전영역 초과 → 압축본 ~3986B만 파일에 둔다. 스텁이 자유 RAM에 푼다.)
     glyphs = gen_glyphs(sorted(syl))  # 30B/글리프(15행)
-    comp = compress_font([glyphs[ch][:GLYPH] for ch in sorted(syl)])
-    assert len(comp) <= COMP_FONT_MAX, f"압축폰트 {len(comp)}B > 안전 {COMP_FONT_MAX}B"
+    raw = [glyphs[ch][:GLYPH] for ch in sorted(syl)]
+    comp, NDICT = compress_font_dict(raw)
+    assert len(comp) <= COMP_FONT_MAX, (
+        f"압축폰트 {len(comp)}B > 안전 {COMP_FONT_MAX}B"
+        f" (옛 행-그대로 코덱이면 {len(compress_font(raw))}B)"
+    )
     op[COMP_FONT_FILE_OFF : COMP_FONT_FILE_OFF + len(comp)] = comp
+    DICT_BYTES = NDICT * 2 + (NDICT * 2 & 1)
     print(
-        f"압축 폰트 {len(comp)}B 임베드 파일 0x{COMP_FONT_FILE_OFF:X} (로드 RAM 0x{COMP_FONT_LOAD:08X})"
+        f"압축 폰트 {len(comp)}B (행 사전 {NDICT}개 · 옛 코덱 {len(compress_font(raw))}B) "
+        f"임베드 파일 0x{COMP_FONT_FILE_OFF:X} (로드 RAM 0x{COMP_FONT_LOAD:08X})"
     )
 
     # 1b) 내레이션 재삽입 — 저주소 텍스트 영역 내 재packing.
@@ -686,54 +884,11 @@ def patch_game(name):
     #    (b) 원PC0 점프. (로더 b_size=0라 소스는 PC0 시점 온전 → 게임 힙클리어 전에 대피)
     #    폰트 레지스터: t0=dst t1=src t2=글리프수 t3=마스크 t4=행 t5=행값.
     #    (줄은 저주소 영역 재packing이라 스텁 복사 불필요 — 폰트만 자유RAM으로 대피)
-    assert n < 0x8000 and COMP_FONT_LOAD & 0xFFFF < 0x8000
-    src_lo = COMP_FONT_LOAD & 0xFFFF
-    pc0_hi, pc0_lo = (ORIG_PC0 >> 16) & 0xFFFF, ORIG_PC0 & 0xFFFF
-    assert pc0_lo < 0x8000
-    # ⚠ 반각 분기가 붙었다(2026-08-16) — 마스크 비트15 가 서면 행마다 1B 만 읽는다.
-    #   `lbu`+`sh` 면 리틀엔디언이 [왼쪽, 0] 으로 놓으므로 **시프트하면 안 된다.**
-    stub = [
-        0x3C080000 | (FONT_RUNTIME >> 16),  # 0  lui  t0, dst_hi   (t0=FONT_RUNTIME, 하위0)
-        0x3C090000 | (COMP_FONT_LOAD >> 16),  # 1  lui  t1, src_hi
-        0x25290000 | src_lo,  # 2  addiu t1, t1, src_lo   (t1=COMP_FONT_LOAD)
-        0x240A0000 | n,  # 3  addiu t2, r0, n         (글리프 수)
-        0x952B0000,  # 4  G: lhu  t3, 0(t1)           마스크
-        # ⚠ **로드 지연 슬롯** — MIPS I(R3000)은 `lhu` 바로 다음 명령에서 그 레지스터를
-        #   못 읽는다. 원 스텁이 `ori`·`addiu` 를 사이에 둔 게 그 이유였고, 여기에
-        #   `andi t6, t3` 를 끼워 넣었다가 **옛 t3** 를 읽어 반각 분기가 죽었다
-        #   (2026-08-16, 화면이 검게 죽었다). 두 명령 뒤로 물린다.
-        0x340C000F,  # 5     ori  t4, r0, 15          행 카운터
-        0x25290002,  # 6     addiu t1, t1, 2          마스크 지나
-        0x316E8000,  # 7     andi t6, t3, 0x8000      반각 플래그(로드 2명령 뒤)
-        0x316D0001,  # 8  R: andi t5, t3, 1
-        0x11A00008,  # 9     beq  t5, r0, WZ(+8 → 18)
-        0x000B5842,  # 10    srl  t3, t3, 1  (delay)
-        0x15C00004,  # 11    bne  t6, r0, HALF(+4 → 16)
-        0x00000000,  # 12    nop (delay)
-        0x952D0000,  # 13    lhu  t5, 0(t1)           전각: 2B
-        0x10000003,  # 14    b    WZ(+3 → 18)
-        0x25290002,  # 15    addiu t1, t1, 2 (delay)
-        0x912D0000,  # 16 HALF: lbu t5, 0(t1)         반각: 1B(왼쪽)
-        0x25290001,  # 17    addiu t1, t1, 1
-        0xA50D0000,  # 18 WZ: sh  t5, 0(t0)
-        0x258CFFFF,  # 19    addiu t4, t4, -1
-        0x1580FFF3,  # 20    bne  t4, r0, R(-13 → 8)
-        0x25080002,  # 21    addiu t0, t0, 2 (delay)
-        # 다음 마스크는 `lhu` 라 **2B 정렬**이어야 한다 — 반각이 홀수 바이트를 남긴다.
-        0x25290001,  # 22    addiu t1, t1, 1     올림
-        0x312F0001,  # 23    andi t7, t1, 1
-        0x012F4823,  # 24    subu t1, t1, t7     (짝수로 내림 = 올림 완성)
-        0x254AFFFF,  # 25    addiu t2, t2, -1
-        0x1540FFE9,  # 26    bne  t2, r0, G(-23 → 4)
-        0x00000000,  # 27    nop (delay)
-    ]
-    stub += [
-        # (b) 원PC0 점프
-        0x3C080000 | pc0_hi,  # lui  t0, pc0_hi
-        0x25080000 | pc0_lo,  # addiu t0, t0, pc0_lo
-        0x01000008,  # jr   t0
-        0x00000000,  # nop
-    ]
+    # ⚠ 스텁은 `build_decoder_stub` 이 만든다 — **테스트가 부를 수 있어야** 하기 때문이다.
+    #   인라인이던 시절엔 손인코딩을 검증할 방법이 디스어셈뿐이었고, 그건 분기 오프셋이
+    #   어긋나도 통과시킨다(2026-08-21 실측: 셋이 전부 한 칸씩 틀렸는데 다 통과).
+    #   지금은 `test_opening_decoder_stub_actually_decodes` 가 **실행해서** 대조한다.
+    stub = build_decoder_stub(FONT_RUNTIME, COMP_FONT_LOAD, DICT_BYTES, n, ORIG_PC0)
     verify_asm(stub, DEC_RAM)
     stub_end = DEC_RAM + len(stub) * 4
     assert len(stub) * 4 <= DEC_RESERVE, (
@@ -785,9 +940,11 @@ def patch_game(name):
             w32(op, a, (ins & 0xFFFF0000) | c)
     print(f"반각 처리: {''.join(narrow)!r} → advance {ADV_NARROW}유닛 (전각 {ADV_WIDE})")
 
-    w32(op, fo(g["adv_w"]), 0x24840003)  # addiu a0,a0,3  (폭측정 전각, 원 +4)
-    w32(op, fo(g["adv_d"]), 0x26730003)  # addiu s3,s3,3  (표시 전각, 원 +4)
-    print("글자 advance 4→3(16px→12px) — 간격 축소")
+    # ⚠ 폭측정·표시 **양쪽 다** 같은 값이어야 한다 — 어긋나면 중앙정렬이 밀려 글자가
+    #   화면 밖으로 잘린다. 그래서 `ADV_WIDE` 하나에서 끌어온다.
+    w32(op, fo(g["adv_w"]), 0x24840000 | ADV_WIDE)  # addiu a0,a0,N  (폭측정 전각, 원 +4)
+    w32(op, fo(g["adv_d"]), 0x26730000 | ADV_WIDE)  # addiu s3,s3,N  (표시 전각, 원 +4)
+    print(f"글자 advance {ADV_WIDE}유닛 ({ADV_WIDE * 4}px)")
 
     if SRC != DST:
         shutil.copyfile(SRC, DST)
@@ -802,6 +959,142 @@ def main():
     for name in want:
         patch_game(name)
     print(f"완료: {DST}")
+
+
+# ── 행 사전 코덱 (2026-08-21) ─────────────────────────────────────────────────
+# **왜 갈아엎나.** 위 `compress_font` 는 비지 않은 행을 **그대로** 저장한다. 그래서 예산
+# 4,064B 가 곧 「평균 잉크 8.5행」이 되고, **셀(16×15)에는 수납되는 폰트가 예산에서 떨어진다** —
+# Galmuri11(10.2행) 4,782B · neodgm 16px(11.9행) 5,472B 가 그렇게 탈락했다.
+#
+# 그런데 한글 도트는 가로획 패턴이 심하게 겹친다. 실측(오프닝 214자):
+#
+#     Galmuri9   비지 않은 행 1,780 → **서로 다른 행 95**
+#     neodgm16   비지 않은 행 2,540 → **서로 다른 행 173**
+#
+# 즉 행을 사전에 모으고 1바이트 색인만 늘어놓으면 된다. 같은 214자 기준:
+#
+#     Galmuri9  3498B → 2398B      Galmuri11 4782B → 2868B      neodgm16 5472B → 3314B
+#
+# **셋 다 예산 안에 들어온다.** 폰트를 키우는 길이 여기서 열린다.
+#
+# 형식:  [사전 D×2B][글리프 …]   글리프 = 2B 마스크 + (선 비트마다) 1B 색인 + 짝수 패딩
+#   ⚠ 마스크는 디코더가 `lhu` 로 읽는다 — **2B 정렬**을 지켜야 한다(홀수 주소 `lhu` 는
+#     MIPS 에서 주소 예외로 죽는다, 2026-08-16 실측).
+#   ⚠ 색인이 1B 라 사전은 **256개까지**다. 넘으면 여기서 실패시킨다.
+#   ⚠ 반각(비트15) 최적화는 **뺐다.** 사전이 이미 그 이득을 먹고(반각 행도 한 항목),
+#     디코더 명령 예산(32명령)이 빠듯하다.
+
+DICT_MAX = 256
+
+
+def compress_font_dict(glyph_list):
+    """행 사전 압축 → `(blob, 사전항목수)`. `blob` 은 사전+글리프를 이어 붙인 것."""
+    order, seen = [], {}
+    per = []
+    for gb in glyph_list:
+        idx = []
+        for r in range(DRAW_ROWS):
+            row = gb[r * 2 : r * 2 + 2]
+            if row == b"\x00\x00":
+                continue
+            if row not in seen:
+                seen[row] = len(order)
+                order.append(row)
+            idx.append((r, seen[row]))
+        per.append(idx)
+    if len(order) > DICT_MAX:
+        raise SystemExit(f"행 사전 {len(order)}개 > {DICT_MAX} — 색인 1B 로 못 가리킨다")
+
+    out = bytearray(b"".join(order))
+    if len(out) & 1:  # 사전 뒤부터 글리프의 마스크가 시작한다 — 2B 정렬
+        out += b"\x00"
+    for idx in per:
+        mask = 0
+        for r, _ in idx:
+            mask |= 1 << r
+        out += struct.pack("<H", mask)
+        out += bytes(i for _, i in idx)
+        if len(out) & 1:
+            out += b"\x00"
+    return bytes(out), len(order)
+
+
+def decode_font_dict(blob, ndict, nglyph):
+    """디코더 스텁과 **같은 절차**로 되돌린다 — 왕복 대조용 기준 구현.
+
+    ⚠ 스텁을 손으로 인코딩하므로 파이썬 기준이 없으면 「빌드는 되는데 화면만 검다」가 된다.
+    """
+    table = [blob[i * 2 : i * 2 + 2] for i in range(ndict)]
+    p = ndict * 2 + (ndict * 2 & 1)
+    out = []
+    for _ in range(nglyph):
+        mask = int.from_bytes(blob[p : p + 2], "little")
+        p += 2
+        rows = []
+        for r in range(DRAW_ROWS):
+            if mask & (1 << r):
+                rows.append(table[blob[p]])
+                p += 1
+            else:
+                rows.append(b"\x00\x00")
+        if p & 1:
+            p += 1
+        out.append(b"".join(rows))
+    return out
+
+
+def build_decoder_stub(dst, src, dict_bytes, nglyph, pc0):
+    """행 사전 blob → 네이티브 30B 글리프로 전개하는 PC0 스텁 (MIPS I 손인코딩).
+
+    레지스터: t0=dst · t1=글리프 스트림 · t2=글리프수 · t3=마스크 · t4=행카운터 ·
+    t5=행값 · t6=색인/주소 · t7=사전바닥 · t9=정렬 임시.
+
+    ⚠ **MIPS I 로드 지연 슬롯** — 로드 바로 다음 명령에서 그 레지스터를 못 읽는다.
+    옛 스텁이 여기서 죽었다(2026-08-16: `andi` 를 끼워 넣었다가 **옛 t3** 를 읽어 반각
+    분기가 죽고 화면이 검게 나갔다). 아래 두 자리가 그 제약을 흡수한다:
+      · `lbu t6`(11) → 쓰는 곳은 13  · `lhu t5`(15) → 쓰는 곳은 17
+    `addiu t4,-1`(16)을 **분기 착지점으로 겸하게** 해서 nop 없이 간격을 만들었다 —
+    비트가 0 이면 `andi` 결과 t5=0 이라 그대로 0 을 쓰면 된다.
+
+    ⚠ 마스크는 `lhu` 다 — 글리프 경계가 **2B 정렬**이어야 한다(홀수 주소 `lhu` = 주소 예외).
+    꼬리 셋(20~22)이 t1 을 짝수로 올린다. `andi t1,t1,0xFFFE` 로 줄이고 싶지만 **상위
+    16비트가 날아가** 주소가 깨진다.
+    """
+    assert dst & 0xFFFF == 0, "dst 는 lui 하나로 만든다"
+    assert src & 0xFFFF < 0x8000 and 0 < dict_bytes < 0x8000 and 0 < nglyph < 0x8000
+    assert pc0 & 0xFFFF < 0x8000
+    return [
+        0x3C080000 | (dst >> 16),  # 0   lui   t0, dst_hi
+        0x3C0F0000 | (src >> 16),  # 1   lui   t7, src_hi
+        0x25EF0000 | (src & 0xFFFF),  # 2   addiu t7, t7, src_lo   (사전 바닥)
+        0x25E90000 | dict_bytes,  # 3   addiu t1, t7, 사전크기 (글리프 스트림)
+        0x240A0000 | nglyph,  # 4   addiu t2, r0, 글리프수
+        0x952B0000,  # 5 G: lhu  t3, 0(t1)        마스크
+        0x340C000F,  # 6    ori  t4, r0, 15       행 카운터
+        0x25290002,  # 7    addiu t1, t1, 2       (t3 는 3명령 뒤에 쓴다)
+        0x316D0001,  # 8 R: andi t5, t3, 1
+        0x11A00006,  # 9    beq  t5, r0, DEC(+6 → 16)
+        0x000B5842,  # 10   srl  t3, t3, 1   (delay)
+        0x912E0000,  # 11   lbu  t6, 0(t1)        색인
+        0x25290001,  # 12   addiu t1, t1, 1
+        0x000E7040,  # 13   sll  t6, t6, 1        색인×2
+        0x01CF7021,  # 14   addu t6, t6, t7       사전 + 오프셋
+        0x95CD0000,  # 15   lhu  t5, 0(t6)        행값
+        0x258CFFFF,  # 16 DEC: addiu t4, t4, -1   (겸 착지점)
+        0xA50D0000,  # 17   sh   t5, 0(t0)
+        0x1580FFF5,  # 18   bne  t4, r0, R(-11 → 8)
+        0x25080002,  # 19   addiu t0, t0, 2  (delay)
+        0x25290001,  # 20   addiu t1, t1, 1       ─┐ 2B 정렬로
+        0x31390001,  # 21   andi t9, t1, 1         │ 올림
+        0x01394823,  # 22   subu t1, t1, t9       ─┘
+        0x254AFFFF,  # 23   addiu t2, t2, -1
+        0x1540FFEC,  # 24   bne  t2, r0, G(-20 → 5)
+        0x00000000,  # 25   nop  (delay)
+        0x3C080000 | (pc0 >> 16),  # 26   lui  t0, pc0_hi
+        0x25080000 | (pc0 & 0xFFFF),  # 27   addiu t0, t0, pc0_lo
+        0x01000008,  # 28   jr   t0
+        0x00000000,  # 29   nop
+    ]
 
 
 if __name__ == "__main__":

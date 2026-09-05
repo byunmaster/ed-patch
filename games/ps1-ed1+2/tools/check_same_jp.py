@@ -25,6 +25,15 @@
 
 그래서 **같은 화자·같은 세그먼트인데 갈리는 것**만 실패로 본다.
 
+🔴 **⚠ 그런데 세그먼트 예외가 진짜 결함을 가린다**(2026-08-19 검수 실측). ED1SCN1 에서 결함
+10종 중 **5종이 이 예외에 걸려 안 보였다**(`446/466` · `758` · `1068` · `1258/1316`).
+예외의 근거는 **정발이 시점마다 다른 표를 쓴다**였는데, 자체 번역으로 갈아탄 뒤엔 문안을
+손으로 쓰므로 그 전제가 없다 — 원문이 같으면 우리 문안도 같아야 한다.
+
+그래도 예외를 **지우지는 않는다.** 「1장엔 왕자를 못 알아본다」는 설정은 유저가 확인한 것이라
+(위) 기계가 뭉개면 안 된다. 대신 **가려진 수를 항상 같이 찍고**, `--strict` 로 세그먼트 축을
+꺼서 전부 볼 수 있게 한다 — 검수는 이걸로 돈다.
+
 ⚠ 상점·현자의 매매 문구를 **일부러 통일하지 않는다**(유저 확정 2026-08-17). 정발에서 찾고
 없으면 JP 를 옮긴다 — 「상점이니 한 문구로」가 아니라 원작·정발이 갈라 둔 대로 간다.
 
@@ -53,7 +62,7 @@ MIN_JP = 12  # 이보다 짧은 JP 는 우연히 같을 수 있다(감탄사·�
 rendered = R.rendered
 
 
-def scan(games=("ED1",), verbose=False):
+def scan(games=("ED1",), verbose=False, strict=False):
     byjp = collections.defaultdict(lambda: collections.defaultdict(list))
     spk_of, seg_of = {}, {}
     ov = json.load(open(os.path.join(ROOT, "align_overrides.json"), encoding="utf-8"))
@@ -81,14 +90,29 @@ def scan(games=("ED1",), verbose=False):
             continue
         spks = {spk_of.get(loc) for locs in variants.values() for loc in locs}
         segs = {seg_of.get(loc) for locs in variants.values() for loc in locs}
-        (same_spk if len(spks) <= 1 and len(segs) <= 1 else diff_spk).append((j, variants))
+        same_seg = len(segs) <= 1 or strict  # --strict: 세그먼트 축을 안 본다
+        (same_spk if len(spks) <= 1 and same_seg else diff_spk).append((j, variants))
 
     n = sum(sum(len(v) for v in var.values()) for _j, var in same_spk)
     print(
         f"  {'✅' if not same_spk else '⚠'} 같은 화자·같은 JP 인데 갈린 자리 {len(same_spk)}종 ({n}블록)"
     )
     if diff_spk:
-        print(f"  ℹ 화자·시점이 달라 갈린 자리 {len(diff_spk)}종 — 정상(현자 말투 · 시점 사본)")
+        # 🔴 **가려진 수를 항상 찍는다.** 「정상」으로만 적으면 여기 숨은 결함을 아무도 안 본다 —
+        #    실측으로 ED1SCN1 결함 절반이 이 통에 있었다.
+        seg_only = sum(
+            1
+            for j, var in diff_spk
+            if len({spk_of.get(loc) for locs in var.values() for loc in locs}) <= 1
+        )
+        print(
+            f"  ℹ 화자·시점이 달라 갈린 자리 {len(diff_spk)}종 — 대개 정상(현자 말투 · 시점 사본)"
+        )
+        if seg_only and not strict:
+            print(
+                f"    ⚠ 그중 {seg_only}종은 **화자가 같고 시점만 다르다** — 자체 번역에선 결함일 수"
+                " 있다. `--strict` 로 본다"
+            )
     if verbose:
         for j, var in sorted(same_spk, key=lambda x: -sum(len(v) for v in x[1].values()))[:20]:
             print(f"\n     JP {j[:52]}")
@@ -100,9 +124,14 @@ def scan(games=("ED1",), verbose=False):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="세그먼트(시점) 예외를 끈다 — 자체 번역 씬 검수용",
+    )
     ap.add_argument("--games", default="ED1")
     a = ap.parse_args()
-    return 1 if scan(tuple(a.games.split(",")), a.verbose) else 0
+    return 1 if scan(tuple(a.games.split(",")), a.verbose, a.strict) else 0
 
 
 if __name__ == "__main__":

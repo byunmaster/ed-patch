@@ -178,6 +178,26 @@ if __name__ == "__main__":
         print(__doc__)
 
 
+# ── 전각 로마자 — 게임 내장 글리프를 갈무리로 덮는다 (유저 확정 2026-08-24) ──────────
+# `ＳＡＶＥ`·`ＬＯＡＤ`·`ＥＰ`·`ＢＧＭ`·`ＯＮ`·`ＯＦＦ` 는 **문안을 안 바꾸고 원본 그대로**
+# 두는 자리다(영문 표기 전역 규칙). 그런데 게임 내장 로마자는 획이 성글어 한글 옆에서 튄다 —
+# 유저가 「갈무리가 가독성이 더 좋다」고 했다. **글자는 그대로 두고 그림만 바꾼다.**
+# ⚠ 슬롯을 새로 먹지 않는다 — 원래 그 코드가 쓰던 글리프 자리를 덮을 뿐이라 인코딩은 무관하다.
+# ⚠ 한자 블록이 아니라 **가나·기호 블록**이다(`font_map.kana_glyph_ed_offset`).
+LATIN_FULLWIDTH = [chr(0xFF21 + i) for i in range(26)]  # Ａ~Ｚ
+
+
+def latin_block(bdf=None):
+    """`{전각 로마자: 22바이트 글리프}` — 갈무리 전각 자형 그대로."""
+    bdf = bdf or galmuri11()
+    out = {}
+    for ch in LATIN_FULLWIDTH:
+        bits = bdf.bits(ch, dy=GALMURI11_DY)
+        assert bits.any(), f"Galmuri11 에 없는 전각 로마자 {ch!r}"
+        out[ch] = pack22(bits)
+    return out
+
+
 def font_block():
     """계획(`hangul_map.SYLLABLES`) 차례로 구운 폰트 블록 — **여기서만 만든다.**
 

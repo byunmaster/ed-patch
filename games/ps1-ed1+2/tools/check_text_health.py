@@ -27,7 +27,7 @@ import sys
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R
-import segment_copy as S
+import past_segment_copy as S
 from align_jp_kr import load_jp_scene
 from common import OUT_DIR, REVIEW_DIR
 

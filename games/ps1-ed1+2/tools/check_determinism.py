@@ -71,7 +71,7 @@ def main():
         return 0
     print(
         "\n❌ 실패 — 빌드가 비결정적 파생물을 읽고 있다.\n"
-        "   배정은 `align_map.json`(커밋)이 정본이어야 한다. `align_semantic` 은 제안 생성기다."
+        "   배정은 `align_map.json`(커밋)이 정본이어야 한다. `past_align_semantic` 은 제안 생성기다."
     )
     return 1
 

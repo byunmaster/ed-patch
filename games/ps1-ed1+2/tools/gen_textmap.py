@@ -16,7 +16,7 @@ import json
 import os
 
 from common import ROOT
-from derive_text import DOS_ED1, TEXTMAP_DIR, _guard, derive, jkey, transform
+from derive_text import TEXTMAP_DIR, _guard, derive, dos_dir, jkey, transform
 
 TOOLS = os.path.join(ROOT, "tools")
 
@@ -48,11 +48,11 @@ def load_table(fname, var):
 def corpus():
     files = list(CORPUS_FILES)
     for sub in ("MONDLL", "SINDLL"):
-        d = os.path.join(DOS_ED1, sub)
+        d = os.path.join(dos_dir(), sub)
         files += [os.path.join(sub, n) for n in sorted(os.listdir(d)) if n.upper().endswith(".DLL")]
     out = []
     for rel in files:
-        p = os.path.join(DOS_ED1, rel)
+        p = os.path.join(dos_dir(), rel)
         if os.path.exists(p):
             out.append((rel, open(p, "rb").read()))
     return out

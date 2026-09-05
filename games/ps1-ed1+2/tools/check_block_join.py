@@ -59,6 +59,10 @@ def _is_plate(raw):
     (`리젤`+`스엘`+`콜크스`, `그로스토스성`+`그로스토스성`). 이어 그려지는 자리가 아닌데
     경계 규칙에는 걸려서 붙음으로 뜬다 — ED2 전수에서 32곳이 이 부류였다(2026-08-17).
 
+    ⚠ **양쪽을 다 본다**(2026-08-20). 처음엔 앞 블록만 봤는데, **뒤 블록이 맵 헤더**인
+    자리를 놓쳤다 — 보물상자 문구(`…들어 있었다.`) 다음에 지명(`그로스토스성`)이 오는
+    꼴로 ED2 에서 다섯이 그랬다. 헤더는 앞 대사에 이어 그려지지 않으므로 경계가 아니다.
+
     ⚠ **조용히 빼지 않는다.** 아래에서 따로 세어 보고한다 — 규칙이 진짜 대사를 삼키기
     시작하면 그 수가 늘어나므로 눈에 띄어야 한다.
     """
@@ -76,10 +80,12 @@ def scan(scenes=None):
         if scenes and scn not in scenes:
             continue
         with redirect_stdout(io.StringIO()):
-            rows = {
-                eid: R.render_bytes(c, ctrl=True)
-                for _s, eid, _jp, c, _t in R.iter_candidates((scn,))
-            }
+            pairs = [
+                (eid, R.render_bytes(c, ctrl=True), R.render_bytes(jp.rstrip(b"\x00"), ctrl=True))
+                for _s, eid, jp, c, _t in R.iter_candidates((scn,))
+            ]
+        rows = {eid: k for eid, k, _j in pairs}
+        jps = {eid: j for eid, _k, j in pairs}
         for eid, raw in rows.items():
             # ⚠ **블록 안**의 선두 공백은 경계와 별개다. 이름창(`%c이름%c`) 뒤 개행에
             # 붙임 공백이 남으면 본문 첫 줄만 한 칸 들여쓰기돼 보인다 — 원문이 이름과
@@ -101,14 +107,30 @@ def scan(scenes=None):
                 continue
             if raw.endswith("%c"):  # 창을 닫았다 — 경계가 아니다
                 continue
+            # 🔴 **원본도 종단 `%c` 없이 끝나면 우리 결함이 아니다.** 원본과 같은 구조를
+            #    낸 것이고, 엔진이 거기서 무엇을 하든 원본에서도 똑같이 한다.
+            #    ⚠ 이 축이 없으면 `drop_extra_tail_mc`(원본에 없는 종단을 떼는 장치)가
+            #      고친 자리를 검출기가 「붙음」으로 오탐한다(실측 5곳, 2026-09-06).
+            #      예전엔 우리가 종단을 **더 내고 있어서** 이 자리가 안 보였다.
+            if not (jps.get(eid) or "").endswith("%c"):
+                continue
             tail = raw.split("\n")[-1]
             head = nxt.split("\n")[0]
+            # 🔴 **꽉 찬 줄(29열) 뒤는 경계가 아니다** — 엔진이 거기서 스스로 줄을 넘긴다.
+            #    그래서 뒷 블록은 다음 행에서 시작하고, 붙지도 넘치지도 않는다. 이 규칙은
+            #    `join_lines`/`_fills_frame` 가 이미 쓰던 것이고 **인게임으로 확인됐다**
+            #    (2026-08-30 유저 QA: 꽉 찬 줄 뒤에 커서가 2행에 있어 빈 줄이 났다).
+            #    ⚠ 이 줄이 없으면 `drop_frame_full_nl` 이 지운 군더더기 개행을 검출기가
+            #    「붙음」으로 오탐한다(실측 10곳).
+            if abs(_w(tail) - R.FRAME_SLOTS) < 1e-9:
+                continue
             # ⚠ 뒷 블록이 `%c` 로 시작하면 **이름창·색 전환이 새로 열린다** — 앞 줄에 안 붙는다.
             # (`…무사하겠지!!` + `%c류난%c` 는 화자가 바뀌는 자리지 문장이 이어지는 자리가 아니다.)
             if not head or head.startswith("%c"):
                 continue
             if head[0] not in (" ", NOBREAK_SP):
-                (plate if _is_plate(raw) else join).append((scn, eid, tail[-12:], head[:12]))
+                bucket = plate if (_is_plate(raw) or _is_plate(nxt)) else join
+                bucket.append((scn, eid, tail[-12:], head[:12]))
                 continue
             if _w(tail + head) > WRAP:
                 over.append((scn, eid, _w(tail + head), tail[-12:], head[:14]))

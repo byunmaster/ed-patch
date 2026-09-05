@@ -29,10 +29,13 @@ def test_period_before_hangul_gets_space():
 
 
 def test_dot_before_bang_is_dropped():
-    # ⚠ 느낌표는 **하나로 모인다**(유저 확정 2026-08-13) — JP 원문에 `!!` 가 0개라
-    # 정발이 더한 것을 물려받은 자리였다. 전투 코퍼스는 경로가 달라 `!!` 를 유지한다.
-    assert R.fix_spacing("뭐야.!!") == "뭐야!"
-    assert R.fix_spacing("안돼!! 열어줘!!") == "안돼! 열어줘!"
+    # ⚠ 느낌표는 **원문을 따른다**(유저 확정 2026-09-04) — 부호를 아예 안 건드린다.
+    # 🔴 08-13 의 「하나로」는 근거가 **측정 오류**였다: 「JP 에 `!!` 가 0개, `!` 가 4개뿐」의
+    #    그 4는 **전각 `！`** 의 수다. 반각으로 세면 `!` 1,264 · `!!` 556 이라 정반대다.
+    #    556곳에서 원문의 강세를 조용히 지우고 있었다(유저 QA: 고든 `持っていけ ドロボウ!!`).
+    assert R.fix_spacing("뭐야.!!") == "뭐야!!"  # 종결부호가 겹치면 앞 온점만 오타
+    assert R.fix_spacing("안돼!! 열어줘!!") == "안돼!! 열어줘!!"
+    assert R.fix_spacing("악!!!!") == "악!!!!"  # 상한도 두지 않는다 — 쓴 대로 나간다
 
 
 def test_ellipsis_is_not_split():
@@ -710,7 +713,7 @@ def test_tool_index_covers_all_tools():
     ⚠ 표에 없는 도구는 다음 사람에게 **고아로 보인다** — 실제로 두 번 그렇게 지웠다
     (2026-08-12 배정 시대 28개 · 08-18 탐색 19개). 둘 다 되살렸다. 지우면 그 도구가 만들던
     것의 **출처가 끊긴다** — `textmap/*.json` 은 `gen_textmap` 이, `ed1-scene-map.md` 는
-    `segment_copy --map` 이 만들었고 체크리스트는 지금도 `proposal.py` 를 인용한다.
+    `past_segment_copy --map` 이 만들었고 체크리스트는 지금도 `proposal.py` 를 인용한다.
     """
     import os
 
@@ -782,6 +785,632 @@ def test_own_table_reads_both_key_types():
 
     src = inspect.getsource(A.own_table)
     assert "pin.get(eid)" in src and "pin.get(str(eid))" in src, "키 한 종류만 본다"
+
+
+def test_tool_tables_match_shared_glossary():
+    """🔴 고유명사 정본(`shared/glossary`)과 도구 표가 어긋나면 안 된다.
+
+    **왜 공용에 두나.** 정발 문안을 옮기던 시절엔 저본이 표기를 대신 맞춰 줬다. 자체 번역으로
+    돌아서면(유저 확정 2026-08-18) 그 역할을 할 게 없어지고, 같은 세계관인 새턴·PCE 가 이
+    표를 그대로 물려받는다.
+
+    **왜 사본을 남기나.** 도구 표에는 **판정 근거 주석**이 붙어 있다(`치유의 로브` — 정발
+    「천민의 옷」은 卑しい 오독 · `사이레스` — ED1/ED2 표기 충돌에서 ED2 우선). 그 지식은
+    JSON 으로 옮기면 죽는다. 그래서 데이터는 공용, 근거는 도구에 두고 **여기서 묶는다** —
+    한쪽만 고치면 이 테스트가 운다(스킬 색인 ↔ 체크리스트와 같은 방식).
+    """
+    import json
+    import os
+    import sys
+
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(_TOOLS)))
+    sys.path.insert(0, os.path.join(repo, "shared"))
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import align_jp_kr
+    import glossary as G
+    import patch_items
+    import patch_sys_ui
+
+    pairs = {
+        "item": dict(patch_items.NAMES),
+        "monster": dict(patch_items.MONSTERS),
+        "person": dict(align_jp_kr.SPEAKER_DICT),
+        "place": dict(patch_sys_ui.PLACES),
+    }
+    # 🔴 **ED2 몬스터 표도 여기 묶는다**(2026-08-29). 118종을 `textmap/monsters_ed2.json` 이
+    # 따로 드는데 이 테스트가 안 보고 있었다 — 새턴 세션이 공용 정본을 고치자 셋이 갈렸고
+    # (`인크랍`·`팡크스`·`워무드`) **아무 게이트도 안 울었다.** 표가 하나 늘 때마다 여기
+    # 등재하지 않으면 그 표는 정본 밖으로 새어 나간다.
+    with open(os.path.join(os.path.dirname(_TOOLS), "textmap", "monsters_ed2.json")) as f:
+        ed2 = json.load(f)
+    pairs["monster"] = {**pairs["monster"], **ed2}
+    # ⚠ **정본은 상위집합이다**(2026-08-18). 내레이션에만 나오는 이름(이셀하사·론윌섬)은
+    #    어느 패치 표에도 없지만 표기는 하나여야 한다. 그래서 「같다」가 아니라
+    #    **「도구 표의 모든 항목이 정본과 일치한다」**를 본다 — 도구가 정본에 없는 표기를
+    #    쓰거나, 같은 JP 를 다르게 읽으면 실패다.
+    for cat, tool in pairs.items():
+        canon = G.table(cat)
+        missing = sorted(set(tool) - set(canon))
+        assert not missing, f"{cat}: 도구에만 있는 이름 {missing[:5]} — 정본에 등재한다"
+        diff = {jp: (kr, canon[jp]) for jp, kr in tool.items() if canon[jp] != kr}
+        assert not diff, f"{cat}: 도구와 정본의 표기가 다르다 {list(diff.items())[:3]}"
+
+
+def test_similarity_gate_covers_ed1_with_a_ratchet():
+    """🔴 유사도 게이트가 ED1 을 봐야 한다 — 축자만 보면 **낱말 하나 지우기**에 뚫린다.
+
+    실측(2026-08-18): 오프닝 9줄이 `세계가 있어, [거기에] 자연의 혜택을 듬뿍` 처럼 어절
+    하나만 지운 정발 문장이었는데 축자 게이트를 그냥 통과했다. 자체 번역으로 돌아서면서
+    ED1 정본이 우리 문장으로 채워지므로 이제 ED1 이 본무대다.
+
+    ⚠ 기준선(래칫)이 없으면 늘 빨간불이라 아무도 안 본다 — **늘면 실패, 줄이면 내린다.**
+    """
+    import inspect
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import check_forbidden as F
+
+    src = inspect.getsource(F.scan_similar)
+    assert "ED*SCN*.json" in src, "ED2 만 본다 — ED1 이 빠졌다"
+    assert "ED1_SIMILAR_BASELINE" in src, "래칫이 없다 (늘 빨간불이거나, 늘어도 안 운다)"
+    assert isinstance(F.ED1_SIMILAR_BASELINE, int)
+
+
+def test_align_file_is_optional_so_work_can_be_wiped():
+    """🔴 빌드는 `work/derived/align/*_SCN*.json` 없이도 돌아야 한다.
+
+    실측(2026-08-19): ED2 를 재삽입 체인에 올린 뒤로 **`rm -rf work/` 가 빌드를 깼다** —
+    `build.py` 는 `align_jp_kr.py --speakers-only` 만 돌려 화자맵만 만드는데, 배정 정본
+    (`align_map.json`)이 빈 씬은 그 파일을 열려다 `FileNotFoundError` 로 죽었다.
+    `check_determinism.py` 도 같은 이유로 못 돌았다 — **결정성 검사가 결정성 구멍에
+    막혀 있었다.**
+
+    더 나쁜 쪽은 그 파일이 **다시 만들면 내용이 달라지는 판단물**이라는 것이다(LaBSE
+    의미정렬 산출물). 빌드 입력으로 두는 한 「집 빌드 ≠ 회사 빌드」가 열려 있다 —
+    레포 제1 원칙. 지금은 화면 블록 문안이 전부 번역 정본(`script/`)에서 오므로
+    없는 채로 도는 것이 정상이고, 그래서 **없으면 빈 배정으로 진행**한다.
+
+    ⚠ 조용히 비는 게 아니다 — 정본이 안 덮은 씬이면 원문이 남고, 빌드의 화면 게이트
+    (`build.check_screen_gates`)가 「화면에 일본어가 남았다」로 실패시킨다.
+    """
+    import inspect
+
+    src = inspect.getsource(R.load_translations)
+    assert "os.path.exists(align_path)" in src, (
+        "정렬 파일을 무조건 연다 — `rm -rf work/` 가 다시 빌드를 깬다"
+    )
+    _, _, tail = src.partition("os.path.exists(align_path)")
+    assert "pairs = []" in tail, "파일이 없을 때의 폴백(빈 배정)이 없다"
+
+
+def test_untranslated_axis_sees_nameplate_blocks():
+    """정본에 **항목조차 없는** 대사 블록을 잡는 축 — 2026-08-19 ED2 검수가 찾은 사각.
+
+    `check_jp_leak.scan` 은 `iter_candidates` 를 도는데 그건 **번역표**를 돈다. 항목이
+    아예 없는 블록은 순회에 안 들어오므로, 원문이 그대로 화면에 나가는데도 초록이었다
+    (여덟 블록 실측 — 전부 포인터 표 접두라 눈으로도 안 띄었다).
+
+    ⚠ 판정을 넓히면 못 쓴다 — 지명 헤더·값 표까지 잡혀 560건이 된다(실측).
+    그래서 **이름창 + 개행**이거나 **가나 6자 + 종결 부호**만 대사로 센다.
+    """
+    import check_jp_leak as L
+
+    # 실제로 샜던 자리 — 이름창이 붙은 대사
+    assert L.is_dialogue("{c}男{c}{n}ここは もう 確保しました。{n}先を急いでください。{c}")
+    assert L.is_dialogue(
+        "{c}%s{c}{n}ふー 助かった · · ·{c}"
+    )  # 종결 부호가 없어도 이름창이면 잡는다
+    # 지명 헤더 — 잡히면 안 된다(전부 patch_sys_ui 관할이다)
+    assert not L.is_dialogue("。{n}グロストス城")
+    assert not L.is_dialogue("{n}ファエトの村")
+    assert not L.is_dialogue("エルアスタ")
+
+
+def test_untranslated_axis_skips_pointer_prefix():
+    """포인터 표 접두는 **꼬리만** 본다 — 앞쪽 바이트가 우연히 가나로 읽히면 오탐이 된다."""
+    import check_jp_leak as L
+
+    s = "\\x34\\x9C\\x17\\x80惧\\x17\\x80{c}男{c}{n}さあ早く 先に進んでください。{c}"
+    assert L._tail(s) == "{c}男{c}{n}さあ早く 先に進んでください。{c}"
+
+
+def test_onomatopoeia_table_separates_by_mora_and_sokuon():
+    """웃음소리는 **인물을 가르는 표지**다 — 원문 꼴이 다르면 우리 꼴도 달라야 한다.
+
+    2026-08-20 에 `フォッフォッフォ`(노인)를 「훠훠훠」로 통일하다가 실피의 `ホッホッホッ`
+    까지 같은 그물에 걸어 네 블록을 잘못 고쳤다. **원문이 다른 낱말인데 우리 문안이 같아서**
+    일괄 치환에 삼켜진 것이다. 표가 그 둘을 갈라 놓는지 지킨다.
+    """
+    import check_onomatopoeia as O
+
+    # 마디 수·촉음이 다르면 우리 꼴도 달라야 한다
+    assert O.CANON["ハハハ"] != O.CANON["ハッハッハ"] != O.CANON["ハッハッハッ"]
+    assert O.CANON["ハッハッハッハ"] != O.CANON["ハッハッハッ"]
+    assert O.CANON["ふっふっふ"] != O.CANON["ふっふっふっ"]
+    # 🔴 실피(여성) ↔ 노인 — 이걸 뭉갠 게 그날의 사고다
+    assert O.CANON["ホッホッホッ"] != O.CANON["フォッフォッフォ"]
+    # 긴 꼴이 짧은 꼴에 먹히면 안 된다
+    assert O.jp_tokens("ハッハッハッハ · ·") == ["ハッハッハッハ"]
+    assert O.jp_tokens("うわっはっはっはっはっ") == ["うわっはっはっはっはっ"]
+
+
+def test_pointer_table_axis_needs_empty_tail():
+    """포인터 표에 문안을 넣으면 **표가 지워진다** — 2026-08-20 `ED2SCN2:300` 실측.
+
+    판정 신호를 두 번 틀렸다. 두 실수를 그대로 테스트로 굳힌다:
+
+    1. 비율만 보면 **표 접두 + 대사 꼬리**(anchor_tail)까지 걸린다 — 66건이 그랬다.
+       그건 재삽입기가 꼬리만 다시 쓰므로 **정상**이다.
+    2. 표는 워드 경계에서 시작하지 않는다 — `ED2SCN2:300` 은 **offset 3** 에서 맞는다.
+    """
+    import check_pointer_tables as P
+
+    tbl = b"\x00\x00\x00" + b"".join((0x80175F2C + i * 4).to_bytes(4, "little") for i in range(20))
+    assert P.pointer_ratio(tbl) > 0.9, "정렬 0~3 을 다 봐야 한다(이 표는 offset 3)"
+    assert P.pointer_ratio(b"\x41" * 80) < 0.5, "평범한 바이트를 표로 보면 안 된다"
+
+    # 꼬리에 대사가 있으면 anchor_tail — 잡으면 안 된다
+    assert P.tail_text("\\x34\\x9C\\x17\\x80{c}男{c}{n}ここは もう 確保しました。")
+    assert not P.tail_text("\\x34\\x9C\\x17\\x80\\xF8\\x5F\\x17\\x80")
+
+
+def test_iso_layout_reads_records_across_sector_gaps():
+    """디렉터리 레코드는 **섹터를 넘지 않는다** — 길이 0 을 만나면 다음 섹터 머리로 건너뛴다.
+
+    그걸 빼먹으면 파일 목록이 중간에서 끊기고, 끊긴 뒤의 파일이 밀려도 **초록으로 뜬다.**
+    배치 검사기가 조용히 거짓말하는 가장 쉬운 길이라 여기서 막는다.
+    """
+    import check_iso_layout as L
+
+    def rec(name, lba, size):
+        nb = name.encode()
+        ln = 33 + len(nb) + ((33 + len(nb)) % 2)
+        b = bytearray(ln)
+        b[0] = ln
+        b[2:6] = lba.to_bytes(4, "little")
+        b[10:14] = size.to_bytes(4, "little")
+        b[32] = len(nb)
+        b[33 : 33 + len(nb)] = nb
+        return bytes(b)
+
+    first = rec("A.;1", 100, 2048)
+    data = bytearray(4096)
+    data[: len(first)] = first  # 앞 섹터엔 하나만 두고 나머지는 0(= 섹터 끝 표식)
+    second = rec("B.;1", 200, 2048)
+    data[2048 : 2048 + len(second)] = second
+
+    got = L.read_root.__wrapped__(data) if hasattr(L.read_root, "__wrapped__") else None
+    assert got is None  # read_root 는 파일을 읽으므로 파서만 따로 재현해 확인한다
+
+    out, i = [], 0
+    while i < len(data):
+        ln = data[i]
+        if ln == 0:
+            i = (i // 2048 + 1) * 2048
+            continue
+        r = data[i : i + ln]
+        out.append(r[33 : 33 + r[32]].decode())
+        i += ln
+    assert out == ["A.;1", "B.;1"], "섹터 경계를 못 넘으면 뒤 파일을 통째로 놓친다"
+
+
+def test_write_log_records_every_sector():
+    """되읽기 지문은 **섹터 단위**여야 한다 — 쓰기 단위로 잡으면 커버리지가 무너진다.
+
+    실측(2026-08-20): 쓰기 단위로 「뒤에 겹친 게 있으면 앞엣것은 검증 제외」로 잡았더니
+    커버리지가 **38%** 였고 하필 **대사 씬 열아홉이 전부** 그 밖이었다(패처가 같은 파일을
+    뒤에서 조금만 덧칠하기 때문). 섹터로 잡으면 마지막 쓴 사람이 자연히 이긴다.
+    """
+    import hashlib
+
+    import common as C
+
+    C.WRITE_SECTORS.clear()
+    C.WRITE_LOG.clear()
+    try:
+        data = bytes(range(256)) * 24  # 6144B = 3섹터
+        # 쓰기 없이 기록부만 확인한다 — `write_user_data` 의 기록 구간과 같은 계산
+        nsec = (len(data) + C.USER_SIZE - 1) // C.USER_SIZE
+        for i in range(nsec):
+            chunk = data[i * C.USER_SIZE : (i + 1) * C.USER_SIZE].ljust(C.USER_SIZE, b"\x00")
+            C.WRITE_SECTORS[100 + i] = [hashlib.sha1(chunk).hexdigest(), "테스트"]
+        assert nsec == 3
+        assert sorted(C.WRITE_SECTORS) == [100, 101, 102], "쓴 섹터를 하나도 빠뜨리면 안 된다"
+        # 뒤에 겹쳐 쓰면 그 섹터의 주인이 바뀐다(= 마지막 쓴 사람이 이긴다)
+        C.WRITE_SECTORS[101] = ["deadbeef", "나중"]
+        assert C.WRITE_SECTORS[101][1] == "나중"
+        assert C.WRITE_SECTORS[100][1] == "테스트", "안 겹친 섹터는 그대로 남아야 한다"
+    finally:
+        C.WRITE_SECTORS.clear()
+        C.WRITE_LOG.clear()
+
+
+def test_proper_noun_report_keeps_control_codes():
+    """보고에 찍는 문안은 **`ctrl=True`** 여야 한다 — 안 그러면 띄어쓰기 오류로 읽힌다.
+
+    실측(2026-08-20): 찾기용 `ctrl=False` 렌더는 `%c` 와 **그 자리의 공백을 같이 지운다**.
+    `'아트라스, 세리오스 공은'` 이 `'아트라스,세리오스공은'` 으로 보여 오타로 오판했다.
+    문안은 멀쩡했다. 찾기는 `%c` 를 넘어야 하니 `ctrl=False` 가 맞고, **보여주기만**
+    `ctrl=True` 로 갈라야 한다.
+    """
+    import inspect
+
+    import check_proper_nouns as C
+
+    src = inspect.getsource(C.scan)
+    assert "render_bytes(cand, ctrl=False)" in src, "찾기는 %c 를 넘어야 한다"
+    assert "render_bytes(cand, ctrl=True)" in src, "보여주기는 %c 를 남겨야 한다"
+    assert "hits.append((eid, name, ours, kind, shown))" in src, (
+        "보고에 찾기용 평문(kr)을 찍으면 %c 자리가 띄어쓰기 오류로 읽힌다"
+    )
+
+
+def test_untranslated_axis_does_not_filter_by_tail():
+    """🔴 **「꼬리가 같은 번역본이 있으면 제외」를 되살리면 안 된다**(2026-08-20 실측).
+
+    한 번 그렇게 걸렀다 — 재삽입기가 대표 사본으로 참조를 돌리니 사본은 안 샐 거라고 본
+    것이다. **틀렸다.** 그 필터가 여덟을 숨겼고, 최종 이미지를 열어 보니 원문 그대로였다
+    (`ED1SCN4:735` 는 `宝혭を낙けました` 로 깨져 나가고 있었다). 별칭이 도는지는 꼬리가
+    같다고 알 수 없다.
+    """
+    import inspect
+
+    import check_jp_leak as L
+
+    src = inspect.getsource(L.untranslated)
+    assert "done = " not in src, "꼬리 기준 제외를 되살리면 안 된다 — 여덟을 숨겼다"
+    assert "if t in done" not in src
+
+
+def test_line_dict_key_is_platform_neutral():
+    """사전 키는 **덤퍼 표기를 타면 안 된다** — 이 사전이 타이틀을 넘어가는 유일한 창구다.
+
+    실측(2026-08-20): PS1 은 `{c}…{c}{n}`, 새턴은 `%c…%c\n` 로 같은 원문을 다르게 적는다.
+    키가 그걸 타고 있어 새턴 적중이 **1.3%** 였다(중립화 뒤 76%).
+    """
+    from export_line_dict import key
+
+    ps1 = "{c}ライアス{c}{n}王子、ちゃんと いすに 座って{n}待っていて くだされ。"
+    sat = "%cライアス%c\n王子、ちゃんと いすに 座って\n待っていて くだされ。"
+    assert key(ps1) == key(sat), "마크업 표기가 다르면 같은 원문도 다른 키가 된다"
+    assert key("あ･あ") == key("あ・あ"), "가운뎃점 세 꼴을 통일해야 한다"
+    assert key("よし\x21\x21") == key("よし!!"), "이식판은 `!!` 를 문자로 쓰기도 한다"
+    assert key("スライム") != key("ドラゴン"), "다른 원문이 같은 키가 되면 안 된다"
+
+
+def test_resolve_handles_port_only_shapes():
+    """이식판에만 있는 꼴은 **규칙으로** 푼다 — 사전에 다 박으면 14,000 항목이 는다."""
+    from export_line_dict import key, resolve
+
+    lines = {key("スライム"): {"t": "슬라임"}, key("ドラゴン"): {"t": "드래곤"}}
+    assert resolve("スライムＡ", lines) == "슬라임Ａ", "개체 구분자는 떼고 찾는다"
+    assert resolve("スライムとドラゴンが現れた。", lines) == "슬라임과 드래곤이 나타났다."
+    assert resolve("ドラゴンとスライムが現れた。", lines) == "드래곤과 슬라임이 나타났다."
+    # ⚠ 조사는 **앞말 받침**으로 고른다 — 처음엔 「와」로 박아 두어 「슬라임와」가 나왔다
+    assert resolve("まったく知らない敵", lines) is None, "모르면 None 이어야 한다"
+
+
+# ── 오프닝 폰트 행 사전 코덱 + 디코더 스텁 (2026-08-21) ──────────────────────
+def _mips_run(words, base, mem, maxsteps=4_000_000):
+    """스텁을 **정말 실행한다** — 손인코딩 기계어의 유일한 정적 검증.
+
+    ⚠ `verify_asm`(디스어셈)은 「명령으로 디코드되는가 · 지연 슬롯에 분기가 없는가」만 본다.
+    분기 오프셋이 한 칸 어긋나도, 로드 지연을 어겨도 **통과한다** — 둘 다 2026-08-21 에
+    실제로 냈다(분기 셋이 전부 +1 어긋나 있었다). 그래서 여기서 돌려 본다.
+    MIPS I 로드 지연도 흉내 낸다(로드 결과는 **다음 명령이 끝난 뒤** 반영).
+    """
+    r = [0] * 32
+    pc, pend, steps = base, None, 0
+    while steps < maxsteps:
+        steps += 1
+        w = words[(pc - base) // 4]
+        op, rs, rt = w >> 26, (w >> 21) & 31, (w >> 16) & 31
+        rd, sa, fn, imm = (w >> 11) & 31, (w >> 6) & 31, w & 63, w & 0xFFFF
+        simm = imm - 0x10000 if imm & 0x8000 else imm
+        nxt, land = pc + 4, None
+        if op == 0 and fn == 8:  # jr
+            return r, mem
+        elif op == 0 and fn == 0:  # sll
+            r[rd] = (r[rt] << sa) & 0xFFFFFFFF
+        elif op == 0 and fn == 2:  # srl
+            r[rd] = (r[rt] & 0xFFFFFFFF) >> sa
+        elif op == 0 and fn == 0x21:  # addu
+            r[rd] = (r[rs] + r[rt]) & 0xFFFFFFFF
+        elif op == 0 and fn == 0x23:  # subu
+            r[rd] = (r[rs] - r[rt]) & 0xFFFFFFFF
+        elif op == 0x09:  # addiu
+            r[rt] = (r[rs] + simm) & 0xFFFFFFFF
+        elif op == 0x0C:  # andi
+            r[rt] = r[rs] & imm
+        elif op == 0x0D:  # ori
+            r[rt] = r[rs] | imm
+        elif op == 0x0F:  # lui
+            r[rt] = (imm << 16) & 0xFFFFFFFF
+        elif op == 0x24:  # lbu — 지연 로드
+            land = (rt, mem[(r[rs] + simm) & 0xFFFFFFFF])
+        elif op == 0x25:  # lhu
+            a = (r[rs] + simm) & 0xFFFFFFFF
+            assert a % 2 == 0, f"홀수 주소 lhu @0x{a:08X} — 실기는 주소 예외로 죽는다"
+            land = (rt, mem[a] | (mem[a + 1] << 8))
+        elif op == 0x29:  # sh
+            a = (r[rs] + simm) & 0xFFFFFFFF
+            assert a % 2 == 0, f"홀수 주소 sh @0x{a:08X}"
+            mem[a], mem[a + 1] = r[rt] & 0xFF, (r[rt] >> 8) & 0xFF
+        elif op in (0x04, 0x05):  # beq / bne
+            take = (r[rs] == r[rt]) if op == 0x04 else (r[rs] != r[rt])
+            if take:
+                nxt = pc + 4 + simm * 4
+            # 지연 슬롯을 먼저 실행한다 — 재귀 대신 한 칸 미룬다
+            dl = words[(pc + 4 - base) // 4]
+            assert dl >> 26 not in (0x04, 0x05) and dl != 0x01000008, "지연 슬롯에 분기"
+            # ⚠ 지연 슬롯을 **먼저** 실행하고 나서 착지한다. 분기 자체는 로드가 아니므로
+            #   앞선 로드의 지연은 여기서 반영된다(분기 조건은 **옛 값**으로 판정 — MIPS I).
+            if pend:
+                r[pend[0]] = pend[1]
+                pend = None
+            _mips_step_simple(words, base, mem, r, pc + 4)
+            pc = nxt if take else pc + 8
+            continue
+        else:
+            raise AssertionError(f"모르는 명령 0x{w:08X} @0x{pc:08X}")
+        if pend:
+            r[pend[0]] = pend[1]
+        pend = land
+        r[0] = 0
+        pc = nxt
+    raise AssertionError("스텁이 안 끝난다 — 무한 루프")
+
+
+def _mips_step_simple(words, base, mem, r, pc):
+    """지연 슬롯 한 칸(분기·로드가 아닌 명령만)."""
+    w = words[(pc - base) // 4]
+    op, rs, rt = w >> 26, (w >> 21) & 31, (w >> 16) & 31
+    rd, sa, fn, imm = (w >> 11) & 31, (w >> 6) & 31, w & 63, w & 0xFFFF
+    simm = imm - 0x10000 if imm & 0x8000 else imm
+    if w == 0:
+        return
+    if op == 0 and fn == 2:
+        r[rd] = (r[rt] & 0xFFFFFFFF) >> sa
+    elif op == 0x09:
+        r[rt] = (r[rs] + simm) & 0xFFFFFFFF
+    else:
+        raise AssertionError(f"지연 슬롯에 모르는 명령 0x{w:08X}")
+    r[0] = 0
+
+
+def test_opening_dict_codec_roundtrips():
+    """행 사전 압축 ↔ 파이썬 기준 디코더."""
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import patch_opening_font as PF
+
+    chars = sorted(set("영웅전설세리오스많읽꽃뷁 ABC.,!?"))
+    gl = [PF.gen_glyphs(chars)[c] for c in chars]
+    blob, nd = PF.compress_font_dict(gl)
+    assert PF.decode_font_dict(blob, nd, len(gl)) == [g[: PF.GLYPH] for g in gl]
+
+
+def test_opening_decoder_stub_actually_decodes():
+    """🔴 **스텁을 실행해** 파이썬 기준과 바이트로 맞댄다.
+
+    ⚠ 이게 없으면 「빌드도 되고 디스어셈도 깨끗한데 화면만 검은」 사고가 그대로 나간다.
+    실제로 2026-08-21 첫 판은 분기 오프셋 셋이 **전부 한 칸씩** 어긋나 있었고
+    `verify_asm` 은 셋 다 통과시켰다.
+    """
+    import collections
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import patch_opening_font as PF
+
+    chars = sorted(set("영웅전설세리오스많읽꽃뷁 ABC.,!?가나다"))
+    gl = [PF.gen_glyphs(chars)[c] for c in chars]
+    blob, nd = PF.compress_font_dict(gl)
+
+    SRC, DST, PC0 = 0x80025500, 0x80080000, 0x80021D50
+    mem = collections.defaultdict(int)
+    for i, b in enumerate(blob):
+        mem[SRC + i] = b
+    words = PF.build_decoder_stub(DST, SRC, nd * 2 + (nd * 2 & 1), len(gl), PC0)
+    PF.verify_asm(words, 0x80025400)
+    _mips_run(words, 0x80025400, mem)
+
+    want = PF.decode_font_dict(blob, nd, len(gl))
+    got = bytes(mem[DST + i] for i in range(len(gl) * PF.GLYPH))
+    assert got == b"".join(want), "스텁 출력이 기준 디코더와 다르다"
+
+
+def test_josa_shift_leaves_no_stale_tail():
+    """조사 병기를 줄인 **뒤 꼬리에 옛 바이트가 남으면 안 된다** (유저 QA 2026-08-24).
+
+    `을(를)` → `을` 은 4B 좌시프트라 널이 4B 앞으로 온다. 그런데 옛 꼬리 4B 를 안 지우면
+    거기 `d7 2e 0a 00`(`다.` 의 하위 바이트 + 온점 + 개행)이 남고, **pre-shift 길이로 그리는
+    경로**(전투 메시지)가 그걸 글리프로 뿌린다 — `사용했다.` 옆 깨진 글자. `d7 2e` 는
+    완성형 밖이라 무슨 글자가 나올지도 모른다.
+
+    ⚠ asm 쪽 대응은 `lbu` 의 **로드 지연 슬롯 nop 을 `sb zero,4(t3)` 로 바꾼 것**이다 —
+    루틴이 504B 이고 VAB 파형까지 여유가 4B 라 명령을 못 늘린다. 그래서 이 테스트는
+    **크기가 안 늘었는지도 함께** 본다(늘면 파형을 침범해 효과음이 조용히 깨진다).
+    """
+    import hangul_map as H
+    import patch_josa_hook as J
+
+    def enc(t):
+        out = bytearray()
+        for ch in t:
+            if ch == " ":
+                out.append(0x20)
+            elif ch == "\n":
+                out.append(0x0A)
+            elif ch.isascii():
+                out.append(ord(ch))
+            else:
+                out += H.syllable_sjis(ch).to_bytes(2, "big")
+        return bytes(out)
+
+    tbl = J.build_bit_table()
+    for line in ("잎을(를) 사용했다.\n", "류난은(는) 동료가 되었습니다.\n"):
+        buf = bytearray(enc(line) + b"\x00" + enc("이전메시지"))
+        buf = buf[:66].ljust(66, b"\x00")
+        assert J.fix_buffer(buf, tbl, cross=None, limit=64) == 1, line
+        z = bytes(buf).find(b"\x00")
+        assert bytes(buf[z + 1 : z + 5]) == b"\x00" * 4, (
+            f"시프트 꼬리에 찌꺼기: {bytes(buf[z + 1 : z + 5]).hex(' ')} — {line!r}"
+        )
+
+    n = len(J.assemble_routine(0x80100000, 0x80101000, 0x80101100))
+    assert n <= 504, f"josa 루틴이 {n}B 로 늘었다 — VAB 파형 여유가 4B 뿐이다"
+
+
+# ── 온점 매달기 훅 — 조립된 바이트를 실제로 돌려 판정표와 대조한다 ──────────────
+# ⚠ 파이썬 모델만 맞고 **인코딩이 틀리면 통과해버리는** 구멍을 막는다(조사 훅과 같은 이유).
+def _run_prewrap_stub(col, ch, nxt):
+    """스텁을 실행해 「끊는다(1) / 안 끊는다(0)」를 돌려준다."""
+    import struct
+
+    import patch_hang_punct as H
+    from patch_josa_hook import REG
+
+    BASE, RESUME, STR = 0x80100000, 0x800ACF08, 0x1000
+    code = H.stub_prewrap(BASE, RESUME)
+    mem = {STR: ch, STR + 1: nxt, STR + 2: nxt}
+    r = [0] * 32
+    r[REG["s1"]], r[REG["s0"]], r[REG["s3"]] = col, 0, STR
+    r[REG["s6"]] = H.COL_LIMIT  # 실행파일에 새로 박는 한계값(30)
+    pc, pending, steps = BASE, None, 0
+    while pc != RESUME:
+        steps += 1
+        assert steps < 500, "무한 루프"
+        w = struct.unpack_from("<I", code, pc - BASE)[0]
+        op, rs, rt, rd, sh, fn = (
+            w >> 26,
+            (w >> 21) & 31,
+            (w >> 16) & 31,
+            (w >> 11) & 31,
+            (w >> 6) & 31,
+            w & 63,
+        )
+        imm = w & 0xFFFF
+        simm = imm - 0x10000 if imm >= 0x8000 else imm
+        nxt_pc, target = pc + 4, None
+        if op == 0:
+            if fn == 0x00:
+                r[rd] = (r[rt] << sh) & 0xFFFFFFFF
+            elif fn == 0x03:
+                v = r[rt] & 0xFFFFFFFF
+                r[rd] = ((v - (1 << 32)) if v >> 31 else v) >> sh & 0xFFFFFFFF
+            elif fn == 0x21:
+                r[rd] = (r[rs] + r[rt]) & 0xFFFFFFFF
+            elif fn == 0x23:
+                r[rd] = (r[rs] - r[rt]) & 0xFFFFFFFF
+            elif fn == 0x25:
+                r[rd] = r[rs] | r[rt]
+            elif fn == 0x06:  # srlv
+                r[rd] = (r[rt] & 0xFFFFFFFF) >> (r[rs] & 31)
+            elif fn == 0x2A:  # slt
+                a = r[rs] - (1 << 32) if r[rs] >> 31 else r[rs]
+                b = r[rt] - (1 << 32) if r[rt] >> 31 else r[rt]
+                r[rd] = int(a < b)
+            else:
+                raise AssertionError(f"미구현 SPECIAL 0x{fn:02X}")
+        elif op == 0x02:
+            target = (w & 0x03FFFFFF) << 2 | 0x80000000
+        elif op == 0x04:
+            target = pc + 4 + simm * 4 if r[rs] == r[rt] else None
+        elif op == 0x05:
+            target = pc + 4 + simm * 4 if r[rs] != r[rt] else None
+        elif op == 0x09:
+            r[rt] = (r[rs] + simm) & 0xFFFFFFFF
+        elif op == 0x0A:
+            a = r[rs] - (1 << 32) if r[rs] >> 31 else r[rs]
+            r[rt] = int(a < simm)
+        elif op == 0x0B:
+            r[rt] = int((r[rs] & 0xFFFFFFFF) < (simm & 0xFFFFFFFF))
+        elif op == 0x0C:
+            r[rt] = r[rs] & imm
+        elif op == 0x0D:  # ori
+            r[rt] = r[rs] | imm
+        elif op == 0x0F:  # lui
+            r[rt] = (imm << 16) & 0xFFFFFFFF
+        elif op == 0x24:
+            r[rt] = mem.get((r[rs] + simm) & 0xFFFFFFFF, 0)
+        else:
+            raise AssertionError(f"미구현 op 0x{op:02X}")
+        r[0] = 0
+        if pending is not None:
+            nxt_pc, pending = pending, None
+        elif target is not None:
+            pending = target
+        pc = nxt_pc
+    return r[REG["v0"]]
+
+
+def test_hang_slots_matches_the_engine_hook():
+    """조판기가 주는 여유와 **훅이 지키는 한계가 같아야** 한다.
+
+    🔴 어긋나면 조용히 나빠진다 — 조판기가 내보낸 줄을 엔진이 또 꺾어 부호가 다음 줄로
+    간다(2026-07-19 실측이 그 상태였다). 값이 두 파일에 있으므로 여기서 묶는다."""
+    import patch_hang_punct as H
+    import reinsert_kr_pilot as R
+
+    assert R.HANG_SLOTS == 0.5 * (1 + H.OVER), (
+        f"조판기 여유 {R.HANG_SLOTS} 슬롯 vs 훅 한계 {H.FRAME + H.OVER}열 — 어긋났다"
+    )
+    assert R.HANG_TAIL == H.HANG_TAIL, "꼬리 부호 집합이 갈렸다"
+
+
+def test_hang_punct_stub_decision_table():
+    """틀(29열)의 **마지막 한 칸을 반각에도 연다**. 부호가 30열(틀 밖)로 밀리면 미리 끊는다.
+
+    🔴 셋이 한 몸이다 — 이 훅 + 드로어 훅 + `reinsert_kr_pilot._hang_merge`.
+    하나만 켜면 엔진이 부호만 다음 줄로 꺾어 **지금보다 나빠진다**(2026-07-19 실측).
+    """
+    FW, HW, DOT = 0x82, 0x41, 0x2E  # 전각 리드바이트 · 반각 'A' · 온점
+    cases = [
+        (1, FW, FW, 0, "줄 앞 — 끊을 이유가 없다"),
+        (27, FW, DOT, 0, "전각이 28열에서 끝난다 — 온점은 29열에 매달린다"),
+        (28, FW, FW, 0, "전각이 29열에서 끝난다 — 다음 글자는 뒤에서 끊긴다"),
+        (28, FW, DOT, 1, "🔴 온점이 30열(틀 밖)로 밀린다 — 금칙: 한 글자 앞에서 끊는다"),
+        (29, FW, FW, 1, "전각은 29열에서 시작 못 한다 — 30열까지 먹는다"),
+        (29, HW, FW, 0, "⭐ 반각은 29열에 앉는다 — 이게 매달기다"),
+        (29, DOT, 0, 0, "⭐ 꼬리 온점이 29열에 앉는다"),
+        (29, DOT, DOT, 1, "온점 둘 — 뒤엣것이 30열로 밀린다"),
+        (30, HW, FW, 1, "30열은 틀 밖이다 — 아무것도 안 앉는다"),
+    ]
+    for col, ch, nxt, want, why in cases:
+        got = _run_prewrap_stub(col, ch, nxt)
+        assert got == want, f"열 {col} 0x{ch:02X}→0x{nxt:02X}: {got} != {want} — {why}"
+
+
+def test_frame_full_line_drops_our_newline():
+    """틀을 꽉 채운 줄 뒤에는 **우리 개행을 안 넣는다** — 넣으면 화면에 빈 줄이 생긴다.
+
+    🔴 온점 매달기의 회귀다(유저 QA 2026-08-30 `게일` 창). 매달기 전엔 줄이 최대
+    `WRAP`(=28열)이라 29열이 늘 비었는데, 꼬리 부호를 29열에 앉히면서 줄이 틀을 꽉 채우게
+    됐다. 꽉 찬 줄에서는 **엔진이 스스로 줄을 넘기므로** 우리 개행이 얹히면 두 번 넘어간다.
+    정적 실측 122곳이었고 전부 매달린 꼬리로 끝났다.
+    """
+    full = "그런 놈들한테 맡길 순 없잖아."  # 14.5슬롯 = 29열
+    assert abs(sum(R.cell_w(c) for c in full) - R.FRAME_SLOTS) < 1e-9, "예시가 틀을 안 채운다"
+    assert R._fills_frame(full)
+    assert R.join_lines([full, "우리가 모셔다 드리지."]) == full + "우리가 모셔다 드리지."
+
+    # ⚠ 안 찬 줄은 그대로 개행으로 잇는다
+    short = "짧은 줄."
+    assert not R._fills_frame(short)
+    assert R.join_lines([short, "다음 줄."]) == short + "\n다음 줄."
+
+    # ⚠ 폭만 보지 않는다 — 꼬리가 매달린 반각 부호일 때만이다(센티널 오판 방지)
+    assert not R._fills_frame("가" * 14 + "나"[:0] + "가")  # 전각만으로는 14.5가 안 된다
 
 
 if __name__ == "__main__":
