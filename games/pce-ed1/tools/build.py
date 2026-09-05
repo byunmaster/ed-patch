@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+import battle
 import common
 import containers
 import font
@@ -201,7 +202,7 @@ def _build(edits_path, iso: Path, cue: Path):
     if "ed1.iso" not in cue.read_text():
         raise BuildError("cue 의 FILE 이름을 못 바꿨다")
     # 글리프 표 = 번역 정본 전체 + PoC 편집의 음절(결정적). 표를 따로 두지 않는다(폰트 전략 §3.2)
-    chars = translate.all_glyph_chars() | sysbuild.all_glyph_chars()
+    chars = translate.all_glyph_chars() | sysbuild.all_glyph_chars() | battle.glyph_chars()
     raw = json.loads(edits_path.read_text()) if edits_path else []
     chars |= {ch for e in raw for ch in e.get("replace_text", "") if font.needs_glyph(ch)}
     table, glyph_bank = font.build_table(chars)
@@ -215,6 +216,7 @@ def _build(edits_path, iso: Path, cue: Path):
     with open(iso, "r+b") as f:
         apply_code_patches(f, glyph_bank, table, touched)
         print("  시스템 문구:", sysbuild.apply(f, table, touched))
+        print("  전투 데이터:", battle.apply(f, table, touched))
         translated_ids = {int(p.stem[3:]) for p in translate.M.SCRIPT_DIR.glob("scn*.json")}
         n_msgs = 0
         for rel, c in sorted(by_rel.items()):
@@ -251,6 +253,7 @@ def _build(edits_path, iso: Path, cue: Path):
     print(f"  번역 메시지 {n_msgs}건(컨테이너마다 다시 셈) · 글리프 {len(chars)}자")
     verify_immutable(iso, touched)
     verify_readback(iso, intended, found)
+    print(f"  전투 컨테이너 되읽기 OK (블록 {battle.verify(iso, table)})")
     bad = mode1.selftest(
         iso,
         lbas=(
