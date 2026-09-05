@@ -66,6 +66,7 @@ OP = {
     # 🔴 글자가 띠를 꽉 채우면 **흰 테의 위아래가 잘린다**(유저 지적 2026-09-05) ⇒
     #    글자를 이만큼 눌러 넣고 위아래로 여백을 남긴다. 옆은 원래 여유가 있다.
     "pad": 3,
+    "margin": 4,
     "sub_rows": 16,
     "sub_ink": 12,
     "sub_bottom": 117,
@@ -358,6 +359,10 @@ def subtitle(
     out[~al] = 0
     ys, xs = np.nonzero(al.any(axis=1))[0], np.nonzero(al.any(axis=0))[0]
     out = out[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
+    # ⚠ 맨 윗줄에 **외딴 후광**이 남는다 — 「하」「영」「들」 꼭대기가 1px 솟아 혹처럼 보인다
+    #    (유저 지적 2026-09-05, 8px). 글줄 전체에 비해 성긴 윗줄은 걷는다.
+    while out.shape[0] > 2 and (out[0, :, 3] > 0).sum() < 12:
+        out = out[1:]
     out[..., :3] = _soften_edge(out[..., :3].astype(np.float32), out[..., 3] > 0, 1.0)
     return Image.fromarray(out, "RGBA")
 
@@ -451,6 +456,17 @@ def op_rim_from_upscale(body):
     blank = [y for y in range(rows.min(), rows.max() + 1) if not up[y].any()]
     cuts = [y for i, y in enumerate(blank) if i == 0 or y - blank[i - 1] > 1]
     band = ndimage.binary_fill_holes(up[cuts[0] : cuts[1]])
+    # 🔴 실루엣(테 포함)을 **내 몸통 상자에 맞춰** 늘이면 테가 상자 밖으로 못 나가
+    #    글자마다 네 변이 반듯하게 잘린다(유저 지적 2026-09-05). ⇒ **그쪽 몸통**(남색 윤곽을
+    #    메운 것)의 상자를 내 몸통 상자에 맞추고, 실루엣은 같은 배율로 따라오게 한다 —
+    #    테는 저절로 상자 밖으로 삐져나온다.
+    rgb = np.asarray(Image.open(RIM_SRC).convert("RGB")).astype(int)[cuts[0] : cuts[1]]
+    navy = (
+        (rgb.max(axis=2) > 15)
+        & (rgb[..., 2] >= rgb[..., 0] + 12)
+        & (rgb[..., 2] >= rgb[..., 1] + 12)
+    )
+    body_u = ndimage.binary_fill_holes(navy) & band
     xs = np.nonzero(band.any(axis=0))[0]
     X0, X1 = xs.min(), xs.max() + 1
     sil = np.zeros(body.shape, bool)
@@ -463,18 +479,27 @@ def op_rim_from_upscale(body):
                 lo = int(u - 60)
                 u = lo + int(np.argmin(band[:, lo : int(u) + 60].sum(axis=0)))
                 u0, u1 = (u, u1) if j == 0 else (u0, u)
-        one = band[:, int(u0) : int(u1)]
-        cy = np.nonzero(one.any(axis=1))[0]
-        cx = np.nonzero(one.any(axis=0))[0]
+        one, bu = band[:, int(u0) : int(u1)], body_u[:, int(u0) : int(u1)]
+        cy, cx = np.nonzero(one.any(axis=1))[0], np.nonzero(one.any(axis=0))[0]
+        by, bx = np.nonzero(bu.any(axis=1))[0], np.nonzero(bu.any(axis=0))[0]
+        if not len(by):
+            continue
         one = one[cy.min() : cy.max() + 1, cx.min() : cx.max() + 1]
         my = np.nonzero(body[:, a:b].any(axis=1))[0]
-        h = my.max() - my.min() + 1
-        r = np.asarray(
-            Image.fromarray((one * 255).astype(np.uint8)).resize((b - a, h), Image.LANCZOS)
+        sx = (b - a) / (bx.max() - bx.min() + 1)
+        sy = (my.max() - my.min() + 1) / (by.max() - by.min() + 1)
+        w, h = max(1, round(one.shape[1] * sx)), max(1, round(one.shape[0] * sy))
+        r = (
+            np.asarray(Image.fromarray((one * 255).astype(np.uint8)).resize((w, h), Image.LANCZOS))
+            >= 128
         )
-        sil[my.min() : my.min() + h, a:b] |= r >= 128
-    # ⚠ 빌린 실루엣이 몸통에 바싹 붙는 자리가 있다(위아래 16열이 1px) ⇒ 테를 **두 겹은**
-    #    보장한다. 안 그러면 눌러 넣어 여백을 남겨도 그 자리는 여전히 잘린 듯 보인다.
+        ox = a - round((bx.min() - cx.min()) * sx)  # 그쪽 몸통 왼끝 → 내 몸통 왼끝
+        oy = my.min() - round((by.min() - cy.min()) * sy)
+        ys0, xs0 = max(0, -oy), max(0, -ox)
+        ys1, xs1 = min(h, sil.shape[0] - oy), min(w, sil.shape[1] - ox)
+        if ys1 > ys0 and xs1 > xs0:
+            sil[oy + ys0 : oy + ys1, ox + xs0 : ox + xs1] |= r[ys0:ys1, xs0:xs1]
+    # ⚠ 그래도 테가 몸통에 바싹 붙는 자리가 있다 ⇒ 두 겹은 보장한다.
     return sil | ndimage.binary_dilation(body, _disk(2))
 
 
@@ -511,16 +536,18 @@ def make_logo_op():
     b = Image.fromarray(np.dstack([col, (a2 * 255).astype(np.uint8)]), "RGBA").resize(
         (OP["big_w"], OP["big_h"] - 2 * OP["pad"]), Image.LANCZOS
     )
-    arr = np.asarray(b).astype(np.float32)
+    P = OP["margin"]  # 테가 몸통 상자 밖으로 나갈 여백 — 좌우는 캔버스의 (400-392)/2 = 4 가 상한
+    arr = np.pad(np.asarray(b).astype(np.float32), ((P, P), (P, P), (0, 0)))
     m = arr[..., 3] >= 128
     # 흰 테 실루엣은 업스케일본에서 빌린다 — 색·질감은 위에서 만든 것 그대로 쓴다
-    body = (
+    body = np.pad(
         np.asarray(
             Image.fromarray((a * 255).astype(np.uint8)).resize(
                 (OP["big_w"], OP["big_h"] - 2 * OP["pad"]), Image.LANCZOS
             )
         )
-        >= 128
+        >= 128,
+        P,
     )
     sil = op_rim_from_upscale(body)
     if sil is not None:
@@ -531,20 +558,25 @@ def make_logo_op():
     arr = np.clip(arr, 0, 255).astype(np.uint8)
     arr[~m] = 0
     arr[..., 3] = m * 255
-    rr = _runs(arr[..., 3] > 0)
+    # 🔴 자간은 **몸통** 기준이다 — 테까지 재면 테가 두꺼워질수록 글자가 벌어진다.
+    #    테는 옆 글자 쪽으로 P 만큼 삐져나가고, 겹치면 서로 얹힌다(원본도 그렇다).
+    rr = [(s_, e_) for s_, e_ in _runs(body) if e_ - s_ > 10]
     widths = [e - s for s, e in rr]
     gap = max(1, round((OP["big_w"] - sum(widths)) / (len(rr) - 1)))
     big_w = sum(widths) + gap * (len(rr) - 1)
-    laid = np.zeros((OP["big_h"] - 2 * OP["pad"], big_w, 4), np.uint8)
-    x = 0
-    for s, e in rr:
-        laid[:, x : x + (e - s)] = arr[:, s:e]
-        x += (e - s) + gap
+    laid = np.zeros((arr.shape[0], big_w + 2 * P, 4), np.uint8)
+    x = P
+    for s_, e_ in rr:
+        crop = arr[:, s_ - P : e_ + P]
+        dst = laid[:, x - P : x - P + crop.shape[1]]
+        sel = crop[..., 3] > 0
+        dst[sel] = crop[sel]
+        x += (e_ - s_) + gap
     sub = subtitle(rows=OP["sub_rows"], ink_rows=OP["sub_ink"], width=OP["w"] - 8)
     plate = np.asarray(op_plate())
     cv = Image.new("RGBA", (OP["w"], OP["h"]), (0, 0, 0, 0))
     cv.alpha_composite(
-        Image.fromarray(laid, "RGBA"), ((OP["w"] - big_w) // 2, OP["top"] + OP["pad"])
+        Image.fromarray(laid, "RGBA"), ((OP["w"] - big_w) // 2 - P, OP["top"] + OP["pad"] - P)
     )
     cv.alpha_composite(sub, ((OP["w"] - sub.width) // 2, OP["sub_bottom"] - sub.height))
     a2 = np.asarray(cv).copy()
