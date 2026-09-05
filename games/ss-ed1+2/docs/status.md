@@ -938,6 +938,16 @@ PS1 에 있는 것을 없다고 했고(402), 고정폭 UI 표를 「남의 자�
 확인 문구의 마침표(`저장합니다.`/`저장합니다`).
 ⚠ **한쪽으로 맞추면 다른 판이 갈린다** — 고칠 때 어느 쪽을 정본으로 삼을지 같이 정한다.
 
+✅ **결정성 검증기가 생겼다**(2026-09-05, `tools/check_determinism.py`) — 새턴엔 **없었다**
+(PS1 은 진작 갖고 있었다). 이 게임의 재삽입은 **자리를 고르는 일**이라(FFD · 인접 병합 ·
+고정점) `dict`/`set` 순회가 한 자리만 새도 회차마다 이미지가 달라진다 — 레포 **제1 원칙**이
+걸린 자리인데 재는 장치가 없었다.
+⇒ 이미지와 **제안**(`scn_shortfall.json`)을 지우고 체인을 다시 돌려 sha1 을 맞댄다.
+제안을 지우는 게 핵심이다 — 빌드는 정본(`scn_expand.json`)만 읽어야 하는데 예전에 제안을
+읽어 **진동**했다(devlog 55). 실측: 두 회차 모두 `2ca8c65e…` ✅
+⚠ **게이트엔 안 넣는다** — 체인을 두 번 돌려 빌드 시간이 배가 된다. 배치 로직을 손댔을 때
+사람이 부른다(PS1 과 같은 규약).
+
 ✅ **닫은 정적 항목**(2026-09-05):
 
 - `expand_files.MEASURED_CAP`(ED2MON +936B) **재검토** — 그 936B(`0x060E5C58~0x060E6000`)를
@@ -1027,6 +1037,7 @@ python3 games/ss-ed1+2/tools/check_ptr_align.py     # ⭐ 옮긴 문자열이 �
 python3 games/ss-ed1+2/tools/check_glossary.py      # ⭐ 정본이 자기 안에서 갈렸나
 python3 games/ss-ed1+2/tools/check_engine_wrap.py   # 엔진이 접은 화면 재현 (줄 수·줄머리 부호)
 python3 games/ss-ed1+2/tools/audit_nuance.py        # 뜻이 미끄러진 자리 (LaBSE, 13분 · 후보만)
+python3 games/ss-ed1+2/tools/check_determinism.py   # 🔴 두 번 구워 sha1 대조 (제1원칙 · 게이트엔 안 넣는다)
 ```
 
 **빌드 한 벌 = `sh games/ss-ed1+2/check.sh`** 다. 순서가 계약이라(앞이 빌드 사본을 만들고
