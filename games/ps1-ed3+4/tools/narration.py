@@ -93,24 +93,31 @@ def _cell(font):
     return int(font.split()[-1])
 
 
-def _dots(ch, font):
-    """말줄임표를 **직접 찍는다** — 전각 한 칸에 바닥 점 셋.
+def _dots(chars, font):
+    """말줄임표를 **직접 찍는다** — 이어진 말줄임표 전체를 한 판에, 점 간격을 **일정하게**.
 
     🔴 폰트의 `…` 는 **글자 가운데 높이**에 있다(일본식). 한국어는 바닥이다.
        Galmuri11 실측: `…` 은 바닥에서 5줄 위, `.` 은 바닥.
+    🔴 칸마다 따로 찍으면 간격이 어긋난다 — 11px 칸에 점 셋을 `round(11·(k+½)/3)` 로 놓으면
+       2·6·9 라 4·3, 다음 칸과는 4 — 「……」 여섯 점이 4·3·4·4·3(유저 지적 2026-09-06).
+       ⇒ 이어진 말줄임표를 **한 덩어리**로, 피치 `round(칸/3)` 으로 고르게 놓고 가운데 맞춘다.
     """
     cell, rows = (
         _cell(font),
         (_cell(font) * 3 if font.startswith("Galmuri") else _ttf_rows(_cell(font))),
     )
     base = _baseline(font)
-    n = ELLIPSIS[ch]
+    n = sum(ELLIPSIS[c] for c in chars)
+    width = cell * len(chars)
     thick = 1 if cell <= 12 else 2
-    m = np.zeros((rows, cell), bool)
+    pitch = max(2, round(cell / 3))
+    span = pitch * (n - 1) + thick
+    x0 = (width - span) // 2
+    m = np.zeros((rows, width), bool)
     for k in range(n):
-        x = round(cell * (k + 0.5) / n) - thick // 2
-        m[base - thick + 1 : base + 1, max(0, x) : max(0, x) + thick] = True
-    return m, cell
+        x = x0 + k * pitch
+        m[base - thick + 1 : base + 1, x : x + thick] = True
+    return m, width
 
 
 _ADV = {}
@@ -172,7 +179,10 @@ def render_line(txt, font):
             if buf:
                 segs.append(("t", buf))
                 buf = ""
-            segs.append(("e", ch))
+            if segs and segs[-1][0] == "e":  # 이어진 말줄임표는 한 덩어리 — 점 간격을 고르게
+                segs[-1] = ("e", segs[-1][1] + ch)
+            else:
+                segs.append(("e", ch))
         else:
             buf += ch
     if buf:
