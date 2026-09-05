@@ -61,10 +61,17 @@ sys.path.insert(0, os.path.join("games", "ps1-ed1+2", "tools"))
 sys.path.insert(0, "shared")
 os.environ.setdefault("LOCK_BYPASS", "1")
 out = {}
+META = {"class", "kind", "note", "src", "ver", "_"}
 def add(d):
     for k, v in d.items():
-        if isinstance(k, str) and isinstance(v, str) and k and v and not k.startswith("__"):
-            out.setdefault(k, v)
+        # 🔴 **메타 키를 문안으로 세지 않는다**(2026-09-06). `textmap/*.json` 의 `_doc`·
+        #    `class` 가 「PS1 에 있는데 새턴엔 없다」로 세 건 잡혀 있었다 — 목록이 늘 3으로
+        #    차면 **정말 빠진 자리가 묻힌다.**
+        if not (isinstance(k, str) and isinstance(v, str) and k and v):
+            continue
+        if k.startswith("_") or k in META:
+            continue
+        out.setdefault(k, v)
 for mod in ("patch_items", "patch_sys_ui"):
     try:
         m = __import__(mod)
@@ -81,12 +88,33 @@ for f in glob.glob(os.path.join("games", "ps1-ed1+2", "textmap", "*.json")):
         d = json.load(fh)
     if isinstance(d, dict):
         add(d)
-print(json.dumps(out, ensure_ascii=False))
+# 🔴 **오프닝·엔딩 자막은 여기 있다** — `entries` 목록이라 위 `add(d)` 가 통째로 못 본다.
+#    2026-09-06 까지 **한 번도 대조된 적이 없었다**(`ui.json` 의 `msgs` 와 같은 꼴의 구멍).
+#    원문 열쇠가 아니라 **우리 문안 자체**를 낸다 — 새턴 쪽은 줄 배열이라 열쇠가 없다.
+sub = {}
+for f, sec in (("opening", "ED1 오프닝"), ("opening_ed2", "ED2 오프닝"),
+               ("ending_ed1", "ED1 엔딩"), ("ending_ed2", "ED2 엔딩")):
+    p2 = os.path.join("games", "ps1-ed1+2", "textmap", f + ".json")
+    if not os.path.exists(p2):
+        continue
+    with open(p2, encoding="utf-8") as fh:
+        e = json.load(fh).get("entries") or []
+    sub[sec] = [x["ours"] for x in e if isinstance(x, dict) and x.get("ours")]
+p3 = os.path.join("games", "ps1-ed1+2", "script", "END_STAFF.json")
+staff = []
+if os.path.exists(p3):
+    with open(p3, encoding="utf-8") as fh:
+        for v in json.load(fh).values():
+            staff += [x.lstrip("*") for x in (v if isinstance(v, list) else [v]) if isinstance(x, str)]
+print(json.dumps({"table": out, "subtitles": sub, "staff": staff}, ensure_ascii=False))
 """
 
 
 def ps1_pairs():
-    """PS1 이 **JP→KR 로 들고 있는** 낱말·문구 전부. 그 트리가 없으면 `None`."""
+    """`(표, 자막, 스태프롤)` — PS1 이 들고 있는 것. 그 트리가 없으면 `None`.
+
+    표는 `JP→KR`, **자막은 우리 문안의 줄 목록**이다(새턴 쪽이 줄 배열이라 열쇠가 없다).
+    """
     if not os.path.isdir(PS1):
         return None
     wt = os.path.dirname(os.path.dirname(PS1))  # PS1 워크트리 뿌리
@@ -98,7 +126,8 @@ def ps1_pairs():
             f"  ⏭ PS1 표를 못 뽑았다: {(r.stderr or '').strip().splitlines()[-1:] or '출력 없음'}"
         )
         return None
-    return json.loads(r.stdout)
+    d = json.loads(r.stdout)
+    return d["table"], d.get("subtitles", {}), d.get("staff", [])
 
 
 def ours():
@@ -141,6 +170,43 @@ def ours():
     return get
 
 
+CREDITS = "ＣＲＥＤＩＴＳ"
+_WS = re.compile(r"\s+")
+
+
+def _flat(s):
+    return _WS.sub("", s or "")
+
+
+def subtitle_gaps(sub, staff):
+    """오프닝·엔딩 자막이 PS1 과 같은가 → `[(구역, 줄번호, 우리 줄)]`.
+
+    🔴 **줄 단위로 안 맞는다** — 새턴은 창이 좁아 같은 문장을 더 잘게 쪼갠다(ED1 엔딩
+       100줄 vs PS1 60줄). 그래서 **이어 붙인 글에 들어 있나**로 본다. 그러면 줄 나눔이
+       달라도 통과하고, **문안·부호가 다르면 걸린다.**
+
+    ⚠ `ＣＲＥＤＩＴＳ` **뒤는 안 본다** — 스태프롤은 이식사가 다르므로(주식회사
+      하이웨이스타 · W-FROM) 내용이 다른 게 맞다. PS1 과 같아야 할 이유가 없다.
+    ⚠ 실패로 안 친다 — 새턴에만 있는 줄이 실재한다(ED2 엔딩의 프레이아 대사 둘).
+    """
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "script", "title.json"
+    )
+    if not os.path.exists(path) or not sub:
+        return []
+    with open(path, encoding="utf-8") as f:
+        ours = json.load(f)
+    pool = "".join(_flat(x) for v in sub.values() for x in v) + "".join(_flat(x) for x in staff)
+    out = []
+    for sec, lines in ours.items():
+        cut = next((i for i, x in enumerate(lines) if CREDITS in (x or "")), len(lines))
+        for i, x in enumerate(lines[:cut]):
+            f2 = _flat(x)
+            if f2 and f2 not in pool:
+                out.append((sec, i, x))
+    return out
+
+
 def pending():
     """갈린 자리의 대장 — `(미룬 할 일, 옮길 것이 아닌 것)`. `script/ps1_divergence.json`.
 
@@ -155,22 +221,23 @@ def pending():
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "script", "ps1_divergence.json"
     )
     if not os.path.exists(p):
-        return {}, {}
+        return {}, {}, {}
     with open(p, encoding="utf-8") as f:
         d = json.load(f)
-    return d.get("pending", {}), d.get("split", {})
+    return d.get("pending", {}), d.get("split", {}), d.get("title", {})
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args()
-    pairs = ps1_pairs()
-    if pairs is None:
+    got = ps1_pairs()
+    if got is None:
         print("  ⏭ PS1 워크트리가 없다 — 건너뜀")
         return 0
+    pairs, sub, staff = got
     get = ours()
-    todo, split = pending()
+    todo, split, titled = pending()
     same, diff, later, kept, miss = 0, [], [], [], []
     for jp, theirs in sorted(pairs.items()):
         mine, src = get(jp)
@@ -195,6 +262,20 @@ def main():
             print(f"     ℹ {n:2}  {w}")
     for jp, why in kept:
         print(f"     ℹ {jp[:20]!r} — {why[:72]}")
+
+    # ── 오프닝·엔딩 자막 (2026-09-06 에 눈에 들어왔다 — 그전엔 사각지대)
+    gaps = subtitle_gaps(sub, staff)
+    kept_t = [g for g in gaps if f"{g[0]}[{g[1]}]" in titled]
+    gaps = [g for g in gaps if f"{g[0]}[{g[1]}]" not in titled]
+    n = sum(len(v) for v in sub.values()) if sub else 0
+    print(
+        f"  자막 — PS1 {n}줄과 대조 · PS1 글에 없는 새턴 줄 {len(gaps)}"
+        f" · 일부러 안 맞춘 것 {len(kept_t)} (크레딧 뒤는 안 본다)"
+    )
+    for sec, i, x in gaps[:12]:
+        print(f"     ℹ {sec}[{i}] {x[:40]!r}")
+    if len(gaps) > 12:
+        print(f"     … 그 외 {len(gaps) - 12}줄")
     for jp, theirs, mine, src in diff:
         print(f"     {jp[:26]!r}")
         print(f"        PS1  {theirs[:56]!r}")
