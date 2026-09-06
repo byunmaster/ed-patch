@@ -258,6 +258,7 @@ python3 tools/check_scn_jp_left.py          # 일본어 잔존(ED1 은 0 이어�
 | -------------------- | ----------------------------------------------------------------------------- |
 | 작업 규칙·트랙 구조  | 루트 [CLAUDE.md](../../../CLAUDE.md) · 게임 [CLAUDE.md](../CLAUDE.md)         |
 | 방침·유저 확정 결정  | [policy.md](policy.md)                                                        |
+| UI 자리·정렬 잣대    | [ui-canon.md](ui-canon.md) — **이식판 공통**(메뉴·메시지·HUD·전투·오프닝·타이틀) |
 | 대사 파이프라인 전모 | [text-pipeline.md](text-pipeline.md)                                          |
 | 재사용 가능한 발견   | [our-findings.md](../../../docs/reference/our-findings.md)                    |
 | 표기 편차 대장       | [jeongbal-deviations.md](jeongbal-deviations.md)                              |
