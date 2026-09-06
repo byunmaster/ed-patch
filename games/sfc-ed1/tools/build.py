@@ -785,8 +785,10 @@ def opening_poc(rom: bytes) -> tuple[str, callable, callable]:
     import hangul_font
 
     tmap = json.loads((common.GAME_DIR / "textmap" / "segments.json").read_text(encoding="utf-8"))
-    sid = next(k for k, v in tmap.items() if v.get("addr") == OPENING_POC_ADDR)
-    kr = _kr_wrap(tmap[sid]["kr"].split("<")[0].rstrip(), OPENING_POC_WIDTH)
+    addrs = [a.strip() for a in OPENING_POC_ADDR.split(",") if a.strip()]
+    sids = [next(k for k, v in tmap.items() if v.get("addr") == a) for a in addrs]
+    krs = {i: _kr_wrap(tmap[i]["kr"].split("<")[0].rstrip(), OPENING_POC_WIDTH) for i in sids}
+    kr = "\n".join(krs.values())  # 자리 배정은 전부 합쳐서 한 번에
 
     # 자리 배정 — 결정적으로(등장 순서 아닌 코드포인트 순서)
     syls = sorted({c for c in kr if "가" <= c <= "힣"})
@@ -834,9 +836,9 @@ def opening_poc(rom: bytes) -> tuple[str, callable, callable]:
         code_of[ch] = (codes[ci],)
         ci += 1
 
-    def enc_override(_sid, entry):
+    def enc_override(sid_, entry):
         b = bytearray()
-        for ch in kr:
+        for ch in krs[sid_]:
             if ch == "\n":
                 b.append(0xCF)
             elif ch == " ":
@@ -860,8 +862,7 @@ def opening_poc(rom: bytes) -> tuple[str, callable, callable]:
                 out[tab + 2 * code] = (t + k) & 0xFF
                 out[tab + 2 * code + 1] = attr | (((t + k) >> 8) & 3)
         return {
-            "seg": sid,
-            "lines": kr.split("\n"),
+            "segs": {i: krs[i].split("\n") for i in sids},
             "syllables": len(syls),
             "puncts": "".join(puncts),
             "cell": f"{hangul_font.CELL_W}x{hangul_font.CELL}",
@@ -870,7 +871,7 @@ def opening_poc(rom: bytes) -> tuple[str, callable, callable]:
             "font": hangul_font.FONT_NAME,
         }
 
-    return sid, enc_override, bake
+    return set(sids), enc_override, bake
 
 
 def main() -> None:
@@ -896,10 +897,10 @@ def main() -> None:
         import hangul_font
 
         rom = common.rom_bytes()
-        sid, enc_override, bake = opening_poc(rom)
-        out, info = build_kr(rom, only={sid}, enc_override=enc_override, after=bake)
+        sids, enc_override, bake = opening_poc(rom)
+        out, info = build_kr(rom, only=sids, enc_override=enc_override, after=bake)
         print(json.dumps(info["opening_poc"], ensure_ascii=False, indent=1))
-        dst = common.OUT_DIR / f"poc_{OPENING_POC_ADDR}_{hangul_font.FONT_NAME}.sfc"
+        dst = common.OUT_DIR / f"poc_{hangul_font.FONT_NAME}.sfc"
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(out)
         print("→", dst, hashlib.sha1(out).hexdigest())
