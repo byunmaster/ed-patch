@@ -21,7 +21,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import text  # noqa: I001
 from shared.text import josa as josa_mod
 
-LEADS = list(range(0xC5, 0xCF))  # 10
+# 🔴 **선두는 「원본이 글자로 한 번도 안 쓰는 코드」여야 한다**(2026-09-06 실측 정정).
+# 안 그러면 **안 옮긴 문안이 일본어로 남는 게 아니라 엉뚱한 한글로 깨진다** — 그 코드를 선두로 읽고
+# 다음 바이트를 색인으로 삼기 때문이다(pc98-ed1 이 같은 부류로 물렸다, 관리자 중계).
+# 처음엔 `$C5~$CE` 10개를 썼는데 그중 **셋이 실제로 쓰인다**: `$CA`($0B:E8DE) · `$C8`($0B:FD26·$0B:FDAE)
+# · `$CC`($0B:FD80). 대본 전량(140,787항목)에서 `kind == "char"` 로 세어 **한 번도 안 쓰이는 12개**로 갈았다.
+LEADS = [0x74, 0x8F, 0xAC, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC9, 0xCB, 0xCD, 0xCE]  # 12 · 전수 실측
 JOSA_LEAD = 0xCE
 JOSA_BASE = 0xF0
 JOSA_PAIRS = [

@@ -367,6 +367,19 @@ def mutable_ranges() -> list[tuple[int, int]]:
     return r
 
 
+def lead_collisions(rom: bytes) -> dict[int, int]:
+    """🔴 **한글 선두 코드를 원본이 글자로 쓰면 안 된다.** 쓰면 **안 옮긴 문안이 일본어로 남는 게
+    아니라 엉뚱한 한글로 깨진다** — 그 코드를 선두로 읽고 다음 바이트를 색인으로 삼기 때문이다.
+    전량(`kind == "char"`)으로 세어 0 이어야 한다(2026-09-06 에 실제로 셋이 걸렸다)."""
+    import encode
+
+    n: dict[int, int] = {}
+    for it in body_items(rom):
+        if it.kind == "char" and it.code in encode.LEADS:
+            n[it.code] = n.get(it.code, 0) + 1
+    return n
+
+
 def verify(rom: bytes, out: bytes, place: dict[int, int]) -> dict:
     # 1. 무변경 구간 byte 대조
     mut = mutable_ranges()
@@ -420,6 +433,7 @@ def verify(rom: bytes, out: bytes, place: dict[int, int]) -> dict:
         script.emit(items_n, back) == rom[common.snes2off(BODY[0]) : common.snes2off(BODY[1])]
     )
     return {
+        "lead_collisions": len(lead_collisions(rom)),
         "immutable_diffs": diffs,
         "readback_msgs": total,
         "readback_mismatch": mism,
@@ -935,7 +949,12 @@ def main() -> None:
     rom = common.rom_bytes()
     out, info = build(rom)
     v = verify(rom, out, relocation_plan(body_items(rom)))
-    ok = v["immutable_diffs"] == 0 and v["readback_mismatch"] == 0 and v["reverse_roundtrip"]
+    ok = (
+        v["immutable_diffs"] == 0
+        and v["readback_mismatch"] == 0
+        and v["reverse_roundtrip"]
+        and v["lead_collisions"] == 0
+    )
     print(info, v)
     if not ok:
         raise SystemExit("빌드 검증 실패")
