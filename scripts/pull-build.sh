@@ -53,6 +53,9 @@
 #   ⚠ 실패를 **덮지는 않는다** — 실패한 칸의 로컬 산출물은 「받다 만 것」이라 믿으면 안 된다.
 #     요약이 그 칸을 이름으로 찍는다.
 #
+# ⚠ **풀이다, 배치가 아니다**(유저 지적 2026-09-06). 종전엔 넷씩 묶어 넷이 다 끝나야 다음 넷을
+#   띄웠고 상태판도 그 넷만 그려서, 다섯을 고르면 다섯째가 화면에 없었다. 이제 고른 칸
+#   전부가 처음부터 판에 있고(`·` 대기 → `⏳` 진행 → `✅`/`🟰`/`⛔`), 하나 끝나면 다음이 바로 뜬다.
 # ⚠ **기본이 병렬이다** — `-j4`(유저 확정 2026-08-25). `-j1` 이면 예전처럼 하나씩,
 #   `--jobs 8` 로 올릴 수도 있다(숫자를 빼면 4).
 #     · 병목은 대개 대역폭이라 2~4 면 충분하다. ssh 세션도 칸마다 셋(ls·rsync·sha1sum)이라
@@ -285,7 +288,15 @@ pull_one() {
   [ $# -gt 0 ] || fail "원격 칸이 비었다: $REMOTE_BUILD"
   for f in "$@"; do
     case "$f" in
-      *.failed) fail "실패 표식이 있다($f) — 이 칸은 받지 않는다. 먼저 빌드를 고쳐라." ;;
+      *.failed)
+        # ⚠ **낡은 표식**일 수 있다(실측 2026-09-06: pc98·md 는 성공한 빌드 옆에 아침의
+        #   `.failed` 가 그대로 남아 있었다 — 그 게임의 build.py 가 시작할 때 지난 잔재를
+        #   안 치운다. ps1 은 `build.py` 가 `*.failed` 를 먼저 지운다). 그래도 **받지 않는다** —
+        #   어느 쪽이 지금 것인지 여기서 판정하지 않는다. 대신 시각을 같이 찍어 사람이 가리게.
+        _ts=$(ssh "$HOST" "cd '$REMOTE_BUILD' && ls -l --time-style=+%m-%d\ %H:%M '$f' '${f%.failed}' 2>/dev/null | awk '{print \$6\" \"\$7\"  \"\$8}'" 2>/dev/null | tr '\n' '\v' || true)
+        fail "실패 표식이 있다($f) — 이 칸은 받지 않는다." \
+             "$(printf '%s' "$_ts" | tr '\v' '\n')" \
+             "정상 파일이 더 새롭다면 낡은 표식이다 — 그 게임의 build.py 가 시작할 때 *.failed 를 지우게 한다(ps1 build.py 참조). 지금 당장은 원격에서 지운다: ssh $HOST rm '$REMOTE_BUILD/$f'" ;;
     esac
   done
 
@@ -324,7 +335,7 @@ pull_one() {
     fi
     # ⚠ 파일당 한 번씩 부른다. `host:a host:b` 로 원격 소스를 둘 이상 주는 건 GNU rsync 3.0+
     #   문법이라 스톡 macOS 의 2.6.9 에서 usage error 로 죽는다(실측).
-    if [ -n "$BASIS_NAME" ]; then stat_set "$f 받는 중 (밑절미 $BASIS_NAME)"
+    if [ -n "$BASIS_NAME" ]; then stat_set "$f 받는 중 (밑절미 있음)"
     else stat_set "$f 받는 중"; fi
     # shellcheck disable=SC2086
     run_rsync $BASIS "$HOST:$Q$REMOTE_BUILD/$f$Q" "$LOCAL_BUILD/"
@@ -358,9 +369,13 @@ pull_one() {
 }
 
 # ── 상태판 ──────────────────────────────────────────────────────────────────
-# 배치가 도는 동안 **따로 띄운 프로세스**가 그린다. 부모는 그동안 `wait` 만 하므로 둘이
-# 같은 화면에 겹쳐 쓸 일이 없고, 종료 상태는 `wait` 에서 그대로 받는다(`.done` 파일 같은
-# 우회가 필요 없다 — 그 우회는 서브셸의 errexit 을 다시 꺼 놓게 된다).
+# 배치가 도는 동안 **따로 띄운 프로세스**가 그린다. 부모는 그동안 풀을 돌리기만 하므로 둘이
+# 같은 화면에 겹쳐 쓸 일이 없다.
+# ⚠ **고른 칸 전부를 늘 그린다**(유저 지적 2026-09-06 — 다섯을 골랐는데 넷만 보였다).
+#   종전엔 「지금 도는 배치」만 그려서, -j4 에 다섯을 고르면 다섯째는 넷이 끝날 때까지
+#   화면에 없었다. 이제 줄마다 상태가 있다 — `·` 대기 · `⏳` 진행(마지막 진행률 한 줄) ·
+#   `✅`/`🟰` 끝(표에 실릴 그 줄) · `⛔` 실패(첫 줄 까닭). brew 처럼 **판 하나가 제자리에서
+#   갱신**된다. 끝나면 판을 지우고 표를 찍는다.
 # ⚠ 줄이 넘치면 되감기 계산이 깨진다 — 폭을 잘라 그린다(한글은 두 칸이라 넉넉히 뺀다).
 board_run() {
   _drawn=0
@@ -369,84 +384,121 @@ board_run() {
     sleep 0.3
   done
   board_draw                                   # 마지막 상태를 한 번 더
-  [ "$_drawn" = 0 ] || {                       # 지운다 — 자세한 로그는 부모가 뱉는다
+  [ "$_drawn" = 0 ] || {                       # 지운다 — 표는 부모가 찍는다
     printf '\033[%dA' "$_drawn"
     _i=0; while [ "$_i" -lt "$_drawn" ]; do printf '\033[2K\n'; _i=$((_i + 1)); done
     printf '\033[%dA' "$_drawn"
   }
 }
+# 🔴 **한 줄이 터미널 폭을 넘으면 안 된다.** 넘으면 줄이 감겨 두 줄이 되고, 「n 줄 위로」가 하나
+#    어긋나 옛 프레임이 화면에 쌓인다(유저 실측 2026-09-06 — 라벨은 안 세고 진행 문구만 잘라서
+#    합치면 폭을 넘었다). 그래서 **줄을 통째로 만든 뒤** 폭 안으로 자른다. 자르는 단위는 **바이트**
+#    (`LC_ALL=C`) — 한글 3B=2칸·이모지 4B=2칸이라 바이트가 칸보다 늘 크거나 같아 **절대 안 감긴다**
+#    (한글이 많은 줄은 조금 일찍 잘린다 — 감기는 것보다 낫다). 되감은 뒤엔 `[J` 로 아래를 싹 지운다.
+# **바이트로 자르고 꼬리의 깨진 UTF-8 조각을 뗀다.** 한글 3B=2칸·이모지 4B=2칸이라 바이트가 칸보다
+# 늘 크거나 같아 **절대 안 감기고**, 바이트 경계에서 잘린 반 글자는 `iconv -c` 가 버린다(맥·리눅스
+# 둘 다 있다). awk 로 글자를 세는 안은 mawk 가 바이트로 쪼개 깨진 글자를 남겼다(실측).
+_fit() { printf '%s' "$1" | LC_ALL=C cut -c1-$((COLS - 2)) | iconv -c -f UTF-8 -t UTF-8 2>/dev/null; }
 board_draw() {
-  [ "$_drawn" = 0 ] || printf '\033[%dA' "$_drawn"
+  [ "$_drawn" = 0 ] || printf '\033[%dA\033[J' "$_drawn"
   _drawn=0
-  _o=$IFS; IFS=$NL
-  for _j in $BATCH; do
-    IFS=$_o
-    _r=${_j#* }; _ji=${_r%% *}; _lab=${_r#* }
-    _s=…
-    [ ! -f "$TMPD/$_ji.stat" ] || _s=$(cat "$TMPD/$_ji.stat" 2>/dev/null || echo …)
-    printf '\033[2K   \033[2m%s\033[0m\n' "$(printf '%s  %s' "$_lab" "$_s" | cut -c1-$((COLS - 12)))"
+  _done=0; _n=0
+  while IFS="$TAB" read -r _ji _lab; do
+    _n=$((_n + 1))
+    if [ -f "$TMPD/$_ji.done" ]; then
+      _done=$((_done + 1))
+      if [ "$(cat "$TMPD/$_ji.done")" = 0 ]; then
+        _ic=$(cut -f1 "$TMPD/$_ji.row" | tr -d ' '); _s=$(cut -f5 "$TMPD/$_ji.row")
+      else
+        _ic=⛔; _s=$(head -1 "$TMPD/$_ji.fail" 2>/dev/null || echo 실패)
+      fi
+      printf '%s\n' "$(_fit " $_ic $_lab  $_s")"
+    elif [ -f "$TMPD/$_ji.stat" ]; then
+      _s=$(cat "$TMPD/$_ji.stat" 2>/dev/null || echo …)
+      printf '%s\n' "$(_fit " ⏳ $_lab  $_s")"
+    else
+      printf '\033[2m%s\033[0m\n' "$(_fit " ·  $_lab  대기")"
+    fi
     _drawn=$((_drawn + 1))
-    IFS=$NL
-  done
-  IFS=$_o
+  done < "$TMPD/labels"
+  printf '\033[2m%s\033[0m\n' "$(_fit " $_done / $_n 끝  (-j$JOBS)")"
+  _drawn=$((_drawn + 1))
 }
 
-# 띄워 둔 배치를 기다린다. 로그는 **띄운 순서대로** 뱉는다(끝난 순서가 아니다 — 목록 순서와
-# 어긋나면 어느 칸 얘긴지 못 읽는다).
-flush_batch() {
-  [ -n "$BATCH" ] || return 0
-  BPID=
-  if [ "$BOARD" = 1 ]; then rm -f "$TMPD/stop"; board_run & BPID=$!; fi
-  _o=$IFS; IFS=$NL
-  for _j in $BATCH; do
-    IFS=$_o
-    _pid=${_j%% *}; _r=${_j#* }; _ji=${_r%% *}; _lab=${_r#* }
-    if wait "$_pid"; then _st=0; else _st=1; fi
-    eval "ST_$_ji=$_st"
-    IFS=$NL
+# ── 풀 ──────────────────────────────────────────────────────────────────────
+# 종전엔 넷씩 **배치**로 띄우고 넷이 다 끝나야 다음 넷을 띄웠다 — 큰 칸 하나가 배치를
+# 통째로 잡고 있으면 나머지 자리가 논다. 이제 **하나가 끝나면 바로 다음을 띄운다.**
+# dash 엔 `wait -n` 이 없으므로 `kill -0` 으로 산 것을 세며 0.3초마다 돈다.
+# ⚠ 종료 상태는 **부모가 `wait <pid>`** 로 받아 `<i>.done` 에 적는다(서브셸이 스스로 적지
+#   않는다 — 그러면 서브셸의 errexit 을 다시 꺼 놓게 된다).
+: > "$TMPD/labels"
+IDX=0; FAILN=0
+for e in "$@"; do
+  IDX=$((IDX + 1))
+  _g=${e%%"$TAB"*}; _r=${e#*"$TAB"}; _t=${_r%%"$TAB"*}
+  printf '%s\t%s · %s\n' "$IDX" "$_g" "$_t" >> "$TMPD/labels"
+done
+N=$IDX
+
+BPID=
+if [ "$BOARD" = 1 ]; then rm -f "$TMPD/stop"; board_run & BPID=$!; fi
+
+RUNNING=""     # "pid idx" 줄들
+NRUN=0; NEXT=1; NDONE=0
+set -- "$@"
+while [ "$NDONE" -lt "$N" ]; do
+  # 자리가 비면 다음 칸을 띄운다
+  while [ "$NRUN" -lt "$JOBS" ] && [ "$NEXT" -le "$N" ]; do
+    e=$(printf '%s\n' "$@" | sed -n "${NEXT}p")
+    GAME=${e%%"$TAB"*}; _r=${e#*"$TAB"}; TAG=${_r%%"$TAB"*}
+    REMOTE_BUILD=${_r#*"$TAB"}                 # 원격 경로는 목록이 준 것을 그대로 쓴다
+    pull_one "$GAME" "$TAG" "$REMOTE_BUILD" "$NEXT" >"$TMPD/$NEXT.log" 2>&1 &
+    RUNNING="$RUNNING$! $NEXT$NL"
+    NRUN=$((NRUN + 1)); NEXT=$((NEXT + 1))
   done
-  IFS=$_o
-  if [ -n "$BPID" ]; then : > "$TMPD/stop"; wait "$BPID" 2>/dev/null || true; fi
+  # 끝난 것을 거둔다
+  _still=""
   _o=$IFS; IFS=$NL
-  for _j in $BATCH; do
+  for _j in $RUNNING; do
     IFS=$_o
-    _r=${_j#* }; _ji=${_r%% *}; _lab=${_r#* }
-    eval "_st=\$ST_$_ji"
-    cat "$TMPD/$_ji.log"
-    # 표는 **띄운 순서대로** 쌓는다(끝난 순서가 아니다 — 고른 목록과 어긋나면 못 읽는다).
-    if [ "$_st" = 0 ]; then
-      cat "$TMPD/$_ji.row" >> "$TMPD/rows"
+    [ -n "$_j" ] || continue
+    _pid=${_j%% *}; _ji=${_j#* }
+    if kill -0 "$_pid" 2>/dev/null; then
+      _still="$_still$_j$NL"
     else
-      FAILN=$((FAILN + 1))
-      # 첫 줄은 표의 「결과」 칸, 나머지는 그 줄 밑에 붙일 것 — 줄바꿈은 표를 흐트러뜨리니
-      # 세로탭으로 이어 한 칸에 싣고 awk 가 다시 편다.
-      _why=$(head -1 "$TMPD/$_ji.fail" 2>/dev/null || true)
-      [ -n "$_why" ] || _why="실패 (까닭을 못 남겼다)"
-      _det=$(tail -n +2 "$TMPD/$_ji.fail" 2>/dev/null | tr '\n' '\v')
-      # ⚠ sha1 자리는 **ASCII 하이픈**이다 — `—` 는 세 바이트라 awk 의 `length()` 가 3 으로
-      #   세서 그 줄만 두 칸 밀린다(실측).
-      printf '⛔ \t%s\t%s\t-\t%s\t%s\n' "${_lab%% · *}" "${_lab##* · }" "$_why" "$_det" >> "$TMPD/rows"
+      if wait "$_pid"; then _st=0; else _st=1; fi
+      echo "$_st" > "$TMPD/$_ji.done"
+      [ "$_st" = 0 ] || FAILN=$((FAILN + 1))
+      NRUN=$((NRUN - 1)); NDONE=$((NDONE + 1))
     fi
     IFS=$NL
   done
   IFS=$_o
-  BATCH=""; NJOB=0
-}
-
-BATCH=""    # "<pid> <idx> <라벨>" 줄들
-NJOB=0; IDX=0; FAILN=0
-: > "$TMPD/rows"
-
-for e in "$@"; do
-  GAME=${e%%"$TAB"*}; _r=${e#*"$TAB"}; TAG=${_r%%"$TAB"*}
-  REMOTE_BUILD=${_r#*"$TAB"}                 # 원격 경로는 목록이 준 것을 그대로 쓴다
-  IDX=$((IDX + 1))
-  pull_one "$GAME" "$TAG" "$REMOTE_BUILD" "$IDX" >"$TMPD/$IDX.log" 2>&1 &
-  BATCH="$BATCH$! $IDX $GAME · $TAG$NL"
-  NJOB=$((NJOB + 1))
-  [ "$NJOB" -lt "$JOBS" ] || flush_batch
+  RUNNING=$_still
+  [ "$NDONE" -ge "$N" ] || sleep 0.3
 done
-flush_batch
+if [ -n "$BPID" ]; then : > "$TMPD/stop"; wait "$BPID" 2>/dev/null || true; fi
+
+# 로그·표는 **고른 순서대로** 쌓는다(끝난 순서가 아니다 — 목록과 어긋나면 어느 칸 얘긴지 못 읽는다).
+: > "$TMPD/rows"
+_i=1
+while [ "$_i" -le "$N" ]; do
+  cat "$TMPD/$_i.log"
+  if [ "$(cat "$TMPD/$_i.done")" = 0 ]; then
+    cat "$TMPD/$_i.row" >> "$TMPD/rows"
+  else
+    _lab=$(awk -F'\t' -v i="$_i" '$1 == i { print $2 }' "$TMPD/labels")
+    # 첫 줄은 표의 「결과」 칸, 나머지는 그 줄 밑에 붙일 것 — 줄바꿈은 표를 흐트러뜨리니
+    # 세로탭으로 이어 한 칸에 싣고 awk 가 다시 편다.
+    _why=$(head -1 "$TMPD/$_i.fail" 2>/dev/null || true)
+    [ -n "$_why" ] || _why="실패 (까닭을 못 남겼다)"
+    _det=$(tail -n +2 "$TMPD/$_i.fail" 2>/dev/null | tr '\n' '\v')
+    # ⚠ sha1 자리는 **ASCII 하이픈**이다 — `—` 는 세 바이트라 awk 의 `length()` 가 3 으로
+    #   세서 그 줄만 두 칸 밀린다(실측).
+    printf '⛔ \t%s\t%s\t-\t%s\t%s\n' "${_lab%% · *}" "${_lab##* · }" "$_why" "$_det" >> "$TMPD/rows"
+  fi
+  _i=$((_i + 1))
+done
 
 # ── 결과 표 ─────────────────────────────────────────────────────────────────
 # ⚠ 폭은 **바이트가 아니라 칸**으로 재야 하는데, 여기 열은 게임·꼬리표·sha1 뿐이라 전부
