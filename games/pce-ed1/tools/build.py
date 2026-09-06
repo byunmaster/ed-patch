@@ -121,13 +121,22 @@ def _main(bank: int, off: int) -> tuple[int, int]:
     return 34 + (bank - 0x68) * 4 + off // common.USER, off % common.USER
 
 
-ONLY: set[str] | None = None  # 진단용 — 패치 그룹 부분집합("cache" · "font")만 건다
+ONLY: set[str] | None = None
+"""진단용 — 개입 그룹의 부분집합만 건다(`--only font,hook`). 그룹은 여섯:
+`font`(글리프 뱅크 + 진입 스텁) · `cache`(16 → 13 슬롯) · `hook`(EX_GETFNT 우회) ·
+`sys`(시스템 문구) · `battle`(전투 컨테이너) · `scn`(씬 컨테이너).
+🔴 **이게 소프트락을 가르는 유일한 도구다** — 증상이 나면 하나씩 끄며 A/B 한다.
+⚠ `font` 를 끄면 글리프가 없어 한글 자리가 통째로 안 그려진다(파일 선택에서 멈춘다) —
+`font,hook` 은 늘 켜 두고 나머지를 끈다."""
+
+
+def want(g: str) -> bool:
+    return ONLY is None or g in ONLY
 
 
 def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
     """(라벨, rel, offset, 기대, 새값). 기대가 어긋나면 그 자리에서 죽는다(쓰기 사전조건)."""
     p = []
-    want = lambda g: ONLY is None or g in ONLY
     # 1. 본 프로그램 진입: JSR $5798 → JSR 스텁
     if want("font"):
         p.append(
@@ -166,7 +175,7 @@ def apply_code_patches(
         mode1.write_at(f, lba, common.USER, off, new, label=label, expect=old)
         touched.append((lba, 1))
     # 5. 글리프 뱅크 → rel 114~125(뱅크 0x7C~0x7E 적재분, 원본 0), 후킹 루틴 → rel 126 앞 256B
-    if ONLY is not None and "font" not in ONLY:
+    if not want("font"):
         return
     lba = common.T2_SECTOR + 114
     mode1.write_user_data(f, lba, glyph_bank, label="glyph banks", expect=b"\0" * len(glyph_bank))
@@ -242,11 +251,13 @@ def _build(edits_path, iso: Path, cue: Path):
     slot_of = {r: n for r, n in refs}  # 참조표가 말하는 섹터 수
     with open(iso, "r+b") as f:
         apply_code_patches(f, glyph_bank, table, touched)
-        print("  시스템 문구:", sysbuild.apply(f, table, touched))
-        print("  전투 데이터:", battle.apply(f, table, touched))
+        if want("sys"):
+            print("  시스템 문구:", sysbuild.apply(f, table, touched))
+        if want("battle"):
+            print("  전투 데이터:", battle.apply(f, table, touched))
         translated_ids = {int(p.stem[3:]) for p in translate.M.SCRIPT_DIR.glob("scn*.json")}
         n_msgs = 0
-        for rel, c in sorted(by_rel.items()):
+        for rel, c in sorted(by_rel.items()) if want("scn") else []:
             hit = {k for k in edits if k[0] == rel} or {
                 b["id"] for b in c["blocks"]
             } & translated_ids
@@ -275,7 +286,8 @@ def _build(edits_path, iso: Path, cue: Path):
     print(f"  번역 메시지 {n_msgs}건(컨테이너마다 다시 셈) · 글리프 {len(chars)}자")
     verify_immutable(iso, touched)
     verify_readback(iso, intended, found)
-    print(f"  전투 컨테이너 되읽기 OK (블록 {battle.verify(iso, table)})")
+    if want("battle"):
+        print(f"  전투 컨테이너 되읽기 OK (블록 {battle.verify(iso, table)})")
     bad = mode1.selftest(
         iso,
         lbas=(
