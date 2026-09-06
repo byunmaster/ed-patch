@@ -48,7 +48,6 @@ def _local(*parts):
 SPEC = os.path.join(common.ROOT, "work", "review", "tim", "ed3", "_spec")
 ASSETS = os.path.join(common.ROOT, "assets", "graphics", "ed3")
 AI_SRC = _local("ed3_title.png")
-RIM_SRC = _local("ed3-title-new.png")  # 유저가 AI 로 5.4배 키운 것 — **실루엣만** 쓴다
 NEODGM = os.path.join(common.REPO, "shared", "fonts", "neodgm.ttf")
 SUB_FONT = _local("fonts", "YeonSung-Regular.ttf")
 
@@ -65,8 +64,22 @@ OP = {
     "big_h": 67,
     # 🔴 글자가 띠를 꽉 채우면 **흰 테의 위아래가 잘린다**(유저 지적 2026-09-05) ⇒
     #    글자를 이만큼 눌러 넣고 위아래로 여백을 남긴다. 옆은 원래 여유가 있다.
-    "pad": 3,
+    # 위는 0 — JP 원본이 글자 알파를 띠 첫 행(35)에 붙였고 우리는 4행 아래 떠 있었다(유저 지적).
+    # 아래 2 — 부제와 붙지 않게. 그만큼 글자도 커진다(JP 몸통 63행, 우리 55행이었다).
+    "pad_top": 0,
+    "pad_bot": 0,  # JP 는 큰 글자 알파가 101행까지 내려와 부제와 3행 뜬다 — 우리는 98 로 6행 떴다(유저 지적)
     "margin": 4,
+    # 🔴 테 두께(400 기준 px). **JP 원본 실측 1.4**(1~2) — 업스케일 실루엣을 빌렸을 땐 4.5(3~7)로
+    #    세 배 두껍고 들쭉날쭉했다(유저 지적 2026-09-05). 매끈한 몸통을 **한 반지름으로**
+    #    부풀리므로 두께가 구조적으로 균일하다.
+    "rim": 1.6,
+    "smooth": 1.0,  # 실루엣 흐림(3배 기준 σ 의 배수) — 클수록 매끈, 1.2 면 ㅎ·ㅁ 이 뭉갠다
+    "edge": 0.85,  # 1비트 알파 계단을 색으로 눅이는 강도
+    "aa": 1.0,
+    "sharpen": 1.3,  # 몸통 언샤프 세기 — 흐림·중앙값 뒤에 되살린다. JP 선명도 31.9, 0 이면 22.0(유저: 흐릿하다)  # 가장자리 커버리지 어둡히기 지수 — 클수록 진하게
+    "tex_med": 3,  # 질감 비율의 중앙값 필터 크기 — 잡티만 지우고 띠·고리는 남긴다
+    "tex_clip": 0.6,  # 질감 비율 폭(±) — 좁히면 원천의 어두운 윤곽 구조까지 죽는다
+    "band_blur": 0.8,  # 깊이 단계 색을 잇는 흐림 — 1.2 면 2px 띠가 녹아 없어진다
     "sub_rows": 16,
     "sub_ink": 12,
     "sub_bottom": 117,
@@ -393,7 +406,18 @@ def make_logo():
         (BIG_W, BIG_H), Image.LANCZOS
     )
     arr = np.asarray(b).astype(np.float32)
+    cov = arr[..., 3] / 255
     m = arr[..., 3] >= 128
+    # 오프닝 로고와 **같은 색 손질**(유저: 「타이틀은 둘 다 맞춰줘」 2026-09-06) — JP 타이틀 로고에서
+    # 잰 깊이별 색·세로 곡선을 입히고 중앙값으로 잡티를 지운다. 기하(테 1px·자간·자리)는 그대로.
+    _metal_shade(
+        arr,
+        m & (ndimage.distance_transform_edt(m) > 1),
+        blur=SMALL["blur"],
+        table=JP_SMALL_RGB,
+        vert=JP_SMALL_VERT,
+        cfg=SMALL,
+    )
     # 🔴 줄인 **뒤에** 바깥 1겹을 순백으로 못 박는다 — 안 그러면 가장자리가 회색으로
     #    내려앉아 테가 **이빨 빠진** 것처럼 끊긴다.
     arr[m & ~ndimage.binary_erosion(m, np.ones((3, 3)))] = (255, 255, 255, 255)
@@ -411,6 +435,8 @@ def make_logo():
         wm[(dist > 2) & (dist <= 3)] = SOFT * 0.5
         arr[..., :3] = arr[..., :3] * (1 - wm[..., None]) + blur * wm[..., None]
     arr[..., :3] = _soften_edge(arr[..., :3], m, EDGE)
+    edge = m & (cov < 0.98)  # 가장자리를 커버리지만큼 어둡게 — 오프닝과 같은 AA
+    arr[edge, :3] *= np.clip(cov[edge], 0.35, 1.0)[:, None] ** SMALL["aa"]
     arr = np.clip(arr, 0, 255).astype(np.uint8)
     arr[~m] = 0
     arr[..., 3] = m * 255
@@ -437,70 +463,114 @@ def make_logo():
     ), f"자간 {gap} · 큰 글자 폭 {big_w} · 부제 폭 {sub.width} · 색 {n}"
 
 
-def op_rim_from_upscale(body):
-    """오프닝 로고의 흰 테 실루엣을 **유저의 업스케일 그림에서 빌려 온다**.
+# JP 원본(OP_MAIN.BIN[19]) 몸통의 명도 실측 — 가장자리에서 안쪽으로 깊이별 · 글자 세로 위치별.
+# 우리 원천은 「밝은 속 + 짙은 남색 윤곽」이라 경계가 딱딱했다(유저 지적 2026-09-05):
+# 깊이 2~3 이 41~49(JP 87~97), 속이 145~157(JP 135). 곡선을 통째로 옮겨 붙인다.
+# 🔴 **색까지** 옮긴다. 명도만 맞추고 우리 남색 (0,0,24) 에 비율을 곱했더니 (0,0,87) — 어두운 띠가
+#    **파랗게** 됐다(유저 지적 2026-09-05 — B-R 이 JP +30 인데 우리는 +80). JP 띠는 거의 무채색이다.
+# ⚠ 표는 **기하로** 잰 것이다 — 알파의 바깥 2px 만 테, 나머지 전부 몸통. 「흰색이 아닌 픽셀」로
+#    재면 JP 의 밝은 하이라이트가 테로 빠져 곡선이 납작해진다(띠 63→76, 속 170→139 로 잘못 봤다).
+JP_DEPTH_RGB = {
+    1: (91, 95, 119),
+    2: (50, 54, 85),
+    3: (78, 82, 108),
+    4: (125, 128, 144),
+    5: (151, 152, 162),
+    6: (168, 169, 174),
+    7: (161, 162, 168),
+    8: (150, 153, 167),
+}
+# 타이틀 화면 로고(DATA5[3], 260×76) 의 JP 실측 — 기하(바깥 1px 테)로 잰 깊이별 RGB · 세로 곡선.
+# 오프닝(400×118)과 **다른 그림**이라 표도 따로 잰다. 깊이 1 이 밝은 건 1px 테 안쪽 첫 줄이 아직
+# 흰빛을 띠기 때문 — JP 가 그렇다.
+JP_SMALL_RGB = {
+    1: (182, 184, 196),
+    2: (71, 76, 105),
+    3: (114, 116, 134),
+    4: (141, 142, 153),
+    5: (151, 152, 162),
+    6: (155, 157, 166),
+    7: (156, 158, 168),
+    8: (154, 156, 169),
+}
+JP_SMALL_VERT = [140, 154, 158, 160, 128, 127, 108, 100]
+# ⚠ 흐림 둘(첫 흐림 · 띠 흐림)은 0.4 — 오프닝 값(0.7·0.8)을 그대로 쓰면 1px 띠가 녹아 121 이 된다
+#    (JP 84). 0.4 면 97. 오프닝에서 파란 선을 만든 건 「띠 흐림 빼기 + 속 흐림 + 구멍 테」의 합이었고,
+#    여기선 속 흐림·구멍 뚫기를 안 하므로 검정 배경에서도 선이 안 뜬다(실측 2026-09-06).
+SMALL = {
+    "blur": 0.4,
+    "tex_med": 3,
+    "tex_clip": 0.6,
+    "band_blur": 0.4,
+    "band_med": False,
+    "inner_blur": 0.0,
+    "sharpen": 0.6,  # JP 타이틀 선명도 44.2, 0 이면 33.7
+    "aa": 1.0,
+}
+JP_VERT = [153, 163, 171, 160, 136, 121, 119, 147]  # 위→아래 8구간, 금속 반사의 어두운 띠가 가운데
 
-    🔴 원천(`AI_SRC`)이 1090px 라 400 으로 줄이는 배율이 **2.8배뿐**이다(작은 로고는 13.6배)
-       — 계단이 그대로 살아남아 흰 테가 파여 보인다. 업스케일본은 2172px(5.4배)라 매끈하다.
-    ⚠ **그 그림을 그대로 쓰지 않는다** — 글자 모양과 정렬이 어긋나 있다(유저 판정 2026-09-05).
-       빌리는 건 **바깥 실루엣뿐**이고, 글자마다 우리 자리(`body`)의 칸에 맞춰 늘여 붙인다.
-    ⚠ 그래도 어긋나므로 마지막에 **우리 몸통과 합집합**을 잡는다 — 몸통이 테 밖으로 새면
-       글자에 구멍이 뚫린 것처럼 보인다.
-    없으면(다른 머신) None — 부르는 쪽이 흐림 방식으로 돌아간다.
+
+def _metal_shade(arr, body, blur=0.7, cap=235, table=None, vert=None, cfg=None):
+    """몸통 색을 JP 의 깊이별 **색**·세로 명도 곡선에 맞추고 살짝 흐려 경계를 눅인다 (제자리).
+
+    깊이마다 **색은 JP 평균 RGB 를 쓰고**, 우리 픽셀은 그 깊이 평균 대비 밝기 비율(질감)만
+    남긴다. 순서: **흐림 → 세로 곡선 → 깊이 색(두 번)**. 흐림을 뒤에 두면 어두운 띠가
+    속으로 번져 맞춰 둔 속이 다시 어두워진다(실측 95~122).
     """
-    if not os.path.exists(RIM_SRC):
-        return None
-    up = np.asarray(Image.open(RIM_SRC).convert("RGB")).astype(int).max(axis=2) > 28
-    rows = np.nonzero(up.any(axis=1))[0]
-    # 금판 아래 · 부제 위 = 큰 글자 띠 (빈 줄로 갈린다)
-    blank = [y for y in range(rows.min(), rows.max() + 1) if not up[y].any()]
-    cuts = [y for i, y in enumerate(blank) if i == 0 or y - blank[i - 1] > 1]
-    band = ndimage.binary_fill_holes(up[cuts[0] : cuts[1]])
-    # 🔴 실루엣(테 포함)을 **내 몸통 상자에 맞춰** 늘이면 테가 상자 밖으로 못 나가
-    #    글자마다 네 변이 반듯하게 잘린다(유저 지적 2026-09-05). ⇒ **그쪽 몸통**(남색 윤곽을
-    #    메운 것)의 상자를 내 몸통 상자에 맞추고, 실루엣은 같은 배율로 따라오게 한다 —
-    #    테는 저절로 상자 밖으로 삐져나온다.
-    rgb = np.asarray(Image.open(RIM_SRC).convert("RGB")).astype(int)[cuts[0] : cuts[1]]
-    navy = (
-        (rgb.max(axis=2) > 15)
-        & (rgb[..., 2] >= rgb[..., 0] + 12)
-        & (rgb[..., 2] >= rgb[..., 1] + 12)
-    )
-    body_u = ndimage.binary_fill_holes(navy) & band
-    xs = np.nonzero(band.any(axis=0))[0]
-    X0, X1 = xs.min(), xs.max() + 1
-    sil = np.zeros(body.shape, bool)
-    runs = [(a, b) for a, b in _runs(body) if b - a > 10]
-    for i, (a, b) in enumerate(runs):
-        u0, u1 = X0 + (X1 - X0) * a / body.shape[1], X0 + (X1 - X0) * b / body.shape[1]
-        # 그쪽은 글자끼리 테가 닿아 붙어 있다 — 경계는 **가장 가는 자리**로 잡는다
-        for j, u in ((0, u0), (1, u1)):
-            if 0 < i + j < len(runs):
-                lo = int(u - 60)
-                u = lo + int(np.argmin(band[:, lo : int(u) + 60].sum(axis=0)))
-                u0, u1 = (u, u1) if j == 0 else (u0, u)
-        one, bu = band[:, int(u0) : int(u1)], body_u[:, int(u0) : int(u1)]
-        cy, cx = np.nonzero(one.any(axis=1))[0], np.nonzero(one.any(axis=0))[0]
-        by, bx = np.nonzero(bu.any(axis=1))[0], np.nonzero(bu.any(axis=0))[0]
-        if not len(by):
-            continue
-        one = one[cy.min() : cy.max() + 1, cx.min() : cx.max() + 1]
-        my = np.nonzero(body[:, a:b].any(axis=1))[0]
-        sx = (b - a) / (bx.max() - bx.min() + 1)
-        sy = (my.max() - my.min() + 1) / (by.max() - by.min() + 1)
-        w, h = max(1, round(one.shape[1] * sx)), max(1, round(one.shape[0] * sy))
-        r = (
-            np.asarray(Image.fromarray((one * 255).astype(np.uint8)).resize((w, h), Image.LANCZOS))
-            >= 128
-        )
-        ox = a - round((bx.min() - cx.min()) * sx)  # 그쪽 몸통 왼끝 → 내 몸통 왼끝
-        oy = my.min() - round((by.min() - cy.min()) * sy)
-        ys0, xs0 = max(0, -oy), max(0, -ox)
-        ys1, xs1 = min(h, sil.shape[0] - oy), min(w, sil.shape[1] - ox)
-        if ys1 > ys0 and xs1 > xs0:
-            sil[oy + ys0 : oy + ys1, ox + xs0 : ox + xs1] |= r[ys0:ys1, xs0:xs1]
-    # ⚠ 그래도 테가 몸통에 바싹 붙는 자리가 있다 ⇒ 두 겹은 보장한다.
-    return sil | ndimage.binary_dilation(body, _disk(2))
+    table = table or JP_DEPTH_RGB
+    vert = vert or JP_VERT
+    cfg = cfg or OP
+    if blur:
+        w = ndimage.gaussian_filter(body.astype(np.float32), blur)
+        for c in range(3):
+            ch = np.where(body, arr[..., c], 0).astype(np.float32)
+            arr[body, c] = (ndimage.gaussian_filter(ch, blur) / np.maximum(w, 1e-6))[body]
+    ys = np.nonzero(body.any(axis=1))[0]
+    if len(ys) > 1:
+        yf = np.clip((np.arange(arr.shape[0]) - ys.min()) / (ys.max() - ys.min()), 0, 1)
+        prof = np.interp(yf, np.linspace(0, 1, len(vert)), vert) / np.mean(vert)
+        arr[body, :3] *= prof[:, None].repeat(arr.shape[1], 1)[body, None]
+    d = np.round(ndimage.distance_transform_edt(body)).astype(int)
+    kmax = max(table)
+    for _ in range(2):
+        # 🔴 질감 비율을 **픽셀 그대로** 쓰면 원천의 노이즈가 곱해져 띠 안쪽이 지글거린다
+        #    (유저 지적 2026-09-06 「잡티」). 흐린 명도로 비율을 구하고 폭을 묶어 **결이 넓은
+        #    그라데이션만** 남긴다.
+        # 🔴 흐림(gaussian)으로 잡티를 지우면 **원천의 어두운 윤곽·ㅇ 속 고리까지 같이 사라져**
+        #    글자가 납작한 회색 덩어리가 된다(실측 2026-09-06). 잡티는 지우고 구조는 남기는 건
+        #    **중앙값 필터**다 — 외딴 점만 없어지고 띠·고리는 그대로다.
+        raw = arr[..., :3].mean(axis=2)
+        fill = np.where(body, raw, raw[body].mean())
+        lum = ndimage.median_filter(fill, size=cfg["tex_med"])
+        target = np.zeros_like(arr[..., :3])
+        ratio = np.ones(arr.shape[:2], np.float32)
+        for k, rgb in table.items():
+            sel = body & ((d == k) if k < kmax else (d >= k))
+            if sel.any():
+                # 🔴 JP 표의 어두운 띠는 남색 기운(B-R +25~35)이 있는데 화면에선 **파랗게** 읽힌다
+                #    (유저 지적 2026-09-07). 명도만 두고 색을 `chroma` 만큼만 남긴다 — 0 이면 무채색.
+                g = sum(rgb) / 3.0
+                target[sel] = [g + (v - g) * cfg.get("chroma", 0.0) for v in rgb]
+                ratio[sel] = lum[sel] / max(1.0, lum[sel].mean())
+        ratio = np.clip(ratio, 1 - cfg["tex_clip"], 1 + cfg["tex_clip"])
+        # 깊이 단계 사이가 계단지지 않게 목표색을 흐린다(몸통 안에서만)
+        w = ndimage.gaussian_filter(body.astype(np.float32), cfg["band_blur"])
+        for c in range(3):
+            target[..., c] = ndimage.gaussian_filter(
+                np.where(body, target[..., c], 0), cfg["band_blur"]
+            ) / np.maximum(w, 1e-6)
+        arr[body, :3] = np.clip(target[body] * ratio[body, None], 0, cap)
+    if cfg.get("sharpen"):
+        # 흐림·중앙값을 거치면 은색이 물러진다(유저: 「조금 흐릿하다」) ⇒ 몸통 안에서만 언샤프.
+        # 잡티를 지운 **뒤에** 세우므로 노이즈는 안 되살아난다. 테(바깥 2px)는 건드리지 않는다.
+        r = cfg.get("sharpen_r", 1.0)
+        w = ndimage.gaussian_filter(body.astype(np.float32), r)
+        for c in range(3):
+            ch = np.where(body, arr[..., c], 0).astype(np.float32)
+            low = ndimage.gaussian_filter(ch, r) / np.maximum(w, 1e-6)
+            arr[body, c] = np.clip(
+                arr[body, c] + cfg["sharpen"] * (arr[body, c] - low[body]), 0, 255
+            )
 
 
 def make_logo_op():
@@ -508,12 +578,13 @@ def make_logo_op():
     src = np.asarray(ai_big_title())
     a = src[..., 3] > 0
     col = src[..., :3].copy()
-    # 🔴 400×118 은 원천이 1090px 라 축소가 **2.8배뿐**이다(작은 로고는 13.6배).
-    #    그래서 흰 테가 얇게 남고, 획이 만나는 **오목한 모서리**가 계단으로 패여
-    #    「이빨 빠진」 것처럼 보인다(유저 지적 2026-09-05).
-    #    ⇒ 실루엣을 **3배로 키워 흐린 뒤 자르고**(계단이 사라진다) **닫기로 오목한 자리를
-    #      메운 다음** 테를 두른다. 흐림 값이 곧 매끈함이다.
-    #    ⚠ 더 키우면 획이 뭉갠다(실측: 흐림 1.2 · 닫기 3.0 에서 「ㅎ」 윗획과 「마」의 ㅁ).
+    # 🔴 AI 원천엔 **흰 테가 이미 그려져 있고 두께가 고르지 않다.** 그 위에 또 두르면 테가
+    #    「AI 것 + 내 것」이 돼 두껍고 들쭉날쭉해진다(실측 3.0, 2~4 — 유저 지적 2026-09-05).
+    #    ⇒ **어두운 몸통**(흰색이 아닌 자리; 속의 은색 하이라이트는 메워서 되살린다)에서부터
+    #      한 반지름으로 두른다. 그러면 두께 = 반지름이고 균일하다. 원천의 흰 테는 버린다.
+    white = a & (src[..., :3].min(axis=2) >= 200)
+    a = ndimage.binary_fill_holes(a & ~white) & a
+    col[white] = 255
     k = src.shape[1] / OP["big_w"]
     up = 3
     f = (
@@ -524,8 +595,13 @@ def make_logo_op():
         ).astype(np.float32)
         / 255
     )
-    sil = ndimage.binary_closing(ndimage.gaussian_filter(f, 0.8 * up) >= 0.5, _disk(k * 2.5 * up))
-    rim = ndimage.binary_dilation(sil, _disk(k * 1.5 * up))
+    sil = ndimage.binary_closing(
+        ndimage.gaussian_filter(f, OP["smooth"] * up) >= 0.5, _disk(k * 2.5 * up)
+    )
+    # 열기 — 원천 그림의 **가시**(「녀」의 ㄴ 위에 몇 px 튀어나온 것, 유저 지적 2026-09-06)를 깎는다.
+    # 반지름은 획 두께보다 훨씬 작아야 한다 — 획은 그대로, 가시만 없어진다.
+    sil = ndimage.binary_opening(sil, _disk(k * 0.9 * up))
+    rim = ndimage.binary_dilation(sil, _disk(k * OP["rim"] * up))
     a2 = (
         np.asarray(
             Image.fromarray((rim * 255).astype(np.uint8)).resize(a.shape[1::-1], Image.LANCZOS)
@@ -533,28 +609,37 @@ def make_logo_op():
         >= 128
     )
     col[a2 & ~a] = 255
+    # 🔴 원천은 AI 의 흰 테까지 잡은 상자라 내 테(더 얇다)로 갈면 **위아래에 빈 줄이 남는다** —
+    #    알파가 36~100 에 그쳐 JP(35~101)보다 위아래 한 줄씩 모자라고 부제와 4행 떴다(유저 지적
+    #    2026-09-06). 새 테의 상자로 다시 잘라 띠 67행을 꽉 쓴다.
+    ys = np.nonzero(a2.any(axis=1))[0]
+    col, a2 = col[ys.min() : ys.max() + 1], a2[ys.min() : ys.max() + 1]
     b = Image.fromarray(np.dstack([col, (a2 * 255).astype(np.uint8)]), "RGBA").resize(
-        (OP["big_w"], OP["big_h"] - 2 * OP["pad"]), Image.LANCZOS
+        (OP["big_w"], OP["big_h"] - OP["pad_top"] - OP["pad_bot"]), Image.LANCZOS
     )
     P = OP["margin"]  # 테가 몸통 상자 밖으로 나갈 여백 — 좌우는 캔버스의 (400-392)/2 = 4 가 상한
     arr = np.pad(np.asarray(b).astype(np.float32), ((P, P), (P, P), (0, 0)))
+    cov = arr[..., 3] / 255  # LANCZOS 축소가 남긴 **진짜 커버리지** — 아래 가장자리 눅이기에 쓴다
     m = arr[..., 3] >= 128
-    # 흰 테 실루엣은 업스케일본에서 빌린다 — 색·질감은 위에서 만든 것 그대로 쓴다
+    a = a[ys.min() : ys.max() + 1]
     body = np.pad(
         np.asarray(
             Image.fromarray((a * 255).astype(np.uint8)).resize(
-                (OP["big_w"], OP["big_h"] - 2 * OP["pad"]), Image.LANCZOS
+                (OP["big_w"], OP["big_h"] - OP["pad_top"] - OP["pad_bot"]), Image.LANCZOS
             )
         )
         >= 128,
         P,
     )
-    sil = op_rim_from_upscale(body)
-    if sil is not None:
-        arr[sil & ~m, :3] = 255  # 넓어진 자리는 흰 테
-        m = sil
+    _metal_shade(arr, m & (ndimage.distance_transform_edt(m) > 2))  # 테 안쪽 몸통만
     arr[m & (ndimage.distance_transform_edt(m) <= 2)] = (255, 255, 255, 255)  # 바깥 2겹 순백
-    arr[..., :3] = _soften_edge(arr[..., :3], m, 0.4)
+    # 0.4 로는 「마」의 ㅁ·ㅏ 테에 계단이 남았다(유저 지적 2026-09-06) — 작은 로고(0.7)보다 더 눅인다
+    arr[..., :3] = _soften_edge(arr[..., :3], m, OP["edge"])
+    # 🔴 1비트 알파의 계단은 σ 나 눅임 강도로는 안 사라진다(실측: 넷 다 같았다). JP 가 쓰는
+    #    수법 — **가장자리 픽셀을 커버리지만큼 어둡게**(JP 경계에도 회색 픽셀이 281개다). 배경이
+    #    검정·주황이라 어두운 쪽으로 섞이면 계단이 녹아 보인다(유저 요청 2026-09-06).
+    edge = m & (cov < 0.98)
+    arr[edge, :3] *= np.clip(cov[edge], 0.35, 1.0)[:, None] ** OP["aa"]
     arr = np.clip(arr, 0, 255).astype(np.uint8)
     arr[~m] = 0
     arr[..., 3] = m * 255
@@ -576,12 +661,12 @@ def make_logo_op():
     plate = np.asarray(op_plate())
     cv = Image.new("RGBA", (OP["w"], OP["h"]), (0, 0, 0, 0))
     cv.alpha_composite(
-        Image.fromarray(laid, "RGBA"), ((OP["w"] - big_w) // 2 - P, OP["top"] + OP["pad"] - P)
+        Image.fromarray(laid, "RGBA"), ((OP["w"] - big_w) // 2 - P, OP["top"] + OP["pad_top"] - P)
     )
     cv.alpha_composite(sub, ((OP["w"] - sub.width) // 2, OP["sub_bottom"] - sub.height))
     a2 = np.asarray(cv).copy()
     a2[: OP["top"]] = plate[: OP["top"]]  # 금판은 색 줄이기 **전에** 붙인다
-    out, _ = _fit_palette(a2, first=185)
+    out, _ = _fit_palette(a2, first=235)  # 계조를 살리려면 색이 더 필요하다(JP 몸통 132색)
     out[: OP["top"]] = plate[: OP["top"]]  # …그리고 뒤에 다시 (색이 흔들리지 않게)
     return Image.fromarray(
         out, "RGBA"
@@ -729,13 +814,11 @@ def main():
     ap.add_argument("--check", action="store_true", help="커밋된 PNG 와 바이트 대조만")
     a = ap.parse_args()
     jobs = []
-    # ⚠ 둘 다 있어야 한다 — 하나만 있으면 **다른 그림이 나오고** `--check` 가 헛돈다
-    missing = [f for f in (AI_SRC, RIM_SRC) if not os.path.exists(f)]
-    if not missing:
+    if os.path.exists(AI_SRC):
         jobs.append(("title_logo.png", make_logo))
         jobs.append(("title_logo_op.png", make_logo_op))
     else:
-        print(f"⬜ 로고는 건너뛴다 — {missing[0]} 가 없다(머신 전용). 커밋된 PNG 가 정본이다.")
+        print(f"⬜ 로고는 건너뛴다 — {AI_SRC} 가 없다(머신 전용). 커밋된 PNG 가 정본이다.")
     for idx, txt, name in BUTTONS:
         jobs.append((name, lambda i=idx, t=txt: make_button(i, t)))
 
