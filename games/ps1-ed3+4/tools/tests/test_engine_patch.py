@@ -15,13 +15,24 @@ import typeset
 
 class TestEnginePatch(unittest.TestCase):
     def test_hooks_assemble_and_verify(self):
-        words = engine_patch.hooks("ed3", 0xE5, 8)
+        words, labels = engine_patch.hooks("ed3", 0xE5, 8)
         p = engine_patch.PATCH["ed3"]
         self.assertLessEqual(4 * len(words), p["table_off"])  # 표를 침범하지 않는다
-        # 끝은 폰트 베이스 복원 — `lui a1,0x800a` · `jr ra` · `addiu a1,a1,-0x1e90`
-        self.assertEqual(words[-3], 0x3C05800A)
-        self.assertEqual(words[-2], 0x03E00008)
-        self.assertEqual(words[-1], 0x24A5E170)
+        # 틀 루틴은 본 훅 뒤에 — `lhu v1,0x14(fp)` 로 시작한다(원래 그 자리의 명령)
+        k = (labels["framew"] - p["dead"]) // 4
+        self.assertEqual(words[k], p["frame_edge_orig"][0])
+        # 막대 루틴 둘은 같은 꼬리(`sh v1,0x2e(fp)`)로 나간다
+        self.assertEqual(words[(labels["bar_out"] - p["dead"]) // 4 + 1], p["frame_bar_orig"][1])
+        # 본 훅의 끝은 폰트 베이스 복원 — `lui a1,0x800a` · `jr ra` · `addiu a1,a1,-0x1e90`
+        self.assertEqual(words[k - 3], 0x3C05800A)
+        self.assertEqual(words[k - 2], 0x03E00008)
+        self.assertEqual(words[k - 1], 0x24A5E170)
+
+    def test_frame_stays_24_columns(self):
+        """격자는 32칸이지만 틀은 24칸 — 유저 실측: 틀이 화면 오른쪽을 뚫었다."""
+        self.assertEqual(engine_patch.FRAME_COLS, 24)
+        self.assertEqual(engine_patch.asm("lhu v1, 0x14(fp)", 0)[0][0], 0x97C30014)
+        self.assertEqual(engine_patch.asm("addiu v1, v0, 0xc\nsh v1, 0x2e(fp)", 0)[0], [0x2443000C, 0xA7C3002E])
 
     def test_cols_matches_typeset(self):
         """격자 열 수는 조판 상한과 같은 값이어야 한다 — 어긋나면 조판은 통과하고 화면이 잘린다."""

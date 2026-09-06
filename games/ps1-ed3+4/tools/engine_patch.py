@@ -55,12 +55,29 @@ import font
 
 # 격자 열 수 — `typeset.COLS` 가 같은 값을 쓴다(한 줄에 들어가는 글리프 수의 상한).
 COLS = 32
+# 틀 폭(열) — 격자는 32칸이지만 틀은 원래대로 24칸(288px)이다. 유저 실측 2026-09-07: 틀이 열 수를
+# 따라 그려져 오른쪽 화면 밖으로 나갔다. 원본에서 32열 창은 없으니(호출부 a2 상수 실측) 32 → 24 만 잡는다.
+FRAME_COLS = 24
+# 틀 밖 빈 칸을 보내는 거리(px). GPU 는 그리기 영역 밖 스프라이트를 안 그린다.
+OFFSCREEN = 600
 
 ED3 = {
     "cols_sites": (0x80039B30, 0x80039BA0, 0x80039BC8, 0x80039C04, 0x80039C2C),
     "cols_orig": 0x24060018,  # addiu a2, zero, 0x18
     "site_a": 0x80018ACC,
     "site_a_orig": (0x3C05800A, 0x24A5E170),  # lui a1,0x800a · addiu a1,a1,-0x1e90
+    # 틀 — 오른쪽 변의 x 를 열 수에서 계산하는 자리(`lhu v1,0x14(fp)` · nop): 32 면 24 로 준다.
+    "frame_edge": 0x80017D30,
+    "frame_edge_orig": (0x97C30014, 0x00000000),
+    # 격자 칸 · 위·아래 막대 루프의 x 전진(`addiu v1,v0,0xc` · `sh v1,0x2e(fp)`): 24번째까지는
+    # +12, 25번째는 +612(화면 밖으로), 그 뒤는 +0. 빈 격자 칸은 **검은 캐시 타일**을 그리므로
+    # (창 내부의 어두운 상자가 곧 격자 셀이다) 틀 밖에 두면 검은 띠가 되고, 마지막 칸 위에
+    # 겹치면 반투명이 겹쳐 그 열만 진해진다 — 그래서 화면 밖이다. 글리프가 올라간 칸은 훅 A 가
+    # x 를 다시 정하니 어디 있었든 상관없다. ⚠ 루프 횟수(32)는 건드리지 않는다 — 막대 타일도
+    # 슬롯·스프라이트를 소비하므로 횟수를 줄이면 글리프 칸 배치가 통째로 어긋난다(09-07 실측:
+    # 글자가 엉뚱한 칸으로 가 「크리」에서 멈춘 것처럼 보였다).
+    "frame_bars": ((0x800178B0, "bar_top"), (0x80017AF0, "bar_top"), (0x8001804C, "bar_bot")),
+    "frame_bar_orig": (0x2443000C, 0xA7C3002E),
     "handles": 0x801D6498,  # 창 핸들 표 (22B × 12)
     "prims": 0x800CEA80,  # 스프라이트 배열 (20B × 0x400, 더블버퍼 +0x5000)
     "dead": 0x8008DAD4,
@@ -308,11 +325,52 @@ def hooks(disc, space_code, space_w):
       lui   a1, {fb_hi:#x}
       jr    ra
       addiu a1, a1, {fb_lo}
+    # ── 틀 오른쪽 변 — `lhu v1,0x14(fp)` 를 대신하되 32 면 24 를 준다. v0 는 살아 있다 — t0 만.
+    framew:
+      lhu   v1, 0x14(fp)
+      li    t0, {COLS}
+      bne   v1, t0, framew_out
+      nop
+      li    v1, {FRAME_COLS}
+    framew_out:
+      jr    ra
+      nop
+    # ── 격자·막대 x 전진 — 들어올 때 v0 = x, i = 방금 놓은 타일 번호. i < 23 → +12,
+    #    i == 23 → +612(다음 타일부터 화면 밖), 23 < i < 31 → +0, i == 31 → −600(루프 뒤의 x 가
+    #    24번째 칸 자리로 돌아온다 — 막대 끝의 **모서리 장식**이 그 x 에 그려진다). 0x2e(fp) 에 쓴다.
+    bar_top:
+      lh    t0, 0x32(fp)
+      j     bar_step
+      nop
+    bar_bot:
+      lh    t0, 0x26(fp)
+      nop
+    bar_step:
+      slti  t1, t0, {FRAME_COLS - 1}
+      bne   t1, zero, bar_plus12
+      li    t1, {FRAME_COLS - 1}
+      beq   t0, t1, bar_jump
+      li    t1, {COLS - 1}
+      beq   t0, t1, bar_back
+      nop
+      j     bar_out
+      move  v1, v0
+    bar_jump:
+      j     bar_out
+      addiu v1, v0, {12 + OFFSCREEN}
+    bar_back:
+      j     bar_out
+      addiu v1, v0, {-OFFSCREEN}
+    bar_plus12:
+      addiu v1, v0, 12
+    bar_out:
+      jr    ra
+      sh    v1, 0x2e(fp)
     """
-    words, _ = asm(src, p["dead"])
+    words, labels = asm(src, p["dead"])
     verify(words, p["dead"])
     assert 4 * len(words) <= p["table_off"], "훅 코드가 표 자리를 침범한다"
-    return words
+    return words, labels
 
 
 def _off(ram):
@@ -344,15 +402,24 @@ def apply(exe, disc, table, space_w=None):
             f"🔴 엔진 패치 사전조건 — 죽은 구간 {p['dead']:#x} 의 sha1 이 다르다 ({got[:12]})"
         )
     _expect(exe, p["site_a"], p["site_a_orig"], "훅 자리")
+    _expect(exe, p["frame_edge"], p["frame_edge_orig"], "틀 오른쪽 변")
+    for f, _ in p["frame_bars"]:
+        _expect(exe, f, p["frame_bar_orig"], "격자·막대 x 전진")
     for s in p["cols_sites"]:
         _expect(exe, s, (p["cols_orig"],), "창 열 수")
 
-    words = hooks(disc, table[" "], space_w)
+    words, labels = hooks(disc, table[" "], space_w)
     struct.pack_into(f"<{len(words)}I", exe, d0, *words)
     t0 = d0 + p["table_off"]
     exe[t0 : t0 + p["table_len"]] = bytes(p["table_len"])
-    jal_a = (3 << 26) | ((p["dead"] >> 2) & 0x3FFFFFF)
-    struct.pack_into("<II", exe, _off(p["site_a"]), jal_a, 0)
+
+    def jal(target):
+        return (3 << 26) | ((target >> 2) & 0x3FFFFFF)
+
+    struct.pack_into("<II", exe, _off(p["site_a"]), jal(p["dead"]), 0)
+    struct.pack_into("<II", exe, _off(p["frame_edge"]), jal(labels["framew"]), 0)
+    for f, name in p["frame_bars"]:
+        struct.pack_into("<II", exe, _off(f), jal(labels[name]), 0)
     for s in p["cols_sites"]:
         struct.pack_into("<I", exe, _off(s), (p["cols_orig"] & 0xFFFF0000) | COLS)
-    return f"공백 {space_w}px · 열 {COLS} · 훅 {len(words)}워드 @ {p['dead']:#x}"
+    return f"공백 {space_w}px · 열 {COLS}(틀 {FRAME_COLS}) · 훅 {len(words)}워드 @ {p['dead']:#x}"
