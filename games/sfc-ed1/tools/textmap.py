@@ -83,6 +83,17 @@ def tokens_in(kr: str) -> list[str]:
     return TOKEN_RE.findall(kr)
 
 
+# 사전 여섯 벌이 공용 정본의 어느 부류인가 — `init_dict`(채우기)와 `check_glossary`(갈림 검사)가 나눠 쓴다
+DICT_CATEGORY = {
+    0xD0: "person",
+    0xD1: "place",
+    0xD2: "item",
+    0xD3: "monster",
+    0xD4: "item",
+    0xD5: None,
+}
+
+
 def check_tokens(kr: str, tokens: list[str]) -> str | None:
     """번역문의 토큰 계약. **제어 토큰(`<..>`, `<@>` 포함)은 전부 같은 순서로** 있어야 한다 — 빠지면 분기·페이지가
     사라진다. **사전·치환 토큰(`{..}`)은 빼도 되고 어순을 바꿔도 된다**(글자만 찍는다 — 「キャリオンク{ロー}ラー」처럼
@@ -154,14 +165,7 @@ def init_dict() -> dict:
     for cat, d in g.items():
         for k, v in d.items():
             idx.setdefault((cat, hira(k)), v)
-    cat_of = {
-        0xD0: "person",
-        0xD1: "place",
-        0xD2: "item",
-        0xD3: "monster",
-        0xD4: "item",
-        0xD5: None,
-    }
+    cat_of = DICT_CATEGORY
     cur = json.loads(DICT_PATH.read_text(encoding="utf-8")) if DICT_PATH.exists() else {}
     n_hit = 0
     for code in text.DICT_TABLES:
@@ -239,6 +243,63 @@ def init_menus() -> dict:
     }
 
 
+def check_glossary() -> list[tuple[str, str, str, str]]:
+    """사전(`dict.json`)의 `glossary` 항목이 **공용 정본과 같은가.** 갈리면 그 자리를 돌려준다.
+
+    ⚠ 정본은 다른 게임의 브랜치에서도 고쳐진다(루트 CLAUDE.md) — 실제로 PS1 의 1회차 QA 가 머지되며
+    몬스터 이름 여섯이 바뀌었고(`살쾡이`→`산고양이` 등) 우리 사전만 옛 표기로 남아 있었다(2026-09-06).
+    표기가 갈리면 **인게임에서만 드러나므로** 게이트가 본다. 원문(JP)은 커밋 안 하니 롬에서 얻는다."""
+    import tm as tm_mod
+
+    rom = common.rom_bytes()
+    g = json.loads(tm_mod.GLOSSARY.read_text(encoding="utf-8"))["categories"]
+    # ⚠ **부류를 갈라 본다** — 같은 원문이 부류마다 다른 표기다(`カース` = 아이템 `커스` · 몬스터 `카스`).
+    #   납작하게 펴면 몬스터를 아이템 표기로 잡는 오탐이 난다(실측 2026-09-06). 순서는 `init_dict` 와 같다.
+    cur = json.loads(DICT_PATH.read_text(encoding="utf-8"))
+    out = []
+    for code in text.DICT_TABLES:
+        cats = [DICT_CATEGORY[code]] + [
+            c for c in ("person", "place", "item", "monster") if c != DICT_CATEGORY[code]
+        ]
+        for i, b in enumerate(text.dict_entries(code, rom)):
+            key = f"{code:02X}:{i:02X}"
+            v = cur.get(key, {})
+            kr = v.get("kr")
+            if not kr or v.get("state") != "glossary":
+                continue
+            jp = text.decode(b).strip()
+            for c in cats:
+                d = g.get(c, {})
+                # 성별 표식이 붙은 변종으로만 정본에 있는 것이 있다(スティングビートル♀ 등)
+                cand = d.get(jp) or d.get(f"{jp}♀") or d.get(f"{jp}♂")
+                if cand:
+                    if cand.rstrip("♀♂") != kr:
+                        out.append((key, jp, kr, cand.rstrip("♀♂")))
+                    break
+    return out
+
+
+# 「가타카나 한 덩어리인데 우리 표기에 공백」 — `docs/naming.md` 의 음차+음차 규칙. 정당한 예외는
+# 원문에 번역한 보통명사가 섞인 자리뿐이고(`レストナキノコ` → 레스토나 버섯), 그건 원문이 한 덩어리가
+# 아니라 여기 안 걸린다. 정본 쪽은 `shared/glossary/tests/test_glossary.py` 가 같은 걸 본다.
+_KATAKANA_RUN = re.compile(r"^[゠-ヿー・]+$")
+
+
+def check_naming() -> list[tuple[str, str, str]]:
+    """우리 초벌이 음차+음차를 띄어 쓰고 있나 — 정본이 안 든 낱말은 이쪽이 유일한 그물이다."""
+    rom = common.rom_bytes()
+    cur = json.loads(DICT_PATH.read_text(encoding="utf-8"))
+    out = []
+    for code in text.DICT_TABLES:
+        for i, b in enumerate(text.dict_entries(code, rom)):
+            key = f"{code:02X}:{i:02X}"
+            kr = cur.get(key, {}).get("kr")
+            jp = text.decode(b).strip()
+            if kr and " " in kr and _KATAKANA_RUN.match(jp):
+                out.append((key, jp, kr))
+    return out
+
+
 def check() -> dict:
     tm = load()
     segs = {
@@ -257,7 +318,18 @@ def check() -> dict:
         err = check_tokens(v["kr"], s["tokens"])
         if err:
             bad.append((k, err))
-    return {"entries": len(tm), "unknown_id": unknown, "token_errors": len(bad), "sample": bad[:3]}
+    gl = check_glossary()
+    nm = check_naming()
+    return {
+        "entries": len(tm),
+        "unknown_id": unknown,
+        "token_errors": len(bad),
+        "sample": bad[:3],
+        "glossary_drift": len(gl),
+        "glossary_sample": gl[:5],
+        "naming_space": len(nm),
+        "naming_sample": nm[:5],
+    }
 
 
 if __name__ == "__main__":
@@ -287,5 +359,5 @@ if __name__ == "__main__":
     if a.check:
         r = check()
         print(r)
-        if r["token_errors"] or r["unknown_id"]:
+        if r["token_errors"] or r["unknown_id"] or r["glossary_drift"] or r["naming_space"]:
             raise SystemExit(1)
