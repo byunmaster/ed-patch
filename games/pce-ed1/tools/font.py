@@ -1,12 +1,13 @@
 """한글 글리프 뱅크 + 코드표 — 문안이 쓰는 음절만 싣는다(결정 B, status.md 8절).
 
     글리프 = 12×12 → 24B(행 0~11, 2B/행, 비트 15~4). 뱅크 0x85~0x87 에 순서대로(24B × ≤1,024).
-    코드  = 리드 F0+idx//220 · 트레일 0x24+idx%220 (idx 는 음절을 유니코드 순으로 정렬한 번호).
+    코드  = 리드 F0+idx//220 · 트레일 0x24+idx%220 (idx 는 **정본 순서**의 번호 — `script/glyph_order.json`).
     ⚠ 트레일은 0x24 이상 — 인터프리터가 <0x24 를 옵코드로 보고, 이름칸 스캐너가 0x06 을 끝으로 본다.
 
 원천 글꼴은 `shared/fonts/Galmuri11.bdf`(11px, 12×12 셀에 맞다). 없는 글자는 **빌드 실패**다.
 """
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -112,9 +113,41 @@ def _index_of(ch: str, table: dict[str, bytes]) -> int:
     return (c[0] - LEAD0) * PER_LEAD + (c[1] - TRAIL0)
 
 
+GLYPH_ORDER = None  # 지연 로드 — `script/glyph_order.json`
+
+
+def _order_canon() -> list[str]:
+    """글리프 배정 순서 **정본**(커밋된다).
+
+    🔴 **코드가 세이브에 남는다.** 게임은 파티원 이름을 우리 글리프 코드 그대로 BRAM 에 적는다
+    (실측 2026-09-06: 유저 세이브 +0x244 에 `f0e0 f1d7 06`). 그래서 배정 순서가 바뀌면
+    **이전 세이브의 이름이 다른 글자로 읽힌다** — 「세리오스」가 「서린온을」이 됐다.
+    옛 방식(`sorted(쓰는 글자)`)은 문안을 한 글자만 늘려도 뒤 코드가 통째로 밀린다.
+    ⇒ 순서를 **커밋되는 정본**으로 못 박고, 새 글자는 **뒤에 덧붙인다**(앞은 안 흔든다).
+    """
+    global GLYPH_ORDER
+    if GLYPH_ORDER is None:
+        f = Path(__file__).resolve().parents[1] / "script" / "glyph_order.json"
+        GLYPH_ORDER = json.loads(f.read_text())["order"] if f.exists() else []
+    return GLYPH_ORDER
+
+
 def build_table(chars) -> tuple[dict[str, bytes], bytes]:
-    """음절 집합 → (글자→2B 코드, 글리프 뱅크 바이트(24KB, 0 패딩)). 조사 글자는 늘 포함한다."""
-    order = sorted(set(chars) | set(JOSA_CHARS))
+    """음절 집합 → (글자→2B 코드, 글리프 뱅크 바이트(24KB, 0 패딩)). 조사 글자는 늘 포함한다.
+
+    배정은 **정본 순서**를 따른다(`_order_canon`). 정본에 없는 글자가 있으면 **빌드가 죽는다** —
+    `python3 tools/freeze_glyphs.py` 로 뒤에 덧붙이고 커밋한다(코드가 안 밀린다).
+    """
+    need = set(chars) | set(JOSA_CHARS)
+    canon = _order_canon()
+    missing = sorted(need - set(canon))
+    if missing:
+        raise ValueError(
+            f"글리프 정본에 없는 글자 {len(missing)}자: {''.join(missing[:20])}…\n"
+            "  → python3 games/pce-ed1/tools/freeze_glyphs.py 로 덧붙이고 커밋해라.\n"
+            "  (순서를 바꾸면 **이전 세이브의 이름이 깨진다** — 코드가 BRAM 에 남는다)"
+        )
+    order = list(canon)
     if len(order) > MAX_GLYPHS:
         raise ValueError(f"음절 {len(order)}자 — 상한 {MAX_GLYPHS}. 결정 B 재검토(status.md 8절)")
     table = {ch: code_of(i) for i, ch in enumerate(order)}

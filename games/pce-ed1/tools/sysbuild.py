@@ -149,6 +149,20 @@ def check_keys(errors: list[str]) -> dict[str, int]:
     seen["extras"] = len(stray)
     errors += [f"extras.json 열쇠가 아무 덩이와도 안 맞는다: {k!r}" for k in stray]
 
+    import battle as B
+
+    bt = _load("battle.json").get("messages", {})
+    if bt:
+        live = {
+            B.msg_key(u["body"])
+            for c in B.scan()
+            for b in c["blocks"]
+            for u in B.msg_units(b["data"])
+        }
+        stray = [k for k in bt if k not in live]
+        seen["battle"] = len(stray)
+        errors += [f"battle.json 열쇠가 아무 문구와도 안 맞는다: {k!r}" for k in stray]
+
     inl = _load("inline.json")
     ik = {r["key"] for r in S.read_inline()}
     stray = [k for k in inl if not k.startswith("_") and k not in ik]
