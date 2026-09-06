@@ -99,7 +99,7 @@ printf 'LANG=C.UTF-8\n' >> /etc/environment   # 비대화형 셸(`ssh dev '명�
 **파이썬** — 빌드 체인이 실제로 쓰는 서드파티는 넷뿐이다:
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install pillow capstone numpy scipy
+python3 -m venv .venv && .venv/bin/pip install pillow capstone numpy scipy pykakasi  # pykakasi: sfc-ed1 번역 메모리(한자→가나)
 ```
 
 - **포매터도 여기 있어야 한다** — `pip install ruff`(레포 규약: `ruff check --fix` + `format`).

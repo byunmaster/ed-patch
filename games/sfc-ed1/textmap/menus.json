@@ -1,0 +1,398 @@
+{
+ "EPひょうじ@A0B": {
+  "kr": "EP 표시",
+  "state": "draft",
+  "budget_tiles": 9,
+  "width_tiles": 7,
+  "fits": true,
+  "row": 3,
+  "x0": 2
+ },
+ "あと@A15": {
+  "kr": "남은",
+  "state": "ps1",
+  "budget_tiles": 4,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 1,
+  "x0": 2
+ },
+ "いどう@A0B": {
+  "kr": "이동",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 5,
+  "x0": 2
+ },
+ "うりたい@A0D": {
+  "kr": "팔기",
+  "state": "draft",
+  "budget_tiles": 4,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 3,
+  "x0": 2
+ },
+ "うん@A05": {
+  "kr": "행운",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 7,
+  "x0": 2
+ },
+ "かいたい@A0D": {
+  "kr": "사기",
+  "state": "draft",
+  "budget_tiles": 4,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 1,
+  "x0": 2
+ },
+ "かいふくのじゅもん@A0C": {
+  "kr": "회복의 주문",
+  "state": "ps1",
+  "budget_tiles": 15,
+  "width_tiles": 11,
+  "fits": true,
+  "row": 7,
+  "x0": 2
+ },
+ "かいふくのアイテム@A0C": {
+  "kr": "회복 아이템",
+  "state": "ps1",
+  "budget_tiles": 15,
+  "width_tiles": 11,
+  "fits": true,
+  "row": 9,
+  "x0": 2
+ },
+ "かしこさ@A05": {
+  "kr": "지혜",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 3,
+  "x0": 2
+ },
+ "こうげき@A05": {
+  "kr": "공격력",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 9,
+  "x0": 2
+ },
+ "じゅもん@A01": {
+  "kr": "주문",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 1,
+  "x0": 2
+ },
+ "すてる@A01": {
+  "kr": "버린다",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 7,
+  "x0": 2
+ },
+ "すてる@B0A": {
+  "kr": "버린다",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 1,
+  "x0": 2
+ },
+ "すてる@B0C": {
+  "kr": "버린다",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 3,
+  "x0": 2
+ },
+ "すてる@C0A": {
+  "kr": "버린다",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 1,
+  "x0": 2
+ },
+ "すばやさ@A05": {
+  "kr": "민첩성",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 5,
+  "x0": 2
+ },
+ "せってい@A06": {
+  "kr": "설정",
+  "state": "draft",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 7,
+  "x0": 2
+ },
+ "ぜんいんのせってい@A0C": {
+  "kr": "전원의 설정",
+  "state": "ps1",
+  "budget_tiles": 15,
+  "width_tiles": 11,
+  "fits": true,
+  "row": 11,
+  "x0": 2
+ },
+ "そうび@A01": {
+  "kr": "장비",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 5,
+  "x0": 2
+ },
+ "そうび@B0C": {
+  "kr": "장비",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 1,
+  "x0": 2
+ },
+ "そのた@A01": {
+  "kr": "그외",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 11,
+  "x0": 2
+ },
+ "そのた@B0A": {
+  "kr": "그외",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 5,
+  "x0": 2
+ },
+ "そのた@B0C": {
+  "kr": "그외",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 7,
+  "x0": 2
+ },
+ "そのた@C0A": {
+  "kr": "그외",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 5,
+  "x0": 2
+ },
+ "たたかいのじゅもん@A0C": {
+  "kr": "전투의 주문",
+  "state": "ps1",
+  "budget_tiles": 15,
+  "width_tiles": 11,
+  "fits": true,
+  "row": 5,
+  "x0": 2
+ },
+ "つかう@A01": {
+  "kr": "사용",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 3,
+  "x0": 2
+ },
+ "つよさ@A01": {
+  "kr": "상태",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 9,
+  "x0": 2
+ },
+ "つよさ@A05": {
+  "kr": "힘",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 2,
+  "fits": true,
+  "row": 1,
+  "x0": 2
+ },
+ "つよさ@B0A": {
+  "kr": "상태",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 3,
+  "x0": 2
+ },
+ "つよさ@B0C": {
+  "kr": "상태",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 5,
+  "x0": 2
+ },
+ "つよさ@C0A": {
+  "kr": "상태",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 3,
+  "x0": 2
+ },
+ "ぼうぎょ@A05": {
+  "kr": "방어력",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 11,
+  "x0": 2
+ },
+ "オートかいふく@A0C": {
+  "kr": "자동 회복",
+  "state": "ps1",
+  "budget_tiles": 15,
+  "width_tiles": 9,
+  "fits": true,
+  "row": 3,
+  "x0": 2
+ },
+ "オートバトル@A0C": {
+  "kr": "자동 전투",
+  "state": "ps1",
+  "budget_tiles": 15,
+  "width_tiles": 9,
+  "fits": true,
+  "row": 1,
+  "x0": 2
+ },
+ "システム@A06": {
+  "kr": "시스템",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 5,
+  "x0": 2
+ },
+ "セーブ@A06": {
+  "kr": "저장",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 3,
+  "x0": 2
+ },
+ "メッセージ@A0B": {
+  "kr": "메시지",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 7,
+  "x0": 2
+ },
+ "リーダー@A01": {
+  "kr": "리더",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 13,
+  "x0": 2
+ },
+ "リーダー@B04": {
+  "kr": "리더",
+  "state": "ps1",
+  "budget_tiles": 4,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 0,
+  "x0": 2
+ },
+ "リーダー@B0A": {
+  "kr": "리더",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 7,
+  "x0": 2
+ },
+ "リーダー@B0C": {
+  "kr": "리더",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 9,
+  "x0": 2
+ },
+ "リーダー@C0A": {
+  "kr": "리더",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 7,
+  "x0": 2
+ },
+ "レベルアップ@A0B": {
+  "kr": "레벨업",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 1,
+  "x0": 2
+ },
+ "ロード@A06": {
+  "kr": "로드",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 1,
+  "x0": 2
+ }
+}
