@@ -40,13 +40,15 @@ LAYOUT_BANK = 0x2C8000  # 넓힌 창 배치 항목을 두는 자리(확장 뱅�
 #   표 A = 틀+내용, 표 B·C = 같은 좌표의 **전부 0 기록**(닫을 때 그 영역을 되돌린다).
 #   A 만 넓히면 오른쪽 2칸이 안 지워져 **맵 위에 창 조각이 남는다.** 짝을 같이 넓힌다.
 #   B0A(=C0A)·B0C 는 0 기록이 아니라 커맨드 창을 **부분 갱신**하는 기록이라 상자만 넓힌다.
+# 🔴 **창을 옆으로 옮기면 커서가 안 따라온다**(실기 2026-09-06, 유저 제보). 커서 열은 창 배치 기록의
+#    `col` 에서 오지 않는다 — 시스템 창을 col 8→10 으로 밀었더니 커서는 **9(=원래 8+1)** 에 그대로 남아
+#    넓힌 커맨드 창의 오른쪽 틀을 한 칸씩 지웠다. ⚠ 폭 때문이 아니다: 옮기기만 하고 폭은 그대로 둔
+#    진단 롬에서도 같은 자리가 깨졌다. 원본에서는 커서가 col 9 = 창 안이라 정상이다.
+# ⇒ **제자리 확장만 한다.** 시스템 창은 오른쪽이 비어 있어(상태판은 열 19부터) 그대로 넓힐 수 있다.
+#    커맨드 창은 오른쪽이 시스템 창이라 못 넓힌다 — 3음절 라벨(`버린다`)은 커서 코드를 고친 뒤로 미룬다.
 WIDEN = {  # (표, id): (끼울 타일 수, col 이동)
-    ("A", 0x01): (2, 0),  # 커맨드 창 — 그리기
-    ("B", 0x01): (2, 0),  # 〃 지우기(=C01, 같은 주소)
-    ("A", 0x06): (2, 2),  # 시스템 창 — 그리기(A01 오른쪽이라 col 도 민다)
-    ("B", 0x06): (2, 2),  # 〃 지우기(=C06)
-    ("B", 0x0A): (2, 0),  # 커맨드 창 부분 갱신(=C0A)
-    ("B", 0x0C): (2, 0),  # 〃
+    ("A", 0x06): (2, 0),  # 시스템 창 — 그리기(제자리로 7→9, 열 8~16)
+    ("B", 0x06): (2, 0),  # 〃 지우기(=C06)
 }
 BOX_W = 7
 
@@ -73,9 +75,18 @@ MENU_POC_SLOTS = [
     0x16A,
     0x16C,
     0x16E,
+    0x120,  # 시스템 창까지 한글로 굽느라 한 행 더 빌린다(가나 두 행 → 세 행)
+    0x122,
+    0x124,
+    0x126,
+    0x128,
+    0x12A,
+    0x12C,
+    0x12E,
 ]
 MENU_POC_WINDOWS = [
     ("A", 0x01),
+    ("A", 0x06),  # 시스템 창(제자리 확장) — 로드·저장·시스템·설정
     ("B", 0x0A),
     ("B", 0x0C),
 ]  # 순서 고정(결정성) — C0A 는 B0A 와 같은 항목
@@ -239,7 +250,10 @@ def menu_poc(out: bytearray, rom: bytes) -> dict:
                     words_bot.append(0x0108)
                 else:
                     raise SystemExit(f"메뉴 PoC 는 한글·공백만: {kr!r}")
-            budget = m[1]["budget_tiles"]
+            # ⚠ 칸 예산은 **지금 기록에서 잰다** — menus.json 의 값은 원본 폭에서 잰 것이라
+            #   창을 안 넓히면 오른쪽 틀과 다음 줄 첫 칸까지 덮어썼다(실기 2026-09-06: 틀이 통째로 사라졌다).
+            x1 = next((i for i in range(x0, w) if line[i] == menus.FRAME), w)
+            budget = x1 - x0
             if len(words_top) > budget:
                 raise SystemExit(f"{m[0]} {kr!r} 가 {budget}칸을 넘는다")
             words_top += [0x0108] * (budget - len(words_top))
@@ -343,8 +357,13 @@ def mutable_ranges() -> list[tuple[int, int]]:
         o = common.snes2off(p)
         w, h = rom[o + 2], rom[o + 3]
         r.append((o, o + 4 + 2 * w * h))  # 제자리 넓힘(부분 갱신 항목)만 실제로 바뀐다
+    for table, wid in MENU_POC_WINDOWS:  # 라벨을 제자리에 다시 굽는 창(넓히지 않은 것도 있다)
+        base = common.snes2off(menus.LAYOUT_TABLES[table])
+        p2 = rom[base + 3 * wid] | (rom[base + 3 * wid + 1] << 8) | (rom[base + 3 * wid + 2] << 16)
+        o2 = common.snes2off(p2)
+        r.append((o2, o2 + 4 + 2 * rom[o2 + 2] * rom[o2 + 3]))
     sheet = common.snes2off(text.FONT_SHEET)
-    for t0 in (0x140, 0x160):  # 메뉴 PoC 가 빌린 시트 행(위 16 + 아래 16 타일)
+    for t0 in (0x120, 0x140, 0x160):  # 메뉴 PoC 가 빌린 시트 행(위 16 + 아래 16 타일)
         r.append((sheet + 8 * t0, sheet + 8 * (t0 + 0x20)))
     return r
 
