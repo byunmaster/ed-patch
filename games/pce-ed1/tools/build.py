@@ -39,36 +39,63 @@ class BuildError(Exception):
     pass
 
 
-def assemble(entries: list[tuple[int, bytes]]) -> bytes:
-    """(id, 풀린 블록) 목록 → 컨테이너 바이트. 같은 블록은 한 번만 싣고 src 를 나눠 갖는다(rel 1,444 꼴)."""
+def assemble(entries: list[tuple[int, bytes]], rel: int, nsec: int) -> bytes:
+    """(id, 풀린 블록) 목록 → 컨테이너 바이트. 🔴 **블록을 원본 자리(`src`)에 그대로 둔다.**
+
+    옛 판은 앞에서부터 다시 깔았는데, 우리 인코더가 원본보다 조금씩 촘촘해서 **안 고친 블록까지
+    앞으로 당겨졌다**(rel 1252 실측 −254B, blk6 은 10,542 → 10,406). 디렉터리는 따라가지만
+    **디렉터리를 안 보는 참조**가 있으면 그게 곧 소프트락이다 — 이 레포가 PS1 에서 이미 물린
+    「위치가 계약인 구간」이다(`docs/reference/our-findings.md` 재삽입 「구조 계약」).
+    ⇒ 원본 컨테이너 바이트에서 출발해 **각 블록의 원래 슬롯만 덮어쓴다.** 슬롯을 넘치면 죽는다.
+    """
     for id_, blk in entries:
         if len(blk) > BANK:
             raise BuildError(f"블록 id {id_} 가 {len(blk)}B — 뱅크(8KB)를 넘는다")
-    packed: dict[bytes, bytes] = {}
-    for _, blk in entries:
-        if blk not in packed:
-            packed[blk] = lz.encode(blk)
-    dir_len = len(entries) * containers.ENTRY + 1
-    src_of: dict[bytes, int] = {}
-    pos = dir_len
-    body = bytearray()
-    for blk, pk in packed.items():
-        src_of[blk] = pos
-        body += pk
-        pos += len(pk)
+
+    orig = common.track_data(rel, nsec)
+    o_ents, _ = containers.parse_dir(orig[: common.USER])
+    if [i for i, _, _ in o_ents] != [i for i, _ in entries]:
+        raise BuildError(f"컨테이너 rel {rel}: 블록 id 목록이 원본과 다르다")
+
+    # 슬롯 = 이 src 부터 **다음 src** 까지(같은 src 를 나눠 쓰는 중복 블록은 한 칸이다)
+    srcs = sorted({src for _, src, _ in o_ents})
+    end_of = {s: (srcs[k + 1] if k + 1 < len(srcs) else len(orig)) for k, s in enumerate(srcs)}
+    ln_of = {src: ln for _, src, ln in o_ents}  # 원본이 말하는 풀린 길이(되풀어 대조용)
+
+    out = bytearray(orig)
+    done: dict[int, bytes] = {}
     d = bytearray()
-    for id_, blk in entries:
-        s = src_of[blk]
-        d += bytes([id_, s & 0xFF, s >> 8, len(blk) & 0xFF, len(blk) >> 8])
+    for (id_, blk), (_, src, _) in zip(entries, o_ents, strict=True):
+        if src in done:
+            if done[src] != blk:
+                raise BuildError(f"컨테이너 rel {rel}: 같은 src {src} 를 다른 내용이 나눠 쓴다")
+        else:
+            room = end_of[src] - src
+            was, _ = lz.decode(orig[src:], ln_of[src])
+            if blk != was:  # ⚠ 안 고친 블록은 **원본 바이트를 손대지 않는다** — 우리 인코더가
+                pk = lz.encode(blk)  #    조금 촘촘해 다시 누르면 바꿀 이유 없는 바이트가 다 바뀐다
+                if len(pk) > room:
+                    raise BuildError(
+                        f"컨테이너 rel {rel} 블록 id {id_}: 압축 {len(pk)}B > 원래 슬롯 {room}B — "
+                        "자리를 옮기지 않는 게 계약이다. 문안을 줄이거나 배치를 다시 설계해라"
+                    )
+                out[src : src + len(pk)] = pk
+                out[src + len(pk) : end_of[src]] = b"\0" * (room - len(pk))
+            done[src] = blk
+        d += bytes([id_, src & 0xFF, src >> 8, len(blk) & 0xFF, len(blk) >> 8])
     d.append(containers.DIR_END)
-    out = bytes(d) + bytes(body)
+    if len(d) > srcs[0]:
+        raise BuildError(f"컨테이너 rel {rel}: 디렉터리 {len(d)}B > 첫 블록 자리 {srcs[0]}B")
+    out[: len(d)] = d
+    out[len(d) : srcs[0]] = b"\0" * (srcs[0] - len(d))
+
     # 자기 검산 — 우리 디코더로 되풀어 같은가(코덱 A 조건)
-    ents, _ = containers.parse_dir(out[:2048])
+    ents, _ = containers.parse_dir(bytes(out[:2048]))
     for (id_, blk), (id2, src, ln) in zip(entries, ents, strict=True):
         assert id_ == id2 and ln == len(blk)
-        got, _ = lz.decode(out[src:], ln)
+        got, _ = lz.decode(bytes(out[src:]), ln)
         assert got == blk, f"재조립 검산 실패 id {id_}"
-    return out
+    return bytes(out)
 
 
 def load_edits(path: Path, table: dict[str, bytes]):
@@ -236,20 +263,15 @@ def _build(edits_path, iso: Path, cue: Path):
                 if blk != b["data"]:
                     intended[(rel, b["id"])] = blk
                 entries.append((b["id"], blk))
-            data = assemble(entries)
+            data = assemble(entries, rel, slot_of[rel])
             slot = slot_of[rel] * common.USER
-            if len(data) > slot:
-                raise BuildError(
-                    f"컨테이너 rel {rel}: {len(data)}B > 칸 {slot}B(참조표 {slot_of[rel]}섹터)"
-                )
-            data = data + b"\0" * (slot - len(data))
+            assert len(data) == slot, f"컨테이너 rel {rel}: {len(data)}B ≠ 칸 {slot}B"
             orig = common.track_data(rel, slot_of[rel])
             lba = common.T2_SECTOR + rel
             mode1.write_user_data(f, lba, data, label=f"container rel {rel}", expect=orig)
             touched.append((lba, slot_of[rel]))
-            print(
-                f"  컨테이너 rel {rel}: {len(entries)}블록 → {len(data.rstrip(b'\0'))}B / {slot}B"
-            )
+            moved = sum(1 for a, b in zip(data, orig, strict=True) if a != b)
+            print(f"  컨테이너 rel {rel}: {len(entries)}블록 · 자리 보존 · 바뀐 바이트 {moved}/{slot}")
     print(f"  번역 메시지 {n_msgs}건(컨테이너마다 다시 셈) · 글리프 {len(chars)}자")
     verify_immutable(iso, touched)
     verify_readback(iso, intended, found)
