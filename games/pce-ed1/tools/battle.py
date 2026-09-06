@@ -303,14 +303,24 @@ def _msgs() -> dict[str, str]:
     return json.loads(f.read_text()).get("messages", {}) if f.exists() else {}
 
 
-def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], where: str) -> int:
-    """전투 문구를 **제자리**로 갈아 끼운다. 자리를 안 옮기고, 남는 꼬리는 원본 바이트로 둔다.
+# 블록이 자랄 수 있는 상한 — 블록은 뱅크 0x74 **+0x400** 에 풀리고, 원본에서 그 위로 처음
+# 0 이 아닌 자료가 나오는 자리가 +0xF0A 다. ⚠ **「0 이니 빈 자리」는 계약이 아니다**(루트 CLAUDE.md
+# ·[[free-space-vab-trap]]) — 어디까지나 상한 가설이고 전투 화면에서 재서 확정해야 한다.
+SAFE_UNPACKED = 0xF0A - 0x400
 
-    꼬리를 원본대로 두는 까닭: 참조 스캔이 **분할 즉치만** 본다(`code_refs`). 못 본 참조가 조각
-    중간을 가리켜도 그 자리엔 **원문 일본어**가 남지, 우리 바이트 한복판이 걸리지 않는다.
-    ⚠ 제어코드는 원문과 **같은 차례로 같은 것**이어야 한다 — `{02}`(행위자 이름)를 빠뜨리면
-    이름이 통째로 안 나온다.
+
+def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], where: str) -> int:
+    """전투 문구를 갈아 끼운다. **자리를 안 옮기고**, 넘치면 `0F` 로 블록 꼬리에 잇는다.
+
+    자리에 들어가면 제자리에 쓴다. 넘치면 원래 자리엔 `0F <주소>` 셋만 남기고 **문안 전체**를
+    블록 끝에 덧붙인다 — 씬 인터프리터가 `0F` 를 점프로 읽는다(원본 전투 대본도 그렇게 쓴다,
+    실측 rel 194 blk12 의 두 자리). 블록의 풀린 길이는 디렉터리가 들고 있어 우리가 늘릴 수 있다.
+
+    ⚠ 꼬리(원래 자리의 남은 바이트)는 **원본 그대로** 둔다 — 참조 스캔이 못 본 참조가 조각
+    중간을 가리켜도 최악이 「그 자리만 일본어」다.
     """
+    from sysbuild import encode_tokens
+
     n = 0
     for u in msg_units(bytes(data)):
         kr = msgs.get(msg_key(u["body"]))
@@ -320,15 +330,28 @@ def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], 
         if TOKEN.findall(kr) != jp_tok:
             errors.append(f"{where} +{u['off']:04X} 「{kr}」 제어코드가 원문과 다르다 {jp_tok}")
             continue
-        from sysbuild import encode_tokens
-
         enc = encode_tokens(kr, table)
         if u["term"] is not None:
             enc += bytes([u["term"]])
-        if len(enc) > u["room"]:
-            errors.append(f"{where} +{u['off']:04X} 「{kr}」 {len(enc)}B > {u['room']}B")
+        if len(enc) <= u["room"]:
+            data[u["off"] : u["off"] + len(enc)] = enc
+            n += 1
             continue
-        data[u["off"] : u["off"] + len(enc)] = enc
+        # 넘친다 — `0F` 로 잇는다
+        if u["room"] < 3:
+            errors.append(
+                f"{where} +{u['off']:04X} 「{kr}」 자리가 {u['room']}B 라 0F 도 못 넣는다"
+            )
+            continue
+        if len(data) + len(enc) > SAFE_UNPACKED:
+            errors.append(
+                f"{where} +{u['off']:04X} 「{kr}」 블록이 {len(data) + len(enc)}B 로 자란다"
+                f" — 상한 {SAFE_UNPACKED}B"
+            )
+            continue
+        tgt = LOAD_ADDR + len(data)
+        data += enc
+        data[u["off"] : u["off"] + 3] = bytes([0x0F, tgt & 0xFF, tgt >> 8])
         n += 1
     return n
 
