@@ -6,7 +6,7 @@
 #   sh scripts/emu.sh ss-ed1+2            # 바로 실행 (mednafen ss)
 #   sh scripts/emu.sh pce-ed1 --orig      # 빌드는 빼고 원본만 (문안 대조)
 #   sh scripts/emu.sh dos-ed2             # DOSBox-X 로 위임
-#   sh scripts/emu.sh pc98-ed1            # DOSBox-X 의 PC-98 모드로 위임 (머신 ROM 불필요)
+#   sh scripts/emu.sh pc98-ed1            # np2kai 로 위임 (--dosbox 면 DOSBox-X PC-98 모드)
 #                                         #   원본·빌드는 pc98.sh 가 목록으로 묻는다
 #   sh scripts/emu.sh <게임> <파일>       # 이미지를 직접 지정
 #   sh scripts/emu.sh --list              # 목록만 (비대화형)
@@ -84,7 +84,7 @@ runner_of() {
     sfc) echo "mednafen snes" ;;
     md)  echo "mednafen md" ;;
     dos)  echo "${DOSENGINE:-dosbox}" ;;
-    pc98) echo "dosbox-x pc98" ;;
+    pc98) echo "${PC98_EMU:-np2kai} (--dosbox 로 DOSBox-X)" ;;
     psp) echo "ppsspp" ;;
     *)   echo "— 미정 ($(blocked_by "$1"))" ;;
   esac
