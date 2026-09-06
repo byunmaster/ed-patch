@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import text  # noqa: I001  (common 보다 먼저 — shared/text 와 이름이 겹친다)
 import common
+import hook
 import script
 
 OUT_NAME = "Dragon Slayer - Eiyuu Densetsu (KR).sfc"
@@ -57,13 +58,9 @@ BOX_W = 7
 # 검증 대상: 시트 편집 → 기존 업로드 → 정적 타일맵 라벨의 경로가 산다(코드 한 줄 안 건드리고).
 # 한 자 = 타일 **t(위) + t+$10(아래)** 두 장뿐이라(D1=B) 한 행을 통째로 쓸 수 있다.
 # 빌린 행: $140/$150 · $160/$170 · $120/$130 (가나 세 행) = 48자리.
-MENU_POC_SLOTS = list(range(0x140, 0x150)) + list(range(0x160, 0x170)) + list(range(0x120, 0x130))
-MENU_POC_WINDOWS = [
-    ("A", 0x01),
-    ("A", 0x06),  # 시스템 창(제자리 확장) — 로드·저장·시스템·설정
-    ("B", 0x0A),
-    ("B", 0x0C),
-]  # 순서 고정(결정성) — C0A 는 B0A 와 같은 항목
+# 🔴 예전엔 가나 세 행(48자리)을 통째로 빌렸다. 그러면 **쓰지도 않는 26자리가 묶여** 대사 슬롯이
+# 굶는다 — 상주와 동적이 같은 웅덩이를 나눠 쓰기 때문이다(`tools/tiles.py`). 이제 필요한 만큼만
+# 앞에서 가져가고, 남은 것이 전부 동적 슬롯이 된다.
 BODY = (text.TEXT_START, 0x0BFE76)  # 옮기는 구간(절반 열림)
 HEADER_ROM_SIZE_OFF = common.HEADER_OFF + 0x17
 CHECKSUM_OFF = common.HEADER_OFF + 0x1C  # cmpl(2) + chk(2)
@@ -176,28 +173,48 @@ def bake_glyph(out: bytearray, sheet: int, t: int, rows: list[int], half: bool) 
             out[sheet + 8 * (t + 0x11) + r] = rows[8 + r] & 0xFF
 
 
-def menu_poc(out: bytearray, rom: bytes) -> dict:
-    """커맨드 창 라벨을 한글로 — 시트의 빌린 타일에 글리프를 굽고, 창 배치 워드를 그 타일로 바꾼다."""
+def menu_windows() -> list[tuple[str, int]]:
+    """라벨이 있는 창 전부 — `menus.json` 의 키 꼬리(`…@A01`)에서 유도한다(목록을 손으로 안 든다)."""
+    labels = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
+    ws = {(k.split("@")[1][0], int(k.split("@")[1][1:], 16)) for k in labels}
+    return sorted(ws)
+
+
+def menu_bake(out: bytearray, rom: bytes) -> dict:
+    """메뉴 라벨을 한글로 — 상주 글리프를 시트에 굽고, 창 배치 워드를 그 타일로 바꾼다.
+
+    ⚠ 라벨은 **정적 타일맵**이라 창이 열려 있는 내내 그 타일이 VRAM 에 있어야 한다 ⇒ 여기서 잡은
+    자리는 대사 슬롯이 쓸 수 없다. 그래서 배정을 `tools/tiles.py` 한 곳에서 한다."""
     import hangul_font
     import menus
+    import tiles
 
     labels = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
     font = hangul_font.load_font()
     inv = menus.inverse_tile_table(rom)
     sheet = common.snes2off(text.FONT_SHEET)
+    import encode
+
+    pool = tiles.overwritable(rom, tiles.layout_tiles(rom), keep_codes(rom))
+    code_tile = tiles.code_tile(rom)
+    half = {ch: c for ch, c in encode.KR_TABLE.items() if ch not in " \n"}
     slot_of: dict[str, int] = {}
+    used_codes: list[int] = []
+    too_long: list[str] = []
 
     def slot(ch: str) -> int:
         if ch not in slot_of:
-            if len(slot_of) >= len(MENU_POC_SLOTS):
-                raise SystemExit(f"메뉴 PoC 글리프 자리가 모자란다: {''.join(slot_of)} + {ch}")
-            t = MENU_POC_SLOTS[len(slot_of)]
+            if len(used_codes) >= len(pool):
+                raise SystemExit(f"메뉴 상주 글리프 자리가 모자란다: {''.join(slot_of)} + {ch}")
+            c = pool[len(used_codes)]
+            used_codes.append(c)
+            t = code_tile[c]
             bake_glyph(out, sheet, t, hangul_font.render(ch, font), hangul_font.CELL_W == 8)
             slot_of[ch] = t
         return slot_of[ch]
 
     done = []
-    for table, wid in MENU_POC_WINDOWS:
+    for table, wid in menu_windows():
         base = common.snes2off(menus.LAYOUT_TABLES[table])
         p = out[base + 3 * wid] | (out[base + 3 * wid + 1] << 8) | (out[base + 3 * wid + 2] << 16)
         o = common.snes2off(p)  # ⚠ 넓힌 뒤의 자리(out 의 포인터)
@@ -234,14 +251,21 @@ def menu_poc(out: bytearray, rom: bytes) -> dict:
                 elif ch == " ":
                     words_top.append(0x0108)
                     words_bot.append(0x0108)
+                elif ch in half:
+                    # 반각(숫자·영문·부호)은 **원본 타일을 그대로 가리킨다** — 구울 게 없다.
+                    # ⚠ 대사 경로의 공백 특례(`CMP #$10` → 아래도 같은 타일)는 정적 타일맵엔 없다.
+                    t = code_tile[half[ch]]
+                    words_top.append(attr | t)
+                    words_bot.append(attr | (t + 0x10))
                 else:
-                    raise SystemExit(f"메뉴 PoC 는 한글·공백만: {kr!r}")
+                    raise SystemExit(f"메뉴 라벨에 못 넣는 글자: {ch!r} in {kr!r}")
             # ⚠ 칸 예산은 **지금 기록에서 잰다** — menus.json 의 값은 원본 폭에서 잰 것이라
             #   창을 안 넓히면 오른쪽 틀과 다음 줄 첫 칸까지 덮어썼다(실기 2026-09-06: 틀이 통째로 사라졌다).
             x1 = next((i for i in range(x0, w) if line[i] == menus.FRAME), w)
             budget = x1 - x0
             if len(words_top) > budget:
-                raise SystemExit(f"{m[0]} {kr!r} 가 {budget}칸을 넘는다")
+                too_long.append(f"{m[0]} {kr!r} {len(words_top)}>{budget}")
+                continue
             words_top += [0x0108] * (budget - len(words_top))
             words_bot += [0x0108] * (budget - len(words_bot))
             for i, (wt, wb) in enumerate(zip(words_top, words_bot, strict=True)):
@@ -250,7 +274,28 @@ def menu_poc(out: bytearray, rom: bytes) -> dict:
                 out[a : a + 2] = wt.to_bytes(2, "little")
                 out[b : b + 2] = wb.to_bytes(2, "little")
             done.append((m[0], kr))
-    return {"glyphs": "".join(slot_of), "labels": len(done)}
+    if too_long:
+        raise SystemExit("라벨이 칸을 넘는다:\n  " + "\n  ".join(too_long))
+    return {
+        "glyphs": "".join(slot_of),
+        "labels": len(done),
+        "resident_codes": used_codes,
+        "windows": len(menu_windows()),
+    }
+
+
+def keep_codes(rom: bytes) -> set[int]:
+    """타일을 지켜야 하는 코드 — 우리가 반각으로 쓰는 것 + 2바이트 선두(렌더러에 안 닿는다)."""
+    import encode
+
+    return set(encode.KR_TABLE.values()) | set(encode.LEADS)
+
+
+def dynamic_slots(out: bytearray, rom: bytes, resident: list[int]) -> list[int]:
+    """대사 훅이 빌릴 코드 — **라벨을 다시 구운 뒤의 롬**으로 잰다(일본어 라벨이 놓아 준 타일이 는다)."""
+    import tiles
+
+    return tiles.overwritable(rom, tiles.layout_tiles(out), keep_codes(rom) | set(resident))
 
 
 def check_widen_pairs(rom: bytes, out: bytearray, originals: list) -> list:
@@ -300,7 +345,7 @@ def build(rom: bytes) -> tuple[bytes, dict]:
     out[ns : ns + len(body)] = body
     n_ptr = rewrite_tables(out, place, rom)
     widened = widen_windows(out, rom)
-    poc = menu_poc(out, rom)
+    poc = menu_bake(out, rom)
     import chapters
 
     chap = chapters.bake(out, rom)
@@ -318,7 +363,7 @@ def build(rom: bytes) -> tuple[bytes, dict]:
         "body_new": common.fmt(common.off2snes(ns)),
         "pointers_rewritten": n_ptr,
         "widened": widened,
-        "menu_poc": poc,
+        "menu_bake": {k: v for k, v in poc.items() if k != "resident_codes"},
         "chapters": len(chap["titles"]),
         "size": len(out),
     }
@@ -347,7 +392,7 @@ def mutable_ranges() -> list[tuple[int, int]]:
         o = common.snes2off(p)
         w, h = rom[o + 2], rom[o + 3]
         r.append((o, o + 4 + 2 * w * h))  # 제자리 넓힘(부분 갱신 항목)만 실제로 바뀐다
-    for table, wid in MENU_POC_WINDOWS:  # 라벨을 제자리에 다시 굽는 창(넓히지 않은 것도 있다)
+    for table, wid in menu_windows():  # 라벨을 제자리에 다시 굽는 창
         base = common.snes2off(menus.LAYOUT_TABLES[table])
         p2 = rom[base + 3 * wid] | (rom[base + 3 * wid + 1] << 8) | (rom[base + 3 * wid + 2] << 16)
         o2 = common.snes2off(p2)
@@ -361,9 +406,14 @@ def mutable_ranges() -> list[tuple[int, int]]:
         r.append((o, o + 16))
         o2 = common.snes2off(a + 0x100)
         r.append((o2, o2 + 16))
+    r += hook.patch_ranges()
     sheet = common.snes2off(text.FONT_SHEET)
-    for t0 in (0x120, 0x140, 0x160):  # 메뉴 PoC 가 빌린 시트 행(위 16 + 아래 16 타일)
-        r.append((sheet + 8 * t0, sheet + 8 * (t0 + 0x20)))
+    import tiles  # 상주 글리프를 구울 수 있는 자리 전부(실제로 구운 것은 그 부분집합이다)
+
+    ct = tiles.code_tile(rom)
+    for c in tiles.overwritable(rom, tiles.layout_tiles(rom), keep_codes(rom)):
+        for t0 in (ct[c], ct[c] + 0x10):
+            r.append((sheet + 8 * t0, sheet + 8 * (t0 + 1)))
     return r
 
 
@@ -380,17 +430,29 @@ def lead_collisions(rom: bytes) -> dict[int, int]:
     return n
 
 
+def immutable_diffs(rom: bytes, out: bytes, show: int = 5) -> int:
+    """선언한 자리 밖이 바뀌었나 — 벗어난 차이는 사고다(루트 CLAUDE.md 「빌드 규율」)."""
+    mut = sorted(mutable_ranges())
+    diffs = 0
+    lo = 0
+    for i in range(len(rom)):
+        if rom[i] == out[i]:
+            continue
+        while lo < len(mut) and mut[lo][1] <= i:
+            lo += 1
+        if any(a <= i < b for a, b in mut[lo : lo + 400]):
+            continue
+        diffs += 1
+        if diffs <= show:
+            print(
+                f"  ⚠ 무변경 구간 차이 {common.fmt(common.off2snes(i))}: {rom[i]:02X}→{out[i]:02X}"
+            )
+    return diffs
+
+
 def verify(rom: bytes, out: bytes, place: dict[int, int]) -> dict:
     # 1. 무변경 구간 byte 대조
-    mut = mutable_ranges()
-    diffs = 0
-    for i in range(len(rom)):
-        if rom[i] != out[i] and not any(a <= i < b for a, b in mut):
-            diffs += 1
-            if diffs <= 5:
-                print(
-                    f"  ⚠ 무변경 구간 차이 {common.fmt(common.off2snes(i))}: {rom[i]:02X}→{out[i]:02X}"
-                )
+    diffs = immutable_diffs(rom, out)
 
     # 2. 되읽기 — 새 표를 따라 새 자리의 첫 조각을 읽어 원본 조각과 **바이트** 대조. 옮긴 뒤 달라져야
     #    하는 건 $F9 의 절대 주소뿐이니 그것만 원래 뱅크로 되돌려 비교한다(디코드 비교는 그 인자를 못 가른다).
@@ -442,8 +504,8 @@ def verify(rom: bytes, out: bytes, place: dict[int, int]) -> dict:
 
 
 # ── 한글 경로: 번역된 조각을 인코딩해 rel16 군집 단위로 32KB 뱅크에 담는다 ───────────────────────
-# $2C = 창 배치 항목(넓힐 때) · $2E = 한글 챕터 제목 조각(chapters.KR_BANK)
-KR_BANKS = [b for b in range(0x27, 0x40) if b not in (0x2C, 0x2E)]
+# $2C = 창 배치 항목(넓힐 때) · $2E = 한글 챕터 제목 조각 · $3D = 글리프 · $3F = 렌더러 훅
+KR_BANKS = [b for b in range(0x27, 0x40) if b not in (0x2C, 0x2E, hook.GLYPH_BANK, hook.HOOK_BANK)]
 BANK_CAP = 0x8000
 
 
@@ -482,6 +544,9 @@ def kr_items(
     texts = [v["kr"] for v in tmap.values() if v.get("kr")] + list(dict_kr.values())
     mmap = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
     texts += [v["kr"] for v in mmap.values() if v.get("kr")]
+    texts.append(
+        hook.josa_chars()
+    )  # 런타임 조사 16형태 — 훅이 색인으로 집는다(문안에 없어도 필요하다)
     rep = encode.repertoire(texts)
     rep_index = {ch: i for i, ch in enumerate(rep)}
     new: list[script.Item] = []
@@ -680,6 +745,7 @@ def build_kr(
     only: set[str] | None = None,
     enc_override=None,
     after=None,
+    with_hook: bool = True,
 ) -> tuple[bytes, dict]:
     k = kr_items(rom, states, only, enc_override)
     pk = pack_banks(k)
@@ -716,13 +782,18 @@ def build_kr(
         pos += n
     n_ptr = rewrite_tables(out, place, rom)
     widened = widen_windows(out, rom)
-    poc = menu_poc(out, rom)
+    poc = menu_bake(out, rom)
     import chapters
 
     chapters.bake(out, rom)
     extra = after(out, rom) if after is not None else None
+    # 🔴 렌더러 훅은 **메뉴를 구운 뒤**에 얹는다 — 슬롯은 「라벨을 다시 구운 롬」으로 재야 한다
+    hk = None
+    if with_hook:
+        hk = hook.apply(out, rom, k["rep"], dynamic_slots(out, rom, poc["resident_codes"]))
     out[HEADER_ROM_SIZE_OFF] = 0x0B
     fix_checksum(out)
+    imm = immutable_diffs(rom, out)
     st = k["stats"]
     # 원문 뱅크별 JP → KR 투영
     per_bank = {}
@@ -749,10 +820,14 @@ def build_kr(
         "banks_used": [(f"${b:02X}", used) for b, used in pk["banks"]],
         "pointers_rewritten": n_ptr,
         "widened": widened,
-        "menu_poc": poc,
+        "menu_bake": {k2: v2 for k2, v2 in poc.items() if k2 != "resident_codes"},
+        "immutable_diffs": imm,
+        "hook": hk,
     }
     if extra is not None:
         info["opening_poc"] = extra
+    if imm:
+        raise SystemExit(f"무변경 구간이 {imm}곳 바뀌었다 — 의도한 자리만 건드려야 한다")
     return bytes(out), info
 
 
@@ -905,6 +980,26 @@ def opening_poc(rom: bytes) -> tuple[str, callable, callable]:
     return set(sids), enc_override, bake
 
 
+def write_image(out: bytes, info: dict) -> None:
+    """빌드 칸에 이미지 하나만 남긴다(낡은 것을 정상으로 오해하는 사고를 막는다)."""
+    d = common.BUILD_DIR / common.BUILD_TAG
+    d.mkdir(parents=True, exist_ok=True)
+    for old in d.glob("*.sfc*"):
+        old.unlink()
+    dst = d / OUT_NAME
+    dst.write_bytes(out)
+    sha = hashlib.sha1(out).hexdigest()
+    (d / "manifest.json").write_text(
+        json.dumps(
+            {"source_sha1": common.ROM_SHA1, "output_sha1": sha, **info},
+            ensure_ascii=False,
+            indent=1,
+        ),
+        encoding="utf-8",
+    )
+    print(f"→ {dst}  sha1 {sha}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--check", action="store_true", help="빌드하고 검증만(파일은 안 남긴다)")
@@ -921,7 +1016,10 @@ def main() -> None:
     ap.add_argument(
         "--kr",
         action="store_true",
-        help="한글 데이터 롬을 work/derived/kr_probe.sfc 에 쓴다(렌더러 훅 없음 — 구조 검증용)",
+        help="한글 롬(렌더러 훅 포함)을 빌드 칸에 쓴다 — 이게 굴리는 이미지다",
+    )
+    ap.add_argument(
+        "--no-hook", action="store_true", help="훅 없이 한글 데이터만(대조군 — 깨져 보이는 게 정상)"
     )
     a = ap.parse_args()
     if a.opening_poc:
@@ -938,13 +1036,10 @@ def main() -> None:
         return
     if a.project or a.kr:
         rom = common.rom_bytes()
-        out, info = build_kr(rom)
+        out, info = build_kr(rom, with_hook=not a.no_hook)
         print(json.dumps(info, ensure_ascii=False, indent=1))
         if a.kr:
-            dst = common.OUT_DIR / "kr_probe.sfc"
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            dst.write_bytes(out)
-            print("→", dst, hashlib.sha1(out).hexdigest())
+            write_image(out, info)
         return
     rom = common.rom_bytes()
     out, info = build(rom)
@@ -961,22 +1056,7 @@ def main() -> None:
     if a.check:
         print("검증 OK")
         return
-    d = common.BUILD_DIR / common.BUILD_TAG
-    d.mkdir(parents=True, exist_ok=True)
-    for old in d.glob("*.sfc*"):  # 한 칸에 하나만
-        old.unlink()
-    dst = d / OUT_NAME
-    dst.write_bytes(out)
-    sha = hashlib.sha1(out).hexdigest()
-    (d / "manifest.json").write_text(
-        json.dumps(
-            {"source_sha1": common.ROM_SHA1, "output_sha1": sha, **info, **v},
-            ensure_ascii=False,
-            indent=1,
-        ),
-        encoding="utf-8",
-    )
-    print(f"→ {dst}  sha1 {sha}")
+    write_image(out, info | v)
 
 
 if __name__ == "__main__":
