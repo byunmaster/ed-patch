@@ -9,6 +9,7 @@
 
 import argparse
 import hashlib
+import os
 import re
 import sys
 from pathlib import Path
@@ -16,17 +17,61 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
 
-FONT = common.ROOT / "shared" / "fonts" / "neodgm.ttf"
+# 글꼴은 **고를 수 있다**(D4 — 유저 확정 2026-09-05: **인게임 = 갈무리 · 오프닝/엔딩 = Neo둥근모**.
+# 다른 게임 트랙과 같은 규약이다. ⚠ Galmuri 상류에 **16px 은 없다**(7·9·11·14뿐) — 16셀엔 Galmuri14 가 맞다).
+#   neodgm      — Neo둥근모 16×16 TTF. 셀을 꽉 채운다(새턴 트랙 확정 글꼴)
+#   Galmuri14   — 14×14 BDF. 16 셀에 2px 여유 · Galmuri 집안 계열
+#   Galmuri11   — 11×11 BDF. PS1 트랙 글꼴이지만 16 셀에 넣으면 자간이 5px 떠 성글다
+# ⚠ 셀은 16×16 고정(D1=A)이라 **설계 크기가 셀보다 크면 안 된다** — 축소는 받침을 무너뜨린다
+# (`shared/fonts/README.md`).
+# 기본 = 인게임 글꼴. 오프닝/엔딩은 뱅크 $1E 가 **따로 적재**하므로(status 8절) 그쪽만 neodgm 으로 굽는다.
+FONT_NAME = os.environ.get("SFC_KR_FONT", "Galmuri14")
+OPENING_FONT = "neodgm"
+# dy 는 **원본 가나의 기준선**에 맞춘다 — 시트 전수 실측(2026-09-06)으로 가나 158자 중 155자가
+# **행 13** 에서 끝난다(윗줄은 큰 가나가 1, 대부분 4~5). 아랫줄을 13 에 맞추면 원문과 한글이 같은 줄에 선다.
+# ⚠ 예전 값(Galmuri14 −3 · Galmuri11 −1)은 **Neo둥근모의 겉모습에 맞춘 것**이라 한 줄씩 어긋나 있었다
+# (14 는 1px 아래 · 11 은 1px 위). 눈이 아니라 잰 값으로 맞춘다.
+FONTS = {
+    "neodgm": {"path": "neodgm.ttf", "kind": "ttf", "size": 16, "dy": 0},  # 잉크 y1~13 · x0~15
+    "Galmuri14": {"path": "Galmuri14.bdf", "kind": "bdf", "dy": -4},  # 잉크 y0~13 · x1~14
+    "Galmuri11": {"path": "Galmuri11.bdf", "kind": "bdf", "dy": 0},  # 잉크 y3~13
+    "GalmuriMono11": {"path": "GalmuriMono11.bdf", "kind": "bdf", "dy": 0},
+}
+FONT = common.ROOT / "shared" / "fonts" / FONTS[FONT_NAME]["path"]
 CELL = 16
 BASE = "0123456789 !?…。、「」HMEPGOLDCAB"  # 게임이 1바이트로 이미 갖는 글자 — 뱅크에 안 넣는다(참고용)
 
 
+def load_font():
+    """선택된 글꼴을 연다 — TTF 는 PIL, BDF 는 공용 `shared.fonts.BdfFont`(도트 무손실)."""
+    spec = FONTS[FONT_NAME]
+    if spec["kind"] == "ttf":
+        from PIL import ImageFont
+
+        return ("ttf", ImageFont.truetype(str(FONT), spec["size"]), spec["dy"])
+    sys.path.insert(0, str(common.ROOT))
+    from shared.fonts import BdfFont
+
+    return ("bdf", BdfFont(str(FONT)), spec["dy"])
+
+
 def render(ch: str, font) -> list[int]:
-    """16행 × 16비트(MSB 왼쪽) — 1bpp 32B 글리프."""
+    """16행 × 16비트(MSB 왼쪽) — 1bpp 32B 글리프. 셀 밖으로 잉크가 나가면 죽는다."""
+    kind, f, dy = font if isinstance(font, tuple) else ("ttf", font, 0)
+    if kind == "bdf":
+        bits = f.bits(ch, dy=dy, rows=CELL, width=CELL)
+        rows = []
+        for y in range(CELL):
+            v = 0
+            for x in range(CELL):
+                if bits[y][x]:
+                    v |= 0x8000 >> x
+            rows.append(v)
+        return rows
     from PIL import Image, ImageDraw
 
     im = Image.new("L", (CELL * 2, CELL * 2), 0)
-    ImageDraw.Draw(im).text((CELL // 2, CELL // 2), ch, font=font, fill=255)
+    ImageDraw.Draw(im).text((CELL // 2, CELL // 2 + dy), ch, font=f, fill=255)
     px = im.load()
     rows = []
     for y in range(CELL):
@@ -35,7 +80,6 @@ def render(ch: str, font) -> list[int]:
             if px[CELL // 2 + x, CELL // 2 + y] > 127:
                 v |= 0x8000 >> x
         rows.append(v)
-    # 셀 밖 잉크 검사
     for y in range(CELL * 2):
         for x in range(CELL * 2):
             if px[x, y] > 127 and not (
@@ -46,9 +90,7 @@ def render(ch: str, font) -> list[int]:
 
 
 def bank(chars: str) -> tuple[bytes, list[str]]:
-    from PIL import ImageFont
-
-    font = ImageFont.truetype(str(FONT), CELL)
+    font = load_font()
     rep = sorted(set(chars))
     out = bytearray()
     for ch in rep:
