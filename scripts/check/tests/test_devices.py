@@ -176,7 +176,7 @@ def test_checklist_sections_are_indexed_by_the_skill():
     sk = open(
         os.path.join(ROOT, ".claude", "skills", "patcher-safety", "SKILL.md"), encoding="utf-8"
     ).read()
-    nums = [m.group(1) for m in re.finditer(r"^## ([\d\-A-B]+)\.", cl, re.MULTILINE)]
+    nums = [m.group(1) for m in re.finditer(r"^## ([\d\-A-Z]+)\.", cl, re.MULTILINE)]
     assert nums, "체크리스트에서 절 번호를 못 읽었다"
     for n in nums:
         assert re.search(rf"^\s*{re.escape(n)}\.", sk, re.MULTILINE), (
