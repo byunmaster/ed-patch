@@ -267,8 +267,16 @@ def timeline(name, start, count=400):
     return out
 
 
-def path(name, trace_json, start):
-    """읽기 추적(JSON)에 실제로 나온 자리만 해독한다 — 죽은 코드를 안 센다."""
+def path(name, trace_json, start, as_timeline=False):
+    """읽기 추적(JSON)에 실제로 나온 자리만 해독한다 — 죽은 코드를 안 센다.
+
+    🔴 `as_timeline` 이면 **`--timeline` 과 같은 줄 꼴**로 낸다 — 그대로
+    `work/review/voice/timeline/V0N.txt` 에 넣어 `voice_place.py --place` 가 읽는다.
+    정적 걷기(`--timeline`)는 **정렬을 잃으면 거기서 멈춘다**(V02 는 `0x140a1` 에서 4 줄).
+    실측 경로는 그 자리를 넘어가므로, 음성 장면은 **이쪽이 정본**이다(2026-09-07).
+    ⚠ 추적 이벤트는 `{"address": <스크립트 절대주소>}` 꼴이다 — emucap 의 쓰기 BP 는
+      `value` 에 그 주소를 싣는다(`address` 는 PC 전역 `0x0609408c`). 옮겨 담아서 준다.
+    """
     import json
     import struct
 
@@ -283,7 +291,8 @@ def path(name, trace_json, start):
         o = e["address"] - 0x200000
         if not seen or seen[-1] != o:
             seen.append(o)
-    print(f"실행된 자리 {len(seen)}개 · 시작 {start:#07x}")
+    if not as_timeline:
+        print(f"실행된 자리 {len(seen)}개 · 시작 {start:#07x}")
     i = 0
     while i < len(seen):
         o = seen[i]
@@ -293,14 +302,30 @@ def path(name, trace_json, start):
                 i += 1
                 continue
             tag = f"FF {b[o + 1]:02X}"
+            size = 2 + ln
             if b[o + 1] == 0x35:
                 f = struct.unpack(">H", b[o + 2 : o + 4])[0]
-                print(f"  {t:6.1f}초  {o:#07x}  {tag} 대기 {f / 60:.1f}초")
+                if as_timeline:
+                    #   ⚠ **홀로 선 `FF 35` 는 후킹 자리가 아니다** — 4B 라 트램펄린
+                    #     (`FD 00` + BE32 = 6B)이 안 들어간다. `--timeline` 과 같은 규약으로
+                    #     후킹 표시 없이 적는다(대기는 시각에만 쓰인다).
+                    print(f"  {t:6.1f}초  {o:#07x}  {tag} 대기 {f}f")
+                else:
+                    print(f"  {t:6.1f}초  {o:#07x}  {tag} 대기 {f / 60:.1f}초")
                 t += f / 60
-            elif 2 + ln >= 6:
-                print(f"  {t:6.1f}초  {o:#07x}  {tag} {2 + ln}B  ← 후킹 가능")
+            elif size >= 6:
+                #   바로 뒤가 `FF 35` 면 그 대기를 이 자리에 달아 준다(`--timeline` 과 같은 셈)
+                w = 0
+                nxt = o + size
+                if nxt + 4 <= len(b) and b[nxt] == 0xFF and b[nxt + 1] == 0x35:
+                    w = struct.unpack(">H", b[nxt + 2 : nxt + 4])[0]
+                if as_timeline:
+                    mark = f"후킹 {size}B" + (f" · 대기 {w}f" if w else "")
+                    print(f"  {t:6.1f}초  {o:#07x}  {tag:20} ← {mark}")
+                else:
+                    print(f"  {t:6.1f}초  {o:#07x}  {tag} {size}B  ← 후킹 가능")
             #   그 명령이 삼킨 자리는 건너뛴다
-            while i < len(seen) and seen[i] < o + 2 + ln:
+            while i < len(seen) and seen[i] < o + size:
                 i += 1
             continue
         i += 1
@@ -312,6 +337,11 @@ def main():
     ap.add_argument("--walk", nargs=2, metavar=("MAP", "OFF"))
     ap.add_argument(
         "--path", nargs=3, metavar=("MAP", "TRACE", "START"), help="실측 경로(읽기 추적)로 해독"
+    )
+    ap.add_argument(
+        "--as-timeline",
+        action="store_true",
+        help="`--path` 를 타임라인 줄 꼴로 (voice_place 가 읽는 형식)",
     )
     ap.add_argument(
         "--timeline",
@@ -340,7 +370,7 @@ def main():
         timeline(a.timeline[0], int(a.timeline[1], 0))
     if a.path:
         name, trace, start = a.path
-        path(name, trace, int(start, 0))
+        path(name, trace, int(start, 0), as_timeline=a.as_timeline)
     if not (a.table or a.walk or a.path or a.timeline):
         ap.error("--table · --walk · --path · --timeline 중 하나")
     return 0
