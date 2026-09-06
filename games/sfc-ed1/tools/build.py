@@ -301,6 +301,9 @@ def build(rom: bytes) -> tuple[bytes, dict]:
     n_ptr = rewrite_tables(out, place, rom)
     widened = widen_windows(out, rom)
     poc = menu_poc(out, rom)
+    import chapters
+
+    chap = chapters.bake(out, rom)
     # ⚠ 제자리로 넓힌 기록(부분 갱신)은 크기가 그대로라 「원래 모습」이 서명이 못 된다 — 자리를 옮긴 것만 본다
     pair_bad = check_widen_pairs(rom, out, [w["orig"] for w in widened if w["grew"]])
     if pair_bad:
@@ -316,6 +319,7 @@ def build(rom: bytes) -> tuple[bytes, dict]:
         "pointers_rewritten": n_ptr,
         "widened": widened,
         "menu_poc": poc,
+        "chapters": len(chap["titles"]),
         "size": len(out),
     }
     return bytes(out), info
@@ -348,6 +352,15 @@ def mutable_ranges() -> list[tuple[int, int]]:
         p2 = rom[base + 3 * wid] | (rom[base + 3 * wid + 1] << 8) | (rom[base + 3 * wid + 2] << 16)
         o2 = common.snes2off(p2)
         r.append((o2, o2 + 4 + 2 * rom[o2 + 2] * rom[o2 + 3]))
+    import chapters  # 챕터 조립 표(장 6 × 17 롱 주소)
+
+    b = common.snes2off(chapters.TABLE)
+    r.append((b, b + chapters.STRIDE * 6))
+    for a in chapters.pool(rom):  # 한글 제목 조각이 들어갈 자리(원본 자리 재활용 + 빈 자리)
+        o = common.snes2off(a)
+        r.append((o, o + 16))
+        o2 = common.snes2off(a + 0x100)
+        r.append((o2, o2 + 16))
     sheet = common.snes2off(text.FONT_SHEET)
     for t0 in (0x120, 0x140, 0x160):  # 메뉴 PoC 가 빌린 시트 행(위 16 + 아래 16 타일)
         r.append((sheet + 8 * t0, sheet + 8 * (t0 + 0x20)))
@@ -415,7 +428,8 @@ def verify(rom: bytes, out: bytes, place: dict[int, int]) -> dict:
 
 
 # ── 한글 경로: 번역된 조각을 인코딩해 rel16 군집 단위로 32KB 뱅크에 담는다 ───────────────────────
-KR_BANKS = [b for b in range(0x27, 0x40) if b != 0x2C]  # $2C 는 넓힌 창 배치 항목 자리
+# $2C = 창 배치 항목(넓힐 때) · $2E = 한글 챕터 제목 조각(chapters.KR_BANK)
+KR_BANKS = [b for b in range(0x27, 0x40) if b not in (0x2C, 0x2E)]
 BANK_CAP = 0x8000
 
 
@@ -689,6 +703,9 @@ def build_kr(
     n_ptr = rewrite_tables(out, place, rom)
     widened = widen_windows(out, rom)
     poc = menu_poc(out, rom)
+    import chapters
+
+    chapters.bake(out, rom)
     extra = after(out, rom) if after is not None else None
     out[HEADER_ROM_SIZE_OFF] = 0x0B
     fix_checksum(out)
