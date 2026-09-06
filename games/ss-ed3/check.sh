@@ -81,6 +81,11 @@ run 8 "$PY" "$G/tools/reinsert_sys.py"
 #    엔진은 어절을 안 보고 17 슬롯에서 글자 단위로 접는다(유저 실측 2026-08-30).
 run 6 "$PY" "$G/tools/fix_orphans.py" --check
 
+# 🔴 게이트다 — 판단이 안 든다. **일본어 `、` 가 개행 앞에 남아 있던 자리 3,479** 를 뺐는데
+#    (2026-09-06), 새 문안을 쓰면 다시 들어온다. 한국어는 개행 앞에 쉼표를 안 찍는다.
+#    ⚠ 뒤가 빈 줄뿐인 쉼표는 「다음 창으로 이어진다」는 표시라 검사기가 봐준다.
+run 4 "$PY" "$G/tools/fix_line_commas.py" --check
+
 echo "  ── 원문에 있던 것이 사라지지 않았나 (숫자 · 고유명사)"
 warn 3 "$PY" "$G/tools/check_fidelity.py"
 
