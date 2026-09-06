@@ -53,7 +53,6 @@ class Patch(unittest.TestCase):
     def test_inline_write(self):
         blk = rec(SJ("スライムＡ") + b"\x06") + b"\xff" * 4 + b"\0" * 60
         blocks = [{"src": B.BASE + 8, "len": len(blk), "packed": 0, "data": blk}]
-        errs = []
         # patch_blocks 는 컨테이너를 읽으므로 여기선 같은 규칙을 직접 확인한다
         enc = font.encode("슬라임Ａ", self.table) + b"\x06"
         self.assertLessEqual(len(enc), B.NAME_LEN)
@@ -126,3 +125,36 @@ class Messages(unittest.TestCase):
         d[at + 5] = (B.LOAD_ADDR + mid) >> 8
         got = [B.render(u["body"]) for u in B.msg_units(bytes(d))]
         self.assertEqual(got, ["あいう{01}", "えおか"])
+
+
+class BranchOperandGuard(unittest.TestCase):
+    """🔴 분기 옵코드의 주소 바이트가 글자로 읽혀 런 머리가 되면 **진행이 깨진다**.
+
+    거기에 우리 문안을 쓰면 점프가 쓰레기 주소로 간다(화면이 아니라 진행). pc98 이 같은
+    자리에서 물렸다(중계 2026-09-07). 합성 데이터로 **검사기가 정말 보는지** 시험한다.
+    """
+
+    # $C48D → 리틀엔디언 `8D C4` = 전각 「再」. 예전 스캐너는 바로 여기서 런을 열었다.
+    ADDR = 0xC48D
+
+    def _block(self, op: int) -> bytes:
+        """레코드 0개(`FF` 로 디렉터리 종료) + `op <주소>` + 텍스트 + 주소가 닿게 패딩."""
+        d = bytearray(b"\xff\x00" + bytes([op]) + self.ADDR.to_bytes(2, "little"))
+        d += SJ("あいうえお") + b"\x00"
+        d += b"\0" * (self.ADDR - B.LOAD_ADDR + 2 - len(d))
+        return bytes(d)
+
+    def test_operand_that_decodes_as_sjis_is_not_a_run_head(self):
+        for op in (0x0F, 0x10, 0x12, 0x15):
+            with self.subTest(op=f"{op:02X}"):
+                d = self._block(op)
+                self.assertEqual(B.branch_operands(d), {3, 4}, "주소 자리를 못 봤다")
+                heads = [a for a, _b, _t in B.text_runs(d, 0)]
+                self.assertNotIn(3, heads, f"{op:02X} 의 주소가 런 머리가 됐다")
+                self.assertIn(5, heads, "진짜 텍스트 런을 놓쳤다")
+
+    def test_data_0f_outside_block_is_not_treated_as_branch(self):
+        """둘째 축 — 주소가 블록 밖이면 분기가 아니다(전투 청크의 `CMP #$0F` 즉치를 지킨다)."""
+        d = b"\xff\x00\xc9\x0f\xb0" + SJ("かきくけこ") + b"\x00"
+        self.assertEqual(B.branch_operands(d), set(), "블록 밖 주소를 분기로 오탐했다")
+        self.assertIn(5, [a for a, _b, _t in B.text_runs(d, 0)])

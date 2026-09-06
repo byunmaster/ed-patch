@@ -39,7 +39,7 @@ class BuildError(Exception):
     pass
 
 
-def assemble(entries: list[tuple[int, bytes]], rel: int, nsec: int) -> bytes:
+def assemble(entries: list[tuple[int, bytes]], orig: bytes, where: str = "") -> bytes:
     """(id, 풀린 블록) 목록 → 컨테이너 바이트. 🔴 **블록을 원본 자리(`src`)에 그대로 둔다.**
 
     옛 판은 앞에서부터 다시 깔았는데, 우리 인코더가 원본보다 조금씩 촘촘해서 **안 고친 블록까지
@@ -52,10 +52,9 @@ def assemble(entries: list[tuple[int, bytes]], rel: int, nsec: int) -> bytes:
         if len(blk) > BANK:
             raise BuildError(f"블록 id {id_} 가 {len(blk)}B — 뱅크(8KB)를 넘는다")
 
-    orig = common.track_data(rel, nsec)
     o_ents, _ = containers.parse_dir(orig[: common.USER])
     if [i for i, _, _ in o_ents] != [i for i, _ in entries]:
-        raise BuildError(f"컨테이너 rel {rel}: 블록 id 목록이 원본과 다르다")
+        raise BuildError(f"컨테이너 {where}: 블록 id 목록이 원본과 다르다")
 
     # 슬롯 = 이 src 부터 **다음 src** 까지(같은 src 를 나눠 쓰는 중복 블록은 한 칸이다)
     srcs = sorted({src for _, src, _ in o_ents})
@@ -68,7 +67,7 @@ def assemble(entries: list[tuple[int, bytes]], rel: int, nsec: int) -> bytes:
     for (id_, blk), (_, src, _) in zip(entries, o_ents, strict=True):
         if src in done:
             if done[src] != blk:
-                raise BuildError(f"컨테이너 rel {rel}: 같은 src {src} 를 다른 내용이 나눠 쓴다")
+                raise BuildError(f"컨테이너 {where}: 같은 src {src} 를 다른 내용이 나눠 쓴다")
         else:
             room = end_of[src] - src
             was, _ = lz.decode(orig[src:], ln_of[src])
@@ -76,7 +75,7 @@ def assemble(entries: list[tuple[int, bytes]], rel: int, nsec: int) -> bytes:
                 pk = lz.encode(blk)  #    조금 촘촘해 다시 누르면 바꿀 이유 없는 바이트가 다 바뀐다
                 if len(pk) > room:
                     raise BuildError(
-                        f"컨테이너 rel {rel} 블록 id {id_}: 압축 {len(pk)}B > 원래 슬롯 {room}B — "
+                        f"컨테이너 {where} 블록 id {id_}: 압축 {len(pk)}B > 원래 슬롯 {room}B — "
                         "자리를 옮기지 않는 게 계약이다. 문안을 줄이거나 배치를 다시 설계해라"
                     )
                 out[src : src + len(pk)] = pk
@@ -85,7 +84,7 @@ def assemble(entries: list[tuple[int, bytes]], rel: int, nsec: int) -> bytes:
         d += bytes([id_, src & 0xFF, src >> 8, len(blk) & 0xFF, len(blk) >> 8])
     d.append(containers.DIR_END)
     if len(d) > srcs[0]:
-        raise BuildError(f"컨테이너 rel {rel}: 디렉터리 {len(d)}B > 첫 블록 자리 {srcs[0]}B")
+        raise BuildError(f"컨테이너 {where}: 디렉터리 {len(d)}B > 첫 블록 자리 {srcs[0]}B")
     out[: len(d)] = d
     out[len(d) : srcs[0]] = b"\0" * (srcs[0] - len(d))
 
@@ -280,10 +279,10 @@ def _build(edits_path, iso: Path, cue: Path):
                 if blk != b["data"]:
                     intended[(rel, b["id"])] = blk
                 entries.append((b["id"], blk))
-            data = assemble(entries, rel, slot_of[rel])
+            orig = common.track_data(rel, slot_of[rel])
+            data = assemble(entries, orig, f"rel {rel}")
             slot = slot_of[rel] * common.USER
             assert len(data) == slot, f"컨테이너 rel {rel}: {len(data)}B ≠ 칸 {slot}B"
-            orig = common.track_data(rel, slot_of[rel])
             lba = common.T2_SECTOR + rel
             mode1.write_user_data(f, lba, data, label=f"container rel {rel}", expect=orig)
             touched.append((lba, slot_of[rel]))

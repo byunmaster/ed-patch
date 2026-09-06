@@ -439,12 +439,41 @@ def code_refs(data: bytes) -> set[int]:
     return out
 
 
+BRANCH_OPS = frozenset(range(0x0F, 0x16))
+"""주소 2바이트를 데리고 다니는 옵코드 — 0F 점프 · 10 호출 · 11/12 조건 · 13/14 플래그 · 15 기계어.
+
+🔴 **주소 바이트가 유효한 전각 코드면 런 머리로 딸려 들어온다.** 거기에 우리 문안을 쓰면
+점프가 쓰레기 주소로 가서 **화면이 아니라 진행이 깨진다**(pc98 이 같은 자리에서 물렸다,
+중계 2026-09-07). ⚠ `0F` 하나만 보면 놓친다 — 실측 7자리 중 여섯이 `10` 이었다.
+"""
+
+
+def branch_operands(data: bytes) -> set[int]:
+    """분기 옵코드의 주소 바이트 자리. **주소가 이 블록 안을 가리킬 때만** 센다.
+
+    ⚠ 둘째 축이 없으면 전투 청크에 널린 데이터 `0F`(대개 `CMP #$0F` 즉치)를 통째로 오탐한다.
+    """
+    out = set()
+    for i, c in enumerate(data[: len(data) - 2]):
+        if c not in BRANCH_OPS:
+            continue
+        tgt = data[i + 1] | (data[i + 2] << 8)
+        if LOAD_ADDR <= tgt < LOAD_ADDR + len(data):
+            out.add(i + 1)
+            out.add(i + 2)
+    return out
+
+
 def text_runs(data: bytes, start: int) -> list[tuple[int, int, int | None]]:
     """(시작, 본문 끝, 종단바이트|None) — start 부터 훑는다."""
     out = []
     i = start
     n = len(data)
+    operands = branch_operands(data)
     while i < n - 1:
+        if i in operands:  # 분기 주소는 글자가 아니다 — 머리로 삼으면 점프를 덮어쓴다
+            i += 1
+            continue
         if not is_char(data, i):
             i += 1
             continue
