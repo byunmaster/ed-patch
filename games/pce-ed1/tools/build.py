@@ -125,7 +125,8 @@ ONLY: set[str] | None = None
 """진단용 — 개입 그룹의 부분집합만 건다(`--only font,hook`). 그룹은 여섯:
 `font`(글리프 뱅크 + 진입 스텁) · `cache`(16 → 13 슬롯) · `hook`(EX_GETFNT 우회) ·
 `sys`(시스템 문구) · `battle`(전투 컨테이너) · `scn`(씬 컨테이너) ·
-`glyph`(글리프 뱅크 적재 — `font` 안에서 다시 뺄 수 있다).
+`glyph`(글리프 뱅크 적재) · `payload`(후킹 루틴 + 표를 $3B00 에 싣기)
+— 뒤 둘은 `font` 안에서 다시 뺄 수 있다.
 🔴 **이게 소프트락을 가르는 유일한 도구다** — 증상이 나면 하나씩 끄며 A/B 한다.
 ⚠ `font` 를 끄면 글리프가 없어 한글 자리가 통째로 안 그려진다(파일 선택에서 멈춘다) —
 `font,hook` 은 늘 켜 두고 나머지를 끈다."""
@@ -194,11 +195,12 @@ def apply_code_patches(
     payload += b"\0" * (hook.RIEUL_ADDR - hook.HOOK_ADDR - len(payload))
     payload += rieul
     payload += b"\0" * (0x300 - len(payload))
-    lba = common.T2_SECTOR + 126
-    mode1.write_user_data(
-        f, lba, bytes(payload), label="hook routine + josa tables", expect=b"\0" * len(payload)
-    )
-    touched.append((lba, 1))
+    if want("payload"):  # 진단용 — $3B00~$3DFF 를 0 인 채로 두는 A/B(스텁은 그대로 돈다)
+        lba = common.T2_SECTOR + 126
+        mode1.write_user_data(
+            f, lba, bytes(payload), label="hook routine + josa tables", expect=b"\0" * len(payload)
+        )
+        touched.append((lba, 1))
     routine = payload
     print(
         f"  코드 패치 {len(code_patches())}곳 + 글리프 {len(glyph_bank.rstrip(b'\0'))}B + 루틴 {len(routine.rstrip(b'\0'))}B"
