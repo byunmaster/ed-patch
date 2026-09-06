@@ -40,7 +40,7 @@ import exetext
 import script as script_canon
 import textenc
 
-KINDS = ("menu",)  # 낱말(고유명사)은 `glossary_` 가 든다 — 여기는 UI 문안만
+KINDS = ("menu", "text")  # 낱말(고유명사)은 `glossary_` 가 든다 — 여기는 UI 문안 + 실행파일 속 글(주문 설명·메모·읽을거리)
 
 
 def canon_path(disc):
@@ -67,7 +67,8 @@ def sites(disc):
             for off in starts:
                 in_table[off] = ((tbl, base, n), hi - lo)
     out = {}
-    for r in dump_names.split(dump_names.regions(dump_names.strings(data, cm)), labels):
+    # ⚠ max_len 64 — 기본 24 는 낱말 표용이라 주문 설명(최대 ~25) · 메모·읽을거리(~30)가 잘린다
+    for r in dump_names.split(dump_names.regions(dump_names.strings(data, cm, max_len=64, newline=True)), labels):
         if labels.get(r["start"]) not in KINDS:
             continue
         for off, jp in zip(r["offs"], r["items"], strict=True):

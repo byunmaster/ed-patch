@@ -117,15 +117,18 @@ MAX_LEN = 24  # 이보다 길면 낱말 표가 아니다 (의뢰문은 예외라
 GAP = 64  # 이만큼 안에서 이어지면 한 구역
 
 
-def strings(data, cm, max_len=MAX_LEN):
+def strings(data, cm, max_len=MAX_LEN, newline=False):
     """[(바이트오프셋, 글자수, 문자열)] — 종결로 갈린 조각 중 **전부 아는 코드**인 것."""
     n = len(data) // 2
     w = struct.unpack(f"<{n}H", data[: n * 2])
     out, cur, start = [], [], 0
     for i, x in enumerate(w):
         if is_term(x):
-            if cur and len(cur) <= max_len and all(c in cm for c in cur):
-                out.append((start * 2, len(cur), "".join(cm[c] for c in cur)))
+            # ⚠ 0x0001 은 개행 제어다(주문 설명 안에 낀다, 2026-09-07) — `newline` 이면 글자로 친다.
+            #    🔴 기본은 끈다 — 켜 두면 잡음 구역의 조각까지 문자열로 잡혀 「원본이 쓰는 코드」가
+            #    불어나고, 글리프 자리 정본이 부딪힌다(check.sh 실측). `uitext` 만 켠다.
+            if cur and len(cur) <= max_len and all(c in cm or (newline and c == 1) for c in cur):
+                out.append((start * 2, len(cur), "".join(cm.get(c, "\n") for c in cur)))
             cur, start = [], i + 1
         else:
             if not cur:
