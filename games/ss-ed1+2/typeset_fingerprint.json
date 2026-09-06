@@ -1,7 +1,7 @@
 {
  "ss-ed1+2": {
-  "/ED2.BIN": "41460dd22768",
-  "/ED.BIN": "4355698c585b",
+  "/ED2.BIN": "244007939acd",
+  "/ED.BIN": "335d09835561",
   "/BIN/ED1SCN08.BIN": "882aa38c61aa",
   "/BIN/ED1SCN02.BIN": "6c269cdce8b3",
   "/BIN/ED1SCN03.BIN": "ee0c10187924",
@@ -93,9 +93,9 @@
   "/BIN/ED2SCN47.BIN": "7b7e864ddcec",
   "UI/표": "5c6497bf3575",
   "UI/이름": "fb1552a2fc76",
-  "UI/시스템": "0ebba953676b",
+  "UI/시스템": "936044fc4af0",
   "UI/카드": "60ccccb28c2b",
-  "UI/메시지": "8caa5e9d950c",
+  "UI/메시지": "8c596d9cfd68",
   "UI/씬머리": "7f1a8140a6f1",
   "몬스터/이름": "cef4d05dbd15",
   "몬스터/조우": "300f27cb5322"

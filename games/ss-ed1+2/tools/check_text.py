@@ -181,6 +181,42 @@ def axis_names(rows):
 
 _NAME_HEAD = re.compile(r"^%c([^%]+)%c")
 
+# 🔴 **부호 앞 공백** — 한국어는 `. , ! ?` 앞에 공백을 쓰지 않는다.
+#    규칙도 구현도 **공용에 이미 있었다**(`shared/text/krwrap._strip_before`). 그런데
+#    22줄이 그 꼴로 남아 있었다 — 까닭은 규칙 부재가 아니라 **조판기를 거치는 문안만
+#    걸리기 때문**이다. 시스템·전투·UI 도구는 `krwrap` 을 임포트하지 않는다(2026-09-07).
+#    ⚠ 원문(JP)이 `輝いた !!` 처럼 공백을 쓰므로 **그대로 옮기면 저절로 생긴다.**
+#    ⚠ `check_ps1_parity` 는 공백을 무시하고 견주므로(`WS.sub`) 이 갈림을 **못 본다** —
+#      「갈렸다 0」이 참인데도 화면은 달랐다.
+_STRIP_BEFORE = ".,!?"
+
+
+def axis_space_before_punct():
+    """⑧ **부호 앞 공백** → `[(파일, 열쇠, 지금, 규칙대로)]`. 판정 정본은 공용 함수다.
+
+    🔴 여기서 규칙을 **다시 쓰지 않는다** — `krwrap._strip_before` 를 그대로 부른다
+       (체크리스트 4-D: 같은 지식이 두 곳에 있으면 갈린다).
+    """
+    from text.krwrap import _strip_before
+
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    out = []
+    for fn in ("system.json", "scn.json", "ui.json"):
+        fp = os.path.join(base, "script", fn)
+        if not os.path.exists(fp):
+            continue
+        with open(fp, encoding="utf-8") as f:
+            d = json.load(f)
+        for k, v in (d.get("lines") or {}).items():
+            if isinstance(v, str) and _strip_before(v, _STRIP_BEFORE) != v:
+                out.append((fn, k, v[:34], _strip_before(v, _STRIP_BEFORE)[:34]))
+        for i, pair in enumerate(d.get("msgs") or []):
+            if _strip_before(pair[1], _STRIP_BEFORE) != pair[1]:
+                out.append(
+                    (fn, f"msgs[{i}]", pair[1][:34], _strip_before(pair[1], _STRIP_BEFORE)[:34])
+                )
+    return out
+
 
 def axis_hardcoded_names(_rows=None):
     """⑦ **손으로 박은 이름 자리가 정본과 갈렸나** → `[(파일, 오프셋, 지금, 정본)]`.
@@ -256,6 +292,7 @@ def main():
         ("③ 고정 명사 뒤 병기", axis_waste(rows)),
         ("④ 부호·표기 규약", axis_style(rows)),
         ("⑦ 손으로 박은 이름이 정본과 갈렸다", axis_hardcoded_names()),
+        ("⑧ 부호 앞 공백", axis_space_before_punct()),
     ):
         if not hits:
             print(f"  ✅ {title}: 0건")
@@ -263,7 +300,10 @@ def main():
         fail += len(hits)
         print(f"  ❌ {title}: {len(hits)}건")
         for row in hits[: (None if a.verbose else 8)]:
-            print("     " + " · ".join(str(x) for x in row[2:]) + f"  ({row[0]} 0x{row[1]:X})")
+            # ⚠ 축마다 둘째 칸이 **오프셋(int)** 이거나 **열쇠(str)** 다 — 한 꼴로 찍으면
+            #   축 하나가 통째로 죽는다(⑧을 붙이고 그 자리에서 밟았다, 2026-09-07).
+            where = f"0x{row[1]:X}" if isinstance(row[1], int) else str(row[1])
+            print("     " + " · ".join(str(x) for x in row[2:]) + f"  ({row[0]} {where})")
 
     joints = axis_joint()
     print(f"  ℹ ⑥ 조사로 끝나는 조각의 꼬리 공백 {len(joints)}건 (판정은 사람)")
