@@ -146,10 +146,13 @@ def check() -> dict:
 
 
 if __name__ == "__main__":
+    import sys as _sys
+
     common.verify_originals()
-    print(check())
-    for jp, where in sorted(names().items()):
-        print(f"  {jp}  ×{len(where)}")
+    print("전투 컨테이너", check())
+    if "--check" not in _sys.argv:  # 목록은 원문이라 게이트에선 안 찍는다
+        for jp, where in sorted(names().items()):
+            print(f"  {jp}  \u00d7{len(where)}")
 
 
 # ─── 표기 · 되쓰기 ──────────────────────────────────────────────────────────
@@ -186,13 +189,16 @@ def kr_names(extra: dict[str, str] | None = None) -> tuple[dict[str, str], list[
     return out, sorted(missing)
 
 
-def patch_blocks(rel: int, kr: dict[str, str], table, errors: list[str]) -> tuple[list[dict], int]:
-    """컨테이너 하나의 블록들에 우리 이름·문구를 박는다. (블록, 갈아 끼운 칸 수)"""
+def patch_blocks(
+    rel: int, kr: dict[str, str], table, errors: list[str]
+) -> tuple[list[dict], int, int]:
+    """컨테이너 하나의 블록들에 우리 이름·문구를 박는다. (블록, 이름 칸 수, 문구 수)"""
     import font
 
     blocks = parse(rel)
     msgs = _msgs()
     hit = 0
+    nmsg = 0
     for b in blocks:
         data = bytearray(b["data"])
         targets: dict[int, str] = {}
@@ -222,9 +228,9 @@ def patch_blocks(rel: int, kr: dict[str, str], table, errors: list[str]) -> tupl
                 continue
             data[off : off + len(enc)] = enc
             hit += 1
-        hit += patch_msgs(data, msgs, table, errors, f"rel{rel} blk")
+        nmsg += patch_msgs(data, msgs, table, errors, f"rel{rel} blk")
         b["data"] = bytes(data)
-    return blocks, hit
+    return blocks, hit, nmsg
 
 
 def apply(f, table, touched, extra: dict[str, str] | None = None) -> dict:
@@ -236,11 +242,13 @@ def apply(f, table, touched, extra: dict[str, str] | None = None) -> dict:
         raise ValueError("몬스터 표기 미등재: " + " · ".join(missing))
     errors: list[str] = []
     n = 0
+    m = 0
     for rel in CONTAINERS:
-        blocks, hit = patch_blocks(rel, kr, table, errors)
-        if not hit:
+        blocks, hit, nmsg = patch_blocks(rel, kr, table, errors)
+        if not (hit or nmsg):
             continue
         n += hit
+        m += nmsg
         nsec = (max(b["src"] - BASE + b["packed"] for b in parse(rel)) - 1) // common.USER + 1
         new = pack(blocks)
         # ⚠ 칸은 **원본이 쓰던 섹터 수**다 — 로더가 그만큼만 읽으므로 넘기면 조용히 잘린다.
@@ -262,7 +270,7 @@ def apply(f, table, touched, extra: dict[str, str] | None = None) -> dict:
             touched.append((lba + i, 1))
     if errors:
         raise ValueError("전투 이름 " + str(len(errors)) + "건:\n  " + "\n  ".join(errors))
-    return {"monsters": n}
+    return {"monsters": n, "msgs": m}
 
 
 def verify(iso: Path, table, extra: dict[str, str] | None = None) -> int:
@@ -275,7 +283,7 @@ def verify(iso: Path, table, extra: dict[str, str] | None = None) -> int:
     kr, _ = kr_names(extra)
     checked = 0
     for rel in CONTAINERS:
-        want, hit = patch_blocks(rel, kr, table, [])
+        want, hit, _ = patch_blocks(rel, kr, table, [])
         if not hit:
             continue
         cont = b"".join(

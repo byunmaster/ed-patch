@@ -20,7 +20,7 @@ echo "== pce-ed1 =="
 "$PY" "$T/containers.py" --check
 
 # 3. 전투 컨테이너 — 6개 · 100블록 · 레코드 259 · 이름 224. 이름칸 파서가 흔들리면 운다
-"$PY" "$T/battle.py" >/dev/null
+"$PY" "$T/battle.py" --check
 
 # 4. 조사 일치 — 주입 토큰(이름·아이템) 뒤에 고정 조사를 쓴 자리(P2 를 닫는 게이트)
 "$PY" "$T/check_josa.py"
