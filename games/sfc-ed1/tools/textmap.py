@@ -300,6 +300,34 @@ def check_naming() -> list[tuple[str, str, str]]:
     return out
 
 
+# PS1 정본과 갈리면 안 되는 어휘 — (쓰면 안 되는 말, 써야 하는 말, 근거).
+# **왜 목록인가**: 같은 개념을 두 트랙이 다르게 옮기면 한 시리즈가 두 말을 한다. PS1 은 1회차
+# 인게임 QA 를 닫았으니 그쪽이 정본이고, 우리는 **플랫폼 제약으로만** 갈릴 수 있다(docs/deviations.md).
+# ⚠ 낱말만 본다 — 문장 구조는 원문이 다르면 갈리는 게 맞다.
+PS1_TERMS = [
+    ("대미지", "피해", "PS1 `%d의 피해!!`(textmap/battle.json)"),
+    ("데미지", "피해", "〃"),
+    ("싸움에서 패", "전투에서 패", "PS1 `은(는) 전투에서 패했습니다.`"),
+    ("가지고 있었다", "갖고 있었다", "PS1 `을(를) 갖고 있었다.`"),
+    ("쓰러뜨렸다", "해치웠다", "PS1 `을(를) 해치웠다.`"),
+]
+
+
+def check_terms() -> list[tuple[str, str, str]]:
+    """번역 정본 셋(조각·사전·메뉴)에 PS1 과 갈린 낱말이 있나."""
+    out = []
+    for name in ("segments.json", "dict.json", "menus.json"):
+        data = json.loads((PATH.parent / name).read_text(encoding="utf-8"))
+        for k, v in data.items():
+            kr = v.get("kr") if isinstance(v, dict) else None
+            if not kr:
+                continue
+            for bad, good, _why in PS1_TERMS:
+                if bad in kr:
+                    out.append((f"{name}:{k}", bad, good))
+    return out
+
+
 def check() -> dict:
     tm = load()
     segs = {
@@ -320,6 +348,7 @@ def check() -> dict:
             bad.append((k, err))
     gl = check_glossary()
     nm = check_naming()
+    tr = check_terms()
     return {
         "entries": len(tm),
         "unknown_id": unknown,
@@ -329,6 +358,8 @@ def check() -> dict:
         "glossary_sample": gl[:5],
         "naming_space": len(nm),
         "naming_sample": nm[:5],
+        "ps1_terms": len(tr),
+        "ps1_term_sample": tr[:5],
     }
 
 
@@ -359,5 +390,5 @@ if __name__ == "__main__":
     if a.check:
         r = check()
         print(r)
-        if r["token_errors"] or r["unknown_id"] or r["glossary_drift"] or r["naming_space"]:
+        if r["token_errors"] or r["unknown_id"] or r["glossary_drift"] or r["naming_space"] or r["ps1_terms"]:
             raise SystemExit(1)
