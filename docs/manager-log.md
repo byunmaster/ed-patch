@@ -64,8 +64,13 @@
 - 여덟 전부: main 2커밋 rebase 요청(sfc·ss-ed3 는 더티 먼저 커밋). ⚠ 직후 셋째 커밋이 생겨 다음 회차에 한 번 더 — 요청은 회차 끝에 몰아서(규약에 추가).
 - pce: 「한 줄 요약」이 채택된 결정을 「결정 필요」로 들고 있다 — 현재로 맞추라고.
 
+**ED1 단계표 (유저 확정)** — `docs/ed1-phases.md`. 다섯(ss·md·pce·pc98·sfc)이 PS1 순서 P0~P7 로 같이 간다.
+pc98 은 P5 까지 같이, P6 는 그때 정한다(레트로 PC 묶음의 저본이 된다). 지금 위치: ss P6 · md P2 · pce P2 · pc98 P1~P2(⚠ P4 를 먼저 넣고 있었다) · sfc P0.
+dashboard.sh 에 「단계」 열.
+
 **main 히스토리 다시 씀 (유저 지시 「docs 커밋 최대한 합치고 각 세션이 리베이스」)**
 - 미푸시 일곱 → **셋**(feat dashboard · docs 관리자 규약+공용 문서 · docs(skills) rpg-translate). 옛 팁은 `backup/main-old`.
+- 완료: md · ps1-ed1+2 · sfc(12→10) · ss-ed3 · pce(28→24). 개수가 주는 건 옛 main 커밋이 떨어져 나간 것 — 두 세션이 독립적으로 짚었고 규약을 「개수가 아니라 내용」으로 고쳤다.
 - 여덟 브랜치가 옛 커밋 위에 얹혀 있어 `git rebase main` 이 아니라 **`git rebase --onto main <옛 base>`** 다 — 옛 base 는 md·ps1-ed1+2·sfc·ss-ed3 = dcacc020 · pc98·pce·ss-ed1+2 = af5036fe · ps1-ed3+4 = 4d389a31. 세션마다 제 값을 찍어 보냈다.
 
 **main 변경**
