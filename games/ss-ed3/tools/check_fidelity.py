@@ -20,6 +20,7 @@
 """
 
 import argparse
+import glob
 import json
 import os
 import re
@@ -144,6 +145,54 @@ def load_gloss():
     return out
 
 
+#   🔴 **읽을거리도 같이 본다**(2026-09-06). 종전엔 `/MAP/` 만 훑어서 **314 문단이 통째로
+#     검사 밖**이었다 — 맞춤법 검사기가 같은 구멍에 빠진 적이 있는데(devlog 2026-09-03)
+#     이쪽은 안 고쳐져 있었다. 한 번 대 보니 진짜 빠짐이 나왔다(BOOK27 「미혹의 숲」이
+#     띄어져 정본과 갈렸다 — 화면에서 다른 곳으로 읽히는 그 사고다).
+#   ⚠ 책은 **줄이 아니라 문단**이 단위다 — 원문도 `book.paragraphs()` 로 문단을 되살려 맞댄다.
+def book_accept():
+    """예산 때문에 이름을 못 넣은 자리 — 사유까지 적어 둔다(`script/book/fidelity_accept.json`)."""
+    p = os.path.join(C.GAME_DIR, "script", "book", "fidelity_accept.json")
+    if not os.path.exists(p):
+        return set()
+    with open(p, encoding="utf-8") as f:
+        return {k for k in json.load(f) if not k.startswith("_")}
+
+
+def book_pairs(only):
+    import book as B
+
+    for path in sorted(glob.glob(os.path.join(C.GAME_DIR, "script", "book", "BOOK*.json"))):
+        stem = os.path.basename(path)[:-5]
+        if only and stem not in only:
+            continue
+        jp_path = os.path.join(C.OUT_DIR, "sys_jp", f"SYSTEM_{stem}.json")
+        if not os.path.exists(jp_path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            kr = json.load(f)
+        with open(jp_path, encoding="utf-8") as f:
+            par = B.paragraphs(json.load(f)["strings"])
+        for k, v in sorted(kr.items(), key=lambda x: int(x[0]) if x[0].isdigit() else -1):
+            if not k.isdigit() or not isinstance(v, str) or int(k) >= len(par):
+                continue
+            yield stem, k, B.join_text(par[int(k)][1]), v
+
+
+def pairs(maps, only):
+    """`(stem, 키, 원문, 문안)` — 맵 대사와 읽을거리 문단을 한 줄기로."""
+    for stem in sorted(maps):
+        if only and stem not in only:
+            continue
+        kr, _ = R.load_script(stem)
+        bl = maps[stem]
+        for k, v in sorted(kr.items(), key=lambda x: int(x[0])):
+            i = int(k)
+            if 0 <= i < len(bl):
+                yield stem, k, M.text_of(bl[i]["body"]), v
+    yield from book_pairs(only)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("stems", nargs="*")
@@ -161,17 +210,10 @@ def main():
                 if stem not in maps:
                     maps[stem] = M.blocks(d.read_extent(lba, size))
 
-    n_num = n_name = n_all = 0
-    for stem in sorted(maps):
-        if a.stems and stem not in a.stems:
-            continue
-        kr, _ = R.load_script(stem)
-        bl = maps[stem]
-        for k, v in sorted(kr.items(), key=lambda x: int(x[0])):
-            i = int(k)
-            if not 0 <= i < len(bl):
-                continue
-            jp = M.text_of(bl[i]["body"])
+    accept = book_accept()
+    n_num = n_name = n_all = n_ok = 0
+    for stem, k, jp, v in pairs(maps, a.stems):
+        if True:
             n_all += 1
 
             want, got = numbers(jp), numbers(v)
@@ -188,14 +230,19 @@ def main():
             hit = [j for j in gloss if _standalone(j, jp)]
             hit = [j for j in hit if not any(o != j and j in o and o in jp for o in hit)]
             miss = [f"{j}→{gloss[j]}" for j in hit if not _has(_need(j, gloss[j]), v)]
+            if miss and f"{stem}:{k}" in accept:
+                n_ok += 1
+                miss = []
             if miss:
                 n_name += 1
                 if not a.quiet:
                     print(f"  {stem}:{k}  고유명사 {', '.join(miss[:4])}")
                     print(f"    {v[:44]!r}")
 
+    ok = f" · 예산으로 못 넣은 자리 {n_ok}(사유 적음)" if n_ok else ""
     print(
-        f"숫자 어긋남 {n_num} · 고유명사 빠짐 {n_name} / 옮긴 블록 {n_all} — ⚠ 경고이지 실패가 아니다"
+        f"숫자 어긋남 {n_num} · 고유명사 빠짐 {n_name}{ok} / 옮긴 블록 {n_all}"
+        " — ⚠ 경고이지 실패가 아니다"
     )
 
 

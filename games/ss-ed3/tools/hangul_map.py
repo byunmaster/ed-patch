@@ -40,6 +40,15 @@ MAP_PATH = os.path.join(C.GAME_DIR, "hangul_map.json")
 #   ⚠ 이것도 정본이다(`--freeze-low`). 빈 슬롯 목록이 밀리면 이미 넣은 문안이 딴 글자가 된다.
 LOW_PATH = os.path.join(C.GAME_DIR, "lowered_map.json")
 
+#   🔴 **책 화면 전용 배정** — 읽을거리는 12 열 글리프를 **8 열로 더해서** 그린다(status 7 절).
+#     합침이 깎는 건 폭이 아니라 **획 사이 틈**이라, 칸을 꽉 채우는 글꼴일수록 손해가 크다.
+#     실측(2026-09-06): 원판 가나는 잉크 폭 9·화소 25 라 살아남고 한자는 11·53 이라 원문에서도
+#     뭉갠다. 우리 Galmuri11 은 10·43 으로 **한자 쪽**이다. 같은 몸집의 `Galmuri9`(9·28)를
+#     책에만 쓰면 자모가 갈린다.
+#   ⚠ 이것도 정본이다 — 빈 슬롯이 밀리면 이미 넣은 문안이 딴 글자가 된다(`--freeze-book`).
+#   ⓘ **파일이 없으면 책도 기본 글리프로 나간다** — 있고 없고로 두 판을 구워 견줄 수 있다.
+BOOK_PATH = os.path.join(C.GAME_DIR, "book_map.json")
+
 
 def ksc_syllables():
     """완성형(KS X 1001) 한글 음절 2,350자 — **가나다순**.
@@ -116,6 +125,55 @@ def load_low():
     return {ch: i for ch, i in zip(doc["chars"], doc["slots"], strict=True)}
 
 
+def book_chars():
+    """읽을거리 본문에 실제로 쓰인 음절 — 가나다순."""
+    import glob
+
+    out = set()
+    for path in sorted(glob.glob(os.path.join(C.GAME_DIR, "script", "book", "BOOK*.json"))):
+        with open(path, encoding="utf-8") as f:
+            for v in json.load(f).values():
+                if isinstance(v, str):
+                    out |= {c for c in v if "가" <= c <= "힣"}
+    return sorted(out)
+
+
+def load_book():
+    """책 화면 전용 배정을 **본 배정 위에 얹은** 표. 파일이 없으면 본 배정 그대로."""
+    table = load()
+    if not os.path.exists(BOOK_PATH):
+        return table
+    with open(BOOK_PATH, encoding="utf-8") as f:
+        doc = json.load(f)
+    table = dict(table)
+    table.update(zip(doc["chars"], doc["slots"], strict=True))
+    return table
+
+
+def freeze_book(free):
+    """책 전용 배정을 박는다 — 본 배정·내려앉은 배정이 쓰고 **남은** 빈 슬롯에서."""
+    chars = book_chars()
+    taken = set(load().values()) | set(load_low().values())
+    rest = [i for i in sorted(free) if i not in taken]
+    if len(rest) < len(chars):
+        raise SystemExit(f"빈 슬롯이 모자란다: {len(rest)} < {len(chars)}")
+    table = dict(zip(chars, rest[: len(chars)], strict=True))
+    with open(BOOK_PATH, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "_doc": "책 화면 전용 글리프 배정(작고 성근 글꼴). "
+                "🔴 파생물이 아니라 정본이다 — 자세한 건 tools/hangul_map.py 의 BOOK_PATH 주석",
+                "chars": chars,
+                "slots": [table[c] for c in chars],
+            },
+            f,
+            ensure_ascii=False,
+            indent=1,
+        )
+    print(f"✅ 책 전용 배정 {len(chars)}자 → {BOOK_PATH}")
+    print(f"   남은 빈 슬롯 {len(rest) - len(chars):,}")
+
+
 def encode_kr(text, table=None):
     """문안 → 게임 바이트열. 한글은 슬롯 SJIS 로, 나머지는 그대로 SJIS 로.
 
@@ -173,11 +231,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--freeze", action="store_true", help="배정을 정본으로 박는다")
     ap.add_argument("--freeze-low", action="store_true", help="자르는 창 전용 배정을 박는다")
+    ap.add_argument("--freeze-book", action="store_true", help="책 화면 전용 배정을 박는다")
     a = ap.parse_args()
     used = F.used_indices()
     free = F.free_slots(used)
     if a.freeze_low:
         return freeze_low(free)
+    if a.freeze_book:
+        return freeze_book(free)
     table = assign(free)
     syl = list(table)
     print(f"음절 {len(syl):,}  쓰는 글리프 {len(used):,}  빈 슬롯 {len(free):,}")

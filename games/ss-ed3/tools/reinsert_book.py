@@ -89,7 +89,10 @@ def patch(data, stem, tbl, hg):
 
 
 def main():
-    hg = H.load()
+    #   🔴 **책 문안만 책 전용 글리프로 인코딩한다**(`book_map.json` 이 있을 때).
+    #     책 화면이 12 열을 8 열로 더해 그려서, 칸을 꽉 채우는 글꼴은 획 사이 틈이 먼저
+    #     사라진다 — 대사창은 12px 를 온전히 쓰므로 같은 글리프를 나눠 쓸 수 없다.
+    hg = H.load_book()
     total = nbad = nsq = ncut = 0
     with C.open_disc(1) as d:
         for name, lba, size in d.files():

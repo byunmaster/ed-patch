@@ -135,6 +135,10 @@ def patched(disc, lay=None):
         raise SystemExit(f"글리프가 없는 글자 {len(missing)}: {''.join(missing[:20])}")
     asc, npad = build_font.build_ascii(disc)
     table = H.load()
+    #   🔴 **책만 다른 글리프 칸을 쓴다** — 책 화면이 12 열을 8 열로 더해 그려서, 칸을 꽉
+    #     채우는 글꼴은 획 사이 틈이 먼저 사라진다(`hangul_map.BOOK_PATH` 주석).
+    #     배정이 없으면 본 배정 그대로다.
+    booktable = H.load_book()
     systbl, desctbl, paramtbl = RS.table(), RD.table(), RP.table()
     covertbl = BCV.table()
     #   ⓘ 무비는 **미리 구워 둔 것만** 넣는다 — 굽는 데 편당 몇 분이라 빌드를 세우지 않는다
@@ -216,7 +220,7 @@ def patched(disc, lay=None):
                 if not booktbl:
                     continue
                 b = d.read_extent(lba, size)
-                new, k, bad, _sq, _cut = RB.patch(b, stem, booktbl, table)
+                new, k, bad, _sq, _cut = RB.patch(b, stem, booktbl, booktable)
                 cnt = {"book": k}
                 #   🔴 **표지는 글자가 아니라 그림이다** — 폰트로는 안 바뀐다.
                 #     정본(`script/book/covers.json`)에 적힌 것만 다시 그린다.

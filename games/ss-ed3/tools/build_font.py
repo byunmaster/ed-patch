@@ -15,6 +15,7 @@ Galmuri11 을 `dy=-3` 으로 얹으면 베이스라인이 그대로 맞는다.
 """
 
 import argparse
+import json
 import os
 import sys
 
@@ -211,6 +212,34 @@ def bake_low(out):
     return n
 
 
+#   🔴 **책 화면 전용 한 벌** — 읽을거리는 12 열을 8 열로 **더해서** 그린다. 칸을 꽉 채우는
+#     글꼴은 획 사이 틈이 먼저 사라져 뭉갠다(실측: 원판 가나 잉크 폭 9 는 살고 한자 11 은
+#     원문에서도 뭉갠다. 우리 Galmuri11 은 10 이라 한자 쪽이다).
+#     ⇒ 같은 몸집의 **Galmuri9**(폭 9)를 책 문안에만 쓴다. 배정이 없으면 아무것도 안 한다.
+BOOK_FONT, BOOK_DY, BOOK_DX = "Galmuri9", DY + 1, DX + 1
+
+
+def bake_book(out):
+    """책 화면 전용 글리프를 굽는다 — `(구운 칸 수)`."""
+    if not os.path.exists(H.BOOK_PATH):
+        return 0
+    import numpy as np
+
+    with open(H.BOOK_PATH, encoding="utf-8") as f:
+        doc = json.load(f)
+    bdf = fonts.galmuri(BOOK_FONT)
+    n = 0
+    for ch, idx in zip(doc["chars"], doc["slots"], strict=True):
+        bits = bdf.bits(ch, dy=BOOK_DY, rows=F.ROWS, width=F.CELL)
+        cell = np.zeros((F.ROWS, F.CELL), np.uint8)
+        cell[:, BOOK_DX:] = bits[:, : F.CELL - BOOK_DX]
+        g = fonts.pack18(cell, rows=F.ROWS)
+        assert len(g) == F.STRIDE, (ch, len(g))
+        out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = g
+        n += 1
+    return n
+
+
 def build(disc=1):
     """`(새 폰트 bytes, 못 찾은 글자)` — 원본과 크기가 같다."""
     base, _ = F.load(disc)
@@ -228,6 +257,7 @@ def build(disc=1):
             bytes(out[idx * F.STRIDE : (idx + 1) * F.STRIDE]), DIGIT_DY
         )
     bake_low(out)
+    bake_book(out)
     bake_label_strips(out, base)
     assert len(out) == len(base), (len(out), len(base))
     return bytes(out), missing

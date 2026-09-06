@@ -111,6 +111,27 @@ ANCHOR_INSET = 8  # 다만 양쪽이 이만큼은 비어 있어야 「가운데�
 #     얇은 획이 죄다 어두운 칸으로 떨어진다(유저 지적 2026-09-03: 저자가 안 보인다).
 #     ⇒ 감마로 **부분 커버리지를 밝은 쪽으로** 민다. 0.7 이 원판 무게에 가깝다.
 GAMMA = 0.7
+#   🔴 **흐린 원인은 두께가 아니라 「가장자리」다**(유저 지적 2026-09-06: 「여전히 흐릿하다」).
+#     원판과 겹쳐 보니 우리 글자가 **더 굵은데도** 흐렸다 — 원판은 밝은 속과 어두운 테두리로
+#     딱 갈리는데, 우리는 안티에일리어싱이 중간 계조를 넓게 깔아 **속이 안 밝다.**
+#     ⇒ 커버리지에 **대비**를 준다(0.5 를 중심으로 기울기 `CONTRAST`). 굵기는 그대로 두고
+#     반쯤 덮인 칸만 밝은 쪽/빈 쪽으로 민다. 1.0 이면 예전 그대로, 클수록 또렷하고 계단진다.
+#     ⚠ 굵히기(stem darkening)로 가면 **반대로 뭉갠다** — 작은 글자(BOOK13 부제)가 먼저 무너진다.
+CONTRAST = 3.5
+
+
+def sharpen(cov, s=None):
+    """커버리지 대비 — 0.5 를 중심으로 기울기 `s`. 굵기는 그대로, 가장자리만 갈라진다.
+
+    ⚠ **반쯤 덮인 칸이 빈 칸이 되기도 한다** — 부르는 쪽은 `cov > 0` 으로 쓸 자리를 다시 잡는다
+      (원본 마스크 `a > 0` 을 쓰면 지워진 가장자리에 옛 계조가 남아 테두리가 두 겹이 된다).
+    """
+    import numpy as np
+
+    s = CONTRAST if s is None else s
+    if s == 1.0:
+        return cov
+    return np.clip((cov - 0.5) * s + 0.5, 0.0, 1.0)
 
 
 def _mid(a, b):
@@ -391,12 +412,13 @@ def render(text, w, h, fill, edge=None, want_h=None, boxes=None, keep=None, wave
     def blit(a, x, y):
         y0, x0 = max(0, y), max(0, x)
         a = a[: h - y0, : w - x0]
-        cov = a.astype(float) / 255.0
+        cov = sharpen(a.astype(float) / 255.0)
         if GAMMA != 1.0:
             cov = cov**GAMMA
         idx = np.clip((cov * len(ramp)).astype(int), 0, len(ramp) - 1)
+        ink = cov > 0
         px[y0 : y0 + a.shape[0], x0 : x0 + a.shape[1]] = np.where(
-            a > 0, arr[idx], px[y0 : y0 + a.shape[0], x0 : x0 + a.shape[1]]
+            ink, arr[idx], px[y0 : y0 + a.shape[0], x0 : x0 + a.shape[1]]
         )
 
     #   ── 원본 줄 상자에 맞춰 앉힌다 ──────────────────────────────────────────

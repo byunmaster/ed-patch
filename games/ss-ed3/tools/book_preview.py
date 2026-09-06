@@ -77,8 +77,13 @@ def final_lines(stem, data):
 
 
 def squeeze(g):
-    """폰트 글리프 `(12, 12)` → 화면 글리프 `(12, 8)`."""
-    return np.stack([g[:, p] | g[:, q] for p, q in SQ], axis=1)
+    """폰트 글리프 `(12, 12)` → 화면 글리프 `(12, 8)` — 값은 **농담 0·1·2**.
+
+    🔴 **더하는 것이지 OR 가 아니다**(2026-09-06 정정). `|` 로 합치면 값이 0·1 뿐이라
+      `spread` 의 `TONE[2]`(진한 먹)가 **한 번도 안 쓰이고 화면이 통째로 옅은 먹**이 된다 —
+      실제 화면보다 흐리게 보였다. 위 독스트링의 실측(화소 전부 일치)은 **합**으로 잰 것이다.
+    """
+    return np.stack([g[:, p] + g[:, q] for p, q in SQ], axis=1)
 
 
 def page(rows, fon, hg, cols=13):
@@ -179,7 +184,7 @@ def main():
     ap.add_argument("--out", default=None, help="PNG 낼 자리 (기본 work/review/book)")
     ap.add_argument("--scale", type=int, default=3)
     a = ap.parse_args()
-    fon, hg = font_of_build(), H.load()
+    fon, hg = font_of_build(), H.load_book()  # 책은 전용 글리프로 본다(있을 때)
     out = a.out or os.path.join(C.REVIEW_DIR, "book")
     os.makedirs(out, exist_ok=True)
     with C.open_disc(1) as d:
