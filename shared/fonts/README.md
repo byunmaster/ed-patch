@@ -4,7 +4,8 @@
 
 | 폰트                        | 격자   | 파일             | 출처                                | 용도                        |
 | --------------------------- | ------ | ---------------- | ----------------------------------- | --------------------------- |
-| Galmuri11 (+Bold·Condensed) | 11×11  | `Galmuri11*.bdf` | <https://github.com/quiple/galmuri> | PS1 영웅전설 1+2 (11×11 셀) |
+| Galmuri11 (+Bold)           | 11×11  | `Galmuri11*.bdf` | <https://github.com/quiple/galmuri> | PS1 영웅전설 1+2 (11×11 셀) |
+| Galmuri11-Condensed         | **8×11** | `Galmuri11-Condensed.bdf` | 〃                          | **SFC 8×16 반각 한글 칸** — 완성형 11,172자 전부 전진폭 8(잉크 ≤7px), 실측 2026-09-06 |
 | Galmuri7 / 9 / 14 / Mono    | 7~14px | `Galmuri*.bdf`   | 〃                                  | 다른 셀 크기 예비           |
 | Neo둥근모                   | 16×16  | `neodgm.ttf`     | <https://github.com/neodgm/neodgm>  | **새턴 16×16 셀 확정**      |
 
