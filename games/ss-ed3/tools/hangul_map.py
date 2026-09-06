@@ -230,6 +230,11 @@ def freeze_low(free):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--freeze", action="store_true", help="배정을 정본으로 박는다")
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="이미 있는 정본을 **바꿔** 박는다 — 옛 세이브·옛 빌드가 깨진다",
+    )
     ap.add_argument("--freeze-low", action="store_true", help="자르는 창 전용 배정을 박는다")
     ap.add_argument("--freeze-book", action="store_true", help="책 화면 전용 배정을 박는다")
     a = ap.parse_args()
@@ -255,6 +260,17 @@ def main():
         else:
             print(f"\n정본이 없다 — `--freeze` 로 박는다 ({MAP_PATH})")
         return
+    #   🔴 **세이브에 이 코드가 그대로 적힌다**(2026-09-06 실측 — 백업 RAM 에서 파티 이름과
+    #     지명이 우리 배정으로 디코드됐다). 자리가 밀리면 **옛 세이브의 이름이 깨지고 옛
+    #     빌드의 문안이 전부 딴 글자**가 된다. 그래서 이미 있는 정본을 바꾸려면 명시해야 한다.
+    if os.path.exists(MAP_PATH) and load() != table and not a.force:
+        moved = sum(1 for ch, i in load().items() if table.get(ch) != i)
+        raise SystemExit(
+            f"❌ 정본을 바꾸려 한다 — {moved:,}자가 딴 칸으로 간다.\n"
+            "   세이브에 이 코드가 적히므로 **옛 세이브의 이름이 깨지고 옛 빌드의 문안이**\n"
+            "   **전부 딴 글자가 된다.** 소재를 새로 열었더라도 배정은 그대로 두는 게 맞다\n"
+            "   (빈 칸은 남아 있다). 정말 바꾸려면 `--freeze --force`."
+        )
     with open(MAP_PATH, "w", encoding="utf-8") as f:
         json.dump(
             {
