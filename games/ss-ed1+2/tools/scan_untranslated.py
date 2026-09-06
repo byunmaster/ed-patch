@@ -34,6 +34,7 @@
 """
 
 import os
+import re
 import struct
 import sys
 
@@ -128,6 +129,61 @@ def scan(path, mm, files):
     return left
 
 
+# 🔴 **가나로만 판정하면 한자만 든 문자열이 원리적으로 빠진다**(2026-09-06). 우리 슬롯도
+#    한자로 디코드되므로 「가나가 없다 = 번역됐다」가 아니다. 그래서 축을 하나 더 둔다 —
+#    **빌드와 원본의 바이트를 자리마다 대조**해 「안 건드린 자리」를 센다. 한자든 가나든 걸린다.
+#
+# ⚠ 그냥 세면 늘 빨간불이라 아무도 안 본다 — **알고 남긴 것**을 여기 적고 뺀다.
+#    적을 때는 **왜 남기는지**를 같이 적는다. 「그냥 원래 그랬다」는 사유가 아니다.
+KEEP = {
+    # 「メニュートップ」를 그리고 **무한 루프로 끝나는 개발자 화면**의 글자 둘.
+    # 함수 시작(ED `0x4CBB4` · ED2 `0x03B930`)이 리터럴 포인터 0 · bsr/bra 0 — **도달 불가**.
+    # 뜻을 모르는 채 옮기면 화면에 엉뚱한 글자가 박히고, 애초에 안 뜬다(유저 판단 2026-09-06).
+    "闘": "도달 불가한 개발자 화면(メニュートップ)",
+    "働": "도달 불가한 개발자 화면(メニュートップ)",
+}
+# SJIS 로 우연히 읽히는 **코드·자료**를 거른다.
+# ⚠ 「셋 이상 이어진 것」으로 걸렀더니 **홑글자 한자가 빠졌다** — 바로 그 `闘`·`働` 을
+#   못 잡는다. 길이가 아니라 **구성**으로 가른다: 전부 일본어 글자여야 한다.
+#   그러면 `CAﾃy7烙`(ASCII 섞임) · `ﾐ臥`(반각 가나) 같은 바이너리는 빠지고,
+#   `ＭＧ１４`(전각 라틴·숫자, 방침상 안 옮긴다)도 빠진다.
+_JP1 = re.compile(r"[ぁ-ゟ゠-ヿ一-鿿]")
+_JPOK = re.compile(r"^[ぁ-ゟ゠-ヿ一-鿿、。・ー〜「」　\n]+$")
+
+
+def _pure_jp(s):
+    return bool(_JP1.search(s) and _JPOK.match(s))
+
+
+def untouched(path, mm, files):
+    """**원본 바이트 그대로 남은** 자리 → `[(오프셋, 원문)]`. 가나 판정의 사각지대를 메운다."""
+    import patch_scn
+
+    got = patch_scn.load(path)
+    if not got or path not in files:
+        return []
+    base, ent = got
+    lba, size = files[path]
+    built = common.read_extent(mm, lba, size)
+    out = []
+    for e in ent:
+        jp, pa = e.get("text"), e.get("ptr_at")
+        if not jp or not pa or jp in KEEP or _internal_key(jp):
+            continue
+        if not _pure_jp(jp):
+            continue  # 서식·파일명·전각 라틴·바이너리는 대상이 아니다
+        p = int(pa[0], 16)
+        if p + 4 > len(built):
+            continue
+        at = int.from_bytes(built[p : p + 4], "big") - base
+        if not (0 <= at < len(built)):
+            continue
+        j = built.find(b"\x00", at)
+        if built[at:j] == bytes.fromhex(e["raw_hex"]):
+            out.append((at, jp))
+    return out
+
+
 def main():
     common.verify_source()
     paths = list(MAIN)
@@ -152,16 +208,31 @@ def main():
         left = scan(path, mm, files)
         total += len(left)
         if not left:
-            print(f"  ✅ {path}: 남은 일본어 없다")
+            # ⚠ **깨끗한 파일은 한 줄도 안 찍는다** — 93파일이면 초록 93줄이 게이트 로그를
+            #    덮어 정작 봐야 할 줄이 밀려난다(실측 2026-09-06). 합계만 남긴다.
             continue
         print(f"  {path}: {len(left)}줄")
         for t, s in left[:40]:
             print(f"     0x{t:06X}  {s!r}")
         if len(left) > 40:
             print(f"     … 그 외 {len(left) - 40}줄")
+    # ── 바이트 대조 축 (가나 판정이 못 보는 자리)
+    kept = 0
+    for path in paths:
+        if path not in files:
+            continue
+        for at, jp in untouched(path, mm, files):
+            kept += 1
+            print(f"  🔴 {path} 0x{at:06X} 원본 바이트 그대로 — {jp[:40]!r}")
     mm.close()
     _f.close()
-    print(f"\n합계 {total}줄")
+    mark = "✅" if not (total or kept) else "🔴"
+    print(
+        f"  {mark} 파일 {len(paths)} — 남은 일본어 {total}줄 · 바이트가 원본 그대로인 자리 "
+        f"{kept} (알고 남긴 것 {len(KEEP)}종 제외)"
+    )
+    if kept:
+        raise SystemExit("원본 바이트 그대로인 자리가 있다 — 옮기거나 `KEEP` 에 사유와 함께 적는다")
 
 
 if __name__ == "__main__":
