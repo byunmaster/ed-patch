@@ -68,7 +68,17 @@ section() { # $1=file $2=제목 정규식(ERE)
     }' "$1"
 }
 
-[ "$BRIEF" -eq 1 ] && printf '%-12s %-16s %5s %5s %5s  %s\n' 게임 브랜치 앞 뒤 더티 마지막커밋
+# 단계: 상태 문서 첫 100줄에서 `단계: P2/7` 꼴을 찾는다(docs/ed1-phases.md). 없으면 `-`.
+phase() { # $1=worktree $2=game
+  for doc in "$1"/games/"$2"/docs/*status*.md; do
+    [ -f "$doc" ] || continue
+    v=$(head -100 "$doc" | grep -oE '단계: *P[0-9]+/[0-9]+' | head -1 | sed 's/단계: *//')
+    [ -n "$v" ] && { echo "$v"; return; }
+  done
+  echo -
+}
+
+[ "$BRIEF" -eq 1 ] && printf '%-12s %-16s %-5s %5s %5s %5s  %s\n' 게임 브랜치 단계 앞 뒤 더티 마지막커밋
 
 for wt in "$WT_DIR"/*/; do
   g=$(basename "$wt")
@@ -80,13 +90,14 @@ for wt in "$WT_DIR"/*/; do
   behind=$(git -C "$wt" rev-list --count "$br"..main 2>/dev/null || echo '?')
   dirty=$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
   last=$(git -C "$wt" log -1 --format='%cr · %s' 2>/dev/null || echo '?')
+  ph=$(phase "$wt" "$g")
 
   if [ "$BRIEF" -eq 1 ]; then
-    printf '%-12s %-16s %5s %5s %5s  %s\n' "$g" "${br#game/}" "$ahead" "$behind" "$dirty" "$last"
+    printf '%-12s %-16s %-5s %5s %5s %5s  %s\n' "$g" "${br#game/}" "$ph" "$ahead" "$behind" "$dirty" "$last"
     continue
   fi
 
-  echo "━━ $g  [$br]  main+$ahead  뒤 $behind  더티 $dirty"
+  echo "━━ $g  [$br]  단계 $ph  main+$ahead  뒤 $behind  더티 $dirty"
   echo "  마지막 커밋: $last"
   # 뒤처짐·더티는 관리자가 짚을 징후라 줄을 따로 뺀다.
   [ "$behind" != "0" ] && [ "$behind" != "?" ] && echo "  ⚠ main 이 $behind 앞서 있다 — rebase 대상"
