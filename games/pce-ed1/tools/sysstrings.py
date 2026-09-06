@@ -235,6 +235,33 @@ def read_screens():
     return out
 
 
+# ─── 코드 안에 박힌 낱개 문자열 ────────────────────────────────────────────
+# 표가 아니라 **리터럴**이라 가족 어디에도 안 잡힌다. 지명표(0x74+0x1C1E)에 「フィールド」가
+# 없어서 오버월드 HUD 만 일본어로 남아 있었다(2026-09-06 인게임 발각).
+# 꼴은 지명표와 같은 「이름 06」 — 06 뒤는 **코드**라 그 앞까지만 쓴다.
+INLINE = {
+    #  key: (bank, off, room)   room 은 06 까지 포함
+    "field": (0x6D, 0x12CB, 13),  # 오버월드 HUD 이름
+}
+
+
+def read_inline():
+    out = []
+    for key, (bank, off, room) in INLINE.items():
+        b = bank_bytes(bank)
+        seg = b[off : off + room]
+        out.append(
+            {
+                "key": key,
+                "bank": bank,
+                "off": off,
+                "room": room,
+                "jp": seg.split(b"\x06")[0].decode("cp932"),
+            }
+        )
+    return out
+
+
 # ─── 오마케 모듈(사운드 테스트 · 몬스터 도감) ───────────────────────────────
 # rel 458~459 에 **평문 00 종단 문자열**이 이어져 있다. 본 프로그램이 아니라 별도 모듈이라
 # 뱅크 좌표가 아니라 rel 좌표로 적는다.
@@ -299,6 +326,7 @@ def dump_all():
         "sysmsg": read_sysmsg(),
         "screens": read_screens(),
         "extras": read_extras(),
+        "inline": read_inline(),
     }
     for k in FIXED:
         fams[k] = read_fixed(k)

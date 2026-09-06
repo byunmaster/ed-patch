@@ -303,10 +303,12 @@ def _msgs() -> dict[str, str]:
     return json.loads(f.read_text()).get("messages", {}) if f.exists() else {}
 
 
-# 블록이 자랄 수 있는 상한 — 블록은 뱅크 0x74 **+0x400** 에 풀리고, 원본에서 그 위로 처음
-# 0 이 아닌 자료가 나오는 자리가 +0xF0A 다. ⚠ **「0 이니 빈 자리」는 계약이 아니다**(루트 CLAUDE.md
-# ·[[free-space-vab-trap]]) — 어디까지나 상한 가설이고 전투 화면에서 재서 확정해야 한다.
-SAFE_UNPACKED = 0xF0A - 0x400
+# 블록이 자랄 수 있는 상한 — **전투 화면에서 잰 값**(2026-09-06, 슬라임전 뱅크 0x74 덤프).
+# 블록은 +0x400 에 풀리고, 그 위로 게임이 실제로 쓰는 첫 자리가 **+0x0B00** 이다(그 사이 1,340B 는
+# 전투 내내 0). 🔴 정적으로 「원본에서 0 이 아닌 첫 자리」로 잡았던 가설은 +0xF0A(2,826B)라
+# **1,000B 나 헐거웠다** — 「0 이니 빈 자리」가 계약이 아니라는 걸 또 확인했다.
+# ⚠ 잰 것은 **한 전투**다. 더 큰 전투가 +0x0B00 아래를 더 쓰면 여기가 좁아진다 — QA 에서 다시 잰다.
+SAFE_UNPACKED = 0x0B00 - 0x400
 
 
 def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], where: str) -> int:

@@ -89,6 +89,9 @@ def all_glyph_chars() -> set[str]:
     for k, v in _load("extras.json").items():
         if not k.startswith("_"):
             chars |= {c for t in v for c in t if font.needs_glyph(c)}
+    for k, v in _load("inline.json").items():
+        if not k.startswith("_"):
+            chars |= {c for c in v if font.needs_glyph(c)}
     return chars
 
 
@@ -145,6 +148,12 @@ def check_keys(errors: list[str]) -> dict[str, int]:
     stray = [k for k in ex if not k.startswith("_") and k not in ek]
     seen["extras"] = len(stray)
     errors += [f"extras.json 열쇠가 아무 덩이와도 안 맞는다: {k!r}" for k in stray]
+
+    inl = _load("inline.json")
+    ik = {r["key"] for r in S.read_inline()}
+    stray = [k for k in inl if not k.startswith("_") and k not in ik]
+    seen["inline"] = len(stray)
+    errors += [f"inline.json 열쇠가 없다: {k!r}" for k in stray]
 
     names = _load("names.json")
     for fam in ("items", "spells", "files", "places"):
@@ -363,6 +372,29 @@ def apply(f, table, touched) -> dict:
             touched.append((lba + i, 1))
         cnt += 1
     stats["extras"] = cnt
+    # 코드 안 낱개 문자열 — 「이름 06」, 06 뒤는 코드라 그 앞까지만 쓴다(남는 자리는 원본 그대로)
+    inline = _load("inline.json")
+    cnt = 0
+    for r in S.read_inline():
+        kr = inline.get(r["key"])
+        if not kr:
+            continue
+        enc = font.encode(kr, table) + b"\x06"
+        if len(enc) > r["room"]:
+            errors.append(f"inline[{r['key']}] 「{kr}」 {len(enc)}B > {r['room']}B")
+            continue
+        b = S.bank_bytes(r["bank"])
+        _write(
+            f,
+            r["bank"],
+            r["off"],
+            enc,
+            b[r["off"] : r["off"] + len(enc)],
+            f"inline {r['key']}",
+            touched,
+        )
+        cnt += 1
+    stats["inline"] = cnt
     if errors:
         raise SysError(
             "시스템 문구 " + str(len(errors)) + "건이 자리를 넘는다:\n  " + "\n  ".join(errors)
