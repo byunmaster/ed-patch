@@ -57,7 +57,8 @@ GRADE = [
     (
         "합쇼체",
         re.compile(
-            r"(습니다|습니까|십니다|십니까|입니다|ㅂ니다|드립니다|십시오|사옵|옵니다|나이다|옵소서)$"
+            r"(습니다|습니까|십니다|십니까|입니다|입니까|ㅂ니다|ㅂ니까|겁니다|겁니까"
+            r"|드립니다|드립니까|십시오|사옵|옵니다|옵니까|나이다|옵소서)$"
         ),
     ),
     (
@@ -69,7 +70,9 @@ GRADE = [
     ("하게체", re.compile(r"(하게|이네|일세|시게|게나|는가|던가|누먼|구먼|나\?|ㄹ세)$")),
     ("하소체", re.compile(r"(구나|란다|느냐|더냐|거라|려무나|로다|노라|니라|시오)$")),
     ("해라체", re.compile(r"(는다|았다|었다|였다|한다|이다|있다|없다|같다|겠다|더군|는군|로군)$")),
-    ("반말", re.compile(r"(거야|잖아|는데|야|어|아|지|래|자|냐|니|까|걸|텐데|든지)$")),
+    # ⚠ 종결 `~는데`·`~텐데` 는 **여운으로 흘리는 미완결 어미**라 등급 신호가 아니다
+    #   (`아니 되네. 모처럼 무사히 돌아왔는데.` — 앞이 하게체인데 뒤만 반말로 잡혔다).
+    ("반말", re.compile(r"(거야|잖아|야|어|아|지|래|자|냐|니|까|걸|든지)$")),
 ]
 
 # 🔴 인물표(`docs/ed2-story-bible.md`)의 「한국어 지침」을 옮긴 것이다 — **정본은 그 문서**고
@@ -87,7 +90,7 @@ EXPECT = {
     "라우엘": ({"합쇼체", "하게체"}, "〃"),
     "디나 왕비": ({"하게체", "하소체", "합쇼체"}, "어머니의 하게체(존댓말 금지)"),
     "페리시아 황태후": ({"하게체", "하소체", "합쇼체"}, "할머니의 하게체"),
-    "제랄드 부인": ({"합쇼체", "해요체"}, "합쇼체"),
+    "제랄드 부인": ({"합쇼체", "해요체", "하소체"}, "합쇼체 · **딸에겐 하소체**"),
     "챨리": ({"합쇼체"}, "거만한 합쇼체"),
     "제니": ({"합쇼체", "해요체"}, "ですわ 합쇼체"),
     "리더": ({"하게체", "하소체", "해라체"}, "노인 하게체"),
@@ -107,6 +110,22 @@ EXPECT = {
 }
 
 
+# 원문 경어 표지 — `check_speech_level` 과 같은 축이지만 **블록 단위**로 쓴다.
+JP_HON = re.compile(
+    r"(です|ます|ました|ません|ましょ|でしょ|ください|ござい|いたし|おります|いらっしゃい|ですな|ますぞ)"
+)
+JP_PLAIN = re.compile(
+    r"(だぞ|だな|だよ|だぜ|だろ|かい|やがる|きさま|貴様|おまえ|お前|だ\s*[!！。]|のか|ぞ。|わ。)"
+)
+HON_GRADES = {"합쇼체", "해요체"}
+
+
+def jp_level(jp_text):
+    """원문의 경어 등급 — 'hon' · 'plain' · None(못 가름)."""
+    h, p2 = bool(JP_HON.search(jp_text)), bool(JP_PLAIN.search(jp_text))
+    return "hon" if h and not p2 else "plain" if p2 and not h else None
+
+
 def grade(sentence):
     s = CLEAN.sub("", sentence).strip()
     if len(s) < 2:
@@ -123,8 +142,8 @@ def scan(track="ED2"):
     for p in sorted(SCRIPT.glob(f"{track}SCN*.json")):
         doc = json.loads(p.read_text(encoding="utf-8"))
         with redirect_stdout(io.StringIO()):
-            rows = [(e, c) for _s, e, _j, c, _t in R.iter_candidates((p.stem,))]
-        for eid, cand in rows:
+            rows = [(e, j, c) for _s, e, j, c, _t in R.iter_candidates((p.stem,))]
+        for eid, jpraw, cand in rows:
             out_txt = R.render_bytes(cand.rstrip(b"\x00"), ctrl=True)
             m = NAMEPLATE.match(out_txt)
             if not m or "%s" in m.group(1):
@@ -140,7 +159,8 @@ def scan(track="ED2"):
             for mm in re.finditer(r"([^.!?…]+)[.!?…]", body):
                 g = grade(mm.group(1))
                 if g:
-                    out.append((p.stem, eid, who, g, mm.group(1).strip()[:34]))
+                    jl = jp_level(R.render_bytes(jpraw.rstrip(b"\x00"), ctrl=False))
+                    out.append((p.stem, eid, who, g, mm.group(1).strip()[:34], jl))
     return out
 
 
@@ -150,21 +170,31 @@ def main():
     rows = scan()
     if "--grades" in sys.argv:
         per = collections.defaultdict(collections.Counter)
-        for _s, _e, who, g, _t in rows:
+        for _s, _e, who, g, _t, _j in rows:
             per[who][g] += 1
         for who, c in sorted(per.items(), key=lambda x: -sum(x[1].values())):
             if sum(c.values()) < 8:
                 continue
             print(f"   {sum(c.values()):>4}  {who:<14} {dict(c.most_common())}")
         return 0
-    bad = [r for r in rows if r[2] in EXPECT and r[3] not in EXPECT[r[2]][0]]
+    off = [r for r in rows if r[2] in EXPECT and r[3] not in EXPECT[r[2]][0]]
+    # 🔴 **인물표와 갈리면 원문체를 따른다**(유저 확정 2026-09-06). 등급이 지침을 벗어나도
+    #    **원문이 같은 층이면 정상**이다 — 대장은 인물의 기본값이고, 상대가 바뀌면 원문부터
+    #    바뀐다(챨리·제랄드 부인은 왕자인 줄 모를 때 반말, 정체를 안 뒤 존대 — 대장
+    #    제랄드 항목에 이미 `ED2SCN4:848·911` → `871·961` 로 적혀 있다).
+    #    ⇒ **우리 등급과 원문 층이 어긋난 것만** 진짜 후보다.
+    bad = [r for r in off if r[5] and ((r[3] in HON_GRADES) != (r[5] == "hon"))]
+    skipped = len(off) - len(bad)
     per = collections.Counter((r[2], r[3]) for r in bad)
-    print(f"  ℹ 인물표와 어긋난 대사 {len(bad)}곳 (대장 등재 인물 {len(EXPECT)}종 기준)")
+    print(
+        f"  ℹ 인물표와 갈리고 **원문체와도 어긋난** 대사 {len(bad)}곳"
+        f" (지침 밖 {len(off)} 중 원문과 같은 층 {skipped}은 정상 — 유저 확정 2026-09-06)"
+    )
     for (who, g), n in per.most_common(12):
         print(f"       {n:>3}  {who} — {g} (지침: {EXPECT[who][1]})")
     if "-v" in sys.argv:
-        for s, e, who, g, t in bad[:40]:
-            print(f"          {s}:{e} [{who}/{g}] {t!r}")
+        for s, e, who, g, t, jl in bad[:40]:
+            print(f"          {s}:{e} [{who}/{g} · 원문 {jl}] {t!r}")
     print("     ⚠ 게이트가 아니다 — 등급은 상대·상황에 따라 정당하게 오르내린다. 사람이 본다.")
     return 0
 
