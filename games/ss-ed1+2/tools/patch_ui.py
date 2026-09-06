@@ -924,15 +924,20 @@ def slot_plan(krs, refresh=False):
     if refresh or not old:
         free = font.free_slots("11kanji")
         assert len(need) <= len(free), f"슬롯 부족 {len(need)}>{len(free)}"
-        # 이미 배정된 글자는 **자리를 지킨다** — 재배정하면 낡은 이미지의 폰트와 어긋난다.
-        keep = {c: i for c, i in old.items() if c in need}
+        # 🔴 **덧붙이기만 한다**(2026-09-06). 이미 배정된 글자는 자리를 지키고, **안 쓰이게
+        #    된 글자도 안 뺀다.**
+        #    까닭: **세이브가 이 코드를 그대로 담는다** — 파티원 이름이 백업 RAM 에 우리
+        #    글리프 코드로 적힌다(실측: 유저 세이브 32KB 안에 16곳 — 세리오스·류난·로우·
+        #    게일·아트라스·란도·플로라·신디). 슬롯을 회수해 다른 글자에 주면 **옛 세이브의
+        #    이름이 엉뚱한 글자로 뜬다.** pce-ed1 이 실제로 물린 사고다(2026-09-06 중계).
+        #    ⚠ 자리는 넉넉하다 — 쓰는 글자 1,120 · 여유 2,959.
+        keep = dict(old)
         taken = set(keep.values()) | reserved_slots(krs)
         pool = [i for i in free if i not in taken]
         old = dict(keep)
         for c in need:
             if c not in old:
                 old[c] = pool.pop(0)
-        old = {c: old[c] for c in need}
         with open(HMAP, "w", encoding="utf-8") as f:
             json.dump(
                 {

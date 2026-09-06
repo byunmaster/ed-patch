@@ -152,7 +152,15 @@ def slot_plan(lines_by_region, refresh=False):
     if refresh or not old:
         free = font.free_slots("kanji")
         assert len(need) <= len(free), f"슬롯 부족 {len(need)}>{len(free)}"
-        old = {c: free[i] for i, c in enumerate(need)}
+        # 🔴 **덧붙이기만 한다**(2026-09-06). 예전엔 `enumerate(need)` 로 **통째 재배정**해
+        #    한 글자만 늘어도 배정이 전부 밀렸다 — pce-ed1 이 그 꼴로 세이브를 깨뜨렸다.
+        #    여기는 `TITLE.BIN` 자막 전용이라 세이브에 안 들어가지만, **같은 함정이라 같은
+        #    규칙으로 닫는다**(4-D — 같은 지식이 두 곳에 있으면 갈린다).
+        taken = set(old.values())
+        pool = [i for i in free if i not in taken]
+        for c in need:
+            if c not in old:
+                old[c] = pool.pop(0)
         with open(HMAP, "w", encoding="utf-8") as f:
             json.dump(
                 {"_doc": "한글 → KANJI.FON 슬롯 인덱스 (커밋 정본)", "syllables": old},
