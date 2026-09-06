@@ -40,16 +40,13 @@ LAYOUT_BANK = 0x2C8000  # 넓힌 창 배치 항목을 두는 자리(확장 뱅�
 #   표 A = 틀+내용, 표 B·C = 같은 좌표의 **전부 0 기록**(닫을 때 그 영역을 되돌린다).
 #   A 만 넓히면 오른쪽 2칸이 안 지워져 **맵 위에 창 조각이 남는다.** 짝을 같이 넓힌다.
 #   B0A(=C0A)·B0C 는 0 기록이 아니라 커맨드 창을 **부분 갱신**하는 기록이라 상자만 넓힌다.
-# 🔴 **창을 옆으로 옮기면 커서가 안 따라온다**(실기 2026-09-06, 유저 제보). 커서 열은 창 배치 기록의
-#    `col` 에서 오지 않는다 — 시스템 창을 col 8→10 으로 밀었더니 커서는 **9(=원래 8+1)** 에 그대로 남아
-#    넓힌 커맨드 창의 오른쪽 틀을 한 칸씩 지웠다. ⚠ 폭 때문이 아니다: 옮기기만 하고 폭은 그대로 둔
-#    진단 롬에서도 같은 자리가 깨졌다. 원본에서는 커서가 col 9 = 창 안이라 정상이다.
-# ⇒ **제자리 확장만 한다.** 시스템 창은 오른쪽이 비어 있어(상태판은 열 19부터) 그대로 넓힐 수 있다.
-#    커맨드 창은 오른쪽이 시스템 창이라 못 넓힌다 — 3음절 라벨(`버린다`)은 커서 코드를 고친 뒤로 미룬다.
-WIDEN = {  # (표, id): (끼울 타일 수, col 이동)
-    ("A", 0x06): (2, 0),  # 시스템 창 — 그리기(제자리로 7→9, 열 8~16)
-    ("B", 0x06): (2, 0),  # 〃 지우기(=C06)
-}
+# ── D2 「메뉴 폭」— 🟢 **넓힐 필요가 없어졌다**(2026-09-06, D1=B 채택) ──────────────────────
+# 한글 한 자가 **한 칸**이 되면서 커맨드 창의 4칸에 3음절(`버린다`)이 그대로 든다.
+# 시스템 창도 4칸에 `시스템`(3)이 든다. ⇒ 창을 안 건드린다.
+# 🔴 넓히기를 걷은 이유는 그것만이 아니다 — **창을 옆으로 옮기면 커서가 안 따라온다**
+#   (status 13.1, 유저 제보 2026-09-06). 커서 열은 창 배치 기록의 `col` 에서 오지 않는다.
+#   넓히기가 필요해지면 그 코드부터 찾아야 한다.
+WIDEN: dict[tuple[str, int], tuple[int, int]] = {}
 BOX_W = 7
 
 # ── 메뉴 한글 PoC(코드 수정 없음) ───────────────────────────────────────────────────────────
@@ -58,32 +55,9 @@ BOX_W = 7
 # 한글 16자(글자 = 위 타일 t,t+1 · 아래 t+$10,t+$11)를 심고, 커맨드 창(A01, 부분 갱신 B0A/B0C/C0A 포함)의 라벨
 # 워드를 그 타일 번호로 다시 굽는다. ⚠ PoC 롬의 일본어 대사에서 ガ~ポ 자리에 한글 조각이 보이는 건 이 때문이다.
 # 검증 대상: 시트 편집 → 기존 업로드 → 정적 타일맵 라벨의 경로가 산다(코드 한 줄 안 건드리고).
-MENU_POC_SLOTS = [
-    0x140,
-    0x142,
-    0x144,
-    0x146,
-    0x148,
-    0x14A,
-    0x14C,
-    0x14E,
-    0x160,
-    0x162,
-    0x164,
-    0x166,
-    0x168,
-    0x16A,
-    0x16C,
-    0x16E,
-    0x120,  # 시스템 창까지 한글로 굽느라 한 행 더 빌린다(가나 두 행 → 세 행)
-    0x122,
-    0x124,
-    0x126,
-    0x128,
-    0x12A,
-    0x12C,
-    0x12E,
-]
+# 한 자 = 타일 **t(위) + t+$10(아래)** 두 장뿐이라(D1=B) 한 행을 통째로 쓸 수 있다.
+# 빌린 행: $140/$150 · $160/$170 · $120/$130 (가나 세 행) = 48자리.
+MENU_POC_SLOTS = list(range(0x140, 0x150)) + list(range(0x160, 0x170)) + list(range(0x120, 0x130))
 MENU_POC_WINDOWS = [
     ("A", 0x01),
     ("A", 0x06),  # 시스템 창(제자리 확장) — 로드·저장·시스템·설정
@@ -189,6 +163,19 @@ def widen_windows(out: bytearray, rom: bytes) -> list[dict]:
     return done
 
 
+def bake_glyph(out: bytearray, sheet: int, t: int, rows: list[int], half: bool) -> None:
+    """글리프 한 자를 시트에 굽는다 — 반각이면 타일 t·t+$10 둘, 전각이면 t·t+1·t+$10·t+$11 넷."""
+    for r in range(8):
+        if half:
+            out[sheet + 8 * t + r] = rows[r]
+            out[sheet + 8 * (t + 0x10) + r] = rows[8 + r]
+        else:
+            out[sheet + 8 * t + r] = rows[r] >> 8
+            out[sheet + 8 * (t + 1) + r] = rows[r] & 0xFF
+            out[sheet + 8 * (t + 0x10) + r] = rows[8 + r] >> 8
+            out[sheet + 8 * (t + 0x11) + r] = rows[8 + r] & 0xFF
+
+
 def menu_poc(out: bytearray, rom: bytes) -> dict:
     """커맨드 창 라벨을 한글로 — 시트의 빌린 타일에 글리프를 굽고, 창 배치 워드를 그 타일로 바꾼다."""
     import hangul_font
@@ -205,12 +192,7 @@ def menu_poc(out: bytearray, rom: bytes) -> dict:
             if len(slot_of) >= len(MENU_POC_SLOTS):
                 raise SystemExit(f"메뉴 PoC 글리프 자리가 모자란다: {''.join(slot_of)} + {ch}")
             t = MENU_POC_SLOTS[len(slot_of)]
-            rows = hangul_font.render(ch, font)  # 16행 × 16비트
-            for r in range(8):
-                out[sheet + 8 * t + r] = rows[r] >> 8
-                out[sheet + 8 * (t + 1) + r] = rows[r] & 0xFF
-                out[sheet + 8 * (t + 0x10) + r] = rows[8 + r] >> 8
-                out[sheet + 8 * (t + 0x11) + r] = rows[8 + r] & 0xFF
+            bake_glyph(out, sheet, t, hangul_font.render(ch, font), hangul_font.CELL_W == 8)
             slot_of[ch] = t
         return slot_of[ch]
 
@@ -243,8 +225,12 @@ def menu_poc(out: bytearray, rom: bytes) -> dict:
             for ch in kr:
                 if "가" <= ch <= "힣":
                     t = slot(ch)
-                    words_top += [attr | t, attr | (t + 1)]
-                    words_bot += [attr | (t + 0x10), attr | (t + 0x11)]
+                    if hangul_font.CELL_W == 8:  # 한 자 = 한 칸
+                        words_top.append(attr | t)
+                        words_bot.append(attr | (t + 0x10))
+                    else:
+                        words_top += [attr | t, attr | (t + 1)]
+                        words_bot += [attr | (t + 0x10), attr | (t + 0x11)]
                 elif ch == " ":
                     words_top.append(0x0108)
                     words_bot.append(0x0108)
@@ -748,8 +734,12 @@ def build_kr(
 # 오프닝은 뱅크 $1E 가 **같은 시트의 타일 $000~$17F 384개**를 워드 $3000 에 올린다(실측: $1E:E6B4·
 # $1E:F168 의 루프가 소스 $18:E02C 에서 3,072B 를 읽는다) — 인게임과 같은 범위라 시트만 고치면 닿는다.
 # ⚠ 빌린 코드·타일 자리의 가나는 이 롬 전체에서 깨져 보인다. **A/B 캡처용 롬**이지 배포물이 아니다.
-OPENING_POC_ADDR = "0BE96F"  # 오프닝 첫 화면 조각(segments.json 의 addr)
-OPENING_POC_WIDTH = int(os.environ.get("SFC_OPENING_POC_WIDTH", "24"))  # 반칸 — 원문 최대 줄 길이가 24
+# 굽을 조각은 고를 수 있다 — 기본은 오프닝 첫 화면. 인게임 대사창을 보려면 그쪽 조각 주소를 준다
+# (엔진은 같고 **VRAM 자리만 다르다** — 오프닝 워드 $3000 · 인게임 $1000).
+OPENING_POC_ADDR = os.environ.get("SFC_POC_SEG", "0BE96F")
+OPENING_POC_WIDTH = int(
+    os.environ.get("SFC_OPENING_POC_WIDTH", "24")
+)  # 반칸 — 원문 최대 줄 길이가 24
 # ⚠ 좁게 주면 같은 글자로 줄 수만 늘릴 수 있다 — **화면이 몇 줄까지 받나**를 재는 데 쓴다(글리프 비용 0).
 OPENING_POC_ROWS = [
     18,
@@ -765,10 +755,13 @@ OPENING_POC_CODE_TOP = 0xCE  # 빌릴 글자 코드는 여기서부터 내려간
 
 
 def _kr_wrap(kr: str, width: int) -> str:
-    """어절 단위 그리디 줄바꿈. 한글 한 자 = 2반칸, 나머지(부호·숫자·공백) = 1반칸."""
+    """어절 단위 그리디 줄바꿈. 한 자의 칸 수는 **글꼴이 정한다**(D1=B 반각이면 1 · 전각이면 2)."""
+    import hangul_font
+
+    hw = 1 if hangul_font.CELL_W == 8 else 2
 
     def w(t: str) -> int:
-        return sum(2 if "가" <= c <= "힣" else 1 for c in t)
+        return sum(hw if "가" <= c <= "힣" else 1 for c in t)
 
     lines, cur = [], ""
     for word in kr.replace("\n", " ").split(" "):
@@ -806,28 +799,38 @@ def opening_poc(rom: bytes) -> tuple[str, callable, callable]:
         if c < 0xD0:
             t0 = rom[tab0 + 2 * c] | ((rom[tab0 + 2 * c + 1] & 3) << 8)
             keep |= {t0, t0 + 0x10}
+    half = hangul_font.CELL_W == 8
+    step = 1 if half else 2
     quads = [
         16 * r + c
         for r in OPENING_POC_ROWS
-        for c in range(0, 16, 2)
-        if not ({16 * r + c, 16 * r + c + 1, 16 * r + c + 0x10, 16 * r + c + 0x11} & keep)
+        for c in range(0, 16, step)
+        if not (
+            (
+                {16 * r + c, 16 * r + c + 0x10}
+                if half
+                else {16 * r + c, 16 * r + c + 1, 16 * r + c + 0x10, 16 * r + c + 0x11}
+            )
+            & keep
+        )
     ]
-    need = len(syls) + (len(puncts) + 1) // 2
+    need = len(syls) + (len(puncts) if half else (len(puncts) + 1) // 2)
     if need > len(quads):
         raise SystemExit(f"오프닝 PoC 글리프 자리가 모자란다: {need} > {len(quads)}")
     codes = [c for c in range(OPENING_POC_CODE_TOP, -1, -1) if c != text.SPACE]
-    if 2 * len(syls) + len(puncts) > len(codes):
-        raise SystemExit("오프닝 PoC 코드가 모자란다")
+    per = 1 if half else 2  # 한 자에 드는 코드 수 = 칸 수
+    if per * len(syls) + len(puncts) > len(codes):
+        raise SystemExit("PoC 코드가 모자란다")
 
     tile_of: dict[str, int] = {}
     code_of: dict[str, tuple[int, ...]] = {}
     ci = 0
     for i, ch in enumerate(syls):
         tile_of[ch] = quads[i]
-        code_of[ch] = (codes[ci], codes[ci + 1])
-        ci += 2
-    for j, ch in enumerate(puncts):  # 반각 — 한 자리(t 또는 t+1)만 쓴다
-        tile_of[ch] = quads[len(syls) + j // 2] + (j % 2)
+        code_of[ch] = tuple(codes[ci : ci + per])
+        ci += per
+    for j, ch in enumerate(puncts):  # 반각 — 한 자리만 쓴다
+        tile_of[ch] = quads[len(syls) + (j if half else j // 2)] + (0 if half else j % 2)
         code_of[ch] = (codes[ci],)
         ci += 1
 
@@ -847,16 +850,11 @@ def opening_poc(rom: bytes) -> tuple[str, callable, callable]:
         sheet = common.snes2off(text.FONT_SHEET)
         tab = common.snes2off(text.TILE_TABLE)
         for ch, t in tile_of.items():
-            rows = hangul_font.render(ch, font)  # 16행 × 16비트
-            half = len(code_of[ch]) == 1
-            if half and any(r & 0x00FF for r in rows):
+            rows = hangul_font.render(ch, font)
+            wide = not half and len(code_of[ch]) == 2  # 전각 글꼴의 한글만 네 타일을 쓴다
+            if not wide and not half and any(r & 0x00FF for r in rows):
                 raise SystemExit(f"반각으로 넣을 글자가 8칸을 넘는다: {ch!r}")
-            for r in range(8):
-                out[sheet + 8 * t + r] = rows[r] >> 8
-                out[sheet + 8 * (t + 0x10) + r] = rows[8 + r] >> 8
-                if not half:
-                    out[sheet + 8 * (t + 1) + r] = rows[r] & 0xFF
-                    out[sheet + 8 * (t + 0x11) + r] = rows[8 + r] & 0xFF
+            bake_glyph(out, sheet, t, rows, half=not wide)
             for k, code in enumerate(code_of[ch]):  # 글자→타일 표를 반쪽 타일로 돌린다
                 attr = src[tab + 2 * code + 1] & 0xFC  # 그 코드가 쓰던 속성은 그대로
                 out[tab + 2 * code] = (t + k) & 0xFF
@@ -866,8 +864,9 @@ def opening_poc(rom: bytes) -> tuple[str, callable, callable]:
             "lines": kr.split("\n"),
             "syllables": len(syls),
             "puncts": "".join(puncts),
-            "tiles": len(syls) * 4 + len(puncts) * 2,
-            "codes": 2 * len(syls) + len(puncts),
+            "cell": f"{hangul_font.CELL_W}x{hangul_font.CELL}",
+            "tiles": (len(syls) + len(puncts)) * (2 if half else 4),
+            "codes": per * len(syls) + len(puncts),
             "font": hangul_font.FONT_NAME,
         }
 
@@ -900,7 +899,7 @@ def main() -> None:
         sid, enc_override, bake = opening_poc(rom)
         out, info = build_kr(rom, only={sid}, enc_override=enc_override, after=bake)
         print(json.dumps(info["opening_poc"], ensure_ascii=False, indent=1))
-        dst = common.OUT_DIR / f"opening_poc_{hangul_font.FONT_NAME}.sfc"
+        dst = common.OUT_DIR / f"poc_{OPENING_POC_ADDR}_{hangul_font.FONT_NAME}.sfc"
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(out)
         print("→", dst, hashlib.sha1(out).hexdigest())

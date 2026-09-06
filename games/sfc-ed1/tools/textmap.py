@@ -200,8 +200,12 @@ def init_dict() -> dict:
 
 
 def render_width(kr: str) -> int:
-    """칸(8px) 단위 폭 — 한글·`…` 은 2, 공백·숫자·영문·`.`·`,` 은 1(D1 조판 규격)."""
-    return sum(2 if ("가" <= c <= "힣" or c == "…") else 1 for c in kr)
+    """칸(8px) 단위 폭. **D1=B**(유저 2026-09-06) 로 한글도 **한 칸**이다 — `Galmuri11-Condensed`
+    가 완성형 전부 폭 7px 라 반각에 든다. `…` 만 전각 두 칸(원본 글꼴을 그대로 쓴다)."""
+    import hangul_font
+
+    hw = 1 if hangul_font.CELL_W == 8 else 2
+    return sum(hw if "가" <= c <= "힣" else (2 if c == "…" else 1) for c in kr)
 
 
 def init_menus() -> dict:
@@ -390,5 +394,11 @@ if __name__ == "__main__":
     if a.check:
         r = check()
         print(r)
-        if r["token_errors"] or r["unknown_id"] or r["glossary_drift"] or r["naming_space"] or r["ps1_terms"]:
+        if (
+            r["token_errors"]
+            or r["unknown_id"]
+            or r["glossary_drift"]
+            or r["naming_space"]
+            or r["ps1_terms"]
+        ):
             raise SystemExit(1)

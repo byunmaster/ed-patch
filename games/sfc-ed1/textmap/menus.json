@@ -99,44 +99,44 @@
   "x0": 2
  },
  "すてる@A01": {
-  "kr": "버림",
+  "kr": "버린다",
   "state": "ps1",
   "budget_tiles": 6,
   "width_tiles": 6,
   "fits": true,
   "row": 7,
   "x0": 2,
-  "note": "⚠ 커맨드 창을 못 넓혀 2음절로 줄였다(커서 열 결함, 2026-09-06)"
+  "note": "PS1 정본(patch_sys_ui 0xBE2AE). D1=B 로 한 칸이 되어 4칸에 든다"
  },
  "すてる@B0A": {
-  "kr": "버림",
+  "kr": "버린다",
   "state": "ps1",
   "budget_tiles": 6,
   "width_tiles": 6,
   "fits": true,
   "row": 1,
   "x0": 2,
-  "note": "⚠ 커맨드 창을 못 넓혀 2음절로 줄였다(커서 열 결함, 2026-09-06)"
+  "note": "PS1 정본(patch_sys_ui 0xBE2AE). D1=B 로 한 칸이 되어 4칸에 든다"
  },
  "すてる@B0C": {
-  "kr": "버림",
+  "kr": "버린다",
   "state": "ps1",
   "budget_tiles": 6,
   "width_tiles": 6,
   "fits": true,
   "row": 3,
   "x0": 2,
-  "note": "⚠ 커맨드 창을 못 넓혀 2음절로 줄였다(커서 열 결함, 2026-09-06)"
+  "note": "PS1 정본(patch_sys_ui 0xBE2AE). D1=B 로 한 칸이 되어 4칸에 든다"
  },
  "すてる@C0A": {
-  "kr": "버림",
+  "kr": "버린다",
   "state": "ps1",
   "budget_tiles": 6,
   "width_tiles": 6,
   "fits": true,
   "row": 1,
   "x0": 2,
-  "note": "⚠ 커맨드 창을 못 넓혀 2음절로 줄였다(커서 열 결함, 2026-09-06)"
+  "note": "PS1 정본(patch_sys_ui 0xBE2AE). D1=B 로 한 칸이 되어 4칸에 든다"
  },
  "すばやさ@A05": {
   "kr": "민첩성",
