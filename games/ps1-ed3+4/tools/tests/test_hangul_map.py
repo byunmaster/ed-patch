@@ -59,6 +59,15 @@ class TestHangulMap(unittest.TestCase):
             first = max(textenc.kana_map(disc)) + 1
             self.assertTrue(all(c >= first for c in _canon(disc).values()), disc)
 
+    def test_codes_stay_inside_the_font(self):
+        """🔴 폰트 끝(전개표) 아래여야 한다 — 넘기면 렌더러 자료를 덮어 대사창이 잡음이 된다."""
+        import font
+
+        for disc in DISCS:
+            end = font.font_slots(disc)
+            over = sorted(c for c in _canon(disc).values() if c >= end)
+            self.assertEqual(over, [], f"{disc}: 폰트 밖 {len(over)}")
+
     def test_canon_file_shape(self):
         for disc in DISCS:
             _canon(disc)

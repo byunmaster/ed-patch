@@ -155,16 +155,20 @@ def test_slots(disc):
     exe, _, _ = font.exe_bytes(disc)
     first = max(textenc.kana_map(disc)) + 1
     n = font.font_end(exe, disc)
-    return [c for c in range(first, n) if font.read_glyph(exe, c, disc).any()]
+    return [c for c in range(first, n) if font.glyphy(exe, c, disc)]
 
 
 def free_slots(disc, used=None):
-    """[코드] — 안 쓰는데 **그림이 있는** 자리. 카나 끝 다음부터."""
+    """[코드] — 안 쓰는데 **글리프다운** 자리. 카나 끝 다음부터 **폰트 끝**(`font.font_slots`)까지.
+
+    🔴 폰트 끝을 넘기면 안 된다 — 그 뒤는 렌더러의 전개표와 문자열이다. 2026-09-07 에 끝을
+       잘못 재서(1900) 71자를 전개표 위에 구웠고 대사창 전체가 잡음이 됐다.
+    """
     used = used_codes(disc) if used is None else used
     exe, _, _ = font.exe_bytes(disc)
     first = max(textenc.kana_map(disc)) + 1
     n = font.font_end(exe, disc)
-    return [c for c in range(first, n) if c not in used and font.read_glyph(exe, c, disc).any()]
+    return [c for c in range(first, n) if c not in used and font.glyphy(exe, c, disc)]
 
 
 def needed_chars(disc):
@@ -183,7 +187,8 @@ def needed_chars(disc):
     import script as script_canon
     import uitext
 
-    have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values())
+    # ⚠ PUNCT(`. , ? !`)는 원본 부호 자리를 다시 구워 쓴다 — 자리를 받으면 낭비다.
+    have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values()) | set(PUNCT)
     freq = collections.Counter()
     for lines in script_canon.load(disc).values():
         for row in lines.values():
@@ -267,6 +272,16 @@ def main():
     used = used_codes(a.disc)
     free = free_slots(a.disc, used)
     keep = load(a.disc) if os.path.exists(map_path(a.disc)) else {}
+    if a.freeze:
+        # 🔴 정본에 폰트 밖 자리가 있으면 **버리고 다시 받는다** — 그대로 두면 append-only 가
+        #    잘못을 영원히 지킨다(2026-09-07: 끝을 잘못 재서 71자가 전개표 위에 있었다).
+        ok = set(free)
+        bad = {ch: c for ch, c in keep.items() if c not in ok}
+        if bad:
+            print(
+                f"  🔴 정본의 {len(bad)}자가 쓸 수 없는 자리에 있다 — 버리고 다시 받는다: {''.join(bad)}"
+            )
+            keep = {ch: c for ch, c in keep.items() if c in ok}
     if a.check and not os.path.exists(map_path(a.disc)):
         print(f"⏭ {a.disc}: 글리프 자리 정본이 아직 없다 (쓸 수 있는 자리 {len(free)})")
         return 0
@@ -299,7 +314,7 @@ def main():
         n = font.glyph_count(exe, a.disc)
         bad = sorted(set(canon.values()) & used)
         outside = sorted(c for c in canon.values() if not (0 <= c < n))
-        blankg = sorted(c for c in canon.values() if not font.read_glyph(exe, c, a.disc).any())
+        blankg = sorted(c for c in canon.values() if 0 <= c < n and not font.glyphy(exe, c, a.disc))
         for label, xs in (
             ("원본이 쓰는 자리", bad),
             ("폰트 밖", outside),

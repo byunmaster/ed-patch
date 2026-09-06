@@ -25,6 +25,15 @@ class TestFontGeometry(unittest.TestCase):
         # 18바이트 = 12행 × 12비트 밀착 패킹
         self.assertEqual(font.ROWS * font.CELL, font.GLYPH_BYTES * 8)
 
+    def test_font_end_is_the_expansion_table(self):
+        """🔴 폰트 끝 = 렌더러 전개표 자리. 추정(1900·1990)으로 71·51자를 표 위에 구웠었다."""
+        self.assertEqual(font.font_slots("ed3"), 1829)
+        self.assertEqual(font.font_slots("ed4"), 1936)
+        for disc, f in font.FONTS.items():
+            # 표는 마지막 글리프 뒤에 온다 — 여백은 한 칸(18B) 미만 (ED3 2B · ED4 0B)
+            self.assertLess((f["table"] - f["ram"]) % font.GLYPH_BYTES, font.GLYPH_BYTES, disc)
+            self.assertEqual(font.font_end(b"", disc), font.font_slots(disc))
+
     def test_pack_roundtrip(self):
         rnd = np.random.default_rng(7)
         for _ in range(50):
