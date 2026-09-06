@@ -46,20 +46,29 @@ def _load_bdf() -> dict[int, tuple[int, int, int, int, list[int]]]:
     return _cache
 
 
+# 11px 글꼴을 12행 셀에 앉히는 기준선 — BDF 의 y=0(베이스라인)이 셀 **11행**이다.
+# 그래서 글리프 윗줄 = BASELINE_ROW − (h + yo). 🔴 이걸 안 쓰고 전부 0 행에 붙이면
+# **h 가 작은 글리프가 셀 꼭대기로 뜬다** — 마침표(h=1)·쉼표(h=2,yo=−1)가 실제로 그랬다
+# (2026-09-06 인게임: 「나타났다'」처럼 점이 글자 어깨에 붙어 나왔다).
+BASELINE_ROW = 11
+
+
 def glyph(ch: str) -> bytes:
-    """한 글자 → 24B. 세로는 셀 위에 붙이고(11px 글꼴이라 아래 1행 여백) 가로는 왼쪽 정렬."""
+    """한 글자 → 24B. 세로는 **베이스라인에 맞추고**(BDF `yo`) 가로는 왼쪽 정렬."""
     g = _load_bdf().get(ord(ch))
     if g is None:
         raise KeyError(f"글꼴에 없는 글자: {ch!r} (U+{ord(ch):04X})")
-    w, _h, xo, _yo, rows = g
+    w, h, xo, yo, rows = g
     nbytes = (w + 7) // 8
-    out = []
-    for r in rows[:12]:
+    out = [0] * 12
+    top = BASELINE_ROW - (h + yo)
+    for i, r in enumerate(rows[:12]):
+        y = top + i
+        if not 0 <= y < 12:
+            continue  # 셀 밖으로 나가는 행(디센더 등)은 버린다
         v = (r << (16 - nbytes * 8)) & 0xFFFF  # BDF 행은 바이트 단위로 왼쪽 정렬돼 있다
         v = (v >> max(xo, 0)) & 0xFFF0 if xo > 0 else v & 0xFFF0
-        out.append(v)
-    while len(out) < 12:
-        out.append(0)
+        out[y] = v
     if all(v == 0 for v in out):
         raise ValueError(f"글리프가 비었다: {ch!r}")
     return b"".join(v.to_bytes(2, "big") for v in out)
