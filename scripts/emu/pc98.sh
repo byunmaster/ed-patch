@@ -1,7 +1,20 @@
 #!/bin/sh
-# PC-98 게임을 DOSBox-X 의 **PC-98 모드**로 띄운다 — `emu.sh pc98-ed1` 이 여기로 위임한다.
+# PC-98 게임을 띄운다 — `emu.sh pc98-ed1` 이 여기로 위임한다. **기본 실행기는 np2kai** 다
+# (유저 확정 2026-09-06 — DOSBox-X 의 PC-98 모드는 **전투 둘째 라운드에서 뻗는다**, 원본으로도).
+# `--dosbox` 로 DOSBox-X 갈래를 그대로 쓸 수 있다(매퍼·kbtest·shot 은 그쪽 전용).
 #
-#   sh scripts/emu/pc98.sh pc98-ed1 [옵션...] [dosbox-x 추가인자...]
+#   sh scripts/emu/pc98.sh pc98-ed1 [옵션...] [실행기 추가인자...]
+#
+#     --np2kai    (기본) np2kai 로 띄운다. 없으면 묻고 소스 빌드(.local/np2kai/). 우리 패치가 붙는다:
+#                 ` 빨리감기 토글 · Tab 빨리감기 홀드 · \ 디스크 교체 · 방향키=텐키 · ⌘R 재시작 ·
+#                 ⌘L 마우스 잠금 토글(시작은 안 잡음, NP2KAI_MOUSE_LOCK=1 이면 예전처럼 잡는다 — ⌘M 은 macOS 최소화).
+#                 실행파일은 `NP2KAI_BIN` 또는 PATH 의 sdlnp21kai·sdlnp2kai·
+#                 xnp21kai·xnp2kai·np21kai·np2kai, 또는 /Applications 의 *np2*kai*.app.
+#                 FDD1 = 부팅 디스크(event/program) · **FDD2 = scenario(세이브 매체)**.
+#                 ⚠ 디스크 교체는 np2kai 메뉴에서(FDD1 → program.d88). 설정·ROM 은
+#                 `~/.config/<실행파일 이름>/`(font.rom 이 없으면 본체 폰트 자리가 빈다 —
+#                 이 게임은 제 폰트를 RAM 에 올리므로 부팅 경고 셋 정도만 영향).
+#     --dosbox    DOSBox-X 의 PC-98 모드(옛 기본값). `PC98_EMU=dosbox` 로도 된다.
 #
 #     (옵션 없이)   ⑴ 원본·빌드 칸을 **목록으로 고르고**(하나뿐이면 안 묻는다),
 #                   ⑵ 세이브가 있으면 **어느 디스크로 뜰지**도 고른다(이어하기 / 오프닝부터)
@@ -100,6 +113,8 @@ case "$GAME" in -*) GAME=pc98-ed1 ;; *) [ $# -gt 0 ] && shift ;; esac
 #   받는다 — 모르고 QA 로 열면 화면은 멀쩡히 도는데 아무 키도 안 먹어 **「에뮬 키보드가
 #   고장났다」로 오진하게 된다.** 실제로 그 오진에 한나절을 썼다(호스트 입력·SDL·PC-98
 #   키보드 절·앱 번들 채널을 차례로 의심했는데 전부 멀쩡했다).
+EMU=${PC98_EMU:-np2kai}   # np2kai | dosbox
+REBUILD_NP2=${NP2KAI_REBUILD:-0}
 ORIG=0; BUILDPICK=; BOOT=event; REFRESH=0; SHOT=; WAIT=25; HEADLESS=auto
 APP=auto; SCAN=0; JIS=0; KBTEST=0; SDL1=0; GENMAP=0
 BOOTSET=0
@@ -124,6 +139,9 @@ while [ $# -gt 0 ]; do
     --kbtest)   KBTEST=1 ;;
     --mapper)   GENMAP=1 ;;   # 매퍼 편집기를 띄워 배치를 만든다
     --no-sync)  SYNC=0 ;;   # dev 세이브 동기화를 끈다
+    --np2kai)   EMU=np2kai ;;
+    --dosbox)   EMU=dosbox ;;
+    --rebuild-np2kai) REBUILD_NP2=1 ;;   # 소스 빌드를 다시 한다(패치·상류 갱신)
     *)          EXTRA="$EXTRA $1" ;;
   esac
   shift
@@ -172,8 +190,137 @@ engine_of() {
   "$1" -version 2>&1 | grep -o "SDL[12]" | head -1 || true
   return 0
 }
-DOSBOX=$(dosbox_x_bin)
-[ -n "$DOSBOX" ] || {
+# np2kai 실행파일 — 값을 정하는 자리라 실패해도 non-zero 로 안 끝난다(루트 CLAUDE.md 셸 절).
+np2kai_bin() {
+  [ -n "${NP2KAI_BIN:-}" ] && { printf '%s\n' "$NP2KAI_BIN"; return 0; }
+  for n in sdlnp21kai_sdl2 sdlnp21kai sdlnp2kai_sdl2 sdlnp2kai; do
+    [ -x "$NP2_HOME/bin/$n" ] && { printf '%s\n' "$NP2_HOME/bin/$n"; return 0; }
+  done
+  for n in sdlnp21kai_sdl2 sdlnp21kai sdlnp2kai_sdl2 sdlnp2kai xnp21kai xnp2kai np21kai np2kai; do
+    _b=$(command -v "$n" 2>/dev/null || true)
+    [ -n "$_b" ] && { printf '%s\n' "$_b"; return 0; }
+  done
+  for a in /Applications/*np2*kai*.app "$HOME"/Applications/*np2*kai*.app /Applications/*NP2*.app; do
+    [ -d "$a" ] || continue
+    _b=$(ls "$a"/Contents/MacOS/* 2>/dev/null | head -1 || true)
+    [ -n "$_b" ] && { printf '%s\n' "$_b"; return 0; }
+  done
+  return 0
+}
+# ── np2kai 가 없으면 **묻고 빌드한다**(유저 요청 2026-09-06 — 다른 실행기는 `need_tool` 이
+#    brew 로 묻고 깐다. np2kai 는 brew 포뮬러가 없어 소스 빌드다). 자리는 머신 전용 `.local/np2kai/`:
+#      src/    git clone --depth 1 AZO234/NP2kai
+#      build/  cmake -G Ninja -D BUILD_SDL=ON -D USE_SDL=2 …  →  타깃 sdlnp21kai_sdl2(IA-32 판)
+#      bin/    결과 실행파일 사본 — `np2kai_bin` 이 PATH 보다 먼저 여기를 본다
+#    ⚠ 몇 분 걸린다. 「게임 켜자」가 빌드로 변하는 게 싫으면 n 을 치면 된다(비대화형이면 안내만).
+#    ⚠ ROM 은 못 깔아 준다 — 설정 폴더(`~/.config/sdlnp21kai/`)에 font.rom 등을 유저가 둔다.
+patch_sha1() { { sha1sum "$1" 2>/dev/null || shasum -a 1 "$1"; } | cut -c1-40; }
+NP2_HOME="${NP2KAI_HOME:-$(cd "$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || echo "$REPO/.git")/.." && pwd)/.local/np2kai}"
+np2kai_install() {
+  if [ "$(uname -s)" = Darwin ]; then
+    command -v brew >/dev/null 2>&1 || { echo "⛔ brew 가 없다 — https://brew.sh 부터" >&2; return 1; }
+    echo "  ① 의존물: brew install cmake ninja sdl2 sdl2_mixer sdl2_ttf libusb"
+    brew install cmake ninja sdl2 sdl2_mixer sdl2_ttf libusb || return 1
+  else
+    for t in cmake ninja git; do command -v "$t" >/dev/null 2>&1 || {
+      echo "⛔ $t 가 없다 — apt-get install cmake ninja-build git libsdl2-dev libsdl2-mixer-dev libsdl2-ttf-dev libusb-1.0-0-dev" >&2; return 1; }; done
+  fi
+  mkdir -p "$NP2_HOME"
+  if [ ! -d "$NP2_HOME/src/.git" ]; then
+    echo "  ② 소스: git clone --depth 1 https://github.com/AZO234/NP2kai"
+    rm -rf "$NP2_HOME/src"
+    git clone -q --depth 1 https://github.com/AZO234/NP2kai "$NP2_HOME/src" || return 1
+  fi
+  # 🎮 **빨리감기 패치** — np2kai 의 NOWAIT(대기 없음)는 메뉴 항목뿐이라 키가 없다. emucap·DOSBox-X 와
+  #   같은 손가락(` 토글 · Tab 누르는 동안)을 `sdl/taskmng.c` 에 18줄로 붙인다(유저 요청 2026-09-06 —
+  #   PC-98 판은 오프닝 스킵이 없어 5분을 그냥 봐야 한다). 패치는 레포의 `np2kai-fastforward.patch`.
+  #   빌드마다 소스를 상류로 되돌리고 새로 붙인다. 상류가 바뀌어 안 붙으면 **키 없이** 빌드하고 알린다.
+  _pt="$HERE/np2kai-fastforward.patch"
+  # 🔴 **먼저 소스를 상류 그대로 되돌린다.** 옛 패치가 붙은 소스에 새 패치를 대면 적용도 역적용도
+  #   안 맞아 「안 붙는다 — 키 없이 빌드」로 빠지고, 지문은 새 걸로 찍혀 다음엔 묻지도 않는다
+  #   (유저 실측 2026-09-06: 재빌드했는데 ⌘L 도 마우스 기본값도 옛날 그대로였다). src 는 우리 클론이라
+  #   지켜야 할 로컬 변경이 없다.
+  git -C "$NP2_HOME/src" checkout -q -- . 2>/dev/null || true
+  git -C "$NP2_HOME/src" clean -qfd 2>/dev/null || true
+  PATCHED=0
+  if git -C "$NP2_HOME/src" apply --check "$_pt" >/dev/null 2>&1 && git -C "$NP2_HOME/src" apply "$_pt"; then
+    PATCHED=1
+    echo "  ② 키 패치: 붙였다 (\` 토글 · Tab 홀드 · \\ 디스크 교체 · 방향키=텐키 · ⌘R · ⌘L)"
+  else
+    echo "  ⚠ 키 패치가 상류 소스에 안 붙는다 — 키 없이 빌드한다(메뉴 F11 로 대신). 상류가 바뀐 것이니 알려 달라" >&2
+  fi
+  # ⚠ 상류가 SDL3 를 기본으로 바꿨다(2026-09 실측: `USE_SDL` 기본 3, README 는 아직 SDL2).
+  # ⚠ **C++ 표준을 박는다** — 상류 CMake 가 표준을 안 정해 컴파일러 기본을 탄다. 리눅스 gcc 는
+  #   C++17 이라 넘어가는데 인텔 맥 AppleClang 15 는 C++98 로 잡아 `constexpr` 에서 20개 오류로
+  #   죽었다(유저 실측 2026-09-06, sound/mamebsd/ymfm.h). `CMAKE_CXX_STANDARD` 만 주면 CMake 가
+  #   「기본이 충족하면 생략」하므로 `-std=gnu++17` 을 플래그로도 준다.
+  #   SDL2 로 고정하면 타깃 이름에 `_sdl2` 가 붙는다 — `sdlnp21kai_sdl2`(IA-32 판).
+  echo "  ③ 빌드: cmake … -D BUILD_SDL=ON -D USE_SDL=2 → sdlnp21kai_sdl2 (몇 분)"
+  cmake -S "$NP2_HOME/src" -B "$NP2_HOME/build" -G Ninja -D CMAKE_BUILD_TYPE=Release \
+        -D BUILD_SDL=ON -D BUILD_X=OFF -D BUILD_WX=OFF -D BUILD_HAXM=OFF -D USE_SDL=2 -D USE_USB=OFF \
+        -D CMAKE_CXX_STANDARD=17 -D CMAKE_CXX_STANDARD_REQUIRED=ON -D CMAKE_C_STANDARD=11 \
+        -D CMAKE_CXX_FLAGS=-std=gnu++17 \
+        > "$NP2_HOME/cmake.log" 2>&1 || { echo "⛔ cmake 실패 — $NP2_HOME/cmake.log" >&2; return 1; }
+  cmake --build "$NP2_HOME/build" --target sdlnp21kai_sdl2 -j "$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)" \
+        > "$NP2_HOME/build.log" 2>&1 || { echo "⛔ 빌드 실패 — $NP2_HOME/build.log" >&2; return 1; }
+  _out=$(find "$NP2_HOME/build" -type f -name 'sdlnp21kai_sdl2' -perm -u+x 2>/dev/null | head -1 || true)
+  [ -n "$_out" ] || { echo "⛔ 빌드는 끝났는데 sdlnp21kai_sdl2 가 안 보인다 — $NP2_HOME/build" >&2; return 1; }
+  mkdir -p "$NP2_HOME/bin" && cp "$_out" "$NP2_HOME/bin/sdlnp21kai_sdl2" || return 1
+  # 🔑 **어느 패치로 구웠는지 지문을 남긴다** — 레포의 패치가 바뀌면 실행파일이 있어도 다시 굽는다.
+  #   실측 2026-09-06: 첫 빌드 뒤 패치를 추가했는데 실행파일이 있어 설치기가 안 돌았고, 유저는
+  #   `rm -rf build` 까지 했는데도 빨리감기 키가 없는 채로 떴다.
+  # ⚠ 패치가 안 붙었으면 지문을 **안 찍는다** — 다음 실행이 다시 묻게.
+  if [ "$PATCHED" = 1 ]; then patch_sha1 "$_pt" > "$NP2_HOME/bin/.patch.sha1"; else rm -f "$NP2_HOME/bin/.patch.sha1"; fi
+  echo "  ✅ $NP2_HOME/bin/sdlnp21kai_sdl2"
+  return 0
+}
+NP2=
+if [ "$EMU" = np2kai ]; then
+  NP2=$(np2kai_bin)
+  # 우리가 구운 실행파일이면 **패치 지문**을 맞춰 본다 — 다르면 다시 굽는다(묻고).
+  case "$NP2" in
+    "$NP2_HOME"/bin/*)
+      _want=$(patch_sha1 "$HERE/np2kai-fastforward.patch"); _have=$(cat "$NP2_HOME/bin/.patch.sha1" 2>/dev/null || true)
+      if [ "$REBUILD_NP2" = 1 ] || [ "$_want" != "$_have" ]; then
+        [ "$REBUILD_NP2" = 1 ] && echo "ⓘ --rebuild-np2kai — np2kai 를 다시 굽는다" \
+          || echo "ⓘ 빨리감기 패치가 바뀌었다(구운 것: ${_have:-없음}) — np2kai 를 다시 굽는다"
+        if has_tty && confirm_yes "   지금 다시 빌드할까? 몇 분 걸린다 (y/n) "; then
+          rm -rf "$NP2_HOME/build"
+          np2kai_install || exit 1
+          NP2=$(np2kai_bin)
+        else
+          echo "   그냥 띄운다 — 키 패치 없이(나중에: sh scripts/emu.sh pc98-ed1 --rebuild-np2kai)" >&2
+        fi
+      fi ;;
+  esac
+  if [ -z "$NP2" ]; then
+    echo "⛔ np2kai 가 없다 (뒤진 곳: NP2KAI_BIN · $NP2_HOME/bin · PATH 의 sdlnp21kai·sdlnp2kai·xnp21kai·xnp2kai · /Applications/*np2*kai*.app)" >&2
+    if has_tty && confirm_yes "   소스에서 빌드해 $NP2_HOME 에 둘까? 몇 분 걸린다 (y/n) "; then
+      np2kai_install || exit 1
+      NP2=$(np2kai_bin)
+    else
+      echo "   나중에 하려면 그냥 다시 실행하고 y — 또는 직접:" >&2
+      echo "     brew install cmake ninja sdl2 sdl2_mixer sdl2_ttf libusb" >&2
+      echo "     git clone --depth 1 https://github.com/AZO234/NP2kai $NP2_HOME/src" >&2
+      echo "     cmake -S $NP2_HOME/src -B $NP2_HOME/build -G Ninja -D BUILD_SDL=ON -D BUILD_X=OFF -D BUILD_WX=OFF -D USE_SDL=2 && cmake --build $NP2_HOME/build --target sdlnp21kai_sdl2" >&2
+      echo "   깔린 게 있으면:  NP2KAI_BIN=/경로/sdlnp21kai  sh scripts/emu.sh pc98-ed1" >&2
+      echo "   DOSBox-X 로 그냥 띄우려면:  --dosbox" >&2
+      exit 1
+    fi
+  fi
+  [ -n "$NP2" ] || { echo "⛔ 빌드 뒤에도 np2kai 를 못 찾는다" >&2; exit 1; }
+  # DOSBox-X 전용 옵션은 여기서 막는다 — 조용히 무시하면 「찍었는데 파일이 없다」가 된다.
+  _bad=
+  [ -z "$SHOT" ]      || _bad="$_bad --shot"
+  [ "$KBTEST" = 0 ]   || _bad="$_bad --kbtest"
+  [ "$GENMAP" = 0 ]   || _bad="$_bad --mapper"
+  [ "$SCAN" = 0 ]     || _bad="$_bad --scancodes"
+  [ "$SDL1" = 0 ]     || _bad="$_bad --sdl1"
+  [ -z "$_bad" ] || { echo "⛔$_bad 는 DOSBox-X 전용이다 — --dosbox 와 함께 쓴다" >&2; exit 1; }
+fi
+DOSBOX=
+[ "$EMU" = dosbox ] && DOSBOX=$(dosbox_x_bin)
+[ "$EMU" != dosbox ] || [ -n "$DOSBOX" ] || {
   echo "⛔ dosbox-x 를 못 찾았다. 이 자리들을 뒤졌다:" >&2
   echo "     PATH 의 dosbox-x" >&2
   dosbox_x_places | sed 's/^/     /' >&2
@@ -186,7 +333,8 @@ DOSBOX=$(dosbox_x_bin)
 }
 
 # 백엔드는 conf 를 쓰기 전에 알아야 한다 — **매퍼 파일이 엔진마다 형식이 다르기 때문**이다.
-ENGINE=$(engine_of "$DOSBOX")
+ENGINE=
+[ -z "$DOSBOX" ] || ENGINE=$(engine_of "$DOSBOX")
 [ -n "$ENGINE" ] || ENGINE=SDL2
 
 SRC="$REPO/originals/jp/$GAME"
@@ -209,15 +357,15 @@ mkdir -p "$RUN"
 #      아무도 모른다(시나리오 디스크는 게임이 **쓰는** 매체다).
 #   ⑵ macOS `open -a`/`open -n` 은 **이미 도는 앱을 앞으로 낼 뿐** 새 인자를 안 준다.
 #      옛 창이 살아 있으면 「빌드로 바꿔 띄웠는데 원본이 그대로」가 된다.
-OLDPIDS=$(pgrep -f "dosbox-x.*$RUN" 2>/dev/null || true)
+OLDPIDS=$(pgrep -f "(dosbox-x|np2.*kai).*$RUN" 2>/dev/null || true)
 if [ -n "$OLDPIDS" ]; then
-  echo "  ⓘ 같은 사본을 쓰던 dosbox-x 를 닫는다 (PID: $(echo "$OLDPIDS" | tr '\n' ' '))"
+  echo "  ⓘ 같은 사본을 쓰던 실행기를 닫는다 (PID: $(echo "$OLDPIDS" | tr '\n' ' '))"
   # ⚠ TERM 을 씹는 경우가 있다(실측: 몇 분째 살아남아 다음 실행과 사본을 다퉜다).
   #   확인하고 안 죽었으면 KILL 로 올린다 — 안 그러면 감시기도 같이 안 끝난다.
   # shellcheck disable=SC2086
   kill $OLDPIDS 2>/dev/null || true
   sleep 2
-  STILL=$(pgrep -f "dosbox-x.*$RUN" 2>/dev/null || true)
+  STILL=$(pgrep -f "(dosbox-x|np2.*kai).*$RUN" 2>/dev/null || true)
   if [ -n "$STILL" ]; then
     # shellcheck disable=SC2086
     kill -9 $STILL 2>/dev/null || true
@@ -447,6 +595,66 @@ if [ "$KBTEST" != 1 ] && [ -f "$SAVEDIR/$SAVEKEY" ]; then
   echo "  💾 세이브를 얹었다 — **$WHAT** 의 것이다 ($SAVEKEY)"
 fi
 
+# ── 💾 다른 칸의 세이브를 가져온다 (유저 실측 2026-09-06 「이어하기를 골랐는데 오프닝이 떴다」) ──
+# 세이브 칸은 빌드 해시로 갈리므로(위) **빌드를 새로 받을 때마다 처음부터**가 된다. 그런데 이 게임의
+# 세이브는 시나리오 디스크의 **논리 섹터 0~127 한 덩이**(0 = 슬롯 목록 · 1~127 = 슬롯 데이터, 슬롯당
+# 섹터 둘)뿐이라 어느 빌드에나 이식할 수 있다. 실린더 0~7 이라 d88 에서 **연속**이다 — 헤더 0x2B0
+# 직후 128섹터 × (16B 헤더 + 1,024B) = 133,120B. 인터리브는 실린더 안에서만 일어나므로 파싱이 필요 없다.
+# ⚠ 처음엔 「논리 0·1·2 세 섹터」로 알았다(pc98-ed1 이 두 번 정정했다 — 그 세이브가 슬롯 1 만 써서
+#   diff 에 그것만 보였다). 셋만 옮기면 **슬롯 1 말고는 다 잃는다.** 관리자 독립 검증(09-06): 유저 세이브
+#   넷의 세이브 차이가 전부 이 구간 안이고, 우리 빌드의 패치(논리 1008~)는 이 구간을 한 바이트도 안 건드린다.
+# ⚠ 사전조건: 두 파일 크기가 같다(1,281,968B). 다르면 다른 디스크(event·program)를 잘못 고른 것.
+# 가져오면 **이 칸의 세이브로 저장**되므로 다음부터는 그냥 뜬다. 원본은 안 건드린다(사본을 만든다).
+import_save() {  # $1=옛 세이브 파일 → $RUN/$SAVEMED 에 섹터 셋을 얹고 $SAVEDIR/$SAVEKEY 로 남긴다
+  python3 - "$1" "$RUN/$SAVEMED" <<'PY' || return 1
+import sys, pathlib
+LO, HI = 0x0002B0, 0x00020AB0            # scenario.d88 논리 섹터 0~127 (헤더 직후 128섹터, 133,120B)
+old, new = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+src, dst = old.read_bytes(), bytearray(new.read_bytes())
+if len(src) != len(dst) or len(src) != 1281968:
+    sys.exit(f"⛔ 크기가 다르다 — 다른 디스크다: {old.name} {len(src):,}B vs {new.name} {len(dst):,}B")
+dst[LO:HI] = src[LO:HI]
+new.write_bytes(bytes(dst))
+PY
+  mkdir -p "$SAVEDIR" && cp "$RUN/$SAVEMED" "$SAVEDIR/$SAVEKEY"
+}
+if [ "$MEDIA" = fd ] && [ "$KBTEST" != 1 ] && [ ! -f "$SAVEDIR/$SAVEKEY" ]; then
+  _cands=$(ls -t "$SAVEDIR"/*.d88 2>/dev/null | sed "/\/${SAVEKEY}\$/d" || true)
+  if [ -n "$_cands" ]; then
+    if has_tty; then
+      echo "  💾 **$WHAT** 엔 세이브가 없는데 다른 칸엔 있다 — 세이브(논리 섹터 0~127)만 이 빌드로 가져올 수 있다"
+      _o=$IFS; IFS='
+'
+      # shellcheck disable=SC2086
+      set -- $_cands
+      IFS=$_o
+      _names=""
+      for _c in "$@"; do _names="$_names$(basename "$_c" .d88) ($(date -r "$_c" +%m-%d\ %H:%M 2>/dev/null || stat -f %Sm -t %m-%d\ %H:%M "$_c"))
+"; done
+      # shellcheck disable=SC2086
+      OLDIFS=$IFS; IFS='
+'; set -- $_names "가져오지 않는다 (오프닝부터)"; IFS=$OLDIFS
+      SELECT_QUIET=1
+      if _pick=$(select_option "세이브" "$@"); then
+        SELECT_QUIET=
+        case "$_pick" in
+          "가져오지 않는다"*) ;;
+          *) _key=${_pick%% (*}
+             if import_save "$SAVEDIR/$_key.d88"; then
+               echo "  💾 가져왔다: $_key → $SAVEKEY (원본 칸은 그대로다)"
+             else
+               echo "  ⚠ 가져오기 실패 — 오프닝부터 뜬다" >&2
+             fi ;;
+        esac
+      else
+        SELECT_QUIET=
+      fi
+    else
+      echo "  ⓘ 다른 칸에 세이브가 있다($(echo "$_cands" | wc -l | tr -d ' ')개) — 대화형에서 띄우면 가져올지 묻는다" >&2
+    fi
+  fi
+fi
+
 # ── 💿 어느 디스크로 뜨나 ────────────────────────────────────────────────────
 #   · 이어하기(Program) = 게임 본편 QA. 오프닝도 디스크 교체도 안 만난다
 #   · 오프닝부터(Event) = **오프닝 한글화 확인**(유저 요청 2026-09-03) · 새 게임
@@ -485,6 +693,74 @@ save_out() {
   echo "  💾 세이브를 떼어 뒀다: $SAVEDIR/$SAVEKEY"
   if [ "$SYNC" = 1 ]; then sh "$SYNCSH" push "$GAME" "$SAVEDIR" "$SAVEKEY" || true; fi
 }
+
+# ── np2kai 갈래 ─────────────────────────────────────────────────────────────
+# 여기까지(원본/빌드 고르기 · 실행 사본 · 세이브 되살리기 · 부팅 디스크 · save_out)는 실행기와
+# 무관하다. 아래부터는 DOSBox-X 전용(conf · 매퍼 · 앱 번들 · imgmount)이라 np2kai 는 여기서 뜬다.
+#
+# np2kai 의 규약(소스 sdl/np2.c 실측 2026-09-06):
+#   · 위치 인자를 **확장자로** 가른다 — .d88/.fdi/… 는 FDD, 앞에서부터 FDD1·FDD2(둘까지).
+#     .hdi/.nhd 는 IDE, .iso/.cue 는 CD.
+#   · 설정·ROM 자리 = `$XDG_CONFIG_HOME/<실행파일이름>/` 또는 `~/.config/<실행파일이름>/`
+#     (sdlnp2kai · sdlnp21kai · xnp2kai …). 파일은 `np2kai.cfg`, 절은 `[NekoProjectIIkai]`.
+#   · `-c/--config <파일>` 로 다른 설정을 줄 수 있다. 우리는 유저 설정을 건드리지 않는다.
+# 🔴 **FDD2 = scenario.d88** 이다. 이 게임은 시나리오 디스크에 세이브를 쓰고(드라이브 2 에서만
+#    슬롯을 읽는다 — 드라이브 1 이면 전부 Read Error, pc98 세션 실측), 종료 뒤 `save_out` 이
+#    그 파일을 떼어 둔다. np2kai 가 읽기전용으로 열면 세이브가 조용히 안 남는다 — 설정에
+#    읽기전용 옵션을 켜 두지 않았는지 본다.
+if [ "$EMU" = np2kai ]; then
+  if [ "$MEDIA" = fd ]; then
+    case "$BOOT" in program) FD1=program.d88 ;; *) FD1=event.d88 ;; esac
+    set -- "$RUN/$FD1" "$RUN/scenario.d88"
+    DRIVES="FDD1=$FD1 · FDD2=scenario.d88 (세이브 매체)"
+  else
+    set -- "$RUN/disk.hdi"
+    DRIVES="IDE=disk.hdi"
+  fi
+  # 설정 폴더 이름은 파일 이름이 아니라 **컴파일 상수**다(sdl/np2.c `appname`: IA-32 판 = sdlnp21kai,
+  # i286 판 = sdlnp2kai). cmake 타깃 `_sdl2` 꼬리는 파일 이름에만 붙으니 떼고 본다.
+  NP2NAME=$(basename "$NP2")
+  case "$NP2" in *.app/Contents/MacOS/*) NP2NAME=$(basename "${NP2%%.app/Contents/MacOS/*}") ;; esac
+  NP2NAME=$(printf '%s' "$NP2NAME" | sed -E 's/_(sdl[123]|HAXM)+$//')
+  CFGDIR="${XDG_CONFIG_HOME:-$HOME/.config}/$NP2NAME"
+  # np2kai 는 이 폴더를 **읽기만 하고 만들지 않는다**(유저 실측 2026-09-06: 맥 ~/.config 에 없었다).
+  # 유저가 font.rom 을 둘 자리이니 먼저 만들어 둔다 — 안 만들면 「어디에 두라는 거냐」가 된다.
+  mkdir -p "$CFGDIR" 2>/dev/null || true
+  echo "실행: $GAME  [np2kai]  $WHAT · 부팅=$BOOT · $NP2"
+  echo "  $DRIVES"
+  echo "  설정·ROM: $CFGDIR  (np21kai.cfg · font.rom · bios.rom …)"
+  # 폰트 ROM 이 없으면 np2kai 는 **작업 폴더의 `default.ttf`** 로 본체 폰트를 그린다(실측:
+  # `Couldn't load 12 points font from ./default.ttf`). 레포의 네오둥근모(새턴용, OFL)를 놓아 준다 —
+  # 이 게임은 대사·메뉴를 제 폰트로 RAM 에 올리므로 본체 폰트가 닿는 건 부팅 경고·시스템 문구뿐이다.
+  if [ ! -f "$CFGDIR/font.rom" ] && [ ! -f "$CFGDIR/font.bmp" ] && [ ! -f "$CFGDIR/FONT.ROM" ]; then
+    if [ ! -f "$RUN/default.ttf" ] && [ -f "$REPO/shared/fonts/neodgm.ttf" ]; then
+      cp "$REPO/shared/fonts/neodgm.ttf" "$RUN/default.ttf"
+    fi
+    echo "  ⓘ font.rom 이 없어 본체 폰트는 default.ttf(네오둥근모)로 그린다 — 진짜 ROM 은 $CFGDIR 에" >&2
+  fi
+  if [ "$BOOT" = event ]; then
+    echo "  ┌ 새 게임 순서 ────────────────────────────────────────────────────"
+    echo "  │ ⑴ 오프닝이 끝나면 「プログラムディスクをドライブ1に…」 안내가 뜬다"
+    echo "  │ ⑵ **\\ 한 번**(백슬래시 · Return 위) — FDD1 이 event ↔ program 으로 바뀐다(우리 패치)"
+    echo "  │    패치가 없으면 F11 메뉴 ▸ FDD ▸ FDD1 ▸ Open... ▸ program.d88 (같은 폴더가 열린다)"
+    echo "  │ ⑶ RETURN → 第1章 이 시작된다"
+    echo "  │ ⑷ 한 번 세이브해 두면 다음부터는 --program 으로 바로 LOAD 하면 된다"
+    echo "  └──────────────────────────────────────────────────────────────"
+  fi
+  echo "  🎮 방향키 = 텐키 8/2/4/6(이동) · ⌘R/F10 = 재시작 · F5/F7 = 퀵세이브/로드 · ⌘L = 마우스 잠금 토글(시작은 안 잡음)"
+  echo "  ⏩ 빨리감기: \` 토글 · Tab 누르는 동안 · \\ = 디스크 교체   (전부 우리 패치 — 없으면 F11 메뉴)"
+  cd "$RUN"
+  DONE=0
+  finish() { [ "$DONE" = 1 ] && return 0; DONE=1; save_out; }
+  trap 'finish; exit 130' INT
+  trap 'finish; exit 143' TERM
+  RC=0
+  # shellcheck disable=SC2086
+  "$NP2" "$@" $EXTRA > "$RUN/np2kai.log" 2>&1 || RC=$?
+  finish
+  [ "$RC" = 0 ] || echo "  ⚠ np2kai 가 $RC 로 끝났다 — 로그: $RUN/np2kai.log" >&2
+  exit $RC
+fi
 
 # 🔴 SDL1 시절 매퍼가 실행 폴더에 남아 있으면 SDL2 가 그걸 집는다(기본 이름이 같다).
 #    이름만 바꿔 비켜 둔다 — 지우지 않는 건 사람이 손댄 배치일 수도 있어서다.

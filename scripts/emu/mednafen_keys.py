@@ -111,6 +111,10 @@ for _sys in ("psx", "snes", "pce"):
 #                ⚠ 이름은 「slow」인데 8배속인 게 이상해 보이지만 sfspeed 는 그냥 승수다 —
 #                  8 을 넣어도 클램프도 경고도 없다(2026-08-22 실측).
 #   DOSBox 쪽은 Tab 홀드만 있다(staging 의 speedlock 은 홀드 전용이고 토글 설정이 없다).
+# 실행기 공통 단축키(유저 요청 2026-09-07 — mednafen · np2kai · DOSBox-X 가 같은 손가락):
+#   ⌘R = 재시작 · F5 = 퀵세이브 · F7 = 퀵로드 · ` = 빨리감기 토글 · Tab = 빨리감기 홀드.
+#   ⌘R 은 `&&` 조합(왼/오른 ⌘ 둘 다, `||`)이고 F10 도 그대로 살려 둔다 — 조합 문법은 이 머신의
+#   mednafen 1.32 에 넣어 파싱되는 걸 확인했다. F5·F7 은 mednafen 기본값이라 명시만 한다.
 SETTINGS = {
     "ffspeed": "8",
     "fftoggle": "1",
@@ -119,6 +123,9 @@ SETTINGS = {
     "sftoggle": "0",
     "command.fast_forward": "keyboard 0x0 53",  # `
     "command.slow_forward": "keyboard 0x0 43",  # Tab
+    "command.reset": "keyboard 0x0 21 && keyboard 0x0 227 || keyboard 0x0 21 && keyboard 0x0 231 || keyboard 0x0 67",  # ⌘R · F10
+    "command.save_state": "keyboard 0x0 62",  # F5
+    "command.load_state": "keyboard 0x0 64",  # F7
 }
 
 

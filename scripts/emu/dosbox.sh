@@ -310,9 +310,12 @@ if [ "$ENGINE" = staging ] && [ ! -f "$BOX/$MAPPERFILE" ]; then
             "$(brew --prefix 2>/dev/null)/share/dosbox-staging/mapperfiles/xbox/d.map"; do
     [ -f "$_m" ] || continue
     # 스틱 제거 → speedlock 을 ` (SDL 스캔코드 53) 로
+    # 공통 단축키(유저 요청 2026-09-07): F10 = 재시작(mednafen 기본·np2kai 와 같다). Staging 매퍼엔
+    # ⌘ 수식키도 세이브스테이트도 없어 ⌘R·F5/F7 은 여기선 못 준다 — 그건 mednafen·np2kai 에서.
     sed -e 's/"stick[^"]*"//g' -e 's/ *$//' \
-        -e 's|^hand_speedlock .*|hand_speedlock "key 43"|' "$_m" > "$BOX/$MAPPERFILE"
-    echo "매퍼 생성: $MAPPERFILE (빨리감기 홀드 = Tab — mednafen 과 같은 키)"
+        -e 's|^hand_speedlock .*|hand_speedlock "key 43"|' \
+        -e 's|^hand_restart .*|hand_restart "key 67"|' "$_m" > "$BOX/$MAPPERFILE"
+    echo "매퍼 생성: $MAPPERFILE (빨리감기 홀드 = Tab · 재시작 = F10 — mednafen 과 같은 키)"
     break
   done
 fi
