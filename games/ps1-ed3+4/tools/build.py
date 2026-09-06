@@ -29,6 +29,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
+import engine_patch
 import exetext
 import font
 import glossary
@@ -237,6 +238,7 @@ def main():
     exe_lba, exe_size = fs[font.FONTS[a.disc]["exe"]]
     exe = bytearray(common.read_lba(a.disc, exe_lba, exe_size))
     baked = bake_font(exe, a.disc, chars, table)
+    engine = engine_patch.apply(exe, a.disc, table)  # 공백 8px — 그 디스크에 패치가 있으면
     ui_put, ui_skip = uitext.apply(exe, a.disc, lambda kr: hangul_map.encode(kr, a.disc, table))
     report["skipped"] += ui_skip
     reinsert_names(exe, a.disc, table, report)
@@ -252,6 +254,7 @@ def main():
         f"낱말 {report['names']}/{report['names'] + len(left)} · UI {ui_put} · "
         f"그림 {gfx_files} · 글리프 {baked}"
     )
+    print(f"  엔진: {engine or '⏭ 패치 없음 (공백도 12px)'}")
     if a.test:
         print("  🔴 **시험 빌드다** — 안 옮긴 문안은 엉뚱한 글자로 나온다. 배포물이 아니다.")
     if left:
@@ -282,7 +285,7 @@ def main():
         with open(tmp, "r+b") as f:
             n = common.write_user_data(f, a.disc, exe_lba, bytes(exe), label="실행파일")
             for path, data in sorted(arcs.items()):
-                lba, size = fs[path]
+                lba, _size = fs[path]
                 n += common.write_user_data(f, a.disc, lba, data, label=path)
     except Exception:
         os.replace(tmp, out + ".failed")  # 🔴 실패한 빌드는 산출물을 무효화한다

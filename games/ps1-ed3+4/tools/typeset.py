@@ -37,15 +37,27 @@ LIMITS = {
 STRIP_AFTER = ".,"
 
 
-def cell_width(ch):
-    """이 게임의 슬롯 폭 — **전부 1**이다.
+CELL_PX = 12  # 화면에서 코드 하나가 차지하는 가로 픽셀 (`font.PITCH`)
+# 코드별 폭(px). 🔴 엔진 패치(`engine_patch`)가 있는 디스크만 12 가 아닌 값을 가질 수 있다 —
+#   공백 8px 는 유저 판정(2026-09-07: 한글은 전각, 공백만 반각). 첫 씬 실측 5.2% 절약.
+WIDTHS = {"ed3": {" ": 8}, "ed4": {}}
+# 한 줄에 들어가는 글리프 수의 상한 = 스프라이트 격자 열 수(`engine_patch.COLS`). 패치 없으면 None.
+COLS = {"ed3": 32, "ed4": None}
+
+
+def cell_width(ch, disc="ed3"):
+    """이 게임의 슬롯 폭 — 공백만 8/12, 나머지 1.
 
     ⚠ 공용 기본값(`krwrap.default_cell_width`)은 공백을 **0.5**로 센다. 그건 PS1 ED1+2 의
       규격이고 여기선 틀린다 — 이 게임엔 공백 코드가 아예 없어서 **빈 글리프를 한 자리
-      구워 쓴다**(`hangul_map.EXTRA`). 화면에서 12px 를 그대로 차지하므로 1슬롯이다.
-      0.5 로 세면 폭 계산이 헐거워져 줄이 창 밖으로 나간다.
+      구워 쓴다**(`hangul_map.EXTRA`). 엔진 패치가 공백을 8px 로 보내니 그만큼(2/3)이다.
     """
-    return 1.0
+    return WIDTHS[disc].get(ch, CELL_PX) / CELL_PX
+
+
+def width_cells(text, disc="ed3"):
+    """한 줄의 폭(칸, 소수). 부호 뒤 공백 제거 전 값이라 안전측이다."""
+    return sum(cell_width(ch, disc) for ch in text)
 
 
 def budget(disc, jp, floor=0):
@@ -81,7 +93,10 @@ def wrap(text, disc, jp=None, width=None, lines=None, floor=0):
         width = width if width is not None else w
         lines = lines if lines is not None else n
     out = krwrap.wrap(
-        text.replace("\n", " "), width=width, cell_width=cell_width, strip_after=STRIP_AFTER
+        text.replace("\n", " "),
+        width=width,
+        cell_width=lambda ch: cell_width(ch, disc),
+        strip_after=STRIP_AFTER,
     )
     return "\n".join(out[:lines]) if len(out) > lines else "\n".join(out)
 
@@ -92,9 +107,13 @@ def violations(text, disc, jp=None, floor=0):
     w, n = budget(disc, jp, floor) if jp is not None else (lim["width"], lim["lines"])
     bad = []
     ls = text.split("\n")
+    cols = COLS[disc]
     for i, line in enumerate(ls):
-        if len(line) > w:
-            bad.append(f"{i + 1}행이 {len(line)}칸 (예산 {w})")
+        wc = width_cells(line, disc)
+        if wc > w:
+            bad.append(f"{i + 1}행이 {wc:g}칸 (예산 {w})")
+        if cols and len(line) > cols:
+            bad.append(f"{i + 1}행이 {len(line)}글리프 (격자 {cols}열)")
     if len(ls) > n:
         bad.append(f"{len(ls)}줄 (예산 {n})")
     return bad

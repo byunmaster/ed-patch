@@ -40,14 +40,28 @@ class TestTypeset(unittest.TestCase):
 
     def test_budget_is_capped(self):
         long = "あ" * 99
-        w, n = typeset.budget("ed3", long)
+        w, _n = typeset.budget("ed3", long)
         self.assertEqual(w, typeset.LIMITS["ed3"]["width"])
 
     def test_wrap_respects_the_budget(self):
         jp = "あいうえおかきくけこ"  # 10칸 1줄
         out = typeset.wrap("아주 긴 우리 문안이 여기에 들어간다", "ed3", jp=jp)
         for line in out.split("\n"):
-            self.assertLessEqual(len(line), 10, out)
+            # 글자 수가 아니라 **폭**이다 — 공백이 2/3칸이라 열한 글자가 열 칸에 들 수 있다
+            self.assertLessEqual(typeset.width_cells(line, "ed3"), 10, out)
+
+    def test_space_is_eight_px_only_where_the_engine_is_patched(self):
+        """공백 8px 는 엔진 패치가 있는 ED3 만 — ED4 는 아직 12px 그대로다."""
+        self.assertAlmostEqual(typeset.cell_width(" ", "ed3"), 8 / 12)
+        self.assertEqual(typeset.cell_width("가", "ed3"), 1)
+        self.assertEqual(typeset.cell_width(" ", "ed4"), 1)
+        self.assertAlmostEqual(typeset.width_cells("가 나", "ed3"), 2 + 8 / 12)
+
+    def test_grid_columns_cap_the_glyph_count(self):
+        """폭이 예산 안이어도 격자 열(32)을 넘는 글리프 수는 화면에서 잘린다."""
+        many = "가 " * 20  # 40글리프, 폭 33.3칸
+        bad = typeset.violations(many.strip(), "ed3")
+        self.assertTrue(any("격자" in b for b in bad), bad)
 
     def test_violations_reports_overflow(self):
         self.assertEqual(typeset.violations("짧다", "ed3", jp="あいうえお"), [])
