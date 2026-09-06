@@ -78,13 +78,17 @@ def all_glyph_chars() -> set[str]:
             kr = names.get(fam, {}).get(r["jp"], gl.get(r["jp"]))
             if kr:
                 chars |= {c for c in kr if font.needs_glyph(c)}
-    for v in _load("labels.json").values():
-        chars |= {c for c in TOK.sub("", v) if font.needs_glyph(c)}
+    for k, v in _load("labels.json").items():
+        if k != "_doc" and v is not None:  # null = 원본 유지로 판정한 것
+            chars |= {c for c in TOK.sub("", v) if font.needs_glyph(c)}
     for v in _load("sysmsg.json").get("messages", {}).values():
         chars |= {c for c in TOK.sub("", v) if font.needs_glyph(c)}
     for k, v in _load("screens.json").items():
         if not k.startswith("_"):
             chars |= {c for line in v for c in line if font.needs_glyph(c)}
+    for k, v in _load("extras.json").items():
+        if not k.startswith("_"):
+            chars |= {c for t in v for c in t if font.needs_glyph(c)}
     return chars
 
 
@@ -108,11 +112,55 @@ def _write(f, bank, off, data, expect, label, touched):
         touched.append((lba + i, 1))
 
 
+def check_keys(errors: list[str]) -> dict[str, int]:
+    """🔴 **정본에 있는데 아무 데도 안 맞는 열쇠**를 잡는다.
+
+    문안을 써 놨는데 열쇠가 한 글자 어긋나면 **조용히 아무 일도 안 일어난다** — 빌드도 게이트도
+    초록불인데 화면만 일본어다. 실측(2026-09-06): `labels.json` 셋이 그 상태였다
+    (`はい` ↔ 읽히는 꼴 `{04}{02}はい` · `{09}{02}` ↔ `{0902}` · 「プレイ時間」 뒤 `：　：` 누락).
+    ⚠ 반대쪽(원문에 있는데 정본에 없는 것)은 **할 일**이지 실패가 아니다 — 여기선 안 본다.
+    """
+    seen = {}
+    labels = _load("labels.json")
+    lb = S.read_labels()
+    keys = {r["jp"] for r in lb} | {f"@{r['addr']:04X}" for r in lb}
+    stray = [k for k in labels if k != "_doc" and k not in keys]
+    seen["labels"] = len(stray)
+    errors += [f"labels.json 열쇠가 아무 라벨과도 안 맞는다: {k!r}" for k in stray]
+
+    msgs = _load("sysmsg.json").get("messages", {})
+    mk = {r["key"] for r in S.read_sysmsg()}
+    stray = [k for k in msgs if k not in mk]
+    seen["sysmsg"] = len(stray)
+    errors += [f"sysmsg.json 열쇠가 아무 메시지와도 안 맞는다: {k!r}" for k in stray]
+
+    scr = _load("screens.json")
+    sk = {c["key"] for c in S.read_screens()}
+    stray = [k for k in scr if not k.startswith("_") and k not in sk]
+    seen["screens"] = len(stray)
+    errors += [f"screens.json 열쇠가 아무 화면과도 안 맞는다: {k!r}" for k in stray]
+
+    ex = _load("extras.json")
+    ek = {g["key"] for g in S.read_extras()}
+    stray = [k for k in ex if not k.startswith("_") and k not in ek]
+    seen["extras"] = len(stray)
+    errors += [f"extras.json 열쇠가 아무 덩이와도 안 맞는다: {k!r}" for k in stray]
+
+    names = _load("names.json")
+    for fam in ("items", "spells", "files", "places"):
+        jp = {r["jp"] for r in S.read_fixed(fam)}
+        stray = [k for k in names.get(fam, {}) if k not in jp]
+        seen[fam] = len(stray)
+        errors += [f"names.json[{fam}] 열쇠가 표에 없다: {k!r}" for k in stray]
+    return seen
+
+
 def apply(f, table, touched) -> dict:
     names = _load("names.json")
     gl = glossary()
     stats = {}
     errors: list[str] = []
+    check_keys(errors)  # 정본에 써 놓고 안 붙는 열쇠부터 잡는다
 
     def kr_of(fam, jp):
         return names.get(fam, {}).get(jp, gl.get(jp))
@@ -183,7 +231,7 @@ def apply(f, table, touched) -> dict:
         kr = labels.get(
             f"@{r['addr']:04X}", labels.get(r["jp"])
         )  # 같은 JP 가 뜻이 다를 때 주소로 덮는다
-        if kr is None:
+        if kr is None:  # 미판정이거나 **원본 유지로 판정**(null) — 둘 다 안 건드린다
             continue
         enc = encode_tokens(kr, table)
         if len(enc) > r["room"]:
@@ -283,6 +331,38 @@ def apply(f, table, touched) -> dict:
         )
         cnt += 1
     stats["screens"] = cnt
+    # 오마케 모듈(사운드 테스트 · 도감 메뉴) — rel 458~459 의 00 종단 목록.
+    # 🔴 포인터 표가 없고 **00 을 세어** 찾으므로 항목 수를 지키고, 남는 자리는 00 으로 채운다
+    #    (전각 공백으로 채우면 마지막 항목 뒤에 빈칸이 붙어 보인다).
+    extras = _load("extras.json")
+    d458 = common.track_data(S.EXTRAS_REL, 2)
+    cnt = 0
+    for g in S.read_extras():
+        items = extras.get(g["key"])
+        if items is None:
+            continue
+        if len(items) != len(g["items"]):
+            errors.append(f"extras[{g['key']}] 항목 {len(items)} ≠ 원본 {len(g['items'])}")
+            continue
+        blob = b"".join(font.encode(t, table) + b"\0" for t in items)
+        if len(blob) > g["room"]:
+            errors.append(f"extras[{g['key']}] {len(blob)}B > {g['room']}B")
+            continue
+        blob += b"\0" * (g["room"] - len(blob))
+        lba = common.T2_SECTOR + S.EXTRAS_REL
+        mode1.write_at(
+            f,
+            lba,
+            common.USER * 2,
+            g["off"],
+            blob,
+            label=f"extras {g['key']}",
+            expect=d458[g["off"] : g["off"] + g["room"]],
+        )
+        for i in range(g["off"] // common.USER, (g["off"] + g["room"] - 1) // common.USER + 1):
+            touched.append((lba + i, 1))
+        cnt += 1
+    stats["extras"] = cnt
     if errors:
         raise SysError(
             "시스템 문구 " + str(len(errors)) + "건이 자리를 넘는다:\n  " + "\n  ".join(errors)

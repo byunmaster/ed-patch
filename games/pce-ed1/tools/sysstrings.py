@@ -235,6 +235,35 @@ def read_screens():
     return out
 
 
+# ─── 오마케 모듈(사운드 테스트 · 몬스터 도감) ───────────────────────────────
+# rel 458~459 에 **평문 00 종단 문자열**이 이어져 있다. 본 프로그램이 아니라 별도 모듈이라
+# 뱅크 좌표가 아니라 rel 좌표로 적는다.
+# 🔴 **포인터 표가 없다** — 게임이 `00` 을 세어 N 번째를 찾는다(라벨 가족과 같은 꼴, 실측:
+#   문자열 간격과 같은 델타를 가진 16비트 배열이 이 모듈 안에 없다).
+#   ⇒ 길이는 바꿔도 되지만 **덩이 총 길이는 지켜야** 뒤 자료가 안 밀린다. 남는 자리는 `00` 으로
+#   채운다 — 전각 공백으로 채우면 마지막 항목에 빈칸이 붙어 보인다.
+EXTRAS_REL = 458
+EXTRAS = (  # (덩이 이름, 시작, 끝) — 시작·끝은 rel 458 부터 2섹터 창 안의 오프셋
+    ("soundtest", 0x07C9, 0x08AD),
+    ("omake", 0x090B, 0x092B),
+    ("chapters", 0x093B, 0x0963),
+    ("paging", 0x096B, 0x0988),
+)
+
+
+def read_extras():
+    d = common.track_data(EXTRAS_REL, 2)
+    out = []
+    for name, lo, hi in EXTRAS:
+        items, i = [], lo
+        while i < hi:
+            j = d.index(0, i)
+            items.append(d[i:j].decode("cp932"))
+            i = j + 1
+        out.append({"key": name, "off": lo, "room": hi - lo, "items": items})
+    return out
+
+
 def read_labels():
     """메뉴 라벨: 00 구분 + 코드 참조 주소에서도 가른다(『…逃げる 06 ＳＡＶＥ』처럼 06 뒤에 참조되는 라벨이 붙어 있다)."""
     b = bank_bytes(0x6D)
@@ -269,6 +298,7 @@ def dump_all():
         "labels": read_labels(),
         "sysmsg": read_sysmsg(),
         "screens": read_screens(),
+        "extras": read_extras(),
     }
     for k in FIXED:
         fams[k] = read_fixed(k)
