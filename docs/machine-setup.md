@@ -143,6 +143,25 @@ npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-co
    cargo build --release                          # MCP 서버 — emucap-mcp · emucap-track-mcp
    ```
 
+   **SNES(SFC)는 mednafen 이 아니라 Mesen2 어댑터로 간다**(emucap 카탈로그가 그렇게 라우팅한다). 그건 따로 짓고,
+   ⚠ **`bash` 로 돌린다**(`sh`=dash 면 문법 오류로 죽는다):
+
+   ```bash
+   curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0 --install-dir ~/.dotnet
+   apt-get install -y clang zip xvfb        # zip 이 없으면 UI 단계(Dependencies.zip)에서 실패한다
+   PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT=$HOME/.dotnet \
+     bash vendor/emucap/adapters/mesen2/build.sh   # MesenCE 2.2.1(.NET 8 고정) — 네이티브 + UI, 10~15분
+   ```
+
+   빌드 뒤 **두 가지를 더 해야 실제로 뜬다**(둘 다 dev 에 적용해 뒀다):
+
+   1. **.NET 런타임 위치 등록** — Mesen 은 apphost 라 `DOTNET_ROOT` 없이도 런타임을 찾아야 한다.
+      `echo /root/.dotnet > /etc/dotnet/install_location` (없으면 `libhostfxr.so [not found]`).
+   2. **가상 디스플레이** — Mesen 은 Avalonia UI 라 헤드리스여도 **X 디스플레이가 필요**하다
+      (`XOpenDisplay failed`). `systemd` 유닛 `xvfb99.service` 로 `:99` 를 상시 띄우고,
+      **emucap-control MCP 등록에 `DISPLAY=:99` 를 넣는다**(`~/.claude.json` 의 프로젝트 키 →
+      `mcpServers.emucap-control.env`). ⚠ MCP 서버는 Claude Code 와 함께 뜨므로 **재시작해야 반영**된다.
+
    ⚠ **빌드했다고 등록되는 게 아니다.** emucap MCP 는 **local 스코프**(`~/.claude.json` 의
    프로젝트 경로 키)라 클론에 안 따라오고, 절대경로를 쓰므로 커밋되는 `.mcp.json` 에도 못 넣는다:
 
