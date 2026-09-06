@@ -10,6 +10,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import hangul_map
 import textenc
 import uitext
 
@@ -40,6 +41,7 @@ class TestUiText(unittest.TestCase):
             if not os.path.exists(uitext.canon_path(disc)):
                 continue
             have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values())
+            have |= set(hangul_map.PUNCT)  # 우리가 원본 자리에 다시 굽는 부호(, .)
             bad = set()
             for row in uitext.load(disc).values():
                 for ch in row["kr"]:
@@ -49,18 +51,11 @@ class TestUiText(unittest.TestCase):
                         bad.add(ch)
             self.assertFalse(bad, f"{disc}: 코드표에 없는 글자 {sorted(bad)}")
 
-    def test_no_ascii_punctuation(self):
-        """반각 마침표·쉼표는 이 게임에 없다 — 「。」를 쓴다."""
-        for disc in DISCS:
-            if not os.path.exists(uitext.canon_path(disc)):
-                continue
-            bad = [
-                (hex(o), r["kr"])
-                for o, r in uitext.load(disc).items()
-                if any(c in r["kr"] for c in ".,!?")
-            ]
-            self.assertFalse(bad, f"{disc}: 반각 부호 {bad[:3]}")
+    def test_korean_punctuation_maps_to_real_codes(self):
+        """🔴 마침표·쉼표는 **원본 자리(2=。 · 1=、)를 다시 구워** 쓴다 — 자리를 새로 안 쓴다.
 
-
-if __name__ == "__main__":
-    unittest.main()
+        옛 이름은 `test_no_ascii_punctuation` 이었고 「반각은 이 게임에 없다」고 못 박고 있었다.
+        0x01 을 줄바꿈으로 오해한 데서 온 규칙이다(2026-09-07 정정).
+        """
+        self.assertEqual(hangul_map.PUNCT, {",": 0x01, ".": 0x02, "?": 0x04, "!": 0x05})
+        self.assertEqual(textenc.CONTROL[0x01], "、")

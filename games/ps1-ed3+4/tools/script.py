@@ -56,6 +56,29 @@ def canon_path(disc, key):
     return os.path.join(SCRIPT_DIR, disc, f"{key}.json")
 
 
+def member_floors(segs):
+    """{조각 색인: 폭 바닥} — **창 폭의 대용**(`typeset.budget` 의 `floor`).
+
+    한 멤버의 **대사** 조각들은 같은 창에 나간다. 인게임 실측(2026-09-07)으로 그 창이 약 24칸
+    인데 그 멤버의 원문 최대가 23칸이었다 — 원문이 창을 거의 꽉 쓴다는 뜻이라 대용이 된다.
+    조각별 예산은 허수다: 같은 화자가 연달아 말하는 창이 4·19·15·21칸으로 널뛴다.
+
+    🔴 **이름창은 아니다.** 「クリスの母」 자리에 「크리스 엄마」(6칸)를 넣었더니 화면에서
+       `크리스` 로 **잘렸다** — 그 자리는 5칸 고정 필드다. 이름은 멤버 **앞머리 블록**에
+       모여 있으므로(첫 문장 조각 앞) 거기까지는 바닥을 안 깐다.
+    ⚠ 상점·메뉴 토막이 뒤에 섞이면 그것도 바닥을 받는다 — 짧은 자리를 길게 쓸 이유가 없어
+      실해는 없지만, 그 창이 좁다는 게 드러나면 여기서 갈라야 한다.
+    """
+    w = max((max((len(x) for x in jp.split("\n")), default=0) for _, jp in segs), default=0)
+    head = True
+    out = {}
+    for i, jp in segs:
+        if head and ("\n" in jp or jp.rstrip().endswith(("。", "？", "！"))):
+            head = False
+        out[i] = 0 if head else w
+    return out
+
+
 def members(disc):
     """[(아카이브, 멤버, [(색인, 원문)…])] — 원본에서 그 자리에서 뽑는다."""
     out = []
@@ -123,10 +146,11 @@ def write_review(disc):
     for archive, member, segs in members(disc):
         have = canon.get((archive, member), {})
         rows = {}
+        floors = member_floors(segs)
         for i, jp in segs:
             if not jp.strip():
                 continue
-            w, ln = typeset.budget(disc, jp)
+            w, ln = typeset.budget(disc, jp, floors.get(i, 0))
             rows[str(i)] = {
                 "jp": jp,
                 "kr": have.get(i, {}).get("kr", ""),
@@ -177,6 +201,7 @@ def sync(disc):
 def check(disc):
     """[사유] — 지문이 어긋났거나 조판을 넘긴 자리."""
     src = {(a, m): dict(segs) for a, m, segs in members(disc)}
+    floors = {(a, m): member_floors(segs) for a, m, segs in members(disc)}
     bad = []
     n = 0
     for (archive, member), lines in sorted(load(disc).items()):
@@ -184,6 +209,7 @@ def check(disc):
         if jp_by_idx is None:
             bad.append(f"{member}: 원본에 없는 멤버")
             continue
+        fl = floors[(archive, member)]
         for i, row in sorted(lines.items()):
             n += 1
             jp = jp_by_idx.get(i)
@@ -193,7 +219,7 @@ def check(disc):
             if stamp(jp) != row["jp"]:
                 bad.append(f"{member}[{i}]: 원문 지문이 다르다 — 번역이 남의 자리에 붙었다")
                 continue
-            for v in typeset.violations(row["kr"], disc, jp=jp):
+            for v in typeset.violations(row["kr"], disc, jp=jp, floor=fl.get(i, 0)):
                 bad.append(f"{member}[{i}]: {v}")
     return n, bad
 

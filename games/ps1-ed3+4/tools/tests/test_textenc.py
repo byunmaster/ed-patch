@@ -10,8 +10,10 @@ import textenc
 
 class TestDecode(unittest.TestCase):
     def test_control_and_term(self):
+        # 🔴 0x01 은 **쉼표(、)**다 — 줄바꿈이 아니다(2026-09-07, 글리프 #1 을 그려 확인).
+        #    이 테스트가 `\n` 을 기대하고 있어서 옛 오해가 굳어 있었다.
         s = textenc.decode([0x42, 0x01, 0x42, textenc.TERM, 0x42], "ed3")
-        self.assertEqual(s, "い\nい")
+        self.assertEqual(s, "い、い")
 
     def test_unknown_is_kept_visible(self):
         s = textenc.decode([0x42, 0x7FF], "ed3")

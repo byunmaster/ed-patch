@@ -27,7 +27,16 @@ class TestTypeset(unittest.TestCase):
         원문이 그 창에서 몇 칸을 썼는지가 우리가 아는 가장 정확한 증거다.
         """
         self.assertEqual(typeset.budget("ed3", "あいうえお"), (5, 1))
-        self.assertEqual(typeset.budget("ed3", "あいうえお\nかきく"), (5, 2))
+
+    def test_floor_lifts_the_width_but_never_the_lines(self):
+        """🔴 폭은 **창**이 정한다 — `floor`(그 멤버의 원문 최대)를 바닥으로 깐다.
+
+        조각별 예산은 허수였다: 같은 화자가 연달아 말하는 창이 4·19·15·21칸으로 널뛴다.
+        인게임 실측(2026-09-07)으로 그 창이 약 24칸인데 멤버 최대가 23칸이었다.
+        ⚠ 줄 수는 안 올린다 — **조각 하나 = 줄 하나**다(0x01 은 쉼표다).
+        """
+        self.assertEqual(typeset.budget("ed3", "あいうえお", 23), (23, 1))
+        self.assertEqual(typeset.budget("ed3", "あいうえお", 0), (5, 1))
 
     def test_budget_is_capped(self):
         long = "あ" * 99

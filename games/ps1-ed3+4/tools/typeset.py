@@ -27,9 +27,11 @@ import common
 from shared.text import krwrap
 
 # 원본이 실제로 쓴 상한 (`--check` 가 다시 잰다)
+# 🔴 **조각 하나 = 줄 하나**다(2026-09-07). 0x01 을 줄바꿈으로 읽던 때는 「5줄」이 나왔는데
+#    그건 쉼표였다 — 실측 다시: ED3 30칸/1줄 · ED4 37칸/1줄.
 LIMITS = {
-    "ed3": {"width": 30, "lines": 5},
-    "ed4": {"width": 35, "lines": 5},
+    "ed3": {"width": 30, "lines": 1},
+    "ed4": {"width": 37, "lines": 1},
 }
 # 대사에서 부호 뒤 공백을 지운다 — 이 레포의 조판 규약(`docs/reference/translation-conventions.md`)
 STRIP_AFTER = ".,"
@@ -46,7 +48,7 @@ def cell_width(ch):
     return 1.0
 
 
-def budget(disc, jp):
+def budget(disc, jp, floor=0):
     """(폭, 줄 수) — **그 조각의 원문이 쓴 만큼**. 상한을 넘지 않는다.
 
     창은 자리마다 다르다(대사창·간판·설명문). 원문이 그 창에서 몇 칸을 썼는지가
@@ -54,19 +56,27 @@ def budget(disc, jp):
     """
     lim = LIMITS[disc]
     ls = jp.split("\n")
-    return min(max((len(x) for x in ls), default=1), lim["width"]), min(
-        max(len(ls), 1), lim["lines"]
-    )
+    w = max((len(x) for x in ls), default=1)
+    # 🔴 **폭은 그 조각이 아니라 창이 정한다.** 조각별로 잡으면 원문이 우연히 짧은 자리에서
+    #    허수 예산이 나온다 — 같은 화자가 연달아 말하는 창들이 4·19·15·21칸으로 널뛴다.
+    #    인게임 실측(2026-09-07, `SC000!FT0000` 크리스 엄마 창): 프레임 안쪽 25~331px ·
+    #    글자 피치 12px · 글자 시작 34 ⇒ **약 24칸**. 그 멤버의 원문 최대가 23칸이었다.
+    #    ⇒ `floor` 로 **그 멤버의 최대 폭**을 받아 바닥으로 깐다. 줄 수는 창 높이라 그대로 둔다.
+    if floor:
+        w = max(w, floor)
+    return min(w, lim["width"]), min(max(len(ls), 1), lim["lines"])
 
 
-def wrap(text, disc, jp=None, width=None, lines=None):
+def wrap(text, disc, jp=None, width=None, lines=None, floor=0):
     """우리 문안 → 줄로 나눈 문안(`\\n` 포함).
 
     `jp` 를 주면 그 조각의 원문이 쓴 폭·줄 수를 예산으로 삼는다(권장).
     """
     if width is None or lines is None:
         w, n = (
-            budget(disc, jp) if jp is not None else (LIMITS[disc]["width"], LIMITS[disc]["lines"])
+            budget(disc, jp, floor)
+            if jp is not None
+            else (LIMITS[disc]["width"], LIMITS[disc]["lines"])
         )
         width = width if width is not None else w
         lines = lines if lines is not None else n
@@ -76,10 +86,10 @@ def wrap(text, disc, jp=None, width=None, lines=None):
     return "\n".join(out[:lines]) if len(out) > lines else "\n".join(out)
 
 
-def violations(text, disc, jp=None):
+def violations(text, disc, jp=None, floor=0):
     """[사유] — 조판 규격을 어긴 자리. 빈 목록이면 통과."""
     lim = LIMITS[disc]
-    w, n = budget(disc, jp) if jp is not None else (lim["width"], lim["lines"])
+    w, n = budget(disc, jp, floor) if jp is not None else (lim["width"], lim["lines"])
     bad = []
     ls = text.split("\n")
     for i, line in enumerate(ls):
