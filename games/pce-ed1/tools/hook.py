@@ -16,14 +16,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import font
 
-HOOK_ADDR = 0x3B00
-# 워크 RAM 배치($3B00~$3DFF, 768B — 쓰기 0회 확인 구간): 루틴 · 조사표 · 받침 비트맵 · 직전 글자
-JOSA_OFF_ADDR = 0x3C80  # 조사 오프셋표 28B (루틴 자리는 $3B00~$3C7F, 384B)
-BATCHIM_ADDR = 0x3CA0  # 받침 비트맵 128B
-RIEUL_ADDR = 0x3D20  # ㄹ받침 비트맵 128B
+# 🔴 **워크 RAM 자리는 $3B00 이 아니다**(2026-09-07 확정). 거기에 이 768B 를 두면 마을 재입장에서
+# 게임이 굳는다 — A/B 일곱 + 「잘 도는 램에 이 768B 만 심으니 다음 맵 전환에서 튕김」으로 못 박았다
+# (devlog 09-06 ⑤). ⚠ **덤프가 0 이라는 건 근거가 못 된다** — $3B00~$3DFF 는 어느 덤프에서도 0인데
+# 게임이 쓴다. 자리를 옮길 땐 **그 자리에 심은 채 한 바퀴(전투·필드·맵 전환·씬)** 를 돌아야 한다.
+HOOK_ADDR = 0x2300
+# 워크 RAM 배치(HOOK_ADDR ~ +0x2FF, 768B): 루틴 · 조사표 · 받침 비트맵 · 직전 글자
+# ⚠ 아래는 **HOOK_ADDR 에서 유도**한다 — 옛 판은 절대값이라 base 를 옮기면 표만 제자리에 남았다.
+JOSA_OFF_ADDR = HOOK_ADDR + 0x180  # 조사 오프셋표 28B (루틴 자리는 base ~ +0x17F, 384B)
+BATCHIM_ADDR = HOOK_ADDR + 0x1A0  # 받침 비트맵 128B
+RIEUL_ADDR = HOOK_ADDR + 0x220  # ㄹ받침 비트맵 128B
 PAYLOAD_LEN = 0x300  # 루틴 + 조사표 + 비트맵 둘 — 스텁이 통째로 옮긴다
 #   ⚠ 이 값을 안 맞추면 **뒤쪽 표만 안 옮겨져** 리드 F1 대역 글자가 조용히 다른 글자로 나온다(실측)
-LAST_ADDR = 0x3DA0  # 직전 글자 코드 2B(리드·트레일)
+LAST_ADDR = HOOK_ADDR + 0x2A0  # 직전 글자 코드 2B(리드·트레일)
 BITCNT_ADDR = 0x3DA2  # 비트 위치 임시
 HASBAT_ADDR = 0x3DA3  # 받침 판정 임시
 # ⚠ 임시값은 워크 RAM 에 둔다 — 게임 ZP 를 빌리면 어느 자리가 비는지 증명해야 한다($EC~$EE 는
