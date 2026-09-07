@@ -432,7 +432,15 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
             #       원문보다 한참 짧은 문안 뒤에 공백을 수십 개 붙이면 전투 화면이
             #       그걸 그대로 그린다. **정상으로 확인된 것은 `nogap` 뿐이고, 그건
             #       3바이트 이상을 건너뛰었다.** 그 규칙을 그대로 기본값으로 둔다.
+            #    🔴 **규칙을 정본으로 우회할 수 있었다**(2026-09-08 회귀). 문안 꼬리에 공백을
+            #       손으로 달아 두면 `slack` 이 0이 되어 위 조건을 그냥 통과한다 — 바이트로는
+            #       「공백 메움 slack≥3」과 **똑같은 것**인데 코드는 「제자리」로 본다.
+            #       실측: 그렇게 들어간 전투 블록이 64(고유 51)였고, 공백을 떼면 실제 slack 이
+            #       **49개가 4 이상**이었다. 유저 실측으로 전투가 다시 크래시했다.
+            #       ⇒ 전투에서는 **문안 꼬리 공백을 세지 않는다.** 잰 다음 우리가 다시 붙인다.
             if is_combat:
+                new = encode(script[k]["t"].rstrip(" "))
+                slack = n - len(new)
                 if forced_pool or slack < 0 or slack >= 3:
                     st["건너뜀:전투 0F 금지"] += 1
                     continue
@@ -504,6 +512,21 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
         for _v in _d.values():
             _chunks[_v["index"] * common.SECTOR_SIZE] = _v["data"]
     check_no_jump_clobber(marks, _chunks)
+    # 🔴 **전투 마크의 꼬리 공백은 원본보다 2를 넘지 못한다** — 규칙(위)을 정본으로
+    #    우회하는 길을 **결과로** 막는다. 2026-09-08 회귀가 정확히 그 길로 들어왔다.
+    _combat_span = [
+        (v["index"] * common.SECTOR_SIZE, v["index"] * common.SECTOR_SIZE + len(v["data"]))
+        for v in scn.load()[1].values()
+    ]
+    for off, old_b, new_b in marks:
+        if not any(a <= off < b for a, b in _combat_span):
+            continue
+        grew = (len(new_b) - len(new_b.rstrip(b" "))) - (len(old_b) - len(old_b.rstrip(b" ")))
+        if grew > 2:
+            raise SystemExit(
+                f"🔴 전투 청크에 꼬리 공백을 {grew}개 붙였다 {off:#08x} — "
+                "전투 화면은 그걸 그대로 그린다(규칙: 2 이하)"
+            )
 
     # 🔴 **겹치면 나중 것이 앞 것을 뭉갠다** — 조용히 틀리는 종류라 여기서 죽인다.
     seen: dict[int, int] = {}
