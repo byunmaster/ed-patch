@@ -35,7 +35,7 @@ import common
 
 HOOK = 0x13780  # lea.l $16224.l, a3
 HOOK_OPERAND = HOOK + 2
-ORIG_LEA = bytes.fromhex("47f900016224")
+ORIG_LEA = bytes.fromhex("47f9")  # `lea <abs>.l, a3` — 피연산자는 빌드가 자막 꼬리로 바꾼다
 # 엔딩은 **장면 준비까지 하는 루틴**을 부른다(표만 갈아 끼우면 팔레트·그림이 없어 빨간 화면이 된다).
 #   02c2c6  그림 적재(gfx_d $1d3dba → VRAM $e000) · 팔레트 · `bsr $2de86`(나레이션)
 #   02c33a  `bsr $2c92c` · `lea $2f1fe,a1` · `lea $2fa10,a2` · `lea $2ed38,a3` · `bsr $2eb4c`(대사 8화면)
@@ -55,10 +55,10 @@ def _src() -> bytes:
 
 def main() -> None:
     d = _src()
-    if d[HOOK : HOOK + 6] != ORIG_LEA:
+    if d[HOOK : HOOK + 2] != ORIG_LEA:
         raise SystemExit(f"후킹 자리가 다르다 @{HOOK:#x}: {d[HOOK : HOOK + 6].hex()}")
     if "--check" in sys.argv:
-        print(f"  후킹 자리 OK @{HOOK:#x} — {ORIG_LEA.hex()}")
+        print(f"  후킹 자리 OK @{HOOK:#x} — {d[HOOK : HOOK + 6].hex()}")
         return
 
     def hook(entry: int, name: str) -> Path:

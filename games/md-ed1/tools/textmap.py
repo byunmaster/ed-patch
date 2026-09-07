@@ -21,7 +21,11 @@ import common
 import scene
 
 SCRIPT_DIR = common.GAME_DIR / "script"
-TAG = re.compile(r"<([0-9a-f]{2})(?::([0-9a-f]{1,4}))?>|\f")
+# 🔴 제어코드는 **한 바이트가 아니다** — `<09 nn>`(파티 번호로 그린 이름) · `<eb p>`(조사) ·
+# `<fc 32>` 처럼 인자가 붙는다. 2 자리만 받으면 `<0900>` 이 태그로 안 잡혀 **글자로 흘러가고**,
+# 「반각 글리프가 없다: '<'」라는 엉뚱한 자리에서 빌드가 죽는다(2026-09-07, 블록 104 를 채우다 물렸다).
+# `tools/sysmsg.py` 의 표 재삽입기는 처음부터 여러 바이트를 받았다 — 대본 쪽만 안 맞아 있었다.
+TAG = re.compile(r"<((?:[0-9a-f]{2})+)(?::([0-9a-f]{1,4}))?>|\f")
 
 
 def jp_key(st: scene.Stream) -> str:
@@ -59,9 +63,10 @@ def parse_ours(s: str) -> list[tuple[str, object]]:
         if m.group(0) == "\f":
             out.append(("page", None))
         else:
-            code = int(m.group(1), 16)
+            raw = bytes.fromhex(m.group(1))
+            code = raw[0]  # 첫 바이트가 코드, 나머지는 인자
             tgt = int(m.group(2), 16) if m.group(2) else None
-            out.append(("ctl", (code, tgt, None if tgt is not None else bytes.fromhex(m.group(1)))))
+            out.append(("ctl", (code, tgt, None if tgt is not None else raw)))
         pos = m.end()
     if pos < len(s):
         out.append(("text", s[pos:]))

@@ -38,7 +38,7 @@ def _load_bdf(
     key = (str(path), cell, top)
     if key in _bdf_cache:
         return _bdf_cache[key]
-    out = {}
+    raw = {}
     lines = path.read_text(encoding="utf-8", errors="replace").split("\n")
     i = 0
     while i < len(lines):
@@ -46,7 +46,7 @@ def _load_bdf(
             ch = chr(int(lines[i].split()[1]))
             while not lines[i].startswith("BBX"):
                 i += 1
-            bw, bh, bx, _by = map(int, lines[i].split()[1:5])
+            bw, bh, bx, by = map(int, lines[i].split()[1:5])
             while lines[i].strip() != "BITMAP":
                 i += 1
             rows = []
@@ -55,16 +55,29 @@ def _load_bdf(
                 v = int(r, 16)
                 nb = len(r) * 4
                 rows.append([(v >> (nb - 1 - x)) & 1 for x in range(bw)])
-            grid = [[0] * cell for _ in range(cell)]
-            # 셀 **위쪽**에 붙인다(기본 1~11행). HUD 장 제목 바는 셀 높이가 14 보다 낮아 아래를 자르므로
-            # 아래 정렬이면 받침이 잘린다(실측: 「제1장」이 「조1적」으로 보였다). 대사창은 줄 간격 16 이라 무방.
-            for y in range(min(bh, cell - top)):
-                for x in range(bw):
-                    if 0 <= x + bx < cell and rows[y][x]:
-                        grid[top + y][x + bx] = 1
-            out[ch] = grid
+            raw[ch] = (bw, bh, bx, by, rows)
             i += bh + 1
         i += 1
+    # 🔴 BBX 의 **y 오프셋(by)** 을 쓴다 — 버리면 키 작은 글자(마침표·「…」)가 셀 꼭대기에 붙는다
+    # (pce-ed1 이 화면에서 물렸다: 「나타났다`」). 기준선은 **글꼴에서 잰다** — 한글은 by=0·bh=11 이라
+    # ref = max(by+bh) = 11 이 되고, 그 글자들은 지금 자리 그대로다(재빌드 요동 없음).
+    # ⚠ FONT_ASCENT(14)를 쓰면 한글이 3행 내려가 **HUD 장 제목 바에서 받침이 잘린다** — 그래서
+    # 「위쪽 정렬」이라는 우리 사정은 top 으로 유지하고, 글자마다의 높이 차이만 by 로 맞춘다.
+    # 기준은 **한글 한 글자**(가)다 — 글꼴 전체의 최대치를 쓰면 라틴 큰 글자 때문에 한글이 밀린다.
+    _bw, _bh, _bx, _by, _rows = raw.get("가", (0, 0, 0, 0, []))
+    ref = (_by + _bh) or max((by + bh) for _w, bh, _x, by, _r in raw.values())
+    out = {}
+    for ch, (bw, bh, bx, by, rows) in raw.items():
+        grid = [[0] * cell for _ in range(cell)]
+        y0 = top + (ref - (by + bh))
+        for y in range(bh):
+            ry = y0 + y
+            if not 0 <= ry < cell:
+                continue
+            for x in range(bw):
+                if 0 <= x + bx < cell and rows[y][x]:
+                    grid[ry][x + bx] = 1
+        out[ch] = grid
     _bdf_cache[key] = out
     return out
 

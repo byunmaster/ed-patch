@@ -44,6 +44,15 @@ FONT_SRC = os.environ.get("MD_CAPTION_FONT", "neodgm")  # 리소스 5 = 오프�
 WIDTH = 16  # 피치 14 × 16 = 224px
 WIDTH_P16 = 14  # 피치 16 × 14 = 224px (네오둥근모)
 OFF_MAX = 0xFFF
+# 꼬리로 옮기는 가족 — (표 머리, 표 포인터 피연산자 자리). 드라이버는 오프코드 0 의 인자를
+# **표 머리 기준 12비트 전방 오프셋**으로 읽으므로 표와 문안을 같이 옮기면 그대로 돈다.
+# 제자리 영역이 만원이라(오프닝 1,052/1,052B · 나레이션 576/576B) 원문에 있는 말을 눌러 쓰고 있었다
+# (2026-09-06 대조: 「어쩌면」·「필사적으로 싸웠고」·「살해」·「16세 생일」 …).
+# ⚠ 옛 영역은 **0 으로 지운다** — 원문 바이트를 남기면 「남은 일본어」 검사가 그만큼 눈이 먼다.
+RELOCATE = {
+    "opening": (0x16224, 0x13782),  # lea $16224.l,a3 @0x13780
+    "ending-narr": (0x2DE9E, 0x2DE92),  # lea $2de9e.l,a3 @0x2de90
+}
 EXPECT = (
     10,
     39,
@@ -137,12 +146,19 @@ def font5_chars(textmap: dict) -> set[str]:
     return out
 
 
-def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
-    """정본 → 쓰기 목록. 번역이 하나라도 있는 가족만 영역·표를 다시 쓴다."""
+def plan(
+    d: bytes, textmap: dict, encode, tail_at: int | None = None
+) -> list[tuple[str, int, bytes]]:
+    """정본 → 쓰기 목록. 번역이 하나라도 있는 가족만 영역·표를 다시 쓴다.
+
+    `tail_at` 을 주면 `RELOCATE` 가족은 **표+문안을 꼬리로** 옮기고 표 포인터를 고친다(제자리 칸을
+    안 쓰므로 문안 길이가 자유롭다). 옛 영역은 0 으로 지운다.
+    """
     strs = streams(d)
     writes: list[tuple[str, int, bytes]] = []
     errs: list[str] = []
     newpos: dict[int, int] = {}
+    areas: dict[str, bytes] = {}
     touched_fams = set()
     for name, _bases, (lo, hi) in FAMILIES:
         mine = [(t, e) for t, e in strs.items() if e["family"] == name]
@@ -163,6 +179,9 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
                 area.append(0)
             newpos[t] = lo + len(area)
             area += body
+        if tail_at is not None and name in RELOCATE and name in touched_fams:
+            areas[name] = bytes(area)  # 자리는 표 길이를 안 뒤에 잡는다(아래 2패스)
+            continue
         if len(area) > hi - lo:
             errs.append(f"captions {name}: 영역 {hi - lo}B 를 {len(area) - (hi - lo)}B 넘는다")
             continue
@@ -171,6 +190,42 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
             writes.append((f"captions:{name}", lo, bytes(area)))
     if errs:
         raise SystemExit("\n".join(errs))
+    moved: dict[str, int] = {}  # 가족 → 꼬리의 표 머리
+    local: dict[str, dict[int, int]] = {}  # 가족 → {스트림: 그 가족 블롭 안의 자리}(사본용)
+    if tail_at is not None:
+        cur = tail_at
+        for name, (base, ptr) in RELOCATE.items():
+            if name not in areas:
+                continue
+            ws = words(d, base)
+            tbl_len = len(ws) * 2 + 2
+            text_at = cur + tbl_len
+            lo = next(a for n, _b, (a, _h) in FAMILIES if n == name)
+            for t in list(newpos):
+                if strs[t]["family"] == name:
+                    newpos[t] = text_at + (newpos[t] - lo)  # 옛 영역 기준 → 꼬리 기준
+            # ⚠ 표가 **다른 가족의 스트림**을 가리키기도 한다(공용 지우기 스트림 `<08><06>` — 문서 6절).
+            # 옮긴 표에서 그 자리를 12비트로 못 짚으므로 **사본을 블롭에 같이 싣는다**(2B 짜리다).
+            blob = bytearray(areas[name])
+            for _pos, op, arg in ws:
+                if op != 0:
+                    continue
+                t = base + arg
+                if strs[t]["family"] == name:
+                    continue
+                if len(blob) & 1:
+                    blob.append(0)
+                # 🔴 **원본 newpos 를 덮지 않는다** — 제자리에 남는 다른 가족의 표가 그 값을 쓴다
+                local.setdefault(name, {})[t] = text_at + len(blob)
+                blob += d[t : strs[t]["stream"].end]
+            areas[name] = bytes(blob)
+            moved[name] = cur
+            writes.append((f"captions-tail:{name}", text_at, areas[name]))
+            writes.append((f"captions-ptr:{name}", ptr, struct.pack(">I", cur)))
+            _lo, _hi = next((a, h) for n, _b, (a, h) in FAMILIES if n == name)
+            writes.append((f"captions:{name}", _lo, b"\x00" * (_hi - _lo)))  # 옛 영역 지우기
+            cur = text_at + len(areas[name])
+            cur += cur & 1
     # 표 — 참조하는 문안이 하나라도 옮겨졌으면 표 전체를 다시 쓴다(오프코드 0 워드만 바뀐다)
     for _name, bases, _area in FAMILIES:
         for base in bases:
@@ -178,15 +233,37 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
             if not any(strs[base + a]["family"] in touched_fams for _, op, a in ws if op == 0):
                 continue
             tbl = bytearray(d[base : base + len(ws) * 2 + 2])
+            here = moved.get(_name, base)  # 옮겼으면 꼬리의 표 머리가 기준이다
             for pos, op, arg in ws:
                 if op != 0:
                     continue
-                off = newpos[base + arg] - base
+                tgt = local.get(_name, {}).get(base + arg, newpos[base + arg])
+                off = tgt - here
                 if not 0 <= off <= OFF_MAX:
                     raise SystemExit(f"captions 표 {base:#x}: 오프셋 {off:#x} 이 12비트를 넘는다")
                 tbl[pos - base : pos - base + 2] = struct.pack(">H", off)
-            writes.append((f"captions-table:{base:06x}", base, bytes(tbl)))
+            writes.append((f"captions-table:{base:06x}", moved.get(_name, base), bytes(tbl)))
     return writes
+
+
+def allowed_tail(at: int, size: int) -> dict[str, tuple[int, int]]:
+    """꼬리로 옮길 때 여는 자리 — 블롭·옮긴 표·표 포인터 피연산자.
+
+    ⚠ 옮긴 표는 `allowed()` 가 이미 **제자리** 범위로 연 라벨과 이름이 같다. 두 자리 중 어디에 써도
+    되게 **합집합**으로 넓힌다(제자리 자리는 옛 영역 지우기에 쓴다)."""
+    out = {f"captions-tail:{n}": (at, at + size) for n in RELOCATE}
+    out.update({f"captions-ptr:{n}": (p, p + 4) for n, (_b, p) in RELOCATE.items()})
+    return out
+
+
+def widen_for_tail(base: dict, at: int, size: int) -> dict:
+    """`allowed()` 의 표 라벨을 꼬리까지 넓힌다 — 옮긴 표는 꼬리에 쓰인다."""
+    out = dict(base)
+    for b, _p in RELOCATE.values():
+        k = f"captions-table:{b:06x}"
+        lo, hi = out.get(k, (at, at + size))
+        out[k] = (min(lo, at), max(hi, at + size))
+    return out
 
 
 def allowed(d: bytes) -> dict[str, tuple[int, int]]:

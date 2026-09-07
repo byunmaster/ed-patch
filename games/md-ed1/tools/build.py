@@ -39,7 +39,12 @@ LINES = 3
 
 SCRIPT_LO, SCRIPT_HI = 0x135324, 0x1918D2  # 대본 블록 자리(색인 0x134FA0 은 항목만 고친다)
 TAIL_LO, TAIL_HI = common.FREE_TAIL
-JOSA_RESERVE = 0x180  # 꼬리 **끝**에 조사 훅(기계어+표)을 예약한다 — 아카이브는 그 앞까지만 쓴다
+CAPTION_RESERVE = 0x900  # 자막(오프닝·엔딩 나레이션)을 꼬리로 옮길 자리 — 제자리 칸이 만원이라서
+# 꼬리 **끝**에 조사 훅(기계어+표)을 예약한다 — 아카이브는 그 앞까지만 쓴다.
+# ⚠ 표는 **한글 코드 수를 따라 자란다**(종성 비트표 = 코드 하나에 1비트). 0x180 으로 재 두었더니
+# 글자 33 자를 새로 굳히자마자 2바이트가 넘쳤다(2026-09-07). 그래서 **글리프 상한**(1,370자)까지
+# 재 둔다 — 172B(한글 비트표) + 16B(반각) + 252B(기계어) + 쌍 표 ≈ 460B.
+JOSA_RESERVE = 0x280
 
 
 BATTLE_LO, BATTLE_HI = 0x0CAB04, 0x0D85B4  # 전투 아카이브 LZ 구간(첫 블록 시작 ~ 끝 블록 끝)
@@ -53,7 +58,7 @@ class Rom:
         "battle-table": (battle.ARCHIVE, battle.ARCHIVE + battle.COUNT * 4),
         "battle": (BATTLE_LO, BATTLE_HI),
         "script": (SCRIPT_LO, SCRIPT_HI),
-        "tail": (TAIL_LO, TAIL_HI - JOSA_RESERVE),
+        "tail": (TAIL_LO, TAIL_HI - JOSA_RESERVE - CAPTION_RESERVE),
         "josa-code": (TAIL_HI - JOSA_RESERVE, TAIL_HI),
         "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 0x1C),
         **{
@@ -83,8 +88,16 @@ class Rom:
         self.orig = data
         self.buf = bytearray(data)
         self.log: list[tuple[str, int, int]] = []
-        self.allowed = dict(
-            self.ALLOWED, **sysmsg.allowed(data), **gfxtext.allowed(), **captions.allowed(data)
+        self.allowed = captions.widen_for_tail(
+            dict(
+                self.ALLOWED,
+                **sysmsg.allowed(data),
+                **gfxtext.allowed(),
+                **captions.allowed(data),
+                **captions.allowed_tail(TAIL_HI - JOSA_RESERVE - CAPTION_RESERVE, CAPTION_RESERVE),
+            ),
+            TAIL_HI - JOSA_RESERVE - CAPTION_RESERVE,
+            CAPTION_RESERVE,
         )
 
     def write(self, label: str, at: int, data: bytes) -> None:
@@ -305,7 +318,10 @@ def main(check_only: bool = False) -> None:
         orig, {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in smap.items()}, cs.encode
     )
     cap_writes = captions.plan(
-        orig, {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in cmap.items()}, cs.encode
+        orig,
+        {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in cmap.items()},
+        cs.encode,
+        tail_at=TAIL_HI - JOSA_RESERVE - CAPTION_RESERVE,
     )
     print(
         f"  정본 블록 {len(maps)} · 한글 {len(cs.hangul)}자 · 표 0 {len(cs.entries)}/{cs.r0['entries']}"
@@ -359,7 +375,7 @@ def main(check_only: bool = False) -> None:
         packed = packed + (b"\x00" if len(packed) & 1 else b"")
         if region == "script" and cur + len(packed) > SCRIPT_HI:
             cur, region = TAIL_LO, "tail"
-        if region == "tail" and cur + len(packed) > TAIL_HI - JOSA_RESERVE:
+        if region == "tail" and cur + len(packed) > TAIL_HI - JOSA_RESERVE - CAPTION_RESERVE:
             raise SystemExit("대본 아카이브가 꼬리 빈 공간도 넘는다")
         rom.write(region, cur, packed)
         table[n * 4 : n * 4 + 4] = struct.pack(">I", cur - base)
@@ -375,7 +391,7 @@ def main(check_only: bool = False) -> None:
         packed = packed + (b"\x00" if len(packed) & 1 else b"")
         if bregion == "battle" and bcur + len(packed) > BATTLE_HI:
             bcur, bregion = (cur if region == "tail" else TAIL_LO), "tail"
-        if bregion == "tail" and bcur + len(packed) > TAIL_HI - JOSA_RESERVE:
+        if bregion == "tail" and bcur + len(packed) > TAIL_HI - JOSA_RESERVE - CAPTION_RESERVE:
             raise SystemExit("전투 아카이브가 꼬리 빈 공간도 넘는다")
         rom.write(bregion, bcur, packed)
         btable[n * 4 : n * 4 + 4] = struct.pack(">I", bcur - bbase)
