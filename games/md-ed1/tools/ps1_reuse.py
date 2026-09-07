@@ -93,6 +93,9 @@ def match_pages(pages: list[str], cp: dict) -> list[tuple] | None:
     out: list[tuple] = []
     i = 0
     while i < len(pages):
+        # ⚠ 「자리가 모자라 못 맞춘 것」과 「안 맞은 것」을 같이 처리해야 한다 — 예전엔 `break` 가
+        # for…else 를 건너뛰어 같은 i 로 while 이 계속 돌았다(마지막 페이지에서 **무한 루프**, 2026-09-06).
+        matched = False
         for k in (1, 2, 3, 4):
             if i + k > len(pages):
                 break
@@ -106,8 +109,9 @@ def match_pages(pages: list[str], cp: dict) -> list[tuple] | None:
                 parts = ["\f".join(parts)] + [""] * (k - 1)
             out += [(g[0], g[1], parts[j], g[3]) for j in range(k)]
             i += k
+            matched = True
             break
-        else:
+        if not matched:
             return None
     return out
 
@@ -151,6 +155,7 @@ def ours_for(st: scene.Stream, kr_pages: list[str]) -> str:
 
 def main(stats_only: bool) -> None:
     cp = corpus()
+    cp_keys = list(cp)  # difflib 후보 — 한 번만 만든다
     persons = json.loads(GLOSSARY.read_text(encoding="utf-8"))["categories"]["person"]
     d = common.rom()
     bl = archives.blocks(d, archives.ARCHIVES["script"][0])
@@ -198,10 +203,12 @@ def main(stats_only: bool) -> None:
                     ent["src"] = "ps1:" + ",".join(f"{g[0]}:{g[1]}" for g in got)
                     filled += 1
                     changed = True
-            else:
+            elif not stats_only:
+                # ⚠ 근사 후보는 **검토표용**이라 통계에선 만들지 않는다 — 페이지마다 3,600 후보와
+                # difflib 를 돌리면 전 블록에 몇 시간이 든다(2026-09-06 실측: --stats 가 40분 넘게 안 끝났다).
                 for pg in pages:
                     if norm(pg) not in cp:
-                        near = difflib.get_close_matches(norm(pg), list(cp), n=1, cutoff=0.6)
+                        near = difflib.get_close_matches(norm(pg), cp_keys, n=1, cutoff=0.6)
                         cand = cp[near[0]][2] if near else ""
                         review.append(f"{key}\t{pg}\t→ {cand}")
         if changed:
