@@ -15,8 +15,11 @@
 🔑 **바이트로 댄다.** `strtab.text_of` 는 제어를 `<0F>` 로 그리는데 표의 키는 실제 `\\x0f`
    라, 글자로 대면 같은 문자열이 다르게 보인다(처음에 그렇게 재서 오탐이 44 → 실제 29).
 
-⚠ **가나가 있는 것만 센다.** `/0.BIN` 을 NUL 로 끊으면 코드·표가 문자열처럼 잡힌다
-   (`'bビja!瑞'` 꼴). 가나는 화면 문안의 표지라 이 한 겹으로 대부분이 걸러진다.
+⚠ **일본어 문자(가나 **또는** 한자)가 있는 것만 센다.** `/0.BIN` 을 NUL 로 끊으면 코드·표가
+   문자열처럼 잡힌다(`'bビja!瑞'` 꼴). 이 한 겹으로 대부분이 걸러진다.
+   🔴 **처음엔 가나만 봤다가 순한자를 통째로 놓쳤다**(pc98 발 지적, 09-07) — 29 → 93 으로
+   넓히니 그 차이에서 **블랙잭 `５０枚`** 가 나왔다. 40·30·20·10·0 은 옮겼는데 50 만 빠져
+   있었다. **같은 창 안에서 다섯은 한글, 하나만 일본어**라 눈으로도 잘 안 걸리는 부류다.
 
 ⚠ 남는 것은 **사유를 적어 받아들인다**(`script/sys_coverage_accept.json`). 두 부류다 —
    **개발자 메뉴**(입구를 죽여서 화면에 안 나온다. 그 구역은 자막 스텁이 쓴다) ·
@@ -38,6 +41,16 @@ ACCEPT = os.path.join(C.GAME_DIR, "script", "sys_coverage_accept.json")
 
 #   SJIS 히라가나(0x829F~0x82F1) · 가타카나(0x8340~0x8396)
 KANA = re.compile(rb"(?:\x82[\x9f-\xf1]|\x83[\x40-\x96])")
+#   SJIS 2 바이트 한자 영역 — 🔴 **가나만 보면 순한자 문자열을 통째로 놓친다**(pc98 발, 09-07).
+#   실측: 가나 기준 29 → 일본어 문자 기준 93. 그 차이 64 중 하나가 **진짜 결함**이었다
+#   (블랙잭 `５０枚` — 40·30·20·10·0 은 옮겼는데 50 만 빠져 화면에 `枚` 가 그대로 났다).
+#   ⚠ 「한 창 안에서 넷은 한글, 둘은 깨짐」이 이 부류의 전형이다 — 눈으로도 잘 안 걸린다.
+KANJI = re.compile(rb"(?:[\x88-\x9f\xe0-\xea][\x40-\xfc])")
+
+
+def japanese(raw):
+    """화면 문안의 표지 — 가나 **또는** 한자."""
+    return bool(KANA.search(raw) or KANJI.search(raw))
 #   종결 바이트는 표기가 갈리므로 양쪽에서 떼고 댄다
 _TERM = b"\x00\x0f\x10"
 
@@ -63,7 +76,7 @@ def scan():
             data = d.read(f)
         for s in S.strings(data, S.load_base(f)):
             raw = s["raw"].lstrip(bytes(range(0x20)))  # 선행 제어를 뗀다
-            if not KANA.search(raw) or covered(raw, keys):
+            if not japanese(raw) or covered(raw, keys):
                 continue
             out.append((f, s["off"], S.text_of(s["raw"])))
     return out
