@@ -26,8 +26,44 @@ import scene
 CODE_END = 0x40000
 LZ = [(0x085E52, 0x09D86E), (0x0CAB04, 0x0D85B4), (0x0D8814, 0x12261C), (0x1293E0, 0x134DDC)]
 MAP_JSON = common.GAME_DIR / "textmap" / "sysmsg.json"
-EXPECT = (106, 40)  # 스트림 · 묶음 (2026-09-05 실측 — 0A 를 끝으로 잡은 뒤)
-EXCLUDE = {0x1ED0C}  # '付近入口H鄲 $Kr' — cp932 로 우연히 풀리는 코드. 눈으로 확인해 뺀다
+EXPECT = (
+    160,
+    66,
+)  # 스트림 · 묶음 (2026-09-06 — 워드 표 0x73bc · 고정 스트림 19 · _textlike 0x80 고침)
+EXCLUDE = {0x1ED0C, 0x32E2A}  # '付近入口H鄲 $Kr' — cp932 로 우연히 풀리는 코드. 눈으로 확인해 뺀다
+
+# 워드 오프셋 표: 표 자리 → 항목 수. 코드가 `lea $73bc.l,a3` + `move.w (a3,d0.w),d0` +
+# `lea (a3,d0.w),a1` 로 고른다(0x717a·0x71a6·0x7f56). 항목 = 표 자리에서의 **부호 있는 워드 변위**.
+# ⚠ 이 표가 가리키는 스트림은 `lea` 참조가 없어 2026-09-06 까지 **통째로 빠져 있었다**
+# (주문·아이템 효과 메시지 — 「ＭＰが足りない」「呪文は封じられた」…). `_textlike` 도 건너뛴다 —
+# 표에 실렸다는 것 자체가 문안이라는 증거고, 「<02>は<06>」 같은 한 글자 연결어는 걸러지기 때문이다.
+WORD_TABLES = {0x73BC: 33}
+
+# 자리를 못 옮기는 스트림 — **소비자를 아직 못 찾았다.** 06 으로 끊긴 앞 스트림 뒤에 물리적으로
+# 이어지는 「수치 뒤 꼬리말」(「奪った」「あがった」「ふえた」「さがった」)인데, 셋 중 하나를 고르는
+# 코드가 lea/pea/절대 상수 어디에도 안 잡힌다(2026-09-06 실측). ⇒ **제자리에, 원본 길이 안에서만**
+# 다시 쓴다. 각자 자기 묶음이 되어 앞뒤 스트림 재배치의 영향을 안 받는다.
+PINNED = {
+    0x762A,
+    0x7640,
+    0x764C,
+    0x7656,  # 수치 뒤 꼬리말(奪った·あがった·ふえた·さがった)
+    0x2A9D6,
+    0x2A9EE,  # 능력 강화 물음 둘
+    0x3105F,
+    0x310A2,  # 오델로 승패 대사(앞의 goto 스트림이 참조를 든다)
+    0x419B,
+    0x75EE,
+    0x760F,
+    0x76BE,  # 06 뒤로 이어지는 꼬리말(あがった·が入っていました·回復した)
+    0x20209,
+    0x24AAE,
+    0x24B0C,
+    0x24B65,
+    0x324BB,
+    0x324C2,
+    0x324E2,  # 미니게임 전투 문구
+}
 
 
 def refs(d: bytes) -> dict[int, list[tuple[str, int]]]:
@@ -45,15 +81,22 @@ def refs(d: bytes) -> dict[int, list[tuple[str, int]]]:
     ):
         t = int.from_bytes(m.group(0)[2:6], "big")
         out.setdefault(t, []).append(("abs", m.start()))
+    for base, n in WORD_TABLES.items():
+        for i in range(n):
+            w = base + i * 2
+            t = base + struct.unpack(">h", d[w : w + 2])[0]
+            out.setdefault(t, []).append((f"tbl:{base:06x}", w))
     return out
 
 
 def _textlike(st: scene.Stream) -> bool:
-    """문안인가 — 코드·표가 스트림으로 읽힌 것을 거른다: 0x80 선두(진짜 SJIS 엔 없다) · 깨진 2B 쌍 ·
-    글자보다 많은 제어/영숫자."""
+    """문안인가 — 코드·표가 스트림으로 읽힌 것을 거른다: 홀로 선 0x80(선두가 못 된다) · 깨진 2B 쌍 ·
+    글자보다 많은 제어/영숫자.
+
+    ⚠ **0x80 을 통째로 막으면 안 된다**(2026-09-06). `ム`(83 80)처럼 **뒤 바이트**로는 흔하다 —
+    그 탓에 오델로 노인 대사 여럿이 조용히 빠져 있었다.
+    """
     txt = b"".join(t.raw for t in st.tokens if t.kind == "text")
-    if b"\x80" in txt:
-        return False
     sj = 0
     i = 0
     while i < len(txt):
@@ -65,6 +108,8 @@ def _textlike(st: scene.Stream) -> bool:
             sj += 1
             i += 2
         else:
+            if txt[i] == 0x80:
+                return False
             i += 1
     if sj < 2:
         return False
@@ -92,6 +137,15 @@ def streams(d: bytes) -> dict[int, dict]:
         if st.end - t > 400 or not _textlike(st):
             continue
         out[t] = {"stream": st, "refs": rs[t]}
+    for t in PINNED:
+        if t not in out:
+            out[t] = {"stream": scene.parse_stream(d, t), "refs": []}
+    for base, n in WORD_TABLES.items():  # 표가 가리키는 자리는 _textlike 를 안 본다(위 주석)
+        for i in range(n):
+            w = base + i * 2
+            t = base + struct.unpack(">h", d[w : w + 2])[0]
+            if t not in out:
+                out[t] = {"stream": scene.parse_stream(d, t), "refs": rs.get(t, [])}
     # goto/call 대상도 스트림이다(참조 없이 오프셋으로만 이어진다)
     work = [
         tok.target
@@ -113,12 +167,19 @@ def clusters(strs: dict[int, dict]) -> list[list[int]]:
     """잇닿은 스트림 묶음(주소 목록). 하위 문자열은 앞 스트림 범위 안에 있다."""
     out: list[list[int]] = []
     end = -1
+    prev_pinned = False
     for t, e in strs.items():
+        if t in PINNED or prev_pinned:  # 고정 스트림은 자기 묶음 — 앞뒤와 안 섞인다
+            out.append([t])
+            end = e["stream"].end
+            prev_pinned = t in PINNED
+            continue
         if out and t <= end + 8:
             out[-1].append(t)
         else:
             out.append([t])
         end = max(end, e["stream"].end)
+        prev_pinned = False
     return out
 
 
@@ -256,7 +317,8 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
     strs = streams(d)
     writes: list[tuple[str, int, bytes]] = []
     over: list[str] = []
-    over: list[str] = []
+    plans = []
+    allpos: dict[int, int] = {}  # 🔴 자리는 **전 묶음을 다 재 놓고** 쓴다 — goto 가 묶음을 넘는다
     for cl in clusters(strs):
         lo, hi = span(strs, cl)
         toks = {}
@@ -272,6 +334,8 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
             else:
                 toks[t] = st.tokens
         if not touched:
+            for t in cl:
+                allpos.setdefault(t, t)  # 안 건드린 묶음은 제자리
             continue
 
         # 배치: 주소 순. 앞 스트림의 새 바이트 접미와 같으면(꼬리 공유) 그 안을 가리킨다
@@ -311,28 +375,33 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
                 f"{lo:#x}~{hi:#x}: {cur - lo}B > {hi - lo}B  ({', '.join(f'{t:06x}' for t in cl)})"
             )
             continue
+        plans.append((lo, hi, cl, toks, order, newpos))
+        allpos.update(newpos)
+    if over:
+        raise SystemExit(
+            "sysmsg 묶음이 넘친다 — textmap/sysmsg.json 을 줄인다:\n    " + "\n    ".join(over)
+        )
+    for lo, hi, cl, toks, order, newpos in plans:
         body = bytearray(b"\x00" * (hi - lo))
         for u in order:
-            b = _emit(toks[u], newpos[u], newpos)
+            b = _emit(toks[u], newpos[u], allpos)
             body[newpos[u] - lo : newpos[u] - lo + len(b)] = b
         writes.append((f"sysmsg:{lo:06x}", lo, bytes(body)))
         for t in cl:
             for kind, ins in strs[t]["refs"]:
-                if kind == "pc":
+                if kind.startswith("tbl:"):
+                    base = int(kind[4:], 16)
+                    disp = newpos[t] - base
+                    if not -0x8000 <= disp < 0x8000:
+                        raise SystemExit(f"sysmsg {t:#x}: 표 변위 범위 초과 @{ins:#x}")
+                    writes.append((f"sysmsg-tbl:{ins:06x}", ins, struct.pack(">h", disp)))
+                elif kind == "pc":
                     disp = newpos[t] - (ins + 2)
                     if not -0x8000 <= disp < 0x8000:
                         raise SystemExit(f"sysmsg {t:#x}: pc 변위 범위 초과 @{ins:#x}")
                     writes.append((f"sysmsg-ref:{ins:06x}", ins + 2, struct.pack(">h", disp)))
                 else:
                     writes.append((f"sysmsg-ref:{ins:06x}", ins + 2, struct.pack(">I", newpos[t])))
-    if over:
-        raise SystemExit(
-            "sysmsg 묶음이 넘친다 — textmap/sysmsg.json 을 줄인다:\n    " + "\n    ".join(over)
-        )
-    if over:
-        raise SystemExit(
-            "sysmsg 묶음이 넘친다 — textmap/sysmsg.json 을 줄인다:\n    " + "\n    ".join(over)
-        )
     return writes
 
 
@@ -345,5 +414,8 @@ def allowed(d: bytes) -> dict[str, tuple[int, int]]:
         out[f"sysmsg:{lo:06x}"] = (lo, hi)
         for t in cl:
             for kind, ins in strs[t]["refs"]:
-                out[f"sysmsg-ref:{ins:06x}"] = (ins + 2, ins + (4 if kind == "pc" else 6))
+                if kind.startswith("tbl:"):
+                    out[f"sysmsg-tbl:{ins:06x}"] = (ins, ins + 2)
+                else:
+                    out[f"sysmsg-ref:{ins:06x}"] = (ins + 2, ins + (4 if kind == "pc" else 6))
     return out

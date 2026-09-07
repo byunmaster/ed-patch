@@ -119,8 +119,14 @@ def typeset(text: str) -> list[list[str]]:
     return pages
 
 
-def build_stream(st: scene.Stream, ours: str, cs: hangul.Charset) -> list[scene.Token]:
-    """정본 한 항목 → 새 토큰 목록. 참조 토큰은 원본 토큰을 그대로(오프셋은 재조립이 다시 잰다)."""
+def build_stream(
+    st: scene.Stream, ours: str, cs: hangul.Charset, *, raw_text: bool = False
+) -> list[scene.Token]:
+    """정본 한 항목 → 새 토큰 목록. 참조 토큰은 원본 토큰을 그대로(오프셋은 재조립이 다시 잰다).
+
+    `raw_text` 면 조판기를 안 태운다 — 여백까지 우리가 정한 자리(장 카드·HUD 제목)를 위해서다.
+    조판기는 줄을 strip 하고 다시 감기 때문에 「30바이트 고정」 같은 계약을 조용히 깬다.
+    """
     refs = [t for t in st.tokens if t.ref]
     end = next((t for t in st.tokens if t.kind == "end"), None)
     out: list[scene.Token] = []
@@ -128,6 +134,18 @@ def build_stream(st: scene.Stream, ours: str, cs: hangul.Charset) -> list[scene.
 
     def flush_text():
         if not pending_text:
+            return
+        if raw_text:
+            body = "".join(pending_text)
+            pending_text.clear()
+            for pi, pg in enumerate(body.split("\f")):
+                if pi:
+                    out.append(scene.Token(0, b"\x05", "ctl", 0x05))
+                for li, ln in enumerate(pg.split("\n")):
+                    if li:
+                        out.append(scene.Token(0, b"\x01", "ctl", 0x01))
+                    if ln:
+                        out.append(scene.Token(0, cs.encode(ln), "text"))
             return
         pages = typeset("".join(pending_text))
         pending_text.clear()
@@ -290,7 +308,7 @@ def main(check_only: bool = False) -> None:
                 raise SystemExit(f"블록 {n}: 스트림 {k} 가 없다")
             if textmap.jp_key(st) != ent["jp"]:
                 raise SystemExit(f"블록 {n} 스트림 {k}: 원문 해시가 갈렸다")
-            replace[off] = build_stream(st, ent["ours"], cs)
+            replace[off] = build_stream(st, ent["ours"], cs, raw_text=bool(ent.get("raw")))
         if not replace:
             continue
         new = scene.reassemble(mod, replace)

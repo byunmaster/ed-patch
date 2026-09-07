@@ -188,11 +188,20 @@ class Charset:
             )
         self.r0 = r0
         self.rom = rom
+        r1 = font.resources(rom)[1]
+        # 반각으로 나갈 수 있는 코드 — 원본 표 + resource1() 이 끼워 넣는 글자.
+        # 🔴 표에 없는 반각을 쓰면 **화면에서 조용히 빈칸**이 된다(괄호로 물렸다, 2026-09-06).
+        self.half = set(font.codes(rom, r1)) | set(EXTRA_R1)
 
     def encode_char(self, ch: str) -> bytes:
         if ch in self.hangul:
             return struct.pack(">H", self.hangul[ch])
         if 0x20 <= ord(ch) < 0x7F:
+            if ord(ch) not in self.half:
+                raise SystemExit(
+                    f"반각 글리프가 없다: {ch!r}({ord(ch):#04x}) — 글꼴 리소스 1 에 없는 글자다. "
+                    "hangul.EXTRA_R1 에 글리프를 넣거나 문안에서 뺀다"
+                )
             return ch.encode("ascii")  # 반각(리소스 1)
         try:
             code = int.from_bytes(ch.encode("cp932"), "big")
@@ -229,7 +238,8 @@ class Charset:
         return header, table, bytes(glyphs)
 
 
-# 반각 리소스 1 에 없는 쉼표(0x2C) — 온점(행 8~11 의 점)과 같은 자리에 꼬리를 단다. 8×14, 1B/행.
+# 반각 리소스 1 에 **없는 글자**들 — 원본 표엔 ` !"-.0-9?A-Za-z` 뿐이다. 8×14, 1B/행.
+# 🔴 괄호가 없으면 병기 「을(를)」이 화면에서 「을 를」로 뜬다(2026-09-06 인게임 실측 — 39자리).
 COMMA_FILL = [
     "........",
     "........",
@@ -246,6 +256,24 @@ COMMA_FILL = [
     "...#....",
     "..#.....",
 ]
+PAREN_L_FILL = [
+    "........",
+    "....##..",
+    "...##...",
+    "..##....",
+    "..##....",
+    ".##.....",
+    ".##.....",
+    ".##.....",
+    "..##....",
+    "..##....",
+    "...##...",
+    "....##..",
+    "........",
+    "........",
+]
+PAREN_R_FILL = ["".join(reversed(r)) for r in PAREN_L_FILL]
+EXTRA_R1 = {0x28: PAREN_L_FILL, 0x29: PAREN_R_FILL, 0x2C: COMMA_FILL}
 FONT1_HDR = (0x1A54DE, 0x1A54EA)
 
 
@@ -269,13 +297,18 @@ def resource1(cs: "Charset") -> list[tuple[str, int, bytes]]:
     rom = cs.rom
     r0, r1 = font.resources(rom)[:2]
     codes = font.codes(rom, r1)
-    if 0x2C in codes:
+    add = [c for c in sorted(EXTRA_R1) if c not in codes]
+    if not add:
         return []
-    i = next(k for k, c in enumerate(codes) if c > 0x2C)
-    codes.insert(i, 0x2C)
-    fill = [[1 if ch == "#" else 0 for ch in row] for row in COMMA_FILL]
-    g = rom[r1["glyphs"] : r1["glyphs"] + (len(codes) - 1) * r1["stride"]]
-    glyphs = g[: i * r1["stride"]] + _pack8(fill) + _pack8(ring(fill)) + g[i * r1["stride"] :]
+    n0 = len(codes)
+    g = rom[r1["glyphs"] : r1["glyphs"] + n0 * r1["stride"]]
+    parts = [g[i * r1["stride"] : (i + 1) * r1["stride"]] for i in range(n0)]
+    for c in add:  # 코드 오름차순 자리에 글리프를 끼운다(표와 글리프 순서가 같아야 한다)
+        i = next((k for k, x in enumerate(codes) if x > c), len(codes))
+        codes.insert(i, c)
+        fill = [[1 if ch == "#" else 0 for ch in row] for row in EXTRA_R1[c]]
+        parts.insert(i, _pack8(fill) + _pack8(ring(fill)))
+    glyphs = b"".join(parts)
     table = b"".join(struct.pack(">H", c) for c in codes)
     tbl_at = r0["table"] + 2 * len(cs.entries)  # 표 0 바로 뒤 (짝수)
     desc_at = r0["desc"] + 4 + len(cs.entries) * r0["stride"]  # 표 0 글리프 바로 뒤

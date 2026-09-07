@@ -45,8 +45,8 @@ MAP_JSON = common.GAME_DIR / "textmap" / "battle.json"
 EXPECT = (
     269,
     100,
-    281,
-)  # 이름 · 기본 이름 · 고유 스트림(lea 180 + 플래그 11 + 자료 A 슬롯만 90) (2026-09-05 실측)
+    320,
+)  # 이름 · 기본 이름 · 고유 스트림(lea·플래그·자료 A + 연쇄 39, 2026-09-06)
 
 
 def blocks(d: bytes):
@@ -127,7 +127,101 @@ def refs(b: bytes) -> dict[int, dict]:
     st = _stream(b, v) if t[3] <= v < len(b) else None
     if st:
         ent(v, st)["words"].append(p)
+    out.update({k: v2 for k, v2 in chain(b, out).items() if k not in out})
     return dict(sorted(out.items()))
+
+
+def _has_kana(st: scene.Stream) -> bool:
+    txt = b"".join(t.raw for t in st.tokens if t.kind == "text")
+    n, i = 0, 0
+    while i < len(txt) - 1:
+        if scene.is_lead(txt[i]):
+            try:
+                ch = txt[i : i + 2].decode("cp932")
+            except UnicodeDecodeError:
+                return False
+            n += "぀" <= ch <= "ヿ"
+            i += 2
+        else:
+            i += 1
+    return n >= 1
+
+
+def _score(st) -> tuple[int, int, int]:
+    """문안다움 — (가나 수, −잡음). 시작을 한 바이트 잘못 잡으면 기호(0x81··/0x87··)나 뜬금없는
+    라틴 글자가 는다(「アギール」→「Aギール」 · 「２回」→「Q回」)."""
+    txt = b"".join(t.raw for t in st.tokens if t.kind == "text")
+    kana = noise = i = 0
+    while i < len(txt) - 1:
+        if scene.is_lead(txt[i]):
+            try:
+                ch = txt[i : i + 2].decode("cp932")
+            except UnicodeDecodeError:
+                return (0, 0, 0)
+            kana += "぀" <= ch <= "ヿ"
+            noise += txt[i] in (0x81, 0x84, 0x85, 0x86, 0x87) and not ("぀" <= ch <= "ヿ")
+            i += 2
+        else:
+            noise += 0x41 <= txt[i] <= 0x5A or 0x61 <= txt[i] <= 0x7A  # ⚠ 반각 가나(0xA1~0xDF)는
+            # 라틴-1 로는 글자로 보인다 — ASCII 만 센다
+            i += 1
+    return (kana, -noise, len(txt))  # 같으면 **더 긴 쪽**(=더 앞에서 시작한 쪽)을 고른다
+
+
+def chain(b: bytes, known: dict[int, dict]) -> dict[int, dict]:
+    """참조가 없는 스트림 — 아는 스트림 **끝 뒤로 이어지는 것** + **레코드 영역의 문안**.
+
+    🔴 `lea`·자료 A 워드로만 찾으면 샌다(2026-09-06 실측: 전투 아카이브에 일본어 116런이 남아 있었다).
+    시스템 메시지와 같은 기전이다 — `06` 은 끝이 아니라 「여기서 끼워 넣어라」라 그 뒤로 문안이
+    이어지고(「〜のすばやさが」+수치+「下がった。」), 보스 등장 문구는 **레코드 영역**에 들어 있다.
+    참조를 모르니 **제자리에서만** 다시 쓴다(`plan_block` 이 길이를 넘기면 실패한다).
+
+    ⚠ 시작 자리를 한 바이트 잘못 잡으면 「アギール」이 「Aギール」이 된다 — 후보 둘(패딩 바로 뒤 ·
+    플래그 바이트 한 칸 뒤)을 **문안다움으로 견줘** 고른다.
+    """
+    t = sections(b)
+    out: dict[int, dict] = {}
+
+    def add(p: int) -> int | None:
+        for q in (
+            p - 1,
+            p,
+            p + 1,
+        ):  # 이미 잡힌 자리면 손대지 않는다(한 바이트 어긋난 사본이 생긴다)
+            e = known.get(q) or out.get(q)
+            if e and q <= p < e["stream"].end:
+                return e["stream"].end
+        best = None
+        for q in (p, p + 1):
+            if q >= len(b):
+                continue
+            st = _stream(b, q)
+            if not st or not _has_kana(st):
+                continue
+            sc = _score(st)
+            if best is None or sc > best[0]:
+                best = (sc, q, st)
+        if best is None:
+            return None
+        _sc, q, st = best
+        out[q] = {"stream": st, "lea": [], "words": [], "pinned": True}
+        return st.end
+
+    for q in range(2, t[1]):  # 레코드 영역 — FF 패딩 뒤(또는 플래그 바이트 뒤)가 문안이다
+        if b[q - 1] == 0xFF and b[q] != 0xFF:
+            add(q)
+    for p0 in sorted({e["stream"].end for e in list(known.values()) + list(out.values())}):
+        p = p0
+        while p < len(b):
+            while p < len(b) and b[p] == 0xFF:
+                p += 1
+            if p in known or p in out:
+                break
+            nxt = add(p)
+            if nxt is None:
+                break
+            p = nxt
+    return out
 
 
 def jp_key(st: scene.Stream) -> str:
@@ -249,7 +343,12 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         if len(enc) > r["cap"]:
             errs.append(f"블록 {n} 이름 {jp!r}→{kr!r} {len(enc)}B > {r['cap']}B")
             continue
+        # 우리 이름이 짧으면 **원본 꼬리를 지운다** — 06 뒤라 화면엔 안 나오지만 원문 조각이 남는다
+        # (2026-09-06 스캔에서 「ル連」「チＡ」 같은 꼬리가 23건 잡혔다).
+        tail = len(r["name"]) - len(enc)
         out[r["name_at"] : r["name_at"] + len(enc) + 1] = enc + b"\x06"
+        if tail > 0:
+            out[r["name_at"] + len(enc) + 1 : r["name_at"] + len(r["name"]) + 1] = b"\x00" * tail
         changed = True
     moves = []
     for tgt, e in refs(b).items():

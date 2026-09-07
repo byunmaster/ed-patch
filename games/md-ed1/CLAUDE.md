@@ -53,9 +53,10 @@ python3 games/md-ed1/tools/tables.py --seed      # textmap/names.json 초안 —
 python3 games/md-ed1/tools/gfxtext.py               # 타이틀 메뉴 그래픽 셀(변형별 색)
 python3 games/md-ed1/tools/vdp.py <덤프폴더> out.png [base] [width]  # 화면 재구성(⚠ VRAM 덤프는 바이트 스왑)
 python3 games/md-ed1/tools/vdp.py <덤프폴더> --guess                # 네임테이블 base·width 추정
-python3 games/md-ed1/tools/sysmsg.py --check/--seed  # 시스템 메시지 99(lea/pea 참조 스트림)
+python3 games/md-ed1/tools/sysmsg.py --check/--seed  # 시스템 메시지 160 (lea/pea + 워드 표 0x73bc + 고정 스트림)
+python3 games/md-ed1/tools/jp_left.py --check       # ⭐ 코드·전투 아카이브에 **남은 일본어**(참조로 못 찾는 자리를 잡는다)
 python3 games/md-ed1/tools/check_text.py [-v]      # 문안 품질 — 원문 잔존 · 부호 규칙 · 표기 일치(PS1 정본·용어집)
-python3 games/md-ed1/tools/battle.py --check/--seed    # 전투 아카이브 110블록 — 몬스터 이름 269 · 메시지 281 (textmap/monsters.json · battle.json)
+python3 games/md-ed1/tools/battle.py --check/--seed    # 전투 아카이브 110블록 — 몬스터 이름 269 · 메시지 320(참조 없는 연쇄·레코드 영역 포함)
 python3 games/md-ed1/tools/captions.py --check/--seed  # 오프닝 자막 8 · 엔딩 나레이션 11 · 엔딩 대사 20 (워드 스크립트 표)
 python3 games/md-ed1/tools/ps1_reuse.py --stats  # PS1 번역 재사용 가능률 (⚠ PS1 QA 뒤에 채운다)
 python3 games/md-ed1/tools/hangul.py --preview out.png "가나다"   # 글리프 미리보기
