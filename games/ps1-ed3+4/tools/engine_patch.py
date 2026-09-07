@@ -78,6 +78,10 @@ ED3 = {
     # 글자가 엉뚱한 칸으로 가 「크리」에서 멈춘 것처럼 보였다).
     "frame_bars": ((0x800178B0, "bar_top"), (0x80017AF0, "bar_top"), (0x8001804C, "bar_bot")),
     "frame_bar_orig": (0x2443000C, 0xA7C3002E),
+    # `▼`(다음 페이지)는 글리프가 아니라 **열 수로 x 를 잡는 별도 자리**다 —
+    # `lhu v1,0x649e(at)`(= 핸들+6 = 열) 뒤에 x 에 더한다. 열이 32 가 되며 화면 밖으로 나갔다.
+    "prompt_site": 0x80039904,
+    "prompt_orig": (0x9423649E, 0x00000000),
     "handles": 0x801D6498,  # 창 핸들 표 (22B × 12)
     "prims": 0x800CEA80,  # 스프라이트 배열 (20B × 0x400, 더블버퍼 +0x5000)
     "dead": 0x8008DAD4,
@@ -310,6 +314,17 @@ def hooks(disc, space_code, space_w):
       bne   t1, t5, sum
       nop
     place:
+      # 🔴 틀 밖으로 나가지 않게 자른다 — `▼`(다음 페이지)는 **글자를 따라오지 않고 격자
+      #    마지막 열**에 놓인다. 열이 24 → 32 가 되면서 x 가 화면 밖으로 나가 사라졌다
+      #    (유저 실측 09-07). 틀 안 마지막 칸으로 당긴다.
+      lhu   t7, 2(t4)
+      nop
+      addiu t7, t7, {12 + 12 * (FRAME_COLS - 1)}
+      slt   t3, t7, t9
+      beq   t3, zero, noclamp
+      nop
+      move  t9, t7
+    noclamp:
       lhu   t7, 0xa(t4)             # 스프라이트 시작
       lui   t3, {p["prims"] >> 16:#x}
       ori   t3, t3, {p["prims"] & 0xFFFF:#x}
@@ -333,6 +348,16 @@ def hooks(disc, space_code, space_w):
       nop
       li    v1, {FRAME_COLS}
     framew_out:
+      jr    ra
+      nop
+    # ── `▼` 자리 — `lhu v1,0x649e(at)` 를 대신한다. at 는 jal 이 안 건드린다.
+    promptw:
+      lhu   v1, 0x649e(at)
+      li    t0, {COLS}
+      bne   v1, t0, promptw_out
+      nop
+      li    v1, {FRAME_COLS}
+    promptw_out:
       jr    ra
       nop
     # ── 격자·막대 x 전진 — 들어올 때 v0 = x, i = 방금 놓은 타일 번호. i < 23 → +12,
@@ -403,6 +428,7 @@ def apply(exe, disc, table, space_w=None):
         )
     _expect(exe, p["site_a"], p["site_a_orig"], "훅 자리")
     _expect(exe, p["frame_edge"], p["frame_edge_orig"], "틀 오른쪽 변")
+    _expect(exe, p["prompt_site"], p["prompt_orig"], "▼ 자리")
     for f, _ in p["frame_bars"]:
         _expect(exe, f, p["frame_bar_orig"], "격자·막대 x 전진")
     for s in p["cols_sites"]:
@@ -418,6 +444,7 @@ def apply(exe, disc, table, space_w=None):
 
     struct.pack_into("<II", exe, _off(p["site_a"]), jal(p["dead"]), 0)
     struct.pack_into("<II", exe, _off(p["frame_edge"]), jal(labels["framew"]), 0)
+    struct.pack_into("<II", exe, _off(p["prompt_site"]), jal(labels["promptw"]), 0)
     for f, name in p["frame_bars"]:
         struct.pack_into("<II", exe, _off(f), jal(labels[name]), 0)
     for s in p["cols_sites"]:
