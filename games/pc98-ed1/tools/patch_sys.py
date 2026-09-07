@@ -68,6 +68,9 @@ def plan() -> tuple[dict[str, list], dict]:
             if d != disk:
                 continue
             o = int(off, 16)
+            # 「원문으로 둔다」고 적어 둔 자리 — 문안이 없다(`check_neighbors.py` 가 읽는다)
+            if v.get("keep_jp") or "t" not in v:
+                continue
             if o not in site:
                 st["건너뜀:자리 없음"] += 1
                 continue

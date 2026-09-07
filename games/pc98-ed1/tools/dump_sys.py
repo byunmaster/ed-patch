@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
 
 LEAD = lambda b: 0x81 <= b <= 0x9F or 0xE0 <= b <= 0xEF
-MIN_CHARS = 3
+MIN_CHARS = 2  # 🔴 3 이면 두 글자 UI 를 통째로 놓친다 — `はい`·`強さ`·`ロー`(2026-09-07)
 
 
 def is_kana(ch: str) -> bool:
