@@ -112,7 +112,8 @@ for _sys in ("psx", "snes", "pce"):
 #                  8 을 넣어도 클램프도 경고도 없다(2026-08-22 실측).
 #   DOSBox 쪽은 Tab 홀드만 있다(staging 의 speedlock 은 홀드 전용이고 토글 설정이 없다).
 # 실행기 공통 단축키(유저 요청 2026-09-07 — mednafen · np2kai · DOSBox-X 가 같은 손가락):
-#   ⌘R = 재시작 · F5 = 퀵세이브 · F7 = 퀵로드 · ` = 빨리감기 토글 · Tab = 빨리감기 홀드.
+#   ⌘R = 재시작 · F5 = 퀵세이브 · F7 = 퀵로드 · ` = 빨리감기 토글 · Tab = 빨리감기 홀드 ·
+#   ⌘1~4 = 창 크기(1 매우 작음 … 4 큼).
 #   ⌘R 은 `&&` 조합(왼/오른 ⌘ 둘 다, `||`)이고 F10 도 그대로 살려 둔다 — 조합 문법은 이 머신의
 #   mednafen 1.32 에 넣어 파싱되는 걸 확인했다. F5·F7 은 mednafen 기본값이라 명시만 한다.
 SETTINGS = {
@@ -126,6 +127,14 @@ SETTINGS = {
     "command.reset": "keyboard 0x0 21 && keyboard 0x0 227 || keyboard 0x0 21 && keyboard 0x0 231 || keyboard 0x0 67",  # ⌘R · F10
     "command.save_state": "keyboard 0x0 62",  # F5
     "command.load_state": "keyboard 0x0 64",  # F7
+    # 창 크기 ⌘1~4 — 1 매우 작음 · 2 작음(기본) · 3 보통 · 4 큼.
+    # ⚠ 이 명령들은 **패치가 들어간 mednafen 에만** 있다(scripts/emu/mednafen-winsize.patch).
+    #   스톡 mednafen 에는 창 크기 명령이 없어서, 패치 없이 이 설정만 넣으면 조용히 무시된다.
+    #   숫자 스캔코드는 1=30 · 2=31 · 3=32 · 4=33, ⌘는 227(왼쪽)·231(오른쪽)이다.
+    "command.scale_1": "keyboard 0x0 30 && keyboard 0x0 227 || keyboard 0x0 30 && keyboard 0x0 231",
+    "command.scale_2": "keyboard 0x0 31 && keyboard 0x0 227 || keyboard 0x0 31 && keyboard 0x0 231",
+    "command.scale_3": "keyboard 0x0 32 && keyboard 0x0 227 || keyboard 0x0 32 && keyboard 0x0 231",
+    "command.scale_4": "keyboard 0x0 33 && keyboard 0x0 227 || keyboard 0x0 33 && keyboard 0x0 231",
 }
 
 
