@@ -27,6 +27,7 @@
 import difflib
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -200,9 +201,67 @@ def scan_canon(verbose=False):
     return len(bad)
 
 
+def scan_inline(scenes=None, verbose=False):
+    """**창 한복판에서 바뀌는 화자** — 원문 둘째 이름창과 우리 것을 대조한다.
+
+    위 `scan` 은 **첫 헤더만** 본다(`jp[2:jp.find(MC, 2)]`). 그런데 원문은 한 블록 안에서
+    화자를 바꾸기도 한다 — `%cアトラス%c\n…\n%cフローラ%c\n…` 처럼 이름창이 둘이다(실측 16블록).
+
+    🔴 **여기서 하나가 새고 있었다**(2026-09-06). `ED2SCN8:242` 는 우리 문안이 창을 둘로만
+    적어(`란도!!{p}란도 씨, 그만하세요.`) 둘째 이름창이 채울 자리로 잡혔고, **본문 첫 어절
+    `란도` 가 그 칸에 밀려 들어갔다** — 화면에 「란도 / 씨, 그만하세요.」로 나가 플로라의 말이
+    란도 것이 됐다. 창을 하나 더 열어(`{p}플로라{p}`) 고쳤다.
+    ⚠ **본문이 인물 이름으로 시작할 때만 난다** — 그래서 나머지 15블록은 멀쩡했다.
+
+    ⚠ **`%c…%c` 를 다 이름창으로 세지 않는다** — 아이템·강조 색 구간이 같은 꼴이다. 원문이
+    **`\n%c…%c\n`**(제 줄을 통째로 차지)인 자리만 센다. 이 구조 조건 하나로 실측 16건이
+    전부 진짜 이름창이었다(오탐 0).
+    ⚠ **화자맵(`_speaker_map`)으로 거르지 않는다** — 그건 정발 유래라 ED2 이름이 없다.
+    실제로 그걸로 걸렀더니 `アトラス`·`フローラ` 가 빠져 **문제의 셋이 통째로 안 보였다**
+    (2026-09-06, 검출기가 먼저 틀린 네 번째다). 정본(`shared/glossary`)을 쓰고, 표에 없는
+    이름은 **버리지 말고 따로 센다.**
+    """
+    canon = _canon_persons()
+    bad, nonl, unknown = [], [], []
+    for scn in R.scene_list(scenes):
+        for _s, eid, jp, cand, _t in R.iter_candidates((scn,)):
+            jt = R.render_bytes(jp.rstrip(b"\x00"), ctrl=True)
+            m = re.search(r"\n%c([^%\n]{1,14})%c\n", jt)
+            if not m:
+                continue
+            ot = R.render_bytes(cand.rstrip(b"\x00"), ctrl=True)
+            head = ot.find("\n")
+            m2 = re.search(r"%c([^%\n]{1,14})%c(\n?)", ot[head + 1 :]) if head >= 0 else None
+            if not m2:
+                continue
+            want = canon.get(m.group(1))
+            if want is None:
+                unknown.append((scn, eid, m.group(1)))
+            elif not _same_person(m2.group(1), want):
+                bad.append((scn, eid, m2.group(1), want))
+            if not m2.group(2):
+                # 이름창 뒤 개행 결손 — 원문엔 있다. 화면에서 본문이 이름줄에 붙는지는
+                # **인게임 확인**이 필요해 보고만 한다(2026-09-06 현재 셋).
+                nonl.append((scn, eid, m2.group(1)))
+    print(f"  {'✅' if not bad else '❌'} 창 중간 화자 전환 이름창 (어긋남 {len(bad)})")
+    for scn, eid, ours, want in bad[:20]:
+        print(f"      {scn}:{eid}  {ours} → {want}")
+    if nonl:
+        print(f"      ℹ 이름창 뒤 개행 없음 {len(nonl)}곳 — 원문엔 있다. 인게임 확인 대기")
+        if verbose:
+            for scn, eid, nm in nonl:
+                print(f"         {scn}:{eid} [{nm}]")
+    if unknown and verbose:
+        print(f"      ℹ 정본에 없는 원문 이름 {len(unknown)} — 대조를 못 했다")
+        for scn, eid, nm in unknown:
+            print(f"         {scn}:{eid} {nm}")
+    return len(bad)
+
+
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     n = scan(set(args) if args else None, "--all" in sys.argv)
     n += scan_canon(verbose=True)
     n += scan_runtime_labels(set(args) if args else None, verbose=True)
+    n += scan_inline(set(args) if args else None, verbose="-v" in sys.argv)
     sys.exit(1 if n else 0)
