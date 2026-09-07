@@ -26,6 +26,7 @@ import captions
 import common
 import gfxtext
 import hangul
+import josa
 import lz
 import scene
 import sysmsg
@@ -38,6 +39,7 @@ LINES = 3
 
 SCRIPT_LO, SCRIPT_HI = 0x135324, 0x1918D2  # 대본 블록 자리(색인 0x134FA0 은 항목만 고친다)
 TAIL_LO, TAIL_HI = common.FREE_TAIL
+JOSA_RESERVE = 0x180  # 꼬리 **끝**에 조사 훅(기계어+표)을 예약한다 — 아카이브는 그 앞까지만 쓴다
 
 
 BATTLE_LO, BATTLE_HI = 0x0CAB04, 0x0D85B4  # 전투 아카이브 LZ 구간(첫 블록 시작 ~ 끝 블록 끝)
@@ -51,7 +53,17 @@ class Rom:
         "battle-table": (battle.ARCHIVE, battle.ARCHIVE + battle.COUNT * 4),
         "battle": (BATTLE_LO, BATTLE_HI),
         "script": (SCRIPT_LO, SCRIPT_HI),
-        "tail": (TAIL_LO, TAIL_HI),
+        "tail": (TAIL_LO, TAIL_HI - JOSA_RESERVE),
+        "josa-code": (TAIL_HI - JOSA_RESERVE, TAIL_HI),
+        "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 0x1C),
+        **{
+            f"josa-tbl:{i:02x}": (josa.HANDLER_TBL + i * 2, josa.HANDLER_TBL + i * 2 + 2)
+            for i in (josa.IDX_ACTOR, josa.IDX_ITEM)
+        },
+        **{
+            f"josa-arg:{i:02x}": (josa.ARGLEN_TBL + i, josa.ARGLEN_TBL + i + 1)
+            for i in (josa.IDX_ACTOR, josa.IDX_ITEM)
+        },
         "font0-header": (0x1A54D2, 0x1A54DE),
         "font0-table": (0x1A551A, 0x1A6080),
         "font0-glyphs": (0x1A62CE, 0x1BA1FA),
@@ -347,7 +359,7 @@ def main(check_only: bool = False) -> None:
         packed = packed + (b"\x00" if len(packed) & 1 else b"")
         if region == "script" and cur + len(packed) > SCRIPT_HI:
             cur, region = TAIL_LO, "tail"
-        if region == "tail" and cur + len(packed) > TAIL_HI:
+        if region == "tail" and cur + len(packed) > TAIL_HI - JOSA_RESERVE:
             raise SystemExit("대본 아카이브가 꼬리 빈 공간도 넘는다")
         rom.write(region, cur, packed)
         table[n * 4 : n * 4 + 4] = struct.pack(">I", cur - base)
@@ -363,7 +375,7 @@ def main(check_only: bool = False) -> None:
         packed = packed + (b"\x00" if len(packed) & 1 else b"")
         if bregion == "battle" and bcur + len(packed) > BATTLE_HI:
             bcur, bregion = (cur if region == "tail" else TAIL_LO), "tail"
-        if bregion == "tail" and bcur + len(packed) > TAIL_HI:
+        if bregion == "tail" and bcur + len(packed) > TAIL_HI - JOSA_RESERVE:
             raise SystemExit("전투 아카이브가 꼬리 빈 공간도 넘는다")
         rom.write(bregion, bcur, packed)
         btable[n * 4 : n * 4 + 4] = struct.pack(">I", bcur - bbase)
@@ -391,6 +403,9 @@ def main(check_only: bool = False) -> None:
         for e in names.get(grp, {}).values():
             hud_chars.update(re.sub(r"<[^>]*>", "", e.get("ours", "")))
     for label, pos, body in hangul.resource4(cs, hud_chars):  # HUD 이름 12×12
+        rom.write(label, pos, body)
+    # 2c. 조사 훅 — 이름 뒤 조사를 런타임에 고른다(제어코드 EB·EC)
+    for label, pos, body in josa.plan(orig, cs, TAIL_HI - JOSA_RESERVE):
         rom.write(label, pos, body)
     # 3. 고정 폭 표(아이템·주문·지명·메뉴 라벨) — 제자리
     for label, pos, body in table_writes:
