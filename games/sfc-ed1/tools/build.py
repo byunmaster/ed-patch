@@ -175,6 +175,69 @@ def bake_glyph(out: bytearray, sheet: int, t: int, rows: list[int], half: bool) 
             out[sheet + 8 * (t + 0x11) + r] = rows[8 + r] & 0xFF
 
 
+# ── 파티 이름 상자 — **문이 아니라 구워진 타일맵**이다 (2026-09-07 실측) ─────────────────
+# 상태 창 왼쪽 위의 이름 상자는 글자 코드를 안 거친다(코드→타일 표 `$03:F484` 에 읽기 BP 를 걸어도
+# 안 걸린다). VRAM 에서 읽은 워드열을 롬에서 역으로 찾아 자리를 잡았다:
+#   `$03:F5B4` 부터 **간격 28바이트**(2줄 × 7워드) × **다섯 이름**
+#   한 줄 = `[틀 $002A][공백 $0108][이름 넉 칸][틀 $402A]`, 아랫줄은 같은 자리의 **타일 +$10**
+# ⇒ 메뉴 라벨과 같은 부류라 **타일 워드를 다시 굽는다**(훅이 아니다).
+# ⚠ 차례가 `textmap/battle_ui.json` 과 다르다(여긴 …ソニア·ゲイル·ロー) — **색인이 아니라 원문으로 짝짓는다.**
+NAME_BOX = 0x03F5B4
+NAME_STRIDE = 28
+NAME_COUNT = 5
+NAME_AT = 2  # 워드 색인 — 이름은 2~5번 칸
+NAME_CELLS = 4
+
+
+def _name_box_rows(rom: bytes) -> list[str]:
+    """구워진 타일을 코드로 되짚어 원문 이름 다섯을 읽는다(짝짓기 열쇠)."""
+    import tiles
+
+    inv: dict[int, int] = {}
+    for c, t in tiles.code_tile(rom).items():
+        inv.setdefault(t, c)
+    out = []
+    for n in range(NAME_COUNT):
+        o = common.snes2off(NAME_BOX + n * NAME_STRIDE)
+        name = ""
+        for i in range(NAME_AT, NAME_AT + NAME_CELLS):
+            w = rom[o + 2 * i] | (rom[o + 2 * i + 1] << 8)
+            c = inv.get(w & 0x3FF)
+            ch = text.TABLE.get(c, "") if c is not None else ""
+            name += ch
+        out.append(name.replace("　", "").strip())
+    return out
+
+
+def bake_name_box(out: bytearray, rom: bytes, slot, code_tile: dict[int, int]) -> list[str]:
+    """이름 상자 다섯을 한글 타일로 다시 굽는다. `slot(ch)` 은 메뉴와 **같은 배정기**를 쓴다."""
+    names = json.loads(
+        (common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8")
+    )["names"]
+    by_jp = {n["jp"]: n["kr"] for n in names}
+    done = []
+    for n, jp in enumerate(_name_box_rows(rom)):
+        kr = by_jp.get(jp)
+        if not kr:
+            raise SystemExit(f"이름 상자 {n} 의 원문 {jp!r} 이 battle_ui.json 에 없다")
+        if len(kr) > NAME_CELLS:
+            raise SystemExit(f"이름 {kr!r} 이 {NAME_CELLS}칸을 넘는다")
+        o = common.snes2off(NAME_BOX + n * NAME_STRIDE)
+        cells = list(kr) + [" "] * (NAME_CELLS - len(kr))
+        for i, ch in enumerate(cells):
+            top = o + 2 * (NAME_AT + i)
+            bot = o + 14 + 2 * (NAME_AT + i)
+            if ch == " ":
+                w_t = w_b = 0x0108  # 빈 칸은 위·아래 같은 타일(원본 규약)
+            else:
+                t = slot(ch)
+                w_t, w_b = t, t + 0x10
+            out[top : top + 2] = w_t.to_bytes(2, "little")
+            out[bot : bot + 2] = w_b.to_bytes(2, "little")
+        done.append(kr)
+    return done
+
+
 def menu_windows() -> list[tuple[str, int]]:
     """라벨이 있는 창 전부 — `menus.json` 의 키 꼬리(`…@A01`)에서 유도한다(목록을 손으로 안 든다)."""
     labels = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
@@ -278,9 +341,12 @@ def menu_bake(out: bytearray, rom: bytes) -> dict:
             done.append((m[0], kr))
     if too_long:
         raise SystemExit("라벨이 칸을 넘는다:\n  " + "\n  ".join(too_long))
+    # 파티 이름 상자도 **같은 배정기**로 굽는다 — 상주 글리프는 한 웅덩이에서 나와야 한다
+    names = bake_name_box(out, rom, slot, code_tile)
     return {
         "glyphs": "".join(slot_of),
         "labels": len(done),
+        "names": names,
         "resident_codes": used_codes,
         "windows": len(menu_windows()),
     }
@@ -409,6 +475,8 @@ def mutable_ranges() -> list[tuple[int, int]]:
         o2 = common.snes2off(a + 0x100)
         r.append((o2, o2 + 16))
     r += hook.patch_ranges()
+    b = common.snes2off(NAME_BOX)  # 파티 이름 상자(구워진 타일맵)
+    r.append((b, b + NAME_STRIDE * NAME_COUNT))
     r += dicts.patch_ranges()
     r += battle_ui.patch_ranges()
     sheet = common.snes2off(text.FONT_SHEET)
