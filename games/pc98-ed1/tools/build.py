@@ -27,6 +27,7 @@ import common
 import font
 import patch_font_hook
 import patch_scn
+import patch_sys
 
 # 글리프 표를 놓을 자리 — `free_map.py` 가 「전부 0xFF 인 섹터」로 확인한 연속 구간.
 # ⚠ 시작 섹터만 적고 길이는 표 크기에서 나온다. 자리를 옮기면 여기만 고친다.
@@ -53,6 +54,7 @@ def claim(secs: list[dict], start: int, size: int) -> range:
 
 
 _SCN_MARKS = None
+_SYS_MARKS = None
 
 
 def patches_for(key: str) -> list[tuple[int, bytes, bytes]]:
@@ -73,6 +75,24 @@ def patches_for(key: str) -> list[tuple[int, bytes, bytes]]:
                 f" · 그중 점프가 오는 자리 {st['밖으로:점프가 온다']:,} · 건너뜀 {skip:,})"
             )
         out = out + _SCN_MARKS
+
+    # 시스템 문안(메뉴·HUD·표·전투 메시지) — **제자리 교체만** 된다(`patch_sys.py`).
+    global _SYS_MARKS
+    if _SYS_MARKS is None:
+        _SYS_MARKS, st = patch_sys.plan()
+        print(
+            f"  시스템 {st['넣음']:,}자리 "
+            f"(넘쳐서 건너뜀 {st['건너뜀:넘침']:,} · 자리 없음 {st['건너뜀:자리 없음']:,})"
+        )
+    out = out + _SYS_MARKS.get(key, [])
+
+    # 🔴 **서로 다른 패처가 같은 바이트를 노리면 조용히 뭉갠다** — 여기서 죽인다.
+    seen: dict[int, int] = {}
+    for off, _e, new in out:
+        for i in range(off, off + len(new)):
+            if i in seen:
+                raise SystemExit(f"🔴 {key}: 패치가 겹친다 {i:#08x}")
+            seen[i] = off
     return out
 
 

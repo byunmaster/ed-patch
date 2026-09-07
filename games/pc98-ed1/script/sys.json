@@ -1,0 +1,1656 @@
+{
+ "program:0x9dc9": {
+  "t": " 사고 싶다",
+  "by": "human"
+ },
+ "program:0x9dd4": {
+  "t": " 팔고 싶다",
+  "by": "human"
+ },
+ "program:0x9f23": {
+  "t": " 마지막 마을로",
+  "by": "human"
+ },
+ "program:0x9f37": {
+  "t": " 싸움 직전으로",
+  "by": "human"
+ },
+ "program:0x9f49": {
+  "t": " 모험을 계속",
+  "by": "human"
+ },
+ "program:0x9f7a": {
+  "t": "지 옥",
+  "by": "human"
+ },
+ "program:0x9f83": {
+  "t": "힘 듦",
+  "by": "human"
+ },
+ "program:0x9f95": {
+  "t": "술술",
+  "by": "human"
+ },
+ "program:0xa32a": {
+  "t": " 찾았습니다.",
+  "by": "human"
+ },
+ "program:0xa3cd": {
+  "t": " 버린다",
+  "by": "human"
+ },
+ "program:0xa3db": {
+  "t": " 그 밖",
+  "by": "human"
+ },
+ "program:0xa3e3": {
+  "t": " 리더",
+  "by": "human"
+ },
+ "program:0xa5fe": {
+  "t": " 시스템",
+  "by": "human"
+ },
+ "program:0xa682": {
+  "t": "번을 로드",
+  "by": "human"
+ },
+ "program:0xa69c": {
+  "t": "번에 저장",
+  "by": "human"
+ },
+ "program:0xa6de": {
+  "t": "해도 괜찮습니까?",
+  "by": "human"
+ },
+ "program:0xa7c1": {
+  "t": "자동 이동",
+  "by": "human"
+ },
+ "program:0xa7cc": {
+  "t": "레벨업",
+  "by": "human"
+ },
+ "program:0xa7ee": {
+  "t": "메시지",
+  "by": "human"
+ },
+ "program:0xa82a": {
+  "t": "멈춤",
+  "by": "human"
+ },
+ "program:0xa831": {
+  "t": "자동",
+  "by": "human"
+ },
+ "program:0xa91c": {
+  "t": "자동 전투",
+  "by": "human"
+ },
+ "program:0xa929": {
+  "t": "자동 회복",
+  "by": "human"
+ },
+ "program:0xa934": {
+  "t": "싸움 주문",
+  "by": "human"
+ },
+ "program:0xa93f": {
+  "t": "회복 주문",
+  "by": "human"
+ },
+ "program:0xa94a": {
+  "t": "회복 아이템",
+  "by": "human"
+ },
+ "program:0xa957": {
+  "t": "전원 설정을",
+  "by": "human"
+ },
+ "program:0xa979": {
+  "t": "안 쓴다",
+  "by": "human"
+ },
+ "program:0xa982": {
+  "t": "같게",
+  "by": "human"
+ },
+ "program:0xa989": {
+  "t": "따로",
+  "by": "human"
+ },
+ "program:0xaa83": {
+  "t": "어쩐지 ",
+  "by": "human"
+ },
+ "program:0xab02": {
+  "t": "싸움에 이겼습니다.",
+  "by": "human"
+ },
+ "program:0xab19": {
+  "t": " 갖고 있었다.",
+  "by": "human"
+ },
+ "program:0xabde": {
+  "t": " 손에 넣었습니다.",
+  "by": "human"
+ },
+ "program:0xac1e": {
+  "t": " 싸움에 졌습니다.",
+  "by": "human"
+ },
+ "program:0xad56": {
+  "t": "  도망",
+  "by": "human"
+ },
+ "program:0xaee5": {
+  "t": "에게 독이 퍼졌다.",
+  "by": "human"
+ },
+ "program:0xaefb": {
+  "t": " 마비되었다 ",
+  "by": "human"
+ },
+ "program:0xaf12": {
+  "t": " 온몸에 독이 퍼졌다 ",
+  "by": "human"
+ },
+ "program:0xaf48": {
+  "t": " 잠들어 있다.",
+  "by": "human"
+ },
+ "program:0xaf58": {
+  "t": " 깨어났다.",
+  "by": "human"
+ },
+ "program:0xafb2": {
+  "t": " 혼란에 빠졌다 ",
+  "by": "human"
+ },
+ "program:0xafc5": {
+  "t": " 정신 차렸다.",
+  "by": "human"
+ },
+ "program:0xb179": {
+  "t": " 싸움　　주문　　막기",
+  "by": "human"
+ },
+ "program:0xb18f": {
+  "t": " 쓰기　　무기　　자동",
+  "by": "human"
+ },
+ "program:0xb1a7": {
+  "t": " 강함　　도망",
+  "by": "human"
+ },
+ "program:0xb275": {
+  "t": " 방어 자세를 취했다.",
+  "by": "human"
+ },
+ "program:0xb2f4": {
+  "t": " 달아났다.",
+  "by": "human"
+ },
+ "event:0xb6f6": {
+  "t": "게일",
+  "by": "glossary"
+ },
+ "event:0xb8e3": {
+  "t": "소니아",
+  "by": "glossary"
+ },
+ "event:0xba71": {
+  "t": "게일",
+  "by": "glossary"
+ },
+ "program:0xf30": {
+  "t": "세리오스",
+  "by": "glossary"
+ },
+ "program:0xf70": {
+  "t": "류난",
+  "by": "glossary"
+ },
+ "program:0xff0": {
+  "t": "게일",
+  "by": "glossary"
+ },
+ "program:0x3f23": {
+  "t": "나이프",
+  "by": "glossary"
+ },
+ "program:0x3f37": {
+  "t": "대형검",
+  "by": "glossary"
+ },
+ "program:0x3f4b": {
+  "t": "소형검",
+  "by": "glossary"
+ },
+ "program:0x3f5f": {
+  "t": "청동검",
+  "by": "glossary"
+ },
+ "program:0x3f73": {
+  "t": "철창",
+  "by": "glossary"
+ },
+ "program:0x3f87": {
+  "t": "철검",
+  "by": "glossary"
+ },
+ "program:0x3f9b": {
+  "t": "강철창",
+  "by": "glossary"
+ },
+ "program:0x3faf": {
+  "t": "강철검",
+  "by": "glossary"
+ },
+ "program:0x3fc3": {
+  "t": "은의 지팡이",
+  "by": "glossary"
+ },
+ "program:0x3fd7": {
+  "t": "소나기의 검",
+  "by": "glossary"
+ },
+ "program:0x3feb": {
+  "t": "은검",
+  "by": "glossary"
+ },
+ "program:0x3fff": {
+  "t": "수정의 지팡이",
+  "by": "glossary"
+ },
+ "program:0x4013": {
+  "t": "수정창",
+  "by": "glossary"
+ },
+ "program:0x4027": {
+  "t": "수정검",
+  "by": "glossary"
+ },
+ "program:0x403b": {
+  "t": "백금창",
+  "by": "glossary"
+ },
+ "program:0x404f": {
+  "t": "백금검",
+  "by": "glossary"
+ },
+ "program:0x4063": {
+  "t": "세라믹검",
+  "by": "glossary"
+ },
+ "program:0x4077": {
+  "t": "성스런 지팡이",
+  "by": "human",
+  "why": "슬롯 편차 — 정본은 「성스러운 지팡이」 — 14B 칸을 한 글자 넘는다"
+ },
+ "program:0x408b": {
+  "t": "불의 지팡이",
+  "by": "glossary"
+ },
+ "program:0x409f": {
+  "t": "얼음의 지팡이",
+  "by": "glossary"
+ },
+ "program:0x40b3": {
+  "t": "번개의 지팡이",
+  "by": "glossary"
+ },
+ "program:0x40c7": {
+  "t": "황금의 검",
+  "by": "glossary"
+ },
+ "program:0x40db": {
+  "t": "사자의 검",
+  "by": "glossary"
+ },
+ "program:0x40ef": {
+  "t": "왕가의 검",
+  "by": "glossary"
+ },
+ "program:0x4103": {
+  "t": "전사의 검",
+  "by": "glossary"
+ },
+ "program:0x4117": {
+  "t": "성스러운 검",
+  "by": "glossary"
+ },
+ "program:0x412b": {
+  "t": "목자르는 낫",
+  "by": "glossary"
+ },
+ "program:0x413f": {
+  "t": "다이아 지팡이",
+  "by": "human",
+  "why": "슬롯 편차 — 정본은 「다이아의 지팡이」 — 14B 칸을 한 글자 넘는다"
+ },
+ "program:0x4153": {
+  "t": "다이아의 검",
+  "by": "glossary"
+ },
+ "program:0x4167": {
+  "t": "고대의 검의 책",
+  "by": "glossary"
+ },
+ "program:0x417b": {
+  "t": "빛의 검",
+  "by": "glossary"
+ },
+ "program:0x418f": {
+  "t": "천 옷",
+  "by": "glossary"
+ },
+ "program:0x41a3": {
+  "t": "탐험자의 옷",
+  "by": "glossary"
+ },
+ "program:0x41b7": {
+  "t": "백금 갑옷",
+  "by": "glossary"
+ },
+ "program:0x41cb": {
+  "t": "비단 옷",
+  "by": "glossary"
+ },
+ "program:0x41df": {
+  "t": "가죽 갑옷",
+  "by": "glossary"
+ },
+ "program:0x41f3": {
+  "t": "청동 갑옷",
+  "by": "glossary"
+ },
+ "program:0x4207": {
+  "t": "사슬 갑옷",
+  "by": "glossary"
+ },
+ "program:0x421b": {
+  "t": "철 갑옷",
+  "by": "glossary"
+ },
+ "program:0x422f": {
+  "t": "강철 갑옷",
+  "by": "glossary"
+ },
+ "program:0x4243": {
+  "t": "은 갑옷",
+  "by": "glossary"
+ },
+ "program:0x4257": {
+  "t": "수정 갑옷",
+  "by": "glossary"
+ },
+ "program:0x426b": {
+  "t": "치유의 로브",
+  "by": "glossary"
+ },
+ "program:0x427f": {
+  "t": "황금 갑옷",
+  "by": "glossary"
+ },
+ "program:0x4293": {
+  "t": "사자의 갑옷",
+  "by": "glossary"
+ },
+ "program:0x42a7": {
+  "t": "왕가의 갑옷",
+  "by": "glossary"
+ },
+ "program:0x42bb": {
+  "t": "성스러운 갑옷",
+  "by": "glossary"
+ },
+ "program:0x42cf": {
+  "t": "다이아 갑옷",
+  "by": "glossary"
+ },
+ "program:0x42e3": {
+  "t": "배틀슈트",
+  "by": "glossary"
+ },
+ "program:0x42f7": {
+  "t": "행운의 반지",
+  "by": "glossary"
+ },
+ "program:0x430b": {
+  "t": "가죽 방패",
+  "by": "glossary"
+ },
+ "program:0x431f": {
+  "t": "청동 방패",
+  "by": "glossary"
+ },
+ "program:0x4333": {
+  "t": "철 방패",
+  "by": "glossary"
+ },
+ "program:0x4347": {
+  "t": "강철 방패",
+  "by": "glossary"
+ },
+ "program:0x435b": {
+  "t": "은 방패",
+  "by": "glossary"
+ },
+ "program:0x436f": {
+  "t": "수정 방패",
+  "by": "glossary"
+ },
+ "program:0x4383": {
+  "t": "백금 방패",
+  "by": "glossary"
+ },
+ "program:0x4397": {
+  "t": "황금 방패",
+  "by": "glossary"
+ },
+ "program:0x43ab": {
+  "t": "사자의 방패",
+  "by": "glossary"
+ },
+ "program:0x43bf": {
+  "t": "왕가의 방패",
+  "by": "glossary"
+ },
+ "program:0x43d3": {
+  "t": "성스러운 방패",
+  "by": "glossary"
+ },
+ "program:0x43e7": {
+  "t": "다이아 방패",
+  "by": "glossary"
+ },
+ "program:0x43fb": {
+  "t": "고대의 방패",
+  "by": "glossary"
+ },
+ "program:0x440f": {
+  "t": "레스의 잎",
+  "by": "glossary"
+ },
+ "program:0x4423": {
+  "t": "비스의 열매",
+  "by": "glossary"
+ },
+ "program:0x4437": {
+  "t": "해독초",
+  "by": "glossary"
+ },
+ "program:0x444b": {
+  "t": "횃불",
+  "by": "glossary"
+ },
+ "program:0x445f": {
+  "t": "쟈그리의 지도",
+  "by": "glossary"
+ },
+ "program:0x4473": {
+  "t": "요슈아의 눈",
+  "by": "glossary"
+ },
+ "program:0x4487": {
+  "t": "고대의 검의 책",
+  "by": "glossary"
+ },
+ "program:0x449b": {
+  "t": "황금의 카드",
+  "by": "glossary"
+ },
+ "program:0x44af": {
+  "t": "약",
+  "by": "glossary"
+ },
+ "program:0x44c3": {
+  "t": "튜트의 반지",
+  "by": "glossary"
+ },
+ "program:0x44d7": {
+  "t": "오프나의 반지",
+  "by": "glossary"
+ },
+ "program:0x44eb": {
+  "t": "길모아의 눈물",
+  "by": "glossary"
+ },
+ "program:0x44ff": {
+  "t": "워프의 깃털",
+  "by": "glossary"
+ },
+ "program:0x4513": {
+  "t": "퀵의 반지",
+  "by": "glossary"
+ },
+ "program:0x4527": {
+  "t": "워프의 날개",
+  "by": "glossary"
+ },
+ "program:0x453b": {
+  "t": "드래곤의 천",
+  "by": "glossary"
+ },
+ "program:0x454f": {
+  "t": "발견의 방울",
+  "by": "glossary"
+ },
+ "program:0x4563": {
+  "t": "당첨 복권",
+  "by": "glossary"
+ },
+ "program:0x4577": {
+  "t": "레스의 뿌리",
+  "by": "glossary"
+ },
+ "program:0x459f": {
+  "t": "요슈아의 거울",
+  "by": "glossary"
+ },
+ "program:0x45b3": {
+  "t": "에릭서",
+  "by": "glossary"
+ },
+ "program:0x45c7": {
+  "t": "황금의 열쇠",
+  "by": "glossary"
+ },
+ "program:0x45db": {
+  "t": "태양의 돌",
+  "by": "glossary"
+ },
+ "program:0x45ef": {
+  "t": "길모아의 별",
+  "by": "glossary"
+ },
+ "program:0x4603": {
+  "t": "럼주",
+  "by": "glossary"
+ },
+ "program:0x4617": {
+  "t": "수면초",
+  "by": "glossary"
+ },
+ "program:0x462b": {
+  "t": "황금의 카드",
+  "by": "glossary"
+ },
+ "program:0x463f": {
+  "t": "은의 피리",
+  "by": "glossary"
+ },
+ "program:0x4653": {
+  "t": "길모아 무지개",
+  "by": "human",
+  "why": "슬롯 편차 — 정본은 「길모아의 무지개」 — 14B 칸을 한 글자 넘는다"
+ },
+ "program:0x467b": {
+  "t": "용의 피리",
+  "by": "glossary"
+ },
+ "program:0x468f": {
+  "t": "바람의 로브",
+  "by": "glossary"
+ },
+ "program:0x46a3": {
+  "t": "불행의 타로트",
+  "by": "glossary"
+ },
+ "program:0x46b7": {
+  "t": "행운의 타로트",
+  "by": "glossary"
+ },
+ "program:0x46cb": {
+  "t": "발견의 피리",
+  "by": "glossary"
+ },
+ "program:0x46df": {
+  "t": "깜짝 상자",
+  "by": "glossary"
+ },
+ "program:0x4707": {
+  "t": "루멘의 램프",
+  "by": "glossary"
+ },
+ "program:0x471b": {
+  "t": "레스의 지팡이",
+  "by": "glossary"
+ },
+ "program:0x472f": {
+  "t": "피코해머",
+  "by": "glossary"
+ },
+ "program:0x4743": {
+  "t": "타이슨펀치",
+  "by": "glossary"
+ },
+ "program:0x4757": {
+  "t": "하이퍼",
+  "by": "glossary"
+ },
+ "program:0x476b": {
+  "t": "하이퍼",
+  "by": "glossary"
+ },
+ "program:0x4793": {
+  "t": "호출의 반지",
+  "by": "glossary"
+ },
+ "program:0x47a7": {
+  "t": "이상한 물병",
+  "by": "glossary"
+ },
+ "program:0x47cf": {
+  "t": "그라디우스",
+  "by": "glossary"
+ },
+ "program:0x47e3": {
+  "t": "파멸의 검",
+  "by": "glossary"
+ },
+ "program:0x47f7": {
+  "t": "궁극의 로브",
+  "by": "glossary"
+ },
+ "program:0x480b": {
+  "t": "궁극의 지팡이",
+  "by": "glossary"
+ },
+ "program:0x481f": {
+  "t": "눈 달린 신발",
+  "by": "glossary"
+ },
+ "program:0x4833": {
+  "t": "프람",
+  "by": "glossary"
+ },
+ "program:0x483e": {
+  "t": "이그나",
+  "by": "glossary"
+ },
+ "program:0x4849": {
+  "t": "휼",
+  "by": "glossary"
+ },
+ "program:0x485f": {
+  "t": "하이퍼",
+  "by": "glossary"
+ },
+ "program:0x486a": {
+  "t": "깜짝",
+  "by": "glossary"
+ },
+ "program:0x4875": {
+  "t": "오비스",
+  "by": "glossary"
+ },
+ "program:0x4880": {
+  "t": "사크타스",
+  "by": "glossary"
+ },
+ "program:0x488b": {
+  "t": "사쿠토",
+  "by": "glossary"
+ },
+ "program:0x4896": {
+  "t": "카스",
+  "by": "glossary"
+ },
+ "program:0x48a1": {
+  "t": "다남",
+  "by": "glossary"
+ },
+ "program:0x48ac": {
+  "t": "헤베달",
+  "by": "glossary"
+ },
+ "program:0x48b7": {
+  "t": "시렌트",
+  "by": "glossary"
+ },
+ "program:0x48c2": {
+  "t": "랙",
+  "by": "glossary"
+ },
+ "program:0x48cd": {
+  "t": "파페피아",
+  "by": "glossary"
+ },
+ "program:0x48e3": {
+  "t": "푸아조",
+  "by": "glossary"
+ },
+ "program:0x48ee": {
+  "t": "사이레스",
+  "by": "glossary"
+ },
+ "program:0x48f9": {
+  "t": "인파스",
+  "by": "glossary"
+ },
+ "program:0x4904": {
+  "t": "튜트",
+  "by": "glossary"
+ },
+ "program:0x491a": {
+  "t": "리파크",
+  "by": "glossary"
+ },
+ "program:0x4930": {
+  "t": "리프",
+  "by": "glossary"
+ },
+ "program:0x493b": {
+  "t": "레지나",
+  "by": "glossary"
+ },
+ "program:0x4946": {
+  "t": "비스",
+  "by": "glossary"
+ },
+ "program:0x4951": {
+  "t": "룩스",
+  "by": "glossary"
+ },
+ "program:0x495c": {
+  "t": "이사이트",
+  "by": "glossary"
+ },
+ "program:0x4972": {
+  "t": "요슈아",
+  "by": "glossary"
+ },
+ "program:0x77fc": {
+  "t": "세리오스",
+  "by": "glossary"
+ },
+ "program:0xd93": {
+  "t": "제1장　왕자의 여행길",
+  "by": "human"
+ },
+ "program:0x3f0f": {
+  "t": "없음",
+  "by": "human"
+ },
+ "program:0x4bee": {
+  "t": "자신에게",
+  "by": "human"
+ },
+ "program:0x4c03": {
+  "t": " 사용했다.",
+  "by": "human"
+ },
+ "program:0x4c0e": {
+  "t": " 효과가 있다.",
+  "by": "human"
+ },
+ "program:0x4c1d": {
+  "t": " 주문이 봉인돼 있다 ",
+  "by": "human"
+ },
+ "program:0x4c38": {
+  "t": " 주문을 튕겨 냈다 ",
+  "by": "human"
+ },
+ "program:0x4c51": {
+  "t": " 아무 일도 없었다.",
+  "by": "human"
+ },
+ "program:0x4c66": {
+  "t": " 외웠다.",
+  "by": "human"
+ },
+ "program:0x4c72": {
+  "t": "MP가 모자라 ",
+  "by": "human"
+ },
+ "program:0x4c85": {
+  "t": "의 HP를",
+  "by": "human"
+ },
+ "program:0x4c91": {
+  "t": "의 MP를",
+  "by": "human"
+ },
+ "program:0x4c9c": {
+  "t": "빼앗음 ",
+  "by": "human"
+ },
+ "program:0x4ca7": {
+  "t": " 공격력이 ",
+  "by": "human"
+ },
+ "program:0x4cb4": {
+  "t": " 방어력이 ",
+  "by": "human"
+ },
+ "program:0x4ccc": {
+  "t": "올랐다.",
+  "by": "human"
+ },
+ "program:0x4cd7": {
+  "t": "늘었다.",
+  "by": "human"
+ },
+ "program:0x4ce0": {
+  "t": "내렸다.",
+  "by": "human"
+ },
+ "program:0x4cec": {
+  "t": " 정신 들었다.",
+  "by": "human"
+ },
+ "program:0x4cfb": {
+  "t": " 모든 주문이 봉인되었다.",
+  "by": "human"
+ },
+ "program:0x4d17": {
+  "t": " 빛에 감싸였다.",
+  "by": "human"
+ },
+ "program:0x4d29": {
+  "t": " 독에 걸렸다 ",
+  "by": "human"
+ },
+ "program:0x4d3e": {
+  "t": " 주문이 봉인됐다 ",
+  "by": "human"
+ },
+ "program:0x4d55": {
+  "t": " 혼란했다 ",
+  "by": "human"
+ },
+ "program:0x4d63": {
+  "t": " 더욱 깊이 잠들었다 ",
+  "by": "human"
+ },
+ "program:0x4d7e": {
+  "t": "의 HP가",
+  "by": "human"
+ },
+ "program:0x4d8a": {
+  "t": "의 MP가",
+  "by": "human"
+ },
+ "program:0x4d95": {
+  "t": " 회복했다.",
+  "by": "human"
+ },
+ "program:0x4da3": {
+  "t": " 입구로 돌아갑니다.\\n괜찮습니까?",
+  "by": "human"
+ },
+ "program:0x4dc8": {
+  "t": " 공격",
+  "by": "human"
+ },
+ "program:0x4dd3": {
+  "t": " 피해 ",
+  "by": "human"
+ },
+ "program:0x4de8": {
+  "t": "회심의 일격",
+  "by": "human"
+ },
+ "program:0x4df6": {
+  "t": "하지만",
+  "by": "human"
+ },
+ "program:0x4e04": {
+  "t": "다행히",
+  "by": "human"
+ },
+ "program:0x4e0b": {
+  "t": "엔 안 맞",
+  "by": "human"
+ },
+ "program:0x4e17": {
+  "t": "에게는 안 통했다.",
+  "by": "human"
+ },
+ "program:0x4e2b": {
+  "t": " 잘 피했다.",
+  "by": "human"
+ },
+ "program:0x4e3d": {
+  "t": " 기절하고 말았다.",
+  "by": "human"
+ },
+ "program:0x4e53": {
+  "t": " 쓰러졌다.",
+  "by": "human"
+ },
+ "program:0x4e60": {
+  "t": " 레벨이 올랐다.",
+  "by": "human"
+ },
+ "program:0x4e75": {
+  "t": "최대 HP가 ",
+  "by": "human"
+ },
+ "program:0x4e86": {
+  "t": " 올랐다.",
+  "by": "human"
+ },
+ "program:0x4e92": {
+  "t": "최대 MP가 ",
+  "by": "human"
+ },
+ "program:0x4ea3": {
+  "t": " 힘을 높입니다.",
+  "by": "human"
+ },
+ "program:0x4eb8": {
+  "t": "강함이 ",
+  "by": "human"
+ },
+ "program:0x4ec0": {
+  "t": "지혜가 ",
+  "by": "human"
+ },
+ "program:0x4ecc": {
+  "t": "민첩이 ",
+  "by": "human"
+ },
+ "program:0x4ed8": {
+  "t": "행운이 ",
+  "by": "human"
+ },
+ "program:0x549a": {
+  "t": "\\n디스크를 확인하고【",
+  "by": "human"
+ },
+ "program:0x54b5": {
+  "t": "】키를 누르십시오.",
+  "by": "human"
+ },
+ "program:0x6522": {
+  "t": "더는 지닐 수 없습니다.\\n무엇을 버립니까?",
+  "by": "human"
+ },
+ "program:0x6553": {
+  "t": " 손에 넣",
+  "by": "human"
+ },
+ "program:0x6561": {
+  "t": " 포기했습니다.",
+  "by": "human"
+ },
+ "program:0x685d": {
+  "t": "아니오",
+  "by": "human"
+ },
+ "program:0x765c": {
+  "t": "지혜",
+  "by": "human"
+ },
+ "program:0x7665": {
+  "t": "민첩",
+  "by": "human"
+ },
+ "program:0x766e": {
+  "t": "행운",
+  "by": "human"
+ },
+ "program:0x931c": {
+  "t": "어느 힘을 높입니까?",
+  "by": "human"
+ },
+ "program:0x9332": {
+  "t": "이대로 괜찮습니까?",
+  "by": "human"
+ },
+ "program:0x934b": {
+  "t": "그 힘은 더는 올릴 수 없습니다.",
+  "by": "human"
+ },
+ "program:0x9afa": {
+  "t": " 안에는",
+  "by": "human"
+ },
+ "program:0x9b04": {
+  "t": " 들어 있었습니다.",
+  "by": "human"
+ },
+ "program:0x9b45": {
+  "t": "2000이 됐다 ",
+  "by": "human"
+ },
+ "program:0x9b59": {
+  "t": "660이 됐다 ",
+  "by": "human"
+ },
+ "event:0x9b99": {
+  "t": "   새 로 시 작 한 다",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9bb7": {
+  "t": " 이 어 서 한 다",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9bd7": {
+  "t": " 시나리오 디스크 백업",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9bf7": {
+  "t": " 세 이 브 데 이 터 지 우 기",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9c17": {
+  "t": " 옵션 보드 사용 제한 설정",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9c37": {
+  "t": "  게임 진행에 관한 설정 변경",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9c57": {
+  "t": "프로그램 디스크를 드라이브 1에\\n시나리오 디스크를　드라이브 2에\\n넣고【",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9cab": {
+  "t": "】키를\\n눌러 주십시오.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9dfd": {
+  "t": "드라이브 1에 시나리오 디스크를\\n드라이브 2에 새 디스크를\\n넣어 주십시오.\\n괜찮습니까?",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9e63": {
+  "t": "백업하는 중입니다.\\n잠시 기다려 주십시오.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9e93": {
+  "t": "백업이 끝났습니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9eb2": {
+  "t": "드라이브 1에 이벤트 디스크를\\n넣고 【",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9ee4": {
+  "t": "】키를\\n눌러 주십시오.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9eff": {
+  "t": "쓰기에 실패했습니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9f1c": {
+  "t": "읽기에 실패했습니다.\\n백업을 중지합니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9f53": {
+  "t": "\\n백업을 계속하시겠습니까?",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x9fbb": {
+  "t": "이 명령은 시나리오 디스크 안의 세이브 영역을 포맷합니다.\\n모든 세이브 데이터가 지워지므로 주의해 주십시오.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa03f": {
+  "t": "세이브 데이터를 지울 시나리오 디스크를 드라이브 2에 넣고\\n【",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa08a": {
+  "t": "】키를 눌러 주십시오.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa0a4": {
+  "t": "세이브 데이터를 지웁니까?",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa0c4": {
+  "t": "이 디스크에 있던 모든\\n세이브 데이터는 지워졌습니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa107": {
+  "t": "쓰기에 실패했습니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa124": {
+  "t": "데이터 지우기를 중지했습니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa225": {
+  "t": "캐시 디스크와 BGM 에\\n쓸 하드의 제한을 설정합니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa267": {
+  "t": "설정할 시나리오 디스크를\\n드라이브 2에 넣고\\n【",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa2a1": {
+  "t": "】키를 눌러 주십시오.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa2bb": {
+  "t": "【8】【2】로 항목을 고르십시오.【",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa2e7": {
+  "t": "】【4】【6】으로 바꿉니다.【ESC】로 설정을 중지합니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa323": {
+  "t": "쓸 메모리 상한",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa338": {
+  "t": "  1 6 색 보 드",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa34b": {
+  "t": "GV-RAM 뒷뱅크",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa375": {
+  "t": "F M 음 원 보 드",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa38a": {
+  "t": "  저 장 후 설 정 끝",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa3cb": {
+  "t": "안 쓴다",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa3d6": {
+  "t": "읽기에 실패했습니다.\\n옵션 보드 설정을 중지합니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa416": {
+  "t": "쓰기에 실패했습니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa431": {
+  "t": "하드 설정을 써 넣었습니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa51a": {
+  "t": "설정할 시나리오 디스크를\\n드라이브 2에 넣고\\n【",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa554": {
+  "t": "】키를 눌러 주십시오.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa56e": {
+  "t": "【8】【2】로 항목을 고르십시오.【",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa59a": {
+  "t": "】【4】【6】으로 바꿉니다.【ESC】로 설정을 중지합니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa5d6": {
+  "t": "게임 진행　",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa5f0": {
+  "t": " 저장 후 설정 끝",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa604": {
+  "t": "지 옥",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa60d": {
+  "t": "힘 듦",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa61f": {
+  "t": "술술",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa62d": {
+  "t": "안 함",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa636": {
+  "t": "읽기에 실패했습니다.\\n게임 설정을 중지합니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa66c": {
+  "t": "쓰기에 실패했습니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xa687": {
+  "t": "게임 설정을 써 넣었습니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x8ae7": {
+  "t": "\\n디스크를 확인하고【",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x8b02": {
+  "t": "】키를 눌러 주십시오.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0x8ee3": {
+  "t": "아니오",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xab62": {
+  "t": "아득한 옛날, 아니, 어쩌면 먼 미래의 일인지도 모른다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xab9b": {
+  "t": "\\n어쨌든 말할 수 있는 건, 「이셀하사」라 불리는, 풍요로운 자연에",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xabdb": {
+  "t": "\\n축복받은 세계가 있고, 그 은혜를 받으며 살아가는",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xac15": {
+  "t": "\\n사람들이 살고 있다는 것뿐이었다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xac3f": {
+  "t": "이셀하사의 거의 한복판에 자리한 론윌 섬과, 그보다",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xac7a": {
+  "t": "\\n훨씬 작은 사스아이 섬으로 이루어진 파렌 왕국은, 국토가",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xacb8": {
+  "t": "\\n좁은 탓도 있어, 이렇다 할 특산물이 없는 가난한 나라였다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xacf4": {
+  "t": "\\n허나 거기 사는 사람들은 가난한 살림쯤 아랑곳하지 않고,",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xad2e": {
+  "t": "\\n마음씨 고운 아스엘 왕 아래, 평화로운 나날을 보내고 있었다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xad6d": {
+  "t": "그런데 어느 밤, 예고 없는 이변이 수도 루디아를 덮쳤다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xada4": {
+  "t": "\\n몬스터들이 떼 지어 성으로 쳐들어온 것이다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xadd6": {
+  "t": "\\n갑작스러운 야습인 데다, 어째선지 성문 빗장이 풀려 있어,",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xae10": {
+  "t": "\\n몬스터들은 쉽사리 성 안에 침입, 병사들과 싸움이 붙는다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xae4c": {
+  "t": "\\n여태 몬스터 따위 본 적도 없는 병사들은 놀라 허둥대고",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xae86": {
+  "t": "한동안 혼전이 이어진다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xae9f": {
+  "t": "\\n허나 날이 밝을 무렵에는 몬스터의 기세가 꺾이기 시작해, 마침내",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xaedf": {
+  "t": "쫓겨나고 만다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xaef4": {
+  "t": "\\n큰 위기를 벗어나 사람들은 환호하지만, 그것도 곧 가라앉고 만다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xaf38": {
+  "t": "\\n국왕 아스엘이 몬스터에게 살해되었다고 전해졌기 때문이다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xaf79": {
+  "t": "이때, 세자인 세리오스 왕자는 겨우 6살.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xafa6": {
+  "t": "\\n단 한 사람, 아스엘 왕의 임종을 지켰다는 측근 아크담은,",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xafe4": {
+  "t": "\\n왕에게서 섭정을 명받았다며, 세리오스 왕자가 16살 생일에",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb022": {
+  "t": "\\n왕위를 이을 때까지 파렌의 정무를 맡겠다고 선언한다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb05c": {
+  "t": "그리고 왕자는 왕위를 이을 때까지 사스아이 섬 엘아스타 마을에서",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb09b": {
+  "t": "\\n자라게 되었다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb0b7": {
+  "t": "　　　　　　그로부터 약 10년의 세월이 흘렀다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb496": {
+  "t": "인간들은 다른 생명을 죽이고 제 세상인 양 세계를 지배하며,",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb4d4": {
+  "t": "\\n하늘과 바다를 더럽히고, 세계를 부수어 간다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb50f": {
+  "t": "인간이야말로, 세계에 어둠을 불러와, 멸망시키는",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb5a8": {
+  "t": "나를 쓰러뜨리다니 ",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb613": {
+  "t": "이제 한 번 더, 너희에게 미래를 맡기마.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb6fe": {
+  "t": "「무슨 일이야, 왕자님.」",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb7b8": {
+  "t": "「인간이 참된 파괴자라고 ",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb9f8": {
+  "t": "「인생이란 긴 여행이 ",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xba97": {
+  "t": " 영웅의 전설",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb546": {
+  "t": "참된 파괴자다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb55c": {
+  "t": "인간들을 멸하고, 세계를 정화해, 멸망에서 지키는 것이 내 소임",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb5cd": {
+  "t": "아직 희망은 있다는 뜻인가 ",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb5f6": {
+  "t": "젊은이들이여, 들으라.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb657": {
+  "t": "같은 잘못을 되풀이하지 않도록,",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb689": {
+  "t": "역사가 되풀이되지 않도록,",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb6b3": {
+  "t": "그리고,",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb6c2": {
+  "t": "세계가 다시 나를 필요로 하지 않도록 ",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb717": {
+  "t": "\\n세리오스「우리가 한 일은 정말 옳았던 걸까?」",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb760": {
+  "t": "「아그니쟈는 세계를 지키려고 인간을 멸한다고",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb79f": {
+  "t": "말했어.」",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb7e6": {
+  "t": "「그렇다면 우리가 한 일은 ",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb813": {
+  "t": "류난「허나, 아그니쟈는 우리에게 이 세계의 미래를",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb855": {
+  "t": "맡긴다고도 했습니다.」",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb87c": {
+  "t": "「앞으로 우리, 아니 모든 인간의 행동이 세계를",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb8ba": {
+  "t": "구할 수 있을지에 달려 있는 것입니다.」",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb8eb": {
+  "t": "「아그니쟈는 세계의, 아니, 자연의 위기를 알리려",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb92a": {
+  "t": "우리 앞에 나타난 것인지도 모르겠네.」",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb95e": {
+  "t": "게일  「끙끙 앓아 봐야 아무것도 시작 안 돼.」",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb997": {
+  "t": "류난「게일의 말이 맞습니다.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xb9c4": {
+  "t": "우리 여행은 이제 막 시작된 것입니다.」",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xba17": {
+  "t": "세리오스「좋아, 다들에게로 돌아가자.",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xba4b": {
+  "t": "어머니와 디나 공주가 기다려.」",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xba79": {
+  "t": "「어허, 말은 잘하는군.」",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xbaa7": {
+  "t": "  제작 저작",
+  "by": "human",
+  "pad": "right"
+ },
+ "event:0xbab5": {
+  "t": "일본 팔콤",
+  "by": "human",
+  "pad": "right"
+ },
+ "program:0x497c": {
+  "table": {
+   "head": 13,
+   "stride": 12,
+   "align": "center"
+  },
+  "items": [
+   "엘아스타",
+   "루디아",
+   "크루즈마을",
+   "베르가광산",
+   "네리아항구",
+   "론도항구",
+   "랄파요새",
+   "마스쿤",
+   "리젤",
+   "해적섬",
+   "스엘마을",
+   "암다마을",
+   "요르도항구",
+   "낫슈마을",
+   "세리스",
+   "바즈눈",
+   "카울마을",
+   "에메마을",
+   "루드라항구",
+   "리셸",
+   "나슬마을",
+   "파에토마을",
+   "판가스",
+   "콜크스마을",
+   "핀요새",
+   "길모아마을",
+   "라스타반",
+   "노부부의집",
+   "오레아의집",
+   "숲의초가집",
+   "로엘의집",
+   "미랄다의집",
+   "바바라의집",
+   "루디아성문",
+   "곶의동굴",
+   "유혈의동굴",
+   "구엔의탑",
+   "시련의동굴",
+   "왕가의묘",
+   "국경의동굴",
+   "용의알",
+   "바람의탑",
+   "방풍의동굴",
+   "늑대입",
+   "수정의탑",
+   "폐광",
+   "니르기드",
+   "기라의길",
+   "바젤의탑",
+   "바니스성"
+  ],
+  "by": "human",
+  "why": "6칸(12B) 고정 표 — **표 층이라 접미를 붙인다**(docs/naming.md 「접미는 층마다 다르다」)"
+ }
+}

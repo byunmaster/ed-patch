@@ -30,6 +30,7 @@ import argparse
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -44,6 +45,8 @@ PAYLOAD_DIR = common.REVIEW_DIR / "translate"
 
 # 덤프에는 코드가 SJIS 로 잘못 읽힌 잡음이 섞여 있다(`dump_scn.py` 머리말 — 옵코드를 안
 # 따라가고 「텍스트로 보이는 최대 구간」을 뜬다). 사람에게 보일 땐 걸러야 한다.
+_NFKC = None
+_KANA = re.compile(r"[ぁ-んァ-ヶー]")
 _JA = re.compile(r"[ぁ-んァ-ン一-龥、。！？「」…ー]")
 _NOISE = re.compile(r"[｡-ﾟ]")  # 반각 가나 — 코드가 이렇게 읽히는 게 대부분이다
 
@@ -126,6 +129,166 @@ def cmd_seed(args) -> int:
     return 0
 
 
+GLOSSARY = common.ROOT / "shared" / "glossary" / "eiyuu.json"
+PUTTABLE = ("scn_jp/scenario", "scn_jp/combat")  # 재삽입 경로가 있는 자리
+
+
+def glossary() -> dict[str, str]:
+    out: dict[str, str] = {}
+
+    def walk(o, key=None):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                walk(v, k)
+        elif isinstance(o, str) and key and not key.startswith("_"):
+            out[key] = o
+
+    walk(json.loads(GLOSSARY.read_text(encoding="utf-8")))
+    return out
+
+
+def cmd_names(args) -> int:
+    """**런이 통째로 정본 낱말인 자리**를 공용 정본에서 채운다 — 몬스터·아이템·지명.
+
+    🔴 이름은 사람이 다시 옮길 것이 아니다. 정본이 있으면 그대로 쓴다.
+    ⚠ **재삽입 경로가 있는 자리만** 넣는다(시나리오·전투). event/program 문자열은 자리가
+      오프셋이라 `patch_sys.py` 의 `sys.json` 이 따로 덮는다 — 두 정본이 겹치면 헷갈린다.
+    ⚠ 정본이 판정 규칙보다 낡은 자리가 있다(`docs/policy.md` — 지명 접미는 띄운다).
+      그래서 넣은 뒤 **`check_glossary.py` 가 우리 안의 갈림을 잡는다.**
+    """
+    tbl = glossary()
+    data = load_script()
+    added = 0
+    for k, b in keyed(blocks()):
+        if b["src"] not in PUTTABLE or k in data:
+            continue
+        core = b["t"].strip(" \u3000")
+        if core in tbl:
+            data[k] = {"t": tbl[core], "by": "glossary"}
+            added += 1
+    print(f"정본에서 채운 이름 {added:,} · 정본 총 {len(data):,}")
+    if not args.dry:
+        save_script(data)
+    return 0
+
+
+# 전투의 정형. **좁은 것부터** 본다 — 「〜の群れが現れた。」이 「〜が現れた。」에 먼저 걸리면
+# 이름에 「の群れ」가 딸려 들어가 정본에서 못 찾는다.
+# 자리표: `{a}`·`{b}`·`{n}` 은 이름, `{j}` 는 **바로 앞 글자**의 받침에 맞춘 이/가,
+#         `{w}` 는 같은 자로 고른 과/와.
+ENC = [
+    (r"(?P<a>.+?)と(?P<b>.+?)の群れが\s*現れた ?!*。?$", "{a}{w} {b} 무리{j} 나타났다."),
+    (r"(?P<a>.+?)と(?P<b>.+?)が\s*現れた ?!*。?$", "{a}{w} {b}{j} 나타났다."),
+    (r"(?P<a>.+?)と(?P<b>.+?)が\\n?現れた ?!*。?$", "{a}{w} {b}{j} 나타났다."),
+    (r"(?P<a>.+?)を従えた、?\\n?(?P<b>.+?)が\s*現れた ?!*。?$", "{a}{r} 거느린 {b}{j} 나타났다."),
+    (r"(?P<n>.+?)の群れが\s*現れた ?!*。?$", "{n} 무리{j} 나타났다."),
+    (r"(?P<n>.+?)たちが\s*現れた ?!*。?$", "{n}들{j} 나타났다."),
+    (r"(?P<n>.+?)がペアで現れた ?!*。?$", "{n}{j} 둘 나타났다."),
+    (r"(?P<n>.+?)が(?P<c>[０-９0-9]+)匹 ?現れた ?!*。?$", "{n}{j} {c}마리 나타났다."),
+    (r"(?P<n>.+?)が\s*現れた ?!*。?$", "{n}{j} 나타났다."),
+    # ⚠ 문장 끝은 **원문을 따른다** — 「。」로 닫은 자리에 `!!` 를 붙이면 감정을 지어내는 것이다
+    (r"(?P<n>.+?)の群れが\s*襲ってきた ?!!$", "{n} 무리{j} 덮쳐 왔다!!"),
+    (r"(?P<n>.+?)の群れが\s*襲ってきた ?。?$", "{n} 무리{j} 덮쳐 왔다."),
+    (r"(?P<n>.+?)が\s*襲ってきた ?!!$", "{n}{j} 덮쳐 왔다!!"),
+    (r"(?P<n>.+?)が\s*襲ってきた ?。?$", "{n}{j} 덮쳐 왔다."),
+]
+ENC = [(re.compile(x), y) for x, y in ENC]
+LABEL = re.compile(r"(?P<n>.+?)(?P<s>[Ａ-Ｄ])$")
+
+
+def resolve(tbl: dict, jp: str) -> str | None:
+    """이름을 정본에서 찾는다 — **앞에서 깎아 들어가며**.
+
+    🔴 덤퍼가 런 앞에 잡음을 붙여 오는 자리가 많다(`ﾝﾃスライムの群れ`). 그렇다고 반각
+       가나를 통째로 버릴 수는 없다 — `ｷｬﾘｵﾝ ｸﾛｰﾗｰ` 처럼 **이름 자체가 반각**인 것이 있다.
+       그래서 **한 글자씩 깎으며 정본에 맞는 가장 긴 것**을 고른다.
+    """
+    # ⚠ 이름이 **반각으로 적힌 자리**도, **정본 키가 반각인 자리**도 있다
+    #   (`ﾌｧｲｱｰﾓｽ` · `ｻﾝﾀﾞｰｽﾈｰｶｰ`). 그래서 양쪽을 **NFKC 로 접어** 맞춘다.
+    global _NFKC
+    if _NFKC is None:
+        _NFKC = {unicodedata.normalize("NFKC", k): v for k, v in tbl.items()}
+    folded = unicodedata.normalize("NFKC", jp)
+    for i in range(len(folded)):
+        tail = folded[i:]
+        if tail not in _NFKC:
+            continue
+        # 🔴 깎아 낸 앞부분이 **내용이면 안 된다** — 삼키면 문안이 통째로 사라진다
+        #    (「フラワーリザードとオディノンが\s*襲ってきた」의 앞 몬스터처럼. 실측).
+        #    가르는 자는 **가나**다 — 진짜 일본어 구절엔 가나가 있고(`幸運の女神に見放された`),
+        #    바이너리 잡음은 한자가 한둘 섞이는 꼴이다(`阡ｱｾFﾞ鐵ｧﾃ`). ⚠ 판정은 **원문**으로
+        #    한다 — NFKC 를 먹인 잡음은 반각 가나가 진짜 가나로 바뀌어 오판한다.
+        raw_prefix = jp[: len(jp) - (len(folded) - i)] if len(folded) >= i else jp[:i]
+        if _KANA.search(raw_prefix) or len(_JA.findall(raw_prefix)) > 3:
+            return None
+        return _NFKC[tail]
+    return None
+
+
+def cmd_encounters(args) -> int:
+    """전투의 **정형**을 규칙으로 짓는다 — 「〜が現れた。」과 개체 라벨(`ＡＢＣＤ`).
+
+    🔴 이름은 **공용 정본**에서 오고 조사는 **`shared/text/josa`** 가 붙인다. 손으로 옮기면
+       같은 문장을 수십 번 쓰면서 받침을 틀린다 — 실제로 이 축이 검사기에 걸렸다.
+    ⚠ 규칙이 **정확히 맞는 것만** 넣는다. 이름이 정본에 없으면 건너뛴다(세어서 보여 준다).
+    ⚠ 개체 라벨의 전각 `Ａ` 는 **반각 `A`** 로 간다(방침: 숫자·영문은 반각).
+    """
+    from text.josa import josa
+
+    tbl = glossary()
+    data = load_script()
+    added = miss = 0
+    for k, b in keyed(blocks()):
+        if b["src"] not in PUTTABLE or k in data:
+            continue
+        # ⚠ 마커가 든 블록은 손대지 않는다 — 정형이 아니고, 규칙으로 지으면
+        #   `<PAGE>`·`<WAIT>` 계약이 깨진다(`apply` 가 거부하는 그 축이다).
+        if "<PAGE>" in b["t"] or "<WAIT>" in b["t"] or "\\n" in b["t"]:
+            continue
+        t = b["t"]
+        m = LABEL.match(t)
+        if m and (kr := resolve(tbl, m.group("n"))):
+            data[k] = {"t": kr + chr(ord(m.group("s")) - 0xFEE0), "by": "auto"}
+            added += 1
+            continue
+        for rx, fmt in ENC:
+            mm = rx.match(t)
+            if not mm:
+                continue
+            g = mm.groupdict()
+            names = {}
+            for tag in ("n", "a", "b"):
+                if g.get(tag) is not None:
+                    kr = resolve(tbl, g[tag])
+                    if kr is None:
+                        break
+                    names[tag] = kr
+            else:
+                if g.get("c"):
+                    names["c"] = "".join(
+                        chr(ord(ch) - 0xFEE0) if "０" <= ch <= "９" else ch for ch in g["c"]
+                    )
+                # ⚠ 조사는 **그 자리 바로 앞 글자**의 받침을 본다 — 「슬라임 무리가」처럼
+                #   이름이 아니라 뒤에 붙은 낱말이 앞말인 자리가 있다.
+                out = fmt
+                for tag, pair in (("j", "이/가"), ("w", "과/와"), ("r", "을/를")):
+                    if "{" + tag + "}" not in out:
+                        continue
+                    before = out.format(
+                        **names, **{tag: "\x00"}, **{o: "" for o in ("j", "w", "r") if o != tag}
+                    ).split("\x00")[0]
+                    out = out.replace("{" + tag + "}", josa(before, pair))
+                data[k] = {"t": out.format(**names), "by": "auto"}
+                added += 1
+                break
+            miss += 1
+            break
+    print(f"정형에서 지은 문안 {added:,} · 이름이 정본에 없어 건너뜀 {miss:,}")
+    if not args.dry:
+        save_script(data)
+    return 0
+
+
 def cmd_stat(args) -> int:
     data = load_script()
     bs = keyed(blocks())
@@ -146,9 +309,10 @@ def cmd_stat(args) -> int:
     where: dict[str, set[str]] = {}
     for k, b in bs:
         where.setdefault(k, set()).add(b["src"])
-    orphan = [k for k in data if k in where and "scn_jp/scenario" not in where[k]]
+    PUT = {"scn_jp/scenario", "scn_jp/combat"}  # 전투도 재삽입 경로가 열렸다(2026-09-06)
+    orphan = [k for k in data if k in where and not (where[k] & PUT)]
     lost = [k for k in data if k not in where]
-    print(f"  ⚠ 재삽입 경로 없음 {len(orphan):,} 줄 (전투·시스템 영역에만 있다)")
+    print(f"  ⚠ 재삽입 경로 없음 {len(orphan):,} 줄 (event/program 문자열에만 있다)")
     if lost:
         print(f"  🔴 원문에 안 붙는 정본 {len(lost):,} 줄 — 덤퍼나 열쇠 규칙이 바뀌었나")
     return 0
@@ -284,6 +448,12 @@ def main() -> int:
         help="사전이 그 뒤 고친 `by=dict` 줄을 다시 받는다 (`by=human` 은 안 건드린다)",
     )
     s.set_defaults(fn=cmd_seed)
+    s = sub.add_parser("encounters")
+    s.add_argument("--dry", action="store_true")
+    s.set_defaults(fn=cmd_encounters)
+    s = sub.add_parser("names")
+    s.add_argument("--dry", action="store_true")
+    s.set_defaults(fn=cmd_names)
     s = sub.add_parser("stat")
     s.set_defaults(fn=cmd_stat)
     s = sub.add_parser("fit")

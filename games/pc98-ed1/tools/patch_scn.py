@@ -42,9 +42,30 @@ from text import sjis
 from text.line_key import key as line_key
 
 SCRIPT = common.ROOT / "games" / "pc98-ed1" / "script" / "scn.json"
-PIERCE_CACHE = common.OUT_DIR / "pierce.json"
+PIERCE_CACHE = common.OUT_DIR / "pierce2.json"  # v2 = 전투 영역 포함
 JUMP = 0x0F
 KU0 = H.KU_LO - 0x20  # ah 바이트에서 구 번호로 (JIS 고위 = 0x20 + 구)
+
+# 🔴 **칸 표** — 한 청크 안에 「이름 14B + 종결자 07」이 줄줄이 이어지는 자리가 있다
+#    (장소 선택 목록 46칸, 2026-09-06 실측). 일반 런처럼 다루면 **정렬이 깨진다** —
+#    밖으로 빼면 칸이 비고, 틈을 쓰면 이름이 왼쪽에 붙는다. 원본은 **가운데 정렬**이다.
+#    ⇒ 여기만 **제자리에 가운데 정렬**로 넣는다(점프를 안 쓴다).
+#    ⚠ 구조를 사전조건으로 검사한다 — 칸마다 종결자가 그 자리에 없으면 우리가 표를
+#      잘못 읽은 것이므로 죽는다(patcher-checklist 2).
+CELL_TABLES = [
+    {
+        "chunk": "10.00.20",
+        "off": 0x14DA,
+        "stride": 15,
+        "width": 14,
+        "cells": 46,
+        "end": 0x07,
+        # ⚠ 덤퍼가 못 보는 칸은 여기서 직접 채운다. 둘뿐이고 이유가 서로 다르다 —
+        #   0번은 런이 칸보다 앞에서 시작하고, 34번(`竜の卵`)은 **순수 한자라 가나 필터가
+        #   버린다**(`dump_scn` 머리말의 그 구멍이다). 문안은 우리 것이라 여기 둬도 된다.
+        "kr": {0: "엘아스타마을", 34: "용의알"},  # ⚠ 표 층이라 접미를 붙인다
+    },
+]
 
 _SYL = None
 
@@ -93,8 +114,19 @@ def encode(text: str) -> bytes:
     return bytes(out)
 
 
+def areas() -> dict:
+    """시나리오 + **전투** 청크를 한 자로 본다.
+
+    🔴 전투 영역(`scn.COMBAT_RANGE`)도 **같은 이벤트 스크립트 문법**이다(2026-09-06 실측:
+       청크 110 · 텍스트 런 3,474 · 안으로 점프가 오는 것 46 · 꼬리 빈자리 48,068B).
+       몬스터 이름과 전투 대사가 거기 살아서, 여길 안 열면 **정본 86종이 화면에 못 간다.**
+    """
+    scenario, combat = scn.load()
+    return {**scenario, **combat}
+
+
 def pierced_map(scenario: dict) -> dict:
-    """{시나리오키: [들어오는 점프 목적지]} — 느려서 `work/derived/` 에 캐시한다."""
+    """{청크키: [들어오는 점프 목적지]} — 느려서 `work/derived/` 에 캐시한다."""
     if PIERCE_CACHE.exists():
         return json.loads(PIERCE_CACHE.read_text())
     out = {}
@@ -112,11 +144,13 @@ def pierced_map(scenario: dict) -> dict:
 def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
     """(평면 오프셋, 원본이어야 할 바이트, 새 바이트) 목록 + 통계."""
     script = json.loads(SCRIPT.read_text(encoding="utf-8")) if SCRIPT.exists() else {}
-    scenario, _ = scn.load()
+    scenario = areas()
     pierce = pierced_map(scenario)
     marks: list[tuple[int, bytes, bytes]] = []
     st = {
         "제자리": 0,
+        "칸 표": 0,
+        "건너뜀:칸 넘침": 0,
         "틈 건너뜀": 0,
         "공백 메움": 0,
         "밖으로": 0,
@@ -136,7 +170,64 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
         body = len(data) - info["tail_free"]
         pool = body  # 꼬리 빈자리의 다음 쓸 자리 (시나리오 데이터 안 오프셋)
 
-        for b in dump_scn.dump_area({key: info})[0]:
+        # ── 칸 표를 먼저 처리하고, 그 구간의 블록은 일반 경로에서 뺀다
+        cells = {}
+        for t in CELL_TABLES:
+            if t["chunk"] != skey:
+                continue
+            for i in range(t["cells"]):
+                c0 = t["off"] + i * t["stride"]
+                if data[c0 + t["width"]] != t["end"]:
+                    raise SystemExit(
+                        f"🔴 {skey}: 칸 표가 어긋난다 — {c0 + t['width']:#06x} 가 종결자가 아니다"
+                    )
+                cells[c0] = t["width"]
+        cells_all = dict(cells)  # 🔴 건너뛰기 판정은 **원래 칸 집합**으로 한다
+
+        for t in CELL_TABLES:
+            if t["chunk"] != skey:
+                continue
+            for i, txt in t.get("kr", {}).items():
+                c0 = t["off"] + i * t["stride"]
+                w = t["width"]
+                cell = encode(txt)
+                if len(cell) > w:
+                    st["건너뜀:칸 넘침"] += 1
+                    continue
+                left = (w - len(cell)) // 2
+                marks.append(
+                    (
+                        base_off + c0,
+                        data[c0 : c0 + w],
+                        b" " * left + cell + b" " * (w - len(cell) - left),
+                    )
+                )
+                st["칸 표"] += 1
+                st["쓴 바이트"] += w
+                cells.pop(c0, None)  # 덤프 경로가 같은 칸을 또 쓰지 않게
+
+        blocks = dump_scn.dump_area({key: info})[0]
+        for b in blocks:
+            c0 = next((c for c, w in cells.items() if c <= b["o"] < c + w), None)
+            if c0 is None:
+                continue
+            k = line_key(reuse.normalise(b))
+            if k not in script:
+                continue
+            w = cells[c0]
+            cell = encode(script[k]["t"])
+            if len(cell) > w:
+                st["건너뜀:칸 넘침"] += 1
+                continue
+            left = (w - len(cell)) // 2
+            blob = b" " * left + cell + b" " * (w - len(cell) - left)
+            marks.append((base_off + c0, data[c0 : c0 + w], blob))
+            st["칸 표"] += 1
+            st["쓴 바이트"] += w
+
+        for b in blocks:
+            if any(c <= b["o"] < c + w for c, w in cells_all.items()):
+                continue  # 🔴 칸 표는 위에서 처리했다 — 일반 경로가 덮으면 정렬이 깨진다
             k = line_key(reuse.normalise(b))
             if k not in script:
                 continue
@@ -257,8 +348,8 @@ def verify_built(tag: str) -> int:
         if new[0] == JUMP and len(new) == 3:
             continue  # 밖으로 뺀 자리의 머리 — 문안은 빈자리에 있다
         n += 1
-        # ⚠ 「공백 메움」으로 붙인 꼬리 공백은 떼고 본다 — 우리가 넣은 패딩이지 문안이 아니다.
-        want = decode_back(new).rstrip(" ")
+        # ⚠ 우리가 넣은 패딩은 떼고 본다 — 「공백 메움」은 꼬리에, **칸 표는 양쪽에** 붙는다.
+        want = decode_back(new).strip(" ")
         # 정본을 찾으려면 열쇠가 필요한데, 여기선 **되읽은 것이 어떤 정본과도 같은가**로 본다
         if want and want not in _script_values(script):
             jbad += 1
@@ -273,11 +364,16 @@ def _script_values(script: dict) -> set:
     global _VALS
     if _VALS is None:
         _VALS = set()
+        # 표에 직접 채운 칸도 우리 문안이다 — 안 넣으면 「정본에 없다」로 잘못 센다
+        for t in CELL_TABLES:
+            for txt in t.get("kr", {}).values():
+                _VALS.add(txt)
+                _VALS.add(txt.strip(" "))
         for v in script.values():
             t = v["t"]
             for x in (t, t.replace("\n", "\\n")):
                 _VALS.add(x)
-                _VALS.add(x.rstrip(" "))
+                _VALS.add(x.strip(" "))
     return _VALS
 
 
