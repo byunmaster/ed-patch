@@ -677,7 +677,43 @@ def _measured_free(path):
     return _MFREE.get(path, [])
 
 
-def migrate(over, base, tail_at, tail_end, spare=(), spans=None):
+def _untouched(holes, built, d):
+    """자리 풀에서 **남이 이미 쓴 구간을 잘라 낸다** → 원본 그대로인 조각만 남긴다.
+
+    🔴 **자리가 비었나를 「원본 배치」로 물으면 안 된다**(2026-09-07). 이 파일의 자리는
+       `patch_ui`(고유명사 표 · 시스템 메시지)와 나눠 쓴다. 그쪽은 표를 **통째로 다시 깔아**
+       원본과 다른 배치로 놓는데, 여기서는 원본 덤프(`d`)의 칸 경계로 「비웠다」를 세므로
+       **살아 있는 한글 이름 위에 대사를 얹는다.**
+       실측 2026-09-07: `/ED.BIN` 아이템 22칸 · 몬스터 10칸의 포인터가 쓰레기를 가리켰다 —
+       화면에 「c의 공격」·「陸를 얻었다」·「A아스의 말이 떠올랐다」가 떴다. 주문 표만
+       멀쩡했는데, 거기만 대사가 안 얹혔다.
+    ⚠ **주인 목록을 손으로 들지 않는다** — `rebuild` 의 「남이 이미 쓴 자리다」와 같은 물음을
+      같은 방식(구조)으로 한다. 새 패처가 생겨도 저절로 따라온다.
+    ⚠ 꼬리(확장 영역)는 원본에 없으므로 비교 대상이 아니다 — 그건 우리 자리다.
+    """
+    if built is None:
+        return list(holes)
+    out = []
+    for a, n in holes:
+        i = a
+        while i < a + n:
+            if i >= len(d) or i >= len(built):  # 꼬리 — 우리 자리다
+                out.append([i, a + n - i])
+                break
+            j = i
+            while j < a + n and j < len(d) and j < len(built) and built[j] == d[j]:
+                j += 1
+            if j > i:
+                out.append([i, j - i])
+            if j >= a + n:
+                break
+            i = j + 1
+            while i < a + n and i < len(d) and i < len(built) and built[i] != d[i]:
+                i += 1
+    return [h for h in out if h[1] > 0]
+
+
+def migrate(over, base, tail_at, tail_end, spare=(), spans=None, built=None, d=None):
     """칸을 넘는 블록을 옮긴다 → `([(오프셋, 바이트)], [(ptr, 새 주소)], 남은 것)`.
 
     🔴 **원본 칸을 앞으로 당기지 않는다.** PS1 이 쓴 2단계다 — 참조만 새 주소로 돌린다.
@@ -706,7 +742,9 @@ def migrate(over, base, tail_at, tail_end, spare=(), spans=None):
     #      풀이 줄면 남는 것은 늘기만 하므로(단조) 반드시 멈춘다.
     blocked = set()
     for _ in range(len(over) + 1):
-        puts, ptrs, left = _place(over, base, tail_at, tail_end, spare, blocked, spans or {})
+        puts, ptrs, left = _place(
+            over, base, tail_at, tail_end, spare, blocked, spans or {}, built, d
+        )
         now = {o for o, _jp in left}
         if now == blocked:
             break
@@ -714,7 +752,7 @@ def migrate(over, base, tail_at, tail_end, spare=(), spans=None):
     return puts, ptrs, left
 
 
-def _place(over, base, tail_at, tail_end, spare, blocked, spans):
+def _place(over, base, tail_at, tail_end, spare, blocked, spans, built=None, d=None):
     """`migrate` 의 한 회차 — `blocked` 의 칸은 풀에 안 넣는다."""
     # 풀 = [꼬리] + [비워질 칸] + [짧아져 남은 칸 뒷부분]. 칸은 자기 글자 자리만 낸다.
     free = [[tail_at, tail_end - tail_at]] if tail_end > tail_at else []
@@ -742,6 +780,10 @@ def _place(over, base, tail_at, tail_end, spare, blocked, spans):
         else:
             merged.append([a, n])
     free = merged
+    # 🔴 **남이 이미 쓴 구간은 자리가 아니다** — 합친 **뒤에** 자른다(합치기 전에 자르면
+    #    조각 경계가 늘어 큰 문안이 갈 데가 없어진다).
+    free = _untouched(free, built, d)
+    free.sort()
     puts, ptrs, left = [], [], []
     for off, _why, jp, e, enc in sorted(over, key=lambda r: (-len(r[4]), r[0])):
         blob = enc + b"\x00"
@@ -956,7 +998,9 @@ def main():
             plans.append((start, blob, [(p, a) for p, a in moves if _moved(entries, p, a)], orig))
         pinned += sum(1 for e in entries if not e.get("ptr_at"))
         puts, mptrs, left = (
-            migrate(over, _base, size, bsize, list(spare) + _measured_free(path), spans)
+            migrate(
+                over, _base, size, bsize, list(spare) + _measured_free(path), spans, built, d
+            )
             if canon
             else ([], [], over)
         )
