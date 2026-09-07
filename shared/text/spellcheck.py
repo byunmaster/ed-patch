@@ -80,6 +80,14 @@ def canon(s):
     return re.sub(r"\s+", " ", PUNCT_WS.sub("", s)).strip()
 
 
+# 🔴 **이 백엔드는 400 을 「너무 빠르다」로 준다**(ss-ed3 실측 2026-09-03).
+#   같은 문장을 5초 간격으로 다섯 번 보내면 1·2회는 200, **3회부터 400** 이고 길이·내용과
+#   무관하다. 그래서 400 은 「우리 요청이 잘못됐다」가 아니라 **throttle 신호**이고,
+#   되풀이해도 되는 쪽이다 — 다만 **간격을 넓혀 가며** 해야 한다.
+#   ⚠ 이걸 모르고 「4xx 는 재시도 안 한다」로 두면 첫 막힘에서 회차가 통째로 죽는다.
+_SOFT = frozenset({400, 408, 429, 500, 502, 503, 504})
+
+
 def call(text, backend=ENGRAM, tone="proof", retry=3, timeout=90):
     body = json.dumps(
         {
@@ -94,6 +102,14 @@ def call(text, backend=ENGRAM, tone="proof", retry=3, timeout=90):
         try:
             with urllib.request.urlopen(req, timeout=timeout) as f:
                 return json.load(f).get("result", "")
+        except urllib.error.HTTPError as e:
+            # ⚠ **4xx 는 되풀이하지 않는다** — 같은 답이 오고 한도만 더 탄다.
+            if e.code not in _SOFT:
+                raise RuntimeError(f"HTTP {e.code} — 요청이 거절됐다(열쇠나 요청 꼴)") from None
+            if i == retry - 1:
+                raise
+            print(f"    재시도 {i + 1}/{retry - 1} (HTTP {e.code})")
+            time.sleep(3 * (i + 1))
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
             if i == retry - 1:
                 raise
@@ -116,16 +132,79 @@ def chunks(sentences, size):
     return out
 
 
-def fetch(parts, cache, jobs=4, on_save=None, backend=ENGRAM):
-    """캐시에 없는 청크만 병렬로 채운다. 청크끼리 독립이라 순서 의존이 없다."""
+def fetch_slow(parts, cache, on_save=None, backend=ENGRAM, delay=40.0, retry=8):
+    """청크를 **하나씩, 쉬어 가며** 받는다 — 막히면 늘리고 통하면 줄인다.
+
+    🔴 **이 검사기는 시험용이라 몰아치면 400 을 준다.** 병렬은 물론이고 5초 간격도 3회차부터
+    막힌다(ss-ed3 실측 2026-09-03) — 그러니 **빠른 게 목적이 아니라 끝까지 도는 게** 목적이다.
+    간격을 스스로 맞춘다: 막히면 ×1.6(최대 180초), 통하면 ×0.9(최소 15초).
+
+    ⚠ **오래 걸린다**(청크당 수십 초). 뒤에 걸어 두고 다른 일을 한다.
+    ⚠ 청크 하나를 끝내 못 받아도 **포기하고 다음으로 간다** — 받은 것은 캐시에 남는다.
+
+    💡 이건 ss-ed3 가 게임 쪽에 두고 있던 것이다(「공용은 main 에서만 고치므로」). 둘째
+    소비자가 생겨 공용으로 올렸다 — 이 백엔드를 쓰는 트랙은 다 같은 벽을 만난다.
+
+    돌려주는 값은 `(받은 수, 포기한 수)` 다.
+    """
     todo = [p for p in parts if "\n".join(p) not in cache]
     if not todo:
-        return 0
-    done, lock = [0], threading.Lock()
+        return 0, 0
+    wait, done, gave_up = delay, 0, 0
+    for i, part in enumerate(todo, 1):
+        key = "\n".join(part)
+        for k in range(retry):
+            try:
+                cache[key] = call(key, backend, retry=1, timeout=60)
+                done += 1
+                wait = max(15.0, wait * 0.9)
+                break
+            except Exception as e:  # noqa: BLE001 — 한 청크가 회차를 죽이면 안 된다
+                wait = min(180.0, wait * 1.6)
+                print(f"    {i}/{len(todo)} 막힘 {k + 1}/{retry} ({type(e).__name__}) → {wait:.0f}s", flush=True)
+                time.sleep(wait)
+        else:
+            gave_up += 1
+            print(f"    {i}/{len(todo)} 포기", flush=True)
+            continue
+        if on_save:
+            on_save(cache)
+        print(f"    {i}/{len(todo)} 받음 (다음 {wait:.0f}s)", flush=True)
+        time.sleep(wait)
+    if gave_up:
+        print(f"  ⚠ {gave_up}/{len(todo)} 청크를 못 받았다 — 받은 것은 캐시에 남았다")
+    return done, gave_up
+
+
+def fetch(parts, cache, jobs=2, on_save=None, backend=ENGRAM, gap=0.3):
+    """캐시에 없는 청크만 병렬로 채운다. 청크끼리 독립이라 순서 의존이 없다.
+
+    🔴 **청크 하나가 죽어도 회차는 산다**(2026-09-08). 종전엔 `ex.map` 이 첫 예외에서
+    터져 **그때까지 받은 결과까지 통째로 날아갔다** — 130청크를 쏘고 하나가 400 이면
+    129개를 다시 받아야 했다. 지금은 청크마다 견디고 **끝에 「몇 개 실패」로 알린다.**
+
+    ⚠ **기본 `jobs` 를 4 → 2 로 낮추고 `gap` 을 뒀다.** 체험 엔드포인트에 130요청을
+    간격 없이 쏘다 막혔다(유저 회차 실측). 빠른 게 목적이 아니라 **끝까지 도는 게**
+    목적이다 — 급하면 부르는 쪽이 올린다.
+
+    돌려주는 값은 `(받은 수, 실패한 수)` 다.
+    """
+    todo = [p for p in parts if "\n".join(p) not in cache]
+    if not todo:
+        return 0, 0
+    done, fail, lock = [0], [], threading.Lock()
 
     def work(part):
         src = "\n".join(part)
-        res = call(src, backend)
+        try:
+            res = call(src, backend)
+        except Exception as e:  # noqa: BLE001 — 한 청크의 실패가 회차를 죽이면 안 된다
+            with lock:
+                fail.append((src[:40], f"{type(e).__name__}: {e}"))
+            return
+        finally:
+            if gap:
+                time.sleep(gap)
         with lock:
             cache[src] = res
             done[0] += 1
@@ -138,7 +217,13 @@ def fetch(parts, cache, jobs=4, on_save=None, backend=ENGRAM):
         list(ex.map(work, todo))
     if on_save:
         on_save(cache)
-    return len(todo)
+    if fail:
+        print(f"  ⚠ {len(fail)}/{len(todo)} 청크가 실패했다 — 받은 것은 캐시에 남았다")
+        for src, why in fail[:3]:
+            print(f"      {src!r} … {why}")
+        if len(fail) > 3:
+            print(f"      … 그 밖 {len(fail) - 3}")
+    return done[0], len(fail)
 
 
 def min_pairs(a, b):
