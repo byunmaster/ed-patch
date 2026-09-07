@@ -221,8 +221,15 @@ def build_tables(orig: bytes, names: dict, cs: hangul.Charset) -> list[tuple[str
             if len(enc) > w:
                 over.append(f"{name}[{i}] {ours!r} {len(enc)}B > {w}B")
                 continue
-            pad = b" " * (w - len(enc))
-            body = pad + enc if align == "right" else enc + pad
+            n = w - len(enc)
+            if align == "right":
+                body = b" " * n + enc
+            elif align == "center":
+                # 🔴 `center` 를 안 다뤄 장 제목·지명이 **왼쪽에 붙어** 있었다(2026-09-06).
+                # 원본이 앞뒤로 공백을 나눠 넣은 자리다 — 남는 칸은 뒤에 준다(반각 6px 단위).
+                body = b" " * (n // 2) + enc + b" " * (n - n // 2)
+            else:
+                body = enc + b" " * n
             out.append((f"table:{name}", pos, body))
     if over:
         raise SystemExit(

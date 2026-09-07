@@ -4,6 +4,21 @@
 [`CLAUDE.md`](../../CLAUDE.md), 진행 현황은 [`docs/status.md`](docs/status.md),
 경위·삽질은 [`docs/devlog.md`](docs/devlog.md).
 
+## 문안 방침 — PS1 은 **저본**이지 정본이 아니다 (유저 지시 2026-09-06)
+
+ED1 문안은 **PS1 판**(1회차 인게임 QA 를 마치고 main 에 머지된 `ada1a54e`)을 참고한다 — 정본 자리는
+`games/ps1-ed1+2/script/ED1SCN1~6.json` · `event.json` · `battle.json` · `ending_ed1.json` ·
+`tools/patch_items.py`(낱말) · `tools/patch_sys_ui.py`(UI) · `tools/patch_gfx_cards.py`(장 카드).
+
+🔴 **PS1 문안이 MD 원문과 다르면 원문을 따른다.** PS1 은 리메이크라 문장이 늘거나 줄고 의역이 있으며,
+기종마다 없는 대사·있는 대사가 갈린다. 실제로 갈린 자리들:
+
+- MD 에만 있는 자막(게일의 첫 대사 · 「하늘과 바다에 독을 뿌리고…」)은 **우리 문안을 유지**했다.
+- 원문의 말투를 따랐다 — `手に入れました`·`見つけました` 는 존댓말, `気が付いた` 는 「깨어났다」
+  (PS1 은 「정신을 차렸다」인데 MD 는 같은 장면에 `我に返った` 가 따로 있다).
+- **칸이 표기를 이긴다** — 아이템 14B · 시스템 메시지 묶음이 제자리라 PS1 표기를 못 넣은 자리는
+  `docs/status.md` 4f·7 에 적어 둔다.
+
 ## 이 게임이 다른 점
 
 - **파일 시스템도 섹터도 없다 — 롬 2MB 하나다.** 좌표는 전부 **롬 오프셋 = 68000 주소**
@@ -61,6 +76,7 @@ python3 games/md-ed1/tools/captions.py --check/--seed  # 오프닝 자막 8 · �
 python3 games/md-ed1/tools/ps1_reuse.py --stats  # PS1 번역 재사용 가능률 (⚠ PS1 QA 뒤에 채운다)
 python3 games/md-ed1/tools/hangul.py --preview out.png "가나다"   # 글리프 미리보기
 python3 games/md-ed1/tools/hangul.py --freeze     # 새 글자에 코드 부여 → textmap/hangul_codes.json (⚠ 코드는 세이브 호환 — 뒤에만 붙인다)
+python3 games/md-ed1/tools/ending_preview.py       # 엔딩을 오프닝 자리에서 트는 시험용 롬(work/emu/ed1_ending.bin)
 python3 games/md-ed1/tools/poc_visibility.py       # PoC 롬(work/emu/poc2.bin) — 글꼴 교체 + 블록 104 길이 변경·재압축·재배치
 sh games/md-ed1/check.sh                         # ⭐ 이 게임의 커밋 전 게이트
 ```
