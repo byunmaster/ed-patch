@@ -32,6 +32,12 @@ import encode
 GROUPS = [
     {"key": "battle", "table": 0x02A30A, "count": 8, "cells": 13, "setup": (0x02A2C8, 0x02A2CF)},
     {"key": "title", "table": 0x02A646, "count": 3, "cells": 12, "setup": (0x02A607, 0x02A60E)},
+    # 🔵 2026-09-08 — **타이틀 흐름에서 한 칸 들어간 자리 둘.** 유저가 「여기까지 한글 되어야
+    #    타이틀 닫았다」며 짚은 화면이 이 둘이다(`docs/status.md` E2).
+    #    ⚠ 앞 둘과 달리 **표가 고정 폭이 아니라 포인터 표**다 — 그래서 문자열 길이가 자유롭고
+    #    `cells` 는 **화면 칸 수**일 뿐이다(`name13` 이 모자란 칸을 공백으로 채운다).
+    {"key": "speed", "table": 0x02A3CE, "count": 2, "cells": 4, "setup": (0x02A38F, 0x02A396)},
+    {"key": "yesno", "table": 0x02A426, "count": 2, "cells": 3, "setup": (0x02A3E7, 0x02A3EE)},
 ]
 
 
@@ -55,9 +61,10 @@ def rows(key: str) -> list[list[str]]:
                 cells[i] = ch
             out.append(cells)
     else:
-        for t in d["title"]:
+        # `title`·`speed`·`yesno` — {jp, kr} 목록을 칸 수에 맞춰 오른쪽을 공백으로 채운다
+        for t in d[key]:
             if len(t["kr"]) > n:
-                raise SystemExit(f"타이틀 줄 {t['kr']!r} 이 {n}칸을 넘는다")
+                raise SystemExit(f"{key} 줄 {t['kr']!r} 이 {n}칸을 넘는다")
             out.append(list(t["kr"]) + [" "] * (n - len(t["kr"])))
     if len(out) != g["count"]:
         raise SystemExit(f"{key} 줄이 {len(out)} — {g['count']} 이어야 한다")
