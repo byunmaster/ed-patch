@@ -16,7 +16,7 @@
   이벤트 자료 + 문안 스트림이 한 덩이. 코덱은 [`tools/lz.py`](tools/lz.py)(디컴프레서 `$0C9E` 이식,
   왕복 검증), 색인은 [`tools/archives.py`](tools/archives.py), 스트림 파서·재조립기는
   [`tools/scene.py`](tools/scene.py). 재조립은 **원본 바이트 제자리 + 스트림을 끝에 다시 쓰고 변위만
-  돌리기**다(길이 변경 PoC 통과, `docs/status.md` 3·7절). 스트림의 끝은 00·06·07, 페이지는 05.
+  돌리기**다(길이 변경 PoC 통과, `docs/status.md` 3·7절). 스트림의 끝은 00·06·07·**0A**·0D(0A 핸들러는 대기 뒤 07 핸들러로 끝난다 — 「계속」이 아니다), 페이지는 05.
 - **글꼴은 롬 안에 있다** — 14×14 1bpp, 글리프마다 **채움 + 테두리 두 면**(56B). 리소스 6개,
   SJIS 표 1,459자(`tools/font.py`). **방침 (b)(유저 확정 2026-09-05)**: 표 0 의 한자·가나 자리에
   **번역문이 쓰는 한글만**(≤1,370자, 코드 0x8A40~, `tools/hangul.py`) 넣는다. 4MB 확장은 SRAM 겹침으로
@@ -43,12 +43,20 @@ python3 games/md-ed1/tools/archives.py --scan    # 색인 없이 LZ 체인 전�
 python3 games/md-ed1/tools/font.py --check       # 글꼴 리소스 6 · 형상
 python3 games/md-ed1/tools/font.py --png out.png [--outline]
 python3 games/md-ed1/tools/lz.py encode|decode <in> <out>
-python3 games/md-ed1/tools/scene.py --check      # 스트림 2,742 · 화자 태그 도달 · 항등 재조립 225
+python3 games/md-ed1/tools/scene.py --check      # 스트림 2,750(끝 = 00·06·07·0A·0D) · 화자 태그 도달 · 항등 재조립 225
 python3 games/md-ed1/tools/scene.py --dump 104   # 블록 104 의 스트림을 읽기 좋게
 python3 games/md-ed1/tools/build.py              # ⭐ 정본(script/*.json) → work/build/<꼬리표>/ed1-kr.bin
 python3 games/md-ed1/tools/build.py --check      # 빌드 없이 정본 게이트만
 python3 games/md-ed1/tools/textmap.py --seed 104 # 블록 104 정본 초안(해시만) + work/derived 에 원문 골격
+python3 games/md-ed1/tools/tables.py --check     # 고정 폭 표·00 묶음 분모 (아이템·주문·지명·메뉴·설정·HUD)
+python3 games/md-ed1/tools/tables.py --seed      # textmap/names.json 초안 — glossary 로 채움
+python3 games/md-ed1/tools/gfxtext.py               # 타이틀 메뉴 그래픽 셀(변형별 색)
+python3 games/md-ed1/tools/sysmsg.py --check/--seed  # 시스템 메시지 99(lea/pea 참조 스트림)
+python3 games/md-ed1/tools/battle.py --check/--seed    # 전투 아카이브 110블록 — 몬스터 이름 269 · 메시지 281 (textmap/monsters.json · battle.json)
+python3 games/md-ed1/tools/captions.py --check/--seed  # 오프닝 자막 8 · 엔딩 나레이션 11 · 엔딩 대사 20 (워드 스크립트 표)
+python3 games/md-ed1/tools/ps1_reuse.py --stats  # PS1 번역 재사용 가능률 (⚠ PS1 QA 뒤에 채운다)
 python3 games/md-ed1/tools/hangul.py --preview out.png "가나다"   # 글리프 미리보기
+python3 games/md-ed1/tools/hangul.py --freeze     # 새 글자에 코드 부여 → textmap/hangul_codes.json (⚠ 코드는 세이브 호환 — 뒤에만 붙인다)
 python3 games/md-ed1/tools/poc_visibility.py       # PoC 롬(work/emu/poc2.bin) — 글꼴 교체 + 블록 104 길이 변경·재압축·재배치
 sh games/md-ed1/check.sh                         # ⭐ 이 게임의 커밋 전 게이트
 ```

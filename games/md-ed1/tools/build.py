@@ -11,6 +11,8 @@
   참조 제어코드 불일치 → **빌드 실패**. 실패하면 산출물을 `.failed` 로 이름 바꾼다.
 """
 
+import json
+import re
 import struct
 import sys
 from pathlib import Path
@@ -19,10 +21,15 @@ from typing import ClassVar
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(common_root := Path(__file__).resolve().parents[3] / "shared"))
 import archives
+import battle
+import captions
 import common
+import gfxtext
 import hangul
 import lz
 import scene
+import sysmsg
+import tables
 import textmap
 from text import krwrap
 
@@ -33,26 +40,42 @@ SCRIPT_LO, SCRIPT_HI = 0x135324, 0x1918D2  # 대본 블록 자리(색인 0x134FA
 TAIL_LO, TAIL_HI = common.FREE_TAIL
 
 
+BATTLE_LO, BATTLE_HI = 0x0CAB04, 0x0D85B4  # 전투 아카이브 LZ 구간(첫 블록 시작 ~ 끝 블록 끝)
+
+
 class Rom:
     """쓰기 통로 하나 — 허용 구간(라벨) 밖은 거부."""
 
     ALLOWED: ClassVar[dict[str, tuple[int, int]]] = {
         "script-table": (0x134FA0, 0x134FA0 + 225 * 4),
+        "battle-table": (battle.ARCHIVE, battle.ARCHIVE + battle.COUNT * 4),
+        "battle": (BATTLE_LO, BATTLE_HI),
         "script": (SCRIPT_LO, SCRIPT_HI),
         "tail": (TAIL_LO, TAIL_HI),
         "font0-header": (0x1A54D2, 0x1A54DE),
         "font0-table": (0x1A551A, 0x1A6080),
         "font0-glyphs": (0x1A62CE, 0x1BA1FA),
+        "font1-header": hangul.FONT1_HDR,
         "checksum": (0x18E, 0x190),
+        **{f"table:{t[0]}": (t[1], t[1] + (t[2] + 1) * t[4]) for t in tables.TABLES},
+        **{f"table:{g[0]}": (g[1], g[1] + 0x200) for g in tables.ZGROUPS},
+        **{f"table:{t[0]}": (t[1], t[1] + t[2] * t[3]) for t in tables.SLOTS},
+        "font2-glyphs": hangul.FONT2_GLYPHS,
+        "font4-header": hangul.FONT4_HDR,
+        "font4-table": hangul.FONT4_TABLE,
+        "font4-glyphs": hangul.FONT4_GLYPHS,
     }
 
     def __init__(self, data: bytes):
         self.orig = data
         self.buf = bytearray(data)
         self.log: list[tuple[str, int, int]] = []
+        self.allowed = dict(
+            self.ALLOWED, **sysmsg.allowed(data), **gfxtext.allowed(), **captions.allowed(data)
+        )
 
     def write(self, label: str, at: int, data: bytes) -> None:
-        lo, hi = self.ALLOWED[label]
+        lo, hi = self.allowed[label]
         if not (lo <= at and at + len(data) <= hi):
             raise SystemExit(
                 f"[{label}] 허용 구간 밖 쓰기 {at:#x}+{len(data)} (구간 {lo:#x}~{hi:#x})"
@@ -62,15 +85,24 @@ class Rom:
 
     def verify_immutable(self) -> None:
         marks = bytearray(len(self.buf))
-        for lo, hi in self.ALLOWED.values():
+        for lo, hi in self.allowed.values():
             marks[lo:hi] = b"\x01" * (hi - lo)
         for i, (a, b) in enumerate(zip(self.orig, self.buf, strict=True)):
             if a != b and not marks[i]:
                 raise SystemExit(f"무변경 구간이 바뀌었다 @{i:#x}")
 
 
+def normalize(text: str) -> str:
+    """부호 규칙(유저 확정 2026-09-05): 온점·쉼표·공백은 반각, 「…」은 전각 하나, 「…」 뒤에 온점 없음."""
+    text = text.replace("...", "…").replace("‥", "…").replace("。", ".").replace("、", ",")
+    text = re.sub(r"…+", "…", text)
+    text = re.sub(r"…\s*[.。]", "…", text)
+    return text
+
+
 def typeset(text: str) -> list[list[str]]:
     """자유 문안 → 페이지(줄 목록). \\f 는 강제 페이지."""
+    text = normalize(text)
     pages = []
     for chunk in text.split("\f"):
         chunk = chunk.strip()
@@ -138,16 +170,105 @@ def build_stream(st: scene.Stream, ours: str, cs: hangul.Charset) -> list[scene.
     return out
 
 
+def encode_tagged(s: str, cs: hangul.Charset) -> bytes:
+    """`<fe0c>` 같은 raw 태그를 섞은 표 문안 → 바이트."""
+    out = b""
+    pos = 0
+    for m in re.finditer(r"<([0-9a-fA-F]+)>", s):
+        out += cs.encode(s[pos : m.start()]) + bytes.fromhex(m.group(1))
+        pos = m.end()
+    return out + cs.encode(s[pos:])
+
+
+def build_tables(orig: bytes, names: dict, cs: hangul.Charset) -> list[tuple[str, int, bytes]]:
+    """표 → (라벨, 자리, 본문). 폭 = 원본 본문 길이. 넘치는 항목은 **전부 모아** 실패로 알린다."""
+    out = []
+    over = []
+    for name, recs in tables.records(orig).items():
+        tbl = names.get(name, {})
+        align = tables.align_of(name)
+        for i, (pos, raw) in enumerate(recs):
+            ours = normalize(tbl.get(str(i), {}).get("ours", ""))
+            if not ours:
+                continue
+            enc = encode_tagged(ours, cs)
+            if name in tables.SLOT_CAP:  # 06 종결 칸 — 이름+06 만, 나머지는 원본
+                if len(enc) > tables.SLOT_CAP[name]:
+                    over.append(f"{name}[{i}] {ours!r} {len(enc)}B > {tables.SLOT_CAP[name]}B")
+                    continue
+                out.append((f"table:{name}", pos, enc + b"\x06"))
+                continue
+            w = len(raw)
+            if len(enc) > w:
+                over.append(f"{name}[{i}] {ours!r} {len(enc)}B > {w}B")
+                continue
+            pad = b" " * (w - len(enc))
+            body = pad + enc if align == "right" else enc + pad
+            out.append((f"table:{name}", pos, body))
+    if over:
+        raise SystemExit(
+            "표 항목이 폭을 넘는다 — textmap/names.json 을 줄인다:\n    " + "\n    ".join(over)
+        )
+    return out
+
+
+def _load(path):
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def load_textmaps() -> dict:
+    """정본 전부 — 대본(script/*.json) · 표(names.json) · 시스템 메시지 · 자막 · 전투(메시지·몬스터)."""
+    return {
+        "maps": textmap.load_all(),
+        "names": _load(tables.NAMES_JSON),
+        "smap": _load(sysmsg.MAP_JSON),
+        "cmap": _load(captions.MAP_JSON),
+        "bmap": _load(battle.MAP_JSON),
+        "monsters": _load(battle.MONSTERS_JSON),
+    }
+
+
+def collect_chars(tm: dict) -> set[str]:
+    """정본 전체가 쓰는 글자 집합(태그 제거 · 부호 정규화 뒤) — 글꼴 표 0 과 코드 배정의 분모."""
+    chars: set[str] = set()
+    strip = lambda t: normalize(re.sub(r"<[^>]*>", "", t))
+    for m in tm["maps"].values():
+        for e in m["streams"].values():
+            chars.update(strip(e.get("ours", "")))
+    for t in tm["names"].values():
+        for e in t.values():
+            chars.update(normalize(e.get("ours", "")))
+    for e in tm["smap"].values():
+        chars.update(strip(e.get("ours", "")))
+    for e in tm["cmap"].values():
+        chars.update(strip(e.get("ours", "")))
+    for e in tm["bmap"].values():
+        chars.update(strip(battle.expand_names(e.get("ours", ""), tm["monsters"])))
+    for e in tm["monsters"].values():
+        chars.update(e.get("ours", ""))
+    return chars
+
+
 def main(check_only: bool = False) -> None:
     orig = common.rom()
-    maps = textmap.load_all()
-    syll = set()
-    for m in maps.values():
-        for e in m["streams"].values():
-            for ch in e.get("ours", ""):
-                if hangul.is_hangul(ch):
-                    syll.add(ch)
-    cs = hangul.Charset(orig, syll)
+    tm = load_textmaps()
+    maps, names, smap, cmap, bmap, monsters = (
+        tm["maps"],
+        tm["names"],
+        tm["smap"],
+        tm["cmap"],
+        tm["bmap"],
+        tm["monsters"],
+    )
+    chars = collect_chars(tm)
+    cs = hangul.Charset(orig, chars)
+    table_writes = build_tables(orig, names, cs)
+    sys_writes = sysmsg.plan(
+        orig, {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in smap.items()}, cs.encode
+    )
+    cap_writes = captions.plan(
+        orig, {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in cmap.items()}, cs.encode
+    )
     print(
         f"  정본 블록 {len(maps)} · 한글 {len(cs.hangul)}자 · 표 0 {len(cs.entries)}/{cs.r0['entries']}"
     )
@@ -174,8 +295,21 @@ def main(check_only: bool = False) -> None:
         new = scene.reassemble(mod, replace)
         scene.verify_reassembly(mod, new, replace)
         new_blocks[n] = new
+    battle_blocks: dict[int, bytes] = {}
+    for n, (_s, bb, _e) in enumerate(battle.blocks(orig)):
+        nb = battle.plan_block(
+            bb,
+            n,
+            {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in bmap.items()},
+            monsters,
+            cs.encode,
+        )
+        if nb is not None:
+            battle_blocks[n] = nb
     if check_only:
-        print(f"  게이트 OK — 바뀌는 블록 {len(new_blocks)}")
+        print(
+            f"  게이트 OK — 바뀌는 블록 {len(new_blocks)} · 표 항목 {len(table_writes)} · 시스템 메시지 쓰기 {len(sys_writes)} · 자막 쓰기 {len(cap_writes)} · 전투 블록 {len(battle_blocks)}"
+        )
         return
 
     rom = Rom(orig)
@@ -193,12 +327,52 @@ def main(check_only: bool = False) -> None:
         table[n * 4 : n * 4 + 4] = struct.pack(">I", cur - base)
         cur += len(packed)
     rom.write("script-table", base, bytes(table))
+    # 1b. 전투 아카이브 — 같은 규칙, 꼬리는 대본과 이어 쓴다
+    bbase = battle.ARCHIVE
+    bbl = battle.blocks(orig)
+    btable = bytearray(orig[bbase : bbase + battle.COUNT * 4])
+    bcur, bregion = BATTLE_LO, "battle"
+    for n, (s, _b, e) in enumerate(bbl):
+        packed = lz.encode(battle_blocks[n]) if n in battle_blocks else orig[s:e]
+        packed = packed + (b"\x00" if len(packed) & 1 else b"")
+        if bregion == "battle" and bcur + len(packed) > BATTLE_HI:
+            bcur, bregion = (cur if region == "tail" else TAIL_LO), "tail"
+        if bregion == "tail" and bcur + len(packed) > TAIL_HI:
+            raise SystemExit("전투 아카이브가 꼬리 빈 공간도 넘는다")
+        rom.write(bregion, bcur, packed)
+        btable[n * 4 : n * 4 + 4] = struct.pack(">I", bcur - bbase)
+        bcur += len(packed)
+    if bregion == "tail":
+        cur, region = bcur, "tail"
+    rom.write("battle-table", bbase, bytes(btable))
     # 2. 글꼴 리소스 0
     hdr, tbl, gl = cs.resource0()
     rom.write("font0-header", cs.r0["hdr"], hdr)
     rom.write("font0-table", cs.r0["table"], tbl)
     rom.write("font0-glyphs", cs.r0["desc"], orig[cs.r0["desc"] : cs.r0["desc"] + 4] + gl)
-    # 3. 체크섬 · 대조 · 출력
+    for label, pos, body in hangul.resource1(cs):  # 반각 쉼표 — 표 0 이 비운 자리에
+        rom.write(label, pos, body)
+    for label, pos, body in hangul.resource2_labels():  # HUD 「ｱﾄ」 → 「다음」 (8×8)
+        rom.write(label, pos, body)
+    hud_chars = set()
+    for grp in ("party_rec", "party_name"):
+        for e in names.get(grp, {}).values():
+            hud_chars.update(re.sub(r"<[^>]*>", "", e.get("ours", "")))
+    for label, pos, body in hangul.resource4(cs, hud_chars):  # HUD 이름 12×12
+        rom.write(label, pos, body)
+    # 3. 고정 폭 표(아이템·주문·지명·메뉴 라벨) — 제자리
+    for label, pos, body in table_writes:
+        rom.write(label, pos, body)
+    # 3a. 그래픽 문자(타이틀 메뉴 셀)
+    for label, pos, body in gfxtext.plan(orig, names):
+        rom.write(label, pos, body)
+    # 3b. 시스템 메시지 묶음 + 참조 명령
+    for label, pos, body in sys_writes:
+        rom.write(label, pos, body)
+    # 3c. 오프닝 자막 · 엔딩 문안 영역 + 표
+    for label, pos, body in cap_writes:
+        rom.write(label, pos, body)
+    # 4. 체크섬 · 대조 · 출력
     rom.write("checksum", 0x18E, struct.pack(">H", common.header_checksum(rom.buf)))
     rom.verify_immutable()
     out_dir = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_")

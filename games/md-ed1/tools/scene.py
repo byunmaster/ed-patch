@@ -100,7 +100,7 @@ GOTO, CALL, CELL, CODE = "goto", "call", "cell", "code"
 COND = {0x11, 0x12, 0xF2, 0xF8}  # 다음 3B(대개 0F goto)를 조건부로 건너뛴다
 # 렌더 한 번을 끝내는 코드 — 00(창 닫기) · 06(그냥 반환) · 07(개행 + 대기 + 반환). 메시지 함수
 # `$60A0` 은 렌더러 `$978C` 를 한 번만 부르므로 이 셋이 곧 스트림의 끝이다. 05 는 페이지 넘김(계속).
-END = {0x00, 0x06, 0x07}
+END = {0x00, 0x06, 0x07, 0x0A, 0x0D}  # 0D($A22C)·0A($A202) 핸들러는 07 핸들러로 끝난다 — 0A 는 「대기·계속」이 아니라 끝(2026-09-05 전투 블록에서 확정)
 REL16 = {0x0F: GOTO, 0x10: CALL, 0x15: CODE, 0xF2: CELL, 0xF3: CELL}
 
 SPEAKER = re.compile(rb"\x1e((?:[\x81-\x9f\xe0-\xea][\x40-\x7e\x80-\xfc]){1,8})\x04")
@@ -505,8 +505,8 @@ if __name__ == "__main__":
             f"셀 {tot['cells']} · 코드 호출 {tot['codes']} · 참조 파싱 실패 {tot['badref']}"
         )
         print("  미도달·실패 블록:", sorted(worst, key=lambda x: -abs(x[0]))[:12])
-        if (tot["streams"], tot["hit"], tot["tags"], tot["badref"]) != (2752, 1425, 1437, 0):
-            raise SystemExit("씬 모듈 분모가 갈렸다 (기대 2752 스트림 · 1425/1437 · 실패 0)")
+        if (tot["streams"], tot["hit"], tot["tags"], tot["badref"]) != (2750, 1425, 1437, 0):
+            raise SystemExit("씬 모듈 분모가 갈렸다 (기대 2750 스트림 · 1425/1437 · 실패 0)")
         biggest = 0
         for _, b, _ in bl:
             mod = parse_module(b)

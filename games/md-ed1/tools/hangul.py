@@ -10,6 +10,7 @@
 - 글리프: Galmuri11(11×11, 셀 아래 정렬) 채움 + 테두리(8방향 팽창 − 채움, 원본 규칙 196/196 일치).
 """
 
+import json
 import struct
 import sys
 from pathlib import Path
@@ -26,23 +27,26 @@ CODE_BASE = 0x8A40
 KEEP_MAX = 0x829A  # 표 0 에서 그대로 두는 원본 항목(기호·숫자·영문)의 마지막 코드
 CELL = 14
 
-_bdf_cache: dict[str, list[list[int]]] | None = None
+_bdf_cache: dict[tuple, dict[str, list[list[int]]]] = {}
 
 
-def _load_bdf() -> dict[str, list[list[int]]]:
-    """BDF 전체를 한 번 읽어 {글자: 14×14 비트 행렬}. 폭·높이가 14 를 넘는 건 자른다(없어야 한다)."""
-    global _bdf_cache
-    if _bdf_cache is not None:
-        return _bdf_cache
+def _load_bdf(
+    path: Path | None = None, cell: int = CELL, top: int = 1
+) -> dict[str, list[list[int]]]:
+    """BDF 전체를 한 번 읽어 {글자: cell×cell 비트 행렬}. 폭·높이가 cell 을 넘는 건 자른다."""
+    path = path or BDF
+    key = (str(path), cell, top)
+    if key in _bdf_cache:
+        return _bdf_cache[key]
     out = {}
-    lines = BDF.read_text(encoding="utf-8", errors="replace").split("\n")
+    lines = path.read_text(encoding="utf-8", errors="replace").split("\n")
     i = 0
     while i < len(lines):
         if lines[i].startswith("ENCODING "):
             ch = chr(int(lines[i].split()[1]))
             while not lines[i].startswith("BBX"):
                 i += 1
-            bw, bh, bx, by = map(int, lines[i].split()[1:5])
+            bw, bh, bx, _by = map(int, lines[i].split()[1:5])
             while lines[i].strip() != "BITMAP":
                 i += 1
             rows = []
@@ -51,17 +55,17 @@ def _load_bdf() -> dict[str, list[list[int]]]:
                 v = int(r, 16)
                 nb = len(r) * 4
                 rows.append([(v >> (nb - 1 - x)) & 1 for x in range(bw)])
-            grid = [[0] * CELL for _ in range(CELL)]
-            # Galmuri14: 베이스라인이 아래에서 by 만큼 위. 셀 안에 위쪽 정렬 + 가로 오프셋 bx
-            top = max(0, CELL - bh - by)
-            for y in range(min(bh, CELL - top)):
+            grid = [[0] * cell for _ in range(cell)]
+            # 셀 **위쪽**에 붙인다(기본 1~11행). HUD 장 제목 바는 셀 높이가 14 보다 낮아 아래를 자르므로
+            # 아래 정렬이면 받침이 잘린다(실측: 「제1장」이 「조1적」으로 보였다). 대사창은 줄 간격 16 이라 무방.
+            for y in range(min(bh, cell - top)):
                 for x in range(bw):
-                    if 0 <= x + bx < CELL and rows[y][x]:
+                    if 0 <= x + bx < cell and rows[y][x]:
                         grid[top + y][x + bx] = 1
             out[ch] = grid
             i += bh + 1
         i += 1
-    _bdf_cache = out
+    _bdf_cache[key] = out
     return out
 
 
@@ -95,26 +99,56 @@ def is_hangul(ch: str) -> bool:
     return "가" <= ch <= "힣"
 
 
-def codes_for(syllables: set[str]) -> dict[str, int]:
-    """번역문에 쓰는 음절 집합 → {음절: 코드}. 둘째 바이트는 0x40~0xFC(0x7F 건너뜀), SJIS 꼴."""
+def needs_glyph(ch: str, keep_codes: list[int]) -> bool:
+    """새 글리프가 필요한 글자 — 한글, 그리고 원본 표에도 ASCII 에도 없는 기호(…‘’“” 등)."""
+    if is_hangul(ch):
+        return True
+    if 0x20 <= ord(ch) < 0x7F or ch in "\n\f":
+        return False
+    try:
+        return int.from_bytes(ch.encode("cp932"), "big") not in keep_codes
+    except UnicodeEncodeError:
+        return True
+
+
+CODES_JSON = common.GAME_DIR / "textmap" / "hangul_codes.json"
+
+
+def _code_at(i: int) -> int:
     seconds = [b for b in range(0x40, 0xFD) if b != 0x7F]
-    out = {}
-    for i, ch in enumerate(sorted(syllables)):
-        hi, lo = divmod(i, len(seconds))
-        out[ch] = ((0x8A + hi) << 8) | seconds[lo]
-        if 0x8A + hi > 0x9F:
-            raise ValueError("한글 코드가 0x9F 를 넘는다 — 상위 바이트 범위 밖")
-    return out
+    hi, lo = divmod(i, len(seconds))
+    if 0x8A + hi > 0x9F:
+        raise SystemExit("한글 코드가 0x9F 를 넘는다 — 상위 바이트 범위 밖")
+    return ((0x8A + hi) << 8) | seconds[lo]
+
+
+def codes_for(syllables: set[str], freeze: bool = False) -> dict[str, int]:
+    """글자 → 코드. **정본 `textmap/hangul_codes.json` 에 고정**한다 — 쓰는 글자 순으로 매번 다시 매기면 문안이 늘 때마다
+    코드가 밀려 세이브(장 제목·파티 이름이 든다)와 스테이트의 글자가 다른 글자로 뜬다(2026-09-05 실측). 새 글자는
+    뒤에 붙인다(`--freeze`). 빌드는 정본에 없는 글자를 실패로 친다."""
+    cur = json.loads(CODES_JSON.read_text(encoding="utf-8")) if CODES_JSON.exists() else {}
+    missing = sorted(c for c in syllables if c not in cur)
+    if missing and not freeze:
+        raise SystemExit(
+            f"코드가 고정되지 않은 글자 {len(missing)}: {''.join(missing[:40])}… — `python3 tools/hangul.py --freeze` 로 붙인다"
+        )
+    if missing:
+        n = len(cur)
+        for k, ch in enumerate(missing):
+            cur[ch] = _code_at(n + k)
+        CODES_JSON.parent.mkdir(exist_ok=True)
+        CODES_JSON.write_text(json.dumps(cur, ensure_ascii=False, indent=0), encoding="utf-8")
+    return {c: cur[c] for c in syllables}
 
 
 class Charset:
     """빌드 한 번의 문자 집합 — 표 0 항목(코드 오름차순)과 글자→코드."""
 
-    def __init__(self, rom: bytes, syllables: set[str]):
+    def __init__(self, rom: bytes, chars: set[str]):
         r0 = font.resources(rom)[0]
         keep = [c for c in font.codes(rom, r0) if c <= KEEP_MAX]
         self.keep_codes = keep
-        self.hangul = codes_for(syllables)
+        self.hangul = codes_for({c for c in chars if needs_glyph(c, keep)})
         self.entries = sorted(keep + list(self.hangul.values()))
         if len(self.entries) > r0["entries"]:
             raise SystemExit(
@@ -124,7 +158,7 @@ class Charset:
         self.rom = rom
 
     def encode_char(self, ch: str) -> bytes:
-        if is_hangul(ch):
+        if ch in self.hangul:
             return struct.pack(">H", self.hangul[ch])
         if 0x20 <= ord(ch) < 0x7F:
             return ch.encode("ascii")  # 반각(리소스 1)
@@ -163,6 +197,114 @@ class Charset:
         return header, table, bytes(glyphs)
 
 
+# 반각 리소스 1 에 없는 쉼표(0x2C) — 온점(행 8~11 의 점)과 같은 자리에 꼬리를 단다. 8×14, 1B/행.
+COMMA_FILL = [
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "..#.....",
+    ".###....",
+    ".###....",
+    "..##....",
+    "...#....",
+    "..#.....",
+]
+FONT1_HDR = (0x1A54DE, 0x1A54EA)
+
+
+def _pack8(rows: list[list[int]]) -> bytes:
+    return bytes(sum(v << (7 - x) for x, v in enumerate(r)) for r in rows)
+
+
+def resource1(cs: "Charset") -> list[tuple[str, int, bytes]]:
+    """리소스 1(반각 8×14)에 쉼표를 더한 새 표·글리프를 표 0 이 비운 자리에 두고 헤더를 돌린다.
+    → [(라벨, 자리, 바이트)] — 라벨은 build.Rom 의 허용 구간 이름."""
+    rom = cs.rom
+    r0, r1 = font.resources(rom)[:2]
+    codes = font.codes(rom, r1)
+    if 0x2C in codes:
+        return []
+    i = next(k for k, c in enumerate(codes) if c > 0x2C)
+    codes.insert(i, 0x2C)
+    fill = [[1 if ch == "#" else 0 for ch in row] for row in COMMA_FILL]
+    g = rom[r1["glyphs"] : r1["glyphs"] + (len(codes) - 1) * r1["stride"]]
+    glyphs = g[: i * r1["stride"]] + _pack8(fill) + _pack8(ring(fill)) + g[i * r1["stride"] :]
+    table = b"".join(struct.pack(">H", c) for c in codes)
+    tbl_at = r0["table"] + 2 * len(cs.entries)  # 표 0 바로 뒤 (짝수)
+    desc_at = r0["desc"] + 4 + len(cs.entries) * r0["stride"]  # 표 0 글리프 바로 뒤
+    if tbl_at + len(table) > r0["table_end"]:
+        raise SystemExit("표 0 이 커서 리소스 1 표를 둘 자리가 없다")
+    h = r1["hdr"]
+    header = struct.pack(">III", tbl_at - h, tbl_at + len(table) - 4 - h, desc_at - h - 8)
+    desc = rom[r1["desc"] : r1["desc"] + 4]
+    return [
+        ("font1-header", h, header),
+        ("font0-table", tbl_at, table),
+        ("font0-glyphs", desc_at, desc + glyphs),
+    ]
+
+
+# ── HUD 소형 폰트 ──────────────────────────────────────────────────────────────
+# 리소스 2(8×8, 1B/행, 두 면): 「ｱﾄ」(b1·c4 — 다음 레벨까지 남은 경험치 라벨) 글리프만 「다음」으로.
+# 리소스 4(12×12, 2B/행, 두 면, 86칸): HUD 이름(`fd 84`, 필드·전투)의 2B 글꼴 — 파티 이름 음절로 갈아 끼운다.
+FONT2_GLYPHS = (0x1BB056, 0x1BB2D6)
+FONT4_HDR = (0x1A5502, 0x1A550E)
+FONT4_TABLE = (0x1A6222, 0x1A62CE)
+FONT4_GLYPHS = (0x1BB66E, 0x1BC68E)
+BDF7 = common.ROOT / "shared" / "fonts" / "Galmuri7.bdf"
+LABEL_R2 = {0xB1: "다", 0xC4: "음"}
+
+
+def _pack_w(rows: list[list[int]], width: int) -> bytes:
+    if width <= 8:
+        return bytes(sum(v << (7 - x) for x, v in enumerate(r)) for r in rows)
+    return b"".join(struct.pack(">H", sum(v << (15 - x) for x, v in enumerate(r))) for r in rows)
+
+
+def resource2_labels() -> list[tuple[str, int, bytes]]:
+    """리소스 2 의 「ｱ」「ﾄ」 자리에 Galmuri7 「다」「음」(8×8, 위 1행 띄움)."""
+    rom = common.rom()
+    r2 = font.resources(rom)[2]
+    codes = font.codes(rom, r2)
+    g7 = _load_bdf(BDF7, 8, 1)
+    out = []
+    for code, ch in LABEL_R2.items():
+        fill = g7[ch]
+        pos = r2["glyphs"] + codes.index(code) * r2["stride"]
+        out.append(("font2-glyphs", pos, _pack_w(fill, 8) + _pack_w(ring(fill), 8)))
+    return out
+
+
+def resource4(cs: "Charset", chars: set[str]) -> list[tuple[str, int, bytes]]:
+    """리소스 4 를 HUD 이름 음절로 — 표(코드 오름차순, 표 0 과 같은 코드)·글리프(12×12 Galmuri11)·헤더(표 끝)."""
+    rom = cs.rom
+    r4 = font.resources(rom)[4]
+    codes = sorted({cs.hangul[c] for c in chars if c in cs.hangul})
+    if len(codes) > r4["entries"]:
+        raise SystemExit(f"리소스 4 가 넘친다: HUD 이름 음절 {len(codes)} > {r4['entries']}")
+    g11 = _load_bdf(BDF, 12, 0)
+    by_code = {v: k for k, v in cs.hangul.items()}
+    glyphs = bytearray()
+    for c in codes:
+        fill = g11[by_code[c]]
+        glyphs += _pack_w(fill, 12) + _pack_w(ring(fill), 12)
+    table = b"".join(struct.pack(">H", c) for c in codes)
+    h = r4["hdr"]
+    header = struct.pack(
+        ">III", r4["table"] - h, r4["table"] + len(table) - 4 - h, r4["desc"] - h - 8
+    )
+    return [
+        ("font4-header", h, header),
+        ("font4-table", r4["table"], table),
+        ("font4-glyphs", r4["glyphs"], bytes(glyphs)),
+    ]
+
+
 def preview(chars: str, out: Path, per_row: int = 24) -> None:
     from PIL import Image
 
@@ -185,6 +327,15 @@ def preview(chars: str, out: Path, per_row: int = 24) -> None:
 
 
 if __name__ == "__main__":
-    if "--preview" in sys.argv:
+    if "--freeze" in sys.argv:
+        import build
+
+        rom = common.rom()
+        r0 = font.resources(rom)[0]
+        keep = [c for c in font.codes(rom, r0) if c <= KEEP_MAX]
+        chars = build.collect_chars(build.load_textmaps())
+        codes_for({c for c in chars if needs_glyph(c, keep)}, freeze=True)
+        print(f"  {CODES_JSON}: {len(json.loads(CODES_JSON.read_text(encoding='utf-8')))}자 고정")
+    elif "--preview" in sys.argv:
         i = sys.argv.index("--preview")
         preview(sys.argv[i + 2], Path(sys.argv[i + 1]))
