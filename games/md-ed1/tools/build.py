@@ -186,7 +186,11 @@ def build_stream(
         if kind == "text":
             pending_text.append(val)
         elif kind == "page":
-            pending_text.append("\f")
+            # 🔴 예전엔 `\f` 를 본문에 이어 붙여 조판기에 맡겼는데, **뒤에 제어코드가 오면**
+            # 조판기가 빈 쪽으로 보고 버려 `<05>` 가 통째로 사라졌다(2026-09-07 실측: 퍼거슨 대화에서
+            # 왕자의 말과 퍼거슨의 대답이 한 창에 붙었다). 쪽 넘김은 **여기서** 토큰으로 낸다.
+            flush_text()
+            out.append(scene.Token(0, b"\x05", "ctl", 0x05))
         else:
             code, tgt, raw = val
             if tgt is not None:
