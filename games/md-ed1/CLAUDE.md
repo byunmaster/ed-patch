@@ -51,6 +51,8 @@ python3 games/md-ed1/tools/textmap.py --seed 104 # 블록 104 정본 초안(해�
 python3 games/md-ed1/tools/tables.py --check     # 고정 폭 표·00 묶음 분모 (아이템·주문·지명·메뉴·설정·HUD)
 python3 games/md-ed1/tools/tables.py --seed      # textmap/names.json 초안 — glossary 로 채움
 python3 games/md-ed1/tools/gfxtext.py               # 타이틀 메뉴 그래픽 셀(변형별 색)
+python3 games/md-ed1/tools/vdp.py <덤프폴더> out.png [base] [width]  # 화면 재구성(⚠ VRAM 덤프는 바이트 스왑)
+python3 games/md-ed1/tools/vdp.py <덤프폴더> --guess                # 네임테이블 base·width 추정
 python3 games/md-ed1/tools/sysmsg.py --check/--seed  # 시스템 메시지 99(lea/pea 참조 스트림)
 python3 games/md-ed1/tools/battle.py --check/--seed    # 전투 아카이브 110블록 — 몬스터 이름 269 · 메시지 281 (textmap/monsters.json · battle.json)
 python3 games/md-ed1/tools/captions.py --check/--seed  # 오프닝 자막 8 · 엔딩 나레이션 11 · 엔딩 대사 20 (워드 스크립트 표)
