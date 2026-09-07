@@ -31,6 +31,7 @@ from asm65816 import Asm
 
 HOOK_BANK = 0x3F  # 훅 코드 + 표
 GLYPH_BANK = 0x3D  # 글리프 2bpp 32B/자
+DICT_BANK = 0x3E  # 사전·전투 UI 문자열(`tools/dicts.py`·`battle_ui.py`)
 GLYPH_BASE = (GLYPH_BANK << 16) | 0x8000
 GLYPH_MAX = 1024  # 한 뱅크 = 32,768B ÷ 32B. 넘으면 뱅크를 갈라야 한다(그때 훅도 고친다)
 HOOK_ORG = 0x8000
@@ -61,6 +62,14 @@ NAME_SITES = [  # (덩이 시작, 패딩 루프 = 끝난 뒤 갈 자리)
     (0x02B387, 0x02B3A8),
 ]
 NAME_BLOCK = 33  # 세 자리 모두 같은 길이
+# 🔴 **다섯째 문 — `MVN`.** 전투 커맨드·파티 이름 여덟(13칸 고정)은 바이트를 훑는 자리가 아예
+# 없다. `$02:A2DB` 가 `LDX $0006 / LDY #$0305 / LDA #$000C / MVN $02,$00` 로 **13바이트를 칸
+# 배열에 통째로 옮긴다** — 한 바이트 = 한 칸이 전제라 두 바이트 한글이 못 산다.
+# ⇒ 전송 자체를 우리 루프로 갈아 끼운다. ⚠ 끝나고 **DB = $00**(원본 MVN 이 남기는 값)이어야 한다.
+MVN_SITE = 0x02A2DB
+MVN_BLOCK = 12
+NAME13_TRAMPOLINE = 0x02FE61
+NAME13_CELLS = 13
 CELLS = 0x000305  # 칸 배열(WRAM 미러) — long 으로 써서 DB 에 안 기댄다
 NMI_CALL = 0x00AA00  # NMI 의 JSR $ACA9 → JSR (우리 스텁)
 NMI_STUB = 0x00FF20  # 뱅크 $00 빈 자리 160B
@@ -280,7 +289,9 @@ def build_payload(
     a.ldy(imm=0x0000, m16=True)
     a.ldx(imm=0x0000, m16=True)
     a.label("nc_loop")
-    a.op("lda", dp=0x06, mode="indlongy")  # ⚠ `[dp],Y` 다 — `[dp]`($A7) 로 쓰면 첫 글자만 읽는다  # LDA [$06],Y — ⚠ 뱅크는 $08 이 정한다
+    a.op(
+        "lda", dp=0x06, mode="indlongy"
+    )  # ⚠ `[dp],Y` 다 — `[dp]`($A7) 로 쓰면 첫 글자만 읽는다  # LDA [$06],Y — ⚠ 뱅크는 $08 이 정한다
     a.cmp(imm=0xFF)
     a.beq(label="nc_end")
     a.phx()
@@ -309,6 +320,61 @@ def build_payload(
     a.label("nc_end")
     a.txy()  # Y = 채운 칸 수
     a.plb()
+    a.plp()
+    a.rtl()
+
+    # ── 13칸 고정 문자열 한 줄 (전투 커맨드·파티 이름) ─────────────────────────────
+    a.label("name13")
+    a.php()
+    a.sep(imm=0x20)
+    a.rep(imm=0x10)
+    a.lda(imm=HOOK_BANK)
+    a.pha()
+    a.plb()
+    a.lda(imm=DICT_BANK)
+    a.op("sta", addr=0x000008, mode="long")  # [dp] 롱 포인터의 뱅크
+    a.ldy(imm=0x0000, m16=True)
+    a.ldx(imm=0x0000, m16=True)
+    a.label("n13_loop")
+    a.cpx(imm=NAME13_CELLS, m16=True)
+    a.bcs(label="n13_end")
+    a.op("lda", dp=0x06, mode="indlongy")
+    a.cmp(imm=0xFF)
+    a.beq(label="n13_pad")
+    a.phx()
+    a.rep(imm=0x20)
+    a.op("and", imm=0x00FF, m16=True)
+    a.tax()
+    a.sep(imm=0x20)
+    a.op("lda", addr="lead_tab", mode="longx")
+    a.plx()
+    a.cmp(imm=0xFF)
+    a.beq(label="n13_put")
+    a.op("sta", addr=V_IDX + 1, mode="long")
+    a.iny()
+    a.op("lda", dp=0x06, mode="indlongy")
+    a.op("sta", addr=V_IDX, mode="long")
+    a.phx()
+    a.phy()
+    a.jsr(addr="alloc", mode="abs")
+    a.ply()
+    a.plx()
+    a.label("n13_put")
+    a.op("sta", addr=CELLS, mode="longx")
+    a.inx()
+    a.iny()
+    a.bra(label="n13_loop")
+    a.label("n13_pad")
+    a.lda(imm=0x10)  # 남은 칸은 공백으로
+    a.label("n13_padloop")
+    a.op("sta", addr=CELLS, mode="longx")
+    a.inx()
+    a.cpx(imm=NAME13_CELLS, m16=True)
+    a.bcc(label="n13_padloop")
+    a.label("n13_end")
+    a.lda(imm=0x00)
+    a.pha()
+    a.plb()  # ⚠ 원본 MVN 처럼 DB = $00 으로 남긴다
     a.plp()
     a.rtl()
 
@@ -631,6 +697,16 @@ def apply(
         blk[0:3] = bytes([0x20, NAME_TRAMPOLINE & 0xFF, (NAME_TRAMPOLINE >> 8) & 0xFF])
         blk[3:6] = bytes([0x4C, join & 0xFF, (join >> 8) & 0xFF])
         out[so : so + NAME_BLOCK] = bytes(blk)
+    # 4. 13칸 고정 문자열: MVN 덩이 → JSR 우리것
+    n13 = (HOOK_BANK << 16) | info["labels"]["name13"]
+    t4 = common.snes2off(NAME13_TRAMPOLINE)
+    out[t4 : t4 + 5] = bytes([0x22, n13 & 0xFF, (n13 >> 8) & 0xFF, HOOK_BANK, 0x60])
+    mo = common.snes2off(MVN_SITE)
+    if rom[mo + 9] != 0x54:  # MVN
+        raise SystemExit(f"MVN 자리가 예상과 다르다: {rom[mo : mo + MVN_BLOCK].hex()}")
+    blk = bytearray([0xEA]) * MVN_BLOCK
+    blk[0:3] = bytes([0x20, NAME13_TRAMPOLINE & 0xFF, (NAME13_TRAMPOLINE >> 8) & 0xFF])
+    out[mo : mo + MVN_BLOCK] = bytes(blk)
     info.pop("labels")
     info["glyph_bytes"] = len(g)
     info["hook_bytes"] = len(blob)
@@ -645,6 +721,8 @@ def patch_ranges() -> list[tuple[int, int]]:
         (common.snes2off(BUF_CALL_SITE), common.snes2off(BUF_CALL_SITE) + 3),
         (common.snes2off(BUF_TRAMPOLINE), common.snes2off(BUF_TRAMPOLINE) + 5),
         (common.snes2off(NAME_TRAMPOLINE), common.snes2off(NAME_TRAMPOLINE) + 5),
+        (common.snes2off(NAME13_TRAMPOLINE), common.snes2off(NAME13_TRAMPOLINE) + 5),
+        (common.snes2off(MVN_SITE), common.snes2off(MVN_SITE) + MVN_BLOCK),
         *[(common.snes2off(s_), common.snes2off(s_) + NAME_BLOCK) for s_, _j in NAME_SITES],
         (common.snes2off(NMI_CALL), common.snes2off(NMI_CALL) + 3),
         (common.snes2off(NMI_STUB), common.snes2off(NMI_STUB) + 8),

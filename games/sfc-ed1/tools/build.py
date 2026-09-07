@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import text  # noqa: I001  (common 보다 먼저 — shared/text 와 이름이 겹친다)
+import battle_ui
 import common
 import dicts
 import hook
@@ -409,6 +410,7 @@ def mutable_ranges() -> list[tuple[int, int]]:
         r.append((o2, o2 + 16))
     r += hook.patch_ranges()
     r += dicts.patch_ranges()
+    r += battle_ui.patch_ranges()
     sheet = common.snes2off(text.FONT_SHEET)
     import tiles  # 상주 글리프를 구울 수 있는 자리 전부(실제로 구운 것은 그 부분집합이다)
 
@@ -849,8 +851,11 @@ def build_kr(
         # ⚠ **사전을 먼저** 놓는다 — 메뉴 이름 훅이 아이템 표의 **새 주소**를 알아야 한다
         import encode as _enc
 
-        dk = dicts.bake(out, rom, _enc.index_map(k["rep"]))
-        led.snap(out, "사전 이관")
+        _idx = _enc.index_map(k["rep"])
+        dk = dicts.bake(out, rom, _idx)
+        bu = battle_ui.bake(out, rom, _idx, dk["next"])  # 사전 바로 뒤에 이어 놓는다
+        dk["전투 UI"] = bu
+        led.snap(out, "사전·전투 UI 이관")
         hk = hook.apply(
             out,
             rom,
@@ -862,6 +867,7 @@ def build_kr(
 
     if with_hook:
         dicts.verify(out, k["rep"])  # 🔑 **체인이 다 끝난 롬**에서 게임의 포인터를 따라 되읽는다
+        battle_ui.verify(out, k["rep"])
     out[HEADER_ROM_SIZE_OFF] = 0x0B
     fix_checksum(out)
     imm = immutable_diffs(rom, out)

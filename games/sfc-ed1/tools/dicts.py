@@ -130,6 +130,7 @@ def bake(out: bytearray, rom: bytes, rep_index: dict[str, int]) -> dict:
             "bytes": cur - table,
         }
     info["끝"] = common.fmt((BANK << 16) | cur)
+    info["next"] = cur  # 뒤에 오는 것(전투 UI 표)이 이어 쓴다
     info["tables"] = tables
     return info
 

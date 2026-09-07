@@ -103,6 +103,7 @@ ENTRY = {
     "hook": (True, True, "far"),  # 호출자(메시지 엔진) = A 8 · X/Y 8
     "hookbuf": (True, True, "far"),  # 사전 버퍼 소비 지점 — 같은 규약
     "namecopy": (True, True, "far"),  # 메뉴 이름 — 넷째 문(칸 배열에 직접 쓴다)
+    "name13": (False, False, "far"),  # 13칸 고정 — 다섯째 문(원본은 MVN). 호출자가 REP #$30
     "drain": (True, True, "far"),  # NMI = sep #$30 뒤
     "fetch": (True, False, "near"),
     "alloc": (True, False, "near"),
