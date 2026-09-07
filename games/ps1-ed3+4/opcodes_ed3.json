@@ -1,0 +1,64 @@
+{
+ "_doc": "대사 VM opcode 표 — 디스패치 트리에서 뽑았다. 자세한 건 tools/opcodes.py",
+ "disc": "ed3",
+ "dispatch": "0x8003850C",
+ "default": "0x80039690",
+ "opcodes": {
+  "0x00": {
+   "handler": "0x80038BC4",
+   "operand": 0
+  },
+  "0x01": {
+   "handler": "0x800389CC",
+   "operand": 0
+  },
+  "0x02": {
+   "handler": "0x80038AD8",
+   "operand": 0
+  },
+  "0x03": {
+   "handler": "0x80038C84",
+   "operand": 0
+  },
+  "0x04": {
+   "handler": "0x80038D74",
+   "operand": 0
+  },
+  "0x05": {
+   "handler": "0x8003855C",
+   "operand": 0
+  },
+  "0x06": {
+   "handler": "0x800391F8",
+   "operand": 0
+  },
+  "0x07": {
+   "handler": "0x800392C8",
+   "operand": 0
+  },
+  "0x08": {
+   "handler": "0x80038DBC",
+   "operand": 0
+  },
+  "0x09": {
+   "handler": "0x80038D1C",
+   "operand": 0
+  },
+  "0x0A": {
+   "handler": "0x80039604",
+   "operand": 0
+  },
+  "0x0B": {
+   "handler": "0x80039630",
+   "operand": 0
+  },
+  "0x0C": {
+   "handler": "0x80039660",
+   "operand": 0
+  },
+  "0x90": {
+   "handler": "0x800385E0",
+   "operand": 0
+  }
+ }
+}

@@ -1,0 +1,301 @@
+{
+ "_doc": [
+  "그림에 박힌 글자의 자리표 — **좌표와 갈래만** 담는다(그림 자체는 커밋 금지).",
+  "`kind`: title=타이틀 화면 · opening=오프닝 내레이션 · ending=엔딩 내레이션 ·",
+  "        credits=엔딩 크레딧 · sign=맵 간판 · frame=액자(글자 없음)",
+  "🔴 대부분 **「흰 잉크 + 투명」 1비트 마스크**다 — 흰 바탕에 그리면 아무것도 안 보인다.",
+  "   미리보기는 어두운 바탕에 올린다(`dump_tim.py`).",
+  "⚠ 자리는 `member` 안의 **몇 번째 TIM 인가**다. 압축을 푼 뒤 매직으로 훑은 순서라,",
+  "   `gmfz`·`tim` 을 고치면 밀릴 수 있다 — 그래서 `--catalog` 가 크기까지 대조한다.",
+  "⚠ `kind` 가 `opening`·`ending` 이어도 **글자가 없는 장이 섞여 있다** — 별밭 3장과",
+  "   빈 칸 1장은 실측으로 `bg` 로 내렸다(잉크 22~43px · 0px).",
+  "🔴 내레이션 글은 `narration_ed3.json` 이 정본이고 `tools/narration.py` 가 그린다 —",
+  "   여기 `file` 은 그 결과를 가리킬 뿐이다.",
+  "🔴 로고는 **둘**이다 — 타이틀 화면 `DATA5.BIN[3]`(260×76)과 **오프닝 끝 `OP_MAIN.BIN[19]`(400×118)**. 오프닝 쪽을 자리표에서 빠뜨려 번역이 안 된 채 떴다(2026-09-04)."
+ ],
+ "disc": "ed3",
+ "images": [
+  {
+   "member": "/M01.DAT!DATA5.BIN",
+   "index": 0,
+   "w": 290,
+   "h": 204,
+   "bpp": 8,
+   "kind": "frame",
+   "note": "타이틀 액자"
+  },
+  {
+   "member": "/M01.DAT!DATA5.BIN",
+   "index": 1,
+   "w": 174,
+   "h": 24,
+   "bpp": 8,
+   "kind": "title",
+   "note": "「冒険の続きをする」 버튼",
+   "file": "title_btn_continue.png"
+  },
+  {
+   "member": "/M01.DAT!DATA5.BIN",
+   "index": 2,
+   "w": 174,
+   "h": 24,
+   "bpp": 8,
+   "kind": "title",
+   "note": "「はじめから冒険をする」 버튼",
+   "file": "title_btn_new.png"
+  },
+  {
+   "member": "/M01.DAT!DATA5.BIN",
+   "index": 3,
+   "w": 260,
+   "h": 76,
+   "bpp": 8,
+   "kind": "title",
+   "note": "로고 — The Legend of Heroes III / 白き魔女",
+   "file": "title_logo.png"
+  },
+  {
+   "member": "/M01.DAT!DATA5.BIN",
+   "index": 4,
+   "w": 176,
+   "h": 20,
+   "bpp": 8,
+   "kind": "title",
+   "note": "저작권 표기 (Falcom / GMF) — 안 건드린다"
+  },
+  {
+   "member": "/M01.DAT!DATA5.BIN",
+   "index": 9,
+   "w": 160,
+   "h": 32,
+   "bpp": 4,
+   "kind": "title",
+   "note": "글자판(용도 미확인)"
+  },
+  {
+   "member": "/M01.DAT!DATA3.BIN",
+   "index": 0,
+   "w": 512,
+   "h": 256,
+   "bpp": 4,
+   "kind": "opening",
+   "note": "내레이션 — 「この物語は、ガガーブの先に…」",
+   "file": "narr_op_intro.png"
+  },
+  {
+   "member": "/M01.DAT!DATA3.BIN",
+   "index": 1,
+   "w": 512,
+   "h": 256,
+   "bpp": 4,
+   "kind": "opening",
+   "note": "내레이션 — 「神話、英雄伝、寓話…」",
+   "file": "narr_op_legend.png"
+  },
+  {
+   "member": "/M01.DAT!DATA3.BIN",
+   "index": 6,
+   "w": 256,
+   "h": 240,
+   "bpp": 4,
+   "kind": "bg",
+   "note": "별밭 — 글자 없음"
+  },
+  {
+   "member": "/M01.DAT!DATA3.BIN",
+   "index": 7,
+   "w": 256,
+   "h": 240,
+   "bpp": 4,
+   "kind": "bg",
+   "note": "별밭 — 글자 없음"
+  },
+  {
+   "member": "/M01.DAT!DATA3.BIN",
+   "index": 8,
+   "w": 256,
+   "h": 240,
+   "bpp": 4,
+   "kind": "bg",
+   "note": "별밭 — 글자 없음"
+  },
+  {
+   "member": "/M01.DAT!DATA2.BIN",
+   "index": 3,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "opening",
+   "file": "narr_op_scroll1a.png"
+  },
+  {
+   "member": "/M01.DAT!DATA2.BIN",
+   "index": 4,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "opening",
+   "file": "narr_op_scroll1b.png"
+  },
+  {
+   "member": "/M01.DAT!DATA2.BIN",
+   "index": 5,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "bg",
+   "note": "완전히 검정 — 글자 없음(두루마리 사이 빈 칸)"
+  },
+  {
+   "member": "/M01.DAT!DATA2.BIN",
+   "index": 6,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "opening",
+   "file": "narr_op_scroll2a.png"
+  },
+  {
+   "member": "/M01.DAT!DATA2.BIN",
+   "index": 7,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "opening",
+   "file": "narr_op_scroll2b.png"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 1,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending",
+   "file": "narr_ed_1.png"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 3,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending",
+   "file": "narr_ed_3.png"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 4,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending",
+   "file": "narr_ed_4.png"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 5,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending",
+   "file": "narr_ed_5.png"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 6,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending",
+   "file": "narr_ed_6.png"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 7,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending",
+   "file": "narr_ed_7.png"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 8,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending",
+   "file": "narr_ed_8.png"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA1.BIN",
+   "index": 9,
+   "w": 432,
+   "h": 108,
+   "bpp": 4,
+   "kind": "ending",
+   "file": "narr_ed_9.png"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA2.BIN",
+   "index": 1,
+   "w": 384,
+   "h": 33,
+   "bpp": 4,
+   "kind": "ending",
+   "note": "「白き魔女と呼ばれる娘が…」",
+   "file": "narr_ed_frame.png"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA3.BIN",
+   "index": 9,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "credits"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA3.BIN",
+   "index": 10,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "credits"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA3.BIN",
+   "index": 12,
+   "w": 256,
+   "h": 512,
+   "bpp": 4,
+   "kind": "credits"
+  },
+  {
+   "member": "/M02.DAT!ENDDATA3.BIN",
+   "index": 13,
+   "w": 256,
+   "h": 366,
+   "bpp": 4,
+   "kind": "credits"
+  },
+  {
+   "member": "/SCE2/SC203.DAT!..\\TIM\\C_241.TI3",
+   "index": 0,
+   "w": 256,
+   "h": 32,
+   "bpp": 8,
+   "kind": "sign",
+   "note": "맵 간판"
+  },
+  {
+   "member": "/M01.DAT!OP_MAIN.BIN",
+   "index": 19,
+   "w": 400,
+   "h": 118,
+   "bpp": 8,
+   "kind": "title",
+   "note": "오프닝 끝 로고 — 타이틀판(260×76)과 같은 그림의 큰 판",
+   "file": "title_logo_op.png"
+  }
+ ]
+}
