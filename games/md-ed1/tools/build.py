@@ -56,6 +56,7 @@ class Rom:
         "font0-table": (0x1A551A, 0x1A6080),
         "font0-glyphs": (0x1A62CE, 0x1BA1FA),
         "font1-header": hangul.FONT1_HDR,
+        "font5-header": hangul.FONT5_HDR,
         "checksum": (0x18E, 0x190),
         **{f"table:{t[0]}": (t[1], t[1] + (t[2] + 1) * t[4]) for t in tables.TABLES},
         **{f"table:{g[0]}": (g[1], g[1] + 0x200) for g in tables.ZGROUPS},
@@ -352,6 +353,12 @@ def main(check_only: bool = False) -> None:
     rom.write("font0-glyphs", cs.r0["desc"], orig[cs.r0["desc"] : cs.r0["desc"] + 4] + gl)
     for label, pos, body in hangul.resource1(cs):  # 반각 쉼표 — 표 0 이 비운 자리에
         rom.write(label, pos, body)
+    cap5 = {c for c in captions.font5_chars(cmap) if c.strip()}
+    if captions.FONT_ID and cap5:  # <fd85> 를 단 자막 전용 글꼴(리소스 5, Galmuri14 14×14)
+        for label, pos, body in hangul.resource5(
+            cs, cap5, hangul.layout_after_r1(cs), cell=captions.FONT_CELL, source=captions.FONT_SRC
+        ):
+            rom.write(label, pos, body)
     for label, pos, body in hangul.resource2_labels():  # HUD 「ｱﾄ」 → 「다음」 (8×8)
         rom.write(label, pos, body)
     hud_chars = set()

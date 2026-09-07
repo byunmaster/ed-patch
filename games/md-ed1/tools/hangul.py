@@ -69,6 +69,38 @@ def _load_bdf(
     return out
 
 
+NEODGM = common.ROOT / "shared" / "fonts" / "neodgm.ttf"
+_neo_cache: dict[str, list[list[int]]] = {}
+
+
+def neodgm_fill(ch: str, cell: int = 16, size: int = 16) -> list[list[int]]:
+    """네오둥근모 글리프 → cell×cell 비트 행렬. **16px 에서만 계단이 없다**(14·15px 는 회색 픽셀이 섞인다,
+    2026-09-05 실측) — 그래서 16×16 칸(타이틀 셀·리소스 5)에만 쓴다. 임계값 이진화라 렌더러 판이 달라도
+    같은 결과가 나온다(제1원칙: 빌드는 결정적).
+
+    ⚠ 잘라 낼 창은 **글자마다가 아니라 고정**이다(그리는 자리 +1,+1). 글자별 잉크 상자에 맞추면
+    「」·… 같은 기호가 칸 왼쪽 위로 끌려와 자리가 틀어진다.
+    """
+    key = f"{ch}:{cell}:{size}"
+    if key in _neo_cache:
+        return _neo_cache[key]
+    from PIL import Image, ImageDraw, ImageFont
+
+    f = ImageFont.truetype(str(NEODGM), size)
+    pad = 8
+    im = Image.new("L", (cell + 2 * pad, cell + 2 * pad), 0)
+    ImageDraw.Draw(im).text((pad, pad), ch, font=f, fill=255)
+    # 잉크는 그리는 자리 +1,+1 에서 시작한다 ⇒ 창을 **그리는 자리 그대로** 잡아 잉크를 1,1 로 민다.
+    # 그래야 팽창 테두리(8방향)가 0행·0열에 들어간다 — +1,+1 로 잡으면 위·왼쪽 테두리가 잘린다
+    # (2026-09-05 유저 지적: 「처음부터/이어하기가 위쪽 1px 잘린 느낌」).
+    ox = oy = pad
+    g = [
+        [1 if im.getpixel((ox + x, oy + y)) >= 128 else 0 for x in range(cell)] for y in range(cell)
+    ]
+    _neo_cache[key] = g
+    return g
+
+
 def glyph_fill(ch: str) -> list[list[int]]:
     g = _load_bdf().get(ch)
     if g is None:
@@ -221,6 +253,16 @@ def _pack8(rows: list[list[int]]) -> bytes:
     return bytes(sum(v << (7 - x) for x, v in enumerate(r)) for r in rows)
 
 
+def layout_after_r1(cs: "Charset") -> tuple[int, int]:
+    """리소스 1 을 옮긴 뒤 남는 (표 자리, 글리프 자리) — 리소스 5 가 여기서 시작한다."""
+    rom = cs.rom
+    r0, r1 = font.resources(rom)[:2]
+    n1 = len(font.codes(rom, r1)) + 1  # 쉼표 한 자 추가
+    tbl = r0["table"] + 2 * len(cs.entries) + 2 * n1
+    gl = r0["desc"] + 4 + len(cs.entries) * r0["stride"] + 4 + n1 * r1["stride"]
+    return (tbl + (tbl & 1), gl + (gl & 1))
+
+
 def resource1(cs: "Charset") -> list[tuple[str, int, bytes]]:
     """리소스 1(반각 8×14)에 쉼표를 더한 새 표·글리프를 표 0 이 비운 자리에 두고 헤더를 돌린다.
     → [(라벨, 자리, 바이트)] — 라벨은 build.Rom 의 허용 구간 이름."""
@@ -302,6 +344,76 @@ def resource4(cs: "Charset", chars: set[str]) -> list[tuple[str, int, bytes]]:
         ("font4-header", h, header),
         ("font4-table", r4["table"], table),
         ("font4-glyphs", r4["glyphs"], bytes(glyphs)),
+    ]
+
+
+# ── 리소스 5 = 오프닝·엔딩용 16×16 네오둥근모 ─────────────────────────────────
+# 렌더러는 스트림 안에서 글꼴을 고른다 — `fd 8N`(와이드 = 2B 코드) / `fd 0N`(반각). 핸들러 $A6C0 이
+# 색인을 $FF1843(와이드)에 넣고 $9BA0 이 `lea $1A54D2` + 색인×12 로 헤더를 짚는다. 리소스 5 는 빈 슬롯이라
+# **대사(리소스 0, 14×14 Galmuri)와 따로** 16×16 글꼴을 둘 수 있다. 글리프 상자가 16 이라 폭 2B/행 —
+# 블리터($9C8E)는 바이트 열을 세어 돌므로 14 든 16 이든 같다.
+FONT5_HDR = (0x1A550E, 0x1A551A)
+
+
+def resource5(
+    cs: "Charset",
+    chars: set[str],
+    after: tuple[int, int],
+    *,
+    cell: int = 14,
+    source: str = "galmuri14",
+) -> list[tuple[str, int, bytes]]:
+    """빈 리소스 5 에 **자막 전용 글꼴**을 만든다 — (라벨, 자리, 바이트). `after` = 리소스 1 이 쓴 자리 뒤.
+
+    자막은 피치 14(원문 그대로 한 줄 16칸)라 **Galmuri14 14×14** 가 제자리다 — 대사창이 피치 12 라
+    Galmuri11 을 쓰는 것이지 자막까지 그럴 이유가 없다(유저 2026-09-06).
+    ⚠ Galmuri14 는 잉크가 14행·14열을 꽉 채운다(원본 JP 글리프는 1px 여백이 있었다) ⇒ 팽창 테두리는
+    칸 안에 드는 만큼만 남는다. 검은 바탕 자막이라 그림자가 조금 얇아질 뿐이다.
+    """
+    rom = cs.rom
+    r0 = font.resources(rom)[0]
+    by_code: dict[int, str] = {}
+    for ch in chars:
+        enc = cs.encode_char(ch)
+        if len(enc) == 2:  # 반각(ASCII)은 리소스 1 이 그린다
+            by_code[int.from_bytes(enc, "big")] = ch
+    codes = sorted(by_code)
+    # (BDF, 칸 안 위 여백) — Galmuri11 계열은 잉크가 11 이라 1행 띄워 테두리 자리를 남긴다.
+    _BDF = {
+        "galmuri11": ("Galmuri11.bdf", 1),
+        "galmuri11bold": ("Galmuri11-Bold.bdf", 1),
+        "galmuri14": ("Galmuri14.bdf", 0),
+    }
+    if source == "neodgm":
+
+        def src(ch):
+            return neodgm_fill(ch, cell, cell)
+
+    else:
+        _name, _top = _BDF[source]
+
+        def src(ch):
+            return _load_bdf(common.ROOT / "shared" / "fonts" / _name, cell, _top)[ch]
+
+    tbl_at, gl_at = after
+    table = b"".join(struct.pack(">H", c) for c in codes)
+    nbytes = ((cell + 7) // 8) * cell
+    glyphs = bytearray()
+    for c in codes:
+        fill = src(by_code[c])
+        glyphs += _pack_w(fill, cell) + _pack_w(ring(fill), cell)
+    if tbl_at + len(table) > r0["table_end"]:
+        raise SystemExit("리소스 5 표를 둘 자리가 없다(표 0 구역 초과)")
+    end = r0["glyphs"] + r0["entries"] * r0["stride"]
+    if gl_at + 4 + len(glyphs) > end:
+        raise SystemExit(f"리소스 5 글리프가 글꼴 구역을 넘는다 ({len(codes)}자)")
+    h = FONT5_HDR[0]
+    desc = bytes([0x01, cell, cell, nbytes])  # 두 면 · cell×cell
+    header = struct.pack(">III", tbl_at - h, tbl_at + len(table) - 4 - h, gl_at - h - 8)
+    return [
+        ("font5-header", h, header),
+        ("font0-table", tbl_at, table),
+        ("font0-glyphs", gl_at, desc + bytes(glyphs)),
     ]
 
 

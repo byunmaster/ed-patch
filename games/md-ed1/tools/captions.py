@@ -10,6 +10,7 @@
 """
 
 import json
+import os
 import struct
 import sys
 from pathlib import Path
@@ -32,9 +33,20 @@ FAMILIES = [
         (0x2EE2C, 0x2F1FE),
     ),
 ]
+# 글꼴은 **스트림마다** 고른다 — 정본이 머리에 `<fd85>`(와이드 글꼴 5)를 달면 그 자막만 리소스 5 로 그리고
+# 끝에 `<fd80>` 으로 대사 글꼴(리소스 0)로 되돌린다. 자막 글꼴 = **Galmuri14 14×14**, 피치는 원문 그대로 14
+# ⇒ 한 줄 16칸이라 줄 재배치가 없다(유저 확정 2026-09-06: 타이틀만 네오둥근모, 오프닝·엔딩은 갈무리).
+FONT_ID = 5
+FONT_TAG = "<fd85>"
+FONT_CELL = 14
+# 후보 비교용 — 정본은 상수, `MD_CAPTION_FONT` 로 한 번씩 바꿔 구워 본다(실험 전용, 배포 빌드는 상수를 고친다).
+FONT_SRC = os.environ.get("MD_CAPTION_FONT", "galmuri14")
 WIDTH = 16  # 피치 14 × 16 = 224px
 OFF_MAX = 0xFFF
-EXPECT = (10, 39)  # 표 · 고유 스트림 (2026-09-05 실측 — 지우기 스트림 <08><06> 을 표 9개가 같이 쓴다)
+EXPECT = (
+    10,
+    39,
+)  # 표 · 고유 스트림 (2026-09-05 실측 — 지우기 스트림 <08><06> 을 표 9개가 같이 쓴다)
 MAP_JSON = common.GAME_DIR / "textmap" / "captions.json"
 
 
@@ -110,6 +122,17 @@ def _width_errors(k: str, ours: str) -> list[str]:
         if w > WIDTH:
             errs.append(f"captions {k}: 줄 {w}칸 > {WIDTH}: {ln!r}")
     return errs
+
+
+def font5_chars(textmap: dict) -> set[str]:
+    """리소스 5 로 그리는 자막이 쓰는 글자 — 그만큼만 글리프를 만든다."""
+    import re
+
+    out: set[str] = set()
+    for e in textmap.values():
+        if FONT_TAG in e.get("ours", ""):
+            out.update(re.sub(r"<[^>]*>", "", e["ours"]))
+    return out
 
 
 def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:

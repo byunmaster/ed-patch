@@ -4,7 +4,7 @@
 (좌상·좌하·우상·우하). 타이틀은 셀 10 부터 54개를 VRAM 0x407~ 로 복사한다(`$12AB2` → `$1B40`).
 셀 10~34 = はじめから × 5(밝기·강조 변형), 35~59 = つづきから × 5.
 
-재삽입: 낱말을 80×16 비트맵(Galmuri11 채움 + 팽창 테두리, 가운데 정렬)으로 그려 변형마다 원본 셀의
+재삽입: 낱말을 80×16 비트맵(**네오둥근모 16px** 채움 + 팽창 테두리, 가운데 정렬)으로 그려 변형마다 원본 셀의
 **채움/테두리 색 인덱스**를 그대로 써 5셀에 덮는다(같은 크기, 제자리). 정본은 `textmap/names.json`
 의 `title_gfx` (jp 낱말 → ours).
 """
@@ -67,15 +67,17 @@ def render_word(word: str, ncell: int) -> tuple[list[list[int]], list[list[int]]
     """낱말 → (채움, 테두리) 16 × (ncell·16) 비트 행렬, 가운데 정렬. 글리프는 hangul.glyph_fill(14×14 셀)."""
     w = ncell * 16
     fill = [[0] * w for _ in range(16)]
-    glyphs = [hangul.glyph_fill(ch) for ch in word if ch != " "]
-    pitch = 13
+    glyphs = [
+        hangul.neodgm_fill(ch) for ch in word if ch != " "
+    ]  # 타이틀은 네오둥근모 16px(유저 2026-09-05)
+    pitch = 16
     total = pitch * len(glyphs)
     x0 = max(0, (w - total) // 2)
     for i, g in enumerate(glyphs):
-        for y in range(14):
-            for x in range(14):
+        for y in range(16):
+            for x in range(16):
                 if g[y][x] and x0 + i * pitch + x < w:
-                    fill[1 + y][x0 + i * pitch + x] = 1
+                    fill[y][x0 + i * pitch + x] = 1
     return fill, hangul.ring(fill)
 
 
