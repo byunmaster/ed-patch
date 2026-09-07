@@ -259,14 +259,15 @@
   "canon": "shared/glossary ui"
  },
  "つよさ@A01": {
-  "kr": "강함",
+  "kr": "상태",
   "state": "ps1",
   "budget_tiles": 6,
   "width_tiles": 4,
   "fits": true,
   "row": 9,
   "x0": 2,
-  "canon": "shared/glossary ui"
+  "canon": "shared/glossary ui",
+  "canon_site": "파티메뉴"
  },
  "つよさ@A05": {
   "kr": "힘",
@@ -276,37 +277,41 @@
   "fits": true,
   "row": 1,
   "x0": 2,
-  "canon_exception": "능력치 칸이라 「힘」. 정본 「강함」 은 커맨드 창 쪽(A01·B0A·B0C·C0A)"
+  "canon_site": "능력치",
+  "canon": "shared/glossary ui"
  },
  "つよさ@B0A": {
-  "kr": "강함",
+  "kr": "상태",
   "state": "ps1",
   "budget_tiles": 6,
   "width_tiles": 4,
   "fits": true,
   "row": 3,
   "x0": 2,
-  "canon": "shared/glossary ui"
+  "canon": "shared/glossary ui",
+  "canon_site": "파티메뉴"
  },
  "つよさ@B0C": {
-  "kr": "강함",
+  "kr": "상태",
   "state": "ps1",
   "budget_tiles": 6,
   "width_tiles": 4,
   "fits": true,
   "row": 5,
   "x0": 2,
-  "canon": "shared/glossary ui"
+  "canon": "shared/glossary ui",
+  "canon_site": "파티메뉴"
  },
  "つよさ@C0A": {
-  "kr": "강함",
+  "kr": "상태",
   "state": "ps1",
   "budget_tiles": 6,
   "width_tiles": 4,
   "fits": true,
   "row": 3,
   "x0": 2,
-  "canon": "shared/glossary ui"
+  "canon": "shared/glossary ui",
+  "canon_site": "파티메뉴"
  },
  "ぼうぎょ@A05": {
   "kr": "방어력",

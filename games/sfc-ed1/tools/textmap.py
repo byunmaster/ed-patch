@@ -332,6 +332,37 @@ def check_terms() -> list[tuple[str, str, str]]:
     return out
 
 
+# ── UI 라벨 정본 대조 ────────────────────────────────────────────────────────────────────
+# 🔴 **이 게임은 가나 전용이라 정본의 한자 열쇠가 안 맞는다.** 공용 `diff_labels` 가
+#    `_aliases` 로 이어 주지만 아직 다 없어서, **못 견준 수를 같이 본다** — 「갈린 데 없다」는
+#    **몇 개를 견줬는지를 봐야** 값이 있다(2026-09-08 실측: 44 중 6 만 견주고 초록이었다).
+# ⚠ 한 원문이 자리마다 다른 말인 열쇠(`強さ@능력치`)가 있어 **창에 자리를 적는다**
+#    (`menus.json` 의 `canon_site`). 자리를 안 대면 셋이 한 말로 뭉개진다.
+MENUS_PATH = common.GAME_DIR / "textmap" / "menus.json"
+
+
+def check_ui_labels() -> dict:
+    """{다름, 못 견춘 것, 견준 수} — 게이트는 **다름만** 실패로 친다(못 견춘 건 할 일이다)."""
+    sys.path.insert(0, str(common.ROOT / "shared"))
+    import glossary
+
+    menus = json.loads(MENUS_PATH.read_text(encoding="utf-8"))
+    mine = {}
+    for k, v in menus.items():
+        if not v.get("kr"):
+            continue
+        jp = k.split("@")[0]
+        site = v.get("canon_site")
+        mine[f"{jp}@{site}" if site else jp] = v["kr"]
+    out = glossary.diff_labels(mine)
+    return {
+        "diff": out.diff,
+        "unmatched": sorted(set(out.unmatched)),
+        "compared": len(mine) - len(out.unmatched),
+        "total": len(mine),
+    }
+
+
 def check() -> dict:
     tm = load()
     segs = {
@@ -353,7 +384,12 @@ def check() -> dict:
     gl = check_glossary()
     nm = check_naming()
     tr = check_terms()
+    ui = check_ui_labels()
     return {
+        "ui_labels": f"{ui['compared']}/{ui['total']} 견줌 · 다름 {len(ui['diff'])}"
+        f" · 못 견줌 {len(ui['unmatched'])}",
+        "ui_diff": ui["diff"],
+        "ui_unmatched": ui["unmatched"],
         "entries": len(tm),
         "unknown_id": unknown,
         "token_errors": len(bad),
@@ -400,5 +436,6 @@ if __name__ == "__main__":
             or r["glossary_drift"]
             or r["naming_space"]
             or r["ps1_terms"]
+            or r["ui_diff"]  # ⚠ `ui_unmatched` 는 실패가 아니다 — 정본에 없는 열쇠는 할 일이다
         ):
             raise SystemExit(1)
