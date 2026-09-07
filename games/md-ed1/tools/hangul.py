@@ -173,6 +173,39 @@ def codes_for(syllables: set[str], freeze: bool = False) -> dict[str, int]:
     return {c: cur[c] for c in syllables}
 
 
+def check_frozen() -> None:
+    """🔴 배정이 **흔들리지 않았나** — 커밋된 정본과 대조한다(세이브 호환의 근본 조건).
+
+    빌드는 「없는 글자」만 실패로 친다. 그런데 진짜 사고는 **재생성**이다 — 누가 코드표를 유니코드
+    순으로 다시 매기면 빌드는 그대로 통과하고, **옛 세이브의 이름·장 제목이 딴 글자로 뜬다**
+    (파티 이름은 레코드에 우리 코드로 박혀 세이브로 따라간다). pce-ed1 이 같은 사고를 실제로 겪었다.
+    ⇒ `git show HEAD:<정본>` 과 대조해 **이미 있던 글자의 코드가 바뀌거나 사라졌으면** 실패시킨다.
+    """
+    import subprocess
+
+    rel = CODES_JSON.relative_to(common.ROOT)
+    cur = json.loads(CODES_JSON.read_text(encoding="utf-8"))
+    try:
+        old_raw = subprocess.run(
+            ["git", "show", f"HEAD:{rel}"],
+            cwd=common.ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print(f"  한글 코드 {len(cur)}자 — 커밋본이 없어 대조는 건너뛴다")
+        return
+    old = json.loads(old_raw)
+    moved = [c for c, v in old.items() if cur.get(c) != v]
+    if moved:
+        raise SystemExit(
+            f"한글 코드가 밀렸다({len(moved)}자: {''.join(moved[:20])}…) — 세이브 호환이 깨진다. "
+            "정본은 **뒤에만** 붙인다(`--freeze`)"
+        )
+    print(f"  한글 코드 {len(cur)}자 · 커밋본 {len(old)}자 대조 OK (밀린 글자 0)")
+
+
 class Charset:
     """빌드 한 번의 문자 집합 — 표 0 항목(코드 오름차순)과 글자→코드."""
 
@@ -481,6 +514,8 @@ if __name__ == "__main__":
         chars = build.collect_chars(build.load_textmaps())
         codes_for({c for c in chars if needs_glyph(c, keep)}, freeze=True)
         print(f"  {CODES_JSON}: {len(json.loads(CODES_JSON.read_text(encoding='utf-8')))}자 고정")
+    elif "--check" in sys.argv:
+        check_frozen()
     elif "--preview" in sys.argv:
         i = sys.argv.index("--preview")
         preview(sys.argv[i + 2], Path(sys.argv[i + 1]))

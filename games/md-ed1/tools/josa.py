@@ -18,7 +18,9 @@ PS1 은 조립 버퍼를 1패스로 훑어 병기를 줄이는 방식이었다. 
 
     EB p   배우 이름 기준 조사 — 이름은 `($FF3470)` 의 첫 바이트(배우 번호) → `$FF1DBC + n*0x40 + 0x30`
     EC p   아이템 이름 기준 조사 — 이름 버퍼 `$FF2028`
-    p = 0 은/는 · 1 이/가 · 2 을/를
+    p 하위 니블 = 0 은/는 · 1 이/가 · 2 을/를
+    p 상위 니블 = 0 이면 위 규칙, **0 이 아니면 (상위−1) 번 파티원**을 쓴다 —
+                  `<09 nn>`(번호로 이름을 그리는 코드) 뒤에 붙는 자리를 위해서다
 
 정본에선 `<02>을(를)` 대신 `<02><eb02>` 로 쓴다.
 
@@ -78,10 +80,11 @@ def tables(cs) -> tuple[bytes, int]:
     n = max(codes.values()) - base + 1
     by_code = {v: k for k, v in codes.items()}
     hangul = bitmap([has_final(by_code.get(base + i, "")) for i in range(n)])
+    # 🔴 68000 은 워드를 **짝수 자리**에서만 읽는다 — 비트표가 홀수면 뒤따르는 조사 쌍 표가
+    # 홀수로 밀려 `move.w (a0,d0.w),d2` 가 어긋난 값을 집는다(2026-09-06 인게임에서 물렸다).
+    hangul += b"\x00" * (len(hangul) & 1)
     ascii_ = bitmap([chr(0x20 + i) in ASCII_FINAL for i in range(0x60)])
-    pairs = b"".join(
-        struct.pack(">HH", codes[a], codes[b]) for a, b in PAIRS
-    )  # (받침 없음, 있음)
+    pairs = b"".join(struct.pack(">HH", codes[a], codes[b]) for a, b in PAIRS)  # (받침 없음, 있음)
     return hangul + ascii_ + pairs, n
 
 
@@ -101,8 +104,12 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
     """손인코딩 — 표 자리를 모르는 1패스에선 0 으로 채워 길이만 잰다."""
     t = tbl_at if tbl_at is not None else 0
     hangul_tbl = t
-    ascii_tbl = t + (n + 7) // 8
+    hangul_len = (n + 7) // 8
+    hangul_len += hangul_len & 1  # 짝수 정렬(tables() 와 같은 규칙)
+    ascii_tbl = t + hangul_len
     pairs_tbl = ascii_tbl + 0x0C
+    if tbl_at is not None:
+        assert pairs_tbl % 2 == 0 and hangul_tbl % 2 == 0, "표가 홀수 자리다 — 워드 읽기가 어긋난다"
     b = bytearray()
 
     def w(*vals):
@@ -114,10 +121,24 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
 
     # ── EB: 배우 이름 ─────────────────────────────────────────────
     w(0x48E7, 0xE0C0)  # movem.l d0-d2/a0-a1,-(a7)
+    w(0x7000)  # moveq #0,d0
+    w(0x1011)  # move.b (a1),d0        p
+    w(0x0240, 0x00F0)  # andi.w #$f0,d0
+    from_ptr_br = len(b)
+    w(0x6700, 0)  # beq.w from_ptr       상위 니블 0 → 배우 포인터
+    w(0xE848)  # lsr.w #4,d0
+    w(0x5340)  # subq.w #1,d0         (상위−1) 번 파티원
+    have_idx_br = len(b)
+    w(0x6000, 0)  # bra.w have_idx
+    from_ptr = len(b)
+    struct.pack_into(">h", b, from_ptr_br + 2, from_ptr - (from_ptr_br + 2))
     w(0x2079)
     l(ACTOR_PTR)  # movea.l ACTOR_PTR.l,a0
-    w(0x7000)  # moveq #0,d0
     w(0x1010)  # move.b (a0),d0
+    have_idx = len(b)
+    struct.pack_into(">h", b, have_idx_br + 2, have_idx - (have_idx_br + 2))
+    w(0x0280)
+    l(0x000000FF)  # andi.l #$ff,d0
     w(0xED88)  # lsl.l #6,d0
     w(0x41F9)
     l(PARTY_REC)  # lea PARTY_REC.l,a0
@@ -207,7 +228,7 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
         struct.pack_into(">h", b, br + 2, pick - (br + 2))
     w(0x7000)  # moveq #0,d0
     w(0x1011)  # move.b (a1),d0     p (피연산자 — a1 은 디스패처가 민다)
-    w(0x0240, 0x0003)  # andi.w #3,d0
+    w(0x0240, 0x0003)  # andi.w #3,d0      하위 니블만(상위는 파티 번호)
     w(0xE548)  # lsl.w #2,d0        p*4
     w(0xD442)  # add.w d2,d2        종성*2
     w(0xD042)  # add.w d2,d0
@@ -268,14 +289,18 @@ def check(d: bytes) -> None:
     import hangul
 
     for c, idx in ((CODE_ACTOR, IDX_ACTOR), (CODE_ITEM, IDX_ITEM)):
-        h = HANDLER_TBL + int.from_bytes(d[HANDLER_TBL + idx * 2 : HANDLER_TBL + idx * 2 + 2], "big")
+        h = HANDLER_TBL + int.from_bytes(
+            d[HANDLER_TBL + idx * 2 : HANDLER_TBL + idx * 2 + 2], "big"
+        )
         if d[h] != 0x4E or d[h + 1] != 0x75:
             raise SystemExit(f"코드 {c:02x} 의 원본 핸들러가 rts 가 아니다 @{h:#x}")
         if d[ARGLEN_TBL + idx] != 0:
             raise SystemExit(f"코드 {c:02x} 의 원본 피연산자 길이가 0 이 아니다")
     cs = hangul.Charset(d, set("는은가이를을"))
     body, tbl = code(0x1F0000, cs)
-    print(f"  조사 훅 — 코드 {CODE_ACTOR:02x}/{CODE_ITEM:02x} · 기계어 {len(body)}B · 표 {len(tbl)}B")
+    print(
+        f"  조사 훅 — 코드 {CODE_ACTOR:02x}/{CODE_ITEM:02x} · 기계어 {len(body)}B · 표 {len(tbl)}B"
+    )
 
 
 if __name__ == "__main__":

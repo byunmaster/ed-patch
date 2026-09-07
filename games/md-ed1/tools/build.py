@@ -424,6 +424,10 @@ def main(check_only: bool = False) -> None:
     rom.verify_immutable()
     out_dir = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_")
     out_dir.mkdir(parents=True, exist_ok=True)
+    # 🔴 지난 실패 표식을 지운다 — `pull-build.sh` 는 `.failed` 가 하나라도 있으면 **그 칸을 통째로**
+    # 거부한다(유저 맥에서 실측 2026-09-06: 성공 이미지 옆에 아침의 .failed 가 남아 못 받았다).
+    for stale in out_dir.glob("*.failed"):
+        stale.unlink()
     out = out_dir / "ed1-kr.bin"
     out.write_bytes(bytes(rom.buf))
     used = cur - SCRIPT_LO if region == "script" else (SCRIPT_HI - SCRIPT_LO) + (cur - TAIL_LO)
