@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
 import font
 import patch_font_hook
+import patch_scn
 
 # 글리프 표를 놓을 자리 — `free_map.py` 가 「전부 0xFF 인 섹터」로 확인한 연속 구간.
 # ⚠ 시작 섹터만 적고 길이는 표 크기에서 나온다. 자리를 옮기면 여기만 고친다.
@@ -51,9 +52,25 @@ def claim(secs: list[dict], start: int, size: int) -> range:
     return rng
 
 
+_SCN_MARKS = None
+
+
 def patches_for(key: str) -> list[tuple[int, bytes, bytes]]:
-    """(플랫 오프셋, 원본이어야 할 바이트, 새 바이트). ⚠ **expect 가 틀리면 죽는다.**"""
-    return patch_font_hook.build_patch(key) if key in patch_font_hook.SITES else []
+    """(플랫 오프셋, 원본이어야 할 바이트, 새 바이트). ⚠ **expect 가 틀리면 죽는다.**
+
+    🔴 **문안은 시나리오 디스크에만** 붙는다 — 대본이 거기 산다(`scn.py`).
+    """
+    out = patch_font_hook.build_patch(key) if key in patch_font_hook.SITES else []
+    if key == "scenario":
+        global _SCN_MARKS
+        if _SCN_MARKS is None:
+            _SCN_MARKS, st = patch_scn.plan()
+            print(
+                f"  문안 {st['제자리'] + st['틈 건너뜀'] + st['공백 메움'] + st['밖으로']:,}블록 "
+                f"(밖으로 {st['밖으로']:,} · 건너뜀 {st['건너뜀:점프가 온다'] + st['건너뜀:빈자리 부족']:,})"
+            )
+        out = out + _SCN_MARKS
+    return out
 
 
 def write_flat(raw: bytearray, secs: list[dict], off: int, data: bytes) -> None:
