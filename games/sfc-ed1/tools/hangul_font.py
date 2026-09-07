@@ -35,7 +35,12 @@ OPENING_FONT = "neodgm"
 FONTS = {
     # 🟢 D1=B 확정(유저 2026-09-06) — 완성형 11,172자가 **전부 폭 7px** 라 8칸에 그대로 든다
     #    (8px 초과 0 · 빈 글리프 0 · 숫자·영문·부호도 전부). 우겨넣는 게 아니라 설계가 반각이다.
-    "Galmuri11-Condensed": {"path": "Galmuri11-Condensed.bdf", "kind": "bdf", "dy": -2, "w": 8},
+    # dy −1: **원판 가나와 밑선을 맞춘 값**(2026-09-07 화면 실측). 원판 가나는 칸의 행 0~12 를 쓰고
+    # 우리 글꼴은 11행이라, dy −1 이어야 잉크가 행 2~12 로 **아랫줄이 같아진다**.
+    # 🔴 예전 −2 는 행 1~11 이라 밑선이 2px 떠서, 게임이 그리는 **커서(안 건드린 것)가 낮아 보였다**
+    #    — 유저 제보 「커서 위치가 메뉴 중앙에 안 온다」의 실체다. 커서는 원판과 **완전히 같았다**
+    #    (화면 y 95~101 동일). 움직인 건 우리 글자 쪽이었다.
+    "Galmuri11-Condensed": {"path": "Galmuri11-Condensed.bdf", "kind": "bdf", "dy": 0, "w": 8},
     "neodgm": {"path": "neodgm.ttf", "kind": "ttf", "size": 16, "dy": 0, "w": 16},  # 잉크 y1~13
     "Galmuri14": {"path": "Galmuri14.bdf", "kind": "bdf", "dy": -4, "w": 16},  # 잉크 y0~13 · x1~14
     "Galmuri11": {"path": "Galmuri11.bdf", "kind": "bdf", "dy": 0, "w": 16},  # 잉크 y3~13
