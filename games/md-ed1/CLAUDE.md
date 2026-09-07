@@ -18,9 +18,9 @@
   [`tools/scene.py`](tools/scene.py). 재조립은 **원본 바이트 제자리 + 스트림을 끝에 다시 쓰고 변위만
   돌리기**다(길이 변경 PoC 통과, `docs/status.md` 3·7절). 스트림의 끝은 00·06·07, 페이지는 05.
 - **글꼴은 롬 안에 있다** — 14×14 1bpp, 글리프마다 **채움 + 테두리 두 면**(56B). 리소스 6개,
-  SJIS 표 1,459자(`tools/font.py`). 조회는 표에서 코드를 찾아 색인 × 56 이라 **표를 한글 코드로
-  갈고 글리프를 붙이면** 그대로 먹는다. 한글 2,350자 × 56B = 131,600B — 한자 자리(81,760B) +
-  꼬리 빈 공간(81,058B)으로 딱 맞거나, 4MB 확장.
+  SJIS 표 1,459자(`tools/font.py`). **방침 (b)(유저 확정 2026-09-05)**: 표 0 의 한자·가나 자리에
+  **번역문이 쓰는 한글만**(≤1,370자, 코드 0x8A40~, `tools/hangul.py`) 넣는다. 4MB 확장은 SRAM 겹침으로
+  불가. 글리프는 Galmuri11(대사창 피치 12px 라 14px 글꼴은 옆 글자를 갉는다).
 - **씬 로더는 `$18460`** — 맵 ID 표 0x134DDC → 씬 번호 `$FF343C` → 블록을 **RAM 0xFF6650** 에 푼다.
   가시성·재압축·재배치 PoC 는 통과했다(`docs/status.md` 7절).
 - **디버깅은 emucap(mednafen md)로 된다.** 브레이크포인트(exec·read·write, 값 필터)·상태 저장이
@@ -45,6 +45,10 @@ python3 games/md-ed1/tools/font.py --png out.png [--outline]
 python3 games/md-ed1/tools/lz.py encode|decode <in> <out>
 python3 games/md-ed1/tools/scene.py --check      # 스트림 2,742 · 화자 태그 도달 · 항등 재조립 225
 python3 games/md-ed1/tools/scene.py --dump 104   # 블록 104 의 스트림을 읽기 좋게
+python3 games/md-ed1/tools/build.py              # ⭐ 정본(script/*.json) → work/build/<꼬리표>/ed1-kr.bin
+python3 games/md-ed1/tools/build.py --check      # 빌드 없이 정본 게이트만
+python3 games/md-ed1/tools/textmap.py --seed 104 # 블록 104 정본 초안(해시만) + work/derived 에 원문 골격
+python3 games/md-ed1/tools/hangul.py --preview out.png "가나다"   # 글리프 미리보기
 python3 games/md-ed1/tools/poc_visibility.py       # PoC 롬(work/emu/poc2.bin) — 글꼴 교체 + 블록 104 길이 변경·재압축·재배치
 sh games/md-ed1/check.sh                         # ⭐ 이 게임의 커밋 전 게이트
 ```
