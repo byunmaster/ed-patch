@@ -28,35 +28,45 @@ import common
 import dicts
 import encode
 
-TABLE = 0x02A30A  # 원본 포인터 표(2B × 8)
-COUNT = 8
-CELLS = 13
-SETUP = (0x02A2C8, 0x02A2CF)  # `LDA $02A30A,X` · `LDA $02A30B,X` — 피연산자를 우리 표로
+# 고정 칸 문자열 표 **둘** — 둘 다 `MVN` 으로 칸 배열에 통째로 옮긴다(`hook.MVN_SITES`).
+GROUPS = [
+    {"key": "battle", "table": 0x02A30A, "count": 8, "cells": 13, "setup": (0x02A2C8, 0x02A2CF)},
+    {"key": "title", "table": 0x02A646, "count": 3, "cells": 12, "setup": (0x02A607, 0x02A60E)},
+]
 
 
-def rows() -> list[list[str]]:
-    """여덟 줄을 **칸 단위 글자 목록**으로 — 격자 셋(칸 시작 0·5·10)과 이름 다섯."""
+def rows(key: str) -> list[list[str]]:
+    """한 무리를 **칸 단위 글자 목록**으로. `battle` = 격자 셋(칸 시작 0·5·10) + 이름 다섯,
+    `title` = 타이틀 메뉴 세 줄."""
     d = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    g = next(x for x in GROUPS if x["key"] == key)
+    n = g["cells"]
     out = []
-    for g in d["grid"]:
-        cells = [" "] * CELLS
-        for col in g["cols"]:
-            for i, ch in enumerate(col["kr"]):
-                cells[col["at"] + i] = ch
-        out.append(cells)
-    for n in d["names"]:
-        cells = [" "] * CELLS
-        for i, ch in enumerate(n["kr"]):
-            cells[i] = ch
-        out.append(cells)
-    if len(out) != COUNT:
-        raise SystemExit(f"전투 UI 줄이 {len(out)} — {COUNT} 이어야 한다")
+    if key == "battle":
+        for grid in d["grid"]:
+            cells = [" "] * n
+            for col in grid["cols"]:
+                for i, ch in enumerate(col["kr"]):
+                    cells[col["at"] + i] = ch
+            out.append(cells)
+        for name in d["names"]:
+            cells = [" "] * n
+            for i, ch in enumerate(name["kr"]):
+                cells[i] = ch
+            out.append(cells)
+    else:
+        for t in d["title"]:
+            if len(t["kr"]) > n:
+                raise SystemExit(f"타이틀 줄 {t['kr']!r} 이 {n}칸을 넘는다")
+            out.append(list(t["kr"]) + [" "] * (n - len(t["kr"])))
+    if len(out) != g["count"]:
+        raise SystemExit(f"{key} 줄이 {len(out)} — {g['count']} 이어야 한다")
     return out
 
 
-def encode_rows(rep_index: dict[str, int]) -> list[bytes]:
+def encode_rows(key: str, rep_index: dict[str, int]) -> list[bytes]:
     out = []
-    for cells in rows():
+    for cells in rows(key):
         b = bytearray()
         for ch in cells:
             if encode.is_glyph(ch):
@@ -64,65 +74,68 @@ def encode_rows(rep_index: dict[str, int]) -> list[bytes]:
             elif ch in encode.KR_TABLE:
                 b.append(encode.KR_TABLE[ch])
             else:
-                raise SystemExit(f"전투 UI 에 못 넣는 글자: {ch!r}")
+                raise SystemExit(f"고정 칸 문자열에 못 넣는 글자: {ch!r}")
         if dicts.TERM in b:
-            raise SystemExit("전투 UI 문자열 안에 $FF")
+            raise SystemExit("고정 칸 문자열 안에 $FF")
         out.append(bytes(b))
     return out
 
 
 def bake(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dict:
-    """[포인터 표][문자열] 을 사전 뒤에 이어 놓고 `$02:A2C8`·`$02:A2CF` 의 피연산자를 바꾼다."""
-    for addr in SETUP:
-        o = common.snes2off(addr)
-        if rom[o] != 0xBF:
-            raise SystemExit(f"전투 UI 표 참조가 예상과 다르다 {common.fmt(addr)}")
-    strs = encode_rows(rep_index)
-    table = org
-    cur = org + 2 * COUNT
-    ptr = []
-    for b in strs:
-        ptr.append(cur)
-        blob = b + bytes([dicts.TERM])
-        so = common.snes2off((dicts.BANK << 16) | cur)
-        out[so : so + len(blob)] = blob
-        cur += len(blob)
-    if cur > 0x10000:
-        raise SystemExit(f"사전 뱅크가 넘친다: {cur:#x}")
-    t = common.snes2off((dicts.BANK << 16) | table)
-    for i, p in enumerate(ptr):
-        out[t + 2 * i : t + 2 * i + 2] = p.to_bytes(2, "little")
-    for k, addr in enumerate(SETUP):  # 두 참조는 표의 lo·hi 를 각각 집는다
-        o = common.snes2off(addr)
-        out[o + 1] = (table + k) & 0xFF
-        out[o + 2] = (table + k) >> 8
-        out[o + 3] = dicts.BANK
-    return {
-        "표": common.fmt((dicts.BANK << 16) | table),
-        "줄": COUNT,
-        "끝": common.fmt((dicts.BANK << 16) | cur),
-    }
+    """무리마다 [포인터 표][문자열] 을 사전 뒤에 이어 놓고 그 무리의 표 참조를 우리 것으로."""
+    info = {}
+    cur = org
+    for g in GROUPS:
+        for addr in g["setup"]:
+            if rom[common.snes2off(addr)] != 0xBF:
+                raise SystemExit(f"표 참조가 예상과 다르다 {common.fmt(addr)}")
+        strs = encode_rows(g["key"], rep_index)
+        table = cur
+        cur += 2 * g["count"]
+        ptr = []
+        for b in strs:
+            ptr.append(cur)
+            blob = b + bytes([dicts.TERM])
+            so = common.snes2off((dicts.BANK << 16) | cur)
+            out[so : so + len(blob)] = blob
+            cur += len(blob)
+        if cur > 0x10000:
+            raise SystemExit(f"사전 뱅크가 넘친다: {cur:#x}")
+        t = common.snes2off((dicts.BANK << 16) | table)
+        for i, p in enumerate(ptr):
+            out[t + 2 * i : t + 2 * i + 2] = p.to_bytes(2, "little")
+        for k, addr in enumerate(g["setup"]):  # 두 참조가 표의 lo·hi 를 각각 집는다
+            o = common.snes2off(addr)
+            out[o + 1] = (table + k) & 0xFF
+            out[o + 2] = (table + k) >> 8
+            out[o + 3] = dicts.BANK
+        info[g["key"]] = {"표": common.fmt((dicts.BANK << 16) | table), "줄": g["count"]}
+    info["끝"] = common.fmt((dicts.BANK << 16) | cur)
+    return info
 
 
 def patch_ranges() -> list[tuple[int, int]]:
-    return [(common.snes2off(a), common.snes2off(a) + 4) for a in SETUP]
+    return [(common.snes2off(a), common.snes2off(a) + 4) for g in GROUPS for a in g["setup"]]
 
 
 def verify(out: bytes, slots: list) -> dict:
-    """🔑 **체인이 다 끝난 롬**에서 게임이 하는 그대로 되읽는다 — `$02:A2C8` 의 피연산자 → 표 → 문자열.
-    ⚠ 우리가 적어 둔 주소가 아니라 **롬에 박힌 값**을 따라간다(뒤 단계가 덮었으면 여기서 걸린다)."""
-    o = common.snes2off(SETUP[0])
-    table = (out[o + 3] << 16) | (out[o + 2] << 8) | out[o + 1]
-    want = ["".join(c) for c in rows()]
+    """🔑 **체인이 다 끝난 롬**에서 게임이 하는 그대로 되읽는다 — 표 참조의 피연산자 → 표 → 문자열."""
+    n_ok = 0
     bad = []
-    for i in range(COUNT):
-        t = common.snes2off(table) + 2 * i
-        p = out[t] | (out[t + 1] << 8)
-        so = common.snes2off((table & 0xFF0000) | p)
-        end = out.find(bytes([dicts.TERM]), so)
-        got = encode.decode_kr(out[so:end], slots)
-        if got != want[i]:
-            bad.append(f"[{i}] {got!r} ≠ {want[i]!r}")
+    for g in GROUPS:
+        o = common.snes2off(g["setup"][0])
+        table = (out[o + 3] << 16) | (out[o + 2] << 8) | out[o + 1]
+        want = ["".join(c).rstrip() for c in rows(g["key"])]
+        for i in range(g["count"]):
+            t = common.snes2off(table) + 2 * i
+            p = out[t] | (out[t + 1] << 8)
+            so = common.snes2off((table & 0xFF0000) | p)
+            end = out.find(bytes([dicts.TERM]), so)
+            got = encode.decode_kr(out[so:end], slots).rstrip()
+            if got != want[i]:
+                bad.append(f"{g['key']}[{i}] {got!r} ≠ {want[i]!r}")
+            else:
+                n_ok += 1
     if bad:
-        raise SystemExit("전투 UI 되읽기 실패:\n  " + "\n  ".join(bad))
-    return {"읽은 줄": COUNT, "표": common.fmt(table)}
+        raise SystemExit("고정 칸 문자열 되읽기 실패:\n  " + "\n  ".join(bad))
+    return {"읽은 줄": n_ok}

@@ -66,10 +66,14 @@ NAME_BLOCK = 33  # 세 자리 모두 같은 길이
 # 없다. `$02:A2DB` 가 `LDX $0006 / LDY #$0305 / LDA #$000C / MVN $02,$00` 로 **13바이트를 칸
 # 배열에 통째로 옮긴다** — 한 바이트 = 한 칸이 전제라 두 바이트 한글이 못 산다.
 # ⇒ 전송 자체를 우리 루프로 갈아 끼운다. ⚠ 끝나고 **DB = $00**(원본 MVN 이 남기는 값)이어야 한다.
-MVN_SITE = 0x02A2DB
-MVN_BLOCK = 12
+# 자리가 **둘**이다(2026-09-07 실측) — 파티 이름 여덟(13칸)과 **타이틀 메뉴 세 줄(12칸)**.
+# 둘 다 `LDX $0006 / LDY #$0305 / LDA #길이−1 / MVN $02,$00` 로 똑같이 생겼다.
+# ⇒ **`MVN` 세 바이트만** `JSR` 로 갈아 끼운다(크기가 같다). 칸 수는 **호출자가 이미 A 에 넣어 준다**
+#   (`LDA #$000C` / `#$000B`) — 그래서 자리마다 상수를 안 든다.
+MVN_SITES = [(0x02A2E4, 0x02A2DE), (0x02A620, 0x02A61A)]  # (MVN, 앞의 `LDY #$0305`)
+MVN_LEN = 3
 NAME13_TRAMPOLINE = 0x02FE61
-NAME13_CELLS = 13
+CELL_BASE = 0x000305  # `LDY #$0305` — 패치할 때 자리마다 확인한다
 CELLS = 0x000305  # 칸 배열(WRAM 미러) — long 으로 써서 DB 에 안 기댄다
 NMI_CALL = 0x00AA00  # NMI 의 JSR $ACA9 → JSR (우리 스텁)
 NMI_STUB = 0x00FF20  # 뱅크 $00 빈 자리 160B
@@ -90,6 +94,10 @@ V_T0 = VAR + 12  # 워드: 본체 임시(조사 — 마지막 글리프 사본)
 V_T1 = VAR + 14  # 본체 임시(슬롯 번호 · 조사 k)
 V_RES, V_TMP = VAR + 15, VAR + 16
 V_CNT = VAR + 17  # NMI: 이번 프레임에 남은 장수
+V_N13 = VAR + 24  # 워드: 고정 칸 문자열의 칸 수(호출자가 A 에 넣어 준다)
+# 🔴 선두 표를 조회하면 **A 가 표 값으로 덮인다** — 선두가 아닌 글자는 원본 바이트를 되찾아야 한다.
+#    안 그러면 공백·숫자 자리에 표의 `$FF` 가 들어가 **칸이 깨진다**(2026-09-07 타이틀 메뉴에서 드러났다).
+V_RAW = VAR + 26  # 방금 읽은 원본 바이트
 V_U0 = VAR + 18  # 워드: NMI 임시(글리프 색인)
 V_U1 = VAR + 20  # NMI 임시(슬롯 번호)
 V_UV = VAR + 21  # 워드: NMI 임시(VRAM 워드 주소)
@@ -302,7 +310,10 @@ def build_payload(
     a.op("lda", addr="lead_tab", mode="longx")
     a.plx()
     a.cmp(imm=0xFF)
-    a.beq(label="nc_plain")
+    a.bne(label="nc_lead")
+    a.op("lda", addr=V_RAW, mode="long")  # 🔴 선두가 아니다 — **원본 바이트**를 되찾는다
+    a.bra(label="nc_plain")
+    a.label("nc_lead")
     a.op("sta", addr=V_IDX + 1, mode="long")  # 선두 서수
     a.iny()
     a.op("lda", dp=0x06, mode="indlongy")  # ⚠ `[dp],Y` 다 — `[dp]`($A7) 로 쓰면 첫 글자만 읽는다
@@ -326,21 +337,27 @@ def build_payload(
     # ── 13칸 고정 문자열 한 줄 (전투 커맨드·파티 이름) ─────────────────────────────
     a.label("name13")
     a.php()
+    a.rep(imm=0x30)
+    a.inc()  # A = 길이−1 → **칸 수**
+    a.op("sta", addr=V_N13, mode="long")
     a.sep(imm=0x20)
-    a.rep(imm=0x10)
     a.lda(imm=HOOK_BANK)
     a.pha()
     a.plb()
     a.lda(imm=DICT_BANK)
-    a.op("sta", addr=0x000008, mode="long")  # [dp] 롱 포인터의 뱅크
-    a.ldy(imm=0x0000, m16=True)
-    a.ldx(imm=0x0000, m16=True)
+    a.op("sta", addr=0x000008, mode="long")  # [$06] 의 뱅크 — 문자열은 우리 뱅크에 있다
+    a.ldy(imm=0x0000, m16=True)  # 소스 커서
+    a.ldx(imm=0x0000, m16=True)  # 칸 커서
     a.label("n13_loop")
-    a.cpx(imm=NAME13_CELLS, m16=True)
+    a.rep(imm=0x20)
+    a.txa()
+    a.op("cmp", addr=V_N13, mode="long")
+    a.sep(imm=0x20)
     a.bcs(label="n13_end")
     a.op("lda", dp=0x06, mode="indlongy")
     a.cmp(imm=0xFF)
     a.beq(label="n13_pad")
+    a.op("sta", addr=V_RAW, mode="long")  # 표 조회가 A 를 덮으므로 미리 보관한다
     a.phx()
     a.rep(imm=0x20)
     a.op("and", imm=0x00FF, m16=True)
@@ -349,7 +366,10 @@ def build_payload(
     a.op("lda", addr="lead_tab", mode="longx")
     a.plx()
     a.cmp(imm=0xFF)
-    a.beq(label="n13_put")
+    a.bne(label="n13_lead")
+    a.op("lda", addr=V_RAW, mode="long")  # 🔴 선두가 아니다 — **원본 바이트**를 되찾는다
+    a.bra(label="n13_put")
+    a.label("n13_lead")
     a.op("sta", addr=V_IDX + 1, mode="long")
     a.iny()
     a.op("lda", dp=0x06, mode="indlongy")
@@ -360,16 +380,19 @@ def build_payload(
     a.ply()
     a.plx()
     a.label("n13_put")
-    a.op("sta", addr=CELLS, mode="longx")
+    a.op("sta", addr=CELL_BASE, mode="longx")
     a.inx()
     a.iny()
     a.bra(label="n13_loop")
     a.label("n13_pad")
     a.lda(imm=0x10)  # 남은 칸은 공백으로
     a.label("n13_padloop")
-    a.op("sta", addr=CELLS, mode="longx")
+    a.op("sta", addr=CELL_BASE, mode="longx")
     a.inx()
-    a.cpx(imm=NAME13_CELLS, m16=True)
+    a.rep(imm=0x20)
+    a.txa()
+    a.op("cmp", addr=V_N13, mode="long")
+    a.sep(imm=0x20)
     a.bcc(label="n13_padloop")
     a.label("n13_end")
     a.lda(imm=0x00)
@@ -697,16 +720,23 @@ def apply(
         blk[0:3] = bytes([0x20, NAME_TRAMPOLINE & 0xFF, (NAME_TRAMPOLINE >> 8) & 0xFF])
         blk[3:6] = bytes([0x4C, join & 0xFF, (join >> 8) & 0xFF])
         out[so : so + NAME_BLOCK] = bytes(blk)
-    # 4. 13칸 고정 문자열: MVN 덩이 → JSR 우리것
+    # 4. 고정 칸 문자열(파티 이름 · 타이틀 메뉴): **`MVN` 세 바이트만** JSR 로
     n13 = (HOOK_BANK << 16) | info["labels"]["name13"]
     t4 = common.snes2off(NAME13_TRAMPOLINE)
     out[t4 : t4 + 5] = bytes([0x22, n13 & 0xFF, (n13 >> 8) & 0xFF, HOOK_BANK, 0x60])
-    mo = common.snes2off(MVN_SITE)
-    if rom[mo + 9] != 0x54:  # MVN
-        raise SystemExit(f"MVN 자리가 예상과 다르다: {rom[mo : mo + MVN_BLOCK].hex()}")
-    blk = bytearray([0xEA]) * MVN_BLOCK
-    blk[0:3] = bytes([0x20, NAME13_TRAMPOLINE & 0xFF, (NAME13_TRAMPOLINE >> 8) & 0xFF])
-    out[mo : mo + MVN_BLOCK] = bytes(blk)
+    for mvn, ldy in MVN_SITES:
+        mo, lo = common.snes2off(mvn), common.snes2off(ldy)
+        if rom[mo] != 0x54:
+            raise SystemExit(f"MVN 자리가 아니다 {common.fmt(mvn)}: {rom[mo : mo + 3].hex()}")
+        # ⚠ 우리 루틴은 목적지를 `$0305` 로 **고정**한다 — 자리마다 그게 맞는지 확인한다
+        want = bytes([0xA0, CELL_BASE & 0xFF, (CELL_BASE >> 8) & 0xFF])
+        if bytes(rom[lo : lo + 3]) != want:
+            raise SystemExit(
+                f"목적지가 $0305 가 아니다 {common.fmt(ldy)}: {rom[lo : lo + 3].hex()}"
+            )
+        out[mo : mo + MVN_LEN] = bytes(
+            [0x20, NAME13_TRAMPOLINE & 0xFF, (NAME13_TRAMPOLINE >> 8) & 0xFF]
+        )
     info.pop("labels")
     info["glyph_bytes"] = len(g)
     info["hook_bytes"] = len(blob)
@@ -722,7 +752,7 @@ def patch_ranges() -> list[tuple[int, int]]:
         (common.snes2off(BUF_TRAMPOLINE), common.snes2off(BUF_TRAMPOLINE) + 5),
         (common.snes2off(NAME_TRAMPOLINE), common.snes2off(NAME_TRAMPOLINE) + 5),
         (common.snes2off(NAME13_TRAMPOLINE), common.snes2off(NAME13_TRAMPOLINE) + 5),
-        (common.snes2off(MVN_SITE), common.snes2off(MVN_SITE) + MVN_BLOCK),
+        *[(common.snes2off(m), common.snes2off(m) + MVN_LEN) for m, _l in MVN_SITES],
         *[(common.snes2off(s_), common.snes2off(s_) + NAME_BLOCK) for s_, _j in NAME_SITES],
         (common.snes2off(NMI_CALL), common.snes2off(NMI_CALL) + 3),
         (common.snes2off(NMI_STUB), common.snes2off(NMI_STUB) + 8),
