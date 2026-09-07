@@ -29,8 +29,8 @@
       ③ x = 창.x + 12 + Σ(그 행에서 앞선 칸의 SLOTW) 를 스프라이트 두 벌(+0 · +0x5000)에 쓴다
     앞선 칸은 늘 먼저 올라오므로(색인 순 · 타자기 순) 그 폭은 이미 표에 있다.
 
-격자 열 수는 24 → 32 로 올린다(공백이 좁아진 만큼 한 줄에 글자가 더 들어가야 값이 난다).
-슬롯 441 · 스프라이트 1,024 안에서 4×32 = 128 이라 여유가 있다.
+격자 열 수를 24 → 32 로 올리면 공백이 좁아진 만큼 글자가 더 들어간다. 🔴 **그런데 지금은
+24 다** — 32 로 올리면 `▼`(다음 페이지)가 사라지고 그 자리를 아직 못 찾았다(2026-09-07).
 
 ## 어디에 넣나
 
@@ -54,9 +54,16 @@ import capstone
 import font
 
 # 격자 열 수 — `typeset.COLS` 가 같은 값을 쓴다(한 줄에 들어가는 글리프 수의 상한).
-COLS = 32
-# 틀 폭(열) — 격자는 32칸이지만 틀은 원래대로 24칸(288px)이다. 유저 실측 2026-09-07: 틀이 열 수를
-# 따라 그려져 오른쪽 화면 밖으로 나갔다. 원본에서 32열 창은 없으니(호출부 a2 상수 실측) 32 → 24 만 잡는다.
+# `COLS == FRAME_COLS` 면 틀 보정 훅을 아예 안 넣는다(넣으면 오히려 원판과 달라진다).
+# 🔴 **24 로 되돌렸다**(2026-09-07). 32 로 올리면 `▼`(다음 페이지)가 사라진다 — 열 24 빌드와
+#    픽셀 대조로 **원인이 열 수임을 확정**했고(34픽셀, x 314~318), 그 x 를 계산하는 자리는
+#    아직 못 찾았다(글리프 업로드·UV 기록·스크롤·`0x80039904` 넷 다 아니다).
+#    ⚠ 열을 안 늘리면 공백 8px 의 **이득이 거의 없다**(한 줄 상한이 24 글리프 그대로다).
+#    그래도 24 로 둔다 — 방침 「원판과 같아지면 픽스, 나아지면 개조」이고, 사라진 `▼` 는
+#    유저가 매 창에서 보는 결함이다. 자리를 찾으면 그때 32 로 올린다.
+COLS = 24
+# 틀 폭(열) — 원판이 그리는 폭(288px). 격자를 늘렸을 때만 이 값으로 되돌린다.
+# 유저 실측 2026-09-07: 열 32 로 올리자 틀이 그걸 따라 그려져 오른쪽 화면 밖으로 나갔다.
 FRAME_COLS = 24
 # 틀 밖 빈 칸을 보내는 거리(px). GPU 는 그리기 영역 밖 스프라이트를 안 그린다.
 OFFSCREEN = 600
@@ -427,12 +434,14 @@ def apply(exe, disc, table, space_w=None):
             f"🔴 엔진 패치 사전조건 — 죽은 구간 {p['dead']:#x} 의 sha1 이 다르다 ({got[:12]})"
         )
     _expect(exe, p["site_a"], p["site_a_orig"], "훅 자리")
-    _expect(exe, p["frame_edge"], p["frame_edge_orig"], "틀 오른쪽 변")
-    _expect(exe, p["prompt_site"], p["prompt_orig"], "▼ 자리")
-    for f, _ in p["frame_bars"]:
-        _expect(exe, f, p["frame_bar_orig"], "격자·막대 x 전진")
-    for s in p["cols_sites"]:
-        _expect(exe, s, (p["cols_orig"],), "창 열 수")
+    if COLS != FRAME_COLS:
+        # 열을 안 늘리면 틀 보정이 필요 없다 — 넣으면 오히려 원판과 달라진다.
+        _expect(exe, p["frame_edge"], p["frame_edge_orig"], "틀 오른쪽 변")
+        _expect(exe, p["prompt_site"], p["prompt_orig"], "▼ 자리")
+        for f, _ in p["frame_bars"]:
+            _expect(exe, f, p["frame_bar_orig"], "격자·막대 x 전진")
+        for s in p["cols_sites"]:
+            _expect(exe, s, (p["cols_orig"],), "창 열 수")
 
     words, labels = hooks(disc, table[" "], space_w)
     struct.pack_into(f"<{len(words)}I", exe, d0, *words)
@@ -443,10 +452,11 @@ def apply(exe, disc, table, space_w=None):
         return (3 << 26) | ((target >> 2) & 0x3FFFFFF)
 
     struct.pack_into("<II", exe, _off(p["site_a"]), jal(p["dead"]), 0)
-    struct.pack_into("<II", exe, _off(p["frame_edge"]), jal(labels["framew"]), 0)
-    struct.pack_into("<II", exe, _off(p["prompt_site"]), jal(labels["promptw"]), 0)
-    for f, name in p["frame_bars"]:
-        struct.pack_into("<II", exe, _off(f), jal(labels[name]), 0)
-    for s in p["cols_sites"]:
-        struct.pack_into("<I", exe, _off(s), (p["cols_orig"] & 0xFFFF0000) | COLS)
+    if COLS != FRAME_COLS:
+        struct.pack_into("<II", exe, _off(p["frame_edge"]), jal(labels["framew"]), 0)
+        struct.pack_into("<II", exe, _off(p["prompt_site"]), jal(labels["promptw"]), 0)
+        for f, name in p["frame_bars"]:
+            struct.pack_into("<II", exe, _off(f), jal(labels[name]), 0)
+        for s in p["cols_sites"]:
+            struct.pack_into("<I", exe, _off(s), (p["cols_orig"] & 0xFFFF0000) | COLS)
     return f"공백 {space_w}px · 열 {COLS}(틀 {FRAME_COLS}) · 훅 {len(words)}워드 @ {p['dead']:#x}"

@@ -42,7 +42,7 @@ CELL_PX = 12  # 화면에서 코드 하나가 차지하는 가로 픽셀 (`font.
 #   공백 8px 는 유저 판정(2026-09-07: 한글은 전각, 공백만 반각). 첫 씬 실측 5.2% 절약.
 WIDTHS = {"ed3": {" ": 8}, "ed4": {}}
 # 한 줄에 들어가는 글리프 수의 상한 = 스프라이트 격자 열 수(`engine_patch.COLS`). 패치 없으면 None.
-COLS = {"ed3": 32, "ed4": None}
+COLS = {"ed3": 24, "ed4": None}  # 🔴 32 가 아니다 — `engine_patch.COLS` 머리말 참조(▼ 결함)
 
 
 def cell_width(ch, disc="ed3"):
