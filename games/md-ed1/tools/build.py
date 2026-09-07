@@ -87,7 +87,7 @@ class Rom:
     def __init__(self, data: bytes):
         self.orig = data
         self.buf = bytearray(data)
-        self.log: list[tuple[str, int, int]] = []
+        self.log: list[tuple[str, int, bytes]] = []
         self.allowed = captions.widen_for_tail(
             dict(
                 self.ALLOWED,
@@ -107,10 +107,14 @@ class Rom:
                 f"[{label}] 허용 구간 밖 쓰기 {at:#x}+{len(data)} (구간 {lo:#x}~{hi:#x})"
             )
         self.buf[at : at + len(data)] = data
-        self.log.append((label, at, len(data)))
+        self.log.append((label, at, bytes(data)))
 
     def verify_no_overlap(self) -> None:
-        """🔴 **뒤 단계가 앞 단계의 자리를 덮지 않았나** — 쓰기 기록을 겹쳐 본다.
+        """🔴 **앞 단계가 쓴 바이트가 최종 이미지에 살아남았나.**
+
+        ⚠ 묻는 말이 「겹치나」가 아니라 **「살아남았나」**다(pce-ed1 이 다듬어 준 축, 2026-09-07) —
+        겹침만 보면 **내 겹침 판정에 구멍이 있으면 같이 샌다.** 최종 버퍼와 대조하면 어떤 경로로
+        덮였든 잡힌다. 덮인 것을 찾으면 **누가 덮었는지**까지 기록에서 되짚어 말해 준다.
 
         ss-ed1+2 가 2026-09-07 에 물린 자리다: 뒤 단계가 이주 자리를 **원본 덤프의 칸 경계**로
         골랐는데 앞 단계가 그 표를 통째로 다시 깔아 놓아, **살아 있는 한글 이름 위에 대사를 얹었다.**
@@ -119,15 +123,20 @@ class Rom:
 
         주인 목록을 손으로 들지 않는다 — `write()` 가 남긴 기록만 보면 구조로 잡힌다.
         """
-        seen: list[tuple[str, int, int]] = []
-        for label, at, n in self.log:
-            for plabel, pat, pn in seen:
-                if at < pat + pn and pat < at + n:
-                    raise SystemExit(
-                        f"쓰기가 겹친다: [{plabel}] {pat:#x}+{pn} 위에 "
-                        f"[{label}] {at:#x}+{n} — 뒤 단계가 앞 단계를 덮는다"
-                    )
-            seen.append((label, at, n))
+        for i, (label, at, data) in enumerate(self.log):
+            if self.buf[at : at + len(data)] == data:
+                continue
+            culprit = next(
+                (
+                    f"[{lb}] {a:#x}+{len(dd)}"
+                    for lb, a, dd in self.log[i + 1 :]
+                    if a < at + len(data) and at < a + len(dd)
+                ),
+                "(뒤에 겹쳐 쓴 기록이 없다 — write() 를 안 거친 쓰기다)",
+            )
+            raise SystemExit(
+                f"[{label}] {at:#x}+{len(data)} 가 최종 이미지에 안 남았다 — {culprit} 이 덮었다"
+            )
 
     def verify_immutable(self) -> None:
         marks = bytearray(len(self.buf))

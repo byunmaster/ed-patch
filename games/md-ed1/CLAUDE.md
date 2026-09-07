@@ -47,6 +47,9 @@ ED1 문안은 **PS1 판**(1회차 인게임 QA 를 마치고 main 에 머지된 
 [`tools/common.py`](tools/common.py). ⚠ **읽기 전용**이고, 쓰기 헬퍼는 재삽입 설계가 서기
 전까지 두지 않는다(`docs/patcher-checklist.md` 2). emucap 은 zip 을 못 열어 `work/emu/ed1.bin` 사본을
 쓴다 — **거기 쓰지 마라**(원본 사본이지 빌드가 아니다).
+🔴 **실제로 한 번 덮여 있었다**(2026-09-07 발견 — sha1 이 빌드의 것이었다). 「원판과 대조한다」면서
+그 파일을 띄우면 **우리 것끼리 대조**하게 된다. 대조 전에 **sha1 을 `tools/common.py` 의 원본 지문과
+맞춰 본다**(`f67c9139…`). 안전한 사본은 `work/emu/ed1_orig.bin` 에도 있다.
 
 ## 도구
 
