@@ -114,6 +114,30 @@ def encode(text: str) -> bytes:
     return bytes(out)
 
 
+ONLY = None  # None | "scenario" | "combat" — `build.py --only` 이 세운다
+
+# 🔴 **전투 청크에서 「밖으로」를 금지한다**(`build.py --no-pool-combat`).
+#    「밖으로」는 청크 **꼬리 빈자리**에 문안을 두고 런 머리에서 `0F` 로 뛴다. 로더가 청크를
+#    통째로 안 올리고 **본문 길이만** 올리면 그 점프는 **안 올라온 자리**로 뛴다.
+#    전투 프리즈의 용의자라 개입 하나로 가르려고 둔 문이다. 넘치는 블록은 **안 넣는다.**
+NO_POOL_COMBAT = False
+
+# 전투 청크에서 **길이가 딱 맞는 제자리 교체만** 한다(틈 건너뜀·공백 메움도 끈다).
+STRICT_INPLACE_COMBAT = False
+
+# 전투 청크를 **원문 그대로 두고 한 글자만** 우리 한글 코드로 바꾼다.
+#    ⇒ 뻗으면 전투 렌더러가 우리 코드 대역(JIS ku 0x40~0x58)을 다른 뜻으로 읽는 것이다.
+ONE_GLYPH_COMBAT = False
+ONE_GLYPH_AT = ("38.00.20", 0x0030, 8, "가")  # 청크 · 런 오프셋 · 런 안 바이트 · 넣을 글자
+
+# 전투 청크를 **절반씩** 넣는다 — 「어느 청크가 범인인가」로 좁힐 때(이분 탐색).
+COMBAT_HALF = None  # None | "a"(앞 절반) | "b"(뒤 절반)
+
+# 전투 청크에서 「틈 건너뜀」/「공백 메움」을 각각 끈다 — 둘 중 누가 범인인가.
+NO_GAP_COMBAT = False   # 틈 건너뜀(`0F` 로 런 끝으로) 금지
+NO_FILL_COMBAT = False  # 공백 메움(꼬리에 반각 공백) 금지
+
+
 def areas() -> dict:
     """시나리오 + **전투** 청크를 한 자로 본다.
 
@@ -122,7 +146,24 @@ def areas() -> dict:
        몬스터 이름과 전투 대사가 거기 살아서, 여길 안 열면 **정본 86종이 화면에 못 간다.**
     """
     scenario, combat = scn.load()
+    # ⚠ **원인을 가르는 빌드**를 위한 문(`build.py --only`). 평소엔 None 이라 둘 다 나간다.
+    #    프리즈처럼 「어느 개입이 범인인가」를 물어야 할 때 개입 그룹을 하나씩 뺀다.
+    if ONLY == "scenario":
+        return dict(scenario)
+    if ONLY == "combat":
+        return dict(combat)
     return {**scenario, **combat}
+
+
+_COMBAT_KEYS = None
+
+
+def _combat_keys() -> set:
+    """전투 청크의 열쇠 집합 — `NO_POOL_COMBAT` 판정에만 쓴다."""
+    global _COMBAT_KEYS
+    if _COMBAT_KEYS is None:
+        _COMBAT_KEYS = {scn.format_key(k) for k in scn.load()[1]}
+    return _COMBAT_KEYS
 
 
 def pierced_map(scenario: dict) -> dict:
@@ -158,6 +199,11 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
         "건너뜀:점프가 머리에": 0,
         "건너뜀:3B 미만": 0,
         "건너뜀:빈자리 부족": 0,
+        "건너뜀:전투 밖으로 금지": 0,
+        "건너뜀:전투 제자리만": 0,
+        "건너뜀:전투 틈 금지": 0,
+        "건너뜀:전투 공백 금지": 0,
+        "건너뜀:전투 0F 금지": 0,
         "쓴 바이트": 0,
         "빈자리 쓴 바이트": 0,
     }
@@ -225,6 +271,24 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
             st["칸 표"] += 1
             st["쓴 바이트"] += w
 
+        # ── 원인 가르기: 전투 청크를 절반만 넣는다(이분 탐색).
+        if COMBAT_HALF and skey in _combat_keys():
+            ks = sorted(_combat_keys())
+            half = ks[: len(ks) // 2] if COMBAT_HALF == "a" else ks[len(ks) // 2 :]
+            if skey not in half:
+                continue
+
+        # ── 원인 가르기: 전투 청크를 **원문 그대로** 두고 **한 글자만** 우리 코드로.
+        if ONE_GLYPH_COMBAT and skey in _combat_keys():
+            ck, co, ci, ch = ONE_GLYPH_AT
+            if skey == ck:
+                cell = encode(ch)
+                assert len(cell) == 2, ch
+                marks.append((base_off + co + ci, data[co + ci : co + ci + 2], cell))
+                st["쓴 바이트"] += 2
+                print(f"  ⚠ 한 글자만: {skey} {co + ci:#06x} ← {ch!r}")
+            continue
+
         for b in blocks:
             if any(c <= b["o"] < c + w for c, w in cells_all.items()):
                 continue  # 🔴 칸 표는 위에서 처리했다 — 일반 경로가 덮으면 정렬이 깨진다
@@ -267,15 +331,52 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
                 forced_pool = True
 
             slack = n - len(new)
+            is_combat = skey in _combat_keys()
+
+            # 🔴 **전투 청크에서는 `0F` 를 쓰지 않는다**(2026-09-07 확정, 유저 실측 + 원본 계측).
+            #    시나리오 청크의 `0F` 는 653번이 **같은 청크 안**을 가리키고 목적지의
+            #    상위 니블이 `0xE`(= `W.BASE`)인 것이 669다. **전투 청크는 0번이다** —
+            #    188개 `0x0F` 바이트는 전부 데이터고, `0xExxx` 를 가리키는 건 5뿐이며
+            #    그중 청크 안은 하나도 없다. ⇒ 전투 스크립트는 그 창에 안 올라오거나
+            #    전투 해석기가 `0F` 를 점프로 안 읽는다. 우리가 심으면 **거기서 뻗는다.**
+            #    ⇒ 전투는 **제자리 · 공백 메움**만. 「틈 건너뜀」도 「밖으로」도 금지다.
+            #    (실측 갈림: `nogap` 정상 · `nofill` 뻗음 · `strict` 정상 · `1glyph` 정상)
+            #    ⚠ 그리고 **틈이 3바이트 이상이면 아예 안 넣는다.** 공백으로 메우면 되겠거니
+            #       했다가 화면이 통째로 깨졌다(2026-09-07 유저 실측 — 앞선 프리즈보다 나쁘다).
+            #       원문보다 한참 짧은 문안 뒤에 공백을 수십 개 붙이면 전투 화면이
+            #       그걸 그대로 그린다. **정상으로 확인된 것은 `nogap` 뿐이고, 그건
+            #       3바이트 이상을 건너뛰었다.** 그 규칙을 그대로 기본값으로 둔다.
+            if is_combat:
+                if forced_pool or slack < 0 or slack >= 3:
+                    st["건너뜀:전투 0F 금지"] += 1
+                    continue
+                if slack > 0:
+                    marks.append((base_off + o, data[o : o + n], new + b" " * slack))
+                    st["공백 메움"] += 1
+                    st["쓴 바이트"] += n
+                    continue
+
+            if STRICT_INPLACE_COMBAT and is_combat and slack != 0:
+                st["건너뜀:전투 제자리만"] += 1
+                continue
+            if NO_POOL_COMBAT and is_combat and (forced_pool or slack < 0):
+                st["건너뜀:전투 밖으로 금지"] += 1
+                continue
             if forced_pool:
                 blob = None  # 아래 「밖으로」로 간다
             elif slack == 0:
                 blob = new
                 st["제자리"] += 1
             elif slack >= 3:
+                if NO_GAP_COMBAT and is_combat:
+                    st["건너뜀:전투 틈 금지"] += 1
+                    continue
                 blob = new + bytes((JUMP, *(W.BASE + o + n).to_bytes(2, "little")))
                 st["틈 건너뜀"] += 1
             elif slack > 0:
+                if NO_FILL_COMBAT and is_combat:
+                    st["건너뜀:전투 공백 금지"] += 1
+                    continue
                 blob = new + b" " * slack
                 st["공백 메움"] += 1
             else:
@@ -298,6 +399,18 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
                 st["밖으로:점프가 온다" if forced_pool else "밖으로"] += 1
             marks.append((base_off + o, data[o : o + len(blob)], blob))
             st["쓴 바이트"] += len(blob)
+    # 🔴 **전투 청크에 `0F` 를 심지 않았나** — 규칙을 코드가 아니라 **결과로** 못 박는다.
+    #    (2026-09-07 프리즈의 원인. 규칙만 두면 다음 사람이 조건 하나를 더하다 되살린다.)
+    _combat_span = [
+        (v["index"] * common.SECTOR_SIZE, v["index"] * common.SECTOR_SIZE + len(v["data"]))
+        for v in scn.load()[1].values()
+    ]
+    for off, _e, new_b in marks:
+        if 0x0F in new_b and any(a <= off < b for a, b in _combat_span):
+            raise SystemExit(
+                f"🔴 전투 청크에 `0F` 를 심었다 {off:#08x} — 전투 해석기는 그걸 점프로 안 읽는다"
+            )
+
     # 🔴 **겹치면 나중 것이 앞 것을 뭉갠다** — 조용히 틀리는 종류라 여기서 죽인다.
     seen: dict[int, int] = {}
     for off, _e, new in marks:

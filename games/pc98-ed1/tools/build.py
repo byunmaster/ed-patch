@@ -56,14 +56,25 @@ def claim(secs: list[dict], start: int, size: int) -> range:
 _SCN_MARKS = None
 _SYS_MARKS = None
 
+# 🔴 **원인을 가르는 빌드** — 개입 그룹을 하나씩 빼서 굽는다(`--only`).
+#    프리즈·먹통처럼 「어느 개입이 범인인가」를 물을 때 쓴다. 평소엔 넷 다 켜져 있다.
+#    ⚠ 반드시 **다른 꼬리표**로 구워라(`--tag`) — 진짜 빌드를 덮으면 낡은 것을 정상으로
+#      오해하는 이 레포의 단골 사고가 난다.
+ALL_GROUPS = ("font", "sys", "scn", "combat")
+GROUPS = set(ALL_GROUPS)
+
 
 def patches_for(key: str) -> list[tuple[int, bytes, bytes]]:
     """(플랫 오프셋, 원본이어야 할 바이트, 새 바이트). ⚠ **expect 가 틀리면 죽는다.**
 
     🔴 **문안은 시나리오 디스크에만** 붙는다 — 대본이 거기 산다(`scn.py`).
     """
-    out = patch_font_hook.build_patch(key) if key in patch_font_hook.SITES else []
-    if key == "scenario":
+    out = (
+        patch_font_hook.build_patch(key)
+        if "font" in GROUPS and key in patch_font_hook.SITES
+        else []
+    )
+    if key == "scenario" and ("scn" in GROUPS or "combat" in GROUPS):
         global _SCN_MARKS
         if _SCN_MARKS is None:
             _SCN_MARKS, st = patch_scn.plan()
@@ -78,6 +89,8 @@ def patches_for(key: str) -> list[tuple[int, bytes, bytes]]:
 
     # 시스템 문안(메뉴·HUD·표·전투 메시지) — **제자리 교체만** 된다(`patch_sys.py`).
     global _SYS_MARKS
+    if "sys" not in GROUPS:
+        _SYS_MARKS = {}
     if _SYS_MARKS is None:
         _SYS_MARKS, st = patch_sys.plan()
         print(
@@ -169,7 +182,78 @@ def verify(key: str, dst: Path, rng: range | None, marks: list) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag", default=common.BUILD_TAG, help="빌드 꼬리표(기본 = 브랜치)")
+    ap.add_argument(
+        "--no-gap-combat",
+        action="store_true",
+        help="전투 청크에서 「틈 건너뜀」 금지 — 원인 가르기용",
+    )
+    ap.add_argument(
+        "--no-fill-combat",
+        action="store_true",
+        help="전투 청크에서 「공백 메움」 금지 — 원인 가르기용",
+    )
+    ap.add_argument(
+        "--combat-half",
+        choices=("a", "b"),
+        help="전투 청크를 절반만 넣는다(a=앞·b=뒤) — 어느 청크가 범인인가",
+    )
+    ap.add_argument(
+        "--strict-inplace-combat",
+        action="store_true",
+        help="전투 청크는 **길이가 딱 맞는 제자리 교체만** — 원인 가르기용",
+    )
+    ap.add_argument(
+        "--one-glyph-combat",
+        action="store_true",
+        help="전투 청크를 원문 그대로 두고 **한 글자만** 우리 코드로 — 원인 가르기용",
+    )
+    ap.add_argument(
+        "--no-pool-combat",
+        action="store_true",
+        help="전투 청크에서 「밖으로」를 금지한다(넘치는 블록은 안 넣는다) — 원인 가르기용",
+    )
+    ap.add_argument(
+        "--only",
+        help="개입 그룹만 넣는다(쉼표) — font·sys·scn·combat. 원인 가르기용",
+    )
     args = ap.parse_args()
+
+    if args.no_gap_combat:
+        patch_scn.NO_GAP_COMBAT = True
+        print("  ⚠ 원인 가르기 빌드 — 전투 청크에서 「틈 건너뜀」 금지")
+    if args.no_fill_combat:
+        patch_scn.NO_FILL_COMBAT = True
+        print("  ⚠ 원인 가르기 빌드 — 전투 청크에서 「공백 메움」 금지")
+
+    if args.combat_half:
+        patch_scn.COMBAT_HALF = args.combat_half
+        print(f"  ⚠ 원인 가르기 빌드 — 전투 청크 {args.combat_half} 절반만")
+
+    if args.strict_inplace_combat:
+        patch_scn.STRICT_INPLACE_COMBAT = True
+        print("  ⚠ 원인 가르기 빌드 — 전투 청크는 길이가 딱 맞는 제자리 교체만")
+    if args.one_glyph_combat:
+        patch_scn.ONE_GLYPH_COMBAT = True
+        print("  ⚠ 원인 가르기 빌드 — 전투 청크는 원문 그대로, 한 글자만 우리 코드로")
+
+    if args.no_pool_combat:
+        patch_scn.NO_POOL_COMBAT = True
+        print("  ⚠ 원인 가르기 빌드 — 전투 청크에서 「밖으로」를 금지한다")
+
+    if args.only:
+        global GROUPS
+        GROUPS = {g.strip() for g in args.only.split(",") if g.strip()}
+        bad = GROUPS - set(ALL_GROUPS)
+        if bad:
+            raise SystemExit(f"🔴 모르는 그룹 {sorted(bad)} — 쓸 수 있는 것 {ALL_GROUPS}")
+        patch_scn.ONLY = (
+            "scenario"
+            if "scn" in GROUPS and "combat" not in GROUPS
+            else "combat"
+            if "combat" in GROUPS and "scn" not in GROUPS
+            else None
+        )
+        print(f"  ⚠ 원인 가르기 빌드 — 넣는 그룹 {sorted(GROUPS)}")
 
     common.check_originals()
     _, base = font.build()
