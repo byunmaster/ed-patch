@@ -328,10 +328,18 @@ def _pack8(rows: list[list[int]]) -> bytes:
 
 
 def layout_after_r1(cs: "Charset") -> tuple[int, int]:
-    """리소스 1 을 옮긴 뒤 남는 (표 자리, 글리프 자리) — 리소스 5 가 여기서 시작한다."""
+    """리소스 1 을 옮긴 뒤 남는 (표 자리, 글리프 자리) — 리소스 5 가 여기서 시작한다.
+
+    🔴 **더한 글자 수를 세서 쓴다.** 예전엔 `+ 1`(쉼표 한 자)로 박혀 있었는데 `EXTRA_R1` 이
+    괄호 둘을 더 받으면서(2026-09-06, 병기 「을(를)」 때문) **셋이 됐다.** 그래서 리소스 5 의
+    시작이 2칸 앞으로 밀려 **리소스 1 의 마지막 두 글자를 덮어썼다**(표 4B · 글리프 56B).
+    ⚠ 덮인 게 하필 안 쓰는 반각 탁점(0xDE·0xDF)이라 **화면에 안 드러났다** — 게이트 셋도 못 봤다
+    (2026-09-07, `build.Rom.verify_no_overlap` 을 세우자마자 나왔다. ss-ed1+2 가 물린 부류다).
+    """
     rom = cs.rom
     r0, r1 = font.resources(rom)[:2]
-    n1 = len(font.codes(rom, r1)) + 1  # 쉼표 한 자 추가
+    codes = font.codes(rom, r1)
+    n1 = len(codes) + len([c for c in EXTRA_R1 if c not in codes])
     tbl = r0["table"] + 2 * len(cs.entries) + 2 * n1
     gl = r0["desc"] + 4 + len(cs.entries) * r0["stride"] + 4 + n1 * r1["stride"]
     return (tbl + (tbl & 1), gl + (gl & 1))

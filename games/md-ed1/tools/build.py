@@ -109,6 +109,26 @@ class Rom:
         self.buf[at : at + len(data)] = data
         self.log.append((label, at, len(data)))
 
+    def verify_no_overlap(self) -> None:
+        """🔴 **뒤 단계가 앞 단계의 자리를 덮지 않았나** — 쓰기 기록을 겹쳐 본다.
+
+        ss-ed1+2 가 2026-09-07 에 물린 자리다: 뒤 단계가 이주 자리를 **원본 덤프의 칸 경계**로
+        골랐는데 앞 단계가 그 표를 통째로 다시 깔아 놓아, **살아 있는 한글 이름 위에 대사를 얹었다.**
+        게이트 셋이 다 초록이었다 — 되읽기는 *자기가 쓴 직후*를, 라운드트립은 *덤프↔원본*을,
+        무변경 구간은 *안 여는 자리*를 본다. **아무도 「두 단계가 같은 바이트를 썼나」를 안 본다.**
+
+        주인 목록을 손으로 들지 않는다 — `write()` 가 남긴 기록만 보면 구조로 잡힌다.
+        """
+        seen: list[tuple[str, int, int]] = []
+        for label, at, n in self.log:
+            for plabel, pat, pn in seen:
+                if at < pat + pn and pat < at + n:
+                    raise SystemExit(
+                        f"쓰기가 겹친다: [{plabel}] {pat:#x}+{pn} 위에 "
+                        f"[{label}] {at:#x}+{n} — 뒤 단계가 앞 단계를 덮는다"
+                    )
+            seen.append((label, at, n))
+
     def verify_immutable(self) -> None:
         marks = bytearray(len(self.buf))
         for lo, hi in self.allowed.values():
@@ -451,6 +471,7 @@ def main(check_only: bool = False) -> None:
         rom.write(label, pos, body)
     # 4. 체크섬 · 대조 · 출력
     rom.write("checksum", 0x18E, struct.pack(">H", common.header_checksum(rom.buf)))
+    rom.verify_no_overlap()
     rom.verify_immutable()
     out_dir = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_")
     out_dir.mkdir(parents=True, exist_ok=True)
