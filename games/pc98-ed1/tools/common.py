@@ -11,7 +11,11 @@
 
 import hashlib
 import struct
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+from build_tag import build_tag
 
 GAME = "pc98-ed1"
 ROOT = Path(__file__).resolve().parents[3]
@@ -21,6 +25,7 @@ ORIG_DIR = ROOT / "originals" / "jp" / GAME
 WORK = GAME_DIR / "work"
 OUT_DIR = WORK / "derived"
 REVIEW_DIR = WORK / "review"
+BUILD_TAG = build_tag()
 BUILD_DIR = WORK / "build"
 DIST_DIR = WORK / "dist"
 

@@ -5,7 +5,8 @@
 
 ## 이 게임이 다른 점
 
-- 🔴 **글꼴이 디스크에 없다 — 본체 CGROM 이다.** 새턴·PS1 의 「폰트 파일에 한글 부어 넣기」가
+- 🔴 **글꼴이 디스크에 없다 — 본체 CGROM 이다.** 그래서 폰트 작업이 「변환」이 아니라
+  **「기계어 + 메모리 배치」**다. 표는 **RAM 세그먼트 0x4000**(캐시 페이지 풀)에 올린다. 새턴·PS1 의 「폰트 파일에 한글 부어 넣기」가
   성립하지 않는다. 대신 이 게임은 CG 윈도우로 **도트를 읽어 자기가 그리므로** 그 루틴을
   후킹한다(`docs/status.md` 2절, 측정은 `tools/probe_font.py`).
   ⇒ **폰트 작업의 무게중심이 「변환」이 아니라 「기계어」에 있다.**
@@ -34,7 +35,9 @@ python3 games/pc98-ed1/tools/dump_scn.py     # 대본 덤프 (+ 라운드트립)
 python3 games/pc98-ed1/tools/dump_sys.py     # Event·Program 문자열 덤프
 python3 games/pc98-ed1/tools/tables.py       # 고정 stride 이름 표 후보
 python3 games/pc98-ed1/tools/walk_scn.py     # 재삽입이 성립하나 — 도달률 세 층
-python3 games/pc98-ed1/tools/free_map.py     # 빈 섹터 지도 (폰트 실을 자리)
+python3 games/pc98-ed1/tools/free_map.py     # 빈 섹터 지도 (디스크 쪽 자리)
+python3 games/pc98-ed1/tools/memmap.py       # 메모리 지도 (폰트 올릴 RAM 자리)
+python3 games/pc98-ed1/tools/reuse.py --dict … # 이미 번역한 문안이 얼마나 붙나
 python3 games/pc98-ed1/tools/census_sjis.py  # 쓰이는 SJIS 코드 → 한글 앉힐 빈 자리
 python3 games/pc98-ed1/tools/font.py --check --preview   # 한글 글리프 표 (16×16, 32B)
 sh games/pc98-ed1/check.sh                   # ⭐ 이 게임의 커밋 전 게이트

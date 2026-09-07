@@ -215,3 +215,24 @@ class Reuse(unittest.TestCase):
         ps1 = "{c}兵士{c}{n}この上は 国王さまの{n}お部屋になっておる。{c}"
         mine = self.r.normalise({"s": "兵士", "t": "この上は 国王さまの\\nお部屋になっておる。"})
         self.assertEqual(key(mine), key(ps1))
+
+
+class MemMap(unittest.TestCase):
+    """폰트 자리의 전제 — 상수가 바뀌면 12절 판독이 무너진다."""
+
+    def setUp(self):
+        import memmap
+
+        self.m = memmap
+
+    def test_첫_뱅크는_256KB다(self):
+        self.assertEqual(self.m.FIRST_BANK_SEG * 16, 256 * 1024)
+        self.assertEqual(self.m.BANK_STEP_SEG * 16, 128 * 1024)
+        self.assertEqual(self.m.PAGE_SEG * 16, 8 * 1024)
+
+    def test_한글이_한_뱅크에_들어간다(self):
+        """서브셋을 안 뜨는 근거 — 페이지 열 장이면 완성형 전부가 들어간다."""
+        page = self.m.PAGE_SEG * 16
+        need = -(-self.m.HANGUL_BYTES // page)
+        self.assertLessEqual(need, self.m.PAGES_PER_BANK)
+        self.assertEqual(need, 10)
