@@ -232,6 +232,22 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
             if k not in script:
                 continue
             o, n = b["o"], b["n"]
+
+            # ── 런 머리에 **코드가 잡음으로 붙은** 자리 (덤퍼 런 경계 문제, status `[P4]`).
+            #    거기에 쓰면 8086 코드를 뭉갠다. 정본이 `head` 로 **그 바이트를 그대로 적어**
+            #    두면 우리는 그만큼 건너뛰고 뒤부터 쓴다.
+            #    🔴 사전조건 — 원본이 정본이 적은 것과 **바이트로 같아야** 한다. 다르면
+            #       덤퍼나 원본이 바뀐 것이므로 그 자리에서 죽는다(patcher-checklist 2).
+            head = bytes.fromhex(script[k].get("head", ""))
+            if head:
+                if data[o : o + len(head)] != head:
+                    raise SystemExit(
+                        f"🔴 {skey} {o:#06x}: 머리 잡음이 정본과 다르다\n"
+                        f"  정본 {head.hex(' ')}\n  원본 {data[o : o + len(head)].hex(' ')}"
+                    )
+                o += len(head)
+                n -= len(head)
+
             new = encode(script[k]["t"])
 
             # 🔴 **안으로 점프가 들어와도 대개 살릴 수 있다**(2026-09-06).

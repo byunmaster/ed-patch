@@ -108,7 +108,13 @@ def plan() -> tuple[dict[str, list], dict]:
             #   **메뉴는 왼쪽 정렬**이라 뒤를 채워야 시작 자리가 안 밀린다.
             #   기본은 원본의 여백 꼴을 따르고, 정본이 `pad` 로 덮어쓴다.
             side = v.get("pad") or pad_shape(site[o]["t"])
-            blob = pad + core if side == "left" else core + pad
+            # ⚠ `center` 는 **정본이 명시할 때만** 쓴다 — 원본이 앞뒤를 다 비웠어도
+            #   가운데 정렬이 아니라 **커서 자리**인 경우가 있다(메뉴의 앞 한 칸).
+            if side == "center":
+                left = len(pad) // 2
+                blob = b" " * left + core + b" " * (len(pad) - left)
+            else:
+                blob = pad + core if side == "left" else core + pad
             out[disk].append((o, flat[o : o + n], blob))
             st["넣음"] += 1
             st["쓴 바이트"] += n

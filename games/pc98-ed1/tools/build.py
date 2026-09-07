@@ -179,6 +179,11 @@ def main() -> int:
 
     out_dir = common.BUILD_DIR / args.tag
     out_dir.mkdir(parents=True, exist_ok=True)
+    # 지난 실패의 잔재를 치우고 시작한다 — `pull-build` 는 `.failed` 가 하나라도 있으면
+    # **그 칸을 통째로 안 받는다.** 성공한 이미지 옆에 아침의 실패 표식이 남아 있으면
+    # 유저 쪽에서 「받을 게 없다」가 된다(실측 2026-09-06, 유저 맥).
+    for stale in out_dir.glob("*.failed"):
+        stale.unlink()
     made = []
     try:
         for key in common.DISKS:
