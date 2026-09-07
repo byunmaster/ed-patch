@@ -15,6 +15,7 @@
 #     --no-sync  세이브 동기화를 끈다
 #     --no-keys  키 배치 맞추기를 건너뛴다(기본은 맞춘다 — mednafen_keys.py)
 #     --no-video 영상 규격 맞추기를 건너뛴다(기본은 맞춘다 — mednafen_video.py).
+#     --size N   창 크기 1 매우 작음 · 2 작음(기본) · 3 보통 · 4 큼 (mednafen 계열만)
 #                ⚠ 화면을 끄는 게 아니라 **cfg 되돌리기**를 끈다
 #     그 밖의 인자는 실행기에 그대로 넘어간다 (`-video.fs 1` 처럼)
 #
@@ -71,7 +72,7 @@ MEDBASE=${MEDNAFEN_HOME:-$HOME/.mednafen}
 DOSENGINE=$(sh "$HELPERS/dosbox.sh" --which 2>/dev/null || echo dosbox)
 
 usage() {
-  echo "사용법: $0 [<게임>|<플랫폼>] [--orig] [--no-sync] [--no-keys] [--no-video] [파일] [실행기 인자...]" >&2
+  echo "사용법: $0 [<게임>|<플랫폼>] [--orig] [--no-sync] [--no-keys] [--no-video] [--size 1-4] [파일] [실행기 인자...]" >&2
   echo "        $0 --list          목록만" >&2
 }
 
@@ -280,6 +281,8 @@ for a in "$@"; do
     --no-sync) SYNC=0 ;;
     --no-keys) KEYS=0 ;;
     --no-video) VIDEO=0 ;;
+    --size) shift; VIDEO_SIZE="${1:-2}" ;;
+    --size=*) VIDEO_SIZE="${1#*=}" ;;
     *.cue|*.ccd|*.toc|*.m3u|*.zip|*.bin|*.iso|*.sfc|*.smc|*.smd|*.md|*.gen|*.pce)
       IMAGE=$a ;;
     *) EXTRA="$EXTRA $a" ;;                # 실행기 설정 덮어쓰기 등
@@ -414,7 +417,7 @@ fi
 #   게임 안 설정으로도 덮인다. 실측으로 **SFC 는 8:7 로 홀쭉했고**(correct_aspect 0)
 #   **PCE 는 좌우가 잘려 있었다**(h_overscan 0). 무엇을 실기로 보는지는 mednafen_video.py.
 if [ "$VIDEO" = 1 ] && command -v python3 >/dev/null 2>&1; then
-  python3 "$HELPERS/mednafen_video.py" --quiet "$MOD" || true
+  python3 "$HELPERS/mednafen_video.py" --quiet --size "${VIDEO_SIZE:-2}" "$MOD" || true
 fi
 
 # ⚠ **`sound 0` 이면 알려준다.** 조용히 켜 주지 않는 이유는, 이 값이 **일부러 꺼 둔 것일 수
