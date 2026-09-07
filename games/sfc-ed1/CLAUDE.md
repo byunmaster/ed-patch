@@ -21,8 +21,12 @@
   다시 계산해야 한다**(구조 계약 — `docs/patcher-checklist.md` 12).
 - **롬 소스 파일명이 남아 있다** — `$Header: message.asm,v 2.26 …` 같은 RCS 태그가 모듈마다
   박혀 있어 코드 지도가 공짜다(`docs/status.md` 2절).
-- **디버거는 아직 없다.** emucap 의 mednafen 빌드에 SNES 가 안 들어 있고 Mesen2 어댑터는 이
-  머신에 안 깔렸다(.NET 필요). 지금까지는 전부 정적 분석이다 — 인게임 확인은 「남은 일」.
+- **막히면 롬을 편다.** 실기 디버거가 늦게 붙은 게임이라 정적 분석이 주력이었고, 실제로
+  저장 소프트락을 푼 것도 `tools/dis65816.py` 였다(2026-09-08). 계측 전에 **「롬만 있으면 답이
+  나오는 물음인가」**를 먼저 묻는다.
+- **디버거는 이제 있다 — emucap 의 Mesen2 다**(mednafen 에는 SNES 가 없다). ⚠ Mesen2 는 X 가
+  필요해서 **MCP 서버에 `DISPLAY=:99` 가 있어야 뜬다**(`XOpenDisplay failed` 로 죽는다).
+  설정은 `/root/.claude.json` 에 있고, **그 뒤에 시작한 세션부터** 유효하다.
 
 ## 원본
 
@@ -38,6 +42,7 @@ python3 games/sfc-ed1/tools/text.py --check     # 포인터 표 4벌 · 사전 6
 python3 games/sfc-ed1/tools/text.py --dump      # work/derived/text/ 에 대본(11,271 조각)·사전 덤프
 python3 games/sfc-ed1/tools/text.py --msg 5     # 메시지 하나 풀어 보기
 python3 games/sfc-ed1/tools/script.py --roundtrip   # 라벨 모델 왕복(본체 153KB 바이트 동일)
+python3 games/sfc-ed1/tools/dis65816.py 0x0298E0 0x029960  # 65816 디스어셈블 — 막히면 롬을 편다(조사용)
 python3 games/sfc-ed1/tools/build.py            # 원문을 확장 뱅크로 옮긴 2MB 롬(+창 넓히기·한글 메뉴 PoC) → work/build/<꼬리표>/
 python3 games/sfc-ed1/tools/build.py --project  # 번역문을 인코딩해 뱅크에 담아 본 분량 투영(파일 안 남김)
 python3 games/sfc-ed1/tools/units.py --stats --dump # 번역 단위·조각·조사 수요 → work/derived/units/

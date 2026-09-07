@@ -592,11 +592,55 @@ def segment_slices(items: list[script.Item]) -> list[tuple[str, int, int]]:
     out = []
     start = 0
     for k, it in enumerate(items):
+        # 🔴 **뱅크 경계에서도 끊는다** — 조각은 「이어서 실행되는 한 덩이」인데 `$02:E784` 는
+        #    16비트만 올려 `$xx:FFFF` 다음이 `$xx:0000`(램)이다. 곧 뱅크를 걸친 한 덩이는
+        #    원판에서도 **이어서 실행될 수 없다.** 안 끊으면 그 조각이 두 뱅크의 rel16 을 동시에
+        #    받는 **경첩**이 되어(실측: 조각 2905 가 $0A 에서 `$FA` 를 받고 $0B 로 `$FC` 를 쏜다)
+        #    군집이 41,767B 로 부풀어 한 뱅크에 못 들어간다. 넷뿐이고 전부 미번역이다.
+        if k > start and common.off2snes(it.off) >> 16 != common.off2snes(items[k - 1].off) >> 16:
+            raw = b"".join(bytes([x.code]) + x.args for x in items[start:k])
+            out.append((hashlib.sha1(raw).hexdigest()[:12], start, k))
+            start = k
         if it.kind == "ctrl" and it.code in (0xE0, 0xE4):
             raw = b"".join(bytes([x.code]) + x.args for x in items[start : k + 1])
             out.append((hashlib.sha1(raw).hexdigest()[:12], start, k + 1))
             start = k + 1
     return out
+
+
+def fallthrough_pairs(
+    items: list[script.Item], slices: list[tuple[str, int, int]], rom: bytes
+) -> list[int]:
+    """`si` → `si+1` 로 **흘러내려야만** 닿는 짝(= si 의 끝이 `$E0` 이고 si+1 이 무참조).
+
+    돌려주는 것은 si 목록이다. 판정 근거는 `kr_items` 의 군집 주석."""
+    refs = set(script.pointer_anchors(rom))
+    for it in items:
+        refs.update(t for t in it.targets)
+
+    # ⚠ 원문 **뱅크가 갈리면 흘러내림이 아니다** — `$02:E784` 는 `$003F/$0040`(16비트)만 올리고
+    #   `$0041`(뱅크)은 안 건드린다. 곧 `$xx:FFFF` 다음은 `$xx:0000`(램)이지 다음 뱅크가 아니다.
+    #   파일에서 이어져 보여도 원판이 **실행할 수 없는 이음**이라 묶으면 안 된다(묶었더니 군집
+    #   하나가 49,895B 로 부풀어 뱅크를 넘었다 — 2026-09-08 실측).
+    #   ⚠ **조각 시작끼리** 견준다 — 경계를 걸친 조각이 실재한다($09:FE49~$0A:8038, 조각 하나).
+    #   끝 주소로 견주면 그 조각이 다음 뱅크에 속한 것처럼 보여 경계가 안 잘린다.
+    def bank(off: int) -> int:
+        return common.off2snes(off) >> 16
+
+    def spans(si: int) -> bool:
+        """조각 하나가 뱅크 경계를 걸친다 — 넷 있다(예: $0A:FE6A~$0B:8005). 사슬에 넣지 않는다."""
+        a, e = slices[si][1], slices[si][2]
+        return bank(items[a].off) != bank(items[e - 1].off + items[e - 1].size - 1)
+
+    return [
+        si
+        for si in range(len(slices) - 1)
+        if items[slices[si][2] - 1].code == 0xE0
+        and items[slices[si + 1][1]].off not in refs
+        and bank(items[slices[si][1]].off) == bank(items[slices[si + 1][1]].off)
+        and not spans(si)
+        and not spans(si + 1)
+    ]
 
 
 def kr_items(
@@ -747,12 +791,28 @@ def kr_items(
                     ra, rb = find(seg_of[k]), find(off_seg[t])
                     if ra != rb:
                         parent[rb] = ra
+    # 🔴 **흘러내림도 참조다** — `$E0` 은 「끝」이 아니라 **쪽 넘김**이다(2026-09-08 실측).
+    #   `$02:DCC0` 경로(메뉴·시스템 메시지)는 `$1779=$177A=0` 으로 들어와 END 핸들러가
+    #   `$02:E30C`(키 대기 → 창 비움 → rts)로 빠지고, 디스패치는 `$173A` 가 `$E4`/`$FF` 가
+    #   아니므로 **`$02:DDDD` 로 돌아가 다음 바이트를 계속 읽는다.** 곧 **`$E0` 다음 바이트가
+    #   실행된다** — 원판의 물리적 이웃이 곧 의미다. 우리는 조각을 다시 담으므로 그 이웃이
+    #   깨졌다(저장 확인 소프트락: `alt1[$4D]` 의 `<E0>` 뒤 `<E4>` 가 사라져 삭제 문안으로
+    #   흘러 들어갔다 — `docs/devlog.md`).
+    #   ⚠ 어디까지 묶나 — **다음 조각이 아무 데서도 참조되지 않을 때만**이다. 참조가 있으면
+    #   그 조각은 제 포인터로 닿는 별개 메시지이고, 전부 묶으면 사슬이 79KB 가 되어 뱅크를
+    #   넘는다(실측). 참조 없는 조각은 **흘러내림 말고는 닿을 길이 없다** ⇒ 반드시 이웃이다.
+    fall = fallthrough_pairs(items, slices, rom)
+    for si in fall:
+        ra, rb = find(si), find(si + 1)
+        if ra != rb:
+            parent[rb] = ra
     comp_of = [find(i) for i in range(len(slices))]
     return {
         "items": new,
         "slices": slices,
         "seg_of": seg_of,
         "comp_of": comp_of,
+        "fallthrough": fall,
         "label_map": label_map,
         "start_of": start_of,
         "rep": rep,
@@ -806,6 +866,21 @@ def pack_banks(k: dict) -> dict:
         place[orig_start] = new_off[idx] if idx in new_off else place.get(orig_start, orig_start)
     for orig_target, idx in k["label_map"].items():
         place[orig_target] = new_off[idx]
+    # 🔴 게이트 — 흘러내림 이웃이 진짜 이웃인가. 군집만 믿지 않는다(같은 군집이어도 배치 차례가
+    #    어긋나면 사이에 남이 낀다). 여기서 **바이트 자리로** 확인한다.
+    for si in k["fallthrough"]:
+        cur = seg_items.get(si)
+        nxt = seg_items.get(si + 1)
+        if not cur or not nxt:
+            continue
+        last = max(cur)
+        first = min(nxt)
+        if new_off[last] + new[last].size != new_off[first]:
+            raise SystemExit(
+                f"흘러내림이 끊겼다: 조각 {si} 끝 {new_off[last] + new[last].size:#08x} "
+                f"≠ 조각 {si + 1} 시작 {new_off[first]:#08x} "
+                f"(`$E0` 다음 바이트가 원판과 달라진다 — 저장 소프트락의 원인)"
+            )
     return {
         "place": place,
         "new_off": new_off,
@@ -855,6 +930,65 @@ class Ledger:
 
     def report(self) -> dict:
         return {k: len(v) for k, v in self.by_stage.items()}
+
+
+def verify_terminators(rom: bytes, out: bytes) -> int:
+    """메시지마다 **첫 종료 코드의 꼴**이 원판과 같은가 — 화면을 보는 게이트.
+
+    🔴 왜 필요한가: `$E0` 은 「끝」이 아니라 **쪽 넘김**이다. `$02:DCC0` 로 들어온 메시지
+    (메뉴·시스템)는 `$1779=$177A=0` 이라 END 핸들러가 `$02:E30C`(키 대기 → 창 비움 → rts)로
+    빠지고, 디스패치(`$02:E216`)는 `$173A` 가 `$E4`/`$FF` 가 아니므로 **`$02:DDDD` 로 돌아가
+    다음 바이트를 계속 읽는다.** 그래서 `<E0>` **다음 바이트가 원판과 같아야** 한다 —
+    `<E0><E4>` 로 닫히던 문안의 `<E4>` 가 사라지면 엔진이 옆 문안으로 흘러 들어가고, 화면은
+    살아 있는데 **저장이 끝나지 않는다**(2026-09-08 소프트락의 정체).
+    ⚠ 되읽기·라운드트립·무변경 구간 셋 다 이걸 못 본다 — **조각 하나하나는 다 맞았다.**
+    """
+    import encode as _enc
+
+    leads = set(_enc.LEADS)
+
+    def first_end(img: bytes, snes: int, kr: bool) -> tuple[int | None, int | None]:
+        o = common.snes2off(snes)
+        for _ in range(600):
+            c = img[o]
+            if kr and c in leads:
+                o += 2
+                continue
+            if c < 0xD0:
+                o += 1
+            elif c in text.DICT_TABLES:
+                o += 2
+            elif c < 0xE0:
+                o += 1
+            elif c in (0xE0, 0xE4, 0xFE, 0xFF):
+                # `$FE`(RETURN)·`$FF`(PAGE, 여백 채움 바이트이기도 하다)에서도 멈춘다 —
+                # 그 뒤를 선형으로 읽는 건 뜻이 없다(원판은 이웃 문안을, 우리는 $FF 여백을 읽어
+                # 서로 다른 자리에서 종료 코드를 만난다). 재는 것은 **첫 종료 코드의 꼴**뿐이다.
+                return c, img[o + 1]
+            else:
+                o += 1 + text.ARGLEN.get(c, 0)
+        return None, None
+
+    bad, seen = [], 0
+    for name in text.MSG_TABLES:
+        try:
+            po, pn = text.msg_pointers(name, rom), text.msg_pointers(name, out)
+        except SystemExit:  # alt3 끝의 $FFFFFF — 포인터가 아니다(원판부터 그렇다)
+            continue
+        for i, (a, b) in enumerate(zip(po, pn, strict=False)):
+            if common.snes2off(a) < common.snes2off(text.TEXT_START):
+                continue  # 표 구간을 가리키는 항목(alt1[0] 등) — 문안이 아니다
+            seen += 1
+            wa, wb = first_end(rom, a, False), first_end(out, b, True)
+            # 종료 코드와 「그 다음이 $E4 인가」만 본다 — 그 뒤 바이트는 번역으로 달라진다
+            if (wa[0], wa[1] == 0xE4) != (wb[0], wb[1] == 0xE4):
+                bad.append(f"{name}[{i:#06x}] 원판 {wa} 우리 {wb}")
+    if bad:
+        raise SystemExit(
+            f"종료 꼴이 갈린 메시지 {len(bad)}건 — `$E0` 다음 바이트가 원판과 다르다\n  "
+            + "\n  ".join(bad[:8])
+        )
+    return seen
 
 
 def build_kr(
@@ -936,6 +1070,7 @@ def build_kr(
     if with_hook:
         dicts.verify(out, k["rep"])  # 🔑 **체인이 다 끝난 롬**에서 게임의 포인터를 따라 되읽는다
         battle_ui.verify(out, k["rep"])
+    n_term = verify_terminators(rom, out)
     out[HEADER_ROM_SIZE_OFF] = 0x0B
     fix_checksum(out)
     imm = immutable_diffs(rom, out)
@@ -964,6 +1099,7 @@ def build_kr(
         "max_component": max(pk["comp_size"].values()),
         "banks_used": [(f"${b:02X}", used) for b, used in pk["banks"]],
         "pointers_rewritten": n_ptr,
+        "terminators_checked": n_term,
         "widened": widened,
         "menu_bake": {k2: v2 for k2, v2 in poc.items() if k2 != "resident_codes"},
         "immutable_diffs": imm,
