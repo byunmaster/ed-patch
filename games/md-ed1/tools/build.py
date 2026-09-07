@@ -126,8 +126,14 @@ def normalize(text: str) -> str:
     return text
 
 
-def typeset(text: str) -> list[list[str]]:
-    """자유 문안 → 페이지(줄 목록). \\f 는 강제 페이지."""
+def typeset(text: str, lead: str = "") -> list[list[str]]:
+    """자유 문안 → 페이지(줄 목록). `\\f` 는 강제 페이지.
+
+    `lead` 는 **첫 줄 앞에 그대로 붙는** 글자다(조판기가 지우면 안 되는 자리). 조사 훅 뒤의
+    공백이 그것이다 — `<0e><ec01> 들어 있었습니다.` 에서 앞 공백이 없으면 화면이
+    「눈물이들어 있었습니다」가 된다. krwrap 도 typeset 도 앞 공백을 지우므로 따로 받는다
+    (2026-09-07 초벌 시험에서 잡았다). ⚠ 폭 검사는 **붙인 뒤**에 한다.
+    """
     text = normalize(text)
     pages = []
     for chunk in text.split("\f"):
@@ -135,6 +141,8 @@ def typeset(text: str) -> list[list[str]]:
         if not chunk:
             continue
         pages += krwrap.wrap_pages(chunk, width=WIDTH, lines_per_page=LINES, strip_after="")
+    if lead and pages and pages[0]:
+        pages[0][0] = lead + pages[0][0]
     for pg in pages:
         if len(pg) > LINES:
             raise SystemExit(f"페이지가 {LINES}줄을 넘는다: {pg}")
@@ -172,7 +180,9 @@ def build_stream(
                     if ln:
                         out.append(scene.Token(0, cs.encode(ln), "text"))
             return
-        pages = typeset("".join(pending_text))
+        body = "".join(pending_text)
+        lead = " " if body[:1] == " " else ""
+        pages = typeset(body, lead)
         pending_text.clear()
         for pi, pg in enumerate(pages):
             if pi:

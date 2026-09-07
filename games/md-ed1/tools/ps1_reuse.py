@@ -430,6 +430,13 @@ def apply_proposal(only: set[int] | None = None) -> None:
     if not PROPOSAL.exists():
         raise SystemExit(f"제안 파일이 없다: {PROPOSAL} — 먼저 `--propose`")
     prop = json.loads(PROPOSAL.read_text(encoding="utf-8"))
+    # 손으로 쓴 초벌도 같이 넣는다(`tools/draft.py --propose`) — PS1 이 못 닿은 자리다.
+    # ⚠ 겹치지 않는다: 초벌은 **PS1 이 못 맞춘 스트림**에만 나온다.
+    extra = common.REVIEW_DIR / "draft" / "draft_proposal.json"
+    if extra.exists():
+        for bn, ss in json.loads(extra.read_text(encoding="utf-8")).items():
+            prop.setdefault(bn, {}).update(ss)
+        print(f"  초벌 제안도 같이 읽었다: {extra}")
     d = common.rom()
     bl = archives.blocks(d, archives.ARCHIVES["script"][0])
     put = skip = 0

@@ -35,9 +35,13 @@ LITERAL = re.compile(r"<(02|0e|0b)>(은|는|이|가|을|를|과|와)(?![\w(])")
 def canon() -> list[tuple[str, str, str]]:
     """[(파일, 자리, 문안)] — 정본 전량."""
     out = []
+    # ⚠ `draft_md_only.json` 은 뺀다 — **골격 없는 조각**이라 `<0e>` 가 그 안에 없다(스트림 토큰이다).
+    # 짝은 펼친 뒤에 본다 — `tools/draft.py --propose` 가 같은 규칙으로 검사한다.
     for f in sorted(
-        glob.glob(str(common.GAME_DIR / "textmap" / "*.json"))
+        f
+        for f in glob.glob(str(common.GAME_DIR / "textmap" / "*.json"))
         + glob.glob(str(common.GAME_DIR / "script" / "*.json"))
+        if Path(f).name != "draft_md_only.json"
     ):
         j = json.loads(Path(f).read_text(encoding="utf-8"))
         name = Path(f).name

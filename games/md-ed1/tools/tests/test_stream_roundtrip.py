@@ -99,6 +99,13 @@ class BuildStream(unittest.TestCase):
         self.assertIn(0x05, [t.code for t in out])
 
 
+class Typeset(unittest.TestCase):
+    def test_lead_space_survives(self):
+        """조사 훅 뒤의 공백을 조판기가 지우면 안 된다 — 「눈물이들어 있었습니다」가 된다."""
+        self.assertEqual(build.typeset(" 들어 있었습니다.", " "), [[" 들어 있었습니다."]])
+        self.assertEqual(build.typeset(" 들어 있었습니다."), [["들어 있었습니다."]])
+
+
 class MultiSpeaker(unittest.TestCase):
     def _stream(self, tokens):
         st = scene.Stream.__new__(scene.Stream)
