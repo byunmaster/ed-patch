@@ -606,7 +606,10 @@ fi
 # ⚠ 사전조건: 두 파일 크기가 같다(1,281,968B). 다르면 다른 디스크(event·program)를 잘못 고른 것.
 # 가져오면 **이 칸의 세이브로 저장**되므로 다음부터는 그냥 뜬다. 원본은 안 건드린다(사본을 만든다).
 import_save() {  # $1=옛 세이브 파일 → $RUN/$SAVEMED 에 섹터 셋을 얹고 $SAVEDIR/$SAVEKEY 로 남긴다
-  python3 - "$1" "$RUN/$SAVEMED" <<'PY' || return 1
+  # ⚠ 원본·빌드의 program.d88 을 같이 넘긴다 — 세이브에 박힌 글자를 바꿀 밑절미다(아래).
+  _po=$(ls "$SRC"/*Program*.d88 2>/dev/null | head -1 || true)
+  _pb="$RUN/program.d88"
+  python3 - "$1" "$RUN/$SAVEMED" "${_po:-/nonexistent}" "$_pb" <<'PY' || return 1
 import sys, pathlib
 LO, HI = 0x0002B0, 0x00020AB0            # scenario.d88 논리 섹터 0~127 (헤더 직후 128섹터, 133,120B)
 old, new = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
@@ -614,6 +617,43 @@ src, dst = old.read_bytes(), bytearray(new.read_bytes())
 if len(src) != len(dst) or len(src) != 1281968:
     sys.exit(f"⛔ 크기가 다르다 — 다른 디스크다: {old.name} {len(src):,}B vs {new.name} {len(dst):,}B")
 dst[LO:HI] = src[LO:HI]
+
+# 🔴 **세이브에 글자가 박혀 있다** — 장 이름 바와 파티 이름 넷은 게임이 실행 파일에서 세이브로
+#    복사한다(pc98-ed1 실측 2026-09-07). 그래서 원판·옛 빌드 세이브를 새 빌드로 열면 그 자리만
+#    일본어·깨진 글자로 뜬다(유저가 본 「HUD 빈칸」의 한 갈래). 여기서 우리 문안으로 바꿔 준다.
+# 자리는 **원본 program.d88 과 같은 오프셋**이다(게임이 통째로 복사한다 — 실측으로 일치).
+#    그래서 하드코딩한 문안이 필요 없다: 세이브에서 읽은 값을 **원본 program 에서 찾아**,
+#    **빌드 program 의 같은 자리** 값으로 바꾼다. 빌드가 바뀌면 저절로 따라오고, 이미 우리
+#    문안이면 원본에서 못 찾아 조용히 넘어간다.
+# ⚠ 길이가 다르면 **안 바꾼다** — 세이브 레코드는 stride 0x40 고정이라 늘리면 다음 칸을 먹는다.
+#    (우리 빌드는 짧은 이름을 공백으로 채워 길이가 같다.)
+CHAP = (0x001083, 30)                                    # 장 이름 바(앞뒤 공백 5칸 포함)
+PARTY = (0x001220, 0x001260, 0x0012a0, 0x0012e0)         # 파티 넷, 종결자 0x06 까지
+prog_o, prog_b = pathlib.Path(sys.argv[3]), pathlib.Path(sys.argv[4])
+if prog_o.exists() and prog_b.exists():
+    po, pb = prog_o.read_bytes(), prog_b.read_bytes()
+    n = 0
+    if len(po) == len(pb):
+        off, ln = CHAP
+        cur = bytes(dst[off:off + ln])
+        i = po.find(cur)
+        if i >= 0 and pb[i:i + ln] != cur:
+            dst[off:off + ln] = pb[i:i + ln]; n += 1
+        for off in PARTY:
+            end = dst.find(b"\x06", off, off + 0x40)
+            if end < 0:
+                continue
+            cur = bytes(dst[off:end])
+            i = po.find(cur + b"\x06")
+            if i < 0:
+                continue
+            j = pb.find(b"\x06", i, i + 0x40)
+            if j < 0 or j - i != end - off:      # 길이가 다르면 건드리지 않는다
+                continue
+            if pb[i:j] != cur:
+                dst[off:end] = pb[i:j]; n += 1
+    if n:
+        print(f"  💾 세이브에 박힌 글자 {n}자리를 이 빌드 문안으로 바꿨다(장 이름·파티 이름)")
 new.write_bytes(bytes(dst))
 PY
   mkdir -p "$SAVEDIR" && cp "$RUN/$SAVEMED" "$SAVEDIR/$SAVEKEY"
