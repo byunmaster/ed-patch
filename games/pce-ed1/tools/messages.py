@@ -100,12 +100,32 @@ def _decode_pair(b: bytes) -> str:
         return f"[{b.hex()}]"
 
 
+_KNOWN: frozenset[str] | None = None
+
+
+def _known_speakers() -> frozenset[str]:
+    """정본에 이름이 있는 화자(SJIS 원문 쪽). 짧은 순한자 화자를 필터에서 지킨다."""
+    global _KNOWN
+    if _KNOWN is None:
+        try:
+            _KNOWN = frozenset(json.loads(SPEAKERS.read_text()))
+        except (OSError, ValueError):
+            _KNOWN = frozenset()
+    return _KNOWN
+
+
 def parse(block: bytes) -> list[Message]:
     """열개 후보(화자 머리 `1F` · 공용 화자 `09 nn` · 대본 런)를 앞에서부터 파싱한다."""
     cands = set()
+    known = _known_speakers()
     for m in SJIS_RUN.finditer(block):
         # 코드 안의 우연한 한자 두 글자를 거른다 — 셋 이상이거나 가나·부호가 있어야 대본이다
-        if len(m.group()) < 6 and not KANA.search(m.group().decode("cp932", "replace")):
+        # 🔴 단 **정본에 있는 화자 이름은 안 버린다.** 순한자 두 글자 화자(「兵士」 등)가 `1F` 없이
+        #    서면 이 필터가 통째로 먹는다 — 검사기는 **자기 입력 밖을 못 보므로** 안 운다
+        #    (pc98 이 같은 필터로 「呪文」·「装備」를 잃었다, 중계 2026-09-07).
+        #    실측: 버려지는 1,595자리 중 `1F` 경로가 624를 건지고, **진짜 손실은 「兵士」 6자리**였다.
+        txt = m.group().decode("cp932", "replace")
+        if len(m.group()) < 6 and not KANA.search(txt) and txt not in known:
             continue
         cands.add(m.start())
     runs = {m.start() for m in SJIS_RUN.finditer(block)}  # 길이 불문 런(화자 이름은 한두 글자다)
