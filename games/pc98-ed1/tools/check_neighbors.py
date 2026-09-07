@@ -27,6 +27,9 @@ JP = re.compile(r"[ぁ-んァ-ヶ一-鿿]")
 NEED = 3  # 이웃 넷 중 몇이 정본에 있으면 「표 한복판」으로 보나
 
 
+KANA = re.compile(r"[\u3040-\u30ff]")
+
+
 def main() -> int:
     canon = patch_sys.load()
     bad = []
@@ -36,7 +39,14 @@ def main() -> int:
         for i, o in enumerate(offs):
             k = f"{disk}:{o:#x}"
             v = canon.get(k)
-            if v is not None or not JP.search(site[o].get("t", "")):
+            t = site[o].get("t", "")
+            # ⚠ **순한자 구간은 후보로 안 올린다** — 2026-09-08 에 덤퍼가 그걸 내기
+            #   시작하자(진짜 UI ` 呪文`·` 装備` 를 놓치고 있었다) **코드 바이트가 한자로
+            #   읽힌 잡음**이 후보를 채웠다(`関幾`·`括盛`·`塙顫` …). 채워 넣을수록 새 잡음이
+            #   떠서 끝이 없다.
+            #   🔴 **그래서 이 검사기는 순한자 UI 를 못 본다.** 그 자리는 화면에서 잡는다
+            #     (안 옮기면 **뜻 없는 한글**로 떠서 눈에 잘 띈다 — `check_hijacked.py`).
+            if v is not None or not JP.search(t) or not KANA.search(t):
                 continue
             if canon.get(k, {}).get("keep_jp"):
                 continue

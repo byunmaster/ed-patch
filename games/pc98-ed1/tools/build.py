@@ -193,6 +193,10 @@ def main() -> int:
         help="전투 청크에서 「공백 메움」 금지 — 원인 가르기용",
     )
     ap.add_argument(
+        "--combat-slice",
+        help="전투 청크를 N 등분해 K 번째만 넣는다 — `K/N`. 절반보다 잘게 가를 때",
+    )
+    ap.add_argument(
         "--combat-half",
         choices=("a", "b"),
         help="전투 청크를 절반만 넣는다(a=앞·b=뒤) — 어느 청크가 범인인가",
@@ -228,6 +232,10 @@ def main() -> int:
     if args.combat_half:
         patch_scn.COMBAT_HALF = args.combat_half
         print(f"  ⚠ 원인 가르기 빌드 — 전투 청크 {args.combat_half} 절반만")
+    if args.combat_slice:
+        _k, _n = args.combat_slice.split("/")
+        patch_scn.COMBAT_SLICE = (int(_k), int(_n))
+        print(f"  ⚠ 원인 가르기 빌드 — 전투 청크 {_k}/{_n} 조각만")
 
     if args.strict_inplace_combat:
         patch_scn.STRICT_INPLACE_COMBAT = True

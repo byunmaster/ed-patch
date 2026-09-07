@@ -61,6 +61,11 @@ def decode_run(data: bytes, start: int) -> tuple[str, int, bool]:
     return "".join(out), i, has_kana
 
 
+def has_kanji(t: str) -> bool:
+    """한 글자 이름(`男`·`女`)도 자리로 낸다 — 짧다고 버리면 화면에 깨진 채로 남는다."""
+    return any("一" <= c <= "鿿" for c in t)
+
+
 def encode_run(text: str) -> bytes:
     """decode_run 의 역 — 라운드트립 검증용."""
     out = bytearray()
@@ -99,6 +104,22 @@ def dump_area(directory: dict) -> tuple[list[dict], int, int]:
                     checked += 1
                     if encode_run(name) != data[i + 1 : end]:
                         failed += 1
+                    # 🔴 **화자 런도 자리로 낸다**(2026-09-08). 종전엔 이름을 메타데이터로만
+                    #    쓰고(`blk["s"]`) 블록으로 안 냈다 — 그래서 **정본에 자리 자체가
+                    #    없어** 아무리 문안을 옮겨도 화자는 영원히 원문이었다.
+                    #    실측 1,492자리 · 고유 이름 140, 그중 흔한 것 대부분이 **뺏은 구**에
+                    #    들어 화면엔 「일본어」가 아니라 **뜻 없는 한글**로 떴다.
+                    #    ⚠ 「정본에 있는데 화면이 원문」과 **「자리가 없다」는 다른 병**이다.
+                    if len(name) >= MIN_CHARS or has_kanji(name):
+                        blocks.append(
+                            {
+                                "k": scn.format_key(key),
+                                "o": i + 1,
+                                "n": end - (i + 1),
+                                "t": name,
+                                "sp": True,
+                            }
+                        )
                     speaker = name
                     i = end + 1
                     continue

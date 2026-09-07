@@ -59,7 +59,7 @@ def plan() -> tuple[dict[str, list], dict]:
     """{디스크: [(플랫 오프셋, 원본 바이트, 새 바이트)]} + 통계."""
     script = load()
     out: dict[str, list] = {d: [] for d in DISKS}
-    st = {"넣음": 0, "건너뜀:넘침": 0, "건너뜀:자리 없음": 0, "쓴 바이트": 0}
+    st = {"넣음": 0, "건너뜀:넘침": 0, "건너뜀:자리 없음": 0, "건너뜀:문안 없음": 0, "쓴 바이트": 0}
     for disk in DISKS:
         flat = b"".join(x["data"] for x in common.read_sectors(common.disk_path(disk)))
         site = sites(disk)
@@ -69,7 +69,14 @@ def plan() -> tuple[dict[str, list], dict]:
                 continue
             o = int(off, 16)
             # 「원문으로 둔다」고 적어 둔 자리 — 문안이 없다(`check_neighbors.py` 가 읽는다)
-            if v.get("keep_jp") or "t" not in v:
+            if v.get("keep_jp"):
+                continue
+            # 🔴 **칸 표는 `t` 가 없다 — `items` 로 든다.** 2026-09-08 에 이 줄이
+            #    `"t" not in v` 였다가 HUD 지명 표를 **조용히 통째로 건너뛰었다**
+            #    (화면에 원문이 그대로 떴는데 통계는 「자리 없음 0」이었다).
+            #    ⇒ 모르는 꼴은 **세서 드러낸다.** 조용히 지나가지 않는다.
+            if "t" not in v and "table" not in v:
+                st["건너뜀:문안 없음"] += 1
                 continue
             if o not in site:
                 st["건너뜀:자리 없음"] += 1

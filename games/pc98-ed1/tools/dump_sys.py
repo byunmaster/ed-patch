@@ -26,6 +26,10 @@ def is_kana(ch: str) -> bool:
     return "ぁ" <= ch <= "ヿ"
 
 
+def is_han(ch: str) -> bool:
+    return "一" <= ch <= "鿿"
+
+
 def fullwidth_run(data: bytes, start: int) -> tuple[str, int]:
     """전각 SJIS 로 이어지는 최대 구간. 전각 공백·ASCII 공백·개행은 안 끊는다."""
     out: list[str] = []
@@ -57,7 +61,18 @@ def dump(flat: bytes) -> list[dict]:
     while i < len(flat) - 1:
         text, end = fullwidth_run(flat, i)
         body = text.replace("\\n", "").replace(" ", "").replace("　", "")
-        if len(body) >= MIN_CHARS and any(is_kana(c) for c in body):
+        # 🔴 **가나가 하나도 없는 순한자 UI 를 놓치고 있었다**(2026-09-08, 화면에서 잡았다).
+        #    필드 커맨드 창의 ` 呪文`·` 装備` 가 그것이다 — 이웃 넷(`使う`·`捨てる`·`強さ`·
+        #    `その他`)은 가나가 있어 들어왔는데 이 둘만 빠져, 화면에 **뜻 없는 한글**로
+        #    떴다(뺏은 구에 든 한자라 그렇다 — `check_hijacked.py`).
+        #    ⚠ `check_neighbors.py` 도 못 잡는다 — 그건 **덤퍼가 낸 자리들** 사이의 구멍을
+        #      보는데, 이건 덤퍼가 **애초에 안 낸** 자리다. 검사기는 자기 입력 밖을 못 본다.
+        #    ⇒ **전부 한자**인 구간도 받는다(`any(kana)` 를 못 지나는 건 이 부류뿐이다).
+        #      잡음은 늘지만 정본에 안 넣으면 해가 없다(MIN_CHARS 를 2로 내릴 때와 같은 셈).
+        #    ⚠ 2026-09-08 두 번째 손질 — `all(is_han)` 도 좁았다. 시스템 창의 `ＥＰ表示` 는
+        #      **전각 라틴 + 한자**라 「전부 한자」를 못 지난다. 축은 「가나가 있나」도
+        #      「전부 한자인가」도 아니라 **「가나든 한자든 하나라도 있나」**다.
+        if len(body) >= MIN_CHARS and any(is_kana(c) or is_han(c) for c in body):
             blocks.append({"o": i, "n": end - i, "t": text})
         i = max(end, i + 1)
     return blocks

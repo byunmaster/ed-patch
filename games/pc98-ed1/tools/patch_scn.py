@@ -47,6 +47,14 @@ JUMP = 0x0F
 # 🔴 **주소를 인자로 갖는 옵코드 전부**(길이 3). 분기(`0F`~`14`)에 `0C`·`15`(ASM 호출)까지.
 #    런 머리에 이 주소가 딸려 들어오면 덮어쓰면 안 된다 — 아래 두 자리에서 쓴다.
 ADDR_OPS = frozenset(c for c, n in W.CODE_LEN.items() if n == 3)
+# 🔴 **길이가 1이 아닌 옵코드 전부.** 인자는 글자가 아니다 — 자리를 안 가리고 비켜 쓴다.
+#    `0x16` 은 **인자가 열 바이트**다(선행 영문 패치의 표: 「선두에 따른 다중 호출」).
+MULTI_OPS = {c: n for c, n in W.CODE_LEN.items() if n > 1}
+# ⚠ 뒤로 훑다가 **종결자나 화자 여는 표식**을 만나면 멈춘다 — 그 너머의 바이트는
+#    인자가 될 수 없다. 이걸 안 하면 데이터 속의 `0x16` 을 옵코드로 읽어 오탐한다
+#    (실측: 화자 런 `頑固そうな老人` 앞 아홉 바이트에 `0x16` 이 있었는데 사이에 `1E` 가 있다).
+STOP_BACK = frozenset({0x00, 0x06, 0x07, 0x0A, 0x0D, 0x1E})
+
 KU0 = H.KU_LO - 0x20  # ah 바이트에서 구 번호로 (JIS 고위 = 0x20 + 구)
 
 # 🔴 **칸 표** — 한 청크 안에 「이름 14B + 종결자 07」이 줄줄이 이어지는 자리가 있다
@@ -135,6 +143,9 @@ ONE_GLYPH_AT = ("38.00.20", 0x0030, 8, "가")  # 청크 · 런 오프셋 · 런 
 
 # 전투 청크를 **절반씩** 넣는다 — 「어느 청크가 범인인가」로 좁힐 때(이분 탐색).
 COMBAT_HALF = None  # None | "a"(앞 절반) | "b"(뒤 절반)
+# 이분을 더 잘게 — `--combat-slice K/N` 이 전투 청크를 N 등분해 K 번째만 넣는다.
+# 절반으로 갈린 뒤 그 안을 또 가르려면 이게 있어야 한다(2026-09-08).
+COMBAT_SLICE = None  # None | (K, N), K 는 1부터
 
 # 전투 청크에서 「틈 건너뜀」/「공백 메움」을 각각 끈다 — 둘 중 누가 범인인가.
 NO_GAP_COMBAT = False  # 틈 건너뜀(`0F` 로 런 끝으로) 금지
@@ -185,6 +196,30 @@ def pierced_map(scenario: dict) -> dict:
     return out
 
 
+def check_no_head_clobber(marks: list[tuple[int, bytes, bytes]], chunks: dict[int, bytes]) -> None:
+    """마크가 **레코드의 머리**(빈 화자 `1E 04` 의 인자 두 바이트)를 덮으면 죽는다.
+
+    🔴 이 부류는 **문안 단위 감사로는 영원히 안 보인다.** 길이도 맞고 `0F` 도 없고 마커 수도
+       같은데, 게임은 **문안을 읽기도 전에** 뻗는다(2026-09-08 유저 실측: 「몬스터조차 안
+       떴다」). ⇒ 재는 층을 **한 칸 위**로 올린 자다.
+
+    ⚠ 자리를 안 가린다 — 전투에서만 물렸지만 전수로 세니 `1E 04` 는 시나리오에도 17자리
+      있고, 그중 셋은 인자 두 바이트가 **둘 다 `>= 0x20`** 이라 같은 사고가 난다.
+    """
+    for off, _old, _new in marks:
+        for base, blob in chunks.items():
+            if not base <= off < base + len(blob):
+                continue
+            r = off - base
+            for q in (r - 2, r - 3, r - 4):
+                if q >= 0 and blob[q] == 0x1E and blob[q + 1] == 0x04 and r < q + 4:
+                    raise SystemExit(
+                        f"🔴 빈 화자 `1E 04` 의 인자를 덮는다 {off:#08x} — "
+                        f"{blob[q : q + 4].hex(' ')} · 그 자리는 글자가 아니다"
+                    )
+            break
+
+
 def check_no_jump_clobber(marks: list[tuple[int, bytes, bytes]], chunks: dict[int, bytes]) -> None:
     """마크가 **앞선 `0F` 의 주소 2바이트**에 앉으면 죽는다.
 
@@ -200,16 +235,15 @@ def check_no_jump_clobber(marks: list[tuple[int, bytes, bytes]], chunks: dict[in
             if not base <= off < base + len(blob):
                 continue
             r = off - base
-            for q in (r - 1, r - 2):
-                if (
-                    q >= 0
-                    and blob[q] in ADDR_OPS
-                    and q + 3 > r
-                    and (blob[q + 2] & 0xF0) == ((W.BASE >> 8) & 0xF0)
-                ):
+            for _back in range(1, 11):
+                q = r - _back
+                if q < 0 or blob[q] in STOP_BACK:
+                    break
+                _len = MULTI_OPS.get(blob[q])
+                if _len and q + _len > r:
                     raise SystemExit(
-                        f"🔴 `0F` 의 주소를 덮어쓴다 {off:#08x} — "
-                        f"점프 {blob[q : q + 3].hex(' ')} 가 어긋난다"
+                        f"🔴 옵코드 인자를 덮어쓴다 {off:#08x} — "
+                        f"{blob[q]:#04x}(길이 {_len}) {blob[q : q + _len].hex(' ')}"
                     )
             break
 
@@ -222,6 +256,9 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
     marks: list[tuple[int, bytes, bytes]] = []
     st = {
         "제자리": 0,
+        "화자": 0,
+        "빈 화자 인자 건너뜀": 0,
+        "건너뜀:화자 자리": 0,
         "머리가 주소 인자라 건너뜀": 0,
         "머리를 앞으로 되넓힘": 0,
         "칸 표": 0,
@@ -305,6 +342,15 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
             st["칸 표"] += 1
             st["쓴 바이트"] += w
 
+        # ── 원인 가르기: 전투 청크를 N 등분해 한 조각만 넣는다.
+        if COMBAT_SLICE and skey in _combat_keys():
+            ks = sorted(_combat_keys())
+            kk, nn = COMBAT_SLICE
+            lo = len(ks) * (kk - 1) // nn
+            hi = len(ks) * kk // nn
+            if skey not in set(ks[lo:hi]):
+                continue
+
         # ── 원인 가르기: 전투 청크를 절반만 넣는다(이분 탐색).
         if COMBAT_HALF and skey in _combat_keys():
             ks = sorted(_combat_keys())
@@ -331,6 +377,28 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
                 continue
             o, n = b["o"], b["n"]
 
+            # ── 🔴 **빈 화자 `1E 04` 뒤 두 바이트는 글자가 아니라 인자다** (2026-09-08).
+            #    반각으로 디코드되지만 **화면엔 안 나온다**(원판 화면에 `ﾝﾃ` 가 없다).
+            #    🔴 유저 실측: 그 자리를 덮은 빌드가 **전투 화면으로 넘어가자마자, 몬스터
+            #       그림도 뜨기 전에** 뻗었다. **문안을 읽기 전**이라 문안 단위 감사(길이·`0F`·
+            #       꼬리 공백·마커 수)가 전부 초록이었다 — 세는 층이 한 칸 위여야 했다.
+            #    ⚠ 「정상 확인 빌드도 같은 자리를 덮었다」를 무죄 근거로 삼았다가 틀렸다 —
+            #      그 자리는 **그 회차가 지나가지 않은 전투**였다. **정상 빌드가 썼다 ≠ 무죄**다.
+            #    ⚠ **전투만의 것이 아니다.** 전수로 세니 `1E 04` 는 시나리오 17 · 전투 7이고,
+            #      **스물넷 모두** 뒤 두 바이트가 전각 본문이 아니다. 값도 자리마다 다르다
+            #      (전투는 `dd c3` 로 고정, 시나리오는 `08 8b`·`c8 89`·`20 06` … ⇒ **인자**다).
+            #      전투에서만 물린 건 `dd c3` 가 **둘 다 `>= 0x20`** 이라 텍스트 런에 딸려
+            #      들어가기 때문이다. 시나리오에도 그런 자리가 셋 있다(`c8 89` ×2 · `c4 89`).
+            #    ⇒ **자리를 안 가리고** 그 인자 바이트만큼 건너뛴다.
+            for _p in (o - 2, o - 3, o - 4):
+                if _p >= 0 and data[_p] == 0x1E and data[_p + 1] == 0x04:
+                    _skip = max(0, _p + 4 - o)
+                    if _skip:
+                        o += _skip
+                        n -= _skip
+                        st["빈 화자 인자 건너뜀"] += _skip
+                    break
+
             # ── 🔴 런 머리가 **앞선 옵코드의 주소 인자 2바이트**일 수 있다 (2026-09-07).
             #    덤퍼는 `< 0x20` 을 제어코드로 **건너뛰기만** 하므로, 주소를 인자로 갖는
             #    옵코드(`ADDR_OPS` = 길이 3 — 분기 `0F`~`14` + `0C` + ASM 호출 `15`)의
@@ -344,13 +412,21 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
             #      전투 청크의 `0F` 는 점프가 아니라 데이터고(policy 「전투 청크 `0F`」),
             #      실제로 넷 중 전투 하나는 목적지가 `0x95C3` 라 여기 안 걸린다.
             #    이건 판단이 아니라 **원본에서 유도되는 구조**라 정본이 아니라 코드에 둔다.
-            for _p in (o - 1, o - 2):
-                if _p >= 0 and data[_p] in ADDR_OPS and _p + 3 > o:
-                    if (data[_p + 2] & 0xF0) == (W.BASE >> 8) & 0xF0:
-                        _skip = _p + 3 - o
-                        o += _skip
-                        n -= _skip
-                        st["머리가 주소 인자라 건너뜀"] += 1
+            #    ⚠ 2026-09-08 두 번째 손질 — **길이 3만 보던 것이 좁았다.** 옵코드 길이 표를
+            #      끝까지 쓰면 `0x09`(2) · `0x16`(**11**) 도 인자를 가진다. 실측: 런 머리가
+            #      인자에 걸친 정본 블록이 **61**이고 그중 **22가 `0x16`** 이다.
+            #      그리고 **「목적지가 창인가」 조건도 뺐다** — 그건 주소 인자에만 맞는 자였고,
+            #      `0x16`·`0x0C` 처럼 주소가 아닌 인자를 통째로 놓쳤다.
+            for _back in range(1, 11):
+                _p = o - _back
+                if _p < 0 or data[_p] in STOP_BACK:
+                    break
+                _len = MULTI_OPS.get(data[_p])
+                if _len and _p + _len > o:
+                    _skip = _p + _len - o
+                    o += _skip
+                    n -= _skip
+                    st["머리가 주소 인자라 건너뜀"] += 1
                     break
 
             # ── 반대 방향의 어긋남 — **런이 늦게 시작해 앞 글자를 흘린다** (2026-09-07).
@@ -418,6 +494,17 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
 
             slack = n - len(new)
             is_combat = skey in _combat_keys()
+
+            # 🔴 **화자 런은 제자리·공백 메움만.** `1E <이름> 04` 안이라 그 사이에 `0F` 를
+            #    심으면 이름 자리가 코드가 된다 — 전투 청크와 같은 이유로 막는다.
+            if b.get("sp"):
+                if slack < 0 or slack >= 3:
+                    st["건너뜀:화자 자리"] += 1
+                    continue
+                marks.append((base_off + o, data[o : o + n], new + b" " * slack))
+                st["화자"] += 1
+                st["쓴 바이트"] += n
+                continue
 
             # 🔴 **전투 청크에서는 `0F` 를 쓰지 않는다**(2026-09-07 확정, 유저 실측 + 원본 계측).
             #    시나리오 청크의 `0F` 는 653번이 **같은 청크 안**을 가리키고 목적지의
@@ -512,6 +599,7 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
         for _v in _d.values():
             _chunks[_v["index"] * common.SECTOR_SIZE] = _v["data"]
     check_no_jump_clobber(marks, _chunks)
+    check_no_head_clobber(marks, _chunks)
     # 🔴 **전투 마크의 꼬리 공백은 원본보다 2를 넘지 못한다** — 규칙(위)을 정본으로
     #    우회하는 길을 **결과로** 막는다. 2026-09-08 회귀가 정확히 그 길로 들어왔다.
     _combat_span = [

@@ -100,8 +100,14 @@ class SysStrings(unittest.TestCase):
         self.assertEqual(text, "")
         self.assertEqual(end, 0)
 
-    def test_가나가_없으면_버린다(self):
-        self.assertEqual(self.m.dump("環讌茫韓環".encode("shift_jis")), [])
+    def test_순한자도_받는다(self):
+        """🔴 2026-09-08 에 자를 넓혔다 — 종전엔 `any(kana)` 라 **순한자 UI 를 통째로
+        버렸다**(필드 커맨드 창의 `呪文`·`装備` 가 화면에 깨진 한글로 떴다).
+        축은 「가나가 있나」가 아니라 **「가나든 한자든 하나라도 있나」**다."""
+        self.assertEqual(
+            self.m.dump("環讌茫韓環".encode("shift_jis")),
+            [{"o": 0, "n": 10, "t": "環讌茫韓環"}],
+        )
 
     def test_가나가_있으면_건진다(self):
         raw = "王子の旅立ち".encode("shift_jis")
