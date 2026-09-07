@@ -13,6 +13,7 @@
 """
 
 import argparse
+import contextlib
 import json
 import shutil
 import sys
@@ -37,6 +38,90 @@ BANK = 0x2000  # 풀린 블록은 뱅크 0x76 하나에 들어가야 한다
 
 class BuildError(Exception):
     pass
+
+
+class WriteLedger:
+    """🔴 **뒤 단계가 앞 단계의 바이트를 지웠나**를 잡는다.
+
+    ss-ed1+2 가 실제로 물렸다(중계 2026-09-07): 뒤 단계가 이주 자리를 **원본 덤프의 칸 경계**로
+    골랐는데 앞 단계가 그 표를 다시 깔아 놔서 **살아 있는 한글 위에 대사를 얹었다.**
+    ⚠ **게이트 셋이 다 초록이었다** — 되읽기는 *자기가 쓴 직후*를, 라운드트립은 *덤프↔원본*을,
+    무변경 구간은 *안 여는 파일*을 본다. **덮어쓰기는 아무도 안 본다.**
+
+    ⚠ **「구간이 겹치나」로 물으면 안 된다** — 우리 쓰기는 대개 섹터 통째 read-modify-write 라
+    겹침이 정상이다(실측: 그렇게 물었더니 오탐 여덟). 물어야 하는 것은
+    **「다 쓴 뒤에도 각 쓰기의 바이트가 그대로인가」**다. 덮였으면 그때만 운다.
+    """
+
+    def __init__(self):
+        self.spans: list[tuple[int, bytes, str]] = []
+
+    def add(self, start: int, data: bytes, label: str):
+        if data:
+            self.spans.append((start, bytes(data), label))
+
+    def verify(self, iso: Path) -> int:
+        """구운 이미지를 열어 장부의 모든 구간이 아직 그 바이트인지 본다."""
+        errs = []
+        with open(iso, "rb") as f:
+            for start, data, label in self.spans:
+                got = bytearray()
+                lba, off = divmod(start, common.USER)
+                while len(got) < len(data):
+                    f.seek(lba * common.RAW + common.USER_OFF)
+                    got += f.read(common.USER)[off:]
+                    lba, off = lba + 1, 0
+                if bytes(got[: len(data)]) != data:
+                    bad = next(i for i in range(len(data)) if got[i] != data[i])
+                    errs.append(f"「{label}」 +{bad} 가 덮였다 (선형 {start + bad})")
+        if errs:
+            raise BuildError(
+                f"쓴 바이트가 나중에 덮였다 {len(errs)}건:\n  " + "\n  ".join(errs[:10])
+            )
+        return len(self.spans)
+
+
+@contextlib.contextmanager
+def _record_writes(ledger: WriteLedger):
+    """`mode1` 의 두 쓰기 함수를 감싸 장부에 적는다.
+
+    ⚠ `shared/` 는 게임 브랜치에서 못 고친다(루트 CLAUDE.md) — 그래서 **여기서 감싼다.**
+    좌표는 **유저 데이터 선형 바이트**(`lba × USER + offset`)라 두 함수를 같은 자로 잰다.
+    ⚠ **`write_at` 은 속에서 `write_user_data` 를 부른다** — 중첩을 둘 다 적으면 안쪽 것이
+    **섹터 통째**로 잡혀 그 섹터의 남은 자리가 「덮였다」로 뜬다(실측 오탐). **바깥만 적는다.**
+    """
+    from shared.disc import mode1
+
+    at, ud = mode1.write_at, mode1.write_user_data
+    depth = [0]
+
+    def w_at(f, lba, size, offset, data, *, label, expect=None):
+        outer = depth[0] == 0  # ⚠ **부르기 전에** 판정한다 — 끝난 뒤엔 깊이가 이미 돌아와 있다
+        depth[0] += 1
+        try:
+            r = at(f, lba, size, offset, data, label=label, expect=expect)
+        finally:
+            depth[0] -= 1
+        if outer:
+            ledger.add(lba * common.USER + offset, data, label)
+        return r
+
+    def w_ud(f, lba, data, *, label, expect=None):
+        outer = depth[0] == 0
+        depth[0] += 1
+        try:
+            r = ud(f, lba, data, label=label, expect=expect)
+        finally:
+            depth[0] -= 1
+        if outer:
+            ledger.add(lba * common.USER, data, label)
+        return r
+
+    mode1.write_at, mode1.write_user_data = w_at, w_ud
+    try:
+        yield
+    finally:
+        mode1.write_at, mode1.write_user_data = at, ud
 
 
 def assemble(entries: list[tuple[int, bytes]], orig: bytes, where: str = "") -> bytes:
@@ -254,7 +339,8 @@ def _build(edits_path, iso: Path, cue: Path):
     intended: dict[tuple[int, int], bytes] = {}
     refs = containers.referenced()
     slot_of = {r: n for r, n in refs}  # 참조표가 말하는 섹터 수
-    with open(iso, "r+b") as f:
+    ledger = WriteLedger()
+    with open(iso, "r+b") as f, _record_writes(ledger):
         apply_code_patches(f, glyph_bank, table, touched)
         if want("sys"):
             print("  시스템 문구:", sysbuild.apply(f, table, touched))
@@ -289,6 +375,7 @@ def _build(edits_path, iso: Path, cue: Path):
             moved = sum(1 for a, b in zip(data, orig, strict=True) if a != b)
             print(f"  컨테이너 rel {rel}: {len(entries)}블록 · 자리 보존 · 바뀐 바이트 {moved}/{slot}")
     print(f"  번역 메시지 {n_msgs}건(컨테이너마다 다시 셈) · 글리프 {len(chars)}자")
+    print(f"  덮어쓰기 없음 (쓰기 구간 {ledger.verify(iso)})")
     verify_immutable(iso, touched)
     verify_readback(iso, intended, found)
     if want("battle"):

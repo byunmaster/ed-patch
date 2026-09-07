@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import build
+import common
 import containers
 import lz
 
@@ -76,3 +77,52 @@ class Assemble(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Ledger(unittest.TestCase):
+    """🔴 **뒤 단계가 앞 단계의 바이트를 지웠나** — 게이트 셋이 다 못 보는 자리다.
+
+    되읽기는 *자기가 쓴 직후*를, 라운드트립은 *덤프↔원본*을, 무변경 구간은 *안 여는 파일*을
+    본다. 덮어쓰기는 아무도 안 본다(ss-ed1+2 실측, 중계 2026-09-07).
+    """
+
+    def _iso(self, sectors=2):
+        import tempfile
+
+        p = Path(tempfile.mkdtemp()) / "t.iso"
+        p.write_bytes(bytes(sectors * common.RAW))
+        return p
+
+    def _put(self, iso, lba, off, data):
+        b = bytearray(iso.read_bytes())
+        s = lba * common.RAW + common.USER_OFF + off
+        b[s : s + len(data)] = data
+        iso.write_bytes(bytes(b))
+
+    def test_덮이면_운다(self):
+        iso = self._iso()
+        led = build.WriteLedger()
+        led.add(0 * common.USER + 10, b"\xaa\xbb", "앞 단계")
+        self._put(iso, 0, 10, b"\x11\x22")  # 뒤 단계가 그 자리를 덮었다
+        with self.assertRaises(build.BuildError) as cm:
+            led.verify(iso)
+        self.assertIn("앞 단계", str(cm.exception))
+
+    def test_안_덮이면_안_운다(self):
+        iso = self._iso()
+        led = build.WriteLedger()
+        led.add(0 * common.USER + 10, b"\xaa\xbb", "앞 단계")
+        self._put(iso, 0, 10, b"\xaa\xbb")
+        led.add(0 * common.USER + 20, b"\xcc", "뒤 단계")
+        self._put(iso, 0, 20, b"\xcc")
+        self.assertEqual(led.verify(iso), 2)
+
+    def test_섹터_경계를_걸쳐도_읽는다(self):
+        """⚠ 우리 쓰기는 섹터를 걸친다 — 되읽기가 거기서 틀리면 가드가 조용히 죽는다."""
+        iso = self._iso()
+        data = bytes(range(1, 33))
+        led = build.WriteLedger()
+        led.add(common.USER - 16, data, "걸침")
+        self._put(iso, 0, common.USER - 16, data[:16])
+        self._put(iso, 1, 0, data[16:])
+        self.assertEqual(led.verify(iso), 1)
