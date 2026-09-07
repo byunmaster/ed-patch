@@ -94,12 +94,29 @@ def is_glyph(ch: str) -> bool:
     return ("가" <= ch <= "힣") or ch in GLYPH_SYMBOLS
 
 
-def repertoire(texts) -> list[str]:
-    """번역문들에서 2바이트 글리프가 필요한 글자를 모아 코드포인트순으로(= 글리프 색인, 결정적)."""
-    rep = sorted({ch for t in texts for ch in t if is_glyph(ch)})
-    if len(rep) > GLYPH_CAPACITY:
-        raise ValueError(f"글리프 {len(rep)} > 자리 {GLYPH_CAPACITY}")
-    return rep
+def bad_index(i: int) -> bool:
+    """🔴 색인 하위가 `$FF` 면 안 된다 — **사전 문자열은 `$FF` 로 끝난다**(`$02:E066` 의 복사 루프).
+    그런 색인의 글자가 이름에 들어가면 문자열이 **거기서 잘린다**. 대본은 `$E0` 로 끝나 안 걸리지만
+    사전은 걸린다 ⇒ 그 자리를 **비워 둔다**(32B 짜리 구멍 셋, 850 글리프 기준)."""
+    return (i & 0xFF) == 0xFF
+
+
+def repertoire(texts) -> list[str | None]:
+    """번역문의 글자를 코드포인트순으로 늘어놓은 **자리 목록**(= 글리프 색인, 결정적).
+    쓸 수 없는 색인은 `None` 으로 비워 둔다 — 자리와 색인이 1:1 이어야 표가 단순해진다."""
+    chars = sorted({ch for t in texts for ch in t if is_glyph(ch)})
+    slots: list[str | None] = []
+    for ch in chars:
+        while bad_index(len(slots)):
+            slots.append(None)
+        slots.append(ch)
+    if len(slots) > GLYPH_CAPACITY:
+        raise ValueError(f"글리프 {len(slots)} > 자리 {GLYPH_CAPACITY}")
+    return slots
+
+
+def index_map(slots: list[str | None]) -> dict[str, int]:
+    return {ch: i for i, ch in enumerate(slots) if ch is not None}
 
 
 def glyph_code(idx: int) -> bytes:
@@ -215,7 +232,7 @@ def decode_kr(b: bytes, rep: list[str]) -> str:
             if c == JOSA_LEAD and j >= JOSA_BASE:
                 out.append("{" + JOSA_PAIRS[j - JOSA_BASE] + "}")
             else:
-                out.append(rep[(LEADS.index(c) << 8) | j])
+                out.append(rep[(LEADS.index(c) << 8) | j] or "\ufffd")
             i += 2
         elif c in inv:
             out.append(inv[c])

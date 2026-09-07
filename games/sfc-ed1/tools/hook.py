@@ -36,6 +36,16 @@ GLYPH_MAX = 1024  # 한 뱅크 = 32,768B ÷ 32B. 넘으면 뱅크를 갈라야 �
 HOOK_ORG = 0x8000
 TRAMPOLINE = 0x02FE52  # 뱅크 $02 빈 자리 430B
 CALL_SITE = 0x02DE0B  # JSR $E784 → JSR $FE52
+# 🔴 **글자가 들어오는 문은 둘이다**(2026-09-07 실측). `$02:DDEE` 가 사전 버퍼가 켜져 있으면
+# 대본 대신 **버퍼**에서 한 바이트를 집어 같은 `$173A` 로 보낸다:
+#     $DDF9  LDA $174C,X / CMP #$FF / BNE $DE0E     ← 두 번째 문
+#     $DE0B  JSR $E784   / STA $173A                ← 첫 번째 문(위)
+# 대본만 훅하면 **사전 문자열(이름·아이템·시스템 문장)의 한글이 통째로 안 풀린다** — 색인 바이트가
+# 그대로 제어코드로 읽혀 인트로가 멈췄다. 크기가 같아 `JSR` 로 갈아 끼울 수 있다.
+BUF_TRAMPOLINE = 0x02FE57
+BUF_CALL_SITE = 0x02DDF9  # LDA $174C,X → JSR $FE57 (셋 다 3바이트)
+BUF_CURSOR = 0x176B  # 사전 버퍼 읽기 커서($02:DDF3 이 올린다)
+BUF_BASE = 0x174C  # 사전 문자열 버퍼 — `$176A` 가 켜져 있는 동안만 읽는다
 NMI_CALL = 0x00AA00  # NMI 의 JSR $ACA9 → JSR (우리 스텁)
 NMI_STUB = 0x00FF20  # 뱅크 $00 빈 자리 160B
 NMI_ORIG = 0xACA9
@@ -76,8 +86,9 @@ def josa_chars() -> str:
     return "".join(s for _n, s in josa_rows())
 
 
-def glyph_bytes(rep: list[str]) -> bytes:
-    """색인 순 2bpp 32B/자 — 위 타일 8행 + 아래 8행, 평면1 = $FF."""
+def glyph_bytes(rep: list[str | None]) -> bytes:
+    """색인 순 2bpp 32B/자 — 위 타일 8행 + 아래 8행, 평면1 = $FF.
+    ⚠ 비워 둔 자리(`None`, `encode.bad_index`)도 **32B 를 차지한다** — 색인이 곧 자리여야 한다."""
     import hangul_font
 
     if hangul_font.CELL_W != 8:
@@ -85,14 +96,14 @@ def glyph_bytes(rep: list[str]) -> bytes:
     font = hangul_font.load_font()
     out = bytearray()
     for ch in rep:
-        rows = hangul_font.render(ch, font)
+        rows = [0] * 16 if ch is None else hangul_font.render(ch, font)
         for half in (0, 8):
             for r in range(8):
                 out += bytes([rows[half + r], 0xFF])
     return bytes(out)
 
 
-def batchim_bits(rep: list[str]) -> bytes:
+def batchim_bits(rep: list[str | None]) -> bytes:
     """글리프 색인 → 받침 있음 1비트. 조사 훅이 읽는다."""
     sys.path.insert(0, str(common.ROOT))
     from shared.text import josa as josa_mod
@@ -100,14 +111,14 @@ def batchim_bits(rep: list[str]) -> bytes:
     n = (len(rep) + 7) // 8
     bits = bytearray(n)
     for i, ch in enumerate(rep):
-        if josa_mod.batchim(ch):
+        if ch is not None and josa_mod.batchim(ch):
             bits[i >> 3] |= 1 << (i & 7)
     return bytes(bits)
 
 
 def build_payload(rep: list[str], slots: list[int], vram: list[int]) -> tuple[bytes, dict]:
     """훅 뱅크 하나를 통째로 만든다 — 코드가 앞, 표가 뒤. **원본을 안 읽는다**(테스트가 돌 수 있게)."""
-    rep_index = {ch: i for i, ch in enumerate(rep)}
+    rep_index = encode.index_map(rep)
     nslot = len(slots)
     assert len(vram) == nslot
     josa_ord = encode.LEADS.index(encode.JOSA_LEAD)
@@ -174,6 +185,56 @@ def build_payload(rep: list[str], slots: list[int], vram: list[int]) -> tuple[by
     a.op("sta", addr=V_IDX, mode="long")
 
     a.label("h_done")
+    a.sep(imm=0x20)
+    a.op("lda", addr=V_IDX, mode="long")
+    a.ply()
+    a.plx()
+    a.plb()
+    a.plp()
+    a.rtl()
+
+    # ── 사전 버퍼에서 한 바이트 ($02:DDF9 에서 JSL) ─────────────────────────────────
+    a.label("hookbuf")
+    a.php()
+    a.phb()
+    a.sep(imm=0x20)
+    a.rep(imm=0x10)
+    a.phx()
+    a.phy()
+    a.lda(imm=HOOK_BANK)
+    a.pha()
+    a.plb()
+    a.op("lda", addr=BUF_CURSOR, mode="abs")
+    a.rep(imm=0x20)
+    a.op("and", imm=0x00FF, m16=True)
+    a.tax()
+    a.sep(imm=0x20)
+    a.op("lda", addr=BUF_BASE, mode="absx")
+    a.op("sta", addr=V_IDX, mode="long")
+    a.rep(imm=0x20)
+    a.op("and", imm=0x00FF, m16=True)
+    a.tax()
+    a.sep(imm=0x20)
+    a.op("lda", addr="lead_tab", mode="absx")
+    a.cmp(imm=0xFF)
+    a.beq(label="hb_done")
+    a.op("sta", addr=V_IDX + 1, mode="long")
+    a.op("lda", addr=BUF_CURSOR, mode="abs")  # 둘째 바이트 — 커서를 우리가 올린다
+    a.inc()
+    a.op("sta", addr=BUF_CURSOR, mode="abs")
+    a.rep(imm=0x20)
+    a.op("and", imm=0x00FF, m16=True)
+    a.tax()
+    a.sep(imm=0x20)
+    a.op("lda", addr=BUF_BASE, mode="absx")
+    a.op("sta", addr=V_IDX, mode="long")
+    a.rep(imm=0x20)
+    a.op("lda", addr=V_IDX, mode="long")
+    a.op("sta", addr=V_LAST, mode="long")
+    a.sep(imm=0x20)
+    a.jsr(addr="alloc", mode="abs")
+    a.op("sta", addr=V_IDX, mode="long")
+    a.label("hb_done")
     a.sep(imm=0x20)
     a.op("lda", addr=V_IDX, mode="long")
     a.ply()
@@ -443,6 +504,7 @@ def apply(out: bytearray, rom: bytes, rep: list[str], slots: list[int]) -> dict:
     go = common.snes2off(GLYPH_BASE)
     out[go : go + len(g)] = g
     hook_addr = (HOOK_BANK << 16) | info["labels"]["hook"]
+    buf_addr = (HOOK_BANK << 16) | info["labels"]["hookbuf"]
     drain_addr = (HOOK_BANK << 16) | info["labels"]["drain"]
 
     # 1. 트램펄린: JSL 훅 + RTS (원본 JSR 과 자리를 맞춘다)
@@ -453,6 +515,13 @@ def apply(out: bytearray, rom: bytes, rep: list[str], slots: list[int]) -> dict:
     if bytes(rom[c : c + 3]) != bytes([0x20, 0x84, 0xE7]):
         raise SystemExit(f"소비 지점이 예상과 다르다: {rom[c : c + 3].hex()}")
     out[c : c + 3] = bytes([0x20, TRAMPOLINE & 0xFF, (TRAMPOLINE >> 8) & 0xFF])
+    # 2b. 사전 버퍼 소비 지점: LDA $174C,X → JSR $FE57
+    t2 = common.snes2off(BUF_TRAMPOLINE)
+    out[t2 : t2 + 5] = bytes([0x22, buf_addr & 0xFF, (buf_addr >> 8) & 0xFF, HOOK_BANK, 0x60])
+    cb = common.snes2off(BUF_CALL_SITE)
+    if bytes(rom[cb : cb + 3]) != bytes([0xBD, BUF_BASE & 0xFF, BUF_BASE >> 8]):
+        raise SystemExit(f"사전 버퍼 소비 지점이 예상과 다르다: {rom[cb : cb + 3].hex()}")
+    out[cb : cb + 3] = bytes([0x20, BUF_TRAMPOLINE & 0xFF, (BUF_TRAMPOLINE >> 8) & 0xFF])
     # 3. NMI: JSR $ACA9 → JSR 스텁(원래 것을 부르고 큐를 비운다)
     n = common.snes2off(NMI_CALL)
     if bytes(rom[n : n + 3]) != bytes([0x20, NMI_ORIG & 0xFF, NMI_ORIG >> 8]):
@@ -482,6 +551,8 @@ def patch_ranges() -> list[tuple[int, int]]:
     return [
         (common.snes2off(CALL_SITE), common.snes2off(CALL_SITE) + 3),
         (common.snes2off(TRAMPOLINE), common.snes2off(TRAMPOLINE) + 5),
+        (common.snes2off(BUF_CALL_SITE), common.snes2off(BUF_CALL_SITE) + 3),
+        (common.snes2off(BUF_TRAMPOLINE), common.snes2off(BUF_TRAMPOLINE) + 5),
         (common.snes2off(NMI_CALL), common.snes2off(NMI_CALL) + 3),
         (common.snes2off(NMI_STUB), common.snes2off(NMI_STUB) + 8),
     ]

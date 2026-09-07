@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import text  # noqa: I001  (common 보다 먼저 — shared/text 와 이름이 겹친다)
 import common
+import dicts
 import hook
 import script
 
@@ -407,6 +408,7 @@ def mutable_ranges() -> list[tuple[int, int]]:
         o2 = common.snes2off(a + 0x100)
         r.append((o2, o2 + 16))
     r += hook.patch_ranges()
+    r += dicts.patch_ranges()
     sheet = common.snes2off(text.FONT_SHEET)
     import tiles  # 상주 글리프를 구울 수 있는 자리 전부(실제로 구운 것은 그 부분집합이다)
 
@@ -504,8 +506,12 @@ def verify(rom: bytes, out: bytes, place: dict[int, int]) -> dict:
 
 
 # ── 한글 경로: 번역된 조각을 인코딩해 rel16 군집 단위로 32KB 뱅크에 담는다 ───────────────────────
-# $2C = 창 배치 항목(넓힐 때) · $2E = 한글 챕터 제목 조각 · $3D = 글리프 · $3F = 렌더러 훅
-KR_BANKS = [b for b in range(0x27, 0x40) if b not in (0x2C, 0x2E, hook.GLYPH_BANK, hook.HOOK_BANK)]
+# $2C = 창 배치 항목(넓힐 때) · $2E = 한글 챕터 제목 조각 · $3D = 글리프 · $3E = 사전 · $3F = 렌더러 훅
+KR_BANKS = [
+    b
+    for b in range(0x27, 0x40)
+    if b not in (0x2C, 0x2E, hook.GLYPH_BANK, dicts.BANK, hook.HOOK_BANK)
+]
 BANK_CAP = 0x8000
 
 
@@ -548,7 +554,7 @@ def kr_items(
         hook.josa_chars()
     )  # 런타임 조사 16형태 — 훅이 색인으로 집는다(문안에 없어도 필요하다)
     rep = encode.repertoire(texts)
-    rep_index = {ch: i for i, ch in enumerate(rep)}
+    rep_index = encode.index_map(rep)
     new: list[script.Item] = []
     seg_of: dict[int, int] = {}  # 새 항목 인덱스 → 조각 번호
     label_map: dict[int, int] = {}  # 원문 런 한복판 목표 오프셋 → 그 자리에 놓인 새 항목 인덱스
@@ -739,6 +745,48 @@ def pack_banks(k: dict) -> dict:
     }
 
 
+# ── 단계끼리 같은 바이트를 쓰는지 본다 (2026-09-07, ss-ed1+2 사고 중계) ─────────────────────
+# 🔴 **뒤 단계가 앞 단계의 자리를 덮어도 게이트 셋이 다 초록이었다**(다른 트랙 실측):
+#   되읽기는 *자기가 쓴 직후*를 · 라운드트립은 *덤프↔원본*을 · 무변경 구간은 *안 여는 파일*을 본다.
+#   셋 다 「다른 단계가 내 자리를 덮었나」를 안 본다. 그래서 **쓴 자리를 단계마다 적어 두고 겹치면 운다.**
+# ⚠ 특히 **빈 자리를 원본 롬에서 고르는 단계**(챕터 조각·글꼴 시트)가 위험하다 — 원본이 비었어도
+#   앞 단계가 이미 깔아 놨을 수 있다. 여기서는 「원본과 다른가」가 아니라 **「누가 썼나」**로 센다.
+def _written(prev: bytes, cur: bytes) -> set[int]:
+    """두 스냅숏 사이에 바뀐 바이트 오프셋 — 4KB 덩이로 먼저 걸러 빠르게 훑는다."""
+    out: set[int] = set()
+    n = len(prev)
+    for b in range(0, n, 4096):
+        e = min(b + 4096, n)
+        if prev[b:e] != cur[b:e]:
+            out.update(i for i in range(b, e) if prev[i] != cur[i])
+    return out
+
+
+class Ledger:
+    """단계마다 `snap()` 을 부르면 그 단계가 쓴 자리를 적고, 앞 단계와 겹치면 그 자리에서 운다."""
+
+    def __init__(self, out: bytearray):
+        self.prev = bytes(out)
+        self.by_stage: dict[str, set[int]] = {}
+
+    def snap(self, out: bytearray, stage: str) -> None:
+        cur = bytes(out)
+        w = _written(self.prev, cur)
+        for other, ow in self.by_stage.items():
+            hit = w & ow
+            if hit:
+                a = min(hit)
+                raise SystemExit(
+                    f"단계 겹침: '{stage}' 가 '{other}' 의 자리를 {len(hit)}바이트 덮었다 "
+                    f"(처음 {common.fmt(common.off2snes(a))})"
+                )
+        self.by_stage[stage] = w
+        self.prev = cur
+
+    def report(self) -> dict:
+        return {k: len(v) for k, v in self.by_stage.items()}
+
+
 def build_kr(
     rom: bytes,
     states=("reviewed", "draft", "tm-draft"),
@@ -751,6 +799,7 @@ def build_kr(
     pk = pack_banks(k)
     new, place = k["items"], pk["place"]
     out = bytearray(rom) + bytearray(b"\xff" * (NEW_SIZE - len(rom)))
+    led = Ledger(out)  # ⚠ **첫 쓰기 전에** 연다 — 본체 이관도 원장에 들어가야 한다
     s, e = common.snes2off(BODY[0]), common.snes2off(BODY[1])
     out[s:e] = b"\xff" * (e - s)
     # 뱅크별로 이어 쓴다 — 항목마다 자기 새 오프셋에
@@ -781,16 +830,30 @@ def build_kr(
         out[pk["new_off"][i] : pk["new_off"][i] + n] = body[pos : pos + n]
         pos += n
     n_ptr = rewrite_tables(out, place, rom)
+    # ⚠ 본체를 $FF 로 비운 뒤 그 안의 표(alt3 는 본체 구간 안에 있다)를 다시 쓴다 —
+    #   **한 덩이**라 한 단계로 센다. 원장이 잡아야 할 것은 「지웠다 다시 쓰기」가 아니라
+    #   **다른 단계가 남의 자리를 먹는 것**이다(2026-09-07 원장을 켜자마자 이 둘이 먼저 걸렸다).
+    led.snap(out, "본체·포인터 표 이관")
     widened = widen_windows(out, rom)
     poc = menu_bake(out, rom)
+    led.snap(out, "메뉴 라벨·상주 글리프")
     import chapters
 
     chapters.bake(out, rom)
+    led.snap(out, "챕터 제목")
     extra = after(out, rom) if after is not None else None
     # 🔴 렌더러 훅은 **메뉴를 구운 뒤**에 얹는다 — 슬롯은 「라벨을 다시 구운 롬」으로 재야 한다
-    hk = None
+    hk = dk = None
     if with_hook:
+        led.snap(out, "오프닝 PoC")
         hk = hook.apply(out, rom, k["rep"], dynamic_slots(out, rom, poc["resident_codes"]))
+        led.snap(out, "렌더러 훅")
+        # 사전 여섯 벌(이름·아이템·몬스터·시스템 문장)을 확장 뱅크로. 훅이 있어야 읽을 수 있다
+        import encode as _enc
+
+        dk = dicts.bake(out, rom, _enc.index_map(k["rep"]))
+        led.snap(out, "사전 이관")
+        dicts.verify(out, k["rep"])  # 🔑 **체인이 다 끝난 롬**에서 게임의 포인터를 따라 되읽는다
     out[HEADER_ROM_SIZE_OFF] = 0x0B
     fix_checksum(out)
     imm = immutable_diffs(rom, out)
@@ -823,6 +886,8 @@ def build_kr(
         "menu_bake": {k2: v2 for k2, v2 in poc.items() if k2 != "resident_codes"},
         "immutable_diffs": imm,
         "hook": hk,
+        "dicts": dk,
+        "written_by_stage": led.report(),
     }
     if extra is not None:
         info["opening_poc"] = extra
