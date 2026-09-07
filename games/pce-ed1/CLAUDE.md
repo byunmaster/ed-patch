@@ -4,6 +4,7 @@
 [`CLAUDE.md`](../../CLAUDE.md), 진행 현황은 [`docs/status.md`](docs/status.md),
 **번역·표기 방침은 [`docs/policy.md`](docs/policy.md)**, 경위·삽질은 [`docs/devlog.md`](docs/devlog.md).
 🔴 대사 문안을 쓰거나 검수하기 전에 스킬 `rpg-translate` 와 `docs/policy.md` 를 연다.
+🎮 **인게임을 켜기 전에 [`docs/playbook.md`](docs/playbook.md)** — 조작·부팅 순서·전투가 나는 자리와 안 나는 자리. 없어서 회차를 한 번 접었다(2026-09-07).
 
 ## 이 게임이 다른 점
 
