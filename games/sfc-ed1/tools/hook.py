@@ -46,6 +46,22 @@ BUF_TRAMPOLINE = 0x02FE57
 BUF_CALL_SITE = 0x02DDF9  # LDA $174C,X → JSR $FE57 (셋 다 3바이트)
 BUF_CURSOR = 0x176B  # 사전 버퍼 읽기 커서($02:DDF3 이 올린다)
 BUF_BASE = 0x174C  # 사전 문자열 버퍼 — `$176A` 가 켜져 있는 동안만 읽는다
+# 🔴 **넷째 문 — 메뉴는 사전을 아예 안 거친다**(2026-09-07 실측: 사전 뱅크에 읽기 BP 를 걸고
+# 도구 목록을 열었는데 **한 번도 안 걸렸다**). 아이템·장비 이름을 그리는 세 창은 아이템 표
+# `$03:EF73` 을 **직접 long,X 로 읽어** 문자열을 **칸 배열 `$0305,Y` 에 그대로 복사한다** —
+# `$173A` 를 안 거치므로 앞의 두 훅이 닿지 않는다. 셋 다 **똑같은 33바이트 덩이**다:
+#     LDA $03EF73,X → $06 / LDA $03EF74,X → $07 / LDA #$03 → $08
+#     LDY #$00 : LDA [$06],Y : CMP #$FF : BEQ 끝 : STA $0305,Y : INY : BRA
+# ⚠ 끝나면 **Y 가 채운 칸 수**여야 한다 — 뒤에 오는 `CPY #$09/$0A/$0F` 패딩 루프가 그걸 쓴다.
+# ⇒ 덩이를 통째로 우리 루틴 호출로 갈아 끼운다(`JSR` + `JMP 패딩`). 한글은 두 바이트를 한 칸으로 접는다.
+NAME_TRAMPOLINE = 0x02FE5C
+NAME_SITES = [  # (덩이 시작, 패딩 루프 = 끝난 뒤 갈 자리)
+    (0x02B10F, 0x02B132),
+    (0x02B18C, 0x02B1AD),
+    (0x02B387, 0x02B3A8),
+]
+NAME_BLOCK = 33  # 세 자리 모두 같은 길이
+CELLS = 0x000305  # 칸 배열(WRAM 미러) — long 으로 써서 DB 에 안 기댄다
 NMI_CALL = 0x00AA00  # NMI 의 JSR $ACA9 → JSR (우리 스텁)
 NMI_STUB = 0x00FF20  # 뱅크 $00 빈 자리 160B
 NMI_ORIG = 0xACA9
@@ -116,13 +132,15 @@ def batchim_bits(rep: list[str | None]) -> bytes:
     return bytes(bits)
 
 
-def build_payload(rep: list[str], slots: list[int], vram: list[int]) -> tuple[bytes, dict]:
+def build_payload(
+    rep: list[str | None], slots: list[int], vram: list[int], item_table: int = 0x3E8000
+) -> tuple[bytes, dict]:
     """훅 뱅크 하나를 통째로 만든다 — 코드가 앞, 표가 뒤. **원본을 안 읽는다**(테스트가 돌 수 있게)."""
     rep_index = encode.index_map(rep)
     nslot = len(slots)
     assert len(vram) == nslot
     josa_ord = encode.LEADS.index(encode.JOSA_LEAD)
-    a = Asm(HOOK_ORG)
+    a = Asm(HOOK_ORG, bank=HOOK_BANK)
 
     # ── 훅 본체 ($02:FE52 에서 JSL) ────────────────────────────────────────────────
     a.label("hook")
@@ -239,6 +257,57 @@ def build_payload(rep: list[str], slots: list[int], vram: list[int]) -> tuple[by
     a.op("lda", addr=V_IDX, mode="long")
     a.ply()
     a.plx()
+    a.plb()
+    a.plp()
+    a.rtl()
+
+    # ── 메뉴 이름 한 줄을 칸 배열에 채운다 (아이템 표 → $0305) ──────────────────────
+    # 들어올 때: A/X/Y 8비트 · X = 표 색인(×2). 나갈 때: **Y = 채운 칸 수**(패딩 루프가 쓴다).
+    a.label("namecopy")
+    a.php()
+    a.phb()
+    a.sep(imm=0x20)
+    a.rep(imm=0x10)
+    a.lda(imm=HOOK_BANK)
+    a.pha()
+    a.plb()
+    a.op("lda", addr=item_table, mode="longx")
+    a.op("sta", addr=0x000006, mode="long")
+    a.op("lda", addr=item_table + 1, mode="longx")
+    a.op("sta", addr=0x000007, mode="long")
+    a.lda(imm=item_table >> 16)
+    a.op("sta", addr=0x000008, mode="long")
+    a.ldy(imm=0x0000, m16=True)
+    a.ldx(imm=0x0000, m16=True)
+    a.label("nc_loop")
+    a.op("lda", dp=0x06, mode="indlongy")  # ⚠ `[dp],Y` 다 — `[dp]`($A7) 로 쓰면 첫 글자만 읽는다  # LDA [$06],Y — ⚠ 뱅크는 $08 이 정한다
+    a.cmp(imm=0xFF)
+    a.beq(label="nc_end")
+    a.phx()
+    a.rep(imm=0x20)
+    a.op("and", imm=0x00FF, m16=True)
+    a.tax()
+    a.sep(imm=0x20)
+    a.op("lda", addr="lead_tab", mode="longx")
+    a.plx()
+    a.cmp(imm=0xFF)
+    a.beq(label="nc_plain")
+    a.op("sta", addr=V_IDX + 1, mode="long")  # 선두 서수
+    a.iny()
+    a.op("lda", dp=0x06, mode="indlongy")  # ⚠ `[dp],Y` 다 — `[dp]`($A7) 로 쓰면 첫 글자만 읽는다
+    a.op("sta", addr=V_IDX, mode="long")  # 색인 하위
+    a.phx()
+    a.phy()
+    a.jsr(addr="alloc", mode="abs")
+    a.ply()
+    a.plx()
+    a.label("nc_plain")
+    a.op("sta", addr=CELLS, mode="longx")
+    a.inx()
+    a.iny()
+    a.bra(label="nc_loop")
+    a.label("nc_end")
+    a.txy()  # Y = 채운 칸 수
     a.plb()
     a.plp()
     a.rtl()
@@ -488,8 +557,14 @@ def build_payload(rep: list[str], slots: list[int], vram: list[int]) -> tuple[by
     return blob, info | {"labels": a.labels}
 
 
-def apply(out: bytearray, rom: bytes, rep: list[str], slots: list[int]) -> dict:
-    """훅 뱅크·글리프 뱅크를 놓고 호출 자리 셋을 갈아 끼운다."""
+def apply(
+    out: bytearray,
+    rom: bytes,
+    rep: list[str | None],
+    slots: list[int],
+    item_table: int = 0x3E8000,
+) -> dict:
+    """훅 뱅크·글리프 뱅크를 놓고 **글자가 들어오는 문 셋**을 갈아 끼운다(대본 · 사전 버퍼 · 메뉴 이름)."""
     if len(rep) > GLYPH_MAX:
         raise SystemExit(
             f"글리프 {len(rep)} > 한 뱅크 {GLYPH_MAX} — 훅의 소스 주소 계산을 넓혀야 한다"
@@ -497,7 +572,7 @@ def apply(out: bytearray, rom: bytes, rep: list[str], slots: list[int]) -> dict:
     if not slots:
         raise SystemExit("동적 슬롯이 하나도 없다")
     tile = tiles.code_tile(rom)
-    blob, info = build_payload(rep, slots, [tiles.vram_word(tile[c]) for c in slots])
+    blob, info = build_payload(rep, slots, [tiles.vram_word(tile[c]) for c in slots], item_table)
     o = common.snes2off((HOOK_BANK << 16) | HOOK_ORG)
     out[o : o + len(blob)] = blob
     g = glyph_bytes(rep)
@@ -540,6 +615,22 @@ def apply(out: bytearray, rom: bytes, rep: list[str], slots: list[int]) -> dict:
             0x60,
         ]
     )
+    # 3. 메뉴 이름 세 자리: 33바이트 덩이 → `JSR 우리것` + `JMP 패딩`
+    name_addr = (HOOK_BANK << 16) | info["labels"]["namecopy"]
+    t3 = common.snes2off(NAME_TRAMPOLINE)
+    out[t3 : t3 + 5] = bytes([0x22, name_addr & 0xFF, (name_addr >> 8) & 0xFF, HOOK_BANK, 0x60])
+    for site, join in NAME_SITES:
+        so = common.snes2off(site)
+        if bytes(rom[so : so + 4]) != bytes([0xBF, 0x73, 0xEF, 0x03]):
+            raise SystemExit(
+                f"메뉴 이름 자리가 예상과 다르다 {common.fmt(site)}: {rom[so : so + 4].hex()}"
+            )
+        if rom[so + NAME_BLOCK - 2 : so + NAME_BLOCK] != bytes([0x80, 0xF4]):
+            raise SystemExit(f"메뉴 이름 덩이 끝이 BRA 가 아니다 {common.fmt(site)}")
+        blk = bytearray([0xEA]) * NAME_BLOCK  # 안 닿는 자리는 NOP 로 둔다(디스어셈블이 안 튄다)
+        blk[0:3] = bytes([0x20, NAME_TRAMPOLINE & 0xFF, (NAME_TRAMPOLINE >> 8) & 0xFF])
+        blk[3:6] = bytes([0x4C, join & 0xFF, (join >> 8) & 0xFF])
+        out[so : so + NAME_BLOCK] = bytes(blk)
     info.pop("labels")
     info["glyph_bytes"] = len(g)
     info["hook_bytes"] = len(blob)
@@ -553,6 +644,8 @@ def patch_ranges() -> list[tuple[int, int]]:
         (common.snes2off(TRAMPOLINE), common.snes2off(TRAMPOLINE) + 5),
         (common.snes2off(BUF_CALL_SITE), common.snes2off(BUF_CALL_SITE) + 3),
         (common.snes2off(BUF_TRAMPOLINE), common.snes2off(BUF_TRAMPOLINE) + 5),
+        (common.snes2off(NAME_TRAMPOLINE), common.snes2off(NAME_TRAMPOLINE) + 5),
+        *[(common.snes2off(s_), common.snes2off(s_) + NAME_BLOCK) for s_, _j in NAME_SITES],
         (common.snes2off(NMI_CALL), common.snes2off(NMI_CALL) + 3),
         (common.snes2off(NMI_STUB), common.snes2off(NMI_STUB) + 8),
     ]

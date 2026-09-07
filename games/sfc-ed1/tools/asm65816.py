@@ -35,6 +35,8 @@ IMPLIED = {
     "tay": 0xA8,
     "txa": 0x8A,
     "tya": 0x98,
+    "txy": 0x9B,
+    "tyx": 0xBB,
     "xba": 0xEB,
     "rts": 0x60,
     "rtl": 0x6B,
@@ -78,19 +80,32 @@ OPS = {
     ("lda", "dp"): 0xA5,
     ("sta", "dp"): 0x85,
     ("lda", "indlong"): 0xA7,
+    ("lda", "indlongy"): 0xB7,
+    ("sta", "indlongy"): 0x97,
     ("sta", "indlong"): 0x87,
     ("jsr", "abs"): 0x20,
     ("jmp", "abs"): 0x4C,
     ("jsl", "long"): 0x22,
 }
-SIZE = {"imm8": 2, "dp": 2, "indlong": 2, "abs": 3, "absx": 3, "absy": 3, "long": 4, "longx": 4}
+SIZE = {
+    "imm8": 2,
+    "dp": 2,
+    "indlong": 2,
+    "indlongy": 2,
+    "abs": 3,
+    "absx": 3,
+    "absy": 3,
+    "long": 4,
+    "longx": 4,
+}
 
 
 class Asm:
     """`org` 는 뱅크 안 주소($8000~). 라벨은 문자열, 값은 뱅크 안 주소."""
 
-    def __init__(self, org: int):
+    def __init__(self, org: int, bank: int = 0):
         self.org = org
+        self.bank = bank  # 라벨을 long 주소로 쓸 때 얹을 뱅크
         self.items: list = []  # (size, emit(labels) -> bytes)
         self.labels: dict[str, int] = {}
         self.pos = org
@@ -140,8 +155,10 @@ class Asm:
         o = OPS[(mnem, mode)]
         n = SIZE[mode] - 1
 
-        def emit_addr(lab, _pc, o=o, v=addr, n=n):
+        def emit_addr(lab, _pc, o=o, v=addr, n=n, bank=self.bank):
             a = lab[v] if isinstance(v, str) else v
+            if isinstance(v, str) and n == 3:  # 라벨을 long 으로 — 이 뱅크 안이다
+                a |= bank << 16
             return bytes([o]) + a.to_bytes(n, "little")
 
         return self._add(1 + n, emit_addr)

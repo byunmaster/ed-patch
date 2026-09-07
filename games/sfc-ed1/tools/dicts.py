@@ -102,6 +102,7 @@ def bake(out: bytearray, rom: bytes, rep_index: dict[str, int]) -> dict:
     rows = encode_all(rep_index)
     cur = ORG
     info = {}
+    tables: dict[int, int] = {}
     for code, (_addr, n, name) in text.DICT_TABLES.items():
         strs = rows[code]
         table = cur
@@ -122,12 +123,14 @@ def bake(out: bytearray, rom: bytes, rep_index: dict[str, int]) -> dict:
         out[s + IMM[0]] = table & 0xFF
         out[s + IMM[1]] = table >> 8
         out[s + IMM[2]] = BANK
+        tables[code] = (BANK << 16) | table
         info[f"${code:02X} {name}"] = {
             "n": n,
             "table": common.fmt((BANK << 16) | table),
             "bytes": cur - table,
         }
     info["끝"] = common.fmt((BANK << 16) | cur)
+    info["tables"] = tables
     return info
 
 

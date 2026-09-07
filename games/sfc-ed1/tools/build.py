@@ -846,13 +846,21 @@ def build_kr(
     hk = dk = None
     if with_hook:
         led.snap(out, "오프닝 PoC")
-        hk = hook.apply(out, rom, k["rep"], dynamic_slots(out, rom, poc["resident_codes"]))
-        led.snap(out, "렌더러 훅")
-        # 사전 여섯 벌(이름·아이템·몬스터·시스템 문장)을 확장 뱅크로. 훅이 있어야 읽을 수 있다
+        # ⚠ **사전을 먼저** 놓는다 — 메뉴 이름 훅이 아이템 표의 **새 주소**를 알아야 한다
         import encode as _enc
 
         dk = dicts.bake(out, rom, _enc.index_map(k["rep"]))
         led.snap(out, "사전 이관")
+        hk = hook.apply(
+            out,
+            rom,
+            k["rep"],
+            dynamic_slots(out, rom, poc["resident_codes"]),
+            item_table=dk["tables"][0xD2],
+        )
+        led.snap(out, "렌더러 훅")
+
+    if with_hook:
         dicts.verify(out, k["rep"])  # 🔑 **체인이 다 끝난 롬**에서 게임의 포인터를 따라 되읽는다
     out[HEADER_ROM_SIZE_OFF] = 0x0B
     fix_checksum(out)
