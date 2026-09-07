@@ -30,14 +30,12 @@
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 import patch_font_hook
-import patch_scn
 import patch_sys
 import translate
 

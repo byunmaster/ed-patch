@@ -11,6 +11,17 @@
   · 일본식 마침표 `。`·쉼표 `、` 가 남아 있나
 
 ⚠ 마커(`\\n` `<PAGE>` `<WAIT>`)는 세지 않는다 — 그 계약은 `translate.py apply` 가 본다.
+
+## 부호 앞 공백 — **조판을 안 거치는 자리**를 여기서 본다
+
+`shared/text/krwrap.strip_before` 가 이미 같은 규칙을 들지만, 그건 **조판기를 타는 문안**만
+본다. 이 게임의 전투·시스템·고정폭 표는 조판을 안 거치므로 **거기서만 새 나간다**
+(md-ed1 실측 중계 2026-09-07). 원문 `･ ･ ･` 을 그대로 옮기면 `말이다 …` 가 남는다.
+
+⚠ **공백이 뜻인 자리가 있다** — 끊어 말하는 연출(`못 … 한 … 다 ….`)·줄 첫머리 들여쓰기.
+   그 자리는 정본에 `"space_ok": true` 를 적어 뺀다(판정을 코드가 아니라 정본에 남긴다).
+🔴 **전투 칸을 공백으로 메우는 데 쓰지 않는다.** 바이트가 모자라면 낱말로 채운다 —
+   실측 `d9053e1e` 가 그 자리였다(`치켜들었다 !!` → `크게 휘둘렀다!!`, 둘 다 32B).
 """
 
 import json
@@ -28,12 +39,17 @@ AXES = {
     "일본식 마침표·쉼표": re.compile(r"[。、]"),
     "일본식 물결·중점": re.compile(r"[～・]"),
 }
+# 마커를 지우기 **전**의 원문으로 본다 — `\n` 뒤의 `…` 를 오탐하지 않기 위해서다
+SPACE_BEFORE = re.compile(r"[가-힣A-Za-z0-9\]\)] +[!?.,…]")
 
 
 def main() -> int:
     script = json.loads(translate.SCRIPT.read_text(encoding="utf-8"))
     bad = {}
     for k, v in script.items():
+        if not v.get("space_ok") and SPACE_BEFORE.search(v["t"]):
+            m = SPACE_BEFORE.search(v["t"])
+            bad.setdefault("부호 앞 공백", []).append((k, m.group(0), v["t"]))
         t = MARK.sub(" ", v["t"])
         for name, rx in AXES.items():
             hit = rx.findall(t)

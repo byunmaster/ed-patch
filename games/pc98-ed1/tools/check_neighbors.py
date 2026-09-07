@@ -50,7 +50,7 @@ def main() -> int:
     print(f"  🔴 이웃은 다 넣었는데 자기만 빠진 자리 {len(bad)}")
     for k, n, t, d, m in bad:
         print(f"     {k:18s} n={n:3d} 이웃 {d}/{m}  {t[:44]!r}")
-    print("     ⚠ 일부러 원문으로 두는 자리면 `sys.json` 에 \"keep_jp\": true 로 적어라")
+    print('     ⚠ 일부러 원문으로 두는 자리면 `sys.json` 에 "keep_jp": true 로 적어라')
     return 1
 
 

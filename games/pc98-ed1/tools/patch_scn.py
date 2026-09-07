@@ -44,6 +44,9 @@ from text.line_key import key as line_key
 SCRIPT = common.ROOT / "games" / "pc98-ed1" / "script" / "scn.json"
 PIERCE_CACHE = common.OUT_DIR / "pierce2.json"  # v2 = 전투 영역 포함
 JUMP = 0x0F
+# 🔴 **주소를 인자로 갖는 옵코드 전부**(길이 3). 분기(`0F`~`14`)에 `0C`·`15`(ASM 호출)까지.
+#    런 머리에 이 주소가 딸려 들어오면 덮어쓰면 안 된다 — 아래 두 자리에서 쓴다.
+ADDR_OPS = frozenset(c for c, n in W.CODE_LEN.items() if n == 3)
 KU0 = H.KU_LO - 0x20  # ah 바이트에서 구 번호로 (JIS 고위 = 0x20 + 구)
 
 # 🔴 **칸 표** — 한 청크 안에 「이름 14B + 종결자 07」이 줄줄이 이어지는 자리가 있다
@@ -134,7 +137,7 @@ ONE_GLYPH_AT = ("38.00.20", 0x0030, 8, "가")  # 청크 · 런 오프셋 · 런 
 COMBAT_HALF = None  # None | "a"(앞 절반) | "b"(뒤 절반)
 
 # 전투 청크에서 「틈 건너뜀」/「공백 메움」을 각각 끈다 — 둘 중 누가 범인인가.
-NO_GAP_COMBAT = False   # 틈 건너뜀(`0F` 로 런 끝으로) 금지
+NO_GAP_COMBAT = False  # 틈 건너뜀(`0F` 로 런 끝으로) 금지
 NO_FILL_COMBAT = False  # 공백 메움(꼬리에 반각 공백) 금지
 
 
@@ -182,6 +185,35 @@ def pierced_map(scenario: dict) -> dict:
     return out
 
 
+def check_no_jump_clobber(marks: list[tuple[int, bytes, bytes]], chunks: dict[int, bytes]) -> None:
+    """마크가 **앞선 `0F` 의 주소 2바이트**에 앉으면 죽는다.
+
+    덤퍼는 `< 0x20` 을 건너뛰기만 하므로 `0F <addr16>` 의 주소가 `>= 0x20` 이면 그 두
+    바이트가 **다음 런의 머리로 딸려 들어온다.** 거기에 쓰면 점프가 어긋나 흐름이 깨진다
+    — 화면이 아니라 **진행**이 깨지는, 전투 프리즈와 같은 등급이다(2026-09-07).
+
+    ⚠ 판별 축은 「`0F` 가 있나」가 아니라 **「그 주소가 창(`0xExxx`)인가」**다. 전투 청크의
+      `0F` 는 점프가 아니라 데이터다(policy 「전투 청크에서는 `0F` 를 쓰지 않는다」).
+    """
+    for off, _old, _new in marks:
+        for base, blob in chunks.items():
+            if not base <= off < base + len(blob):
+                continue
+            r = off - base
+            for q in (r - 1, r - 2):
+                if (
+                    q >= 0
+                    and blob[q] in ADDR_OPS
+                    and q + 3 > r
+                    and (blob[q + 2] & 0xF0) == ((W.BASE >> 8) & 0xF0)
+                ):
+                    raise SystemExit(
+                        f"🔴 `0F` 의 주소를 덮어쓴다 {off:#08x} — "
+                        f"점프 {blob[q : q + 3].hex(' ')} 가 어긋난다"
+                    )
+            break
+
+
 def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
     """(평면 오프셋, 원본이어야 할 바이트, 새 바이트) 목록 + 통계."""
     script = json.loads(SCRIPT.read_text(encoding="utf-8")) if SCRIPT.exists() else {}
@@ -190,6 +222,8 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
     marks: list[tuple[int, bytes, bytes]] = []
     st = {
         "제자리": 0,
+        "머리가 주소 인자라 건너뜀": 0,
+        "머리를 앞으로 되넓힘": 0,
         "칸 표": 0,
         "건너뜀:칸 넘침": 0,
         "틈 건너뜀": 0,
@@ -296,6 +330,58 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
             if k not in script:
                 continue
             o, n = b["o"], b["n"]
+
+            # ── 🔴 런 머리가 **앞선 옵코드의 주소 인자 2바이트**일 수 있다 (2026-09-07).
+            #    덤퍼는 `< 0x20` 을 제어코드로 **건너뛰기만** 하므로, 주소를 인자로 갖는
+            #    옵코드(`ADDR_OPS` = 길이 3 — 분기 `0F`~`14` + `0C` + ASM 호출 `15`)의
+            #    주소가 `>= 0x20` 이면 그 두 바이트가
+            #    **다음 런의 머리로 딸려 들어온다.**
+            #    거기에 우리 문안을 쓰면 **점프가 엉뚱한 데로 간다** — 화면이 아니라
+            #    흐름이 깨지는, 2026-09-07 전투 프리즈와 **같은 등급**의 사고다.
+            #    실측: `0F` 만 세도 시나리오 215 · 전투 35(정본 4) · 분기 전체 +164(정본 8)
+            #          · `0C`·`15` 까지 +54(정본 0 — 아직 안 물렸을 뿐이다).
+            #    ⚠ 판별은 「`0F` 가 있나」가 아니라 **「그 주소가 창(0xExxx)인가」**다 —
+            #      전투 청크의 `0F` 는 점프가 아니라 데이터고(policy 「전투 청크 `0F`」),
+            #      실제로 넷 중 전투 하나는 목적지가 `0x95C3` 라 여기 안 걸린다.
+            #    이건 판단이 아니라 **원본에서 유도되는 구조**라 정본이 아니라 코드에 둔다.
+            for _p in (o - 1, o - 2):
+                if _p >= 0 and data[_p] in ADDR_OPS and _p + 3 > o:
+                    if (data[_p + 2] & 0xF0) == (W.BASE >> 8) & 0xF0:
+                        _skip = _p + 3 - o
+                        o += _skip
+                        n -= _skip
+                        st["머리가 주소 인자라 건너뜀"] += 1
+                    break
+
+            # ── 반대 방향의 어긋남 — **런이 늦게 시작해 앞 글자를 흘린다** (2026-09-07).
+            #    앞선 런이 한자 두 바이트를 물어 가면 뒤에 **홀로 남은 바이트**가 생기고,
+            #    덤퍼는 그걸 못 읽어 다음 런을 **한 글자 뒤에서** 시작한다. 실측으로
+            #    `わしは…` 가 `しは…` 로, `ああ、…` 가 `あ、…` 로 잘려 있었다.
+            #    그 자리에 그냥 쓰면 화면에 **`わ` 하나가 우리 문안 앞에 남는다.**
+            #    ⇒ 앞으로 **되넓힌다.** 흘린 글자도 우리가 이미 번역에 담고 있다.
+            #    ⚠ 넓히면 안 되는 자리 셋 — 분기 주소(위) · 남의 블록이 덮는 자리 ·
+            #      제어코드. 셋을 다 피할 때만 두 바이트씩 물린다.
+            _covered = {
+                (bb["o"], bb["o"] + bb["n"])
+                for bb in blocks
+                if line_key(reuse.normalise(bb)) in script and bb["o"] != b["o"]
+            }
+            #    ⚠ 정본이 `head` 를 적은 자리는 **손대지 않는다** — 사람이 이미 판정한
+            #      머리라 되넓히면 그 사전조건이 깨진다.
+            for _ in range(0 if "head" in script[k] else 4):
+                if o < 2 or data[o - 3 : o - 2] and data[o - 3] in ADDR_OPS:
+                    break
+                if any(a <= o - 1 < e for a, e in _covered):
+                    break
+                try:
+                    _c = data[o - 2 : o].decode("shift_jis")
+                except UnicodeDecodeError:
+                    break
+                if len(_c) != 1 or not ("\u3040" <= _c <= "\u30ff" or "\u4e00" <= _c <= "\u9fff"):
+                    break
+                o -= 2
+                n += 2
+                st["머리를 앞으로 되넓힘"] += 1
 
             # ── 런 머리에 **코드가 잡음으로 붙은** 자리 (덤퍼 런 경계 문제, status `[P4]`).
             #    거기에 쓰면 8086 코드를 뭉갠다. 정본이 `head` 로 **그 바이트를 그대로 적어**
@@ -410,6 +496,14 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
             raise SystemExit(
                 f"🔴 전투 청크에 `0F` 를 심었다 {off:#08x} — 전투 해석기는 그걸 점프로 안 읽는다"
             )
+
+    # 🔴 **`0F` 의 주소 2바이트를 덮어쓰지 않았나** — 위의 자동 건너뜀이 정말 걸렸나를
+    #    **결과로** 확인한다. 덮으면 점프가 엉뚱한 데로 가서 흐름이 깨진다(화면이 아니라).
+    _chunks = {}
+    for _d in scn.load():
+        for _v in _d.values():
+            _chunks[_v["index"] * common.SECTOR_SIZE] = _v["data"]
+    check_no_jump_clobber(marks, _chunks)
 
     # 🔴 **겹치면 나중 것이 앞 것을 뭉갠다** — 조용히 틀리는 종류라 여기서 죽인다.
     seen: dict[int, int] = {}

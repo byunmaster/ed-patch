@@ -306,7 +306,9 @@ if __name__ == "__main__":
     print(f"대역 ku {KU_LO:#04x}~{KU_HI:#04x} (완성형 2,350자)")
     for disk, site in SITES.items():
         c, h, r = sector_chs(site["font_sector"], base=site["font_base"])
-        print(f"== {disk}  표는 {site['font_disk']} C{c} H{h} R{r:#04x} · 드라이브 "
-              f"{'1' if site['drive'] == 0x90 else '2'}")
+        print(
+            f"== {disk}  표는 {site['font_disk']} C{c} H{h} R{r:#04x} · 드라이브 "
+            f"{'1' if site['drive'] == 0x90 else '2'}"
+        )
         for off, exp, new in build_patch(disk):
             print(f"    {off:#07x}  {len(new):3d}B  ← {exp[:6].hex(' ')}…")
