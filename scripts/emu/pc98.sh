@@ -100,6 +100,7 @@
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
+. "$HERE/winsize.sh"   # 창 크기 단계 넷 — 실행기 셋이 같은 눈금
 REPO=$(cd "$HERE/../.." && pwd)
 . "$HERE/../lib/select.sh"     # 화살표 키 선택 UI
 
@@ -142,6 +143,10 @@ while [ $# -gt 0 ]; do
     --np2kai)   EMU=np2kai ;;
     --dosbox)   EMU=dosbox ;;
     --rebuild-np2kai) REBUILD_NP2=1 ;;   # 소스 빌드를 다시 한다(패치·상류 갱신)
+    # 창 크기 단계 — np2kai 는 환경변수로 받는다(패치가 첫 창을 그때 정한다).
+    # ⚠ 실행 중에는 ⌥- / ⌥+ 로 바꾼다. DOSBox-X 는 conf 가 정하므로 여기서 안 쓴다.
+    --size)     WIN_SIZE=$2; shift ;;
+    --size=*)   WIN_SIZE=${1#*=} ;;
     *)          EXTRA="$EXTRA $1" ;;
   esac
   shift
@@ -231,11 +236,16 @@ np2kai_install() {
     rm -rf "$NP2_HOME/src"
     git clone -q --depth 1 https://github.com/AZO234/NP2kai "$NP2_HOME/src" || return 1
   fi
-  # 🎮 **빨리감기 패치** — np2kai 의 NOWAIT(대기 없음)는 메뉴 항목뿐이라 키가 없다. emucap·DOSBox-X 와
-  #   같은 손가락(` 토글 · Tab 누르는 동안)을 `sdl/taskmng.c` 에 18줄로 붙인다(유저 요청 2026-09-06 —
-  #   PC-98 판은 오프닝 스킵이 없어 5분을 그냥 봐야 한다). 패치는 레포의 `np2kai-fastforward.patch`.
+  # 🎮 **키 패치** — np2kai 는 손에 익은 키가 거의 없다(NOWAIT 도 메뉴 항목뿐이다). 실행기 셋을
+  #   같은 손가락으로 쓰려고 `sdl/` 에 붙인다 — 레포의 `np2kai-keys.patch`.
+  #     ` 토글 · Tab 홀드(빨리감기, 유저 요청 2026-09-06 — PC-98 판은 오프닝 스킵이 없어 5분을
+  #     그냥 봐야 한다) · \ 디스크 교체 · 방향키=텐키 · F5/F7 세이브 · F10·⌘R 재시작 · ⌘L 마우스 ·
+  #     **⌥- / ⌥+ · ⌥1~4 창 크기**(유저 요청 2026-09-07 — mednafen 과 같은 손가락, 단계 넷).
+  #     🔴 ⌘가 아닌 건 mednafen 이 정했다 — 거기선 ⌘가 수정자로 안 세어져 세이브 슬롯과 겹친다.
+  #   ⚠ 창 크기는 **에뮬 해상도가 아니라 창만** 바꾼다. `NP2KAI_WIN_SIZE`(1~4, 기본 2)로 처음 크기를
+  #     정한다 — `emu.sh --size N` 이 그 환경변수를 준다.
   #   빌드마다 소스를 상류로 되돌리고 새로 붙인다. 상류가 바뀌어 안 붙으면 **키 없이** 빌드하고 알린다.
-  _pt="$HERE/np2kai-fastforward.patch"
+  _pt="$HERE/np2kai-keys.patch"
   # 🔴 **먼저 소스를 상류 그대로 되돌린다.** 옛 패치가 붙은 소스에 새 패치를 대면 적용도 역적용도
   #   안 맞아 「안 붙는다 — 키 없이 빌드」로 빠지고, 지문은 새 걸로 찍혀 다음엔 묻지도 않는다
   #   (유저 실측 2026-09-06: 재빌드했는데 ⌘L 도 마우스 기본값도 옛날 그대로였다). src 는 우리 클론이라
@@ -245,7 +255,7 @@ np2kai_install() {
   PATCHED=0
   if git -C "$NP2_HOME/src" apply --check "$_pt" >/dev/null 2>&1 && git -C "$NP2_HOME/src" apply "$_pt"; then
     PATCHED=1
-    echo "  ② 키 패치: 붙였다 (\` 토글 · Tab 홀드 · \\ 디스크 교체 · 방향키=텐키 · ⌘R · ⌘L)"
+    echo "  ② 키 패치: 붙였다 (\` 토글 · Tab 홀드 · \\ 디스크 교체 · 방향키=텐키 · ⌘R · ⌘L · ⌥-/⌥+ · ⌥1~4 창 크기 · ⌥M 소리)"
   else
     echo "  ⚠ 키 패치가 상류 소스에 안 붙는다 — 키 없이 빌드한다(메뉴 F11 로 대신). 상류가 바뀐 것이니 알려 달라" >&2
   fi
@@ -280,10 +290,10 @@ if [ "$EMU" = np2kai ]; then
   # 우리가 구운 실행파일이면 **패치 지문**을 맞춰 본다 — 다르면 다시 굽는다(묻고).
   case "$NP2" in
     "$NP2_HOME"/bin/*)
-      _want=$(patch_sha1 "$HERE/np2kai-fastforward.patch"); _have=$(cat "$NP2_HOME/bin/.patch.sha1" 2>/dev/null || true)
+      _want=$(patch_sha1 "$HERE/np2kai-keys.patch"); _have=$(cat "$NP2_HOME/bin/.patch.sha1" 2>/dev/null || true)
       if [ "$REBUILD_NP2" = 1 ] || [ "$_want" != "$_have" ]; then
         [ "$REBUILD_NP2" = 1 ] && echo "ⓘ --rebuild-np2kai — np2kai 를 다시 굽는다" \
-          || echo "ⓘ 빨리감기 패치가 바뀌었다(구운 것: ${_have:-없음}) — np2kai 를 다시 굽는다"
+          || echo "ⓘ 키 패치가 바뀌었다(구운 것: ${_have:-없음}) — np2kai 를 다시 굽는다"
         if has_tty && confirm_yes "   지금 다시 빌드할까? 몇 분 걸린다 (y/n) "; then
           rm -rf "$NP2_HOME/build"
           np2kai_install || exit 1
@@ -789,6 +799,9 @@ if [ "$EMU" = np2kai ]; then
   fi
   echo "  🎮 방향키 = 텐키 8/2/4/6(이동) · ⌘R/F10 = 재시작 · F5/F7 = 퀵세이브/로드 · ⌘L = 마우스 잠금 토글(시작은 안 잡음)"
   echo "  ⏩ 빨리감기: \` 토글 · Tab 누르는 동안 · \\ = 디스크 교체   (전부 우리 패치 — 없으면 F11 메뉴)"
+  echo "  🖥  창 크기: ⌥- / ⌥+ · ⌥1~4 · 소리: ⌥M (단계 넷, 지금 ${WIN_SIZE:-2}단계)   ⚠ 에뮬 해상도가 아니라 창만 바뀐다"
+  # 첫 창 크기는 환경변수로 넘긴다 — 패치가 창을 만든 직후 이걸 읽는다(`--size N` → 여기).
+  export NP2KAI_WIN_SIZE="${WIN_SIZE:-2}"
   cd "$RUN"
   DONE=0
   finish() { [ "$DONE" = 1 ] && return 0; DONE=1; save_out; }
@@ -836,7 +849,12 @@ autolock=false
 #      키 입력 전후 화면이 170,901px 바뀌고(= 먹는다) 안 보내면 16px 다.
 usescancodes=false
 fullscreen=false
-windowresolution=800x600
+CONFEOF
+  # ⚠ **창 크기 한 줄만 히어독 밖에서 쓴다** — 위 히어독은 따옴표로 닫혀 있어야 하고
+  #   (주석 속 `$`·백틱이 터진다, 이 파일 머리의 ⑷) 그러면 `$(…)` 도 안 풀린다.
+  #   그래서 값이 드는 이 줄만 갈라 낸다. **[sdl] 절 한복판이라 순서가 중요하다.**
+  printf 'windowresolution=%s\n' "$(winsize_wh "${WIN_SIZE:-2}")" >> "$CONF"
+  cat >> "$CONF" <<'CONFEOF'
 # opengl 이라야 windowresolution 스케일링이 먹는다
 output=opengl
 priority=highest,highest
@@ -1091,7 +1109,7 @@ logfile=$KB/kb.log
 autolock=false
 usescancodes=false
 fullscreen=false
-windowresolution=800x600
+windowresolution=$(winsize_wh "${WIN_SIZE:-2}")
 output=opengl
 [dosbox]
 machine=pc98

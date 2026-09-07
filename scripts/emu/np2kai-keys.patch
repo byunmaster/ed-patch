@@ -1,0 +1,318 @@
+diff --git a/sdl/kbtrans.c b/sdl/kbtrans.c
+index 993946b..c8f1c52 100755
+--- a/sdl/kbtrans.c
++++ b/sdl/kbtrans.c
+@@ -404,10 +404,10 @@ static const SDLKCNV sdlcnv101[] = {
+   {SDL_SCANCODE_DELETE,       0x39},  // DEL
+   {SDL_SCANCODE_PAGEUP,       0x36},  // ROLLUP
+   {SDL_SCANCODE_PAGEDOWN,     0x37},  // ROLLDOWN
+-  {SDL_SCANCODE_UP,           0x3a},  // Up
+-  {SDL_SCANCODE_LEFT,         0x3b},  // Left
+-  {SDL_SCANCODE_RIGHT,        0x3c},  // Right
+-  {SDL_SCANCODE_DOWN,         0x3d},  // Down
++  {SDL_SCANCODE_UP,           0x43},  // KP8 (eiyuu: 방향키=텐키)
++  {SDL_SCANCODE_LEFT,         0x46},  // KP4 (eiyuu)
++  {SDL_SCANCODE_RIGHT,        0x48},  // KP6 (eiyuu)
++  {SDL_SCANCODE_DOWN,         0x4b},  // KP2 (eiyuu)
+   {SDL_SCANCODE_HOME,         0x3e},  // HOME/CLR
+   {SDL_SCANCODE_END,          0x3f},  // HELP
+   {SDL_SCANCODE_KP_MINUS,     0x40},  // KP-
+@@ -623,10 +623,10 @@ static const SDLKCNV sdlcnv106[] = {
+   {SDL_SCANCODE_DELETE,         0x39},  // DEL
+   {SDL_SCANCODE_PAGEUP,         0x36},  // ROLLUP
+   {SDL_SCANCODE_PAGEDOWN,       0x37},  // ROLLDOWN
+-  {SDL_SCANCODE_UP,             0x3a},  // Up
+-  {SDL_SCANCODE_LEFT,           0x3b},  // Left
+-  {SDL_SCANCODE_RIGHT,          0x3c},  // Right
+-  {SDL_SCANCODE_DOWN,           0x3d},  // Down
++  {SDL_SCANCODE_UP,             0x43},  // KP8 (eiyuu: 방향키=텐키)
++  {SDL_SCANCODE_LEFT,           0x46},  // KP4 (eiyuu)
++  {SDL_SCANCODE_RIGHT,          0x48},  // KP6 (eiyuu)
++  {SDL_SCANCODE_DOWN,           0x4b},  // KP2 (eiyuu)
+   {SDL_SCANCODE_HOME,           0x3e},  // HOME/CLR
+   {SDL_SCANCODE_END,            0x3f},  // HELP
+   {SDL_SCANCODE_KP_MINUS,       0x40},  // KP-
+diff --git a/sdl/np2.c b/sdl/np2.c
+index 80e2f97..88c9e5c 100755
+--- a/sdl/np2.c
++++ b/sdl/np2.c
+@@ -647,7 +647,8 @@ int np2_main(int argc, char *argv[]) {
+ 	pc98_cirrus_vga_init();
+ #endif
+ #if !defined(__LIBRETRO__)
+-	mousemng_hidecursor(s_window);
++	/* eiyuu-densetsu-patch: 시작할 때 마우스를 잡지 않는다. Cmd+L 로 토글 */
++	if (getenv("NP2KAI_MOUSE_LOCK") != NULL) mousemng_hidecursor(s_window);
+ #endif	/* __LIBRETRO__ */
+ 	scrndraw_redraw();
+ 	pccore_reset();
+diff --git a/sdl/scrnmng.c b/sdl/scrnmng.c
+index 2e5016f..19948d4 100755
+--- a/sdl/scrnmng.c
++++ b/sdl/scrnmng.c
+@@ -95,6 +95,64 @@ void scrnmng_getsize(int* pw, int* ph) {
+ 	*ph = scrnmng.height;
+ }
+ 
++/* eiyuu-densetsu-patch: 창 크기 단계 넷 (유저 요청 2026-09-07 — 실행기 셋을 한 손가락으로).
++   ⚠ **에뮬 해상도는 안 건드린다.** SDL2 렌더러가 `SDL_RenderSetLogicalSize` 로 논리 크기를
++   잡고 있으므로, 창만 키우면 내용이 그대로 늘어난다. `scrnmng_setwidth/setheight` 는
++   **에뮬 화면 크기**(640x400 <-> 640x480 …)를 바꾸는 자리라 저기에 손대면 게임이 깨진다.
++   🔴 그런데 그 둘이 `SDL_SetWindowSize` 를 직접 불러 **우리 배율을 되돌린다** — 게임이
++   해상도를 바꾸는 순간 창이 1배로 돌아간다. 그래서 그 둘의 끝에서도 다시 건다.
++   단계는 mednafen 과 **물리 크기가 맞도록** 골랐다(PC-98 640x400 기준):
++     1 = 1배(640x400) · 2 = 1.5배(960x600) · 3 = 2배(1280x800) · 4 = 2.5배(1600x1000) */
++static const int ed_scale_num[5] = { 0, 1, 3, 2, 5 };
++static const int ed_scale_den[5] = { 0, 1, 2, 1, 2 };
++static int ed_scale_step = 0;   /* 0 = 아직 안 정했다 (첫 apply 때 환경변수/기본값으로 정한다) */
++
++void ed_scrn_applyscale(void) {
++#if !defined(__LIBRETRO__) && USE_SDL == 2
++	int w, h;
++	if (ed_scale_step == 0) {
++		const char *e = getenv("NP2KAI_WIN_SIZE");
++		ed_scale_step = (e != NULL) ? atoi(e) : 2;
++		if (ed_scale_step < 1) ed_scale_step = 1;
++		if (ed_scale_step > 4) ed_scale_step = 4;
++	}
++	if (s_window == NULL || s_renderer == NULL) return;
++	/* 🔑 **렌더러의 논리 크기를 되읽는다** — `scrnmng.width/height` 를 회전 마스크로 뒤집어
++	   맞추지 않는다. 논리 크기는 create·setwidth·setheight 가 회전까지 반영해 이미 정해
++	   놓은 값이라, 여기서 같은 판단을 되풀이하면 한쪽만 고쳐질 때 조용히 갈린다. */
++	SDL_RenderGetLogicalSize(s_renderer, &w, &h);
++	if (w <= 0 || h <= 0) return;
++	SDL_SetWindowSize(s_window,
++	                  w * ed_scale_num[ed_scale_step] / ed_scale_den[ed_scale_step],
++	                  h * ed_scale_num[ed_scale_step] / ed_scale_den[ed_scale_step]);
++#endif
++}
++
++/* 단계를 바로 건다(⌥1~4). 범위 밖이면 아무 일도 안 한다. */
++void ed_scrn_setscale(int step) {
++#if !defined(__LIBRETRO__) && USE_SDL == 2
++	if (step < 1 || step > 4) return;
++	ed_scale_step = step;
++	ed_scrn_applyscale();
++#else
++	(void)step;
++#endif
++}
++
++/* delta 만큼 단계를 옮긴다. 양끝에서는 조용히 머문다(경고음 대신 아무 일도 안 일어난다). */
++void ed_scrn_stepscale(int delta) {
++#if !defined(__LIBRETRO__) && USE_SDL == 2
++	int n;
++	if (ed_scale_step == 0) ed_scrn_applyscale();   /* 먼저 지금 단계를 확정한다 */
++	n = ed_scale_step + delta;
++	if (n < 1 || n > 4) return;
++	ed_scale_step = n;
++	ed_scrn_applyscale();
++#else
++	(void)delta;
++#endif
++}
++
+ BRESULT scrnmng_create(UINT8 mode) {
+    if(draw32bit) {
+       scrnmng.bpp = 32;
+@@ -219,6 +277,7 @@ BRESULT scrnmng_create(UINT8 mode) {
+ 		}
+ 	#endif
+ #endif    /* __LIBRETRO__ */
++	ed_scrn_applyscale();   /* eiyuu-densetsu-patch */
+ 	return(SUCCESS);
+ }
+ 
+@@ -348,6 +407,7 @@ void scrnmng_setwidth(int posx, int width) {
+ 	scrnmng.width = width;
+ 	scrnsurf.width = width;
+ 	menubase.width = width;
++	ed_scrn_applyscale();   /* eiyuu-densetsu-patch: 배율을 다시 건다 */
+ }
+ 
+ void scrnmng_setheight(int posy, int height) {
+@@ -437,6 +497,7 @@ void scrnmng_setheight(int posy, int height) {
+ 	scrnmng.height = height;
+ 	scrnsurf.height = height;
+ 	menubase.height = height;
++	ed_scrn_applyscale();   /* eiyuu-densetsu-patch: 배율을 다시 건다 */
+ }
+ 
+ #if !defined(__LIBRETRO__)
+diff --git a/sdl/scrnmng.h b/sdl/scrnmng.h
+index 93af0c7..8cd15c8 100755
+--- a/sdl/scrnmng.h
++++ b/sdl/scrnmng.h
+@@ -99,6 +99,11 @@ void scrnmng_menudraw(const RECT_T *rct);
+ void scrnmng_update(void);
+ void scrnmng_updatecursor(void);
+ 
++/* eiyuu-densetsu-patch: 창 크기 단계 넷 (Cmd+- / Cmd++) */
++void ed_scrn_applyscale(void);
++void ed_scrn_stepscale(int delta);
++void ed_scrn_setscale(int step);
++
+ void scrnmng_updatefsres(void);
+ void scrnmng_blthdc(void);
+ void scrnmng_bltwab(void);
+diff --git a/sdl/taskmng.c b/sdl/taskmng.c
+index dbd8a20..c4760e6 100755
+--- a/sdl/taskmng.c
++++ b/sdl/taskmng.c
+@@ -2,6 +2,35 @@
+ #define _POSIX_C_SOURCE 199309L
+ #endif
+ #include	<compiler.h>
++
++/* eiyuu-densetsu-patch: 빨리감기 키 — ` 토글 · Tab 누르는 동안 (emucap 규약과 같다) */
++#include	<fdd/diskdrv.h>
++#include	<diskimage/fddfile.h>
++#include	<pccore.h>
++#include	<nevent.h>
++static UINT8 ed_ff_hold_prev = 0;
++static int ed_mouse_locked = 0;   /* 시작은 안 잡은 상태(np2.c) */
++static int ed_muted = 0;          /* ⌥M 토글 — 소리 장치를 멈췄다 다시 튼다 */
++/* eiyuu-densetsu-patch: \ = FDD1 의 event.d88 ↔ program.d88 교체 (DOSBox-X 매퍼와 같은 키).
++   영웅전설 PC-98 이 오프닝 끝에서 「프로그램 디스크를 드라이브 1 에」라고 할 때 쓴다. */
++static void ed_swap_fdd1(void) {
++	const OEMCHAR *cur = fdd_diskname(0);
++	OEMCHAR path[MAX_PATH];
++	const char *hit; size_t base;
++	if (cur == NULL || cur[0] == '\0') return;
++	if ((hit = strstr(cur, "event.d88")) != NULL) {
++		base = (size_t)(hit - cur);
++		if (base + sizeof("program.d88") > sizeof(path)) return;
++		memcpy(path, cur, base); memcpy(path + base, "program.d88", sizeof("program.d88"));
++	} else if ((hit = strstr(cur, "program.d88")) != NULL) {
++		base = (size_t)(hit - cur);
++		if (base + sizeof("event.d88") > sizeof(path)) return;
++		memcpy(path, cur, base); memcpy(path + base, "event.d88", sizeof("event.d88"));
++	} else {
++		return;
++	}
++	diskdrv_setfdd(0, path, 0);
++}
+ #include	"inputmng.h"
+ #include	"taskmng.h"
+ #include	"kbtrans.h"
+@@ -10,6 +39,7 @@
+ #include	"sysmenu.h"
+ #include	"scrnmng.h"
+ #include	"mousemng.h"
++#include	"soundmng.h"   /* eiyuu-densetsu-patch: ⌥M 소리 토글 */
+ #include	"np2.h"
+ #include	<np2_thread.h>
+ 
+@@ -259,6 +289,92 @@ void taskmng_rol(void) {
+ 				}
+ 			}
+ #endif
++#if USE_SDL == 2
++			/* eiyuu-densetsu-patch: ` = NOWAIT 토글, Tab = 누르는 동안 NOWAIT (게스트엔 안 보낸다) */
++			if (e.key.keysym.scancode == SDL_SCANCODE_GRAVE) {
++				if (!e.key.repeat) np2oscfg.NOWAIT ^= 1;
++				break;
++			}
++			if (e.key.keysym.scancode == SDL_SCANCODE_TAB) {
++				if (!e.key.repeat) { ed_ff_hold_prev = np2oscfg.NOWAIT; np2oscfg.NOWAIT = 1; }
++				break;
++			}
++			if (e.key.keysym.scancode == SDL_SCANCODE_BACKSLASH) {
++				if (!e.key.repeat) ed_swap_fdd1();
++				break;
++			}
++			/* eiyuu-densetsu-patch: F5 = 퀵세이브(상태 s00) · F7 = 퀵로드 — mednafen 기본과 같은 키.
++			   flagsave/flagload 는 np2.h 에 공개돼 있다(메뉴 Status Save/Load 와 같은 경로, 강제 로드). */
++			if (e.key.keysym.scancode == SDL_SCANCODE_F5) {
++				if (!e.key.repeat) flagsave("s00");
++				break;
++			}
++			if (e.key.keysym.scancode == SDL_SCANCODE_F7) {
++				if (!e.key.repeat) flagload("s00", "Quick Load", TRUE);
++				break;
++			}
++			/* eiyuu-densetsu-patch: F10 = 재시작 — 실행기 공통(mednafen 기본 · DOSBox Staging 매퍼) */
++			if (e.key.keysym.scancode == SDL_SCANCODE_F10) {
++				if (!e.key.repeat) { sdlkbd_reset(); pccore_cfgupdate(); if (nevent_iswork(NEVENT_CDWAIT)) nevent_forceexecute(NEVENT_CDWAIT); pccore_reset(); }
++				break;
++			}
++			/* eiyuu-densetsu-patch: Cmd+R = 재시작(메뉴 Reset 과 같다) · Cmd+L = 마우스 잠금 토글
++			   (Cmd+M 은 macOS 최소화와 겹친다 — 유저 실측 2026-09-06) */
++			if (e.key.keysym.mod & (KMOD_LGUI | KMOD_RGUI)) {
++				if (e.key.keysym.scancode == SDL_SCANCODE_R) {
++					if (!e.key.repeat) {
++						sdlkbd_reset();
++						pccore_cfgupdate();
++						if (nevent_iswork(NEVENT_CDWAIT)) nevent_forceexecute(NEVENT_CDWAIT);
++						pccore_reset();
++					}
++					break;
++				}
++				if (e.key.keysym.scancode == SDL_SCANCODE_L) {
++					if (!e.key.repeat) {
++						ed_mouse_locked = !ed_mouse_locked;
++						SDL_SetRelativeMouseMode(ed_mouse_locked ? SDL_TRUE : SDL_FALSE);
++						SDL_ShowCursor(ed_mouse_locked ? SDL_DISABLE : SDL_ENABLE);
++					}
++					break;
++				}
++			}
++			/* eiyuu-densetsu-patch: ⌥- · ⌥+ = 창 크기 한 단계 (실행기 셋이 같은 손가락).
++			   🔴 **⌘가 아니라 ⌥인 이유는 mednafen 이 정했다**(유저 실측 2026-09-07).
++			      mednafen 은 수정자를 alt·shift·ctrl 로만 세고 ⌘는 아예 안 세므로,
++			      ⌘를 눌러도 기본 `-`/`=`(세이브 슬롯 증감)가 같이 먹는다. ⌥면 안 겹친다.
++			      np2kai 는 ⌘로도 되지만 **손가락이 갈리면 눈금이 아니다.**
++			   ⚠ 숫자(⌥1~4)는 쓰지 않는다 — 실행기마다 세이브 슬롯에 물려 있다. */
++			if (e.key.keysym.mod & (KMOD_LALT | KMOD_RALT)) {
++				if (e.key.keysym.scancode == SDL_SCANCODE_MINUS ||
++				    e.key.keysym.scancode == SDL_SCANCODE_KP_MINUS) {
++					if (!e.key.repeat) ed_scrn_stepscale(-1);
++					break;
++				}
++				if (e.key.keysym.scancode == SDL_SCANCODE_EQUALS ||
++				    e.key.keysym.scancode == SDL_SCANCODE_KP_PLUS) {
++					if (!e.key.repeat) ed_scrn_stepscale(+1);
++					break;
++				}
++							/* ⌥M = 소리 끄기/켜기 (mednafen 과 같은 손가락).
++				   장치를 멈췄다 다시 트는 것이라 볼륨 개념이 없어도 된다 —
++				   np2kai 엔 마스터 볼륨 API 가 없다. */
++				if (e.key.keysym.scancode == SDL_SCANCODE_M) {
++					if (!e.key.repeat) {
++						ed_muted = !ed_muted;
++						if (ed_muted) soundmng_stop(); else soundmng_play();
++					}
++					break;
++				}
++				/* ⌥1~4 = 단계를 바로. ⌥가 눌린 동안이라 게스트 숫자와 안 겹친다. */
++				if (e.key.keysym.scancode >= SDL_SCANCODE_1 &&
++				    e.key.keysym.scancode <= SDL_SCANCODE_4) {
++					if (!e.key.repeat)
++						ed_scrn_setscale(e.key.keysym.scancode - SDL_SCANCODE_1 + 1);
++					break;
++				}
++			}
++#endif
+ #if USE_SDL >= 3
+ 			/* use command-f to toggle fullscreen/windowed mode */
+ 			if ((e.key.mod == SDL_KMOD_LGUI) || (e.key.mod == SDL_KMOD_RGUI)) {
+@@ -318,6 +434,19 @@ void taskmng_rol(void) {
+ #endif
+ #endif  // __OPENDINGUX__
+ 
++#if USE_SDL == 2
++      if (e.key.keysym.scancode == SDL_SCANCODE_TAB) { np2oscfg.NOWAIT = ed_ff_hold_prev; break; }
++      if (e.key.keysym.scancode == SDL_SCANCODE_GRAVE) { break; }
++      if (e.key.keysym.scancode == SDL_SCANCODE_BACKSLASH) { break; }
++      if (e.key.keysym.scancode == SDL_SCANCODE_F5 || e.key.keysym.scancode == SDL_SCANCODE_F7 || e.key.keysym.scancode == SDL_SCANCODE_F10) { break; }
++      /* eiyuu-densetsu-patch: 창 크기 키의 뗌 — ⚠ **수정자가 눌린 동안만** 삼킨다.
++         무조건 삼키면 게스트에서 `-` 나 `=` 를 못 친다. */
++      if ((e.key.keysym.mod & (KMOD_LALT | KMOD_RALT)) &&
++          (e.key.keysym.scancode == SDL_SCANCODE_MINUS  || e.key.keysym.scancode == SDL_SCANCODE_EQUALS ||
++           e.key.keysym.scancode == SDL_SCANCODE_KP_MINUS || e.key.keysym.scancode == SDL_SCANCODE_KP_PLUS ||
++           e.key.keysym.scancode == SDL_SCANCODE_M ||
++           (e.key.keysym.scancode >= SDL_SCANCODE_1 && e.key.keysym.scancode <= SDL_SCANCODE_4))) { break; }
++#endif
+ #if USE_SDL >= 3
+       sdlkbd_keyup(e.key.scancode);
+ #elif USE_SDL == 2

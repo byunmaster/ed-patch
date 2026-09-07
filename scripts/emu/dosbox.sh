@@ -108,6 +108,7 @@
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
+. "$HERE/winsize.sh"   # 창 크기 단계 넷 — 실행기 셋이 같은 눈금
 REPO=$(cd "$HERE/../.." && pwd)   # scripts/emu → 레포 루트
 # ⚠ **CLI 바이너리를 먼저 찾는다 — 앱 번들은 폴백이다**(유저 요청 2026-08-21). brew formula
 # (`brew install dosbox-x`)는 **이 맥에서 소스로 빌드**돼 OS 천장에 안 걸리는 반면, 받아 쓰는
@@ -192,6 +193,11 @@ while [ $# -gt 0 ]; do
     --scancodes) SCAN=1 ;;
     --mapper) MAPPER=1 ;;
     --no-sync) SYNC=0 ;;
+    # 창 크기 단계 — DOSBox-X 는 conf 가 정하므로 **띄우기 전에** 박는다.
+    # ⚠ 실행 중에는 ⌥-/⌥+ 로도 바뀐다(우리 매퍼가 문다 — X 본디 F12+↑↓ 도 산다).
+    #   ⌥1~4(단계를 바로)는 mednafen·np2kai 만이다 — X 엔 그런 이벤트가 없다.
+    --size) shift; WIN_SIZE=$1 ;;
+    --size=*) WIN_SIZE=${1#*=} ;;
     --cycles) shift; CYCLES=$1; [ -n "$CYCLES" ] || { echo "--cycles N" >&2; exit 2; } ;;
     --core) shift; CORE=$1; [ -n "$CORE" ] || { echo "--core normal|dynamic" >&2; exit 2; } ;;
     --engine) shift; ENGINE=$1; [ -n "$ENGINE" ] || { echo "--engine staging|x" >&2; exit 2; } ;;
@@ -280,6 +286,7 @@ fi
 sed -e "s|@GAME@|$GAME|g" -e "s|@DRIVE@|$DRIVE|g" -e "s|@CMD@|$CMD|g" \
     -e "s|@MOUNTCD@|$MOUNTCD|g" -e "s|@SBTYPE@|$SBTYPE|g" -e "s|@SBIRQ@|$SBIRQ|g" \
     -e "s|@MAPPERFILE@|$MAPPERFILE|g" -e "s|@CYCLES@|$CYCLES|g" -e "s|@CORE@|$CORE|g" \
+    -e "s|@WINRES@|$(winsize_wh "${WIN_SIZE:-2}")|g" \
     "$HERE/dosbox/game.conf.tmpl" > "$BOX/$GAME.conf"
 # 템플릿은 DOSBox-X 기준이다. staging 은 여섯 키를 거부하는데(실측) 전부 경고로 넘어가긴
 # 하지만, 로그가 지저분하면 진짜 경고를 놓친다 — 여기서 갈아 준다.
@@ -305,6 +312,24 @@ sed -e "s|@GAME@|$GAME|g" -e "s|@DRIVE@|$DRIVE|g" -e "s|@CMD@|$CMD|g" \
 # 그런데 staging 이 번들한 매퍼 186개를 대조해 보니 **스틱 바인딩만 빼면 185개가 완전히
 # 동일**했다 — 그게 곧 기본 세트다. 그걸 밑절미로 스틱을 걷어내고 speedlock 만 바꾼다.
 # 없으면 그냥 안 만든다(기본 바인딩으로 돈다 — 빨리감기만 Alt+F12 로 남는다).
+# ── DOSBox-X 매퍼 — 없으면 레포 템플릿을 깐다 (유저 제공 2026-09-07) ─────────────
+# 🔴 **X 는 밑절미가 없었다.** Staging 은 번들 매퍼를 고쳐 쓰는데(아래) X 는 그런 게 없어,
+#   지금까지 유저가 `--mapper` UI 로 직접 잡은 것이 `.local/`(머신 전용)에만 살았다.
+#   머신을 옮기면 사라지고, 그러면 빨리감기도 창 크기도 조용히 기본값으로 돌아간다.
+#   ⇒ 유저 머신의 것을 레포 템플릿으로 올려 **없을 때만** 깐다. conf 를 템플릿으로 두는
+#     것과 같은 방식이다. 이미 있으면 **안 건드린다** — 사람이 손댄 배치일 수 있다.
+# ⚠ **전체 파일이라야 한다** — 부분 매퍼는 기본 바인딩을 통째로 대체해 키보드를 죽인다
+#   (2026-07-31 실측). 그래서 한 줄만 고치는 게 아니라 226줄을 통째로 둔다.
+# 담긴 손가락: ` 토글 · Tab 홀드(빨리감기) · ⌥-/⌥+ 와 F12+↑↓(창 크기) · F12+R 재시작.
+#   🔑 **X 에도 창 크기 이벤트가 본디 있다**(`hand_incsize`·`hand_decsize`, 기본 F12+↑↓).
+#     없는 줄 알고 「X 는 conf 뿐」이라고 적었던 것은 틀렸다 — 매퍼 파일을 보고 알았다.
+#     ⌥ 조합을 **덧붙이기만** 한다(`mod2` = Alt). 기본 F12+↑↓ 도 그대로 살려 둔다 —
+#     뺏을 이유가 없고, 뺏으면 옛 손가락을 아는 사람이 헤맨다.
+if [ "$ENGINE" = x ] && [ ! -f "$BOX/$MAPPERFILE" ] && [ -f "$HERE/dosbox/mapper-x.map" ]; then
+  mkdir -p "$BOX" && cp "$HERE/dosbox/mapper-x.map" "$BOX/$MAPPERFILE"
+  echo "매퍼 생성: $MAPPERFILE (빨리감기 \` 토글·Tab 홀드 · 창 크기 ⌥-/⌥+ · 재시작 F12+R)"
+fi
+
 if [ "$ENGINE" = staging ] && [ ! -f "$BOX/$MAPPERFILE" ]; then
   for _m in "/Applications/DOSBox Staging.app/Contents/Resources/mapperfiles/xbox/d.map" \
             "$(brew --prefix 2>/dev/null)/share/dosbox-staging/mapperfiles/xbox/d.map"; do

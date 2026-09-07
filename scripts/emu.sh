@@ -15,7 +15,12 @@
 #     --no-sync  세이브 동기화를 끈다
 #     --no-keys  키 배치 맞추기를 건너뛴다(기본은 맞춘다 — mednafen_keys.py)
 #     --no-video 영상 규격 맞추기를 건너뛴다(기본은 맞춘다 — mednafen_video.py).
-#     --size N   창 크기 1 매우 작음 · 2 작음(기본) · 3 보통 · 4 큼 (mednafen 계열만)
+#     --size N   창 크기 1 매우 작음 · 2 작음(기본) · 3 보통 · 4 큼
+#                mednafen 은 설정으로, np2kai 는 `NP2KAI_WIN_SIZE` 로 받는다.
+#                ⚠ 실행 중에는 **⌥- / ⌥+**(한 단계씩) · **⌥1~4**(바로 지정).
+#                   실행기 셋이 같은 손가락이다(X 는 우리 매퍼가 문다).
+#                   ⌥1~4(단계를 바로)는 mednafen·np2kai 만 — X 엔 그 이벤트가 없다
+#                ⌘1~4 로 **실행 중에도** 바꾸려면 `sh scripts/emu/mednafen-build.sh` 를 한 번 돌린다
 #                ⚠ 화면을 끄는 게 아니라 **cfg 되돌리기**를 끈다
 #     그 밖의 인자는 실행기에 그대로 넘어간다 (`-video.fs 1` 처럼)
 #
@@ -319,6 +324,8 @@ while :; do
     # ⚠ 「실행:」 줄은 pc98.sh 가 무엇을 띄우는지까지 알고 찍는다 — 여기서 또 찍지 않는다.
     set -- "$GAME"
     [ "$ORIG" = 1 ] && set -- "$@" --orig
+    # ⚠ `--size` 도 위 고리가 먹으므로 되넘긴다 — np2kai·DOSBox-X 도 창 크기 단계를 받는다.
+    [ -n "$VIDEO_SIZE" ] && set -- "$@" --size "$VIDEO_SIZE"
     # shellcheck disable=SC2086
     exec sh "$HELPERS/pc98.sh" "$@" $EXTRA
   fi
@@ -328,6 +335,8 @@ while :; do
   if [ "$PLAT" = dos ]; then
     echo "실행: $GAME  [dosbox-x]"
     # shellcheck disable=SC2086
+    # ⚠ `--size` 는 위 고리가 먹으므로 되넘긴다 (DOSBox-X 는 conf 로 받는다).
+    [ -n "$VIDEO_SIZE" ] && EXTRA="$EXTRA --size $VIDEO_SIZE"
     exec sh "$HELPERS/dosbox.sh" "${GAME#dos-}" $EXTRA
   fi
 
@@ -461,10 +470,25 @@ fi
 # ── 실행 ────────────────────────────────────────────────────────────────────
 # `-force_module` 을 박는 이유는 자동 판별이 못 미더워서가 아니라, **엉뚱한 이미지를 줬을 때
 # 조용히 다른 기종으로 뜨는 걸 막으려는** 것이다. 여기선 시끄럽게 죽는 쪽이 옳다.
-echo "실행: $(basename "$IMAGE")  [$MOD]"
+# 🔴 **어느 바이너리를 띄우나는 갈래보다 먼저 정한다**(유저 실측 2026-09-07).
+#   창 크기 단축키가 든 우리 빌드를 먼저 찾고 없으면 시스템 것으로 간다 —
+#   ⚠ 종전엔 이 판단이 **`SYNC != 1` 갈래 안에만** 있어서, 세이브를 쓰는 **평소 실행에서는
+#     한 번도 안 쓰였다.** 유저가 굽고도 「창 크기가 안 된다」고 한 게 이것이다. 증상이
+#     조용했던 이유는 시스템 mednafen 이 그 명령 이름을 **모를 뿐 멀쩡히 뜨기** 때문이다
+#     (`mednafen_cfg.py` 가 「설정이 없다: command.scale_*」로 여섯 줄을 찍고 있었는데
+#      그게 유일한 신호였다).
+#   💡 그래서 **값을 한 곳에서 정하고 두 갈래가 같이 쓴다.** 갈래마다 다시 고르면 또 갈린다.
+#   ⚠ 시스템 것에는 그 명령이 아예 없어 `--size` 인자만 듣는다(띄우기 전에 크기를 정한다).
+#     만들려면 `sh scripts/emu/mednafen-build.sh` — 상태는 `--check`.
+MEDNAFEN_BIN="$REPO/.local/mednafen/bin/mednafen"
+[ -x "$MEDNAFEN_BIN" ] || MEDNAFEN_BIN=mednafen
+case "$MEDNAFEN_BIN" in
+  /*) echo "실행: $(basename "$IMAGE")  [$MOD]  (우리 빌드 — 창 크기 ⌥-/⌥+ · ⌥1~4)" ;;
+  *)  echo "실행: $(basename "$IMAGE")  [$MOD]  (시스템 mednafen — 창 크기 단축키 없음)" ;;
+esac
 if [ "$SYNC" != 1 ]; then
   # shellcheck disable=SC2086
-  exec mednafen -force_module "$MOD" -filesys.path_sav "$SAVEREL" $EXTRA "$IMAGE"
+  exec "$MEDNAFEN_BIN" -force_module "$MOD" -filesys.path_sav "$SAVEREL" $EXTRA "$IMAGE"
 fi
 
 # ⚠ Ctrl+C 로 끊어도 세이브는 올려야 한다 — 진행분을 잃는 게 제일 나쁜 결과다.
@@ -481,6 +505,6 @@ trap 'finish; exit 143' TERM
 
 RC=0
 # shellcheck disable=SC2086
-mednafen -force_module "$MOD" -filesys.path_sav "$SAVEREL" $EXTRA "$IMAGE" || RC=$?
+"$MEDNAFEN_BIN" -force_module "$MOD" -filesys.path_sav "$SAVEREL" $EXTRA "$IMAGE" || RC=$?
 finish
 exit $RC

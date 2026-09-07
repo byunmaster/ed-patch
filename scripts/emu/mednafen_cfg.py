@@ -34,7 +34,12 @@ def apply(text: str, settings: dict, *, verbose: bool = False):
         want = f"{name} {value}"
         m = re.search(rf"^{re.escape(name)} .*$", text, re.M)
         if not m:
-            print(f"⚠ 설정이 없다: {name}")
+            # ⚠ **이건 「그 이름을 지금 바이너리가 모른다」는 뜻이다.** 오타일 수도 있지만
+            #   우리가 소스에 더한 명령(`command.scale_*`)이면 **패치 안 된 mednafen 이 떴다는
+            #   신호**다 — mednafen 은 아는 설정을 종료할 때 cfg 에 전부 써 넣으므로, 한 번이라도
+            #   패치본이 돌았으면 이름이 있다. 실측 2026-09-07: `emu.sh` 가 세이브 동기화 갈래에서
+            #   시스템 mednafen 을 부르고 있었고, **이 여섯 줄이 유일한 신호였다.**
+            print(f"⚠ 설정이 없다: {name}  (지금 뜬 mednafen 이 모르는 이름이다)")
             missing += 1
         elif m.group(0) == want:
             same += 1

@@ -1,26 +1,43 @@
-창 크기 단계 1~4 를 단축키로 바꾼다 (한글패치 레포)
+창 크기와 소리 끄기를 단축키로 (한글패치 레포)
 
-mednafen 에는 창 크기 명령이 없다 — 전체화면 토글뿐이다. 그 토글이 쓰는 길을
-그대로 빌려 명령 넷을 더한다: 설정(<module>.xscale/yscale)을 바꾸고
-NeedVideoSync 로 비디오 스레드를 깨운다. Video_Sync() 가 그 설정을 매번 다시
-읽으므로 에뮬레이션을 멈추거나 리셋하지 않고 창만 다시 잡힌다.
+mednafen 에는 창 크기 명령도 mute 도 없다. 둘 다 **설정을 바꾸면 그만인 것**이라,
+전체화면 토글이 쓰는 길을 빌려 명령을 더한다.
 
-기본 바인딩은 alt+1~4 로 두고, 실제 키(⌘1~4)는 scripts/emu/mednafen_keys.py 가
-설정 파일에서 정한다 — 다른 실행기와 단축키를 맞추는 자리가 거기다.
+  scale_1~4      단계를 바로 지정
+  scale_down/up  한 단계 오르내림 — 지금 배율을 읽어 계산하므로
+                 밖에서 정한 값(emu.sh --size)과도 이어진다
+  toggle_mute    소리 끄기/켜기
 
---- src/drivers/main.h	2026-09-07 17:18:08.125831632 +0900
-+++ src/drivers/main.h	2026-09-07 17:18:08.151467007 +0900
-@@ -67,6 +67,7 @@
+창 크기는 <module>.xscale/yscale 을 바꾸고 NeedVideoSync 로 비디오 스레드를
+깨운다. Video_Sync() 가 그 설정을 매번 다시 읽으므로 에뮬레이션을 멈추거나
+리셋하지 않고 창만 다시 잡힌다.
+소리는 그보다 더 싸다 — sound.volume 은 프레임마다 다시 읽히므로(espec.SoundVolume)
+설정만 바꾸면 된다. 사운드 장치를 다시 열지 않아 끊김이 없다.
+⚠ 켤 때 되돌릴 값은 우리가 들고 있어야 한다. 0 에서는 「원래 얼마였나」를 알 길이 없다.
+
+실제 키(⌥- / ⌥+ / ⌥1~4 / ⌥M)는 scripts/emu/mednafen_keys.py 가 설정 파일에서 정한다.
+⚠ **수정자는 반드시 ⌥·⇧·⌃ 중 하나여야 한다.** mednafen 이 세는 수정자가 그 셋뿐이고
+  ⌘(GUI)는 아예 안 센다(keyboard.cpp:RecalcModsCache). 매칭은 마스크 완전 일치라
+  (TestButtonWithMods) ⌘를 눌러도 마스크가 0 이라 **기본 바인딩이 같이 먹는다** —
+  숫자는 세이브 스테이트 슬롯, `-`·`=` 는 슬롯 증감이다(유저 실측 두 번).
+
+--- src/drivers/main.h	2026-09-07 17:59:46.246514420 +0900
++++ src/drivers/main.h	2026-09-07 17:59:46.267681390 +0900
+--- src/drivers/main.h
++++ src/drivers/main.h
+@@ -67,6 +67,9 @@
  
  void GT_SetWMInputBehavior(const WMInputBehavior& wmib);
  void GT_ToggleFS(void);
 +void GT_SetScale(unsigned n);
++void GT_StepScale(int delta);
++void GT_ToggleMute(void);
  bool GT_ReinitVideo(void);
  bool GT_ReinitSound(void);
  
---- src/drivers/main.cpp	2026-09-07 17:18:08.118786071 +0900
-+++ src/drivers/main.cpp	2026-09-07 17:18:08.152013996 +0900
-@@ -1604,6 +1604,34 @@
+--- src/drivers/main.cpp
++++ src/drivers/main.cpp
+@@ -1601,6 +1601,86 @@
   }
  }
  
@@ -28,6 +45,8 @@ NeedVideoSync 로 비디오 스레드를 깨운다. Video_Sync() 가 그 설정�
 +// 창 크기 단계 1~4 (한글패치 레포 추가). 전체화면 토글과 같은 길을 쓴다 —
 +// 설정을 바꾸고 NeedVideoSync 로 비디오 스레드를 깨울 뿐이라 에뮬레이션은 안 멈춘다.
 +// Video_Sync() 가 <module>.xscale/yscale 을 매번 다시 읽으므로 그대로 반영된다.
++//
++// 단계 n → 배율 n+1 (1 매우 작음=2배 … 4 큼=5배).
 +//
 +void GT_SetScale(unsigned n)
 +{
@@ -52,20 +71,71 @@ NeedVideoSync 로 비디오 스레드를 깨운다. Video_Sync() 가 그 설정�
 + }
 +}
 +
++//
++// 지금 배율에서 한 단계 오르내린다(⌥+ / ⌥-). 설정값을 그대로 읽으므로
++// 밖에서 정한 값(emu.sh --size)과도 이어진다. 1~4 를 벗어나면 붙든다.
++//
++void GT_StepScale(int delta)
++{
++ if(!CurGame || !CurGame->shortname)
++  return;
++
++ const std::string pfx = std::string(CurGame->shortname) + ".";
++ int n = (int)(MDFN_GetSettingF(pfx + "yscale") + 0.5) - 1;
++
++ n += delta;
++ if(n < 1) n = 1;
++ if(n > 4) n = 4;
++
++ GT_SetScale((unsigned)n);
++}
++
++//
++// 소리 끄기/켜기 토글 (한글패치 레포 추가).
++//
++// mednafen 엔 mute 명령이 없다. 그런데 sound.volume 은 프레임마다 다시 읽히므로
++// (아래 espec.SoundVolume) **설정만 바꾸면 바로 먹는다** — 사운드 장치를 다시 열지
++// 않아 끊김도 리셋도 없다. 창 크기와 같은 수다.
++//
++// ⚠ 켤 때 되돌릴 값을 우리가 들고 있어야 한다. 0 에서 「원래 얼마였나」를 알 길이
++//   없기 때문이다. 처음부터 0 으로 떠 있었으면 100 으로 켠다.
++//
++void GT_ToggleMute(void)
++{
++ static unsigned saved_volume = 100;
++ const unsigned cur = MDFN_GetSettingUI("sound.volume");
++
++ if(cur)
++ {
++  saved_volume = cur;
++  MDFNI_SetSetting("sound.volume", "0");
++  MDFN_Notify(MDFN_NOTICE_STATUS, _("Sound muted."));
++ }
++ else
++ {
++  const unsigned v = saved_volume ? saved_volume : 100;
++  char tmp[16];
++  snprintf(tmp, sizeof(tmp), "%u", v);
++  MDFNI_SetSetting("sound.volume", tmp);
++  MDFN_Notify(MDFN_NOTICE_STATUS, _("Sound unmuted (%u%%)."), v);
++ }
++}
++
  bool GT_ReinitVideo(void)
  {
   // assert(MThreading::Thread_ID() == GameThreadID);
---- src/drivers/input.cpp	2026-09-07 17:18:08.131695451 +0900
-+++ src/drivers/input.cpp	2026-09-07 17:18:08.152416383 +0900
-@@ -1182,6 +1182,7 @@
+--- src/drivers/input.cpp
++++ src/drivers/input.cpp
+@@ -1182,6 +1182,8 @@
  	CK_TAKE_SNAPSHOT,
  	CK_TAKE_SCALED_SNAPSHOT,
  	CK_TOGGLE_FS,
-+	CK_SCALE_1, CK_SCALE_2, CK_SCALE_3, CK_SCALE_4,
++	CK_SCALE_1, CK_SCALE_2, CK_SCALE_3, CK_SCALE_4, CK_SCALE_DOWN, CK_SCALE_UP,
++	CK_TOGGLE_MUTE,
  	CK_FAST_FORWARD,
  	CK_SLOW_FORWARD,
  
-@@ -1307,6 +1308,10 @@
+@@ -1307,6 +1309,13 @@
  	CKEYDEF( "take_scaled_snapshot", "Take scaled(and filtered) screen snapshot", 0, MK_CK_SHIFT(F9) ),
  
  	CKEYDEF( "toggle_fs", "Toggle fullscreen mode", 0, MK_CK_ALT(RETURN) ),
@@ -73,10 +143,13 @@ NeedVideoSync 로 비디오 스레드를 깨운다. Video_Sync() 가 그 설정�
 +	CKEYDEF( "scale_2", "Window size 2", 0,            MK_CK_ALT(2) ),
 +	CKEYDEF( "scale_3", "Window size 3", 0,            MK_CK_ALT(3) ),
 +	CKEYDEF( "scale_4", "Window size 4 (largest)", 0,  MK_CK_ALT(4) ),
++	CKEYDEF( "scale_down", "Window size down one step", 0, MK_CK_ALT(MINUS) ),
++	CKEYDEF( "scale_up", "Window size up one step", 0,     MK_CK_ALT(EQUALS) ),
++	CKEYDEF( "toggle_mute", "Toggle sound mute", 0,     MK_CK_ALT(M) ),
  	CKEYDEF( "fast_forward", "Fast-forward", 0, 	   MK_CK(GRAVE) ),
          CKEYDEF( "slow_forward", "Slow-forward", 0, 	   MK_CK(BACKSLASH) ),
  
-@@ -1779,6 +1784,11 @@
+@@ -1779,6 +1788,14 @@
     GT_ToggleFS();
    }
  
@@ -84,6 +157,9 @@ NeedVideoSync 로 비디오 스레드를 깨운다. Video_Sync() 가 그 설정�
 +  if(CK_Check(CK_SCALE_2)) GT_SetScale(2);
 +  if(CK_Check(CK_SCALE_3)) GT_SetScale(3);
 +  if(CK_Check(CK_SCALE_4)) GT_SetScale(4);
++  if(CK_Check(CK_SCALE_DOWN)) GT_StepScale(-1);
++  if(CK_Check(CK_SCALE_UP)) GT_StepScale(+1);
++  if(CK_Check(CK_TOGGLE_MUTE)) GT_ToggleMute();
 +
    if(!CurGame)
  	return;

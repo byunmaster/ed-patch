@@ -4,6 +4,7 @@
 # 경로를 전부 상대로 둔 이유: 이 파일은 커밋되므로 로컬 절대경로를 담을 수 없다(CLAUDE.md).
 # dosbox.sh 가 .local/dosbox 로 cd 한 뒤 실행하므로 상대경로가 그 기준으로 해석된다.
 #   @GAME@ = ed1|ed2|ed3|ed4 — 사본 디렉터리 이름이자 로그 파일 이름
+#   @WINRES@ = 창 크기 (`--size 1~4` → scripts/emu/winsize.sh 의 사다리)
 #
 # macOS 함정(ed2-mantra-restore에서 실측한 것 이식):
 #  - usescancodes=true면 저수준 키보드 경로를 타는데 입력 모니터링 권한이 필요하다.
@@ -15,7 +16,7 @@
 
 [sdl]
 fullscreen=false
-windowresolution=800x600
+windowresolution=@WINRES@
 # opengl 이라야 windowresolution 스케일링이 먹는다
 output=opengl
 usescancodes=false
