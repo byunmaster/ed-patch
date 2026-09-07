@@ -30,8 +30,10 @@
    **다음 사람이 똑같이 밟는다**(실제로 하루에 넷을 밟았다 — ss-ed3 devlog).
 3. **새 게임을 열거나 빌드·재삽입 파이프라인을 손댄다면
    [`docs/patcher-checklist.md`](docs/patcher-checklist.md)** — 조용히 틀리는 사고를 막는
-   장치 열둘(입력 지문 · 쓰기 사전조건 · 결정성 · 감사 · **검사기 자신의 커버리지** ·
-   **게이트 우회 금지** · 판단 · 대량 변경 · 회귀 테스트 · 세대 결박 · 배포 지문 · 구조 계약)과
+   장치 열넷(입력 지문 · 쓰기 사전조건 · 결정성 · 감사 · **계측 설계** ·
+   **검사기 자신의 커버리지** ·
+   **게이트 우회 금지** · **같은 지식이 두 곳에 있나** · 판단 · 대량 변경 · 회귀 테스트 ·
+   세대 결박 · 배포 지문 · 구조 계약)과
    언어 선택 기준. 스킬 `patcher-safety` 로도 라우팅된다.
 4. **`sh scripts/check-updates.sh`** — 외부 의존물(emucap · 스킬 둘 · 패치 템플릿)에
    새 버전이 있는지 본다. 있으면 유저에게 알리고 판단을 받는다.
@@ -86,7 +88,7 @@ scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test
 patcher/            웹 패처 일체 — index.html.tmpl · build.py · subset_font.py · fonts.css
                     빌드하면 games/*/patches/*.json 이 인라인된 자립형 HTML 하나가 나온다
 docs/               레퍼런스·공개 체크리스트·소장 컬렉션
-                    └ patcher-checklist.md = **안전장치 아홉**(플랫폼 무관, 새 게임의 출발점)
+                    └ patcher-checklist.md = **안전장치 열넷**(플랫폼 무관, 새 게임의 출발점)
                     └ manager.md · manager-log.md = **관리자 세션** 규약과 회차 기록
 originals/<지역>/   원본 디스크·정발판 (gitignore, 소장자 제공 — originals/README.md)
 vendor/             emucap 등 서드파티 (gitignore, 읽기 전용)

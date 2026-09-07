@@ -1,0 +1,90 @@
+창 크기 단계 1~4 를 단축키로 바꾼다 (한글패치 레포)
+
+mednafen 에는 창 크기 명령이 없다 — 전체화면 토글뿐이다. 그 토글이 쓰는 길을
+그대로 빌려 명령 넷을 더한다: 설정(<module>.xscale/yscale)을 바꾸고
+NeedVideoSync 로 비디오 스레드를 깨운다. Video_Sync() 가 그 설정을 매번 다시
+읽으므로 에뮬레이션을 멈추거나 리셋하지 않고 창만 다시 잡힌다.
+
+기본 바인딩은 alt+1~4 로 두고, 실제 키(⌘1~4)는 scripts/emu/mednafen_keys.py 가
+설정 파일에서 정한다 — 다른 실행기와 단축키를 맞추는 자리가 거기다.
+
+--- src/drivers/main.h	2026-09-07 17:18:08.125831632 +0900
++++ src/drivers/main.h	2026-09-07 17:18:08.151467007 +0900
+@@ -67,6 +67,7 @@
+ 
+ void GT_SetWMInputBehavior(const WMInputBehavior& wmib);
+ void GT_ToggleFS(void);
++void GT_SetScale(unsigned n);
+ bool GT_ReinitVideo(void);
+ bool GT_ReinitSound(void);
+ 
+--- src/drivers/main.cpp	2026-09-07 17:18:08.118786071 +0900
++++ src/drivers/main.cpp	2026-09-07 17:18:08.152013996 +0900
+@@ -1604,6 +1604,34 @@
+  }
+ }
+ 
++//
++// 창 크기 단계 1~4 (한글패치 레포 추가). 전체화면 토글과 같은 길을 쓴다 —
++// 설정을 바꾸고 NeedVideoSync 로 비디오 스레드를 깨울 뿐이라 에뮬레이션은 안 멈춘다.
++// Video_Sync() 가 <module>.xscale/yscale 을 매번 다시 읽으므로 그대로 반영된다.
++//
++void GT_SetScale(unsigned n)
++{
++ static const char* const scales[5] = { "", "2.000000", "3.000000", "4.000000", "5.000000" };
++
++ if(n < 1 || n > 4 || !CurGame || !CurGame->shortname)
++  return;
++
++ MThreading::Mutex_Lock(VTMutex);
++ {
++  const std::string pfx = std::string(CurGame->shortname) + ".";
++  MDFNI_SetSetting(pfx + "xscale", scales[n]);
++  MDFNI_SetSetting(pfx + "yscale", scales[n]);
++ }
++ NeedVideoSync = true;
++ MThreading::Mutex_Unlock(VTMutex);
++
++ MThreading::Sem_Post(VTWakeupSem);
++ while(NeedVideoSync && GameThreadRun)
++ {
++  Time::SleepMS(2);
++ }
++}
++
+ bool GT_ReinitVideo(void)
+ {
+  // assert(MThreading::Thread_ID() == GameThreadID);
+--- src/drivers/input.cpp	2026-09-07 17:18:08.131695451 +0900
++++ src/drivers/input.cpp	2026-09-07 17:18:08.152416383 +0900
+@@ -1182,6 +1182,7 @@
+ 	CK_TAKE_SNAPSHOT,
+ 	CK_TAKE_SCALED_SNAPSHOT,
+ 	CK_TOGGLE_FS,
++	CK_SCALE_1, CK_SCALE_2, CK_SCALE_3, CK_SCALE_4,
+ 	CK_FAST_FORWARD,
+ 	CK_SLOW_FORWARD,
+ 
+@@ -1307,6 +1308,10 @@
+ 	CKEYDEF( "take_scaled_snapshot", "Take scaled(and filtered) screen snapshot", 0, MK_CK_SHIFT(F9) ),
+ 
+ 	CKEYDEF( "toggle_fs", "Toggle fullscreen mode", 0, MK_CK_ALT(RETURN) ),
++	CKEYDEF( "scale_1", "Window size 1 (smallest)", 0, MK_CK_ALT(1) ),
++	CKEYDEF( "scale_2", "Window size 2", 0,            MK_CK_ALT(2) ),
++	CKEYDEF( "scale_3", "Window size 3", 0,            MK_CK_ALT(3) ),
++	CKEYDEF( "scale_4", "Window size 4 (largest)", 0,  MK_CK_ALT(4) ),
+ 	CKEYDEF( "fast_forward", "Fast-forward", 0, 	   MK_CK(GRAVE) ),
+         CKEYDEF( "slow_forward", "Slow-forward", 0, 	   MK_CK(BACKSLASH) ),
+ 
+@@ -1779,6 +1784,11 @@
+    GT_ToggleFS();
+   }
+ 
++  if(CK_Check(CK_SCALE_1)) GT_SetScale(1);
++  if(CK_Check(CK_SCALE_2)) GT_SetScale(2);
++  if(CK_Check(CK_SCALE_3)) GT_SetScale(3);
++  if(CK_Check(CK_SCALE_4)) GT_SetScale(4);
++
+   if(!CurGame)
+ 	return;
+   

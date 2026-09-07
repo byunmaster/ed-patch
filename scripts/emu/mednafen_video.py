@@ -32,6 +32,20 @@
   「전역 = 0..239」가 곧 실기지만, PCE 는 VDC 가 세로 출력줄 수 자체를 프로그램한다 —
   0..239 로 열면 실기엔 없던 위아래 여백이 딸려 온다. mednafen 기본값(4..235)이 낫다.
 
+── 창 크기 ────────────────────────────────────────────────────────────────
+**단계 넷으로 통일한다**(유저 확정 2026-09-07). 종전엔 기종마다 제각각이었다 —
+PS1·SS·PCE·MD 는 3배, SFC·NES 는 4배.
+
+    1 매우 작음(2배)   2 작음(3배, **기본**)   3 보통(4배)   4 큼(5배)
+
+    sh scripts/emu.sh ss-ed1+2 --size 3
+
+⚠ **정수배만 쓴다.** 우리는 보간을 끄므로(`videoip 0`) 소수 배율이면 **픽셀 줄이 고르지
+않게** 보이고, 그건 글리프 검수에 그대로 방해가 된다. 그래서 **창 크기가 완전히 같아지지는
+않는다** — 원본 세로가 기종마다 달라서다(2단계 기준 PS1·SS 720 · PCE 696 · MD·SFC 672).
+「같은 배율」까지가 정수배로 갈 수 있는 최대다.
+💡 폭은 `correct_aspect` 가 4:3 으로 바로잡으므로 **세로만 정하면 따라온다.**
+
 ⚠ **`video.driver` 는 안 건드린다.** 이 맥은 `softfb` 인데, 그건 OpenGL 이 이 OS 에서
   말썽이라 고른 값일 수 있다(같은 이유로 Geargrafx 가 아예 안 떴다 — `emu.sh` 머리말).
   실행기를 못 뜨게 만드는 설정은 「규격」보다 무겁다.
@@ -84,12 +98,24 @@ MODULES = {
 }
 
 
-def settings(modules=None) -> dict:
-    """「모듈.설정 → 값」으로 편다. `modules` 를 주면 그 기종만."""
+# 창 크기 단계 → 정수 배율. 기본은 2(작음).
+SIZES = {1: 2, 2: 3, 3: 4, 4: 5}
+SIZE_DEFAULT = 2
+
+
+def settings(modules=None, size=SIZE_DEFAULT) -> dict:
+    """「모듈.설정 → 값」으로 편다. `modules` 를 주면 그 기종만.
+
+    `size` 는 창 크기 단계(1~4). `xscale`·`yscale` 을 같은 정수 배율로 준다 —
+    폭은 `correct_aspect` 가 4:3 으로 바로잡으므로 세로만 정하면 따라온다.
+    """
+    scale = f"{SIZES[size]:.6f}"
     out = {}
     for mod in modules or MODULES:
         for name, value in MODULES[mod].items():
             out[f"{mod}.{name}"] = value
+        out[f"{mod}.xscale"] = scale
+        out[f"{mod}.yscale"] = scale
     return out
 
 
@@ -97,10 +123,17 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="바꾸지 않고 현재 값만 본다")
     ap.add_argument("--quiet", action="store_true", help="바뀐 게 있을 때만 말한다")
+    ap.add_argument(
+        "--size", type=int, choices=sorted(SIZES), default=SIZE_DEFAULT,
+        help="창 크기 1 매우 작음 · 2 작음(기본) · 3 보통 · 4 큼",
+    )
     ap.add_argument("module", nargs="*", choices=list(MODULES), help="이 기종만 (기본: 전부)")
     args = ap.parse_args()
     return mednafen_cfg.run(
-        settings(args.module or None), label="영상 규격", check=args.check, quiet=args.quiet
+        settings(args.module or None, args.size),
+        label=f"영상 규격(크기 {args.size})",
+        check=args.check,
+        quiet=args.quiet,
     )
 
 
