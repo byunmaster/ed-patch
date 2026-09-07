@@ -241,28 +241,20 @@ python3 tools/check_scn_jp_left.py          # 일본어 잔존(ED1 은 0 이어�
 
 ## 유저 손이 필요한 것
 
-- 🔴 **`main` 에 force-push 가 필요하다**(2026-08-13). 히스토리에서 정발 문안을 걷어내려고
-  `git filter-branch` 로 29커밋을 재작성했고(오염 143→0), 이어서 작업 커밋들을 유형별로
-  접었다. 푸시는 유저 몫이라 손대지 않았다 — `git push --force-with-lease origin main`.
-  푸시가 끝나면 옛 히스토리를 붙잡는 참조를 지운다:
-  `git update-ref -d refs/original/refs/heads/main` ·
-  `git tag -d backup-before-scrub-2026-08-13 backup-before-squash` ·
-  `git reflog expire --expire=now --all && git gc --prune=now`.
-  ⚠ **force-push 후에도 옛 커밋은 SHA 를 알면 한동안 열린다** — 공개 레포에서 확실히
-  지우려면 호스팅 쪽에 GC 를 요청한다.
-- **커밋은 순서대로 쌓는다**(유저 확정 2026-08-10) — 장별로 한 커밋씩, QA 반영은 그 장의
-  **다음 커밋**으로. 과거 커밋에 끼워 넣지 않는다(같은 JSON 을 뒤 커밋들이 계속 고쳐 충돌하고,
-  "무엇을 언제 알았는지"가 무너진다).
-- 외부 의존물은 **2026-08-09 기준 전부 최신**이다 — emucap 0.14.1 · create-kr-patch 1.2.1 ·
-  patch-template. ⚠ **emucap 을 올린 세션에는 Claude Code 재시작이 필요하다**(MCP 서버가
-  메모리에 물려 있어 구 바이너리로 붙어 있다).
-- ⚠ **이 머신엔 emucap 어댑터(에뮬레이터 바이너리)가 없다.** 인게임 확인은 맥
-  (DuckStation)에서 한다. 여기서 돌리려면
-  `sh vendor/emucap/adapters/mednafen/build.sh` + BIOS 배치 —
-  [machine-setup.md](../../../docs/machine-setup.md) ③.
-- `vendor/emucap` 의 "수정된 파일 3개"(`adapters/desmume-nds/patches/*.patch`)는 **해소됐다**
-  — 우리가 고친 게 아니라 CRLF 변환 탓이었고, 그 경로만 변환을 끄면 끝난다(2026-08-09).
-  절차는 [machine-setup.md](../../../docs/machine-setup.md) ②.
+- 🔴 **푸시는 유저 몫이다** — `origin/main` 이 로컬 `main` 의 조상이라 **일반 푸시로 나간다**
+  (force 는 필요 없다, 09-07 실측). 08-13 의 히스토리 재작성 건은 끝났다 — 붙잡던 참조
+  (`refs/original` · `backup-before-*` 태그)가 이미 없다.
+- ✅ **이 머신에서 PS1 을 띄울 수 있다**(09-07 확인). `launch_plan` 이 `adapter_built: true` ·
+  `launch_blockers: []` 를 준다 — 바이너리는
+  `vendor/emucap/adapters/mednafen/work/mednafen/src/mednafen`, BIOS `scph5500/1/2` 는
+  `~/.local/share/emucap/firmware/` 에 있다.
+  🔴 **「없다」고 적었다가 같은 날 정정했다** — `find -maxdepth 6` 으로 훑었는데 바이너리가
+  그보다 깊은 자리에 있었다. **있는지 없는지는 `launch_plan` 에 물어야 한다**(권위 있는 답을
+  주는 쪽이 그것이다). 파일 시스템 추정으로 「환경이 없다」고 적으면 그 줄이 다음 세션의
+  판단을 막는다.
+  ⚠ emucap 을 올린 세션엔 **Claude Code 재시작**이 필요하다(MCP 서버가 구 바이너리에 물려 있다).
+- 외부 의존물(emucap · 스킬 · 패치 템플릿)의 최신 여부는 **여기 안 적는다** — 적어 두면
+  그날로 낡는다. `sh scripts/check-updates.sh` 가 정본이다.
 
 ## 문서 지도
 
@@ -270,6 +262,7 @@ python3 tools/check_scn_jp_left.py          # 일본어 잔존(ED1 은 0 이어�
 | -------------------- | ----------------------------------------------------------------------------- |
 | 작업 규칙·트랙 구조  | 루트 [CLAUDE.md](../../../CLAUDE.md) · 게임 [CLAUDE.md](../CLAUDE.md)         |
 | 방침·유저 확정 결정  | [policy.md](policy.md)                                                        |
+| UI 자리·정렬 잣대    | [ui-canon.md](ui-canon.md) — **이식판 공통**(메뉴·메시지·HUD·전투·오프닝·타이틀) |
 | 대사 파이프라인 전모 | [text-pipeline.md](text-pipeline.md)                                          |
 | 재사용 가능한 발견   | [our-findings.md](../../../docs/reference/our-findings.md)                    |
 | 표기 편차 대장       | [jeongbal-deviations.md](jeongbal-deviations.md)                              |

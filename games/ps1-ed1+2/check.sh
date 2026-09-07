@@ -47,12 +47,15 @@ echo "$out" | tail -1 | sed 's/^/     /'
 # 자리가 섞여 있다. 수치가 나빠지면 사람이 본다. ED2 를 체인에 올리면 이 줄은 지운다.
 "$PY" "$T/check_ed2_reinsert.py" -q 2>&1 | tail -1 | sed 's/^/     /'
 
-# 블록 경계 — ⚠ **인게임 QA 를 마친 층에만 게이트로 건다.** ED2 를 체인에 올리자 붙음이
-# 463곳 나왔는데(ED1 은 71곳을 다 고쳤다), 그건 「실패」가 아니라 「할 일」이다.
+# 블록 경계 — 🔴 **ED2 도 게이트다**(2026-09-06). 예전엔 「ED2 를 체인에 올리자 붙음이
+# 463곳 나왔고 그건 실패가 아니라 할 일」이라 보고만 했는데, **463곳은 08-17 에 다 닫혔고
+# 지금 0이다.** 0 이 된 축을 보고로 두면 다시 늘어도 아무도 안 본다.
 # shellcheck disable=SC2086
 out=$("$PY" "$T/check_block_join.py" $SCN 2>&1) || fail=1
 echo "$out" | tail -1 | sed 's/^/     /'
-"$PY" "$T/check_block_join.py" $(for i in $(seq 1 13); do echo -n "ED2SCN$i "; done) 2>&1 | tail -1 | sed 's/^/     [ED2] /'
+# shellcheck disable=SC2046
+out=$("$PY" "$T/check_block_join.py" $(for i in $(seq 1 13); do echo -n "ED2SCN$i "; done) 2>&1) || fail=1
+echo "$out" | tail -1 | sed 's/^/     [ED2] /'
 
 # 조사 받침 일치 + 변수 뒤 병기. ⚠ **상주 게이트다** — 오타는 아직 화면에 안 나온 자리에
 # 있다가 배정이 진행되며 하나씩 올라온다(실측 2026-08-17: 화면 코퍼스 0건인데 전량엔 3건).
