@@ -85,7 +85,7 @@ vendor/             emucap 등 서드파티 (gitignore, 읽기 전용)
 ```
 
 - **originals는 어떤 트랙에서도 읽기 전용**이다. `<지역>/<플랫폼>-ed<N>` 규약
-  (`kr/dos-ed2`, `jp/ps1-ed1+2`, `us/pce-ed1`). 게임 폴더명은 여기서 지역만 뺀 이름.
+  (`kr/dos-ed2`, `jp/ps1-ed1+2`, `jp/pce-ed1`). 게임 폴더명은 여기서 지역만 뺀 이름.
 - 게임이 늘면 `games/<플랫폼>-ed<N>/`을 파고, 그 게임의 `CLAUDE.md`에 트랙을 적는다.
 
 ## 작업 산출물은 전부 `work/` 아래
