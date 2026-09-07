@@ -120,7 +120,8 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
         "틈 건너뜀": 0,
         "공백 메움": 0,
         "밖으로": 0,
-        "건너뜀:점프가 온다": 0,
+        "밖으로:점프가 온다": 0,
+        "건너뜀:점프가 머리에": 0,
         "건너뜀:3B 미만": 0,
         "건너뜀:빈자리 부족": 0,
         "쓴 바이트": 0,
@@ -141,11 +142,27 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
                 continue
             o, n = b["o"], b["n"]
             new = encode(script[k]["t"])
-            if any(W.BASE + o < t < W.BASE + o + n for t in targets):
-                st["건너뜀:점프가 온다"] += 1
-                continue
+
+            # 🔴 **안으로 점프가 들어와도 대개 살릴 수 있다**(2026-09-06).
+            #    「밖으로」는 런 **머리 3바이트**에만 `0F <빈자리>` 를 심고 나머지는 원본 그대로
+            #    둔다. 그러니 들어오는 점프가 **오프셋 3 이상**에 떨어지면 그 점프는 여전히
+            #    **원본 바이트**에 앉는다 — 지금(무패치)과 **똑같이** 동작한다. 잃는 게 없다.
+            #    ⚠ 반대로 `d < 3` 이면 우리 점프 한복판에 떨어져 흐름이 깨진다 → 건너뛴다.
+            #    ⚠ 그리고 이때는 **「틈」을 쓰면 안 된다** — 그건 런 몸통을 덮어써서
+            #      들어오는 점프가 우리 문안 한복판에 앉는다. 반드시 밖으로 뺀다.
+            #    실측: 건너뛰던 434 중 **404** 가 `d >= 3` 이었다.
+            inside = [t - (W.BASE + o) for t in targets if W.BASE + o < t < W.BASE + o + n]
+            forced_pool = False
+            if inside:
+                if min(inside) < 3:
+                    st["건너뜀:점프가 머리에"] += 1
+                    continue
+                forced_pool = True
+
             slack = n - len(new)
-            if slack == 0:
+            if forced_pool:
+                blob = None  # 아래 「밖으로」로 간다
+            elif slack == 0:
                 blob = new
                 st["제자리"] += 1
             elif slack >= 3:
@@ -155,6 +172,8 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
                 blob = new + b" " * slack
                 st["공백 메움"] += 1
             else:
+                blob = None
+            if blob is None:  # 밖으로 — 넘치거나, 안으로 점프가 들어오거나
                 if n < 3:
                     st["건너뜀:3B 미만"] += 1
                     continue
@@ -169,7 +188,7 @@ def plan() -> tuple[list[tuple[int, bytes, bytes]], dict]:
                 blob = bytes((JUMP, *(W.BASE + pool).to_bytes(2, "little")))
                 st["빈자리 쓴 바이트"] += need
                 pool += need
-                st["밖으로"] += 1
+                st["밖으로:점프가 온다" if forced_pool else "밖으로"] += 1
             marks.append((base_off + o, data[o : o + len(blob)], blob))
             st["쓴 바이트"] += len(blob)
     # 🔴 **겹치면 나중 것이 앞 것을 뭉갠다** — 조용히 틀리는 종류라 여기서 죽인다.

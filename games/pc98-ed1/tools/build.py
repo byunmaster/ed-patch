@@ -65,9 +65,12 @@ def patches_for(key: str) -> list[tuple[int, bytes, bytes]]:
         global _SCN_MARKS
         if _SCN_MARKS is None:
             _SCN_MARKS, st = patch_scn.plan()
+            put = st["제자리"] + st["틈 건너뜀"] + st["공백 메움"] + st["밖으로"]
+            put += st["밖으로:점프가 온다"]
+            skip = sum(v for k, v in st.items() if k.startswith("건너뜀"))
             print(
-                f"  문안 {st['제자리'] + st['틈 건너뜀'] + st['공백 메움'] + st['밖으로']:,}블록 "
-                f"(밖으로 {st['밖으로']:,} · 건너뜀 {st['건너뜀:점프가 온다'] + st['건너뜀:빈자리 부족']:,})"
+                f"  문안 {put:,}블록 (밖으로 {st['밖으로'] + st['밖으로:점프가 온다']:,}"
+                f" · 그중 점프가 오는 자리 {st['밖으로:점프가 온다']:,} · 건너뜀 {skip:,})"
             )
         out = out + _SCN_MARKS
     return out

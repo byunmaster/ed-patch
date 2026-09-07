@@ -88,12 +88,21 @@ def cmd_seed(args) -> int:
     dic = json.loads(Path(args.dict).read_text(encoding="utf-8"))["lines"]
     data = load_script()
     bs = keyed(blocks())
-    hit = new = 0
+    hit = new = upd = 0
     for k, _b in bs:
         if k not in dic:
             continue
         hit += 1
-        if k in data:  # ⚠ 이미 든 판단을 자동으로 밀어내지 않는다(patcher-checklist 6)
+        if k in data:
+            # ⚠ 이미 든 판단을 자동으로 밀어내지 않는다(patcher-checklist 6).
+            # 🔴 다만 `by="dict"` 는 **판단이 아니라 사전 사본**이다 — 사전 쪽(PS1)이 QA 로
+            #    좋아지면 우리도 받아야 한다. `--refresh` 로 그 줄만 다시 긁는다.
+            #    `by="human"` 은 우리가 내린 판정이라 **무엇을 줘도 안 건드린다**(`why` 에 근거).
+            if args.refresh and data[k].get("by") == "dict" and data[k]["t"] != dic[k]["t"]:
+                if args.dry:
+                    print(f"  [{k[:8]}] {data[k]['t'][:38]}\n        → {dic[k]['t'][:38]}")
+                data[k] = {"t": dic[k]["t"], "by": "dict"}
+                upd += 1
             continue
         data[k] = {"t": dic[k]["t"], "by": "dict"}
         new += 1
@@ -102,6 +111,17 @@ def cmd_seed(args) -> int:
     uniq = {k for k, _ in bs}
     print(f"블록 {len(bs):,} · 고유 열쇠 {len(uniq):,}")
     print(f"사전 적중 {hit:,} 블록 · 정본에 새로 넣은 것 {new:,}")
+    human = sum(1 for v in data.values() if v.get("by") == "human")
+    if args.refresh:
+        print(f"사전이 고쳐져 따라간 것 {upd:,} · 우리 판정이라 그대로 둔 것 {human:,}")
+    else:
+        stale = sum(
+            1
+            for k, v in data.items()
+            if v.get("by") == "dict" and k in dic and dic[k]["t"] != v["t"]
+        )
+        if stale:
+            print(f"  ⚠ 사전이 그 뒤 고친 줄 {stale:,} — `seed --refresh` 로 받는다")
     print(f"정본 총 {len(data):,} 줄 ({'미저장 --dry' if args.dry else SCRIPT})")
     return 0
 
@@ -117,6 +137,20 @@ def cmd_stat(args) -> int:
     print(f"볼 값어치 있는 블록 {len(text):,} / 전체 {len(bs):,}")
     print(f"  덮인 블록 {done:,} = {done / max(1, len(text)):.1%}")
     print(f"  덮인 글자 {dchars:,} / {chars:,} = {dchars / max(1, chars):.1%}")
+
+    # 🔴 **재삽입 경로가 없는 정본을 센다.** 지금 붙일 수 있는 자리는 **시나리오 영역뿐**이다
+    #    (`patch_scn.py` 가 `scn.SCENARIO_RANGE` 만 본다). 전투·event·program 에만 있는 줄은
+    #    번역해 둬도 **화면에 안 나온다** — 그런데 `stat` 의 「덮인 비율」에는 잡히므로
+    #    조용히 는다. 실패로는 안 친다(경로가 없는 건 「할 일」이지 「결함」이 아니다).
+    #    ⚠ 이 자리는 patcher-checklist 「로더가 못 읽는 자료」다 — 주기 점검에서 다시 본다.
+    where: dict[str, set[str]] = {}
+    for k, b in bs:
+        where.setdefault(k, set()).add(b["src"])
+    orphan = [k for k in data if k in where and "scn_jp/scenario" not in where[k]]
+    lost = [k for k in data if k not in where]
+    print(f"  ⚠ 재삽입 경로 없음 {len(orphan):,} 줄 (전투·시스템 영역에만 있다)")
+    if lost:
+        print(f"  🔴 원문에 안 붙는 정본 {len(lost):,} 줄 — 덤퍼나 열쇠 규칙이 바뀌었나")
     return 0
 
 
@@ -244,6 +278,11 @@ def main() -> int:
     s = sub.add_parser("seed")
     s.add_argument("--dict", default=str(DICT))
     s.add_argument("--dry", action="store_true")
+    s.add_argument(
+        "--refresh",
+        action="store_true",
+        help="사전이 그 뒤 고친 `by=dict` 줄을 다시 받는다 (`by=human` 은 안 건드린다)",
+    )
     s.set_defaults(fn=cmd_seed)
     s = sub.add_parser("stat")
     s.set_defaults(fn=cmd_stat)
