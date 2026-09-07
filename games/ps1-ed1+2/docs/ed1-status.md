@@ -244,10 +244,14 @@ python3 tools/check_scn_jp_left.py          # 일본어 잔존(ED1 은 0 이어�
 - 🔴 **푸시는 유저 몫이다** — `origin/main` 이 로컬 `main` 의 조상이라 **일반 푸시로 나간다**
   (force 는 필요 없다, 09-07 실측). 08-13 의 히스토리 재작성 건은 끝났다 — 붙잡던 참조
   (`refs/original` · `backup-before-*` 태그)가 이미 없다.
-- ⚠ **이 머신엔 PS1 에뮬레이터 바이너리가 없다**(09-07 실측 — `mednafen` 없음). 인게임
-  확인은 맥(DuckStation)에서 한다. 여기서 돌리려면
-  `sh vendor/emucap/adapters/mednafen/build.sh` + BIOS 배치 —
-  [machine-setup.md](../../../docs/machine-setup.md) ③.
+- ✅ **이 머신에서 PS1 을 띄울 수 있다**(09-07 확인). `launch_plan` 이 `adapter_built: true` ·
+  `launch_blockers: []` 를 준다 — 바이너리는
+  `vendor/emucap/adapters/mednafen/work/mednafen/src/mednafen`, BIOS `scph5500/1/2` 는
+  `~/.local/share/emucap/firmware/` 에 있다.
+  🔴 **「없다」고 적었다가 같은 날 정정했다** — `find -maxdepth 6` 으로 훑었는데 바이너리가
+  그보다 깊은 자리에 있었다. **있는지 없는지는 `launch_plan` 에 물어야 한다**(권위 있는 답을
+  주는 쪽이 그것이다). 파일 시스템 추정으로 「환경이 없다」고 적으면 그 줄이 다음 세션의
+  판단을 막는다.
   ⚠ emucap 을 올린 세션엔 **Claude Code 재시작**이 필요하다(MCP 서버가 구 바이너리에 물려 있다).
 - 외부 의존물(emucap · 스킬 · 패치 템플릿)의 최신 여부는 **여기 안 적는다** — 적어 두면
   그날로 낡는다. `sh scripts/check-updates.sh` 가 정본이다.
