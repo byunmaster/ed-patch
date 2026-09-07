@@ -38,10 +38,11 @@ FAMILIES = [
 # ⇒ 한 줄 16칸이라 줄 재배치가 없다(유저 확정 2026-09-06: 타이틀만 네오둥근모, 오프닝·엔딩은 갈무리).
 FONT_ID = 5
 FONT_TAG = "<fd85>"
-FONT_CELL = 14
+FONT_CELL = int(os.environ.get("MD_CAPTION_CELL", "16"))
 # 후보 비교용 — 정본은 상수, `MD_CAPTION_FONT` 로 한 번씩 바꿔 구워 본다(실험 전용, 배포 빌드는 상수를 고친다).
-FONT_SRC = os.environ.get("MD_CAPTION_FONT", "galmuri14")
+FONT_SRC = os.environ.get("MD_CAPTION_FONT", "neodgm")  # 리소스 5 = 오프닝 전용 네오둥근모 16×16
 WIDTH = 16  # 피치 14 × 16 = 224px
+WIDTH_P16 = 14  # 피치 16 × 14 = 224px (네오둥근모)
 OFF_MAX = 0xFFF
 EXPECT = (
     10,
@@ -116,11 +117,12 @@ def seed(d: bytes) -> None:
 def _width_errors(k: str, ours: str) -> list[str]:
     import re
 
+    limit = WIDTH_P16 if "<fe10>" in ours else WIDTH  # 피치가 폭을 정한다
     errs = []
     for ln in re.sub(r"<[^>]*>", "", ours).split("\n"):
         w = krwrap.text_width(ln.rstrip())
-        if w > WIDTH:
-            errs.append(f"captions {k}: 줄 {w}칸 > {WIDTH}: {ln!r}")
+        if w > limit:
+            errs.append(f"captions {k}: 줄 {w}칸 > {limit}: {ln!r}")
     return errs
 
 

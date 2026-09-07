@@ -299,7 +299,7 @@ FONT4_HDR = (0x1A5502, 0x1A550E)
 FONT4_TABLE = (0x1A6222, 0x1A62CE)
 FONT4_GLYPHS = (0x1BB66E, 0x1BC68E)
 BDF7 = common.ROOT / "shared" / "fonts" / "Galmuri7.bdf"
-LABEL_R2 = {0xB1: "다", 0xC4: "음"}
+LABEL_R2 = {0xB1: "남", 0xC4: "다"}  # あと → 「남다」(PS1 정본 표기와 통일, 2026-09-06)
 
 
 def _pack_w(rows: list[list[int]], width: int) -> bytes:
