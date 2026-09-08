@@ -480,7 +480,7 @@ fi
 #   💡 그래서 **값을 한 곳에서 정하고 두 갈래가 같이 쓴다.** 갈래마다 다시 고르면 또 갈린다.
 #   ⚠ 시스템 것에는 그 명령이 아예 없어 `--size` 인자만 듣는다(띄우기 전에 크기를 정한다).
 #     만들려면 `sh scripts/emu/mednafen-build.sh` — 상태는 `--check`.
-MEDNAFEN_BIN="$REPO/.local/mednafen/bin/mednafen"
+MEDNAFEN_BIN="$REPO/.local/cache/mednafen/bin/mednafen"
 [ -x "$MEDNAFEN_BIN" ] || MEDNAFEN_BIN=mednafen
 case "$MEDNAFEN_BIN" in
   /*) echo "실행: $(basename "$IMAGE")  [$MOD]  (우리 빌드 — 창 크기 ⌥-/⌥+ · ⌥1~4)" ;;

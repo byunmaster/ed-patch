@@ -8,7 +8,7 @@
 #                되는데 방향키만 죽는 게 전형적 증상). ⚠ 저수준 키보드 경로라 입력 모니터링
 #                권한이 필요하므로 **--app 과 같이** 써야 의미가 있다
 #     --mapper   매퍼 편집기로 시작(-startmapper). 단축키를 바꿔 저장하면 **전체** 매퍼
-#                파일이 .local/dosbox/mapper.map 로 생성된다(부분 매퍼는 키보드를 죽인다)
+#                파일이 .local/cache/dosbox/mapper.map 로 생성된다(부분 매퍼는 키보드를 죽인다)
 #     --debug    DOSBox-X 디버거(-break-start). ⚠ 디버거 UI는 **실행한 터미널**에 뜨므로
 #                --app 과 같이 못 쓰고, -log-con 도 같은 터미널을 두고 부딪혀 뺀다
 #     --refresh  사본을 버리고 원본에서 다시 만든다(세이브·설정·패치 전부 초기화)
@@ -45,7 +45,7 @@
 #   hand_speedlock2  = **토글**                 → `     (SDL1 키심 96)
 #   mednafen 과 손가락이 같아진다(` 토글 · Tab 홀드). 한 번 뒤집어 봤다가 되돌린 결과다 —
 #   이름만 보고 speedlock 을 토글로 짐작하면 정확히 반대다.
-# ⚠ 이 배치는 `.local/dosbox/mapper.map`(머신 전용)에 있다. 그 파일이 날아가면 `--mapper` 로
+# ⚠ 이 배치는 `.local/cache/dosbox/mapper.map`(머신 전용)에 있다. 그 파일이 날아가면 `--mapper` 로
 #   매퍼 UI 를 열어 다시 잡는다(부분 매퍼는 금물 — 전체 파일이라야 한다).
 # ⚠ X 를 쓰면 **`-log-con` 이 살아난다** — 게임이 찍는 DOS 메시지가 로그에 남는다(ED4 를
 #   그걸로 진단했다). 진단 능력만 보면 X 가 낫다.
@@ -55,14 +55,14 @@
 #
 # ── 사본 방식 ────────────────────────────────────────────────────────────────
 # 원본 `originals/kr/dos-ed{1,2,3,4}`(gitignore, 소장본)는 **읽기만 한다.** 게임 본체를
-# `.local/dosbox/<game>/` 로 복사해 그 사본을 실행하므로, 세이브·설정은 물론 **DOS 쪽
+# `.local/cache/dosbox/<game>/` 로 복사해 그 사본을 실행하므로, 세이브·설정은 물론 **DOS 쪽
 # 패치 파일을 덮어써 가며 검증**할 수 있다(ed2-mantra-restore와 같은 방식).
 #
 # ⚠ **CD 이미지는 복사하지 않는다** — 용량의 95%가 CD인데(ED3: 482M 중 471M) 읽기
 # 전용이라 사본이 필요 없다. 원본에서 직접 마운트한다. 덕분에 4개 전부 떠도 사본은
 # ~69MB(ED1 15M + ED2 33M + ED3 11M + ED4 10M)로 끝난다.
 #
-# 로그: .local/dosbox/<game>.log (매 실행 초기화) · 스크린샷: .local/dosbox/capture
+# 로그: .local/cache/dosbox/<game>.log (매 실행 초기화) · 스크린샷: .local/cache/dosbox/capture
 #
 # ── 세이브 동기화 (기본 켜짐, --no-sync 로 끈다) ──────────────────────────────
 # 작업 머신은 원격(dev)인데 **DOSBox 는 GUI 라 맥에서만 뜬다.** 그래서 세이브가 맥에
@@ -229,7 +229,7 @@ if [ "$ENGINE" = staging ]; then MAPPERFILE=mapper-staging.map; else MAPPERFILE=
 ORIG="$REPO/originals/kr/$SRC"
 [ -d "$ORIG" ] || { echo "원본 없음: originals/kr/$SRC (소장본 필요 — originals/README.md)" >&2; exit 1; }
 
-BOX="$REPO/.local/dosbox"
+BOX="$REPO/.local/cache/dosbox"
 COPY="$BOX/$GAME"          # 쓰기 가능 사본 (세이브·설정·DOS 패치)
 mkdir -p "$BOX/capture"
 
@@ -237,7 +237,7 @@ mkdir -p "$BOX/capture"
 
 # ── 사본 만들기 (CD·런처 폴더 제외) ─────────────────────────────────────────
 if [ ! -f "$COPY/$MARKER" ]; then
-  echo "사본 생성: originals/kr/$SRC → .local/dosbox/$GAME (CD 제외)"
+  echo "사본 생성: originals/kr/$SRC → .local/cache/dosbox/$GAME (CD 제외)"
   rm -rf "$COPY"; mkdir -p "$COPY"
   for item in "$ORIG"/*; do
     [ -e "$item" ] || continue
@@ -262,7 +262,7 @@ fi
 
 # ── CD 마운트 줄 조립 ───────────────────────────────────────────────────────
 # ed2~4는 BGM이 CD 오디오라 드라이브가 없으면 음악 초기화가 실패한다.
-# .local/dosbox 기준 **상대경로**로 적어 생성 conf에 절대경로가 안 남게 한다.
+# .local/cache/dosbox 기준 **상대경로**로 적어 생성 conf에 절대경로가 안 남게 한다.
 MOUNTCD=""
 if [ -n "$CD" ]; then
   case "$CD" in
@@ -282,7 +282,7 @@ elif [ -n "$WANT_CD" ]; then
   [ -n "$MOUNTCD" ] || echo "⚠ CD 이미지 없음: originals/kr/$SRC/{CD,DosBox/CD}/*.{cue,iso} — BGM 초기화 실패 가능" >&2
 fi
 
-# ── conf 생성 (템플릿 → .local/dosbox/<game>.conf, 생성물은 gitignore) ────────
+# ── conf 생성 (템플릿 → .local/cache/dosbox/<game>.conf, 생성물은 gitignore) ────────
 sed -e "s|@GAME@|$GAME|g" -e "s|@DRIVE@|$DRIVE|g" -e "s|@CMD@|$CMD|g" \
     -e "s|@MOUNTCD@|$MOUNTCD|g" -e "s|@SBTYPE@|$SBTYPE|g" -e "s|@SBIRQ@|$SBIRQ|g" \
     -e "s|@MAPPERFILE@|$MAPPERFILE|g" -e "s|@CYCLES@|$CYCLES|g" -e "s|@CORE@|$CORE|g" \
@@ -366,7 +366,7 @@ fi
 # 나머지 키가 전부 언바인드돼 **키보드가 죽는다**(2026-07-31 실측). 게임 안 매퍼 UI
 # (Ctrl+F1)로 저장한 **전체 파일**만 유효하다. 손으로 만든 부분 매퍼는 치운다.
 if [ -f "$BOX/$MAPPERFILE" ] && [ "$(wc -l < "$BOX/$MAPPERFILE")" -lt 20 ]; then
-  echo "⚠ 부분 매퍼 감지 — 키보드가 죽으므로 제거한다: .local/dosbox/$MAPPERFILE" >&2
+  echo "⚠ 부분 매퍼 감지 — 키보드가 죽으므로 제거한다: .local/cache/dosbox/$MAPPERFILE" >&2
   rm -f "$BOX/$MAPPERFILE"
 fi
 rm -f "$BOX/$GAME.log"

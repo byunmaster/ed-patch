@@ -4,14 +4,14 @@
 #   scripts/patcher.sh [serve] [옵션]    빌드해서 127.0.0.1 로 띄운다 (기본 동작)
 #       --port N        포트 지정 (기본 8731)
 #       --no-open       브라우저를 자동으로 열지 않는다
-#   scripts/patcher.sh build             .local/patcher/index.html 로 빌드만 한다
+#   scripts/patcher.sh build             .local/cache/patcher/index.html 로 빌드만 한다
 #   scripts/patcher.sh deploy [옵션]     공개 리포(ed-patch)에 올린다
 #       --amend         마지막 커밋을 덮어쓴다(기본). 산출물 리포라 히스토리가
 #                       의미 없어 안정화 전까지는 이쪽을 쓴다
 #       --new           새 커밋을 쌓는다
 #       --dry-run       빌드만 하고 커밋·push 하지 않는다
 #       --msg "..."     커밋 메시지(생략 시 기본 문구)
-#       --repo-dir DIR  공개 리포 클론 위치(기본 .local/ed-patch, gitignore 안이라 안전)
+#       --repo-dir DIR  공개 리포 클론 위치(기본 .local/cache/ed-patch, gitignore 안이라 안전)
 #
 # 세 갈래가 모두 아래 build() 하나를 거친다. serve 로 본 것이 곧 deploy 되는 것이며,
 # 빌드 인자가 갈래마다 어긋날 수 없다 — 미리보기가 거짓말을 하지 않는다.
@@ -64,7 +64,7 @@ case "$CMD" in
 build)
     [ $# -eq 0 ] || { echo "build 는 인자를 받지 않는다: $*" >&2; exit 1; }
     echo "== 빌드"
-    build "$ROOT/.local/patcher/index.html"
+    build "$ROOT/.local/cache/patcher/index.html"
     ;;
 
 serve)
@@ -79,7 +79,7 @@ serve)
         shift
     done
 
-    OUT="$ROOT/.local/patcher"
+    OUT="$ROOT/.local/cache/patcher"
     echo "== 빌드"
     build "$OUT/index.html"
 
@@ -97,7 +97,7 @@ serve)
 deploy)
     MODE=amend
     MSG=""
-    REPO_DIR="$ROOT/.local/ed-patch"
+    REPO_DIR="$ROOT/.local/cache/ed-patch"
     while [ $# -gt 0 ]; do
         case "$1" in
             --amend)    MODE=amend ;;

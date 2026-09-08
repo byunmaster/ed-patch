@@ -78,7 +78,7 @@ else
 fi
 
 # ── 패치 템플릿 (참고용 클론) ─────────────────────────────────────────
-TPL="$ROOT/.local/ref/kr-patch-template"
+TPL="$ROOT/.local/cache/ref/kr-patch-template"
 TPL_URL=https://github.com/mcpads/create-kr-patch-template
 if [ -d "$TPL/.git" ]; then
   local_sha=$(git -C "$TPL" rev-parse HEAD)
@@ -93,7 +93,7 @@ if [ -d "$TPL/.git" ]; then
     fi
   fi
 else
-  echo "  patch-template 없음 — \`git clone --depth 1 $TPL_URL .local/ref/kr-patch-template\`"
+  echo "  patch-template 없음 — \`git clone --depth 1 $TPL_URL .local/cache/ref/kr-patch-template\`"
 fi
 
 [ "$UPDATE" = "0" ] && echo "\n(당기려면 --update. 스킬은 /plugin, emucap 갱신 후엔 재시작)"

@@ -258,7 +258,7 @@ SMB/NFS 로 직접 마운트해 여는 것도 되지만 권하지 않는다 — 
 ## PC-98 실행기 — np2kai (2026-09-06, DOSBox-X 를 대체)
 
 `sh scripts/emu.sh pc98-ed1` 이 np2kai 를 띄운다. **없으면 묻고 소스에서 빌드**한다(맥은 brew 로
-의존물 → `.local/np2kai/`, 인텔 맥에서 수 분). DOSBox-X 는 `--dosbox` 로 남겨 뒀다 — 전투에서 뻗던
+의존물 → `.local/cache/np2kai/`, 인텔 맥에서 수 분). DOSBox-X 는 `--dosbox` 로 남겨 뒀다 — 전투에서 뻗던
 현상은 DOSBox-X 탓이 아니라 우리 전투 문안 재삽입이었다(09-06 bisect).
 
 - **키(우리 소스 패치)**: `` ` `` 빨리감기 토글 · Tab 누르는 동안 빨리감기 · `\` 디스크 교체(FDD1

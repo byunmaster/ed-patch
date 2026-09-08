@@ -5,7 +5,7 @@
 #
 #   sh scripts/emu/pc98.sh pc98-ed1 [옵션...] [실행기 추가인자...]
 #
-#     --np2kai    (기본) np2kai 로 띄운다. 없으면 묻고 소스 빌드(.local/np2kai/). 우리 패치가 붙는다:
+#     --np2kai    (기본) np2kai 로 띄운다. 없으면 묻고 소스 빌드(.local/cache/np2kai/). 우리 패치가 붙는다:
 #                 ` 빨리감기 토글 · Tab 빨리감기 홀드 · \ 디스크 교체 · 방향키=텐키 · ⌘R 재시작 ·
 #                 ⌘L 마우스 잠금 토글(시작은 안 잡음, NP2KAI_MOUSE_LOCK=1 이면 예전처럼 잡는다 — ⌘M 은 macOS 최소화).
 #                 실행파일은 `NP2KAI_BIN` 또는 PATH 의 sdlnp21kai·sdlnp2kai·
@@ -45,7 +45,7 @@
 #
 # 💾 **세이브는 Scenario 디스크 「안」에 쓰인다** — 이 기종만 그렇다. 그래서 실행 사본을
 #    매번 새로 뜨는 이 스크립트가 **세이브를 매번 지우고 있었다**(2026-09-03 발견).
-#    지금은 종료할 때 세이브 매체를 `.local/pc98/saves/<게임>/<출처>-<해시>.d88` 로 떼어
+#    지금은 종료할 때 세이브 매체를 `.local/cache/pc98/saves/<게임>/<출처>-<해시>.d88` 로 떼어
 #    두고 dev 에 올린다. 자세한 건 아래 「💾 세이브」 절.
 #
 # ── 🔴 키가 안 먹을 때 ──────────────────────────────────────────────────────
@@ -213,14 +213,14 @@ np2kai_bin() {
   return 0
 }
 # ── np2kai 가 없으면 **묻고 빌드한다**(유저 요청 2026-09-06 — 다른 실행기는 `need_tool` 이
-#    brew 로 묻고 깐다. np2kai 는 brew 포뮬러가 없어 소스 빌드다). 자리는 머신 전용 `.local/np2kai/`:
+#    brew 로 묻고 깐다. np2kai 는 brew 포뮬러가 없어 소스 빌드다). 자리는 머신 전용 `.local/cache/np2kai/`:
 #      src/    git clone --depth 1 AZO234/NP2kai
 #      build/  cmake -G Ninja -D BUILD_SDL=ON -D USE_SDL=2 …  →  타깃 sdlnp21kai_sdl2(IA-32 판)
 #      bin/    결과 실행파일 사본 — `np2kai_bin` 이 PATH 보다 먼저 여기를 본다
 #    ⚠ 몇 분 걸린다. 「게임 켜자」가 빌드로 변하는 게 싫으면 n 을 치면 된다(비대화형이면 안내만).
 #    ⚠ ROM 은 못 깔아 준다 — 설정 폴더(`~/.config/sdlnp21kai/`)에 font.rom 등을 유저가 둔다.
 patch_sha1() { { sha1sum "$1" 2>/dev/null || shasum -a 1 "$1"; } | cut -c1-40; }
-NP2_HOME="${NP2KAI_HOME:-$(cd "$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || echo "$REPO/.git")/.." && pwd)/.local/np2kai}"
+NP2_HOME="${NP2KAI_HOME:-$(cd "$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || echo "$REPO/.git")/.." && pwd)/.local/cache/np2kai}"
 np2kai_install() {
   if [ "$(uname -s)" = Darwin ]; then
     command -v brew >/dev/null 2>&1 || { echo "⛔ brew 가 없다 — https://brew.sh 부터" >&2; return 1; }
@@ -358,7 +358,7 @@ SRC="$REPO/originals/jp/$GAME"
 #   ⚠ 그래서 **한 게임을 두 트리에서 동시에 띄우면 사본이 부딪힌다.** 아래에서 그 게임의
 #   옛 인스턴스를 먼저 죽이는 이유가 이것이기도 하다.
 MAIN=$(cd "$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || echo "$REPO/.git")/.." && pwd)
-RUN="${PC98_RUN_DIR:-$MAIN/.local/pc98}/$GAME"
+RUN="${PC98_RUN_DIR:-$MAIN/.local/cache/pc98}/$GAME"
 [ "$REFRESH" = 1 ] && rm -rf "$RUN"
 mkdir -p "$RUN"
 

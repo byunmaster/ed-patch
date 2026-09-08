@@ -1,8 +1,8 @@
 # 정발(DOS) 영웅전설 실행용 DOSBox-X 설정 **템플릿**.
-# scripts/emu/dosbox.sh 가 @…@ 자리를 채워 .local/dosbox/<game>.conf 로 생성한다(생성물은 gitignore).
+# scripts/emu/dosbox.sh 가 @…@ 자리를 채워 .local/cache/dosbox/<game>.conf 로 생성한다(생성물은 gitignore).
 #
 # 경로를 전부 상대로 둔 이유: 이 파일은 커밋되므로 로컬 절대경로를 담을 수 없다(CLAUDE.md).
-# dosbox.sh 가 .local/dosbox 로 cd 한 뒤 실행하므로 상대경로가 그 기준으로 해석된다.
+# dosbox.sh 가 .local/cache/dosbox 로 cd 한 뒤 실행하므로 상대경로가 그 기준으로 해석된다.
 #   @GAME@ = ed1|ed2|ed3|ed4 — 사본 디렉터리 이름이자 로그 파일 이름
 #   @WINRES@ = 창 크기 (`--size 1~4` → scripts/emu/winsize.sh 의 사다리)
 #
@@ -63,7 +63,7 @@ irq=@SBIRQ@
 dma=1
 
 [autoexec]
-# 게임 본체는 **원본이 아니라 사본**(.local/dosbox/<game>)을 마운트한다 — 세이브·설정은
+# 게임 본체는 **원본이 아니라 사본**(.local/cache/dosbox/<game>)을 마운트한다 — 세이브·설정은
 # 물론 DOS 패치 파일을 덮어써 가며 검증할 수 있다. CD는 읽기 전용이라 사본을 안 뜨고
 # originals/ 에서 직접 물린다(용량의 95%가 CD다).
 mount @DRIVE@ @GAME@

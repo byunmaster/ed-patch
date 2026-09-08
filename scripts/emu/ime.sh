@@ -49,7 +49,7 @@ _ime_main() {
 _ime_tis() {
   _m=$(_ime_main); [ -n "$_m" ] || return 0
   _src="$_m/scripts/emu/tis_select.swift"
-  _bin="$_m/.local/bin/tis-select"
+  _bin="$_m/.local/cache/bin/tis-select"
   [ -f "$_src" ] || return 0
   if [ ! -x "$_bin" ] || [ "$_src" -nt "$_bin" ]; then
     command -v swiftc >/dev/null 2>&1 || return 0

@@ -22,7 +22,7 @@ set -e
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 PATCH="$ROOT/scripts/emu/mednafen-winsize.patch"
-OUT="$ROOT/.local/mednafen"
+OUT="$ROOT/.local/cache/mednafen"
 BIN="$OUT/bin/mednafen"
 STAMP="$OUT/.patch.sha1"
 

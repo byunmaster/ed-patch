@@ -80,7 +80,15 @@ scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test
                        ⚠ 자격증명은 레포에 없다 — 인증은 크롬 프로필이 든다
   lib/select.sh     └ 화살표 키 선택 UI (에뮬 전용이 아니라 여기 둔다)
   worktree.sh       └ 게임별 워크트리 (originals 지역 링크까지 대신한다)
-.local/             이 머신 전용 (gitignore) — dosbox 실행 사본 · 패처 빌드 · 배포 레포 클론
+.local/             이 머신 전용 (gitignore). 🔴 **기본값은 보존이다** — 지워도 되는 건
+                    `cache/` 하나뿐이고 리셋은 `rm -rf .local/cache` 다(`work/` 와 같은 성질).
+                    ⚠ 「gitignore 니까 재생성되겠지」가 아니다 — 안에 **되살릴 수 없는 자료**가
+                    섞여 있다(소장 공략집을 실제로 날렸다). 칸별 표는 `.local/README.md`
+  cache/            └ ✅ **여기만 지운다** — 에뮬 빌드·실행 사본(dosbox·mednafen·np2kai·pc98) ·
+                       내려받은 글꼴 · 패처 빌드 · 배포 레포 클론 · 템플릿 클론
+  guide/  bios/     └ 🔴 소장자 제공물. 다시 못 구한다
+  inbox/<게임>/     └ 인게임 QA 스크린샷 — 라운드가 닫히면 **칸 안만** 정리한다
+                       (⚠ `inbox/` 바로 아래엔 출처 불명물이 쌓인다 — 남긴다)
   secrets.env       └ **바깥 서비스 열쇠는 여기 하나로** (DeepL · Gemini …). 새 `.env`
                        규약을 만들지 않는다 — `.local/` 이 이미 그 자리다. 도구는
                        `common.secret(이름)` 으로 읽고 **환경변수가 이긴다**.
@@ -111,9 +119,11 @@ games/<게임>/work/
   dist/      DIST_DIR    배포 차분(xdelta/BPS) — 아직 미사용
 ```
 
-루트에는 `work/` 를 두지 않는다. 스크립트가 만드는 머신 전용물은 **`.local/`** 이다
-(dosbox 실행 사본 · 패처 빌드 · 배포 레포 클론). 두 단어로 갈린다 — **`work` 는 게임 작업물,
+루트에는 `work/` 를 두지 않는다. 스크립트가 만드는 머신 전용물은 **`.local/cache/`** 다
+(에뮬 빌드·실행 사본 · 패처 빌드 · 배포 레포 클론). 두 단어로 갈린다 — **`work` 는 게임 작업물,
 `.local` 은 머신 전용.** 숨김인 이유는 gitignore 라서가 아니라 사람이 거의 안 열기 때문이다.
+🔴 **`.local` 자체는 「지워도 되는 칸」이 아니다** — 소장 공략집·BIOS·열쇠가 거기 산다.
+`rm -rf` 는 **`.local/cache` 까지만**이고, 그래서 재생성물을 그 한 칸으로 몰아 뒀다.
 
 ⚠ `derived/` 를 "산출물이니 재생성되겠지" 하고 버리면 **빌드가 아예 안 돈다**(2026-07-30 레포
 이관 때 실제로 겪었다). `derived/text/` 는 파생 출력이고, 커밋되는 소스는 `textmap/` 이다.
@@ -164,7 +174,7 @@ sh scripts/worktree.sh <게임>              # 게임별 워크트리 (originals
   칸을 나눈 이유는 갈래를 동시에 굴리기 때문이다 — ED1 QA 를 도는 사이 ED2 빌드가 덮어썼다
   (유저 요청 2026-08-15). 꼬리표는 `common.BUILD_TAG`(기본 = 현재 git 브랜치, `ED_BUILD_TAG`
   로 덮어씀)이고, 도구는 전부 `BUILD_DIR` 을 쓰므로 **하나도 안 고쳐도 따라온다.**
-- `dosbox.sh`는 원본을 읽기만 하고 **본체 사본**(`.local/dosbox/<game>`)을 실행한다 —
+- `dosbox.sh`는 원본을 읽기만 하고 **본체 사본**(`.local/cache/dosbox/<game>`)을 실행한다 —
   세이브·설정은 물론 DOS 패치 파일을 덮어써 가며 검증할 수 있다. CD는 읽기 전용이라
   사본을 안 뜨고 originals에서 직접 마운트한다(4개 전부 떠도 사본 68MB).
   `--app`·`--debug`·`--refresh` 참조.
