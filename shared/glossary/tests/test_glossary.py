@@ -126,6 +126,10 @@ def test_한_원문이_자리마다_다르면_갈라_담는다():
     유저 QA 2026-08-14).
     """
     assert G.lookup("強さ", "ui") is None, "맨 `強さ` 가 다시 들어왔다 — 자리로 갈라야 한다"
+    # `あと` 도 같은 부류다 — PCE 는 경험치표시의 **값**(낱말)인데, PC-98 은 「남은 N」으로
+    # 이어지고 PS1 ED3 는 뒤에 `ＭＰ` 가 붙는 **조각**이다. 맨 열쇠로 담으면 문장이 깨진다.
+    assert G.lookup("あと", "ui") is None, "맨 `あと` 가 다시 들어왔다"
+    assert G.lookup("あと@경험치표시", "ui") == "남다"
     assert G.lookup("強さ@파티메뉴", "ui") == "상태"
     assert G.lookup("強さ@전투커맨드", "ui") == "강함"
     assert G.lookup("強さ@능력치", "ui") == "힘"
@@ -162,6 +166,21 @@ def test_장음_부호는_정규화한다():
     """
     out = G.diff_labels({"リーダー": "리더", "メッセージ": "메시지"})
     assert out.diff == [] and out.unmatched == []
+
+
+def test_kr_texts_에는_화면에_안_나가는_것이_안_섞인다():
+    """🔴 정본을 손으로 훑으면 `_aliases` 의 값(`強さ@전투커맨드`)이 표시 문안으로 센다.
+
+    실측(pce-ed1 2026-09-08): 그 탓에 글리프 표에 `@`·「능」·「티」가 들어가 게이트가
+    「정본에 없는 글자 4자」로 울었다. 게임마다 규칙을 알 게 아니라 공용이 답을 준다.
+    """
+    txt = "".join(G.kr_texts())
+    assert "@" not in txt, "자리가 붙은 열쇠가 표기 쪽에 샜다"
+    import re
+
+    assert not re.search(r"[ぁ-んァ-ヶ一-龯]", txt), "일본어가 표기 쪽에 샜다"
+    # 진짜 표기는 다 들어 있다
+    assert "기타" in txt and "강함" in txt
 
 
 def test_원문이_다르면_별칭이_아니다():

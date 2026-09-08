@@ -8,6 +8,7 @@
     lookup("ルディア")            # '루디아'  (범주를 안 가리면 전부에서 찾는다)
     lookup("カース", "monster")   # '카스'
     diff_labels({"その他": "그외"})  # LabelCheck(diff=[('その他','기타','그외')], unmatched=[])
+    kr_texts()                   # 화면에 나가는 우리 표기만(글리프 커버리지용)
     table("item")                # {JP: KR} — 순서는 정본 파일 그대로
 
 ⚠ **범주별로 둔다.** 같은 JP 가 범주에 따라 다른 것을 가리킨다(`カース` = 아이템 커스 /
@@ -107,6 +108,21 @@ def diff_labels(mine, category="ui", title="eiyuu"):
         elif canon[key] != ours:
             diff.append((jp, canon[key], ours))
     return LabelCheck(diff, unmatched)
+
+
+def kr_texts(title="eiyuu"):
+    """**화면에 나가는 우리 표기**만 — 글리프 커버리지·폰트 서브셋용.
+
+    🔴 **정본을 손으로 훑으면 화면에 안 나가는 것이 섞인다**(pce-ed1 실측 2026-09-08).
+    `_aliases` 의 **값**은 `強さ@전투커맨드` 꼴이라, 정본을 평평하게 훑던 게임이 그걸
+    표시 문안으로 세어 글리프 표에 `@`·「능」·「티」가 들어갔다. 게이트가 「정본에 없는
+    글자」로 울어서 잡혔다.
+    ⇒ **게임마다 「밑줄로 시작하는 절은 건너뛴다」를 알 게 아니라 공용이 답을 준다.**
+
+    ⚠ 열쇠(JP)도 안 준다 — `強さ@파티메뉴` 처럼 **자리가 붙은 열쇠**가 있고, 그것도
+    화면에 나가는 글자가 아니다.
+    """
+    return [kr for c in load(title)["categories"].values() for kr in c.values()]
 
 
 def all_names(title="eiyuu"):
