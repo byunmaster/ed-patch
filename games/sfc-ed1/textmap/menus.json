@@ -1,0 +1,446 @@
+{
+ "EPひょうじ@A0B": {
+  "kr": "EP 표시",
+  "state": "draft",
+  "budget_tiles": 9,
+  "width_tiles": 7,
+  "fits": true,
+  "row": 3,
+  "x0": 2,
+  "canon_exception": "원문이 다르다 — SFC 는 `EPひょうじ`, 정본 열쇠는 `経験値表示`. 별칭은 표기 차이지 낱말 차이가 아니다(정본 _doc)"
+ },
+ "あと@A15": {
+  "kr": "남다",
+  "state": "ps1",
+  "budget_tiles": 4,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 1,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "いどう@A0B": {
+  "kr": "이동",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 5,
+  "x0": 2,
+  "canon_exception": "원문이 다르다 — SFC 는 `いどう`(속도 없음), 정본 열쇠는 `移動速度`"
+ },
+ "うりたい@A0D": {
+  "kr": "팔기",
+  "state": "draft",
+  "budget_tiles": 4,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 3,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "うん@A05": {
+  "kr": "행운",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 7,
+  "x0": 2
+ },
+ "かいたい@A0D": {
+  "kr": "사기",
+  "state": "draft",
+  "budget_tiles": 4,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 1,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "かいふくのじゅもん@A0C": {
+  "kr": "회복 주문",
+  "state": "ps1",
+  "budget_tiles": 15,
+  "width_tiles": 11,
+  "fits": true,
+  "row": 7,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "かいふくのアイテム@A0C": {
+  "kr": "회복 아이템",
+  "state": "ps1",
+  "budget_tiles": 15,
+  "width_tiles": 11,
+  "fits": true,
+  "row": 9,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "かしこさ@A05": {
+  "kr": "지혜",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 3,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "こうげき@A05": {
+  "kr": "공격력",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 9,
+  "x0": 2
+ },
+ "じゅもん@A01": {
+  "kr": "주문",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 1,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "すてる@A01": {
+  "kr": "버린다",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 7,
+  "x0": 2,
+  "note": "PS1 정본(patch_sys_ui 0xBE2AE). D1=B 로 한 칸이 되어 4칸에 든다",
+  "canon": "shared/glossary ui"
+ },
+ "すてる@B0A": {
+  "kr": "버린다",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 1,
+  "x0": 2,
+  "note": "PS1 정본(patch_sys_ui 0xBE2AE). D1=B 로 한 칸이 되어 4칸에 든다",
+  "canon": "shared/glossary ui"
+ },
+ "すてる@B0C": {
+  "kr": "버린다",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 3,
+  "x0": 2,
+  "note": "PS1 정본(patch_sys_ui 0xBE2AE). D1=B 로 한 칸이 되어 4칸에 든다",
+  "canon": "shared/glossary ui"
+ },
+ "すてる@C0A": {
+  "kr": "버린다",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 1,
+  "x0": 2,
+  "note": "PS1 정본(patch_sys_ui 0xBE2AE). D1=B 로 한 칸이 되어 4칸에 든다",
+  "canon": "shared/glossary ui"
+ },
+ "すばやさ@A05": {
+  "kr": "민첩",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 5,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "せってい@A06": {
+  "kr": "설정",
+  "state": "draft",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 7,
+  "x0": 2,
+  "canon_exception": "가리키는 게 다르다 — 우리 `せってい` 는 시스템 창의 **한 항목**이고 정본 `戦闘設定` 은 **그 창 이름**이다"
+ },
+ "ぜんいんのせってい@A0C": {
+  "kr": "전원 설정을",
+  "state": "ps1",
+  "budget_tiles": 15,
+  "width_tiles": 11,
+  "fits": true,
+  "row": 11,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "そうび@A01": {
+  "kr": "장비",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 5,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "そうび@B0C": {
+  "kr": "장비",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 1,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "そのた@A01": {
+  "kr": "기타",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 11,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "そのた@B0A": {
+  "kr": "기타",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 5,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "そのた@B0C": {
+  "kr": "기타",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 7,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "そのた@C0A": {
+  "kr": "기타",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 5,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "たたかいのじゅもん@A0C": {
+  "kr": "전투 주문",
+  "state": "ps1",
+  "budget_tiles": 15,
+  "width_tiles": 11,
+  "fits": true,
+  "row": 5,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "つかう@A01": {
+  "kr": "사용",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 3,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "つよさ@A01": {
+  "kr": "상태",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 9,
+  "x0": 2,
+  "canon": "shared/glossary ui",
+  "canon_site": "파티메뉴"
+ },
+ "つよさ@A05": {
+  "kr": "힘",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 2,
+  "fits": true,
+  "row": 1,
+  "x0": 2,
+  "canon_site": "능력치",
+  "canon": "shared/glossary ui"
+ },
+ "つよさ@B0A": {
+  "kr": "상태",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 3,
+  "x0": 2,
+  "canon": "shared/glossary ui",
+  "canon_site": "파티메뉴"
+ },
+ "つよさ@B0C": {
+  "kr": "상태",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 5,
+  "x0": 2,
+  "canon": "shared/glossary ui",
+  "canon_site": "파티메뉴"
+ },
+ "つよさ@C0A": {
+  "kr": "상태",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 3,
+  "x0": 2,
+  "canon": "shared/glossary ui",
+  "canon_site": "파티메뉴"
+ },
+ "ぼうぎょ@A05": {
+  "kr": "방어력",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 11,
+  "x0": 2
+ },
+ "オートかいふく@A0C": {
+  "kr": "자동 회복",
+  "state": "ps1",
+  "budget_tiles": 15,
+  "width_tiles": 9,
+  "fits": true,
+  "row": 3,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "オートバトル@A0C": {
+  "kr": "자동 전투",
+  "state": "ps1",
+  "budget_tiles": 15,
+  "width_tiles": 9,
+  "fits": true,
+  "row": 1,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "システム@A06": {
+  "kr": "시스템",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 5,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "セーブ@A06": {
+  "kr": "저장",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 3,
+  "x0": 2
+ },
+ "メッセージ@A0B": {
+  "kr": "메시지",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 7,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "リーダー@A01": {
+  "kr": "리더",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 13,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "リーダー@B04": {
+  "kr": "리더",
+  "state": "ps1",
+  "budget_tiles": 4,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 0,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "リーダー@B0A": {
+  "kr": "리더",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 7,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "リーダー@B0C": {
+  "kr": "리더",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 9,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "リーダー@C0A": {
+  "kr": "리더",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 7,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "レベルアップ@A0B": {
+  "kr": "레벨업",
+  "state": "ps1",
+  "budget_tiles": 9,
+  "width_tiles": 6,
+  "fits": true,
+  "row": 1,
+  "x0": 2,
+  "canon": "shared/glossary ui"
+ },
+ "ロード@A06": {
+  "kr": "로드",
+  "state": "ps1",
+  "budget_tiles": 6,
+  "width_tiles": 4,
+  "fits": true,
+  "row": 1,
+  "x0": 2
+ }
+}
