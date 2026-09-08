@@ -238,6 +238,60 @@ def bake_name_box(out: bytearray, rom: bytes, slot, code_tile: dict[int, int]) -
     return done
 
 
+# ── 창 표 밖의 머리 상자 ────────────────────────────────────────────────────────────────
+# 🔴 `menus.py` 의 창 표(27×3)가 **못 잡는 조각**이 있다. 「데이터를 지운다」의 머리 상자가
+#    그것이다 — A06(`$03:C817`, 7×10) 바로 뒤 `$03:C8A7` 에 7워드 두 줄이 더 붙어 있는데
+#    표의 어느 항목도 그 자리를 안 가리킨다(전수 확인). 그래서 `menu_bake` 가 안 굽고 화면엔
+#    원문 「けす」 가 남았다(유저 제보 ⑵ — 뺏긴 타일이라 「문다」로 보였다).
+# 🔑 **찾은 길** — 코드→타일 표(`$03:F3EC`)의 `け` 자리에 **읽기 BP 를 걸어도 안 걸린다**
+#    ⇒ 코드가 아니라 **구워진 타일**이다. 그래서 VRAM 워드를 롬에서 되짚어 자리를 찾았다
+#    (이름 상자 `$03:F5B4` 를 찾은 그 수법 그대로).
+# ⚠ 조각이라 **위·아래 두 줄**만 있다(아래 = 위 + $10). 칸 수는 둘이다.
+LOOSE_BOXES = [
+    {"key": "けす", "addr": 0x03C8A7, "at": 2, "cells": 2, "stride": 14},
+]
+
+
+def bake_loose_boxes(out: bytearray, rom: bytes, slot, code_tile: dict[int, int]) -> list[str]:
+    """창 표가 못 잡는 머리 상자를 한글 타일로 다시 굽는다. `slot` 은 메뉴와 **같은 배정기**."""
+    import tiles
+
+    inv: dict[int, int] = {}
+    for c, t in tiles.code_tile(rom).items():
+        inv.setdefault(t, c)
+    # ⚠ `menus.json` 은 열쇠가 `원문@창id` 라 **표 밖 조각을 담을 자리가 없다** — `battle_ui.json`
+    #   의 `loose` 에 둔다(거기가 이미 창 아닌 고정 문자열의 자리다)
+    src = json.loads(
+        (common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8")
+    )["loose"]
+    by_jp = {x["jp"]: x["kr"] for x in src}
+    done = []
+    for box in LOOSE_BOXES:
+        o = common.snes2off(box["addr"])
+        # ⚠ **원문을 되읽어 확인한다** — 자리를 손으로 적었으므로 그 자리가 맞는지 값으로 본다
+        got = ""
+        for i in range(box["at"], box["at"] + box["cells"]):
+            w = rom[o + 2 * i] | (rom[o + 2 * i + 1] << 8)
+            c = inv.get(w & 0x3FF)
+            got += text.TABLE.get(c, "") if c is not None else ""
+        if got != box["key"]:
+            raise SystemExit(f"머리 상자 {common.fmt(box['addr'])} 의 원문이 {got!r} — {box['key']!r} 이어야 한다")
+        kr = by_jp.get(box["key"])
+        if not kr:
+            raise SystemExit(f"머리 상자 원문 {box['key']!r} 이 battle_ui.json 의 loose 에 없다")
+        if len(kr) > box["cells"]:
+            raise SystemExit(f"머리 상자 {kr!r} 이 {box['cells']}칸을 넘는다")
+        cells = list(kr) + [" "] * (box["cells"] - len(kr))
+        for i, ch in enumerate(cells):
+            top = o + 2 * (box["at"] + i)
+            bot = o + box["stride"] + 2 * (box["at"] + i)
+            w_t, w_b = (0x0108, 0x0108) if ch == " " else (slot(ch), slot(ch) + 0x10)
+            out[top : top + 2] = w_t.to_bytes(2, "little")
+            out[bot : bot + 2] = w_b.to_bytes(2, "little")
+        done.append(kr)
+    return done
+
+
 def menu_windows() -> list[tuple[str, int]]:
     """라벨이 있는 창 전부 — `menus.json` 의 키 꼬리(`…@A01`)에서 유도한다(목록을 손으로 안 든다)."""
     labels = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
@@ -343,10 +397,12 @@ def menu_bake(out: bytearray, rom: bytes) -> dict:
         raise SystemExit("라벨이 칸을 넘는다:\n  " + "\n  ".join(too_long))
     # 파티 이름 상자도 **같은 배정기**로 굽는다 — 상주 글리프는 한 웅덩이에서 나와야 한다
     names = bake_name_box(out, rom, slot, code_tile)
+    loose = bake_loose_boxes(out, rom, slot, code_tile)
     return {
         "glyphs": "".join(slot_of),
         "labels": len(done),
         "names": names,
+        "loose_boxes": loose,
         "resident_codes": used_codes,
         "windows": len(menu_windows()),
     }
@@ -465,6 +521,9 @@ def mutable_ranges() -> list[tuple[int, int]]:
         p2 = rom[base + 3 * wid] | (rom[base + 3 * wid + 1] << 8) | (rom[base + 3 * wid + 2] << 16)
         o2 = common.snes2off(p2)
         r.append((o2, o2 + 4 + 2 * rom[o2 + 2] * rom[o2 + 3]))
+    for box in LOOSE_BOXES:  # 창 표가 못 잡는 머리 상자 — 두 줄만 바뀐다
+        o3 = common.snes2off(box["addr"])
+        r.append((o3, o3 + box["stride"] + 2 * (box["at"] + box["cells"])))
     import chapters  # 챕터 조립 표(장 6 × 17 롱 주소)
 
     b = common.snes2off(chapters.TABLE)
