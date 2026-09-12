@@ -5,8 +5,17 @@
 #   기계 작업만 다른 트리로 뺀다. 정발 대조·QA 는 직렬이라 트리를 늘려도 안 빨라진다 —
 #   손이 나뉠 뿐이다. 본 트리는 지금 굴리는 타이틀(ps1-ed1+2)이 잡는다.
 #
-#   sh scripts/worktree.sh ps1-ed1+2        # 열기(없으면 만든다)
+#   sh scripts/worktree.sh ps1-ed1+2          # 열기(없으면 만든다)
+#   sh scripts/worktree.sh ps1-ed1+2 --as re  # **같은 게임의 둘째 트리** (브랜치 game/ps1-ed1+2-re)
 #   sh scripts/worktree.sh --list
+#
+# ⚠ **`--as` 는 한 게임을 두 세션이 나눠 맡을 때만 쓴다**(마스터 확정 2026-09-13). 기준은
+#   「게임이 둘인가」가 아니라 **「세션이 둘인가」**다 — 한 트리에서 두 세션이 빌드하면
+#   **바뀐 파일을 읽고도 성공한다.** 처음 쓴 자리: ps1-ed1+2 의 문안 QA 와 RE(그래픽·ASM)를
+#   갈랐다. 나누는 선은 **일의 종류**여야 한다(문안 ↔ RE) — 같은 파일을 두 트리에서 고치면
+#   머지가 지옥이 된다.
+#   ⚠ 둘째 트리는 **게임 tip 에서 딴다**(main 이 아니다). 끝나면 그 브랜치를 게임 브랜치로
+#     머지하거나 게임 쪽이 rebase 로 받는다.
 #
 # ⚠ **`originals/` 는 gitignore 라 워크트리에 안 따라온다.** 심볼릭 링크로 이어야 도구가
 #   원본을 찾는데, `originals/README.md` 가 추적되는 파일이라 디렉터리 자체는 이미 있으니
@@ -104,10 +113,23 @@ EOF
 fi
 
 GAME="${1:-}"
-[ -n "$GAME" ] || { echo "쓰기: sh scripts/worktree.sh <게임>   (예: ps1-ed1+2)"; exit 2; }
+[ -n "$GAME" ] || { echo "쓰기: sh scripts/worktree.sh <게임> [--as <접미>]   (예: ps1-ed1+2)"; exit 2; }
+shift
 
-BR="game/$GAME"
-WT="$DIR/$GAME"
+# `--as <접미>` — 같은 게임의 **둘째 트리**. 브랜치·디렉터리에만 접미가 붙고, 내용 경로
+# (`games/<게임>/` · originals 목록 · derived 원천)는 **게임 이름 그대로**다.
+SUF=""
+if [ "${1:-}" = "--as" ]; then
+  SUF="${2:-}"
+  [ -n "$SUF" ] || { echo "--as 뒤에 접미를 준다 (예: --as re)"; exit 2; }
+  case "$SUF" in
+    *[!a-z0-9-]*) echo "접미는 소문자·숫자·하이픈만 (받은 것: $SUF)"; exit 2 ;;
+  esac
+fi
+
+TAG="$GAME${SUF:+-$SUF}"
+BR="game/$TAG"
+WT="$DIR/$TAG"
 
 if [ -d "$WT" ]; then
   echo "이미 있다: $WT"
@@ -115,10 +137,17 @@ else
   mkdir -p "$DIR"
   if git -C "$ROOT" show-ref --quiet "refs/heads/$BR"; then
     git -C "$ROOT" worktree add "$WT" "$BR"
+  elif [ -n "$SUF" ]; then
+    # 둘째 트리 — **게임 tip 에서** 딴다(main 이 아니다). 그러면 그 게임의 정본·파생물이
+    # 그대로 보이고, 머지할 때 차분이 「내가 한 것」만 남는다.
+    base="game/$GAME"
+    git -C "$ROOT" show-ref --quiet "refs/heads/$base" ||
+      { echo "기준 브랜치 $base 가 없다 — 먼저 sh scripts/worktree.sh $GAME"; exit 2; }
+    git -C "$ROOT" worktree add -b "$BR" "$WT" "$base"
   else
     git -C "$ROOT" worktree add -b "$BR" "$WT"
   fi
-  echo "만들었다: $WT  (브랜치 $BR)"
+  echo "만들었다: $WT  (브랜치 $BR${SUF:+ — game/$GAME 에서 땄다})"
 fi
 
 # originals — 그 게임이 선언한 것만 건다
@@ -156,6 +185,16 @@ DST_DERIVED="$WT/games/$GAME/work/derived"
 # ⚠ **허브는 파생물의 주인이 아니라 거울이다**(배치를 뒤집은 뒤로 — 본 트리 = main).
 #   허브 쪽이 심볼릭 링크면 그건 이 워크트리를 되비추는 것이라, 복사하면 **자기를 자기에게
 #   복사**하게 된다(실측 2026-08-18: 그렇게 44K 짜리 반쪽 사본이 생겼다).
+# ⚠ 허브가 링크면 **어디를 가리키는지 풀어 본다** — 이 트리를 되비추면 복사가 자기복사지만,
+#   **형제 트리**를 가리키면 그게 원천이다(`--as` 둘째 트리에서 실측 2026-09-13: 건너뛰어서
+#   `derived` 가 비었고 빌드가 안 돌았다). 「링크면 건너뛴다」는 첫 트리만 있던 시절의 전제였다.
+if [ -L "$SRC_DERIVED" ]; then
+  REAL=$(cd "$(dirname "$SRC_DERIVED")" && cd "$(readlink "$SRC_DERIVED")" 2>/dev/null && pwd || true)
+  MINE=$(cd "$(dirname "$DST_DERIVED")" 2>/dev/null && pwd || true)
+  if [ -n "$REAL" ] && [ "$REAL" != "$MINE/derived" ]; then
+    SRC_DERIVED="$REAL"   # 형제 트리가 원천이다
+  fi
+fi
 if [ -L "$SRC_DERIVED" ]; then
   echo "  work/derived — 허브가 이 트리를 되비추고 있다(복사 안 함)"
 elif [ -d "$SRC_DERIVED" ]; then
@@ -177,8 +216,12 @@ fi
 #                  허브에 남아 있던 **8/18 낡은 이미지**를 대신 받을 뻔했다(이 레포의 1급 사고).
 # ⚠ 이 블록은 한동안 **`--shared` 갈래 안에 잘못 들어가 있었다** — 거기선 `$GAME` 이 안 잡혀
 #   `set -u` 로 즉시 죽고(=`--shared` 전면 불통), 정작 게임 갈래에서는 **한 번도 안 돌았다.**
+# ⚠ **둘째 트리(`--as`)는 허브를 되비추지 않는다** — 그 자리는 첫 트리가 주인이고, 덮으면
+#   `pull-build.sh` 가 엉뚱한 트리의 이미지를 가리킨다(이 레포의 1급 사고).
 HUB="$ROOT/games/$GAME/work"
+[ -z "$SUF" ] || HUB=""
 for sub in derived build; do
+  [ -n "$HUB" ] || continue
   [ -d "$WT/games/$GAME/work/$sub" ] || continue
   mkdir -p "$HUB"
   if [ -L "$HUB/$sub" ] || [ ! -e "$HUB/$sub" ]; then
@@ -206,7 +249,10 @@ cat <<EOF
   $PY games/$GAME/tools/build.py      # 원본이 보이는지부터
   sh scripts/check.sh
 
-⚠ 이 워크트리에서는 **자기 games/$GAME/ 만** 만진다.
+${SUF:+⚠ **이 트리는 $GAME 의 둘째 트리다**(브랜치 $BR). 첫 트리와 **같은 파일을 고치지 않는다** —
+   일의 종류로 갈라 맡고, 끝나면 game/$GAME 으로 머지한다. 빌드 꼬리표는 브랜치라 안 섞인다.
+
+}⚠ 이 워크트리에서는 **자기 games/$GAME/ 만** 만진다.
    \`shared/\` · \`scripts/\` · \`.claude/skills/\` · \`docs/\` 는 **main 에서** 고치고 받아 온다 —
    여기서 고치면 다른 게임의 조판이 조용히 바뀐다(조판 지문이 잡지만, 그건 사후다).
 EOF
