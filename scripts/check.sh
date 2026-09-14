@@ -49,9 +49,17 @@ fi
 for g in $GAMES; do
   gate="$ROOT/games/$g/check.sh"
   if [ ! -f "$gate" ]; then
-    # ⚠ **조용히 넘어가지 않는다.** 게이트가 없는 게임을 「통과」로 보이게 하면 그게 곧
-    #   dos-ed2 가 여태 무방비였던 이유다.
-    echo "── [$g]  ⚠ 게이트 없음 (games/$g/check.sh 를 만들어라)"
+    # 🔴 **실패로 친다.** 종전엔 줄만 찍고 `continue` 했는데, 그러면 맨 끝에서
+    #   **✅ 커밋해도 되는 상태** 가 찍힌다 — 초록이 「깨끗하다」가 아니라 **「아무도 안
+    #   돌렸다」**가 되는 자리다(2026-09-14 실측: `game/ps1-ed1+2-re` 워크트리에서 무인자로
+    #   돌리면 `games/ps1-ed1+2-re` 를 찾다 못 찾고 그대로 ✅ 였다).
+    #   ⚠ 게이트 없는 게임을 조용히 「통과」로 보이게 한 것이 dos-ed2 가 여태 무방비였던 이유다.
+    if [ ! -d "$ROOT/games/$g" ]; then
+      echo "── [$g]  ❌ 그런 게임이 없다 — 이름을 확인해라 (sh scripts/check/which_game.sh --why)"
+    else
+      echo "── [$g]  ❌ 게이트 없음 (games/$g/check.sh 를 만들어라)"
+    fi
+    fail=1
     continue
   fi
   echo "── [$g]"

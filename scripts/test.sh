@@ -42,6 +42,14 @@ for t in "$ROOT"/scripts/*/tests/test_*.py "$ROOT"/shared/*/tests/test_*.py; do
 done
 
 for g in $(sh "$ROOT/scripts/check/which_game.sh" "$@"); do
+  # 🔴 **없는 게임이면 실패다.** 글롭이 안 맞으면 `run` 이 조용히 넘어가서, 이름을 잘못
+  #   유도한 채로 **「✅ 전부 통과」** 가 찍힌다 — 초록이 「깨끗하다」가 아니라 「아무도 안
+  #   돌렸다」가 되는 자리다(2026-09-14, `game/<게임>-re` 워크트리 실측).
+  if [ ! -d "$ROOT/games/$g" ]; then
+    printf '\n❌ 그런 게임이 없다: %s (sh scripts/check/which_game.sh --why)\n' "$g"
+    fail=1
+    continue
+  fi
   for t in "$ROOT/games/$g"/tools/tests/test_*.py; do
     run "$t"
   done

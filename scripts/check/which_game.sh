@@ -29,7 +29,20 @@ case "${1:-}" in
   "")
     br=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
     case "$br" in
-      game/*) echo "${br#game/}" | say branch ;;
+      game/*)
+        # ⚠ **워크트리 꼬리표를 벗긴다.** 한 게임을 두 세션이 나눠 맡으면 브랜치가
+        #   `game/<타이틀>-re` 처럼 꼬리를 단다(`worktree.sh --as`). 그대로 쓰면
+        #   `games/<타이틀>-re` 를 찾다 못 찾고 **「게이트 없음」으로 넘어가며 ✅ 를 찍는다**
+        #   — 초록이 「깨끗하다」가 아니라 **「아무도 안 돌렸다」**가 된다(2026-09-14 실측).
+        g="${br#game/}"
+        while [ ! -d "$ROOT/games/$g" ]; do
+          case "$g" in
+            *-*) g="${g%-*}" ;;                # 꼬리를 한 칸씩 벗긴다
+            *)   g="${br#game/}"; break ;;     # 못 찾으면 원래 이름으로 — 아래가 경고한다
+          esac
+        done
+        echo "$g" | say branch
+        ;;
       *) ls "$ROOT/games" | say fallback ;;
     esac
     ;;
