@@ -163,3 +163,36 @@ stale 오버레이가 남지 않는다(빌드 실패 시 `*.failed` 로 산출�
 
 ⚠ **「엔진이 그런다」로 보인 것 중 셋이 우리가 낸 것이었다.** 가르는 법은 하나 —
 최종 바이트를 떠서 원문과 나란히 놓는다.
+
+## 9. 검사기 자신의 커버리지 — 전수 실측 (2026-09-13)
+
+`docs/patcher-checklist.md` 4-B 의 물음 셋(⑴ 실제 분모 ⑵ 선언 분모 ⑶ 판정)을 이 게임의
+검사기 39개 전부에 돌렸다. **7개(18%)가 갈려 있었다** — 전부 "도크스트링은 넓고 코드는
+좁았다"는 같은 원인이다.
+
+### 갈린 것 — 고쳤다
+
+| 검사기 | 실제 분모(수정 전) | 선언 분모 | 조치 |
+| --- | --- | --- | --- |
+| `check_window_nl` | ED1(`range(1,7)`) | 전체 | `SCN_COUNT` 로 ED1+ED2, 게이트 편입 |
+| `check_shop_verbs` | ED1 | 전체 | 동일 |
+| `check_variants` | ED1(하드코딩이라 `--disc` 로 ED2 선택 자체가 불가능했다) | 전체 | 동일 |
+| `check_leader_variants` | ED1 | 전체 | 동일 |
+| `lock_lines.observe()` | ED1(`SCENES`) | "전 블록" | `SCENES_OBSERVE` 신설로 ED1+ED2 — 등록 4,941→11,902블록(가장 무거웠다) |
+| `check_same_jp` | ED1(`--games` 기본값) | 암묵적 전체("화면에서 갈리는가") | 게이트 호출에 `--games ED1,ED2` 명시 — 넓혀도 새 결함 0건 |
+| `check_block_join` | `script/ED*SCN*.json`(씬 대사)만 | 암묵적 전체("이어 그려지는 블록 경계") | **미수정** — `textmap/*.json`(전투·이벤트) 미포함을 041③ 조사 중 발견, 도크스트링에 할 일로 기록만 함 |
+
+### 좁지만 의도가 맞아 도크스트링에 "게이트 밖" 을 못 박은 것
+
+`check_battle_wrap`(ED1 배틀 코퍼스 전용, ED2 워드랩 미포함 — 슬롯 오버플로는 별도로
+이미 게이트됨) · `check_align_fit`·`check_dup_jp`·`check_orphan_entries`·`check_page_holes`·
+`check_spell_rules`·`check_text_health`(전부 정발 배정 시대 진단기, 자체 번역 전환 이후
+재검토 없이 남았다 — `check_text_health` 는 게이트에 아예 안 물려 있기까지 했다).
+
+### 확인해서 이상 없었던 것
+
+`check_proper_nouns`·`check_tail_cut`(`scene_list(None)` 기본이 전체) ·
+`check_onomatopoeia`·`check_speech_level`(`glob("ED*SCN*.json")` 와일드카드라 신규 씬
+자동 포함) · `check_terms`·`check_forbidden`·`check_josa_agreement`(파일명 `_ed2` 접미사로
+이미 양쪽 판별) · `check_ed2_reinsert`(이름부터 ED2 전용, 의도대로) · `check_josa_sites`·
+`check_overlay_base`·`check_movie_anchors`(1회성 엔진 주소 도출기, 게이트 대상이 아니다).
