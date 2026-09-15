@@ -85,6 +85,27 @@ make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" >> "$OUT/build.log" 
 make install >> "$OUT/build.log" 2>&1
 
 [ -x "$BIN" ] || { echo "🔴 빌드는 끝났는데 $BIN 이 없다 — $OUT/build.log" >&2; exit 1; }
+
+# 🔴 **빌드 성공이 「모듈이 다 들어갔다」는 뜻이 아니다**(실측 2026-09-15). mednafen 의 configure 는
+#   의존물이 없으면 **그 모듈만 조용히 끄고** 나머지를 짓는다 — 맥에서 `ss` 가 그렇게 빠졌고,
+#   `emu.sh` 가 `-force_module ss` 를 주자 에뮬레이터가 「Unrecognized system」으로 죽어서
+#   **원인이 에뮬레이터 쪽으로 보였다.** 두 기종에서 같은 증상을 겪고서야 갈렸다.
+#   ⇒ 여기서 **기대 목록과 대 본다.** 우리가 실제로 쓰는 기종만 든다(`emu.sh` 의 `mednafen <모듈>`).
+WANT_MODS="ss psx pce pcfx md"
+have=$("$BIN" --help 2>&1 | sed -n 's/.*Emulation modules: *//p' | head -1 || true)
+missing=
+for m in $WANT_MODS; do
+  printf '%s' "$have" | tr ' ' '\n' | grep -qx "$m" || missing="$missing $m"
+done
+if [ -n "$missing" ]; then
+  echo "🔴 빌드는 됐는데 **모듈이 빠졌다:**$missing" >&2
+  echo "   있는 것: $have" >&2
+  echo "   왜 빠졌는지는 configure 로그에 있다 —" >&2
+  echo "     grep -inE 'saturn|WARNING|disabl' $OUT/build.log | head -30" >&2
+  echo "   ⚠ 이 상태로도 나머지 기종은 돌아간다. 빠진 기종만 시스템 mednafen 으로 떨어진다." >&2
+else
+  echo "· 모듈 확인:$(printf '%s' " $WANT_MODS")  전부 있다"
+fi
 printf '%s' "$want" > "$STAMP"
 echo "✅ $BIN"
 echo "   이제 ⌥- · ⌥+ 로 한 단계씩, ⌥1~4 로 바로 창 크기를 · ⌥M 으로 소리를 끄고 켠다 (1 매우 작음 … 4 큼)"

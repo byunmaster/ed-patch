@@ -255,9 +255,27 @@ candidates() {
     [ -d "$REPO/originals/$_r/$GAME" ] && images_in "원본" "$REPO/originals/$_r/$GAME"
   done
   [ "$ORIG" = 1 ] && return 0
-  for _d in "$BUILDS"/*/; do
+  for _d in $(build_dirs); do
+    images_in "빌드 $(basename "$_d")" "$_d"
+  done
+}
+
+# 🔴 **빌드는 메인 트리에만 있지 않다.** 세션마다 워크트리에서 굽고 산출물을 거기 그대로 둔다
+#   (루트 `CLAUDE.md` 「빌드 산출물은 워크트리 안에 그대로 둔다」) — `pull-build.sh` 가 같은
+#   이유로 양쪽을 훑는다. 여기만 메인 트리를 보고 있어서 **빌드를 받아 놓고도 원본이 떴다**
+#   (마스터 실측 2026-09-15, ps1-ed3). 후보가 0개면 조용히 원본만 남아 자동 선택되므로
+#   에러도 안 난다 — 이 레포의 1급 사고(낡은/엉뚱한 이미지를 정상으로 오해)와 같은 부류다.
+#   ⚠ 메인 트리 칸이 워크트리로 가는 **심볼릭 링크**인 경우가 있어(실측: 둘) 같은 칸이 두 줄로
+#   보인다 ⇒ **실경로로 중복을 접는다.**
+build_dirs() {
+  _seen=
+  for _d in "$REPO/games/$GAME_DIR/work/build"/*/ \
+            "$REPO/.claude/worktrees"/*/"games/$GAME_DIR/work/build"/*/; do
     [ -d "$_d" ] || continue
-    images_in "빌드 $(basename "$_d")" "${_d%/}"   # 끝 슬래시를 떼야 경로에 // 가 안 생긴다
+    _rp=$(cd "$_d" && pwd -P) || continue
+    case "$_seen" in *"|$_rp|"*) continue ;; esac
+    _seen="$_seen|$_rp|"
+    printf '%s\n' "${_d%/}"
   done
 }
 
@@ -350,7 +368,30 @@ while :; do
     exit 1
   fi
 
-  BUILDS="$REPO/games/$GAME/work/build"
+  # 🔴 **`originals` 의 이름과 `games/` 의 이름이 늘 같지는 않다**(실측 2026-09-15).
+  #   합본은 `games/` 쪽만 합쳐져 있다 — `originals/jp/ps1-ed3` · `ps1-ed4` 인데
+  #   게임 폴더는 `games/ps1-ed3+4` 하나다(루트 `CLAUDE.md` 「합본은 `+`로 잇는다」).
+  #   게임 목록은 **originals 에서 뽑으므로**(위 `games()`) `ps1-ed3` 이 그대로 GAME 이 되고,
+  #   그러면 `games/ps1-ed3/work/build` 라는 **없는 칸**을 보게 된다 ⇒ 후보에 원본만 남고
+  #   **빌드를 받아 놓고도 원본이 뜬다.** 조용히 틀리는 쪽이라 한참 못 알아챈다.
+  #   ⇒ 합본 이름을 펼쳐 주인을 찾는다. 새 규약이 아니라 **이미 있는 이름 규칙**을 읽는 것이다.
+  game_dir_for() {
+    if [ -d "$REPO/games/$1" ]; then printf '%s' "$1"; return 0; fi
+    for _g in "$REPO"/games/*/; do
+      _n=${_g%/}; _n=${_n##*/}
+      case "$_n" in *+*) ;; *) continue ;; esac
+      _head=${_n%%+*}          # ps1-ed3+4 → ps1-ed3
+      _pre=${_head%-*}         # ps1-ed3   → ps1
+      if [ "$1" = "$_head" ]; then printf '%s' "$_n"; return 0; fi
+      for _x in $(printf '%s' "${_n#*+}" | tr '+' ' '); do
+        if [ "$1" = "$_pre-ed$_x" ]; then printf '%s' "$_n"; return 0; fi
+      done
+    done
+    printf '%s' "$1"; return 0            # 못 찾으면 원래 이름 — 아래가 「빌드 없음」으로 알린다
+  }
+  GAME_DIR=$(game_dir_for "$GAME")
+  [ "$GAME_DIR" = "$GAME" ] || echo "   빌드 칸: games/$GAME_DIR (합본)"
+  # (빌드 칸은 `build_dirs()` 가 메인 트리 + 워크트리를 함께 훑는다)
   [ -n "$IMAGE" ] && break                         # 파일을 직접 줬으면 고를 것이 없다
 
   TAG=$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null | sed 's#.*/##; s#[^A-Za-z0-9._-]#-#g')
@@ -480,12 +521,36 @@ fi
 #   💡 그래서 **값을 한 곳에서 정하고 두 갈래가 같이 쓴다.** 갈래마다 다시 고르면 또 갈린다.
 #   ⚠ 시스템 것에는 그 명령이 아예 없어 `--size` 인자만 듣는다(띄우기 전에 크기를 정한다).
 #     만들려면 `sh scripts/emu/mednafen-build.sh` — 상태는 `--check`.
+#   🔴 **그 빌드에 이 기종 모듈이 있는지 먼저 본다**(실측 2026-09-15). mednafen 의 configure 는
+#     의존물이 없으면 **그 모듈만 조용히 끄고 빌드는 성공**한다 — 맥의 우리 빌드에 `ss` 가
+#     그렇게 빠져 있었다. 그 상태로 `-force_module ss` 를 주면 에뮬레이터가
+#     **「Unrecognized system "ss"!」**로 죽어서, 원인이 우리 빌드가 아니라 **에뮬레이터 쪽으로**
+#     보인다. 두 기종(ss-ed3 · ss-ed1+2)에서 같은 증상을 겪고서야 갈렸다.
+#     ⇒ 없으면 **시끄럽게 알리고 시스템 것으로 떨어진다**(창 크기 단축키는 잃지만 뜨긴 뜬다).
+_has_mod() {  # $1=바이너리 · $2=모듈 — 있으면 0
+  "$1" --help 2>&1 | sed -n 's/.*Emulation modules: *//p' | head -1 |
+    tr ' ' '\n' | grep -qx "$2" && return 0
+  return 1
+}
 MEDNAFEN_BIN="$REPO/.local/cache/mednafen/bin/mednafen"
 [ -x "$MEDNAFEN_BIN" ] || MEDNAFEN_BIN=mednafen
 case "$MEDNAFEN_BIN" in
-  /*) echo "실행: $(basename "$IMAGE")  [$MOD]  (우리 빌드 — 창 크기 ⌥-/⌥+ · ⌥1~4)" ;;
+  /*) if _has_mod "$MEDNAFEN_BIN" "$MOD"; then
+        echo "실행: $(basename "$IMAGE")  [$MOD]  (우리 빌드 — 창 크기 ⌥-/⌥+ · ⌥1~4)"
+      else
+        echo "⚠ 우리 빌드에 [$MOD] 모듈이 없다 — 시스템 mednafen 으로 간다(창 크기 단축키 없음)."
+        echo "  다시 지으려면: sh scripts/emu/mednafen-build.sh   (상태: --check)"
+        MEDNAFEN_BIN=mednafen
+        echo "실행: $(basename "$IMAGE")  [$MOD]"
+      fi ;;
   *)  echo "실행: $(basename "$IMAGE")  [$MOD]  (시스템 mednafen — 창 크기 단축키 없음)" ;;
 esac
+if ! _has_mod "$MEDNAFEN_BIN" "$MOD"; then
+  echo "🔴 이 mednafen 에는 [$MOD] 모듈이 없다 — 이미지가 아니라 **에뮬레이터** 문제다." >&2
+  echo "   확인: $MEDNAFEN_BIN --help | grep 'Emulation modules'" >&2
+  echo "   고치기: sh scripts/emu/mednafen-build.sh" >&2
+  exit 1
+fi
 if [ "$SYNC" != 1 ]; then
   # shellcheck disable=SC2086
   exec "$MEDNAFEN_BIN" -force_module "$MOD" -filesys.path_sav "$SAVEREL" $EXTRA "$IMAGE"
