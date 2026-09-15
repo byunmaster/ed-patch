@@ -101,7 +101,7 @@ MANUAL = {
     # 안 실으면 그 이름만 화면에 일본어로 남는다.
     "デ・オクト": "디오쿠토",
     "ストライプツ": "스트라이프츠",
-    "プルダーム": "풀담",
+    "プルダーム": "플다암",
     "ブランナ": "브란나",
     "雷娘": "뇌랑",
     "ブラムナクイーン": "브람나퀸",
@@ -214,13 +214,21 @@ def records(buf):
     """[(시작, 끝)] — 능력치표 **끝**부터 다음 표 시작까지가 한 레코드다.
 
     ⚠ 표의 시작에서 자르면 레코드 머리에 표가 들어와 이름을 못 찾는다.
+
+    🔴 **마지막 표 뒤 꼬리를 빠뜨렸었다**(2026-09-13 실측) — 마지막 `STAT` 매치부터
+    버퍼 끝까지를 담는 항이 없어서, 그 안에 있던 이름(예: MON0 의 `赤スライムＡ` D~F류
+    변형)이 `name_strings`·`_recover_embedded` 어느 쪽에도 안 걸려 화면에 일본어로 남았다
+    (`check_scn_jp_left` 의 ED2MON 편입으로 처음 드러났다). 끝에 `(marks[-1].end(),
+    len(buf))` 를 더해 닫는다.
     """
     marks = list(STAT.finditer(buf))
     if not marks:
         return []
-    return [(0, marks[0].start())] + [
-        (marks[i].end(), marks[i + 1].start()) for i in range(len(marks) - 1)
-    ]
+    return (
+        [(0, marks[0].start())]
+        + [(marks[i].end(), marks[i + 1].start()) for i in range(len(marks) - 1)]
+        + [(marks[-1].end(), len(buf))]
+    )
 
 
 def ps1_names(group):

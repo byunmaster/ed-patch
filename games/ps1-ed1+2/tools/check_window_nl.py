@@ -58,10 +58,17 @@ def raws_of(name):
     return {e["entry_id"]: bytes.fromhex(e["raw_hex"]) for e in doc["entries"] if e.get("raw_hex")}
 
 
+# 🔴 **편마다 씬 수가 다르다** — ED1 여섯 · ED2 열셋. 여기를 `range(1, 7)` 로 두면
+#    **ED2 가 통째로 분모 밖**이 된다(2026-09-12 실측: 마스터가 화면에서 찾은 창 앞 개행
+#    결손 넷이 전부 ED2 였고 이 검사기는 초록이었다). **배선은 돼 있는데 분모가 반쪽**인
+#    꼴이라 게이트가 거짓 초록을 냈다.
+SCN_COUNT = {"ED1": 6, "ED2": 13}
+
+
 def scan(game="ED1", scenes=None):
     """[(씬, eid, 원본 `\\n%c` 수, 우리 수, 렌더 미리보기)] — 창 앞 개행이 모자란 블록."""
     out = []
-    for scn in scenes or range(1, 7):
+    for scn in scenes or range(1, SCN_COUNT[game] + 1):
         name = f"{game}SCN{scn}"
         tr, _, _ = R.load_translations(name.replace("SCN", "_SCN"), name)
         raws = raws_of(name)
@@ -145,7 +152,8 @@ def verify(name, eid, wins):
 
 
 def main():
-    rows = scan()
+    # ⚠ **두 편을 다 돈다.** 한쪽만 돌면 그쪽만 초록이고 다른 편은 안 보인다.
+    rows = scan("ED1") + scan("ED2")
     print(f"창 앞 개행 결손 {len(rows)}블록")
     deep = "--suggest" in sys.argv or "--apply" in sys.argv
     show = rows if deep else rows[:20]
@@ -174,8 +182,12 @@ def main():
         for nm, e, wins in plans:
             sc = ov.setdefault(nm, {})
             cur = dict(sc.get(str(e)) or scene_map(nm).get(e) or {})
-            if not cur.get("table") or cur.get("nl_after"):
-                continue  # 좌표가 없거나 이미 손으로 넣은 건 안 건드린다
+            # 🔴 **`table` 을 요구하지 않는다**(2026-09-12). 예전엔 `not cur.get("table")` 로
+            #    걸렀는데 그건 **배정 시대 가정**이다 — 자체 번역 블록(`script/`)은 좌표가
+            #    없어서 전부 튕겼고, 실측으로 ED2 23건이 「제안은 ✅ 인데 반영 0건」이 됐다.
+            #    런타임은 `table` 과 무관하게 `nl_after` 를 읽는다(`reinsert_kr_pilot:3428`).
+            if cur.get("nl_after"):
+                continue  # 이미 손으로 넣은 건 안 건드린다
             cur["nl_after"] = wins
             cur["note"] = (cur.get("note") or "") + (
                 " · 창 앞 개행 복원(check_window_nl 2026-08-06)"

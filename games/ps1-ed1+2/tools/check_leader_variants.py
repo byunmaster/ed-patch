@@ -75,16 +75,21 @@ def families(game, scn):
     return out
 
 
+# 🔴 **편마다 씬 수가 다르다**(ED1 6 · ED2 13). 인자 없이 부르면 한 편만 보던 것을
+#    2026-09-12 에 고친다 — 두 편의 씬을 다 분모에 넣는다.
+_SCN_COUNT = {"ED1": 6, "ED2": 13}
+
+
 def main():
-    game = "ED1"
     scenes = [a for a in sys.argv[1:] if a.startswith("ED")] or [
-        f"{game}SCN{i}" for i in range(1, 7)
+        f"{g}SCN{i}" for g in ("ED1", "ED2") for i in range(1, _SCN_COUNT[g] + 1)
     ]
     import reinsert_kr_pilot as R
 
     total = bad = 0
     lines = ["# 리더별 대사 변형 감사", ""]
     for scn in scenes:
+        game = scn[:3]
         n = int(scn.split("SCN")[1])
         tr, _, _ = R.load_translations(f"{game}_SCN{n}", scn)
         ov = R._load_overrides().get(scn, {})

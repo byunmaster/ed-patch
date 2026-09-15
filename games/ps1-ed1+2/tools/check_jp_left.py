@@ -8,6 +8,12 @@
 문자열처럼 잡힌다(실측 39건). 전투 코퍼스는 **코드 참조를 따라가는** `corpus_strings` 가
 정본이다.
 
+🔴 **이 파일은 전각 SJIS만 본다 — 반각 가타카나(JIS X 0201, `0xA1~0xDF`)는 원리상 못
+본다**(2026-09-14, 마스터 QA 051 — HUD 지명이 반각으로만 있어 전각 검색 전부가 0건을
+찍었다. `check_scn_jp_left.py`의 `check_mon_name_no_live_jp`엔 반각 축을 추가했지만,
+**여기(ED.EXE 전용 구조 — `patch_items` 테이블·전투 코퍼스)는 아직 안 넓혔다** — 범위가
+커서 이번 라운드엔 보류했다. **여기 초록불을 "전각+반각 다 깨끗하다"로 읽지 말 것.**
+
     python3 tools/check_jp_left.py            # 요약
     python3 tools/check_jp_left.py -v         # 남은 문자열까지
 """

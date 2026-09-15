@@ -1887,7 +1887,7 @@ LITERAL_NAMES = {
     "ドラント": "드랜트",
     "クルスにいた女": "크루즈 여자",
     "奥にいる道具屋": "안쪽 도구점",
-    "プルダーム": "풀담",
+    "プルダーム": "플다암",
     "青いマントの男": "푸른 망토의 남자",
 }
 
@@ -4208,6 +4208,26 @@ def _build_scene(name, lba, size, identity, fixed):
     if identity:
         assert bytes(out_file) == data, f"{name}: 아이덴티티 라운드트립 실패"
         return None, f"{name}: 라운드트립 OK (포인터 {patched}건 = 원본 동일)", {}
+
+    # ED2SCN8 jp0 — "イシュタ"(이름,8B)+널4B+"やあ こんにちは。"(본문) 두 조각이 한
+    # nul종단 안에 있는데 **본문 시작(오프셋 12)을 직접 가리키는 내부 참조가 따로
+    # 있어**(델타=12) `mid_block_ref` 로 통째로 제외돼 있었다(2026-09-13, 마스터 QA
+    # 051 — 인게임에 이 창만 원문 그대로 남아 있었다). 이름을 **정확히 12바이트로**
+    # (문안+널패딩) 맞추면 그 델타 경계가 그대로 보존된다 — 재배치도 포인터 패치도
+    # 필요 없이 제자리에서 안전하게 두 조각을 따로 번역할 수 있다. `excluded` 판정
+    # 자체는 건드리지 않는다(범용 안전장치는 그대로 두고, 이 한 자리만 직접 되쓴다).
+    if name == "ED2SCN8":
+        name_kr = encode_ext("이슈타")
+        body_kr = encode_ext("야, 안녕하세요.")
+        name_slot, total_end = 12, 0x1D
+        body_slot = total_end - name_slot
+        assert len(name_kr) + 1 <= name_slot, f"jp0 이름 슬롯 초과: {len(name_kr) + 1}B > {name_slot}B"
+        assert len(body_kr) + 1 <= body_slot, f"jp0 본문 슬롯 초과: {len(body_kr) + 1}B > {body_slot}B"
+        out_file = bytearray(out_file)
+        out_file[0:name_slot] = name_kr.ljust(name_slot, b"\x00")
+        out_file[name_slot:total_end] = body_kr.ljust(body_slot, b"\x00")
+        out_file = bytes(out_file)
+        excluded.pop(0, None)
 
     n_tr = sum(1 for _, _, _, _, eid in layout if eid in translations and eid not in excluded)
     used = sum(nl for _, _, _, nl, _ in layout)

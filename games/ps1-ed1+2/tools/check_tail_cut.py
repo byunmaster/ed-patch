@@ -117,6 +117,10 @@ def scan(verbose=False):
         for chain, text in chained(made):
             for nm, body in windows(text):
                 n = body.strip("\n").count("\n") + 1 + (1 if nm else 0)
+                # ⚠ 이 비교는 reinsert_kr_pilot 의 `lim = LINES_PER_PAGE - 1 if has_name` 과
+                #   **같은 경계**다 — 여기선 이름을 본문에 더하고(n) 거기선 한계에서 뺀다(lim).
+                #   `limit = LINES_PER_PAGE - 1` 로 "맞추려" 하면 안전한 본문 5 를 오탐
+                #   처리한다(2026-09-13 회귀 확인·되돌림 — 040 조사 중 나온 착시).
                 if n > R.LINES_PER_PAGE:
                     runs.append((chain, n, nm, body))
         return _report(cur, win, lines, runs, spare, verbose)

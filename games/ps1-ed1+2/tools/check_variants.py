@@ -116,20 +116,26 @@ def scan(game, scn):
     return hits
 
 
+# 🔴 **편마다 씬 수가 다르다**(ED1 6 · ED2 13). `game` 이 하드코딩 "ED1" 이라 인자를 줘도
+#    ED2 를 고를 방법이 아예 없었다(2026-09-12) — `only.startswith(game)` 이 늘 ED1 기준이라
+#    `ED2SCN3` 를 줘도 무시됐다. 두 편을 각각 돈다.
+_SCN_COUNT = {"ED1": 6, "ED2": 13}
+
+
 def main():
-    game = "ED1"
-    only = next((a for a in sys.argv[1:] if a.startswith(game)), None)
+    only = next((a for a in sys.argv[1:] if a.startswith("ED")), None)
     total = 0
-    for scn in range(1, 7):
-        name = f"{game}SCN{scn}"
-        if only and only != name:
-            continue
-        hits = scan(game, scn)
-        total += len(hits)
-        if hits:
-            print(f"\n{name}: 변형 겹침 **{len(hits)}건**")
-            for jid, table, eid, n, m in hits:
-                print(f"  jp{jid:<5} {table}#{eid:<4} 변형 {m}벌 중 **{n}벌**이 한 창에")
+    for game in ("ED1", "ED2"):
+        for scn in range(1, _SCN_COUNT[game] + 1):
+            name = f"{game}SCN{scn}"
+            if only and only != name:
+                continue
+            hits = scan(game, scn)
+            total += len(hits)
+            if hits:
+                print(f"\n{name}: 변형 겹침 **{len(hits)}건**")
+                for jid, table, eid, n, m in hits:
+                    print(f"  jp{jid:<5} {table}#{eid:<4} 변형 {m}벌 중 **{n}벌**이 한 창에")
     print(f"\n합계 {total}건" + ("" if total else " — 깨끗하다"))
 
 

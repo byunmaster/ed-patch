@@ -34,9 +34,14 @@ UI = {
     0xBE2A4: "장비",
     0xBE2AE: "버린다",
     0xBE2B8: "상태",
-    # ⚠ **「외」는 의존명사라 띄운다**(맞춤법, 2026-09-08). 슬롯 10B 에 6B 라 여유 4B.
+    # 🔴 **「기타」다**(유저 확정 2026-09-08, 정발 화면 대조). 하루 안에 두 번 바뀐 자리라
+    #   경위를 남긴다: `그외` → `그 외`(「외」가 의존명사라 띄운다) → **`기타`**.
+    #   ⚠ 앞 판단이 틀린 게 아니다 — **띄어쓰기로 풀려던 문제를 낱말을 바꿔 없앤 것**이다.
+    #   근거는 **정발 ED1 이 「기타」**라는 것이고(ED2 정발은 `그외`로 갈려 있는데 그쪽이
+    #   맞춤법이 틀린 쪽이다), 한 낱말이라 **띄어쓰기 문제가 아예 없어진다.**
+    #   덤으로 **2칸**이라 고정 칸 메뉴를 쓰는 MD·SFC 에도 유리하다.
     #   ED2 는 `patch_ed2_sys.positional()` 이 이 값을 자리로 끌어가 같이 움직인다.
-    0xBE2C2: "그 외",
+    0xBE2C2: "기타",
     0xBE2CC: "리더",
     # ── 전투 커맨드 여덟 — **ED2 정발로 두 편 통일**(유저 확정 2026-08-17) ──────────
     # 원문은 `戦う·呪文·守る·使う·武器·オート·強さ·逃げる` 로 **ED1(ED.EXE 0xBE2D8)과
@@ -137,12 +142,13 @@ PLACES_BASE, PLACES_STRIDE = 0xBE690, 14
 # ⭐ **워프 목록 슬롯만 다르게 쓰는 자리**(유저 확정 2026-08-30).
 # `PLACES` 의 값은 **두 소비자**가 쓴다 — ① ED.EXE 슬롯(워프 목록·HUD 조립) ② `patch_scn_headers`
 # 의 JP→KR 치환 사전. 리셸은 그 둘이 갈려야 한다:
-#   · 워프 목록에는 **`리셸항`** 이 맞다 — 그 목적지의 HUD 플레이트가 `리셸항` 이라
-#     목록과 화면이 어긋난다(유저 QA 2026-08-30).
+#   · 워프 목록에는 **`리셸항구`** 가 맞다 — 그 목적지의 HUD 플레이트가 `리셸항구` 라
+#     목록과 화면이 어긋난다(유저 QA 2026-08-30, 011 판정으로 `항`→`항구` 전환 후 값 갱신
+#     2026-09-13 — "항→항구" 가 이 자리에도 적용됐는데 주석이 옛 값 `리셸항`으로 낡아 있었다).
 #   · 치환 사전의 `リシェール`(짧은 꼴)은 **`리셸`** 이어야 한다 — ED2SCN3·7 의 플레이트
 #     다섯이 그 짧은 꼴이고 거기선 `리셸` 이 맞다.
 # 🔴 **원문이 갈린 건 판단이 아니라 자리 부족이다** — `リシェールの港` 는 15B(널 포함)라
-#    슬롯 14B 에 안 들어간다. 우리 `리셸항` 은 7B 라 들어간다. 즉 **우리는 원문보다 일관되게
+#    슬롯 14B 에 안 들어간다. 우리 `리셸항구` 는 9B 라 들어간다. 즉 **우리는 원문보다 일관되게
 #    갈 수 있다.** (전수 대조 2026-08-30: 두 층이 갈린 지명은 이 하나뿐이다.)
 SLOT_OVERRIDE = {"リシェール": "리셸항구"}
 
@@ -231,6 +237,175 @@ PLACES = [  # (PS1 일본어, 정발 한국어) — JP는 SCN 헤더 치환 키
     ("廃坑", "폐광"),
     ("ニルギド", "니르기드"),
 ]
+
+# 058(2026-09-14, 마스터 판정) — "늑대입"의 갇힌 자리(SCN 헤더, 뒤가 살아있는 포인터라
+# 8B 뿐)는 위 PLACES 표를 바꾸면 patch_scn_headers()의 슬롯 assert 가 그 자리에서
+# 빌드를 실패시킨다(공유 표라 한쪽만 늘릴 수 없다). ⇒ **표는 안 바꾼다** — 대신 칸이
+# 넉넉한 자리만 좌표로 직접 "늑대의입"으로 되돌린다(정발 원표기 복원). 좌표마다
+# 원본 바이트를 assert 해 슬롯이 안 밀렸는지 확인한다(034 식).
+# ⚠ 후보로 나온 자리 중 ED2SCN7 0x885f(트레일링 널 183)는 **살아있는 참조가 없다**
+# (find_refs 확인) — 대사 블록 꼬리의 죽은 잔존이라 넣어도 화면에 안 뜬다. 뺐다.
+# 🔴 **꼬리 공백이 잡음이 아니라 필수였다**(마스터 정정, 2026-09-14 — 052 에서는
+# 접미 뒤 공백이 잡음이었는데 여기선 정반대다). ED.EXE 정본 지명표는 지명+접미를
+# **엔진이 직접 이어 붙인다**(위 `patch_scn_headers` 인접 주석 — 이름 복사와 접미
+# 복사 사이에 공백이 없다, `RAM 0x800856C0`). 그래서 "베르가광산남서"처럼 안 붙게
+# **지명 문자열 자기 안에 공백을 넣어 둔다** — 마스쿤·리젤·세리스·왕가의묘·수정의탑
+# 전부 꼬리가 `20 00`(공백+널)이었는데 "늑대입"→"늑대의입" 되돌리며 그 공백을
+# 빠뜨렸다. `狼の口` 하나만 어긴 게 아니라 **이 표 전체의 계약**이다.
+FULL_PLACE_RESTORES = (
+    # (파일, LBA, 크기, 오프셋, 원본 바이트(꼬리 포함, byte-assert), 새 KR, 전체 슬롯 크기)
+    ("ED.EXE", ED_LBA, ED_SIZE, 0xBE8F8, bytes.fromhex("8abf8ae990d2"), "늑대의입 ", 14),
+)
+
+
+def restore_full_place_names():
+    """`FULL_PLACE_RESTORES`(ED.EXE 정본 지명표)와 ED2.EXE HUD·워프 사본을 되돌린다.
+
+    build.py 맨 끝, **최종 이미지**에 직접 적용한다(finalize_connector_space와 같은
+    자리 — 이 파이프라인의 다른 스크립트가 이 바이트를 다시 쓸 일이 없어 순서
+    걱정이 없다). 공유 표(PLACES)나 patch_scn_headers 의 슬롯 계산은 그대로 둔다 —
+    이 함수가 손대는 자리는 **그 표의 소비 경로 밖**(직접 좌표)이다.
+    """
+    img = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
+    n = 0
+    with open(img, "r+b") as f:
+        for label, lba, size, off, orig, kr, slot in FULL_PLACE_RESTORES:
+            buf = bytearray(extract(lba, size, path=img))
+            assert buf[off : off + len(orig)] == orig, (
+                f"058 지명 복원 {label} @0x{off:X} 불일치: {bytes(buf[off : off + len(orig)]).hex()} != {orig.hex()}"
+            )
+            kb = H.encode_kr(kr) + b"\x00"
+            assert len(kb) <= slot, f"058 지명 복원 {label} {kr!r} {len(kb)}B > 슬롯 {slot}B"
+            buf[off : off + slot] = kb.ljust(slot, b"\x00")
+            write_user_data(f, lba, bytes(buf), label=f"{label} 지명 복원({kr})")
+            n += 1
+    # ED2.EXE — HUD 판(0x9A1F0)·워프 목적지 표(0x9A478) 사본. 둘 다 꼬리 여유가
+    # 넉넉해(각 10B·8B) 8B 내용 + 널이 쉽게 들어간다(정적 실측, 2026-09-14).
+    ed2_targets = (
+        (0x9A1F0, bytes.fromhex("8abf8ae990d2"), 16),  # HUD 판, 슬롯 16B(6B+10널)
+        (0x9A478, bytes.fromhex("8abf8ae990d2"), 14),  # 워프 목적지 표, 슬롯 14B(6B+8널)
+    )
+    ED2_LBA, ED2_SIZE = 756, 872448
+    with open(img, "r+b") as f:
+        buf = bytearray(extract(ED2_LBA, ED2_SIZE, path=img))
+        for off, orig, slot in ed2_targets:
+            assert buf[off : off + len(orig)] == orig, (
+                f"058 지명 복원 ED2.EXE @0x{off:X} 불일치: {bytes(buf[off : off + len(orig)]).hex()} != {orig.hex()}"
+            )
+            kb = H.encode_kr("늑대의입") + b"\x00"
+            assert len(kb) <= slot, f"058 지명 복원 ED2.EXE {len(kb)}B > 슬롯 {slot}B"
+            buf[off : off + slot] = kb.ljust(slot, b"\x00")
+            n += 1
+        write_user_data(f, ED2_LBA, bytes(buf), label="ED2.EXE 지명 복원(늑대의입)")
+    print(f"  058 지명 정본 복원 {n}곳(늑대입→늑대의입, 칸 넉넉한 자리만)")
+
+
+# 058ⓑ ④ — ED1SCN5·ED2SCN7 안의 지명 슬롯 10곳. **살아있는 포인터가 바로 뒤에 와서
+# 8B 뿐이다**(058 지명 지도 실측) — 전각 "늑대의입"(4음절=8B+널=9B)이 다 안 들어가
+# ED2SCN7 은 "늑대입"(3음절, '의' 빠짐)으로 남았다. 반각(1B/자)이면 4음절+널=5B 로
+# 8B 슬롯에 여유 있게 들어간다.
+# 🔴 **정정(마스터 화면 확인 2026-09-15, 일곱 번째 "사본이 둘" 사고).** ED1SCN5 는
+# 재삽입 중 커져서 `DUMMY.;1` 영역(2026-09-15 확인: LBA 92072)으로 재배치된다
+# (`reinsert_kr_pilot.SCN_FILES` 주석) — ISO 디렉터리도 거기를 가리킨다. **원래 LBA
+# 1555 는 재배치 전 죽은 옛 사본**이라 거기 쓴 반각 3곳은 화면에 안 나갔다.
+# ⚠ **LBA 를 손으로 적지 않는다** — `_scn_layout()`(아래)로 매 빌드 다시 얻는다.
+# 재삽입 크기가 바뀌면 재배치 LBA도 바뀌는데, 하드코딩하면 바로 이 사고가 재발한다
+# (`_scn_layout` 자신의 독스트링에 2026-07-31 실측이 있다 — 오늘 그걸 못 보고 또 밟았다).
+# 판정은 **참조 추적이 아니라 내용물 세기**로 한다 — SCN 데이터는 텍스트+포인터가
+# 섞여 lui/addiu 스캔이 우연히 다 걸린다(devlog "⑧" 참조). 세어 보면 한 번에 갈린다:
+# 재배치 전(옛 LBA) = 습니다/했다 0곳·した/ます 158곳(죽음) vs 재배치 후 = 99곳·4곳(삶).
+# ⚠ 이 자리는 PLACES 표 밖의 **씬 파일 자체에 박힌 사본**이라 `patch_scn_headers`의
+# 슬롯 assert 도, PLACES 딕셔너리도 관여하지 않는다 — 좌표 직접 패치.
+# (씬이름, 씬 안 상대 오프셋, 원본 8B) — LBA·size는 `_scn_layout()`으로 매번 다시 얻는다.
+HALFWIDTH_HUD_SLOT_SPECS = (
+    ("ED1SCN5", 0x0, bytes.fromhex("8abf8ae990d20000")),
+    ("ED1SCN5", 0x51C, bytes.fromhex("8abf8ae990d20000")),
+    ("ED1SCN5", 0x9D4, bytes.fromhex("8abf8ae990d20000")),
+    ("ED2SCN7", 0x896C, bytes.fromhex("8abf8ae990d20000")),
+    ("ED2SCN7", 0x9E44, bytes.fromhex("8abf8ae990d20000")),
+    ("ED2SCN7", 0x9E9C, bytes.fromhex("8abf8ae990d20000")),
+    ("ED2SCN7", 0xA6C4, bytes.fromhex("8abf8ae990d20000")),
+    ("ED2SCN7", 0xA71C, bytes.fromhex("8abf8ae990d20000")),
+    ("ED2SCN7", 0xADEC, bytes.fromhex("8abf8ae990d20000")),
+    ("ED2SCN7", 0xAE44, bytes.fromhex("8abf8ae990d20000")),
+    # 11번째 자리 — `find_refs` 가 "참조 없음"으로 죽은 사본이라 오판했던 곳(058).
+    # 실은 라이브다(마스터 QA 2026-09-15, RE 쓰기 BP 로 확인: 맵 전환 시 a1=이 주소).
+    # 뒤에 널이 183B 나 이어져(SUPERSEDED_SPELLINGS 조사) 사정이 다르지만, 마스터
+    # 판정대로 **입구 쪽과 같은 6조각 값**으로 통일한다 — 앞 8B 만 건드리는 건 다른
+    # 자리와 같은 관용(나머지 175B 는 원래도 널이라 손 안 대도 무방).
+    ("ED2SCN7", 0x885F, bytes.fromhex("8abf8ae990d20000")),
+)
+
+# 🔴 되돌림 대상 — **죽은 옛 사본**(ED1SCN5 재배치 전, 원래 `SCN_FILES` 의 LBA 1555)에
+# 반각을 잘못 넣었던 3곳. 해는 없지만(아무도 안 읽는다) **다음 사람이 "고쳤는데 왜
+# 안 뜨지"로 또 밟는다** — 원본 바이트로 되돌리고 이 표에 이유를 남긴다. **이 LBA 는
+# 재배치 전 고정값이라 하드코딩해도 안전하다**(`SCN_FILES` 자체가 그 정의다) — 반각을
+# 잘못 썼던 바로 그 좌표를 정확히 겨눠 되돌리는 게 목적이라 `_scn_layout()` 을 쓰면
+# 오히려 틀린 자리(재배치 후 LBA)를 되돌리려 든다.
+DEAD_COPY_REVERTS = (
+    ("ED1SCN5(죽은 옛 사본)#0", 1555, 171392, 0x0, bytes.fromhex("985482cc8cfb0000")),
+    ("ED1SCN5(죽은 옛 사본)#1", 1555, 171392, 0x51C, bytes.fromhex("985482cc8cfb0000")),
+    ("ED1SCN5(죽은 옛 사본)#2", 1555, 171392, 0x9D4, bytes.fromhex("985482cc8cfb0000")),
+)
+
+
+def _revert_dead_copies():
+    img = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
+    n = 0
+    for label, lba, size, off, orig in DEAD_COPY_REVERTS:
+        buf = bytearray(extract(lba, size, path=img))
+        cur = bytes(buf[off : off + 8])
+        if cur == orig:  # 이미 원본 — 되돌릴 것 없음
+            continue
+        buf[off : off + 8] = orig
+        with open(img, "r+b") as f:
+            write_user_data(f, lba, bytes(buf), label=f"{label} 원복(죽은 사본)")
+        buf2 = extract(lba, size, path=img)
+        assert bytes(buf2[off : off + 8]) == orig, f"{label} 원복 되읽기 불일치"
+        n += 1
+    if n:
+        print(f"  058 죽은 옛 사본 원복 {n}곳(재배치 전 LBA1555 — 화면에 안 나가는 자리)")
+    return n
+
+
+def apply_halfwidth_hud_slots():
+    """HALFWIDTH_HUD_SLOT_SPECS 11곳을 반각 "늑대의입"으로 되쓴다 — 한 자리씩 되읽는다.
+
+    씬 LBA·크기는 매번 `_scn_layout()` 으로 다시 얻는다(재배치 반영, 하드코딩 금지).
+
+    🔴 062 — 값은 음절 코드가 아니라 `patch_hangul_glyph_table.HUD_CODES`(마스터
+    도안을 6px씩 자른 6조각). **7조각이 아니라 6조각인 이유**: 이 슬롯의 이름 복사가
+    최대 7B 이고 그 안에서 널을 만나야만 복사돼(RE 실측), 내용 7B(널이 인덱스7)는
+    종단이 복사 밖이라 안 온다 — 6B(널이 인덱스6)만 안전하다. 물리 슬롯은 8B 라
+    `len(want)==8`(6코드+널 2)을 그대로 assert 해 둔다.
+    """
+    import patch_hangul_glyph_table as G
+
+    _revert_dead_copies()  # 죽은 사본에 잘못 쓴 값부터 원복(순서 무관, 서로 다른 자리)
+    layout = {name: (lba, size) for name, lba, size in _scn_layout()}
+    want = bytes(G.HUD_CODES) + b"\x00\x00"
+    assert len(want) == 8, f"HUD 슬롯은 8B 고정인데 조각 코드+널이 {len(want)}B 다"
+    img = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
+    n = 0
+    for scn, off, orig in HALFWIDTH_HUD_SLOT_SPECS:
+        lba, size = layout[scn]
+        label = f"{scn}@0x{off:X}"
+        buf = bytearray(extract(lba, size, path=img))
+        cur = bytes(buf[off : off + 8])
+        if cur == want:  # 재빌드 — 이미 우리 값
+            continue
+        assert cur == orig, (
+            f"058 HUD 반각 슬롯 {label}(lba{lba}) 불일치: {cur.hex()} != {orig.hex()}"
+        )
+        buf[off : off + 8] = want
+        with open(img, "r+b") as f:
+            write_user_data(f, lba, bytes(buf), label=f"{label} 반각 지명(늑대의입)")
+        buf2 = bytearray(extract(lba, size, path=img))
+        assert bytes(buf2[off : off + 8]) == want, f"058 HUD 반각 슬롯 {label} 되읽기 불일치"
+        n += 1
+    print(f"  058 HUD 반각 지명 {n}곳(늑대입/죽은 옛 사본 → 반각 늑대의입, 산 자리로 정정)")
+    return n
+
 
 # SCN 플레이트에만 나오는 지명 — **ED.EXE 표에는 없다**(슬롯이 47번 `ニルギド` 에서 끝난다,
 # 실측 2026-08-10). 위 `PLACES` 는 **위치가 곧 슬롯 번호**라 여기 덧붙이면 표 뒤 데이터를
