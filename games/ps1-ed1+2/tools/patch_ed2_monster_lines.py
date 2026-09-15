@@ -168,7 +168,10 @@ def plan():
             s = decode_sjis(buf[i:j]) if 2 <= j - i <= 200 else None
             # 이름 판정은 **정렬 후보 전부**를 정본에 걸어 본다 — 한 후보만 보면 유령 접두가
             # 붙은 자리가 대사로 새어 「문안 없음」이 된다(`resolve_name` 참조).
-            if s and is_dialog(s) and resolve_name(buf[i:j], names) is None:
+            # ⚠ `is_dialog` 의 「세 글자 미만은 자료다」가 `と` 한 글자(분열 메시지의 접속사,
+            # 2026-09-13 마스터 QA `012`)를 자료로 오판해 스캔 밖으로 샜다 — 규칙을 안 풀고
+            # **손으로 승인한 항목(`hand`)만** 길이 게이트를 건너뛰게 한다.
+            if s and (is_dialog(s) or s in hand) and resolve_name(buf[i:j], names) is None:
                 nxt = j
                 while nxt < len(buf) and buf[nxt] == 0:
                     nxt += 1
@@ -277,29 +280,42 @@ def main():
     for group, (lba, size) in sorted(MON.items()):
         if lba not in by_lba and lba not in mv_lba:
             continue
-        orig = bytes(extract(lba, size))
-        buf = bytearray(extract(lba, size, path=IMG))
+        # ⚠ **섹터 정렬 크기(`cap`)로 읽는다** — `size`로 읽으면 **이 그룹에 먼저 쓴 다른
+        # 패처의 꼬리 재배치**(예: `patch_ed2_monsters.py`의 이름 재배치)를 통째로 잘라내고
+        # 그 위에 되쓰게 된다(2026-09-13 실측: 모래두더지/불꽃의기사/육지해파리 이름이
+        # 옛 슬롯도 새 자리도 없이 통째로 사라졌다 — 마스터 QA 052 RE 재현). `_apply_sha_table`
+        # 은 이미 이 관용을 쓴다 — 여기만 안 맞춰져 있었다.
+        cap = (size + 2047) // 2048 * 2048
+        orig = bytes(extract(lba, size))  # overlay_refs 대조 기준(원본, 빌드 아님)
+        before = bytes(extract(lba, cap, path=IMG))
+        buf = bytearray(before)
         slots = []
         for off, kr, slot in by_lba.get(lba, ()):
             b = _enc(kr) + b"\x00"
             buf[off : off + slot] = b + b"\x00" * (slot - len(b))
             slots.append((off, off + slot))
-        new, touched = _relocate(buf, orig, mv_lba.get(lba, ()))
+        # "실제 쓰인 끝" 뒤에 붙인다 — cap 그대로 넘기면 이미 채워진 꼬리(다른 패처 것
+        # 포함) 뒤에 또 이어 붙여 섹터를 넘긴다.
+        used = max((k for k in range(len(buf) - 1, -1, -1) if buf[k]), default=-1) + 1
+        used = (used + 3) & ~3
+        new, touched = _relocate(bytearray(buf[:used]), orig, mv_lba.get(lba, ()))
         moved += len(mv_lba.get(lba, ()))
+        content_len = len(new)  # 논리 길이 — 섹터 패딩(cap) 이전, 디렉터리 크기는 이걸 쓴다
+        assert content_len <= cap, f"ED2MON{group}: 재배치 꼬리가 섹터 여유({cap}B)를 넘었다"
+        new = new.ljust(cap, b"\x00")
         # 게이트 ③ — 코드 구간 무변경: 우리가 쓴 자리 밖은 빌드 이전과 byte 동일해야 한다
         touched += slots
         marks = bytearray(len(new))
         for lo, hi in touched:
             for k in range(lo, min(hi, len(marks))):
                 marks[k] = 1
-        base = bytes(extract(lba, size, path=IMG)).ljust(len(new), b"\x00")
+        base = before.ljust(len(new), b"\x00")
         for k in range(len(new)):
             assert marks[k] or new[k] == base[k], f"ED2MON{group} 코드 구간 변형 @0x{k:X}"
-        assert (len(new) + 2047) // 2048 == (size + 2047) // 2048, f"ED2MON{group} 섹터 증가"
         with open(IMG, "r+b") as f:
             total += write_user_data(f, lba, new, label=f"ED2MON{group} 전투 대사")
-            if len(new) != size:
-                _update_dir_size(f, group, len(new))
+            if content_len != size:
+                _update_dir_size(f, group, content_len)
     total += _apply_sha_table()
     print(
         f"ED2MON: 섹터 {total}개 수정 — 전투 대사 {len(fit)}건 제자리 + {moved}건 꼬리 재배치"
@@ -309,10 +325,25 @@ def main():
 
 
 SHA_TABLE = os.path.join(ROOT, "script", "ED2MON_LINES.json")
+# ⚠ **`_apply_sha_table` 은 재배치 경로가 없다** — 슬롯이 모자라면 `continue` 뿐이고
+# 그 사실을 어디에도 보고하지 않는다(2026-09-13 실측: 283건 중 119건, 41%가 조용히
+# 건너뛰어졌다 — 041①이 "107곳 병기 결정"으로 올린 표 태반이 화면에 안 들어갔다).
+# `check_scn_jp_left`(build.py 의 화면 게이트)도 `ED2MON*.BIN` 을 스캔 범위 밖에 둬서
+# 못 잡는다 — 이 파일군엔 그 축의 게이트가 아예 없었다.
+# ⇒ **기준선 파일**로 대신한다(조판 지문과 같은 꼴) — 늘 찍고, 늘면 실패, 줄면 알린다
+# (0 을 목표로 삼지 않는다 — 지금 세우면 이 브랜치가 통째로 빨간불이 되고, 그럼 아무도
+# 안 본다). **수만이 아니라 (group, offset) 목록까지 굳힌다** — 하나 늘고 하나 줄면
+# 수는 그대로라 수만 보면 조용히 지나간다.
+# 🔴 **`script/` 안의 모든 키는 `_`로 시작해야 한다** — `reinsert_kr_pilot._load_script()` 가
+# `script/*.json` 전부를 "씬"으로 읽어 `_` 로 안 가린 키를 블록 취급한다(실측: `_ids`(list)를
+# `ids`로 처음 냈다가 `AttributeError: 'list' object has no attribute 'replace'`로 빌드가
+# 죽었다 — `_load_overrides()` 가 리스트를 문안으로 읽으려 한 것). `ED2MON_LINES.json` 이
+# 안 죽는 건 우연이다(값이 전부 문자열이라 `.replace()` 가 통과한다).
+SKIP_BASELINE = os.path.join(ROOT, "script", "ed2mon_sha_skip_baseline.json")
 
 
 def _apply_sha_table():
-    """`script/ED2MON_LINES.json`(sha1 키) 를 **제자리 치환**한다.
+    """`script/ED2MON_LINES.json`(sha1 키) 를 **제자리 치환 + 넘치면 꼬리 재배치**한다.
 
     ⚠ **위 열거가 절반을 못 본다.** 널 구분으로 조각을 뜨는데 대사 앞에 이진이 붙으면
     조각째 디코드가 깨져 통째로 버려진다(디코드 실패 43,993건 실측 2026-08-16). 그래서
@@ -320,19 +351,26 @@ def _apply_sha_table():
 
     ⚠ **원문은 리포에 안 남긴다** — 키가 JP sha1 앞 10자다(`monster_lines_ed2.json` 은
     JP 를 그대로 키로 쓰는 옛 표라, 이 방식으로 옮겨 가야 한다).
+
+    🔴 **재배치는 `plan()`/`_relocate()` 와 같은 길을 그대로 쓴다**(2026-09-13, 041① 퇴보
+    이후 신설) — 새로 짜지 않는다. 참조(`overlay_refs`)가 있는 자리만 꼬리로 옮기고,
+    없는 자리는 예전처럼 제자리 유지(슬롯 부족 기준선으로 보고)한다.
     """
     if not os.path.exists(SHA_TABLE):
         return 0
     with open(SHA_TABLE, encoding="utf-8") as f:
-        table = json.load(f)
-    n = 0
+        table = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+    n = moved_total = 0
+    skipped = []  # [(id, group, key, slot, need)] — 참조가 없어 재배치도 못 하는 자리
     with open(IMG, "r+b") as f:
-        for _group, (lba, size) in sorted(MON.items()):
+        for group, (lba, size) in sorted(MON.items()):
             # ⚠ **섹터 정렬 크기로 읽는다** — 원래 크기(size)로 읽고 다시 쓰면 재배치가
             # 붙인 **꼬리를 0 으로 밀어 버린다**(2026-08-17 실측: 재배치 20건이 조용히
             # 사라지고 빌드는 통과했다).
             cap = (size + 2047) // 2048 * 2048
-            data = bytearray(extract(lba, cap, path=IMG))
+            before = bytes(extract(lba, cap, path=IMG))
+            data = bytearray(before)
+            orig = bytes(extract(lba, size))  # 원본(JP) — overlay_refs·_relocate 대조 기준
             here = {}
             for part in bytes(data).split(b"\x00"):
                 if not (4 <= len(part) <= 1024):
@@ -344,6 +382,9 @@ def _apply_sha_table():
                         continue
                     here.setdefault(hashlib.sha1(t.encode()).hexdigest()[:10], t)
             hits = 0
+            slots = []  # 제자리로 쓴 [(off, off+slot)] — 뒤 안전대조에서 "우리가 쓴 자리"로 뺀다
+            moves = []  # 슬롯 부족+참조 있음 → 꼬리로 뺄 [(off, jp, kr, slot)]
+            refs = None
             for key, kr in table.items():
                 jp = here.get(key)
                 if jp is None:
@@ -351,18 +392,93 @@ def _apply_sha_table():
                 jb, kb = jp.encode("cp932"), _enc(kr)
                 for m in list(re.finditer(re.escape(jb), bytes(data))):
                     i, e = m.start(), m.end()
+                    # ⚠ **머리도 널 경계여야 한다** — 안 그러면 짧은 키가 **더 긴 다른
+                    # 문안 한복판에 우연히 박힌 부분열**로 걸린다(끝만 널 검사하던 시절의
+                    # 사각). 2026-09-13 실측: `%c%s%cは興奮した。\n`(302c06afb2)가
+                    # `攻撃を受けた%c%s%cは興奮した。\n`(3c1ee910cd)의 **꼬리와 겹쳐**
+                    # 제자리 치환이 그 안쪽을 덮어써 3c1ee910cd 쪽이 조용히 깨졌다
+                    # (되읽기로 발각 — 도구 집계엔 하나도 안 걸렸다).
+                    if i != 0 and data[i - 1] != 0:
+                        continue
                     nxt = e
                     while nxt < len(data) and data[nxt] == 0:
                         nxt += 1
                     if nxt == e:  # 널종단이 아니면 남의 문자열 한복판이다
                         continue
-                    if len(kb) + 1 > nxt - i:
+                    need, slot = len(kb) + 1, nxt - i
+                    if need > slot:
+                        if refs is None:
+                            refs, lui_use = overlay_refs(orig)
+                        # ⚠ **lui 를 다른 대상과 나눠 쓰면 재배치 불가**다(`_relocate` 의
+                        # 게이트) — 그 lui 의 상위값을 바꾸면 그 lui 를 같이 쓰는 다른
+                        # 참조까지 엉뚱한 주소를 가리킨다. 미리 걸러 `_relocate` 를 통째로
+                        # 죽이지 않는다(2026-09-13 실측: `0xD574` 공유로 배치 전체가 멈췄다).
+                        shared = i in refs and any(
+                            len(lui_use[lui_off]) > 1 for _imm_off, lui_off, _op in refs[i]
+                        )
+                        if i in refs and not shared:
+                            moves.append((i, jp, kr, slot))
+                        else:
+                            skipped.append((f"{group}:{i:#x}", group, key, slot, need))
                         continue
                     data[i:nxt] = (kb + b"\x00").ljust(nxt - i, b"\x00")
                     hits += 1
-            if hits:
-                n += write_user_data(f, lba, bytes(data), label=f"ED2MON 대사(표) {hits}곳")
+                    slots.append((i, nxt))
+            if not hits and not moves:
+                continue
+            # ⚠ **꼬리는 "실제 쓰인 끝" 뒤에 붙인다** — cap 그대로 넘기면 `_relocate` 가
+            # 패딩 전부를 "이미 쓰인 것"으로 보고 그 뒤에 또 이어 붙여 섹터를 넘긴다.
+            used = max((k for k in range(len(data) - 1, -1, -1) if data[k]), default=-1) + 1
+            used = (used + 3) & ~3
+            new = bytes(data[:used])
+            if moves:
+                new, mv_touched = _relocate(bytearray(new), orig, moves)
+                moved_total += len(moves)
+            else:
+                mv_touched = []
+            assert len(new) <= cap, f"ED2MON{group} 재배치가 섹터를 넘었다 (+{len(new) - cap}B)"
+            new = new.ljust(cap, b"\x00")
+            touched = list(mv_touched) + slots
+            marks = bytearray(len(new))
+            for lo, hi in touched:
+                for k in range(lo, min(hi, len(marks))):
+                    marks[k] = 1
+            for k in range(len(new)):
+                assert marks[k] or new[k] == before[k], f"ED2MON{group} 코드/데이터 무변경 위반 @0x{k:X}"
+            n += write_user_data(f, lba, new, label=f"ED2MON{group} 전투 대사(표) {hits}건 제자리")
+    _check_skip_baseline(skipped)
+    if moved_total:
+        print(f"  ED2MON 대사(표): 꼬리 재배치 {moved_total}건")
     return n
+
+
+def _check_skip_baseline(skipped):
+    """건너뜀을 **기준선과 대조**한다 — 조판 지문과 같은 꼴(늘 찍고, 늘면 실패, 줄면 알린다).
+
+    0 을 목표로 삼지 않는다 — 지금(2026-09-13) 119건이라 0 으로 걸면 이 브랜치가 통째로
+    빨간불이 되고, 그럼 아무도 안 본다(`CLAUDE.md`: "늘 빨간불이면 아무도 안 본다").
+    """
+    ids = sorted(s[0] for s in skipped)
+    print(f"  ⚠ ED2MON 대사(표): 슬롯 부족으로 건너뜀 {len(ids)}건")
+    if not os.path.exists(SKIP_BASELINE):
+        print(f"    (기준선 없음 — {os.path.relpath(SKIP_BASELINE, ROOT)} 를 만들어 두면 회귀를 잡는다)")
+        return
+    with open(SKIP_BASELINE, encoding="utf-8") as f:
+        base = json.load(f)
+    base_ids = set(base["_ids"])
+    new = sorted(set(ids) - base_ids)
+    gone = sorted(base_ids - set(ids))
+    print(f"    기준선 {len(base_ids)}건 대비 — 새로 건너뜀 {len(new)} · 해소됨 {len(gone)}")
+    if gone:
+        print(f"    ℹ 해소된 자리(기준선을 손으로 갱신할 것): {', '.join(gone)}")
+    if new:
+        detail = {s[0]: s for s in skipped}
+        lines = [f"      {i}  key={detail[i][2]} slot={detail[i][3]}B need={detail[i][4]}B" for i in new]
+        raise SystemExit(
+            "ED2MON 대사(표): 새로 건너뛴 자리가 생겼다 — 화면에 일본어가 남는다\n"
+            + "\n".join(lines)
+            + f"\n기준선: {os.path.relpath(SKIP_BASELINE, ROOT)} (의도된 변화면 이 파일을 갱신한다)"
+        )
 
 
 if __name__ == "__main__":

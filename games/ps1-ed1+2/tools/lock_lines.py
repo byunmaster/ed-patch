@@ -59,6 +59,12 @@ from common import OUT_DIR, ROOT
 LOCK_PATH = os.path.join(ROOT, "locked_lines.json")
 OBS_PATH = os.path.join(ROOT, "observed_lines.json")
 SCENES = [f"ED1SCN{i}" for i in range(1, 7)]
+# 🔴 `observe()` 전용 — 락(`SCENES`)은 인게임 확인분(ED1)만 지키지만, 관측은 **전 블록**을
+# 봐야 한다(도크스트링 그대로). ED2 를 빼면 오늘 발견된 것과 똑같은 구멍이 된다 —
+# check_window_nl·check_shop_verbs·check_variants·check_leader_variants 가 전부 이 꼴로
+# ED1 만 보다 걸렸다(2026-09-13). observe() 는 SCENES 가 아니라 이걸 돈다.
+_SCN_COUNT = {"ED1": 6, "ED2": 13}
+SCENES_OBSERVE = [f"{g}SCN{i}" for g in ("ED1", "ED2") for i in range(1, _SCN_COUNT[g] + 1)]
 
 
 def line_sha(t):
@@ -118,7 +124,7 @@ def observe():
         "받아들일 때만 — 자동 갱신하면 알림의 목적이 사라진다."
     )
     tot = ch = ad = dr = 0
-    for scn in SCENES:
+    for scn in SCENES_OBSERVE:
         tr, _, _ = R.load_translations(scn.replace("SCN", "_SCN"), scn)
         c, a, d = obs_diff(scn, tr)
         ch, ad, dr = ch + len(c), ad + len(a), dr + len(d)

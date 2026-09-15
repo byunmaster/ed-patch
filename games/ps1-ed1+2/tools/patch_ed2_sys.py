@@ -33,6 +33,10 @@ import patch_sys_ui as P
 from common import BUILD_DIR, extract, write_user_data
 
 ED2_LBA, ED2_SIZE = 756, 872448
+
+# HUD 상태이상 라벨 사본 — ED.EXE `0xF91D8`(patch_sys_ui.STATUS_BASE)와 값·스트라이드는
+# 같고 오프셋만 다르다(034 RE, 위 apply() 참조).
+STATUS_BASE_ED2 = 0xD4B10
 IMG = f"{BUILD_DIR}/Eiyuu Densetsu (KR).bin"
 
 # 파티 이름 (0x800, 12B 슬롯) — 정발 ED2 코퍼스 실측(아트라스 188회 · 플로라 101 ·
@@ -241,13 +245,83 @@ REPACK = ((0x800, 0xF44, "ED2 이름"),)
 # 포인터 쪽만 맞고 인덱싱 쪽이 어긋난다. 루트 CLAUDE.md 「구조 계약」의 **위치** 항목이다.
 FIXED_SLOTS = ((0xD4870, 0xD4950, "ED2 시나리오 아이템"),)
 
+# 058(2026-09-14, 마스터 판정) — 光の杖·氷の杖·竜の涙·笛 넷은 FIXED_SLOTS 안에서도
+# **8B 고정칸에 갇힌 시나리오 이벤트 전용 참조**다(정적 확인: 각 이름이 lui/addiu
+# 참조 정확히 1곳뿐이고, 셋은 같은 이벤트큐 등록 함수(0x80021b3c)를, 笛는 그 자매
+# 함수(0x80021d7c)를 부른다 — fp 카운터를 증가시키며 아이템을 순서대로 지급하는
+# 연출). ⚠ **인벤토리는 이 표를 안 읽는다** — 같은 이름 넷이 전부 `NAMES_ED2`
+# (REPACK 대상, 길이 제약 없음)에도 이미 있고 그쪽이 인벤토리 정본이다(비키니·
+# 램프도 마찬가지 — 두 표에 값이 겹치는 건 034·051 처럼 새는 사고의 씨앗이 될 수도
+# 있었지만, 이번엔 **인벤토리가 이미 옳아서** 대사 쪽 참조만 바꾸면 끝나는 쪽으로
+# 뒤집혔다).
+# ⇒ **FIXED_SLOTS 안 원래 칸(8B)은 손대지 않는다**(옆 슬롯 20개가 `base+i*8` 로도
+# 읽히는 배열이라 스트라이드를 조금이라도 어긋나게 하면 위 "ED2 맵 배경이 검게
+# 나간 사고"가 재현된다 — 이 넷도 그 배열 안에 있다). 대신 **참조(대사가 읽는
+# 포인터)만** REPACK 구획(`0x800~0xF44`, `repack_names` 가 이미 매 빌드 다시
+# 채우는 안전한 자리)의 재packing 뒤 남는 꼬리로 돌린다 — 새 0런을 찾지 않는다
+# (052 교훈: 빈 공간이 VAB 일 수 있다).
+FIXED_ITEM_REFS = {
+    # (원본 lui 파일오프셋, 원본 addiu 파일오프셋, 원본 명령 워드 — 034 식 byte-assert)
+    "光の杖": (0xF728, 0xF72C, 0x3C05800E, 0x24A54080),
+    "氷の杖": (0x102D8, 0x102DC, 0x3C05800E, 0x24A540A0),
+    "竜の涙": (0x10780, 0x10784, 0x3C05800E, 0x24A540A8),
+    "笛": (0x12118, 0x1211C, 0x3C05800E, 0x24A54110),
+}
+
+
+def relocate_fixed_items(buf, canon):
+    """`FIXED_ITEM_REFS` 의 대사 참조를 REPACK 꼬리의 완전한 KR 문자열로 돌린다.
+
+    반환: 옮긴 수. 옮긴 항목은 `canon`에서 지운다 — `fill_fixed()`가 원래 칸을
+    다시 건드리지 않게(원래 칸은 그대로 두는 게 계약이다, 위 주석).
+    """
+    import struct
+
+    import patch_items as PI
+
+    lo, hi, _label = REPACK[0]
+    used = max((k for k in range(lo, hi) if buf[k]), default=lo - 1) + 1
+    used = (used + 3) & ~3
+    n = 0
+    for jp, (lui_fo, imm_fo, want_lui, want_imm) in FIXED_ITEM_REFS.items():
+        kr = canon.get(jp)
+        if not kr:
+            continue
+        got_lui = struct.unpack_from("<I", buf, lui_fo)[0]
+        got_imm = struct.unpack_from("<I", buf, imm_fo)[0]
+        assert (got_lui, got_imm) == (want_lui, want_imm), (
+            f"058 {jp!r} 참조 명령 불일치 @0x{lui_fo:X}/0x{imm_fo:X}: "
+            f"{got_lui:08x}/{got_imm:08x} != {want_lui:08x}/{want_imm:08x}"
+        )
+        kb = _enc(kr) + b"\x00"
+        new_fo = used
+        assert new_fo + len(kb) <= hi, f"058 {jp!r} REPACK 꼬리 여유 부족 ({new_fo}+{len(kb)}>{hi})"
+        buf[new_fo : new_fo + len(kb)] = kb
+        used = (new_fo + len(kb) + 3) & ~3
+        new_ram = PI.ram_of(new_fo)
+        new_lo = new_ram & 0xFFFF
+        new_hi = (new_ram >> 16) + (1 if new_lo & 0x8000 else 0)
+        struct.pack_into("<I", buf, lui_fo, (want_lui & 0xFFFF0000) | new_hi)
+        struct.pack_into("<I", buf, imm_fo, (want_imm & 0xFFFF0000) | new_lo)
+        canon.pop(jp, None)
+        n += 1
+    if n:
+        print(f"  058 시나리오 아이템 대사 참조 재배치 {n}건 (REPACK 꼬리, 정본 칸은 안 건드림)")
+    return n
+
+
 # 주문책 — `Xの書` 는 **주문 이름 + 「의 책」**이다(`呪文` 은 「주문」, policy 「표기 방침」).
 # 이름은 ED1 정본에서 끌어오므로 여기 다시 적지 않는다 — 주문 표기를 고치면 책도 따라온다.
 BOOK_SUFFIX = "의 책"
 
 # 워프 메뉴(16B) 접미 — 정발 `F_000` 30곳의 표기를 따른다. 핵심어는 위 표를 쓰고
 # 접미만 여기서 붙인다(같은 지명이 두 표에서 다른 말을 하지 않게).
-SUFFIX = {"の町": "", "の村": "마을", "の港": "항", "の鉱山": "광산", "の城": "성"}
+# ⚠ `の港`→`항구` — ED1 정본(`patch_sys_ui.PLACES`: `네리아항구`·`론도항구`·`요르도항구`·
+# `루드라항구`·`리셸항구`)과 맞춘다. 그 다섯은 `positional()`(ED1 표와의 자리 정렬)이
+# 먼저 채워 이 표를 안 거치지만, **랄파는 ED1 표에 `ラルファの港` 가 없어**(ED1 은
+# `ラルファの砦`=요새) 정렬이 안 잡히고 이 기본값으로 떨어진다 — `항` 이던 시절엔
+# 그 자리만 `랄파항` 으로 남아 ED1↔ED2 표기가 갈렸다(마스터 QA 014, 2026-09-13).
+SUFFIX = {"の町": "", "の村": "마을", "の港": "항구", "の鉱山": "광산", "の城": "성"}
 
 
 def _enc(kr):
@@ -493,6 +567,88 @@ def fill_fixed(buf, canon):
     return n
 
 
+# HUD 이동 경로 라벨(승합마차·배 노선 안내) — **같은 지명이 반각 가타카나로 또 있다**
+# (2026-09-14, 마스터 QA 051 — 「이슈타~이즈」 HUD 가 일본어로 보였다). 전각 SJIS
+# 지명(`PLACES_ED2`)은 이미 다 옮겨져 있는데, 이 표는 **반각**(0xA1~0xDF)으로 같은
+# 지명을 또 담고 있어 `_jp_at()`(전각 판정)가 원리상 못 봤다 — 034(ED2.EXE 사본
+# 하나 더)와 같은 집안이다. 슬롯은 12B 로 고정, 이미 옆에 전각 번역이 있어 새로
+# 옮길 것 없이 **그대로 복사**한다.
+HALFWIDTH_ROUTE_LABELS = (
+    # (오프셋, 반각 원본 바이트(꼬리 널 제외), KR)
+    # 🔴 구분자는 물결표(~)에서 줄표(-)로 전환(마스터 확정 2026-09-15) — ASCII 0x7E 가
+    # 이 폰트에서 물결이 아니라 **맨 윗줄 오버라인**으로 그려져(RE 실측: 잉크 행0)
+    # "이슈타 ̄이즈"처럼 보였다. ASCII 0x2D('-')는 **행5 — 11행 중 정확히 세로 중앙**
+    # (RE 실측)이라 하이픈답게 나온다. 반각 6px 전진폭 안에서 폭도 5px로 안 겹친다.
+    (0xAAAC, bytes.fromhex("b2bcadc08160b2bddeb0"), "이슈타-이즈"),
+    (0xAACC, bytes.fromhex("b2bcadc08160b1ccd9"), "이슈타-아훌"),
+    (0xAAF8, bytes.fromhex("b2bddeb081608fe9"), "이즈-성"),
+    (0xAB30, bytes.fromhex("b7adcdded781608fe9"), "큐베라-성"),
+    (0xAB4C, bytes.fromhex("b7adcdded78160b3b2d9"), "큐베라-윌"),
+    (0xAB78, bytes.fromhex("b3b2d98160cdded9dd"), "윌-베른"),
+)
+# 058ⓑ ④ → 062 로 정정(2026-09-14). 처음엔 음절 코드(0xC5~0xCA)+구분자('~')로 옮겼는데
+# 그 음절 글리프가 7px 인데 반각 전진폭이 6px 라 화면에서 다음 글자를 먹었다(062 — 정확히
+# 같은 원인이 HUD "늑대의입"에도 있었다). **고치는 법도 같다** — 큐베라프로스 여섯 글자를
+# 66px 가상 캔버스에 그리고 6px씩 잘라 11칸(`patch_hangul_glyph_table.ROUTE_CODES`)에
+# 나눠 굽는다. ⚠ **이 슬롯은 11코드+널=12B 로 꽉 차 구분자('~') 넣을 자리가 없다** —
+# 66px 안에 여섯 글자(65px, 여유 1px)를 넣는 것도 빠듯해 물결표까지는 못 넣는다.
+# "큐베라"·"프로스"로 갈라 보이던 걸 "큐베라프로스" 한 덩이로 붙여 보이는 트레이드오프다
+# (마스터 062 비교 캡처로 검토·승인됨 — `.local/inbox/ps1-ed1+2/062-master-comparison.png`).
+HALFWIDTH_ROUTE_LABEL_HALF_JP = bytes.fromhex("b7adcdded78160ccdfdbbd")  # ｷｭﾍﾞﾗ～ﾌﾟﾛｽ
+ROUTE_LABEL_SLOT = 12
+
+# 🔴 새로 찾은 사본(2026-09-14, 063 조사 중 발견 — 마스터가 「이슈타 이즈 아훌 큐베라 윌
+# 프로스」 반각 필요를 짚어서 경로 라벨 표를 다시 훑다가 나왔다) — `0xD4B5C`
+# 부근에 위 표와 **별개인 반각 지명 표**가 있고, 원본 그대로("ｱﾌﾙ～城"·"ｳｲﾙ～城") 번역이
+# 안 돼 있었다. 슬롯은 8B 씩(위 HUD 지명 슬롯과 같은 크기지만 다른 좌표·다른 문맥) —
+# 여기는 전각이 그대로 들어간다("아훌~성"=8B 딱 맞음, "윌~성"=6B, 여유 있음). 이 표의
+# 실제 용도(성 함락류 이벤트 경고?)는 아직 안 밝혔다 — 화면에서 언제 뜨는지 확인 필요.
+ROUTE_LABELS_2 = (
+    (0xD4B5C, bytes.fromhex("b1ccd981608fe900"), "아훌-성"),
+    (0xD4B64, bytes.fromhex("b3b2d981608fe900"), "윌-성"),
+)
+
+
+def fix_halfwidth_route_labels(buf):
+    """`HALFWIDTH_ROUTE_LABELS` 자리를 반각 원문에서 한글로 — 고친 수 반환.
+
+    0xAB10(큐베라프로스)은 전각으론 칸이 모자라 못 옮겼던 자리라 **062 조각 코드**
+    (`patch_hangul_glyph_table.ROUTE_CODES`)로 옮긴다 — 정본은 그 파일.
+    """
+    import patch_hangul_glyph_table as G
+
+    n = 0
+    for off, jp_bytes, kr in HALFWIDTH_ROUTE_LABELS:
+        assert buf[off : off + len(jp_bytes)] == jp_bytes, (
+            f"HUD 경로 라벨 슬롯 불일치 @0x{off:X}: {bytes(buf[off : off + len(jp_bytes)]).hex()} != {jp_bytes.hex()}"
+        )
+        kb = _enc(kr) + b"\x00"
+        assert len(kb) <= ROUTE_LABEL_SLOT, (
+            f"HUD 경로 라벨 초과 {kr!r} {len(kb)}B > {ROUTE_LABEL_SLOT}B"
+        )
+        buf[off : off + ROUTE_LABEL_SLOT] = kb.ljust(ROUTE_LABEL_SLOT, b"\x00")
+        n += 1
+    off, jp_bytes = 0xAB10, HALFWIDTH_ROUTE_LABEL_HALF_JP
+    assert buf[off : off + len(jp_bytes)] == jp_bytes, (
+        f"HUD 경로 라벨(반각) 슬롯 불일치 @0x{off:X}: {bytes(buf[off : off + len(jp_bytes)]).hex()} != {jp_bytes.hex()}"
+    )
+    kb = bytes(G.ROUTE_CODES) + b"\x00"
+    assert len(kb) <= ROUTE_LABEL_SLOT, f"HUD 경로 라벨(반각) 초과 {len(kb)}B > {ROUTE_LABEL_SLOT}B"
+    buf[off : off + ROUTE_LABEL_SLOT] = kb.ljust(ROUTE_LABEL_SLOT, b"\x00")
+    n += 1
+    for off, jp_bytes, kr in ROUTE_LABELS_2:
+        assert buf[off : off + len(jp_bytes)] == jp_bytes, (
+            f"경로 라벨(사본2) 슬롯 불일치 @0x{off:X}: {bytes(buf[off : off + len(jp_bytes)]).hex()} != {jp_bytes.hex()}"
+        )
+        kb = _enc(kr) + b"\x00"
+        assert len(kb) <= len(jp_bytes), (
+            f"경로 라벨(사본2) 초과 {kr!r} {len(kb)}B > {len(jp_bytes)}B"
+        )
+        buf[off : off + len(jp_bytes)] = kb.ljust(len(jp_bytes), b"\x00")
+        n += 1
+    return n
+
+
 def apply():
     rows, over = plan()
     for off, jp, kr, slot, enc in over:
@@ -510,6 +666,7 @@ def apply():
     for jp, kr in list(canon.items()):
         canon.setdefault(jp + "の書", kr + BOOK_SUFFIX)
     repack_names(buf, canon)
+    relocate_fixed_items(buf, canon)
     fill_fixed(buf, canon)
     # ⚠ **메모리카드·세이브 문구는 ED2.EXE 에도 한 벌 더 있다**(2026-08-16 실측, 13곳).
     # ED1 쪽만 고쳐 뒀더니 ED2 화면엔 `メモリーカードを 캑べています` 처럼 **가나 + 깨진
@@ -517,6 +674,21 @@ def apply():
     # `patch_sys_ui.MSGS` 는 **원문 문자열로 짝을 짓고 전 사본을 훑는** 표라 버퍼만 바꿔
     # 그대로 태우면 된다(오프셋을 다시 적으면 두 표가 갈린다 — 이 파일의 제1 관용).
     P.patch_msgs(buf)
+    # ⚠ **HUD 상태이상 라벨도 ED2.EXE 에 사본이 따로 있다**(2026-09-13, 마스터 QA `034`
+    # RE — ED1MON은 「묵」인데 ED2 전투 몬스터 창만 「黙」로 남아 있었다. `patch_sys_ui`
+    # 가 `extract(ED_LBA=257)` 로 **ED.EXE 한 벌만** 열어 사본을 놓쳤다). 정본은
+    # `patch_sys_ui.STATUS_LABELS` 하나 — 오프셋만 이쪽 사본 것(`0xD4B10`)을 쓴다.
+    for i, (jp, kr) in enumerate(P.STATUS_LABELS):
+        off = STATUS_BASE_ED2 + i * P.STATUS_STRIDE
+        assert buf[off : off + 2] == jp.encode("cp932"), (
+            f"ED2 상태 라벨 슬롯 불일치 @0x{off:X}: {buf[off : off + 2].hex()} != {jp!r}"
+        )
+        b = H.encode_kr(kr)
+        assert len(b) < P.STATUS_STRIDE, f"ED2 상태 라벨 초과 {kr!r} {len(b)}B"
+        buf[off : off + P.STATUS_STRIDE] = b.ljust(P.STATUS_STRIDE, b"\x00")
+    print(f"ED2 상태이상 라벨 {len(P.STATUS_LABELS)}개 (0x{STATUS_BASE_ED2:X}~)")
+    n_route = fix_halfwidth_route_labels(buf)
+    print(f"HUD 경로 라벨(반각) {n_route}개")
     for off, _jp, _kr, slot, enc in rows:
         b = enc + b"\x00"
         buf[off : off + slot] = b + b"\x00" * (slot - len(b))

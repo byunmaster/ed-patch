@@ -82,7 +82,12 @@ def strings(buf):
         except Exception:  # noqa: BLE001 — 코드/데이터 구간
             continue
         # `\x80` 이 든 것은 문자열이 아니라 **포인터 배열이 앞에 붙은 자리**다.
-        if ("\x80" in s) or not (KANA.search(s) or "%" in s):
+        # ⚠ **가나·`%` 도 없는 순한자 문자열은 원래 걸러진다**(코드/데이터 구간 오탐 방지) —
+        # 그런데 **자기 대상 자리표시자 `自分自身`도 순한자**라 그 채로 걸러져 화면에
+        # 미번역으로 남았다(마스터 QA 047 — 아이템을 자기 자신에게 쓰면 이름이 깨짐,
+        # 2026-09-13). 정본(`battle.json`)에 값이 이미 있는데 스캐너가 못 봤을 뿐이다 —
+        # 이 한 문자열만 명시로 편입한다(범위를 넓히면 코드/데이터 오탐이 돌아온다).
+        if ("\x80" in s) or not (KANA.search(s) or "%" in s or s == "自分自身"):
             continue
         out[fo] = s
     for fo in EXTRA_OFF:

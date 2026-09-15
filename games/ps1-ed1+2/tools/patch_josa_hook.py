@@ -28,6 +28,43 @@ from text.josa import batchim
 
 # ── 슬롯 코드 상수 ──────────────────────────────────────────────────────────
 SYL_LO, SYL_HI = 0x889F, 0x94FC  # 가~마지막 음절 슬롯 (hangul_map 배치)
+# 반각 한글(058, 2026-09-14 마스터 판정 — Galmuri11-Condensed 8px) 배정 구간.
+HALF_LO, HALF_HI = 0xA1, 0xDF  # 원래 반각 가타카나 구간을 반각 한글에 재배정
+# **코드 배정 확정**(RE, 2026-09-14) — 반각 가타카나 46종 중 빈 칸에서 골랐다:
+# 연속 10칸 · 표 밖 특수취급 코드(0xAF·0xDC) 회피 · 반각 구두점(0xA1~0xA5) 회피.
+# RE 가 빌드 전체(전투 코퍼스 0종·SCN 대사 17종·UI/이름표 0종)를 스캔해 **이 10칸이
+# 어디에도 안 쓰인다**를 값으로 확인했다 — 이 상수가 관용될 자리가 이후 늘면(HUD
+# 지명이 더 나오면) **여기만 옮기면 된다**(하드코딩 금지, 46종 여유가 있다).
+# ⚠ **글리프 픽셀 데이터의 실제 주소 산식은 이 상수와 별개다** — 조회가 단조가
+# 아니라서(0xA1~0xA5 는 byte-0x40, 0xDE~0xDF 는 byte-0x77, 일부는 2×byte+M) RE 가
+# 시뮬레이터로 가지를 직접 밟아 확정했다(`patch_hangul_glyph_table.py`, 2026-09-14
+# 굽기 완료).
+# 🔴 **062 로 용도가 바뀌었다(2026-09-14)** — 이 코드들의 화면 내용은 이제 음절
+# 하나가 아니라 "늑대의입"·"큐베라프로스" **그림의 6px 조각**이다(반각 전진폭이
+# 6px 인데 음절 글리프가 7px 라 다음 글자를 먹는 렌더 버그, `patch_hangul_glyph_table.py`
+# 참조). 그래서 **음절 문자열 → 코드 인코더(`encode_halfwidth_kr`)는 없앴다** — 이제
+# 이 코드들은 임의 한글 음절을 담는 범용 반각 슬롯이 아니라 "이 문자열 전용" 그림
+# 조각이라, 인코더가 있으면 마치 아무 음절이나 넣어도 되는 것처럼 오해를 부른다.
+# **이 표(HALFWIDTH_KR_ALLOC)는 이제 딱 하나만 한다** — 조사 훅이 이 코드 뒤에 오는
+# 은(는)/이(가)/을(를) 를 종성 유무로 축약할 때(`build_half_bit_table`, 아직 파이프라인에
+# 안 물려 있다 — half_table 인자가 항상 None) 그 코드가 **화면에서 무슨 음절로
+# 끝나 보이는지**(예: 0xC4 는 그림은 바뀌었어도 여전히 "입"으로 보인다)를 알아야
+# 하므로 남긴다. 실제 반각 값을 쓰는 쪽(HUD_CODES·ROUTE_CODES)은
+# `patch_hangul_glyph_table.py` 가 정본이다.
+HALFWIDTH_KR_ALLOC = {
+    0xC1: "늑",
+    0xC2: "대",
+    0xC3: "의",
+    0xC4: "입",
+    0xC5: "큐",
+    0xC6: "베",
+    0xC7: "라",
+    0xC8: "프",
+    0xC9: "로",
+    0xCA: "스",
+}
+
+
 BASE_LIN = 94  # 가(0x889F)의 (hi-0x88)*188+cell 값 — idx = lin - BASE_LIN
 PAREN_L, PAREN_R = 0x28, 0x29  # 반각 ( ) — 전투 인코더(patch_items.enc)는 ASCII 1바이트 폴백
 
@@ -48,6 +85,24 @@ def build_bit_table():
     return bytes(bits)
 
 
+def build_half_bit_table(alloc):
+    """반각 코드(`HALF_LO`~`HALF_HI`) → 종성 유무 1bit(8B, LSB-first).
+
+    `alloc`: {코드: 음절문자} — **058 ⑴ 에서 실제 폰트를 구울 때 정해지는 배정표**를
+    그대로 넣는다. 배정 안 된 코드는 비트가 0(무받침 취급)이지만 애초에 텍스트에
+    안 나오므로 무해하다 — 이 함수는 "배정이 오면 표를 만드는 방법"만 고정한다.
+    """
+    n = HALF_HI - HALF_LO + 1
+    bits = bytearray((n + 7) // 8)
+    for code, ch in alloc.items():
+        if not (HALF_LO <= code <= HALF_HI):
+            continue
+        idx = code - HALF_LO
+        if batchim(ch):
+            bits[idx // 8] |= 1 << (idx % 8)
+    return bytes(bits)
+
+
 def sjis_to_idx(code):
     """슬롯 SJIS → 음절 인덱스 (전수 검증된 산식 — 행당 188셀, 0x7F 스킵)."""
     hi, lo = code >> 8, code & 0xFF
@@ -55,7 +110,13 @@ def sjis_to_idx(code):
     return (hi - 0x88) * 188 + cell - BASE_LIN
 
 
-def fix_buffer(buf: bytearray, table: bytes, cross: int | None = 66, limit: int = 64) -> int:
+def fix_buffer(
+    buf: bytearray,
+    table: bytes,
+    cross: int | None = 66,
+    limit: int = 64,
+    half_table: bytes | None = None,
+) -> int:
     """파이썬 시뮬레이터 — asm 루틴(assemble_routine)과 **동일 의미**. 반환: 치환 수.
 
     buf: 스캔 시작 위치. 조립본은 [02][이름][01][조사]… 형태(02=이름색 시작, 01=복귀).
@@ -66,22 +127,35 @@ def fix_buffer(buf: bytearray, table: bytes, cross: int | None = 66, limit: int 
     cross: 조사A가 줄 끝(다음 바이트 null)일 때 '(조사B)'를 찾을 **다음 워크슬롯 인덱스**
     (asm의 a2 = 절대 포인터). 게임 자체 조판이 병기를 두 슬롯으로 가른 경우를 결합한다
     (유저 QA 07-28). `None`이면 cross-line 비활성 — asm에서는 a2에 zero guard 주소를
-    넘겨 같은 효과를 낸다(0 바이트는 '('가 아니므로 판정이 자연히 실패)."""
+    넘겨 같은 효과를 낸다(0 바이트는 '('가 아니므로 판정이 자연히 실패).
+
+    half_table: `build_half_bit_table()` 산출물(058, 2026-09-14) — **반각 한글**
+    (`HALF_LO`~`HALF_HI`, 1바이트)도 종성 판정 대상에 넣는다. 지금 훅은 전각 음절
+    (2바이트)·숫자·영문(0x30~0x7A)만 받는데, 반각 한글은 그 어느 쪽도 아니라서
+    `None`이면 그대로 지나쳐 「용의눈물**을(를)**」처럼 병기가 안 접힌다. `None`이면
+    반각 구간을 예전처럼 "그 외 1바이트"(prev 리셋)로 취급 — 반각 한글이 아직
+    안 굽힌 빌드에서도 기존 동작을 그대로 보존한다."""
     i, prev, fixed = 0, None, 0
     limit = min(limit, len(buf))
     while i < limit and buf[i]:
         b = buf[i]
-        if b < 0x81 or b == 0xFF:  # 1바이트(반각·공백·제어)
+        if b < 0x81 or b == 0xFF or (half_table is not None and HALF_LO <= b <= HALF_HI):
             if b == 0x20 or 1 <= b <= 3:
                 pass  # 공백·색제어(1·2·3) → prev 유지
             elif 0x30 <= b <= 0x7A:
                 prev = SYL_LO  # 숫자·영문 → 무받침 마커('가')
+            elif half_table is not None and HALF_LO <= b <= HALF_HI:
+                prev = b  # 반각 한글 — 코드 자체를 종성 판정 대상으로 남긴다
             else:
                 prev = None
             i += 1
             continue
         code = (b << 8) | buf[i + 1]
-        if prev is not None and SYL_LO <= prev <= SYL_HI:  # 앞이 음절일 때만
+        prev_is_full_syl = prev is not None and SYL_LO <= prev <= SYL_HI
+        prev_is_half_syl = (
+            half_table is not None and prev is not None and HALF_LO <= prev <= HALF_HI
+        )
+        if prev_is_full_syl or prev_is_half_syl:  # 앞이 음절(전각·반각)일 때만
             for a, bb in PAIRS:
                 if code != a:
                     continue
@@ -99,8 +173,12 @@ def fix_buffer(buf: bytearray, table: bytes, cross: int | None = 66, limit: int 
                     continue
                 if (buf[pb + 1] << 8 | buf[pb + 2]) != bb or buf[pb + 3] != PAREN_R:
                     continue
-                idx = sjis_to_idx(prev)
-                has = table[idx // 8] >> (idx % 8) & 1
+                if prev_is_half_syl:
+                    idx = prev - HALF_LO
+                    has = half_table[idx // 8] >> (idx % 8) & 1
+                else:
+                    idx = sjis_to_idx(prev)
+                    has = table[idx // 8] >> (idx % 8) & 1
                 chosen = a if has else bb
                 buf[i] = chosen >> 8
                 buf[i + 1] = chosen & 0xFF
