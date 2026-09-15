@@ -30,9 +30,15 @@
 
 ## 원본
 
-`originals/jp/sfc-ed1/*.zip`(zip 째, 안에 1,048,576B `.sfc`, 복사기 헤더 없음). 지문·상수는
-[`tools/common.py`](tools/common.py). ⚠ **읽기 전용**이고, 쓰기 헬퍼는 재삽입 설계가 서기
-전까지 두지 않는다(`docs/patcher-checklist.md` 2).
+`originals/jp/sfc-ed1/Dragon Slayer - Eiyuu Densetsu (J).sfc`(1,048,576B 순정 LoROM, 복사기
+헤더 없음 — 있었으면 1024 로 안 나눠떨어져 `common.rom_bytes()` 가 죽는다). 같은 폴더의
+`.zip`은 소장 원본 그대로 남겨 둔 것이고 도구는 읽지 않는다(2026-09-15 zip 추출로 전환).
+지문·상수는 [`tools/common.py`](tools/common.py). ⚠ **읽기 전용**이고, 쓰기 헬퍼는 재삽입
+설계가 서기 전까지 두지 않는다(`docs/patcher-checklist.md` 2).
+
+⚠ **미래의 `sfc-ed2`(있다면)는 다른 게임이다** — HiROM, 2MB(1,572,864B), 헤더 타이틀
+"DRAGON SLAYER LEGEND2", 체크섬/보수 2B19/D4E6. 이 파일의 LoROM 상수(`ROM_SIZE`·
+`HEADER_TITLE`·`snes2off()`)를 그대로 재사용하면 안 된다.
 
 ## 도구
 
