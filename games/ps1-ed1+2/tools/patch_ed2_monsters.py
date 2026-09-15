@@ -51,7 +51,11 @@ _PUA = re.compile(r"[-]")  # cp932 가 미정의 바이트를 매핑하는
 DIALOG = re.compile(r"[。！？…、」『%\n]")
 NAME_MAX = 14
 
-# 전각 접미 → 반각. `′`·`”` 는 분열체 구분이라 살린다(`赤スライムＡ′`).
+# 전각 접미 → 반각.
+# 🔴 `′`·`”` 도 반각으로 낸다(2026-09-15, 마스터 QA — 전각 프라임이 폭도 넘치고 깨진
+# 글자로 오해까지 샀다). 이 표는 일반 알파벳 접미(A~F)만 다루고, 색전환 `%c` 가 낀
+# 분열체(A′·A″·B′·B″) 넷은 이름표 스캔 밖이라 `SPLIT_SLIME_MSGS._halfwidth_marks()`
+# 가 따로 처리한다 — 같은 지식이 두 곳에 있는 게 아니라 **경로가 아예 다르다.**
 HALF = {chr(0xFF21 + i): chr(ord("A") + i) for i in range(26)}
 
 
@@ -341,31 +345,55 @@ def fix_stray_fullwidth_suffix(buf, group):
 # 없이 매끈한 것)은 이미 정상 번역돼 있으니(레코드 표), 그 결과를 그대로 본뜬다.
 # ⚠ **직접 좌표 패치다** — 이 넷은 이름표 스캔 경로 밖이라 `plan()`이 원리상 못 본다.
 # 슬롯 안에 들어가므로(19/17B ≤ 24/20B) 재배치도 필요 없다.
+#
+# 🔴 **분열체 접미(′/″)는 반각으로 낸다**(2026-09-15, 마스터 QA — "붉은슬라임B' 와
+# 붉은슬라임B″가 되었다."가 40반각으로 창 틀(29반각)을 넘는 걸 보고, 우선 전각 프라임을
+# 깨진 글자로 오해하셨다가 정정). 전각(2바이트, `8166`=’·`8168`=”)을 반각 ASCII(1바이트,
+# `'`·`"`)로 바꾸면 표시도 더 깔끔하고 폭도 하나씩 줄어든다. ⚠ **hex 를 손으로 다시 안
+# 쓴다** — 원래 KR 바이트열(전각)은 그대로 두고 `_halfwidth_marks()`로 마크만 기계적으로
+# 치환한다(과거 이 표에서 손으로 친 hex가 "임" 음절을 통째로 빠뜨린 사고가 있었다).
+_MARK_TO_HALFWIDTH = {bytes.fromhex("8166"): b"'", bytes.fromhex("8168"): b'"'}
+
+
+def _halfwidth_marks(kr):
+    for full, half in _MARK_TO_HALFWIDTH.items():
+        kr = kr.replace(full, half)
+    return kr
+
+
 SPLIT_SLIME_MSGS = (
     # (group, off, 원본 바이트, 새 바이트)
     (
         0,
         0x1DC,
         bytes.fromhex("2563 90d4 8358 8389 2563 2563 8343 8380 8260 8166 2563".replace(" ", "")),
-        bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 2563 2563 90d1 4181 6625 63".replace(" ", "")),
+        _halfwidth_marks(
+            bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 2563 2563 90d1 4181 6625 63".replace(" ", ""))
+        ),
     ),
     (
         0,
         0x1F4,
         bytes.fromhex("2563 90d4 8358 8389 8343 8380 8260 8168 2563".replace(" ", "")),
-        bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 90d1 4181 6825 63".replace(" ", "")),
+        _halfwidth_marks(
+            bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 90d1 4181 6825 63".replace(" ", ""))
+        ),
     ),
     (
         0,
         0x208,
         bytes.fromhex("2563 90d4 8358 8389 2563 2563 8343 8380 8261 8166 2563".replace(" ", "")),
-        bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 2563 2563 90d1 4281 6625 63".replace(" ", "")),
+        _halfwidth_marks(
+            bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 2563 2563 90d1 4281 6625 63".replace(" ", ""))
+        ),
     ),
     (
         0,
         0x220,
         bytes.fromhex("2563 90d4 8358 8389 8343 8380 8261 8168 2563".replace(" ", "")),
-        bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 90d1 4281 6825 63".replace(" ", "")),
+        _halfwidth_marks(
+            bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 90d1 4281 6825 63".replace(" ", ""))
+        ),
     ),
 )
 
