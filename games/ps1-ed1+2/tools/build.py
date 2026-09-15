@@ -159,6 +159,51 @@ def check_screen_gates():
         raise SystemExit(
             "화면에 일본어가 남았다 — 블록이 탈락했다: " + " · ".join(left) + "\n" + _why_excluded()
         )
+    # ⚠ ED2MON0~5.BIN(ED2 전투 대사 오버레이) — 2026-09-13 편입. 041①이 퇴보였을 때 여기
+    # 116곳이 JP 로 남아 있었는데 위 SCN 축만 보느라 아무도 몰랐다. 0 이 아니라 기준선
+    # 대조다(이름 접미 변형 등 "할 일"이 섞여 있다 — 늘 빨간불을 피한다).
+    check_scn_jp_left.check_mon_baseline(check_scn_jp_left.scan_mon(), strict=True)
+    # 🔴 위 `scan()`은 "참조 블록·kind 분류"에 기대는 축이라, **분류 자체가 틀리면
+    # 영영 못 본다**(2026-09-13, 마스터 QA 051 — ED2SCN8 jp0 이 실제 대사인데
+    # `kind:"header"`(선두 지명)로 뽑혀 `mid_block_ref` 로 통째로 건너뛰었고, 표에
+    # 번역이 있는데도 화면엔 원문이 그대로 나갔다. 위 scan() 은 이걸 "0곳"으로 찍었다).
+    # ⇒ 분류·참조·임계값을 전혀 안 보는 별도 축 — "번역표에 값이 있는데 그 자리
+    # 바이트가 원문 그대로인가"만 잰다(0을 목표로 삼는다, 문턱값 없음).
+    check_scn_jp_left.check_translated_but_raw_all(strict=True)
+    # 🔴 위는 "이미지 어딘가에 일본어가 있나"(분모=파일 전체) — 방향을 뒤집어 "우리가
+    # 쓴 자리가 맞나"(분모=우리 표)도 본다. 047(레밍플러스A — 스캐너가 아예 못 본 이름)
+    # 는 위 축으로는 원리상 안 잡힌다.
+    import check_ed2mon_readback
+
+    bad_names = check_ed2mon_readback.check_names()
+    missing_lines = check_ed2mon_readback.check_lines()
+    blind_names = check_ed2mon_readback.check_name_coverage()
+    check_ed2mon_readback.check_baseline(bad_names, missing_lines, blind_names, strict=True)
+    # 🔴 위 셋 다 "우리 표"가 분모라 표에 없는 자리는 원리적으로 못 본다(047 의 진짜
+    # 교훈). 원본↔빌드를 직접 대조해 "우리가 건드린 자리"만 분모로 삼는다 — 스탯 이진
+    # 자료가 많아도 잡음이 0이다.
+    import check_original_diff
+
+    check_original_diff.check_baseline("ED2MON", strict=True)
+    # ED2.EXE 는 개수만 기준선으로 등록(2026-09-13) — 분류는 다음 라운드, 그래서 아직
+    # 비strict(새 자리가 생겨도 보고만 하고 빌드는 안 막는다).
+    check_original_diff.check_baseline("ED2EXE", strict=False)
+    # 사본 개수 게이트(2026-09-15) — "고치는 원본 바이트열이 이미지에 N곳인데 바뀐
+    # 게 N곳 미만이면 실패". 오늘 일곱 번 겪은 "사본이 둘" 사고의 공통 축.
+    import check_copy_completeness
+
+    if not check_copy_completeness.check():
+        raise SystemExit("사본 개수 게이트 실패 — 위 출력을 본다")
+    # 056 — **줄 수가 아니라 바이트**가 진짜 한계다(RE 실기, 2026-09-15). 메시지박스
+    # strcpy 에 길이검사가 없어 128B 를 넘으면 ra 를 덮는다(소프트락). 반각 폭 게이트
+    # (이론상 최악 `check()`)는 "보기" 축이라 비strict 로 남기고, 이건 "구조" 축이라 strict.
+    import check_runtime_template_width as CRTW
+
+    CRTW.check_byte_budget(strict=True)
+    # 056 잔여 — **분모 재측정(2026-09-15)** 으로 세 번째 거짓 초과 템플릿을 걸러내자
+    # 실제 초과가 0이 됐다. 0인 축을 보고로만 두면 다시 늘어도 아무도 안 본다(루트
+    # CLAUDE.md) — strict 게이트로 승격. `-v` 로 상세, `--realistic` 로 단독 실행 가능.
+    CRTW.check_realistic(strict=True)
     if script_draft.check_sentinels():
         raise SystemExit("번역 정본이 `%s`·`%d` 인자를 잃었다 — 그 블록은 fmt_drop 으로 탈락한다")
 
@@ -208,10 +253,8 @@ def main():
     # ⚠ 창 제어값 교정 — **원판이 안 그리고 넘어가는 창**을 되살린다(문안이 아니라 기계어).
     #   씬 재삽입 뒤 최종 이미지 위에서 돈다. 코드는 재삽입해도 안 움직여 오프셋이 안정하다.
     run("patch_scn_msgctl.py")
-    run("patch_ed2_sys.py")
-    run(
-        "patch_ed2_battle.py"
-    )  # ED2.EXE 전투 문안 — 제자리 치환만(재배치 미구현)  # ED2.EXE 시스템 UI·지명 — **ED.EXE 와 사본 관계**라 따로 쓴다
+    run("patch_ed2_sys.py")  # ED2.EXE 시스템 UI·지명 — **ED.EXE 와 사본 관계**라 따로 쓴다
+    run("patch_ed2_battle.py")  # ED2.EXE 전투 문안 — 제자리 치환 + 넘치면 재배치
     run("patch_ed2_monsters.py")  # ED2MON0~5.BIN 몬스터 이름 — 제자리 치환만
     run("patch_ed2_monster_lines.py")  # ED2MON0~5.BIN 전투 대사 — 제자리 치환만
     run("patch_items.py")  # ED.EXE 아이템·마법명 (FINAL 제자리 갱신)
@@ -231,6 +274,34 @@ def main():
     # 그래서 파일마다 **자기 슬라이스만** 넣는다. END1·END2 는 세이브가 있어야 확인이 되므로
     # 인게임 검증 뒤에 붙인다.
     run("patch_opening_font.py", "OPEN1", "OPEN2", "END1", "END2")  # 오프닝·엔딩 (FINAL 제자리)
+    # 🔴 **ED2MON 을 건드리는 두 스크립트(이름·대사)가 다 돈 뒤, 딱 한 번**(2026-09-14,
+    # 012 "와" 뒤 공백 — 대사 스크립트가 같은 자리를 자기 스캔으로 다시 써서 이름
+    # 스크립트가 앞서 넣은 공백을 지웠다). 순서 싸움을 피하려고 맨 뒤로 뺐다.
+    import patch_ed2_monsters as _pm
+
+    n_conn = _pm.finalize_connector_space()
+    if n_conn:
+        print(f"ED2MON 접속사 공백 {n_conn}건")
+    # 058 지명 지도 그리기(2026-09-14, 마스터 지시) — 칸 넉넉한 자리만 "늑대입"→
+    # "늑대의입" 복원. 화면에서 바뀐 곳=그 자리 용도가 밝혀진다(HUD·워프·배너 등).
+    import patch_sys_ui as _psu
+
+    _psu.restore_full_place_names()
+    # 058ⓑ 반각 한글 글리프 굽기(2026-09-15, RE 확정 주소) — 코드 배정(조사 훅)과
+    # 글리프 픽셀은 층이 달라 따로 적용한다. 위 지명 복원과 같은 이유로 맨 뒤.
+    import patch_hangul_glyph_table as _phg
+
+    _phg.apply()
+    # 058ⓑ ④ — 글리프가 구워진 뒤에야 반각 문자열이 화면에 정상으로 나간다.
+    _psu.apply_halfwidth_hud_slots()
+    # 038 — 세레 저택 NPC 슬롯 설치 인자 한 바이트(원판 결함, RE 확정 2026-09-15).
+    import patch_npc_zeni_slot as _pnz
+
+    _pnz.apply()
+    # 065 — ED2SCN10·ED2SCN13 안 경로 라벨 사본(058ⓑ 와 같은 "사본이 둘" 부류).
+    import patch_scn_route_labels as _psrl
+
+    _psrl.apply()
     for stem in INTERMEDIATES + STALE:
         rm(stem)
     check_immutable()

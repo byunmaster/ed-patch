@@ -1,0 +1,4 @@
+{
+ "_doc": "이 목록의 자리는 시스템 문구(강제 번역)라 정발과 겹쳐도 정상이다 — check_forbidden.scan_repo() 가 읽는다. 필름 서사(오프닝·엔딩)는 창작 서사라 여기 선언해도 빠지지 않는다(MOVIE_TEXTMAPS, 코드 쪽 규칙).",
+ "system_text": ["textmap/*.json"]
+}

@@ -22,6 +22,8 @@ forbidden Korean strings must never appear"* 로 같은 자리를 지킨다(2026
 """
 
 import collections
+import fnmatch
+import json
 import os
 import re
 import sys
@@ -452,16 +454,92 @@ def scan_canon(verbose=False):
     return n
 
 
+# ── 시스템 문구 선언 — 경로 관례가 아니라 **게임이 스스로 선언** ────────────────────
+# 🔴 **예전엔 「`textmap/` 안이면 시스템 문구」였다 — 경로 관례로 갈랐다**(2026-09-12 사고).
+#    다른 게임은 시스템 문구를 `script/`(예: `system.json`)에 두는데, 이 검사기가
+#    **레포 전역**을 훑다 보니 **자기 관례를 남의 게임에 강제**한 꼴이었다. 실측: ss-ed1+2
+#    `script/system.json` 929문자열 중 397이 우리 `textmap/` 과 바이트까지 같은 시스템
+#    문구(`〜が現れた。` 류)인데, 경로가 달라 **12건이 저작권 위반으로 잘못 잡혔다**
+#    (pc98-ed1 `scn.json` 도 1건 — 이쪽은 대사 파일이라 진짜일 수 있다, 그 게임이 판정한다).
+#
+# ⇒ **경로 대신 선언**이다. 게임이 자기 디렉터리에 `forbidden_exempt.json` 을 두면
+#    그 게임의 몫만 스스로 정한다 — 남의 관례를 몰라도 되고, 남이 내 관례를 몰라도 된다.
+#
+#        games/<게임>/forbidden_exempt.json
+#        {
+#          "_doc": "이 목록의 자리는 시스템 문구(강제 번역)라 정발과 겹쳐도 정상이다.",
+#          "system_text": ["textmap/*.json"]
+#        }
+#
+#    `system_text` 는 그 게임 디렉터리 기준 **글롭 목록**이다. 선언이 없는 게임은 예전처럼
+#    **전부 검사 대상**(안전한 기본값 — 선언 안 하면 느슨해지는 게 아니라 빡빡한 쪽으로 있다).
+#    ⚠ **필름 서사(오프닝·엔딩)는 이 선언을 타도 빠지지 않는다** — `MOVIE_TEXTMAPS` 는
+#    창작 서사라 시스템 문구 취급 자체가 틀렸다(2026-08-21 사고, 그건 선언과 별개 규칙이다).
+def _declared_exempt():
+    """{게임 상대경로("games/<게임>"): [글롭, …]} — 각 게임이 스스로 선언한 시스템 문구 자리."""
+    root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    )
+    games_dir = os.path.join(root, "games")
+    out = {}
+    if not os.path.isdir(games_dir):
+        return out
+    for game in sorted(os.listdir(games_dir)):
+        mf = os.path.join(games_dir, game, "forbidden_exempt.json")
+        if not os.path.isfile(mf):
+            continue
+        try:
+            doc = json.load(open(mf, encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        pats = doc.get("system_text") or []
+        if pats:
+            out[os.path.join("games", game)] = pats
+    return out
+
+
+def _is_declared_system_text(rel, exempt):
+    """`rel`(레포 루트 기준)이 시스템 문구로 면제되는가 — **레거시 관례 + 선언**, 둘 다 본다.
+
+    ⚠ **관례를 걷지 않는다.** `textmap/` 프리 패스로 이미 사는 게임(md-ed1·sfc-ed1 등)이
+    있다 — 선언 없이 걷으면 그 게임들이 **하루아침에 빨간불**이 된다(2026-09-12 시험에서
+    실제로 그랬다: md 2건·sfc 1건이 새로 실패로 잡혔다). **선언은 관례가 안 맞는 게임을
+    위한 추가 경로**다 — `script/` 에 시스템 문구를 두는 ss-ed1+2 같은 경우.
+    관례 쪽을 걷는 건 **각 게임이 스스로 선언 파일로 옮겨 갈 때**(다음 라운드 이후)다.
+    """
+    fname = os.path.basename(rel)
+    if fname in MOVIE_TEXTMAPS:
+        return False  # 창작 서사는 관례·선언 어느 쪽을 타도 뺄 수 없다
+    if "/textmap/" in rel.replace(os.sep, "/"):
+        return True  # 레거시 관례 — 그대로 유지
+    for prefix, pats in exempt.items():
+        if not (rel == prefix or rel.startswith(prefix + os.sep)):
+            continue
+        sub = rel[len(prefix) + 1 :]
+        if any(fnmatch.fnmatch(sub, pat) for pat in pats):
+            return True
+    return False
+
+
 def scan_repo(verbose=False):
-    """커밋되는 파일에 정발 번역문이 있는가."""
+    """커밋되는 파일에 정발 번역문이 있는가.
+
+    🔴 **이 스캔은 레포 전체를 훑는다**(다른 게임이 「자기 대조 코퍼스가 없어 가짜
+    초록」이 되는 사고를 막으려면 범위를 좁히면 안 된다 — 마스터 지시 2026-09-14).
+    그런데 그 결과로 **다른 게임 트리의 적발이 이 게임의 게이트를 영구히 빨간불로
+    만든다**(pc98-ed1·ss-ed1+2 가 실제로 그랬다) — 늘 빨간불이면 아무도 안 본다.
+    ⇒ **적발은 계속 보이되(경고 + 주인 이름), `exit 1` 은 자기 게임 것만** 낸다.
+    다른 게임 몫은 그 게임 세션이 본다 — 우리가 대신 고치면 남의 브랜치를 건드리게 된다.
+    """
     lines = _corpus_lines()
     if not lines:
         print("  ⏭ 정발 코퍼스가 없어 건너뜀(원본이 있는 머신에서 검사된다)")
         return 0
     # tools → 게임 → games → 레포 루트
-    root = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    )
+    game_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    this_game = os.path.basename(game_dir)  # "ps1-ed1+2"
+    root = os.path.dirname(os.path.dirname(game_dir))
+    exempt = _declared_exempt()
     bad = 0
     for dirpath, dirnames, files in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIR]
@@ -490,18 +568,28 @@ def scan_repo(verbose=False):
             hit = [h for h in hit if not any(re.sub(r"\s+", "", h) in t for t in ok)]
             if hit:
                 rel = os.path.relpath(path, root)
-                # 🔴 EXE 시스템 문구(`textmap/`)는 **강제 번역**이라 우연 일치가 정상이다 —
+                # 🔴 **선언된 시스템 문구는 강제 번역**이라 우연 일치가 정상이다 —
                 #    「〜が現れた。」는 누가 옮겨도 「〜이(가) 나타났다.」다(방침 08-18 · 08-04).
-                #    세되 실패로 치지 않는다. 대사(`script/`)는 그대로 실패다.
-                if os.sep + "textmap" + os.sep in path and f not in MOVIE_TEXTMAPS:
+                #    세되 실패로 치지 않는다. 대사(`script/`)는 선언이 없는 한 그대로 실패다.
+                if _is_declared_system_text(rel, exempt):
                     print(f"      ℹ {rel}: 시스템 문구 {len(hit)}건 (강제 번역 — 실패 아님)")
+                    continue
+                owner = rel.split("/")[1] if rel.startswith("games/") else None
+                if owner and owner != this_game:
+                    # 다른 게임 것 — 계속 보이게 하되(범위를 좁히면 그 게임이 가짜 초록이
+                    # 된다) 우리 게이트는 이걸로 안 죽는다. 고치는 건 그 게임 세션 몫이다.
+                    print(
+                        f"      ⚠ [{owner}] {rel}: 정발 번역문 {len(hit)}건 (다른 게임 — 이 게이트는 안 셈)"
+                    )
+                    for h in hit[:1]:
+                        print(f"           {h[:56]!r}")
                     continue
                 bad += len(hit)
                 print(f"      ⚠ {rel}: 정발 번역문 {len(hit)}건")
                 for h in hit[:3] if verbose else hit[:1]:
                     print(f"           {h[:56]!r}")
     print(
-        f"  {'✅ 리포에 정발 번역문 없음' if not bad else f'⚠ 정발 번역문 {bad}건'}"
+        f"  {'✅ 리포에 정발 번역문 없음(이 게임)' if not bad else f'⚠ 정발 번역문 {bad}건(이 게임)'}"
         + (
             ""
             if not bad

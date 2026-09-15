@@ -34,10 +34,15 @@ KR_BUY = ("사시겠습니까", "사시려나요", "사시렵니까", "사가시
 KR_SELL = ("파시겠습니까", "파시려나요", "파시렵니까", "파시겠어요", "파실", "파시려")
 
 
+# 🔴 **편마다 씬 수가 다르다**(ED1 6 · ED2 13). 여기를 고정하면 한 편이 분모 밖이 된다
+#    (2026-09-12, check_window_nl 과 같은 사고). `main()` 이 두 편을 다 돈다.
+SCN_COUNT = {"ED1": 6, "ED2": 13}
+
+
 def scan(game="ED1"):
     """[(씬, eid, 방향, 렌더)] — JP 와 KR 의 매매 동사가 어긋난 블록."""
     out = []
-    for scn in range(1, 7):
+    for scn in range(1, SCN_COUNT[game] + 1):
         name = f"{game}SCN{scn}"
         tr, _, _ = R.load_translations(name.replace("SCN", "_SCN"), name)
         jp = {b["id"]: b for b in load_jp_scene(game, scn)}
@@ -61,7 +66,7 @@ def scan(game="ED1"):
 
 
 def main():
-    rows = scan()
+    rows = scan("ED1") + scan("ED2")
     print(f"매매 동사가 뒤집힌 블록 {len(rows)}건")
     for name, e, why, kr in rows[:24]:
         print(f"  {name} jp{e}  [{why}]  {kr[:44]}")

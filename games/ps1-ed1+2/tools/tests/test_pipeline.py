@@ -1271,6 +1271,49 @@ def test_josa_shift_leaves_no_stale_tail():
     assert n <= 504, f"josa 루틴이 {n}B 로 늘었다 — VAB 파형 여유가 4B 뿐이다"
 
 
+def test_josa_hook_folds_halfwidth_korean():
+    """058(2026-09-14, 마스터 판정) — **반각 한글도 조사 훅이 접어야 한다.**
+
+    지금 훅은 전각 음절(2B)·숫자·영문(0x30~0x7A)만 종성 판정 대상으로 본다 —
+    반각 한글(`HALF_LO`~`HALF_HI`, 1B)은 그 어느 쪽도 아니라서 안 고치면
+    「용의눈물**을(를)**」이 그대로 화면에 뜬다. 실제 반각 코드 배정은 058 ⑴
+    (폰트 굽기)에서 정해지므로 여기선 가짜 배정(0xA1=늑받침있음·0xA2=피받침없음)
+    으로 **판정 로직**만 검증한다 — 배정이 오면 `build_half_bit_table()`에 그
+    표만 넣으면 된다.
+    """
+    import hangul_map as H
+    import patch_josa_hook as J
+
+    alloc = {0xA1: "늑", 0xA2: "피"}
+    half_tbl = J.build_half_bit_table(alloc)
+    full_tbl = J.build_bit_table()
+
+    def pair(a, b):
+        return (
+            H.syllable_sjis(a).to_bytes(2, "big")
+            + b"("
+            + H.syllable_sjis(b).to_bytes(2, "big")
+            + b")"
+        )
+
+    # 받침 있는 반각 음절(늑) 뒤엔 은(는) → 은
+    buf = bytearray(bytes([0xA1]) + pair("은", "는"))
+    buf = buf.ljust(66, b"\x00")
+    assert J.fix_buffer(buf, full_tbl, cross=None, limit=64, half_table=half_tbl) == 1
+    assert (buf[1] << 8 | buf[2]) == H.syllable_sjis("은")
+
+    # 받침 없는 반각 음절(피) 뒤엔 은(는) → 는
+    buf2 = bytearray(bytes([0xA2]) + pair("은", "는"))
+    buf2 = buf2.ljust(66, b"\x00")
+    assert J.fix_buffer(buf2, full_tbl, cross=None, limit=64, half_table=half_tbl) == 1
+    assert (buf2[1] << 8 | buf2[2]) == H.syllable_sjis("는")
+
+    # half_table 을 안 주면(058 적용 전 빌드) 예전 그대로 — 반각 구간을 손 안 댄다
+    buf3 = bytearray(bytes([0xA1]) + pair("은", "는"))
+    buf3 = buf3.ljust(66, b"\x00")
+    assert J.fix_buffer(buf3, full_tbl, cross=None, limit=64, half_table=None) == 0
+
+
 # ── 온점 매달기 훅 — 조립된 바이트를 실제로 돌려 판정표와 대조한다 ──────────────
 # ⚠ 파이썬 모델만 맞고 **인코딩이 틀리면 통과해버리는** 구멍을 막는다(조사 훅과 같은 이유).
 def _run_prewrap_stub(col, ch, nxt):
