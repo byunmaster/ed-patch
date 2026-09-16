@@ -461,6 +461,24 @@ def fix_checksum(out: bytearray) -> None:
     out[CHECKSUM_OFF + 2 : CHECKSUM_OFF + 4] = s.to_bytes(2, "little")
 
 
+def verify_header_checksum(out: bytes) -> None:
+    """확장 산출물의 헤더 계약 — 2026-09-15 관리자 지적(빌드 칸이 2배로 커진 걸 보고).
+    ⚠ **조용히 틀리는 자리다** — 체크섬이 안 맞아도 대부분의 에뮬레이터는 그냥 돈다. 실기·일부
+    에뮬에서만 걸린다. `fix_checksum()` 직후라 사실상 항상 참이어야 하지만, 그 계산 자체가
+    깨지거나 나중에 누가 그 뒤에 바이트를 더 건드리면 여기서 잡는다(회귀 방지)."""
+    if len(out) != NEW_SIZE:
+        raise SystemExit(f"산출물 크기가 {NEW_SIZE:,}B 가 아니다: {len(out):,}B")
+    if out[HEADER_ROM_SIZE_OFF] != 0x0B:
+        raise SystemExit(f"헤더 ROM 크기 필드가 0x0B(2048KB) 가 아니다: {out[HEADER_ROM_SIZE_OFF]:#04x}")
+    cmpl = int.from_bytes(out[CHECKSUM_OFF : CHECKSUM_OFF + 2], "little")
+    chk = int.from_bytes(out[CHECKSUM_OFF + 2 : CHECKSUM_OFF + 4], "little")
+    if cmpl ^ chk != 0xFFFF:
+        raise SystemExit(f"체크섬·보수가 안 맞물린다: chk={chk:#06x} cmpl={cmpl:#06x}")
+    want = (sum(out) - sum(out[CHECKSUM_OFF : CHECKSUM_OFF + 4]) + 0x1FE) & 0xFFFF
+    if want != chk:
+        raise SystemExit(f"체크섬이 실제 바이트합과 다르다: 기록 {chk:#06x} 실측 {want:#06x}")
+
+
 def build(rom: bytes) -> tuple[bytes, dict]:
     items = body_items(rom)
     place = relocation_plan(items)
@@ -484,6 +502,7 @@ def build(rom: bytes) -> tuple[bytes, dict]:
         )
     out[HEADER_ROM_SIZE_OFF] = 0x0B  # 2048KB
     fix_checksum(out)
+    verify_header_checksum(out)
     info = {
         "items": len(items),
         "body_bytes": len(body),
@@ -1147,6 +1166,7 @@ def build_kr(
     n_term = verify_terminators(rom, out)
     out[HEADER_ROM_SIZE_OFF] = 0x0B
     fix_checksum(out)
+    verify_header_checksum(out)
     imm = immutable_diffs(rom, out)
     st = k["stats"]
     # 원문 뱅크별 JP → KR 투영
