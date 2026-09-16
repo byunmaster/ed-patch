@@ -11,7 +11,7 @@ hand_paste "key 287 mod1"
 hand_pasteend 
 hand_ejectpage "key 283 mod1" 
 hand_printtext 
-hand_pause "key 19 host" 
+hand_pause "key 112 mod2" 
 hand_pauseints 
 hand_gui "key 99 host" 
 hand_mapper "key 109 host" 
@@ -45,7 +45,7 @@ hand_caprawmidi
 hand_caprawopl 
 hand_capnetrf 
 hand_video "key 105 host" 
-hand_scrshot "key 112 host" 
+hand_scrshot "key 99 mod2" 
 hand_rawscrshot "key 112 mod1 host" 
 hand_cycauto 
 hand_cycledown "key 45 host" 

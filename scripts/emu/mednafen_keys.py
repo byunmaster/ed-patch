@@ -122,6 +122,7 @@ for _sys in ("psx", "snes", "pce"):
 #                  8 을 넣어도 클램프도 경고도 없다(2026-08-22 실측).
 #   DOSBox 쪽은 Tab 홀드만 있다(staging 의 speedlock 은 홀드 전용이고 토글 설정이 없다).
 # 실행기 공통 단축키(유저 요청 2026-09-07 — mednafen · np2kai · DOSBox-X 가 같은 손가락):
+#   Space(또는 ⌥P) = 일시정지 · ⌥C = 화면 캡처 · ⌥B = 되감기(⌥⇧B 로 먼저 켠다) ·
 #   ⌘R = 재시작 · F5 = 퀵세이브 · F7 = 퀵로드 · ` = 빨리감기 토글 · Tab = 빨리감기 홀드 ·
 #   ⌥- / ⌥+ = 창 크기 한 단계씩 · ⌥1~4 = 단계를 바로 (1 매우 작음 … 4 큼).
 #   ⌥M = 소리 끄기/켜기.
@@ -138,6 +139,27 @@ SETTINGS = {
     "command.reset": "keyboard 0x0 21 && keyboard 0x0 227 || keyboard 0x0 21 && keyboard 0x0 231 || keyboard 0x0 67",  # ⌘R · F10
     "command.save_state": "keyboard 0x0 62",  # F5
     "command.load_state": "keyboard 0x0 64",  # F7
+    # 일시정지·캡처·되감기 (마스터 요청 2026-09-17). 셋 다 mednafen 내장 기능이라 **설정만**
+    # 바꾸면 된다 — 소스는 안 건드린다.
+    # 🔴 **⌥ 조합으로 맞춘다**(마스터 2026-09-17). 창 크기 ⌥-/⌥+ · ⌥1~4 · 소리 ⌥M 이 이미
+    #   ⌥ 라 손가락이 같고, 무엇보다 **DOS·PC-98 은 게임이 F 키를 쓴다** — 단독 F 키로 잡으면
+    #   게스트가 그 키를 못 받는다. 세 실행기가 **같은 글자**를 쓰려면 ⌥ 가 유일한 답이었다.
+    #   ⚠ 기본값은 일시정지=Pause 키 · 캡처=F9 · 되감기=Backspace 라 셋 다 바꾼다.
+    # 🔑 **스페이스도 같이 문다**(마스터 2026-09-17 — 「⌥P 가 조금 불편하다, 덕스테이션처럼
+    #   스페이스로」). 콘솔 기종은 **스페이스가 완전히 비어 있다** — mednafen 기본 명령에도 없고
+    #   우리 패드 배치(q w e a s d z c · 방향키 · Shift=select · Tab · `)에도 없다.
+    # 🔴 **DOS·PC-98 엔 못 준다** — 거기선 **게임이 스페이스를 직접 쓴다**(확인·넘김·메뉴).
+    #   그래서 ⌥P 를 **같이** 물려 둔다: 스페이스는 편한 키, ⌥P 는 **세 실행기에서 다 되는** 키다.
+    #   ⚠ 하나로 줄이지 않는다 — 기종을 옮겨 다니면 「여기선 뭐였지」가 되기 때문이다.
+    "command.pause": "keyboard 0x0 44 || keyboard 0x0 19+alt",  # Space · ⌥P
+    "command.take_snapshot": "keyboard 0x0 6+alt",  # ⌥C
+    "command.state_rewind": "keyboard 0x0 5+alt",  # ⌥B (누르고 있는 동안 되감긴다)
+    # 🔴 **되감기는 켜야 쌓인다.** `state_rewind`(⌥B)만으로는 아무 일도 안 난다 —
+    #   `toggle_state_rewind` 로 **기능 자체를 먼저 켜야** 그때부터 상태를 버퍼에 쌓는다.
+    #   ⚠ 그래서 기본은 **꺼짐**이고, 이게 우리에게 유리하다 — `emucap` 이 **같은 cfg 를
+    #   공유**하므로(`emucap-mednafen.sh` 의 `MEDBASE`), 늘 켜 두면 **에이전트 자동 확인까지
+    #   메모리·CPU 를 쓴다.** 켜는 건 사람이 직접 누를 때만이다.
+    "command.toggle_state_rewind": "keyboard 0x0 5+alt+shift",  # ⌥⇧B (기본은 ⌥S — 되감기와 같은 글자로 모은다)
     # 창 크기 ⌥-(작게) · ⌥+(크게) — 1 매우 작음 · 2 작음(기본) · 3 보통 · 4 큼.
     # ⚠ 이 명령들은 **패치가 들어간 mednafen 에만** 있다(scripts/emu/mednafen-winsize.patch).
     #   스톡 mednafen 에는 창 크기 명령이 없어서, 패치 없이 이 설정만 넣으면 조용히 무시된다.

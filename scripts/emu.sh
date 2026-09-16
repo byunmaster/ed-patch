@@ -234,7 +234,13 @@ images_in() {
   _label=$1; _dir=$2
   # ⚠ 호출자가 결과를 줄 단위로 받으려고 IFS 를 개행으로 바꿔 둔다 — 그대로 두면 확장자
   #   목록이 안 쪼개져 `*.zip sfc smc ...` 라는 글로브 하나가 된다(실측). 여기서 되돌린다.
-  #   `$(...)` 안이라 서브셸이고, 바꿔도 호출자에 안 샌다.
+  # 🔴 **바꾼 IFS 를 반드시 되돌린다**(마스터 실측 2026-09-17, md·sfc). 종전 주석은
+  #   「`$(...)` 안이라 서브셸이고 바꿔도 호출자에 안 샌다」였는데 **틀렸다** — 서브셸 밖으로는
+  #   안 새도 **같은 서브셸 안의 `candidates()` 로는 샌다.** 그러면 그 뒤의
+  #   `for _d in $(build_dirs)` 가 **개행이 아니라 공백으로만** 쪼개서, 빌드 칸이 **둘 이상이면
+  #   전부 한 덩어리**가 되고 **하나도 안 잡힌다.** 칸이 하나일 땐 멀쩡히 돌아 눈치채기 어렵다
+  #   — md 는 칸이 셋(빌드+글꼴비교 둘), sfc 는 둘이 되면서 **원본만 뜨기 시작했다.**
+  _oifs=$IFS
   IFS=' '
   for _e in $(exts_of "$PLAT"); do
     for _f in "$_dir"/*."$_e"; do
@@ -248,6 +254,7 @@ images_in() {
       printf '%s\t%s\n' "$_label" "$_f"
     done
   done
+  IFS=$_oifs            # 🔴 되돌린다 — 위 주석 참조. 안 되돌리면 빌드 칸 둘 이상이 통째로 뭉개진다
 }
 
 candidates() {
@@ -333,6 +340,41 @@ while :; do
   fi
   PLAT=${GAME%%-*}
 
+  # ── 띄울 때마다 단축키를 찍는다 (마스터 요청 2026-09-17) ───────────────────
+  # 기종마다 에뮬레이터가 다르고 **되는 것도 다르다.** 어디에 무엇이 있는지 외우고 있을 수가
+  # 없으니 실행할 때마다 보여 준다.
+  # 🔴 **여기 적힌 것은 전부 실제로 도는 것만이다.** 없는 기능을 「있다」고 찍으면 안 찍느니만
+  #   못하다 — 이 레포에서 **글이 값을 대신한 자리**로 하루에 다섯 번 물렸다(2026-09-17).
+  #   되감기는 mednafen 계열에만 있다. DOSBox-X·np2kai 엔 그 기능 자체가 없다.
+  # ⚠ **정본은 여기가 아니다** — mednafen 은 `emu/mednafen_keys.py`, DOSBox-X 는
+  #   `emu/dosbox/mapper-x.map`, PC-98 은 `emu/np2kai-keys.patch` 다. 여기는 그걸 사람이
+  #   읽는 꼴로 보여 줄 뿐이라 **두 곳에 있는 지식**이다. 정본을 고치면 여기도 같이 고친다.
+  # 🔴 **셋 다 ⌥ 조합이다**(마스터 2026-09-17). 창 크기 ⌥-/⌥+ · ⌥1~4 · 소리 ⌥M 이 이미 ⌥ 고,
+  #   무엇보다 **DOS·PC-98 은 게임이 F 키를 쓴다** — 단독 F 키로 잡으면 게스트가 그 키를 못 받는다.
+  #   ⚠ np2kai 는 기존 패치가 F5·F7·F10 을 이미 단독으로 가져다 쓰고 있다. 거기 더 얹지 않는다.
+  keyhelp() {
+    echo "── 단축키 ─────────────────────────────────────────────" >&2
+    case "$1" in
+      mednafen)
+        echo "   Space 일시정지(⌥P 도 됨)    ⌥C 캡처    ⌥B 되감기 ⚠ ⌥⇧B 로 먼저 켠다" >&2
+        echo "   F5 저장        F7 불러오기    \` 빨리감기    Tab 느리게" >&2
+        echo "   ⌘R 재시작    ⌥-/⌥+ 창 크기    ⌥1~4 크기 단계    ⌥M 소리" >&2
+        ;;
+      dos)
+        echo "   ⌥P 일시정지    ⌥C 캡처    (되감기 없음 — DOSBox-X 에 그 기능이 없다)" >&2
+        echo "   ⚠ 여긴 Space 가 안 된다 — 게임이 그 키를 쓴다" >&2
+        echo "   Host+S 저장    Host+L 불러오기    Tab 빨리감기" >&2
+        ;;
+      pc98)
+        echo "   ⌥P 일시정지    ⌥C 캡처    (되감기 없음 — np2kai 에 그 기능이 없다)" >&2
+        echo "   ⚠ 여긴 Space 가 안 된다 — 게임이 그 키를 쓴다" >&2
+        echo "   \` 빨리감기 토글    Tab 누르는 동안    \\ 디스크 교체    F5 저장    F7 불러오기" >&2
+        ;;
+      *) echo "   (이 기종은 아직 정리된 단축키가 없다)" >&2 ;;
+    esac
+    echo "───────────────────────────────────────────────────────" >&2
+  }
+
   # ── PC-98 도 통째로 위임한다 ───────────────────────────────────────────────
   # 디스크가 3장이고 **파일 시스템이 없어**(`-fs none` · 드라이브 번호) 마운트 규약이
   # mednafen 계열과 아예 다르다. 사본·헤드리스·스크린샷까지 pc98.sh 가 안다.
@@ -344,6 +386,7 @@ while :; do
     [ "$ORIG" = 1 ] && set -- "$@" --orig
     # ⚠ `--size` 도 위 고리가 먹으므로 되넘긴다 — np2kai·DOSBox-X 도 창 크기 단계를 받는다.
     [ -n "$VIDEO_SIZE" ] && set -- "$@" --size "$VIDEO_SIZE"
+    keyhelp pc98
     # shellcheck disable=SC2086
     exec sh "$HELPERS/pc98.sh" "$@" $EXTRA
   fi
@@ -352,6 +395,7 @@ while :; do
   # 사본 방식·CD 마운트·CNF 재작성까지 dosbox.sh 가 이미 다 한다. 흉내 내면 두 벌이 된다.
   if [ "$PLAT" = dos ]; then
     echo "실행: $GAME  [dosbox-x]"
+    keyhelp dos
     # shellcheck disable=SC2086
     # ⚠ `--size` 는 위 고리가 먹으므로 되넘긴다 (DOSBox-X 는 conf 로 받는다).
     [ -n "$VIDEO_SIZE" ] && EXTRA="$EXTRA --size $VIDEO_SIZE"
@@ -406,12 +450,45 @@ while :; do
     exit 1
   fi
 
+  # 🔴 **빌드가 하나도 없으면 원본이 조용히 자동 선택된다** — 후보가 원본 하나뿐이면 고를 게
+  #   없어 그대로 뜨고, 에러도 경고도 안 난다. 마스터가 실측으로 두 번 물렸다
+  #   (2026-09-15 ps1-ed3 · 2026-09-17 md-ed1). 둘 다 「받았는데 원본이 뜬다」였는데 원인이
+  #   달랐다 — 앞은 **워크트리를 안 훑어서**(`build_dirs()` 가 고쳤다), 뒤는 **그 머신에 빌드가
+  #   아예 없어서**다. `git pull` 은 소스만 가져온다. 빌드 산출물은 gitignore 라 안 따라오고
+  #   `pull-build.sh` 로 따로 받아야 한다.
+  # ⚠ 막지는 않는다 — 원본을 띄우는 건 정당한 용도다(대조군). 대신 **조용하지 않게** 한다.
+  if [ "$ORIG" != 1 ]; then
+    _has_build=0
+    for _c in "$@"; do
+      case ${_c%%"$TAB"*} in "빌드 "*) _has_build=1; break ;; esac
+    done
+    if [ "$_has_build" = 0 ]; then
+      echo "⚠ 빌드가 없다 — 지금 뜨는 건 **원본**이다 (games/$GAME_DIR/work/build 가 비었다)" >&2
+      echo "   이 머신에서 구웠다면: 워크트리 안까지 보는지 확인" >&2
+      echo "   다른 머신에서 구웠다면: sh scripts/pull-build.sh ${GAME%%-*}" >&2
+    fi
+  fi
+
   # 현재 브랜치 빌드가 목록에 있으면 커서를 거기에 놓고 시작한다.
-  _n=0
+  # 🔴 **커서 기본값은 원본이 아니라 빌드여야 한다**(마스터 실측 2026-09-17, md-ed1).
+  #   종전엔 「현재 브랜치와 같은 꼬리표의 빌드」만 찾았다. 그런데 **QA 머신은 늘 `main` 에
+  #   서 있다** — 소스만 pull 받고 빌드는 `pull-build.sh` 로 받으니 브랜치를 갈 이유가 없다.
+  #   그러면 `빌드 main` 은 없고 커서가 1번(=원본)에 남아, **Enter 만 치면 원본이 뜬다.**
+  #   「받았는데 안 된다」의 정체가 이것이다 — 목록엔 빌드가 멀쩡히 있었다.
+  # ⇒ 세 단계로 고른다: ① 현재 브랜치 꼬리표 ② 그 게임 이름 꼬리표 ③ 아무 빌드.
+  #   ⚠ 꼬리표는 브랜치명을 **살균한** 꼴이라(`ps1-ed1+2` → `ps1-ed1-2`) 게임 이름도 같은
+  #   규칙으로 살균해서 맞춘다. 셋 다 없을 때만 원본에 남는다(그땐 위에서 경고가 나간다).
+  _gsan=$(printf '%s' "$GAME_DIR" | sed 's#[^A-Za-z0-9._-]#-#g')
+  _n=0; _hit_tag=; _hit_game=; _hit_any=
   for _c in "$@"; do
     _n=$((_n + 1))
-    [ "${_c%%"$TAB"*}" = "빌드 $TAG" ] && { SELECT_INDEX=$_n; break; }
+    case ${_c%%"$TAB"*} in
+      "빌드 $TAG")   [ -n "$_hit_tag" ]  || _hit_tag=$_n ;;
+      "빌드 $_gsan") [ -n "$_hit_game" ] || _hit_game=$_n ;;
+      "빌드 "*)      [ -n "$_hit_any" ]  || _hit_any=$_n ;;
+    esac
   done
+  SELECT_INDEX=${_hit_tag:-${_hit_game:-$_hit_any}}
   if PICK=$(choose "이미지" row_image "$@"); then
     SELECT_INDEX=; IMAGE=${PICK#*"$TAB"}; break
   fi
@@ -545,6 +622,7 @@ case "$MEDNAFEN_BIN" in
       fi ;;
   *)  echo "실행: $(basename "$IMAGE")  [$MOD]  (시스템 mednafen — 창 크기 단축키 없음)" ;;
 esac
+keyhelp mednafen
 if ! _has_mod "$MEDNAFEN_BIN" "$MOD"; then
   echo "🔴 이 mednafen 에는 [$MOD] 모듈이 없다 — 이미지가 아니라 **에뮬레이터** 문제다." >&2
   echo "   확인: $MEDNAFEN_BIN --help | grep 'Emulation modules'" >&2
