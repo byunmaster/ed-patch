@@ -3,16 +3,17 @@
 ⚠ **읽기 전용이다.** 쓰기 헬퍼는 재삽입 설계가 서기 전까지 두지 않는다
 (`docs/patcher-checklist.md` 2 — 쓰기 사전조건이 없는 쓰기 경로를 만들지 않는다).
 
-🔴 **소장본은 `.SMD` 확장자지만 인터리브가 아니다 — plain BIN 이다.** 0x100 에 `SEGA MEGA DRIVE`
+🔴 **원본은 물리적으로 SMD 인터리브가 아니라 plain BIN 이다.** 0x100 에 `SEGA MEGA DRIVE`
 가 그대로 있고 벡터 테이블이 0 에 있다. `docs/ports-survey.md` 가 「SMD 인터리브 · 커스텀 문자
-테이블」로 적은 건 이 파일을 디인터리브해 읽은 결과다(그래서 SJIS 가 0 으로 나왔다). 실제 대본은
-**SJIS 평문**이다(`docs/status.md`). 좌표는 전부 **롬 파일 오프셋 = 68000 주소**(매퍼 없음, 2MB).
+테이블」로 적은 건 옛 `.zip` 안의 `.SMD` 를 디인터리브해 읽은 결과였다(그래서 SJIS 가 0 으로
+나왔다). 실제 대본은 **SJIS 평문**이다(`docs/status.md`). 좌표는 전부 **롬 파일 오프셋 = 68000
+주소**(매퍼 없음, 2MB). 2026-09-15 부터 소장본이 압축 없는 `.bin` 으로 옮겨져(HDD 컬렉션),
+읽기 경로도 그에 맞춰 zip 해제를 걷어냈다 — 바이트는 옛 zip 안의 `.SMD` 와 sha1 까지 동일하다.
 """
 
 import hashlib
 import struct
 import sys
-import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
@@ -29,13 +30,13 @@ REVIEW_DIR = WORK / "review"
 BUILD_TAG = build_tag()
 BUILD_DIR = WORK / "build"
 DIST_DIR = WORK / "dist"
-# 에뮬 실행용 사본 자리 — zip 을 풀어 `ed1.bin` 으로 둔다(emucap 은 zip 을 못 연다).
+# 에뮬 실행용 사본 자리 — `ed1.bin` 으로 둔다(원본 그 자체엔 안 쓴다, 빌드가 실수로 원본을 덮지
+# 않게 사본을 따로 둔다).
 EMU_DIR = WORK / "emu"
 
-# 소장본은 zip 하나. 안의 .SMD 가 곧 롬(헤더 없는 plain BIN 2,097,152B).
-ORIG_ZIP = ORIG_DIR / "SMD - Dragon Slayer - Eiyuu Densetsu (J).zip"
-ORIG_MEMBER = "Dragon Slayer - Eiyuu Densetsu (J).SMD"
-ORIG_SHA1 = "f67c9139bbc93f171e274a5cd3fba66480cd8244"  # zip 안의 .SMD (= 롬 바이트)
+# 소장본은 압축 없는 plain BIN 하나(2,097,152B).
+ORIG_ROM = ORIG_DIR / "Dragon Slayer - Eiyuu Densetsu (J).bin"
+ORIG_SHA1 = "f67c9139bbc93f171e274a5cd3fba66480cd8244"
 ROM_SIZE = 2_097_152
 
 # 헤더 실측 (0x100~). 체크섬은 0x200~ 의 16비트 BE 합 & 0xFFFF — 롬을 고치면 다시 맞춰야 한다.
@@ -61,15 +62,14 @@ def rom() -> bytes:
     global _rom_cache
     if _rom_cache is not None:
         return _rom_cache
-    if not ORIG_ZIP.exists():
-        raise SystemExit(f"원본 없음: {ORIG_ZIP}")
-    with zipfile.ZipFile(ORIG_ZIP) as z:
-        data = z.read(ORIG_MEMBER)
+    if not ORIG_ROM.exists():
+        raise SystemExit(f"원본 없음: {ORIG_ROM}")
+    data = ORIG_ROM.read_bytes()
     if len(data) != ROM_SIZE:
         raise SystemExit(f"크기 불일치: {len(data)} != {ROM_SIZE}")
     got = sha1_of_bytes(data)
     if got != ORIG_SHA1:
-        raise SystemExit(f"지문 불일치: {ORIG_MEMBER}\n  기대 {ORIG_SHA1}\n  실제 {got}")
+        raise SystemExit(f"지문 불일치: {ORIG_ROM.name}\n  기대 {ORIG_SHA1}\n  실제 {got}")
     _rom_cache = data
     return data
 
@@ -96,7 +96,7 @@ def verify_header(data: bytes) -> None:
 if __name__ == "__main__":
     data = rom()
     verify_header(data)
-    print(f"{GAME}: {ORIG_MEMBER} sha1={ORIG_SHA1} size={ROM_SIZE}")
+    print(f"{GAME}: {ORIG_ROM.name} sha1={ORIG_SHA1} size={ROM_SIZE}")
     print(
         f"  serial {HDR_SERIAL.decode()} checksum {HDR_CHECKSUM:04x} 확인 · 꼬리 빈 공간 {FREE_TAIL[1] - FREE_TAIL[0]}B"
     )
