@@ -17,6 +17,13 @@
 
 ⚠ VRAM 쓰기는 NMI 안에서만 한다(그 시점엔 강제 블랭크가 켜져 있다 — `$00:A9EC`).
 ⚠ 큐가 넘치면 **가장 오래된 것을 덮는다** — 한 프레임에 16자를 넘겨 그리는 경로는 없다.
+
+**오프닝(D1)은 네 번째 문이다**(`docs/status.md` 13절, 2026-09-15/16 실기 특정) — 대사 엔진과
+**완전히 다른 경로**(`$1E:DF44`, 인라인 `LDA [$23],y`)라 트램펄린 없이 `JSL open_fetch` 로
+직접 간다. 같은 코드→타일 표(`$03:F3EC`)·같은 `JSL $02:B07B` 변환을 쓰지만 **패턴 메모리가
+워드 `$3000`**(인게임은 `$1000`)이라 완전히 딴 자리다 — 그래서 슬롯 코드는 **공유**하되 큐
+항목마다 컨텍스트 한 바이트(`Q_CTX`)를 더 실어 `upload()` 가 베이스를 가른다. NMI 큐 비우기도
+같은 것 하나를 그대로 쓴다(오프닝·인게임은 동시에 안 돌아 충돌하지 않는다).
 """
 
 import sys
@@ -88,6 +95,22 @@ NMI_ORIG = 0xACA9
 QN = 16  # 글리프 큐 칸 수(2의 거듭제곱)
 DRAIN_MAX = 8  # 한 프레임에 올릴 글리프 수 — 32B×2 씩이라 여유 있다
 
+# 🔴 **여섯째 문 — 오프닝(D1)은 인게임과 완전히 다른 경로다**(2026-09-15 실기 확정, status 13절).
+# `$1E:DF44 LDA [$23],y / INY / STY $1B44`(6B, 인라인 — JSR 을 거치지 않는다)가 대본에서 다음
+# 바이트를 읽는 자리다. 검사 셋(`$CF`/`$E0`/`$FF`)만 알아서 우리 2바이트 선두를 모른다.
+# ⇒ 6바이트를 통째로 `JSL open_fetch` + `NOP`×2 로 갈아 끼운다(트램펄린이 필요 없다 — 원래도
+# `JSR` 이 아니라 인라인 코드였다). `$1E:DF41`(패치 전 줄)이 이미 `LDY $1B44` 를 해 뒀으므로
+# 진입 시 Y 는 그대로 커서다.
+# 글리프·슬롯 코드는 **인게임과 공유한다** — 같은 `$03:F3EC` 표를 오프닝도 그대로 쓰고(같은
+# `$02:B07B` 변환 호출, 실측), 오프닝의 타일 패턴 메모리는 **워드 `$3000`**(인게임은 `$1000`)로
+# 완전히 별도 자리라 겹치지 않는다(status 13절: `$1E:E6CC`·`$1E:F175` 가 시트를 그리로 따로
+# 올린다). 그래서 큐 항목마다 **컨텍스트 한 바이트**(`Q_CTX`)만 더 들고 다니면 `upload()` 가
+# 그 값으로 `$1000` 표/`$3000` 표를 갈라 쓸 수 있다 — 새 글리프 뱅크·새 NMI 훅이 필요 없다.
+OPEN_CALL_SITE = 0x1EDF44  # LDA [$23],y / INY / STY $1B44 (6B) → JSL open_fetch + NOP×2
+OPEN_PATCH_LEN = 6
+OPEN_CURSOR = 0x001B44  # 오프닝 읽기 커서(뱅크 $00 고정 — `long` 으로 쓴다, DB 가 훅뱅크라서)
+OPEN_VRAM_DELTA = 0x2000  # 오프닝 패턴 베이스 워드 $3000 = 인게임 $1000 + $2000(status 13절 실측)
+
 # ── WRAM 변수 ($7E:4625, 741B 무손상 확인 — status 13.8) ────────────────────────────────
 VAR = 0x7E4625
 V_MAGIC, V_HEAD, V_TAIL, V_NEXT = VAR + 0, VAR + 1, VAR + 2, VAR + 3
@@ -105,11 +128,14 @@ V_N13 = VAR + 24  # 워드: 고정 칸 문자열의 칸 수(호출자가 A 에 �
 # 🔴 선두 표를 조회하면 **A 가 표 값으로 덮인다** — 선두가 아닌 글자는 원본 바이트를 되찾아야 한다.
 #    안 그러면 공백·숫자 자리에 표의 `$FF` 가 들어가 **칸이 깨진다**(2026-09-07 타이틀 메뉴에서 드러났다).
 V_RAW = VAR + 26  # 방금 읽은 원본 바이트
+V_OVERFLOW = VAR + 23  # 슬롯 풀이 한 바퀴 다 돌아 재사용됐다(= 그 사이 화면에 남은 글자가 덮일 수 있다)
+V_CTX = VAR + 27  # 다음 alloc() 큐잉의 컨텍스트(0=인게임 워드 $1000 · 1=오프닝 워드 $3000)
+V_UCTX = VAR + 28  # NMI: upload 중 큐 항목의 컨텍스트 사본
 V_U0 = VAR + 18  # 워드: NMI 임시(글리프 색인)
 V_U1 = VAR + 20  # NMI 임시(슬롯 번호)
 V_UV = VAR + 21  # 워드: NMI 임시(VRAM 워드 주소)
-Q_SLOT, Q_LO, Q_HI = VAR + 32, VAR + 48, VAR + 64
-VAR_END = VAR + 80
+Q_SLOT, Q_LO, Q_HI, Q_CTX = VAR + 32, VAR + 48, VAR + 64, VAR + 80
+OWNER_BASE = VAR + 96  # 슬롯별 「지금 이 슬롯이 담은 글리프」 — nslot 만큼(build_payload 가 정한다)
 MAGIC = 0x5A
 
 
@@ -162,6 +188,10 @@ def build_payload(
     """훅 뱅크 하나를 통째로 만든다 — 코드가 앞, 표가 뒤. **원본을 안 읽는다**(테스트가 돌 수 있게)."""
     rep_index = encode.index_map(rep)
     nslot = len(slots)
+    owner_lo, owner_hi = OWNER_BASE, OWNER_BASE + nslot  # 슬롯마다 word 하나 — 캐시 표
+    var_end = OWNER_BASE + 2 * nslot
+    if var_end - VAR >= 741:
+        raise SystemExit(f"WRAM 무손상 구간(741B)을 넘는다: {var_end - VAR}B (슬롯 {nslot}개)")
     assert len(vram) == nslot
     josa_ord = encode.LEADS.index(encode.JOSA_LEAD)
     a = Asm(HOOK_ORG, bank=HOOK_BANK)
@@ -177,6 +207,8 @@ def build_payload(
     a.lda(imm=HOOK_BANK)
     a.pha()
     a.plb()
+    a.lda(imm=0x00)
+    a.op("sta", addr=V_CTX, mode="long")  # 인게임 컨텍스트(오프닝 훅이 남긴 값을 되돌린다)
     a.op("lda", addr=V_PEND_N, mode="long")
     a.beq(label="h_fetch")
     a.op("lda", addr=V_PEND + 0, mode="long")
@@ -246,6 +278,8 @@ def build_payload(
     a.lda(imm=HOOK_BANK)
     a.pha()
     a.plb()
+    a.lda(imm=0x00)
+    a.op("sta", addr=V_CTX, mode="long")  # 인게임 컨텍스트
     a.op("lda", addr=BUF_CURSOR, mode="abs")
     a.rep(imm=0x20)
     a.op("and", imm=0x00FF, m16=True)
@@ -295,6 +329,8 @@ def build_payload(
     a.lda(imm=HOOK_BANK)
     a.pha()
     a.plb()
+    a.lda(imm=0x00)
+    a.op("sta", addr=V_CTX, mode="long")  # 인게임 컨텍스트
     a.op("lda", addr=item_table, mode="longx")
     a.op("sta", addr=0x000006, mode="long")
     a.op("lda", addr=item_table + 1, mode="longx")
@@ -351,6 +387,8 @@ def build_payload(
     a.lda(imm=HOOK_BANK)
     a.pha()
     a.plb()
+    a.lda(imm=0x00)
+    a.op("sta", addr=V_CTX, mode="long")  # 인게임 컨텍스트
     a.lda(imm=DICT_BANK)
     a.op("sta", addr=0x000008, mode="long")  # [$06] 의 뱅크 — 문자열은 우리 뱅크에 있다
     a.ldy(imm=0x0000, m16=True)  # 소스 커서
@@ -408,6 +446,93 @@ def build_payload(
     a.plp()
     a.rtl()
 
+    # ── 오프닝(D1) 대본 다음 바이트 ($1E:DF44 에서 JSL, 인라인 코드를 통째로 갈아 끼운다) ──
+    # `h_fetch`(위 `hook`)와 뼈대가 같다 — 다른 건 **fetch 방식뿐**이다. 인게임은 `$3F/$40`
+    # 포인터 + `JSR $E784` 지만, 오프닝은 `[$23],y`(Y 는 `$1B44`, 호출 직전 `$1E:DF41` 이 이미
+    # 채워 뒀다) — 그래서 `fetch` 를 호출하는 대신 이 자리에서 직접 읽는다. 조사·2음절 대기
+    # (`V_PEND*`)까지 인게임과 **같은 전역**을 그대로 쓴다(오프닝·인게임은 동시에 안 돈다).
+    a.label("open_fetch")
+    a.php()
+    a.phb()  # 🔴 원래 DBR 을 먼저 실어 둔다 — 안 그러면 끝의 plb() 가 엉뚱한 바이트를 집어 탈선한다
+    a.sep(imm=0x20)
+    a.rep(imm=0x10)
+    a.phx()
+    a.phy()
+    a.lda(imm=HOOK_BANK)
+    a.pha()
+    a.plb()
+    a.lda(imm=0x01)
+    a.op("sta", addr=V_CTX, mode="long")  # 오프닝 컨텍스트 — 글리프는 워드 $3000 에 올라간다
+    a.op("lda", addr=V_PEND_N, mode="long")
+    a.beq(label="o_fetch")
+    a.op("lda", addr=V_PEND + 0, mode="long")
+    a.op("sta", addr=V_IDX, mode="long")
+    a.op("lda", addr=V_PEND + 1, mode="long")
+    a.op("sta", addr=V_PEND + 0, mode="long")
+    a.op("lda", addr=V_PEND + 2, mode="long")
+    a.op("sta", addr=V_PEND + 1, mode="long")
+    a.op("lda", addr=V_PEND_N, mode="long")
+    a.dec()
+    a.op("sta", addr=V_PEND_N, mode="long")
+    a.bra(label="o_done")
+
+    a.label("o_fetch")
+    a.op("lda", dp=0x23, mode="indlongy")
+    a.pha()  # STY 엔 long 이 없다(65816 명세) — 커서는 A 로 옮겨 stz long 대신 sta long 으로 쓴다
+    a.iny()
+    a.rep(imm=0x20)
+    a.tya()
+    a.op("sta", addr=OPEN_CURSOR, mode="long")
+    a.sep(imm=0x20)
+    a.pla()
+    a.op("sta", addr=V_IDX, mode="long")
+    a.rep(imm=0x20)
+    a.op("and", imm=0x00FF, m16=True)
+    a.tax()
+    a.sep(imm=0x20)
+    a.op("lda", addr="lead_tab", mode="absx")
+    a.cmp(imm=0xFF)
+    a.beq(label="o_done")
+    a.op("sta", addr=V_IDX + 1, mode="long")  # 선두 서수
+    a.op("lda", dp=0x23, mode="indlongy")
+    a.pha()
+    a.iny()
+    a.rep(imm=0x20)
+    a.tya()
+    a.op("sta", addr=OPEN_CURSOR, mode="long")
+    a.sep(imm=0x20)
+    a.pla()
+    a.op("sta", addr=V_IDX, mode="long")  # 색인 하위
+    a.op("lda", addr=V_IDX + 1, mode="long")
+    a.cmp(imm=josa_ord)
+    a.bne(label="o_glyph")
+    a.op("lda", addr=V_IDX, mode="long")
+    a.cmp(imm=encode.JOSA_BASE)
+    a.bcc(label="o_glyph")
+    a.op("and", imm=0x0F)
+    a.jsr(addr="josa", mode="abs")
+    a.op("sta", addr=V_IDX, mode="long")
+    a.op("lda", addr=V_TMP, mode="long")
+    a.beq(label="o_fetch")
+    a.bra(label="o_done")
+
+    a.label("o_glyph")
+    a.rep(imm=0x20)
+    a.op("lda", addr=V_IDX, mode="long")
+    a.op("sta", addr=V_LAST, mode="long")
+    a.sep(imm=0x20)
+    a.jsr(addr="alloc", mode="abs")
+    a.op("sta", addr=V_IDX, mode="long")
+
+    a.label("o_done")
+    a.sep(imm=0x20)
+    a.op("lda", addr=V_IDX, mode="long")
+    a.ply()
+    a.plx()
+    a.plb()
+    a.plp()
+    a.rtl()
+
     # ── 대본 다음 바이트 (원본 $02:E784 과 같은 동작) ────────────────────────────────
     a.label("fetch")
     a.op("lda", addr=0x003F, mode="abs")
@@ -421,8 +546,31 @@ def build_payload(
     a.rts()
 
     # ── 슬롯 하나를 잡고 글리프를 큐에 넣는다 (색인 = V_IDX) ─────────────────────────
+    # 🔴 **먼저 캐시를 본다**(status 13.5 원 설계 — 구현에서 빠져 있던 검사). 이미 어느
+    # 슬롯이 이 글리프를 담고 있으면 **그 슬롯을 그대로 돌려준다** — 새로 안 뺏는다. 캐시가
+    # 없으면 같은 화면 안에서 슬롯 수(nslot)보다 글자 **인스턴스**가 많을 때(반복 포함) 라운드
+    # 로빈이 이미 그려진 앞 글자의 타일을 뒤 글자가 덮어쓴다(오프닝 첫 페이지 실기로 확인,
+    # 2026-09-16 — 대사창은 68 < 80 이라 우연히 안 터졌을 뿐이다).
     a.label("alloc")
     a.sep(imm=0x20)
+    a.ldx(imm=0x0000, m16=True)
+    a.label("ac_scan")
+    a.op("lda", addr=owner_lo, mode="longx")
+    a.op("cmp", addr=V_IDX, mode="long")
+    a.bne(label="ac_next")
+    a.op("lda", addr=owner_hi, mode="longx")
+    a.op("cmp", addr=V_IDX + 1, mode="long")
+    a.beq(label="ac_hit")
+    a.label("ac_next")
+    a.inx()
+    a.cpx(imm=nslot, m16=True)
+    a.bne(label="ac_scan")
+    a.bra(label="al_miss")
+    a.label("ac_hit")
+    a.op("lda", addr="slot_code", mode="absx")
+    a.jmp(addr="al_ret", mode="abs")  # `bra` 로는 안 닿을 수 있다 — 아래 al_miss 본문이 길다
+
+    a.label("al_miss")
     a.op("lda", addr=V_NEXT, mode="long")
     a.cmp(imm=nslot)
     a.bcc(label="al0")
@@ -432,6 +580,8 @@ def build_payload(
     a.inc()
     a.cmp(imm=nslot)
     a.bcc(label="al1")
+    a.lda(imm=0x01)  # 한 바퀴 다 돌았다 — 화면에 남은 글자가 덮일 수 있다(계측, 조용히 안 넘긴다)
+    a.op("sta", addr=V_OVERFLOW, mode="long")
     a.lda(imm=0x00)
     a.label("al1")
     a.op("sta", addr=V_NEXT, mode="long")
@@ -446,6 +596,8 @@ def build_payload(
     a.op("sta", addr=Q_LO, mode="longx")
     a.op("lda", addr=V_IDX + 1, mode="long")
     a.op("sta", addr=Q_HI, mode="longx")
+    a.op("lda", addr=V_CTX, mode="long")  # 이 큐 항목이 인게임/오프닝 어느 쪽인지 같이 싣는다
+    a.op("sta", addr=Q_CTX, mode="longx")
     a.op("lda", addr=V_HEAD, mode="long")
     a.inc()
     a.op("and", imm=QN - 1)
@@ -455,7 +607,12 @@ def build_payload(
     a.op("and", imm=0x00FF, m16=True)
     a.tax()
     a.sep(imm=0x20)
+    a.op("lda", addr=V_IDX, mode="long")  # 캐시 갱신 — 이 슬롯이 이제 이 글리프를 담는다
+    a.op("sta", addr=owner_lo, mode="longx")
+    a.op("lda", addr=V_IDX + 1, mode="long")
+    a.op("sta", addr=owner_hi, mode="longx")
     a.op("lda", addr="slot_code", mode="absx")
+    a.label("al_ret")
     a.rts()
 
     # ── 런타임 조사 (A = k) ─────────────────────────────────────────────────────────
@@ -530,8 +687,16 @@ def build_payload(
     a.cmp(imm=MAGIC)
     a.beq(label="d_go")
     a.lda(imm=0x00)
-    for v in (V_HEAD, V_TAIL, V_NEXT, V_PEND_N):
+    for v in (V_HEAD, V_TAIL, V_NEXT, V_PEND_N, V_OVERFLOW):
         a.op("sta", addr=v, mode="long")
+    a.lda(imm=0xFF)  # 캐시 표 — 실제 글리프 색인(최대 $08FF)은 절대 안 되는 값으로 비운다
+    a.ldx(imm=0x0000, m16=True)
+    a.label("d_ownerclr")
+    a.op("sta", addr=owner_lo, mode="longx")
+    a.op("sta", addr=owner_hi, mode="longx")
+    a.inx()
+    a.cpx(imm=nslot, m16=True)
+    a.bne(label="d_ownerclr")
     a.lda(imm=MAGIC)
     a.op("sta", addr=V_MAGIC, mode="long")
     a.bra(label="d_end")
@@ -568,6 +733,8 @@ def build_payload(
     # ── 글리프 한 자를 VRAM 으로 (X = 큐 칸) ────────────────────────────────────────
     a.label("upload")
     a.sep(imm=0x20)
+    a.op("lda", addr=Q_CTX, mode="longx")  # X 가 아직 **큐 칸**일 때 먼저 챙긴다(곧 슬롯 번호로 바뀐다)
+    a.op("sta", addr=V_UCTX, mode="long")
     a.op("lda", addr=Q_SLOT, mode="longx")
     a.op("sta", addr=V_U1, mode="long")
     a.op("lda", addr=Q_LO, mode="longx")
@@ -579,10 +746,19 @@ def build_payload(
     a.op("and", imm=0x00FF, m16=True)
     a.tax()
     a.sep(imm=0x20)
-    a.op("lda", addr="slot_vlo", mode="absx")
+    a.op("lda", addr=V_UCTX, mode="long")
+    a.beq(label="u_ig")
+    a.op("lda", addr="slot_ovlo", mode="absx")  # 오프닝 — 패턴 베이스 워드 $3000
+    a.op("sta", addr=V_UV, mode="long")
+    a.op("lda", addr="slot_ovhi", mode="absx")
+    a.op("sta", addr=V_UV + 1, mode="long")
+    a.bra(label="u_vd")
+    a.label("u_ig")
+    a.op("lda", addr="slot_vlo", mode="absx")  # 인게임 — 패턴 베이스 워드 $1000
     a.op("sta", addr=V_UV, mode="long")
     a.op("lda", addr="slot_vhi", mode="absx")
     a.op("sta", addr=V_UV + 1, mode="long")
+    a.label("u_vd")
     a.rep(imm=0x30)
     a.op("lda", addr=V_U0, mode="long")
     for _ in range(5):
@@ -626,6 +802,11 @@ def build_payload(
     a.raw(bytes(v & 0xFF for v in vram))
     a.label("slot_vhi")
     a.raw(bytes(v >> 8 for v in vram))
+    ovram = [v + OPEN_VRAM_DELTA for v in vram]  # 같은 슬롯 코드, 오프닝 패턴 베이스(워드 $3000)
+    a.label("slot_ovlo")
+    a.raw(bytes(v & 0xFF for v in ovram))
+    a.label("slot_ovhi")
+    a.raw(bytes(v >> 8 for v in ovram))
     rows = josa_rows()
     a.label("josa_len")
     a.raw(bytes(n for n, _s in rows))
@@ -649,6 +830,8 @@ def build_payload(
         "glyphs": len(rep),
         "hook": common.fmt((HOOK_BANK << 16) | a.labels["hook"]),
         "drain": common.fmt((HOOK_BANK << 16) | a.labels["drain"]),
+        "open_fetch": common.fmt((HOOK_BANK << 16) | a.labels["open_fetch"]),
+        "var_end": var_end,
     }
     return blob, info | {"labels": a.labels}
 
@@ -744,6 +927,16 @@ def apply(
         out[mo : mo + MVN_LEN] = bytes(
             [0x20, NAME13_TRAMPOLINE & 0xFF, (NAME13_TRAMPOLINE >> 8) & 0xFF]
         )
+    # 5. 오프닝(D1) 소비 지점: 인라인 6바이트 → `JSL open_fetch` + NOP×2(트램펄린이 필요 없다 —
+    #    원래도 JSR 이 아니었다). `apply()` 밖(=$1E:DF41)이 이미 Y 를 채워 두므로 손 안 댄다.
+    open_addr = (HOOK_BANK << 16) | info["labels"]["open_fetch"]
+    oc = common.snes2off(OPEN_CALL_SITE)
+    want_open = bytes([0xB7, 0x23, 0xC8, 0x8C, 0x44, 0x1B])
+    if bytes(rom[oc : oc + OPEN_PATCH_LEN]) != want_open:
+        raise SystemExit(f"오프닝 소비 지점이 예상과 다르다: {rom[oc : oc + OPEN_PATCH_LEN].hex()}")
+    out[oc : oc + OPEN_PATCH_LEN] = bytes(
+        [0x22, open_addr & 0xFF, (open_addr >> 8) & 0xFF, HOOK_BANK, 0xEA, 0xEA]
+    )
     info.pop("labels")
     info["glyph_bytes"] = len(g)
     info["hook_bytes"] = len(blob)
@@ -763,4 +956,5 @@ def patch_ranges() -> list[tuple[int, int]]:
         *[(common.snes2off(s_), common.snes2off(s_) + NAME_BLOCK) for s_, _j in NAME_SITES],
         (common.snes2off(NMI_CALL), common.snes2off(NMI_CALL) + 3),
         (common.snes2off(NMI_STUB), common.snes2off(NMI_STUB) + 8),
+        (common.snes2off(OPEN_CALL_SITE), common.snes2off(OPEN_CALL_SITE) + OPEN_PATCH_LEN),
     ]
