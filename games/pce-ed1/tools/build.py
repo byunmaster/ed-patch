@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import battle
+import boxpack
 import chapter_band
 import common
 import containers
@@ -210,7 +211,7 @@ ONLY: set[str] | None = None
 """진단용 — 개입 그룹의 부분집합만 건다(`--only font,hook`). 그룹은 여섯:
 `font`(글리프 뱅크 + 진입 스텁) · `cache`(16 → 13 슬롯) · `hook`(EX_GETFNT 우회) ·
 `sys`(시스템 문구) · `battle`(전투 컨테이너) · `scn`(씬 컨테이너) ·
-`band`(장 제목 띠, rel 210) ·
+`band`(장 제목 띠, rel 210) · `box`(빈 슬롯 상자 msg1, 뱅크 0x7B 재배치) ·
 `glyph`(글리프 뱅크 적재) · `payload`(후킹 루틴 + 표를 $3B00 에 싣기)
 — 뒤 둘은 `font` 안에서 다시 뺄 수 있다.
 🔴 **이게 소프트락을 가르는 유일한 도구다** — 증상이 나면 하나씩 끄며 A/B 한다.
@@ -220,6 +221,11 @@ ONLY: set[str] | None = None
 
 def want(g: str) -> bool:
     return ONLY is None or g in ONLY
+
+
+def _order_index(ch: str) -> int:
+    """글리프 정본 순서에서의 번호 — 코드는 세이브에 남으므로 정본만 본다."""
+    return font._order_canon().index(ch)
 
 
 def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
@@ -244,6 +250,23 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
         for off in (0x151F, 0x15D1, 0x15F2, 0x163A, 0x1783):
             p.append((f"cache CPX 13 @{off:04X}", *_main(0x68, off), b"\xe0\x10", b"\xe0\x0d"))
         p.append(("cache LDA 13 @15FC", *_main(0x68, 0x15FC), b"\xa9\x10", b"\xa9\x0d"))
+    if want("slot"):
+        # 5. 🔴 파일 선택 화면의 슬롯 줄 — 「第」가 **코드에 즉치값으로** 박혀 있다.
+        #    $8616 LDA #$91 / STA $8533 / LDA #$E6 / STA $8534 로 슬롯 줄 틀의 「제」 자리를
+        #    매번 원문 한자로 **덮어쓴다**(뱅크 0x78 = 논리 $8000 창). 그래서 틀을 번역해도
+        #    첫 줄만 한글이고 둘째 줄부터 한자로 나왔다(마스터 실측: 1번 한글 · 2번 한자).
+        #    ⚠ 이 자리는 **문자열 검색으로는 안 잡힌다** — 「91 e6」이 연속이 아니라
+        #    `a9 91` … `a9 e6` 로 **두 즉치값에 쪼개져** 있기 때문이다. 화면 실측 → 쓰기
+        #    브레이크포인트($8533)로 PC $8618 을 잡아서야 나왔다(devlog 09-16 (6)).
+        kr = font.code_of(_order_index("제"))
+        p.append(
+            (
+                "slot chapter 第→제",
+                *_main(0x78, 0x0616),
+                b"\xa9\x91\x8d\x33\x85\xa9\xe6",
+                b"\xa9" + kr[:1] + b"\x8d\x33\x85\xa9" + kr[1:],
+            ),
+        )
     if want("hook"):
         # 4. EX_GETFNT 호출부(본 프로그램 4곳) → $3B00
         tgt = hook.HOOK_ADDR.to_bytes(2, "little")
@@ -350,6 +373,8 @@ def _build(edits_path, iso: Path, cue: Path):
             print("  전투 데이터:", battle.apply(f, table, touched))
         if want("band"):
             print("  " + chapter_band.apply(f, touched))
+        if want("box"):
+            print("  " + boxpack.apply_msg1_relocation(f, touched))
         translated_ids = {int(p.stem[3:]) for p in translate.M.SCRIPT_DIR.glob("scn*.json")}
         n_msgs = 0
         for rel, c in sorted(by_rel.items()) if want("scn") else []:
@@ -377,7 +402,9 @@ def _build(edits_path, iso: Path, cue: Path):
             mode1.write_user_data(f, lba, data, label=f"container rel {rel}", expect=orig)
             touched.append((lba, slot_of[rel]))
             moved = sum(1 for a, b in zip(data, orig, strict=True) if a != b)
-            print(f"  컨테이너 rel {rel}: {len(entries)}블록 · 자리 보존 · 바뀐 바이트 {moved}/{slot}")
+            print(
+                f"  컨테이너 rel {rel}: {len(entries)}블록 · 자리 보존 · 바뀐 바이트 {moved}/{slot}"
+            )
     print(f"  번역 메시지 {n_msgs}건(컨테이너마다 다시 셈) · 글리프 {len(chars)}자")
     print(f"  덮어쓰기 없음 (쓰기 구간 {ledger.verify(iso)})")
     verify_immutable(iso, touched)
