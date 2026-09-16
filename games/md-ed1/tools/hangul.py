@@ -517,11 +517,15 @@ def resource5(
         if len(enc) == 2:  # 반각(ASCII)은 리소스 1 이 그린다
             by_code[int.from_bytes(enc, "big")] = ch
     codes = sorted(by_code)
-    # (BDF, 칸 안 위 여백) — Galmuri11 계열은 잉크가 11 이라 1행 띄워 테두리 자리를 남긴다.
+    # (BDF, 칸 안 위 여백, 칸 안 왼 여백) — 채움이 칸 0행·0열에 바로 닿으면 그쪽으로 팽창할
+    # 테두리 자리가 없다(대사창 리소스0 의 GLYPH_TOP/GLYPH_LEFT 와 같은 함정, 2026-09-17
+    # 마스터 지적 — 갈무리11 후보를 왼쪽 잘린 채로 보여드렸었다). 갈무리11 계열은 잉크가
+    # 11×11 이라 상하좌우 다 1칸씩 띄워야 사방 테두리가 온전하다. 갈무리14 는 14×14 라 위만
+    # 안 띄우면 위쪽이 잘린다(왼쪽은 bx 오프셋이 있어 이미 여유가 있다).
     _BDF = {
-        "galmuri11": ("Galmuri11.bdf", 1),
-        "galmuri11bold": ("Galmuri11-Bold.bdf", 1),
-        "galmuri14": ("Galmuri14.bdf", 0),
+        "galmuri11": ("Galmuri11.bdf", 1, 1),
+        "galmuri11bold": ("Galmuri11-Bold.bdf", 1, 1),
+        "galmuri14": ("Galmuri14.bdf", 1, 0),
     }
     if source == "neodgm":
 
@@ -529,10 +533,10 @@ def resource5(
             return neodgm_fill(ch, cell, cell)
 
     else:
-        _name, _top = _BDF[source]
+        _name, _top, _left = _BDF[source]
 
         def src(ch):
-            return _load_bdf(common.ROOT / "shared" / "fonts" / _name, cell, _top)[ch]
+            return _load_bdf(common.ROOT / "shared" / "fonts" / _name, cell, _top, _left)[ch]
 
     tbl_at, gl_at = after
     table = b"".join(struct.pack(">H", c) for c in codes)
