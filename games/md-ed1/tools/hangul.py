@@ -31,11 +31,11 @@ _bdf_cache: dict[tuple, dict[str, list[list[int]]]] = {}
 
 
 def _load_bdf(
-    path: Path | None = None, cell: int = CELL, top: int = 1
+    path: Path | None = None, cell: int = CELL, top: int = 1, left: int = 0
 ) -> dict[str, list[list[int]]]:
     """BDF 전체를 한 번 읽어 {글자: cell×cell 비트 행렬}. 폭·높이가 cell 을 넘는 건 자른다."""
     path = path or BDF
-    key = (str(path), cell, top)
+    key = (str(path), cell, top, left)
     if key in _bdf_cache:
         return _bdf_cache[key]
     raw = {}
@@ -75,8 +75,9 @@ def _load_bdf(
             if not 0 <= ry < cell:
                 continue
             for x in range(bw):
-                if 0 <= x + bx < cell and rows[y][x]:
-                    grid[ry][x + bx] = 1
+                rx = x + bx + left
+                if 0 <= rx < cell and rows[y][x]:
+                    grid[ry][rx] = 1
         out[ch] = grid
     _bdf_cache[key] = out
     return out
@@ -114,8 +115,29 @@ def neodgm_fill(ch: str, cell: int = 16, size: int = 16) -> list[list[int]]:
     return g
 
 
+# 실험 손잡이 — HUD 장 제목 밴드에서 받침이 잘리는 자리(status.md 2026-09-15)를 재려고 둔다.
+# 정본은 top=1(기존, MD_GLYPH_TOP=0 은 마스터 반려 2026-09-15 — 원본도 아래를 넘긴다는 게 값으로
+# 확인돼 세로는 그대로 둔다). `_load_bdf` 의 그 값 그대로다 — **바꾸면 리소스 0 전체(대사창 포함)가
+# 움직인다.**
+#
+# MD_GLYPH_LEFT — 가로 손잡이(같은 날, 이어서). bx=0 인 한글(제·장·왕 등, 대부분)은 잉크가 칸
+# 0열에 바로 붙어 **왼쪽으로 테두리가 팽창할 자리가 없다**(-1열은 없다) — 그 행만 테두리 없이
+# 잉크가 배경에 바로 닿는다. 문자열 첫 글자에서 특히 드러난다(뒷글자는 피치 12 < 셀 14 라 앞
+# 글자 테두리가 그 자리를 메운다).
+# 🔴 **기본값 1 = 정본**(마스터 승인 2026-09-15, "글자가 온전하네"). `resource0()`의 kept 코드
+# (숫자·기호·영문, 원본 그대로 복사하던 자리)도 같이 밀어야 한다 — 한글만 밀면 kept 코드가
+# 제자리라 「제１장」처럼 한글과 kept 코드가 섞인 자리에서 간격이 어긋난다(마스터가 화면에서
+# 직접 잡았다). 리소스 1(반각)은 **안 민다** — 한글 최대 오른쪽 열이 이동해도 10→11 인데
+# 리소스0→1 겹침은 열12 부터 시작해 **항상 열12 앞에서 멈춘다**(BDF 11,172자 전수 확인) —
+# 깨짐이 구조적으로 불가능해 밀 필요가 없다.
+import os as _os
+
+GLYPH_TOP = int(_os.environ.get("MD_GLYPH_TOP", "1"))
+GLYPH_LEFT = int(_os.environ.get("MD_GLYPH_LEFT", "1"))
+
+
 def glyph_fill(ch: str) -> list[list[int]]:
-    g = _load_bdf().get(ch)
+    g = _load_bdf(top=GLYPH_TOP, left=GLYPH_LEFT).get(ch)
     if g is None:
         raise KeyError(f"Galmuri14 에 없는 글자: {ch!r}")
     return g
@@ -138,6 +160,24 @@ def ring(fill: list[list[int]]) -> list[list[int]]:
 
 def pack(rows: list[list[int]]) -> bytes:
     return b"".join(struct.pack(">H", sum(v << (15 - x) for x, v in enumerate(r))) for r in rows)
+
+
+def unpack(data: bytes, w: int, h: int) -> list[list[int]]:
+    return [[(v >> (15 - x)) & 1 for x in range(w)] for v in struct.unpack(f">{h}H", data)]
+
+
+def shift_cols(rows: list[list[int]], left: int, cell: int) -> list[list[int]]:
+    """열을 `left` 만큼 오른쪽으로 미는 자리 이동 — 칸을 넘는 열은 버린다(`_load_bdf` 와 같은 규칙)."""
+    if left == 0:
+        return rows
+    h = len(rows)
+    out = [[0] * cell for _ in range(h)]
+    for y in range(h):
+        for x in range(cell):
+            rx = x + left
+            if 0 <= rx < cell and rows[y][x]:
+                out[y][rx] = 1
+    return out
 
 
 def is_hangul(ch: str) -> bool:
@@ -275,7 +315,19 @@ class Charset:
             else:
                 i = orig_codes.index(c)
                 g = r0["glyphs"] + i * r0["stride"]
-                glyphs += rom[g : g + r0["stride"]]
+                raw = rom[g : g + r0["stride"]]
+                if GLYPH_LEFT:
+                    # 🔴 kept 코드(기호·숫자·영문, 원본 그대로)도 한글과 **같은 이동**을 받아야
+                    # 리소스 0 전체가 균일하게 밀린다 — 안 그러면 「올(」처럼 한글 뒤에 반각이
+                    # 바로 붙는 자리에서 둘의 상대 간격이 어긋난다(status.md 2026-09-15, 마스터
+                    # 지시 "x값을 오른쪽으로 1px" 를 한글에만 반만 적용했던 자리를 마저 채운다).
+                    # ⚠ 열13 에 이미 닿은 글리프가 **`％`(0x8193) 하나** 있다 — 지금은 문안에
+                    # 사용례가 0건이라 안전하지만, **나중에 누가 `％`를 쓰면 그 오른쪽 1열이
+                    # 잘린다.** 쓰게 되면 그때 이 글리프만 예외 처리한다.
+                    fill = unpack(raw[: r0["nbytes"]], r0["w"], r0["h"])
+                    fill = shift_cols(fill, GLYPH_LEFT, r0["w"])
+                    raw = pack(fill) + pack(ring(fill))
+                glyphs += raw
         h = r0["hdr"]
         tbl_off = r0["table"] - h
         end_off = tbl_off + len(table) - 4
