@@ -1,0 +1,11 @@
+{
+ "_doc": "scn 19 — 1장 완료 카드(엘아스타 개선). 열쇠는 tools/messages.py 의 key(JP 원문 sha1), 원문 대조는 work/derived/messages/scn019.json",
+ "messages": {
+  "c535c4fa26f502cf": {
+   "t": "파렌 왕국은 몬스터에게서 해방되었습니다."
+  },
+  "dd69c136e4c87ec8": {
+   "t": "제1장 왕자의 여행\n\n완"
+  }
+ }
+}

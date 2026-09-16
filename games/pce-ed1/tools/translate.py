@@ -33,7 +33,11 @@ def all_glyph_chars() -> set[str]:
     for p in sorted(M.SCRIPT_DIR.glob("scn*.json")):
         for e in json.loads(p.read_text())["messages"].values():
             chars |= {ch for ch in e["t"] if font.needs_glyph(ch)}
-    for v in M.load_speakers().values():
+    # 🔑 **화면에 나가는 표기만** 공용에서 받는다(`kr_texts`) — 열쇠도 `_aliases` 도 안 온다.
+    #    ⚠ `load_speakers()` 는 **맵**이라 조판이 쓰고, 글리프 커버리지는 이쪽이다.
+    import glossary as G  # shared/
+
+    for v in list(G.kr_texts()) + list(M.load_speaker_overrides().values()):
         chars |= {ch for ch in v if font.needs_glyph(ch)}
     return chars
 

@@ -1,0 +1,11 @@
+{
+ "_doc": "scn 129 — 3장 완료 카드(라누라 해방). 열쇠는 tools/messages.py 의 key(JP 원문 sha1), 원문 대조는 work/derived/messages/scn129.json",
+ "messages": {
+  "c1018cea4b20d4b3": {
+   "t": "제3장 국왕의 증표\n\n완"
+  },
+  "adf8f94a76cd226a": {
+   "t": "라누라 왕국의 몬스터는 모두 도망쳤습니다. 라누라 왕국을 해방했습니다."
+  }
+ }
+}

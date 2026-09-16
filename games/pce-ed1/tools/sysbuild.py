@@ -44,19 +44,15 @@ class SysError(Exception):
 
 
 def glossary() -> dict[str, str]:
-    g = json.loads((common.ROOT / "shared" / "glossary" / "eiyuu.json").read_text())
-    flat = {}
+    """JP → 우리 표기. **공용 `glossary.all_names()` 가 준다** — 우리가 정본을 훑지 않는다.
 
-    def walk(o):
-        if isinstance(o, dict):
-            for k, v in o.items():
-                if isinstance(v, str):
-                    flat[k] = v
-                else:
-                    walk(v)
+    🔴 옛 판은 정본을 **평평하게** 훑어 `_aliases` 의 값(`強さ@전투커맨드` 꼴)까지 표시 문안으로
+    셌다(2026-09-08 실측: 게이트가 「정본에 없는 글자 `@능티`」로 울었다). **게임마다 「밑줄로
+    시작하는 절은 건너뛴다」를 알 게 아니라** 공용이 `categories` 만 준다.
+    """
+    import glossary as G  # shared/ (common 이 sys.path 에 올린다)
 
-    walk(g)
-    return flat
+    return {jp: kr for _c, jp, kr in G.all_names()}
 
 
 def _load(name):

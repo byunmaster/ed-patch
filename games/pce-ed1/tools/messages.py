@@ -61,6 +61,27 @@ def is_lead(b: int) -> bool:
     return b >= 0x24
 
 
+BRANCH_OPS = frozenset(range(0x0F, 0x16))
+"""주소 2바이트를 데리고 다니는 씬 옵코드(0F 점프 · 10 호출 · 11/12 조건 · 13/14 플래그 · 15 기계어) —
+`battle.BRANCH_OPS` 와 같은 축. 🔴 **주소 바이트가 유효한 전각 코드면 메시지 머리로 딸려 들어온다**
+(devlog 09-07 ③, 씬 6,001 메시지 중 86곳 실측). 거기서 메시지를 열고 번역을 써 넣으면 그 점프가
+쓰레기 주소로 가서 **화면이 아니라 진행이 깨진다**(pc98 이 같은 자리에서 물렸다)."""
+
+
+def branch_operands(block: bytes) -> set[int]:
+    """분기 옵코드의 주소 바이트 자리. **주소가 이 블록 안을 가리킬 때만** 센다(`battle.branch_operands`
+    와 같은 두 축 — 옵코드인가 + 주소가 블록 안인가. 둘째가 없으면 데이터 `0F`를 통째로 오탐한다)."""
+    out = set()
+    for i, c in enumerate(block[: len(block) - 2]):
+        if c not in BRANCH_OPS:
+            continue
+        tgt = block[i + 1] | (block[i + 2] << 8)
+        if BASE <= tgt < BASE + len(block):
+            out.add(i + 1)
+            out.add(i + 2)
+    return out
+
+
 @dataclass
 class Message:
     start: int
@@ -118,7 +139,13 @@ def parse(block: bytes) -> list[Message]:
     """열개 후보(화자 머리 `1F` · 공용 화자 `09 nn` · 대본 런)를 앞에서부터 파싱한다."""
     cands = set()
     known = _known_speakers()
+    operands = branch_operands(block)  # 분기 주소 바이트 — 메시지 머리로 안 삼는다(devlog 09-07 ③)
     for m in SJIS_RUN.finditer(block):
+        # 🔴 분기 옵코드의 주소 바이트가 우연히 유효한 전각 코드면 이 런에 걸린다 — 거기서 메시지를
+        #    열면 번역이 그 점프 주소를 덮어써 진행이 깨진다. 런의 첫 글자(2B)가 피연산자와
+        #    겹치면 통째로 버린다.
+        if m.start() in operands or m.start() + 1 in operands:
+            continue
         # 코드 안의 우연한 한자 두 글자를 거른다 — 셋 이상이거나 가나·부호가 있어야 대본이다
         # 🔴 단 **정본에 있는 화자 이름은 안 버린다.** 순한자 두 글자 화자(「兵士」 등)가 `1F` 없이
         #    서면 이 필터가 통째로 먹는다 — 검사기는 **자기 입력 밖을 못 보므로** 안 운다
@@ -128,8 +155,14 @@ def parse(block: bytes) -> list[Message]:
         if len(m.group()) < 6 and not KANA.search(txt) and txt not in known:
             continue
         cands.add(m.start())
-    runs = {m.start() for m in SJIS_RUN.finditer(block)}  # 길이 불문 런(화자 이름은 한두 글자다)
+    runs = {
+        m.start()
+        for m in SJIS_RUN.finditer(block)
+        if m.start() not in operands and m.start() + 1 not in operands
+    }  # 길이 불문 런(화자 이름은 한두 글자다) — 여기서도 피연산자를 뺀다
     for i in range(len(block) - 3):
+        if i in operands:  # 분기 주소 자리에서 화자·공용 머리를 열지 않는다
+            continue
         # 화자 머리: 1F + 이름(SJIS 런) + 04, 이름은 14B 이내
         if block[i] == 0x1F and (i + 1) in runs and 0x04 in block[i + 2 : i + 16]:
             cands.add(i)
@@ -264,6 +297,11 @@ def load_translations(scene_id: int) -> dict[str, dict]:
         return {}
     d = json.loads(p.read_text())
     return d.get("messages", {})
+
+
+def load_speaker_overrides() -> dict[str, str]:
+    """`script/speakers.json` 만 — 정본 위에 얹는 보충·덮어쓰기."""
+    return json.loads(SPEAKERS.read_text()) if SPEAKERS.exists() else {}
 
 
 def load_speakers() -> dict[str, str]:
