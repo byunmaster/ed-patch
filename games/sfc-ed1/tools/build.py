@@ -29,7 +29,10 @@ import dicts
 import hook
 import script
 
-OUT_NAME = "Dragon Slayer - Eiyuu Densetsu (KR).sfc"
+OUT_NAME = {  # 경로별로 갈라 쓴다(patcher-checklist.md 3-B ② — 「어느 경로가 만들었나」를 파일명에도)
+    "kr": "Dragon Slayer - Eiyuu Densetsu (KR).sfc",  # build_kr() — 이게 굴리는 이미지
+    "poc": "Dragon Slayer - Eiyuu Densetsu (POC).sfc",  # build() — 구조 재배치 + 메뉴 PoC, 배포 대상 아님
+}
 NEW_SIZE = 2 * 1024 * 1024
 BANK_SHIFT = 0x20  # 원본 뱅크 $07~$0B → $27~$2B
 LAYOUT_BANK = 0x2C8000  # 넓힌 창 배치 항목을 두는 자리(확장 뱅크)
@@ -1334,18 +1337,23 @@ def opening_poc(rom: bytes) -> tuple[str, callable, callable]:
     return set(sids), enc_override, bake
 
 
-def write_image(out: bytes, info: dict) -> None:
-    """빌드 칸에 이미지 하나만 남긴다(낡은 것을 정상으로 오해하는 사고를 막는다)."""
+def write_image(out: bytes, info: dict, build_path: str) -> None:
+    """빌드 칸에 이미지 하나만 남긴다(낡은 것을 정상으로 오해하는 사고를 막는다).
+
+    ⚠ `build_path` 는 "kr"(`build_kr()`, 실제 굽는 이미지) 아니면 "poc"(`build()`, 구조 재배치 +
+    메뉴 PoC) — 2026-09-15 빌드 지문 소동(patcher-checklist.md 3-B)의 재발 방지책. 파일명 접미
+    + manifest 의 `build_path` 칸, **둘 다** 남긴다 — 지문을 옮겨 적을 때 무엇을 쟀는지가
+    값으로 같이 남게."""
     d = common.BUILD_DIR / common.BUILD_TAG
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob("*.sfc*"):
         old.unlink()
-    dst = d / OUT_NAME
+    dst = d / OUT_NAME[build_path]
     dst.write_bytes(out)
     sha = hashlib.sha1(out).hexdigest()
     (d / "manifest.json").write_text(
         json.dumps(
-            {"source_sha1": common.ROM_SHA1, "output_sha1": sha, **info},
+            {"build_path": build_path, "source_sha1": common.ROM_SHA1, "output_sha1": sha, **info},
             ensure_ascii=False,
             indent=1,
         ),
@@ -1393,7 +1401,7 @@ def main() -> None:
         out, info = build_kr(rom, with_hook=not a.no_hook)
         print(json.dumps(info, ensure_ascii=False, indent=1))
         if a.kr:
-            write_image(out, info)
+            write_image(out, info, "kr")
         return
     rom = common.rom_bytes()
     out, info = build(rom)
@@ -1410,7 +1418,7 @@ def main() -> None:
     if a.check:
         print("검증 OK")
         return
-    write_image(out, info | v)
+    write_image(out, info | v, "poc")
 
 
 if __name__ == "__main__":

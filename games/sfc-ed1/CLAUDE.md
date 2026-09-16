@@ -49,7 +49,8 @@ python3 games/sfc-ed1/tools/text.py --dump      # work/derived/text/ 에 대본(
 python3 games/sfc-ed1/tools/text.py --msg 5     # 메시지 하나 풀어 보기
 python3 games/sfc-ed1/tools/script.py --roundtrip   # 라벨 모델 왕복(본체 153KB 바이트 동일)
 python3 games/sfc-ed1/tools/dis65816.py 0x0298E0 0x029960  # 65816 디스어셈블 — 막히면 롬을 편다(조사용)
-python3 games/sfc-ed1/tools/build.py            # 원문을 확장 뱅크로 옮긴 2MB 롬(+창 넓히기·한글 메뉴 PoC) → work/build/<꼬리표>/
+python3 games/sfc-ed1/tools/build.py            # 원문을 확장 뱅크로 옮긴 2MB 롬(+창 넓히기·한글 메뉴 PoC, 파일명 접미 POC) → work/build/<꼬리표>/
+python3 games/sfc-ed1/tools/build.py --kr       # ⭐ 사전·전투 UI 이관 + 렌더러 훅까지 — 이게 굴리는 이미지(파일명 접미 KR). **빌드 지문은 항상 이걸로 잰다**
 python3 games/sfc-ed1/tools/build.py --project  # 번역문을 인코딩해 뱅크에 담아 본 분량 투영(파일 안 남김)
 python3 games/sfc-ed1/tools/units.py --stats --dump # 번역 단위·조각·조사 수요 → work/derived/units/
 python3 games/sfc-ed1/tools/tm.py --readings --dump # PS1 번역본과 읽기 유사도 정렬 → work/derived/tm/
