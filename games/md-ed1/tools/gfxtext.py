@@ -59,7 +59,7 @@ CURSOR_Y_LO = 0x13362  # move.w #$E6,d2 (4B)
 CURSOR_Y_ORIG = bytes.fromhex("343c00e6")
 CURSOR_Y_NEW = bytes.fromhex(
     "343c00" + os.environ.get("MD_TITLE_CURSOR", "e8")
-)  # 정본 = 원판(e6). 실험 손잡이
+)  # 정본 = **e8**(원판보다 2px 아래). `e6` 을 주면 원판 자리로 되돌려 볼 수 있다
 # 🔴 **윗줄 조각** — 셀 60~64 는 「이어하기」 칸 바로 위 한 줄(플레인 B 13행, y104~111)에 깔리는 다섯 칸으로,
 #    `つづきから` 가 16행 칸을 **위로 넘친 획**(づ 의 탁점·き 의 윗획 = 흰 2px, x150~151 y111)과 그 테두리를
 #    담는다 — 가나 자리가 모자라 붙인 조각이다(유저 간파 2026-09-07). 한글은 안 넘치니 **통째로 비운다.**
@@ -256,7 +256,7 @@ def plan(d: bytes, names: dict) -> list[tuple[str, int, bytes]]:
         raise SystemExit(
             f"커서 Y 명령이 원본과 다르다 @{CURSOR_Y_LO:#x}: {d[CURSOR_Y_LO : CURSOR_Y_LO + 4].hex()}"
         )
-    if CURSOR_Y_NEW != CURSOR_Y_ORIG:  # 정본은 원판 그대로 — 실험일 때만 쓴다
+    if CURSOR_Y_NEW != CURSOR_Y_ORIG:  # `MD_TITLE_CURSOR=e6` 으로 원판 자리를 볼 땐 안 쓴다
         writes.append(("gfx:cursor", CURSOR_Y_LO, CURSOR_Y_NEW))
     return writes
 
