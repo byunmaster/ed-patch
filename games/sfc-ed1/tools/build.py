@@ -538,6 +538,7 @@ def mutable_ranges() -> list[tuple[int, int]]:
     r.append((b, b + NAME_STRIDE * NAME_COUNT))
     r += dicts.patch_ranges()
     r += battle_ui.patch_ranges()
+    r += battle_ui.patch_ranges_a3()
     sheet = common.snes2off(text.FONT_SHEET)
     import tiles  # 상주 글리프를 구울 수 있는 자리 전부(실제로 구운 것은 그 부분집합이다)
 
@@ -1124,6 +1125,8 @@ def build_kr(
         dk = dicts.bake(out, rom, _idx)
         bu = battle_ui.bake(out, rom, _idx, dk["next"])  # 사전 바로 뒤에 이어 놓는다
         dk["전투 UI"] = bu
+        a3 = battle_ui.bake_a3_values(out, rom, _idx, bu["next"])  # 그 뒤에 이어 놓는다
+        dk["A3 값"] = a3
         led.snap(out, "사전·전투 UI 이관")
         hk = hook.apply(
             out,
@@ -1137,6 +1140,7 @@ def build_kr(
     if with_hook:
         dicts.verify(out, k["rep"])  # 🔑 **체인이 다 끝난 롬**에서 게임의 포인터를 따라 되읽는다
         battle_ui.verify(out, k["rep"])
+        battle_ui.verify_a3_values(out, k["rep"])
     n_term = verify_terminators(rom, out)
     out[HEADER_ROM_SIZE_OFF] = 0x0B
     fix_checksum(out)

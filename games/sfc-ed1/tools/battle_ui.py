@@ -24,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import text  # noqa: F401, I001
+import asm65816
 import common
 import dicts
 import encode
@@ -38,6 +39,10 @@ GROUPS = [
     #    `cells` 는 **화면 칸 수**일 뿐이다(`name13` 이 모자란 칸을 공백으로 채운다).
     {"key": "speed", "table": 0x02A3CE, "count": 2, "cells": 4, "setup": (0x02A38F, 0x02A396)},
     {"key": "yesno", "table": 0x02A426, "count": 2, "cells": 3, "setup": (0x02A3E7, 0x02A3EE)},
+    # 🔵 2026-09-15 — A4 전투 설정 창의 **라벨 자체**. 창 표(menus.py LAYOUT_TABLES)가 굽는
+    #    $03:CC1B 는 아무도 안 읽는 사본이고, 실제 드로어는 이 포인터 표를 통해 $0305 로
+    #    MVN 한다(라이브 BP 로 확인 — $02:ADFA, X=포인터, count=10). 10바이트 고정칸.
+    {"key": "a4_labels", "table": 0x02AE59, "count": 6, "cells": 10, "setup": (0x02ADE1, 0x02ADE8)},
 ]
 
 
@@ -88,6 +93,143 @@ def encode_rows(key: str, rep_index: dict[str, int]) -> list[bytes]:
     return out
 
 
+# ── A3 시스템 설정 창 값 — **포인터 표가 아니라 즉치 4갈래** ─────────────────────────────
+# 라이브 BP 로 확정(2026-09-15). `$1239` 의 비트를 마스킹해 옵션 번호(Y)를 얻고
+# `베이스 + Y×스트라이드` 로 문자열을 찾는다. 베이스 셋(레벨업·EP표시·이동/메시지-공유)을
+# **각 분기가 16비트 상수로 직접** 갖고 있어(`lda #$xx` 두 번) `GROUPS`/`bake()` 의 포인터
+# 표 전제와 안 맞는다 — 그래서 별도 함수다.
+#
+# 🔴 원본 스트라이드는 ×3(바이트) 인데 한글 2음절(4바이트)이 그 안에 안 들어간다 — 그래서
+# **원본 게임 코드**(`$02:AF10~AF31`, 스트라이드 계산)를 ×5 로 넓힌다. 우리 훅 코드가 아니라
+# 원본을 고치는 것이라 루트 CLAUDE.md 「손인코딩 기계어는 디스어셈블로 검산한다」가 걸린다 —
+# 아래 `_a3_stride_patch()` 가 어셈블러로 짓고, `test_hook.py` 류의 재디코드는 없지만 빌드
+# 게이트(`--project`)의 무변경 구간·되읽기가 매 회차 재확인한다.
+# 🔴 **처음엔 ×4 + 「name13 칸수를 2로 줄인다」로 갔다가 실기에서 깨졌다**(자기 정정) — 「수동」
+# 뒤에 다음 옵션 「자동」의 「자」가 붙어 「수동자」로 보였다. 칸수(`LDA #$0002`)를 줄이면
+# name13 이 **덜 읽고 멈추긴 하지만**, 그 뒤에 오는 **다른(미확인) 다운스트림 경로가 여전히
+# 고정 3칸을 화면에 낸다** — 우리 루프가 안 쓴 세 번째 칸이 **이전 프레임의 잔재**를 그대로
+# 내보인 것으로 보인다. ⇒ **원본 칸수(3)는 그대로 두고**, 다른 그룹(speed·yesno·a4_labels)과
+# 똑같이 **`$FF` 종료 + `name13` 자체 패딩**으로 세 번째 칸을 **명시적으로 공백 처리**한다.
+# 그러려면 스트라이드가 「내용(4B) + 종결자(1B)」= **5바이트**여야 다음 옵션과 안 겹친다.
+A3_STRIDE_ORG = 0x02AF10
+A3_STRIDE_LEN = 0x02AF31 - 0x02AF10  # 33바이트, 원본과 정확히 같은 길이 — 뒤 코드가 안 밀린다
+A3_MVN = 0x02AF3C
+A3_MVN_LDY = 0x02AF36  # `LDY #$0305` — hook.MVN_SITES 가 이 자리로 앞 3바이트를 확인한다
+A3_SCRATCH = 0x000009  # ×5 계산용 임시 — $0006~$0008 바로 뒤, 이 루틴 안에서만 쓰고 버린다
+
+# (행 이름, [분기의 즉치 lo 주소, 즉치 hi 주소] 목록, 옵션 jp 목록)
+A3_ROWS = [
+    ("레벨업", [(0x02AECD, 0x02AED2)], ["セット", "オート"]),
+    ("EP표시", [(0x02AEDC, 0x02AEE1)], ["EP", "あと"]),
+    ("이동·메시지", [(0x02AEEB, 0x02AEF0), (0x02AEFA, 0x02AEFF)], ["おそい", "ふつう", "はやい", "とまる"]),
+]
+A3_STRIDE = 5  # 패치 후 스트라이드(바이트) — 한글 2음절(4B) + `$FF` 종결자(1B)
+
+
+def _a3_stride_patch() -> bytes:
+    """`베이스 + Y×5` — 원본의 ×3(TAY→ASL→ADC→TYA→ADC, 인터리브)과 달리 **Y×4 를 스크래치에
+    모아 뒀다가 Y 를 한 번 더 더해** 캐리 전파를 한 번만 한다(안 그러면 33B 를 넘긴다)."""
+    a = asm65816.Asm(org=A3_STRIDE_ORG, bank=0x02)
+    a.tay()
+    a.asl()
+    a.asl()  # A = Y×4
+    a.op("sta", addr=A3_SCRATCH, mode="abs")
+    a.tya()  # A = Y (레지스터끼리 더하는 명령이 없어 스크래치를 거친다)
+    a.clc()
+    a.op("adc", addr=A3_SCRATCH, mode="abs")  # A = Y×4 + Y = Y×5
+    a.clc()
+    a.op("adc", addr=0x0006, mode="abs")
+    a.op("sta", addr=0x0006, mode="abs")
+    a.lda(imm=0x00)
+    a.op("adc", addr=0x0007, mode="abs")
+    a.op("sta", addr=0x0007, mode="abs")
+    code = a.assemble()
+    pad = A3_STRIDE_LEN - len(code)
+    if pad < 0:
+        raise SystemExit(f"A3 스트라이드 패치가 원본 자리({A3_STRIDE_LEN}B)보다 크다: {len(code)}B")
+    return code + bytes([0xEA]) * pad  # 나머지는 NOP — 뒤 코드(REP#$30~)는 그대로 둔다
+
+
+def bake_a3_values(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dict:
+    """A3 값 8종을 **5바이트 고정 스트라이드**(한글 4B + `$FF` 1B)로 사전 뱅크에 굽고,
+    즉치 4갈래 + 스트라이드 ASM 을 함께 패치한다. `org` 이어 쓴다(battle_ui.bake() 뒤)."""
+    d = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    by_jp = {x["jp"]: x["kr"] for x in d["a3_values"]}
+    for _row, addrs, _opts in A3_ROWS:
+        for lo, hi in addrs:  # lo·hi 는 $A9(LDA #imm) **오피코드** 주소 — +1 이 피연산자다
+            if rom[common.snes2off(lo)] != 0xA9 or rom[common.snes2off(hi)] != 0xA9:
+                raise SystemExit(f"A3 값 즉치 자리가 예상과 다르다 {common.fmt(lo)}/{common.fmt(hi)}")
+    if rom[common.snes2off(A3_MVN)] != 0x54:
+        raise SystemExit(f"A3 값 MVN 자리가 예상과 다르다 {common.fmt(A3_MVN)}")
+
+    cur = org
+    info = {}
+    for row, addrs, opts in A3_ROWS:
+        base = cur
+        for jp in opts:
+            kr = by_jp.get(jp)
+            if not kr:
+                raise SystemExit(f"A3 값 원문 {jp!r} 이 battle_ui.json 의 a3_values 에 없다")
+            b = bytearray()
+            for ch in kr:
+                if encode.is_glyph(ch):
+                    b += encode.glyph_code(rep_index[ch])
+                elif ch in encode.KR_TABLE:
+                    b.append(encode.KR_TABLE[ch])
+                else:
+                    raise SystemExit(f"A3 값에 못 넣는 글자: {ch!r}")
+            b.append(dicts.TERM)  # $FF — name13 이 여기서 멈추고 남은 칸을 공백으로 채운다
+            if len(b) > A3_STRIDE:
+                raise SystemExit(f"A3 값 {kr!r}(+종결자) 이 {A3_STRIDE}바이트를 넘는다({len(b)}B)")
+            b += bytes([0xFF]) * (A3_STRIDE - len(b))  # 안 읽히는 자리 — 값은 안 중요하다
+            so = common.snes2off((dicts.BANK << 16) | cur)
+            out[so : so + A3_STRIDE] = bytes(b)
+            cur += A3_STRIDE
+        for lo, hi in addrs:  # 이 행의 모든 분기가 같은 base 를 가리킨다(이동·메시지는 공유)
+            ol, oh = common.snes2off(lo), common.snes2off(hi)
+            out[ol + 1] = base & 0xFF
+            out[oh + 1] = base >> 8
+        info[row] = {"표": common.fmt((dicts.BANK << 16) | base), "옵션": len(opts)}
+        if cur > 0x10000:
+            raise SystemExit(f"사전 뱅크가 넘친다: {cur:#x}")
+
+    patch = _a3_stride_patch()
+    po = common.snes2off(A3_STRIDE_ORG)
+    out[po : po + A3_STRIDE_LEN] = patch
+    info["끝"] = common.fmt((dicts.BANK << 16) | cur)
+    info["next"] = cur
+    return info
+
+
+def verify_a3_values(out: bytes, slots: list) -> dict:
+    """되읽기 — 즉치 4곳이 가리키는 자리를 그대로 따라가 디코드한다."""
+    n_ok = 0
+    bad = []
+    d = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    by_jp = {x["jp"]: x["kr"] for x in d["a3_values"]}
+    for _row, addrs, opts in A3_ROWS:
+        lo, hi = addrs[0]
+        ol, oh = common.snes2off(lo), common.snes2off(hi)
+        base = out[ol + 1] | (out[oh + 1] << 8)
+        for i, jp in enumerate(opts):
+            so = common.snes2off((dicts.BANK << 16) | (base + i * A3_STRIDE))
+            end = out.find(bytes([dicts.TERM]), so, so + A3_STRIDE)
+            got = encode.decode_kr(out[so:end], slots).rstrip()
+            want = by_jp[jp]
+            if got != want:
+                bad.append(f"{jp} → {got!r} ≠ {want!r}")
+            else:
+                n_ok += 1
+        for lo2, hi2 in addrs[1:]:  # 공유 분기도 같은 base 를 가리키는지
+            ol2, oh2 = common.snes2off(lo2), common.snes2off(hi2)
+            base2 = out[ol2 + 1] | (out[oh2 + 1] << 8)
+            if base2 != base:
+                bad.append(f"공유 분기 base 불일치: {common.fmt(lo)}={base:#x} ≠ {common.fmt(lo2)}={base2:#x}")
+    if bad:
+        raise SystemExit("A3 값 되읽기 실패:\n  " + "\n  ".join(bad))
+    return {"읽은 옵션": n_ok}
+
+
 def bake(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dict:
     """무리마다 [포인터 표][문자열] 을 사전 뒤에 이어 놓고 그 무리의 표 참조를 우리 것으로."""
     info = {}
@@ -118,11 +260,21 @@ def bake(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dic
             out[o + 3] = dicts.BANK
         info[g["key"]] = {"표": common.fmt((dicts.BANK << 16) | table), "줄": g["count"]}
     info["끝"] = common.fmt((dicts.BANK << 16) | cur)
+    info["next"] = cur
     return info
 
 
 def patch_ranges() -> list[tuple[int, int]]:
     return [(common.snes2off(a), common.snes2off(a) + 4) for g in GROUPS for a in g["setup"]]
+
+
+def patch_ranges_a3() -> list[tuple[int, int]]:
+    r = [(common.snes2off(A3_STRIDE_ORG), common.snes2off(A3_STRIDE_ORG) + A3_STRIDE_LEN)]
+    for _row, addrs, _opts in A3_ROWS:
+        for lo, hi in addrs:
+            r.append((common.snes2off(lo) + 1, common.snes2off(lo) + 2))
+            r.append((common.snes2off(hi) + 1, common.snes2off(hi) + 2))
+    return r
 
 
 def verify(out: bytes, slots: list) -> dict:
