@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import battle
+import chapter_band
 import common
 import containers
 import font
@@ -209,6 +210,7 @@ ONLY: set[str] | None = None
 """진단용 — 개입 그룹의 부분집합만 건다(`--only font,hook`). 그룹은 여섯:
 `font`(글리프 뱅크 + 진입 스텁) · `cache`(16 → 13 슬롯) · `hook`(EX_GETFNT 우회) ·
 `sys`(시스템 문구) · `battle`(전투 컨테이너) · `scn`(씬 컨테이너) ·
+`band`(장 제목 띠, rel 210) ·
 `glyph`(글리프 뱅크 적재) · `payload`(후킹 루틴 + 표를 $3B00 에 싣기)
 — 뒤 둘은 `font` 안에서 다시 뺄 수 있다.
 🔴 **이게 소프트락을 가르는 유일한 도구다** — 증상이 나면 하나씩 끄며 A/B 한다.
@@ -346,6 +348,8 @@ def _build(edits_path, iso: Path, cue: Path):
             print("  시스템 문구:", sysbuild.apply(f, table, touched))
         if want("battle"):
             print("  전투 데이터:", battle.apply(f, table, touched))
+        if want("band"):
+            print("  " + chapter_band.apply(f, touched))
         translated_ids = {int(p.stem[3:]) for p in translate.M.SCRIPT_DIR.glob("scn*.json")}
         n_msgs = 0
         for rel, c in sorted(by_rel.items()) if want("scn") else []:
