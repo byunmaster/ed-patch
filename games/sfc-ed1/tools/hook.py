@@ -492,6 +492,21 @@ def build_payload(
     a.sep(imm=0x20)
     a.pla()
     a.op("sta", addr=V_IDX, mode="long")
+    # 🔴 **페이지 경계(`$FF`)·메시지 끝(`$E0`/`$E4`)에서 캐시를 비운다**(관리자 제안,
+    # 2026-09-17 — 박스 클리어 자리를 찾는 대신, 이미 가로채는 바이트 흐름 안의 페이지
+    # 제어 코드를 그대로 쓴다). 화면이 어차피 지워지는 자리라 지금 보이는 글자를 갈아칠
+    # 위험이 없다 — 한 페이지 고유 음절 최대 64 < 슬롯 80 이니 **페이지마다 비우면 몇
+    # 바퀴를 돌아도 풀이 안 터진다**(무한 반복되는 오프닝 실측 — devlog 09-17).
+    a.cmp(imm=0xFF)
+    a.beq(label="o_pagebreak")
+    a.cmp(imm=0xE0)
+    a.beq(label="o_pagebreak")
+    a.cmp(imm=0xE4)
+    a.bne(label="o_notpage")
+    a.label("o_pagebreak")
+    a.jsr(addr="cache_reset", mode="abs")
+    a.label("o_notpage")
+    a.op("lda", addr=V_IDX, mode="long")  # cache_reset 이 A/X 를 비운다 — 원본 바이트를 되찾는다
     a.rep(imm=0x20)
     a.op("and", imm=0x00FF, m16=True)
     a.tax()
@@ -538,6 +553,21 @@ def build_payload(
     a.plb()
     a.plp()
     a.rtl()
+
+    # ── 오너 표를 비운다(페이지 경계) — A/X 를 자유롭게 쓴다, 호출부가 원본 바이트를 되찾는다 ──
+    a.label("cache_reset")
+    a.sep(imm=0x20)
+    a.lda(imm=0xFF)  # 캐시 표 — 실제 글리프 색인(최대 $08FF)은 절대 안 되는 값으로 비운다
+    a.ldx(imm=0x0000, m16=True)
+    a.label("cr_loop")
+    a.op("sta", addr=owner_lo, mode="longx")
+    a.op("sta", addr=owner_hi, mode="longx")
+    a.inx()
+    a.cpx(imm=nslot, m16=True)
+    a.bne(label="cr_loop")
+    a.lda(imm=0x00)
+    a.op("sta", addr=V_NEXT, mode="long")
+    a.rts()
 
     # ── 대본 다음 바이트 (원본 $02:E784 과 같은 동작) ────────────────────────────────
     a.label("fetch")
