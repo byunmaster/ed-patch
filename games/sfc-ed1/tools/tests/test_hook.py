@@ -111,6 +111,7 @@ ENTRY = {
     "josa": (True, False, "near"),
     "upload": (True, False, "near"),
     "cache_reset": (True, False, "near"),  # 오프닝 페이지 경계에서 오너 표를 비운다
+    "font_reset": (True, True, "far"),  # 폰트 벌크카피 트램펄린 착지점 — `JSL` 로 불린다
 }
 
 

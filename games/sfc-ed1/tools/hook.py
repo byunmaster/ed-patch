@@ -109,13 +109,19 @@ DRAIN_MAX = 8  # 한 프레임에 올릴 글리프 수 — 32B×2 씩이라 여�
 OPEN_CALL_SITE = 0x1EDF44  # LDA [$23],y / INY / STY $1B44 (6B) → JSL open_fetch + NOP×2
 OPEN_PATCH_LEN = 6
 OPEN_CURSOR = 0x001B44  # 오프닝 읽기 커서(뱅크 $00 고정 — `long` 으로 쓴다, DB 가 훅뱅크라서)
-OPEN_VRAM_DELTA = 0x2000  # 오프닝 패턴 베이스 워드 $3000(status 13절 문서값) — 🔴 **검증 안 됨**,
-# 2026-09-16 밤 실기로 캐 봤더니 활성 BG 레이어 CHR 베이스 넷($800/$1000/$1800/$0) 중 어디에도
-# $3000 이 없다(devlog 09-16(2) 참조). `$800`(BG3, 우리 글꼴과 같은 2bpp)로 바꿔 시험했더니
-# **더 나빠졌다**(배경 그래픽까지 깨짐 — 그 자리는 다른 레이어가 실제로 쓰고 있다는 뜻).
-# $3000 은 배경을 안 깨뜨리니 "안 쓰는 자리에 헛되이 쓰고 있다"에 가깝다 — 진짜 베이스는
-# 아직 못 찾았다. 다음 세션은 여기부터(레이어 4개 중 어느 것이 오프닝 문자 레이어인지 먼저
-# tilemapAddress·활성 레이어 비트로 좁힌 뒤 CHR 베이스를 확정한다).
+OPEN_VRAM_DELTA = 0x2000  # 오프닝 패턴 베이스 워드 $3000 — **확정됨**(09-17(6), 화면을
+# 확정 번역과 줄 단위 대조해 구조가 완전히 일치함을 확인했다). 09-16(2)·09-17(5)의 "베이스가
+# 틀렸다"는 전제는 오진이었다 — 다시 건드리지 않는다. 진짜 범인은 아래 `FONT_*`(09-17(6)(7)).
+
+# 🔴 **일곱째 문 — 폰트 벌크카피가 오프닝 진입 시 우리 글리프를 도로 덮는다**(09-17(6)(7)
+# 실기+정적 확정). `$1E:E6B3`(호출 자리 셋 — `$1E:D2CB`·`D508`·`EBCA`)가 WRAM `$7F:A028`
+# 스테이징을 거쳐 **정확히 워드 `$3000`, 타일 0~0x17F(384장)**를 원본 가나로 채운다 —
+# 우리 동적 슬롯의 타일 상한(`tiles.py` 의 `UPLOADED=0x180`)과 **완전히 겹친다**(옮겨 갈
+# 자리가 없다, devlog 09-17(7)). 세 자리 모두 `JSR $E6B3`(3B, 뱅크 안 호출) 이라 트램펄린이
+# 하나 더 필요하다 — 원본 호출을 그대로 하고 **직후 오너 표를 비우는** 트램펄린을
+# `$1E:FAF4`(빈 자리, `$FF` 런 1,292B 확인)에 둔다.
+FONT_CALL_SITES = [0x1ED2CB, 0x1ED508, 0x1EEBCA]  # `JSR $E6B3` 세 자리 — 전부 같은 패치
+FONT_TRAMPOLINE = 0x1EFAF4  # `JSR $E6B3` + `JSL font_reset` + `RTS`(뱅크 안이라 JSR 로 부른다)
 
 # ── WRAM 변수 ($7E:4625, 741B 무손상 확인 — status 13.8) ────────────────────────────────
 VAR = 0x7E4625
@@ -569,6 +575,16 @@ def build_payload(
     a.op("sta", addr=V_NEXT, mode="long")
     a.rts()
 
+    # ── 폰트 벌크카피 트램펄린의 착지점 — `JSL` 로 불려 `cache_reset`(근접 호출 규약)을
+    #    감싼다. 원 호출부(`$1E:D2CB` 등)의 A/X/Y 폭을 모르므로 여기서 강제로 맞춘다 ──
+    a.label("font_reset")
+    a.php()
+    a.sep(imm=0x20)
+    a.rep(imm=0x10)
+    a.jsr(addr="cache_reset", mode="abs")
+    a.plp()
+    a.rtl()
+
     # ── 대본 다음 바이트 (원본 $02:E784 과 같은 동작) ────────────────────────────────
     a.label("fetch")
     a.op("lda", addr=0x003F, mode="abs")
@@ -973,6 +989,29 @@ def apply(
     out[oc : oc + OPEN_PATCH_LEN] = bytes(
         [0x22, open_addr & 0xFF, (open_addr >> 8) & 0xFF, HOOK_BANK, 0xEA, 0xEA]
     )
+    # 6. 폰트 벌크카피 세 자리: `JSR $E6B3` → `JSR <뱅크 $1E 트램펄린>`(같은 3바이트).
+    #    트램펄린은 원 호출을 그대로 하고 `JSL font_reset` 으로 오너 표를 비운 뒤 돌아온다.
+    reset_addr = (HOOK_BANK << 16) | info["labels"]["font_reset"]
+    ft = common.snes2off(FONT_TRAMPOLINE)
+    if rom[ft : ft + 8] != b"\xff" * 8:
+        raise SystemExit(f"폰트 트램펄린 자리가 비어 있지 않다: {rom[ft : ft + 8].hex()}")
+    out[ft : ft + 8] = bytes(
+        [
+            0x20,
+            0xB3,
+            0xE6,  # JSR $E6B3 (원본 그대로)
+            0x22,
+            reset_addr & 0xFF,
+            (reset_addr >> 8) & 0xFF,
+            HOOK_BANK,  # JSL font_reset
+            0x60,  # RTS
+        ]
+    )
+    for site in FONT_CALL_SITES:
+        so = common.snes2off(site)
+        if bytes(rom[so : so + 3]) != bytes([0x20, 0xB3, 0xE6]):
+            raise SystemExit(f"폰트 벌크카피 호출 자리가 예상과 다르다 {common.fmt(site)}: {rom[so : so + 3].hex()}")
+        out[so : so + 3] = bytes([0x20, FONT_TRAMPOLINE & 0xFF, (FONT_TRAMPOLINE >> 8) & 0xFF])
     info.pop("labels")
     info["glyph_bytes"] = len(g)
     info["hook_bytes"] = len(blob)
@@ -993,4 +1032,6 @@ def patch_ranges() -> list[tuple[int, int]]:
         (common.snes2off(NMI_CALL), common.snes2off(NMI_CALL) + 3),
         (common.snes2off(NMI_STUB), common.snes2off(NMI_STUB) + 8),
         (common.snes2off(OPEN_CALL_SITE), common.snes2off(OPEN_CALL_SITE) + OPEN_PATCH_LEN),
+        *[(common.snes2off(s_), common.snes2off(s_) + 3) for s_ in FONT_CALL_SITES],
+        (common.snes2off(FONT_TRAMPOLINE), common.snes2off(FONT_TRAMPOLINE) + 8),
     ]
