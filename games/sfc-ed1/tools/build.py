@@ -930,6 +930,32 @@ def kr_items(
         ra, rb = find(si), find(si + 1)
         if ra != rb:
             parent[rb] = ra
+    # 🔴 **오프닝(D1) 크롤 36블록은 재진입점이 있어도 물리적으로 붙어 있어야 한다**(2026-09-20
+    # 실기 — 마스터가 캡처에서 두 블록이 화면에 아예 안 나온다고 지적해 찾았다). 크롤은
+    # `$1E:DF44`(대본 전용 인라인 페치)로 **포인터 하나에서 그냥 쭉 읽는다** — 각 블록마다
+    # 되쓰는 포인터가 없다. 그런데 `alt3` 재진입점(19개, 대사창 시스템이 「장면 재진입」
+    # 용으로 이 서사 한복판을 가리키는 것)이 있는 블록은 **참조가 있다**는 이유로 위
+    # `fallthrough_pairs()` 가 앞 블록과의 흘러내림 묶음에서 뺀다(그 규칙 자체는 옳다 —
+    # 「참조 있으면 제 포인터로 닿는 별개 메시지」가 보통은 맞다. 크롤만 예외다). 그 결과
+    # first-fit 이 그 블록만 **다른(더 이른) 뱅크의 빈틈**에 꽂아 버려 크롤 읽기가 그 블록을
+    # 건너뛴다 — 화면에 원본 대비 통째로 안 뜬다(번역 누락이 아니라 배치 사고). 확인: 블록1
+    # (`$0B:E96F`, 5개국 소개)·블록3(`$0B:EAAB`, "그러던 어느 밤")이 뱅크 `$27`에 떨어져
+    # 있었다(나머지는 `$28`/`$29`). ⇒ 이 주소 구간(포인터 표 직후 ~ 36번째 블록 끝)의 조각은
+    # 참조 여부와 무관하게 **전부 한 군집으로 강제 결속**한다 — 재진입 포인터 자체는
+    # `place[]`/`new_off[]` 로 여전히 정확히 갱신되니(군집은 배치 단위일 뿐 포인터 재기입과
+    # 무관) 재진입 기능은 그대로 산다.
+    OPENING_LO, OPENING_HI = 0x0BE8E5, 0x0BF337  # 크롤 본문 시작 ~ 36번째(마지막) 블록 끝
+    opening_slices = [
+        si
+        for si, (_sid, a, _e) in enumerate(slices)
+        if OPENING_LO <= common.off2snes(items[a].off) < OPENING_HI
+    ]
+    if len(opening_slices) != 36:
+        raise SystemExit(f"오프닝 36블록 결속 — 자리 수가 다르다: {len(opening_slices)}")
+    for si in opening_slices[1:]:
+        ra, rb = find(opening_slices[0]), find(si)
+        if ra != rb:
+            parent[rb] = ra
     comp_of = [find(i) for i in range(len(slices))]
     return {
         "items": new,
