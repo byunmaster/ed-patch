@@ -295,6 +295,7 @@ def main():
     if a.test:
         cue = cue.replace(".cue", " (TEST).cue")
     common.write_cue(cue, os.path.basename(out))
+    common.write_build_manifest(a.disc, "kr", out)
     dropped = sweep(common.BUILD_DIR, {out, cue})
     print(f"바뀐 섹터 {n:,}\n→ {out}")
     if dropped:
