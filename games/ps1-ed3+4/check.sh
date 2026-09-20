@@ -117,5 +117,17 @@ echo "  ── 실행파일 낱말 표 (항등 재구축이 바이트 동일한�
 run 6 "$PY" "$G/tools/exetext.py" --disc ed3 --check
 run 6 "$PY" "$G/tools/exetext.py" --disc ed4 --check
 
+echo "  ── 조판 지문 (공용이 우리 줄바꿈을 조용히 흔들지 않나)"
+# ⚠ **락도 관측 대장도 조판을 안 본다**(화자 + 창 본문만 해시). `tools/typeset.py` 가
+#    `shared/text/krwrap.py` 를 직접 쓰므로, 같은 PS1 플랫폼인 ps1-ed1+2 를 흔든 공용
+#    변경이 우리도 흔들 수 있다(실측 확인 2026-09-15 — krwrap 을 되돌리면 ed3 대사 구역
+#    지문이 실제로 갈린다). 게이트가 아니다(문안을 바꾸면 당연히 뜬다) —
+#    **안 바꿨는데 뜨면 `shared/` 를 의심한다.**
+# ⚠ 헤드라인이 `tail -N` 에 잘리는 사고를 ps1-ed1+2 가 겪었다(2026-09-15) — 첫 줄 + 마지막
+#    줄만 남긴다(성공 시 한 줄이라 awk 가 중복 없이 처리한다).
+"$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game ps1-ed3+4 2>&1 \
+  | awk 'NR==1{first=$0} {last=$0; n=NR} END{print first; if (n>1) print last}' \
+  | sed 's/^/   /'
+
 if [ "$fail" -eq 0 ]; then echo "  ✅ 통과"; else echo "  🔴 실패"; fi
 exit "$fail"

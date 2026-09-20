@@ -97,6 +97,32 @@ def build_cue(disc):
     return os.path.join(BUILD_DIR, DISCS[disc]["label"] + ".cue")
 
 
+def write_build_manifest(disc, build_path, out):
+    """`BUILD_DIR/manifest.json` — **어느 스크립트가 이 이미지를 만들었나**.
+
+    `build.py`·`build_poc.py` 가 같은 `BUILD_DIR` 에 쓴다(칸엔 이미지 하나만 두는 설계는
+    그대로 둔다). 파일명 접미(`(TEST)`·`(POC)`)는 사람이 보고, 이 칸은 지문·자동화가 본다
+    — sfc-ed1 이 `build()`/`build_kr()` 를 같은 파일명·같은 manifest 로 구분 못 해 지문을
+    엉뚱한 것끼리 비교한 사고에서 정한 규약(main `docs/patcher-checklist.md` 3-B).
+    """
+    import json
+    import time
+
+    p = os.path.join(BUILD_DIR, "manifest.json")
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "disc": disc,
+                "build_path": build_path,
+                "out": os.path.basename(out),
+                "built_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            },
+            f,
+            ensure_ascii=False,
+            indent=1,
+        )
+
+
 SECTOR = 2352  # raw MODE2/2352
 USER_OFF = 24  # sync(12)+header(4)+subheader(8) → Mode2 Form1 유저 데이터
 USER_SIZE = 2048

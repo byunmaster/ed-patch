@@ -18,6 +18,7 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import build  # sweep() 만 빌려 쓴다 — 「칸엔 이미지 하나만」 설계는 어느 스크립트가 굽든 지킨다
 import common
 import font
 import hangul_map
@@ -118,14 +119,20 @@ def exe_poc(a, exe, exe_lba):
         print("(dry-run)")
         return
     os.makedirs(common.BUILD_DIR, exist_ok=True)
-    out = common.build_bin(a.disc)
+    # ⚠ build.py 와 같은 BUILD_DIR/파일명을 쓰면 **어느 스크립트가 만들었는지 안 남는다**
+    #   (sfc-ed1 실측 — build()/build_kr() 가 같은 파일명에 써서 지문을 다른 함수끼리 비교하고도
+    #   몰랐다). 접미로 사람이 보고, manifest 로 자동화가 본다(main docs/patcher-checklist.md 3-B).
+    out = common.build_bin(a.disc).replace(".bin", " (POC).bin")
     tmp = out + ".part"
     print(f"원본 복사 → {out}")
     shutil.copyfile(common.orig_bin(a.disc), tmp)
     with open(tmp, "r+b") as f:
         n1 = common.write_user_data(f, a.disc, exe_lba, bytes(exe), label="폰트+문안")
     os.replace(tmp, out)
-    common.write_cue(common.build_cue(a.disc), os.path.basename(out))
+    cue = common.build_cue(a.disc).replace(".cue", " (POC).cue")
+    common.write_cue(cue, os.path.basename(out))
+    common.write_build_manifest(a.disc, "poc", out)
+    build.sweep(common.BUILD_DIR, {out, cue})
     print(f"바뀐 섹터: {n1}\n→ {out}")
 
 
@@ -216,7 +223,7 @@ def main():
         return
 
     os.makedirs(common.BUILD_DIR, exist_ok=True)
-    out = common.build_bin(a.disc)
+    out = common.build_bin(a.disc).replace(".bin", " (POC).bin")
     tmp = out + ".part"
     print(f"원본 복사 → {out}")
     shutil.copyfile(common.orig_bin(a.disc), tmp)
@@ -224,7 +231,10 @@ def main():
         n1 = common.write_user_data(f, a.disc, exe_lba, bytes(exe), label="폰트")
         n2 = common.write_user_data(f, a.disc, sc_lba, bytes(sc), label="문안")
     os.replace(tmp, out)
-    common.write_cue(common.build_cue(a.disc), os.path.basename(out))
+    cue = common.build_cue(a.disc).replace(".cue", " (POC).cue")
+    common.write_cue(cue, os.path.basename(out))
+    common.write_build_manifest(a.disc, "poc", out)
+    build.sweep(common.BUILD_DIR, {out, cue})
     print(f"바뀐 섹터: 폰트 {n1} · 문안 {n2}\n→ {out}")
 
 
