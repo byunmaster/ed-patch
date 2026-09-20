@@ -112,6 +112,27 @@ def _internal_key(jp):
     return internal_key(jp)
 
 
+# 🔴 **접미가 원문에 없는 지명 다섯**(ps1-ed1+2 실측 2026-09-12, 정본 주석과 같다) —
+#    マスクーン·セリス·リーゼル·バズヌーン·セダル. 정본은 이 다섯을 **접미 없이** 든다
+#    (`"マスクーン": "마스쿤"`), 그런데 ED2 「지명 긴꼴」 표는 원문이 **접미를 바로 구운
+#    자리**라(`マスクーンの町`) 정본 열쇠와 안 맞아 조용히 죽는다(2026-09-15, 정본이
+#    바뀌며 처음 드러났다 — `AssertionError: 정본에 없는 place`).
+#    ⇒ 다섯만 벗겨서 재조회한다. **다른 접미(港·砦·洞窟…)는 안 건드린다** — 그건 서로
+#      다른 시설이라 벗기면 안 된다(⚠ `ラルファ`가 그 예: ED1 砦 / ED2 港).
+_NO_SUFFIX_PLACES = ("マスクーン", "セリス", "リーゼル", "バズヌーン", "セダル")
+
+
+def _place_lookup(jp, cat):
+    """`glossary.lookup` 을 먼저 그대로 쓰고, 위 다섯만 접미를 벗겨 다시 잰다."""
+    kr = lookup(jp, cat)
+    if kr is not None or cat != "place":
+        return kr
+    for bare in _NO_SUFFIX_PLACES:
+        if jp == bare + "の町":
+            return lookup(bare, cat)
+    return None
+
+
 def rows():
     """`(파일키, 표이름, 색인, 오프셋, stride, JP, KR|None)` — 원본에서 읽어 정본과 짝짓는다."""
     tables, pad, _cards, pad_to_jp, _msgs = load_canon()
@@ -155,7 +176,7 @@ def rows():
                     continue
                 if _internal_key(jp):
                     continue  # 반각 내부 키 — 화면에 안 나온다(아래 헬퍼 주석)
-                kr = lookup(jp, cat)
+                kr = _place_lookup(jp, cat)
                 # 🔴 조용히 건너뛰지 않는다 — 한 칸만 일본어로 남으면 화면에서 바로 튄다.
                 assert kr, f"{key}/{name}[{i}] 0x{at:06x}: 정본에 없는 {cat} {jp!r}"
                 if name == SUFFIXED_TABLE and rec_len(kr + WIDE_SP) <= stride:
