@@ -27,7 +27,7 @@ CELL = 16
 STRIDE = CELL * 2  # 행당 2바이트 × 16행 = 32B
 
 # 표 전체 지문 — 폰트나 렌더가 바뀌면 여기가 먼저 운다. `--freeze` 로만 갱신한다.
-TABLE_SHA1 = "516e5a8f031241ee0e129bcd3e5d9a3384f9f96c"
+TABLE_SHA1 = "76aa8996a31fe271c4001f3daedf06e324c031f2"
 
 
 def ksc_syllables() -> list[str]:
@@ -58,11 +58,44 @@ def pack32(bits: np.ndarray) -> bytes:
     return np.packbits(grid, axis=1).tobytes()
 
 
+# 완성형 표에서 **실사용 0인 자리**를 문장부호 전용으로 빌린다(2026-09-16, 마스터 지적).
+# 한국어 말줄임표는 바닥(기준선)인데, 원문 `…`(JIS ku1·ten36)은 **우리 표 밖**(CGROM
+# 패스스루)이라 손을 댈 수가 없다 — 일본식 가운데점 그대로 나간다. 이 게임의 완성형
+# 2,350자 중 **우리 번역 어디에도 안 쓰인 자리**(census 확인, 1,391자 여유) 하나를
+# `…` 로 갈아 끼운다.
+# ⚠ 이 표를 쓰는 모든 경로(시나리오·전투·시스템)가 같이 바뀐다 — `…` 을 문안 어디에 써도
+# 이 글리프로 나간다. 오프닝 전용이 아니다.
+CUSTOM_GLYPHS = {"…": "갉"}  # 대체할 음절 — 우리 문안 전체(scn.json+sys.json)에 0회 등장
+
+
+def ellipsis_bitmap() -> np.ndarray:
+    """말줄임표 — **손으로 찍은 점 셋**(마스터 확정 2026-09-17, 후보 A).
+
+    Neo둥근모 자체 `…` 글리프도 바닥에는 있었지만 점 간격이 고르지 않았다. 마침표(`.`)의
+    점(2×2px, 10~11행·3~4열)과 **크기를 맞추고**, 칸 안에서 고른 간격으로 셋을 찍는다 —
+    여백 2px · 점 사이 3px(2,7,12 열 시작). 세로는 마침표와 **같은 행**(바닥 정렬).
+    """
+    g = np.zeros((CELL, CELL), dtype=np.uint8)
+    for col in (2, 7, 12):
+        g[10:12, col : col + 2] = 1
+    return g
+
+
+CUSTOM_BITMAPS = {"…": ellipsis_bitmap}  # 폰트 렌더 대신 이 함수로 그린다
+
+
 def build() -> tuple[list[str], bytes]:
     font = ImageFont.truetype(str(TTF), CELL)
     syllables = ksc_syllables()
-    table = b"".join(pack32(render(ch, font)) for ch in syllables)
-    return syllables, table
+    table = bytearray(b"".join(pack32(render(ch, font)) for ch in syllables))
+    for custom_ch, victim_ch in CUSTOM_GLYPHS.items():
+        i = syllables.index(victim_ch)
+        bits = (
+            CUSTOM_BITMAPS[custom_ch]() if custom_ch in CUSTOM_BITMAPS else render(custom_ch, font)
+        )
+        table[i * STRIDE : (i + 1) * STRIDE] = pack32(bits)
+        syllables[i] = custom_ch
+    return syllables, bytes(table)
 
 
 def preview(syllables: list[str], table: bytes, path: Path, cols: int = 48) -> None:
