@@ -94,6 +94,7 @@ NMI_STUB = 0x00FF20  # 뱅크 $00 빈 자리 160B
 NMI_ORIG = 0xACA9
 QN = 16  # 글리프 큐 칸 수(2의 거듭제곱)
 DRAIN_MAX = 8  # 한 프레임에 올릴 글리프 수 — 32B×2 씩이라 여유 있다
+REALLOC_MARGIN = 20  # 캐시 히트인데 남은 수명이 이만큼 미만이면 새 슬롯으로 옮긴다(`alloc` 주석)
 
 # 🔴 **여섯째 문 — 오프닝(D1)은 인게임과 완전히 다른 경로다**(2026-09-15 실기 확정, status 13절).
 # `$1E:DF44 LDA [$23],y / INY / STY $1B44`(6B, 인라인 — JSR 을 거치지 않는다)가 대본에서 다음
@@ -109,6 +110,30 @@ DRAIN_MAX = 8  # 한 프레임에 올릴 글리프 수 — 32B×2 씩이라 여�
 OPEN_CALL_SITE = 0x1EDF44  # LDA [$23],y / INY / STY $1B44 (6B) → JSL open_fetch + NOP×2
 OPEN_PATCH_LEN = 6
 OPEN_CURSOR = 0x001B44  # 오프닝 읽기 커서(뱅크 $00 고정 — `long` 으로 쓴다, DB 가 훅뱅크라서)
+# 🔴 **오프닝은 타자기다 — 한 칸 그릴 때마다 줄 시작 커서를 「칸 수」만큼 올린다**(2026-09-20 실기,
+# `$1B44` 를 훅 호출마다 찍어서 잡았다: 2번째 호출 Y=1→커서 3, 3번째 호출 Y=**2**). 한 줄은
+# `$1B81`(줄 시작) → `$1B44`(읽기 커서)로 시작하고, 칸을 다 채우면 `$1E:E0BB` 가 `$1B81 += $1B83`
+# (칸 수 — 크롤 1 · 인물 카드 $32) 한다. **바이트가 아니라 칸이다.** 한글은 한 칸이 2바이트라
+# 다음 칸이 색인 바이트에서 시작해 「정상 글리프 + 쓰레기 한 칸」이 음절마다 붙었다(4배 화면의
+# 「아。주요 먼민」이 정확히 그 모양). `$1B44` 는 그 사이 `$1E:DF97` 이 DMA 카운터로 덮어쓰므로
+# 못 믿는다 — 훅이 **실제 소비한 바이트 커서**를 따로 남기고(`V_OCUR`), `$1E:E0BB` 의 증가
+# 루프(11B)를 `JSL open_advance` 로 갈아 끼워 `$1B81 = V_OCUR` 로 세운다.
+OPEN_LINE = 0x001B81  # 줄 시작 커서(워드) — `$1E:DF34 LDY $1B81 / STY $1B44`
+# 🔴 **컨텍스트(글리프가 올라갈 VRAM 베이스)는 「어느 훅이 불렸나」가 아니라 「지금 화면 배치가
+# 무엇이냐」다**(2026-09-20 실기). 인물 소개 카드는 오프닝 화면(BG3 베이스 워드 `$3000`) 위에서
+# **인게임 메시지 엔진**(`$02:DCE0` 가 칸 배열을 채운다 — 쓰기 BP 로 잡았다)이 글자를 그린다.
+# 인게임 훅이 진입마다 `V_CTX=0` 으로 되돌리니 글리프가 워드 `$1000` 에 올라가고 화면은 `$3000`
+# 의 원본 가나를 보여 줬다(카드 글자가 가나 모양으로 깨진 정체 — 서명 검사: 슬롯 타일의 평면1 이
+# `$FF` 가 아니었다). 롬에 PPU 베이스 그림자 변수가 없어(`STA $210C` 가 세 자리뿐, 전부 즉치)
+# **그 세 자리를 가로채** `V_CTX` 를 세운다 — BG3 베이스가 `$3000`(`$210C=$03`)이면 1, 아니면 0.
+PPU_CTX_SITES = [  # (`LDA #imm / STA $210C` 5B 자리, 즉치, 컨텍스트) → `JSL ctx_*` + NOP
+    (0x008082, 0x22, 0),
+    (0x00826C, 0x22, 0),
+    (0x008294, 0x03, 1),
+]
+PPU_BG34NBA = 0x00210C
+OPEN_ADVANCE_SITE = 0x1EE0BB  # LDX $1B83 / DEX / BMI +5 / INC $1B81 / BRA -8 (11B) → JSL open_advance + NOP×7
+OPEN_ADVANCE_LEN = 11
 OPEN_VRAM_DELTA = 0x2000  # 오프닝 패턴 베이스 워드 $3000 — **확정됨**(09-17(6), 화면을
 # 확정 번역과 줄 단위 대조해 구조가 완전히 일치함을 확인했다). 09-16(2)·09-17(5)의 "베이스가
 # 틀렸다"는 전제는 오진이었다 — 다시 건드리지 않는다. 진짜 범인은 아래 `FONT_*`(09-17(6)(7)).
@@ -143,6 +168,7 @@ V_RAW = VAR + 26  # 방금 읽은 원본 바이트
 V_OVERFLOW = VAR + 23  # 슬롯 풀이 한 바퀴 다 돌아 재사용됐다(= 그 사이 화면에 남은 글자가 덮일 수 있다)
 V_CTX = VAR + 27  # 다음 alloc() 큐잉의 컨텍스트(0=인게임 워드 $1000 · 1=오프닝 워드 $3000)
 V_UCTX = VAR + 28  # NMI: upload 중 큐 항목의 컨텍스트 사본
+V_OCUR = VAR + 30  # 워드: 오프닝 — 훅이 실제로 소비한 바이트 커서(`$1B44` 사본, `open_advance` 가 읽는다)
 V_U0 = VAR + 18  # 워드: NMI 임시(글리프 색인)
 V_U1 = VAR + 20  # NMI 임시(슬롯 번호)
 V_UV = VAR + 21  # 워드: NMI 임시(VRAM 워드 주소)
@@ -219,8 +245,6 @@ def build_payload(
     a.lda(imm=HOOK_BANK)
     a.pha()
     a.plb()
-    a.lda(imm=0x00)
-    a.op("sta", addr=V_CTX, mode="long")  # 인게임 컨텍스트(오프닝 훅이 남긴 값을 되돌린다)
     a.op("lda", addr=V_PEND_N, mode="long")
     a.beq(label="h_fetch")
     a.op("lda", addr=V_PEND + 0, mode="long")
@@ -290,8 +314,6 @@ def build_payload(
     a.lda(imm=HOOK_BANK)
     a.pha()
     a.plb()
-    a.lda(imm=0x00)
-    a.op("sta", addr=V_CTX, mode="long")  # 인게임 컨텍스트
     a.op("lda", addr=BUF_CURSOR, mode="abs")
     a.rep(imm=0x20)
     a.op("and", imm=0x00FF, m16=True)
@@ -341,8 +363,6 @@ def build_payload(
     a.lda(imm=HOOK_BANK)
     a.pha()
     a.plb()
-    a.lda(imm=0x00)
-    a.op("sta", addr=V_CTX, mode="long")  # 인게임 컨텍스트
     a.op("lda", addr=item_table, mode="longx")
     a.op("sta", addr=0x000006, mode="long")
     a.op("lda", addr=item_table + 1, mode="longx")
@@ -399,8 +419,6 @@ def build_payload(
     a.lda(imm=HOOK_BANK)
     a.pha()
     a.plb()
-    a.lda(imm=0x00)
-    a.op("sta", addr=V_CTX, mode="long")  # 인게임 컨텍스트
     a.lda(imm=DICT_BANK)
     a.op("sta", addr=0x000008, mode="long")  # [$06] 의 뱅크 — 문자열은 우리 뱅크에 있다
     a.ldy(imm=0x0000, m16=True)  # 소스 커서
@@ -486,7 +504,7 @@ def build_payload(
     a.op("lda", addr=V_PEND_N, mode="long")
     a.dec()
     a.op("sta", addr=V_PEND_N, mode="long")
-    a.bra(label="o_done")
+    a.jmp(addr="o_done", mode="abs")  # 커서 사본(`V_OCUR`)이 붙어 `bra` 로는 안 닿는다
 
     a.label("o_fetch")
     a.op("lda", dp=0x23, mode="indlongy")
@@ -495,6 +513,7 @@ def build_payload(
     a.rep(imm=0x20)
     a.tya()
     a.op("sta", addr=OPEN_CURSOR, mode="long")
+    a.op("sta", addr=V_OCUR, mode="long")  # 줄 끝에 `open_advance` 가 `$1B81` 로 되돌려 준다
     a.sep(imm=0x20)
     a.pla()
     a.op("sta", addr=V_IDX, mode="long")
@@ -527,6 +546,7 @@ def build_payload(
     a.rep(imm=0x20)
     a.tya()
     a.op("sta", addr=OPEN_CURSOR, mode="long")
+    a.op("sta", addr=V_OCUR, mode="long")
     a.sep(imm=0x20)
     a.pla()
     a.op("sta", addr=V_IDX, mode="long")  # 색인 하위
@@ -585,6 +605,27 @@ def build_payload(
     a.plp()
     a.rtl()
 
+    # ── 오프닝 줄 끝(`$1E:E0BB`) — 줄 시작 커서를 「칸 수」가 아니라 **소비한 바이트**로 올린다.
+    #    호출부의 A 폭이 경로마다 다르다(8/16) — php/plp 로 감싸 16비트로 고정하고 A 만 쓴다.
+    #    ⚠ `$1B81` 은 DBR 에 기대지 않고 long 으로 쓴다(뱅크 $00 WRAM 미러).
+    a.label("open_advance")
+    a.php()
+    a.rep(imm=0x20)
+    a.op("lda", addr=V_OCUR, mode="long", m16=True)
+    a.op("sta", addr=OPEN_LINE, mode="long", m16=True)
+    a.plp()
+    a.rtl()
+
+    # ── PPU 배치 자리(`$00:8082` 류) — 원본의 `LDA #imm / STA $210C` 를 대신하고 컨텍스트를 세운다.
+    #    호출부는 A 8비트(직전이 `LDA #$0C / STA $210A`). 뱅크 $00 코드지만 DBR 에 안 기댄다.
+    for name, imm, ctx in (("ctx_game", 0x22, 0), ("ctx_open", 0x03, 1)):
+        a.label(name)
+        a.lda(imm=imm)
+        a.op("sta", addr=PPU_BG34NBA, mode="long")
+        a.lda(imm=ctx)
+        a.op("sta", addr=V_CTX, mode="long")
+        a.rtl()
+
     # ── 대본 다음 바이트 (원본 $02:E784 과 같은 동작) ────────────────────────────────
     a.label("fetch")
     a.op("lda", addr=0x003F, mode="abs")
@@ -618,7 +659,27 @@ def build_payload(
     a.cpx(imm=nslot, m16=True)
     a.bne(label="ac_scan")
     a.bra(label="al_miss")
+    # 🔴 **늙은 히트는 다시 올린다**(2026-09-20 실기 — 소니아 카드의 「다루는」이 「다성는」으로).
+    #    라운드로빈은 히트해도 나이를 안 되돌리므로, 60여 할당 전에 올린 글리프(로우 카드의 「크루스」)를
+    #    지금 화면이 다시 쓰면 그 슬롯이 몇 글자 뒤 「성」에게 밀려 **화면에 남은 글자가 바뀐다.**
+    #    남은 수명이 `REALLOC_AGE` 미만이면 오너 표를 비우고 새 슬롯으로 옮긴다(재업로드 한 번이 비용).
     a.label("ac_hit")
+    a.txa()
+    a.op("sta", addr=V_T1, mode="long")
+    a.op("eor", imm=0xFF)  # -slot-1
+    a.clc()
+    a.op("adc", addr=V_NEXT, mode="long")  # 나이 = V_NEXT - slot - 1 (음수면 한 바퀴 보정)
+    a.bpl(label="ac_age")
+    a.clc()
+    a.adc(imm=nslot)
+    a.label("ac_age")
+    a.cmp(imm=nslot - REALLOC_MARGIN)
+    a.bcc(label="ac_fresh")
+    a.lda(imm=0xFF)
+    a.op("sta", addr=owner_lo, mode="longx")
+    a.op("sta", addr=owner_hi, mode="longx")
+    a.bra(label="al_miss")
+    a.label("ac_fresh")
     a.op("lda", addr="slot_code", mode="absx")
     a.jmp(addr="al_ret", mode="abs")  # `bra` 로는 안 닿을 수 있다 — 아래 al_miss 본문이 길다
 
@@ -883,6 +944,7 @@ def build_payload(
         "hook": common.fmt((HOOK_BANK << 16) | a.labels["hook"]),
         "drain": common.fmt((HOOK_BANK << 16) | a.labels["drain"]),
         "open_fetch": common.fmt((HOOK_BANK << 16) | a.labels["open_fetch"]),
+        "open_advance": common.fmt((HOOK_BANK << 16) | a.labels["open_advance"]),
         "var_end": var_end,
     }
     return blob, info | {"labels": a.labels}
@@ -989,6 +1051,23 @@ def apply(
     out[oc : oc + OPEN_PATCH_LEN] = bytes(
         [0x22, open_addr & 0xFF, (open_addr >> 8) & 0xFF, HOOK_BANK, 0xEA, 0xEA]
     )
+    # 5b. 오프닝 줄 끝: `$1B81 += $1B83`(칸 수) 루프 11B → `JSL open_advance`($1B81 = 소비한 바이트)
+    #     + NOP×7. 뒤이은 `$1E:E0C6`(스택 복원·RTS)로 그대로 떨어진다.
+    adv_addr = (HOOK_BANK << 16) | info["labels"]["open_advance"]
+    oa = common.snes2off(OPEN_ADVANCE_SITE)
+    want_adv = bytes([0xAE, 0x83, 0x1B, 0xCA, 0x30, 0x05, 0xEE, 0x81, 0x1B, 0x80, 0xF8])
+    if bytes(rom[oa : oa + OPEN_ADVANCE_LEN]) != want_adv:
+        raise SystemExit(f"오프닝 줄 끝 자리가 예상과 다르다: {rom[oa : oa + OPEN_ADVANCE_LEN].hex()}")
+    out[oa : oa + OPEN_ADVANCE_LEN] = bytes(
+        [0x22, adv_addr & 0xFF, (adv_addr >> 8) & 0xFF, HOOK_BANK] + [0xEA] * 7
+    )
+    # 5c. PPU 배치 세 자리: `LDA #imm / STA $210C`(5B) → `JSL ctx_*` + NOP. 컨텍스트의 정본.
+    for site, imm, ctx in PPU_CTX_SITES:
+        so = common.snes2off(site)
+        if bytes(rom[so : so + 5]) != bytes([0xA9, imm, 0x8D, 0x0C, 0x21]):
+            raise SystemExit(f"PPU 배치 자리가 예상과 다르다 {common.fmt(site)}: {rom[so : so + 5].hex()}")
+        ctx_addr = (HOOK_BANK << 16) | info["labels"]["ctx_open" if ctx else "ctx_game"]
+        out[so : so + 5] = bytes([0x22, ctx_addr & 0xFF, (ctx_addr >> 8) & 0xFF, HOOK_BANK, 0xEA])
     # 6. 폰트 벌크카피 세 자리: `JSR $E6B3` → `JSR <뱅크 $1E 트램펄린>`(같은 3바이트).
     #    트램펄린은 원 호출을 그대로 하고 `JSL font_reset` 으로 오너 표를 비운 뒤 돌아온다.
     reset_addr = (HOOK_BANK << 16) | info["labels"]["font_reset"]
@@ -1032,6 +1111,8 @@ def patch_ranges() -> list[tuple[int, int]]:
         (common.snes2off(NMI_CALL), common.snes2off(NMI_CALL) + 3),
         (common.snes2off(NMI_STUB), common.snes2off(NMI_STUB) + 8),
         (common.snes2off(OPEN_CALL_SITE), common.snes2off(OPEN_CALL_SITE) + OPEN_PATCH_LEN),
+        (common.snes2off(OPEN_ADVANCE_SITE), common.snes2off(OPEN_ADVANCE_SITE) + OPEN_ADVANCE_LEN),
+        *[(common.snes2off(s_), common.snes2off(s_) + 5) for s_, _i, _c in PPU_CTX_SITES],
         *[(common.snes2off(s_), common.snes2off(s_) + 3) for s_ in FONT_CALL_SITES],
         (common.snes2off(FONT_TRAMPOLINE), common.snes2off(FONT_TRAMPOLINE) + 8),
     ]

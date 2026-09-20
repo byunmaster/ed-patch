@@ -112,6 +112,9 @@ ENTRY = {
     "upload": (True, False, "near"),
     "cache_reset": (True, False, "near"),  # 오프닝 페이지 경계에서 오너 표를 비운다
     "font_reset": (True, True, "far"),  # 폰트 벌크카피 트램펄린 착지점 — `JSL` 로 불린다
+    "open_advance": (True, True, "far"),  # 오프닝 줄 끝(`$1E:E0BB`) — 줄 시작 커서를 소비한 바이트로
+    "ctx_game": (True, True, "far"),  # PPU 배치 자리(`$00:8082`·`$826C`) — 인게임 컨텍스트
+    "ctx_open": (True, True, "far"),  # PPU 배치 자리(`$00:8294`) — 오프닝 컨텍스트(BG3 `$3000`)
 }
 
 

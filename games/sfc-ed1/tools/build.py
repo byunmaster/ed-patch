@@ -108,6 +108,38 @@ def _widen_row(row: list[int], extra: int) -> list[int]:
     return row[: BOX_W - 1] + [fill] * extra + row[BOX_W - 1 :]
 
 
+# ── 문장부호는 한국식으로(마스터 지시 2026-09-20) ────────────────────────────────────────
+# 번역문의 `.`·`,`·`!`·`?` 는 1바이트 코드로 원본 시트의 `。`·`、`·`!`·`?` 타일을 그대로 썼다.
+# 코드는 그대로 두고(길이·사전 제약 불변) **시트의 그 타일 넷을 한글 글꼴의 반각 글리프로 덮는다** —
+# 시트는 인게임·오프닝이 같은 것을 올리므로(`$1E:E6B3`·`$1E:F175`) 한 번에 둘 다 닿는다.
+# 글리프는 칸 왼쪽에 붙으므로 뒤따르는 공백 한 칸을 인코더가 뺀다(`encode.encode`) — 「부호 공백은 반각」.
+PUNCT_CODES = {".": 0x83, ",": 0x84, "!": 0x0C, "?": 0x0F}
+
+
+def punct_tiles(rom: bytes) -> list[int]:
+    import tiles
+
+    ct = tiles.code_tile(rom)
+    return [t for c in PUNCT_CODES.values() for t in (ct[c], ct[c] + 0x10)]
+
+
+def punct_bake(out: bytearray, rom: bytes) -> dict:
+    import hangul_font
+    import tiles
+
+    ct = tiles.code_tile(rom)
+    sheet = common.snes2off(text.FONT_SHEET)
+    font = hangul_font.load_font()
+    done = {}
+    for ch, code in PUNCT_CODES.items():
+        rows = hangul_font.render(ch, font)
+        t = ct[code]
+        out[sheet + 8 * t : sheet + 8 * t + 8] = bytes(rows[:8])
+        out[sheet + 8 * (t + 0x10) : sheet + 8 * (t + 0x10) + 8] = bytes(rows[8:])
+        done[ch] = t
+    return done
+
+
 def widen_windows(out: bytearray, rom: bytes) -> list[dict]:
     """창 배치 항목을 넓힌다. 크기가 늘면 확장 뱅크에 새로 쓰고 포인터를 돌리고, 부분 갱신 항목은 제자리."""
     import menus
@@ -568,6 +600,8 @@ def mutable_ranges() -> list[tuple[int, int]]:
     for c in tiles.overwritable(rom, tiles.layout_tiles(rom), keep_codes(rom)):
         for t0 in (ct[c], ct[c] + 0x10):
             r.append((sheet + 8 * t0, sheet + 8 * (t0 + 1)))
+    for t0 in punct_tiles(rom):  # 한국식 문장부호 타일 넷(위·아래)
+        r.append((sheet + 8 * t0, sheet + 8 * (t0 + 1)))
     return r
 
 
@@ -1135,6 +1169,8 @@ def build_kr(
 
     chapters.bake(out, rom)
     led.snap(out, "챕터 제목")
+    punct = punct_bake(out, rom)
+    led.snap(out, "한국식 문장부호")
     extra = after(out, rom) if after is not None else None
     # 🔴 렌더러 훅은 **메뉴를 구운 뒤**에 얹는다 — 슬롯은 「라벨을 다시 구운 롬」으로 재야 한다
     hk = dk = None
