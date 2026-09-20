@@ -22,6 +22,13 @@
    그 자리는 정본에 `"space_ok": true` 를 적어 뺀다(판정을 코드가 아니라 정본에 남긴다).
 🔴 **전투 칸을 공백으로 메우는 데 쓰지 않는다.** 바이트가 모자라면 낱말로 채운다 —
    실측 `d9053e1e` 가 그 자리였다(`치켜들었다 !!` → `크게 휘둘렀다!!`, 둘 다 32B).
+
+## 전각 숫자 — 장 카드만 예외다(마스터 확정 2026-09-15)
+
+기본은 반각 숫자다(위 실측 「2층」 사례). **단 장 카드(`第N章…`)는 전각으로 간다** — 원본도
+`第１章` 처럼 전각이었고, 반각 숫자는 그 구(ku)가 안 뺏겼는데도 옆 한글(16px)보다 절반 크기라
+줄에서 혼자 작아 보인다(마스터가 스크린샷으로 잡았다). 그 자리는 정본에 `"digit_ok": true`
+를 적어 뺀다 — `space_ok` 와 같은 패턴이다.
 """
 
 import json
@@ -76,6 +83,8 @@ def main() -> int:
             bad.setdefault("부호 앞 공백", []).append((k, m.group(0), v["t"]))
         t = MARK.sub(" ", v["t"])
         for name, rx in AXES.items():
+            if name == "전각 숫자" and v.get("digit_ok"):
+                continue
             hit = rx.findall(t)
             if hit:
                 bad.setdefault(name, []).append((k, "".join(sorted(set(hit))), t))
