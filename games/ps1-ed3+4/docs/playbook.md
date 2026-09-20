@@ -18,12 +18,19 @@
 
 ## ED3 — 부팅에서 첫 대사창까지 (실측, 다섯 번 재현)
 
+🔴 **D2(장 카드, 「서장　작은 순례자」)는 여기서 본다 — 새 게임 시작 직후, 첫 대사창 뜨기
+직전 한 번뿐이다.** 마스터도 처음엔 못 찾으셨다(09-15) — 인게임에서 그냥 플레이하면
+**타이틀 화면 바로 다음, 크리스 집 대사가 뜨기 전 한두 초**뿐이라 지나치기 쉽다. 다른 장
+(제1장~종장)엔 이런 카드 자체가 없다 — `FT0000[164..171]` 은 챕터 카드가 아니라 **워프
+NPC 가 여는 메뉴 선택지**였다(09-15 정정, 아래 참조). **序章 카드가 ED3 전체에서 유일한
+그림 챕터 카드다.**
+
 ```
 launch(psx, "…/Eiyuu Densetsu III (KR) (TEST).cue")   # ⚠ .cue 는 launch_plan 승인 먼저
 tap start  press 10  after 3200    # SCEI 로고 → 별밤 내레이션(D1, 한글)
 tap start  press 10  after 4500    # 오프닝 무비
 tap start  press 10  after 4500    # 타이틀 화면(E1·E2, 한글)
-tap circle press 12  after 2900    # 장 카드(D2, 일본어) → NOW LOADING → 첫 대사창
+tap circle press 12  after 2900    # 장 카드(D2, 한글 — 09-15부터) → NOW LOADING → 첫 대사창
 ```
 
 - 타이틀 커서는 **이미 「모험을 처음부터 한다」에 있다** — `down` 을 누르면 메모리카드 로드로
@@ -58,6 +65,21 @@ tap circle press 12  after 2900    # 장 카드(D2, 일본어) → NOW LOADING �
 번갈아 돈다. 로고는 몽타주 **끝**(시작 후 ~13,000f).
 🔴 **어트랙트 중엔 어떤 입력이든 타이틀로 튕긴다** — `tap(press_frames=0)` 도 입력이다.
 **`step(count, unit="frames")`** 로만 민다(한 번에 최대 5,000).
+
+## D3(엔딩) — 오프닝 자리에서 바로 본다
+
+```
+ED_BUILD_TAG=ps1-ed3-ending-qa ED_MOVIE_SWAP=M01=M02 python3 tools/build.py --disc ed3 --test
+launch(psx, "…/ps1-ed3-ending-qa/Eiyuu Densetsu III (KR) (TEST).cue")
+tap start press10 after 3200   # 첫 내레이션부터 이미 엔딩(과거형 회고체 문안)
+tap start press10 after 2000   # 내레이션 계속
+tap start press10 after 4500   # 타이틀 단계 — 한 프레임 깨진 그림이 지나간다(정상, M01 전용
+                                # DATA5.BIN 이 M02 엔 없어서다), 진행은 안 막힌다
+tap circle press10 after 500   # 크레딧 롤
+```
+
+`ED_BUILD_TAG` 를 갈라야 정상 빌드 칸(`ps1-ed3-4`)을 안 덮는다. **배포 빌드엔 절대 안 켠다**
+(`tools/build.py:movie_swap`). 상세·검증 경위는 `docs/devlog.md` 09-15 항목.
 
 ## ED4 — 아직 안 돌아 봤다
 

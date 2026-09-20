@@ -185,6 +185,45 @@ def sweep(d, keep):
     return gone
 
 
+MOVIE_ARCHIVES = {"M01": "/M01.DAT", "M02": "/M02.DAT"}  # 오프닝+타이틀 · 엔딩+크레딧
+
+
+def movie_swap(disc, out):
+    """🔬 **검증 전용** — 동영상 아카이브를 통째로 갈아 **부팅 직후 엔딩을 본다**.
+
+        ED_BUILD_TAG=ps1-ed3-ending-qa ED_MOVIE_SWAP=M01=M02 python3 tools/build.py --disc ed3 --test
+
+    ps1-ed1+2 는 동영상 EXE 넷이 물리 크기까지 같아 자리를 그대로 맞바꿨다. ED3 는
+    `M01.DAT`(오프닝+타이틀, 3,682,304B)·`M02.DAT`(엔딩+크레딧, 2,365,440B) 크기가 달라
+    **같은 조건은 아니다** — 그런데 `write_user_data` 가 원본 길이만큼만 쓰고 자리 전체를
+    안 지우므로, **작은 쪽을 큰 쪽 자리에 얹는 건 된다**(M02 가 M01 보다 작아 방향이 맞다,
+    반대는 안 된다). emucap 실측(2026-09-15, `M01=M02`): 부팅 후 첫 내레이션부터 **엔딩
+    내레이션 → 크레딧 롤**까지 재생됐다 — 화면 문안이 「2人は白き魔女の残した希望の道を
+    通ってきた」등 엔딩 특유의 과거형 회고체였다. ⚠ 타이틀 화면을 구성하는 단계(M01 전용
+    `DATA5.BIN` 자리)에서 한 프레임 깨진 그림이 지나갔다 — M02 에 그 멤버가 없어서고,
+    **진행을 막지는 않는다**(그 뒤로도 계속 돈다). 반대 방향(`M02=M01`)은 큰 걸 작은 자리에
+    얹는 셈이라 **안 해 봤다** — 자리를 넘는지부터 다시 재야 한다.
+
+    🔴 **`src` 는 `FINAL`(이미 구운 이미지)에서 읽는다** — originals 가 아니다. 우리가 옮긴
+    한국어 엔딩 문안(그림 속 글자 포함)이 이미 빌드에 구워져 있으므로, 그걸 그대로 봐야
+    검증이 된다. originals 에서 읽으면 미번역 일본어를 보게 된다(첫 실험에서 실수로 그랬다).
+    🔴 배포 빌드에 절대 켜지 않는다. 환경변수라 커밋물에 안 남고, 꼬리표를 갈라 짓는다.
+    """
+    spec = os.environ.get("ED_MOVIE_SWAP", "")
+    pairs = [kv.split("=", 1) for kv in spec.split(",") if "=" in kv]
+    if not pairs:
+        return
+    fs = common.iso_files(disc)
+    for dst, src in pairs:
+        assert dst in MOVIE_ARCHIVES and src in MOVIE_ARCHIVES, f"모르는 동영상 아카이브: {dst}={src}"
+        dst_lba, _dst_size = fs[MOVIE_ARCHIVES[dst]]
+        src_lba, src_size = fs[MOVIE_ARCHIVES[src]]
+        data = common.read_lba(disc, src_lba, src_size, path=out)  # 이미 구운 FINAL 에서
+        with open(out, "r+b") as f:
+            n = common.write_user_data(f, disc, dst_lba, bytes(data), label=f"🔬 {dst} ← {src}")
+        print(f"  🔬 동영상 구획 교체: {dst}(LBA {dst_lba}) ← {src} — 섹터 {n}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--disc", choices=common.DISC_NAMES, default="ed3")
@@ -296,6 +335,7 @@ def main():
         cue = cue.replace(".cue", " (TEST).cue")
     common.write_cue(cue, os.path.basename(out))
     common.write_build_manifest(a.disc, "kr", out)
+    movie_swap(a.disc, out)
     dropped = sweep(common.BUILD_DIR, {out, cue})
     print(f"바뀐 섹터 {n:,}\n→ {out}")
     if dropped:
