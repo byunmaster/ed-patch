@@ -114,6 +114,28 @@ def _widen_row(row: list[int], extra: int) -> list[int]:
 # 시트는 인게임·오프닝이 같은 것을 올리므로(`$1E:E6B3`·`$1E:F175`) 한 번에 둘 다 닿는다.
 # 글리프는 칸 왼쪽에 붙으므로 뒤따르는 공백 한 칸을 인코더가 뺀다(`encode.encode`) — 「부호 공백은 반각」.
 PUNCT_CODES = {".": 0x83, ",": 0x84, "!": 0x0C, "?": 0x0F}
+# 🔴 쉼표는 글꼴(Galmuri11-Condensed)이 주는 그대로 쓰지 않는다(마스터 지적 2026-09-20 —
+# 직선 한 획짜리라 일본식 「、」에 가깝게 보인다). **마스터가 직접 찍은 도안**(온점과
+# 같은 무게 — 온점이 행 12 한 칸짜리 점이라, 쉼표도 그 옆 대각선 2픽셀로) —
+# `dot-editor-tool.md` 관례대로 이게 정본이다.
+PUNCT_COMMA_OVERRIDE = [
+    0b00000000,  # 0
+    0b00000000,  # 1
+    0b00000000,  # 2
+    0b00000000,  # 3
+    0b00000000,  # 4
+    0b00000000,  # 5
+    0b00000000,  # 6
+    0b00000000,  # 7
+    0b00000000,  # 8
+    0b00000000,  # 9
+    0b00000000,  # 10
+    0b00000000,  # 11
+    0b01000000,  # 12 — 온점과 같은 행·같은 칸(.#)
+    0b10000000,  # 13 — 그 아래 왼쪽으로 한 칸(#.)
+    0b00000000,  # 14
+    0b00000000,  # 15
+]
 
 
 def punct_tiles(rom: bytes) -> list[int]:
@@ -132,7 +154,7 @@ def punct_bake(out: bytearray, rom: bytes) -> dict:
     font = hangul_font.load_font()
     done = {}
     for ch, code in PUNCT_CODES.items():
-        rows = hangul_font.render(ch, font)
+        rows = PUNCT_COMMA_OVERRIDE if ch == "," else hangul_font.render(ch, font)
         t = ct[code]
         out[sheet + 8 * t : sheet + 8 * t + 8] = bytes(rows[:8])
         out[sheet + 8 * (t + 0x10) : sheet + 8 * (t + 0x10) + 8] = bytes(rows[8:])
