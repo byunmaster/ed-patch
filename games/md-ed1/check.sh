@@ -55,3 +55,7 @@ echo "== md-ed1 =="
 
 # 7. 정본 게이트 — 빌드 없이 미수록 글자 · 조판 · 참조 · 표 폭 · 묶음 폭 · 자막 영역/12비트 오프셋
 "$PY" "$T/build.py" --check
+
+# 8. 조판 지문 — 게이트가 아니라 보고다(shared/text/krwrap 이 대사 조판을 조용히 흔들면 여기서 운다).
+#    안 바꿨는데 뜨면 `shared/` 를 의심한다.
+"$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game md-ed1 2>&1 | sed 's/^/  /'

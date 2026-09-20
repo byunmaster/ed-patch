@@ -31,11 +31,11 @@ _bdf_cache: dict[tuple, dict[str, list[list[int]]]] = {}
 
 
 def _load_bdf(
-    path: Path | None = None, cell: int = CELL, top: int = 1
+    path: Path | None = None, cell: int = CELL, top: int = 1, left: int = 0
 ) -> dict[str, list[list[int]]]:
     """BDF 전체를 한 번 읽어 {글자: cell×cell 비트 행렬}. 폭·높이가 cell 을 넘는 건 자른다."""
     path = path or BDF
-    key = (str(path), cell, top)
+    key = (str(path), cell, top, left)
     if key in _bdf_cache:
         return _bdf_cache[key]
     raw = {}
@@ -75,8 +75,9 @@ def _load_bdf(
             if not 0 <= ry < cell:
                 continue
             for x in range(bw):
-                if 0 <= x + bx < cell and rows[y][x]:
-                    grid[ry][x + bx] = 1
+                rx = x + bx + left
+                if 0 <= rx < cell and rows[y][x]:
+                    grid[ry][rx] = 1
         out[ch] = grid
     _bdf_cache[key] = out
     return out
@@ -114,11 +115,125 @@ def neodgm_fill(ch: str, cell: int = 16, size: int = 16) -> list[list[int]]:
     return g
 
 
+# 실험 손잡이 — HUD 장 제목 밴드에서 받침이 잘리는 자리(status.md 2026-09-15)를 재려고 둔다.
+# 정본은 top=1(기존, MD_GLYPH_TOP=0 은 마스터 반려 2026-09-15 — 원본도 아래를 넘긴다는 게 값으로
+# 확인돼 세로는 그대로 둔다). `_load_bdf` 의 그 값 그대로다 — **바꾸면 리소스 0 전체(대사창 포함)가
+# 움직인다.**
+#
+# MD_GLYPH_LEFT — 가로 손잡이(같은 날, 이어서). bx=0 인 한글(제·장·왕 등, 대부분)은 잉크가 칸
+# 0열에 바로 붙어 **왼쪽으로 테두리가 팽창할 자리가 없다**(-1열은 없다) — 그 행만 테두리 없이
+# 잉크가 배경에 바로 닿는다. 문자열 첫 글자에서 특히 드러난다(뒷글자는 피치 12 < 셀 14 라 앞
+# 글자 테두리가 그 자리를 메운다).
+# 🔴 **기본값 1 = 정본**(마스터 승인 2026-09-15, "글자가 온전하네"). `resource0()`의 kept 코드
+# (숫자·기호·영문, 원본 그대로 복사하던 자리)도 같이 밀어야 한다 — 한글만 밀면 kept 코드가
+# 제자리라 「제１장」처럼 한글과 kept 코드가 섞인 자리에서 간격이 어긋난다(마스터가 화면에서
+# 직접 잡았다). 리소스 1(반각)은 **안 민다** — 한글 최대 오른쪽 열이 이동해도 10→11 인데
+# 리소스0→1 겹침은 열12 부터 시작해 **항상 열12 앞에서 멈춘다**(BDF 11,172자 전수 확인) —
+# 깨짐이 구조적으로 불가능해 밀 필요가 없다.
+import os as _os
+
+GLYPH_TOP = int(_os.environ.get("MD_GLYPH_TOP", "1"))
+GLYPH_LEFT = int(_os.environ.get("MD_GLYPH_LEFT", "1"))
+
+
+def extend_jamo_arms(grid: list[list[int]]) -> list[list[int]]:
+    """갈무리11 의 `ㅏㅓ…` 계열 가로획(팔)이 1px 뿐이라 안 읽힌다(마스터 지적 2026-09-17,
+    재 보니 정확했다 — 세로획이 있으면 8방향 팽창 테두리가 옆 칸에 늘 "+"를 찍어서, 팔이
+    있는 행이나 없는 행이나 그 칸이 똑같이 밝아 팔이 도드라지지 않는다).
+
+    **무엇을 보고 늘리나**: 어떤 칸(x)에 세로로 3행 이상 이어지는 채움(스트로크)이 있고,
+    바로 옆 칸(x+1)에 **딱 1~2행짜리 고립된 돌출**(그 칸 전체를 봐도 다른 데는 안 채워짐)이
+    붙어 있으면, 그 돌출을 한 칸 더(x+2) 늘린다. 세로획 옆의 짧은 돌출만 골라내므로
+    ㄱ·ㅋ 의 윗획처럼 원래 긴 가로획은 (돌출이 아니라서) 안 걸리고, ㅏㅓ 류의 팔만 걸린다.
+
+    ⚠ 캡션 235자 전수 확인(2026-09-17): 60자가 걸림(대부분 ㅏㅓ 류 + 「왕」처럼 ㅘ 안에 ㅏ가
+    낀 자리) · 부작용 **1건**(「국」— 이미 11칸짜리 가로획 끝에 1px 이 더 붙을 뿐이라 티가
+    안 난다) · 우측 경계(칸15) 넘침 0.
+    """
+    h, w = len(grid), len(grid[0])
+    out = [row[:] for row in grid]
+    for y in range(h):
+        for x in range(w - 1):
+            if not (grid[y][x] and grid[y][x + 1] and (x + 2 >= w or not grid[y][x + 2])):
+                continue
+            run = 1
+            yy = y - 1
+            while yy >= 0 and grid[yy][x]:
+                run += 1
+                yy -= 1
+            yy = y + 1
+            while yy < h and grid[yy][x]:
+                run += 1
+                yy += 1
+            if run < 3:
+                continue
+            col_x1_run = sum(1 for yy2 in range(h) if grid[yy2][x + 1])
+            if col_x1_run <= 2 and x + 2 < w:
+                out[y][x + 2] = 1
+    return out
+
+
+_period_dot_cache: tuple[list[list[int]], int] | None = None
+
+
+def _period_dot() -> tuple[list[list[int]], int]:
+    """원작 마침표(반각 리소스1, **켑트 바이트 — 우리가 안 그렸다**)의 잉크 모양과 그
+    절대 행(칸 맨 위에서부터 몇 번째 행에 잉크가 시작하나).
+
+    🔴 **정정(2026-09-17)** — 말줄임표를 처음 맞출 때 "마침표"를 갈무리11.bdf 에서
+    잘못 읽었다(`glyph_fill(".")` 는 실제로 안 쓰인다 — `.` 은 ASCII 라 `needs_glyph()` 가
+    False 를 내 애초에 리소스0/5 를 안 타고 **리소스1(반각, 원작 그대로)** 로 나간다).
+    실제 화면의 마침표는 이 함수가 읽는 8×14 켑트 글리프고, **3×4 다이아몬드**(테두리 포함
+    5×6)다 — Galmuri11 의 자체 `.` 글리프(1×1)보다 훨씬 크다. 말줄임표 점은 이 모양을
+    기준으로 잡아야 "마침표와 같은 크기"가 된다.
+    """
+    global _period_dot_cache
+    if _period_dot_cache is not None:
+        return _period_dot_cache
+    rom = common.rom()
+    r1 = font.resources(rom)[1]
+    codes = font.codes(rom, r1)
+    i = codes.index(ord("."))
+    raw = rom[r1["glyphs"] + i * r1["stride"] : r1["glyphs"] + (i + 1) * r1["stride"]]
+    fill = [[(b >> (7 - x)) & 1 for x in range(8)] for b in raw[:14]]
+    ys = [y for y, row in enumerate(fill) if any(row)]
+    xs = [x for row in fill for x, v in enumerate(row) if v]
+    y0, y1, x0, x1 = min(ys), max(ys), min(xs), max(xs)
+    dot = [row[x0 : x1 + 1] for row in fill[y0 : y1 + 1]]
+    _period_dot_cache = (dot, y0)
+    return _period_dot_cache
+
+
+def ellipsis_dots(cell: int) -> list[list[int]]:
+    """말줄임표 — **점 크기·가로 간격은 갈무리11 원본 그대로, 세로 위치만** 마침표의
+    바닥(원작 켑트 글리프의 잉크 맨 아래 행)으로 내린다(마스터 확정 2026-09-17 —
+    "크기는 그대로 위치만 아래로". 점 모양을 마침표 크기로 다시 그리는 안은 접었다).
+
+    갈무리11 자체 `…` 글리프는 칸 가운데(일본식)에 있다 — 그 잉크를 통째로 세로로만
+    밀어 **잉크의 맨 아래 행 = 마침표(리소스1, 원작) 잉크의 맨 아래 행**이 되게 한다.
+    """
+    native = _load_bdf(BDF, cell, top=GLYPH_TOP, left=GLYPH_LEFT)["…"]
+    native_bottom = max((y for y, row in enumerate(native) if any(row)), default=None)
+    _dot, y0 = _period_dot()
+    period_bottom = y0 + len(_dot) - 1
+    if native_bottom is None:
+        return native
+    shift = period_bottom - native_bottom
+    out = [[0] * cell for _ in range(cell)]
+    for y, row in enumerate(native):
+        ny = y + shift
+        if 0 <= ny < cell:
+            out[ny] = row[:]
+    return out
+
+
 def glyph_fill(ch: str) -> list[list[int]]:
-    g = _load_bdf().get(ch)
+    if ch == "…":
+        return ellipsis_dots(CELL)
+    g = _load_bdf(top=GLYPH_TOP, left=GLYPH_LEFT).get(ch)
     if g is None:
         raise KeyError(f"Galmuri14 에 없는 글자: {ch!r}")
-    return g
+    return extend_jamo_arms(g)
 
 
 def ring(fill: list[list[int]]) -> list[list[int]]:
@@ -138,6 +253,24 @@ def ring(fill: list[list[int]]) -> list[list[int]]:
 
 def pack(rows: list[list[int]]) -> bytes:
     return b"".join(struct.pack(">H", sum(v << (15 - x) for x, v in enumerate(r))) for r in rows)
+
+
+def unpack(data: bytes, w: int, h: int) -> list[list[int]]:
+    return [[(v >> (15 - x)) & 1 for x in range(w)] for v in struct.unpack(f">{h}H", data)]
+
+
+def shift_cols(rows: list[list[int]], left: int, cell: int) -> list[list[int]]:
+    """열을 `left` 만큼 오른쪽으로 미는 자리 이동 — 칸을 넘는 열은 버린다(`_load_bdf` 와 같은 규칙)."""
+    if left == 0:
+        return rows
+    h = len(rows)
+    out = [[0] * cell for _ in range(h)]
+    for y in range(h):
+        for x in range(cell):
+            rx = x + left
+            if 0 <= rx < cell and rows[y][x]:
+                out[y][rx] = 1
+    return out
 
 
 def is_hangul(ch: str) -> bool:
@@ -275,7 +408,19 @@ class Charset:
             else:
                 i = orig_codes.index(c)
                 g = r0["glyphs"] + i * r0["stride"]
-                glyphs += rom[g : g + r0["stride"]]
+                raw = rom[g : g + r0["stride"]]
+                if GLYPH_LEFT:
+                    # 🔴 kept 코드(기호·숫자·영문, 원본 그대로)도 한글과 **같은 이동**을 받아야
+                    # 리소스 0 전체가 균일하게 밀린다 — 안 그러면 「올(」처럼 한글 뒤에 반각이
+                    # 바로 붙는 자리에서 둘의 상대 간격이 어긋난다(status.md 2026-09-15, 마스터
+                    # 지시 "x값을 오른쪽으로 1px" 를 한글에만 반만 적용했던 자리를 마저 채운다).
+                    # ⚠ 열13 에 이미 닿은 글리프가 **`％`(0x8193) 하나** 있다 — 지금은 문안에
+                    # 사용례가 0건이라 안전하지만, **나중에 누가 `％`를 쓰면 그 오른쪽 1열이
+                    # 잘린다.** 쓰게 되면 그때 이 글리프만 예외 처리한다.
+                    fill = unpack(raw[: r0["nbytes"]], r0["w"], r0["h"])
+                    fill = shift_cols(fill, GLYPH_LEFT, r0["w"])
+                    raw = pack(fill) + pack(ring(fill))
+                glyphs += raw
         h = r0["hdr"]
         tbl_off = r0["table"] - h
         end_off = tbl_off + len(table) - 4
@@ -319,7 +464,23 @@ PAREN_L_FILL = [
     "........",
 ]
 PAREN_R_FILL = ["".join(reversed(r)) for r in PAREN_L_FILL]
-EXTRA_R1 = {0x28: PAREN_L_FILL, 0x29: PAREN_R_FILL, 0x2C: COMMA_FILL}
+
+# 갈무리11 자체 마침표·쉼표 — **마스터 확정(2026-09-17)**: 원작 마침표(켑트 바이트,
+# 3×4 다이아몬드)·우리 손그림 쉼표가 큰 건 실수가 아니라 **일본식 조판 관례**였다(부호를
+# 덩어리로 크게 그린다). 한글 획 하나(테두리 포함 3px)와 비슷한 크기인 갈무리11 자체 부호로
+# 바꾸는 쪽으로 정했다 — 8×14 칸(리소스1 규격, top=1·left=1, 대사창과 같은 오프셋)에 얹은 그대로.
+PERIOD_FILL_GALMURI = ["........"] * 11 + ["..#....."] + ["........"] * 2
+COMMA_FILL_GALMURI = ["........"] * 11 + ["..#....."] + [".#......"] + ["........"]
+# MD_PUNCT_SRC=original 로 되돌릴 수 있는 손잡이는 남긴다(비교·회귀용) — 정본은 galmuri.
+PUNCT_SRC = _os.environ.get("MD_PUNCT_SRC", "galmuri")
+EXTRA_R1 = {
+    0x28: PAREN_L_FILL,
+    0x29: PAREN_R_FILL,
+    0x2C: (lambda: COMMA_FILL_GALMURI if PUNCT_SRC == "galmuri" else COMMA_FILL),
+}
+# 🔴 마침표는 EXTRA_R1(없는 글자 추가) 이 아니라 OVERRIDE_R1(있는 글자를 갈아 끼움) 이다 —
+# 원작이 이미 갖고 있던 켑트 코드라 "추가"가 아니라 "교체"다. `resource1()` 이 갈라 처리한다.
+OVERRIDE_R1 = {0x2E: PERIOD_FILL_GALMURI} if PUNCT_SRC == "galmuri" else {}
 FONT1_HDR = (0x1A54DE, 0x1A54EA)
 
 
@@ -352,15 +513,22 @@ def resource1(cs: "Charset") -> list[tuple[str, int, bytes]]:
     r0, r1 = font.resources(rom)[:2]
     codes = font.codes(rom, r1)
     add = [c for c in sorted(EXTRA_R1) if c not in codes]
-    if not add:
+    override = {c: v for c, v in OVERRIDE_R1.items() if c in codes}
+    if not add and not override:
         return []
     n0 = len(codes)
     g = rom[r1["glyphs"] : r1["glyphs"] + n0 * r1["stride"]]
     parts = [g[i * r1["stride"] : (i + 1) * r1["stride"]] for i in range(n0)]
+    for c, rows in override.items():  # 있는 글자를 갈아 끼운다(표는 안 바뀐다)
+        i = codes.index(c)
+        fill = [[1 if ch == "#" else 0 for ch in row] for row in rows]
+        parts[i] = _pack8(fill) + _pack8(ring(fill))
     for c in add:  # 코드 오름차순 자리에 글리프를 끼운다(표와 글리프 순서가 같아야 한다)
         i = next((k for k, x in enumerate(codes) if x > c), len(codes))
         codes.insert(i, c)
-        fill = [[1 if ch == "#" else 0 for ch in row] for row in EXTRA_R1[c]]
+        raw = EXTRA_R1[c]
+        rows = raw() if callable(raw) else raw
+        fill = [[1 if ch == "#" else 0 for ch in row] for row in rows]
         parts.insert(i, _pack8(fill) + _pack8(ring(fill)))
     glyphs = b"".join(parts)
     table = b"".join(struct.pack(">H", c) for c in codes)
@@ -465,11 +633,15 @@ def resource5(
         if len(enc) == 2:  # 반각(ASCII)은 리소스 1 이 그린다
             by_code[int.from_bytes(enc, "big")] = ch
     codes = sorted(by_code)
-    # (BDF, 칸 안 위 여백) — Galmuri11 계열은 잉크가 11 이라 1행 띄워 테두리 자리를 남긴다.
+    # (BDF, 칸 안 위 여백, 칸 안 왼 여백) — 채움이 칸 0행·0열에 바로 닿으면 그쪽으로 팽창할
+    # 테두리 자리가 없다(대사창 리소스0 의 GLYPH_TOP/GLYPH_LEFT 와 같은 함정, 2026-09-17
+    # 마스터 지적 — 갈무리11 후보를 왼쪽 잘린 채로 보여드렸었다). 갈무리11 계열은 잉크가
+    # 11×11 이라 상하좌우 다 1칸씩 띄워야 사방 테두리가 온전하다. 갈무리14 는 14×14 라 위만
+    # 안 띄우면 위쪽이 잘린다(왼쪽은 bx 오프셋이 있어 이미 여유가 있다).
     _BDF = {
-        "galmuri11": ("Galmuri11.bdf", 1),
-        "galmuri11bold": ("Galmuri11-Bold.bdf", 1),
-        "galmuri14": ("Galmuri14.bdf", 0),
+        "galmuri11": ("Galmuri11.bdf", 1, 1),
+        "galmuri11bold": ("Galmuri11-Bold.bdf", 1, 1),
+        "galmuri14": ("Galmuri14.bdf", 1, 0),
     }
     if source == "neodgm":
 
@@ -477,10 +649,16 @@ def resource5(
             return neodgm_fill(ch, cell, cell)
 
     else:
-        _name, _top = _BDF[source]
+        _name, _top, _left = _BDF[source]
+        _path = common.ROOT / "shared" / "fonts" / _name
 
+        # 갈무리 계열의 ㅏㅓ 팔 1px·「…」가 가운데(일본식)인 문제는 대사창(리소스0)과 같은
+        # 글꼴 파일이라 **같은 함수**로 고친다(마스터 확정 2026-09-17) — 여기서 안 태우면
+        # 자막만 안 고쳐진 채로 남아 「같은 지식이 두 곳, 한쪽만 고침」이 재현된다.
         def src(ch):
-            return _load_bdf(common.ROOT / "shared" / "fonts" / _name, cell, _top)[ch]
+            if ch == "…":
+                return ellipsis_dots(cell)
+            return extend_jamo_arms(_load_bdf(_path, cell, _top, _left)[ch])
 
     tbl_at, gl_at = after
     table = b"".join(struct.pack(">H", c) for c in codes)

@@ -24,9 +24,10 @@ ED1 문안은 **PS1 판**(1회차 인게임 QA 를 마치고 main 에 머지된 
 - **파일 시스템도 섹터도 없다 — 롬 2MB 하나다.** 좌표는 전부 **롬 오프셋 = 68000 주소**
   (매퍼 없음). 고치면 헤더 체크섬(0x18E)을 다시 맞춘다. 꼬리 0x1EC35C~ 81KB 가 FF 빈 공간이고,
   더 필요하면 **4MB 로 늘리는 길**이 열려 있다(MD 는 4MB 까지 매퍼 없이 잡힌다 — 헤더 ROM end 갱신).
-- 🔴 **`.SMD` 확장자지만 인터리브가 아니다 — plain BIN.** `docs/ports-survey.md` 의 옛 판정
-  (「인터리브 · 커스텀 문자 테이블 · SJIS 0」)은 이 파일을 디인터리브해 읽은 결과다. 실제로는
-  **SJIS 평문 + 제어코드**(만트라 DOS·PC-98·PCE 와 같은 집안: `1E 화자 04` / `01` / `05` / `00`).
+- 🔴 **물리적으로 SMD 인터리브가 아니라 plain BIN 이다.** `docs/ports-survey.md` 의 옛 판정
+  (「인터리브 · 커스텀 문자 테이블 · SJIS 0」)은 옛 `.zip` 안의 `.SMD` 를 디인터리브해 읽은
+  결과였다. 실제로는 **SJIS 평문 + 제어코드**(만트라 DOS·PC-98·PCE 와 같은 집안:
+  `1E 화자 04` / `01` / `05` / `00`).
 - **대본은 LZ 로 묶인 「씬 모듈」 225개다.** 모듈 = 헤더 + **68000 코드**(pc 상대 참조) +
   이벤트 자료 + 문안 스트림이 한 덩이. 코덱은 [`tools/lz.py`](tools/lz.py)(디컴프레서 `$0C9E` 이식,
   왕복 검증), 색인은 [`tools/archives.py`](tools/archives.py), 스트림 파서·재조립기는
@@ -43,10 +44,12 @@ ED1 문안은 **PS1 판**(1회차 인게임 QA 를 마치고 main 에 머지된 
 
 ## 원본
 
-`originals/jp/md-ed1/*.zip` 안의 `.SMD` 하나(2,097,152B). 지문·헤더 상수는
-[`tools/common.py`](tools/common.py). ⚠ **읽기 전용**이고, 쓰기 헬퍼는 재삽입 설계가 서기
-전까지 두지 않는다(`docs/patcher-checklist.md` 2). emucap 은 zip 을 못 열어 `work/emu/ed1.bin` 사본을
-쓴다 — **거기 쓰지 마라**(원본 사본이지 빌드가 아니다).
+`originals/jp/md-ed1/Dragon Slayer - Eiyuu Densetsu (J).bin` 하나(2,097,152B, 압축 없는 plain BIN).
+지문·헤더 상수는 [`tools/common.py`](tools/common.py). ⚠ **읽기 전용**이고, 쓰기 헬퍼는 재삽입
+설계가 서기 전까지 두지 않는다(`docs/patcher-checklist.md` 2).
+🔴 **2026-09-15 까지는 `.zip` 안의 `.SMD` 였다** — HDD 컬렉션으로 옮기며 압축 없는 `.bin` 이 됐다
+(바이트·sha1 은 그대로). `tools/common.py` 의 `rom()` 이 이제 zip 해제 없이 직접 읽는다.
+emucap 은 실행에 `work/emu/ed1.bin` 사본을 쓴다 — **거기 쓰지 마라**(원본 사본이지 빌드가 아니다).
 🔴 **실제로 한 번 덮여 있었다**(2026-09-07 발견 — sha1 이 빌드의 것이었다). 「원판과 대조한다」면서
 그 파일을 띄우면 **우리 것끼리 대조**하게 된다. 대조 전에 **sha1 을 `tools/common.py` 의 원본 지문과
 맞춰 본다**(`f67c9139…`). 안전한 사본은 `work/emu/ed1_orig.bin` 에도 있다.
