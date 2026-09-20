@@ -222,8 +222,15 @@ python3 tools/hangul_map.py   --disc ed3 --check  # 글리프 자리 정본 (--f
 python3 tools/exetext.py      --disc ed3 --check  # 실행파일 낱말 표 (항등 재구축)
 python3 tools/typeset.py      --disc ed3 --check  # 조판 상수가 원본을 담나
 python3 tools/script.py       --disc ed3 --check  # 번역 정본 (원문 지문 · 조판)
+python3 tools/list_demonstratives.py --disc ed3 --show   # 지시사 후보 (⚠ 게이트 아님 — 목록기)
 sh check.sh                                      # 이 게임의 커밋 전 게이트
 ```
+
+🔴 **`list_demonstratives.py` 는 게이트에 안 물린다** — 「저」가 맞나는 **장면을 알아야** 갈려서
+기계로 못 닫는다. 대신 **부르는 시점을 정해 둔다**(안 도는 검사기는 잊힌다): **씬 하나를 정본에
+옮긴 직후**(`--member` 로 좁힌다) · **묶음 ④·P4 를 닫기 전 전량 한 번** · **인게임 QA 회차 전**.
+⚠ 부류 셋의 위험도가 다르다 — `made-up`(원문에 지시사가 없다, **기계로 닫힌다**) ·
+`ano`(원문 `あの`, **가장 위험**하다 — 조응이면 「그」다) · `sono`(거의 「그」다).
 
 ⚠ `solve_charmap.py` 는 **비결정적 제안**이다(새턴 ED3 JP 덤프가 있어야 돈다).
 `solve_charmap_glyph.py` 는 비트 완전일치라 판단이 안 들지만, 산출물의 자리는 같다 —

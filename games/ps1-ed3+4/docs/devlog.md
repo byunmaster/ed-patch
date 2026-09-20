@@ -2197,3 +2197,39 @@ B 에 건 브레이크가 **한 번도 안 걸렸다.** 격자를 깔 때 칸 k 
 차이 나는 프리미티브를 찾고, 그 x 를 쓰는 코드를 역으로 잡는다.
 근거 캡처 — `.local/inbox/ps1-ed3+4/A1-window-cols24-prompt-ok.png` ·
 `A1-window-cols32-prompt-gone.png` · `A1-prompt-zoom-24-vs-32.png`(확대 대조).
+
+## 2026-09-07 (라운드 끝) — 리베이스에서 배운 것 둘
+
+`⑤ 타이틀`이 머지되고 라운드가 닫혔다. 다음 라운드가 같은 자리에서 안 서게 둘을 남긴다.
+
+### ① 커밋된 충돌 마커 잔해
+
+`git rebase main` 이 **`error: could not parse conflict hunks`** 로 섰다. 원인은 내 옛 커밋
+(`ED4 코드표가 열렸다`)의 `docs/reference/our-findings.md` 안에 **낡은 충돌 표시 한 줄이 그대로
+커밋돼 있던 것**이다(`||||||| parent of …`, 언젠가의 리베이스 잔해). 이 레포는
+`merge.conflictstyle=diff3` 라 git 이 **자기가 쓴 마커와 그 줄을 구분 못 한다.**
+
+    git -c merge.conflictstyle=merge rebase main      # 마커를 단순 스타일로 → 파싱된다
+    grep -c '^|||||||' docs/reference/our-findings.md  # 리베이스 **직전**에 한 번
+
+⇒ 잔해가 든 커밋이 뒤로 밀릴수록 충돌 회차가 는다 — **미룰수록 커지는 부류**다.
+(전 트리를 훑으니 ss-ed1+2 에도 하나 있었다.)
+
+### ② 「그 뒤 N 개」는 「내 것 N 개」가 아니다
+
+md 머지가 main 에서 빠져 다시 얹으라는 요청을 받았고, base 로 그 머지 커밋을 받았다.
+그런데 그 뒤엔 **남의 게임 커밋 27개**(ps1-ed1+2 26 · ss-ed3 1)가 더 얹혀 있었다 —
+`--onto main <그 머지>` 로 돌리니 `games/ps1-ed1+2/locked_lines.json` 에서 섰다.
+
+⇒ **base 는 개수로 받지 말고 값으로 고른다.** 후보마다 이 한 줄이면 갈린다:
+
+    for g in <다른 게임들>; do git log --oneline <후보>..HEAD -- games/$g | wc -l; done
+
+전부 0 인 후보가 내 base 다(여기선 내가 마지막으로 얹었던 그때의 main 팁). 66개만 옮겨졌다.
+💡 충돌한 커밋이 **main 에 이미 흡수**됐으면 손으로 풀지 말고 `--skip` — 문구를 main 에서
+   `grep` 해 값으로 확인한 뒤에 한다(손으로 풀면 남의 작업을 되돌린다).
+
+### 리베이스가 바이트를 안 건드렸다는 확인
+
+이미지 sha1 이 전후 동일(`13d4d835…`)했고, **정본에서 다시 구워도 같은 sha1** 이 나왔다.
+「안 갈렸다」는 한 번 재는 것으로 안 끝내고 **갈릴 수 있었던 경로(재빌드)를 맞대 봤다.**
