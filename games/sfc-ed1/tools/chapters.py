@@ -73,19 +73,29 @@ FONT = "Galmuri11.bdf"
 DY = -2  # 흰 획 행 1~11 · 테두리 0~12 (원본 흰 획 0~11 과 아랫줄이 같다)
 
 
+DIGIT_SHIFT = 2  # (11-7)//2 — 숫자 글리프(원본 폭 7px 급)를 11px 칸 안에서 가운데로
+
+# 🔴 2026-09-15 마스터 확정 — 장 제목 숫자는 전각(11px, 다른 글자와 같은 칸)으로 간다.
+# 원본 JP 는 숫자가 7px 로 한자보다 좁았다(위 12.1 절 실측) — 그런데 그건 **원문 줄 자체가
+# 가나·숫자(좁음)·한자(네모)로 폭이 섞여 있어서** 자연스러웠던 것이다. 우리 줄은 전부 한글이라
+# 네모꼴 일색이라 **숫자 하나만 좁으면 그것만 튄다.** 원본이 그 폭을 쓴 이유가 우리 줄엔 없다
+# — 그래서 좁혀 둔 채로 안 두고 넓힌다(다음에 「원본은 좁은데 왜 넓혔지」로 되돌리지 않는다).
+# ⚠ 이 특례는 **장 제목(chapters.py)에만** 있다 — `grep isdigit tools/*.py` 로 확인, 다른
+# 숫자 표시(HUD·메뉴 등)는 이 코드를 안 거친다.
 def _metrics(txt: str, f, gap: int, sw: int) -> tuple[set, int]:
-    """(흰 획 점 집합, 폭). 글자 폭은 11, 숫자는 7."""
+    """(흰 획 점 집합, 폭). 글자 폭은 11(숫자도) — 숫자는 잉크를 칸 안에서 가운데로 미룬다."""
     white, x = set(), 0
     for ch in txt:
         if ch == " ":
             x += sw
             continue
         bits = f.bits(ch, dy=DY, rows=16, width=16)
+        shift = DIGIT_SHIFT if ch.isdigit() else 0
         for yy in range(16):
             for xx in range(11):
                 if bits[yy][xx]:
-                    white.add((x + xx, yy))
-        x += (7 if ch.isdigit() else 11) + gap
+                    white.add((x + xx + shift, yy))
+        x += 11 + gap
     return white, x - gap
 
 

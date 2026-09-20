@@ -59,6 +59,7 @@ OPS = {
     ("rep", "imm8"): 0xC2,
     ("lda", "abs"): 0xAD,
     ("sta", "abs"): 0x8D,
+    ("adc", "abs"): 0x6D,  # 2026-09-15 — A3 값 스트라이드(×3→×4) 원본 코드 패치에 필요
     ("cmp", "abs"): 0xCD,
     ("ldx", "abs"): 0xAE,
     ("ldy", "abs"): 0xAC,

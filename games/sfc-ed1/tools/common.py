@@ -10,7 +10,6 @@
 
 import hashlib
 import sys
-import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
@@ -28,10 +27,12 @@ BUILD_TAG = build_tag()
 BUILD_DIR = WORK / "build"
 DIST_DIR = WORK / "dist"
 
-# 소장본은 zip 째다(mednafen 이 zip 을 직접 읽는다 — `scripts/emu.sh`). 도구는 zip 안의 .sfc 를
-# 메모리로 편다. 헤더 없는 1MB 순수 롬(복사기 헤더 512B 없음 — 크기가 정확히 2^20).
-ORIG_ZIP = ORIG_DIR / "SFC - Dragon Slayer - Eiyuu Densetsu (J).zip"
+# 소장본은 압축 안 한 순정 .sfc 파일이다(mednafen 은 zip 도 읽지만 도구는 파일을 직접 연다 —
+# `scripts/emu.sh` 는 그쪽대로 알아서 찾는다). 헤더 없는 1MB 순수 롬 — 복사기 헤더(512B) 가
+# 붙으면 파일 크기가 1024 로 안 나눠떨어진다(1,049,088 % 1024 = 512) — `rom_bytes()` 가
+# 그 자리에서 잡는다. 2026-09-15 zip 추출본으로 갈음(원본 zip 은 원본 폴더에 그대로 둔다).
 ROM_NAME = "Dragon Slayer - Eiyuu Densetsu (J).sfc"
+ORIG_ROM = ORIG_DIR / ROM_NAME
 ROM_SHA1 = "2fbc7d0b48f6017d4a2d65b3c37032ad708a6255"
 ROM_SIZE = 1_048_576  # 8Mbit LoROM
 ROM_CRC32 = 0x70BBA233
@@ -67,14 +68,20 @@ _rom_cache: bytes | None = None
 
 
 def rom_bytes() -> bytes:
-    """원본 롬 1MB 를 zip 에서 한 번만 편다. 지문이 어긋나면 그 자리에서 죽는다 —
+    """원본 롬 1MB 를 파일에서 한 번만 읽는다. 지문이 어긋나면 그 자리에서 죽는다 —
     패치된 사본을 원본으로 오해하지 않기 위해."""
     global _rom_cache
     if _rom_cache is None:
-        if not ORIG_ZIP.exists():
-            raise SystemExit(f"원본 없음: {ORIG_ZIP}")
-        with zipfile.ZipFile(ORIG_ZIP) as zf:
-            data = zf.read(ROM_NAME)
+        if not ORIG_ROM.exists():
+            raise SystemExit(f"원본 없음: {ORIG_ROM}")
+        data = ORIG_ROM.read_bytes()
+        # 복사기 헤더(512B) 방어 — 있으면 이후 모든 오프셋이 512 밀려 조용히 틀린다.
+        if len(data) % 1024 != 0:
+            raise SystemExit(
+                f"복사기 헤더가 붙은 것으로 보인다: {ORIG_ROM}\n"
+                f"  크기 {len(data):,}B 가 1024 로 안 나눠떨어진다(나머지 {len(data) % 1024}) — "
+                "앞 512B 를 잘라내고 다시 시도한다."
+            )
         if len(data) != ROM_SIZE:
             raise SystemExit(f"롬 크기가 다르다: {len(data):,}B (기대 {ROM_SIZE:,}B)")
         got = sha1_of(data)

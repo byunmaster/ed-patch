@@ -397,12 +397,7 @@ def dis(rom, start, end, m8=True, x8=True):
 
 
 if __name__ == "__main__":
-    rom = common.load_rom() if hasattr(common, "load_rom") else None
-    if rom is None:
-        import zipfile
-
-        with zipfile.ZipFile(common.ORIG_ZIP) as z:
-            rom = z.read(common.ROM_NAME)
+    rom = common.rom_bytes()
     a = int(sys.argv[1], 16)
     b = int(sys.argv[2], 16)
     m8 = "m16" not in sys.argv

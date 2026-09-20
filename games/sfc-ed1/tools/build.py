@@ -29,7 +29,10 @@ import dicts
 import hook
 import script
 
-OUT_NAME = "Dragon Slayer - Eiyuu Densetsu (KR).sfc"
+OUT_NAME = {  # 경로별로 갈라 쓴다(patcher-checklist.md 3-B ② — 「어느 경로가 만들었나」를 파일명에도)
+    "kr": "Dragon Slayer - Eiyuu Densetsu (KR).sfc",  # build_kr() — 이게 굴리는 이미지
+    "poc": "Dragon Slayer - Eiyuu Densetsu (POC).sfc",  # build() — 구조 재배치 + 메뉴 PoC, 배포 대상 아님
+}
 NEW_SIZE = 2 * 1024 * 1024
 BANK_SHIFT = 0x20  # 원본 뱅크 $07~$0B → $27~$2B
 LAYOUT_BANK = 0x2C8000  # 넓힌 창 배치 항목을 두는 자리(확장 뱅크)
@@ -103,6 +106,60 @@ def _widen_row(row: list[int], extra: int) -> list[int]:
     if first == 0x28 or (row[0] & 0x8000 and first == 0x28):
         fill = row[1]
     return row[: BOX_W - 1] + [fill] * extra + row[BOX_W - 1 :]
+
+
+# ── 문장부호는 한국식으로(마스터 지시 2026-09-20) ────────────────────────────────────────
+# 번역문의 `.`·`,`·`!`·`?` 는 1바이트 코드로 원본 시트의 `。`·`、`·`!`·`?` 타일을 그대로 썼다.
+# 코드는 그대로 두고(길이·사전 제약 불변) **시트의 그 타일 넷을 한글 글꼴의 반각 글리프로 덮는다** —
+# 시트는 인게임·오프닝이 같은 것을 올리므로(`$1E:E6B3`·`$1E:F175`) 한 번에 둘 다 닿는다.
+# 글리프는 칸 왼쪽에 붙으므로 뒤따르는 공백 한 칸을 인코더가 뺀다(`encode.encode`) — 「부호 공백은 반각」.
+PUNCT_CODES = {".": 0x83, ",": 0x84, "!": 0x0C, "?": 0x0F}
+# 🔴 쉼표는 글꼴(Galmuri11-Condensed)이 주는 그대로 쓰지 않는다(마스터 지적 2026-09-20 —
+# 직선 한 획짜리라 일본식 「、」에 가깝게 보인다). **마스터가 직접 찍은 도안**(온점과
+# 같은 무게 — 온점이 행 12 한 칸짜리 점이라, 쉼표도 그 옆 대각선 2픽셀로) —
+# `dot-editor-tool.md` 관례대로 이게 정본이다.
+PUNCT_COMMA_OVERRIDE = [
+    0b00000000,  # 0
+    0b00000000,  # 1
+    0b00000000,  # 2
+    0b00000000,  # 3
+    0b00000000,  # 4
+    0b00000000,  # 5
+    0b00000000,  # 6
+    0b00000000,  # 7
+    0b00000000,  # 8
+    0b00000000,  # 9
+    0b00000000,  # 10
+    0b00000000,  # 11
+    0b01000000,  # 12 — 온점과 같은 행·같은 칸(.#)
+    0b10000000,  # 13 — 그 아래 왼쪽으로 한 칸(#.)
+    0b00000000,  # 14
+    0b00000000,  # 15
+]
+
+
+def punct_tiles(rom: bytes) -> list[int]:
+    import tiles
+
+    ct = tiles.code_tile(rom)
+    return [t for c in PUNCT_CODES.values() for t in (ct[c], ct[c] + 0x10)]
+
+
+def punct_bake(out: bytearray, rom: bytes) -> dict:
+    import hangul_font
+    import tiles
+
+    ct = tiles.code_tile(rom)
+    sheet = common.snes2off(text.FONT_SHEET)
+    font = hangul_font.load_font()
+    done = {}
+    for ch, code in PUNCT_CODES.items():
+        rows = PUNCT_COMMA_OVERRIDE if ch == "," else hangul_font.render(ch, font)
+        t = ct[code]
+        out[sheet + 8 * t : sheet + 8 * t + 8] = bytes(rows[:8])
+        out[sheet + 8 * (t + 0x10) : sheet + 8 * (t + 0x10) + 8] = bytes(rows[8:])
+        done[ch] = t
+    return done
 
 
 def widen_windows(out: bytearray, rom: bytes) -> list[dict]:
@@ -458,6 +515,24 @@ def fix_checksum(out: bytearray) -> None:
     out[CHECKSUM_OFF + 2 : CHECKSUM_OFF + 4] = s.to_bytes(2, "little")
 
 
+def verify_header_checksum(out: bytes) -> None:
+    """확장 산출물의 헤더 계약 — 2026-09-15 관리자 지적(빌드 칸이 2배로 커진 걸 보고).
+    ⚠ **조용히 틀리는 자리다** — 체크섬이 안 맞아도 대부분의 에뮬레이터는 그냥 돈다. 실기·일부
+    에뮬에서만 걸린다. `fix_checksum()` 직후라 사실상 항상 참이어야 하지만, 그 계산 자체가
+    깨지거나 나중에 누가 그 뒤에 바이트를 더 건드리면 여기서 잡는다(회귀 방지)."""
+    if len(out) != NEW_SIZE:
+        raise SystemExit(f"산출물 크기가 {NEW_SIZE:,}B 가 아니다: {len(out):,}B")
+    if out[HEADER_ROM_SIZE_OFF] != 0x0B:
+        raise SystemExit(f"헤더 ROM 크기 필드가 0x0B(2048KB) 가 아니다: {out[HEADER_ROM_SIZE_OFF]:#04x}")
+    cmpl = int.from_bytes(out[CHECKSUM_OFF : CHECKSUM_OFF + 2], "little")
+    chk = int.from_bytes(out[CHECKSUM_OFF + 2 : CHECKSUM_OFF + 4], "little")
+    if cmpl ^ chk != 0xFFFF:
+        raise SystemExit(f"체크섬·보수가 안 맞물린다: chk={chk:#06x} cmpl={cmpl:#06x}")
+    want = (sum(out) - sum(out[CHECKSUM_OFF : CHECKSUM_OFF + 4]) + 0x1FE) & 0xFFFF
+    if want != chk:
+        raise SystemExit(f"체크섬이 실제 바이트합과 다르다: 기록 {chk:#06x} 실측 {want:#06x}")
+
+
 def build(rom: bytes) -> tuple[bytes, dict]:
     items = body_items(rom)
     place = relocation_plan(items)
@@ -481,6 +556,7 @@ def build(rom: bytes) -> tuple[bytes, dict]:
         )
     out[HEADER_ROM_SIZE_OFF] = 0x0B  # 2048KB
     fix_checksum(out)
+    verify_header_checksum(out)
     info = {
         "items": len(items),
         "body_bytes": len(body),
@@ -538,6 +614,7 @@ def mutable_ranges() -> list[tuple[int, int]]:
     r.append((b, b + NAME_STRIDE * NAME_COUNT))
     r += dicts.patch_ranges()
     r += battle_ui.patch_ranges()
+    r += battle_ui.patch_ranges_a3()
     sheet = common.snes2off(text.FONT_SHEET)
     import tiles  # 상주 글리프를 구울 수 있는 자리 전부(실제로 구운 것은 그 부분집합이다)
 
@@ -545,6 +622,8 @@ def mutable_ranges() -> list[tuple[int, int]]:
     for c in tiles.overwritable(rom, tiles.layout_tiles(rom), keep_codes(rom)):
         for t0 in (ct[c], ct[c] + 0x10):
             r.append((sheet + 8 * t0, sheet + 8 * (t0 + 1)))
+    for t0 in punct_tiles(rom):  # 한국식 문장부호 타일 넷(위·아래)
+        r.append((sheet + 8 * t0, sheet + 8 * (t0 + 1)))
     return r
 
 
@@ -723,6 +802,14 @@ def kr_items(
     texts = [v["kr"] for v in tmap.values() if v.get("kr")] + list(dict_kr.values())
     mmap = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
     texts += [v["kr"] for v in mmap.values() if v.get("kr")]
+    # ⚠ `battle_ui.json` 도 **화면에 나가는 문안**이다 — 고정 칸 문자열·이름 상자·머리 상자.
+    #   여기 안 넣으면 그 파일에만 있는 음절이 `rep_index` 에 없어 `encode_rows` 가 KeyError 로
+    #   죽는다. 지금은 0건이지만 **다른 파일에 같은 글자가 있어서 우연히 사는 것**이라(실측
+    #   2026-09-08: 51자 전부 다른 데서 왔다) 낱말 하나만 바꿔도 깨진다. 원천으로 못 박는다.
+    bmap = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    for key in ("title", "speed", "yesno", "loose", "names"):
+        texts += [x["kr"] for x in bmap.get(key, [])]
+    texts += [c["kr"] for g in bmap.get("grid", []) for c in g["cols"]]
     texts.append(
         hook.josa_chars()
     )  # 런타임 조사 16형태 — 훅이 색인으로 집는다(문안에 없어도 필요하다)
@@ -863,6 +950,32 @@ def kr_items(
     fall = fallthrough_pairs(items, slices, rom)
     for si in fall:
         ra, rb = find(si), find(si + 1)
+        if ra != rb:
+            parent[rb] = ra
+    # 🔴 **오프닝(D1) 크롤 36블록은 재진입점이 있어도 물리적으로 붙어 있어야 한다**(2026-09-20
+    # 실기 — 마스터가 캡처에서 두 블록이 화면에 아예 안 나온다고 지적해 찾았다). 크롤은
+    # `$1E:DF44`(대본 전용 인라인 페치)로 **포인터 하나에서 그냥 쭉 읽는다** — 각 블록마다
+    # 되쓰는 포인터가 없다. 그런데 `alt3` 재진입점(19개, 대사창 시스템이 「장면 재진입」
+    # 용으로 이 서사 한복판을 가리키는 것)이 있는 블록은 **참조가 있다**는 이유로 위
+    # `fallthrough_pairs()` 가 앞 블록과의 흘러내림 묶음에서 뺀다(그 규칙 자체는 옳다 —
+    # 「참조 있으면 제 포인터로 닿는 별개 메시지」가 보통은 맞다. 크롤만 예외다). 그 결과
+    # first-fit 이 그 블록만 **다른(더 이른) 뱅크의 빈틈**에 꽂아 버려 크롤 읽기가 그 블록을
+    # 건너뛴다 — 화면에 원본 대비 통째로 안 뜬다(번역 누락이 아니라 배치 사고). 확인: 블록1
+    # (`$0B:E96F`, 5개국 소개)·블록3(`$0B:EAAB`, "그러던 어느 밤")이 뱅크 `$27`에 떨어져
+    # 있었다(나머지는 `$28`/`$29`). ⇒ 이 주소 구간(포인터 표 직후 ~ 36번째 블록 끝)의 조각은
+    # 참조 여부와 무관하게 **전부 한 군집으로 강제 결속**한다 — 재진입 포인터 자체는
+    # `place[]`/`new_off[]` 로 여전히 정확히 갱신되니(군집은 배치 단위일 뿐 포인터 재기입과
+    # 무관) 재진입 기능은 그대로 산다.
+    OPENING_LO, OPENING_HI = 0x0BE8E5, 0x0BF337  # 크롤 본문 시작 ~ 36번째(마지막) 블록 끝
+    opening_slices = [
+        si
+        for si, (_sid, a, _e) in enumerate(slices)
+        if OPENING_LO <= common.off2snes(items[a].off) < OPENING_HI
+    ]
+    if len(opening_slices) != 36:
+        raise SystemExit(f"오프닝 36블록 결속 — 자리 수가 다르다: {len(opening_slices)}")
+    for si in opening_slices[1:]:
+        ra, rb = find(opening_slices[0]), find(si)
         if ra != rb:
             parent[rb] = ra
     comp_of = [find(i) for i in range(len(slices))]
@@ -1104,6 +1217,8 @@ def build_kr(
 
     chapters.bake(out, rom)
     led.snap(out, "챕터 제목")
+    punct = punct_bake(out, rom)
+    led.snap(out, "한국식 문장부호")
     extra = after(out, rom) if after is not None else None
     # 🔴 렌더러 훅은 **메뉴를 구운 뒤**에 얹는다 — 슬롯은 「라벨을 다시 구운 롬」으로 재야 한다
     hk = dk = None
@@ -1116,6 +1231,8 @@ def build_kr(
         dk = dicts.bake(out, rom, _idx)
         bu = battle_ui.bake(out, rom, _idx, dk["next"])  # 사전 바로 뒤에 이어 놓는다
         dk["전투 UI"] = bu
+        a3 = battle_ui.bake_a3_values(out, rom, _idx, bu["next"])  # 그 뒤에 이어 놓는다
+        dk["A3 값"] = a3
         led.snap(out, "사전·전투 UI 이관")
         hk = hook.apply(
             out,
@@ -1129,9 +1246,11 @@ def build_kr(
     if with_hook:
         dicts.verify(out, k["rep"])  # 🔑 **체인이 다 끝난 롬**에서 게임의 포인터를 따라 되읽는다
         battle_ui.verify(out, k["rep"])
+        battle_ui.verify_a3_values(out, k["rep"])
     n_term = verify_terminators(rom, out)
     out[HEADER_ROM_SIZE_OFF] = 0x0B
     fix_checksum(out)
+    verify_header_checksum(out)
     imm = immutable_diffs(rom, out)
     st = k["stats"]
     # 원문 뱅크별 JP → KR 투영
@@ -1322,18 +1441,23 @@ def opening_poc(rom: bytes) -> tuple[str, callable, callable]:
     return set(sids), enc_override, bake
 
 
-def write_image(out: bytes, info: dict) -> None:
-    """빌드 칸에 이미지 하나만 남긴다(낡은 것을 정상으로 오해하는 사고를 막는다)."""
+def write_image(out: bytes, info: dict, build_path: str) -> None:
+    """빌드 칸에 이미지 하나만 남긴다(낡은 것을 정상으로 오해하는 사고를 막는다).
+
+    ⚠ `build_path` 는 "kr"(`build_kr()`, 실제 굽는 이미지) 아니면 "poc"(`build()`, 구조 재배치 +
+    메뉴 PoC) — 2026-09-15 빌드 지문 소동(patcher-checklist.md 3-B)의 재발 방지책. 파일명 접미
+    + manifest 의 `build_path` 칸, **둘 다** 남긴다 — 지문을 옮겨 적을 때 무엇을 쟀는지가
+    값으로 같이 남게."""
     d = common.BUILD_DIR / common.BUILD_TAG
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob("*.sfc*"):
         old.unlink()
-    dst = d / OUT_NAME
+    dst = d / OUT_NAME[build_path]
     dst.write_bytes(out)
     sha = hashlib.sha1(out).hexdigest()
     (d / "manifest.json").write_text(
         json.dumps(
-            {"source_sha1": common.ROM_SHA1, "output_sha1": sha, **info},
+            {"build_path": build_path, "source_sha1": common.ROM_SHA1, "output_sha1": sha, **info},
             ensure_ascii=False,
             indent=1,
         ),
@@ -1381,7 +1505,7 @@ def main() -> None:
         out, info = build_kr(rom, with_hook=not a.no_hook)
         print(json.dumps(info, ensure_ascii=False, indent=1))
         if a.kr:
-            write_image(out, info)
+            write_image(out, info, "kr")
         return
     rom = common.rom_bytes()
     out, info = build(rom)
@@ -1398,7 +1522,7 @@ def main() -> None:
     if a.check:
         print("검증 OK")
         return
-    write_image(out, info | v)
+    write_image(out, info | v, "poc")
 
 
 if __name__ == "__main__":

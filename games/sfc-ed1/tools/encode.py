@@ -86,6 +86,11 @@ TOKEN_RE = re.compile(
 )
 
 
+# 🔴 한국식 문장부호(마스터 지시 2026-09-20) — 코드는 원본 `。`·`、`·`!`·`?` 그대로 쓰되 **시트 타일을
+# 한글 글꼴 글리프로 덮는다**(`build.punct_bake`). 글리프가 칸 왼쪽에 붙어 오른쪽이 비므로 **뒤따르는
+# 공백 한 칸은 안 낸다**(부호 공백 = 반각). 인게임·오프닝 공통이다(시트·인코더가 하나).
+HALF_PUNCT = set(".,!?")
+
 # 2칸(16×16) 글리프로 가는 기호 — 반각 8px 글리프가 없는 것들. 글꼴(Neo둥근모)에서 굽는다.
 GLYPH_SYMBOLS = set("…~()·『』【】〜―")
 
@@ -203,6 +208,7 @@ def encode(kr: str, rep_index: dict[str, int], dict_kr: dict[str, str] | None = 
                     buf += glyph_code(rep_index[ch])
             continue
         # 글자열
+        prev_ch = ""
         for ch in piece:
             if is_glyph(ch):
                 if ch not in rep_index:
@@ -210,12 +216,15 @@ def encode(kr: str, rep_index: dict[str, int], dict_kr: dict[str, str] | None = 
                 buf += glyph_code(rep_index[ch])
                 prev_word += ch
                 prev_runtime = False
+            elif ch == " " and prev_ch in HALF_PUNCT:
+                pass  # 부호 뒤 공백은 반각 — 부호 글리프가 칸 왼쪽에 붙어 남는 오른쪽이 곧 공백이다
             elif ch in KR_TABLE:
                 buf.append(KR_TABLE[ch])
                 if ch not in " \n":
                     prev_word = ""
             else:
                 raise ValueError(f"매핑 없는 글자: {ch!r} (U+{ord(ch):04X})")
+            prev_ch = ch
     flush()
     return out
 
@@ -240,4 +249,17 @@ def decode_kr(b: bytes, rep: list[str]) -> str:
         else:
             out.append(f"<{c:02X}>")
             i += 1
-    return "".join(out)
+    # 인코더가 뺀 「부호 뒤 공백」을 되살린다 — 뒤에 글자가 이어질 때만(줄 끝·닫는 괄호·제어 앞은 원래 없다)
+    res = []
+    for k, tok in enumerate(out):
+        res.append(tok)
+        nxt = out[k + 1] if k + 1 < len(out) else ""
+        if (
+            tok in HALF_PUNCT
+            and nxt
+            and nxt not in (" ", "\n", "」")
+            and nxt not in HALF_PUNCT
+            and not nxt.startswith("<")
+        ):
+            res.append(" ")
+    return "".join(res)

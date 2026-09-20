@@ -30,9 +30,15 @@
 
 ## 원본
 
-`originals/jp/sfc-ed1/*.zip`(zip 째, 안에 1,048,576B `.sfc`, 복사기 헤더 없음). 지문·상수는
-[`tools/common.py`](tools/common.py). ⚠ **읽기 전용**이고, 쓰기 헬퍼는 재삽입 설계가 서기
-전까지 두지 않는다(`docs/patcher-checklist.md` 2).
+`originals/jp/sfc-ed1/Dragon Slayer - Eiyuu Densetsu (J).sfc`(1,048,576B 순정 LoROM, 복사기
+헤더 없음 — 있었으면 1024 로 안 나눠떨어져 `common.rom_bytes()` 가 죽는다). 같은 폴더의
+`.zip`은 소장 원본 그대로 남겨 둔 것이고 도구는 읽지 않는다(2026-09-15 zip 추출로 전환).
+지문·상수는 [`tools/common.py`](tools/common.py). ⚠ **읽기 전용**이고, 쓰기 헬퍼는 재삽입
+설계가 서기 전까지 두지 않는다(`docs/patcher-checklist.md` 2).
+
+⚠ **미래의 `sfc-ed2`(있다면)는 다른 게임이다** — HiROM, 2MB(1,572,864B), 헤더 타이틀
+"DRAGON SLAYER LEGEND2", 체크섬/보수 2B19/D4E6. 이 파일의 LoROM 상수(`ROM_SIZE`·
+`HEADER_TITLE`·`snes2off()`)를 그대로 재사용하면 안 된다.
 
 ## 도구
 
@@ -43,7 +49,8 @@ python3 games/sfc-ed1/tools/text.py --dump      # work/derived/text/ 에 대본(
 python3 games/sfc-ed1/tools/text.py --msg 5     # 메시지 하나 풀어 보기
 python3 games/sfc-ed1/tools/script.py --roundtrip   # 라벨 모델 왕복(본체 153KB 바이트 동일)
 python3 games/sfc-ed1/tools/dis65816.py 0x0298E0 0x029960  # 65816 디스어셈블 — 막히면 롬을 편다(조사용)
-python3 games/sfc-ed1/tools/build.py            # 원문을 확장 뱅크로 옮긴 2MB 롬(+창 넓히기·한글 메뉴 PoC) → work/build/<꼬리표>/
+python3 games/sfc-ed1/tools/build.py            # 원문을 확장 뱅크로 옮긴 2MB 롬(+창 넓히기·한글 메뉴 PoC, 파일명 접미 POC) → work/build/<꼬리표>/
+python3 games/sfc-ed1/tools/build.py --kr       # ⭐ 사전·전투 UI 이관 + 렌더러 훅까지 — 이게 굴리는 이미지(파일명 접미 KR). **빌드 지문은 항상 이걸로 잰다**
 python3 games/sfc-ed1/tools/build.py --project  # 번역문을 인코딩해 뱅크에 담아 본 분량 투영(파일 안 남김)
 python3 games/sfc-ed1/tools/units.py --stats --dump # 번역 단위·조각·조사 수요 → work/derived/units/
 python3 games/sfc-ed1/tools/tm.py --readings --dump # PS1 번역본과 읽기 유사도 정렬 → work/derived/tm/

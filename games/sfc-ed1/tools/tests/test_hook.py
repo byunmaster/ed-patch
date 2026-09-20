@@ -102,6 +102,7 @@ OPC = {
 ENTRY = {
     "hook": (True, True, "far"),  # 호출자(메시지 엔진) = A 8 · X/Y 8
     "hookbuf": (True, True, "far"),  # 사전 버퍼 소비 지점 — 같은 규약
+    "open_fetch": (True, True, "far"),  # 오프닝(D1) 소비 지점 — $1E:DF3D 가 같은 규약으로 둔다
     "namecopy": (True, True, "far"),  # 메뉴 이름 — 넷째 문(칸 배열에 직접 쓴다)
     "name13": (False, False, "far"),  # 13칸 고정 — 다섯째 문(원본은 MVN). 호출자가 REP #$30
     "drain": (True, True, "far"),  # NMI = sep #$30 뒤
@@ -109,6 +110,11 @@ ENTRY = {
     "alloc": (True, False, "near"),
     "josa": (True, False, "near"),
     "upload": (True, False, "near"),
+    "cache_reset": (True, False, "near"),  # 오프닝 페이지 경계에서 오너 표를 비운다
+    "font_reset": (True, True, "far"),  # 폰트 벌크카피 트램펄린 착지점 — `JSL` 로 불린다
+    "open_advance": (True, True, "far"),  # 오프닝 줄 끝(`$1E:E0BB`) — 줄 시작 커서를 소비한 바이트로
+    "ctx_game": (True, True, "far"),  # PPU 배치 자리(`$00:8082`·`$826C`) — 인게임 컨텍스트
+    "ctx_open": (True, True, "far"),  # PPU 배치 자리(`$00:8294`) — 오프닝 컨텍스트(BG3 `$3000`)
 }
 
 
@@ -212,7 +218,7 @@ class HookAsm(unittest.TestCase):
     def test_호출_자리_바이트(self):
         """갈아 끼울 자리는 **원본과 크기가 같아야** 한다."""
         self.assertEqual(hook.QN & (hook.QN - 1), 0, "큐 칸은 2의 거듭제곱")
-        self.assertLess(hook.VAR_END - hook.VAR, 741, "WRAM 무손상 구간(741B)을 넘는다")
+        self.assertLess(self.info["var_end"] - hook.VAR, 741, "WRAM 무손상 구간(741B)을 넘는다")
         self.assertLessEqual(len(self.blob), 0x8000)
 
     def test_조사표(self):
