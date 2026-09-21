@@ -28,6 +28,7 @@ import common
 import containers
 import font
 import hook
+import opening_sub
 import lz
 import sysbuild
 import translate
@@ -367,6 +368,8 @@ def _build(edits_path, iso: Path, cue: Path):
     ledger = WriteLedger()
     with open(iso, "r+b") as f, _record_writes(ledger):
         apply_code_patches(f, glyph_bank, table, touched)
+        if want("opsub"):  # 오프닝 나레이션 자막(스프라이트) — tools/opening_sub.py
+            print("  " + opening_sub.apply(f, touched))
         if want("sys"):
             print("  시스템 문구:", sysbuild.apply(f, table, touched))
         if want("battle"):
