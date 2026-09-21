@@ -51,6 +51,22 @@ W, H = 256, 232
 CELL, ADV_LATIN = 12, 8
 LEFT_MARGIN, RIGHT_MARGIN = 20, 20
 TOP, LINE_H = 44, 18
+# 🔴 **자막은 전 구간 상단 고정이다**(마스터 확정 2026-09-22 — 하단 배치를 거쳐 되돌렸다).
+#
+# 왜 하단을 버렸나 — 이 게임은 **장면마다 표시 행수가 다르다**(VDC 의 VDR 실측: 240 · 232 ·
+# 216 · 208 을 확인했다). 스프라이트 Y 는 **화면 위쪽 기준**이므로,
+#   · 화면 좌표로 고정하면 → 그림 안에서의 비율이 장면마다 달라 「자막이 움직인다」로 보이고,
+#   · 장면별로 보정해 **밑 간격**을 맞추면 → 줄 수가 다른 자막끼리 블록이 어긋나 보인다
+#     (마스터: 「240 216 누가봐도 위치가 다른데? 세줄짜리가 좀더 위쪽에 있어」).
+# 게다가 높이가 바뀌는 자리가 **우리 장면 항목 경계와 안 맞는다** — 「불」 항목(4834~5467)
+# 안쪽 V_FRAME 4910 에서 이미 232 였다. 장면표로는 따라갈 수가 없다.
+# ⇒ **위를 기준으로 삼으면 이 문제가 통째로 없어진다.** Y=64 는 화면 높이와 무관하게 늘
+#   첫 표시행이라, 상단 고정은 어느 장면에서든 그림 위 끝에서 같은 거리다. 보정 코드도,
+#   장면별 높이 실측도 필요 없다. 그림도 위쪽이 하늘이라 여백이 넉넉하다(마스터).
+SUB_TOP = TOP  # 별하늘 구간과 같은 자리 — 오프닝 전체에서 자막 높이가 한 값이다
+SUB_MAX_ROWS = 3  # 그림 구간 자막의 최대 줄 수(이 이상은 대본에서 나눈다)
+SHORTEST_SCREEN = 192  # 자막이 들어가야 할 화면 높이 하한. ⚠ 실측 최솟값(208)보다 낮게 잡는다
+#   — 성기게 잰 실측이 이미 한 번 틀렸다(「불」을 240 으로 봤는데 232 였다).
 LINE_CAP = 10
 DY = fonts.GALMURI11_DY
 GLYPH_ROWS = 14  # 12px 글리프 + 테두리 → 14행(0~13), 셀 16행 중 14·15는 빈 행
@@ -62,7 +78,11 @@ IRQ_JSR_ADDR = 0x44A5  # IRQ1 핸들러의 `JSR $E063` (모듈 +0x4A5, 뱅크 0x
 LOOP_JSR_ADDR = 0x4039  # 메인 루프 마지막 `JSR $43F3` (+0x39)
 CODE_OFF = 0x4D40  # 뱅크 0x6A +0xD40 — 원판 0 인 13KB 자리의 머리. 논리 $8D40(MPR4=0x6A)
 CODE_ADDR = 0x8000 + (CODE_OFF - 0x4000)
-CODE_MAX = 0x5800 - CODE_OFF  # 뱅크 0x6A +0x1800 까지(2.7KB) — 그 뒤 2KB 는 백업 슬롯
+# 🔴 2026-09-22: 자막을 전부 2줄 이하로 쪼개면서 자막 수가 16 → 24 로 늘어 표가 108B 넘쳤다.
+#   그래서 경계를 0x5800 → 0x5A00 으로 옮겨 512B 를 더 썼고, 그만큼 **백업 슬롯 하나를
+#   내놓았다**(아래 BACKUP_SLOTS 에서 0x6A +0x1800 을 뺐다). 최대 빌림이 19개라 23칸으로도
+#   남는다 — `plan_scenes` 가 넘치면 빌드에서 막는다.
+CODE_MAX = 0x5A00 - CODE_OFF  # 뱅크 0x6A +0x1A00 까지(3.2KB) — 그 뒤 1.5KB 가 백업 슬롯
 DATA_REL = 422  # 빈 섹터 rel 422~449(28개, 원판 0) — 우리는 12개만 쓴다
 STRIP_BANKS = (0x85, 0x86, 0x87)  # 오프닝 내내 0 인 뱅크(덤프 29개 실측)
 STRIP_BANK_SECTORS = {0x85: 0, 0x86: 4, 0x87: 8}  # DATA_REL 기준 섹터 오프셋
@@ -70,7 +90,8 @@ CELL_BYTES = GLYPH_ROWS * 2 * 2  # 셀 = plane0 14행 + plane1 14행, 행마다 
 # 빌린 VRAM 청크(512B)의 백업 슬롯 — (뱅크, MPR3 창 $6000 기준 오프셋). 오프닝 내내 0 인 자리들.
 BACKUP_SLOTS = (
     [(0x6B, o) for o in range(0, 0x2000, 0x200)]  # 모듈 안의 빈 8KB
-    + [(0x6A, o) for o in (0x1800, 0x1A00, 0x1C00, 0x1E00)]  # 코드 뒤
+    # ⚠ 0x1800 은 **코드가 가져갔다**(CODE_MAX 를 0x5A00 으로 옮김, 2026-09-22)
+    + [(0x6A, o) for o in (0x1A00, 0x1C00, 0x1E00)]  # 코드 뒤
     + [(0x80, 0x1C00), (0x80, 0x1E00)]  # 모듈 마지막 뱅크 꼬리
     + [(0xF8, 0x1A00), (0xF8, 0x1C00)]  # 워크 RAM $3A00~$3DFF
 )
@@ -120,6 +141,7 @@ hook.OPS.update(
         ("CPY", "abs"): 0xCC,
         ("CPY", "imm"): 0xC0,
         ("ORA", "imm"): 0x09,
+        ("ADC", "absy"): 0x79,
         ("STA", "absx"): 0x9D,
         ("STZ", "absx"): 0x9E,
         ("LDX", "abs"): 0xAE,
@@ -232,6 +254,7 @@ def timeline(subs, rules):
     """→ (lines[str], pages[list[row line-idx|None]], events[(sec, page_idx)])."""
     cuts = [c for c in rules["scene_cuts"] if c not in rules["cut_ignore"]]
     tail, lead, gap_clear, cap = rules["clear_tail"], rules["scene_lead"], rules["gap_clear"], rules["line_cap"]
+    solo = rules.get("solo_from", 1e9)  # 이 시각부터는 문장을 안 쌓고 한 번에 하나만 띄운다
     ss = sorted(subs, key=lambda x: x[0])
     ev = [(t, 0, "cut", None) for t in cuts]
     for i, (st, en, text) in enumerate(ss):
@@ -261,6 +284,8 @@ def timeline(subs, rules):
             if payload.startswith("\f") and committed:
                 committed = []
             payload = payload.lstrip("\f")
+            if t >= solo:  # 중반 그림 구간 — 이어붙이지 않고 한 문장씩 (마스터 요청 2026-09-22)
+                committed = []
             new = ([None] if payload.startswith("\n") else []) + [lid(s) for s in wrap(payload.lstrip("\n"))]
             if len(committed) + len(new) > cap:
                 committed = []
@@ -321,7 +346,41 @@ def frames_of(sec, timing):
 
 
 # ── 실행 코드 ──────────────────────────────────────────────────────────────
-def runtime(lines_tab, pages, events, scenes, timing) -> bytes:
+def page_y_table(pages, events, rules):
+    """페이지마다 세로 자리를 정한다 → [**스프라이트 Y(= 64 + 화면 y)**] (마스터 확정 2026-09-22).
+
+    지금은 별하늘도 그림 구간도 **상단 고정**이라 값이 하나다. 표를 남겨 둔 건 구간별로
+    다시 가를 여지를 위해서고, 실제로 하단 배치를 한 회차 굴려 봤다(위 SUB_TOP 주석 참조).
+
+    ⚠ 한 바이트라 255 를 넘으면 안 된다 — 하단 배치 때 실제로 걸렸다(272).
+    """
+    solo = rules.get("solo_from", 1e9)
+    first_t = {}
+    for t, p in events:
+        first_t.setdefault(p, t)
+    out = []
+    for i, rows in enumerate(pages):
+        n = len(rows)
+        if n == 0 or first_t.get(i, 0) < solo:
+            out.append(64 + TOP)
+        else:  # 줄 수와 무관하게 첫 줄을 늘 같은 자리에
+            # ⚠ 4줄이 되면 그림을 너무 가린다. 대본에서 어절 경계로 나눠 줄인다
+            #   (⚠ 기계적으로 반씩 가르면 꼬리가 어색해지고, 2줄까지 줄이면 뒷토막이
+            #    너무 빨리 사라진다 — 마스터 실기 2026-09-22. 3줄까지가 타협점이다).
+            assert n <= SUB_MAX_ROWS, (i, n, "그림 구간 자막이 너무 길다 — script 에서 나눠라")
+            out.append(64 + SUB_TOP)
+    # 지켜야 할 건 둘이다 — 표가 한 바이트에 들어가는가, 글이 **가장 짧은 화면**에 들어가는가.
+    # 상단 고정이라 기준이 화면 높이와 무관해졌지만, 별하늘의 8줄 더미는 여전히 길다.
+    for i, (rows, y) in enumerate(zip(pages, out)):
+        assert 0 <= y < 256, (i, y, "page_y 가 한 바이트를 넘는다 — SUB_TOP 을 낮춰라")
+        if rows:
+            bot = y - 64 + LINE_H * (len(rows) - 1) + GLYPH_ROWS
+            limit = H if y - 64 == TOP and len(rows) > SUB_MAX_ROWS else SHORTEST_SCREEN
+            assert bot <= limit, (i, len(rows), y, bot, limit)
+    return out
+
+
+def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     """뱅크 0x6A +0xD40(논리 $8D40, MPR4) 에 들어가는 코드 + 표."""
     a = Asm(CODE_ADDR)
     # ── init: JSR 로 들어온다(CD_PLAY 자리). A 에 CD_PLAY 결과를 그대로 돌려줘야 한다.
@@ -873,9 +932,19 @@ def runtime(lines_tab, pages, events, scenes, timing) -> bytes:
     a.op("ASL")  # 32p
     a.op("CLC")
     a.op("ADC", "zp", Z_T1)  # 36p (≤108)
-    a.op("ADC", "imm", 64 + TOP)
+    # 세로 자리는 **페이지마다 다르다** — 별하늘은 위(TOP), 그림이 나오는 구간은 하단에
+    # 아래를 맞춰 띄운다(영화 자막처럼, 마스터 요청 2026-09-22). page_y 는 스프라이트 원점
+    # +64 를 품은 값이고(표가 한 바이트라 `page_y_table` 이 256 미만인지 단언한다),
+    # 36*pair 를 더하면 255 를 넘을 수 있어 올림을 상위 바이트로 넘긴다.
+    a.op("LDY", "abs", V_PAGE)
+    a.op("ADC", "absy", "page_y")
     a.op("STA", "absx", SAT_SHADOW)
-    a.op("STZ", "absx", SAT_SHADOW + 1)
+    # 🔴 Y 는 10비트다 — 상위 바이트를 0 으로 지우면 Y ≤ 255, 즉 화면 y ≤ 191 까지밖에 못 내린다.
+    # 지금은 상단 고정이라 안 닿지만, 올림은 제대로 넘겨 둔다(하단 배치를 시도했을 때 물렸다).
+    # CLA 는 플래그를 안 건드리므로 바로 밑의 x 상위 바이트 계산과 같은 수법이다.
+    a.op("CLA")
+    a.op("ADC", "imm", 0)
+    a.op("STA", "absx", SAT_SHADOW + 1)
     a.op("LDA", "abs", V_TMP_K)  # x = 32 + xbase + 32k
     for _ in range(5):
         a.op("ASL")
@@ -1154,6 +1223,8 @@ def runtime(lines_tab, pages, events, scenes, timing) -> bytes:
     for rows in pages:
         r = list(rows) + [None] * (8 - len(rows))
         a.data(bytes(0xFF if x is None else x for x in r))
+    a.label("page_y")  # 페이지별 세로 자리(스프라이트 Y, +64 포함). sat_show 가 36*pair 에 더한다
+    a.data(bytes(page_y))
     a.label("lines")
     for bank, off, ncell in lines_tab:
         a.data(bytes((bank, off & 0xFF, off >> 8, ncell)))
@@ -1280,7 +1351,8 @@ def build_all():
     lines, pages, events = timeline(sub["lines"], sub["rules"])
     sc = plan_scenes(lines, pages, events, sc, sub["timing"])
     banks, table = pack_strips(lines)
-    code = runtime(table, pages, events, sc, sub["timing"])
+    py = page_y_table(pages, events, sub["rules"])
+    code = runtime(table, pages, events, sc, sub["timing"], py)
     return sub, lines, pages, events, banks, table, code
 
 
