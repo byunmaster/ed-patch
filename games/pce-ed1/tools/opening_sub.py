@@ -1089,6 +1089,13 @@ def runtime(lines_tab, pages, events, scenes, timing) -> bytes:
         a.op("ADC", "imm", SC_CHUNKS)
         a.op("TAY")
         a.op("LDA", "izpy", Z_SCN)  # 청크 번호 = VRAM 워드주소 hi
+        # 🔴 0xFF = 표 채움(그 장면이 실제로 쓰는 청크는 여기서 끝). 종전엔 마지막 청크를
+        # 복제해 채워서 **안 빌린 장면도 28칸까지 돌며 같은 자리를 열 번 넘게 백업·복원**했다.
+        # 한 칸이 512B 라 그게 곧 한 프레임의 태반이고, 게임의 그림 로드와 부딪히는 창이 된다.
+        a.op("CMP", "imm", 0xFF)
+        a.op("BNE", "rel", f"{name}_go3")
+        a.op("RTS")
+        a.label(f"{name}_go3")
         a.op("STA", "zp", Z_T1)
         a.op("TMA", "tma", 3)
         a.op("STA", "zp", Z_T0)
@@ -1154,7 +1161,7 @@ def runtime(lines_tab, pages, events, scenes, timing) -> bytes:
     for s in scenes:
         qu, end, sw = s["quiet"], s["end"], s["switch"]
         chunks = list(s["chunks"])
-        chunks += [chunks[-1]] * (4 * SPR_PER_PAIR - len(chunks))  # 모자라면 마지막 것을 채움(닿지 않음 — sprites_needed 검사)
+        chunks += [0xFF] * (4 * SPR_PER_PAIR - len(chunks))  # 0xFF = 끝 표식(draw 는 need 까지만 쓰니 안 닿는다)
         a.data(bytes((qu & 0xFF, qu >> 8, end & 0xFF, end >> 8, sw & 0xFF, sw >> 8, s["x_base"], s["nsafe"], s.get("spr_base", SPR_BASE), s.get("game_n", 0))) + bytes(chunks))
     a.data(b"\xff\xff" * 3 + b"\0" * (SCENE_ENTRY - 6))  # 끝 표식(switch=0xFFFF: 안 넘어간다)
     a.label("end")
