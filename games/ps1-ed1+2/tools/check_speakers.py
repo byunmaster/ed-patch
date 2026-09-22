@@ -258,10 +258,57 @@ def scan_inline(scenes=None, verbose=False):
     return len(bad)
 
 
+def scan_nl_after_gaps(scenes=None, verbose=False):
+    """**본문 창 뒤에 이어지는 창이 붙어 보일 자리** — 키입력개행(qa2-002, 마스터 09-20).
+
+    원본 JP 본문 창의 raw 토큰이 `%c` 경계 직전 `nl` 로 끝나는데, 우리 재조판은 그
+    창을 통째로 우리 번역으로 갈아 끼우며 그 nl 을 버린다(`build_from_template` 는
+    `chunks[k]` 를 그대로 내보낼 뿐 원문 토큰을 안 본다). **다음 창에 실제 내용
+    (`body`/`name`)이 있을 때만** 화면에서 붙어 보인다 — 다음이 `empty`(블록 종단
+    `%c%c`)면 뒤에 아무 것도 없어 무해하다.
+
+    ⚠ **"발견되면 무조건 자동 삽입"은 아니다**(2026-09-20 조사) — 전 정본(본문 창
+    12,865개)에서 이 조건에 맞는 자리는 43개뿐이고, 나머지 raw-nl 종료 창 1,224개는
+    다음이 `empty`/종단이라 안전하다. 그래서 이 함수는 **자동으로 안 고친다** — 43개
+    후보 중 `align_overrides.json` 의 `nl_after` 로 이미 덮인 것과 대조해 **빠진
+    자리만** 보고한다. 인덱스는 `kind=="body"` 인 창(이름창 인덱스를 주면 조용히
+    무동작이다 — 000-a/b 가 그렇게 한 번 틀렸다)."""
+    ov = R._load_overrides()
+    have = {}
+    for scn, entries in ov.items():
+        if not isinstance(entries, dict):
+            continue
+        for eid, e in entries.items():
+            if isinstance(e, dict) and "nl_after" in e:
+                have.setdefault(scn, set()).update(e["nl_after"])
+
+    missing = []
+    for scn in R.scene_list(scenes):
+        for _s, eid, jp, _cand, _t in R.iter_candidates((scn,)):
+            wins = R.template_windows(R.parse_template(jp))
+            for k, (kind, seg) in enumerate(wins):
+                if kind != "body":
+                    continue
+                if not (seg and seg[-1][0] == "nl"):
+                    continue
+                nxt = wins[k + 1][0] if k + 1 < len(wins) else "END"
+                if nxt not in ("body", "name"):
+                    continue
+                if k in have.get(scn, set()):
+                    continue
+                missing.append((scn, eid, k, nxt))
+    print(f"  {'✅' if not missing else 'ℹ'} 키입력개행 후보(raw nl+다음 창 있음) 미반영 {len(missing)}건")
+    if missing and verbose:
+        for scn, eid, k, nxt in missing:
+            print(f"      {scn}:{eid}  창{k}(body, raw nl 종료) → 다음 창 {nxt}")
+    return 0  # 게이트 실패시키지 않는다 — 화면 확인 전 후보 보고일 뿐(위 이름창 개행 축과 같은 성격)
+
+
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     n = scan(set(args) if args else None, "--all" in sys.argv)
     n += scan_canon(verbose=True)
     n += scan_runtime_labels(set(args) if args else None, verbose=True)
     n += scan_inline(set(args) if args else None, verbose="-v" in sys.argv)
+    n += scan_nl_after_gaps(set(args) if args else None, verbose="-v" in sys.argv)
     sys.exit(1 if n else 0)

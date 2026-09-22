@@ -22,7 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 from common import BUILD_DIR, ROOT, extract
-from ed2_monster_review import MON
+from ed2_monster_review import MON as MON_ORIG
+from patch_ed2_monster_lines import BIN_DIR_LBA
 from patch_ed2_monster_lines import _enc as _enc_lines
 from patch_ed2_monsters import _enc as _enc_names
 from patch_ed2_monsters import plan as names_plan
@@ -38,6 +39,37 @@ LINES_TABLE = os.path.join(ROOT, "script", "ED2MON_LINES.json")
 SKIP_BASELINE = os.path.join(ROOT, "script", "ed2mon_readback_skip_baseline.json")
 
 
+def _live_mon():
+    """`MON`(정적 원본 LBA)이 아니라 **지금 이미지의 ISO 디렉터리**에서 그룹별 현재
+    LBA·크기를 읽는다.
+
+    🔴 **정적 표로 읽으면 DUMMY 재배치를 놓친다**(2026-09-22 실측). `patch_ed2_monster_lines
+    ._apply_sha_table()` 은 그룹이 넘치면 `ED2MON{g}.BIN` 전체를 DUMMY 영역으로 옮기고
+    ISO 디렉터리만 갱신한다(내부 배치는 안 건드리는 "위치만 이동" — 로더는 그 디렉터리를
+    보고 찾으므로 실제 게임에선 아무 문제가 없다). 그런데 이 되읽기 게이트가 옛 정적
+    `MON`(원본 LBA)으로 읽으면 **재배치로 비워진(또는 옛 내용이 남은) 자리**를 읽어
+    그 그룹 전체가 "대사 못 찾음"으로 쏟아진다 — 실측: ED2MON3·4 가 재배치된 회차에
+    93건이 한꺼번에 튀었는데, 실제 이미지(새 LBA)에는 우리 문안이 멀쩡히 있었다.
+    ⇒ 이 함수가 진짜 정본이다 — **매번 이미지에서 다시 읽는다**(캐시하지 않는다,
+    빌드마다 재배치 여부가 달라진다).
+    """
+    bdir = bytes(extract(BIN_DIR_LBA, 2048, path=IMG))
+    by_name = {}
+    i = 0
+    while i < len(bdir) and bdir[i]:
+        nlen = bdir[i + 32]
+        name = bytes(bdir[i + 33 : i + 33 + nlen]).decode("ascii", "replace")
+        lba = int.from_bytes(bdir[i + 2 : i + 6], "little")
+        size = int.from_bytes(bdir[i + 10 : i + 14], "little")
+        by_name[name] = (lba, size)
+        i += bdir[i]
+    out = {}
+    for g, (orig_lba, orig_size) in MON_ORIG.items():
+        lba, size = by_name.get(f"ED2MON{g}.BIN;1", (orig_lba, orig_size))
+        out[g] = (lba, size)
+    return out
+
+
 def check_names():
     """이름 테이블 — `plan()`(원본 기준 계획) vs **빌드 이미지**(제자리 치환이라 오프셋은 같다).
 
@@ -45,12 +77,17 @@ def check_names():
     """
     fit, _over, _none = names_plan()
     bad = []
+    # ⚠ `fit` 의 lba 는 `plan()` 이 **정적 원본 좌표**로 낸 것이다(그룹 안 상대 오프셋은
+    # 재배치돼도 그대로다 — 옮기는 건 그룹 파일의 시작 LBA뿐). 그래서 **읽을 때만**
+    # `_live_mon()` 의 현재 LBA로 바꿔 치환한다(`by_lba` 는 원본 좌표 판별용으로 남긴다).
     by_lba = {}
-    for g, (lba, size) in MON.items():
+    for g, (lba, size) in MON_ORIG.items():
         by_lba[lba] = (g, size)
+    live = _live_mon()
     for lba, off, jp, kr, slot in fit:
-        g, size = by_lba[lba]
-        buf = bytes(extract(lba, size, path=IMG))
+        g, _orig_size = by_lba[lba]
+        cur_lba, size = live[g]
+        buf = bytes(extract(cur_lba, size, path=IMG))
         want = _enc_names(kr) + b"\x00"
         got = buf[off : off + len(want)]
         if got != want:
@@ -72,11 +109,13 @@ def check_name_coverage():
     """
     canon = json.load(open(os.path.join(ROOT, "textmap", "monsters_ed2.json"), encoding="utf-8"))
     fit, over, none = names_plan()
-    known = {(g, off) for lba, off, *_ in fit + over for g, (l, _s) in MON.items() if l == lba}
+    known = {(g, off) for lba, off, *_ in fit + over for g, (l, _s) in MON_ORIG.items() if l == lba}
     known |= {(g, off) for g, off, _jp in none}
 
+    # ⚠ **원본(originals/)을 훑는다** — `extract()` 기본 `path` 가 원본이다. 재배치는
+    # 빌드 이미지에서만 일어나므로 여기는 정적 `MON_ORIG` 그대로가 맞다(수정 불필요).
     blind = []
-    for g, (lba, size) in sorted(MON.items()):
+    for g, (lba, size) in sorted(MON_ORIG.items()):
         buf = bytes(extract(lba, size))
         for jp_base in canon:
             for suf in SUFFIXES:
@@ -102,11 +141,12 @@ def check_lines():
     """
     with open(LINES_TABLE, encoding="utf-8") as f:
         table = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+    live = _live_mon()
     missing = []
     for key, kr in table.items():
         want = _enc_lines(kr) + b"\x00"
         found = False
-        for _g, (lba, size) in MON.items():
+        for lba, size in live.values():
             cap = (size + 2047) // 2048 * 2048
             buf = bytes(extract(lba, cap, path=IMG))
             idx = buf.find(want)

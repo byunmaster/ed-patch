@@ -223,7 +223,7 @@ def _ellipsis_bits(ft):
     return out
 
 
-def gen_glyphs(chars):
+def gen_glyphs(chars, narrow_singles=frozenset()):
     """렌더 단위 → GLYPH바이트(16×DRAW_ROWS) 글리프 (**Neo둥근모 16px 네이티브**).
 
     단위는 1글자(한글·부호)이거나 **로마자 2글자**다 — 로마자가 8px 라 둘이 한 셀에 맞는다.
@@ -232,6 +232,11 @@ def gen_glyphs(chars):
     뭉갠다(`오`·`스` 는 멀쩡한데 `영`·`웅`·`많`·`읽` 이 무너진다). 16px 그대로 찍으면
     잉크가 13행이라 셀(16×15)에 그냥 들어간다. 기준은 `shared/fonts/README.md`.
     ⚠ 레이아웃 엔진을 BASIC 으로 못 박는다 — Raqm 유무로 배치가 달라져 빌드가 환경을 탄다.
+
+    `narrow_singles` — 이 호출에서 **반각 advance 로 확정된** 짝 못 찾은 로마자/숫자
+    한 글자(`patch_game` 이 `narrow` 슬롯 다섯 자리를 정한 뒤 넘긴다). 왼쪽 정렬(dx=0)로
+    찍는다 — 반각 advance(8px) 다음 글자가 바로 그 자리에서 시작하므로 잉크가 8px 안에
+    있어야 겹치지 않는다.
     """
     from PIL import Image, ImageDraw, ImageFont
 
@@ -239,9 +244,14 @@ def gen_glyphs(chars):
     out = {}
     for ch in chars:
         im = Image.new("L", (16, DRAW_ROWS), 0)
-        # ⚠ 짝을 못 찾은 로마자 한 글자(8px)는 **셀 가운데**로 민다 — 왼쪽에 붙이면 뒤에만
-        #   8px 가 비어 「고작 6 살.」 처럼 한쪽으로 벌어진다.
-        dx = 4 if len(ch) == 1 and ch in PAIRABLE else 0
+        # ⚠ 짝을 못 찾은 로마자/숫자 한 글자(8px)는 기본은 **셀 가운데**로 민다 — 왼쪽에
+        #   붙이면 뒤에만 8px 가 비어 「고작 6 살.」 처럼 한쪽으로 벌어진다. 다만 이 글자가
+        #   `narrow_singles` 로 반각 advance 를 받게 되면 **왼쪽 정렬**해야 한다 — 안 그러면
+        #   가운데 찍은 잉크의 오른쪽 절반이 다음 글자와 겹친다(2026-09-16, 「6살」 간격 신고).
+        if ch in narrow_singles:
+            dx = 0
+        else:
+            dx = 4 if len(ch) == 1 and ch in PAIRABLE else 0
         ImageDraw.Draw(im).text((dx, 0), ch, fill=255, font=ft)
         bits = (np.array(im) >= 128).astype(np.uint8)
         if ch == "…":
@@ -670,9 +680,19 @@ def patch_game(name):
     n = len(syl)
     print(f"고유 음절 {n}, 네이티브 폰트 {n * GLYPH}B(raw)")
 
+    # ⚠ **여기서 미리 정한다** — 엔진의 반각 advance 슬롯은 다섯 자리뿐이고(원본 "좁은 글자
+    #   5종" 비교 상수 재사용), 어떤 글자가 그 자리를 받는지에 따라 **글리프를 왼쪽 정렬해야
+    #   할지(반각)·가운데 정렬해야 할지(전각인데 짝을 못 찾음)가 갈린다**(`gen_glyphs`
+    #   `narrow_singles` 참조). 부호(`NARROW`)를 우선 채우고 남으면 짝 못 찾은 로마자/숫자
+    #   한 글자(`6` 처럼)를 채운다 — 그런 글자가 전각 advance 로 남으면 뒤 글자와 간격이
+    #   벌어진다(2026-09-16 실측 「겨우 6 살이었다.」).
+    lone_pairable = sorted(c for c in syl if len(c) == 1 and c in PAIRABLE)
+    narrow_candidates = list(NARROW) + lone_pairable
+    narrow = [c for c in narrow_candidates if c in slot][:5]
+
     # 1) 폰트를 네이티브 30B로 생성 → 행-마스크 압축 → 안전 0영역에 임베드.
     #    (raw 5730B는 안전영역 초과 → 압축본 ~3986B만 파일에 둔다. 스텁이 자유 RAM에 푼다.)
-    glyphs = gen_glyphs(sorted(syl))  # 30B/글리프(15행)
+    glyphs = gen_glyphs(sorted(syl), narrow_singles=frozenset(narrow))  # 30B/글리프(15행)
     raw = [glyphs[ch][:GLYPH] for ch in sorted(syl)]
     comp, NDICT = compress_font_dict(raw)
     assert len(comp) <= COMP_FONT_MAX, (
@@ -923,12 +943,14 @@ def patch_game(name):
     def fo(ram):
         return 0x800 + (ram - TADDR)
 
-    # 4b) 반각 처리 — 원본의 "좁은 글자 5종" 비교 상수를 우리 공백·부호 슬롯으로 바꾼다.
+    # 4b) 반각 처리 — 원본의 "좁은 글자 5종" 비교 상수를 우리 공백·부호(+짝 못 찾은
+    #     로마자/숫자) 슬롯으로 바꾼다.
     #     원본: 0x8140(전각공백)·0x8286·0x8289·0x828A·0x828C(ｆｉｊｌ)를 만나면 advance 2.
     #     이 다섯 자리를 우리 글자로 채우면 **코드 한 줄 안 늘리고** 반각을 얻는다.
     #     ⚠ 폭측정·표시 **양쪽 다** 바꿔야 한다 — 한쪽만 바꾸면 측정≠표시라 중앙정렬이
     #     밀려 글자가 화면 밖으로 잘린다(advance 4→3 때 실측한 함정과 같은 것).
-    narrow = [c for c in NARROW if c in slot][:5]
+    #     ⚠ `narrow` 는 위(글리프 생성 전)에서 이미 정했다 — 여기서 다시 고르면 글리프가
+    #     찍힌 정렬(dx)과 advance 가 서로 다른 글자를 기준으로 어긋날 수 있다.
     codes = [slot[c][0] for c in narrow]
     codes += [codes[0]] * (5 - len(codes))  # 남는 자리는 첫 코드로 채워 무해하게
     for base in (g["narrow_w"], g["narrow_d"]):  # 폭측정 / 표시 — ori 5개

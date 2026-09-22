@@ -302,6 +302,12 @@ def main():
     import patch_scn_route_labels as _psrl
 
     _psrl.apply()
+    # 006/012 — HUD 지명은 **JP 원문 길이에 맞춰 인라인된 고정 길이 복사**로 실린다.
+    # 우리 전각 한글이 그보다 길면 널이 안 실리거나 글자 중간에서 끊긴다(RE 확정
+    # 2026-09-20). 지명 문자열을 다 쓴 **맨 뒤에** 돌아야 최종 길이를 본다.
+    import patch_scn_hud_copy as _pshc
+
+    _pshc.apply()
     for stem in INTERMEDIATES + STALE:
         rm(stem)
     check_immutable()

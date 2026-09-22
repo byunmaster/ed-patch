@@ -115,6 +115,44 @@ BASE = 0x8014A000  # 오버레이 적재 주소 — 로더 0x800959F4 의 상수
 BIN_DIR_LBA = 1182  # \BIN 디렉토리 레코드 섹터 (reinsert_kr_pilot 과 같은 값)
 MIPS_LUI, MIPS_ADDIU, MIPS_ORI = 0x0F, 0x09, 0x0D
 
+# ⚠ **전체 파일을 옮겨도 안전한 이유** — 로더가 이 파일을 "표 13+g 번째"로 찾아 **파일
+# 전체를 통짜로** 0x8014A000 에 올린다(디스패처는 그 RAM 주소 기준 `jal` 만 쓴다, 위
+# 모듈 docstring 참조). 그래서 **내부 바이트 배치**(문자열·코드 상대 오프셋)만 안
+# 흔들면, 파일이 디스크 **어느 LBA 에서** 오든 무관하다 — reinsert_kr_pilot 의 SCN
+# DUMMY 재배치와 같은 논리다. 반대로 파일 내부에서 문자열을 밀어내는 건(재삽입기
+# docstring 의 "밀어내기 재packing 은 하지 말 것") 여전히 금지 — 그건 내부 상대
+# 오프셋이 흔들려 `jal` 대상이 어긋난다. 이 함수가 하는 "그룹 재배치"는 내부는 안
+# 건드리고 **디스크 위치만** 옮기는 것이라 다른 종류의 안전이다.
+#
+# ⚠ **SCN 재배치(`reinsert_kr_pilot.DUMMY_LBA=91700`)와 자리를 나눈다** — 같은
+# DUMMY.;1(LBA 91700~107205, 31.7MB) 안이지만 SCN 은 91700 부터 순차로 자라므로,
+# 그 성장분과 안 겹치게 반대편 끝에서부터 예약한다(2026-09-19, 마스터 요청으로
+# ED2MON 그룹 파일에도 DUMMY 재배치를 추가하며 신설). ED2MON 여섯 파일은 각각
+# 5~46KB 라(`MON` 참조) 합쳐도 300KB(150섹터) 를 안 넘는다 — 넉넉히 이격한다.
+ED2MON_DUMMY_LBA = 106000  # DUMMY.;1 끝(107205)에서 1205섹터(2.4MB) 여유를 두고 시작
+
+
+def _update_dir_entry(f, fname, new_lba, new_size):
+    """ISO 디렉터리의 LBA·크기(양 엔디언) 갱신 — `reinsert_kr_pilot` 의 dir_moves 와 같은 수법.
+
+    `_update_dir_size` 와 달리 **LBA 도 옮긴다** — 그룹 파일 전체를 DUMMY 영역으로
+    재배치할 때 쓴다(파일 자체는 안 건드리고 어디서 읽어 오는지만 바꾼다).
+    """
+    bdir = bytearray(extract(BIN_DIR_LBA, 2048, path=IMG))
+    want = fname.encode("ascii")
+    i = 0
+    while i < len(bdir) and bdir[i]:
+        nlen = bdir[i + 32]
+        if bdir[i + 33 : i + 33 + nlen] == want:
+            bdir[i + 2 : i + 6] = new_lba.to_bytes(4, "little")
+            bdir[i + 6 : i + 10] = new_lba.to_bytes(4, "big")
+            bdir[i + 10 : i + 14] = new_size.to_bytes(4, "little")
+            bdir[i + 14 : i + 18] = new_size.to_bytes(4, "big")
+            write_user_data(f, BIN_DIR_LBA, bytes(bdir), label="ISO 디렉터리 LBA·크기")
+            return
+        i += bdir[i]
+    raise SystemExit(f"BIN 디렉토리에 {fname} 없음")
+
 
 def overlay_refs(orig):
     """오버레이 안에서 자기 자신(BASE+)을 가리키는 `lui`+`addiu/ori` 쌍.
@@ -355,6 +393,12 @@ def _apply_sha_table():
     🔴 **재배치는 `plan()`/`_relocate()` 와 같은 길을 그대로 쓴다**(2026-09-13, 041① 퇴보
     이후 신설) — 새로 짜지 않는다. 참조(`overlay_refs`)가 있는 자리만 꼬리로 옮기고,
     없는 자리는 예전처럼 제자리 유지(슬롯 부족 기준선으로 보고)한다.
+
+    🔴 **그룹 자체가 넘치면 파일 전체를 DUMMY 영역으로 재배치한다**(2026-09-19 신설,
+    마스터 요청 — 그룹4 재배치 여유가 4B 까지 좁혀진 걸 보고 "더미로 옮기는 것도
+    테스트해보자"). 내부 배치는 그대로 두고 **디스크 위치만** 옮기므로 `jal` 안전
+    규칙(모듈 docstring)을 안 건드린다 — ISO 디렉터리 LBA·크기만 갱신하면 로더가
+    새 자리에서 그대로 읽는다.
     """
     if not os.path.exists(SHA_TABLE):
         return 0
@@ -362,6 +406,8 @@ def _apply_sha_table():
         table = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
     n = moved_total = 0
     skipped = []  # [(id, group, key, slot, need)] — 참조가 없어 재배치도 못 하는 자리
+    dummy_cursor = ED2MON_DUMMY_LBA
+    dir_entries = []  # [(fname, new_lba, new_size)] — 그룹 전체를 DUMMY 로 옮긴 것들
     with open(IMG, "r+b") as f:
         for group, (lba, size) in sorted(MON.items()):
             # ⚠ **섹터 정렬 크기로 읽는다** — 원래 크기(size)로 읽고 다시 쓰면 재배치가
@@ -436,9 +482,26 @@ def _apply_sha_table():
                 moved_total += len(moves)
             else:
                 mv_touched = []
-            assert len(new) <= cap, f"ED2MON{group} 재배치가 섹터를 넘었다 (+{len(new) - cap}B)"
-            new = new.ljust(cap, b"\x00")
             touched = list(mv_touched) + slots
+            if len(new) > cap:
+                # ⚠ **그룹 재배치 여유(cap)까지 넘었다** — 꼬리를 더 못 늘리니 파일
+                # 전체를 DUMMY 영역으로 옮긴다. 내부 배치는 그대로라 무변경 대조는
+                # 의미가 없다(원본 LBA 는 손도 안 대고 버려둔다 — 디렉터리가 더 이상
+                # 그쪽을 안 가리키므로 무해하다).
+                new_size = len(new)
+                new_cap = (new_size + 2047) // 2048 * 2048
+                new_lba = dummy_cursor
+                dummy_cursor += new_cap // 2048
+                n += write_user_data(
+                    f,
+                    new_lba,
+                    new.ljust(new_cap, b"\x00"),
+                    label=f"ED2MON{group} 전투 대사(표) {hits}건 (DUMMY 재배치)",
+                )
+                dir_entries.append((f"ED2MON{group}.BIN;1", new_lba, new_size))
+                print(f"  ED2MON{group}: {cap}→{new_size}B, LBA {lba}→{new_lba} (DUMMY 재배치)")
+                continue
+            new = new.ljust(cap, b"\x00")
             marks = bytearray(len(new))
             for lo, hi in touched:
                 for k in range(lo, min(hi, len(marks))):
@@ -446,6 +509,8 @@ def _apply_sha_table():
             for k in range(len(new)):
                 assert marks[k] or new[k] == before[k], f"ED2MON{group} 코드/데이터 무변경 위반 @0x{k:X}"
             n += write_user_data(f, lba, new, label=f"ED2MON{group} 전투 대사(표) {hits}건 제자리")
+        for fname, new_lba, new_size in dir_entries:
+            _update_dir_entry(f, fname, new_lba, new_size)
     _check_skip_baseline(skipped)
     if moved_total:
         print(f"  ED2MON 대사(표): 꼬리 재배치 {moved_total}건")
