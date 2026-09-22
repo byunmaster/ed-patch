@@ -65,6 +65,20 @@ TOP, LINE_H = 44, 18
 #   장면별 높이 실측도 필요 없다. 그림도 위쪽이 하늘이라 여백이 넉넉하다(마스터).
 SUB_TOP = TOP  # 별하늘 구간과 같은 자리 — 오프닝 전체에서 자막 높이가 한 값이다
 SUB_MAX_ROWS = 3  # 그림 구간 자막의 최대 줄 수(이 이상은 대본에서 나눈다)
+# 🔴 **자리는 문장마다 고를 수 있다**(마스터 확정 2026-09-22) — 대본에서 네 번째 칸에
+#   "bottom" · "middle" 을 적는다(없으면 상단). 그림이 위쪽을 다 쓰는 장면(몬스터·아크담)은
+#   하단, 암전 화면(마지막 줄)은 가운데가 낫다는 마스터 판단.
+# ⚠ 세 모드는 **기준점이 다르고, 화면 높이 보정(V_YADJ)도 다르게 먹는다**:
+#     상단 = 프레임 위 기준   → y_adj 를 1배 뺀다(프레임 안에서 자리 고정)
+#     가운데 = 그림 한가운데   → 그림 중심의 프레임 좌표가 늘 135 이므로 역시 1배
+#     하단 = 그림 밑변 기준   → y_adj 를 **2배** 빼야 밑 간격이 일정해진다
+#   (화면 y = page_y − 64 − mul*y_adj, y_adj = (240 − 높이)/2 이므로 대입해 보면 나온다)
+# 🔴 하단도 **프레임 기준**이다(마스터 확정 2026-09-22: 「몬스터들이 떼를 지어, 갑작스러운
+#   야습에 모두 하단에 같은높이에 있어야 해」). 그림 밑변에 붙이면(=y_adj 2배) 그림이 짧아질수록
+#   밑변이 올라가 자막도 같이 올라간다 — 실기에서 그게 보였다. 그래서 세 모드 전부 1배다.
+# 값 정하기: 가장 짧은 그림(208행)의 밑변이 프레임 238행이므로, 3줄 덩어리(50) 바닥을
+#   프레임 230 에 두면 어느 장면에서도 그림 안에 들어가고 화면에서 자리가 같다.
+BOT_BASE = 64 + 180 + 49 - 64  # 프레임 180행에서 시작 → 바닥 230행 (page_y = 프레임+49)
 SHORTEST_SCREEN = 192  # 자막이 들어가야 할 화면 높이 하한. ⚠ 실측 최솟값(208)보다 낮게 잡는다
 #   — 성기게 잰 실측이 이미 한 번 틀렸다(「불」을 240 으로 봤는데 232 였다).
 LINE_CAP = 10
@@ -110,6 +124,14 @@ SPR_ATTR = 0x1188  # CGY=1(32높이) CGX=1(32폭) SPBG=1 팔레트 8
 SPR_PAL = 8
 SAT_VRAM = 0x7F00
 PAL_SHADOW = 0x272E  # IRQ1 핸들러가 TIA 로 VCE 에 올리는 512색 그림자(실측 일치)
+# 🔴 **게임이 들고 있는 「지금 화면 높이」**(240·232·224·216·208). 원판 덤프 13개에서
+# VDC 의 VSR(레지스터 $0C) 상위바이트 VDS 와 `높이 = 270 − 2*VDS` 로 정확히 일치했다.
+# 이 게임은 그림을 **프레임 한가운데에 세로로 맞춘다** — 모든 장면에서 `VDS + 높이/2 = 135`.
+# 스프라이트 Y 는 **표시 시작줄(VDS) 기준**이라, 그림이 짧아지면 VDS 가 내려가고 자막도
+# 화면에서 같이 내려간다(마스터 폰 캡처 실측: 장면마다 13픽셀 = PCE 4줄씩 내려갔다).
+# ⚠ **emucap 스크린샷은 표시 영역만 잘라 보여줘서 이게 안 보인다** — 실기·폰에서만 드러난다.
+# ⇒ 매 프레임 `y_adj = (240 − 높이)/2` 를 빼서 **프레임 안에서 같은 자리**에 고정한다.
+GAME_H = 0x2D54
 
 hook.OPS.update(
     {
@@ -257,10 +279,12 @@ def timeline(subs, rules):
     solo = rules.get("solo_from", 1e9)  # 이 시각부터는 문장을 안 쌓고 한 번에 하나만 띄운다
     ss = sorted(subs, key=lambda x: x[0])
     ev = [(t, 0, "cut", None) for t in cuts]
-    for i, (st, en, text) in enumerate(ss):
+    for i, sub in enumerate(ss):
+        st, en, text = sub[0], sub[1], sub[2]
+        lay = sub[3] if len(sub) > 3 else "top"  # 네 번째 칸 = 자리(top/bottom/middle)
         nxt = ss[i + 1][0] if i + 1 < len(ss) else 1e9
         ev.append((en + tail, 1, "end", nxt - en > gap_clear))
-        ev.append((st, 2, "start", text))
+        ev.append((st, 2, "start", (text, lay)))
     ev.sort(key=lambda e: (e[0], e[1]))
     lines: list[str] = []
     def lid(s):
@@ -270,15 +294,20 @@ def timeline(subs, rules):
     committed: list = []
     current = None
     cur_start = None
+    cur_lay = "top"
     pending = False
-    states = []  # (t, rows)
+    states = []  # (t, rows, lay)
     def emit(t):
         rows = committed + (current or [])
         assert len(rows) <= cap, rows
-        if not states or states[-1][1] != rows:
-            states.append((t, list(rows)))
+        # ⚠ 자리는 **마지막으로 시작한 문장의 것**을 계속 쓴다. `current` 가 None 인 동안
+        #   상단으로 되돌리면, 문장이 끝난 뒤 지워지기 전까지 자막이 아래→위로 튄다.
+        lay = cur_lay
+        if not states or (states[-1][1], states[-1][2]) != (rows, lay):
+            states.append((t, list(rows), lay))
     for t, _, kind, payload in ev:
         if kind == "start":
+            payload, cur_lay = payload
             if current:
                 committed, current = committed + current, None
             if payload.startswith("\f") and committed:
@@ -304,13 +333,17 @@ def timeline(subs, rules):
                 pending = True
         emit(t)
     pages: list[tuple] = [()]  # 0 = 빈 페이지
+    page_lay = ["top"]
+    seen = {((), "top"): 0}
     events = []
-    for t, rows in states:
-        key = tuple(rows)
-        if key not in pages:
-            pages.append(key)
-        events.append((t, pages.index(key)))
-    return lines, pages, events
+    for t, rows, lay in states:
+        key = (tuple(rows), lay)
+        if key not in seen:
+            seen[key] = len(pages)
+            pages.append(tuple(rows))
+            page_lay.append(lay)
+        events.append((t, seen[key]))
+    return lines, pages, events, page_lay
 
 
 # ── 데이터 묶기 ────────────────────────────────────────────────────────────
@@ -346,37 +379,35 @@ def frames_of(sec, timing):
 
 
 # ── 실행 코드 ──────────────────────────────────────────────────────────────
-def page_y_table(pages, events, rules):
-    """페이지마다 세로 자리를 정한다 → [**스프라이트 Y(= 64 + 화면 y)**] (마스터 확정 2026-09-22).
+def page_y_table(pages, page_lay):
+    """페이지마다 세로 자리를 정한다 → [스프라이트 Y 기준값].
 
-    지금은 별하늘도 그림 구간도 **상단 고정**이라 값이 하나다. 표를 남겨 둔 건 구간별로
-    다시 가를 여지를 위해서고, 실제로 하단 배치를 한 회차 굴려 봤다(위 SUB_TOP 주석 참조).
-
-    ⚠ 한 바이트라 255 를 넘으면 안 된다 — 하단 배치 때 실제로 걸렸다(272).
+    자리는 **문장마다** 대본에서 고른다(마스터 확정 2026-09-22) — 위 BOT_BASE 주석 참조.
+    ⚠ 표는 한 바이트다. 255 를 넘으면 안 된다(하단 배치 첫 시도 때 실제로 272 가 나왔다).
     """
-    solo = rules.get("solo_from", 1e9)
-    first_t = {}
-    for t, p in events:
-        first_t.setdefault(p, t)
     out = []
     for i, rows in enumerate(pages):
-        n = len(rows)
-        if n == 0 or first_t.get(i, 0) < solo:
-            out.append(64 + TOP)
-        else:  # 줄 수와 무관하게 첫 줄을 늘 같은 자리에
+        n, lay = len(rows), page_lay[i]
+        bh = LINE_H * (n - 1) + GLYPH_ROWS if n else 0
+        if n and lay == "bottom":
             # ⚠ 4줄이 되면 그림을 너무 가린다. 대본에서 어절 경계로 나눠 줄인다
-            #   (⚠ 기계적으로 반씩 가르면 꼬리가 어색해지고, 2줄까지 줄이면 뒷토막이
-            #    너무 빨리 사라진다 — 마스터 실기 2026-09-22. 3줄까지가 타협점이다).
-            assert n <= SUB_MAX_ROWS, (i, n, "그림 구간 자막이 너무 길다 — script 에서 나눠라")
-            out.append(64 + SUB_TOP)
-    # 지켜야 할 건 둘이다 — 표가 한 바이트에 들어가는가, 글이 **가장 짧은 화면**에 들어가는가.
-    # 상단 고정이라 기준이 화면 높이와 무관해졌지만, 별하늘의 8줄 더미는 여전히 길다.
+            #   (기계적으로 반씩 가르면 꼬리가 어색하고, 2줄까지 줄이면 뒷토막이 너무 빨리
+            #    사라진다 — 마스터 실기 2026-09-22. 3줄까지가 타협점이다).
+            assert n <= SUB_MAX_ROWS, (i, n, "하단 자막이 너무 길다 — script 에서 나눠라")
+            out.append(BOT_BASE)
+        elif n and lay == "middle":
+            out.append(64 + 120 - bh // 2)  # 그림 중심의 프레임 좌표는 늘 135
+        else:
+            out.append(64 + TOP)
     for i, (rows, y) in enumerate(zip(pages, out)):
-        assert 0 <= y < 256, (i, y, "page_y 가 한 바이트를 넘는다 — SUB_TOP 을 낮춰라")
-        if rows:
-            bot = y - 64 + LINE_H * (len(rows) - 1) + GLYPH_ROWS
-            limit = H if y - 64 == TOP and len(rows) > SUB_MAX_ROWS else SHORTEST_SCREEN
-            assert bot <= limit, (i, len(rows), y, bot, limit)
+        assert 0 <= y < 256, (i, y, "page_y 가 한 바이트를 넘는다")
+        if not rows:
+            continue
+        bh = LINE_H * (len(rows) - 1) + GLYPH_ROWS
+        # 가장 짧은 화면에서도 글이 화면 안에 들어가는가 — 모드마다 기준이 다르다.
+        top = (y - 64) - (240 - SHORTEST_SCREEN) // 2
+        assert top >= 0, (i, top, "자막이 화면 위로 넘친다")
+        assert top + bh <= SHORTEST_SCREEN, (i, len(rows), y, top + bh, SHORTEST_SCREEN)
     return out
 
 
@@ -423,7 +454,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
         ri.op("JSR", "abs", 0xE009)  # CD_READ — 모듈 자신의 적재 템플릿($408D)과 같은 규약(_dh=6, _bl=뱅크)
         ri.op("CMP", "imm", 0)
         ri.op("BNE", "rel", f"rd_{bank:02X}")
-    for v in (V_FRAME, V_FRAME + 1, V_EVIDX, V_PAGE, V_SCENE, V_RESTORED, V_SATDIRTY, V_HIDING):
+    for v in (V_FRAME, V_FRAME + 1, V_EVIDX, V_PAGE, V_SCENE, V_RESTORED, V_SATDIRTY, V_HIDING, V_YADJ):
         ri.op("STZ", "abs", v)
     ri.op("LDA", "imm", 1)
     ri.op("STA", "abs", V_DIRTY)
@@ -584,6 +615,29 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("STZ", "abs", 0x0404)
     a.op("STZ", "abs", 0x0405)
     a.op("CLI")
+    # 3.5 화면 높이 보정(🔴 마스터 폰 실측 2026-09-22). 게임은 그림을 프레임 한가운데에
+    #     세로로 맞추므로(VDS + 높이/2 = 135), 짧은 그림일수록 표시 시작줄이 내려간다.
+    #     스프라이트 Y 는 그 시작줄 기준이라 자막도 같이 내려가 보인다 — 그만큼 끌어올린다.
+    #     ⚠ 값이 바뀌면 SAT 를 다시 써야 하므로 **장면 전환처럼** 전부 다시 그리게 만든다.
+    a.op("LDA", "imm", 240)
+    a.op("SEC")
+    a.op("SBC", "abs", GAME_H)
+    a.op("BCS", "rel", "ya_ok")
+    a.op("CLA")  # 높이가 240 을 넘으면(있을 리 없지만) 보정 없음
+    a.label("ya_ok")
+    a.op("LSR")
+    a.op("CMP", "imm", 33)
+    a.op("BCC", "rel", "ya_ok2")
+    a.op("CLA")  # 말이 안 되는 값이면 보정 없음 — 자막을 화면 밖으로 날리지 않는다
+    a.label("ya_ok2")
+    a.op("CMP", "abs", V_YADJ)
+    a.op("BEQ", "rel", "ya_same")
+    a.op("STA", "abs", V_YADJ)
+    a.op("LDA", "imm", 0xFF)
+    a.op("STA", "abs", V_LASTPAGE)  # 건너뛰기 판정 리셋 — 전 슬롯의 SAT 를 다시 쓴다
+    a.op("LDA", "imm", 1)
+    a.op("STA", "abs", V_DIRTY)
+    a.label("ya_same")
     # 4. 그리기 게이트. 되돌린 상태(그림 로드 중)거나 이 장면의 quiet 을 지났으면 안 그린다 — 게임이 히트 전에
     #    다음 그림 타일을 VRAM 에 쓰기 시작하므로 그 뒤에 우리가 쓰면 그림이 깨진다(실측 2026-09-20). 서명 자가복구는
     #    같은 이유로 뺐다(덮인 걸 되그리면 곧 다음 그림을 망친다). 사건은 계속 쌓이고 switch 때 한 번에 그린다.
@@ -917,9 +971,15 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     # sat_hide / sat_show: 그림자 SAT_SHADOW[s] 를 쓴다(VRAM 은 sat_flush 가). s = Z_T3.
     #   y = 64+TOP+36*pair, x = 32+xbase+32k, 패턴 = chunk*8, 속성 SPR_ATTR
     a.label("sat_hide")
+    # 🔴 **항목 8바이트를 통째로 지운다**(2026-09-22). 종전엔 y 2바이트만 0 으로 만들어
+    # x·패턴·속성에 **옛 장면 값이 그대로 남아** 있었다(실측: 세리오스에서 숨은 슬롯이
+    # 청크 49~61·88·108~110 과 옛 x 를 들고 있었다). 그 상태에서 SAT 갱신과 하드웨어의
+    # SATB DMA 가 겹치면 **엉뚱한 패턴이 엉뚱한 자리에 블록으로 뜬다** — 마스터가 계속
+    # 보고한 「세리오스 얼굴 깨짐」의 모양과 자리가 정확히 그것이다. mednafen 은 이
+    # 타이밍을 안 봐서 못 잡았다(09-21 에 겪은 부류와 같다).
     a.op("JSR", "abs", "sat_idx")
-    a.op("STZ", "absx", SAT_SHADOW)
-    a.op("STZ", "absx", SAT_SHADOW + 1)  # y=0 → 화면 밖
+    for off in range(8):
+        a.op("STZ", "absx", SAT_SHADOW + off)
     a.op("RTS")
     a.label("sat_show")
     a.op("JSR", "abs", "sat_idx")
@@ -938,12 +998,23 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     # 36*pair 를 더하면 255 를 넘을 수 있어 올림을 상위 바이트로 넘긴다.
     a.op("LDY", "abs", V_PAGE)
     a.op("ADC", "absy", "page_y")
-    a.op("STA", "absx", SAT_SHADOW)
     # 🔴 Y 는 10비트다 — 상위 바이트를 0 으로 지우면 Y ≤ 255, 즉 화면 y ≤ 191 까지밖에 못 내린다.
     # 지금은 상단 고정이라 안 닿지만, 올림은 제대로 넘겨 둔다(하단 배치를 시도했을 때 물렸다).
     # CLA 는 플래그를 안 건드리므로 바로 밑의 x 상위 바이트 계산과 같은 수법이다.
+    a.op("STA", "zp", Z_T1)
     a.op("CLA")
     a.op("ADC", "imm", 0)
+    a.op("STA", "zp", Z_T0)
+    # 🔴 그리고 **화면 높이 보정**을 뺀다(V_YADJ, main 이 프레임마다 갱신). 안 빼면 짧은
+    # 그림에서 자막이 화면 아래로 밀려 보인다 — 장면마다 PCE 4줄씩(마스터 폰 실측).
+    # ⚠ Z_T0·Z_T1 은 바로 밑 x 계산에서 다시 쓰이니 여기서 써도 된다. Z_T2 는 **안 된다**
+    #   (slot_loop 가 PAGE*8 을 거기 담아 두고 sat_show 뒤에도 쓴다).
+    a.op("LDA", "zp", Z_T1)
+    a.op("SEC")
+    a.op("SBC", "abs", V_YADJ)
+    a.op("STA", "absx", SAT_SHADOW)
+    a.op("LDA", "zp", Z_T0)
+    a.op("SBC", "imm", 0)
     a.op("STA", "absx", SAT_SHADOW + 1)
     a.op("LDA", "abs", V_TMP_K)  # x = 32 + xbase + 32k
     for _ in range(5):
@@ -1280,6 +1351,7 @@ V_TMP_K, V_TMP_PAIR, V_TMP_LA, V_TMP_LB, V_TMP_C, V_TMP_CHUNK, V_TMP_VLO, V_TMP_
 )
 V_TMP_LINE, V_TMP_CELL, V_TMP_SHIFT, V_TMP_SIGWANT, V_TMP_NUSED = 0x2368, 0x2369, 0x236A, 0x236B, 0x236C
 V_RESTORED, V_TMP_I, V_TMP_SLOT, V_SATDIRTY, V_HIDING, V_LASTPAGE = 0x236D, 0x236E, 0x236F, 0x2370, 0x2371, 0x2372  # 되돌림 상태 · 백업 루프 인덱스 · SAT 그림자 변경 · 지우기 선행 중 · 마지막으로 실제로 그린 페이지(0xFF=없음)
+V_YADJ = 0x2373  # 화면 높이 보정 = (240 − GAME_H)/2. main 이 프레임마다 갱신, sat_show 가 뺀다
 
 
 def _imm_label_fix(a: Asm):
@@ -1348,10 +1420,10 @@ def plan_scenes(lines, pages, events, scenes, timing):
 def build_all():
     sub = json.loads(SUBS.read_text(encoding="utf-8"))
     sc = json.loads(SCENES.read_text(encoding="utf-8"))["scenes"]
-    lines, pages, events = timeline(sub["lines"], sub["rules"])
+    lines, pages, events, page_lay = timeline(sub["lines"], sub["rules"])
     sc = plan_scenes(lines, pages, events, sc, sub["timing"])
     banks, table = pack_strips(lines)
-    py = page_y_table(pages, events, sub["rules"])
+    py = page_y_table(pages, page_lay)
     code = runtime(table, pages, events, sc, sub["timing"], py)
     return sub, lines, pages, events, banks, table, code
 
