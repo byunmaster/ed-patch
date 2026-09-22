@@ -268,6 +268,20 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
                 b"\xa9" + kr[:1] + b"\x8d\x33\x85\xa9" + kr[1:],
             ),
         )
+    if want("cast"):
+        # 6. 「게임 시작」 뒤 성우 크레딧의 표제 `声優出演` → `ＣＡＳＴ`(마스터 확정 2026-09-23 —
+        #    이름 13개는 실존 성우라 원문 유지, 표제만). 크레딧 모듈(rel 514)이 이 SJIS 평문
+        #    (rel 517)을 BIOS 글꼴(EX_GETFNT)로 직접 그리므로 **같은 길이의 전각 영문**으로 바꾸면
+        #    코드 수정 없이 같은 자리에 나온다. 뒤의 `81 40 00`(전각 공백·종단)은 그대로 둔다.
+        p.append(
+            (
+                "cast title 声優出演→ＣＡＳＴ",
+                517,
+                0x0420,
+                "声優出演".encode("sjis"),
+                "ＣＡＳＴ".encode("sjis"),
+            )
+        )
     if want("hook"):
         # 4. EX_GETFNT 호출부(본 프로그램 4곳) → $3B00
         tgt = hook.HOOK_ADDR.to_bytes(2, "little")
