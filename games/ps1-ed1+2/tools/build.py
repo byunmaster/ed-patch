@@ -294,6 +294,9 @@ def main():
     _phg.apply()
     # 058ⓑ ④ — 글리프가 구워진 뒤에야 반각 문자열이 화면에 정상으로 나간다.
     _psu.apply_halfwidth_hud_slots()
+    # 073 — 같은 이유로 글리프가 구워진 뒤에. `patch_scn_headers`(위, 사피아호수 전각)가
+    # 먼저 써 둔 자리를 반각 11조각으로 덮는다.
+    _psu.apply_sapia_lake_hud()
     # 038 — 세레 저택 NPC 슬롯 설치 인자 한 바이트(원판 결함, RE 확정 2026-09-15).
     import patch_npc_zeni_slot as _pnz
 
@@ -303,6 +306,10 @@ def main():
     import patch_npc_gale3_sprite as _png3
 
     _png3.apply()
+    # 076 — 몽거 전투 종료 때 필드 그림 재적재 플래그(원판의 과잉 보수값) 1→0. ED2.EXE 한 바이트.
+    import patch_mongo_field_reload as _pmfr
+
+    _pmfr.apply()
     # 065 — ED2SCN10·ED2SCN13 안 경로 라벨 사본(058ⓑ 와 같은 "사본이 둘" 부류).
     import patch_scn_route_labels as _psrl
 

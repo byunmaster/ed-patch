@@ -1505,5 +1505,103 @@ def test_ed2mon_dir_entry_updates_survive_back_to_back():
             L.IMG, L.BIN_DIR_LBA = old_img, old_dir
 
 
+# ── 키 입력 뒤 같은 줄 이어 쓰기(`scn_waits`) ────────────────────────────────
+def test_sprintf_trailing_arg_is_read_through_delay_slot_and_tail_call():
+    """끝 `%c` 인자(9=이어 쓰기)를 코드에서 읽는다 — 지연 슬롯·꼬리 호출 둘 다.
+
+    🔴 `%c` 로 끝났다고 창이 닫히는 게 아니다. 인자 9 면 키 입력 뒤 같은 줄에 이어 쓴다
+    (ED2SCN8 jp188→189, 마스터 QA 2026-09-24). 인자를 못 읽으면 이 부류가 통째로 샌다.
+    """
+    import scn_waits as W
+
+    base, spr = 0x80165000, W.SPRINTF["ED2"]
+
+    def lui(r, v):
+        return (0x0F << 26) | (r << 16) | (v & 0xFFFF)
+
+    def addiu(rt, rs, v):
+        return (0x09 << 26) | (rs << 21) | (rt << 16) | (v & 0xFFFF)
+
+    def jal(t):
+        return (3 << 26) | ((t >> 2) & 0x3FFFFFF)
+
+    def j(t):
+        return (2 << 26) | ((t >> 2) & 0x3FFFFFF)
+
+    def sw(rt, off):
+        return (0x2B << 26) | (29 << 21) | (rt << 16) | (off & 0xFFFF)
+
+    blk = base + 0x100
+    hi, lo = (blk >> 16) + (1 if blk & 0x8000 else 0), blk & 0xFFFF
+    code = [
+        # ① 직접 호출 — 인자가 지연 슬롯에서 채워진다
+        lui(5, hi),
+        addiu(5, 5, lo),
+        jal(spr),
+        addiu(6, 0, 9),
+        # ② 꼬리 호출 — 인자를 스택에 두고 공용 호출 자리로 뛴다
+        addiu(2, 0, 9),
+        sw(2, 0x10),
+        lui(5, hi),
+        j(base + 4 * 12),
+        addiu(5, 5, lo),
+        0,
+        0,
+        0,
+        jal(spr),
+        0,
+    ]
+    data = b"".join(w.to_bytes(4, "little") for w in code)
+    calls = W._calls("ED2SCNX", base, {0x100: {}}, data)
+    assert [c[1] for c in calls if c[0] == spr][:2] == [0x100, 0x100], calls
+    assert calls[0][2][0] == 9, calls[0]
+    assert any(c[2][2] == 9 for c in calls[1:]), calls
+
+
+def test_period_after_tilde_is_dropped():
+    """`~.` 는 `~` 로 — 물결이 이미 말끝이다(마스터 QA 2026-09-24). 말줄임은 남긴다."""
+    import re
+
+    src = open(R.__file__, encoding="utf-8").read()
+    assert 're.sub(r"~\\.(?!\\.)", "~", t)' in src
+    rule = re.compile(r"~\.(?!\.)")
+    assert rule.sub("~", "매번 고맙수~.") == "매번 고맙수~"
+    assert rule.sub("~", "아~ 심심해~. 벌써") == "아~ 심심해~ 벌써"
+    assert rule.sub("~", "음~...") == "음~..."
+
+
+def test_ed2_battle_restores_dropped_tail_newline():
+    """원문 `…\\n%c` 의 꼬리 개행을 번역이 흘리면 되살린다(082). 중앙정렬 여백 줄은 둔다."""
+    import patch_ed2_battle as PB
+
+    jp = "%c%s%c\nイシュタが どうしたんだ？\n%c"
+    assert PB.restore_tail_nl(jp, "%c%s%c\n이슈타가 어떻게 된 거야?%c").endswith("거야?\n%c")
+    assert PB.restore_tail_nl(jp, "a\n%c") == "a\n%c"
+    title = " 영웅들의 전설 2\n               %c"
+    assert PB.restore_tail_nl("\n  英雄達の伝説２\n%c", title) == title
+
+
+def test_ed2mon_halfwidth_only_names_are_scanned():
+    """반각 가나로만 된 몬스터 이름도 줍는다(089 — `ﾌﾞﾗﾑﾅ ｸｲｰﾝ` 이 일본어로 떴다)."""
+    import patch_ed2_monsters as PM
+
+    buf = b"\x00" + "ﾌﾞﾗﾑﾅ ｸｲｰﾝ".encode("cp932") + b"\x00\x00" + "護衛Ａ".encode("cp932") + b"\x00"
+    assert [s for _o, s in PM._halfwidth_strings(buf, 0, len(buf))] == ["ﾌﾞﾗﾑﾅ ｸｲｰﾝ"]
+    assert PM._canon_key("ﾌﾞﾗﾑﾅ ｸｲｰﾝ") == "ブラムナクイーン"
+    assert PM._canon_key("ｻｲﾚﾝﾄ･ﾛｰﾄﾞ") == "サイレント・ロード"
+    assert PM._canon_key("ウｲーバー") == "ウｲーバー"  # 섞인 꼴로 등재된 것은 원꼴이 이긴다
+
+
+def test_ed2mon_tail_append_keeps_last_terminator():
+    """꼬리에 이어 붙일 때 앞 문자열의 종단 널을 덮지 않는다(나무인간+대사가 한 줄로 붙었다)."""
+    from patch_ed2_monster_lines import used_end
+
+    name8 = b"\x8a\x49\x8d\x4a\x90\xcc\x88\xa1"  # 8B — 4바이트 경계에 딱 맞게 끝난다
+    buf = b"\x01\x02\x03\x04" + name8 + b"\x00" * 12
+    end = used_end(buf)
+    assert end % 4 == 0 and buf[end - 1] == 0 and end > 4 + len(name8)
+    assert used_end(b"\x00" * 8) == 0
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

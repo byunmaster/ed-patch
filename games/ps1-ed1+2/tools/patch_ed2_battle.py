@@ -96,6 +96,22 @@ def strings(buf):
     return out
 
 
+def restore_tail_nl(jp, kr):
+    """원문이 `…\n%c` 로 끝나면 우리 문안에도 그 꼬리 개행을 되살린다.
+
+    끝 `%c` 는 코드가 넘기는 제어 문자라 인자 `9`(키 입력 뒤 **커서 자리에서 이어 씀**)면
+    다음 문자열이 같은 줄에 붙는다 — 원작은 새 줄에서 잇고 싶을 때 이 꼬리 개행을 넣어 뒀다.
+    번역에서 그걸 흘리면 `이슈타가 어떻게 된 거야?모두라니?` 처럼 붙는다(마스터 QA 082,
+    2026-09-24). SCN 쪽 `reinsert_kr_pilot.restore_tail_nl` 과 같은 구실이다.
+    ⚠ 꼬리가 **공백만 있는 줄**이면 건드리지 않는다 — 타이틀 카드의 중앙정렬 여백이다.
+    """
+    if not (jp.endswith("\n%c") and kr.endswith("%c")) or kr.endswith("\n%c"):
+        return kr
+    if kr[:-2].rstrip(" ").endswith("\n"):
+        return kr
+    return kr[:-2] + "\n%c"
+
+
 def plan():
     """([(오프셋, JP, KR, 슬롯)], 넘치는 것, 번역 없는 것)."""
     buf = extract(ED2_LBA, ED2_SIZE)
@@ -118,6 +134,7 @@ def plan():
         if kr is None:
             none.append((fo, jp))
             continue
+        kr = restore_tail_nl(jp, kr)
         end = buf.find(b"\x00", fo)
         nxt = end
         while nxt < len(buf) and buf[nxt] == 0:

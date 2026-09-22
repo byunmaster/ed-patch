@@ -45,6 +45,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R
+import scn_waits
 from patch_sys_ui import SCN_FILES
 
 NOBREAK_SP = R.NOBREAK_SP
@@ -82,6 +83,7 @@ def scan(scenes=None):
     over = []  # 붙고 나서 폭을 넘는 줄
     lead = []  # 개행 뒤인데 선두 공백이 남은 블록
     indent = []  # 블록 **안**에서 개행 뒤 줄이 공백으로 시작
+    cont = []  # 키 입력 뒤 같은 줄에 이어 쓰는(`%c`←9) 블록인데 끝에 개행이 없다
     for scn, _l, _z in SCN_FILES:
         if scenes and scn not in scenes:
             continue
@@ -92,6 +94,16 @@ def scan(scenes=None):
             ]
         rows = {eid: k for eid, k, _j in pairs}
         jps = {eid: j for eid, _k, j in pairs}
+        # 🔴 **`%c` 로 끝난다고 창이 닫히는 게 아니다**(2026-09-24). 끝 `%c` 인자가 `9` 면
+        #    키 입력 뒤 **같은 줄에서 이어 쓴다** — 아래 `raw.endswith("%c")` 건너뛰기가 이
+        #    부류를 통째로 가려, 게이트가 초록인 동안 화면에선 붙고(`그렇습니까…그럼`)
+        #    꺾였다(첫칸공백·빈 줄). 재삽입기가 개행을 넣으니 여기선 **들어갔는지**만 본다.
+        for eid in sorted(scn_waits.same_line_waits(scn)):
+            raw = rows.get(eid) or ""
+            if raw and not raw.endswith(("\n%c", "\n")):
+                tail = raw[:-2].split("\n")[-1] if raw.endswith("%c") else raw.split("\n")[-1]
+                if abs(_w(tail) - R.FRAME_SLOTS) >= 1e-9:  # 꽉 찬 줄은 엔진이 넘긴다
+                    cont.append((scn, eid, tail[-12:]))
         for eid, raw in rows.items():
             # ⚠ **블록 안**의 선두 공백은 경계와 별개다. 이름창(`%c이름%c`) 뒤 개행에
             # 붙임 공백이 남으면 본문 첫 줄만 한 칸 들여쓰기돼 보인다 — 원문이 이름과
@@ -107,7 +119,7 @@ def scan(scenes=None):
             # 앞 블록이 **개행으로** 끝나면 뒷 블록은 새 줄에서 시작한다 — 그 자리의 선두
             # 공백은 줄이 들여쓰기돼 보인다(` 현자답지 못한 짓이라고`, 유저 QA 2026-08-12).
             # 경계에 공백을 넣어 뒀다가 나중에 꼬리 개행(`trail_nl`)이 붙으면 이렇게 남는다.
-            if raw.endswith("\n"):
+            if raw.endswith(("\n", "\n%c")):
                 if nxt[:1] in (" ", NOBREAK_SP):
                     lead.append((scn, eid + 1, nxt.split("\n")[0][:16]))
                 continue
@@ -146,13 +158,15 @@ def scan(scenes=None):
         print(f"  ⚠ {scn} jp{eid}→{eid + 1} 이은 줄이 {w}슬롯(>{WRAP}): …{t!r} + {h!r}")
     for scn, eid, h in lead:
         print(f"  ⚠ {scn} jp{eid} 개행 뒤인데 선두 공백이 남았다: {h!r}")
+    for scn, eid, t in cont:
+        print(f"  ⚠ {scn} jp{eid} 키 입력 뒤 같은 줄에 이어 쓰는데 끝에 개행이 없다: …{t!r}")
     for scn, eid, i, h in indent:
         print(f"  ⚠ {scn} jp{eid} {i}번째 줄이 공백으로 시작한다(들여쓰기로 보인다): {h!r}")
     if plate:
         print(f"  ℹ 낱말 플레이트라 이어 그려지지 않는 경계 {len(plate)}곳 — 제외했다")
-    bad = len(join) + len(over) + len(lead) + len(indent)
+    bad = len(join) + len(over) + len(lead) + len(indent) + len(cont)
     print(
-        f"\n{'✅ 블록 경계 이상 없음' if not bad else f'⚠ 붙음 {len(join)} · 넘침 {len(over)} · 선두 공백 {len(lead)} · 들여쓰기 {len(indent)}'}"
+        f"\n{'✅ 블록 경계 이상 없음' if not bad else f'⚠ 붙음 {len(join)} · 넘침 {len(over)} · 선두 공백 {len(lead)} · 들여쓰기 {len(indent)} · 이어 쓰기 개행 누락 {len(cont)}'}"
     )
     return bad
 

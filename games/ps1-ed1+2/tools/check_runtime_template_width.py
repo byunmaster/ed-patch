@@ -31,7 +31,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.abspath(__file__).rsplit("/games/", 1)[0] + "/shared")
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import hangul_map as H
 import patch_ed2_sys as PS
 import patch_items as PI
 import patch_sys_ui as PU
@@ -52,6 +51,13 @@ JOSA_PAIR = re.compile(r"(은|이|을)\((는|가|를)\)")
 # 줄 수(6줄, 넘치면 스크롤— 배열 밖으로 안 나가 안전)와는 **완전히 다른 축**이다.
 BYTE_LIMIT = 128
 AUTO_NEWLINE_RESERVE = 8  # prewrap 이 추가로 끼워 넣을 수 있는 개행 수의 상한
+
+# 폭 초과를 **실패가 아니라 보고로** 내리는 이름 — 마스터 판정(2026-09-25, qa2 089):
+# 「몬스터명은 전투에서만 쓰이고 전투 문구는 로그성이라 개행돼도 상관없다」.
+# 드러스트고스트(7음절, 공용 용어집 표기)는 6음절+접미에 맞춰 다듬은 틀 74조합에서 +2반각
+# 넘친다 — 이름을 줄이는 대신 엔진 prewrap 에 맡긴다. ⚠ **바이트 예산(`check_byte_budget`)은
+# 그대로 본다** — 그쪽은 보기가 아니라 소프트락(구조)이라 예외가 없다.
+WIDTH_EXEMPT_NAMES = {"드러스트고스트"}
 
 
 def _enc_len(s):
@@ -235,7 +241,9 @@ def check_byte_budget(*, strict=True, verbose=False):
             blen = _enc_len(filled) + AUTO_NEWLINE_RESERVE + 1  # +1 널 종단
             if blen > BYTE_LIMIT:
                 over.append((src, t, name, name_src, blen))
-    print(f"  런타임 템플릿 {len(tmpls)}개 — 메시지박스 버퍼({BYTE_LIMIT}B 권장) 초과 {len(over)}건")
+    print(
+        f"  런타임 템플릿 {len(tmpls)}개 — 메시지박스 버퍼({BYTE_LIMIT}B 권장) 초과 {len(over)}건"
+    )
     if verbose:
         for src, t, name, name_src, blen in over:
             print(f"    [{src}] {t!r} + {name!r}({name_src}) = {blen}B")
@@ -265,7 +273,7 @@ def check_realistic(*, top_n=20, verbose=False, strict=False):
     체감이 가장 큰 자리다(긴 이름 × 긴 문장).
     """
     tmpls = templates()
-    over = []
+    over, exempt = [], []
     for src, t in tmpls:
         if t in NUMERIC_S_TEMPLATES:
             continue
@@ -279,8 +287,14 @@ def check_realistic(*, top_n=20, verbose=False, strict=False):
             # 관리자 지적 — 고치는 법과 재는 법이 정면으로 부딪히는 자리였다.
             w = max(_width(line) for line in folded.split("\n"))
             if w > FRAME_HALFWIDTH:
-                over.append((src, t, name, name_src, w, w - FRAME_HALFWIDTH))
+                row = (src, t, name, name_src, w, w - FRAME_HALFWIDTH)
+                exempt_rows = name.rstrip("ABCDEFGHIJ′”") in WIDTH_EXEMPT_NAMES
+                (exempt if exempt_rows else over).append(row)
     over.sort(key=lambda r: -r[5])
+    if exempt:
+        print(
+            f"  ℹ 폭 초과 허용 이름({', '.join(sorted(WIDTH_EXEMPT_NAMES))}) {len(exempt)}조합 — 실패로 안 센다"
+        )
     print(
         f"  실제 분모(편 분리·파티 4인 고정·무접미+A 두 경우): 템플릿 {len(tmpls)}개, "
         f"초과 조합 {len(over)}건 (이전 이론치는 check() 참조)"

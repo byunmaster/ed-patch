@@ -288,6 +288,19 @@ def plan():
     return fit, move, over, none
 
 
+def used_end(buf):
+    """꼬리를 이어 붙일 자리 — 「실제 쓰인 끝」 **+ 마지막 문자열의 널 하나**, 4바이트 정렬.
+
+    🔴 **널을 안 남기면 앞 문자열의 종단을 덮는다**(2026-09-25 실측, 목인→나무인간). 마지막
+    비영 바이트 바로 뒤를 끝으로 잡으면, 앞서 꼬리로 옮긴 이름이 4바이트 경계에 딱 맞게 끝날 때
+    (`나무인간`=8B) 그 뒤 종단 널이 「빈 공간」으로 보여 다음 재배치(대사)가 그 자리부터 쓴다 —
+    `나무인간` + `아시카사고와 익룡이 나타났다.` 가 한 문자열로 붙었다. 되읽기 게이트가 「대사
+    못 찾음」(널 경계 앞이 널이 아님)으로 잡았다.
+    """
+    last = max((k for k in range(len(buf) - 1, -1, -1) if buf[k]), default=-1)
+    return (min(last + 2, len(buf)) + 3) & ~3 if last >= 0 else 0
+
+
 def _relocate(buf, orig, moves):
     """`moves` 를 꼬리로 빼고 오버레이 참조를 갱신한다. 반환: (새 buf, 옮긴 수).
 
@@ -401,8 +414,7 @@ def main():
             slots.append((off, off + slot))
         # "실제 쓰인 끝" 뒤에 붙인다 — cap 그대로 넘기면 이미 채워진 꼬리(다른 패처 것
         # 포함) 뒤에 또 이어 붙여 섹터를 넘긴다.
-        used = max((k for k in range(len(buf) - 1, -1, -1) if buf[k]), default=-1) + 1
-        used = (used + 3) & ~3
+        used = used_end(buf)
         new, touched = _relocate(bytearray(buf[:used]), orig, mv_lba.get(lba, ()))
         moved += len(mv_lba.get(lba, ()))
         content_len = len(new)  # 논리 길이 — 섹터 패딩(cap) 이전, 디렉터리 크기는 이걸 쓴다
@@ -552,8 +564,7 @@ def _apply_sha_table():
                 continue
             # ⚠ **꼬리는 "실제 쓰인 끝" 뒤에 붙인다** — cap 그대로 넘기면 `_relocate` 가
             # 패딩 전부를 "이미 쓰인 것"으로 보고 그 뒤에 또 이어 붙여 섹터를 넘긴다.
-            used = max((k for k in range(len(data) - 1, -1, -1) if data[k]), default=-1) + 1
-            used = (used + 3) & ~3
+            used = used_end(data)
             new = bytes(data[:used])
             if moves:
                 new, mv_touched = _relocate(bytearray(new), orig, moves)

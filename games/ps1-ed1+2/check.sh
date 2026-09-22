@@ -37,7 +37,7 @@ fail=0
 # 🔴 2026-09-14: check_window_frame 추가(040) — 온점 매달기가 창의 마지막 줄을 14.5슬롯
 #   까지 늘렸는데 그 창이 이미 줄 수 리밋을 꽉 채운 자리(엔진이 부호만 다음 줄로 꺾어
 #   창 틀이 갉힌다). 계측을 스크래치로 날리면 다음 사람이 또 잰다 — 늘 도는 축으로 남긴다.
-for t in check_tail_cut check_terms check_spellings check_forbidden check_proper_nouns check_battle_wrap check_punct check_name_echo check_onomatopoeia check_pointer_tables check_iso_layout check_readback check_movie_coverage check_card_centering check_window_nl check_log_register check_register_vs_jp check_jp_left check_scn_jp_left check_shop_verbs check_variants check_leader_variants check_window_frame; do
+for t in check_tail_cut check_terms check_spellings check_forbidden check_proper_nouns check_battle_wrap check_battle_grid_wrap check_punct check_name_echo check_onomatopoeia check_pointer_tables check_iso_layout check_readback check_movie_coverage check_card_centering check_window_nl check_log_register check_register_vs_jp check_jp_left check_scn_jp_left check_shop_verbs check_variants check_leader_variants check_window_frame; do
   out=$("$PY" "$T/$t.py" 2>&1) || fail=1
   echo "$out" | tail -3 | sed 's/^/     /'
 done

@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
@@ -41,6 +42,7 @@ from patch_ed2_monster_lines import _relocate as _mon_lines_relocate
 from patch_ed2_monster_lines import _update_dir_size as _mon_lines_update_dir_size
 from patch_ed2_monster_lines import overlay_refs as _mon_overlay_refs
 from patch_ed2_monster_lines import trace_lba as _trace_lba
+from patch_ed2_monster_lines import used_end as _mon_lines_used_end
 
 assert _MON_LINES_BASE == 0x8014A000  # 이름 표·대사 표가 같은 오버레이 베이스를 본다는 전제
 
@@ -164,6 +166,46 @@ def _canon_jp():
     return _CANON_JP
 
 
+# 🔴 **반각 가타카나만으로 된 이름**(2026-09-25, 마스터 QA 089 — `ﾌﾞﾗﾑﾅ ｸｲｰﾝ` 이 전투 화면에
+# 일본어로 떴다). `jp_strings` 의 `JP` 는 전각 가나·한자만 보므로 이 부류는 **스캐너에 아예 안
+# 잡혀** `none`(정본에 없음)에도 안 뜨고 되읽기 게이트의 분모에도 없었다 — 조용히 샜다.
+# `JP` 자체를 넓히면 이진 바이트(0xA6~0xDF 는 흔하다)가 반각 가나로 읽혀 `ｯバレート` 같은
+# 유령 접두가 생긴다(실측: 바레트 1곳이 깨졌다). 그래서 **따로** 훑어 `_recover_embedded` 의
+# 정본 완전일치 안전장치에만 태운다. 실측 5곳(ED2MON4 드러스트고스트 A·B · 브람나퀸 ·
+# ED2MON5 사일런트로드 A·B).
+_HALFWIDTH_NAME = re.compile(r"[ｦ-ﾟ][ｦ-ﾟ ･]*[Ａ-Ｊ]?")
+
+
+def _canon_key(stem):
+    """정본 조회 키 — 반각 가나 이름은 전각으로 펴고 공백을 뺀다(`ﾌﾞﾗﾑﾅ ｸｲｰﾝ` →
+    `ブラムナクイーン`). 정본·공용 용어집은 전각 한 벌로 둔다(표기 갈림 방지)."""
+    # ⚠ 정본에 **섞인 꼴 그대로** 등재된 이름이 있다(`ウｲーバー`) — 원꼴이 먼저 이긴다.
+    if stem in _canon_jp() or not any("ｦ" <= c <= "ﾟ" for c in stem):
+        return stem
+    return unicodedata.normalize("NFKC", stem).replace(" ", "")
+
+
+def _halfwidth_strings(buf, start, end):
+    """[start, end) 의 널 종단 문자열 중 **반각 가나로만 된** 것 — (오프셋, 문자열)."""
+    out = []
+    i = start
+    while i < end - 1:
+        if buf[i] == 0:
+            i += 1
+            continue
+        j = buf.find(b"\x00", i)
+        if j < 0 or j > end:
+            break
+        try:
+            s = buf[i:j].decode("cp932")
+        except UnicodeDecodeError:
+            s = ""
+        if 3 <= len(s) and _HALFWIDTH_NAME.fullmatch(s):
+            out.append((i, s))
+        i = j + 1
+    return out
+
+
 def _recover_embedded(buf, start, end, covered):
     """대사 틈에 **단독으로 박힌** 이름 — 유일보스는 [이름들] 머리 없이 대사 중간에 이름이
     낀다(2026-09-13, `037` プルダーム 실측: `はてれている。` 다음에 `プルダーム` 가 그대로
@@ -176,12 +218,12 @@ def _recover_embedded(buf, start, end, covered):
     """
     canon = _canon_jp()
     out = []
-    for off, text in jp_strings(buf, start, end):
+    for off, text in jp_strings(buf, start, end) + _halfwidth_strings(buf, start, end):
         if any(o <= off < o + s for o, s in covered):
             continue
         sfx = SUFFIX.search(text)
         stem = text[: sfx.start()] if sfx else text
-        if stem not in canon:
+        if _canon_key(stem) not in canon:
             continue
         j = buf.find(b"\x00", off)
         nxt = j
@@ -268,7 +310,7 @@ def plan():
                 sfx = SUFFIX.search(jp)
                 stem = jp[: sfx.start()] if sfx else jp
                 tail = "".join(HALF.get(c, c) for c in (sfx.group() if sfx else ""))
-                kr = canon.get(stem)
+                kr = canon.get(_canon_key(stem))
                 if kr is None:
                     none.append((group, off, jp))
                     continue
@@ -516,8 +558,7 @@ def main():
             # ⚠ **"실제 쓰인 끝" 뒤에 붙인다** — cap 그대로 넘기면 `_relocate`가 널 패딩
             # 전부를 "이미 쓰인 것"으로 보고 그 뒤에 이어 붙여 섹터를 넘긴다
             # (patch_ed2_monster_lines._apply_sha_table 과 같은 관용, 2026-09-13 실측).
-            used = max((k for k in range(len(buf) - 1, -1, -1) if buf[k]), default=-1) + 1
-            used = (used + 3) & ~3
+            used = _mon_lines_used_end(buf)  # 마지막 문자열의 널 하나를 남긴다
             orig = bytes(extract(lba, size))  # overlay_refs 대조 기준(원본, 빌드 아님)
             new_buf, _touched = _mon_lines_relocate(bytes(buf[:used]), orig, moves)
             content_len = len(new_buf)  # 논리 길이 — 디렉터리 크기는 이걸 쓴다(cap 이 아니다)
