@@ -88,6 +88,8 @@ GLYPH_ROWS = 14  # 12px 글리프 + 테두리 → 14행(0~13), 셀 16행 중 14�
 # ── 디스크·메모리 자리 ────────────────────────────────────────────────────
 MODULE_REL = 322  # 타이틀 모듈. 모듈 +off ↔ rel 322 + off//2048 : off%2048, 논리 $4000+off (뱅크 0x68+)
 CDPLAY_OFF = 0x1AB1  # `JSR $E012`
+OPENING_ARGS = (0x46, 0x41)  # 오프닝 CD_PLAY 인자 $F8·$F9 (실측 2026-09-23) — init 의 트랙 게이트
+TITLE_JSR_OFF = 0x4905  # 타이틀 초기화의 `JSR $50AE`(20 AE 50) — 뱅크 0x6A = 모듈 +0x4000 창
 IRQ_JSR_ADDR = 0x44A5  # IRQ1 핸들러의 `JSR $E063` (모듈 +0x4A5, 뱅크 0x68 = $4000 창)
 LOOP_JSR_ADDR = 0x4039  # 메인 루프 마지막 `JSR $43F3` (+0x39)
 CODE_OFF = 0x4D40  # 뱅크 0x6A +0xD40 — 원판 0 인 13KB 자리의 머리. 논리 $8D40(MPR4=0x6A)
@@ -111,6 +113,14 @@ BACKUP_SLOTS = (
 )
 
 TRAMP_MAIN, TRAMP_IRQ = 0x2300, 0x2330  # 워크 RAM(오프닝 내내 0, 12덤프)
+# 🔴 타이틀 진입 트램펄린(2026-09-23). 타이틀 초기화 루틴의 `JSR $50AE`(BAT 32x32 설정, 논리
+# $6905 = 모듈 +0x4905)를 여기로 돌린다. 그 시점엔 MPR4 가 0x6B 라 우리 코드가 $8xxx 에 없다 —
+# 그래서 RAM 트램펄린이 MPR4 를 0x6A 로 바꿔 teardown 을 부른 뒤 원래 `CLX·CLY·$50AE` 로 잇는다.
+# 오프닝을 **스킵**하든 **끝까지 보든** 타이틀은 이 루틴으로 들어온다(스킵은 $6905 브레이크로 실측).
+TRAMP_TEAR = 0x233C  # $233C~$234F (20B) — TRAMP_IRQ(**12B**, $2330~$233B) 뒤, V_FRAME($2350) 앞
+# 🔴 2026-09-23 실측 사고: 처음 $233A 에 뒀다가 IRQ 트램펄린 꼬리 2B(`INC $2351` 상위·`RTS`)를
+#   덮어 **매 VBlank 마다 IRQ 가 teardown 트램펄린으로 흘러 `JMP $50AE`** → 스택 폭주·크래시.
+#   아래 runtime() 의 단언이 겹침을 빌드에서 막는다.
 RAM_INIT, RAM_INIT_MAX = 0x2380, 0xC0  # init 본체(BIOS CD_READ·CD_PLAY 호출) — $2380~$243F
 SAT_SHADOW = 0x2440  # 우리 SAT 항목 28개 그림자(28×8 = 224B, $2440~$251F) — 그리기는 여기에, VRAM 엔 flush 가 쓴다
 SAT_GAMETMP = 0x2540  # 게임 스프라이트 항목 옮길 때 임시(최대 24개 × 8 = 192B, $2540~$25FF)
@@ -183,6 +193,7 @@ hook.OPS.update(
         ("CMP", "izpy"): 0xD1,
         ("ROR", "imp"): 0x6A,
         ("ROL", "imp"): 0x2A,
+        ("CLX", "imp"): 0x82,
         ("AND", "abs"): 0x2D,
         ("EOR", "imm"): 0x49,
         ("BIT", "abs"): 0x2C,
@@ -416,9 +427,25 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a = Asm(CODE_ADDR)
     # ── init: JSR 로 들어온다(CD_PLAY 자리). A 에 CD_PLAY 결과를 그대로 돌려줘야 한다.
     a.label("init")
-    a.op("LDA", "abs", V_INIT)
+    # 🔴 **매번 전부 초기화한다** — V_INIT 가드를 없앴다(2026-09-23). 종전엔 두 번째 호출부터
+    # 곧장 CD_PLAY 로 갔는데, 타이틀에서 기다리면 도는 **어트랙트 재생**에서 자막이 안 나왔다
+    # (마스터 보고). 원인이 둘이다: ① V_FRAME 이 첫 재생 끝값에 멈춰 사건이 안 걸린다
+    # ② 타이틀이 모듈을 디스크에서 다시 적재하면서 **첫 재생 때 RAM 에 심은 IRQ/메인 훅이
+    # 지워진다**(실측: 재진입에서 V_FRAME 을 0 으로 되돌려도 그 뒤로 안 셌다).
+    # 스트립 적재(CD_READ 12섹터)·훅 설치·상태 리셋을 매번 해도 해가 없다 — 재생 **전**이라
+    # 되돌릴 상태가 없고, CD_PLAY 실패 뒤 게임이 재시도해도 같은 이유로 안전하다.
+    # 🔴 단, **오프닝 트랙일 때만**(2026-09-23). 타이틀 화면이 자기 BGM 도 이 CD_PLAY 자리로
+    # 틀어서, 가드를 없애자 타이틀 위에서 자막이 처음부터 다시 시작됐다(마스터 스킵 캡처의
+    # 「아주 먼 옛날…」). 게임이 $F8~$FF 에 깔아 둔 CD_PLAY 인자로 가른다 — emucap 실측:
+    #   오프닝(트랙18) 46 41 59 40 49 26 16 42 / 타이틀 BGM 00 6B 00 00 01 60 2E 2B
+    a.op("LDA", "zp", 0xF8)
+    a.op("CMP", "imm", OPENING_ARGS[0])
+    a.op("BNE", "rel", "init_skip")
+    a.op("LDA", "zp", 0xF9)
+    a.op("CMP", "imm", OPENING_ARGS[1])
     a.op("BEQ", "rel", "init_go")
-    a.op("JMP", "abs", 0xE012)  # 재시도 경로 — 이미 초기화됐다
+    a.label("init_skip")
+    a.op("JMP", "abs", 0xE012)  # 다른 트랙 — 우리 일이 아니다. 진짜 CD_PLAY 로
     a.label("init_go")
     a.tii(0, TRAMP_MAIN, 0)  # 자리만 — 아래서 실제 값으로 고친다
     tii_main_pos = len(a.out) - 7
@@ -426,6 +453,8 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     tii_irq_pos = len(a.out) - 7
     a.tii(0, RAM_INIT, 0)
     tii_init_pos = len(a.out) - 7
+    a.tii(0, TRAMP_TEAR, 0)
+    tii_tear_pos = len(a.out) - 7
     a.op("JMP", "abs", RAM_INIT)  # 되돌아갈 주소는 모듈 것 그대로 스택에 있다
 
     # ── RAM init($2380): BIOS 호출은 여기서 — MPR3~6 을 저장·복원한다 ──
@@ -454,7 +483,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
         ri.op("JSR", "abs", 0xE009)  # CD_READ — 모듈 자신의 적재 템플릿($408D)과 같은 규약(_dh=6, _bl=뱅크)
         ri.op("CMP", "imm", 0)
         ri.op("BNE", "rel", f"rd_{bank:02X}")
-    for v in (V_FRAME, V_FRAME + 1, V_EVIDX, V_PAGE, V_SCENE, V_RESTORED, V_SATDIRTY, V_HIDING, V_YADJ):
+    for v in (V_FRAME, V_FRAME + 1, V_EVIDX, V_PAGE, V_SCENE, V_RESTORED, V_SATDIRTY, V_HIDING, V_YADJ, V_DONE):
         ri.op("STZ", "abs", v)
     ri.op("LDA", "imm", 1)
     ri.op("STA", "abs", V_DIRTY)
@@ -513,6 +542,13 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
 
     # ── main: 매 프레임(메인 루프 끝) ──
     a.label("main")
+    # 0. 🔴 오프닝이 끝났으면(타이틀) 아무것도 안 한다 — 종전엔 타이틀 위에서도 매 프레임 스프라이트
+    #    팔레트를 흰색으로 다시 써서 로고의 「n」만 빛나고 페이드에서 남았고(마스터 실기),
+    #    스킵하면 우리 자막 스프라이트와 청크 되돌림이 타이틀 위에 그대로 얹혔다.
+    a.op("LDA", "abs", V_DONE)
+    a.op("BEQ", "rel", "main_go")
+    a.op("RTS")
+    a.label("main_go")
     # 1. 사건: FRAME >= EVENTS[EVIDX].frame 인 동안 페이지 갱신
     a.label("ev_loop")
     a.op("LDA", "abs", V_EVIDX)
@@ -1281,6 +1317,34 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
         a.op("INC", "abs", V_TMP_SLOT)
         a.op("JMP", "abs", f"{name}_loop")
 
+    # ── teardown: 타이틀 진입 때 한 번 — 우리 스프라이트를 SAT 에서 지우고 런타임을 멈춘다 ──
+    # ⚠ 청크는 되돌리지 **않는다** — 타이틀이 VRAM 을 새로 채우므로 옛 백업을 쓰면 오히려 망친다.
+    a.label("teardown")
+    a.op("SEI")
+    a.op("LDX", "imm", 0)
+    a.label("td_sh")
+    a.op("STZ", "absx", SAT_SHADOW)
+    a.op("INX")
+    a.op("CPX", "imm", 4 * SPR_PER_PAIR * 8)
+    a.op("BNE", "rel", "td_sh")
+    a.op("ST0", "imm", 0x00)  # MAWR = $7F00 + 36*4 (우리 항목 36~63)
+    a.op("LDA", "imm", (SPR_BASE * 4) & 0xFF)
+    a.op("STA", "abs", 0x0002)
+    a.op("LDA", "imm", SAT_VRAM >> 8)
+    a.op("STA", "abs", 0x0003)
+    a.op("ST0", "imm", 0x02)
+    a.op("LDX", "imm", 4 * SPR_PER_PAIR * 4)  # 28항목 × 4워드
+    a.label("td_vr")
+    a.op("STZ", "abs", 0x0002)
+    a.op("STZ", "abs", 0x0003)
+    a.op("DEX")
+    a.op("BNE", "rel", "td_vr")
+    a.op("STZ", "abs", V_SATDIRTY)
+    a.op("LDA", "imm", 1)
+    a.op("STA", "abs", V_DONE)
+    a.op("CLI")
+    a.op("RTS")
+
     # ── 표 ──
     a.label("slots")
     for bank, off in BACKUP_SLOTS:
@@ -1321,7 +1385,20 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     tm2.op("JMP", "abs", 0x43F3)
     ri.labels["scenes_lo"] = a.labels["scenes"] & 0xFF
     ri.labels["scenes_hi"] = a.labels["scenes"] >> 8
-    tm_bytes, ti_bytes, ri_bytes = tm2.bytes(), ti.bytes(), ri.bytes()
+    tt = Asm(TRAMP_TEAR)
+    tt.op("TMA", "tma", 4)
+    tt.op("PHA")
+    tt.op("LDA", "imm", 0x6A)
+    tt.op("TAM", "tam", 4)
+    tt.op("JSR", "abs", a.labels["teardown"])
+    tt.op("PLA")
+    tt.op("TAM", "tam", 4)
+    tt.op("CLX")  # 원래 자리의 CLX·CLY 를 되살린다($50AE 는 X/Y 로 BAT 크기를 정한다)
+    tt.op("CLY")
+    tt.op("JMP", "abs", 0x50AE)
+    tm_bytes, ti_bytes, ri_bytes, tt_bytes = tm2.bytes(), ti.bytes(), ri.bytes(), tt.bytes()
+    assert TRAMP_IRQ + len(ti_bytes) <= TRAMP_TEAR, (len(ti_bytes), "IRQ 트램펄린이 TRAMP_TEAR 와 겹친다")
+    assert TRAMP_TEAR + len(tt_bytes) <= V_FRAME, len(tt_bytes)
     assert len(tm_bytes) <= TRAMP_IRQ - TRAMP_MAIN and len(ti_bytes) <= V_FRAME - TRAMP_IRQ
     assert len(ri_bytes) <= RAM_INIT_MAX, len(ri_bytes)
     a.labels["scenes_lo"] = a.labels["scenes"] & 0xFF
@@ -1336,8 +1413,9 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     tm_pos = CODE_ADDR + len(code)
     ti_pos = tm_pos + len(tm_bytes)
     ri_pos = ti_pos + len(ti_bytes)
-    code += tm_bytes + ti_bytes + ri_bytes
-    for pos, src, ln in ((tii_main_pos, tm_pos, len(tm_bytes)), (tii_irq_pos, ti_pos, len(ti_bytes)), (tii_init_pos, ri_pos, len(ri_bytes))):
+    tt_pos = ri_pos + len(ri_bytes)
+    code += tm_bytes + ti_bytes + ri_bytes + tt_bytes
+    for pos, src, ln in ((tii_main_pos, tm_pos, len(tm_bytes)), (tii_irq_pos, ti_pos, len(ti_bytes)), (tii_init_pos, ri_pos, len(ri_bytes)), (tii_tear_pos, tt_pos, len(tt_bytes))):
         code[pos + 1 : pos + 3] = src.to_bytes(2, "little")
         code[pos + 5 : pos + 7] = ln.to_bytes(2, "little")
     assert len(code) <= CODE_MAX, len(code)
@@ -1351,6 +1429,7 @@ V_TMP_K, V_TMP_PAIR, V_TMP_LA, V_TMP_LB, V_TMP_C, V_TMP_CHUNK, V_TMP_VLO, V_TMP_
 )
 V_TMP_LINE, V_TMP_CELL, V_TMP_SHIFT, V_TMP_SIGWANT, V_TMP_NUSED = 0x2368, 0x2369, 0x236A, 0x236B, 0x236C
 V_RESTORED, V_TMP_I, V_TMP_SLOT, V_SATDIRTY, V_HIDING, V_LASTPAGE = 0x236D, 0x236E, 0x236F, 0x2370, 0x2371, 0x2372  # 되돌림 상태 · 백업 루프 인덱스 · SAT 그림자 변경 · 지우기 선행 중 · 마지막으로 실제로 그린 페이지(0xFF=없음)
+V_DONE = 0x2374  # 1 = 오프닝이 끝났다(타이틀 진입). main 이 곧장 돌아가 팔레트·SAT 를 더는 안 건드린다
 V_YADJ = 0x2373  # 화면 높이 보정 = (240 − GAME_H)/2. main 이 프레임마다 갱신, sat_show 가 뺀다
 
 
@@ -1438,6 +1517,13 @@ def apply(f, touched):
     mode1.write_at(
         f, common.T2_SECTOR + rel, common.USER, off,
         b"\x20" + CODE_ADDR.to_bytes(2, "little"), label="opening CD_PLAY→init", expect=b"\x20\x12\xe0",
+    )
+    touched.append((common.T2_SECTOR + rel, 1))
+    # 1b. 타이틀 초기화의 `JSR $50AE` → 타이틀 진입 트램펄린(오프닝 스킵·정상 종료 둘 다 여기로 온다)
+    rel, off = MODULE_REL + TITLE_JSR_OFF // common.USER, TITLE_JSR_OFF % common.USER
+    mode1.write_at(
+        f, common.T2_SECTOR + rel, common.USER, off,
+        b"\x20" + TRAMP_TEAR.to_bytes(2, "little"), label="opening title→teardown", expect=b"\x20\xae\x50",
     )
     touched.append((common.T2_SECTOR + rel, 1))
     # 2. 코드+표 → 모듈 +0x4D40~ (섹터 경계를 걸치므로 섹터마다 write_at)
