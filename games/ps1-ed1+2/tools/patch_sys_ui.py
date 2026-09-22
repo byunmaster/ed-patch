@@ -407,6 +407,43 @@ def apply_halfwidth_hud_slots():
     return n
 
 
+# 073 — ED2SCN10 필드 HUD "サピアの湖" 자리. `patch_scn_headers`(위)가 먼저 "사피아호수"
+# (전각, 10B+널2B=12B, PLACES_ED2 값 그대로 — 이 슬롯은 12B 고정이라 の를 살린 13B가
+# 못 들어간다, qa2 021ⓑ)를 써 넣는데, 그 뒤에 **여기서 한 번 더 덮어** 마스터가 도트로
+# 찍은 66px/11조각 그림(patch_hangul_glyph_table.SAPIA_CODES·SAPIA_GRID)으로 바꾼다.
+# 조각 11개 + 널 1B = 12B, 슬롯을 여유 0으로 정확히 채운다(HUD 전용 8B 슬롯과 달리
+# 이 표는 REPACK 밖 12B 고정이라 복사 상한 별문제는 없다 — patch_ed2_sys.py qa2 021 참조).
+SAPIA_HUD_SCN = "ED2SCN10"
+SAPIA_HUD_OFF = 0x1880
+SAPIA_HUD_ORIG = bytes.fromhex("8e8794668fc494a18ef40000")  # "사피아호수"(전각) + 널2
+
+
+def apply_sapia_lake_hud():
+    """SAPIA_HUD_OFF 자리를 반각 "사피아의호수"(11조각+널)로 되쓴다."""
+    import patch_hangul_glyph_table as G
+
+    want = bytes(G.SAPIA_CODES) + b"\x00"
+    assert len(want) == 12, f"073 사피아 슬롯은 12B 고정인데 조각 코드+널이 {len(want)}B 다"
+    layout = {name: (lba, size) for name, lba, size in _scn_layout()}
+    lba, size = layout[SAPIA_HUD_SCN]
+    img = os.path.join(BUILD_DIR, "Eiyuu Densetsu (KR).bin")
+    buf = bytearray(extract(lba, size, path=img))
+    cur = bytes(buf[SAPIA_HUD_OFF : SAPIA_HUD_OFF + 12])
+    if cur == want:  # 재빌드 — 이미 우리 값
+        return 0
+    assert cur == SAPIA_HUD_ORIG, (
+        f"073 사피아 HUD 슬롯 불일치: {cur.hex()} != {SAPIA_HUD_ORIG.hex()} — "
+        "patch_scn_headers 가 먼저 안 돌았거나 사본이 어긋났다"
+    )
+    buf[SAPIA_HUD_OFF : SAPIA_HUD_OFF + 12] = want
+    with open(img, "r+b") as f:
+        write_user_data(f, lba, bytes(buf), label=f"{SAPIA_HUD_SCN}@0x{SAPIA_HUD_OFF:X} 반각 사피아의호수")
+    buf2 = extract(lba, size, path=img)
+    assert bytes(buf2[SAPIA_HUD_OFF : SAPIA_HUD_OFF + 12]) == want, "073 사피아 HUD 되읽기 불일치"
+    print(f"  073 필드 HUD 사피아의호수(반각 11조각) 1곳 — {SAPIA_HUD_SCN}@0x{SAPIA_HUD_OFF:X}")
+    return 1
+
+
 # SCN 플레이트에만 나오는 지명 — **ED.EXE 표에는 없다**(슬롯이 47번 `ニルギド` 에서 끝난다,
 # 실측 2026-08-10). 위 `PLACES` 는 **위치가 곧 슬롯 번호**라 여기 덧붙이면 표 뒤 데이터를
 # 덮는다. 그래서 `patch_scn_headers` 만 쓰는 표로 따로 둔다.

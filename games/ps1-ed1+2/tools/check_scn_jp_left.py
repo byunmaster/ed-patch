@@ -36,6 +36,7 @@ import reinsert_kr_pilot as R
 from common import BUILD_DIR, OUT_DIR, extract
 from ed2_monster_review import MON, decode_sjis
 from lock_lines import SETTLED, load_lock
+from patch_ed2_monster_lines import _live_group_lba as _live_mon  # 🔴 재배치 뒤 현재 LBA
 from patch_ed2_monster_lines import is_dialog, overlay_refs
 from patch_ed2_monsters import CANON, _enc
 from patch_sys_ui import _scn_layout
@@ -212,7 +213,7 @@ def scan_mon():
     의심되면 **이 게이트를 믿지 말고 손으로 센다.**
     """
     hits = {}
-    for group, (lba, size) in sorted(MON.items()):
+    for group, (lba, size) in sorted(_live_mon().items()):
         data = bytes(extract(lba, size, path=IMG))
         i = 0
         while i < len(data) - 1:
@@ -283,7 +284,7 @@ def check_mon_name_coverage(*, strict=True):
     for stem, kr in sorted(canon.items()):
         want = _enc(kr)
         found = False
-        for group, (lba, size) in sorted(MON.items()):
+        for _group, (lba, size) in sorted(_live_mon().items()):
             cap = (size + 2047) // 2048 * 2048
             buf = bytes(extract(lba, cap, path=IMG))
             if want in buf:
@@ -326,7 +327,7 @@ def check_mon_name_no_live_jp(*, strict=True):
     with open(CANON, encoding="utf-8") as f:
         canon = json.load(f)  # {JP: KR}
     hits = []
-    for group, (lba, size) in sorted(MON.items()):
+    for group, (lba, size) in sorted(_live_mon().items()):
         cap = (size + 2047) // 2048 * 2048
         buf = bytes(extract(lba, cap, path=IMG))
         refs, _lui_use = overlay_refs(buf)
@@ -386,22 +387,25 @@ def check_mon_name_null_terminated(*, strict=True):
     from patch_ed2_monsters import plan as mon_plan
 
     fit, over, _none = mon_plan()
+    # ⚠ `plan()` 의 lba 는 **정적 원본 좌표**(그룹 판별용). 읽기는 live LBA 로 — 재배치된
+    # 그룹을 옛 자리에서 읽으면 버려진 원문을 보고 오판한다(2026-09-22, ED2MON3/4 실측).
     lba_to_group = {lba: g for g, (lba, _s) in MON.items()}
+    live = _live_mon()
     missing = []
     for lba, off, jp, kr, _slot in fit:
         group = lba_to_group[lba]
-        size = MON[group][1]
+        cur_lba, size = live[group]
         cap = (size + 2047) // 2048 * 2048
-        buf = bytes(extract(lba, cap, path=IMG))
+        buf = bytes(extract(cur_lba, cap, path=IMG))
         want = _enc(kr)
         end = off + len(want)
         if end >= len(buf) or buf[end] != 0:
             missing.append((group, off, jp, kr, "fit"))
     for lba, d in _dedup_over(over).items():
         group = lba_to_group[lba]
-        size = MON[group][1]
+        cur_lba, size = live[group]
         cap = (size + 2047) // 2048 * 2048
-        buf = bytes(extract(lba, cap, path=IMG))
+        buf = bytes(extract(cur_lba, cap, path=IMG))
         for off2, jp, kr, _slot in d.values():
             # ⚠ **앞 경계는 안 본다** — `_relocate`가 재배치 꼬리를 잇는 시작점("실제
             # 쓰인 끝")은 섹터 슬랙에 남은 **원판 잔여 비영 바이트**로 밀릴 수 있고

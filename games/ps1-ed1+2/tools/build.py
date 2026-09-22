@@ -298,6 +298,11 @@ def main():
     import patch_npc_zeni_slot as _pnz
 
     _pnz.apply()
+    # 004 — 늑대의입 게일 3세 조형(팩 #4 10행 → 팩 #9 7행 + SCN7 a2=7, RE 확정 2026-09-22·원본 행 정정 09-24).
+    # 038 과 같은 부류(NPC 설치 인자)지만 그림 데이터(ED2CHR.DAT)까지 같이 옮긴다.
+    import patch_npc_gale3_sprite as _png3
+
+    _png3.apply()
     # 065 — ED2SCN10·ED2SCN13 안 경로 라벨 사본(058ⓑ 와 같은 "사본이 둘" 부류).
     import patch_scn_route_labels as _psrl
 

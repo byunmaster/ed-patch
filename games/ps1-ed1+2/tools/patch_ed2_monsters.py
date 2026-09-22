@@ -28,7 +28,7 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 
 import hangul_map as H
 from common import BUILD_DIR, ROOT, extract, write_user_data
-from ed2_monster_review import JP, MON, SUFFIX, decode_sjis, records
+from ed2_monster_review import JP, MON, SUFFIX, records
 from ed2_monster_review import strings as jp_strings
 
 # 이름 슬롯 초과분 재배치 — 새로 짜지 않고 patch_ed2_monster_lines 의 것을 그대로 쓴다
@@ -36,9 +36,11 @@ from ed2_monster_review import strings as jp_strings
 # `overlay_refs`/`_relocate`/`BASE` 는 같은 ED2MON 오버레이를 보는 같은 도구라 100% 재사용
 # 가능하다 — 재구현하면 같은 판단이 두 곳에 갈린다).
 from patch_ed2_monster_lines import BASE as _MON_LINES_BASE
+from patch_ed2_monster_lines import _live_group_lba as _live_mon
 from patch_ed2_monster_lines import _relocate as _mon_lines_relocate
 from patch_ed2_monster_lines import _update_dir_size as _mon_lines_update_dir_size
 from patch_ed2_monster_lines import overlay_refs as _mon_overlay_refs
+from patch_ed2_monster_lines import trace_lba as _trace_lba
 
 assert _MON_LINES_BASE == 0x8014A000  # 이름 표·대사 표가 같은 오버레이 베이스를 본다는 전제
 
@@ -420,9 +422,18 @@ CONNECTOR_SPACE = ((0, 0x1B8, {b"\x82\xc6", b"\x90\x6c"}, b"\x90\x6c\x20"),)  # 
 def finalize_connector_space():
     """build.py 맨 끝에서 한 번 — CONNECTOR_SPACE 자리에 공백을 끼운다(이미 끼워져
     있으면 조용히 넘어간다 — 멱등). 고친 수 반환."""
+    _trace_lba("monsters.finalize_connector 진입")
+    # 🔴 **정적 `MON` 이 아니라 지금 이미지의 LBA 다.** 이 함수는 build.py **맨 끝**에서
+    # 도는데, 그 앞에서 `patch_ed2_monster_lines._apply_sha_table` 이 슬롯을 넘긴 그룹을
+    # **DUMMY 로 통째 재배치**해 놨을 수 있다(2026-09-22 계측으로 확정 — 대사 6건을
+    # 되살리자 ED2MON3·4 가 실제로 106000·106030 으로 옮겨갔다). 정적 LBA 로 읽으면
+    # 버려진 옛 자리를 보게 되는데, 그러면 ① 멱등 가드가 옛 자리 기준이라 **살아 있는
+    # 새 자리엔 공백이 안 들어가고** ② 쓰기도 아무도 안 읽는 유령 자리로 나간다.
+    # 깨끗한 표에선 재배치가 0이라 이 버그가 **안 드러난다** — 문안을 고칠 때만 터진다.
+    live = _live_mon()
     n = 0
     for group, off, jp_variants, kr in CONNECTOR_SPACE:
-        lba, size = MON[group]
+        lba, size = live[group]
         cap = (size + 2047) // 2048 * 2048
         buf = bytearray(extract(lba, cap, path=IMG))
         if buf[off : off + len(kr)] == kr:
@@ -465,7 +476,9 @@ def main():
             print(f"  ⚠ 넘침 {off:#07x} [{slot}B] {jp} → {kr} ({len(_enc(kr)) + 2}B 필요)")
         for group, off, jp in none:
             print(f"  ⚠ 정본에 없음 ED2MON{group} {off:#07x} {jp}")
-        print(f"\n제자리 {len(fit)} · 넘침 {len(seen_over)}(중복제거 전 {len(over)}) · 정본에 없음 {len(none)}")
+        print(
+            f"\n제자리 {len(fit)} · 넘침 {len(seen_over)}(중복제거 전 {len(over)}) · 정본에 없음 {len(none)}"
+        )
         return 0
 
     by_lba = {}
@@ -483,7 +496,9 @@ def main():
         if lba not in by_lba and lba not in over_by_lba:
             if n_stray:
                 with open(IMG, "r+b") as f:
-                    total += write_user_data(f, lba, bytes(buf), label=f"ED2MON{group} 전각 접미 정리")
+                    total += write_user_data(
+                        f, lba, bytes(buf), label=f"ED2MON{group} 전각 접미 정리"
+                    )
             continue
         for off, kr, slot in by_lba.get(lba, []):
             b = _enc(kr) + b"\x00"

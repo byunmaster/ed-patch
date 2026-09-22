@@ -290,8 +290,12 @@ def _known_name_spans(label):
 
     with open(RB.LINES_TABLE, encoding="utf-8") as f:
         table = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
-    cap = (MON[g][1] + 2047) // 2048 * 2048
-    build_buf = bytes(extract(lba, cap, path=IMG))
+    # ⚠ **빌드 이미지는 live LBA 로 읽는다**(원본은 정적 `MON` 이 맞다 — 재배치는 빌드에서만
+    # 일어난다). 2026-09-22 실측: 대사 5건을 되살리자 ED2MON3·4 가 DUMMY 로 옮겨갔는데
+    # 여기가 정적 LBA 로 읽어 **옛 자리의 원문**을 보고 "미번역 127건"을 새로 만들었다.
+    cur_lba, cur_size = PL._live_group_lba()[g]
+    cap = (cur_size + 2047) // 2048 * 2048
+    build_buf = bytes(extract(cur_lba, cap, path=IMG))
     for kr in table.values():
         want = RB._enc_lines(kr) + b"\x00"
         idx = build_buf.find(want)
@@ -305,9 +309,16 @@ def _known_name_spans(label):
 
 def _load_original(name):
     if name == "ED2MON":
+        from patch_ed2_monster_lines import _live_group_lba
+
+        # ⚠ **원본은 정적 `MON`, 빌드는 live LBA** — 재배치는 빌드 이미지에서만 일어난다
+        # (`_check_known_spans` 의 같은 주석 참조). 둘을 같은 좌표로 읽으면 재배치된
+        # 그룹에서 옛 자리의 원문을 빌드 내용으로 착각한다.
+        live = _live_group_lba()
         out = {}
         for g, (lba, size) in sorted(MON.items()):
-            out[f"ED2MON{g}"] = (extract(lba, size), extract(lba, size, path=IMG))
+            cur_lba, _cur_size = live[g]
+            out[f"ED2MON{g}"] = (extract(lba, size), extract(cur_lba, size, path=IMG))
         return out
     if name == "ED2EXE":
         import patch_ed2_sys as P

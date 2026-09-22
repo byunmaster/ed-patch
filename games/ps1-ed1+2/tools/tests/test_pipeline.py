@@ -1456,5 +1456,54 @@ def test_frame_full_line_drops_our_newline():
     assert not R._fills_frame("가" * 14 + "나"[:0] + "가")  # 전각만으로는 14.5가 안 된다
 
 
+# ── ED2MON 디렉터리 갱신 — 같은 핸들로 쓰고 다른 핸들로 읽는 함정 (2026-09-22) ──────
+def test_ed2mon_dir_entry_updates_survive_back_to_back():
+    """🔴 `_update_dir_entry` 를 연달아 두 번 부르면 **앞 갱신이 되돌려졌다**(qa2-026 4차).
+
+    쓰기는 열린 핸들 `f` 로, 읽기는 `extract(path=IMG)` 의 별도 핸들로 하는 구조라, 앞
+    호출이 쓴 디렉터리 섹터가 파이썬 버퍼에 남은 채 뒤 호출이 디스크의 옛 디렉터리를
+    읽어 거기에 자기 것만 얹어 되썼다. ED2MON3 은 새 자리에 있는데 디렉터리는 옛 자리를
+    가리켜 그룹 하나가 통째로 유령이 됐고, 되읽기 게이트가 53건까지 튀었다. 읽기 직전
+    `f.flush()` 가 고친 것 — 합성 이미지로 그 순서를 그대로 재현한다.
+    """
+    import struct
+    import tempfile
+
+    import patch_ed2_monster_lines as L
+
+    def rec(name, lba, size):
+        name = name.encode("ascii")
+        ln = 33 + len(name)
+        ln += ln & 1
+        r = bytearray(ln)
+        r[0] = ln
+        r[2:6] = struct.pack("<I", lba)
+        r[6:10] = struct.pack(">I", lba)
+        r[10:14] = struct.pack("<I", size)
+        r[14:18] = struct.pack(">I", size)
+        r[32] = len(name)
+        r[33 : 33 + len(name)] = name
+        return bytes(r)
+
+    bdir = rec("ED2MON3.BIN;1", 2483, 58536) + rec("ED2MON4.BIN;1", 2512, 70944)
+    old_img, old_dir = L.IMG, L.BIN_DIR_LBA
+    with tempfile.TemporaryDirectory() as td:
+        img = os.path.join(td, "fake.bin")
+        with open(img, "wb") as f:
+            f.write(bytes(C.SECTOR * 3))
+        L.IMG, L.BIN_DIR_LBA = img, 1
+        try:
+            with open(img, "r+b") as f:
+                C.write_user_data(f, 1, bdir.ljust(2048, b"\x00"), label="test dir")
+            with open(img, "r+b") as f:
+                L._update_dir_entry(f, "ED2MON3.BIN;1", 106000, 59448)
+                L._update_dir_entry(f, "ED2MON4.BIN;1", 106030, 71736)  # 앞 갱신을 되돌리면 안 된다
+            live = L._live_group_lba(img)
+            assert live[3] == (106000, 59448), live[3]
+            assert live[4] == (106030, 71736), live[4]
+        finally:
+            L.IMG, L.BIN_DIR_LBA = old_img, old_dir
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

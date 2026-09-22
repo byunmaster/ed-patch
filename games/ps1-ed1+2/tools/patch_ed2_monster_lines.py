@@ -132,12 +132,65 @@ MIPS_LUI, MIPS_ADDIU, MIPS_ORI = 0x0F, 0x09, 0x0D
 ED2MON_DUMMY_LBA = 106000  # DUMMY.;1 끝(107205)에서 1205섹터(2.4MB) 여유를 두고 시작
 
 
+def _live_group_lba(path=None):
+    """`MON`(정적 원본 LBA)이 아니라 **지금 이미지의 ISO 디렉터리**에서 그룹별 현재
+    LBA·크기를 읽는다 — `{group: (lba, size)}`.
+
+    🔴 **정적 `MON` 을 그대로 읽으면 다른 패처의 재배치를 놓친다**(2026-09-22 실측,
+    마스터 QA 026 재조사). `patch_ed2_monsters.py`(이름표)가 이 `main()` 보다 **먼저**
+    돌아 그룹을 DUMMY 로 옮길 수 있는데(`ED2MON3/4` 가 실제로 그랬다), 이 함수 이전엔
+    아래 두 자리(`main()` 의 제자리 루프 · `_apply_sha_table()`)가 **정적 `MON` 으로
+    읽고 썼다** — 그 결과 옛(버려진) LBA 에 새 문안을 얹고, 디렉터리는 이름표가 옮겨
+    둔 새 LBA 를 그대로 가리켜 **문안 패치가 아무도 안 가리키는 자리에 고아로
+    남았다**(대사표 되읽기 게이트가 44건까지 튀운 원인 — 내가 안 건드린 기존 문안도
+    포함됐었다). ⇒ **이 함수가 모든 읽기/쓰기의 진짜 정본이다** — 매번 이미지에서
+    다시 읽는다(캐시하지 않는다, 이전 패처가 방금 옮겼을 수 있다).
+    """
+    img = path or IMG
+    bdir = bytes(extract(BIN_DIR_LBA, 2048, path=img))
+    by_name = {}
+    i = 0
+    while i < len(bdir) and bdir[i]:
+        nlen = bdir[i + 32]
+        name = bytes(bdir[i + 33 : i + 33 + nlen]).decode("ascii", "replace")
+        lba = int.from_bytes(bdir[i + 2 : i + 6], "little")
+        size = int.from_bytes(bdir[i + 10 : i + 14], "little")
+        by_name[name] = (lba, size)
+        i += bdir[i]
+    out = {}
+    for g, (orig_lba, orig_size) in MON.items():
+        out[g] = by_name.get(f"ED2MON{g}.BIN;1", (orig_lba, orig_size))
+    return out
+
+
+def trace_lba(tag):
+    """`ED2MON_TRACE=1` 일 때만 — 지금 이미지의 그룹→LBA 를 한 줄로 찍는다.
+
+    🔴 **ED2MON 은 소비자가 셋이다**(이름표 `patch_ed2_monsters.main` · 대사표 이 파일의
+    `main`+`_apply_sha_table` · 맨 뒤 `finalize_connector_space`). 그중 대사표만 파일을
+    통째로 DUMMY 로 옮기므로(`_update_dir_entry`), **뒤에 오는 소비자가 정적 `MON` 을
+    읽으면 유령 자리를 본다.** 단계별 좌표를 안 찍으면 최종 상태만 보고 "어디서
+    갈렸는지"를 못 가른다 — 실측으로 되읽기 44건을 며칠 못 좁힌 게 그래서다.
+    """
+    if os.environ.get("ED2MON_TRACE") != "1":
+        return
+    live = _live_group_lba()
+    moved = [f"{g}:{lba}{'*' if lba != MON[g][0] else ''}" for g, (lba, _s) in sorted(live.items())]
+    print(f"  [ED2MON_TRACE] {tag:34s} " + " ".join(moved), flush=True)
+
+
 def _update_dir_entry(f, fname, new_lba, new_size):
     """ISO 디렉터리의 LBA·크기(양 엔디언) 갱신 — `reinsert_kr_pilot` 의 dir_moves 와 같은 수법.
 
     `_update_dir_size` 와 달리 **LBA 도 옮긴다** — 그룹 파일 전체를 DUMMY 영역으로
     재배치할 때 쓴다(파일 자체는 안 건드리고 어디서 읽어 오는지만 바꾼다).
     """
+    # 🔴 **읽기 전에 `f` 를 flush 한다.** 이 함수는 열린 핸들 `f` 로 쓰면서 읽기는
+    # `extract(path=IMG)` 의 **별도 핸들**로 한다 — 앞선 호출이 쓴 내용이 파이썬 버퍼에
+    # 남아 있으면 **디스크엔 아직 없어서 그 갱신을 못 보고 되돌린다.** 2026-09-22 계측으로
+    # 확정: 대사표가 ED2MON3·4 를 연달아 DUMMY 로 옮겼는데 디렉터리엔 **4번만** 남고
+    # 3번은 옛 LBA 그대로였다(→ 3번 그룹의 문안이 통째로 유령이 되어 되읽기 53건).
+    f.flush()
     bdir = bytearray(extract(BIN_DIR_LBA, 2048, path=IMG))
     want = fname.encode("ascii")
     i = 0
@@ -279,6 +332,12 @@ def _relocate(buf, orig, moves):
 
 def _update_dir_size(f, group, newsize):
     """ISO 디렉터리의 크기 필드(양 엔디언) 갱신 — `reinsert_kr_pilot` 과 같은 수법."""
+    # 🔴 **읽기 전에 `f` 를 flush 한다.** 이 함수는 열린 핸들 `f` 로 쓰면서 읽기는
+    # `extract(path=IMG)` 의 **별도 핸들**로 한다 — 앞선 호출이 쓴 내용이 파이썬 버퍼에
+    # 남아 있으면 **디스크엔 아직 없어서 그 갱신을 못 보고 되돌린다.** 2026-09-22 계측으로
+    # 확정: 대사표가 ED2MON3·4 를 연달아 DUMMY 로 옮겼는데 디렉터리엔 **4번만** 남고
+    # 3번은 옛 LBA 그대로였다(→ 3번 그룹의 문안이 통째로 유령이 되어 되읽기 53건).
+    f.flush()
     bdir = bytearray(extract(BIN_DIR_LBA, 2048, path=IMG))
     want = f"ED2MON{group}.BIN;1".encode("ascii")
     i = 0
@@ -294,6 +353,7 @@ def _update_dir_size(f, group, newsize):
 
 
 def main():
+    trace_lba("lines.main 진입")
     fit, move, over, none = plan()
     if "--plan" in sys.argv:
         for _lba, off, jp, kr, slot in fit:
@@ -315,17 +375,24 @@ def main():
     for lba, off, jp, kr, slot in move:
         mv_lba.setdefault(lba, []).append((off, jp, kr, slot))
     total = moved = 0
-    for group, (lba, size) in sorted(MON.items()):
+    live = _live_group_lba()
+    for group, (lba, orig_size) in sorted(MON.items()):
         if lba not in by_lba and lba not in mv_lba:
             continue
+        # ⚠ **읽고 쓰는 자리는 정적 `lba` 가 아니라 `_live_group_lba()` 다** — `plan()`
+        # 이 낸 `off`(그룹 안 상대 오프셋)는 정적 좌표로 구해도 유효하지만(재배치는
+        # 그룹 파일의 시작 LBA 만 옮긴다), **읽고 쓸 실제 섹터**는 `patch_ed2_monsters.py`
+        # (이 함수보다 먼저 돈다)가 이미 DUMMY 로 옮겨 놨을 수 있다(2026-09-22 실측 —
+        # 옛 정적 lba 에 쓰면 디렉터리가 안 가리키는 자리에 문안이 고아로 남는다).
+        cur_lba, size = live[group]
         # ⚠ **섹터 정렬 크기(`cap`)로 읽는다** — `size`로 읽으면 **이 그룹에 먼저 쓴 다른
         # 패처의 꼬리 재배치**(예: `patch_ed2_monsters.py`의 이름 재배치)를 통째로 잘라내고
         # 그 위에 되쓰게 된다(2026-09-13 실측: 모래두더지/불꽃의기사/육지해파리 이름이
         # 옛 슬롯도 새 자리도 없이 통째로 사라졌다 — 마스터 QA 052 RE 재현). `_apply_sha_table`
         # 은 이미 이 관용을 쓴다 — 여기만 안 맞춰져 있었다.
         cap = (size + 2047) // 2048 * 2048
-        orig = bytes(extract(lba, size))  # overlay_refs 대조 기준(원본, 빌드 아님)
-        before = bytes(extract(lba, cap, path=IMG))
+        orig = bytes(extract(lba, orig_size))  # overlay_refs 대조 기준(원본 디스크, 빌드 아님)
+        before = bytes(extract(cur_lba, cap, path=IMG))
         buf = bytearray(before)
         slots = []
         for off, kr, slot in by_lba.get(lba, ()):
@@ -351,7 +418,7 @@ def main():
         for k in range(len(new)):
             assert marks[k] or new[k] == base[k], f"ED2MON{group} 코드 구간 변형 @0x{k:X}"
         with open(IMG, "r+b") as f:
-            total += write_user_data(f, lba, new, label=f"ED2MON{group} 전투 대사")
+            total += write_user_data(f, cur_lba, new, label=f"ED2MON{group} 전투 대사")
             if content_len != size:
                 _update_dir_size(f, group, content_len)
     total += _apply_sha_table()
@@ -406,17 +473,28 @@ def _apply_sha_table():
         table = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
     n = moved_total = 0
     skipped = []  # [(id, group, key, slot, need)] — 참조가 없어 재배치도 못 하는 자리
+    # ⚠ **`ED2MON_DUMMY_LBA` 에서 맨손으로 다시 시작하지 않는다** — `patch_ed2_monsters.py`
+    # (이름표)가 이 함수보다 먼저 돌아 이미 그 자리에 그룹을 옮겨 뒀을 수 있다(2026-09-22
+    # 실측). 그대로 시작하면 그 그룹을 덮어쓴다 — **이미 쓰인 DUMMY 영역 뒤에서** 잇는다.
+    trace_lba("lines._apply_sha_table 진입")
+    live0 = _live_group_lba()
     dummy_cursor = ED2MON_DUMMY_LBA
+    for g_lba, g_size in live0.values():
+        if g_lba >= ED2MON_DUMMY_LBA:
+            dummy_cursor = max(dummy_cursor, g_lba + (g_size + 2047) // 2048)
     dir_entries = []  # [(fname, new_lba, new_size)] — 그룹 전체를 DUMMY 로 옮긴 것들
     with open(IMG, "r+b") as f:
-        for group, (lba, size) in sorted(MON.items()):
+        for group, (lba, orig_size) in sorted(MON.items()):
+            # ⚠ **정적 `lba` 가 아니라 `_live_group_lba()`** — `patch_ed2_monsters.py`
+            # 가 이미 DUMMY 로 옮겨 놨을 수 있다(경위는 `_live_group_lba` 독스트링).
+            cur_lba, size = live0[group]
             # ⚠ **섹터 정렬 크기로 읽는다** — 원래 크기(size)로 읽고 다시 쓰면 재배치가
             # 붙인 **꼬리를 0 으로 밀어 버린다**(2026-08-17 실측: 재배치 20건이 조용히
             # 사라지고 빌드는 통과했다).
             cap = (size + 2047) // 2048 * 2048
-            before = bytes(extract(lba, cap, path=IMG))
+            before = bytes(extract(cur_lba, cap, path=IMG))
             data = bytearray(before)
-            orig = bytes(extract(lba, size))  # 원본(JP) — overlay_refs·_relocate 대조 기준
+            orig = bytes(extract(lba, orig_size))  # 원본(JP, 디스크) — 대조 기준
             here = {}
             for part in bytes(data).split(b"\x00"):
                 if not (4 <= len(part) <= 1024):
@@ -499,16 +577,23 @@ def _apply_sha_table():
                     label=f"ED2MON{group} 전투 대사(표) {hits}건 (DUMMY 재배치)",
                 )
                 dir_entries.append((f"ED2MON{group}.BIN;1", new_lba, new_size))
-                print(f"  ED2MON{group}: {cap}→{new_size}B, LBA {lba}→{new_lba} (DUMMY 재배치)")
+                print(f"  ED2MON{group}: {cap}→{new_size}B, LBA {cur_lba}→{new_lba} (DUMMY 재배치)")
                 continue
+            new_size = len(new)
             new = new.ljust(cap, b"\x00")
             marks = bytearray(len(new))
             for lo, hi in touched:
                 for k in range(lo, min(hi, len(marks))):
                     marks[k] = 1
             for k in range(len(new)):
-                assert marks[k] or new[k] == before[k], f"ED2MON{group} 코드/데이터 무변경 위반 @0x{k:X}"
-            n += write_user_data(f, lba, new, label=f"ED2MON{group} 전투 대사(표) {hits}건 제자리")
+                assert marks[k] or new[k] == before[k], (
+                    f"ED2MON{group} 코드/데이터 무변경 위반 @0x{k:X}"
+                )
+            n += write_user_data(
+                f, cur_lba, new, label=f"ED2MON{group} 전투 대사(표) {hits}건 제자리"
+            )
+            if new_size != size:
+                _update_dir_size(f, group, new_size)
         for fname, new_lba, new_size in dir_entries:
             _update_dir_entry(f, fname, new_lba, new_size)
     _check_skip_baseline(skipped)
@@ -526,7 +611,9 @@ def _check_skip_baseline(skipped):
     ids = sorted(s[0] for s in skipped)
     print(f"  ⚠ ED2MON 대사(표): 슬롯 부족으로 건너뜀 {len(ids)}건")
     if not os.path.exists(SKIP_BASELINE):
-        print(f"    (기준선 없음 — {os.path.relpath(SKIP_BASELINE, ROOT)} 를 만들어 두면 회귀를 잡는다)")
+        print(
+            f"    (기준선 없음 — {os.path.relpath(SKIP_BASELINE, ROOT)} 를 만들어 두면 회귀를 잡는다)"
+        )
         return
     with open(SKIP_BASELINE, encoding="utf-8") as f:
         base = json.load(f)
@@ -538,7 +625,9 @@ def _check_skip_baseline(skipped):
         print(f"    ℹ 해소된 자리(기준선을 손으로 갱신할 것): {', '.join(gone)}")
     if new:
         detail = {s[0]: s for s in skipped}
-        lines = [f"      {i}  key={detail[i][2]} slot={detail[i][3]}B need={detail[i][4]}B" for i in new]
+        lines = [
+            f"      {i}  key={detail[i][2]} slot={detail[i][3]}B need={detail[i][4]}B" for i in new
+        ]
         raise SystemExit(
             "ED2MON 대사(표): 새로 건너뛴 자리가 생겼다 — 화면에 일본어가 남는다\n"
             + "\n".join(lines)
