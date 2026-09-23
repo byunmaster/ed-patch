@@ -28,6 +28,7 @@ import common
 import containers
 import ending_sub
 import font
+import gfx_text
 import hook
 import lz
 import opening_sub
@@ -405,7 +406,15 @@ def _build(edits_path, iso: Path, cue: Path):
             print("  " + opening_sub.apply(f, touched))
         if want("staff"):  # 엔딩 스태프롤 전각 영문(사람 이름만 원문) — tools/staffroll.py
             print("  " + staffroll.apply(f, touched))
-        if want("edsub"):  # 엔딩 음성 자막(스프라이트, 오프닝 런타임 한 벌 더) — tools/ending_sub.py
+        # 엔딩 끝 카드 「영웅들의 전설 / 제작·저작」(네오둥근모) · 오마케 간판 — tools/gfx_text.py
+        if want("card"):
+            print("  " + gfx_text.apply_card(f, touched))
+        if want("banner"):
+            print("  " + gfx_text.apply_banner(f, touched))
+        if want("kkeut"):
+            print("  " + gfx_text.apply_kkeut(f, touched))
+        # 엔딩 음성 자막(스프라이트, 오프닝 런타임 한 벌 더) — tools/ending_sub.py
+        if want("edsub"):
             print("  " + ending_sub.apply(f, touched))
         if want("sys"):
             print("  시스템 문구:", sysbuild.apply(f, table, touched))
