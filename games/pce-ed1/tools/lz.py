@@ -145,6 +145,68 @@ def encode(data: bytes, *, with_header: bool = True) -> bytes:
     return (HEADER if with_header else b"") + bytes(w.out)
 
 
+def encode_optimal(data: bytes, *, with_header: bool = True) -> bytes:
+    """최적 파싱 인코더 — 탐욕이 원래 슬롯을 몇 바이트 넘길 때만 쓴다(빌드의 대체 경로).
+
+    링 내용은 파싱과 무관하게 **출력 이력**으로 정해진다(디코더가 낸 바이트를 차례로 링에 쓴다).
+    그래서 자리 i 에서 링 칸 r 의 값 = 「i 이전에 그 칸에 마지막으로 쓰인 출력 바이트」(없으면 0) 이고,
+    자리마다 최장 일치를 구해 두면 「리터럴 9비트 · 되참조 13비트(플래그 1 + 인덱스 8 + 길이 4)」
+    의 최소 비트 경로를 뒤에서부터 DP 로 고를 수 있다. 짧은 일치는 긴 일치의 앞부분이라 따로 안 찾는다.
+    ⚠ 탐욕보다 느리다(블록 하나에 수 초) — 그래서 기본값이 아니다.
+    """
+    n = len(data)
+
+    def slot_val(t: int, pos: int) -> int:
+        # 시각 t(출력 t 바이트를 낸 뒤) 링 칸 pos 의 값
+        j = t - 1 - ((WIDX0 + t - 1 - pos) & 0xFF)
+        return data[j] if j >= 0 else 0
+
+    best = [(0, 0)] * n  # (최장 길이, 링 인덱스)
+    for i in range(n):
+        max_len = min(MAX_LEN, n - i)
+        if max_len < MIN_LEN:
+            continue
+        bl, bi = 0, 0
+        for ridx in range(RING):
+            ln = 0
+            while ln < max_len and slot_val(i + ln, (ridx + ln) & 0xFF) == data[i + ln]:
+                ln += 1
+            if ln > bl:
+                bl, bi = ln, ridx
+                if ln == max_len:
+                    break
+        best[i] = (bl, bi)
+    INF = 1 << 60
+    cost = [INF] * (n + 1)
+    choice = [0] * (n + 1)
+    cost[n] = 0
+    for i in range(n - 1, -1, -1):
+        cost[i], choice[i] = 9 + cost[i + 1], 1
+        bl, _ = best[i]
+        for ln in range(MIN_LEN, bl + 1):
+            c = 13 + cost[i + ln]
+            if c < cost[i]:
+                cost[i], choice[i] = c, ln
+    w = _BitWriter()
+    i = 0
+    while i < n:
+        ln = choice[i]
+        if ln == 1:
+            w.bit(1)
+            w.byte(data[i])
+        else:
+            w.bit(0)
+            w.byte(best[i][1])
+            v = ln - MIN_LEN
+            for k in range(3, -1, -1):
+                w.bit((v >> k) & 1)
+        i += ln
+    out = (HEADER if with_header else b"") + bytes(w.out)
+    back, _ = decode(out, n, with_header=with_header)
+    assert back == data, "최적 파싱 왕복 불일치"
+    return out
+
+
 if __name__ == "__main__":
     import sys
 

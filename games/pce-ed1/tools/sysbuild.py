@@ -279,6 +279,8 @@ def apply(f, table, touched) -> dict:
     # 시스템 메시지
     msgs = _load("sysmsg.json").get("messages", {})
     cnt = 0
+    plan = []  # (r, 새 바이트(패딩 전), 원본)
+    spills = []  # 자리를 넘는 조각 — 다른 단위의 남는 00 자리로 옮기고 `0F` 로 뛴다
     for r in S.read_sysmsg():
         kr = msgs.get(r["key"])
         if kr is None:
@@ -297,11 +299,40 @@ def apply(f, table, touched) -> dict:
             nxt = 0x8000 + r["off"] + core_len
             new += bytes([0x0F, nxt & 0xFF, nxt >> 8])
         if len(new) > r["room"]:
+            # 🔑 **옮겨 싣기**(2026-09-24) — 조각 「は」(3·4B)에 「은/는 」(조사 2B + 공백 2B)이 안 들어가
+            #    「아그니쟈는세리오스에」로 붙었다. 꼬리가 종료 옵코드인 조각만 옮긴다(흘러가는 조각은 안 된다).
+            #    ⚠ `0F` 는 씬 인터프리터만 따라간다 — 전투 문구 경로(`$7047`)는 그 인터프리터다(09-06 트레이스).
+            if r["room"] >= 3 and not flows_on and tail and tail[-1] in TERMINAL_OPS:
+                spills.append((r, new, orig))
+                continue
             errors.append(
                 f"sysmsg {r['addr']:04X} 「{r['jp']}」→「{kr}」 {len(new)}B > {r['room']}B{' (0F 이어쓰기 3B 포함)' if flows_on else ''}"
             )
             continue
+        plan.append([r, new, orig])
+    # 남는 자리: 우리가 쓴 단위의 끝(종료·점프 뒤)부터 방 끝까지 00 — 한 칸 띄우고 쓴다
+    slack = sorted(
+        (p[0]["off"] + len(p[1]) + 1, p[0]["off"] + p[0]["room"], i) for i, p in enumerate(plan)
+    )
+    extra: dict[int, bytearray] = {}  # plan 번호 → 덧붙일 바이트(끝 뒤 한 칸부터)
+    for r, new, orig in spills:
+        for k, (lo, hi, i) in enumerate(slack):
+            if hi - lo >= len(new):
+                tgt = 0x8000 + lo
+                extra.setdefault(i, bytearray()).extend(new)
+                slack[k] = (lo + len(new), hi, i)
+                plan.append([r, bytes([0x0F, tgt & 0xFF, tgt >> 8]), orig])
+                stats["sysmsg_spill"] = stats.get("sysmsg_spill", 0) + 1
+                break
+        else:
+            errors.append(
+                f"sysmsg {r['addr']:04X} 「{r['jp']}」 {len(new)}B — 옮겨 실을 빈자리가 없다"
+            )
+    for i, (r, new, orig) in enumerate(plan):
+        if i in extra:
+            new = new + b"\0" + bytes(extra[i])
         new += b"\0" * (r["room"] - len(new))
+        assert len(new) == r["room"], (r["addr"], len(new), r["room"])
         _write(f, 0x6D, r["off"], new, orig, f"sysmsg {r['addr']:04X}", touched)
         cnt += 1
     stats["sysmsg"] = cnt

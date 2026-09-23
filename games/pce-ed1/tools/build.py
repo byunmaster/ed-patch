@@ -164,6 +164,8 @@ def assemble(entries: list[tuple[int, bytes]], orig: bytes, where: str = "") -> 
             was, _ = lz.decode(orig[src:], ln_of[src])
             if blk != was:  # ⚠ 안 고친 블록은 **원본 바이트를 손대지 않는다** — 우리 인코더가
                 pk = lz.encode(blk)  #    조금 촘촘해 다시 누르면 바꿀 이유 없는 바이트가 다 바뀐다
+                if len(pk) > room:  # 탐욕이 넘치면 최적 파싱으로 다시(느리다 — 넘칠 때만)
+                    pk = lz.encode_optimal(blk)
                 if len(pk) > room:
                     raise BuildError(
                         f"컨테이너 {where} 블록 id {id_}: 압축 {len(pk)}B > 원래 슬롯 {room}B — "
