@@ -118,6 +118,20 @@ TRAMP_MAIN, TRAMP_IRQ = 0x2300, 0x2330  # 워크 RAM(오프닝 내내 0, 12덤�
 # 그래서 RAM 트램펄린이 MPR4 를 0x6A 로 바꿔 teardown 을 부른 뒤 원래 `CLX·CLY·$50AE` 로 잇는다.
 # 오프닝을 **스킵**하든 **끝까지 보든** 타이틀은 이 루틴으로 들어온다(스킵은 $6905 브레이크로 실측).
 TRAMP_TEAR = 0x233C  # $233C~$234F (20B) — TRAMP_IRQ(**12B**, $2330~$233B) 뒤, V_FRAME($2350) 앞
+
+# ── 모듈별 손잡이(2026-09-24, 엔딩 자막이 둘째 소비자) ─────────────────────────
+# 기본값은 오프닝(타이틀 모듈 rel 322) 것이다. `tools/ending_sub.py` 가 이 모듈을 **따로 한 벌**
+# 불러와 값만 바꿔 엔딩 모듈(rel 898)용 런타임을 굽는다 — 코드는 하나, 값만 둘.
+# 🔴 기본값을 바꾸면 오프닝 바이트가 바뀐다. 손잡이를 달 때 오프닝 산출 코드의 sha1 이 그대로인지 확인했다.
+NAME = "opening"  # 빌드 라벨
+CODE_BANK = 0x6A  # 코드가 사는 뱅크(트램펄린이 MPR4 에 건다)
+LOOP_TARGET = 0x43F3  # 메인 루프 훅 자리의 원래 JSR 대상
+YADJ_MAX = 33  # 화면 높이 보정 상한(+1). 오프닝 화면은 208줄까지라 32 면 충분했다
+STRIP_MODE = "bank"  # "bank" = CD_READ 로 뱅크에 · "adpcm" = AD_TRANS 로 ADPCM RAM 에(엔딩)
+ADPCM_BASE = 0x8000  # adpcm 모드: 스트립을 싣는 ADPCM 주소
+CELL_BUF = 0x3C00  # adpcm 모드: 셀 하나(56B)를 AD_READ 로 받아 두는 RAM
+INIT_WINDOW = None  # CD_PLAY 때 코드 뱅크가 $8000 창에 없으면 그 창 주소(스텁을 거친다)
+DONE_FRAME = None  # 이 카운터 프레임에 스스로 teardown + 훅 원상복구(엔딩: 오마케 적재 전에 물러난다)
 # 🔴 2026-09-23 실측 사고: 처음 $233A 에 뒀다가 IRQ 트램펄린 꼬리 2B(`INC $2351` 상위·`RTS`)를
 #   덮어 **매 VBlank 마다 IRQ 가 teardown 트램펄린으로 흘러 `JMP $50AE`** → 스택 폭주·크래시.
 #   아래 runtime() 의 단언이 겹침을 빌드에서 막는다.
@@ -294,7 +308,11 @@ def timeline(subs, rules):
         st, en, text = sub[0], sub[1], sub[2]
         lay = sub[3] if len(sub) > 3 else "top"  # 네 번째 칸 = 자리(top/bottom/middle)
         nxt = ss[i + 1][0] if i + 1 < len(ss) else 1e9
-        ev.append((en + tail, 1, "end", nxt - en > gap_clear))
+        et = en + tail
+        if rules.get("tail_before_next") and et >= nxt:
+            # 엔딩(gap_clear 0): 꼬리가 다음 문장 시작을 넘으면 그 문장까지 지운다 — 시작 직전으로 자른다
+            et = nxt - 0.01
+        ev.append((et, 1, "end", nxt - en > gap_clear))
         ev.append((st, 2, "start", (text, lay)))
     ev.sort(key=lambda e: (e[0], e[1]))
     lines: list[str] = []
@@ -336,9 +354,7 @@ def timeline(subs, rules):
             if pending or payload:
                 committed, pending = [], False
         elif kind == "cut":
-            if current is None:
-                committed = []
-            elif t - cur_start <= lead:
+            if current is None or t - cur_start <= lead:
                 committed = []
             else:
                 pending = True
@@ -358,8 +374,23 @@ def timeline(subs, rules):
 
 
 # ── 데이터 묶기 ────────────────────────────────────────────────────────────
+STRIP_SECTORS = 0  # adpcm 모드: 스트립 섹터 수(pack_strips 가 채운다 — init 의 AD_TRANS 인자)
+
+
 def pack_strips(lines):
-    """줄 스트립을 뱅크에 순서대로 싣는다(8KB 경계는 안 넘긴다). → (banks{bank: bytes}, table[(bank, off, ncell)])."""
+    """줄 스트립을 뱅크에 순서대로 싣는다(8KB 경계는 안 넘긴다). → (banks{bank: bytes}, table[(bank, off, ncell)]).
+    adpcm 모드면 한 덩어리로 이어 붙이고 table 의 off 는 **ADPCM 주소**다 → ({0: blob}, …)."""
+    global STRIP_SECTORS
+    if STRIP_MODE == "adpcm":
+        blob, table = bytearray(), []
+        for text in lines:
+            cells = strip_cells(text)
+            table.append((0, ADPCM_BASE + len(blob), len(cells)))
+            blob += b"".join(cells)
+        if ADPCM_BASE + len(blob) > 0x10000:
+            raise SystemExit(f"줄 스트립 {len(blob)}B 가 ADPCM RAM(${ADPCM_BASE:04X}~)을 넘는다")
+        STRIP_SECTORS = (len(blob) + common.USER - 1) // common.USER
+        return {0: bytes(blob)}, table
     banks = {b: bytearray() for b in STRIP_BANKS}
     order = list(STRIP_BANKS)
     bi = 0
@@ -475,14 +506,25 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     ri.op("INX")
     ri.op("CPX", "imm", 8)
     ri.op("BNE", "rel", "save_f8ff")
-    for bank, rel, cnt in ((0x85, DATA_REL, 12),):
-        ri.label(f"rd_{bank:02X}")
-        for zp, val in ((0xF8, cnt), (0xF9, 0), (0xFA, bank), (0xFB, 0), (0xFC, rel >> 16), (0xFD, (rel >> 8) & 0xFF), (0xFE, rel & 0xFF), (0xFF, 6)):
+    if STRIP_MODE == "bank":
+        for bank, rel, cnt in ((0x85, DATA_REL, 12),):
+            ri.label(f"rd_{bank:02X}")
+            for zp, val in ((0xF8, cnt), (0xF9, 0), (0xFA, bank), (0xFB, 0), (0xFC, rel >> 16), (0xFD, (rel >> 8) & 0xFF), (0xFE, rel & 0xFF), (0xFF, 6)):
+                ri.op("LDA", "imm", val)
+                ri.op("STA", "zp", zp)
+            ri.op("JSR", "abs", 0xE009)  # CD_READ — 모듈 자신의 적재 템플릿($408D)과 같은 규약(_dh=6, _bl=뱅크)
+            ri.op("CMP", "imm", 0)
+            ri.op("BNE", "rel", f"rd_{bank:02X}")
+    else:
+        # AD_TRANS — 엔딩 모듈 자신의 적재($57CC)와 같은 규약: _al 섹터 수 · _bx ADPCM 주소 ·
+        # _cl:_ch:_dl 섹터(rel) · _dh 0. 실패(A≠0)면 게임처럼 다시 부른다.
+        ri.label("rd_adpcm")
+        for zp, val in ((0xF8, STRIP_SECTORS), (0xF9, 0), (0xFA, ADPCM_BASE & 0xFF), (0xFB, ADPCM_BASE >> 8), (0xFC, DATA_REL >> 16), (0xFD, (DATA_REL >> 8) & 0xFF), (0xFE, DATA_REL & 0xFF), (0xFF, 0)):
             ri.op("LDA", "imm", val)
             ri.op("STA", "zp", zp)
-        ri.op("JSR", "abs", 0xE009)  # CD_READ — 모듈 자신의 적재 템플릿($408D)과 같은 규약(_dh=6, _bl=뱅크)
+        ri.op("JSR", "abs", 0xE033)
         ri.op("CMP", "imm", 0)
-        ri.op("BNE", "rel", f"rd_{bank:02X}")
+        ri.op("BNE", "rel", "rd_adpcm")
     for v in (V_FRAME, V_FRAME + 1, V_EVIDX, V_PAGE, V_SCENE, V_RESTORED, V_SATDIRTY, V_HIDING, V_YADJ, V_DONE):
         ri.op("STZ", "abs", v)
     ri.op("LDA", "imm", 1)
@@ -525,12 +567,12 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     tm = Asm(TRAMP_MAIN)
     tm.op("TMA", "tma", 4)
     tm.op("PHA")
-    tm.op("LDA", "imm", 0x6A)
+    tm.op("LDA", "imm", CODE_BANK)
     tm.op("TAM", "tam", 4)
     tm.op("JSR", "abs", "main")  # 라벨은 바깥 어셈블러 것 — 아래서 손으로 박는다
     tm.op("PLA")
     tm.op("TAM", "tam", 4)
-    tm.op("JMP", "abs", 0x43F3)
+    tm.op("JMP", "abs", LOOP_TARGET)
     a.label("tramp_irq")
     ti = Asm(TRAMP_IRQ)
     ti.op("JSR", "abs", 0xE063)
@@ -549,6 +591,27 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("BEQ", "rel", "main_go")
     a.op("RTS")
     a.label("main_go")
+    if DONE_FRAME is not None:
+        # 스스로 물러난다(엔딩): 마지막 장면이 끝나면 우리 SAT 를 지우고 IRQ·메인 루프 훅을
+        # 원래 JSR 로 되돌린다 — 곡이 끝나면 게임이 이 뱅크 자리에 오마케를 싣는다(쓰기 BP 실측).
+        a.op("LDA", "abs", V_FRAME + 1)
+        a.op("CMP", "imm", DONE_FRAME >> 8)
+        a.op("BCC", "rel", "not_done")
+        a.op("BNE", "rel", "is_done")
+        a.op("LDA", "abs", V_FRAME)
+        a.op("CMP", "imm", DONE_FRAME & 0xFF)
+        a.op("BCC", "rel", "not_done")
+        a.label("is_done")
+        a.op("JSR", "abs", "teardown")
+        a.op("SEI")
+        for addr, tgt in ((IRQ_JSR_ADDR, 0xE063), (LOOP_JSR_ADDR, LOOP_TARGET)):
+            a.op("LDA", "imm", tgt & 0xFF)
+            a.op("STA", "abs", addr + 1)
+            a.op("LDA", "imm", tgt >> 8)
+            a.op("STA", "abs", addr + 2)
+        a.op("CLI")
+        a.op("RTS")
+        a.label("not_done")
     # 1. 사건: FRAME >= EVENTS[EVIDX].frame 인 동안 페이지 갱신
     a.label("ev_loop")
     a.op("LDA", "abs", V_EVIDX)
@@ -662,7 +725,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("CLA")  # 높이가 240 을 넘으면(있을 리 없지만) 보정 없음
     a.label("ya_ok")
     a.op("LSR")
-    a.op("CMP", "imm", 33)
+    a.op("CMP", "imm", YADJ_MAX)
     a.op("BCC", "rel", "ya_ok2")
     a.op("CLA")  # 말이 안 되는 값이면 보정 없음 — 자막을 화면 밖으로 날리지 않는다
     a.label("ya_ok2")
@@ -901,50 +964,119 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
 
     # put_cell: 줄 V_TMP_LINE 의 셀 V_TMP_CELL 을 VWR 로 64워드 쓴다(V_TMP_SHIFT 행 내려서).
     #   줄 없음/셀 범위 밖이면 0 을 64워드. plane2·3 은 늘 0. MPR3 에 스트립 뱅크를 잠깐 건다.
-    a.label("put_cell")
-    a.op("SEI")
-    a.op("ST0", "imm", 0x02)
-    a.op("LDA", "abs", V_TMP_LINE)
-    a.op("CMP", "imm", 0xFF)
-    a.op("BNE", "rel", "pc_a")
-    a.op("JMP", "abs", "pc_zero")
-    a.label("pc_a")
-    a.op("JSR", "abs", "ncell_of")
-    a.op("CMP", "abs", V_TMP_CELL)
-    a.op("BEQ", "rel", "pc_z2")
-    a.op("BCS", "rel", "pc_go")
-    a.label("pc_z2")
-    a.op("JMP", "abs", "pc_zero")
-    a.label("pc_go")
-    # src = $6000 + line.off + cell*56 ; MPR3 = line.bank. cell*56 은 16비트 누산(cell ≤ 14)
-    a.op("LDA", "abs", V_TMP_LINE)
-    a.op("ASL")
-    a.op("ASL")
-    a.op("TAX")
-    a.op("TMA", "tma", 3)
-    a.op("STA", "zp", Z_T0)
-    a.op("LDA", "absx", "lines")
-    a.op("TAM", "tam", 3)
-    a.op("LDA", "absx", "lines+1")
-    a.op("STA", "zp", Z_SRC)
-    a.op("LDA", "absx", "lines+2")
-    a.op("STA", "zp", Z_SRC + 1)
-    a.op("LDX", "abs", V_TMP_CELL)
-    a.op("BEQ", "rel", "pc_src_done")
-    a.label("pc_src_add")
-    a.op("CLC")
-    a.op("LDA", "zp", Z_SRC)
-    a.op("ADC", "imm", CELL_BYTES)
-    a.op("STA", "zp", Z_SRC)
-    a.op("LDA", "zp", Z_SRC + 1)
-    a.op("ADC", "imm", 0)
-    a.op("STA", "zp", Z_SRC + 1)
-    a.op("DEX")
-    a.op("BNE", "rel", "pc_src_add")
-    a.label("pc_src_done")
-    a.op("LDA", "zp", Z_SRC + 1)
-    a.op("ORA", "imm", 0x60)
-    a.op("STA", "zp", Z_SRC + 1)
+    if STRIP_MODE == "bank":
+        a.label("put_cell")
+        a.op("SEI")
+        a.op("ST0", "imm", 0x02)
+        a.op("LDA", "abs", V_TMP_LINE)
+        a.op("CMP", "imm", 0xFF)
+        a.op("BNE", "rel", "pc_a")
+        a.op("JMP", "abs", "pc_zero")
+        a.label("pc_a")
+        a.op("JSR", "abs", "ncell_of")
+        a.op("CMP", "abs", V_TMP_CELL)
+        a.op("BEQ", "rel", "pc_z2")
+        a.op("BCS", "rel", "pc_go")
+        a.label("pc_z2")
+        a.op("JMP", "abs", "pc_zero")
+        a.label("pc_go")
+        # src = $6000 + line.off + cell*56 ; MPR3 = line.bank. cell*56 은 16비트 누산(cell ≤ 14)
+        a.op("LDA", "abs", V_TMP_LINE)
+        a.op("ASL")
+        a.op("ASL")
+        a.op("TAX")
+        a.op("TMA", "tma", 3)
+        a.op("STA", "zp", Z_T0)
+        a.op("LDA", "absx", "lines")
+        a.op("TAM", "tam", 3)
+        a.op("LDA", "absx", "lines+1")
+        a.op("STA", "zp", Z_SRC)
+        a.op("LDA", "absx", "lines+2")
+        a.op("STA", "zp", Z_SRC + 1)
+        a.op("LDX", "abs", V_TMP_CELL)
+        a.op("BEQ", "rel", "pc_src_done")
+        a.label("pc_src_add")
+        a.op("CLC")
+        a.op("LDA", "zp", Z_SRC)
+        a.op("ADC", "imm", CELL_BYTES)
+        a.op("STA", "zp", Z_SRC)
+        a.op("LDA", "zp", Z_SRC + 1)
+        a.op("ADC", "imm", 0)
+        a.op("STA", "zp", Z_SRC + 1)
+        a.op("DEX")
+        a.op("BNE", "rel", "pc_src_add")
+        a.label("pc_src_done")
+        a.op("LDA", "zp", Z_SRC + 1)
+        a.op("ORA", "imm", 0x60)
+        a.op("STA", "zp", Z_SRC + 1)
+    else:
+        a.label("put_cell")
+        # adpcm 모드(엔딩): 셀 56B 를 AD_READ 로 CELL_BUF 에 받은 뒤 뱅크 모드와 같은 복사를 탄다.
+        # ⚠ BIOS 호출은 **SEI·VDC 레지스터 선택 전에** 한다 — 인터럽트를 막은 채 BIOS 를 부르지 않고,
+        #   BIOS 가 $F8~$FF 를 쓰므로 앞뒤로 보존한다(게임이 메인 루프에서 그 자리를 인자로 쓴다).
+        a.op("LDA", "abs", V_TMP_LINE)
+        a.op("CMP", "imm", 0xFF)
+        a.op("BNE", "rel", "pc_a")
+        a.label("pc_zz")
+        a.op("SEI")
+        a.op("ST0", "imm", 0x02)
+        a.op("JMP", "abs", "pc_zero")
+        a.label("pc_a")
+        a.op("JSR", "abs", "ncell_of")
+        a.op("CMP", "abs", V_TMP_CELL)
+        a.op("BEQ", "rel", "pc_zz")
+        a.op("BCC", "rel", "pc_zz")
+        a.op("LDA", "abs", V_TMP_LINE)
+        a.op("ASL")
+        a.op("ASL")
+        a.op("TAX")
+        a.op("LDA", "absx", "lines+1")
+        a.op("STA", "zp", Z_SRC)
+        a.op("LDA", "absx", "lines+2")
+        a.op("STA", "zp", Z_SRC + 1)
+        a.op("LDX", "abs", V_TMP_CELL)
+        a.op("BEQ", "rel", "pc_src_done")
+        a.label("pc_src_add")
+        a.op("CLC")
+        a.op("LDA", "zp", Z_SRC)
+        a.op("ADC", "imm", CELL_BYTES)
+        a.op("STA", "zp", Z_SRC)
+        a.op("LDA", "zp", Z_SRC + 1)
+        a.op("ADC", "imm", 0)
+        a.op("STA", "zp", Z_SRC + 1)
+        a.op("DEX")
+        a.op("BNE", "rel", "pc_src_add")
+        a.label("pc_src_done")
+        a.op("LDX", "imm", 0)
+        a.label("pc_sv")
+        a.op("LDA", "zpx", 0xF8)
+        a.op("PHA")
+        a.op("INX")
+        a.op("CPX", "imm", 8)
+        a.op("BNE", "rel", "pc_sv")
+        for zp, val in ((0xF8, CELL_BYTES), (0xF9, 0), (0xFA, CELL_BUF & 0xFF), (0xFB, CELL_BUF >> 8), (0xFF, 0)):
+            a.op("LDA", "imm", val)
+            a.op("STA", "zp", zp)
+        a.op("LDA", "zp", Z_SRC)
+        a.op("STA", "zp", 0xFC)
+        a.op("LDA", "zp", Z_SRC + 1)
+        a.op("STA", "zp", 0xFD)
+        a.op("JSR", "abs", 0xE036)  # AD_READ(_cx=ADPCM 주소, _bx=목적지, _ax=길이, _dh=0 메모리) — 게임 자신의 호출과 같은 규약
+        a.op("LDX", "imm", 8)
+        a.label("pc_rs")
+        a.op("DEX")
+        a.op("PLA")
+        a.op("STA", "zpx", 0xF8)
+        a.op("CPX", "imm", 0)
+        a.op("BNE", "rel", "pc_rs")
+        a.op("LDA", "imm", CELL_BUF & 0xFF)
+        a.op("STA", "zp", Z_SRC)
+        a.op("LDA", "imm", CELL_BUF >> 8)
+        a.op("STA", "zp", Z_SRC + 1)
+        a.op("TMA", "tma", 3)
+        a.op("STA", "zp", Z_T0)  # 꼬리의 `TAM #3` 이 제자리로 돌리게(뱅크 모드와 공유)
+        a.op("SEI")
+        a.op("ST0", "imm", 0x02)
     # plane0 · plane1: shift 행 0 → 14행 복사 → (2-shift) 행 0
     for plane in range(2):
         a.op("LDA", "abs", V_TMP_SHIFT)
@@ -1345,6 +1477,20 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("CLI")
     a.op("RTS")
 
+    if INIT_WINDOW is not None:
+        # CD_PLAY 때 코드 뱅크가 $8000 창에 없다(엔딩: MPR4=0x6A, 코드는 0x6B 가 MPR5 에). 이 스텁을
+        # **INIT_WINDOW 창 주소로** 부른다 — 절대주소는 RAM·$8000 창만 쓰므로 어느 창에서 돌아도 같다.
+        a.label("init_stub")
+        a.op("TMA", "tma", 4)
+        a.op("PHA")
+        a.op("LDA", "imm", CODE_BANK)
+        a.op("TAM", "tam", 4)
+        a.op("JSR", "abs", "init")
+        a.op("STA", "abs", V_TMP_K)
+        a.op("PLA")
+        a.op("TAM", "tam", 4)
+        a.op("LDA", "abs", V_TMP_K)
+        a.op("RTS")
     # ── 표 ──
     a.label("slots")
     for bank, off in BACKUP_SLOTS:
@@ -1377,18 +1523,18 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     tm2 = Asm(TRAMP_MAIN)
     tm2.op("TMA", "tma", 4)
     tm2.op("PHA")
-    tm2.op("LDA", "imm", 0x6A)
+    tm2.op("LDA", "imm", CODE_BANK)
     tm2.op("TAM", "tam", 4)
     tm2.op("JSR", "abs", main_addr)
     tm2.op("PLA")
     tm2.op("TAM", "tam", 4)
-    tm2.op("JMP", "abs", 0x43F3)
+    tm2.op("JMP", "abs", LOOP_TARGET)
     ri.labels["scenes_lo"] = a.labels["scenes"] & 0xFF
     ri.labels["scenes_hi"] = a.labels["scenes"] >> 8
     tt = Asm(TRAMP_TEAR)
     tt.op("TMA", "tma", 4)
     tt.op("PHA")
-    tt.op("LDA", "imm", 0x6A)
+    tt.op("LDA", "imm", CODE_BANK)
     tt.op("TAM", "tam", 4)
     tt.op("JSR", "abs", a.labels["teardown"])
     tt.op("PLA")
@@ -1419,7 +1565,12 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
         code[pos + 1 : pos + 3] = src.to_bytes(2, "little")
         code[pos + 5 : pos + 7] = ln.to_bytes(2, "little")
     assert len(code) <= CODE_MAX, len(code)
+    RUNTIME_LABELS.clear()
+    RUNTIME_LABELS.update(a.labels)
     return bytes(code)
+
+
+RUNTIME_LABELS: dict = {}  # 마지막으로 조립한 런타임의 라벨(apply 가 스텁 주소를 읽는다)
 
 
 SCENE_ENTRY = 10 + 4 * SPR_PER_PAIR  # quiet(2) end(2) switch(2) x_base(1) nsafe(1) spr_base(1) game_n(1) chunks(28)
@@ -1512,20 +1663,22 @@ def apply(f, touched):
     from shared.disc import mode1
 
     sub, lines, pages, events, banks, table, code = build_all()
-    # 1. CD_PLAY 호출 → init
+    # 1. CD_PLAY 호출 → init (코드 뱅크가 그때 $8000 창에 없으면 INIT_WINDOW 창의 스텁으로)
+    entry = CODE_ADDR if INIT_WINDOW is None else RUNTIME_LABELS["init_stub"] - 0x8000 + INIT_WINDOW
     rel, off = MODULE_REL + CDPLAY_OFF // common.USER, CDPLAY_OFF % common.USER
     mode1.write_at(
         f, common.T2_SECTOR + rel, common.USER, off,
-        b"\x20" + CODE_ADDR.to_bytes(2, "little"), label="opening CD_PLAY→init", expect=b"\x20\x12\xe0",
+        b"\x20" + entry.to_bytes(2, "little"), label=f"{NAME} CD_PLAY→init", expect=b"\x20\x12\xe0",
     )
     touched.append((common.T2_SECTOR + rel, 1))
     # 1b. 타이틀 초기화의 `JSR $50AE` → 타이틀 진입 트램펄린(오프닝 스킵·정상 종료 둘 다 여기로 온다)
-    rel, off = MODULE_REL + TITLE_JSR_OFF // common.USER, TITLE_JSR_OFF % common.USER
-    mode1.write_at(
-        f, common.T2_SECTOR + rel, common.USER, off,
-        b"\x20" + TRAMP_TEAR.to_bytes(2, "little"), label="opening title→teardown", expect=b"\x20\xae\x50",
-    )
-    touched.append((common.T2_SECTOR + rel, 1))
+    if TITLE_JSR_OFF is not None:
+        rel, off = MODULE_REL + TITLE_JSR_OFF // common.USER, TITLE_JSR_OFF % common.USER
+        mode1.write_at(
+            f, common.T2_SECTOR + rel, common.USER, off,
+            b"\x20" + TRAMP_TEAR.to_bytes(2, "little"), label=f"{NAME} title→teardown", expect=b"\x20\xae\x50",
+        )
+        touched.append((common.T2_SECTOR + rel, 1))
     # 2. 코드+표 → 모듈 +0x4D40~ (섹터 경계를 걸치므로 섹터마다 write_at)
     pos = 0
     while pos < len(code):
@@ -1534,18 +1687,23 @@ def apply(f, touched):
         n = min(common.USER - o, len(code) - pos)
         mode1.write_at(
             f, common.T2_SECTOR + rel, common.USER, o, code[pos : pos + n],
-            label=f"opening code rel {rel}", expect=b"\0" * n,
+            label=f"{NAME} code rel {rel}", expect=b"\0" * n,
         )
         touched.append((common.T2_SECTOR + rel, 1))
         pos += n
-    # 3. 스트립 → rel 422~ (뱅크마다 4섹터, 원판 0)
-    for bank, secoff in STRIP_BANK_SECTORS.items():
+    # 3. 스트립 → rel 422~ (뱅크마다 4섹터, 원판 0) · adpcm 모드면 DATA_REL 부터 한 덩어리
+    if STRIP_MODE == "adpcm":
+        blob = banks[0] + b"\0" * (STRIP_SECTORS * common.USER - len(banks[0]))
+        lba = common.T2_SECTOR + DATA_REL
+        mode1.write_user_data(f, lba, blob, label=f"{NAME} strips", expect=b"\0" * len(blob))
+        touched.append((lba, STRIP_SECTORS))
+    for bank, secoff in (STRIP_BANK_SECTORS.items() if STRIP_MODE == "bank" else ()):
         blob = banks[bank] + b"\0" * (0x2000 - len(banks[bank]))
         lba = common.T2_SECTOR + DATA_REL + secoff
         mode1.write_user_data(f, lba, blob, label=f"opening strips bank {bank:02X}", expect=b"\0" * len(blob))
         touched.append((lba, 4))
     used = sum(len(b) for b in banks.values())
-    return f"오프닝 자막: 줄 {len(lines)} · 페이지 {len(pages)} · 사건 {len(events)} · 스트립 {used}B · 코드+표 {len(code)}B"
+    return f"{NAME} 자막: 줄 {len(lines)} · 페이지 {len(pages)} · 사건 {len(events)} · 스트립 {used}B · 코드+표 {len(code)}B"
 
 
 def main():
@@ -1555,8 +1713,8 @@ def main():
     for sec, page in events:
         print(f"  {sec:7.2f}s f{frames_of(sec, sub['timing']):5d} → page {page}: {[None if r is None else lines[r][:10] for r in pages[page]]}")
     if "--preview" in sys.argv:
-        from PIL import Image
         import numpy as np
+        from PIL import Image
 
         out = common.REVIEW_DIR / "opening"
         out.mkdir(parents=True, exist_ok=True)

@@ -26,10 +26,12 @@ import boxpack
 import chapter_band
 import common
 import containers
+import ending_sub
 import font
 import hook
-import opening_sub
 import lz
+import opening_sub
+import staffroll
 import sysbuild
 import translate
 
@@ -268,6 +270,23 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
                 b"\xa9" + kr[:1] + b"\x8d\x33\x85\xa9" + kr[1:],
             ),
         )
+        # 5-2. 종장(장 번호 6)은 같은 루틴이 **다른 즉치값**을 쓴다 — $85E3 에서 「終」(8F49)를
+        #      $8533 에, 전각 공백을 $8535 에. 옛 3번 슬롯이 「終 장」으로 나온 자리(마스터 09-24).
+        #      원문 자리 그대로 「종」+ 전각 공백 → 「종 장」 — 「종」은 「제」, 「장」은 「장」과 같은 칸
+        #      (마스터 2026-09-25: 「종장」으로 붙여 오른쪽에 두었더니 「제1장」들과 칸이 안 맞았다).
+        jong = font.code_of(_order_index("종"))
+        p.append(
+            (
+                "slot final chapter 終→종",
+                *_main(0x78, 0x05E3),
+                b"\xa9\x8f\x8d\x33\x85\xa9\x49\x8d\x34\x85\xa9\x81\x8d\x35\x85\xa9\x40\x8d\x36\x85",
+                b"\xa9"
+                + jong[:1]
+                + b"\x8d\x33\x85\xa9"
+                + jong[1:]
+                + b"\x8d\x34\x85\xa9\x81\x8d\x35\x85\xa9\x40\x8d\x36\x85",
+            ),
+        )
     if want("cast"):
         # 6. 「게임 시작」 뒤 성우 크레딧의 표제 `声優出演` → `ＣＡＳＴ`(마스터 확정 2026-09-23 —
         #    이름 13개는 실존 성우라 원문 유지, 표제만). 크레딧 모듈(rel 514)이 이 SJIS 평문
@@ -384,6 +403,10 @@ def _build(edits_path, iso: Path, cue: Path):
         apply_code_patches(f, glyph_bank, table, touched)
         if want("opsub"):  # 오프닝 나레이션 자막(스프라이트) — tools/opening_sub.py
             print("  " + opening_sub.apply(f, touched))
+        if want("staff"):  # 엔딩 스태프롤 전각 영문(사람 이름만 원문) — tools/staffroll.py
+            print("  " + staffroll.apply(f, touched))
+        if want("edsub"):  # 엔딩 음성 자막(스프라이트, 오프닝 런타임 한 벌 더) — tools/ending_sub.py
+            print("  " + ending_sub.apply(f, touched))
         if want("sys"):
             print("  시스템 문구:", sysbuild.apply(f, table, touched))
         if want("battle"):
