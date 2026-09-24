@@ -43,6 +43,8 @@ python3 games/pce-ed1/tools/hook.py                    # 후킹 루틴·스텁 �
 python3 games/pce-ed1/tools/font.py                    # 글리프 표·코드 배정 확인
 python3 games/pce-ed1/tools/messages.py                # 메시지 파싱 → work/derived/messages/ (열쇠↔원문)
 python3 games/pce-ed1/tools/sysstrings.py              # 시스템 문구 가족 덤프 → work/derived/sys/
+python3 games/pce-ed1/tools/savefile.py goto <sav> 224 --out <sav2> --boost   # 씬 점프 세이브(슬롯 3, 종장 등)
+python3 games/pce-ed1/tools/gfx_text.py                # 그림 글자(엔딩 카드·오마케 간판·끝) 미리보기 → work/review/
 sh games/pce-ed1/check.sh                          # ⭐ 이 게임의 커밋 전 게이트
 ```
 

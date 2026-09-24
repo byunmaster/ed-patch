@@ -3,7 +3,7 @@
 배치(status.md 9절):
   · 루틴 본체 `$3B00~`(워크 RAM, 쓰기 0회 확인 구간). 원본은 디스크 rel 126(뱅크 0x7F 적재분) 앞 256B 에
     실어 두고 스텁이 TII 로 옮긴다.
-  · 글리프 뱅크: rel 114~125(뱅크 0x7C~0x7E 적재분, 원본 0) → 스텁이 0x85~0x87 로 복사.
+  · 글리프 뱅크: rel 114~(뱅크 0x7C~ 적재분, 원본 0) → 스텁이 font.GLYPH_BANK0~0x87 로 복사(font.GLYPH_NBANKS 뱅크).
   · 스텁: 뱅크 0x69 +0x1852(루틴 사이 850B 패딩, 논리 $7852). 본 프로그램 진입 `JSR $5798` 을 스텁으로 돌리고
     스텁이 `JMP $5798` 로 잇는다.
   · 호출 규약은 EX_GETFNT 그대로: `_ax`=코드(`$F9` 리드 · `$F8` 트레일), `_bx`=출력 32B, 성공 시 A=0.
@@ -36,7 +36,7 @@ HASBAT_ADDR = 0x3DA3  # 받침 판정 임시
 STUB_ADDR = 0x7852  # 뱅크 0x69 +0x1852
 ORIG_INIT = 0x5798
 GLYPH_WINDOW_HI = 0x60  # 글리프 뱅크를 MPR3($6000) 에 잠깐 건다
-GLYPH_BANK0 = 0x85
+GLYPH_BANK0 = font.GLYPH_BANK0
 
 # (니모닉, 모드) → 옵코드. 모드: imp · imm · zp · abs · absx · absy · izpy · rel · tma · tam
 OPS = {
@@ -204,7 +204,7 @@ def hook_routine() -> bytes:
     a.op("ADC", "absx", "base_hi")
     a.op("STA", "zp", 0xED)
     a.op("BRA", "rel", "copy_setup")  # 보통 글자는 바로 복사로
-    # ─ 글리프 복사: 뱅크 = 0x85 + (off>>13), MPR3 창 ─
+    # ─ 글리프 복사: 뱅크 = GLYPH_BANK0 + (off>>13), MPR3 창 ─
     a.label("copy_setup")
     a.op("TMA", "tma", 3)
     a.op("STA", "zp", 0xEE)
@@ -218,13 +218,36 @@ def hook_routine() -> bytes:
     a.op("AND", "imm", 0x1F)
     a.op("ORA", "imm", GLYPH_WINDOW_HI)
     a.op("STA", "zp", 0xED)
+    # 🔴 **뱅크 경계를 걸치는 글리프**(2026-09-16, 화면에서 「십」이 깨져 잡았다).
+    # 글리프 24B · 뱅크 8,192B 라 8192÷24=341.33 로 안 떨어져 **순번 341 하나가 경계에 걸린다** —
+    # 뱅크 안에 8B, 다음 뱅크에 16B. 아래 복사는 MPR3 창($6000~$7FFF) 하나만 걸고 24B 를 **연속으로**
+    # 읽으므로, 그 글자는 `$7FF8`에서 시작해 **`$800F`까지 창 밖(MPR4)** 을 읽었다. MPR4 는 이 루틴이
+    # 건드리지도 저장하지도 않아 **게임 뱅크가 그대로 새어 들어왔다**(화면 실측: 윗 4행=8B 만 맞고
+    # 아래 8행=16B 가 쓰레기 — 8/16 분할이 그대로 보였다).
+    # ⇒ 넘을 때만 **창 끝까지 복사 → 다음 뱅크로 갈아 끼우고 → 나머지**. MPR3 은 이미 저장·복원한다.
+    # ⚠ 글자→코드 순서는 **세이브에 남아 못 바꾼다** — 「걸치는 순번을 건너뛴다」는 해법이 아니다.
     a.op("CLY")
     a.label("copy")
     a.op("LDA", "izpy", 0xEC)
     a.op("STA", "izpy", 0xFA)
     a.op("INY")
     a.op("CPY", "imm", font.GLYPH_BYTES)
+    a.op("BEQ", "rel", "copy_done")
+    a.op("TYA")
+    a.op("CLC")
+    a.op("ADC", "zp", 0xEC)  # ($EC+Y) 하위가 0 = 페이지 경계
     a.op("BNE", "rel", "copy")
+    a.op("LDA", "zp", 0xED)
+    a.op("CMP", "imm", GLYPH_WINDOW_HI | 0x1F)  # 그 페이지 경계가 **창 끝**($8000)인가
+    a.op("BNE", "rel", "copy")  # 창 안쪽 경계면 그냥 이어간다(주소가 알아서 올라간다)
+    a.op("TMA", "tma", 3)
+    a.op("INC")
+    a.op("TAM", "tam", 3)  # 다음 글리프 뱅크로 갈아 끼운다
+    # 포인터를 $5F00+$EC 로 내린다 — 지금 Y 에서 정확히 $6000 을 가리킨다($EC+Y=0x100)
+    a.op("LDA", "imm", GLYPH_WINDOW_HI - 1)
+    a.op("STA", "zp", 0xED)
+    a.op("BRA", "rel", "copy")  # Y 를 이어받아 나머지를 채운다
+    a.label("copy_done")
     a.op("CLA")
     a.label("zero")
     a.op("STA", "izpy", 0xFA)
@@ -368,7 +391,7 @@ def init_stub() -> bytes:
     a.op("PHA")
     a.op("TMA", "tma", 6)
     a.op("PHA")
-    for i in range(3):
+    for i in range(font.GLYPH_NBANKS):
         a.op("LDA", "imm", 0x7C + i)
         a.op("TAM", "tam", 5)
         a.op("LDA", "imm", GLYPH_BANK0 + i)

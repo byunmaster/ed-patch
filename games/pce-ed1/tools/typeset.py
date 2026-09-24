@@ -23,6 +23,18 @@ def pages(text: str, *, speaker: bool) -> list[list[str]]:
     """문안 → [[줄…], …]. `\\n` 은 하드 개행, `\\f` 는 강제 페이지."""
     out: list[list[str]] = []
     for chunk in text.split("\f"):
+        if "\n" in chunk and not speaker:
+            # 🔴 **하드 개행이 든 창은 줄을 그대로 둔다**(빈 줄·앞 공백 포함) — krwrap 은
+            #    protect_hard 여도 빈 줄과 줄머리 공백을 지워 장 끝 「완」 카드가 「…여행 완」 한 줄로
+            #    붙었다(2026-09-24, 여섯 장 모두). 원문도 전각 공백으로 가운데를 맞춘 카드다.
+            #    정본에서 `\n` 을 쓰는 건 그 카드뿐이라 대사 조판은 안 바뀐다.
+            lines = chunk.split("\n")
+            # ⚠ 창은 세 줄이다. 그리고 **빈 줄은 전각 공백 하나를 넣어 적는다** — 개행(`01`)은 「다음 글자 전에
+            #   줄 바꿈」 표시라 둘을 잇달아 써도 한 줄만 넘어간다(종장 카드 화면 2026-09-25)
+            assert len(lines) <= LINES and all(len(x) <= WIDTH for x in lines), chunk
+            out.append(lines)
+            speaker = False
+            continue
         pg = krwrap.wrap_pages(chunk, WIDTH, LINES, cell_width=cell)
         if speaker and pg and pg[0] and len(pg[0][0]) > FIRST_WITH_SPEAKER:
             # 첫 줄만 좁히면 되지만 krwrap 엔 줄별 폭이 없다 — 첫 창을 10칸으로 다시 짠다

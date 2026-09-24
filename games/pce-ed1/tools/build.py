@@ -22,11 +22,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import battle
+import boxpack
+import chapter_band
 import common
 import containers
+import ending_sub
 import font
+import gfx_text
 import hook
 import lz
+import opening_sub
+import staffroll
 import sysbuild
 import translate
 
@@ -158,6 +164,8 @@ def assemble(entries: list[tuple[int, bytes]], orig: bytes, where: str = "") -> 
             was, _ = lz.decode(orig[src:], ln_of[src])
             if blk != was:  # ⚠ 안 고친 블록은 **원본 바이트를 손대지 않는다** — 우리 인코더가
                 pk = lz.encode(blk)  #    조금 촘촘해 다시 누르면 바꿀 이유 없는 바이트가 다 바뀐다
+                if len(pk) > room:  # 탐욕이 넘치면 최적 파싱으로 다시(느리다 — 넘칠 때만)
+                    pk = lz.encode_optimal(blk)
                 if len(pk) > room:
                     raise BuildError(
                         f"컨테이너 {where} 블록 id {id_}: 압축 {len(pk)}B > 원래 슬롯 {room}B — "
@@ -207,8 +215,9 @@ def _main(bank: int, off: int) -> tuple[int, int]:
 
 ONLY: set[str] | None = None
 """진단용 — 개입 그룹의 부분집합만 건다(`--only font,hook`). 그룹은 여섯:
-`font`(글리프 뱅크 + 진입 스텁) · `cache`(16 → 13 슬롯) · `hook`(EX_GETFNT 우회) ·
+`font`(글리프 뱅크 + 진입 스텁) · `cache`(16 → 16−글리프 뱅크 칸) · `hook`(EX_GETFNT 우회) ·
 `sys`(시스템 문구) · `battle`(전투 컨테이너) · `scn`(씬 컨테이너) ·
+`band`(장 제목 띠, rel 210) · `box`(빈 슬롯 상자 msg1, 뱅크 0x7B 재배치) ·
 `glyph`(글리프 뱅크 적재) · `payload`(후킹 루틴 + 표를 $3B00 에 싣기)
 — 뒤 둘은 `font` 안에서 다시 뺄 수 있다.
 🔴 **이게 소프트락을 가르는 유일한 도구다** — 증상이 나면 하나씩 끄며 A/B 한다.
@@ -218,6 +227,11 @@ ONLY: set[str] | None = None
 
 def want(g: str) -> bool:
     return ONLY is None or g in ONLY
+
+
+def _order_index(ch: str) -> int:
+    """글리프 정본 순서에서의 번호 — 코드는 세이브에 남으므로 정본만 본다."""
+    return font._order_canon().index(ch)
 
 
 def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
@@ -237,11 +251,61 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
         stub = hook.init_stub()
         p.append(("init stub", *_main(0x69, 0x1852), b"\0" * len(stub), stub))
     if want("cache"):
-        # 3. 할당기: 캐시 16 → 13 슬롯 (뱅크 0x85~0x87 을 글리프에 내준다) — status 9절
-        p.append(("cache init free=13", *_main(0x68, 0x14FB), b"\xa9\x90", b"\xa9\x8d"))
+        # 3. 할당기: 캐시 16 → 16−글리프 뱅크 칸(끝 칸들을 글리프에 내준다) — status 9절
+        #    🔴 13칸(글리프 3뱅크)으로는 종장 맵에서 넘쳤다 — 원본이 그 자리에서 14칸을 쓴다(devlog 09-25).
+        n = 16 - font.GLYPH_NBANKS
+        p.append((f"cache init free={n}", *_main(0x68, 0x14FB), b"\xa9\x90", bytes([0xA9, 0x80 | n])))
         for off in (0x151F, 0x15D1, 0x15F2, 0x163A, 0x1783):
-            p.append((f"cache CPX 13 @{off:04X}", *_main(0x68, off), b"\xe0\x10", b"\xe0\x0d"))
-        p.append(("cache LDA 13 @15FC", *_main(0x68, 0x15FC), b"\xa9\x10", b"\xa9\x0d"))
+            p.append((f"cache CPX {n} @{off:04X}", *_main(0x68, off), b"\xe0\x10", bytes([0xE0, n])))
+        p.append((f"cache LDA {n} @15FC", *_main(0x68, 0x15FC), b"\xa9\x10", bytes([0xA9, n])))
+    if want("slot"):
+        # 5. 🔴 파일 선택 화면의 슬롯 줄 — 「第」가 **코드에 즉치값으로** 박혀 있다.
+        #    $8616 LDA #$91 / STA $8533 / LDA #$E6 / STA $8534 로 슬롯 줄 틀의 「제」 자리를
+        #    매번 원문 한자로 **덮어쓴다**(뱅크 0x78 = 논리 $8000 창). 그래서 틀을 번역해도
+        #    첫 줄만 한글이고 둘째 줄부터 한자로 나왔다(마스터 실측: 1번 한글 · 2번 한자).
+        #    ⚠ 이 자리는 **문자열 검색으로는 안 잡힌다** — 「91 e6」이 연속이 아니라
+        #    `a9 91` … `a9 e6` 로 **두 즉치값에 쪼개져** 있기 때문이다. 화면 실측 → 쓰기
+        #    브레이크포인트($8533)로 PC $8618 을 잡아서야 나왔다(devlog 09-16 (6)).
+        kr = font.code_of(_order_index("제"))
+        p.append(
+            (
+                "slot chapter 第→제",
+                *_main(0x78, 0x0616),
+                b"\xa9\x91\x8d\x33\x85\xa9\xe6",
+                b"\xa9" + kr[:1] + b"\x8d\x33\x85\xa9" + kr[1:],
+            ),
+        )
+        # 5-2. 종장(장 번호 6)은 같은 루틴이 **다른 즉치값**을 쓴다 — $85E3 에서 「終」(8F49)를
+        #      $8533 에, 전각 공백을 $8535 에. 옛 3번 슬롯이 「終 장」으로 나온 자리(마스터 09-24).
+        #      원문 자리 그대로 「종」+ 전각 공백 → 「종 장」 — 「종」은 「제」, 「장」은 「장」과 같은 칸
+        #      (마스터 2026-09-25: 「종장」으로 붙여 오른쪽에 두었더니 「제1장」들과 칸이 안 맞았다).
+        jong = font.code_of(_order_index("종"))
+        p.append(
+            (
+                "slot final chapter 終→종",
+                *_main(0x78, 0x05E3),
+                b"\xa9\x8f\x8d\x33\x85\xa9\x49\x8d\x34\x85\xa9\x81\x8d\x35\x85\xa9\x40\x8d\x36\x85",
+                b"\xa9"
+                + jong[:1]
+                + b"\x8d\x33\x85\xa9"
+                + jong[1:]
+                + b"\x8d\x34\x85\xa9\x81\x8d\x35\x85\xa9\x40\x8d\x36\x85",
+            ),
+        )
+    if want("cast"):
+        # 6. 「게임 시작」 뒤 성우 크레딧의 표제 `声優出演` → `ＣＡＳＴ`(마스터 확정 2026-09-23 —
+        #    이름 13개는 실존 성우라 원문 유지, 표제만). 크레딧 모듈(rel 514)이 이 SJIS 평문
+        #    (rel 517)을 BIOS 글꼴(EX_GETFNT)로 직접 그리므로 **같은 길이의 전각 영문**으로 바꾸면
+        #    코드 수정 없이 같은 자리에 나온다. 뒤의 `81 40 00`(전각 공백·종단)은 그대로 둔다.
+        p.append(
+            (
+                "cast title 声優出演→ＣＡＳＴ",
+                517,
+                0x0420,
+                "声優出演".encode("sjis"),
+                "ＣＡＳＴ".encode("sjis"),
+            )
+        )
     if want("hook"):
         # 4. EX_GETFNT 호출부(본 프로그램 4곳) → $3B00
         tgt = hook.HOOK_ADDR.to_bytes(2, "little")
@@ -260,7 +324,7 @@ def apply_code_patches(
         lba = common.T2_SECTOR + rel
         mode1.write_at(f, lba, common.USER, off, new, label=label, expect=old)
         touched.append((lba, 1))
-    # 5. 글리프 뱅크 → rel 114~125(뱅크 0x7C~0x7E 적재분, 원본 0), 후킹 루틴 → rel 126 앞 256B
+    # 5. 글리프 뱅크 → rel 114~(뱅크 0x7C~ 적재분, 원본 0 — font.GLYPH_NBANKS 뱅크), 후킹 루틴 → rel 126 앞 256B
     if not want("font"):
         return
     if want("glyph"):  # 진단용으로 뺄 수 있다 — 뱅크 0x7C~0x7E 를 0 인 채로 두는 A/B
@@ -268,7 +332,7 @@ def apply_code_patches(
         mode1.write_user_data(
             f, lba, glyph_bank, label="glyph banks", expect=b"\0" * len(glyph_bank)
         )
-        touched.append((lba, 12))
+        touched.append((lba, len(glyph_bank) // common.USER))
     # 루틴 + 조사 오프셋표 + 받침 비트맵 둘 — 스텁이 통째로 $3B00 으로 옮긴다(0x300B)
     payload = bytearray(hook.hook_routine())
     payload += b"\0" * (hook.JOSA_OFF_ADDR - hook.HOOK_ADDR - len(payload))
@@ -342,10 +406,28 @@ def _build(edits_path, iso: Path, cue: Path):
     ledger = WriteLedger()
     with open(iso, "r+b") as f, _record_writes(ledger):
         apply_code_patches(f, glyph_bank, table, touched)
+        if want("opsub"):  # 오프닝 나레이션 자막(스프라이트) — tools/opening_sub.py
+            print("  " + opening_sub.apply(f, touched))
+        if want("staff"):  # 엔딩 스태프롤 전각 영문(사람 이름만 원문) — tools/staffroll.py
+            print("  " + staffroll.apply(f, touched))
+        # 엔딩 끝 카드 「영웅들의 전설 / 제작·저작」(네오둥근모) · 오마케 간판 — tools/gfx_text.py
+        if want("card"):
+            print("  " + gfx_text.apply_card(f, touched))
+        if want("banner"):
+            print("  " + gfx_text.apply_banner(f, touched))
+        if want("kkeut"):
+            print("  " + gfx_text.apply_kkeut(f, touched))
+        # 엔딩 음성 자막(스프라이트, 오프닝 런타임 한 벌 더) — tools/ending_sub.py
+        if want("edsub"):
+            print("  " + ending_sub.apply(f, touched))
         if want("sys"):
             print("  시스템 문구:", sysbuild.apply(f, table, touched))
         if want("battle"):
             print("  전투 데이터:", battle.apply(f, table, touched))
+        if want("band"):
+            print("  " + chapter_band.apply(f, touched))
+        if want("box"):
+            print("  " + boxpack.apply_msg1_relocation(f, touched))
         translated_ids = {int(p.stem[3:]) for p in translate.M.SCRIPT_DIR.glob("scn*.json")}
         n_msgs = 0
         for rel, c in sorted(by_rel.items()) if want("scn") else []:
@@ -373,7 +455,9 @@ def _build(edits_path, iso: Path, cue: Path):
             mode1.write_user_data(f, lba, data, label=f"container rel {rel}", expect=orig)
             touched.append((lba, slot_of[rel]))
             moved = sum(1 for a, b in zip(data, orig, strict=True) if a != b)
-            print(f"  컨테이너 rel {rel}: {len(entries)}블록 · 자리 보존 · 바뀐 바이트 {moved}/{slot}")
+            print(
+                f"  컨테이너 rel {rel}: {len(entries)}블록 · 자리 보존 · 바뀐 바이트 {moved}/{slot}"
+            )
     print(f"  번역 메시지 {n_msgs}건(컨테이너마다 다시 셈) · 글리프 {len(chars)}자")
     print(f"  덮어쓰기 없음 (쓰기 구간 {ledger.verify(iso)})")
     verify_immutable(iso, touched)
