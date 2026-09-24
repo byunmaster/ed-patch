@@ -3,7 +3,7 @@
 배치(status.md 9절):
   · 루틴 본체 `$3B00~`(워크 RAM, 쓰기 0회 확인 구간). 원본은 디스크 rel 126(뱅크 0x7F 적재분) 앞 256B 에
     실어 두고 스텁이 TII 로 옮긴다.
-  · 글리프 뱅크: rel 114~125(뱅크 0x7C~0x7E 적재분, 원본 0) → 스텁이 0x85~0x87 로 복사.
+  · 글리프 뱅크: rel 114~(뱅크 0x7C~ 적재분, 원본 0) → 스텁이 font.GLYPH_BANK0~0x87 로 복사(font.GLYPH_NBANKS 뱅크).
   · 스텁: 뱅크 0x69 +0x1852(루틴 사이 850B 패딩, 논리 $7852). 본 프로그램 진입 `JSR $5798` 을 스텁으로 돌리고
     스텁이 `JMP $5798` 로 잇는다.
   · 호출 규약은 EX_GETFNT 그대로: `_ax`=코드(`$F9` 리드 · `$F8` 트레일), `_bx`=출력 32B, 성공 시 A=0.
@@ -36,7 +36,7 @@ HASBAT_ADDR = 0x3DA3  # 받침 판정 임시
 STUB_ADDR = 0x7852  # 뱅크 0x69 +0x1852
 ORIG_INIT = 0x5798
 GLYPH_WINDOW_HI = 0x60  # 글리프 뱅크를 MPR3($6000) 에 잠깐 건다
-GLYPH_BANK0 = 0x85
+GLYPH_BANK0 = font.GLYPH_BANK0
 
 # (니모닉, 모드) → 옵코드. 모드: imp · imm · zp · abs · absx · absy · izpy · rel · tma · tam
 OPS = {
@@ -204,7 +204,7 @@ def hook_routine() -> bytes:
     a.op("ADC", "absx", "base_hi")
     a.op("STA", "zp", 0xED)
     a.op("BRA", "rel", "copy_setup")  # 보통 글자는 바로 복사로
-    # ─ 글리프 복사: 뱅크 = 0x85 + (off>>13), MPR3 창 ─
+    # ─ 글리프 복사: 뱅크 = GLYPH_BANK0 + (off>>13), MPR3 창 ─
     a.label("copy_setup")
     a.op("TMA", "tma", 3)
     a.op("STA", "zp", 0xEE)
@@ -391,7 +391,7 @@ def init_stub() -> bytes:
     a.op("PHA")
     a.op("TMA", "tma", 6)
     a.op("PHA")
-    for i in range(3):
+    for i in range(font.GLYPH_NBANKS):
         a.op("LDA", "imm", 0x7C + i)
         a.op("TAM", "tam", 5)
         a.op("LDA", "imm", GLYPH_BANK0 + i)

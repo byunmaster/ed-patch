@@ -48,10 +48,10 @@ def fetch(banks: bytes, idx: int) -> bytes:
 class GlyphBankBoundary(unittest.TestCase):
     def setUp(self):
         # 합성 뱅크 — 바이트마다 값이 달라 한 바이트만 어긋나도 걸린다
-        self.banks = bytes((i * 7 + (i >> 8) * 13) & 0xFF for i in range(3 * BANK))
+        self.banks = bytes((i * 7 + (i >> 8) * 13) & 0xFF for i in range(font.GLYPH_NBANKS * BANK))
 
     def test_every_glyph_reads_whole(self):
-        """상한(1,024자)까지 **모든** 순번이 자기 24B 를 그대로 받아야 한다."""
+        """상한(font.MAX_GLYPHS — 2뱅크 682자)까지 **모든** 순번이 자기 24B 를 그대로 받아야 한다."""
         for idx in range(font.MAX_GLYPHS):
             off = idx * font.GLYPH_BYTES
             want = self.banks[off : off + font.GLYPH_BYTES]
@@ -65,8 +65,9 @@ class GlyphBankBoundary(unittest.TestCase):
             if (i * font.GLYPH_BYTES) % BANK > BANK - font.GLYPH_BYTES
         ]
         self.assertTrue(straddling, "걸치는 순번이 없다 — 이 검사가 경계 경로를 안 밟는다")
-        # 2026-09-16 현재: 341(=「십」)·682. 값이 바뀌면 글리프 크기/뱅크 크기가 바뀐 것이다.
-        self.assertEqual(straddling, [341, 682], "걸치는 자리가 옮겨 갔다 — 훅을 다시 보라")
+        # 2026-09-16: 341(=「십」)·682(3뱅크). 2026-09-25 2뱅크로 줄여 341 하나. 값이 바뀌면 글리프
+        # 크기/뱅크 수가 바뀐 것이다.
+        self.assertEqual(straddling, [341], "걸치는 자리가 옮겨 갔다 — 훅을 다시 보라")
 
     def test_hook_routine_fits(self):
         """경계 처리를 넣고도 루틴이 제 칸에 들어가야 한다(넘치면 뒤 표를 덮어쓴다)."""

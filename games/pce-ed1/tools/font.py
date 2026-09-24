@@ -1,6 +1,6 @@
 """한글 글리프 뱅크 + 코드표 — 문안이 쓰는 음절만 싣는다(결정 B, status.md 8절).
 
-    글리프 = 12×12 → 24B(행 0~11, 2B/행, 비트 15~4). 뱅크 0x85~0x87 에 순서대로(24B × ≤1,024).
+    글리프 = 12×12 → 24B(행 0~11, 2B/행, 비트 15~4). 뱅크 0x86~0x87 에 순서대로(24B × ≤682).
     코드  = 리드 F0+idx//220 · 트레일 0x24+idx%220 (idx 는 **정본 순서**의 번호 — `script/glyph_order.json`).
     ⚠ 트레일은 0x24 이상 — 인터프리터가 <0x24 를 옵코드로 보고, 이름칸 스캐너가 0x06 을 끝으로 본다.
 
@@ -20,11 +20,16 @@ GLYPH_BYTES = 24
 PER_LEAD = 220
 LEAD0 = 0xF0
 TRAIL0 = 0x24
-MAX_GLYPHS = 3 * 0x2000 // GLYPH_BYTES  # 1,024
+# 🔴 **2뱅크**(0x86~0x87)다 — 2026-09-25 3뱅크에서 줄였다. 리소스 캐시(0x78~0x87, 16칸)에서 글리프가
+#    가져간 만큼 게임의 칸이 준다. 13칸으로는 종장 맵이 넘쳐(원본이 이 자리에서 14칸을 쓴다) 장 제목 띠의
+#    적재가 **조용히 실패**했다(devlog 09-25). 682자 상한 — 넘으면 빌드가 멈춘다(재검토: status.md 8절).
+GLYPH_NBANKS = 2
+GLYPH_BANK0 = 0x88 - GLYPH_NBANKS  # 캐시 맨 끝 칸들
+MAX_GLYPHS = GLYPH_NBANKS * 0x2000 // GLYPH_BYTES  # 682
 # 🔴 리드 F9 는 **동적 조사** 전용으로 예약한다(글리프 배정에서 뺀다) — `F9 (0x24+종류)`.
 #    후킹 루틴이 **직전에 그린 글자**의 받침을 보고 두 글리프 중 하나를 낸다(status.md 12절).
 JOSA_LEAD = 0xF9
-MAX_LEADS = JOSA_LEAD - LEAD0  # 9 → 1,980 자리, 뱅크 셋(1,024)이 먼저 찬다
+MAX_LEADS = JOSA_LEAD - LEAD0  # 9 → 1,980 자리, 뱅크(682)가 먼저 찬다
 JOSA_PAIRS = ["은/는", "이/가", "을/를", "과/와", "으로/로", "아/야", "이랑/랑"]
 JOSA_CHARS = sorted({c for p in JOSA_PAIRS for part in p.split("/") for c in part})
 
@@ -135,7 +140,7 @@ def expand_packed(text: str) -> str:
 
 def code_of(idx: int) -> bytes:
     if idx >= MAX_GLYPHS:
-        raise ValueError(f"글리프 {idx} — 뱅크 셋(1,024자)을 넘는다")
+        raise ValueError(f"글리프 {idx} — 글리프 뱅크({MAX_GLYPHS}자)를 넘는다")
     lead = LEAD0 + idx // PER_LEAD
     if lead >= JOSA_LEAD:
         raise ValueError("리드가 조사 예약(F9)에 닿았다")
@@ -220,7 +225,7 @@ def build_table(chars) -> tuple[dict[str, bytes], bytes]:
         raise ValueError(f"음절 {len(order)}자 — 상한 {MAX_GLYPHS}. 결정 B 재검토(status.md 8절)")
     table = {ch: code_of(i) for i, ch in enumerate(order)}
     bank = b"".join(glyph(ch) for ch in order)
-    bank += b"\0" * (3 * 0x2000 - len(bank))
+    bank += b"\0" * (GLYPH_NBANKS * 0x2000 - len(bank))
     build_table.order = order  # 받침 표를 만들 때 쓴다
     return table, bank
 

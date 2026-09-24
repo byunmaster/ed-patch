@@ -215,7 +215,7 @@ def _main(bank: int, off: int) -> tuple[int, int]:
 
 ONLY: set[str] | None = None
 """진단용 — 개입 그룹의 부분집합만 건다(`--only font,hook`). 그룹은 여섯:
-`font`(글리프 뱅크 + 진입 스텁) · `cache`(16 → 13 슬롯) · `hook`(EX_GETFNT 우회) ·
+`font`(글리프 뱅크 + 진입 스텁) · `cache`(16 → 16−글리프 뱅크 칸) · `hook`(EX_GETFNT 우회) ·
 `sys`(시스템 문구) · `battle`(전투 컨테이너) · `scn`(씬 컨테이너) ·
 `band`(장 제목 띠, rel 210) · `box`(빈 슬롯 상자 msg1, 뱅크 0x7B 재배치) ·
 `glyph`(글리프 뱅크 적재) · `payload`(후킹 루틴 + 표를 $3B00 에 싣기)
@@ -251,11 +251,13 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
         stub = hook.init_stub()
         p.append(("init stub", *_main(0x69, 0x1852), b"\0" * len(stub), stub))
     if want("cache"):
-        # 3. 할당기: 캐시 16 → 13 슬롯 (뱅크 0x85~0x87 을 글리프에 내준다) — status 9절
-        p.append(("cache init free=13", *_main(0x68, 0x14FB), b"\xa9\x90", b"\xa9\x8d"))
+        # 3. 할당기: 캐시 16 → 16−글리프 뱅크 칸(끝 칸들을 글리프에 내준다) — status 9절
+        #    🔴 13칸(글리프 3뱅크)으로는 종장 맵에서 넘쳤다 — 원본이 그 자리에서 14칸을 쓴다(devlog 09-25).
+        n = 16 - font.GLYPH_NBANKS
+        p.append((f"cache init free={n}", *_main(0x68, 0x14FB), b"\xa9\x90", bytes([0xA9, 0x80 | n])))
         for off in (0x151F, 0x15D1, 0x15F2, 0x163A, 0x1783):
-            p.append((f"cache CPX 13 @{off:04X}", *_main(0x68, off), b"\xe0\x10", b"\xe0\x0d"))
-        p.append(("cache LDA 13 @15FC", *_main(0x68, 0x15FC), b"\xa9\x10", b"\xa9\x0d"))
+            p.append((f"cache CPX {n} @{off:04X}", *_main(0x68, off), b"\xe0\x10", bytes([0xE0, n])))
+        p.append((f"cache LDA {n} @15FC", *_main(0x68, 0x15FC), b"\xa9\x10", bytes([0xA9, n])))
     if want("slot"):
         # 5. 🔴 파일 선택 화면의 슬롯 줄 — 「第」가 **코드에 즉치값으로** 박혀 있다.
         #    $8616 LDA #$91 / STA $8533 / LDA #$E6 / STA $8534 로 슬롯 줄 틀의 「제」 자리를
@@ -322,7 +324,7 @@ def apply_code_patches(
         lba = common.T2_SECTOR + rel
         mode1.write_at(f, lba, common.USER, off, new, label=label, expect=old)
         touched.append((lba, 1))
-    # 5. 글리프 뱅크 → rel 114~125(뱅크 0x7C~0x7E 적재분, 원본 0), 후킹 루틴 → rel 126 앞 256B
+    # 5. 글리프 뱅크 → rel 114~(뱅크 0x7C~ 적재분, 원본 0 — font.GLYPH_NBANKS 뱅크), 후킹 루틴 → rel 126 앞 256B
     if not want("font"):
         return
     if want("glyph"):  # 진단용으로 뺄 수 있다 — 뱅크 0x7C~0x7E 를 0 인 채로 두는 A/B
@@ -330,7 +332,7 @@ def apply_code_patches(
         mode1.write_user_data(
             f, lba, glyph_bank, label="glyph banks", expect=b"\0" * len(glyph_bank)
         )
-        touched.append((lba, 12))
+        touched.append((lba, len(glyph_bank) // common.USER))
     # 루틴 + 조사 오프셋표 + 받침 비트맵 둘 — 스텁이 통째로 $3B00 으로 옮긴다(0x300B)
     payload = bytearray(hook.hook_routine())
     payload += b"\0" * (hook.JOSA_OFF_ADDR - hook.HOOK_ADDR - len(payload))
