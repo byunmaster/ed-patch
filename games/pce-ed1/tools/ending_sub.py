@@ -68,6 +68,7 @@ rt.BAND = True  # 🔴 까만 띠 자막(마스터 2026-09-24) — 표시를 프
 # 잘라 보여서 228 에 둔다. 띠가 좁은 그림(176줄 = 띠 32줄)에서 두 줄이면 위가 그림 밑에 몇 줄 걸친다.
 # 띠가 없는 그림(240줄, 마지막 대지 장면)에선 종전처럼 그림 위에 뜬다.
 BOTTOM_ROW = 228
+rt.GAMEN_RELEASE = True  # 파티 장면 끝에 SAT 28.. 복사본을 지운다(opening_sub sat_flush 주석 — 소니아 목)
 rt.BAND_CENTER = True
 rt.RASTER_SAFE = True  # 그리기에서 SEI 를 안 건다 — 띠 RCR 이 늦으면 띠 윗단에 그림 타일이 비친다(마스터 캡처 2026-09-25)
 rt.WRAP_W = 7 * 32 - 2  # 띠엔 게임 스프라이트가 없어 스트립 7개를 다 쓴다(왼쪽 정렬, 마스터 2026-09-25)
@@ -92,7 +93,10 @@ def page_y_table(pages, page_lay):
         y = (VIS_BOTTOM + 120 + 240 // 2) // 2 - bh // 2  # h=240 일 때의 가운데 식: (232 + 240)/2 − bh/2
         out.append(y - rt.PAGE_Y_BIAS + 64)
         bh_real = rt.LINE_H * (max(n, 1) - 1) + rt.GLYPH_ROWS  # 바닥 한계는 그 페이지의 실제 높이로
-        ymax.append(VIS_BOTTOM - 1 - bh_real - rt.PAGE_Y_BIAS + 64)  # 바닥을 보이는 끝(231행)까지 — 좁은 띠에서도 가운데에 가깝게
+        # 바닥을 보이는 끝(231행)까지 — 위끝 + 높이 − 1 ≤ 231 ⇒ 위끝 ≤ 232 − 높이. 🔴 종전 식(−1 을 더 뺐다)은 한 줄 위로 올라가,
+        # 띠가 딱 두 줄 높이(32행)인 「좋아…」 장면에서 첫 줄 맨 윗줄 1px 이 그림 밑변에 걸렸다 — 게임이 스프라이트를 켜기 전엔
+        # 띠(밑변 아래)에서만 스프라이트가 보이니 그 1px 이 잘려 보였다(마스터 캡처 2026-09-25).
+        ymax.append(VIS_BOTTOM - bh_real - rt.PAGE_Y_BIAS + 64)
         # 가장 짧은 그림에서도 위가 그림 밑변보다 아래(띠 안)
         top144 = y - (240 - rt.SHORTEST_SCREEN) // 4
         assert min(top144, BOTTOM_ROW - bh) >= 120 + rt.SHORTEST_SCREEN // 2 - 2, (i, top144, bh)

@@ -149,6 +149,7 @@ PAGE_YMAX: list = []  # BAND_CENTER 때 페이지별 상한(프레임 행, page_
 PAGE_Y_BIAS = 0  # page_y 표(한 바이트)에서 빼 둔 값 — sat_show 가 더한다(엔딩 64)
 BAND_RAM = 0x3C40  # 엔딩 내내 0 인 $3AF0~$3DA1 안, CELL_BUF(56B) 뒤 — IRQ 트램펄린 + 처리기 둘
 BAND_TABLE = 0x2BCE
+GAMEN_RELEASE = False  # 엔딩: game_n 장면의 자막이 끝나면 게임 스프라이트 옮기기를 멈춘다(sat_flush 주석)
 BAND_ORIG = bytes([0x37, 0x44, 0xF0, 0x3A, 0x44, 0x00])  # 엔딩 모듈 원래 사슬(덤프 전부 같다)
 RCR_NEXT = 0x4154  # 엔딩 모듈의 「다음 RCR 줄 걸기」
 # 🔴 2026-09-23 실측 사고: 처음 $233A 에 뒀다가 IRQ 트램펄린 꼬리 2B(`INC $2351` 상위·`RTS`)를
@@ -650,7 +651,19 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
             h.op("ST0", "imm", 5)  # CR — 게임 그림자 $F3/$F4 (IRQ1 이 매 프레임 쓰는 값)
             h.op("LDA", "zp", 0xF3)
             if bg_off:
-                h.op("AND", "imm", 0x7F)  # BG 끔(스프라이트는 그대로)
+                # 🔴 **게임이 BG 를 켜 둔 때만**(그림자 bit7) 손댄다. 게임이 그림을 올리느라 스스로 화면을 끈 때($F3=0x0C)는
+                #   그대로 둬야 원본처럼 버스트 모드가 로딩 중인 프레임을 가린다 — 늘 스프라이트를 켰더니 가림막이 사라져,
+                #   BG 를 표시 도중에 켜는 로딩 마지막 프레임에 반쯤 올라온 그림이 틀린 색으로 한 장 비쳤다(「좋아…」 직전,
+                #   마스터 영상 2026-09-25).
+                h.op("BPL", "rel", "band_keep")
+                # BG 끔 + 🔴 **스프라이트는 켠다**. 둘 다 꺼진 채 수직 동기를 맞으면 VDC 가 다음 프레임을 통째로 쉰다
+                #   (버스트 모드 — 화면 전체가 까맣다). 평소엔 VBlank 가 CR 을 되돌려 문제없지만, 게임이 컷을 올리느라
+                #   VBlank 처리를 건너뛰는 프레임엔 이 값 그대로 동기를 맞는다 — 자막이 뜨기 전(그림자 $F3=8C, 스프라이트
+                #   꺼짐) 「좋아…」 세리오스가 돌아서는 사이 세 번 까맣게 깜빡였다(마스터 영상 2026-09-25, 원본엔 없음 ·
+                #   에뮬 실측: 그 프레임 VBlank 에 CR=0x0C). 켜도 띠(그림 밑변 아래)엔 게임 스프라이트가 없다(SAT 실측).
+                h.op("AND", "imm", 0x7F)
+                h.op("ORA", "imm", 0x40)
+                h.label("band_keep")
             h.op("STA", "abs", 0x0002)
             h.op("LDA", "zp", 0xF4)
             h.op("STA", "abs", 0x0003)
@@ -1368,11 +1381,52 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.label("sat_flush")
     a.op("LDY", "imm", SC_GAMEN)
     a.op("LDA", "izpy", Z_SCN)
-    a.op("BEQ", "rel", "sf_ours")
+    if GAMEN_RELEASE:  # 아래 풀기 경로가 길어 짧은 분기가 안 닿는다
+        a.op("BNE", "rel", "sf_gn")
+        a.op("JMP", "abs", "sf_ours")
+        a.label("sf_gn")
+    else:
+        a.op("BEQ", "rel", "sf_ours")
     a.op("ASL")
     a.op("ASL")
     a.op("ASL")
     a.op("STA", "zp", Z_T2)  # 게임 항목 바이트 수(≤192)
+    if GAMEN_RELEASE:
+        # 장면 자막이 끝나면 옮기기를 멈추고 28.. 의 복사본을 지운다 — 우리 항목도 안 쓴다(게임 것만 남는다).
+        # 🔴 그대로 두면 다음 그림이 올라오는 동안 **옛 장면의 게임 스프라이트 복사본**이 28 번에 남아, 패턴 자리에 새 그림
+        # 데이터가 들어온 채로 그려졌다 — 파티2 → 파티3 페이드인에서 소니아 목에 갈색 상자(마스터 캡처 2026-09-25, 원본엔
+        # 28 번이 비어 있다 · 에뮬 SAT 실측: Y 9A X 9C 패턴 300).
+        # 시점은 V_RESTORED = 1 — end 에서 hide_all(=2)을 한 뒤 그 **숨김이 한 번 옮기기 경로로 SAT 에 반영된 다음**이다.
+        #   FRAME ≥ end 로 바로 풀었더니 숨김이 안 써져, 게임이 다시 안 쓰는 0..game_n−1 안의 우리 항목(마지막 자막의 스트립)이
+        #   남아 다음 장면에 「리고」 조각으로 떴다(에뮬 SAT 실측: 5번).
+        a.op("LDA", "abs", V_RESTORED)
+        a.op("CMP", "imm", 1)
+        a.op("BNE", "rel", "sf_move")
+        if RASTER_SAFE:
+            a.op("LDA", "imm", 0x00)
+            a.op("STA", "zp", 0xF7)
+        # 🔴 복사본(28..)뿐 아니라 **우리 항목 자리(game_n..27)까지** 비운다 — 여기서 우리 항목 쓰기를 건너뛰니, 끝에 숨긴
+        #   자막이 VRAM SAT 에 반영되지 않고 남아 다음 장면에서 새 글자 칸을 가리켰다(「좋아…」 첫 두 프레임 오른쪽에 「리고」
+        #   조각, 에뮬 실측). game_n..(28+game_n−1) = 28 항목 = 112 워드. 게임 항목(0..game_n−1)은 안 건드린다.
+        a.op("ST0", "imm", 0x00)  # MAWR = $7F00 + game_n*4
+        a.op("LDA", "zp", Z_T2)
+        a.op("LSR")
+        a.op("STA", "abs", 0x0002)
+        a.op("LDA", "imm", SAT_VRAM >> 8)
+        a.op("STA", "abs", 0x0003)
+        if RASTER_SAFE:
+            a.op("LDA", "imm", 0x02)
+            a.op("STA", "zp", 0xF7)
+        a.op("ST0", "imm", 0x02)
+        a.op("LDX", "imm", (4 * SPR_PER_PAIR * 4) * 2)  # 112 워드 = 224 바이트(DEX 두 번씩)
+        a.label("sf_rel")
+        a.op("STZ", "abs", 0x0002)
+        a.op("STZ", "abs", 0x0003)
+        a.op("DEX")
+        a.op("DEX")
+        a.op("BNE", "rel", "sf_rel")
+        a.op("JMP", "abs", "sf_dma")
+        a.label("sf_move")
     if not RASTER_SAFE:
         a.op("SEI")
     if RASTER_SAFE:
@@ -1447,6 +1501,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("INX")
     a.op("CPX", "imm", 4 * SPR_PER_PAIR * 8)
     a.op("BNE", "rel", "sf_ours_w")
+    a.label("sf_dma")
     if RASTER_SAFE:
         a.op("LDA", "imm", 0x13)
         a.op("STA", "zp", 0xF7)
