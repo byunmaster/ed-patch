@@ -35,20 +35,23 @@ def fw(s: str) -> str:
 
 # 배역(성우 표의 왼쪽 열) — 칸 CAST_COL 자 안에 들어가야 한다
 CAST = {
+    # 🔴 표기 순위(마스터 2026-09-25): ① 팔콤 공식(음반 『Symphonic Poem Dragon Slayer -The Legend
+    #   of Heroes- Vol.2』 곡명 — Selios · Sonia · Rias · Akdam) ② PC-98 영문 팬 번역
+    #   (nleseul/ds6_pc98_trans 화자 칸). 영문판(TGXCD1029)은 이름을 통째로 바꿔(Logan …) 못 쓴다.
     "ナレーション": "Narration",
-    "セリオス": "Selios",
-    "リュナン": "Runan",
-    "ロー": "Roh",
-    "ゲイル": "Gale",
-    "ソニア": "Sonia",
-    "ディーナ姫": "Pr.Dina",
-    "ライアス": "Rias",
-    "ボアード": "Board",
-    "大盗賊ゲイル": "Gale Sr.",  # 10자 칸에 「Thief Gale」 는 이름과 붙는다 — 마스터 확인 대상
-    "アクダム": "Akdam",
-    "シルフィ": "Sylphie",
-    "バジール": "Basil",
-    "アグニージャ": "Agnija",
+    "セリオス": "Selios",  # 공식
+    "リュナン": "Runan",  # 팬
+    "ロー": "Ro",  # 팬
+    "ゲイル": "Gail",  # 팬
+    "ソニア": "Sonia",  # 공식
+    "ディーナ姫": "Dina",  # 팬 「Princess Dina」 는 10자 칸을 넘어 이름만(마스터 2026-09-25)
+    "ライアス": "Rias",  # 공식(팬은 Lyas)
+    "ボアード": "Buald",  # 팬
+    "大盗賊ゲイル": "Gail I",  # 게일의 할아버지(랄프가 2세) — 팬 「The Great Thief Gail」 은 10자 칸을 넘는다(마스터 2026-09-25)
+    "アクダム": "Akdam",  # 공식(팬은 Achdam)
+    "シルフィ": "Sylphie",  # 팬
+    "バジール": "Beziel",  # 팬
+    "アグニージャ": "Agnija",  # 팬
 }
 CAST_COL = 10  # 배역 칸 폭(자) — 이름 열 32+12×10 = 152px, 6자 이름(16px 글씨)이 248px 에 끝난다
 

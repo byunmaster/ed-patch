@@ -4433,3 +4433,10 @@ Continue 로 최종 맵 입구에 선다(실측: 깨끗한 부팅 → 슬롯 3 �
   0.6초는 장면 사이 까만 전환이다. 🔑 **자막이 늦다 = 시각표 문제가 아니라 장면 경계에 걸린 것**일 수 있다 — 사건
   프레임과 장면 표를 먼저 대조한다.
 
+
+### 2026-09-25 (3) 스태프롤 CAST 영문 이름 — 공식 → 팬 번역 순
+
+- 영문판(TGXCD1029) 스태프롤을 디스크에서 읽어 보니 **이름을 통째로 바꿨다**(Logan · Ethan · Giles · Drax · Naja …) — 역할명과 달리 이름은 참고가 안 된다.
+- 팔콤 공식 표기는 음반 『Symphonic Poem … Vol.2』 곡명에서만 나온다: Selios · Sonia · Rias · Akdam.
+- 나머지는 PC-98 영문 팬 번역(nleseul/ds6_pc98_trans)의 화자 칸을 원문과 짝지어 셌다: Runan · Ro · Gail · Buald · Sylphie · Beziel · Agnija.
+- 마스터 판정: **공식 우선, 그다음 팬 번역.** 10자 칸에 안 드는 둘(Princess Dina · The Great Thief Gail)만 줄였다(Dina · Gail I — 디나는 마스터가 Pr. 도 빼라 했다. 대도적은 게일의 **할아버지**라(랄프가 2세) 처음 둔 「Gail Sr.」 는 틀린 표기였다).
