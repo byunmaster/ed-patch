@@ -132,6 +132,25 @@ ADPCM_BASE = 0x8000  # adpcm 모드: 스트립을 싣는 ADPCM 주소
 CELL_BUF = 0x3C00  # adpcm 모드: 셀 하나(56B)를 AD_READ 로 받아 두는 RAM
 INIT_WINDOW = None  # CD_PLAY 때 코드 뱅크가 $8000 창에 없으면 그 창 주소(스텁을 거친다)
 DONE_FRAME = None  # 이 카운터 프레임에 스스로 teardown + 훅 원상복구(엔딩: 오마케 적재 전에 물러난다)
+# 까만 띠 자막(엔딩, 마스터 2026-09-24 「자막 위치를 아래 까만영역에」): 표시 높이를 프레임 바닥까지 늘리고
+# 그림 밑변 줄에서 래스터 인터럽트로 BG 를 끈다(그 아래는 BAT 의 다른 그림 타일이라서). BG 를 끈 줄은 VDC 가
+# 스프라이트 색 0($100 — 테두리와 같은 검정)으로 채운다(mednafen vdc.cpp). ⚠ 한가운데서 VCE 를 쓰면 실기에서
+# 점이 튀므로 색은 안 건드린다.
+# 게임의 RCR 사슬(표 $2BCE: 처리기 2B · 줄 1B …, 끝 0 — 처리기는 `JMP $4154` 로 끝난다)에 우리 둘을 끼운다.
+BAND = False
+# 래스터 안전(엔딩): 그리기(set_mawr·put_cell·sat_flush)에서 SEI 를 안 걸고, 게임 관례대로 `$F7` 에 선택 레지스터를
+# 적은 뒤 ST0 한다(IRQ 가 `$F7` 로 되돌린다). SEI 가 길면 까만 띠를 여는 RCR 이 몇 줄 늦어 띠 윗단에 그림 타일이 1프레임
+# 비쳤다(마스터 캡처 2026-09-25). 메인 트램펄린이 게임의 `$F7` 을 보존한다.
+RASTER_SAFE = False
+WRAP_W = 0  # 줄 폭 상한(px). 0 = W − 좌우 여백(오프닝 216). 엔딩은 띠 스트립 7개 = 224 − 테두리 2 = 222
+BAND_FLOOR = 0  # BAND_CENTER 때 덩어리 위끝의 하한 = 그림 밑변 + 이 값(프레임 행) — 0 이면 안 쓴다
+BAND_CENTER = False  # 엔딩: 자막을 까만 띠 **가운데**로 — y 에서 y_adj/2 를 더 빼고 page_ymax(바닥 한계)로 자른다
+PAGE_YMAX: list = []  # BAND_CENTER 때 페이지별 상한(프레임 행, page_y 와 같은 눈금) — page_y_table 이 채운다
+PAGE_Y_BIAS = 0  # page_y 표(한 바이트)에서 빼 둔 값 — sat_show 가 더한다(엔딩 64)
+BAND_RAM = 0x3C40  # 엔딩 내내 0 인 $3AF0~$3DA1 안, CELL_BUF(56B) 뒤 — IRQ 트램펄린 + 처리기 둘
+BAND_TABLE = 0x2BCE
+BAND_ORIG = bytes([0x37, 0x44, 0xF0, 0x3A, 0x44, 0x00])  # 엔딩 모듈 원래 사슬(덤프 전부 같다)
+RCR_NEXT = 0x4154  # 엔딩 모듈의 「다음 RCR 줄 걸기」
 # 🔴 2026-09-23 실측 사고: 처음 $233A 에 뒀다가 IRQ 트램펄린 꼬리 2B(`INC $2351` 상위·`RTS`)를
 #   덮어 **매 VBlank 마다 IRQ 가 teardown 트램펄린으로 흘러 `JMP $50AE`** → 스택 폭주·크래시.
 #   아래 runtime() 의 단언이 겹침을 빌드에서 막는다.
@@ -198,6 +217,7 @@ hook.OPS.update(
         ("STA", "zpx"): 0x95,
         ("ORA", "zp"): 0x05,
         ("LDA", "absy_"): 0xB9,
+        ("CMP", "absy"): 0xD9,
         ("STZ", "zpx"): 0x74,
         ("TSX", "imp"): 0xBA,
         ("NOP", "imp"): 0xEA,
@@ -232,7 +252,9 @@ def _adv(ch):
     return ADV_LATIN if ord(ch) < 0x1100 else CELL
 
 
-def wrap(text, max_w=W - LEFT_MARGIN - RIGHT_MARGIN):
+def wrap(text, max_w=None):
+    if max_w is None:
+        max_w = WRAP_W if WRAP_W else W - LEFT_MARGIN - RIGHT_MARGIN
     words = text.split(" ")
     lines, cur, curw = [], "", 0
     for w_ in words:
@@ -344,7 +366,7 @@ def timeline(subs, rules):
             payload = payload.lstrip("\f")
             if t >= solo:  # 중반 그림 구간 — 이어붙이지 않고 한 문장씩 (마스터 요청 2026-09-22)
                 committed = []
-            new = ([None] if payload.startswith("\n") else []) + [lid(s) for s in wrap(payload.lstrip("\n"))]
+            new = ([None] if payload.startswith("\n") else []) + [lid(s) for seg in payload.lstrip("\n").split("\n") for s in wrap(seg)]
             if len(committed) + len(new) > cap:
                 committed = []
             current, cur_start = new, t
@@ -456,6 +478,7 @@ def page_y_table(pages, page_lay):
 def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     """뱅크 0x6A +0xD40(논리 $8D40, MPR4) 에 들어가는 코드 + 표."""
     a = Asm(CODE_ADDR)
+    tirq = BAND_RAM if BAND else TRAMP_IRQ
     # ── init: JSR 로 들어온다(CD_PLAY 자리). A 에 CD_PLAY 결과를 그대로 돌려줘야 한다.
     a.label("init")
     # 🔴 **매번 전부 초기화한다** — V_INIT 가드를 없앴다(2026-09-23). 종전엔 두 번째 호출부터
@@ -480,7 +503,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.label("init_go")
     a.tii(0, TRAMP_MAIN, 0)  # 자리만 — 아래서 실제 값으로 고친다
     tii_main_pos = len(a.out) - 7
-    a.tii(0, TRAMP_IRQ, 0)
+    a.tii(0, tirq, 0)
     tii_irq_pos = len(a.out) - 7
     a.tii(0, RAM_INIT, 0)
     tii_init_pos = len(a.out) - 7
@@ -546,7 +569,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     ri.op("JSR", "abs", 0xE012)  # 진짜 CD_PLAY — 이 복귀가 프레임 원점
     ri.op("PHA")
     ri.op("SEI")
-    for addr, tgt in ((IRQ_JSR_ADDR, TRAMP_IRQ), (LOOP_JSR_ADDR, TRAMP_MAIN)):
+    for addr, tgt in ((IRQ_JSR_ADDR, tirq), (LOOP_JSR_ADDR, TRAMP_MAIN)):
         ri.op("LDA", "imm", tgt & 0xFF)
         ri.op("STA", "abs", addr + 1)
         ri.op("LDA", "imm", tgt >> 8)
@@ -565,6 +588,9 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     # ── 트램펄린 원본(init 이 워크 RAM 으로 복사) ──
     a.label("tramp_main")
     tm = Asm(TRAMP_MAIN)
+    if RASTER_SAFE:
+        tm.op("LDA", "zp", 0xF7)  # 게임의 VDC 선택 그림자 — 우리 그리기가 바꾼다
+        tm.op("PHA")
     tm.op("TMA", "tma", 4)
     tm.op("PHA")
     tm.op("LDA", "imm", CODE_BANK)
@@ -572,15 +598,67 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     tm.op("JSR", "abs", "main")  # 라벨은 바깥 어셈블러 것 — 아래서 손으로 박는다
     tm.op("PLA")
     tm.op("TAM", "tam", 4)
+    if RASTER_SAFE:
+        tm.op("PLA")
+        tm.op("STA", "zp", 0xF7)
+        tm.op("STA", "abs", 0x0000)
     tm.op("JMP", "abs", LOOP_TARGET)
     a.label("tramp_irq")
-    ti = Asm(TRAMP_IRQ)
+    ti = Asm(tirq)
     ti.op("JSR", "abs", 0xE063)
     ti.op("INC", "abs", V_FRAME)
     ti.op("BNE", "rel", "done")
     ti.op("INC", "abs", V_FRAME + 1)
     ti.label("done")
+    if BAND:
+        on_addr, off_addr = BAND_RAM + 0x80, BAND_RAM + 0xA8
+        ti.op("LDA", "abs", GAME_H)
+        ti.op("CMP", "imm", 240)
+        ti.op("BCS", "rel", "full")
+        # 표시 높이 VDW = h − 1 + (240 − h)/2 (그림은 그대로, 아래 까만 띠까지 표시) · VCR = 4
+        ti.op("LDA", "imm", 240)
+        ti.op("SEC")
+        ti.op("SBC", "abs", GAME_H)
+        ti.op("LSR")
+        ti.op("CLC")
+        ti.op("ADC", "abs", GAME_H)
+        ti.op("SEC")
+        ti.op("SBC", "imm", 1)
+        ti.op("ST0", "imm", 0x0D)
+        ti.op("STA", "abs", 0x0002)
+        ti.op("ST2", "imm", 0)
+        ti.op("ST0", "imm", 0x0E)
+        ti.op("ST1", "imm", 4)
+        ti.op("ST2", "imm", 0)
+        ti.op("LDA", "abs", GAME_H)  # 끄는 줄 = 그림 밑변
+        ti.op("BRA", "rel", "tbl")
+        ti.label("full")
+        ti.op("LDA", "imm", 0xF0)  # 띠가 없다(240줄) — 표시 밖 줄에 걸어 둔다
+        ti.label("tbl")
+        ti.op("STA", "abs", BAND_TABLE + 2)
+        for k, v in enumerate((on_addr & 0xFF, on_addr >> 8, None, off_addr & 0xFF, off_addr >> 8, 0xF0, 0x3A, 0x44)):
+            if v is not None:
+                ti.op("LDA", "imm", v)
+                ti.op("STA", "abs", BAND_TABLE + k)
+        ti.op("STZ", "abs", BAND_TABLE + 8)
     ti.op("RTS")
+    if BAND:
+        tib = bytearray(ti.bytes())
+        assert len(tib) <= 0x80, len(tib)
+        for addr, bg_off in ((on_addr, False), (off_addr, True)):
+            h = Asm(addr)
+            h.op("ST0", "imm", 5)  # CR — 게임 그림자 $F3/$F4 (IRQ1 이 매 프레임 쓰는 값)
+            h.op("LDA", "zp", 0xF3)
+            if bg_off:
+                h.op("AND", "imm", 0x7F)  # BG 끔(스프라이트는 그대로)
+            h.op("STA", "abs", 0x0002)
+            h.op("LDA", "zp", 0xF4)
+            h.op("STA", "abs", 0x0003)
+            h.op("JMP", "abs", RCR_NEXT)
+            hb = h.bytes()
+            assert len(hb) <= 0x28, len(hb)
+            tib += bytes(addr - BAND_RAM - len(tib)) + hb
+        ti.bytes = lambda _b=bytes(tib): _b
 
     # ── main: 매 프레임(메인 루프 끝) ──
     a.label("main")
@@ -604,6 +682,10 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
         a.label("is_done")
         a.op("JSR", "abs", "teardown")
         a.op("SEI")
+        if BAND:  # 게임 RCR 사슬을 원래대로(우리 처리기는 곧 IRQ 트램펄린과 함께 안 쓰인다)
+            for k, v in enumerate(BAND_ORIG):
+                a.op("LDA", "imm", v)
+                a.op("STA", "abs", BAND_TABLE + k)
         for addr, tgt in ((IRQ_JSR_ADDR, 0xE063), (LOOP_JSR_ADDR, LOOP_TARGET)):
             a.op("LDA", "imm", tgt & 0xFF)
             a.op("STA", "abs", addr + 1)
@@ -951,7 +1033,11 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
 
     # set_mawr: MAWR ← V_TMP_VLO/VHI, 선택 = VWR. (SEI 는 put_cell 안에서 건다 — 여기선 MAWR 만)
     a.label("set_mawr")
-    a.op("SEI")
+    if not RASTER_SAFE:
+        a.op("SEI")
+    if RASTER_SAFE:
+        a.op("LDA", "imm", 0x00)
+        a.op("STA", "zp", 0xF7)
     a.op("ST0", "imm", 0x00)
     a.op("LDA", "abs", V_TMP_VLO)
     a.op("STA", "abs", 0x0002)
@@ -966,7 +1052,11 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     #   줄 없음/셀 범위 밖이면 0 을 64워드. plane2·3 은 늘 0. MPR3 에 스트립 뱅크를 잠깐 건다.
     if STRIP_MODE == "bank":
         a.label("put_cell")
-        a.op("SEI")
+        if not RASTER_SAFE:
+            a.op("SEI")
+        if RASTER_SAFE:
+            a.op("LDA", "imm", 0x02)
+            a.op("STA", "zp", 0xF7)
         a.op("ST0", "imm", 0x02)
         a.op("LDA", "abs", V_TMP_LINE)
         a.op("CMP", "imm", 0xFF)
@@ -1018,7 +1108,11 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
         a.op("CMP", "imm", 0xFF)
         a.op("BNE", "rel", "pc_a")
         a.label("pc_zz")
-        a.op("SEI")
+        if not RASTER_SAFE:
+            a.op("SEI")
+        if RASTER_SAFE:
+            a.op("LDA", "imm", 0x02)
+            a.op("STA", "zp", 0xF7)
         a.op("ST0", "imm", 0x02)
         a.op("JMP", "abs", "pc_zero")
         a.label("pc_a")
@@ -1075,7 +1169,11 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
         a.op("STA", "zp", Z_SRC + 1)
         a.op("TMA", "tma", 3)
         a.op("STA", "zp", Z_T0)  # 꼬리의 `TAM #3` 이 제자리로 돌리게(뱅크 모드와 공유)
-        a.op("SEI")
+        if not RASTER_SAFE:
+            a.op("SEI")
+        if RASTER_SAFE:
+            a.op("LDA", "imm", 0x02)
+            a.op("STA", "zp", 0xF7)
         a.op("ST0", "imm", 0x02)
     # plane0 · plane1: shift 행 0 → 14행 복사 → (2-shift) 행 0
     for plane in range(2):
@@ -1118,11 +1216,17 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("LDA", "abs", V_TMP_SIGWANT)
     a.op("BEQ", "rel", "pc_end")
     a.op("STZ", "abs", V_TMP_SIGWANT)
+    if RASTER_SAFE:
+        a.op("LDA", "imm", 0x01)
+        a.op("STA", "zp", 0xF7)
     a.op("ST0", "imm", 0x01)
     a.op("LDA", "abs", V_SIGADDR)
     a.op("STA", "abs", 0x0002)
     a.op("LDA", "abs", V_SIGADDR + 1)
     a.op("STA", "abs", 0x0003)
+    if RASTER_SAFE:
+        a.op("LDA", "imm", 0x02)
+        a.op("STA", "zp", 0xF7)
     a.op("ST0", "imm", 0x02)
     a.op("LDA", "abs", 0x0002)
     a.op("STA", "abs", V_SIG)
@@ -1165,7 +1269,34 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     # +64 를 품은 값이고(표가 한 바이트라 `page_y_table` 이 256 미만인지 단언한다),
     # 36*pair 를 더하면 255 를 넘을 수 있어 올림을 상위 바이트로 넘긴다.
     a.op("LDY", "abs", V_PAGE)
-    a.op("ADC", "absy", "page_y")
+    if BAND_CENTER:
+        # 띠 가운데 = 프레임 176 + h/4 − bh/2 = (236 − bh/2) − y_adj/2  (y_adj = (240−h)/2).
+        # 표(page_y)엔 236 − bh/2 를, 여기서 y_adj/2 를 빼고, 띠가 없거나 좁으면 page_ymax(228 − bh)로 자른다.
+        a.op("STA", "zp", Z_T0)  # 36p
+        a.op("LDA", "abs", V_YADJ)
+        a.op("LSR")
+        a.op("STA", "zp", Z_T1)
+        a.op("LDA", "absy", "page_y")
+        a.op("SEC")
+        a.op("SBC", "zp", Z_T1)
+        if BAND_FLOOR:
+            # 위끝 ≥ 그림 밑변(= 240 − y_adj) + BAND_FLOOR — 띠가 좁은 장면에서 한 줄이 그림에 걸치지 않게
+            a.op("STA", "zp", Z_T1)
+            a.op("LDA", "imm", 240 + BAND_FLOOR)
+            a.op("SEC")
+            a.op("SBC", "abs", V_YADJ)
+            a.op("CMP", "zp", Z_T1)
+            a.op("BCS", "rel", "py_floor")
+            a.op("LDA", "zp", Z_T1)
+            a.label("py_floor")
+        a.op("CMP", "absy", "page_ymax")
+        a.op("BCC", "rel", "py_ok")
+        a.op("LDA", "absy", "page_ymax")
+        a.label("py_ok")
+        a.op("CLC")
+        a.op("ADC", "zp", Z_T0)
+    else:
+        a.op("ADC", "absy", "page_y")
     # 🔴 Y 는 10비트다 — 상위 바이트를 0 으로 지우면 Y ≤ 255, 즉 화면 y ≤ 191 까지밖에 못 내린다.
     # 지금은 상단 고정이라 안 닿지만, 올림은 제대로 넘겨 둔다(하단 배치를 시도했을 때 물렸다).
     # CLA 는 플래그를 안 건드리므로 바로 밑의 x 상위 바이트 계산과 같은 수법이다.
@@ -1173,6 +1304,14 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("CLA")
     a.op("ADC", "imm", 0)
     a.op("STA", "zp", Z_T0)
+    if PAGE_Y_BIAS:  # 표가 한 바이트라 프레임 아래쪽(엔딩 까만 띠)은 표에서 빼 두고 여기서 더한다
+        a.op("LDA", "zp", Z_T1)
+        a.op("CLC")
+        a.op("ADC", "imm", PAGE_Y_BIAS)
+        a.op("STA", "zp", Z_T1)
+        a.op("LDA", "zp", Z_T0)
+        a.op("ADC", "imm", 0)
+        a.op("STA", "zp", Z_T0)
     # 🔴 그리고 **화면 높이 보정**을 뺀다(V_YADJ, main 이 프레임마다 갱신). 안 빼면 짧은
     # 그림에서 자막이 화면 아래로 밀려 보인다 — 장면마다 PCE 4줄씩(마스터 폰 실측).
     # ⚠ Z_T0·Z_T1 은 바로 밑 x 계산에서 다시 쓰이니 여기서 써도 된다. Z_T2 는 **안 된다**
@@ -1234,11 +1373,18 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("ASL")
     a.op("ASL")
     a.op("STA", "zp", Z_T2)  # 게임 항목 바이트 수(≤192)
-    a.op("SEI")
+    if not RASTER_SAFE:
+        a.op("SEI")
+    if RASTER_SAFE:
+        a.op("LDA", "imm", 0x01)
+        a.op("STA", "zp", 0xF7)
     a.op("ST0", "imm", 0x01)  # MARR = $7F00
     a.op("STZ", "abs", 0x0002)
     a.op("LDA", "imm", SAT_VRAM >> 8)
     a.op("STA", "abs", 0x0003)
+    if RASTER_SAFE:
+        a.op("LDA", "imm", 0x02)
+        a.op("STA", "zp", 0xF7)
     a.op("ST0", "imm", 0x02)
     a.op("LDX", "imm", 0)
     a.label("sf_rd")
@@ -1250,11 +1396,17 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("INX")
     a.op("CPX", "zp", Z_T2)
     a.op("BNE", "rel", "sf_rd")
+    if RASTER_SAFE:
+        a.op("LDA", "imm", 0x00)
+        a.op("STA", "zp", 0xF7)
     a.op("ST0", "imm", 0x00)  # MAWR = $7F00 + 28*4
     a.op("LDA", "imm", (4 * SPR_PER_PAIR * 4) & 0xFF)
     a.op("STA", "abs", 0x0002)
     a.op("LDA", "imm", SAT_VRAM >> 8)
     a.op("STA", "abs", 0x0003)
+    if RASTER_SAFE:
+        a.op("LDA", "imm", 0x02)
+        a.op("STA", "zp", 0xF7)
     a.op("ST0", "imm", 0x02)
     a.op("LDX", "imm", 0)
     a.label("sf_wr")
@@ -1268,7 +1420,11 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("BNE", "rel", "sf_wr")
     a.op("CLI")
     a.label("sf_ours")
-    a.op("SEI")
+    if not RASTER_SAFE:
+        a.op("SEI")
+    if RASTER_SAFE:
+        a.op("LDA", "imm", 0x00)
+        a.op("STA", "zp", 0xF7)
     a.op("ST0", "imm", 0x00)  # MAWR = $7F00 + spr_base*4
     a.op("LDY", "imm", SC_SPRBASE)
     a.op("LDA", "izpy", Z_SCN)
@@ -1277,6 +1433,9 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("STA", "abs", 0x0002)
     a.op("LDA", "imm", SAT_VRAM >> 8)
     a.op("STA", "abs", 0x0003)
+    if RASTER_SAFE:
+        a.op("LDA", "imm", 0x02)
+        a.op("STA", "zp", 0xF7)
     a.op("ST0", "imm", 0x02)
     a.op("LDX", "imm", 0)
     a.label("sf_ours_w")
@@ -1288,6 +1447,9 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("INX")
     a.op("CPX", "imm", 4 * SPR_PER_PAIR * 8)
     a.op("BNE", "rel", "sf_ours_w")
+    if RASTER_SAFE:
+        a.op("LDA", "imm", 0x13)
+        a.op("STA", "zp", 0xF7)
     a.op("ST0", "imm", 0x13)  # DVSSR = $7F00 → 다음 VBlank 에 SATB DMA
     a.op("ST1", "imm", SAT_VRAM & 0xFF)
     a.op("ST2", "imm", SAT_VRAM >> 8)
@@ -1506,6 +1668,9 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
         a.data(bytes(0xFF if x is None else x for x in r))
     a.label("page_y")  # 페이지별 세로 자리(스프라이트 Y, +64 포함). sat_show 가 36*pair 에 더한다
     a.data(bytes(page_y))
+    if BAND_CENTER:
+        a.label("page_ymax")
+        a.data(bytes(PAGE_YMAX))
     a.label("lines")
     for bank, off, ncell in lines_tab:
         a.data(bytes((bank, off & 0xFF, off >> 8, ncell)))
@@ -1521,6 +1686,9 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     # 트램펄린 라벨 해결: main 주소를 알아야 한다 → 두 번 조립
     main_addr = a.labels["main"]
     tm2 = Asm(TRAMP_MAIN)
+    if RASTER_SAFE:
+        tm2.op("LDA", "zp", 0xF7)  # 게임의 VDC 선택 그림자 — 우리 그리기가 바꾸므로 보존한다
+        tm2.op("PHA")
     tm2.op("TMA", "tma", 4)
     tm2.op("PHA")
     tm2.op("LDA", "imm", CODE_BANK)
@@ -1528,6 +1696,10 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     tm2.op("JSR", "abs", main_addr)
     tm2.op("PLA")
     tm2.op("TAM", "tam", 4)
+    if RASTER_SAFE:
+        tm2.op("PLA")
+        tm2.op("STA", "zp", 0xF7)
+        tm2.op("STA", "abs", 0x0000)
     tm2.op("JMP", "abs", LOOP_TARGET)
     ri.labels["scenes_lo"] = a.labels["scenes"] & 0xFF
     ri.labels["scenes_hi"] = a.labels["scenes"] >> 8
@@ -1543,9 +1715,11 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     tt.op("CLY")
     tt.op("JMP", "abs", 0x50AE)
     tm_bytes, ti_bytes, ri_bytes, tt_bytes = tm2.bytes(), ti.bytes(), ri.bytes(), tt.bytes()
-    assert TRAMP_IRQ + len(ti_bytes) <= TRAMP_TEAR, (len(ti_bytes), "IRQ 트램펄린이 TRAMP_TEAR 와 겹친다")
+    if not BAND:
+        assert TRAMP_IRQ + len(ti_bytes) <= TRAMP_TEAR, (len(ti_bytes), "IRQ 트램펄린이 TRAMP_TEAR 와 겹친다")
+        assert len(ti_bytes) <= V_FRAME - TRAMP_IRQ
     assert TRAMP_TEAR + len(tt_bytes) <= V_FRAME, len(tt_bytes)
-    assert len(tm_bytes) <= TRAMP_IRQ - TRAMP_MAIN and len(ti_bytes) <= V_FRAME - TRAMP_IRQ
+    assert len(tm_bytes) <= TRAMP_IRQ - TRAMP_MAIN
     assert len(ri_bytes) <= RAM_INIT_MAX, len(ri_bytes)
     a.labels["scenes_lo"] = a.labels["scenes"] & 0xFF
     a.labels["scenes_hi"] = a.labels["scenes"] >> 8

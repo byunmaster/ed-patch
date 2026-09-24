@@ -32,7 +32,7 @@ def all_glyph_chars() -> set[str]:
     chars = set()
     for p in sorted(M.SCRIPT_DIR.glob("scn*.json")):
         for e in json.loads(p.read_text())["messages"].values():
-            chars |= {ch for ch in e["t"] if font.needs_glyph(ch)}
+            chars |= {ch for ch in font.expand_packed(e["t"]) if font.needs_glyph(ch)}
     # 🔑 **화면에 나가는 표기만** 공용에서 받는다(`kr_texts`) — 열쇠도 `_aliases` 도 안 온다.
     #    ⚠ `load_speakers()` 는 **맵**이라 조판이 쓰고, 글리프 커버리지는 이쪽이다.
     import glossary as G  # shared/
@@ -52,14 +52,17 @@ def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str,
     lead_nl = bool(m.tokens) and m.tokens[0] == ("op", NL)
     if lead_nl:
         out.append(NL)
-    pgs = typeset.pages(tr["t"], speaker=m.speaker is not None or m.common is not None)
+    pgs = typeset.pages(font.expand_packed(tr["t"]), speaker=m.speaker is not None or m.common is not None)
+    # 하드 개행이 든 화자 없는 창(장 끝 카드)은 줄을 그대로 둔 것이라 **개행도 그대로** 넣는다 —
+    # 꽉 찬 제목 줄 뒤의 빈 줄이 먹혔다(종장 카드 화면 2026-09-25: 13칸 제목 바로 밑에 「끝」).
+    verbatim = "\n" in tr["t"] and m.speaker is None and m.common is None
     for i, pg in enumerate(pgs):
         if i:
             out.append(PAGE)
         for j, line in enumerate(pg):
             # 🔴 **틀을 꽉 채운 줄 뒤에는 개행을 안 넣는다** — 인터프리터가 열 ≥ $99(13)에서 스스로
             #    넘기므로 우리 `01` 이 얹히면 **빈 줄**이 된다(our-findings 2026-08-30, PS1 이 122곳).
-            if j and len(pg[j - 1]) < typeset.WIDTH:
+            if j and (verbatim or len(pg[j - 1]) < typeset.WIDTH):
                 out.append(NL)
             out += font.encode(line, table)
     if m.terminated:

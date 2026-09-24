@@ -29,7 +29,8 @@ def pages(text: str, *, speaker: bool) -> list[list[str]]:
             #    붙었다(2026-09-24, 여섯 장 모두). 원문도 전각 공백으로 가운데를 맞춘 카드다.
             #    정본에서 `\n` 을 쓰는 건 그 카드뿐이라 대사 조판은 안 바뀐다.
             lines = chunk.split("\n")
-            # ⚠ 창은 세 줄이다 — 네 줄째는 화면에서 빈 줄이 먹힌다(종장 카드 실측 2026-09-24)
+            # ⚠ 창은 세 줄이다. 그리고 **빈 줄은 전각 공백 하나를 넣어 적는다** — 개행(`01`)은 「다음 글자 전에
+            #   줄 바꿈」 표시라 둘을 잇달아 써도 한 줄만 넘어간다(종장 카드 화면 2026-09-25)
             assert len(lines) <= LINES and all(len(x) <= WIDTH for x in lines), chunk
             out.append(lines)
             speaker = False

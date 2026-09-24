@@ -235,7 +235,8 @@ CARD_LINES = [  # (문구, 위 첫 타일, 아래 첫 타일, 칸 수)
 BANNER = Stream("오마케 간판", 706, 192, 0x162F8, 0x80, 0x700)
 BANNER_TEXT = "드래곤슬레이어 극단"
 BANNER_BAND = (0x720, 0x730, 16)
-BANNER_ROWS = range(3, 12)  # 글자 자리(원문 잉크 3~11행)
+BANNER_ROWS = range(3, 13)  # 지우는 자리(원문 잉크 3~11행 + 아래 배경 12행)
+BANNER_TOP = 4  # 글자 윗줄 — 9행 글자를 4~12행에(위아래 여백이 1·1, 마스터 2026-09-25 「1px 아래로」)
 BANNER_COLS = range(3, 125)
 BANNER_INK = 11
 
@@ -320,7 +321,7 @@ def banner() -> tuple[bytearray, bytearray]:
     for y in range(9):
         for x, v in enumerate(g[y]):
             if v:
-                px[BANNER_ROWS.start + y][left + x] = BANNER_INK
+                px[BANNER_TOP + y][left + x] = BANNER_INK
     write_band(BANNER, vram, *BANNER_BAND, px)
     return old, vram
 

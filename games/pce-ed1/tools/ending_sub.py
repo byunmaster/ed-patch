@@ -63,30 +63,40 @@ rt.YADJ_MAX = 49  # 144줄 화면 = (240−144)/2 = 48
 rt.SUB_MAX_ROWS = 2
 rt.SHORTEST_SCREEN = 144
 rt.BACKUP_SLOTS = []  # 빌리지 않는다
-BOTTOM_ROW = 186  # 자막 덩어리 바닥의 프레임 행 — 가장 짧은 그림(144줄)의 밑변이 프레임 192행이다
+rt.BAND = True  # 🔴 까만 띠 자막(마스터 2026-09-24) — 표시를 프레임 바닥까지 늘리고 그림 밑변에서 BG 를 끈다
+# 자막 덩어리 바닥의 프레임 행. 표시는 프레임 240행까지 늘어나지만 에뮬(mednafen)·TV 는 아래 8줄쯤을
+# 잘라 보여서 228 에 둔다. 띠가 좁은 그림(176줄 = 띠 32줄)에서 두 줄이면 위가 그림 밑에 몇 줄 걸친다.
+# 띠가 없는 그림(240줄, 마지막 대지 장면)에선 종전처럼 그림 위에 뜬다.
+BOTTOM_ROW = 228
+rt.BAND_CENTER = True
+rt.RASTER_SAFE = True  # 그리기에서 SEI 를 안 건다 — 띠 RCR 이 늦으면 띠 윗단에 그림 타일이 비친다(마스터 캡처 2026-09-25)
+rt.WRAP_W = 7 * 32 - 2  # 띠엔 게임 스프라이트가 없어 스트립 7개를 다 쓴다(왼쪽 정렬, 마스터 2026-09-25)
+rt.BAND_FLOOR = 2  # 한 줄도 그림 밑변보다 2행 아래부터(띠가 좁은 장면 — 「어이구…」)
+VIS_BOTTOM = 232  # 띠의 보이는 바닥(프레임 행)
+rt.PAGE_Y_BIAS = 64  # page_y = 64 + 프레임 행 은 한 바이트를 넘는다 — 표엔 프레임 행만
 rt.DONE_FRAME = None  # 아래 build_all 에서 장면 표의 done_frame 으로
 
 
 def page_y_table(pages, page_lay):
-    """하단 한 가지 — 덩어리 **바닥**을 프레임 BOTTOM_ROW 에 맞춘다(줄 수가 달라도 밑선이 같다)."""
-    out = []
+    """까만 띠 **가운데**(마스터 2026-09-24 「까만띠 중앙에」). 표엔 띠가 가장 넓은 경우의 가운데(236 − bh/2)를,
+    런타임이 장면마다 y_adj/2 를 빼서 그 장면 띠의 가운데로 옮긴다. 띠 = 그림 밑변(120 + h/2)~프레임 232행
+    (에뮬·TV 가 아래 8줄쯤을 자른다). 띠가 좁거나 없으면(240줄) 바닥을 BOTTOM_ROW 에 맞춘다(page_ymax)."""
+    out, ymax = [], []
     for i, rows in enumerate(pages):
         n = len(rows)
-        if not n:
-            out.append(64 + BOTTOM_ROW - rt.GLYPH_ROWS)
-            continue
-        assert page_lay[i] == "bottom", (i, page_lay[i], "엔딩은 하단만")
-        assert n <= rt.SUB_MAX_ROWS, (
-            i,
-            n,
-            "엔딩 자막은 2줄까지 — script/ending_sub.json 에서 나눠라",
-        )
-        bh = rt.LINE_H * (n - 1) + rt.GLYPH_ROWS
-        y = 64 + BOTTOM_ROW - bh
-        # 가장 짧은 그림에서도 화면 안: 표시 y = page_y − 64 − yadj(48)
-        top = y - 64 - (240 - rt.SHORTEST_SCREEN) // 2
-        assert top >= 0 and top + bh <= rt.SHORTEST_SCREEN, (i, top, bh)
-        out.append(y)
+        if n:
+            assert page_lay[i] == "bottom", (i, page_lay[i], "엔딩은 하단만")
+            assert n <= rt.SUB_MAX_ROWS, (i, n, "엔딩 자막은 2줄까지 — script/ending_sub.json 에서 나눠라")
+        # 🔴 한 줄도 **두 줄일 때와 같은 top** 에 둔다(마스터 2026-09-25 — 가운데 정렬이 아니라)
+        bh = rt.LINE_H * (rt.SUB_MAX_ROWS - 1) + rt.GLYPH_ROWS
+        y = (VIS_BOTTOM + 120 + 240 // 2) // 2 - bh // 2  # h=240 일 때의 가운데 식: (232 + 240)/2 − bh/2
+        out.append(y - rt.PAGE_Y_BIAS + 64)
+        bh_real = rt.LINE_H * (max(n, 1) - 1) + rt.GLYPH_ROWS  # 바닥 한계는 그 페이지의 실제 높이로
+        ymax.append(VIS_BOTTOM - 1 - bh_real - rt.PAGE_Y_BIAS + 64)  # 바닥을 보이는 끝(231행)까지 — 좁은 띠에서도 가운데에 가깝게
+        # 가장 짧은 그림에서도 위가 그림 밑변보다 아래(띠 안)
+        top144 = y - (240 - rt.SHORTEST_SCREEN) // 4
+        assert min(top144, BOTTOM_ROW - bh) >= 120 + rt.SHORTEST_SCREEN // 2 - 2, (i, top144, bh)
+    rt.PAGE_YMAX[:] = ymax
     return out
 
 

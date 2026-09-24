@@ -55,6 +55,9 @@ BASELINE_ROW = 11
 
 def glyph(ch: str) -> bytes:
     """한 글자 → 24B. 세로는 **베이스라인에 맞추고**(BDF `yo`) 가로는 왼쪽 정렬."""
+    pk = packed_glyphs().get(ch) if 0xE000 <= ord(ch) <= 0xF8FF else None
+    if pk is not None:
+        return pk
     g = _load_bdf().get(ord(ch))
     if g is None:
         raise KeyError(f"글꼴에 없는 글자: {ch!r} (U+{ord(ch):04X})")
@@ -72,6 +75,62 @@ def glyph(ch: str) -> bytes:
     if all(v == 0 for v in out):
         raise ValueError(f"글리프가 비었다: {ch!r}")
     return b"".join(v.to_bytes(2, "big") for v in out)
+
+
+# ── 촘촘히 짠 줄(전용 글자) ──────────────────────────────────────────────────
+# 이 창은 모든 글자를 12px 칸에 하나씩 놓아 공백도 한 칸이다(반각 없음 — 인터프리터가 두 글자를
+# 12px 셀 둘 = 타일 셋으로 짠다, status 2절). 13칸을 넘는 한 줄은 **줄 전체를 한 장으로 그려 12px 씩
+# 잘라 전용 글자**로 넣는다 — 공백만 6px 로 줄이고 글자는 평소처럼 12px 피치(마스터 2026-09-25,
+# 종장 카드 「종장  그리고 영웅들의 전설」 15칸 → 13칸). 정본에선 `⟦…⟧` 로 적고 조판 전에 푼다.
+PACK_RE = re.compile("⟦(.*?)⟧")
+PACK_SPACE_PX = 6
+PACKED = {"종장  그리고 영웅들의 전설": 0xE000}  # 문안 → 전용 글자 첫 코드포인트(사용자 영역)
+_packed_cache: dict[str, bytes] | None = None
+
+
+def _packed_cells(text: str) -> list[bytes]:
+    x, strip = 0, [0] * 12
+    placed = []
+    for ch in text:
+        if ch == " ":
+            x += PACK_SPACE_PX
+            continue
+        placed.append((x, glyph(ch)))
+        x += 12
+    ncell = (x + 11) // 12
+    width = ncell * 12
+    for gx, g in placed:
+        for r in range(12):
+            v = int.from_bytes(g[2 * r : 2 * r + 2], "big") >> 4  # 12비트, MSB = 왼쪽 픽셀
+            strip[r] |= v << (width - 12 - gx)
+    cells = []
+    for k in range(ncell):
+        rows = [((strip[r] >> (width - 12 - 12 * k)) & 0xFFF) << 4 for r in range(12)]
+        cells.append(b"".join(v.to_bytes(2, "big") for v in rows))
+    return cells
+
+
+def packed_glyphs() -> dict[str, bytes]:
+    global _packed_cache
+    if _packed_cache is None:
+        _packed_cache = {}
+        for text, base in PACKED.items():
+            for k, cell in enumerate(_packed_cells(text)):
+                _packed_cache[chr(base + k)] = cell
+    return _packed_cache
+
+
+def expand_packed(text: str) -> str:
+    """`⟦문안⟧` → 전용 글자 열. 등록 안 된 문안이면 빌드 실패."""
+
+    def one(m):
+        body = m.group(1)
+        if body not in PACKED:
+            raise KeyError(f"전용 글자로 등록 안 된 줄: {body!r} — font.PACKED 에 넣어라")
+        n = len(_packed_cells(body))
+        return "".join(chr(PACKED[body] + k) for k in range(n))
+
+    return PACK_RE.sub(one, text)
 
 
 def code_of(idx: int) -> bytes:
@@ -170,6 +229,8 @@ def needs_glyph(ch: str) -> bool:
     """우리 글리프가 필요한 글자 — SJIS 전각 2바이트로 못 적는 것 전부(한글 · ASCII 부호·숫자·라틴)."""
     if ch in (" ", "\n", "\f"):
         return False
+    if 0xE000 <= ord(ch) <= 0xF8FF:
+        return True  # 🔴 사용자 영역 — cp932 가 F040~ 외자로 인코딩해 **우리 글리프 코드(리드 F0~)와 겹친다**
     try:
         b = ch.encode("cp932")
     except UnicodeEncodeError:
