@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>영웅전설 바로 실행</title>
+<!--
+  브라우저에서 바로 돌리는 자리 — EmulatorJS(RetroArch 코어의 WASM 판)를 CDN 에서 불러온다.
+  run.html?rom=<롬 경로>&save=<세이브 경로>  (경로는 파일서버 기준 상대 경로, index.html 이 만들어 준다)
+  세이브는 게임이 뜬 뒤 에뮬 파일시스템에 써 넣고 코어에 다시 읽힌 다음 리셋한다 —
+  EmulatorJS 메뉴의 「세이브 불러오기」와 같은 길이다(writeFile → loadSaveFiles).
+  ⚠ 지금은 롬 한 파일짜리(SFC · MD)만. CD 기종은 cue+bin 을 한 파일(zip)로 묶어야 해서 아직이다.
+-->
+<style>
+:root { --bg: #111315; --ink: #e7e5df; --muted: #9aa0a7; --accent: #e08a4f; }
+/* 한 화면에 꽉 차게 — 폰 세로에서 스크롤이 생겼다(09-26 실기). 원인 둘: 100% 높이가 주소창을 뺀
+   실제 보이는 높이가 아니었고(→ 100dvh), 윗줄이 두 줄로 접혀 40px 가정이 깨졌다(→ 세로 flex 로
+   윗줄 높이를 재지 않고 게임이 나머지를 차지). */
+html, body { margin: 0; height: 100%; height: 100dvh; overflow: hidden; background: var(--bg); color: var(--ink);
+  font: 14px/1.5 "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+#bar { flex: none; display: flex; gap: 10px; align-items: center; padding: 8px 12px; font-size: 13px; }
+#bar a { flex: none; white-space: nowrap; color: var(--accent); text-decoration: none; }
+#msg { min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#game { flex: 1; min-height: 0; width: 100%; }
+/* 폰 가로: EmulatorJS 는 Mode/Select·Start·Fast·Slow 를 화면 가운데 아래(.ejs_virtualGamepad_bottom)에 둬서
+   게임 화면과 겹친다(09-26 마스터 실기). 가로일 땐 좌우로 가른다 — Mode(Select)·Fast 는 왼쪽 방향키 아래,
+   Start·Slow 는 오른쪽 버튼 아래(마스터 지정). 버튼마다 b_<id> 클래스가 붙어 있어 그걸로 집는다. */
+@media (orientation: landscape) and (max-height: 600px) {
+  .ejs_virtualGamepad_bottom .ejs_virtualGamepad_button { position: fixed !important; top: auto !important; }
+  .b_mode, .b_select { left: 24px !important; right: auto !important; bottom: 62px !important; }
+  .b_speed_fast       { left: 24px !important; right: auto !important; bottom: 14px !important; }
+  .b_start            { right: 24px !important; left: auto !important; bottom: 62px !important; }
+  .b_speed_slow       { right: 24px !important; left: auto !important; bottom: 14px !important; }
+}
+/* 켜 두는 스위치 셋(빨리·느리게·멈춤) — 가상 패드의 Fast/Slow 는 누르는 동안만이라 옆에 토글을 붙인다
+   (마스터 09-26). 🔴 따로 고정 좌표로 두면 폰마다 패드 위치가 달라 정렬이 따로 논다(09-26 실기) —
+   그래서 **패드의 같은 칸(.ejs_virtualGamepad_bottom) 안에 같은 모양으로** 넣고 Fast/Slow/Start 기준
+   상대 좌표로 둔다(아래 스크립트). 가로에선 패드 버튼과 같이 fixed 로 좌우 가른다. */
+.quick { display: none; }
+.ejs_virtualGamepad_button.quick { display: block; cursor: pointer; }
+/* ↑ 글자색·굵기·글꼴은 스크립트가 옆 패드 버튼의 계산값을 그대로 옮긴다 — <button> 은 물려받지 않아
+   까맣게(09-26), 흰색으로 박으니 이번엔 패드(회색)보다 밝게 튀었다. 값을 베끼는 게 맞다. */
+.ejs_virtualGamepad_button.quick.on { color: #111315; background-color: var(--accent); border-color: var(--accent); }
+@media (orientation: landscape) and (max-height: 600px) {
+  #q-ff { left: 84px !important; right: auto !important; bottom: 14px !important; }
+  #q-sm { right: 84px !important; left: auto !important; bottom: 14px !important; }
+  #q-ps { right: 84px !important; left: auto !important; bottom: 62px !important; }
+  .b_speed_rewind { left: 84px !important; right: auto !important; bottom: 62px !important; }
+}
+</style>
+</head>
+<body>
+<div id="bar"><a href="./">← 목록</a><span id="msg"></span></div>
+<div id="game"></div>
+<button type="button" class="quick" id="q-ff" aria-pressed="false" title="빨리감기 켜 두기">빨리</button>
+<button type="button" class="quick" id="q-sm" aria-pressed="false" title="느리게 켜 두기">느림</button>
+<button type="button" class="quick" id="q-ps" aria-pressed="false" title="일시정지">멈춤</button>
+<script>
+// 롬 확장자 → EmulatorJS 코어 이름. 여기 없는 기종은 실행 버튼이 안 뜬다(index.html 도 이 표를 본다).
+const CORES = { sfc: "snes", smc: "snes", md: "segaMD", gen: "segaMD", smd: "segaMD" };
+const q = new URLSearchParams(location.search);
+const rom = q.get("rom");
+const save = q.get("save");
+const msg = document.getElementById("msg");
+const ext = (rom || "").split(".").pop().toLowerCase();
+
+if (!rom || !CORES[ext]) {
+  msg.textContent = "이 파일은 아직 바로 실행을 못 합니다 — 목록에서 받아서 여세요.";
+} else (async () => {
+  const name = decodeURIComponent(rom.split("/").pop());
+  msg.textContent = name + (save ? " · 세이브 포함" : "");
+  // 🔴 롬 주소에 서버 파일의 올린 시각을 붙여(?v=) 브라우저 HTTP 캐시를 깬다. 09-26 실측: 캐시 DB 를
+  //   꺼도(EJS_disableDatabases) 같은 주소면 브라우저가 **HTTP 캐시에서 옛 롬**을 줬다 — 화면 윗줄은
+  //   새 빌드 시각인데 화면은 옛 빌드(md 나레이션 전부 x=48). 윗줄 시각과 받는 롬이 같은 응답에서 나오게
+  //   먼저 HEAD 를 묻고, 그 값으로 주소를 만든다.
+  let built = "", ver = Date.now();
+  try {
+    const r = await fetch(rom, { method: "HEAD", cache: "no-store" });
+    const d = new Date(r.headers.get("last-modified") || 0);
+    ver = d.getTime() || ver;
+    built = ` · 빌드 ${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    msg.textContent += built;
+  } catch { /* 시각 없이 띄운다 — 캐시 깨기는 지금 시각으로 */ }
+  window.EJS_player = "#game";
+  window.EJS_core = CORES[ext];
+  window.EJS_gameUrl = `${rom}?v=${ver}`;
+  window.EJS_gameName = name.replace(/\.[^.]+$/, "");
+  window.EJS_pathtodata = "https://cdn.emulatorjs.org/stable/data/";
+  window.EJS_startOnLoaded = true;
+  // 🔴 롬 캐시를 끈다 — EmulatorJS 는 롬을 「파일 이름 + 크기」로 브라우저에 캐시해서, 같은 이름·같은
+  //   크기로 새로 구운 빌드(SFC 는 늘 2MB)를 받아도 **옛 롬을 그대로 돌린다**(09-25 마스터 실기: 새 빌드를
+  //   올렸는데 엔딩이 옛 화면 그대로). 이 레포에서 낡은 이미지를 정상으로 보는 건 1급 사고라 캐시를 안 쓴다.
+  //   코어도 매번 받지만 수 MB 라 괜찮다. 세이브 저장소는 이 설정과 무관하다.
+  window.EJS_disableDatabases = true;
+  // 뒤로감기 — 코어 설정 「Rewind Enabled」를 켠 채로 띄운다(가상 패드에 누르는 동안 되감는 Rewind 버튼이 생긴다).
+  //   ⚠ 저장된 설정(localStorage)이 하나라도 있으면 기본값을 무시하므로 설정 저장을 끈다 — 이 페이지는 매번
+  //   같은 조건으로 뜨는 게 낫다(옛 설정이 섞여 「어제는 됐는데」가 되지 않게).
+  window.EJS_defaultOptions = { rewindEnabled: "enabled" };
+  window.EJS_disableLocalStorage = true;
+  window.EJS_language = "ko-KR";
+  if (save) {
+    // ① 코어가 뜨기 **전에** RetroArch 세이브 자리에 둔다 — 콘텐츠를 열 때 frontend 가 읽어 간다.
+    //   ⚠ MD(Genesis Plus GX)는 이 길만 된다: 돌아가는 중엔 SRAM 크기를 「마지막 비-FF 바이트까지」로
+    //   보고해서, 빈 SRAM 에 뒤늦게 넣으면(아래 ②) 0 바이트만 복사된다(09-25 폰 실측 — 슬롯이 빈 채).
+    //   자리 = /data/saves/<코어 라이브러리 이름>/<롬 파일 이름(URL 꼴 그대로)에서 확장자 뺀 것>.srm
+    const LIB = { snes: "Snes9x", segaMD: "Genesis Plus GX" };
+    const stem = rom.split("/").pop().replace(/\.[^.]+$/, "");   // ?v= 는 확장자째 떨어진다
+    const early = fetch(save, { cache: "no-store" }).then((r) => r.ok ? r.arrayBuffer() : null).catch(() => null);
+    window.EJS_ready = () => window.EJS_emulator.on("saveDatabaseLoaded", async (FS) => {
+      const buf = await early;
+      if (!buf) return;
+      const dir = `/data/saves/${LIB[CORES[ext]]}`;
+      try { FS.mkdirTree(dir); } catch { /* 이미 있다 */ }
+      FS.writeFile(`${dir}/${stem}.srm`, new Uint8Array(buf));
+    });
+    // ② 뜬 뒤에도 한 번 더 — SFC(snes9x)는 이것만으로 된다(크기를 고정으로 보고한다). 경로를 코어에게 묻는다.
+    window.EJS_onGameStart = async () => {
+      try {
+        const r = await fetch(save, { cache: "no-store" });
+        if (!r.ok) throw new Error(r.status);
+        const data = new Uint8Array(await r.arrayBuffer());
+        const gm = window.EJS_emulator.gameManager;
+        const path = gm.getSaveFilePath();
+        if (gm.FS.analyzePath(path).exists) gm.FS.unlink(path);
+        gm.FS.writeFile(path, data);
+        gm.loadSaveFiles();
+        gm.restart();            // 타이틀에서 세이브를 다시 읽게 한다
+        msg.textContent = name + built + " · 세이브 넣음";
+      } catch (e) {
+        msg.textContent = "세이브를 못 넣었습니다(" + e.message + ") — 메뉴의 세이브 불러오기로 넣으세요";
+      }
+    };
+  }
+  // 토글 — 빨리감기·느리게는 EmulatorJS 설정 메뉴와 같은 길(handleSpecialOptions), 둘은 서로 배타.
+  //   일시정지는 EmulatorJS 의 pause()/play(). 패드가 만들어진 뒤(start) 패드 칸 안으로 옮겨 붙인다.
+  const sw = { "q-ff": "fastForward", "q-sm": "slowMotion" };
+  const btn = (id) => document.getElementById(id);
+  const set = (id, on) => {
+    btn(id).classList.toggle("on", on);
+    try { window.EJS_emulator.handleSpecialOptions(sw[id], on ? "enabled" : "disabled"); } catch { /* 아직 안 떴다 */ }
+  };
+  for (const id of Object.keys(sw)) {
+    btn(id).addEventListener("click", () => {
+      const on = !btn(id).classList.contains("on");
+      if (on) set(id === "q-ff" ? "q-sm" : "q-ff", false);
+      set(id, on);
+    });
+  }
+  btn("q-ps").addEventListener("click", () => {
+    const e = window.EJS_emulator;
+    if (!e) return;
+    if (e.paused) e.play(); else e.pause();
+    btn("q-ps").classList.toggle("on", e.paused);
+    btn("q-ps").textContent = e.paused ? "계속" : "멈춤";
+  });
+  const dock = () => {
+    const fast = document.querySelector(".b_speed_fast"), slow = document.querySelector(".b_speed_slow");
+    const start = document.querySelector(".b_start");
+    if (!fast || !slow || !start) return;
+    const box = fast.parentElement, gap = 8;
+    const px = (el, k) => parseFloat(el.style[k]) || 0;
+    for (const [id, ref, dx] of [["q-ff", fast, -1], ["q-sm", slow, 1], ["q-ps", start, 1]]) {
+      const b = btn(id);
+      b.style.cssText = ref.style.cssText;            // 패드 버튼과 같은 크기·글꼴·모서리
+      b.classList.add("ejs_virtualGamepad_button", "quick");
+      const cs = getComputedStyle(ref);
+      for (const k of ["color", "fontFamily", "fontWeight", "fontSize"]) b.style[k] = cs[k];
+      b.style.left = (px(ref, "left") + dx * (ref.offsetWidth + gap)) + "px";
+      box.appendChild(b);
+    }
+  };
+  const prevReady = window.EJS_ready;
+  window.EJS_ready = () => { if (prevReady) prevReady(); window.EJS_emulator.on("start", dock); };
+  const s = document.createElement("script");
+  s.src = window.EJS_pathtodata + "loader.js";
+  document.body.appendChild(s);
+})();
+</script>
+</body>
+</html>

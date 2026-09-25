@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>영웅전설 빌드함</title>
+<!--
+  파일서버(.local/cache/publish/ 를 `python3 -m http.server 8800` 으로 서빙) 의 첫 화면.
+  목록을 손으로 적지 않는다 — http.server 가 주는 폴더 목록을 이 페이지가 직접 읽어 그린다.
+  그래서 세션이 무엇을 올리든 이 파일은 안 고친다. 설치는 `.local/publish.sh` 가 매번 복사한다.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #f3f2ee;
+  --surface: #ffffff;
+  --ink: #1f2328;
+  --muted: #6a6f76;
+  --line: #dcdad3;
+  --accent: #b5561c;
+  --accent-soft: #f6e6da;
+  --build: #1f6f5c;
+  --build-soft: #dcefe8;
+  --save: #4b5a8a;
+  --save-soft: #e3e7f4;
+  --shadow: 0 1px 2px rgba(31, 35, 40, .06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171a;
+    --surface: #1d2024;
+    --ink: #e7e5df;
+    --muted: #9aa0a7;
+    --line: #2f3338;
+    --accent: #e08a4f;
+    --accent-soft: #3a2a1f;
+    --build: #6cc3a8;
+    --build-soft: #1c332c;
+    --save: #9fb0e6;
+    --save-soft: #232a40;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171a;
+  --surface: #1d2024;
+  --ink: #e7e5df;
+  --muted: #9aa0a7;
+  --line: #2f3338;
+  --accent: #e08a4f;
+  --accent-soft: #3a2a1f;
+  --build: #6cc3a8;
+  --build-soft: #1c332c;
+  --save: #9fb0e6;
+  --save-soft: #232a40;
+  --shadow: none;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 "IBM Plex Sans KR", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+}
+.wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+.sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.status { font: 12px "IBM Plex Mono", ui-monospace, monospace; color: var(--muted); }
+button.reload {
+  font: inherit; font-size: 13px; color: var(--accent); background: none;
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+}
+button.reload:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.games { display: grid; gap: 14px; margin-top: 18px; }
+.game {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.game > summary {
+  list-style: none; cursor: pointer; padding: 14px 16px;
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: baseline;
+}
+.game > summary::-webkit-details-marker { display: none; }
+.game-title { font-size: 17px; font-weight: 600; }
+.game-id { font: 12px "IBM Plex Mono", ui-monospace, monospace; color: var(--muted); }
+.game-when { grid-column: 2; grid-row: 1 / span 2; font-size: 12px; color: var(--muted); text-align: right; white-space: nowrap; }
+.game-when b { display: block; color: var(--ink); font-weight: 600; font-size: 13px; }
+.game.fresh .game-when b { color: var(--accent); }
+.body { border-top: 1px solid var(--line); padding: 2px 16px 14px; }
+.folder-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.path { font: 13px "IBM Plex Mono", ui-monospace, monospace; word-break: break-all; }
+.chip {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; border-radius: 999px; padding: 1px 8px;
+}
+.chip.build { color: var(--build); background: var(--build-soft); }
+.chip.save { color: var(--save); background: var(--save-soft); }
+.chip.orig { color: var(--accent); background: var(--accent-soft); }
+.chip.misc { color: var(--muted); background: var(--bg); }
+details.folder > summary { cursor: pointer; list-style: none; }
+details.folder > summary::-webkit-details-marker { display: none; }
+details.folder { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 10px; }
+details.folder > summary { display: grid; gap: 2px; }
+details.folder .brief { color: var(--muted); font: 12px "IBM Plex Mono", ui-monospace, monospace; word-break: break-all; }
+details.folder .brief a.play { font-family: inherit; }
+details.folder .caret { margin-left: auto; color: var(--muted); transition: transform .15s; }
+details.folder[open] .caret { transform: rotate(90deg); }
+button.getall {
+  margin-left: 6px; padding: 1px 9px; border-radius: 999px; font: 600 12px/1.6 inherit;
+  color: var(--build); background: var(--build-soft); border: 1px solid var(--build); cursor: pointer;
+}
+button.getall:disabled { opacity: .7; cursor: default; }
+a.play {
+  display: inline-block; margin-left: 6px; padding: 1px 9px; border-radius: 999px;
+  color: #fff; background: var(--accent); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap;
+}
+a.play:hover { color: #fff; filter: brightness(1.08); }
+ul.files { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; }
+ul.files li {
+  display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: baseline;
+  padding: 6px 8px; border-radius: 6px;
+}
+ul.files li:nth-child(odd) { background: var(--bg); }
+ul.files a { color: var(--ink); text-decoration: none; word-break: break-all; }
+ul.files a:hover { color: var(--accent); text-decoration: underline; }
+ul.files li.main a { font-weight: 600; }
+ul.files a.play {
+  display: inline-block; margin-left: 6px; padding: 1px 9px; border-radius: 999px;
+  color: #fff; background: var(--accent); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap;
+}
+ul.files a.play:hover { color: #fff; filter: brightness(1.08); }
+.meta { font: 12px "IBM Plex Mono", ui-monospace, monospace; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+pre.readme {
+  margin: 8px 0 0; padding: 10px 12px; background: var(--accent-soft); border-radius: 8px;
+  font: 12.5px/1.6 "IBM Plex Mono", ui-monospace, monospace; white-space: pre-wrap; word-break: break-word;
+  overflow-x: auto;
+}
+.note { color: var(--muted); font-size: 13px; margin-top: 22px; }
+.err { color: var(--accent); }
+@media (max-width: 520px) {
+  ul.files li { grid-template-columns: 1fr; gap: 0; }
+  .game-when { grid-column: 1; grid-row: auto; text-align: left; }
+  .game-when b { display: inline; margin-right: 6px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>영웅전설 빌드함</h1>
+      <p class="sub">게임을 누르면 빌드·세이브가 펼쳐집니다. 최근에 올라온 순서입니다.</p>
+    </div>
+    <div>
+      <span class="status" id="status">목록을 읽는 중…</span>
+      <button class="reload" id="reload" type="button">새로 읽기</button>
+    </div>
+  </header>
+  <div class="games" id="games"></div>
+  <p class="note">받는 법 — 한 폴더의 파일을 <b>같은 폴더에, 이름을 바꾸지 말고</b> 받아서 .cue/.m3u(없으면 롬)를 엽니다. 세이브는 롬과 같은 이름이어야 읽힙니다. 폴더마다 README 를 먼저 보세요.</p>
+</div>
+<script>
+// 게임 폴더 이름 → 보이는 이름. ⚠ 여기 있는 폴더만 뜬다(루트 목록을 못 읽어서 — load() 주석).
+//   새 게임을 파일서버에 올리면 여기에 한 줄을 더한다.
+const TITLES = {
+  "sfc-ed1": "슈퍼패미컴 · 영웅전설",
+  "md-ed1": "메가드라이브 · 영웅전설",
+  "md-ed2": "메가드라이브 · 영웅전설 II",
+  "pce-ed1": "PC엔진 CD · 영웅전설",
+  "pc98-ed1": "PC-98 · 영웅전설",
+  "ps1-ed1+2": "플레이스테이션 · 영웅전설 I·II",
+  "ps1-ed3+4": "플레이스테이션 · 영웅전설 III·IV",
+  "ss-ed1+2": "새턴 · 영웅전설 I·II",
+  "ss-ed3": "새턴 · 하얀마녀",
+  "dos-ed2": "DOS · 영웅전설 II",
+};
+const ROM = /\.(cue|m3u|iso|bin|img|chd|sfc|smc|md|gen|smd|pce|d88|hdi|fdi)$/i;
+const OPEN = /\.(cue|m3u|sfc|smc|md|gen|d88)$/i;          // 에뮬에서 여는 파일(굵게)
+const SAVE = /\.(srm|sav|bkr|bcr|smpc|mcd|mcr|bin\.sav|state)$|bkram\.bin$/i;
+const MAX_DEPTH = 4;
+const PLAYABLE = /\.(sfc|smc|md|gen|smd)$/i;                 // run.html 이 돌리는 것(롬 한 파일짜리)
+const relPath = (href) => new URL(href, location.href).pathname.replace(/^\//, "");
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function list(url) {
+  // http.server 의 폴더 목록 HTML 에서 링크만 뽑는다. 점 파일(.sha1 등)은 뺀다.
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`${r.status} ${url}`);
+  const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+  return [...doc.querySelectorAll("li > a")]
+    .map((a) => a.getAttribute("href"))
+    .filter((h) => h && !h.startsWith("?") && !h.startsWith("..") && !decodeURIComponent(h).startsWith("."));
+}
+
+async function walk(url, depth, out) {
+  const entries = await list(url);
+  const files = [];
+  const dirs = [];
+  for (const h of entries) (h.endsWith("/") ? dirs : files).push(h);
+  if (files.length) out.push({ url, files: files.map((h) => ({ href: url + h, name: decodeURIComponent(h) })) });
+  if (depth < MAX_DEPTH) await Promise.all(dirs.map((d) => walk(url + d, depth + 1, out)));
+  return out;
+}
+
+async function head(file) {
+  try {
+    const r = await fetch(file.href, { method: "HEAD", cache: "no-store" });
+    file.size = +r.headers.get("content-length") || 0;
+    const lm = r.headers.get("last-modified");
+    file.mtime = lm ? new Date(lm) : null;
+  } catch { /* 크기·시각 없이 그린다 */ }
+}
+
+function kind(folder) {
+  if (/\/saves\//.test(folder.url)) return "save";   // publish.sh 가 세이브를 모는 칸
+  if (/\/original\//.test(folder.url)) return "orig"; // 원본 롬(링크) — 우리 빌드와 대 보는 용
+  if (folder.files.some((f) => ROM.test(f.name) && !SAVE.test(f.name))) return "build";
+  if (folder.files.every((f) => SAVE.test(f.name) || /readme/i.test(f.name))) return "save";
+  return "misc";
+}
+
+const fmtSize = (n) => !n ? "" : n >= 1 << 30 ? (n / (1 << 30)).toFixed(2) + " GB"
+  : n >= 1 << 20 ? (n / (1 << 20)).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
+const fmtTime = (d) => !d ? "" : `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+function ago(d) {
+  if (!d) return "";
+  const h = (Date.now() - d) / 36e5;
+  return h < 1 ? "방금" : h < 24 ? `${Math.floor(h)}시간 전` : `${Math.floor(h / 24)}일 전`;
+}
+
+async function load() {
+  const status = $("#status");
+  const box = $("#games");
+  status.textContent = "목록을 읽는 중…";
+  box.innerHTML = "";
+  try {
+    const root = new URL("./", location.href).href;
+    // ⚠ 루트 목록은 못 읽는다 — 이 파일이 루트의 index.html 이라 http.server 가 목록 대신 이걸 준다.
+    //   그래서 게임 폴더는 TITLES 이름을 하나씩 두드려 있는 것만 쓴다. 새 게임은 TITLES 에 한 줄.
+    const games = (await Promise.all(Object.keys(TITLES).map(async (id) => {
+      const r = await fetch(root + encodeURIComponent(id) + "/", { method: "HEAD", cache: "no-store" });
+      return r.ok ? encodeURIComponent(id) + "/" : null;
+    }))).filter(Boolean);
+    const data = await Promise.all(games.map(async (g) => {
+      const folders = await walk(root + g, 1, []);
+      // 크기·시각은 빌드 폴더와 README 만 묻는다 — 세이브 폴더는 해시 이름이 수십 개라 요청이 는다.
+      const targets = [];
+      for (const f of folders) {
+        f.kind = kind(f);
+        for (const file of f.files) if (f.kind !== "save" || /readme/i.test(file.name)) targets.push(file);
+      }
+      await Promise.all(targets.map(head));
+      const times = targets.map((f) => f.mtime).filter(Boolean);
+      const id = decodeURIComponent(g.replace(/\/$/, ""));
+      return { id, folders, latest: times.length ? new Date(Math.max(...times)) : null };
+    }));
+    data.sort((a, b) => (b.latest || 0) - (a.latest || 0));
+    for (const g of data) box.appendChild(renderGame(g));
+    status.textContent = `${data.length}개 게임 · ${fmtTime(new Date())} 기준`;
+  } catch (e) {
+    status.innerHTML = `<span class="err">읽지 못했습니다 — ${esc(String(e.message || e))}</span>`;
+  }
+}
+
+function renderGame(g) {
+  const el = document.createElement("details");
+  el.className = "game";
+  if (g.latest && Date.now() - g.latest < 2 * 864e5) el.classList.add("fresh");
+  const title = TITLES[g.id] || g.id;
+  el.innerHTML = `<summary>
+      <span class="game-title">${esc(title)}</span>
+      <span class="game-when"><b>${esc(ago(g.latest))}</b>${esc(fmtTime(g.latest))}</span>
+      <span class="game-id">${esc(g.id)}</span>
+    </summary><div class="body"></div>`;
+  const body = el.querySelector(".body");
+  const order = { build: 0, orig: 1, misc: 2, save: 3 };
+  g.folders.sort((a, b) => order[a.kind] - order[b.kind] || a.url.localeCompare(b.url));
+  for (const f of g.folders) body.appendChild(renderFolder(f, g.id));
+  el.addEventListener("toggle", () => {
+    if (!el.open) return;
+    el.querySelectorAll("pre.readme[data-src]").forEach(async (pre) => {
+      const src = pre.dataset.src;
+      delete pre.dataset.src;
+      try {
+        const r = await fetch(src, { cache: "no-store" });
+        pre.textContent = new TextDecoder("utf-8").decode(await r.arrayBuffer()).trim();
+      } catch { pre.textContent = "README 를 읽지 못했습니다."; }
+    });
+  });
+  return el;
+}
+
+function renderFolder(f, gameId) {
+  const rel = decodeURIComponent(f.url).split(`/${gameId}/`).pop() || "./";
+  const label = { build: "빌드", orig: "원본", save: "세이브", misc: "기타" }[f.kind];
+  const readme = f.files.find((x) => /readme/i.test(x.name));
+  const files = f.files.filter((x) => x !== readme)
+    .sort((a, b) => (OPEN.test(b.name) - OPEN.test(a.name)) || a.name.localeCompare(b.name));
+  // 브라우저 실행 — run.html 의 CORES 와 같은 확장자만. 같은 이름의 .srm 이 곁에 있으면 같이 넘긴다.
+  const playLink = (x) => {
+    if (!PLAYABLE.test(x.name)) return "";
+    const stem = x.name.replace(/\.[^.]+$/, "");
+    const sav = f.files.find((y) => y.name === stem + ".srm");
+    // ⚠ t= 는 폰 브라우저가 run.html 을 옛것으로 쓰지 않게 하는 캐시 깨기(09-25 실측: 새로고침해도 옛 롬)
+    const u = `run.html?t=${Date.now()}&rom=${encodeURIComponent(relPath(x.href))}` + (sav ? `&save=${encodeURIComponent(relPath(sav.href))}` : "");
+    return ` <a class="play" href="${u}">▶ 실행${sav ? " (세이브 포함)" : ""}</a>`;
+  };
+  const rows = files.map((x) => `<li class="${OPEN.test(x.name) ? "main" : ""}">
+      <span><a href="${x.href}" download>${esc(x.name)}</a>${playLink(x)}</span>
+      <span class="meta">${esc([fmtSize(x.size), fmtTime(x.mtime)].filter(Boolean).join(" · "))}</span>
+    </li>`).join("");
+  // 접힌 한 줄 요약 — 폴더를 열지 않아도 무엇이 언제 올라왔는지와 「▶ 실행」이 보이게.
+  const main = files.find((x) => OPEN.test(x.name)) || files[0];
+  const times = files.map((x) => x.mtime).filter(Boolean);
+  const latest = times.length ? new Date(Math.max(...times)) : null;
+  const total = files.reduce((n, x) => n + (x.size || 0), 0);
+  const brief = f.kind === "save"
+    ? `${files.length}개`
+    : [main ? main.name : "", fmtSize(total), fmtTime(latest)].filter(Boolean).join(" · ");
+  const head = `<span class="path">${esc(rel)}</span><span class="chip ${f.kind}">${label}</span>`;
+  const readmeHtml = readme ? `<pre class="readme" data-src="${readme.href}">README 읽는 중…</pre>` : "";
+  const wrap = document.createElement("details");
+  wrap.className = "folder";
+  wrap.innerHTML = `<summary><span class="folder-head">${head}<span class="caret" aria-hidden="true">▸</span></span>
+      <span class="brief">${esc(brief)}${main ? playLink(main) : ""}${files.length > 1 && f.kind !== "save"
+        ? ` <button type="button" class="getall">⬇ 전부 받기 (${files.length}개)</button>` : ""}</span></summary>
+    ${readmeHtml}<ul class="files">${rows}</ul>`;
+  // 폴더 통째 받기 — http.server 는 묶어 주지 못하고, 폰에서 수백 MB 를 zip 으로 묶는 것도 무겁다.
+  // 그래서 파일마다 다운로드를 차례로 건다(이름 그대로라 .cue 가 .bin 을 그대로 찾는다).
+  // 브라우저가 처음 한 번 「여러 파일 다운로드 허용」을 물을 수 있다.
+  const btn = wrap.querySelector(".getall");
+  if (btn) btn.addEventListener("click", async (ev) => {
+    ev.preventDefault(); ev.stopPropagation();          // summary 안이라 접힘이 토글되지 않게
+    btn.disabled = true;
+    for (const [i, x] of files.entries()) {
+      btn.textContent = `⬇ 받는 중 ${i + 1}/${files.length}`;
+      const a = document.createElement("a");
+      a.href = x.href; a.download = x.name; document.body.appendChild(a); a.click(); a.remove();
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+    btn.textContent = `✓ ${files.length}개 받기를 걸었습니다`;
+  });
+  return wrap;
+}
+
+$("#reload").addEventListener("click", load);
+load();
+</script>
+</body>
+</html>
