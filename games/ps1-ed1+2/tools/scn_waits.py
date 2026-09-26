@@ -10,7 +10,7 @@
 - `0x0C` — 대화 끝
 
 원작은 `9` 뒤를 새 줄에서 열고 싶을 때 블록 끝에 `{n}` 을 직접 넣어 뒀다(84곳 중 70곳).
-나머지 14곳은 `{n}` 없이 **같은 줄에서** 잇는다(그중 1곳은 뒷 블록이 `{n}` 으로 열어 빠진다 → 13곳) — 일본어는 띄어쓰기가 없고 짧아서 괜찮지만
+나머지 14곳은 `{n}` 없이 **같은 줄에서** 잇는다(뒷 블록이 `{n}` 으로 여는 1곳도 우리 조판이 머리 개행을 버리므로 포함 → 14곳) — 일본어는 띄어쓰기가 없고 짧아서 괜찮지만
 한국어는 ① 두 블록이 공백 없이 붙고(`그렇습니까…그럼`) ② 조판이 블록마다 따로 돌아 앞 줄
 길이를 모르니 이은 줄이 창 폭을 넘어 엔진이 멋대로 꺾는다 — 꺾인 자리에 공백이 남으면
 **첫칸공백**, 29열을 딱 채우면 우리 개행과 겹쳐 **빈 줄**(마스터 QA 2026-09-24, 셋 다 발각).
@@ -152,7 +152,6 @@ def same_line_waits(scn):
     lba, size = next((lba, size) for name, lba, size in SCN_FILES if name == scn)
     data = bytes(common.extract(lba, size))  # 원본 — 코드는 우리가 안 건드린다
     blocks = _blocks(scn)
-    by_id = {e["entry_id"]: e for e in blocks.values()}
     hits = set()
     for tgt, off, args in _calls(scn, OVERLAY_BASE[game], blocks, data):
         if tgt != SPRINTF[game]:
@@ -164,9 +163,9 @@ def same_line_waits(scn):
             continue
         if args[n - 1] != CONTINUE_SAME_LINE or e["text"].endswith("{n}{c}"):
             continue
-        nxt = by_id.get(e["entry_id"] + 1)
-        if nxt and nxt["text"].startswith("{n}"):  # 뒷 블록이 스스로 새 줄을 연다
-            continue
+        # ⚠ 뒷 블록이 원문에서 `{n}` 으로 새 줄을 열어도 **빼지 않는다**(2026-09-27, 마스터 QA 108 — ED2SCN9
+        #   jp256→257 「…처리해 주마.각오해라!!」). 우리 조판(krwrap)은 블록 **머리 개행을 버리므로** 원문의 `{n}` 이
+        #   화면에 안 남는다 — 그 자리도 앞 블록 끝 개행이 필요하다. 13 → 14곳.
         hits.add(e["entry_id"])
     return hits
 

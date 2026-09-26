@@ -57,7 +57,24 @@ AUTO_NEWLINE_RESERVE = 8  # prewrap 이 추가로 끼워 넣을 수 있는 개�
 # 드러스트고스트(7음절, 공용 용어집 표기)는 6음절+접미에 맞춰 다듬은 틀 74조합에서 +2반각
 # 넘친다 — 이름을 줄이는 대신 엔진 prewrap 에 맡긴다. ⚠ **바이트 예산(`check_byte_budget`)은
 # 그대로 본다** — 그쪽은 보기가 아니라 소프트락(구조)이라 예외가 없다.
-WIDTH_EXEMPT_NAMES = {"드러스트고스트"}
+# 🔴 09-27 비움 — 7음절 이름은 폭이 아니라 **엔진 이름 칸(13B = 6음절+접미)**을 넘어 끝 글자가 깨졌다(마스터 QA 109,
+#   「드러스트고스+」). 마스터 판정으로 「드러스트유령」(6음절)으로 줄였다. 7음절 이름은 다시 만들지 않는다.
+WIDTH_EXEMPT_NAMES: set[str] = set()
+
+# 폭 초과를 **실패가 아니라 보고로** 내리는 **템플릿** — QA 110(마스터 09-27 신규 규칙):
+# 「로그성 메시지(도구·주문 사용 등)는 강제 개행을 없애고, 넘칠 때만 어절 단위로 개행합니다」.
+# 이 표는 문장 자체가 `%s`(이름) 뒤에서 넘칠 수 있는데, 위 WIDTH_EXEMPT_NAMES 와 같은 근거
+# (2026-09-25, qa2 089 — 로그성 문구는 개행돼도 되고 엔진 prewrap 이 맡는다)를 **템플릿**
+# 단위로 적용한다. ⚠ 이건 추정이 아니라 **실측**이다 —
+# `check_prewrap_rules.prewrap()` 으로 원판·빌드 두 EXE 에 이 템플릿 + 최장 이름 조합을
+# 실제로 태워 본 결과: 원판은 ④(낱말 중간 절단)를 냈고, 09-27 어절 백오프 스텁(`patch_hang_punct
+# .stub_backoff`)을 적용한 빌드는 **0건**(마지막 공백에서 정확히 물러나 개행)이었다.
+# ⇒ 이 축(견본 32건)은 `CRTW.check()`(이론상 최악, 여기)가 아니라 `check_prewrap_rules
+# ._battle_table` 류의 실행 검증이 정본이고, 여기서는 실패로 안 센다.
+WIDTH_EXEMPT_TEMPLATES: set[str] = {
+    "%c%s%c은(는) 꼬리로 공격했다.\n",
+    "%c%s%c의 목을 물어뜯었다.\n",
+}
 
 
 def _enc_len(s):
@@ -288,12 +305,15 @@ def check_realistic(*, top_n=20, verbose=False, strict=False):
             w = max(_width(line) for line in folded.split("\n"))
             if w > FRAME_HALFWIDTH:
                 row = (src, t, name, name_src, w, w - FRAME_HALFWIDTH)
-                exempt_rows = name.rstrip("ABCDEFGHIJ′”") in WIDTH_EXEMPT_NAMES
+                exempt_rows = t in WIDTH_EXEMPT_TEMPLATES or (
+                    name.rstrip("ABCDEFGHIJ′”") in WIDTH_EXEMPT_NAMES
+                )
                 (exempt if exempt_rows else over).append(row)
     over.sort(key=lambda r: -r[5])
     if exempt:
         print(
-            f"  ℹ 폭 초과 허용 이름({', '.join(sorted(WIDTH_EXEMPT_NAMES))}) {len(exempt)}조합 — 실패로 안 센다"
+            f"  ℹ 폭 초과 허용(이름 {', '.join(sorted(WIDTH_EXEMPT_NAMES)) or '없음'} · "
+            f"템플릿 {len(WIDTH_EXEMPT_TEMPLATES)}개) {len(exempt)}조합 — 실패로 안 센다"
         )
     print(
         f"  실제 분모(편 분리·파티 4인 고정·무접미+A 두 경우): 템플릿 {len(tmpls)}개, "
