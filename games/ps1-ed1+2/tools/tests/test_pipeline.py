@@ -1642,5 +1642,39 @@ def test_jp_leak_ignores_plain_fullwidth_alnum():
     assert L.shared_runs(jp, "ＭＰ".encode("cp932")) == []
     assert L.shared_runs("密造酒".encode("cp932"), "造酒".encode("cp932")) == ["造酒"]
 
+
+def test_prewrap_backoff_and_space_swallow_stubs():
+    """런타임 줄넘김 ③·④ 스텁(09-27) — 원본 없이 스텁만 실행해 규칙을 값으로 본다."""
+    import check_prewrap_rules as C
+    import patch_hang_punct as HP
+
+    base = 0x80100000
+    bo = HP.stub_backoff(base)
+    HP.verify_asm(bo, base, "backoff")
+
+    def backoff(text, c, breaks=()):
+        cpu = C.CPU(b"", base=0x90000000)
+        for i, b in enumerate(bo):
+            cpu.mem[base + i] = b
+        s_addr, br = 0x80200000, 0x80300000
+        for i, b in enumerate(text):
+            cpu.wb(s_addr + i, b)
+        for k, v in enumerate(breaks):
+            cpu.wb(br + 2 * k, v)
+            cpu.wb(br + 2 * k + 1, v >> 8)
+        r = cpu.call(base, {8: c, 19: s_addr, 21: br, 18: len(breaks)})
+        return r[8]
+
+    s = b"ab cd ef"
+    assert backoff(s, 7) == 5  # 같은 줄 마지막 공백으로 물러난다
+    assert backoff(s, 7, breaks=(6,)) == 7  # 직전 끊는 자리 앞으로는 안 간다
+    assert backoff(b"ab\n cd", 6) == 6  # 수동 개행 바로 뒤 들여쓰기로는 안 물러난다
+    assert backoff(b"abcdef", 5) == 5  # 공백이 없으면 그대로
+    assert backoff(s, 7, breaks=(1, 1, 1, 1, 1, 1)) == 7  # 끊는 자리가 6개면 안 물러난다
+
+    p3 = HP.stub_pass3_space(base, 0x800AD124)
+    HP.verify_asm(p3, base, "pass3")
+    HP.verify_asm(HP.stub_after_backoff(base, base, 0x800ACF80), base, "after")
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
