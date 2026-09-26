@@ -93,6 +93,8 @@ class Asm:
             raise AssertionError(f"mov.l 꼴 모름: {s},{d}")
 
     def _mov_b(self, s, d):
+        if self._mov_b_ext(s, d):
+            return
         if s.startswith("@(r0,"):  # mov.b @(r0,Rm),Rn
             self.emit(0x000C | (_n(d) << 8) | (_n(s[5:-1]) << 4))
         elif s.startswith("@"):  # mov.b @Rm,Rn
@@ -117,6 +119,9 @@ class Asm:
         self.emit(0x3008 | (_n(d) << 8) | (_n(s) << 4))
 
     def _cmp_eq(self, s, d):
+        if s.startswith("#"):  # ⚠ `cmp/eq #imm` 은 **r0 전용**이다
+            assert _n(d) == 0, "cmp/eq #imm 는 r0 만"
+            return self._cmp_eq_imm(int(s[1:], 0))
         self.emit(0x3000 | (_n(d) << 8) | (_n(s) << 4))
 
     def _cmp_hs(self, s, d):
@@ -169,6 +174,46 @@ class Asm:
 
     def _jmp(self, s):
         self.emit(0x402B | (_n(s[1:]) << 8))
+
+    def _movt(self, d):
+        self.emit(0x0029 | (_n(d) << 8))
+
+    def _rts(self):
+        self.emit(0x000B)
+
+    def _sett(self):
+        self.emit(0x0018)
+
+    def _clrt(self):
+        self.emit(0x0008)
+
+    # ── 줄 나누기 루틴(`patch_msgwrap`)이 더 쓰는 것 ──────────────────────────
+    def _cmp_ge(self, s, d):  # 부호 있는 Rn >= Rm
+        self.emit(0x3003 | (_n(d) << 8) | (_n(s) << 4))
+
+    def _cmp_gt(self, s, d):  # 부호 있는 Rn > Rm
+        self.emit(0x3007 | (_n(d) << 8) | (_n(s) << 4))
+
+    def _cmp_hi(self, s, d):  # 부호 없는 Rn > Rm
+        self.emit(0x3006 | (_n(d) << 8) | (_n(s) << 4))
+
+    def _cmp_eq_imm(self, v):
+        assert -128 <= v <= 127, f"cmp/eq #imm 범위 밖: {v}"
+        self.emit(0x8800 | (v & 0xFF))
+
+    def _mov_b_ext(self, s, d):
+        """`mov.b` 의 나머지 꼴 — `@Rm+,Rn` · `r0,@(d,Rn)`."""
+        if s.startswith("@") and s.endswith("+"):
+            self.emit(0x6004 | (_n(d) << 8) | (_n(s[1:-1]) << 4))
+            return True
+        if d.startswith("@(") and not d.startswith("@(r0,"):
+            assert _n(s) == 0, "mov.b Rm,@(d,Rn) 는 r0 만"
+            disp, rn = d[2:-1].split(",")
+            v = int(disp, 0)
+            assert 0 <= v <= 15
+            self.emit(0x8000 | (_n(rn) << 4) | v)
+            return True
+        return False
 
     # ── 마무리 ──────────────────────────────────────────────────────────────
     def link(self, base):

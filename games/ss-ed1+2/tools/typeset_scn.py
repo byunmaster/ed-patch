@@ -129,6 +129,11 @@ def fits(body):
 #      8행을 쓰고 싶어지면 그때 눈금자로 재라. 지금은 **원문 이내**라 안전하다.
 WIN_ROWS = 7
 
+# 🔴 **반각 꼬리 부호는 29열(14.5)에 앉는다** — 드로어 훅(`patch_msgwrap.hang_stub`, 마스터 판정
+#    2026-09-27 · PS1 `patch_hang_punct` 와 같다). 그 부호를 그린 뒤 엔진이 **스스로 줄을 넘기므로**
+#    그 줄 뒤엔 우리 개행을 넣지 않는다(넣으면 빈 줄 — `wrap` 주석, PS1 도 같은 규칙 2026-08-30).
+HANG_TAIL = set(".,!?)\"'")
+
 # 🔴 줄머리에 오면 안 되는 글자(금칙) — 한국어 조판의 관례다.
 HEAD_BAN = set("。、．，.,!?！？」』）)]〕》〉…‥·:;~")
 
@@ -164,6 +169,13 @@ def wrap(seg):
     for i, ch in enumerate(seg):
         if ch == "\n":
             out.append((cur, start))
+            # 🔴 **넘친 줄 뒤의 개행은 빈 줄을 하나 더 만든다**(2026-09-27 실기). 엔진은 줄이
+            #    14.0 을 **넘는** 순간(13.5 에서 전각이 시작해 14.5 가 되면) 곧바로 줄을 넘기고,
+            #    거기에 명시 개행이 오면 또 넘긴다 — 교회 신부 창에서 「…아론님을 뵙게」(29B)
+            #    다음에 빈 줄이 떴다(`r6-scene-wrap-blankline-BUG.png`). ⚠ **14.0 딱은 괜찮다** —
+            #    원문에 「14.0 + 개행」이 665줄 있다(빈 줄이 났다면 원판이 못 넘겼을 수).
+            if w > COLS:
+                out.append(("", -1))  # 시작 자리 -1 = 이 빈 줄은 원문에 없다(엔진이 만든다)
             cur, w, start = "", 0.0, i + 1
             continue
         cw = width(ch)
@@ -178,7 +190,7 @@ def wrap(seg):
         #      「…뒀습니다」        / 「요.」            ← 14.0 에서 끊기는 쪽도 맞다
         #    💡 조사 훅의 한 줄 예산이 **29B** 인 것과도 맞는다(루트 CLAUDE.md) — 줄 버퍼가
         #       29 반각 칸이다. 우리 모델만 28 이었다.
-        if w >= COLS:
+        if w >= COLS and not (w == COLS and ch in HANG_TAIL):
             out.append((cur, start))
             cur, w, start = ch, cw, i
         else:
@@ -462,6 +474,11 @@ _PS1_MARKUP = [
     ("\x1a", "%s"),
     ("\x17", "%s"),
     ("\x1b", "%d"),
+    # 🔴 **PS1 의 붙임 공백**(`reinsert_kr_pilot.NOBREAK_SP`) — 블록을 이어 붙일 때 PS1 조판기가
+    #    보통 공백을 깎아서 쓰는 표식이다. 새턴엔 그 사정이 없으니 **그냥 공백**이다.
+    #    ⚠ 안 바꾸면 cp932 가 사용자 영역(U+E003)을 **`F0 43`** 으로 인코딩한다 — 폰트(4,375자)
+    #      한참 밖이라 화면에 엉뚱한 글자가 찍힌다(2026-09-27, 42블록 — 줄바꿈 전수 스캔이 잡았다).
+    ("\ue003", " "),
 ]
 _HALFW = {
     c: c - 0xFEE0
@@ -491,10 +508,321 @@ def typeset(jp, kr, names, why=None):
     ⚠ `why` 에 리스트를 주면 **밀어내기가 포기한 사유**가 담긴다(계측용 — `check_engine_wrap`).
       실패 사유(둘째 반환값)와는 다른 것이다.
     """
-    built, bad = _typeset(jp, kr, names)
+    built, bad = _typeset(jp, space_places(kr), names)
     if built is None:
         return None, bad
-    return "%c".join(nudge(seg, why) for seg in built.split("%c")), None
+    return "%c".join(nudge(seg, why) for seg in wrap_block(built).split("%c")), None
+
+
+# ── 어절 단위 줄바꿈 (마스터 확정 2026-09-27 — 조판 여섯 규칙은 씬까지 전 영역) ──────────
+# 엔진은 글자 단위로 접는다(`wrap`) — 그래서 「알겠/다」처럼 낱말 한가운데서 갈렸다. 빌드 때
+# **어절 자리에 개행을 미리 넣어** 엔진이 접을 일이 없게 한다(엔진 쪽 코드는 안 건드린다).
+# 🔴 **규칙은 다시 쓰지 않는다** — 메시지 창 기준 구현 `msgwrap.wrap` 을 그대로 쓴다(4-D).
+#    문자열을 그 함수가 먹는 바이트로 옮기고(한글 = 전각 2B 자리표), 결과를 되짚어 온다.
+# ⚠ 못 하면 **안 한다**(원래 조각 그대로 → 밀어내기만): 창 7행 초과 · `%s`/`%d` 한복판 절단 ·
+#   엔진 모델이 여전히 접는 줄이 남는 경우.
+# 🔴 **씬 창은 한 칸(1B) 좁게** — 메시지 창 규칙(`LIMIT` 28 = 28B 미만일 때 놓는다)이면 전각이
+#    27B 에서 시작해 **29B(14.5)** 줄이 되고, 그 뒤에 우리가 넣은 개행이 오면 엔진이 빈 줄을
+#    하나 더 만든다(위 `wrap` 주석). 27 미만일 때만 놓으면 개행으로 끝나는 줄이 늘 **28B 이하**다.
+SCN_LIMIT = 27
+_HOLE = b"\x88\x9f"  # 한글 한 글자 자리표 — 닫는 부호가 아닌 전각 SJIS
+# 🔴 **런타임 이름(`%s`)은 가장 긴 이름으로 잰다** — 아이템이 들어오는 자리가 있다(「보물상자 안에는
+#    %s이(가)…」). 짧게 잡으면 긴 이름이 그 줄을 넘치게 하고, 그 뒤 우리 개행이 **빈 줄**을
+#    만든다(위 `wrap` 주석). 정본 최장 = 아이템 7.5 칸(`프레이아의 미소`) · 몬스터 7 → 전각 8.
+# `%c` 는 **글줄 안 색 쌍**으로만 여기 들어온다(`line_groups`) — 폭 없는 제어(`msgwrap.ZERO_W`).
+_TOKENS = {"%s": _HOLE * 8, "%d": b"99999", "%c": b"\x02"}  # 수치는 다섯 자리(`50000 Gold`)
+
+
+# 🔴 **색 없는 `%s` 뒤에 주어 조사가 오면 파티원이다** — 원문 전량에서 예외가 없다(2026-09-27:
+#    보물상자 여는 사람 · 「%s은(는) 포기할 수밖에 없었다」). 파티 기본 이름 최장 = 전각 넷
+#    (`세리오스`·`아트라스`). 여기까지 8 칸으로 재면 「%s은(는) / 읽었다.」 처럼 두 어절 문장이
+#    괜히 갈린다. ⚠ 나머지 `%s`(색 쌍 안 · 지명 · 주문 · 수치 표)는 그대로 가장 긴 값이다.
+_SUBJECT = re.compile(r"(?<!%c)%s(?=은\(는\)|이\(가\))")
+_PARTY_W = 4
+
+
+def _is_subject(seg, i):
+    return _SUBJECT.match(seg, i) is not None
+
+
+def _units(seg, tokens=None):
+    """`[(바이트, 원문 조각)]` — `%s`·`%d` 는 한 덩어리."""
+    tokens = _TOKENS if tokens is None else tokens
+    out, i = [], 0
+    while i < len(seg):
+        t = seg[i : i + 2]
+        if t == "%s" and _is_subject(seg, i):
+            out.append((_HOLE * _PARTY_W, t))
+            i += 2
+            continue
+        if t in tokens:
+            out.append((tokens[t], t))
+            i += 2
+            continue
+        ch = seg[i]
+        try:
+            b = ch.encode("cp932")
+        except UnicodeEncodeError:
+            b = _HOLE
+        out.append((b, ch))
+        i += 1
+    return out
+
+
+def wordwrap(seg):
+    """조각 하나에 어절 단위 개행을 넣는다. 못 하면 원래 조각.
+
+    ⚠ **수치 앞 공백을 풀어 한 번 더 본다** — 규칙 2(공백 뒤 숫자는 안 끊는다)가 끊을 자리를
+      전부 막으면 **숫자 한복판**만 남는다(`%s은(는) %d Gold…` — 이름이 길면 그 줄에 다른 공백이
+      없다). 숫자를 가르느니 그 공백에서 끊는다 — 둘째 시도에서 `%d` 를 숫자 아닌 자리표로 잰다.
+    """
+    new = _wordwrap(seg, _TOKENS)
+    if new is None and "%d" in seg:
+        new = _wordwrap(seg, {**_TOKENS, "%d": b"xxxxx"})
+    return seg if new is None else new
+
+
+def _wordwrap(seg, tokens):
+    """한 번의 시도 — 못 하면 `None`."""
+    import msgwrap
+
+    units = _units(seg, tokens)
+    src = b"".join(b for b, _t in units)
+    got = msgwrap.wrap(src, stop=None, limit=SCN_LIMIT, retreat=True)  # 씬·대사는 어절 단위
+    if not msgwrap.check_invariant(src, got):
+        return None
+    body = [u for u in units if u[1] not in (" ", "\n")]
+    out, pos, k = [], 0, 0
+    while pos < len(got):
+        c = got[pos]
+        if c in (msgwrap.NL, msgwrap.SP):
+            out.append("\n" if c == msgwrap.NL else " ")
+            pos += 1
+            continue
+        b, t = body[k]
+        if got[pos : pos + len(b)] != b:
+            return None  # 한 덩어리(`%s`·`%d`·한 글자) 한복판에서 끊겼다
+        out.append(t)
+        pos += len(b)
+        k += 1
+    new = "".join(out)
+    ls = lines(measure(new))
+    if len(ls) > WIN_ROWS or len(ls) != new.count("\n") + 1:
+        return None  # 창이 넘치거나 엔진이 여전히 접는다
+    return new
+
+
+def measure(t):
+    """엔진 접기 모델(`wrap`)에 태울 꼴 — 색 쌍은 폭 0, 런타임 인자는 **가장 긴 값**."""
+    t = _SUBJECT.sub("가" * _PARTY_W, t)
+    return t.replace("%c", "").replace("%s", "가" * 8).replace("%d", "99999")
+
+
+def _inline(inner, after):
+    """`%c inner %c after` 가 **글줄 안 색 쌍**인가 — 이름을 칠하고 같은 줄이 이어진다.
+
+    🔴 `%c` 는 셋이다(원문 전량 분류 2026-09-27): 화자 명판 `%c화자%c\n` · 창/쪽 넘김
+       (대개 개행 뒤) · **글줄 안 이름 색** `…には%c%s%cが…` · `%c密造酒%cを渡しました`.
+       셋째를 조각 경계로 보면 한 줄이 둘로 쪼개져 **그 줄 폭을 못 잰다**(「보물상자 안에는
+       %c%s%c이(가) 들어 있었다」 19칸이 안 접혔다).
+    """
+    return (
+        "\n" not in inner
+        and after != ""
+        and not after.startswith("\n")
+        and (inner == "%s" or 0 < width(inner) <= 8)
+    )
+
+
+def line_groups(built):
+    """`%c` 로 가른 조각을 **글줄 안 색 쌍만 다시 붙여** 묶는다 → `[조각 번호 목록]`."""
+    segs = built.split("%c")
+    join = [False] * max(0, len(segs) - 1)  # join[b] = b 번째 `%c`(segs[b]|segs[b+1]) 를 잇는다
+    k = 1
+    while k < len(segs) - 1:
+        if _inline(segs[k], segs[k + 1]):
+            join[k - 1] = join[k] = True
+            k += 2
+        else:
+            k += 1
+    groups, cur = [], [0]
+    for b, j in enumerate(join):
+        if j:
+            cur.append(b + 1)
+        else:
+            groups.append(cur)
+            cur = [b + 1]
+    groups.append(cur)
+    return segs, groups
+
+
+def wrap_block(built):
+    """블록 전체 줄바꿈 — 글줄 단위(`line_groups`)로 **PS1 과 같은 조판**(`ps1_layout`)을 걸고,
+    새턴 제약을 못 지키면 어절 단위 탐욕(`wordwrap`)으로 물러선다."""
+    segs, groups = line_groups(built)
+    out = []
+    for g in groups:
+        t = "%c".join(segs[i] for i in g)
+        out.append(ps1_layout(t) or wordwrap(t))
+    return "%c".join(out)
+
+
+# ── PS1 과 같은 조판 (마스터 판정 2026-09-27 — 「대사창 사이즈가 같다면 PS1 과 동일하게」) ──
+# PS1 은 씬 대사를 공용 `krwrap.wrap_pages`(문장 단위 · 균형 배치 · 고아 방지)로 조판한다
+# (`ps1-ed1+2/tools/reinsert_kr_pilot.wrap_page`). 창 폭이 같으므로(14.0 슬롯 · 반각 0.5)
+# **같은 함수 · 같은 인자**를 부르면 줄 나눔이 같아진다 — 같은 문안 11,697조각 실측 38.3% → 99.7%.
+# 새턴 몫은 셋만 덧댄다: ① 런타임 인자 폭(가장 긴 값 — `_TOKENS` 주석) ② 7행 ③ **개행 앞 줄은
+# 14.0 이하 · 엔진이 접는 줄 없음**(넘친 줄 뒤 개행 = 빈 줄, `wrap` 주석). 못 지키면 None.
+# ⚠ PS1 의 「14.5 + 끝 부호」 걸침(`_hang_merge`)은 **안 가져온다** — PS1 은 엔진을 고쳐
+#   (`patch_hang_punct`) 반각 부호가 29열에서 **시작**하게 열었다. 새턴 엔진은 14.0 에서 시작하는
+#   글자를 다음 줄로 꺾으므로 조판만으로는 못 한다(부호만 줄머리로 떨어진다).
+# ⚠ 붙임 규칙 둘(`_KEEP`·`_NUM_UNIT`)은 PS1 `keep_together`·`_bind_num_unit` 과 **같은 규칙**이다 —
+#   정본이 게임 쪽에 둘로 갈려 있다. `shared/` 로 올릴 후보(관리자에게 넘김, 4-D).
+_NB = "\ue014"  # 붙임 공백 자리표 — 조판 뒤 공백으로 되돌린다(화면에 안 나간다)
+_SENT = {"%s": "\ue010", "%S": "\ue011", "%d": "\ue012", "%c": "\ue013"}  # %S = 주어 파티원
+_SENT_W = {"\ue010": 8.0, "\ue011": float(_PARTY_W), "\ue012": 2.5, "\ue013": 0.0, _NB: 0.5}
+_NUM_UNIT = re.compile(r"(?<=[0-9\ue012]) (?=Gold)")  # PS1 `_NUM_UNIT` — 금액과 단위
+_KATA = re.compile(r"[ァ-ヴー]{2,}")
+
+
+def _cell(ch):
+    return _SENT_W.get(ch, 0.5 if ch.isascii() else 1.0)
+
+
+_PLACE_RE = None
+_PLACE_FORMS = None
+_MARK_TAIL = re.compile(r"[A-JＡ-Ｊ♀♂]$")
+
+
+def _place_forms():
+    """`{문안 속 꼴: 대사 꼴}` — 바뀌는 것만."""
+    global _PLACE_FORMS
+    if _PLACE_FORMS is None:
+        from names import ATTACHED_KINDS, space_place_dialog
+
+        vals = set(table("place").values())
+        _PLACE_FORMS = {v: w for v in vals if (w := space_place_dialog(v)) != v}
+        # 「성」·「섬」은 붙인다 — 띄어 쓴 꼴(`루디아 성`)이 문안에 있으면 붙인다
+        _PLACE_FORMS.update(
+            {v[:-1] + " " + v[-1]: v for v in vals if v.endswith(ATTACHED_KINDS) and len(v) > 2}
+        )
+    return _PLACE_FORMS
+
+
+def space_places(kr):
+    """대사 속 지명을 대사 꼴로 — 🔴 규칙은 `names.space_place_dialog` 가 정본이다.
+
+    ⚠ **지명 한 덩어리 블록은 안 건드린다** — 항로·워프 목록처럼 이름 칸인 자리다(판정 (나)는 붙임).
+      개체 표지가 붙은 꼴(`핀요새B`·`핀요새Ｃ` — 몬스터 이름과 같은 글자)도 이름 칸이다.
+    """
+    global _PLACE_RE
+    forms = _place_forms()
+    if not kr or _MARK_TAIL.sub("", kr.strip()) in forms:
+        return kr
+    if _PLACE_RE is None:
+        _PLACE_RE = re.compile("|".join(map(re.escape, sorted(forms, key=len, reverse=True))))
+    return _PLACE_RE.sub(lambda m: forms[m.group(0)], kr)
+
+
+def _keep():
+    """띄어 쓴 고유명사 — PS1 `keep_together` 와 같은 뜻(인물·지명은 가타카나 원명만)."""
+    global _KEEP
+    if _KEEP is None:
+        names = {"신의 아들"}
+        for cat in ("item", "monster"):
+            names.update(table(cat).values())
+        for cat in ("person", "place"):
+            names.update(v for k, v in table(cat).items() if _KATA.search(k))
+        # 대사 꼴로 띄운 지명은 **전부** 한 덩어리다(조판 규칙 ④ 묶음 안 끊기 — 관리자 중계
+        # 2026-09-27: 가타카나 원명뿐 아니라 `국경의 동굴`·`용의 알` 도. PS1 도 같게 간다)
+        names.update(_place_forms().values())
+        out = [n for n in names if " " in n.strip() and sum(map(_cell, n)) <= COLS]
+        _KEEP = tuple(sorted(out, key=lambda n: (-len(n), n)))
+    return _KEEP
+
+
+_KEEP = None
+
+
+def ps1_layout(seg):
+    """글줄 하나를 PS1 과 같게 조판한다. 새턴 제약을 못 지키면 None."""
+    from text import krwrap
+
+    if "\n\n" in seg or "\t" in seg or any("\ue000" <= c <= "\uf8ff" for c in seg):
+        return None  # 원문 빈 줄·탭 정렬(장 끝 카드 등)은 원래 조판을 그대로 둔다
+    lead = seg[: len(seg) - len(seg.lstrip("\n"))]  # 화자 줄 끝 개행
+    body = seg[len(lead) :]
+    if not body.strip():
+        return None
+    t = _SUBJECT.sub("%S", body)
+    for k, v in _SENT.items():
+        t = t.replace(k, v)
+    for n in _keep():
+        t = t.replace(n, n.replace(" ", _NB))
+    t = _NUM_UNIT.sub(_NB, t)
+    pages = krwrap.wrap_pages(
+        t,
+        float(COLS),
+        WIN_ROWS,
+        break_char="\n",
+        cell_width=_cell,
+        strip_before=".,!?",
+        strip_after="",
+        det_orphan=True,
+    )
+    ls = _hang_merge([ln for pg in pages for ln in pg])
+    hung = [_hung(ln) for ln in ls]
+    if len(ls) > WIN_ROWS or any(
+        sum(map(_cell, ln)) > COLS and not h for ln, h in zip(ls, hung, strict=True)
+    ):
+        return None
+    # 매단 줄 뒤엔 개행도 공백도 안 넣는다 — 엔진이 부호를 그린 뒤 스스로 넘긴다
+    last = len(ls) - 1
+    new = "".join(
+        ln + ("" if h or i == last else "\n")
+        for i, (ln, h) in enumerate(zip(ls, hung, strict=True))
+    )
+    want = list(ls)
+    new = _unsent(new.replace(_NB, " "))
+    want = [_unsent(ln.replace(_NB, " ")) for ln in want]
+    new = lead + new
+    if _strip_ws(new) != _strip_ws(seg):
+        return None  # 글 소실 — 절대 안 받는다
+    m = lines(measure(new))
+    if m[len(lead) :] != [measure(w) for w in want] or len(m) > WIN_ROWS:
+        return None  # 엔진이 우리가 뜻한 줄과 다르게 접거나 빈 줄이 난다
+    return new
+
+
+def _unsent(t):
+    for k, v in _SENT.items():
+        t = t.replace(v, "%s" if k == "%S" else k)
+    return t
+
+
+def _strip_ws(t):
+    return "".join(c for c in t if c not in " \n")
+
+
+def _hung(ln):
+    """29열(14.5)을 반각 꼬리 부호로 채운 줄인가."""
+    return sum(map(_cell, ln)) == COLS + 0.5 and ln[-1:] in HANG_TAIL
+
+
+def _hang_merge(ls):
+    """PS1 `_hang_merge` 와 같은 뜻 — 꼬리 부호 하나 때문에 갈린 줄을 도로 붙인다(14.5 까지)."""
+    out, i = [], 0
+    while i < len(ls):
+        if i + 1 < len(ls):
+            j = f"{ls[i]} {ls[i + 1]}"
+            w = sum(map(_cell, j))
+            if COLS < w <= COLS + 0.5 and j[-1] in HANG_TAIL and _cell(j[-1]) == 0.5:
+                out.append(j)
+                i += 2
+                continue
+        out.append(ls[i])
+        i += 1
+    return out
 
 
 def _typeset(jp, kr, names):

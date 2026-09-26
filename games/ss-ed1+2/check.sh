@@ -81,6 +81,11 @@ echo "  ── ED2 몬스터 이름 (제자리 우선 · 넘치면 칸끼리 재
 step "몬스터 이름" "$T/patch_mon_names.py" --apply
 echo "  ── 회심/통한 복사 루프 (14B 고정 → NUL 종단)"
 step "회심 복사" "$T/patch_crit_copy.py" --apply
+# 🔴 **메시지 창은 그리기 전에 prewrap 이 줄을 나눈다**(2026-09-27). 원 루틴은 일본어용 글자
+#    단위라 `레스`/`1` 이 갈리고 줄머리에 공백·마침표가 왔다 — 어절 단위로 갈아 끼운다.
+#    병기는 그 앞에서 조사 훅의 `접기` 진입점이 접는다(아래 「조사 훅」). 규칙 정본 `msgwrap.py`.
+echo "  ── 메시지 창 줄 나누기 (prewrap → 어절 단위)"
+step "줄 나누기" "$T/patch_msgwrap.py" --apply
 echo "  ── 고정 길이 복사 전수 (칸에 맞나 · 빌드 이미지 기준)"
 step "고정 복사" "$T/check_fixed_copy.py"
 echo "  ── 포인터 정렬 (두 바이트 고정으로 읽는 화면이 있다)"
@@ -114,6 +119,10 @@ step "정본" "$T/check_glossary.py"
 #    얻었다」가 떴는데 **게이트는 전부 초록이었다.**
 echo "  ── 고유명사 표 (체인이 끝난 이미지에서 포인터를 따라가 되읽는다)"
 step "이름 표" "$T/check_name_tables.py"
+# 🔴 **지명 칸은 전각 짝수**(마스터 판정 (나) 2026-09-27) — PS1 은 반각 공백이 낀 홀수 길이
+#    지명에서 HUD 가 NUL 을 놓쳤다. 새턴은 그 코드가 없지만 약속을 되읽기로 지킨다.
+echo "  ── 지명 칸 (반각 누출 · 홀수 길이)"
+step "지명 칸" "$T/check_place_fields.py"
 echo "  ── 참조 (비운 자리를 아직 보나 · 핀에 썼나)"
 step "참조" "$T/check_stale_refs.py"
 echo "  ── 덤프 라운드트립 (덤퍼가 잃는 것이 있나)"
@@ -135,6 +144,17 @@ step "남은 일본어" "$T/scan_untranslated.py" --all
 # 🔴 다만 **7행 초과가 뜨면 그건 잘린다** — 그때는 사람이 본다.
 echo "  ── 엔진 접기 (전각 14 × 7행으로 화면을 재현 — 보고)"
 "$PY" "$T/check_engine_wrap.py" 2>&1 | grep -E "행을 넘는 창|줄머리" | sed 's/^/     /' || true
+# 🔴 **조판 여섯 규칙 — 전 영역**(마스터 확정 2026-09-27). 씬 창(빌드 조판)·메시지 창(기계어)
+#    둘 다 규칙 정본은 `msgwrap.wrap` 이다. 지금 전부 0 이라 **실패로 친다**(회귀 방지) —
+#    한 줄보다 긴 어절(규칙 3, 글자 단위로 끊을 수밖에 없다)만 보고로 둔다.
+echo "  ── 조판 여섯 규칙 (씬 · 메시지 — 영역별 위반 수)"
+wr=$("$PY" "$T/check_wrap_rules.py" 2>&1) || {
+  echo "$wr" | sed 's/^/     /'
+  echo "  ❌ 조판 규칙 — $PY $T/check_wrap_rules.py --show 8"
+  invalidate
+  exit 1
+}
+echo "$wr" | sed 's/^/     /'
 echo "  ── 동적 조사 훅 (SH-2 디스어셈블 검산 + 참조 되읽기)"
 step "조사 훅" "$T/patch_josa_hook.py" --apply
 

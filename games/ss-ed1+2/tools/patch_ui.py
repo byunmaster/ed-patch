@@ -133,6 +133,24 @@ def _place_lookup(jp, cat):
     return None
 
 
+# 🔴 **종류 말은 붙여 쓴다**(마스터 판정 (나) 2026-09-27 — PS1 과 같은 꼴). HUD·표·헤더의
+#    지명은 「크루즈마을」이고, 공백은 **뒷말(입구·부근·방위) 앞에만** 전각으로 둔다.
+#    ⚠ 한때 종류 말을 전각으로 띄웠다(24종) — 칸이 안 드는 이름이 섞여 이름마다 판정하는
+#      장치까지 붙었는데, 판정 (나)로 통째로 걷었다. 경위는 devlog 09-27.
+#    ⚠ 공백은 **전각**이다 — 지명 칸 바이트 길이가 늘 짝수여야 한다(`check_place_fields`).
+
+
+def _fit_place(kr, room, suffixed, where):
+    """지명 한 칸 → 칸(`room` = 널 포함 바이트)에 드는 꼴.
+
+    `suffixed`(「…부근」 표)면 뒤에 접미가 붙으므로 끝에 전각 공백을 하나 붙인다 —
+    화면에서 확인된 「크루즈마을　입구」 꼴. 안 들면 붙여 쓴다.
+    """
+    if suffixed and rec_len(kr + WIDE_SP) <= room:
+        return kr + WIDE_SP
+    return kr
+
+
 def rows():
     """`(파일키, 표이름, 색인, 오프셋, stride, JP, KR|None)` — 원본에서 읽어 정본과 짝짓는다."""
     tables, pad, _cards, pad_to_jp, _msgs = load_canon()
@@ -179,8 +197,7 @@ def rows():
                 kr = _place_lookup(jp, cat)
                 # 🔴 조용히 건너뛰지 않는다 — 한 칸만 일본어로 남으면 화면에서 바로 튄다.
                 assert kr, f"{key}/{name}[{i}] 0x{at:06x}: 정본에 없는 {cat} {jp!r}"
-                if name == SUFFIXED_TABLE and rec_len(kr + WIDE_SP) <= stride:
-                    kr += WIDE_SP  # 접미와 띄운다 — 아래 주석
+                kr = _fit_place(kr, stride, name == SUFFIXED_TABLE, f"{key}/{name}")
                 out.append((key, name, i, at, stride, jp, kr))
         # ── 파티 기본 이름 — 지명과 같은 수법(정본은 glossary), 자리만 손으로 적었다
         for k, at, fl in dump_ui.PERSON_SLOTS:
@@ -238,7 +255,8 @@ def scn_header(d, i, places):
             continue
         kr = places.get(jp)
         if kr:
-            return s, fl, jp, kr
+            # 🔴 널이 반드시 남아야 한다 — 꼬리 바이트(`09`)가 끝을 차지하므로 본문은 fl-2 까지.
+            return s, fl, jp, _fit_place(kr, fl - 1, False, "씬 지명 헤더")
     return None
 
 
