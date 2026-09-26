@@ -65,6 +65,17 @@ HALFWIDTH_KR_ALLOC = {
 }
 
 
+# 🔴 **숫자는 읽은 소리대로**(2026-09-26 마스터 확정 — 07-27 「숫자·영문은 무받침」 정발 근거를 대체).
+# 끝 숫자 0(영)·1(일)·3(삼)·6(육)·7(칠)·8(팔) = 받침 → 을·은·이 / 2(이)·4(사)·5(오)·9(구) = 무받침.
+# 영문·부호는 그대로 무받침. 루틴은 명령을 늘릴 수 없어(504B, VAB 파형까지 4B) 마스크를 `lui` 한 번에
+# 싣고 **문자 코드 자체로 시프트**한다: 비트 = (DIGIT_BATCHIM_MASK >> (b & 31)) & 1, prev = 가 + 비트
+# (가=0x889F 무받침, 각=0x88A0 받침 — 인접 슬롯이라 더하기 하나로 고른다).
+# ⚠ 시프트가 하위 5비트만 보므로 **P~Y·p~y(0x50~59·0x70~79)도 같은 비트를 탄다**(Q·S·V·W·X·P 등이
+# 받침으로 읽힘). 전 문안 실측(2026-09-26): 이 글자 뒤에 병기가 오는 자리 0 — 몬스터 식별자는 A~J,
+# 분열체 접미는 ′·″ 라 영향 없다. 새 문안이 이 부류를 만들면 여기부터 본다.
+DIGIT_BATCHIM = (0, 1, 3, 6, 7, 8)
+DIGIT_BATCHIM_MASK = sum(1 << ((0x30 + d) & 31) for d in DIGIT_BATCHIM)  # 0x01CB0000
+assert DIGIT_BATCHIM_MASK & 0xFFFF == 0  # lui 하나로 실린다
 BASE_LIN = 94  # 가(0x889F)의 (hi-0x88)*188+cell 값 — idx = lin - BASE_LIN
 PAREN_L, PAREN_R = 0x28, 0x29  # 반각 ( ) — 전투 인코더(patch_items.enc)는 ASCII 1바이트 폴백
 
@@ -144,7 +155,8 @@ def fix_buffer(
             if b == 0x20 or 1 <= b <= 3:
                 pass  # 공백·색제어(1·2·3) → prev 유지
             elif 0x22 <= b <= 0x7A:
-                prev = SYL_LO  # 부호·숫자·영문 → 무받침 마커('가')
+                # 부호·영문 → 무받침 마커(가), 숫자 → 읽은 소리대로(가/각) — asm 과 같은 산식
+                prev = SYL_LO + ((DIGIT_BATCHIM_MASK >> (b & 31)) & 1)
             elif half_table is not None and HALF_LO <= b <= HALF_HI:
                 prev = b  # 반각 한글 — 코드 자체를 종성 판정 대상으로 남긴다
             else:
@@ -381,6 +393,9 @@ def assemble_routine(free_base, table_addr, pairs_addr):
     a.sltiu("t3", "t2", 4)
     a.bne("t3", "zero", "adv1")
     a.nop()
+    # 🔴 **2026-09-26 마스터 확정으로 숫자 규칙이 바뀌었다** — 아래 07-27 「정발이 무받침으로 통일」 근거는
+    #   **숫자에 한해 대체**됐다: 숫자는 읽은 소리대로(0·1·3·6·7·8 받침 / 2·4·5·9 무받침, 모듈 상단
+    #   `DIGIT_BATCHIM_MASK`). 영문·부호 무받침은 그대로. 이하 옛 경위:
     # 반각 숫자(0x30~0x39)·영문자(0x41~0x5A,0x61~0x7A): 정발이 주문 레벨명(레지나01) 뒤
     # 조사를 **무받침으로 통일**하고(DOSBox 실측 07-27), 엔진이 동종 몬스터에 붙이는 식별자
     # (부엉이A/B — 런타임 append)도 알파벳이라 무받침이어야 한다(유저 지적 07-27). prev를
@@ -394,13 +409,15 @@ def assemble_routine(free_base, table_addr, pairs_addr):
     # 0x22~0x2F(사이 부호 포함, `(`·`)` 도)까지 같이 딸려 오지만 위와 같은 이유로 무해하다.
     a.addiu("t3", "t2", -0x22)
     a.sltiu("t3", "t3", 0x7A - 0x22 + 1)  # 0x22~0x7A 부호·숫자·영문
-    a.beq("t3", "zero", "notdigit")
-    a.nop()
-    a.ori("t1", "zero", SYL_LO)  # 숫자/영문 → '가' 마커(무받침)
-    a.beq("zero", "zero", "adv1")
-    a.nop()
-    a.label("notdigit")
-    a.li16("t1", 0)
+    a.beq("t3", "zero", "adv1")
+    a.li16("t1", 0)  # 지연 슬롯: 범위 밖 → prev 리셋(범위 안이면 아래에서 덮는다)
+    # 숫자는 읽은 소리대로(2026-09-26) — 옛 `ori SYL_LO / b adv1 / nop / notdigit: li 0` 넷을
+    # 지연 슬롯으로 접어 비운 자리에 넣었다(명령 수 동일 — 504B 그대로).
+    a.lui("t6", DIGIT_BATCHIM_MASK >> 16)
+    a.srlv("t6", "t6", "t2")  # 하위 5비트만 쓴다 — DIGIT_BATCHIM_MASK 주석의 P~Y 부작용 참조
+    a.andi("t6", "t6", 1)
+    a.ori("t1", "zero", SYL_LO)
+    a.addu("t1", "t1", "t6")  # 가(무받침) / 각(받침) — adv1 로 흘러 떨어진다
     a.label("adv1")
     a.beq("zero", "zero", "scan")
     a.addiu("t0", "t0", 1)  # 지연 슬롯(-4B) — 무조건 분기라 항상 실행된다
@@ -982,6 +999,28 @@ def _selftest():
         ),
         ("cross-line", [_sjis("눈") + _sjis("을"), P_L + _sjis("를") + P_R + _sjis("사용")]),
     ]
+    # 숫자는 읽은 소리대로(2026-09-26 마스터) — 기대 조사를 **값으로** 박는다(asm≡시뮬만으론 규칙 오류를 못 잡는다).
+    digit_want = [
+        ("레스1", b"1", "을"),
+        ("레스2", b"2", "를"),
+        ("레스3", b"3", "을"),
+        ("레스4", b"4", "를"),
+        ("레스5", b"5", "를"),
+        ("레스0", b"0", "을"),
+        ("레스6", b"6", "을"),
+        ("레스7", b"7", "을"),
+        ("레스8", b"8", "을"),
+        ("레스9", b"9", "를"),
+        ("프람2", b"2", "를"),
+    ]
+    for desc, dg, want_j in digit_want:
+        stem = desc[:-1]
+        line = b"\x02" + _sjis(stem) + dg + b"\x01" + _sjis("을") + P_L + _sjis("를") + P_R
+        cases.append((f"숫자 {desc} → {want_j}", [line]))
+        probe = bytearray(line.ljust(LINE_STRIDE, b"\x00") + b"\x00" * LINE_STRIDE)
+        fix_buffer(probe, table, cross=LINE_STRIDE, limit=LINE_LIMIT)
+        got = bytes(probe[len(line) - 6 : len(line) - 4])
+        assert got == _sjis(want_j), f"{desc}: {got.hex()} ≠ {want_j}"
     for desc, lines in cases:
         buf = bytearray()
         for ln in lines:

@@ -1268,7 +1268,9 @@ def test_josa_shift_leaves_no_stale_tail():
         )
 
     n = len(J.assemble_routine(0x80100000, 0x80101000, 0x80101100))
-    assert n <= 504, f"josa 루틴이 {n}B 로 늘었다 — VAB 파형 여유가 4B 뿐이다"
+    # 2026-09-26 숫자 소리 규칙(마스터)이 마지막 4B 를 썼다 — 이제 VAB 파형 직전 한계(508B)에 딱 맞는다.
+    # 더 늘리려면 명령을 줄이거나 루틴을 옮겨야 한다.
+    assert n <= J.JOSA_SAFE == 508, f"josa 루틴이 {n}B — VAB 파형 한계 508B 를 넘는다"
 
 
 def test_josa_hook_folds_halfwidth_korean():
@@ -1601,6 +1603,34 @@ def test_ed2mon_tail_append_keeps_last_terminator():
     end = used_end(buf)
     assert end % 4 == 0 and buf[end - 1] == 0 and end > 4 + len(name8)
     assert used_end(b"\x00" * 8) == 0
+
+
+def test_josa_hook_reads_trailing_digit_aloud():
+    """숫자로 끝나는 이름 뒤 조사는 읽은 소리대로(2026-09-26 마스터) — 영문·부호는 무받침 그대로."""
+    import hangul_map as HM
+    import patch_josa_hook as J
+
+    table = J.build_bit_table()
+    sj = lambda s: b"".join(HM.syllable_sjis(c).to_bytes(2, "big") for c in s)  # noqa: E731
+    want = {
+        b"0": "을",
+        b"1": "을",
+        b"2": "를",
+        b"3": "을",
+        b"4": "를",
+        b"5": "를",
+        b"6": "을",
+        b"7": "을",
+        b"8": "을",
+        b"9": "를",
+        b"A": "를",
+        b"'": "를",
+    }
+    for tail, j in want.items():
+        line = b"\x02" + sj("레스") + tail + b"\x01" + sj("을") + b"(" + sj("를") + b")"
+        buf = bytearray(line + b"\x00" * 140)
+        J.fix_buffer(buf, table, cross=None, limit=128)
+        assert bytes(buf[len(line) - 6 : len(line) - 4]) == sj(j), (tail, j)
 
 
 if __name__ == "__main__":
