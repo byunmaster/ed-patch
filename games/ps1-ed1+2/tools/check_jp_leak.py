@@ -69,6 +69,16 @@ def leaked(buf):
     return out
 
 
+def _plain_fullwidth(seq):
+    """전각 부호·영숫자(0x8140~0x829A)로만 된 연속열 — 원본 폰트 그대로인 정상 글리프다.
+
+    ⚠ 「우리 문안이 원문 2바이트 글자 둘 이상을 그대로 재현할 일은 없다」는 가정이 **전각 영숫자에선
+    깨진다**(2026-09-27, 마스터 확정 — 원문이 전각 `ＭＰ` 면 우리도 전각으로 쓴다). 가나·한자(=우리 한글
+    슬롯) 코드가 하나라도 섞이면 여전히 잡는다.
+    """
+    return all(0x8140 <= int.from_bytes(seq[k : k + 2], "big") <= 0x829A for k in range(0, len(seq), 2))
+
+
 def shared_runs(jp, cand, chars=2):
     """원본과 후보에 **똑같이 들어 있는 2바이트 글자 연속열**(기본 2자 이상).
 
@@ -93,7 +103,7 @@ def shared_runs(jp, cand, chars=2):
             n += 1
         for ln in range(n, chars - 1, -1):
             seq = cand[i : i + 2 * ln]
-            if seq in body:
+            if seq in body and not _plain_fullwidth(seq):
                 out.append(seq.decode("cp932", "replace"))
                 break
         i += 2 * max(n, 1)

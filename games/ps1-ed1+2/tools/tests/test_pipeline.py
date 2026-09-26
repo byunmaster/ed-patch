@@ -1633,5 +1633,14 @@ def test_josa_hook_reads_trailing_digit_aloud():
         assert bytes(buf[len(line) - 6 : len(line) - 4]) == sj(j), (tail, j)
 
 
+
+def test_jp_leak_ignores_plain_fullwidth_alnum():
+    """원문이 전각 ＭＰ 면 우리도 전각으로 쓴다(09-27) — 전각 영숫자 공유는 누출이 아니다."""
+    import check_jp_leak as L
+
+    jp = "ＭＰが足りない".encode("cp932")
+    assert L.shared_runs(jp, "ＭＰ".encode("cp932")) == []
+    assert L.shared_runs("密造酒".encode("cp932"), "造酒".encode("cp932")) == ["造酒"]
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
