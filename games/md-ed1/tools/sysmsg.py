@@ -27,9 +27,10 @@ CODE_END = 0x40000
 LZ = [(0x085E52, 0x09D86E), (0x0CAB04, 0x0D85B4), (0x0D8814, 0x12261C), (0x1293E0, 0x134DDC)]
 MAP_JSON = common.GAME_DIR / "textmap" / "sysmsg.json"
 EXPECT = (
-    160,
+    163,
     66,
-)  # 스트림 · 묶음 (2026-09-06 — 워드 표 0x73bc · 고정 스트림 19 · _textlike 0x80 고침)
+)  # 스트림 · 묶음 (2026-09-06 — 워드 표 0x73bc · 고정 스트림 19 · _textlike 0x80 고침
+#     · 09-26 묶음 안 참조 3 — 0x7402·0x2ba62·0x325a6)
 EXCLUDE = {0x1ED0C, 0x32E2A}  # '付近入口H鄲 $Kr' — cp932 로 우연히 풀리는 코드. 눈으로 확인해 뺀다
 
 # 워드 오프셋 표: 표 자리 → 항목 수. 코드가 `lea $73bc.l,a3` + `move.w (a3,d0.w),d0` +
@@ -146,6 +147,14 @@ def streams(d: bytes) -> dict[int, dict]:
             t = base + struct.unpack(">h", d[w : w + 2])[0]
             if t not in out:
                 out[t] = {"stream": scene.parse_stream(d, t), "refs": rs.get(t, [])}
+    # 🔴 묶음 **안**을 가리키는 참조는 _textlike 를 못 넘어도 스트림이다(2026-09-26). 묶음을 다시 쓰면
+    # 그 자리는 남의 바이트가 되는데, 안 세면 참조가 안 옮겨져 **엉뚱한 문안을 가리킨다** — 「<02>に<06>」
+    # (주문을 남에게 걸 때 대상 이름, 0x7402)이 한 글자라 걸러져 「…을 외웠다」 한가운데를 가리키고 있었다.
+    for cl in clusters(dict(sorted(out.items()))):
+        lo, hi = span(out, cl)
+        for t in rs:
+            if lo <= t < hi and t not in out and t not in EXCLUDE:
+                out[t] = {"stream": scene.parse_stream(d, t), "refs": rs[t]}
     # goto/call 대상도 스트림이다(참조 없이 오프셋으로만 이어진다)
     work = [
         tok.target
@@ -315,6 +324,7 @@ def _emit(toks: list[scene.Token], base: int, newpos: dict[int, int]) -> bytes:
 def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
     """정본 → 쓰기 목록 [(라벨, 자리, 바이트)]. 번역이 하나라도 있는 묶음만 다시 쓴다."""
     strs = streams(d)
+    rs = refs(d)
     writes: list[tuple[str, int, bytes]] = []
     over: list[str] = []
     plans = []
@@ -375,6 +385,9 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
                 f"{lo:#x}~{hi:#x}: {cur - lo}B > {hi - lo}B  ({', '.join(f'{t:06x}' for t in cl)})"
             )
             continue
+        stray = [t for t in rs if lo <= t < hi and t not in newpos and t not in EXCLUDE]
+        if stray:  # 다시 쓰는 묶음 안을 가리키는데 안 옮겨지는 참조 — 위 streams() 의 🔴
+            raise SystemExit(f"sysmsg {lo:#x}: 안 옮겨지는 참조 {', '.join(f'{t:#x}' for t in stray)}")
         plans.append((lo, hi, cl, toks, order, newpos))
         allpos.update(newpos)
     if over:

@@ -547,14 +547,15 @@ def resource1(cs: "Charset") -> list[tuple[str, int, bytes]]:
 
 
 # ── HUD 소형 폰트 ──────────────────────────────────────────────────────────────
-# 리소스 2(8×8, 1B/행, 두 면): 「ｱﾄ」(b1·c4 — 다음 레벨까지 남은 경험치 라벨) 글리프만 「다음」으로.
+# 리소스 2(8×8, 1B/행, 두 면): 「ｱﾄ」(b1·c4 — 다음 레벨까지 남은 경험치 라벨) 글리프만 「남다」로.
+# 🔴 도안은 **마스터가 찍은 정본**(`assets/hud_namda_16x8.txt`, 2026-09-26) — 한 픽셀도 고치지 않는다.
 # 리소스 4(12×12, 2B/행, 두 면, 86칸): HUD 이름(`fd 84`, 필드·전투)의 2B 글꼴 — 파티 이름 음절로 갈아 끼운다.
 FONT2_GLYPHS = (0x1BB056, 0x1BB2D6)
 FONT4_HDR = (0x1A5502, 0x1A550E)
 FONT4_TABLE = (0x1A6222, 0x1A62CE)
 FONT4_GLYPHS = (0x1BB66E, 0x1BC68E)
-BDF7 = common.ROOT / "shared" / "fonts" / "Galmuri7.bdf"
-LABEL_R2 = {0xB1: "남", 0xC4: "다"}  # あと → 「남다」(PS1 정본 표기와 통일, 2026-09-06)
+LABEL_R2 = (0xB1, 0xC4)  # あと → 「남다」(PS1 정본 표기와 통일, 2026-09-06) — 왼쪽·오른쪽 8×8
+LABEL_R2_DOTS = common.GAME_DIR / "assets" / "hud_namda_16x8.txt"  # 마스터 도안 16×8(채움만, 테두리는 ring)
 
 
 def _pack_w(rows: list[list[int]], width: int) -> bytes:
@@ -563,19 +564,30 @@ def _pack_w(rows: list[list[int]], width: int) -> bytes:
     return b"".join(struct.pack(">H", sum(v << (15 - x) for x, v in enumerate(r))) for r in rows)
 
 
+def label_r2_dots() -> list[list[int]]:
+    """마스터 도안 → 16×8 채움 행렬. 머리 줄 뒤 `.`/`#` 16자 여덟 줄만 읽는다(다르면 죽는다)."""
+    rows = [
+        ln.rstrip("\n")
+        for ln in LABEL_R2_DOTS.read_text(encoding="utf-8").splitlines()
+        if ln and set(ln) <= {".", "#"}
+    ]
+    if len(rows) != 8 or any(len(r) != 16 for r in rows):
+        raise SystemExit(f"{LABEL_R2_DOTS.name}: 16×8 도안이 아니다 ({len(rows)}줄)")
+    return [[1 if ch == "#" else 0 for ch in r] for r in rows]
+
+
 def resource2_labels() -> list[tuple[str, int, bytes]]:
-    """리소스 2 의 「ｱ」「ﾄ」 자리에 Galmuri7 「다」「음」(8×8, 위 1행 띄움)."""
+    """리소스 2 의 「ｱ」「ﾄ」 자리에 마스터 도안 「남다」(16×8 → 8×8 두 칸, 테두리는 ring)."""
     rom = common.rom()
     r2 = font.resources(rom)[2]
     codes = font.codes(rom, r2)
-    g7 = _load_bdf(BDF7, 8, 1)
+    dots = label_r2_dots()
     out = []
-    for code, ch in LABEL_R2.items():
-        fill = g7[ch]
+    for i, code in enumerate(LABEL_R2):
+        fill = [r[i * 8 : i * 8 + 8] for r in dots]
         pos = r2["glyphs"] + codes.index(code) * r2["stride"]
         out.append(("font2-glyphs", pos, _pack_w(fill, 8) + _pack_w(ring(fill), 8)))
     return out
-
 
 def resource4(cs: "Charset", chars: set[str]) -> list[tuple[str, int, bytes]]:
     """리소스 4 를 HUD 이름 음절로 — 표(코드 오름차순, 표 0 과 같은 코드)·글리프(12×12 Galmuri11)·헤더(표 끝)."""

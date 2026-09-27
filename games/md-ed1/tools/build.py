@@ -455,7 +455,7 @@ def main(check_only: bool = False) -> None:
             cs, cap5, hangul.layout_after_r1(cs), cell=captions.FONT_CELL, source=captions.FONT_SRC
         ):
             rom.write(label, pos, body)
-    for label, pos, body in hangul.resource2_labels():  # HUD 「ｱﾄ」 → 「다음」 (8×8)
+    for label, pos, body in hangul.resource2_labels():  # HUD 「ｱﾄ」 → 「남다」 (8×8, 마스터 도안)
         rom.write(label, pos, body)
     hud_chars = set()
     for grp in ("party_rec", "party_name"):
