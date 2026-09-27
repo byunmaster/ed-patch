@@ -26,6 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
 import font
 import patch_font_hook
+import patch_hud_narrow
+import patch_josa_hook
 import patch_scn
 import patch_sys
 
@@ -60,7 +62,10 @@ _SYS_MARKS = None
 #    프리즈·먹통처럼 「어느 개입이 범인인가」를 물을 때 쓴다. 평소엔 넷 다 켜져 있다.
 #    ⚠ 반드시 **다른 꼬리표**로 구워라(`--tag`) — 진짜 빌드를 덮으면 낡은 것을 정상으로
 #      오해하는 이 레포의 단골 사고가 난다.
-ALL_GROUPS = ("font", "sys", "scn", "combat")
+ALL_GROUPS = ("font", "sys", "scn", "combat", "josa")
+# 🔴 **`narrow`(필드 HUD 8px)는 아직 기본 그룹이 아니다** — 인게임에서 LOAD 화면 이후
+#   입력이 멎는 결함을 만났고(2026-09-27), 원인을 못 잡았다. `--only ...,narrow` 로만
+#   시험한다. devlog·status 「다음 라운드」에 남겨 뒀다.
 GROUPS = set(ALL_GROUPS)
 
 
@@ -98,6 +103,14 @@ def patches_for(key: str) -> list[tuple[int, bytes, bytes]]:
             f"(넘쳐서 건너뜀 {st['건너뜀:넘침']:,} · 자리 없음 {st['건너뜀:자리 없음']:,})"
         )
     out = out + _SYS_MARKS.get(key, [])
+
+    # 조사 훅 — 그리는 순간 자리표시(`{은}` 등)를 직전 받침으로 고른다(`patch_josa_hook.py`)
+    if key == "program" and "josa" in GROUPS:
+        out = out + patch_josa_hook.build_patch()
+
+    # 필드 HUD·LOAD 슬롯 8px 글리프 + 가운데 정렬(`patch_hud_narrow.py`)
+    if key == "program" and "narrow" in GROUPS:
+        out = out + patch_hud_narrow.build_patch()
 
     # 🔴 **서로 다른 패처가 같은 바이트를 노리면 조용히 뭉갠다** — 여기서 죽인다.
     seen: dict[int, int] = {}
@@ -218,7 +231,7 @@ def main() -> int:
     )
     ap.add_argument(
         "--only",
-        help="개입 그룹만 넣는다(쉼표) — font·sys·scn·combat. 원인 가르기용",
+        help="개입 그룹만 넣는다(쉼표) — font·sys·scn·combat·josa·narrow. 원인 가르기용",
     )
     args = ap.parse_args()
 
@@ -268,6 +281,33 @@ def main() -> int:
     if hashlib.sha1(base).hexdigest() != font.TABLE_SHA1:
         raise SystemExit("🔴 글리프 표 지문이 다르다 — font.py --check 부터 본다")
     table = patch_font_hook.ku128_table()  # ku 당 128칸으로 다시 깐다(산술을 없앤다)
+    if (
+        "sys" in GROUPS
+        and "font" not in GROUPS
+        and any("move" in v for v in patch_sys.load().values())
+    ):
+        raise SystemExit(
+            "🔴 조각 이주는 font 없이 못 굽는다 — 이주 자리가 폰트 훅 덕에 죽은 코드다"
+        )
+    if "josa" in GROUPS:
+        # 🔴 조사 훅의 발판은 폰트 훅이 죽여 둔 캐시 뱅크 블록에 산다 — 폰트 없이 구우면
+        #    **살아 있는 코드를 덮는다.** 몸통은 표 꼬리(로더가 같이 올리는 남는 섹터)에 붙인다.
+        if "font" not in GROUPS:
+            raise SystemExit(
+                "🔴 josa 는 font 없이 못 굽는다 — 발판 자리가 폰트 훅 덕에 죽은 코드다"
+            )
+        assert len(table) == patch_josa_hook.TABLE_BYTES
+        table = table + patch_josa_hook.far_blob()
+
+    if "narrow" in GROUPS:
+        # 🔴 필드 HUD·LOAD 슬롯 8px 글리프 — 조사 훅과 같은 이유로 font 필수, josa 뒤에 붙는다.
+        if "font" not in GROUPS:
+            raise SystemExit(
+                "🔴 narrow 는 font 없이 못 굽는다 — 발판 자리가 폰트 훅 덕에 죽은 코드다"
+            )
+        if "josa" not in GROUPS:
+            raise SystemExit("🔴 narrow 는 josa 뒤에 이어 붙는다 — josa 없이 자리가 안 맞는다")
+        table = table + patch_hud_narrow.far_blob()
 
     out_dir = common.BUILD_DIR / args.tag
     out_dir.mkdir(parents=True, exist_ok=True)

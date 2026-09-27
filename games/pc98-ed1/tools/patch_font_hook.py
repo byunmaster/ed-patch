@@ -117,6 +117,11 @@ SLOTS_PER_KU = 128
 KU_LO = 0x40  # JIS 상위 바이트의 시작. `昔`(0x404e)이 여기 든다 — 화면에서 바로 보인다
 KU_HI = KU_LO + KU_COUNT - 1
 TRACKS = -(-(KU_COUNT * SLOTS_PER_KU * 32) // (8 * 1024))  # 통째로 읽을 트랙 수
+# 🔴 **+1 트랙은 표 꼬리 자리다** — `patch_josa_hook`·`patch_hud_narrow` 가 여기 얹혀
+#    산다(둘 다 FONT_SEG+TABLE_BYTES//16 뒤를 far 세그먼트로 쓴다). 실측(2026-09-27):
+#    표 바로 뒤 빈 섹터가 224개 연속인데 위 계산은 208개만 읽어 16개(=1트랙)를 놀렸다 —
+#    필드 HUD 8px 표(이름 스파스 인덱스 2,350B + 글리프)가 그 안에 다 안 들어가서 늘렸다.
+TRACKS += 1
 SOLID = False  # 진단용 — 글리프 대신 통짜로 채운다
 
 
