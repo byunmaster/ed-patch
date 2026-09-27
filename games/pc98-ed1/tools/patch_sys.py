@@ -129,6 +129,15 @@ def plan() -> tuple[dict[str, list], dict]:
                 st["쓴 바이트"] += n
                 continue
 
+            # ── 꼬리 삼키기 — 원문이 뒤에 붙는 부호를 따로 두는 자리(`は混乱した ` + `!!`).
+            #    우리 문안이 짧으면 채움 공백이 부호 **앞**에 끼어 「혼란했다   !!」가 된다.
+            #    `tail` 로 그 부호까지 쓰기 범위에 넣으면 채움이 줄 끝(종결자 앞)으로 가서 안 보인다.
+            #    🔴 사전조건: 그 자리 바이트가 적어 둔 값과 같아야 한다.
+            if "tail" in v:
+                tail = bytes.fromhex(v["tail"])
+                if flat[o + n : o + n + len(tail)] != tail:
+                    raise SystemExit(f"🔴 {key}: 꼬리가 {v['tail']} 이 아니다")
+                n += len(tail)
             core = patch_scn.encode(v["t"])
             # ── 조각 이주 — 문안이 자리보다 길면 **조각째 옮기고 가리키는 곳을 고친다.**
             #    메시지는 `10 <조각 주소 2B>` 로 조각을 부른다(`0e …문안… 06` 꼴). 새 조각은

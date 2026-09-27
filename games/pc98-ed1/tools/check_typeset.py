@@ -250,6 +250,10 @@ def particle_drop(reg: str, jp: str, kr: str) -> bool:
     # 대본은 「では」「にわとり」처럼 낱말 머리일 때가 많다 — 조사 뒤가 공백·한자일 때만 센다
     if reg == "대본" and not re.match(r".[ \u3000\u4e00-\u9fff]", s):
         return False
+    # 번역이 공백 없이 조사를 바로 붙였으면 빠진 건 아니다 — 단 받침 따라 갈리는 조사를
+    # 고정으로 박았으면(「을 손에 넣었습니다」) 이름에 따라 틀리므로 계속 센다. 「에게」는 안 갈린다.
+    if kr[:1] and "가" <= kr[0] <= "힣":
+        return bool(re.match(r"(을|를|은|는|가|와|과|이)(?![가-힣])", kr))
     return not kr.lstrip().startswith(tuple(p[0] for p in patch_scn.JOSA_PAIRS))
 
 
@@ -333,8 +337,10 @@ def main() -> int:
         fail += v["소실"]
 
     _out, st = patch_sys.plan()
-    cut = st.get("잘림", 0)
-    print(f"── 글 소실 없음: 조판 흉내 소실 {fail} · 칸 표 잘림 {cut}")
+    # 넘쳐서 건너뛴 자리는 **원문이 그대로 남아** 화면에서 깨진다(뺏은 구) — 조용한 소실이다.
+    #   2026-09-27 에 두 자리를 한 글자 틀리게 세어 넘겼는데 게이트가 ✅ 였다.
+    cut = st.get("잘림", 0) + st.get("건너뜀:넘침", 0)
+    print(f"── 글 소실 없음: 조판 흉내 소실 {fail} · 칸 표 잘림·넘쳐 건너뜀 {cut}")
     if a.list:
         for r in rules:
             for reg, key, kr in samples[r][: a.list]:
