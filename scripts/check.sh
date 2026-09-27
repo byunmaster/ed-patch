@@ -35,8 +35,13 @@ WHY=$(sh "$ROOT/scripts/check/which_game.sh" --why "$@")
 #   전역이면, 원본을 안 링크한 워크트리에서 남의 게임 때문에 늘 빨간불이 된다(실측:
 #   새턴 트리에서 ps1 의 정발 DOS 의존으로 실패). 늘 빨간불인 게이트는 아무도 안 본다.
 echo "── 단위·회귀 테스트 (공용 + $(echo "$GAMES" | tr '\n' ' '))"
-sh "$ROOT/scripts/test.sh" $GAMES >/dev/null \
-  || { echo "❌ 테스트 실패 — sh scripts/test.sh $(echo "$GAMES" | tr '\n' ' ')"; exit 1; }
+# 성공이면 조용히, 실패면 **무엇이** 틀렸는지 꼬리를 보인다 — 「❌ 테스트 실패」 한 줄로는
+#   다시 돌려 봐야 원인을 안다(pce 제보 2026-09-27).
+tout=$(sh "$ROOT/scripts/test.sh" $GAMES 2>&1) || {
+  echo "❌ 테스트 실패 — sh scripts/test.sh $(echo "$GAMES" | tr '\n' ' ')"
+  echo "$tout" | tail -20 | sed 's/^/     /'
+  exit 1
+}
 echo "  ✅ 통과"
 
 fail=0
