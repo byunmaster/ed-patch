@@ -47,6 +47,15 @@ echo "== md-ed1 =="
 #        「엘아스타 암」·「엘아스타 할」 — 부근·입구·동서남북이 코드에 SJIS 로 직접 박혀 있다)
 "$PY" "$T/field_hud.py" --check
 
+# 6b2-4. 필드 입장 배너 지명 표 — 대본 블록 91, scene.py 문안 스트림 밖이라 collect_chars() 가
+#        안 보던 자리(마스터 지시 2026-09-27 밤 — 빈 배너, devlog 참조). 앵커가 원본과 같은지만 본다
+#        (내용 검산은 build.py 가 표 전체를 다시 써 보며 한다)
+"$PY" "$T/field_names.py" --check
+
+# 6b2-5. 숨은 텍스트 — scene.py/battle.py 스트림 범위 밖 SJIS 런, **보고 전용**(실패 아님).
+#        1,502건(script 112·battle 5블록) 확인, 대사 라운드 몫 — docs/status.md 「다음 라운드」
+"$PY" "$T/check_hidden_text.py"
+
 # 6b3. 조사 일치 — 훅의 짝(<02><eb>·<0e><ec>) · 손으로 쓴 조사 · 남은 병기(P2 게이트)
 "$PY" "$T/check_josa.py" --check
 

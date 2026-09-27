@@ -25,6 +25,7 @@ import battle
 import captions
 import common
 import field_hud
+import field_names
 import gfxtext
 import hangul
 import josa
@@ -365,6 +366,7 @@ def collect_chars(tm: dict) -> set[str]:
     for e in tm["monsters"].values():
         chars.update(e.get("ours", ""))
     chars.update(field_hud.chars())  # 필드 HUD 뒷말·방위(문안을 안 거친다) — 늘 굽는다
+    chars.update(field_names.chars())  # 대본 블록 91 지명 표(문안 스트림 밖) — 늘 굽는다
     return chars
 
 
@@ -417,6 +419,9 @@ def main(check_only: bool = False) -> None:
         new = scene.reassemble(mod, replace)
         scene.verify_reassembly(mod, new, replace)
         new_blocks[n] = new
+    # 대본 블록 91 — 문안 스트림 밖의 지명 표(입장 배너). scene.py 로는 안 보여 별도 경로로 얹는다.
+    fn_base = new_blocks.get(field_names.BLOCK, bl[field_names.BLOCK][1])
+    new_blocks[field_names.BLOCK] = field_names.new_block(fn_base, cs.encode)
     battle_blocks: dict[int, bytes] = {}
     for n, (_s, bb, _e) in enumerate(battle.blocks(orig)):
         nb = battle.plan_block(
