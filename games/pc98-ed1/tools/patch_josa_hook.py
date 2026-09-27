@@ -75,6 +75,24 @@ SJIS2JIS = 0x7DA0
 NARROW_AT = 0x7D8E
 NARROW_EXPECT = bytes.fromhex("b4293d7f297203058000")
 
+# 줄 끝 판정 — 메시지 창 출력기(`0x79c8~`)는 글자마다 `ch`(칸)를 세고 `ch ≥ 34` 면 접는다.
+#   원판은 `ch == 34` 에서 다음 글자가 `!`·`。` 일 때만 줄 끝에 매단다(금칙). 우리 문장 끝은 반각
+#   `.` 라 그 목록에 없어 **혼자 다음 줄로** 떨어졌다(조판 규칙 ①). 그 판정 26B 를 먼 호출로 바꿔
+#   ① 딱 34칸에서 `. , ? !` 도 매달고(원판의 매단 `。` 와 같은 칸 — 35칸째는 테두리다)
+#   ② 다음 바이트가 명시 줄바꿈(`01`)이면 먼저 접지 않고(빈 줄 방지) ③ 접는 자리의 반각 공백은
+#   먹고 접는다(다음 줄 머리 공백 방지). ⚠ 넓은 글자가 33~34칸을 채워 `ch=35` 가 된 뒤의 부호는
+#   이걸로 못 살린다 — 낱말 단위로 미리 접어야 하는 자리다(조판 검사기가 센다).
+#   ④ **어절 접기** — 원판은 글자 단위로만 접어 대본까지 「공부 / 가」처럼 낱말 한가운데서
+#   끊겼다(2026-09-27 새 게임 첫 장면 실측 — 정책 문서의 「공백에서 접는다」는 우연히 맞은 한 줄을
+#   일반화한 오진이었다). 그래서 판정을 `cmp ch,34` **앞**(0x7a13)에서 가로채 글자마다 부르고,
+#   방금 그린 게 반각 공백이면 다음 어절을 미리 재서 안 들어가면 공백 뒤에서 접는다.
+#   ⚠ 어절은 **제어 바이트에서 끝난다고 본다** — 조각 호출(`10`)·이름 끼움(`0e`) 너머는 못 잰다.
+HANG_AT = 0x7A13
+HANG_END = 0x7A32  # `ret` — 안 접고 돌아가는 자리
+HANG_EXPECT = bytes.fromhex("80fd22721a7403e9e8018b043c21740f86e03d42817403e9d801c6065540ff")
+WRAP = 0x7C05  # 줄바꿈(`01` 과 같은 루틴): ch=0 · cl++
+HANG_NARROW = b"!.,?"
+
 PH_LEAD = patch_scn.JOSA_LEAD  # SJIS 선행 — 구 9
 PAIRS = patch_scn.JOSA_PAIRS  # (자리표시, 받침 있을 때, 없을 때) — 순서가 곧 코드
 
@@ -193,6 +211,88 @@ narrow:                     ; al = 1바이트 글자. 끝나면 0x7d8e~0x7d97 �
     add ax, 0x80
 .x: retf
 
+hang:                       ; 글자마다 불린다. ch = 지금 칸 · DS:SI = 다음 바이트. CF=0 둔다 · CF=1 접는다
+    cmp ch, 0x22
+    jae short .end
+    cmp byte [si-1], 0x20   ; ④ 방금 그린 게 반각 공백인가(2바이트 글자 후행은 0x40 이상이라 안 겹친다)
+    jne short .keep
+    push si
+    push dx
+    mov dl, ch
+.w: mov dh, dl              ; dh = 이 글자 앞 칸
+    lodsb
+    cmp al, 0x21
+    jb  short .fit          ; 공백·제어 = 어절 끝
+    mov ah, al
+    cmp al, 0x80
+    jb  short .n
+    cmp al, 0xa0
+    jb  short .wd
+    cmp al, 0xe0
+    jb  short .n
+.wd:
+    lodsb
+    inc dl
+.n: inc dl
+    cmp dh, 0x22
+    jb  short .w            ; 34칸 앞에서 시작하면 이 줄에 든다
+    ja  short .nofit
+    cmp byte [si], 0x21     ; 딱 34칸 — 어절 **마지막** 글자가 매다는 부호일 때만 든다
+    jae short .nofit        ;   (`!!` 는 하나만 매달리고 둘째가 고아가 된다)
+    cmp ah, 0x81            ; 아래 ① 과 같은 목록
+    jne short .nar
+    cmp al, 0x42
+    je  short .fit
+    jmp short .nofit
+.nar:
+    cmp ah, 0x21
+    je  short .fit
+    cmp ah, 0x2e
+    je  short .fit
+    cmp ah, 0x2c
+    je  short .fit
+    cmp ah, 0x3f
+    je  short .fit
+.nofit:
+    pop dx
+    pop si
+    stc                     ; 공백은 이 줄 끝에 이미 그렸다 — 어절을 다음 줄로
+    retf
+.fit:
+    pop dx
+    pop si
+    clc
+    retf
+.end:                       ; ch ≥ 34 — 줄 끝 판정
+    mov ax, [si]
+    cmp al, 0x01            ; ② 명시 줄바꿈이 곧 온다 — 먼저 접으면 빈 줄이 된다(그리는 것 없음)
+    je  short .keep
+    cmp al, 0x20            ; ③ 접을 자리의 반각 공백은 **먹고** 접는다 — 다음 줄 머리 공백 방지
+    jne short .punct
+    inc si
+    jmp short .wrap
+.punct:
+    cmp ch, 0x22            ; ① 매달기는 딱 34칸에서만 — 35칸째는 창 테두리다(실측: 테두리를 긁었다)
+    jne short .wrap
+    cmp al, 0x21
+    je  short .keep
+    cmp al, 0x2e
+    je  short .keep
+    cmp al, 0x2c
+    je  short .keep
+    cmp al, 0x3f
+    je  short .keep
+    xchg al, ah             ; 원판 그대로 — 전각 `。` 는 좁은 마무리(0x4055)로 34칸에 매단다
+    cmp ax, 0x8142
+    jne short .wrap
+    mov byte [0x4055], 0xff
+.keep:
+    clc
+    retf
+.wrap:
+    stc
+    retf
+
 digit:                      ; al = 0..9 → bl = 받침(0/1). 숫자는 읽는 소리대로(마스터 09-26)
     push cx
     mov cl, al
@@ -220,7 +320,7 @@ org 0x{NEAR_AT:x}
 """
 
 
-FAR_LABELS = ("pre", "post", "narrow", "digit", "pairs", "bitmap")
+FAR_LABELS = ("pre", "post", "narrow", "hang", "digit", "pairs", "bitmap")
 
 
 def _nasm(src: str, d: Path, name: str, labels: tuple[str, ...] = ()) -> tuple[bytes, dict]:
@@ -265,6 +365,24 @@ def _build() -> tuple[bytes, dict, bytes]:
     return far, lab, near
 
 
+def hang_patch(hang: int) -> bytes:
+    """`0x7a13~0x7a31` — `call far hang / jnc 돌아가기 / jmp 줄바꿈`, 남는 자리는 nop."""
+    with tempfile.TemporaryDirectory() as d:
+        src = f"""
+BITS 16
+org 0x{HANG_AT:x}
+    call 0x{FAR_SEG:x}:0x{hang:x}
+    jnc short 0x{HANG_END:x}
+    jmp near 0x{WRAP:x}
+"""
+        code, _ = _nasm(src, Path(d), "hang")
+    _no_near_jcc(code, HANG_AT)
+    room = HANG_END - HANG_AT
+    if len(code) > room:
+        raise SystemExit(f"🔴 줄 끝 판정이 자리를 넘는다: {len(code)}B > {room}B")
+    return code + b"\x90" * (room - len(code))
+
+
 def far_blob() -> bytes:
     """폰트 표 뒤에 붙일 몸통 — build.py 가 두 폰트 디스크에 같이 싣는다."""
     return _build()[0]
@@ -285,6 +403,7 @@ def build_patch() -> list[tuple[int, bytes, bytes]]:
         (NEAR_AT, NEAR_EXPECT, near),
         (WIDE_AT, WIDE_EXPECT, call_near(WIDE_AT, NEAR_AT)),
         (NARROW_AT, NARROW_EXPECT, call_far_narrow + b"\x90" * (10 - 5)),
+        (HANG_AT, HANG_EXPECT, hang_patch(lab["hang"])),
     ]
 
 

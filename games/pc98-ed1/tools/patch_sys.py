@@ -66,6 +66,7 @@ def plan() -> tuple[dict[str, list], dict]:
     st = {
         "넣음": 0,
         "이주": 0,
+        "잘림": 0,  # 칸 표 칸을 잘라서 넣은 수 — 글이 사라진다(`check_typeset.py` 가 0 을 요구한다)
         "건너뜀:넘침": 0,
         "건너뜀:자리 없음": 0,
         "건너뜀:문안 없음": 0,
@@ -119,7 +120,7 @@ def plan() -> tuple[dict[str, list], dict]:
                 for name in items:
                     cell = patch_scn.encode(name)
                     if len(cell) > stride:
-                        st["건너뜀:넘침"] += 1
+                        st["잘림"] += 1
                         cell = cell[:stride]
                     left = (stride - len(cell)) // 2  # 가운데 정렬
                     blob += b" " * left + cell + b" " * (stride - len(cell) - left)
