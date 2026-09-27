@@ -409,6 +409,9 @@ board_run() {
 # 늘 크거나 같아 **절대 안 감기고**, 바이트 경계에서 잘린 반 글자는 `iconv -c` 가 버린다(맥·리눅스
 # 둘 다 있다). awk 로 글자를 세는 안은 mawk 가 바이트로 쪼개 깨진 글자를 남겼다(실측).
 _fit() { printf '%s' "$1" | LC_ALL=C cut -c1-$((COLS - 2)) | iconv -c -f UTF-8 -t UTF-8 2>/dev/null; }
+# ⚠ **진행판과 끝난 표가 같은 자리에서 시작한다**(마스터 09-28 — 진행 중엔 게임명 앞에 한 칸이 더
+#   있었다). 종전엔 줄 앞에 공백을 하나 두고 아이콘 뒤 채움을 `tr -d ' '` 로 지웠는데, 표는 채움째
+#   (`🟰␣␣` · `✅␣`) 맨 앞에서 찍는다. 판도 채움째 맨 앞에서 찍고, ⏳ 는 ✅ 와, · 는 🟰 와 같게 둔다.
 board_draw() {
   [ "$_drawn" = 0 ] || printf '\033[%dA\033[J' "$_drawn"
   _drawn=0
@@ -418,20 +421,20 @@ board_draw() {
     if [ -f "$TMPD/$_ji.done" ]; then
       _done=$((_done + 1))
       if [ "$(cat "$TMPD/$_ji.done")" = 0 ]; then
-        _ic=$(cut -f1 "$TMPD/$_ji.row" | tr -d ' '); _s=$(cut -f5 "$TMPD/$_ji.row")
+        _ic=$(cut -f1 "$TMPD/$_ji.row"); _s=$(cut -f5 "$TMPD/$_ji.row")   # 칸 채움 공백째
       else
-        _ic=⛔; _s=$(head -1 "$TMPD/$_ji.fail" 2>/dev/null || echo 실패)
+        _ic='⛔ '; _s=$(head -1 "$TMPD/$_ji.fail" 2>/dev/null || echo 실패)
       fi
-      printf '%s\n' "$(_fit " $_ic $_lab  $_s")"
+      printf '%s\n' "$(_fit "$_ic$_lab  $_s")"
     elif [ -f "$TMPD/$_ji.stat" ]; then
       _s=$(cat "$TMPD/$_ji.stat" 2>/dev/null || echo …)
-      printf '%s\n' "$(_fit " ⏳ $_lab  $_s")"
+      printf '%s\n' "$(_fit "⏳ $_lab  $_s")"
     else
-      printf '\033[2m%s\033[0m\n' "$(_fit " ·  $_lab  대기")"
+      printf '\033[2m%s\033[0m\n' "$(_fit "·  $_lab  대기")"
     fi
     _drawn=$((_drawn + 1))
   done < "$TMPD/labels"
-  printf '\033[2m%s\033[0m\n' "$(_fit " $_done / $_n 끝  (-j$JOBS)")"
+  printf '\033[2m%s\033[0m\n' "$(_fit "$_done / $_n 끝  (-j$JOBS)")"
   _drawn=$((_drawn + 1))
 }
 

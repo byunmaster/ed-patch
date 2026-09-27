@@ -44,9 +44,16 @@ has_tty() { { : </dev/tty; } 2>/dev/null && { : >/dev/tty; } 2>/dev/null; }
 
 _sel_key() { dd bs=1 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n'; }
 
+# 🔴 **그리는 동안 터미널 줄 감기를 끈다**(마스터 09-28 — 이미지 이름이 터미널보다 길면 목록이
+#   깨져 쌓였다). 한 항목이 두 줄로 감기면 다시 그릴 때 「n 줄 위로」가 어긋나 옛 프레임이 남는다.
+#   DECAWM(`ESC[?7l`)을 끄면 넘치는 꼬리는 오른쪽 끝에서 잘릴 뿐 줄이 늘지 않는다 — 폭을 세어
+#   자르는 것(pull-build 의 `_fit`)보다 한글·이모지 폭 계산이 필요 없어 단순하다. 되살림은 `_sel_restore`.
+_sel_nowrap() { printf '\033[?7l' >/dev/tty 2>/dev/null || true; }
+
 # ⚠ **파일 스코프에 둔다.** select_option 안에 두면 select_multi 에서 `command not found` 로
 #   터미널이 에코 꺼진 채 남는다(2026-08-22 실측).
 _sel_restore() {
+  printf '\033[?7h' >/dev/tty 2>/dev/null || true   # 줄 감기 되살림(아래 _sel_nowrap)
   tput cnorm >/dev/tty 2>/dev/null || true
   [ -n "${_sold:-}" ] && stty "$_sold" </dev/tty 2>/dev/null || true
   trap - INT TERM
@@ -148,6 +155,7 @@ select_option() {
 
   _shelp='↑↓ 이동'
   [ "$_sside" = 1 ] && [ "$_ssn" -gt 1 ] && _shelp="$_shelp, ←→ ${SELECT_SIDE_LABEL:-바꾸기}"
+  _sel_nowrap
   printf '%s \033[2m(%s, Enter 선택, Esc 뒤로, q 취소)\033[0m\n' "$_sp" "$_shelp" >/dev/tty
 
   _sold=$(stty -g </dev/tty 2>/dev/null) || _sold=
@@ -264,6 +272,7 @@ select_multi() {
     done
   }
 
+  _sel_nowrap
   printf '%s \033[2m(space 토글, ↑↓ 이동, Enter 확정, Esc 뒤로, q 취소)\033[0m\n' "$_sp" >/dev/tty
   _sold=$(stty -g </dev/tty 2>/dev/null) || _sold=
   stty -echo -icanon isig min 1 time 0 </dev/tty 2>/dev/null || true

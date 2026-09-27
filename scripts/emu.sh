@@ -291,10 +291,46 @@ build_dirs() {
 
 # ⚠ 라벨을 `%-14s` 로 줄맞춤하지 않는다 — printf 의 폭은 **바이트**라 한글이 섞이면 어긋난다
 #   (「원본」은 6바이트인데 화면에선 4칸이다). 꼬리표 길이도 제각각이라 어차피 못 맞춘다.
+# 🔴 **빌드 지문(sha1 앞 12자)을 목록과 실행 줄에 보인다**(마스터 2026-09-28) — pull-build 표·
+#   파일서버·웹 실행기와 **같은 규칙**이다: 이미지 파일의 sha1(`.cue` 면 그것이 가리키는 첫 파일).
+#   「어느 빌드를 보고 있나」가 이 레포에서 하루를 태우는 축이라 고르는 자리에서 보여야 한다.
+#   ⚠ CD 이미지는 수백 MB 라 한 번 재는 데 한두 초 — (경로·크기·시각)으로 캐시한다
+#     (`.local/cache/emu-sha1.tsv`). 목록은 다시 그릴 때마다 줄을 부르므로 **캐시만 읽는다.**
+SHA_CACHE="$REPO/.local/cache/emu-sha1.tsv"
+_img_file() {
+  _f=$1
+  case "$_f" in
+    *.cue|*.CUE)
+      _b=$(sed -n 's/^ *FILE *"\(.*\)".*/\1/p' "$_f" | head -1)
+      [ -n "$_b" ] && _f="$(dirname "$_f")/$_b" ;;
+  esac
+  printf '%s' "$_f"
+  return 0
+}
+_sha_key() { printf '%s\t%s\t%s' "$1" "$(wc -c < "$1" | tr -d ' ')" "$(date -r "$1" +%s 2>/dev/null)"; }
+sha_cached() {   # 캐시에 있으면 찍고, 없으면 아무것도 안 찍는다
+  _f=$(_img_file "$1"); [ -f "$_f" ] || return 0
+  _k=$(_sha_key "$_f")
+  [ -f "$SHA_CACHE" ] && awk -F'\t' -v k="$_k" '($1"\t"$2"\t"$3)==k{print $4; exit}' "$SHA_CACHE"
+  return 0
+}
+img_sha() {      # 캐시에 없으면 재서 넣는다
+  _v=$(sha_cached "$1"); [ -n "$_v" ] && { printf '%s' "$_v"; return 0; }
+  _f=$(_img_file "$1"); [ -f "$_f" ] || return 0
+  _v=$(shasum -a 1 "$_f" 2>/dev/null | cut -c1-12)
+  [ -n "$_v" ] || return 0
+  mkdir -p "$(dirname "$SHA_CACHE")"
+  printf '%s\t%s\n' "$(_sha_key "$_f")" "$_v" >> "$SHA_CACHE"
+  printf '%s' "$_v"
+  return 0
+}
+
 row_image() {
   _lb=${2%%"$TAB"*}; _pa=${2#*"$TAB"}
-  if [ "$3" = 1 ]; then printf '\033[36m❯ %s · %s\033[0m\n' "$_lb" "$(basename "$_pa")"
-  else                  printf '  \033[2m%s ·\033[0m %s\n' "$_lb" "$(basename "$_pa")"; fi
+  _sh=; case "$_lb" in "빌드 "*) _sh=$(sha_cached "$_pa") ;; esac
+  [ -n "$_sh" ] && _sh="  sha1 $_sh"
+  if [ "$3" = 1 ]; then printf '\033[36m❯ %s · %s\033[0m\033[2m%s\033[0m\n' "$_lb" "$(basename "$_pa")" "$_sh"
+  else                  printf '  \033[2m%s ·\033[0m %s\033[2m%s\033[0m\n' "$_lb" "$(basename "$_pa")" "$_sh"; fi
 }
 
 # ── 인자 ────────────────────────────────────────────────────────────────────
@@ -492,6 +528,12 @@ while :; do
     esac
   done
   SELECT_INDEX=${_hit_tag:-${_hit_game:-$_hit_any}}
+  # 빌드 지문을 미리 잰다(처음 한 번만 느리다 — 그다음은 캐시)
+  for _c in "$@"; do
+    case ${_c%%"$TAB"*} in "빌드 "*)
+      [ -n "$(sha_cached "${_c#*"$TAB"}")" ] || { printf '   sha1 재는 중 — %s\r' "$(basename "${_c#*"$TAB"}")"; img_sha "${_c#*"$TAB"}" >/dev/null; printf '\033[2K'; } ;;
+    esac
+  done
   if PICK=$(choose "이미지" row_image "$@"); then
     SELECT_INDEX=; IMAGE=${PICK#*"$TAB"}; break
   fi
@@ -630,6 +672,8 @@ case "$MEDNAFEN_BIN" in
       fi ;;
   *)  echo "실행: $(basename "$IMAGE")  [$MOD]  (시스템 mednafen — 창 크기 단축키 없음)" ;;
 esac
+_isha=$(img_sha "$IMAGE" || true)
+[ -n "$_isha" ] && echo "      sha1 $_isha"
 keyhelp mednafen
 if ! _has_mod "$MEDNAFEN_BIN" "$MOD"; then
   echo "🔴 이 mednafen 에는 [$MOD] 모듈이 없다 — 이미지가 아니라 **에뮬레이터** 문제다." >&2
@@ -642,6 +686,25 @@ if [ "$SYNC" != 1 ]; then
   exec "$MEDNAFEN_BIN" -force_module "$MOD" -filesys.path_sav "$SAVEREL" $EXTRA "$IMAGE"
 fi
 
+# 🔴 **이번 실행에서 만든 스테이트도 dev 로 보낸다**(마스터 2026-09-27) — 세이브가 안 되는 자리
+#   (전투 등)에서 재현한 순간을 세션에 넘기려는 것이다. dev emucap 도 mednafen 1.32.1 이라 md·ps1·
+#   ss·pce 는 세션이 그대로 불러올 수 있다(⚠ sfc 는 dev 가 Mesen2 라 못 부른다 — 풀어 읽기만).
+#   `~/save/<게임>/state/` 에 `<mednafen 이름>.<시각>.mednafen` 으로 쌓는다(슬롯을 덮지 않게 시각을 붙인다).
+#   웹 실행기의 「상태」 버튼과 같은 칸이다(`scripts/publish/serve.py`).
+STATE_MARK=$(mktemp)
+push_states() {
+  _stem=$(basename "${IMAGE%.*}")
+  _tmp=$(mktemp -d)
+  _ts=$(date +%Y%m%d-%H%M%S)
+  find "$MEDBASE/mcs" -maxdepth 1 -type f -name "$_stem.*" -name '*.mc[0-9]' -newer "$STATE_MARK" \
+    2>/dev/null | while IFS= read -r f; do cp -p "$f" "$_tmp/$(basename "$f").$_ts.mednafen"; done
+  if [ -n "$(ls "$_tmp")" ]; then
+    ( cd "$_tmp" && set -- * && sh "$SYNCSH" push "$GAME/state" "$_tmp" "$@" ) || true
+  fi
+  rm -rf "$_tmp" "$STATE_MARK"
+  return 0
+}
+
 # ⚠ Ctrl+C 로 끊어도 세이브는 올려야 한다 — 진행분을 잃는 게 제일 나쁜 결과다.
 PUSHED=0
 finish() {
@@ -650,6 +713,7 @@ finish() {
   # 글로브는 **여기서 리터럴로** 편다(전개 결과는 단어분리를 안 타 파일명의 공백·`&` 가 산다
   # — `sync-saves.sh` 헤더 참조).
   ( cd "$SAVEDIR" && set -- * && sh "$SYNCSH" push "$GAME" "$SAVEDIR" "$@" ) || true
+  push_states
 }
 trap 'finish; exit 130' INT
 trap 'finish; exit 143' TERM

@@ -63,7 +63,8 @@ case "$ACT" in
   pull)
     mkdir -p "$DIR"
     # 원격에 아직 정본이 없으면 rsync 가 23 으로 죽는데 그건 **정상 상황**이라 삼킨다.
-    if rsync -a -u -e "ssh $SSHOPT" "$DEV_HOST:$REMOTE/" "$DIR/" 2>/dev/null; then
+    # `state/`(보낸 스테이트 — emu.sh·웹 실행기)는 세션 몫이라 실행 머신으로 안 당긴다.
+    if rsync -a -u --exclude 'state/' --exclude 'state.bak/' -e "ssh $SSHOPT" "$DEV_HOST:$REMOTE/" "$DIR/" 2>/dev/null; then
       echo "세이브 당김: $DEV_HOST:$REMOTE → $SHORT"
     else
       echo "세이브 없음(원격) — 그냥 진행한다"

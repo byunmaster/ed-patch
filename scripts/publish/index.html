@@ -210,6 +210,7 @@ async function head(file) {
   try {
     const r = await fetch(file.href, { method: "HEAD", cache: "no-store" });
     file.size = +r.headers.get("content-length") || 0;
+    file.sha1 = r.headers.get("x-sha1") || "";   // serve.py 가 준다 — 큰 파일은 첫 조회 뒤 잠시 있다가 뜬다
     const lm = r.headers.get("last-modified");
     file.mtime = lm ? new Date(lm) : null;
   } catch { /* 크기·시각 없이 그린다 */ }
@@ -311,7 +312,7 @@ function renderFolder(f, gameId) {
   };
   const rows = files.map((x) => `<li class="${OPEN.test(x.name) ? "main" : ""}">
       <span><a href="${x.href}" download>${esc(x.name)}</a>${playLink(x)}</span>
-      <span class="meta">${esc([fmtSize(x.size), fmtTime(x.mtime)].filter(Boolean).join(" · "))}</span>
+      <span class="meta">${esc([fmtSize(x.size), fmtTime(x.mtime), x.sha1 ? "sha1 " + x.sha1.slice(0, 8) : ""].filter(Boolean).join(" · "))}</span>
     </li>`).join("");
   // 접힌 한 줄 요약 — 폴더를 열지 않아도 무엇이 언제 올라왔는지와 「▶ 실행」이 보이게.
   const main = files.find((x) => OPEN.test(x.name)) || files[0];

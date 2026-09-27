@@ -25,16 +25,11 @@
 # 다른 건 **파일명뿐**이라 이 스크립트가 하는 일도 복사와 이름 짓기다:
 #
 #   DuckStation  <이미지 이름>_1.mcd            _1 · _2
-#   mednafen     <이미지 이름>.<MD5>.0.mcr      .0 · .1
-#
-# ⚠ **MD5 는 우리가 못 만든다** — mednafen 이 디스크에서 뽑는 값이라, 이미 있는 `.mcr` 에서
-#   배운다. 그 게임을 mednafen 으로 한 번도 안 돌렸으면 배울 데가 없으니 그때는 멈추고
-#   알려 준다(한 번 돌려 게임 안에서 저장하면 생긴다).
+#   mednafen     <이미지 이름>.0.mcr            .0 · .1   (해시 없는 정본 — 아래 「카드 이름」)
 #
 # ⚠ **원본과 빌드는 이름이 다르니 카드도 따로다**(`Legend of Heroes...(Japan)` vs
 #   `Eiyuu Densetsu (KR)`). 그래서 import 는 **알고 있는 이름 전부에** 넣는다 — 어느 이미지로
 #   켜든 같은 세이브가 보이는 게 QA 에서 맞다. 128KB짜리라 몇 벌 더 둬도 부담이 없다.
-#   (MD5 는 원본과 빌드가 같다 — 실측 `eb5fce…`. 디스크 내용 해시가 아닌 모양이다.)
 #
 # ⚠ **이름을 하드코딩하지 않는다**(2026-08-28). 종전엔 DuckStation 쪽 필터와 export 목적지가
 #   ed1+2 문자열로 박혀 있었다. 게임이 인자로 굳어 있을 땐 안 틀렸지만 **고를 수 있게 되는
@@ -73,8 +68,7 @@ ps1_games() {
 }
 
 # ── 게임 고르기 ─────────────────────────────────────────────────────────────
-# 세이브 칸이 있는지를 같이 보여 준다 — mednafen 으로 한 번도 안 돌린 게임은 MD5 를 배울 데가
-# 없어 어차피 멈추는데, 고르기 전에 보이면 헛걸음이 없다.
+# 세이브 칸이 있는지를 같이 보여 준다 — 고르기 전에 보이면 헛걸음이 없다.
 row_game() {
   if [ -d "$MEDBASE/sav/$2" ]; then _st="mednafen 세이브 있음"; else _st="mednafen 세이브 없음"; fi
   if [ "$3" = 1 ]; then printf '\033[36m❯ %-11s %s\033[0m\n' "$2" "$_st"
@@ -156,31 +150,14 @@ orig_name() {
   return 0
 }
 
-# 이미 있는 카드에서 MD5 를 배운다. 평평한 옛 자리(`sav/`)도 같이 본다.
-# ⚠ 평평한 자리엔 **다른 게임 카드도 산다**(실측: SMD·PS1 이 섞여 있다). 게임 칸(`$SAV`)은
-#   이미 갈려 있으니 그대로 믿고, 평평한 자리만 **이 게임 이미지 이름으로 거른다** — 안 그러면
-#   남의 게임 MD5 를 배워 읽히지도 않는 이름으로 카드를 만든다.
-learn_md5() {
-  for f in "$SAV"/*.mcr; do
-    [ -f "$f" ] || continue
-    b=$(basename "$f"); b=${b%.mcr}; b=${b%.*}
-    printf '%s\n' "${b##*.}"
-  done
-  for f in "$MEDBASE/sav"/*.mcr; do
-    [ -f "$f" ] || continue
-    b=$(basename "$f"); b=${b%.mcr}; b=${b%.*}   # 슬롯 떼기 → "<이름>.<MD5>"
-    case "$NAMES_BAR" in *"|${b%.*}|"*) ;; *) continue ;; esac
-    printf '%s\n' "${b##*.}"
-  done
-}
-
-MD5=$(learn_md5 | sort -u | head -1)
-[ -n "$MD5" ] || {
-  echo "⛔ MD5 를 배울 카드가 없다 — $GAME 을 mednafen 으로 한 번 돌려 게임 안에서 저장한다." >&2
-  echo "   sh scripts/emu.sh $GAME" >&2
-  exit 1
-}
-echo "$GAME  ·  MD5: $MD5"
+# 🔴 **카드는 해시 없는 이름 한 벌이다**(2026-09-28 — 종전 「MD5 를 배워 붙인다」를 대체).
+#   mednafen 은 `%M` 규칙으로 **해시 없는 `<이미지 이름>.<슬롯>.mcr` 을 먼저** 읽고(emu.sh 가
+#   실행 전에 `save_unhash.py` 로 그 한 벌을 만든다), 있으면 해시 붙은 카드는 안 본다. 그래서
+#   import 가 해시 붙은 이름으로 넣으면 **넣어도 안 읽힌다.**
+#   ⚠ 실측 09-28: 해시 없는 카드가 생긴 뒤 `learn_md5` 가 그 이름에서 「MD5」 자리를 이미지
+#     이름으로 잘못 떼어(`Eiyuu Densetsu (KR).Eiyuu Densetsu (KR).0.mcr`) 엉뚱한 파일을 만들었고,
+#     마스터가 옮긴 세이브가 게임에서 안 보였다. MD5 를 아예 안 쓴다.
+echo "$GAME  ·  카드 이름: <이미지 이름>.<0|1>.mcr (해시 없음)"
 
 cp_v() {   # $1=원본 $2=대상
   if [ "$DRY" = 1 ]; then echo "  [dry] $(basename "$1") → $(basename "$2")"; return 0; fi
@@ -213,7 +190,7 @@ if [ "$DIR" = import ]; then
 '
       for nm in $NAMES; do
         IFS=$OLDIFS
-        cp_v "$s" "$SAV/$nm.$MD5.$((slot - 1)).mcr"; n=$((n + 1))
+        cp_v "$s" "$SAV/$nm.$((slot - 1)).mcr"; n=$((n + 1))
         IFS='
 '
       done
@@ -230,7 +207,8 @@ else
   mkdir -p "$DUCK"
   # ⚠ 되돌릴 때 **소스는 하나만** 고른다 — 이름이 여럿이라 아무거나 쓰면 옛 진행분을 올릴 수 있다.
   for slot in 0 1; do
-    newest=$(ls -t "$SAV"/*".$MD5.$slot.mcr" 2>/dev/null | head -1)
+    # 해시 없는 정본이 기준이고, 없던 시절 카드(해시 붙은 것)도 후보로 둔다 — 제일 새것 하나.
+    newest=$(ls -t "$SAV"/*".$slot.mcr" 2>/dev/null | head -1)
     [ -n "$newest" ] || continue
     # 목적지는 **DuckStation 에 이미 있는 그 게임 카드**다(원본으로 보고 있으면 원본 카드,
     # 빌드로 보고 있으면 빌드 카드). 하나도 없으면 원본 이름으로 새로 만든다 — 안 쓰는 이름의
@@ -251,5 +229,5 @@ else
       cp_v "$newest" "$DUCK/$(orig_name)_$((slot + 1)).mcd"; n=$((n + 1))
     fi
   done
-  [ "$n" -gt 0 ] || echo "⚠ 옮길 카드가 없었다 — $SAV 에 이 MD5 카드가 없다" >&2
+  [ "$n" -gt 0 ] || echo "⚠ 옮길 카드가 없었다 — $SAV 에 이 게임 카드가 없다" >&2
 fi

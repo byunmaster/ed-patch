@@ -56,6 +56,7 @@ body { display: flex; flex-direction: column; }
 <button type="button" class="quick" id="q-ff" aria-pressed="false" title="빨리감기 켜 두기">빨리</button>
 <button type="button" class="quick" id="q-sm" aria-pressed="false" title="느리게 켜 두기">느림</button>
 <button type="button" class="quick" id="q-ps" aria-pressed="false" title="일시정지">멈춤</button>
+<button type="button" class="quick" id="q-st" title="지금 상태를 dev 로 보내기(세션 디버깅용)">상태</button>
 <script>
 // 롬 확장자 → EmulatorJS 코어 이름. 여기 없는 기종은 실행 버튼이 안 뜬다(index.html 도 이 표를 본다).
 const CORES = { sfc: "snes", smc: "snes", md: "segaMD", gen: "segaMD", smd: "segaMD" };
@@ -80,6 +81,8 @@ if (!rom || !CORES[ext]) {
     const d = new Date(r.headers.get("last-modified") || 0);
     ver = d.getTime() || ver;
     built = ` · 빌드 ${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    const sha = r.headers.get("x-sha1");
+    if (sha) built += ` · sha1 ${sha.slice(0, 8)}`;
     msg.textContent += built;
   } catch { /* 시각 없이 띄운다 — 캐시 깨기는 지금 시각으로 */ }
   window.EJS_player = "#game";
@@ -160,7 +163,7 @@ if (!rom || !CORES[ext]) {
     if (!fast || !slow || !start) return;
     const box = fast.parentElement, gap = 8;
     const px = (el, k) => parseFloat(el.style[k]) || 0;
-    for (const [id, ref, dx] of [["q-ff", fast, -1], ["q-sm", slow, 1], ["q-ps", start, 1]]) {
+    for (const [id, ref, dx] of [["q-ff", fast, -1], ["q-sm", slow, 1], ["q-ps", start, 1], ["q-st", start, 2]]) {
       const b = btn(id);
       b.style.cssText = ref.style.cssText;            // 패드 버튼과 같은 크기·글꼴·모서리
       b.classList.add("ejs_virtualGamepad_button", "quick");
@@ -170,8 +173,62 @@ if (!rom || !CORES[ext]) {
       box.appendChild(b);
     }
   };
+  // 🔴 세이브를 dev 정본으로 올린다(마스터 2026-09-27 「어디서든 같은 세이브를 봐야」). 게임 안에서
+  //   세이브하면 SRAM 이 바뀌므로, 몇 초마다 SRAM 을 읽어 **바뀌었을 때만** 롬 곁 세이브 주소(`<롬>.srm`)로
+  //   PUT 한다 — serve.py 가 `~/save/<게임>/` 의 해시 없는 정본(맥 emu.sh 와 같은 파일)에 쓴다.
+  //   페이지를 떠날 때도 한 번 더(keepalive). 빈 SRAM 은 서버가 거절한다.
+  const saveUrl = save || rom.replace(/\.[^./]+$/, ".srm");
+  let lastSig = "";
+  const sig = (a) => { let h = 0; for (let i = 0; i < a.length; i++) h = (h * 31 + a[i]) | 0; return a.length + ":" + h; };
+  const pushSave = async (keepalive) => {
+    try {
+      const gm = window.EJS_emulator && window.EJS_emulator.gameManager;
+      if (!gm) return;
+      gm.saveSaveFiles();
+      const data = gm.getSaveFile ? gm.getSaveFile() : gm.FS.readFile(gm.getSaveFilePath());
+      if (!data || !data.length) return;
+      const s = sig(data);
+      if (s === lastSig) return;
+      const r = await fetch(saveUrl, { method: "PUT", body: data, keepalive: !!keepalive });
+      if (r.ok) {
+        lastSig = s;
+        const t = new Date();
+        msg.textContent = name + built + ` · 세이브 올림 ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+      }
+    } catch { /* 다음 주기에 다시 */ }
+  };
+  // 🔴 스테이트 보내기(마스터 2026-09-27) — 세이브가 안 되는 자리(전투 등)에서 이슈를 재현하면 그 순간을
+  //   dev 의 `~/save/<게임>/state/` 로 보낸다. 서버가 롬 sha1·시각·코어를 이름에 박아 쌓는다(덮지 않는다).
+  //   ⚠ 이 스테이트는 웹 코어 것이라 emucap 이 못 불러온다 — 세션이 풀어서 RAM·VRAM 을 읽는다.
+  btn("q-st").addEventListener("click", async () => {
+    const gm = window.EJS_emulator && window.EJS_emulator.gameManager;
+    if (!gm) return;
+    const b = btn("q-st");
+    try {
+      const data = gm.getState();
+      const url = rom.replace(/\.[^./]+$/, ".state") + "?core=" + encodeURIComponent(CORES[ext]);
+      const r = await fetch(url, { method: "PUT", body: data });
+      if (!r.ok) throw new Error(r.status);
+      const t = new Date();
+      msg.textContent = name + built + ` · 상태 보냄 ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}:${String(t.getSeconds()).padStart(2, "0")}`;
+      b.classList.add("on"); setTimeout(() => b.classList.remove("on"), 600);
+    } catch (e) {
+      msg.textContent = name + built + " · 상태를 못 보냈습니다(" + e.message + ")";
+    }
+  });
   const prevReady = window.EJS_ready;
-  window.EJS_ready = () => { if (prevReady) prevReady(); window.EJS_emulator.on("start", dock); };
+  window.EJS_ready = () => {
+    if (prevReady) prevReady();
+    window.EJS_emulator.on("start", () => {
+      dock();
+      // 불러온 세이브와 같은 내용은 안 올리게, 첫 서명은 조금 뒤(세이브 주입이 끝난 뒤)에 잡는다
+      setTimeout(() => { try { const gm = window.EJS_emulator.gameManager; gm.saveSaveFiles();
+        const d = gm.getSaveFile ? gm.getSaveFile() : gm.FS.readFile(gm.getSaveFilePath()); lastSig = sig(d); } catch { /* 없다 */ }
+        setInterval(() => pushSave(false), 5000); }, 4000);
+    });
+  };
+  addEventListener("pagehide", () => pushSave(true));
+  document.addEventListener("visibilitychange", () => { if (document.hidden) pushSave(true); });
   const s = document.createElement("script");
   s.src = window.EJS_pathtodata + "loader.js";
   document.body.appendChild(s);
