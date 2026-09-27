@@ -57,9 +57,41 @@ def _load_bdf() -> dict[int, tuple[int, int, int, int, list[int]]]:
 # (2026-09-06 인게임: 「나타났다'」처럼 점이 글자 어깨에 붙어 나왔다).
 BASELINE_ROW = 11
 
+# 🔴 **`?` 는 마스터 도트로 바꾼다**(2026-09-27, 반각 C안) — 반각(4px, 0~3열) 폭에 맞춘 전용 글리프.
+# `.local/inbox/pce-ed1/master-dots-question-4x12.txt` 그대로(4×12, 행 11 기준선·빈 줄) — 픽셀 그대로 굽는다.
+# `shared/fonts/Galmuri11.bdf`(공용)의 원래 `?`(0~4열, 5px 폭)를 대체한다 — 공용 파일은 안 건드리고
+# 이 게임의 `glyph()` 에서만 가로챈다.
+QUESTION_4PX_ROWS = [
+    ".##.",
+    "#..#",
+    "#..#",
+    "...#",
+    "..#.",
+    ".#..",
+    ".#..",
+    ".#..",
+    "....",
+    ".#..",
+    ".#..",
+    "....",
+]
+
+
+def _question_4px() -> bytes:
+    out = []
+    for row in QUESTION_4PX_ROWS:
+        v = 0
+        for col, c in enumerate(row):
+            if c == "#":
+                v |= 0x8000 >> col
+        out.append(v)
+    return b"".join(v.to_bytes(2, "big") for v in out)
+
 
 def glyph(ch: str) -> bytes:
     """한 글자 → 24B. 세로는 **베이스라인에 맞추고**(BDF `yo`) 가로는 왼쪽 정렬."""
+    if ch == "?":
+        return _question_4px()
     pk = packed_glyphs().get(ch) if 0xE000 <= ord(ch) <= 0xF8FF else None
     if pk is not None:
         return pk

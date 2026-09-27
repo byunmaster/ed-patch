@@ -52,19 +52,28 @@ def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str,
     lead_nl = bool(m.tokens) and m.tokens[0] == ("op", NL)
     if lead_nl:
         out.append(NL)
-    pgs = typeset.pages(font.expand_packed(tr["t"]), speaker=m.speaker is not None or m.common is not None)
-    # 하드 개행이 든 화자 없는 창(장 끝 카드)은 줄을 그대로 둔 것이라 **개행도 그대로** 넣는다 —
-    # 꽉 찬 제목 줄 뒤의 빈 줄이 먹혔다(종장 카드 화면 2026-09-25: 13칸 제목 바로 밑에 「끝」).
-    verbatim = "\n" in tr["t"] and m.speaker is None and m.common is None
-    for i, pg in enumerate(pgs):
-        if i:
-            out.append(PAGE)
-        for j, line in enumerate(pg):
-            # 🔴 **틀을 꽉 채운 줄 뒤에는 개행을 안 넣는다** — 인터프리터가 열 ≥ $99(13)에서 스스로
-            #    넘기므로 우리 `01` 이 얹히면 **빈 줄**이 된다(our-findings 2026-08-30, PS1 이 122곳).
-            if j and (verbatim or len(pg[j - 1]) < typeset.WIDTH):
-                out.append(NL)
-            out += font.encode(line, table)
+    if tr.get("raw"):
+        # 🔴 **조판기(`typeset.pages`→공용 `krwrap`)를 아예 안 거친다** — 원판이 가운데맞춤을 앞뒤
+        #    전각 공백으로 **미리 구워** 낸 고정폭 표(필드 입장 배너 지명 46개, `scn000.json`)라 어절
+        #    경계 공백을 지우는 일반 대사 조판기를 태우면 공백이 사라져 왼쪽 정렬이 된다(devlog 09-27).
+        #    `krwrap` 은 공용(`shared/`)이라 이 게임에서 못 고친다 — 문안 쪽에서 통째로 비켜 간다.
+        out += font.encode(tr["t"], table)
+    else:
+        pgs = typeset.pages(
+            font.expand_packed(tr["t"]), speaker=m.speaker is not None or m.common is not None
+        )
+        # 하드 개행이 든 화자 없는 창(장 끝 카드)은 줄을 그대로 둔 것이라 **개행도 그대로** 넣는다 —
+        # 꽉 찬 제목 줄 뒤의 빈 줄이 먹혔다(종장 카드 화면 2026-09-25: 13칸 제목 바로 밑에 「끝」).
+        verbatim = "\n" in tr["t"] and m.speaker is None and m.common is None
+        for i, pg in enumerate(pgs):
+            if i:
+                out.append(PAGE)
+            for j, line in enumerate(pg):
+                # 🔴 **틀을 꽉 채운 줄 뒤에는 개행을 안 넣는다** — 인터프리터가 열 ≥ $99(13)에서 스스로
+                #    넘기므로 우리 `01` 이 얹히면 **빈 줄**이 된다(our-findings 2026-08-30, PS1 이 122곳).
+                if j and (verbatim or len(pg[j - 1]) < typeset.WIDTH):
+                    out.append(NL)
+                out += font.encode(line, table)
     if m.terminated:
         out.append(m.tokens[-1][1])
     elif m.tokens and m.tokens[-1] in (("op", PAGE), ("op", 0x03)):

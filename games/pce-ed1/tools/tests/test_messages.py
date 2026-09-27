@@ -52,5 +52,34 @@ class BranchOperandGuard(unittest.TestCase):
         self.assertTrue(any(m.speaker == "兵士" for m in M.parse(d)))
 
 
+class Scn000EntryBanner(unittest.TestCase):
+    """씬 0(공용 블록 0) — 필드 입장 배너 지명표 46개가 다 번역됐나(마스터 09-27 지적:
+    「エルアスタの町」가 그대로였다). 원본 파생물이 없는 트리는 건너뛴다."""
+
+    def _block0(self):
+        import containers as C
+
+        try:
+            found = C.scan()
+        except (OSError, FileNotFoundError):
+            return None
+        for c in found:
+            for b in c["blocks"]:
+                if b["id"] == 0:
+                    return b["data"]
+        return None
+
+    def test_banner_place_names_all_translated(self):
+        data = self._block0()
+        if data is None:
+            self.skipTest("원본 파생물 없음")
+        msgs = M.parse(data)
+        trs = M.load_translations(0)
+        place_msgs = [m for m in msgs if m.key in trs][:46]
+        self.assertGreaterEqual(len(place_msgs), 46, "지명표 46개를 다 못 찾았다 — 원문이 바뀌었나")
+        untranslated = [m.key for m in place_msgs if M.KANA.search(trs[m.key]["t"])]
+        self.assertEqual(untranslated, [], "배너 지명에 일본어가 남았다")
+
+
 if __name__ == "__main__":
     unittest.main()
