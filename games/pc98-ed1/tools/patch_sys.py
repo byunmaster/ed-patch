@@ -78,10 +78,18 @@ def plan() -> tuple[dict[str, list], dict]:
             if "t" not in v and "table" not in v:
                 st["건너뜀:문안 없음"] += 1
                 continue
+            # 🔴 **반각 가나는 스캔에서 아예 빠진다**(`dump_sys.py` 머리말 — x86 코드
+            #    바이트와 대역이 겹쳐서). 그런 자리는 `site` 사전에 없다 — 정본이
+            #    `"n"`(원본 바이트 길이) 을 직접 주면 그 값으로 대신한다. 이땐 `pad_shape`
+            #    가 쓸 `site[o]["t"]` 도 없으므로 **`pad` 를 반드시 같이 준다.**
             if o not in site:
-                st["건너뜀:자리 없음"] += 1
-                continue
-            n = site[o]["n"]
+                if "n" in v:
+                    n = v["n"]
+                else:
+                    st["건너뜀:자리 없음"] += 1
+                    continue
+            else:
+                n = site[o]["n"]
 
             # ── 칸 표(지명 목록 등) — 한 문자열 안에 **고정 폭 칸이 여럿** 들어 있다.
             #    🔴 통째로 채우면 정렬이 통째로 깨진다. 칸마다 따로 넣고 **가운데 정렬**한다.
@@ -117,7 +125,7 @@ def plan() -> tuple[dict[str, list], dict]:
             #   표(아이템)는 우측정렬이라 앞을 채워야 칸이 안 흐트러지고,
             #   **메뉴는 왼쪽 정렬**이라 뒤를 채워야 시작 자리가 안 밀린다.
             #   기본은 원본의 여백 꼴을 따르고, 정본이 `pad` 로 덮어쓴다.
-            side = v.get("pad") or pad_shape(site[o]["t"])
+            side = v.get("pad") or (pad_shape(site[o]["t"]) if o in site else "none")
             # ⚠ `center` 는 **정본이 명시할 때만** 쓴다 — 원본이 앞뒤를 다 비웠어도
             #   가운데 정렬이 아니라 **커서 자리**인 경우가 있다(메뉴의 앞 한 칸).
             if side == "center":
