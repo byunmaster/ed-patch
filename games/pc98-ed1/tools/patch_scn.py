@@ -57,6 +57,17 @@ STOP_BACK = frozenset({0x00, 0x06, 0x07, 0x0A, 0x0D, 0x1E})
 
 KU0 = H.KU_LO - 0x20  # ah 바이트에서 구 번호로 (JIS 고위 = 0x20 + 구)
 
+# 조사 자리표시 — (문안 표기, 받침 있을 때, 없을 때). 그리는 순간 `patch_josa_hook` 이 고른다.
+# 코드는 원본 세 장이 **한 번도 안 쓰는 구 9**의 앞 칸들(SJIS 0x8540~). ⚠ 순서가 곧 코드다.
+JOSA_PAIRS = (
+    ("{은}", "은", "는"),
+    ("{을}", "을", "를"),
+    ("{이}", "이", "가"),
+    ("{과}", "과", "와"),
+)
+JOSA_LEAD = 0x85
+JOSA_MARKS = {tag: bytes([JOSA_LEAD, 0x40 + i]) for i, (tag, _a, _b) in enumerate(JOSA_PAIRS)}
+
 # 🔴 **칸 표** — 한 청크 안에 「이름 14B + 종결자 07」이 줄줄이 이어지는 자리가 있다
 #    (장소 선택 목록 46칸, 2026-09-06 실측). 일반 런처럼 다루면 **정렬이 깨진다** —
 #    밖으로 빼면 칸이 비고, 틈을 쓰면 이름이 왼쪽에 붙는다. 원본은 **가운데 정렬**이다.
@@ -109,6 +120,11 @@ def encode(text: str) -> bytes:
                 i += len(tag)
                 break
         else:
+            mark = next((t for t in JOSA_MARKS if text.startswith(t, i)), None)
+            if mark:
+                out += JOSA_MARKS[mark]
+                i += len(mark)
+                continue
             c = text[i]
             if c in syl:
                 out += sjis.sjis_of_index(slot_of(syl[c]))

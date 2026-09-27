@@ -30,6 +30,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 import common
 import patch_scn
 
+# 조각 이주 자리 — 조사 훅 발판 뒤, 죽은 캐시 뱅크 블록의 남는 꼬리(플랫)
+LOAD = 0xC00  # program 실행 주소 = 플랫 + 0xC00
+MOVE_POOL = (0x5A69, 0x5AA3)
+
 SCRIPT = common.ROOT / "games" / "pc98-ed1" / "script" / "sys.json"
 DUMP = common.OUT_DIR / "sys_jp"
 DISKS = ("event", "program")
@@ -59,7 +63,15 @@ def plan() -> tuple[dict[str, list], dict]:
     """{디스크: [(플랫 오프셋, 원본 바이트, 새 바이트)]} + 통계."""
     script = load()
     out: dict[str, list] = {d: [] for d in DISKS}
-    st = {"넣음": 0, "건너뜀:넘침": 0, "건너뜀:자리 없음": 0, "건너뜀:문안 없음": 0, "쓴 바이트": 0}
+    st = {
+        "넣음": 0,
+        "이주": 0,
+        "건너뜀:넘침": 0,
+        "건너뜀:자리 없음": 0,
+        "건너뜀:문안 없음": 0,
+        "쓴 바이트": 0,
+    }
+    moved_at: dict[str, int] = {}
     for disk in DISKS:
         flat = b"".join(x["data"] for x in common.read_sectors(common.disk_path(disk)))
         site = sites(disk)
@@ -117,6 +129,41 @@ def plan() -> tuple[dict[str, list], dict]:
                 continue
 
             core = patch_scn.encode(v["t"])
+            # ── 조각 이주 — 문안이 자리보다 길면 **조각째 옮기고 가리키는 곳을 고친다.**
+            #    메시지는 `10 <조각 주소 2B>` 로 조각을 부른다(`0e …문안… 06` 꼴). 새 조각은
+            #    원래 머리(`frag`~문안 앞) + 우리 문안 + 원래 종결자 1B 로 짓는다.
+            #    🔴 자리는 폰트 훅이 죽여 둔 캐시 뱅크 블록의 남는 꼬리다 — font 없이 구우면
+            #       살아 있는 코드를 덮는다(build.py 가 막는다). 옛 자리는 손대지 않는다(안 불린다).
+            if "move" in v:
+                if disk != "program":
+                    raise SystemExit(f"🔴 {key}: 조각 이주는 program 만 된다")
+                mv = v["move"]
+                frag = int(mv["frag"], 16)
+                # 꼬리 = 문안 끝부터 첫 종결자(06·07·0A)까지 — `1e … 04 06` 처럼 닫는 제어 바이트가
+                #    종결자 앞에 더 붙는 조각이 있다. 제어 바이트(<0x20)만 허용한다.
+                e = o + n
+                while flat[e] not in (0x06, 0x07, 0x0A):
+                    if flat[e] >= 0x20 or e - (o + n) >= 3:
+                        raise SystemExit(
+                            f"🔴 {key}: 문안 뒤에 종결자가 없다 ({flat[o + n : e + 1].hex()})"
+                        )
+                    e += 1
+                new = flat[frag:o] + core + flat[o + n : e + 1]
+                at = moved_at.setdefault("cur", MOVE_POOL[0])
+                if at + len(new) > MOVE_POOL[1]:
+                    raise SystemExit(f"🔴 {key}: 이주 자리가 모자란다 {len(new)}B")
+                moved_at["cur"] = at + len(new)
+                out[disk].append((at, flat[at : at + len(new)], new))
+                old_rt = (frag + LOAD).to_bytes(2, "little")
+                new_rt = (at + LOAD).to_bytes(2, "little")
+                for r in mv["refs"]:
+                    ro = int(r, 16)
+                    if flat[ro : ro + 2] != old_rt:
+                        raise SystemExit(f"🔴 {key}: {r} 가 옛 조각을 안 가리킨다")
+                    out[disk].append((ro, old_rt, new_rt))
+                st["이주"] += 1
+                st["쓴 바이트"] += len(new)
+                continue
             if len(core) > n:
                 st["건너뜀:넘침"] += 1
                 continue
