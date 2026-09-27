@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import text  # noqa: F401, I001  (common 보다 먼저 — shared/text 와 이름이 겹친다)
+import text  # noqa: I001  (common 보다 먼저 — shared/text 와 이름이 겹친다)
 import common
 import encode
 import tiles
@@ -83,10 +83,30 @@ MVN_SITES = [
     (0x02A3A8, 0x02A3A2),  # 메시지 속도 창 サクサク/ドキドキ (4칸) — 2026-09-08
     (0x02A400, 0x02A3FA),  # 확인 창 はい/いいえ (3칸) — 2026-09-08
     (0x02ADFA, 0x02ADF4),  # A4 전투 설정 창 라벨 (6줄×10칸) — 2026-09-15, 라이브 BP 로 확인
-    (0x02AF3C, 0x02AF36),  # A3 시스템 설정 창 값 (8옵션, 스트라이드 ASM ×4 확장과 함께) — 2026-09-15
+    (
+        0x02AF3C,
+        0x02AF36,
+    ),  # A3 시스템 설정 창 값 (8옵션, 스트라이드 ASM ×4 확장과 함께) — 2026-09-15
 ]  # (MVN, 앞의 `LDY #$0305`)
 MVN_LEN = 3
+A4V_MVN = 0x02ADD7  # A4 값 MVN(목적지 `LDY #$030F`) → `JSR A4V_TRAMPOLINE` → `name13_v`
+A4V_LDY = 0x02ADD1
+A4V_TRAMPOLINE = 0x02FE75
 NAME13_TRAMPOLINE = 0x02FE61
+# 🔴 **여섯째 문 — 지명.** `$02:A67F`(표 `$A793`)·`$02:A6DB`(표 `$A8B1` — **필드 HUD 지명**, 2026-09-27 실행 BP 로
+#    확인: 로드 뒤 HUD 를 그리는 건 `placecopy_b` 다. 처음엔 거꾸로 적었다)이 맵ID 로 지명 포인터를 집어 10칸을
+# **바이트 그대로** `$0305` 에 옮긴다(A5 「운겠다터저속태사」·A6③). 포인터를 집는 `LDA 표,X` 부터 복사 루프
+# 끝까지를 `JSR 트램펄린`(→ `placecopy_*`) + `SEP #$30`(원래 루프가 8비트 색인으로 끝난다) + `JMP 패딩`으로.
+PLACE_SITES = [  # (덩이 시작 = `LDA 표,X`, 패딩 루프, 트램펄린, 라벨, 원본 첫 4바이트)
+    (0x02A68D, 0x02A6B0, 0x02FE66, "placecopy_a", bytes([0xBF, 0x93, 0xA7, 0x02])),
+    (0x02A6E9, 0x02A70C, 0x02FE6B, "placecopy_b", bytes([0xBF, 0xB1, 0xA8, 0x02])),
+    # 로드 메뉴 슬롯 목록(A5) — 같은 표(`$A8B1`)를 칸 `$030B` 에(공백은 건너뛰며) 쓴다. 패딩 루프가 없어
+    # 곧장 `JSL $02:B07B` 로 간다.
+    (0x02A5A8, 0x02A5CF, 0x02FE70, "placecopy_c", bytes([0xBF, 0xB1, 0xA8, 0x02])),
+    # 필드 주문 목록(B2) — 주문 표 `$03:EEDD` 를 같은 꼴로 `$0305` 에 옮기고 레벨 숫자를 붙여 5칸으로 채운다
+    # (2026-09-26 실기, 칸 배열 쓰기 BP). 한글 표는 `dicts.bake_runtime` 이 만든다.
+    (0x02AFCC, 0x02AFED, 0x02FE7A, "spellcopy", bytes([0xBF, 0xDD, 0xEE, 0x03])),
+]
 CELL_BASE = 0x000305  # `LDY #$0305` — 패치할 때 자리마다 확인한다
 CELLS = 0x000305  # 칸 배열(WRAM 미러) — long 으로 써서 DB 에 안 기댄다
 NMI_CALL = 0x00AA00  # NMI 의 JSR $ACA9 → JSR (우리 스텁)
@@ -138,7 +158,9 @@ PPU_BG34NBA = 0x00210C
 # A 를 보존하는 변종 `ctx_open_x` 를 부른다. 안 걸면 엔딩 전 구간이 가나로 깨진다(마스터 실기).
 ENDING_CTX_SITE = 0x1EEAA8
 ENDING_CTX_ORIG = bytes([0xA2, 0x03, 0x8E, 0x0C, 0x21])
-OPEN_ADVANCE_SITE = 0x1EE0BB  # LDX $1B83 / DEX / BMI +5 / INC $1B81 / BRA -8 (11B) → JSL open_advance + NOP×7
+OPEN_ADVANCE_SITE = (
+    0x1EE0BB  # LDX $1B83 / DEX / BMI +5 / INC $1B81 / BRA -8 (11B) → JSL open_advance + NOP×7
+)
 OPEN_ADVANCE_LEN = 11
 CREDITS_VRAM_DELTA = 0  # 스태프롤 — 글자는 BG1(글자 베이스 워드 $1000, 인게임과 같은 자리)에 찍힌다(2026-09-26 실기).
 # 인게임(0)과 다른 건 **배경 투명**뿐이다(맵 위 검은 칸에 뜬다) — 그래서 컨텍스트를 따로 둔다.
@@ -173,10 +195,20 @@ V_N13 = VAR + 24  # 워드: 고정 칸 문자열의 칸 수(호출자가 A 에 �
 # 🔴 선두 표를 조회하면 **A 가 표 값으로 덮인다** — 선두가 아닌 글자는 원본 바이트를 되찾아야 한다.
 #    안 그러면 공백·숫자 자리에 표의 `$FF` 가 들어가 **칸이 깨진다**(2026-09-07 타이틀 메뉴에서 드러났다).
 V_RAW = VAR + 26  # 방금 읽은 원본 바이트
-V_OVERFLOW = VAR + 23  # 슬롯 풀이 한 바퀴 다 돌아 재사용됐다(= 그 사이 화면에 남은 글자가 덮일 수 있다)
-V_CTX = VAR + 27  # 다음 alloc() 큐잉의 컨텍스트(0=인게임 워드 $1000 · 1=오프닝·엔딩 워드 $3000 · 2=스태프롤 워드 $1000·투명)
+# 조사 받침 덮어쓰기 — $FF = 마지막 글리프(`V_LAST`)로 판정, 0 = 받침 없음, 1 = 받침 있음.
+# 글리프를 내면 $FF, 한글이 아닌 1바이트 글자(숫자·영문·부호)를 내면 `raw_jb` 표 값으로 세운다(2026-09-26 —
+# 「레스1를」이던 것: 끝 숫자를 건너뛰고 앞 한글로 골랐다. 마스터 확정: 숫자는 읽는 소리대로, 영문·부호는 받침 없음).
+V_JB = VAR + 29
+V_OVERFLOW = (
+    VAR + 23
+)  # 슬롯 풀이 한 바퀴 다 돌아 재사용됐다(= 그 사이 화면에 남은 글자가 덮일 수 있다)
+V_CTX = (
+    VAR + 27
+)  # 다음 alloc() 큐잉의 컨텍스트(0=인게임 워드 $1000 · 1=오프닝·엔딩 워드 $3000 · 2=스태프롤 워드 $1000·투명)
 V_UCTX = VAR + 28  # NMI: upload 중 큐 항목의 컨텍스트 사본
-V_OCUR = VAR + 30  # 워드: 오프닝 — 훅이 실제로 소비한 바이트 커서(`$1B44` 사본, `open_advance` 가 읽는다)
+V_OCUR = (
+    VAR + 30
+)  # 워드: 오프닝 — 훅이 실제로 소비한 바이트 커서(`$1B44` 사본, `open_advance` 가 읽는다)
 V_U0 = VAR + 18  # 워드: NMI 임시(글리프 색인)
 V_U1 = VAR + 20  # NMI 임시(슬롯 번호)
 V_UV = VAR + 21  # 워드: NMI 임시(VRAM 워드 주소)
@@ -215,27 +247,57 @@ def glyph_bytes(rep: list[str | None]) -> bytes:
     return bytes(out)
 
 
-def batchim_bits(rep: list[str | None]) -> bytes:
-    """글리프 색인 → 받침 있음 1비트. 조사 훅이 읽는다."""
+DIGIT_BATCHIM = set("013678")  # 영·일·삼·육·칠·팔 — 읽은 소리에 받침(마스터 확정 09-26, PS1 정본)
+
+
+def has_batchim(ch: str) -> bool:
+    """조사 받침 판정 — 한글은 종성, **숫자는 읽는 소리**, 영문·부호는 받침 없음."""
     sys.path.insert(0, str(common.ROOT))
     from shared.text import josa as josa_mod
 
+    if ch.isdigit():
+        return ch in DIGIT_BATCHIM
+    return bool(josa_mod.batchim(ch))
+
+
+def batchim_bits(rep: list[str | None]) -> bytes:
+    """글리프 색인 → 받침 있음 1비트. 조사 훅이 읽는다."""
     n = (len(rep) + 7) // 8
     bits = bytearray(n)
     for i, ch in enumerate(rep):
-        if ch is not None and josa_mod.batchim(ch):
+        if ch is not None and has_batchim(ch):
             bits[i >> 3] |= 1 << (i & 7)
     return bytes(bits)
 
 
+def raw_jb() -> bytes:
+    """원본 1바이트 글자 코드 → 조사 받침(0/1), $FE = 판정을 건드리지 않는다(제어·공백·빈 코드)."""
+    t = bytearray([0xFE]) * 256
+    for c, ch in text.TABLE.items():
+        if c > 0xFF or len(ch) != 1 or ch in " \u3000" or encode.is_glyph(ch):
+            continue
+        if ch.isdigit() or (ch.isascii() and not ch.isspace()):
+            t[c] = 1 if has_batchim(ch) else 0
+    return bytes(t)
+
+
 def build_payload(
-    rep: list[str | None], slots: list[int], vram: list[int], item_table: int = 0x3E8000
+    rep: list[str | None],
+    slots: list[int],
+    vram: list[int],
+    item_table: int = 0x3E8000,
+    place_tables: tuple[int, int] = (0x3E8000, 0x3E8000),
+    spell_table: int = 0x3E8000,
 ) -> tuple[bytes, dict]:
     """훅 뱅크 하나를 통째로 만든다 — 코드가 앞, 표가 뒤. **원본을 안 읽는다**(테스트가 돌 수 있게)."""
     rep_index = encode.index_map(rep)
     nslot = len(slots)
     owner_lo, owner_hi = OWNER_BASE, OWNER_BASE + nslot  # 슬롯마다 word 하나 — 캐시 표
-    var_end = OWNER_BASE + 2 * nslot
+    # 🔴 **고정 칸**(2026-09-27 마스터 인게임 — 메뉴를 여럿 열자 HUD 지명이 「마번로드 하갈」로 바뀌었다).
+    #    칸은 라운드로빈이라 새 글자가 nslot 만큼 오면 **한 번 그리고 계속 화면에 남는** HUD 지명 칸을 덮는다
+    #    (값: 칸 79 · 부팅 뒤 51칸까지 씀). HUD 지명을 그릴 때 그 글자 칸을 고정하고, 할당기는 고정 칸을 건너뛴다.
+    pin = OWNER_BASE + 2 * nslot
+    var_end = pin + nslot
     if var_end - VAR >= 741:
         raise SystemExit(f"WRAM 무손상 구간(741B)을 넘는다: {var_end - VAR}B (슬롯 {nslot}개)")
     assert len(vram) == nslot
@@ -275,7 +337,7 @@ def build_payload(
     a.sep(imm=0x20)
     a.op("lda", addr="lead_tab", mode="absx")
     a.cmp(imm=0xFF)
-    a.beq(label="h_done")
+    a.beq(label="h_raw")
     a.op("sta", addr=V_IDX + 1, mode="long")  # 선두 서수
     a.jsr(addr="fetch", mode="abs")
     a.op("sta", addr=V_IDX, mode="long")  # 색인 하위
@@ -299,8 +361,17 @@ def build_payload(
     a.op("lda", addr=V_IDX, mode="long")
     a.op("sta", addr=V_LAST, mode="long")
     a.sep(imm=0x20)
+    a.lda(imm=0xFF)
+    a.op("sta", addr=V_JB, mode="long")
     a.jsr(addr="alloc", mode="abs")
     a.op("sta", addr=V_IDX, mode="long")
+    a.bra(label="h_done")
+
+    a.label("h_raw")  # 한글이 아닌 1바이트 — X = 그 바이트
+    a.op("lda", addr="raw_jb", mode="absx")
+    a.cmp(imm=0xFE)
+    a.beq(label="h_done")  # 제어·공백 — 판정을 그대로 둔다
+    a.op("sta", addr=V_JB, mode="long")
 
     a.label("h_done")
     a.sep(imm=0x20)
@@ -335,7 +406,7 @@ def build_payload(
     a.sep(imm=0x20)
     a.op("lda", addr="lead_tab", mode="absx")
     a.cmp(imm=0xFF)
-    a.beq(label="hb_done")
+    a.beq(label="hb_raw")
     a.op("sta", addr=V_IDX + 1, mode="long")
     a.op("lda", addr=BUF_CURSOR, mode="abs")  # 둘째 바이트 — 커서를 우리가 올린다
     a.inc()
@@ -350,8 +421,16 @@ def build_payload(
     a.op("lda", addr=V_IDX, mode="long")
     a.op("sta", addr=V_LAST, mode="long")
     a.sep(imm=0x20)
+    a.lda(imm=0xFF)
+    a.op("sta", addr=V_JB, mode="long")
     a.jsr(addr="alloc", mode="abs")
     a.op("sta", addr=V_IDX, mode="long")
+    a.bra(label="hb_done")
+    a.label("hb_raw")  # X = 그 바이트
+    a.op("lda", addr="raw_jb", mode="absx")
+    a.cmp(imm=0xFE)
+    a.beq(label="hb_done")
+    a.op("sta", addr=V_JB, mode="long")
     a.label("hb_done")
     a.sep(imm=0x20)
     a.op("lda", addr=V_IDX, mode="long")
@@ -363,126 +442,168 @@ def build_payload(
 
     # ── 메뉴 이름 한 줄을 칸 배열에 채운다 (아이템 표 → $0305) ──────────────────────
     # 들어올 때: A/X/Y 8비트 · X = 표 색인(×2). 나갈 때: **Y = 채운 칸 수**(패딩 루프가 쓴다).
-    a.label("namecopy")
-    a.php()
-    a.phb()
-    a.sep(imm=0x20)
-    a.rep(imm=0x10)
-    a.lda(imm=HOOK_BANK)
-    a.pha()
-    a.plb()
-    a.op("lda", addr=item_table, mode="longx")
-    a.op("sta", addr=0x000006, mode="long")
-    a.op("lda", addr=item_table + 1, mode="longx")
-    a.op("sta", addr=0x000007, mode="long")
-    a.lda(imm=item_table >> 16)
-    a.op("sta", addr=0x000008, mode="long")
-    a.ldy(imm=0x0000, m16=True)
-    a.ldx(imm=0x0000, m16=True)
-    a.label("nc_loop")
-    a.op(
-        "lda", dp=0x06, mode="indlongy"
-    )  # ⚠ `[dp],Y` 다 — `[dp]`($A7) 로 쓰면 첫 글자만 읽는다  # LDA [$06],Y — ⚠ 뱅크는 $08 이 정한다
-    a.cmp(imm=0xFF)
-    a.beq(label="nc_end")
-    a.phx()
-    a.rep(imm=0x20)
-    a.op("and", imm=0x00FF, m16=True)
-    a.tax()
-    a.sep(imm=0x20)
-    a.op("lda", addr="lead_tab", mode="longx")
-    a.plx()
-    a.cmp(imm=0xFF)
-    a.bne(label="nc_lead")
-    a.op("lda", addr=V_RAW, mode="long")  # 🔴 선두가 아니다 — **원본 바이트**를 되찾는다
-    a.bra(label="nc_plain")
-    a.label("nc_lead")
-    a.op("sta", addr=V_IDX + 1, mode="long")  # 선두 서수
-    a.iny()
-    a.op("lda", dp=0x06, mode="indlongy")  # ⚠ `[dp],Y` 다 — `[dp]`($A7) 로 쓰면 첫 글자만 읽는다
-    a.op("sta", addr=V_IDX, mode="long")  # 색인 하위
-    a.phx()
-    a.phy()
-    a.jsr(addr="alloc", mode="abs")
-    a.ply()
-    a.plx()
-    a.label("nc_plain")
-    a.op("sta", addr=CELLS, mode="longx")
-    a.inx()
-    a.iny()
-    a.bra(label="nc_loop")
-    a.label("nc_end")
-    a.txy()  # Y = 채운 칸 수
-    a.plb()
-    a.plp()
-    a.rtl()
+    # 지명(HUD·로드 메뉴)도 같은 꼴 — 표만 다르다(`places.py`). X = 색인×2, 표는 사전 뱅크의 2바이트 포인터.
+    for name, pre, table, dest in (
+        ("namecopy", "nc", item_table, CELLS),
+        ("placecopy_a", "pa", place_tables[0], CELLS),
+        ("placecopy_b", "pb", place_tables[1], CELLS),
+        (
+            "placecopy_c",
+            "pc",
+            place_tables[1],
+            CELLS + 6,
+        ),  # 로드 메뉴 슬롯 줄 — `$030B` 부터(번호·레벨 뒤)
+        ("spellcopy", "sc", spell_table, CELLS),  # 필드 주문 목록
+    ):
+        a.label(name)
+        a.php()
+        a.phb()
+        a.sep(imm=0x20)
+        a.rep(imm=0x10)
+        a.lda(imm=HOOK_BANK)
+        a.pha()
+        a.plb()
+        if pre == "pb":  # HUD 지명을 새로 그린다 — 앞 지명의 고정을 푼다(X = 표 색인, 지킨다)
+            a.phx()
+            a.lda(imm=0x00)
+            a.ldx(imm=0x0000, m16=True)
+            a.label("pb_unpin")
+            a.op("sta", addr=pin, mode="longx")
+            a.inx()
+            a.cpx(imm=nslot, m16=True)
+            a.bne(label="pb_unpin")
+            a.plx()
+        a.op("lda", addr=table, mode="longx")
+        a.op("sta", addr=0x000006, mode="long")
+        a.op("lda", addr=table + 1, mode="longx")
+        a.op("sta", addr=0x000007, mode="long")
+        a.lda(imm=table >> 16)
+        a.op("sta", addr=0x000008, mode="long")
+        a.ldy(imm=0x0000, m16=True)
+        a.ldx(imm=0x0000, m16=True)
+        a.label(f"{pre}_loop")
+        a.op(
+            "lda", dp=0x06, mode="indlongy"
+        )  # ⚠ `[dp],Y` 다 — `[dp]`($A7) 로 쓰면 첫 글자만 읽는다  # LDA [$06],Y — ⚠ 뱅크는 $08 이 정한다
+        a.cmp(imm=0xFF)
+        a.beq(label=f"{pre}_end")
+        # 선두가 아니면 아래서 `V_RAW` 를 쓴다 — 이 루프가 먼저 넣어야 한다(안 넣으면 다른 경로가 남긴
+        # 묵은 바이트가 찍힌다: HUD 지명 앞 공백이 「オオ」로 나왔다, 2026-09-26)
+        a.op("sta", addr=V_RAW, mode="long")
+        a.phx()
+        a.rep(imm=0x20)
+        a.op("and", imm=0x00FF, m16=True)
+        a.tax()
+        a.sep(imm=0x20)
+        a.op("lda", addr="lead_tab", mode="longx")
+        a.plx()
+        a.cmp(imm=0xFF)
+        a.bne(label=f"{pre}_lead")
+        a.op("lda", addr=V_RAW, mode="long")  # 🔴 선두가 아니다 — **원본 바이트**를 되찾는다
+        a.bra(label=f"{pre}_plain")
+        a.label(f"{pre}_lead")
+        a.op("sta", addr=V_IDX + 1, mode="long")  # 선두 서수
+        a.iny()
+        a.op(
+            "lda", dp=0x06, mode="indlongy"
+        )  # ⚠ `[dp],Y` 다 — `[dp]`($A7) 로 쓰면 첫 글자만 읽는다
+        a.op("sta", addr=V_IDX, mode="long")  # 색인 하위
+        a.phx()
+        a.phy()
+        a.jsr(addr="alloc", mode="abs")
+        if pre == "pb":  # HUD 지명 — 이 칸을 고정한다(alloc 은 잡은 칸을 V_T1 에 남긴다)
+            a.pha()
+            a.op("lda", addr=V_T1, mode="long")
+            a.rep(imm=0x20)
+            a.op("and", imm=0x00FF, m16=True)
+            a.tax()
+            a.sep(imm=0x20)
+            a.lda(imm=0x01)
+            a.op("sta", addr=pin, mode="longx")
+            a.pla()
+        a.ply()
+        a.plx()
+        a.label(f"{pre}_plain")
+        a.op("sta", addr=dest, mode="longx")
+        a.inx()
+        a.iny()
+        a.bra(label=f"{pre}_loop")
+        a.label(f"{pre}_end")
+        a.txy()  # Y = 채운 칸 수
+        a.plb()
+        a.plp()
+        a.rtl()
 
     # ── 13칸 고정 문자열 한 줄 (전투 커맨드·파티 이름) ─────────────────────────────
-    a.label("name13")
-    a.php()
-    a.rep(imm=0x30)
-    a.inc()  # A = 길이−1 → **칸 수**
-    a.op("sta", addr=V_N13, mode="long")
-    a.sep(imm=0x20)
-    a.lda(imm=HOOK_BANK)
-    a.pha()
-    a.plb()
-    a.lda(imm=DICT_BANK)
-    a.op("sta", addr=0x000008, mode="long")  # [$06] 의 뱅크 — 문자열은 우리 뱅크에 있다
-    a.ldy(imm=0x0000, m16=True)  # 소스 커서
-    a.ldx(imm=0x0000, m16=True)  # 칸 커서
-    a.label("n13_loop")
-    a.rep(imm=0x20)
-    a.txa()
-    a.op("cmp", addr=V_N13, mode="long")
-    a.sep(imm=0x20)
-    a.bcs(label="n13_end")
-    a.op("lda", dp=0x06, mode="indlongy")
-    a.cmp(imm=0xFF)
-    a.beq(label="n13_pad")
-    a.op("sta", addr=V_RAW, mode="long")  # 표 조회가 A 를 덮으므로 미리 보관한다
-    a.phx()
-    a.rep(imm=0x20)
-    a.op("and", imm=0x00FF, m16=True)
-    a.tax()
-    a.sep(imm=0x20)
-    a.op("lda", addr="lead_tab", mode="longx")
-    a.plx()
-    a.cmp(imm=0xFF)
-    a.bne(label="n13_lead")
-    a.op("lda", addr=V_RAW, mode="long")  # 🔴 선두가 아니다 — **원본 바이트**를 되찾는다
-    a.bra(label="n13_put")
-    a.label("n13_lead")
-    a.op("sta", addr=V_IDX + 1, mode="long")
-    a.iny()
-    a.op("lda", dp=0x06, mode="indlongy")
-    a.op("sta", addr=V_IDX, mode="long")
-    a.phx()
-    a.phy()
-    a.jsr(addr="alloc", mode="abs")
-    a.ply()
-    a.plx()
-    a.label("n13_put")
-    a.op("sta", addr=CELL_BASE, mode="longx")
-    a.inx()
-    a.iny()
-    a.bra(label="n13_loop")
-    a.label("n13_pad")
-    a.lda(imm=0x10)  # 남은 칸은 공백으로
-    a.label("n13_padloop")
-    a.op("sta", addr=CELL_BASE, mode="longx")
-    a.inx()
-    a.rep(imm=0x20)
-    a.txa()
-    a.op("cmp", addr=V_N13, mode="long")
-    a.sep(imm=0x20)
-    a.bcc(label="n13_padloop")
-    a.label("n13_end")
-    a.lda(imm=0x00)
-    a.pha()
-    a.plb()  # ⚠ 원본 MVN 처럼 DB = $00 으로 남긴다
-    a.plp()
-    a.rtl()
+    # A4 값(`$02:ADD7`, 목적지 `$030F`)도 같은 꼴 — 목적지만 다르다.
+    for name, pre, dest in (("name13", "n13", CELL_BASE), ("name13_v", "n13v", CELL_BASE + 10)):
+        a.label(name)
+        a.php()
+        a.rep(imm=0x30)
+        a.inc()  # A = 길이−1 → **칸 수**
+        a.op("sta", addr=V_N13, mode="long")
+        a.sep(imm=0x20)
+        a.lda(imm=HOOK_BANK)
+        a.pha()
+        a.plb()
+        a.lda(imm=DICT_BANK)
+        a.op("sta", addr=0x000008, mode="long")  # [$06] 의 뱅크 — 문자열은 우리 뱅크에 있다
+        a.ldy(imm=0x0000, m16=True)  # 소스 커서
+        a.ldx(imm=0x0000, m16=True)  # 칸 커서
+        a.label(f"{pre}_loop")
+        a.rep(imm=0x20)
+        a.txa()
+        a.op("cmp", addr=V_N13, mode="long")
+        a.sep(imm=0x20)
+        a.bcs(label=f"{pre}_end")
+        a.op("lda", dp=0x06, mode="indlongy")
+        a.cmp(imm=0xFF)
+        a.beq(label=f"{pre}_pad")
+        a.op("sta", addr=V_RAW, mode="long")  # 표 조회가 A 를 덮으므로 미리 보관한다
+        a.phx()
+        a.rep(imm=0x20)
+        a.op("and", imm=0x00FF, m16=True)
+        a.tax()
+        a.sep(imm=0x20)
+        a.op("lda", addr="lead_tab", mode="longx")
+        a.plx()
+        a.cmp(imm=0xFF)
+        a.bne(label=f"{pre}_lead")
+        a.op("lda", addr=V_RAW, mode="long")  # 🔴 선두가 아니다 — **원본 바이트**를 되찾는다
+        a.bra(label=f"{pre}_put")
+        a.label(f"{pre}_lead")
+        a.op("sta", addr=V_IDX + 1, mode="long")
+        a.iny()
+        a.op("lda", dp=0x06, mode="indlongy")
+        a.op("sta", addr=V_IDX, mode="long")
+        a.phx()
+        a.phy()
+        a.jsr(addr="alloc", mode="abs")
+        a.ply()
+        a.plx()
+        a.label(f"{pre}_put")
+        a.op("sta", addr=dest, mode="longx")
+        a.inx()
+        a.iny()
+        a.bra(label=f"{pre}_loop")
+        a.label(f"{pre}_pad")
+        a.label(f"{pre}_padloop")
+        # 남은 칸은 공백으로 — ⚠ 매번 다시 싣는다. 아래 비교의 `TXA` 가 A 를 덮어 둘째 칸부터 칸 번호가
+        # 찍혔다(A4 값 「안 함 4」, 2026-09-26 — 라벨은 데이터가 이미 공백으로 차 있어 안 드러났다)
+        a.lda(imm=0x10)
+        a.op("sta", addr=dest, mode="longx")
+        a.inx()
+        a.rep(imm=0x20)
+        a.txa()
+        a.op("cmp", addr=V_N13, mode="long")
+        a.sep(imm=0x20)
+        a.bcc(label=f"{pre}_padloop")
+        a.label(f"{pre}_end")
+        a.lda(imm=0x00)
+        a.pha()
+        a.plb()  # ⚠ 원본 MVN 처럼 DB = $00 으로 남긴다
+        a.plp()
+        a.rtl()
 
     # ── 오프닝(D1) 대본 다음 바이트 ($1E:DF44 에서 JSL, 인라인 코드를 통째로 갈아 끼운다) ──
     # `h_fetch`(위 `hook`)와 뼈대가 같다 — 다른 건 **fetch 방식뿐**이다. 인게임은 `$3F/$40`
@@ -608,6 +729,17 @@ def build_payload(
     a.bne(label="cr_loop")
     a.lda(imm=0x00)
     a.op("sta", addr=V_NEXT, mode="long")
+    # 고정 칸은 인게임(컨텍스트 0)에선 둔다 — HUD 가 계속 떠 있다. 오프닝·엔딩·스태프롤로 가면 푼다(풀 전체를 쓴다).
+    a.op("lda", addr=V_CTX, mode="long")
+    a.beq(label="cr_keep")
+    a.lda(imm=0x00)
+    a.ldx(imm=0x0000, m16=True)
+    a.label("cr_pinclr")
+    a.op("sta", addr=pin, mode="longx")
+    a.inx()
+    a.cpx(imm=nslot, m16=True)
+    a.bne(label="cr_pinclr")
+    a.label("cr_keep")
     a.rts()
 
     # ── 폰트 벌크카피 트램펄린의 착지점 — `JSL` 로 불려 `cache_reset`(근접 호출 규약)을
@@ -713,6 +845,11 @@ def build_payload(
     a.label("ac_hit")
     a.txa()
     a.op("sta", addr=V_T1, mode="long")
+    a.op("lda", addr=pin, mode="longx")  # 고정 칸은 나이와 상관없이 그대로 쓴다
+    a.beq(label="ac_unpinned")
+    a.jmp(addr="ac_fresh", mode="abs")
+    a.label("ac_unpinned")
+    a.op("lda", addr=V_T1, mode="long")
     a.op("eor", imm=0xFF)  # -slot-1
     a.clc()
     a.op("adc", addr=V_NEXT, mode="long")  # 나이 = V_NEXT - slot - 1 (음수면 한 바퀴 보정)
@@ -731,6 +868,29 @@ def build_payload(
     a.jmp(addr="al_ret", mode="abs")  # `bra` 로는 안 닿을 수 있다 — 아래 al_miss 본문이 길다
 
     a.label("al_miss")
+    a.lda(imm=nslot)
+    a.op("sta", addr=V_T0, mode="long")  # 한 바퀴 넘게 돌지 않게(전부 고정일 리는 없지만)
+    a.label("al_try")
+    a.op("lda", addr=V_NEXT, mode="long")
+    a.cmp(imm=nslot)
+    a.bcc(label="al_t0")
+    a.lda(imm=0x00)
+    a.op("sta", addr=V_NEXT, mode="long")
+    a.label("al_t0")
+    a.rep(imm=0x20)
+    a.op("and", imm=0x00FF, m16=True)
+    a.tax()
+    a.sep(imm=0x20)
+    a.op("lda", addr=pin, mode="longx")
+    a.beq(label="al_take")
+    a.op("lda", addr=V_NEXT, mode="long")
+    a.inc()
+    a.op("sta", addr=V_NEXT, mode="long")
+    a.op("lda", addr=V_T0, mode="long")
+    a.dec()
+    a.op("sta", addr=V_T0, mode="long")
+    a.bne(label="al_try")
+    a.label("al_take")
     a.op("lda", addr=V_NEXT, mode="long")
     a.cmp(imm=nslot)
     a.bcc(label="al0")
@@ -778,6 +938,12 @@ def build_payload(
     # ── 런타임 조사 (A = k) ─────────────────────────────────────────────────────────
     a.label("josa")
     a.op("sta", addr=V_T1, mode="long")
+    a.op("lda", addr=V_JB, mode="long")
+    a.cmp(imm=0xFF)
+    a.beq(label="j_glyph")
+    a.op("eor", imm=0x01)  # 1(받침 있음) → b=0 · 0(없음) → b=1
+    a.bra(label="j_e")
+    a.label("j_glyph")
     a.rep(imm=0x30)
     a.op("lda", addr=V_LAST, mode="long")
     a.op("sta", addr=V_T0, mode="long")
@@ -849,6 +1015,8 @@ def build_payload(
     a.lda(imm=0x00)
     for v in (V_HEAD, V_TAIL, V_NEXT, V_PEND_N, V_OVERFLOW):
         a.op("sta", addr=v, mode="long")
+    a.lda(imm=0xFF)
+    a.op("sta", addr=V_JB, mode="long")  # 조사: 글리프로 판정
     a.lda(imm=0xFF)  # 캐시 표 — 실제 글리프 색인(최대 $08FF)은 절대 안 되는 값으로 비운다
     a.ldx(imm=0x0000, m16=True)
     a.label("d_ownerclr")
@@ -857,6 +1025,13 @@ def build_payload(
     a.inx()
     a.cpx(imm=nslot, m16=True)
     a.bne(label="d_ownerclr")
+    a.lda(imm=0x00)
+    a.ldx(imm=0x0000, m16=True)
+    a.label("d_pinclr")
+    a.op("sta", addr=pin, mode="longx")
+    a.inx()
+    a.cpx(imm=nslot, m16=True)
+    a.bne(label="d_pinclr")
     a.lda(imm=MAGIC)
     a.op("sta", addr=V_MAGIC, mode="long")
     a.bra(label="d_end")
@@ -893,7 +1068,9 @@ def build_payload(
     # ── 글리프 한 자를 VRAM 으로 (X = 큐 칸) ────────────────────────────────────────
     a.label("upload")
     a.sep(imm=0x20)
-    a.op("lda", addr=Q_CTX, mode="longx")  # X 가 아직 **큐 칸**일 때 먼저 챙긴다(곧 슬롯 번호로 바뀐다)
+    a.op(
+        "lda", addr=Q_CTX, mode="longx"
+    )  # X 가 아직 **큐 칸**일 때 먼저 챙긴다(곧 슬롯 번호로 바뀐다)
     a.op("sta", addr=V_UCTX, mode="long")
     a.op("lda", addr=Q_SLOT, mode="longx")
     a.op("sta", addr=V_U1, mode="long")
@@ -1039,6 +1216,8 @@ def build_payload(
     a.raw(bytes(1 << i for i in range(8)))
     a.label("batchim")
     a.raw(batchim_bits(rep))
+    a.label("raw_jb")
+    a.raw(raw_jb())
     blob = a.assemble()
     if len(blob) > 0x8000:
         raise SystemExit(f"훅 뱅크가 넘친다: {len(blob):,}B")
@@ -1062,6 +1241,8 @@ def apply(
     rep: list[str | None],
     slots: list[int],
     item_table: int = 0x3E8000,
+    place_tables: tuple[int, int] | None = None,
+    spell_table: int = 0x3E8000,
 ) -> dict:
     """훅 뱅크·글리프 뱅크를 놓고 **글자가 들어오는 문 셋**을 갈아 끼운다(대본 · 사전 버퍼 · 메뉴 이름)."""
     if len(rep) > GLYPH_MAX:
@@ -1071,7 +1252,14 @@ def apply(
     if not slots:
         raise SystemExit("동적 슬롯이 하나도 없다")
     tile = tiles.code_tile(rom)
-    blob, info = build_payload(rep, slots, [tiles.vram_word(tile[c]) for c in slots], item_table)
+    blob, info = build_payload(
+        rep,
+        slots,
+        [tiles.vram_word(tile[c]) for c in slots],
+        item_table,
+        place_tables or (0x3E8000, 0x3E8000),
+        spell_table,
+    )
     o = common.snes2off((HOOK_BANK << 16) | HOOK_ORG)
     out[o : o + len(blob)] = blob
     g = glyph_bytes(rep)
@@ -1130,6 +1318,25 @@ def apply(
         blk[0:3] = bytes([0x20, NAME_TRAMPOLINE & 0xFF, (NAME_TRAMPOLINE >> 8) & 0xFF])
         blk[3:6] = bytes([0x4C, join & 0xFF, (join >> 8) & 0xFF])
         out[so : so + NAME_BLOCK] = bytes(blk)
+    # 3b. 지명 두 자리(HUD · 로드 메뉴): `LDA 표,X`~복사 루프 → `JSR 트램펄린` + `SEP #$30` + `JMP 패딩`
+    if place_tables is not None:
+        for site, join, tramp, label, head in PLACE_SITES:
+            so = common.snes2off(site)
+            if bytes(rom[so : so + 4]) != head:
+                raise SystemExit(
+                    f"지명 자리가 예상과 다르다 {common.fmt(site)}: {rom[so : so + 4].hex()}"
+                )
+            pa = (HOOK_BANK << 16) | info["labels"][label]
+            to = common.snes2off(tramp)
+            if bytes(rom[to : to + 5]) != b"\xff" * 5:
+                raise SystemExit(f"지명 트램펄린 자리가 비어 있지 않다 {common.fmt(tramp)}")
+            out[to : to + 5] = bytes([0x22, pa & 0xFF, (pa >> 8) & 0xFF, HOOK_BANK, 0x60])
+            n = join - site
+            blk = bytearray([0xEA]) * n
+            blk[0:3] = bytes([0x20, tramp & 0xFF, (tramp >> 8) & 0xFF])
+            blk[3:5] = bytes([0xE2, 0x30])
+            blk[5:8] = bytes([0x4C, join & 0xFF, (join >> 8) & 0xFF])
+            out[so : so + n] = bytes(blk)
     # 4. 고정 칸 문자열(파티 이름 · 타이틀 메뉴): **`MVN` 세 바이트만** JSR 로
     n13 = (HOOK_BANK << 16) | info["labels"]["name13"]
     t4 = common.snes2off(NAME13_TRAMPOLINE)
@@ -1147,6 +1354,18 @@ def apply(
         out[mo : mo + MVN_LEN] = bytes(
             [0x20, NAME13_TRAMPOLINE & 0xFF, (NAME13_TRAMPOLINE >> 8) & 0xFF]
         )
+    # 4b. A4 값 MVN(목적지 `$030F`) → `name13_v`
+    nv = (HOOK_BANK << 16) | info["labels"]["name13_v"]
+    tv = common.snes2off(A4V_TRAMPOLINE)
+    if bytes(rom[tv : tv + 5]) != b"\xff" * 5:
+        raise SystemExit("A4 값 트램펄린 자리가 비어 있지 않다")
+    out[tv : tv + 5] = bytes([0x22, nv & 0xFF, (nv >> 8) & 0xFF, HOOK_BANK, 0x60])
+    mo, lo = common.snes2off(A4V_MVN), common.snes2off(A4V_LDY)
+    if bytes(rom[mo : mo + 3]) != bytes([0x54, 0x00, 0x02]) or bytes(rom[lo : lo + 3]) != bytes(
+        [0xA0, 0x0F, 0x03]
+    ):
+        raise SystemExit("A4 값 MVN 자리가 예상과 다르다")
+    out[mo : mo + 3] = bytes([0x20, A4V_TRAMPOLINE & 0xFF, (A4V_TRAMPOLINE >> 8) & 0xFF])
     # 5. 오프닝(D1) 소비 지점: 인라인 6바이트 → `JSL open_fetch` + NOP×2(트램펄린이 필요 없다 —
     #    원래도 JSR 이 아니었다). `apply()` 밖(=$1E:DF41)이 이미 Y 를 채워 두므로 손 안 댄다.
     open_addr = (HOOK_BANK << 16) | info["labels"]["open_fetch"]
@@ -1163,7 +1382,9 @@ def apply(
     oa = common.snes2off(OPEN_ADVANCE_SITE)
     want_adv = bytes([0xAE, 0x83, 0x1B, 0xCA, 0x30, 0x05, 0xEE, 0x81, 0x1B, 0x80, 0xF8])
     if bytes(rom[oa : oa + OPEN_ADVANCE_LEN]) != want_adv:
-        raise SystemExit(f"오프닝 줄 끝 자리가 예상과 다르다: {rom[oa : oa + OPEN_ADVANCE_LEN].hex()}")
+        raise SystemExit(
+            f"오프닝 줄 끝 자리가 예상과 다르다: {rom[oa : oa + OPEN_ADVANCE_LEN].hex()}"
+        )
     out[oa : oa + OPEN_ADVANCE_LEN] = bytes(
         [0x22, adv_addr & 0xFF, (adv_addr >> 8) & 0xFF, HOOK_BANK] + [0xEA] * 7
     )
@@ -1171,7 +1392,9 @@ def apply(
     for site, imm, ctx in PPU_CTX_SITES:
         so = common.snes2off(site)
         if bytes(rom[so : so + 5]) != bytes([0xA9, imm, 0x8D, 0x0C, 0x21]):
-            raise SystemExit(f"PPU 배치 자리가 예상과 다르다 {common.fmt(site)}: {rom[so : so + 5].hex()}")
+            raise SystemExit(
+                f"PPU 배치 자리가 예상과 다르다 {common.fmt(site)}: {rom[so : so + 5].hex()}"
+            )
         ctx_addr = (HOOK_BANK << 16) | info["labels"]["ctx_open" if ctx else "ctx_game"]
         out[so : so + 5] = bytes([0x22, ctx_addr & 0xFF, (ctx_addr >> 8) & 0xFF, HOOK_BANK, 0xEA])
     so = common.snes2off(ENDING_CTX_SITE)
@@ -1200,7 +1423,9 @@ def apply(
     for site in FONT_CALL_SITES:
         so = common.snes2off(site)
         if bytes(rom[so : so + 3]) != bytes([0x20, 0xB3, 0xE6]):
-            raise SystemExit(f"폰트 벌크카피 호출 자리가 예상과 다르다 {common.fmt(site)}: {rom[so : so + 3].hex()}")
+            raise SystemExit(
+                f"폰트 벌크카피 호출 자리가 예상과 다르다 {common.fmt(site)}: {rom[so : so + 3].hex()}"
+            )
         out[so : so + 3] = bytes([0x20, FONT_TRAMPOLINE & 0xFF, (FONT_TRAMPOLINE >> 8) & 0xFF])
     info.pop("labels")
     info["glyph_bytes"] = len(g)
@@ -1218,7 +1443,11 @@ def patch_ranges() -> list[tuple[int, int]]:
         (common.snes2off(NAME_TRAMPOLINE), common.snes2off(NAME_TRAMPOLINE) + 5),
         (common.snes2off(NAME13_TRAMPOLINE), common.snes2off(NAME13_TRAMPOLINE) + 5),
         *[(common.snes2off(m), common.snes2off(m) + MVN_LEN) for m, _l in MVN_SITES],
+        (common.snes2off(A4V_MVN), common.snes2off(A4V_MVN) + MVN_LEN),
+        (common.snes2off(A4V_TRAMPOLINE), common.snes2off(A4V_TRAMPOLINE) + 5),
         *[(common.snes2off(s_), common.snes2off(s_) + NAME_BLOCK) for s_, _j in NAME_SITES],
+        *[(common.snes2off(s_), common.snes2off(j_)) for s_, j_, _t, _l, _h in PLACE_SITES],
+        *[(common.snes2off(t_), common.snes2off(t_) + 5) for _s, _j, t_, _l, _h in PLACE_SITES],
         (common.snes2off(NMI_CALL), common.snes2off(NMI_CALL) + 3),
         (common.snes2off(NMI_STUB), common.snes2off(NMI_STUB) + 8),
         (common.snes2off(OPEN_CALL_SITE), common.snes2off(OPEN_CALL_SITE) + OPEN_PATCH_LEN),

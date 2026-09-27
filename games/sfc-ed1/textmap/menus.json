@@ -1,6 +1,6 @@
 {
  "EPひょうじ@A0B": {
-  "kr": "EP 표시",
+  "kr": "EP표시",
   "state": "draft",
   "budget_tiles": 9,
   "width_tiles": 7,
@@ -59,7 +59,7 @@
   "canon": "shared/glossary ui"
  },
  "かいふくのじゅもん@A0C": {
-  "kr": "회복 주문",
+  "kr": "회복주문",
   "state": "ps1",
   "budget_tiles": 15,
   "width_tiles": 11,
@@ -69,7 +69,7 @@
   "canon": "shared/glossary ui"
  },
  "かいふくのアイテム@A0C": {
-  "kr": "회복 아이템",
+  "kr": "회복아이템",
   "state": "ps1",
   "budget_tiles": 15,
   "width_tiles": 11,
@@ -152,7 +152,7 @@
   "canon": "shared/glossary ui"
  },
  "すばやさ@A05": {
-  "kr": "민첩",
+  "kr": "민첩성",
   "state": "ps1",
   "budget_tiles": 9,
   "width_tiles": 6,
@@ -242,7 +242,7 @@
   "canon": "shared/glossary ui"
  },
  "たたかいのじゅもん@A0C": {
-  "kr": "전투 주문",
+  "kr": "전투주문",
   "state": "ps1",
   "budget_tiles": 15,
   "width_tiles": 11,
@@ -326,7 +326,7 @@
   "x0": 2
  },
  "オートかいふく@A0C": {
-  "kr": "자동 회복",
+  "kr": "자동회복",
   "state": "ps1",
   "budget_tiles": 15,
   "width_tiles": 9,
@@ -336,7 +336,7 @@
   "canon": "shared/glossary ui"
  },
  "オートバトル@A0C": {
-  "kr": "자동 전투",
+  "kr": "자동전투",
   "state": "ps1",
   "budget_tiles": 15,
   "width_tiles": 9,

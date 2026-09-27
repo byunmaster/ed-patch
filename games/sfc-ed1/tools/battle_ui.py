@@ -121,9 +121,78 @@ A3_SCRATCH = 0x000009  # ×5 계산용 임시 — $0006~$0008 바로 뒤, 이 �
 A3_ROWS = [
     ("레벨업", [(0x02AECD, 0x02AED2)], ["セット", "オート"]),
     ("EP표시", [(0x02AEDC, 0x02AEE1)], ["EP", "あと"]),
-    ("이동·메시지", [(0x02AEEB, 0x02AEF0), (0x02AEFA, 0x02AEFF)], ["おそい", "ふつう", "はやい", "とまる"]),
+    (
+        "이동·메시지",
+        [(0x02AEEB, 0x02AEF0), (0x02AEFA, 0x02AEFF)],
+        ["おそい", "ふつう", "はやい", "とまる"],
+    ),
 ]
 A3_STRIDE = 5  # 패치 후 스트라이드(바이트) — 한글 2음절(4B) + `$FF` 종결자(1B)
+
+
+# 🔴 A4(전투 설정) 값 — `$02:AD42` 행 분기가 `$06` 에 원본 5칸 문자열(`$02:AE3B`·`AE45`·`AE4F`, 옵션 둘씩)을
+# 넣고, 켜짐이면 `+5`(`$02:ADBC LDA #$05`) 한 뒤 `MVN` 으로 5바이트를 칸 `$030F` 에 옮긴다. 한글 2바이트 + `$FF`
+# 가 5를 넘으므로 **짝마다 우리 뱅크에 A4_STRIDE 간격으로** 굽고, 즉치 lo/hi 여섯 쌍과 보폭 즉치를 바꾼다.
+# `MVN` 은 `hook.A4V_MVN` 이 목적지 `$030F` 판 `name13_v` 로 바꾼다(2026-09-26, 라운드⑤).
+A4_ROWS = [  # (행, 즉치 lo(`LDA #`) 주소, 즉치 hi 주소, 옵션 짝 jp)
+    (0, 0x02AD64, 0x02AD69, ("しない", "する")),
+    (1, 0x02AD72, 0x02AD77, ("しない", "する")),
+    (2, 0x02AD80, 0x02AD85, ("つかわない", "つかう")),
+    (3, 0x02AD8E, 0x02AD93, ("つかわない", "つかう")),
+    (4, 0x02AD9C, 0x02ADA1, ("つかわない", "つかう")),
+    (5, 0x02ADAA, 0x02ADAF, ("こべつに", "おなじに")),
+]
+A4_STEP_SITE = 0x02ADBC  # LDA #$05 — 켜짐 옵션까지의 보폭
+A4_STRIDE = 8  # 한글 3음절(6B) + `$FF` 를 담는 보폭
+
+
+def bake_a4_values(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dict:
+    d = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    by_jp = {x["jp"]: x["kr"] for x in d["a4_values"]}
+    if bytes(rom[common.snes2off(A4_STEP_SITE) : common.snes2off(A4_STEP_SITE) + 2]) != bytes(
+        [0xA9, 0x05]
+    ):
+        raise SystemExit("A4 값 보폭 자리가 예상과 다르다")
+    cur = org
+    pairs: dict[tuple[str, str], int] = {}
+    for _row, lo, hi, pair in A4_ROWS:
+        for a in (lo, hi):
+            if rom[common.snes2off(a)] != 0xA9:
+                raise SystemExit(f"A4 값 즉치 자리가 예상과 다르다 {common.fmt(a)}")
+        if pair not in pairs:
+            pairs[pair] = cur
+            for jp in pair:
+                kr = by_jp[jp]
+                b = bytearray()
+                for ch in kr:
+                    if encode.is_glyph(ch):
+                        b += encode.glyph_code(rep_index[ch])
+                    elif ch in encode.KR_TABLE:
+                        b.append(encode.KR_TABLE[ch])
+                    else:
+                        raise SystemExit(f"A4 값에 못 넣는 글자: {ch!r}")
+                b.append(dicts.TERM)
+                if len(b) > A4_STRIDE:
+                    raise SystemExit(f"A4 값 {kr!r} 이 {A4_STRIDE}바이트를 넘는다")
+                b += bytes([dicts.TERM]) * (A4_STRIDE - len(b))
+                so = common.snes2off((dicts.BANK << 16) | cur)
+                out[so : so + A4_STRIDE] = bytes(b)
+                cur += A4_STRIDE
+        base = pairs[pair]
+        out[common.snes2off(lo) + 1] = base & 0xFF
+        out[common.snes2off(hi) + 1] = base >> 8
+    out[common.snes2off(A4_STEP_SITE) + 1] = A4_STRIDE
+    if cur > 0x10000:
+        raise SystemExit(f"사전 뱅크가 넘친다: A4 값 {cur:#x}")
+    return {"짝": len(pairs), "next": cur}
+
+
+def patch_ranges_a4() -> list[tuple[int, int]]:
+    r = [(common.snes2off(A4_STEP_SITE) + 1, common.snes2off(A4_STEP_SITE) + 2)]
+    for _row, lo, hi, _p in A4_ROWS:
+        r.append((common.snes2off(lo) + 1, common.snes2off(lo) + 2))
+        r.append((common.snes2off(hi) + 1, common.snes2off(hi) + 2))
+    return r
 
 
 def _a3_stride_patch() -> bytes:
@@ -158,7 +227,9 @@ def bake_a3_values(out: bytearray, rom: bytes, rep_index: dict[str, int], org: i
     for _row, addrs, _opts in A3_ROWS:
         for lo, hi in addrs:  # lo·hi 는 $A9(LDA #imm) **오피코드** 주소 — +1 이 피연산자다
             if rom[common.snes2off(lo)] != 0xA9 or rom[common.snes2off(hi)] != 0xA9:
-                raise SystemExit(f"A3 값 즉치 자리가 예상과 다르다 {common.fmt(lo)}/{common.fmt(hi)}")
+                raise SystemExit(
+                    f"A3 값 즉치 자리가 예상과 다르다 {common.fmt(lo)}/{common.fmt(hi)}"
+                )
     if rom[common.snes2off(A3_MVN)] != 0x54:
         raise SystemExit(f"A3 값 MVN 자리가 예상과 다르다 {common.fmt(A3_MVN)}")
 
@@ -224,7 +295,9 @@ def verify_a3_values(out: bytes, slots: list) -> dict:
             ol2, oh2 = common.snes2off(lo2), common.snes2off(hi2)
             base2 = out[ol2 + 1] | (out[oh2 + 1] << 8)
             if base2 != base:
-                bad.append(f"공유 분기 base 불일치: {common.fmt(lo)}={base:#x} ≠ {common.fmt(lo2)}={base2:#x}")
+                bad.append(
+                    f"공유 분기 base 불일치: {common.fmt(lo)}={base:#x} ≠ {common.fmt(lo2)}={base2:#x}"
+                )
     if bad:
         raise SystemExit("A3 값 되읽기 실패:\n  " + "\n  ".join(bad))
     return {"읽은 옵션": n_ok}

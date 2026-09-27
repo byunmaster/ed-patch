@@ -61,7 +61,9 @@ def encode_rows(rep_index: dict[str, int]) -> bytes:
 def bake(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dict:
     so = common.snes2off(SITE)
     if bytes(rom[so : so + len(SITE_ORIG)]) != SITE_ORIG:
-        raise SystemExit(f"크레딧 포인터 자리가 예상과 다르다: {rom[so : so + len(SITE_ORIG)].hex()}")
+        raise SystemExit(
+            f"크레딧 포인터 자리가 예상과 다르다: {rom[so : so + len(SITE_ORIG)].hex()}"
+        )
     b = encode_rows(rep_index)
     if org + len(b) > 0x10000:
         raise SystemExit(f"사전 뱅크가 넘친다: 크레딧 {org:#x}+{len(b)}")
