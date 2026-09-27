@@ -23,6 +23,8 @@ PS1 은 조립 버퍼를 1패스로 훑어 병기를 줄이는 방식이었다. 
     p 하위 니블 = 0 은/는 · 1 이/가 · 2 을/를
     EB 의 p 상위 니블 = 0 이면 위 규칙, **0 이 아니면 (상위−1) 번 파티원**을 쓴다 —
                   `<09 nn>`(번호로 이름을 그리는 코드) 뒤에 붙는 자리를 위해서다
+                  **상위 니블 = F 면 리더**(`$FF1AEC`) — `<0b>`(리더 이름) 뒤 조사. 전투의 이름 바꿈
+                  「헷갈리므로 <0b>은(는) …」(블록 71, 2026-09-27)을 위해 넣었다. 리더는 메뉴에서 바뀐다
 
 정본에선 `<02>을(를)` 대신 `<02><eb02>` 로 쓴다.
 
@@ -54,6 +56,7 @@ IDX_ACTOR, IDX_ITEM = CODE_ACTOR - 0xCB, CODE_ITEM - 0xCB  # 표 색인(디스�
 RENDER = 0x978C  # 렌더러 — a1 = 문안, d0 = 재귀 표식
 MAGIC = 0xFEDCBA98  # 이름 삽입 핸들러가 쓰는 값 그대로
 ACTOR_PTR = 0xFF3470  # 배우 레코드 포인터
+LEADER = 0xFF1AEC  # 리더의 레코드 번호 — 코드 `0B` 핸들러(`$A912`)가 이 바이트로 이름을 그린다
 PARTY_REC = 0xFF1DBC  # 레코드 배열(0x40 간격, 이름은 +0x30)
 ITEM_BUF = 0xFF2028  # 아이템 이름 버퍼
 SPELL_BUF = 0xFF3450  # 주문 이름 버퍼(EC 의 p 상위 니블 1)
@@ -131,9 +134,18 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
     w(0x0240, 0x00F0)  # andi.w #$f0,d0
     from_ptr_br = len(b)
     w(0x6700, 0)  # beq.w from_ptr       상위 니블 0 → 배우 포인터
+    w(0x0C40, 0x00F0)  # cmpi.w #$f0,d0
+    leader_br = len(b)
+    w(0x6700, 0)  # beq.w from_leader    상위 니블 F → 리더(`<0b>` 가 그리는 이름)
     w(0xE848)  # lsr.w #4,d0
     w(0x5340)  # subq.w #1,d0         (상위−1) 번 파티원
     have_idx_br = len(b)
+    w(0x6000, 0)  # bra.w have_idx
+    from_leader = len(b)
+    struct.pack_into(">h", b, leader_br + 2, from_leader - (leader_br + 2))
+    w(0x1039)
+    l(LEADER)  # move.b LEADER.l,d0
+    have_idx_br2 = len(b)
     w(0x6000, 0)  # bra.w have_idx
     from_ptr = len(b)
     struct.pack_into(">h", b, from_ptr_br + 2, from_ptr - (from_ptr_br + 2))
@@ -142,6 +154,7 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
     w(0x1010)  # move.b (a0),d0
     have_idx = len(b)
     struct.pack_into(">h", b, have_idx_br + 2, have_idx - (have_idx_br + 2))
+    struct.pack_into(">h", b, have_idx_br2 + 2, have_idx - (have_idx_br2 + 2))
     w(0x0280)
     l(0x000000FF)  # andi.l #$ff,d0
     w(0xED88)  # lsl.l #6,d0

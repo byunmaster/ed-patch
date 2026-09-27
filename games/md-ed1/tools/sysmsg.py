@@ -27,10 +27,10 @@ CODE_END = 0x40000
 LZ = [(0x085E52, 0x09D86E), (0x0CAB04, 0x0D85B4), (0x0D8814, 0x12261C), (0x1293E0, 0x134DDC)]
 MAP_JSON = common.GAME_DIR / "textmap" / "sysmsg.json"
 EXPECT = (
-    163,
-    66,
+    166,
+    68,
 )  # 스트림 · 묶음 (2026-09-06 — 워드 표 0x73bc · 고정 스트림 19 · _textlike 0x80 고침
-#     · 09-26 묶음 안 참조 3 — 0x7402·0x2ba62·0x325a6)
+#     · 09-26 묶음 안 참조 3 — 0x7402·0x2ba62·0x325a6 · 09-27 짧은 가나 조각 3 — 0x24a68·0x2b272·0x324dd)
 EXCLUDE = {0x1ED0C, 0x32E2A}  # '付近入口H鄲 $Kr' — cp932 로 우연히 풀리는 코드. 눈으로 확인해 뺀다
 
 # 워드 오프셋 표: 표 자리 → 항목 수. 코드가 `lea $73bc.l,a3` + `move.w (a3,d0.w),d0` +
@@ -53,13 +53,14 @@ PINNED = {
     0x2A9EE,  # 능력 강화 물음 둘
     0x3105F,
     0x310A2,  # 오델로 승패 대사(앞의 goto 스트림이 참조를 든다)
-    0x419B,
+    0x4195,  # 🔴 06 바로 뒤가 꼬리의 시작이다 — 0x419B 로 잡아 앞 「ﾎﾟｲﾝﾄ 」(반각 가나)가 번역 없이 남아
+    #   화면에 「최대 ＨＰ가 9999ﾎﾟｲﾝﾄ 올랐다」로 떴다(09-27). MP 꼬리(0x41B2)는 처음부터 제자리였다.
     0x75EE,
     0x760F,
     0x76BE,  # 06 뒤로 이어지는 꼬리말(あがった·が入っていました·回復した)
-    0x20209,
+    0x20202,  # 🔴 같은 부류 — 「ＥＰ 1ﾎﾟｲﾝﾄ 획득했다」(전투 승리, 09-27 인게임)
     0x24AAE,
-    0x24B0C,
+    0x24B0A,  # 🔴 「<08><0e>を持っていた」의 시작 — 0x24B0C 로 잡아 <0e> 가 스트림 밖이라 조사 훅을 못 붙였다(09-27)
     0x24B65,
     0x324BB,
     0x324C2,
@@ -119,6 +120,31 @@ def _textlike(st: scene.Stream) -> bool:
     return ascii_ <= sj and ctl <= sj + 2
 
 
+def _short_kana(st: scene.Stream) -> bool:
+    """코드가 직접 가리키는 **짧은 연결 조각**(「<02>に<06>」 · 「<0e>は<07>」) — 전각이 두 자가 안 돼 `_textlike`
+    가 거르지만 가나가 들었으면 문안이다. 🔴 셋이 번역 없이 남았다(2026-09-27): 전투 대미지 「<02>に」는
+    가나 글리프가 표 0 에 없어 **빈 칸 하나(12px)로** 그려져 「슬러그C  7035의 대미지!!」처럼 보였다 —
+    화면이 멀쩡해 보여 아무도 못 잡았다. 짧은 것만 받는다(가나 없는 자료 포인터는 여전히 걸러진다)."""
+    if st.end - st.start >= 40:
+        return False
+    for t in st.tokens:
+        if t.kind != "text":
+            continue
+        i, r = 0, t.raw
+        while i < len(r) - 1:
+            if scene.is_lead(r[i]):
+                try:
+                    ch = r[i : i + 2].decode("cp932")
+                except UnicodeDecodeError:
+                    return False
+                if "぀" <= ch <= "ヿ":
+                    return True
+                i += 2
+            else:
+                i += 1
+    return False
+
+
 def streams(d: bytes) -> dict[int, dict]:
     """주소 → {stream, refs}. 참조된 자리에서 파싱되는 문안 스트림만."""
     import tables
@@ -135,7 +161,7 @@ def streams(d: bytes) -> dict[int, dict]:
             st = scene.parse_stream(d, t)
         except (ValueError, IndexError):
             continue
-        if st.end - t > 400 or not _textlike(st):
+        if st.end - t > 400 or not (_textlike(st) or _short_kana(st)):
             continue
         out[t] = {"stream": st, "refs": rs[t]}
     for t in PINNED:
@@ -387,7 +413,9 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
             continue
         stray = [t for t in rs if lo <= t < hi and t not in newpos and t not in EXCLUDE]
         if stray:  # 다시 쓰는 묶음 안을 가리키는데 안 옮겨지는 참조 — 위 streams() 의 🔴
-            raise SystemExit(f"sysmsg {lo:#x}: 안 옮겨지는 참조 {', '.join(f'{t:#x}' for t in stray)}")
+            raise SystemExit(
+                f"sysmsg {lo:#x}: 안 옮겨지는 참조 {', '.join(f'{t:#x}' for t in stray)}"
+            )
         plans.append((lo, hi, cl, toks, order, newpos))
         allpos.update(newpos)
     if over:

@@ -64,8 +64,14 @@ def scan() -> dict:
 
     for n, (_s, b, _e) in enumerate(archives.blocks(d, archives.ARCHIVES["script"][0])):
         walk("script", list(scene.parse_module(b).streams.values()), n)
+    bmap = json.loads(battle.MAP_JSON.read_text(encoding="utf-8"))
     for n, (_s, b, _e) in enumerate(battle.blocks(d)):
-        walk("battle", [e["stream"] for e in battle.refs(b).values()], n)
+        sts = []
+        for tgt, e in battle.refs(b).items():
+            st = e["stream"]
+            ent = bmap.get(battle.pos_key(st, n, tgt)) or bmap.get(battle.jp_key(st)) or {}
+            sts.append(battle.drop_goto(st, ent.get("ours") or ""))  # 재삽입과 같은 판단
+        walk("battle", sts, n)
     return {
         "refs": refs,
         "midtext": sorted(midtext),

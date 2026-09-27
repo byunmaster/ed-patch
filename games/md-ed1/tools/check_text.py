@@ -42,6 +42,13 @@ TERM_EXCEPTIONS = {
     "ダイヤの杖": "아이템 칸 14B — PS1 「다이아의 지팡이」는 15B",
     "ギルモアの虹": "아이템 칸 14B — PS1 「길모아의 무지개」는 15B",
 }
+# 판정 대기 — 표기가 갈린 걸 **알고** 마스터 판정을 기다리는 자리. 실패로 치지 않고 목록만 보인다.
+# 🔴 실패로 두면 `check.sh`(set -e)가 **여기서 멈춰 뒤 검사가 통째로 안 돈다** — 2026-09-16~27 실제로
+# 조판 지문·남은 일본어·빌드 게이트가 열하루 동안 안 돌았다(09-27 발견). 판정이 나면 여기서 뺀다.
+PENDING = {
+    "買いたい": "상점 선택지 — status 「마스터 판정 대기」 3(영업 도구점 화면 미확인)",
+    "売りたい": "상점 선택지 — 같은 판정",
+}
 MAPS = {
     "names": "textmap/names.json",
     "monsters": "textmap/monsters.json",
@@ -101,7 +108,7 @@ def main(verbose: bool = False) -> None:
     canon = _ps1_canon()
     mp = common.GAME_DIR / "textmap" / "monsters.json"
     monsters = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}
-    leaks, puncts, terms = [], [], []
+    leaks, puncts, terms, pending = [], [], [], []
     done = {}
     for src, key, jp, ours in ents:
         tot, fill = done.setdefault(src, [0, 0])
@@ -131,10 +138,14 @@ def main(verbose: bool = False) -> None:
         if jp:
             want = canon.get(unicodedata.normalize("NFKC", jp).replace(" ", ""))
             if want and want != ours and jp not in TERM_EXCEPTIONS:
-                terms.append(f"{src}[{key}] {jp}: {ours!r} ≠ 정본 {want!r}")
+                msg = f"{src}[{key}] {jp}: {ours!r} ≠ 정본 {want!r}"
+                (pending if jp in PENDING else terms).append(msg)
     print(
         f"  문안 검사 — 항목 {len(ents)} · 원문 잔존 {len(leaks)} · 부호 {len(puncts)} · 표기 {len(terms)}"
+        f" · 판정 대기 {len(pending)}"
     )
+    for p in pending:
+        print("    ⏸ " + p)
     if verbose:
         for src, (tot, fill) in sorted(done.items()):
             print(f"     {src:22s} {fill}/{tot}")
