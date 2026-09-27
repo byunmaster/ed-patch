@@ -318,6 +318,32 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
         p.append(("name JMP $93A3", *_main(0x6D, 0x13A3), b"\x4c\x60\xe0", b"\x4c" + tgt))
         p.append(("JSR 6C+0F5A", *_main(0x6C, 0x0F5A), b"\x20\x60\xe0", b"\x20" + tgt))
         p.append(("JSR 78+0932", *_main(0x78, 0x0932), b"\x20\x60\xe0", b"\x20" + tgt))
+        # 5. 로그 자동 개행 품질(①③) — 세 JSR 호출 대상을 우리 스텁으로 돌린다(원본 바이트 수 그대로,
+        #    `hook.hook_wrap_fix()` 참조). $6D9C·$6723·$6730 은 전부 뱅크 0x6C(오프셋 = 논리주소−$6000).
+        p.append(
+            (
+                "wrap orphan JSR $6D9C",
+                *_main(0x6C, 0x0D9C),
+                b"\x20\xb5\x6a",
+                b"\x20" + hook.ORPHAN_ADDR.to_bytes(2, "little"),
+            )
+        )
+        p.append(
+            (
+                "wrap mark JSR $6723",
+                *_main(0x6C, 0x0723),
+                b"\x20\xb9\x6a",
+                b"\x20" + hook.MARK_ADDR.to_bytes(2, "little"),
+            )
+        )
+        p.append(
+            (
+                "wrap eat JSR $6730",
+                *_main(0x6C, 0x0730),
+                b"\x20\x8a\x6d",
+                b"\x20" + hook.EAT_ADDR.to_bytes(2, "little"),
+            )
+        )
     return p
 
 
