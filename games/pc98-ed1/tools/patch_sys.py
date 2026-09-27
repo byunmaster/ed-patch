@@ -138,7 +138,15 @@ def plan() -> tuple[dict[str, list], dict]:
                 if flat[o + n : o + n + len(tail)] != tail:
                     raise SystemExit(f"🔴 {key}: 꼬리가 {v['tail']} 이 아니다")
                 n += len(tail)
-            core = patch_scn.encode(v["t"])
+            # 🔴 **좁은 출력기(8px) 전용 인코딩** — 필드 HUD 접미사(`근처`/`입구`)는 대사창의
+            #    전역 음절표가 아니라 `patch_hud_narrow` 의 전용 구를 쓴다(그 경로 말고 아무도
+            #    이 바이트를 안 읽으므로 겹칠 상대가 없다 — `encode`:"narrow" 로 표시).
+            if v.get("encode") == "narrow":
+                import patch_hud_narrow
+
+                core = patch_hud_narrow.encode_suffix(v["t"])
+            else:
+                core = patch_scn.encode(v["t"])
             # ── 조각 이주 — 문안이 자리보다 길면 **조각째 옮기고 가리키는 곳을 고친다.**
             #    메시지는 `10 <조각 주소 2B>` 로 조각을 부른다(`0e …문안… 06` 꼴). 새 조각은
             #    원래 머리(`frag`~문안 앞) + 우리 문안 + 원래 종결자 1B 로 짓는다.
