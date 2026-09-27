@@ -93,6 +93,9 @@ HALF_PUNCT = set(".,!?")
 
 # 2칸(16×16) 글리프로 가는 기호 — 반각 8px 글리프가 없는 것들. 글꼴(Neo둥근모)에서 굽는다.
 GLYPH_SYMBOLS = set("…~()·『』【】〜―")
+# 스태프롤 「J.D.K.」 — J·K 는 반각 영문 표에 없고, D 는 표에 있지만 시트의 굵은 D 라 J·K 와 굵기가
+# 갈린다(마스터 지적 2026-09-26). 셋 다 글꼴 글리프로 굽는다 — 대사 인코더는 D 를 계속 표로 쓴다.
+CREDIT_GLYPHS = set("JDK")
 
 
 def is_glyph(ch: str) -> bool:
@@ -109,7 +112,7 @@ def bad_index(i: int) -> bool:
 def repertoire(texts) -> list[str | None]:
     """번역문의 글자를 코드포인트순으로 늘어놓은 **자리 목록**(= 글리프 색인, 결정적).
     쓸 수 없는 색인은 `None` 으로 비워 둔다 — 자리와 색인이 1:1 이어야 표가 단순해진다."""
-    chars = sorted({ch for t in texts for ch in t if is_glyph(ch)})
+    chars = sorted({ch for t in texts for ch in t if is_glyph(ch) or ch in CREDIT_GLYPHS})
     slots: list[str | None] = []
     for ch in chars:
         while bad_index(len(slots)):

@@ -82,9 +82,22 @@ def body_items(rom: bytes) -> list[script.Item]:
     )
 
 
+def table_targets(rom: bytes) -> set[int]:
+    """메시지 포인터 표 넷이 가리키는 원문 오프셋 전부."""
+    out: set[int] = set()
+    for addr, count in text.MSG_TABLES.values():
+        base = common.snes2off(addr)
+        for i in range(count):
+            p = rom[base + 3 * i] | (rom[base + 3 * i + 1] << 8) | (rom[base + 3 * i + 2] << 16)
+            out.add(common.snes2off(p))
+    return out
+
+
 def rewrite_tables(out: bytearray, place: dict[int, int], rom: bytes) -> int:
     n = 0
-    for addr, count in text.MSG_TABLES.values():
+    lost = []
+    body = range(common.snes2off(BODY[0]), common.snes2off(BODY[1]))
+    for name, (addr, count) in text.MSG_TABLES.items():
         base = common.snes2off(addr)
         for i in range(count):
             p = rom[base + 3 * i] | (rom[base + 3 * i + 1] << 8) | (rom[base + 3 * i + 2] << 16)
@@ -94,6 +107,12 @@ def rewrite_tables(out: bytearray, place: dict[int, int], rom: bytes) -> int:
                     3, "little"
                 )
                 n += 1
+            elif off in body:
+                lost.append(f"{name}[{i}] → {common.fmt(p)}")
+    # 🔴 본체 안을 가리키는데 새 자리가 없으면 **조용히 두지 않는다** — 본체를 `$FF` 로 비운 뒤라
+    #    그 칸은 `FFFFFF` 가 되고, 화면에선 그 메시지만 통째로 빈다(엔딩 클로즈업 실측 2026-09-26).
+    if lost:
+        raise SystemExit(f"새 자리를 못 찾은 표 항목 {len(lost)}건: {lost[:8]}")
     return n
 
 
@@ -615,6 +634,12 @@ def mutable_ranges() -> list[tuple[int, int]]:
     r += dicts.patch_ranges()
     r += battle_ui.patch_ranges()
     r += battle_ui.patch_ranges_a3()
+    import credits
+
+    b = common.snes2off(credits.SITE)  # 스태프롤 포인터(주소 워드 · 뱅크)
+    r.append((b, b + len(credits.SITE_ORIG)))
+    b = common.snes2off(credits.LEN_SITE)  # 스태프롤 끝 판정(읽은 바이트 수)
+    r.append((b, b + 3))
     sheet = common.snes2off(text.FONT_SHEET)
     import tiles  # 상주 글리프를 구울 수 있는 자리 전부(실제로 구운 것은 그 부분집합이다)
 
@@ -810,6 +835,9 @@ def kr_items(
     for key in ("title", "speed", "yesno", "loose", "names"):
         texts += [x["kr"] for x in bmap.get(key, [])]
     texts += [c["kr"] for g in bmap.get("grid", []) for c in g["cols"]]
+    import credits
+
+    texts += credits.texts()  # 엔딩 스태프롤 — 표 밖 문안이라 여기서 따로 넣는다
     texts.append(
         hook.josa_chars()
     )  # 런타임 조사 16형태 — 훅이 색인으로 집는다(문안에 없어도 필요하다)
@@ -828,6 +856,11 @@ def kr_items(
         "errors": [],
     }
     targets_all = {t for it in items for t in it.targets}
+    # 🔴 **포인터 표 항목도 목표다**(2026-09-26 — 엔딩 세리오스 클로즈업이 통째로 빈 화면이었다).
+    #    alt3 재진입점 17번(`$0B:F0CA`)은 조각 `$0B:F0A0` 의 `<FF>` 바로 뒤를 가리킨다. 분기 목표만
+    #    이어 주고 표 목표를 빼 두었더니 새 자리를 못 찾아 `rewrite_tables` 가 조용히 건너뛰었고,
+    #    본체를 `$FF` 로 비운 뒤라 그 칸에 `FFFFFF` 가 남았다(엔진이 `$FF:FFFE` 부터 읽어 빈 페이지).
+    targets_all |= table_targets(rom)
     fake_off = -1
     for si, (sid, a, e) in enumerate(slices):
         seg = items[a:e]
@@ -1233,6 +1266,9 @@ def build_kr(
         dk["전투 UI"] = bu
         a3 = battle_ui.bake_a3_values(out, rom, _idx, bu["next"])  # 그 뒤에 이어 놓는다
         dk["A3 값"] = a3
+        import credits
+
+        dk["크레딧"] = credits.bake(out, rom, _idx, a3["next"])  # 그 뒤에 이어 놓는다
         led.snap(out, "사전·전투 UI 이관")
         hk = hook.apply(
             out,

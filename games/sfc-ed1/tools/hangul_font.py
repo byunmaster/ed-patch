@@ -65,7 +65,24 @@ def load_font():
     return ("bdf", BdfFont(str(FONT)), spec["dy"])
 
 
+def _ellipsis_low() -> list[int]:
+    """한국식 말줄임표 — 점 셋을 **마침표 높이**(12행)에. 글꼴의 「…」는 일본식으로 글자 가운데(8행)에
+    떠 있다(마스터 폰 실기 지적 2026-09-26). 반각 8칸 전용."""
+    rows = [0] * CELL
+    rows[12] = 0b01010100 << (CELL_W - 8)
+    return rows
+
+
+GLYPH_OVERRIDES = {"…": _ellipsis_low}
+
+
 def render(ch: str, font) -> list[int]:
+    if ch in GLYPH_OVERRIDES and CELL_W == 8:
+        return GLYPH_OVERRIDES[ch]()
+    return _render(ch, font)
+
+
+def _render(ch: str, font) -> list[int]:
     """16행 × `CELL_W` 비트(MSB 왼쪽). 반각이면 8비트(1bpp 16B) · 전각이면 16비트(32B).
     ⚠ **창은 늘 16×16 으로 떠서 잰다** — 글꼴 이름의 px 는 잉크가 시작하는 행이 아니라서
     창을 글꼴 크기로 잡으면 받침이 조용히 잘린다(2026-09-06 목업에서 두 번째로 밟았다)."""

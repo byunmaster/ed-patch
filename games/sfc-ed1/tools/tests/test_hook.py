@@ -115,6 +115,7 @@ ENTRY = {
     "open_advance": (True, True, "far"),  # 오프닝 줄 끝(`$1E:E0BB`) — 줄 시작 커서를 소비한 바이트로
     "ctx_game": (True, True, "far"),  # PPU 배치 자리(`$00:8082`·`$826C`) — 인게임 컨텍스트
     "ctx_open": (True, True, "far"),  # PPU 배치 자리(`$00:8294`) — 오프닝 컨텍스트(BG3 `$3000`)
+    "ctx_open_x": (False, True, "far"),  # 엔딩 PPU 배치(`$1E:EAA8`, STX) — A 16비트로 들어온다
 }
 
 

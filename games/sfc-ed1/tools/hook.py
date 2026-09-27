@@ -132,8 +132,16 @@ PPU_CTX_SITES = [  # (`LDA #imm / STA $210C` 5B 자리, 즉치, 컨텍스트) �
     (0x008294, 0x03, 1),
 ]
 PPU_BG34NBA = 0x00210C
+# 넷째 자리 — **엔딩** 화면 초기화(`$1E:EA94~` 가 BG 레지스터를 X 로 줄줄이 쓴다). 즉치 `LDA/STA`
+# 가 아니라 `LDX #$03 / STX $210C` 라 09-20 의 「세 자리」 전수 검색에서 빠졌다(롬 전체 `$210C`
+# 쓰기는 이 넷이 전부 — 09-26 재전수). 여기선 A 가 16비트이고 원본은 A 를 안 건드리므로
+# A 를 보존하는 변종 `ctx_open_x` 를 부른다. 안 걸면 엔딩 전 구간이 가나로 깨진다(마스터 실기).
+ENDING_CTX_SITE = 0x1EEAA8
+ENDING_CTX_ORIG = bytes([0xA2, 0x03, 0x8E, 0x0C, 0x21])
 OPEN_ADVANCE_SITE = 0x1EE0BB  # LDX $1B83 / DEX / BMI +5 / INC $1B81 / BRA -8 (11B) → JSL open_advance + NOP×7
 OPEN_ADVANCE_LEN = 11
+CREDITS_VRAM_DELTA = 0  # 스태프롤 — 글자는 BG1(글자 베이스 워드 $1000, 인게임과 같은 자리)에 찍힌다(2026-09-26 실기).
+# 인게임(0)과 다른 건 **배경 투명**뿐이다(맵 위 검은 칸에 뜬다) — 그래서 컨텍스트를 따로 둔다.
 OPEN_VRAM_DELTA = 0x2000  # 오프닝 패턴 베이스 워드 $3000 — **확정됨**(09-17(6), 화면을
 # 확정 번역과 줄 단위 대조해 구조가 완전히 일치함을 확인했다). 09-16(2)·09-17(5)의 "베이스가
 # 틀렸다"는 전제는 오진이었다 — 다시 건드리지 않는다. 진짜 범인은 아래 `FONT_*`(09-17(6)(7)).
@@ -166,7 +174,7 @@ V_N13 = VAR + 24  # 워드: 고정 칸 문자열의 칸 수(호출자가 A 에 �
 #    안 그러면 공백·숫자 자리에 표의 `$FF` 가 들어가 **칸이 깨진다**(2026-09-07 타이틀 메뉴에서 드러났다).
 V_RAW = VAR + 26  # 방금 읽은 원본 바이트
 V_OVERFLOW = VAR + 23  # 슬롯 풀이 한 바퀴 다 돌아 재사용됐다(= 그 사이 화면에 남은 글자가 덮일 수 있다)
-V_CTX = VAR + 27  # 다음 alloc() 큐잉의 컨텍스트(0=인게임 워드 $1000 · 1=오프닝 워드 $3000)
+V_CTX = VAR + 27  # 다음 alloc() 큐잉의 컨텍스트(0=인게임 워드 $1000 · 1=오프닝·엔딩 워드 $3000 · 2=스태프롤 워드 $1000·투명)
 V_UCTX = VAR + 28  # NMI: upload 중 큐 항목의 컨텍스트 사본
 V_OCUR = VAR + 30  # 워드: 오프닝 — 훅이 실제로 소비한 바이트 커서(`$1B44` 사본, `open_advance` 가 읽는다)
 V_U0 = VAR + 18  # 워드: NMI 임시(글리프 색인)
@@ -491,8 +499,15 @@ def build_payload(
     a.lda(imm=HOOK_BANK)
     a.pha()
     a.plb()
-    a.lda(imm=0x01)
-    a.op("sta", addr=V_CTX, mode="long")  # 오프닝 컨텍스트 — 글리프는 워드 $3000 에 올라간다
+    # 크롤은 오프닝·엔딩(`$210C=$03`, 컨텍스트 1 → 워드 $3000)과 **스태프롤**(`$210C=$22`, 인게임
+    # 배치 그대로 — 글자는 BG1, 베이스 워드 $1000)에서 돈다. 인게임 배치(0)에서 크롤이 돌면 스태프롤이다
+    # ⇒ 컨텍스트 2. 예전엔 여기서 늘 1 로 박아 스태프롤 글리프가 $3000 으로 가 가나가 보였다(2026-09-26).
+    a.op("lda", addr=V_CTX, mode="long")
+    a.bne(label="o_ctx_ok")
+    a.lda(imm=0x02)
+    a.op("sta", addr=V_CTX, mode="long")
+    a.jsr(addr="cache_reset", mode="abs")  # 다른 베이스에 올린 글리프를 「있음」으로 치지 않게
+    a.label("o_ctx_ok")
     a.op("lda", addr=V_PEND_N, mode="long")
     a.beq(label="o_fetch")
     a.op("lda", addr=V_PEND + 0, mode="long")
@@ -618,13 +633,45 @@ def build_payload(
 
     # ── PPU 배치 자리(`$00:8082` 류) — 원본의 `LDA #imm / STA $210C` 를 대신하고 컨텍스트를 세운다.
     #    호출부는 A 8비트(직전이 `LDA #$0C / STA $210A`). 뱅크 $00 코드지만 DBR 에 안 기댄다.
+    #    🔴 컨텍스트가 **바뀌면 글리프 캐시를 비운다** — 캐시는 글리프 색인만 보고 베이스는 안 본다.
+    #    안 비우면 $3000 에 올린 글리프가 $2000 화면에서 「이미 있음」으로 히트해 가나가 보인다.
     for name, imm, ctx in (("ctx_game", 0x22, 0), ("ctx_open", 0x03, 1)):
         a.label(name)
+        a.php()
+        a.sep(imm=0x20)
+        a.rep(imm=0x10)
+        a.phx()
         a.lda(imm=imm)
         a.op("sta", addr=PPU_BG34NBA, mode="long")
         a.lda(imm=ctx)
+        a.op("cmp", addr=V_CTX, mode="long")
+        a.beq(label=f"{name}_same")
         a.op("sta", addr=V_CTX, mode="long")
+        a.jsr(addr="cache_reset", mode="abs")
+        a.label(f"{name}_same")
+        a.plx()
+        a.plp()
+        a.sep(imm=0x20)  # 호출부는 A 8비트 — 원본처럼 A = 즉치로 돌려준다
+        a.lda(imm=imm)
         a.rtl()
+    a.label("ctx_open_x")
+    a.op("php")
+    a.sep(imm=0x20)
+    a.rep(imm=0x10)
+    a.op("pha")
+    a.phx()
+    a.lda(imm=0x03)
+    a.op("sta", addr=PPU_BG34NBA, mode="long")
+    a.lda(imm=1)
+    a.op("cmp", addr=V_CTX, mode="long")
+    a.beq(label="ctx_open_x_same")
+    a.op("sta", addr=V_CTX, mode="long")
+    a.jsr(addr="cache_reset", mode="abs")
+    a.label("ctx_open_x_same")
+    a.plx()
+    a.op("pla")
+    a.op("plp")
+    a.rtl()
 
     # ── 대본 다음 바이트 (원본 $02:E784 과 같은 동작) ────────────────────────────────
     a.label("fetch")
@@ -861,6 +908,14 @@ def build_payload(
     a.sep(imm=0x20)
     a.op("lda", addr=V_UCTX, mode="long")
     a.beq(label="u_ig")
+    a.op("cmp", imm=0x02)
+    a.bne(label="u_op")
+    a.op("lda", addr="slot_cvlo", mode="absx")  # 스태프롤 — 패턴 베이스 워드 $1000(배경 투명)
+    a.op("sta", addr=V_UV, mode="long")
+    a.op("lda", addr="slot_cvhi", mode="absx")
+    a.op("sta", addr=V_UV + 1, mode="long")
+    a.bra(label="u_vd")
+    a.label("u_op")
     a.op("lda", addr="slot_ovlo", mode="absx")  # 오프닝 — 패턴 베이스 워드 $3000
     a.op("sta", addr=V_UV, mode="long")
     a.op("lda", addr="slot_ovhi", mode="absx")
@@ -966,6 +1021,11 @@ def build_payload(
     a.raw(bytes(v & 0xFF for v in ovram))
     a.label("slot_ovhi")
     a.raw(bytes(v >> 8 for v in ovram))
+    cvram = [v + CREDITS_VRAM_DELTA for v in vram]  # 스태프롤 패턴 베이스(워드 $1000)
+    a.label("slot_cvlo")
+    a.raw(bytes(v & 0xFF for v in cvram))
+    a.label("slot_cvhi")
+    a.raw(bytes(v >> 8 for v in cvram))
     rows = josa_rows()
     a.label("josa_len")
     a.raw(bytes(n for n, _s in rows))
@@ -1114,6 +1174,11 @@ def apply(
             raise SystemExit(f"PPU 배치 자리가 예상과 다르다 {common.fmt(site)}: {rom[so : so + 5].hex()}")
         ctx_addr = (HOOK_BANK << 16) | info["labels"]["ctx_open" if ctx else "ctx_game"]
         out[so : so + 5] = bytes([0x22, ctx_addr & 0xFF, (ctx_addr >> 8) & 0xFF, HOOK_BANK, 0xEA])
+    so = common.snes2off(ENDING_CTX_SITE)
+    if bytes(rom[so : so + 5]) != ENDING_CTX_ORIG:
+        raise SystemExit(f"엔딩 PPU 배치 자리가 예상과 다르다: {rom[so : so + 5].hex()}")
+    ctx_addr = (HOOK_BANK << 16) | info["labels"]["ctx_open_x"]
+    out[so : so + 5] = bytes([0x22, ctx_addr & 0xFF, (ctx_addr >> 8) & 0xFF, HOOK_BANK, 0xEA])
     # 6. 폰트 벌크카피 세 자리: `JSR $E6B3` → `JSR <뱅크 $1E 트램펄린>`(같은 3바이트).
     #    트램펄린은 원 호출을 그대로 하고 `JSL font_reset` 으로 오너 표를 비운 뒤 돌아온다.
     reset_addr = (HOOK_BANK << 16) | info["labels"]["font_reset"]
@@ -1159,6 +1224,7 @@ def patch_ranges() -> list[tuple[int, int]]:
         (common.snes2off(OPEN_CALL_SITE), common.snes2off(OPEN_CALL_SITE) + OPEN_PATCH_LEN),
         (common.snes2off(OPEN_ADVANCE_SITE), common.snes2off(OPEN_ADVANCE_SITE) + OPEN_ADVANCE_LEN),
         *[(common.snes2off(s_), common.snes2off(s_) + 5) for s_, _i, _c in PPU_CTX_SITES],
+        (common.snes2off(ENDING_CTX_SITE), common.snes2off(ENDING_CTX_SITE) + 5),
         *[(common.snes2off(s_), common.snes2off(s_) + 3) for s_ in FONT_CALL_SITES],
         (common.snes2off(FONT_TRAMPOLINE), common.snes2off(FONT_TRAMPOLINE) + 8),
     ]
