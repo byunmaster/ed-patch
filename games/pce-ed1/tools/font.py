@@ -151,12 +151,22 @@ def josa_code(pair: str) -> bytes:
     return bytes([JOSA_LEAD, TRAIL0 + JOSA_PAIRS.index(pair)])
 
 
+# 숫자를 읽는 소리 — 받침은 이 음절로 가른다(0 = 영). 영문·부호는 무받침(비트 0).
+DIGIT_READING = dict(zip("0123456789", "영일이삼사오육칠팔구", strict=True))
+
+
 def batchim_tables(order: list[str]) -> tuple[bytes, bytes]:
     """글리프 순서 → (받침 비트맵, ㄹ받침 비트맵) 각 128B. 비트 1 = 받침 있음."""
     has = bytearray(MAX_GLYPHS // 8)
     rieul = bytearray(MAX_GLYPHS // 8)
     for i, ch in enumerate(order):
-        if "가" <= ch <= "힣":
+        if ch in DIGIT_READING:  # 끝 숫자는 읽는 소리대로(마스터 09-26): 레스1을 · 레스2를
+            f = (ord(DIGIT_READING[ch]) - 0xAC00) % 28
+            if f:
+                has[i >> 3] |= 1 << (i & 7)
+                if f == 8:
+                    rieul[i >> 3] |= 1 << (i & 7)
+        elif "가" <= ch <= "힣":
             f = (ord(ch) - 0xAC00) % 28
             if f:
                 has[i >> 3] |= 1 << (i & 7)

@@ -29,6 +29,7 @@ RIEUL_ADDR = HOOK_ADDR + 0x220  # ㄹ받침 비트맵 128B
 PAYLOAD_LEN = 0x300  # 루틴 + 조사표 + 비트맵 둘 — 스텁이 통째로 옮긴다
 #   ⚠ 이 값을 안 맞추면 **뒤쪽 표만 안 옮겨져** 리드 F1 대역 글자가 조용히 다른 글자로 나온다(실측)
 LAST_ADDR = HOOK_ADDR + 0x2A0  # 직전 글자 코드 2B(리드·트레일)
+EXT_ADDR = HOOK_ADDR + 0x2A2  # 확장 블록(~+0x2FF, 94B) — 주 루틴 자리(384B)가 꽉 차 여기로 넘긴다
 BITCNT_ADDR = 0x3DA2  # 비트 위치 임시
 HASBAT_ADDR = 0x3DA3  # 받침 판정 임시
 # ⚠ 임시값은 워크 RAM 에 둔다 — 게임 ZP 를 빌리면 어느 자리가 비는지 증명해야 한다($EC~$EE 는
@@ -158,11 +159,17 @@ class Asm:
 
 
 def hook_routine() -> bytes:
+    b = _main_asm().bytes()
+    assert len(b) <= JOSA_OFF_ADDR - HOOK_ADDR, len(b)
+    return b + b"\0" * (JOSA_OFF_ADDR - HOOK_ADDR - len(b))
+
+
+def _main_asm() -> "Asm":
     """EX_GETFNT 대체 — 우리 코드면 글리프를 내고, 조사 코드면 **직전 글자의 받침**으로 고른다.
 
     · 리드 < F0 또는 > F9 → `JMP $E060`(BIOS)
     · 리드 F9 → 조사: 종류 k = 트레일−0x24, 직전 글자(LAST)가 우리 코드면 받침 비트맵 조회,
-      아니면 받침 있음으로 본다(숫자·일본어 뒤). `으로/로` 는 ㄹ 비트맵을 한 번 더 본다.
+      아니면 받침 없음으로 본다(원문 전각 숫자·영문·부호 뒤 — 기종 간 규칙 09-26). `으로/로` 는 ㄹ 비트맵을 한 번 더 본다.
     · 그 밖(F0~F8) → 글리프 인덱스 계산 후 복사하고 **LAST 를 갱신**한다.
     """
     a = Asm(HOOK_ADDR)
@@ -172,7 +179,7 @@ def hook_routine() -> bytes:
     a.op("CMP", "imm", font.JOSA_LEAD + 1)
     a.op("BCC", "rel", "ours")
     a.label("bios")
-    a.op("JMP", "abs", 0xE060)  # 우리 범위 밖 — BIOS 그대로(_dh 는 호출부가 이미 세웠다)
+    a.op("JMP", "abs", EXT_ADDR)  # 우리 범위 밖 — LAST 를 적고 BIOS 로(`hook_ext`)
     a.label("ours")
     a.op("PHP")
     a.op("SEI")
@@ -265,13 +272,13 @@ def hook_routine() -> bytes:
     a.label("josa")
     a.op("LDA", "abs", LAST_ADDR)  # 직전 리드
     a.op("CMP", "imm", font.LEAD0)
-    a.op("BCC", "rel", "assume_batchim")  # 우리 글자가 아니면(숫자·일본어) 받침 있음으로 본다
+    # 우리 글자가 아니면(원문 SJIS — 게임이 붙이는 전각 숫자·영문·부호) `hook_ext` 가 가른다:
+    # 전각 숫자는 **읽는 소리대로**, 나머지는 무받침(기종 간 규칙, 마스터 09-26).
+    a.op("BCC", "rel", "not_ours")
     a.op("CMP", "imm", font.JOSA_LEAD)
     a.op("BCC", "rel", "calc")
-    a.label("assume_batchim")
-    a.op("LDA", "imm", 1)
-    a.op("STA", "abs", HASBAT_ADDR)
-    a.op("BRA", "rel", "decide")
+    a.label("not_ours")
+    a.op("JMP", "abs", EXT_ADDR + EXT_JOSA_OFF)
     a.label("calc")
     # 인덱스 = (리드−F0)×220 + (트레일−0x24) → $EC/$ED
     a.op("SEC")
@@ -339,9 +346,80 @@ def hook_routine() -> bytes:
     a.data(bytes((i * font.PER_LEAD) & 0xFF for i in range(10)))
     a.label("idx_hi")
     a.data(bytes((i * font.PER_LEAD) >> 8 & 0xFF for i in range(10)))
+    a.bytes()  # 분기 거리 검산
+    return a
+
+
+EXT_JOSA_OFF = 15  # hook_ext 안 조사 판정 입구(ext_bios 15B 뒤)
+# 전각 숫자 ０~９ 를 읽은 소리: 0 무받침 · 1 받침 · 2 받침+ㄹ — 영일이삼사오육칠팔구
+DIGIT_KIND = bytes((1, 2, 0, 1, 0, 0, 1, 2, 2, 0))
+
+
+def hook_ext() -> bytes:
+    """확장 블록(EXT_ADDR~, 94B) — 주 루틴 자리가 꽉 차 여기로 뺐다.
+
+    · ext_bios: BIOS 로 가는 글자도 **LAST 에 적는다** — 안 적으면 「레스１」(게임이 붙이는 SJIS 전각 숫자)
+      뒤 조사가 **숫자 앞 한글**(「스」)을 보고 골라 「레스1를」이 됐다(마스터 규칙 09-26, 화면 실측).
+    · ext_josa: LAST 가 우리 글자가 아닐 때 — SJIS 전각 숫자(82 4F~82 58)면 읽는 소리대로, 나머지는 무받침.
+      `으로/로`(종류 4)는 ㄹ받침(1·7·8)이면 「로」.
+    """
+    decide = _main_asm().labels["decide"]
+    a = Asm(EXT_ADDR)
+    a.label("ext_bios")
+    a.op("LDA", "zp", 0xF9)
+    a.op("STA", "abs", LAST_ADDR)
+    a.op("LDA", "zp", 0xF8)
+    a.op("STA", "abs", LAST_ADDR + 1)
+    a.op("LDA", "zp", 0xF9)  # A 를 들어올 때 값으로
+    a.op("JMP", "abs", 0xE060)
+    assert a.pc - EXT_ADDR == EXT_JOSA_OFF, a.pc - EXT_ADDR
+    a.label("ext_josa")
+    a.op("LDA", "abs", LAST_ADDR)
+    a.op("CMP", "imm", 0x82)
+    a.op("BNE", "rel", "plain")
+    a.op("LDA", "abs", LAST_ADDR + 1)
+    a.op("SEC")
+    a.op("SBC", "imm", 0x4F)
+    a.op("CMP", "imm", 10)
+    a.op("BCS", "rel", "plain")
+    a.op("TAX")
+    a.op("LDA", "absx", "digit_kind")
+    a.op("BEQ", "rel", "plain")
+    a.op("CMP", "imm", 2)
+    a.op("BNE", "rel", "has")
+    a.op("LDA", "zp", 0xF8)  # ㄹ받침 — `으로/로` 면 무받침 쪽(로)
+    a.op("SEC")
+    a.op("SBC", "imm", font.TRAIL0)
+    a.op("CMP", "imm", 4)
+    a.op("BEQ", "rel", "plain")
+    a.label("has")
+    a.op("LDA", "imm", 1)
+    a.op("STA", "abs", HASBAT_ADDR)
+    a.op("JMP", "abs", decide)
+    a.label("plain")
+    a.op("STZ", "abs", HASBAT_ADDR)
+    a.op("JMP", "abs", decide)
+    a.label("digit_kind")
+    a.data(DIGIT_KIND)
     b = a.bytes()
-    assert len(b) <= JOSA_OFF_ADDR - HOOK_ADDR, len(b)
-    return b + b"\0" * (JOSA_OFF_ADDR - HOOK_ADDR - len(b))
+    assert len(b) <= HOOK_ADDR + PAYLOAD_LEN - EXT_ADDR, len(b)
+    return b
+
+
+def payload(table) -> bytes:
+    """스텁이 통째로 옮기는 768B — 루틴 · 조사표 · 받침 비트맵 둘 · LAST · 확장 블록."""
+    p = bytearray(hook_routine())
+    p += font.josa_offsets(table)
+    p += b"\0" * (BATCHIM_ADDR - HOOK_ADDR - len(p))
+    has, rieul = font.batchim_tables(font.build_table.order)
+    p += has
+    p += b"\0" * (RIEUL_ADDR - HOOK_ADDR - len(p))
+    p += rieul
+    p += b"\0" * (EXT_ADDR - HOOK_ADDR - len(p))  # LAST(2B) 는 0 으로 시작
+    p += hook_ext()
+    p += b"\0" * (PAYLOAD_LEN - len(p))
+    assert len(p) == PAYLOAD_LEN
+    return bytes(p)
 
 
 def _bit(a: "Asm", table_addr: int, tag: str) -> None:

@@ -240,14 +240,7 @@ class Hook(unittest.TestCase):
     def setup_mem(self, chars):
         table, bank = font.build_table(chars)
         mem = bytearray(0x10000)
-        payload = bytearray(hook.hook_routine())
-        payload += b"\0" * (hook.JOSA_OFF_ADDR - hook.HOOK_ADDR - len(payload))
-        payload += font.josa_offsets(table)
-        payload += b"\0" * (hook.BATCHIM_ADDR - hook.HOOK_ADDR - len(payload))
-        has, rieul = font.batchim_tables(font.build_table.order)
-        payload += has
-        payload += b"\0" * (hook.RIEUL_ADDR - hook.HOOK_ADDR - len(payload))
-        payload += rieul
+        payload = hook.payload(table)
         mem[hook.HOOK_ADDR : hook.HOOK_ADDR + len(payload)] = payload
         return table, bank, mem
 
@@ -287,11 +280,37 @@ class Hook(unittest.TestCase):
             got, _c = self.draw(mem, font.josa_code("으로/로"), bank=bank)
             self.assertEqual(got[:24], font.glyph(expect), f"{word} 뒤 으로/로")
 
-    def test_한글이_아니면_받침_있음(self):
+    def test_한글이_아니면_받침_없음(self):
+        """우리 글자가 아니면(원문 전각 영문·부호) 무받침 — 기종 간 규칙(마스터 09-26)."""
         _table, bank, mem = self.setup_mem("가은는")
         self.draw(mem, b"\x82\xa0", bank=bank)  # BIOS 로 간 글자 — LAST 는 안 바뀐다
         got, _c = self.draw(mem, font.josa_code("은/는"), bank=bank)
-        self.assertEqual(got[:24], font.glyph("은"))
+        self.assertEqual(got[:24], font.glyph("는"))
+
+    def test_전각_숫자_뒤_조사(self):
+        """게임이 붙이는 SJIS 전각 숫자(BIOS 글자)도 LAST 에 남아 읽는 소리대로 — 레스１을 · 레스２를 · １로."""
+        for sj, pair, expect in (
+            (b"\x82\x50", "을/를", "을"),  # 1 = 일
+            (b"\x82\x51", "을/를", "를"),  # 2 = 이
+            (b"\x82\x52", "은/는", "은"),  # 3 = 삼
+            (b"\x82\x55", "이/가", "이"),  # 6 = 육
+            (b"\x82\x54", "이/가", "가"),  # 5 = 오
+            (b"\x82\x50", "으로/로", "로"),  # 1 = 일(ㄹ)
+            (b"\x82\x4f", "으로/로", "으"),  # 0 = 영
+        ):
+            _table, bank, mem = self.setup_mem("가스을를은는이으로")
+            _t2, _c = self.draw(mem, _table["스"], bank=bank)
+            _g, cpu = self.draw(mem, sj, bank=bank)
+            self.assertTrue(cpu.bios_called)
+            got, _c = self.draw(mem, font.josa_code(pair), bank=bank)
+            self.assertEqual(got[:24], font.glyph(expect), f"{sj.hex()} 뒤 {pair}")
+
+    def test_숫자는_읽는_소리대로(self):
+        """끝 숫자를 읽은 소리로 — 0·1·3·6·7·8 받침, 2·4·5·9 무받침, 1·7·8 은 ㄹ(으로→로)."""
+        has, rieul = font.batchim_tables(list("0123456789"))
+        bit = lambda t, i: (t[i >> 3] >> (i & 7)) & 1
+        self.assertEqual([bit(has, i) for i in range(10)], [1, 1, 0, 1, 0, 0, 1, 1, 1, 0])
+        self.assertEqual([bit(rieul, i) for i in range(10)], [0, 1, 0, 0, 0, 0, 0, 1, 1, 0])
 
 
 if __name__ == "__main__":
