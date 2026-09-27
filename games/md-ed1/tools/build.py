@@ -80,6 +80,7 @@ class Rom:
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE,
         ),
         "field-hud-space-site": (field_hud.SPACE_SITE, field_hud.SPACE_SITE + 6),
+        "field-hud-align": (field_hud.ALIGN_SITE, field_hud.ALIGN_SITE + 4),
         **{f"field-hud-dir:{i}": (a, a + 2) for i, (a, _c, _w) in enumerate(field_hud.DIRECTIONS)},
         **{f"field-hud-suffix:{i}": (a, a + 4) for i, (a, _c, _w) in enumerate(field_hud.SUFFIX)},
         **{
