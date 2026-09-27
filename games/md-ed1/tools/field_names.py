@@ -31,6 +31,22 @@
 6~10바이트라 **항상 여유가 있다**(대칭 패딩으로 반각 공백을 좌우 균등하게 채운다, 홀수 나머지는
 안 나온다 — 한글도 2바이트 고정이라 남는 폭이 항상 짝수). **칸 길이를 원본과 완전히 같게
 유지한다**(마스터 지시) — 표 뒤의 코드·서술문·그래픽 바이트가 한 바이트도 안 밀리게 하기 위해서다.
+
+## 갈무리14로 확대 (마스터 확정 2026-09-28 — "입장배너 폰트크기 키울 수 있나")
+
+배너 글자가 대사창·HUD(표0, 갈무리11)보다 작아 보인다는 지적에, **배너를 그리는 루틴을 찾아
+다른 리소스를 읽게 라우팅을 바꾸는 안**(ASM 조사, devlog 09-28)을 먼저 봤지만 한 번에 못
+잡았다. **관리자가 더 쉬운 길을 냈다** — 표0에 빈 칸이 716개 있으니, **배너가 쓰는 89음절만
+갈무리14로 그린 사본 글리프**를 표0의 **새 코드**에 굽고, 블록91 문자열만 그 코드로
+인코딩한다. 대사창·HUD 는 원래(갈무리11) 코드를 그대로 쓰므로 **ASM 도 렌더러도 안
+건드린다** — 순수 데이터 추가다. `field_hud.py` 의 콘덴스드 뒷말과 같은 `hangul.CUSTOM_GLYPHS`
+경로(PUA 자리표시로 `hangul.py` 기존 코드 배정·표0 굽기 파이프라인을 그대로 탄다)를 재사용한다.
+
+⚠ **갈무리14 는 14×14 칸을 잉크로 꽉 채운다**(원본 JP 글리프엔 있던 1px 여백이 없다,
+`hangul.py` 리소스5/자막 주석에 이미 문서화됨) — 그래서 8방향 팽창 테두리(ring)가 칸 가장자리에서
+못 나간다(89음절 전수 확인: 전부 칸 가장자리에 잉크가 닿는다). **새 문제가 아니라 이미 쓰는
+자막(리소스5)과 같은 특성**이다 — 잉크 자체(글자 획)는 안 잘리고, 테두리만 한쪽이 살짝
+얇아질 뿐이다.
 """
 
 import sys
@@ -39,6 +55,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import archives
 import common
+import hangul
 
 BLOCK = 91
 TABLE_OFF = 10604  # 압축 해제 오프셋 0x296C
@@ -85,7 +102,7 @@ ENTRIES = [
     (34, "용의알", bytes.fromhex("83c7"), "竜の卵<83c7>"),  # 꼬리 바이트 의미 불명 — 보존
     (35, "바람의탑", b"", "カザミの塔"),
     (36, "방풍의동굴", b"", "風よけの穴"),
-    (37, "늑대입", b"", "狼の口"),
+    (37, "늑대의입", b"", "狼の口"),  # 마스터 확정 2026-09-28 — 대사 속은 "늑대의 입"(띄어씀), HUD·배너는 붙임
     (38, "수정의탑", b"", "水晶の塔"),
     (39, "쟈그리폐광", b"", "ジャグリの廃坑"),  # ジャグリ → 쟈그리, shared/glossary/eiyuu.json 정본(place, 820행 부근)
     (40, "노부부의집", b"", "老夫婦の家"),
@@ -97,9 +114,45 @@ ENTRIES = [
 ]
 
 
+# ── 갈무리14 전용 합성 글리프 (마스터 확정 2026-09-28 — "입장배너 폰트크기 키울 수 있나") ──
+# 표0은 대사창(피치12)과 공유라 통째로 바꿀 수 없다 — 배너 89음절만 PUA(U+E100~) 자리표시로
+# hangul.py 기존 파이프라인(코드 배정·표0 굽기)을 태워 **별도 코드**로 굽는다(field_hud.py 의
+# 콘덴스드 뒷말과 같은 `hangul.CUSTOM_GLYPHS` 경로). 대사창·HUD 는 원래 코드를 그대로 쓰므로
+# 영향이 없다. ASM 은 안 건드린다 — 블록91 레코드에 들어가는 **코드값만** 바뀐다(바이트 길이는
+# 음절당 2B 로 그대로라 `_pad`·칸 계산도 안 바뀐다).
+GALMURI14 = common.ROOT / "shared" / "fonts" / "Galmuri14.bdf"
+_PUA_BASE = 0xE100
+_pua_for: dict[str, str] | None = None
+
+
+def _pua_map() -> dict[str, str]:
+    global _pua_for
+    if _pua_for is None:
+        uniq = sorted(set("".join(kr for _, kr, _extra, _jp in ENTRIES)))
+        _pua_for = {ch: chr(_PUA_BASE + i) for i, ch in enumerate(uniq)}
+    return _pua_for
+
+
+def _ensure_custom_glyphs() -> None:
+    # top=0(대사창/HUD 은 top=1) — 갈무리14 는 이미 14행을 꽉 채우는 디자인이라 top=1 을 얹으면
+    # 89자 중 74자가 바닥 행이 칸 밖(15번째 행)으로 밀려 조용히 잘렸다(마스터 실기 지적
+    # 2026-09-28, `m-0928-banner-g14-bottomcut.png`). 배너 사본에만 적용 — 대사창·HUD(Galmuri11,
+    # top=1)는 안 건드린다.
+    bdf = hangul._load_bdf(GALMURI14, hangul.CELL, top=0, left=0)
+    for ch, pua in _pua_map().items():
+        if pua in hangul.CUSTOM_GLYPHS:
+            continue
+        g = bdf.get(ch)
+        if g is None:
+            raise SystemExit(f"갈무리14 에 없는 글자: {ch!r}")
+        hangul.CUSTOM_GLYPHS[pua] = hangul.extend_jamo_arms(g)
+
+
 def chars() -> set[str]:
-    """이 표가 쓰는 한글 — `collect_chars()` 가 다른 문안과 상관없이 늘 굽는다."""
-    return set("".join(kr for _, kr, _extra, _jp in ENTRIES))
+    """이 표가 쓰는 글자 — `collect_chars()` 가 다른 문안과 상관없이 늘 굽는다.
+    실제로 굽는 건 갈무리14 합성 글리프(PUA)뿐이다(마스터 확정 2026-09-28)."""
+    _ensure_custom_glyphs()
+    return set(_pua_map().values())
 
 
 def _pad(body: bytes, total: int = ENTRY_LEN) -> bytes:
@@ -110,15 +163,19 @@ def _pad(body: bytes, total: int = ENTRY_LEN) -> bytes:
     return b" " * left + body + b" " * (pad - left)
 
 
-def new_block(orig_data: bytes, encode) -> bytes:
+def new_block(orig_data: bytes, cs) -> bytes:
     """블록 91 의 디컴프레스 결과에서 표 구간만 한글로 갈아 끼운다. 나머지(코드·서술문·그래픽)는
-    원본 그대로 — 칸 길이(46×14B)가 완전히 같아 뒤 오프셋이 안 흔들린다."""
+    원본 그대로 — 칸 길이(46×14B)가 완전히 같아 뒤 오프셋이 안 흔들린다.
+
+    `cs` 는 `hangul.Charset` — 각 음절을 PUA 코드(갈무리14 합성 글리프)로 인코딩한다."""
     if orig_data[TABLE_OFF : TABLE_OFF + len(ORIG_ANCHOR)] != ORIG_ANCHOR:
         raise SystemExit("블록 91: 지명 표 자리가 원본과 다르다 — 원본이 바뀌었나 확인")
+    pua = _pua_map()
     out = bytearray(orig_data)
     pos = TABLE_OFF
     for _i, kr, extra, _jp in ENTRIES:
-        rec = _pad(encode(kr) + extra)
+        body = b"".join(cs.encode_char(pua[ch]) for ch in kr)
+        rec = _pad(body + extra)
         out[pos : pos + ENTRY_LEN] = rec
         pos += STRIDE
     return bytes(out)
