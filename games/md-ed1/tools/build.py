@@ -24,6 +24,7 @@ import archives
 import battle
 import captions
 import common
+import field_hud
 import gfxtext
 import hangul
 import josa
@@ -32,6 +33,7 @@ import scene
 import sysmsg
 import tables
 import textmap
+import wordwrap
 from text import krwrap
 
 # 대사창 한 줄 = 210px(전각 17.5칸) — 원판이 **저절로 넘긴다**: 전각 17자(204px) 뒤 18째 글자를 다음 줄로
@@ -41,12 +43,19 @@ LINES = 3
 
 SCRIPT_LO, SCRIPT_HI = 0x135324, 0x1918D2  # 대본 블록 자리(색인 0x134FA0 은 항목만 고친다)
 TAIL_LO, TAIL_HI = common.FREE_TAIL
-CAPTION_RESERVE = 0x1000  # 자막(오프닝·엔딩 나레이션·엔딩 대사)을 꼬리로 옮길 자리 — 제자리 칸이 만원이라서
+CAPTION_RESERVE = (
+    0x1000  # 자막(오프닝·엔딩 나레이션·엔딩 대사)을 꼬리로 옮길 자리 — 제자리 칸이 만원이라서
+)
 # 꼬리 **끝**에 조사 훅(기계어+표)을 예약한다 — 아카이브는 그 앞까지만 쓴다.
 # ⚠ 표는 **한글 코드 수를 따라 자란다**(종성 비트표 = 코드 하나에 1비트). 0x180 으로 재 두었더니
 # 글자 33 자를 새로 굳히자마자 2바이트가 넘쳤다(2026-09-07). 그래서 **글리프 상한**(1,370자)까지
 # 재 둔다 — 172B(한글 비트표) + 16B(반각) + 252B(기계어) + 쌍 표 ≈ 460B.
 JOSA_RESERVE = 0x280
+# 조사 훅 앞에 로그 줄넘김 가드 본체(tools/wordwrap.py, 86B)를 둔다 — 글자 단위는 그대로, 고아 부호·
+# 줄 첫 칸 공백만 막는다(2026-09-27 밤, 어절 접기를 하루 만에 되돌렸다 — 기종 공통 최종 판정)
+WRAP_RESERVE = 0x60
+# 어절 줄넘김 앞에 필드 HUD 뒷말·방위 앞 공백 트램펄린(tools/field_hud.py, 18B)을 둔다(2026-09-27 밤)
+FIELD_HUD_RESERVE = 0x20
 
 
 BATTLE_LO, BATTLE_HI = 0x0CAB04, 0x0D85B4  # 전투 아카이브 LZ 구간(첫 블록 시작 ~ 끝 블록 끝)
@@ -60,9 +69,19 @@ class Rom:
         "battle-table": (battle.ARCHIVE, battle.ARCHIVE + battle.COUNT * 4),
         "battle": (BATTLE_LO, BATTLE_HI),
         "script": (SCRIPT_LO, SCRIPT_HI),
-        "tail": (TAIL_LO, TAIL_HI - JOSA_RESERVE - CAPTION_RESERVE),
+        "tail": (TAIL_LO, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE),
         "josa-code": (TAIL_HI - JOSA_RESERVE, TAIL_HI),
-        "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 0x1C),
+        "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 12),
+        "wrap-code": (TAIL_HI - JOSA_RESERVE - WRAP_RESERVE, TAIL_HI - JOSA_RESERVE),
+        "wrap-tramp": (wordwrap.TRAMP, wordwrap.TRAMP + 6),
+        **{f"wrap-site:{s:x}": (s, s + 4) for s in wordwrap.SITES},
+        "field-hud-space-tramp": (
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE,
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE,
+        ),
+        "field-hud-space-site": (field_hud.SPACE_SITE, field_hud.SPACE_SITE + 6),
+        **{f"field-hud-dir:{i}": (a, a + 2) for i, (a, _c, _w) in enumerate(field_hud.DIRECTIONS)},
+        **{f"field-hud-suffix:{i}": (a, a + 4) for i, (a, _c, _w) in enumerate(field_hud.SUFFIX)},
         **{
             f"josa-tbl:{i:02x}": (josa.HANDLER_TBL + i * 2, josa.HANDLER_TBL + i * 2 + 2)
             for i in (josa.IDX_ACTOR, josa.IDX_ITEM)
@@ -96,9 +115,11 @@ class Rom:
                 **sysmsg.allowed(data),
                 **gfxtext.allowed(),
                 **captions.allowed(data),
-                **captions.allowed_tail(TAIL_HI - JOSA_RESERVE - CAPTION_RESERVE, CAPTION_RESERVE),
+                **captions.allowed_tail(
+                    TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE, CAPTION_RESERVE
+                ),
             ),
-            TAIL_HI - JOSA_RESERVE - CAPTION_RESERVE,
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE,
             CAPTION_RESERVE,
         )
 
@@ -342,6 +363,7 @@ def collect_chars(tm: dict) -> set[str]:
         chars.update(strip(battle.expand_names(e.get("ours", ""), tm["monsters"])))
     for e in tm["monsters"].values():
         chars.update(e.get("ours", ""))
+    chars.update(field_hud.chars())  # 필드 HUD 뒷말·방위(문안을 안 거친다) — 늘 굽는다
     return chars
 
 
@@ -366,7 +388,7 @@ def main(check_only: bool = False) -> None:
         orig,
         {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in cmap.items()},
         cs.encode,
-        tail_at=TAIL_HI - JOSA_RESERVE - CAPTION_RESERVE,
+        tail_at=TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE,
     )
     print(
         f"  정본 블록 {len(maps)} · 한글 {len(cs.hangul)}자 · 표 0 {len(cs.entries)}/{cs.r0['entries']}"
@@ -420,7 +442,10 @@ def main(check_only: bool = False) -> None:
         packed = packed + (b"\x00" if len(packed) & 1 else b"")
         if region == "script" and cur + len(packed) > SCRIPT_HI:
             cur, region = TAIL_LO, "tail"
-        if region == "tail" and cur + len(packed) > TAIL_HI - JOSA_RESERVE - CAPTION_RESERVE:
+        if (
+            region == "tail"
+            and cur + len(packed) > TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE
+        ):
             raise SystemExit("대본 아카이브가 꼬리 빈 공간도 넘는다")
         rom.write(region, cur, packed)
         table[n * 4 : n * 4 + 4] = struct.pack(">I", cur - base)
@@ -436,7 +461,10 @@ def main(check_only: bool = False) -> None:
         packed = packed + (b"\x00" if len(packed) & 1 else b"")
         if bregion == "battle" and bcur + len(packed) > BATTLE_HI:
             bcur, bregion = (cur if region == "tail" else TAIL_LO), "tail"
-        if bregion == "tail" and bcur + len(packed) > TAIL_HI - JOSA_RESERVE - CAPTION_RESERVE:
+        if (
+            bregion == "tail"
+            and bcur + len(packed) > TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE
+        ):
             raise SystemExit("전투 아카이브가 꼬리 빈 공간도 넘는다")
         rom.write(bregion, bcur, packed)
         btable[n * 4 : n * 4 + 4] = struct.pack(">I", bcur - bbase)
@@ -467,6 +495,13 @@ def main(check_only: bool = False) -> None:
         rom.write(label, pos, body)
     # 2c. 조사 훅 — 이름 뒤 조사를 런타임에 고른다(제어코드 EB·EC)
     for label, pos, body in josa.plan(orig, cs, TAIL_HI - JOSA_RESERVE):
+        rom.write(label, pos, body)
+    # 2d. 로그 줄넘김 가드 — 글자 단위는 그대로, 고아 부호·줄 첫 칸 공백만 막는다(렌더러 $978C 의 반각 줄바꿈 호출)
+    for label, pos, body in wordwrap.plan(orig, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE):
+        rom.write(label, pos, body)
+    # 2e. 필드 HUD 뒷말(부근·입구)·방위(동서남북) — 문안을 안 거치고 코드가 SJIS 를 직접 찍는 여덟 자리
+    field_hud_tramp_at = TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE
+    for label, pos, body in field_hud.plan(cs, field_hud_tramp_at):
         rom.write(label, pos, body)
     # 3. 고정 폭 표(아이템·주문·지명·메뉴 라벨) — 제자리
     for label, pos, body in table_writes:

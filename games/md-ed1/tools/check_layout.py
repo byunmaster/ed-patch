@@ -8,17 +8,18 @@
 외웠다」가 온점만 다음 줄로 떨궜다(마스터 인게임). 그래서 조각을 실제 순서대로 잇고 빈 자리엔 **가장 긴 값**을 넣어 잰다.
 
 폭(실측): 전각·한글 12px · 반각 6px(대사창 피치, status 5절). 메시지 창(`$642C`, 224×40)은 **210px(반각 35칸)까지** 한
-줄에 들고 넘으면 **글자 단위로 저절로 다음 줄로 넘긴다** — 「게일은 세리오스에게 레스1을 외웠다」(210px)는 한 줄, 온점을
-더하면(216px) 온점만 넘어갔다(구 롬 86ce835d 로 재현, 09-27).
-**꽉 찬 줄 + 박은 `\\n` 은 빈 줄을 만들지 않는다** — 창은 다음 글자가 안 들어갈 때만 넘긴다(칸 끝에 닿는 순간 넘기지
-않는다). 시험 롬으로 210px 딱 맞는 줄 뒤에 `\\n` 을 두니 다음 줄이 바로 이어졌다(`r5-typeset-210px-newline.png`, 09-27 —
-pce 는 반대라 빈 줄이 생겼다). 그래서 ②는 **우리가 박은 빈 줄**만 센다.
-규칙(라운드⑤ 조판 기반): ① 고아 부호(부호만 다음 줄) ② 빈 줄 ③ 줄 첫칸 공백 ④ 묶음 끊김(210px 를 넘겨 저절로 넘어가면
-그 자리가 어디든 위반으로 본다 — 줄은 우리가 박은 `\\n` 에서만 바뀌어야 한다) ⑤ 조사 병기 「(을)」류 남음
+줄에 든다(「게일은 세리오스에게 레스1을 외웠다」 210px 한 줄 — 구 롬 86ce835d, 09-27).
+🔴 **줄넘김은 글자 단위다(마스터 최종 확정 2026-09-27 밤, 기종 공통).** 대사(씬·NPC)는 빌드 조판기(krwrap)가
+어절 단위로 접지만, 로그성 메시지(도구·주문·전투)는 **엔진이 원래 하던 대로 글자 단위**로 접는다(낱말 가운데서
+갈리는 것도 허용 — 「사용했 / 다.」도 정상). 대신 렌더러 패치(`tools/wordwrap.py`)가 최소 가드 둘만 막는다:
+**① 고아 부호**(.!?, 「!!」·「!?」 연쇄 포함)가 혼자 줄 첫머리로 못 가고 앞줄 끝에 매달린다(넘쳐도 그대로 그린다) ·
+**② 줄이 공백으로 시작하지 않는다**(넘친 공백은 버린다). `wrap` 은 그 패치와 **같은 모형**이다.
+**꽉 찬 줄 + 박은 `\\n` 은 빈 줄을 만들지 않는다** — 창은 다음 글자가 안 들어갈 때만 넘긴다(`r5-typeset-210px-newline.png`,
+09-27 — pce 는 반대라 빈 줄이 생겼다). 그래서 ②는 **우리가 박은 빈 줄**만 센다.
+규칙(라운드⑤ 조판 기반) — **접은 결과**에서 센다: ① 고아 부호(부호만 한 줄) ② 빈 줄 ③ 줄 첫칸 공백 ⑤ 조사 병기 「(을)」류 남음
 ⑦ **글 소실 없음** — 줄을 가르기 전후 글자 수(공백·줄바꿈 빼고)가 같아야 한다. PS1 이 어절 단위 줄넘김을 고치다 특정 폭에서
 꼬리 글을 잃었다(「ＨＰ를 112 / 빼앗았다!!」 소실, 09-27) — 폭·위반만 보는 검사는 그걸 못 본다. 씬은 빌드 조판기(`build.typeset`)
-전후를, 시스템·전투는 창 줄넘김 모형(`wrap`) 전후를 잰다. 렌더러 줄넘김을 손댈 때(전투 라운드)도 `wrap` 을 그 규칙으로 바꾸고
-이 불변식을 그대로 건다.
+전후를, 시스템·전투는 창 줄넘김 모형(`wrap`) 전후를 잰다.
 """
 
 import json
@@ -104,18 +105,35 @@ def glyphs(s: str) -> str:
     return re.sub(r"\s", "", s)
 
 
-def wrap(line: str, limit: int) -> list[str]:
-    """메시지 창 줄넘김 모형 — 다음 글자가 안 들어갈 때만 글자 단위로 넘긴다(실측 09-27)."""
-    out, cur, w = [], "", 0
+ORPHAN = set(".!?")  # 혼자 줄 첫머리로 못 가는 부호(마스터 확정 2026-09-27 밤, 기종 공통) — 「!!」·「!?」는 낱자 둘의 연쇄로 걸린다
+
+
+def wrap_ex(line: str, limit: int) -> list[str]:
+    """렌더러(글자 단위 + 최소 가드 둘)와 같은 모형(마스터 확정 2026-09-27 밤, 기종 공통).
+
+    로그성 메시지는 **어절이 아니라 글자 단위**로 접는다(낱말 가운데서 갈리는 것도 허용) — 대신
+    ① 고아 부호(.!?)가 혼자 다음 줄 첫머리로 떨어지지 않게(넘쳐도 앞줄 끝에 매단다) · ② 줄 첫 칸이
+    공백으로 시작하지 않게(넘친 공백은 버린다) 이 둘만 막는다.
+    """
+    out, cur = [], ""
     for c in line:
-        cw = width(c)
-        if w + cw > limit and cur:
+        if width(cur) + width(c) > limit and cur:
+            if c == " ":  # 넘친 공백은 버리고 줄만 바꾼다(줄 첫 칸 공백 금지)
+                out.append(cur)
+                cur = ""
+                continue
+            if c in ORPHAN:  # 부호는 줄 끝에 매단다(넘어도 그대로 이어 그린다, 고아 부호 금지)
+                cur += c
+                continue
             out.append(cur)
-            cur, w = "", 0
+            cur = ""
         cur += c
-        w += cw
     out.append(cur)
     return out
+
+
+def wrap(line: str, limit: int) -> list[str]:
+    return wrap_ex(line, limit)
 
 
 def lost(before: str, after: str) -> str | None:
@@ -135,30 +153,21 @@ def check_line_set(
     tail: bool = False,
     limit: int = LIMIT,
 ) -> None:
-    lines = text.split("\n")
-    shown = "\n".join(sub for ln in lines for sub in wrap(ln, limit))
-    miss = lost(text, shown)
+    shown_lines = []
+    for ln in text.split("\n"):
+        shown_lines += wrap_ex(ln, limit)
+    miss = lost(text, "\n".join(shown_lines))
     if miss:
         out.append(f"{label}: ⑦ 글 소실 — {miss!r}")
-    for i, ln in enumerate(lines):
-        w = width(ln)
+    for i, ln in enumerate(shown_lines):
         if verbose:
-            print(f"   {w:3d}px |{ln}|")
-        if i and ln == "" and i < len(lines) - 1:
+            print(f"   {width(ln):3d}px |{ln}|")
+        if i and ln == "" and i < len(shown_lines) - 1:
             out.append(f"{label}: ② 빈 줄")
         if ln.startswith(" ") and not (tail and i == 0):  # 꼬리 조각은 숫자·이름 뒤에 붙는다
             out.append(f"{label}: ③ 줄 첫칸 공백 — {ln!r}")
-        if w > limit:
-            # 저절로 넘어가는 자리
-            acc, cut = 0, len(ln)
-            for k, c in enumerate(ln):
-                acc += width(c)
-                if acc > limit:
-                    cut = k
-                    break
-            rest = ln[cut:]
-            kind = "① 고아 부호" if rest and set(rest) <= PUNCT else "④ 묶음 끊김(저절로 줄넘김)"
-            out.append(f"{label}: {kind} — {w}px > {limit}px, 넘어가는 몫 {rest!r}")
+        if i and ln and set(ln.strip()) <= PUNCT:
+            out.append(f"{label}: ① 고아 부호 — {ln!r}")
     if re.search(r"\((을|를|은|는|이|가|과|와|으로|로)\)", text):
         out.append(f"{label}: ⑤ 조사 병기 — {text!r}")
 
@@ -274,7 +283,9 @@ def scene_region(out: list[str]) -> None:
             if miss:
                 out.append(f"scene {p.stem}/{off}: ⑦ 글 소실 — {miss!r}")
             for pg in pages:
-                check_line_set(f"scene {p.stem}/{off}", "\n".join(pg), out, False, limit=DIALOG_LIMIT)
+                check_line_set(
+                    f"scene {p.stem}/{off}", "\n".join(pg), out, False, limit=DIALOG_LIMIT
+                )
 
 
 # ── 원판(JP) — 같은 규칙을 원문에 대 본다(①~④만; ⑤⑥⑦은 한국어 조판의 축이라 해당 없다) ──────
