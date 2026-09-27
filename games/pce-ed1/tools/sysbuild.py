@@ -332,15 +332,17 @@ def apply(f, table, touched) -> dict:
     )
     extra: dict[int, bytearray] = {}  # plan 번호 → 덧붙일 바이트(끝 뒤 한 칸부터)
     # 🆕 09-26: 자투리가 모자라면 **선언한 빈 공간**(freespace.SPANS)으로 — 원본 기대 바이트부터 검산
-    pool = freespace.Pool(freespace.SPANS)
+    pool = freespace.Pool(freespace.spans())
     pool.check_original(S.bank_bytes)
     pool_writes = []  # (Span, 뱅크 안 오프셋, 바이트)
+    spilled = {}  # 자투리로 옮긴 조각: 주소 → (새 논리 주소, 바이트)
     for r, new, orig in spills:
         for k, (lo, hi, i) in enumerate(slack):
             if hi - lo >= len(new):
                 tgt = 0x8000 + lo
                 extra.setdefault(i, bytearray()).extend(new)
                 slack[k] = (lo + len(new), hi, i)
+                spilled[r["addr"]] = (tgt, new)
                 plan.append([r, bytes([0x0F, tgt & 0xFF, tgt >> 8]), orig])
                 stats["sysmsg_spill"] = stats.get("sysmsg_spill", 0) + 1
                 break
@@ -362,19 +364,29 @@ def apply(f, table, touched) -> dict:
             span.bank,
             off,
             data,
-            bytes([span.fill]) * len(data),
+            bytes([span.fill]) * len(data)
+            if span.fill is not None
+            else S.bank_bytes(span.bank)[off : off + len(data)],
             f"sysmsg {r['addr']:04X} → 빈 공간 {span.bank:#x}+{off:#x}",
             touched,
         )
     moved = {r["addr"]: (0x8000 + off, data) for _s, off, data, r in pool_writes}
+    moved.update(spilled)
+    inplace = {}  # 제자리 조각: 주소 → 바이트(패딩 전)
     for i, (r, new, orig) in enumerate(plan):
+        if r["addr"] not in moved:
+            inplace[r["addr"]] = (r, bytes(new))
         if i in extra:
             new = new + b"\0" + bytes(extra[i])
         new += b"\0" * (r["room"] - len(new))
         assert len(new) == r["room"], (r["addr"], len(new), r["room"])
         _write(f, 0x6D, r["off"], new, orig, f"sysmsg {r['addr']:04X}", touched)
         cnt += 1
-    # 되읽기 게이트 — 빈 공간으로 옮긴 조각: 원 자리가 `0F 새주소` 로 시작하고, 새 자리에 그 조각이 그대로 있는가
+    # 되읽기 게이트 — **글 소실 없음**(관리자 공유 09-27: PS1·ps1-ed3+4 에서 조판·이주가 꼬리 글을 조용히 잃었다).
+    # 모든 조각이 이미지에 **바이트 그대로** 있어야 한다: 제자리면 그 자리에, 옮겼으면 원 자리 = `0F 새주소` + 새 자리에.
+    for addr, (r, data) in inplace.items():
+        if _read(f, 0x6D, r["off"], len(data)) != data:
+            raise SysError(f"sysmsg {addr:04X} 제자리 되읽기 실패 — 글이 사라졌다")
     for addr, (tgt, data) in moved.items():
         r = next(x for x in S.read_sysmsg() if x["addr"] == addr)
         head = _read(f, 0x6D, r["off"], 3)

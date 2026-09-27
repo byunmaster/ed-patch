@@ -18,7 +18,9 @@ class Span:
     bank: int
     off: int  # 뱅크 안 오프셋
     size: int
-    fill: int  # 원본 기대 바이트(그 자리 전부가 이 값이어야 한다)
+    fill: (
+        int | None
+    )  # 원본 기대 바이트(그 자리 전부가 이 값) — None 이면 원본 바이트 그대로가 기대값(안 쓰는 옛 자료)
     why: str  # 실측 근거
 
 
@@ -27,6 +29,30 @@ class Span:
 BANK6D_TAIL = Span(0x6D, 0x1F20, 0xE0, 0xFF, "뱅크 끝 FF 224B — 덤프 넷 + 쓰기 BP 한 바퀴")
 
 SPANS = [BANK6D_TAIL]
+MEASURED_HUD_TAIL = 905  # 09-27 실측 범위의 시작(묶음 안 오프셋) — 물리 0xDAEB5~0xDAF20
+
+
+def spans() -> list[Span]:
+    """빌드가 쓰는 선언표 — 고정 자리 + HUD 묶음 꼬리(새 압축본 뒤, 길이는 HUD 굽기 결과로 정해진다).
+
+    HUD 꼬리 근거(2026-09-27): 읽기·쓰기 BP 를 건 채 부팅·파일 로드(해제기 실행)·경험치표시 전환 두 번·다른 파티 세이브
+    게임 안 LOAD — **읽기 0 · 쓰기는 부팅 CD 적재뿐**. ⚠ 전투·맵 전환은 아직. 옛 압축본 바이트가 원본에 남아 있으므로
+    `fill=None` — 기대값은 원본 바이트 그대로(HUD 굽기는 이 꼬리를 안 쓴다, `hud_plate.apply`).
+    """
+    import hud_plate
+
+    n = hud_plate.compressed_len()
+    start = max(
+        n + 1, MEASURED_HUD_TAIL
+    )  # 실측한 범위 안에서만 — 압축본이 줄어도 안 잰 자리는 안 쓴다
+    tail = Span(
+        0x6D,
+        hud_plate.BANK_BLOCK_OFF + start,
+        hud_plate.BLOCK_LEN - start,
+        None,
+        "HUD 묶음 꼬리 — 읽기·쓰기 BP 한 바퀴(부팅·로드·EP 전환·파티 LOAD)",
+    )
+    return SPANS + [tail]
 
 
 @dataclass
@@ -51,6 +77,10 @@ class Pool:
     def check_original(self, bank_bytes_of) -> None:
         """선언한 자리가 원본에서 정말 fill 인가 — 아니면 빌드를 멈춘다."""
         for s in self.spans:
+            if s.fill is None:
+                continue
             b = bank_bytes_of(s.bank)[s.off : s.off + s.size]
             if b != bytes([s.fill]) * s.size:
-                raise ValueError(f"빈 공간 선언이 원본과 다르다: 뱅크 {s.bank:#x}+{s.off:#x} ({s.why})")
+                raise ValueError(
+                    f"빈 공간 선언이 원본과 다르다: 뱅크 {s.bank:#x}+{s.off:#x} ({s.why})"
+                )

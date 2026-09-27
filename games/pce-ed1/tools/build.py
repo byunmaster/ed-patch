@@ -417,6 +417,9 @@ def _build(edits_path, iso: Path, cue: Path):
         # 엔딩 음성 자막(스프라이트, 오프닝 런타임 한 벌 더) — tools/ending_sub.py
         if want("edsub"):
             print("  " + ending_sub.apply(f, touched))
+        # ⚠ HUD 가 먼저 — 시스템 문구가 HUD 묶음 꼬리(빈 공간 ⓑ)에 조각을 옮겨 싣는다(freespace.spans)
+        if want("hud"):
+            print("  " + hud_plate.apply(f, touched))
         if want("sys"):
             print("  시스템 문구:", sysbuild.apply(f, table, touched))
         if want("battle"):
@@ -425,8 +428,6 @@ def _build(edits_path, iso: Path, cue: Path):
             print("  " + chapter_band.apply(f, touched))
         if want("box"):
             print("  " + boxpack.apply_msg1_relocation(f, touched))
-        if want("hud"):
-            print("  " + hud_plate.apply(f, touched))
         translated_ids = {int(p.stem[3:]) for p in translate.M.SCRIPT_DIR.glob("scn*.json")}
         n_msgs = 0
         for rel, c in sorted(by_rel.items()) if want("scn") else []:

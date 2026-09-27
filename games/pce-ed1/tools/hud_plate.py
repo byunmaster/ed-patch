@@ -43,6 +43,7 @@ from shared import fonts
 BLOCK_REL = 55
 BLOCK_OFF = 0x32C
 BLOCK_LEN = 1013  # 원본 압축본 길이 = 상한
+BANK_BLOCK_OFF = 0x800 + BLOCK_OFF  # 뱅크 0x6D 안 오프셋(rel 54 가 뱅크 첫 섹터)
 NTILES = 0x70
 BAT_REL = 54  # 뱅크 0x6D 첫 섹터
 BAT_OFF = 0x761
@@ -468,7 +469,19 @@ def build(sector=None, bat=None, spr=None):
     used = len(pool) - len(free)
     sused = len(spool) - len(sfree)
     info = f"압축 {len(enc)}/{BLOCK_LEN}B · 이름판 타일 {used}/{len(pool)} · 스프라이트 조각 {sused}/{len(spool)}"
+    global _LAST_LEN
+    _LAST_LEN = len(enc)
     return bytes(sec), bytes(bsec), bytes(bank), info
+
+
+_LAST_LEN = None
+
+
+def compressed_len() -> int:
+    """새 압축본 길이 — 꼬리 빈 공간(freespace)의 시작을 정한다."""
+    if _LAST_LEN is None:
+        build()
+    return _LAST_LEN
 
 
 def apply(f, touched):
@@ -481,7 +494,11 @@ def apply(f, touched):
 
     osec, obat, ospr = block_sector(), bat_sector(), spr_bank()
     sec, bsec, spr, info = build(osec, obat, ospr)
-    spans = [(BLOCK_REL, BLOCK_OFF, BLOCK_LEN, sec, osec, "HUD 글자판 묶음")]
+    # ⚠ 묶음 꼬리(실측 범위)는 빈 공간 ⓑ 라 시스템 문구가 쓴다 — 여기선 그 앞까지만(한 바이트는 한 패치만 쓴다)
+    import freespace
+
+    own = max(compressed_len() + 1, freespace.MEASURED_HUD_TAIL)
+    spans = [(BLOCK_REL, BLOCK_OFF, own, sec, osec, "HUD 글자판 묶음")]
     for o in SPR_LISTS:
         spans.append((BLOCK_REL, o, 6, sec, osec, "HUD 스프라이트 조각 목록"))
     for i in range(SPR_BASE, len(spr) - 63, 64):  # 바뀐 조각(64B)만
