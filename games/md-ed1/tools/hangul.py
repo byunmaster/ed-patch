@@ -227,7 +227,16 @@ def ellipsis_dots(cell: int) -> list[list[int]]:
     return out
 
 
+# 합성 글리프(코드 하나가 글자 하나가 아닌 자리) — 자리표시 문자(PUA, U+E000~)를 키로 써서
+# 기존 파이프라인(codes_for·Charset·resource0)을 그대로 통과시킨다. `needs_glyph()`는 PUA를
+# cp932 로 못 걸어 이미 "새 글리프 필요"로 잡는다(예외 경로) — 여기서 채움 행렬만 꽂아 주면
+# 나머지(코드 배정·표0 굽기)는 한글 한 글자와 완전히 같은 길을 탄다.
+CUSTOM_GLYPHS: dict[str, list[list[int]]] = {}
+
+
 def glyph_fill(ch: str) -> list[list[int]]:
+    if ch in CUSTOM_GLYPHS:
+        return CUSTOM_GLYPHS[ch]
     if ch == "…":
         return ellipsis_dots(CELL)
     g = _load_bdf(top=GLYPH_TOP, left=GLYPH_LEFT).get(ch)

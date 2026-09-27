@@ -56,6 +56,46 @@
 `subq.b #2,d1`(0x1ED30, 원래 값)을 `subq.b #1,d1` 로 — 명령 모양은 원판과 완전히 같고 상수만
 바꿨다(즉값 1바이트). 자리·크기 그대로라 트램펄린이 필요 없다. 박스 실제 폭(px)을 몰라 **반칸 5칸을
 예비로 미리 까는 근사**다 — 정확한 폭을 알면 상수를 더 정밀하게 맞출 수 있다.
+
+🔴 **정정(2026-09-28) — 위 `subq#1` 은 실제로는 아무 이름에도 영향이 없었다.** place_a/b 50개를
+전부 시뮬레이션하면 `subq#2`(원본)과 `subq#1`(위 "고침")이 **완전히 같은 `front_pad`**를 낸다 —
+한글은 전부 2바이트/음절이라 `d1`이 늘 짝수이고, 짝수 `d1`에서는 두 상수가 산술적으로 같아진다
+(마스터가 실제로 "front_pad 는 이미 0, 더 당길 데가 없다"로 다시 잡은 자리와 같은 결론). 진짜
+문제는 오프셋이 아니라 **폭**이었다 — 아래 절로 이어진다.
+
+## 뒷말·방위를 콘덴스드로 압축 (마스터 확정 2026-09-28 — "입구 부근 동서남북도 콘덴스드로")
+
+이름은 그대로 두고 **뒷말(부근/입구)·방위만** 갈무리 콘덴스드(`shared/fonts/Galmuri11-Condensed.bdf`,
+한글 8px/자)로 다시 그려 **12px 코드 칸**으로 잘라 넣는다. 공백도 **별도 1바이트가 아니라 그림
+안에 녹인다**(앞 공백 6px, 마스터 확정 — 처음 8px/꼬리0 은 우측 여유가 1px까지 줄어 근사 오차
+안에 들어 반려, 7px 도 거쳐 최종 6px). 렌더러는 **글리프마다 폭 메타데이터가 없다**(표0 서술자가
+리소스 전체에 [w,h] 하나 — `font.py` 확인) — 그래서 "글자를 좁게 그린다"는 통하지 않고, **칸
+수 자체를 줄이는 것만** 통한다(09-28 낮에 이걸 몰라 "이름만 압축" 안이 한 번 엎어졌다).
+
+- **부근/입구**: 「공백6px+두 글자(16px)」=22px 를 12px 칸 2개(24px)로 자른다 — 원래 공백(6px,
+  1B)+두 글자(24px, 2코드)=30px 대비 **6px 절약**. 복사 루프(`$1ECE6`~`$1ECEC`, `move.b
+  (a1)+,(a2)+` 4번 고정)는 **길이가 그대로**(4B=코드 2개)라 안 건드린다 — `$1ED0C`/`$1ED10`
+  리터럴 **내용만** 새 코드 2개로 간다.
+- **방위(동서남북)**: 「공백6px+한 글자(8px)」=14px — 칸(14px 폭 셀) 하나에 꼭 맞게 들어간다
+  (칸을 넘는 2px는 다음 칸이 없어 버려져도 안전). 방위는 **리터럴 복사가 아니라 즉값**이다
+  (`move.w #코드,d6/d3`) — 이미 코드 하나짜리 자리라 "칸을 나눈다"는 개념이 없고, 공백만
+  흡수해 18px→12px(1코드)로 줄어든다.
+- **가운데 정렬(K)**: 시뮬레이션(합성 데이터)으로는 `subq#1`(K=1)이 `subq#2`(K=2, 원본)와
+  산술적으로 같아 보여 **한 번은 NOP**(K=0, 뺄셈 없음)까지 시도했다 — 그런데 **마스터 실기
+  캡처(2026-09-28, `m-0928-cruise-iriguchi-overflow.png`)가 그 모델을 반증했다.** 박스
+  내부를 픽셀 임계값으로 실측하니 **88px**(모델 가정 90px)·왼쪽 여백 **8px**(모델 예측
+  6px)였고, K=0(front_pad=6px)에서는 **「구」가 박스 오른쪽에 그대로 닿아** 여유가 0px
+  이었다(모델은 3px 남는다고 예측했었다). 보정한(88px·+2px 기준선) 모델로 K=0/K=1을
+  50개×4경우 다시 돌리니 **K=0은 34/200 넘침**·**K=1은 0/200, 최소 여유 좌2·우5px**로
+  갈렸다 — **결국 `subq.b #1,d1`(K=1, 09-27 밤에 처음 넣었던 그 상수)로 되돌아간다.**
+  자리·크기는 그대로라 트램펄린 불필요. 🔴 **교훈**: 합성 글리프 폭·박스 경계는 실기 캡처
+  없이 산술로만 믿으면 틀린다 — 여기서 두 번(이름 압축 폭 오해·K=0 오판) 물렸다.
+- **트램펄린**: `space_tramp`(SPACE_SITE, 우리가 이미 둔 자리)의 `move.b #$20,(a2)+`(4B, 공백을
+  별도로 쓰던 스텝)을 뺀다 — 공백이 이제 콘덴스드 그림 안에 있어서다. 18B→14B, `FIELD_HUD_RESERVE`
+  (0x20=32B) 예산 안이라 build.py 쪽 구간 상수는 안 바꾼다.
+- **코드 배정**: 합성 글리프 8개(부근용 2·입구용 2·방위용 4)는 진짜 문자가 아니라 **PUA(U+E000~)
+  자리표시**를 키로 써서 `hangul.py`의 기존 파이프라인(코드 배정·표0 굽기)을 그대로 탄다 —
+  `hangul.CUSTOM_GLYPHS`에 채움 행렬만 등록하면 `glyph_fill()`이 BDF 대신 그걸 돌려준다.
 """
 
 import struct
@@ -64,17 +104,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
+import hangul
 
 SPACE_SITE = 0x1EC6A  # movea.l a3,a2 (2B) + lea.l $1ED10,a1 (6B) — 방위·뒷말 공통 진입점
 SPACE_SITE_LEN = 8
 SPACE_RESUME = 0x1EC72  # 원래 흐름으로 되돌아갈 자리(공백 삽입 다음 원래 명령)
 SPACE_A1 = 0x1ED10  # lea 가 원래 가리키던 곳("입구") — 트램펄린에서 복제한다
-SPACE_TRAMP_LEN = 18  # movea(2)+move.b#imm(4)+lea(6)+jmp(6)
+SPACE_TRAMP_LEN = 14  # movea(2)+lea(6)+jmp(6) — 공백은 이제 콘덴스드 그림 안에 있어 별도 write 없음
 
-ALIGN_SITE = 0x1ED30  # subq.b #2,d1 — 가운데 정렬 앞 공백 계산의 상수. 즉값 1바이트만 바꾼다
-ALIGN_PATCH = b"\x53\x01\xe2\x09"  # subq.b #1,d1 (뒷말 최대폭 5칸을 미리 반영) + lsr.b #1,d1(원본 그대로)
+ALIGN_SITE = 0x1ED30  # subq.b #2,d1(원본) — 가운데 정렬 앞 공백 계산의 상수. 즉값 1바이트만 바꾼다
+ALIGN_PATCH = b"\x53\x01\xe2\x09"  # subq.b #1,d1(="K=1") + lsr.b #1,d1(원본 그대로)
 
-# (자리, 글자) — 즉값 이동/비교 명령의 피연산자 2B. 전부 같은 함수(`$1EC20`) 안.
+# (자리, 글자) — 즉값 이동/비교 명령의 피연산자 2B. 전부 같은 함수(`$1EC20`) 안. `글자`는
+# PUA 코드를 찾는 키(아래 DIR_PUA)일 뿐, 실제로 이 글자 하나짜리 코드를 굽지는 않는다.
 DIRECTIONS = [
     (0x1EC3C, "서", "move.w #서,d6 — 서쪽 기본값"),
     (0x1EC46, "동", "move.w #동,d6 — 동쪽"),
@@ -83,18 +125,129 @@ DIRECTIONS = [
     (0x1ECA4, "북", "cmpi.w #북,d3 — 북/남 갈림(캐시 플래그), 위 북 값과 같아야 한다"),
     (0x1ECC8, "동", "cmpi.w #동,d6 — 동/서 갈림(캐시 플래그), 위 동 값과 같아야 한다"),
 ]
-# (자리, 낱말) — 4B 리터럴 문자열(2글자). 出典 위치는 표 0x1ED0C(付近)·0x1ED10(入口).
+# (자리, 낱말) — 4B 리터럴(콘덴스드 슬라이스 코드 2개). 出典 위치는 표 0x1ED0C(付近)·0x1ED10(入口).
 SUFFIX = [
     (0x1ED0C, "부근", "「부근」— 마을과 떨어졌을 때"),
     (0x1ED10, "입구", "「입구」— 마을 그 칸일 때"),
 ]
 
+# ── 콘덴스드 합성 글리프 — PUA(U+E000~) 자리표시로 hangul.py 기존 파이프라인을 그대로 탄다 ──
+CONDENSED_BDF = common.ROOT / "shared" / "fonts" / "Galmuri11-Condensed.bdf"
+CONDENSED_ADVANCE = 8  # 콘덴스드 한글 1자 전진폭(BDF DWIDTH 실측, 전부 8)
+SPACE_PX = 6  # 압축분 앞 공백(마스터 확정 2026-09-28 — 8px/꼬리0 은 우측여유 1px라 반려, 최종 6px)
+CELL = hangul.CELL  # 14
+PITCH = 12
+
+PUA_SUFFIX = {"부근": ["", ""], "입구": ["", ""]}
+PUA_DIR = {"동": "", "서": "", "남": "", "북": ""}
+
+_cbdf_cache: dict | None = None
+
+
+def _load_condensed() -> dict:
+    global _cbdf_cache
+    if _cbdf_cache is not None:
+        return _cbdf_cache
+    raw = {}
+    lines = CONDENSED_BDF.read_text(encoding="utf-8", errors="replace").split("\n")
+    i = 0
+    while i < len(lines):
+        if lines[i].startswith("ENCODING "):
+            code = int(lines[i].split()[1])
+            j = i
+            while not lines[j].startswith("BBX"):
+                j += 1
+            bw, bh, bx, by = map(int, lines[j].split()[1:5])
+            while lines[j].strip() != "BITMAP":
+                j += 1
+            rows = []
+            for r in lines[j + 1 : j + 1 + bh]:
+                r = r.strip()
+                v = int(r, 16) if r else 0
+                nb = len(r) * 4
+                rows.append([(v >> (nb - 1 - x)) & 1 for x in range(bw)])
+            raw[chr(code)] = (bw, bh, bx, by, rows)
+            i = j + bh
+        i += 1
+    _cbdf_cache = raw
+    return raw
+
+
+def _condensed_strip(text: str, space_px: int) -> list[list[int]]:
+    """「공백 + text」를 이어 그린 연속 채움 비트맵(높이 CELL, 폭 = space_px + 8*len(text))."""
+    bdf = _load_condensed()
+    _bw, _bh, _bx, _by, _ = bdf.get("가", (0, 0, 0, 0, []))
+    ref = _by + _bh
+    width = space_px + CONDENSED_ADVANCE * len(text)
+    grid = [[0] * width for _ in range(CELL)]
+    top = 1
+    for k, ch in enumerate(text):
+        bw, bh, bx, by, rows = bdf[ch]
+        y0 = top + (ref - (by + bh))
+        x_off = space_px + k * CONDENSED_ADVANCE
+        for y in range(bh):
+            ry = y0 + y
+            if not 0 <= ry < CELL:
+                continue
+            for x in range(bw):
+                rx = x_off + x + bx
+                if 0 <= rx < width:
+                    grid[ry][rx] = grid[ry][rx] or rows[y][x]
+    return grid
+
+
+def _slice_multi(strip: list[list[int]]) -> list[list[list[int]]]:
+    """12px 피치 · 14px 폭 창으로 자른다 — 뒷말(부근/입구)용, 코드 여러 개."""
+    width = len(strip[0])
+    n = -(-width // PITCH)
+    out = []
+    for k in range(n):
+        x0 = k * PITCH
+        g = [[0] * CELL for _ in range(CELL)]
+        for y in range(CELL):
+            for x in range(CELL):
+                sx = x0 + x
+                if 0 <= sx < width:
+                    g[y][x] = strip[y][sx]
+        out.append(g)
+    return out
+
+
+def _slice_single(strip: list[list[int]]) -> list[list[int]]:
+    """칸 하나(0~13열)만 잘라낸다 — 방위용. 코드 하나짜리 즉값이라 여러 칸으로 못 나눈다
+    (내용을 칸 폭(14px) 안에 들어오게 미리 맞춘다 — `SPACE_PX+8` = 14, 정확히 한 칸)."""
+    g = [[0] * CELL for _ in range(CELL)]
+    width = len(strip[0])
+    for y in range(CELL):
+        for x in range(CELL):
+            if x < width:
+                g[y][x] = strip[y][x]
+    return g
+
+
+_registered = False
+
+
+def _ensure_custom_glyphs() -> None:
+    """합성 글리프 8개를 `hangul.CUSTOM_GLYPHS`에 등록 — 코드 배정·표0 굽기는 기존 길을 탄다."""
+    global _registered
+    if _registered:
+        return
+    for word, puas in PUA_SUFFIX.items():
+        slices = _slice_multi(_condensed_strip(word, SPACE_PX))
+        if len(slices) != len(puas):
+            raise SystemExit(f"뒷말 「{word}」 슬라이스 수가 예상과 다르다: {len(slices)} ≠ {len(puas)}")
+        for pua, g in zip(puas, slices, strict=True):
+            hangul.CUSTOM_GLYPHS[pua] = g
+    for ch, pua in PUA_DIR.items():
+        hangul.CUSTOM_GLYPHS[pua] = _slice_single(_condensed_strip(ch, SPACE_PX))
+    _registered = True
+
 
 def space_tramp(at: int) -> bytes:
-    """트램펄린 본체 — 원래 명령 둘 + 공백 하나, 그리고 원래 흐름으로 복귀."""
+    """트램펄린 본체 — 원래 명령 둘(공백 쓰기는 이제 없다), 그리고 원래 흐름으로 복귀."""
     b = bytearray()
     b += struct.pack(">H", 0x244B)  # movea.l a3,a2
-    b += struct.pack(">H", 0x14FC) + struct.pack(">H", 0x0020)  # move.b #$20,(a2)+
     b += struct.pack(">H", 0x43F9) + struct.pack(">I", SPACE_A1)  # lea.l $1ED10.l,a1
     b += struct.pack(">H", 0x4EF9) + struct.pack(">I", SPACE_RESUME)  # jmp $1EC72.l
     assert len(b) == SPACE_TRAMP_LEN, len(b)
@@ -103,11 +256,13 @@ def space_tramp(at: int) -> bytes:
 
 def plan(cs, tramp_at: int) -> list[tuple[str, int, bytes]]:
     """`cs` 는 `hangul.Charset` — 순환 임포트를 피해 타입은 안 박는다."""
+    _ensure_custom_glyphs()
     out = []
     for i, (addr, ch, _why) in enumerate(DIRECTIONS):
-        out.append((f"field-hud-dir:{i}", addr, cs.encode_char(ch)))
+        out.append((f"field-hud-dir:{i}", addr, cs.encode_char(PUA_DIR[ch])))
     for i, (addr, word, _why) in enumerate(SUFFIX):
-        out.append((f"field-hud-suffix:{i}", addr, cs.encode(word)))
+        body = b"".join(cs.encode_char(pua) for pua in PUA_SUFFIX[word])
+        out.append((f"field-hud-suffix:{i}", addr, body))
     out.append(("field-hud-space-tramp", tramp_at, space_tramp(tramp_at)))
     out.append(
         (
@@ -121,8 +276,11 @@ def plan(cs, tramp_at: int) -> list[tuple[str, int, bytes]]:
 
 
 def chars() -> set[str]:
-    """이 패치가 쓰는 글자 — `collect_chars()` 가 다른 문안과 상관없이 늘 구워 둔다."""
-    return set("부근입구동서남북")
+    """이 패치가 쓰는 글자 — `collect_chars()` 가 다른 문안과 상관없이 늘 구워 둔다.
+    실제로 굽는 건 합성 글리프(PUA)뿐이다 — `_ensure_custom_glyphs()`가 비트맵을 채워야
+    `needs_glyph()`가 코드를 배정할 게 있다."""
+    _ensure_custom_glyphs()
+    return {p for puas in PUA_SUFFIX.values() for p in puas} | set(PUA_DIR.values())
 
 
 ORIG = {
