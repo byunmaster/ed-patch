@@ -269,6 +269,12 @@ def plan():
                 head = j - len(s.encode("cp932", "replace"))
                 slot = nxt - head
                 kr = table.get(s)
+                # 🔴 참조 없는 4바이트 이하 조각은 기계어일 수 있다 — 「あ! 」「う! 」가 조우
+                # 코드의 `sb v0,0xa(a0)` 윗 반워드(82 a0 21 20)와 우연히 같아 명령어 셋을
+                # 덮어썼다(09-28, 나무인간 조우 간헐 프리징). 진짜 대사면 참조가 있다.
+                if len(buf[head:j]) <= 4 and not refs.get(head):
+                    i = j + 1
+                    continue
                 if kr is None:
                     none.append((group, head, s))
                 elif len(_enc(kr)) + 1 <= slot:
@@ -534,8 +540,15 @@ def _apply_sha_table():
                     # `攻撃を受けた%c%s%cは興奮した。\n`(3c1ee910cd)의 **꼬리와 겹쳐**
                     # 제자리 치환이 그 안쪽을 덮어써 3c1ee910cd 쪽이 조용히 깨졌다
                     # (되읽기로 발각 — 도구 집계엔 하나도 안 걸렸다).
+                    # 🔴 단 **코드가 그 자리를 직접 가리키면 진짜 문장 머리다**(09-28, 마스터 QA
+                    # 디겐스전 「剣を受けた」). 포인터 표 바로 뒤에 붙은 대사는 앞 바이트가 널이
+                    # 아니라서 이 검사에 걸려 **6줄이 일본어로 남았다** — 원본 diff 기준선이
+                    # 그걸 「알려진 잔존」으로 삼켜 게이트도 조용했다.
                     if i != 0 and data[i - 1] != 0:
-                        continue
+                        if refs is None:
+                            refs, lui_use = overlay_refs(orig)
+                        if i not in refs:
+                            continue
                     nxt = e
                     while nxt < len(data) and data[nxt] == 0:
                         nxt += 1

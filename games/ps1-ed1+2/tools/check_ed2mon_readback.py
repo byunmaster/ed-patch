@@ -25,6 +25,7 @@ from common import BUILD_DIR, ROOT, extract
 from ed2_monster_review import MON as MON_ORIG
 from patch_ed2_monster_lines import _enc as _enc_lines
 from patch_ed2_monster_lines import _live_group_lba as _live_mon
+from patch_ed2_monster_lines import overlay_refs
 from patch_ed2_monsters import _enc as _enc_names
 from patch_ed2_monsters import plan as names_plan
 
@@ -124,8 +125,16 @@ def check_lines():
             cap = (size + 2047) // 2048 * 2048
             buf = bytes(extract(lba, cap, path=IMG))
             idx = buf.find(want)
+            refs = None
             while idx >= 0:
                 if idx == 0 or buf[idx - 1] == 0:
+                    found = True
+                    break
+                # 포인터 표 바로 뒤에 붙은 대사는 앞이 널이 아니다 — 코드가 그 자리를
+                # 직접 가리키면 문장 머리로 인정한다(적용기 `_apply_sha_table` 과 같은 규칙).
+                if refs is None:
+                    refs = overlay_refs(buf)[0]
+                if idx in refs:
                     found = True
                     break
                 idx = buf.find(want, idx + 1)

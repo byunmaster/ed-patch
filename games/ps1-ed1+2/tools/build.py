@@ -257,6 +257,9 @@ def main():
     run("patch_ed2_battle.py")  # ED2.EXE 전투 문안 — 제자리 치환 + 넘치면 재배치
     run("patch_ed2_monsters.py")  # ED2MON0~5.BIN 몬스터 이름 — 제자리 치환만
     run("patch_ed2_monster_lines.py")  # ED2MON0~5.BIN 전투 대사 — 제자리 치환만
+    # 조우 코드의 이름 복사가 JP 길이로 굳어 있어 긴 한글 이름이 잘린다(QA 129) —
+    # 이름표 재배치가 끝난 **뒤**에 복사를 널까지 도는 루프로 바꾼다.
+    run("patch_ed2_name_copy.py")
     run("patch_items.py")  # ED.EXE 아이템·마법명 (FINAL 제자리 갱신)
     # 줄머리 공백 훅(patch_battle_wrap.py)은 **미채택 확정**(2026-07-23 유저 결정, 보류 아님).
     # 구현·검증까지 끝냈으나 ①differential로 인트로 정지와 무관함이 확인돼 실익이 없었고

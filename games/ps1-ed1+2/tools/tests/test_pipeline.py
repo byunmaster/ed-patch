@@ -1611,7 +1611,7 @@ def test_josa_hook_reads_trailing_digit_aloud():
     import patch_josa_hook as J
 
     table = J.build_bit_table()
-    sj = lambda s: b"".join(HM.syllable_sjis(c).to_bytes(2, "big") for c in s)  # noqa: E731
+    sj = lambda s: b"".join(HM.syllable_sjis(c).to_bytes(2, "big") for c in s)
     want = {
         b"0": "을",
         b"1": "을",
@@ -1675,6 +1675,33 @@ def test_prewrap_backoff_and_space_swallow_stubs():
     p3 = HP.stub_pass3_space(base, 0x800AD124)
     HP.verify_asm(p3, base, "pass3")
     HP.verify_asm(HP.stub_after_backoff(base, base, 0x800ACF80), base, "after")
+
+
+def test_ed2mon_name_copy_loop_and_liveness():
+    """09-28 QA 129 — 이름 복사는 JP 길이로 펼쳐져 있어 루프로 바꾼다. 루프 자체와
+    「뒤 코드가 레지스터를 읽나」 판정의 두 함정(복귀·긴 직선 구간)을 박아 둔다."""
+    import struct
+
+    import patch_ed2_name_copy as NC
+
+    base = NC.BASE
+    loop = b"".join(struct.pack("<I", w) for w in NC._loop(base))
+    ins = list(NC._md.disasm(loop, base))
+    assert [i.mnemonic for i in ins] == ["lbu", "addiu", "sb", "bnez", "addiu"]
+    assert int(ins[3].op_str.split(",")[-1], 0) == base  # 분기는 루프 머리로
+
+    def words(*ws):
+        return b"".join(struct.pack("<I", w) for w in ws)
+
+    # 복귀(jr ra) 뒤의 a1·v1 은 호출자가 안 본다 — 거부하면 안 된다
+    ret = words(0x24020022, 0x03E00008, 0x00000000)  # addiu v0,zero,0x22 · jr ra · nop
+    assert NC._reads_before_write(ret, 0) == set()
+    # 긴 직선 저장 구간(40명령) 뒤에 a1 을 먼저 쓰면 안전 — 한도에 걸려 「위험」이 되면 안 된다
+    long = words(*([0xA0200000] * 40), 0x24050018, 0x24030001, 0x24040000, 0x24020000, 0x03E00008, 0)
+    assert NC._reads_before_write(long, 0) == set()
+    # 진짜로 a1 을 읽으면 잡는다
+    assert "$a1" in NC._reads_before_write(words(0x90A20000, 0), 0)
+
 
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

@@ -71,6 +71,12 @@ WIDTH_EXEMPT_NAMES: set[str] = set()
 # .stub_backoff`)을 적용한 빌드는 **0건**(마지막 공백에서 정확히 물러나 개행)이었다.
 # ⇒ 이 축(견본 32건)은 `CRTW.check()`(이론상 최악, 여기)가 아니라 `check_prewrap_rules
 # ._battle_table` 류의 실행 검증이 정본이고, 여기서는 실패로 안 센다.
+# 폭 초과를 보고로 내리는 **표 전체** — 몬스터 전투 대사(ED2MON)는 전부 로그성이다(09-27 규칙).
+# 09-28 마스터 지시로 우리가 넣었던 문장 중간 개행 140줄을 걷었다(원문에 있던 5줄만 남김 —
+# 그 개행은 09-15 엔진이 낱말 한가운데서 끊던 시절 056 대응으로 손으로 박은 것). 실측:
+# 걷어 낸 140줄 × 최장 이름 12개 = 1,680조합을 빌드 prewrap 에 태워 ④(낱말 중간 절단) 0건.
+WIDTH_EXEMPT_SOURCES: set[str] = {"script/ED2MON_LINES.json"}
+
 WIDTH_EXEMPT_TEMPLATES: set[str] = {
     "%c%s%c은(는) 꼬리로 공격했다.\n",
     "%c%s%c의 목을 물어뜯었다.\n",
@@ -305,7 +311,7 @@ def check_realistic(*, top_n=20, verbose=False, strict=False):
             w = max(_width(line) for line in folded.split("\n"))
             if w > FRAME_HALFWIDTH:
                 row = (src, t, name, name_src, w, w - FRAME_HALFWIDTH)
-                exempt_rows = t in WIDTH_EXEMPT_TEMPLATES or (
+                exempt_rows = t in WIDTH_EXEMPT_TEMPLATES or src in WIDTH_EXEMPT_SOURCES or (
                     name.rstrip("ABCDEFGHIJ′”") in WIDTH_EXEMPT_NAMES
                 )
                 (exempt if exempt_rows else over).append(row)

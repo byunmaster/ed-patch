@@ -139,7 +139,12 @@ def plan():
         nxt = end
         while nxt < len(buf) and buf[nxt] == 0:
             nxt += 1
-        slot = nxt - fo
+        # 🔴 **칸은 원문 끝을 4바이트로 올린 데까지다**(09-28, 마스터 QA 112). 그 너머로
+        # 이어지는 0 은 정렬 패딩이 아니라 **게임이 실행 중에 쓰는 고정 길이 버퍼**일 수
+        # 있다 — `たち` 뒤 26바이트가 그랬고, 재배치가 거기에 「…의 ＨＰ를 %d 빼앗았다!!」를
+        # 넣자 게임이 버퍼를 채우며 「빼」를 00 00 으로 덮어 문장이 「…129 」에서 끊겼다
+        # (RAM 0x800E415E, 스테이트마다 다른 값이 들어 있다 = 변수다).
+        slot = min(nxt, (end + 1 + 3) & ~3) - fo
         (fit if len(_enc(kr)) + 1 <= slot else over).append((fo, jp, kr, slot))
     return fit, over, none
 
