@@ -391,7 +391,15 @@ def _battle_table(tbl):
         #   prewrap 이 아무것도 안 바꿔도 걸리므로 입력 자체의 판정을 뺀다.
         base = violations(s, s)
         for lab, exe in (("원판", orig), ("빌드", new)):
-            v = [x for x in violations(s, prewrap(exe, "ED2", s)) if x not in base]
+            out = prewrap(exe, "ED2", s)
+            v = [x for x in violations(s, out) if x not in base]
+            # ⑨ 폭에 꼭 찬 줄 뒤의 개행 — 렌더러가 29열에서 한 번 넘기고 `\n` 이 또 넘겨
+            #   **빈 줄**이 생긴다(종장 마스터 캡처 「…평화를 / (빈 줄) / 되찾아」, 09-28).
+            #   입력 줄 자체의 결함이라 base 로는 안 걸러지니 따로 본다.
+            #   ⚠ `%d`(4자리로 편 줄)는 뺀다 — 걸리는 건 레벨업 배분 포인트 「1234포인트만큼」
+            #   뿐인데 그 값은 세 자리를 안 넘는다(세 자리면 28열로 빈 줄이 안 생긴다).
+            if any(width(ln) == FRAME and b"1234" not in ln for ln in out.split(b"\n")[:-1]):
+                v.append("⑨")
             for x in v:
                 tally[lab][x] = tally[lab].get(x, 0) + 1
             if lab == "빌드" and v:
@@ -433,7 +441,7 @@ def main():
         worst = max(worst, sum(tally["빌드"].values()))
         print(f"  {game}: 조립 문장 {n}종 — 원판 {tally['원판'] or 0} → 빌드 {tally['빌드'] or 0}")
     worst = max(worst, _battle_table(tbl))
-    print(f"  {'✅' if not worst else '❌'} 런타임 줄넘김 ①~④·⑦·⑧: 빌드 {worst}건")
+    print(f"  {'✅' if not worst else '❌'} 런타임 줄넘김 ①~④·⑦~⑨: 빌드 {worst}건")
     return 1 if worst else 0
 
 
