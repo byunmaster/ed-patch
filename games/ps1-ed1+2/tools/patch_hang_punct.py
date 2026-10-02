@@ -63,6 +63,13 @@ SIG_PREWRAP = re.compile(rb"\xff\xff\xc2\x26\x2a\x10\x43\x00[\s\S]{2}\x40\x10\x0
 # addiu v0,s4,-1 ; slt v0,v0,v1 ; beqz v0,.. ; slt v0,s4,v1
 SIG_DRAW = re.compile(rb"\xff\xff\x82\x26\x2a\x10\x43\x00[\s\S]{2}\x40\x10\x2a\x10\x83\x02")
 
+# 드로어의 **그린 뒤 선제 줄바꿈** — `slt v0,s4,v0 ; beqz ; addiu v0,s3,1 ; addiu s1,s1,1 ; addiu s0,zero,1 ;
+# addiu v0,s3,1 ; move s3,v0`. 29열을 다 채우면 다음 글자를 보기도 전에 줄을 넘긴다(아래 `stub_eager_nl`).
+SIG_EAGER = re.compile(
+    rb"\x2a\x10\x82\x02[\s\S]{2}\x40\x10\x01\x00\x62\x26\x01\x00\x31\x26\x01\x00\x10\x24"
+    rb"\x01\x00\x62\x26\x21\x98\x40\x00"
+)
+
 HALF_LO, HALF_N = 0x20, 0x5F  # 0x20..0x7E  = 반각
 KANA_ADD, KANA_N = 0x5F, 0x3F  # 0xA1..0xDF = 반각(반각 가나)
 HANG_TAIL = ".,!?)\"'"  # 매달 수 있는 꼬리 부호 — `reinsert_kr_pilot.HANG_TAIL` 과 같아야 한다
@@ -360,6 +367,41 @@ def stub_after_backoff(base, bo, loop_tail):
     return a.resolve()
 
 
+def stub_eager_nl(base, resume):
+    """드로어가 **정확히 29열을 채운 줄** 바로 뒤의 명시 개행(`\\n`)이 빈 줄을 만들지 않게 한다.
+
+    원판 드로어는 글자를 그린 직후 `열 > 한계` 면 **다음 글자를 보지 않고** 줄을 넘긴다(`s1++ · s0=1`).
+    그 줄 끝에 `\\n` 이 오면 개행 처리기가 방금 넘어간 **빈 줄**을 공백으로 채우고 또 넘겨 **빈 줄 하나**가
+    생긴다 — 이름이 네 글자인 주인공의 「세리오스는 보물상자를 열었다.」(딱 29열)가 그 모양이다(마스터 10-03).
+    문안을 늘려 피하는 길(「열어 보았다」)은 **런타임 이름 폭**을 몰라 부분 해법이라 접고 엔진을 고쳤다.
+    에뮬 A/B(같은 글을 같은 자리에 주입): 원판은 29열 줄과 다음 줄 사이에 빈 줄이 뜨고 이 스텁은 안 뜬다.
+
+    ⇒ 다음 글자가 `\\n`(0x0A)이면 **줄을 넘기지 않고** 열만 한계+1 로 둔다. 개행 처리기는 `열 > 한계` 일 때
+    공백 채움 없이 줄만 넘기므로(0x80083dc8~dd4) 줄이 정확히 하나만 넘어간다. 아니면 원판 그대로.
+
+    진입은 원 `addiu s1,s1,1` 자리의 `j` 다 — 그 **지연 슬롯이 원 `addiu s0,zero,1`** 이라 여기 들어올 때
+    s0=1 이다(그래서 개행 쪽에서 `s0 = s4 + 1` 을 다시 쓴다). 레지스터: s3=방금 그린 글자의 마지막 바이트
+    인덱스 · [sp+0x20]=문자열 · s4=한계값.
+    """
+    a = Asm(base)
+    _lw(a, "t0", 0x20, "sp")
+    a.sll("t1", "s3", 16)
+    _sra(a, "t1", "t1", 16)
+    a.addiu("t1", "t1", 1)  # 다음 글자
+    a.addu("t1", "t0", "t1")
+    a.lbu("t2", 0, "t1")
+    a.nop()  # 로드 지연
+    a.addiu("t3", "zero", 0x0A)
+    a.bne("t2", "t3", "wrap")
+    a.nop()
+    _j(a, resume)  # 개행이 온다 — 줄을 넘기지 않는다
+    a.addiu("s0", "s4", 1)  # 지연 슬롯: 열 = 한계+1 (개행 처리기가 공백 없이 넘긴다)
+    a.label("wrap")
+    _j(a, resume)
+    a.addiu("s1", "s1", 1)  # 지연 슬롯: 원 명령(줄 +1) — s0 는 이미 1
+    return a.resolve()
+
+
 def stub_pass3_space(base, tail):
     """3패스 자동 개행 자리: 그 자리 글자가 공백이면 **개행이 공백을 대신한다**(③).
 
@@ -529,17 +571,28 @@ def build_and_patch(ed: bytearray, game: str):
     off, avail = free_run(ed, (st["josa_off"], st["data_off"]), size)
     base = off - 0x800 + 0x80010000
     # ③·④ 스텁은 **다른 런**에 둔다(이 런은 176B 뿐이다) — 오름차순 첫 자리라 결정적이다.
+    # 선제 줄바꿈 자리 — 같은 드로어 함수 안(`d` 뒤 0x300B 이내)에서만 찾는다
+    ed_bytes = bytes(ed)
+    eager = [
+        m.start() - 0x800 + 0x80010000 + 12
+        for m in SIG_EAGER.finditer(ed_bytes)
+        if 0 <= m.start() - 0x800 + 0x80010000 - d < 0x300
+    ]
+    assert len(eager) == 1, f"{game} 선제 줄바꿈 자리 {len(eager)}곳 — 하나여야 한다"
+    e = eager[0]
     size2 = (
         len(stub_backoff(0))
         + len(stub_after_backoff(0, 0, p + 0x80))
         + len(stub_pass3_space(0, p + 0x224))
+        + len(stub_eager_nl(0, e + 8))
     )
     off2, avail2 = free_run(ed, (st["josa_off"], st["data_off"], off), size2)
     base2 = off2 - 0x800 + 0x80010000
     bo = stub_backoff(base2)
     af = stub_after_backoff(base2 + len(bo), base2, p + 0x80)
     p3 = stub_pass3_space(base2 + len(bo) + len(af), p + 0x224)
-    blob2 = bo + af + p3
+    en = stub_eager_nl(base2 + len(bo) + len(af) + len(p3), e + 8)
+    blob2 = bo + af + p3 + en
     assert all(b == 0 for b in ed[off2 : off2 + len(blob2)]), "③·④ 배치 자리가 0이 아니다"
     ed[off2 : off2 + len(blob2)] = blob2
     s1 = stub_prewrap(base, p + 8, bo=base2)
@@ -555,6 +608,11 @@ def build_and_patch(ed: bytearray, game: str):
         (d, 0x2682FFFF, base + len(s1) + len(s1b)),  # addiu v0, s4, -1
         (p + 0x64, 0x24110001, base2 + len(bo)),  # addiu s1, zero, 1 — 놓은 뒤 끊기(④)
         (p + 0x20C, 0x00051400, base2 + len(bo) + len(af)),  # sll v0, a1, 16 — 3패스 개행(③)
+        (
+            e,
+            0x26310001,
+            base2 + len(bo) + len(af) + len(p3),
+        ),  # addiu s1, s1, 1 — 드로어 선제 줄바꿈
     ):
         got = struct.unpack_from("<I", ed, fo(ram))[0]
         assert got == want, f"{game} 훅 0x{ram:08X} 원명령 불일치: 0x{got:08X} != 0x{want:08X}"

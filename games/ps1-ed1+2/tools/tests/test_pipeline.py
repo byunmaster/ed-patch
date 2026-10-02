@@ -1633,7 +1633,6 @@ def test_josa_hook_reads_trailing_digit_aloud():
         assert bytes(buf[len(line) - 6 : len(line) - 4]) == sj(j), (tail, j)
 
 
-
 def test_jp_leak_ignores_plain_fullwidth_alnum():
     """원문이 전각 ＭＰ 면 우리도 전각으로 쓴다(09-27) — 전각 영숫자 공유는 누출이 아니다."""
     import check_jp_leak as L
@@ -1697,10 +1696,82 @@ def test_ed2mon_name_copy_loop_and_liveness():
     ret = words(0x24020022, 0x03E00008, 0x00000000)  # addiu v0,zero,0x22 · jr ra · nop
     assert NC._reads_before_write(ret, 0) == set()
     # 긴 직선 저장 구간(40명령) 뒤에 a1 을 먼저 쓰면 안전 — 한도에 걸려 「위험」이 되면 안 된다
-    long = words(*([0xA0200000] * 40), 0x24050018, 0x24030001, 0x24040000, 0x24020000, 0x03E00008, 0)
+    long = words(
+        *([0xA0200000] * 40), 0x24050018, 0x24030001, 0x24040000, 0x24020000, 0x03E00008, 0
+    )
     assert NC._reads_before_write(long, 0) == set()
     # 진짜로 a1 을 읽으면 잡는다
     assert "$a1" in NC._reads_before_write(words(0x90A20000, 0), 0)
+
+
+def _run_eager_stub(next_byte):
+    """드로어 선제 줄바꿈 스텁을 실행해 (줄 +1 했나, 열) 을 돌려준다.
+
+    진입 전에 원 지연 슬롯(`s0 = 1`)이 이미 실행된 상태를 흉내 낸다."""
+    import struct
+
+    import patch_hang_punct as H
+    from patch_josa_hook import REG
+
+    BASE, RESUME, STR, SP = 0x80100000, 0x80100800, 0x2000, 0x3000
+    code = H.stub_eager_nl(BASE, RESUME)
+    mem_b = {STR + 5: next_byte}  # s3=4 → 다음 글자 = STR+4+1
+    mem_w = {SP + 0x20: STR}
+    r = [0] * 32
+    r[REG["s0"]], r[REG["s1"]], r[REG["s3"]], r[REG["s4"]], r[REG["sp"]] = 1, 7, 4, 29, SP
+    pc, pending, steps = BASE, None, 0
+    while pc != RESUME:
+        steps += 1
+        assert steps < 100, "무한 루프"
+        w = struct.unpack_from("<I", code, pc - BASE)[0]
+        op, rs, rt, rd, sh, fn = (
+            w >> 26,
+            (w >> 21) & 31,
+            (w >> 16) & 31,
+            (w >> 11) & 31,
+            (w >> 6) & 31,
+            w & 63,
+        )
+        imm = w & 0xFFFF
+        simm = imm - 0x10000 if imm >= 0x8000 else imm
+        nxt, target = pc + 4, None
+        if op == 0 and fn == 0x00:
+            r[rd] = (r[rt] << sh) & 0xFFFFFFFF
+        elif op == 0 and fn == 0x03:
+            v = r[rt] & 0xFFFFFFFF
+            r[rd] = ((v - (1 << 32)) if v >> 31 else v) >> sh & 0xFFFFFFFF
+        elif op == 0 and fn == 0x21:
+            r[rd] = (r[rs] + r[rt]) & 0xFFFFFFFF
+        elif op == 0x09:
+            r[rt] = (r[rs] + simm) & 0xFFFFFFFF
+        elif op == 0x24:
+            r[rt] = mem_b.get((r[rs] + simm) & 0xFFFFFFFF, 0)
+        elif op == 0x23:
+            r[rt] = mem_w[(r[rs] + simm) & 0xFFFFFFFF]
+        elif op == 0x05:
+            target = pc + 4 + simm * 4 if r[rs] != r[rt] else None
+        elif op == 0x02:
+            target = (w & 0x03FFFFFF) << 2 | 0x80000000
+        else:
+            raise AssertionError(f"미구현 op 0x{op:02X} fn 0x{fn:02X}")
+        r[0] = 0
+        if pending is not None:
+            nxt, pending = pending, None
+        elif target is not None:
+            pending = target
+        pc = nxt
+    return r[REG["s1"]], r[REG["s0"]]
+
+
+def test_drawer_eager_wrap_skips_when_newline_follows():
+    """꽉 찬(29열) 줄 뒤에 `\\n` 이 오면 선제 줄바꿈을 하지 않는다 — 빈 줄을 막는다(마스터 10-03).
+
+    에뮬 A/B 로 확인했다: 원판은 29열 줄 + `\\n` 사이에 빈 줄이 뜨고 이 스텁은 안 뜬다."""
+    line, col = _run_eager_stub(0x0A)
+    assert line == 7, "개행이 오는데 줄을 넘겼다 — 빈 줄이 생긴다"
+    assert col == 30, "열은 한계+1 이어야 개행 처리기가 공백 없이 넘긴다"
+    line, col = _run_eager_stub(0x41)  # 다른 글자 — 원판 그대로(줄 +1, 열 1)
+    assert (line, col) == (8, 1)
 
 
 def test_log_register_plain_class():

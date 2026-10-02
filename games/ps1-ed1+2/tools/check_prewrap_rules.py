@@ -393,13 +393,8 @@ def _battle_table(tbl):
         for lab, exe in (("원판", orig), ("빌드", new)):
             out = prewrap(exe, "ED2", s)
             v = [x for x in violations(s, out) if x not in base]
-            # ⑨ 폭에 꼭 찬 줄 뒤의 개행 — 렌더러가 29열에서 한 번 넘기고 `\n` 이 또 넘겨
-            #   **빈 줄**이 생긴다(종장 마스터 캡처 「…평화를 / (빈 줄) / 되찾아」, 09-28).
-            #   입력 줄 자체의 결함이라 base 로는 안 걸러지니 따로 본다.
-            #   ⚠ `%d`(4자리로 편 줄)는 뺀다 — 걸리는 건 레벨업 배분 포인트 「1234포인트만큼」
-            #   뿐인데 그 값은 세 자리를 안 넘는다(세 자리면 28열로 빈 줄이 안 생긴다).
-            if any(width(ln) == FRAME and b"1234" not in ln for ln in out.split(b"\n")[:-1]):
-                v.append("⑨")
+            # ⑨(폭에 꼭 찬 줄 뒤의 개행 → 빈 줄)는 **엔진을 고쳐 없앴다**(10-03 `stub_eager_nl`, 에뮬 A/B).
+            #   종장 배 안내(09-28)에서 발견해 검사기에 넣었던 규칙인데 문안이 아니라 드로어가 원인이었다.
             for x in v:
                 tally[lab][x] = tally[lab].get(x, 0) + 1
             if lab == "빌드" and v:

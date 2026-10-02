@@ -80,8 +80,9 @@ def check_window(w):
         # ② 꽉 찬 줄(29열) 바로 뒤의 **명시 개행** — 엔진이 이미 꺾었는데 우리 `\n` 이 한 번 더 꺾어 빈 줄
         #   (`test_frame_full_line_drops_our_newline` 이 막는 부류, pce 에서도 같은 발견 09-27)
         # 창을 닫기 직전의 꼬리 개행(`…。{n}{c}` — 원문 구조)은 뒤에 그릴 글이 없어 빈 줄이 안 보인다 → 뺀다
-        if any(x.strip() for x in lines[i + 1 :]) and width(chunks[-1]) == FRAME:
-            out.append(("②", f"{chunks[-1]}⏎(29열+개행)"))
+        # 🔴 10-03: **엔진 드로어를 고쳐서 더는 결함이 아니다**(`patch_hang_punct.stub_eager_nl` — 29열 줄 뒤에
+        #   `\n` 이 오면 선제 줄바꿈을 건너뛴다, 에뮬 A/B 로 빈 줄 사라짐 확인). 그래서 세지 않는다.
+        #   (그 전에는 이 줄이 22건이었고 문안을 늘려 피했다 — 「열어 보았다」 — 이름 폭을 모르는 부분 해법이었다.)
         for a, b in pairwise(chunks):
             if b.startswith(" "):
                 out.append(("③", f"{a}/{b}"))
