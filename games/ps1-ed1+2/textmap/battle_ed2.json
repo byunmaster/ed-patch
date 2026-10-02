@@ -4,8 +4,8 @@
  "entries": [
   {
    "k": "eb93bcf9ee",
-   "sha": "f4cdc449",
-   "ours": " Gold를 얻었습니다.\n"
+   "sha": "53cc1c86",
+   "ours": " Gold를 얻었다.\n"
   },
   {
    "k": "439ccc3598",
@@ -119,8 +119,8 @@
   },
   {
    "k": "e0ac19ff13",
-   "sha": "ebecf4a9",
-   "ours": "%c%s%c은(는)\n%s 주문을 익혔습니다."
+   "sha": "c465c5e8",
+   "ours": "%c%s%c은(는)\n%s 주문을 익혔다."
   },
   {
    "k": "0a451f4fd5",
