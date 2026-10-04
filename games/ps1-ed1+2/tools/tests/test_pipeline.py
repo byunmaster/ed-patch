@@ -1774,23 +1774,5 @@ def test_drawer_eager_wrap_skips_when_newline_follows():
     assert (line, col) == (8, 1)
 
 
-def test_log_register_plain_class():
-    """시스템·행동 로그는 평어체(마스터 10-03) — 분류 규칙은 NPC 대사를 건드리지 않는다."""
-    import check_log_register as L
-
-    # 한 문장짜리 파티 행동 서술 · 현재형 해설 → 로그
-    assert L.is_log_text("황금의 열쇠를 건넸습니다.")
-    assert L.is_log_text("문에는 자물쇠가 걸려 있습니다.")
-    assert L.is_log_text("을(를) 받았습니다.{p}을(를) 손에 넣었습니다.")
-    # 호칭·쉼표·1~2인칭이 있으면 NPC 대사다 — 정중 그대로 둔다
-    assert not L.is_log_text("정말 감사합니다. 덕분에 목숨을 건졌습니다.")
-    assert not L.is_log_text("왕자님, 편지를 받았습니다.")
-    assert not L.is_log_text("저는 선물을 받았습니다.")
-    # 과거는 ㅆ 받침만, 물음은 그대로
-    assert L.to_plain_text("보물상자를 열었습니다.") == "보물상자를 열었다."
-    assert L.to_plain_text("문에는 자물쇠가 걸려 있습니다.") == "문에는 자물쇠가 걸려 있다."
-    assert L.to_plain_text("무엇을 버리겠습니까?") == "무엇을 버리겠습니까?"
-
-
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)

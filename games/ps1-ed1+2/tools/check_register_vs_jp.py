@@ -45,7 +45,6 @@ from contextlib import redirect_stdout
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R
-from check_log_register import is_log_text
 from reinsert_kr_pilot import SCN_FILES
 
 POLITE_JP = re.compile(r"(ました|ます|ません|でした|です)[。！？\s]*$")
@@ -56,39 +55,17 @@ POLITE_KR = re.compile(r"습니다[.!?…\s]*$")
 NAMEPLATE = re.compile(r"^%c[^%\n]{1,20}%c\n")
 
 
-# 평어로 올린 **해설·획득 안내**(마스터 10-03) — 런타임 주입 표지가 없어 표지로는 못 가른다.
-# 같은 씬에 라벨이 빈 NPC 대사(`정말 감사합니다`)가 섞여 있어서 **손으로 가려낸 목록**이다.
-# 새 해설을 평어로 올리면 여기에 적는다(안 적으면 이 검사가 모른다).
-LOG_EXTRA = {
-    "ED1SCN1": {1174, 303, 1215},
-    "ED1SCN2": {347, 322, 867, 916, 868, 421, 520, 923, 929},
-    "ED1SCN3": {269, 344, 706, 1132, 119, 140, 271},
-    "ED1SCN4": {408, 466, 649},
-    "ED1SCN5": {1199},
-    "ED1SCN6": {258, 212, 296, 260},
-    "ED2SCN1": {35},
-    "ED2SCN11": {167, 322},
-    "ED2SCN2": {280, 335, 336, 337, 338, 372},
-    "ED2SCN3": {335, 789},
-    "ED2SCN4": {318, 691, 743},
-    "ED2SCN5": {576, 599, 745},
-    "ED2SCN7": {321, 520},
-    "ED2SCN9": {347},
-    "ED2SCN12": {153, 154, 155, 163},
-}
-
-
 def _log_ids(name):
-    """정본에서 시스템·행동 로그 블록의 eid 집합 — 주입 표지(`\\x1a`·`\\x17`) 블록 + `LOG_EXTRA`."""
+    """정본에서 시스템·행동 로그 블록의 eid 집합 — 주입 표지(`\\x1a`·`\\x17`) 블록."""
     import json
     import pathlib
 
     p = pathlib.Path(__file__).resolve().parents[1] / "script" / f"{name}.json"
-    ids = set(LOG_EXTRA.get(name, ()))
+    ids = set()
     if p.exists():
         for k, v in json.loads(p.read_text(encoding="utf-8")).items():
             t = v.get("t", "") if isinstance(v, dict) else ""
-            if "\x1a" in t or "\x17" in t or is_log_text(t):
+            if "\x1a" in t or "\x17" in t:
                 ids.add(int(k))
     return ids
 
@@ -172,8 +149,8 @@ def scan_textmap():
         txt = re.sub(r"%[csd]", "", ours).strip()
         # 전투·아이템 코퍼스에는 NPC 대사(가이드·가드·왕비)가 섞여 있다 — 승패·획득·해방 같은
         # **시스템 결과 문구**만 본다(10-03).
-        result = re.search(r"승리했|패했|Gold|얻었|포기했|찾았|익혔|해방|도망쳤", txt)
-        if POLITE_KR.search(txt) and (result or is_log_text(txt)):
+        result = re.search(r"승리했|패했|Gold|얻었|포기했|찾았|익혔", txt)
+        if POLITE_KR.search(txt) and result:
             out.append((cls, k, j.strip()[-26:], ours.strip()[-30:]))
     return out
 

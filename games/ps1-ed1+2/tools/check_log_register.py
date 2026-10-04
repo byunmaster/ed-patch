@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """**시스템·행동 로그의 문체**를 부류 단위로 지킨다 — **평어체**(마스터 확정 2026-10-03).
 
-🔴 **09-03 의 「원문이 정중이니 정중」을 10-03 에 뒤집었다.** 종장 QA 에서 마스터가 「전투 로그는
+🔴 **09-03 의 「원문이 정중이니 정중」을 10-03 에 뒤집었다 — 단 주입 표지(흰색) 로그만이다.**
+**초록 해설과 NPC 대사는 정중 그대로다**(마스터 10-03 「NPC 대사는 로그가 아니라 대화」·「초록색 해설은 존댓말 유지」).
+표지 없는 서술은 색이 콜사이트 인자라 문안으로 못 가린다 — 평어로 올리지 않았다(아래 서술은 당시 것). 종장 QA 에서 마스터가 「전투 로그는
 반말(`기절해 버렸다`)인데 보물상자·승패·획득은 존댓말이라 한 화면에서 섞여 보인다」고 짚었고
 「전부 평어」로 판정했다. 원문은 이 부류에서 정중(`〜ました`) 맞다 — 그래서 아래 수치는 그대로
 「원문이 정중임」의 근거로 남기되, **우리 문체는 평어**다(원문 우선의 예외 — 일관성). 이 검사기의
@@ -52,43 +54,6 @@ STATEMENT = re.compile(r"습니다[.!?…]?$")
 PLAIN = re.compile(r"(었다|았다|했다|였다|된다|한다|이다)[.!?…]?$")
 
 
-# ── 표지 없는 해설·획득 안내 — 손으로 가린 **규칙**(마스터 10-03 「전부 평어」) ──────────────────
-# 주입 표지(`\x1a`·`\x17`)가 없는 로그도 있다(`을(를) 받았습니다`·`건넸습니다`). 라벨이 빈 NPC 대사가
-# 섞여 있어 정중 평서를 통째로 평어로 올릴 수는 없으므로 **한 문장짜리 파티 행동 서술**만 가린다:
-# 동사가 아래 목록이고 · 쉼표·호칭·1~2인칭이 없고 · 문장 전부가 그 꼴이어야 한다.
-LOG_VERB = (
-    r"(받았|건넸|넣었|손에 넣었|장비했|동료가 되었|동료로 합류했|외웠|발견했|집었|돌려놓았|적었|"
-    r"끼워 넣었|끼워 보았|사용했|열었|닫았|읽었|기도했|설치했|돌려받았)"
-)
-LOG_SENT = re.compile(r"^[^.!?,…{}]{0,44}" + LOG_VERB + r"습니다[.!]?(\{p\})?$")
-LOG_PRON = re.compile(
-    r"여러분|님[,.\s께]|당신|너희|저희|제가|저는|우리|그대|왕자님|오셨|주십시오|하겠습니다|드리|뵙|주셨|하셨|계십|십니다|시겠"
-)
-# 현재형 해설(`문에는 자물쇠가 걸려 있습니다`) — 정발이 해설 높임말을 쓰던 자리라 문두로 가린다.
-LOG_NARR_HEAD = re.compile(r"^(문에는|석비에는|석비가) ")
-
-
-def is_log_text(t):
-    """주입 표지 없는 **시스템·행동 로그·해설** 문안인가 — 평어체로 올릴 대상."""
-    tt = t.replace("\n", " ").replace("\x1a", "").replace("\x17", "")
-    sents = [x.strip() for x in re.split(r"(?<=[.!])\s+|\{p\}", tt) if x.strip()]
-    if not sents:
-        return False
-    if LOG_NARR_HEAD.match(sents[0]):
-        return all(x.endswith(("있습니다.", "없습니다.")) for x in sents)
-    return all(LOG_SENT.match(x) and not LOG_PRON.search(x) for x in sents)
-
-
-def to_plain_text(t):
-    """정중 평서 → 평어체. 과거(`ㅆ` 받침 + 습니다)와 현재 `있습니다·없습니다` 만 다룬다."""
-    t = re.sub(
-        r"([\uAC00-\uD7A3])습니다",
-        lambda m: m.group(1) + "다" if (ord(m.group(1)) - 0xAC00) % 28 == 20 else m.group(0),
-        t,
-    )
-    return re.sub(r"(있|없)습니다", r"\1다", t)
-
-
 def scan(track):
     bad, total = [], 0
     for p in sorted(SCRIPT.glob(f"{track}SCN*.json")):
@@ -96,7 +61,7 @@ def scan(track):
             if not isinstance(v, dict):
                 continue
             t = v.get("t") or ""
-            if not (any(m in t for m in INJECT) or is_log_text(t)):
+            if not any(m in t for m in INJECT):
                 continue
             total += 1
             tail = t.rstrip().rstrip("}pn{").rstrip()
