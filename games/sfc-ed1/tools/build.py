@@ -82,9 +82,22 @@ def body_items(rom: bytes) -> list[script.Item]:
     )
 
 
+def table_targets(rom: bytes) -> set[int]:
+    """메시지 포인터 표 넷이 가리키는 원문 오프셋 전부."""
+    out: set[int] = set()
+    for addr, count in text.MSG_TABLES.values():
+        base = common.snes2off(addr)
+        for i in range(count):
+            p = rom[base + 3 * i] | (rom[base + 3 * i + 1] << 8) | (rom[base + 3 * i + 2] << 16)
+            out.add(common.snes2off(p))
+    return out
+
+
 def rewrite_tables(out: bytearray, place: dict[int, int], rom: bytes) -> int:
     n = 0
-    for addr, count in text.MSG_TABLES.values():
+    lost = []
+    body = range(common.snes2off(BODY[0]), common.snes2off(BODY[1]))
+    for name, (addr, count) in text.MSG_TABLES.items():
         base = common.snes2off(addr)
         for i in range(count):
             p = rom[base + 3 * i] | (rom[base + 3 * i + 1] << 8) | (rom[base + 3 * i + 2] << 16)
@@ -94,6 +107,12 @@ def rewrite_tables(out: bytearray, place: dict[int, int], rom: bytes) -> int:
                     3, "little"
                 )
                 n += 1
+            elif off in body:
+                lost.append(f"{name}[{i}] → {common.fmt(p)}")
+    # 🔴 본체 안을 가리키는데 새 자리가 없으면 **조용히 두지 않는다** — 본체를 `$FF` 로 비운 뒤라
+    #    그 칸은 `FFFFFF` 가 되고, 화면에선 그 메시지만 통째로 빈다(엔딩 클로즈업 실측 2026-09-26).
+    if lost:
+        raise SystemExit(f"새 자리를 못 찾은 표 항목 {len(lost)}건: {lost[:8]}")
     return n
 
 
@@ -295,6 +314,65 @@ def bake_name_box(out: bytearray, rom: bytes, slot, code_tile: dict[int, int]) -
     return done
 
 
+# ── HUD E 줄 머리 「あと」 — 글자가 아니라 **HUD 전용 2bpp 타일 두 장**이다 (2026-09-26 실기) ──────────
+# EP 표시를 「あと」로 두면 HUD 오른쪽 위 E 줄 머리에 BG2 타일 `$1FA`·`$1FB` 가 놓이고, 그 그림은
+# `$18:F2CC`(32B, 타일마다 2bpp 16B)에서 온다. 색은 셋 — 3 = 글자 · 1 = 검은 테두리 · 2 = 바탕.
+# 원본의 테두리는 **글자 픽셀의 상하좌우 이웃**과 정확히 같다(원본 あと 로 불일치 0) ⇒ 마스터 도트(글자 픽셀만,
+# `textmap/hud_namda_16x8.txt` — 정본, 다시 그리지 않는다)에 같은 규칙으로 테두리를 두른다.
+HUD_ATO = 0x18F2CC
+# 자리 — 「남다」 모드 E 줄의 틀(11워드, HUD 0~10번 칸)이 `$00:9AB7` 부터다. 원본은 2~3번 칸에 あと 를 둔다.
+# H·M 머리(0번 칸)와 세로로 맞추려고 0~1번 칸으로 옮긴다(마스터 지시 09-26, 타일 추가 없음).
+HUD_ATO_ROW = 0x009AB7
+HUD_ATO_ROW_ORIG = bytes.fromhex("27002700fa05fb05")
+HUD_ATO_ROW_NEW = bytes.fromhex("fa05fb0527002700")
+HUD_ATO_DOTS = "hud_namda_16x8.txt"
+
+
+def hud_ato_pixels() -> list[list[int]]:
+    rows = (common.GAME_DIR / "textmap" / HUD_ATO_DOTS).read_text(encoding="utf-8").splitlines()
+    if len(rows) != 8 or any(len(r) != 16 or set(r) - {"#", "."} for r in rows):
+        raise SystemExit(f"{HUD_ATO_DOTS} 는 8줄 × 16칸, `#`/`.` 만이어야 한다")
+    g = [[3 if ch == "#" else 2 for ch in r] for r in rows]
+    for y in range(8):
+        for x in range(16):
+            if g[y][x] != 3 and any(
+                0 <= y + dy < 8 and 0 <= x + dx < 16 and rows[y + dy][x + dx] == "#"
+                for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1))
+            ):
+                g[y][x] = 1
+    return g
+
+
+def bake_hud_ato(out: bytearray) -> None:
+    ro = common.snes2off(HUD_ATO_ROW)
+    if bytes(out[ro : ro + 8]) != HUD_ATO_ROW_ORIG:
+        raise SystemExit(f"HUD E 줄 틀이 예상과 다르다: {bytes(out[ro : ro + 8]).hex()}")
+    out[ro : ro + 8] = HUD_ATO_ROW_NEW
+    g = hud_ato_pixels()
+    o = common.snes2off(HUD_ATO)
+    for t in range(2):
+        for y in range(8):
+            p0 = p1 = 0
+            for x in range(8):
+                v = g[y][8 * t + x]
+                p0 |= (v & 1) << (7 - x)
+                p1 |= (v >> 1) << (7 - x)
+            out[o + 16 * t + 2 * y] = p0
+            out[o + 16 * t + 2 * y + 1] = p1
+    # 되읽기 — 구운 바이트에서 글자 픽셀을 다시 뽑아 도트 파일과 같은지
+    back = []
+    for y in range(8):
+        r = ""
+        for x in range(16):
+            t, b = divmod(x, 8)
+            p0, p1 = out[o + 16 * t + 2 * y], out[o + 16 * t + 2 * y + 1]
+            r += "#" if ((p0 >> (7 - b)) & 1) and ((p1 >> (7 - b)) & 1) else "."
+        back.append(r)
+    want = (common.GAME_DIR / "textmap" / HUD_ATO_DOTS).read_text(encoding="utf-8").splitlines()
+    if back != want:
+        raise SystemExit("HUD 「남다」 되읽기가 도트 파일과 다르다")
+
+
 # ── 창 표 밖의 머리 상자 ────────────────────────────────────────────────────────────────
 # 🔴 `menus.py` 의 창 표(27×3)가 **못 잡는 조각**이 있다. 「데이터를 지운다」의 머리 상자가
 #    그것이다 — A06(`$03:C817`, 7×10) 바로 뒤 `$03:C8A7` 에 7워드 두 줄이 더 붙어 있는데
@@ -318,9 +396,9 @@ def bake_loose_boxes(out: bytearray, rom: bytes, slot, code_tile: dict[int, int]
         inv.setdefault(t, c)
     # ⚠ `menus.json` 은 열쇠가 `원문@창id` 라 **표 밖 조각을 담을 자리가 없다** — `battle_ui.json`
     #   의 `loose` 에 둔다(거기가 이미 창 아닌 고정 문자열의 자리다)
-    src = json.loads(
-        (common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8")
-    )["loose"]
+    src = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))[
+        "loose"
+    ]
     by_jp = {x["jp"]: x["kr"] for x in src}
     done = []
     for box in LOOSE_BOXES:
@@ -332,7 +410,9 @@ def bake_loose_boxes(out: bytearray, rom: bytes, slot, code_tile: dict[int, int]
             c = inv.get(w & 0x3FF)
             got += text.TABLE.get(c, "") if c is not None else ""
         if got != box["key"]:
-            raise SystemExit(f"머리 상자 {common.fmt(box['addr'])} 의 원문이 {got!r} — {box['key']!r} 이어야 한다")
+            raise SystemExit(
+                f"머리 상자 {common.fmt(box['addr'])} 의 원문이 {got!r} — {box['key']!r} 이어야 한다"
+            )
         kr = by_jp.get(box["key"])
         if not kr:
             raise SystemExit(f"머리 상자 원문 {box['key']!r} 이 battle_ui.json 의 loose 에 없다")
@@ -454,6 +534,10 @@ def menu_bake(out: bytearray, rom: bytes) -> dict:
         raise SystemExit("라벨이 칸을 넘는다:\n  " + "\n  ".join(too_long))
     # 파티 이름 상자도 **같은 배정기**로 굽는다 — 상주 글리프는 한 웅덩이에서 나와야 한다
     names = bake_name_box(out, rom, slot, code_tile)
+    bake_hud_ato(out)
+    import hud_names  # HUD 인물 이름(A6②) — 대사 글꼴이 아니라 HUD 전용 8×8 타일
+
+    hud_names.bake(out, rom)
     loose = bake_loose_boxes(out, rom, slot, code_tile)
     return {
         "glyphs": "".join(slot_of),
@@ -523,7 +607,9 @@ def verify_header_checksum(out: bytes) -> None:
     if len(out) != NEW_SIZE:
         raise SystemExit(f"산출물 크기가 {NEW_SIZE:,}B 가 아니다: {len(out):,}B")
     if out[HEADER_ROM_SIZE_OFF] != 0x0B:
-        raise SystemExit(f"헤더 ROM 크기 필드가 0x0B(2048KB) 가 아니다: {out[HEADER_ROM_SIZE_OFF]:#04x}")
+        raise SystemExit(
+            f"헤더 ROM 크기 필드가 0x0B(2048KB) 가 아니다: {out[HEADER_ROM_SIZE_OFF]:#04x}"
+        )
     cmpl = int.from_bytes(out[CHECKSUM_OFF : CHECKSUM_OFF + 2], "little")
     chk = int.from_bytes(out[CHECKSUM_OFF + 2 : CHECKSUM_OFF + 4], "little")
     if cmpl ^ chk != 0xFFFF:
@@ -612,9 +698,23 @@ def mutable_ranges() -> list[tuple[int, int]]:
     r += hook.patch_ranges()
     b = common.snes2off(NAME_BOX)  # 파티 이름 상자(구워진 타일맵)
     r.append((b, b + NAME_STRIDE * NAME_COUNT))
+    b = common.snes2off(HUD_ATO)  # HUD E 줄 머리 「あと」 타일 두 장
+    r.append((b, b + 32))
+    b = common.snes2off(HUD_ATO_ROW)  # 그 두 장을 놓는 E 줄 틀(0~3번 칸)
+    r.append((b, b + 8))
+    import hud_names
+
+    r += hud_names.patch_ranges()  # HUD 인물 이름 — 줄 틀 다섯 + 타일 13장
     r += dicts.patch_ranges()
     r += battle_ui.patch_ranges()
     r += battle_ui.patch_ranges_a3()
+    r += battle_ui.patch_ranges_a4()
+    import credits
+
+    b = common.snes2off(credits.SITE)  # 스태프롤 포인터(주소 워드 · 뱅크)
+    r.append((b, b + len(credits.SITE_ORIG)))
+    b = common.snes2off(credits.LEN_SITE)  # 스태프롤 끝 판정(읽은 바이트 수)
+    r.append((b, b + 3))
     sheet = common.snes2off(text.FONT_SHEET)
     import tiles  # 상주 글리프를 구울 수 있는 자리 전부(실제로 구운 것은 그 부분집합이다)
 
@@ -810,6 +910,12 @@ def kr_items(
     for key in ("title", "speed", "yesno", "loose", "names"):
         texts += [x["kr"] for x in bmap.get(key, [])]
     texts += [c["kr"] for g in bmap.get("grid", []) for c in g["cols"]]
+    import credits
+
+    texts += credits.texts()  # 엔딩 스태프롤 — 표 밖 문안이라 여기서 따로 넣는다
+    import places
+
+    texts += places.texts()  # 지명(HUD·로드 메뉴) — 표 밖 문안
     texts.append(
         hook.josa_chars()
     )  # 런타임 조사 16형태 — 훅이 색인으로 집는다(문안에 없어도 필요하다)
@@ -828,6 +934,15 @@ def kr_items(
         "errors": [],
     }
     targets_all = {t for it in items for t in it.targets}
+    # 🔴 **포인터 표 항목도 목표다**(2026-09-26 — 엔딩 세리오스 클로즈업이 통째로 빈 화면이었다).
+    #    alt3 재진입점 17번(`$0B:F0CA`)은 조각 `$0B:F0A0` 의 `<FF>` 바로 뒤를 가리킨다. 분기 목표만
+    #    이어 주고 표 목표를 빼 두었더니 새 자리를 못 찾아 `rewrite_tables` 가 조용히 건너뛰었고,
+    #    본체를 `$FF` 로 비운 뒤라 그 칸에 `FFFFFF` 가 남았다(엔진이 `$FF:FFFE` 부터 읽어 빈 페이지).
+    targets_all |= table_targets(rom)
+    # 조판 — 17칸 창에 맞게 어절 단위로 개행한다(`typeset.py`). 정본 textmap 은 그대로, 롬에만 들어간다.
+    import typeset
+
+    _ts = typeset.Typesetter()
     fake_off = -1
     for si, (sid, a, e) in enumerate(slices):
         seg = items[a:e]
@@ -845,7 +960,9 @@ def kr_items(
             enc = (
                 enc_override(sid, entry)
                 if enc_override is not None
-                else encode.encode(entry["kr"], rep_index, dict_kr)
+                else encode.encode(
+                    _ts(entry["kr"], common.off2snes(seg[0].off)), rep_index, dict_kr
+                )
             )
         except ValueError as ex:
             stats["errors"].append((sid, str(ex)))
@@ -1233,6 +1350,18 @@ def build_kr(
         dk["전투 UI"] = bu
         a3 = battle_ui.bake_a3_values(out, rom, _idx, bu["next"])  # 그 뒤에 이어 놓는다
         dk["A3 값"] = a3
+        a4 = battle_ui.bake_a4_values(out, rom, _idx, a3["next"])
+        dk["A4 값"] = a4
+        import credits
+
+        dk["크레딧"] = credits.bake(out, rom, _idx, a4["next"])  # 그 뒤에 이어 놓는다
+        import places
+
+        dk["지명"] = places.bake(out, rom, _idx, dk["크레딧"]["next"])
+        # 런타임 치환(`{D6}~`)의 표 여섯 — 지명 표가 있어야 해서 맨 끝
+        dk["런타임 치환"] = dicts.bake_runtime(
+            out, rom, dk["tables"], dk["지명"]["a"], dk["지명"]["next"]
+        )
         led.snap(out, "사전·전투 UI 이관")
         hk = hook.apply(
             out,
@@ -1240,6 +1369,8 @@ def build_kr(
             k["rep"],
             dynamic_slots(out, rom, poc["resident_codes"]),
             item_table=dk["tables"][0xD2],
+            place_tables=(dk["지명"]["a"], dk["지명"]["b"]),
+            spell_table=dk["런타임 치환"]["주문 표 주소"],
         )
         led.snap(out, "렌더러 훅")
 

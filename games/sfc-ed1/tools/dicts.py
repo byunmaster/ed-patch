@@ -135,10 +135,83 @@ def bake(out: bytearray, rom: bytes, rep_index: dict[str, int]) -> dict:
     return info
 
 
+# 🔴 **런타임 치환(`$D6~$DF`)도 같은 표를 따로 가리킨다**(2026-09-26 실기 — B1 「해독초를 사용했다」의
+# 아이템 이름이 원문 가나로 깨졌다). 핸들러(`$02:E0CE~`)가 **자기 즉치 셋**으로 `$06~$08` 에 표를 넣고
+# 같은 버퍼 복사(`$02:E047`)로 간다 — 사전 코드의 설정 루틴과 모양이 같아(`IMM`) 즉치만 바꾸면 된다.
+# 롬 전체에서 `LDA #lo/STA $06 · #hi/$07 · #bank/$08` 을 훑어 원본 표를 가리키는 건 이 넷 + 아래 둘이 전부다.
+RUNTIME_SITES = {0x02E0F5: 0xD0, 0x02E106: 0xD3, 0x02E119: 0xD2, 0x02E134: 0xD3}
+# 주문 이름 — `$03:EEDD`(32칸, 색인 & $1F)는 `$D4` 사전(21)과 **다른 배열**이다(빈 칸은 `$03:EF72` 의
+# 쓰레기를 가리킨다 — 원본도 안 쓰는 자리). 같은 문자열 바이트로 `$D4` 항목에 이어 붙인다.
+SPELL_SITE = 0x02E14F
+SPELL_TABLE = 0x03EEDD
+SPELL_N = 32
+# 지명 — `$02:A793`(HUD 지명 표, `places.TABLES["a"]`)을 그대로 가리킨다. 한글 표는 `places.bake` 가 만든다.
+PLACE_SITE = 0x02E0D2
+PLACE_ORIG = 0x02A793
+RUNTIME_ALL = [*RUNTIME_SITES, SPELL_SITE, PLACE_SITE]
+
+
+def _imm(buf, site: int) -> int:
+    o = common.snes2off(site)
+    if buf[o] != 0xA9 or buf[o + 5] != 0xA9 or buf[o + 10] != 0xA9:
+        raise SystemExit(f"런타임 치환 설정 자리가 예상과 다르다 @{common.fmt(site)}")
+    return buf[o + IMM[0]] | (buf[o + IMM[1]] << 8) | (buf[o + IMM[2]] << 16)
+
+
+def _set_imm(out: bytearray, site: int, addr: int) -> None:
+    o = common.snes2off(site)
+    out[o + IMM[0]] = addr & 0xFF
+    out[o + IMM[1]] = (addr >> 8) & 0xFF
+    out[o + IMM[2]] = addr >> 16
+
+
+def bake_runtime(
+    out: bytearray, rom: bytes, tables: dict[int, int], place_a: int, org: int
+) -> dict:
+    """런타임 치환 여섯 자리를 한글 표로 돌린다. 주문 표(32칸)만 새로 `org` 에 굽는다."""
+    want = {**{s: text.DICT_TABLES[c][0] for s, c in RUNTIME_SITES.items()}}
+    want[SPELL_SITE] = SPELL_TABLE
+    want[PLACE_SITE] = PLACE_ORIG
+    for s, w in want.items():
+        if _imm(rom, s) != w:
+            raise SystemExit(f"런타임 치환 {common.fmt(s)} 이 {w:06X} 를 안 가리킨다")
+    for s, c in RUNTIME_SITES.items():
+        _set_imm(out, s, tables[c])
+    _set_imm(out, PLACE_SITE, place_a)
+    # 주문: 원본 `$03:EEDD[i]` 문자열 == `$D4[j]` 문자열이면 우리 `$D4` 표의 j 번 포인터를 쓴다
+    d4 = {bytes(b): j for j, b in enumerate(text.dict_entries(0xD4))}
+    d4_table = common.snes2off(tables[0xD4])
+    empty = org + 2 * SPELL_N  # 빈 칸용 종단자 하나
+    out[common.snes2off((BANK << 16) | empty)] = TERM
+    base = common.snes2off(SPELL_TABLE)
+    hit = 0
+    for i in range(SPELL_N):
+        p = rom[base + 2 * i] | (rom[base + 2 * i + 1] << 8)
+        j = None
+        if p >= 0x8000:  # 끝 두 칸(30·31)은 표 밖 값이다 — 원본도 안 쓴다
+            so = common.snes2off((SPELL_TABLE & 0xFF0000) | p)
+            j = d4.get(bytes(rom[so : rom.index(b"\xff", so)]))
+        if j is None:
+            q = empty
+        else:
+            q = out[d4_table + 2 * j] | (out[d4_table + 2 * j + 1] << 8)
+            hit += 1
+        t = common.snes2off((BANK << 16) | org) + 2 * i
+        out[t : t + 2] = q.to_bytes(2, "little")
+    if hit != 21:
+        raise SystemExit(f"주문 표 {SPELL_N}칸 중 `$D4` 와 이어진 게 {hit} 이다(21 이어야 한다)")
+    _set_imm(out, SPELL_SITE, (BANK << 16) | org)
+    return {
+        "주문 표": common.fmt((BANK << 16) | org),
+        "주문 표 주소": (BANK << 16) | org,  # 필드 주문 목록 훅(`hook.spellcopy`)도 이걸 읽는다
+        "next": empty + 1,
+    }
+
+
 def patch_ranges() -> list[tuple[int, int]]:
-    """원본 1MB 안에서 바꾸는 자리 — 설정 루틴 여섯의 즉치뿐이다."""
+    """원본 1MB 안에서 바꾸는 자리 — 설정 루틴 여섯 + 런타임 치환 여섯의 즉치뿐이다."""
     r = []
-    for addr in SETUP.values():
+    for addr in [*SETUP.values(), *RUNTIME_ALL]:
         o = common.snes2off(addr)
         r += [(o + i, o + i + 1) for i in IMM]
     return r
