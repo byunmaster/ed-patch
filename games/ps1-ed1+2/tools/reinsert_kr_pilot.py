@@ -203,9 +203,8 @@ ITEM_SLOTS = 4.5
 # `.`). 중앙값으로 올린다 — 더 올리면 짧은 아이템에서 불필요한 개행이 생긴다(NAME_SLOTS 4.0 이
 # 그래서 3.0 으로 내려온 이력이 있다).
 # 조사 병기를 **원자 단위**로 조판하기 위한 마커(STOCK 보물상자). 한 토큰이라 줄 경계에서
-# 안 쪼개진다(훅의 한 줄 스캔 보장). ⚠ 폭은 **병기 전체("은(는)"·"이(가)")** 기준(이름+3) —
-# 엔진의 박스 줄배치는 조사훅 해결 **전**에 일어나 버퍼의 병기 전체(3슬롯)로 배치하므로,
-# 조판 폭을 병기 전체로 맞춰야 엔진이 재줄바꿈(→ 병기 분할)을 안 한다(유저 QA 07-28).
+# 안 쪼개진다(훅의 한 줄 스캔 보장). 폭은 **조사 1글자** 기준(이름+1) — 훅이 줄 나눔보다 먼저 병기를 접는다
+# (옛 「병기 전체 3슬롯」은 07-28 훅 위치를 고치기 전 값이다 — `cell_w` 주석).
 JOSA_NAME = "\x15"  # [%s]은(는)
 JOSA_ITEM = "\x16"  # [%c%s%c]이(가)
 
@@ -993,8 +992,10 @@ def cell_w(ch):
     if ch == ITEM_SENT:
         return ITEM_SLOTS  # %c%s%c(아이템) — 인물보다 길다(위 주석)
     if ch in (JOSA_NAME, JOSA_ITEM):
-        # 이름/아이템 + 병기 전체(은(는)/이(가)=3슬롯) — 엔진 배치와 일치
-        return (NAME_SLOTS if ch == JOSA_NAME else ITEM_SLOTS) + 3
+        # 이름/아이템 + 조사 **1글자**(마스터 10-05) — 조사 훅이 prewrap 보다 먼저 돌아 병기를 한 글자로 접은 뒤에
+        # 줄을 나눈다(07-28 prewrap early-resolve). 예전엔 훅이 뒤라서 병기 전체 3슬롯으로 쟀으나 그 전제가 사라졌고,
+        # 일반 대사 경로(`_fold_josa`)는 이미 1슬롯이다 — 이 원자만 낡은 값(+3)이 남아 있었다.
+        return (NAME_SLOTS if ch == JOSA_NAME else ITEM_SLOTS) + 1
     if ch == NOBREAK_SP:
         return 0.5  # 보통 공백과 같은 폭(조판 후 공백으로 되돌린다)
     return 0.5 if ch == " " or ch in HALF_PUNCT or (ch.isascii() and ch.isalnum()) else 1.0
@@ -1657,7 +1658,8 @@ def stock_build(raw):
     # 🔴 문안 길이가 한계다 — 10-03 에 정본 블록과 같게 「보물상자 안에는 … 들어 있었다」로 늘려 봤더니 정형 블록이
     #   `size` 로 탈락해 일본어가 나갔다(ED2SCN13 13건·ED1SCN6 10건 실측). 그래서 **짧은 쪽(상자에는 … 있었다)이 표준**이고
     #   정본 블록(`script/*.json`)을 이쪽으로 맞춘다.
-    b2 = b2.replace("들어 있었", "있었")
+    # 문안은 **블록마다** 정한다 — 정본 블록과 같은 「들어 있었다」를 먼저 시도하고 JP 칸에 안 들어가면 짧은
+    # 「있었다」로 물러선다(칸이 원문 바이트라 블록마다 여유가 다르다. 한쪽으로 못 박으면 탈락 아니면 불일치다).
     if kind == "open":
         # [%s]은(는) 보물상자를 열었다.\n상자의 안에는 [%c%s%c]이(가)\n들어 있었다.
         # 첫 언급 "보물상자"(JP 宝箱·정발 3장), 반복은 "상자"로 축약(정발·ED2 동일, 유저 07-28).
@@ -1675,9 +1677,13 @@ def stock_build(raw):
         # (세리오스·아트라스)도 29열에 꼬리 온점이 앉아 한 줄에 들어가고(드로어 훅이 29열 줄 뒤 개행의 빈 줄을 막는다),
         # 짧은 이름은 더 여유롭다. 이름 뒤 병기가 줄 경계에서 안 쪼개지는 것도 이쪽이 더 안전하다.
         first_line = JOSA_NAME + " " + first
-        text = rest.strip() + " " + JOSA_ITEM + HARD_NL + b2
+        # 둘째 줄도 조판기에 맡기지 않는다(마스터 10-05) — 조병기 원자(`이(가)`)를 세 글자로 쳐서 「상자에는 레스의 잎이 /
+        # 있었다.」로 한 줄에 들어갈 문장을 둘로 갈랐다. 한 줄로 내보내고 길어지면(긴 아이템 이름) 엔진 prewrap 이
+        # 어절에서 꺾는다. 문안은 표준 「상자에는 ⟨아이템⟩이(가) 있었다.」 하나다(「들어 있었다」는 칸이 모자라고
+        # 길어서 한 줄에 안 들어간다).
+        second_line = rest.strip() + " " + JOSA_ITEM + " " + b2.replace("들어 있었", "있었")
         blk = bytearray()
-        for i, ln in enumerate([first_line] + [ln for pg in wrap_page(text) for ln in pg]):
+        for i, ln in enumerate([first_line, second_line]):
             if i:
                 blk += b"\x0a"
             for part in re.split(f"([{JOSA_NAME}{JOSA_ITEM}])", ln):
