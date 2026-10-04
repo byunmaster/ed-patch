@@ -56,4 +56,12 @@ def pages(text: str, *, speaker: bool) -> list[list[str]]:
     for p in out:
         for line in p:
             assert len(line) <= WIDTH, (line, len(line))
+    # 🔴 **글 소실 없음** — 조판 전후 글자(공백·개행·페이지 제외)가 같아야 한다. 폭·위반만 보는 검사는 꼬리 글이
+    #    조용히 사라지는 결함을 못 잡는다(PS1·ps1-ed3+4 실측, 관리자 공유 2026-09-27).
+    assert ink(text) == ink("".join(l for p in out for l in p)), ("조판이 글을 잃었다", text)
     return out
+
+
+def ink(s: str) -> str:
+    """글자만 — 공백(반각·전각)·개행·페이지를 뺀다."""
+    return "".join(c for c in s if c not in " \u3000\n\f")

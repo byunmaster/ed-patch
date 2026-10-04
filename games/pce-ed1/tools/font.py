@@ -57,9 +57,41 @@ def _load_bdf() -> dict[int, tuple[int, int, int, int, list[int]]]:
 # (2026-09-06 인게임: 「나타났다'」처럼 점이 글자 어깨에 붙어 나왔다).
 BASELINE_ROW = 11
 
+# 🔴 **`?` 는 마스터 도트로 바꾼다**(2026-09-27, 반각 C안) — 반각(4px, 0~3열) 폭에 맞춘 전용 글리프.
+# `.local/inbox/pce-ed1/master-dots-question-4x12.txt` 그대로(4×12, 행 11 기준선·빈 줄) — 픽셀 그대로 굽는다.
+# `shared/fonts/Galmuri11.bdf`(공용)의 원래 `?`(0~4열, 5px 폭)를 대체한다 — 공용 파일은 안 건드리고
+# 이 게임의 `glyph()` 에서만 가로챈다.
+QUESTION_4PX_ROWS = [
+    ".##.",
+    "#..#",
+    "#..#",
+    "...#",
+    "..#.",
+    ".#..",
+    ".#..",
+    ".#..",
+    "....",
+    ".#..",
+    ".#..",
+    "....",
+]
+
+
+def _question_4px() -> bytes:
+    out = []
+    for row in QUESTION_4PX_ROWS:
+        v = 0
+        for col, c in enumerate(row):
+            if c == "#":
+                v |= 0x8000 >> col
+        out.append(v)
+    return b"".join(v.to_bytes(2, "big") for v in out)
+
 
 def glyph(ch: str) -> bytes:
     """한 글자 → 24B. 세로는 **베이스라인에 맞추고**(BDF `yo`) 가로는 왼쪽 정렬."""
+    if ch == "?":
+        return _question_4px()
     pk = packed_glyphs().get(ch) if 0xE000 <= ord(ch) <= 0xF8FF else None
     if pk is not None:
         return pk
@@ -151,12 +183,22 @@ def josa_code(pair: str) -> bytes:
     return bytes([JOSA_LEAD, TRAIL0 + JOSA_PAIRS.index(pair)])
 
 
+# 숫자를 읽는 소리 — 받침은 이 음절로 가른다(0 = 영). 영문·부호는 무받침(비트 0).
+DIGIT_READING = dict(zip("0123456789", "영일이삼사오육칠팔구", strict=True))
+
+
 def batchim_tables(order: list[str]) -> tuple[bytes, bytes]:
     """글리프 순서 → (받침 비트맵, ㄹ받침 비트맵) 각 128B. 비트 1 = 받침 있음."""
     has = bytearray(MAX_GLYPHS // 8)
     rieul = bytearray(MAX_GLYPHS // 8)
     for i, ch in enumerate(order):
-        if "가" <= ch <= "힣":
+        if ch in DIGIT_READING:  # 끝 숫자는 읽는 소리대로(마스터 09-26): 레스1을 · 레스2를
+            f = (ord(DIGIT_READING[ch]) - 0xAC00) % 28
+            if f:
+                has[i >> 3] |= 1 << (i & 7)
+                if f == 8:
+                    rieul[i >> 3] |= 1 << (i & 7)
+        elif "가" <= ch <= "힣":
             f = (ord(ch) - 0xAC00) % 28
             if f:
                 has[i >> 3] |= 1 << (i & 7)

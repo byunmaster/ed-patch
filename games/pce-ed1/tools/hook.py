@@ -26,11 +26,25 @@ HOOK_ADDR = 0x2300
 JOSA_OFF_ADDR = HOOK_ADDR + 0x180  # 조사 오프셋표 28B (루틴 자리는 base ~ +0x17F, 384B)
 BATCHIM_ADDR = HOOK_ADDR + 0x1A0  # 받침 비트맵 128B
 RIEUL_ADDR = HOOK_ADDR + 0x220  # ㄹ받침 비트맵 128B
-PAYLOAD_LEN = 0x300  # 루틴 + 조사표 + 비트맵 둘 — 스텁이 통째로 옮긴다
+PAYLOAD_LEN = 0x340  # 루틴 + 조사표 + 비트맵 둘 + 줄바꿈 품질 블록(62B, `WRAP_ADDR`) — 스텁이 통째로 옮긴다
 #   ⚠ 이 값을 안 맞추면 **뒤쪽 표만 안 옮겨져** 리드 F1 대역 글자가 조용히 다른 글자로 나온다(실측)
 LAST_ADDR = HOOK_ADDR + 0x2A0  # 직전 글자 코드 2B(리드·트레일)
+EXT_ADDR = HOOK_ADDR + 0x2A2  # 확장 블록(~+0x2FF, 94B) — 주 루틴 자리(384B)가 꽉 차 여기로 넘긴다
 BITCNT_ADDR = 0x3DA2  # 비트 위치 임시
 HASBAT_ADDR = 0x3DA3  # 받침 판정 임시
+# 🔴 **로그 자동 개행 품질 패치(①③, status.md 09-27)** — `$6D95`(자동 개행 판정) 자체엔 여유가
+#   0B 라 새 코드는 못 넣지만, 그 판정·처리부가 부르는 **세 JSR 호출부**(`$6D9C`→`$6AB5`,
+#   `$6723`→`$6AB9`, `$6730`→`$6D8A`)는 그대로 남아 있다 — 그 호출 대상만 우리 스텁으로 돌리면
+#   원본 코드를 한 바이트도 안 늘리고 끼어들 수 있다(위 폰트 후킹과 같은 패턴). 자리는 페이로드
+#   뒤(`$300~`, 이 섹터 나머지 1,280B 는 원본에서도 전부 0 — 실측 확인됨) 새 블록 하나.
+WRAP_ADDR = HOOK_ADDR + 0x300
+# 원본 호출 대상(그대로 남는다 — 우리 스텁이 필요하면 부른다)
+ORIG_SET_PENDING = 0x6AB5  # $6D9C 가 부르던 것 — "개행 보류" 플래그(`$CF15`) 증가
+ORIG_DO_WRAP = 0x6AB9  # $6723 가 부르던 것 — 보류 플래그가 서 있으면 실제로 줄을 넘긴다
+ORIG_ADV_COL = 0x6D8A  # $6730 이 부르던 것 — 칸 카운터(`$38BB`) 전진
+# 부호 넷(4px, glyph_order.json 로 유도) — 줄 끝에 매단다(고아로 새 줄 첫 칸에 혼자 안 남긴다)
+HANG_PUNCT = ((font.LEAD0, 0x24), (font.LEAD0, 0x25), (font.LEAD0, 0x27), (font.LEAD0, 0x2E))
+SPACE_CODE = (0x81, 0x40)  # 공백(전각) — 개행 직후 첫 글자면 그린 그대로 두고 칸만 안 늘린다
 # ⚠ 임시값은 워크 RAM 에 둔다 — 게임 ZP 를 빌리면 어느 자리가 비는지 증명해야 한다($EC~$EE 는
 #   BIOS 가 쓰는 스크래치라 그대로 쓴다).
 STUB_ADDR = 0x7852  # 뱅크 0x69 +0x1852
@@ -71,6 +85,7 @@ OPS = {
     ("BCS", "rel"): 0xB0,
     ("BNE", "rel"): 0xD0,
     ("JMP", "abs"): 0x4C,
+    ("JSR", "abs"): 0x20,
     ("RTS", "imp"): 0x60,
     ("INY", "imp"): 0xC8,
     ("CLA", "imp"): 0x62,
@@ -158,11 +173,17 @@ class Asm:
 
 
 def hook_routine() -> bytes:
+    b = _main_asm().bytes()
+    assert len(b) <= JOSA_OFF_ADDR - HOOK_ADDR, len(b)
+    return b + b"\0" * (JOSA_OFF_ADDR - HOOK_ADDR - len(b))
+
+
+def _main_asm() -> "Asm":
     """EX_GETFNT 대체 — 우리 코드면 글리프를 내고, 조사 코드면 **직전 글자의 받침**으로 고른다.
 
     · 리드 < F0 또는 > F9 → `JMP $E060`(BIOS)
     · 리드 F9 → 조사: 종류 k = 트레일−0x24, 직전 글자(LAST)가 우리 코드면 받침 비트맵 조회,
-      아니면 받침 있음으로 본다(숫자·일본어 뒤). `으로/로` 는 ㄹ 비트맵을 한 번 더 본다.
+      아니면 받침 없음으로 본다(원문 전각 숫자·영문·부호 뒤 — 기종 간 규칙 09-26). `으로/로` 는 ㄹ 비트맵을 한 번 더 본다.
     · 그 밖(F0~F8) → 글리프 인덱스 계산 후 복사하고 **LAST 를 갱신**한다.
     """
     a = Asm(HOOK_ADDR)
@@ -172,7 +193,7 @@ def hook_routine() -> bytes:
     a.op("CMP", "imm", font.JOSA_LEAD + 1)
     a.op("BCC", "rel", "ours")
     a.label("bios")
-    a.op("JMP", "abs", 0xE060)  # 우리 범위 밖 — BIOS 그대로(_dh 는 호출부가 이미 세웠다)
+    a.op("JMP", "abs", EXT_ADDR)  # 우리 범위 밖 — LAST 를 적고 BIOS 로(`hook_ext`)
     a.label("ours")
     a.op("PHP")
     a.op("SEI")
@@ -265,13 +286,13 @@ def hook_routine() -> bytes:
     a.label("josa")
     a.op("LDA", "abs", LAST_ADDR)  # 직전 리드
     a.op("CMP", "imm", font.LEAD0)
-    a.op("BCC", "rel", "assume_batchim")  # 우리 글자가 아니면(숫자·일본어) 받침 있음으로 본다
+    # 우리 글자가 아니면(원문 SJIS — 게임이 붙이는 전각 숫자·영문·부호) `hook_ext` 가 가른다:
+    # 전각 숫자는 **읽는 소리대로**, 나머지는 무받침(기종 간 규칙, 마스터 09-26).
+    a.op("BCC", "rel", "not_ours")
     a.op("CMP", "imm", font.JOSA_LEAD)
     a.op("BCC", "rel", "calc")
-    a.label("assume_batchim")
-    a.op("LDA", "imm", 1)
-    a.op("STA", "abs", HASBAT_ADDR)
-    a.op("BRA", "rel", "decide")
+    a.label("not_ours")
+    a.op("JMP", "abs", EXT_ADDR + EXT_JOSA_OFF)
     a.label("calc")
     # 인덱스 = (리드−F0)×220 + (트레일−0x24) → $EC/$ED
     a.op("SEC")
@@ -339,9 +360,142 @@ def hook_routine() -> bytes:
     a.data(bytes((i * font.PER_LEAD) & 0xFF for i in range(10)))
     a.label("idx_hi")
     a.data(bytes((i * font.PER_LEAD) >> 8 & 0xFF for i in range(10)))
+    a.bytes()  # 분기 거리 검산
+    return a
+
+
+EXT_JOSA_OFF = 15  # hook_ext 안 조사 판정 입구(ext_bios 15B 뒤)
+# 전각 숫자 ０~９ 를 읽은 소리: 0 무받침 · 1 받침 · 2 받침+ㄹ — 영일이삼사오육칠팔구
+DIGIT_KIND = bytes((1, 2, 0, 1, 0, 0, 1, 2, 2, 0))
+
+
+def hook_ext() -> bytes:
+    """확장 블록(EXT_ADDR~, 94B) — 주 루틴 자리가 꽉 차 여기로 뺐다.
+
+    · ext_bios: BIOS 로 가는 글자도 **LAST 에 적는다** — 안 적으면 「레스１」(게임이 붙이는 SJIS 전각 숫자)
+      뒤 조사가 **숫자 앞 한글**(「스」)을 보고 골라 「레스1를」이 됐다(마스터 규칙 09-26, 화면 실측).
+    · ext_josa: LAST 가 우리 글자가 아닐 때 — SJIS 전각 숫자(82 4F~82 58)면 읽는 소리대로, 나머지는 무받침.
+      `으로/로`(종류 4)는 ㄹ받침(1·7·8)이면 「로」.
+    """
+    decide = _main_asm().labels["decide"]
+    a = Asm(EXT_ADDR)
+    a.label("ext_bios")
+    a.op("LDA", "zp", 0xF9)
+    a.op("STA", "abs", LAST_ADDR)
+    a.op("LDA", "zp", 0xF8)
+    a.op("STA", "abs", LAST_ADDR + 1)
+    a.op("LDA", "zp", 0xF9)  # A 를 들어올 때 값으로
+    a.op("JMP", "abs", 0xE060)
+    assert a.pc - EXT_ADDR == EXT_JOSA_OFF, a.pc - EXT_ADDR
+    a.label("ext_josa")
+    a.op("LDA", "abs", LAST_ADDR)
+    a.op("CMP", "imm", 0x82)
+    a.op("BNE", "rel", "plain")
+    a.op("LDA", "abs", LAST_ADDR + 1)
+    a.op("SEC")
+    a.op("SBC", "imm", 0x4F)
+    a.op("CMP", "imm", 10)
+    a.op("BCS", "rel", "plain")
+    a.op("TAX")
+    a.op("LDA", "absx", "digit_kind")
+    a.op("BEQ", "rel", "plain")
+    a.op("CMP", "imm", 2)
+    a.op("BNE", "rel", "has")
+    a.op("LDA", "zp", 0xF8)  # ㄹ받침 — `으로/로` 면 무받침 쪽(로)
+    a.op("SEC")
+    a.op("SBC", "imm", font.TRAIL0)
+    a.op("CMP", "imm", 4)
+    a.op("BEQ", "rel", "plain")
+    a.label("has")
+    a.op("LDA", "imm", 1)
+    a.op("STA", "abs", HASBAT_ADDR)
+    a.op("JMP", "abs", decide)
+    a.label("plain")
+    a.op("STZ", "abs", HASBAT_ADDR)
+    a.op("JMP", "abs", decide)
+    a.label("digit_kind")
+    a.data(DIGIT_KIND)
     b = a.bytes()
-    assert len(b) <= JOSA_OFF_ADDR - HOOK_ADDR, len(b)
-    return b + b"\0" * (JOSA_OFF_ADDR - HOOK_ADDR - len(b))
+    assert len(b) <= HOOK_ADDR + PAYLOAD_LEN - EXT_ADDR, len(b)
+    return b
+
+
+def _wrap_asm() -> "Asm":
+    """줄바꿈 품질 패치(①③) — 세 JSR 호출부(`$6D9C`·`$6723`·`$6730`)의 대상을 여기로 돌린다.
+
+    · `orphan`(→$6D9C 대신): 다음 글자가 부호 넷 중 하나면 **개행 보류 플래그를 안 세운다** —
+      이번 글자는 이번 줄에 그대로 그려진다(줄 끝에 매달린다). 아니면 원래대로 `$6AB5` 호출.
+    · `mark`(→$6723 대신): 원래 호출(`$6AB9`) 전에 `$CF15`(보류 플래그)를 미리 읽어 둔다 —
+      `$6AB9` 자신이 그 값을 0 으로 지우므로, "이번 글자에서 실제로 개행이 일어났는가"는
+      **호출 전**에만 알 수 있다.
+    · `eat`(→$6730 대신): 방금 개행이 일어났고(위 플래그) 이번 글자가 공백이면 **칸 전진을
+      건너뛴다** — 공백은 원래대로 그려지지만(안 그려도 잉크가 없어 상관없다) 칸을 안 먹으므로
+      다음 실제 글자가 줄 맨 앞(칸 0)에 온다. 아니면 원래대로 `$6D8A` 호출.
+    """
+    a = Asm(WRAP_ADDR)
+    a.label("flag")
+    a.data(b"\x00")
+    a.label("orphan")
+    a.op("LDA", "zp", 0xF9)
+    a.op("CMP", "imm", font.LEAD0)
+    a.op("BNE", "rel", "orphan_normal")
+    a.op("LDA", "zp", 0xF8)
+    for lead, trail in HANG_PUNCT:
+        assert lead == font.LEAD0
+        a.op("CMP", "imm", trail)
+        a.op("BEQ", "rel", "orphan_hang")
+    a.label("orphan_normal")
+    a.op("JSR", "abs", ORIG_SET_PENDING)
+    a.op("RTS")
+    a.label("orphan_hang")
+    a.op("RTS")
+    a.label("mark")
+    a.op("LDA", "abs", 0xCF15)
+    a.op("STA", "abs", "flag")
+    a.op("JSR", "abs", ORIG_DO_WRAP)
+    a.op("RTS")
+    a.label("eat")
+    a.op("LDA", "abs", "flag")
+    a.op("BEQ", "rel", "eat_normal")
+    a.op("LDA", "zp", 0xF9)
+    a.op("CMP", "imm", SPACE_CODE[0])
+    a.op("BNE", "rel", "eat_normal")
+    a.op("LDA", "zp", 0xF8)
+    a.op("CMP", "imm", SPACE_CODE[1])
+    a.op("BNE", "rel", "eat_normal")
+    a.op("RTS")  # 먹는다 — 칸 전진을 건너뛴다
+    a.label("eat_normal")
+    a.op("JSR", "abs", ORIG_ADV_COL)
+    a.op("RTS")
+    return a
+
+
+def hook_wrap_fix() -> bytes:
+    return _wrap_asm().bytes()
+
+
+WRAP_LABELS = _wrap_asm().labels
+ORPHAN_ADDR = WRAP_LABELS["orphan"]  # $6D9C 의 새 JSR 대상
+MARK_ADDR = WRAP_LABELS["mark"]  # $6723 의 새 JSR 대상
+EAT_ADDR = WRAP_LABELS["eat"]  # $6730 의 새 JSR 대상
+
+
+def payload(table) -> bytes:
+    """스텁이 통째로 옮기는 페이로드 — 루틴 · 조사표 · 받침 비트맵 둘 · LAST · 확장 블록 · 줄바꿈 품질."""
+    p = bytearray(hook_routine())
+    p += font.josa_offsets(table)
+    p += b"\0" * (BATCHIM_ADDR - HOOK_ADDR - len(p))
+    has, rieul = font.batchim_tables(font.build_table.order)
+    p += has
+    p += b"\0" * (RIEUL_ADDR - HOOK_ADDR - len(p))
+    p += rieul
+    p += b"\0" * (EXT_ADDR - HOOK_ADDR - len(p))  # LAST(2B) 는 0 으로 시작
+    p += hook_ext()
+    p += b"\0" * (WRAP_ADDR - HOOK_ADDR - len(p))
+    p += hook_wrap_fix()
+    p += b"\0" * (PAYLOAD_LEN - len(p))
+    assert len(p) == PAYLOAD_LEN
+    return bytes(p)
 
 
 def _bit(a: "Asm", table_addr: int, tag: str) -> None:

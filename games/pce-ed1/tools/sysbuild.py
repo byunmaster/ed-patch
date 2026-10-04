@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import common
 import font
+import freespace
 import sysstrings as S
 
 from shared.disc import mode1
@@ -109,6 +110,16 @@ def _write(f, bank, off, data, expect, label, touched):
     mode1.write_at(f, lba, common.USER * 2, o, data, label=label, expect=expect)
     for i in range((o + len(data) - 1) // common.USER + 1):
         touched.append((lba + i, 1))
+
+
+def _read(f, bank, off, n) -> bytes:
+    """이미지에서 뱅크 오프셋의 유저 데이터를 읽는다(섹터 경계를 걸쳐도 된다)."""
+    out = bytearray()
+    while len(out) < n:
+        rel, o = S.bank_rel(bank, off + len(out))
+        f.seek((common.T2_SECTOR + rel) * common.RAW + common.USER_OFF + o)
+        out += f.read(min(n - len(out), common.USER - o))
+    return bytes(out)
 
 
 def check_keys(errors: list[str]) -> dict[str, int]:
@@ -300,9 +311,14 @@ def apply(f, table, touched) -> dict:
             new += bytes([0x0F, nxt & 0xFF, nxt >> 8])
         if len(new) > r["room"]:
             # 🔑 **옮겨 싣기**(2026-09-24) — 조각 「は」(3·4B)에 「은/는 」(조사 2B + 공백 2B)이 안 들어가
-            #    「아그니쟈는세리오스에」로 붙었다. 꼬리가 종료 옵코드인 조각만 옮긴다(흘러가는 조각은 안 된다).
+            #    「아그니쟈는세리오스에」로 붙었다. 원 자리엔 `0F 새주소`(3B)만 남긴다.
             #    ⚠ `0F` 는 씬 인터프리터만 따라간다 — 전투 문구 경로(`$7047`)는 그 인터프리터다(09-06 트레이스).
-            if r["room"] >= 3 and not flows_on and tail and tail[-1] in TERMINAL_OPS:
+            #    🆕 09-26: **흘러가는 조각도** 옮긴다 — 새 자리 끝에 `0F 원래_다음주소` 를 붙여 돌아온다
+            #    (「에」→「에게」, 전투 「X에 N의 데미지」가 뒤 조각으로 이어진다).
+            if r["room"] >= 3:
+                if flows_on:
+                    nxt = 0x8000 + r["off"] + core_len
+                    new = lead + body + tail + bytes([0x0F, nxt & 0xFF, nxt >> 8])
                 spills.append((r, new, orig))
                 continue
             errors.append(
@@ -315,26 +331,68 @@ def apply(f, table, touched) -> dict:
         (p[0]["off"] + len(p[1]) + 1, p[0]["off"] + p[0]["room"], i) for i, p in enumerate(plan)
     )
     extra: dict[int, bytearray] = {}  # plan 번호 → 덧붙일 바이트(끝 뒤 한 칸부터)
+    # 🆕 09-26: 자투리가 모자라면 **선언한 빈 공간**(freespace.SPANS)으로 — 원본 기대 바이트부터 검산
+    pool = freespace.Pool(freespace.spans())
+    pool.check_original(S.bank_bytes)
+    pool_writes = []  # (Span, 뱅크 안 오프셋, 바이트)
+    spilled = {}  # 자투리로 옮긴 조각: 주소 → (새 논리 주소, 바이트)
     for r, new, orig in spills:
         for k, (lo, hi, i) in enumerate(slack):
             if hi - lo >= len(new):
                 tgt = 0x8000 + lo
                 extra.setdefault(i, bytearray()).extend(new)
                 slack[k] = (lo + len(new), hi, i)
+                spilled[r["addr"]] = (tgt, new)
                 plan.append([r, bytes([0x0F, tgt & 0xFF, tgt >> 8]), orig])
                 stats["sysmsg_spill"] = stats.get("sysmsg_spill", 0) + 1
                 break
         else:
-            errors.append(
-                f"sysmsg {r['addr']:04X} 「{r['jp']}」 {len(new)}B — 옮겨 실을 빈자리가 없다"
-            )
+            got = pool.alloc(0x6D, len(new))
+            if got is None:
+                errors.append(
+                    f"sysmsg {r['addr']:04X} 「{r['jp']}」 {len(new)}B — 옮겨 실을 빈자리가 없다"
+                )
+                continue
+            span, off = got
+            tgt = 0x8000 + off
+            pool_writes.append((span, off, new, r))
+            plan.append([r, bytes([0x0F, tgt & 0xFF, tgt >> 8]), orig])
+            stats["sysmsg_pool"] = stats.get("sysmsg_pool", 0) + 1
+    for span, off, data, r in pool_writes:
+        _write(
+            f,
+            span.bank,
+            off,
+            data,
+            bytes([span.fill]) * len(data)
+            if span.fill is not None
+            else S.bank_bytes(span.bank)[off : off + len(data)],
+            f"sysmsg {r['addr']:04X} → 빈 공간 {span.bank:#x}+{off:#x}",
+            touched,
+        )
+    moved = {r["addr"]: (0x8000 + off, data) for _s, off, data, r in pool_writes}
+    moved.update(spilled)
+    inplace = {}  # 제자리 조각: 주소 → 바이트(패딩 전)
     for i, (r, new, orig) in enumerate(plan):
+        if r["addr"] not in moved:
+            inplace[r["addr"]] = (r, bytes(new))
         if i in extra:
             new = new + b"\0" + bytes(extra[i])
         new += b"\0" * (r["room"] - len(new))
         assert len(new) == r["room"], (r["addr"], len(new), r["room"])
         _write(f, 0x6D, r["off"], new, orig, f"sysmsg {r['addr']:04X}", touched)
         cnt += 1
+    # 되읽기 게이트 — **글 소실 없음**(관리자 공유 09-27: PS1·ps1-ed3+4 에서 조판·이주가 꼬리 글을 조용히 잃었다).
+    # 모든 조각이 이미지에 **바이트 그대로** 있어야 한다: 제자리면 그 자리에, 옮겼으면 원 자리 = `0F 새주소` + 새 자리에.
+    for addr, (r, data) in inplace.items():
+        if _read(f, 0x6D, r["off"], len(data)) != data:
+            raise SysError(f"sysmsg {addr:04X} 제자리 되읽기 실패 — 글이 사라졌다")
+    for addr, (tgt, data) in moved.items():
+        r = next(x for x in S.read_sysmsg() if x["addr"] == addr)
+        head = _read(f, 0x6D, r["off"], 3)
+        body = _read(f, 0x6D, tgt - 0x8000, len(data))
+        if head != bytes([0x0F, tgt & 0xFF, tgt >> 8]) or body != data:
+            raise SysError(f"sysmsg {addr:04X} 옮겨 싣기 되읽기 실패")
     stats["sysmsg"] = cnt
     # 부팅·파일 선택 화면 — 화면 총 길이를 지킨다(코드가 화면 머리를 절대주소로 가리킨다).
     # 줄 수·col·row 는 원본 그대로 쓰고, 남는 자리는 마지막 줄 뒤에 전각 공백으로 채운다.

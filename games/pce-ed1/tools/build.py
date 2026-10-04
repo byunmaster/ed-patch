@@ -30,6 +30,7 @@ import ending_sub
 import font
 import gfx_text
 import hook
+import hud_plate
 import lz
 import opening_sub
 import staffroll
@@ -217,7 +218,7 @@ ONLY: set[str] | None = None
 """진단용 — 개입 그룹의 부분집합만 건다(`--only font,hook`). 그룹은 여섯:
 `font`(글리프 뱅크 + 진입 스텁) · `cache`(16 → 16−글리프 뱅크 칸) · `hook`(EX_GETFNT 우회) ·
 `sys`(시스템 문구) · `battle`(전투 컨테이너) · `scn`(씬 컨테이너) ·
-`band`(장 제목 띠, rel 210) · `box`(빈 슬롯 상자 msg1, 뱅크 0x7B 재배치) ·
+`band`(장 제목 띠, rel 210) · `hud`(HUD 이름판·あと·상태 글자, rel 54·55) · `box`(빈 슬롯 상자 msg1, 뱅크 0x7B 재배치) ·
 `glyph`(글리프 뱅크 적재) · `payload`(후킹 루틴 + 표를 $3B00 에 싣기)
 — 뒤 둘은 `font` 안에서 다시 뺄 수 있다.
 🔴 **이게 소프트락을 가르는 유일한 도구다** — 증상이 나면 하나씩 끄며 A/B 한다.
@@ -254,9 +255,13 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
         # 3. 할당기: 캐시 16 → 16−글리프 뱅크 칸(끝 칸들을 글리프에 내준다) — status 9절
         #    🔴 13칸(글리프 3뱅크)으로는 종장 맵에서 넘쳤다 — 원본이 그 자리에서 14칸을 쓴다(devlog 09-25).
         n = 16 - font.GLYPH_NBANKS
-        p.append((f"cache init free={n}", *_main(0x68, 0x14FB), b"\xa9\x90", bytes([0xA9, 0x80 | n])))
+        p.append(
+            (f"cache init free={n}", *_main(0x68, 0x14FB), b"\xa9\x90", bytes([0xA9, 0x80 | n]))
+        )
         for off in (0x151F, 0x15D1, 0x15F2, 0x163A, 0x1783):
-            p.append((f"cache CPX {n} @{off:04X}", *_main(0x68, off), b"\xe0\x10", bytes([0xE0, n])))
+            p.append(
+                (f"cache CPX {n} @{off:04X}", *_main(0x68, off), b"\xe0\x10", bytes([0xE0, n]))
+            )
         p.append((f"cache LDA {n} @15FC", *_main(0x68, 0x15FC), b"\xa9\x10", bytes([0xA9, n])))
     if want("slot"):
         # 5. 🔴 파일 선택 화면의 슬롯 줄 — 「第」가 **코드에 즉치값으로** 박혀 있다.
@@ -313,6 +318,32 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
         p.append(("name JMP $93A3", *_main(0x6D, 0x13A3), b"\x4c\x60\xe0", b"\x4c" + tgt))
         p.append(("JSR 6C+0F5A", *_main(0x6C, 0x0F5A), b"\x20\x60\xe0", b"\x20" + tgt))
         p.append(("JSR 78+0932", *_main(0x78, 0x0932), b"\x20\x60\xe0", b"\x20" + tgt))
+        # 5. 로그 자동 개행 품질(①③) — 세 JSR 호출 대상을 우리 스텁으로 돌린다(원본 바이트 수 그대로,
+        #    `hook.hook_wrap_fix()` 참조). $6D9C·$6723·$6730 은 전부 뱅크 0x6C(오프셋 = 논리주소−$6000).
+        p.append(
+            (
+                "wrap orphan JSR $6D9C",
+                *_main(0x6C, 0x0D9C),
+                b"\x20\xb5\x6a",
+                b"\x20" + hook.ORPHAN_ADDR.to_bytes(2, "little"),
+            )
+        )
+        p.append(
+            (
+                "wrap mark JSR $6723",
+                *_main(0x6C, 0x0723),
+                b"\x20\xb9\x6a",
+                b"\x20" + hook.MARK_ADDR.to_bytes(2, "little"),
+            )
+        )
+        p.append(
+            (
+                "wrap eat JSR $6730",
+                *_main(0x6C, 0x0730),
+                b"\x20\x8a\x6d",
+                b"\x20" + hook.EAT_ADDR.to_bytes(2, "little"),
+            )
+        )
     return p
 
 
@@ -334,15 +365,7 @@ def apply_code_patches(
         )
         touched.append((lba, len(glyph_bank) // common.USER))
     # 루틴 + 조사 오프셋표 + 받침 비트맵 둘 — 스텁이 통째로 $3B00 으로 옮긴다(0x300B)
-    payload = bytearray(hook.hook_routine())
-    payload += b"\0" * (hook.JOSA_OFF_ADDR - hook.HOOK_ADDR - len(payload))
-    payload += font.josa_offsets(table)
-    payload += b"\0" * (hook.BATCHIM_ADDR - hook.HOOK_ADDR - len(payload))
-    has, rieul = font.batchim_tables(font.build_table.order)
-    payload += has
-    payload += b"\0" * (hook.RIEUL_ADDR - hook.HOOK_ADDR - len(payload))
-    payload += rieul
-    payload += b"\0" * (0x300 - len(payload))
+    payload = hook.payload(table)
     if want("payload"):  # 진단용 — $3B00~$3DFF 를 0 인 채로 두는 A/B(스텁은 그대로 돈다)
         lba = common.T2_SECTOR + 126
         mode1.write_user_data(
@@ -420,6 +443,9 @@ def _build(edits_path, iso: Path, cue: Path):
         # 엔딩 음성 자막(스프라이트, 오프닝 런타임 한 벌 더) — tools/ending_sub.py
         if want("edsub"):
             print("  " + ending_sub.apply(f, touched))
+        # ⚠ HUD 가 먼저 — 시스템 문구가 HUD 묶음 꼬리(빈 공간 ⓑ)에 조각을 옮겨 싣는다(freespace.spans)
+        if want("hud"):
+            print("  " + hud_plate.apply(f, touched))
         if want("sys"):
             print("  시스템 문구:", sysbuild.apply(f, table, touched))
         if want("battle"):
