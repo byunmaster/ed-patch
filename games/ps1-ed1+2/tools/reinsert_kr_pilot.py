@@ -1654,6 +1654,9 @@ def stock_build(raw):
     # 여기서 `to_plain` 으로 종결어미를 바꾼다(문안은 DOS 파생 그대로, 어미만). 화면에서만 드러나는
     # 자리다 — `check_log_register` 는 `script/*.json` 만 보므로 이 경로를 못 본다(09-05 사고와 같다).
     a, b2, re1, re2 = (to_plain(x) for x in (a, b2, re1, re2))
+    # 🔴 문안 길이가 한계다 — 10-03 에 정본 블록과 같게 「보물상자 안에는 … 들어 있었다」로 늘려 봤더니 정형 블록이
+    #   `size` 로 탈락해 일본어가 나갔다(ED2SCN13 13건·ED1SCN6 10건 실측). 그래서 **짧은 쪽(상자에는 … 있었다)이 표준**이고
+    #   정본 블록(`script/*.json`)을 이쪽으로 맞춘다.
     b2 = b2.replace("들어 있었", "있었")
     if kind == "open":
         # [%s]은(는) 보물상자를 열었다.\n상자의 안에는 [%c%s%c]이(가)\n들어 있었다.
@@ -1667,9 +1670,14 @@ def stock_build(raw):
         # 병기 뒤 하드개행(HARD_NL): "들어 있었다"가 아이템 줄로 딸려 올라가 폭 초과(엔진
         # 재줄바꿈→병기 분할)하는 걸 막는다. 일반 "\n"은 문장 단위 reflow가 공백으로 지워
         # 재packing하므로 protect_hard 마커를 써야 한다(유저 QA 07-28).
-        text = JOSA_NAME + " " + first + HARD_NL + rest + " " + JOSA_ITEM + HARD_NL + b2
+        # 첫 줄(「○○는 보물상자를 열었다.」)은 **조판기에 맡기지 않는다**(마스터 10-03) — 조판기는 이름 자리를
+        # 최장 이름으로 쳐서 28열(14슬롯)에서 꺾어 「○○는 / 보물상자를 열었다.」로 이름만 윗줄에 떼어 놓는다. 최장 이름
+        # (세리오스·아트라스)도 29열에 꼬리 온점이 앉아 한 줄에 들어가고(드로어 훅이 29열 줄 뒤 개행의 빈 줄을 막는다),
+        # 짧은 이름은 더 여유롭다. 이름 뒤 병기가 줄 경계에서 안 쪼개지는 것도 이쪽이 더 안전하다.
+        first_line = JOSA_NAME + " " + first
+        text = rest.strip() + " " + JOSA_ITEM + HARD_NL + b2
         blk = bytearray()
-        for i, ln in enumerate(ln for pg in wrap_page(text) for ln in pg):
+        for i, ln in enumerate([first_line] + [ln for pg in wrap_page(text) for ln in pg]):
             if i:
                 blk += b"\x0a"
             for part in re.split(f"([{JOSA_NAME}{JOSA_ITEM}])", ln):
