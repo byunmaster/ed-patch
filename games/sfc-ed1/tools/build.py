@@ -939,6 +939,10 @@ def kr_items(
     #    이어 주고 표 목표를 빼 두었더니 새 자리를 못 찾아 `rewrite_tables` 가 조용히 건너뛰었고,
     #    본체를 `$FF` 로 비운 뒤라 그 칸에 `FFFFFF` 가 남았다(엔진이 `$FF:FFFE` 부터 읽어 빈 페이지).
     targets_all |= table_targets(rom)
+    # 조판 — 17칸 창에 맞게 어절 단위로 개행한다(`typeset.py`). 정본 textmap 은 그대로, 롬에만 들어간다.
+    import typeset
+
+    _ts = typeset.Typesetter()
     fake_off = -1
     for si, (sid, a, e) in enumerate(slices):
         seg = items[a:e]
@@ -956,7 +960,9 @@ def kr_items(
             enc = (
                 enc_override(sid, entry)
                 if enc_override is not None
-                else encode.encode(entry["kr"], rep_index, dict_kr)
+                else encode.encode(
+                    _ts(entry["kr"], common.off2snes(seg[0].off)), rep_index, dict_kr
+                )
             )
         except ValueError as ex:
             stats["errors"].append((sid, str(ex)))

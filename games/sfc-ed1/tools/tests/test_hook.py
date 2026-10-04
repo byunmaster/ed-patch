@@ -116,6 +116,7 @@ ENTRY = {
     "josa": (True, False, "near"),
     "upload": (True, False, "near"),
     "cache_reset": (True, False, "near"),  # 오프닝 페이지 경계에서 오너 표를 비운다
+    "kinsoku_carry": (True, False, "near"),  # 고아 부호 훅 — h_kpunct/hb_kpunct 가 jsr 로 부른다(A 8·X 16)
     "font_reset": (True, True, "far"),  # 폰트 벌크카피 트램펄린 착지점 — `JSL` 로 불린다
     "open_advance": (
         True,
