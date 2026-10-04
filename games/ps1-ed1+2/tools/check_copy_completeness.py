@@ -22,7 +22,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import hangul_map as H
-from common import BUILD_DIR
+from common import BUILD_DIR, extract
 
 IMG = f"{BUILD_DIR}/Eiyuu Densetsu (KR).bin"
 
@@ -193,6 +193,65 @@ def check_superseded_spellings(data, *, verbose=False):
     return results
 
 
+def check_route_label_separator(*, verbose=False):
+    """065 경로 라벨 구분자(줄표) — **물리 칸 18개 전부**를 되읽는다.
+
+    🔴 **RE 가 닫히기 전에 남긴 지적**(2026-09-15) — 이전 readback 은 "9종"(전각 표,
+    textmap 유래)만 봤는데, 실제로는 같은 라벨이 표 **셋 + 글리프 한 자리**에 흩어져
+    있다(전각 9 · 반각 ASCII `HALFWIDTH_ROUTE_LABELS` 6 · 반각 ASCII `ROUTE_LABELS_2`
+    2 · 반각 글리프코드 1 = 18칸). "9종 재확인"이 초록이어도 **못 본 아홉 칸**이
+    조용히 물결표로 돌아갈 수 있다 — 관리자가 지적한 "4-F: 없다는 결론이 아니라 물음"의
+    실례다. 세 표를 **각자의 정본 상수에서 직접 가져와** 되읽는다(오프셋을 여기 다시
+    적지 않는다 — 이 파일이 네 번째 사본이 되는 걸 피한다).
+    """
+    import patch_ed2_battle as PB
+    import patch_ed2_sys as PS
+    import patch_hangul_glyph_table as G
+    from battle_text import B
+    from derive_text import jp_map
+
+    buf = extract(PB.ED2_LBA, PB.ED2_SIZE, path=IMG)
+    problems = []
+    checked = 0
+
+    # 전각 9 — patch_ed2_battle 이 빌드 때 쓰는 것과 같은 스캔으로 오프셋·원문을 다시
+    # 얻는다(원본 기준이라 항상 같은 9곳이 나온다), KR 은 build 의 조회 순서(plan())와
+    # 똑같이 textmap 셋에서 찾는다.
+    orig = extract(PB.ED2_LBA, PB.ED2_SIZE)
+    ed2_map, items_map = jp_map("battle_ed2"), jp_map("items_battle")
+    for fo, jp in sorted(PB.strings(orig).items()):
+        if "～" not in jp:
+            continue
+        kr = ed2_map.get(jp) or B.get(jp) or items_map.get(jp)
+        if kr is None or "-" not in kr:
+            continue
+        checked += 1
+        kb = PB._enc(kr) + b"\x00"
+        actual = bytes(buf[fo : fo + len(kb)])
+        if actual != kb:
+            problems.append(f"전각 0x{fo:X} {kr!r} — 기대 {kb.hex()} 실제 {actual.hex()}")
+
+    # 반각 ASCII 8 — HALFWIDTH_ROUTE_LABELS(6) + ROUTE_LABELS_2(2)
+    for off, _jp, kr in (*PS.HALFWIDTH_ROUTE_LABELS, *PS.ROUTE_LABELS_2):
+        checked += 1
+        kb = PS._enc(kr) + b"\x00"
+        actual = bytes(buf[off : off + len(kb)])
+        if actual != kb:
+            problems.append(f"반각ASCII 0x{off:X} {kr!r} — 기대 {kb.hex()} 실제 {actual.hex()}")
+
+    # 반각 글리프코드 1 — 0xAB10(큐베라-프로스, 062 조각 코드)
+    off = 0xAB10
+    kb = bytes(G.ROUTE_CODES) + b"\x00"
+    checked += 1
+    actual = bytes(buf[off : off + len(kb)])
+    if actual != kb:
+        problems.append(f"반각글리프 0x{off:X} — 기대 {kb.hex()} 실제 {actual.hex()}")
+
+    if verbose or problems:
+        print(f"  경로 라벨 구분자 되읽기 — {checked}칸 확인, 문제 {len(problems)}건")
+    return problems
+
+
 def check():
     import patch_hangul_glyph_table as G
 
@@ -209,6 +268,8 @@ def check():
     superseded_hits = check_superseded_spellings(data)
     for label, n, reason in superseded_hits:
         problems.append(f"버린 옛 표기가 라이브 자리에 남음 — {label} {n}곳 · {reason}")
+
+    problems.extend(check_route_label_separator())
 
     for label, pattern, allowed, reason in PATTERN_BASELINE:
         n = data.count(pattern)

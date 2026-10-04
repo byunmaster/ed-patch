@@ -96,6 +96,22 @@ def strings(buf):
     return out
 
 
+def restore_tail_nl(jp, kr):
+    """원문이 `…\n%c` 로 끝나면 우리 문안에도 그 꼬리 개행을 되살린다.
+
+    끝 `%c` 는 코드가 넘기는 제어 문자라 인자 `9`(키 입력 뒤 **커서 자리에서 이어 씀**)면
+    다음 문자열이 같은 줄에 붙는다 — 원작은 새 줄에서 잇고 싶을 때 이 꼬리 개행을 넣어 뒀다.
+    번역에서 그걸 흘리면 `이슈타가 어떻게 된 거야?모두라니?` 처럼 붙는다(마스터 QA 082,
+    2026-09-24). SCN 쪽 `reinsert_kr_pilot.restore_tail_nl` 과 같은 구실이다.
+    ⚠ 꼬리가 **공백만 있는 줄**이면 건드리지 않는다 — 타이틀 카드의 중앙정렬 여백이다.
+    """
+    if not (jp.endswith("\n%c") and kr.endswith("%c")) or kr.endswith("\n%c"):
+        return kr
+    if kr[:-2].rstrip(" ").endswith("\n"):
+        return kr
+    return kr[:-2] + "\n%c"
+
+
 def plan():
     """([(오프셋, JP, KR, 슬롯)], 넘치는 것, 번역 없는 것)."""
     buf = extract(ED2_LBA, ED2_SIZE)
@@ -118,11 +134,17 @@ def plan():
         if kr is None:
             none.append((fo, jp))
             continue
+        kr = restore_tail_nl(jp, kr)
         end = buf.find(b"\x00", fo)
         nxt = end
         while nxt < len(buf) and buf[nxt] == 0:
             nxt += 1
-        slot = nxt - fo
+        # 🔴 **칸은 원문 끝을 4바이트로 올린 데까지다**(09-28, 마스터 QA 112). 그 너머로
+        # 이어지는 0 은 정렬 패딩이 아니라 **게임이 실행 중에 쓰는 고정 길이 버퍼**일 수
+        # 있다 — `たち` 뒤 26바이트가 그랬고, 재배치가 거기에 「…의 ＨＰ를 %d 빼앗았다!!」를
+        # 넣자 게임이 버퍼를 채우며 「빼」를 00 00 으로 덮어 문장이 「…129 」에서 끊겼다
+        # (RAM 0x800E415E, 스테이트마다 다른 값이 들어 있다 = 변수다).
+        slot = min(nxt, (end + 1 + 3) & ~3) - fo
         (fit if len(_enc(kr)) + 1 <= slot else over).append((fo, jp, kr, slot))
     return fit, over, none
 

@@ -1268,7 +1268,9 @@ def test_josa_shift_leaves_no_stale_tail():
         )
 
     n = len(J.assemble_routine(0x80100000, 0x80101000, 0x80101100))
-    assert n <= 504, f"josa 루틴이 {n}B 로 늘었다 — VAB 파형 여유가 4B 뿐이다"
+    # 2026-09-26 숫자 소리 규칙(마스터)이 마지막 4B 를 썼다 — 이제 VAB 파형 직전 한계(508B)에 딱 맞는다.
+    # 더 늘리려면 명령을 줄이거나 루틴을 옮겨야 한다.
+    assert n <= J.JOSA_SAFE == 508, f"josa 루틴이 {n}B — VAB 파형 한계 508B 를 넘는다"
 
 
 def test_josa_hook_folds_halfwidth_korean():
@@ -1454,6 +1456,322 @@ def test_frame_full_line_drops_our_newline():
 
     # ⚠ 폭만 보지 않는다 — 꼬리가 매달린 반각 부호일 때만이다(센티널 오판 방지)
     assert not R._fills_frame("가" * 14 + "나"[:0] + "가")  # 전각만으로는 14.5가 안 된다
+
+
+# ── ED2MON 디렉터리 갱신 — 같은 핸들로 쓰고 다른 핸들로 읽는 함정 (2026-09-22) ──────
+def test_ed2mon_dir_entry_updates_survive_back_to_back():
+    """🔴 `_update_dir_entry` 를 연달아 두 번 부르면 **앞 갱신이 되돌려졌다**(qa2-026 4차).
+
+    쓰기는 열린 핸들 `f` 로, 읽기는 `extract(path=IMG)` 의 별도 핸들로 하는 구조라, 앞
+    호출이 쓴 디렉터리 섹터가 파이썬 버퍼에 남은 채 뒤 호출이 디스크의 옛 디렉터리를
+    읽어 거기에 자기 것만 얹어 되썼다. ED2MON3 은 새 자리에 있는데 디렉터리는 옛 자리를
+    가리켜 그룹 하나가 통째로 유령이 됐고, 되읽기 게이트가 53건까지 튀었다. 읽기 직전
+    `f.flush()` 가 고친 것 — 합성 이미지로 그 순서를 그대로 재현한다.
+    """
+    import struct
+    import tempfile
+
+    import patch_ed2_monster_lines as L
+
+    def rec(name, lba, size):
+        name = name.encode("ascii")
+        ln = 33 + len(name)
+        ln += ln & 1
+        r = bytearray(ln)
+        r[0] = ln
+        r[2:6] = struct.pack("<I", lba)
+        r[6:10] = struct.pack(">I", lba)
+        r[10:14] = struct.pack("<I", size)
+        r[14:18] = struct.pack(">I", size)
+        r[32] = len(name)
+        r[33 : 33 + len(name)] = name
+        return bytes(r)
+
+    bdir = rec("ED2MON3.BIN;1", 2483, 58536) + rec("ED2MON4.BIN;1", 2512, 70944)
+    old_img, old_dir = L.IMG, L.BIN_DIR_LBA
+    with tempfile.TemporaryDirectory() as td:
+        img = os.path.join(td, "fake.bin")
+        with open(img, "wb") as f:
+            f.write(bytes(C.SECTOR * 3))
+        L.IMG, L.BIN_DIR_LBA = img, 1
+        try:
+            with open(img, "r+b") as f:
+                C.write_user_data(f, 1, bdir.ljust(2048, b"\x00"), label="test dir")
+            with open(img, "r+b") as f:
+                L._update_dir_entry(f, "ED2MON3.BIN;1", 106000, 59448)
+                L._update_dir_entry(f, "ED2MON4.BIN;1", 106030, 71736)  # 앞 갱신을 되돌리면 안 된다
+            live = L._live_group_lba(img)
+            assert live[3] == (106000, 59448), live[3]
+            assert live[4] == (106030, 71736), live[4]
+        finally:
+            L.IMG, L.BIN_DIR_LBA = old_img, old_dir
+
+
+# ── 키 입력 뒤 같은 줄 이어 쓰기(`scn_waits`) ────────────────────────────────
+def test_sprintf_trailing_arg_is_read_through_delay_slot_and_tail_call():
+    """끝 `%c` 인자(9=이어 쓰기)를 코드에서 읽는다 — 지연 슬롯·꼬리 호출 둘 다.
+
+    🔴 `%c` 로 끝났다고 창이 닫히는 게 아니다. 인자 9 면 키 입력 뒤 같은 줄에 이어 쓴다
+    (ED2SCN8 jp188→189, 마스터 QA 2026-09-24). 인자를 못 읽으면 이 부류가 통째로 샌다.
+    """
+    import scn_waits as W
+
+    base, spr = 0x80165000, W.SPRINTF["ED2"]
+
+    def lui(r, v):
+        return (0x0F << 26) | (r << 16) | (v & 0xFFFF)
+
+    def addiu(rt, rs, v):
+        return (0x09 << 26) | (rs << 21) | (rt << 16) | (v & 0xFFFF)
+
+    def jal(t):
+        return (3 << 26) | ((t >> 2) & 0x3FFFFFF)
+
+    def j(t):
+        return (2 << 26) | ((t >> 2) & 0x3FFFFFF)
+
+    def sw(rt, off):
+        return (0x2B << 26) | (29 << 21) | (rt << 16) | (off & 0xFFFF)
+
+    blk = base + 0x100
+    hi, lo = (blk >> 16) + (1 if blk & 0x8000 else 0), blk & 0xFFFF
+    code = [
+        # ① 직접 호출 — 인자가 지연 슬롯에서 채워진다
+        lui(5, hi),
+        addiu(5, 5, lo),
+        jal(spr),
+        addiu(6, 0, 9),
+        # ② 꼬리 호출 — 인자를 스택에 두고 공용 호출 자리로 뛴다
+        addiu(2, 0, 9),
+        sw(2, 0x10),
+        lui(5, hi),
+        j(base + 4 * 12),
+        addiu(5, 5, lo),
+        0,
+        0,
+        0,
+        jal(spr),
+        0,
+    ]
+    data = b"".join(w.to_bytes(4, "little") for w in code)
+    calls = W._calls("ED2SCNX", base, {0x100: {}}, data)
+    assert [c[1] for c in calls if c[0] == spr][:2] == [0x100, 0x100], calls
+    assert calls[0][2][0] == 9, calls[0]
+    assert any(c[2][2] == 9 for c in calls[1:]), calls
+
+
+def test_period_after_tilde_is_dropped():
+    """`~.` 는 `~` 로 — 물결이 이미 말끝이다(마스터 QA 2026-09-24). 말줄임은 남긴다."""
+    import re
+
+    src = open(R.__file__, encoding="utf-8").read()
+    assert 're.sub(r"~\\.(?!\\.)", "~", t)' in src
+    rule = re.compile(r"~\.(?!\.)")
+    assert rule.sub("~", "매번 고맙수~.") == "매번 고맙수~"
+    assert rule.sub("~", "아~ 심심해~. 벌써") == "아~ 심심해~ 벌써"
+    assert rule.sub("~", "음~...") == "음~..."
+
+
+def test_ed2_battle_restores_dropped_tail_newline():
+    """원문 `…\\n%c` 의 꼬리 개행을 번역이 흘리면 되살린다(082). 중앙정렬 여백 줄은 둔다."""
+    import patch_ed2_battle as PB
+
+    jp = "%c%s%c\nイシュタが どうしたんだ？\n%c"
+    assert PB.restore_tail_nl(jp, "%c%s%c\n이슈타가 어떻게 된 거야?%c").endswith("거야?\n%c")
+    assert PB.restore_tail_nl(jp, "a\n%c") == "a\n%c"
+    title = " 영웅들의 전설 2\n               %c"
+    assert PB.restore_tail_nl("\n  英雄達の伝説２\n%c", title) == title
+
+
+def test_ed2mon_halfwidth_only_names_are_scanned():
+    """반각 가나로만 된 몬스터 이름도 줍는다(089 — `ﾌﾞﾗﾑﾅ ｸｲｰﾝ` 이 일본어로 떴다)."""
+    import patch_ed2_monsters as PM
+
+    buf = b"\x00" + "ﾌﾞﾗﾑﾅ ｸｲｰﾝ".encode("cp932") + b"\x00\x00" + "護衛Ａ".encode("cp932") + b"\x00"
+    assert [s for _o, s in PM._halfwidth_strings(buf, 0, len(buf))] == ["ﾌﾞﾗﾑﾅ ｸｲｰﾝ"]
+    assert PM._canon_key("ﾌﾞﾗﾑﾅ ｸｲｰﾝ") == "ブラムナクイーン"
+    assert PM._canon_key("ｻｲﾚﾝﾄ･ﾛｰﾄﾞ") == "サイレント・ロード"
+    assert PM._canon_key("ウｲーバー") == "ウｲーバー"  # 섞인 꼴로 등재된 것은 원꼴이 이긴다
+
+
+def test_ed2mon_tail_append_keeps_last_terminator():
+    """꼬리에 이어 붙일 때 앞 문자열의 종단 널을 덮지 않는다(나무인간+대사가 한 줄로 붙었다)."""
+    from patch_ed2_monster_lines import used_end
+
+    name8 = b"\x8a\x49\x8d\x4a\x90\xcc\x88\xa1"  # 8B — 4바이트 경계에 딱 맞게 끝난다
+    buf = b"\x01\x02\x03\x04" + name8 + b"\x00" * 12
+    end = used_end(buf)
+    assert end % 4 == 0 and buf[end - 1] == 0 and end > 4 + len(name8)
+    assert used_end(b"\x00" * 8) == 0
+
+
+def test_josa_hook_reads_trailing_digit_aloud():
+    """숫자로 끝나는 이름 뒤 조사는 읽은 소리대로(2026-09-26 마스터) — 영문·부호는 무받침 그대로."""
+    import hangul_map as HM
+    import patch_josa_hook as J
+
+    table = J.build_bit_table()
+    sj = lambda s: b"".join(HM.syllable_sjis(c).to_bytes(2, "big") for c in s)
+    want = {
+        b"0": "을",
+        b"1": "을",
+        b"2": "를",
+        b"3": "을",
+        b"4": "를",
+        b"5": "를",
+        b"6": "을",
+        b"7": "을",
+        b"8": "을",
+        b"9": "를",
+        b"A": "를",
+        b"'": "를",
+    }
+    for tail, j in want.items():
+        line = b"\x02" + sj("레스") + tail + b"\x01" + sj("을") + b"(" + sj("를") + b")"
+        buf = bytearray(line + b"\x00" * 140)
+        J.fix_buffer(buf, table, cross=None, limit=128)
+        assert bytes(buf[len(line) - 6 : len(line) - 4]) == sj(j), (tail, j)
+
+
+def test_jp_leak_ignores_plain_fullwidth_alnum():
+    """원문이 전각 ＭＰ 면 우리도 전각으로 쓴다(09-27) — 전각 영숫자 공유는 누출이 아니다."""
+    import check_jp_leak as L
+
+    jp = "ＭＰが足りない".encode("cp932")
+    assert L.shared_runs(jp, "ＭＰ".encode("cp932")) == []
+    assert L.shared_runs("密造酒".encode("cp932"), "造酒".encode("cp932")) == ["造酒"]
+
+
+def test_prewrap_backoff_and_space_swallow_stubs():
+    """런타임 줄넘김 ③·④ 스텁(09-27) — 원본 없이 스텁만 실행해 규칙을 값으로 본다."""
+    import check_prewrap_rules as C
+    import patch_hang_punct as HP
+
+    base = 0x80100000
+    bo = HP.stub_backoff(base)
+    HP.verify_asm(bo, base, "backoff")
+
+    def backoff(text, c, breaks=()):
+        cpu = C.CPU(b"", base=0x90000000)
+        for i, b in enumerate(bo):
+            cpu.mem[base + i] = b
+        s_addr, br = 0x80200000, 0x80300000
+        for i, b in enumerate(text):
+            cpu.wb(s_addr + i, b)
+        for k, v in enumerate(breaks):
+            cpu.wb(br + 2 * k, v)
+            cpu.wb(br + 2 * k + 1, v >> 8)
+        r = cpu.call(base, {8: c, 19: s_addr, 21: br, 18: len(breaks)})
+        return r[8]
+
+    s = b"ab cd ef"
+    assert backoff(s, 7) == 5  # 같은 줄 마지막 공백으로 물러난다
+    assert backoff(s, 7, breaks=(6,)) == 7  # 직전 끊는 자리 앞으로는 안 간다
+    assert backoff(b"ab\n cd", 6) == 6  # 수동 개행 바로 뒤 들여쓰기로는 안 물러난다
+    assert backoff(b"abcdef", 5) == 5  # 공백이 없으면 그대로
+    assert backoff(s, 7, breaks=(1, 1, 1, 1, 1, 1)) == 7  # 끊는 자리가 6개면 안 물러난다
+
+    p3 = HP.stub_pass3_space(base, 0x800AD124)
+    HP.verify_asm(p3, base, "pass3")
+    HP.verify_asm(HP.stub_after_backoff(base, base, 0x800ACF80), base, "after")
+
+
+def test_ed2mon_name_copy_loop_and_liveness():
+    """09-28 QA 129 — 이름 복사는 JP 길이로 펼쳐져 있어 루프로 바꾼다. 루프 자체와
+    「뒤 코드가 레지스터를 읽나」 판정의 두 함정(복귀·긴 직선 구간)을 박아 둔다."""
+    import struct
+
+    import patch_ed2_name_copy as NC
+
+    base = NC.BASE
+    loop = b"".join(struct.pack("<I", w) for w in NC._loop(base))
+    ins = list(NC._md.disasm(loop, base))
+    assert [i.mnemonic for i in ins] == ["lbu", "addiu", "sb", "bnez", "addiu"]
+    assert int(ins[3].op_str.split(",")[-1], 0) == base  # 분기는 루프 머리로
+
+    def words(*ws):
+        return b"".join(struct.pack("<I", w) for w in ws)
+
+    # 복귀(jr ra) 뒤의 a1·v1 은 호출자가 안 본다 — 거부하면 안 된다
+    ret = words(0x24020022, 0x03E00008, 0x00000000)  # addiu v0,zero,0x22 · jr ra · nop
+    assert NC._reads_before_write(ret, 0) == set()
+    # 긴 직선 저장 구간(40명령) 뒤에 a1 을 먼저 쓰면 안전 — 한도에 걸려 「위험」이 되면 안 된다
+    long = words(
+        *([0xA0200000] * 40), 0x24050018, 0x24030001, 0x24040000, 0x24020000, 0x03E00008, 0
+    )
+    assert NC._reads_before_write(long, 0) == set()
+    # 진짜로 a1 을 읽으면 잡는다
+    assert "$a1" in NC._reads_before_write(words(0x90A20000, 0), 0)
+
+
+def _run_eager_stub(next_byte):
+    """드로어 선제 줄바꿈 스텁을 실행해 (줄 +1 했나, 열) 을 돌려준다.
+
+    진입 전에 원 지연 슬롯(`s0 = 1`)이 이미 실행된 상태를 흉내 낸다."""
+    import struct
+
+    import patch_hang_punct as H
+    from patch_josa_hook import REG
+
+    BASE, RESUME, STR, SP = 0x80100000, 0x80100800, 0x2000, 0x3000
+    code = H.stub_eager_nl(BASE, RESUME)
+    mem_b = {STR + 5: next_byte}  # s3=4 → 다음 글자 = STR+4+1
+    mem_w = {SP + 0x20: STR}
+    r = [0] * 32
+    r[REG["s0"]], r[REG["s1"]], r[REG["s3"]], r[REG["s4"]], r[REG["sp"]] = 1, 7, 4, 29, SP
+    pc, pending, steps = BASE, None, 0
+    while pc != RESUME:
+        steps += 1
+        assert steps < 100, "무한 루프"
+        w = struct.unpack_from("<I", code, pc - BASE)[0]
+        op, rs, rt, rd, sh, fn = (
+            w >> 26,
+            (w >> 21) & 31,
+            (w >> 16) & 31,
+            (w >> 11) & 31,
+            (w >> 6) & 31,
+            w & 63,
+        )
+        imm = w & 0xFFFF
+        simm = imm - 0x10000 if imm >= 0x8000 else imm
+        nxt, target = pc + 4, None
+        if op == 0 and fn == 0x00:
+            r[rd] = (r[rt] << sh) & 0xFFFFFFFF
+        elif op == 0 and fn == 0x03:
+            v = r[rt] & 0xFFFFFFFF
+            r[rd] = ((v - (1 << 32)) if v >> 31 else v) >> sh & 0xFFFFFFFF
+        elif op == 0 and fn == 0x21:
+            r[rd] = (r[rs] + r[rt]) & 0xFFFFFFFF
+        elif op == 0x09:
+            r[rt] = (r[rs] + simm) & 0xFFFFFFFF
+        elif op == 0x24:
+            r[rt] = mem_b.get((r[rs] + simm) & 0xFFFFFFFF, 0)
+        elif op == 0x23:
+            r[rt] = mem_w[(r[rs] + simm) & 0xFFFFFFFF]
+        elif op == 0x05:
+            target = pc + 4 + simm * 4 if r[rs] != r[rt] else None
+        elif op == 0x02:
+            target = (w & 0x03FFFFFF) << 2 | 0x80000000
+        else:
+            raise AssertionError(f"미구현 op 0x{op:02X} fn 0x{fn:02X}")
+        r[0] = 0
+        if pending is not None:
+            nxt, pending = pending, None
+        elif target is not None:
+            pending = target
+        pc = nxt
+    return r[REG["s1"]], r[REG["s0"]]
+
+
+def test_drawer_eager_wrap_skips_when_newline_follows():
+    """꽉 찬(29열) 줄 뒤에 `\\n` 이 오면 선제 줄바꿈을 하지 않는다 — 빈 줄을 막는다(마스터 10-03).
+
+    에뮬 A/B 로 확인했다: 원판은 29열 줄 + `\\n` 사이에 빈 줄이 뜨고 이 스텁은 안 뜬다."""
+    line, col = _run_eager_stub(0x0A)
+    assert line == 7, "개행이 오는데 줄을 넘겼다 — 빈 줄이 생긴다"
+    assert col == 30, "열은 한계+1 이어야 개행 처리기가 공백 없이 넘긴다"
+    line, col = _run_eager_stub(0x41)  # 다른 글자 — 원판 그대로(줄 +1, 열 1)
+    assert (line, col) == (8, 1)
 
 
 if __name__ == "__main__":

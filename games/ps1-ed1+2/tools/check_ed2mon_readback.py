@@ -22,8 +22,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 from common import BUILD_DIR, ROOT, extract
-from ed2_monster_review import MON
+from ed2_monster_review import MON as MON_ORIG
 from patch_ed2_monster_lines import _enc as _enc_lines
+from patch_ed2_monster_lines import _live_group_lba as _live_mon
+from patch_ed2_monster_lines import overlay_refs
 from patch_ed2_monsters import _enc as _enc_names
 from patch_ed2_monsters import plan as names_plan
 
@@ -37,6 +39,11 @@ IMG = f"{BUILD_DIR}/Eiyuu Densetsu (KR).bin"
 LINES_TABLE = os.path.join(ROOT, "script", "ED2MON_LINES.json")
 SKIP_BASELINE = os.path.join(ROOT, "script", "ed2mon_readback_skip_baseline.json")
 
+# ⚠ `_live_mon` 은 `patch_ed2_monster_lines._live_group_lba` **그대로다** — 정본은
+# 거기 하나다(DRY). 🔴 **정적 `MON` 을 그대로 읽으면 DUMMY 재배치를 놓친다**(2026-09-22
+# 실측 — 경위는 `_live_group_lba` 독스트링). 이 되읽기 게이트가 옛 정적 `MON`(원본
+# LBA)으로 읽던 시절엔 재배치된 그룹 전체가 "대사 못 찾음"으로 쏟아졌다(93건).
+
 
 def check_names():
     """이름 테이블 — `plan()`(원본 기준 계획) vs **빌드 이미지**(제자리 치환이라 오프셋은 같다).
@@ -45,12 +52,17 @@ def check_names():
     """
     fit, _over, _none = names_plan()
     bad = []
+    # ⚠ `fit` 의 lba 는 `plan()` 이 **정적 원본 좌표**로 낸 것이다(그룹 안 상대 오프셋은
+    # 재배치돼도 그대로다 — 옮기는 건 그룹 파일의 시작 LBA뿐). 그래서 **읽을 때만**
+    # `_live_mon()` 의 현재 LBA로 바꿔 치환한다(`by_lba` 는 원본 좌표 판별용으로 남긴다).
     by_lba = {}
-    for g, (lba, size) in MON.items():
+    for g, (lba, size) in MON_ORIG.items():
         by_lba[lba] = (g, size)
+    live = _live_mon()
     for lba, off, jp, kr, slot in fit:
-        g, size = by_lba[lba]
-        buf = bytes(extract(lba, size, path=IMG))
+        g, _orig_size = by_lba[lba]
+        cur_lba, size = live[g]
+        buf = bytes(extract(cur_lba, size, path=IMG))
         want = _enc_names(kr) + b"\x00"
         got = buf[off : off + len(want)]
         if got != want:
@@ -72,11 +84,13 @@ def check_name_coverage():
     """
     canon = json.load(open(os.path.join(ROOT, "textmap", "monsters_ed2.json"), encoding="utf-8"))
     fit, over, none = names_plan()
-    known = {(g, off) for lba, off, *_ in fit + over for g, (l, _s) in MON.items() if l == lba}
+    known = {(g, off) for lba, off, *_ in fit + over for g, (l, _s) in MON_ORIG.items() if l == lba}
     known |= {(g, off) for g, off, _jp in none}
 
+    # ⚠ **원본(originals/)을 훑는다** — `extract()` 기본 `path` 가 원본이다. 재배치는
+    # 빌드 이미지에서만 일어나므로 여기는 정적 `MON_ORIG` 그대로가 맞다(수정 불필요).
     blind = []
-    for g, (lba, size) in sorted(MON.items()):
+    for g, (lba, size) in sorted(MON_ORIG.items()):
         buf = bytes(extract(lba, size))
         for jp_base in canon:
             for suf in SUFFIXES:
@@ -102,16 +116,25 @@ def check_lines():
     """
     with open(LINES_TABLE, encoding="utf-8") as f:
         table = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+    live = _live_mon()
     missing = []
     for key, kr in table.items():
         want = _enc_lines(kr) + b"\x00"
         found = False
-        for _g, (lba, size) in MON.items():
+        for lba, size in live.values():
             cap = (size + 2047) // 2048 * 2048
             buf = bytes(extract(lba, cap, path=IMG))
             idx = buf.find(want)
+            refs = None
             while idx >= 0:
                 if idx == 0 or buf[idx - 1] == 0:
+                    found = True
+                    break
+                # 포인터 표 바로 뒤에 붙은 대사는 앞이 널이 아니다 — 코드가 그 자리를
+                # 직접 가리키면 문장 머리로 인정한다(적용기 `_apply_sha_table` 과 같은 규칙).
+                if refs is None:
+                    refs = overlay_refs(buf)[0]
+                if idx in refs:
                     found = True
                     break
                 idx = buf.find(want, idx + 1)

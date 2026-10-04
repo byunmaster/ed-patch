@@ -203,9 +203,8 @@ ITEM_SLOTS = 4.5
 # `.`). 중앙값으로 올린다 — 더 올리면 짧은 아이템에서 불필요한 개행이 생긴다(NAME_SLOTS 4.0 이
 # 그래서 3.0 으로 내려온 이력이 있다).
 # 조사 병기를 **원자 단위**로 조판하기 위한 마커(STOCK 보물상자). 한 토큰이라 줄 경계에서
-# 안 쪼개진다(훅의 한 줄 스캔 보장). ⚠ 폭은 **병기 전체("은(는)"·"이(가)")** 기준(이름+3) —
-# 엔진의 박스 줄배치는 조사훅 해결 **전**에 일어나 버퍼의 병기 전체(3슬롯)로 배치하므로,
-# 조판 폭을 병기 전체로 맞춰야 엔진이 재줄바꿈(→ 병기 분할)을 안 한다(유저 QA 07-28).
+# 안 쪼개진다(훅의 한 줄 스캔 보장). 폭은 **조사 1글자** 기준(이름+1) — 훅이 줄 나눔보다 먼저 병기를 접는다
+# (옛 「병기 전체 3슬롯」은 07-28 훅 위치를 고치기 전 값이다 — `cell_w` 주석).
 JOSA_NAME = "\x15"  # [%s]은(는)
 JOSA_ITEM = "\x16"  # [%c%s%c]이(가)
 
@@ -878,6 +877,9 @@ def parse_kr(entry):
     # 쉼표·단일 온점도 같은 이유로 붙인다("왕자님 , 남편을" 인게임 지적 2026-08-02).
     # ⚠ 말줄임 `...` 앞 공백은 정발의 의도적 호흡이라 건드리지 않는다 — 그래서 `\.(?!\.)`.
     t = re.sub(r"[ \n]+(?=[!?,]|\.(?!\.))", "", t)
+    # 물결 뒤 온점은 뗀다(마스터 QA 2026-09-24, `고맙수~.`·`심심해~.` 10곳). 늘어진 말끝(`~`)이
+    # 이미 종결이라 온점이 겹쳐 어색하다. 말줄임(`~...`)은 남긴다.
+    t = re.sub(r"~\.(?!\.)", "~", t)
     # 곧은 따옴표 → 곡선 따옴표. PS1 폰트에 `"`·`'` 글리프가 **없어서**(전각 ＂로 변환됐다가
     # `글리프 범위 밖`) 그 페이지를 무는 블록이 통째로 `encode` 탈락한다. 정발 ED1 에 31곳 있어
     # 잠재 지뢰였다 — jp681·jp734 가 축소 재배정으로 그 페이지를 물자 실제로 터졌다(2026-07-31).
@@ -990,8 +992,10 @@ def cell_w(ch):
     if ch == ITEM_SENT:
         return ITEM_SLOTS  # %c%s%c(아이템) — 인물보다 길다(위 주석)
     if ch in (JOSA_NAME, JOSA_ITEM):
-        # 이름/아이템 + 병기 전체(은(는)/이(가)=3슬롯) — 엔진 배치와 일치
-        return (NAME_SLOTS if ch == JOSA_NAME else ITEM_SLOTS) + 3
+        # 이름/아이템 + 조사 **1글자**(마스터 10-05) — 조사 훅이 prewrap 보다 먼저 돌아 병기를 한 글자로 접은 뒤에
+        # 줄을 나눈다(07-28 prewrap early-resolve). 예전엔 훅이 뒤라서 병기 전체 3슬롯으로 쟀으나 그 전제가 사라졌고,
+        # 일반 대사 경로(`_fold_josa`)는 이미 1슬롯이다 — 이 원자만 낡은 값(+3)이 남아 있었다.
+        return (NAME_SLOTS if ch == JOSA_NAME else ITEM_SLOTS) + 1
     if ch == NOBREAK_SP:
         return 0.5  # 보통 공백과 같은 폭(조판 후 공백으로 되돌린다)
     return 0.5 if ch == " " or ch in HALF_PUNCT or (ch.isascii() and ch.isalnum()) else 1.0
@@ -1311,12 +1315,22 @@ def template_windows(tpl):
     return out
 
 
-def _tpl_name_str(jp_bytes, speaker, first):
-    """_tpl_name과 같은 판정의 **문자열** 결과 — 접힌 이름창의 폭 계산에 쓴다."""
+def _tpl_name_pick(jp_bytes, speaker, first):
+    """이름창에 실제로 쓸 KR 이름 — 화자맵(JP→정발명, 다중 화자 블록의 둘째 이후
+    이름창까지 커버) 우선, 정렬 화자(`speaker`, 블록당 하나뿐이라 **첫 이름창만** 폴백.
+
+    🔴 **043 실측(2026-09-23)** — `ED2SCN2` 의 「페리시아 황태후」가 JP 헤더가 그냥
+    `フェリシア`(호칭 없음)인 자리에서 화자맵 값(`페리시아`, ED1·ED2 공용 — 두 게임이
+    이름을 공유해 여기서 갈라 못 둔다, `_speaker_map` 독스트링)에 밀려 호칭이 빠졌다.
+    **정렬 화자가 화자맵 값을 통째로 포함하면(=더 구체적이면) 정렬 화자를 쓴다** —
+    화자맵의 "같은 인물, 같은 표기" 목적은 그대로 지키면서(다른 인물이면 포함 관계가
+    안 나온다), 블록별로 더 자세히 적어 둔 표기(호칭 등)를 화자맵이 깎지 않게 한다."""
     try:
         kr = _speaker_map().get(jp_bytes.decode("cp932"))
     except UnicodeDecodeError:
         kr = None
+    if kr and first and speaker and speaker != kr and speaker.startswith(kr):
+        return speaker
     if kr:
         return kr
     if first and speaker:
@@ -1324,18 +1338,14 @@ def _tpl_name_str(jp_bytes, speaker, first):
     raise SkipBlock("이름창 화자 미해결")
 
 
+def _tpl_name_str(jp_bytes, speaker, first):
+    """_tpl_name과 같은 판정의 **문자열** 결과 — 접힌 이름창의 폭 계산에 쓴다."""
+    return _tpl_name_pick(jp_bytes, speaker, first)
+
+
 def _tpl_name(jp_bytes, speaker, first):
-    """템플릿 이름창의 KR 이름 바이트. 화자맵(JP 이름→정발명) 우선 — 다중 화자 블록에서
-    두 번째 화자를 정렬 화자로 덮어쓰면 오표기가 되므로, 정렬 화자 폴백은 **첫 이름창만**."""
-    try:
-        kr = _speaker_map().get(jp_bytes.decode("cp932"))
-    except UnicodeDecodeError:
-        kr = None
-    if kr:
-        return encode_ext(kr)
-    if first and speaker:
-        return encode_ext(speaker)
-    raise SkipBlock("이름창 화자 미해결")
+    """템플릿 이름창의 KR 이름 바이트."""
+    return encode_ext(_tpl_name_pick(jp_bytes, speaker, first))
 
 
 # ── 글자 주입 %c쌍 (0x5C 이스케이프) ───────────────────────────────────────
@@ -1357,6 +1367,11 @@ TRAIL_NL = set()
 # 창 종단(`%c`)이 없는 조각은 다음 블록이 **같은 줄에 이어 붙으므로**, 경계에 아무것도
 # 없으면 어절이 붙어 나온다(`없는데바위` — 유저 QA 2026-08-10, 전 씬 20건).
 TRAIL_SP = set()
+# **키 입력 뒤 같은 줄에 이어 쓰는 블록**: {eid} — 씬 단위, 코드에서 뽑는다(`scn_waits`).
+# 끝 `%c` 인자가 `9`(이어 쓰기)인데 원문이 `{n}` 없이 끝나는 자리 — 뒷 블록이 앞 줄 끝에서
+# 시작해 붙거나(`그렇습니까…그럼`), 조판이 모르는 줄 폭을 넘어 엔진이 꺾는다(첫칸공백·빈 줄,
+# 마스터 QA 2026-09-24). 끝 `%c` 앞에 개행을 넣어 뒷 블록을 늘 새 줄 0열에서 시작시킨다.
+CONT_NL = set()
 # 이름창 접기: {eid: {이름창 인덱스: 조사}} — 씬 단위(load_translations 재구축).
 # JP `%c세리오스%c\n가 リーダー…`는 이름을 **헤더 줄**로 띄우는데, 정발은 한 줄로
 # `세리오스가 리더가 되었습니다.`로 뽑는다(유저 정발 대조 2026-07-30). 이름창에 조사+공백을
@@ -1460,11 +1475,9 @@ SCN_ARG_PATCHES = {
     ("ED1SCN1", 336): [(0x1CCAC, 0x24070020), (0x1CCB0, 0x24020020)],
     ("ED1SCN1", 339): [(0x1CD24, 0x24070020), (0x1CD28, 0x24020020)],
     ("ED1SCN1", 421): [(0x1E1F0, 0x24070020), (0x1E1F4, 0x24020020)],
-    # eid 280 리더 교대: 콜사이트 인자열 `(2,1,8,3,1,0xC)`의 4·5번째 색코드를 바꾼다
-    # (RAM 0x80185728/30). **색코드 실측: 2=주황(화자 이름) · 3=초록 · 1=흰색 복귀.**
-    # 원판은 세리오스=초록·본문=흰색인데, 유저 지정(2026-07-30)에 따라
-    # **세리오스=주황(2) · 뒷문장=초록(3)**으로 바꾼다. 인자 개수·순서는 불변.
-    ("ED1SCN1", 280): [(0x1B728, 0x24020002), (0x1B730, 0x24020003)],
+    # eid 280 리더 교대: **원판 색으로 되돌렸다**(마스터 10-05). 07-30 에는 콜사이트 인자열 `(2,1,8,3,1,0xC)` 의
+    # 4·5번째 색코드를 바꿔 세리오스=주황(2)·뒷문장=초록(3)으로 칠했으나, 「색은 원문 그대로」(09-08)에 맞춰
+    # 원판(세리오스=초록·본문=흰색)을 따른다. 색코드 실측: 2=주황(화자 이름) · 3=초록 · 1=흰색.
     # eid 287 크루즈 마을 여자(베르가 광산 괴물 경고): **원판 fall-through 버그 복구**.
     # 원본은 케이스 287이 종료 점프 없이 케이스 288로 흘러들어가고, 두 sprintf가 **같은
     # 버퍼(sp+0x20)**를 써서 288(남편 대사)이 287을 덮어쓴다 → 287은 화면에 절대 안 나온다
@@ -1636,7 +1649,15 @@ def stock_build(raw):
     #   **42블록이 `size` 로 탈락하고 화면에 일본어가 나간다**(2026-08 실측, `build.py` 주석).
     #   `들어 있었습니다` → `있었습니다` 로 두 글자를 되돌려 **탈락 0**을 확인했다.
     a, b2, re1, re2 = _chest_texts()
-    b2 = b2.replace("들어 있었", "있었")
+    # 🔴 **평어체로 되돌렸다**(마스터 10-03 「전부 평어」 — 09-03 정중 판정을 번복). DOS 소스가 정중이라
+    # 여기서 `to_plain` 으로 종결어미를 바꾼다(문안은 DOS 파생 그대로, 어미만). 화면에서만 드러나는
+    # 자리다 — `check_log_register` 는 `script/*.json` 만 보므로 이 경로를 못 본다(09-05 사고와 같다).
+    a, b2, re1, re2 = (to_plain(x) for x in (a, b2, re1, re2))
+    # 🔴 문안 길이가 한계다 — 10-03 에 정본 블록과 같게 「보물상자 안에는 … 들어 있었다」로 늘려 봤더니 정형 블록이
+    #   `size` 로 탈락해 일본어가 나갔다(ED2SCN13 13건·ED1SCN6 10건 실측). 그래서 **짧은 쪽(상자에는 … 있었다)이 표준**이고
+    #   정본 블록(`script/*.json`)을 이쪽으로 맞춘다.
+    # 문안은 **블록마다** 정한다 — 정본 블록과 같은 「들어 있었다」를 먼저 시도하고 JP 칸에 안 들어가면 짧은
+    # 「있었다」로 물러선다(칸이 원문 바이트라 블록마다 여유가 다르다. 한쪽으로 못 박으면 탈락 아니면 불일치다).
     if kind == "open":
         # [%s]은(는) 보물상자를 열었다.\n상자의 안에는 [%c%s%c]이(가)\n들어 있었다.
         # 첫 언급 "보물상자"(JP 宝箱·정발 3장), 반복은 "상자"로 축약(정발·ED2 동일, 유저 07-28).
@@ -1649,9 +1670,18 @@ def stock_build(raw):
         # 병기 뒤 하드개행(HARD_NL): "들어 있었다"가 아이템 줄로 딸려 올라가 폭 초과(엔진
         # 재줄바꿈→병기 분할)하는 걸 막는다. 일반 "\n"은 문장 단위 reflow가 공백으로 지워
         # 재packing하므로 protect_hard 마커를 써야 한다(유저 QA 07-28).
-        text = JOSA_NAME + " " + first + HARD_NL + rest + " " + JOSA_ITEM + HARD_NL + b2
+        # 첫 줄(「○○는 보물상자를 열었다.」)은 **조판기에 맡기지 않는다**(마스터 10-03) — 조판기는 이름 자리를
+        # 최장 이름으로 쳐서 28열(14슬롯)에서 꺾어 「○○는 / 보물상자를 열었다.」로 이름만 윗줄에 떼어 놓는다. 최장 이름
+        # (세리오스·아트라스)도 29열에 꼬리 온점이 앉아 한 줄에 들어가고(드로어 훅이 29열 줄 뒤 개행의 빈 줄을 막는다),
+        # 짧은 이름은 더 여유롭다. 이름 뒤 병기가 줄 경계에서 안 쪼개지는 것도 이쪽이 더 안전하다.
+        first_line = JOSA_NAME + " " + first
+        # 둘째 줄도 조판기에 맡기지 않는다(마스터 10-05) — 조병기 원자(`이(가)`)를 세 글자로 쳐서 「상자에는 레스의 잎이 /
+        # 있었다.」로 한 줄에 들어갈 문장을 둘로 갈랐다. 한 줄로 내보내고 길어지면(긴 아이템 이름) 엔진 prewrap 이
+        # 어절에서 꺾는다. 문안은 표준 「상자에는 ⟨아이템⟩이(가) 있었다.」 하나다(「들어 있었다」는 칸이 모자라고
+        # 길어서 한 줄에 안 들어간다).
+        second_line = rest.strip() + " " + JOSA_ITEM + " " + b2.replace("들어 있었", "있었")
         blk = bytearray()
-        for i, ln in enumerate(ln for pg in wrap_page(text) for ln in pg):
+        for i, ln in enumerate([first_line, second_line]):
             if i:
                 blk += b"\x0a"
             for part in re.split(f"([{JOSA_NAME}{JOSA_ITEM}])", ln):
@@ -1870,7 +1900,7 @@ LITERAL_NAMES = {
     "子ども": "아이",
     "呪文屋": "주문점",
     "ヤミ屋": "밀매상",
-    "フラッド": "프랏드",
+    "フラッド": "프래드",  # 정발 표기(마스터 QA 2026-09-16)
     "シンディ": "신디",
     "ナレサ隊長": "나레사 대장",
     "女中": "하녀",
@@ -2812,6 +2842,11 @@ def build_candidate(raw, t, eid):
             # 게이트가 조용하다), 무엇보다 원본 조판과 달라진다. 공백이면 krwrap 이 알아서 감는다.
             c += b"\x20" if eid in TRAIL_SP else b"\x0a"
             cand = c + b"\x00" * (-len(c) % 4 or 4)
+    if cand is not None and eid in CONT_NL:
+        c = cand.rstrip(b"\x00")
+        if c.endswith(MC) and not c[:-2].endswith(b"\x0a"):
+            c = c[:-2] + b"\x0a" + MC
+            cand = c + b"\x00" * (-len(c) % 4 or 4)
     # 🔴 **꼬리 개행 정리는 맨 마지막이다** — 개행을 붙이는 자리가 셋(조판기 · `restore_tail_nl`
     # · `TRAIL_NL` 오버라이드)이라 중간에서 지우면 뒤에서 다시 붙는다(실측: 앞에 두었더니
     # 22곳 중 11곳만 잡혔다).
@@ -3154,6 +3189,10 @@ def load_translations(align_name, scn_name):
     INJECT_PAIRS.clear()  # 씬 단위 상태 — 오버라이드 inject_pairs가 재구축
     TRAIL_NL.clear()
     TRAIL_SP.clear()
+    CONT_NL.clear()
+    import scn_waits  # 지연 임포트 — patch_sys_ui 를 끌어온다
+
+    CONT_NL.update(scn_waits.same_line_waits(scn_name))
     FOLD_NAME.clear()
     COLOR_WRAP.clear()
     COLOR_BODY.clear()

@@ -257,6 +257,9 @@ def main():
     run("patch_ed2_battle.py")  # ED2.EXE 전투 문안 — 제자리 치환 + 넘치면 재배치
     run("patch_ed2_monsters.py")  # ED2MON0~5.BIN 몬스터 이름 — 제자리 치환만
     run("patch_ed2_monster_lines.py")  # ED2MON0~5.BIN 전투 대사 — 제자리 치환만
+    # 조우 코드의 이름 복사가 JP 길이로 굳어 있어 긴 한글 이름이 잘린다(QA 129) —
+    # 이름표 재배치가 끝난 **뒤**에 복사를 널까지 도는 루프로 바꾼다.
+    run("patch_ed2_name_copy.py")
     run("patch_items.py")  # ED.EXE 아이템·마법명 (FINAL 제자리 갱신)
     # 줄머리 공백 훅(patch_battle_wrap.py)은 **미채택 확정**(2026-07-23 유저 결정, 보류 아님).
     # 구현·검증까지 끝냈으나 ①differential로 인트로 정지와 무관함이 확인돼 실익이 없었고
@@ -294,14 +297,32 @@ def main():
     _phg.apply()
     # 058ⓑ ④ — 글리프가 구워진 뒤에야 반각 문자열이 화면에 정상으로 나간다.
     _psu.apply_halfwidth_hud_slots()
+    # 073 — 같은 이유로 글리프가 구워진 뒤에. `patch_scn_headers`(위, 사피아호수 전각)가
+    # 먼저 써 둔 자리를 반각 11조각으로 덮는다.
+    _psu.apply_sapia_lake_hud()
     # 038 — 세레 저택 NPC 슬롯 설치 인자 한 바이트(원판 결함, RE 확정 2026-09-15).
     import patch_npc_zeni_slot as _pnz
 
     _pnz.apply()
+    # 004 — 늑대의입 게일 3세 조형(팩 #4 10행 → 팩 #9 7행 + SCN7 a2=7, RE 확정 2026-09-22·원본 행 정정 09-24).
+    # 038 과 같은 부류(NPC 설치 인자)지만 그림 데이터(ED2CHR.DAT)까지 같이 옮긴다.
+    import patch_npc_gale3_sprite as _png3
+
+    _png3.apply()
+    # 076 — 몽거 전투 종료 때 필드 그림 재적재 플래그(원판의 과잉 보수값) 1→0. ED2.EXE 한 바이트.
+    import patch_mongo_field_reload as _pmfr
+
+    _pmfr.apply()
     # 065 — ED2SCN10·ED2SCN13 안 경로 라벨 사본(058ⓑ 와 같은 "사본이 둘" 부류).
     import patch_scn_route_labels as _psrl
 
     _psrl.apply()
+    # 006/012 — HUD 지명은 **JP 원문 길이에 맞춰 인라인된 고정 길이 복사**로 실린다.
+    # 우리 전각 한글이 그보다 길면 널이 안 실리거나 글자 중간에서 끊긴다(RE 확정
+    # 2026-09-20). 지명 문자열을 다 쓴 **맨 뒤에** 돌아야 최종 길이를 본다.
+    import patch_scn_hud_copy as _pshc
+
+    _pshc.apply()
     for stem in INTERMEDIATES + STALE:
         rm(stem)
     check_immutable()

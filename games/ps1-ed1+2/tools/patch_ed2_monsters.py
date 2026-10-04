@@ -22,13 +22,14 @@ import json
 import os
 import re
 import sys
+import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 import hangul_map as H
 from common import BUILD_DIR, ROOT, extract, write_user_data
-from ed2_monster_review import JP, MON, SUFFIX, decode_sjis, records
+from ed2_monster_review import JP, MON, SUFFIX, records
 from ed2_monster_review import strings as jp_strings
 
 # 이름 슬롯 초과분 재배치 — 새로 짜지 않고 patch_ed2_monster_lines 의 것을 그대로 쓴다
@@ -36,9 +37,12 @@ from ed2_monster_review import strings as jp_strings
 # `overlay_refs`/`_relocate`/`BASE` 는 같은 ED2MON 오버레이를 보는 같은 도구라 100% 재사용
 # 가능하다 — 재구현하면 같은 판단이 두 곳에 갈린다).
 from patch_ed2_monster_lines import BASE as _MON_LINES_BASE
+from patch_ed2_monster_lines import _live_group_lba as _live_mon
 from patch_ed2_monster_lines import _relocate as _mon_lines_relocate
 from patch_ed2_monster_lines import _update_dir_size as _mon_lines_update_dir_size
 from patch_ed2_monster_lines import overlay_refs as _mon_overlay_refs
+from patch_ed2_monster_lines import trace_lba as _trace_lba
+from patch_ed2_monster_lines import used_end as _mon_lines_used_end
 
 assert _MON_LINES_BASE == 0x8014A000  # 이름 표·대사 표가 같은 오버레이 베이스를 본다는 전제
 
@@ -51,8 +55,20 @@ _PUA = re.compile(r"[-]")  # cp932 가 미정의 바이트를 매핑하는
 DIALOG = re.compile(r"[。！？…、」『%\n]")
 NAME_MAX = 14
 
-# 전각 접미 → 반각. `′`·`”` 는 분열체 구분이라 살린다(`赤スライムＡ′`).
+# 전각 접미 → 반각.
+# 🔴 `′`·`”` 도 반각으로 낸다(2026-09-15, 마스터 QA — 전각 프라임이 폭도 넘치고 깨진
+# 글자로 오해까지 샀다). ⚠ **이 표가 `SUFFIX` 정규식(`[Ａ-ＺA-Z][’′”]*$`, ed2_monster_review)의
+# 프라임 접미도 실제로 받는다** — 「분열체는 이름표 스캔 밖이라 이 표를 안 탄다」던 옛
+# 가정은 **틀렸다**(2026-09-17 마스터 QA 재발 — "붉은슬라임B'" 뒤 "을(를)"이 안 접히고
+# 프라임도 전각으로 보인다는 지적을 되읽기로 추적, `plan()` 이 실제로 이 이름을 스캔하고
+# 있었다 — `HALF` 에 프라임 항목만 없어서 글자만 반각화되고 프라임은 그대로 새 나갔다).
+# `SPLIT_SLIME_MSGS._halfwidth_marks()` 는 **별개의 다른 문자열**(분열 "…가 되었다" 공지
+# 문장에 색전환 `%c` 가 끼어 박힌 4자리)을 처리하는 것이지, 이 표를 대신하는 게 아니다 —
+# 그래서 프라임은 **여기에도** 넣는다(같은 지식이 두 곳에 있는 게 아니라 대상이 다르다).
 HALF = {chr(0xFF21 + i): chr(ord("A") + i) for i in range(26)}
+HALF["’"] = "'"  # ’ (분열체 A′/B′ 등)
+HALF["′"] = "'"  # ′ (같은 프라임의 다른 코드포인트)
+HALF["”"] = '"'  # ” (분열체 A″/B″ 등)
 
 
 def _enc(kr):
@@ -150,6 +166,46 @@ def _canon_jp():
     return _CANON_JP
 
 
+# 🔴 **반각 가타카나만으로 된 이름**(2026-09-25, 마스터 QA 089 — `ﾌﾞﾗﾑﾅ ｸｲｰﾝ` 이 전투 화면에
+# 일본어로 떴다). `jp_strings` 의 `JP` 는 전각 가나·한자만 보므로 이 부류는 **스캐너에 아예 안
+# 잡혀** `none`(정본에 없음)에도 안 뜨고 되읽기 게이트의 분모에도 없었다 — 조용히 샜다.
+# `JP` 자체를 넓히면 이진 바이트(0xA6~0xDF 는 흔하다)가 반각 가나로 읽혀 `ｯバレート` 같은
+# 유령 접두가 생긴다(실측: 바레트 1곳이 깨졌다). 그래서 **따로** 훑어 `_recover_embedded` 의
+# 정본 완전일치 안전장치에만 태운다. 실측 5곳(ED2MON4 드러스트고스트 A·B · 브람나퀸 ·
+# ED2MON5 사일런트로드 A·B).
+_HALFWIDTH_NAME = re.compile(r"[ｦ-ﾟ][ｦ-ﾟ ･]*[Ａ-Ｊ]?")
+
+
+def _canon_key(stem):
+    """정본 조회 키 — 반각 가나 이름은 전각으로 펴고 공백을 뺀다(`ﾌﾞﾗﾑﾅ ｸｲｰﾝ` →
+    `ブラムナクイーン`). 정본·공용 용어집은 전각 한 벌로 둔다(표기 갈림 방지)."""
+    # ⚠ 정본에 **섞인 꼴 그대로** 등재된 이름이 있다(`ウｲーバー`) — 원꼴이 먼저 이긴다.
+    if stem in _canon_jp() or not any("ｦ" <= c <= "ﾟ" for c in stem):
+        return stem
+    return unicodedata.normalize("NFKC", stem).replace(" ", "")
+
+
+def _halfwidth_strings(buf, start, end):
+    """[start, end) 의 널 종단 문자열 중 **반각 가나로만 된** 것 — (오프셋, 문자열)."""
+    out = []
+    i = start
+    while i < end - 1:
+        if buf[i] == 0:
+            i += 1
+            continue
+        j = buf.find(b"\x00", i)
+        if j < 0 or j > end:
+            break
+        try:
+            s = buf[i:j].decode("cp932")
+        except UnicodeDecodeError:
+            s = ""
+        if 3 <= len(s) and _HALFWIDTH_NAME.fullmatch(s):
+            out.append((i, s))
+        i = j + 1
+    return out
+
+
 def _recover_embedded(buf, start, end, covered):
     """대사 틈에 **단독으로 박힌** 이름 — 유일보스는 [이름들] 머리 없이 대사 중간에 이름이
     낀다(2026-09-13, `037` プルダーム 실측: `はてれている。` 다음에 `プルダーム` 가 그대로
@@ -162,12 +218,12 @@ def _recover_embedded(buf, start, end, covered):
     """
     canon = _canon_jp()
     out = []
-    for off, text in jp_strings(buf, start, end):
+    for off, text in jp_strings(buf, start, end) + _halfwidth_strings(buf, start, end):
         if any(o <= off < o + s for o, s in covered):
             continue
         sfx = SUFFIX.search(text)
         stem = text[: sfx.start()] if sfx else text
-        if stem not in canon:
+        if _canon_key(stem) not in canon:
             continue
         j = buf.find(b"\x00", off)
         nxt = j
@@ -254,7 +310,7 @@ def plan():
                 sfx = SUFFIX.search(jp)
                 stem = jp[: sfx.start()] if sfx else jp
                 tail = "".join(HALF.get(c, c) for c in (sfx.group() if sfx else ""))
-                kr = canon.get(stem)
+                kr = canon.get(_canon_key(stem))
                 if kr is None:
                     none.append((group, off, jp))
                     continue
@@ -341,31 +397,55 @@ def fix_stray_fullwidth_suffix(buf, group):
 # 없이 매끈한 것)은 이미 정상 번역돼 있으니(레코드 표), 그 결과를 그대로 본뜬다.
 # ⚠ **직접 좌표 패치다** — 이 넷은 이름표 스캔 경로 밖이라 `plan()`이 원리상 못 본다.
 # 슬롯 안에 들어가므로(19/17B ≤ 24/20B) 재배치도 필요 없다.
+#
+# 🔴 **분열체 접미(′/″)는 반각으로 낸다**(2026-09-15, 마스터 QA — "붉은슬라임B' 와
+# 붉은슬라임B″가 되었다."가 40반각으로 창 틀(29반각)을 넘는 걸 보고, 우선 전각 프라임을
+# 깨진 글자로 오해하셨다가 정정). 전각(2바이트, `8166`=’·`8168`=”)을 반각 ASCII(1바이트,
+# `'`·`"`)로 바꾸면 표시도 더 깔끔하고 폭도 하나씩 줄어든다. ⚠ **hex 를 손으로 다시 안
+# 쓴다** — 원래 KR 바이트열(전각)은 그대로 두고 `_halfwidth_marks()`로 마크만 기계적으로
+# 치환한다(과거 이 표에서 손으로 친 hex가 "임" 음절을 통째로 빠뜨린 사고가 있었다).
+_MARK_TO_HALFWIDTH = {bytes.fromhex("8166"): b"'", bytes.fromhex("8168"): b'"'}
+
+
+def _halfwidth_marks(kr):
+    for full, half in _MARK_TO_HALFWIDTH.items():
+        kr = kr.replace(full, half)
+    return kr
+
+
 SPLIT_SLIME_MSGS = (
     # (group, off, 원본 바이트, 새 바이트)
     (
         0,
         0x1DC,
         bytes.fromhex("2563 90d4 8358 8389 2563 2563 8343 8380 8260 8166 2563".replace(" ", "")),
-        bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 2563 2563 90d1 4181 6625 63".replace(" ", "")),
+        _halfwidth_marks(
+            bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 2563 2563 90d1 4181 6625 63".replace(" ", ""))
+        ),
     ),
     (
         0,
         0x1F4,
         bytes.fromhex("2563 90d4 8358 8389 8343 8380 8260 8168 2563".replace(" ", "")),
-        bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 90d1 4181 6825 63".replace(" ", "")),
+        _halfwidth_marks(
+            bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 90d1 4181 6825 63".replace(" ", ""))
+        ),
     ),
     (
         0,
         0x208,
         bytes.fromhex("2563 90d4 8358 8389 2563 2563 8343 8380 8261 8166 2563".replace(" ", "")),
-        bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 2563 2563 90d1 4281 6625 63".replace(" ", "")),
+        _halfwidth_marks(
+            bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 2563 2563 90d1 4281 6625 63".replace(" ", ""))
+        ),
     ),
     (
         0,
         0x220,
         bytes.fromhex("2563 90d4 8358 8389 8343 8380 8261 8168 2563".replace(" ", "")),
-        bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 90d1 4281 6825 63".replace(" ", "")),
+        _halfwidth_marks(
+            bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 90d1 4281 6825 63".replace(" ", ""))
+        ),
     ),
 )
 
@@ -384,9 +464,18 @@ CONNECTOR_SPACE = ((0, 0x1B8, {b"\x82\xc6", b"\x90\x6c"}, b"\x90\x6c\x20"),)  # 
 def finalize_connector_space():
     """build.py 맨 끝에서 한 번 — CONNECTOR_SPACE 자리에 공백을 끼운다(이미 끼워져
     있으면 조용히 넘어간다 — 멱등). 고친 수 반환."""
+    _trace_lba("monsters.finalize_connector 진입")
+    # 🔴 **정적 `MON` 이 아니라 지금 이미지의 LBA 다.** 이 함수는 build.py **맨 끝**에서
+    # 도는데, 그 앞에서 `patch_ed2_monster_lines._apply_sha_table` 이 슬롯을 넘긴 그룹을
+    # **DUMMY 로 통째 재배치**해 놨을 수 있다(2026-09-22 계측으로 확정 — 대사 6건을
+    # 되살리자 ED2MON3·4 가 실제로 106000·106030 으로 옮겨갔다). 정적 LBA 로 읽으면
+    # 버려진 옛 자리를 보게 되는데, 그러면 ① 멱등 가드가 옛 자리 기준이라 **살아 있는
+    # 새 자리엔 공백이 안 들어가고** ② 쓰기도 아무도 안 읽는 유령 자리로 나간다.
+    # 깨끗한 표에선 재배치가 0이라 이 버그가 **안 드러난다** — 문안을 고칠 때만 터진다.
+    live = _live_mon()
     n = 0
     for group, off, jp_variants, kr in CONNECTOR_SPACE:
-        lba, size = MON[group]
+        lba, size = live[group]
         cap = (size + 2047) // 2048 * 2048
         buf = bytearray(extract(lba, cap, path=IMG))
         if buf[off : off + len(kr)] == kr:
@@ -429,7 +518,9 @@ def main():
             print(f"  ⚠ 넘침 {off:#07x} [{slot}B] {jp} → {kr} ({len(_enc(kr)) + 2}B 필요)")
         for group, off, jp in none:
             print(f"  ⚠ 정본에 없음 ED2MON{group} {off:#07x} {jp}")
-        print(f"\n제자리 {len(fit)} · 넘침 {len(seen_over)}(중복제거 전 {len(over)}) · 정본에 없음 {len(none)}")
+        print(
+            f"\n제자리 {len(fit)} · 넘침 {len(seen_over)}(중복제거 전 {len(over)}) · 정본에 없음 {len(none)}"
+        )
         return 0
 
     by_lba = {}
@@ -447,7 +538,9 @@ def main():
         if lba not in by_lba and lba not in over_by_lba:
             if n_stray:
                 with open(IMG, "r+b") as f:
-                    total += write_user_data(f, lba, bytes(buf), label=f"ED2MON{group} 전각 접미 정리")
+                    total += write_user_data(
+                        f, lba, bytes(buf), label=f"ED2MON{group} 전각 접미 정리"
+                    )
             continue
         for off, kr, slot in by_lba.get(lba, []):
             b = _enc(kr) + b"\x00"
@@ -465,8 +558,7 @@ def main():
             # ⚠ **"실제 쓰인 끝" 뒤에 붙인다** — cap 그대로 넘기면 `_relocate`가 널 패딩
             # 전부를 "이미 쓰인 것"으로 보고 그 뒤에 이어 붙여 섹터를 넘긴다
             # (patch_ed2_monster_lines._apply_sha_table 과 같은 관용, 2026-09-13 실측).
-            used = max((k for k in range(len(buf) - 1, -1, -1) if buf[k]), default=-1) + 1
-            used = (used + 3) & ~3
+            used = _mon_lines_used_end(buf)  # 마지막 문자열의 널 하나를 남긴다
             orig = bytes(extract(lba, size))  # overlay_refs 대조 기준(원본, 빌드 아님)
             new_buf, _touched = _mon_lines_relocate(bytes(buf[:used]), orig, moves)
             content_len = len(new_buf)  # 논리 길이 — 디렉터리 크기는 이걸 쓴다(cap 이 아니다)

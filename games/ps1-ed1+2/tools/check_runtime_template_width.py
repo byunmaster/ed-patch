@@ -31,7 +31,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.abspath(__file__).rsplit("/games/", 1)[0] + "/shared")
 os.environ.setdefault("LOCK_BYPASS", "1")
 
-import hangul_map as H
 import patch_ed2_sys as PS
 import patch_items as PI
 import patch_sys_ui as PU
@@ -52,6 +51,36 @@ JOSA_PAIR = re.compile(r"(은|이|을)\((는|가|를)\)")
 # 줄 수(6줄, 넘치면 스크롤— 배열 밖으로 안 나가 안전)와는 **완전히 다른 축**이다.
 BYTE_LIMIT = 128
 AUTO_NEWLINE_RESERVE = 8  # prewrap 이 추가로 끼워 넣을 수 있는 개행 수의 상한
+
+# 폭 초과를 **실패가 아니라 보고로** 내리는 이름 — 마스터 판정(2026-09-25, qa2 089):
+# 「몬스터명은 전투에서만 쓰이고 전투 문구는 로그성이라 개행돼도 상관없다」.
+# 드러스트고스트(7음절, 공용 용어집 표기)는 6음절+접미에 맞춰 다듬은 틀 74조합에서 +2반각
+# 넘친다 — 이름을 줄이는 대신 엔진 prewrap 에 맡긴다. ⚠ **바이트 예산(`check_byte_budget`)은
+# 그대로 본다** — 그쪽은 보기가 아니라 소프트락(구조)이라 예외가 없다.
+# 🔴 09-27 비움 — 7음절 이름은 폭이 아니라 **엔진 이름 칸(13B = 6음절+접미)**을 넘어 끝 글자가 깨졌다(마스터 QA 109,
+#   「드러스트고스+」). 마스터 판정으로 「드러스트유령」(6음절)으로 줄였다. 7음절 이름은 다시 만들지 않는다.
+WIDTH_EXEMPT_NAMES: set[str] = set()
+
+# 폭 초과를 **실패가 아니라 보고로** 내리는 **템플릿** — QA 110(마스터 09-27 신규 규칙):
+# 「로그성 메시지(도구·주문 사용 등)는 강제 개행을 없애고, 넘칠 때만 어절 단위로 개행합니다」.
+# 이 표는 문장 자체가 `%s`(이름) 뒤에서 넘칠 수 있는데, 위 WIDTH_EXEMPT_NAMES 와 같은 근거
+# (2026-09-25, qa2 089 — 로그성 문구는 개행돼도 되고 엔진 prewrap 이 맡는다)를 **템플릿**
+# 단위로 적용한다. ⚠ 이건 추정이 아니라 **실측**이다 —
+# `check_prewrap_rules.prewrap()` 으로 원판·빌드 두 EXE 에 이 템플릿 + 최장 이름 조합을
+# 실제로 태워 본 결과: 원판은 ④(낱말 중간 절단)를 냈고, 09-27 어절 백오프 스텁(`patch_hang_punct
+# .stub_backoff`)을 적용한 빌드는 **0건**(마지막 공백에서 정확히 물러나 개행)이었다.
+# ⇒ 이 축(견본 32건)은 `CRTW.check()`(이론상 최악, 여기)가 아니라 `check_prewrap_rules
+# ._battle_table` 류의 실행 검증이 정본이고, 여기서는 실패로 안 센다.
+# 폭 초과를 보고로 내리는 **표 전체** — 몬스터 전투 대사(ED2MON)는 전부 로그성이다(09-27 규칙).
+# 09-28 마스터 지시로 우리가 넣었던 문장 중간 개행 140줄을 걷었다(원문에 있던 5줄만 남김 —
+# 그 개행은 09-15 엔진이 낱말 한가운데서 끊던 시절 056 대응으로 손으로 박은 것). 실측:
+# 걷어 낸 140줄 × 최장 이름 12개 = 1,680조합을 빌드 prewrap 에 태워 ④(낱말 중간 절단) 0건.
+WIDTH_EXEMPT_SOURCES: set[str] = {"script/ED2MON_LINES.json"}
+
+WIDTH_EXEMPT_TEMPLATES: set[str] = {
+    "%c%s%c은(는) 꼬리로 공격했다.\n",
+    "%c%s%c의 목을 물어뜯었다.\n",
+}
 
 
 def _enc_len(s):
@@ -161,6 +190,11 @@ NUMERIC_S_TEMPLATES = frozenset(
         "%c%s%c은(는)\n%s 주문을 익혔습니다.",
         "%c%s%c에 %s의\n피해!!\n",
         "%c해적%c에 %s의 피해!!\n",
+        # qa2-026(마스터 QA 2026-09-22) — 대상이 유정물(사람)인데 "에"를 써 "에게"로
+        # 교정. 조사만 바뀌었을 뿐 **문형은 그대로**(둘째 %s 는 여전히 피해량 숫자다) —
+        # 문자열 리터럴로 등록하는 방식이라 텍스트가 바뀌면 새로 등록해야 한다.
+        "%c%s%c에게 %s의\n피해!!\n",
+        "%c해적%c에게 %s의 피해!!\n",
     }
 )
 
@@ -230,7 +264,9 @@ def check_byte_budget(*, strict=True, verbose=False):
             blen = _enc_len(filled) + AUTO_NEWLINE_RESERVE + 1  # +1 널 종단
             if blen > BYTE_LIMIT:
                 over.append((src, t, name, name_src, blen))
-    print(f"  런타임 템플릿 {len(tmpls)}개 — 메시지박스 버퍼({BYTE_LIMIT}B 권장) 초과 {len(over)}건")
+    print(
+        f"  런타임 템플릿 {len(tmpls)}개 — 메시지박스 버퍼({BYTE_LIMIT}B 권장) 초과 {len(over)}건"
+    )
     if verbose:
         for src, t, name, name_src, blen in over:
             print(f"    [{src}] {t!r} + {name!r}({name_src}) = {blen}B")
@@ -260,7 +296,7 @@ def check_realistic(*, top_n=20, verbose=False, strict=False):
     체감이 가장 큰 자리다(긴 이름 × 긴 문장).
     """
     tmpls = templates()
-    over = []
+    over, exempt = [], []
     for src, t in tmpls:
         if t in NUMERIC_S_TEMPLATES:
             continue
@@ -274,8 +310,17 @@ def check_realistic(*, top_n=20, verbose=False, strict=False):
             # 관리자 지적 — 고치는 법과 재는 법이 정면으로 부딪히는 자리였다.
             w = max(_width(line) for line in folded.split("\n"))
             if w > FRAME_HALFWIDTH:
-                over.append((src, t, name, name_src, w, w - FRAME_HALFWIDTH))
+                row = (src, t, name, name_src, w, w - FRAME_HALFWIDTH)
+                exempt_rows = t in WIDTH_EXEMPT_TEMPLATES or src in WIDTH_EXEMPT_SOURCES or (
+                    name.rstrip("ABCDEFGHIJ′”") in WIDTH_EXEMPT_NAMES
+                )
+                (exempt if exempt_rows else over).append(row)
     over.sort(key=lambda r: -r[5])
+    if exempt:
+        print(
+            f"  ℹ 폭 초과 허용(이름 {', '.join(sorted(WIDTH_EXEMPT_NAMES)) or '없음'} · "
+            f"템플릿 {len(WIDTH_EXEMPT_TEMPLATES)}개) {len(exempt)}조합 — 실패로 안 센다"
+        )
     print(
         f"  실제 분모(편 분리·파티 4인 고정·무접미+A 두 경우): 템플릿 {len(tmpls)}개, "
         f"초과 조합 {len(over)}건 (이전 이론치는 check() 참조)"

@@ -63,6 +63,13 @@ SIG_PREWRAP = re.compile(rb"\xff\xff\xc2\x26\x2a\x10\x43\x00[\s\S]{2}\x40\x10\x0
 # addiu v0,s4,-1 ; slt v0,v0,v1 ; beqz v0,.. ; slt v0,s4,v1
 SIG_DRAW = re.compile(rb"\xff\xff\x82\x26\x2a\x10\x43\x00[\s\S]{2}\x40\x10\x2a\x10\x83\x02")
 
+# 드로어의 **그린 뒤 선제 줄바꿈** — `slt v0,s4,v0 ; beqz ; addiu v0,s3,1 ; addiu s1,s1,1 ; addiu s0,zero,1 ;
+# addiu v0,s3,1 ; move s3,v0`. 29열을 다 채우면 다음 글자를 보기도 전에 줄을 넘긴다(아래 `stub_eager_nl`).
+SIG_EAGER = re.compile(
+    rb"\x2a\x10\x82\x02[\s\S]{2}\x40\x10\x01\x00\x62\x26\x01\x00\x31\x26\x01\x00\x10\x24"
+    rb"\x01\x00\x62\x26\x21\x98\x40\x00"
+)
+
 HALF_LO, HALF_N = 0x20, 0x5F  # 0x20..0x7E  = 반각
 KANA_ADD, KANA_N = 0x5F, 0x3F  # 0xA1..0xDF = 반각(반각 가나)
 HANG_TAIL = ".,!?)\"'"  # 매달 수 있는 꼬리 부호 — `reinsert_kr_pilot.HANG_TAIL` 과 같아야 한다
@@ -144,7 +151,7 @@ def _is_hang(a, byte_reg, dest, t, tag):
     a.label(f"nohang{tag}")
 
 
-def stub_prewrap(base, resume):
+def stub_prewrap(base, resume, bo=None):
     """v0 = 「여기서 끊어야 하나」 — 원판의 `열 > 한계-1` 대신 **폭과 부호를 본다**.
 
     ① 이 글자가 제 한계를 넘어서 끝나면 끊는다. 한계는 **꼬리 부호면 30열, 아니면 29열**.
@@ -185,6 +192,12 @@ def stub_prewrap(base, resume):
     _j(a, resume)
     a.addu("v0", "zero", "zero")  # 지연 슬롯 — 끊지 않는다
     a.label("brk")
+    if bo is not None:  # ④ 낱말 중간이면 마지막 공백으로 물러나 끊는다(09-27)
+        a.sll("t0", "s0", 16)
+        _sra(a, "t0", "t0", 16)
+        _jal(a, bo)
+        a.nop()
+        a.addu("s0", "t0", "zero")  # 끊는 자리 = 물러난 공백(없으면 그대로) — 여기서 다시 잰다
     _j(a, resume)
     a.addiu("v0", "zero", 1)  # 지연 슬롯 — 끊는다
     return a.resolve()
@@ -211,6 +224,205 @@ def stub_after(base, resume):
     a.label("no")
     _j(a, resume)
     a.addu("v0", "zero", "zero")
+    return a.resolve()
+
+
+# ── 조판 기반 ③·④ (2026-09-27 마스터 — 런타임 줄넘김이 만드는 줄머리 공백·낱말 절단) ─────────
+# 원판 prewrap 은 **글자 단위**로 끊는다: 1패스가 29열을 넘는(또는 딱 채운) 자리를 `breaks[]`
+# (sp+0x10, halfword 8칸)에 적고, 3패스가 그 앞에 `\n` 을 끼워 복사한다. 그래서
+#   ③ 줄이 29열을 딱 채우면 **다음 글자 앞**에서 끊는데 그게 공백이면 줄머리에 남는다
+#      (「플로라는 자기 자신에게 레스를 / ␣외웠다.」 — 8+1+4+1+8+1+6 = 29열)
+#   ④ 다음 글자가 낱말 한가운데면 그대로 자른다(「아트라스는 신디에게 레스를 외 / 웠다.」)
+# 고침: ④ 1패스가 끊는 자리를 적을 때 **같은 줄의 마지막 공백으로 물러나** 거기서부터 다시 잰다
+#   (열을 다시 세므로 다음 줄이 넘치지 않는다) · ③ 3패스가 자동 개행 자리의 공백 하나를 삼킨다.
+# ⚠ **수동 `\n` 뒤 공백은 안 건드린다**(장 끝 카드 가운데 정렬 「     제1장…」) — ③ 은 자동 끊는
+#   자리에서만 돌고, ④ 는 `\n` 을 만나면 멈추며 `\n` 바로 뒤 공백으로는 물러나지 않는다.
+# ⚠ 끊는 자리 표는 8칸이다 — 물러나면 줄이 짧아져 끊는 수가 늘 수 있어 **이미 6개면 안 물러난다**.
+BACKOFF_MAX_BREAKS = 6
+BACKOFF_KEEP = 4  # 두 번째 입구 — 호출자가 t5(공백 후보)를 미리 채워 부른다(줄을 딱 채운 뒤 공백)
+
+
+def _jal(a, target):
+    a.emit(0x0C000000 | ((target >> 2) & 0x03FFFFFF))
+
+
+def stub_backoff(base):
+    """t0 = 끊을 자리 → t0 = 같은 줄 마지막 공백(있으면). t1~t5 · ra(jal) 만 쓴다.
+
+    줄 첫 글자 = 직전 끊는 자리(없으면 0). 그보다 뒤이고 `\n` 을 넘지 않는 공백만 받는다.
+    공백 바로 앞이 `\n` 이면(수동 개행 뒤 들여쓰기) 물러나지 않는다 — 빈 줄이 된다.
+    ⚠ 0x01~0x03·0x20·0x0A 는 SJIS 둘째 바이트로 나올 수 없어 바이트 단위로 거꾸로 훑어도 안전하다.
+
+    🔴 **이름 구간(`\x02…\x01`/`\x03`) 안에서는 끊지 않는다**(2026-09-27 마스터) — 「불꽃의 / 창」.
+    거꾸로 훑으며 `\x01`·`\x03`(이름 끝)을 만나면 구간 안(t4=1)이 되어 그 안의 공백은 건너뛰고,
+    `\x02`(이름 시작)에서 빠져나온다. 끊을 자리가 **이름 한가운데**면(구간 끝 표지 없이 `\x02` 를 먼저
+    만난다) 그 `\x02` 바로 뒤(이름 첫 글자)에서 끊어 이름을 통째로 다음 줄로 넘긴다(앞 공백은 줄 끝에 남아 안 보인다).
+    이름이 줄 첫 글자까지 이어지면(한 줄보다 길다) 구간 시작을 못 만나 **그대로 둔다**(안전장치).
+
+    ⚠ 거꾸로 훑을 때 **처음 만난 공백은 후보일 뿐이다** — 이름 뒤쪽 안에서 끊는 경우(「가죽 갑옷」의
+    가운데 공백) `\x01` 을 아직 못 봤으니 이름 안인지 모른다. 그래서 후보(t5)를 두고 더 훑어
+    `\x02` 가 먼저 나오면(이름 안이었다) 이름 첫 글자에서, `\x01`·`\x03`·줄 첫 글자·`\n` 이 먼저
+    나오면(이름 밖이었다) 후보에서 끊는다.
+    """
+    a = Asm(base)
+    a.addu("t5", "zero", "zero")  # 공백 후보 = 없음 — `BACKOFF_KEEP` 입구는 이 줄을 건너뛴다
+    _slti(a, "t3", "s2", BACKOFF_MAX_BREAKS)
+    a.beq("t3", "zero", "ret0")
+    a.addu("t1", "zero", "zero")  # 지연 슬롯: lb = 0
+    a.beq("s2", "zero", "lb0")
+    a.addiu("t2", "s2", 0xFFFF)  # 지연 슬롯: s2-1
+    a.sll("t2", "t2", 1)
+    a.addu("t2", "s5", "t2")  # &breaks[s2-1]
+    a.emit(_i(0x21, REG["t2"], REG["t1"], 0))  # lh t1, 0(t2) — 줄 첫 글자
+    a.nop()
+    a.label("lb0")
+    a.addiu("t2", "t0", 0xFFFF)  # k = c-1
+    a.addu("t4", "zero", "zero")  # 이름 구간 안 = 0
+    a.label("loop")
+    _slt(a, "t3", "t1", "t2")  # lb < k ?
+    a.beq("t3", "zero", "fin")
+    a.addu("t3", "s3", "t2")  # 지연 슬롯: &s[k]
+    a.lbu("t3", 0, "t3")
+    a.nop()
+    a.addiu("t3", "t3", 0xFFFF)  # b-1
+    a.beq("t3", "zero", "endm")  # 0x01 이름 끝(거꾸로는 들어감)
+    a.addiu("t3", "t3", 0xFFFF)  # 지연 슬롯: b-2
+    a.beq("t3", "zero", "startm")  # 0x02 이름 시작
+    a.addiu("t3", "t3", 0xFFFF)  # 지연 슬롯: b-3
+    a.beq("t3", "zero", "endm")  # 0x03 도 색 복귀
+    a.addiu("t3", "t3", 0xFFF9)  # 지연 슬롯: b-0x0A
+    a.beq("t3", "zero", "fin")  # 수동 개행 → 이 줄은 여기까지
+    a.addiu("t3", "t3", 0xFFEA)  # 지연 슬롯: b-0x20
+    a.bne("t3", "zero", "next")
+    a.or_("t3", "t4", "t5")  # 지연 슬롯: 이름 안이거나 후보가 이미 있으면 건너뛴다
+    a.bne("t3", "zero", "next")
+    a.addu("t3", "s3", "t2")  # 지연 슬롯: 공백 앞 글자
+    a.lbu("t3", 0xFFFF, "t3")
+    a.nop()
+    a.addiu("t3", "t3", 0xFFF6)
+    a.bne("t3", "zero", "next")  # `\n` 바로 뒤 공백(들여쓰기)은 후보가 아니다
+    a.addu("t5", "t2", "zero")  # 지연 슬롯: 후보 = k (들여쓰기면 곧 fin 으로 끝나 무해)
+    a.addu("t5", "zero", "zero")  # 들여쓰기였다 → 후보 취소
+    a.label("next")
+    a.beq("zero", "zero", "loop")
+    a.addiu("t2", "t2", 0xFFFF)  # 지연 슬롯: k--
+    a.label("endm")
+    a.bne("t5", "zero", "take")  # 후보 오른쪽에서 이름이 끝났다 → 후보는 이름 밖
+    a.addiu("t4", "zero", 1)  # 지연 슬롯: 이름 안으로
+    a.beq("zero", "zero", "loop")
+    a.addiu("t2", "t2", 0xFFFF)
+    a.label("startm")
+    a.bne("t4", "zero", "next")  # 이름 하나를 통째로 지나왔다 → 계속
+    a.addu("t4", "zero", "zero")  # 지연 슬롯: 이름 밖으로
+    a.jr("ra")  # 끊을 자리가 이름 안 → 이름 첫 글자(\x02 바로 뒤) 앞에서 끊는다
+    a.addiu("t0", "t2", 1)  # 지연 슬롯: k+1 — ⚠ \x02 자체에서 끊으면 원판 1패스가 그 바이트를
+    #   **전각 글자로 재서**(폭 함수는 제어부호를 모른다) 열이 2 밀리고 다음 바이트를 건너뛴다.
+    #   색 시작은 윗줄 끝에 남는다(그리는 폭 0 — 색 상태는 개행을 넘어 이어진다).
+    a.label("fin")
+    a.beq("t5", "zero", "ret0")  # 후보가 없으면 그대로
+    a.nop()
+    a.label("take")
+    a.jr("ra")
+    a.addu("t0", "t5", "zero")  # 지연 슬롯: 끊는 자리 = 후보 공백
+    a.label("ret0")
+    a.jr("ra")
+    a.nop()
+    return a.resolve()
+
+
+def stub_after_backoff(base, bo, loop_tail):
+    """놓은 **뒤** 끊기(줄을 딱 채운 경우) — 원판 `breaks[s2++] = a0+1; s1 = 1` 을 대신한다.
+
+    다음 글자가 개행·끝이면 원판 그대로(2패스가 처리), 아니면 ④ 로 물러난다.
+    물러났으면 1패스를 그 공백부터 다시 돌린다(`s0 = 자리-1` → 루프 꼬리가 +1).
+    다음 글자가 **공백**이면 그 공백을 후보로 넣고 부른다 — 이름 밖이면 그대로 거기서(③ 이 삼킨다),
+    이름 안(「가죽 / 갑옷」)이면 이름 첫 글자로 물러난다(09-27).
+    """
+    a = Asm(base)
+    a.addiu("s1", "zero", 1)
+    a.addiu("t0", "a0", 1)  # 원판이 적는 자리 = 다음 글자
+    a.addu("t1", "s3", "t0")
+    a.lbu("t1", 0, "t1")
+    a.nop()
+    a.beq("t1", "zero", "rec")  # 끝
+    a.addiu("t2", "t1", 0xFFF6)  # 지연 슬롯: -0x0A
+    a.beq("t2", "zero", "rec")  # 개행(2패스가 끊기를 취소한다)
+    a.addiu("t2", "t1", 0xFFE0)  # 지연 슬롯: -0x20
+    a.bne("t2", "zero", "word")
+    a.nop()
+    _jal(a, bo + BACKOFF_KEEP)  # 공백 — 후보로 넣고 이름 안인지만 본다
+    a.addu("t5", "t0", "zero")  # 지연 슬롯: 후보 = 그 공백
+    a.beq("zero", "zero", "rec")
+    a.nop()
+    a.label("word")
+    _jal(a, bo)
+    a.nop()
+    a.label("rec")
+    a.sll("v0", "s2", 1)
+    a.addu("v0", "v0", "s5")
+    a.emit(_i(0x29, REG["v0"], REG["t0"], 0))  # sh t0, 0(v0)
+    a.addiu("s2", "s2", 1)
+    _j(a, loop_tail)
+    a.addiu("s0", "t0", 0xFFFF)  # 지연 슬롯: s0 = 자리-1 (루프 꼬리가 +1)
+    return a.resolve()
+
+
+def stub_eager_nl(base, resume):
+    """드로어가 **정확히 29열을 채운 줄** 바로 뒤의 명시 개행(`\\n`)이 빈 줄을 만들지 않게 한다.
+
+    원판 드로어는 글자를 그린 직후 `열 > 한계` 면 **다음 글자를 보지 않고** 줄을 넘긴다(`s1++ · s0=1`).
+    그 줄 끝에 `\\n` 이 오면 개행 처리기가 방금 넘어간 **빈 줄**을 공백으로 채우고 또 넘겨 **빈 줄 하나**가
+    생긴다 — 이름이 네 글자인 주인공의 「세리오스는 보물상자를 열었다.」(딱 29열)가 그 모양이다(마스터 10-03).
+    문안을 늘려 피하는 길(「열어 보았다」)은 **런타임 이름 폭**을 몰라 부분 해법이라 접고 엔진을 고쳤다.
+    에뮬 A/B(같은 글을 같은 자리에 주입): 원판은 29열 줄과 다음 줄 사이에 빈 줄이 뜨고 이 스텁은 안 뜬다.
+
+    ⇒ 다음 글자가 `\\n`(0x0A)이면 **줄을 넘기지 않고** 열만 한계+1 로 둔다. 개행 처리기는 `열 > 한계` 일 때
+    공백 채움 없이 줄만 넘기므로(0x80083dc8~dd4) 줄이 정확히 하나만 넘어간다. 아니면 원판 그대로.
+
+    진입은 원 `addiu s1,s1,1` 자리의 `j` 다 — 그 **지연 슬롯이 원 `addiu s0,zero,1`** 이라 여기 들어올 때
+    s0=1 이다(그래서 개행 쪽에서 `s0 = s4 + 1` 을 다시 쓴다). 레지스터: s3=방금 그린 글자의 마지막 바이트
+    인덱스 · [sp+0x20]=문자열 · s4=한계값.
+    """
+    a = Asm(base)
+    _lw(a, "t0", 0x20, "sp")
+    a.sll("t1", "s3", 16)
+    _sra(a, "t1", "t1", 16)
+    a.addiu("t1", "t1", 1)  # 다음 글자
+    a.addu("t1", "t0", "t1")
+    a.lbu("t2", 0, "t1")
+    a.nop()  # 로드 지연
+    a.addiu("t3", "zero", 0x0A)
+    a.bne("t2", "t3", "wrap")
+    a.nop()
+    _j(a, resume)  # 개행이 온다 — 줄을 넘기지 않는다
+    a.addiu("s0", "s4", 1)  # 지연 슬롯: 열 = 한계+1 (개행 처리기가 공백 없이 넘긴다)
+    a.label("wrap")
+    _j(a, resume)
+    a.addiu("s1", "s1", 1)  # 지연 슬롯: 원 명령(줄 +1) — s0 는 이미 1
+    return a.resolve()
+
+
+def stub_pass3_space(base, tail):
+    """3패스 자동 개행 자리: 그 자리 글자가 공백이면 **개행이 공백을 대신한다**(③).
+
+    원판: `out[a1++] = '\n'; k++` 뒤 꼬리가 `out[a1++] = s[i]` 를 복사한다. 공백이면
+    `s[i]` 를 `\n` 으로 바꾸고 a1 을 안 올려 꼬리가 같은 칸에 `\n` 을 쓰게 한다(s 는 끝에
+    strcpy 로 통째로 덮이므로 원문을 바꿔도 무해). 레지스터: t1=0x0A · a3=out · a2=i · s3=s.
+    """
+    a = Asm(base)
+    a.addu("v0", "a3", "a1")
+    a.sb("t1", 0, "v0")  # out[a1] = '\n'
+    a.addu("t3", "s3", "a2")
+    a.lbu("t4", 0, "t3")
+    a.addiu("s1", "s1", 1)  # k++ (로드 지연 슬롯 채움)
+    a.addiu("t4", "t4", 0xFFE0)
+    a.bne("t4", "zero", "ns")
+    a.nop()
+    _j(a, tail)
+    a.sb("t1", 0, "t3")  # 지연 슬롯: s[i] = '\n' — 꼬리가 같은 칸에 복사
+    a.label("ns")
+    _j(a, tail)
+    a.addiu("a1", "a1", 1)  # 지연 슬롯
     return a.resolve()
 
 
@@ -352,13 +564,38 @@ def build_and_patch(ed: bytearray, game: str):
     normal, wrap, fall = _btarget(ed, d + 8), _btarget(ed, d + 16), d + 20
 
     size = (
-        len(stub_prewrap(0, p + 8))
+        len(stub_prewrap(0, p + 8, bo=0))
         + len(stub_after(0, p + 0x5C))
         + len(stub_draw(0, normal, wrap, fall))
     )
     off, avail = free_run(ed, (st["josa_off"], st["data_off"]), size)
     base = off - 0x800 + 0x80010000
-    s1 = stub_prewrap(base, p + 8)
+    # ③·④ 스텁은 **다른 런**에 둔다(이 런은 176B 뿐이다) — 오름차순 첫 자리라 결정적이다.
+    # 선제 줄바꿈 자리 — 같은 드로어 함수 안(`d` 뒤 0x300B 이내)에서만 찾는다
+    ed_bytes = bytes(ed)
+    eager = [
+        m.start() - 0x800 + 0x80010000 + 12
+        for m in SIG_EAGER.finditer(ed_bytes)
+        if 0 <= m.start() - 0x800 + 0x80010000 - d < 0x300
+    ]
+    assert len(eager) == 1, f"{game} 선제 줄바꿈 자리 {len(eager)}곳 — 하나여야 한다"
+    e = eager[0]
+    size2 = (
+        len(stub_backoff(0))
+        + len(stub_after_backoff(0, 0, p + 0x80))
+        + len(stub_pass3_space(0, p + 0x224))
+        + len(stub_eager_nl(0, e + 8))
+    )
+    off2, avail2 = free_run(ed, (st["josa_off"], st["data_off"], off), size2)
+    base2 = off2 - 0x800 + 0x80010000
+    bo = stub_backoff(base2)
+    af = stub_after_backoff(base2 + len(bo), base2, p + 0x80)
+    p3 = stub_pass3_space(base2 + len(bo) + len(af), p + 0x224)
+    en = stub_eager_nl(base2 + len(bo) + len(af) + len(p3), e + 8)
+    blob2 = bo + af + p3 + en
+    assert all(b == 0 for b in ed[off2 : off2 + len(blob2)]), "③·④ 배치 자리가 0이 아니다"
+    ed[off2 : off2 + len(blob2)] = blob2
+    s1 = stub_prewrap(base, p + 8, bo=base2)
     s1b = stub_after(base + len(s1), p + 0x5C) if OVER else b""
     s2 = stub_draw(base + len(s1) + len(s1b), normal, wrap, fall)
     blob = s1 + s1b + s2
@@ -369,6 +606,13 @@ def build_and_patch(ed: bytearray, game: str):
         (p, 0x26C2FFFF, base),  # addiu v0, s6, -1
         *([(p + 0x50, 0x00021400, base + len(s1))] if OVER else []),  # 놓은 뒤 검사
         (d, 0x2682FFFF, base + len(s1) + len(s1b)),  # addiu v0, s4, -1
+        (p + 0x64, 0x24110001, base2 + len(bo)),  # addiu s1, zero, 1 — 놓은 뒤 끊기(④)
+        (p + 0x20C, 0x00051400, base2 + len(bo) + len(af)),  # sll v0, a1, 16 — 3패스 개행(③)
+        (
+            e,
+            0x26310001,
+            base2 + len(bo) + len(af) + len(p3),
+        ),  # addiu s1, s1, 1 — 드로어 선제 줄바꿈
     ):
         got = struct.unpack_from("<I", ed, fo(ram))[0]
         assert got == want, f"{game} 훅 0x{ram:08X} 원명령 불일치: 0x{got:08X} != 0x{want:08X}"
@@ -380,6 +624,9 @@ def build_and_patch(ed: bytearray, game: str):
         "base": base,
         "size": len(blob),
         "avail": avail,
+        "base2": base2,
+        "size2": len(blob2),
+        "avail2": avail2,
         "limits": limits,
     }
 
@@ -410,12 +657,14 @@ def main():
         ed = bytearray(extract(st["lba"], st["size"], path=target))
         r = build_and_patch(ed, game)
         verify_asm(bytes(ed[fo(r["base"]) : fo(r["base"]) + r["size"]]), r["base"], game)
+        verify_asm(bytes(ed[fo(r["base2"]) : fo(r["base2"]) + r["size2"]]), r["base2"], game)
         with open(target, "r+b") as f:
             n = write_user_data(f, st["lba"], ed, label=f"온점 매달기 ({game})")
         print(
             f"온점 매달기 [{game}]: {r['size']}B @0x{r['base']:08X} (여유 {r['avail'] - r['size']}B) "
             f"→ prewrap 0x{r['prewrap']:08X} · 드로어 0x{r['draw']:08X} 훅 · "
-            f"한계 {FRAME}→{COL_LIMIT}열 {len(r['limits'])}곳, 섹터 {n}개 수정"
+            f"한계 {FRAME}→{COL_LIMIT}열 {len(r['limits'])}곳 · 줄넘김 ③·④ {r['size2']}B "
+            f"@0x{r['base2']:08X}(여유 {r['avail2'] - r['size2']}B), 섹터 {n}개 수정"
         )
 
 

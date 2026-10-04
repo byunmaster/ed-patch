@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""**우리 문체가 원문과 갈린 자리**를 최종 바이트 기준으로 잡는다.
+"""**시스템·행동 로그가 평어체인가**를 최종 바이트 기준으로 잡는다.
+
+🔴 **방향이 뒤집혔다(마스터 확정 2026-10-03 「전부 평어」).** 아래 서술(09-05~06)은 「원문이 정중이니
+우리도 정중」 시절의 것이다. 지금은 **원문이 정중(`〜ました`)이어도 시스템·행동 로그는 평어체**로 간다
+(전투 로그가 평어라 한 화면에서 섞여 보인다는 마스터 QA). 그래서 이 검사기는 같은 부류(런타임 주입
+`%s` 블록 · 전투·아이템 코퍼스)에서 **정중 평서(`〜습니다`)가 남으면** 잡는다. 화면에 나가는 바이트를
+본다는 이점(정형 블록 조립기 · textmap)은 그대로다 — `check_log_register` 가 정본만 보는 구멍을 메운다.
 
 **왜(2026-09-05~06).** 이번 주에만 원문과 갈린 자리를 넷 찾았고 **전부 유저 QA 로만** 나왔다:
 보물상자 정형 문구(`열었다`) · 아이템 획득(`얻었다`) · 포기(`포기했다`) · 전투 승패
@@ -43,8 +49,25 @@ from reinsert_kr_pilot import SCN_FILES
 
 POLITE_JP = re.compile(r"(ました|ます|ません|でした|です)[。！？\s]*$")
 PLAIN_KR = re.compile(r"(었다|았다|였다|했다|한다|된다|이다)[.!?…\s]*$")
+# 10-03: 우리 쪽이 **정중 평서**로 끝나면 결함이다(물음 `〜습니까?`는 도구점 주인의 말이라 뺀다).
+POLITE_KR = re.compile(r"습니다[.!?…\s]*$")
 # 화자 이름표 = 블록 머리의 `%c…%c` **뒤가 개행**. 조사가 오면 아이템 구간이다.
 NAMEPLATE = re.compile(r"^%c[^%\n]{1,20}%c\n")
+
+
+def _log_ids(name):
+    """정본에서 시스템·행동 로그 블록의 eid 집합 — 주입 표지(`\\x1a`·`\\x17`) 블록."""
+    import json
+    import pathlib
+
+    p = pathlib.Path(__file__).resolve().parents[1] / "script" / f"{name}.json"
+    ids = set()
+    if p.exists():
+        for k, v in json.loads(p.read_text(encoding="utf-8")).items():
+            t = v.get("t", "") if isinstance(v, dict) else ""
+            if "\x1a" in t or "\x17" in t:
+                ids.add(int(k))
+    return ids
 
 
 def scan_scenes():
@@ -52,7 +75,10 @@ def scan_scenes():
     for name, _lba, _size in SCN_FILES:
         with redirect_stdout(io.StringIO()):
             rows = [(e, j, c) for _s, e, j, c, _t in R.iter_candidates((name,))]
+        logs = _log_ids(name)
         for eid, jp, kr in rows:
+            if int(eid) not in logs:
+                continue  # 시스템·행동 로그가 아니다 — NPC 대사·말투는 인물이 정한다
             j = R.render_bytes(jp.rstrip(b"\x00"), ctrl=True)
             k = R.render_bytes(kr.rstrip(b"\x00"), ctrl=True)
             if NAMEPLATE.match(j):  # NPC 대사 — 말투는 인물이 정한다
@@ -70,7 +96,7 @@ def scan_scenes():
             kt = re.sub(r"%[csd]", "", k).strip()
             if not jt or not kt:
                 continue
-            if POLITE_JP.search(jt) and PLAIN_KR.search(kt):
+            if POLITE_KR.search(kt):
                 out.append((name, eid, jt.replace("\n", " ")[-26:], kt.replace("\n", " ")[-30:]))
     return out
 
@@ -120,9 +146,11 @@ def scan_textmap():
         j = seen.get(k)
         if not j:
             continue
-        if POLITE_JP.search(re.sub(r"%[csd]", "", j).strip()) and PLAIN_KR.search(
-            re.sub(r"%[csd]", "", ours).strip()
-        ):
+        txt = re.sub(r"%[csd]", "", ours).strip()
+        # 전투·아이템 코퍼스에는 NPC 대사(가이드·가드·왕비)가 섞여 있다 — 승패·획득·해방 같은
+        # **시스템 결과 문구**만 본다(10-03).
+        result = re.search(r"승리했|패했|Gold|얻었|포기했|찾았|익혔", txt)
+        if POLITE_KR.search(txt) and result:
             out.append((cls, k, j.strip()[-26:], ours.strip()[-30:]))
     return out
 
@@ -130,17 +158,19 @@ def scan_textmap():
 def main():
     if "--textmap" in sys.argv:
         bad = scan_textmap()
-        print(f"  {'❌' if bad else '✅'} 전투·아이템 코퍼스 — 원문 정중인데 평어체: {len(bad)}")
+        print(f"  {'❌' if bad else '✅'} 전투·아이템 코퍼스 — 정중 평서가 남음: {len(bad)}")
         for c, _k, j, o in bad:
             print(f"       [{c}] {j!r} → {o!r}")
         return 1 if bad else 0
     rows = scan_scenes()
     if rows:
-        print(f"  ❌ 원문 정중인데 우리가 평어체: {len(rows)}곳 (화자 없는 블록만 셌다)")
+        print(
+            f"  ❌ 로그 부류에 정중 평서가 남았다(평어체여야 한다): {len(rows)}곳 (화자 없는 블록만 셌다)"
+        )
         for n, e, j, k in rows[:20]:
             print(f"       {n}:{e}  JP …{j}  KR …{k}")
     else:
-        print("  ✅ 화자 없는 블록의 문체가 원문과 같다 (ED1·ED2)")
+        print("  ✅ 로그 부류(런타임 주입 블록)가 전부 평어체다 (ED1·ED2)")
     return 1 if rows else 0
 
 
