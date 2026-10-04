@@ -15,33 +15,46 @@
 패치 파일에는 원본 게임 데이터가 포함되지 않습니다. 적용하려면 직접 소장한 원본이
 필요합니다.
 
-## 패치 현황
+## 패치 현황 (2026-10-05)
 
-| 게임                                        | 트랙 | 플랫폼            | 상태              | 배포                                                    |
-| ------------------------------------------- | ---- | ----------------- | ----------------- | ------------------------------------------------------- |
-| [영웅전설 1+2](games/ps1-ed1+2/)            | kr   | PS1 (SLPS-01323)  | 🔧 리버싱 진행 중 | -                                                       |
-| [영웅전설 II](games/dos-ed2/)               | fix  | 만트라 DOS 정발   | ✅ 이슈 #1 해결   | [브라우저 패처](https://byunmaster.github.io/ed-patch/) |
-| [드래곤 슬레이어 영웅전설](games/pc98-ed1/) | kr   | PC-98 (1989 원작) | 🔧 리버싱 진행 중 | -                                                       |
+| 게임 | 트랙 | 기종 | 상태 |
+| ---- | ---- | ---- | ---- |
+| [영웅전설 I · II](games/ps1-ed1+2/) | kr | PlayStation | ✅ v1.0.0 배포 |
+| [영웅전설 III](games/ps1-ed3+4/) | kr | PlayStation | 🔧 작업 중 |
+| 영웅전설 IV | kr | PlayStation | 진행 예정 |
+| [영웅전설 I · II](games/ss-ed1+2/) | kr | 세가새턴 | 🔧 작업 중 |
+| [영웅전설 III](games/ss-ed3/) | kr | 세가새턴 | 🔧 작업 중 |
+| [드래곤 슬레이어 영웅전설](games/pce-ed1/) | kr | PC엔진 CD | 🔧 작업 중 |
+| [드래곤 슬레이어 영웅전설](games/sfc-ed1/) | kr | 슈퍼 패미컴 | 🔧 작업 중 |
+| [드래곤 슬레이어 영웅전설](games/md-ed1/) | kr | 메가드라이브 | 🔧 작업 중 |
+| [드래곤 슬레이어 영웅전설](games/pc98-ed1/) | kr | PC-9801 | 🔧 작업 중 (레트로 PC 라운드) |
+| [영웅전설 II](games/dos-ed2/) | fix | MS-DOS 정발(만트라) | ✅ 복원 패치 배포 |
 
-- 릴리스 태그는 `<게임>-<트랙>-v<버전>` 형식입니다 (`ps1-ed1+2-kr-v1.0.0`,
-  `dos-ed2-fix-v1.0.0`). 완성된 패치는 [Releases](../../releases)에 올라갑니다.
-- 정발 복원 패치는 브라우저에서 바로 적용할 수 있는 웹 패처로도 배포합니다
-  (외부 요청이 0인 자립형 HTML 한 장 — 파일이 서버로 올라가지 않습니다).
-- 진행 계획과 마일스톤은 [ROADMAP.md](ROADMAP.md).
+- 각 ED2(PCE · SFC · MD)는 진행 예정이고, 레트로 PC 원작군(PC-88 · MSX2 · X68000 · FM TOWNS)은 미정입니다.
+- 게임별 세부 진행은 각 게임의 상태 문서(`games/<게임>/docs/`)에 있습니다. 배포 페이지의 표는
+  `patcher/site/site.json` 이 정본입니다.
+- 릴리스 태그는 `<게임>-<트랙>-v<버전>`(`ps1-ed1+2-kr-v1.0.0`)이고, 패치 파일(xdelta · BPS)은
+  [Releases](../../releases)에 올립니다. 레포에는 패치 파일을 넣지 않습니다.
+- 정발 복원 패치는 브라우저에서 바로 적용하는 웹 패처로도 배포합니다(파일이 서버로 올라가지 않습니다).
+
+## 번역 방침
+
+- **자체 번역입니다.** 일본 원판에서 직접 번역합니다.
+- 국내 정발판(만트라)에서는 **고유명사 표기만** 빌려 옵니다. 애매한 표현을 풀 때 참고하는 데 그칩니다.
+- 고유명사 정본은 `shared/glossary/`, 표기 원칙은 [docs/naming.md](docs/naming.md)에 있습니다.
 
 ## 저장소 구조
 
 ```
-games/<게임>/       게임별 코드베이스 (도구 · 리버싱 노트 · 패치 스펙 · 번역 테이블)
-  ps1-ed1+2/        [kr]  PS1 영웅전설 1+2 한글패치
-  pc98-ed1/         [kr]  PC-98 드래곤 슬레이어 영웅전설(1989 원작)
+games/<게임>/       게임별 코드베이스 (도구 · 리버싱 노트 · 번역 정본 · 검사 게이트 check.sh)
+  ps1-ed1+2/        [kr]  PS1 영웅전설 I · II        ps1-ed3+4/  [kr]  PS1 영웅전설 III · IV
+  ss-ed1+2/         [kr]  새턴 영웅전설 I · II       ss-ed3/     [kr]  새턴 영웅전설 III
+  pce-ed1/ sfc-ed1/ md-ed1/ pc98-ed1/   [kr]  드래곤 슬레이어 영웅전설(콘솔 · PC-98)
   dos-ed2/          [fix] 만트라 DOS 영웅전설 II 복원
-shared/             플랫폼 공용 라이브러리 (SJIS 스캔, ISO9660, 폰트 변환, 한글 조판)
-scripts/            진입점 스크립트 — dosbox.sh(정발 DOS 실행) · patcher.sh(웹 패처)
-                    dosbox/ 에 DOSBox-X 설정 템플릿
-patcher/            웹 패처 일체 — 템플릿 · 빌드 · 폰트 서브셋
-                    빌드하면 games/*/patches/*.json 이 인라인된 자립형 HTML 하나
-docs/               레퍼런스 · 공개 체크리스트 · 소장 컬렉션
+shared/             공용 라이브러리 — 한글 조판(krwrap) · 조사 · 맞춤법 · 고유명사 정본 · 글꼴
+scripts/            진입점 — check.sh(커밋 전) · test.sh · emu.sh(게임 실행) · worktree.sh …
+patcher/            웹 패처 · 배포 페이지(patcher/site/)
+docs/               레퍼런스 · 공개 체크리스트 · 관리자 세션 규약 · 소장 컬렉션
 originals/          원본 게임 데이터 (gitignore — 직접 소장본으로 채움)
 .local/             이 머신 전용 — 바깥 서비스 열쇠도 여기 ([.local/README.md](.local/README.md))
 ```
@@ -51,17 +64,17 @@ originals/          원본 게임 데이터 (gitignore — 직접 소장본으�
 `sh scripts/worktree.sh <게임>`. 겹치는 건 공용뿐이라, 공용은 `main` 에서만 고칩니다.
 
 원본은 `originals/<지역>/<플랫폼>-ed<번호>/` 규약으로 한 벌만 둡니다
-(`kr/dos-ed2`, `jp/ps1-ed1+2`, `us/pce-ed1`). 자세한 건
+(`kr/dos-ed2`, `jp/ps1-ed1+2`, `jp/pce-ed1`). 자세한 건
 [originals/README.md](originals/README.md).
 
 ## 주요 진입점
 
 ```bash
-python3 games/ps1-ed1+2/tools/build.py   # [kr] 한글패치 디스크 빌드
+python3 games/ps1-ed1+2/tools/build.py   # [kr] 한글패치 디스크 빌드 (게임마다 tools/build.py)
+sh scripts/check.sh                      # 커밋 전 — 공용 검사 + 지금 게임의 게이트
+sh scripts/emu.sh                        # 게임 실행 (목록에서 고른다)
+sh scripts/worktree.sh <게임>            # 게임별 워크트리 (originals 링크까지)
 sh scripts/patcher.sh serve              # [fix] 웹 패처를 로컬에서 띄워 확인
-sh scripts/emu/dosbox.sh ed1|ed2|ed3|ed4     # 정발 DOS판 실행 (문안 대조 · 패치 검증)
-sh scripts/worktree.sh ps1-ed1+2         # 게임별 워크트리 (originals 링크까지)
-sh scripts/check.sh                      # 커밋 전 — 빌드 + 화면·조판 검사
 ```
 
 ### 서드파티 도구
@@ -87,8 +100,9 @@ claude mcp add emucap-control -- "$(pwd)/target/release/emucap-mcp"
 claude mcp add emucap-track   -- "$(pwd)/target/release/emucap-track-mcp"
 ```
 
-PSX 검증은 Mednafen 포크 어댑터를 쓴다(`adapters/mednafen/build.sh`, BIOS
-`scph5500.bin` → `~/.mednafen/firmware/`). BIOS·에뮬레이터 바이너리·원본은 커밋 금지.
+기종별 어댑터는 `adapters/<이름>/build.sh` 로 빌드한다 — PS1 · 새턴 · PCE · MD 는 Mednafen 포크,
+SFC 는 Mesen2. 새 버전 확인과 갱신은 `sh scripts/check-updates.sh [--update]`.
+BIOS · 에뮬레이터 바이너리 · 원본은 커밋 금지.
 
 ## 소장 컬렉션
 
@@ -105,11 +119,11 @@ PSX 검증은 Mednafen 포크 어댑터를 쓴다(`adapters/mednafen/build.sh`, 
 
 - 본 프로젝트는 **비영리 팬 프로젝트**이며, 원작에 대한 어떠한 권리도 주장하지 않습니다.
 - 『영웅전설』 시리즈의 저작권을 비롯한 모든 권리는 **Nihon Falcom Corporation** 및 각 권리자에게
-  있습니다. 번역 저본으로 삼는 국내 정발판의 번역 문안 역시 해당 권리자에게 권리가 있습니다.
+  있습니다. 국내 정발판의 번역 문안 역시 해당 권리자에게 권리가 있습니다.
 - 패치는 **차분(패치) 파일로만 배포**하며, 게임 원본 데이터·실행 파일·BIOS를 일절 포함하지
   않습니다. 적용에는 본인이 직접 소장한 원본이 필요합니다.
-- 이 저장소의 소스에도 원본 게임 데이터를 남기지 않습니다 — 번역 테이블은 소장 원본에서
-  빌드 때 파생하고, 패치 스펙은 바뀐 값과 검증용 해시만 담습니다
+- 이 저장소의 소스에도 원본 게임 데이터를 남기지 않습니다 — 번역 정본은 우리 문안과 원문
+  해시만 담고, 패치 스펙은 바뀐 값과 검증용 해시만 담습니다
   ([docs/publishing.md](docs/publishing.md)).
 - 패치의 판매·유료 배포 등 **상업적 이용을 금지**합니다.
 - 권리자의 요청이 있을 경우 배포를 즉시 중단합니다.
@@ -117,6 +131,6 @@ PSX 검증은 Mednafen 포크 어댑터를 쓴다(`adapters/mednafen/build.sh`, 
 ## 크레딧
 
 - 리버싱·도구: Claude Code 보조
-- 번역: 정발판(만트라) 공식 번역 이식 + AI 번역 + 인간 QA
+- 번역: 일본 원판 자체 번역(AI 보조) + 인간 QA, 고유명사는 정발판(만트라) 표기
 - 폰트: [Galmuri](https://github.com/quiple/galmuri)(Lee Minseo) ·
   [Neo둥근모](https://github.com/neodgm/neodgm)(Eunbin Jeong) — SIL OFL 1.1, 라이선스 전문 `shared/fonts/`
