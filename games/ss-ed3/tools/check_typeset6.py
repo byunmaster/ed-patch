@@ -93,7 +93,7 @@ def blocks():
     for k, v in vc.items():
         if k.startswith("_"):
             continue
-        for j, h in enumerate(v.get("hooks", [])):
+        for j, h in enumerate(v.get("hooks", []) + v.get("items", [])):
             if h.get("lines"):
                 out.append(("음성 자막", f"{k}#{j}", "\n".join(h["lines"]), T.WIN_COLS))
     return out

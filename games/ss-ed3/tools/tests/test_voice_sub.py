@@ -209,5 +209,52 @@ class Chain(unittest.TestCase):
         self.assertEqual(stub[var + SS.VAR_LEN : var + SS.VAR_LEN + 4], bytes.fromhex("00000000"))
 
 
+class ClockScene(unittest.TestCase):
+    """시계 장면 — arm 칸 하나 + 4 정렬 시계 표 + 항목 글자(칸·사슬 없음)."""
+
+    def setUp(self):
+        raw = bytearray(b"\x11" * 0x100)
+        raw += bytes.fromhex("ff070000000000000000000000000000") + b"\x22" * 100  # FF 07 (14B)
+        self.raw = bytes(raw)
+        ent = {
+            "map": "MAP999",
+            "clock": {"off": 0x100, "len": 14, "origin": 0.5},
+            "hooks": [],
+            "items": [
+                {"t": 3.0, "who": "쥬리오", "lines": ["하나"], "dur": 2.0, "face": None},
+                {"t": 7.5, "who": "크리스", "lines": ["둘", "셋"], "dur": 1.5, "face": None},
+            ],
+        }
+        self.hooks = VS.by_map({"V99": ent})["MAP999"]
+
+    def test_arm_slot_points_at_an_aligned_clock_table_with_absolute_frames(self):
+        tail, patches = VS.plan(self.raw, self.hooks)
+        n = len(self.raw)
+        self.assertEqual(len(patches), 1)  # 후킹 지점은 arm 하나뿐
+        start = -(-n // VS.SLOT) * VS.SLOT
+        slot = tail[start - n : start - n + VS.SLOT]
+        self.assertEqual(slot[SS.MAGIC_OFF : SS.MAGIC_OFF + 4], struct.pack(">I", SS.MAGIC))
+        ptr = struct.unpack(">I", slot[SS.PTR_OFF :])[0] - VS.BASE
+        self.assertEqual(ptr % 4, 0)  # 표는 mov.l 로 항목 주소를 읽는다
+        tb = tail[ptr - n :]
+        self.assertEqual(struct.unpack(">HH", tb[:4]), (VS.CLOCK_MAGIC, 2))
+        got = []
+        for i in range(2):
+            fr, z, addr = struct.unpack(">HHI", tb[4 + 8 * i : 12 + 8 * i])
+            self.assertEqual(z, 0)
+            got.append((fr, addr - VS.BASE))
+        self.assertEqual([g[0] for g in got], [round(3.5 * VS.CLOCK_FPS), round(8.0 * VS.CLOCK_FPS)])  # 원점 +0.5초
+        #   각 항목 글자는 `<프레임 수> <얼굴> <표정>` 으로 시작한다 — 마지막은 닫힘(`dur`) 이 있다
+        for fr, off in got:
+            frames, face, _ = struct.unpack(">HHH", tail[off - n : off - n + 6])
+            self.assertEqual(face, VS.NO_FACE)
+            self.assertGreaterEqual(frames, 0)
+
+    def test_last_item_must_close_itself(self):
+        self.hooks[-1]["_hold"] = True  # 붙잡으면 창이 안 닫힌다
+        with self.assertRaises(SystemExit):
+            VS.plan(self.raw, self.hooks)
+
+
 if __name__ == "__main__":
     unittest.main()

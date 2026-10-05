@@ -101,7 +101,14 @@ V_FLAG, V_TIMER = 0, 2  # 창 켜짐(u16) · 남은 프레임(u16)
 V_TXTP, V_DRAWN, V_PRE = 4, 8, 12  # 래치한 글자 · 그린 글자 · 미리 싣기 목록 커서(0 = 없음)
 V_FACE_ID, V_FACE_EXPR = 16, 18  # 지금 얼굴 (0xFFFF = 없음)
 V_NOFACE = 20  # 상수 쌍 `FFFF 0000` — 치울 때 face_apply 에 준다
-VAR_LEN = 24
+#   시계 장면(V02~V16 — `voice_sub.clock_hooks`): 음성 0초부터 **전역 프레임 시계**(`GCLK`)로 센다.
+#   `V_CTAB` = 시계 표 포인터(0 = 꺼짐) · `V_CSTART` = 켜질 때의 `GCLK` · `V_CIDX` = 다음에 볼 항목.
+V_CIDX = 24  # u16 (mov.w 변위는 30 까지라 큰 변수는 뒤로)
+V_CTAB, V_CSTART = 28, 32  # u32
+VAR_LEN = 36
+#   🔴 전역 프레임 시계 — 크레딧 태스크(`_credits_code`, 필드·크레딧 공통 VBlank 태스크)가 **매 프레임 +1** 한다.
+#     위치는 고정이다(대사창 스텁이 `mov.l` 로 읽는다) — 크레딧 코드 구역 끝(`STUB − 0x1D0`)에 둔다.
+GCLK = 0x06018A30
 
 
 class Asm:
@@ -318,6 +325,48 @@ def build():
     a.movi(0, 1)
     a.movw_r0_d(11, V_FLAG)
     a.label("no_latch")
+    #   ── 시계 장면 — 표(`V_CTAB`)가 켜져 있으면 전역 시계로 **때가 된 항목**을 꺼내 글자 포인터로 래치한다(여럿이 밀려 있으면
+    #     마지막 것만). 표 = `<0xFFFE> <개수>` + 항목 8B `<시작 프레임 u16> <0> <글자 주소 u32>`. 다 쓰면 표를 끈다.
+    a.movl_d(1, 11, V_CTAB)
+    a.tst(1, 1)
+    a.bt("no_clk")
+    a.movl_pc(2, "GCLK")
+    a.movl_at(2, 2)
+    a.movl_d(3, 11, V_CSTART)
+    a.sub(2, 3)  # r2 = 경과 프레임
+    a.mov(6, 1)
+    a.add(6, 2)
+    a.movw_at(5, 6)  # r5 = 개수
+    a.add(6, 2)  # r6 = 첫 항목
+    a.movw_d_r0(11, V_CIDX)
+    a.mov(4, 0)  # r4 = 다음 항목 번호
+    a.movi(7, 0)  # r7 = 켤 글자(0 = 없음)
+    a.label("clk_loop")
+    a.cmp_hs(4, 5)
+    a.bt("clk_all")
+    a.mov(3, 4)
+    a.shll2(3)
+    a.shll(3)  # ×8
+    a.addr(3, 6)
+    a.movw_at(0, 3)  # r0 = 시작 프레임
+    a.cmp_hs(2, 0)  # 경과 ≥ 시작?
+    a.bf("clk_store")
+    a.movl_d(7, 3, 4)
+    a.add(4, 1)
+    a.bra("clk_loop")
+    a.nop()
+    a.label("clk_all")
+    a.movi(1, 0)
+    a.movl_to_d(11, 1, V_CTAB)  # 표를 다 썼다 — 끈다
+    a.label("clk_store")
+    a.mov(0, 4)
+    a.movw_r0_d(11, V_CIDX)
+    a.tst(7, 7)
+    a.bt("no_clk")
+    a.movl_to_d(11, 7, V_TXTP)
+    a.movi(0, 1)
+    a.movw_r0_d(11, V_FLAG)
+    a.label("no_clk")
     #   ── 미리 싣기 — 목록(PRE)이 있으면 얼굴 작업이 놀 때(상태 0) 한 장 켜고, 캐시에 실려
     #     들어오려는 순간(상태 2) 꺼서 다음 장으로 간다. 0xFFFF 가 끝.
     a.movl_d(8, 11, V_PRE)
@@ -389,6 +438,22 @@ def build():
     a.bra("done")
     a.nop()
     a.label("not_pre")
+    #   🔴 시계 표(`0xFFFE`) — arm 칸이 래치한 글자다: 표를 켜고(항목 0 부터, 시계 0) **창은 아직 안 띄운다**.
+    a.movi(1, -2)
+    a.cmp_eq(0, 1)
+    a.bf("not_arm")
+    a.mov(1, 8)
+    a.add(1, -2)
+    a.movl_to_d(11, 1, V_CTAB)
+    a.movl_pc(2, "GCLK")
+    a.movl_at(2, 2)
+    a.movl_to_d(11, 2, V_CSTART)
+    a.movi(0, 0)
+    a.movw_r0_d(11, V_CIDX)
+    a.movw_r0_d(11, V_FLAG)
+    a.bra("done")
+    a.nop()
+    a.label("not_arm")
     a.movw_r0_d(11, V_TIMER)
     a.mov(9, 8)  # r9 = 얼굴·표정 쌍
     a.add(8, 4)
@@ -596,6 +661,7 @@ def build():
             "F_EXPR": F_EXPR,
             "F_WINX": F_WINX,
             "F_WINY": F_WINY,
+            "GCLK": GCLK,
         }
     )
     stub = bytearray(stub)
@@ -607,7 +673,7 @@ def build():
         stub[o : o + 4] = struct.pack(">I", val)
     #   변수 표 — DRAWN 0 은 어떤 포인터와도 다르다. FACE_ID 는 「없음」(0xFFFF)으로 시작해야
     #   첫 얼굴이 뜬다. NOFACE 는 치울 때 face_apply 에 주는 상수 쌍이다.
-    stub += struct.pack(">HHIIIHHHH", 0, 0, 0, 0, 0, 0xFFFF, 0, 0xFFFF, 0)
+    stub += struct.pack(">HHIIIHHHHHHII", 0, 0, 0, 0, 0, 0xFFFF, 0, 0xFFFF, 0, 0, 0, 0, 0)
     assert len(stub) == tail + VAR_LEN
     #   창 테두리 · 글자 — **살아 있는 표에서 뜬 값 그대로** 쓴다(글자 쪽은 src 만 우리 버퍼로).
     #     테두리 [20] 264x64 src 0x12000 colr 0x4f60 · 글자 [21] 216x48 src 0x78000 colr 0x4740
@@ -697,6 +763,11 @@ def _credits_code(a):
         a.push(r)
     a.sts_pr()
     a.movl_pc(11, "VARC")
+    #   ── 전역 프레임 시계 +1 (시계 장면 자막이 센다 — `GCLK`)
+    a.movl_pc(1, "GCLK")
+    a.movl_at(2, 1)
+    a.add(2, 1)
+    a.movl_to(1, 2)
     #   ── 크레딧인가(고해상도) — 아니면 꺼 두고 나간다
     a.movl_pc(1, "TVMD")
     a.movw_at(0, 1)
@@ -966,6 +1037,7 @@ def build_credits(draw_line, table=b""):
         "TPLC": 0,
         "XABUF": XABUF,
         "SENT": 0x7FFF,
+        "GCLK": GCLK,
     }
     code, _, _ = asm(base_pool)
     var = CRED + len(code)
@@ -983,10 +1055,10 @@ def build_credits(draw_line, table=b""):
     )
     assert len(out) == ctab - CRED
     out += table
-    assert CRED + len(out) <= STUB - 0x1C0, (
+    assert CRED + len(out) <= STUB - 0x1D0, (
         len(out),
-        STUB - 0x1C0 - CRED,
-    )  # 끝 0x1C0B 는 `patch_ui_center.WRAP`·`WRAP2`·`WRAP3` 자리
+        STUB - 0x1D0 - CRED,
+    )  # 끝 0x1D0B 는 `GCLK`(16B) · `patch_ui_center.WRAP`·`WRAP2`·`WRAP3` 자리
     return bytes(out), {
         "ctab": ctab,
         "var": var,
@@ -1030,6 +1102,7 @@ def patch(data, table_fn=None):
         _, ca = build_credits(where["draw_line9"])
         blob, ca = build_credits(where["draw_line9"], table_fn(ca["ctab"]))
         put(CRED, blob, b"")
+        put(GCLK, b"\x00" * 16, b"")  # 전역 프레임 시계 — 0 으로 시작(원래 디버그 메뉴 코드 바이트가 있던 자리)
         put(TASK_LIT, struct.pack(">I", CRED), struct.pack(">I", TASK_ORIG))
         #   등록은 메인 스레드에서 — 크레딧 글자 함수 에필로그 12B 를 `mov.l @(1,pc),r8 · jmp @r8 · nop · nop · 주소` 로
         put(HOOK2, struct.pack(">HHHHI", 0xD801, 0x482B, 0x0009, 0x0009, ca["cemit"]), HOOK2_ORIG)

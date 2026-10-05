@@ -132,6 +132,8 @@ def entry(h, table=None):
 
     `preload` 후킹이면 `<0xFFFF>` + `_faces` 쌍들 + `<0xFFFF 0>` 목록이다.
     """
+    if h.get("_arm"):
+        raise SystemExit("시계 표는 plan() 이 만든다(칸 주소가 필요하다)")
     if h.get("preload"):
         if h.get("lines") or h.get("delay"):
             raise SystemExit(f"{h['off']:#x}: 미리 싣기 칸엔 글자도 `delay` 도 못 둔다")
@@ -259,7 +261,7 @@ def chain(orig, ret_off, subs, txt_offs):
 #   (안 들어가면 묶지 않는다). 접기는 문장·쉼표 뒤를 우선한다.
 MERGE_SHORT = 2.0
 MERGE_GAP = 1.5
-HOLD_GAP = 1.5  # 같은 화자라도 말 사이가 이만큼 넘게 비면 창을 닫고 새로 띄운다
+HOLD_GAP = 1.0  # 같은 화자라도 말 사이가 이만큼 넘게 비면 창을 닫고 새로 띄운다(마스터 10-05: 1.5 는 길다)
 _ENDS = (".", "?", "!", "？", "！", ",", "…", "~")
 
 
@@ -368,12 +370,38 @@ def link(hooks, order):
         prev = h
 
 
+CLOCK_MAGIC = 0xFFFE  # 글자 첫 워드가 이것이면 **시계 표**다(`subtitle_stub`) — 미리 싣기 목록(0xFFFF) 옆 종류
+
+
+def clock_table(arm, entries, addr_of, fps):
+    """시계 표 — `<0xFFFE> <개수>` + 항목 8B `<시작 프레임 u16> <0> <글자 주소 u32>`(4 정렬) + 얼굴 목록(있으면).
+
+    시작 프레임 = 음성 0초부터 센 프레임 = round((`t` + 원점) × fps). 스텁이 **전역 프레임 시계**(`subtitle_stub.GCLK`) 로 센다.
+    """
+    org = float(arm.get("_origin", 0.0))
+    out = struct.pack(">HH", CLOCK_MAGIC, len(entries))
+    last = -1
+    for i, e in entries:
+        fr = round((float(e["_t"]) + org) * fps)
+        if not 0 <= fr < 0x7FFF:
+            raise SystemExit(f"{e['_scene']}: 시각 {e['_t']} 초가 시계 범위를 넘는다({fr} 프레임)")
+        if fr < last:
+            raise SystemExit(f"{e['_scene']}: 시각이 오름차순이 아니다 — {e['_t']}")
+        last = fr
+        out += struct.pack(">HHI", fr, 0, BASE + addr_of[i])
+    return out
+
+
 def plan(raw, hooks, table=None):
     """`(붙일 꼬리, [(오프셋, 덮을 6B)])` — 칸들 뒤에 글자 표.
 
     꼬리는 **옛 파일 끝을 32B 로 올린 자리**부터 시작한다(칸 정렬). 각 후킹은 자기 칸으로
     점프하고, 칸의 포인터는 그 뒤 글자 표의 제 벌을 가리킨다. 같은 `off` 의 후킹들은
     `delay` 순으로 **칸 사슬**이 된다(위 「대기 한복판에 넣기」).
+
+    🔴 **시계 장면**(`_arm` + `_clock`): 칸은 **arm 후킹 하나**뿐이고 그 글자가 시계 표다. `_clock` 항목들은 칸·사슬 없이
+    글자만 꼬리에 붙고(`delay` = 음성 0초부터의 프레임), 스텁이 전역 시계로 표를 걸어 때가 되면 켠다 — 스크립트 안에서
+    음성 위치를 재지 않아도 된다.
     """
     if not hooks:
         return b"", []
@@ -384,14 +412,21 @@ def plan(raw, hooks, table=None):
         hooks,
         sorted(range(len(hooks)), key=lambda i: (hooks[i]["off"], int(hooks[i].get("delay", 0)))),
     )
-    texts = [entry(h, table) for h in hooks]
-    if hooks[-1].get("lines") and texts[-1][:2] == b"\x00\x00":
+    texts = [None if h.get("_arm") else entry(h, table) for h in hooks]
+    last_real = [h for h in hooks if h.get("lines")]
+    if last_real and last_real[-1] is hooks[-1] and texts[-1][:2] == b"\x00\x00":
         raise SystemExit(
             f"{hooks[-1]['off']:#x}: 마지막 칸은 `dur` 가 0 이면 안 된다 — 창이 남는다"
         )
-    #   자리별로 묶는다 — 같은 자리는 길이가 같아야 한다
+    for scene in {h["_scene"] for h in hooks if h.get("_clock")}:
+        ents = [h for h in hooks if h.get("_clock") and h["_scene"] == scene]
+        if ents[-1].get("lines") and entry(ents[-1], table)[:2] == b"\x00\x00":
+            raise SystemExit(f"{scene}: 시계 장면의 마지막 항목은 `dur` 가 0 이면 안 된다 — 창이 남는다")
+    #   자리별로 묶는다 — 같은 자리는 길이가 같아야 한다(시계 항목은 자리가 없다)
     sites = []
     for i, h in enumerate(hooks):
+        if h.get("_clock"):
+            continue
         if h["len"] < len(GOTO) + 4:
             raise SystemExit(f"{h['off']:#x}: 후킹 지점이 짧다({h['len']}B) — GOTO 6B 가 안 든다")
         if sites and hooks[sites[-1][0]]["off"] == h["off"]:
@@ -419,9 +454,26 @@ def plan(raw, hooks, table=None):
             nslots += len(idxs) + (1 if pre or int(h0.get("delay", 0)) > 0 else 0)
     txt_at = {}
     at = start + SLOT * nslots
-    for i, t in enumerate(texts):
+    #   🔴 시계 표는 **4 정렬**이어야 한다(항목의 글자 주소를 `mov.l` 로 읽는다) — 칸들(32B 배수) 바로 뒤에 먼저 둔다
+    arms = [i for i, h in enumerate(hooks) if h.get("_arm")]
+    for i in arms:
+        ents = [(j, h) for j, h in enumerate(hooks) if h.get("_clock") and h["_scene"] == hooks[i]["_scene"]]
+        faces = hooks[i].get("_faces")
+        tbl_len = 4 + 8 * len(ents) + (4 * len(faces) + 4 if faces else 0)
         txt_at[i] = at
-        at += len(t)
+        at += tbl_len
+    for i, t in enumerate(texts):
+        if t is None:
+            continue
+        txt_at[i] = at + (at % 2)
+        at = txt_at[i] + len(t)
+    for i in arms:
+        ents = [(j, h) for j, h in enumerate(hooks) if h.get("_clock") and h["_scene"] == hooks[i]["_scene"]]
+        tb = clock_table(hooks[i], [(j, dict(h, _t=h["_t"])) for j, h in ents], txt_at, hooks[i].get("_fps", 59.83))
+        faces = hooks[i].get("_faces")
+        if faces:
+            tb += b"".join(struct.pack(">HH", *p) for p in faces) + struct.pack(">HH", NO_FACE, 0)
+        texts[i] = tb
     tail = bytearray(b"\x00" * (start - n))
     patches = []
     here = start
@@ -440,8 +492,13 @@ def plan(raw, hooks, table=None):
             tail += _slot(body, BASE + nxt if nxt else BASE + ret, txt)
             here += SLOT
     assert here == start + SLOT * nslots, (here, start, nslots)
-    for t in texts:
-        tail += t
+    #   글자들 — 시계 표(앞, 정렬 맞음) 뒤에 나머지를 **주소대로** 잇는다(짝수 정렬 패딩 포함)
+    pos = start + SLOT * nslots
+    for i in sorted(txt_at, key=lambda k: txt_at[k]):
+        if txt_at[i] > pos:
+            tail += b"\x00" * (txt_at[i] - pos)
+        tail += texts[i]
+        pos = txt_at[i] + len(texts[i])
     #   ⓘ 섹터 여백에 맞추지 않는다 — 꼬리가 붙은 맵은 `relocate.py` 가 트랙 1 끝의 새
     #     자리로 옮기므로 길이 제한이 없다(2026-09-05. 13/19 장면이 여백에 안 들었다).
     return bytes(tail), patches
@@ -452,6 +509,47 @@ def load_plan():
         return {}
     with open(SCRIPT, encoding="utf-8") as f:
         return json.load(f)
+
+
+CLOCK_FPS = 59.83  # 필드 화면 프레임률 — 음성 시각(초) → 전역 프레임 시계
+
+
+def clock_hooks(key, ent):
+    """시계 장면(`clock` + `items`) → arm 후킹 하나 + 항목마다 시계 후킹.
+
+    `clock` = `{"off": arm 자리, "len": 그 자리 옵코드 길이, "origin": 초(기본 0), "fps"}`. `items[]` 의 `t` 는 **음성 0초 기준 초**다.
+    arm 자리는 음성(`FF 42`) 시작 **직후**에 도는 옵코드여야 한다 — 거기서 시계가 0 이 된다. `origin` 은 arm 이 음성보다 늦거나
+    빠른 만큼(초) 밀어 맞추는 값이다(어긋나면 이 값 하나로 민다).
+    """
+    ck = ent["clock"]
+    fps = float(ck.get("fps", CLOCK_FPS))
+    org = float(ck.get("origin", 0.0))
+    out = [
+        {
+            "off": ck["off"],
+            "len": ck["len"],
+            "_arm": True,
+            "_origin": org,
+            "_fps": fps,
+            "_scene": key,
+            "delay": 0,
+        }
+    ]
+    for it in ent.get("items", []):
+        out.append(
+            dict(
+                it,
+                off=ck["off"],
+                len=ck["len"],
+                _clock=True,
+                _scene=key,
+                _t=float(it["t"]),
+                delay=round((float(it["t"]) + org) * fps),
+            )
+        )
+    if ck.get("preload"):  # 얼굴을 쓰면 음성 **앞**에 미리 싣기 자리가 따로 필요하다
+        out.append(dict(ck["preload"], preload=True, _scene=key))
+    return out
 
 
 def by_map(doc=None):
@@ -466,6 +564,8 @@ def by_map(doc=None):
         if key.startswith("_"):
             continue
         hooks = [dict(h, _scene=key) for h in ent["hooks"]]
+        if ent.get("clock"):
+            hooks += clock_hooks(key, ent)
         faces = sorted({face(h) for h in hooks if h.get("lines")} - {(NO_FACE, 0)})
         pres = [h for h in hooks if h.get("preload")]
         if len(pres) > 1:
@@ -559,6 +659,13 @@ def main():
             print(f"── {iso}  {size:,}B → {size + len(tail):,}B  (여백 {(-size) % SECTOR}B)")
             at = start + SLOT * len(hooks)
             for i, h in enumerate(hooks):
+                if h.get("_arm"):
+                    n_ent = sum(1 for o in hooks if o.get("_clock") and o["_scene"] == h["_scene"])
+                    print(
+                        f"   {h['_scene']} arm {h['off']:#07x} ({h['len']:2}B) → 칸 {start + SLOT * i:#07x}"
+                        f"  시계 표 항목 {n_ent}  원점 {h['_origin']:+.2f}초"
+                    )
+                    continue
                 e = entry(h)
                 fr, fid, _ = struct.unpack(">HHH", e[:6])
                 tag = (
@@ -568,10 +675,8 @@ def main():
                     + ("  ⤒붙잡음" if h.get("_hold") else "")
                     + (f"  얼굴 {fid}" if fid != NO_FACE else "")
                 )
-                print(
-                    f"   {h['_scene']} 후킹 {h['off']:#07x} ({h['len']:2}B) → 칸 {start + SLOT * i:#07x}"
-                    f"  글자 {at:#07x} {len(e):3}B  {tag}"
-                )
+                where = f"시계 {h['delay'] / CLOCK_FPS:6.1f}초" if h.get("_clock") else f"후킹 {h['off']:#07x} ({h['len']:2}B)"
+                print(f"   {h['_scene']} {where}  글자 {len(e):3}B  {tag}")
                 if h.get("who") and h.get("lines"):
                     carry = len(h.get("_body", ())) - len(h["lines"])
                     print(

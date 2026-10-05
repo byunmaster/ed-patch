@@ -15,9 +15,9 @@
 """
 
 import argparse
-import re
 import json
 import os
+import re
 import struct
 import sys
 
@@ -26,7 +26,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import common as C
 import hangul_map as H
 import subtitle_stub as SS
-import typeset as T
 
 PATH = os.path.join(C.GAME_DIR, "script", "voice_credits.json")
 BUF_W = SS.BUF_STRIDE * 2  # 글자 버퍼 폭(px) — 216
