@@ -38,6 +38,12 @@ _END = re.compile(r"[^.!?…]+[.!?…]+")
 # ⚠ **거듭한 것도 맞장구다** — 말을 더듬는 자리의 「네, 네.」가 반말로 잡히던 걸 같이 막는다.
 _INTERJ = r"(?:네|예|응|어|아|아니|아니요|그래|왜|뭐|음|흠)"
 _SHORT = re.compile(rf"^{_INTERJ}(?:\s*,\s*{_INTERJ})*[.!?…]*$")
+# 부르는 말만 있는 문장(「케빈 할아버지.」)도 화계를 안 가른다 — `할아버지` 의 `지` 가 반말 「~지」로
+#   잡혀, 검수자가 오탐을 피하려고 멀쩡한 문안을 비틀던 자리다(10-02 라운드 8).
+_VOC = re.compile(
+    r"^(?:\S+\s)?(?:할아버지|할머니|아저씨|아주머니|삼촌|아빠|엄마|아버지|어머니|누나|언니|"
+    r"선생님|촌장님|선장님|군|양|씨|님)[.!?…]*$"
+)
 
 # 하십시오체 · 해요체
 HIGH = re.compile(
@@ -61,7 +67,11 @@ def sentences(text):
     out = []
     for s in _END.findall(flat):
         s = s.strip()
-        if s and not _SHORT.match(s):
+        if (
+            s
+            and not _SHORT.match(s)
+            and not _VOC.match(re.sub(r"^(?:네|예|아|아아|어머|오오|저기)[,\s]+", "", s))
+        ):
             out.append(s)
     return out
 
@@ -98,6 +108,8 @@ def level(s):
     for nm in _NAMES:
         if nm in s:
             s = s.replace(nm, "○")
+    # 문장 끝에 붙은 부르는 말(「어때요, 쥬리오 군.」)은 걷어 내고 그 앞 어미로 판정한다
+    s = re.sub(r",\s*\S+\s(?:군|양|씨|님)([.!?…]*)$", r"\1", s)
     if NEUTRAL.search(s):
         return None
     if HIGH.search(s):
