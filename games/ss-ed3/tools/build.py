@@ -345,6 +345,7 @@ def build_one(a_disc):
             print(f"      트랙 {nt} 개를 옮겼다 ({nb / 1e6:.0f}MB) — 트랙1 밖의 파일이 여기 있다")
         write_cue(a.disc)
         write_m3u()
+        emit_saves()
         ok = True
         print(f"\n✅ {dst}")
     finally:
@@ -365,6 +366,19 @@ def build_one(a_disc):
                 q = track_path(a.disc, num)
                 if os.path.exists(q):
                     os.remove(q)
+
+
+def emit_saves():
+    """이 빌드의 **해시 이름 세이브**를 이미지 옆에 놓는다(`save_names`) — 세이브 보관함에는 안 쌓는다(마스터 10-05)."""
+    import save_names as SN
+
+    sys.path.insert(0, os.path.join(C.GAME_DIR, "..", "..", "scripts", "emu"))
+    import ss_gameid as SG
+
+    imgs = [out_paths(d)[1] for d in C.DISCS] + [m3u_path()]
+    made = SN.emit(SN.default_src(), C.BUILD_DIR, imgs, SG.game_id)
+    if made:
+        print(f"      세이브 사본 {len(made)}개를 빌드 칸에 놓았다(해시 이름) ← {SN.default_src()}")
 
 
 def m3u_path():
