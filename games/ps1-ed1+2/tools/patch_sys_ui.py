@@ -258,6 +258,13 @@ FULL_PLACE_RESTORES = (
     ("ED.EXE", ED_LBA, ED_SIZE, 0xBE8F8, bytes.fromhex("8abf8ae990d2"), "늑대의입 ", 14),
 )
 
+# 🔴 **화면에 나가는 최종 표기**(2026-10-05). `PLACES` 의 `狼の口` 값은 빌드 **중간값**이다 —
+# 8B 칸(ED2SCN7 헤더)까지 한 표로 채우려고 짧은 꼴을 넣어 두고, 최종 이미지에서 위
+# `restore_full_place_names`(ED.EXE·ED2.EXE)와 `apply_halfwidth_hud_slots`(8B 칸, 반각)가
+# 전부 정본 「늑대의입」으로 덮는다. 실측: v1.0.0 이미지(aa240a91)에 짧은 꼴 바이트 0곳.
+# 고유명사 정본 대조(`test_tool_tables_match_shared_glossary`)는 이 최종값으로 본다.
+PLACES_ON_SCREEN = {"狼の口": "늑대의입"}
+
 
 def restore_full_place_names():
     """`FULL_PLACE_RESTORES`(ED.EXE 정본 지명표)와 ED2.EXE HUD·워프 사본을 되돌린다.

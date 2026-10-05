@@ -816,7 +816,8 @@ def test_tool_tables_match_shared_glossary():
         "item": dict(patch_items.NAMES),
         "monster": dict(patch_items.MONSTERS),
         "person": dict(align_jp_kr.SPEAKER_DICT),
-        "place": dict(patch_sys_ui.PLACES),
+        # 지명은 화면 최종값으로 본다 — `PLACES` 의 일부는 덮일 중간값이다(`PLACES_ON_SCREEN`)
+        "place": {**dict(patch_sys_ui.PLACES), **patch_sys_ui.PLACES_ON_SCREEN},
     }
     # 🔴 **ED2 몬스터 표도 여기 묶는다**(2026-08-29). 118종을 `textmap/monsters_ed2.json` 이
     # 따로 드는데 이 테스트가 안 보고 있었다 — 새턴 세션이 공용 정본을 고치자 셋이 갈렸고

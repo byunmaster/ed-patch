@@ -221,7 +221,8 @@ class DialogPlaceSpacing(unittest.TestCase):
         self.assertEqual(f("국경의동굴"), "국경의 동굴")
         self.assertEqual(f("숲의초가집"), "숲의 초가집")
         self.assertEqual(f("크루즈마을"), "크루즈 마을")
-        self.assertEqual(f("늑대입"), "늑대입")
+        self.assertEqual(f("늑대의입"), "늑대의 입")  # 「~의」 뒤 목록 밖 끝말은 띄운다
+        self.assertEqual(f("바람굴"), "바람굴")  # 「의」 없는 목록 밖 끝말은 그대로(가짜 지명)
         self.assertEqual(f("해적섬"), "해적섬")  # 섬은 붙인다
         self.assertEqual(f("론윌섬"), "론윌섬")
         self.assertEqual(f("네사의변토"), "네사의 변토")
