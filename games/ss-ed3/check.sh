@@ -100,6 +100,17 @@ run 6 "$PY" "$G/tools/fix_orphans.py" --check
 #    ⚠ 뒤가 빈 줄뿐인 쉼표는 「다음 창으로 이어진다」는 표시라 검사기가 봐준다.
 run 4 "$PY" "$G/tools/fix_line_commas.py" --check
 
+# 🔴 게이트다 — 판단이 안 든다. 검은 바탕 가운데 정렬 화면(나레이션·장 카드)은 원문 앞 공백을
+#    그대로 옮겨 **줄마다 가운데가 달랐다**(마스터 폰 실측 2026-09-26, 엔딩 나레이션).
+#    실제 렌더 폭(전각 1 · 반각 0.5)으로 다시 잡는다 — 고치는 법은 인자 없이 돌리면 된다.
+run 4 "$PY" "$G/tools/center_narration.py" --check
+
+# 🔴 게이트다 — 조판 여섯 규칙(①고아·폭 ②빈 줄 ③첫 칸 공백 ④묶음 끊김) 전 영역 전수.
+#    걸린 것 중 설계(원판 여백·조각)·이월(대사 라운드)은 사유를 적어 대장에 두고,
+#    **대장 밖에서 새로 생기면 실패**한다. ⑤⑥ 은 위 char_cols·reinsert_desc·check_josa 가 본다.
+echo "  ── 조판 여섯 규칙 (전 영역 · 대장 밖 새 위반)"
+run 2 "$PY" "$G/tools/check_typeset6.py" --check
+
 echo "  ── 원문에 있던 것이 사라지지 않았나 (숫자 · 고유명사)"
 warn 3 "$PY" "$G/tools/check_fidelity.py"
 
@@ -120,6 +131,13 @@ warn 0 "$PY" "$G/tools/check_save_compat.py"
 
 echo "  ── 구워 둔 이미지가 지금 소스의 것인가 (두 장 대조)"
 run 0 "$PY" "$G/tools/check_build_discs.py"
+
+# 🔴 게이트다 — **글 소실 없음** 불변식. 위 검사기들은 「넣으려던 문안」을 보고, 이건
+#    「이미지에 들어간 것」을 되풀어 본다(공백·개행 제외 글자열이 script/ 와 같은가).
+#    ps1-ed3+4 가 대사 꼬리를 폭 한도로 잘라 버리는데 검사기가 0 건이던 사고(09-27)의 짝.
+#    ⚠ 1 분쯤 걸린다(두 장 전량 되읽기). 이미지가 없으면 스스로 건너뛴다.
+echo "  ── 글 소실 없음 (구운 이미지를 되풀어 문안과 대조)"
+run 3 "$PY" "$G/tools/check_no_loss.py"
 
 if [ "$fail" -ne 0 ]; then
   echo "  ❌ [ss-ed3] 게이트 실패"

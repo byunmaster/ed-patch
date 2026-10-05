@@ -23,6 +23,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
 import typeset as T
+import center_narration as CN
 
 SCRIPT_DIR = os.path.join(C.GAME_DIR, "script")
 SYSTEM = os.path.join(SCRIPT_DIR, "system.json")
@@ -35,9 +36,13 @@ def tables():
     return d["chapter_line"], d["word"]["完"]
 
 
-def center(title, screen=T.SCREEN_COLS):
-    """가운데 정렬 들여쓰기 — 원문이 쓰는 규칙 그대로."""
-    return "　" * max(0, round((screen - T.cols(title)) / 2))
+def center(title):
+    """가운데 정렬 들여쓰기 — 정본은 `center_narration` 하나다(화면 중심 · 반 칸 단위).
+
+    ⚠ `--write` 뒤엔 `center_narration.py` 를 한 번 돌린다 — 예산이 빠듯한 카드는
+      거기서 블록째 반 칸씩 옮겨 맞춘다(게이트가 그걸 본다).
+    """
+    return CN.lead_for(title)
 
 
 def translate(text, tbl, fin_kr, shift=0):

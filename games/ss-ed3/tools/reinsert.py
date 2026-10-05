@@ -24,6 +24,7 @@ import mapfile as M
 import typeset as T
 
 SCRIPT_DIR = os.path.join(C.GAME_DIR, "script")
+NAME_MAX = 14  # 맵 이름 최대 — 원판 최장(`ディルトの関所`·`ドルフェスの塔`·`ラグーナ船着場`)
 
 
 def load_script(stem):
@@ -102,6 +103,21 @@ def patch_blocks(data, stem, table):
             bad.append((key, f"원문 지문이 다르다 — 블록이 밀렸다(기대 {want})"))
             continue
         budget = len(blk["body"])
+        if blk["off"] == M.NAME_OFF and len(raw := H.encode_kr(kr, table)) > budget:
+            #   맵 이름 칸 — NUL 종료 문자열이고 뒤는 0 으로 비어 있다(88 맵 전부 30B 넘게).
+            #   원판도 14B 까지 쓴다(`ディルトの関所` 등) ⇒ 뒤가 비었을 때만 NAME_MAX 까지 늘려 쓴다.
+            #   🔑 「큰뱀의 등뼈」(11B)가 원문 `大蛇の背骨`(10B)를 넘어 붙여쓰기로 버티던 자리(09-28 마스터).
+            #   ⚠ 예산 안이면 종전대로(공백 채움) — 88 이름의 바이트를 안 흔든다.
+            end = blk["off"] + max(budget, len(raw))
+            if len(raw) > NAME_MAX:
+                bad.append((key, f"맵 이름이 {NAME_MAX}B 를 넘는다({len(raw)}B)"))
+                continue
+            if any(data[blk["off"] + budget : blk["off"] + NAME_MAX + 1]):
+                bad.append((key, "맵 이름 뒤가 비어 있지 않다 — 늘려 쓸 수 없다"))
+                continue
+            out[blk["off"] : end] = raw + b"\x00" * (end - blk["off"] - len(raw))
+            done += 1
+            continue
         jp = M.text_of(blk["body"])
         fitted, why = fit(kr, budget, T.overflows(jp), jp)
         if fitted is None:

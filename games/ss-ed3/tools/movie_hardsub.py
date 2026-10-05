@@ -55,6 +55,9 @@ BOTTOM = 10  # 마지막 줄 밑 여백
 DY = fonts.GALMURI11_DY  # 게임 폰트와 같은 베이스라인 보정
 CELL = 12  # 한 글자를 찍는 칸 (한글 자리 폭)
 ADV_LATIN = 8
+#   갈무리11 의 「…」는 일본식(글자 가운데 높이)이다 — 한국식은 마침표 높이(바닥)다.
+#   글리프를 마침표 행까지 내려 찍는다(마스터 폰 확인 09-26). 문안은 그대로 둔다.
+ELLIPSIS_DROP = 5
 
 
 def _adv(ch):
@@ -77,6 +80,8 @@ def _draw(text):
         for c in line:
             if c != " ":
                 b = bdf.bits(c, dy=DY, rows=LINE_H, width=CELL)
+                if c == "…":
+                    b = np.roll(b, ELLIPSIS_DROP, 0)
                 h, w = b.shape
                 if 0 <= y and y + h <= H and 0 <= x and x + w <= W:
                     out[y : y + h, x : x + w] |= b
@@ -126,6 +131,8 @@ def enc_key(name, size):
     h = hashlib.sha1()
     h.update(json.dumps(lines(name), ensure_ascii=False).encode())
     h.update(f"|{size}|{W}x{H}|{LINE_H}|{BOTTOM}|{DY}|{CELL}|{ADV_LATIN}|".encode())
+    if any("…" in x[-1] for x in lines(name)):
+        h.update(f"ell{ELLIPSIS_DROP}|".encode())
     h.update(ffmpeg_ver().encode())
     h.update(" ".join(ENC_OPTS).encode())
     return h.hexdigest()

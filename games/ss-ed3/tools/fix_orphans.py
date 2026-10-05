@@ -26,6 +26,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
 import typeset as T
+import center_narration as CN
 
 SCRIPT_DIR = os.path.join(C.GAME_DIR, "script")
 
@@ -63,12 +64,20 @@ def main():
     a = ap.parse_args()
 
     total, fixed, stuck = 0, 0, []
+    #   🔴 `T.is_narration` 으로 거르면 안 된다 — 들여쓴 대사창 블록(예언 인용 등)까지 나레이션으로
+    #      쳐서 **검사에서 사라진다**(실측: MAP042 #418). 가운데 정렬 대상 목록 하나만 쓴다.
+    narr = {(n, str(i)) for n, i, _ in CN.targets()}
     for p in sorted(glob.glob(os.path.join(SCRIPT_DIR, "MAP*.json"))):
         with open(p, encoding="utf-8") as f:
             doc = json.load(f)
         changed = 0
         for k, v in doc.items():
             if k.startswith("_") or not isinstance(v, str):
+                continue
+            #   나레이션은 대화창(17칸)이 아니라 화면 폭에 놓인다 — 여기서 재면 헛걸린다
+            #   (2026-09-26: 가운데 정렬로 앞 공백이 늘자 「못 고침」이 하나 늘어 보였다).
+            #   그 블록은 `center_narration.py` 게이트가 본다.
+            if (os.path.basename(p), k) in narr:
                 continue
             if not any(needs_fix(x) for x in T.lines(v)):
                 continue
