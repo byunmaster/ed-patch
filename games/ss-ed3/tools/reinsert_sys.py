@@ -46,7 +46,7 @@ def table():
 
 
 def chapter_keys():
-    """메뉴 맨 위 **챕터 바**에 나가는 JP 키 — 여기만 기본(원판 자리) 글리프를 쓴다."""
+    """메뉴 맨 위 **챕터 바**에 나가는 JP 키 — 내린 판을 쓰되 이유가 다르다(아래 🔴)."""
     if not os.path.exists(SYSTEM):
         return set()
     with open(SYSTEM, encoding="utf-8") as f:
@@ -55,11 +55,13 @@ def chapter_keys():
 
 #   🔴 **시스템 표는 0 행을 자르는 창(스탯)에 나간다** — 그래서 기본이 아니라 **한 행 내린
 #     판**으로 인코딩한다(`hangul_map.LOW_PATH`). 안 그러면 초성 윗 가로획이 날아간다.
-#   ⚠ **챕터 바만 예외다** — 그 창은 0 행을 안 자른다(2026-09-03 실측). 내린 판을 쓰면
-#     거기서만 글자가 아래 테두리에 붙는다. 그래서 그 아홉 줄은 기본 글리프로 간다.
+#   🔴 **챕터 바도 내린 판이다**(마스터 10-05 「장 카드가 위 1px 아래 2px — 위 2 아래 1 이어야」).
+#     챕터 바는 0 행을 안 자르니 기본 글리프(위 2·아래 1)로 두었는데(09-03), 그 뒤 전투 배너 글자를
+#     1px 올린 패치(`patch_ui_center.TEXT_Y`, 09-30)가 **같은 그리기 함수라 챕터 바도 1px 올렸다.**
+#     ⇒ 챕터 바 글자를 내린 판으로 보내 그 1px 을 상쇄한다(위 2·아래 1 로 복귀).
 def encoder(jp, low=None, chapters=None):
-    """그 문자열을 인코딩하는 함수 — 챕터 바만 기본, 나머지는 내린 판."""
-    if low and jp not in (chapters or ()):
+    """그 문자열을 인코딩하는 함수 — 시스템 표 전부 내린 판(챕터 바 포함)."""
+    if low:
         return lambda t: H.encode_kr(t, table={**H.load(), **low})
     return H.encode_kr
 

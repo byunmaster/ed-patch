@@ -96,7 +96,7 @@ def load():
 def lowered_chars():
     """한 행 내린 판이 필요한 글자 — **0 행을 자르는 창에 나갈 수 있는 문안 전량**.
 
-    갈래 셋이다: `/0.BIN` 시스템 표(`system.json`, ⚠ 챕터 바는 뺀다 — 거긴 안 자른다) ·
+    갈래 셋이다: `/0.BIN` 시스템 표(`system.json`, 챕터 바 포함 — 아래 🔴) ·
     이름 정본(`glossary_manual.json`) · 설명문(`desc_*.json`).
     ⚠ **한글만** 든다. 반각·전각 숫자는 원본 자리가 0~9 행이라 0 행을 버려도 안 잘린다.
     """
@@ -108,7 +108,7 @@ def lowered_chars():
     with open(os.path.join(C.GAME_DIR, "script", "system.json"), encoding="utf-8") as f:
         doc = json.load(f)
     for k, v in doc.items():
-        if k.startswith("_") or k == "chapter" or not isinstance(v, dict):
+        if k.startswith("_") or not isinstance(v, dict):
             continue
         for x in v.values():
             take(x)

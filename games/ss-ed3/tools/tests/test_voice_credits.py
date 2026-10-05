@@ -46,11 +46,20 @@ class CreditsTable(unittest.TestCase):
         for _, _, p in ents:
             off = p - self.ctab
             frames, x, y, xc, yc, xr, xcr = struct.unpack(">Hhhhhhh", self.t[off : off + 14])
-            self.assertEqual(frames, 0)
+            self.assertIn(frames, (0, 1, 2))  # 쪽을 못박는 값 — 0 = 게임이 정한다(`CV_FORCE`)
             self.assertTrue(-200 <= x <= 60 and -200 <= xr <= 60, (x, xr))  # 로컬 좌표(원점 = 화면 가운데)
             self.assertLess(xr, x)  # 그림 오른쪽 → 자막은 왼쪽
             self.assertTrue(40 <= y <= 110, y)
             self.assertEqual(self.t[off + 14], 0)  # 이름 줄 비움
+
+    def test_only_the_pinned_subtitle_forces_a_side(self):
+        # 마스터 10-05 — #23 만 처음부터 왼쪽 칸(그림 오른쪽 = 2). 나머지는 게임이 정한다
+        n, ents = parse(self.t, self.ctab)
+        forced = []
+        for i, (_, _, p) in enumerate(ents):
+            if struct.unpack(">H", self.t[p - self.ctab : p - self.ctab + 2])[0]:
+                forced.append(i)
+        self.assertEqual(len(forced), 1)
 
     def test_fits_the_dead_region(self):
         blob, _ = SS.build_credits(SS.build()[2]["draw_line9"], self.t)
@@ -102,6 +111,21 @@ class CreditsCode(unittest.TestCase):
         data[SS.TASK_LIT - base : SS.TASK_LIT - base + 4] = b"\x00\x00\x00\x00"
         with self.assertRaises(AssertionError):
             SS.patch(bytes(data), table_fn=lambda c: b"\x00\x00\x00\x00")
+
+
+class Centering(unittest.TestCase):
+    def test_one_char_longer_line_starts_at_the_same_x(self):
+        # 마스터 10-05 — 한 글자(0.5칸) 차이 줄은 시작 x 가 같다(왼쪽 기준)
+        a, b = "설령 세상이 멸망한다 해도", "끝내 움직이지 않았을 게다."
+        self.assertEqual(len(set(VC.pads([a, b]))), 1)
+
+    def test_far_apart_lines_stay_centered(self):
+        p = VC.pads(["쥬리오, 그리고 크리스.", "정말 잘해 주었다."])
+        self.assertLess(p[0], p[1])
+
+    def test_exact_half_goes_left(self):
+        # 정확히 반 칸에 걸치면 작은 쪽(왼쪽)이다 — `round` 의 짝수 쏠림이 아니다
+        self.assertEqual(VC._pad("가"), max(0, __import__("math").ceil(VC._exact("가") - 0.5)))
 
 
 if __name__ == "__main__":

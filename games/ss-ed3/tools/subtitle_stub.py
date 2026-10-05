@@ -747,7 +747,10 @@ CV_END, CV_ESIDE = (
     32,
     36,
 )  # 지금 자막의 끝 시계 · 그 자막이 뜰 때 래치한 그림 쪽(둘 다 long — mov.w 변위는 30 까지)
-CV_LEN = 40
+CV_FORCE = 40  # 지금 자막이 **그림 쪽을 못박았나**(long) — 0 = 게임이 정한다 · 1 = 그림 왼쪽(자막 오른쪽) · 2 = 그림 오른쪽(자막 왼쪽)
+#   🔴 자막 쪽은 원래 **직원 이름 글자 위치**로 정한다(위 `cemit`). 이름이 없는 구간(그림이 오른쪽에서 사라지는 중인 #23)에선
+#   **직전 쪽이 남아** 자막이 그림 위에 얹혔다(마스터 10-05) — 그래서 자막 글자 첫 낱말(옛 「프레임」 칸)로 쪽을 못박을 수 있게 했다.
+CV_LEN = 44
 #   그림이 자막 도중에 옮겨 가면 자막도 따라 옮기되, **남은 시간이 이보다 짧으면 옮기지 않고 거기서 끝낸다**
 #   (마스터 10-03 — 「그는 지팡이를 보고 깜짝 놀랐다」 가 옮기자마자 사라지던 자리). 프레임(≈1.5초).
 MOVE_MIN = 90
@@ -841,7 +844,14 @@ def _credits_code(a):
     #   새 자막 — 끝 시계와 지금 그림 쪽을 래치한다(`cemit` 이 도중에 그림이 옮겨 갔는지 본다)
     a.movl_d(1, 5, 4)
     a.movl_to_d(11, 1, CV_END)
+    a.movw_at(2, 7)  # 글자 첫 낱말 = 쪽을 못박는 값(0 = 안 못박음)
+    a.movl_to_d(11, 2, CV_FORCE)
     a.movw_d_r0(11, CV_SIDE)
+    a.tst(2, 2)
+    a.bt("c_noforce")
+    a.mov(0, 2)
+    a.add(0, -1)
+    a.label("c_noforce")
     a.movl_to_d(11, 0, CV_ESIDE)
     #   ── 새 글자 — 좌표를 뜨고 버퍼에 굽는다
     a.mov(8, 7)
@@ -942,6 +952,12 @@ def _credits_emit_code(a):
     a.bt("ce_out")
     #   그림이 이 자막 도중에 옮겨 갔으면: 남은 시간이 `MOVE_MIN` 이상일 때만 따라 옮기고, 짧으면 여기서 감춘다
     a.movw_d_r0(11, CV_SIDE)
+    a.movl_d(1, 11, CV_FORCE)
+    a.tst(1, 1)
+    a.bt("ce_noforce")
+    a.mov(0, 1)
+    a.add(0, -1)
+    a.label("ce_noforce")
     a.movl_d(2, 11, CV_ESIDE)
     a.cmp_eq(0, 2)
     a.bt("ce_side")

@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import math
 import os
 import re
 import struct
@@ -39,6 +40,7 @@ CENTER = {
 }  # 그림 L: 검은 칸 화면 x 313~660 의 가운데 / 그림 R: 0~347 의 가운데(VDP1 = 화면/2.0625)
 LOCAL = 160  # VDP1 로컬 원점 x(화면 가운데)
 LOCAL_Y = 120  # 로컬 원점 y
+FORCE = {"L": 1, "R": 2}  # JSON `force` — 그림이 왼쪽(자막 오른쪽) · 오른쪽(자막 왼쪽)으로 못박는다
 BLACK_W = 172  # 그림 반대쪽 검은 칸 폭(VDP1 좌표) — 화면 x 315~660 을 절반으로
 
 
@@ -106,12 +108,28 @@ def wrap(lines):
     return out
 
 
-def _pad(line):
-    """가운데 맞추는 앞 공백 개수 — 반각 공백 4px."""
+def _exact(line):
+    """가운데 맞추는 앞 공백 개수(소수) — 반각 공백 4px."""
     #   줄 끝 부호 칸은 잉크가 3px 쯤이고 나머지는 빈칸이라 폭에서 빈칸을 빼야 **눈으로** 가운데다
     tail = FULL - 3 if line.rstrip()[-1:] in H.CRED_PUNCT else 0
-    #   반올림한다 — 내림이면 한 칸(4px) 가까이 왼쪽으로 쏠린 줄이 생긴다(마스터 10-03 「중앙정렬 안 된 부분」)
-    return max(0, round((BUF_W - (width(line) - tail)) / 2 / HALF))
+    return (BUF_W - (width(line) - tail)) / 2 / HALF
+
+
+#   🔴 **줄 길이가 한 글자(0.5칸 어긋남) 차이면 시작 x 를 같게 — 왼쪽으로 붙인다**(마스터 10-05 「0.5칸 차이는 왼쪽으로, 첫째 줄·
+#     둘째 줄이 같은 x 에서 시작해야」). 글자 하나(10px)가 길면 가운데 맞춘 시작점은 5px 어긋나는데, 그게 눈에는 줄이 들쭉날쭉한 것으로 보인다.
+SAME_START = 1.3  # 이 안(반각 공백 단위, 5px ≈ 1.25)이면 더 긴 줄의 시작점에 맞춘다
+
+
+def pads(lines):
+    """줄마다 앞 공백 개수 — 반올림은 정확히 반이면 왼쪽, 한 글자 차이 줄은 가장 긴 줄과 같은 시작점."""
+    ex = [_exact(t) for t in lines]
+    base = min(ex)
+    return [max(0, math.ceil((base if e - base <= SAME_START else e) - 0.5)) for e in ex]
+
+
+def _pad(line):
+    """한 줄만 있을 때의 앞 공백 개수 — 정확히 반 칸이면 왼쪽(`ceil(x − 0.5)`)."""
+    return pads([line])[0]
 
 
 def table_cred():
@@ -139,12 +157,14 @@ def record(sub, table, scale=1.0):
     xs = [round(CENTER[side] - w / 2 - LOCAL) for side in ("L", "R")]
     out = (
         struct.pack(
-            ">Hhhhhhh", 0, xs[0], y, xs[0] + round(w), y + round(h), xs[1], xs[1] + round(w)
+            ">Hhhhhhh",
+            FORCE.get(sub.get("force"), 0),  # 쪽을 못박는 값(`subtitle_stub.CV_FORCE`) — 없으면 게임이 정한다
+            xs[0], y, xs[0] + round(w), y + round(h), xs[1], xs[1] + round(w),
         )
         + b"\x00"
     )
-    for t in lines:
-        out += H.encode_kr(" " * _pad(t) + rendered(t), table) + b"\x00"
+    for t, n in zip(lines, pads(lines), strict=True):
+        out += H.encode_kr(" " * n + rendered(t), table) + b"\x00"
     out += b"\x00"
     return out + b"\x00" * (len(out) % 2)
 
