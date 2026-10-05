@@ -271,7 +271,7 @@ def test_num_unit_not_split():
     # 금액과 단위가 두 줄에 걸쳤다(`하룻밤 10` / `Gold입니다.` — 여관 jp667, 유저 QA 08-11).
     import reinsert_kr_pilot as R
 
-    txt = "여행자의 집에 어서 오십시오. 하룻밤 10 Gold입니다. 묵으시겠습니까?"
+    txt = "나그네 쉼터에 잘 오셨습니다. 하룻밤 10 Gold입니다. 쉬시겠습니까?"  # 가짜 문장, 같은 꼴
     pg = R.wrap_page(txt, max_lines=5)
     lines = [ln for p in pg for ln in p]
     assert not any(ln.rstrip().endswith("10") for ln in lines), lines

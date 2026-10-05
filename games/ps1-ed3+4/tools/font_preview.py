@@ -53,7 +53,7 @@ def row(text, bdf=None, dy=0, disc="ed3"):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--jp", default="クリスチーナ。明日の準備はできているの？")
+    ap.add_argument("--jp", default="クリスチーナ。準備はできてるの？明日だよ")  # 가짜 문장(20자)
     ap.add_argument("--mix", default="크리스티나。明日は준비되었니？라구ドゥル")
     ap.add_argument("--scale", type=int, default=5)
     ap.add_argument("--out", default=None)

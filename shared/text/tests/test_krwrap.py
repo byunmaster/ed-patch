@@ -117,11 +117,11 @@ def test_wrap_hard_merges_fragment():
 
 def test_wrap_hard_overflow_cascades_to_next_line():
     # 넘친 줄의 꼬리(문장 미종결)는 다음 원문 줄에 이어 붙는다 — '무엇보다' 고아 방지
-    src = "훌륭한 왕이 되시기에는 무엇보다\n학문이 중요하옵나이다."
+    src = "현명한 군주가 되시려면 무엇보다\n독서가 필요하옵나이다."  # 가짜 문장(정발 인용 금지)
     out = wrap_hard(src, 14, strip_before=".,!?")
     # 요지는 `무엇보다`가 홀로 안 남는 것. 줄 배분은 `_balance` 가 고르게 다시 나눈다
     # (이 기대값도 `_balance` 도입 후 갱신 누락이었다 — 2026-08-04 정정).
-    assert out == ["훌륭한 왕이", "되시기에는 무엇보다", "학문이 중요하옵나이다."], out
+    assert out == ["현명한 군주가", "되시려면 무엇보다", "독서가 필요하옵나이다."], out
     assert not any(ln == "무엇보다" for ln in out), out
 
 
