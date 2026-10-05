@@ -26,7 +26,9 @@ HOOK_ADDR = 0x2300
 JOSA_OFF_ADDR = HOOK_ADDR + 0x180  # 조사 오프셋표 28B (루틴 자리는 base ~ +0x17F, 384B)
 BATCHIM_ADDR = HOOK_ADDR + 0x1A0  # 받침 비트맵 128B
 RIEUL_ADDR = HOOK_ADDR + 0x220  # ㄹ받침 비트맵 128B
-PAYLOAD_LEN = 0x340  # 루틴 + 조사표 + 비트맵 둘 + 줄바꿈 품질 블록(62B, `WRAP_ADDR`) — 스텁이 통째로 옮긴다
+PAYLOAD_LEN = (
+    0x340  # 루틴 + 조사표 + 비트맵 둘 + 줄바꿈 품질 블록(62B, `WRAP_ADDR`) — 스텁이 통째로 옮긴다
+)
 #   ⚠ 이 값을 안 맞추면 **뒤쪽 표만 안 옮겨져** 리드 F1 대역 글자가 조용히 다른 글자로 나온다(실측)
 LAST_ADDR = HOOK_ADDR + 0x2A0  # 직전 글자 코드 2B(리드·트레일)
 EXT_ADDR = HOOK_ADDR + 0x2A2  # 확장 블록(~+0x2FF, 94B) — 주 루틴 자리(384B)가 꽉 차 여기로 넘긴다
@@ -70,6 +72,28 @@ OPS = {
     ("LDA", "absy"): 0xB9,
     ("LDX", "abs"): 0xAE,
     ("LDY", "imm"): 0xA0,
+    ("LDX", "imm"): 0xA2,
+    ("STX", "zp"): 0x86,
+    ("STY", "zp"): 0x84,
+    ("STX", "abs"): 0x8E,
+    ("STY", "abs"): 0x8C,
+    ("SBC", "abs"): 0xED,
+    ("DEC", "abs"): 0xCE,
+    ("INC", "abs"): 0xEE,
+    ("CPX", "imm"): 0xE0,
+    ("EOR", "imm"): 0x49,
+    ("ADC", "abs"): 0x6D,
+    ("BMI", "rel"): 0x30,
+    ("LDY", "abs"): 0xAC,
+    ("CMP", "absx"): 0xDD,
+    ("CMP", "izpy"): 0xD1,
+    ("BPL", "rel"): 0x10,
+    ("TSX", "imp"): 0xBA,
+    ("INC", "zp"): 0xE6,
+    ("ORA", "abs"): 0x0D,
+    ("CMP", "abs"): 0xCD,
+    ("SBC", "absx"): 0xFD,
+    ("CPY", "abs"): 0xCC,
     ("TAY", "imp"): 0xA8,
     ("TYA", "imp"): 0x98,
     ("TXA", "imp"): 0x8A,
@@ -559,6 +583,9 @@ def init_stub() -> bytes:
     a.op("LDA", "imm", 0x7F)
     a.op("TAM", "tam", 5)
     a.tii(0xA000, HOOK_ADDR, PAYLOAD_LEN)
+    a.op(
+        "STZ", "abs", 0x22BC
+    )  # 나레이션 자동 넘김 표시(`narration_gates.AUTO_FLAG`) — 리셋 때 남지 않게
     a.op("STZ", "abs", 0xA000)
     a.tii(0xA000, 0xA001, 0x1FFF)
     a.op("PLA")

@@ -45,6 +45,8 @@ python3 games/pce-ed1/tools/messages.py                # 메시지 파싱 → wo
 python3 games/pce-ed1/tools/sysstrings.py              # 시스템 문구 가족 덤프 → work/derived/sys/
 python3 games/pce-ed1/tools/savefile.py goto <sav> 224 --out <sav2> --boost   # 씬 점프 세이브(슬롯 3, 종장 등)
 python3 games/pce-ed1/tools/gfx_text.py                # 그림 글자(엔딩 카드·오마케 간판·끝) 미리보기 → work/review/
+python3 games/pce-ed1/tools/narration_gates.py         # 나레이션 게이트($C04C) 전수 → work/review/ · 자막 패치 표(SITES)는 build 가 읽는다
+python3 games/pce-ed1/tools/voice.py --wav [--stt]     # 씬 음성(ADPCM) 꺼내기 + 로컬 Whisper 초벌 → work/review/voice/ (원문, 커밋 금지)
 sh games/pce-ed1/check.sh                          # ⭐ 이 게임의 커밋 전 게이트
 ```
 
