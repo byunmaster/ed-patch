@@ -81,6 +81,12 @@ def check():
             d = cache[path]
             z = d.find(b"\x00", at, at + room)
             raw = d[at : z if z >= 0 else at + room]
+            # 🔴 **도트 글리프 예외**(마스터 지시 2026-10-05) — 「늑대의입」은 씬 헤더에서
+            #   저장 바이트가 막혀 PS1 처럼 반각 도트 6B 로 적는다(`patch_ui.DOTART_PLACES`).
+            #   이 자리는 **의도적으로 반각**이라 위 둘(전각 짝수 약속)을 어겨도 정상이다 —
+            #   다만 쓴 바이트가 정확히 그 6개일 때만 봐준다, 아니면 평소대로 전부 잡는다.
+            if kr in patch_ui.DOTART_PLACES and raw == patch_ui.DOTART_PLACES[kr]:
+                continue
             half, is_odd = _walk(raw)
             if half:
                 leak.append((where, kr, raw))
