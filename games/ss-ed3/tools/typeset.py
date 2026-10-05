@@ -127,9 +127,8 @@ def is_narration(text):
 
 
 def wrapped_rows(line, width=WIN_COLS):
-    """엔진이 접었을 때 이 줄이 차지하는 줄 수."""
-    c = cols(line)
-    return max(1, -(-int(c * 2) // (width * 2)))  # ceil, 0.5 슬롯까지 정수로
+    """엔진이 접었을 때 이 줄이 차지하는 줄 수 — `fold` 와 같은 규칙(시작 위치 기준)."""
+    return max(1, len(fold(line, width)))
 
 
 def overflows(text, width=WIN_COLS, rows=WIN_ROWS):
@@ -158,7 +157,11 @@ def fold(line, width=WIN_COLS):
     out, cur, c = [], "", 0.0
     for ch in visible(line):
         cw = char_cols(ch)
-        if c + cw > width:
+        #   🔴 **엔진은 글자를 그리기 「전에」 커서가 `폭 − 1`칸(16.0 = 192px)을 넘었는지 본다** — 글자가 **끝나는** 자리가 아니라
+        #     **시작하는** 자리다(마스터 10-05, 엔딩 로디 「…쓰러뜨렸고.」). 전각은 둘이 같지만 **반각 부호는 다르다**: 16.5 에서 시작해
+        #     17.0 에 끝나는 마침표는 「끝」으로 재면 들어가는데 엔진은 **시작 16.5 > 16.0 이라 접는다** → 부호 하나만 다음 줄로 밀린다.
+        #     (줄이 17.0 칸이고 끝이 반각이면 늘 그렇다 — 대사 전체 109 줄이 이 모양이었는데 검사기가 「들어간다」고 했다.)
+        if c > width - 1:
             out.append(cur)
             cur, c = "", 0.0
         cur += ch

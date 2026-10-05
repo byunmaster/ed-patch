@@ -122,10 +122,12 @@ class GlyphCoverage(unittest.TestCase):
 
 
 class Centering(unittest.TestCase):
-    def test_one_char_longer_line_starts_at_the_same_x(self):
-        # 마스터 10-05 — 한 글자(0.5칸) 차이 줄은 시작 x 가 같다(왼쪽 기준)
+    def test_each_line_is_centered_on_its_own(self):
+        # 마스터 10-05 — 줄마다 가운데. 한 글자 길면 앞 공백이 반 칸쯤 적을 뿐 시작을 합치지 않는다
         a, b = "설령 세상이 멸망한다 해도", "끝내 움직이지 않았을 게다."
-        self.assertEqual(len(set(VC.pads([a, b]))), 1)
+        pa, pb = VC.pads([a, b])
+        self.assertEqual(pa, VC._pad(a))
+        self.assertEqual(pb, VC._pad(b))
 
     def test_far_apart_lines_stay_centered(self):
         p = VC.pads(["쥬리오, 그리고 크리스.", "정말 잘해 주었다."])
