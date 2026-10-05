@@ -67,6 +67,18 @@ DRAW_REFS_EXPECTED = 6  # 두 편 다 여섯 곳에서 부른다(실측)
 SPLIT_SIG = bytes.fromhex("6b432e52ec1de800")
 SPLIT_REFS_EXPECTED = 1  # 두 편 다 한 곳에서만 부른다(실측)
 
+# 🔴 **접기**(prewrap — ED 0x0607CE74 · ED2 0x06064268, 2026-09-27) — 메시지 창의 줄 나누기.
+#    **나누기보다 앞**이다: 메시지 루틴이 `strcpy → prewrap → … → 스플리터(→ 나누기)` 로 돈다.
+#    병기를 여기서 접어야 줄 나누기가 **접힌 길이**로 잰다 — 안 그러면 병기마다 4B 를 헛셈해
+#    일찍 넘기고, 29B 경계에 걸친 병기는 반쪽이 다음 줄로 샜다(마스터 캡처 「요슈아의 눈」).
+#    ⚠ 이 진입점은 **나누기와 달리 안전하다** — `r4` 가 늘 메시지 루틴의 스택 버퍼(128B,
+#      방금 `strcpy` 로 채운 것)라 「아직 안 채워진 회차」가 없다. 부르는 곳도 한 곳뿐이다.
+#    꼬리 점프 목적지는 원 prewrap 주소 그대로 — 그 본체는 `patch_msgwrap` 이 어절 단위
+#    루틴으로 덮어쓴다(규칙 정본 `msgwrap.py`).
+from patch_msgwrap import SIG as WRAP_SIG
+
+WRAP_REFS_EXPECTED = 1
+
 DRY_SITES = set(os.environ.get("JOSA_DRY", "나누기").split(",")) - {""}  # 🔴 나누기는 무동작 (위)
 SCAN_LIMIT = 256  # 한 버퍼에서 훑을 최대 바이트 — 한 창이 29B×6줄이라 넉넉하다
 WORKRAM_TOP = 0x06100000  # 워크램 하이의 끝 — 이 위는 유효한 버퍼가 아니다
@@ -98,6 +110,13 @@ def routine(base, table_at, half_at, back, pairs, *, arg="r6", pad=True, dry=Fal
       · 그리기 진입점(`pad=True`): 나누기를 안 거치고 바로 그려지는 경로의 안전망.
         여기까지 병기가 살아 왔다면 이미 옛 길이로 자리가 잡힌 뒤라 폭을 되돌려야 한다.
     """
+    if dry:
+        # 🔴 **무동작 진입점은 되돌림 세 줄이다**(2026-09-27). 예전엔 루틴 전체(424B)를 굽고
+        #    맨 앞에 `bra done` 만 넣었는데, 그 몸통은 **한 번도 안 도는 자리 차지**였다 —
+        #    `접기` 진입점을 넣을 자리가 그 424B 였다. 동작은 같다(버퍼를 안 보고 꼬리 점프).
+        return sh2.assemble(
+            ["mov.l @(L_BACK,pc),r0", "jmp @r0", "nop", f".long L_BACK {back}"], base
+        )
     a, b, c = pairs  # 각각 (조사A, 조사B)
     PAD = (
         """        ; 🔴 **꼬리를 NUL 이 아니라 반각 공백 넷으로 채운다.** r1 은 방금 옮겨 적은 종단이다.
@@ -417,9 +436,11 @@ def find_sites(d):
     """
     draw, dref = find_fn(d, DRAW_SIG, DRAW_REFS_EXPECTED, "그리기")
     split, sref = find_fn(d, SPLIT_SIG, SPLIT_REFS_EXPECTED, "줄 나누기")
+    wrap, wref = find_fn(d, WRAP_SIG, WRAP_REFS_EXPECTED, "접기")
     sites = {
         "나누기": (split, sref, "r4", False),
         "그리기": (draw, dref, "r6", True),
+        "접기": (wrap, wref, "r4", False),
     }
     return {k: v for k, v in sites.items() if k not in SKIP_SITES}
 

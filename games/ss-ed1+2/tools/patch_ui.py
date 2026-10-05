@@ -133,6 +133,85 @@ def _place_lookup(jp, cat):
     return None
 
 
+# 🔴 **종류 말은 붙여 쓴다**(마스터 판정 (나) 2026-09-27 — PS1 과 같은 꼴). HUD·표·헤더의
+#    지명은 「크루즈마을」이고, 공백은 **뒷말(입구·부근·방위) 앞에만** 전각으로 둔다.
+#    ⚠ 한때 종류 말을 전각으로 띄웠다(24종) — 칸이 안 드는 이름이 섞여 이름마다 판정하는
+#      장치까지 붙었는데, 판정 (나)로 통째로 걷었다. 경위는 devlog 09-27.
+#    ⚠ 공백은 **전각**이다 — 지명 칸 바이트 길이가 늘 짝수여야 한다(`check_place_fields`).
+
+
+# 🔴 **입장 배너 필드 폭 상수**(`0x0607AD60`, 라이브 확정 — devlog 09-27 「드디어 잡았다」).
+#   배너 박스는 타일 단위(10타일×9px=90px)인데 이 함수는 **왼쪽 패딩만** 계산한다(오른쪽
+#   패딩이 없다 — `strcat` 로 이름을 그대로 붙이고 끝). 그런데 우리 지명 표(`ED.BIN`
+#   `0x060AC754`+색인×14)는 전 칸(48/48)에 **HUD 접미("…부근/…입구") 구분용 트레일링
+#   전각공백**이 박혀 있다(`patch_ui.py` `_fit_place`, `SUFFIXED_TABLE="지명"`). 그 공백이
+#   `strlen()` 에 잡혀 실제로 그려지므로 **오른쪽에 항상 12px 이 고정으로 남는다** — 이
+#   12px 은 전 칸에 똑같이 붙으므로(전각이라 바이트 길이가 늘 짝수) 왼쪽 시작점만 그만큼
+#   옮기면 보이는 이름이 도로 가운데로 온다.
+#   실측: 상수 15(왼쪽 13·오른쪽 23, 차 10px) → **17**(왼쪽 19·오른쪽 17, 차 2px —
+#   6px 단위라 이보다 더 가깝게는 못 맞춘다). 완전히 0 으로 닫으려면 이름 복사 자리
+#   (`jsr 0x06095d5c`)를 코드 훅으로 바꿔 트레일링 공백 자체를 안 그려야 하는데, 이 함수는
+#   마을 진입마다 도는 자리라 관리자 판단으로 **상수 하나로 닫는 쪽**을 택했다(devlog 09-27).
+#   ⚠ `ED2.BIN` 은 이미 다른 값(14)을 쓴다 — 박스 크기를 확인 안 했으니 이번엔 건드리지
+#   않는다(`ED.BIN`=ED1 만).
+BANNER_FIELD_OFF = 0x52D85  # `/ED.BIN` 파일 오프셋 — `add #12,r1`(RAM 0x0607AD84)의 즉치 바이트
+
+# 🔴 **마스터 미세조정**(2026-09-27 「약간 왼쪽으로 치우치게」) — 위 필드폭은 6px 단위라
+#   왼쪽 19/오른쪽 17 까지만 좁힌다. 마스터는 반대(왼쪽이 더 좁고 오른쪽이 더 넓은 쪽)를
+#   원해 **픽셀 단위로 시작 x 를 정하는 자리**(`0x0607ADCA`, `jsr 0x0607D160` 지연 슬롯의
+#   `mov #63,r4`)를 직접 건드린다 — 필드폭(바이트 단위, 6px 배수)과 달리 이 자리는 1px
+#   단위로 왼쪽·오른쪽을 함께 옮긴다. `63→61`(-2px)로 왼쪽17·오른쪽19 예상.
+BANNER_XBASE_OFF = 0x52DCB  # `/ED.BIN` 파일 오프셋 — `mov #63,r4`(RAM 0x0607ADCA)의 즉치 바이트
+
+# 🔴 **마스터 미세조정 2**(2026-09-27 「위쪽에 쏠려 있다」) — 배너가 상하로도 위로 쏠려
+#   있었다(실측 위2px·아래5px). x 와 같은 자리 바로 옆에 **y 를 1px 단위로 정하는 자리**가
+#   있다(`0x0607ADC6`, `mov #61,r5` — x_base 를 넣는 지연 슬롯 바로 앞 명령). `62`(+1px)로
+#   위3·아래4 후보와 `63`(+2px)로 위4·아래3 후보를 라이브로 만들어 마스터가 `62`를 골랐다.
+BANNER_YBASE_OFF = 0x52DC7  # `/ED.BIN` 파일 오프셋 — `mov #61,r5`(RAM 0x0607ADC6)의 즉치 바이트
+
+
+def patch_banner_field(f, files):
+    lba, size = files["/ED.BIN"]
+    common.write_at(
+        f,
+        lba,
+        size,
+        BANNER_FIELD_OFF,
+        bytes([17]),
+        expect=bytes([12]),
+        label="ED.BIN 입장배너 필드폭(12→17)",
+    )
+    common.write_at(
+        f,
+        lba,
+        size,
+        BANNER_XBASE_OFF,
+        bytes([61]),
+        expect=bytes([63]),
+        label="ED.BIN 입장배너 시작x(63→61px)",
+    )
+    common.write_at(
+        f,
+        lba,
+        size,
+        BANNER_YBASE_OFF,
+        bytes([62]),
+        expect=bytes([61]),
+        label="ED.BIN 입장배너 시작y(61→62px)",
+    )
+
+
+def _fit_place(kr, room, suffixed, where):
+    """지명 한 칸 → 칸(`room` = 널 포함 바이트)에 드는 꼴.
+
+    `suffixed`(「…부근」 표)면 뒤에 접미가 붙으므로 끝에 전각 공백을 하나 붙인다 —
+    화면에서 확인된 「크루즈마을　입구」 꼴. 안 들면 붙여 쓴다.
+    """
+    if suffixed and rec_len(kr + WIDE_SP) <= room:
+        return kr + WIDE_SP
+    return kr
+
+
 def rows():
     """`(파일키, 표이름, 색인, 오프셋, stride, JP, KR|None)` — 원본에서 읽어 정본과 짝짓는다."""
     tables, pad, _cards, pad_to_jp, _msgs = load_canon()
@@ -179,8 +258,7 @@ def rows():
                 kr = _place_lookup(jp, cat)
                 # 🔴 조용히 건너뛰지 않는다 — 한 칸만 일본어로 남으면 화면에서 바로 튄다.
                 assert kr, f"{key}/{name}[{i}] 0x{at:06x}: 정본에 없는 {cat} {jp!r}"
-                if name == SUFFIXED_TABLE and rec_len(kr + WIDE_SP) <= stride:
-                    kr += WIDE_SP  # 접미와 띄운다 — 아래 주석
+                kr = _fit_place(kr, stride, name == SUFFIXED_TABLE, f"{key}/{name}")
                 out.append((key, name, i, at, stride, jp, kr))
         # ── 파티 기본 이름 — 지명과 같은 수법(정본은 glossary), 자리만 손으로 적었다
         for k, at, fl in dump_ui.PERSON_SLOTS:
@@ -238,7 +316,8 @@ def scn_header(d, i, places):
             continue
         kr = places.get(jp)
         if kr:
-            return s, fl, jp, kr
+            # 🔴 널이 반드시 남아야 한다 — 꼬리 바이트(`09`)가 끝을 차지하므로 본문은 fl-2 까지.
+            return s, fl, jp, _fit_place(kr, fl - 1, False, "씬 지명 헤더")
     return None
 
 
@@ -1207,6 +1286,7 @@ def main():
     _f.close()
 
     with open(dst, "r+b") as f:
+        patch_banner_field(f, files)
         for key, path in dump_ui.FILES.items():
             patch = {
                 at: encode(kr, stride, plan)

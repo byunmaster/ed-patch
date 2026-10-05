@@ -71,10 +71,6 @@ class TestUiCanon(unittest.TestCase):
                     )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PinnedInPlace(unittest.TestCase):
     """🔴 **포인터가 있어도 못 옮기는 자리가 있다**(2026-08-28 실기).
 
@@ -127,3 +123,25 @@ class TablesAreNotRelocated(unittest.TestCase):
             mm.close()
             _f.close()
         self.assertEqual(bad, [], f"표 안에 시스템 메시지 레코드가 있다: {bad[:4]}")
+
+
+class PlaceFields(unittest.TestCase):
+    """🔴 지명 칸은 전각 짝수 — 종류 말은 붙이고 뒷말 앞에만 전각 공백(판정 (나) 2026-09-27)."""
+
+    def test_kind_word_stays_attached(self):
+        self.assertEqual(patch_ui._fit_place("크루즈마을", 14, False, "t"), "크루즈마을")
+
+    def test_suffix_space_is_wide_and_only_if_it_fits(self):
+        self.assertEqual(patch_ui._fit_place("크루즈마을", 14, True, "t"), "크루즈마을　")
+        self.assertEqual(patch_ui._fit_place("그로스토스성", 14, True, "t"), "그로스토스성")
+
+    def test_gate_sees_half_width_and_odd_length(self):
+        from check_place_fields import _walk
+
+        self.assertEqual(_walk("漢字　村".encode("cp932")), (0, False))
+        self.assertEqual(_walk(b"\x88\xa0 \x88\xa1"), (1, True))
+        self.assertEqual(_walk(b"\x88\xa0\x81\x40\x88\xa1"), (0, False))
+
+
+if __name__ == "__main__":
+    unittest.main()

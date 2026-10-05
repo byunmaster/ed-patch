@@ -96,8 +96,10 @@ class Typeset(unittest.TestCase):
         kr = "%s은(는) 보물상자를 열었다.\n보물상자 안에는 %s이(가) 들어 있었다."
         got, bad = self.t(jp, kr)
         self.assertIsNone(bad)
+        # ⚠ 개행은 PS1 과 같은 조판(`ps1_layout` — 문장 단위·균형)이 넣은 것이다.
+        #   런타임 이름은 가장 긴 값(색 쌍 안 아이템 전각 8 · 주어 파티원 4)으로 잰다.
         self.assertEqual(
-            got, "%s은(는) 보물상자를 열었다.\n보물상자 안에는 %c%s%c이(가) 들어 있었다."
+            got, "%s은(는)\n보물상자를 열었다.\n보물상자 안에는\n%c%s%c이(가)\n들어 있었다."
         )
 
     def test_partial_canon_must_not_blank_the_rest(self):
@@ -192,7 +194,9 @@ class Typeset(unittest.TestCase):
             return sum(1 for a, b in itertools.pairwise(ls) if b and b[0] in T.HEAD_BAN and a)
 
         # 한 글자만 내리면 고아가 나서 포기하고, 두 글자면 되는 자리(합성 탐색으로 찾았다)
-        seg = "아아사자자자사차라아사가자다!가라차나다사자나나나차라마자"
+        # ⚠ 부호는 `~` — 드로어 훅(2026-09-27) 뒤로 `!`·`.` 같은 **반각 꼬리 부호는 29열에
+        #   매달려** 줄머리로 안 떨어진다. 매달리지 않는 금칙 부호로 같은 자리를 만든다.
+        seg = "아아사자자자사차라아사가자다~가라차나다사자나나나차라마자"
         self.assertEqual(heads(seg), 1, "표본이 금칙을 안 만든다")
         try:
             T.NUDGE_BACK = (1,)
@@ -220,13 +224,16 @@ class Typeset(unittest.TestCase):
         self.assertEqual(T.lines(seg), ["." + "가" * 14, "나"])
         # 커서가 14.0 이면 안 들어간다 — 「뒀습니다 / 요.」 쪽
         self.assertEqual(T.lines("가" * 14 + "나"), ["가" * 14, "나"])
-        self.assertEqual(T.lines("가" * 13 + "..."), ["가" * 13 + "..", "."])
+        # 🔴 드로어 훅(2026-09-27) — 반각 **꼬리 부호**는 14.0 에서 시작해도 29열에 앉는다.
+        #    보통 반각은 여전히 넘긴다(자동 줄바꿈에 기대는 화면이 틀 밖으로 안 삐지게).
+        self.assertEqual(T.lines("가" * 13 + "..."), ["가" * 13 + "..."])
+        self.assertEqual(T.lines("가" * 14 + "a"), ["가" * 14, "a"])
 
     def test_head_ban_symbol_is_pulled_down_with_its_neighbour(self):
         """🔴 부호만 줄머리에 떨어지면 앞 글자와 **함께** 내린다(실측 491곳)."""
-        # 전각 14 를 채우고 부호가 오면 그 부호만 다음 줄로 떨어진다
-        seg = "가" * 14 + "."
-        self.assertEqual(T.lines(seg), ["가" * 14, "."])
+        # 전각 14 를 채우고 부호가 둘 오면 — 첫째는 29열에 매달리고(드로어 훅) **둘째만** 떨어진다
+        seg = "가" * 14 + "!!"
+        self.assertEqual(T.lines(seg), ["가" * 14 + "!", "!"])
         got = T.nudge(seg)
         for ln in T.lines(got)[1:]:
             self.assertFalse(ln and ln[0] in T.HEAD_BAN, got)
@@ -285,6 +292,59 @@ class Typeset(unittest.TestCase):
         self.assertIs(W.lines, T.lines)
         self.assertIs(W.HEAD_BAN, T.HEAD_BAN)
         self.assertIs(W.WIN_ROWS, T.WIN_ROWS)
+
+
+class WordWrap(unittest.TestCase):
+    """🔴 씬 창 어절 줄바꿈 — 엔진 접기 모델(`T.wrap`)로 **화면을 다시 만들어** 본다(2026-09-27)."""
+
+    def screen(self, block):
+        segs, groups = T.line_groups(block)
+        return [T.wrap(T.measure("%c".join(segs[i] for i in grp))) for grp in groups]
+
+    def check(self, block):
+        got = T.wrap_block(block)
+        strip = lambda x: "".join(c for c in x if c not in " \n")
+        self.assertEqual(strip(got), strip(block), "글 소실")
+        for ws in self.screen(got):
+            ls = [ln for ln, _a in ws]
+            self.assertNotIn(-1, [a for _l, a in ws], f"빈 줄(넘친 줄 뒤 개행): {got!r}")
+            self.assertLessEqual(len(ls), T.WIN_ROWS)
+            for b in ls[1:]:
+                self.assertFalse(b.startswith(" "), f"줄머리 공백: {got!r}")
+        return got
+
+    def test_engine_never_wraps_mid_word(self):
+        got = self.check("\n세리오스 왕자님이라고!? 알겠다. 이보게, 자네들을 거기 좀 비켜 드리게.")
+        self.assertIn("알겠다.", got)
+        for g in T.line_groups(got)[0]:
+            ls = T.lines(T.measure(g))
+            self.assertEqual(len(ls), g.count("\n") + 1, f"엔진이 접는 줄이 남았다: {g!r}")
+
+    def test_full_line_then_newline_is_blank_line(self):
+        """29B 줄 뒤 개행 = 빈 줄(실기 `r6-scene-wrap-blankline-BUG.png`) — 모델이 알아야 한다."""
+        ws = T.wrap("왕자님이십니다. 아론님을 뵙게\n해")
+        self.assertEqual([a for _l, a in ws].count(-1), 1)
+        ws = T.wrap("가" * 14 + "\n해")  # 14.0 딱은 괜찮다(원문에 665줄)
+        self.assertEqual([a for _l, a in ws].count(-1), 0)
+        self.check(
+            "\n이분은 세리오스 왕자님이십니다. 아론님을 뵙게 해 드리고 싶으니 지하로 가게 해 주십시오."
+        )
+
+    def test_inline_color_pair_is_one_line(self):
+        _segs, groups = T.line_groups("보물상자 안에는 %c%s%c이(가) 들어 있었다.")
+        self.assertEqual(groups, [[0, 1, 2]])
+        _segs, groups = T.line_groups("%c케리%c\n지금까지 열심히 했습니다.%c")
+        self.assertEqual(len(groups), 4, "화자 명판은 글줄 안 색 쌍이 아니다")
+        self.check("보물상자 안에는 %c%s%c이(가) 들어 있었다.")
+
+    def test_number_is_not_split(self):
+        got = self.check("%c%s%c은(는) %d Gold밖에 안 되겠는걸. 그래도 괜찮겠소?%c")
+        self.assertIn("%d Gold", got)
+        self.assertIn("레스 %d을", T.wrap_block("가나다라마바사아자 레스 %d을 외웠다."))
+
+    def test_ps1_nobreak_space_becomes_space(self):
+        """PS1 붙임 공백(U+E003)은 cp932 가 `F0 43` 으로 구워 폰트 밖 글자가 찍힌다."""
+        self.assertEqual(T.to_saturn("요.\ue003이 복권은"), "요. 이 복권은")
 
 
 if __name__ == "__main__":

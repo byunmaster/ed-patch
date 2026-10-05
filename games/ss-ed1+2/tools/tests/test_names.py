@@ -180,10 +180,6 @@ class PlaceSpacing(unittest.TestCase):
         assert not bad, f"슬롯 표 지명에 공백이 있다 — HUD 에서 잘린다: {bad}"
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class SplitWinner(unittest.TestCase):
     """③ 범주를 가로질러 갈린 원문의 **화면 승자**가 못 박은 값과 같은가.
 
@@ -213,3 +209,37 @@ class SplitWinner(unittest.TestCase):
             }
             self.assertGreater(len(set(seen.values())), 1, f"{jp} 는 이제 안 갈린다 — 못을 뺀다")
             self.assertEqual(seen.get(cat), want, f"{jp} 의 {cat} 표기가 바뀌었다")
+
+
+class DialogPlaceSpacing(unittest.TestCase):
+    """🔴 대사 속 지명(마스터 판정 2026-09-27, 두 기종 공통) — 성은 붙이고 「~의」 뒤·종류 말 앞은 띄운다."""
+
+    def test_rules(self):
+        from names import space_place_dialog as f
+
+        self.assertEqual(f("루디아성"), "루디아성")
+        self.assertEqual(f("국경의동굴"), "국경의 동굴")
+        self.assertEqual(f("숲의초가집"), "숲의 초가집")
+        self.assertEqual(f("크루즈마을"), "크루즈 마을")
+        self.assertEqual(f("늑대입"), "늑대입")
+        self.assertEqual(f("해적섬"), "해적섬")  # 섬은 붙인다
+        self.assertEqual(f("론윌섬"), "론윌섬")
+        self.assertEqual(f("네사의변토"), "네사의 변토")
+        self.assertEqual(f("용의알"), "용의 알")
+
+    def test_name_blocks_untouched(self):
+        import typeset_scn as T
+
+        T._PLACE_FORMS = {"크루즈마을": "크루즈 마을", "루디아 성": "루디아성"}
+        T._PLACE_RE = None
+        try:
+            self.assertEqual(T.space_places("크루즈마을"), "크루즈마을")
+            self.assertEqual(T.space_places("크루즈마을Ｂ"), "크루즈마을Ｂ")
+            self.assertEqual(T.space_places("어서 크루즈마을로."), "어서 크루즈 마을로.")
+            self.assertEqual(T.space_places("루디아 성으로"), "루디아성으로")
+        finally:
+            T._PLACE_FORMS = T._PLACE_RE = None
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
