@@ -81,6 +81,10 @@ FPS = 60
 MAX_COLS = SS.BUF_STRIDE * 2 // 12
 MAX_LINES = SS.MAX_LINES  # 이름 줄까지 — 본문은 이름이 있으면 하나 적다
 NO_FACE = 0xFFFF
+#   엔진의 얼굴 캐시 = `(얼굴<<8)|표정` 열쇠 **8 칸 순환표**(조회 `0x060107E4`, 표 `0x002F8E24`, 커서 `0x002F8E34`).
+#   없는 열쇠를 찾으면 그 자리에 새로 잡고(가장 오래된 칸을 밀어냄) CD 를 탄다 — 음성 중엔 CD 가 음성 몫이라
+#   로드가 안 끝나고, 그 조회가 남의 칸을 밀어내 연쇄로 얼굴이 사라진다(09-30 V19 실측: 10 종 → 42초 뒤 전멸).
+FACE_CACHE = 8
 GLOBAL_CAST = 0x14  # 이 미만의 `speaker` 가 전역 인물(얼굴이 있다)
 PRELOAD = 0xFFFF  # 프레임 자리에 이것이 오면 미리 싣기 목록
 
@@ -114,6 +118,15 @@ def face(h):
     return int(sp), int(h.get("expr", 0))
 
 
+#   🔴 음성 자막의 `?`·`!` 는 **전각**으로 찍는다(마스터 10-01 「물음표 느낌표가 작다」) — 반각은 ASCII 글리프(6px)라 한글(12px)
+#   옆에서 작아 보인다. 전각 칸은 엔진 일본어 글리프(`？！`)를 쓴다.
+_FW = str.maketrans({"?": "？", "!": "！"})
+
+
+def fw(t):
+    return t.translate(_FW)
+
+
 def entry(h, table=None):
     """글자 한 벌 — `<프레임> <얼굴> <표정>` + 이름 + 줄들(NUL 종결) + NUL. 짝수 길이.
 
@@ -130,6 +143,7 @@ def entry(h, table=None):
     room = MAX_LINES - (1 if who else 0)
     if len(lines) > room:
         raise SystemExit(f"{h['off']:#x}: 줄이 {room} 을 넘는다({len(lines)}) — 이름 줄 몫을 뺀다")
+    lines = [fw(t) for t in lines]
     for t in [who, *lines]:
         if "\n" in t:
             raise SystemExit(f"{h['off']:#x}: 줄 안에 개행 — `lines` 를 나눠 적는다: {t!r}")
@@ -151,9 +165,13 @@ def entry(h, table=None):
 #     `script_ops.py` 참조). 예컨대 `FF 07` 은 처리기 `0x06011608` 안에서 PC 저장이
 #     `0x0601170c` 한 곳뿐이고 거기서 항상 `+12` 라 분기와 무관하게 2+12=14 고정이다
 #     (2026-08-30 확인). 자리를 새로 잡을 땐 같은 검산을 다시 한다(`script_ops.py --path`).
-def slot(orig, ret_off, txt_off):
-    """칸 32B — 밀어낸 옵코드 · 한 프레임 대기 · 복귀 · 서명 · 글자 포인터."""
-    return _slot(orig + WAIT1, BASE + ret_off, txt_off)
+def slot(orig, ret_off, txt_off, frames=2):
+    """칸 32B — 밀어낸 옵코드 · 대기(기본 2 프레임 = `FF 35 0001`) · 복귀 · 서명 · 글자 포인터.
+
+    `frames` 는 `preload` 후킹의 `wait` 다 — 얼굴 한 장에 ~12 프레임이라 음성 앞에 긴 대기가
+    없는 장면은 여기서 (얼굴 수 × 12 + 여유) 만큼 멈춰 CD 가 얼굴을 다 싣게 한다.
+    """
+    return _slot(orig + (WAIT + struct.pack(">H", frames - 1)), BASE + ret_off, txt_off)
 
 
 def _slot(body, goto, txt_off=None):
@@ -208,7 +226,7 @@ def chain(orig, ret_off, subs, txt_offs):
     pre, total = split_waits(orig)
     ds = [int(h.get("delay", 0)) for h in subs]
     if len(subs) == 1 and ds[0] == 0:
-        return [slot(orig, ret_off, txt_offs[0])]
+        return [slot(orig, ret_off, txt_offs[0], int(subs[0].get("wait", 2)))]
     off = subs[0]["off"]
     if not total:
         raise SystemExit(f"{off:#x}: `delay` 를 쓰려면 자리 뒤가 `FF 35` 대기여야 한다")
@@ -235,24 +253,109 @@ def chain(orig, ret_off, subs, txt_offs):
 #   판정은 **화자(`who`) + 얼굴**이 같고 바로 다음 칸일 때. 화제가 바뀌어 새로 띄우고
 #   싶으면 그 칸에 `"new": true` 를 적는다.
 #   ⚠ 창은 이름 줄을 빼면 두 줄이라, 세 줄째가 오면 **맨 위가 밀려 나간다**(그게 스크롤이다).
+#   🔴 **짧게 뜨고 사라지는 창은 앞뒤 대사와 한 창으로 묶는다**(마스터 10-01 — 「방금 알아챘어」「하지만 말이야」가 금방
+#   사라져 못 읽는다). 스크롤은 안 쓴다(마스터가 뺐다) — **다음 창이 앞 창의 줄을 함께 싣는다**. 앞·뒤 칸 중 하나가
+#   `MERGE_SHORT` 초보다 짧고 같은 화자·얼굴·자리이고 사이가 `MERGE_GAP` 초 안이면 `reflow` 로 두 줄 안에 다시 접는다
+#   (안 들어가면 묶지 않는다). 접기는 문장·쉼표 뒤를 우선한다.
+MERGE_SHORT = 2.0
+MERGE_GAP = 1.5
+HOLD_GAP = 1.5  # 같은 화자라도 말 사이가 이만큼 넘게 비면 창을 닫고 새로 띄운다
+_ENDS = (".", "?", "!", "？", "！", ",", "…", "~")
+
+
+def reflow(segments, room):
+    """줄들을 이어 `room` 줄 이내·줄당 `MAX_COLS` 칸 이내로 다시 접는다 → 줄 목록 또는 `None`(안 들어감)."""
+    words = [fw(w) for seg in segments for w in seg.split()]
+    best = None
+    for k in range(0 if room >= 1 else 1, len(words)):
+        # k = 첫 줄 어절 수(0 이면 한 줄)
+        rows = [" ".join(words)] if k == 0 else [" ".join(words[:k]), " ".join(words[k:])]
+        if len(rows) > room or any(T.cols(r) > MAX_COLS for r in rows):
+            continue
+        score = -abs(T.cols(rows[0]) - T.cols(rows[-1])) if len(rows) > 1 else 0
+        if len(rows) > 1 and words[k - 1].endswith(_ENDS):
+            score += 100 + (50 if words[k - 1][-1] in ".?!？！…" else 0)
+        if len(rows) == 1:
+            score += 200  # 한 줄에 들어가면 그게 낫다
+        if best is None or score > best[0]:
+            best = (score, rows)
+    return best[1] if best else None
+
+
+def _close(a, b):
+    """같은 화자·얼굴·자리이고 사이가 `MERGE_GAP` 초 안인 이웃인가."""
+    return bool(
+        a.get("who")
+        and a.get("who") == b.get("who")
+        and face(a) == face(b)
+        and a["off"] == b["off"]
+        and (int(b.get("delay", 0)) - int(a.get("delay", 0))) / FPS - a.get("_dur0", a.get("dur", 0)) < MERGE_GAP
+    )
+
+
+_TERMINAL = (".", "?", "!", "…", "~", "」", ")")
+
+
+def _merge_short(hooks, order):
+    """짧은 칸을 이웃과 한 창으로 — **글이 이어지면(쉼표·미완) 뒤 칸과, 문장이 끝났으면 앞 칸과** 묶는다.
+
+    뒤 칸과 묶으면 **앞 칸 때부터** 합친 글을 띄우고(앞 칸 표시 시간을 뒤 칸 시작까지 늘린다) 뒤 칸도 같은 글이다 —
+    같은 줄이 두 창에 겹쳐 나오지 않게(마스터 10-01 「하지만 말이야가 두 대사에 겹쳐서」). 한 칸은 한 번만 묶인다.
+    """
+    seq = [hooks[i] for i in order if hooks[i].get("lines") and not hooks[i].get("preload")]
+    for h in seq:
+        h.pop("_m", None)
+        h["dur"] = h.setdefault("_dur0", h.get("dur", 9))  # 늘린 표시 시간을 되돌려 몇 번을 불러도 같다
+    for i, h in enumerate(seq):
+        if h.get("_m") or h["_dur0"] >= MERGE_SHORT:
+            continue
+        room = MAX_LINES - (1 if h.get("who") else 0)
+        nxt = seq[i + 1] if i + 1 < len(seq) else None
+        prev = seq[i - 1] if i > 0 else None
+        cont = not h["lines"][-1].rstrip().endswith(_TERMINAL)
+        if cont and nxt and not nxt.get("_m") and _close(h, nxt):
+            m = reflow(h["lines"] + nxt["lines"], room)
+            if m:
+                span = (int(nxt.get("delay", 0)) - int(h.get("delay", 0))) / FPS
+                h["_body"] = nxt["_body"] = m
+                h["_m"] = nxt["_m"] = True
+                h["dur"] = max(h["_dur0"], round(span, 2))
+                continue
+        if prev and not prev.get("_m") and _close(prev, h):
+            m = reflow(prev["lines"] + h["lines"], room)
+            if m:
+                h["_body"] = m
+                h["_m"] = True
+
+
 def link(hooks, order):
     """`_body`(이어 붙인 본문) · `_hold`(앞 칸을 다음 칸까지 붙잡기) 를 매긴다."""
     prev = None
+    _merge_short(hooks, order)
     for i in order:
         h = hooks[i]
         if h.get("preload") or not h.get("lines"):
             prev = None  # 닫는 칸·미리 싣기에서 사슬이 끊긴다
             continue
+        #   🔴 같은 화자가 이어지면 **창·얼굴은 그대로 두고 글만 바꾼다**(마스터 10-01 — 스크롤은 안 한다). 앞 칸을 다음 칸까지
+        #     붙잡고(`_hold`) 뒤 칸은 **자기 줄만** 띄운다. 창이 새로 뜨는 건 **화자가 바뀔 때, 또는 말 사이가 `HOLD_GAP` 초 넘게 비었을 때**다(마스터 10-01).
         same = (
             prev is not None
             and not h.get("new")
             and h.get("who", "")
             and h.get("who") == prev.get("who")
             and face(h) == face(prev)
+            #   말 사이가 `HOLD_GAP` 초 넘게 비면(뜸을 들이면) 닫고 새로 띄운다 — 자리가 다르면 간격을 못 재니 이어진 것으로 본다
+            and (
+                h["off"] != prev["off"]
+                or (int(h.get("delay", 0)) - int(prev.get("delay", 0))) / FPS - prev.get("_dur0", prev.get("dur", 0)) < HOLD_GAP
+            )
         )
-        if same:
-            room = MAX_LINES - (1 if h.get("who") else 0)
-            h["_body"] = (prev["_body"] + h["lines"])[-room:]
+        room = MAX_LINES - (1 if h.get("who") else 0)
+        if h.get("_m"):
+            pass  # 짧은 칸 묶음(`_merge_short`)이 이미 몸통을 정했다
+        elif same:
+            h["_body"] = list(h["lines"])  # 앞 줄을 싣지 않는다 — 스크롤이 아니라 **교체**
             prev["_hold"] = True
         else:
             h["_body"] = list(h["lines"])
@@ -363,6 +466,11 @@ def by_map(doc=None):
             raise SystemExit(f"{key}: 미리 싣기 후킹은 장면에 하나다")
         if faces and not pres:
             raise SystemExit(f"{key}: 얼굴 {faces} 을 쓰는데 `preload` 후킹이 없다")
+        if len(faces) > FACE_CACHE:
+            raise SystemExit(
+                f"{key}: (얼굴, 표정) 조합이 {len(faces)} 종이라 엔진 캐시({FACE_CACHE} 칸)를 넘는다 — "
+                f"넘친 조합은 밀려나고, 밀려난 것을 찾는 조회가 다른 칸까지 연쇄로 밀어 얼굴이 통째로 사라진다"
+            )
         for h in pres:
             if any(o["off"] == h["off"] for o in hooks if o is not h):
                 raise SystemExit(f"{key}: 미리 싣기 칸 {h['off']:#x} 은 혼자여야 한다")

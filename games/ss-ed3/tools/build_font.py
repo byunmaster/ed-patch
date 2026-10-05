@@ -176,6 +176,10 @@ def bake_label_strips(out, base):
             cell = np.zeros((F.ROWS, F.CELL), np.uint8)
             cell[:, DX:] = bits[:, : F.CELL - DX]
             strip[:, k * F.CELL : (k + 1) * F.CELL] = cell
+        #   🔴 **통째로 한 행 내린다**(마스터 10-01) — 말풍선 안쪽 14 행에서 일반 글자(본체RAM)는 위 2·아래 1 인데
+        #     이 스트립은 위 1·아래 2 로 한 줄 높았다(실측: 잉크 34~44 vs 35~45). RAM 석 자(원본 픽셀)도 같이 내려야 한 몸이다.
+        assert not strip[-1].any(), "마지막 행이 비어 있어야 한 행 내릴 수 있다"
+        strip = np.vstack([np.zeros((1, strip.shape[1]), strip.dtype), strip[:-1]])
         for i in range(cells):
             g = fonts.pack18(strip[:, i * F.CELL : (i + 1) * F.CELL], rows=F.ROWS)
             assert len(g) == F.STRIDE, len(g)
@@ -240,6 +244,27 @@ def bake_book(out):
     return n
 
 
+#   🔴 **크레딧 자막 전용 한 벌** — Galmuri9 를 **왼쪽 붙임**(DX 0)으로 굽는다. 그리는 쪽이 글자 폭을
+#     10 으로 불러(`subtitle_stub.draw_line9`) 9 폭 글리프 + 1 간격이 된다. 배정이 없으면 아무것도 안 한다.
+CRED_FONT, CRED_DY = "Galmuri9", -2
+
+
+def bake_cred(out):
+    """크레딧 자막 전용 글리프를 굽는다 — `(구운 칸 수)`."""
+    table = H.load_cred()
+    if not table:
+        return 0
+    bdf = fonts.galmuri(CRED_FONT)
+    n = 0
+    for ch, idx in table.items():
+        cell = bdf.bits(ch, dy=CRED_DY, rows=F.ROWS, width=F.CELL)
+        g = fonts.pack18(cell, rows=F.ROWS)
+        assert len(g) == F.STRIDE, (ch, len(g))
+        out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = g
+        n += 1
+    return n
+
+
 def build(disc=1):
     """`(새 폰트 bytes, 못 찾은 글자)` — 원본과 크기가 같다."""
     base, _ = F.load(disc)
@@ -258,6 +283,7 @@ def build(disc=1):
         )
     bake_low(out)
     bake_book(out)
+    bake_cred(out)
     bake_label_strips(out, base)
     assert len(out) == len(base), (len(out), len(base))
     return bytes(out), missing

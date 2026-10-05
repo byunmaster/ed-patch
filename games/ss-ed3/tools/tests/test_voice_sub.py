@@ -122,8 +122,8 @@ class Chain(unittest.TestCase):
             VS.entry({"off": 0, "lines": ["a", "b", "c"], "who": "n", "dur": 1.0}, None)
         VS.entry({"off": 0, "lines": ["a", "b", "c"], "dur": 1.0}, None)
 
-    def test_same_speaker_scrolls_instead_of_reopening(self):
-        """같은 화자가 이어지면 앞 줄을 이고 가고, 앞 칸은 「다음 칸까지」(0) 로 붙잡힌다."""
+    def test_same_speaker_swaps_text_instead_of_reopening(self):
+        """같은 화자가 이어지면 창은 그대로 두고 글만 **교체**한다(스크롤 아님) — 앞 칸은 「다음 칸까지」(0) 로 붙잡힌다."""
         hooks = [
             {"off": 0x10, "len": 8, "lines": ["1"], "who": "n", "speaker": 1, "dur": 1.0},
             {"off": 0x20, "len": 8, "lines": ["2"], "who": "n", "speaker": 1, "dur": 1.0},
@@ -140,8 +140,8 @@ class Chain(unittest.TestCase):
             },
         ]
         VS.link(hooks, range(len(hooks)))
-        #   이름 줄이 있어 본문은 둘 — 셋째는 맨 위를 밀어낸다(그게 스크롤이다)
-        self.assertEqual([h["_body"] for h in hooks], [["1"], ["1", "2"], ["2", "3"], ["4"], ["5"]])
+        #   앞 줄을 싣지 않는다 — 각 칸은 자기 줄만(교체)
+        self.assertEqual([h["_body"] for h in hooks], [["1"], ["2"], ["3"], ["4"], ["5"]])
         self.assertEqual([bool(h.get("_hold")) for h in hooks], [True, True, False, False, False])
         #   붙잡힌 칸은 표시 프레임이 0 이다
         self.assertEqual(struct.unpack(">H", VS.entry(hooks[0], None)[:2])[0], 0)
@@ -180,6 +180,21 @@ class Chain(unittest.TestCase):
         doc["S"]["hooks"].insert(0, {"off": 0x20, "len": 8, "preload": True})
         with self.assertRaises(SystemExit):
             VS.by_map(doc)
+
+    def test_face_combos_beyond_the_engine_cache_fail(self):
+        """(얼굴, 표정) 조합이 엔진 캐시 8 칸을 넘으면 실패한다 — 밀려난 조합의 조회가 연쇄로 얼굴을 지운다."""
+
+        def scene(n):
+            hooks = [{"off": 0x10, "len": 8, "preload": True}]
+            for k in range(n):  # 쥬리오(0) 표정 0..n-1 — 서로 다른 조합 n 종
+                hooks.append(
+                    {"off": 0x20 + 8 * k, "len": 8, "lines": ["a"], "speaker": 0, "expr": k, "dur": 1.0}
+                )
+            return {"S": {"map": "M", "hooks": hooks}}
+
+        VS.by_map(scene(VS.FACE_CACHE))  # 8 종은 된다
+        with self.assertRaises(SystemExit):
+            VS.by_map(scene(VS.FACE_CACHE + 1))
 
     def test_stub_fits_and_hook_is_a_jump(self):
         stub, hook, where = SS.build()

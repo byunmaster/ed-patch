@@ -23,6 +23,18 @@
      주파수). 좌우 상관 0.971 로 거의 모노 — 음성 트랙의 전형이다.
    ⚠ 이걸 틀리면 **받아쓰기가 통째로 환각**이 된다. 「SAP 은 음악이다」로 두 번 오판했다.
 
+🔴 **V20(디스크2 트랙2, 크레딧)은 섹터가 끼워진 스트림이다 — 이어 읽으면 버벅거린다**(마스터 귀로 발견 2026-09-27).
+   MODE2 서브헤더를 보면 **「파일 1 섹터 2개 + 빈 섹터 4개」**가 되풀이되고, 사이사이에 엔딩 그림
+   `END01~16.GRP`(파일 2~, 각 131 섹터)가 끼어 있다. 빈 섹터는 데이터·EDC 까지 전부 0 이다(2 배속 읽기를 음성
+   속도 88.2KB/s 에 맞춘 조절 — 6 중 2 = 50 섹터/초). ⇒ **서브헤더 파일 번호가 1 인 섹터만**, 머리말이 말하는
+   크기(`0x800 + 표본수×4`)만큼 이어 붙인다(`to_wav_v20`) — **520 초**, 좌우 상관 0.9~1.0 · 시간차 0.
+   🔑 ISO 디렉터리의 크기(45.9MB)는 **소리 데이터 크기**지 섹터가 퍼진 범위가 아니다 — 스트림은 그 세 배 남짓
+      (LBA 201161~ 트랙 끝 가까이)에 퍼져 있다. **ISO 범위에서 끊으면 177 초에서 편지가 잘린다**(두 번째 판이 그랬다).
+   ⚠ 세 번 틀렸다: ① 전부 이어 읽음(빈 섹터가 끼어 버벅 · 「오른쪽이 블록 둘 앞선다」는 그 착시) →
+     ② ISO 범위에서 끊음(177 초, 편지 중간 절단 — 「머리말 520 초는 빈 칸까지 센 값」이라고 **틀리게** 적었다) →
+     ③ 머리말 크기만큼 파일 1 을 모음(이것). 머리말이 처음부터 옳았다. ⚠ 파일 번호는 **디스크 전체에서 따로** 매긴다
+     (그림은 2~17) — 「구간마다 새로 매긴다」도 오진이었다.
+   ⇒ **뽑은 뒤 좌우 시간차를 잰다** — 음성 트랙은 0 이어야 한다. **머리말 길이와 뽑은 길이가 같은지도** 본다.
 ⚠ 산출물은 `work/review/` 다 — **원음이라 커밋하지 않는다.**
 """
 
@@ -91,6 +103,43 @@ def to_wav(name, disc=None):
                 print(f"  {name}  {nf / sr:6.1f}초  {ch}ch {bits}bit {sr}Hz → {dst}")
                 return dst
     raise SystemExit(f"{name}.SAP 를 못 찾았다")
+
+
+V20_LBA = 201161  # disc2 ISO 가 적은 V20.SAP 시작 — 트랙2(MODE2) 안이다
+TRACK2_LBA = 200805  # disc2 트랙1 섹터 수 = 트랙2 파일의 0 번 섹터(INDEX 00 부터 파일에 들어 있다)
+
+
+def to_wav_v20():
+    """`V20` → `work/review/sap/V20.wav` — 트랙2 에서 **서브헤더 파일 1 섹터만** 이어 붙인다(위 🔴)."""
+    import numpy as np
+
+    path = next(p for n, _m, p in C.disc_tracks(2) if n == 2)
+    buf = bytearray()
+    with open(path, "rb") as f:
+        f.seek((V20_LBA - TRACK2_LBA) * 2352)
+        need = None
+        while len(s := f.read(2352)) == 2352:
+            if s[16] == 1:
+                buf += s[24 : 24 + 2048]
+            if need is None and len(buf) >= HDR:
+                nf, ch, bits, _sr = _hdr(bytes(buf[:HDR]))
+                need = HDR + nf * ch * bits // 8
+            if need is not None and len(buf) >= need:
+                break
+    if need is None or len(buf) < need:
+        raise SystemExit(f"V20 이 모자란다: {len(buf)} < {need} — 트랙2 가 잘렸나")
+    buf = buf[:need]
+    _nf, ch, bits, sr = _hdr(bytes(buf[:HDR]))
+    x = np.frombuffer(bytes(buf[HDR : len(buf) // 2 * 2]), dtype=">i2")
+    os.makedirs(OUT_DIR, exist_ok=True)
+    dst = os.path.join(OUT_DIR, "V20.wav")
+    with wave.open(dst, "wb") as w:
+        w.setnchannels(ch)
+        w.setsampwidth(bits // 8)
+        w.setframerate(sr)
+        w.writeframes(deplanar(x, ch).astype("<i2").tobytes())
+    print(f"  V20  {len(x) / ch / sr:6.1f}초  {ch}ch {bits}bit {sr}Hz (트랙2 파일1 섹터만) → {dst}")
+    return dst
 
 
 def scan():

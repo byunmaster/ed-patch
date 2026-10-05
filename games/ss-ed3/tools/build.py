@@ -30,6 +30,7 @@ import common as C
 import hangul_map as H
 import movie_hardsub as MV
 import patch_josa_hook as JOSA
+import patch_ui_center as UIC
 import reinsert as R
 import reinsert_battle as RBT
 import reinsert_book as RB
@@ -39,6 +40,7 @@ import reinsert_param as RP
 import reinsert_sys as RS
 import relocate as RL
 import subtitle_stub as SS
+import voice_credits as VC
 import voice_sub as VS
 
 from shared.disc import mode1
@@ -203,10 +205,15 @@ def patched(disc, lay=None):
                     #     앞말을 모른다. 훅이 안 돌면 병기 그대로 보인다(안 틀린다).
                     new, hk = JOSA.patch(new)
                     cnt["josa"] = hk
+                    #   전투 위쪽 배너(기술명·승리 문구) 글자를 세로 가운데로 — 상수 하나(`patch_ui_center`).
+                    new = UIC.patch(new)
+                    cnt["ui_center"] = 1
                     #   🔴 **음성 자막 렌더러** — 컷신 위에 우리 창을 그리는 스텁과 훅.
                     #     조사 스텁 뒤 같은 문자열 구역을 쓰므로 그 다음에 넣는다.
                     if voicetbl:
-                        new = SS.patch(new)
+                        #   🔴 크레딧 자막(V20)도 이 파일에 든다 — 스텁 앞 죽은 구역에 코드·표를 얹고
+                        #     프레임 태스크의 호출 주소를 바꾼다(`subtitle_stub` 「크레딧 자막」).
+                        new = SS.patch(new, table_fn=lambda ctab: VC.blob(ctab))
                         cnt["voice_stub"] = 1
             elif name == RBT.PATH:
                 #   🔴 **HP 창 이름은 문자열이 아니라 그림이다** — `status.spr` 안의

@@ -76,6 +76,8 @@ LINE_PITCH = 16  # 줄 간격(px) — 12px 글자 + 4
 CLEARFN = 0x0601A838
 DRAWFN = 0x060417AC
 BUF = 0x25C79000  # 우리 글자 버퍼 (빈 VRAM)
+CRED_PITCH = 12  # 크레딧 자막 줄 간격(px) — Galmuri9 9 행 + 3
+CRED_CELL = 10  # 크레딧 자막 글자 폭(px) — Galmuri9 9 + 간격 1. 반각은 그 절반 − 1 이 아니라 CELL//2//2·2 = 4
 BUF_STRIDE = 108  # 216px 4bpp = 108B — 원판 대사창 글자 스프라이트와 같은 폭
 BUF_LEN = 108 * 48  # 216x48
 MAX_LINES = 3  # 48px ÷ 16 — 이름 줄이 있으면 본문은 둘
@@ -204,6 +206,9 @@ class Asm:
 
     def jsr(self, n):  # jsr @Rn              0100 nnnn 00001011
         self._e(0x400B | (n << 8))
+
+    def jmp(self, n):  # jmp @Rn              0100 nnnn 00101011  (지연 슬롯 하나)
+        self._e(0x402B | (n << 8))
 
     def sts_pr(self):  # sts.l PR,@-r15       0100 1111 00100010
         self._e(0x4F22)
@@ -365,6 +370,20 @@ def build():
     a.cmp_eq(0, 1)
     a.bf("not_pre")
     a.movl_to_d(11, 8, V_PRE)
+    #   🔴 엔진 얼굴 캐시(8 칸 FIFO)를 **비운다** — 씬 앞에 남은 남의 얼굴이 적중으로 잡혀 우리
+    #     조합이 안 실리고, 이어 싣는 사이 그 적중분이 밀려나 음성 중 미스가 된다(V19 실측
+    #     2026-09-30: 앞 대사의 (0,10)·(1,10) 이 적중 → 나머지 다섯을 싣다 밀려남 → 표정 7 이 안 뜸).
+    #     키 8 워드를 0xFFFF(없는 키)로, 커서를 0 으로 — 전부 미스라 목록 순서대로 0~7 칸에 실린다.
+    a.movl_pc(1, "RING")
+    a.movi(0, -1)
+    a.movi(3, 8)
+    a.label("ring_clr")
+    a.movw_to(1, 0)
+    a.add(1, 2)
+    a.dt(3)
+    a.bf("ring_clr")
+    a.movi(0, 0)
+    a.movw_to(1, 0)
     a.movi(0, 0)
     a.movw_r0_d(11, V_FLAG)
     a.bra("done")
@@ -540,22 +559,23 @@ def build():
     a.rts()
     a.nop()
     #   draw_line(r4=대상, r5=색, r6=문자열): 엔진 draw(대상, 행바이트, 문자열, 높이, 스택 색·0·1)
-    a.label("draw_line")
-    a.sts_pr()
-    a.movi(1, 1)
-    a.push(1)
-    a.movi(1, 0)
-    a.push(1)
-    a.push(5)
-    a.movi(5, BUF_STRIDE)
-    a.movi(7, 12)
-    a.movl_pc(0, "DRAWFN")
-    a.jsr(0)
-    a.nop()
-    a.add(15, 12)  # 밀어 넣은 인자 셋을 걷는다
-    a.lds_pr()
-    a.rts()
-    a.nop()
+    for name, width in (("draw_line", 12), ("draw_line9", CRED_CELL)):
+        a.label(name)
+        a.sts_pr()
+        a.movi(1, 1)
+        a.push(1)
+        a.movi(1, 0)
+        a.push(1)
+        a.push(5)
+        a.movi(5, BUF_STRIDE)
+        a.movi(7, width)  # 글자 폭 — 엔진 draw 가 이 값으로 **전진량**(전각 폭, 반각 폭/2)을 잡는다
+        a.movl_pc(0, "DRAWFN")
+        a.jsr(0)
+        a.nop()
+        a.add(15, 12)  # 밀어 넣은 인자 셋을 걷는다
+        a.lds_pr()
+        a.rts()
+        a.nop()
     stub, addr = a.resolve(
         {
             "VAR": 0,
@@ -570,6 +590,7 @@ def build():
             "PITCH": BUF_STRIDE * LINE_PITCH,
             "CLEARFN": CLEARFN,
             "DRAWFN": DRAWFN,
+            "RING": 0x002F8E24,
             "F_STATE": F_STATE,
             "F_ID": F_ID,
             "F_EXPR": F_EXPR,
@@ -616,8 +637,317 @@ def build():
             "pre": var + V_PRE,
             "face": var + V_FACE_ID,
             "tpl": tpl,
+            "draw_line": a.lbl["draw_line"],
+            "draw_line9": a.lbl["draw_line9"],
         },
     )
+
+
+#   ══ 크레딧 자막 (V20) ═══════════════════════════════════════════════════════
+#   🔴 크레딧엔 맵 스크립트도, 대사창 갱신 함수(`HOOK`)도 없다 — 프레임마다 도는 자리가 필요하다.
+#     엔진에는 **프레임 태스크 표**(`0x06095E60`, 16 칸)가 있고 VBlank 콜백(`0x060469E4`)이 매 프레임 칸을 차례로
+#     `jsr` 한다. 필드·크레딧 **공통** 태스크 `0x06047908` 은 `0x0604BD10` 을 부르는 얇은 래퍼라, 그 호출의
+#     **주소 리터럴**(`TASK_LIT`)만 우리 루틴으로 바꾸면 매 프레임 불린다(2026-09-30: 10 스텝에 11 회).
+#     우리 루틴은 할 일을 하고 **원래 함수로 꼬리 점프**한다(PR 그대로 — 원래 함수가 래퍼로 돌아간다).
+#   ⓘ 크레딧은 **고해상도**(TVMD 하위 3 비트 == 2)이고 필드는 아니다 — 그걸로 크레딧인지 안다.
+#     크레딧에 들어오면(처음 본 프레임) 시계를 0 으로 놓고 세며, 나가면 꺼서 다음에 다시 센다.
+#   자료: 항목 12B `<시작 u32> <끝 u32> <글자 포인터 u32>`(프레임 = 시계) 앞에 `<개수 u16> <0 u16>`.
+#     글자 = `<프레임 0> <x s16> <y s16>` + 이름 `\0`(비움) + 줄들 — **대사창 글자와 같은 꼴**이라
+#     `voice_sub.entry` 의 줄 인코딩을 그대로 쓴다. x·y 는 VDP1 로컬 좌표(원점 = 화면 가운데).
+#   ⚠ 글자는 **테두리 없이** 글자 스프라이트 하나만 등록한다(대사창이 아니다 — 마스터 09-30).
+CRED = 0x06016420  # 죽은 디버그 메뉴 구역 안(`0x0601641C` 부터) — 스텁(`STUB`) 앞
+TASK_LIT = 0x06047924  # 태스크 `0x06047908` 이 부르는 함수 주소 리터럴
+TASK_ORIG = 0x0604BD10
+TVMD = 0x25F80000  # VDP2 화면 모드 — 하위 3 비트 2 = 640 폭(고해상도)
+CV_ARM, CV_IDX, CV_X, CV_Y, CV_CLK, CV_TXTP = 0, 2, 4, 6, 8, 12  # 크레딧 변수(작은 것 먼저 — mov.w 변위가 30 까지)
+CV_XC, CV_YC = 16, 18  # 글자 스프라이트 오른쪽 아래 — **확대·축소 스프라이트**라 두 점을 준다
+CV_HK = 20  # 메인 스레드 등록 루틴이 불린 횟수(계측 — 프레임마다 도는지 본다)
+CV_XR, CV_XCR = 24, 26  # 그림이 **오른쪽**일 때(자막은 왼쪽) 쓰는 x — 기본 x·xc 는 그림이 왼쪽일 때(자막은 오른쪽)
+CV_MINX, CV_SIDE = 28, 30  # 이번 프레임에 등록된 크레딧 글자들의 XA 최솟값(0x7FFF = 없음) · 래치한 그림 쪽(0 왼쪽 · 1 오른쪽)
+CV_LEN = 32
+EMIT_LIT = 0x0603EE30  # 크레딧 글자 함수의 `jsr emit` 이 읽는 풀 리터럴(값 = EMIT)
+XABUF = 0x0607D1C8  # 크레딧 글자 함수가 방금 등록한 글자 명령의 XA(로컬 x) — 이름 글자가 검은 칸 쪽에 놓이므로 그림 좌우를 가른다
+HOOK2 = 0x0603EDE8  # 크레딧 글자 함수 에필로그 — 메인 스레드에서 프레임마다 `emit` 을 ~26 회 부르는 함수의 끝
+HOOK2_ORIG = bytes.fromhex("6fe34f266ef66df66cf66bf6")
+CRED_ROWS = MAX_LINES  # 이름 줄이 없으니 버퍼(216x48)에 세 줄까지 든다
+
+
+def _credits_code(a):
+    for r in (9, 10, 11, 12, 13):
+        a.push(r)
+    a.sts_pr()
+    a.movl_pc(11, "VARC")
+    #   ── 크레딧인가(고해상도) — 아니면 꺼 두고 나간다
+    a.movl_pc(1, "TVMD")
+    a.movw_at(0, 1)
+    a.movi(2, 7)
+    a.and_(0, 2)
+    a.movi(1, 2)
+    a.cmp_eq(0, 1)
+    a.bt("c_hi")
+    a.movi(0, 0)
+    a.movw_r0_d(11, CV_ARM)
+    a.movi(1, 0)
+    a.movl_to_d(11, 1, CV_TXTP)
+    a.bra("c_out")
+    a.nop()
+    a.label("c_hi")
+    a.movw_d_r0(11, CV_ARM)
+    a.tst(0, 0)
+    a.bf("c_run")
+    #   처음 본 프레임 — 시계 0, 항목 0, 글자 없음
+    a.movi(0, 1)
+    a.movw_r0_d(11, CV_ARM)
+    a.movi(0, 0)
+    a.movw_r0_d(11, CV_IDX)
+    a.movi(1, 0)
+    a.movl_to_d(11, 1, CV_CLK)
+    a.movl_to_d(11, 1, CV_TXTP)
+    a.label("c_run")
+    #   ── 시계 +1 → r1, 항목 번호 → r2, 개수 → r4, 표 시작 → r3
+    a.movl_d(1, 11, CV_CLK)
+    a.add(1, 1)
+    a.movl_to_d(11, 1, CV_CLK)
+    a.movw_d_r0(11, CV_IDX)
+    a.mov(2, 0)
+    a.movl_pc(3, "CTAB")
+    a.movw_at(4, 3)
+    a.add(3, 4)
+    a.label("c_scan")
+    a.cmp_hs(2, 4)  # 번호 >= 개수 → 없다
+    a.bt("c_none")
+    a.mov(5, 2)
+    a.shll2(5)  # 4i
+    a.mov(6, 5)
+    a.addr(5, 5)  # 8i
+    a.addr(5, 6)  # 12i
+    a.addr(5, 3)  # 항목 주소
+    a.movl_d(6, 5, 4)  # 끝
+    a.cmp_hs(1, 6)  # 시계 >= 끝 → 지나갔다, 다음 항목
+    a.bf("c_have")
+    a.add(2, 1)
+    a.bra("c_scan")
+    a.nop()
+    a.label("c_have")
+    a.movl_at(6, 5)  # 시작
+    a.cmp_hs(1, 6)
+    a.bf("c_none")  # 아직 안 왔다
+    a.movl_d(7, 5, 8)  # 글자 포인터
+    a.bra("c_set")
+    a.nop()
+    a.label("c_none")
+    a.movi(7, 0)
+    a.label("c_set")
+    a.mov(0, 2)
+    a.movw_r0_d(11, CV_IDX)
+    #   ── 바뀌었나
+    a.movl_d(1, 11, CV_TXTP)
+    a.cmp_eq(1, 7)
+    a.bt("c_same")
+    a.movl_to_d(11, 7, CV_TXTP)
+    a.tst(7, 7)
+    a.bt("c_out")  # 글자가 없어졌다 — 그릴 것 없다
+    #   ── 새 글자 — 좌표를 뜨고 버퍼에 굽는다
+    a.mov(8, 7)
+    a.movw_inc(0, 8)  # 프레임(안 쓴다)
+    a.movw_inc(0, 8)
+    a.movw_r0_d(11, CV_X)
+    a.movw_inc(0, 8)
+    a.movw_r0_d(11, CV_Y)
+    a.movw_inc(0, 8)
+    a.movw_r0_d(11, CV_XC)
+    a.movw_inc(0, 8)
+    a.movw_r0_d(11, CV_YC)
+    a.movw_inc(0, 8)
+    a.movw_r0_d(11, CV_XR)
+    a.movw_inc(0, 8)
+    a.movw_r0_d(11, CV_XCR)
+    a.label("c_skipname")
+    a.movb_at(0, 8)
+    a.add(8, 1)
+    a.tst(0, 0)
+    a.bf("c_skipname")
+    a.movl_pc(4, "BUF")
+    a.movl_pc(5, "BUFLEN")
+    a.movl_pc(0, "CLEARFN")
+    a.jsr(0)
+    a.nop()
+    a.movl_pc(9, "BUF")
+    a.movi(13, CRED_ROWS)
+    a.label("c_line")
+    a.mov(4, 9)
+    a.movi(5, BODY_COLOR)
+    a.mov(6, 8)
+    a.movl_pc(0, "DRAWLINE")
+    a.jsr(0)
+    a.nop()
+    a.label("c_nul")
+    a.movb_at(0, 8)
+    a.add(8, 1)
+    a.tst(0, 0)
+    a.bf("c_nul")
+    a.movb_at(0, 8)
+    a.tst(0, 0)
+    a.bt("c_emit")
+    a.dt(13)
+    a.bt("c_emit")
+    a.movl_pc(2, "PITCH")
+    a.addr(9, 2)
+    a.bra("c_line")
+    a.nop()
+    a.label("c_same")
+    a.label("c_emit")
+    #   🔴 여기서 스프라이트를 **등록하지 않는다** — 이 코드는 VBlank 콜백(인터럽트)에서 돈다. 인터럽트 안에서
+    #     `emit` 을 부르면 메인 스레드의 등록(크레딧 글자 프레임당 ~26 회)과 부딪혀 크레딧이 **페이지를 못 넘긴다**
+    #     (2026-10-01 실측: 등록만 빼면 진행이 정상). 등록은 아래 `cemit`(메인 스레드)에서 한다.
+    a.label("c_out")
+    a.lds_pr()
+    for r in (13, 12, 11, 10, 9):
+        a.pop(r)
+    a.movl_pc(1, "ORIG")
+    a.jmp(1)
+    a.nop()
+
+
+def _credits_emit_code(a):
+    """`cemit` — 크레딧 글자 함수(`HOOK2`) 에필로그 자리에 걸린다(메인 스레드, 프레임마다).
+
+    ISR 쪽 루틴이 정해 둔 글자(`CV_TXTP`)가 있으면 글자 스프라이트 하나를 엔진에 등록한다. 끝은 밀어낸
+    에필로그를 그대로(`HOOK` 과 같은 꼴 — r14~r9 를 되살리고 복귀)."""
+    a.label("cemit")
+    a.push(0)
+    a.sts_pr()
+    a.movl_pc(11, "VARC")
+    a.movl_d(1, 11, CV_HK)
+    a.add(1, 1)
+    a.movl_to_d(11, 1, CV_HK)
+    #   🔴 그림이 어느 쪽인가는 **게임이 알려 준다** — 크레딧 이름 글자는 검은 칸(그림 반대쪽)에 놓인다. 글자 하나하나가 등록될 때
+    #     `cwrap` 이 그 XA(로컬 x)의 **최솟값**을 모은다. 이번 프레임에 글자가 있었고 최솟값이 −40 보다 작으면 이름이 왼쪽 =
+    #     그림이 오른쪽이다. **글자가 없던 프레임은 쪽을 그대로 둔다**(옛 값으로 튀지 않게 — 마스터 10-01).
+    a.movw_d_r0(11, CV_MINX)
+    a.movl_pc(1, "SENT")
+    a.cmp_eq(0, 1)
+    a.bt("ce_keep")
+    a.add(0, 40)
+    a.cmp_pz(0)
+    a.bt("ce_art_l")
+    a.movi(0, 1)
+    a.bra("ce_store")
+    a.nop()
+    a.label("ce_art_l")
+    a.movi(0, 0)
+    a.label("ce_store")
+    a.movw_r0_d(11, CV_SIDE)
+    a.movl_pc(0, "SENT")
+    a.movw_r0_d(11, CV_MINX)
+    a.label("ce_keep")
+    a.movl_d(1, 11, CV_TXTP)
+    a.tst(1, 1)
+    a.bt("ce_out")
+    a.movl_pc(4, "TPLC")
+    a.movw_d_r0(11, CV_SIDE)
+    a.tst(0, 0)
+    a.bt("ce_left_art")
+    a.movw_d_r0(11, CV_XR)
+    a.movw_r0_d(4, 12)
+    a.movw_d_r0(11, CV_XCR)
+    a.movw_r0_d(4, 20)
+    a.bra("ce_y")
+    a.nop()
+    a.label("ce_left_art")
+    a.movw_d_r0(11, CV_X)
+    a.movw_r0_d(4, 12)
+    a.movw_d_r0(11, CV_XC)
+    a.movw_r0_d(4, 20)
+    a.label("ce_y")
+    a.movw_d_r0(11, CV_Y)
+    a.movw_r0_d(4, 14)
+    a.movw_d_r0(11, CV_YC)
+    a.movw_r0_d(4, 22)
+    a.movl_pc(5, "Z_TEXT")
+    a.movl_pc(0, "EMIT")
+    a.jsr(0)
+    a.nop()
+    a.label("ce_out")
+    a.lds_pr()
+    a.pop(0)
+    a.mov(15, 14)
+    a.lds_pr()
+    for r in (14, 13, 12, 11, 10, 9):
+        a.pop(r)
+    a.rts()
+    a.pop(8)
+
+
+def _credits_wrap_code(a):
+    """`cwrap` — 크레딧 글자 함수가 글자 하나를 등록할 때(`emit` 호출 리터럴) 거쳐 가는 껍데기.
+
+    방금 채운 글자 명령의 XA 를 읽어 이번 프레임의 **최솟값**(`CV_MINX`)에 모으고 원래 `emit` 으로 점프한다
+    (인자·PR·스택은 그대로). r0~r2 만 쓴다 — 이 호출 뒤 호출자는 r0~r3 를 다시 채운다."""
+    a.label("cwrap")
+    a.movl_pc(1, "XABUF")
+    a.movw_at(1, 1)
+    a.movl_pc(2, "VARC")
+    a.movw_d_r0(2, CV_MINX)
+    a._e(0x3017)  # cmp/gt r1,r0   T = r0 > r1  (부호 있음) — 지금 최솟값이 이번 값보다 크면
+    a.bf("cw_skip")
+    a.mov(0, 1)
+    a.label("cw_skip")
+    a.movw_r0_d(2, CV_MINX)
+    a.movl_pc(0, "EMIT")
+    a.jmp(0)
+    a.nop()
+
+
+def build_credits(draw_line, table=b""):
+    """`(자리 CRED 에 쓸 바이트, {이름: 주소})` — 코드 · 풀 · 변수 · 글자 명령 · 표.
+
+    `table` 은 `<개수> <0>` + 항목 12B 들 + 글자들(포인터는 아래 `ctab` 기준으로 채워 넘긴다 —
+    `voice_credits.blob(ctab)`). 코드 길이가 값에 안 걸려서 두 번 조립한다(첫 번엔 자리만 잰다).
+    """
+
+    def asm(pool):
+        a = Asm(CRED)
+        _credits_code(a)
+        _credits_emit_code(a)
+        _credits_wrap_code(a)
+        code, addr = a.resolve(pool)
+        return code, addr, a.lbl
+
+    base_pool = {
+        "VARC": 0,
+        "TVMD": TVMD,
+        "CTAB": 0,
+        "BUF": BUF,
+        "BUFLEN": BUF_LEN,
+        "CLEARFN": CLEARFN,
+        "PITCH": BUF_STRIDE * CRED_PITCH,
+        "DRAWLINE": draw_line,
+        "EMIT": EMIT,
+        "Z_TEXT": Z_NEAR + 1,
+        "ORIG": TASK_ORIG,
+        "TPLC": 0,
+        "XABUF": XABUF,
+        "SENT": 0x7FFF,
+    }
+    code, _, _ = asm(base_pool)
+    var = CRED + len(code)
+    var += -var % 4
+    tplc = var + CV_LEN
+    ctab = tplc + 32
+    pool = dict(base_pool, VARC=var, CTAB=ctab, TPLC=tplc)
+    code, addr, lbl = asm(pool)
+    out = bytearray(code)
+    out += b"\x00" * (var - CRED - len(out))
+    out += b"\x00" * CV_LEN
+    #   글자 명령 하나(32B) — 대사창 글자와 같되 **확대·축소 스프라이트**(`0x0001`, 두 점 지정)다. 좌표는 매 프레임 덮어쓴다
+    out += struct.pack(
+        ">8H16x", 0x0001, 0x0000, 0x0880, 0x4740, (BUF - TAB) // 8, (216 // 8) << 8 | 48, 0, 0
+    )
+    assert len(out) == ctab - CRED
+    out += table
+    assert CRED + len(out) <= STUB - 0x140, (len(out), STUB - 0x140 - CRED)  # 끝 0x140B 는 `patch_ui_center.WRAP`·`WRAP2` 자리
+    return bytes(out), {"ctab": ctab, "var": var, "tplc": tplc, "cred": CRED, "cemit": lbl["cemit"], "cwrap": lbl["cwrap"]}
 
 
 BASE = 0x06004000  # `/0.BIN` 적재 주소
@@ -630,14 +960,15 @@ GATE_ORIG = bytes.fromhex("8952")
 GATE_NEW = bytes.fromhex("a052")  # 같은 변위, 무조건 분기
 
 
-def patch(data):
+def patch(data, table_fn=None):
     """`/0.BIN` 에 스텁 + 훅을 넣는다 → 새 bytes. 크기 불변.
 
     스텁은 디버그 메뉴 코드 자리에 들어가므로 **그 메뉴의 입구(`DEBUG_GATE`)를 먼저 막는다** —
     타이틀 조합키로 켜지는 개발용 메뉴라 게임엔 없어도 된다.
+    `table_fn(ctab)` 이 있으면 **크레딧 자막**(V20)도 넣는다 — 표를 `ctab` 자리 기준으로 만들어 돌려준다.
     """
     out = bytearray(data)
-    stub, hook, _ = build()
+    stub, hook, where = build()
 
     def put(addr, blob, expect):
         off = addr - BASE
@@ -648,6 +979,15 @@ def patch(data):
     put(DEBUG_GATE, GATE_NEW, GATE_ORIG)
     put(STUB, stub, STUB_ORIG)
     put(HOOK, hook, HOOK_ORIG)
+    if table_fn is not None:
+        _, ca = build_credits(where["draw_line9"])
+        blob, ca = build_credits(where["draw_line9"], table_fn(ca["ctab"]))
+        put(CRED, blob, b"")
+        put(TASK_LIT, struct.pack(">I", CRED), struct.pack(">I", TASK_ORIG))
+        #   등록은 메인 스레드에서 — 크레딧 글자 함수 에필로그 12B 를 `mov.l @(1,pc),r8 · jmp @r8 · nop · nop · 주소` 로
+        put(HOOK2, struct.pack(">HHHHI", 0xD801, 0x482B, 0x0009, 0x0009, ca["cemit"]), HOOK2_ORIG)
+        #   글자 하나를 등록하는 `emit` 호출의 풀 리터럴 → `cwrap`(XA 최솟값을 모은다)
+        put(EMIT_LIT, struct.pack(">I", ca["cwrap"]), struct.pack(">I", EMIT))
     return bytes(out)
 
 
