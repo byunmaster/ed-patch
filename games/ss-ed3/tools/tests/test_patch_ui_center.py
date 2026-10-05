@@ -26,9 +26,8 @@ class UiCenter(unittest.TestCase):
         new = P.patch(old)
         diff = {i for i in range(len(old)) if old[i] != new[i]}
         self.assertIn(P.TEXT_Y - P.BASE + 1, diff)
-        for lit in P.LIST_LITS:  # 목록 그리기 호출 둘이 껍데기로 돈다
-            self.assertEqual(new[lit - P.BASE : lit - P.BASE + 4], P.WRAP.to_bytes(4, "big"))
-        self.assertEqual(new[P.WRAP - P.BASE : P.WRAP - P.BASE + len(P.WRAP_CODE)], P.WRAP_CODE)
+        for lit in P.LIST_LITS:  # 목록 그리기 호출은 원본 그대로 — 껍데기를 달면 모든 목록 마지막 줄이 잘린다(10-05)
+            self.assertEqual(new[lit - P.BASE : lit - P.BASE + 4], P.DRAW.to_bytes(4, "big"))
         # 배너 글자 호출은 이름 변환 껍데기로 돈다 — 쥬리오의 본 → 내려앉은 코드 쌍이 표에 있다
         self.assertEqual(
             new[P.BANNER_LIT - P.BASE : P.BANNER_LIT - P.BASE + 4], P.WRAP2.to_bytes(4, "big")

@@ -146,6 +146,13 @@ def record(sub, table, scale=1.0):
     어느 쪽인지는 게임 중에 스텁이 고른다(`subtitle_stub.cemit`). 줄은 위에서 아래로 쌓이므로 **아래 끝(그림 아래 끝)** 기준으로 y 를 잡는다.
     """
     lines = wrap(sub["lines"])
+    #   🔴 **크레딧 전용 글리프 표에 없는 글자는 빌드를 세운다**(마스터 10-05 — 「이익」의 「익」이 깨졌다). 표에 없으면 본 글리프로
+    #     **조용히** 새어 나가 폭·기준선이 달라 글자가 깨진다 — 문안을 바꿀 때 `--freeze-cred` 를 잊는 자리다.
+    cred = H.load_cred()
+    if cred:
+        miss = sorted({c for t in lines for c in t if "가" <= c <= "힣" and c not in cred})
+        if miss:
+            raise SystemExit(f"#{sub.get('n')}: 크레딧 전용 글리프에 없는 글자 {miss} — `hangul_map.py --freeze-cred`")
     if not 1 <= len(lines) <= SS.CRED_ROWS:
         raise SystemExit(f"#{sub.get('n')}: 줄은 1~{SS.CRED_ROWS} 개다({len(lines)}): {lines}")
     for t in lines:

@@ -29,16 +29,15 @@ BORDER_Y = 0x060101A4
 BORDER_Y_ORIG = bytes.fromhex("7189")  # −119
 
 
-#   🔴 **LOAD FILE 목록 글자를 한 행 내린다**(마스터 10-01 「텍스트가 1px 내려가면 일관성」). 목록 한 줄을 버퍼에 찍는
-#   함수(`0x06028400` 부근)가 엔진 글자 그리기(`0x060417ac`)를 **둘** 부른다(이름·LV). 호출 대상은 각각 풀의 리터럴이라
-#   그 둘을 **우리 껍데기**로 돌린다 — 껍데기는 `r4 += r5`(행 바이트 = 한 행)만 하고 원래 그리기로 점프한다.
-#   스택 인자·PR 이 그대로라 호출 규약이 안 깨진다. 껍데기 12B 는 디버그 메뉴 죽은 영역 끝(`STUB − 16`)에 둔다.
+#   🔴 **목록 글자를 한 행 내리는 껍데기는 걷었다**(마스터 10-05 「목록 글자 아래가 잘린다 — 예전엔 잘 나왔다 · LOAD 쪽 수정하다 생긴 듯」).
+#   10-01 에 저장 목록 글자만 1px 내리려고 목록 한 줄을 찍는 함수(`0x06028400` 부근)의 그리기 호출 둘(`LIST_LITS`)을 껍데기(`r4 += r5`)로
+#   돌렸는데, **그 함수는 독서·장비·설정·저장 목록이 다 같이 쓴다.** 그래서 모든 목록 글자가 1px 내려가 **마지막 줄 맨 아래 한 행이 패널 아래
+#   테두리에 눌렸다**(캡처 다섯 장을 픽셀로 쟀다 — 마지막 줄만 10행). 에뮬에서 껍데기를 얹고 걷어 비교해 확정했다(설정 창 41–51 → 42–52).
+#   ⇒ 이제 이 두 리터럴은 **원본 그대로 둔다**(아래 `patch` 가 그 사실을 단언한다). 저장 목록만 따로 내리려면 호출한 목록이 어느 것인지
+#   가를 값이 필요한데 아직 못 찾았다 — 찾기 전엔 건드리지 않는다.
+WRAP = 0x06018BF0  # 옛 목록 껍데기 자리 — 지금은 비어 있고, `WRAP2` 가 쓸 수 있는 끝(상한)을 재는 기준으로만 남는다
 DRAW = 0x060417AC
 LIST_LITS = (0x060284B4, 0x06028550)  # 풀에서 `DRAW` 를 가리키는 리터럴 둘
-WRAP = 0x06018BF0
-WRAP_CODE = bytes.fromhex("345cd001402b0009") + DRAW.to_bytes(
-    4, "big"
-)  # add r5,r4 · mov.l @(1,pc),r0 · jmp @r0 · nop · 리터럴
 
 
 #   🔴 **배너 안의 파티 이름만 1px 높게 나왔다**(마스터 10-01 「쥬리오 만 1px 더」). 배너 글자는 시스템 문자열이라 **내려앉은
@@ -238,12 +237,9 @@ def patch(data):
     off = TEXT_Y - BASE
     assert out[off : off + 2] == TEXT_Y_ORIG, f"{TEXT_Y:#x} 가 예상과 다르다"
     out[off : off + 2] = TEXT_Y_NEW
-    for lit in LIST_LITS:
+    for lit in LIST_LITS:  # 목록 그리기 호출은 건드리지 않는다 — 위 🔴
         o = lit - BASE
         assert out[o : o + 4] == DRAW.to_bytes(4, "big"), f"{lit:#x} 가 예상과 다르다"
-        out[o : o + 4] = WRAP.to_bytes(4, "big")
-    o = WRAP - BASE
-    out[o : o + len(WRAP_CODE)] = WRAP_CODE
     o = BANNER_LIT - BASE
     assert out[o : o + 4] == DRAW.to_bytes(4, "big"), f"{BANNER_LIT:#x} 가 예상과 다르다"
     out[o : o + 4] = WRAP2.to_bytes(4, "big")

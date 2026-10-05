@@ -113,6 +113,14 @@ class CreditsCode(unittest.TestCase):
             SS.patch(bytes(data), table_fn=lambda c: b"\x00\x00\x00\x00")
 
 
+class GlyphCoverage(unittest.TestCase):
+    def test_a_syllable_missing_from_the_credit_font_stops_the_build(self):
+        # 마스터 10-05 — 표에 없는 글자는 본 글리프로 새어 나가 깨진다. 조용히 넘기지 않는다
+        sub = {"n": 0, "lines": ["쀍"]}
+        with self.assertRaises(SystemExit):
+            VC.record(sub, VC.table_cred())
+
+
 class Centering(unittest.TestCase):
     def test_one_char_longer_line_starts_at_the_same_x(self):
         # 마스터 10-05 — 한 글자(0.5칸) 차이 줄은 시작 x 가 같다(왼쪽 기준)

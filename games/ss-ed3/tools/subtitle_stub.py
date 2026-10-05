@@ -109,6 +109,7 @@ VAR_LEN = 36
 #   🔴 전역 프레임 시계 — 크레딧 태스크(`_credits_code`, 필드·크레딧 공통 VBlank 태스크)가 **매 프레임 +1** 한다.
 #     위치는 고정이다(대사창 스텁이 `mov.l` 로 읽는다) — 크레딧 코드 구역 끝(`STUB − 0x1D0`)에 둔다.
 GCLK = 0x06018A30
+RELOC = 0x06018A10  # 예산이 모자란 시스템 문자열을 **옮겨 두는 칸**(32B) — 정본은 `reinsert_sys.RELOC_AT`(같은 값, 테스트가 묶는다)
 
 
 class Asm:
@@ -1071,10 +1072,10 @@ def build_credits(draw_line, table=b""):
     )
     assert len(out) == ctab - CRED
     out += table
-    assert CRED + len(out) <= STUB - 0x1D0, (
+    assert CRED + len(out) <= RELOC, (
         len(out),
-        STUB - 0x1D0 - CRED,
-    )  # 끝 0x1D0B 는 `GCLK`(16B) · `patch_ui_center.WRAP`·`WRAP2`·`WRAP3` 자리
+        RELOC - CRED,
+    )  # 끝 0x1F0B 는 재배치 문자열 칸(`reinsert_sys.RELOC_LEN`) · `GCLK`(16B) · `patch_ui_center.WRAP`·`WRAP2`·`WRAP3` 자리
     return bytes(out), {
         "ctab": ctab,
         "var": var,
