@@ -35,6 +35,7 @@ import font
 import glossary
 import graphics
 import hangul_map
+import patch_title_font
 import script as script_canon
 import scriptmap
 import textenc
@@ -386,6 +387,8 @@ def main():
     arcs = reinsert_script(a.disc, canon, table, report)
     for path, data in gfx_arcs.items():  # 그림이 든 파일도 같이 쓴다
         arcs.setdefault(path, data)
+    title_font_n, title_font_arcs = patch_title_font.apply(a.disc, base_arcs=arcs)
+    arcs.update(title_font_arcs)  # 그림 위에 문자열을 얹는다(같은 M01.DAT 일 수 있다)
 
     lines = sum(len(v) for v in canon.values())
     skipped = report["skipped"] + report["skipped_names"]
@@ -396,6 +399,8 @@ def main():
         f"그림 {gfx_files} · 글리프 {baked}"
     )
     print(f"  엔진: {engine or '⏭ 패치 없음 (공백도 12px)'}")
+    if title_font_n:
+        print(f"  타이틀 폰트: SLPS_012.01 BIOS 리다이렉트 · M01.DAT 문자열 {title_font_n}")
     if a.test:
         print("  🔴 **시험 빌드다** — 안 옮긴 문안은 엉뚱한 글자로 나온다. 배포물이 아니다.")
     if left:
