@@ -13,6 +13,7 @@
 아니라 **원본 + 정본**만 보므로 게이트에서 빌드 없이 돈다.
 """
 
+import itertools
 import json
 import sys
 from pathlib import Path
@@ -89,6 +90,44 @@ def scan(d: bytes) -> list[tuple[int, str]]:
     return runs
 
 
+def gaps(d: bytes) -> list[tuple[str, str]]:
+    """시스템 메시지 스트림 **사이 틈**(24B 이하)에 남은 가나 — 전각 한 글자 · 반각 두 글자 이상.
+
+    `scan` 은 묶음 범위 전체를 「덮였다」로 치고, 재삽입은 **번역된 스트림 제 범위**만 다시 쓴다. 스트림
+    시작을 한 칸 잘못 잡으면 그 사이 바이트가 원문 그대로 남는다 — `06`(수치) 바로 뒤 「 ﾎﾟｲﾝﾄ 」가
+    꼬리 스트림 앞에서 빠져 **화면에 반각 가나가 떴다**(전투 승리 · 레벨업 HP, 09-27 인게임). 꼬리는 제
+    묶음을 따로 이뤄 틈이 **묶음 사이**에 있었고, 반각 가나는 1바이트라 `_is_jp` 로는 아예 안 보였다.
+    """
+    import scene
+
+    smap = json.loads((common.GAME_DIR / "textmap" / "sysmsg.json").read_text(encoding="utf-8"))
+    strs = sysmsg.streams(d)
+    mine = sorted(
+        (t, e["stream"].end) for t, e in strs.items() if smap.get(f"{t:06x}", {}).get("ours")
+    )
+    out: list[tuple[str, str]] = []
+    for (_, e1), (s2, _) in itertools.pairwise(mine):
+        if not 0 < s2 - e1 <= 24:
+            continue
+        i = e1
+        while i < s2:
+            if 0xA6 <= d[i] <= 0xDF:
+                j = i
+                while j < s2 and 0xA6 <= d[j] <= 0xDF:
+                    j += 1
+                if j - i >= 2:
+                    out.append((f"gap:{i:06x}", d[i:j].decode("cp932", "replace")))
+                i = j
+            elif scene.is_lead(d[i]) and i + 1 < s2:
+                ch = _is_jp(int.from_bytes(d[i : i + 2], "big"))
+                if ch and "぀" <= ch <= "ヿ":
+                    out.append((f"gap:{i:06x}", ch))
+                i += 2
+            else:
+                i += 1
+    return out
+
+
 def scan_battle(d: bytes) -> list[tuple[str, str]]:
     """전투 아카이브(압축을 푼 110블록)에 남은 일본어. 자리는 `battle:<블록>:<오프셋>`.
 
@@ -104,7 +143,10 @@ def scan_battle(d: bytes) -> list[tuple[str, str]]:
     for n, (_s, b, _e) in enumerate(battle.blocks(d)):
         cov = []
         for tgt, e in battle.refs(b).items():
-            if bmap.get(battle.jp_key(e["stream"]), {}).get("ours"):
+            st = e["stream"]
+            if (bmap.get(battle.pos_key(st, n, tgt)) or bmap.get(battle.jp_key(st), {})).get(
+                "ours"
+            ):
                 cov.append((tgt, e["stream"].end))
         for r in battle.records(b):
             if battle.base_name(r["name"].decode("cp932", "replace")) in mons:
@@ -139,7 +181,7 @@ def known() -> dict[str, str]:
 
 def main() -> None:
     d = common.rom()
-    runs = [(f"{a:06x}", s) for a, s in scan(d)] + scan_battle(d)
+    runs = [(f"{a:06x}", s) for a, s in scan(d)] + scan_battle(d) + gaps(d)
     if "--freeze" in sys.argv:
         KNOWN_JSON.write_text(
             json.dumps(dict(runs), ensure_ascii=False, indent=1) + "\n", encoding="utf-8"

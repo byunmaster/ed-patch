@@ -14,6 +14,7 @@
 textmap/monsters.json 하나다.
 """
 
+import dataclasses
 import hashlib
 import json
 import re
@@ -45,8 +46,8 @@ MAP_JSON = common.GAME_DIR / "textmap" / "battle.json"
 EXPECT = (
     269,
     100,
-    320,
-)  # 이름 · 기본 이름 · 고유 스트림(lea·플래그·자료 A + 연쇄 39, 2026-09-06)
+    323,
+)  # 이름 · 기본 이름 · 고유 스트림(lea·플래그·자료 A + 연쇄 39, 2026-09-06 · 짧은 lea 조각 +3, 09-27)
 
 
 def blocks(d: bytes):
@@ -102,6 +103,20 @@ def _stream(b: bytes, tgt: int):
     return st if scene._textlike(st) else None
 
 
+def _short_lea(b: bytes, tgt: int):
+    """`lea` 가 가리키는 **짧은 연결 조각**(「は<02>に」 · 「の 左」+goto) — 전각 3자 미만이라 `_textlike` 가
+    거르지만 코드가 직접 가리키니 문안이다. 🔴 걸러진 넷(블록 23·73·93×2)이 번역 없이 원문 그대로 남아
+    화면에 가나가 새거나(가나 글리프는 표 0 에 없다) 옮겨진 스트림의 빈자리로 goto 했다(2026-09-27).
+    가나가 들어 있고 짧은 것만 받는다 — 자료 포인터가 우연히 풀린 것은 가나가 없다."""
+    if not 0 <= tgt < len(b):
+        return None
+    try:
+        st = scene.parse_stream(b, tgt)
+    except (ValueError, IndexError):
+        return None
+    return st if st.end - tgt < 40 and _has_kana(st) else None
+
+
 def refs(b: bytes) -> dict[int, dict]:
     """스트림 시작 → {stream, lea:[명령 자리], words:[자료 A 의 워드 자리], pinned}."""
     t = sections(b)
@@ -112,7 +127,7 @@ def refs(b: bytes) -> dict[int, dict]:
 
     for m in LEA.finditer(b, t[3]):
         tgt = m.start() + 2 + struct.unpack(">h", m.group(2))[0]
-        st = _stream(b, tgt)
+        st = _stream(b, tgt) or _short_lea(b, tgt)
         if st:
             ent(tgt, st)["lea"].append(m.start())
     for m in FLAG.finditer(b, t[3]):
@@ -228,6 +243,13 @@ def jp_key(st: scene.Stream) -> str:
     return hashlib.sha1(b"".join(t.raw for t in st.tokens)).hexdigest()[:10]
 
 
+def pos_key(st: scene.Stream, n: int, tgt: int) -> str:
+    """자리를 가리는 열쇠 — 바이트가 같아도 뜻이 다른 스트림용(있으면 해시 열쇠를 이긴다).
+    블록 93 「の 左」+goto 둘은 상대 goto 까지 바이트가 같은데 한쪽은 「…주문을 외웠다」, 다른 쪽은
+    「…물어뜯었다」로 이어진다 — 해시 하나로는 둘을 못 가른다."""
+    return f"{jp_key(st)}@{n}:{tgt:04x}"
+
+
 def survey(d: bytes):
     names: dict[str, list] = {}
     strs: dict[str, dict] = {}
@@ -329,6 +351,16 @@ def expand_names(text: str, monsters: dict) -> str:
     return NAME_TAG.sub(rep, text)
 
 
+def drop_goto(st: scene.Stream, ours: str) -> scene.Stream:
+    """우리 문안이 끝 코드로 닫히면 원문의 goto 를 버린 스트림 — 재삽입(`plan_block`)과 토큰 경계 게이트
+    (`check_refs`)가 **같은 판단**을 쓰게 한 자리. 원문이 남의 스트림 한가운데로 goto 해 꼬리를 빌려 쓰는
+    자리(블록 93 「の 左」→「の頭は…」)는 우리 글을 끝까지 제 글로 쓴다 — 옮겨진 스트림에선 상대 goto 가
+    성립하지 않는다."""
+    if re.search(r"<(00|06|07|0a)>$", ours) and any(t.ref == scene.GOTO for t in st.tokens):
+        return dataclasses.replace(st, tokens=[t for t in st.tokens if t.ref != scene.GOTO])
+    return st
+
+
 def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes | None:
     """블록 하나의 새 바이트(바뀐 게 없으면 None)."""
     out = bytearray(b)
@@ -353,10 +385,11 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
     moves = []
     for tgt, e in refs(b).items():
         st = e["stream"]
-        ent = textmap.get(jp_key(st))
+        ent = textmap.get(pos_key(st, n, tgt)) or textmap.get(jp_key(st))
         if not ent or not ent.get("ours"):
             continue
         ours = expand_names(ent["ours"], monsters)
+        st = drop_goto(st, ours)
         body = b"".join(t.raw for t in sysmsg._tokens_from_ours(st, ours, encode))
         span = st.end - tgt
         if len(body) <= span:

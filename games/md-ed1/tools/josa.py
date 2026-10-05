@@ -18,9 +18,13 @@ PS1 은 조립 버퍼를 1패스로 훑어 병기를 줄이는 방식이었다. 
 
     EB p   배우 이름 기준 조사 — 이름은 `($FF3470)` 의 첫 바이트(배우 번호) → `$FF1DBC + n*0x40 + 0x30`
     EC p   아이템 이름 기준 조사 — 이름 버퍼 `$FF2028`
+           p 상위 니블 = 1 이면 **주문 이름 버퍼 `$FF3450`**(시스템 메뉴 주문 사용 「…외웠다」 — 코드가
+           `lea $ff3450,a1 → jsr $60a0` 로 이름을 그린 직후 스트림 $7412 를 부른다, 2026-09-26 실측)
     p 하위 니블 = 0 은/는 · 1 이/가 · 2 을/를
-    p 상위 니블 = 0 이면 위 규칙, **0 이 아니면 (상위−1) 번 파티원**을 쓴다 —
+    EB 의 p 상위 니블 = 0 이면 위 규칙, **0 이 아니면 (상위−1) 번 파티원**을 쓴다 —
                   `<09 nn>`(번호로 이름을 그리는 코드) 뒤에 붙는 자리를 위해서다
+                  **상위 니블 = F 면 리더**(`$FF1AEC`) — `<0b>`(리더 이름) 뒤 조사. 전투의 이름 바꿈
+                  「헷갈리므로 <0b>은(는) …」(블록 71, 2026-09-27)을 위해 넣었다. 리더는 메뉴에서 바뀐다
 
 정본에선 `<02>을(를)` 대신 `<02><eb02>` 로 쓴다.
 
@@ -32,7 +36,9 @@ PS1 은 조립 버퍼를 1패스로 훑어 병기를 줄이는 방식이었다. 
     꼬리          진짜 핸들러 + 종성 비트표(한글·반각) + 조사 코드 쌍
 
 종성 판정은 **비트표**다 — 한글 코드는 `hangul_codes.json` 의 등록 순서라 규칙이 없다(빌드가 표를
-만든다). 반각은 숫자·라틴 글자를 한국어로 읽을 때의 받침(1=일 · 3=삼 · L=엘 …)을 담는다.
+만든다). 반각 표는 **숫자만 읽은 소리대로** 받침을 준다 — 0(영)·1(일)·3(삼)·6(육)·7(칠)·8(팔) = 받침 있음,
+2·4·5·9 = 없음(「레스1을 · 레스2를」). 🔴 **영문·부호 끝은 무받침**이다(기종 간 규칙, 마스터 확정 2026-09-26 —
+「부엉이A는」). 09-26 오전까지는 L·M·N·R 을 「엘·엠·엔·아르」로 읽어 받침을 줬는데 그 규칙으로 걷었다.
 """
 
 import struct
@@ -50,13 +56,15 @@ IDX_ACTOR, IDX_ITEM = CODE_ACTOR - 0xCB, CODE_ITEM - 0xCB  # 표 색인(디스�
 RENDER = 0x978C  # 렌더러 — a1 = 문안, d0 = 재귀 표식
 MAGIC = 0xFEDCBA98  # 이름 삽입 핸들러가 쓰는 값 그대로
 ACTOR_PTR = 0xFF3470  # 배우 레코드 포인터
+LEADER = 0xFF1AEC  # 리더의 레코드 번호 — 코드 `0B` 핸들러(`$A912`)가 이 바이트로 이름을 그린다
 PARTY_REC = 0xFF1DBC  # 레코드 배열(0x40 간격, 이름은 +0x30)
 ITEM_BUF = 0xFF2028  # 아이템 이름 버퍼
+SPELL_BUF = 0xFF3450  # 주문 이름 버퍼(EC 의 p 상위 니블 1)
 
 # p → (받침 없음, 받침 있음)
 PAIRS = [("는", "은"), ("가", "이"), ("를", "을")]
-# 반각을 한국어로 읽었을 때 받침이 있는 글자(1=일 · 3=삼 · 6=육 · 7=칠 · 8=팔 · 0=영 · L/M/N/R)
-ASCII_FINAL = set("013678") | set("LMNR") | set("lmnr")
+# 반각을 한국어로 읽었을 때 받침이 있는 글자 — 숫자만(1=일 · 3=삼 · 6=육 · 7=칠 · 8=팔 · 0=영)
+ASCII_FINAL = set("013678")  # 숫자만 읽은 소리대로 — 영문·부호는 무받침(위 docstring)
 
 
 def bitmap(bits: list[bool]) -> bytes:
@@ -126,9 +134,18 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
     w(0x0240, 0x00F0)  # andi.w #$f0,d0
     from_ptr_br = len(b)
     w(0x6700, 0)  # beq.w from_ptr       상위 니블 0 → 배우 포인터
+    w(0x0C40, 0x00F0)  # cmpi.w #$f0,d0
+    leader_br = len(b)
+    w(0x6700, 0)  # beq.w from_leader    상위 니블 F → 리더(`<0b>` 가 그리는 이름)
     w(0xE848)  # lsr.w #4,d0
     w(0x5340)  # subq.w #1,d0         (상위−1) 번 파티원
     have_idx_br = len(b)
+    w(0x6000, 0)  # bra.w have_idx
+    from_leader = len(b)
+    struct.pack_into(">h", b, leader_br + 2, from_leader - (leader_br + 2))
+    w(0x1039)
+    l(LEADER)  # move.b LEADER.l,d0
+    have_idx_br2 = len(b)
     w(0x6000, 0)  # bra.w have_idx
     from_ptr = len(b)
     struct.pack_into(">h", b, from_ptr_br + 2, from_ptr - (from_ptr_br + 2))
@@ -137,6 +154,7 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
     w(0x1010)  # move.b (a0),d0
     have_idx = len(b)
     struct.pack_into(">h", b, have_idx_br + 2, have_idx - (have_idx_br + 2))
+    struct.pack_into(">h", b, have_idx_br2 + 2, have_idx - (have_idx_br2 + 2))
     w(0x0280)
     l(0x000000FF)  # andi.l #$ff,d0
     w(0xED88)  # lsl.l #6,d0
@@ -151,6 +169,10 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
     w(0x48E7, 0xE0C0)  # movem.l d0-d2/a0-a1,-(a7)
     w(0x41F9)
     l(ITEM_BUF)  # lea ITEM_BUF.l,a0
+    w(0x0811, 0x0004)  # btst #4,(a1)       p 상위 니블 1 → 주문 이름
+    w(0x6706)  # beq.s +6
+    w(0x41F9)
+    l(SPELL_BUF)  # lea SPELL_BUF.l,a0
     # ── 공통: 이름의 마지막 글자를 찾는다 ─────────────────────────
     common = len(b)
     struct.pack_into(">h", b, common_from_actor + 2, common - (common_from_actor + 2))
@@ -203,6 +225,22 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
     w(0x6000, 0)  # bra.w bit
     wide2 = len(b)
     struct.pack_into(">h", b, wide2_br + 2, wide2 - (wide2_br + 2))
+    # 전각 숫자 「０~９」(SJIS 0x824F~0x8258)는 반각 숫자와 같은 받침 — 주문 이름이 「레스１」꼴이다
+    # (코드 `$A74E` 가 레벨을 전각 숫자로 붙인다, 버퍼 `$FF3450` 실측 2026-09-26).
+    w(0x0C41, 0x824F)  # cmpi.w #$824f,d1
+    nd_br1 = len(b)
+    w(0x6500, 0)  # bcs.w notdig
+    w(0x0C41, 0x8259)  # cmpi.w #$8259,d1
+    nd_br2 = len(b)
+    w(0x6400, 0)  # bcc.w notdig
+    w(0x0441, 0x823F)  # subi.w #$823f,d1    → 반각 표 색인('0' = 0x10)
+    w(0x41F9)
+    l(ascii_tbl)  # lea ascii_tbl.l,a0
+    bit_br2 = len(b)
+    w(0x6000, 0)  # bra.w bit
+    notdig = len(b)
+    struct.pack_into(">h", b, nd_br1 + 2, notdig - (nd_br1 + 2))
+    struct.pack_into(">h", b, nd_br2 + 2, notdig - (nd_br2 + 2))
     w(0x0441, base & 0xFFFF)  # subi.w #base,d1
     pick_br3 = len(b)
     w(0x6500, 0)  # bcs.w pick
@@ -213,6 +251,7 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
     l(hangul_tbl)  # lea hangul_tbl.l,a0
     bit = len(b)
     struct.pack_into(">h", b, bit_br + 2, bit - (bit_br + 2))
+    struct.pack_into(">h", b, bit_br2 + 2, bit - (bit_br2 + 2))
     w(0x3001)  # move.w d1,d0
     w(0xE649)  # lsr.w #3,d1
     w(0xD0C1)  # adda.w d1,a0

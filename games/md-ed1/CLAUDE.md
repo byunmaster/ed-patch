@@ -74,8 +74,9 @@ python3 games/md-ed1/tools/tables.py --seed      # textmap/names.json 초안 —
 python3 games/md-ed1/tools/gfxtext.py               # 타이틀 메뉴 그래픽 셀(변형별 색)
 python3 games/md-ed1/tools/vdp.py <덤프폴더> out.png [base] [width]  # 화면 재구성(⚠ VRAM 덤프는 바이트 스왑)
 python3 games/md-ed1/tools/vdp.py <덤프폴더> --guess                # 네임테이블 base·width 추정
-python3 games/md-ed1/tools/sysmsg.py --check/--seed  # 시스템 메시지 160 (lea/pea + 워드 표 0x73bc + 고정 스트림)
+python3 games/md-ed1/tools/sysmsg.py --check/--seed  # 시스템 메시지 163 (lea/pea + 워드 표 0x73bc + 고정 스트림)
 python3 games/md-ed1/tools/jp_left.py --check       # ⭐ 코드·전투 아카이브에 **남은 일본어**(참조로 못 찾는 자리를 잡는다)
+python3 games/md-ed1/tools/check_layout.py [-v]    # ⭐ 조립형 메시지 조판 — 가장 긴 이름·도구·주문·수치로 메시지 창 210px(시스템 게이트 · 전투·씬은 세기만)
 python3 games/md-ed1/tools/check_text.py [-v]      # 문안 품질 — 원문 잔존 · 부호 규칙 · 표기 일치(PS1 정본·용어집)
 python3 games/md-ed1/tools/battle.py --check/--seed    # 전투 아카이브 110블록 — 몬스터 이름 269 · 메시지 320(참조 없는 연쇄·레코드 영역 포함)
 python3 games/md-ed1/tools/captions.py --check/--seed  # 오프닝 자막 8 · 엔딩 나레이션 11 · 엔딩 대사 20 (워드 스크립트 표)
@@ -84,6 +85,7 @@ python3 games/md-ed1/tools/hangul.py --preview out.png "가나다"   # 글리프
 python3 games/md-ed1/tools/hangul.py --freeze     # 새 글자에 코드 부여 → textmap/hangul_codes.json (⚠ 코드는 세이브 호환 — 뒤에만 붙인다)
 python3 games/md-ed1/tools/ending_preview.py       # 엔딩을 오프닝 자리에서 트는 시험용 롬(work/emu/ed1_ending.bin)
 python3 games/md-ed1/tools/poc_visibility.py       # PoC 롬(work/emu/poc2.bin) — 글꼴 교체 + 블록 104 길이 변경·재압축·재배치
+python3 games/md-ed1/tools/publish.py            # ⭐ 게시 — 롬 + **그 md5 이름의 세이브**(슬롯 1 메뉴 · 3 엔딩 전)를 파일서버·~/save 로
 sh games/md-ed1/check.sh                         # ⭐ 이 게임의 커밋 전 게이트
 ```
 
