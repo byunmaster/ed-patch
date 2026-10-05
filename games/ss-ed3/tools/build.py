@@ -40,6 +40,7 @@ import reinsert_param as RP
 import reinsert_sys as RS
 import relocate as RL
 import subtitle_stub as SS
+import dev_options as DEV
 import voice_credits as VC
 import voice_sub as VS
 
@@ -249,7 +250,8 @@ def patched(disc, lay=None):
                 #   ⚠ 한 파일에 **설명문과 이름 표**가 같이 있다 — 둘을 이어서 넣는다.
                 #     이름 표가 빠져 있어 장비창에 일본어가 떴다(2026-08-27 유저 실측).
                 b = d.read_extent(lba, size)
-                new, k, bad = (b, 0, []) if not desctbl else RD.patch(b, table, desctbl)
+                src = DEV.patch_param(b)  # 개발용: 환경변수로 켤 때만(ED_DEV_ISABEL_HP) — 이름이 일본어일 때(번역 전)에 찾는다
+                new, k, bad = (src, 0, []) if not desctbl else RD.patch(src, table, desctbl)
                 new, k2, bad2 = RP.patch(new, None, paramtbl)
                 bad = bad + bad2
                 cnt = {"desc": k, "name": k2}
