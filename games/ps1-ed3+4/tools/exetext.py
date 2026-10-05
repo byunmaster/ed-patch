@@ -161,6 +161,87 @@ def scan_tables(data, cm, min_n=4):
     return out
 
 
+# 🔴 **표가 풀에서 떨어져 있는 자리** — `scan_tables` 는 「표[0] = 표 자신의 길이」(표 = base)인
+#    규격만 찾는다. 아이템 이름은 그 규격이 아니다: 표는 0x096F36 에, 오프셋의 기준(base)은
+#    0x09702C(표 안쪽)에 있다. 스캐너가 못 찾자 빌드는 이 구역을 「표 없음 → 길이 고정」으로 보고
+#    **통째로 건너뛰어** 화면에 일본어 아이템명이 남았다(2026-09-27 마스터 캡처 「布の服」·「短剣」).
+#    찾은 법: 이름 사이 간격(6·10·16B)과 같은 차이를 가진 u16 배열을 실행파일 전체에서 훑었다.
+#    항목 0~121 이 전부 문자열 시작을 가리킨다(122~130 은 0 = 빈 이름이라 안 넣는다).
+#    둘째(0x09D0F6, base = 표 끝 0x09D188, 73항목)는 **소지품 창** 한 벌 — 見る/読む/使う/捨てる ·
+#    수첩 목차 · 種別：/効果： 라벨 · 장비 갈래(短剣…盾) · 주문 이름 · 귀중품 설명 · 버리기 확인.
+#    표를 몰라 「길이 고정」으로 보던 자리라 1자 칸에 「盾」→「방패」가 못 들어갔다(같은 찾기로 발견).
+DETACHED = {"ed3": [(0x096F36, 0x09702C, 122), (0x09D0F6, 0x09D188, 73)]}
+
+# 🔴 **인물 이름은 표가 아니라 고정폭 칸**이다 — 14B(7워드) 칸 14개: 글자 ≤6 + 0 채움 + 마지막
+#    워드 0xFFFF. 칸 간격이 전부 14B 이고 어느 쪽 가리킴(u16·u32)도 없다 — 코드가 `기준 + 번호×14`
+#    로 곧바로 찾는다. 상태 창 머리·대상 선택·파티 목록이 다 여기서 읽는다(「ジュリオ」 세 곳).
+FIXED_SLOTS = {"ed3": [(0x096E54, 14, 7)]}  # (첫 칸, 칸 수, 칸 워드 수)
+
+
+def detached_tables(data, disc):
+    """[{table, base, n}] — `DETACHED` 를 **규격으로 다시 확인**하고 돌려준다(원본이 다르면 운다)."""
+    out = []
+    for tbl, base, n in DETACHED.get(disc, []):
+        ents = struct.unpack_from(f"<{n}H", data, tbl)
+        pool = base + min(ents)
+        for x in ents:
+            if string_end(data, base + x) is None or not is_start(data, base + x, pool):
+                raise ExeTextError(f"떨어진 표 0x{tbl:X}: 0x{base + x:X} 가 문자열 시작이 아니다")
+        out.append({"table": tbl, "base": base, "n": n})
+    return out
+
+
+def fixed_slots(data, disc):
+    """[(칸 주소, 칸 워드 수, 글자 코드)] — 모양(글자 · 0 채움 · 마지막 워드)이 다르면 운다."""
+    out = []
+    for first, count, words in FIXED_SLOTS.get(disc, []):
+        for i in range(count):
+            off = first + i * words * 2
+            w = struct.unpack_from(f"<{words}H", data, off)
+            n = next((k for k, x in enumerate(w) if is_term(x)), None)
+            if n is None or any(x != TERM_ZERO for x in w[n : words - 1]) or w[-1] != TERM_FFFF:
+                raise ExeTextError(f"고정 칸 0x{off:X} 모양이 다르다: {[hex(x) for x in w]}")
+            out.append((off, words, list(w[:n])))
+    return out
+
+
+def write_fixed_slot(data, off, words, codes):
+    """칸 하나를 다시 쓴다 — 글자 뒤는 0 으로, 마지막 워드(0xFFFF)는 그대로. 넘치면 운다."""
+    if len(codes) > words - 1:
+        raise ExeTextError(f"고정 칸 0x{off:X}: {len(codes)}코드는 {words - 1}칸을 넘는다")
+    struct.pack_into(
+        f"<{words}H", data, off, *codes, *([TERM_ZERO] * (words - 1 - len(codes))), TERM_FFFF
+    )
+
+
+def glued_entries(data, tables):
+    """[(오프셋, [짝 오프셋…])] — 표가 가리키는데 **바로 앞이 종결이 아닌** 문자열과, 주소로 그 뒤 항목들.
+
+    🔴 **표 바로 뒤 첫 항목은 구역 스캐너 눈에 안 보인다**(2026-09-27). 표의 마지막 워드(오프셋
+       값)가 종결이 아니라서 `dump_names.strings()` 가 표와 첫 문자열을 **한 덩어리**로 읽고, 그
+       덩어리엔 표 값이 섞여 있어 통째로 버린다. 그래서 표마다 첫 항목 하나씩이 게이트·UI 자리·
+       「쓰는 코드」 셈에서 빠져 있었다 — `ページ`(페이지 1)·`イノシシ`·`フォルティア`·`ハチよせ`·
+       `戦闘設定`. 짝 오프셋은 **갈래(kind)를 정하는 데** 쓴다 — 스캐너가 찾은 첫 짝의 구역 라벨이
+       곧 이 항목의 갈래다(주소로는 앞 구역 라벨에 걸려 틀린다). ⚠ 바로 다음 짝이 빈 문자열이면
+       스캐너가 안 세므로(`フォルティア` 뒤가 그랬다) 몇 개를 넘겨 준다 — `kind_of` 로 고른다.
+    """
+    out = []
+    for t in tables:
+        ents = sorted(set(struct.unpack_from(f"<{t['n']}H", data, t["table"])))
+        offs = [t["base"] + x for x in ents]
+        for i, off in enumerate(offs):
+            if off < 2 or is_term(struct.unpack_from("<H", data, off - 2)[0]):
+                continue
+            if i + 1 < len(offs):
+                out.append((off, offs[i + 1 : i + 6]))
+    return out
+
+
+def kind_of(mates, kind_at):
+    """짝들 중 스캐너가 라벨을 붙인 첫 자리의 갈래 — 없으면 None."""
+    return next((kind_at[m] for m in mates if kind_at.get(m)), None)
+
+
 def table_of(data, offs, cm, tables=None):
     """(표 주소, base, N) — 그 구역의 문자열을 담는 표. 없으면 None.
 
@@ -223,7 +304,7 @@ def chunks(data, tbl, base, n):
     return out
 
 
-def rebuild(data, tbl, base, n, new_codes, cm=None):
+def rebuild(data, tbl, base, n, new_codes, cm=None, pad_code=None):
     """표와 풀을 다시 싼다. `new_codes` 는 표 순서대로 N개.
 
     🔴 **표 순서가 곧 배치 순서는 아니다.** 표가 같은 문자열을 두 번 가리키기도 하므로
@@ -232,6 +313,16 @@ def rebuild(data, tbl, base, n, new_codes, cm=None):
     🔴 종결 바이트는 **원본 것을 그대로 쓴다** — 표마다 다르고(`0x8002`·`0xFFFF`·`0x0000`)
        바꾸면 그 문안이 화면에 안 붙는다(새턴 ED3 에서 겪은 사고와 같은 종류다).
     ⚠ 같은 자리를 가리키는 항목엔 **같은 문안**을 줘야 한다 — 다르면 어느 쪽인지 정할 수 없다.
+
+    🔴 **`pad_code` 없이 칸이 줄면 남는 자리를 `TERM_FFFF` 로 채운다 — 이게 일부 UI 목록에서
+       사고를 낸다.** 실측(ED3, 2026-09-26): 시스템 설정·메시지속도 목록은 **표를 안 보고
+       종결마다 다음 문자열로 이어 읽는 순차 스캔**이다. 그 목록이 참조하는 문자열 하나가
+       이 표의 칸 끝에 걸려 있었는데, 문안이 짧아져 생긴 슬랙을 `TERM_FFFF`(빈 문자열
+       두 개)로 채우자 순차 스캐너가 **빈 문자열 = 목록 끝**으로 읽어 4줄이 2줄로 잘렸다
+       (`docs/devlog.md` 09-26 참조). `pad_code` 를 주면 슬랙을 **그 칸의 마지막 조각 자신의
+       글자열**에 이어 붙여(종결 앞으로) 채운다 — 안 보이는 채움 글자(스페이스)라 화면엔
+       안 보이면서 순차 스캐너 눈엔 "빈 문자열"이 아니라 "긴 문자열 하나"로 남는다.
+       ⚠ **칸 안에서 빌려주는 구간(여러 조각)이면 해당 없다** — 마지막 조각에만 닿는다.
     반환: (새 바이트열, 칸마다 남은 자리 합)
     """
     if len(new_codes) != n:
@@ -248,7 +339,7 @@ def rebuild(data, tbl, base, n, new_codes, cm=None):
         want[x], terms[x] = codes, t
 
     out = bytearray(data)
-    remap, slack = {}, 0
+    remap, slack, tail_pad = {}, 0, {}
     for lo, hi, starts in chunks(data, tbl, base, n):
         pool = bytearray()
         for off in starts:
@@ -257,8 +348,15 @@ def rebuild(data, tbl, base, n, new_codes, cm=None):
             pool += struct.pack(f"<{len(want[x])}H", *want[x]) + struct.pack("<H", terms[x])
         if lo + len(pool) > hi:
             raise ExeTextError(f"예산 초과: 칸 0x{lo:X} 에 {len(pool)}B (자리는 {hi - lo}B)")
+        extra_words = (hi - lo - len(pool)) // 2
+        if pad_code is not None and extra_words and starts:
+            last_x = starts[-1] - base
+            term_bytes = pool[-2:]
+            pool = pool[:-2] + struct.pack(f"<{extra_words}H", *([pad_code] * extra_words))
+            pool += term_bytes
+            tail_pad[last_x] = extra_words
         out[lo : lo + len(pool)] = pool
-        for i in range(lo + len(pool), hi, 2):  # 남는 자리는 종결로 채운다
+        for i in range(lo + len(pool), hi, 2):  # 그래도 남는 자리는 종결로 채운다
             struct.pack_into("<H", out, i, TERM_FFFF)
         slack += hi - lo - len(pool)
     if max(remap.values()) > 0xFFFF:
@@ -269,7 +367,8 @@ def rebuild(data, tbl, base, n, new_codes, cm=None):
     back = struct.unpack_from(f"<{n}H", bytes(out), tbl)
     for i, x in enumerate(back):
         codes, term = raw_string(bytes(out), base + x)
-        if codes != list(new_codes[i]) or term != terms[ents[i]]:
+        want_codes = list(new_codes[i]) + [pad_code] * tail_pad.get(ents[i], 0)
+        if codes != want_codes or term != terms[ents[i]]:
             raise ExeTextError(f"되읽은 {i}번이 넣은 것과 다르다")
     return bytes(out), slack
 
@@ -359,6 +458,26 @@ def main():
             if out[lo:hi] != data[lo:hi] or out[tbl : tbl + n * 2] != data[tbl : tbl + n * 2]:
                 print("     🔴 항등 재구축이 바이트 동일이 아니다")
                 fail = 1
+    # 🔴 떨어진 표(`DETACHED`)·고정 칸(`FIXED_SLOTS`)도 같은 검산을 받는다 — 구역 스캐너가
+    #    그 자리를 「미상」으로 보므로 위 루프만으론 **빌드가 쓰는 표가 검사 밖**이었다(09-27).
+    if a.check:
+        for t in detached_tables(data, a.disc):
+            tbl, base, n = t["table"], t["base"], t["n"]
+            cur = [
+                raw_string(data, base + x)[0] or [] for x in struct.unpack_from(f"<{n}H", data, tbl)
+            ]
+            try:
+                out, _ = rebuild(data, tbl, base, n, cur)
+            except ExeTextError as e:
+                print(f"     🔴 떨어진 표 0x{tbl:06X} 항등 재구축 실패: {e}")
+                fail = 1
+                continue
+            same = out == data
+            print(f"  0x{tbl:06X} 떨어진 표 N={n:3d} → 항등 재구축 {'✓' if same else '🔴'}")
+            fail |= not same
+        slots = fixed_slots(data, a.disc)  # 모양이 다르면 여기서 운다
+        if slots:
+            print(f"  고정 칸 {len(slots)} → 모양 ✓")
     if a.check and fail:
         print("  🔴 실행파일 낱말 표 — 파서가 구조를 잘못 읽고 있다")
     return fail

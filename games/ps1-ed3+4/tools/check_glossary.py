@@ -48,6 +48,20 @@ def words(disc):
             for s in r["items"]:
                 if s not in by[r["kind"]]:
                     by[r["kind"]].append(s)
+    # 🔴 표 바로 뒤 첫 항목은 구역 스캐너가 못 본다(`exetext.glued_entries`) — 빌드는 표로
+    #    그 자리를 옮기므로, 여기서 빠지면 정본에 넣은 이름이 「원본에 없는 항목」으로 운다.
+    import exetext
+
+    kind_at = {off: r["kind"] for r in regs for off in r["offs"]}
+    tables = exetext.scan_tables(data, cm) + exetext.detached_tables(data, disc)
+    for off, mates in exetext.glued_entries(data, tables):
+        kind = exetext.kind_of(mates, kind_at)
+        codes, _ = exetext.raw_string(data, off)
+        if kind not in glossary.KINDS or not codes or any(c not in cm for c in codes):
+            continue
+        s = textenc.decode(codes, disc)
+        if len(codes) <= dump_names.MAX_LEN and s not in by[kind]:
+            by[kind].append(s)
     return by
 
 

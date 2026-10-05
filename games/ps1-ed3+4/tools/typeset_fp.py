@@ -14,11 +14,12 @@ PS1 플랫폼이라 ps1-ed1+2 를 흔든 공용 변경(`c3ec16af`, 보조용언�
 
 ## 무엇을 재나 — build.py 가 실제로 굽는 것 그대로
 
-`build.py:reinsert_script` 는 `typeset.wrap(row["kr"], disc, jp=jp)` 를 그대로 화면에 쓴다
-(⚠ `floor` 는 **안 넘긴다** — `floor` 는 `script.py --check`·`--review` 의 예산 판정에만 쓰이고,
-실제로 이미지에 박히는 줄바꿈은 `jp` 만으로 정해진다). 지문도 똑같이 `jp=jp` 만 준다 — 그래야
-**빌드가 실제로 쓰는 값**을 잰다(체크리스트 4-B: 검사기가 재는 자가 빌드가 쓰는 자와 달라지면
-초록불이 거짓말한다).
+`build.py:reinsert_script` 는 `typeset.wrap(row["kr"], disc, jp=jp, floor=…)` 를 그대로 화면에
+쓴다(`floor` = `script.member_floors`). 지문도 똑같이 준다 — 그래야 **빌드가 실제로 쓰는 값**을
+잰다(체크리스트 4-B: 검사기가 재는 자가 빌드가 쓰는 자와 달라지면 초록불이 거짓말한다).
+🔴 09-27 까지는 빌드가 `floor` 를 **안 넘겼고** 지문도 그걸 충실히 따라 했다 — 그래서 지문은
+**잘린 문안**을 얼려 두고 있었다(ED3 37줄 · ED4 59줄). 지문은 「빌드와 같은가」만 보지
+「빌드가 맞는가」는 못 본다. 그 구멍은 `typeset.wrap` 이 넘치면 우는 쪽으로 막았다.
 
 - **대사** — `script.load(disc)` 의 전 조각을 `jp=원문` 으로 조판해 **아카이브!멤버** 단위로 묶는다.
 - **UI** — `uitext.load(disc)` 의 전 항목을 조판해(창 폭 상한, `jp` 없이) 한 구역으로 묶는다.
@@ -55,13 +56,14 @@ def fingerprint():
     for disc in common.DISC_NAMES:
         for archive, member, segs in script_canon.members(disc):
             jp_by_idx = dict(segs)
+            floors = script_canon.member_floors(segs)
             lines = script_canon.load(disc).get((archive, member))
             if not lines:
                 continue
             parts = []
             for i, row in sorted(lines.items()):
                 jp = jp_by_idx.get(i, "")
-                wrapped = typeset.wrap(row["kr"], disc, jp=jp)
+                wrapped = typeset.wrap(row["kr"], disc, jp=jp, floor=floors.get(i, 0))
                 parts.append(f"{i}\x00{wrapped}")
             region = f"{disc}:{archive}!{member}"
             out[region] = _h(parts)
