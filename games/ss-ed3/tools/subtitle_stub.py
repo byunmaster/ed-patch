@@ -659,12 +659,32 @@ CRED = 0x06016420  # 죽은 디버그 메뉴 구역 안(`0x0601641C` 부터) —
 TASK_LIT = 0x06047924  # 태스크 `0x06047908` 이 부르는 함수 주소 리터럴
 TASK_ORIG = 0x0604BD10
 TVMD = 0x25F80000  # VDP2 화면 모드 — 하위 3 비트 2 = 640 폭(고해상도)
-CV_ARM, CV_IDX, CV_X, CV_Y, CV_CLK, CV_TXTP = 0, 2, 4, 6, 8, 12  # 크레딧 변수(작은 것 먼저 — mov.w 변위가 30 까지)
+CV_ARM, CV_IDX, CV_X, CV_Y, CV_CLK, CV_TXTP = (
+    0,
+    2,
+    4,
+    6,
+    8,
+    12,
+)  # 크레딧 변수(작은 것 먼저 — mov.w 변위가 30 까지)
 CV_XC, CV_YC = 16, 18  # 글자 스프라이트 오른쪽 아래 — **확대·축소 스프라이트**라 두 점을 준다
 CV_HK = 20  # 메인 스레드 등록 루틴이 불린 횟수(계측 — 프레임마다 도는지 본다)
-CV_XR, CV_XCR = 24, 26  # 그림이 **오른쪽**일 때(자막은 왼쪽) 쓰는 x — 기본 x·xc 는 그림이 왼쪽일 때(자막은 오른쪽)
-CV_MINX, CV_SIDE = 28, 30  # 이번 프레임에 등록된 크레딧 글자들의 XA 최솟값(0x7FFF = 없음) · 래치한 그림 쪽(0 왼쪽 · 1 오른쪽)
-CV_LEN = 32
+CV_XR, CV_XCR = (
+    24,
+    26,
+)  # 그림이 **오른쪽**일 때(자막은 왼쪽) 쓰는 x — 기본 x·xc 는 그림이 왼쪽일 때(자막은 오른쪽)
+CV_MINX, CV_SIDE = (
+    28,
+    30,
+)  # 이번 프레임에 등록된 크레딧 글자들의 XA 최솟값(0x7FFF = 없음) · 래치한 그림 쪽(0 왼쪽 · 1 오른쪽)
+CV_END, CV_ESIDE = (
+    32,
+    36,
+)  # 지금 자막의 끝 시계 · 그 자막이 뜰 때 래치한 그림 쪽(둘 다 long — mov.w 변위는 30 까지)
+CV_LEN = 40
+#   그림이 자막 도중에 옮겨 가면 자막도 따라 옮기되, **남은 시간이 이보다 짧으면 옮기지 않고 거기서 끝낸다**
+#   (마스터 10-03 — 「그는 지팡이를 보고 깜짝 놀랐다」 가 옮기자마자 사라지던 자리). 프레임(≈1.5초).
+MOVE_MIN = 90
 EMIT_LIT = 0x0603EE30  # 크레딧 글자 함수의 `jsr emit` 이 읽는 풀 리터럴(값 = EMIT)
 XABUF = 0x0607D1C8  # 크레딧 글자 함수가 방금 등록한 글자 명령의 XA(로컬 x) — 이름 글자가 검은 칸 쪽에 놓이므로 그림 좌우를 가른다
 HOOK2 = 0x0603EDE8  # 크레딧 글자 함수 에필로그 — 메인 스레드에서 프레임마다 `emit` 을 ~26 회 부르는 함수의 끝
@@ -747,6 +767,11 @@ def _credits_code(a):
     a.movl_to_d(11, 7, CV_TXTP)
     a.tst(7, 7)
     a.bt("c_out")  # 글자가 없어졌다 — 그릴 것 없다
+    #   새 자막 — 끝 시계와 지금 그림 쪽을 래치한다(`cemit` 이 도중에 그림이 옮겨 갔는지 본다)
+    a.movl_d(1, 5, 4)
+    a.movl_to_d(11, 1, CV_END)
+    a.movw_d_r0(11, CV_SIDE)
+    a.movl_to_d(11, 0, CV_ESIDE)
     #   ── 새 글자 — 좌표를 뜨고 버퍼에 굽는다
     a.mov(8, 7)
     a.movw_inc(0, 8)  # 프레임(안 쓴다)
@@ -844,8 +869,20 @@ def _credits_emit_code(a):
     a.movl_d(1, 11, CV_TXTP)
     a.tst(1, 1)
     a.bt("ce_out")
-    a.movl_pc(4, "TPLC")
+    #   그림이 이 자막 도중에 옮겨 갔으면: 남은 시간이 `MOVE_MIN` 이상일 때만 따라 옮기고, 짧으면 여기서 감춘다
     a.movw_d_r0(11, CV_SIDE)
+    a.movl_d(2, 11, CV_ESIDE)
+    a.cmp_eq(0, 2)
+    a.bt("ce_side")
+    a.movl_d(1, 11, CV_END)
+    a.movl_d(3, 11, CV_CLK)
+    a.sub(1, 3)  # 남은 프레임
+    a.movi(3, MOVE_MIN)
+    a.cmp_hs(1, 3)
+    a.bf("ce_out")
+    a.movl_to_d(11, 0, CV_ESIDE)
+    a.label("ce_side")
+    a.movl_pc(4, "TPLC")
     a.tst(0, 0)
     a.bt("ce_left_art")
     a.movw_d_r0(11, CV_XR)
@@ -946,8 +983,18 @@ def build_credits(draw_line, table=b""):
     )
     assert len(out) == ctab - CRED
     out += table
-    assert CRED + len(out) <= STUB - 0x140, (len(out), STUB - 0x140 - CRED)  # 끝 0x140B 는 `patch_ui_center.WRAP`·`WRAP2` 자리
-    return bytes(out), {"ctab": ctab, "var": var, "tplc": tplc, "cred": CRED, "cemit": lbl["cemit"], "cwrap": lbl["cwrap"]}
+    assert CRED + len(out) <= STUB - 0x1C0, (
+        len(out),
+        STUB - 0x1C0 - CRED,
+    )  # 끝 0x1C0B 는 `patch_ui_center.WRAP`·`WRAP2`·`WRAP3` 자리
+    return bytes(out), {
+        "ctab": ctab,
+        "var": var,
+        "tplc": tplc,
+        "cred": CRED,
+        "cemit": lbl["cemit"],
+        "cwrap": lbl["cwrap"],
+    }
 
 
 BASE = 0x06004000  # `/0.BIN` 적재 주소

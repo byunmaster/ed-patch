@@ -34,7 +34,10 @@ ART_BOTTOM = 230  # 그림 아래 끝(VDP1 좌표 — 화면 460 의 절반)
 LINE_H = SS.LINE_PITCH  # 줄 간격(px)
 #   그림이 왼쪽이면 자막은 오른쪽 검은 칸(화면 x 315~660 → VDP1 157~330)의 가운데 245,
 #   오른쪽이면 왼쪽 검은 칸의 가운데 85. 글자 스프라이트의 **가운데**가 거기 오게 한다.
-CENTER = {"L": 236, "R": 84}  # 그림 L: 검은 칸 화면 x 313~660 의 가운데 / 그림 R: 0~347 의 가운데(VDP1 = 화면/2.0625)
+CENTER = {
+    "L": 236,
+    "R": 84,
+}  # 그림 L: 검은 칸 화면 x 313~660 의 가운데 / 그림 R: 0~347 의 가운데(VDP1 = 화면/2.0625)
 LOCAL = 160  # VDP1 로컬 원점 x(화면 가운데)
 LOCAL_Y = 120  # 로컬 원점 y
 BLACK_W = 172  # 그림 반대쪽 검은 칸 폭(VDP1 좌표) — 화면 x 315~660 을 절반으로
@@ -108,7 +111,8 @@ def _pad(line):
     """가운데 맞추는 앞 공백 개수 — 반각 공백 4px."""
     #   줄 끝 부호 칸은 잉크가 3px 쯤이고 나머지는 빈칸이라 폭에서 빈칸을 빼야 **눈으로** 가운데다
     tail = FULL - 3 if line.rstrip()[-1:] in H.CRED_PUNCT else 0
-    return max(0, (BUF_W - (width(line) - tail)) // 2 // HALF)
+    #   반올림한다 — 내림이면 한 칸(4px) 가까이 왼쪽으로 쏠린 줄이 생긴다(마스터 10-03 「중앙정렬 안 된 부분」)
+    return max(0, round((BUF_W - (width(line) - tail)) / 2 / HALF))
 
 
 def table_cred():
@@ -134,9 +138,12 @@ def record(sub, table, scale=1.0):
     #   글자 9 행(0~8) · 줄 간격 `CRED_PITCH` — 마지막 줄 잉크 아래 끝이 그림 아래 끝에서 5px 위에 오게 위 끝을 잡는다
     y = round(ART_BOTTOM - 5 - LOCAL_Y - ((len(lines) - 1) * SS.CRED_PITCH + 8) * scale)
     xs = [round(CENTER[side] - w / 2 - LOCAL) for side in ("L", "R")]
-    out = struct.pack(
-        ">Hhhhhhh", 0, xs[0], y, xs[0] + round(w), y + round(h), xs[1], xs[1] + round(w)
-    ) + b"\x00"
+    out = (
+        struct.pack(
+            ">Hhhhhhh", 0, xs[0], y, xs[0] + round(w), y + round(h), xs[1], xs[1] + round(w)
+        )
+        + b"\x00"
+    )
     for t in lines:
         out += H.encode_kr(" " * _pad(t) + rendered(t), table) + b"\x00"
     out += b"\x00"
@@ -185,7 +192,9 @@ def main():
     t = blob(w["ctab"], doc)
     n = len(doc["subs"])
     span = SS.STUB - w["ctab"]
-    print(f"항목 {n} · 표 {len(t)}B (남는 자리 {span - len(t)}B) · 크레딧 코드 @ {SS.CRED:#x} · 표 @ {w['ctab']:#x}")
+    print(
+        f"항목 {n} · 표 {len(t)}B (남는 자리 {span - len(t)}B) · 크레딧 코드 @ {SS.CRED:#x} · 표 @ {w['ctab']:#x}"
+    )
     ends = max(s["end"] for s in doc["subs"])
     print(f"마지막 자막 끝 {ends:.1f}초 = 시계 {round(ends * doc['fps'])} 프레임")
     if len(t) > span:

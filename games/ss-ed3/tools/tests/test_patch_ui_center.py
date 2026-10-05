@@ -15,6 +15,8 @@ def fake():
     for lit in P.LIST_LITS:
         b[lit - P.BASE : lit - P.BASE + 4] = P.DRAW.to_bytes(4, "big")
     b[P.BANNER_LIT - P.BASE : P.BANNER_LIT - P.BASE + 4] = P.DRAW.to_bytes(4, "big")
+    for lit in P.WAIT_LITS:
+        b[lit - P.BASE : lit - P.BASE + 4] = P.WAIT.to_bytes(4, "big")
     return bytes(b)
 
 
@@ -28,13 +30,25 @@ class UiCenter(unittest.TestCase):
             self.assertEqual(new[lit - P.BASE : lit - P.BASE + 4], P.WRAP.to_bytes(4, "big"))
         self.assertEqual(new[P.WRAP - P.BASE : P.WRAP - P.BASE + len(P.WRAP_CODE)], P.WRAP_CODE)
         # 배너 글자 호출은 이름 변환 껍데기로 돈다 — 쥬리오의 본 → 내려앉은 코드 쌍이 표에 있다
-        self.assertEqual(new[P.BANNER_LIT - P.BASE : P.BANNER_LIT - P.BASE + 4], P.WRAP2.to_bytes(4, "big"))
+        self.assertEqual(
+            new[P.BANNER_LIT - P.BASE : P.BANNER_LIT - P.BASE + 4], P.WRAP2.to_bytes(4, "big")
+        )
         table, chars = P._person_pairs()
         self.assertIn("쥬", chars)
         self.assertIn(table[:4], P.wrap2_code())
         # add #imm,r1 — 부호 있는 imm8: −116 → −117 (한 줄 위)
         self.assertEqual(int.from_bytes(P.TEXT_Y_ORIG[1:], "big") - 256, -116)
         self.assertEqual(int.from_bytes(P.TEXT_Y_NEW[1:], "big") - 256, -117)
+
+    def test_wait_routine_goes_through_the_cursor_wrapper(self):
+        new = P.patch(fake())
+        for lit in P.WAIT_LITS:  # `▼` 대기 루틴 호출 둘이 껍데기로 돈다
+            self.assertEqual(new[lit - P.BASE : lit - P.BASE + 4], P.WRAP3.to_bytes(4, "big"))
+        code = P.wrap3_code()
+        self.assertEqual(new[P.WRAP3 - P.BASE : P.WRAP3 - P.BASE + len(code)], code)
+        self.assertLessEqual(P.WRAP3 + len(code), P.WRAP2)  # 이웃(WRAP2)을 안 덮는다
+        self.assertIn(P.WAIT.to_bytes(4, "big"), code)  # 원래 대기 루틴으로 점프한다
+        self.assertIn(P.WINS.to_bytes(4, "big"), code)
 
     def test_refuses_a_different_build(self):
         bad = bytearray(fake())

@@ -289,7 +289,9 @@ def _close(a, b):
         and a.get("who") == b.get("who")
         and face(a) == face(b)
         and a["off"] == b["off"]
-        and (int(b.get("delay", 0)) - int(a.get("delay", 0))) / FPS - a.get("_dur0", a.get("dur", 0)) < MERGE_GAP
+        and (int(b.get("delay", 0)) - int(a.get("delay", 0))) / FPS
+        - a.get("_dur0", a.get("dur", 0))
+        < MERGE_GAP
     )
 
 
@@ -305,7 +307,9 @@ def _merge_short(hooks, order):
     seq = [hooks[i] for i in order if hooks[i].get("lines") and not hooks[i].get("preload")]
     for h in seq:
         h.pop("_m", None)
-        h["dur"] = h.setdefault("_dur0", h.get("dur", 9))  # 늘린 표시 시간을 되돌려 몇 번을 불러도 같다
+        h["dur"] = h.setdefault(
+            "_dur0", h.get("dur", 9)
+        )  # 늘린 표시 시간을 되돌려 몇 번을 불러도 같다
     for i, h in enumerate(seq):
         if h.get("_m") or h["_dur0"] >= MERGE_SHORT:
             continue
@@ -324,8 +328,10 @@ def _merge_short(hooks, order):
         if prev and not prev.get("_m") and _close(prev, h):
             m = reflow(prev["lines"] + h["lines"], room)
             if m:
-                h["_body"] = m
-                h["_m"] = True
+                #   🔴 앞 칸도 **같은 묶음 글**로 띄운다 — 뒤 칸만 바꾸면 앞 줄이 혼자 한 번, 묶음으로 또 한 번 나와
+                #     같은 줄이 두 창에 겹친다(마스터 10-03 V17 「어라? 이 분수…」 · V18 「힘으로 밀어붙이면…」).
+                prev["_body"] = h["_body"] = m
+                prev["_m"] = h["_m"] = True
 
 
 def link(hooks, order):
@@ -348,17 +354,17 @@ def link(hooks, order):
             #   말 사이가 `HOLD_GAP` 초 넘게 비면(뜸을 들이면) 닫고 새로 띄운다 — 자리가 다르면 간격을 못 재니 이어진 것으로 본다
             and (
                 h["off"] != prev["off"]
-                or (int(h.get("delay", 0)) - int(prev.get("delay", 0))) / FPS - prev.get("_dur0", prev.get("dur", 0)) < HOLD_GAP
+                or (int(h.get("delay", 0)) - int(prev.get("delay", 0))) / FPS
+                - prev.get("_dur0", prev.get("dur", 0))
+                < HOLD_GAP
             )
         )
-        room = MAX_LINES - (1 if h.get("who") else 0)
-        if h.get("_m"):
-            pass  # 짧은 칸 묶음(`_merge_short`)이 이미 몸통을 정했다
-        elif same:
+        if same:
+            prev["_hold"] = (
+                True  # 창·얼굴을 두고 글만 바꾼다 — 묶음 칸 사이도 마찬가지(같은 글이면 그대로 보인다)
+            )
+        if not h.get("_m"):  # 묶음 칸은 `_merge_short` 가 이미 몸통을 정했다
             h["_body"] = list(h["lines"])  # 앞 줄을 싣지 않는다 — 스크롤이 아니라 **교체**
-            prev["_hold"] = True
-        else:
-            h["_body"] = list(h["lines"])
         prev = h
 
 

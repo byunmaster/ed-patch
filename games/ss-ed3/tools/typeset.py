@@ -421,8 +421,12 @@ def pad_to_budget(text, budget, width=WIN_COLS, keep_last=True):
         if need <= 0:
             break
         take = min(room, need)
-        # 홀수 바이트는 반각 하나로 맞춘다(0.5칸)
-        pages[pi][li] += PAD * (take // 2) + (PAD_HALF if take % 2 else "")
+        # 홀수 바이트는 반각 하나로 맞춘다(0.5칸).
+        # 🔴 **반각이 앞, 전각이 뒤다.** 엔진은 **글자를 그리기 전에** 커서가 `창 폭 − 2칸`(18칸 창에서 16칸 = 192px)을 넘었으면
+        #   줄을 바꾼다. 줄 끝 반각 공백이 그 선을 넘은 자리(예: 6.5칸 + 전각 10 = 16.5칸 뒤 반각)에서 시작하면 **그 공백 하나가
+        #   다음 줄로 넘어가** 대기 `▼` 가 한 줄 아래 왼쪽 끝에 뜬다(2026-10-04 실기 — MAP076 「괜찮아, 엄마.」). 반각을 앞에
+        #   두면 모든 공백이 선 안(시작 x ≤ 192)에서 시작한다.
+        pages[pi][li] += (PAD_HALF if take % 2 else "") + PAD * (take // 2)
         need -= take
     out = PAGE.join(NL.join(pg) for pg in pages)
     assert body_bytes(out) == budget, (body_bytes(out), budget)

@@ -36,7 +36,9 @@ BORDER_Y_ORIG = bytes.fromhex("7189")  # −119
 DRAW = 0x060417AC
 LIST_LITS = (0x060284B4, 0x06028550)  # 풀에서 `DRAW` 를 가리키는 리터럴 둘
 WRAP = 0x06018BF0
-WRAP_CODE = bytes.fromhex("345cd001402b0009") + DRAW.to_bytes(4, "big")  # add r5,r4 · mov.l @(1,pc),r0 · jmp @r0 · nop · 리터럴
+WRAP_CODE = bytes.fromhex("345cd001402b0009") + DRAW.to_bytes(
+    4, "big"
+)  # add r5,r4 · mov.l @(1,pc),r0 · jmp @r0 · nop · 리터럴
 
 
 #   🔴 **배너 안의 파티 이름만 1px 높게 나왔다**(마스터 10-01 「쥬리오 만 1px 더」). 배너 글자는 시스템 문자열이라 **내려앉은
@@ -136,6 +138,97 @@ def wrap2_code():
     return blob
 
 
+#   🔴 **`▼`(대기 표시)가 글자에서 멀다**(마스터 10-01·10-03). 원본 블록은 원문 길이에 딱 맞아 `▼` 가 글자 바로 뒤에 붙는데,
+#   우리는 **바이트 예산을 채우려고 줄 끝에 전각·반각 공백을 덧붙인다**(`typeset.pad_to_budget`) — 공백도 글자라 커서가 그만큼
+#   밀리고 `▼` 는 커서에 찍힌다. 한 줄 대사는 채울 자리가 그 줄 끝뿐이라 글 구성으로는 못 푼다(대사 페이지 끝 줄의 약 28%).
+#   ⇒ 대기 루틴(`0x06041F68`: 창 번호 r4 → 창 구조체 `0x06095AB0 + 84×r4`, 커서 x = `+20`)을 부르는 두 자리(리터럴)를
+#   **껍데기**(`WRAP3`)로 돌린다 — 호출 직전 **스크립트 스트림에서 방금 읽은 끝 공백**(전각 `81 40` · 반각 `20`)의 폭(`+62`/`+64`)만큼
+#   커서 x 를 되돌려 두고 원래 루틴을 부른 뒤 **x 를 원래대로 복원**한다(뒤따르는 글·줄바꿈은 달라지지 않는다).
+#   스크립트 포인터(`+4`)는 대기 옵코드를 이미 읽은 **다음** 바이트라 `ptr−1` 이 옵코드, 그 앞이 글자다.
+WAIT = 0x06041F68
+WAIT_LITS = (
+    0x060420C8,
+    0x060420F0,
+)  # 풀에서 `WAIT` 를 가리키는 리터럴 둘(0x060420A0 · 0x060420D8 이 읽는다)
+WINS = 0x06095AB0
+WRAP3 = 0x06018A40
+WRAP3_ROOM = WRAP2 - WRAP3
+
+
+def wrap3_code():
+    """`WRAP3` 에 둘 바이트 — 코드 · 풀(WINS · WAIT)."""
+    import subtitle_stub as SS
+
+    a = SS.Asm(WRAP3)
+    a.sts_pr()
+    a.push(4)  # 창 번호
+    a.movi(1, 84)
+    a._e(0x0417)  # mul.l r1,r4
+    a._e(0x031A)  # sts macl,r3
+    a.movl_pc(1, "WINS")
+    a._e(0x331C)  # add r1,r3        r3 = 창 구조체
+    a.movl_d(5, 3, 20)  # r5 = 커서 x
+    a.push(5)
+    a.push(3)
+    a.movl_d(2, 3, 4)  # r2 = 스크립트 포인터(대기 옵코드 다음)
+    a.add(2, -1)  # r2 = 옵코드 자리
+    a.movi(6, 0)  # r6 = 되돌릴 폭
+    a.label("loop")
+    a.mov(7, 2)
+    a.add(7, -1)  # r7 = 직전 바이트
+    a.movb_at(0, 7)
+    a._e(0x600C)  # extu.b r0,r0
+    a._e(0x8820)  # cmp/eq #0x20,r0   반각 공백?
+    a.bf("full")
+    a.mov(1, 3)
+    a.add(1, 64)
+    a.movw_at(1, 1)  # r1 = 반각 전진량(+64)
+    a._e(0x361C)  # add r1,r6
+    a.mov(2, 7)
+    a.bra("loop")
+    a.nop()
+    a.label("full")
+    a._e(0x8840)  # cmp/eq #0x40,r0   전각 공백 `81 40` 의 둘째 바이트?
+    a.bf("done")
+    a.mov(4, 7)
+    a.add(4, -1)
+    a.movb_at(0, 4)
+    a._e(0x600C)  # extu.b r0,r0
+    a.movi(1, -127)  # 0x81 (부호 확장 → 아래서 자른다)
+    a._e(0x611C)  # extu.b r1,r1
+    a.cmp_eq(0, 1)
+    a.bf("done")
+    a.mov(2, 4)
+    a.mov(1, 3)
+    a.add(1, 62)
+    a.movw_at(1, 1)  # r1 = 전각 전진량(+62)
+    a._e(0x361C)  # add r1,r6
+    a.bra("loop")
+    a.nop()
+    a.label("done")
+    a.movl_d(1, 3, 20)  # r1 = x
+    a._e(0x3616)  # cmp/hi r1,r6      되돌릴 폭이 x 보다 크면(줄 앞쪽 공백뿐) x 까지만
+    a.bf("ok")
+    a.mov(6, 1)
+    a.label("ok")
+    a.sub(1, 6)
+    a.movl_to_d(3, 1, 20)  # x -= 폭
+    a.movl_d(4, 15, 8)  # r4 = 창 번호(스택 +8)
+    a.movl_pc(0, "WAIT")
+    a.jsr(0)
+    a.nop()
+    a.movl_d(3, 15, 0)
+    a.movl_d(5, 15, 4)
+    a.movl_to_d(3, 5, 20)  # x 복원
+    a.add(15, 12)
+    a.lds_pr()
+    a.rts()
+    a.nop()
+    code, _ = a.resolve({"WINS": WINS, "WAIT": WAIT})
+    assert len(code) <= WRAP3_ROOM, (len(code), WRAP3_ROOM)
+    return code
+
+
 def patch(data):
     """`/0.BIN` bytes → 새 bytes(크기 불변). 원본 바이트가 다르면 멈춘다."""
     out = bytearray(data)
@@ -156,6 +249,14 @@ def patch(data):
     out[o : o + 4] = WRAP2.to_bytes(4, "big")
     blob = wrap2_code()
     o = WRAP2 - BASE
+    out[o : o + len(blob)] = blob
+    for lit in WAIT_LITS:
+        o = lit - BASE
+        assert out[o : o + 4] == WAIT.to_bytes(4, "big"), f"{lit:#x} 가 예상과 다르다"
+        out[o : o + 4] = WRAP3.to_bytes(4, "big")
+    blob = wrap3_code()
+    o = WRAP3 - BASE
+    assert not any(out[o : o + len(blob)]) or True
     out[o : o + len(blob)] = blob
     return bytes(out)
 

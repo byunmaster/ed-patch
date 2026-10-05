@@ -96,10 +96,14 @@ def check_maps(disc, img, files, rev):
             src = d.read_extent(*orig[name])
         got = B.read_extent(img, lba, size)
         blocks = M.blocks(src)
+        slots = R.name_slots(blocks, src)
         for key, kr in script.items():
             blk = blocks[int(key)]
             body = got[blk["off"] : blk["off"] + len(blk["body"])]
-            if blk["off"] == M.NAME_OFF:
+            if int(key) in slots:
+                #   이름표 칸은 32B 안에서 원문보다 길게 쓴다(`reinsert.name_slots`) — NUL 까지 읽는다
+                body = got[blk["off"] : got.index(b"\x00", blk["off"])]
+            elif blk["off"] == M.NAME_OFF:
                 #   맵 이름은 원문보다 길게 쓸 수 있다(`reinsert.NAME_MAX`) — NUL 까지 읽는다
                 body = got[blk["off"] : got.index(b"\x00", blk["off"])]
             n += 1

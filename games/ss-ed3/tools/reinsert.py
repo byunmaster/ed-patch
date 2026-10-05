@@ -80,12 +80,46 @@ def fit(text, budget, jp_over=None, jp_text=None):
     return out, None
 
 
+NAME_STRIDE = 32  # 맵의 인물 이름표는 **32B 칸**이 이어진 표다(`0x14` 이상 화자 번호 = 표 색인) — 이름 뒤는 0 으로 비어 있다
+NAME_MAX_SLOT = 24  # 그 칸 안에서 늘려 쓰는 상한(B) — 이름줄이 창 폭 안이고 NUL 종료 자리를 남긴다
+
+
+def name_slots(blocks, data):
+    """`{블록 색인: 칸 크기}` — 이름표 구간: 오프셋이 정확히 32B 간격으로 이어지고 **칸 뒤가 전부 0 인** 블록 2 개 이상.
+
+    ⚠ 간격만 보면 우연히 32B 떨어진 대사 블록이 걸린다(MAP057). 이름표는 칸 뒤가 0 이고 머리가 `0000` 이다(첫 칸만 앞 포인터 꼬리)."""
+
+    def ok(j):
+        o, n = blocks[j]["off"], len(blocks[j]["body"])
+        return (
+            n < NAME_STRIDE
+            and not any(data[o + n : o + NAME_STRIDE])
+            and (blocks[j]["head"] == "0000" or j == 1)
+        )
+
+    out, run = {}, []
+    for i in range(1, len(blocks) + 1):
+        if (
+            i < len(blocks)
+            and ok(i)
+            and run
+            and blocks[i]["off"] - blocks[run[-1]]["off"] == NAME_STRIDE
+        ):
+            run.append(i)
+            continue
+        if len(run) >= 2:
+            out.update({j: NAME_STRIDE for j in run})
+        run = [i] if i < len(blocks) and ok(i) else []
+    return out
+
+
 def patch_blocks(data, stem, table):
     """`(새 bytes, 넣은 수, [(블록, 사유)])` — 길이 불변."""
     script, stamps = load_script(stem)
     if not script:
         return data, 0, []
     blocks = M.blocks(data)
+    slots = name_slots(blocks, data)
     out = bytearray(data)
     done = 0
     bad = []
@@ -103,6 +137,21 @@ def patch_blocks(data, stem, table):
             bad.append((key, f"원문 지문이 다르다 — 블록이 밀렸다(기대 {want})"))
             continue
         budget = len(blk["body"])
+        #   🔴 **이름표 칸은 늘려 쓴다**(마스터 10-04 「크리스엄마 → 크리스 엄마」) — 칸이 32B 인데 원문 이름은 10~16B 라 뒤가 0 이다.
+        #   예산(원문 길이)에 묶이면 「크리스의 母」 10B 가 「크리스엄마」 10B 로 꽉 차 띄울 자리가 없었다. 칸 안(`NAME_MAX_SLOT`)에서
+        #   **채우지 않고** 이름만 쓰고 NUL 로 닫는다(원문 이름도 길이가 제각각이다).
+        if i in slots and not any(c in kr for c in "\n\f"):
+            raw = H.encode_kr(kr, table)
+            end = blk["off"] + slots[i]
+            if len(raw) > NAME_MAX_SLOT:
+                bad.append((key, f"이름이 {NAME_MAX_SLOT}B 를 넘는다({len(raw)}B)"))
+                continue
+            if any(data[blk["off"] + budget + 1 : end]):
+                bad.append((key, "이름 칸 뒤가 비어 있지 않다 — 늘려 쓸 수 없다"))
+                continue
+            out[blk["off"] : end] = raw + b"\x00" * (end - blk["off"] - len(raw))
+            done += 1
+            continue
         if blk["off"] == M.NAME_OFF and len(raw := H.encode_kr(kr, table)) > budget:
             #   맵 이름 칸 — NUL 종료 문자열이고 뒤는 0 으로 비어 있다(88 맵 전부 30B 넘게).
             #   원판도 14B 까지 쓴다(`ディルトの関所` 등) ⇒ 뒤가 비었을 때만 NAME_MAX 까지 늘려 쓴다.
