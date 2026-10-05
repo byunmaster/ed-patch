@@ -79,11 +79,27 @@ def budget(disc, jp, floor=0):
     return min(w, lim["width"]), min(max(len(ls), 1), lim["lines"])
 
 
+class TypesetError(Exception):
+    pass
+
+
 def wrap(text, disc, jp=None, width=None, lines=None, floor=0):
     """우리 문안 → 줄로 나눈 문안(`\\n` 포함).
 
-    `jp` 를 주면 그 조각의 원문이 쓴 폭·줄 수를 예산으로 삼는다(권장).
+    `jp` 를 주면 그 조각의 원문이 쓴 폭·줄 수를 예산으로 삼는다(권장). 멤버 대사는 `floor`
+    (`script.member_floors`)도 준다 — 검사기(`script.py --check`)와 **같은 자**여야 한다.
+
+    🔴 **예산을 넘으면 운다 — 자르지 않는다.** 예전엔 넘친 줄을 `out[:lines]` 로 버렸고, 빌드가
+       `floor` 없이 불러 **ED3 37줄 · ED4 59줄의 꼬리가 조용히 사라졌다**(09-27, 화면 실측:
+       `...아무튼,` · `을(를)` 에서 끊김). 검사기는 `floor` 를 줘서 0건이라 했다.
+    🔴 **앞뒤 공백은 지키지 않고 남긴다.** 조각은 엔진이 끼우는 아이템 이름·숫자와 **한 줄로**
+       이어 붙는다(스크립트 opcode `0x04`·`0x05`·`0x07`) — `쥬리오는 ` + [아이템] 의 공백을
+       `split()` 이 먹으면 `쥬리오는短剣` 으로 붙는다.
     """
+    if not text.strip():
+        return ""
+    lead = text[: len(text) - len(text.lstrip(" "))]
+    trail = text[len(text.rstrip(" ")) :]
     if width is None or lines is None:
         w, n = (
             budget(disc, jp, floor)
@@ -98,7 +114,12 @@ def wrap(text, disc, jp=None, width=None, lines=None, floor=0):
         cell_width=lambda ch: cell_width(ch, disc),
         strip_after=STRIP_AFTER,
     )
-    return "\n".join(out[:lines]) if len(out) > lines else "\n".join(out)
+    if len(out) > lines:
+        raise TypesetError(f"{len(out)}줄 > 예산 {lines}줄 (폭 {width:g}): {text!r}")
+    res = lead + "\n".join(out) + trail
+    if "".join(res.split()) != "".join(text.split()):  # 불변식: 조판은 공백·개행만 옮긴다
+        raise TypesetError(f"글이 바뀌었다: {text!r} → {res!r}")
+    return res
 
 
 def violations(text, disc, jp=None, floor=0):

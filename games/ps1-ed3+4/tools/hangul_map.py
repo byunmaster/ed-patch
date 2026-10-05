@@ -128,7 +128,9 @@ def used_codes(disc, after_patch=True):
     cm = textenc.charmap(disc)
     lba, size = common.iso_files(disc)[dump_names.EXE[disc]]
     exe = common.read_lba(disc, lba, size)
-    for t in exetext.scan_tables(exe, cm):
+    # ⚠ 떨어진 표(아이템 이름)도 센다 — 빠뜨리면 거기 쓰인 한자(鎧·盾·槍…)를 「빈 자리」로 보고
+    #   한글을 굽는다(2026-09-27 실측: 槍·耐·絹·疾·覇·： 여섯이 그렇게 한글 자리가 돼 있었다).
+    for t in exetext.scan_tables(exe, cm) + exetext.detached_tables(exe, disc):
         for x in struct.unpack_from(f"<{t['n']}H", exe, t["table"]):
             codes, _ = exetext.raw_string(exe, t["base"] + x)
             if textenc.decode(codes or [], disc) in words:
@@ -251,6 +253,9 @@ def encode(text, disc, table=None):
     for code, ch in textenc.CONTROL.items():
         rev.setdefault(ch, code)
     rev.update(PUNCT)  # 한국식 마침표·쉼표 → 원본 코드
+    # 실행파일 글(주문·귀중품 설명)의 0x0001 은 **개행**이다 — 스캐너가 「\n」으로 읽으니 되돌린다.
+    # ⚠ 그래서 그 창에서는 쉼표(→0x01)도 줄을 바꾼다. 설명문엔 쉼표를 쓰지 않는다.
+    rev.setdefault("\n", 0x01)
     out = []
     for ch in text:
         if ch in table:

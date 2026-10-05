@@ -45,10 +45,11 @@ class TestTypeset(unittest.TestCase):
 
     def test_wrap_respects_the_budget(self):
         jp = "あいうえおかきくけこ"  # 10칸 1줄
-        out = typeset.wrap("아주 긴 우리 문안이 여기에 들어간다", "ed3", jp=jp)
-        for line in out.split("\n"):
-            # 글자 수가 아니라 **폭**이다 — 공백이 2/3칸이라 열한 글자가 열 칸에 들 수 있다
-            self.assertLessEqual(typeset.width_cells(line, "ed3"), 10, out)
+        # 글자 수가 아니라 **폭**이다 — 공백이 2/3칸이라 열한 글자가 열 칸에 든다
+        out = typeset.wrap("우리 문안 여기 든다", "ed3", jp=jp)
+        self.assertLessEqual(typeset.width_cells(out, "ed3"), 10, out)
+        with self.assertRaises(typeset.TypesetError):  # 안 들면 자르지 않고 운다
+            typeset.wrap("아주 긴 우리 문안이 여기에 들어간다", "ed3", jp=jp)
 
     def test_space_is_eight_px_only_where_the_engine_is_patched(self):
         """공백 8px 는 엔진 패치가 있는 ED3 만 — ED4 는 아직 12px 그대로다."""
@@ -68,11 +69,27 @@ class TestTypeset(unittest.TestCase):
         bad = typeset.violations("아주아주아주 긴 줄", "ed3", jp="あい")
         self.assertTrue(bad)
 
+    def test_wrap_never_drops_text(self):
+        """🔴 실측 사고(09-27) — 넘친 줄을 `out[:lines]` 로 버렸다. 빌드가 `floor` 를 안 줘서
+        ED3 37줄 · ED4 59줄의 꼬리가 화면에서 사라졌다(`을(를) 건네받았다.` → `을(를)`)."""
+        with self.assertRaises(typeset.TypesetError):
+            typeset.wrap("을(를) 건네받았다.", "ed3", jp="を渡された。")
+        self.assertEqual(
+            typeset.wrap("을(를) 건네받았다.", "ed3", jp="を渡された。", floor=23),
+            "을(를) 건네받았다.",
+        )
+
+    def test_wrap_keeps_edge_spaces_for_runtime_inserts(self):
+        """조각은 엔진이 끼우는 이름·숫자와 한 줄로 붙는다 — `쥬리오는 ` 의 공백이 살아야 한다."""
+        self.assertEqual(typeset.wrap("쥬리오는 ", "ed3", jp="ジュリオは", floor=23), "쥬리오는 ")
+        self.assertEqual(typeset.wrap(" 맞지?", "ed3", jp="だね？", floor=23), " 맞지?")
+        self.assertEqual(typeset.wrap("   ", "ed3", jp="あ", floor=23), "")
+
     def test_wrap_is_deterministic(self):
         """빌드는 결정적이어야 한다 — 같은 입력이면 같은 줄바꿈."""
         jp = "あいうえおかきくけこさしすせそ"
-        a = typeset.wrap("우리 문안을 여러 번 조판해도 같은 결과가 나와야 한다", "ed3", jp=jp)
-        b = typeset.wrap("우리 문안을 여러 번 조판해도 같은 결과가 나와야 한다", "ed3", jp=jp)
+        a = typeset.wrap("우리 문안을 여러 번 조판해도 같은 결과", "ed3", jp=jp, floor=24)
+        b = typeset.wrap("우리 문안을 여러 번 조판해도 같은 결과", "ed3", jp=jp, floor=24)
         self.assertEqual(a, b)
 
 

@@ -202,6 +202,26 @@ def hangul_glyph(ch, dy=fonts.GALMURI11_DY):
     return f.bits(ch, dy=dy, rows=ROWS, width=HANGUL_W)
 
 
+# 🔴 **한 글자를 두 칸에 반씩 나눈 전용 글리프**(마스터 판정 2026-09-27, 커맨드 창 「시 스 템」).
+#    메뉴는 코드당 12px 고정이고 공백도 12px 라 「시 스 템」(5코드·60px)이 4칸 창을 넘는다.
+#    그래서 가운데 글자를 반 칸(6px) 밀어 두 칸에 걸쳐 굽는다 — [시][스◐][◑스][템] = 4코드·48px.
+#    ⚠ 도트는 **새로 안 그린다** — 그 글자의 Galmuri11 글리프를 그대로 잘라 옮긴다.
+#    사용 영역 문자(U+E000~)라 문안·배정·굽기가 한글과 같은 길(글리프 자리 게이트)을 탄다.
+SPLIT = {"": ("스", "L"), "": ("스", "R")}
+SPLIT_SHIFT = PITCH // 2  # 반 칸
+
+
+def glyph_bits(ch):
+    """굽을 글리프 한 칸 — 한글은 `hangul_glyph`, 나눈 글자는 그 글자를 반 칸 밀어 자른 조각."""
+    if ch not in SPLIT:
+        return hangul_glyph(ch)
+    base, side = SPLIT[ch]
+    g = np.asarray(hangul_glyph(base), dtype=np.uint8)
+    wide = np.zeros((g.shape[0], CELL * 2), dtype=np.uint8)
+    wide[:, SPLIT_SHIFT : SPLIT_SHIFT + g.shape[1]] = g  # 두 칸 캔버스에 반 칸 밀어 놓는다
+    return wide[:, :CELL] if side == "L" else wide[:, CELL:]
+
+
 if __name__ == "__main__":
     import argparse
 

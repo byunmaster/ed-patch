@@ -98,6 +98,78 @@ class TestExeText(unittest.TestCase):
         out, _ = exetext.rebuild(mem, 0, 0, n, cur)
         self.assertEqual(out, mem)
 
+    def test_shrink_without_pad_leaves_empty_string_in_slack(self):
+        """🔴 실측 사고(ED3, 2026-09-26): 칸이 줄면 남는 슬랙이 `TERM_FFFF` 두 개(=빈
+        문자열)로 채워진다. 표를 안 보고 종결마다 이어 읽는 순차 스캔 UI 목록은 그 빈
+        문자열을 「목록 끝」으로 읽어 뒤 항목이 안 보인다."""
+        mem = make([[0x50, 0x51], [0x40, 0x41, 0x42]], terms=[0x8000, 0x8000])
+        n = exetext.table_at(mem, 0, CM, min_n=2)
+        out, slack = exetext.rebuild(mem, 0, 0, n, [[0x50, 0x51], [0x40]])
+        self.assertEqual(slack, 4)
+        second = struct.unpack_from(f"<{n}H", out, 0)[1]
+        codes, term = exetext.raw_string(out, second)
+        self.assertEqual((codes, term), ([0x40], 0x8000))
+        # 그 뒤에 남는 슬랙이 빈 문자열(종결부터 바로 또 종결)이다
+        after = struct.unpack_from("<H", out, second + 2 * 2)[0]
+        self.assertTrue(exetext.is_term(after))
+
+    def test_pad_code_extends_last_chunk_entry_instead_of_faking_a_list_end(self):
+        """`pad_code` 를 주면 슬랙이 **마지막 조각의 글자열**로 늘어나고(종결 앞), 화면엔 안
+        보이는 채움 글자만 늘 뿐 슬랙 자리에 새 빈 문자열이 생기지 않는다(위 함정의 수정)."""
+        mem = make([[0x50, 0x51], [0x40, 0x41, 0x42]], terms=[0x8000, 0x8000])
+        n = exetext.table_at(mem, 0, CM, min_n=2)
+        out, slack = exetext.rebuild(mem, 0, 0, n, [[0x50, 0x51], [0x40]], pad_code=0x99)
+        self.assertEqual(slack, 0, "채움 글자로 다 썼으니 슬랙은 안 남는다")
+        second = struct.unpack_from(f"<{n}H", out, 0)[1]
+        codes, term = exetext.raw_string(out, second)
+        self.assertEqual((codes, term), ([0x40, 0x99, 0x99], 0x8000))
+        # 종결이 칸의 원래 끝자리 그대로다 — 뒤에 다른 문자열이 있었다면 그 시작이 안 밀린다
+        self.assertEqual(len(out), len(mem))
+
+    def test_pad_code_does_not_touch_untouched_chunks(self):
+        """짧아지지 않은 칸은 `pad_code` 를 줘도 그대로다."""
+        mem = make([[0x40, 0x41], [0x42, 0x43]])
+        n = exetext.table_at(mem, 0, CM, min_n=2)
+        cur = [exetext.raw_string(mem, x)[0] for x in struct.unpack_from(f"<{n}H", mem, 0)]
+        out, slack = exetext.rebuild(mem, 0, 0, n, cur, pad_code=0x99)
+        self.assertEqual(out, mem)
+        self.assertEqual(slack, 0)
+
+
+class TestDetachedAndFixed(unittest.TestCase):
+    """2026-09-27 — 표 규격 밖이라 **빌드가 통째로 건너뛰던** 두 자리(아이템·인물 이름).
+
+    스캐너가 「표 없음」이라 하면 빌드는 조용히 넘어가고 화면엔 일본어가 남는다 — 실패가 아니라
+    누락이라 게이트도 초록이었다. 여기서 박는 계약은 둘: 떨어진 표도 `rebuild` 로 싸진다 ·
+    고정 칸은 모양(글자·0 채움·마지막 0xFFFF)을 지키고 넘치면 운다.
+    """
+
+    def test_rebuild_works_when_table_is_away_from_base(self):
+        """아이템 표처럼 표 주소 ≠ base 여도 `rebuild` 가 풀을 싸고 표를 고친다."""
+        pool = bytearray(b"\x00\x00")  # base 자리(빈 이름) — 실물처럼 풀 앞에 한 워드
+        offs = []
+        for codes in ([0x40, 0x41], [0x42, 0x43, 0x44]):
+            offs.append(len(pool))
+            pool += struct.pack(f"<{len(codes)}H", *codes) + struct.pack("<H", 0xFFFF)
+        tbl = struct.pack("<2H", *offs)
+        mem = bytearray(tbl + bytes(pool))
+        base = len(tbl)
+        out, _ = exetext.rebuild(bytes(mem), 0, base, 2, [[0x50], [0x51, 0x52]])
+        got = [exetext.raw_string(out, base + x)[0] for x in struct.unpack_from("<2H", out, 0)]
+        self.assertEqual(got, [[0x50], [0x51, 0x52]])
+
+    def test_fixed_slot_keeps_shape(self):
+        """넷 글자 → 셋 글자: 뒤는 0, 마지막 워드는 0xFFFF 그대로, 칸 크기 불변."""
+        slot = bytearray(struct.pack("<7H", 0xA6, 0xD2, 0xD7, 0x98, 0, 0, 0xFFFF))
+        exetext.write_fixed_slot(slot, 0, 7, [0x100, 0x101, 0x102])
+        self.assertEqual(struct.unpack("<7H", slot), (0x100, 0x101, 0x102, 0, 0, 0, 0xFFFF))
+
+    def test_fixed_slot_refuses_overflow(self):
+        """칸(6글자)을 넘으면 운다 — 다음 사람의 이름을 덮지 않는다."""
+        slot = bytearray(struct.pack("<7H", 0x40, 0, 0, 0, 0, 0, 0xFFFF))
+        with self.assertRaises(exetext.ExeTextError):
+            exetext.write_fixed_slot(slot, 0, 7, list(range(0x40, 0x47)))
+
 
 if __name__ == "__main__":
     unittest.main()

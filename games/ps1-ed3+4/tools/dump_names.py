@@ -39,6 +39,7 @@ REGIONS = {
         0x097574: "item",
         0x097686: "noise",
         0x097CC2: "spell",
+        0x097DAA: "text",  # 주문 설명 1번(カマイタチ) — 刃(0x3FA)가 풀려 보이기 시작했다(09-27)
         0x097DCC: "text",
         0x099776: "monster",
         0x099CCC: "noise",

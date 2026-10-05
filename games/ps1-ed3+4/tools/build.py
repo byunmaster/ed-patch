@@ -35,6 +35,7 @@ import font
 import glossary
 import graphics
 import hangul_map
+import patch_title_font
 import script as script_canon
 import scriptmap
 import textenc
@@ -52,12 +53,34 @@ def bake_font(exe, disc, chars, table):
     for ch in sorted(chars):
         if ch not in table:
             continue
-        font.write_glyph(exe, table[ch], font.hangul_glyph(ch), disc)
+        font.write_glyph(exe, table[ch], font.glyph_bits(ch), disc)
         baked += 1
     # 마침표·쉼표는 **원본 자리(1=、 · 2=。)를 한국식 모양으로 다시 굽는다** — 자리를 안 쓴다.
     for ch, code in hangul_map.PUNCT.items():
         font.write_glyph(exe, code, font.hangul_glyph(ch), disc)
     return baked
+
+
+def check_no_text_loss(where, newmem, lines, disc, table, report):
+    """🔴 불변식 — **정본 글자 = 구운 글자**(공백·개행 빼고). 조판·인코딩·풀 재포장 어디서
+    빠져도 여기서 멈춘다. 「넘치면 멈춤」(`typeset.wrap`)은 한 경로만 막는다 — 09-27 꼬리 잘림은
+    검사기·지문·테스트가 다 초록인 채로 ED3 37줄 · ED4 59줄을 버렸다.
+    건너뛴 조각(글리프 자리 없음 → 원문 그대로)은 이미 세어 알리므로 빼고 본다."""
+    space = table.get(" ")
+    got = scriptmap.parse(newmem)["segments"]
+    for i, row in lines.items():
+        want_text = "".join(row["kr"].split())
+        try:
+            want = hangul_map.encode(want_text, disc, table)
+        except KeyError:
+            continue  # 원문 그대로 남는 조각 — report["skipped"] 가 센다
+        have = [c for c in got[i][1] if c != space]
+        if have != want:
+            raise SystemExit(
+                f"🔴 {where} #{i}: 구운 글이 정본과 다르다(공백 빼고 {len(have)} vs {len(want)}자)\n"
+                f"   정본: {row['kr']!r}"
+            )
+        report["loss_checked"] = report.get("loss_checked", 0) + 1
 
 
 def reinsert_script(disc, canon, table, report):
@@ -79,9 +102,19 @@ def reinsert_script(disc, canon, table, report):
             mem = bytes(data[off : off + sz])
             info = scriptmap.parse(mem)
             segs = [list(c) for _, c in info["segments"]]
+            jps = [(i, textenc.decode(c, disc)) for i, (_, c) in enumerate(info["segments"])]
+            # 🔴 검사기(`script.py --check`)와 **같은 자**로 조판한다 — `floor` 를 빼먹어 넘친
+            #    꼬리가 조용히 잘렸다(ED3 37줄 · ED4 59줄, 09-27).
+            floors = script_canon.member_floors(jps)
             for i, row in sorted(lines.items()):
-                jp = textenc.decode(info["segments"][i][1], disc)
-                kr = typeset.wrap(row["kr"], disc, jp=jp)
+                jp = jps[i][1]
+                try:
+                    kr = typeset.wrap(row["kr"], disc, jp=jp, floor=floors.get(i, 0))
+                except typeset.TypesetError as e:
+                    raise SystemExit(
+                        f"🔴 {path}!{nm} #{i}: 조판 예산 초과 — {e}\n"
+                        f"   `script.py --check` 가 통과했다면 검사기와 빌드의 자가 다르다."
+                    ) from e
                 try:
                     segs[i] = hangul_map.encode(kr, disc, table)
                 except KeyError:
@@ -90,6 +123,7 @@ def reinsert_script(disc, canon, table, report):
                     report["skipped"] += 1
                     continue
             newmem, _ = scriptmap.rebuild(mem, segs)
+            check_no_text_loss(f"{path}!{nm}", newmem, lines, disc, table, report)
             if len(newmem) > sz:
                 raise SystemExit(
                     f"🔴 {path}!{nm}: 멤버가 {len(newmem) - sz:+d}B 커졌다 — 예산 {sz}B\n"
@@ -104,16 +138,72 @@ def reinsert_script(disc, canon, table, report):
     return out
 
 
+def fit_chunks(exe, t, ents, cur, krs, orig, disc, table, report):
+    """칸 예산을 넘는 칸에서 **띄어쓰기부터** 빼고, 그래도 넘치면 **그 칸 안에서만** 되돌린다.
+
+    🔴 실측(2026-09-27): 아이템 표의 한 칸이 12B, 다른 칸이 18B 넘쳐 되돌리기가 **47개를
+       일본어로** 남겼다(「の」 한 글자가 「의 」 두 글자가 된다). 칸마다 띄어쓰기만 빼면 전부
+       들어간다 — 화면에 일본어가 남는 것보다 띄어쓰기 하나 빠지는 편이 훨씬 낫다.
+       넘친 **그 칸 안에서만**, 긴 이름부터 공백을 하나씩 뺀다(결정적). 다른 칸은 안 건드린다.
+    🔴 되돌리기도 칸 단위다 — 예전엔 표 전체에서 「가장 많이 는 것」부터 되돌려, 공백이 없는
+       칸 하나(1코드 초과)를 맞추려고 **다른 칸의 멀쩡한 이름 39개**를 일본어로 돌려놨다.
+    반환: 되돌린 수.
+    """
+    reverted = 0
+    tbl, base, n = t["table"], t["base"], t["n"]
+    for lo, hi, starts in exetext.chunks(exe, tbl, base, n):
+        idx = {s: [i for i, x in enumerate(ents) if base + x == s] for s in starts}
+        need = sum((len(cur[ids[0]]) + 1) * 2 for ids in idx.values())
+        while need > hi - lo:
+            cand = [ids for ids in idx.values() if krs[ids[0]] and " " in krs[ids[0]]]
+            if not cand:
+                break
+            ids = max(cand, key=lambda ids: (len(cur[ids[0]]), -ids[0]))
+            kr = krs[ids[0]]
+            k = kr.rindex(" ")
+            kr = kr[:k] + kr[k + 1 :]
+            for i in ids:
+                krs[i], cur[i] = kr, hangul_map.encode(kr, disc, table)
+            need -= 2
+            report["squeezed"] = report.get("squeezed", 0) + 1
+        while need > hi - lo:
+            grown = [ids for ids in idx.values() if len(cur[ids[0]]) > len(orig[ids[0]])]
+            if not grown:
+                break
+            ids = max(grown, key=lambda ids: (len(cur[ids[0]]) - len(orig[ids[0]]), -ids[0]))
+            need -= (len(cur[ids[0]]) - len(orig[ids[0]])) * 2
+            for i in ids:
+                cur[i], krs[i] = orig[i], None
+            reverted += len(ids)
+    return reverted
+
+
 def reinsert_names(exe, disc, table, report):
     """실행파일 낱말 표에 고유명사 정본을 넣는다. 표가 없는 구역은 **길이 고정**이라 건너뛴다."""
     cm = textenc.charmap(disc)
     words = dict(glossary.flat(disc))
-    tables = exetext.scan_tables(bytes(exe), cm)
+    tables = exetext.scan_tables(bytes(exe), cm) + exetext.detached_tables(bytes(exe), disc)
     seen = set()
+    # 고정폭 칸(인물 이름) — 표가 없어 자리째 바꾼다. 넘치면 원문 그대로 두고 센다.
+    for off, n_words, codes in exetext.fixed_slots(bytes(exe), disc):
+        jp = textenc.decode(codes, disc)
+        kr = words.get(jp)
+        if not kr:
+            continue
+        seen.add(jp)
+        if kr == jp:
+            continue
+        try:
+            exetext.write_fixed_slot(exe, off, n_words, hangul_map.encode(kr, disc, table))
+            report["names"] += 1
+        except KeyError:
+            report["skipped_names"] += 1
+        except exetext.ExeTextError:
+            report["over_budget"] += 1
     for t in tables:
         tbl, base, n = t["table"], t["base"], t["n"]
         ents = struct.unpack_from(f"<{n}H", bytes(exe), tbl)
-        cur, changed = [], 0
+        cur, krs, changed = [], [], 0
         for x in ents:
             codes, _ = exetext.raw_string(bytes(exe), base + x)
             codes = codes or []
@@ -124,19 +214,24 @@ def reinsert_names(exe, disc, table, report):
             if kr and kr != jp:
                 try:
                     cur.append(hangul_map.encode(kr, disc, table))
+                    krs.append(kr)
                     changed += 1
                     continue
                 except KeyError:
                     report["skipped_names"] += 1
             cur.append(codes)
+            krs.append(None)
         if not changed:
             continue
-        # 🔴 예산을 넘으면 **긴 것부터 되돌린다** — 표 하나를 통째로 버리면 이름 133개가
-        #    같이 날아간다. 되돌린 자리는 원문 그대로 남고 개수를 찍는다.
+        # 🔴 예산을 넘으면 **그 칸 안에서** 띄어쓰기 → 긴 것 순으로 되돌린다 — 표 하나를 통째로
+        #    버리면 이름 133개가 같이 날아간다. 되돌린 자리는 원문 그대로 남고 개수를 찍는다.
         orig = []
         for x in ents:
             codes, _ = exetext.raw_string(bytes(exe), base + x)
             orig.append(codes or [])
+        back = fit_chunks(bytes(exe), t, ents, cur, krs, orig, disc, table, report)
+        changed -= back
+        report["over_budget"] += back
         over = sorted(
             (i for i in range(n) if len(cur[i]) > len(orig[i])),
             key=lambda i: len(orig[i]) - len(cur[i]),
@@ -215,7 +310,9 @@ def movie_swap(disc, out):
         return
     fs = common.iso_files(disc)
     for dst, src in pairs:
-        assert dst in MOVIE_ARCHIVES and src in MOVIE_ARCHIVES, f"모르는 동영상 아카이브: {dst}={src}"
+        assert dst in MOVIE_ARCHIVES and src in MOVIE_ARCHIVES, (
+            f"모르는 동영상 아카이브: {dst}={src}"
+        )
         dst_lba, _dst_size = fs[MOVIE_ARCHIVES[dst]]
         src_lba, src_size = fs[MOVIE_ARCHIVES[src]]
         data = common.read_lba(disc, src_lba, src_size, path=out)  # 이미 구운 FINAL 에서
@@ -278,12 +375,20 @@ def main():
     exe = bytearray(common.read_lba(a.disc, exe_lba, exe_size))
     baked = bake_font(exe, a.disc, chars, table)
     engine = engine_patch.apply(exe, a.disc, table)  # 공백 8px — 그 디스크에 패치가 있으면
-    ui_put, ui_skip = uitext.apply(exe, a.disc, lambda kr: hangul_map.encode(kr, a.disc, table))
+    exe_orig = bytes(exe)
+    enc = lambda kr: hangul_map.encode(kr, a.disc, table)
+    ui_put, ui_skip = uitext.apply(exe, a.disc, enc)
     report["skipped"] += ui_skip
     reinsert_names(exe, a.disc, table, report)
+    # 🔴 불변식 — 구운 UI 글이 정본과 같은가(공백 빼고). 낱말 재포장이 표를 같이 쓰므로 그 뒤에 본다.
+    lost = uitext.lost_text(exe_orig, bytes(exe), a.disc, enc)
+    if lost:
+        raise SystemExit("🔴 UI 글 소실:\n  " + "\n  ".join(lost[:10]))
     arcs = reinsert_script(a.disc, canon, table, report)
     for path, data in gfx_arcs.items():  # 그림이 든 파일도 같이 쓴다
         arcs.setdefault(path, data)
+    title_font_n, title_font_arcs = patch_title_font.apply(a.disc, base_arcs=arcs)
+    arcs.update(title_font_arcs)  # 그림 위에 문자열을 얹는다(같은 M01.DAT 일 수 있다)
 
     lines = sum(len(v) for v in canon.values())
     skipped = report["skipped"] + report["skipped_names"]
@@ -294,11 +399,15 @@ def main():
         f"그림 {gfx_files} · 글리프 {baked}"
     )
     print(f"  엔진: {engine or '⏭ 패치 없음 (공백도 12px)'}")
+    if title_font_n:
+        print(f"  타이틀 폰트: SLPS_012.01 BIOS 리다이렉트 · M01.DAT 문자열 {title_font_n}")
     if a.test:
         print("  🔴 **시험 빌드다** — 안 옮긴 문안은 엉뚱한 글자로 나온다. 배포물이 아니다.")
     if left:
         print(f"  ⬜ 아직 못 넣는 낱말 {len(left)} (표가 없는 구역 — 길이 고정)")
         print("     " + " · ".join(left[:10]))
+    if report.get("squeezed"):
+        print(f"  ⬜ 칸 예산 때문에 뺀 띄어쓰기 {report['squeezed']} (이름은 들어갔다)")
     if report["over_budget"]:
         print(
             f"  ⬜ 칸 예산을 넘어 되돌린 낱말 {report['over_budget']} (원문 그대로 남는다)\n"

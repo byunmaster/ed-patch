@@ -21,7 +21,14 @@ fail=0
 _run() {
   _gate=$1; _tail=$2; shift 2
   _out=$("$@" 2>&1) && _rc=0 || _rc=$?
-  if [ "$_tail" -gt 0 ]; then printf '%s\n' "$_out" | tail -"$_tail" | sed 's/^/   /'
+  if [ "$_tail" -gt 0 ]; then
+    # 🔴 `tail` 이 잘라 낸 앞부분의 🔴 줄은 **따로 올린다** — ss-ed1+2 에서 합계 줄이 가려져
+    #    일본어가 남은 빌드가 초록으로 보였다(09-27 관리자 공통 점검).
+    _n=$(printf '%s\n' "$_out" | wc -l)
+    if [ "$_n" -gt "$_tail" ]; then
+      printf '%s\n' "$_out" | head -n $((_n - _tail)) | grep '🔴' | sed 's/^/   /' || true
+    fi
+    printf '%s\n' "$_out" | tail -"$_tail" | sed 's/^/   /'
   else printf '%s\n' "$_out" | sed 's/^/   /'; fi
   [ "$_rc" -eq 0 ] || [ "$_gate" = warn ] || fail=1
 }

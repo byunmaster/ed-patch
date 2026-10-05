@@ -40,7 +40,10 @@ import exetext
 import script as script_canon
 import textenc
 
-KINDS = ("menu", "text")  # 낱말(고유명사)은 `glossary_` 가 든다 — 여기는 UI 문안 + 실행파일 속 글(주문 설명·메모·읽을거리)
+KINDS = (
+    "menu",
+    "text",
+)  # 낱말(고유명사)은 `glossary_` 가 든다 — 여기는 UI 문안 + 실행파일 속 글(주문 설명·메모·읽을거리)
 
 
 def canon_path(disc):
@@ -52,12 +55,28 @@ def exe_bytes(disc):
     return common.read_lba(disc, lba, size)
 
 
+# 🔴 스캐너 사각지대 — `dump_names.strings()` 는 **바로 앞이 종결이 아닌** 문자열을 앞 자료와
+#    한 덩어리로 읽고 버린다. 두 부류다:
+#    ① **표 바로 뒤 첫 항목** — 표의 마지막 오프셋 값이 앞에 붙는다. `戦闘設定`(0xA10CC)·
+#       `ページ`(0xA13E4, 페이지 목록 1번 줄) 가 그랬다 → `exetext.glued_entries` 가 표에서
+#       일반적으로 되살린다. ⚠ 09-26 에는 0xA10CC 의 원인을 「앞 워드 `0x182` 가 미매핑 코드」로
+#       적었는데, 그 `0x182` 는 글자가 아니라 **표 0xA10B0 의 마지막 오프셋 값**이었다(09-27 정정).
+#    ② **표가 아닌 자료 뒤** — 일반 규칙으로 못 가린다. 사람이 확인한 자리만 여기 더한다.
+#    ⚠ 스캐너 자체를 고치는 길(모르는 코드를 연성 종결로)은 09-26 에 다른 표에서 낱말 430여 개가
+#      사라지는 회귀를 내 되돌렸다 — 그래서 소비자 쪽에서 되살린다.
+EXTRA_SITES = {
+    "ed3": [
+        0x10BC
+    ],  # はい — 예/아니오 창. 앞 네 워드(1·8·2·4)는 표가 아닌 자료다(いいえ 는 보인다)
+}
+
+
 def sites(disc):
     """{오프셋: {"jp":…, "len":코드수, "table":(주소,base,N)|None, "budget":칸 바이트}}"""
     cm = textenc.charmap(disc)
     data = exe_bytes(disc)
     labels = dump_names.REGIONS[disc]
-    tables = exetext.scan_tables(data, cm)
+    tables = exetext.scan_tables(data, cm) + exetext.detached_tables(data, disc)
     # 표 항목의 오프셋 → (표, 칸 예산)
     in_table = {}
     for t in tables:
@@ -68,7 +87,10 @@ def sites(disc):
                 in_table[off] = ((tbl, base, n), hi - lo)
     out = {}
     # ⚠ max_len 64 — 기본 24 는 낱말 표용이라 주문 설명(최대 ~25) · 메모·읽을거리(~30)가 잘린다
-    for r in dump_names.split(dump_names.regions(dump_names.strings(data, cm, max_len=64, newline=True)), labels):
+    regs = dump_names.split(
+        dump_names.regions(dump_names.strings(data, cm, max_len=64, newline=True)), labels
+    )
+    for r in regs:
         if labels.get(r["start"]) not in KINDS:
             continue
         for off, jp in zip(r["offs"], r["items"], strict=True):
@@ -77,6 +99,27 @@ def sites(disc):
             codes, _ = exetext.raw_string(data, off)
             tb, budget = in_table.get(off, (None, 0))
             out[off] = {"jp": jp, "len": len(codes or []), "table": tb, "budget": budget}
+    # 표 바로 뒤 첫 항목(스캐너 사각지대 ①) — 갈래는 주소로 다음 항목(짝)의 구역 라벨을 따른다.
+    kind_at = {o: labels.get(r["start"]) for r in regs for o in r["offs"]}
+    for off, mates in exetext.glued_entries(data, tables):
+        if off in out or exetext.kind_of(mates, kind_at) not in KINDS:
+            continue
+        codes, _ = exetext.raw_string(data, off)
+        if not codes or any(c not in cm and c != 1 for c in codes):
+            continue
+        jp = "".join(cm.get(c, "\n") for c in codes)  # 스캐너(`strings(newline=True)`)와 같은 읽기
+        if jp.strip():
+            tb, budget = in_table.get(off, (None, 0))
+            out[off] = {"jp": jp, "len": len(codes), "table": tb, "budget": budget}
+    for off in EXTRA_SITES.get(disc, []):
+        if off in out:
+            continue
+        codes, _ = exetext.raw_string(data, off)
+        if not codes or any(c not in cm for c in codes):
+            continue
+        jp = "".join(cm[c] for c in codes)
+        tb, budget = in_table.get(off, (None, 0))
+        out[off] = {"jp": jp, "len": len(codes), "table": tb, "budget": budget}
     return data, out
 
 
@@ -130,7 +173,10 @@ def sync(disc):
         doc = json.load(f)
     rows, n = {}, 0
     for k, row in doc["strings"].items():
-        kr = (row.get("kr") or "").strip()
+        # ⚠ 문안은 **쓴 그대로** 옮긴다(앞뒤 공백·개행 포함). 원문이 한 낱말을 두 조각으로 벌려
+        #   둔 곳(「は」「い」)에서 남는 조각은 공백으로 지우고, 이름 뒤에 붙는 조각(「が現れた」)은
+        #   앞 공백이 곧 띄어쓰기이며, 원문 끝의 개행도 자리다 — strip 하면 셋 다 깨진다(09-27).
+        kr = row.get("kr") or ""
         if not kr:
             continue
         off = int(k, 16)
@@ -162,6 +208,23 @@ def check(disc):
     return len(canon), len(ss), bad
 
 
+def pack_fixed(exe, off, codes, orig_len, orig_term, pad_code=None):
+    """표가 없는(길이 고정) 자리 하나를 쓴다 — 원본 자리·종결을 보존한다.
+
+    🔴 **줄어든 만큼을 그냥 비우면 사고가 난다**(실측, ED3 2026-09-26) — 여기도 표 있는
+    자리(`exetext.rebuild`)와 **같은 함정**이다. 시스템 설정 값 목록(메시지속도의
+    「보통」「느림」)이 바로 이 경로로 들어가는데, 짧아진 자리를 `TERM_FFFF`(빈 문자열)로
+    끊자 표를 안 보고 종결마다 이어 읽는 순차 스캔이 그 빈 문자열을 「목록 끝」으로 읽어
+    「느림」이 통째로 안 보였다. `pad_code` 를 주면 안 보이는 채움 글자(스페이스)로 원래
+    길이까지 늘리고 **원본 종결을 그 자리에 그대로 남긴다** — 화면엔 안 보이면서 순차
+    스캐너도 표 기반 재구축도 둘 다 안전하다.
+    """
+    if pad_code is not None and len(codes) < orig_len:
+        codes = list(codes) + [pad_code] * (orig_len - len(codes))
+    struct.pack_into(f"<{len(codes)}H", exe, off, *codes)
+    struct.pack_into("<H", exe, off + len(codes) * 2, orig_term)
+
+
 def apply(exe, disc, encode):
     """실행파일 bytearray 에 정본을 넣는다. `encode(kr) -> [코드]`.
 
@@ -170,6 +233,10 @@ def apply(exe, disc, encode):
     """
     _, ss = sites(disc)
     canon = load(disc)
+    try:
+        pad_code = encode(" ")[0]
+    except (KeyError, IndexError):
+        pad_code = None
     put = skipped = 0
     by_table = {}
     for off, row in sorted(canon.items()):
@@ -186,11 +253,16 @@ def apply(exe, disc, encode):
             if len(codes) > s["len"]:
                 skipped += 1
                 continue
-            struct.pack_into(f"<{len(codes)}H", exe, off, *codes)
-            struct.pack_into("<H", exe, off + len(codes) * 2, exetext.TERM_FFFF)
+            _, orig_term = exetext.raw_string(bytes(exe), off)
+            pack_fixed(exe, off, codes, s["len"], orig_term, pad_code)
             put += 1
         else:
             by_table.setdefault(s["table"], {})[off] = codes
+    # 🔴 칸이 줄면 남는 슬랙을 `TERM_FFFF`(빈 문자열)로 채우던 게 실제 사고를 냈다 —
+    #    일부 UI 목록(시스템 설정·메시지속도)은 표를 안 보고 종결마다 다음 문자열로
+    #    이어 읽는 **순차 스캔**이라, 빈 문자열을 「목록 끝」으로 읽어 줄이 잘렸다
+    #    (실측 2026-09-26, `docs/devlog.md`). 화면에 안 보이는 스페이스로 채워
+    #    칸의 마지막 조각 뒤에 늘려 붙이면 순차 스캔도 표 기반 재구축도 둘 다 안전하다.
     for (tbl, base, n), want in by_table.items():
         ents = struct.unpack_from(f"<{n}H", bytes(exe), tbl)
         cur = []
@@ -198,13 +270,48 @@ def apply(exe, disc, encode):
             codes, _ = exetext.raw_string(bytes(exe), base + x)
             cur.append(want.get(base + x, codes or []))
         try:
-            new, _ = exetext.rebuild(bytes(exe), tbl, base, n, cur)
+            new, _ = exetext.rebuild(bytes(exe), tbl, base, n, cur, pad_code=pad_code)
         except exetext.ExeTextError:
             skipped += len(want)
             continue
         exe[:] = bytearray(new)
         put += len(want)
     return put, skipped
+
+
+def lost_text(orig, new, disc, encode):
+    """[사유] — 🔴 불변식 「정본 글자 = 구운 글자」(공백 빼고). `apply` 뒤에 부른다.
+
+    표가 있는 자리는 재포장으로 **자리가 옮겨 가므로** 원본 표에서 항목 번호를 찾고 새 이미지의
+    같은 표 항목을 따라가 읽는다. 원문 그대로 남기로 한(건너뛴) 자리는 뺀다.
+    """
+    _, ss = sites(disc)
+    try:
+        space = encode(" ")[0]
+    except (KeyError, IndexError):
+        space = None
+    bad = []
+    for off, row in sorted(load(disc).items()):
+        s = ss.get(off)
+        if s is None or script_canon.stamp(s["jp"]) != row["jp"]:
+            continue
+        try:
+            want = encode(row["kr"].replace(" ", ""))  # ⚠ split() 은 개행(0x01)까지 지운다
+        except KeyError:
+            continue
+        where = off
+        if s["table"] is not None:
+            tbl, base, n = s["table"]
+            ents = struct.unpack_from(f"<{n}H", orig, tbl)
+            if off - base not in ents:
+                continue
+            k = ents.index(off - base)
+            where = base + struct.unpack_from(f"<{n}H", new, tbl)[k]
+        codes, _ = exetext.raw_string(new, where)
+        have = [c for c in (codes or []) if c != space]
+        if have != want and (s["table"] is not None or len(encode(row["kr"])) <= s["len"]):
+            bad.append(f"0x{off:06X}: 구운 글이 정본과 다르다 ({len(have)} vs {len(want)}자)")
+    return bad
 
 
 def main():

@@ -21,13 +21,17 @@ class TestDecode(unittest.TestCase):
         self.assertTrue(s.startswith("い"))
 
     def test_charmap_is_jis_ordered(self):
-        """표의 구조 계약 — 코드가 커지면 JIS 코드도 커진다. 어기면 배정이 틀린 것이다."""
+        """표의 구조 계약 — 한자 블록은 코드가 커지면 JIS 코드도 커진다. 어기면 배정이 틀린 것이다.
+
+        ⚠ 한자 블록 **뒤에 기호 꼬리**가 붙어 있다(0x719~ ⅠⅡⅢ · 0x722 ：, 2026-09-27 판독) —
+          JIS 1·13구 기호라 순서 밖이다. 앞쪽 기호(0x3F 아래)처럼 한자가 아닌 것은 안 센다.
+        """
         m = textenc.charmap("ed3")
         kana = set(textenc.kana_map("ed3"))
         prev_code = prev_jis = None
         bad = []
         for code in sorted(m):
-            if code in kana or code < 0x3F:
+            if code in kana or code < 0x3F or not "一" <= m[code] <= "鿿":
                 continue
             try:
                 j = int.from_bytes(m[code].encode("cp932"), "big")
