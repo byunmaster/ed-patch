@@ -1,6 +1,6 @@
 {
  "ss-ed1+2": {
-  "/ED2.BIN": "b8d4b7a4fa6c",
+  "/ED2.BIN": "1d7d89fdca88",
   "/ED.BIN": "9ce925f4e3b9",
   "/BIN/ED1SCN08.BIN": "a8dfc476164e",
   "/BIN/ED1SCN02.BIN": "a18b397b03ad",
@@ -30,7 +30,7 @@
   "/BIN/ED1SCN26.BIN": "c146efe3ac8e",
   "/BIN/ED1SCN27.BIN": "31049bbc7761",
   "/BIN/ED1SCN28.BIN": "6af8ee371ac0",
-  "/BIN/ED1SCN29.BIN": "4188e1c6a8df",
+  "/BIN/ED1SCN29.BIN": "75ca1a301709",
   "/BIN/ED1SCN30.BIN": "3359b56bb6e1",
   "/BIN/ED1SCN31.BIN": "2affb684bbb8",
   "/BIN/ED1SCN32.BIN": "feed034b3566",
@@ -91,12 +91,12 @@
   "/BIN/ED2SCN45.BIN": "382fd2c1d388",
   "/BIN/ED2SCN46.BIN": "af56abe4cb28",
   "/BIN/ED2SCN47.BIN": "188f844defa7",
-  "UI/표": "e5ee4c0f0d90",
+  "UI/표": "de796f3079a7",
   "UI/이름": "42f744dd980b",
   "UI/시스템": "a5a169e4c3c6",
   "UI/카드": "f43147bbb4b8",
   "UI/메시지": "d0f1ccb896f0",
-  "UI/씬머리": "630903f4d90e",
+  "UI/씬머리": "01b8ef45fee2",
   "몬스터/이름": "fb0a05f38fc7",
   "몬스터/조우": "cf1ee8573fff"
  },

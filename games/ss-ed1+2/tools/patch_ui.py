@@ -278,6 +278,185 @@ def rows():
     return out
 
 
+# ── 반각 도트 글리프 — 저장 바이트가 막히는 지명 전용(PS1 수법 이식) ──────────────────
+# 🔴 **마스터 지시(2026-10-05)**: 「새턴도 ps1과 똑같이 도트로 처리하면 돼. ps1에서
+#   도트작업했던 모든것들은 새턴에도 동일 적용이야」. 狼の口 정본이 「늑대입」→「늑대의입」
+#   (4글자·8B)으로 바뀌면서 씬 지명 헤더(아래 `scn_header`) 11곳이 막혔다(ED1SCN27 2 ·
+#   ED2SCN33 9) — 자리가 8B(널 포함 본문 7B)뿐인데 헤더는 4바이트 정렬이라 칸을 못 늘린다
+#   (헤더 바로 뒤가 SH-2 코드, 위 주석). HUD·배너·워프 표는 `glossary.lookup` 이 채우는
+#   별도 자리라 넉넉해서 안 막힌다 — **씬 헤더만** 막힌다.
+#
+# PS1 은 `ps1-ed1+2/tools/patch_hangul_glyph_table.py` 에서 같은 류의 문제(8B 벽)를
+# **저장 바이트를 2B/글자 → 1B/글자로 줄여서** 풀었다 — 전각 한글 대신 **반각 코드 하나하나에
+# 그림 조각(6px)을 구워** 6글자를 6B 로 담는다(`HUD_GRID`, 마스터가 직접 찍은 36×11 도안).
+# **그 도안은 정본이라 다시 그리거나 손보지 않고 그대로 가져온다** — 아래 `HUD_GRID` 는
+# PS1 원본과 바이트까지 같다.
+#
+# 새턴도 **같은 지오메트리다**(2026-09-27 이번 세션이 라이브 RE 로 이미 확정해 둔 값,
+# 「HUD 좁은 글꼴 조사」·「배너 정렬」 두 회차에 걸친 디스어셈블):
+#   `0x0607D5D4`(반각/전각 판정, 표 없이 순수 산수) — `(c-32)∈[0,94)` 또는
+#   `(c+95)&0xFF∈[0,62)`(=0xA1~0xDF) 면 반각. `0x0607D768`(반각 블리터)은 **표 참조 없이
+#   `/11ASCII.FON` 을 코드값×11 로 직접 색인하는 고정 스트라이드 비트 블리터**다 — PS1 처럼
+#   "주소가 단조가 아니다" 같은 복잡함이 없다. 커서 전진은 **반각이면 무조건 6px**(여러
+#   문맥에서 라이브로 반복 실측, 예외 없음). ⇒ PS1 의 8×11 비트맵(열 6·7 은 항상 0)·6px
+#   전진 규약과 **구조가 완전히 같아서, 그 비트맵을 그대로 6px씩 잘라 쓸 수 있다.**
+#
+# PS1 이 쓴 정확한 코드(0xC1·0xC2·0xC3·0xC4·0xCB·0xCE)는 새턴에서 전부 **이미 쓰는 중**이다
+# (반각 가타카나 ﾁﾂﾃﾄﾋﾎ — 원본 UI·대사에 남아 있다). 그래서 새턴 전용으로 빈 칸을 새로
+# 골랐다 — JP 원문 전량(`work/derived/scn_jp/*.json`·`ui_jp.json`·`title_jp.json`) + 우리
+# KR 출력(`script/*.json`) 을 전수 스캔해 0xA1~0xDF 63칸 중 **7칸이 완전히 비어 있음**을
+# 확인했다(0xA1·0xA3·0xA4·0xA6·0xA9·0xD2·0xD4). 그중 0xA1·0xA3·0xA4 는 **원본 글리프조차
+# 빈 칸**(00×11)이라 가장 안전하다. 6개만 쓰고 0xD4 는 다음에 반각 칸이 더 필요할 때 쓰도록
+# 비워 둔다(PS1 의 0xCF 와 같은 관례).
+SS_HUD_CODES = (0xA1, 0xA3, 0xA4, 0xA6, 0xA9, 0xD2)  # 왼→오, PS1 HUD_CODES 와 같은 순서
+
+# PS1 `patch_hangul_glyph_table.HUD_GRID` 그대로(36×11, 6px 6조각) — **다듬지 않는다.**
+HUD_GRID = (
+    ".#.......####.#.#...##....#...##...#",
+    ".#.......#....#.#..#..#...#..#..#..#",
+    ".#.......#....#.#.#....#..#.#....#.#",
+    ".######..#....#.#.#....#..#.#....#.#",
+    ".........#....#.#..#..#...#..#..#..#",
+    "########.#....###...##....#...##...#",
+    ".........#....#.#.........#.........",
+    ".######..#....#.#.........#..#.....#",
+    "......#..#....#.#.#######.#..#######",
+    "......#..####.#.#.........#..#.....#",
+    "......#.......#.#.........#..#######",
+)
+
+# 🔴 **「사피아의호수」추가(마스터 지시 2026-10-05) — 첫 조사는 틀렸다.** 처음엔 「새턴에
+#   빈 반각 코드가 9개뿐이라 11개가 필요한 SAPIA_GRID 는 못 넣는다」고 보고했는데, 관리자가
+#   짚었다 — 그 조사가 **JP 원문 전체**를 "쓰는 중"으로 셌다. JP 원문은 거의 다 우리 KR
+#   문안으로 **덮인다**(번역이 곧 그 자리를 비운다) — 화면에 실제로 남는 반각 사용은 최종
+#   KR 출력(+남은 일본어 2종, 전부 도달 불가한 개발자 화면 한자라 반각과 무관)뿐이다.
+#   **그 기준으로 다시 세니 0xA1~0xDF 63칸 중 실사용은 `･`(0xA5) 하나뿐**이었다 — 56칸이
+#   비어 있다(HUD 의 6칸을 빼도 50칸). 11개는 충분하다.
+SS_SAPIA_CODES = (0xA2, 0xA7, 0xA8, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF, 0xB0, 0xB1)
+
+# PS1 `patch_hangul_glyph_table.SAPIA_GRID` 그대로(66×11, 6px 11조각) — **다듬지 않는다.**
+# PS1 자리(ED2SCN10 필드 HUD)와 같은 류: `サピアの湖`("사피아호수", 5음절) 의 씬 헤더가
+# 12B(본문 11B)인데, PS1 과 자모를 맞춘 「사피아의호수」(6음절·12B)는 전각으로 못 들어간다
+# (12B+NUL=13B > 12B) — HUD_GRID 와 같은 이유로 도트가 **필수**다(관리자 확인: SAPIA 11조각은
+# HUD 조각과도, 자기들끼리도 겹치는 픽셀이 없다).
+SAPIA_GRID = (
+    "...#....#..#######.#...###...#....###....#....#####.........#.....",
+    "...#....#...#...#..#..#...#..#...#...#...#..................#.....",
+    "...#....#...#...#..#.#.....#.#..#.....#..#.###########....##.##...",
+    "...#....#...#...#..#.#.....#.#..#.....#..#..............##.....##.",
+    "...#....#...#...#..#.#.....#.#...#...#...#...#######..............",
+    "..#.#...##..#...#..#.#.....#.##...###....#..#.......#..###########",
+    "..#.#...#...#...#..#.#.....#.#...........#..#.......#.......#.....",
+    ".#...#..#...#...#..#.#.....#.#...........#...#######........#.....",
+    ".#...#..#...#...#..#..#...#..#..########.#......#...........#.....",
+    "#.....#.#..#######.#...###...#...........#.###########......#.....",
+    "........#..........#.........#...........#..................#.....",
+)
+
+# {이름: (그리드, 코드순서)} — 둘 다 6px 조각 그리드다. 추가할 땐 여기 한 줄.
+DOTART_GRIDS = {
+    "hud": (HUD_GRID, SS_HUD_CODES),
+    "sapia": (SAPIA_GRID, SS_SAPIA_CODES),
+}
+
+
+def _pack_dotart_glyph(row_bits):
+    """11행 × 6px(`#`/`.`) 문자열 → 11B(행당 1B, MSB=왼쪽, 열 6·7은 항상 0)."""
+    out = bytearray(11)
+    for r, row in enumerate(row_bits):
+        b = 0
+        for c, ch in enumerate(row):
+            if ch == "#":
+                b |= 1 << (7 - c)
+        out[r] = b
+    return bytes(out)
+
+
+def bake_dotart_glyphs():
+    """{코드: 11B 글리프} — `DOTART_GRIDS` 의 각 그리드를 6px씩 잘라 해당 코드에 붙인다."""
+    out = {}
+    for name, (grid, codes) in DOTART_GRIDS.items():
+        assert len(grid) == 11, f"{name} 행 수 {len(grid)} != 11"
+        width = len(codes) * 6
+        for r, row in enumerate(grid):
+            assert len(row) == width, f"{name} {r}행 길이 {len(row)} != {width}"
+        for i, code in enumerate(codes):
+            chunk = [row[i * 6 : i * 6 + 6] for row in grid]
+            out[code] = _pack_dotart_glyph(chunk)
+    return out
+
+
+# {우리 KR 지명: 도트 바이트열} — **씬 헤더 전용** 오버라이드(`scn_encode`). HUD·배너·워프
+# 표는 자리가 넉넉해 평범한 전각 인코딩 그대로 간다(`glossary.lookup`). 짧은 꼴(「늑대입」)로
+# 되돌리는 예외는 두지 않는다(마스터 지시 2026-10-05).
+DOTART_PLACES = {
+    "늑대의입": bytes(SS_HUD_CODES),
+    "사피아의호수": bytes(SS_SAPIA_CODES),
+}
+
+# {JP 원문: 강제 KR} — **씬 헤더 전용** 표기 오버라이드. `サピアの湖` 는 일반 지명 표(HUD·
+# 배너·워프)에선 글로서리 값 「사피아호수」(5음절, 짧아서 그쪽은 안 막힌다)를 그대로 쓰고,
+# **이 씬 헤더에서만** PS1 과 자모를 맞춘 「사피아의호수」로 띄운다(마스터 지시 2026-10-05,
+# "ps1에서 도트작업했던 모든것들은 새턴에도 동일 적용"). 글로서리 자체를 바꾸지 않는 이유 —
+# 다른 자리(HUD·배너·워프)까지 전부 「사피아의호수」가 되면 그쪽 자리들도 다시 다 맞는지
+# 확인해야 한다(늑대의입 때처럼); 이번엔 이 씬 헤더 하나만 PS1 과 다른 게 문제이므로 범위를
+# 좁힌다.
+SCN_HEADER_WORDING = {"サピアの湖": "사피아의호수"}
+
+
+def dotart_claimed_codes():
+    """`DOTART_PLACES`/`DOTART_GRIDS` 가 실제로 점유하는 반각 코드 전부."""
+    return {c for _g, codes in DOTART_GRIDS.values() for c in codes}
+
+
+def dotart_text_codes(rs, scn, ntabs, sysm, cards_msgs_kr):
+    """**최종 화면에 실제로 나가는 글** 이 쓰는 반각 코드 — 도트가 훔칠 수 없는 칸.
+
+    🔴 JP 원문 전체를 센 첫 조사는 틀렸다(관리자 지적 2026-10-05) — 원문은 거의 다 KR 로
+      덮이므로 "원문이 쓴다"가 "화면에 남는다"가 아니다. 여기는 **KR 출력 쪽만** 센다
+      (한글 슬롯은 늘 전각 2B 라 반각 코드를 쓰지 않으므로 애초에 안 걸린다 — 그 밖의
+      글자만 `cp932` 로 재 1B 면 반각).
+    """
+    used = set()
+
+    def mark(kr):
+        if not kr:
+            return
+        for ch in kr:
+            if "가" <= ch <= "힣":
+                continue
+            try:
+                b = ch.encode("cp932")
+            except UnicodeEncodeError:
+                continue
+            if len(b) == 1 and (0x21 <= b[0] <= 0x7E or 0xA1 <= b[0] <= 0xDF):
+                used.add(b[0])
+
+    for _k, _n, _i, _at, _s, _jp, kr in rs:
+        mark(kr)
+    for _p, _l, _s, _at, _fl, jp, kr, _t in scn:
+        mark(SCN_HEADER_WORDING.get(jp, kr))
+    for t in ntabs:
+        for _at, _jp, kr, _ptrs in t["recs"]:
+            mark(kr)
+    for _p, _l, _s, _at, _sp, _pre, kr, _ptrs in sysm:
+        mark(kr)
+    for kr in cards_msgs_kr:
+        mark(kr)
+    return used
+
+
+def check_dotart_codes(rs, scn, ntabs, sysm):
+    """🔴 **게이트** — 도트가 점유한 코드가 실제 화면 글과 겹치면 그 글이 깨진다(관리자
+    요청 2026-10-05, 「이식할 때 누출 검사를 같이 건다」). `DOTART_PLACES` 를 늘릴 때마다
+    돈다."""
+    d = json.load(open(CANON, encoding="utf-8"))
+    cards_msgs_kr = [e[-1] for e in d.get("cards", []) + d.get("msgs", [])]
+    text_codes = dotart_text_codes(rs, scn, ntabs, sysm, cards_msgs_kr)
+    clash = dotart_claimed_codes() & text_codes
+    assert not clash, f"도트 코드가 실제 화면 글과 겹친다: {sorted(hex(c) for c in clash)}"
+
+
 # ── 씬 파일 지명 헤더 ────────────────────────────────────────────────────────
 # 🔴 **HUD 우하단 지명은 `ED.BIN` 의 표가 아니라 여기서 온다**(2026-08-24 실측 — 표를
 #   넣었는데 화면은 그대로 일본어였다). 씬 파일은 `[지명 헤더][SH-2 코드][텍스트]` 가
@@ -316,6 +495,7 @@ def scn_header(d, i, places):
             continue
         kr = places.get(jp)
         if kr:
+            kr = SCN_HEADER_WORDING.get(jp, kr)
             # 🔴 널이 반드시 남아야 한다 — 꼬리 바이트(`09`)가 끝을 차지하므로 본문은 fl-2 까지.
             return s, fl, jp, _fit_place(kr, fl - 1, False, "씬 지명 헤더")
     return None
@@ -1065,7 +1245,7 @@ def scn_suffix_fit(scn, canon=None):
     for _p, _l, _s, _at, _fl, jp, kr, _t in scn:
         seen.setdefault(kr, jp)
     for kr, jp in seen.items():
-        ours, orig = rec_len(kr) - 1, len(jp.encode("cp932"))
+        ours, orig = scn_rec_len(kr) - 1, len(jp.encode("cp932"))
         if ours > orig:
             bad.append((kr, ours, jp, orig))
     return bad
@@ -1167,10 +1347,21 @@ def check(rs):
 
 
 def scn_encode(kr, fl, tail, plan):
-    """헤더 필드 — 우리 이름 + 널 채움 + **원본 꼬리 바이트 그대로**."""
-    body = to_bytes(kr, plan)
+    """헤더 필드 — 우리 이름 + 널 채움 + **원본 꼬리 바이트 그대로**.
+
+    🔴 저장 바이트가 막히는 지명(`DOTART_PLACES`)은 전각 한글이 아니라 반각 도트 글리프
+      6B 로 적는다(위 섹션, PS1 수법 이식·마스터 지시 2026-10-05).
+    """
+    body = DOTART_PLACES.get(kr) or to_bytes(kr, plan)
     assert len(body) < fl, f"{kr!r} 이 {len(body)}B 로 헤더 {fl}B 에 안 든다"
     return body + b"\x00" * (fl - 1 - len(body)) + bytes([tail])
+
+
+def scn_rec_len(kr):
+    """씬 헤더용 레코드 길이 — `DOTART_PLACES` 오버라이드가 있으면 그 길이, 없으면 `rec_len`."""
+    if kr in DOTART_PLACES:
+        return len(DOTART_PLACES[kr]) + 1
+    return rec_len(kr)
 
 
 def write_file(f, path, lba, size, patch, label):
@@ -1242,9 +1433,10 @@ def main():
         + " · ".join(f"{t['key']} {t['what']} {len(t['recs'])}" for t in ntabs)
     )
     bad = check(rs)
+    check_dotart_codes(rs, scn, ntabs, sysm)
     for path, _l, _s, at, fl, jp, kr, _t in scn:
-        if rec_len(kr) > fl:
-            print(f"  ❌ {path} 0x{at:05x} {jp}→{kr} {rec_len(kr)}B > 헤더 {fl}B")
+        if scn_rec_len(kr) > fl:
+            print(f"  ❌ {path} 0x{at:05x} {jp}→{kr} {scn_rec_len(kr)}B > 헤더 {fl}B")
             bad += 1
     for path, _l, _s, at, span, pre, kr in cards + msgs:
         if rec_len(kr) + (len(pre) if isinstance(pre, bytes) else 0) > span:
@@ -1363,6 +1555,25 @@ def main():
                 )
             print(f"  반각 폰트 {FON_ASCII}: 원본에 없던 {''.join(gaps)!r} 구움")
 
+        # ── 반각 도트 글리프 — DOTART_PLACES 가 실제로 scn 헤더에 쓰인 지명만 굽는다
+        used_dotart = sorted({kr for _p, _l, _s, _at, _fl, _jp, kr, _t in scn if kr in DOTART_PLACES})
+        if used_dotart:
+            alba, asize = files[FON_ASCII]
+            orig_ascii = common.extract(FON_ASCII)
+            for code, g in bake_dotart_glyphs().items():
+                off = code * ASCII_STRIDE
+                common.write_at(
+                    f,
+                    alba,
+                    asize,
+                    off,
+                    g,
+                    label=f"{FON_ASCII} 도트 0x{code:02X}",
+                    expect=bytes(orig_ascii[off : off + ASCII_STRIDE]),
+                )
+            n_codes = sum(len(DOTART_PLACES[kr]) for kr in used_dotart)
+            print(f"  반각 도트 {FON_ASCII}: {n_codes}칸 구움 ({'·'.join(used_dotart)})")
+
         # ── 전각 폰트의 구멍 — 원본에 글리프가 없는 전각 글자(말줄임표 등)
         kgaps = kanji_gaps(
             [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs + sysm] + names,
@@ -1433,7 +1644,11 @@ def verify(dst, rs, scn, cards, plan, files):
         if path not in cache:
             cache[path] = common.read_extent(mm2, *files[path])
         rec = cache[path][at : at + fl]
-        got = decode(rec[: rec.find(b"\x00")], inv)
+        raw = rec[: rec.find(b"\x00")]
+        # 🔴 도트 글리프는 일반 디코더로 읽으면 바이트 그대로의 반각(｡｣､ｦｩﾒ)으로 나온다 —
+        #   그게 맞다(`scn_encode` 가 실제로 그 바이트를 쓴다). 쓴 바이트가 정확히 그
+        #   조합일 때만 지명으로 되돌려 대조한다.
+        got = kr if kr in DOTART_PLACES and raw == DOTART_PLACES[kr] else decode(raw, inv)
         if got != kr:
             bad.append(f"{path} 0x{at:05x} {got!r} ≠ {kr!r}")
     for path, _lba, _size, at, span, pre, kr in cards:
