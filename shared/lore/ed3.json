@@ -1,0 +1,11001 @@
+{
+ "_doc": [
+  "『영웅전설 III 하얀 마녀』(白き魔女, Falcom 1994) **사실 사전** — 마스터 소장 국내 공략집에서 뽑은 사실만 담는다.",
+  "🔴 저작권: 이름·수치·효과·가격·위치·관계·장(章)만. 공략 문장·대사·예언 문구는 옮기지 않는다 — role/effect/note 는 우리 말로 쓴 40자 안팎 요약이다.",
+  "레코드 공통: id(영문 슬러그, 안정 키) · name(대표 표기) · src([{guide, loc}]) · alt([{field, value, src, note?}]) · note? · unsure? · glossary",
+  "🔴 ED3 표기는 **잠정**이다(마스터 판정: 씬 작업 전이라 공략집 기반으로 먼저 만들고, 작업하면서 고유명사가 바뀔 수 있다). name = 정발(만트라·삼성전자 DOS판) 기반 공략의 표기.",
+  "대표 표기 우선순위: ① 공략 스크린샷의 게임 화면(HUD·대화창 이름표) ② gamepia(DOS 정발 핸드북, 화면 캡처 가장 많음) ③ pcchamp·pcchamp2·comgame(DOS 정발 잡지) 다수 ④ hwp. 갈리면 버리지 않고 alt 에 출처째 남긴다.",
+  "⚠ hwp 는 출처 표기 없는 팬 공략이고 **신영웅전설3(Win 리메이크) 기준**이다(구영전3=DOS 정발과의 차이를 스스로 적어 둔다). 표기가 정발과 자주 갈려 alt 로만 쓴다 — 단, HP 표는 hwp 가 가장 촘촘해 수치 이형으로 싣는다.",
+  "glossary: shared/glossary/eiyuu.json 과 공백 제거·접미 차이로 맞는 것만 {cat, jp, value}. 🔴 ED3 는 정본으로 name 을 덮지 않는다(정본은 ED1·2 세계관이라 겹침은 우연·공용어 정도) — 참고용이다.",
+  "⚠ 오기로 보이는 이형도 지우지 않는다 — note 에 '오기 추정'(판정은 사람 몫). 판독 불가는 null + unsure.",
+  "loc 표기: pdf·잡지 = 지면 인쇄 쪽(p.NN) · hwp = 장 절(서장·제N장·최종장·TIP). gamepia 이미지 폴더(25장)는 PDF 앞 25쪽과 같은 스캔이라 PDF 로만 인용한다.",
+  "범주 조정(ED1 대비): ED3 는 주문 레벨제가 아니라 **채플계(회복·보조)·칸드계(공격) 두 계통 마법을 마을 사원에서 전수받고 MP 를 쓴다** — spells 를 magic 으로 바꾸고 school·mp 를 단다(max_level 없음).",
+  "범주 조정: places 에 country(8개국)와 shrine(샤리네 다섯의 속성)을 단다. 상점은 places[].shops 대신 merchants(상인·환율 표)로 따로 둔다 — ED3 공략은 품목을 '도시의 상인 이름'으로 적고 Goa→Pia 환전율이 상인마다 다르다.",
+  "범주 조정: chapters 는 0=서장 ~ 8=최종장(9장). misc 에 통화(고어·피어)·전투(DBS·VP)·요리 대회·하얀 마녀 연표 같은 체계 사실을 둔다.",
+  "categories: persons · places · magic · items · monsters · chapters · merchants · misc. 교차 참조는 id 로(items[].where 의 place id, merchants[].place 등)."
+ ],
+ "title": "eiyuu-densetsu-3",
+ "sources": {
+  "gamepia": {
+   "file": "영웅전설 3 게임피아 부록 공략.pdf",
+   "title": "영웅전설III 완벽공략 핸드북",
+   "publisher": "KBS게임피아(KBS문화사업단) 부록",
+   "issue": "1998년 5월호 부록(판독)",
+   "basis": "정발 DOS판(만트라·삼성전자)",
+   "note": "pdf 1쪽=표지, 2~19쪽=펼침 두 쪽. 영웅전설3 본문은 인쇄 p.3~25, p.26 이후는 CD 부록·다른 게임. 폴더 '영웅전설 3 게임피아 부록 공략/'(001~025.jpg)은 같은 스캔의 저해상 낱장(표지~p.25) — 중복이라 PDF 로 인용"
+  },
+  "pcchamp": {
+   "file": "영웅전설 3 PC챔프 공략/1~8.jpg",
+   "title": "Perfect Analysis 영웅전설 3",
+   "publisher": "PC챔프",
+   "issue": "1997년 4월호(p.230~237)",
+   "basis": "정발 DOS판(팔콤/만트라, 유통 삼성전자, 46,200원)"
+  },
+  "pcchamp2": {
+   "file": "영웅전설 3 PC챔프 공략/9~13.jpg",
+   "title": "공략노하우 3 영웅전설 3",
+   "publisher": "PC챔프",
+   "issue": "1997년 6월호(p.261~265)",
+   "basis": "정발 DOS판",
+   "note": "적 HP 표 · 아이템 표 · 상인·환율 표 · 마법 MP 표가 있다"
+  },
+  "comgame": {
+   "file": "영웅전설 3 컴퓨터게임 공략/Page109~117.jpg",
+   "title": "Complete Guide 영웅전설 3 -하얀마녀-",
+   "publisher": "컴퓨터게임",
+   "issue": "1997년 6월호(p.109~117)",
+   "basis": "정발 DOS판(팔콤/만트라, 유통 삼성전자)"
+  },
+  "hwp": {
+   "file": "영웅전설 3 하얀 마녀.hwp",
+   "title": "신영웅전설3 - 하얀마녀 - (TIP·공략)",
+   "publisher": null,
+   "issue": null,
+   "basis": "🔴 신영웅전설3(Win) 기준 팬 공략 — DOS 정발(구영전3)과의 차이를 군데군데 적었다",
+   "note": "출처 표기 없음. pyhwp(hwp5txt)로 텍스트 추출. 장별 출현 몬스터 HP 가 있다"
+  }
+ },
+ "persons": [
+  {
+   "id": "jurio",
+   "name": "쥬리오",
+   "role": "주인공, 라그픽 출신 14세 검사",
+   "first_chapter": 0,
+   "relations": {
+    "companion": "chris"
+   },
+   "age": 14,
+   "note": "게임 화면 HUD 표기 '쥬리오'(gamepia p.7). 방향치",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.7"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.231"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.109"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "주리오",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.4"
+      }
+     ],
+     "note": "인물 소개란만 — 같은 책 화면·본문은 쥬리오"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "chris",
+   "name": "크리스",
+   "role": "라그픽 출신 15세 소녀, 채플계 마법사",
+   "first_chapter": 0,
+   "relations": {
+    "uncle": "huck",
+    "companion": "jurio"
+   },
+   "age": 15,
+   "note": "병으로 한 해 늦게 순례에 나섬. 라프의 지팡이 → 게르드의 지팡이",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.4"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.231"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.109"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sara",
+   "name": "사라",
+   "role": "여자 도둑, 활과 변장의 명수",
+   "first_chapter": 0,
+   "relations": {
+    "partner": "goose"
+   },
+   "age": 22,
+   "note": "gamepia p.18 대화창 이름표 '사라'. 출신 퓨엔테(gamepia, 물음표 붙음)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.5"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.18"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "샤라",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.231"
+      },
+      {
+       "guide": "comgame",
+       "loc": "p.114"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.18"
+      },
+      {
+       "guide": "hwp",
+       "loc": "제5장"
+      }
+     ],
+     "note": "gamepia 도 사진 설명에서 한 번 샤라"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "goose",
+   "name": "구스",
+   "role": "남자 도둑, 단도·로프 던지기",
+   "first_chapter": 0,
+   "relations": {
+    "partner": "sara"
+   },
+   "age": 23,
+   "note": "출신 불명. 4장에서 잠시 일행",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.5"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.231"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.114"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "huck",
+   "name": "허크",
+   "role": "하얀 마녀를 연구하는 32세 남자",
+   "first_chapter": 0,
+   "relations": {
+    "niece": "chris"
+   },
+   "age": 32,
+   "home": "ragna",
+   "note": "크리스의 삼촌(작은아버지). 라그나에 산다",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.5"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.231"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.261"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.111"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "relation_to_chris",
+     "value": "사촌",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.111"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "rody",
+   "name": "로디",
+   "role": "가루가를 쫓는 청년",
+   "first_chapter": 1,
+   "relations": {
+    "grandfather": "kevin"
+   },
+   "age": 20,
+   "home": "negal_island",
+   "note": "메나트 네갈섬 출신, 가루가에 부모를 잃음. 듀르젤을 존경",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.5"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.113"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "alf",
+   "name": "알프",
+   "role": "엠비쉬 국왕 알프레드의 떠돌이 행세",
+   "first_chapter": 1,
+   "aliases": [
+    "알프레드"
+   ],
+   "relations": {
+    "servant": "morrison"
+   },
+   "note": "정체=엠비쉬 국왕 알프레드(2장에서 밝혀짐). 알프의 반지를 남긴다",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.15"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.113"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "morrison",
+   "name": "모리슨",
+   "role": "알프레드의 궁중 마법사(칸드계)",
+   "first_chapter": 1,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.114"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "모리스",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.113"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "magisa",
+   "name": "마기사",
+   "role": "칸드 마스터, 젊은 여성 마법사",
+   "first_chapter": 2,
+   "note": "가루가 전투에서 크게 다치고 크리스가 치료",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.114"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "lure",
+   "name": "루레",
+   "role": "도박 좋아하는 백발 칸드계 노마법사",
+   "first_chapter": 1,
+   "relations": {
+    "identity": "captain_thomas",
+    "partner": "baron"
+   },
+   "note": "정체=전설의 캡틴 토마스 선장(해적왕 라몬을 물리친)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.15"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.113"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "루네",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.233"
+      },
+      {
+       "guide": "pcchamp2",
+       "loc": "p.263"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "whirly",
+   "name": "휘리",
+   "role": "약사 리즈의 외동딸, 채플계",
+   "first_chapter": 4,
+   "relations": {
+    "mother": "liz"
+   },
+   "age": 14,
+   "note": "친구 꼬마곰 방방. 하이젠에서 인기",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.115"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "liz",
+   "name": "리즈",
+   "role": "퓨엔테의 약사",
+   "first_chapter": 4,
+   "relations": {
+    "daughter": "whirly"
+   },
+   "note": "저주를 푸는 비약을 지을 수 있는 유일한 사람",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "리스",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.234"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "로즈",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.20"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "badat",
+   "name": "바다트",
+   "role": "기드나 투기장에서 만난 거한",
+   "first_chapter": 6,
+   "note": "gamepia 화면 파티 이름 '바다트'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.21"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.116"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "바라트",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.235"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "바리카",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.21"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "stella",
+   "name": "스테라",
+   "role": "사막의 흑표범, 폭탄 명수 칸드계",
+   "first_chapter": 6,
+   "aliases": [
+    "나제",
+    "사막의 흑표범"
+   ],
+   "note": "가명 나제로 울기트의 횡포에 맞선다. 화면 파티 이름 '스테라'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.116"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "aliases",
+     "value": "니제",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.116"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "durzel",
+   "name": "듀르젤",
+   "role": "폴티아 궁정검사, 돌페스 탑에 유폐",
+   "first_chapter": 5,
+   "note": "게르드와 교류. 게르드 사망을 지켜봄. 화면 파티 이름 '듀르젤'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.5"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.237"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.261"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제5장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "듀르잭",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.21"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "드류젤",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.23"
+      },
+      {
+       "guide": "comgame",
+       "loc": "p.117"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "joanna",
+   "name": "조안나",
+   "role": "아로자에 사는 듀르젤의 혈육",
+   "first_chapter": 7,
+   "relations": {
+    "relative": "durzel"
+   },
+   "note": "관계가 공략마다 갈린다(딸·손녀)",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.237"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "죠안나",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.117"
+      },
+      {
+       "guide": "hwp",
+       "loc": "제6장"
+      }
+     ]
+    },
+    {
+     "field": "relation",
+     "value": "듀르젤의 딸",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.22"
+      }
+     ]
+    },
+    {
+     "field": "relation",
+     "value": "듀르젤의 손녀",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.117"
+      },
+      {
+       "guide": "hwp",
+       "loc": "제6장"
+      }
+     ]
+    },
+    {
+     "field": "relation",
+     "value": "하얀 마녀의 손녀딸",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.235"
+      },
+      {
+       "guide": "pcchamp",
+       "loc": "p.237"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gerd",
+   "name": "게르드",
+   "role": "하얀 마녀의 진짜 이름",
+   "first_chapter": null,
+   "aliases": [
+    "하얀 마녀"
+   ],
+   "note": "20년 전 18세에 예언하며 순례. 가가브력 972년 레파스에게 살해(pcchamp2)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.261"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.117"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "lefas",
+   "name": "레파스",
+   "role": "점성술사, 폴티아 음모의 실행자",
+   "first_chapter": 6,
+   "note": "이자벨이 끌어들임. 울기트·칸다타를 조종. 천의실 보스",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.23"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.24"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.261"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.117"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "레바스",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제7장"
+      },
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기(hwp 안에서도 레파스와 섞임)"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "isabel",
+   "name": "이자벨",
+   "role": "폴티아 왕비, 모든 악의 근원",
+   "first_chapter": 7,
+   "relations": {
+    "husband": "rudolf"
+   },
+   "note": "루돌프 왕을 홀림. 최종 보스. 화면 이름표 '이자벨 왕비'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.24"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.261"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.117"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "rudolf",
+   "name": "루돌프",
+   "role": "폴티아 국왕, 꼭두각시가 됨",
+   "first_chapter": 8,
+   "relations": {
+    "wife": "isabel"
+   },
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.261"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "르돌프",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.117"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "kazimu",
+   "name": "카지무",
+   "role": "환술사, 가짜 현자로 변신",
+   "first_chapter": 3,
+   "note": "크리스·구스에게 저주. 루드성 지하에서 로디와 싸움",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.115"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "berat",
+   "name": "베라트",
+   "role": "퓨엔테 두 왕가를 이간한 떠돌이",
+   "first_chapter": 5,
+   "note": "홀크 왕비를 볼모로 잡음. 6장 게일 가도에서 재전투(HP 386)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.20"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.116"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제5장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "배라트",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.235"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "베아트",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.21"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ulgit",
+   "name": "울기트",
+   "role": "기드넬의 대지주·거상",
+   "first_chapter": 6,
+   "note": "무화과를 독점. 레파스에게 홀렸다가 제정신",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.21"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.116"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "울기드",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.235"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "우르기드",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제6장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "kandata",
+   "name": "칸다타",
+   "role": "울기트의 수하",
+   "first_chapter": 6,
+   "note": "크리스를 기드넬로 끌고 감. 레파스에게 조종됨",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.21"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.116"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "raf",
+   "name": "라프",
+   "role": "라그픽의 노인, 실은 대마도사",
+   "first_chapter": 0,
+   "aliases": [
+    "미셸 드 라프 헤븐"
+   ],
+   "note": "크리스에게 지팡이를 줌. 마녀의 섬에 다녀온 유일한 마법사",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.8"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.110"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "aliases",
+     "value": "미첼 드 라프 헤븐",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "rogue",
+   "name": "로그",
+   "role": "라그픽 마을 사람",
+   "first_chapter": 0,
+   "note": "7장 쥬리오의 꿈에 쓰러진 모습으로 나온다",
+   "src": [
+    {
+     "guide": "comgame",
+     "loc": "p.109"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dolta",
+   "name": "돌타",
+   "role": "라그픽 촌장",
+   "first_chapter": 0,
+   "note": "지도 라벨 판독",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.8"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "simon",
+   "name": "시논",
+   "role": "라프에게 구해진 가족의 가장",
+   "first_chapter": 0,
+   "note": "엠비쉬에서 라프를 찾아옴. 3장 도타성에서 재회",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.18"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "시넌",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.110"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sheryl",
+   "name": "세릴",
+   "role": "라그나에서 쥬리오를 도운 여인",
+   "first_chapter": 0,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.9"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "셰릴",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.111"
+      },
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "fard",
+   "name": "파드",
+   "role": "탈영병, 뒤에 토네리코 망루지기",
+   "first_chapter": 0,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.111"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "joey",
+   "name": "조이",
+   "role": "파드와 함께 숨은 탈영병",
+   "first_chapter": 0,
+   "note": "정발 공략끼리도 갈린다",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "comgame",
+     "loc": "p.111"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "죠",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.232"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "죠이",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "zilba",
+   "name": "질바",
+   "role": "독수리 발톱호 선장",
+   "first_chapter": 0,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.10"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.111"
+    },
+    {
+     "guide": "hwp",
+     "loc": "TIP"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "질버",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "bosley",
+   "name": "보스레이",
+   "role": "독수리 발톱호 선원",
+   "first_chapter": 0,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.10"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.262"
+    },
+    {
+     "guide": "hwp",
+     "loc": "TIP"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "보슬레이",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "garton",
+   "name": "가튼",
+   "role": "독수리 발톱호 선원(2번 마스트)",
+   "first_chapter": 0,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.10"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "거튼",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "bolt_sailor",
+   "name": "볼트",
+   "role": "독수리 발톱호 갑판 선원",
+   "first_chapter": 0,
+   "note": "지명 볼트와 같은 이름",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.10"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.111"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "roger",
+   "name": "로저",
+   "role": "배에 탄 신혼부부의 남편",
+   "first_chapter": 0,
+   "relations": {
+    "wife": "ted"
+   },
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.11"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.111"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.262"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "로져",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ted",
+   "name": "테드",
+   "role": "배에 탄 신혼부부의 아내",
+   "first_chapter": 0,
+   "relations": {
+    "husband": "roger"
+   },
+   "note": "정발 공략 중 한 곳만 이름을 적음",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "comgame",
+     "loc": "p.111"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "테스",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "heston",
+   "name": "헤스톤",
+   "role": "배의 도난 사건 범인(부자 승객)",
+   "first_chapter": 0,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.11"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.111"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.262"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "kai",
+   "name": "카이",
+   "role": "닐리의 아이, 은단검 소동",
+   "first_chapter": 0,
+   "note": "화이트 스톤을 줌",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.12"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "tobai",
+   "name": "토바이",
+   "role": "알데의 어부, 배로 일행을 태움",
+   "first_chapter": 0,
+   "relations": {
+    "father": "miguel"
+   },
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.12"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "miguel",
+   "name": "미겔",
+   "role": "토바이의 아버지, 다리를 다친 노인",
+   "first_chapter": 0,
+   "note": "정발 공략은 이름 없이 '토바이의 아버지'",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "kevin",
+   "name": "케빈",
+   "role": "테그라의 노인, 로디의 할아버지",
+   "first_chapter": 1,
+   "relations": {
+    "grandson": "rody"
+   },
+   "note": "진홍의 불꽃을 부탁",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.13"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.14"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "캐빈",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.112"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ben",
+   "name": "벤",
+   "role": "테그라의 광부",
+   "first_chapter": 1,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.13"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "emena",
+   "name": "에메나",
+   "role": "테그라에서 배에 탄 모자의 어머니",
+   "first_chapter": 1,
+   "relations": {
+    "son": "inta"
+   },
+   "note": "건조맥을 준다. 정발 공략은 이름 없음(pcchamp2 p.264 '에메나'는 건조맥 출처로 1회)",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "inta",
+   "name": "인타",
+   "role": "에메나의 아들, 뱃멀미",
+   "first_chapter": 1,
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "santos",
+   "name": "산토스",
+   "role": "튜엘의 어부, 가루가 위치를 알림",
+   "first_chapter": 1,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.15"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "zene",
+   "name": "제네",
+   "role": "튜엘의 할머니, 하얀 마녀를 만났다",
+   "first_chapter": 1,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.15"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "trova",
+   "name": "트로바",
+   "role": "키타라 악사, 해마다 다츠를 찾음",
+   "first_chapter": 2,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.113"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "crowa",
+   "name": "크로와",
+   "role": "다츠 근처 오두막의 할머니",
+   "first_chapter": 2,
+   "note": "하얀 마녀를 만난 적이 있다(pcchamp)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.113"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "baron",
+   "name": "바론",
+   "role": "다이스를 다스리는 사람",
+   "first_chapter": 2,
+   "relations": {
+    "partner": "lure",
+    "identity": "ramon"
+   },
+   "note": "정체=해적왕 라몬(gamepia p.16). 직함은 공략마다 갈림",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.113"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "title",
+     "value": "대통령",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.233"
+      },
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ]
+    },
+    {
+     "field": "title",
+     "value": "총리대신",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.113"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "patsin",
+   "name": "팻신",
+   "role": "도타성의 무기상(만 번째 통행자)",
+   "first_chapter": 2,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.114"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "팟신",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "domingo",
+   "name": "도밍고",
+   "role": "안데라의 가게 주인",
+   "first_chapter": 3,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.18"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "giorno",
+   "name": "죠르노",
+   "role": "안데라 성의 조리장",
+   "first_chapter": 3,
+   "src": [
+    {
+     "guide": "comgame",
+     "loc": "p.114"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "knox",
+   "name": "녹스",
+   "role": "안데라 청년",
+   "first_chapter": 3,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.17"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.262"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "anne",
+   "name": "안느",
+   "role": "안데라 도구점",
+   "first_chapter": 3,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.17"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.262"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "안누",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "pirro",
+   "name": "피로",
+   "role": "올도스의 이름난 의사",
+   "first_chapter": 4,
+   "note": "여성(gamepia·hwp)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.115"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "paren",
+   "name": "파렌",
+   "role": "올도스, 명상하며 책을 빌려줌",
+   "first_chapter": 4,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.115"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ファーレーン",
+    "value": "파렌"
+   },
+   "note": "정본 일치는 ED1 ファーレーン — 같은 인물 아님(표기 우연 일치)"
+  },
+  {
+   "id": "raba",
+   "name": "라바",
+   "role": "토네리코 촌장",
+   "first_chapter": 4,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "denken",
+   "name": "덴켄",
+   "role": "올도스 대신관",
+   "first_chapter": 4,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.115"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "kerak",
+   "name": "케라크",
+   "role": "홀크 왕(퓨엔테 남부 왕가)",
+   "first_chapter": 5,
+   "src": [
+    {
+     "guide": "comgame",
+     "loc": "p.115"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "카렉",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제5장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "eneton",
+   "name": "에네톤",
+   "role": "하이젠 왕(퓨엔테 북부 왕가)",
+   "first_chapter": 5,
+   "src": [
+    {
+     "guide": "comgame",
+     "loc": "p.116"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제5장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "brit",
+   "name": "브리트",
+   "role": "루드성 안 듀르젤의 심복",
+   "first_chapter": 8,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.237"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "moscos",
+   "name": "모스크스",
+   "role": "루드 성밑 마을, 브리트를 만나는 집",
+   "first_chapter": 8,
+   "note": "공략 셋이 모두 다르다",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "코스모",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.237"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "모스코스",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "elis",
+   "name": "엘리스",
+   "role": "돌페스의 꼬마, 병사를 따돌려 줌",
+   "first_chapter": 7,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "앨리스",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제7장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ortega",
+   "name": "올테가",
+   "role": "옛 대마도사(용 퇴치 전설)",
+   "first_chapter": null,
+   "note": "책 제목·이야기로만 등장",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.17"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ramon",
+   "name": "라몬",
+   "role": "전설의 해적왕",
+   "first_chapter": null,
+   "note": "캡틴 토마스와의 이야기 책. 정체=바론(gamepia)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.12"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "captain_thomas",
+   "name": "캡틴 토마스",
+   "role": "해적왕을 물리친 전설의 선장",
+   "first_chapter": null,
+   "note": "정체=루레. 대항해 이야기 책의 주인공",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.12"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.261"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  }
+ ],
+ "places": [
+  {
+   "id": "tirasweel",
+   "name": "티라스일",
+   "kind": "world",
+   "country": null,
+   "chapter": null,
+   "note": "이야기의 무대인 지방·대륙",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.3"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.230"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.110"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "다리스일",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.109"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gagave",
+   "name": "가가브",
+   "kind": "region",
+   "country": null,
+   "chapter": null,
+   "note": "'가가브 저편' 표현으로만 나옴. 연호 가가브력(pcchamp2 p.261)",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.3"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "forthia",
+   "name": "폴티아",
+   "kind": "country",
+   "country": null,
+   "chapter": 0,
+   "note": "주인공 고향. 수도 루드성",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.3"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.7"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.231"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "폼디아",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.110"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "menart",
+   "name": "메나트",
+   "kind": "country",
+   "country": null,
+   "chapter": 0,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.3"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "chanom",
+   "name": "챠놈",
+   "kind": "country",
+   "country": null,
+   "chapter": 2,
+   "note": "수도 다이스, 대통령제",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.3"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "embish",
+   "name": "엠비쉬",
+   "kind": "country",
+   "country": null,
+   "chapter": 2,
+   "note": "수도 안데라",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.3"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "앰비쉬",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.14"
+      },
+      {
+       "guide": "hwp",
+       "loc": "제1장"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "woodle",
+   "name": "우들",
+   "kind": "country",
+   "country": null,
+   "chapter": 3,
+   "note": "숲의 나라",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.3"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.18"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "우돌",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "oldos",
+   "name": "올도스",
+   "kind": "country",
+   "country": null,
+   "chapter": 4,
+   "note": "대성당이 있는 하늘의 샤리네 소재국",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.3"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "fuente",
+   "name": "퓨엔테",
+   "kind": "country",
+   "country": null,
+   "chapter": 4,
+   "note": "북부 하이젠 왕가·남부 홀크 왕가",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.3"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "푸엔테",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.19"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gidna",
+   "name": "기드나",
+   "kind": "country",
+   "country": null,
+   "chapter": 6,
+   "note": "사막의 상업 나라",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.3"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "기드라",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.263"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "shrine_dine",
+   "name": "디네의 샤리네",
+   "kind": "shrine",
+   "country": "forthia",
+   "chapter": 0,
+   "shrine": "물",
+   "note": "첫째 샤리네. 도서관·현자·마법의 거울",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.9"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.110"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "shrine_tegra",
+   "name": "테그라의 샤리네",
+   "kind": "shrine",
+   "country": "menart",
+   "chapter": 1,
+   "shrine": "땅(대지)",
+   "aliases": [
+    "대지의 샤리네"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.9"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.14"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "shrine_ignis",
+   "name": "이그니스의 샤리네",
+   "kind": "shrine",
+   "country": "embish",
+   "chapter": 3,
+   "shrine": "불",
+   "aliases": [
+    "불의 샤리네"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.9"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.17"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.114"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "shrine_sipul",
+   "name": "시플의 샤리네",
+   "kind": "shrine",
+   "country": "woodle",
+   "chapter": 4,
+   "shrine": "바람",
+   "aliases": [
+    "바람의 샤리네"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.9"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "shrine_oldos",
+   "name": "올도스의 샤리네",
+   "kind": "shrine",
+   "country": "oldos",
+   "chapter": 4,
+   "shrine": "하늘(모든 것을 총괄)",
+   "aliases": [
+    "하늘의 샤리네"
+   ],
+   "note": "대성당 꼭대기",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.9"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ragpick",
+   "name": "라그픽",
+   "kind": "village",
+   "country": "forthia",
+   "chapter": 0,
+   "note": "주인공 마을. HUD '라그픽 마을'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.7"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.231"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.109"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ragpick_west_field",
+   "name": "서쪽 들판",
+   "kind": "field",
+   "country": "forthia",
+   "chapter": 0,
+   "note": "HUD '라그픽 마을 서쪽 들판'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.7"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "rudera_gate",
+   "name": "루데라 국경문",
+   "kind": "gate",
+   "country": "forthia",
+   "chapter": 0,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.231"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.110"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "crystal_lake",
+   "name": "수정호",
+   "kind": "lake",
+   "country": "forthia",
+   "chapter": 0,
+   "note": "다리(수정교)가 끊겨 동굴로 우회",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.9"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.231"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gaza_cave",
+   "name": "가쟈 동굴",
+   "kind": "cave",
+   "country": "forthia",
+   "chapter": 0,
+   "note": "3층 구조(pcchamp)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.9"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "가자의 동굴",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dine",
+   "name": "디네",
+   "kind": "town",
+   "country": "forthia",
+   "chapter": 0,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.9"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.231"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "calm_beach",
+   "name": "잔잔한 해변",
+   "kind": "field",
+   "country": "forthia",
+   "chapter": 0,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.9"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "잔물결해변",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ragna",
+   "name": "라그나",
+   "kind": "port",
+   "country": "forthia",
+   "chapter": 0,
+   "note": "항구도시. HUD '라그나 선착장'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.9"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.10"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.111"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "라그라",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.9"
+      },
+      {
+       "guide": "pcchamp",
+       "loc": "p.232"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "eagle_claw",
+   "name": "독수리 발톱호",
+   "kind": "ship",
+   "country": "forthia",
+   "chapter": 0,
+   "note": "HUD '독수리발톱호'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.10"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.111"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "thirst_desert_border",
+   "name": "딜트 검문소",
+   "kind": "gate",
+   "country": "forthia",
+   "chapter": 6,
+   "note": "기드나→폴티아 국경, 다리가 오르내림",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "딜티 검문소",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.237"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "달티 검문소",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.261"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "witch_coast",
+   "name": "마녀의 해안",
+   "kind": "field",
+   "country": "forthia",
+   "chapter": 7,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "aroza",
+   "name": "아로자",
+   "kind": "village",
+   "country": "forthia",
+   "chapter": 7,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.237"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dolpes",
+   "name": "돌페스",
+   "kind": "town",
+   "country": "forthia",
+   "chapter": 7,
+   "note": "듀르젤이 유폐된 탑이 있다",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "돌페즈",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.237"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "돌레스",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.264"
+      },
+      {
+       "guide": "pcchamp2",
+       "loc": "p.265"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "돌테스",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.263"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dolpes_tower",
+   "name": "돌페스의 탑",
+   "kind": "tower",
+   "country": "forthia",
+   "chapter": 7,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.117"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "forgotten_road",
+   "name": "잊혀진 거리",
+   "kind": "field",
+   "country": "forthia",
+   "chapter": 7,
+   "note": "게르드 언덕으로 가는 길",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gerd_hill",
+   "name": "게르드 언덕",
+   "kind": "field",
+   "country": "forthia",
+   "chapter": 7,
+   "note": "하얀 마녀의 무덤. HUD '게르드 언덕'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "rude_town",
+   "name": "루드 성밑 마을",
+   "kind": "town",
+   "country": "forthia",
+   "chapter": 8,
+   "note": "HUD '루드 성밑 마을'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.237"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "rude_castle",
+   "name": "루드성",
+   "kind": "castle",
+   "country": "forthia",
+   "chapter": 8,
+   "note": "폴티아 수도. 중앙 정원·알현실·지하통로(미궁)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.23"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.237"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.117"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "로드성",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.237"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "루디성",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.263"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "isabel_tower",
+   "name": "이자벨의 탑",
+   "kind": "tower",
+   "country": "forthia",
+   "chapter": 8,
+   "note": "옥상에 천의실. 최종 결전",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.24"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.236"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "celestial_room",
+   "name": "천의실",
+   "kind": "room",
+   "country": "forthia",
+   "chapter": 8,
+   "note": "천구의가 있는 방",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.24"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.261"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "천의구(방)",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.117"
+      }
+     ],
+     "note": "comgame 은 장치를 '천의구'로"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "negal_island",
+   "name": "네갈섬",
+   "kind": "island",
+   "country": "menart",
+   "chapter": 1,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.111"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "nilly",
+   "name": "닐리",
+   "kind": "village",
+   "country": "menart",
+   "chapter": 0,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.11"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "니리",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "wave_end_road",
+   "name": "파도끝의 길",
+   "kind": "field",
+   "country": "menart",
+   "chapter": 0,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.12"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "파도소리 길",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "alde",
+   "name": "알데",
+   "kind": "village",
+   "country": "menart",
+   "chapter": 0,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.12"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "알레",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.232"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "lone_tree_forest",
+   "name": "외전나무 숲",
+   "kind": "field",
+   "country": "menart",
+   "chapter": 0,
+   "note": "gamepia HUD 판독 흐림('외?나무 숲')",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "tarata",
+   "name": "타라타호",
+   "kind": "ship",
+   "country": "menart",
+   "chapter": 0,
+   "note": "토바이의 배. HUD '타라타 호 갑판'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.12"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.262"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "타랏타호",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "tegra",
+   "name": "테그라",
+   "kind": "village",
+   "country": "menart",
+   "chapter": 1,
+   "note": "가루가에 파괴됨",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.13"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "tegra_mine",
+   "name": "테그라 탄광",
+   "kind": "dungeon",
+   "country": "menart",
+   "chapter": 1,
+   "note": "지하 3층 늪에서 진홍의 불꽃",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.14"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sharp_hill",
+   "name": "뾰족한 언덕",
+   "kind": "field",
+   "country": "menart",
+   "chapter": 1,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "chita",
+   "name": "치타",
+   "kind": "village",
+   "country": "menart",
+   "chapter": 1,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.15"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "nelba",
+   "name": "넬바",
+   "kind": "town",
+   "country": "menart",
+   "chapter": 1,
+   "note": "메나트 수도. 넬바성·성밑 마을",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.15"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "엘바",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.264"
+      },
+      {
+       "guide": "pcchamp2",
+       "loc": "p.265"
+      }
+     ],
+     "note": "상점 표 — 넬바로 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "jade_road",
+   "name": "비취의 거리",
+   "kind": "field",
+   "country": "menart",
+   "chapter": 1,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.15"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "비취가도",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제1장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "topaz_coast",
+   "name": "토파즈 해안",
+   "kind": "field",
+   "country": "menart",
+   "chapter": 1,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.15"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "lapis_road",
+   "name": "라피스 거리",
+   "kind": "field",
+   "country": "menart",
+   "chapter": 1,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "라피스해안",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제1장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "tuel",
+   "name": "튜엘",
+   "kind": "town",
+   "country": "menart",
+   "chapter": 1,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.15"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "twin_dragon_valley",
+   "name": "쌍룡 계곡",
+   "kind": "field",
+   "country": "menart",
+   "chapter": 1,
+   "note": "끝에 관문(검문소)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.15"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "tultz_road",
+   "name": "툴츠 거리",
+   "kind": "field",
+   "country": "chanom",
+   "chapter": 2,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dream_road",
+   "name": "몽견가도",
+   "kind": "field",
+   "country": "chanom",
+   "chapter": 2,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.114"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "꿈의 거리",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dice",
+   "name": "다이스",
+   "kind": "town",
+   "country": "chanom",
+   "chapter": 2,
+   "note": "도박의 도시, 카지노",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "poison_swamp",
+   "name": "독늪 지대",
+   "kind": "field",
+   "country": "chanom",
+   "chapter": 2,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dats",
+   "name": "다츠",
+   "kind": "village",
+   "country": "chanom",
+   "chapter": 2,
+   "note": "다이스와 대비되는 빈민가 마을",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.113"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "다트",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "three_nation_bridge",
+   "name": "삼도교",
+   "kind": "bridge",
+   "country": null,
+   "chapter": 2,
+   "note": "챠놈·엠비쉬·올도스 공동, 대륙 최장 다리(comgame)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.114"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dota_castle",
+   "name": "도타성",
+   "kind": "castle",
+   "country": "embish",
+   "chapter": 2,
+   "note": "엠비쉬 관문 요새",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.114"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "뾰족바위",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "elder_coast",
+   "name": "엘더 해안",
+   "kind": "field",
+   "country": "embish",
+   "chapter": 2,
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "엘자 해안",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    },
+    {
+     "field": "name",
+     "value": "엘저해안",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.263"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "bolt",
+   "name": "볼트",
+   "kind": "camp",
+   "country": "embish",
+   "chapter": 2,
+   "note": "가루가 결전지(볼트 해안). HUD '엠비쉬 볼트'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "great_snake_spine",
+   "name": "큰 뱀의 등뼈",
+   "kind": "field",
+   "country": "embish",
+   "chapter": 3,
+   "note": "산맥 길",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.3"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "큰뱀의 혀",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.233"
+      }
+     ],
+     "note": "같은 길인지 미확인"
+    },
+    {
+     "field": "name",
+     "value": "큰뱀의 등",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.263"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ignis",
+   "name": "이그니스",
+   "kind": "town",
+   "country": "embish",
+   "chapter": 3,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.17"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "andera",
+   "name": "안데라",
+   "kind": "castle_town",
+   "country": "embish",
+   "chapter": 3,
+   "note": "엠비쉬 수도·알프레드의 성. 요리 대회",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.17"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.18"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.114"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "안델라",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    },
+    {
+     "field": "name",
+     "value": "인데라",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.263"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "wind_valley_gate",
+   "name": "바람계곡 관문",
+   "kind": "gate",
+   "country": "woodle",
+   "chapter": 3,
+   "note": "우들 국경 입국 심사",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.115"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "silent_forest",
+   "name": "정숙의 숲",
+   "kind": "field",
+   "country": "woodle",
+   "chapter": 4,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "정적의 숲",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sipul",
+   "name": "시플",
+   "kind": "town",
+   "country": "woodle",
+   "chapter": 4,
+   "note": "시플성이 있다. HUD '우들 시플성'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.18"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "toneriko",
+   "name": "토네리코",
+   "kind": "village",
+   "country": "woodle",
+   "chapter": 4,
+   "note": "미궁의 숲 입구 마을",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "토리네코라",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.19"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "토네리코라",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.235"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "maze_forest",
+   "name": "미궁의 숲",
+   "kind": "dungeon",
+   "country": "woodle",
+   "chapter": 4,
+   "note": "하얀 마녀가 친 결계, 비석으로 지형이 바뀐다. 성수 아르그레스가 산다",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "grace_mountain",
+   "name": "그레이스 산지",
+   "kind": "field",
+   "country": "woodle",
+   "chapter": 4,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.115"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "그레이스산",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "angola_road",
+   "name": "앙고라의 길",
+   "kind": "field",
+   "country": "oldos",
+   "chapter": 4,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "앙골라길",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    },
+    {
+     "field": "name",
+     "value": "앙고나 길",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.263"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "oldos_town",
+   "name": "올도스",
+   "kind": "city",
+   "country": "oldos",
+   "chapter": 4,
+   "note": "대성문·마을구역·대성당. 피로 선생",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "oldos_cathedral",
+   "name": "올도스 대성당",
+   "kind": "temple",
+   "country": "oldos",
+   "chapter": 4,
+   "note": "입구에서 다섯 질문",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.20"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "torif_gate",
+   "name": "토리프 검문소",
+   "kind": "gate",
+   "country": "fuente",
+   "chapter": 4,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "토리프관문",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    },
+    {
+     "field": "name",
+     "value": "트리프 검문소",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.20"
+      },
+      {
+       "guide": "pcchamp",
+       "loc": "p.235"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "north_hitz_road",
+   "name": "북히츠 거리",
+   "kind": "field",
+   "country": "fuente",
+   "chapter": 4,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "south_hitz_road",
+   "name": "남히츠 거리",
+   "kind": "field",
+   "country": "fuente",
+   "chapter": 5,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제5장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "liz_house",
+   "name": "리즈의 집",
+   "kind": "house",
+   "country": "fuente",
+   "chapter": 4,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "heigen",
+   "name": "하이젠",
+   "kind": "castle_town",
+   "country": "fuente",
+   "chapter": 4,
+   "note": "북부 왕가의 성과 성밑 마을",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "luis_gate",
+   "name": "루이스 검문소",
+   "kind": "gate",
+   "country": "fuente",
+   "chapter": 5,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.20"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "루이즈관문",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제5장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "holk",
+   "name": "홀크",
+   "kind": "castle_town",
+   "country": "fuente",
+   "chapter": 5,
+   "note": "퓨엔테 부수도, 남부 왕가",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.20"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제5장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "hez_road",
+   "name": "헤즈거리",
+   "kind": "field",
+   "country": "fuente",
+   "chapter": 5,
+   "note": "HUD '퓨엔테 헤즈거리'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.20"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제5장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "north_south_road",
+   "name": "남북가도",
+   "kind": "field",
+   "country": "fuente",
+   "chapter": 5,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.20"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제5장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "lupinas_lake",
+   "name": "루피나스 호수",
+   "kind": "lake",
+   "country": "fuente",
+   "chapter": 5,
+   "note": "베라트가 세운 성(홀크의 성)이 있다",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제5장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "mansa_gate",
+   "name": "망사 검문소",
+   "kind": "gate",
+   "country": "fuente",
+   "chapter": 5,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.21"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "망사의 관문",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제5장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "thirst_desert",
+   "name": "갈증의 사막",
+   "kind": "field",
+   "country": "gidna",
+   "chapter": 6,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "baraka",
+   "name": "바라카",
+   "kind": "town",
+   "country": "gidna",
+   "chapter": 6,
+   "note": "사막의 상업도시, 투기장",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.21"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.116"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "바라크",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.265"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ruins",
+   "name": "유적지",
+   "kind": "dungeon",
+   "country": "gidna",
+   "chapter": 6,
+   "note": "고대의 검·태양의 갑옷",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.21"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gidnel",
+   "name": "기드넬",
+   "kind": "town",
+   "country": "gidna",
+   "chapter": 6,
+   "note": "자유무역 도시, 울기트 저택",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.21"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.116"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gale_road",
+   "name": "게일가도",
+   "kind": "field",
+   "country": "gidna",
+   "chapter": 6,
+   "note": "베라트 재전투 장소. 정발 공략에 이름 없음",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "witch_sea",
+   "name": "마녀의 바다",
+   "kind": "sea",
+   "country": null,
+   "chapter": null,
+   "note": "가루가의 서식처",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "witch_island",
+   "name": "마녀의 섬",
+   "kind": "island",
+   "country": null,
+   "chapter": null,
+   "note": "라프만 다녀옴",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "glossary": null
+  }
+ ],
+ "magic": [
+  {
+   "id": "star_call",
+   "name": "별부르기",
+   "school": "채플",
+   "mp": 1,
+   "effect": "별을 불러 적을 공격",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "별 부르기",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.112"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "vacuum_blade",
+   "name": "진공검",
+   "school": "채플",
+   "mp": 2,
+   "effect": "진공의 칼날로 적을 공격",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sleep",
+   "name": "슬립",
+   "school": "채플",
+   "mp": 4,
+   "effect": "적을 잠재움",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "bind",
+   "name": "묶기",
+   "school": "채플",
+   "mp": 5,
+   "effect": "적이 행동하지 못하게 함",
+   "note": "공략끼리 이름이 갈린다",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "쇠사슬묶기",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.112"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "heal1",
+   "name": "회복1",
+   "school": "채플",
+   "mp": 1,
+   "effect": "한 명의 HP 조금 회복",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "heal2",
+   "name": "회복2",
+   "school": "채플",
+   "mp": 2,
+   "effect": "한 명의 HP 크게(절반쯤) 회복",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "회복 2",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.112"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "heal_all",
+   "name": "전체회복",
+   "school": "채플",
+   "mp": 4,
+   "effect": "동료 전원의 HP 회복",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "전회복",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.112"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "revive",
+   "name": "환생",
+   "school": "채플",
+   "mp": 6,
+   "effect": "근처의 전투불능 동료를 되살림",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "부활",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "vp_heal_chapel",
+   "name": "VP 회복",
+   "school": "채플",
+   "mp": 2,
+   "effect": "한 명의 VP 회복",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "teleport",
+   "name": "텔레포트",
+   "school": "채플",
+   "mp": 2,
+   "effect": "HP 가장 낮은 동료를 후방으로 빼냄",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "invisible",
+   "name": "투명인간",
+   "school": "채플",
+   "mp": 3,
+   "effect": "대상을 투명하게 함",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "flame",
+   "name": "플레임",
+   "school": "칸드",
+   "mp": 4,
+   "effect": "적 전원에 불 공격",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "fire",
+   "name": "파이어",
+   "school": "칸드",
+   "mp": 1,
+   "effect": "적 하나에 불 공격",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "화이어",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.112"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "fog",
+   "name": "안개",
+   "school": "칸드",
+   "mp": 3,
+   "effect": "안개로 적을 혼란시킴",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "연개",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.232"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "shield_circle",
+   "name": "실드써클",
+   "school": "칸드",
+   "mp": 3,
+   "effect": "받는 피해를 줄임",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "실드서클",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.112"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "force_up",
+   "name": "포스업",
+   "school": "칸드",
+   "mp": 2,
+   "effect": "공격력·마력 상승",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "time_stop",
+   "name": "시공정지",
+   "school": "칸드",
+   "mp": 5,
+   "effect": "시간을 멈춰 적을 묶음",
+   "note": "베라트·퍼펫트맨·다크나이트도 사용(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "freeze",
+   "name": "프리즈",
+   "school": "칸드",
+   "mp": 4,
+   "effect": "적을 얼려 피해·둔화",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "vp_drain",
+   "name": "VP 소비",
+   "school": "칸드",
+   "mp": 3,
+   "effect": "적의 VP 소비를 두 배로",
+   "src": [
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "VP 회복",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.232"
+      },
+      {
+       "guide": "pcchamp2",
+       "loc": "p.263"
+      }
+     ],
+     "note": "효과(적 VP 2배 소비)와 안 맞는 이름 — 오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "saving",
+   "name": "세이빙",
+   "school": "칸드",
+   "mp": 3,
+   "effect": "동료의 VP 소비를 반으로",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "heal_kand",
+   "name": "회복",
+   "school": "칸드",
+   "mp": 2,
+   "effect": "동료 한 명의 HP 회복",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "회복 1",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.112"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  }
+ ],
+ "items": [
+  {
+   "id": "silver_dagger",
+   "name": "은단검",
+   "kind": "단검",
+   "effect": "순례의 증표, 통행증 구실",
+   "price": null,
+   "where": [
+    "ragpick"
+   ],
+   "note": "순례자의 숙박·뱃삯 무료(comgame)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.8"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.110"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "flash_dagger",
+   "name": "번뜩임 단검",
+   "kind": "단검",
+   "effect": "공격력+1",
+   "price": 40,
+   "where": [
+    "shop:ragpick"
+   ],
+   "shops": [
+    {
+     "place": "ragpick",
+     "merchant": "다론"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "small_sword",
+   "name": "소형검",
+   "kind": "단검",
+   "effect": "공격력+2",
+   "price": 80,
+   "where": [
+    "shop:alde"
+   ],
+   "shops": [
+    {
+     "place": "alde",
+     "merchant": null
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "小型のつるぎ",
+    "value": "소형검"
+   }
+  },
+  {
+   "id": "flame_dagger",
+   "name": "불꽃의 단검",
+   "kind": "단검",
+   "effect": "소형검과 비슷",
+   "price": 140,
+   "where": [
+    "shop:lone_tree_forest"
+   ],
+   "shops": [
+    {
+     "place": "lone_tree_forest",
+     "merchant": "로벳트"
+    }
+   ],
+   "note": "표의 '메나르의 로벳트' = 메나트 외전나무 숲 상인",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "swift_dagger",
+   "name": "속결의 단검",
+   "kind": "단검",
+   "effect": "공격력+3",
+   "price": 200,
+   "where": [
+    "shop:tuel"
+   ],
+   "shops": [
+    {
+     "place": "tuel",
+     "merchant": "톨레"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "iron_sword",
+   "name": "철검",
+   "kind": "장검",
+   "effect": "공격력+4",
+   "price": 160,
+   "where": [
+    "shop:nelba"
+   ],
+   "shops": [
+    {
+     "place": "nelba",
+     "merchant": "아틀레이"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "鉄のつるぎ",
+    "value": "철검"
+   }
+  },
+  {
+   "id": "steel_sword",
+   "name": "강철검",
+   "kind": "장검",
+   "effect": "공격력+8",
+   "price": 450,
+   "where": [
+    "shop:dats"
+   ],
+   "shops": [
+    {
+     "place": "dats",
+     "merchant": "질"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "はがねのつるぎ",
+    "value": "강철검"
+   }
+  },
+  {
+   "id": "summon_dagger",
+   "name": "소환의 단도",
+   "kind": "단검",
+   "effect": "공격력+7",
+   "price": 800,
+   "where": [
+    "shop:bolt"
+   ],
+   "shops": [
+    {
+     "place": "bolt",
+     "merchant": "바이스"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "master_knife",
+   "name": "마스터 나이프",
+   "kind": "단검",
+   "effect": "공격력+7",
+   "price": 1200,
+   "where": [
+    "shop:andera"
+   ],
+   "shops": [
+    {
+     "place": "andera",
+     "merchant": "마뎀"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "rage_sword",
+   "name": "광폭검",
+   "kind": "검",
+   "effect": "공격력+9",
+   "price": 2000,
+   "where": [
+    "shop:toneriko"
+   ],
+   "shops": [
+    {
+     "place": "toneriko",
+     "merchant": "할"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dream_sword",
+   "name": "몽견검",
+   "kind": "장검",
+   "effect": "공격력+11",
+   "price": 3000,
+   "where": [
+    "shop:oldos_town"
+   ],
+   "shops": [
+    {
+     "place": "oldos_town",
+     "merchant": "오레이"
+    }
+   ],
+   "note": "이름 첫 글자 판독 흐림",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "cleaver_sword",
+   "name": "절단검",
+   "kind": "장검",
+   "effect": "공격력+22",
+   "price": 4000,
+   "where": [
+    "shop:holk"
+   ],
+   "shops": [
+    {
+     "place": "holk",
+     "merchant": "그라드"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "vacuum_sword",
+   "name": "진공검",
+   "kind": "장검",
+   "effect": "공격력+27",
+   "price": 10000,
+   "where": [
+    "shop:gidnel"
+   ],
+   "shops": [
+    {
+     "place": "gidnel",
+     "merchant": "브렐"
+    }
+   ],
+   "note": "같은 이름의 채플 마법과 별개",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "master_sword",
+   "name": "달인의 검",
+   "kind": "장검",
+   "effect": "공격력+32",
+   "price": 7500,
+   "where": [
+    "shop:baraka"
+   ],
+   "shops": [
+    {
+     "place": "baraka",
+     "merchant": "렐크"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ancient_sword",
+   "name": "고대의 검",
+   "kind": "장검",
+   "effect": "공격력+39",
+   "price": null,
+   "where": [
+    "ruins"
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.21"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "spire_knife",
+   "name": "스파이어나이프",
+   "kind": "장검",
+   "effect": "공격력+24",
+   "price": 9000,
+   "where": [
+    "shop:dolpes"
+   ],
+   "shops": [
+    {
+     "place": "dolpes",
+     "merchant": "로이드"
+    }
+   ],
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "스파이더 나이프",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제6장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기, 유적 보물"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "durzel_sword",
+   "name": "듀르젤의 검",
+   "kind": "장검",
+   "effect": "공격력+44",
+   "price": null,
+   "where": [
+    "gerd_hill"
+   ],
+   "note": "게르드 무덤에서 힘을 되찾는 듀르젤의 검",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "esperancer",
+   "name": "에스페란서",
+   "kind": "검",
+   "effect": null,
+   "price": null,
+   "where": [],
+   "note": "쥬리오 최종 장비(gamepia). 최강의 검(hwp)",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.25"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "에페란자",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "hwp 가 신영웅전설3 쪽 표기라고 적음"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "meteor_spear",
+   "name": "유성의 창",
+   "kind": "창",
+   "effect": "공격력+10",
+   "price": 16000,
+   "where": [
+    "shop:rude_town"
+   ],
+   "shops": [
+    {
+     "place": "rude_town",
+     "merchant": null
+    }
+   ],
+   "note": "값에 비해 낮은 수치 — 표 그대로",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "purity_spear",
+   "name": "파사의 창",
+   "kind": "창",
+   "effect": null,
+   "price": null,
+   "where": [],
+   "note": "듀르젤 최종 장비",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.25"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "정사의 창",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기, 루드성 지하 보물"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ice_spear",
+   "name": "빙설의 창",
+   "kind": "창",
+   "effect": null,
+   "price": null,
+   "where": [
+    "rude_castle"
+   ],
+   "note": "루드성 지하 보물",
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "famous_silping",
+   "name": "명검 실핑",
+   "kind": "검",
+   "effect": null,
+   "price": null,
+   "where": [
+    "gale_road"
+   ],
+   "note": "사피 전 9권 교환 보상(사피 선택)",
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "prince_cutlass",
+   "name": "왕자의 커틀러스",
+   "kind": "검",
+   "effect": null,
+   "price": null,
+   "where": [
+    "gale_road"
+   ],
+   "note": "사피 전 9권 교환 보상(블러드 선택)",
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "fisher_knife",
+   "name": "어부의 나이프",
+   "kind": "단검",
+   "effect": null,
+   "price": null,
+   "where": [
+    "nilly"
+   ],
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "wood_shield",
+   "name": "나무방패",
+   "kind": "방패",
+   "effect": "방어력+1",
+   "price": 40,
+   "where": [
+    "shop:nilly"
+   ],
+   "shops": [
+    {
+     "place": "nilly",
+     "merchant": "카리오"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "small_shield",
+   "name": "소형방패",
+   "kind": "방패",
+   "effect": "방어력+3",
+   "price": 100,
+   "where": [
+    "shop:tuel"
+   ],
+   "shops": [
+    {
+     "place": "tuel",
+     "merchant": "톨레"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "large_shield",
+   "name": "대형방패",
+   "kind": "방패",
+   "effect": "방어력+5",
+   "price": 1000,
+   "where": [
+    "shop:holk"
+   ],
+   "shops": [
+    {
+     "place": "holk",
+     "merchant": "그라드"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "brave_shield",
+   "name": "난자의 방패",
+   "kind": "방패",
+   "effect": "방어력+8",
+   "price": 3000,
+   "where": [
+    "shop:gidnel"
+   ],
+   "shops": [
+    {
+     "place": "gidnel",
+     "merchant": "브렐"
+    }
+   ],
+   "note": "첫 글자 판독 흐림",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "artisan_shield",
+   "name": "장인의 방패",
+   "kind": "방패",
+   "effect": "방어력+8",
+   "price": 8000,
+   "where": [
+    "shop:rude_town"
+   ],
+   "shops": [
+    {
+     "place": "rude_town",
+     "merchant": null
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "flame_shield",
+   "name": "불꽃의 방패",
+   "kind": "방패",
+   "effect": null,
+   "price": null,
+   "where": [
+    "ruins"
+   ],
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "judge_shield",
+   "name": "심판의 방패",
+   "kind": "방패",
+   "effect": null,
+   "price": null,
+   "where": [
+    "rude_castle"
+   ],
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "luck_clothes",
+   "name": "행운의 옷",
+   "kind": "경갑옷",
+   "effect": "운+1",
+   "price": 40,
+   "where": [
+    "shop:ragpick"
+   ],
+   "shops": [
+    {
+     "place": "ragpick",
+     "merchant": "다론"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "leather_armor",
+   "name": "가죽갑옷",
+   "kind": "경갑옷",
+   "effect": "방어력+2",
+   "price": 70,
+   "where": [
+    "shop:tegra"
+   ],
+   "shops": [
+    {
+     "place": "tegra",
+     "merchant": "잭"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "革のヨロイ",
+    "value": "가죽 갑옷"
+   }
+  },
+  {
+   "id": "iron_plate",
+   "name": "철판갑옷",
+   "kind": "갑옷",
+   "effect": "방어력+5",
+   "price": 230,
+   "where": [
+    "shop:dice"
+   ],
+   "shops": [
+    {
+     "place": "dice",
+     "merchant": "마르키"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "bronze_armor",
+   "name": "청동갑옷",
+   "kind": "갑옷",
+   "effect": "방어력+9",
+   "price": 1400,
+   "where": [
+    "shop:oldos_town"
+   ],
+   "shops": [
+    {
+     "place": "oldos_town",
+     "merchant": "로보스"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "青銅のヨロイ",
+    "value": "청동 갑옷"
+   }
+  },
+  {
+   "id": "plate_armor",
+   "name": "판금갑옷",
+   "kind": "중갑옷",
+   "effect": "방어력+15",
+   "price": 3000,
+   "where": [
+    "shop:baraka"
+   ],
+   "shops": [
+    {
+     "place": "baraka",
+     "merchant": "렐크"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sun_armor",
+   "name": "태양의 갑옷",
+   "kind": "갑옷",
+   "effect": "방어력+14",
+   "price": null,
+   "where": [
+    "ruins"
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.21"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "artisan_armor",
+   "name": "장인의 갑옷",
+   "kind": "갑옷",
+   "effect": "방어력+22",
+   "price": 14000,
+   "where": [
+    "shop:rude_town"
+   ],
+   "shops": [
+    {
+     "place": "rude_town",
+     "merchant": null
+    }
+   ],
+   "note": "듀르젤 최종 장비(gamepia)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.25"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "artisan_clothes",
+   "name": "장인의 옷",
+   "kind": "옷",
+   "effect": null,
+   "price": null,
+   "where": [],
+   "note": "쥬리오 최종 장비",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.25"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "raf_staff",
+   "name": "라프의 지팡이",
+   "kind": "지팡이",
+   "effect": "마력+1",
+   "price": null,
+   "where": [
+    "ragpick"
+   ],
+   "note": "7장 게르드 무덤에서 게르드의 지팡이로 바뀜",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.8"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ruby_staff",
+   "name": "루비지팡이",
+   "kind": "지팡이",
+   "effect": "마법+1",
+   "price": 40,
+   "where": [
+    "shop:nilly"
+   ],
+   "shops": [
+    {
+     "place": "nilly",
+     "merchant": "카리오"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "white_silver_staff",
+   "name": "백은 지팡이",
+   "kind": "지팡이",
+   "effect": "마력+4",
+   "price": 180,
+   "where": [
+    "shop:tuel"
+   ],
+   "shops": [
+    {
+     "place": "tuel",
+     "merchant": "톨레"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "light_staff",
+   "name": "광명의 지팡이",
+   "kind": "지팡이",
+   "effect": "마력+10",
+   "price": 1700,
+   "where": [
+    "shop:andera"
+   ],
+   "shops": [
+    {
+     "place": "andera",
+     "merchant": "마뎀"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "mage_staff",
+   "name": "마도사의 지팡이",
+   "kind": "지팡이",
+   "effect": null,
+   "price": 3800,
+   "where": [
+    "shop:baraka"
+   ],
+   "shops": [
+    {
+     "place": "baraka",
+     "merchant": "렐크"
+    }
+   ],
+   "note": "수치가 '마력+' 뒤로 빠져 있다",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gerd_staff",
+   "name": "게르드의 지팡이",
+   "kind": "지팡이",
+   "effect": "지+8·마+34·마방+8",
+   "price": null,
+   "where": [
+    "gerd_hill"
+   ],
+   "note": "크리스 최종 장비",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.25"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "plain_robe",
+   "name": "무명로브",
+   "kind": "로브",
+   "effect": "방어력+1",
+   "price": 40,
+   "where": [
+    "shop:ragpick"
+   ],
+   "shops": [
+    {
+     "place": "ragpick",
+     "merchant": "다론"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "silk_robe",
+   "name": "실크로브",
+   "kind": "로브",
+   "effect": "방어력+3",
+   "price": 80,
+   "where": [
+    "shop:alde"
+   ],
+   "shops": [
+    {
+     "place": "alde",
+     "merchant": null
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "moonlight_robe",
+   "name": "월영로브",
+   "kind": "로브",
+   "effect": "방어력+6",
+   "price": 200,
+   "where": [
+    "shop:nelba"
+   ],
+   "shops": [
+    {
+     "place": "nelba",
+     "merchant": "아틀레이"
+    }
+   ],
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "evasion_robe",
+   "name": "회피의 로브",
+   "kind": "로브",
+   "effect": "방어력+14",
+   "price": 1800,
+   "where": [
+    "shop:toneriko"
+   ],
+   "shops": [
+    {
+     "place": "toneriko",
+     "merchant": "할"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "wisdom_robe",
+   "name": "지혜의 로브",
+   "kind": "로브",
+   "effect": "방어력+27",
+   "price": 18000,
+   "where": [
+    "shop:rude_town",
+    "shop:dolpes"
+   ],
+   "shops": [
+    {
+     "place": "rude_town",
+     "merchant": null
+    },
+    {
+     "place": "dolpes",
+     "merchant": "로이드"
+    }
+   ],
+   "note": "표에 두 줄(돌페스·루드). 크리스 최종 장비",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.25"
+    }
+   ],
+   "alt": [
+    {
+     "field": "effect",
+     "value": "방어력+24",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.264"
+      }
+     ],
+     "note": "돌페스 줄"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "supremacy_rod",
+   "name": "패천의 로드",
+   "kind": "로브",
+   "effect": "마력+15",
+   "price": 8000,
+   "where": [
+    "shop:rude_town"
+   ],
+   "shops": [
+    {
+     "place": "rude_town",
+     "merchant": null
+    }
+   ],
+   "note": "스테라 최종 장비",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.25"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "패천의 로브",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.264"
+      }
+     ],
+     "note": "로브 칸에 실림"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "shield_robe",
+   "name": "실드로브",
+   "kind": "로브",
+   "effect": null,
+   "price": null,
+   "where": [
+    "rude_castle"
+   ],
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "crest_cloak",
+   "name": "문장의 망토",
+   "kind": "망토",
+   "effect": "방어력+7",
+   "price": 2200,
+   "where": [
+    "shop:toneriko"
+   ],
+   "shops": [
+    {
+     "place": "toneriko",
+     "merchant": "할"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "hero_cloak",
+   "name": "영웅의 망토",
+   "kind": "망토",
+   "effect": "방어력+8",
+   "price": 18000,
+   "where": [
+    "shop:dolpes"
+   ],
+   "shops": [
+    {
+     "place": "dolpes",
+     "merchant": "로이드"
+    }
+   ],
+   "note": "스테라 최종 장비",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.25"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "wisdom_ring1",
+   "name": "지혜의 반지1",
+   "kind": "반지",
+   "effect": "지혜+1",
+   "price": 100,
+   "where": [
+    "shop:peddler_polbe"
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "wisdom_ring2",
+   "name": "지혜의 반지2",
+   "kind": "반지",
+   "effect": "지혜+6",
+   "price": 800,
+   "where": [
+    "shop:bolt"
+   ],
+   "shops": [
+    {
+     "place": "bolt",
+     "merchant": "에거레이"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "agility_ring1",
+   "name": "민첩의 반지1",
+   "kind": "반지",
+   "effect": "민첩성+1",
+   "price": 200,
+   "where": [
+    "shop:chita"
+   ],
+   "shops": [
+    {
+     "place": "chita",
+     "merchant": "골가"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "agility_ring2",
+   "name": "민첩의 반지2",
+   "kind": "반지",
+   "effect": "민첩성+4",
+   "price": 800,
+   "where": [
+    "shop:dota_castle"
+   ],
+   "shops": [
+    {
+     "place": "dota_castle",
+     "merchant": "코엘"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "agility_ring3",
+   "name": "민첩의 반지3",
+   "kind": "반지",
+   "effect": "민첩성+12",
+   "price": 4000,
+   "where": [
+    "shop:dolpes"
+   ],
+   "shops": [
+    {
+     "place": "dolpes",
+     "merchant": "메렌다"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "antimagic_ring1",
+   "name": "항마의 반지1",
+   "kind": "반지",
+   "effect": "마법 방어력+3",
+   "price": 200,
+   "where": [
+    "shop:peddler_dolka"
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "luck_ring2",
+   "name": "행운의 반지2",
+   "kind": "반지",
+   "effect": "운+2",
+   "price": 800,
+   "where": [
+    "shop:dice"
+   ],
+   "shops": [
+    {
+     "place": "dice",
+     "merchant": "모란"
+    }
+   ],
+   "note": "요리 대회 4등 상품(hwp)",
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "항마의 반지2",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.264"
+      }
+     ],
+     "note": "효과 운+2 와 다음 줄 '행운의 반지3' 으로 보아 오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "luck_ring3",
+   "name": "행운의 반지3",
+   "kind": "반지",
+   "effect": "운+12",
+   "price": 4000,
+   "where": [
+    "shop:gidnel"
+   ],
+   "shops": [
+    {
+     "place": "gidnel",
+     "merchant": "이스리"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "magic_ring",
+   "name": "마력의 반지",
+   "kind": "반지",
+   "effect": null,
+   "price": null,
+   "where": [
+    "bolt"
+   ],
+   "note": "마기사가 모리슨 편에 보냄",
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "guard_ring",
+   "name": "수호의 반지",
+   "kind": "반지",
+   "effect": null,
+   "price": null,
+   "where": [
+    "andera"
+   ],
+   "note": "요리 대회 우승 상품",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.18"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "지킴의 반지",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "antimagic_ring3",
+   "name": "마방의 반지 III",
+   "kind": "반지",
+   "effect": null,
+   "price": null,
+   "where": [
+    "isabel_tower"
+   ],
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "alf_ring",
+   "name": "알프의 반지",
+   "kind": "중요",
+   "effect": "엠비쉬 문장의 옛 반지",
+   "price": null,
+   "where": [
+    "tuel"
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "swordsman_manual",
+   "name": "검사교본",
+   "kind": "책",
+   "effect": "읽을거리(3권까지)",
+   "price": 15,
+   "where": [
+    "shop:ragpick",
+    "shop:dine"
+   ],
+   "note": "1권 라그픽, 2·3권 디네 상인(hwp). 다이스에서 사피4권과 교환",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.8"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sapi1",
+   "name": "사피 1권",
+   "kind": "책",
+   "effect": "검사 사피의 무협 소설",
+   "price": 30,
+   "where": [
+    "shop:peddler_polbe"
+   ],
+   "shops": [],
+   "note": "행상인 폴베",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sapi2",
+   "name": "사피 2권",
+   "kind": "책",
+   "effect": "검사 사피의 무협 소설",
+   "price": 30,
+   "where": [
+    "shop:tegra"
+   ],
+   "shops": [
+    {
+     "place": "tegra",
+     "merchant": "코일"
+    }
+   ],
+   "note": "'메나트의 코일' — 테그라 도구상(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sapi3",
+   "name": "사피 3권",
+   "kind": "책",
+   "effect": "검사 사피의 무협 소설",
+   "price": 30,
+   "where": [
+    "shop:nelba"
+   ],
+   "shops": [
+    {
+     "place": "nelba",
+     "merchant": "쥬리아"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sapi4",
+   "name": "사피 4권",
+   "kind": "책",
+   "effect": "검사 사피의 무협 소설",
+   "price": 30,
+   "where": [
+    "shop:dolpes"
+   ],
+   "shops": [
+    {
+     "place": "dolpes",
+     "merchant": "메렌다"
+    }
+   ],
+   "note": "3권 뒤 한참 뒤에 돌페스에서",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sapi5",
+   "name": "사피 5권",
+   "kind": "책",
+   "effect": "검사 사피의 무협 소설",
+   "price": 30,
+   "where": [
+    "shop:dota_castle"
+   ],
+   "shops": [
+    {
+     "place": "dota_castle",
+     "merchant": "코엘"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sapi6",
+   "name": "사피 6권",
+   "kind": "책",
+   "effect": "검사 사피의 무협 소설",
+   "price": 30,
+   "where": [
+    "shop:ignis"
+   ],
+   "shops": [
+    {
+     "place": "ignis",
+     "merchant": "커톨"
+    }
+   ],
+   "note": "'사라에(샤리네)의 커톨' — 이그니스 행상인(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sapi7",
+   "name": "사피 7권",
+   "kind": "책",
+   "effect": "검사 사피의 무협 소설",
+   "price": 30,
+   "where": [
+    "shop:sipul"
+   ],
+   "shops": [
+    {
+     "place": "sipul",
+     "merchant": "로렌"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sapi8",
+   "name": "사피 8권",
+   "kind": "책",
+   "effect": "검사 사피의 무협 소설",
+   "price": 30,
+   "where": [
+    "shop:holk"
+   ],
+   "shops": [
+    {
+     "place": "holk",
+     "merchant": "시아"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sapi9",
+   "name": "사피 9권",
+   "kind": "책",
+   "effect": "검사 사피의 무협 소설",
+   "price": 30,
+   "where": [
+    "shop:gidnel"
+   ],
+   "shops": [
+    {
+     "place": "gidnel",
+     "merchant": "이스리"
+    }
+   ],
+   "note": "완결편",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "white_stone",
+   "name": "화이트 스톤",
+   "kind": "중요",
+   "effect": "마법방어+2",
+   "price": null,
+   "where": [
+    "crystal_lake",
+    "nilly"
+   ],
+   "note": "수정호에서 줍고 닐리의 카이에게서 다시 받음",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.9"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "와이트 스톤",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.264"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "crimson_flame",
+   "name": "진홍의 불꽃",
+   "kind": "중요",
+   "effect": "진홍늪에서 나는 붉은 보석",
+   "price": null,
+   "where": [
+    "tegra_mine"
+   ],
+   "note": "천구의 표피를 벗기는 데 쓰임(최종장)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.14"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "진홍 불꽃",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.264"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "주홍의 불꽃",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.117"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "faith_charm",
+   "name": "신앙의 부적",
+   "kind": "기타",
+   "effect": null,
+   "price": 1200,
+   "where": [
+    "shop:oldos_town"
+   ],
+   "shops": [
+    {
+     "place": "oldos_town",
+     "merchant": "라키스"
+    }
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dried_barley",
+   "name": "건조맥",
+   "kind": "중요",
+   "effect": "보리를 볶은 것",
+   "price": null,
+   "where": [
+    "eagle_claw"
+   ],
+   "note": "멀미약 답례로 받아 알프에게 줌",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.14"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.113"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "보리맥",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.233"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "말린 보리",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제1장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "lentil_seed",
+   "name": "렌즈콩 씨앗",
+   "kind": "중요",
+   "effect": "황무지에서도 자람",
+   "price": null,
+   "where": [
+    "dice"
+   ],
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "렌즈콩 자루",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "seal_bait",
+   "name": "바다표범의 먹이",
+   "kind": "중요",
+   "effect": null,
+   "price": null,
+   "where": [
+    "alde"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.12"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "seasick_medicine",
+   "name": "멀미약",
+   "kind": "중요",
+   "effect": null,
+   "price": null,
+   "where": [
+    "eagle_claw"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.11"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.111"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "thomas_voyage_book",
+   "name": "캡틴 토마스의 대항해",
+   "kind": "책",
+   "effect": null,
+   "price": null,
+   "where": [
+    "eagle_claw"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.12"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "캡틴토마스",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "argres_horn",
+   "name": "아르그레스의 뿔",
+   "kind": "중요",
+   "effect": "저주를 푸는 비약의 재료",
+   "price": null,
+   "where": [
+    "maze_forest"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "fig",
+   "name": "무화과",
+   "kind": "중요",
+   "effect": null,
+   "price": null,
+   "where": [
+    "gidnel"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.21"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.116"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "kerak_letter",
+   "name": "카렉의 친서",
+   "kind": "중요",
+   "effect": "홀크 왕의 친서",
+   "price": null,
+   "where": [
+    "holk"
+   ],
+   "note": "정발 공략은 '왕의 친서·서신'",
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제5장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "huck_notebook",
+   "name": "허크의 수첩",
+   "kind": "중요",
+   "effect": null,
+   "price": null,
+   "where": [
+    "thirst_desert_border"
+   ],
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "bronze_key",
+   "name": "동열쇠",
+   "kind": "열쇠",
+   "effect": null,
+   "price": null,
+   "where": [
+    "rude_castle"
+   ],
+   "note": "구스가 구해 줌",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.23"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "동의 열쇠",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "iron_key",
+   "name": "철열쇠",
+   "kind": "열쇠",
+   "effect": null,
+   "price": null,
+   "where": [
+    "rude_castle"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.23"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "철의 열쇠",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "steel_key",
+   "name": "강철 열쇠",
+   "kind": "열쇠",
+   "effect": null,
+   "price": null,
+   "where": [
+    "rude_castle"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.23"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "강철의 열쇠",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "soap_piece",
+   "name": "비누 조각",
+   "kind": "기타",
+   "effect": null,
+   "price": null,
+   "where": [
+    "three_nation_bridge"
+   ],
+   "note": "만 번째 통행 상품",
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "thomas_medal",
+   "name": "캡틴 R. 토마스의 메달",
+   "kind": "기타",
+   "effect": null,
+   "price": null,
+   "where": [
+    "andera"
+   ],
+   "note": "요리 대회 상품",
+   "src": [
+    {
+     "guide": "comgame",
+     "loc": "p.114"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "캡틴 토마스 기념메달",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기, 2등 상품"
+    }
+   ],
+   "glossary": null
+  }
+ ],
+ "monsters": [
+  {
+   "id": "slug",
+   "name": "괄태충",
+   "hp": 20,
+   "where": [
+    "forthia"
+   ],
+   "chapter": 0,
+   "boss": false,
+   "note": "hwp 의 왕 달팽이(HP 20)와 같은 것으로 추정",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "왕 달팽이",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "armor_ant",
+   "name": "갑옷게미",
+   "hp": 21,
+   "where": [
+    "forthia"
+   ],
+   "chapter": 0,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "갑옷 아리",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "net_spider",
+   "name": "투망거미",
+   "hp": 18,
+   "where": [
+    "forthia",
+    "menart"
+   ],
+   "chapter": 0,
+   "boss": false,
+   "trait": "민첩성 저하(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "big_rat",
+   "name": "큰쥐",
+   "hp": 22,
+   "where": [
+    "eagle_claw"
+   ],
+   "chapter": 0,
+   "boss": false,
+   "trait": "배 밑 식량을 노림",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "왕쥐",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "small_rat",
+   "name": "작은쥐",
+   "hp": 18,
+   "where": [
+    "eagle_claw"
+   ],
+   "chapter": 0,
+   "boss": false,
+   "trait": "배 밑 식량을 노림",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "쥐",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "strick",
+   "name": "스트리크",
+   "hp": 20,
+   "where": [
+    "menart"
+   ],
+   "chapter": 0,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "스트리스크",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    },
+    {
+     "field": "hp",
+     "value": 22,
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "descario",
+   "name": "데스카리오",
+   "hp": 22,
+   "where": [
+    "menart",
+    "forthia"
+   ],
+   "chapter": 0,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "데스카르고",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "boar",
+   "name": "멧돼지",
+   "hp": 22,
+   "where": [
+    "forthia",
+    "menart"
+   ],
+   "chapter": 0,
+   "boss": false,
+   "note": "쥬리오의 첫 전투 상대",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "hp",
+     "value": 16,
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "big_boar",
+   "name": "큰 멧돼지",
+   "hp": 22,
+   "where": [
+    "ragpick_west_field"
+   ],
+   "chapter": 0,
+   "boss": false,
+   "note": "크리스를 위협하는 서장 이벤트 전투. hp 는 hwp",
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.109"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "큰멧돼지",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "서장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "pawn_eagle",
+   "name": "폰독수리",
+   "hp": 19,
+   "where": [
+    "menart"
+   ],
+   "chapter": 1,
+   "boss": false,
+   "trait": "활강 공격",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.262"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.13"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "폴워시",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제1장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기 — hwp 스스로 '구영전3에서는 폰독수리'라 적음"
+    },
+    {
+     "field": "hp",
+     "value": 23,
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제1장"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "codic",
+   "name": "코딕",
+   "hp": 28,
+   "where": [
+    "menart"
+   ],
+   "chapter": 1,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "claw_corps",
+   "name": "발톱부대",
+   "hp": 24,
+   "where": [
+    "menart"
+   ],
+   "chapter": 1,
+   "boss": false,
+   "note": "hwp 송곳늑대(HP 24)와 같은 것으로 추정",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "송곳늑대",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제1장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "quarrel",
+   "name": "크와렐",
+   "hp": 37,
+   "where": [
+    "menart"
+   ],
+   "chapter": 1,
+   "boss": false,
+   "trait": "회복 마법, 민첩",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "land_penguin",
+   "name": "육지펭귄",
+   "hp": 30,
+   "where": [
+    "menart"
+   ],
+   "chapter": 1,
+   "boss": false,
+   "trait": "해변, 프리즈 마법",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "육상펭귄",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제1장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "vacuum_bear",
+   "name": "진공곰",
+   "hp": 39,
+   "where": [
+    "menart"
+   ],
+   "chapter": 1,
+   "boss": false,
+   "trait": "진공 마법(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "진공 곰",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제1장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "earth_eater",
+   "name": "어스어터",
+   "hp": 30,
+   "where": [
+    "topaz_coast"
+   ],
+   "chapter": 1,
+   "boss": false,
+   "note": "정발 공략 적 표에 없음",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "rich_monkey",
+   "name": "부자원숭이",
+   "hp": 38,
+   "where": [
+    "menart"
+   ],
+   "chapter": 2,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "binina",
+   "name": "비니나",
+   "hp": 31,
+   "where": [
+    "menart"
+   ],
+   "chapter": 2,
+   "boss": false,
+   "trait": "빠르다(hwp)",
+   "note": "표 판독 '비니나'(흐림)",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "버니너",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    },
+    {
+     "field": "hp",
+     "value": 34,
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "mongal",
+   "name": "몬갈",
+   "hp": 43,
+   "where": [
+    "menart",
+    "chanom"
+   ],
+   "chapter": 2,
+   "boss": false,
+   "trait": "회복 마법(hwp)",
+   "note": "표 특징: 후방에서 정지",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "tontod",
+   "name": "톤토드",
+   "hp": 44,
+   "where": [
+    "chanom"
+   ],
+   "chapter": 2,
+   "boss": false,
+   "trait": "프리즈 마법",
+   "note": "hwp 돔 바다사자(HP 44)와 같은 것으로 추정",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "돔 바다사자",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "beetgi",
+   "name": "비트기",
+   "hp": 41,
+   "where": [
+    "chanom"
+   ],
+   "chapter": 2,
+   "boss": false,
+   "trait": "돌진(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "비틀러",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "cryosil",
+   "name": "크리오실",
+   "hp": 59,
+   "where": [
+    "dream_road",
+    "elder_coast"
+   ],
+   "chapter": 2,
+   "boss": false,
+   "note": "정발 공략 적 표에 없음",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "hornsalas",
+   "name": "혼사라스",
+   "hp": 66,
+   "where": [
+    "elder_coast"
+   ],
+   "chapter": 2,
+   "boss": false,
+   "trait": "돌진(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "혼샐러스",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "garuga",
+   "name": "가루가",
+   "hp": null,
+   "where": [
+    "witch_sea",
+    "bolt"
+   ],
+   "chapter": 1,
+   "boss": true,
+   "note": "가장 큰 괴수, 기생수에게 조종됨. 직접 싸우지 않음",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.13"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "bazera",
+   "name": "바제라",
+   "hp": 70,
+   "where": [
+    "bolt"
+   ],
+   "chapter": 2,
+   "boss": true,
+   "trait": "가루가의 기생수",
+   "note": "2장 보스(gamepia p.17 '기생수')",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "바젤러",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    },
+    {
+     "field": "name",
+     "value": "바데라",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.114"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "bazeminion",
+   "name": "바제미니온",
+   "hp": 40,
+   "where": [
+    "bolt"
+   ],
+   "chapter": 2,
+   "boss": false,
+   "trait": "가루가의 기생수",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "바제머니온",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "poisons",
+   "name": "포세이즌",
+   "hp": 67,
+   "where": [
+    "great_snake_spine",
+    "embish"
+   ],
+   "chapter": 3,
+   "boss": false,
+   "trait": "프리즈 마법",
+   "note": "표에 두 줄(지역만 다름)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "포이즌세스",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "big_moth",
+   "name": "박모스",
+   "hp": 69,
+   "where": [
+    "embish"
+   ],
+   "chapter": 3,
+   "boss": false,
+   "trait": "공중공격·독가루",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "빅모스",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "baby_drago",
+   "name": "베이비드라고",
+   "hp": 75,
+   "where": [
+    "embish"
+   ],
+   "chapter": 3,
+   "boss": false,
+   "trait": "공격 능력 없음",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "퍼피드래곤",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "kelgertle",
+   "name": "켈거틀",
+   "hp": 83,
+   "where": [
+    "andera"
+   ],
+   "chapter": 3,
+   "boss": false,
+   "trait": "미쳐버린 닭",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "켈게돌",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gal_tiger",
+   "name": "갈타이거",
+   "hp": 89,
+   "where": [
+    "embish"
+   ],
+   "chapter": 3,
+   "boss": false,
+   "trait": "미쳐버린 호랑이",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "hairfly",
+   "name": "헤어플라이",
+   "hp": 94,
+   "where": [
+    "embish"
+   ],
+   "chapter": 4,
+   "boss": false,
+   "trait": "공중공격",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "헤리오플라이",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    },
+    {
+     "field": "hp",
+     "value": 95,
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "floatfish",
+   "name": "부유어",
+   "hp": 105,
+   "where": [
+    "woodle"
+   ],
+   "chapter": 4,
+   "boss": false,
+   "trait": "공중공격·회복 마법",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "hp",
+     "value": 115,
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "북히츠거리 이후 줄"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "heatbeak",
+   "name": "히트빅",
+   "hp": 97,
+   "where": [
+    "woodle"
+   ],
+   "chapter": 4,
+   "boss": false,
+   "trait": "파이어 마법(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "히트비크",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "galbazer",
+   "name": "갈바제러",
+   "hp": 90,
+   "where": [
+    "woodle"
+   ],
+   "chapter": 4,
+   "boss": true,
+   "trait": "카지무의 심복",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "kazimu_m",
+   "name": "카지무",
+   "hp": null,
+   "where": [
+    "shrine_sipul"
+   ],
+   "chapter": 4,
+   "boss": true,
+   "note": "첫 전투는 지는 이벤트. 두 번째에 승리",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.19"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "pollquin",
+   "name": "폴퀴인",
+   "hp": 112,
+   "where": [
+    "angola_road"
+   ],
+   "chapter": 4,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "폴큐인",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "calmerion",
+   "name": "칼메리온",
+   "hp": 121,
+   "where": [
+    "woodle"
+   ],
+   "chapter": 4,
+   "boss": false,
+   "trait": "투명 마법(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "카멜레온",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gibdeer",
+   "name": "기브디어",
+   "hp": 130,
+   "where": [
+    "woodle"
+   ],
+   "chapter": 4,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "깁디어",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "rucup",
+   "name": "루겁",
+   "hp": 132,
+   "where": [
+    "woodle"
+   ],
+   "chapter": 4,
+   "boss": false,
+   "trait": "진공 마법(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "류컵",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "claw_panda",
+   "name": "손톱팬더",
+   "hp": 117,
+   "where": [
+    "fuente"
+   ],
+   "chapter": 4,
+   "boss": false,
+   "trait": "미쳐버린 팬더",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "할퀴기팬더",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "twintail",
+   "name": "트윈틸",
+   "hp": 135,
+   "where": [
+    "fuente"
+   ],
+   "chapter": 5,
+   "boss": false,
+   "trait": "투명인간",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "트윈테일",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제5장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "prowler",
+   "name": "프로터",
+   "hp": 110,
+   "where": [
+    "fuente"
+   ],
+   "chapter": 5,
+   "boss": false,
+   "trait": "저공비행·프리즈",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제5장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "hp",
+     "value": 115,
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제5장"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "fuzz_bird",
+   "name": "퍼즈버드",
+   "hp": 120,
+   "where": [
+    "fuente"
+   ],
+   "chapter": 5,
+   "boss": false,
+   "trait": "고공비행·슬립",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "퍼즈배트",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제5장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "pelican",
+   "name": "페리콘",
+   "hp": 125,
+   "where": [
+    "fuente"
+   ],
+   "chapter": 5,
+   "boss": false,
+   "trait": "활강 공격",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제5장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "killer_blue",
+   "name": "킬러블",
+   "hp": 150,
+   "where": [
+    "fuente"
+   ],
+   "chapter": 5,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "킬러블루",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제5장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "killer_giraffe",
+   "name": "킬러지라드",
+   "hp": 140,
+   "where": [
+    "fuente"
+   ],
+   "chapter": 5,
+   "boss": false,
+   "trait": "회복·환생 마법",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "킬러기린",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제5장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "cure_grab",
+   "name": "큐어그라브",
+   "hp": 135,
+   "where": [
+    "fuente"
+   ],
+   "chapter": 5,
+   "boss": false,
+   "trait": "회복·환생 마법",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "큐아클럽",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제5장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "bubble_shrimp",
+   "name": "거품새우",
+   "hp": 150,
+   "where": [
+    "fuente"
+   ],
+   "chapter": 5,
+   "boss": false,
+   "trait": "뭍에 오른 새우",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제5장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "lifant",
+   "name": "라이펀드",
+   "hp": 160,
+   "where": [
+    "fuente"
+   ],
+   "chapter": 5,
+   "boss": false,
+   "trait": "폭주 코끼리, 진공검(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "라이펀트",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제5장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "berat_m",
+   "name": "베라트",
+   "hp": 386,
+   "where": [
+    "gale_road"
+   ],
+   "chapter": 6,
+   "boss": true,
+   "trait": "시공정지(hwp)",
+   "note": "나무인형(HP 350, hwp)을 데리고 나온다",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "wood_doll",
+   "name": "나무인형",
+   "hp": 350,
+   "where": [
+    "gale_road"
+   ],
+   "chapter": 6,
+   "boss": false,
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dark_tilus",
+   "name": "다크자러스",
+   "hp": 169,
+   "where": [
+    "thirst_desert"
+   ],
+   "chapter": 6,
+   "boss": false,
+   "trait": "공중공격",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "다크틸러스",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제6장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "piera_crow",
+   "name": "피에라크로우",
+   "hp": 155,
+   "where": [
+    "thirst_desert",
+    "gidna"
+   ],
+   "chapter": 6,
+   "boss": false,
+   "trait": "공중공격·진공검(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "히엘라크로우",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제6장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "angral",
+   "name": "앙그랄",
+   "hp": 153,
+   "where": [
+    "thirst_desert"
+   ],
+   "chapter": 6,
+   "boss": false,
+   "trait": "저공비행·프리즈",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "bracamel",
+   "name": "브라카멜",
+   "hp": 163,
+   "where": [
+    "gidna"
+   ],
+   "chapter": 6,
+   "boss": false,
+   "trait": "사막의 괴수",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "부라캬멜",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제6장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "high_lizard",
+   "name": "하이리저드",
+   "hp": 162,
+   "where": [
+    "gidna"
+   ],
+   "chapter": 6,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "big_hermit",
+   "name": "큰소라게",
+   "hp": 170,
+   "where": [
+    "gidna"
+   ],
+   "chapter": 6,
+   "boss": false,
+   "trait": "회복 마법(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "왕집게",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제6장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "poison_fish",
+   "name": "맹독고기",
+   "hp": 170,
+   "where": [
+    "gidna"
+   ],
+   "chapter": 6,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "맹독복어",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제6장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    },
+    {
+     "field": "hp",
+     "value": 161,
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제6장"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "vulture",
+   "name": "발져",
+   "hp": 194,
+   "where": [
+    "gidna"
+   ],
+   "chapter": 6,
+   "boss": false,
+   "trait": "사막의 까마귀, 진공검·묶기(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "발쳐",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제6장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sunringer",
+   "name": "선링거",
+   "hp": 171,
+   "where": [
+    "gidna"
+   ],
+   "chapter": 6,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "shrinpax",
+   "name": "쥬린퍽스",
+   "hp": 195,
+   "where": [
+    "witch_coast"
+   ],
+   "chapter": 7,
+   "boss": false,
+   "trait": "안개",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "슈린패스",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제7장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    },
+    {
+     "field": "hp",
+     "value": 197,
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제7장"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "giant_spider",
+   "name": "거대거미",
+   "hp": 197,
+   "where": [
+    "witch_coast"
+   ],
+   "chapter": 7,
+   "boss": false,
+   "trait": "플레임",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "hp",
+     "value": 195,
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제7장"
+      }
+     ]
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "curse",
+   "name": "커스",
+   "hp": 206,
+   "where": [
+    "forthia"
+   ],
+   "chapter": 7,
+   "boss": false,
+   "trait": "회복·환생 마법",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.262"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "カース",
+    "value": "커스"
+   }
+  },
+  {
+   "id": "girl_jack",
+   "name": "걸잭",
+   "hp": 196,
+   "where": [
+    "witch_coast"
+   ],
+   "chapter": 7,
+   "boss": false,
+   "note": "정발 공략 적 표에 없음",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "tentacles",
+   "name": "텐더클스",
+   "hp": 200,
+   "where": [
+    "dolpes_tower"
+   ],
+   "chapter": 7,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "덴터클즈",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제7장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "galbar",
+   "name": "길바",
+   "hp": 225,
+   "where": [
+    "dolpes_tower"
+   ],
+   "chapter": 7,
+   "boss": false,
+   "trait": "탑을 지키는 괴물, 진공검(hwp)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "갤버",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제7장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ice_doll",
+   "name": "아이스돌",
+   "hp": 226,
+   "where": [
+    "forthia"
+   ],
+   "chapter": 7,
+   "boss": false,
+   "trait": "프리즈",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "radicurse",
+   "name": "라디커스",
+   "hp": 231,
+   "where": [
+    "forgotten_road"
+   ],
+   "chapter": 8,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "라아지커스",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "akedon",
+   "name": "아케돈",
+   "hp": 230,
+   "where": [
+    "forgotten_road"
+   ],
+   "chapter": 8,
+   "boss": false,
+   "trait": "투명인간",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "아켈론",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "hell_gator",
+   "name": "헬게이터",
+   "hp": 233,
+   "where": [
+    "forgotten_road"
+   ],
+   "chapter": 8,
+   "boss": false,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "헬 게이더",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "puppetman",
+   "name": "바베트맨",
+   "hp": 478,
+   "where": [
+    "rude_castle"
+   ],
+   "chapter": 8,
+   "boss": false,
+   "trait": "시공정지(hwp)",
+   "note": "표 판독 흐림",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "퍼펫트맨",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dark_knight",
+   "name": "다크나이트",
+   "hp": 580,
+   "where": [
+    "rude_castle"
+   ],
+   "chapter": 8,
+   "boss": false,
+   "trait": "플레임·시공정지",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gustbone",
+   "name": "거스트본",
+   "hp": 420,
+   "where": [
+    "rude_castle"
+   ],
+   "chapter": 8,
+   "boss": false,
+   "trait": "민첩성 저하",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "lich",
+   "name": "릿치",
+   "hp": 280,
+   "where": [
+    "rude_castle",
+    "isabel_tower"
+   ],
+   "chapter": 8,
+   "boss": false,
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "spirits",
+   "name": "스피리츠",
+   "hp": 270,
+   "where": [
+    "isabel_tower"
+   ],
+   "chapter": 8,
+   "boss": false,
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "lefas_m",
+   "name": "레파스",
+   "hp": 280,
+   "where": [
+    "celestial_room"
+   ],
+   "chapter": 8,
+   "boss": true,
+   "note": "gamepia 화면 HP 판독 흐림(?/280)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.24"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "레바스",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "evil_eye",
+   "name": "이블아이",
+   "hp": 360,
+   "where": [
+    "celestial_room"
+   ],
+   "chapter": 8,
+   "boss": false,
+   "note": "레파스를 회복·환생시킴. HP 는 gamepia 화면 360/360",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.24"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "devil_imp",
+   "name": "데빌임프",
+   "hp": 200,
+   "where": [
+    "celestial_room"
+   ],
+   "chapter": 8,
+   "boss": false,
+   "note": "화면에 두 마리",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.24"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "데블임프",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "isabel_m",
+   "name": "이자벨 왕비",
+   "hp": 500,
+   "where": [
+    "isabel_tower"
+   ],
+   "chapter": 8,
+   "boss": true,
+   "note": "최종 보스. hp 는 hwp",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.24"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "astabel",
+   "name": "아스타벨",
+   "hp": 320,
+   "where": [
+    "isabel_tower"
+   ],
+   "chapter": 8,
+   "boss": false,
+   "note": "두 마리(hwp, 신영웅전설3)",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "death_wraith",
+   "name": "데스레이스",
+   "hp": 240,
+   "where": [
+    "isabel_tower"
+   ],
+   "chapter": 8,
+   "boss": false,
+   "note": "세 마리(hwp)",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "glossary": null
+  }
+ ],
+ "chapters": [
+  {
+   "no": 0,
+   "title": "작은 순례자",
+   "places": [
+    "ragpick",
+    "ragpick_west_field",
+    "crystal_lake",
+    "gaza_cave",
+    "dine",
+    "shrine_dine",
+    "calm_beach",
+    "ragna",
+    "eagle_claw",
+    "nilly",
+    "wave_end_road",
+    "alde",
+    "lone_tree_forest",
+    "tarata"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.7"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.231"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ],
+   "note": "서장"
+  },
+  {
+   "no": 1,
+   "title": "테그라의 보석",
+   "places": [
+    "negal_island",
+    "tegra",
+    "shrine_tegra",
+    "tegra_mine",
+    "sharp_hill",
+    "chita",
+    "nelba",
+    "jade_road",
+    "topaz_coast",
+    "lapis_road",
+    "tuel",
+    "twin_dragon_valley"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.13"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.232"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.112"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제1장"
+    }
+   ]
+  },
+  {
+   "no": 2,
+   "title": "볼트 대결전",
+   "places": [
+    "tultz_road",
+    "dream_road",
+    "dice",
+    "poison_swamp",
+    "dats",
+    "three_nation_bridge",
+    "dota_castle",
+    "elder_coast",
+    "bolt"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.16"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.113"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제2장"
+    }
+   ]
+  },
+  {
+   "no": 3,
+   "title": "삼도교의 환영",
+   "places": [
+    "great_snake_spine",
+    "ignis",
+    "shrine_ignis",
+    "andera",
+    "three_nation_bridge",
+    "wind_valley_gate"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.17"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.233"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.114"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ]
+  },
+  {
+   "no": 4,
+   "title": "성수가 사는 숲",
+   "places": [
+    "silent_forest",
+    "sipul",
+    "shrine_sipul",
+    "grace_mountain",
+    "angola_road",
+    "oldos_town",
+    "torif_gate",
+    "north_hitz_road",
+    "liz_house",
+    "heigen",
+    "toneriko",
+    "maze_forest",
+    "oldos_cathedral",
+    "shrine_oldos"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.18"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.234"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.115"
+    }
+   ],
+   "alt": [
+    {
+     "field": "title",
+     "value": "성수의 숲",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ]
+  },
+  {
+   "no": 5,
+   "title": "와카타레타 호",
+   "places": [
+    "south_hitz_road",
+    "luis_gate",
+    "holk",
+    "hez_road",
+    "north_south_road",
+    "lupinas_lake",
+    "mansa_gate"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.20"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.21"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ],
+   "note": "게임 화면 HUD 의 장 표기(gamepia·pcchamp2 화면 배치도)",
+   "alt": [
+    {
+     "field": "title",
+     "value": "고향을 향하여",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.235"
+      }
+     ]
+    },
+    {
+     "field": "title",
+     "value": "나뉘어진 호수",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.115"
+      }
+     ]
+    },
+    {
+     "field": "title",
+     "value": "나누어진 호수",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제5장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ]
+  },
+  {
+   "no": 6,
+   "title": "시작된 예언",
+   "places": [
+    "thirst_desert",
+    "baraka",
+    "ruins",
+    "gidnel",
+    "gale_road",
+    "thirst_desert_border"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.21"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.116"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "title",
+     "value": "기드나",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.235"
+      }
+     ],
+     "note": "소제목일 수 있음"
+    }
+   ]
+  },
+  {
+   "no": 7,
+   "title": "순례자의 흔적",
+   "places": [
+    "witch_coast",
+    "aroza",
+    "dolpes",
+    "dolpes_tower",
+    "forgotten_road",
+    "gerd_hill"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.237"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.117"
+    }
+   ],
+   "alt": [
+    {
+     "field": "title",
+     "value": "순례자의 길",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제7장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ]
+  },
+  {
+   "no": 8,
+   "title": "상냥한 마녀",
+   "places": [
+    "rude_town",
+    "rude_castle",
+    "isabel_tower",
+    "celestial_room"
+   ],
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.22"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.237"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.117"
+    }
+   ],
+   "note": "최종장",
+   "alt": [
+    {
+     "field": "title",
+     "value": "하얀마녀",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "최종장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ]
+  }
+ ],
+ "merchants": [
+  {
+   "place": "ragpick",
+   "merchant": "다론",
+   "goa_to_pia": 15,
+   "note": "라그나 무기상 다론과 같은 이름(pcchamp p.232)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "nilly",
+   "merchant": "카리오",
+   "goa_to_pia": 15,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "alde",
+   "merchant": "베로네",
+   "goa_to_pia": 15,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": null,
+   "merchant": "폴테",
+   "goa_to_pia": 14,
+   "note": "메나트 행상인. 아이템 표엔 '폴베'(바다표범 먹이 판매자)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ],
+   "alt": [
+    {
+     "field": "merchant",
+     "value": "폴베",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.264"
+      },
+      {
+       "guide": "pcchamp",
+       "loc": "p.232"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "place": "tegra",
+   "merchant": "잭",
+   "goa_to_pia": 15,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "lone_tree_forest",
+   "merchant": "로벳트",
+   "goa_to_pia": 13,
+   "note": "최악의 환율",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "chita",
+   "merchant": "골가",
+   "goa_to_pia": 16,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "chita",
+   "merchant": "모즈크",
+   "goa_to_pia": 16,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "nelba",
+   "merchant": "아틀레이",
+   "goa_to_pia": 14,
+   "note": "표의 '엘바 성밑마을'",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "nelba",
+   "merchant": "쥬리아",
+   "goa_to_pia": 14,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": null,
+   "merchant": "돌카",
+   "goa_to_pia": 16,
+   "note": "메나트 행상인",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "tuel",
+   "merchant": "엘사",
+   "goa_to_pia": 15,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "tuel",
+   "merchant": "톨레",
+   "goa_to_pia": 15,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "dice",
+   "merchant": "모란",
+   "goa_to_pia": 14,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "dice",
+   "merchant": "마르키",
+   "goa_to_pia": 14,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "dats",
+   "merchant": "질",
+   "goa_to_pia": 17,
+   "note": "최고 환율(hwp 도 다트 17)",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "dota_castle",
+   "merchant": "코엘",
+   "goa_to_pia": 14,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "ignis",
+   "merchant": "커톨",
+   "goa_to_pia": 15,
+   "note": "표의 '사리에' — 샤리네(이그니스)로 추정",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "andera",
+   "merchant": "마뎀",
+   "goa_to_pia": 15,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "toneriko",
+   "merchant": "할",
+   "goa_to_pia": 13,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "sipul",
+   "merchant": "로렌",
+   "goa_to_pia": 16,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "sipul",
+   "merchant": "할스",
+   "goa_to_pia": 16,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "oldos_town",
+   "merchant": "오레이",
+   "goa_to_pia": 15,
+   "note": "대성문",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "oldos_town",
+   "merchant": "로보스",
+   "goa_to_pia": 15,
+   "note": "대성문",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "oldos_town",
+   "merchant": "라키스",
+   "goa_to_pia": 15,
+   "note": "마을구역 도구상",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "holk",
+   "merchant": "그라드",
+   "goa_to_pia": 16,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "holk",
+   "merchant": "시아",
+   "goa_to_pia": 16,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "baraka",
+   "merchant": "렐크",
+   "goa_to_pia": 14,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "gidnel",
+   "merchant": "브렐",
+   "goa_to_pia": 16,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "gidnel",
+   "merchant": "이스리",
+   "goa_to_pia": 16,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  },
+  {
+   "place": "dolpes",
+   "merchant": "메렌다",
+   "goa_to_pia": 15,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ],
+   "alt": [
+    {
+     "field": "merchant",
+     "value": "에렌다",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.265"
+      }
+     ],
+     "note": "같은 표 안 오기 추정"
+    }
+   ]
+  },
+  {
+   "place": "dolpes",
+   "merchant": "로이드",
+   "goa_to_pia": 15,
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    }
+   ]
+  }
+ ],
+ "misc": {
+  "currency": {
+   "value": "고어(Goa)·피어(Pia) 두 가지, 상인에게 고어를 피어로 환전",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.7"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.265"
+    },
+    {
+     "guide": "hwp",
+     "loc": "서장"
+    }
+   ]
+  },
+  "battle": {
+   "value": "DBS(Direction Battle System) 자동 전투. 행동작성·행동설정·대열변경, VP 를 쓴다",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.230"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.231"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.6"
+    }
+   ],
+   "note": "행동 패턴 50,625가지(comgame p.109)"
+  },
+  "magic_system": {
+   "value": "채플계(회복·보조)·칸드계(공격). 마을 사원·교회에서 전수, 마법사는 한 계통만",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.230"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.263"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.109"
+    }
+   ],
+   "note": "MP 는 레벨업마다 1~2 오른다(pcchamp2). 로브=채플계, 망토=칸드계(pcchamp2 p.264)",
+   "alt": [
+    {
+     "field": "school_name",
+     "value": "칸트",
+     "src": [
+      {
+       "guide": "pcchamp2",
+       "loc": "p.263"
+      },
+      {
+       "guide": "hwp",
+       "loc": "제2장"
+      }
+     ]
+    }
+   ]
+  },
+  "pilgrimage": {
+   "value": "14세에 다섯 샤리네의 마법의 거울을 보고 돌아오는 성인 의식. 은단검이 증표",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.8"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.231"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.110"
+    }
+   ]
+  },
+  "white_witch": {
+   "value": "하얀 마녀 게르드 — 20년 전 18세에 예언하며 순례, 가가브력 972년 사망",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.261"
+    }
+   ],
+   "person": "gerd"
+  },
+  "raual_wave": {
+   "value": "라우엘의 파도 — 한 문명이 끝날 때 대지를 덮는 재앙의 파도",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.230"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.261"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.115"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "라우앨의 파도",
+     "src": [
+      {
+       "guide": "pcchamp",
+       "loc": "p.235"
+      },
+      {
+       "guide": "pcchamp",
+       "loc": "p.237"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "라우알의 파도",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제4장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ]
+  },
+  "celestial_globe": {
+   "value": "천구의 — 루드성 천의실에서 라우엘의 파도를 부르는 장치",
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제7장"
+    },
+    {
+     "guide": "hwp",
+     "loc": "최종장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "천의구",
+     "src": [
+      {
+       "guide": "comgame",
+       "loc": "p.117"
+      }
+     ]
+    }
+   ]
+  },
+  "cooking_contest": {
+   "value": "안데라 성 요리 대회. 시푸드 카레로 우승",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.18"
+    },
+    {
+     "guide": "pcchamp2",
+     "loc": "p.262"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제3장"
+    }
+   ],
+   "ingredients": [
+    "감자",
+    "당근",
+    "양파",
+    "포도주",
+    "마늘",
+    "사와크림",
+    "쇠고기",
+    "생선과 조개",
+    "비츠",
+    "코코넛 밀크",
+    "카레 스파이스",
+    "토마토 퓨레",
+    "셀러리",
+    "스파이스",
+    "사프렌",
+    "데미그라스",
+    "요구르트"
+   ],
+   "prizes": [
+    {
+     "rank": 1,
+     "item": "guard_ring",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.18"
+      },
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ]
+    },
+    {
+     "rank": 2,
+     "item": "thomas_medal",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ]
+    },
+    {
+     "rank": 3,
+     "label": "카츄사",
+     "item": null,
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ]
+    },
+    {
+     "rank": 4,
+     "item": "luck_ring2",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ]
+    }
+   ],
+   "note": "재료 목록은 pcchamp2. 메달은 comgame 이 상위 입상 없이 받은 상품으로 적음",
+   "alt": [
+    {
+     "field": "winning_dish",
+     "value": "해산물 카레",
+     "src": [
+      {
+       "guide": "hwp",
+       "loc": "제3장"
+      }
+     ],
+     "note": "팬 공략(신영웅전설3 기준) 표기"
+    }
+   ]
+  },
+  "cathedral_quiz": {
+   "value": "대성당 입구 다섯 질문 — 물·대지(땅)·불·바람 순, 마지막은 부정",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.20"
+    },
+    {
+     "guide": "pcchamp",
+     "loc": "p.235"
+    },
+    {
+     "guide": "hwp",
+     "loc": "제4장"
+    }
+   ]
+  },
+  "sapi_exchange": {
+   "value": "사피 전 9권을 모으면 게일 가도의 상인이 무기로 바꿔 줌",
+   "src": [
+    {
+     "guide": "hwp",
+     "loc": "제6장"
+    }
+   ],
+   "items": [
+    "famous_silping",
+    "prince_cutlass"
+   ]
+  },
+  "status_colors": {
+   "value": "빨강=포스업 · 녹색=VP 소비 · 보라=묶기 · 흰색=특수공격 둔화 · 파랑=프리즈",
+   "src": [
+    {
+     "guide": "pcchamp2",
+     "loc": "p.264"
+    }
+   ],
+   "note": "세이빙 색은 판독 흐림"
+  },
+  "release": {
+   "value": "정발: 팔콤/만트라, 유통 삼성전자, 46,200원(DOS)",
+   "src": [
+    {
+     "guide": "pcchamp",
+     "loc": "p.230"
+    },
+    {
+     "guide": "comgame",
+     "loc": "p.109"
+    }
+   ]
+  }
+ }
+}

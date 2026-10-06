@@ -1,0 +1,9332 @@
+{
+ "_doc": [
+  "『영웅전설』1(Dragon Slayer 英雄伝説) **사실 사전** — 마스터 소장 국내 공략집에서 뽑은 사실만 담는다.",
+  "🔴 저작권: 이름·수치·효과·가격·위치·관계·장(章)만. 공략 문장은 옮기지 않는다 — desc/note 는 우리 말로 쓴 40자 안팎 요약이다.",
+  "레코드 공통: id(영문 슬러그, 안정 키) · name(대표 표기) · src([{guide, loc}]) · alt([{field, value, src, note?}]) · note? · unsure?",
+  "🔴 대표 표기 = 우리 고유명사 정본(shared/glossary) 값(마스터 판정). 정발은 근거·이형으로만 — 우리가 교정한 것은 우리 것을 따른다. 정발 공략 표기는 alt(note: 정발 표기 — 우리 정본이 교정)로 내린다.",
+  "glossary: 정본 대응 {cat, jp, value} 또는 null(정본에 없음 — 공략 표기를 대표로 두고, 정본 편입은 마스터께 묻는다). 공백만 다른 것은 층 차이라 name 을 그대로 둔다.",
+  "정본에 없는 이름은 정발(만트라 DOS) 기반 공략(txt·gamepia·gamecom·softcom)의 다수 표기를 대표로. 갈리면 **버리지 않고** alt 에 출처째 남긴다(field='name' 은 이름 이형).",
+  "⚠ gameworld(1991)는 MSX2 일본판 기준 — 정발 이전 잡지 자체 음역이라 정발 표기 근거가 아니다. alt 로만 싣는다.",
+  "⚠ 오기로 보이는 이형도 지우지 않는다 — note 에 '오기 추정'이라 적는다(판정은 사람 몫).",
+  "loc 표기: txt=절 번호(§8 제N장 등) · pdf=지면 인쇄 쪽(p.NNN) · gameworld=imgNN(인쇄 쪽).",
+  "수치가 스크린샷 판독값이면 note 에 적는다 — 전투 화면 숫자는 피해 뒤 값일 수 있다. 판독 불가는 null + unsure.",
+  "categories: persons · places · spells · items · monsters · chapters. 교차 참조는 id 로(예: places[].shops 의 item id)."
+ ],
+ "title": "eiyuu-densetsu-1",
+ "sources": {
+  "txt": {
+   "file": "영웅전설 1 공략.txt",
+   "title": "DRAGON SLAYER 영웅전설1 공략",
+   "publisher": "한영의 게임세상(블로그, hygame.tistory.com/1880)",
+   "issue": null,
+   "basis": "정발 DOS판"
+  },
+  "txt_magic": {
+   "file": "영웅전설 1 마법.txt",
+   "title": "영웅전설 1 마법 목록",
+   "publisher": null,
+   "issue": null,
+   "basis": "정발 DOS판(추정)",
+   "note": "출처 표기 없음"
+  },
+  "gamepia": {
+   "file": "영웅전설 1 게임피아 공략.pdf",
+   "title": "영웅전설 공략",
+   "publisher": "게임피아",
+   "issue": null,
+   "basis": "정발 DOS판",
+   "note": "호수 미상. 인쇄 쪽 p.130~137(pdf 1~8쪽)"
+  },
+  "gamecom": {
+   "file": "영웅전설 1 게임컴 96년 2월호.pdf",
+   "title": "영웅전설 분석",
+   "publisher": "게임컴",
+   "issue": "1996년 2월호",
+   "basis": "정발 DOS판(판매 삼성전자)",
+   "note": "인쇄 쪽 p.126~142(pdf 1~9쪽, 두 쪽 펼침). p.143 은 다른 게임"
+  },
+  "softcom": {
+   "file": "영웅전설 1 소프콤 96년 3월호.pdf",
+   "title": "SOFCOM SOLUTION 영웅전설",
+   "publisher": "소프콤",
+   "issue": "1996년 3월호",
+   "basis": "정발 DOS판(제작 팔콤·만트라, 판매 삼성전자)",
+   "note": "인쇄 쪽 p.68~73(pdf 1~3쪽, 두 쪽 펼침)"
+  },
+  "gameworld": {
+   "file": "영웅전설 1 게임월드 공략/01~22.JPG",
+   "title": "게임집중분석 (영웅전설) 드래곤 슬레이어 전편·후편",
+   "publisher": "게임월드",
+   "issue": "1991년 4월호(img01~10, p.86~95) · 5월호(img11~22, p.78~89)",
+   "basis": "🔴 MSX2 일본판 — 정발 이전, 잡지 자체 음역"
+  },
+  "ps1": {
+   "file": "games/ps1-ed1+2/script/",
+   "title": "PS1 영웅전설 I·II 한글판 대사(우리 번역)",
+   "publisher": null,
+   "issue": null,
+   "basis": "PS1(SLPS-01323) 원문 대조",
+   "note": "공략이 아니라 우리 대본에서 확인한 사실(10-06 사전 검수)"
+  }
+ },
+ "persons": [
+  {
+   "id": "serios",
+   "name": "세리오스",
+   "role": "파렌 왕국 왕자, 주인공",
+   "first_chapter": 1,
+   "relations": {
+    "father": "asuel",
+    "mother": "ferisia",
+    "teacher": "raias",
+    "fiancee": "dina",
+    "uncle": "jeston"
+   },
+   "note": "엘아스터에서 성장. 외숙=제스톤(어머니 페리시아의 오빠) — PS1 대사로 확인",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§2"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.127"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    },
+    {
+     "guide": "ps1",
+     "loc": "ED1 대사(외숙 언급)"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "セリオス",
+    "value": "세리오스"
+   }
+  },
+  {
+   "id": "ryunan",
+   "name": "류난",
+   "role": "라누라 왕국 셋째 왕자, 레지스탕스 수도사",
+   "first_chapter": 1,
+   "aliases": [
+    "에리온"
+   ],
+   "relations": {
+    "elder_brother": [
+     "brado",
+     "jerman"
+    ]
+   },
+   "note": "본명 에리온",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§2"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.127"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img12 p.79"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "リュナン",
+    "value": "류난"
+   }
+  },
+  {
+   "id": "rou",
+   "name": "로우",
+   "role": "붉은 망토의 모험가, 프람계 주문 사용",
+   "first_chapter": 1,
+   "join_level": 7,
+   "note": "합류 레벨이 공략마다 다르다(txt 7·gamepia 8·gamecom 6)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§2"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.127"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img05 p.90"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "로",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img04 p.89"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "로스",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.69"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "join_level",
+     "value": 8,
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.133"
+      }
+     ]
+    },
+    {
+     "field": "join_level",
+     "value": 6,
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.128"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img05 p.90"
+      }
+     ]
+    },
+    {
+     "field": "epithet",
+     "value": "불꽃의 떠돌이",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img04 p.89"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ロー",
+    "value": "로우"
+   }
+  },
+  {
+   "id": "gale",
+   "name": "게일",
+   "role": "대도 게일의 손자(3세), 도적",
+   "first_chapter": 1,
+   "aliases": [
+    "게일 3세"
+   ],
+   "relations": {
+    "grandfather": "great_gale",
+    "father": "ralf",
+    "friend": "hans"
+   },
+   "note": "베르가 광산에서 합류",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§2"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.127"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ゲイル",
+    "value": "게일"
+   }
+  },
+  {
+   "id": "sonia",
+   "name": "소니아",
+   "role": "아론의 손녀, 주문 특기",
+   "first_chapter": 2,
+   "relations": {
+    "grandfather": "aron"
+   },
+   "note": "2장 끝 랄파에서 합류(페리시아 왕비의 명)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§2"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "소피아",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.136"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "소비아",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.69"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ソニア",
+    "value": "소니아"
+   }
+  },
+  {
+   "id": "dina",
+   "name": "디나",
+   "role": "솔디스 공주, 세리오스의 약혼자",
+   "first_chapter": 4,
+   "relations": {
+    "father": "ados",
+    "mother": "crea",
+    "fiance": "serios"
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "디바",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.132"
+      }
+     ],
+     "note": "캡션, 오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "다나",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제4장"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ディーナ",
+    "value": "디나"
+   }
+  },
+  {
+   "id": "asuel",
+   "name": "아스엘",
+   "role": "파렌 국왕, 세리오스의 부왕(피살)",
+   "first_chapter": 0,
+   "relations": {
+    "son": "serios",
+    "wife": "ferisia"
+   },
+   "note": "first_chapter 0 = 프롤로그",
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.126"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img02 p.87"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "アスエル",
+    "value": "아스엘"
+   }
+  },
+  {
+   "id": "akdam",
+   "name": "아크담",
+   "role": "파렌 국왕의 측근·섭정, 부왕 살해범",
+   "first_chapter": 0,
+   "monster_ref": "akdam",
+   "note": "4장 방풍의 동굴에서 최후",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§1"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.126"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img02 p.87"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "아크남",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "アクダム",
+    "value": "아크담"
+   }
+  },
+  {
+   "id": "ferisia",
+   "name": "페리시아",
+   "role": "파렌 왕비, 세리오스의 어머니",
+   "first_chapter": 1,
+   "relations": {
+    "son": "serios"
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.129"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "페르시아",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img12 p.79"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img22 p.89"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "フェリシア",
+    "value": "페리시아"
+   }
+  },
+  {
+   "id": "raias",
+   "name": "라이아스",
+   "role": "세리오스의 스승, 엘아스터",
+   "first_chapter": 1,
+   "relations": {
+    "brother": "aron"
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.128"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "라이어스",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img05 p.90"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "라이사스",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.68"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "relation",
+     "value": "아론의 쌍둥이 형제",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img05 p.90"
+      }
+     ]
+    },
+    {
+     "field": "relation",
+     "value": "아론이 형",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.68"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ライアス",
+    "value": "라이아스"
+   }
+  },
+  {
+   "id": "fergusson",
+   "name": "퍼거슨",
+   "role": "엘아스터의 농부",
+   "first_chapter": 1,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.128"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ファーガソン",
+    "value": "퍼거슨"
+   }
+  },
+  {
+   "id": "rauel",
+   "name": "라우엘",
+   "role": "루디아의 레지스탕스",
+   "first_chapter": 1,
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.128"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "라우렐",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제1장"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "라푸엘",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.68"
+      }
+     ],
+     "note": "같은 지면 안에서 갈림, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ラウエル",
+    "value": "라우엘"
+   }
+  },
+  {
+   "id": "aron",
+   "name": "아론",
+   "role": "크루즈 레지스탕스 대장",
+   "first_chapter": 1,
+   "relations": {
+    "granddaughter": "sonia",
+    "brother": "raias"
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.127"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.128"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img05 p.90"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "アロン",
+    "value": "아론"
+   }
+  },
+  {
+   "id": "pom",
+   "name": "폼",
+   "role": "모험가, 사이레스를 찾는 노부부의 아들",
+   "first_chapter": 2,
+   "note": "레스3 전수(숲속 초가집)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.130"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img07 p.92"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ポム",
+    "value": "폼"
+   }
+  },
+  {
+   "id": "orea",
+   "name": "오레아",
+   "role": "주문을 가르치는 노인(구엔의 탑 인근)",
+   "first_chapter": 2,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.129"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "オレア",
+    "value": "오레아"
+   }
+  },
+  {
+   "id": "fols",
+   "name": "폴스",
+   "role": "마스쿤 시장, 에릭의 형",
+   "first_chapter": 2,
+   "relations": {
+    "younger_brother": "eric"
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.131"
+    }
+   ],
+   "alt": [
+    {
+     "field": "role",
+     "value": "장로",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img09 p.94"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "フォルス",
+    "value": "폴스"
+   }
+  },
+  {
+   "id": "eric",
+   "name": "에릭",
+   "role": "폴스의 동생(리젤), 정체는 바위 인간",
+   "first_chapter": 2,
+   "monster_ref": "rockman",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.131"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img09 p.94"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "エリック",
+    "value": "에릭"
+   }
+  },
+  {
+   "id": "jeston",
+   "name": "제스톤",
+   "role": "리젤 성주",
+   "first_chapter": 2,
+   "note": "세리오스의 외숙(페리시아의 오빠) — PS1 대사로 확인",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.130"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img09 p.94"
+    },
+    {
+     "guide": "ps1",
+     "loc": "ED1 대사(외숙 언급)"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ジェストン",
+    "value": "제스톤"
+   },
+   "relations": {
+    "sister": "ferisia",
+    "nephew": "serios"
+   }
+  },
+  {
+   "id": "roel",
+   "name": "로엘",
+   "role": "현자, 리젤 북서 외딴집",
+   "first_chapter": 2,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.131"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img09 p.94"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ロエル",
+    "value": "로엘"
+   }
+  },
+  {
+   "id": "boad",
+   "name": "보아드",
+   "role": "해적 선장",
+   "first_chapter": 3,
+   "relations": {
+    "mother": "miralda",
+    "friend": "gale"
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img12 p.79"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "보르도",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.134"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.135"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ボアード",
+    "value": "보아드"
+   }
+  },
+  {
+   "id": "miralda",
+   "name": "미랄다",
+   "role": "보아드의 어머니, 원래 해적 두목",
+   "first_chapter": 3,
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img14 p.81"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.70"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "미랄드",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제3장"
+      }
+     ],
+     "note": "txt 안에서 미랄다와 섞임"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ミラルダ",
+    "value": "미랄다"
+   }
+  },
+  {
+   "id": "brado",
+   "name": "프라토",
+   "role": "라누라 국왕, 류난의 맏형",
+   "first_chapter": 3,
+   "relations": {
+    "younger_brother": [
+     "jerman",
+     "ryunan"
+    ]
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "브라도",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제3장"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.133"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.134"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "프래트",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img12 p.79"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img13 p.80"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "フラート",
+    "value": "프라토"
+   }
+  },
+  {
+   "id": "jerman",
+   "name": "제르만",
+   "role": "라누라 둘째 왕자",
+   "first_chapter": 3,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "젤만",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img13 p.80"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ジェルマン",
+    "value": "제르만"
+   }
+  },
+  {
+   "id": "barbara",
+   "name": "바바라",
+   "role": "용의 제전을 맡은 사제(할머니)",
+   "first_chapter": 3,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img13 p.80"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "バーバラ",
+    "value": "바바라"
+   }
+  },
+  {
+   "id": "riston",
+   "name": "리스톤",
+   "role": "세금을 거둔 탐관오리(낫슈)",
+   "first_chapter": 3,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img13 p.80"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "リストン",
+    "value": "리스톤"
+   }
+  },
+  {
+   "id": "pauel",
+   "name": "파우엘",
+   "role": "암다 마을의 노인",
+   "first_chapter": 3,
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img12 p.79"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "パウエル",
+    "value": "파우엘"
+   }
+  },
+  {
+   "id": "fisher_yordo",
+   "name": "어부",
+   "role": "요르도의 어부, 황금의 열쇠 습득",
+   "first_chapter": 3,
+   "note": "이름 없음",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "漁師",
+    "value": "어부"
+   }
+  },
+  {
+   "id": "crea",
+   "name": "크레아",
+   "role": "솔디스 왕비",
+   "first_chapter": 4,
+   "aliases": [
+    "크레아 왕비"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img15 p.82"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "クレア",
+    "value": "크레아"
+   }
+  },
+  {
+   "id": "ados",
+   "name": "아토스",
+   "role": "솔디스 국왕, 디나의 아버지",
+   "first_chapter": 4,
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "아도스",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.136"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "아토스",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img04 p.89"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img15 p.82"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "アートス",
+    "value": "아토스"
+   }
+  },
+  {
+   "id": "silphy",
+   "name": "실피",
+   "role": "무용수, 아크담 편",
+   "first_chapter": 4,
+   "monster_ref": "silphy",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img15 p.82"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "설피",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "실비",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "シルフィ",
+    "value": "실피"
+   }
+  },
+  {
+   "id": "boil",
+   "name": "보일",
+   "role": "카울의 드래곤 사육자",
+   "first_chapter": 4,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img15 p.82"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ボイル",
+    "value": "보일"
+   }
+  },
+  {
+   "id": "cynthia",
+   "name": "신시아",
+   "role": "크레아 왕비의 옛 유모(카울)",
+   "first_chapter": 4,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.70"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img15 p.82"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "シンシア",
+    "value": "신시아"
+   }
+  },
+  {
+   "id": "todd",
+   "name": "토드",
+   "role": "신시아의 개",
+   "first_chapter": 4,
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img15 p.82"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "トッド",
+    "value": "토드"
+   }
+  },
+  {
+   "id": "harry",
+   "name": "해리",
+   "role": "루드라의 발명가(연)",
+   "first_chapter": 4,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img15 p.82"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "해일",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ハリー",
+    "value": "해리"
+   }
+  },
+  {
+   "id": "veramis",
+   "name": "베라미스",
+   "role": "아그니쟈의 부하",
+   "first_chapter": 4,
+   "monster_ref": "veramis",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img17 p.84"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "베라이스",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ベラミス",
+    "value": "베라미스"
+   }
+  },
+  {
+   "id": "agnija",
+   "name": "아그니쟈",
+   "role": "파괴신(사신), 최종 보스",
+   "first_chapter": 4,
+   "monster_ref": "agnija",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "아니그자",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.135"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.137"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "야그니자",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "아그니자",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ],
+     "note": "쟈→자"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "アグニージャ",
+    "value": "아그니쟈"
+   }
+  },
+  {
+   "id": "ralf",
+   "name": "랄프",
+   "role": "고고학자(파에토), 게일의 아버지(2세)",
+   "first_chapter": 5,
+   "aliases": [
+    "게일 2세"
+   ],
+   "relations": {
+    "son": "gale"
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.138"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img19 p.86"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ラルフ",
+    "value": "랄프"
+   }
+  },
+  {
+   "id": "great_gale",
+   "name": "대도 게일",
+   "role": "판가스의 대도적, 게일의 할아버지",
+   "first_chapter": 5,
+   "aliases": [
+    "대도적 게일"
+   ],
+   "relations": {
+    "grandson": "gale"
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§2"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img18 p.85"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "大盗賊 ゲイル",
+    "value": "대도 게일"
+   }
+  },
+  {
+   "id": "hans",
+   "name": "한스",
+   "role": "모레스톤 대통령, 게일의 친구",
+   "first_chapter": 5,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img18 p.85"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ハンス",
+    "value": "한스"
+   }
+  },
+  {
+   "id": "hol",
+   "name": "홀",
+   "role": "판가스 상인(수면초)",
+   "first_chapter": 5,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ホール",
+    "value": "홀"
+   }
+  },
+  {
+   "id": "jira",
+   "name": "지라",
+   "role": "콜크스 불면증 남자의 어머니",
+   "first_chapter": 5,
+   "note": "아그니쟈 전설을 들려줌. 이름은 softcom 만",
+   "src": [
+    {
+     "guide": "softcom",
+     "loc": "p.71"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ジーラ",
+    "value": "지라"
+   }
+  },
+  {
+   "id": "basil",
+   "name": "바질",
+   "role": "몬스터 대장(수정의 탑)",
+   "first_chapter": 5,
+   "monster_ref": "basil",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img19 p.86"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "バジール",
+    "value": "바질"
+   }
+  },
+  {
+   "id": "jack",
+   "name": "쟈크",
+   "role": "형기를 마친 도둑(핀 요새)",
+   "first_chapter": 6,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ジャック",
+    "value": "쟈크"
+   }
+  },
+  {
+   "id": "gordon",
+   "name": "고든",
+   "role": "길모아 마을의 1인자",
+   "first_chapter": 6,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img20 p.87"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "고둑",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ゴードン",
+    "value": "고든"
+   }
+  },
+  {
+   "id": "dorgas",
+   "name": "도르가스",
+   "role": "길모아 마을의 2인자, 고대 유적을 노림",
+   "first_chapter": 6,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.71"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "도르카스",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img20 p.87"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "도로 가스",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ドルカス",
+    "value": "도르가스"
+   }
+  },
+  {
+   "id": "boris",
+   "name": "보리스",
+   "role": "도르가스와 결탁한 인물",
+   "first_chapter": 6,
+   "unsure": true,
+   "note": "softcom 에만 나온다",
+   "src": [
+    {
+     "guide": "softcom",
+     "loc": "p.71"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ボリス",
+    "value": "보리스"
+   }
+  },
+  {
+   "id": "doran",
+   "name": "도란",
+   "role": "길모아에서 일행을 돕는 인물",
+   "first_chapter": 6,
+   "unsure": true,
+   "note": "gamepia 캡션·스크린샷만, 역할 판독 불확실",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ドラン",
+    "value": "도란"
+   }
+  },
+  {
+   "id": "priest_gilmoa",
+   "name": "신부",
+   "role": "길모아 교회 신부(촛대 보관)",
+   "first_chapter": 6,
+   "note": "이름 없음",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.141"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img20 p.87"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "神父",
+    "value": "신부"
+   }
+  },
+  {
+   "id": "freia",
+   "name": "프레이아",
+   "role": "빛의 (여)신",
+   "first_chapter": 0,
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역. 신앙 대상",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img02 p.87"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img13 p.80"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "フレイア",
+    "value": "프레이아"
+   }
+  },
+  {
+   "id": "yoshua",
+   "name": "요슈아",
+   "role": "천상의 신",
+   "first_chapter": 0,
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역. 아이템 '요슈아의 눈·거울'의 이름",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img02 p.87"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img13 p.80"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ヨシュア",
+    "value": "요슈아"
+   }
+  }
+ ],
+ "places": [
+  {
+   "id": "iselhasa",
+   "name": "이셀하사",
+   "kind": "world",
+   "region": null,
+   "chapter": 0,
+   "note": "다섯 왕국이 있는 세계",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§1"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.126"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img02 p.87"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "イセルハーサ",
+    "value": "이셀하사"
+   }
+  },
+  {
+   "id": "farren",
+   "name": "파렌",
+   "kind": "kingdom",
+   "region": "iselhasa",
+   "chapter": 1,
+   "note": "론윌섬·사스아이섬으로 이뤄짐",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§1"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.126"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ファーレーン",
+    "value": "파렌"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "파렌 왕국",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§1"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.126"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.68"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    }
+   ]
+  },
+  {
+   "id": "ponrig",
+   "name": "온리크",
+   "kind": "kingdom",
+   "region": "iselhasa",
+   "chapter": 2,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.130"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "폰 리그 왕국",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제2장"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.130"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "폰리그",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.69"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "온리크",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img02 p.87"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img08 p.93"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "온리크 공국",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img09 p.94"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ウォンリーク",
+    "value": "온리크"
+   }
+  },
+  {
+   "id": "ranura",
+   "name": "라누라",
+   "kind": "kingdom",
+   "region": "iselhasa",
+   "chapter": 3,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§2"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.127"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img02 p.87"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "라느라 왕국",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§2"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.127"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img02 p.87"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "라르라 왕국",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.134"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ラヌーラ",
+    "value": "라누라"
+   }
+  },
+  {
+   "id": "soldis",
+   "name": "솔디스",
+   "kind": "kingdom",
+   "region": "iselhasa",
+   "chapter": 4,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img02 p.87"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "솔디스 왕국",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제4장"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.134"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img02 p.87"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    },
+    {
+     "field": "name",
+     "value": "솔리드 왕국",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ソルディス",
+    "value": "솔디스"
+   }
+  },
+  {
+   "id": "moreston",
+   "name": "모레스톤",
+   "kind": "kingdom",
+   "region": "iselhasa",
+   "chapter": 5,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.138"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img17 p.84"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "모레스톤 공화국",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제5장"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.138"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img17 p.84"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    },
+    {
+     "field": "name",
+     "value": "모레스톤 왕국",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.136"
+      }
+     ],
+     "note": "같은 잡지 p.138 은 공화국"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "モレストン",
+    "value": "모레스톤"
+   }
+  },
+  {
+   "id": "ronwil",
+   "name": "론윌섬",
+   "kind": "island",
+   "region": "farren",
+   "chapter": 1,
+   "src": [
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img02 p.87"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ロンウォール島",
+    "value": "론윌섬"
+   }
+  },
+  {
+   "id": "sasai",
+   "name": "사스아이섬",
+   "kind": "island",
+   "region": "farren",
+   "chapter": 1,
+   "note": "엘아스터가 있는 섬",
+   "src": [
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img02 p.87"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "サースアイ島",
+    "value": "사스아이섬"
+   }
+  },
+  {
+   "id": "elaster",
+   "name": "엘아스타",
+   "kind": "town",
+   "region": "farren",
+   "chapter": 1,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§1"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.126"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img02 p.87"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "エルアスタ",
+    "value": "엘아스타"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "엘아스터",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§1"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.126"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img02 p.87"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    }
+   ]
+  },
+  {
+   "id": "cape_cave",
+   "name": "곶의 동굴",
+   "kind": "dungeon",
+   "region": "farren",
+   "chapter": 1,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.128"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.73"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "해저동굴",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img05 p.90"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "岬の洞窟",
+    "value": "곶의동굴"
+   }
+  },
+  {
+   "id": "ludia",
+   "name": "루디아 성",
+   "kind": "castle",
+   "region": "farren",
+   "chapter": 1,
+   "shops": {
+    "item": [
+     "res_leaf",
+     "antidote_herb",
+     "yoshua_eye"
+    ],
+    "weapon": [
+     "knife",
+     "small_sword",
+     "explorer_clothes",
+     "leather_armor",
+     "leather_shield"
+    ]
+   },
+   "note": "파렌 수도. 성 아래 현자에게 주문 습득",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.126"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ルディアの城",
+    "value": "루디아성"
+   }
+  },
+  {
+   "id": "cruise",
+   "name": "크루즈 마을",
+   "kind": "town",
+   "region": "farren",
+   "chapter": 1,
+   "shops": {
+    "item": [
+     "res_leaf",
+     "antidote"
+    ]
+   },
+   "note": "레지스탕스 본거지",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.128"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "크루스마을",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img05 p.90"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "クルスの村",
+    "value": "크루즈마을"
+   }
+  },
+  {
+   "id": "berga",
+   "name": "베르가 광산",
+   "kind": "mine",
+   "region": "farren",
+   "chapter": 1,
+   "note": "루디아 남쪽",
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.128"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "벨가의 광산",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img05 p.90"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ベルガの鉱山",
+    "value": "베르가광산"
+   }
+  },
+  {
+   "id": "neria",
+   "name": "네리아 항구",
+   "kind": "port",
+   "region": "farren",
+   "chapter": 1,
+   "shops": {
+    "item": [
+     "res_leaf",
+     "antidote_herb"
+    ],
+    "weapon": [
+     "bronze_sword",
+     "bronze_armor",
+     "bronze_shield"
+    ]
+   },
+   "note": "밀매상(암흑의 상인)이 있다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.128"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ネリアの港",
+    "value": "네리아항구"
+   }
+  },
+  {
+   "id": "rondo",
+   "name": "론도 항구",
+   "kind": "port",
+   "region": "ponrig",
+   "chapter": 2,
+   "shops": {
+    "item": [
+     "res_leaf",
+     "torch",
+     "warp_feather"
+    ],
+    "weapon": [
+     "iron_spear",
+     "chain_mail"
+    ]
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.129"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "론드",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img06 p.91"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ロンドの港",
+    "value": "론도항구"
+   }
+  },
+  {
+   "id": "old_couple_house",
+   "name": "노부부의 집",
+   "kind": "house",
+   "region": "ponrig",
+   "chapter": 2,
+   "note": "론도 북서. 노인과 오셀로를 두면 주문 전수",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.129"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.134"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "老夫婦の家",
+    "value": "노부부의집"
+   }
+  },
+  {
+   "id": "bloody_cave",
+   "name": "유혈의 동굴",
+   "kind": "dungeon",
+   "region": "ponrig",
+   "chapter": 2,
+   "note": "보스 가르고",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.129"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "流血の洞窟",
+    "value": "유혈의동굴"
+   }
+  },
+  {
+   "id": "ralfa",
+   "name": "랄파 요새",
+   "kind": "fort",
+   "region": "ponrig",
+   "chapter": 2,
+   "note": "도구점→열쇠 가게→복권 가게로 바뀐다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.130"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "랄파마을",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img07 p.92"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ラルファの砦",
+    "value": "랄파요새"
+   }
+  },
+  {
+   "id": "orea_house",
+   "name": "오레아의 집",
+   "kind": "house",
+   "region": "ponrig",
+   "chapter": 2,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "オレアの家",
+    "value": "오레아의집"
+   }
+  },
+  {
+   "id": "guen_tower",
+   "name": "구엔의 탑",
+   "kind": "tower",
+   "region": "ponrig",
+   "chapter": 2,
+   "note": "4층 비석에 사이레스",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.130"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "구엔탑",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img07 p.92"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "グエンの塔",
+    "value": "구엔의탑"
+   }
+  },
+  {
+   "id": "forest_house",
+   "name": "숲의초가집",
+   "kind": "house",
+   "region": "ponrig",
+   "chapter": 2,
+   "note": "폼의 부모(노부부)가 사는 집",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "숲속의 초가집",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제2장"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.132"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "숲속의 집",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.132"
+      }
+     ],
+     "note": "위치도 라벨"
+    },
+    {
+     "field": "name",
+     "value": "숲의 초가집",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.69"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "森の一軒家",
+    "value": "숲의초가집"
+   }
+  },
+  {
+   "id": "mascoon",
+   "name": "마스쿤",
+   "kind": "town",
+   "region": "ponrig",
+   "chapter": 2,
+   "shops": {
+    "item": [
+     "res_leaf",
+     "torch",
+     "warp_feather",
+     "discovery_bell"
+    ],
+    "weapon": [
+     "iron_sword",
+     "steel_spear",
+     "iron_armor",
+     "iron_shield"
+    ]
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.130"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img08 p.93"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "마스쿤 마을",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제2장"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.130"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img08 p.93"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    },
+    {
+     "field": "name",
+     "value": "마쿠스",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.134"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "マスクーン",
+    "value": "마스쿤"
+   }
+  },
+  {
+   "id": "trial_cave",
+   "name": "시련의 동굴",
+   "kind": "dungeon",
+   "region": "ponrig",
+   "chapter": 2,
+   "note": "요슈아의 거울·오프나의 반지",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.131"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "試練の洞窟",
+    "value": "시련의동굴"
+   }
+  },
+  {
+   "id": "liesel",
+   "name": "리젤",
+   "kind": "castle",
+   "region": "ponrig",
+   "chapter": 2,
+   "shops": {
+    "item": [
+     "res_leaf",
+     "medicine",
+     "warp_feather",
+     "warp_wing"
+    ],
+    "weapon": [
+     "steel_sword",
+     "steel_armor",
+     "steel_shield"
+    ]
+   },
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.130"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img08 p.93"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "리젤 성",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.130"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.69"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img08 p.93"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    },
+    {
+     "field": "name",
+     "value": "리젤 마을",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제2장"
+      }
+     ],
+     "note": "상점 목록 표제"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "リーゼル",
+    "value": "리젤"
+   }
+  },
+  {
+   "id": "roel_house",
+   "name": "로엘의 집",
+   "kind": "house",
+   "region": "ponrig",
+   "chapter": 2,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ロエルの家",
+    "value": "로엘의집"
+   }
+  },
+  {
+   "id": "guard_captain_house",
+   "name": "경비 대장의 집",
+   "kind": "house",
+   "region": "ralfa",
+   "chapter": 2,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.130"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "pirate_island",
+   "name": "해적섬",
+   "kind": "island",
+   "region": "ranura",
+   "chapter": 3,
+   "note": "해적 게임(능력치 배분 모의전), 폭약 창고",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img12 p.79"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "海賊島",
+    "value": "해적섬"
+   }
+  },
+  {
+   "id": "archipelago",
+   "name": "다도해",
+   "kind": "sea",
+   "region": "ranura",
+   "chapter": 3,
+   "src": [
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "多島海",
+    "value": "다도해"
+   }
+  },
+  {
+   "id": "suel",
+   "name": "스엘 마을",
+   "kind": "town",
+   "region": "ranura",
+   "chapter": 3,
+   "shops": {
+    "item": [
+     "res_leaf",
+     "vis_fruit"
+    ],
+    "weapon": []
+   },
+   "note": "해적 아지트에서 휴식",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img12 p.79"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "スエルの村",
+    "value": "스엘마을"
+   }
+  },
+  {
+   "id": "amda",
+   "name": "암다 마을",
+   "kind": "town",
+   "region": "ranura",
+   "chapter": 3,
+   "shops": {
+    "item": [
+     "res_leaf",
+     "vis_fruit"
+    ],
+    "weapon": []
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img12 p.79"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "アムダの村",
+    "value": "암다마을"
+   }
+  },
+  {
+   "id": "yordo",
+   "name": "요르도 항구",
+   "kind": "port",
+   "region": "ranura",
+   "chapter": 3,
+   "shops": {
+    "item": [
+     "torch",
+     "res_leaf",
+     "vis_fruit"
+    ],
+    "weapon": [
+     "crystal_staff",
+     "crystal_spear",
+     "crystal_shield",
+     "silk_clothes"
+    ]
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "욜드마을",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img13 p.80"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ヨルドの港",
+    "value": "요르도항구"
+   }
+  },
+  {
+   "id": "barbara_house",
+   "name": "바바라의 집",
+   "kind": "house",
+   "region": "ranura",
+   "chapter": 3,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "バーバラの家",
+    "value": "바바라의집"
+   }
+  },
+  {
+   "id": "sere_lake",
+   "name": "세레 호수",
+   "kind": "lake",
+   "region": "ranura",
+   "chapter": 3,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.70"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "nash",
+   "name": "낫슈 마을",
+   "kind": "town",
+   "region": "ranura",
+   "chapter": 3,
+   "shops": {
+    "item": [
+     "torch",
+     "res_leaf",
+     "vis_fruit"
+    ],
+    "weapon": [
+     "silver_staff",
+     "silver_sword",
+     "silver_armor",
+     "silver_shield"
+    ]
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img13 p.80"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ナッシュの町",
+    "value": "낫슈마을"
+   }
+  },
+  {
+   "id": "dragon_egg",
+   "name": "용의 알",
+   "kind": "shrine",
+   "region": "ranura",
+   "chapter": 3,
+   "note": "용의 제전이 열리는 성역",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img13 p.80"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "竜の卵",
+    "value": "용의알"
+   }
+  },
+  {
+   "id": "royal_tomb",
+   "name": "왕가의 묘",
+   "kind": "dungeon",
+   "region": "ranura",
+   "chapter": 3,
+   "note": "길모아의 별·튜트의 반지·쿠이크의 반지",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.73"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "王家の墓",
+    "value": "왕가의묘"
+   }
+  },
+  {
+   "id": "seris",
+   "name": "세리스",
+   "kind": "castle",
+   "region": "ranura",
+   "chapter": 3,
+   "shops": {
+    "item": [
+     "res_leaf",
+     "vis_fruit"
+    ],
+    "weapon": [
+     "crystal_sword",
+     "crystal_armor",
+     "crystal_shield",
+     "commoner_clothes"
+    ],
+    "bar": [
+     "rum"
+    ]
+   },
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img12 p.79"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "세리스 성",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.133"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.134"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img12 p.79"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    },
+    {
+     "field": "name",
+     "value": "세리스 마을",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제3장"
+      }
+     ],
+     "note": "상점 목록 표제"
+    },
+    {
+     "field": "name",
+     "value": "세리아 성",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "セリス",
+    "value": "세리스"
+   }
+  },
+  {
+   "id": "miralda_house",
+   "name": "미랄다의 집",
+   "kind": "house",
+   "region": "ranura",
+   "chapter": 3,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ミラルダの家",
+    "value": "미랄다의집"
+   }
+  },
+  {
+   "id": "border_cave",
+   "name": "국경의 동굴",
+   "kind": "dungeon",
+   "region": "ranura",
+   "chapter": 4,
+   "note": "폭약으로 바위 파괴, 수문 레버",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.73"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "국경 부근의 동굴",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "国境の洞窟",
+    "value": "국경의동굴"
+   }
+  },
+  {
+   "id": "bazunoon",
+   "name": "바즈눈",
+   "kind": "castle",
+   "region": "soldis",
+   "chapter": 4,
+   "shops": {
+    "item": [
+     "res_root",
+     "discovery_bell"
+    ]
+   },
+   "note": "솔디스 수도",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img15 p.82"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "바즈눈 성",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제4장"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.135"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img15 p.82"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    },
+    {
+     "field": "name",
+     "value": "바즈누 왕국",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제5장"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "バズヌーン",
+    "value": "바즈눈"
+   }
+  },
+  {
+   "id": "wind_tower",
+   "name": "바람의 탑",
+   "kind": "tower",
+   "region": "soldis",
+   "chapter": 4,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "카자미의 탑",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img15 p.82"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역(カザミの塔)"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "カザミの塔",
+    "value": "바람의탑"
+   }
+  },
+  {
+   "id": "eme",
+   "name": "에메 마을",
+   "kind": "town",
+   "region": "soldis",
+   "chapter": 4,
+   "shops": {
+    "item": [
+     "res_root",
+     "discovery_bell"
+    ],
+    "weapon": []
+   },
+   "note": "사막 오아시스, 노예 시장",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img15 p.82"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "エメの町",
+    "value": "에메마을"
+   }
+  },
+  {
+   "id": "rudra",
+   "name": "루드라 항구",
+   "kind": "port",
+   "region": "soldis",
+   "chapter": 4,
+   "shops": {
+    "item": [
+     "res_root",
+     "discovery_bell"
+    ],
+    "weapon": [
+     "platinum_sword",
+     "platinum_armor"
+    ]
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img15 p.82"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ルドラの港",
+    "value": "루드라항구"
+   }
+  },
+  {
+   "id": "kaul",
+   "name": "카울 마을",
+   "kind": "town",
+   "region": "soldis",
+   "chapter": 4,
+   "shops": {
+    "item": [
+     "res_root",
+     "discovery_bell"
+    ],
+    "weapon": []
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "가울 마을",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제4장"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ],
+     "note": "txt 는 본문 카울·표제 가울"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "カウルの村",
+    "value": "카울마을"
+   }
+  },
+  {
+   "id": "windbreak_cave",
+   "name": "방풍의 동굴",
+   "kind": "dungeon",
+   "region": "soldis",
+   "chapter": 4,
+   "note": "아크담과의 결전 장소",
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.70"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "바람막이 동굴",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제4장"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img16 p.83"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "바람막이 구멍",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.136"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "風よけの穴",
+    "value": "방풍의동굴"
+   }
+  },
+  {
+   "id": "lishel",
+   "name": "리셸 항구",
+   "kind": "port",
+   "region": "moreston",
+   "chapter": 5,
+   "shops": {
+    "item": [
+     "res_root",
+     "elixir"
+    ],
+    "weapon": [
+     "ceramic_sword"
+    ]
+   },
+   "note": "소매치기가 있다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.70"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "リシェールの港",
+    "value": "리셸항구"
+   }
+  },
+  {
+   "id": "nasul",
+   "name": "나슬 마을",
+   "kind": "town",
+   "region": "moreston",
+   "chapter": 5,
+   "shops": {
+    "item": [
+     "res_root",
+     "elixir"
+    ],
+    "weapon": [
+     "holy_sword",
+     "holy_armor",
+     "holy_shield"
+    ]
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img17 p.84"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ナスールの町",
+    "value": "나슬마을"
+   }
+  },
+  {
+   "id": "faeto",
+   "name": "파에토 마을",
+   "kind": "town",
+   "region": "moreston",
+   "chapter": 5,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "파에트",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img19 p.86"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ファエトの村",
+    "value": "파에토마을"
+   }
+  },
+  {
+   "id": "fangas",
+   "name": "판가스",
+   "kind": "town",
+   "region": "moreston",
+   "chapter": 5,
+   "shops": {
+    "item": [
+     "warp_feather",
+     "warp_wing"
+    ],
+    "weapon": [
+     "diamond_staff",
+     "diamond_sword",
+     "diamond_armor",
+     "diamond_shield"
+    ]
+   },
+   "note": "도적의 마을",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "판가스 마을",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제5장"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.136"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.136"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    },
+    {
+     "field": "name",
+     "value": "광가스",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img18 p.85"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ファンガス",
+    "value": "판가스"
+   }
+  },
+  {
+   "id": "wolf_mouth",
+   "name": "늑대의 입",
+   "kind": "dungeon",
+   "region": "moreston",
+   "chapter": 5,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.73"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "늑대의 굴",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img17 p.84"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img18 p.85"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "狼の口",
+    "value": "늑대의입"
+   }
+  },
+  {
+   "id": "colcus",
+   "name": "콜크스 마을",
+   "kind": "town",
+   "region": "moreston",
+   "chapter": 5,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.127"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "콜쿠스",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img18 p.85"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "コルクスの町",
+    "value": "콜크스마을"
+   }
+  },
+  {
+   "id": "crystal_tower",
+   "name": "수정의 탑",
+   "kind": "tower",
+   "region": "moreston",
+   "chapter": 5,
+   "note": "빛의 엘리베이터로 5층",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img18 p.85"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "수정탑",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.136"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "水晶の塔",
+    "value": "수정의탑"
+   }
+  },
+  {
+   "id": "wulf_pil",
+   "name": "울프·필",
+   "kind": "other",
+   "region": "moreston",
+   "chapter": 5,
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역. 고문서 속 이름, 늑대의 입을 가리킴",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img19 p.86"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "jagri",
+   "name": "쟈그리",
+   "kind": "region",
+   "region": "iselhasa",
+   "chapter": 6,
+   "note": "죄수 유배지",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "온리크 북부 자치령",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img20 p.87"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역. 같은 지역인지 불확실"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ジャグリ",
+    "value": "쟈그리"
+   }
+  },
+  {
+   "id": "fin_fort",
+   "name": "핀 요새",
+   "kind": "fort",
+   "region": "jagri",
+   "chapter": 6,
+   "note": "돈으로 살 수 있는 최강 장비. 나갈 때 소지금 절반을 뇌물로",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "핀의 요새",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "핀 마을",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img20 p.87"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "フィーンの砦",
+    "value": "핀요새"
+   }
+  },
+  {
+   "id": "gilmoa",
+   "name": "길모아 마을",
+   "kind": "town",
+   "region": "jagri",
+   "chapter": 6,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "길모어",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img20 p.87"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ギルモアの里",
+    "value": "길모아마을"
+   }
+  },
+  {
+   "id": "gilmoa_ruins",
+   "name": "고대 유적",
+   "kind": "dungeon",
+   "region": "jagri",
+   "chapter": 6,
+   "note": "길모아 지하",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.140"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gilmoa_church",
+   "name": "길모아의 교회",
+   "kind": "church",
+   "region": "jagri",
+   "chapter": 6,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "old_mine",
+   "name": "폐광",
+   "kind": "dungeon",
+   "region": "jagri",
+   "chapter": 6,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.73"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "쟈그리 폐광",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.139"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "자그리 폐광",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.141"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "길모아의 폐광",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.73"
+      }
+     ],
+     "note": "지도 제목"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "廃坑",
+    "value": "폐광"
+   }
+  },
+  {
+   "id": "rastaban",
+   "name": "라스타반",
+   "kind": "town",
+   "region": "iselhasa",
+   "chapter": 6,
+   "note": "숨겨진 마을, 모든 주문 습득",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img21 p.88"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "라스타판",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.137"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "다스타반",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ラスタバン",
+    "value": "라스타반"
+   }
+  },
+  {
+   "id": "nirgid",
+   "name": "니르기드",
+   "kind": "castle",
+   "region": "iselhasa",
+   "chapter": 6,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.140"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "니르기드 성",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 종장"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.139"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.140"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    },
+    {
+     "field": "name",
+     "value": "닐기드라",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.137"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "닐기드성",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img21 p.88"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ニルギド",
+    "value": "니르기드"
+   }
+  },
+  {
+   "id": "gira_road",
+   "name": "기라의 길",
+   "kind": "dungeon",
+   "region": "iselhasa",
+   "chapter": 6,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.73"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "기라의 동굴",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img21 p.88"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ギーラの道",
+    "value": "기라의길"
+   }
+  },
+  {
+   "id": "basel_tower",
+   "name": "바젤의 탑",
+   "kind": "tower",
+   "region": "iselhasa",
+   "chapter": 6,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.140"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "바빌의 탑",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.72"
+      }
+     ],
+     "note": "본문·지도 제목. 지도 안 화면 표기는 바젤의 탑"
+    },
+    {
+     "field": "name",
+     "value": "바젤탑",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img21 p.88"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "バゼルの塔",
+    "value": "바젤의탑"
+   }
+  },
+  {
+   "id": "vanis",
+   "name": "바니스 성",
+   "kind": "castle",
+   "region": "iselhasa",
+   "chapter": 6,
+   "note": "끝에 문 둘, 오른쪽은 빛의 검으로",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.71"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "바니스의 성",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.72"
+      }
+     ],
+     "note": "지도 제목"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "バーニス城",
+    "value": "바니스성"
+   }
+  },
+  {
+   "id": "baruazus",
+   "name": "바르아즈스섬",
+   "kind": "island",
+   "region": "iselhasa",
+   "chapter": 6,
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역. 최종 미궁이 있는 섬",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img21 p.88"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "バルアズス島",
+    "value": "바르아즈스섬"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "발아즈스섬",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img21 p.88"
+      }
+     ],
+     "note": "MSX 잡지 표기 — 우리 정본을 따름"
+    }
+   ]
+  },
+  {
+   "id": "mad_sea",
+   "name": "미친바다",
+   "kind": "sea",
+   "region": "iselhasa",
+   "chapter": 6,
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img21 p.88"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "marus",
+   "name": "마루스",
+   "kind": "port",
+   "region": "moreston",
+   "chapter": 5,
+   "note": "gamepia 만, 판독·정체 불확실(리셸 항구 자리)",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    }
+   ],
+   "glossary": null
+  }
+ ],
+ "spells": [
+  {
+   "id": "fram",
+   "name": "프람",
+   "type": "공격",
+   "max_level": 5,
+   "mp": null,
+   "effect": "불 속성 공격",
+   "type_gw": "공격",
+   "jp_msx": "フラム",
+   "learned": [
+    "로우가 프람3을 남김(마스쿤, 2장)"
+   ],
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.72"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "프림",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.69"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "フラム",
+    "value": "프람"
+   }
+  },
+  {
+   "id": "igna",
+   "name": "이그나",
+   "type": "공격",
+   "max_level": 5,
+   "mp": null,
+   "effect": "전기 속성 공격",
+   "type_gw": "공격",
+   "jp_msx": "イガナ",
+   "note": "jp_msx 는 지면 그대로(イグナ 의 오식 추정)",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "이그너",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.134"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "イグナ",
+    "value": "이그나"
+   }
+  },
+  {
+   "id": "hyul",
+   "name": "휼",
+   "type": "공격",
+   "max_level": 5,
+   "mp": null,
+   "effect": "얼음 속성 공격",
+   "type_gw": "공격",
+   "jp_msx": "ヒュール",
+   "learned": [
+    "노부부의 집 오셀로(gamecom 은 휼2 추천)"
+   ],
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ヒュール",
+    "value": "휼"
+   }
+  },
+  {
+   "id": "obis",
+   "name": "오비스",
+   "type": "공격",
+   "max_level": 3,
+   "mp": null,
+   "effect": "적 하나를 일격에 없앰",
+   "type_gw": "공격",
+   "jp_msx": "オビス",
+   "note": "아크담·아그니쟈는 오비스4 사용(gameworld)",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "オビス",
+    "value": "오비스"
+   }
+  },
+  {
+   "id": "saktas",
+   "name": "사크타스",
+   "type": "공격",
+   "max_level": 4,
+   "mp": null,
+   "effect": "적 HP를 빼앗아 자기 HP로",
+   "type_gw": "공격",
+   "jp_msx": "サクタス",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.72"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "サクタス",
+    "value": "사크타스"
+   }
+  },
+  {
+   "id": "inpers",
+   "name": "인파스",
+   "type": "보조",
+   "max_level": 4,
+   "mp": null,
+   "effect": "공격력 상승",
+   "type_gw": "공격보조",
+   "jp_msx": "インパス",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "인퍼스",
+     "src": [
+      {
+       "guide": "txt_magic",
+       "loc": "전체"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "인파스",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img10 p.95"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "인피스",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.69"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.72"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "인디스",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "インパス",
+    "value": "인파스"
+   }
+  },
+  {
+   "id": "tute",
+   "name": "튜트",
+   "type": "보조",
+   "max_level": 4,
+   "mp": null,
+   "effect": "방어력 상승",
+   "type_gw": "방어",
+   "jp_msx": "テュート",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "テュート",
+    "value": "튜트"
+   }
+  },
+  {
+   "id": "sera",
+   "name": "세라",
+   "type": "보조",
+   "max_level": 3,
+   "mp": null,
+   "effect": "민첩성 상승",
+   "type_gw": "공격보조",
+   "jp_msx": "セラ",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "セラ",
+    "value": "세라"
+   }
+  },
+  {
+   "id": "danam",
+   "name": "다남",
+   "type": "보조",
+   "max_level": 4,
+   "mp": null,
+   "effect": "적 방어력 하락",
+   "type_gw": "공격보조",
+   "jp_msx": "ダナーム",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ダナム",
+    "value": "다남"
+   }
+  },
+  {
+   "id": "hebedal",
+   "name": "헤베달",
+   "type": "보조",
+   "max_level": 3,
+   "mp": null,
+   "effect": "적 민첩성 하락",
+   "type_gw": "공격보조",
+   "jp_msx": "ヘベ",
+   "note": "jp_msx 판독 불확실(뒷글자 흐림)",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "헤베탈",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img10 p.95"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "헤에달",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.69"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ヘベタル",
+    "value": "헤베달"
+   }
+  },
+  {
+   "id": "puazo",
+   "name": "푸아조",
+   "type": "상태이상",
+   "max_level": 3,
+   "mp": null,
+   "effect": "독, 몇 턴 뒤 마비·기절",
+   "type_gw": "공격",
+   "jp_msx": "プアゾ",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "프아조",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img10 p.95"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "푸아로",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.68"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.72"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "プアゾ",
+    "value": "푸아조"
+   }
+  },
+  {
+   "id": "silent",
+   "name": "시렌트",
+   "type": "상태이상",
+   "max_level": 3,
+   "mp": null,
+   "effect": "적 하나의 주문 봉쇄",
+   "type_gw": "방어",
+   "jp_msx": "シレント",
+   "learned": [
+    "라스타반(종장, txt 는 전원 시렌트3 권장)"
+   ],
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "シレント",
+    "value": "시렌트"
+   }
+  },
+  {
+   "id": "papepia",
+   "name": "파페피아",
+   "type": "상태이상",
+   "max_level": 3,
+   "mp": null,
+   "effect": "혼란",
+   "type_gw": "공격보조",
+   "jp_msx": "パペピア",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "パペピア",
+    "value": "파페피아"
+   }
+  },
+  {
+   "id": "ho",
+   "name": "호",
+   "type": "상태이상",
+   "max_level": 3,
+   "mp": null,
+   "effect": "수면",
+   "type_gw": "공격보조",
+   "jp_msx": "ホー",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.72"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ホー",
+    "value": "호"
+   }
+  },
+  {
+   "id": "silence",
+   "name": "사이레스",
+   "type": "상태이상",
+   "max_level": 1,
+   "mp": null,
+   "effect": "적·아군 모두 주문 봉쇄",
+   "type_gw": "공격보조",
+   "jp_msx": "サイレス",
+   "learned": [
+    "구엔의 탑 4층 비석(2장)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.131"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "사일레스",
+     "src": [
+      {
+       "guide": "txt_magic",
+       "loc": "전체"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.134"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.69"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "サイレス",
+    "value": "사이레스"
+   }
+  },
+  {
+   "id": "res",
+   "name": "레스",
+   "type": "회복",
+   "max_level": 5,
+   "mp": null,
+   "effect": "HP 회복(100·250·500·1000·전부)",
+   "type_gw": "회복",
+   "jp_msx": "レス",
+   "learned": [
+    "레스2: 구엔탑 옆 오두막 노인(gameworld)",
+    "레스3: 폼(숲속 초가집)",
+    "레스5: 나슬 위쪽 노인"
+   ],
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "レス",
+    "value": "레스"
+   }
+  },
+  {
+   "id": "regina",
+   "name": "레지나",
+   "type": "회복",
+   "max_level": 1,
+   "mp": null,
+   "effect": "독 해제",
+   "type_gw": "회복",
+   "jp_msx": "レジナ",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "レジナ",
+    "value": "레지나"
+   }
+  },
+  {
+   "id": "leaf",
+   "name": "리프",
+   "type": "회복",
+   "max_level": 1,
+   "mp": null,
+   "effect": "기절한 동료를 HP 1로",
+   "type_gw": "회복",
+   "jp_msx": "リーフ",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "레이",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.72"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "リーフ",
+    "value": "리프"
+   }
+  },
+  {
+   "id": "ripark",
+   "name": "리파크",
+   "type": "기타",
+   "max_level": 1,
+   "mp": null,
+   "effect": "받은 주문을 반사",
+   "type_gw": "방어",
+   "jp_msx": "リパーク",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    },
+    {
+     "guide": "txt",
+     "loc": "§3"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "リパーク",
+    "value": "리파크"
+   }
+  },
+  {
+   "id": "lux",
+   "name": "룩스",
+   "type": "기타",
+   "max_level": 5,
+   "mp": null,
+   "effect": "동굴에서 시야 확보",
+   "note": "txt_magic 에 '룩스(5)'로만 적힘 — 최대 5인지 5 고정인지 불명. gameworld 표에 없다",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ルクス",
+    "value": "룩스"
+   }
+  },
+  {
+   "id": "sakuto",
+   "name": "사쿠토",
+   "type": "기타",
+   "max_level": 4,
+   "mp": null,
+   "effect": "적 MP를 빼앗아 자기 MP로",
+   "type_gw": "공격보조",
+   "jp_msx": "サクト",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.72"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "사크트",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img10 p.95"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "サクト",
+    "value": "사쿠토"
+   }
+  },
+  {
+   "id": "warp",
+   "name": "워프",
+   "type": "이동",
+   "max_level": 2,
+   "mp": null,
+   "effect": "1=마지막 들른 마을, 2=골라서 이동",
+   "type_gw": "이동",
+   "jp_msx": "ワープ",
+   "note": "워프2는 동굴 안에서 못 씀(gamepia). txt_magic 목록엔 없다",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ワプ",
+    "value": "워프"
+   }
+  }
+ ],
+ "items": [
+  {
+   "id": "res_leaf",
+   "name": "레스의 잎",
+   "kind": "consumable",
+   "effect": "HP 500 회복(레스3 상당)",
+   "price": null,
+   "where": [
+    "shop:ludia",
+    "shop:cruise",
+    "shop:neria",
+    "shop:rondo",
+    "shop:mascoon",
+    "shop:liesel",
+    "shop:suel",
+    "shop:amda",
+    "shop:nash",
+    "shop:yordo",
+    "shop:seris"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장 상점"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "レスの葉",
+    "value": "레스의 잎"
+   }
+  },
+  {
+   "id": "res_root",
+   "name": "레스의 뿌리",
+   "kind": "consumable",
+   "effect": "HP 1500 회복(레스4 상당)",
+   "price": null,
+   "where": [
+    "shop:bazunoon",
+    "shop:eme",
+    "shop:rudra",
+    "shop:kaul",
+    "shop:lishel",
+    "shop:nasul"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장 상점"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 제5장 상점"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "レスの根",
+    "value": "레스의 뿌리"
+   }
+  },
+  {
+   "id": "antidote_herb",
+   "name": "해독초",
+   "kind": "consumable",
+   "effect": "독 해제",
+   "price": null,
+   "where": [
+    "shop:ludia",
+    "shop:neria"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장 상점"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img03 p.88"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "毒消し草",
+    "value": "해독초"
+   }
+  },
+  {
+   "id": "antidote",
+   "name": "해독제",
+   "kind": "consumable",
+   "effect": "독 해제(추정)",
+   "price": null,
+   "where": [
+    "shop:cruise"
+   ],
+   "note": "txt 크루즈 상점에만. 해독초와 같은 것인지 불명",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장 상점"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "medicine",
+   "name": "약",
+   "kind": "consumable",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:liesel"
+   ],
+   "note": "txt 리젤 상점에만, 효과 미기재",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "気付けぐすり",
+    "value": "약"
+   }
+  },
+  {
+   "id": "vis_fruit",
+   "name": "비스의 열매",
+   "kind": "consumable",
+   "effect": "MP 회복",
+   "price": null,
+   "where": [
+    "shop:suel",
+    "shop:amda",
+    "shop:nash",
+    "shop:yordo",
+    "shop:seris"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "피스의 열매",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img21 p.88"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ビスの実",
+    "value": "비스의 열매"
+   }
+  },
+  {
+   "id": "elixir",
+   "name": "에릭서",
+   "kind": "consumable",
+   "effect": "기절자 부활+HP·MP 전부 회복",
+   "price": null,
+   "where": [
+    "shop:lishel",
+    "shop:nasul"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장 상점"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.140"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "엘릭서",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img04 p.89"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img12 p.79"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "エリクサー",
+    "value": "에릭서"
+   }
+  },
+  {
+   "id": "rum",
+   "name": "럼주",
+   "kind": "consumable",
+   "effect": "전투 중 기절한 동료를 깨움; 보아드에게 주면 폭약",
+   "price": 1000,
+   "where": [
+    "bar:seris"
+   ],
+   "note": "가격 1000 Gold 는 gamecom p.135 스크린샷 판독(흐림)",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img15 p.82"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ラム酒",
+    "value": "럼주"
+   }
+  },
+  {
+   "id": "torch",
+   "name": "횃불",
+   "kind": "consumable",
+   "effect": "동굴에서 시야 확보(시간 제한)",
+   "price": null,
+   "where": [
+    "shop:rondo",
+    "shop:mascoon",
+    "shop:nash",
+    "shop:yordo"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "たいまつ",
+    "value": "횃불"
+   }
+  },
+  {
+   "id": "lumen_lamp",
+   "name": "루멘의 램프",
+   "kind": "tool",
+   "effect": "횃불을 무제한으로",
+   "price": null,
+   "where": null,
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "루멘의 렘프",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 종장"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ルメンのランプ",
+    "value": "루멘의 램프"
+   }
+  },
+  {
+   "id": "yoshua_eye",
+   "name": "요슈아의 눈",
+   "kind": "consumable",
+   "effect": "현재 위치 지도(1회)",
+   "price": null,
+   "where": [
+    "shop:ludia"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장 상점"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.72"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "요수아의 눈",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ヨシュアの目",
+    "value": "요슈아의 눈"
+   }
+  },
+  {
+   "id": "yoshua_mirror",
+   "name": "요슈아의 거울",
+   "kind": "tool",
+   "effect": "지도 표시(무제한)",
+   "price": null,
+   "where": [
+    "trial_cave"
+   ],
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.131"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.72"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "요수아의 거울",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.72"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ヨシュアの鏡",
+    "value": "요슈아의 거울"
+   }
+  },
+  {
+   "id": "discovery_bell",
+   "name": "발견의 방울",
+   "kind": "consumable",
+   "effect": "적을 잠시 보이게",
+   "price": null,
+   "where": [
+    "shop:mascoon",
+    "shop:bazunoon",
+    "shop:eme",
+    "shop:rudra",
+    "shop:kaul"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 제4장 상점"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.72"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "출현의 방울",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img04 p.89"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img09 p.94"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "あらわしの鈴",
+    "value": "발견의 방울"
+   }
+  },
+  {
+   "id": "discovery_flute",
+   "name": "발견의 피리",
+   "kind": "tool",
+   "effect": "적을 계속 보이게",
+   "price": null,
+   "where": [
+    "wolf_mouth"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.72"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "출현의 피리",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img04 p.89"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img18 p.85"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "あらわしの笛",
+    "value": "발견의 피리"
+   }
+  },
+  {
+   "id": "warp_feather",
+   "name": "워프의 깃털",
+   "kind": "consumable",
+   "effect": "마지막 들른 마을로(워프1 상당)",
+   "price": null,
+   "where": [
+    "shop:rondo",
+    "shop:mascoon",
+    "shop:liesel",
+    "shop:fangas"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 제5장 상점"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ワプの羽",
+    "value": "워프의 깃털"
+   }
+  },
+  {
+   "id": "warp_wing",
+   "name": "워프의 날개",
+   "kind": "consumable",
+   "effect": "골라서 이동(워프2 상당), 동굴 불가",
+   "price": null,
+   "where": [
+    "shop:liesel",
+    "shop:fangas"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 제5장 상점"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "워프의 나개",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제2장"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "위프의 날개",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.135"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ワプの翼",
+    "value": "워프의 날개"
+   }
+  },
+  {
+   "id": "luck_tarot",
+   "name": "행운의 타로트",
+   "kind": "consumable",
+   "effect": "아군 운 상승",
+   "price": null,
+   "where": [
+    "neria(밀매상)"
+   ],
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img20 p.87"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "幸運のタロット",
+    "value": "행운의 타로트"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "행운의 타롯트",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img04 p.89"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img20 p.87"
+      }
+     ],
+     "note": "MSX 잡지 표기 — 우리 정본을 따름"
+    }
+   ]
+  },
+  {
+   "id": "misfortune_tarot",
+   "name": "불행의 타로트",
+   "kind": "consumable",
+   "effect": "적 운 하락",
+   "price": null,
+   "where": [
+    "neria(밀매상)"
+   ],
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img04 p.89"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img20 p.87"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "不幸のタロット",
+    "value": "불행의 타로트"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "불행의 타롯트",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img04 p.89"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img20 p.87"
+      }
+     ],
+     "note": "MSX 잡지 표기 — 우리 정본을 따름"
+    }
+   ]
+  },
+  {
+   "id": "sleep_herb",
+   "name": "수면초",
+   "kind": "key",
+   "effect": "콜크스 불면증 남자에게 전달",
+   "price": null,
+   "where": [
+    "fangas(홀)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "수몬초",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "眠り草",
+    "value": "수면초"
+   }
+  },
+  {
+   "id": "sleep_drug",
+   "name": "잠자는 약",
+   "kind": "consumable",
+   "effect": "전투 중 수면 유발",
+   "price": null,
+   "where": [
+    "fangas(암시장)"
+   ],
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img18 p.85"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "explosive",
+   "name": "폭약",
+   "kind": "key",
+   "effect": "국경의 동굴 바위 파괴",
+   "price": null,
+   "where": [
+    "pirate_island(럼주 1병당 1개)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img15 p.82"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "화약",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.135"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "バクヤク",
+    "value": "폭약"
+   }
+  },
+  {
+   "id": "strange_potion",
+   "name": "이상한 물약",
+   "kind": "consumable",
+   "effect": "전투 중 상대 MP를 몽땅 빼앗음",
+   "price": null,
+   "where": [
+    "pirate_island(해적 게임 7연승)"
+   ],
+   "sell": 22500,
+   "note": "gamecom 만. 같은 보상을 txt 는 궁극의 로브, gameworld 는 엘릭서라 함",
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "lottery",
+   "name": "복권",
+   "kind": "key",
+   "effect": "종장에 랄파에서 당첨금 50000 Gold",
+   "price": null,
+   "where": [
+    "ralfa(복권 가게)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img20 p.87"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "clay",
+   "name": "점토",
+   "kind": "key",
+   "effect": "구엔의 탑 문 열쇠본 뜨기",
+   "price": null,
+   "where": [
+    "ralfa(도구점)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.130"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "粘土",
+    "value": "점토"
+   }
+  },
+  {
+   "id": "guen_key",
+   "name": "구엔의 탑 열쇠",
+   "kind": "key",
+   "effect": "구엔의 탑 4층 문",
+   "price": null,
+   "where": [
+    "ralfa(열쇠 가게)"
+   ],
+   "note": "이름은 우리가 붙인 설명명",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img09 p.94"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "stele_fragment",
+   "name": "비석 조각",
+   "kind": "key",
+   "effect": "사이레스 비석 복원",
+   "price": null,
+   "where": [
+    "gale"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img09 p.94"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "gilmoa_tears",
+   "name": "길모아의 눈물",
+   "kind": "key",
+   "effect": "철을 거부하는 힘의 보석(펜던트)",
+   "price": null,
+   "where": [
+    "ferisia(1장 끝)"
+   ],
+   "note": "빛의 검의 보석 하나",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.129"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "길모어의 눈물",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img06 p.91"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ギルモアの涙",
+    "value": "길모아의 눈물"
+   }
+  },
+  {
+   "id": "gilmoa_star",
+   "name": "길모아의 별",
+   "kind": "key",
+   "effect": "라느라 왕가의 보물, 빛의 검의 보석",
+   "price": null,
+   "where": [
+    "royal_tomb"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.140"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "길모어의 별",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img13 p.80"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ギルモアの星",
+    "value": "길모아의 별"
+   }
+  },
+  {
+   "id": "gilmoa_rainbow",
+   "name": "길모아의 무지개",
+   "kind": "key",
+   "effect": "솔디스의 보물(아그니쟈 손에 넘어감)",
+   "price": null,
+   "where": null,
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.70"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "길모어의 무지개",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img16 p.83"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ギルモアの虹",
+    "value": "길모아의 무지개"
+   }
+  },
+  {
+   "id": "golden_key",
+   "name": "황금의 열쇠",
+   "kind": "key",
+   "effect": "왕가의 묘 입구",
+   "price": null,
+   "where": [
+    "fisher_yordo"
+   ],
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img13 p.80"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "황금 열쇠",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제3장"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.133"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "黄金のかぎ",
+    "value": "황금의 열쇠"
+   }
+  },
+  {
+   "id": "sun_stone",
+   "name": "태양의 돌",
+   "kind": "key",
+   "effect": "황금의 열쇠에 박혀 있던 보석",
+   "price": null,
+   "where": [
+    "boad"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "太陽の石",
+    "value": "태양의 돌"
+   }
+  },
+  {
+   "id": "dragon_tears",
+   "name": "용의 눈물",
+   "kind": "key",
+   "effect": "용의 알에 들어가는 데 필요한 보석",
+   "price": null,
+   "where": [
+    "riston"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.133"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "竜の涙",
+    "value": "용의 눈물"
+   }
+  },
+  {
+   "id": "dragon_cloth",
+   "name": "드래곤의 천",
+   "kind": "key",
+   "effect": "연의 재료(새끼 드래곤 솜털)",
+   "price": null,
+   "where": [
+    "boil"
+   ],
+   "note": "보일이 1500만 골드라 부른다(gamecom·gameworld)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img16 p.83"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "용의 천",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ドラゴンの布",
+    "value": "드래곤의 천"
+   }
+  },
+  {
+   "id": "kite",
+   "name": "연",
+   "kind": "key",
+   "effect": "바즈눈 성 3층으로 날아감",
+   "price": null,
+   "where": [
+    "harry"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.70"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "dragon_flute",
+   "name": "용의 피리",
+   "kind": "key",
+   "effect": "드래곤을 불러 타고 이동",
+   "price": null,
+   "where": [
+    "boil(종장)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "용피리",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.137"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "드래곤의 피리",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img21 p.88"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "竜の笛",
+    "value": "용의 피리"
+   }
+  },
+  {
+   "id": "silver_flute",
+   "name": "은의 피리",
+   "kind": "key",
+   "effect": "수정의 탑 빛의 엘리베이터 작동",
+   "price": null,
+   "where": [
+    "wolf_mouth"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.138"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img18 p.85"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "은대롱",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.136"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.137"
+      },
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      }
+     ],
+     "note": "대사 표현 — 정체를 알기 전 호칭(「…은대롱… …은의 피리…」). 아이템 이름은 은의 피리"
+    },
+    {
+     "field": "name",
+     "value": "은피리",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "銀の笛",
+    "value": "은의 피리"
+   }
+  },
+  {
+   "id": "golden_card",
+   "name": "황금의 카드",
+   "kind": "key",
+   "effect": "수정의 탑 문을 여는 카드",
+   "price": null,
+   "where": [
+    "hans"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.138"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img18 p.85"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "황금 카드",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.137"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "황금의 판",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      }
+     ],
+     "note": "1회"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "黄金のカード",
+    "value": "황금의 카드"
+   }
+  },
+  {
+   "id": "ancient_document",
+   "name": "고대 문서",
+   "kind": "key",
+   "effect": "빛의 엘리베이터 기록",
+   "price": null,
+   "where": [
+    "crystal_tower"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.138"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "고문서",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img19 p.86"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "ancient_book",
+   "name": "고대의 책",
+   "kind": "key",
+   "effect": "빛의 검에 관한 기록",
+   "price": null,
+   "where": [
+    "gilmoa_ruins"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.140"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "고대의 무기책",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img21 p.88"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "jagri_map",
+   "name": "쟈그리의 지도",
+   "kind": "key",
+   "effect": "도르가스 집의 지도",
+   "price": null,
+   "where": [
+    "gilmoa(도르가스의 집)"
+   ],
+   "note": "txt·gamecom 은 그냥 '지도'",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.140"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ジャグリの地図",
+    "value": "쟈그리의 지도"
+   }
+  },
+  {
+   "id": "candlestick",
+   "name": "촛대",
+   "kind": "key",
+   "effect": "빛의 검의 본체",
+   "price": null,
+   "where": [
+    "priest_gilmoa"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.141"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "쇼크타이",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img20 p.87"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img21 p.88"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역(しょく台 를 음차)"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "しょく台",
+    "value": "촛대"
+   }
+  },
+  {
+   "id": "royal_sword",
+   "name": "왕가의 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "elaster(시작)",
+    "pirate_island(해적 게임 약 22승)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.128"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "王家のつるぎ",
+    "value": "왕가의 검"
+   }
+  },
+  {
+   "id": "knife",
+   "name": "나이프",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:ludia",
+    "ryunan(감옥)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장 상점"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ナイフ",
+    "value": "나이프"
+   }
+  },
+  {
+   "id": "small_sword",
+   "name": "소형검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:ludia"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "小型のつるぎ",
+    "value": "소형검"
+   }
+  },
+  {
+   "id": "bronze_sword",
+   "name": "청동검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:neria"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "青銅のつるぎ",
+    "value": "청동검"
+   }
+  },
+  {
+   "id": "iron_spear",
+   "name": "철창",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:rondo"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img07 p.92"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "鉄のやり",
+    "value": "철창"
+   }
+  },
+  {
+   "id": "iron_sword",
+   "name": "철검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:mascoon"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "鉄のつるぎ",
+    "value": "철검"
+   }
+  },
+  {
+   "id": "steel_spear",
+   "name": "강철창",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:mascoon"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "はがねのやり",
+    "value": "강철창"
+   }
+  },
+  {
+   "id": "steel_sword",
+   "name": "강철검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:liesel"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "はがねのつるぎ",
+    "value": "강철검"
+   }
+  },
+  {
+   "id": "silver_staff",
+   "name": "은의 지팡이",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:nash"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "銀の杖",
+    "value": "은의 지팡이"
+   }
+  },
+  {
+   "id": "silver_sword",
+   "name": "은검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:nash"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "銀のつるぎ",
+    "value": "은검"
+   }
+  },
+  {
+   "id": "crystal_staff",
+   "name": "수정의 지팡이",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:yordo"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "水晶の杖",
+    "value": "수정의 지팡이"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "수정 지팡이",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제3장 상점"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    }
+   ]
+  },
+  {
+   "id": "crystal_spear",
+   "name": "수정창",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:yordo"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "水晶のやり",
+    "value": "수정창"
+   }
+  },
+  {
+   "id": "crystal_sword",
+   "name": "수정검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:seris"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "水晶のつるぎ",
+    "value": "수정검"
+   }
+  },
+  {
+   "id": "platinum_sword",
+   "name": "백금 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:rudra"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "プラチナの剣",
+    "value": "백금검"
+   }
+  },
+  {
+   "id": "platinum_spear",
+   "name": "백금 창",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "border_cave"
+   ],
+   "src": [
+    {
+     "guide": "softcom",
+     "loc": "p.70"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "プラチナのやり",
+    "value": "백금창"
+   }
+  },
+  {
+   "id": "ceramic_sword",
+   "name": "세라믹검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:lishel"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "セラミックの剣",
+    "value": "세라믹검"
+   }
+  },
+  {
+   "id": "holy_sword",
+   "name": "성스러운 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:nasul"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장 상점"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.71"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "聖なるつるぎ",
+    "value": "성스러운 검"
+   }
+  },
+  {
+   "id": "diamond_staff",
+   "name": "다이아의 지팡이",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:fangas"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ダイヤの杖",
+    "value": "다이아의 지팡이"
+   }
+  },
+  {
+   "id": "diamond_sword",
+   "name": "다이아의 검",
+   "kind": "weapon",
+   "effect": "프람·불에 녹는다",
+   "price": null,
+   "where": [
+    "shop:fangas"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장 상점"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ダイヤのつるぎ",
+    "value": "다이아의 검"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "다이아 검",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제5장 상점"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.137"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    }
+   ]
+  },
+  {
+   "id": "golden_sword",
+   "name": "황금의 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "wolf_mouth(왼쪽 방)"
+   ],
+   "sell": 225000,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img19 p.86"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "황금검",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.138"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "黄金のつるぎ",
+    "value": "황금의 검"
+   }
+  },
+  {
+   "id": "shower_sword",
+   "name": "소나기의 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "pirate_island(해적 게임 약 19승 더)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "소나기 검",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제3장"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ムラサメの刀",
+    "value": "소나기의 검"
+   }
+  },
+  {
+   "id": "ice_staff",
+   "name": "얼음의 지팡이",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "pirate_island(해적 게임 약 25승)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "氷の杖",
+    "value": "얼음의 지팡이"
+   }
+  },
+  {
+   "id": "flame_staff",
+   "name": "불의 지팡이",
+   "kind": "weapon",
+   "effect": "프람 효과",
+   "price": null,
+   "where": [
+    "hernild 처치"
+   ],
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "炎の杖",
+    "value": "불의 지팡이"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "불꽃의 지팡이",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.132"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img10 p.95"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    }
+   ]
+  },
+  {
+   "id": "warrior_sword",
+   "name": "전사의 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "fin_fort"
+   ],
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img20 p.87"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "戦士のつるぎ",
+    "value": "전사의 검"
+   }
+  },
+  {
+   "id": "light_sword",
+   "name": "빛의 검",
+   "kind": "weapon",
+   "effect": "아그니쟈를 쓰러뜨릴 무기(2자루)",
+   "price": null,
+   "where": [
+    "candlestick+gilmoa_tears+gilmoa_star"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.140"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img21 p.88"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "光のつるぎ",
+    "value": "빛의 검"
+   }
+  },
+  {
+   "id": "royal_armor",
+   "name": "왕가의 갑옷",
+   "kind": "armor",
+   "effect": "팔 수 없음",
+   "price": null,
+   "where": [
+    "elaster(시작)",
+    "pirate_island(7연승 뒤 1승)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "王家のヨロイ",
+    "value": "왕가의 갑옷"
+   }
+  },
+  {
+   "id": "explorer_clothes",
+   "name": "탐험자의 옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:ludia"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "冒険者の服",
+    "value": "탐험자의 옷"
+   }
+  },
+  {
+   "id": "leather_armor",
+   "name": "가죽 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:ludia"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "革のヨロイ",
+    "value": "가죽 갑옷"
+   }
+  },
+  {
+   "id": "bronze_armor",
+   "name": "청동 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:neria"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "青銅のヨロイ",
+    "value": "청동 갑옷"
+   }
+  },
+  {
+   "id": "chain_mail",
+   "name": "사슬 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:rondo"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "미늘 갑옷",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제2장 상점"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "사슬갑옷",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img07 p.92"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "くさりかたびら",
+    "value": "사슬 갑옷"
+   }
+  },
+  {
+   "id": "iron_armor",
+   "name": "철 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:mascoon"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "鉄のヨロイ",
+    "value": "철 갑옷"
+   }
+  },
+  {
+   "id": "steel_armor",
+   "name": "강철 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:liesel"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "はがねのヨロイ",
+    "value": "강철 갑옷"
+   }
+  },
+  {
+   "id": "silver_armor",
+   "name": "은 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:nash"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "銀のヨロイ",
+    "value": "은 갑옷"
+   }
+  },
+  {
+   "id": "silk_clothes",
+   "name": "비단 옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:yordo"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "絹のローブ",
+    "value": "비단 옷"
+   }
+  },
+  {
+   "id": "crystal_armor",
+   "name": "수정 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:seris"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "水晶のヨロイ",
+    "value": "수정 갑옷"
+   }
+  },
+  {
+   "id": "commoner_clothes",
+   "name": "천민의 옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:seris"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "platinum_armor",
+   "name": "백금 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:rudra"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "プラチナの鎧",
+    "value": "백금 갑옷"
+   }
+  },
+  {
+   "id": "holy_armor",
+   "name": "성스러운 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:nasul"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "聖なるヨロイ",
+    "value": "성스러운 갑옷"
+   }
+  },
+  {
+   "id": "diamond_armor",
+   "name": "다이아 갑옷",
+   "kind": "armor",
+   "effect": "프람·불에 녹는다",
+   "price": null,
+   "where": [
+    "shop:fangas",
+    "pirate_island(해적 게임 약 27승)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장 상점"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ダイヤのヨロイ",
+    "value": "다이아 갑옷"
+   }
+  },
+  {
+   "id": "ultimate_robe",
+   "name": "궁극의 로브",
+   "kind": "armor",
+   "effect": "팔 수 없음",
+   "price": null,
+   "where": [
+    "pirate_island(해적 게임 7연승)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "궁그의 로브",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제3장"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "究極のローブ",
+    "value": "궁극의 로브"
+   }
+  },
+  {
+   "id": "wind_robe",
+   "name": "바람의 로브",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "wolf_mouth"
+   ],
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img18 p.85"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "風のローブ",
+    "value": "바람의 로브"
+   }
+  },
+  {
+   "id": "battle_suit",
+   "name": "배틀슈트",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "fin_fort"
+   ],
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img20 p.87"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "バトルスーツ",
+    "value": "배틀슈트"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "배틀 슈츠",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img20 p.87"
+      }
+     ],
+     "note": "MSX 잡지 표기 — 우리 정본을 따름"
+    }
+   ]
+  },
+  {
+   "id": "royal_shield",
+   "name": "왕가의 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": null,
+   "where": [
+    "elaster(시작)"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "王家のたて",
+    "value": "왕가의 방패"
+   }
+  },
+  {
+   "id": "leather_shield",
+   "name": "가죽 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:ludia"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "革のたて",
+    "value": "가죽 방패"
+   }
+  },
+  {
+   "id": "bronze_shield",
+   "name": "청동 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:neria"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "青銅のたて",
+    "value": "청동 방패"
+   }
+  },
+  {
+   "id": "iron_shield",
+   "name": "철 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:mascoon"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "鉄のたて",
+    "value": "철 방패"
+   }
+  },
+  {
+   "id": "steel_shield",
+   "name": "강철 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:liesel"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "はがねのたて",
+    "value": "강철 방패"
+   }
+  },
+  {
+   "id": "silver_shield",
+   "name": "은 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:nash"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "銀のたて",
+    "value": "은 방패"
+   }
+  },
+  {
+   "id": "crystal_shield",
+   "name": "수정 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:yordo",
+    "shop:seris"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "水晶のたて",
+    "value": "수정 방패"
+   }
+  },
+  {
+   "id": "platinum_shield",
+   "name": "백금 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": null,
+   "where": [
+    "border_cave"
+   ],
+   "src": [
+    {
+     "guide": "softcom",
+     "loc": "p.70"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "プラチナのたて",
+    "value": "백금 방패"
+   }
+  },
+  {
+   "id": "holy_shield",
+   "name": "성스러운 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": null,
+   "where": [
+    "shop:nasul"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "聖なるたて",
+    "value": "성스러운 방패"
+   }
+  },
+  {
+   "id": "diamond_shield",
+   "name": "다이아 방패",
+   "kind": "shield",
+   "effect": "프람·불에 녹는다",
+   "price": null,
+   "where": [
+    "shop:fangas"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장 상점"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ダイヤのたて",
+    "value": "다이아 방패"
+   }
+  },
+  {
+   "id": "ancient_shield",
+   "name": "고대의 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": null,
+   "where": [
+    "fin_fort"
+   ],
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img20 p.87"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "いにしえのたて",
+    "value": "고대의 방패"
+   }
+  },
+  {
+   "id": "opna_ring",
+   "name": "오프나의 반지",
+   "kind": "accessory",
+   "effect": "공격력 상승",
+   "price": null,
+   "where": [
+    "trial_cave"
+   ],
+   "note": "gamepia 표기가 정발판 공략의 유일한 근거",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img03 p.88"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img09 p.94"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "오프너의 반지",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.134"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "オプナのゆびわ",
+    "value": "오프나의 반지"
+   }
+  },
+  {
+   "id": "quick_ring",
+   "name": "퀵의 반지",
+   "kind": "accessory",
+   "effect": "속도 상승",
+   "price": null,
+   "where": [
+    "royal_tomb"
+   ],
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역. 정발판 공략엔 이름이 안 나온다",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img03 p.88"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img14 p.81"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "クイクのゆびわ",
+    "value": "퀵의 반지"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "쿠이크의 반지",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img03 p.88"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img14 p.81"
+      }
+     ],
+     "note": "MSX 잡지 표기 — 우리 정본을 따름"
+    }
+   ]
+  },
+  {
+   "id": "tute_ring",
+   "name": "튜트의 반지",
+   "kind": "accessory",
+   "effect": "방어력 상승",
+   "price": null,
+   "where": [
+    "royal_tomb"
+   ],
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img03 p.88"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img14 p.81"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "テュトのゆびわ",
+    "value": "튜트의 반지"
+   }
+  },
+  {
+   "id": "luck_ring",
+   "name": "행운의 반지",
+   "kind": "accessory",
+   "effect": "행운 상승",
+   "price": null,
+   "where": [
+    "border_cave"
+   ],
+   "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img03 p.88"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img15 p.82"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "幸運のゆびわ",
+    "value": "행운의 반지"
+   }
+  }
+ ],
+ "monsters": [
+  {
+   "id": "slime",
+   "name": "슬라임",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "elaster 주변"
+   ],
+   "chapter": 1,
+   "boss": false,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "スライム",
+    "value": "슬라임"
+   }
+  },
+  {
+   "id": "commander",
+   "name": "사령관",
+   "hp": 400,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "berga"
+   ],
+   "chapter": 1,
+   "boss": true,
+   "note": "사이레스 사용. HP 400 은 softcom 본문 + gameworld 스크린샷 전투 화면 표시값(MSX)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img06 p.91"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "司令官",
+    "value": "사령관"
+   }
+  },
+  {
+   "id": "agin",
+   "name": "아진",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "rondo 주변",
+    "ralfa"
+   ],
+   "chapter": 2,
+   "boss": false,
+   "note": "세 마리 무리가 강하다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.130"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img07 p.92"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "アジン",
+    "value": "아진"
+   }
+  },
+  {
+   "id": "gargo",
+   "name": "가르고",
+   "hp": 370,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "bloody_cave"
+   ],
+   "chapter": 2,
+   "boss": true,
+   "note": "휼에 약함. hp 는 gameworld 스크린샷 전투 화면 표시값(MSX)",
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.129"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img07 p.92"
+    }
+   ],
+   "alt": [
+    {
+     "field": "hp",
+     "value": 169,
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.130"
+      }
+     ],
+     "note": "스크린샷 전투 화면 표시값(DOS), 피해 뒤 값일 수 있음"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ガルゴ",
+    "value": "가르고"
+   }
+  },
+  {
+   "id": "rockman",
+   "name": "바위 사나이",
+   "hp": 560,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "liesel"
+   ],
+   "chapter": 2,
+   "boss": false,
+   "note": "에릭·리젤 주민의 정체. hp 는 gameworld 스크린샷 전투 화면 표시값(MSX)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "바위 인간",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제2장"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "바위사나이",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img09 p.94"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "img10 p.95"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "바위 무사",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.69"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "岩男",
+    "value": "바위 사나이"
+   }
+  },
+  {
+   "id": "hernild",
+   "name": "헤르닐드",
+   "hp": 1000,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "liesel 2층"
+   ],
+   "chapter": 2,
+   "boss": true,
+   "note": "프람 사용. hp 는 gameworld 스크린샷 전투 화면 표시값(MSX)",
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.131"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img10 p.95"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "헤르닐르",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제2장"
+      }
+     ]
+    },
+    {
+     "field": "hp",
+     "value": 595,
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.131"
+      }
+     ],
+     "note": "스크린샷 전투 화면 표시값(DOS), 피해 뒤 값일 수 있음"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ヘルニルド",
+    "value": "헤르닐드"
+   }
+  },
+  {
+   "id": "akdam",
+   "name": "아크담",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "mascoon(2장)",
+    "windbreak_cave(4장)"
+   ],
+   "chapter": 2,
+   "boss": true,
+   "note": "오비스4 사용(gameworld)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img07 p.92"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img17 p.84"
+    }
+   ],
+   "alt": [
+    {
+     "field": "hp",
+     "value": 800,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img07 p.92"
+      }
+     ],
+     "note": "2장 마스쿤 전, 스크린샷 전투 화면 표시값(MSX)"
+    },
+    {
+     "field": "hp",
+     "value": 1400,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img17 p.84"
+      }
+     ],
+     "note": "4장 결전, 스크린샷 전투 화면 표시값(MSX)"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "アクダム",
+    "value": "아크담"
+   }
+  },
+  {
+   "id": "akdam_minion",
+   "name": "아크담의 부하",
+   "hp": 600,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "windbreak_cave"
+   ],
+   "chapter": 4,
+   "boss": false,
+   "note": "스크린샷 전투 화면 표시값(MSX), 두 마리",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img17 p.84"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "アクダムの手下",
+    "value": "아크담의 부하"
+   }
+  },
+  {
+   "id": "orc_horn",
+   "name": "오크혼",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "seris"
+   ],
+   "chapter": 3,
+   "boss": false,
+   "note": "세리스 성 경비, 길모아의 별이 있으면 통과",
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "オークホーン",
+    "value": "오크혼"
+   }
+  },
+  {
+   "id": "thunder_hound",
+   "name": "선더하운드",
+   "hp": 900,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "seris 2층"
+   ],
+   "chapter": 3,
+   "boss": false,
+   "note": "규리게스가 두 마리 소환. hp 는 gameworld 스크린샷 전투 화면 표시값(MSX)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "썬더 하운드",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제3장"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.134"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "썬더하운드",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.134"
+      }
+     ]
+    },
+    {
+     "field": "hp",
+     "value": 988,
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.134"
+      }
+     ],
+     "note": "스크린샷 전투 화면 표시값(DOS), 두 마리 다 같은 값"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ｻﾝﾀﾞｰﾊｳﾝﾄﾞ",
+    "value": "선더하운드"
+   }
+  },
+  {
+   "id": "gyuriges",
+   "name": "규리게스",
+   "hp": 1500,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "seris 2층"
+   ],
+   "chapter": 3,
+   "boss": true,
+   "note": "레스4·이그나5·사크타스4 사용(gamecom). hp 는 gameworld 스크린샷 전투 화면 표시값(MSX)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img14 p.81"
+    }
+   ],
+   "alt": [
+    {
+     "field": "hp",
+     "value": 1413,
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.134"
+      }
+     ],
+     "note": "스크린샷 전투 화면 표시값(DOS), 피해 뒤 값일 수 있음"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ギュリゲス",
+    "value": "규리게스"
+   }
+  },
+  {
+   "id": "silphy",
+   "name": "실피",
+   "hp": 500,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "bazunoon 2층"
+   ],
+   "chapter": 4,
+   "boss": true,
+   "note": "남자 일행을 홀린다. hp 500 은 gamecom(DOS)·gameworld(MSX) 스크린샷 전투 화면 표시값 일치",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img17 p.84"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "シルフィ",
+    "value": "실피"
+   }
+  },
+  {
+   "id": "veramis",
+   "name": "베라미스",
+   "hp": 2000,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "windbreak_cave"
+   ],
+   "chapter": 4,
+   "boss": true,
+   "note": "휼 사용(gameworld). hp 2000 은 gamecom·gameworld 스크린샷 전투 화면 표시값 일치",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img17 p.84"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ベラミス",
+    "value": "베라미스"
+   }
+  },
+  {
+   "id": "eagle",
+   "name": "독수리",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "bazunoon 상공"
+   ],
+   "chapter": 4,
+   "boss": false,
+   "note": "실피가 보낸 사자, 연을 망가뜨린다(이벤트)",
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "garyubas",
+   "name": "가류바스",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "colcus",
+    "crystal_tower"
+   ],
+   "chapter": 5,
+   "boss": false,
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img18 p.85"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ガリュバス",
+    "value": "가류바스"
+   }
+  },
+  {
+   "id": "basil",
+   "name": "바질",
+   "hp": 3500,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "crystal_tower 5층"
+   ],
+   "chapter": 5,
+   "boss": true,
+   "note": "실체 3500 · 허상 500 — gameworld(MSX)·softcom(DOS) 스크린샷 전투 화면 표시값 일치. 허상이 실체를 회복",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.138"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img20 p.87"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.71"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "バジール",
+    "value": "바질"
+   }
+  },
+  {
+   "id": "agnija_phantom",
+   "name": "아그니쟈(허상)",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "vanis 왼쪽 문"
+   ],
+   "chapter": 6,
+   "boss": true,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img21 p.88"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "agnija",
+   "name": "아그니쟈",
+   "hp": 6000,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "vanis 오른쪽 문"
+   ],
+   "chapter": 6,
+   "boss": true,
+   "note": "오비스4·화염 숨결(전체). 이그나·사크타스 외 공격 주문 무효(gameworld). hp 는 gameworld 스크린샷 전투 화면 표시값(MSX)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.141"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img22 p.89"
+    }
+   ],
+   "alt": [
+    {
+     "field": "hp",
+     "value": 5734,
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.141"
+      }
+     ],
+     "note": "스크린샷 전투 화면 표시값(DOS), 피해 뒤 값일 수 있음"
+    },
+    {
+     "field": "attack_name",
+     "value": "화이어·브레스",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img22 p.89"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "attack_name",
+     "value": "화염의 숨결",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.141"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "アグニージャ",
+    "value": "아그니쟈"
+   }
+  }
+ ],
+ "chapters": [
+  {
+   "no": 1,
+   "title": "여행의 시작",
+   "places": [
+    "elaster",
+    "cape_cave",
+    "ludia",
+    "cruise",
+    "berga",
+    "neria"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제1장"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img05 p.90"
+    }
+   ],
+   "alt": [
+    {
+     "field": "title",
+     "value": "왕자의 여행",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img05 p.90"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    }
+   ]
+  },
+  {
+   "no": 2,
+   "title": "침묵의 주문",
+   "places": [
+    "rondo",
+    "old_couple_house",
+    "bloody_cave",
+    "orea_house",
+    "guen_tower",
+    "ralfa",
+    "forest_house",
+    "mascoon",
+    "trial_cave",
+    "liesel",
+    "roel_house"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제2장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.129"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.68"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img06 p.91"
+    }
+   ]
+  },
+  {
+   "no": 3,
+   "title": "국왕의 증명",
+   "places": [
+    "pirate_island",
+    "suel",
+    "amda",
+    "yordo",
+    "barbara_house",
+    "nash",
+    "dragon_egg",
+    "royal_tomb",
+    "miralda_house",
+    "seris"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제3장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.132"
+    },
+    {
+     "guide": "softcom",
+     "loc": "p.69"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "img12 p.79"
+    }
+   ]
+  },
+  {
+   "no": 4,
+   "title": "홀려버린 국왕",
+   "places": [
+    "border_cave",
+    "bazunoon",
+    "wind_tower",
+    "eme",
+    "rudra",
+    "kaul",
+    "windbreak_cave"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제4장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    }
+   ],
+   "alt": [
+    {
+     "field": "title",
+     "value": "홀린 국왕",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img15 p.82"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "title",
+     "value": "홀리게 된 국왕",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ]
+  },
+  {
+   "no": 5,
+   "title": "요상한 빛의 탑",
+   "places": [
+    "lishel",
+    "nasul",
+    "faeto",
+    "fangas",
+    "wolf_mouth",
+    "colcus",
+    "crystal_tower"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 제5장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.127"
+    }
+   ],
+   "alt": [
+    {
+     "field": "title",
+     "value": "괴상한 빛의 탑",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img17 p.84"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "title",
+     "value": "신비로운 빛의 탑",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.70"
+      }
+     ],
+     "note": "화면 장 표기와 다름"
+    }
+   ]
+  },
+  {
+   "no": 6,
+   "title": "종장 그리고 영웅들의 전설",
+   "places": [
+    "fin_fort",
+    "gilmoa",
+    "old_mine",
+    "gilmoa_ruins",
+    "gilmoa_church",
+    "rastaban",
+    "nirgid",
+    "gira_road",
+    "basel_tower",
+    "vanis"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§8 종장"
+    },
+    {
+     "guide": "gamecom",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    }
+   ],
+   "alt": [
+    {
+     "field": "title",
+     "value": "마지막 장 그리고 영웅들의 전설",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.139"
+      }
+     ],
+     "note": "장 제목 상자. 화면 표기는 '종장'"
+    },
+    {
+     "field": "title",
+     "value": "최종장 그리고 영웅들의 전설",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img20 p.87"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "title",
+     "value": "마지막 장-영웅들의 전설",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.71"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "misc": {
+  "sell_rate": {
+   "value": "구입가의 75%",
+   "src": [
+    {
+     "guide": "gamecom",
+     "loc": "p.126"
+    }
+   ]
+  },
+  "spell_learn_cost_screenshot": {
+   "note": "MSX 스크린샷의 주문 상점 표시값(단위 'M', 의미 미확인). gameworld 만",
+   "unsure": true,
+   "values": {
+    "res2": 25,
+    "warp1": 50,
+    "inpers2": 37,
+    "tute2": 37,
+    "sera2": 37
+   },
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "img07 p.92"
+    }
+   ]
+  },
+  "pirate_game": {
+   "desc": "해적섬 모의전: 숫자 100을 체력·공격력·방어력·민첩성에 배분",
+   "prizes": [
+    {
+     "wins": 7,
+     "item": "ultimate_robe",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제3장"
+      }
+     ]
+    },
+    {
+     "wins": 7,
+     "item": "strange_potion",
+     "src": [
+      {
+       "guide": "gamecom",
+       "loc": "p.132"
+      }
+     ]
+    },
+    {
+     "wins": 7,
+     "item": "elixir",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "img12 p.79"
+      }
+     ],
+     "note": "게임월드는 MSX판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "wins": 7,
+     "item": null,
+     "label": "레스의 뿌리깜짝 상자",
+     "src": [
+      {
+       "guide": "softcom",
+       "loc": "p.69"
+      }
+     ],
+     "note": "스크린샷 대사 판독(흐림)",
+     "unsure": true
+    },
+    {
+     "wins": 8,
+     "item": "royal_armor",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§8 제3장"
+      },
+      {
+       "guide": "gamecom",
+       "loc": "p.132"
+      }
+     ]
+    }
+   ],
+   "note": "7연승 보상이 공략마다 다르다 — 판본·회차 차이인지 미확인"
+  }
+ }
+}

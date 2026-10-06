@@ -1,0 +1,11493 @@
+{
+ "_doc": [
+  "『영웅전설 II』(Dragon Slayer 英雄伝説 II) **사실 사전** — 마스터 소장 국내 공략집에서 뽑은 사실만 담는다. 꼴은 ed1.json 과 같다.",
+  "🔴 저작권: 이름·수치·효과·가격·위치·관계·장(章)만. 공략 문장은 옮기지 않는다 — role/effect/note 는 우리 말로 쓴 40자 안팎 요약이다.",
+  "레코드 공통: id(영문 슬러그, 안정 키 — ED1 과 같은 인물·장소·물건은 ed1.json 의 id 를 다시 쓴다) · name(대표 표기) · src([{guide, loc}]) · alt([{field, value, src, note?}]) · note? · unsure?",
+  "🔴 대표 표기 = 우리 고유명사 정본(shared/glossary) 값(마스터 판정). 정발은 근거·이형으로만 — 우리가 교정한 것은 우리 것을 따른다. 정발 공략 표기는 alt(note: 정발 표기 — 우리 정본이 교정)로 내린다.",
+  "glossary: 정본 대응 {cat, jp, value} 또는 null(정본에 없음 — 공략 표기를 대표로 두고, 정본 편입은 마스터께 묻는다). 공백만 다른 것은 층 차이라 name 을 그대로 둔다.",
+  "정본에 없는 이름은 정발(만트라 DOS) 기반 공략(txt·txt2·txt_magic·gamepia)의 다수 표기를 대표로. 갈리면 **버리지 않고** alt 에 출처째 남긴다(field='name' 은 이름 이형).",
+  "⚠ gameworld 는 **MD(수퍼알라딘보이) 일본판** 기준 잡지 공략이다(ED1 의 gameworld 는 MSX2). 정발 이전·잡지 자체 음역이라 정발 표기 근거가 아니다 — alt 로만 싣는다. 수치(가격·공격력)도 기종 차이일 수 있다.",
+  "⚠ gw_map 은 게임월드 폴더에 함께 든 **일본어 지도 소책자**(쪽 4~11)다. 일본어 원문 이름(jp_map)과 상점 값만 쓴다.",
+  "jp_md = gameworld 장비·주문 표에 병기된 MD판 일본어 이름(지면 그대로, 오식 포함). 정본 JP 와 다를 수 있다.",
+  "⚠ 오기로 보이는 이형도 지우지 않는다 — note 에 '오기 추정'이라 적는다(판정은 사람 몫).",
+  "loc 표기: txt·txt2=절(§제N장 등) · txt_magic=전체 · gamepia=지면 인쇄 쪽(p.NNN, pdf N쪽=p.129+N) · gameworld=HERONN(인쇄 쪽) · gw_map=파일번호(소책자 쪽).",
+  "장(chapter) 번호: 0=서장 · 1~4=제1~4장 · 5=종장. ED2 주문엔 레벨이 없다(책을 사서 배우고 1인 7칸) — spells.max_level 은 null.",
+  "⚠ items.where·places.shops 의 판매처는 대부분 gameworld(MD판) 표에서 왔다 — 정발 DOS판 판매처와 다를 수 있다.",
+  "items: price=구입가(정발 txt2 표 우선, 없으면 gameworld) · sell=gameworld 판매가 · atk/def=공격력/방어력 보정. 출처마다 다른 값은 alt.",
+  "categories: persons · places · spells · items · monsters · chapters · misc. 교차 참조는 id 로(places[].shops 는 items[].where 의 'shop:<place>' 에서 만든다)."
+ ],
+ "title": "eiyuu-densetsu-2",
+ "sources": {
+  "txt": {
+   "file": "영웅전설 2 공략.txt",
+   "title": "영웅전설2 (장별 공략)",
+   "publisher": null,
+   "issue": null,
+   "basis": "정발 DOS판(추정 — 내용이 txt2 본문과 같은 계열)",
+   "note": "출처 표기 없음. '영웅전설 2 게임월드 공략/영웅전설2.txt' 는 이 파일과 바이트 동일(CP949 사본) — 따로 세지 않는다"
+  },
+  "txt2": {
+   "file": "영웅전설 2 공략2.txt",
+   "title": "드래곤 슬레이어 영웅전설 2 (특집: 집중 공략)",
+   "publisher": null,
+   "issue": null,
+   "basis": "정발 DOS판(ESC·DOS 커맨드, 세이브 11번째 칸)",
+   "note": "출처 표기 없음. 등장인물·조작·장별 공략·밀매상·무기/방어구/아이템/주문 표"
+  },
+  "txt_magic": {
+   "file": "영웅전설 2 마법.txt",
+   "title": "영웅전설 2 주문 목록(판매 마을)",
+   "publisher": null,
+   "issue": null,
+   "basis": "정발 DOS판(추정)",
+   "note": "출처 표기 없음"
+  },
+  "gamepia": {
+   "file": "영웅전설 2 게임피아 공략.pdf",
+   "title": "체험 CDPIA 영웅전설II —한글화— Dragon Slayer2",
+   "publisher": "게임피아",
+   "issue": null,
+   "basis": "정발 DOS판(팔콤·만트라, IBM-PC 386·RAM 4MB)",
+   "note": "호수 미상. 인쇄 쪽 p.130~139(pdf 1~10쪽, 한 쪽씩). 지도 라벨은 흐려서 쓰지 않았다"
+  },
+  "gameworld": {
+   "file": "영웅전설 2 게임월드 공략/HERO01~21.JPG",
+   "title": "완전공략 드래곤슬레이어 영웅전설2(上)·(下)",
+   "publisher": "게임월드",
+   "issue": "호수 미상 — 상권 HERO01~11(p.125~135) · 하권 HERO12~21(p.142~151, 필자 김중진)",
+   "basis": "🔴 MD(수퍼알라딘보이) 일본판 — 세가, 1월 20일 발매, 8800엔, 16M. 정발 이전, 잡지 자체 음역"
+  },
+  "gw_map": {
+   "file": "영웅전설 2 게임월드 공략/001~004.jpg",
+   "title": "일본어 지도 소책자(イシュタ地方·キュベラ地方·ウイル地方·ネサの辺土)",
+   "publisher": null,
+   "issue": null,
+   "basis": "일본판(기종 미상) — 일본어 원문",
+   "note": "쪽 4~11 일부. 게임월드 부록으로 추정(미확인)"
+  },
+  "ps1": {
+   "file": "games/ps1-ed1+2/script/",
+   "title": "PS1 영웅전설 I·II 한글판 대사(우리 번역)",
+   "publisher": null,
+   "issue": null,
+   "basis": "PS1(SLPS-01323) 원문 대조",
+   "note": "공략이 아니라 우리 대본에서 확인한 사실(10-06 사전 검수)"
+  }
+ },
+ "persons": [
+  {
+   "id": "atlas",
+   "name": "아트라스",
+   "role": "파렌 왕자, 주인공(15세)",
+   "first_chapter": 0,
+   "relations": {
+    "father": "serios",
+    "mother": "dina",
+    "grandmother": "ferisia",
+    "tutor": "rauel",
+    "maternal_grandfather": "ados",
+    "maternal_grandmother": "crea"
+   },
+   "age": 15,
+   "note": "사스아이섬 엘아스타에서 교육받으며 자람. 종장 뒤 즉위",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§오프닝"
+    },
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§프롤로그"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§등장인물"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "아틀라스",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제2장"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO02 p.126"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO03 p.127"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO05 p.129"
+      }
+     ],
+     "note": "txt2 일부·gameworld"
+    },
+    {
+     "field": "name",
+     "value": "아틀사스",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§프롤로그"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "アトラス",
+    "value": "아트라스"
+   }
+  },
+  {
+   "id": "rando",
+   "name": "란도",
+   "role": "공격계 주문사, 동료(32세)",
+   "first_chapter": 0,
+   "age": 32,
+   "birthplace": "ponrig",
+   "note": "라스타반에 살다 시리카로 옮김(txt2). gameworld 는 시리카를 고향으로",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§등장인물"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO03 p.127"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO09 p.133"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "랜도",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO03 p.127"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO09 p.133"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO14 p.144"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO19 p.149"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ランドー",
+    "value": "란도"
+   },
+   "relations": {
+    "father": "roderick"
+   }
+  },
+  {
+   "id": "flora",
+   "name": "플로라",
+   "role": "회복계 주문 소녀, 동료(14세)",
+   "first_chapter": 0,
+   "relations": {
+    "father": "jerald"
+   },
+   "age": 14,
+   "birthplace": "ranura",
+   "note": "제랄드의 딸. 여신 프레이아의 꿈을 꾸고 떠남. 1장 왕가의 묘에서 합류",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§등장인물"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO03 p.127"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "フローラ",
+    "value": "플로라"
+   }
+  },
+  {
+   "id": "cindy",
+   "name": "신디",
+   "role": "철가면의 거한, 동료(20세)",
+   "first_chapter": 1,
+   "age": 20,
+   "birthplace": "soldis",
+   "note": "기억을 잃음. 나슬에서 처음 보고 파에토 촌장 집에서 합류. 정체는 세리오스가 키운 흰 용",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§등장인물"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO19 p.149"
+    }
+   ],
+   "alt": [
+    {
+     "field": "birthplace",
+     "value": "설디스왕국",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§등장인물"
+      }
+     ],
+     "note": "솔디스의 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "シンディ",
+    "value": "신디"
+   }
+  },
+  {
+   "id": "serios",
+   "name": "세리오스",
+   "role": "파렌 국왕, 아트라스의 부친(ED1 주인공)",
+   "first_chapter": 0,
+   "relations": {
+    "son": "atlas",
+    "wife": "dina",
+    "mother": "ferisia",
+    "uncle": "jeston",
+    "friend": [
+     "gale",
+     "boad"
+    ]
+   },
+   "note": "1장에 온리크로 떠나 실종, 그로스토스 성에 감금. 숙부=제스톤은 gameworld",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§오프닝"
+    },
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§프롤로그"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO09 p.133"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "セリオス",
+    "value": "세리오스"
+   }
+  },
+  {
+   "id": "dina",
+   "name": "디나",
+   "role": "파렌 왕비, 아트라스의 모친",
+   "first_chapter": 0,
+   "relations": {
+    "husband": "serios",
+    "son": "atlas",
+    "father": "ados",
+    "mother": "crea"
+   },
+   "note": "솔디스 출신 — 바즈눈 성이 친정",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§오프닝"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§프롤로그"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO17 p.147"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ディーナ",
+    "value": "디나"
+   }
+  },
+  {
+   "id": "ferisia",
+   "name": "페리시아",
+   "role": "파렌 황태후, 세리오스의 모친",
+   "first_chapter": 0,
+   "relations": {
+    "son": "serios",
+    "grandson": "atlas"
+   },
+   "note": "여행 경비 5000G 를 준다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "フェリシア",
+    "value": "페리시아"
+   }
+  },
+  {
+   "id": "rauel",
+   "name": "라우엘",
+   "role": "아트라스의 교육계",
+   "first_chapter": 0,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ラウエル",
+    "value": "라우엘"
+   }
+  },
+  {
+   "id": "parker",
+   "name": "파카",
+   "role": "엘아스타의 농부",
+   "first_chapter": 0,
+   "note": "밭 울타리에 길을 내 준다. gamepia 는 '인부'로만",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "파커",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO02 p.126"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "パーカー",
+    "value": "파카"
+   }
+  },
+  {
+   "id": "aron",
+   "name": "아론",
+   "role": "크루즈 마을 촌장(장로)",
+   "first_chapter": 0,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "アロン",
+    "value": "아론"
+   }
+  },
+  {
+   "id": "pete",
+   "name": "피트",
+   "role": "베르가 광산 인부(작업 반장)",
+   "first_chapter": 0,
+   "note": "낙반 복구 일손을 청한다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ピート",
+    "value": "피트"
+   }
+  },
+  {
+   "id": "rou",
+   "name": "로우",
+   "role": "크루즈에 사는 ED1 의 동료",
+   "first_chapter": 0,
+   "note": "네리아 항구 배가 그를 만난 뒤 뜬다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "로",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§서장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§서장"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "로우",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.132"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO02 p.126"
+      }
+     ],
+     "note": "gamepia·gameworld"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ロー",
+    "value": "로우"
+   }
+  },
+  {
+   "id": "jeston",
+   "name": "제스톤",
+   "role": "온리크 공국의 왕(리젤 성)",
+   "first_chapter": 0,
+   "relations": {
+    "nephew": "serios"
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO03 p.127"
+    }
+   ],
+   "alt": [
+    {
+     "field": "role",
+     "value": "온리크 공작, 세리오스의 외삼촌",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO03 p.127"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ジェストン",
+    "value": "제스톤"
+   }
+  },
+  {
+   "id": "jerald",
+   "name": "제랄드",
+   "role": "낫슈의 시장·부자, 플로라의 부친",
+   "first_chapter": 0,
+   "relations": {
+    "daughter": "flora"
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO03 p.127"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    }
+   ],
+   "alt": [
+    {
+     "field": "home",
+     "value": "세레 마을",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.135"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO05 p.129"
+      }
+     ],
+     "note": "플로라 부모가 머무는 곳"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ジェラルド",
+    "value": "제랄드"
+   }
+  },
+  {
+   "id": "charlie",
+   "name": "챨리",
+   "role": "제랄드의 집사",
+   "first_chapter": 0,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "찰리",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.133"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO03 p.127"
+      }
+     ],
+     "note": "gamepia·gameworld"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "チャーリー",
+    "value": "챨리"
+   }
+  },
+  {
+   "id": "erion",
+   "name": "에리온",
+   "role": "라누라 국왕(ED1 의 류난)",
+   "first_chapter": 0,
+   "relations": {
+    "wife": "sonia",
+    "son": "charles"
+   },
+   "note": "ed1.json 의 ryunan 과 같은 인물. 2장에 세리오스와 함께 갇힘(gameworld)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "エリオン",
+    "value": "에리온"
+   }
+  },
+  {
+   "id": "sonia",
+   "name": "소니아",
+   "role": "라누라 왕비(ED1 동료)",
+   "first_chapter": 0,
+   "relations": {
+    "husband": "erion",
+    "son": "charles"
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "소비아",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO05 p.129"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ソニア",
+    "value": "소니아"
+   }
+  },
+  {
+   "id": "charles",
+   "name": "챨즈",
+   "role": "라누라 왕자",
+   "first_chapter": 0,
+   "relations": {
+    "father": "erion",
+    "mother": "sonia"
+   },
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "チャールズ",
+    "value": "챨즈"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "찰스",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO04 p.128"
+      }
+     ],
+     "note": "MD 잡지 표기 — 우리 정본을 따름"
+    }
+   ]
+  },
+  {
+   "id": "barbara",
+   "name": "바바라",
+   "role": "용의 제사를 맡은 사제",
+   "first_chapter": 0,
+   "note": "용의 알 진입에 쓰는 용의 눈물을 준다. 요르도 성역에 있다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO09 p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO10 p.134"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "バーバラ",
+    "value": "바바라"
+   }
+  },
+  {
+   "id": "zina",
+   "name": "지나",
+   "role": "스엘 여관 주인",
+   "first_chapter": 0,
+   "note": "아트라스를 볼모로 잡으려 함",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    },
+    {
+     "guide": "ps1",
+     "loc": "ED2SCN5:524"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ジーナ",
+    "value": "지나"
+   },
+   "relations": {
+    "husband": "boad"
+   }
+  },
+  {
+   "id": "zigo",
+   "name": "지고",
+   "role": "스엘 여관 종업원",
+   "first_chapter": 0,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ジゴ",
+    "value": "지고"
+   }
+  },
+  {
+   "id": "boad",
+   "name": "보아드",
+   "role": "해적 두목, 보아드 해운 주인",
+   "first_chapter": 0,
+   "relations": {
+    "friend": "serios",
+    "wife": "zina"
+   },
+   "note": "ED1 의 인물. 배와 폭약을 내준다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO08 p.132"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "보이드",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.135"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ボアード",
+    "value": "보아드"
+   }
+  },
+  {
+   "id": "ados",
+   "name": "아토스",
+   "role": "솔디스 국왕, 아트라스의 외조부",
+   "first_chapter": 1,
+   "relations": {
+    "wife": "crea",
+    "daughter": "dina"
+   },
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "アートス",
+    "value": "아토스"
+   }
+  },
+  {
+   "id": "crea",
+   "name": "크레아",
+   "role": "솔디스 왕비, 아트라스의 외조모",
+   "first_chapter": 1,
+   "relations": {
+    "husband": "ados",
+    "daughter": "dina"
+   },
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "クレア",
+    "value": "크레아"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "클레어",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO05 p.129"
+      }
+     ],
+     "note": "MD 잡지 표기 — 우리 정본을 따름"
+    }
+   ]
+  },
+  {
+   "id": "hans",
+   "name": "한스",
+   "role": "모레스톤 공화국 대통령(콜크스)",
+   "first_chapter": 1,
+   "note": "20년째 집권(gamepia)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ハンス",
+    "value": "한스"
+   }
+  },
+  {
+   "id": "gale",
+   "name": "게일 3세",
+   "role": "대도 게일의 손자, 세리오스의 옛 동료",
+   "first_chapter": 1,
+   "relations": {
+    "grandfather": "great_gale",
+    "friend": "serios"
+   },
+   "note": "1장 실종·감금. 4장 월 통행증, 종장 은 플레이트를 준다(txt). 늑대의 입은 그의 시험 장소(gamepia)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO17 p.147"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO18 p.148"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ゲイル３世",
+    "value": "게일 3세"
+   }
+  },
+  {
+   "id": "great_gale",
+   "name": "대도 게일",
+   "role": "이즈 마을 시장의 정체",
+   "first_chapter": 2,
+   "aliases": [
+    "이즈 시장"
+   ],
+   "note": "길모아의 별·통행증·퀵의 반지를 준다. 지저 세계 정보를 안다. 정체는 gameworld 만",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO09 p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO10 p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO12 p.142"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO13 p.143"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "大盗賊 ゲイル",
+    "value": "대도 게일"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "대도적 게일 1세",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO09 p.133"
+      }
+     ],
+     "note": "MD 잡지 표기 — 우리 정본을 따름"
+    }
+   ]
+  },
+  {
+   "id": "drake",
+   "name": "드레이크",
+   "role": "늑대의 입의 도적",
+   "first_chapter": 1,
+   "note": "나락의 입으로 길을 낸다. 소매치기(gamepia)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "드레이트",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§제1장"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ドレイク",
+    "value": "드레이크"
+   }
+  },
+  {
+   "id": "reisia",
+   "name": "레이시아",
+   "role": "레지스탕스 여전사",
+   "first_chapter": 2,
+   "relations": {
+    "father": "gabi"
+   },
+   "note": "노인으로 변장해 일행을 시험. 종장에 태양의 성검을 준다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO07 p.131"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO16 p.146"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "レイシア",
+    "value": "레이시아"
+   }
+  },
+  {
+   "id": "leader",
+   "name": "리더",
+   "role": "지저 레지스탕스의 리더(이슈타)",
+   "first_chapter": 2,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO07 p.131"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "リーダー",
+    "value": "리더"
+   }
+  },
+  {
+   "id": "boza",
+   "name": "보자",
+   "role": "레지스탕스 대원",
+   "first_chapter": 2,
+   "note": "gameworld 만",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO07 p.131"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO13 p.143"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO16 p.146"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO18 p.148"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ボザ",
+    "value": "보자"
+   }
+  },
+  {
+   "id": "harvey",
+   "name": "하베이",
+   "role": "아훌의 노인, 밀조주를 빚음",
+   "first_chapter": 2,
+   "note": "재료: 버섯의 왕(txt·gamepia) / 회복 버섯(gameworld)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO07 p.131"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO08 p.132"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ハーベイ",
+    "value": "하베이"
+   }
+  },
+  {
+   "id": "erisa",
+   "name": "에리사",
+   "role": "이즈 시장 집의 여자(집사)",
+   "first_chapter": 2,
+   "note": "일행을 일꾼으로 오인. 플로라 옷이 제복과 닮았다고 알려 줌",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO08 p.132"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "エリーサ",
+    "value": "에리사"
+   }
+  },
+  {
+   "id": "naresa",
+   "name": "나레사",
+   "role": "제국 가드 대장, 반란을 일으킴",
+   "first_chapter": 2,
+   "aliases": [
+    "나레사 대장"
+   ],
+   "note": "길모아의 별을 받는다. 4장 시련의 동굴에서 다시 만나 베른 수용소 잠입을 돕는다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO09 p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO15 p.145"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "나래사",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.136"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ナレサ",
+    "value": "나레사"
+   }
+  },
+  {
+   "id": "fred",
+   "name": "프래드",
+   "role": "황제의 심복, 푸른 망토의 남자",
+   "first_chapter": 3,
+   "note": "종장에 황제에게 당해 쓰러진다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.138"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO12 p.142"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO13 p.143"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO18 p.148"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "프레드",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO04 p.128"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO11 p.135"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO12 p.142"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO13 p.143"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO18 p.148"
+      }
+     ],
+     "note": "txt·txt2 4장·gameworld"
+    },
+    {
+     "field": "name",
+     "value": "프라트",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.138"
+      }
+     ],
+     "note": "gamepia — '5인의 마스터의 제자'로 소개"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "フラッド",
+    "value": "프래드"
+   }
+  },
+  {
+   "id": "dim",
+   "name": "디임",
+   "role": "시리카의 은퇴한 현자",
+   "first_chapter": 4,
+   "note": "지팡이 파편으로 프람나·휴드나를 완성해 책을 준다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO14 p.144"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "다임",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제4장"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "딤",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO14 p.144"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ディーム",
+    "value": "디임"
+   }
+  },
+  {
+   "id": "kerry",
+   "name": "케리",
+   "role": "월 마을의 사내",
+   "first_chapter": 4,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ケリイ",
+    "value": "케리"
+   }
+  },
+  {
+   "id": "morgan",
+   "name": "모건",
+   "role": "땅굴 파기의 명수(노인)",
+   "first_chapter": 3,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO10 p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO11 p.135"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "모간",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제3장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제3장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.137"
+      }
+     ],
+     "note": "txt·txt2 혼용, gamepia"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "モーガン",
+    "value": "모건"
+   }
+  },
+  {
+   "id": "sammy",
+   "name": "사미",
+   "role": "모건의 제자",
+   "first_chapter": 3,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO11 p.135"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "サミー",
+    "value": "사미"
+   }
+  },
+  {
+   "id": "ralf",
+   "name": "랄프",
+   "role": "고고학자(사피아의 호수)",
+   "first_chapter": 2,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO10 p.134"
+    }
+   ],
+   "alt": [
+    {
+     "field": "role",
+     "value": "박사",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO10 p.134"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ラルフ",
+    "value": "랄프"
+   }
+  },
+  {
+   "id": "harry",
+   "name": "해리",
+   "role": "바즈눈의 발명가, 드래곤 시리즈 개발",
+   "first_chapter": 1,
+   "note": "ED1 의 연 발명가와 같은 이름(ed1.json harry)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "하리",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§최종장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§종장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.135"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "헨리",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO17 p.147"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ハリー",
+    "value": "해리"
+   }
+  },
+  {
+   "id": "jean",
+   "name": "쟌",
+   "role": "카울 마을의 드래곤 시리즈 상인",
+   "first_chapter": 5,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ジャン",
+    "value": "쟌"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "쟝",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§최종장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§종장"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    }
+   ]
+  },
+  {
+   "id": "gabi",
+   "name": "가비",
+   "role": "괴물로 변한 레지스탕스, 레이시아의 부친",
+   "first_chapter": 5,
+   "relations": {
+    "daughter": "reisia"
+   },
+   "monster_ref": "gabi",
+   "note": "황제의 실험으로 괴물이 됨",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO19 p.149"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "ガービィ",
+    "value": "가비"
+   }
+  },
+  {
+   "id": "godwin",
+   "name": "고드윈 2세",
+   "role": "파게스타 제국 황제, 최종 보스",
+   "first_chapter": 2,
+   "monster_ref": "godwin",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.130"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO19 p.149"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "고드윈",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.130"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.139"
+      }
+     ],
+     "note": "gamepia"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ゴドウィン２世",
+    "value": "고드윈 2세"
+   }
+  },
+  {
+   "id": "masters",
+   "name": "마스터",
+   "role": "지저 세계의 정신적 지도자들",
+   "first_chapter": 3,
+   "note": "5인(gamepia). 프로스 수용소에 갇힘. 용의 알·지저 세계의 내력을 앎",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO10 p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO11 p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO16 p.146"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "マスター",
+    "value": "마스터"
+   }
+  },
+  {
+   "id": "freia",
+   "name": "프레이아",
+   "role": "빛·희망의 여신",
+   "first_chapter": 0,
+   "note": "정체는 고대 문명의 메인 컴퓨터(gamepia·gameworld). 엔딩에 희망의 여신이 됨",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§등장인물"
+    },
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO16 p.146"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "후레이아",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§종장"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "フレイア",
+    "value": "프레이아"
+   }
+  },
+  {
+   "id": "yoshua",
+   "name": "요슈아",
+   "role": "천상의 신",
+   "first_chapter": 0,
+   "note": "정체는 인공위성(gameworld·gamepia). 아이템 요슈아의 눈·거울의 이름",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO11 p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO16 p.146"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ヨシュア",
+    "value": "요슈아"
+   }
+  },
+  {
+   "id": "agnija",
+   "name": "아그니쟈",
+   "role": "파괴의 신, ED1 의 적",
+   "first_chapter": 0,
+   "note": "고대 문명을 파멸시킨 신(gameworld)",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§프롤로그"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO16 p.146"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "이그나자",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§프롤로그"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "person",
+    "jp": "アグニージャ",
+    "value": "아그니쟈"
+   }
+  },
+  {
+   "id": "roderick",
+   "name": "로데릭",
+   "role": "란도의 아버지",
+   "relations": {
+    "son": "rando"
+   },
+   "glossary": null,
+   "src": [
+    {
+     "guide": "ps1",
+     "loc": "ED2SCN3:559"
+    }
+   ],
+   "note": "공략엔 없음 — PS1 대사로 확인"
+  }
+ ],
+ "places": [
+  {
+   "id": "iselhasa",
+   "name": "이셀하사",
+   "kind": "world",
+   "region": null,
+   "chapter": 0,
+   "note": "지상 세계",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§오프닝"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§프롤로그"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "아셀하사",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§서장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§서장"
+      }
+     ],
+     "note": "1회씩, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "イセルハーサ",
+    "value": "이셀하사"
+   }
+  },
+  {
+   "id": "fargesta",
+   "name": "파게스타",
+   "kind": "empire",
+   "region": null,
+   "chapter": 2,
+   "jp_map": "ファーゲスタ帝国",
+   "note": "지하 세계의 제국. 황제 고드윈 2세",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§프롤로그"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO01 p.125"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO07 p.131"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "파게스타 제국",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§프롤로그"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO01 p.125"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO07 p.131"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ファーゲスタ",
+    "value": "파게스타"
+   }
+  },
+  {
+   "id": "farren",
+   "name": "파렌",
+   "kind": "kingdom",
+   "region": "iselhasa",
+   "chapter": 0,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "파랜왕국",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§서장"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ファーレーン",
+    "value": "파렌"
+   }
+  },
+  {
+   "id": "ponrig",
+   "name": "온리크",
+   "kind": "duchy",
+   "region": "iselhasa",
+   "chapter": 0,
+   "jp_map": "ウォンリーク公国",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO03 p.127"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "온누크공국",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§등장인물"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "온크리 공국",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO05 p.129"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ウォンリーク",
+    "value": "온리크"
+   }
+  },
+  {
+   "id": "ranura",
+   "name": "라누라",
+   "kind": "kingdom",
+   "region": "iselhasa",
+   "chapter": 0,
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§등장인물"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO01 p.125"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "라느라 왕국",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO02 p.126"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO03 p.127"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO04 p.128"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "라루라 왕국",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.133"
+      }
+     ],
+     "note": "오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "리루라 왕국",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.134"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ラヌーラ",
+    "value": "라누라"
+   }
+  },
+  {
+   "id": "soldis",
+   "name": "솔디스",
+   "kind": "kingdom",
+   "region": "iselhasa",
+   "chapter": 1,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ソルディス",
+    "value": "솔디스"
+   }
+  },
+  {
+   "id": "moreston",
+   "name": "모레스톤",
+   "kind": "republic",
+   "region": "iselhasa",
+   "chapter": 1,
+   "jp_map": "モレストン共和国",
+   "note": "수도 콜크스, 대통령 한스",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "モレストン",
+    "value": "모레스톤"
+   }
+  },
+  {
+   "id": "sasai",
+   "name": "사스아이섬",
+   "kind": "island",
+   "region": "farren",
+   "chapter": 0,
+   "note": "엘아스타가 있는 섬",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§등장인물"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "サースアイ島",
+    "value": "사스아이섬"
+   }
+  },
+  {
+   "id": "elaster",
+   "name": "엘아스타",
+   "kind": "town",
+   "region": "sasai",
+   "chapter": 0,
+   "note": "아트라스가 자란 마을",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§등장인물"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO01 p.125"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "엘아스트",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§서장"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "엘아스터",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.132"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO01 p.125"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO02 p.126"
+      }
+     ],
+     "note": "gamepia·gameworld"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "エルアスタ",
+    "value": "엘아스타"
+   }
+  },
+  {
+   "id": "ludia",
+   "name": "루디아",
+   "kind": "castle",
+   "region": "farren",
+   "chapter": 0,
+   "note": "파렌 수도. 3장 용의 알 가까이",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "루디아 마을",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO02 p.126"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "shops": {
+    "item": [
+     "torch",
+     "res_leaf",
+     "antidote_herb"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "ルディア",
+    "value": "루디아"
+   }
+  },
+  {
+   "id": "cruise",
+   "name": "크루즈 마을",
+   "kind": "town",
+   "region": "farren",
+   "chapter": 0,
+   "note": "1장 몬스터 습격으로 폐허. 3장 곁에 용의 알",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "크르스 마을",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO02 p.126"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO05 p.129"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "크리스",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO01 p.125"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역(지도 목록)"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "クルスの村",
+    "value": "크루즈마을"
+   }
+  },
+  {
+   "id": "berga",
+   "name": "베르가 광산",
+   "kind": "mine",
+   "region": "farren",
+   "chapter": 0,
+   "note": "낙반 복구 이벤트",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "벨가의 광산",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO01 p.125"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO02 p.126"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "shops": {
+    "weapon": [
+     "small_sword",
+     "hero_sword"
+    ],
+    "armor": [
+     "leather_armor",
+     "leather_shield"
+    ],
+    "item": [
+     "res_leaf",
+     "antidote_herb"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "ベルガの鉱山",
+    "value": "베르가광산"
+   }
+  },
+  {
+   "id": "neria",
+   "name": "네리아 항구",
+   "kind": "port",
+   "region": "farren",
+   "chapter": 0,
+   "note": "첫 밀매상(재해 방지 부적)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO03 p.127"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "네리아항",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§서장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§서장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.132"
+      }
+     ]
+    }
+   ],
+   "shops": {
+    "weapon": [
+     "hero_sword"
+    ],
+    "item": [
+     "yoshua_eye",
+     "medicine"
+    ],
+    "black_market": [
+     "disaster_charm"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "ネリアの港",
+    "value": "네리아항구"
+   }
+  },
+  {
+   "id": "rondo",
+   "name": "론도 항구",
+   "kind": "port",
+   "region": "ponrig",
+   "chapter": 0,
+   "note": "불량배에게 돈을 털린다. 란도 첫 등장",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "론드 마을",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO03 p.127"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "shops": {
+    "item": [
+     "ticket",
+     "yoshua_eye",
+     "res_leaf",
+     "antidote_herb",
+     "medicine"
+    ],
+    "spell": [
+     "stol",
+     "ent"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "ロンドの港",
+    "value": "론도항구"
+   }
+  },
+  {
+   "id": "sirika",
+   "name": "시리카 마을",
+   "kind": "town",
+   "region": "ponrig",
+   "chapter": 0,
+   "note": "은퇴한 마법사들의 마을. 다임이 산다",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO14 p.144"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "シリカの村",
+    "value": "시리카마을"
+   }
+  },
+  {
+   "id": "mascoon",
+   "name": "마스쿤",
+   "kind": "town",
+   "region": "ponrig",
+   "chapter": 0,
+   "note": "1장에 몬스터 습격으로 무너짐(gameworld)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO01 p.125"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO03 p.127"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "미스쿤",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.133"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "マスクーン",
+    "value": "마스쿤"
+   }
+  },
+  {
+   "id": "liesel",
+   "name": "리젤",
+   "kind": "castle",
+   "region": "ponrig",
+   "chapter": 0,
+   "note": "온리크의 왕성, 제스톤",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO03 p.127"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "리젤성",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§서장"
+      },
+      {
+       "guide": "txt",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§서장"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "리젠성",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§서장"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "shops": {
+    "weapon": [
+     "small_sword"
+    ],
+    "spell": [
+     "saktas",
+     "danam",
+     "hebedal"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "リーゼル",
+    "value": "리젤"
+   }
+  },
+  {
+   "id": "ralfa",
+   "name": "랄파 항구",
+   "kind": "port",
+   "region": "ponrig",
+   "chapter": 0,
+   "note": "골동품 상인이 성스러운 장비를 150G 에 산다",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.134"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "랄파항",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§서장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.133"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "랄파 마을",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO11 p.135"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "shops": {
+    "weapon": [
+     "warrior_sword"
+    ],
+    "black_market": [
+     "warrior_sword"
+    ],
+    "armor": [
+     "battle_suit",
+     "ancient_shield"
+    ],
+    "item": [
+     "ticket"
+    ],
+    "spell": [
+     "silence"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "ラルファの港",
+    "value": "랄파항구"
+   }
+  },
+  {
+   "id": "trial_cave",
+   "name": "시련의 동굴",
+   "kind": "dungeon",
+   "region": "ponrig",
+   "chapter": 4,
+   "jp_map": "試練の洞窟",
+   "note": "대지진으로 네사의 변토와 이어짐. 4장 나레사 대장",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.138"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "004 p.11"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "훈련의 동굴",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO03 p.127"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO15 p.145"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "試練の洞窟",
+    "value": "시련의동굴"
+   }
+  },
+  {
+   "id": "yordo",
+   "name": "요르도 항구",
+   "kind": "port",
+   "region": "ranura",
+   "chapter": 0,
+   "note": "라누라 왕실의 피난처",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.134"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "요르도항",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제1장"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "욜드 마을",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO01 p.125"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO03 p.127"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO04 p.128"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "shops": {
+    "armor": [
+     "leather_armor",
+     "leather_shield"
+    ],
+    "item": [
+     "ticket",
+     "yoshua_eye",
+     "torch"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "ヨルドの港",
+    "value": "요르도항구"
+   }
+  },
+  {
+   "id": "yordo_sanctuary",
+   "name": "요르도 성역",
+   "kind": "shrine",
+   "region": "ranura",
+   "chapter": 3,
+   "note": "사제 바바라",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "욜드의 성역",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO03 p.127"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO09 p.133"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "seris",
+   "name": "세리스",
+   "kind": "castle",
+   "region": "ranura",
+   "chapter": 0,
+   "note": "라누라 왕성. 용의 제사",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO03 p.127"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "세리성",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§서장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§서장"
+      }
+     ],
+     "note": "txt·txt2 혼용, 오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "세리스 마을",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO03 p.127"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "セリス",
+    "value": "세리스"
+   }
+  },
+  {
+   "id": "nash",
+   "name": "낫슈 마을",
+   "kind": "town",
+   "region": "ranura",
+   "chapter": 0,
+   "note": "제랄드의 저택",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO03 p.127"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ナッシュの町",
+    "value": "낫슈마을"
+   }
+  },
+  {
+   "id": "suel",
+   "name": "스엘 마을",
+   "kind": "town",
+   "region": "ranura",
+   "chapter": 0,
+   "note": "공짜 여관(지나·지고). 해적 여행소 1000G(gameworld)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO17 p.147"
+    }
+   ],
+   "shops": {
+    "spell": [
+     "papepia",
+     "ripark"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "スエルの村",
+    "value": "스엘마을"
+   }
+  },
+  {
+   "id": "amda",
+   "name": "암다 마을",
+   "kind": "town",
+   "region": "ranura",
+   "chapter": 0,
+   "note": "이벤트가 없는 해안 마을",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO01 p.125"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "엠다",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.133"
+      }
+     ],
+     "note": "gamepia 본문(같은 지면 워프 메뉴 화면은 '암다')"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "アムダの村",
+    "value": "암다마을"
+   }
+  },
+  {
+   "id": "sere",
+   "name": "세레 마을",
+   "kind": "town",
+   "region": "ranura",
+   "chapter": 1,
+   "note": "플로라의 부모가 머무는 곳",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO01 p.125"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "セレの村",
+    "value": "세레마을"
+   }
+  },
+  {
+   "id": "sedal",
+   "name": "세달",
+   "kind": "town",
+   "region": "ranura",
+   "chapter": 1,
+   "note": "다리로 동·서가 갈린 국경 마을. 다리가 부서져 솔디스로 못 감",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "세다르",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO04 p.128"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "shops": {
+    "spell": [
+     "inpers",
+     "tute",
+     "sera"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "セダル",
+    "value": "세달"
+   }
+  },
+  {
+   "id": "boad_shipping",
+   "name": "보아드 해운",
+   "kind": "hideout",
+   "region": "ranura",
+   "chapter": 0,
+   "note": "해적 아지트. 배·폭약·표",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "보아드의 아지트",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO04 p.128"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO08 p.132"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ボアード海運",
+    "value": "보아드해운"
+   }
+  },
+  {
+   "id": "royal_tomb",
+   "name": "왕가의묘",
+   "kind": "dungeon",
+   "region": "ranura",
+   "chapter": 1,
+   "note": "중간 보스 플다암, 플로라 합류",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "왕가의 무덤",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제1장"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "왕가의 묘지",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.134"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "왕가의 묘",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO04 p.128"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO05 p.129"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "王家の墓",
+    "value": "왕가의묘"
+   }
+  },
+  {
+   "id": "bazunoon",
+   "name": "바즈눈",
+   "kind": "castle",
+   "region": "soldis",
+   "chapter": 1,
+   "note": "솔디스 왕성, 디나의 친정. 발명가 하리",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "바즈",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO01 p.125"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역(지도 목록 약칭)"
+    }
+   ],
+   "shops": {
+    "spell": [
+     "fram",
+     "hyul",
+     "igna"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "バズヌーン",
+    "value": "바즈눈"
+   }
+  },
+  {
+   "id": "kaul",
+   "name": "카울 마을",
+   "kind": "town",
+   "region": "soldis",
+   "chapter": 1,
+   "note": "드래곤 목장. 종장에 드래곤 시리즈 판매",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO17 p.147"
+    }
+   ],
+   "shops": {
+    "weapon": [
+     "bronze_sword",
+     "dragon_sword"
+    ],
+    "black_market": [
+     "dragon_sword"
+    ],
+    "armor": [
+     "iron_armor",
+     "dragon_armor",
+     "iron_shield",
+     "dragon_shield"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "カウルの村",
+    "value": "카울마을"
+   }
+  },
+  {
+   "id": "eme",
+   "name": "에메 마을",
+   "kind": "town",
+   "region": "soldis",
+   "chapter": 1,
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO01 p.125"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "에메",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO01 p.125"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "エメの町",
+    "value": "에메마을"
+   }
+  },
+  {
+   "id": "rudra",
+   "name": "루드라 항구",
+   "kind": "port",
+   "region": "soldis",
+   "chapter": 1,
+   "note": "모레스톤 정기선 100G(gameworld)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "루드라항",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제1장"
+      }
+     ]
+    }
+   ],
+   "shops": {
+    "weapon": [
+     "bronze_sword"
+    ],
+    "item": [
+     "yoshua_eye",
+     "medicine"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "ルドラの港",
+    "value": "루드라항구"
+   }
+  },
+  {
+   "id": "lishel",
+   "name": "리셸",
+   "kind": "port",
+   "region": "moreston",
+   "chapter": 1,
+   "note": "회복계 주문 판매. 주변 마을이 몬스터에 소멸(gamepia)",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "리셀",
+     "src": [
+      {
+       "guide": "txt_magic",
+       "loc": "전체"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.135"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO06 p.130"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "리셀항",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§제1장"
+      }
+     ]
+    }
+   ],
+   "shops": {
+    "spell": [
+     "res",
+     "regina",
+     "leaf"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "リシェール",
+    "value": "리셸"
+   }
+  },
+  {
+   "id": "nasul",
+   "name": "나슬 마을",
+   "kind": "town",
+   "region": "moreston",
+   "chapter": 1,
+   "note": "신디를 처음 봄",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "shops": {
+    "weapon": [
+     "iron_sword"
+    ],
+    "black_market": [
+     "iron_sword"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "ナスールの町",
+    "value": "나슬마을"
+   }
+  },
+  {
+   "id": "faeto",
+   "name": "파에토마을",
+   "kind": "town",
+   "region": "moreston",
+   "chapter": 1,
+   "note": "촌장 집에서 신디 합류",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "파에트 마을",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO06 p.130"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "파에토",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.135"
+      }
+     ],
+     "note": "gamepia — 정본과 같음"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ファエトの村",
+    "value": "파에토마을"
+   }
+  },
+  {
+   "id": "fangas",
+   "name": "판가스",
+   "kind": "town",
+   "region": "moreston",
+   "chapter": 1,
+   "note": "게일 3세가 살던 도적 마을, 몬스터에 사라짐",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "팡가스",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO01 p.125"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ファンガス",
+    "value": "판가스"
+   }
+  },
+  {
+   "id": "colcus",
+   "name": "콜크스",
+   "kind": "town",
+   "region": "moreston",
+   "chapter": 1,
+   "note": "모레스톤 수도",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "shops": {
+    "spell": [
+     "puazo",
+     "ho",
+     "silent",
+     "obis"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "コルクス",
+    "value": "콜크스"
+   }
+  },
+  {
+   "id": "wolf_mouth",
+   "name": "늑대의 입",
+   "kind": "dungeon",
+   "region": "moreston",
+   "chapter": 1,
+   "note": "도적의 소굴",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "狼の口",
+    "value": "늑대의입"
+   }
+  },
+  {
+   "id": "abyss_mouth",
+   "name": "나락의 입",
+   "kind": "dungeon",
+   "region": "moreston",
+   "chapter": 1,
+   "jp_map": "奈落の口",
+   "note": "지저 세계로 가는 입구. 1장 보스 그록가드",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "001 p.4-5"
+    }
+   ],
+   "alt": [
+    {
+     "field": "dir",
+     "value": "늑대의 입 서쪽",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO06 p.130"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "dir",
+     "value": "늑대의 입 동쪽",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제1장"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "奈落の口",
+    "value": "나락의입"
+   }
+  },
+  {
+   "id": "ishta",
+   "name": "이슈타",
+   "kind": "town",
+   "region": "fargesta",
+   "chapter": 2,
+   "jp_map": "イシュタの村",
+   "note": "레지스탕스 본거지. 4장 초에 폐허",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO07 p.131"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO12 p.142"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "001 p.4-5"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "イシュタ",
+    "value": "이슈타"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "이슈타 마을",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제2장"
+      },
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제2장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.135"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO07 p.131"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO12 p.142"
+      },
+      {
+       "guide": "gw_map",
+       "loc": "001 p.4-5"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    }
+   ]
+  },
+  {
+   "id": "afl",
+   "name": "아훌",
+   "kind": "town",
+   "region": "fargesta",
+   "chapter": 2,
+   "jp_map": "アフルの村",
+   "note": "하베이·밀매상",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "아홀 마을",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제2장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제2장"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "아훌",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.136"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§HINT&TIP"
+      }
+     ],
+     "note": "gamepia·txt2 밀매상 절 — 정본과 같음"
+    },
+    {
+     "field": "name",
+     "value": "아플 마을",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO07 p.131"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO17 p.147"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "shops": {
+    "weapon": [
+     "morning_star"
+    ],
+    "black_market": [
+     "morning_star"
+    ],
+    "armor": [
+     "steel_shield"
+    ],
+    "item": [
+     "moonshine"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "アフル",
+    "value": "아훌"
+   }
+  },
+  {
+   "id": "warrior_tomb",
+   "name": "전사의 무덤",
+   "kind": "dungeon",
+   "region": "fargesta",
+   "chapter": 2,
+   "jp_map": "戦士の洞窟",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "전사의 던전",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "anes_tower",
+   "name": "아네스의 탑",
+   "kind": "tower",
+   "region": "fargesta",
+   "chapter": 2,
+   "jp_map": "アネスの塔",
+   "note": "버섯의 왕(txt)·주문의 반지(gameworld)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO08 p.132"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "001 p.4-5"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "아네스탑",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.136"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "アネスの塔",
+    "value": "아네스의탑"
+   }
+  },
+  {
+   "id": "izu",
+   "name": "이즈",
+   "kind": "town",
+   "region": "fargesta",
+   "chapter": 2,
+   "jp_map": "イズーの町",
+   "note": "상업 마을. 시장은 대도 게일. 램프 판매",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO07 p.131"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO08 p.132"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "001 p.4-5"
+    }
+   ],
+   "shops": {
+    "weapon": [
+     "deadly_sword",
+     "defeat_sword"
+    ],
+    "black_market": [
+     "deadly_sword"
+    ],
+    "armor": [
+     "invulnerable_armor",
+     "invincible_shield"
+    ],
+    "item": [
+     "lamp",
+     "recovery_mushroom",
+     "restona_mushroom",
+     "visna_fruit"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "イズー",
+    "value": "이즈"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "이즈 마을",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제2장"
+      },
+      {
+       "guide": "txt",
+       "loc": "§제3장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제2장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제3장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.136"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO07 p.131"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO08 p.132"
+      },
+      {
+       "guide": "gw_map",
+       "loc": "001 p.4-5"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    }
+   ]
+  },
+  {
+   "id": "izu_life_tower",
+   "name": "이즈 생명의 탑",
+   "kind": "tower",
+   "region": "fargesta",
+   "chapter": null,
+   "jp_map": "イズー生命の塔",
+   "note": "몬스터가 전송돼 오는 탑. 한국어 표기는 gameworld 반지 표뿐",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "gw_map",
+     "loc": "003 p.10"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "이즈~명의 탑",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 지면 그대로(한 글자 빠짐 추정)"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "sapia_lake",
+   "name": "사피아호수",
+   "kind": "lake",
+   "region": "fargesta",
+   "chapter": 2,
+   "jp_map": "サピアの湖",
+   "note": "물길이 바뀌면 큐베라 지방으로 건너감(뗏목)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO08 p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO10 p.134"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "사피아의 호수",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제2장"
+      },
+      {
+       "guide": "txt",
+       "loc": "§제3장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제2장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제3장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.137"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO08 p.132"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO10 p.134"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "사비아의 호수",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.137"
+      }
+     ],
+     "note": "오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "サピアの湖",
+    "value": "사피아호수"
+   }
+  },
+  {
+   "id": "yuisis",
+   "name": "유이시스",
+   "kind": "town",
+   "region": "fargesta",
+   "chapter": 2,
+   "jp_map": "ユイシスの町",
+   "note": "각 지방을 잇는 교차로, 통행 규제. 그로스토스 성 입구",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO08 p.132"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "001 p.4-5"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "유이시즈",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§HINT&TIP"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.136"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.138"
+      }
+     ]
+    }
+   ],
+   "shops": {
+    "weapon": [
+     "strong_spear",
+     "defeat_sword"
+    ],
+    "black_market": [
+     "strong_spear"
+    ],
+    "armor": [
+     "steel_armor"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "ユイシス",
+    "value": "유이시스"
+   }
+  },
+  {
+   "id": "grostos_castle",
+   "name": "그로스토스 성",
+   "kind": "castle",
+   "region": "fargesta",
+   "chapter": 2,
+   "jp_map": "グロストス城",
+   "note": "황제 거처. 본관·별관·중앙 정원",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO07 p.131"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO12 p.142"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "그로스토 성",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO08 p.132"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 1회"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "グロストス城",
+    "value": "그로스토스성"
+   }
+  },
+  {
+   "id": "cubera_region",
+   "name": "큐베라 지방",
+   "kind": "region",
+   "region": "fargesta",
+   "chapter": 3,
+   "jp_map": "キュベラ地方",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO10 p.134"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "002 p.8-9"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "cubera",
+   "name": "큐베라",
+   "kind": "town",
+   "region": "cubera_region",
+   "chapter": 3,
+   "jp_map": "キュベラの村",
+   "note": "레지스탕스 은신처. 침대 밑 비밀통로",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO10 p.134"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "002 p.8-9"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "큐베르",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제3장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제3장"
+      }
+     ],
+     "note": "txt·txt2 3장"
+    },
+    {
+     "field": "name",
+     "value": "큘베르",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제3장"
+      }
+     ],
+     "note": "1회, 오기 추정"
+    }
+   ],
+   "shops": {
+    "weapon": [
+     "deadly_sword",
+     "earth_axe"
+    ],
+    "armor": [
+     "invulnerable_armor",
+     "invincible_shield"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "キュベラ",
+    "value": "큐베라"
+   }
+  },
+  {
+   "id": "pros",
+   "name": "프로스",
+   "kind": "prison",
+   "region": "cubera_region",
+   "chapter": 3,
+   "jp_map": "プロスの収容所",
+   "note": "마스터들이 갇힌 곳",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO10 p.134"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "002 p.8-9"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "プロス",
+    "value": "프로스"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "프로스 수용소",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제3장"
+      },
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제3장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.137"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO10 p.134"
+      },
+      {
+       "guide": "gw_map",
+       "loc": "002 p.8-9"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    }
+   ]
+  },
+  {
+   "id": "morgan_house",
+   "name": "모건의 집",
+   "kind": "house",
+   "region": "cubera_region",
+   "chapter": 3,
+   "jp_map": "モーガンの家",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO10 p.134"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "002 p.8-9"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "모간의 집",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제3장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제3장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.139"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "モーガンの家",
+    "value": "모건의집"
+   }
+  },
+  {
+   "id": "will_region",
+   "name": "윌 지방",
+   "kind": "region",
+   "region": "fargesta",
+   "chapter": 4,
+   "jp_map": "ウイル地方",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.138"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "003 p.10"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "will",
+   "name": "윌",
+   "kind": "town",
+   "region": "will_region",
+   "chapter": 4,
+   "jp_map": "ウイルの町",
+   "note": "출입구 둘(남=베른, 북=유이시스는 폐쇄). 이력 장비 판매",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO14 p.144"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO15 p.145"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "월",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO14 p.144"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "윌",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.138"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO13 p.143"
+      }
+     ],
+     "note": "gamepia·gameworld 일부 — 정본과 같음"
+    }
+   ],
+   "shops": {
+    "weapon": [
+     "force_sword"
+    ],
+    "armor": [
+     "force_armor",
+     "force_shield"
+    ]
+   },
+   "glossary": {
+    "cat": "place",
+    "jp": "ウイル",
+    "value": "윌"
+   }
+  },
+  {
+   "id": "will_life_tower",
+   "name": "윌 생명의 탑",
+   "kind": "tower",
+   "region": "will_region",
+   "chapter": 4,
+   "jp_map": "ウイル生命の塔",
+   "note": "유이시스→윌 길목, 몬스터가 전송돼 옴. 한국어 표기는 직역",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "gw_map",
+     "loc": "003 p.10"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "bern",
+   "name": "베른",
+   "kind": "prison",
+   "region": "will_region",
+   "chapter": 4,
+   "jp_map": "ベルンの収容所",
+   "note": "잡힌 레지스탕스를 가둔 곳",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.138"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "003 p.10"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "베른 수용소",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.138"
+      },
+      {
+       "guide": "gw_map",
+       "loc": "003 p.10"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정(접미 차이)"
+    },
+    {
+     "field": "name",
+     "value": "베룬의 수용소",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO13 p.143"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO15 p.145"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "벨의 수용소",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO15 p.145"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 지도 라벨"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ベルン",
+    "value": "베른"
+   }
+  },
+  {
+   "id": "nesa",
+   "name": "네사의변토",
+   "kind": "region",
+   "region": "will_region",
+   "chapter": 4,
+   "jp_map": "ネサの辺土",
+   "note": "지하 세계의 끝. 대지진으로 시련의 동굴과 이어짐",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.138"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "네사의 면토",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.138"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "네사의 변토(邊土)",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO15 p.145"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역 — 원문 辺土 와 맞는 음"
+    },
+    {
+     "field": "name",
+     "value": "네사의 연토",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO15 p.145"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "ネサの辺土",
+    "value": "네사의변토"
+   }
+  },
+  {
+   "id": "technica",
+   "name": "테크니카",
+   "kind": "room",
+   "region": "grostos_castle",
+   "chapter": 5,
+   "note": "성 깊은 곳의 제어실",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "테크니카 방",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§최종장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§종장"
+      }
+     ]
+    },
+    {
+     "field": "name",
+     "value": "테크니컬 룸",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO18 p.148"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "テクニカ",
+    "value": "테크니카"
+   }
+  },
+  {
+   "id": "courtyard",
+   "name": "안뜰",
+   "kind": "area",
+   "region": "grostos_castle",
+   "chapter": 5,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO17 p.147"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO18 p.148"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "中庭",
+    "value": "안뜰"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "중앙 정원",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§최종장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§종장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.139"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO17 p.147"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO18 p.148"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    }
+   ]
+  },
+  {
+   "id": "lava_furnace",
+   "name": "용암로",
+   "kind": "dungeon",
+   "region": "grostos_castle",
+   "chapter": 5,
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO19 p.149"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "溶岩炉",
+    "value": "용암로"
+   }
+  },
+  {
+   "id": "throne_room",
+   "name": "옥좌의 방",
+   "kind": "room",
+   "region": "grostos_castle",
+   "chapter": 5,
+   "note": "황제와의 결전",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "玉座の間",
+    "value": "옥좌의방"
+   }
+  },
+  {
+   "id": "dragon_egg",
+   "name": "용의 알",
+   "kind": "device",
+   "region": "iselhasa",
+   "chapter": 0,
+   "note": "몬스터를 지상으로 보내는 장치. 3장에 하나씩 멈춘다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO10 p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO11 p.135"
+    }
+   ],
+   "alt": [
+    {
+     "field": "count",
+     "value": 4,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO10 p.134"
+      }
+     ],
+     "note": "3장 기준"
+    }
+   ],
+   "glossary": {
+    "cat": "place",
+    "jp": "竜の卵",
+    "value": "용의알"
+   }
+  },
+  {
+   "id": "reshir",
+   "name": "레시르",
+   "kind": "unknown",
+   "region": null,
+   "chapter": null,
+   "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역. 지도 목록 (12)번, 정체 미상",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO01 p.125"
+    }
+   ],
+   "glossary": null
+  }
+ ],
+ "spells": [
+  {
+   "id": "fram",
+   "name": "프람",
+   "type": "공격",
+   "max_level": null,
+   "mp": null,
+   "effect": "적 하나에 불 공격",
+   "type_by_src": {
+    "txt_magic": "공격",
+    "txt2": "공격",
+    "gamepia": "공격",
+    "gameworld": "공격"
+   },
+   "learned": [
+    "shop:bazunoon"
+   ],
+   "price": 100,
+   "sell": 75,
+   "charge_gw": "보통",
+   "jp_md": "フラム",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "フラム",
+    "value": "프람"
+   }
+  },
+  {
+   "id": "hyul",
+   "name": "휼",
+   "type": "공격",
+   "max_level": null,
+   "mp": null,
+   "effect": "적 하나에 얼음 공격",
+   "type_by_src": {
+    "txt_magic": "공격",
+    "txt2": "공격",
+    "gamepia": "공격",
+    "gameworld": "공격"
+   },
+   "learned": [
+    "shop:bazunoon"
+   ],
+   "price": 100,
+   "sell": 75,
+   "charge_gw": "보통",
+   "jp_md": "ヒュール",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "홀",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§주문"
+      }
+     ],
+     "note": "표 1회, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ヒュール",
+    "value": "휼"
+   }
+  },
+  {
+   "id": "igna",
+   "name": "이그나",
+   "type": "공격",
+   "max_level": null,
+   "mp": null,
+   "effect": "적 전체에 번개 공격",
+   "type_by_src": {
+    "txt_magic": "공격",
+    "txt2": "공격",
+    "gamepia": "공격",
+    "gameworld": "공격"
+   },
+   "learned": [
+    "shop:bazunoon"
+   ],
+   "price": 200,
+   "sell": 150,
+   "charge_gw": "느림",
+   "jp_md": "イグナ",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "イグナ",
+    "value": "이그나"
+   }
+  },
+  {
+   "id": "framna",
+   "name": "프람나",
+   "type": "공격",
+   "max_level": null,
+   "mp": null,
+   "effect": "적 전체에 불 공격(프람 상위)",
+   "type_by_src": {
+    "txt_magic": "공격",
+    "txt2": "공격",
+    "gamepia": null,
+    "gameworld": "공격"
+   },
+   "learned": [
+    "시리카 다임(4장, 지팡이 조각을 건네면 무료)"
+   ],
+   "price": null,
+   "charge_gw": "아주 느림",
+   "jp_md": "プラムナ",
+   "note": "카자즘의 얼음벽에 유효",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "브람나",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO14 p.144"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ブラムナ",
+    "value": "프람나"
+   }
+  },
+  {
+   "id": "hyudna",
+   "name": "휴드나",
+   "type": "공격",
+   "max_level": null,
+   "mp": null,
+   "effect": "적 전체에 얼음 공격(휼 상위)",
+   "type_by_src": {
+    "txt_magic": "공격",
+    "txt2": "공격",
+    "gamepia": null,
+    "gameworld": "공격"
+   },
+   "learned": [
+    "시리카 다임(4장)"
+   ],
+   "price": null,
+   "charge_gw": "아주 느림",
+   "jp_md": "ヒュドナ",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO14 p.144"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "휴드라",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제4장"
+      }
+     ],
+     "note": "txt·txt2 4장 혼용, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ヒュドナ",
+    "value": "휴드나"
+   }
+  },
+  {
+   "id": "saktas",
+   "name": "사크타스",
+   "type": "공격",
+   "max_level": null,
+   "mp": null,
+   "effect": "적 HP 를 빨아 자기 HP 로",
+   "type_by_src": {
+    "txt_magic": "공격",
+    "txt2": null,
+    "gamepia": "공격",
+    "gameworld": "공격"
+   },
+   "learned": [
+    "shop:liesel"
+   ],
+   "price": 800,
+   "sell": 600,
+   "charge_gw": "느림",
+   "jp_md": "サクタス",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "alt": [
+    {
+     "field": "effect",
+     "value": "적 MP 를 빼앗음",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 다른 출처와 다름"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "サクタス",
+    "value": "사크타스"
+   }
+  },
+  {
+   "id": "res",
+   "name": "레스",
+   "type": "회복",
+   "max_level": null,
+   "mp": null,
+   "effect": "HP 회복(주문능력만큼)",
+   "type_by_src": {
+    "txt_magic": "회복",
+    "txt2": "치료",
+    "gamepia": "치료",
+    "gameworld": "치료"
+   },
+   "learned": [
+    "shop:lishel"
+   ],
+   "price": 200,
+   "sell": 150,
+   "charge_gw": "아주 빠름",
+   "jp_md": "レス",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "alt": [
+    {
+     "field": "learned",
+     "value": [
+      "shop:seris"
+     ],
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§주문"
+      }
+     ],
+     "note": "txt2 표의 판매 장소"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "レス",
+    "value": "레스"
+   }
+  },
+  {
+   "id": "regina",
+   "name": "레지나",
+   "type": "회복",
+   "max_level": null,
+   "mp": null,
+   "effect": "독 해제",
+   "type_by_src": {
+    "txt_magic": "회복",
+    "txt2": "치료",
+    "gamepia": "치료",
+    "gameworld": "치료"
+   },
+   "learned": [
+    "shop:lishel"
+   ],
+   "price": 100,
+   "sell": 75,
+   "charge_gw": "아주 빠름",
+   "jp_md": "レジナ",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "alt": [
+    {
+     "field": "learned",
+     "value": [
+      "shop:seris"
+     ],
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§주문"
+      }
+     ],
+     "note": "txt2 표의 판매 장소"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "レジナ",
+    "value": "레지나"
+   }
+  },
+  {
+   "id": "leaf",
+   "name": "리프",
+   "type": "회복",
+   "max_level": null,
+   "mp": null,
+   "effect": "기절한 동료 하나를 HP 1로",
+   "type_by_src": {
+    "txt_magic": "회복",
+    "txt2": "치료",
+    "gamepia": "치료",
+    "gameworld": "치료"
+   },
+   "learned": [
+    "shop:lishel"
+   ],
+   "price": 1000,
+   "sell": 750,
+   "charge_gw": "느림",
+   "jp_md": "リーフ",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "リーフ",
+    "value": "리프"
+   }
+  },
+  {
+   "id": "papepia",
+   "name": "파페피아",
+   "type": "상태이상",
+   "max_level": null,
+   "mp": null,
+   "effect": "혼란",
+   "type_by_src": {
+    "txt_magic": "상태이상",
+    "txt2": "보조",
+    "gamepia": "공격보조",
+    "gameworld": "공격 보조"
+   },
+   "learned": [
+    "shop:suel"
+   ],
+   "price": 100,
+   "sell": 75,
+   "charge_gw": "빠름",
+   "jp_md": "パペピア",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "パペピア",
+    "value": "파페피아"
+   }
+  },
+  {
+   "id": "puazo",
+   "name": "푸아조",
+   "type": "상태이상",
+   "max_level": null,
+   "mp": null,
+   "effect": "독(몇 턴 뒤 기절)",
+   "type_by_src": {
+    "txt_magic": "상태이상",
+    "txt2": "공격",
+    "gamepia": "공격",
+    "gameworld": "공격"
+   },
+   "learned": [
+    "shop:colcus"
+   ],
+   "price": 300,
+   "sell": 225,
+   "charge_gw": "느림",
+   "jp_md": "プアゾ",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "프아조",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§주문"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.132"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "txt2·gamepia·gameworld"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "プアゾ",
+    "value": "푸아조"
+   }
+  },
+  {
+   "id": "ho",
+   "name": "호",
+   "type": "상태이상",
+   "max_level": null,
+   "mp": null,
+   "effect": "수면",
+   "type_by_src": {
+    "txt_magic": "상태이상",
+    "txt2": "보조",
+    "gamepia": "공격보조",
+    "gameworld": "공격 보조"
+   },
+   "learned": [
+    "shop:colcus"
+   ],
+   "price": 700,
+   "sell": 525,
+   "charge_gw": "느림",
+   "jp_md": "ホー",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ホー",
+    "value": "호"
+   }
+  },
+  {
+   "id": "silent",
+   "name": "시렌트",
+   "type": "상태이상",
+   "max_level": null,
+   "mp": null,
+   "effect": "적 하나의 주문 봉쇄",
+   "type_by_src": {
+    "txt_magic": "상태이상",
+    "txt2": "방어",
+    "gamepia": "방어",
+    "gameworld": "수비"
+   },
+   "learned": [
+    "shop:colcus"
+   ],
+   "price": 500,
+   "sell": 375,
+   "charge_gw": "보통",
+   "jp_md": "シレント",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "시렌토",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "シレント",
+    "value": "시렌트"
+   }
+  },
+  {
+   "id": "obis",
+   "name": "오비스",
+   "type": "상태이상",
+   "max_level": null,
+   "mp": null,
+   "effect": "적 하나를 한 번에 기절",
+   "type_by_src": {
+    "txt_magic": "상태이상",
+    "txt2": "공격",
+    "gamepia": "공격",
+    "gameworld": "공격"
+   },
+   "learned": [
+    "shop:colcus"
+   ],
+   "price": 1000,
+   "sell": 750,
+   "charge_gw": "아주 느림",
+   "jp_md": "オビス",
+   "note": "듣지 않는 적이 있다",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "オビス",
+    "value": "오비스"
+   }
+  },
+  {
+   "id": "silence",
+   "name": "사이레스",
+   "type": "상태이상",
+   "max_level": null,
+   "mp": null,
+   "effect": "적·아군 전원 주문 봉쇄",
+   "type_by_src": {
+    "txt_magic": "상태이상",
+    "txt2": "보조",
+    "gamepia": "공격보조",
+    "gameworld": "공격 보조"
+   },
+   "learned": [
+    "shop:ralfa"
+   ],
+   "price": 200,
+   "sell": 150,
+   "charge_gw": "빠름",
+   "jp_md": "サイレス",
+   "note": "보스전(그록가드·다리스·디겐스)에 권장",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "사일레스",
+     "src": [
+      {
+       "guide": "txt_magic",
+       "loc": "전체"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "사이레스",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§주문"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제2장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.132"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.134"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "txt2·gamepia·gameworld"
+    },
+    {
+     "field": "name",
+     "value": "사레이스",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO08 p.132"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "サイレス",
+    "value": "사이레스"
+   }
+  },
+  {
+   "id": "danam",
+   "name": "다남",
+   "type": "보조",
+   "max_level": null,
+   "mp": null,
+   "effect": "적 방어력 하락",
+   "type_by_src": {
+    "txt_magic": "보조",
+    "txt2": "공격",
+    "gamepia": "공격",
+    "gameworld": "공격 보조"
+   },
+   "learned": [
+    "shop:liesel"
+   ],
+   "price": 300,
+   "sell": 225,
+   "charge_gw": "보통",
+   "jp_md": "ダナム",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "alt": [
+    {
+     "field": "learned",
+     "value": [
+      "shop:lishel"
+     ],
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ダナム",
+    "value": "다남"
+   }
+  },
+  {
+   "id": "hebedal",
+   "name": "헤베달",
+   "type": "보조",
+   "max_level": null,
+   "mp": null,
+   "effect": "적 민첩성 하락",
+   "type_by_src": {
+    "txt_magic": "보조",
+    "txt2": "공격",
+    "gamepia": "공격보조",
+    "gameworld": "공격 보조"
+   },
+   "learned": [
+    "shop:liesel"
+   ],
+   "price": 500,
+   "sell": 375,
+   "charge_gw": "보통",
+   "jp_md": "ヘベタル",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "헤베탈",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "learned",
+     "value": [
+      "shop:lishel"
+     ],
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ヘベタル",
+    "value": "헤베달"
+   }
+  },
+  {
+   "id": "stol",
+   "name": "스톨",
+   "type": "보조",
+   "max_level": null,
+   "mp": null,
+   "effect": "적 하나의 주문능력 하락",
+   "type_by_src": {
+    "txt_magic": "보조",
+    "txt2": "보조",
+    "gamepia": "공격보조",
+    "gameworld": "공격 보조"
+   },
+   "learned": [
+    "shop:rondo"
+   ],
+   "price": 500,
+   "sell": 375,
+   "charge_gw": "보통",
+   "jp_md": "ストール",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ストール",
+    "value": "스톨"
+   }
+  },
+  {
+   "id": "inpers",
+   "name": "인파스",
+   "type": "보조",
+   "max_level": null,
+   "mp": null,
+   "effect": "아군 공격력 상승",
+   "type_by_src": {
+    "txt_magic": "보조",
+    "txt2": "보조",
+    "gamepia": "공격보조",
+    "gameworld": "공격 보조"
+   },
+   "learned": [
+    "shop:sedal"
+   ],
+   "price": 700,
+   "sell": 525,
+   "charge_gw": "보통",
+   "jp_md": "インパス",
+   "note": "gameworld 는 동(東)세달 판매",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "インパス",
+    "value": "인파스"
+   }
+  },
+  {
+   "id": "tute",
+   "name": "튜트",
+   "type": "보조",
+   "max_level": null,
+   "mp": null,
+   "effect": "아군 방어력 상승",
+   "type_by_src": {
+    "txt_magic": "보조",
+    "txt2": "방어",
+    "gamepia": "방어",
+    "gameworld": "수비"
+   },
+   "learned": [
+    "shop:sedal"
+   ],
+   "price": 300,
+   "sell": 225,
+   "charge_gw": "보통",
+   "jp_md": "テュート",
+   "note": "gameworld 는 동(東)세달 판매",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "튜드",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.132"
+      }
+     ],
+     "note": "gamepia"
+    },
+    {
+     "field": "name",
+     "value": "튜토",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "テュート",
+    "value": "튜트"
+   }
+  },
+  {
+   "id": "sera",
+   "name": "세라",
+   "type": "보조",
+   "max_level": null,
+   "mp": null,
+   "effect": "아군 민첩성 상승",
+   "type_by_src": {
+    "txt_magic": "보조",
+    "txt2": "보조",
+    "gamepia": "공격보조",
+    "gameworld": "공격 보조"
+   },
+   "learned": [
+    "shop:sedal"
+   ],
+   "price": 500,
+   "sell": 375,
+   "charge_gw": "느림",
+   "jp_md": "セラ",
+   "note": "gameworld 는 서(西)세달 판매",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "セラ",
+    "value": "세라"
+   }
+  },
+  {
+   "id": "ent",
+   "name": "엔트",
+   "type": "보조",
+   "max_level": null,
+   "mp": null,
+   "effect": "아군 주문능력 상승",
+   "type_by_src": {
+    "txt_magic": "보조",
+    "txt2": "보조",
+    "gamepia": "공격보조",
+    "gameworld": "공격 보조"
+   },
+   "learned": [
+    "shop:rondo"
+   ],
+   "price": 500,
+   "sell": 375,
+   "charge_gw": "보통",
+   "jp_md": "エント",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "엔토",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§주문"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.132"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "txt2·gamepia·gameworld"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "エント",
+    "value": "엔트"
+   }
+  },
+  {
+   "id": "ripark",
+   "name": "리파크",
+   "type": "보조",
+   "max_level": null,
+   "mp": null,
+   "effect": "걸려 온 주문을 되돌림(아군 회복도)",
+   "type_by_src": {
+    "txt_magic": "보조",
+    "txt2": "방어",
+    "gamepia": "방어",
+    "gameworld": "수비"
+   },
+   "learned": [
+    "shop:suel"
+   ],
+   "price": 500,
+   "charge_gw": "보통",
+   "jp_md": "リパーク",
+   "src": [
+    {
+     "guide": "txt_magic",
+     "loc": "전체"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§주문"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "alt": [
+    {
+     "field": "sell",
+     "value": 37,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "지면 그대로 — 끝자리 잘림 추정(375)"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "リパーク",
+    "value": "리파크"
+   }
+  }
+ ],
+ "items": [
+  {
+   "id": "knife",
+   "name": "나이프",
+   "kind": "weapon",
+   "effect": null,
+   "price": 10,
+   "where": [
+    "initial"
+   ],
+   "atk": 5,
+   "sell": 7,
+   "jp_md": "ナイフ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ナイフ",
+    "value": "나이프"
+   }
+  },
+  {
+   "id": "small_sword",
+   "name": "소형검",
+   "kind": "weapon",
+   "effect": null,
+   "price": 60,
+   "where": [
+    "shop:berga",
+    "shop:liesel"
+   ],
+   "atk": 10,
+   "sell": 45,
+   "jp_md": "小型のつるぎ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "小型のつるぎ",
+    "value": "소형검"
+   }
+  },
+  {
+   "id": "bronze_sword",
+   "name": "청동검",
+   "kind": "weapon",
+   "effect": null,
+   "price": 300,
+   "where": [
+    "shop:rudra",
+    "shop:kaul",
+    "royal_tomb"
+   ],
+   "atk": 15,
+   "sell": 225,
+   "jp_md": "青銅のつるぎ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "青銅のつるぎ",
+    "value": "청동검"
+   }
+  },
+  {
+   "id": "fire_spear",
+   "name": "불꽃의 창",
+   "kind": "weapon",
+   "effect": "공격 때 프람 효과",
+   "price": 400,
+   "where": [
+    "drop:fire_knight"
+   ],
+   "atk": 20,
+   "sell": 150,
+   "jp_md": "炎のやり",
+   "note": "상점에 없음. gameworld 는 지팡이 표에 실음",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "불꽃창",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§무기"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "불꽃의 창",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO05 p.129"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "atk",
+     "value": 15,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "炎のやり",
+    "value": "불꽃의 창"
+   }
+  },
+  {
+   "id": "iron_sword",
+   "name": "철검",
+   "kind": "weapon",
+   "effect": null,
+   "price": 500,
+   "where": [
+    "shop:nasul",
+    "black_market:nasul"
+   ],
+   "atk": 20,
+   "sell": 375,
+   "jp_md": "鉄のつるぎ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§HINT&TIP"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "鉄のつるぎ",
+    "value": "철검"
+   }
+  },
+  {
+   "id": "morning_star",
+   "name": "철구곤봉",
+   "kind": "weapon",
+   "effect": null,
+   "price": 1000,
+   "where": [
+    "shop:afl",
+    "black_market:afl"
+   ],
+   "atk": 30,
+   "jp_md": "鉄球こうぼう",
+   "note": "gameworld 판매가 75 는 750 의 오식 추정",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§HINT&TIP"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "alt": [
+    {
+     "field": "sell",
+     "value": 75,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "鉄球こんぼう",
+    "value": "철구 곤봉"
+   }
+  },
+  {
+   "id": "strong_spear",
+   "name": "강자의 창",
+   "kind": "weapon",
+   "effect": null,
+   "price": 2500,
+   "where": [
+    "shop:yuisis",
+    "black_market:yuisis"
+   ],
+   "atk": 45,
+   "sell": 1875,
+   "jp_md": "強者のやり",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§HINT&TIP"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "強者のやり",
+    "value": "강자의 창"
+   }
+  },
+  {
+   "id": "deadly_sword",
+   "name": "필살의 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": 4000,
+   "where": [
+    "shop:izu",
+    "shop:cubera",
+    "black_market:izu"
+   ],
+   "atk": 65,
+   "sell": 3000,
+   "jp_md": "必殺のつるぎ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§HINT&TIP"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "필살검",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§무기"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§HINT&TIP"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "필살의 검",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "price",
+     "value": 4000,
+     "src": [
+      {
+       "guide": "gw_map",
+       "loc": "002 p.8-9"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "必殺のつるぎ",
+    "value": "필살의 검"
+   }
+  },
+  {
+   "id": "earth_axe",
+   "name": "대지의 도끼",
+   "kind": "weapon",
+   "effect": null,
+   "price": 8000,
+   "where": [
+    "shop:cubera"
+   ],
+   "atk": 85,
+   "sell": 6000,
+   "jp_md": "大地のおの",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "002 p.8-9"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "大地のおの",
+    "value": "대지의 도끼"
+   }
+  },
+  {
+   "id": "warrior_sword",
+   "name": "전사의 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": 12000,
+   "where": [
+    "shop:ralfa",
+    "black_market:ralfa"
+   ],
+   "atk": 115,
+   "sell": 9000,
+   "jp_md": "戦士のつるぎ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§HINT&TIP"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "alt": [
+    {
+     "field": "atk",
+     "value": 85,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "戦士のつるぎ",
+    "value": "전사의 검"
+   }
+  },
+  {
+   "id": "knight_spear",
+   "name": "기사의 창",
+   "kind": "weapon",
+   "effect": null,
+   "price": 14000,
+   "where": [
+    "chest:grostos_castle"
+   ],
+   "atk": 160,
+   "sell": 10500,
+   "jp_md": "騎士のやり",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "騎士のやり",
+    "value": "기사의 창"
+   }
+  },
+  {
+   "id": "hero_sword",
+   "name": "용사의 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": 25000,
+   "where": [
+    "shop:berga",
+    "shop:neria"
+   ],
+   "atk": 180,
+   "sell": 18750,
+   "jp_md": "勇者のつるぎ",
+   "note": "베르가·네리아 판매는 gameworld",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "勇者のつるぎ",
+    "value": "용사의 검"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "용자의 검",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§무기"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    }
+   ]
+  },
+  {
+   "id": "defeat_sword",
+   "name": "격파의 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": 40000,
+   "where": [
+    "shop:izu",
+    "shop:yuisis",
+    "chest:will_road"
+   ],
+   "atk": 240,
+   "sell": 30000,
+   "jp_md": "撃破のつるぎ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO14 p.144"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "撃破のつるぎ",
+    "value": "격파의 검"
+   }
+  },
+  {
+   "id": "force_sword",
+   "name": "이력의 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": 50000,
+   "where": [
+    "shop:will",
+    "chest:cubera_will_road"
+   ],
+   "atk": 300,
+   "sell": 37500,
+   "jp_md": "理力のつるぎ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO14 p.144"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "003 p.10"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "이력의 칼",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO15 p.145"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "理力のつるぎ",
+    "value": "이력의 검"
+   }
+  },
+  {
+   "id": "justice_sword",
+   "name": "정의의 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": 60000,
+   "where": [
+    "cubera 레지스탕스 아지트"
+   ],
+   "atk": 380,
+   "sell": 45000,
+   "jp_md": "正義のつるぎ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO17 p.147"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "正義のつるぎ",
+    "value": "정의의 검"
+   }
+  },
+  {
+   "id": "dragon_sword",
+   "name": "드래곤의 검",
+   "kind": "weapon",
+   "effect": "변신한 황제에겐 무효(gameworld)",
+   "price": 160000,
+   "where": [
+    "shop:kaul",
+    "black_market:kaul"
+   ],
+   "atk": 450,
+   "sell": 120000,
+   "jp_md": "ドラゴンのつるぎ",
+   "note": "하리가 발명, 카울의 쟝이 판다",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§HINT&TIP"
+    },
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO19 p.149"
+    }
+   ],
+   "alt": [
+    {
+     "field": "price",
+     "value": 16000,
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§HINT&TIP"
+      }
+     ],
+     "note": "밀매상 절, 표와 한 자리 다름 — 오기 추정"
+    },
+    {
+     "field": "atk",
+     "value": 480,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ドラゴンの剣",
+    "value": "드래곤의 검"
+   }
+  },
+  {
+   "id": "sun_sword",
+   "name": "태양의 성검",
+   "kind": "weapon",
+   "effect": "변신한 황제에게 유일하게 듣는다",
+   "price": null,
+   "where": [
+    "event:reisia"
+   ],
+   "atk": 550,
+   "jp_md": "太陽の聖剣",
+   "note": "마스터들이 만든 검, 레이시아가 준다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO19 p.149"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "태양의 검",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§최종장"
+      }
+     ],
+     "note": "txt 본문"
+    },
+    {
+     "field": "atk",
+     "value": 650,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "太陽の聖剣",
+    "value": "태양의 성검"
+   }
+  },
+  {
+   "id": "holy_sword",
+   "name": "성스러운 검",
+   "kind": "weapon",
+   "effect": null,
+   "price": null,
+   "where": [
+    "event:rauel"
+   ],
+   "sell": 50,
+   "atk": 110,
+   "jp_md": "聖つるぎ",
+   "note": "서장에 받음. 성스러운 3종을 150G 에 팔아 뱃삯을 마련. atk 는 gameworld 만",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "聖なるつるぎ",
+    "value": "성스러운 검"
+   }
+  },
+  {
+   "id": "thunder_staff",
+   "name": "번개의 지팡이",
+   "kind": "staff",
+   "effect": "전투 중 적 전체에 이그나",
+   "price": null,
+   "where": [
+    "drop:groggard"
+   ],
+   "atk": 20,
+   "sell": 300,
+   "jp_md": "いかずちの杖",
+   "note": "1장 보스 격파 보상. atk·sell 은 gameworld",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "번개 지팡이",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제1장"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "번개의 지팡이",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.135"
+      }
+     ],
+     "note": "gamepia"
+    },
+    {
+     "field": "name",
+     "value": "천둥의 지팡이",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "이카즈기 지팡이",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO07 p.131"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역(일본어 음차)"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "いかづちの杖",
+    "value": "번개의 지팡이"
+   }
+  },
+  {
+   "id": "holy_staff",
+   "name": "성스러운 지팡이",
+   "kind": "staff",
+   "effect": "적 하나 수면",
+   "price": null,
+   "where": [
+    "chest:izu"
+   ],
+   "atk": 25,
+   "sell": 3750,
+   "jp_md": "聖なるの杖",
+   "note": "gameworld 만",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "성스러운 지방이",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 지면 그대로"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "聖なる杖",
+    "value": "성스러운 지팡이"
+   }
+  },
+  {
+   "id": "ice_staff",
+   "name": "얼음의 지팡이",
+   "kind": "staff",
+   "effect": "적 하나에 휼",
+   "price": null,
+   "where": [
+    "drop:daris"
+   ],
+   "atk": 0,
+   "sell": 2250,
+   "jp_md": "氷の杖",
+   "note": "gameworld 만",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "얼음의 지방이",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 지면 그대로"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "氷の杖",
+    "value": "얼음의 지팡이"
+   }
+  },
+  {
+   "id": "light_staff",
+   "name": "빛의 지팡이",
+   "kind": "staff",
+   "effect": "적 하나에 오비스 효과",
+   "price": null,
+   "where": [
+    "chest:grostos_castle"
+   ],
+   "atk": 25,
+   "sell": 375,
+   "jp_md": "光の杖",
+   "note": "gameworld 만",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "빛의 지방이",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 지면 그대로"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "光の杖",
+    "value": "빛의 지팡이"
+   }
+  },
+  {
+   "id": "clothes",
+   "name": "천옷",
+   "kind": "armor",
+   "effect": null,
+   "price": 10,
+   "where": [
+    "initial"
+   ],
+   "sell": 7,
+   "jp_md": "布の服",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "보통옷",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "def": 5,
+   "glossary": {
+    "cat": "item",
+    "jp": "布の服",
+    "value": "천 옷"
+   }
+  },
+  {
+   "id": "leather_armor",
+   "name": "가죽갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": 50,
+   "where": [
+    "shop:yordo",
+    "shop:berga"
+   ],
+   "sell": 37,
+   "jp_md": "革のヨロイ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "def": 10,
+   "glossary": {
+    "cat": "item",
+    "jp": "革のヨロイ",
+    "value": "가죽 갑옷"
+   }
+  },
+  {
+   "id": "iron_armor",
+   "name": "철갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": 400,
+   "where": [
+    "shop:kaul",
+    "royal_tomb"
+   ],
+   "sell": 300,
+   "jp_md": "鉄のヨロイ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "def": 20,
+   "glossary": {
+    "cat": "item",
+    "jp": "鉄のヨロイ",
+    "value": "철 갑옷"
+   }
+  },
+  {
+   "id": "holy_armor",
+   "name": "성스러운 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": null,
+   "where": [
+    "event:rauel"
+   ],
+   "sell": 50,
+   "jp_md": "聖なるヨロイ",
+   "note": "def 는 gameworld 만",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "def": 25,
+   "glossary": {
+    "cat": "item",
+    "jp": "聖なるヨロイ",
+    "value": "성스러운 갑옷"
+   }
+  },
+  {
+   "id": "steel_armor",
+   "name": "강철갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": 1500,
+   "where": [
+    "shop:yuisis"
+   ],
+   "sell": 1125,
+   "jp_md": "はがねのヨロイ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "def": 40,
+   "glossary": {
+    "cat": "item",
+    "jp": "はがねのヨロイ",
+    "value": "강철 갑옷"
+   }
+  },
+  {
+   "id": "invulnerable_armor",
+   "name": "불사의 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": 3500,
+   "where": [
+    "shop:izu",
+    "shop:cubera"
+   ],
+   "sell": 2625,
+   "jp_md": "不死身のヨロイ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "002 p.8-9"
+    }
+   ],
+   "def": 70,
+   "glossary": {
+    "cat": "item",
+    "jp": "不死身のヨロイ",
+    "value": "불사의 갑옷"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "불사신의 갑옷",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§갑옷과 방패"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      },
+      {
+       "guide": "gw_map",
+       "loc": "002 p.8-9"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    }
+   ]
+  },
+  {
+   "id": "recovery_armor",
+   "name": "회복의 갑옷",
+   "kind": "armor",
+   "effect": "전투 중 '막다'를 고르면 HP 400 회복",
+   "price": null,
+   "where": [
+    "drop:nukacchi"
+   ],
+   "sell": 375,
+   "jp_md": "回復のヨロイ",
+   "note": "gameworld 만. 3장 누캇치에게서 드물게",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO11 p.135"
+    }
+   ],
+   "def": 80,
+   "glossary": {
+    "cat": "item",
+    "jp": "回復のヨロイ",
+    "value": "회복의 갑옷"
+   }
+  },
+  {
+   "id": "battle_suit",
+   "name": "배틀슈트",
+   "kind": "armor",
+   "effect": null,
+   "price": 10000,
+   "where": [
+    "shop:ralfa"
+   ],
+   "sell": 7500,
+   "jp_md": "バトルーツ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "배틀슈츠",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§갑옷과 방패"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "배틀 슈트",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "def": 120,
+   "glossary": {
+    "cat": "item",
+    "jp": "バトルスーツ",
+    "value": "배틀슈트"
+   }
+  },
+  {
+   "id": "force_armor",
+   "name": "이력의 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": 40000,
+   "where": [
+    "shop:will",
+    "chest:will_bern_road"
+   ],
+   "sell": 30000,
+   "jp_md": "理力のヨロイ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO15 p.145"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "003 p.10"
+    }
+   ],
+   "def": 180,
+   "glossary": {
+    "cat": "item",
+    "jp": "理力のヨロイ",
+    "value": "이력의 갑옷"
+   }
+  },
+  {
+   "id": "liberty_armor",
+   "name": "자유의 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": 50000,
+   "where": [
+    "cubera 레지스탕스 아지트"
+   ],
+   "sell": 37500,
+   "jp_md": "自由のヨロイ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO17 p.147"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    }
+   ],
+   "def": 250,
+   "glossary": {
+    "cat": "item",
+    "jp": "自由のヨロイ",
+    "value": "자유의 갑옷"
+   }
+  },
+  {
+   "id": "dragon_armor",
+   "name": "드래곤의 갑옷",
+   "kind": "armor",
+   "effect": null,
+   "price": 160000,
+   "where": [
+    "shop:kaul"
+   ],
+   "sell": 112500,
+   "jp_md": "ドラゴンのヨロイ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "alt": [
+    {
+     "field": "price",
+     "value": 150000,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "def",
+     "value": 320,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "def": 350,
+   "glossary": {
+    "cat": "item",
+    "jp": "ドラゴンの鎧",
+    "value": "드래곤의 갑옷"
+   }
+  },
+  {
+   "id": "leather_shield",
+   "name": "가죽방패",
+   "kind": "shield",
+   "effect": null,
+   "price": 40,
+   "where": [
+    "shop:yordo",
+    "shop:berga"
+   ],
+   "sell": 30,
+   "jp_md": "革のたて",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "def": 5,
+   "glossary": {
+    "cat": "item",
+    "jp": "革のたて",
+    "value": "가죽 방패"
+   }
+  },
+  {
+   "id": "iron_shield",
+   "name": "철방패",
+   "kind": "shield",
+   "effect": null,
+   "price": 350,
+   "where": [
+    "shop:kaul",
+    "royal_tomb"
+   ],
+   "sell": 262,
+   "jp_md": "鉄のたて",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "def": 15,
+   "glossary": {
+    "cat": "item",
+    "jp": "鉄のたて",
+    "value": "철 방패"
+   }
+  },
+  {
+   "id": "holy_shield",
+   "name": "성스러운 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": null,
+   "where": [
+    "event:rauel"
+   ],
+   "sell": 50,
+   "jp_md": "聖なるたて",
+   "note": "def 는 gameworld 만",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "def": 20,
+   "glossary": {
+    "cat": "item",
+    "jp": "聖なるたて",
+    "value": "성스러운 방패"
+   }
+  },
+  {
+   "id": "steel_shield",
+   "name": "강철방패",
+   "kind": "shield",
+   "effect": null,
+   "price": 1200,
+   "where": [
+    "shop:afl"
+   ],
+   "sell": 900,
+   "jp_md": "はがねのたて",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "def": 25,
+   "glossary": {
+    "cat": "item",
+    "jp": "はがねのたて",
+    "value": "강철 방패"
+   }
+  },
+  {
+   "id": "invincible_shield",
+   "name": "무적의 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": 3000,
+   "where": [
+    "shop:izu",
+    "shop:cubera"
+   ],
+   "sell": 2250,
+   "jp_md": "無敵のたて",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "002 p.8-9"
+    }
+   ],
+   "def": 50,
+   "glossary": {
+    "cat": "item",
+    "jp": "無敵のたて",
+    "value": "무적의 방패"
+   }
+  },
+  {
+   "id": "ancient_shield",
+   "name": "고대의 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": 8000,
+   "where": [
+    "shop:ralfa"
+   ],
+   "sell": 6000,
+   "jp_md": "いにしえのたて",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "def": 80,
+   "glossary": {
+    "cat": "item",
+    "jp": "いにしえのたて",
+    "value": "고대의 방패"
+   }
+  },
+  {
+   "id": "force_shield",
+   "name": "이력의 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": 30000,
+   "where": [
+    "shop:will",
+    "chest:cubera_will_road"
+   ],
+   "sell": 22500,
+   "jp_md": "理力のたて",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO14 p.144"
+    },
+    {
+     "guide": "gw_map",
+     "loc": "003 p.10"
+    }
+   ],
+   "def": 140,
+   "glossary": {
+    "cat": "item",
+    "jp": "理力のたて",
+    "value": "이력의 방패"
+   }
+  },
+  {
+   "id": "hope_shield",
+   "name": "희망의 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": 40000,
+   "where": [
+    "cubera 레지스탕스 아지트"
+   ],
+   "sell": 30000,
+   "jp_md": "希望のたて",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO17 p.147"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    }
+   ],
+   "def": 200,
+   "glossary": {
+    "cat": "item",
+    "jp": "希望のたて",
+    "value": "희망의 방패"
+   }
+  },
+  {
+   "id": "dragon_shield",
+   "name": "드래곤의 방패",
+   "kind": "shield",
+   "effect": null,
+   "price": 160000,
+   "where": [
+    "shop:kaul"
+   ],
+   "sell": 90000,
+   "jp_md": "ドラゴンのたて",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§갑옷과 방패"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "alt": [
+    {
+     "field": "price",
+     "value": 120000,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "def",
+     "value": 280,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "def": 300,
+   "glossary": {
+    "cat": "item",
+    "jp": "ドラゴンのたて",
+    "value": "드래곤의 방패"
+   }
+  },
+  {
+   "id": "ticket",
+   "name": "표",
+   "kind": "key",
+   "effect": "배를 탈 때 필요",
+   "price": 100,
+   "where": [
+    "shop:rondo",
+    "shop:ralfa",
+    "shop:yordo"
+   ],
+   "jp_md": "切符",
+   "note": "보아드 해운 발행(gameworld)",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "切符",
+    "value": "표"
+   }
+  },
+  {
+   "id": "warp_wing",
+   "name": "워프의 날개",
+   "kind": "tool",
+   "effect": "가 본 마을로 순간 이동",
+   "price": null,
+   "where": [
+    "event:rauel"
+   ],
+   "jp_md": "ワプの翼",
+   "note": "1장 왕가의 묘 근처에서 플로라의 것을 받기도 함",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ワプの翼",
+    "value": "워프의 날개"
+   }
+  },
+  {
+   "id": "royal_letter",
+   "name": "친서",
+   "kind": "key",
+   "effect": "각국 지도자에게 전할 위문 편지",
+   "price": null,
+   "where": [
+    "event:serios"
+   ],
+   "note": "4통(온리크·라누라·솔디스·모레스톤). 1장에 라우엘에게 돌려준다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "yoshua_eye",
+   "name": "요슈아의 눈",
+   "kind": "tool",
+   "effect": "주위 지도를 봄(1회용)",
+   "price": 10,
+   "where": [
+    "shop:neria",
+    "shop:rondo",
+    "shop:rudra",
+    "shop:yordo"
+   ],
+   "jp_md": "ヨシュアの目",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ヨシュアの目",
+    "value": "요슈아의 눈"
+   }
+  },
+  {
+   "id": "yoshua_mirror",
+   "name": "요슈아의 거울",
+   "kind": "tool",
+   "effect": "요슈아의 눈의 무제한판",
+   "price": null,
+   "where": [
+    "chest:afl_road"
+   ],
+   "jp_md": "ヨシュアの鏡",
+   "note": "2장 필수, 돈으로 못 산다(gameworld)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO01 p.125"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO08 p.132"
+    }
+   ],
+   "alt": [
+    {
+     "field": "where",
+     "value": [
+      "shop:mascoon"
+     ],
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.133"
+      }
+     ],
+     "note": "gamepia 본문 — 판매로 적음"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ヨシュアの鏡",
+    "value": "요슈아의 거울"
+   }
+  },
+  {
+   "id": "torch",
+   "name": "횃불",
+   "kind": "tool",
+   "effect": "어두운 곳을 밝힘(짧음)",
+   "price": 5,
+   "where": [
+    "shop:ludia",
+    "shop:yordo"
+   ],
+   "jp_md": "たいまつ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "たいまつ",
+    "value": "횃불"
+   }
+  },
+  {
+   "id": "lamp",
+   "name": "램프",
+   "kind": "tool",
+   "effect": "횃불보다 오래 밝힘",
+   "price": 200,
+   "where": [
+    "shop:izu"
+   ],
+   "jp_md": "ランプ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO08 p.132"
+    }
+   ],
+   "alt": [
+    {
+     "field": "where",
+     "value": [
+      "shop:mascoon"
+     ],
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.133"
+      }
+     ],
+     "note": "gamepia"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ランプ",
+    "value": "램프"
+   }
+  },
+  {
+   "id": "explosive",
+   "name": "폭약",
+   "kind": "tool",
+   "effect": "전투 중 던져 피해 / 바위 파괴",
+   "price": 200,
+   "where": [
+    "boad_shipping"
+   ],
+   "jp_md": "バクヤク",
+   "note": "밀조주와 맞바꾼다. 가격은 gameworld",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "バクヤク",
+    "value": "폭약"
+   }
+  },
+  {
+   "id": "sleep_mushroom",
+   "name": "수면 버섯",
+   "kind": "consumable",
+   "effect": "적 하나를 잠재움",
+   "price": null,
+   "where": [
+    "chest"
+   ],
+   "jp_md": "眠りタケ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "잠자는 버섯",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§아이템"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "잠재우는 버섯",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO08 p.132"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO10 p.134"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO14 p.144"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO15 p.145"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 지도 라벨"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "眠りタケ",
+    "value": "수면 버섯"
+   }
+  },
+  {
+   "id": "res_leaf",
+   "name": "레스의 잎",
+   "kind": "consumable",
+   "effect": "HP 회복",
+   "price": 50,
+   "where": [
+    "shop:ludia",
+    "shop:berga",
+    "shop:rondo"
+   ],
+   "jp_md": "レスの葉",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "alt": [
+    {
+     "field": "effect",
+     "value": "1명 HP 100 회복",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "レスの葉",
+    "value": "레스의 잎"
+   }
+  },
+  {
+   "id": "recovery_mushroom",
+   "name": "회복 버섯",
+   "kind": "consumable",
+   "effect": "HP 회복",
+   "price": 500,
+   "where": [
+    "shop:izu"
+   ],
+   "jp_md": "回復キノコ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO07 p.131"
+    }
+   ],
+   "alt": [
+    {
+     "field": "effect",
+     "value": "1명 HP 1000 회복",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "回復キノコ",
+    "value": "회복 버섯"
+   }
+  },
+  {
+   "id": "mushroom_king",
+   "name": "버섯의 왕",
+   "kind": "consumable",
+   "effect": "HP 회복",
+   "price": null,
+   "where": [
+    "anes_tower",
+    "chest"
+   ],
+   "jp_md": "キノコの王様",
+   "note": "하베이의 술 재료(txt)",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "alt": [
+    {
+     "field": "effect",
+     "value": "1명 HP 1000 회복",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "キノコの王様",
+    "value": "버섯의 왕"
+   }
+  },
+  {
+   "id": "restona_mushroom",
+   "name": "레스토나 버섯",
+   "kind": "consumable",
+   "effect": "동료 전원 HP 회복",
+   "price": 3000,
+   "where": [
+    "shop:izu"
+   ],
+   "jp_md": "レストナキノコ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "레스트나 버섯",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§아이템"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "레스토나 버섯",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§종장"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO13 p.143"
+      }
+     ],
+     "note": "txt2 종장·gameworld"
+    },
+    {
+     "field": "effect",
+     "value": "전원 HP 500 회복",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "レストナキノコ",
+    "value": "레스토나 버섯"
+   }
+  },
+  {
+   "id": "antidote_herb",
+   "name": "해독초",
+   "kind": "consumable",
+   "effect": "독 해제",
+   "price": 5,
+   "where": [
+    "shop:ludia",
+    "shop:berga",
+    "shop:rondo"
+   ],
+   "jp_md": "毒消し草",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "毒消し草",
+    "value": "해독초"
+   }
+  },
+  {
+   "id": "medicine",
+   "name": "약",
+   "kind": "consumable",
+   "effect": "전투 중 기절한 동료를 깨움(HP 1)",
+   "price": 50,
+   "where": [
+    "shop:neria",
+    "shop:rondo",
+    "shop:rudra"
+   ],
+   "jp_md": "気付けぐすり",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "気付けぐすり",
+    "value": "약"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "회복약",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§아이템"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    }
+   ]
+  },
+  {
+   "id": "vis_mushroom",
+   "name": "비스의 버섯",
+   "kind": "consumable",
+   "effect": "MP 회복",
+   "price": null,
+   "where": [
+    "drop:kazazum"
+   ],
+   "jp_md": "ビスのキノコ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "alt": [
+    {
+     "field": "effect",
+     "value": "1명 MP 전부 회복",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ビスのキノコ",
+    "value": "비스의 버섯"
+   }
+  },
+  {
+   "id": "visna_fruit",
+   "name": "비스나의 열매",
+   "kind": "consumable",
+   "effect": "동료 전원 MP 회복",
+   "price": 1000,
+   "where": [
+    "shop:izu"
+   ],
+   "jp_md": "ビスナの實",
+   "note": "전투 중엔 못 씀(gameworld)",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO08 p.132"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ビスナの実",
+    "value": "비스나의 열매"
+   }
+  },
+  {
+   "id": "elixir",
+   "name": "에릭서",
+   "kind": "consumable",
+   "effect": "기절한 동료를 바로 일으킴",
+   "price": null,
+   "where": [
+    "chest:lava_furnace"
+   ],
+   "jp_md": "エリクサー",
+   "note": "용암로에서만(gameworld)",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO19 p.149"
+    }
+   ],
+   "alt": [
+    {
+     "field": "effect",
+     "value": "기절 동료 HP·MP 전부 회복",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "エリクサー",
+    "value": "에릭서"
+   }
+  },
+  {
+   "id": "moonshine",
+   "name": "밀조주",
+   "kind": "key",
+   "effect": "보아드에게 주면 폭약",
+   "price": null,
+   "where": [
+    "event:harvey",
+    "shop:afl"
+   ],
+   "jp_md": "密造酒",
+   "note": "gameworld 표 가격 50000 은 오식 가능",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO17 p.147"
+    }
+   ],
+   "alt": [
+    {
+     "field": "price",
+     "value": 50000,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "effect",
+     "value": "기절 동료 HP 전부 회복",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "密造酒",
+    "value": "밀조주"
+   }
+  },
+  {
+   "id": "disaster_charm",
+   "name": "재해 방지 부적",
+   "kind": "accessory",
+   "effect": "행운 +10",
+   "price": 300,
+   "where": [
+    "black_market:neria"
+   ],
+   "jp_md": "災害のお守り",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§HINT&TIP"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "재해의 부적",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§서장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§HINT&TIP"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "재해 방지 부적",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.132"
+      }
+     ],
+     "note": "gamepia — 정본과 같음"
+    },
+    {
+     "field": "name",
+     "value": "재난의 막음",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "price",
+     "value": 100,
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "災害のお守り",
+    "value": "재해 방지 부적"
+   }
+  },
+  {
+   "id": "opna_ring",
+   "name": "오프나의 반지",
+   "kind": "accessory",
+   "effect": "공격력 상승",
+   "price": null,
+   "where": [
+    "chest:cubera_pros_road"
+   ],
+   "jp_md": "オプナのゆびわ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "alt": [
+    {
+     "field": "effect",
+     "value": "공격력 +100",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "オプナのゆびわ",
+    "value": "오프나의 반지"
+   }
+  },
+  {
+   "id": "tute_ring",
+   "name": "튜트의 반지",
+   "kind": "accessory",
+   "effect": "방어력 상승",
+   "price": null,
+   "where": [
+    "chest:grostos_castle"
+   ],
+   "jp_md": "テュトのゆびわ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO13 p.143"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "튜토의 반지",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§아이템"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO13 p.143"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "effect",
+     "value": "방어력 +25",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "テュトのゆびわ",
+    "value": "튜트의 반지"
+   }
+  },
+  {
+   "id": "quick_ring",
+   "name": "퀵의 반지",
+   "kind": "accessory",
+   "effect": "민첩성 상승",
+   "price": null,
+   "where": [
+    "chest:izu"
+   ],
+   "jp_md": "クイクのゆびわ",
+   "note": "유이시스 통과에 필요(gameworld)",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO12 p.142"
+    }
+   ],
+   "alt": [
+    {
+     "field": "effect",
+     "value": "민첩성 +10",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "クイクのゆびわ",
+    "value": "퀵의 반지"
+   }
+  },
+  {
+   "id": "spell_ring",
+   "name": "주문의 반지",
+   "kind": "accessory",
+   "effect": "주문능력 상승",
+   "price": null,
+   "where": [
+    "anes_tower"
+   ],
+   "jp_md": "スペルのゆびわ",
+   "note": "정본은 マホウ(마법의 반지)·スペル(주문의 반지)를 가른다 — 효과로 スペル 쪽에 맞췄다",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO10 p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "마법의 반지",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§아이템"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "주문의 반지",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO10 p.134"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역 — 정본과 같음"
+    },
+    {
+     "field": "effect",
+     "value": "주문능력 +100",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO10 p.134"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "where",
+     "value": [
+      "izu_life_tower"
+     ],
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역(이즈~명의 탑)"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "スペルのゆびわ",
+    "value": "주문의 반지"
+   }
+  },
+  {
+   "id": "mouse_ring",
+   "name": "마우스의 반지",
+   "kind": "accessory",
+   "effect": "MP 회복이 빨라짐",
+   "price": null,
+   "where": [
+    "chest:cubera_pros_road"
+   ],
+   "jp_md": "マウスのゆびわ",
+   "note": "gameworld 만. 정본에 マウス 가 없다 — マホウのゆびわ(마법의 반지)의 오독일 수 있음(미확인)",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "glossary": null
+  },
+  {
+   "id": "luck_ring",
+   "name": "행운의 반지",
+   "kind": "accessory",
+   "effect": "행운 상승",
+   "price": null,
+   "where": [
+    "chest:will_bern_road"
+   ],
+   "jp_md": "幸運のゆびわ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO15 p.145"
+    }
+   ],
+   "alt": [
+    {
+     "field": "effect",
+     "value": "운 +25",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "幸運のゆびわ",
+    "value": "행운의 반지"
+   }
+  },
+  {
+   "id": "wise_ring",
+   "name": "현자의 반지",
+   "kind": "accessory",
+   "effect": "현명함 상승",
+   "price": null,
+   "where": [
+    "drop:digens"
+   ],
+   "jp_md": "賢者のゆびわ",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§아이템"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "alt": [
+    {
+     "field": "effect",
+     "value": "현명함 +10",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "賢者のゆびわ",
+    "value": "현자의 반지"
+   }
+  },
+  {
+   "id": "warrior_flute",
+   "name": "전사의 피리",
+   "kind": "key",
+   "effect": "레지스탕스 증표 / 가비의 결계를 풂",
+   "price": null,
+   "where": [
+    "sapia_lake 근처 동굴"
+   ],
+   "jp_md": "戦士の笛",
+   "note": "2장 노인(레이시아)의 부탁",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO07 p.131"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "戦士の笛",
+    "value": "전사의 피리"
+   }
+  },
+  {
+   "id": "gilmoa_star",
+   "name": "길모아의 별",
+   "kind": "key",
+   "effect": "나레사 대장에게 전할 보석",
+   "price": null,
+   "where": [
+    "event:great_gale"
+   ],
+   "jp_md": "ギルモアの星",
+   "note": "전작의 파렌 왕가 보석",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "길모어의 별",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제2장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제2장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.136"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "길모아의 별",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.136"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO08 p.132"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO09 p.133"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "gamepia 일부·gameworld"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ギルモアの星",
+    "value": "길모아의 별"
+   }
+  },
+  {
+   "id": "dragon_tears",
+   "name": "용의 눈물",
+   "kind": "key",
+   "effect": "용의 알에 들어갈 때 필요",
+   "price": null,
+   "where": [
+    "event:barbara"
+   ],
+   "jp_md": "龍の涙",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO09 p.133"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "용의 알",
+     "src": [
+      {
+       "guide": "txt2",
+       "loc": "§제3장"
+      }
+     ],
+     "note": "txt2 — 받는 물건을 '용의 알'로 적음, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "竜の涙",
+    "value": "용의 눈물"
+   }
+  },
+  {
+   "id": "staff_fragment",
+   "name": "지팡이 조각",
+   "kind": "key",
+   "effect": "다임에게 주면 프람나·휴드나 완성",
+   "price": null,
+   "where": [
+    "drop:gyanoa"
+   ],
+   "jp_md": "杖のかけら",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "지팡이의 파편",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제3장"
+      },
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.137"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "부서진 지팡이",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "杖のかけら",
+    "value": "지팡이 조각"
+   }
+  },
+  {
+   "id": "will_pass",
+   "name": "윌 통행증",
+   "kind": "key",
+   "effect": "윌 지방으로 나가는 통행증",
+   "price": null,
+   "where": [
+    "event:great_gale"
+   ],
+   "note": "정본엔 지명별 통행증 넷(아훌·이즈·큐베라·윌)이 있다 · 주는 사람은 대도 게일(게일 3세 아님) — PS1 대사 ED2SCN11:164",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "ps1",
+     "loc": "ED2SCN11:164"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "월통행증",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제4장"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "윌로 가는 통행증",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO13 p.143"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "name",
+     "value": "큐베라의 통행증",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.138"
+      }
+     ],
+     "note": "gamepia — 대도 게일(1세)에게서. 다른 통행증일 수 있음"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "ウイル通行証",
+    "value": "윌 통행증"
+   }
+  },
+  {
+   "id": "silver_plate",
+   "name": "은 플레이트",
+   "kind": "key",
+   "effect": "별관의 빨간 문을 엶",
+   "price": null,
+   "where": [
+    "event:gale"
+   ],
+   "jp_md": "銀のプレート",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "은의 플레이트",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§최종장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§종장"
+      },
+      {
+       "guide": "gamepia",
+       "loc": "p.139"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "은의 블레이트",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO20 p.150"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 오기 추정"
+    }
+   ],
+   "glossary": {
+    "cat": "item",
+    "jp": "銀のプレート",
+    "value": "은 플레이트"
+   }
+  }
+ ],
+ "monsters": [
+  {
+   "id": "slime",
+   "name": "슬라임",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "elaster 주변"
+   ],
+   "chapter": 0,
+   "boss": false,
+   "note": "레벨 3 이후엔 경험치 0(txt2)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§HINT&TIP"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "スライム",
+    "value": "슬라임"
+   }
+  },
+  {
+   "id": "pulldam",
+   "name": "플다암",
+   "hp": null,
+   "exp": 50,
+   "gold": null,
+   "where": [
+    "royal_tomb"
+   ],
+   "chapter": 1,
+   "boss": true,
+   "note": "1장 중간 보스, 플로라를 쫓음",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "プルダーム",
+    "value": "플다암"
+   },
+   "alt": [
+    {
+     "field": "name",
+     "value": "풀담",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제1장"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO05 p.129"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    }
+   ]
+  },
+  {
+   "id": "rinko",
+   "name": "링코",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "royal_tomb 부근"
+   ],
+   "chapter": 1,
+   "boss": false,
+   "note": "txt2 만",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "リンコー",
+    "value": "링코"
+   }
+  },
+  {
+   "id": "fire_knight",
+   "name": "불꽃의 기사",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "필드"
+   ],
+   "chapter": 1,
+   "boss": false,
+   "note": "불꽃창을 떨어뜨림",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§무기"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "炎の騎士",
+    "value": "불꽃의 기사"
+   }
+  },
+  {
+   "id": "bakara",
+   "name": "바카라",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "나슬~파에토"
+   ],
+   "chapter": 1,
+   "boss": false,
+   "note": "경험치가 많다(gameworld 스샷 캡션)",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "バカラ",
+    "value": "바카라"
+   }
+  },
+  {
+   "id": "groggard",
+   "name": "그록가드",
+   "hp": null,
+   "exp": 1500,
+   "gold": 600,
+   "where": [
+    "abyss_mouth"
+   ],
+   "chapter": 1,
+   "boss": true,
+   "note": "1장 보스, 두 마리(gameworld). 일행을 호로 재움 — 사이레스·리파크 권장(txt2). 번개 지팡이",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "그록 가드",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO06 p.130"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO07 p.131"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "グロッグガード",
+    "value": "그록가드"
+   }
+  },
+  {
+   "id": "kaigyo",
+   "name": "괴어",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "전사의 피리 동굴"
+   ],
+   "chapter": 2,
+   "boss": false,
+   "note": "껍질이 단단해 번개 지팡이·이그나만 듣는다(gamepia)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "怪魚",
+    "value": "괴어"
+   }
+  },
+  {
+   "id": "guard",
+   "name": "가드",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "ishta",
+    "anes_tower",
+    "grostos_castle",
+    "pros"
+   ],
+   "chapter": 2,
+   "boss": false,
+   "note": "제국 병사",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO09 p.133"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ガード",
+    "value": "가드"
+   }
+  },
+  {
+   "id": "daris",
+   "name": "다리스",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "grostos_castle 수로"
+   ],
+   "chapter": 2,
+   "boss": true,
+   "note": "2장 보스. 전원 피해·회복을 쓴다 — 사이레스로 봉쇄(txt2·gameworld). 얼음의 지팡이(gameworld)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.136"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO09 p.133"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ダリス",
+    "value": "다리스"
+   }
+  },
+  {
+   "id": "nukacchi",
+   "name": "누캇치",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "3장 필드"
+   ],
+   "chapter": 3,
+   "boss": false,
+   "note": "회복의 갑옷을 드물게 떨어뜨림. 판독 '누캇치'(gameworld)",
+   "unsure": true,
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO11 p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ヌカッチ",
+    "value": "누캇치"
+   }
+  },
+  {
+   "id": "gyanoa",
+   "name": "갸노아",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "dragon_egg(마지막)"
+   ],
+   "chapter": 3,
+   "boss": true,
+   "note": "황제의 부하. 불 계열 주문(txt), 공격 주문 무효(gameworld). 지팡이의 파편",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO11 p.135"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "가노아",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO11 p.135"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 캡션"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ギャノア",
+    "value": "갸노아"
+   }
+  },
+  {
+   "id": "kazazum",
+   "name": "카자즘",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "cubera 비밀통로"
+   ],
+   "chapter": 4,
+   "boss": true,
+   "note": "4장 중간 보스. 얼음벽 — 프람나로 깬다(gamepia 는 휴드나가 회복시킨다고)",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "카쟈즘",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제4장"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "카자즘",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO14 p.144"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO15 p.145"
+      }
+     ],
+     "note": "txt·txt2 혼용, gameworld"
+    },
+    {
+     "field": "name",
+     "value": "가자즘",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.138"
+      }
+     ],
+     "note": "gamepia"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "カザズーム",
+    "value": "카자즘"
+   }
+  },
+  {
+   "id": "digens",
+   "name": "디겐스",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "pros"
+   ],
+   "chapter": 4,
+   "boss": true,
+   "note": "4장 보스, 사형 집행인. 휴드나·독 공격. 현자의 반지(gameworld)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.138"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO16 p.146"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "디켄스",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO21 p.151"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역, 오기 추정"
+    },
+    {
+     "field": "name",
+     "value": "적의 대장",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제4장"
+      },
+      {
+       "guide": "txt2",
+       "loc": "§제4장"
+      }
+     ],
+     "note": "txt·txt2 는 이름 없음"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ディゲンス",
+    "value": "디겐스"
+   }
+  },
+  {
+   "id": "drast_ghost",
+   "name": "드러스트유령",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "pros"
+   ],
+   "chapter": 4,
+   "boss": false,
+   "note": "디겐스의 호위 두 마리. 디겐스를 쓰러뜨리면 사라짐",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "드래스트 고스트",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.139"
+      }
+     ],
+     "note": "정발 표기 — 우리 정본이 교정"
+    },
+    {
+     "field": "name",
+     "value": "드라고스트",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO16 p.146"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ドラストゴースト",
+    "value": "드러스트유령"
+   }
+  },
+  {
+   "id": "metal_steam",
+   "name": "메탈스팀",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "grostos_castle 본관"
+   ],
+   "chapter": 5,
+   "boss": false,
+   "note": "호가 듣는다. gameworld 만",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO17 p.147"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "メタルスチーム",
+    "value": "메탈스팀"
+   }
+  },
+  {
+   "id": "sea_king_knight",
+   "name": "해왕기사",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "technica 앞"
+   ],
+   "chapter": 5,
+   "boss": true,
+   "note": "푸아조·오비스를 쓴다(gameworld). 호·사이레스 권장",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO18 p.148"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "海王騎士",
+    "value": "해왕기사"
+   }
+  },
+  {
+   "id": "black_knight",
+   "name": "블랙나이트",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "grostos_castle 각 층"
+   ],
+   "chapter": 5,
+   "boss": false,
+   "note": "세 명씩(gameworld)",
+   "src": [
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO18 p.148"
+    }
+   ],
+   "alt": [
+    {
+     "field": "name",
+     "value": "블랙 나이트",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.139"
+      }
+     ]
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ブラックナイト",
+    "value": "블랙나이트"
+   }
+  },
+  {
+   "id": "gabi",
+   "name": "가비",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "grostos_castle"
+   ],
+   "chapter": 5,
+   "boss": true,
+   "note": "결계를 침 — 전사의 피리로 푼다. 레이시아가 거든다",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO19 p.149"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ガービィ",
+    "value": "가비"
+   }
+  },
+  {
+   "id": "godwin",
+   "name": "고드윈 2세",
+   "hp": null,
+   "exp": null,
+   "gold": null,
+   "where": [
+    "throne_room"
+   ],
+   "chapter": 5,
+   "boss": true,
+   "note": "최종 보스. 두 번 변신(gameworld), 변신 뒤엔 태양의 성검만 유효. 흰 용(신디)이 합류",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO19 p.149"
+    }
+   ],
+   "glossary": {
+    "cat": "monster",
+    "jp": "ゴドウィン２世",
+    "value": "고드윈 2세"
+   }
+  }
+ ],
+ "chapters": [
+  {
+   "no": 0,
+   "title": "평화로운 날",
+   "places": [
+    "elaster",
+    "ludia",
+    "cruise",
+    "berga",
+    "neria",
+    "rondo",
+    "liesel",
+    "ralfa",
+    "seris",
+    "nash",
+    "suel",
+    "boad_shipping"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "title",
+     "value": "평화로운 나날들",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO02 p.126"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "field": "title",
+     "value": "평화로운 나날",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.132"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "no": 1,
+   "title": "열려진 나락",
+   "places": [
+    "ludia",
+    "liesel",
+    "yordo",
+    "royal_tomb",
+    "sere",
+    "sedal",
+    "boad_shipping",
+    "rudra",
+    "bazunoon",
+    "kaul",
+    "lishel",
+    "nasul",
+    "faeto",
+    "colcus",
+    "wolf_mouth",
+    "abyss_mouth"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제1장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.134"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO04 p.128"
+    }
+   ]
+  },
+  {
+   "no": 2,
+   "title": "영웅들의 행방",
+   "places": [
+    "ishta",
+    "warrior_tomb",
+    "afl",
+    "anes_tower",
+    "boad_shipping",
+    "izu",
+    "sapia_lake",
+    "yuisis",
+    "grostos_castle"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제2장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.135"
+    }
+   ],
+   "alt": [
+    {
+     "field": "title",
+     "value": "영웅들의 해방",
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO07 p.131"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    }
+   ]
+  },
+  {
+   "no": 3,
+   "title": "용의 알",
+   "places": [
+    "ishta",
+    "izu",
+    "yordo",
+    "yordo_sanctuary",
+    "dragon_egg",
+    "sapia_lake",
+    "cubera",
+    "pros",
+    "morgan_house",
+    "ludia",
+    "cruise"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제3장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO09 p.133"
+    }
+   ],
+   "alt": [
+    {
+     "field": "title",
+     "value": "용의알",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제3장"
+      }
+     ],
+     "note": "표제 붙여 씀"
+    }
+   ]
+  },
+  {
+   "no": 4,
+   "title": "암흑의 지배자",
+   "places": [
+    "ishta",
+    "sirika",
+    "yuisis",
+    "grostos_castle",
+    "will",
+    "cubera",
+    "bern",
+    "nesa",
+    "trial_cave",
+    "pros"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§제4장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.137"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO12 p.142"
+    }
+   ]
+  },
+  {
+   "no": 5,
+   "title": "기원, 그리고 희망",
+   "places": [
+    "grostos_castle",
+    "courtyard",
+    "technica",
+    "bazunoon",
+    "kaul",
+    "lava_furnace",
+    "throne_room"
+   ],
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§최종장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§종장"
+    }
+   ],
+   "alt": [
+    {
+     "field": "title",
+     "value": "최종장 - 기원, 그리고 희망",
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§최종장"
+      }
+     ],
+     "note": "장 이름 '최종장'"
+    },
+    {
+     "field": "title",
+     "value": "기원 그리고 희망",
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.139"
+      },
+      {
+       "guide": "gameworld",
+       "loc": "HERO16 p.146"
+      }
+     ],
+     "note": "쉼표 없음"
+    }
+   ]
+  }
+ ],
+ "misc": {
+  "opening": {
+   "desc": "ED1 뒤 20년, 세리오스·디나의 아들 아트라스. 대지진 뒤 용의 알과 지하인 출현",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§오프닝"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§프롤로그"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO02 p.126"
+    }
+   ]
+  },
+  "travel_funds": {
+   "value": "황태후에게 5000G, 처음 합계 8000G",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.132"
+    }
+   ],
+   "note": "합계 8000G 는 txt 만"
+  },
+  "holy_gear_sale": {
+   "value": "성스러운 검·갑옷·방패를 150G 에 팔아 뱃삯",
+   "src": [
+    {
+     "guide": "txt",
+     "loc": "§서장"
+    },
+    {
+     "guide": "txt2",
+     "loc": "§서장"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO03 p.127"
+    }
+   ]
+  },
+  "spell_slots": {
+   "value": "1인 최대 7개, MP 캡슐 하나에 주문 하나. 전투가 끝나면 MP 회복",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§조작설명"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.131"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO01 p.125"
+    }
+   ]
+  },
+  "autosave": {
+   "value": "마을 진입·전투 전환 때 자동 저장 — 불러오기 11번째 칸",
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§조작설명"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.130"
+    }
+   ]
+  },
+  "ship_fares": [
+   {
+    "value": "표 100G",
+    "src": [
+     {
+      "guide": "txt2",
+      "loc": "§아이템"
+     },
+     {
+      "guide": "gameworld",
+      "loc": "HERO20 p.150"
+     }
+    ]
+   },
+   {
+    "value": "루드라→리셸 정기선 100G",
+    "src": [
+     {
+      "guide": "gameworld",
+      "loc": "HERO06 p.130"
+     }
+    ],
+    "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+   },
+   {
+    "value": "스엘 해적 여행소 1000G",
+    "src": [
+     {
+      "guide": "gameworld",
+      "loc": "HERO17 p.147"
+     }
+    ],
+    "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+   }
+  ],
+  "sell_rate": {
+   "value": "구입가의 75%",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO20 p.150"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO21 p.151"
+    }
+   ],
+   "note": "gameworld 표의 살 때·팔 때 값에서 계산(예: 60→45). 판매 단가는 MD판"
+  },
+  "black_market": {
+   "desc": "밀매상이 상점에 없는 장비를 판다(txt2 HINT&TIP)",
+   "by_chapter": [
+    {
+     "chapter": 0,
+     "place": "neria",
+     "items": [
+      "disaster_charm"
+     ]
+    },
+    {
+     "chapter": 1,
+     "place": "nasul",
+     "items": [
+      "iron_sword"
+     ],
+     "note": "철검 시리즈"
+    },
+    {
+     "chapter": 2,
+     "place": "afl",
+     "items": [
+      "morning_star"
+     ],
+     "note": "철구 곤봉 시리즈"
+    },
+    {
+     "chapter": 2,
+     "place": "yuisis",
+     "items": [
+      "strong_spear"
+     ],
+     "note": "강자의 창 시리즈"
+    },
+    {
+     "chapter": 3,
+     "place": "izu",
+     "items": [
+      "deadly_sword"
+     ],
+     "note": "필살검 시리즈"
+    },
+    {
+     "chapter": 3,
+     "place": "ralfa",
+     "items": [
+      "warrior_sword"
+     ],
+     "note": "전사의 검 시리즈"
+    },
+    {
+     "chapter": 5,
+     "place": "kaul",
+     "items": [
+      "dragon_sword",
+      "dragon_armor",
+      "dragon_shield"
+     ],
+     "note": "드래곤 시리즈"
+    }
+   ],
+   "src": [
+    {
+     "guide": "txt2",
+     "loc": "§HINT&TIP"
+    }
+   ]
+  },
+  "dragon_egg_order": {
+   "desc": "3장 뒤쪽에 멈추는 용의 알 위치 — 공략마다 다르다",
+   "variants": [
+    {
+     "value": [
+      "리젤 마을 아래",
+      "랄파 마을 위",
+      "루디아 북동 크루즈 옆(갸노아)"
+     ],
+     "src": [
+      {
+       "guide": "gamepia",
+       "loc": "p.137"
+      }
+     ]
+    },
+    {
+     "value": [
+      "루디아 성 부근",
+      "론드 마을 남쪽",
+      "무너진 마스쿤 마을"
+     ],
+     "src": [
+      {
+       "guide": "gameworld",
+       "loc": "HERO11 p.135"
+      }
+     ],
+     "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역"
+    },
+    {
+     "value": [
+      "루디아 밖 크루즈 쪽",
+      "세리스 성 쪽",
+      "그 아래 동쪽(갸노아)"
+     ],
+     "src": [
+      {
+       "guide": "txt",
+       "loc": "§제3장"
+      }
+     ]
+    }
+   ],
+   "unsure": true
+  },
+  "world_secret": {
+   "desc": "고대 문명이 아그니쟈에게 멸망, 일부가 지하로 피신. 프레이아=메인 컴퓨터, 요슈아=인공위성. 황제가 프레이아를 악용",
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO16 p.146"
+    },
+    {
+     "guide": "gamepia",
+     "loc": "p.139"
+    }
+   ]
+  },
+  "recommended_levels": {
+   "values": {
+    "pulldam": 7,
+    "groggard": 12,
+    "daris": 18,
+    "gyanoa": 24,
+    "godwin": 44
+   },
+   "src": [
+    {
+     "guide": "gameworld",
+     "loc": "HERO05 p.129"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO06 p.130"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO09 p.133"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO11 p.135"
+    },
+    {
+     "guide": "gameworld",
+     "loc": "HERO19 p.149"
+    }
+   ],
+   "note": "게임월드는 MD(수퍼알라딘보이) 일본판 기준·정발 이전 잡지 음역. txt2 는 그록가드 전 전원 10"
+  }
+ }
+}
