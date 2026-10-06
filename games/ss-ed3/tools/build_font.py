@@ -94,6 +94,8 @@ def pad_ascii(asc, pad=None):
 #     146 개가 이미 쓰는 자리라 아래도 안 잘린다(`DY` 주석의 실측).
 #   ⚠ 한글을 올리는 쪽은 안 된다 — 창이 첫 줄 0 행을 자르는데 한글은 초성 가로획이
 #     통째로 날아간다(2026-08-27 에 그래서 내려 앉힌 것이다).
+#   ⚠ **ASCII 는 원판 크기·자리 그대로다**(마스터 10-06). 숫자 도안으로 키우고 `ASCII_DY` 를 2 로 내려 봤더니 스탯 창은 맞았지만 장비·저장 목록·상점
+#     (소지금·PRICE)이 다 어긋나 **되돌렸다**(`20f40247` 에 시험본이 남아 있다). 알파벳(`Pia`·`Goa`)이 원본 크기라 숫자만 키우면 창마다 기준선이 갈린다.
 ASCII_DY = 1
 
 #   🔴 **숫자는 반각으로 써도 전각 글리프로 그려진다**(실측 2026-09-01). 대사창에 반각
@@ -104,7 +106,8 @@ ASCII_DY = 1
 #     아래 두 행이 비어 있으니 **2 행 내려 2~11 행**에 앉히면 한글과 밑이 맞는다.
 #   ⚠ HUD 의 `70 Pia / 0 Goa` 는 게임이 자기 `ASCII.FON` 으로 직접 그린다(실측: 행 3~11 =
 #     `ASCII_DY` 가 먹은 자리) — 여기 안 걸린다.
-DIGIT_DY = 1
+DIGIT_DY = 1  # (옛 값 — 전각 숫자를 갈무리에서 뽑으면서 쓰지 않는다)
+DIGIT_DX = 3  # 갈무리 숫자(폭 7)를 12px 칸 가운데에 — 열 3~9
 FULLWIDTH_DIGITS = tuple(range(0x824F, 0x8259))  # ０~９
 
 
@@ -176,6 +179,10 @@ def bake_label_strips(out, base):
             cell = np.zeros((F.ROWS, F.CELL), np.uint8)
             cell[:, DX:] = bits[:, : F.CELL - DX]
             strip[:, k * F.CELL : (k + 1) * F.CELL] = cell
+        #   🔴 **통째로 한 행 내린다**(마스터 10-01) — 말풍선 안쪽 14 행에서 일반 글자(본체RAM)는 위 2·아래 1 인데
+        #     이 스트립은 위 1·아래 2 로 한 줄 높았다(실측: 잉크 34~44 vs 35~45). RAM 석 자(원본 픽셀)도 같이 내려야 한 몸이다.
+        assert not strip[-1].any(), "마지막 행이 비어 있어야 한 행 내릴 수 있다"
+        strip = np.vstack([np.zeros((1, strip.shape[1]), strip.dtype), strip[:-1]])
         for i in range(cells):
             g = fonts.pack18(strip[:, i * F.CELL : (i + 1) * F.CELL], rows=F.ROWS)
             assert len(g) == F.STRIDE, len(g)
@@ -240,6 +247,27 @@ def bake_book(out):
     return n
 
 
+#   🔴 **크레딧 자막 전용 한 벌** — Galmuri9 를 **왼쪽 붙임**(DX 0)으로 굽는다. 그리는 쪽이 글자 폭을
+#     10 으로 불러(`subtitle_stub.draw_line9`) 9 폭 글리프 + 1 간격이 된다. 배정이 없으면 아무것도 안 한다.
+CRED_FONT, CRED_DY = "Galmuri9", -2
+
+
+def bake_cred(out):
+    """크레딧 자막 전용 글리프를 굽는다 — `(구운 칸 수)`."""
+    table = H.load_cred()
+    if not table:
+        return 0
+    bdf = fonts.galmuri(CRED_FONT)
+    n = 0
+    for ch, idx in table.items():
+        cell = bdf.bits(ch, dy=CRED_DY, rows=F.ROWS, width=F.CELL)
+        g = fonts.pack18(cell, rows=F.ROWS)
+        assert len(g) == F.STRIDE, (ch, len(g))
+        out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = g
+        n += 1
+    return n
+
+
 def build(disc=1):
     """`(새 폰트 bytes, 못 찾은 글자)` — 원본과 크기가 같다."""
     base, _ = F.load(disc)
@@ -256,8 +284,19 @@ def build(disc=1):
         out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = shift_down12(
             bytes(out[idx * F.STRIDE : (idx + 1) * F.STRIDE]), DIGIT_DY
         )
+    #   🔴 **전각 숫자는 한글과 같은 갈무리에서 뽑는다**(마스터 10-06 「전각은 갈무리 기반으로」) — 한글(0~10 행)과 같은 높이·같은 획이다.
+    #   갈무리 숫자는 폭 7(열 0~6)이라 12px 칸 가운데(`DIGIT_DX`=3 → 열 3~9)에 앉힌다. ASCII 숫자만 마스터 도안(폭 6 고정)이다.
+    dg, dmiss = fonts.convert_chars(
+        list("0123456789"), dy=DY, rows=F.ROWS, packer=fonts.pack18, width=F.CELL
+    )
+    assert not dmiss, dmiss
+    for ch, idx in zip("0123456789", digit_slots(), strict=True):
+        out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = shift_right(
+            dg[ch], F.CELL, F.ROWS, F.STRIDE, DIGIT_DX
+        )
     bake_low(out)
     bake_book(out)
+    bake_cred(out)
     bake_label_strips(out, base)
     assert len(out) == len(base), (len(out), len(base))
     return bytes(out), missing

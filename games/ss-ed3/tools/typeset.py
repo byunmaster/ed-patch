@@ -127,9 +127,8 @@ def is_narration(text):
 
 
 def wrapped_rows(line, width=WIN_COLS):
-    """엔진이 접었을 때 이 줄이 차지하는 줄 수."""
-    c = cols(line)
-    return max(1, -(-int(c * 2) // (width * 2)))  # ceil, 0.5 슬롯까지 정수로
+    """엔진이 접었을 때 이 줄이 차지하는 줄 수 — `fold` 와 같은 규칙(시작 위치 기준)."""
+    return max(1, len(fold(line, width)))
 
 
 def overflows(text, width=WIN_COLS, rows=WIN_ROWS):
@@ -158,7 +157,11 @@ def fold(line, width=WIN_COLS):
     out, cur, c = [], "", 0.0
     for ch in visible(line):
         cw = char_cols(ch)
-        if c + cw > width:
+        #   🔴 **엔진은 글자를 그리기 「전에」 커서가 `폭 − 1`칸(16.0 = 192px)을 넘었는지 본다** — 글자가 **끝나는** 자리가 아니라
+        #     **시작하는** 자리다(마스터 10-05, 엔딩 로디 「…쓰러뜨렸고.」). 전각은 둘이 같지만 **반각 부호는 다르다**: 16.5 에서 시작해
+        #     17.0 에 끝나는 마침표는 「끝」으로 재면 들어가는데 엔진은 **시작 16.5 > 16.0 이라 접는다** → 부호 하나만 다음 줄로 밀린다.
+        #     (줄이 17.0 칸이고 끝이 반각이면 늘 그렇다 — 대사 전체 109 줄이 이 모양이었는데 검사기가 「들어간다」고 했다.)
+        if c > width - 1:
             out.append(cur)
             cur, c = "", 0.0
         cur += ch
@@ -407,6 +410,9 @@ def pad_to_budget(text, budget, width=WIN_COLS, keep_last=True):
             #    줄을 넘기고, 그 뒤의 `0D` 가 **빈 줄을 하나 더** 만든다. 그러면 페이지가
             #    한 줄 늘어 3줄을 넘고, **화자 줄이 스크롤로 밀려 사라진다**(실기 실측
             #    2026-08-24: 첫 줄을 17칸으로 채웠더니 「クリスの母」가 없어졌다).
+            #    ⚠ 경계는 **넘을 때**다(2026-09-27 주입 실측): 17.0 칸 딱 맞음 + `0D` 는
+            #      빈 줄이 안 생기고 18 칸 + `0D` 는 생긴다. 반칸 유보는 패딩이 넘치지 않게 하는
+            #      안전폭이지, 「17 칸 문안 = 결함」이 아니다(devlog 09-27).
             #    ⚠ 단 **뒤에 `0D` 가 없는 줄**(그 페이지의 마지막 줄)은 그 사고가 없다 —
             #    거기까지 반칸을 유보하면 채울 자리가 모자라 재삽입이 통째로 거부된다.
             room = int(width * 2 - cols(pg[li]) * 2) - (0 if li == len(pg) - 1 else 1)
@@ -418,8 +424,12 @@ def pad_to_budget(text, budget, width=WIN_COLS, keep_last=True):
         if need <= 0:
             break
         take = min(room, need)
-        # 홀수 바이트는 반각 하나로 맞춘다(0.5칸)
-        pages[pi][li] += PAD * (take // 2) + (PAD_HALF if take % 2 else "")
+        # 홀수 바이트는 반각 하나로 맞춘다(0.5칸).
+        # 🔴 **반각이 앞, 전각이 뒤다.** 엔진은 **글자를 그리기 전에** 커서가 `창 폭 − 2칸`(18칸 창에서 16칸 = 192px)을 넘었으면
+        #   줄을 바꾼다. 줄 끝 반각 공백이 그 선을 넘은 자리(예: 6.5칸 + 전각 10 = 16.5칸 뒤 반각)에서 시작하면 **그 공백 하나가
+        #   다음 줄로 넘어가** 대기 `▼` 가 한 줄 아래 왼쪽 끝에 뜬다(2026-10-04 실기 — MAP076 「괜찮아, 엄마.」). 반각을 앞에
+        #   두면 모든 공백이 선 안(시작 x ≤ 192)에서 시작한다.
+        pages[pi][li] += (PAD_HALF if take % 2 else "") + PAD * (take // 2)
         need -= take
     out = PAGE.join(NL.join(pg) for pg in pages)
     assert body_bytes(out) == budget, (body_bytes(out), budget)

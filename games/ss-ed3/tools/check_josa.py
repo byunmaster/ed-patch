@@ -40,10 +40,19 @@ from text.josa import batchim
 #     `サーナ`=「사나」 뒤에 「이」가 오면 「사나이」(男)가 되는데, 검사기는 조사로 읽고
 #     「사나가」로 고치라 한다(실측 2026-08-28, BOOK13 「일곱 바다를 건넌 사나이」).
 #     정본에서 그 이름을 뺄 일은 아니고 — 그 이름 자체는 맞다 — 이 짝만 눈감는다.
-SAFE = frozenset({"사나이"})
+SAFE = frozenset({"사나이", "사나이란"})
 
 # (받침 있을 때, 받침 없을 때)
-PAIRS = (("은", "는"), ("이", "가"), ("을", "를"), ("과", "와"))
+PAIRS = (
+    ("은", "는"),
+    ("이", "가"),
+    ("을", "를"),
+    ("과", "와"),
+    #   서술격 「이다」 활용 — 받침 없으면 「이」가 빠진다. 「사막의흑표이라는」 둘이 이 구멍으로 샜다(10-02)
+    ("이라는", "라는"),
+    ("이란", "란"),
+    ("이라고", "라고"),
+)
 FLAT = {j: (i, k == 0) for i, p in enumerate(PAIRS) for k, j in enumerate(p)}
 
 
@@ -64,7 +73,9 @@ def scan(paths):
     if not ns:
         return bad
     pat = re.compile(
-        "(" + "|".join(re.escape(n) for n in ns) + r")(은|는|이|가|을|를|과|와)(?![가-힣])"
+        "("
+        + "|".join(re.escape(n) for n in ns)
+        + r")(이라는|라는|이란|이라고|라고|은|는|이|가|을|를|과|와|란)(?![가-힣])"
     )
     for f in paths:
         with open(f, encoding="utf-8") as fh:

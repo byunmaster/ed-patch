@@ -46,7 +46,7 @@ def table():
 
 
 def chapter_keys():
-    """메뉴 맨 위 **챕터 바**에 나가는 JP 키 — 여기만 기본(원판 자리) 글리프를 쓴다."""
+    """메뉴 맨 위 **챕터 바**에 나가는 JP 키 — 내린 판을 쓰되 이유가 다르다(아래 🔴)."""
     if not os.path.exists(SYSTEM):
         return set()
     with open(SYSTEM, encoding="utf-8") as f:
@@ -55,11 +55,13 @@ def chapter_keys():
 
 #   🔴 **시스템 표는 0 행을 자르는 창(스탯)에 나간다** — 그래서 기본이 아니라 **한 행 내린
 #     판**으로 인코딩한다(`hangul_map.LOW_PATH`). 안 그러면 초성 윗 가로획이 날아간다.
-#   ⚠ **챕터 바만 예외다** — 그 창은 0 행을 안 자른다(2026-09-03 실측). 내린 판을 쓰면
-#     거기서만 글자가 아래 테두리에 붙는다. 그래서 그 아홉 줄은 기본 글리프로 간다.
+#   🔴 **챕터 바도 내린 판이다**(마스터 10-05 「장 카드가 위 1px 아래 2px — 위 2 아래 1 이어야」).
+#     챕터 바는 0 행을 안 자르니 기본 글리프(위 2·아래 1)로 두었는데(09-03), 그 뒤 전투 배너 글자를
+#     1px 올린 패치(`patch_ui_center.TEXT_Y`, 09-30)가 **같은 그리기 함수라 챕터 바도 1px 올렸다.**
+#     ⇒ 챕터 바 글자를 내린 판으로 보내 그 1px 을 상쇄한다(위 2·아래 1 로 복귀).
 def encoder(jp, low=None, chapters=None):
-    """그 문자열을 인코딩하는 함수 — 챕터 바만 기본, 나머지는 내린 판."""
-    if low and jp not in (chapters or ()):
+    """그 문자열을 인코딩하는 함수 — 시스템 표 전부 내린 판(챕터 바 포함)."""
+    if low:
         return lambda t: H.encode_kr(t, table={**H.load(), **low})
     return H.encode_kr
 
@@ -90,6 +92,31 @@ def split_lead(text):
     return (m.group(0), text[m.end() :]) if m else ("", text)
 
 
+#   🔴 **예산이 모자란 문자열은 옮겨 쓴다**(마스터 10-05 「재배치로 가자. 최대한 원문을 살려야지」). 자리 뒤에 다른 문자열이 바로 붙어
+#   제자리 확장이 안 되는 것 — 그 문자열을 가리키는 **포인터가 하나뿐**이면 죽은 디버그 메뉴 구역의 칸으로 옮기고 포인터만 바꾼다
+#   (원자리는 NUL 로 비운다). 칸은 `subtitle_stub.RELOC`(32B) — 크레딧 코드 구역이 그 앞에서 끝나게 단언이 지킨다.
+#   ⚠ 포인터가 하나가 아니면 멈춘다 — 다른 데서 읽는 포인터를 놓치면 **옛 자리를 읽어 빈 문자열**이 나온다.
+RELOC_AT = 0x06018A10
+RELOC_LEN = 32
+RELOCATABLE = {"/0.BIN": ("戦闘に勝った！\x00",)}  # 화면에 나가는 문구라 원문을 살리려고 옮기는 것들(키 = JP 원문 + 종결자)
+
+
+def _relocate(out, s, raw, base):
+    """문자열 `s` 를 `RELOC_AT` 로 옮기고 그 포인터 하나를 바꾼다. 못 하면 `None`(사유)."""
+    if len(raw) + 1 > RELOC_LEN:
+        return f"옮길 칸({RELOC_LEN}B)보다 길다({len(raw) + 1}B)"
+    if base is None:
+        return "포인터 베이스를 모른다"
+    old = (base + s["off"]).to_bytes(4, "big")
+    refs = [i for i in range(0, len(out) - 3, 4) if out[i : i + 4] == old]
+    if len(refs) != 1:
+        return f"포인터가 {len(refs)}개다(하나여야 한다)"
+    at = RELOC_AT - base
+    out[at : at + RELOC_LEN] = raw + b"\x00" * (RELOC_LEN - len(raw))
+    out[refs[0] : refs[0] + 4] = RELOC_AT.to_bytes(4, "big")
+    return None
+
+
 def patch(data, name, tbl):
     """`(새 bytes, 넣은 수, [(JP, 사유)])` — 파일 크기 불변."""
     out = bytearray(data)
@@ -105,6 +132,14 @@ def patch(data, name, tbl):
         raw = encoder(jp, low, chapters)(lead + kr)
         b = budget(data, s)
         if len(raw) > b:
+            if jp + "\x00" in RELOCATABLE.get(name, ()):
+                why = _relocate(out, s, raw, S.load_base(name))
+                if why is None:
+                    out[s["off"] : s["off"] + b + 1] = b"\x00" * (b + 1)  # 원자리는 비운다
+                    done += 1
+                    continue
+                bad.append((jp, f"예산 {b}B 를 {len(raw) - b}B 넘고 옮길 수도 없다: {why}"))
+                continue
             bad.append((jp, f"예산 {b}B 를 {len(raw) - b}B 넘는다"))
             continue
         # 남는 자리는 NUL 로 덮는다 — 원문 꼬리가 남으면 화면에 붙어 나온다.

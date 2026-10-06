@@ -50,6 +50,14 @@ LOW_PATH = os.path.join(C.GAME_DIR, "lowered_map.json")
 BOOK_PATH = os.path.join(C.GAME_DIR, "book_map.json")
 
 
+#   🔴 **크레딧 자막 전용 배정** — 크레딧 자막은 Galmuri9 로 작게 그린다(마스터 10-01). 같은 코드를
+#     본 글리프와 나눠 쓸 수 없어 **남은 빈 슬롯**에 자막에 쓰인 음절만 따로 든다(글리프 폰트 한 장이라
+#     크레딧 때만 바꿔 끼울 수 없다). 그리는 쪽은 글자 폭 10 으로 부른다(`subtitle_stub.draw_line9`).
+#   ⚠ 이것도 정본이다(`--freeze-cred`). 빈 슬롯이 밀리면 이미 넣은 문안이 딴 글자가 된다.
+CRED_PATH = os.path.join(C.GAME_DIR, "credits_map.json")
+CRED_SRC = os.path.join(C.GAME_DIR, "script", "voice_credits.json")
+
+
 def ksc_syllables():
     """완성형(KS X 1001) 한글 음절 2,350자 — **가나다순**.
 
@@ -88,7 +96,7 @@ def load():
 def lowered_chars():
     """한 행 내린 판이 필요한 글자 — **0 행을 자르는 창에 나갈 수 있는 문안 전량**.
 
-    갈래 셋이다: `/0.BIN` 시스템 표(`system.json`, ⚠ 챕터 바는 뺀다 — 거긴 안 자른다) ·
+    갈래 셋이다: `/0.BIN` 시스템 표(`system.json`, 챕터 바 포함 — 아래 🔴) ·
     이름 정본(`glossary_manual.json`) · 설명문(`desc_*.json`).
     ⚠ **한글만** 든다. 반각·전각 숫자는 원본 자리가 0~9 행이라 0 행을 버려도 안 잘린다.
     """
@@ -100,7 +108,7 @@ def lowered_chars():
     with open(os.path.join(C.GAME_DIR, "script", "system.json"), encoding="utf-8") as f:
         doc = json.load(f)
     for k, v in doc.items():
-        if k.startswith("_") or k == "chapter" or not isinstance(v, dict):
+        if k.startswith("_") or not isinstance(v, dict):
             continue
         for x in v.values():
             take(x)
@@ -174,6 +182,66 @@ def freeze_book(free):
     print(f"   남은 빈 슬롯 {len(rest) - len(chars):,}")
 
 
+#   부호도 **전각 칸 글리프**로 둔다 — 엔진 반각은 전진량이 4px(글자 폭 10 의 1/4 올림 내림)인데 글리프는 6px 라
+#   다음 글자가 부호 꼬리를 덮어 「?」가 잘린다(마스터 10-01). 부호 뒤 공백은 그 칸이 대신한다(voice_credits).
+CRED_PUNCT = ".,?!~"
+
+
+def cred_chars():
+    """크레딧 자막에 쓰인 음절 + 부호 — 가나다순."""
+    with open(CRED_SRC, encoding="utf-8") as f:
+        doc = json.load(f)
+    out = set()
+    for sub in doc["subs"]:
+        for line in sub["lines"]:
+            out |= {c for c in line if "가" <= c <= "힣" or c in CRED_PUNCT}
+    return sorted(out)
+
+
+def load_cred():
+    """크레딧 전용 배정 `{음절: 슬롯}`. 파일이 없으면 빈 표."""
+    if not os.path.exists(CRED_PATH):
+        return {}
+    with open(CRED_PATH, encoding="utf-8") as f:
+        doc = json.load(f)
+    return {ch: i for ch, i in zip(doc["chars"], doc["slots"], strict=True)}
+
+
+def freeze_cred(free, force=False):
+    """크레딧 전용 배정을 박는다 — 본·내려앉은·책 배정이 쓰고 **남은** 빈 슬롯에서.
+
+    이미 있으면 **없는 글자만 덧붙인다**(이미 박힌 자리는 그대로 — 옛 빌드와 같은 코드를 지킨다).
+    """
+    have = load_cred()
+    chars = cred_chars()
+    taken = set(load().values()) | set(load_low().values())
+    if os.path.exists(BOOK_PATH):
+        with open(BOOK_PATH, encoding="utf-8") as f:
+            taken |= set(json.load(f)["slots"])
+    taken |= set(have.values())
+    rest = [i for i in sorted(free) if i not in taken]
+    new = [c for c in chars if c not in have]
+    if len(rest) < len(new):
+        raise SystemExit(f"빈 슬롯이 모자란다: {len(rest)} < {len(new)}")
+    table = dict(have)
+    table.update(zip(new, rest[: len(new)], strict=True))
+    keys = sorted(table)
+    with open(CRED_PATH, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "_doc": "크레딧 자막 전용 글리프 배정(Galmuri9). "
+                "🔴 파생물이 아니라 정본이다 — 자세한 건 tools/hangul_map.py 의 CRED_PATH 주석",
+                "chars": keys,
+                "slots": [table[c] for c in keys],
+            },
+            f,
+            ensure_ascii=False,
+            indent=1,
+        )
+    print(f"✅ 크레딧 전용 배정 {len(keys)}자(새로 {len(new)}) → {CRED_PATH}")
+    print(f"   남은 빈 슬롯 {len(rest) - len(new):,}")
+
+
 def encode_kr(text, table=None):
     """문안 → 게임 바이트열. 한글은 슬롯 SJIS 로, 나머지는 그대로 SJIS 로.
 
@@ -205,26 +273,41 @@ def encode_kr(text, table=None):
 
 
 def freeze_low(free):
-    """자르는 창 전용 배정을 정본으로 박는다 — **본 배정이 쓰고 남은 빈 슬롯 앞에서부터**."""
+    """자르는 창 전용 배정을 정본으로 박는다 — **이미 박힌 자리는 그대로, 없는 글자만 빈 슬롯에 덧붙인다.**
+
+    ⚠ 종전엔 매번 처음부터 다시 배정했다 — 문안이 늘 때마다 **다른 글자의 슬롯이 밀릴** 수 있었다.
+    그리고 **갱신을 잊으면 새 글자가 본 글리프(한 행 높은 것)로 나간다**(2026-10-01 실측: 승리 문구의
+    「승」만 1px 높았다 — 정본이 낡아 있었다).
+    """
+    have = load_low()
     chars = lowered_chars()
-    rest = [i for i in sorted(free) if i not in set(load().values())]
-    if len(rest) < len(chars):
-        raise SystemExit(f"빈 슬롯이 모자란다: {len(rest)} < {len(chars)}")
-    table = dict(zip(chars, rest[: len(chars)], strict=True))
+    taken = set(load().values()) | set(have.values())
+    if os.path.exists(BOOK_PATH):
+        with open(BOOK_PATH, encoding="utf-8") as f:
+            taken |= set(json.load(f)["slots"])
+    if os.path.exists(CRED_PATH):
+        taken |= set(load_cred().values())
+    rest = [i for i in sorted(free) if i not in taken]
+    new = [c for c in chars if c not in have]
+    if len(rest) < len(new):
+        raise SystemExit(f"빈 슬롯이 모자란다: {len(rest)} < {len(new)}")
+    table = dict(have)
+    table.update(zip(new, rest[: len(new)], strict=True))
+    keys = list(have) + new
     with open(LOW_PATH, "w", encoding="utf-8") as f:
         json.dump(
             {
                 "_doc": "0 행을 자르는 창 전용 글리프 배정(한 행 내려 그린 같은 글자). "
                 "🔴 파생물이 아니라 정본이다 — 자세한 건 tools/hangul_map.py 의 LOW_PATH 주석",
-                "chars": chars,
-                "slots": [table[c] for c in chars],
+                "chars": keys,
+                "slots": [table[c] for c in keys],
             },
             f,
             ensure_ascii=False,
             indent=1,
         )
-    print(f"✅ 내려앉은 배정 {len(chars)}자 → {LOW_PATH}")
-    print(f"   남은 빈 슬롯 {len(rest) - len(chars):,}")
+    print(f"✅ 내려앉은 배정 {len(keys)}자(새로 {len(new)}: {''.join(new)}) → {LOW_PATH}")
+    print(f"   남은 빈 슬롯 {len(rest) - len(new):,}")
 
 
 def main():
@@ -237,6 +320,7 @@ def main():
     )
     ap.add_argument("--freeze-low", action="store_true", help="자르는 창 전용 배정을 박는다")
     ap.add_argument("--freeze-book", action="store_true", help="책 화면 전용 배정을 박는다")
+    ap.add_argument("--freeze-cred", action="store_true", help="크레딧 자막 전용 배정을 박는다")
     a = ap.parse_args()
     used = F.used_indices()
     free = F.free_slots(used)
@@ -244,6 +328,8 @@ def main():
         return freeze_low(free)
     if a.freeze_book:
         return freeze_book(free)
+    if a.freeze_cred:
+        return freeze_cred(free)
     table = assign(free)
     syl = list(table)
     print(f"음절 {len(syl):,}  쓰는 글리프 {len(used):,}  빈 슬롯 {len(free):,}")

@@ -145,8 +145,17 @@ def parse_timeline(name):
     return out
 
 
-def durations(rows):
-    """다음 마디까지의 간격으로 표시 시간을 잡는다 — 마지막은 `DUR_MAX` 로 닫는다."""
+def durations(rows, name=None):
+    """다음 마디까지의 간격으로 표시 시간을 잡는다 — 마지막은 `DUR_MAX` 로 닫는다.
+
+    `work/review/voice/<장면>.final-times.json`(확정 시각 — 시작·끝)이 있으면 그 **끝**을 쓴다.
+    끝은 음성 끝 + 1.0초, 같은 사람이 이어 말하면 다음 줄 직전까지다(09-30 마스터 영상 확인)."""
+    fin = os.path.join(DRAFT, f"{name}.final-times.json") if name else ""
+    if fin and os.path.exists(fin):
+        with open(fin, encoding="utf-8") as f:
+            ft = json.load(f)
+        if len(ft) == len(rows):
+            return [round(max(0.5, x["end"] - x["t"]), 2) for x in ft]
     ts = [r["t"] for r in rows]
     out = []
     for i, r in enumerate(rows):
@@ -161,7 +170,7 @@ def durations(rows):
 def skeleton(name):
     """초안 → 문안·화자·표시 시간까지 채운 `hooks[]`. `off`·`delay` 는 실측 몫이다."""
     rows = parse_draft(name)
-    durs = durations(rows)
+    durs = durations(rows, name)
     hooks = []
     for r, d in zip(rows, durs, strict=True):
         who = r["who"]

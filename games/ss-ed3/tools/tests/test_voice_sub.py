@@ -122,8 +122,8 @@ class Chain(unittest.TestCase):
             VS.entry({"off": 0, "lines": ["a", "b", "c"], "who": "n", "dur": 1.0}, None)
         VS.entry({"off": 0, "lines": ["a", "b", "c"], "dur": 1.0}, None)
 
-    def test_same_speaker_scrolls_instead_of_reopening(self):
-        """같은 화자가 이어지면 앞 줄을 이고 가고, 앞 칸은 「다음 칸까지」(0) 로 붙잡힌다."""
+    def test_same_speaker_swaps_text_instead_of_reopening(self):
+        """같은 화자가 이어지면 창은 그대로 두고 글만 **교체**한다(스크롤 아님) — 앞 칸은 「다음 칸까지」(0) 로 붙잡힌다."""
         hooks = [
             {"off": 0x10, "len": 8, "lines": ["1"], "who": "n", "speaker": 1, "dur": 1.0},
             {"off": 0x20, "len": 8, "lines": ["2"], "who": "n", "speaker": 1, "dur": 1.0},
@@ -140,12 +140,30 @@ class Chain(unittest.TestCase):
             },
         ]
         VS.link(hooks, range(len(hooks)))
-        #   이름 줄이 있어 본문은 둘 — 셋째는 맨 위를 밀어낸다(그게 스크롤이다)
-        self.assertEqual([h["_body"] for h in hooks], [["1"], ["1", "2"], ["2", "3"], ["4"], ["5"]])
+        #   앞 줄을 싣지 않는다 — 각 칸은 자기 줄만(교체)
+        self.assertEqual([h["_body"] for h in hooks], [["1"], ["2"], ["3"], ["4"], ["5"]])
         self.assertEqual([bool(h.get("_hold")) for h in hooks], [True, True, False, False, False])
         #   붙잡힌 칸은 표시 프레임이 0 이다
         self.assertEqual(struct.unpack(">H", VS.entry(hooks[0], None)[:2])[0], 0)
         self.assertEqual(struct.unpack(">H", VS.entry(hooks[2], None)[:2])[0], 60)
+
+    def test_gap_across_different_slots_closes_the_window(self):
+        """자리(`off`)가 달라도 `_t` 로 빈 시간을 잰다 — `HOLD_GAP` 을 넘으면 창을 닫고 새로 띄운다(마스터 10-07, V17 허크)."""
+        hooks = [
+            {"off": 0x10, "len": 8, "lines": ["1"], "who": "n", "speaker": 1, "dur": 1.65, "_t": "29.2초"},
+            {"off": 0x20, "len": 8, "lines": ["2"], "who": "n", "speaker": 1, "dur": 1.0, "_t": "32.8초"},  # 빈 시간 1.95s
+            {"off": 0x30, "len": 8, "lines": ["3"], "who": "n", "speaker": 1, "dur": 1.0, "_t": "33.9초"},  # 빈 시간 0.1s
+        ]
+        VS.link(hooks, range(len(hooks)))
+        self.assertEqual([bool(h.get("_hold")) for h in hooks], [False, True, False])
+
+    def test_gap_unknown_without_time_label_keeps_old_behavior(self):
+        hooks = [
+            {"off": 0x10, "len": 8, "lines": ["1"], "who": "n", "speaker": 1, "dur": 1.0},
+            {"off": 0x20, "len": 8, "lines": ["2"], "who": "n", "speaker": 1, "dur": 1.0},
+        ]
+        VS.link(hooks, range(len(hooks)))
+        self.assertTrue(hooks[0].get("_hold"))
 
     def test_close_slot_breaks_the_scroll(self):
         """닫는 칸·미리 싣기에서 사슬이 끊긴다 — 창이 없어졌는데 이어 붙이면 안 된다."""
@@ -181,6 +199,21 @@ class Chain(unittest.TestCase):
         with self.assertRaises(SystemExit):
             VS.by_map(doc)
 
+    def test_face_combos_beyond_the_engine_cache_fail(self):
+        """(얼굴, 표정) 조합이 엔진 캐시 8 칸을 넘으면 실패한다 — 밀려난 조합의 조회가 연쇄로 얼굴을 지운다."""
+
+        def scene(n):
+            hooks = [{"off": 0x10, "len": 8, "preload": True}]
+            for k in range(n):  # 쥬리오(0) 표정 0..n-1 — 서로 다른 조합 n 종
+                hooks.append(
+                    {"off": 0x20 + 8 * k, "len": 8, "lines": ["a"], "speaker": 0, "expr": k, "dur": 1.0}
+                )
+            return {"S": {"map": "M", "hooks": hooks}}
+
+        VS.by_map(scene(VS.FACE_CACHE))  # 8 종은 된다
+        with self.assertRaises(SystemExit):
+            VS.by_map(scene(VS.FACE_CACHE + 1))
+
     def test_stub_fits_and_hook_is_a_jump(self):
         stub, hook, where = SS.build()
         self.assertLessEqual(SS.STUB + len(stub), SS.STUB_END)
@@ -192,6 +225,53 @@ class Chain(unittest.TestCase):
             stub[var + SS.V_FACE_ID : var + SS.V_NOFACE + 4], bytes.fromhex("ffff0000ffff0000")
         )
         self.assertEqual(stub[var + SS.VAR_LEN : var + SS.VAR_LEN + 4], bytes.fromhex("00000000"))
+
+
+class ClockScene(unittest.TestCase):
+    """시계 장면 — arm 칸 하나 + 4 정렬 시계 표 + 항목 글자(칸·사슬 없음)."""
+
+    def setUp(self):
+        raw = bytearray(b"\x11" * 0x100)
+        raw += bytes.fromhex("ff070000000000000000000000000000") + b"\x22" * 100  # FF 07 (14B)
+        self.raw = bytes(raw)
+        ent = {
+            "map": "MAP999",
+            "clock": {"off": 0x100, "len": 14, "origin": 0.5},
+            "hooks": [],
+            "items": [
+                {"t": 3.0, "who": "쥬리오", "lines": ["하나"], "dur": 2.0, "face": None},
+                {"t": 7.5, "who": "크리스", "lines": ["둘", "셋"], "dur": 1.5, "face": None},
+            ],
+        }
+        self.hooks = VS.by_map({"V99": ent})["MAP999"]
+
+    def test_arm_slot_points_at_an_aligned_clock_table_with_absolute_frames(self):
+        tail, patches = VS.plan(self.raw, self.hooks)
+        n = len(self.raw)
+        self.assertEqual(len(patches), 1)  # 후킹 지점은 arm 하나뿐
+        start = -(-n // VS.SLOT) * VS.SLOT
+        slot = tail[start - n : start - n + VS.SLOT]
+        self.assertEqual(slot[SS.MAGIC_OFF : SS.MAGIC_OFF + 4], struct.pack(">I", SS.MAGIC))
+        ptr = struct.unpack(">I", slot[SS.PTR_OFF :])[0] - VS.BASE
+        self.assertEqual(ptr % 4, 0)  # 표는 mov.l 로 항목 주소를 읽는다
+        tb = tail[ptr - n :]
+        self.assertEqual(struct.unpack(">HH", tb[:4]), (VS.CLOCK_MAGIC, 2))
+        got = []
+        for i in range(2):
+            fr, z, addr = struct.unpack(">HHI", tb[4 + 8 * i : 12 + 8 * i])
+            self.assertEqual(z, 0)
+            got.append((fr, addr - VS.BASE))
+        self.assertEqual([g[0] for g in got], [round(3.5 * VS.CLOCK_FPS), round(8.0 * VS.CLOCK_FPS)])  # 원점 +0.5초
+        #   각 항목 글자는 `<프레임 수> <얼굴> <표정>` 으로 시작한다 — 마지막은 닫힘(`dur`) 이 있다
+        for fr, off in got:
+            frames, face, _ = struct.unpack(">HHH", tail[off - n : off - n + 6])
+            self.assertEqual(face, VS.NO_FACE)
+            self.assertGreaterEqual(frames, 0)
+
+    def test_last_item_must_close_itself(self):
+        self.hooks[-1]["_hold"] = True  # 붙잡으면 창이 안 닫힌다
+        with self.assertRaises(SystemExit):
+            VS.plan(self.raw, self.hooks)
 
 
 if __name__ == "__main__":

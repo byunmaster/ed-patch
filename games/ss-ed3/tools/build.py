@@ -30,6 +30,7 @@ import common as C
 import hangul_map as H
 import movie_hardsub as MV
 import patch_josa_hook as JOSA
+import patch_ui_center as UIC
 import reinsert as R
 import reinsert_battle as RBT
 import reinsert_book as RB
@@ -39,6 +40,8 @@ import reinsert_param as RP
 import reinsert_sys as RS
 import relocate as RL
 import subtitle_stub as SS
+import dev_options as DEV
+import voice_credits as VC
 import voice_sub as VS
 
 from shared.disc import mode1
@@ -203,10 +206,15 @@ def patched(disc, lay=None):
                     #     앞말을 모른다. 훅이 안 돌면 병기 그대로 보인다(안 틀린다).
                     new, hk = JOSA.patch(new)
                     cnt["josa"] = hk
+                    #   전투 위쪽 배너(기술명·승리 문구) 글자를 세로 가운데로 — 상수 하나(`patch_ui_center`).
+                    new = UIC.patch(new)
+                    cnt["ui_center"] = 1
                     #   🔴 **음성 자막 렌더러** — 컷신 위에 우리 창을 그리는 스텁과 훅.
                     #     조사 스텁 뒤 같은 문자열 구역을 쓰므로 그 다음에 넣는다.
                     if voicetbl:
-                        new = SS.patch(new)
+                        #   🔴 크레딧 자막(V20)도 이 파일에 든다 — 스텁 앞 죽은 구역에 코드·표를 얹고
+                        #     프레임 태스크의 호출 주소를 바꾼다(`subtitle_stub` 「크레딧 자막」).
+                        new = SS.patch(new, table_fn=lambda ctab: VC.blob(ctab))
                         cnt["voice_stub"] = 1
             elif name == RBT.PATH:
                 #   🔴 **HP 창 이름은 문자열이 아니라 그림이다** — `status.spr` 안의
@@ -242,7 +250,8 @@ def patched(disc, lay=None):
                 #   ⚠ 한 파일에 **설명문과 이름 표**가 같이 있다 — 둘을 이어서 넣는다.
                 #     이름 표가 빠져 있어 장비창에 일본어가 떴다(2026-08-27 유저 실측).
                 b = d.read_extent(lba, size)
-                new, k, bad = (b, 0, []) if not desctbl else RD.patch(b, table, desctbl)
+                src = DEV.patch_param(b)  # 개발용: 환경변수로 켤 때만(ED_DEV_ISABEL_HP) — 이름이 일본어일 때(번역 전)에 찾는다
+                new, k, bad = (src, 0, []) if not desctbl else RD.patch(src, table, desctbl)
                 new, k2, bad2 = RP.patch(new, None, paramtbl)
                 bad = bad + bad2
                 cnt = {"desc": k, "name": k2}
@@ -336,6 +345,7 @@ def build_one(a_disc):
             print(f"      트랙 {nt} 개를 옮겼다 ({nb / 1e6:.0f}MB) — 트랙1 밖의 파일이 여기 있다")
         write_cue(a.disc)
         write_m3u()
+        emit_saves()
         ok = True
         print(f"\n✅ {dst}")
     finally:
@@ -356,6 +366,19 @@ def build_one(a_disc):
                 q = track_path(a.disc, num)
                 if os.path.exists(q):
                     os.remove(q)
+
+
+def emit_saves():
+    """이 빌드의 **해시 이름 세이브**를 이미지 옆에 놓는다(`save_names`) — 세이브 보관함에는 안 쌓는다(마스터 10-05)."""
+    import save_names as SN
+
+    sys.path.insert(0, os.path.join(C.GAME_DIR, "..", "..", "scripts", "emu"))
+    import ss_gameid as SG
+
+    imgs = [out_paths(d)[1] for d in C.DISCS] + [m3u_path()]
+    made = SN.emit(SN.default_src(), C.BUILD_DIR, imgs, SG.game_id)
+    if made:
+        print(f"      세이브 사본 {len(made)}개를 빌드 칸에 놓았다(해시 이름) ← {SN.default_src()}")
 
 
 def m3u_path():

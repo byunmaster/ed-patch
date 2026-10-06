@@ -58,6 +58,7 @@
 import argparse
 import json
 import os
+import re
 import struct
 import sys
 from itertools import pairwise
@@ -81,6 +82,10 @@ FPS = 60
 MAX_COLS = SS.BUF_STRIDE * 2 // 12
 MAX_LINES = SS.MAX_LINES  # 이름 줄까지 — 본문은 이름이 있으면 하나 적다
 NO_FACE = 0xFFFF
+#   엔진의 얼굴 캐시 = `(얼굴<<8)|표정` 열쇠 **8 칸 순환표**(조회 `0x060107E4`, 표 `0x002F8E24`, 커서 `0x002F8E34`).
+#   없는 열쇠를 찾으면 그 자리에 새로 잡고(가장 오래된 칸을 밀어냄) CD 를 탄다 — 음성 중엔 CD 가 음성 몫이라
+#   로드가 안 끝나고, 그 조회가 남의 칸을 밀어내 연쇄로 얼굴이 사라진다(09-30 V19 실측: 10 종 → 42초 뒤 전멸).
+FACE_CACHE = 8
 GLOBAL_CAST = 0x14  # 이 미만의 `speaker` 가 전역 인물(얼굴이 있다)
 PRELOAD = 0xFFFF  # 프레임 자리에 이것이 오면 미리 싣기 목록
 
@@ -114,11 +119,22 @@ def face(h):
     return int(sp), int(h.get("expr", 0))
 
 
+#   🔴 음성 자막의 `?`·`!` 는 **전각**으로 찍는다(마스터 10-01 「물음표 느낌표가 작다」) — 반각은 ASCII 글리프(6px)라 한글(12px)
+#   옆에서 작아 보인다. 전각 칸은 엔진 일본어 글리프(`？！`)를 쓴다.
+_FW = str.maketrans({"?": "？", "!": "！"})
+
+
+def fw(t):
+    return t.translate(_FW)
+
+
 def entry(h, table=None):
     """글자 한 벌 — `<프레임> <얼굴> <표정>` + 이름 + 줄들(NUL 종결) + NUL. 짝수 길이.
 
     `preload` 후킹이면 `<0xFFFF>` + `_faces` 쌍들 + `<0xFFFF 0>` 목록이다.
     """
+    if h.get("_arm"):
+        raise SystemExit("시계 표는 plan() 이 만든다(칸 주소가 필요하다)")
     if h.get("preload"):
         if h.get("lines") or h.get("delay"):
             raise SystemExit(f"{h['off']:#x}: 미리 싣기 칸엔 글자도 `delay` 도 못 둔다")
@@ -130,6 +146,7 @@ def entry(h, table=None):
     room = MAX_LINES - (1 if who else 0)
     if len(lines) > room:
         raise SystemExit(f"{h['off']:#x}: 줄이 {room} 을 넘는다({len(lines)}) — 이름 줄 몫을 뺀다")
+    lines = [fw(t) for t in lines]
     for t in [who, *lines]:
         if "\n" in t:
             raise SystemExit(f"{h['off']:#x}: 줄 안에 개행 — `lines` 를 나눠 적는다: {t!r}")
@@ -151,9 +168,13 @@ def entry(h, table=None):
 #     `script_ops.py` 참조). 예컨대 `FF 07` 은 처리기 `0x06011608` 안에서 PC 저장이
 #     `0x0601170c` 한 곳뿐이고 거기서 항상 `+12` 라 분기와 무관하게 2+12=14 고정이다
 #     (2026-08-30 확인). 자리를 새로 잡을 땐 같은 검산을 다시 한다(`script_ops.py --path`).
-def slot(orig, ret_off, txt_off):
-    """칸 32B — 밀어낸 옵코드 · 한 프레임 대기 · 복귀 · 서명 · 글자 포인터."""
-    return _slot(orig + WAIT1, BASE + ret_off, txt_off)
+def slot(orig, ret_off, txt_off, frames=2):
+    """칸 32B — 밀어낸 옵코드 · 대기(기본 2 프레임 = `FF 35 0001`) · 복귀 · 서명 · 글자 포인터.
+
+    `frames` 는 `preload` 후킹의 `wait` 다 — 얼굴 한 장에 ~12 프레임이라 음성 앞에 긴 대기가
+    없는 장면은 여기서 (얼굴 수 × 12 + 여유) 만큼 멈춰 CD 가 얼굴을 다 싣게 한다.
+    """
+    return _slot(orig + (WAIT + struct.pack(">H", frames - 1)), BASE + ret_off, txt_off)
 
 
 def _slot(body, goto, txt_off=None):
@@ -208,7 +229,7 @@ def chain(orig, ret_off, subs, txt_offs):
     pre, total = split_waits(orig)
     ds = [int(h.get("delay", 0)) for h in subs]
     if len(subs) == 1 and ds[0] == 0:
-        return [slot(orig, ret_off, txt_offs[0])]
+        return [slot(orig, ret_off, txt_offs[0], int(subs[0].get("wait", 2)))]
     off = subs[0]["off"]
     if not total:
         raise SystemExit(f"{off:#x}: `delay` 를 쓰려면 자리 뒤가 `FF 35` 대기여야 한다")
@@ -235,28 +256,155 @@ def chain(orig, ret_off, subs, txt_offs):
 #   판정은 **화자(`who`) + 얼굴**이 같고 바로 다음 칸일 때. 화제가 바뀌어 새로 띄우고
 #   싶으면 그 칸에 `"new": true` 를 적는다.
 #   ⚠ 창은 이름 줄을 빼면 두 줄이라, 세 줄째가 오면 **맨 위가 밀려 나간다**(그게 스크롤이다).
+#   🔴 **짧게 뜨고 사라지는 창은 앞뒤 대사와 한 창으로 묶는다**(마스터 10-01 — 「방금 알아챘어」「하지만 말이야」가 금방
+#   사라져 못 읽는다). 스크롤은 안 쓴다(마스터가 뺐다) — **다음 창이 앞 창의 줄을 함께 싣는다**. 앞·뒤 칸 중 하나가
+#   `MERGE_SHORT` 초보다 짧고 같은 화자·얼굴·자리이고 사이가 `MERGE_GAP` 초 안이면 `reflow` 로 두 줄 안에 다시 접는다
+#   (안 들어가면 묶지 않는다). 접기는 문장·쉼표 뒤를 우선한다.
+MERGE_SHORT = 2.0
+MERGE_GAP = 1.5
+HOLD_GAP = 1.0  # 같은 화자라도 말 사이가 이만큼 넘게 비면 창을 닫고 새로 띄운다(마스터 10-05: 1.5 는 길다)
+_ENDS = (".", "?", "!", "？", "！", ",", "…", "~")
+
+
+def reflow(segments, room):
+    """줄들을 이어 `room` 줄 이내·줄당 `MAX_COLS` 칸 이내로 다시 접는다 → 줄 목록 또는 `None`(안 들어감)."""
+    words = [fw(w) for seg in segments for w in seg.split()]
+    best = None
+    for k in range(0 if room >= 1 else 1, len(words)):
+        # k = 첫 줄 어절 수(0 이면 한 줄)
+        rows = [" ".join(words)] if k == 0 else [" ".join(words[:k]), " ".join(words[k:])]
+        if len(rows) > room or any(T.cols(r) > MAX_COLS for r in rows):
+            continue
+        score = -abs(T.cols(rows[0]) - T.cols(rows[-1])) if len(rows) > 1 else 0
+        if len(rows) > 1 and words[k - 1].endswith(_ENDS):
+            score += 100 + (50 if words[k - 1][-1] in ".?!？！…" else 0)
+        if len(rows) == 1:
+            score += 200  # 한 줄에 들어가면 그게 낫다
+        if best is None or score > best[0]:
+            best = (score, rows)
+    return best[1] if best else None
+
+
+def _close(a, b):
+    """같은 화자·얼굴·자리이고 사이가 `MERGE_GAP` 초 안인 이웃인가."""
+    return bool(
+        a.get("who")
+        and a.get("who") == b.get("who")
+        and face(a) == face(b)
+        and a["off"] == b["off"]
+        and (int(b.get("delay", 0)) - int(a.get("delay", 0))) / FPS
+        - a.get("_dur0", a.get("dur", 0))
+        < MERGE_GAP
+    )
+
+
+_TERMINAL = (".", "?", "!", "…", "~", "」", ")")
+
+
+def _merge_short(hooks, order):
+    """짧은 칸을 이웃과 한 창으로 — **글이 이어지면(쉼표·미완) 뒤 칸과, 문장이 끝났으면 앞 칸과** 묶는다.
+
+    뒤 칸과 묶으면 **앞 칸 때부터** 합친 글을 띄우고(앞 칸 표시 시간을 뒤 칸 시작까지 늘린다) 뒤 칸도 같은 글이다 —
+    같은 줄이 두 창에 겹쳐 나오지 않게(마스터 10-01 「하지만 말이야가 두 대사에 겹쳐서」). 한 칸은 한 번만 묶인다.
+    """
+    seq = [hooks[i] for i in order if hooks[i].get("lines") and not hooks[i].get("preload")]
+    for h in seq:
+        h.pop("_m", None)
+        h["dur"] = h.setdefault(
+            "_dur0", h.get("dur", 9)
+        )  # 늘린 표시 시간을 되돌려 몇 번을 불러도 같다
+    for i, h in enumerate(seq):
+        if h.get("_m") or h["_dur0"] >= MERGE_SHORT:
+            continue
+        room = MAX_LINES - (1 if h.get("who") else 0)
+        nxt = seq[i + 1] if i + 1 < len(seq) else None
+        prev = seq[i - 1] if i > 0 else None
+        cont = not h["lines"][-1].rstrip().endswith(_TERMINAL)
+        if cont and nxt and not nxt.get("_m") and _close(h, nxt):
+            m = reflow(h["lines"] + nxt["lines"], room)
+            if m:
+                span = (int(nxt.get("delay", 0)) - int(h.get("delay", 0))) / FPS
+                h["_body"] = nxt["_body"] = m
+                h["_m"] = nxt["_m"] = True
+                h["dur"] = max(h["_dur0"], round(span, 2))
+                continue
+        if prev and not prev.get("_m") and _close(prev, h):
+            m = reflow(prev["lines"] + h["lines"], room)
+            if m:
+                #   🔴 앞 칸도 **같은 묶음 글**로 띄운다 — 뒤 칸만 바꾸면 앞 줄이 혼자 한 번, 묶음으로 또 한 번 나와
+                #     같은 줄이 두 창에 겹친다(마스터 10-03 V17 「어라? 이 분수…」 · V18 「힘으로 밀어붙이면…」).
+                prev["_body"] = h["_body"] = m
+                prev["_m"] = h["_m"] = True
+
+
+
+def _secs(h):
+    """칸의 시작 시각(음성 0초 기준 초) — 자료의 `_t` 라벨(「29.2초」)에서 읽는다. 없거나 못 읽으면 None."""
+    m = re.match(r"\s*(\d+(?:\.\d+)?)", str(h.get("_t", "")))
+    return float(m.group(1)) if m else None
+
+
+def _gap(prev, h):
+    """앞 칸이 끝난 뒤 다음 칸이 시작하기까지의 빈 시간(초). 못 재면 None(= 이어진 것으로 본다).
+
+    🔴 **자리(`off`)가 달라도 잰다**(마스터 10-07 「V17 허크 — 분수 얘기 뒤 텀이 2초 가까운데 창이 안 닫힌다」). 종전엔 자리가 다르면 간격을
+    못 잰다고 보고 이어 붙였는데, 칸마다 `_t`(음성 0초 기준)가 있어 잴 수 있다. 같은 자리면 종전대로 `delay`(프레임) 차이로 잰다."""
+    dur = prev.get("_dur0", prev.get("dur", 0))
+    if h["off"] == prev["off"]:
+        return (int(h.get("delay", 0)) - int(prev.get("delay", 0))) / FPS - dur
+    a, b = _secs(prev), _secs(h)
+    return None if a is None or b is None else b - a - dur
+
+
 def link(hooks, order):
     """`_body`(이어 붙인 본문) · `_hold`(앞 칸을 다음 칸까지 붙잡기) 를 매긴다."""
     prev = None
+    _merge_short(hooks, order)
     for i in order:
         h = hooks[i]
         if h.get("preload") or not h.get("lines"):
             prev = None  # 닫는 칸·미리 싣기에서 사슬이 끊긴다
             continue
+        #   🔴 같은 화자가 이어지면 **창·얼굴은 그대로 두고 글만 바꾼다**(마스터 10-01 — 스크롤은 안 한다). 앞 칸을 다음 칸까지
+        #     붙잡고(`_hold`) 뒤 칸은 **자기 줄만** 띄운다. 창이 새로 뜨는 건 **화자가 바뀔 때, 또는 말 사이가 `HOLD_GAP` 초 넘게 비었을 때**다(마스터 10-01).
         same = (
             prev is not None
             and not h.get("new")
             and h.get("who", "")
             and h.get("who") == prev.get("who")
             and face(h) == face(prev)
+            #   말 사이가 `HOLD_GAP` 초 넘게 비면(뜸을 들이면) 닫고 새로 띄운다 — 자리가 다르면 간격을 못 재니 이어진 것으로 본다
+            and ((_gap(prev, h) or 0) < HOLD_GAP)
         )
         if same:
-            room = MAX_LINES - (1 if h.get("who") else 0)
-            h["_body"] = (prev["_body"] + h["lines"])[-room:]
-            prev["_hold"] = True
-        else:
-            h["_body"] = list(h["lines"])
+            prev["_hold"] = (
+                True  # 창·얼굴을 두고 글만 바꾼다 — 묶음 칸 사이도 마찬가지(같은 글이면 그대로 보인다)
+            )
+        if not h.get("_m"):  # 묶음 칸은 `_merge_short` 가 이미 몸통을 정했다
+            h["_body"] = list(h["lines"])  # 앞 줄을 싣지 않는다 — 스크롤이 아니라 **교체**
         prev = h
+
+
+CLOCK_MAGIC = 0xFFFE  # 글자 첫 워드가 이것이면 **시계 표**다(`subtitle_stub`) — 미리 싣기 목록(0xFFFF) 옆 종류
+
+
+def clock_table(arm, entries, addr_of, fps):
+    """시계 표 — `<0xFFFE> <개수>` + 항목 8B `<시작 프레임 u16> <0> <글자 주소 u32>`(4 정렬) + 얼굴 목록(있으면).
+
+    시작 프레임 = 음성 0초부터 센 프레임 = round((`t` + 원점) × fps). 스텁이 **전역 프레임 시계**(`subtitle_stub.GCLK`) 로 센다.
+    """
+    org = float(arm.get("_origin", 0.0))
+    out = struct.pack(">HH", CLOCK_MAGIC, len(entries))
+    last = -1
+    for i, e in entries:
+        fr = round((float(e["_t"]) + org) * fps)
+        if not 0 <= fr < 0x7FFF:
+            raise SystemExit(f"{e['_scene']}: 시각 {e['_t']} 초가 시계 범위를 넘는다({fr} 프레임)")
+        if fr < last:
+            raise SystemExit(f"{e['_scene']}: 시각이 오름차순이 아니다 — {e['_t']}")
+        last = fr
+        out += struct.pack(">HHI", fr, 0, BASE + addr_of[i])
+    return out
 
 
 def plan(raw, hooks, table=None):
@@ -265,6 +413,10 @@ def plan(raw, hooks, table=None):
     꼬리는 **옛 파일 끝을 32B 로 올린 자리**부터 시작한다(칸 정렬). 각 후킹은 자기 칸으로
     점프하고, 칸의 포인터는 그 뒤 글자 표의 제 벌을 가리킨다. 같은 `off` 의 후킹들은
     `delay` 순으로 **칸 사슬**이 된다(위 「대기 한복판에 넣기」).
+
+    🔴 **시계 장면**(`_arm` + `_clock`): 칸은 **arm 후킹 하나**뿐이고 그 글자가 시계 표다. `_clock` 항목들은 칸·사슬 없이
+    글자만 꼬리에 붙고(`delay` = 음성 0초부터의 프레임), 스텁이 전역 시계로 표를 걸어 때가 되면 켠다 — 스크립트 안에서
+    음성 위치를 재지 않아도 된다.
     """
     if not hooks:
         return b"", []
@@ -275,14 +427,21 @@ def plan(raw, hooks, table=None):
         hooks,
         sorted(range(len(hooks)), key=lambda i: (hooks[i]["off"], int(hooks[i].get("delay", 0)))),
     )
-    texts = [entry(h, table) for h in hooks]
-    if hooks[-1].get("lines") and texts[-1][:2] == b"\x00\x00":
+    texts = [None if h.get("_arm") else entry(h, table) for h in hooks]
+    last_real = [h for h in hooks if h.get("lines")]
+    if last_real and last_real[-1] is hooks[-1] and texts[-1][:2] == b"\x00\x00":
         raise SystemExit(
             f"{hooks[-1]['off']:#x}: 마지막 칸은 `dur` 가 0 이면 안 된다 — 창이 남는다"
         )
-    #   자리별로 묶는다 — 같은 자리는 길이가 같아야 한다
+    for scene in {h["_scene"] for h in hooks if h.get("_clock")}:
+        ents = [h for h in hooks if h.get("_clock") and h["_scene"] == scene]
+        if ents[-1].get("lines") and entry(ents[-1], table)[:2] == b"\x00\x00":
+            raise SystemExit(f"{scene}: 시계 장면의 마지막 항목은 `dur` 가 0 이면 안 된다 — 창이 남는다")
+    #   자리별로 묶는다 — 같은 자리는 길이가 같아야 한다(시계 항목은 자리가 없다)
     sites = []
     for i, h in enumerate(hooks):
+        if h.get("_clock"):
+            continue
         if h["len"] < len(GOTO) + 4:
             raise SystemExit(f"{h['off']:#x}: 후킹 지점이 짧다({h['len']}B) — GOTO 6B 가 안 든다")
         if sites and hooks[sites[-1][0]]["off"] == h["off"]:
@@ -310,9 +469,26 @@ def plan(raw, hooks, table=None):
             nslots += len(idxs) + (1 if pre or int(h0.get("delay", 0)) > 0 else 0)
     txt_at = {}
     at = start + SLOT * nslots
-    for i, t in enumerate(texts):
+    #   🔴 시계 표는 **4 정렬**이어야 한다(항목의 글자 주소를 `mov.l` 로 읽는다) — 칸들(32B 배수) 바로 뒤에 먼저 둔다
+    arms = [i for i, h in enumerate(hooks) if h.get("_arm")]
+    for i in arms:
+        ents = [(j, h) for j, h in enumerate(hooks) if h.get("_clock") and h["_scene"] == hooks[i]["_scene"]]
+        faces = hooks[i].get("_faces")
+        tbl_len = 4 + 8 * len(ents) + (4 * len(faces) + 4 if faces else 0)
         txt_at[i] = at
-        at += len(t)
+        at += tbl_len
+    for i, t in enumerate(texts):
+        if t is None:
+            continue
+        txt_at[i] = at + (at % 2)
+        at = txt_at[i] + len(t)
+    for i in arms:
+        ents = [(j, h) for j, h in enumerate(hooks) if h.get("_clock") and h["_scene"] == hooks[i]["_scene"]]
+        tb = clock_table(hooks[i], [(j, dict(h, _t=h["_t"])) for j, h in ents], txt_at, hooks[i].get("_fps", 59.83))
+        faces = hooks[i].get("_faces")
+        if faces:
+            tb += b"".join(struct.pack(">HH", *p) for p in faces) + struct.pack(">HH", NO_FACE, 0)
+        texts[i] = tb
     tail = bytearray(b"\x00" * (start - n))
     patches = []
     here = start
@@ -331,8 +507,13 @@ def plan(raw, hooks, table=None):
             tail += _slot(body, BASE + nxt if nxt else BASE + ret, txt)
             here += SLOT
     assert here == start + SLOT * nslots, (here, start, nslots)
-    for t in texts:
-        tail += t
+    #   글자들 — 시계 표(앞, 정렬 맞음) 뒤에 나머지를 **주소대로** 잇는다(짝수 정렬 패딩 포함)
+    pos = start + SLOT * nslots
+    for i in sorted(txt_at, key=lambda k: txt_at[k]):
+        if txt_at[i] > pos:
+            tail += b"\x00" * (txt_at[i] - pos)
+        tail += texts[i]
+        pos = txt_at[i] + len(texts[i])
     #   ⓘ 섹터 여백에 맞추지 않는다 — 꼬리가 붙은 맵은 `relocate.py` 가 트랙 1 끝의 새
     #     자리로 옮기므로 길이 제한이 없다(2026-09-05. 13/19 장면이 여백에 안 들었다).
     return bytes(tail), patches
@@ -343,6 +524,47 @@ def load_plan():
         return {}
     with open(SCRIPT, encoding="utf-8") as f:
         return json.load(f)
+
+
+CLOCK_FPS = 59.83  # 필드 화면 프레임률 — 음성 시각(초) → 전역 프레임 시계
+
+
+def clock_hooks(key, ent):
+    """시계 장면(`clock` + `items`) → arm 후킹 하나 + 항목마다 시계 후킹.
+
+    `clock` = `{"off": arm 자리, "len": 그 자리 옵코드 길이, "origin": 초(기본 0), "fps"}`. `items[]` 의 `t` 는 **음성 0초 기준 초**다.
+    arm 자리는 음성(`FF 42`) 시작 **직후**에 도는 옵코드여야 한다 — 거기서 시계가 0 이 된다. `origin` 은 arm 이 음성보다 늦거나
+    빠른 만큼(초) 밀어 맞추는 값이다(어긋나면 이 값 하나로 민다).
+    """
+    ck = ent["clock"]
+    fps = float(ck.get("fps", CLOCK_FPS))
+    org = float(ck.get("origin", 0.0))
+    out = [
+        {
+            "off": ck["off"],
+            "len": ck["len"],
+            "_arm": True,
+            "_origin": org,
+            "_fps": fps,
+            "_scene": key,
+            "delay": 0,
+        }
+    ]
+    for it in ent.get("items", []):
+        out.append(
+            dict(
+                it,
+                off=ck["off"],
+                len=ck["len"],
+                _clock=True,
+                _scene=key,
+                _t=float(it["t"]),
+                delay=round((float(it["t"]) + org) * fps),
+            )
+        )
+    if ck.get("preload"):  # 얼굴을 쓰면 음성 **앞**에 미리 싣기 자리가 따로 필요하다
+        out.append(dict(ck["preload"], preload=True, _scene=key))
+    return out
 
 
 def by_map(doc=None):
@@ -357,12 +579,19 @@ def by_map(doc=None):
         if key.startswith("_"):
             continue
         hooks = [dict(h, _scene=key) for h in ent["hooks"]]
+        if ent.get("clock"):
+            hooks += clock_hooks(key, ent)
         faces = sorted({face(h) for h in hooks if h.get("lines")} - {(NO_FACE, 0)})
         pres = [h for h in hooks if h.get("preload")]
         if len(pres) > 1:
             raise SystemExit(f"{key}: 미리 싣기 후킹은 장면에 하나다")
         if faces and not pres:
             raise SystemExit(f"{key}: 얼굴 {faces} 을 쓰는데 `preload` 후킹이 없다")
+        if len(faces) > FACE_CACHE:
+            raise SystemExit(
+                f"{key}: (얼굴, 표정) 조합이 {len(faces)} 종이라 엔진 캐시({FACE_CACHE} 칸)를 넘는다 — "
+                f"넘친 조합은 밀려나고, 밀려난 것을 찾는 조회가 다른 칸까지 연쇄로 밀어 얼굴이 통째로 사라진다"
+            )
         for h in pres:
             if any(o["off"] == h["off"] for o in hooks if o is not h):
                 raise SystemExit(f"{key}: 미리 싣기 칸 {h['off']:#x} 은 혼자여야 한다")
@@ -445,6 +674,13 @@ def main():
             print(f"── {iso}  {size:,}B → {size + len(tail):,}B  (여백 {(-size) % SECTOR}B)")
             at = start + SLOT * len(hooks)
             for i, h in enumerate(hooks):
+                if h.get("_arm"):
+                    n_ent = sum(1 for o in hooks if o.get("_clock") and o["_scene"] == h["_scene"])
+                    print(
+                        f"   {h['_scene']} arm {h['off']:#07x} ({h['len']:2}B) → 칸 {start + SLOT * i:#07x}"
+                        f"  시계 표 항목 {n_ent}  원점 {h['_origin']:+.2f}초"
+                    )
+                    continue
                 e = entry(h)
                 fr, fid, _ = struct.unpack(">HHH", e[:6])
                 tag = (
@@ -454,10 +690,8 @@ def main():
                     + ("  ⤒붙잡음" if h.get("_hold") else "")
                     + (f"  얼굴 {fid}" if fid != NO_FACE else "")
                 )
-                print(
-                    f"   {h['_scene']} 후킹 {h['off']:#07x} ({h['len']:2}B) → 칸 {start + SLOT * i:#07x}"
-                    f"  글자 {at:#07x} {len(e):3}B  {tag}"
-                )
+                where = f"시계 {h['delay'] / CLOCK_FPS:6.1f}초" if h.get("_clock") else f"후킹 {h['off']:#07x} ({h['len']:2}B)"
+                print(f"   {h['_scene']} {where}  글자 {len(e):3}B  {tag}")
                 if h.get("who") and h.get("lines"):
                     carry = len(h.get("_body", ())) - len(h["lines"])
                     print(
