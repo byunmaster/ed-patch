@@ -186,9 +186,8 @@ python3 games/dos-ed2/tools/gen_patch.py --out games/dos-ed2/patches/issue-1-sue
 # 2) CLI 적용 (--check / --revert 도 된다)
 python3 games/dos-ed2/tools/apply_patch.py games/dos-ed2/patches/issue-1-suel-boat-tour.json work/dosbox/ed2
 
-# 3) 웹 패처 확인 → 생성물 하나만 공개 리포지토리에 올린다
+# 3) 웹 패처 확인 — 배포는 main 머지 뒤 Pages 워크플로가 한다(옛 deploy 는 2026-10-07 에 걷었다)
 sh scripts/patcher.sh              # 빌드해서 로컬에 띄워 확인
-sh scripts/patcher.sh deploy       # ed-patch 로 빌드·커밋·push
 ```
 
 웹 패처는 `patcher/index.html.tmpl` + 스펙을 합친 **자립형 HTML 하나**(약 30KB)다.
@@ -309,7 +308,6 @@ CD 를 마운트하지 않는다. `BGM/`의 `.MUS`/`.INS`(FM 음악)만 나오�
 
 ```bash
 sh scripts/patcher.sh                       # = serve. 빌드해서 127.0.0.1:8731 로 띄운다
-sh scripts/patcher.sh deploy --dry-run      # 빌드만 하고 push 하지 않는다
 ```
 
 - **`file://`로 열면 안 된다** — `showDirectoryPicker`가 보안 컨텍스트를 요구해서

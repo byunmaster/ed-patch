@@ -53,7 +53,6 @@ patches/    패치 스펙(JSON) — 바뀐 값과 검증 해시만. 원본 바�
 sh scripts/emu/dosbox.sh ed2                 # 게임 실행 (사본 work/dosbox/ed2 를 만들어 띄운다)
 sh scripts/emu/dosbox.sh ed2 --app           # macOS에서 키 입력이 안 먹을 때
 sh scripts/patcher.sh serve              # 웹 패처를 로컬에서 띄워 확인
-sh scripts/patcher.sh deploy             # 공개 리포(ed-patch)로 빌드·배포
 
 python3 games/dos-ed2/tools/apply_patch.py \
     games/dos-ed2/patches/issue-1-suel-boat-tour.json work/dosbox/ed2
@@ -61,7 +60,7 @@ python3 games/dos-ed2/tools/apply_patch.py \
 
 ## 패치 적용 (사용자)
 
-브라우저 패처가 가장 간단합니다 — **<https://byunmaster.github.io/ed-patch/>**.
+브라우저 패처가 가장 간단합니다 — **<https://byunmaster.github.io/ed-patch/dos-ed2/>**.
 자립형 HTML 한 장이라 파일이 서버로 올라가지 않고, 외부 요청도 없습니다. 소장 중인
 만트라 DOS 정발판 폴더를 지정하면 대상 파일을 찾아 그 자리에서 바꿔 줍니다.
 
