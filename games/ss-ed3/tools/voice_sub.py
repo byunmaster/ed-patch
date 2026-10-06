@@ -58,6 +58,7 @@
 import argparse
 import json
 import os
+import re
 import struct
 import sys
 from itertools import pairwise
@@ -336,6 +337,25 @@ def _merge_short(hooks, order):
                 prev["_m"] = h["_m"] = True
 
 
+
+def _secs(h):
+    """칸의 시작 시각(음성 0초 기준 초) — 자료의 `_t` 라벨(「29.2초」)에서 읽는다. 없거나 못 읽으면 None."""
+    m = re.match(r"\s*(\d+(?:\.\d+)?)", str(h.get("_t", "")))
+    return float(m.group(1)) if m else None
+
+
+def _gap(prev, h):
+    """앞 칸이 끝난 뒤 다음 칸이 시작하기까지의 빈 시간(초). 못 재면 None(= 이어진 것으로 본다).
+
+    🔴 **자리(`off`)가 달라도 잰다**(마스터 10-07 「V17 허크 — 분수 얘기 뒤 텀이 2초 가까운데 창이 안 닫힌다」). 종전엔 자리가 다르면 간격을
+    못 잰다고 보고 이어 붙였는데, 칸마다 `_t`(음성 0초 기준)가 있어 잴 수 있다. 같은 자리면 종전대로 `delay`(프레임) 차이로 잰다."""
+    dur = prev.get("_dur0", prev.get("dur", 0))
+    if h["off"] == prev["off"]:
+        return (int(h.get("delay", 0)) - int(prev.get("delay", 0))) / FPS - dur
+    a, b = _secs(prev), _secs(h)
+    return None if a is None or b is None else b - a - dur
+
+
 def link(hooks, order):
     """`_body`(이어 붙인 본문) · `_hold`(앞 칸을 다음 칸까지 붙잡기) 를 매긴다."""
     prev = None
@@ -354,12 +374,7 @@ def link(hooks, order):
             and h.get("who") == prev.get("who")
             and face(h) == face(prev)
             #   말 사이가 `HOLD_GAP` 초 넘게 비면(뜸을 들이면) 닫고 새로 띄운다 — 자리가 다르면 간격을 못 재니 이어진 것으로 본다
-            and (
-                h["off"] != prev["off"]
-                or (int(h.get("delay", 0)) - int(prev.get("delay", 0))) / FPS
-                - prev.get("_dur0", prev.get("dur", 0))
-                < HOLD_GAP
-            )
+            and ((_gap(prev, h) or 0) < HOLD_GAP)
         )
         if same:
             prev["_hold"] = (

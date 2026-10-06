@@ -147,6 +147,24 @@ class Chain(unittest.TestCase):
         self.assertEqual(struct.unpack(">H", VS.entry(hooks[0], None)[:2])[0], 0)
         self.assertEqual(struct.unpack(">H", VS.entry(hooks[2], None)[:2])[0], 60)
 
+    def test_gap_across_different_slots_closes_the_window(self):
+        """자리(`off`)가 달라도 `_t` 로 빈 시간을 잰다 — `HOLD_GAP` 을 넘으면 창을 닫고 새로 띄운다(마스터 10-07, V17 허크)."""
+        hooks = [
+            {"off": 0x10, "len": 8, "lines": ["1"], "who": "n", "speaker": 1, "dur": 1.65, "_t": "29.2초"},
+            {"off": 0x20, "len": 8, "lines": ["2"], "who": "n", "speaker": 1, "dur": 1.0, "_t": "32.8초"},  # 빈 시간 1.95s
+            {"off": 0x30, "len": 8, "lines": ["3"], "who": "n", "speaker": 1, "dur": 1.0, "_t": "33.9초"},  # 빈 시간 0.1s
+        ]
+        VS.link(hooks, range(len(hooks)))
+        self.assertEqual([bool(h.get("_hold")) for h in hooks], [False, True, False])
+
+    def test_gap_unknown_without_time_label_keeps_old_behavior(self):
+        hooks = [
+            {"off": 0x10, "len": 8, "lines": ["1"], "who": "n", "speaker": 1, "dur": 1.0},
+            {"off": 0x20, "len": 8, "lines": ["2"], "who": "n", "speaker": 1, "dur": 1.0},
+        ]
+        VS.link(hooks, range(len(hooks)))
+        self.assertTrue(hooks[0].get("_hold"))
+
     def test_close_slot_breaks_the_scroll(self):
         """닫는 칸·미리 싣기에서 사슬이 끊긴다 — 창이 없어졌는데 이어 붙이면 안 된다."""
         hooks = [
