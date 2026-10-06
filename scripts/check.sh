@@ -71,10 +71,13 @@ for g in $GAMES; do
   sh "$gate" || fail=1
 done
 
-# 게임 브랜치가 공용·남의 게임을 건드렸나 — 게이트가 아니다(급하면 어길 수 있어야 한다).
-# 공용은 `main` 에서 고치고 받아 온다 — 게임 브랜치에서 고치면 다른 게임이 조용히 바뀐다.
+# 게임 브랜치가 공용·남의 게임을 건드렸나 — 공용 코드·남의 게임은 알림만(급하면 어길 수 있어야 한다).
+# 🔴 단 **정본 사전(shared/glossary·lore)을 고치면 실패**다(마스터 2026-10-07 — 워커는 독자 데이터를 못 갖는다).
 echo "── 브랜치 범위"
-"$PY" "$ROOT/scripts/check/check_shared_scope.py" 2>&1 | tail -4 | sed 's/^/  /'
+scope_rc=0
+scope_out=$("$PY" "$ROOT/scripts/check/check_shared_scope.py" 2>&1) || scope_rc=$?
+printf '%s\n' "$scope_out" | tail -8 | sed 's/^/  /'
+[ "$scope_rc" -eq 0 ] || fail=1
 
 [ "$fail" -eq 0 ] || { printf '\n⚠ 검사 중 실패가 있다 — 위 출력을 본다\n'; exit 1; }
 printf '\n✅ 커밋해도 되는 상태\n'
