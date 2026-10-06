@@ -53,13 +53,13 @@ class CreditsTable(unittest.TestCase):
             self.assertEqual(self.t[off + 14], 0)  # 이름 줄 비움
 
     def test_only_the_pinned_subtitle_forces_a_side(self):
-        # 마스터 10-05 — #23 만 처음부터 왼쪽 칸(그림 오른쪽 = 2). 나머지는 게임이 정한다
+        # 마스터 10-05·10-07 — #23(처음부터 왼쪽 칸) · #39(처음부터 오른쪽 칸)만 못박는다. 나머지는 게임이 정한다
         n, ents = parse(self.t, self.ctab)
         forced = []
         for i, (_, _, p) in enumerate(ents):
             if struct.unpack(">H", self.t[p - self.ctab : p - self.ctab + 2])[0]:
                 forced.append(i)
-        self.assertEqual(len(forced), 1)
+        self.assertEqual(len(forced), 2)
 
     def test_fits_the_dead_region(self):
         blob, _ = SS.build_credits(SS.build()[2]["draw_line9"], self.t)
@@ -121,13 +121,45 @@ class GlyphCoverage(unittest.TestCase):
             VC.record(sub, VC.table_cred())
 
 
+class ManualPads(unittest.TestCase):
+    def test_손으로_준_pads_가_자동을_이긴다(self):
+        table = VC.table_cred()
+        sub = {"n": 1, "start": 0, "end": 1, "lines": ["그는 자신의 마력과 맞바꿔", "지팡이에 깃든 힘을 봉인하고,"]}
+        auto = VC.record(sub, table)
+        manual = VC.record(dict(sub, pads=[3, 7]), table)
+        self.assertNotEqual(auto, manual)
+        self.assertGreater(len(manual), 0)
+
+    def test_pads_개수가_줄과_다르면_운다(self):
+        with self.assertRaises(SystemExit):
+            VC.record({"n": 1, "start": 0, "end": 1, "lines": ["그는 자신의 마력과 맞바꿔", "지팡이에 깃든 힘을 봉인하고,"], "pads": [1]}, VC.table_cred())
+
+
 class Centering(unittest.TestCase):
-    def test_each_line_is_centered_on_its_own(self):
-        # 마스터 10-05 — 줄마다 가운데. 한 글자 길면 앞 공백이 반 칸쯤 적을 뿐 시작을 합치지 않는다
-        a, b = "설령 세상이 멸망한다 해도", "끝내 움직이지 않았을 게다."
+    def test_line_centers_stay_within_2px(self):
+        # 마스터 10-06 — 가장 긴 줄 기준 상대 반올림이라 줄 사이 가운데 어긋남이 늘 2px 이하(합침·독립 반올림은 3~5px 어긋났다)
+        for a, b in (
+            ("검사를 동경하던 나는 무사", "수행 흉내를 내며 떠돌았다."),
+            ("그는 자신의 마력과 맞바꿔", "지팡이에 깃든 힘을 봉인하고,"),
+            ("그 세상이 그릇된 길로", "가지 않게 하는 것도"),
+            ("지금은 실감이 나지", "않을지도 모르겠구나."),
+            ("마법의 도시 올도스를 세운", "대마도사 올테가가"),
+        ):
+            pa, pb = VC.pads([a, b])
+            gap = abs((pa * VC.HALF + VC._ink_w(a) / 2) - (pb * VC.HALF + VC._ink_w(b) / 2))
+            self.assertLessEqual(gap, 2, (a, b, pa, pb))
+
+    def test_nearly_equal_lines_start_at_the_same_x(self):
+        # 폭 차이가 반 칸(4px) 이하면 자연히 같은 시작점
+        self.assertEqual(len(set(VC.pads(["가나다라", "가나다라"]))), 1)
+
+    def test_clearly_different_lines_are_centered_each(self):
+        # 폭이 10px 넘게 다르면 짧은 줄이 더 들여 쓰인다 — 왼쪽으로 쏠리지 않는다
+        a, b = "쥬리오, 그리고 크리스.", "정말 잘해 주었다."
         pa, pb = VC.pads([a, b])
         self.assertEqual(pa, VC._pad(a))
-        self.assertEqual(pb, VC._pad(b))
+        self.assertLessEqual(abs(pb - VC._pad(b)), 1)
+        self.assertNotEqual(pa, pb)
 
     def test_far_apart_lines_stay_centered(self):
         p = VC.pads(["쥬리오, 그리고 크리스.", "정말 잘해 주었다."])

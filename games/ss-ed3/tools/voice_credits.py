@@ -108,29 +108,42 @@ def wrap(lines):
     return out
 
 
+def _ink_w(line):
+    """가운데 맞춤에 쓰는 폭(px) — **줄 끝 부호는 0**, 줄 중간 부호는 전각 칸 그대로 센다."""
+    #   마스터 10-06 「줄 끝에 오는 마침표·쉼표 등 문장부호는 정렬에 영향을 주지 않는다 · 중간 쉼표는 계산한다」 — 끝 부호 칸은 잉크가 3px 쯤이다.
+    t = line.rstrip()
+    return width(t[:-1].rstrip() if t[-1:] in H.CRED_PUNCT else t)
+
+
 def _exact(line):
     """가운데 맞추는 앞 공백 개수(소수) — 반각 공백 4px."""
-    #   줄 끝 부호 칸은 잉크가 3px 쯤이고 나머지는 빈칸이라 폭에서 빈칸을 빼야 **눈으로** 가운데다
-    tail = FULL - 3 if line.rstrip()[-1:] in H.CRED_PUNCT else 0
-    return (BUF_W - (width(line) - tail)) / 2 / HALF
+    return (BUF_W - _ink_w(line)) / 2 / HALF
 
 
-#   🔴 **줄마다 가운데 맞춘다 — 정확히 반 칸(공백 반 개)에 걸칠 때만 왼쪽**(마스터 10-05).
-#   한 번 「한 글자 차이 줄은 시작 x 를 같게」로 갔다가(10-05 낮) **짧은 줄이 왼쪽으로 쏠려 가운데가 아니게 보여** 되돌렸다 —
-#   두 요청(「반 칸은 왼쪽」 · 「가운데로」)이 부딪힌 자리였고, 「반 칸 = 올림·내림이 갈리는 경계」로 푼 것이 이 값이다.
-SAME_START = 0.0  # 0 = 줄마다 가운데(시작점을 합치지 않는다). 올리면 그 안의 차이는 더 긴 줄 시작점에 맞춘다
+#   🔴 **줄 사이 가운데는 가장 긴 줄을 기준으로 상대 반올림한다**(마스터 10-06 캡처 14장 — 줄끼리 가운데가 안 맞아 보임).
+#   단계: ① 줄마다 따로 가운데 → 줄마다 반올림 오차(최대 ±2px)가 쌓여 3px 어긋남 ② 폭 차이 한 글자(10px) 이내는 시작 x 를 합침(10-05) →
+#   합친 줄은 가운데가 3~5px 어긋나 눈에 띈다(캡처 실측: 폭 차 6px → 3px, 10px → 5px) ③ **가장 긴 줄만 가운데에 두고 나머지는 그 줄 기준으로
+#   (폭 차 / 2) 만큼 상대 반올림**(지금) — 줄 사이 어긋남이 늘 ≤2px, 폭 차 4px 이하(반 칸 미만)는 자연히 같은 시작점이 된다.
+#   ⚠ 부호는 칸은 10px 인데 잉크는 3px 뿐이라 눈에는 폭이 아니다 — 재는 건 한글·공백(줄 끝 부호 제외)뿐이다.
+
+
+def _pad_for(line):
+    return max(0, math.ceil(_exact(line) - 0.5))
 
 
 def pads(lines):
-    """줄마다 앞 공백 개수 — 반올림은 정확히 반이면 왼쪽, 한 글자 차이 줄은 가장 긴 줄과 같은 시작점."""
-    ex = [_exact(t) for t in lines]
-    base = min(ex)
-    return [max(0, math.ceil((base if e - base <= SAME_START else e) - 0.5)) for e in ex]
+    """줄마다 앞 공백 개수 — 가장 긴 줄을 가운데에 두고 나머지는 그 줄에 대해 상대 반올림(정확히 반이면 왼쪽)."""
+    if len(lines) < 2:
+        return [_pad_for(t) for t in lines]
+    ws = [_ink_w(t) for t in lines]
+    ref = ws.index(max(ws))
+    base = _pad_for(lines[ref])
+    return [max(0, base + math.ceil((ws[ref] - w) / 2 / HALF - 0.5)) for w in ws]
 
 
 def _pad(line):
     """한 줄만 있을 때의 앞 공백 개수 — 정확히 반 칸이면 왼쪽(`ceil(x − 0.5)`)."""
-    return pads([line])[0]
+    return _pad_for(line)
 
 
 def table_cred():
@@ -171,7 +184,11 @@ def record(sub, table, scale=1.0):
         )
         + b"\x00"
     )
-    for t, n in zip(lines, pads(lines), strict=True):
+    #   🔴 `pads`(JSON)가 있으면 **손으로 맞춘 값이 이긴다**(마스터가 편집기로 준 값) — 줄 수가 안 맞으면 빌드를 세운다
+    manual = sub.get("pads")
+    if manual is not None and len(manual) != len(lines):
+        raise SystemExit(f"#{sub.get('n')}: pads {len(manual)} 개 ≠ 줄 {len(lines)} 개")
+    for t, n in zip(lines, manual if manual is not None else pads(lines), strict=True):
         out += H.encode_kr(" " * n + rendered(t), table) + b"\x00"
     out += b"\x00"
     return out + b"\x00" * (len(out) % 2)
