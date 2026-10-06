@@ -1,0 +1,188 @@
+<title>@TITLE@ 한글패치</title>
+<meta name="description" content="@TITLE@ (@PLATFORM@) 한글패치 — 브라우저에서 바로 적용하거나 xdelta 파일로 받는다. 원본은 업로드되지 않는다.">
+<style>
+@FONTS@
+@CSS@
+</style>
+
+<header class="band">
+  <div class="wrap">
+    <div>
+      <a class="crumb" href="../index.html">◀ 패치 목록</a>
+      <h1 id="title"></h1>
+      <p id="sub"></p>
+    </div>
+    <div class="row" id="chips"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="shots" id="shots" hidden tabindex="0" aria-label="게임 화면">
+    <div class="stage">
+      <img alt="">
+      <button type="button" class="prev" aria-label="이전 화면">◀</button>
+      <button type="button" class="next" aria-label="다음 화면">▶</button>
+    </div>
+    <div class="dots"></div>
+  </section>
+  <div class="cols">
+    <div>
+      <section class="box" id="web">
+        <h2>웹 패치</h2>
+        <div class="in">
+          <p>가지고 계신 원본 <code>.bin</code> 을 고르면 맞는 덤프인지 확인한 뒤 한글판을 만들어 드립니다. 파일은 이 컴퓨터 안에서만 처리되고 어디에도 올라가지 않습니다.</p>
+          <label class="drop" id="drop" for="pick">
+            <input type="file" id="pick" accept=".bin">
+            <span id="drop-text">여기에 원본 .bin 을 끌어 놓거나 눌러서 고르기</span>
+          </label>
+          <div class="bar" aria-hidden="true"><span id="bar"></span></div>
+          <div class="crt" id="log" role="status" aria-live="polite"></div>
+          <div class="row">
+            <button class="btn" id="save" type="button" disabled>한글판 .bin 받기</button>
+            <button class="btn sub" id="cue" type="button" disabled>.cue 받기</button>
+          </div>
+          <p>CD 이미지가 커서(약 250MB) 컴퓨터 브라우저를 권합니다. 휴대폰에서는 메모리가 모자라 멈출 수 있습니다.</p>
+        </div>
+      </section>
+
+      <section class="box" id="files">
+        <h2>파일로 받기</h2>
+        <div class="in">
+          <div class="row" id="dl"></div>
+          <ol class="how">
+            <li><b>xdelta</b> — Delta Patcher(윈도·맥) 에서 원본 <code>.bin</code> 과 받은 <code>.xdelta</code> 를 고르고 적용합니다. 명령줄이면 <code>xdelta3 -d -s 원본.bin 패치.xdelta 한글판.bin</code></li>
+            <li><b>BPS</b> — Flips 나 Rom Patcher JS 로 적용합니다. 원본이 다르면 적용 전에 알려 줍니다.</li>
+            <li>만든 <code>.bin</code> 옆에 같은 이름의 <code>.cue</code> 를 두고 에뮬레이터에서 <code>.cue</code> 를 엽니다.</li>
+          </ol>
+        </div>
+      </section>
+    </div>
+
+    <div>
+      <section class="box">
+        <h2>게임 정보</h2>
+        <div class="in"><table class="fp" id="info"></table></div>
+      </section>
+      <section class="box" id="src-box">
+        <h2>맞는 원본</h2>
+        <div class="in">
+          <p id="disc"></p>
+          <div class="scroll"><table class="fp" id="fp"></table></div>
+          <p>원본 세이브와 한글판 세이브는 서로 호환되지 않을 수 있습니다.</p>
+        </div>
+      </section>
+
+      <section class="box">
+        <h2><span id="prog-title">진행 상황</span><small id="updated"></small></h2>
+        <div class="in">
+          <div id="stages"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <p class="foot"><a href="../index.html#notice">고지</a> — 비영리 팬 프로젝트입니다. 원작의 모든 권리는 Nihon Falcom Corporation 및 각 권리자에게 있습니다.</p>
+</main>
+
+<script type="application/json" id="site-data">@DATA@</script>
+<script>@SLIDERJS@</script>
+<script>@BPSJS@</script>
+<script>
+"use strict";
+const GAME = "@GAME@";
+const TRACK = { kr: "한글패치", fix: "복원 패치" };
+const STATUS = { released: "배포 중", preparing: "작업 중", planned: "진행 예정", undecided: "미정" };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+let site, game, rel, result;
+
+function render(s) {
+  site = s; game = s.games.find((g) => g.id === GAME); rel = game.release || {};
+  $("title").textContent = game.title;
+  $("sub").textContent = game.original || game.platform;
+  $("chips").innerHTML = `<span class="tag plat">${esc(game.tags.platform)}</span>` + game.tags.series.map((t) => `<span class="tag">${esc(t)}</span>`).join("")+ `<span class="chip ${esc(game.track)}">${TRACK[game.track]}</span>`;
+// 게임 정보 — 기종 · 원제 + site.json 의 meta(출시 · 이식 등, 있는 것만)
+$("info").innerHTML = [["기종", game.platform], ["원제", game.original], ...Object.entries(game.meta || {})]
+  .filter(([, v]) => v).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("");
+
+  EDSlider($("shots"), (game.shots || []).map((x) => "../" + x), game.title);
+  const src = rel.source || {};
+  $("disc").innerHTML = `${esc(rel.disc || "")} 일본판 · <code>${esc(src.file || "")}</code>`;
+  $("fp").innerHTML = [["크기", src.size ? src.size.toLocaleString() + " 바이트" : ""], ["CRC32", src.crc32], ["MD5", src.md5], ["SHA-1", src.sha1], ["SHA-256", src.sha256]]
+    .map(([k, v]) => `<tr><th>${k}</th><td>${esc(v)}</td></tr>`).join("");
+  // 진행 상황 · 버전 — 배포 전이면 끝난 단계 요약과 지금 단계, 배포 뒤면 버전 기록(site.json 의 versions:
+  //   [{version, date, note}] 최신이 위). 미완성은 진행 상황, 완성은 버전(마스터 10-05).
+  const at = s.stages.findIndex((x) => x.id === game.stage);
+  if (game.status === "released") {
+    $("prog-title").textContent = "버전";
+    const vs = game.versions || [];
+    $("stages").innerHTML = vs.length ? `<ul class="stagelist">${vs.map((v) =>
+      `<li><i class="done"></i><b>v${esc(v.version)}</b><span>${esc(v.note || "")}<small>${esc(v.date || "")}</small></span></li>`).join("")}</ul>` : "";
+  } else {
+    const done = Math.max(0, at);
+    const rows = s.stages.slice(0, done).map((x) =>
+      `<li><i class="done"></i><b>✓</b><span>${esc(x.name)}<small>${esc(x.desc)}</small></span></li>`);
+    if (game.status === "preparing") rows.push(`<li><i class="now"></i><b>…</b><span>${esc(s.stages[at].name)} — 작업 중<small>${esc(s.stages[at].desc)}</small></span></li>`);
+    $("stages").innerHTML = rows.length ? `<ul class="stagelist">${rows.join("")}</ul>` : "<p>아직 시작 전입니다.</p>";
+  }
+  $("updated").textContent = s.updated;
+  const dl = [["xdelta", rel.xdelta], ["BPS", rel.bps]];
+  $("dl").innerHTML = dl.map(([k, v]) => v
+    ? `<a class="btn" href="${esc(v)}" download>${k} 받기</a>`
+    : `<span class="btn" aria-disabled="true">${k} 준비 중</span>`).join("");
+  // 배포 전(작업 중)이면 패치하기를 막는다 — 페이지는 진행 상황과 게임 화면을 보이는 자리다
+  const ready = game.status === "released" && !!rel.bps;
+  $("pick").disabled = !ready;
+  $("drop").classList.toggle("off", !ready);
+  $("src-box").hidden = !src.sha1;
+  if (!ready) log("dim", "한글화 작업 중입니다.\n패치가 나오면 여기서 바로 적용할 수 있습니다.");
+}
+
+function log(cls, msg, keep) {
+  const el = $("log");
+  if (!keep) el.innerHTML = "";
+  el.insertAdjacentHTML("beforeend", `<span class="${cls}">${esc(msg)}</span>\n`);
+}
+const bar = (f) => { $("bar").style.width = Math.round(f * 100) + "%"; };
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+async function handle(file) {
+  $("save").disabled = $("cue").disabled = true; result = null; bar(0);
+  const src = rel.source || {};
+  log("", `> ${file.name}`);
+  log("", `  크기 ${file.size.toLocaleString()} 바이트`, true);
+  if (src.size && file.size !== src.size) return log("err", `  ✗ 크기가 다릅니다 — 이 패치는 ${src.size.toLocaleString()} 바이트 덤프용입니다`, true);
+  log("", "  원본 확인 중…", true); await tick();
+  const buf = new Uint8Array(await file.arrayBuffer()); bar(0.2);
+  const sha = await EDPatch.sha1Hex(buf); bar(0.35);
+  if (sha !== src.sha1) return log("err", `  ✗ SHA-1 이 다릅니다\n    ${sha}\n  다른 판이나 손상된 덤프입니다. 오른쪽 지문과 비교해 주세요.`, true);
+  log("", "  ✓ 맞는 원본입니다 (SHA-1 일치)", true);
+  if (!rel.bps) return log("dim", "  패치 파일이 올라가면 여기서 바로 적용됩니다.", true);
+  log("", "  패치 받는 중…", true); await tick();
+  const patch = new Uint8Array(await (await fetch(rel.bps, { cache: "no-store" })).arrayBuffer()); bar(0.45);
+  log("", "  적용 중…", true); await tick();
+  try {
+    result = EDPatch.bpsApply(buf, patch, (f) => bar(0.45 + f * 0.5));
+  } catch (e) { return log("err", `  ✗ ${e.message}`, true); }
+  bar(1);
+  log("", `  ✓ 완료 — ${rel.output}`, true);
+  $("save").disabled = false; $("cue").disabled = !rel.cue;
+}
+
+function save(bytes, name, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([bytes], { type }));
+  a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+$("save").addEventListener("click", () => result && save(result, rel.output, "application/octet-stream"));
+// .cue 는 원본 시트를 본뜬 틀(site.json 의 cue)에 결과 파일 이름만 넣는다 — 트랙 구성은 게임마다 다르다.
+$("cue").addEventListener("click", () => save(rel.cue.replace("{bin}", rel.output), rel.output.replace(/\.bin$/i, ".cue"), "text/plain"));
+$("pick").addEventListener("change", (e) => e.target.files[0] && handle(e.target.files[0]));
+const drop = $("drop");
+["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => !$("pick").disabled && e.dataTransfer.files[0] && handle(e.dataTransfer.files[0]));
+
+render(JSON.parse($("site-data").textContent));
+fetch("../site.json", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((s) => { if (s) render(s); }).catch(() => {});
+</script>

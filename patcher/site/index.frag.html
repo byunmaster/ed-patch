@@ -1,0 +1,114 @@
+<title>영웅전설 패치</title>
+<meta name="description" content="영웅전설 시리즈 한글패치·기타패치 배포 창구. 기종별 진행 상황과 패치 받기.">
+<style>
+@FONTS@
+@CSS@
+</style>
+
+<header class="band">
+  <div class="wrap">
+    <div>
+      <h1>영웅전설 패치</h1>
+      <p>팔콤 『영웅전설』 시리즈 — 기종별 한글패치와 기타패치</p>
+    </div>
+    <p id="updated"></p>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="filters" id="filters"></div>
+  <div class="grid" id="grid" aria-live="polite"></div>
+  <section class="foot" id="notice">
+    <h2>고지</h2>
+    <p>비영리 팬 프로젝트이며 원작에 대한 어떠한 권리도 주장하지 않습니다. 『영웅전설』 시리즈의 모든 권리는 Nihon Falcom Corporation 및 각 권리자에게 있습니다.</p>
+    <p>패치는 바뀐 바이트만 담은 차분이며 게임 원본 데이터를 포함하지 않습니다. 원본 디스크·롬을 갖고 계신 분을 위한 것입니다. 상업적 이용을 금지하며, 권리자의 요청이 있을 경우 배포를 즉시 중단합니다.</p>
+    <p>글꼴: 갈무리(<a href="LICENSE-Galmuri.txt">SIL OFL 1.1</a>) · 네오둥근모(<a href="LICENSE-neodgm.txt">SIL OFL 1.1</a>)</p>
+  </section>
+</main>
+
+<script type="application/json" id="site-data">@DATA@</script>
+<script>
+"use strict";
+const TRACK = { kr: "한글패치", fix: "기타패치" };
+const STATUS = { released: "배포 중", preparing: "작업 중", planned: "진행 예정", undecided: "미정" };
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const $ = (id) => document.getElementById(id);
+
+// 상태 글자 — 커버 자리와 카드 아래 띠가 같은 말을 쓴다(마스터 10-05). 패치 종류는 태그가 아니라 여기에
+//   붙인다: 한글패치는 「한글화 …」, 복원 패치는 「복원 …」. 작업 중이면 끝난 단계 비율을 붙인다.
+const VERB = { kr: "한글화", fix: "복원" };
+function label(site, g) {
+  const v = VERB[g.track];
+  if (g.status === "released") return `${v} 패치하기`;
+  if (g.status === "undecided") return "미정";
+  if (g.status === "planned") return `${v} 진행 예정`;
+  const done = Math.max(0, site.stages.findIndex((s) => s.id === g.stage));
+  return `${v} 작업 중 (${Math.round((done / site.stages.length) * 100)}%)`;
+}
+
+const tags = (g) => `<span class="tag plat">${esc(g.tags.platform)}</span>` + g.tags.series.map((t) => `<span class="tag">${esc(t)}</span>`).join("");
+
+// 커버 — 우리 한글패치를 적용한 타이틀 화면 캡처(site.json 의 cover). 없으면 상태 글자만 둔다.
+const cover = (g) => g.cover
+  ? `<div class="cover"><img src="${esc(g.cover)}" alt="${esc(g.title)} 한글판 타이틀 화면" loading="lazy"></div>`
+  : `<div class="cover empty" aria-hidden="true"><span>${esc(STATUS[g.status])}</span></div>`;
+
+function card(site, g) {
+  // 상세 페이지 — 배포 중이거나 작업 중인 게임(기타패치는 href 로 따로 둔다)
+  const href = g.href || (["released", "preparing"].includes(g.status) ? `${g.id}/index.html` : "");
+  const tag = href ? "a" : "div";
+  const go = label(site, g) + (href ? " ▶" : "");
+  return `<${tag} class="card ${esc(g.status)}${href ? "" : " dim"}"${href ? ` href="${esc(href)}"` : ""}>
+    ${cover(g)}
+    <div class="body">
+      <div class="tags">${tags(g)}</div>
+      <h2>${esc(g.title).replace(/ (I{1,3}|IV)$/, "\u00a0$1")}</h2>
+      ${g.original ? `<p class="orig">${esc(g.original)}</p>` : ""}
+    </div>
+    <div class="go"><span>${go}</span></div>
+  </${tag}>`;
+}
+
+// 거르개 — 기종 하나 · 작품 하나(다시 누르면 풀린다). 고른 값은 이 브라우저에만 남는다.
+let pick = { platform: "", series: "" }, current;
+try { pick = JSON.parse(localStorage.getItem("ed-filter")) || pick; } catch { /* 저장소가 막힌 창 */ }
+function filters(site) {
+  const order = site.layout.flat().filter(Boolean).map((id) => site.games.find((g) => g.id === id));
+  const plats = [...new Set(order.map((g) => g.tags.platform))];
+  const series = [...new Set(site.games.flatMap((g) => g.tags.series))].sort();
+  const btn = (k, v, cls) => `<button type="button" class="tag ${cls}" data-k="${k}" data-v="${esc(v)}" aria-pressed="${pick[k] === v}">${esc(v)}</button>`;
+  $("filters").innerHTML =
+    `<div class="line"><span>기종</span>${plats.map((v) => btn("platform", v, "plat")).join("")}</div>` +
+    `<div class="line"><span>게임</span>${series.map((v) => btn("series", v, "")).join("")}</div>`;
+}
+$("filters").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  pick[b.dataset.k] = pick[b.dataset.k] === b.dataset.v ? "" : b.dataset.v;
+  try { localStorage.setItem("ed-filter", JSON.stringify(pick)); } catch { /* 무시 */ }
+  render(current);
+});
+
+// 배치 — site.json 의 layout(4칸 줄, null 은 빈칸)을 그대로 따른다. 거르는 중엔 빈칸 없이 이어 붙인다.
+function render(site) {
+  current = site;
+  filters(site);
+  const byId = Object.fromEntries(site.games.map((g) => [g.id, g]));
+  const hit = (g) => (!pick.platform || g.tags.platform === pick.platform) && (!pick.series || g.tags.series.includes(pick.series));
+  const filtering = pick.platform || pick.series;
+  const cells = [];
+  for (const row of site.layout) {
+    for (const id of row) {
+      if (!id) { if (!filtering) cells.push(`<div class="blank" aria-hidden="true"></div>`); continue; }
+      if (hit(byId[id])) cells.push(card(site, byId[id]));
+    }
+    if (!filtering) for (let i = row.length; i < 4; i++) cells.push(`<div class="blank" aria-hidden="true"></div>`);
+  }
+  $("grid").innerHTML = cells.some((c) => !c.includes('class="blank"')) ? cells.join("")
+    : `<p>고른 조건에 맞는 패치가 없습니다. 태그를 다시 눌러 풀어 주세요.</p>`;
+  $("updated").textContent = `진행 상황 갱신 ${site.updated}`;
+}
+
+// 진행 상황은 site.json 을 열 때마다 읽는다 — 파일 하나만 바꿔 올리면 페이지를 다시 굽지 않아도 된다.
+render(JSON.parse($("site-data").textContent));
+fetch("site.json", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((s) => { if (s) render(s); }).catch(() => {});
+</script>

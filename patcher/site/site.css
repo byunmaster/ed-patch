@@ -1,0 +1,145 @@
+  /* 배포 사이트 — 기존 웹 패처(patcher/index.html.tmpl)의 픽셀 문법을 그대로 잇는다.
+     면은 단색, 형태는 굵은 검정 테두리, 그라데이션·블러·둥근 모서리·그림자 없음, 4px 격자.
+     픽셀 폰트는 고유 격자의 정수배로만 쓴다(갈무리9 → 18px · 갈무리11 → 22/33px · 모노9 → 18px).
+     한 가지 화면으로 고정한다(다크 모드 없음) — 패처와 같은 「디스켓 케이스」 세계라 그렇다. */
+  :root {
+    color-scheme: light;
+    --ink:#000000;          /* 모든 외곽선 · 글자 */
+    --paper:#f8f8f0;        /* 바탕 */
+    --card:#ffffff;
+    --case:#c8c4b0; --case-l:#e0dcc8; --case-d:#908c78;
+    --disk:#484858;         /* 머리 띠 */
+    --scr:#101010;          /* CRT 유리 */
+    --gray:#d8d8d0; --white:#ffffff;
+    --green:#54fc54; --yellow:#fcfc54; --red:#fc5454; --cyan:#54fcfc;
+    --grn-d:#00a800; --red-d:#d82800;
+    --display:'NeoDunggeunmo', 'Galmuri11', 'Apple SD Gothic Neo', sans-serif;   /* 네오둥근모 16px 격자 → 32px */
+    --sans:'Galmuri9', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    --title:'Galmuri11', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    --mono:'GalmuriMono9', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+    --mono11:'GalmuriMono11', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 18px/28px var(--sans);
+    -webkit-font-smoothing: none; font-smooth: never;
+    word-break: keep-all;   /* 한글은 낱말 가운데서 끊지 않는다 */
+  }
+  a { color: inherit; }
+  :focus-visible { outline: 4px solid var(--cyan); outline-offset: 0; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding-inline: 16px; padding-block: 24px 48px; }
+
+  /* 머리 띠 */
+  .band { background: var(--disk); color: var(--white); border-bottom: 4px solid var(--ink); }
+  .band .wrap { padding-block: 24px; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: end; justify-content: space-between; }
+  .band h1 { margin: 0; font: 400 32px/40px var(--display); letter-spacing: 0; text-wrap: balance; }
+  .band p { margin: 0; color: var(--case-l); }
+  .crumb { font: 18px/28px var(--mono); color: var(--case-l); text-decoration: none; }
+  .crumb:hover { color: var(--white); }
+
+  /* 칩 — 상태는 색과 글자 둘 다로 */
+  .chip { display: inline-block; padding: 0 8px; border: 2px solid var(--ink); color: var(--ink); font: 18px/24px var(--sans); white-space: nowrap; }
+  .band .tag.plat { border-color: var(--white); }   /* 진한 머리 띠 위에서도 기종 태그 테두리가 보이게 */
+  .chip.released { background: var(--green); }
+  .chip.preparing { background: var(--yellow); }
+  .chip.kr, .chip.fix { background: var(--white); }   /* 같은 계열(트랙)은 같은 색 */
+  .chip.planned { background: var(--gray); }
+
+  /* 카드 */
+  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 16px; }   /* 모든 줄을 가장 긴 카드 높이로 */
+  .blank { min-height: 1px; }
+  @media (max-width: 1000px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .blank { display: none; } }
+  @media (max-width: 560px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+  /* 태그 — 카드 안에서도, 위의 거르개에서도 같은 모양 */
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag { display: inline-block; padding: 0 6px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); font: 18px/24px var(--mono); white-space: nowrap; }
+  .tag.plat { background: var(--disk); color: var(--white); }
+  .filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+  .filters .line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .filters .line > span { min-width: 3em; color: var(--case-d); }
+  .filters button { cursor: pointer; }
+  .filters button[aria-pressed="true"] { background: var(--yellow); color: var(--ink); }
+  .card { display: flex; flex-direction: column; min-width: 0; background: var(--card); border: 4px solid var(--ink); text-decoration: none; }
+    .cover { height: 168px; border-bottom: 4px solid var(--ink); background: var(--case); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .cover img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; background: var(--scr); }
+  .cover.empty span { font: 32px/40px var(--display); color: var(--case-d); text-align: center; padding: 0 8px; }
+  .card.planned .cover.empty span { opacity: .6; }
+  .card.undecided { opacity: .6; }   /* 할지 정하지 않은 작품은 카드 전체를 흐리게 */
+  .card .body { display: flex; flex-direction: column; gap: 12px; padding: 12px; flex: 1; }
+  .card h2 { margin: 0; font: 700 22px/28px var(--title); text-wrap: balance; word-break: keep-all; }
+  .card .orig { margin: -8px 0 0; color: var(--case-d); }
+  .card .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .card .go { margin-top: auto; display: flex; justify-content: space-between; align-items: center; padding: 4px 12px; border-top: 4px solid var(--ink); background: var(--case-l); font: 18px/28px var(--mono); }
+  a.card:hover .go, a.card:focus-visible .go { background: var(--yellow); }
+  .card.dim .go { color: var(--case-d); }
+
+  /* 진행 칸 — 여덟 단계, 끝난 칸 · 지금 칸 · 남은 칸 */
+  .steps { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+  /* 진행 칸 — 끝난 단계는 검정, 지금 단계는 진한 회색, 남은 단계는 흐리게 */
+  .steps i { display: block; height: 16px; border: 2px solid var(--case-d); background: var(--paper); }
+  .steps i.done { background: var(--ink); border-color: var(--ink); }
+  .steps i.now { background: var(--case-d); border-color: var(--ink); }
+  .steps-label { display: flex; justify-content: space-between; gap: 8px; font: 18px/28px var(--mono); font-variant-numeric: tabular-nums; }
+
+  .foot h2 { margin: 0 0 8px; font: 700 22px/32px var(--title); color: var(--ink); }
+  .foot p { margin: 0 0 8px; }
+  .foot { margin-top: 32px; padding-top: 16px; border-top: 4px solid var(--ink); color: var(--case-d); }
+  .draft { display: inline-block; margin-bottom: 16px; padding: 4px 12px; background: var(--yellow); border: 2px solid var(--ink); }
+
+  /* 게임 페이지 */
+  .cols { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px; align-items: start; }
+  @media (max-width: 820px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+  section.box { border: 4px solid var(--ink); background: var(--card); margin-bottom: 24px; }
+  section.box > h2 { margin: 0; padding: 4px 12px; background: var(--case); border-bottom: 4px solid var(--ink); font: 700 22px/32px var(--title); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  section.box > h2 small { font: 400 18px/32px var(--mono); color: var(--case-d); }
+  section.box > .in { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  section.box p { margin: 0; max-width: 62ch; }
+
+  .drop { display: block; padding: 24px 16px; border: 4px dashed var(--ink); background: var(--case-l); text-align: center; cursor: pointer; }
+  .drop:hover, .drop.over { background: var(--yellow); }
+  .drop.off, .drop.off:hover { background: var(--gray); color: var(--case-d); cursor: not-allowed; border-style: solid; }
+  .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .crt { background: var(--scr); color: var(--green); border: 4px solid var(--ink); padding: 12px; min-height: 140px; font: 18px/28px var(--mono); white-space: pre-wrap; word-break: break-all; }
+  .crt .err { color: var(--red); }
+  .crt .dim { color: var(--case-d); }
+  .bar { height: 16px; border: 2px solid var(--ink); background: var(--gray); }
+  .bar > span { display: block; height: 100%; width: 0; background: var(--grn-d); }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 16px; border: 4px solid var(--ink); background: var(--green); color: var(--ink); font: 700 22px/28px var(--title); text-decoration: none; cursor: pointer; }
+  .btn:hover { background: var(--yellow); }
+  .btn[aria-disabled="true"], .btn:disabled { background: var(--gray); color: var(--case-d); cursor: not-allowed; }
+  .btn.sub { background: var(--white); font: 18px/24px var(--sans); }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; }
+
+  .fp { width: 100%; border-collapse: collapse; font: 18px/28px var(--mono); }
+  .fp th { text-align: left; padding: 4px 12px 4px 0; white-space: nowrap; vertical-align: top; }
+  .fp td { padding: 4px 0; word-break: break-all; }
+  .fp tr + tr { border-top: 2px solid var(--gray); }
+  .scroll { overflow-x: auto; }
+
+  ol.how { margin: 0; padding-left: 28px; display: flex; flex-direction: column; gap: 8px; }
+  code { font: 18px/28px var(--mono); background: var(--case-l); padding: 0 4px; word-break: break-all; }
+
+  .stagelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .stagelist li { display: grid; grid-template-columns: 24px 56px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px 0; border-top: 2px solid var(--gray); }
+  .stagelist li:first-child { border-top: 0; }
+  .stagelist i { display: block; width: 20px; height: 20px; margin-top: 4px; border: 2px solid var(--ink); background: var(--gray); }
+  .stagelist i.done { background: var(--ink); } .stagelist i.now { background: var(--case-d); }
+  .stagelist b { font: 18px/28px var(--mono); }
+  .stagelist small { display: block; color: var(--case-d); font-size: 18px; }
+
+  @media (prefers-reduced-motion: no-preference) { .bar > span { transition: width .1s steps(4); } }
+
+  /* 게임 화면 — 가로로 꽉 채우는 슬라이드. 화면은 픽셀 그대로 키우고 화살표는 위에 얹는다 */
+  .shots { margin-bottom: 24px; }
+  .shots .stage { position: relative; background: var(--scr); border: 4px solid var(--ink); display: flex; justify-content: center; align-items: center; aspect-ratio: 4 / 3; max-height: 72vh; width: 100%; }
+  .shots .stage img { height: 100%; width: 100%; object-fit: contain; image-rendering: pixelated; }
+  .shots .prev, .shots .next { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 72px; border: 4px solid var(--ink); background: var(--case-l); font: 22px/1 var(--mono); cursor: pointer; }
+  .shots .prev { left: 12px; } .shots .next { right: 12px; }
+  .shots .prev:hover, .shots .next:hover { background: var(--yellow); }
+  .shots .dots { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
+  .shots .dots button { width: 16px; height: 16px; padding: 0; border: 2px solid var(--ink); background: var(--gray); cursor: pointer; }
+  .shots .dots button[aria-current="true"] { background: var(--ink); }
