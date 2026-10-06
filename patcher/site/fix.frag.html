@@ -55,9 +55,9 @@
           <div class="scroll"><table class="fp" id="fp"></table></div>
         </div>
       </section>
-      <section class="box" id="video-box" hidden>
-        <h2>영상</h2>
-        <div class="in"><p>복원된 장면을 녹화한 영상입니다.</p><div class="row"><a class="btn sub" id="video" target="_blank" rel="noopener">유튜브에서 보기 ▶</a></div></div>
+      <section class="box" id="ver-box" hidden>
+        <h2><span>버전</span><small id="updated"></small></h2>
+        <div class="in"><div id="versions"></div></div>
       </section>
     </div>
   </div>
@@ -72,7 +72,7 @@
 // 판정과 적용은 patcher/index.html.tmpl(단독 패처)과 같다: 파일 전체 sha1 로 가르고, 하나라도 어긋나면 아무것도 안 고친다.
 const SPECS = @PATCHES@;
 const GAME = "@GAME@";
-const TRACK = { kr: "한글패치", fix: "복원 패치" };
+const TRACK = { kr: "한글패치", fix: "복원패치" };
 const STATUS = { released: "배포 중", preparing: "작업 중", planned: "진행 예정", undecided: "미정" };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -90,10 +90,25 @@ $("disc").textContent = "정발판 설치 폴더의 아래 파일";
 $("info").innerHTML = [["기종", game.platform], ["원제", game.original], ...Object.entries(game.meta || {})]
   .filter(([, v]) => v).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("");
 
-EDSlider($("shots"), (game.shots || []).map((x) => "../" + x), game.title);
+if (game.video) {
+  // 게임 화면 자리에 녹화 영상 — 무음 자동 재생·반복(브라우저는 소리 있는 자동 재생을 막는다).
+  //   ⚠ 이 페이지를 열면 유튜브(nocookie)로 요청이 나간다 — 영상을 뺀 게임은 외부 요청 0 그대로다.
+  const box = $("shots"); box.hidden = false;
+  const v = encodeURIComponent(game.video);
+  box.querySelector(".stage").classList.add("video");
+  box.querySelector(".stage").innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${v}?autoplay=1&mute=1&loop=1&playlist=${v}&playsinline=1&rel=0" title="${esc(game.title)} 영상" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+  box.querySelector(".dots").hidden = true;
+} else {
+  EDSlider($("shots"), (game.shots || []).map((x) => "../" + x), game.title);
+}
 $("fp").innerHTML = SPECS.flatMap((s) => s.files).map((f) =>
   `<tr><th>${esc(f.file)}</th><td>${f.size.toLocaleString()} 바이트<br>SHA-1 ${esc(f.sha1_from)}</td></tr>`).join("");
-if (game.video) { $("video-box").hidden = false; $("video").href = `https://www.youtube.com/watch?v=${encodeURIComponent(game.video)}`; }
+const vs = game.versions || [];
+if (vs.length) {
+  $("ver-box").hidden = false;
+  $("updated").textContent = vs[0].date || "";   // 버전 칸 제목의 날짜 = 최신 버전의 공개일
+  $("versions").innerHTML = `<ul class="stagelist">${vs.map((v) => `<li><i class="done"></i><b>v${esc(v.version)}</b><span>${esc(v.note || "")}</span></li>`).join("")}</ul>`;
+}
 
 function hexToBytes(h) {
   const n = h.length >> 1, out = new Uint8Array(n);

@@ -136,6 +136,8 @@
   /* 게임 화면 — 가로로 꽉 채우는 슬라이드. 화면은 픽셀 그대로 키우고 화살표는 위에 얹는다 */
   .shots { margin-bottom: 24px; }
   .shots .stage { position: relative; background: var(--scr); border: 4px solid var(--ink); display: flex; justify-content: center; align-items: center; aspect-ratio: 4 / 3; max-height: 72vh; width: 100%; }
+  .shots .stage.video { aspect-ratio: 16 / 9; }
+  .shots .stage iframe { width: 100%; height: 100%; border: 0; }
   .shots .stage img { height: 100%; width: 100%; object-fit: contain; image-rendering: pixelated; }
   .shots .prev, .shots .next { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 72px; border: 4px solid var(--ink); background: var(--case-l); font: 22px/1 var(--mono); cursor: pointer; }
   .shots .prev { left: 12px; } .shots .next { right: 12px; }

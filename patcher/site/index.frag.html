@@ -35,7 +35,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const $ = (id) => document.getElementById(id);
 
 // 상태 글자 — 커버 자리와 카드 아래 띠가 같은 말을 쓴다(마스터 10-05). 패치 종류는 태그가 아니라 여기에
-//   붙인다: 한글패치는 「한글화 …」, 복원 패치는 「복원 …」. 작업 중이면 끝난 단계 비율을 붙인다.
+//   붙인다: 한글패치는 「한글화 …」, 복원패치는 「복원 …」. 작업 중이면 끝난 단계 비율을 붙인다.
 const VERB = { kr: "한글화", fix: "복원" };
 function label(site, g) {
   const v = VERB[g.track];

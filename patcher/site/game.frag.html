@@ -89,7 +89,7 @@
 <script>
 "use strict";
 const GAME = "@GAME@";
-const TRACK = { kr: "한글패치", fix: "복원 패치" };
+const TRACK = { kr: "한글패치", fix: "복원패치" };
 const STATUS = { released: "배포 중", preparing: "작업 중", planned: "진행 예정", undecided: "미정" };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -116,7 +116,7 @@ $("info").innerHTML = [["기종", game.platform], ["원제", game.original], ...
     $("prog-title").textContent = "버전";
     const vs = game.versions || [];
     $("stages").innerHTML = vs.length ? `<ul class="stagelist">${vs.map((v) =>
-      `<li><i class="done"></i><b>v${esc(v.version)}</b><span>${esc(v.note || "")}<small>${esc(v.date || "")}</small></span></li>`).join("")}</ul>` : "";
+      `<li><i class="done"></i><b>v${esc(v.version)}</b><span>${esc(v.note || "")}</span></li>`).join("")}</ul>` : "";
   } else {
     const done = Math.max(0, at);
     const rows = s.stages.slice(0, done).map((x) =>
@@ -124,7 +124,8 @@ $("info").innerHTML = [["기종", game.platform], ["원제", game.original], ...
     if (game.status === "preparing") rows.push(`<li><i class="now"></i><b>…</b><span>${esc(s.stages[at].name)} — 작업 중<small>${esc(s.stages[at].desc)}</small></span></li>`);
     $("stages").innerHTML = rows.length ? `<ul class="stagelist">${rows.join("")}</ul>` : "<p>아직 시작 전입니다.</p>";
   }
-  $("updated").textContent = s.updated;
+  // 칸 제목의 날짜 — 배포 뒤면 최신 버전의 공개일, 배포 전이면 진행 상황 갱신일
+  $("updated").textContent = game.status === "released" ? ((game.versions || [])[0] || {}).date || "" : s.updated;
   const dl = [["xdelta", rel.xdelta], ["BPS", rel.bps]];
   $("dl").innerHTML = dl.map(([k, v]) => v
     ? `<a class="btn" href="${esc(v)}" download>${k} 받기</a>`

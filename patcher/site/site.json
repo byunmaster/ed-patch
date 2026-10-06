@@ -375,7 +375,18 @@
         ]
       },
       "video": "rRsJ_RGPIMY",
-      "original": "The Legend Of Heroes II"
+      "original": "The Legend Of Heroes II",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "note": "스엘 「세계 3대 명소 유람여행」 크래시 수정",
+          "date": "2026-07-29"
+        }
+      ],
+      "meta": {
+        "이식": "만트라",
+        "유통": "삼성전자"
+      }
     }
   ],
   "layout": [
