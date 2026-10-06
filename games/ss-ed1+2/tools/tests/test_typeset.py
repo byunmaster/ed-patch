@@ -159,7 +159,7 @@ class Typeset(unittest.TestCase):
         self.assertEqual(got, "%c%s%c\n… 로우가 없다니!?%c")
 
     def test_over_window_is_rejected(self):
-        """창 총량(전각 15×5)을 넘으면 뒷줄이 잘린다 — 넣지 않는다."""
+        """창 총량(전각 14×5)을 넘으면 뒷줄이 잘린다 — 넣지 않는다."""
         got, bad = self.t("%c兵士%c\n本文。%c", "가" * 80)
         self.assertIsNone(got)
         self.assertEqual(bad, "창을 넘는다")
