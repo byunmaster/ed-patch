@@ -4,11 +4,11 @@
 @FONTS@
 @CSS@
 </style>
+<script>@THEMEJS@</script>
 
 <header class="band">
   <div class="wrap">
     <div>
-      <a class="crumb" href="../index.html">◀ 패치 목록</a>
       <h1 id="title"></h1>
       <p id="sub"></p>
     </div>
@@ -17,6 +17,7 @@
 </header>
 
 <main class="wrap">
+  <a class="crumb" href="../index.html">← 패치 목록</a>
   <section class="shots" id="shots" hidden tabindex="0" aria-label="게임 화면">
     <div class="stage">
       <img alt="">
@@ -30,18 +31,20 @@
       <section class="box" id="web">
         <h2>웹 패치</h2>
         <div class="in">
-          <p>가지고 계신 원본 <code>.bin</code> 을 고르면 맞는 덤프인지 확인한 뒤 한글판을 만들어 드립니다. 파일은 이 컴퓨터 안에서만 처리되고 어디에도 올라가지 않습니다.</p>
+          <p id="web-intro">가지고 계신 원본 <code>.bin</code> 을 고르면 맞는 덤프인지 확인한 뒤 한글판을 만들어 드립니다. 파일은 이 컴퓨터 안에서만 처리되고 어디에도 올라가지 않습니다.</p>
           <label class="drop" id="drop" for="pick">
             <input type="file" id="pick" accept=".bin">
             <span id="drop-text">여기에 원본 .bin 을 끌어 놓거나 눌러서 고르기</span>
           </label>
           <div class="bar" aria-hidden="true"><span id="bar"></span></div>
           <div class="crt" id="log" role="status" aria-live="polite"></div>
-          <div class="row">
-            <button class="btn" id="save" type="button" disabled>한글판 .bin 받기</button>
-            <button class="btn sub" id="cue" type="button" disabled>.cue 받기</button>
+          <div class="row" id="save-row">
+            <button class="btn" id="save" type="button" disabled>다운로드</button>
           </div>
-          <p>CD 이미지가 커서(약 250MB) 컴퓨터 브라우저를 권합니다. 휴대폰에서는 메모리가 모자라 멈출 수 있습니다.</p>
+          <div>
+            <p id="save-note">한글판 .bin 과 .cue 를 .zip 파일 하나로 묶어 다운로드합니다.</p>
+            <p id="web-note">CD 이미지가 커서(약 250MB) 컴퓨터 브라우저를 권합니다. 휴대폰에서는 메모리가 모자라 멈출 수 있습니다.</p>
+          </div>
         </div>
       </section>
 
@@ -49,10 +52,10 @@
         <h2>파일로 받기</h2>
         <div class="in">
           <div class="row" id="dl"></div>
-          <ol class="how">
+          <ol class="how" id="how">
             <li><b>xdelta</b> — Delta Patcher(윈도·맥) 에서 원본 <code>.bin</code> 과 받은 <code>.xdelta</code> 를 고르고 적용합니다. 명령줄이면 <code>xdelta3 -d -s 원본.bin 패치.xdelta 한글판.bin</code></li>
             <li><b>BPS</b> — Flips 나 Rom Patcher JS 로 적용합니다. 원본이 다르면 적용 전에 알려 줍니다.</li>
-            <li>만든 <code>.bin</code> 옆에 같은 이름의 <code>.cue</code> 를 두고 에뮬레이터에서 <code>.cue</code> 를 엽니다.</li>
+            <li>만든 <code>.bin</code> 옆에 같은 이름의 <code>.cue</code> 를 두고 에뮬레이터에서 <code>.cue</code> 를 엽니다. 웹 패치로 받은 <code>.zip</code> 은 풀면 둘이 같이 들어 있습니다.</li>
           </ol>
         </div>
       </section>
@@ -76,6 +79,13 @@
         <h2><span id="prog-title">진행 상황</span><small id="updated"></small></h2>
         <div class="in">
           <div id="stages"></div>
+        </div>
+      </section>
+      <section class="box" id="report" hidden>
+        <h2>문제 제보</h2>
+        <div class="in">
+          <p>오탈자나 글자 깨짐, 진행이 막히는 곳을 찾으셨다면 알려 주세요. 게임과 패치 버전은 자동으로 채워집니다.</p>
+          <div class="row"><a class="btn sub" id="report-link" href="#" target="_blank" rel="noopener">제보하기 ↗</a></div>
         </div>
       </section>
     </div>
@@ -115,27 +125,54 @@ $("info").innerHTML = [["기종", game.platform], ["원제", game.original], ...
   if (game.status === "released") {
     $("prog-title").textContent = "버전";
     const vs = game.versions || [];
-    $("stages").innerHTML = vs.length ? `<ul class="stagelist">${vs.map((v) =>
-      `<li><i class="done"></i><b>v${esc(v.version)}</b><span>${esc(v.note || "")}</span></li>`).join("")}</ul>` : "";
+    $("stages").innerHTML = vs.length ? `<ul class="verlist">${vs.map((v) =>
+      `<li><b>v${esc(v.version)}</b><span>${esc(v.note || "")}</span></li>`).join("")}</ul>` : "";
   } else {
-    const done = Math.max(0, at);
-    const rows = s.stages.slice(0, done).map((x) =>
-      `<li><i class="done"></i><b>✓</b><span>${esc(x.name)}<small>${esc(x.desc)}</small></span></li>`);
-    if (game.status === "preparing") rows.push(`<li><i class="now"></i><b>…</b><span>${esc(s.stages[at].name)} — 작업 중<small>${esc(s.stages[at].desc)}</small></span></li>`);
+    // 단계는 한 줄로만 가지 않는다 — 앞 단계를 일부만 닫고 다음으로 넘어간 게임이 있다(마스터 10-07:
+    //   「ps1 ed3 는 전투 조사 훅을 다 안 했는데 된 것처럼 나온다」). stage 앞은 기본이 「끝」이고,
+    //   game.phases 가 단계마다 덮는다 — { "P2": { "state": "partial", "note": "전투 조사 훅 남음" } }.
+    //   state: done(끝) · partial(일부) · todo(아직 — 안 보인다). note 는 설명 대신 붙는다.
+    const ph = game.phases || {};
+    //   지금 단계 뒤라도 phases 에 적힌 단계(먼저 해 둔 연출·일부 번역 등)는 보인다.
+    const last = Math.max(at, ...s.stages.map((x, i) => (ph[x.id] && ph[x.id].state !== "todo" ? i : -1)));
+    const rows = s.stages.slice(0, last + 1).map((x, i) => {
+      const o = ph[x.id] || {}, note = o.note || x.desc;
+      if (i === at && game.status === "preparing")
+        return `<li><i class="now"></i><b>…</b><span>${esc(x.name)} — 작업 중<small>${esc(note)}</small></span></li>`;
+      const st = o.state || (i < at ? "done" : "todo");
+      if (st === "partial") return `<li><i class="part"></i><b>◐</b><span>${esc(x.name)} — 일부<small>${esc(note)}</small></span></li>`;
+      if (st === "todo") return "";	// 아직 안 한 단계는 안 보인다(마스터 10-07)
+      return `<li><i class="done"></i><b>✓</b><span>${esc(x.name)}<small>${esc(note)}</small></span></li>`;
+    });
+    rows.splice(0, rows.length, ...rows.filter(Boolean));
     $("stages").innerHTML = rows.length ? `<ul class="stagelist">${rows.join("")}</ul>` : "<p>아직 시작 전입니다.</p>";
   }
   // 칸 제목의 날짜 — 배포 뒤면 최신 버전의 공개일, 배포 전이면 진행 상황 갱신일
   $("updated").textContent = game.status === "released" ? ((game.versions || [])[0] || {}).date || "" : s.updated;
   const dl = [["xdelta", rel.xdelta], ["BPS", rel.bps]];
   $("dl").innerHTML = dl.map(([k, v]) => v
-    ? `<a class="btn" href="${esc(v)}" download>${k} 받기</a>`
+    ? `<a class="btn" href="${esc(v)}" download>${k}</a>`
     : `<span class="btn" aria-disabled="true">${k} 준비 중</span>`).join("");
   // 배포 전(작업 중)이면 패치하기를 막는다 — 페이지는 진행 상황과 게임 화면을 보이는 자리다
   ready = game.status === "released" && !!rel.bps;
   // ⚠ render 는 site.json 을 다시 읽은 뒤 한 번 더 불린다 — 처리 중이면 잠금을 건드리지 않는다
   if (!busy) { $("pick").disabled = !ready; $("drop").classList.toggle("off", !ready); }
   $("src-box").hidden = !src.sha1;
+  // 매체가 CD 가 아닌 게임(PC-98 디스크 이미지 등) — 안내만 그 매체에 맞게 바꾼다(마스터 10-06).
+  //   실제 패처는 그 게임 배포 때 만든다. 그전엔 패치 칸이 잠겨 있으니 문구만 맞으면 된다.
+  const media = game.media;
+  if (media) {
+    $("web-intro").textContent = media.intro;
+    $("drop-text").textContent = media.drop;
+    $("pick").accept = media.accept || "";
+    $("web-note").textContent = media.note || "";
+    $("web-note").hidden = !media.note;
+    $("save-row").hidden = $("save-note").hidden = true;
+    $("how").innerHTML = (media.how || []).map((t) => `<li>${esc(t)}</li>`).join("");
+  }
   if (!ready) log("dim", "한글화 작업 중입니다.\n패치가 나오면 여기서 바로 적용할 수 있습니다.");
+  // 빈 로그 대신 할 일 안내(마스터 10-06) — 한 번이라도 파일을 고르면 그 뒤로는 진행 기록을 그대로 둔다
+  else if (!busy && !$("log").dataset.used) log("dim", "원본 .bin 을 고르면 여기에 진행 상황이 나옵니다.\n\n  1. 원본 확인 — 크기와 SHA-1 로 맞는 덤프인지 봅니다\n  2. 패치 적용 — 이 브라우저 안에서만 처리합니다\n  3. 한글판 받기 — .bin · .cue 를 .zip 하나로 저장합니다");
 }
 
 function log(cls, msg, keep) {
@@ -147,8 +184,9 @@ const bar = (f) => { $("bar").style.width = Math.round(f * 100) + "%"; };
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 async function process(file) {
-  $("save").disabled = $("cue").disabled = true; result = null; bar(0);
+  $("save").disabled = true; result = null; bar(0);
   const src = rel.source || {};
+  $("log").dataset.used = "1";
   log("", `> ${file.name}`);
   log("", `  크기 ${file.size.toLocaleString()} 바이트`, true);
   if (src.size && file.size !== src.size) return log("err", `  ✗ 크기가 다릅니다 — 이 패치는 ${src.size.toLocaleString()} 바이트 덤프용입니다`, true);
@@ -173,18 +211,56 @@ async function process(file) {
   } catch (e) { return log("err", `  ✗ ${e.message}`, true); }
   bar(1);
   log("", `  ✓ 완료 — ${rel.output}`, true);
-  $("save").disabled = false; $("cue").disabled = !rel.cue;
+  $("save").disabled = false;
 }
 
-function save(bytes, name, type) {
+function save(blob, name) {
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([bytes], { type }));
+  a.href = URL.createObjectURL(blob);
   a.download = name; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
-$("save").addEventListener("click", () => result && save(result, rel.output, "application/octet-stream"));
-// .cue 는 원본 시트를 본뜬 틀(site.json 의 cue)에 결과 파일 이름만 넣는다 — 트랙 구성은 게임마다 다르다.
-$("cue").addEventListener("click", () => save(rel.cue.replace("{bin}", rel.output), rel.output.replace(/\.bin$/i, ".cue"), "text/plain"));
+
+// 한글판은 .zip 하나로 준다(마스터 10-07) — 따로 받게 하면 .cue 를 빠뜨리기 쉽고, 브라우저는 여러 파일을
+//   한 번에 내려받으려 하면 막거나 묻는다. 디스크가 여럿인 게임은 여기에 .m3u 가 더 붙는다.
+//   압축은 안 한다(저장만) — 디스크 이미지는 거의 안 줄고, 빨리 끝난다. 4GB 를 넘으면 ZIP64 가 필요하다.
+function zipStore(files) {
+  const enc = new TextEncoder(), parts = [], central = [];
+  const d = new Date();
+  const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  let off = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), data = typeof f.data === "string" ? enc.encode(f.data) : f.data;
+    const crc = EDPatch.crc32(data), size = data.length;
+    if (off + size > 0xFFFFFFFF) throw new Error("4GB 를 넘어 .zip 으로 묶을 수 없습니다");
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+    lh.setUint16(10, time, true); lh.setUint16(12, date, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, size, true); lh.setUint32(22, size, true);
+    lh.setUint16(26, name.length, true);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+    ch.setUint16(12, time, true); ch.setUint16(14, date, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, size, true); ch.setUint32(24, size, true);
+    ch.setUint16(28, name.length, true); ch.setUint32(42, off, true);
+    parts.push(lh, name, data); central.push(ch, name);
+    off += 30 + name.length + size;
+  }
+  const cdSize = central.reduce((n, x) => n + x.byteLength, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, off, true);
+  return new Blob([...parts, ...central, end], { type: "application/zip" });
+}
+$("save").addEventListener("click", () => {
+  if (!result) return;
+  // .cue 는 원본 시트를 본뜬 틀(site.json 의 cue)에 결과 파일 이름만 넣는다 — 트랙 구성은 게임마다 다르다.
+  const files = [{ name: rel.output, data: result }];
+  if (rel.cue) files.push({ name: rel.output.replace(/\.bin$/i, ".cue"), data: rel.cue.replace("{bin}", rel.output) });
+  try { save(zipStore(files), rel.output.replace(/\.bin$/i, ".zip")); }
+  catch (e) { log("err", `  ✗ ${e.message}`, true); }
+});
 // 처리하는 동안은 파일 고르기를 잠근다 — 두 번째 파일이 끼어들면 로그와 결과가 섞인다
 async function handle(file) {
   $("pick").disabled = true; $("drop").classList.add("off"); busy = true;
@@ -200,4 +276,17 @@ drop.addEventListener("drop", (e) => !$("pick").disabled && e.dataTransfer.files
 
 render(JSON.parse($("site-data").textContent));
 fetch("../site.json", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((s) => { if (s) render(s); }).catch(() => {});
+
+// 문제 제보 — Tally 폼을 새 탭으로 연다(페이지 안 삽입 스크립트는 안 쓴다 — 외부 요청 0 유지).
+//   숨은 칸 game · title · version 을 주소로 넘겨 제보자가 고르지 않게 한다(마스터 10-06).
+(() => {
+  const v = ((game.versions || [])[0] || {}).version || game.stage || "dev";
+  // 값 둘을 가른다(마스터 10-07): game = 내부 코드(ps1-ed1+2 — 쌓인 제보를 거르고 이슈로 옮길 때 쓴다) ·
+  //   title = 폼에 보여 줄 정식 이름(기종 짧은 이름 + 한글 제목 = 「PS1 영웅전설 I · II」, 폼 글 블록의 @title).
+  //   ⚠ URLSearchParams 는 공백을 「+」로 적는다 — 폼이 그대로 보일 수 있어 %20 으로 직접 적는다.
+  const title = `${(game.tags || {}).platform || game.platform} ${game.title}`;
+  const q = [["game", game.id], ["title", title], ["version", v]].map(([k, x]) => `${k}=${encodeURIComponent(x)}`).join("&");
+  $("report-link").href = `${site.report || "https://tally.so/r/rjxd05"}?${q}`;
+  $("report").hidden = game.status !== "released";   // 제보는 배포된 게임만(마스터 10-06) — 작업 중엔 안 받는다
+})();
 </script>

@@ -4,11 +4,11 @@
 @FONTS@
 @CSS@
 </style>
+<script>@THEMEJS@</script>
 
 <header class="band">
   <div class="wrap">
     <div>
-      <a class="crumb" href="../index.html">◀ 패치 목록</a>
       <h1 id="title"></h1>
       <p id="sub"></p>
     </div>
@@ -17,6 +17,7 @@
 </header>
 
 <main class="wrap">
+  <a class="crumb" href="../index.html">← 패치 목록</a>
   <section class="shots" id="shots" hidden tabindex="0" aria-label="게임 화면">
     <div class="stage">
       <img alt="">
@@ -38,8 +39,8 @@
       </section>
 
       <section class="box">
-        <h2>고치는 내용</h2>
-        <div class="in"><ul class="stagelist" id="items"></ul></div>
+        <h2>복원 내역</h2>
+        <div class="in"><div class="restore" id="items"></div></div>
       </section>
     </div>
 
@@ -58,6 +59,13 @@
       <section class="box" id="ver-box" hidden>
         <h2><span>버전</span><small id="updated"></small></h2>
         <div class="in"><div id="versions"></div></div>
+      </section>
+      <section class="box" id="report" hidden>
+        <h2>문제 제보</h2>
+        <div class="in">
+          <p>오탈자나 글자 깨짐, 진행이 막히는 곳을 찾으셨다면 알려 주세요. 게임과 패치 버전은 자동으로 채워집니다.</p>
+          <div class="row"><a class="btn sub" id="report-link" href="#" target="_blank" rel="noopener">제보하기 ↗</a></div>
+        </div>
       </section>
     </div>
   </div>
@@ -84,7 +92,13 @@ $("sub").textContent = game.original || game.platform;
 $("chips").innerHTML = `<span class="tag plat">${esc(game.tags.platform)}</span>` + game.tags.series.map((t) => `<span class="tag">${esc(t)}</span>`).join("")
  + `<span class="chip ${esc(game.track)}">${TRACK[game.track]}</span>`;
 // 스펙의 description 은 개발 노트(오프셋·호출 경로)라 화면엔 이름만 쓴다
-$("items").innerHTML = SPECS.map((s) => `<li><i class="done"></i><b>${esc((s.issue ?? "") && "#" + s.issue)}</b><span>${esc(s.name.replace(/^이슈\s*#\d+\s*—\s*/, ""))}</span></li>`).join("");
+// 복원 내역 — site.json 의 restorations(무엇을 해결했나만 짧게, 마스터 10-06 「How 는 없어도 된다」).
+//   스펙의 description 은 개발 노트(오프셋·호출 경로)라 화면에 쓰지 않는다. 없으면 스펙 이름만 보인다.
+$("items").innerHTML = (game.restorations || SPECS.map((s) => ({ issue: s.issue, title: s.name.replace(/^이슈\s*#\d+\s*—\s*/, "") })))
+  .map((r) => `<article class="fix-item">
+    <h3><span class="no">#${esc(r.issue)}</span>${esc(r.title)}</h3>
+    ${r.summary ? `<p>${esc(r.summary)}</p>` : ""}
+  </article>`).join("");
 $("disc").textContent = "정발판 설치 폴더의 아래 파일";
 // 게임 정보 — 기종 · 원제 + site.json 의 meta(출시 · 이식 등, 있는 것만)
 $("info").innerHTML = [["기종", game.platform], ["원제", game.original], ...Object.entries(game.meta || {})]
@@ -107,7 +121,7 @@ const vs = game.versions || [];
 if (vs.length) {
   $("ver-box").hidden = false;
   $("updated").textContent = vs[0].date || "";   // 버전 칸 제목의 날짜 = 최신 버전의 공개일
-  $("versions").innerHTML = `<ul class="stagelist">${vs.map((v) => `<li><i class="done"></i><b>v${esc(v.version)}</b><span>${esc(v.note || "")}</span></li>`).join("")}</ul>`;
+  $("versions").innerHTML = `<ul class="verlist">${vs.map((v) => `<li><b>v${esc(v.version)}</b><span>${esc(v.note || "")}</span></li>`).join("")}</ul>`;
 }
 
 function hexToBytes(h) {
@@ -202,4 +216,12 @@ $("pick").addEventListener("click", async () => {
   $("pick").disabled = true;
   try { await run(root); } finally { $("pick").disabled = false; }
 });
+
+// 문제 제보 — Tally 폼을 새 탭으로 연다(페이지 안 삽입 스크립트는 안 쓴다 — 외부 요청 0 유지).
+//   숨은 칸 game · version 을 주소로 넘겨 제보자가 고르지 않게 한다(마스터 10-06).
+(() => {
+  const v = ((game.versions || [])[0] || {}).version || game.stage || "dev";
+  $("report-link").href = `${site.report || "https://tally.so/r/rjxd05"}?game=${encodeURIComponent(game.id)}&version=${encodeURIComponent(v)}`;
+  $("report").hidden = game.status !== "released";   // 제보는 배포된 게임만(마스터 10-06) — 작업 중엔 안 받는다
+})();
 </script>

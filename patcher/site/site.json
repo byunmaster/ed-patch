@@ -1,5 +1,6 @@
 {
   "updated": "2026-10-04",
+  "report": "https://tally.so/r/rjxd05",
   "stages": [
     {
       "id": "P0",
@@ -66,7 +67,7 @@
         "bps": "ps1-ed1+2-kr-v1.0.0.bps",
         "xdelta": "ps1-ed1+2-kr-v1.0.0.xdelta",
         "cue": "FILE \"{bin}\" BINARY\r\n  TRACK 01 MODE2/2352\r\n    INDEX 01 00:00:00\r\n",
-        "output_sha1": "aa240a91ce9c04567cc7a1d83ecc0d302ac5c55d"
+        "output_sha1": "ff8f47fd19e64c05fc8bb56c6294950d0959c9e4"
       },
       "tags": {
         "platform": "PS1",
@@ -95,12 +96,26 @@
       "original": "英雄伝説III 白き魔女",
       "track": "kr",
       "status": "preparing",
-      "stage": "P4",
+      "stage": "P2",
       "tags": {
         "platform": "PS1",
         "series": [
           "영웅전설3"
         ]
+      },
+      "phases": {
+        "P1": {
+          "state": "partial",
+          "note": "상태 창·상점 화면이 남았다"
+        },
+        "P2": {
+          "state": "partial",
+          "note": "전투 문안과 조사 처리"
+        },
+        "P3": {
+          "state": "done",
+          "note": "오프닝·엔딩·타이틀 확인"
+        }
       }
     },
     {
@@ -125,13 +140,19 @@
       "original": "英雄伝説 I&II",
       "track": "kr",
       "status": "preparing",
-      "stage": "P4",
+      "stage": "P6",
       "tags": {
         "platform": "새턴",
         "series": [
           "영웅전설1",
           "영웅전설2"
         ]
+      },
+      "phases": {
+        "P6": {
+          "state": "partial",
+          "note": "ED1 플레이 테스트 중 · ED2 는 아직"
+        }
       }
     },
     {
@@ -141,12 +162,30 @@
       "original": "英雄伝説III 白き魔女",
       "track": "kr",
       "status": "preparing",
-      "stage": "P4",
+      "stage": "P6",
       "tags": {
         "platform": "새턴",
         "series": [
           "영웅전설3"
         ]
+      },
+      "phases": {
+        "P0": {
+          "state": "partial",
+          "note": "빌드 결정성 검사가 남았다"
+        },
+        "P5": {
+          "state": "partial",
+          "note": "빌드 결정성 검사가 남았다"
+        },
+        "P3": {
+          "state": "done",
+          "note": "오프닝·엔딩·크레딧까지 확인"
+        },
+        "P4": {
+          "state": "done",
+          "note": "대사 전량과 음성 장면 자막"
+        }
       }
     },
     {
@@ -156,12 +195,26 @@
       "original": "ドラゴンスレイヤー英雄伝説",
       "track": "kr",
       "status": "preparing",
-      "stage": "P3",
+      "stage": "P2",
       "tags": {
         "platform": "PC엔진",
         "series": [
           "영웅전설1"
         ]
+      },
+      "phases": {
+        "P2": {
+          "state": "partial",
+          "note": "전투 문구 350 중 108"
+        },
+        "P3": {
+          "state": "done",
+          "note": "오프닝 나레이션 자막까지 확인"
+        },
+        "P4": {
+          "state": "partial",
+          "note": "씬 220 중 7 · 첫 씬 대사가 남았다"
+        }
       }
     },
     {
@@ -186,12 +239,26 @@
       "original": "ドラゴンスレイヤー英雄伝説",
       "track": "kr",
       "status": "preparing",
-      "stage": "P3",
+      "stage": "P2",
       "tags": {
         "platform": "슈퍼패미컴",
         "series": [
           "영웅전설1"
         ]
+      },
+      "phases": {
+        "P2": {
+          "state": "partial",
+          "note": "전투 화면 확인 전 · 적 이름이 깨진다"
+        },
+        "P3": {
+          "state": "done",
+          "note": "오프닝·엔딩·타이틀 확인"
+        },
+        "P4": {
+          "state": "partial",
+          "note": "대사 3,548 중 1,386 · 깨지는 페이지와 문장 끝에 붙은 낱말 정리가 남았다"
+        }
       }
     },
     {
@@ -216,12 +283,22 @@
       "original": "ドラゴンスレイヤー英雄伝説",
       "track": "kr",
       "status": "preparing",
-      "stage": "P3",
+      "stage": "P2",
       "tags": {
         "platform": "메가드라이브",
         "series": [
           "영웅전설1"
         ]
+      },
+      "phases": {
+        "P2": {
+          "state": "partial",
+          "note": "상태이상·레벨업·승패 화면이 남았다"
+        },
+        "P3": {
+          "state": "partial",
+          "note": "장 카드는 플레이 테스트 때 확인"
+        }
       }
     },
     {
@@ -275,13 +352,40 @@
       "title": "드래곤 슬레이어 영웅전설",
       "original": "ドラゴンスレイヤー英雄伝説",
       "track": "kr",
-      "status": "preparing",
+      "status": "planned",
       "stage": "P2",
       "tags": {
         "platform": "PC-98",
         "series": [
           "영웅전설1"
         ]
+      },
+      "media": {
+        "intro": "PC-98 판은 플로피 디스크 세 장(프로그램 · 시나리오 · 이벤트)에 담겨 있습니다. 가지고 계신 디스크 이미지(.d88)를 고르면 어느 디스크인지 알아본 뒤 한글판으로 바꿔 드립니다. 시나리오 디스크의 세이브는 그대로 남깁니다.",
+        "drop": "여기에 디스크 이미지(.d88)를 끌어 놓거나 눌러서 고르기",
+        "accept": ".d88",
+        "note": "디스크 이미지 패처는 배포할 때 열립니다.",
+        "how": [
+          "디스크 이미지 세 장에 각각 패치를 적용합니다 — 배포 때 자세한 방법을 적습니다."
+        ]
+      },
+      "phases": {
+        "P1": {
+          "state": "partial",
+          "note": "필드 지명·불러오기 창이 남았다"
+        },
+        "P2": {
+          "state": "partial",
+          "note": "전투 문안 일부 · 조사는 정적 처리"
+        },
+        "P3": {
+          "state": "partial",
+          "note": "오프닝 확인 · 2장 이후 막힘"
+        },
+        "P4": {
+          "state": "partial",
+          "note": "대사 일부"
+        }
       }
     },
     {
@@ -386,7 +490,14 @@
       "meta": {
         "이식": "만트라",
         "유통": "삼성전자"
-      }
+      },
+      "restorations": [
+        {
+          "issue": 1,
+          "title": "스엘 「세계 3대 명소 유람여행」 크래시",
+          "summary": "스엘 마을에서 유람여행 배를 타면 월드맵으로 나가는 순간 게임이 꺼지던 문제를 고칩니다. 원판처럼 여행을 끝까지 즐길 수 있습니다."
+        }
+      ]
     }
   ],
   "layout": [
