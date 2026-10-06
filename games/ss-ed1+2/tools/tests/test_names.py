@@ -45,7 +45,7 @@ class Names(unittest.TestCase):
         self.assertEqual(patch_ui.name_kr("スライムＡ", self.c), "슬라임A")
 
     def test_spellbook_is_derived(self):
-        self.assertEqual(patch_ui.name_kr("フラムの書", self.c), "프람의 서")
+        self.assertEqual(patch_ui.name_kr("フラムの書", self.c), "프람의 책")  # 주문책은 「~의 책」(마스터 10-06, PS1 과 같게)
 
     def test_halfwidth_kana_and_middot_normalise(self):
         """표엔 반각 가나·중점 표기가 섞여 있다 — **맞출 때만** 눕힌다."""

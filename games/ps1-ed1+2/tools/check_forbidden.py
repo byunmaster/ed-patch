@@ -78,7 +78,10 @@ SCAN_EXT = (".json", ".py", ".md", ".sh", ".html")
 # ⚠ **레포 상대경로로 비교한다.** 절대경로로 하면 레포가 `/root/work/...` 같은 자리에 있을 때
 # `work` 가 **모든 디렉터리에 매칭돼** 검사가 통째로 건너뛰어진다 — 게이트가 조용히
 # 초록불이 된다(2026-08-13 실측, 일부러 심은 문장을 못 잡아 발견했다).
-SKIP_DIR = (".git", "work", ".local", "originals", "vendor", ".venv", "node_modules")
+# ⚠ `worktrees` — 메인 트리에서 돌리면 `.claude/worktrees/*` 의 **다른 세션 사본**까지 훑어, 남의 브랜치
+#   문안을 「이 게임」으로 세어 빨간불이 났다(10-06 실측 206건). 사본은 그 워크트리의 게이트가 본다.
+#   `.claude/` 통째로 빼지 않는 건 스킬 문서(`.claude/skills`)도 공개되니 인용 검사 대상이라서다.
+SKIP_DIR = (".git", "work", ".local", "originals", "vendor", ".venv", "node_modules", "worktrees")
 # ⚠ 예외 목록을 두지 않는다 — 같으면 포인터로 바꾸면 되니 통과시킬 이유가 없다.
 ALLOW = set()
 

@@ -715,9 +715,10 @@ def name_kr(jp, canon):
     #   ⚠ **Ｅ 에서 끊지 않는다** — 소환 목록은 `毒大ガエルＨ` 까지 간다(2026-08-24).
     if len(n) > 1 and "A" <= n[-1:] <= "Z" and n[:-1] in canon:
         return canon[n[:-1]] + n[-1]
-    # `〜の書`(주문서)도 파생이다 — 밑말이 주문 이름이라 정본에 따로 안 둔다.
+    # `〜の書`(주문책)도 파생이다 — 밑말이 주문 이름이라 정본에 따로 안 둔다.
+    #   「~의 책」이다(마스터 10-06 「모든 주문은 ~의 책」 — PS1 BOOK_SUFFIX 와 같게).
     if n.endswith("の書") and n[:-2] in canon:
-        return canon[n[:-2]] + "의 서"
+        return canon[n[:-2]] + "의 책"
     return None
 
 
