@@ -51,7 +51,7 @@ class GlyphBankBoundary(unittest.TestCase):
         self.banks = bytes((i * 7 + (i >> 8) * 13) & 0xFF for i in range(font.GLYPH_NBANKS * BANK))
 
     def test_every_glyph_reads_whole(self):
-        """상한(font.MAX_GLYPHS — 2뱅크 682자)까지 **모든** 순번이 자기 24B 를 그대로 받아야 한다."""
+        """상한(font.MAX_GLYPHS — 2뱅크 676자, 꼬리는 어절 줄바꿈 루틴)까지 **모든** 순번이 자기 24B 를 그대로 받아야 한다."""
         for idx in range(font.MAX_GLYPHS):
             off = idx * font.GLYPH_BYTES
             want = self.banks[off : off + font.GLYPH_BYTES]

@@ -44,6 +44,13 @@ WRAP_ADDR = HOOK_ADDR + 0x300
 ORIG_SET_PENDING = 0x6AB5  # $6D9C 가 부르던 것 — "개행 보류" 플래그(`$CF15`) 증가
 ORIG_DO_WRAP = 0x6AB9  # $6723 가 부르던 것 — 보류 플래그가 서 있으면 실제로 줄을 넘긴다
 ORIG_ADV_COL = 0x6D8A  # $6730 이 부르던 것 — 칸 카운터(`$38BB`) 전진
+# 🔴 **로그 어절 줄바꿈(마스터 09-30 「로그성 메시지도 어절 단위」, 10-07 구현)** — `mark` 가 글자마다
+#   마지막 글리프 뱅크 꼬리의 `wordck` 를 MPR4 에 잠깐 걸어 부른다. 공백 다음 글자(어절 첫 글자)에서
+#   어절 길이를 앞질러 재고(이름·도구 삽입이면 06 에서 `$93/$94` 로 돌아가 이어 잰다) 「열 + 길이 > 13」이면
+#   개행 보류 플래그(`$CF15`)를 세워 그 글자부터 새 줄에 그린다. 13 보다 긴 낱말은 원래대로 글자 단위.
+WORDCK_BANK = font.GLYPH_BANK0 + font.GLYPH_NBANKS - 1
+WORDCK_ADDR = 0x8000 + 0x2000 - font.GLYPH_TAIL  # MPR4 창 기준
+LINE_COLS_ZP = 0x99  # 줄 폭(칸) — `$6D95` 가 비교하는 그 값(로그·필드 창 13)
 # 부호 넷(4px, glyph_order.json 로 유도) — 줄 끝에 매단다(고아로 새 줄 첫 칸에 혼자 안 남긴다)
 HANG_PUNCT = ((font.LEAD0, 0x24), (font.LEAD0, 0x25), (font.LEAD0, 0x27), (font.LEAD0, 0x2E))
 SPACE_CODE = (0x81, 0x40)  # 공백(전각) — 개행 직후 첫 글자면 그린 그대로 두고 칸만 안 늘린다
@@ -66,6 +73,7 @@ OPS = {
     ("STA", "izpy"): 0x91,
     ("STZ", "zp"): 0x64,
     ("CMP", "imm"): 0xC9,
+    ("CMP", "zp"): 0xC5,
     ("CPY", "imm"): 0xC0,
     ("BEQ", "rel"): 0xF0,
     ("BRA", "rel"): 0x80,
@@ -112,6 +120,7 @@ OPS = {
     ("JSR", "abs"): 0x20,
     ("RTS", "imp"): 0x60,
     ("INY", "imp"): 0xC8,
+    ("DEY", "imp"): 0x88,
     ("CLA", "imp"): 0x62,
     ("CLY", "imp"): 0xC2,
     ("PHA", "imp"): 0x48,
@@ -449,10 +458,10 @@ def _wrap_asm() -> "Asm":
 
     · `orphan`(→$6D9C 대신): 다음 글자가 부호 넷 중 하나면 **개행 보류 플래그를 안 세운다** —
       이번 글자는 이번 줄에 그대로 그려진다(줄 끝에 매달린다). 아니면 원래대로 `$6AB5` 호출.
-    · `mark`(→$6723 대신): 원래 호출(`$6AB9`) 전에 `$CF15`(보류 플래그)를 미리 읽어 둔다 —
-      `$6AB9` 자신이 그 값을 0 으로 지우므로, "이번 글자에서 실제로 개행이 일어났는가"는
-      **호출 전**에만 알 수 있다.
-    · `eat`(→$6730 대신): 방금 개행이 일어났고(위 플래그) 이번 글자가 공백이면 **칸 전진을
+    · `mark`(→$6723 대신): 글리프 뱅크를 MPR4 에 잠깐 걸어 `wordck`(어절 줄바꿈 판정 + `flag`
+      기록)를 부르고 원래 `$6AB9` 로 넘어간다. `$6AB9` 가 보류 플래그를 지우므로 「이번 글자에서
+      개행이 일어나는가」는 **호출 전**에만 알 수 있다 — 그래서 `flag` 를 거기서 적는다.
+    · `eat`(→$6730 대신): 방금 개행이 일어났고 이번 글자가 공백이면(위 `flag`) **칸 전진을
       건너뛴다** — 공백은 원래대로 그려지지만(안 그려도 잉크가 없어 상관없다) 칸을 안 먹으므로
       다음 실제 글자가 줄 맨 앞(칸 0)에 온다. 아니면 원래대로 `$6D8A` 호출.
     """
@@ -467,31 +476,130 @@ def _wrap_asm() -> "Asm":
     for lead, trail in HANG_PUNCT:
         assert lead == font.LEAD0
         a.op("CMP", "imm", trail)
-        a.op("BEQ", "rel", "orphan_hang")
+        a.op("BEQ", "rel", "ret")
     a.label("orphan_normal")
-    a.op("JSR", "abs", ORIG_SET_PENDING)
-    a.op("RTS")
-    a.label("orphan_hang")
-    a.op("RTS")
-    a.label("mark")
-    a.op("LDA", "abs", 0xCF15)
-    a.op("STA", "abs", "flag")
-    a.op("JSR", "abs", ORIG_DO_WRAP)
-    a.op("RTS")
+    a.op("JMP", "abs", ORIG_SET_PENDING)
+    a.label("mark")  # 어절 판정 + `flag` 기록(글리프 뱅크) → 원래 `$6AB9`
+    a.op("TMA", "tma", 4)
+    a.op("PHA")
+    a.op("LDA", "imm", WORDCK_BANK)
+    a.op("TAM", "tam", 4)
+    a.op("JSR", "abs", WORDCK_ADDR)
+    a.op("PLA")
+    a.op("TAM", "tam", 4)
+    a.op("JMP", "abs", ORIG_DO_WRAP)
     a.label("eat")
     a.op("LDA", "abs", "flag")
     a.op("BEQ", "rel", "eat_normal")
+    a.label("ret")
+    a.op("RTS")  # 먹는다 — 칸 전진을 건너뛴다(부호 매달기도 여기로 돌아간다)
+    a.label("eat_normal")
+    a.op("JMP", "abs", ORIG_ADV_COL)
+    return a
+
+
+def _wordck_asm() -> "Asm":
+    """어절 첫 글자에서 「열 + 어절 길이 > 13」이면 개행 보류(`$CF15`)를 세운다. X·Y 를 지킨다.
+
+    지금 글자 = `$F9:$F8`, 열 = `$38BB`(이 글자가 들어갈 칸), 다음 바이트 = `($14),Y`.
+    길이는 글자(≥$24, 2B) 수 — 공백(`81 40`)·제어(<$24)에서 끝난다. 단 이름·도구 삽입 중(`$90` 비트1)에
+    `06` 을 만나면 삽입 전 자리(`$93/$94`)로 돌아가 이어 잰다(「캐리온크롤러A는」처럼 조사가 뒤에 붙는다).
+    """
+    a = Asm(WORDCK_ADDR)
+    a.op("PHY")
+    a.op("PHX")
+    a.op("LDX", "abs", "prevsp")  # 직전 글자가 공백이었나
+    a.op("STZ", "abs", "prevsp")
     a.op("LDA", "zp", 0xF9)
     a.op("CMP", "imm", SPACE_CODE[0])
-    a.op("BNE", "rel", "eat_normal")
+    a.op("BNE", "rel", "nsp")
     a.op("LDA", "zp", 0xF8)
     a.op("CMP", "imm", SPACE_CODE[1])
-    a.op("BNE", "rel", "eat_normal")
-    a.op("RTS")  # 먹는다 — 칸 전진을 건너뛴다
-    a.label("eat_normal")
-    a.op("JSR", "abs", ORIG_ADV_COL)
+    a.op("BNE", "rel", "nsp")
+    a.op("INC", "abs", "prevsp")
+    a.op("BRA", "rel", "out")
+    a.label("nsp")
+    a.op("TXA")
+    a.op("BEQ", "rel", "out")  # 어절 첫 글자가 아니다
+    a.op("LDA", "abs", 0x38BB)
+    a.op("BEQ", "rel", "out")  # 줄 머리
+    a.op("STA", "abs", "col")
+    a.op("STZ", "abs", "cnt")  # 지금 글자 뒤로 몇 칸 — 마지막 글자 열 = 열 + cnt
+    a.op("LDA", "zp", 0x14)
+    a.op("STA", "zp", 0xEC)
+    a.op("LDA", "zp", 0x15)
+    a.op("STA", "zp", 0xED)
+    a.op("LDA", "zp", 0x90)
+    a.op("AND", "imm", 2)
+    a.op("TAX")  # X = 삽입 중인가
+    a.label("lp")
+    a.op("LDA", "izpy", 0xEC)
+    a.op("CMP", "imm", 0x24)
+    a.op("BCC", "rel", "ctl")
+    a.op("CMP", "imm", SPACE_CODE[0])
+    a.op("BNE", "rel", "ch")
+    a.op("INY")
+    a.op("LDA", "izpy", 0xEC)
+    a.op("DEY")
+    a.op("CMP", "imm", SPACE_CODE[1])
+    a.op("BEQ", "rel", "done")
+    a.label("ch")  # A = 리드(공백 갈래에서 왔으면 트레일 $40 — 리드 F0 과 안 겹친다)
+    a.op("CMP", "imm", font.LEAD0)
+    a.op("BNE", "rel", "cnt1")
+    a.op("INY")
+    a.op("LDA", "izpy", 0xEC)
+    a.op("DEY")
+    for _lead, trail in HANG_PUNCT:  # 매다는 부호는 줄 밖에 걸리니 길이에 안 센다
+        a.op("CMP", "imm", trail)
+        a.op("BEQ", "rel", "skip")
+    a.label("cnt1")
+    a.op("INC", "abs", "cnt")
+    a.label("skip")
+    a.op("INY")
+    a.op("INY")
+    a.op("BRA", "rel", "lp")  # 끝은 늘 제어 코드(00·01·04 …)라 멈춘다
+    a.label("ctl")
+    a.op("CMP", "imm", 6)
+    a.op("BNE", "rel", "done")
+    a.op("TXA")
+    a.op("BEQ", "rel", "done")
+    a.op("LDX", "imm", 0)
+    a.op("LDA", "zp", 0x93)
+    a.op("STA", "zp", 0xEC)
+    a.op("LDA", "zp", 0x94)
+    a.op("STA", "zp", 0xED)
+    a.op("LDY", "imm", 0)
+    a.op("BRA", "rel", "lp")
+    a.label("done")
+    a.op("LDA", "abs", "col")
+    a.op("CLC")
+    a.op("ADC", "abs", "cnt")
+    a.op(
+        "CMP", "zp", LINE_COLS_ZP
+    )  # 창마다의 줄 폭(로그·필드 13) — 마지막 글자 열 < 폭이면 들어간다
+    a.op("BCC", "rel", "out")
+    a.op("INC", "abs", 0xCF15)  # 이 글자부터 새 줄
+    a.label("out")
+    # `flag`(RAM) = 「이 글자에서 개행이 일어나고 이 글자가 공백」 — `eat` 이 칸 전진을 건너뛴다.
+    #   `$6AB9` 가 `$CF15` 를 지우므로 호출 전인 여기서만 알 수 있다.
+    a.op("LDA", "abs", 0xCF15)
+    a.op("BEQ", "rel", "st")
+    a.op("LDA", "abs", "prevsp")
+    a.label("st")
+    a.op("STA", "abs", WRAP_ADDR)
+    a.op("PLX")
+    a.op("PLY")
     a.op("RTS")
+    for v in ("prevsp", "col", "cnt"):
+        a.label(v)
+        a.data(b"\x00")
     return a
+
+
+def wordck() -> bytes:
+    b = _wordck_asm().bytes()
+    assert len(b) <= font.GLYPH_TAIL, len(b)
+    return b + b"\0" * (font.GLYPH_TAIL - len(b))
 
 
 def hook_wrap_fix() -> bytes:

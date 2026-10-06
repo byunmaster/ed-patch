@@ -25,7 +25,10 @@ TRAIL0 = 0x24
 #    적재가 **조용히 실패**했다(devlog 09-25). 682자 상한 — 넘으면 빌드가 멈춘다(재검토: status.md 8절).
 GLYPH_NBANKS = 2
 GLYPH_BANK0 = 0x88 - GLYPH_NBANKS  # 캐시 맨 끝 칸들
-MAX_GLYPHS = GLYPH_NBANKS * 0x2000 // GLYPH_BYTES  # 682
+# 마지막 글리프 뱅크 꼬리는 런타임 어절 줄바꿈 루틴(`hook.wordck`) 자리 — 게임이 안 쓰는 우리 뱅크라서다
+#   (10-07: 뱅크 0x69·0x6A·워크 RAM `$22BC~` 의 「빈 자리」는 실행 중에 다 쓰이고 있었다)
+GLYPH_TAIL = 160
+MAX_GLYPHS = (GLYPH_NBANKS * 0x2000 - GLYPH_TAIL) // GLYPH_BYTES  # 676
 # 🔴 리드 F9 는 **동적 조사** 전용으로 예약한다(글리프 배정에서 뺀다) — `F9 (0x24+종류)`.
 #    후킹 루틴이 **직전에 그린 글자**의 받침을 보고 두 글리프 중 하나를 낸다(status.md 12절).
 JOSA_LEAD = 0xF9
@@ -189,8 +192,8 @@ DIGIT_READING = dict(zip("0123456789", "영일이삼사오육칠팔구", strict=
 
 def batchim_tables(order: list[str]) -> tuple[bytes, bytes]:
     """글리프 순서 → (받침 비트맵, ㄹ받침 비트맵) 각 128B. 비트 1 = 받침 있음."""
-    has = bytearray(MAX_GLYPHS // 8)
-    rieul = bytearray(MAX_GLYPHS // 8)
+    has = bytearray((MAX_GLYPHS + 7) // 8)
+    rieul = bytearray((MAX_GLYPHS + 7) // 8)
     for i, ch in enumerate(order):
         if ch in DIGIT_READING:  # 끝 숫자는 읽는 소리대로(마스터 09-26): 레스1을 · 레스2를
             f = (ord(DIGIT_READING[ch]) - 0xAC00) % 28
