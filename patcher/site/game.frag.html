@@ -93,7 +93,7 @@ const TRACK = { kr: "한글패치", fix: "복원패치" };
 const STATUS = { released: "배포 중", preparing: "작업 중", planned: "진행 예정", undecided: "미정" };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-let site, game, rel, result;
+let site, game, rel, result, ready = false, busy = false;
 
 function render(s) {
   site = s; game = s.games.find((g) => g.id === GAME); rel = game.release || {};
@@ -131,9 +131,9 @@ $("info").innerHTML = [["기종", game.platform], ["원제", game.original], ...
     ? `<a class="btn" href="${esc(v)}" download>${k} 받기</a>`
     : `<span class="btn" aria-disabled="true">${k} 준비 중</span>`).join("");
   // 배포 전(작업 중)이면 패치하기를 막는다 — 페이지는 진행 상황과 게임 화면을 보이는 자리다
-  const ready = game.status === "released" && !!rel.bps;
-  $("pick").disabled = !ready;
-  $("drop").classList.toggle("off", !ready);
+  ready = game.status === "released" && !!rel.bps;
+  // ⚠ render 는 site.json 을 다시 읽은 뒤 한 번 더 불린다 — 처리 중이면 잠금을 건드리지 않는다
+  if (!busy) { $("pick").disabled = !ready; $("drop").classList.toggle("off", !ready); }
   $("src-box").hidden = !src.sha1;
   if (!ready) log("dim", "한글화 작업 중입니다.\n패치가 나오면 여기서 바로 적용할 수 있습니다.");
 }
@@ -146,7 +146,7 @@ function log(cls, msg, keep) {
 const bar = (f) => { $("bar").style.width = Math.round(f * 100) + "%"; };
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-async function handle(file) {
+async function process(file) {
   $("save").disabled = $("cue").disabled = true; result = null; bar(0);
   const src = rel.source || {};
   log("", `> ${file.name}`);
@@ -154,9 +154,16 @@ async function handle(file) {
   if (src.size && file.size !== src.size) return log("err", `  ✗ 크기가 다릅니다 — 이 패치는 ${src.size.toLocaleString()} 바이트 덤프용입니다`, true);
   log("", "  원본 확인 중…", true); await tick();
   const buf = new Uint8Array(await file.arrayBuffer()); bar(0.2);
-  const sha = await EDPatch.sha1Hex(buf); bar(0.35);
-  if (sha !== src.sha1) return log("err", `  ✗ SHA-1 이 다릅니다\n    ${sha}\n  다른 판이나 손상된 덤프입니다. 오른쪽 지문과 비교해 주세요.`, true);
-  log("", "  ✓ 맞는 원본입니다 (SHA-1 일치)", true);
+  // SHA-1 은 WebCrypto 라 https(또는 localhost)에서만 된다. 그 밖(사내망 http 미리보기 등)에선 CRC32 로 가른다.
+  if (crypto.subtle) {
+    const sha = await EDPatch.sha1Hex(buf); bar(0.35);
+    if (sha !== src.sha1) return log("err", `  ✗ SHA-1 이 다릅니다\n    ${sha}\n  다른 판이나 손상된 덤프입니다. 오른쪽 지문과 비교해 주세요.`, true);
+    log("", "  ✓ 맞는 원본입니다 (SHA-1 일치)", true);
+  } else {
+    const crc = EDPatch.crc32(buf).toString(16).toUpperCase().padStart(8, "0"); bar(0.35);
+    if (crc !== String(src.crc32).toUpperCase()) return log("err", `  ✗ CRC32 가 다릅니다 (${crc})\n  다른 판이나 손상된 덤프입니다. 오른쪽 지문과 비교해 주세요.`, true);
+    log("", "  ✓ 맞는 원본입니다 (CRC32 일치)", true);
+  }
   if (!rel.bps) return log("dim", "  패치 파일이 올라가면 여기서 바로 적용됩니다.", true);
   log("", "  패치 받는 중…", true); await tick();
   const patch = new Uint8Array(await (await fetch(rel.bps, { cache: "no-store" })).arrayBuffer()); bar(0.45);
@@ -178,6 +185,13 @@ function save(bytes, name, type) {
 $("save").addEventListener("click", () => result && save(result, rel.output, "application/octet-stream"));
 // .cue 는 원본 시트를 본뜬 틀(site.json 의 cue)에 결과 파일 이름만 넣는다 — 트랙 구성은 게임마다 다르다.
 $("cue").addEventListener("click", () => save(rel.cue.replace("{bin}", rel.output), rel.output.replace(/\.bin$/i, ".cue"), "text/plain"));
+// 처리하는 동안은 파일 고르기를 잠근다 — 두 번째 파일이 끼어들면 로그와 결과가 섞인다
+async function handle(file) {
+  $("pick").disabled = true; $("drop").classList.add("off"); busy = true;
+  try { await process(file); }
+  catch (e) { log("err", `  ✗ 처리 중 오류: ${e.message}`, true); }
+  finally { busy = false; $("pick").disabled = !ready; $("drop").classList.toggle("off", !ready); $("pick").value = ""; }
+}
 $("pick").addEventListener("change", (e) => e.target.files[0] && handle(e.target.files[0]));
 const drop = $("drop");
 ["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
