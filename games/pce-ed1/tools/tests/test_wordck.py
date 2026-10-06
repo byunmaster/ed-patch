@@ -14,7 +14,7 @@ import hook
 
 ZP = 0x2000  # HuC6280 영페이지
 COL, PEND = 0x38BB, 0xCF15
-BUF, INJ = 0x4000, 0x4100
+BUF, INJ = 0xC600, 0x6973  # 전투 블록 창·삽입 버퍼 — 실측 자리
 SP = (0x81, 0x40)
 CH = (font.LEAD0, 0x80)  # 아무 글자
 DOT = (font.LEAD0, 0x2E)  # 매다는 부호
@@ -35,7 +35,7 @@ class CPU:
 
     def run(self, pc):
         m = self.m
-        self.stack.append(None)  # 돌아갈 자리 표지
+        self.stack += [None, None]  # 돌아갈 자리 표지(2B — PLA 두 번으로 버리는 코드가 있다)
         self.pc = pc
 
         def b():
@@ -67,8 +67,18 @@ class CPU:
             elif op == 0x7A:
                 self.y = nz(self.stack.pop())
             elif op == 0x60:
-                assert self.stack.pop() is None, "스택이 안 맞는다"
-                return
+                lo, hi = self.stack.pop(), self.stack.pop()
+                if lo is None:
+                    assert hi is None, "스택이 안 맞는다"
+                    return
+                self.pc = (hi << 8 | lo) + 1
+            elif op == 0x20:
+                t = w()
+                ret = self.pc - 1
+                self.stack += [ret >> 8, ret & 0xFF]
+                self.pc = t
+            elif op == 0x68:
+                self.a = nz(self.stack.pop())
             elif op == 0xAE:
                 self.x = nz(m[w()])
             elif op == 0xA2:
@@ -195,6 +205,23 @@ class WordCk(unittest.TestCase):
         self.assertEqual(self.call(CH, chars(2) + b"\x06", 10, inject=chars(1))[0], 1)
         self.assertEqual(self.call(CH, chars(2) + b"\x06", 9, inject=chars(1))[0], 0)
 
+    def test_pointer_in_own_window_skips(self):
+        # 글이 `$4000~$5FFF`(우리가 건 창)에 있으면 못 읽는다 — 판정 없이 나간다(넘기지 않는다)
+        m = self.m
+        buf = 0x5000
+        m[self.labels["prevsp"]] = 1
+        m[ZP + 0xF9], m[ZP + 0xF8] = CH
+        m[COL], m[PEND] = 12, 0
+        m[ZP + hook.LINE_COLS_ZP] = 13
+        m[buf : buf + 12] = chars(5) + b"\x00\x00"
+        m[ZP + 0x14], m[ZP + 0x15] = buf & 0xFF, buf >> 8
+        m[ZP + 0x90] = 0
+        cpu = CPU(m)
+        cpu.x, cpu.y = 0x48, 0
+        cpu.run(hook.WORDCK_ADDR)
+        self.assertEqual(m[PEND], 0)
+        self.assertEqual((cpu.x, cpu.y), (0x48, 0))
+
     def test_06_outside_inject_stops(self):
         self.assertEqual(self.call(CH, chars(2) + b"\x06" + chars(5), 10)[0], 0)
 
@@ -222,7 +249,7 @@ class WordCk(unittest.TestCase):
 
     def test_fits_tail(self):
         self.assertLessEqual(len(hook._wordck_asm().bytes()), font.GLYPH_TAIL)
-        self.assertEqual(hook.WORDCK_ADDR + font.GLYPH_TAIL, 0xA000)
+        self.assertEqual(hook.WORDCK_ADDR + font.GLYPH_TAIL, (hook.WORDCK_MPR + 1) << 13)
 
 
 if __name__ == "__main__":

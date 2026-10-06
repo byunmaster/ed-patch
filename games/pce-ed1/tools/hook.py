@@ -45,11 +45,16 @@ ORIG_SET_PENDING = 0x6AB5  # $6D9C 가 부르던 것 — "개행 보류" 플래�
 ORIG_DO_WRAP = 0x6AB9  # $6723 가 부르던 것 — 보류 플래그가 서 있으면 실제로 줄을 넘긴다
 ORIG_ADV_COL = 0x6D8A  # $6730 이 부르던 것 — 칸 카운터(`$38BB`) 전진
 # 🔴 **로그 어절 줄바꿈(마스터 09-30 「로그성 메시지도 어절 단위」, 10-07 구현)** — `mark` 가 글자마다
-#   마지막 글리프 뱅크 꼬리의 `wordck` 를 MPR4 에 잠깐 걸어 부른다. 공백 다음 글자(어절 첫 글자)에서
+#   마지막 글리프 뱅크 꼬리의 `wordck` 를 **MPR2($4000)** 에 잠깐 걸어 부른다(SEI). 공백 다음 글자(어절 첫 글자)에서
 #   어절 길이를 앞질러 재고(이름·도구 삽입이면 06 에서 `$93/$94` 로 돌아가 이어 잰다) 「열 + 길이 > 13」이면
 #   개행 보류 플래그(`$CF15`)를 세워 그 글자부터 새 줄에 그린다. 13 보다 긴 낱말은 원래대로 글자 단위.
 WORDCK_BANK = font.GLYPH_BANK0 + font.GLYPH_NBANKS - 1
-WORDCK_ADDR = 0x8000 + 0x2000 - font.GLYPH_TAIL  # MPR4 창 기준
+# 🔴 창은 **글이 안 사는 곳**이어야 한다 — 앞질러 읽는 글은 `$6000`(삽입 버퍼, 0x6C) · `$8000`(시스템 문구, 0x6D) ·
+#   `$A000`(씬 블록) · `$C000`(전투 블록·이름표, 0x74) 에 산다. 처음엔 MPR4($8000) 에 걸었다가 시스템 문구
+#   (「을/를 사용했다.」)를 읽을 자리에서 **우리 루틴 자신을 읽어** 「류난은 / 횃불을…」로 넘겼다(10-07 실측).
+#   MPR2($4000, 본 프로그램 0x68) 는 코드뿐이라 거기 건다 — 혹시 포인터가 `$4000~$5FFF` 면 판정을 건너뛴다.
+WORDCK_MPR = 2
+WORDCK_ADDR = (WORDCK_MPR << 13) + 0x2000 - font.GLYPH_TAIL  # MPR2 창 기준
 LINE_COLS_ZP = 0x99  # 줄 폭(칸) — `$6D95` 가 비교하는 그 값(로그·필드 창 13)
 # 부호 넷(4px, glyph_order.json 로 유도) — 줄 끝에 매단다(고아로 새 줄 첫 칸에 혼자 안 남긴다)
 HANG_PUNCT = ((font.LEAD0, 0x24), (font.LEAD0, 0x25), (font.LEAD0, 0x27), (font.LEAD0, 0x2E))
@@ -60,6 +65,10 @@ STUB_ADDR = 0x7852  # 뱅크 0x69 +0x1852
 ORIG_INIT = 0x5798
 GLYPH_WINDOW_HI = 0x60  # 글리프 뱅크를 MPR3($6000) 에 잠깐 건다
 GLYPH_BANK0 = font.GLYPH_BANK0
+UNPACK_ADDR = (
+    GLYPH_WINDOW_HI << 8
+) + font.BANK_GLYPH_END  # 글리프 뱅크마다 같은 자리 — MPR3 창 기준
+UNPACK_ROOM = 0x2000 - font.GLYPH_TAIL - font.BANK_GLYPH_END  # 112B(마지막 뱅크는 뒤에 어절 루틴)
 
 # (니모닉, 모드) → 옵코드. 모드: imp · imm · zp · abs · absx · absy · izpy · rel · tma · tam
 OPS = {
@@ -68,6 +77,8 @@ OPS = {
     ("LDA", "abs"): 0xAD,
     ("LDA", "absx"): 0xBD,
     ("LDA", "izpy"): 0xB1,
+    ("LDA", "izp"): 0xB2,
+    ("ROL", "imp"): 0x2A,
     ("STA", "zp"): 0x85,
     ("STA", "abs"): 0x8D,
     ("STA", "izpy"): 0x91,
@@ -82,6 +93,7 @@ OPS = {
     ("LDY", "imm"): 0xA0,
     ("LDX", "imm"): 0xA2,
     ("STX", "zp"): 0x86,
+    ("LDX", "zp"): 0xA6,
     ("STY", "zp"): 0x84,
     ("STX", "abs"): 0x8E,
     ("STY", "abs"): 0x8C,
@@ -168,7 +180,7 @@ class Asm:
         self.out.append(OPS[(mn, mode)])
         if mode == "imp":
             return
-        if mode in ("imm", "zp", "izpy"):
+        if mode in ("imm", "zp", "izpy", "izp"):
             self.out.append(arg & 0xFF)
         elif mode in ("tma", "tam"):
             self.out.append(1 << arg)  # MPR 번호 → 비트
@@ -236,78 +248,26 @@ def _main_asm() -> "Asm":
     a.op("BNE", "rel", "normal")  # 조사 블록은 복사 블록 뒤라 짧은 분기로 못 간다
     a.op("JMP", "abs", "josa")
     a.label("normal")
-    # ─ 보통 글자: off = (lead−F0)×220×24 + (trail−0x24)×24 ─
     a.op("LDA", "zp", 0xF9)
     a.op("STA", "abs", LAST_ADDR)
     a.op("LDA", "zp", 0xF8)
     a.op("STA", "abs", LAST_ADDR + 1)
-    a.op("SEC")
-    a.op("SBC", "imm", font.TRAIL0)
-    a.op("STA", "zp", 0xEC)
-    a.op("STZ", "zp", 0xED)
-    _mul24(a)
+    a.op("STA", "zp", 0xEC)  # 트레일
     a.op("LDA", "zp", 0xF9)
+    # ─ 글리프 내기(A = 리드, $EC = 트레일): 뱅크 = GLYPH_BANK0 + (리드−F0)>>1 를 MPR3 창에 걸고 그 뱅크
+    #   꼬리의 풀기 루틴(`unpack_asm`, 18B → 24B)을 부른다. 루틴이 뱅크마다 같은 자리에 있어 어느 뱅크든 된다.
+    a.label("fetch")
     a.op("SEC")
     a.op("SBC", "imm", font.LEAD0)
     a.op("TAX")
-    a.op("CLC")
-    a.op("LDA", "zp", 0xEC)
-    a.op("ADC", "absx", "base_lo")
-    a.op("STA", "zp", 0xEC)
-    a.op("LDA", "zp", 0xED)
-    a.op("ADC", "absx", "base_hi")
-    a.op("STA", "zp", 0xED)
-    a.op("BRA", "rel", "copy_setup")  # 보통 글자는 바로 복사로
-    # ─ 글리프 복사: 뱅크 = GLYPH_BANK0 + (off>>13), MPR3 창 ─
-    a.label("copy_setup")
     a.op("TMA", "tma", 3)
     a.op("STA", "zp", 0xEE)
-    a.op("LDA", "zp", 0xED)
-    for _ in range(5):
-        a.op("LSR")
-    a.op("CLC")
-    a.op("ADC", "imm", GLYPH_BANK0)
+    a.op("TXA")
+    a.op("LSR")  # C = 뱅크 안 리드 짝(0 = 앞 3,960B · 1 = 뒤) — 풀기 루틴이 C 로 받는다
+    assert GLYPH_BANK0 % font.GLYPH_NBANKS == 0  # ORA 로 더한다(C 를 안 건드린다)
+    a.op("ORA", "imm", GLYPH_BANK0)
     a.op("TAM", "tam", 3)
-    a.op("LDA", "zp", 0xED)
-    a.op("AND", "imm", 0x1F)
-    a.op("ORA", "imm", GLYPH_WINDOW_HI)
-    a.op("STA", "zp", 0xED)
-    # 🔴 **뱅크 경계를 걸치는 글리프**(2026-09-16, 화면에서 「십」이 깨져 잡았다).
-    # 글리프 24B · 뱅크 8,192B 라 8192÷24=341.33 로 안 떨어져 **순번 341 하나가 경계에 걸린다** —
-    # 뱅크 안에 8B, 다음 뱅크에 16B. 아래 복사는 MPR3 창($6000~$7FFF) 하나만 걸고 24B 를 **연속으로**
-    # 읽으므로, 그 글자는 `$7FF8`에서 시작해 **`$800F`까지 창 밖(MPR4)** 을 읽었다. MPR4 는 이 루틴이
-    # 건드리지도 저장하지도 않아 **게임 뱅크가 그대로 새어 들어왔다**(화면 실측: 윗 4행=8B 만 맞고
-    # 아래 8행=16B 가 쓰레기 — 8/16 분할이 그대로 보였다).
-    # ⇒ 넘을 때만 **창 끝까지 복사 → 다음 뱅크로 갈아 끼우고 → 나머지**. MPR3 은 이미 저장·복원한다.
-    # ⚠ 글자→코드 순서는 **세이브에 남아 못 바꾼다** — 「걸치는 순번을 건너뛴다」는 해법이 아니다.
-    a.op("CLY")
-    a.label("copy")
-    a.op("LDA", "izpy", 0xEC)
-    a.op("STA", "izpy", 0xFA)
-    a.op("INY")
-    a.op("CPY", "imm", font.GLYPH_BYTES)
-    a.op("BEQ", "rel", "copy_done")
-    a.op("TYA")
-    a.op("CLC")
-    a.op("ADC", "zp", 0xEC)  # ($EC+Y) 하위가 0 = 페이지 경계
-    a.op("BNE", "rel", "copy")
-    a.op("LDA", "zp", 0xED)
-    a.op("CMP", "imm", GLYPH_WINDOW_HI | 0x1F)  # 그 페이지 경계가 **창 끝**($8000)인가
-    a.op("BNE", "rel", "copy")  # 창 안쪽 경계면 그냥 이어간다(주소가 알아서 올라간다)
-    a.op("TMA", "tma", 3)
-    a.op("INC")
-    a.op("TAM", "tam", 3)  # 다음 글리프 뱅크로 갈아 끼운다
-    # 포인터를 $5F00+$EC 로 내린다 — 지금 Y 에서 정확히 $6000 을 가리킨다($EC+Y=0x100)
-    a.op("LDA", "imm", GLYPH_WINDOW_HI - 1)
-    a.op("STA", "zp", 0xED)
-    a.op("BRA", "rel", "copy")  # Y 를 이어받아 나머지를 채운다
-    a.label("copy_done")
-    a.op("CLA")
-    a.label("zero")
-    a.op("STA", "izpy", 0xFA)
-    a.op("INY")
-    a.op("CPY", "imm", 0x20)
-    a.op("BNE", "rel", "zero")
+    a.op("JSR", "abs", UNPACK_ADDR)
     a.op("LDA", "zp", 0xEE)
     a.op("TAM", "tam", 3)
     a.op("PLY")
@@ -380,15 +340,10 @@ def _main_asm() -> "Asm":
     a.label("josa_lookup")
     a.op("ASL")
     a.op("TAX")  # 받침 k×4 · 무받침 k×4+2
-    a.op("LDA", "absx", JOSA_OFF_ADDR)
+    a.op("LDA", "absx", JOSA_OFF_ADDR)  # 표 = (트레일, 리드) — 보통 글자 길로 낸다
     a.op("STA", "zp", 0xEC)
     a.op("LDA", "absx", JOSA_OFF_ADDR + 1)
-    a.op("STA", "zp", 0xED)
-    a.op("JMP", "abs", "copy_setup")
-    a.label("base_lo")
-    a.data(font.base_table()[:10])
-    a.label("base_hi")
-    a.data(font.base_table()[10:])
+    a.op("JMP", "abs", "fetch")
     a.label("idx_lo")
     a.data(bytes((i * font.PER_LEAD) & 0xFF for i in range(10)))
     a.label("idx_hi")
@@ -458,7 +413,7 @@ def _wrap_asm() -> "Asm":
 
     · `orphan`(→$6D9C 대신): 다음 글자가 부호 넷 중 하나면 **개행 보류 플래그를 안 세운다** —
       이번 글자는 이번 줄에 그대로 그려진다(줄 끝에 매달린다). 아니면 원래대로 `$6AB5` 호출.
-    · `mark`(→$6723 대신): 글리프 뱅크를 MPR4 에 잠깐 걸어 `wordck`(어절 줄바꿈 판정 + `flag`
+    · `mark`(→$6723 대신): 글리프 뱅크를 MPR2 에 잠깐 걸어(SEI — 그 창의 본 프로그램을 인터럽트가 못 부르게) `wordck`(어절 줄바꿈 판정 + `flag`
       기록)를 부르고 원래 `$6AB9` 로 넘어간다. `$6AB9` 가 보류 플래그를 지우므로 「이번 글자에서
       개행이 일어나는가」는 **호출 전**에만 알 수 있다 — 그래서 `flag` 를 거기서 적는다.
     · `eat`(→$6730 대신): 방금 개행이 일어났고 이번 글자가 공백이면(위 `flag`) **칸 전진을
@@ -480,13 +435,16 @@ def _wrap_asm() -> "Asm":
     a.label("orphan_normal")
     a.op("JMP", "abs", ORIG_SET_PENDING)
     a.label("mark")  # 어절 판정 + `flag` 기록(글리프 뱅크) → 원래 `$6AB9`
-    a.op("TMA", "tma", 4)
+    a.op("PHP")
+    a.op("SEI")
+    a.op("TMA", "tma", WORDCK_MPR)
     a.op("PHA")
     a.op("LDA", "imm", WORDCK_BANK)
-    a.op("TAM", "tam", 4)
+    a.op("TAM", "tam", WORDCK_MPR)
     a.op("JSR", "abs", WORDCK_ADDR)
     a.op("PLA")
-    a.op("TAM", "tam", 4)
+    a.op("TAM", "tam", WORDCK_MPR)
+    a.op("PLP")
     a.op("JMP", "abs", ORIG_DO_WRAP)
     a.label("eat")
     a.op("LDA", "abs", "flag")
@@ -496,6 +454,99 @@ def _wrap_asm() -> "Asm":
     a.label("eat_normal")
     a.op("JMP", "abs", ORIG_ADV_COL)
     return a
+
+
+def unpack_asm() -> "Asm":
+    """글리프 뱅크 꼬리 루틴(뱅크마다 같은 바이트) — 18B 묶음 글리프를 ($FA) 에 화면용 24B(+0 채움 32B)로 푼다.
+
+    들어올 때: C = 뱅크 안 리드 짝(0/1), `$EC` = 트레일 바이트. 이 뱅크가 MPR3($6000) 에 걸려 있다.
+    자리 = 짝×3,960 + (트레일−0x24)×18. 두 행 = 3B: hiA · (loA | hiB>>4) · (hiB<<4 | loB>>4) — `font.pack`.
+    """
+    a = Asm(UNPACK_ADDR)
+    a.op("LDX", "zp", 0xEC)  # 트레일 — $24 까지 세어 내려가며 18 씩 더한다(곱셈 대신, 최대 219번)
+    a.op("STZ", "zp", 0xEC)
+    a.op("LDY", "imm", GLYPH_WINDOW_HI)
+    a.op("BCC", "rel", "even")
+    a.op("LDA", "imm", font.GROUP_BYTES & 0xFF)
+    a.op("STA", "zp", 0xEC)
+    a.op("LDY", "imm", GLYPH_WINDOW_HI + (font.GROUP_BYTES >> 8))
+    a.label("even")
+    a.op("STY", "zp", 0xED)
+    a.label("mul")
+    a.op("CPX", "imm", font.TRAIL0)
+    a.op("BEQ", "rel", "go")
+    a.op("DEX")
+    a.op("LDA", "zp", 0xEC)
+    a.op("CLC")
+    a.op("ADC", "imm", font.PACKED_BYTES)
+    a.op("STA", "zp", 0xEC)
+    a.op("BCC", "rel", "mul")
+    a.op("INC", "zp", 0xED)
+    a.op("BRA", "rel", "mul")
+    a.label("go")
+    a.op("CLY")
+    a.label("lp")
+    a.op("JSR", "abs", "rd")
+    a.op("STA", "izpy", 0xFA)  # hiA
+    a.op("INY")
+    a.op("JSR", "abs", "rd")
+    a.op("PHA")
+    a.op("AND", "imm", 0xF0)
+    a.op("STA", "izpy", 0xFA)  # loA
+    a.op("INY")
+    a.op("PLA")
+    for _ in range(4):
+        a.op("ASL")
+    a.op("STA", "abs", "tmp")
+    a.op("JSR", "abs", "rd")
+    a.op("PHA")
+    for _ in range(4):
+        a.op("LSR")
+    a.op("ORA", "abs", "tmp")
+    a.op("STA", "izpy", 0xFA)  # hiB
+    a.op("INY")
+    a.op("PLA")
+    for _ in range(4):
+        a.op("ASL")
+    a.op("STA", "izpy", 0xFA)  # loB
+    a.op("INY")
+    a.op("CPY", "imm", font.GLYPH_BYTES)
+    a.op("BNE", "rel", "lp")
+    a.op("CLA")
+    a.label("zero")
+    a.op("STA", "izpy", 0xFA)
+    a.op("INY")
+    a.op("CPY", "imm", 0x20)
+    a.op("BNE", "rel", "zero")
+    a.op("RTS")
+    a.label("rd")
+    a.op("LDA", "izp", 0xEC)
+    a.op("INC", "zp", 0xEC)
+    a.op("BNE", "rel", "rd_ret")
+    a.op("INC", "zp", 0xED)
+    a.label("rd_ret")
+    a.op("RTS")
+    a.label("tmp")
+    a.data(b"\x00")
+    return a
+
+
+def unpack_code() -> bytes:
+    b = unpack_asm().bytes()
+    assert len(b) <= UNPACK_ROOM, len(b)
+    return b
+
+
+def finish_banks(glyph_bank: bytes) -> bytes:
+    """글리프 뱅크에 꼬리 코드를 얹는다 — 뱅크마다 풀기 루틴, 마지막 뱅크 맨 끝은 어절 줄바꿈 루틴."""
+    gb = bytearray(glyph_bank)
+    code = unpack_code()
+    for k in range(font.GLYPH_NBANKS):
+        at = k * 0x2000 + font.BANK_GLYPH_END
+        assert not gb[at : (k + 1) * 0x2000].strip(b"\0"), "글리프가 뱅크 꼬리 코드 자리를 덮는다"
+        gb[at : at + len(code)] = code
+    gb[-font.GLYPH_TAIL :] = wordck()
+    return bytes(gb)
 
 
 def _wordck_asm() -> "Asm":
@@ -523,12 +574,12 @@ def _wordck_asm() -> "Asm":
     a.op("BEQ", "rel", "out")  # 어절 첫 글자가 아니다
     a.op("LDA", "abs", 0x38BB)
     a.op("BEQ", "rel", "out")  # 줄 머리
-    a.op("STA", "abs", "col")
     a.op("STZ", "abs", "cnt")  # 지금 글자 뒤로 몇 칸 — 마지막 글자 열 = 열 + cnt
     a.op("LDA", "zp", 0x14)
     a.op("STA", "zp", 0xEC)
     a.op("LDA", "zp", 0x15)
     a.op("STA", "zp", 0xED)
+    a.op("JSR", "abs", "guard")
     a.op("LDA", "zp", 0x90)
     a.op("AND", "imm", 2)
     a.op("TAX")  # X = 삽입 중인가
@@ -568,10 +619,11 @@ def _wordck_asm() -> "Asm":
     a.op("STA", "zp", 0xEC)
     a.op("LDA", "zp", 0x94)
     a.op("STA", "zp", 0xED)
+    a.op("JSR", "abs", "guard")
     a.op("LDY", "imm", 0)
     a.op("BRA", "rel", "lp")
     a.label("done")
-    a.op("LDA", "abs", "col")
+    a.op("LDA", "abs", 0x38BB)
     a.op("CLC")
     a.op("ADC", "abs", "cnt")
     a.op(
@@ -590,7 +642,17 @@ def _wordck_asm() -> "Asm":
     a.op("PLX")
     a.op("PLY")
     a.op("RTS")
-    for v in ("prevsp", "col", "cnt"):
+    a.label("guard")  # 포인터가 우리 창(`$4000~$5FFF`)이면 못 읽는다 — 판정 없이 나간다
+    a.op("LDA", "zp", 0xED)
+    a.op("AND", "imm", 0xE0)
+    a.op("CMP", "imm", WORDCK_MPR << 5)
+    a.op("BNE", "rel", "g_ok")
+    a.op("PLA")
+    a.op("PLA")
+    a.op("BRA", "rel", "out")
+    a.label("g_ok")
+    a.op("RTS")
+    for v in ("prevsp", "cnt"):
         a.label(v)
         a.data(b"\x00")
     return a

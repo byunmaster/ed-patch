@@ -1,6 +1,8 @@
 """한글 글리프 뱅크 + 코드표 — 문안이 쓰는 음절만 싣는다(결정 B, status.md 8절).
 
-    글리프 = 12×12 → 24B(행 0~11, 2B/행, 비트 15~4). 뱅크 0x86~0x87 에 순서대로(24B × ≤682).
+    글리프 = 12×12 → 화면용 24B(행 0~11, 2B/행, 비트 15~4). **뱅크엔 12비트 행으로 묶어 18B** 로 싣는다
+    (`pack`, 10-07) — 리드 하나(220자)가 3,960B, 뱅크 하나에 리드 둘(0x86=F0·F1, 0x87=F2·F3) · 880자.
+    후킹이 그 뱅크 꼬리의 풀기 루틴(`hook.unpack_asm`)으로 24B 로 되돌린다.
     코드  = 리드 F0+idx//220 · 트레일 0x24+idx%220 (idx 는 **정본 순서**의 번호 — `script/glyph_order.json`).
     ⚠ 트레일은 0x24 이상 — 인터프리터가 <0x24 를 옵코드로 보고, 이름칸 스캐너가 0x06 을 끝으로 본다.
 
@@ -25,10 +27,19 @@ TRAIL0 = 0x24
 #    적재가 **조용히 실패**했다(devlog 09-25). 682자 상한 — 넘으면 빌드가 멈춘다(재검토: status.md 8절).
 GLYPH_NBANKS = 2
 GLYPH_BANK0 = 0x88 - GLYPH_NBANKS  # 캐시 맨 끝 칸들
-# 마지막 글리프 뱅크 꼬리는 런타임 어절 줄바꿈 루틴(`hook.wordck`) 자리 — 게임이 안 쓰는 우리 뱅크라서다
+# 🔴 **18B 묶음 저장**(10-07) — 24B 는 행마다 아래 4비트가 늘 0 이라 6B 가 빈다. 전투 문안만으로 41자가 더
+#    필요한데 2뱅크 24B 로는 676자가 끝이었다(682 − 어절 루틴 자리). 묶으면 리드 하나 = 220×18 = 3,960B 라
+#    **뱅크에 리드 둘이 딱 들고**(7,920B) 걸치는 글자가 없다(24B 땐 순번 341 이 뱅크 경계에 걸려 「십」이 깨졌다).
+PACKED_BYTES = 18
+LEADS_PER_BANK = 2
+GROUP_BYTES = PER_LEAD * PACKED_BYTES  # 3960
+BANK_GLYPH_END = (
+    LEADS_PER_BANK * GROUP_BYTES
+)  # 0x1EF0 — 뒤 272B 는 코드 자리(풀기 루틴 · 어절 줄바꿈)
+# 마지막 글리프 뱅크 맨 끝은 런타임 어절 줄바꿈 루틴(`hook.wordck`) 자리 — 게임이 안 쓰는 우리 뱅크라서다
 #   (10-07: 뱅크 0x69·0x6A·워크 RAM `$22BC~` 의 「빈 자리」는 실행 중에 다 쓰이고 있었다)
-GLYPH_TAIL = 160
-MAX_GLYPHS = (GLYPH_NBANKS * 0x2000 - GLYPH_TAIL) // GLYPH_BYTES  # 676
+GLYPH_TAIL = 168  # `hook.wordck` — 앞 104B 는 풀기 루틴(`hook.unpack_asm`)
+MAX_GLYPHS = GLYPH_NBANKS * LEADS_PER_BANK * PER_LEAD  # 880
 # 🔴 리드 F9 는 **동적 조사** 전용으로 예약한다(글리프 배정에서 뺀다) — `F9 (0x24+종류)`.
 #    후킹 루틴이 **직전에 그린 글자**의 받침을 보고 두 글리프 중 하나를 낸다(status.md 12절).
 JOSA_LEAD = 0xF9
@@ -211,7 +222,7 @@ def batchim_tables(order: list[str]) -> tuple[bytes, bytes]:
 
 
 def josa_offsets(table: dict[str, bytes]) -> bytes:
-    """조사 종류별 (받침용, 무받침용) 글리프 오프셋 2B × 2 × 7 = 28B.
+    """조사 종류별 (받침용, 무받침용) 글리프 **코드**(트레일·리드) 2B × 2 × 7 = 28B — 후킹이 보통 글자 길로 낸다.
 
     ⚠ 두 글자짜리 조사(으로·이랑)는 **첫 글자만** 표에 넣고 둘째 글자는 문안이 그대로 들고 있는다 —
     루틴이 글리프 하나만 낼 수 있어서다(`으로/로` → 문안에 `{으로/로}로` 로 쓰지 않는다,
@@ -221,8 +232,8 @@ def josa_offsets(table: dict[str, bytes]) -> bytes:
     for pair in JOSA_PAIRS:
         a, b = pair.split("/")
         for part in (a, b):
-            idx = _index_of(part[0], table)
-            out += (idx * GLYPH_BYTES).to_bytes(2, "little")
+            c = table[part[0]]
+            out += bytes([c[1], c[0]])
     return bytes(out)
 
 
@@ -269,8 +280,11 @@ def build_table(chars) -> tuple[dict[str, bytes], bytes]:
     if len(order) > MAX_GLYPHS:
         raise ValueError(f"음절 {len(order)}자 — 상한 {MAX_GLYPHS}. 결정 B 재검토(status.md 8절)")
     table = {ch: code_of(i) for i, ch in enumerate(order)}
-    bank = b"".join(glyph(ch) for ch in order)
-    bank += b"\0" * (GLYPH_NBANKS * 0x2000 - len(bank))
+    bank = bytearray(GLYPH_NBANKS * 0x2000)
+    for i, ch in enumerate(order):
+        at = glyph_at(i)
+        bank[at : at + PACKED_BYTES] = pack(glyph(ch))
+    bank = bytes(bank)
     build_table.order = order  # 받침 표를 만들 때 쓴다
     return table, bank
 
@@ -324,11 +338,29 @@ def encode(text: str, table: dict[str, bytes]) -> bytes:
     return bytes(out)
 
 
-def base_table() -> bytes:
-    """후킹 루틴이 쓰는 리드별 글리프 오프셋(lo/hi 각 10B) — 코드 배치와 같은 식."""
-    lo = bytes(((i * PER_LEAD * GLYPH_BYTES) & 0xFF) for i in range(10))
-    hi = bytes(((i * PER_LEAD * GLYPH_BYTES) >> 8 & 0xFF) for i in range(10))
-    return lo + hi
+def glyph_at(idx: int) -> int:
+    """순번 → 글리프 뱅크들(이어 붙인 것) 안 바이트 자리. 뱅크 = 리드 둘씩, 리드 안은 18B 씩."""
+    g, k = divmod(idx, PER_LEAD)
+    return (g // LEADS_PER_BANK) * 0x2000 + (g % LEADS_PER_BANK) * GROUP_BYTES + k * PACKED_BYTES
+
+
+def pack(g: bytes) -> bytes:
+    """24B(행마다 hi·lo, lo 아래 4비트 0) → 18B(두 행 = 3B: hiA · loA|hiB>>4 · hiB<<4|loB>>4)."""
+    assert len(g) == GLYPH_BYTES
+    out = bytearray()
+    for r in range(0, 12, 2):
+        ha, la, hb, lb = g[2 * r], g[2 * r + 1], g[2 * r + 2], g[2 * r + 3]
+        assert not (la & 0x0F or lb & 0x0F), "12 칸 밖 잉크"
+        out += bytes([ha, la | hb >> 4, (hb << 4 & 0xF0) | lb >> 4])
+    return bytes(out)
+
+
+def unpack(b: bytes) -> bytes:
+    out = bytearray()
+    for i in range(0, PACKED_BYTES, 3):
+        b0, b1, b2 = b[i : i + 3]
+        out += bytes([b0, b1 & 0xF0, (b1 << 4 | b2 >> 4) & 0xFF, b2 << 4 & 0xF0])
+    return bytes(out)
 
 
 if __name__ == "__main__":

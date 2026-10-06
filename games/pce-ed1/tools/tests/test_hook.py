@@ -22,12 +22,13 @@ class CPU:
 
     def __init__(self, mem: bytearray, pc: int, glyph_bank: bytes = b"", bank0: int = 0x85):
         self.m = mem
-        self.glyph = glyph_bank
+        self.glyph = bytearray(glyph_bank)  # 꼬리 코드의 임시값을 쓴다 — 창 쓰기도 뱅크로
         self.bank0 = bank0
         self.pc = pc
         self.a = self.x = self.y = 0
         self.c = self.z = 0
         self.stack = []
+        self.calls = []
         self.mpr = [0] * 8
         self.done = False
         self.bios_called = False
@@ -45,7 +46,11 @@ class CPU:
         return self.m[a]
 
     def wr(self, a, v):
-        self.m[a & 0xFFFF] = v & 0xFF
+        a &= 0xFFFF
+        if 0x6000 <= a < 0x8000 and self.glyph:
+            self.glyph[(self.mpr[3] - self.bank0) * 0x2000 + (a - 0x6000)] = v & 0xFF
+            return
+        self.m[a] = v & 0xFF
 
     def setz(self, v):
         self.z = 1 if (v & 0xFF) == 0 else 0
@@ -97,6 +102,12 @@ class CPU:
             v = imm()
             self.c = 1 if self.a >= v else 0
             self.z = 1 if self.a == v else 0
+        elif op == 0xA6:
+            self.x = self.setz(self.rd(self.zp(imm())))
+        elif op == 0xE0:
+            v = imm()
+            self.c = 1 if self.x >= v else 0
+            self.z = 1 if self.x == v else 0
         elif op == 0xC0:
             v = imm()
             self.c = 1 if self.y >= v else 0
@@ -124,8 +135,25 @@ class CPU:
                 self.done = True
             else:
                 self.pc = t
+        elif op == 0x20:  # JSR — 루틴 안 호출(뱅크 꼬리 풀기 루틴)
+            t = abs_()
+            self.calls.append(self.pc)
+            self.pc = t
         elif op == 0x60:
-            self.done = True
+            if self.calls:
+                self.pc = self.calls.pop()
+            else:
+                self.done = True
+        elif op == 0xB2:  # LDA (zp)
+            z = self.zp(imm())
+            self.a = self.setz(self.rd(self.rd(z) | self.rd(z + 1) << 8))
+        elif op == 0xE6:
+            z = self.zp(imm())
+            self.wr(z, self.setz(self.rd(z) + 1))
+        elif op == 0x84:
+            self.wr(self.zp(imm()), self.y)
+        elif op == 0x0D:
+            self.a = self.setz(self.a | self.rd(abs_()))
         elif op == 0x48:
             self.stack.append(self.a)
         elif op == 0x68:
@@ -155,19 +183,19 @@ class CPU:
         elif op == 0x9C:
             self.wr(abs_(), 0)
         elif op == 0xAA:
-            self.x = self.a
+            self.x = self.setz(self.a)
         elif op == 0xA8:
-            self.y = self.a
+            self.y = self.setz(self.a)
         elif op == 0x98:
             self.a = self.setz(self.y)
         elif op == 0x8A:
             self.a = self.setz(self.x)
         elif op == 0xC8:
-            self.y = (self.y + 1) & 0xFF
+            self.y = self.setz(self.y + 1)
         elif op == 0xE8:
-            self.x = (self.x + 1) & 0xFF
+            self.x = self.setz(self.x + 1)
         elif op == 0xCA:
-            self.x = (self.x - 1) & 0xFF
+            self.x = self.setz(self.x - 1)
         elif op == 0x1A:
             self.a = self.setz(self.a + 1)
         elif op == 0x3A:
@@ -239,6 +267,7 @@ class CPU:
 class Hook(unittest.TestCase):
     def setup_mem(self, chars):
         table, bank = font.build_table(chars)
+        bank = hook.finish_banks(bank)
         mem = bytearray(0x10000)
         payload = hook.payload(table)
         mem[hook.HOOK_ADDR : hook.HOOK_ADDR + len(payload)] = payload

@@ -395,10 +395,9 @@ def apply_code_patches(
         return
     if want("glyph"):  # 진단용으로 뺄 수 있다 — 뱅크 0x7C~0x7E 를 0 인 채로 두는 A/B
         lba = common.T2_SECTOR + 114
-        # 마지막 뱅크 꼬리 = 어절 줄바꿈 루틴(`hook.wordck`, `$6723` 경로가 MPR4 에 걸어 부른다)
-        tail = font.GLYPH_TAIL
-        assert not glyph_bank[-tail:].strip(b"\0"), "글리프가 어절 줄바꿈 루틴 자리를 덮는다"
-        glyph_bank = glyph_bank[:-tail] + hook.wordck()
+        # 뱅크 꼬리 = 코드: 뱅크마다 풀기 루틴(`hook.unpack_asm`, 18B → 24B) · 마지막 뱅크 맨 끝은 어절
+        #   줄바꿈 루틴(`hook.wordck`, `$6723` 경로가 MPR4 에 걸어 부른다). 글리프는 `BANK_GLYPH_END` 앞까지만.
+        glyph_bank = hook.finish_banks(glyph_bank)
         mode1.write_user_data(
             f, lba, glyph_bank, label="glyph banks", expect=b"\0" * len(glyph_bank)
         )
