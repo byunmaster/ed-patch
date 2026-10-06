@@ -298,8 +298,8 @@
     ② 전 트리     before=$(git rev-parse HEAD:games/<게임>)
     ③ 얹기        git rebase --onto main <떨굴 base>
     ④ 후 트리     같은지 대조                            ← 커밋 수로는 못 보는 것
-    ⑤ 되돌릴 곳   git branch -f backup/<이름>-pre-force<N> origin/game/<이름>
-    ⑥ 올리기      git push --force-with-lease
+    ⑤ 되돌릴 곳   git branch -f backup/<이름>-pre-rebase<N> <얹기 전 HEAD>   (로컬에만)
+    ⑥ 올리기      없음 — 게임 브랜치는 원격에 안 올린다(마스터 10-06). 관리자가 로컬 브랜치를 머지한다
 
 세 번 다 ④ 가 통과해 **게이트를 안 돌렸다** — 리베이스 한 번에 빌드 5분+게이트를 아낀다.
 🔴 **④ 는 「내 게임 트리가 안 변했다」만 말한다.** `shared/`·`scripts/` 가 바뀌어 들어오면
