@@ -63,6 +63,15 @@ set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
+# 캡처는 세 실행기 모두 **메인 트리 `.local/capture/<게임>/`** 로 모은다(마스터 10-06 「저장 경로 일원화」).
+#   워크트리에서 띄워도 메인 트리로 간다(.local 은 워크트리에 안 따라온다 — git-common-dir 로 찾는다).
+#   `.local/cache` 가 아니라 바로 아래라 **지우는 칸이 아니다** — 찍은 것은 사람이 모은 자료다.
+capture_dir() {   # $1 = 게임 칸 이름 → 만들어서 절대경로를 찍는다
+  _cd=$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || true)
+  case "$_cd" in "") _root=$REPO ;; /*) _root=$(cd "$_cd/.." && pwd) ;; *) _root=$(cd "$REPO/$_cd/.." && pwd) ;; esac
+  mkdir -p "$_root/.local/capture/$1" && printf '%s' "$_root/.local/capture/$1"
+  return 0
+}
 HELPERS="$HERE/emu"                   # 실행기 본체·기전은 여기 모여 있다
 SYNCSH="$HELPERS/sync-saves.sh"
 PY_BIN="$REPO/.venv/bin/python"       # ⚠ 여기서 실패할 수 있는 명령을 쓰지 않는다(set -e)
@@ -395,8 +404,9 @@ while :; do
     echo "── 단축키 ─────────────────────────────────────────────" >&2
     case "$1" in
       mednafen)
-        echo "   Space 일시정지(⌥P 도 됨)    ⌥C 캡처    ⌥B 되감기 ⚠ ⌥⇧B 로 먼저 켠다" >&2
-        echo "   F5 저장        F7 불러오기    \` 빨리감기    Tab 느리게" >&2
+        echo "   Space 일시정지(⌥P 도 됨)    F9 캡처    ⌥B 되감기 ⚠ ⌥⇧B 로 먼저 켠다" >&2
+        echo "   F5 저장        F7 불러오기    \` 빨리감기    Tab 누르는 동안 빨리감기" >&2
+        echo "   ⌥F 뗀 뒤 3초 안에 패드 키 = 그 버튼 자동 연타(같이 누르지 않는다)    ⌥F 또는 아무 패드 키 = 끄기" >&2
         echo "   ⌘R 재시작    ⌥-/⌥+ 창 크기    ⌥1~4 크기 단계    ⌥M 소리" >&2
         ;;
       dos)
@@ -659,6 +669,8 @@ _has_mod() {  # $1=바이너리 · $2=모듈 — 있으면 0
     tr ' ' '\n' | grep -qx "$2" && return 0
   return 1
 }
+SNAPDIR=$(capture_dir "$GAME")   # F9 캡처 자리 — 명령줄로만 준다(emucap 과 같이 쓰는 cfg 는 안 건드린다)
+echo "  📷 F9 캡처 → $SNAPDIR"
 MEDNAFEN_BIN="$REPO/.local/cache/mednafen/bin/mednafen"
 [ -x "$MEDNAFEN_BIN" ] || MEDNAFEN_BIN=mednafen
 case "$MEDNAFEN_BIN" in
@@ -683,7 +695,7 @@ if ! _has_mod "$MEDNAFEN_BIN" "$MOD"; then
 fi
 if [ "$SYNC" != 1 ]; then
   # shellcheck disable=SC2086
-  exec "$MEDNAFEN_BIN" -force_module "$MOD" -filesys.path_sav "$SAVEREL" $EXTRA "$IMAGE"
+  exec "$MEDNAFEN_BIN" -force_module "$MOD" -filesys.path_sav "$SAVEREL" -filesys.path_snap "$SNAPDIR" $EXTRA "$IMAGE"
 fi
 
 # 🔴 **이번 실행에서 만든 스테이트도 dev 로 보낸다**(마스터 2026-09-27) — 세이브가 안 되는 자리
@@ -720,6 +732,6 @@ trap 'finish; exit 143' TERM
 
 RC=0
 # shellcheck disable=SC2086
-"$MEDNAFEN_BIN" -force_module "$MOD" -filesys.path_sav "$SAVEREL" $EXTRA "$IMAGE" || RC=$?
+"$MEDNAFEN_BIN" -force_module "$MOD" -filesys.path_sav "$SAVEREL" -filesys.path_snap "$SNAPDIR" $EXTRA "$IMAGE" || RC=$?
 finish
 exit $RC

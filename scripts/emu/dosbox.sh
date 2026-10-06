@@ -110,6 +110,15 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 . "$HERE/winsize.sh"   # 창 크기 단계 넷 — 실행기 셋이 같은 눈금
 REPO=$(cd "$HERE/../.." && pwd)   # scripts/emu → 레포 루트
+# 캡처는 세 실행기 모두 **메인 트리 `.local/capture/<게임>/`** 로 모은다(마스터 10-06 「저장 경로 일원화」).
+#   워크트리에서 띄워도 메인 트리로 간다(.local 은 워크트리에 안 따라온다 — git-common-dir 로 찾는다).
+#   `.local/cache` 가 아니라 바로 아래라 **지우는 칸이 아니다** — 찍은 것은 사람이 모은 자료다.
+capture_dir() {   # $1 = 게임 칸 이름 → 만들어서 절대경로를 찍는다
+  _cd=$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || true)
+  case "$_cd" in "") _root=$REPO ;; /*) _root=$(cd "$_cd/.." && pwd) ;; *) _root=$(cd "$REPO/$_cd/.." && pwd) ;; esac
+  mkdir -p "$_root/.local/capture/$1" && printf '%s' "$_root/.local/capture/$1"
+  return 0
+}
 # ⚠ **CLI 바이너리를 먼저 찾는다 — 앱 번들은 폴백이다**(유저 요청 2026-08-21). brew formula
 # (`brew install dosbox-x`)는 **이 맥에서 소스로 빌드**돼 OS 천장에 안 걸리는 반면, 받아 쓰는
 # 앱 번들은 상류가 최신 macOS API 를 부르는 순간 그냥 못 뜬다 — Geargrafx 가 SDL3 의
@@ -287,6 +296,7 @@ sed -e "s|@GAME@|$GAME|g" -e "s|@DRIVE@|$DRIVE|g" -e "s|@CMD@|$CMD|g" \
     -e "s|@MOUNTCD@|$MOUNTCD|g" -e "s|@SBTYPE@|$SBTYPE|g" -e "s|@SBIRQ@|$SBIRQ|g" \
     -e "s|@MAPPERFILE@|$MAPPERFILE|g" -e "s|@CYCLES@|$CYCLES|g" -e "s|@CORE@|$CORE|g" \
     -e "s|@WINRES@|$(winsize_wh "${WIN_SIZE:-2}")|g" \
+    -e "s|^captures=capture\$|captures=$(capture_dir "dos-$GAME")|" \
     "$HERE/dosbox/game.conf.tmpl" > "$BOX/$GAME.conf"
 # 템플릿은 DOSBox-X 기준이다. staging 은 여섯 키를 거부하는데(실측) 전부 경고로 넘어가긴
 # 하지만, 로그가 지저분하면 진짜 경고를 놓친다 — 여기서 갈아 준다.
@@ -358,7 +368,7 @@ if [ "$ENGINE" = staging ]; then
     echo "glshader=none"
     echo ""
     echo "[capture]"
-    echo "capture_dir=capture"
+    echo "capture_dir=$(capture_dir "dos-$GAME")"
   } >> "$BOX/$GAME.conf.tmp"
   mv "$BOX/$GAME.conf.tmp" "$BOX/$GAME.conf"
 fi

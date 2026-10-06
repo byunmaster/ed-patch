@@ -41,7 +41,22 @@ set -e
 
 DEV_HOST=${DEV_HOST:-dev}
 DEV_SAVES=${DEV_SAVES:-save}      # dev 홈 기준 상대 — 레포 밖이다
-SSHOPT="-o ConnectTimeout=5 -o BatchMode=yes"
+SSHOPT="-o ConnectTimeout=5 -o BatchMode=yes -o ServerAliveInterval=5 -o ServerAliveCountMax=2"
+
+# 🔴 **원격이 응답을 안 하면 끝없이 기다렸다**(마스터 10-06 — 세이브 없는 게임에서 ⌃C 를 눌러야
+#    넘어갔다). ConnectTimeout 은 「붙는 데까지」만 재고, 붙은 뒤 rsync 가 멈추면 소용이 없다.
+#    그래서 원격을 부르는 명령은 전부 시간 제한을 건다. macOS 엔 `timeout` 이 없어 손으로 만든다:
+#    명령을 뒤로 돌리고, 감시자가 N 초 뒤 죽인다. 제한에 걸리면 「없음」과 똑같이 넘어간다.
+with_limit() {
+  _lim=$1; shift
+  "$@" &
+  _pid=$!
+  ( sleep "$_lim"; kill "$_pid" 2>/dev/null ) &
+  _dog=$!
+  wait "$_pid"; _rc=$?
+  kill "$_dog" 2>/dev/null; wait "$_dog" 2>/dev/null
+  return "$_rc"
+}
 
 ACT=$1
 [ -n "$ACT" ] || { echo "사용법: $0 probe|pull|push <leaf> <디렉터리> [패턴...]" >&2; exit 2; }
@@ -49,7 +64,7 @@ shift
 
 # dev 에 붙는지만 본다. 못 붙어도 호출자가 **로컬로 계속 진행**할 수 있게 코드로만 알린다.
 if [ "$ACT" = probe ]; then
-  ssh $SSHOPT "$DEV_HOST" true 2>/dev/null || exit 1
+  with_limit 10 ssh $SSHOPT "$DEV_HOST" true 2>/dev/null </dev/null || exit 1
   exit 0
 fi
 
@@ -64,7 +79,7 @@ case "$ACT" in
     mkdir -p "$DIR"
     # 원격에 아직 정본이 없으면 rsync 가 23 으로 죽는데 그건 **정상 상황**이라 삼킨다.
     # `state/`(보낸 스테이트 — emu.sh·웹 실행기)는 세션 몫이라 실행 머신으로 안 당긴다.
-    if rsync -a -u --exclude 'state/' --exclude 'state.bak/' -e "ssh $SSHOPT" "$DEV_HOST:$REMOTE/" "$DIR/" 2>/dev/null; then
+    if with_limit 30 rsync -a -u --exclude 'state/' --exclude 'state.bak/' -e "ssh $SSHOPT" "$DEV_HOST:$REMOTE/" "$DIR/" 2>/dev/null </dev/null; then
       echo "세이브 당김: $DEV_HOST:$REMOTE → $SHORT"
     else
       echo "세이브 없음(원격) — 그냥 진행한다"

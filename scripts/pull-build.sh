@@ -387,8 +387,14 @@ pull_one() {
 #   `✅`/`🟰` 끝(표에 실릴 그 줄) · `⛔` 실패(첫 줄 까닭). brew 처럼 **판 하나가 제자리에서
 #   갱신**된다. 끝나면 판을 지우고 표를 찍는다.
 # ⚠ 줄이 넘치면 되감기 계산이 깨진다 — 폭을 잘라 그린다(한글은 두 칸이라 넉넉히 뺀다).
+# 🔴 **줄 감김을 아예 끈다**(DECAWM, 마스터 10-06 — ss-ed3 두 줄이 프레임마다 쌓였다). 폭을 세어 잘라도
+#    도중에 창을 줄이거나 터미널이 「·」 같은 모호폭 글자를 두 칸으로 그리면 한 줄이 두 줄로 감기고,
+#    그 순간 「n 줄 위로」가 어긋나 옛 줄이 남는다. 감김을 끄면 넘치는 꼬리는 오른쪽 끝에서 잘릴 뿐
+#    줄 수가 늘지 않는다(`lib/select.sh` 와 같은 수). 폭도 프레임마다 다시 잰다.
 board_run() {
   _drawn=0
+  printf '\033[?7l'
+  trap 'printf "\033[?7h"' EXIT
   while [ ! -f "$TMPD/stop" ]; do
     board_draw
     sleep 0.3
@@ -399,6 +405,7 @@ board_run() {
     _i=0; while [ "$_i" -lt "$_drawn" ]; do printf '\033[2K\n'; _i=$((_i + 1)); done
     printf '\033[%dA' "$_drawn"
   }
+  printf '\033[?7h'
 }
 # 🔴 **한 줄이 터미널 폭을 넘으면 안 된다.** 넘으면 줄이 감겨 두 줄이 되고, 「n 줄 위로」가 하나
 #    어긋나 옛 프레임이 화면에 쌓인다(유저 실측 2026-09-06 — 라벨은 안 세고 진행 문구만 잘라서
@@ -413,6 +420,7 @@ _fit() { printf '%s' "$1" | LC_ALL=C cut -c1-$((COLS - 2)) | iconv -c -f UTF-8 -
 #   있었다). 종전엔 줄 앞에 공백을 하나 두고 아이콘 뒤 채움을 `tr -d ' '` 로 지웠는데, 표는 채움째
 #   (`🟰␣␣` · `✅␣`) 맨 앞에서 찍는다. 판도 채움째 맨 앞에서 찍고, ⏳ 는 ✅ 와, · 는 🟰 와 같게 둔다.
 board_draw() {
+  COLS=$(tput cols 2>/dev/null </dev/tty || echo "$COLS")   # 창을 줄였을 수 있다 — 프레임마다 다시
   [ "$_drawn" = 0 ] || printf '\033[%dA\033[J' "$_drawn"
   _drawn=0
   _done=0; _n=0
@@ -427,7 +435,7 @@ board_draw() {
       fi
       printf '%s\n' "$(_fit "$_ic$_lab  $_s")"
     elif [ -f "$TMPD/$_ji.stat" ]; then
-      _s=$(cat "$TMPD/$_ji.stat" 2>/dev/null || echo …)
+      _s=$(tr -d '\000-\037' < "$TMPD/$_ji.stat" 2>/dev/null || echo …)   # 제어 문자가 섞이면 줄 계산이 어긋난다
       printf '%s\n' "$(_fit "⏳ $_lab  $_s")"
     else
       printf '\033[2m%s\033[0m\n' "$(_fit "·  $_lab  대기")"

@@ -807,6 +807,15 @@ if [ "$EMU" = np2kai ]; then
   echo "  🖥  창 크기: ⌥- / ⌥+ · ⌥1~4 · 소리: ⌥M (단계 넷, 지금 ${WIN_SIZE:-2}단계)   ⚠ 에뮬 해상도가 아니라 창만 바뀐다"
   # 첫 창 크기는 환경변수로 넘긴다 — 패치가 창을 만든 직후 이걸 읽는다(`--size N` → 여기).
   export NP2KAI_WIN_SIZE="${WIN_SIZE:-2}"
+  # 🔴 **캡처가 어디 떨어졌는지 몰랐다**(마스터 10-06 「pc98 은 캡처나 정지가 따로 안 되나」). 패치는
+  #   `NP2KAI_SHOT_DIR` 이 없으면 **현재 디렉터리 = 실행 사본($RUN, .local/cache 안)** 에 BMP 를 두고,
+  #   「캡처: 경로」 알림은 stdout 이라 np2kai.log 로 빨려 들어가 화면에 안 보였다. 보이는 자리로 뺀다 —
+  #   세 실행기 공통 자리 `.local/capture/<게임>/` 로. 끝나면 이번에 찍은 것을 알린다.
+  _cap=$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || true)
+  case "$_cap" in "") _cap=$REPO ;; /*) _cap=$(cd "$_cap/.." && pwd) ;; *) _cap=$(cd "$REPO/$_cap/.." && pwd) ;; esac
+  export NP2KAI_SHOT_DIR="${NP2KAI_SHOT_DIR:-$_cap/.local/capture/$GAME}"   # 세 실행기 공통 자리(마스터 10-06)
+  mkdir -p "$NP2KAI_SHOT_DIR"
+  echo "  📷 ⌥C 캡처 → $NP2KAI_SHOT_DIR (BMP)   ⏸ ⌥P 일시정지   (우리 키 패치 — 안 먹으면 --rebuild-np2kai)"
   cd "$RUN"
   DONE=0
   finish() { [ "$DONE" = 1 ] && return 0; DONE=1; save_out; }
@@ -816,6 +825,7 @@ if [ "$EMU" = np2kai ]; then
   # shellcheck disable=SC2086
   "$NP2" "$@" $EXTRA > "$RUN/np2kai.log" 2>&1 || RC=$?
   finish
+  grep '캡처' "$RUN/np2kai.log" 2>/dev/null | sed 's/^/  📷 /' || true
   [ "$RC" = 0 ] || echo "  ⚠ np2kai 가 $RC 로 끝났다 — 로그: $RUN/np2kai.log" >&2
   exit $RC
 fi
