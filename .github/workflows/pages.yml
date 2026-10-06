@@ -26,12 +26,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 릴리스가 올라오면 **main 기준으로 다시 띄운다** — 릴리스 이벤트는 태그 기준으로 돌고, Pages 배포 환경
+  #   (github-pages)은 main 에서만 배포를 받는다(2026-10-07 첫 배포 때 실측). 배포는 늘 main 에서 나간다.
+  redispatch:
+    if: ${{ github.event_name == 'release' && !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml -R "$GITHUB_REPOSITORY" --ref main
+
   build:
-    if: ${{ !github.event.repository.private }}
+    if: ${{ github.event_name != 'release' && !github.event.repository.private }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: python -m pip install -r patcher/requirements.txt
@@ -60,7 +72,7 @@ jobs:
           while read -r tag dir file; do
             gh release download "$tag" -R "$GITHUB_REPOSITORY" -p "$file" -D "_site/$dir" --clobber
           done < releases.txt
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
 

@@ -55,7 +55,7 @@ const cover = (g) => g.cover
 
 function card(site, g) {
   // 상세 페이지 — 배포 중이거나 작업 중인 게임(기타패치는 href 로 따로 둔다)
-  const href = g.href || (["released", "preparing"].includes(g.status) ? `${g.id}/index.html` : "");
+  const href = g.href || (["released", "preparing"].includes(g.status) ? `${g.id}/` : "");
   const tag = href ? "a" : "div";
   const text = label(site, g);
   const go = text && text + (href ? " →" : "");
