@@ -1,0 +1,227 @@
+<title>@TITLE@ 패치</title>
+<meta name="description" content="@TITLE@ (@PLATFORM@) — 설치된 게임 폴더에 브라우저에서 바로 적용한다. 파일은 컴퓨터 밖으로 나가지 않는다.">
+<style>
+@FONTS@
+@CSS@
+</style>
+<script>@THEMEJS@</script>
+
+<header class="band">
+  <div class="wrap">
+    <div>
+      <h1 id="title"></h1>
+      <p id="sub"></p>
+    </div>
+    <div class="row" id="chips"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <a class="crumb" href="../index.html">← 패치 목록</a>
+  <section class="shots" id="shots" hidden tabindex="0" aria-label="게임 화면">
+    <div class="stage">
+      <img alt="">
+      <button type="button" class="prev" aria-label="이전 화면">◀</button>
+      <button type="button" class="next" aria-label="다음 화면">▶</button>
+    </div>
+    <div class="dots"></div>
+  </section>
+  <div class="cols">
+    <div>
+      <section class="box">
+        <h2>웹 패치</h2>
+        <div class="in">
+          <p>설치된 게임 폴더를 고르면 대상 파일을 찾아 판본을 확인한 뒤 그 자리에서 고칩니다. 원본은 같은 폴더에 <code>.BAK</code> 으로 남기고, 판본이 다르거나 이미 패치된 파일은 건드리지 않습니다.</p>
+          <div class="row"><button class="btn" id="pick" type="button">게임 폴더 고르기</button></div>
+          <div class="crt" id="log" role="status" aria-live="polite"></div>
+          <p>Chrome · Edge(데스크톱)에서 됩니다. 게임이 <code>Program Files</code> 같은 시스템 폴더에 있으면 브라우저가 접근을 막으니, 폴더를 바탕화면으로 복사해 패치한 뒤 되돌려 놓으세요.</p>
+        </div>
+      </section>
+
+      <section class="box">
+        <h2>복원 내역</h2>
+        <div class="in"><div class="restore" id="items"></div></div>
+      </section>
+    </div>
+
+    <div>
+      <section class="box">
+        <h2>게임 정보</h2>
+        <div class="in"><table class="fp" id="info"></table></div>
+      </section>
+      <section class="box">
+        <h2>맞는 원본</h2>
+        <div class="in">
+          <p id="disc"></p>
+          <div class="scroll"><table class="fp" id="fp"></table></div>
+        </div>
+      </section>
+      <section class="box" id="ver-box" hidden>
+        <h2><span>버전</span><small id="updated"></small></h2>
+        <div class="in"><div id="versions"></div></div>
+      </section>
+      <section class="box" id="report" hidden>
+        <h2>문제 제보</h2>
+        <div class="in">
+          <p>오탈자나 글자 깨짐, 진행이 막히는 곳을 찾으셨다면 알려 주세요. 게임과 패치 버전은 자동으로 채워집니다.</p>
+          <div class="row"><a class="btn sub" id="report-link" href="#" target="_blank" rel="noopener">제보하기 ↗</a></div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <p class="foot"><a href="../index.html#notice">고지</a> — 비영리 팬 프로젝트입니다. 원작의 모든 권리는 Nihon Falcom Corporation 및 각 권리자에게 있습니다.</p>
+</main>
+
+<script type="application/json" id="site-data">@DATA@</script>
+<script>@SLIDERJS@</script>
+<script>
+"use strict";
+// [fix] 트랙 패처 — 스키마 v2 스펙(우리가 쓴 바이트 + 원본/결과 sha1, 원본 바이트 없음)을 인라인한다.
+// 판정과 적용은 patcher/index.html.tmpl(단독 패처)과 같다: 파일 전체 sha1 로 가르고, 하나라도 어긋나면 아무것도 안 고친다.
+const SPECS = @PATCHES@;
+const GAME = "@GAME@";
+const TRACK = { kr: "한글패치", fix: "복원패치" };
+const STATUS = { released: "배포 중", preparing: "작업 중", planned: "진행 예정", undecided: "미정" };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+const site = JSON.parse($("site-data").textContent);
+const game = site.games.find((g) => g.id === GAME);
+$("title").textContent = game.title;
+$("sub").textContent = game.original || game.platform;
+$("chips").innerHTML = `<span class="tag plat">${esc(game.tags.platform)}</span>` + game.tags.series.map((t) => `<span class="tag">${esc(t)}</span>`).join("")
+ + `<span class="chip ${esc(game.track)}">${TRACK[game.track]}</span>`;
+// 스펙의 description 은 개발 노트(오프셋·호출 경로)라 화면엔 이름만 쓴다
+// 복원 내역 — site.json 의 restorations(무엇을 해결했나만 짧게, 마스터 10-06 「How 는 없어도 된다」).
+//   스펙의 description 은 개발 노트(오프셋·호출 경로)라 화면에 쓰지 않는다. 없으면 스펙 이름만 보인다.
+$("items").innerHTML = (game.restorations || SPECS.map((s) => ({ issue: s.issue, title: s.name.replace(/^이슈\s*#\d+\s*—\s*/, "") })))
+  .map((r) => `<article class="fix-item">
+    <h3><span class="no">#${esc(r.issue)}</span>${esc(r.title)}</h3>
+    ${r.summary ? `<p>${esc(r.summary)}</p>` : ""}
+  </article>`).join("");
+$("disc").textContent = "정발판 설치 폴더의 아래 파일";
+// 게임 정보 — 기종 · 원제 + site.json 의 meta(출시 · 이식 등, 있는 것만)
+$("info").innerHTML = [["기종", game.platform], ["원제", game.original], ...Object.entries(game.meta || {})]
+  .filter(([, v]) => v).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("");
+
+if (game.video) {
+  // 게임 화면 자리에 녹화 영상 — 무음 자동 재생·반복(브라우저는 소리 있는 자동 재생을 막는다).
+  //   ⚠ 이 페이지를 열면 유튜브(nocookie)로 요청이 나간다 — 영상을 뺀 게임은 외부 요청 0 그대로다.
+  const box = $("shots"); box.hidden = false;
+  const v = encodeURIComponent(game.video);
+  box.querySelector(".stage").classList.add("video");
+  box.querySelector(".stage").innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${v}?autoplay=1&mute=1&loop=1&playlist=${v}&playsinline=1&rel=0" title="${esc(game.title)} 영상" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+  box.querySelector(".dots").hidden = true;
+} else {
+  EDSlider($("shots"), (game.shots || []).map((x) => "../" + x), game.title);
+}
+$("fp").innerHTML = SPECS.flatMap((s) => s.files).map((f) =>
+  `<tr><th>${esc(f.file)}</th><td>${f.size.toLocaleString()} 바이트<br>SHA-1 ${esc(f.sha1_from)}</td></tr>`).join("");
+const vs = game.versions || [];
+if (vs.length) {
+  $("ver-box").hidden = false;
+  $("updated").textContent = vs[0].date || "";   // 버전 칸 제목의 날짜 = 최신 버전의 공개일
+  $("versions").innerHTML = `<ul class="verlist">${vs.map((v) => `<li><b>v${esc(v.version)}</b><span>${esc(v.note || "")}</span></li>`).join("")}</ul>`;
+}
+
+function hexToBytes(h) {
+  const n = h.length >> 1, out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) out[i] = parseInt(h.substr(i * 2, 2), 16);
+  return out;
+}
+async function sha1(buf) {
+  if (!crypto.subtle) return null;
+  const d = await crypto.subtle.digest("SHA-1", buf);
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+const TARGETS = new Map();
+for (const spec of SPECS)
+  for (const meta of spec.files)
+    TARGETS.set(meta.file.split("/").pop().toLowerCase(), {
+      meta, rel: meta.file.replace(/\//g, "\\"),
+      patches: spec.patches.filter((p) => p.file === meta.file),
+    });
+async function inspect(bytes, t) {
+  if (bytes.length !== t.meta.size) return { state: "mismatch", why: "크기가 다릅니다" };
+  const h = await sha1(bytes);
+  if (!h) return { state: "mismatch", why: "https 로 접속해야 검사할 수 있습니다" };
+  if (h === t.meta.sha1_to) return { state: "applied", why: "이미 패치됨" };
+  if (h !== t.meta.sha1_from) return { state: "mismatch", why: "판본이 다릅니다" };
+  return { state: "ready" };
+}
+function applyTo(bytes, t) {
+  const out = new Uint8Array(bytes);
+  for (const p of t.patches) out.set(hexToBytes(p.to), parseInt(p.offset, 16));
+  return out;
+}
+
+const log = (cls, msg) => { $("log").insertAdjacentHTML("beforeend", `<span class="${cls}">${esc(msg)}</span>\n`); };
+async function findEntry(dir, name, kind) {
+  const want = name.toLowerCase();
+  for await (const [n, h] of dir.entries()) if (h.kind === kind && n.toLowerCase() === want) return h;
+  return null;
+}
+
+async function run(root) {
+  $("log").innerHTML = "";
+  log("", `> ${root.name}`);
+  const dirs = [root];
+  const scena = await findEntry(root, "SCENA", "directory");
+  if (scena) dirs.push(scena);
+  const found = [];
+  for (const dir of dirs)
+    for (const [base, t] of TARGETS) {
+      const fh = await findEntry(dir, base, "file");
+      if (fh && !found.some((f) => f.t === t)) found.push({ dir, fh, base, t });
+    }
+  if (!found.length) return log("err", "  ✗ 대상 파일을 찾지 못했습니다 — 게임 실행 파일이나 SCENA 가 있는 폴더를 고르세요.");
+  const absent = [...TARGETS.values()].filter((t) => !found.some((f) => f.t === t));
+  if (absent.length) return log("err", `  ✗ 빠진 파일이 있습니다: ${absent.map((t) => t.rel).join(", ")}\n  아무것도 고치지 않았습니다.`);
+  const jobs = [];
+  for (const f of found) {
+    const bytes = new Uint8Array(await (await f.fh.getFile()).arrayBuffer());
+    const r = await inspect(bytes, f.t);
+    log(r.state === "mismatch" ? "err" : r.state === "applied" ? "dim" : "", `  ${f.t.rel}  ${r.state === "ready" ? "OK" : r.why}`);
+    jobs.push({ ...f, bytes, r });
+  }
+  if (jobs.some((j) => j.r.state === "mismatch")) return log("err", "  ✗ 판본이 맞지 않아 아무것도 고치지 않았습니다. 오른쪽 지문과 비교해 주세요.");
+  const todo = jobs.filter((j) => j.r.state === "ready");
+  if (!todo.length) return log("", "  ✓ 이미 패치되어 있습니다.");
+  let done = 0;
+  for (const j of todo) {
+    try {
+      if (!(await findEntry(j.dir, j.base + ".bak", "file"))) {
+        const bw = await (await j.dir.getFileHandle(j.base.toUpperCase() + ".BAK", { create: true })).createWritable();
+        await bw.write(j.bytes); await bw.close();
+      }
+      const w = await j.fh.createWritable();
+      await w.write(applyTo(j.bytes, j.t)); await w.close();
+      done++;
+    } catch (e) { log("err", `  ✗ ${j.t.rel}: ${e.message}`); }
+  }
+  if (done) log("", `  ✓ ${done}개 파일 패치 완료 — 원본은 .BAK 으로 남겼습니다.`);
+}
+
+const supported = !!window.showDirectoryPicker;
+if (!supported) {
+  $("pick").disabled = true;
+  log("err", "이 브라우저에서는 폴더에 바로 쓸 수 없습니다.\nChrome 또는 Edge(데스크톱)로 다시 열어 주세요.");
+} else {
+  log("dim", "게임 폴더를 고르면 여기에 검사 결과가 나옵니다.");
+}
+$("pick").addEventListener("click", async () => {
+  let root;
+  try { root = await window.showDirectoryPicker({ mode: "readwrite", id: GAME }); }
+  catch (e) { if (e.name !== "AbortError") log("err", e.message); return; }
+  $("pick").disabled = true;
+  try { await run(root); } finally { $("pick").disabled = false; }
+});
+
+// 문제 제보 — Tally 폼을 새 탭으로 연다(페이지 안 삽입 스크립트는 안 쓴다 — 외부 요청 0 유지).
+//   숨은 칸 game · version 을 주소로 넘겨 제보자가 고르지 않게 한다(마스터 10-06).
+(() => {
+  const v = ((game.versions || [])[0] || {}).version || game.stage || "dev";
+  $("report-link").href = `${site.report || "https://tally.so/r/rjxd05"}?game=${encodeURIComponent(game.id)}&version=${encodeURIComponent(v)}`;
+  $("report").hidden = game.status !== "released";   // 제보는 배포된 게임만(마스터 10-06) — 작업 중엔 안 받는다
+})();
+</script>

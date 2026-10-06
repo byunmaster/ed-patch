@@ -32,5 +32,23 @@ done
 # 라이선스 전문은 배포물에도 같이 나가야 한다(OFL 조건)
 cp "$DEST/LICENSE.txt" "$ROOT/patcher/LICENSE-Galmuri.txt"
 
-echo "== 완료: $DEST  (갈무리 $VER)"
+# 프리텐다드(Pretendard) — 배포 사이트 본문 글꼴. SIL OFL 1.1(예약 글꼴 이름 있음 → 서브셋은
+#   이름을 바꿔 쓴다, patcher/site/build_site.py 의 RFN_FACES).
+#   Copyright (c) 2021 Kil Hyung-jin — https://github.com/orioncactus/pretendard
+PVER=1.3.9
+PBASE="https://cdn.jsdelivr.net/npm/pretendard@$PVER/dist"
+PDEST="$ROOT/vendor/pretendard"
+[ "$1" = --force ] && rm -rf "$PDEST"
+mkdir -p "$PDEST"
+for f in web/static/woff2/Pretendard-Regular.woff2 web/static/woff2/Pretendard-Bold.woff2 LICENSE.txt; do
+    b=$(basename "$f")
+    if [ -s "$PDEST/$b" ]; then
+        echo "  있음: $b"
+    else
+        echo "  받는 중: $b"
+        curl -sSf --max-time 60 -o "$PDEST/$b" "$PBASE/$f"
+    fi
+done
+
+echo "== 완료: $DEST  (갈무리 $VER) · $PDEST  (프리텐다드 $PVER)"
 echo "   이제 python3 patcher/subset_font.py 로 서브셋한다."

@@ -1,0 +1,538 @@
+{
+  "updated": "2026-10-04",
+  "report": "https://tally.so/r/rjxd05",
+  "stages": [
+    {
+      "id": "P0",
+      "name": "기반",
+      "desc": "원본 분석 · 글꼴 · 재삽입 파이프라인 · 첫 한글 대사"
+    },
+    {
+      "id": "P1",
+      "name": "시스템",
+      "desc": "메뉴 · 시스템 메시지 · HUD · 아이템·주문·지명·몬스터 이름"
+    },
+    {
+      "id": "P2",
+      "name": "전투",
+      "desc": "전투 문안 · 조사(은/는, 을/를) 처리"
+    },
+    {
+      "id": "P3",
+      "name": "연출",
+      "desc": "오프닝 · 엔딩 · 타이틀 · 장 카드"
+    },
+    {
+      "id": "P4",
+      "name": "대사",
+      "desc": "씬 대사 번역 전량"
+    },
+    {
+      "id": "P5",
+      "name": "검수",
+      "desc": "화면 일본어 0 · 줄바꿈 · 세이브 호환 정적 점검"
+    },
+    {
+      "id": "P6",
+      "name": "플레이 테스트",
+      "desc": "처음부터 끝까지 직접 플레이하며 확인"
+    },
+    {
+      "id": "P7",
+      "name": "배포",
+      "desc": "웹 패치 · xdelta 공개"
+    }
+  ],
+  "games": [
+    {
+      "id": "ps1-ed1+2",
+      "platform": "PlayStation",
+      "title": "영웅전설 I · II",
+      "original": "英雄伝説 I&II",
+      "track": "kr",
+      "status": "released",
+      "stage": "P6",
+      "release": {
+        "version": "1.0.0",
+        "disc": "SLPS-01323",
+        "source": {
+          "file": "Legend of Heroes I & II, The - Eiyuu Densetsu (Japan).bin",
+          "size": 252498960,
+          "crc32": "4BDCBF59",
+          "md5": "7b7cf3a179cf65adbc62201808fbdd88",
+          "sha1": "269032ba730f4dbe80b798a2c4c3b415e094f359",
+          "sha256": "6270aaad9d35c0be4292f6aa10033a55c7e24c1ffbfb62277d54af6b44c2a15c"
+        },
+        "output": "Eiyuu Densetsu I & II (KR).bin",
+        "bps": "ps1-ed1+2-kr-v1.0.0.bps",
+        "xdelta": "ps1-ed1+2-kr-v1.0.0.xdelta",
+        "cue": "FILE \"{bin}\" BINARY\r\n  TRACK 01 MODE2/2352\r\n    INDEX 01 00:00:00\r\n",
+        "output_sha1": "ff8f47fd19e64c05fc8bb56c6294950d0959c9e4"
+      },
+      "tags": {
+        "platform": "PS1",
+        "series": [
+          "영웅전설1",
+          "영웅전설2"
+        ]
+      },
+      "meta": {
+        "출시": "1998",
+        "이식": "GMF"
+      },
+      "version": "1.0.0",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "date": "2026-10-05",
+          "note": "첫 배포 — 영웅전설 I·II 한글화"
+        }
+      ]
+    },
+    {
+      "id": "ps1-ed3",
+      "platform": "PlayStation",
+      "title": "영웅전설 III",
+      "original": "英雄伝説III 白き魔女",
+      "track": "kr",
+      "status": "preparing",
+      "stage": "P2",
+      "tags": {
+        "platform": "PS1",
+        "series": [
+          "영웅전설3"
+        ]
+      },
+      "phases": {
+        "P1": {
+          "state": "partial",
+          "note": "상태 창·상점 화면이 남았다"
+        },
+        "P2": {
+          "state": "partial",
+          "note": "전투 문안과 조사 처리"
+        },
+        "P3": {
+          "state": "done",
+          "note": "오프닝·엔딩·타이틀 확인"
+        }
+      }
+    },
+    {
+      "id": "ps1-ed4",
+      "platform": "PlayStation",
+      "title": "영웅전설 IV",
+      "original": "英雄伝説IV 朱紅い雫",
+      "track": "kr",
+      "status": "planned",
+      "stage": "",
+      "tags": {
+        "platform": "PS1",
+        "series": [
+          "영웅전설4"
+        ]
+      }
+    },
+    {
+      "id": "ss-ed1+2",
+      "platform": "SEGA Saturn",
+      "title": "영웅전설 I · II",
+      "original": "英雄伝説 I&II",
+      "track": "kr",
+      "status": "preparing",
+      "stage": "P6",
+      "tags": {
+        "platform": "새턴",
+        "series": [
+          "영웅전설1",
+          "영웅전설2"
+        ]
+      },
+      "phases": {
+        "P6": {
+          "state": "partial",
+          "note": "ED1 플레이 테스트 중 · ED2 는 아직"
+        }
+      }
+    },
+    {
+      "id": "ss-ed3",
+      "platform": "SEGA Saturn",
+      "title": "영웅전설 III",
+      "original": "英雄伝説III 白き魔女",
+      "track": "kr",
+      "status": "preparing",
+      "stage": "P6",
+      "tags": {
+        "platform": "새턴",
+        "series": [
+          "영웅전설3"
+        ]
+      },
+      "phases": {
+        "P0": {
+          "state": "partial",
+          "note": "빌드 결정성 검사가 남았다"
+        },
+        "P5": {
+          "state": "partial",
+          "note": "빌드 결정성 검사가 남았다"
+        },
+        "P3": {
+          "state": "done",
+          "note": "오프닝·엔딩·크레딧까지 확인"
+        },
+        "P4": {
+          "state": "done",
+          "note": "대사 전량과 음성 장면 자막"
+        }
+      }
+    },
+    {
+      "id": "pce-ed1",
+      "platform": "PC Engine CD",
+      "title": "드래곤 슬레이어 영웅전설",
+      "original": "ドラゴンスレイヤー英雄伝説",
+      "track": "kr",
+      "status": "preparing",
+      "stage": "P2",
+      "tags": {
+        "platform": "PC엔진",
+        "series": [
+          "영웅전설1"
+        ]
+      },
+      "phases": {
+        "P2": {
+          "state": "partial",
+          "note": "전투 문구 350 중 108"
+        },
+        "P3": {
+          "state": "done",
+          "note": "오프닝 나레이션 자막까지 확인"
+        },
+        "P4": {
+          "state": "partial",
+          "note": "씬 220 중 7 · 첫 씬 대사가 남았다"
+        }
+      }
+    },
+    {
+      "id": "pce-ed2",
+      "platform": "PC Engine CD",
+      "title": "드래곤 슬레이어 영웅전설 II",
+      "original": "ドラゴンスレイヤー英雄伝説 II",
+      "track": "kr",
+      "status": "planned",
+      "stage": "",
+      "tags": {
+        "platform": "PC엔진",
+        "series": [
+          "영웅전설2"
+        ]
+      }
+    },
+    {
+      "id": "sfc-ed1",
+      "platform": "SUPER FAMICOM",
+      "title": "드래곤 슬레이어 영웅전설",
+      "original": "ドラゴンスレイヤー英雄伝説",
+      "track": "kr",
+      "status": "preparing",
+      "stage": "P2",
+      "tags": {
+        "platform": "슈퍼패미컴",
+        "series": [
+          "영웅전설1"
+        ]
+      },
+      "phases": {
+        "P2": {
+          "state": "partial",
+          "note": "전투 화면 확인 전 · 적 이름이 깨진다"
+        },
+        "P3": {
+          "state": "done",
+          "note": "오프닝·엔딩·타이틀 확인"
+        },
+        "P4": {
+          "state": "partial",
+          "note": "대사 3,548 중 1,386 · 깨지는 페이지와 문장 끝에 붙은 낱말 정리가 남았다"
+        }
+      }
+    },
+    {
+      "id": "sfc-ed2",
+      "platform": "SUPER FAMICOM",
+      "title": "드래곤 슬레이어 영웅전설 II",
+      "original": "ドラゴンスレイヤー英雄伝説 II",
+      "track": "kr",
+      "status": "planned",
+      "stage": "",
+      "tags": {
+        "platform": "슈퍼패미컴",
+        "series": [
+          "영웅전설2"
+        ]
+      }
+    },
+    {
+      "id": "md-ed1",
+      "platform": "MEGA DRIVE",
+      "title": "드래곤 슬레이어 영웅전설",
+      "original": "ドラゴンスレイヤー英雄伝説",
+      "track": "kr",
+      "status": "preparing",
+      "stage": "P2",
+      "tags": {
+        "platform": "메가드라이브",
+        "series": [
+          "영웅전설1"
+        ]
+      },
+      "phases": {
+        "P2": {
+          "state": "partial",
+          "note": "상태이상·레벨업·승패 화면이 남았다"
+        },
+        "P3": {
+          "state": "partial",
+          "note": "장 카드는 플레이 테스트 때 확인"
+        }
+      }
+    },
+    {
+      "id": "md-ed2",
+      "platform": "MEGA DRIVE",
+      "title": "드래곤 슬레이어 영웅전설 II",
+      "original": "ドラゴンスレイヤー英雄伝説 II",
+      "track": "kr",
+      "status": "planned",
+      "stage": "",
+      "tags": {
+        "platform": "메가드라이브",
+        "series": [
+          "영웅전설2"
+        ]
+      }
+    },
+    {
+      "id": "pc88-ed1",
+      "platform": "PC-8801",
+      "title": "드래곤 슬레이어 영웅전설",
+      "original": "ドラゴンスレイヤー英雄伝説",
+      "track": "kr",
+      "status": "undecided",
+      "stage": "",
+      "tags": {
+        "platform": "PC-88",
+        "series": [
+          "영웅전설1"
+        ]
+      }
+    },
+    {
+      "id": "pc88-ed2",
+      "platform": "PC-8801",
+      "title": "드래곤 슬레이어 영웅전설 II",
+      "original": "ドラゴンスレイヤー英雄伝説 II",
+      "track": "kr",
+      "status": "undecided",
+      "stage": "",
+      "tags": {
+        "platform": "PC-88",
+        "series": [
+          "영웅전설2"
+        ]
+      }
+    },
+    {
+      "id": "pc98-ed1",
+      "platform": "PC-9801",
+      "title": "드래곤 슬레이어 영웅전설",
+      "original": "ドラゴンスレイヤー英雄伝説",
+      "track": "kr",
+      "status": "planned",
+      "stage": "P2",
+      "tags": {
+        "platform": "PC-98",
+        "series": [
+          "영웅전설1"
+        ]
+      },
+      "media": {
+        "intro": "PC-98 판은 플로피 디스크 세 장(프로그램 · 시나리오 · 이벤트)에 담겨 있습니다. 가지고 계신 디스크 이미지(.d88)를 고르면 어느 디스크인지 알아본 뒤 한글판으로 바꿔 드립니다. 시나리오 디스크의 세이브는 그대로 남깁니다.",
+        "drop": "여기에 디스크 이미지(.d88)를 끌어 놓거나 눌러서 고르기",
+        "accept": ".d88",
+        "note": "디스크 이미지 패처는 배포할 때 열립니다.",
+        "how": [
+          "디스크 이미지 세 장에 각각 패치를 적용합니다 — 배포 때 자세한 방법을 적습니다."
+        ]
+      },
+      "phases": {
+        "P1": {
+          "state": "partial",
+          "note": "필드 지명·불러오기 창이 남았다"
+        },
+        "P2": {
+          "state": "partial",
+          "note": "전투 문안 일부 · 조사는 정적 처리"
+        },
+        "P3": {
+          "state": "partial",
+          "note": "오프닝 확인 · 2장 이후 막힘"
+        },
+        "P4": {
+          "state": "partial",
+          "note": "대사 일부"
+        }
+      }
+    },
+    {
+      "id": "pc98-ed2",
+      "platform": "PC-9801",
+      "title": "드래곤 슬레이어 영웅전설 II",
+      "original": "ドラゴンスレイヤー英雄伝説 II",
+      "track": "kr",
+      "status": "undecided",
+      "stage": "",
+      "tags": {
+        "platform": "PC-98",
+        "series": [
+          "영웅전설2"
+        ]
+      }
+    },
+    {
+      "id": "msx-ed1",
+      "platform": "MSX2",
+      "title": "드래곤 슬레이어 영웅전설",
+      "original": "ドラゴンスレイヤー英雄伝説",
+      "track": "kr",
+      "status": "undecided",
+      "stage": "",
+      "tags": {
+        "platform": "MSX",
+        "series": [
+          "영웅전설1"
+        ]
+      }
+    },
+    {
+      "id": "x68k-ed1",
+      "platform": "X68000",
+      "title": "드래곤 슬레이어 영웅전설",
+      "original": "ドラゴンスレイヤー英雄伝説",
+      "track": "kr",
+      "status": "undecided",
+      "stage": "",
+      "tags": {
+        "platform": "X68000",
+        "series": [
+          "영웅전설1"
+        ]
+      }
+    },
+    {
+      "id": "fmt-ed1",
+      "platform": "FM TOWNS",
+      "title": "드래곤 슬레이어 영웅전설",
+      "original": "ドラゴンスレイヤー英雄伝説",
+      "track": "kr",
+      "status": "undecided",
+      "stage": "",
+      "tags": {
+        "platform": "FM TOWNS",
+        "series": [
+          "영웅전설1"
+        ]
+      }
+    },
+    {
+      "id": "fmt-ed2",
+      "platform": "FM TOWNS",
+      "title": "드래곤 슬레이어 영웅전설 II",
+      "original": "ドラゴンスレイヤー英雄伝説 II",
+      "track": "kr",
+      "status": "undecided",
+      "stage": "",
+      "tags": {
+        "platform": "FM TOWNS",
+        "series": [
+          "영웅전설2"
+        ]
+      }
+    },
+    {
+      "id": "dos-ed2",
+      "platform": "MS-DOS",
+      "title": "영웅전설 II",
+      "track": "fix",
+      "status": "released",
+      "stage": "P7",
+      "version": "1.0.0",
+      "href": "dos-ed2/index.html",
+      "tags": {
+        "platform": "DOS",
+        "series": [
+          "영웅전설2"
+        ]
+      },
+      "video": "rRsJ_RGPIMY",
+      "original": "The Legend Of Heroes II",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "note": "스엘 「세계 3대 명소 유람여행」 크래시 수정",
+          "date": "2026-07-29"
+        }
+      ],
+      "meta": {
+        "이식": "만트라",
+        "유통": "삼성전자"
+      },
+      "restorations": [
+        {
+          "issue": 1,
+          "title": "스엘 「세계 3대 명소 유람여행」 크래시",
+          "summary": "스엘 마을에서 유람여행 배를 타면 월드맵으로 나가는 순간 게임이 꺼지던 문제를 고칩니다. 원판처럼 여행을 끝까지 즐길 수 있습니다."
+        }
+      ]
+    }
+  ],
+  "layout": [
+    [
+      "ps1-ed1+2",
+      "ps1-ed3",
+      "ps1-ed4",
+      null
+    ],
+    [
+      "ss-ed1+2",
+      "ss-ed3",
+      "pce-ed1",
+      "pce-ed2"
+    ],
+    [
+      "sfc-ed1",
+      "sfc-ed2",
+      "md-ed1",
+      "md-ed2"
+    ],
+    [
+      "pc88-ed1",
+      "pc88-ed2",
+      "pc98-ed1",
+      "pc98-ed2"
+    ],
+    [
+      "msx-ed1",
+      "x68k-ed1",
+      "fmt-ed1",
+      "fmt-ed2"
+    ],
+    [
+      "dos-ed2"
+    ]
+  ]
+}
