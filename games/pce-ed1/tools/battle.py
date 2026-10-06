@@ -319,6 +319,20 @@ def _msgs() -> dict[str, str]:
 SAFE_UNPACKED = 0x0B00 - 0x400
 
 
+def _tokens_ok(kr_tok: list[str], jp_tok: list[str]) -> bool:
+    """우리 제어코드 = 원문 제어코드에서 `01` 몇 개를 뺀 것(차례 그대로)."""
+    it = iter(jp_tok)
+    for t in kr_tok:
+        for j in it:
+            if j == t:
+                break
+            if j != "01":
+                return False
+        else:
+            return False
+    return all(j == "01" for j in it)
+
+
 def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], where: str) -> int:
     """전투 문구를 갈아 끼운다. **자리를 안 옮기고**, 넘치면 `0F` 로 블록 꼬리에 잇는다.
 
@@ -333,8 +347,8 @@ def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], 
     ⚠ 확인된 건 **등장 문구 계열**이다. 다른 계열(데미지·승리·주문)은 호출 자리가 달라
     **화면으로 따로 봐야 한다.** 안 보고 늘리면 pc98 이 사흘을 태운 그 자리다.
 
-    ⚠ 꼬리(원래 자리의 남은 바이트)는 **원본 그대로** 둔다 — 참조 스캔이 못 본 참조가 조각
-    중간을 가리켜도 최악이 「그 자리만 일본어」다.
+    ⚠ 꼬리(원래 자리의 남은 바이트)는 **0 으로 지운다**(10-07 — 처음엔 「못 본 참조가 가리켜도 그 자리만
+    일본어」라며 원문을 남겼는데, 전량 번역에서 그 죽은 원문이 컨테이너 칸을 넘겼다). 최악은 「그 자리만 빈 글」이다.
     """
     from sysbuild import encode_tokens
 
@@ -344,7 +358,9 @@ def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], 
         if not kr:
             continue
         jp_tok = TOKEN.findall(render(u["body"]))
-        if TOKEN.findall(kr) != jp_tok:
+        # `{01}`(줄바꿈)은 우리 문안에서 뺄 수 있다 — 로그는 어절 줄바꿈이 런타임에서 접는다(마스터 09-27·09-30).
+        #   남긴 `{01}` 과 다른 제어코드는 원문과 같은 차례여야 한다.
+        if not _tokens_ok(TOKEN.findall(kr), jp_tok):
             errors.append(f"{where} +{u['off']:04X} 「{kr}」 제어코드가 원문과 다르다 {jp_tok}")
             continue
         enc = encode_tokens(kr, table)
@@ -369,6 +385,11 @@ def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], 
         tgt = LOAD_ADDR + len(data)
         data += enc
         data[u["off"] : u["off"] + 3] = bytes([0x0F, tgt & 0xFF, tgt >> 8])
+        # 남은 원래 자리는 0 으로 — 아무도 안 읽는 원문이 압축을 먹었다(10-07: 전투 문안 전량을 옮기자 컨테이너
+        #   셋이 칸을 0.6~0.9KB 넘었고, 이걸로 들었다). 단위는 코드 참조에서 이미 끊겨 있어(`msg_units`) 이 안을
+        #   가리키는 알려진 참조는 없다. 끝이 없는(다음 단위로 흐르는) 단위는 옮기면 흐름이 끊기니 막는다.
+        assert u["term"] is not None, f"{where} +{u['off']:04X} 흐르는 단위를 옮길 수 없다"
+        data[u["off"] + 3 : u["off"] + u["room"]] = bytes(u["room"] - 3)
         n += 1
     return n
 

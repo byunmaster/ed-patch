@@ -18,7 +18,9 @@ import typeset_check as T
 #   (09-27 의 전투 32건(①11·③21)은 `hook._wrap_asm`(①③, 09-27)이 이미 막고 있었는데 검사기가 원판 넘김을
 #   흉내 내고 있어 남아 보였다 — 10-07 `wrap()` 을 런타임 그대로로 고치며 0 이 됐다)
 KNOWN_SYSTEM: set[str] = set()
-KNOWN_BATTLE: set[str] = set()
+# 값 뒤에 붙는 조각(「민첩성이 」+ 수치 + 「 내려갔다!」) — 앞 공백은 런타임 수치와 띄우는 자리다(10-07, 블록 바이트로
+#   `07 22` 수치 출력 뒤에 오는 것을 확인). 검사기는 조각 하나만 봐서 ③ 으로 센다.
+KNOWN_BATTLE: set[str] = {"d5d3859767b7d32d", "84bdae195eaef1c0"}
 
 
 class Typeset(unittest.TestCase):

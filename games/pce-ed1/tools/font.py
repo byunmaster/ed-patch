@@ -102,10 +102,32 @@ def _question_4px() -> bytes:
     return b"".join(v.to_bytes(2, "big") for v in out)
 
 
+# 🔴 **겹느낌표는 한 칸에 그린다**(10-07, 마스터 「회심의 일격! !」 — 「!!」 전각 벌어짐). 이 창은 글자마다 12px 칸이라
+#   부호 둘이 「! !」로 벌어진다. 반각 렌더러(C안)를 기다리지 않고 **두 부호를 4px 간격으로 한 글리프에** 굽고
+#   인코딩 때 바꿔 넣는다(`ligate`). 화면 폭은 오히려 한 칸 준다 — 조판·줄바꿈은 두 칸으로 세니 넘칠 일은 없다.
+LIGATURES = {"!!": "‼", "!?": "⁉"}
+LIGATURE_STEP = 4  # 둘째 부호를 오른쪽으로 민 픽셀
+
+
+def ligate(text: str) -> str:
+    for a, b in LIGATURES.items():
+        text = text.replace(a, b)
+    return text
+
+
 def glyph(ch: str) -> bytes:
     """한 글자 → 24B. 세로는 **베이스라인에 맞추고**(BDF `yo`) 가로는 왼쪽 정렬."""
     if ch == "?":
         return _question_4px()
+    lig = next((k for k, v in LIGATURES.items() if v == ch), None)
+    if lig is not None:
+        a, b = (glyph(c) for c in lig)
+        rows = [
+            int.from_bytes(a[i : i + 2], "big")
+            | (int.from_bytes(b[i : i + 2], "big") >> LIGATURE_STEP)
+            for i in range(0, GLYPH_BYTES, 2)
+        ]
+        return b"".join((v & 0xFFF0).to_bytes(2, "big") for v in rows)
     pk = packed_glyphs().get(ch) if 0xE000 <= ord(ch) <= 0xF8FF else None
     if pk is not None:
         return pk
@@ -267,7 +289,7 @@ def build_table(chars) -> tuple[dict[str, bytes], bytes]:
     배정은 **정본 순서**를 따른다(`_order_canon`). 정본에 없는 글자가 있으면 **빌드가 죽는다** —
     `python3 tools/freeze_glyphs.py` 로 뒤에 덧붙이고 커밋한다(코드가 안 밀린다).
     """
-    need = set(chars) | set(JOSA_CHARS)
+    need = set(chars) | set(JOSA_CHARS) | set(LIGATURES.values())
     canon = _order_canon()
     missing = sorted(need - set(canon))
     if missing:
@@ -312,6 +334,7 @@ def encode(text: str, table: dict[str, bytes]) -> bytes:
     앞말이 런타임에 정해지는 자리(이름·아이템)에 그대로 쓴다. 두 글자 조사는 첫 글자만 토큰이 되고
     둘째 글자는 보통 글자로 나간다(`으로/로` → `F9 28` + `로`).
     """
+    text = ligate(text)
     out = bytearray()
     pos = 0
     for m in JOSA_TOKEN.finditer(text):

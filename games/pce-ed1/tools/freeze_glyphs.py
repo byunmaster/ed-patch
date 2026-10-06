@@ -29,6 +29,7 @@ def used() -> set[str]:
         | sysbuild.all_glyph_chars()
         | battle.glyph_chars()
         | set(font.JOSA_CHARS)
+        | set(font.LIGATURES.values())
     )
 
 
