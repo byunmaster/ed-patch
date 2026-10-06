@@ -49,10 +49,10 @@
       "title": "영웅전설 I · II",
       "original": "英雄伝説 I&II",
       "track": "kr",
-      "status": "preparing",
+      "status": "released",
       "stage": "P6",
       "release": {
-        "version": "",
+        "version": "1.0.0",
         "disc": "SLPS-01323",
         "source": {
           "file": "Legend of Heroes I & II, The - Eiyuu Densetsu (Japan).bin",
@@ -63,9 +63,10 @@
           "sha256": "6270aaad9d35c0be4292f6aa10033a55c7e24c1ffbfb62277d54af6b44c2a15c"
         },
         "output": "Eiyuu Densetsu I & II (KR).bin",
-        "bps": "",
-        "xdelta": "",
-        "cue": "FILE \"{bin}\" BINARY\r\n  TRACK 01 MODE2/2352\r\n    INDEX 01 00:00:00\r\n"
+        "bps": "ps1-ed1+2-kr-v1.0.0.bps",
+        "xdelta": "ps1-ed1+2-kr-v1.0.0.xdelta",
+        "cue": "FILE \"{bin}\" BINARY\r\n  TRACK 01 MODE2/2352\r\n    INDEX 01 00:00:00\r\n",
+        "output_sha1": "aa240a91ce9c04567cc7a1d83ecc0d302ac5c55d"
       },
       "tags": {
         "platform": "PS1",
@@ -77,7 +78,15 @@
       "meta": {
         "출시": "1998",
         "이식": "GMF"
-      }
+      },
+      "version": "1.0.0",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "date": "2026-10-05",
+          "note": "첫 배포 — 영웅전설 I·II 한글화"
+        }
+      ]
     },
     {
       "id": "ps1-ed3",

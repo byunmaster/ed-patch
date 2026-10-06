@@ -36,8 +36,8 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 NEODGM = os.path.join(ROOT, "shared", "fonts", "neodgm.ttf")
 
 
-def local_dir(name):
-    """`.local/<name>` — 워크트리엔 `.local/` 이 안 따라오므로 메인 트리 것을 거슬러 찾는다(루트 CLAUDE.md)."""
+def main_root():
+    """메인 트리 루트 — 워크트리에서 돌려도 git common dir 로 거슬러 찾는다."""
     try:
         common = subprocess.run(
             ["git", "-C", ROOT, "rev-parse", "--path-format=absolute", "--git-common-dir"],
@@ -45,10 +45,14 @@ def local_dir(name):
             text=True,
             check=True,
         ).stdout.strip()
-        main = os.path.dirname(common)
+        return os.path.dirname(common)
     except (OSError, subprocess.CalledProcessError):
-        main = ROOT
-    for base in (ROOT, main):
+        return ROOT
+
+
+def local_dir(name):
+    """`.local/<name>` — 워크트리엔 `.local/` 이 안 따라오므로 메인 트리 것을 거슬러 찾는다(루트 CLAUDE.md)."""
+    for base in (ROOT, main_root()):
         p = os.path.join(base, ".local", name)
         if os.path.isdir(p):
             return p
@@ -199,6 +203,20 @@ def main():
         for x in g.get("shots", []):
             os.makedirs(os.path.join(out, "covers"), exist_ok=True)
             shutil.copy(os.path.join(covers_dir, os.path.basename(x)), os.path.join(out, x))
+
+    # 이 머신에서 미리 볼 때 — 패치 파일을 게임 빌드 칸(work/dist, 워크트리가 이긴다)에서 옆에 둔다.
+    #   배포 때는 워크플로가 릴리스에서 받아 같은 자리에 둔다(그래서 여기서는 없으면 조용히 넘어간다).
+    for g in site["games"]:
+        r = g.get("release") or {}
+        for name in (r.get("bps"), r.get("xdelta")):
+            if not name:
+                continue
+            main = main_root()
+            for base in (os.path.join(main, ".claude", "worktrees", g["id"]), main):
+                src = os.path.join(base, "games", g["id"], "work", "dist", name)
+                if os.path.exists(src):
+                    shutil.copy(src, os.path.join(out, g["id"], name))
+                    break
 
     for lic in ("LICENSE-Galmuri.txt", "LICENSE-neodgm.txt"):
         shutil.copy(os.path.join(ROOT, "shared", "fonts", lic), os.path.join(out, lic))
