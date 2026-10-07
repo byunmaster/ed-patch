@@ -356,10 +356,10 @@
   "canon": "shared/glossary ui"
  },
  "セーブ@A06": {
-  "kr": "저장",
+  "kr": "세이브",
   "state": "ps1",
   "budget_tiles": 6,
-  "width_tiles": 4,
+  "width_tiles": 3,
   "fits": true,
   "row": 3,
   "x0": 2
