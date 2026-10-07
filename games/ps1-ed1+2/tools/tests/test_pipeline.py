@@ -816,8 +816,8 @@ def test_tool_tables_match_shared_glossary():
         "item": dict(patch_items.NAMES),
         "monster": dict(patch_items.MONSTERS),
         "person": dict(align_jp_kr.SPEAKER_DICT),
-        # 지명은 화면 최종값으로 본다 — `PLACES` 의 일부는 덮일 중간값이다(`PLACES_ON_SCREEN`)
-        "place": {**dict(patch_sys_ui.PLACES), **patch_sys_ui.PLACES_ON_SCREEN},
+        # 지명 표는 정본이다 — 8B 칸용 중간값은 `places_for_build()` 에만 있다
+        "place": dict(patch_sys_ui.PLACES),
     }
     # 🔴 **ED2 몬스터 표도 여기 묶는다**(2026-08-29). 118종을 `textmap/monsters_ed2.json` 이
     # 따로 드는데 이 테스트가 안 보고 있었다 — 새턴 세션이 공용 정본을 고치자 셋이 갈렸고
@@ -1777,3 +1777,19 @@ def test_drawer_eager_wrap_skips_when_newline_follows():
 
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
+
+
+def test_name_echo_allows_explicit_name_segment():
+    """🔴 이름 조각을 `{p}` 로 제 조각에 둔 자리는 겹침이 아니다(2026-10-07) — 본문 안 색칠 이름 꼴(`%c이름%c의 ＨＰ가`)을
+    조각마다 채워야 이름이 방출 바이트에 산다. 이름이 한 조각에 문장과 섞이면(꼴1 `소니아가 …`) 여전히 겹침이다."""
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import check_name_echo as E
+
+    assert E.echoes("소니아", "소니아가 동료가 되었습니다.")  # 창에도 있고 본문에도 — 소니아소니아가
+    assert not E.echoes("소니아", "이(가) 동료가 되었습니다.")  # 조사만 — 정상
+    assert not E.echoes("마리", "마리{p}의 ＨＰ가{p}회복되었다.")  # 이름 조각을 제 조각에 둠 — 정상
+    assert E.echoes("마리", "마리의 ＨＰ가{p}회복되었다.")  # 한 조각에 섞임 — 겹침
