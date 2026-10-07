@@ -78,7 +78,22 @@ phase() { # $1=worktree $2=game
   echo -
 }
 
-[ "$BRIEF" -eq 1 ] && printf '%-12s %-16s %-5s %5s %5s %5s  %s\n' 게임 브랜치 단계 앞 뒤 더티 마지막커밋
+# 상황판 — 워커가 일을 잡을 때·커밋할 때·막힐 때 덮어쓰는 몇 줄(마스터 10-07 「관리자는 보고받기보다
+# 늘 알고 있어야」). 커밋 전의 진행은 git·상태 문서에 아직 없으니 이게 그 틈을 메운다. 머신 전용이라 .local.
+BOARD="$ROOT/.local/work/board"
+board_age() { # $1=file → 「N분 전」
+  now=$(date +%s); m=$(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1")
+  d=$(( (now - m) / 60 ))
+  if [ "$d" -lt 60 ]; then echo "${d}분 전"; else echo "$((d / 60))시간 전"; fi
+}
+board_now() { # $1=game → 「지금:」 줄 한 줄
+  f="$BOARD/$1.md"
+  [ -f "$f" ] || { echo "(상황판 없음)"; return; }
+  v=$(grep -m1 '^지금:' "$f" | sed 's/^지금: *//')
+  echo "${v:-?} ($(board_age "$f"))"
+}
+
+[ "$BRIEF" -eq 1 ] && printf '%-12s %-16s %-5s %5s %5s %5s  %s\n' 게임 브랜치 단계 앞 뒤 더티 지금
 
 for wt in "$WT_DIR"/*/; do
   g=$(basename "$wt")
@@ -93,12 +108,18 @@ for wt in "$WT_DIR"/*/; do
   ph=$(phase "$wt" "$g")
 
   if [ "$BRIEF" -eq 1 ]; then
-    printf '%-12s %-16s %-5s %5s %5s %5s  %s\n' "$g" "${br#game/}" "$ph" "$ahead" "$behind" "$dirty" "$last"
+    printf '%-12s %-16s %-5s %5s %5s %5s  %s\n' "$g" "${br#game/}" "$ph" "$ahead" "$behind" "$dirty" "$(board_now "$g")"
     continue
   fi
 
   echo "━━ $g  [$br]  단계 $ph  main+$ahead  뒤 $behind  더티 $dirty"
   echo "  마지막 커밋: $last"
+  if [ -f "$BOARD/$g.md" ]; then
+    echo "  📌 상황판 ($(board_age "$BOARD/$g.md"))"
+    sed 's/^/    /' "$BOARD/$g.md" | head -8
+  else
+    echo "  ⚠ 상황판 없음 (.local/work/board/$g.md)"
+  fi
   # 뒤처짐·더티는 관리자가 짚을 징후라 줄을 따로 뺀다.
   [ "$behind" != "0" ] && [ "$behind" != "?" ] && echo "  ⚠ main 이 $behind 앞서 있다 — rebase 대상"
   [ "$dirty" != "0" ] && git -C "$wt" status --porcelain | sed 's/^/    /' | head -8
