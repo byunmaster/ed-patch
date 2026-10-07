@@ -34,6 +34,10 @@ if _TOOLS not in sys.path:
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 TITLE = "eiyuu"
+# 정본(`shared/canon`)은 메뉴·호칭·시스템·전투 문구 — 장면 대사(`ED1SCN…`·`ED2SCN…`)는 범위 밖이다(마스터 10-08).
+# 같은 원문이라도 장면 대사는 장면 문체(정중체 「건넸습니다」 등)로 옮긴다.
+CANON_SKIP = r"SCN\d"
+CANON_GATE = True
 
 ED1_SCENES = [f"ED1SCN{i}" for i in range(1, 7)]
 ED2_SCENES = [f"ED2SCN{i}" for i in range(1, 14)]
