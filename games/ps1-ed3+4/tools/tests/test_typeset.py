@@ -9,6 +9,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import script
 import typeset
 
 
@@ -88,6 +89,16 @@ class TestTypeset(unittest.TestCase):
         self.assertEqual(typeset.wrap("쥬리오는 ", "ed3", jp="ジュリオは", floor=23), "쥬리오는 ")
         self.assertEqual(typeset.wrap(" 맞지?", "ed3", jp="だね？", floor=23), " 맞지?")
         self.assertEqual(typeset.wrap("   ", "ed3", jp="あ", floor=23), "")
+
+    def test_head_block_names_get_the_name_floor(self):
+        """🔴 머리 블록 이름은 원문 글자 수가 아니라 `NAME_FLOOR` 칸 — 「크리스 엄마」(5.5칸)가 두 줄로 접혀 `크리스` 만 남던 사고."""
+        segs = [(0, "クリスの母"), (1, "ログ"), (2, "ジュリオ。")]
+        floors = script.member_floors(segs)
+        self.assertEqual(floors[0], script.NAME_FLOOR)
+        self.assertEqual(floors[1], script.NAME_FLOOR)
+        self.assertEqual(typeset.wrap("크리스 엄마", "ed3", jp="クリスの母", floor=floors[0]), "크리스 엄마")
+        with self.assertRaises(typeset.TypesetError):  # 바닥이 없으면 예전 사고가 그대로 난다
+            typeset.wrap("크리스 엄마", "ed3", jp="クリスの母")
 
     def test_wrap_is_deterministic(self):
         """빌드는 결정적이어야 한다 — 같은 입력이면 같은 줄바꿈."""

@@ -68,6 +68,18 @@ class TestScriptMap(unittest.TestCase):
         starts = [s for s, _ in info["segments"]]
         self.assertEqual(sorted(t for _, t, _ in info["targets"]), sorted(starts))
 
+    def test_unresolved_pointer_forbids_length_change(self):
+        """🔴 조각 한복판을 가리키는 못 푼 포인터가 있으면 길이를 바꿀 수 없다(같은 길이는 된다)."""
+        mem, _ = member(32, ptr(0) + ptr(6) + ptr(1 + 2 * 3 + 2), self.segs)  # 마지막 = 조각 한복판
+        info = scriptmap.parse(mem)
+        same = [c for _, c in info["segments"]]
+        out, unres = scriptmap.rebuild(mem, same)
+        self.assertEqual((out, unres), (mem, 1))
+        longer = [list(c) for c in same]
+        longer[0] = longer[0] + [0x44]
+        with self.assertRaises(scriptmap.ScriptError):
+            scriptmap.rebuild(mem, longer)
+
     def test_segment_count_must_match(self):
         with self.assertRaises(scriptmap.ScriptError):
             scriptmap.rebuild(self.mem, [[1], [2]])

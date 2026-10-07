@@ -271,6 +271,16 @@ def rebuild(mem, new_segments):
 
     out = bytearray(mem[:base]) + pool
     unresolved = 0
+    #   🔴 못 푼 포인터(조각 한복판을 가리키는 `0x90` — 이벤트 VM 데이터로 본다)가 있는 멤버는
+    #      **조각 길이를 못 바꾼다**: 그 포인터는 안 따라가서, 길이가 바뀌면 엉뚱한 자리를 가리킨다.
+    #      조용히 깨지는 대신 여기서 멈춘다(「같은 길이로만」 152 멤버 — 이벤트 VM 해독 전까지).
+    unresolved_n = sum(1 for _, V in info["pointers"] if base + (V & ~1) not in remap)
+    if unresolved_n and any(
+        len(new) != len(old) for (_, old), new in zip(segs, new_segments, strict=True)
+    ):
+        raise ScriptError(
+            f"못 푼 포인터 {unresolved_n}개가 있는 멤버 — 조각 길이를 바꿀 수 없다(같은 길이로만)"
+        )
     for at, V in info["pointers"]:
         old = base + (V & ~1)
         if old not in remap:
