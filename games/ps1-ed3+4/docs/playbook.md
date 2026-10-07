@@ -80,10 +80,22 @@ tap circle press10 after 500   # 크레딧 롤
 
 `ED_BUILD_TAG` 를 갈라야 정상 빌드 칸(`ps1-ed3-4`)을 안 덮는다. **배포 빌드엔 절대 안 켠다**
 (`tools/build.py:movie_swap`). 🔴 **마스터 확인 완료(2026-09-17)** — 엔딩 9장·크레딧·Fin
-캡션 전부 화면으로 확인됐다(`.local/inbox/ps1-ed3+4/D3-ending-01~10*.png`). 위 탭 순서는
+캡션 전부 화면으로 확인됐다(`.local/work/inbox/ps1-ed3+4/D3-ending-01~10*.png`). 위 탭 순서는
 빠르게 훑는 용도고, **개별 화면을 하나씩 캡처하려면 `step`(입력 없이)을 200~1500프레임씩
 잘게 써야** 놓치지 않는다(탭 하나로 여러 화면을 건너뛴다). 상세·검증 경위는
 `docs/devlog.md` 09-15·09-17 항목.
+
+## 이어서 하기 화면 (BIOS 폰트 화면)
+
+헤드리스 새 부팅은 「이어서 하기」 뒤의 **체크中·페이지 목록을 건너뛴다**(포트·카드 해시·세이브 유무와 무관, 값으로 반증). 보는 법:
+
+1. 마스터 스테이트 `/root/save/ps1-ed3/state/*mc0*`(체크中)를 **gzip 풀어**(`.mednafen` 은 gzip 퀵세이브 — 그대로는 `Missing/Wrong save state header ID`) `load_state`.
+2. 빌드 산출 바이트(SLPS 지명 표·MD05/YUKI8/DATA5 꼬리·훅)를 `write_memory ram` 으로 주입 → `resume` → 프레임을 밀면 체크가 끝나며 목록이 **새로** 그려진다.
+   ⚠ 목록이 이미 떠 있는 스테이트에 주입하면 안 다시 그려진다(캐시). ⚠ `load_state` 직후엔 `resume` 한 번 해야 `tap` 이 먹는다.
+3. 그림(`DATA5[8]` 예／아니오)은 스테이트의 `GPURAM[0][0]`(1바이트 밀림 주의)을 4bpp 로 펼쳐 찾고 `write_memory gpu` 로 쓴다.
+4. 글자 그리기 호출 추적은 `0x80024DC4`(글리프 훅)에 `pause_on_hit=false` exec 중단점을 걸어 `poll_events` 로 a0 를 읽는다.
+
+버튼은 이 화면들에서 `circle` 결정 · `cross` 취소다.
 
 ## ED4 — 아직 안 돌아 봤다
 
@@ -97,7 +109,7 @@ tap circle press10 after 500   # 크레딧 롤
 
 ## 근거 캡처
 
-`.local/inbox/ps1-ed3+4/` 에 **칸 ID 를 앞에, 이름은 ASCII 로** — `A1-window-top.png`.
+`.local/work/inbox/ps1-ed3+4/` 에 **칸 ID 를 앞에, 이름은 ASCII 로** — `A1-window-top.png`.
 🔴 한글 이름은 맥에서 자모가 분리돼 관리자가 못 연다(09-07 실측). 괄호도 셸에서 걸린다.
 ⚠ **저해상도 캡처로 글자를 판정하지 않는다** — 320×240 에서 `ㅏ`/`ㅣ` 가 안 갈린다.
 확대본을 같이 남기거나 바이트를 댄다.

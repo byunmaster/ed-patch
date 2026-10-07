@@ -33,14 +33,17 @@ LIMITS = {
     "ed3": {"width": 30, "lines": 1},
     "ed4": {"width": 37, "lines": 1},
 }
-# 대사에서 부호 뒤 공백을 지운다 — 이 레포의 조판 규약(`docs/reference/translation-conventions.md`)
-STRIP_AFTER = ".,"
+# 대사에서 부호 뒤 공백을 지우던 규약(`docs/reference/translation-conventions.md`, 옛 값 ".,")은 **ED3 에선 접는다**(마스터 10-07).
+# 이유: 부호가 반 칸(6px)이 되며 「부호 12px 하나」가 「부호 6px + 공백 6px」과 폭이 같아졌다 — 공백을 남겨도 한 줄 폭이 그대로고,
+#   지우면 「티나,내일」처럼 붙어 읽기 나쁘다(실측 캡처 `halfspace/P01`). ED4 는 엔진 패치가 없어 부호가 12px 라 아직 옛 규약이 맞다.
+STRIP_AFTER = {"ed3": "", "ed4": ".,"}
 
 
 CELL_PX = 12  # 화면에서 코드 하나가 차지하는 가로 픽셀 (`font.PITCH`)
 # 코드별 폭(px). 🔴 엔진 패치(`engine_patch`)가 있는 디스크만 12 가 아닌 값을 가질 수 있다 —
-#   공백 8px 는 유저 판정(2026-09-07: 한글은 전각, 공백만 반각). 첫 씬 실측 5.2% 절약.
-WIDTHS = {"ed3": {" ": 8}, "ed4": {}}
+#   공백 8px → 6px(반 칸): 유저 판정 2026-09-07 은 「한글 전각·공백만 반각」, 마스터 10-07 「대사창 공백 반각」 — 8px 는 2/3 칸이라 절반(6px)으로 내린다.
+# 반각(6px): 공백 · `. , ? !` · `( )` — `… ～ 「」` 는 전각 유지(마스터 10-07: 점 셋 한 글리프·반각이면 모양이 안 남).
+WIDTHS = {"ed3": {c: 6 for c in " .,?!()"}, "ed4": {}}
 # 한 줄에 들어가는 글리프 수의 상한 = 스프라이트 격자 열 수(`engine_patch.COLS`). 패치 없으면 None.
 COLS = {"ed3": 24, "ed4": None}  # 🔴 32 가 아니다 — `engine_patch.COLS` 머리말 참조(▼ 결함)
 
@@ -50,7 +53,7 @@ def cell_width(ch, disc="ed3"):
 
     ⚠ 공용 기본값(`krwrap.default_cell_width`)은 공백을 **0.5**로 센다. 그건 PS1 ED1+2 의
       규격이고 여기선 틀린다 — 이 게임엔 공백 코드가 아예 없어서 **빈 글리프를 한 자리
-      구워 쓴다**(`hangul_map.EXTRA`). 엔진 패치가 공백을 8px 로 보내니 그만큼(2/3)이다.
+      구워 쓴다**(`hangul_map.EXTRA`). 엔진 패치가 공백을 6px(반 칸)로 보내니 그만큼(1/2)이다.
     """
     return WIDTHS[disc].get(ch, CELL_PX) / CELL_PX
 
@@ -112,7 +115,7 @@ def wrap(text, disc, jp=None, width=None, lines=None, floor=0):
         text.replace("\n", " "),
         width=width,
         cell_width=lambda ch: cell_width(ch, disc),
-        strip_after=STRIP_AFTER,
+        strip_after=STRIP_AFTER[disc],
     )
     if len(out) > lines:
         raise TypesetError(f"{len(out)}줄 > 예산 {lines}줄 (폭 {width:g}): {text!r}")

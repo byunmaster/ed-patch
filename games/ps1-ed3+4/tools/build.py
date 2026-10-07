@@ -153,7 +153,18 @@ def fit_chunks(exe, t, ents, cur, krs, orig, disc, table, report):
     tbl, base, n = t["table"], t["base"], t["n"]
     for lo, hi, starts in exetext.chunks(exe, tbl, base, n):
         idx = {s: [i for i, x in enumerate(ents) if base + x == s] for s in starts}
-        need = sum((len(cur[ids[0]]) + 1) * 2 for ids in idx.values())
+
+        def chunk_need(idx=idx, lo=lo, hi=hi):
+            """칸이 실제로 먹는 바이트 — 넘칠 땐 꼬리 공유(`exetext.rebuild`)까지 센다."""
+            plain = sum((len(cur[ids[0]]) + 1) * 2 for ids in idx.values())
+            if plain <= hi - lo:
+                return plain
+            want = {s - base: cur[ids[0]] for s, ids in idx.items()}
+            terms = {s - base: exetext.raw_string(exe, s)[1] for s in idx}
+            got = exetext._share_tails(list(idx), base, want, terms, lo)
+            return plain if got is None else min(plain, len(got[0]))
+
+        need = chunk_need()
         while need > hi - lo:
             cand = [ids for ids in idx.values() if krs[ids[0]] and " " in krs[ids[0]]]
             if not cand:
@@ -164,16 +175,16 @@ def fit_chunks(exe, t, ents, cur, krs, orig, disc, table, report):
             kr = kr[:k] + kr[k + 1 :]
             for i in ids:
                 krs[i], cur[i] = kr, hangul_map.encode(kr, disc, table)
-            need -= 2
+            need = chunk_need()
             report["squeezed"] = report.get("squeezed", 0) + 1
         while need > hi - lo:
             grown = [ids for ids in idx.values() if len(cur[ids[0]]) > len(orig[ids[0]])]
             if not grown:
                 break
             ids = max(grown, key=lambda ids: (len(cur[ids[0]]) - len(orig[ids[0]]), -ids[0]))
-            need -= (len(cur[ids[0]]) - len(orig[ids[0]])) * 2
             for i in ids:
                 cur[i], krs[i] = orig[i], None
+            need = chunk_need()
             reverted += len(ids)
     return reverted
 

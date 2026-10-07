@@ -9,6 +9,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import script
 import typeset
 
 
@@ -51,12 +52,16 @@ class TestTypeset(unittest.TestCase):
         with self.assertRaises(typeset.TypesetError):  # 안 들면 자르지 않고 운다
             typeset.wrap("아주 긴 우리 문안이 여기에 들어간다", "ed3", jp=jp)
 
-    def test_space_is_eight_px_only_where_the_engine_is_patched(self):
-        """공백 8px 는 엔진 패치가 있는 ED3 만 — ED4 는 아직 12px 그대로다."""
-        self.assertAlmostEqual(typeset.cell_width(" ", "ed3"), 8 / 12)
+    def test_space_is_six_px_only_where_the_engine_is_patched(self):
+        """공백 6px(반 칸)는 엔진 패치가 있는 ED3 만 — ED4 는 아직 12px 그대로다."""
+        self.assertAlmostEqual(typeset.cell_width(" ", "ed3"), 6 / 12)
         self.assertEqual(typeset.cell_width("가", "ed3"), 1)
         self.assertEqual(typeset.cell_width(" ", "ed4"), 1)
-        self.assertAlmostEqual(typeset.width_cells("가 나", "ed3"), 2 + 8 / 12)
+        self.assertAlmostEqual(typeset.width_cells("가 나", "ed3"), 2 + 6 / 12)
+        for p in ",.?!()":  # 부호도 반 칸(마스터 10-07) — 엔진 훅의 부호 코드와 같은 집합이다
+            self.assertAlmostEqual(typeset.cell_width(p, "ed3"), 6 / 12, msg=p)
+        for p in "…～「」":  # 전각 유지(마스터 10-07)
+            self.assertEqual(typeset.cell_width(p, "ed3"), 1, p)
 
     def test_grid_columns_cap_the_glyph_count(self):
         """폭이 예산 안이어도 격자 열(32)을 넘는 글리프 수는 화면에서 잘린다."""
@@ -84,6 +89,16 @@ class TestTypeset(unittest.TestCase):
         self.assertEqual(typeset.wrap("쥬리오는 ", "ed3", jp="ジュリオは", floor=23), "쥬리오는 ")
         self.assertEqual(typeset.wrap(" 맞지?", "ed3", jp="だね？", floor=23), " 맞지?")
         self.assertEqual(typeset.wrap("   ", "ed3", jp="あ", floor=23), "")
+
+    def test_head_block_names_get_the_name_floor(self):
+        """🔴 머리 블록 이름은 원문 글자 수가 아니라 `NAME_FLOOR` 칸 — 「크리스 엄마」(5.5칸)가 두 줄로 접혀 `크리스` 만 남던 사고."""
+        segs = [(0, "クリスの母"), (1, "ログ"), (2, "ジュリオ。")]
+        floors = script.member_floors(segs)
+        self.assertEqual(floors[0], script.NAME_FLOOR)
+        self.assertEqual(floors[1], script.NAME_FLOOR)
+        self.assertEqual(typeset.wrap("크리스 엄마", "ed3", jp="クリスの母", floor=floors[0]), "크리스 엄마")
+        with self.assertRaises(typeset.TypesetError):  # 바닥이 없으면 예전 사고가 그대로 난다
+            typeset.wrap("크리스 엄마", "ed3", jp="クリスの母")
 
     def test_wrap_is_deterministic(self):
         """빌드는 결정적이어야 한다 — 같은 입력이면 같은 줄바꿈."""
