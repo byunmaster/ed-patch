@@ -13,12 +13,12 @@
 ⚠ 게이트에는 안 물린다: 망이 드는 검사를 `check.sh` 에 넣으면 끊긴 자리에서 늘 빨간불이다.
 """
 
-EPILOG = """열쇠는 `.local/secrets.env` 하나에 모은다(환경변수가 이긴다):
+EPILOG = """열쇠는 `.local/keep/secrets.env` 하나에 모은다(환경변수가 이긴다):
 
   DEEPL_API_KEY=...    # https://www.deepl.com/pro-api 의 DeepL API Free — 월 50만 자
 
 ⚠ 워크트리엔 `.local/` 이 안 따라온다 — 메인 트리에 한 번만 두면 거슬러 올라가 찾는다.
-자세한 것은 `.local/README.md`."""
+자세한 것은 루트 CLAUDE.md 의 `.local` 항목."""
 
 import argparse
 import os

@@ -24,7 +24,7 @@ WORK_DIR = os.path.join(GAME_DIR, "work")
 
 
 def secrets_path():
-    """`.local/secrets.env` 를 **위로 올라가며** 찾는다 — 없으면 있을 자리를 돌려준다.
+    """`.local/keep/secrets.env` 를 **위로 올라가며** 찾는다 — 없으면 있을 자리를 돌려준다.
 
     ⚠ 열쇠는 `.local/` 에 둔다 — 이 레포가 이미 「머신 전용」으로 쓰는 자리이고
     `.gitignore` 에 들어 있다. **새 `.env` 규약을 만들지 않는다.**
@@ -34,7 +34,7 @@ def secrets_path():
     d = ROOT
     fallback = None
     for _ in range(6):
-        p = os.path.join(d, ".local", "secrets.env")
+        p = os.path.join(d, ".local", "keep", "secrets.env")
         if os.path.exists(p):
             return p
         if fallback is None and os.path.isdir(os.path.join(d, ".local")):
@@ -43,11 +43,11 @@ def secrets_path():
         if nd == d:
             break
         d = nd
-    return fallback or os.path.join(ROOT, ".local", "secrets.env")
+    return fallback or os.path.join(ROOT, ".local", "keep", "secrets.env")
 
 
 def secret(name):
-    """바깥 서비스 열쇠 — **환경변수 → `.local/secrets.env`** 순. 없으면 빈 문자열.
+    """바깥 서비스 열쇠 — **환경변수 → `.local/keep/secrets.env`** 순. 없으면 빈 문자열.
 
     열쇠가 느는 자리가 이미 둘이다(`DEEPL_API_KEY` · `GEMINI_API_KEY`). 도구마다 읽는
     법을 따로 쓰면 곧 갈리므로 여기 하나로 둔다.

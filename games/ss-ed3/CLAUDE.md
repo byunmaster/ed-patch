@@ -1,7 +1,7 @@
 # CLAUDE.md — 새턴 『백의 마녀 — 또 하나의 영웅전설』 (ss-ed3)
 
 **트랙: [kr]** — 일본 원판 한글 번역 패치. 공용 규칙은 루트 [`CLAUDE.md`](../../CLAUDE.md),
-진행 현황은 [`docs/status.md`](docs/status.md).
+진행 현황은 [`docs/status.md`](docs/status.md), 확정된 구조 지식은 [`docs/design.md`](docs/design.md).
 
 ## 이 게임이 다른 점
 
@@ -33,14 +33,15 @@
   - 정발(`originals/kr/dos-ed3`, `ED3_DT*.DAT` 평문)은 이제 **지명 표기와 대조 자료**로만
     쓴다. 단어 수준이라 저작권 대상이 아니다(루트 「저작권」).
   - 윈도 정발(`kr/win-ed3`)은 `LB DAT` 아카이브 안이 압축이라 아직 못 읽는다.
-  - 정본은 `games/ss-ed3/glossary_manual.json` — 판단 근거는 그 안 `evidence` 다.
-    `shared/glossary/` 승격은 아직 유저 승인 전이다(공용이라 main 에서 한다).
+  - 정본은 `games/ss-ed3/glossary_manual.json`(812 표제어) — 판단 근거는 그 안 `evidence` 다.
+    🔴 **사전(`shared/glossary`)으로 이관 예정이다**(관리자 10-07 — 워커는 독자 데이터를 갖지 않는다). 그때까지도 **게임 폴더에 새 JP→KR 표를 만들지 않고**,
+    새 이름·바꿀 이름은 **후보로 관리자에게** 올린다. 게임 브랜치는 사전을 못 고친다(`check.sh` 가 막는다).
 
 ## 원본
 
 `originals/jp/ss-ed3/` — MODE1/2352, 2 디스크. 지문·경로 정본은
-[`tools/common.py`](tools/common.py). ⚠ **읽기 전용**이고, 쓰기 헬퍼는 재삽입 설계가
-서기 전까지 두지 않는다(`docs/patcher-checklist.md` 2).
+[`tools/common.py`](tools/common.py). ⚠ **읽기 전용**이다 — 이미지는 `build.py` 가 사본을 만들어 쓰고,
+원본을 직접 쓰는 헬퍼는 두지 않는다(`docs/patcher-checklist.md` 2).
 
 ## 도구
 
