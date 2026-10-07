@@ -562,6 +562,17 @@ def dynamic_slots(out: bytearray, rom: bytes, resident: list[int]) -> list[int]:
     return tiles.overwritable(rom, tiles.layout_tiles(out), keep_codes(rom) | set(resident))
 
 
+def crawl_slots(out: bytearray, rom: bytes, base: list[int]) -> list[int]:
+    """오프닝·엔딩 크롤이 **더** 빌리는 코드 — 창 배치 표가 쓰는 타일은 그 화면에 없으니 인게임에서만 못 건드린다.
+    가변 폭(VWF)은 칸마다 슬롯을 새로 먹어(글리프 캐시가 안 듣는다) 한 쪽(최대 146칸)에 슬롯 79개로는 모자란다.
+    인게임(컨텍스트 0)에서는 훅이 이 슬롯을 건너뛴다(`hook.alloc` · `vwf_newslot`)."""
+    import tiles
+
+    keep = keep_codes(rom)
+    allc = tiles.overwritable(rom, set(), keep)
+    return [c for c in allc if c not in set(base)]
+
+
 def check_widen_pairs(rom: bytes, out: bytearray, originals: list) -> list:
     """넓힌 기록과 **원래 크기가 똑같던 기록**이 안 넓혀진 채 남아 있으면 실패로 친다.
 
@@ -960,7 +971,10 @@ def kr_items(
                 enc_override(sid, entry)
                 if enc_override is not None
                 else encode.encode(
-                    _ts(entry["kr"], common.off2snes(seg[0].off)), rep_index, dict_kr
+                    _ts(entry["kr"], common.off2snes(seg[0].off)),
+                    rep_index,
+                    dict_kr,
+                    vwf=common.VWF,  # 크롤(오프닝·엔딩)도 가변 폭 — 스태프롤은 이 경로가 아니다(마스터 10-08)
                 )
             )
         except ValueError as ex:
@@ -1362,11 +1376,13 @@ def build_kr(
             out, rom, dk["tables"], dk["지명"]["a"], dk["지명"]["next"]
         )
         led.snap(out, "사전·전투 UI 이관")
+        _base = dynamic_slots(out, rom, poc["resident_codes"])
         hk = hook.apply(
             out,
             rom,
             k["rep"],
-            dynamic_slots(out, rom, poc["resident_codes"]),
+            _base + crawl_slots(out, rom, _base),
+            xfrom=len(_base),
             item_table=dk["tables"][0xD2],
             place_tables=(dk["지명"]["a"], dk["지명"]["b"]),
             spell_table=dk["런타임 치환"]["주문 표 주소"],

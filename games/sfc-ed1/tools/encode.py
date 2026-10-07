@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import text  # noqa: I001
+import common
 from shared.text import josa as josa_mod
 
 # 🔴 **선두는 「원본이 글자로 한 번도 안 쓰는 코드」여야 한다**(2026-09-06 실측 정정).
@@ -163,9 +164,18 @@ class Encoded:
         return n
 
 
-def encode(kr: str, rep_index: dict[str, int], dict_kr: dict[str, str] | None = None) -> Encoded:
+def encode(
+    kr: str,
+    rep_index: dict[str, int],
+    dict_kr: dict[str, str] | None = None,
+    vwf: bool | None = None,
+) -> Encoded:
     """번역문 → 조각. 사전 토큰은 바이트로(2B), 치환 토큰은 1B, 제어 토큰은 원본 항목을 그대로 쓰도록 표시만 한다.
-    `dict_kr` = {"D3:08": "병사", …} — 사전 토큰 뒤 조사 확정에 쓴다."""
+    `dict_kr` = {"D3:08": "병사", …} — 사전 토큰 뒤 조사 확정에 쓴다.
+    `vwf` = 대사창 가변 폭 엔진(`hook_vwf`)이 그릴 문안인가 — 그렇다면 공백·부호가 4px 라 **공백을 그대로 낸다**.
+    크롤(오프닝·엔딩)은 다른 엔진이라 8px 칸 그대로고, 부호 뒤 공백을 빼는 옛 규칙을 쓴다."""
+    if vwf is None:
+        vwf = common.VWF
     out = Encoded()
     buf = bytearray()
     prev_word = ""  # 조사 판정용 — 직전 글자열 또는 사전 토큰의 표기
@@ -219,7 +229,7 @@ def encode(kr: str, rep_index: dict[str, int], dict_kr: dict[str, str] | None = 
                 buf += glyph_code(rep_index[ch])
                 prev_word += ch
                 prev_runtime = False
-            elif ch == " " and prev_ch in HALF_PUNCT:
+            elif ch == " " and prev_ch in HALF_PUNCT and not vwf:
                 pass  # 부호 뒤 공백은 반각 — 부호 글리프가 칸 왼쪽에 붙어 남는 오른쪽이 곧 공백이다
             elif ch in KR_TABLE:
                 buf.append(KR_TABLE[ch])
@@ -232,7 +242,7 @@ def encode(kr: str, rep_index: dict[str, int], dict_kr: dict[str, str] | None = 
     return out
 
 
-def decode_kr(b: bytes, rep: list[str]) -> str:
+def decode_kr(b: bytes, rep: list[str], vwf: bool | None = None) -> str:
     """검증용 역변환 — 2바이트 글리프·조사 코드·반각을 되돌린다(제어는 <XX>)."""
     inv = {v: k for k, v in KR_TABLE.items()}
     out = []
@@ -252,6 +262,10 @@ def decode_kr(b: bytes, rep: list[str]) -> str:
         else:
             out.append(f"<{c:02X}>")
             i += 1
+    if vwf is None:
+        vwf = common.VWF
+    if vwf:  # 가변 폭 엔진용 문안은 공백을 그대로 냈다 — 되살릴 게 없다
+        return "".join(out)
     # 인코더가 뺀 「부호 뒤 공백」을 되살린다 — 뒤에 글자가 이어질 때만(줄 끝·닫는 괄호·제어 앞은 원래 없다)
     res = []
     for k, tok in enumerate(out):

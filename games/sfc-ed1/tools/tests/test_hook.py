@@ -76,6 +76,12 @@ OPC = {
     0x6F: ("adc l", 3),
     0x2F: ("and l", 3),
     0x0F: ("ora l", 3),
+    0x99: ("sta a,y", 2),
+    0x1D: ("ora a,x", 2),
+    0x1F: ("ora l,x", 3),
+    0xDF: ("cmp l,x", 3),
+    0xEF: ("sbc l", 3),
+    0xE9: ("sbc #", "m"),
     0xBF: ("lda l,x", 3),
     0x9F: ("sta l,x", 3),
     0xA5: ("lda d", 1),
@@ -128,6 +134,37 @@ ENTRY = {
     "ctx_open_x": (False, True, "far"),  # 엔딩 PPU 배치(`$1E:EAA8`, STX) — A 16비트로 들어온다
 }
 
+# 대사창 가변 폭(hook_vwf.py)을 켠 빌드에만 있는 루틴 — 전부 훅 본체에서 `jsr` 로 부른다(A 8·X 16).
+# `chunk` 는 가운데 `rts`/`jmp` 로 닫아 점프로만 닿는 덩이다.
+VWF_ENTRY = {
+    "vwf_sync": (True, False, "near"),
+    "vwf_live": (True, False, "near"),
+    "vwf_crawl_nl": (True, False, "near"),
+    "vwf_newslot": (True, False, "near"),
+    "vwf_clrbuf": (True, False, "near"),
+    "vwf_blit0": (True, False, "near"),
+    "vwf_blit1": (True, False, "near"),
+    "vwf_blit2": (True, False, "near"),
+    "vwf_enq": (True, False, "near"),
+    "vwf_ldg_h": (True, False, "near"),
+    "vwf_ldg_r": (True, False, "near"),
+    "vwf_adv": (True, False, "near"),
+    "vwf_put": (True, False, "near"),
+    "vwf_flush": (True, False, "near"),
+    "vwf_glyph": (True, False, "near"),
+    "vwf_raw": (True, False, "near"),
+    "u_ram": (True, False, "chunk"),
+    "vp_spill": (True, False, "chunk"),
+    "vl_y": (True, False, "chunk"),
+
+    "vr_h1": (True, False, "chunk"),
+    "o_swallow": (True, False, "chunk"),
+    "o_raw": (True, False, "chunk"),
+    "o_prn": (True, False, "chunk"),
+    "vg_mis": (True, False, "chunk"),
+    "vr_fm": (True, False, "chunk"),
+}
+
 
 def decode(blob: bytes, org: int, start: int, m8: bool, x8: bool, end: int):
     """한 루틴을 선형 해독한다 → [(주소, 니모닉, 인자, 크기)]. 모르는 바이트면 예외."""
@@ -159,11 +196,16 @@ def decode(blob: bytes, org: int, start: int, m8: bool, x8: bool, end: int):
 
 
 class HookAsm(unittest.TestCase):
+    VWF = False  # 정본 롬의 훅(가변 폭 꺼짐)
+
     def setUp(self):
         self.rep = sorted(set("가나다라마바사아자차카타파하각논딜" + hook.josa_chars()))
         self.slots = list(range(0x20, 0x20 + 40))
         self.vram = [0x1000 + 8 * (0x30 + i) for i in range(40)]
-        self.blob, self.info = hook.build_payload(self.rep, self.slots, self.vram)
+        self.blob, self.info = hook.build_payload(self.rep, self.slots, self.vram, vwf=self.VWF, xfrom=30)
+        self.entry = dict(ENTRY)  # 가변 폭이 꺼졌을 때(옛 길)는 고아 부호 끌어오기가 있다
+        if self.VWF:
+            self.entry = {k: v for k, v in ENTRY.items() if k != "kinsoku_carry"} | VWF_ENTRY
         self.lab = self.info["labels"]
         self.code_end = hook.HOOK_ORG + self.info["code_bytes"]
 
@@ -171,9 +213,9 @@ class HookAsm(unittest.TestCase):
         """루틴마다 진입 폭을 주고 끝까지 해독한다. 라벨 자리가 곧 명령 경계여야 한다."""
         starts = sorted(self.lab.items(), key=lambda kv: kv[1])
         bounds = set()
-        for name, (m8, x8, _kind) in ENTRY.items():
+        for name, (m8, x8, _kind) in self.entry.items():
             pc = self.lab[name]
-            nxt = min((v for _k, v in starts if v > pc and _k in ENTRY), default=self.code_end)
+            nxt = min((v for _k, v in starts if v > pc and _k in self.entry), default=self.code_end)
             ins, _ = decode(self.blob, hook.HOOK_ORG, pc, m8, x8, nxt)
             for a, *_ in ins:
                 bounds.add(a)
@@ -222,9 +264,9 @@ class HookAsm(unittest.TestCase):
 
     def test_복귀_명령(self):
         """`JSL` 로 불리는 루틴은 RTL, `JSR` 은 RTS 로 닫힌다 — 어긋나면 스택이 샌다."""
-        want = {"far": "rtl", "near": "rts"}
+        want = {"far": ("rtl",), "near": ("rts",), "chunk": ("rts", "jmp")}
         for name, ins in self._walk():
-            self.assertEqual(ins[-1][1], want[ENTRY[name][2]], f"{name} 의 복귀 명령")
+            self.assertIn(ins[-1][1], want[self.entry[name][2]], f"{name} 의 복귀 명령")
 
     def test_호출_자리_바이트(self):
         """갈아 끼울 자리는 **원본과 크기가 같아야** 한다."""
@@ -239,6 +281,14 @@ class HookAsm(unittest.TestCase):
         self.assertEqual([s for _n, s in rows[:6]], ["은", "는", "이", "가", "을", "를"])
         self.assertEqual(rows[8], (2, "으로"))  # 받침 있음
         self.assertEqual(rows[9], (1, "로"))
+
+
+
+
+class HookAsmVwf(HookAsm):
+    """가변 폭을 켠 훅 — 같은 검사(전량 해독·분기 목표·스택·복귀)를 새 루틴까지 한다."""
+
+    VWF = True
 
 
 if __name__ == "__main__":
