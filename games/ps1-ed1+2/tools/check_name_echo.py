@@ -52,6 +52,19 @@ _WIN = re.compile(r"\{c\}([^{}]+)\{c\}(?!\{n\})")
 #   「늘 빨간불인 게이트는 아무도 안 본다」가 된다. 둘을 고친 근거는 커밋 349dc438.
 
 
+def echoes(kr, t):
+    """창 이름 `kr` 이 우리 본문 `t` 에서 **또** 나오는가.
+
+    🔴 `{p}` 로 **이름을 제 조각으로 열어 둔 자리는 겹침이 아니다**(2026-10-07). 원문이 이름을 본문 안에 색칠해 두는
+    꼴(`%cランドー%cのＨＰが…`)은 우리도 `란도{p}의 ＨＰ가{p}…` 로 **조각마다 창에 1:1** 로 채워야 이름이 방출 바이트에
+    산다 — 이름 조각을 빼면(`의 ＨＰ가{p}{p}…`) 화면에서 이름이 사라진다(v1.0.0 ED2SCN4:519·558 실측). 이름이 조각 하나를
+    통째로 차지하면(`{p}` 로 갈린 한 조각이 이름뿐) 그 창을 우리가 직접 채운 것이라 파이프라인이 한 번 더 내보내지 않는다.
+    """
+    if kr in [seg.strip() for seg in t.split("{p}")]:
+        return False
+    return bool(re.search(rf"(?<![가-힣]){re.escape(kr)}", t))
+
+
 def _canon():
     """JP 이름 → 우리 표기(인물·지명). 이름창에 오는 것은 이 둘뿐이다."""
     out = {}
@@ -80,7 +93,7 @@ def scan(scenes=None, verbose=False):
                 for jp_name in _WIN.findall(e.get("text") or ""):
                     kr = canon.get(jp_name.strip())
                     # ⚠ 짧은 이름은 다른 낱말에 묻힌다(`로우`↔`로우거`) — 낱말 경계를 본다.
-                    if kr and re.search(rf"(?<![가-힣]){re.escape(kr)}", t):
+                    if kr and echoes(kr, t):
                         bad.append((scn, e["entry_id"], jp_name.strip(), kr, t[:34]))
     print(f"  {'✅' if not bad else '❌'} 이름이 창과 본문에 겹친 곳 {len(bad)}")
     if verbose:

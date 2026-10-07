@@ -1777,3 +1777,19 @@ def test_drawer_eager_wrap_skips_when_newline_follows():
 
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
+
+
+def test_name_echo_allows_explicit_name_segment():
+    """🔴 이름 조각을 `{p}` 로 제 조각에 둔 자리는 겹침이 아니다(2026-10-07) — 본문 안 색칠 이름 꼴(`%c이름%c의 ＨＰ가`)을
+    조각마다 채워야 이름이 방출 바이트에 산다. 이름이 한 조각에 문장과 섞이면(꼴1 `소니아가 …`) 여전히 겹침이다."""
+    import os
+    import sys
+
+    sys.path.insert(0, _TOOLS)
+    os.environ.setdefault("LOCK_BYPASS", "1")
+    import check_name_echo as E
+
+    assert E.echoes("소니아", "소니아가 동료가 되었습니다.")  # 창에도 있고 본문에도 — 소니아소니아가
+    assert not E.echoes("소니아", "이(가) 동료가 되었습니다.")  # 조사만 — 정상
+    assert not E.echoes("마리", "마리{p}의 ＨＰ가{p}회복되었다.")  # 이름 조각을 제 조각에 둠 — 정상
+    assert E.echoes("마리", "마리의 ＨＰ가{p}회복되었다.")  # 한 조각에 섞임 — 겹침
