@@ -94,7 +94,7 @@ def _ui(mm, out):
         [f"{tb['what']}\x00{jp}\x00{kr}" for tb in U.name_rows(mm) for _o, jp, kr, _p in tb["recs"]]
     )
     out["UI/시스템"] = _h(
-        [f"{p}\x00{o:x}\x00{kr}" for p, _l, _s, o, _r, _pre, kr, _ptr in U.sys_rows(mm)]
+        [f"{p}\x00{o:x}\x00{kr}" for p, _l, _s, o, _r, _pre, kr, _ptr, _jp in U.sys_rows(mm)]
     )
     out["UI/카드"] = _h([repr(r) for r in U.card_rows(mm, cards)])
     out["UI/메시지"] = _h([repr(r) for r in U.msg_rows(mm, msgs)])

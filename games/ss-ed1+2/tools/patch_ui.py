@@ -439,7 +439,7 @@ def dotart_text_codes(rs, scn, ntabs, sysm, cards_msgs_kr):
     for t in ntabs:
         for _at, _jp, kr, _ptrs in t["recs"]:
             mark(kr)
-    for _p, _l, _s, _at, _sp, _pre, kr, _ptrs in sysm:
+    for _p, _l, _s, _at, _sp, _pre, kr, _ptrs, _jp in sysm:
         mark(kr)
     for kr in cards_msgs_kr:
         mark(kr)
@@ -851,7 +851,14 @@ def _sys_match(run, canon):
 
 
 def sys_rows(mm):
-    """시스템 메시지 — `[(파일, lba, size, 오프셋, 여유, 앞바이트, KR)]` (문구 표와 같은 꼴).
+    """시스템 메시지 — `[(파일, lba, size, 오프셋, 여유, 앞바이트, KR, 포인터, JP)]`.
+
+    🔴 **`앞바이트`(6번째)는 JP 원문이 아니다 — 거의 늘 비어 있다.** 매칭된 JP 접미 앞에
+       0 없이 붙은 **이름 등 처리 안 된 바이트**만 담는다(`_no_jp_prefix` 용). 대부분의
+       줄은 런 맨 앞에서 바로 매칭돼 이 필드가 빈 바이트열이다(실측 2026-10-07:
+       1,143자리 중 1,135자리가 공백 — `check_prose_glossary.py` 가 이걸 JP 로 착각해
+       대조 커버리지가 8/1,143 뿐이었다, 다루디아 옛 표기 잔존 사고). **JP 원문은 9번째
+       `jp`를 쓴다**(`_sys_match()` 가 찾은 그 값 그대로).
 
     🔴 **`exact` 는 「통짜일 때만 맞는」 표시다.** 홑조사(`に`·`は`)처럼 짧은 정본은 접미
        매칭 탓에 **아직 일본어인 문장의 끝**과도 맞는다(실측: `に` 가 `/ED2.BIN` 0x18006 의
@@ -989,6 +996,7 @@ def sys_rows(mm):
                             d[base : i + k],
                             canon[sys_key(jp)],
                             ptrs,
+                            jp,
                         )
                     )
             i = j
@@ -1009,7 +1017,7 @@ def _no_double_owner(inplace, sysm):
     for path, _l, _s, at, span, _pre, _kr in inplace:
         spans.setdefault(path, []).append((at, at + span))
     bad = []
-    for path, _l, _s, at, span, _pre, kr, _p in sysm:
+    for path, _l, _s, at, span, _pre, kr, _p, _jp in sysm:
         if any(at < b and a < at + span for a, b in spans.get(path, [])):
             bad.append(f"{path} 0x{at:06X} {kr!r}")
     if bad:
@@ -1119,7 +1127,7 @@ def sys_pack(sysm, ntabs, plan):
         #   ⚠ 못 옮기는 조건은 **둘**이다 — 포인터가 없거나, `PINNED_INPLACE` 이거나
         #     (포인터가 있어도 표로 집히는 자리, 위 주석).
         pin = PINNED_INPLACE.get(path, ())
-        for _p, _l, _s, at, span, pre, kr, ptrs in recs:
+        for _p, _l, _s, at, span, pre, kr, ptrs, _jp in recs:
             if ptrs and at not in pin:
                 continue
             blob = pre + to_bytes(kr, plan)
@@ -1150,7 +1158,7 @@ def sys_pack(sysm, ntabs, plan):
         #     넘치면 예전대로 죽는다(조용히 넘기지 않는다).
         #   ⚠ 문안을 줄여 맞추지 않는다 — PS1 도 `이(가) 나타났다.` 라, 여기서만 줄이면
         #     **두 이식판의 표기가 갈린다**(2026-08-27 확인).
-        for _p, _l, _s, _at, _span, pre, kr, ptrs in want:
+        for _p, _l, _s, _at, _span, pre, kr, ptrs, _jp in want:
             blob = pre + to_bytes(kr, plan)
             blob += b"\x00"
             # 🔴 **짝수 주소에만 놓는다**(2026-08-28). 이 게임의 어떤 화면은 두 바이트를
@@ -1557,7 +1565,9 @@ def main():
             print(f"  반각 폰트 {FON_ASCII}: 원본에 없던 {''.join(gaps)!r} 구움")
 
         # ── 반각 도트 글리프 — DOTART_PLACES 가 실제로 scn 헤더에 쓰인 지명만 굽는다
-        used_dotart = sorted({kr for _p, _l, _s, _at, _fl, _jp, kr, _t in scn if kr in DOTART_PLACES})
+        used_dotart = sorted(
+            {kr for _p, _l, _s, _at, _fl, _jp, kr, _t in scn if kr in DOTART_PLACES}
+        )
         if used_dotart:
             alba, asize = files[FON_ASCII]
             orig_ascii = common.extract(FON_ASCII)
@@ -1703,7 +1713,7 @@ def verify_sys(dst, sysm, plan, files):
     inv = {sjis: ch for ch, (sjis, _i) in plan.items()}
     _f2, mm2 = common.open_image(dst)
     cache, n = {}, 0
-    for path, lba, size, at, _span, pre, kr, ptrs in sysm:
+    for path, lba, size, at, _span, pre, kr, ptrs, _jp in sysm:
         if path not in cache:
             cache[path] = common.read_extent(mm2, lba, size)
         d = cache[path]
