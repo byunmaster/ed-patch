@@ -173,3 +173,32 @@ class TestDetachedAndFixed(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTailSharing(unittest.TestCase):
+    def _data(self, strs, total):
+        """표(u16 N개) + 풀(칸 하나, 종결 0x8002) — 풀 총량이 `total` 바이트인 가짜 실행파일."""
+        n = len(strs)
+        base = 2 * n
+        raw, ents = b"", []
+        for codes in strs:
+            ents.append(len(raw))  # 풀 상대 오프셋(표 바로 뒤가 base)
+            raw += struct.pack(f"<{len(codes)}H", *codes) + struct.pack("<H", 0x8002)
+        assert len(raw) == total
+        return struct.pack(f"<{n}H", *ents) + raw, n, base
+
+    def test_tail_is_shared_only_when_over_budget(self):
+        # 철열쇠(3) 강열쇠 대신 강철열쇠(4) 를 넣으면 한 칸이 넘친다 — 철열쇠 ⊂ 강철열쇠 라 겹친다.
+        data, n, base = self._data([[1, 2, 3], [4, 5, 3], [6, 7, 3]], 24)
+        want_all = [[5, 2, 3], [9, 5, 2, 3], [6, 7, 3]]  # 13 단어 = 26B > 24B
+        new, _slack = exetext.rebuild(data, 0, base, n, want_all)
+        ents = struct.unpack_from(f"<{n}H", new, 0)
+        for i, want in enumerate(want_all):
+            codes, term = exetext.raw_string(new, base + ents[i])
+            self.assertEqual((codes, term), (want, 0x8002))
+        self.assertEqual(ents[0], ents[1] + 2)  # 꼬리를 공유한다
+
+    def test_fitting_chunk_layout_is_unchanged(self):
+        data, n, base = self._data([[1, 2, 3], [4, 5, 3], [6, 7, 3]], 24)
+        new, _ = exetext.rebuild(data, 0, base, n, [[1, 2, 3], [4, 5, 3], [6, 7, 3]])
+        self.assertEqual(new, data)

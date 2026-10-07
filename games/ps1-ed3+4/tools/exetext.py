@@ -304,6 +304,29 @@ def chunks(data, tbl, base, n):
     return out
 
 
+def _share_tails(starts, base, want, terms, lo):
+    """(풀 바이트, {옛 x: 새 x}) | None — 꼬리가 같은 이름을 한 문자열로 겹친다.
+
+    긴 것부터 놓고, 나머지가 **이미 놓은 문자열의 꼬리(종결 포함)** 면 그 가운데를 가리킨다.
+    같은 종결을 쓰는 것끼리만 겹친다. 결정적이다(길이 내림차순, 같으면 주소 순).
+    """
+    order = sorted((off - base for off in starts), key=lambda x: (-len(want[x]), x))
+    pool, remap, placed = bytearray(), {}, []  # placed: [(codes, term, 풀 안 시작 바이트)]
+    for x in order:
+        codes, term = want[x], terms[x]
+        hit = None
+        for pc, pt, at in placed:
+            if pt == term and len(pc) > len(codes) and pc[len(pc) - len(codes) :] == codes:
+                hit = at + 2 * (len(pc) - len(codes))
+                break
+        if hit is None:
+            hit = len(pool)
+            placed.append((codes, term, hit))
+            pool += struct.pack(f"<{len(codes)}H", *codes) + struct.pack("<H", term)
+        remap[x] = lo - base + hit
+    return bytes(pool), remap
+
+
 def rebuild(data, tbl, base, n, new_codes, cm=None, pad_code=None):
     """표와 풀을 다시 싼다. `new_codes` 는 표 순서대로 N개.
 
@@ -341,15 +364,26 @@ def rebuild(data, tbl, base, n, new_codes, cm=None, pad_code=None):
     out = bytearray(data)
     remap, slack, tail_pad = {}, 0, {}
     for lo, hi, starts in chunks(data, tbl, base, n):
+        tail_shared = False
         pool = bytearray()
         for off in starts:
             x = off - base
             remap[x] = lo - base + len(pool)
             pool += struct.pack(f"<{len(want[x])}H", *want[x]) + struct.pack("<H", terms[x])
         if lo + len(pool) > hi:
-            raise ExeTextError(f"예산 초과: 칸 0x{lo:X} 에 {len(pool)}B (자리는 {hi - lo}B)")
+            # 🔴 넘칠 때만 **꼬리 공유** — 한 이름이 다른 이름의 꼬리(종결까지)와 같으면 따로 두지 않고 그 가운데를 가리킨다
+            #    (「철열쇠」 ⊂ 「강철열쇠」). 표 포인터라 가운데를 가리켜도 된다. 넘치지 않는 칸은 배치가 그대로다
+            #    (그래서 지금까지의 빌드 바이트가 안 바뀐다).
+            shared = _share_tails(starts, base, want, terms, lo)
+            if shared is None:
+                raise ExeTextError(f"예산 초과: 칸 0x{lo:X} 에 {len(pool)}B (자리는 {hi - lo}B)")
+            pool, remap_part = shared
+            remap.update(remap_part)
+            tail_shared = True
+            if lo + len(pool) > hi:
+                raise ExeTextError(f"예산 초과: 칸 0x{lo:X} 에 {len(pool)}B (자리는 {hi - lo}B)")
         extra_words = (hi - lo - len(pool)) // 2
-        if pad_code is not None and extra_words and starts:
+        if pad_code is not None and extra_words and starts and not tail_shared:
             last_x = starts[-1] - base
             term_bytes = pool[-2:]
             pool = pool[:-2] + struct.pack(f"<{extra_words}H", *([pad_code] * extra_words))
