@@ -220,7 +220,7 @@ ONLY: set[str] | None = None
 `font`(글리프 뱅크 + 진입 스텁) · `cache`(16 → 16−글리프 뱅크 칸) · `hook`(EX_GETFNT 우회) ·
 `sys`(시스템 문구) · `battle`(전투 컨테이너) · `scn`(씬 컨테이너) ·
 `band`(장 제목 띠, rel 210) · `hud`(HUD 이름판·あと·상태 글자, rel 54·55) · `box`(빈 슬롯 상자 msg1, 뱅크 0x7B 재배치) ·
-`glyph`(글리프 뱅크 적재) · `payload`(후킹 루틴 + 표를 $3B00 에 싣기) ·
+`glyph`(글리프 뱅크 적재) · `payload`(후킹 루틴 + 표를 `hook.HOOK_ADDR`=$2300 에 싣기) ·
 `narr`(나레이션 게이트 자막 — 게이트 + 블록 꼬리 스텁, `narration_gates.patch_block`)
 — 뒤 둘은 `font` 안에서 다시 뺄 수 있다.
 🔴 **이게 소프트락을 가르는 유일한 도구다** — 증상이 나면 하나씩 끄며 A/B 한다.
@@ -314,7 +314,7 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
             )
         )
     if want("hook"):
-        # 4. EX_GETFNT 호출부(본 프로그램 4곳) → $3B00
+        # 4. EX_GETFNT 호출부(본 프로그램 4곳) → `hook.HOOK_ADDR`($2300)
         tgt = hook.HOOK_ADDR.to_bytes(2, "little")
         p.append(("dialog JMP $7044", *_main(0x6C, 0x1044), b"\x4c\x60\xe0", b"\x4c" + tgt))
         p.append(("name JMP $93A3", *_main(0x6D, 0x13A3), b"\x4c\x60\xe0", b"\x4c" + tgt))
@@ -390,21 +390,21 @@ def apply_code_patches(
         lba = common.T2_SECTOR + rel
         mode1.write_at(f, lba, common.USER, off, new, label=label, expect=old)
         touched.append((lba, 1))
-    # 5. 글리프 뱅크 → rel 114~(뱅크 0x7C~ 적재분, 원본 0 — font.GLYPH_NBANKS 뱅크), 후킹 루틴 → rel 126 앞 256B
+    # 5. 글리프 뱅크 → rel 114~(뱅크 0x7C~0x7D 적재분, 원본 0 — font.GLYPH_NBANKS 뱅크), 후킹 루틴 → rel 126 앞 0x340B
     if not want("font"):
         return
-    if want("glyph"):  # 진단용으로 뺄 수 있다 — 뱅크 0x7C~0x7E 를 0 인 채로 두는 A/B
+    if want("glyph"):  # 진단용으로 뺄 수 있다 — 뱅크 0x7C~0x7D 를 0 인 채로 두는 A/B
         lba = common.T2_SECTOR + 114
         # 뱅크 꼬리 = 코드: 뱅크마다 풀기 루틴(`hook.unpack_asm`, 18B → 24B) · 마지막 뱅크 맨 끝은 어절
-        #   줄바꿈 루틴(`hook.wordck`, `$6723` 경로가 MPR4 에 걸어 부른다). 글리프는 `BANK_GLYPH_END` 앞까지만.
+        #   줄바꿈 루틴(`hook.wordck`, `$6723` 경로가 MPR2 에 걸어 부른다). 글리프는 `BANK_GLYPH_END` 앞까지만.
         glyph_bank = hook.finish_banks(glyph_bank)
         mode1.write_user_data(
             f, lba, glyph_bank, label="glyph banks", expect=b"\0" * len(glyph_bank)
         )
         touched.append((lba, len(glyph_bank) // common.USER))
-    # 루틴 + 조사 오프셋표 + 받침 비트맵 둘 — 스텁이 통째로 $3B00 으로 옮긴다(0x300B)
+    # 루틴 + 조사 코드표 + 받침 비트맵 둘 + 줄바꿈 품질 블록 — 스텁이 통째로 `HOOK_ADDR`($2300)로 옮긴다(0x340B)
     payload = hook.payload(table)
-    if want("payload"):  # 진단용 — $3B00~$3DFF 를 0 인 채로 두는 A/B(스텁은 그대로 돈다)
+    if want("payload"):  # 진단용 — `HOOK_ADDR` 자리를 0 인 채로 두는 A/B(스텁은 그대로 돈다)
         lba = common.T2_SECTOR + 126
         mode1.write_user_data(
             f, lba, bytes(payload), label="hook routine + josa tables", expect=b"\0" * len(payload)

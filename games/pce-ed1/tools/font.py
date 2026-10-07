@@ -24,7 +24,7 @@ LEAD0 = 0xF0
 TRAIL0 = 0x24
 # 🔴 **2뱅크**(0x86~0x87)다 — 2026-09-25 3뱅크에서 줄였다. 리소스 캐시(0x78~0x87, 16칸)에서 글리프가
 #    가져간 만큼 게임의 칸이 준다. 13칸으로는 종장 맵이 넘쳐(원본이 이 자리에서 14칸을 쓴다) 장 제목 띠의
-#    적재가 **조용히 실패**했다(devlog 09-25). 682자 상한 — 넘으면 빌드가 멈춘다(재검토: status.md 8절).
+#    적재가 **조용히 실패**했다(devlog 09-25). 상한은 아래 `MAX_GLYPHS`(18B 묶음, 880자) — 넘으면 빌드가 멈춘다.
 GLYPH_NBANKS = 2
 GLYPH_BANK0 = 0x88 - GLYPH_NBANKS  # 캐시 맨 끝 칸들
 # 🔴 **18B 묶음 저장**(10-07) — 24B 는 행마다 아래 4비트가 늘 0 이라 6B 가 빈다. 전투 문안만으로 41자가 더
@@ -43,7 +43,7 @@ MAX_GLYPHS = GLYPH_NBANKS * LEADS_PER_BANK * PER_LEAD  # 880
 # 🔴 리드 F9 는 **동적 조사** 전용으로 예약한다(글리프 배정에서 뺀다) — `F9 (0x24+종류)`.
 #    후킹 루틴이 **직전에 그린 글자**의 받침을 보고 두 글리프 중 하나를 낸다(status.md 12절).
 JOSA_LEAD = 0xF9
-MAX_LEADS = JOSA_LEAD - LEAD0  # 9 → 1,980 자리, 뱅크(682)가 먼저 찬다
+MAX_LEADS = JOSA_LEAD - LEAD0  # 9 → 1,980 자리, 뱅크(`MAX_GLYPHS` 880)가 먼저 찬다
 JOSA_PAIRS = ["은/는", "이/가", "을/를", "과/와", "으로/로", "아/야", "이랑/랑"]
 JOSA_CHARS = sorted({c for p in JOSA_PAIRS for part in p.split("/") for c in part})
 
@@ -72,7 +72,7 @@ def _load_bdf() -> dict[int, tuple[int, int, int, int, list[int]]]:
 BASELINE_ROW = 11
 
 # 🔴 **`?` 는 마스터 도트로 바꾼다**(2026-09-27, 반각 C안) — 반각(4px, 0~3열) 폭에 맞춘 전용 글리프.
-# `.local/inbox/pce-ed1/master-dots-question-4x12.txt` 그대로(4×12, 행 11 기준선·빈 줄) — 픽셀 그대로 굽는다.
+# `.local/work/inbox/pce-ed1/master-dots-question-4x12.txt` 그대로(4×12, 행 11 기준선·빈 줄) — 픽셀 그대로 굽는다.
 # `shared/fonts/Galmuri11.bdf`(공용)의 원래 `?`(0~4열, 5px 폭)를 대체한다 — 공용 파일은 안 건드리고
 # 이 게임의 `glyph()` 에서만 가로챈다.
 QUESTION_4PX_ROWS = [
