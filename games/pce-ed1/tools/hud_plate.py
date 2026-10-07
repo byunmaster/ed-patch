@@ -34,8 +34,11 @@ from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "shared"))
 
+import canon  # shared/ — 공통 문안 정본(ED1 = PS1 씨앗)
 import common
+import glossary as G  # shared/ — 고유명사만
 import hud_lz
 
 from shared import fonts
@@ -68,27 +71,42 @@ PAL8 = [
     (252, 252, 252),
 ]
 
-# 이름판: (배치표 안 오프셋, 원문, 한글) — 오프셋은 `ff` 바이트 자리(rel 54 기준)
+def _person(jp: str) -> str:
+    kr = G.lookup(jp, "person")
+    assert kr, f"사전에 인물 {jp!r} 가 없다"
+    return kr
+
+
+def _ui(jp: str, fallback: str | None = None) -> str:
+    kr = canon.lookup(jp, "ui", "ed1")
+    if kr is not None:
+        return kr
+    assert fallback, f"정본 ui 에 {jp!r} 가 없다"
+    return fallback
+
+
+# 이름판: (배치표 안 오프셋, 원문, 한글) — 오프셋은 `ff` 바이트 자리(rel 54 기준). 한글은 **사전(person)에서 읽는다**(마스터 10-08)
 PLATES = [
-    (0x760, "セリオス", "세리오스"),
-    (0x783, "リュナン", "류난"),
-    (0x7A6, "ロー", "로우"),
-    (0x7C9, "ゲイル", "게일"),
-    (0x7EC, "ソニア", "소니아"),
+    (0x760, "セリオス", _person("セリオス")),
+    (0x783, "リュナン", _person("リュナン")),
+    (0x7A6, "ロー", _person("ロー")),
+    (0x7C9, "ゲイル", _person("ゲイル")),
+    (0x7EC, "ソニア", _person("ソニア")),
 ]
-# 상태 한자: (타일 줄들, 원문, 한글) — PS1 `patch_sys_ui.STATUS_LABELS` · 새턴 `patch_gfx_hud.STATUS` 선례
+# 상태 한자: (타일 줄들, 원문, 한글) — PS1 `patch_sys_ui.STATUS_LABELS` · 새턴 `patch_gfx_hud.STATUS` 선례.
+# 한글은 정본 ui 에서 읽는다 — 정본에 아직 없는 셋(守 跳 気絶)은 **정본 후보**라 값을 여기 둔다(관리자에게 올림, 10-08)
 STATUS = [
-    ([[0x1A, 0x1B], [0x1C, 0x1D]], "眠", "잠"),
-    ([[0x1E, 0x1F], [0x20, 0x21]], "乱", "혼"),
-    ([[0x2A, 0x2B], [0x2C, 0x2D]], "毒", "독"),
-    ([[0x2E, 0x2F], [0x30, 0x31]], "黙", "묵"),
-    ([[0x32, 0x33], [0x34, 0x35]], "守", "수"),
+    ([[0x1A, 0x1B], [0x1C, 0x1D]], "眠", _ui("眠")),
+    ([[0x1E, 0x1F], [0x20, 0x21]], "乱", _ui("乱")),
+    ([[0x2A, 0x2B], [0x2C, 0x2D]], "毒", _ui("毒")),
+    ([[0x2E, 0x2F], [0x30, 0x31]], "黙", _ui("黙")),
+    ([[0x32, 0x33], [0x34, 0x35]], "守", _ui("守", "수")),
     (
         [[0x36, 0x37], [0x38, 0x39]],
         "跳",
-        "반",
+        _ui("跳", "반"),
     ),  # 跳ね返す = 반사(PS1 정발 표기) — PCE 엔 「呪」가 없다
-    ([[0x26, 0x27, 0x22, 0x23], [0x28, 0x29, 0x24, 0x25]], "気絶", "기절"),
+    ([[0x26, 0x27, 0x22, 0x23], [0x28, 0x29, 0x24, 0x25]], "気絶", _ui("気絶", "기절")),
 ]
 ATO = ([[0x10, 0x11]], "あと")
 

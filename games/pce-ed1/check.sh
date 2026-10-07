@@ -28,8 +28,15 @@ echo "== pce-ed1 =="
 # 4-b. 사전 대조 — 원문의 정본 이름이 우리 줄에 정본 표기로 있나(라운드⑥ 닫힘 조건 「다른 표기 잔존 0」)
 "$PY" "$T/check_glossary.py"
 
+# 4-c. 화면 일본어 0 — 대사 외 자리(메뉴·시스템·전투·HUD·배너)에 가나·한자가 남지 않았나
+"$PY" "$T/check_jp_left.py"
+
 # 5. 글리프 정본 — 코드가 세이브(BRAM)에 남으므로 순서를 못 흔든다. 새 글자는 덧붙이기만
 "$PY" "$T/freeze_glyphs.py" --check
 
 # 6. 빌드 — 코드 패치 사전조건 · 시스템 문구 자리 · 컨테이너 재조립 · 무변경 대조 · 되읽기
 "$PY" "$T/build.py"
+
+# 7. 조판 지문 — 공용(shared/text)이 이 게임의 줄바꿈을 흔들면 운다. 문안을 의도적으로 바꿨을 때만 --freeze
+echo "-- 조판 지문 --"
+"$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game pce-ed1

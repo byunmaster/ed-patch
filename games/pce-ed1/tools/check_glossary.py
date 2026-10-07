@@ -22,9 +22,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
+import messages as M
 
 sys.path.insert(0, str(common.ROOT))
-from shared.glossary import all_names, diff_labels
+from shared.glossary import all_names
 
 CATS = ("monster", "person", "place", "item")
 HANGUL = re.compile(r"[가-힣]")
@@ -81,7 +82,7 @@ def pairs() -> list[tuple[str, str, str]]:
         sp = s / p.name
         if not sp.exists():
             continue
-        kr = json.loads(sp.read_text("utf-8")).get("messages", {})
+        kr = M.load_translations(int(p.stem[3:]))
         for r in json.loads(p.read_text("utf-8")):
             v = kr.get(r["key"])
             if v and v.get("t"):
@@ -107,26 +108,6 @@ def missing(rows=None, tbl=None) -> list[tuple[str, str, set[str], str]]:
     return out
 
 
-def ui_diff():
-    """⑤ 메뉴·커맨드 라벨 ↔ 정본 `ui`(`diff_labels`). 묶음 라벨(전투 커맨드 창)은 칸마다 갈라 견준다 —
-    `強さ` 는 자리마다 다른 말이라 전투 커맨드 창에선 `強さ@전투커맨드`(강함)로 묻는다(10-07: 「상태」로 나가고 있었다)."""
-    d = json.loads((common.GAME_DIR / "script" / "sys" / "labels.json").read_text("utf-8"))
-    mine = {}
-    sep = r"\{[0-9A-F]+\}|　+"
-    for jp, kr in d.get("labels", d).items():
-        if jp.startswith("_") or not isinstance(kr, str):
-            continue
-        a = [w for w in re.split(sep, jp) if w]
-        b = [w for w in re.split(sep, kr) if w]
-        if len(a) != len(b):
-            continue
-        for x, y in zip(a, b, strict=True):
-            if "戦う" in a and x == "強さ":
-                x = "強さ@전투커맨드"
-            mine.setdefault(x, y)
-    return diff_labels(mine), len(mine)
-
-
 def main() -> int:
     rows = pairs()
     if not rows:
@@ -136,12 +117,8 @@ def main() -> int:
     print(f"사전 대조 — 정본 이름 {len(canon()):,} · 우리 줄 {len(rows):,}")
     for where, name, want, kr in bad:
         print(f"  🔴 {where}  {name} → {'/'.join(sorted(want))}  ⟨{kr}⟩")
-    (ui, unmatched), n = ui_diff()
-    for jp, want, ours in ui:
-        print(f"  🔴 라벨 {jp}: 정본 「{want}」 · 우리 「{ours}」")
-    print(f"  라벨 {n - len(unmatched)}/{n} 견줌(나머지는 정본에 없는 이 게임 라벨)")
-    print("  ✅ 다른 표기 잔존 0" if not (bad or ui) else f"  🔴 {len(bad) + len(ui)}건")
-    return 1 if (bad or ui) else 0
+    print("  ✅ 다른 표기 잔존 0" if not bad else f"  🔴 {len(bad)}건")
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":

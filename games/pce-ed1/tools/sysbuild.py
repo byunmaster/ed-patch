@@ -44,16 +44,99 @@ class SysError(Exception):
     pass
 
 
+CANON = "ed1"  # 공통 문안 정본 — ED1 은 PS1 씨앗(`shared/canon/ed1.json`, 마스터 10-08)
+
+
 def glossary() -> dict[str, str]:
-    """JP → 우리 표기. **공용 `glossary.all_names()` 가 준다** — 우리가 정본을 훑지 않는다.
+    """JP → 우리 표기. **고유명사는 사전(`glossary.all_names`)이, 화자 호칭·UI 낱말은 정본(`canon`)이 준다** —
+    우리가 표를 들지 않는다(마스터 10-08 「사전 = 고유명사만 · 공통 문안은 정본」).
 
     🔴 옛 판은 정본을 **평평하게** 훑어 `_aliases` 의 값(`強さ@전투커맨드` 꼴)까지 표시 문안으로
     셌다(2026-09-08 실측: 게이트가 「정본에 없는 글자 `@능티`」로 울었다). **게임마다 「밑줄로
-    시작하는 절은 건너뛴다」를 알 게 아니라** 공용이 `categories` 만 준다.
+    시작하는 절은 건너뛴다」를 알 게 아니라** 공용이 `categories` 만 준다. 자리가 붙은 열쇠(`원문@자리`)는 안 낸다.
+    사전이 먼저, 그다음 화자 호칭(兵士·侍女…), 마지막이 UI 낱말(何もない…)이다.
     """
-    import glossary as G  # shared/ (common 이 sys.path 에 올린다)
+    import canon  # shared/ (common 이 sys.path 에 올린다)
+    import glossary as G
 
-    return {jp: kr for _c, jp, kr in G.all_names()}
+    out: dict[str, str] = {}
+    for _c, jp, kr in G.all_names():
+        out.setdefault(jp, kr)
+    for cat in ("speaker", "ui"):
+        for jp, kr in canon.table(cat, CANON).items():
+            if "@" not in jp:
+                out.setdefault(jp, kr)
+    return out
+
+
+# ─── 메뉴 라벨 — 정본 `ui` 낱말을 구분자(전각 공백·제어 토큰) 사이에서 읽는다 ──────────────────────────
+_LABEL_SEP = re.compile(r"(\{[0-9A-Fa-f]+\}|\u3000+)")
+# 같은 원문이 자리마다 다른 말일 때 어느 칸인가 — 정본 열쇠가 `원문@자리` 다. 주소로 고른다(코드 지식 — 이름이 아니다).
+LABEL_CTX = {0x9640: "능력치"}
+_CTX_ORDER = ("파티메뉴", "전투설정", "경험치표시")  # 주소로 안 정해지면 이 순서로 처음 있는 자리
+
+
+def chapter_kr(jp: str) -> str | None:
+    """장 제목 칸 `第１章　王子の旅立ち` → `제1장　왕자의 여행` — 제목은 정본 `chapter`, 머리 「제N장　」만 여기서 만든다."""
+    import canon
+
+    m = re.match(r"第([０-９])章　(.+)$", jp)
+    if not m:
+        return None
+    kr = canon.table("chapter", CANON).get(m.group(2))
+    return None if kr is None else f"제{m.group(1).translate(_FW2ASCII)}장　{kr}"
+
+
+_FW2ASCII = str.maketrans("０１２３４５６７８９", "0123456789")
+
+
+def canon_label(jp: str, addr: int | None = None) -> str | None:
+    """원본 라벨(제어 토큰 `{XX}` 포함) → 정본 `ui` 로 만든 우리 라벨. 낱말 하나라도 정본에 없으면 None.
+
+    구분자(`{XX}` · 전각 공백 덩어리)는 그대로 두고 그 사이 낱말만 바꾼다 — 칸 정렬이 원본 배치 그대로다.
+    「戦う」가 든 줄은 전투 커맨드 창이라 `원문@전투커맨드` 열쇠를 먼저 본다.
+    """
+    import canon
+
+    ui = canon.table("ui", CANON)
+    alias = canon.load(CANON).get("_aliases", {})
+    battle_cmd = "戦う" in jp
+    out = []
+    any_word = False
+    for i, part in enumerate(_LABEL_SEP.split(jp)):
+        if i % 2 == 1 or not part:
+            out.append(part)
+            continue
+        ctxs = ["전투커맨드"] if battle_cmd else []
+        if addr in LABEL_CTX:
+            ctxs.append(LABEL_CTX[addr])
+        ctxs += _CTX_ORDER
+        kr = None
+        for key in (part, alias.get(part)):
+            if key is None:
+                continue
+            for c in ctxs:
+                kr = ui.get(f"{key}@{c}")
+                if kr is not None:
+                    break
+            if kr is None:
+                kr = ui.get(key)
+            if kr is not None:
+                break
+        if kr is None:
+            return None
+        out.append(kr)
+        any_word = True
+    return "".join(out) if any_word else None
+
+
+def label_kr(r: dict, overrides: dict | None = None) -> str | None:
+    """라벨 하나의 우리 문구 — `labels.json`(정본이 못 대는 자리·원본 유지 `null`)이 먼저, 없으면 정본에서 읽는다."""
+    ov = _load("labels.json") if overrides is None else overrides
+    for k in (f"@{r['addr']:04X}", r["jp"]):
+        if k in ov:
+            return ov[k]
+    return canon_label(r["jp"], r["addr"])
 
 
 def _load(name):
@@ -75,8 +158,9 @@ def all_glyph_chars() -> set[str]:
             kr = names.get(fam, {}).get(r["jp"], gl.get(r["jp"]))
             if kr:
                 chars |= {c for c in kr if font.needs_glyph(c)}
-    for k, v in _load("labels.json").items():
-        if k != "_doc" and v is not None:  # null = 원본 유지로 판정한 것
+    for r in S.read_labels():
+        v = label_kr(r)  # null = 원본 유지로 판정한 것 · 정본에도 없으면 None
+        if v is not None:
             chars |= {c for c in TOK.sub("", v) if font.needs_glyph(c)}
     for v in _load("sysmsg.json").get("messages", {}).values():
         chars |= {c for c in TOK.sub("", v) if font.needs_glyph(c)}
@@ -92,15 +176,15 @@ def all_glyph_chars() -> set[str]:
     return chars
 
 
-def encode_tokens(text: str, table, msg: bool = False) -> bytes:
+def encode_tokens(text: str, table, msg: bool = False, half_space: bool = False) -> bytes:
     """`{XX}` 토큰은 그 바이트로, 나머지는 font.encode. `msg` = 대사창 문안(시스템 메시지·전투 문구) — 공백은 반각."""
     out = bytearray()
     pos = 0
     for m in TOK.finditer(text):
-        out += font.encode(text[pos : m.start()], table, msg=msg)
+        out += font.encode(text[pos : m.start()], table, msg=msg, half_space=half_space)
         out += bytes.fromhex(m.group(1))
         pos = m.end()
-    out += font.encode(text[pos:], table, msg=msg)
+    out += font.encode(text[pos:], table, msg=msg, half_space=half_space)
     return bytes(out)
 
 
@@ -193,6 +277,8 @@ def apply(f, table, touched) -> dict:
     check_keys(errors)  # 정본에 써 놓고 안 붙는 열쇠부터 잡는다
 
     def kr_of(fam, jp):
+        if fam == "chapter" and jp not in names.get(fam, {}):
+            return chapter_kr(jp)
         return names.get(fam, {}).get(jp, gl.get(jp))
 
     # 고정폭 표
@@ -259,12 +345,13 @@ def apply(f, table, touched) -> dict:
     b6d = S.bank_bytes(0x6D)
     cnt = 0
     for r in S.read_labels():
-        kr = labels.get(
-            f"@{r['addr']:04X}", labels.get(r["jp"])
-        )  # 같은 JP 가 뜻이 다를 때 주소로 덮는다
-        if kr is None:  # 미판정이거나 **원본 유지로 판정**(null) — 둘 다 안 건드린다
+        kr = label_kr(r, labels)  # labels.json(주소·원문 순)이 먼저, 없으면 정본 ui
+        if kr is None:  # 정본에도 없거나 **원본 유지로 판정**(null) — 안 건드린다
             continue
         enc = encode_tokens(kr, table)
+        if len(enc) > r["room"]:
+            # 칸이 모자라면 공백을 반 칸 변형 코드로 접는다(아이템 이름과 같은 길 — 바이트 0, 마스터 10-07)
+            enc = encode_tokens(kr, table, half_space=True)
         if len(enc) > r["room"]:
             errors.append(f"label 「{r['jp']}」→「{kr}」 {len(enc)}B > {r['room']}B")
             continue

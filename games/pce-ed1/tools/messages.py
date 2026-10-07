@@ -295,19 +295,29 @@ def load_translations(scene_id: int) -> dict[str, dict]:
     p = SCRIPT_DIR / f"scn{scene_id:03d}.json"
     if not p.exists():
         return {}
-    d = json.loads(p.read_text())
-    return d.get("messages", {})
+    msgs = json.loads(p.read_text()).get("messages", {})
+    out = {}
+    for k, v in msgs.items():
+        if "jp" in v:
+            # 입장 배너(scn000) — 지명은 **사전(place)이 정본**이고 여기는 원문 지명 + 가운데맞춤 공백(`lead`·`tail`)뿐이다
+            import glossary as G  # shared/
+
+            kr = G.lookup(v["jp"], "place")
+            if kr is None:
+                raise KeyError(f"scn{scene_id:03d} 열쇠 {k}: 사전(place)에 {v['jp']!r} 가 없다")
+            v = {**v, "t": v.get("lead", "") + kr + v.get("tail", "")}
+        out[k] = v
+    return out
 
 
 def load_speaker_overrides() -> dict[str, str]:
-    """`script/speakers.json` 만 — 정본 위에 얹는 보충·덮어쓰기."""
+    """`script/speakers.json`(있으면) — 사전·정본 위에 얹는 보충·덮어쓰기. 10-08 에 5줄이 전부 사전·정본에 들어가 파일을 걷었다."""
     return json.loads(SPEAKERS.read_text()) if SPEAKERS.exists() else {}
 
 
 def load_speakers() -> dict[str, str]:
-    """화자 이름 = **`shared/glossary` 가 정본**이고 `script/speakers.json` 은 보충·덮어쓰기.
-
-    역할군(兵士·神父·道具屋…)까지 정본에 들어 있어 따로 적을 필요가 없다(2026-09-06 확인).
+    """화자 이름 = 인물은 **`shared/glossary`**, 역할군(兵士·神父·道具屋…)은 **`shared/canon`**(speaker)이 정본이다.
+    `script/speakers.json` 이 있으면 그 위에 얹는 보충·덮어쓰기.
     """
     import sysbuild  # 지연 임포트 — 순환을 피한다
 

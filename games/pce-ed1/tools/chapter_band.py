@@ -159,14 +159,22 @@ def tiles_needed(width_px):
 # 마스터 확정(2026-09-15): **갈무리11 · 공백은 혼합**(장 번호 뒤 전각 · 낱말 사이 반각).
 # 문안은 이미 승인된 D2 장 카드 것을 그대로 쓴다(`script/scn*.json`) — 두 자리가 갈리면
 # 안 되니 여기서 새로 짓지 않는다.
-KR_TITLES = (
-    "제１장 왕자의 여행",
-    "제２장 침묵의 주문",
-    "제３장 국왕의 증표",
-    "제４장 매혹된 국왕",
-    "제５장 요사한 빛의 탑",
-    "종장 그리고 영웅들의 전설",
-)
+def _kr_titles():
+    """장 제목 여섯 — 낱말은 정본 `chapter`(마스터 10-08: 모든 장 제목 정본)에서 읽고 「제N장」 머리만 여기서 붙인다."""
+    import sys as _sys
+    from pathlib import Path as _P
+
+    _sys.path.insert(0, str(_P(__file__).resolve().parents[3] / "shared"))
+    import canon
+
+    jp_kr = list(canon.table("chapter", "ed1").values())
+    nums = "１２３４５"
+    return tuple(
+        (f"제{nums[i]}장 " if i < 5 else "종장 ") + kr for i, kr in enumerate(jp_kr)
+    )
+
+
+KR_TITLES = _kr_titles()
 SPACE_PX = [12, 6]  # 첫 공백(장 번호 뒤) 전각, 나머지 반각
 STREAM_OFF = 0x030  # 글리프 스트림이 시작하는 자리(디렉터리 바로 뒤)
 STREAM_END = 0x608  # 첫 BAT 표 자리 = 스트림이 넘으면 안 되는 선

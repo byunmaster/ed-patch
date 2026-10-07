@@ -23,8 +23,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import battle
 import common
 import hud_plate
+import messages as M
 import sysbuild
 import sysstrings as S
+
+CANON = "ed1"  # 공통 문안 정본(`shared/canon/ed1.json` — PS1 씨앗, 마스터 10-08) — `check_canon.py` 가 읽는다
+CANON_GATE = True  # 어긋남 0(승인 예외 제외)이면 켠다 — 켜면 `check_canon` 어긋남이 실패다
 
 DERIVED = common.GAME_DIR / "work" / "derived"
 SCRIPT = common.GAME_DIR / "script"
@@ -36,7 +40,7 @@ def _load(p: Path):
 
 def _scenes():
     for p in sorted((DERIVED / "messages").glob("scn*.json")):
-        kr = _load(SCRIPT / p.name).get("messages", {})
+        kr = M.load_translations(int(p.stem[3:]))  # 입장 배너(scn000)는 사전에서 풀린 문안
         for r in json.loads(p.read_text("utf-8")):
             e = kr.get(r["key"]) or {}
             # `raw` = 씬 0 의 입장 배너 표(원판이 가운데맞춤 공백을 구워 낸 고정폭 칸) — 비대사
@@ -69,11 +73,8 @@ def _system():
             if r["jp"]:
                 kr = names.get(fam, {}).get(r["jp"], gl.get(r["jp"]))
                 yield (f"fixed:{fam}#{r['i']}", r["jp"], kr, "slot")
-    labels = _load(SCRIPT / "sys" / "labels.json")
-    labels = labels.get("labels", labels)
     for r in S.read_labels():
-        kr = labels.get(f"@{r['addr']:04X}", labels.get(r["jp"]))
-        yield (f"label:{r['addr']:04X}", r["jp"], kr if isinstance(kr, str) else None, "slot")
+        yield (f"label:{r['addr']:04X}", r["jp"], sysbuild.label_kr(r), "slot")  # 정본 ui 에서 읽은 라벨(+ labels.json 잔여)
     screens = _load(SCRIPT / "sys" / "screens.json")
     for sc in S.read_screens():
         kr = screens.get(sc["key"])
