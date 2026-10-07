@@ -21,6 +21,7 @@ import ast
 
 import battle
 import common
+import halfspace
 
 TAG = re.compile(r"<[^>]*>")
 NAME_TAG = re.compile(r"\{([^{}|]+)(?:\|[^{}]+)?\}")  # 전투 문안의 몬스터 이름 자리(빌드가 채운다)
@@ -39,8 +40,6 @@ BAD_PUNCT = {
 # 칸이 표기를 이기는 자리 — 근거와 함께 적는다(2026-09-06)
 TERM_EXCEPTIONS = {
     "聖なる杖": "아이템 칸 14B — PS1 「성스러운 지팡이」는 15B",
-    "ダイヤの杖": "아이템 칸 14B — PS1 「다이아의 지팡이」는 15B",
-    "ギルモアの虹": "아이템 칸 14B — PS1 「길모아의 무지개」는 15B",
 }
 # 판정 대기 — 표기가 갈린 걸 **알고** 마스터 판정을 기다리는 자리. 실패로 치지 않고 목록만 보인다.
 # 🔴 실패로 두면 `check.sh`(set -e)가 **여기서 멈춰 뒤 검사가 통째로 안 돈다** — 2026-09-16~27 실제로
@@ -72,7 +71,7 @@ def _entries() -> list[tuple[str, str, str, str]]:
             elif isinstance(v, dict):  # names.json: 표 이름 → 항목
                 for kk, vv in v.items():
                     if isinstance(vv, dict):
-                        out.append((f"{name}:{k}", kk, vv.get("jp", ""), vv.get("ours", "")))
+                        out.append((f"{name}:{k}", kk, vv.get("jp", ""), halfspace.plain(vv.get("ours", ""))))
     for p in sorted((common.GAME_DIR / "script").glob("*.json")):
         d = json.loads(p.read_text(encoding="utf-8"))
         for off, e in d.get("streams", {}).items():

@@ -31,6 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
+import halfspace
 
 LIMIT = 210  # 메시지 창 한 줄(px)
 FULL, HALF = 12, 6
@@ -38,7 +39,10 @@ T = common.GAME_DIR / "textmap"
 
 
 def width(s: str) -> int:
-    return sum(HALF if ord(c) < 0x80 else FULL for c in s)
+    return sum(
+        FULL + halfspace.EXTRA_PX if c == halfspace.PUA else HALF if ord(c) < 0x80 else FULL
+        for c in s
+    )
 
 
 def longest(names: list[str]) -> str:

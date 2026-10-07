@@ -27,6 +27,7 @@ import common
 import field_hud
 import field_names
 import gfxtext
+import halfspace
 import hangul
 import josa
 import lz
@@ -75,6 +76,12 @@ class Rom:
         "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 12),
         "wrap-code": (TAIL_HI - JOSA_RESERVE - WRAP_RESERVE, TAIL_HI - JOSA_RESERVE),
         "wrap-tramp": (wordwrap.TRAMP, wordwrap.TRAMP + 6),
+        "half-code": (
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE + halfspace.CODE_OFF,
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE + halfspace.CODE_OFF + halfspace.CODE_LEN,
+        ),
+        "half-tramp": (halfspace.TRAMP, halfspace.TRAMP + 6),
+        "half-site": (halfspace.SITE, halfspace.SITE + 4),
         **{f"wrap-site:{s:x}": (s, s + 4) for s in wordwrap.SITES},
         "field-hud-space-tramp": (
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE,
@@ -366,6 +373,7 @@ def collect_chars(tm: dict) -> set[str]:
     for e in tm["monsters"].values():
         chars.update(e.get("ours", ""))
     chars.update(field_hud.chars())  # 필드 HUD 뒷말·방위(문안을 안 거친다) — 늘 굽는다
+    chars.update(halfspace.chars())  # 「의␣」 — 아이템 칸 14B 에 반각 공백을 녹인 합성 글자
     chars.update(field_names.chars())  # 대본 블록 91 지명 표(문안 스트림 밖) — 늘 굽는다
     return chars
 
@@ -504,6 +512,8 @@ def main(check_only: bool = False) -> None:
         rom.write(label, pos, body)
     # 2d. 어절 줄넘김 — 렌더러($978C)가 넘칠 때 글자가 아니라 어절을 다음 줄로 보낸다(마스터 2026-09-30)
     for label, pos, body in wordwrap.plan(orig, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE):
+        rom.write(label, pos, body)
+    for label, pos, body in halfspace.plan(cs, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE):
         rom.write(label, pos, body)
     # ⚠ 합성 글리프(field_hud·field_names 의 PUA 콘덴스드 슬라이스)는 뺀다 — 일부러 큰 왼쪽
     # 여백을 구워 둔 자리라(공백을 그림 안에 녹였다) 정상 글자처럼 재면 문턱이 깨진다. 이

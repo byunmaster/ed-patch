@@ -19,6 +19,7 @@ import archives
 import battle
 import captions
 import common
+import halfspace
 import scene
 import sysmsg
 
@@ -112,7 +113,7 @@ def _names_pairs():
             jp = ent.get("jp")
             if not jp:
                 continue
-            yield f"names:{cat}[{idx}]", jp, (ent.get("ours") or None)
+            yield f"names:{cat}[{idx}]", jp, (halfspace.plain(ent.get("ours") or "") or None)
 
 
 def pairs():
