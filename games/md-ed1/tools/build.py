@@ -53,7 +53,7 @@ CAPTION_RESERVE = (
 # ⚠ 표는 **한글 코드 수를 따라 자란다**(종성 비트표 = 코드 하나에 1비트). 0x180 으로 재 두었더니
 # 글자 33 자를 새로 굳히자마자 2바이트가 넘쳤다(2026-09-07). 그래서 **글리프 상한**(1,370자)까지
 # 재 둔다 — 172B(한글 비트표) + 16B(반각) + 252B(기계어) + 쌍 표 ≈ 460B.
-JOSA_RESERVE = 0x280
+JOSA_RESERVE = 0x340  # 0x280→0x340: 으로/로·과/와 를 넣으며 표가 2비트(받침·ㄹ)로 커졌다 — 글리프 1,370자일 때 기계어 388 + 표 383 = 771B
 # 조사 훅 앞에 어절 줄넘김 본체(tools/wordwrap.py, 326B)를 둔다 — 넘칠 때 글자가 아니라 어절을
 # 다음 줄로 보낸다(마스터 2026-09-30 번복, 전 기종 — 09-27 밤의 글자 단위 "최종 판정"을 다시 뒤집었다)
 WRAP_RESERVE = 0x180
@@ -374,6 +374,7 @@ def collect_chars(tm: dict) -> set[str]:
     for e in tm["monsters"].values():
         chars.update(e.get("ours", ""))
     chars.update(field_hud.chars())  # 필드 HUD 뒷말·방위(문안을 안 거친다) — 늘 굽는다
+    chars.update(josa.chars())  # 조사 훅이 그리는 글자(는은가이를을와과으로) — 늘 굽는다
     chars.update(halfspace.chars())  # 「의␣」 — 아이템 칸 14B 에 반각 공백을 녹인 합성 글자
     chars.update(field_names.chars())  # 대본 블록 91 지명 표(문안 스트림 밖) — 늘 굽는다
     return chars

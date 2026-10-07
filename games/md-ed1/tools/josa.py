@@ -20,7 +20,7 @@ PS1 은 조립 버퍼를 1패스로 훑어 병기를 줄이는 방식이었다. 
     EC p   아이템 이름 기준 조사 — 이름 버퍼 `$FF2028`
            p 상위 니블 = 1 이면 **주문 이름 버퍼 `$FF3450`**(시스템 메뉴 주문 사용 「…외웠다」 — 코드가
            `lea $ff3450,a1 → jsr $60a0` 로 이름을 그린 직후 스트림 $7412 를 부른다, 2026-09-26 실측)
-    p 하위 니블 = 0 은/는 · 1 이/가 · 2 을/를
+    p 하위 니블 = 0 은/는 · 1 이/가 · 2 을/를 · 3 과/와 · 4 으로/로(ㄹ 받침은 「로」)
     EB 의 p 상위 니블 = 0 이면 위 규칙, **0 이 아니면 (상위−1) 번 파티원**을 쓴다 —
                   `<09 nn>`(번호로 이름을 그리는 코드) 뒤에 붙는 자리를 위해서다
                   **상위 니블 = F 면 리더**(`$FF1AEC`) — `<0b>`(리더 이름) 뒤 조사. 전투의 이름 바꿈
@@ -62,23 +62,33 @@ ITEM_BUF = 0xFF2028  # 아이템 이름 버퍼
 SPELL_BUF = 0xFF3450  # 주문 이름 버퍼(EC 의 p 상위 니블 1)
 
 # p → (받침 없음, 받침 있음)
-PAIRS = [("는", "은"), ("가", "이"), ("를", "을")]
+PAIRS = [("는", "은"), ("가", "이"), ("를", "을"), ("와", "과")]
+JOSA_CHARS = "는은가이를을와과으로"  # 훅이 그리는 글자 — 글꼴 표에 코드가 있어야 한다(빌드가 chars() 로 넣는다)
+P_EURO = 4  # 으로/로 — 한 글자가 아니라 「으」+「로」/「로」라 쌍 표 밖에서 따로 그린다
+
+
+def chars() -> set[str]:
+    return set(JOSA_CHARS)
 # 반각을 한국어로 읽었을 때 받침이 있는 글자 — 숫자만(1=일 · 3=삼 · 6=육 · 7=칠 · 8=팔 · 0=영)
 ASCII_FINAL = set("013678")  # 숫자만 읽은 소리대로 — 영문·부호는 무받침(위 docstring)
+ASCII_RIEUL = set("178")  # 일·칠·팔 = ㄹ 받침 — 「레스1로」(으로/로 는 「로」)
 
 
-def bitmap(bits: list[bool]) -> bytes:
-    """LSB 우선 비트맵 — 핸들러가 `btst d0,d1` 로 읽는다(비트 0 이 LSB)."""
-    out = bytearray((len(bits) + 7) // 8)
-    for i, v in enumerate(bits):
-        if v:
-            out[i >> 3] |= 1 << (i & 7)
+def bitmap(vals: list[int]) -> bytes:
+    """LSB 우선 **2비트** 표 — 값 0 = 받침 없음 · 1 = 받침 있음 · 2 = ㄹ 받침(으로/로 가 「로」).
+    핸들러가 `lsr.b d0,d1` 로 읽는다(항목 i 는 바이트 i>>2 의 비트 (i&3)*2)."""
+    out = bytearray((len(vals) + 3) // 4)
+    for i, v in enumerate(vals):
+        out[i >> 2] |= (v & 3) << ((i & 3) * 2)
     return bytes(out)
 
 
-def has_final(ch: str) -> bool:
-    """한글 음절에 종성이 있나 — (코드 − 0xAC00) % 28 ≠ 0."""
-    return "가" <= ch <= "힣" and (ord(ch) - 0xAC00) % 28 != 0
+def final_kind(ch: str) -> int:
+    """한글 음절의 종성 — 0 없음 · 1 있음 · 2 ㄹ(종성 인덱스 8). (코드 − 0xAC00) % 28."""
+    if not ("가" <= ch <= "힣"):
+        return 0
+    j = (ord(ch) - 0xAC00) % 28
+    return 0 if j == 0 else (2 if j == 8 else 1)
 
 
 def tables(cs) -> tuple[bytes, int]:
@@ -87,11 +97,13 @@ def tables(cs) -> tuple[bytes, int]:
     base = min(codes.values())
     n = max(codes.values()) - base + 1
     by_code = {v: k for k, v in codes.items()}
-    hangul = bitmap([has_final(by_code.get(base + i, "")) for i in range(n)])
+    hangul = bitmap([final_kind(by_code.get(base + i, "")) for i in range(n)])
     # 🔴 68000 은 워드를 **짝수 자리**에서만 읽는다 — 비트표가 홀수면 뒤따르는 조사 쌍 표가
     # 홀수로 밀려 `move.w (a0,d0.w),d2` 가 어긋난 값을 집는다(2026-09-06 인게임에서 물렸다).
     hangul += b"\x00" * (len(hangul) & 1)
-    ascii_ = bitmap([chr(0x20 + i) in ASCII_FINAL for i in range(0x60)])
+    ascii_ = bitmap(
+        [(2 if chr(0x20 + i) in ASCII_RIEUL else 1 if chr(0x20 + i) in ASCII_FINAL else 0) for i in range(0x60)]
+    )
     pairs = b"".join(struct.pack(">HH", codes[a], codes[b]) for a, b in PAIRS)  # (받침 없음, 있음)
     return hangul + ascii_ + pairs, n
 
@@ -101,21 +113,22 @@ def code(at: int, cs) -> tuple[bytes, bytes]:
     tbl, n = tables(cs)
     base = min(cs.hangul.values())
     # 표는 코드 **뒤에** 붙는데 코드 안에 표 주소가 박힌다 — 길이를 먼저 재고(1패스) 자리를 넣어 다시 짠다.
-    body = _asm(at, None, base, n)
+    eu, ro = cs.hangul["으"], cs.hangul["로"]
+    body = _asm(at, None, base, n, eu, ro)
     tbl_at = at + len(body)
-    body = _asm(at, tbl_at, base, n)
+    body = _asm(at, tbl_at, base, n, eu, ro)
     assert tbl_at == at + len(body), "코드 길이가 2패스에서 갈렸다"
     return body, tbl
 
 
-def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
+def _asm(at: int, tbl_at: int | None, base: int, n: int, eu: int, ro: int) -> bytes:
     """손인코딩 — 표 자리를 모르는 1패스에선 0 으로 채워 길이만 잰다."""
     t = tbl_at if tbl_at is not None else 0
     hangul_tbl = t
-    hangul_len = (n + 7) // 8
+    hangul_len = (n + 3) // 4  # 2비트 표
     hangul_len += hangul_len & 1  # 짝수 정렬(tables() 와 같은 규칙)
     ascii_tbl = t + hangul_len
-    pairs_tbl = ascii_tbl + 0x0C
+    pairs_tbl = ascii_tbl + 0x18
     if tbl_at is not None:
         assert pairs_tbl % 2 == 0 and hangul_tbl % 2 == 0, "표가 홀수 자리다 — 워드 읽기가 어긋난다"
     b = bytearray()
@@ -253,21 +266,27 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
     struct.pack_into(">h", b, bit_br + 2, bit - (bit_br + 2))
     struct.pack_into(">h", b, bit_br2 + 2, bit - (bit_br2 + 2))
     w(0x3001)  # move.w d1,d0
-    w(0xE649)  # lsr.w #3,d1
+    w(0xE449)  # lsr.w #2,d1        2비트 표 — 바이트 = 색인 / 4
     w(0xD0C1)  # adda.w d1,a0
-    w(0x0240, 0x0007)  # andi.w #7,d0
+    w(0x0240, 0x0003)  # andi.w #3,d0
+    w(0xD040)  # add.w d0,d0        비트 위치 = (색인 % 4) * 2
     w(0x1210)  # move.b (a0),d1
-    w(0x0101)  # btst d0,d1
-    pick_br5 = len(b)
-    w(0x6700, 0)  # beq.w pick        비트 0 = 받침 없음
-    w(0x7401)  # moveq #1,d2
+    w(0xE029)  # lsr.b d0,d1
+    w(0x0241, 0x0003)  # andi.w #3,d1
+    w(0x3401)  # move.w d1,d2       종성 종류: 0 없음 · 1 있음 · 2 ㄹ
     # ── 조사를 골라 그린다 ────────────────────────────────────────
     pick = len(b)
-    for br in (pick_br1, pick_br2, pick_br3, pick_br4, pick_br5):
+    for br in (pick_br1, pick_br2, pick_br3, pick_br4):
         struct.pack_into(">h", b, br + 2, pick - (br + 2))
     w(0x7000)  # moveq #0,d0
     w(0x1011)  # move.b (a1),d0     p (피연산자 — a1 은 디스패처가 민다)
-    w(0x0240, 0x0003)  # andi.w #3,d0      하위 니블만(상위는 파티 번호)
+    w(0x0240, 0x0007)  # andi.w #7,d0      하위 니블만(상위는 파티 번호)
+    w(0x0C40, P_EURO)  # cmpi.w #4,d0      으로/로 는 따로
+    p4_br = len(b)
+    w(0x6700, 0)  # beq.w p4
+    w(0x0C42, 0x0002)  # cmpi.w #2,d2      ㄹ 받침도 일반 조사에선 받침 있음
+    w(0x6602)  # bne.s +2
+    w(0x7401)  # moveq #1,d2
     w(0xE548)  # lsl.w #2,d0        p*4
     w(0xD442)  # add.w d2,d2        종성*2
     w(0xD042)  # add.w d2,d0
@@ -283,6 +302,32 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int) -> bytes:
     w(0x4EB9)
     l(RENDER)  # jsr RENDER.l
     w(0x588F)  # addq.l #4,a7
+    w(0x4CDF, 0x0307)  # movem.l (a7)+,d0-d2/a0-a1
+    w(0x4E75)  # rts
+    # ── p = 4: 으로/로 — 받침 없음·ㄹ 받침은 「로」, 그 밖은 「으로」(문자열 6B: [으][로][06][00] 또는 [로][06][00][00 00])
+    p4 = len(b)
+    struct.pack_into(">h", b, p4_br + 2, p4 - (p4_br + 2))
+    w(0x0C42, 0x0001)  # cmpi.w #1,d2
+    ro_br = len(b)
+    w(0x6600, 0)  # bne.w ro_only
+    w(0x3F3C, 0x0600)  # move.w #$0600,-(a7)
+    w(0x3F3C, ro)  # move.w #로,-(a7)
+    w(0x3F3C, eu)  # move.w #으,-(a7)
+    render_br = len(b)
+    w(0x6000, 0)  # bra.w render
+    ro_only = len(b)
+    struct.pack_into(">h", b, ro_br + 2, ro_only - (ro_br + 2))
+    w(0x3F3C, 0x0000)  # move.w #0,-(a7)
+    w(0x3F3C, 0x0600)  # move.w #$0600,-(a7)
+    w(0x3F3C, ro)  # move.w #로,-(a7)
+    render = len(b)
+    struct.pack_into(">h", b, render_br + 2, render - (render_br + 2))
+    w(0x224F)  # movea.l a7,a1
+    w(0x203C)
+    l(MAGIC)  # move.l #MAGIC,d0
+    w(0x4EB9)
+    l(RENDER)  # jsr RENDER.l
+    w(0x5C8F)  # addq.l #6,a7
     w(0x4CDF, 0x0307)  # movem.l (a7)+,d0-d2/a0-a1
     w(0x4E75)  # rts
     _asm.item_entry = item_entry
@@ -335,7 +380,7 @@ def check(d: bytes) -> None:
             raise SystemExit(f"코드 {c:02x} 의 원본 핸들러가 rts 가 아니다 @{h:#x}")
         if d[ARGLEN_TBL + idx] != 0:
             raise SystemExit(f"코드 {c:02x} 의 원본 피연산자 길이가 0 이 아니다")
-    cs = hangul.Charset(d, set("는은가이를을"))
+    cs = hangul.Charset(d, set(JOSA_CHARS))
     body, tbl = code(0x1F0000, cs)
     print(
         f"  조사 훅 — 코드 {CODE_ACTOR:02x}/{CODE_ITEM:02x} · 기계어 {len(body)}B · 표 {len(tbl)}B"
@@ -347,7 +392,7 @@ if __name__ == "__main__":
     if "--asm" in sys.argv:
         import hangul
 
-        cs = hangul.Charset(d, set("는은가이를을"))
+        cs = hangul.Charset(d, set(JOSA_CHARS))
         body, _tbl = code(0x1F0000, cs)
         print("\n".join(verify(body, 0x1F0000)))
     else:
