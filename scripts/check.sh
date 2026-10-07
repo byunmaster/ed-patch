@@ -69,6 +69,12 @@ for g in $GAMES; do
   fi
   echo "── [$g]"
   sh "$gate" || fail=1
+  # 이름 검사 — 잣대는 공용 하나(shared/glossary/names.py), 게임은 「원문 줄 · 우리 줄」 어댑터만(마스터 10-07).
+  # 🔴 어댑터가 없으면(rc 2) **실패** — 번역 게임 일곱에 다 붙었다(10-07). 번역 트랙이 아니면 해당 없음(0).
+  names_rc=0
+  names_out=$("$PY" "$ROOT/scripts/check/check_names.py" --game "$g" 2>&1) || names_rc=$?
+  printf '%s\n' "$names_out" | sed 's/^/  /'
+  if [ "$names_rc" -ne 0 ]; then fail=1; fi
 done
 
 # 게임 브랜치가 공용·남의 게임을 건드렸나 — 공용 코드·남의 게임은 알림만(급하면 어길 수 있어야 한다).
