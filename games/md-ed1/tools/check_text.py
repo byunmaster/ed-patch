@@ -41,9 +41,6 @@ TERM_EXCEPTIONS = {
     "聖なる杖": "아이템 칸 14B — PS1 「성스러운 지팡이」는 15B",
     "ダイヤの杖": "아이템 칸 14B — PS1 「다이아의 지팡이」는 15B",
     "ギルモアの虹": "아이템 칸 14B — PS1 「길모아의 무지개」는 15B",
-    "狼の口": "마스터 확정 2026-09-28 — MD·PS1 둘 다 「늑대의입」(HUD·배너 붙임). PS1 브랜치는"
-    " 이미 그렇고, 정본 대조가 물고 오는 건 main 에 머지돼 있는 **옛 PS1 사본**이라 갈려 보일"
-    " 뿐이다 — ps1-ed1+2 가 라운드 끝에 머지되면 맞춰지니 그때 이 예외를 지운다",
 }
 # 판정 대기 — 표기가 갈린 걸 **알고** 마스터 판정을 기다리는 자리. 실패로 치지 않고 목록만 보인다.
 # 🔴 실패로 두면 `check.sh`(set -e)가 **여기서 멈춰 뒤 검사가 통째로 안 돈다** — 2026-09-16~27 실제로
@@ -92,7 +89,12 @@ def _ps1_canon() -> dict[str, str]:
             if isinstance(cat, dict):
                 canon.update({k: v for k, v in cat.items() if isinstance(v, str)})
     ps1 = common.ROOT / "games" / "ps1-ed1+2" / "tools"
-    for f, names in (("patch_items.py", {"NAMES", "MONSTERS"}), ("patch_sys_ui.py", {"PLACES"})):
+    # ⚠ PLACES 는 빌드 중간값일 수 있다(2026-10-05, ps1 쪽 주석) — PLACES_ON_SCREEN(있으면) 이
+    # 화면에 실제로 나가는 최종 표기라 **나중에 읽어 덮어쓴다**(파일 안 정의 순서가 PLACES 뒤).
+    for f, names in (
+        ("patch_items.py", {"NAMES", "MONSTERS"}),
+        ("patch_sys_ui.py", {"PLACES", "PLACES_ON_SCREEN"}),
+    ):
         p = ps1 / f
         if not p.exists():
             continue

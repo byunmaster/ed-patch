@@ -52,9 +52,9 @@ CAPTION_RESERVE = (
 # 글자 33 자를 새로 굳히자마자 2바이트가 넘쳤다(2026-09-07). 그래서 **글리프 상한**(1,370자)까지
 # 재 둔다 — 172B(한글 비트표) + 16B(반각) + 252B(기계어) + 쌍 표 ≈ 460B.
 JOSA_RESERVE = 0x280
-# 조사 훅 앞에 로그 줄넘김 가드 본체(tools/wordwrap.py, 86B)를 둔다 — 글자 단위는 그대로, 고아 부호·
-# 줄 첫 칸 공백만 막는다(2026-09-27 밤, 어절 접기를 하루 만에 되돌렸다 — 기종 공통 최종 판정)
-WRAP_RESERVE = 0x60
+# 조사 훅 앞에 어절 줄넘김 본체(tools/wordwrap.py, 326B)를 둔다 — 넘칠 때 글자가 아니라 어절을
+# 다음 줄로 보낸다(마스터 2026-09-30 번복, 전 기종 — 09-27 밤의 글자 단위 "최종 판정"을 다시 뒤집었다)
+WRAP_RESERVE = 0x180
 # 어절 줄넘김 앞에 필드 HUD 뒷말·방위 앞 공백 트램펄린(tools/field_hud.py, 18B)을 둔다(2026-09-27 밤)
 FIELD_HUD_RESERVE = 0x20
 
@@ -502,9 +502,15 @@ def main(check_only: bool = False) -> None:
     # 2c. 조사 훅 — 이름 뒤 조사를 런타임에 고른다(제어코드 EB·EC)
     for label, pos, body in josa.plan(orig, cs, TAIL_HI - JOSA_RESERVE):
         rom.write(label, pos, body)
-    # 2d. 로그 줄넘김 가드 — 글자 단위는 그대로, 고아 부호·줄 첫 칸 공백만 막는다(렌더러 $978C 의 반각 줄바꿈 호출)
+    # 2d. 어절 줄넘김 — 렌더러($978C)가 넘칠 때 글자가 아니라 어절을 다음 줄로 보낸다(마스터 2026-09-30)
     for label, pos, body in wordwrap.plan(orig, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE):
         rom.write(label, pos, body)
+    # ⚠ 합성 글리프(field_hud·field_names 의 PUA 콘덴스드 슬라이스)는 뺀다 — 일부러 큰 왼쪽
+    # 여백을 구워 둔 자리라(공백을 그림 안에 녹였다) 정상 글자처럼 재면 문턱이 깨진다. 이
+    # 글리프들은 로그 렌더러($978C)를 안 타는 고정폭 HUD 전용이라 애초에 안 재도 된다.
+    normal_wide = {v for k, v in cs.hangul.items() if k not in hangul.CUSTOM_GLYPHS}
+    gap, sp = wordwrap.gap_gate(bytes(rom.buf), normal_wide)
+    print(f"  어절 줄넘김 — 글자 틈 최대 {gap}px < 문턱 {wordwrap.SPACE_PX}px ≤ 공백 틈 최소 {sp}px")
     # 2e. 필드 HUD 뒷말(부근·입구)·방위(동서남북) — 문안을 안 거치고 코드가 SJIS 를 직접 찍는 여덟 자리
     field_hud_tramp_at = TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE
     for label, pos, body in field_hud.plan(cs, field_hud_tramp_at):
