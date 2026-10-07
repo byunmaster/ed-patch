@@ -2,7 +2,7 @@
 
     python3 tools/names_corpus.py --check   # 분모만(블록·스트림 수) 찍는다
 
-`pairs()` = `[(자리, 원문 줄, 우리 줄 또는 None)]` — **문안 전체**(script 225블록 · battle 110블록 ·
+`pairs()` = `[(자리, 원문 줄, 우리 줄 또는 None, 갈래)]` (갈래 "dialog" = 메시지 창에 나가는 문장 — script·battle·sysmsg·captions · "slot" = 이름 칸·표 — monsters·names) — **문안 전체**(script 225블록 · battle 110블록 ·
 sysmsg · captions · monsters.json · names.json, 압축 해제 기준)에 대해 낸다. 미번역은 None 으로
 내서 분모에 들게 한다(마스터 10-07 — 「9/225 만 보고 0건」이 이 구멍이었다).
 
@@ -24,6 +24,9 @@ import scene
 import sysmsg
 
 
+DIALOG, SLOT = "dialog", "slot"  # 갈래 — 메시지 창 문장(대사·전투 로그·시스템 메시지·캡션)은 지명 띄어쓰기까지 잰다, 칸·표·로그는 무시(마스터 10-07)
+
+
 def _script_pairs(rom: bytes):
     import json
 
@@ -41,7 +44,7 @@ def _script_pairs(rom: bytes):
             n_streams += 1
             jp = st.text()
             ours = kr_map.get(f"{off:04x}", {}).get("ours") or None
-            yield f"script:{n:03d}:{off:04x}", jp, ours
+            yield f"script:{n:03d}:{off:04x}", jp, ours, DIALOG
 
 
 def _battle_pairs(rom: bytes):
@@ -63,7 +66,7 @@ def _battle_pairs(rom: bytes):
         # 「{アクダム}」가 문자 그대로 비교돼 항상 어긋난 것으로 보인다.
         if ours:
             ours = battle.expand_names(ours, monsters)
-        yield f"battle:{blk:03d}:{k}", e["text"], ours or None
+        yield f"battle:{blk:03d}:{k}", e["text"], ours or None, DIALOG
 
 
 def _sysmsg_pairs(rom: bytes):
@@ -75,7 +78,7 @@ def _sysmsg_pairs(rom: bytes):
     for addr, e in strs.items():
         jp = sysmsg.render(e["stream"])
         ours = kr_map.get(f"{addr:06x}", {}).get("ours") or None
-        yield f"sysmsg:{addr:06x}", jp, ours
+        yield f"sysmsg:{addr:06x}", jp, ours, DIALOG
 
 
 def _captions_pairs(rom: bytes):
@@ -87,7 +90,7 @@ def _captions_pairs(rom: bytes):
     for addr, e in strs.items():
         jp = e["stream"].text()
         ours = kr_map.get(f"{addr:06x}", {}).get("ours") or None
-        yield f"captions:{addr:06x}", jp, ours
+        yield f"captions:{addr:06x}", jp, ours, DIALOG
 
 
 def _monsters_pairs():
@@ -96,7 +99,7 @@ def _monsters_pairs():
     p = common.GAME_DIR / "textmap" / "monsters.json"
     d = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
     for jp, v in d.items():
-        yield f"monsters:{jp}", jp, (v.get("ours") or None)
+        yield f"monsters:{jp}", jp, (v.get("ours") or None), SLOT
 
 
 def _names_pairs():
@@ -113,7 +116,7 @@ def _names_pairs():
             jp = ent.get("jp")
             if not jp:
                 continue
-            yield f"names:{cat}[{idx}]", jp, (halfspace.plain(ent.get("ours") or "") or None)
+            yield f"names:{cat}[{idx}]", jp, (halfspace.plain(ent.get("ours") or "") or None), SLOT
 
 
 def pairs():
@@ -128,6 +131,6 @@ def pairs():
 
 if __name__ == "__main__":
     n = 0
-    for _where, _jp, ours in pairs():
+    for _where, _jp, _ours, _kind in pairs():
         n += 1
     print(f"  names_corpus: 줄 {n}")
