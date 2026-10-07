@@ -29,6 +29,14 @@ echo "     ✅ 통과"
 SCN=$(ls "$G/script/" 2>/dev/null | sed -n 's/\(ED1SCN[0-9]*\)\.json/\1/p' | tr '\n' ' ')
 
 fail=0
+# 🔴 검사가 실패하면 **그 출력의 꼬리를 찍는다**(2026-10-07). 예전엔 `|| fail=1` 만 하고 요약 한 줄(`tail -1`)을 찍어서
+#   검사기가 「✅ …」 요약으로 끝나면서 종료 코드만 1 인 경우(`check_speakers` 가 화자맵 어긋남 1건을 중간에 ❌ 로 찍고
+#   끝줄은 ✅) 게이트가 **아무 이유도 없이** 빨간불이 됐다 — 盗賊 이름창 구멍이 그렇게 한참 가려졌다.
+gate_fail() {
+  fail=1
+  echo "     ❌ $1 실패(종료 코드 ≠ 0) — 출력 끝 12줄:"
+  printf '%s\n' "$2" | grep -v '^[[:space:]]*$' | tail -12 | sed 's/^/        /'
+}
 # 🔴 2026-09-12 까지 아래 다섯이 **있는데 게이트에 안 물려 있었다**(마스터 QA 로 발각).
 #   초록불이 「없다」가 아니라 「아무도 안 본다」였다 — check_jp_left·check_scn_jp_left 는
 #   화면·EXE 일본어 잔존, check_shop_verbs 는 매매 동사 뒤집힘, check_variants·
@@ -40,7 +48,7 @@ fail=0
 # 🔴 2026-09-27: check_typeset_rules(씬 조판 ①~④) · check_prewrap_rules(런타임 줄넘김 ①~④·⑦·⑧,
 #   ~90초 — 빌드 EXE 의 prewrap 을 통째로 실행한다) 추가. 둘 다 만들어 놓고 게이트에 안 물려 있었다.
 for t in check_tail_cut check_terms check_spellings check_forbidden check_proper_nouns check_battle_wrap check_battle_grid_wrap check_punct check_name_echo check_onomatopoeia check_pointer_tables check_iso_layout check_readback check_movie_coverage check_card_centering check_window_nl check_log_register check_register_vs_jp check_jp_left check_scn_jp_left check_shop_verbs check_variants check_leader_variants check_window_frame check_typeset_rules check_prewrap_rules; do
-  out=$("$PY" "$T/$t.py" 2>&1) || fail=1
+  out=$("$PY" "$T/$t.py" 2>&1) || gate_fail "$t" "$out"
   echo "$out" | tail -3 | sed 's/^/     /'
 done
 
@@ -48,7 +56,7 @@ done
 # 그 구간이 원문 그대로 나간다(ED2 49블록 실측). ② **정본에 항목조차 없는 블록** — 순회가
 # 번역표를 돌아 아예 안 보였다(8블록 실측 2026-08-19). 둘 다 구조 게이트는 초록이라 여기서만
 # 잡힌다. ⚠ 요약은 검사기가 **맨 끝 한 줄**로 합쳐 낸다(중간에 진행 출력이 끼어든다).
-out=$("$PY" "$T/check_jp_leak.py" 2>&1) || fail=1
+out=$("$PY" "$T/check_jp_leak.py" 2>&1) || gate_fail check_jp_leak "$out"
 echo "$out" | tail -1 | sed 's/^/     /'
 "$PY" "$T/check_jp_leak.py" --ed2 2>&1 | tail -1 | sed 's/^/     [ED2] /'
 
@@ -61,15 +69,15 @@ echo "$out" | tail -1 | sed 's/^/     /'
 # 463곳 나왔고 그건 실패가 아니라 할 일」이라 보고만 했는데, **463곳은 08-17 에 다 닫혔고
 # 지금 0이다.** 0 이 된 축을 보고로 두면 다시 늘어도 아무도 안 본다.
 # shellcheck disable=SC2086
-out=$("$PY" "$T/check_block_join.py" $SCN 2>&1) || fail=1
+out=$("$PY" "$T/check_block_join.py" $SCN 2>&1) || gate_fail "check_block_join(ED1)" "$out"
 echo "$out" | tail -1 | sed 's/^/     /'
 # shellcheck disable=SC2046
-out=$("$PY" "$T/check_block_join.py" $(for i in $(seq 1 13); do echo -n "ED2SCN$i "; done) 2>&1) || fail=1
+out=$("$PY" "$T/check_block_join.py" $(for i in $(seq 1 13); do echo -n "ED2SCN$i "; done) 2>&1) || gate_fail "check_block_join(ED2)" "$out"
 echo "$out" | tail -1 | sed 's/^/     [ED2] /'
 
 # 조사 받침 일치 + 변수 뒤 병기. ⚠ **상주 게이트다** — 오타는 아직 화면에 안 나온 자리에
 # 있다가 배정이 진행되며 하나씩 올라온다(실측 2026-08-17: 화면 코퍼스 0건인데 전량엔 3건).
-out=$("$PY" "$T/check_josa_agreement.py" 2>&1) || fail=1
+out=$("$PY" "$T/check_josa_agreement.py" 2>&1) || gate_fail check_josa_agreement "$out"
 echo "$out" | grep -E '✅|❌' | sed 's/^/     /'
 
 # 같은 화자·같은 JP 인데 문안이 갈리는 자리 — ⚠ **게이트로 안 세운다**(늘 빨간불이 된다).
@@ -105,7 +113,7 @@ echo "$out" | grep -E '✅|❌' | sed 's/^/     /'
 
 if [ -n "$SCN" ]; then
   # shellcheck disable=SC2086
-  out=$("$PY" "$T/check_speakers.py" $SCN 2>&1) || fail=1
+  out=$("$PY" "$T/check_speakers.py" $SCN 2>&1) || gate_fail check_speakers "$out"
   echo "$out" | tail -1 | sed 's/^/     /'
   echo "     (이름창은 정본 씬만: $SCN)"
 fi
