@@ -98,10 +98,10 @@ class FullLine(unittest.TestCase):
         table, _bank = font.build_table("가나다라마바사아자차카타파하")
         text = "가나다라마바사아자차카타파 하나"  # 첫 줄이 13칸을 꽉 채운다
         pages = typeset.pages(text, speaker=False)
-        self.assertEqual(len(pages[0][0]), typeset.WIDTH, pages)
+        self.assertEqual(typeset.cols(pages[0][0]), typeset.FULL, pages)
         msg = M.Message(0, 4, None, None, [("op", 0x00)])
         out = translate.compose(msg, {"t": text}, table, {})
-        first = font.encode(pages[0][0], table)
+        first = font.encode(pages[0][0], table, msg=True)
         self.assertTrue(out.startswith(first))
         self.assertNotEqual(out[len(first)], translate.NL)
 
@@ -113,7 +113,7 @@ class FullLine(unittest.TestCase):
         table, _bank = font.build_table("가나다라마바사아자차카타파하")
         text = "가나다라마바사아 자차카타파하가나다"  # 첫 줄 8칸(틀 미만) → 개행이 붙는다
         pages = typeset.pages(text, speaker=False)
-        self.assertLess(len(pages[0][0]), typeset.WIDTH, pages)
+        self.assertLess(typeset.cols(pages[0][0]), typeset.FULL, pages)
         msg = M.Message(0, 4, None, None, [("op", 0x00)])
         out = translate.compose(msg, {"t": text}, table, {})
         self.assertIn(bytes([translate.NL]), out)

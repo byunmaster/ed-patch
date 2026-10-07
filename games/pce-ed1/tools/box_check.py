@@ -27,7 +27,7 @@ import common
 
 
 def _main_tree() -> Path:
-    """🔴 산출물은 **메인 트리**의 `.local/inbox/<게임>/` 에 둔다 — 마스터가 거기를 본다.
+    """🔴 산출물은 **메인 트리**의 `.local/work/inbox/<게임>/` 에 둔다 — 마스터가 거기를 본다.
     워크트리 안에 떨어뜨리면 안 보인다(다른 게임 `qa_shot.py` 와 같은 규약)."""
     import subprocess
 
@@ -130,7 +130,7 @@ def main():
     args = ap.parse_args()
 
     if args.export_fixed:
-        out = _main_tree() / ".local" / "inbox" / common.GAME / "box_fixed_tiles.json"
+        out = _main_tree() / ".local" / "work" / "inbox" / common.GAME / "box_fixed_tiles.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         data = bp.export_fixed_tiles_json(str(out))
         print(f"{out}: 예약 {data['reserved_count']}장 · 새 타일 예산 {data['budget_for_new']}장")

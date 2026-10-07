@@ -1,6 +1,8 @@
 """한글 글리프 뱅크 + 코드표 — 문안이 쓰는 음절만 싣는다(결정 B, status.md 8절).
 
-    글리프 = 12×12 → 24B(행 0~11, 2B/행, 비트 15~4). 뱅크 0x86~0x87 에 순서대로(24B × ≤682).
+    글리프 = 12×12 → 화면용 24B(행 0~11, 2B/행, 비트 15~4). **뱅크엔 12비트 행으로 묶어 18B** 로 싣는다
+    (`pack`, 10-07) — 리드 하나(220자)가 3,960B, 뱅크 하나에 리드 둘(0x86=F0·F1, 0x87=F2·F3) · 880자.
+    후킹이 그 뱅크 꼬리의 풀기 루틴(`hook.unpack_asm`)으로 24B 로 되돌린다.
     코드  = 리드 F0+idx//220 · 트레일 0x24+idx%220 (idx 는 **정본 순서**의 번호 — `script/glyph_order.json`).
     ⚠ 트레일은 0x24 이상 — 인터프리터가 <0x24 를 옵코드로 보고, 이름칸 스캐너가 0x06 을 끝으로 본다.
 
@@ -22,14 +24,40 @@ LEAD0 = 0xF0
 TRAIL0 = 0x24
 # 🔴 **2뱅크**(0x86~0x87)다 — 2026-09-25 3뱅크에서 줄였다. 리소스 캐시(0x78~0x87, 16칸)에서 글리프가
 #    가져간 만큼 게임의 칸이 준다. 13칸으로는 종장 맵이 넘쳐(원본이 이 자리에서 14칸을 쓴다) 장 제목 띠의
-#    적재가 **조용히 실패**했다(devlog 09-25). 682자 상한 — 넘으면 빌드가 멈춘다(재검토: status.md 8절).
+#    적재가 **조용히 실패**했다(devlog 09-25). 상한은 아래 `MAX_GLYPHS`(18B 묶음, 880자) — 넘으면 빌드가 멈춘다.
 GLYPH_NBANKS = 2
 GLYPH_BANK0 = 0x88 - GLYPH_NBANKS  # 캐시 맨 끝 칸들
-MAX_GLYPHS = GLYPH_NBANKS * 0x2000 // GLYPH_BYTES  # 682
+# 🔴 **18B 묶음 저장**(10-07) — 24B 는 행마다 아래 4비트가 늘 0 이라 6B 가 빈다. 전투 문안만으로 41자가 더
+#    필요한데 2뱅크 24B 로는 676자가 끝이었다(682 − 어절 루틴 자리). 묶으면 리드 하나 = 220×18 = 3,960B 라
+#    **뱅크에 리드 둘이 딱 들고**(7,920B) 걸치는 글자가 없다(24B 땐 순번 341 이 뱅크 경계에 걸려 「십」이 깨졌다).
+PACKED_BYTES = 18
+LEADS_PER_BANK = 2
+GROUP_BYTES = PER_LEAD * PACKED_BYTES  # 3960
+BANK_GLYPH_END = (
+    LEADS_PER_BANK * GROUP_BYTES
+)  # 0x1EF0 — 뒤 272B 는 풀기 루틴(`hook.unpack_asm`, 뱅크마다) 자리
+# 🔴 **마지막 글리프 뱅크 끝 `CODE_SLOTS` 칸은 코드 자리다**(10-07 반각) — 어절 줄바꿈 `hook.wordck` 과 반 칸 전진 `hook._entry_asm` 가
+#   여기 산다(게임이 안 쓰는 우리 뱅크라서다. 10-07: 뱅크 0x69·0x6A·워크 RAM `$22BC~` 의 「빈 자리」는 실행 중에 다 쓰이고 있었다).
+#   글리프 정본이 733자라 끝 칸들은 어차피 빈다 — 상한만 그만큼 준다(`MAX_GLYPHS`). 풀기 루틴 뒤 꼬리 168B 는 비어 있다.
+CODE_SLOTS = 28
+CODE_BYTES = CODE_SLOTS * PACKED_BYTES  # 504
+MAX_GLYPHS = GLYPH_NBANKS * LEADS_PER_BANK * PER_LEAD - CODE_SLOTS  # 852
+# 🔴 **반 칸(4px) 전진 변형 코드**(마스터 10-07) — 리드 F4~F7 = 「리드 F0~F3 의 같은 트레일 글자를 평소대로 그리고 +4px」.
+#    글리프 칸을 안 먹는다(글자는 그대로, 코드만 다르다). 글리프가 이 리드를 쓰기 시작하면(상한 넘김) 빌드가 멈춘다.
+#    렌더러 훅은 `hook._narrow_asm`(렌더러 입구 `$7047`).
+VARIANT_LEAD0 = LEAD0 + GLYPH_NBANKS * LEADS_PER_BANK  # F4
+VARIANT_LEADS = GLYPH_NBANKS * LEADS_PER_BANK  # 4
+assert VARIANT_LEAD0 + VARIANT_LEADS <= 0xF8  # F8 은 반각 공백, F9 는 동적 조사 전용
+# 🔴 **반각 공백**(마스터 10-07 「대사창 전체에 반각 해야지」) — 대사창(씬 대사 · 전투 문구 · 시스템 메시지)의 공백은 4px 만 간다.
+#    `F8 24` = 「안 그리고 4px 전진」(렌더러 훅 `hook._narrow_asm`). 전각 공백 `81 40`(12px)은 입장 배너 가운데맞춤·고정표·라벨 패딩이
+#    그대로 쓴다 — 그래서 **다른 코드**다.
+HALF_SPACE = bytes([0xF8, 0x24])
+# 반각 부호 — 잉크가 왼쪽 4px 안인 글리프(마스터 도트 `?` 4px 포함). 대사창에서 12px 칸에 그린 뒤 8px 되감아 4px 만 간다.
+NARROW_PUNCT = ".,!?·"  # 마스터 10-07: … ～ 「」 는 전각 유지, 나머지 부호는 반각
 # 🔴 리드 F9 는 **동적 조사** 전용으로 예약한다(글리프 배정에서 뺀다) — `F9 (0x24+종류)`.
 #    후킹 루틴이 **직전에 그린 글자**의 받침을 보고 두 글리프 중 하나를 낸다(status.md 12절).
 JOSA_LEAD = 0xF9
-MAX_LEADS = JOSA_LEAD - LEAD0  # 9 → 1,980 자리, 뱅크(682)가 먼저 찬다
+MAX_LEADS = JOSA_LEAD - LEAD0  # 9 → 1,980 자리, 뱅크(`MAX_GLYPHS` 880)가 먼저 찬다
 JOSA_PAIRS = ["은/는", "이/가", "을/를", "과/와", "으로/로", "아/야", "이랑/랑"]
 JOSA_CHARS = sorted({c for p in JOSA_PAIRS for part in p.split("/") for c in part})
 
@@ -58,7 +86,7 @@ def _load_bdf() -> dict[int, tuple[int, int, int, int, list[int]]]:
 BASELINE_ROW = 11
 
 # 🔴 **`?` 는 마스터 도트로 바꾼다**(2026-09-27, 반각 C안) — 반각(4px, 0~3열) 폭에 맞춘 전용 글리프.
-# `.local/inbox/pce-ed1/master-dots-question-4x12.txt` 그대로(4×12, 행 11 기준선·빈 줄) — 픽셀 그대로 굽는다.
+# `.local/work/inbox/pce-ed1/master-dots-question-4x12.txt` 그대로(4×12, 행 11 기준선·빈 줄) — 픽셀 그대로 굽는다.
 # `shared/fonts/Galmuri11.bdf`(공용)의 원래 `?`(0~4열, 5px 폭)를 대체한다 — 공용 파일은 안 건드리고
 # 이 게임의 `glyph()` 에서만 가로챈다.
 QUESTION_4PX_ROWS = [
@@ -88,10 +116,32 @@ def _question_4px() -> bytes:
     return b"".join(v.to_bytes(2, "big") for v in out)
 
 
+# 🔴 **겹느낌표는 한 칸에 그린다**(10-07, 마스터 「회심의 일격! !」 — 「!!」 전각 벌어짐). 이 창은 글자마다 12px 칸이라
+#   부호 둘이 「! !」로 벌어진다. 반각 렌더러(C안)를 기다리지 않고 **두 부호를 4px 간격으로 한 글리프에** 굽고
+#   인코딩 때 바꿔 넣는다(`ligate`). 화면 폭은 오히려 한 칸 준다 — 조판·줄바꿈은 두 칸으로 세니 넘칠 일은 없다.
+LIGATURES = {"!!": "‼", "!?": "⁉"}
+LIGATURE_STEP = 4  # 둘째 부호를 오른쪽으로 민 픽셀
+
+
+def ligate(text: str) -> str:
+    for a, b in LIGATURES.items():
+        text = text.replace(a, b)
+    return text
+
+
 def glyph(ch: str) -> bytes:
     """한 글자 → 24B. 세로는 **베이스라인에 맞추고**(BDF `yo`) 가로는 왼쪽 정렬."""
     if ch == "?":
         return _question_4px()
+    lig = next((k for k, v in LIGATURES.items() if v == ch), None)
+    if lig is not None:
+        a, b = (glyph(c) for c in lig)
+        rows = [
+            int.from_bytes(a[i : i + 2], "big")
+            | (int.from_bytes(b[i : i + 2], "big") >> LIGATURE_STEP)
+            for i in range(0, GLYPH_BYTES, 2)
+        ]
+        return b"".join((v & 0xFFF0).to_bytes(2, "big") for v in rows)
     pk = packed_glyphs().get(ch) if 0xE000 <= ord(ch) <= 0xF8FF else None
     if pk is not None:
         return pk
@@ -189,8 +239,8 @@ DIGIT_READING = dict(zip("0123456789", "영일이삼사오육칠팔구", strict=
 
 def batchim_tables(order: list[str]) -> tuple[bytes, bytes]:
     """글리프 순서 → (받침 비트맵, ㄹ받침 비트맵) 각 128B. 비트 1 = 받침 있음."""
-    has = bytearray(MAX_GLYPHS // 8)
-    rieul = bytearray(MAX_GLYPHS // 8)
+    has = bytearray((MAX_GLYPHS + 7) // 8)
+    rieul = bytearray((MAX_GLYPHS + 7) // 8)
     for i, ch in enumerate(order):
         if ch in DIGIT_READING:  # 끝 숫자는 읽는 소리대로(마스터 09-26): 레스1을 · 레스2를
             f = (ord(DIGIT_READING[ch]) - 0xAC00) % 28
@@ -208,7 +258,7 @@ def batchim_tables(order: list[str]) -> tuple[bytes, bytes]:
 
 
 def josa_offsets(table: dict[str, bytes]) -> bytes:
-    """조사 종류별 (받침용, 무받침용) 글리프 오프셋 2B × 2 × 7 = 28B.
+    """조사 종류별 (받침용, 무받침용) 글리프 **코드**(트레일·리드) 2B × 2 × 7 = 28B — 후킹이 보통 글자 길로 낸다.
 
     ⚠ 두 글자짜리 조사(으로·이랑)는 **첫 글자만** 표에 넣고 둘째 글자는 문안이 그대로 들고 있는다 —
     루틴이 글리프 하나만 낼 수 있어서다(`으로/로` → 문안에 `{으로/로}로` 로 쓰지 않는다,
@@ -218,8 +268,8 @@ def josa_offsets(table: dict[str, bytes]) -> bytes:
     for pair in JOSA_PAIRS:
         a, b = pair.split("/")
         for part in (a, b):
-            idx = _index_of(part[0], table)
-            out += (idx * GLYPH_BYTES).to_bytes(2, "little")
+            c = table[part[0]]
+            out += bytes([c[1], c[0]])
     return bytes(out)
 
 
@@ -253,7 +303,7 @@ def build_table(chars) -> tuple[dict[str, bytes], bytes]:
     배정은 **정본 순서**를 따른다(`_order_canon`). 정본에 없는 글자가 있으면 **빌드가 죽는다** —
     `python3 tools/freeze_glyphs.py` 로 뒤에 덧붙이고 커밋한다(코드가 안 밀린다).
     """
-    need = set(chars) | set(JOSA_CHARS)
+    need = set(chars) | set(JOSA_CHARS) | set(LIGATURES.values())
     canon = _order_canon()
     missing = sorted(need - set(canon))
     if missing:
@@ -266,8 +316,11 @@ def build_table(chars) -> tuple[dict[str, bytes], bytes]:
     if len(order) > MAX_GLYPHS:
         raise ValueError(f"음절 {len(order)}자 — 상한 {MAX_GLYPHS}. 결정 B 재검토(status.md 8절)")
     table = {ch: code_of(i) for i, ch in enumerate(order)}
-    bank = b"".join(glyph(ch) for ch in order)
-    bank += b"\0" * (GLYPH_NBANKS * 0x2000 - len(bank))
+    bank = bytearray(GLYPH_NBANKS * 0x2000)
+    for i, ch in enumerate(order):
+        at = glyph_at(i)
+        bank[at : at + PACKED_BYTES] = pack(glyph(ch))
+    bank = bytes(bank)
     build_table.order = order  # 받침 표를 만들 때 쓴다
     return table, bank
 
@@ -288,17 +341,33 @@ def needs_glyph(ch: str) -> bool:
 JOSA_TOKEN = re.compile("|".join(re.escape(p) for p in JOSA_PAIRS))
 
 
-def encode(text: str, table: dict[str, bytes]) -> bytes:
+def variant(code: bytes) -> bytes:
+    """글리프 코드 → 「그 글자를 그리고 +4px」 변형 코드(리드만 `VARIANT_LEADS` 만큼 올린다)."""
+    assert LEAD0 <= code[0] < VARIANT_LEAD0, code.hex()
+    return bytes([code[0] + VARIANT_LEAD0 - LEAD0, code[1]])
+
+
+def encode(
+    text: str, table: dict[str, bytes], half_space: bool = False, msg: bool = False
+) -> bytes:
     """우리 문안 → 게임 바이트.
+
+    `msg` — 대사창 문안(씬 대사 · 전투 문구 · 시스템 메시지)이다: 공백은 **반각**(`HALF_SPACE`, 4px) 코드로 쓴다.
+    아니면 전각 공백(`81 40`, 12px) — 입장 배너·고정표·라벨 패딩.
+
+    `half_space` — 글리프 바로 뒤의 공백을 **반 칸**으로 쓴다: 그 글자를 변형 코드(`variant`, +4px)로 바꿔 공백 바이트를
+    따로 안 먹는다(칸이 바이트로 고정된 이름표에서 「성스러운 지팡이」를 7칸 14B 에 넣는다). 글리프 뒤가 아닌 공백(앞 · 연속 ·
+    부호 뒤)은 평소처럼 전각 공백이다.
 
     `은/는`·`이/가`·`을/를`·`과/와`·`으로/로`·`아/야`·`이랑/랑` 은 **동적 조사 토큰**이다 —
     앞말이 런타임에 정해지는 자리(이름·아이템)에 그대로 쓴다. 두 글자 조사는 첫 글자만 토큰이 되고
     둘째 글자는 보통 글자로 나간다(`으로/로` → `F9 28` + `로`).
     """
+    text = ligate(text)
     out = bytearray()
     pos = 0
     for m in JOSA_TOKEN.finditer(text):
-        out += encode(text[pos : m.start()], table) if m.start() > pos else b""
+        out += encode(text[pos : m.start()], table, half_space, msg) if m.start() > pos else b""
         pair = m.group()
         out += josa_code(pair)
         rest = pair.split("/")[0][1:]  # 받침용의 둘째 글자(으로→로, 이랑→랑)
@@ -306,14 +375,19 @@ def encode(text: str, table: dict[str, bytes]) -> bytes:
             out += table[rest[0]]
         pos = m.end()
     if pos:
-        return bytes(out) + encode(text[pos:], table)
+        return bytes(out) + encode(text[pos:], table, half_space, msg)
+    glyph_end = -1  # 바로 앞 글자가 우리 글리프였나(그 코드가 out 끝 2B)
     for ch in text:
         if ch in table:
             out += table[ch]
+            glyph_end = len(out)
         elif ch == "\n":
             out.append(0x01)
         elif ch == " ":
-            out += b"\x81\x40"  # 공백은 전각 한 칸 — 반각은 이 창에 없다(3절)
+            if half_space and glyph_end == len(out) and LEAD0 <= out[-2] < VARIANT_LEAD0:
+                out[-2:] = variant(bytes(out[-2:]))  # 글자 + 반 칸
+            else:
+                out += HALF_SPACE if msg else b"\x81\x40"  # 전각 한 칸(12px) · 대사창은 반각(4px)
         elif needs_glyph(ch):
             raise ValueError(f"글리프 표에 없는 글자: {ch!r} — 정본에서 모은 집합이 아니다")
         else:
@@ -321,11 +395,29 @@ def encode(text: str, table: dict[str, bytes]) -> bytes:
     return bytes(out)
 
 
-def base_table() -> bytes:
-    """후킹 루틴이 쓰는 리드별 글리프 오프셋(lo/hi 각 10B) — 코드 배치와 같은 식."""
-    lo = bytes(((i * PER_LEAD * GLYPH_BYTES) & 0xFF) for i in range(10))
-    hi = bytes(((i * PER_LEAD * GLYPH_BYTES) >> 8 & 0xFF) for i in range(10))
-    return lo + hi
+def glyph_at(idx: int) -> int:
+    """순번 → 글리프 뱅크들(이어 붙인 것) 안 바이트 자리. 뱅크 = 리드 둘씩, 리드 안은 18B 씩."""
+    g, k = divmod(idx, PER_LEAD)
+    return (g // LEADS_PER_BANK) * 0x2000 + (g % LEADS_PER_BANK) * GROUP_BYTES + k * PACKED_BYTES
+
+
+def pack(g: bytes) -> bytes:
+    """24B(행마다 hi·lo, lo 아래 4비트 0) → 18B(두 행 = 3B: hiA · loA|hiB>>4 · hiB<<4|loB>>4)."""
+    assert len(g) == GLYPH_BYTES
+    out = bytearray()
+    for r in range(0, 12, 2):
+        ha, la, hb, lb = g[2 * r], g[2 * r + 1], g[2 * r + 2], g[2 * r + 3]
+        assert not (la & 0x0F or lb & 0x0F), "12 칸 밖 잉크"
+        out += bytes([ha, la | hb >> 4, (hb << 4 & 0xF0) | lb >> 4])
+    return bytes(out)
+
+
+def unpack(b: bytes) -> bytes:
+    out = bytearray()
+    for i in range(0, PACKED_BYTES, 3):
+        b0, b1, b2 = b[i : i + 3]
+        out += bytes([b0, b1 & 0xF0, (b1 << 4 | b2 >> 4) & 0xFF, b2 << 4 & 0xF0])
+    return bytes(out)
 
 
 if __name__ == "__main__":

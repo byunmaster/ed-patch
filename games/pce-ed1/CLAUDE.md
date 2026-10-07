@@ -2,7 +2,8 @@
 
 **트랙: [kr]** — 일본 원판(HCD1020, Hudson 1991) 한글 번역 패치. 공용 규칙은 루트
 [`CLAUDE.md`](../../CLAUDE.md), 진행 현황은 [`docs/status.md`](docs/status.md),
-**번역·표기 방침은 [`docs/policy.md`](docs/policy.md)**, 경위·삽질은 [`docs/devlog.md`](docs/devlog.md).
+**번역·표기 방침은 [`docs/policy.md`](docs/policy.md)**, 경위·삽질은 [`docs/devlog.md`](docs/devlog.md),
+닫힌 판정·옛 점검 기록은 [`docs/judgments.md`](docs/judgments.md).
 🔴 대사 문안을 쓰거나 검수하기 전에 스킬 `rpg-translate` 와 `docs/policy.md` 를 연다.
 🎮 **인게임을 켜기 전에 [`docs/playbook.md`](docs/playbook.md)** — 조작·부팅 순서·전투가 나는 자리와 안 나는 자리. 없어서 회차를 한 번 접었다(2026-09-07).
 
@@ -17,16 +18,16 @@
 - **대본은 SJIS 평문이지만 LZ 로 묶여 있다.** 씬 블록(이벤트 코드 + 대본) 220개가 컨테이너
   24개에 압축돼 있고, 게임이 RAM 에 풀어 놓는다. 코덱은 [`tools/lz.py`](tools/lz.py)(왕복 검증됨).
   제어코드는 만트라 DOS·PC-98 과 같은 집안(`1F 화자 04` / `01` / `05` / `00`).
-- **음성이 있다.** 데이터 트랙의 3/4(rel ~1,750 이후, ~14MB)가 ADPCM 이다. 텍스트 없이
-  음성만 나가는 장면이 있으면 그건 kr 이 아니라 mod 다(루트 ROADMAP).
+- **음성이 있다.** 데이터 트랙의 3/4(rel ~1,750 이후, ~14MB)가 ADPCM 이다. 음성만 나가는 자리에도
+  한국어 자막을 단다 — 오프닝(D1)·나레이션 게이트 42곳(`tools/narration_gates.py`, policy.md 「나레이션」).
 - **디버깅은 emucap(mednafen pce)로 된다.** 브레이크포인트·트레이스가 다 걸린다 —
-  부팅 절차는 `docs/status.md` 5절.
+  부팅·조작은 [`docs/playbook.md`](docs/playbook.md).
 
 ## 원본
 
 `originals/jp/pce-ed1/` — redump `.cue`+`.iso`(2352B raw, 22트랙). 지문·경로 정본은
-[`tools/common.py`](tools/common.py). ⚠ **읽기 전용**이고, 쓰기 헬퍼는 재삽입 설계가 서기
-전까지 두지 않는다(`docs/patcher-checklist.md` 2).
+[`tools/common.py`](tools/common.py). ⚠ **읽기 전용**이다 — 빌드는 원본을 읽어 `work/build/` 새 이미지에만 쓴다
+(쓰기는 기대 바이트를 확인하는 `shared/disc` 의 `mode1.write_at` 로만, `docs/patcher-checklist.md` 2).
 ⚠ 같은 폴더의 `.ccd/.img/.sub` 세트는 중복 덤프라 도구가 안 읽는다. 원본 cue 는 ISO 파일명을
 대문자로 적어 리눅스에서 못 여니, 실행용 사본은 `work/emu/`(하드링크 + cue)다 — **거기 쓰지 마라.**
 
@@ -45,11 +46,17 @@ python3 games/pce-ed1/tools/messages.py                # 메시지 파싱 → wo
 python3 games/pce-ed1/tools/sysstrings.py              # 시스템 문구 가족 덤프 → work/derived/sys/
 python3 games/pce-ed1/tools/savefile.py goto <sav> 224 --out <sav2> --boost   # 씬 점프 세이브(슬롯 3, 종장 등)
 python3 games/pce-ed1/tools/gfx_text.py                # 그림 글자(엔딩 카드·오마케 간판·끝) 미리보기 → work/review/
+python3 games/pce-ed1/tools/narration_gates.py         # 나레이션 게이트($C04C) 전수 → work/review/ · 자막 패치 표(SITES)는 build 가 읽는다
+python3 games/pce-ed1/tools/voice.py --wav [--stt]     # 씬 음성(ADPCM) 꺼내기 + 로컬 Whisper 초벌 → work/review/voice/ (원문, 커밋 금지)
+python3 games/pce-ed1/tools/typeset_check.py --all     # 조판(13칸·어절 줄바꿈 런타임 흉내) — 시스템·전투·씬 위반
+python3 games/pce-ed1/tools/check_glossary.py          # 사전 대조 — 원문의 정본 이름이 우리 줄에 정본 표기로 있나 · UI 라벨
 sh games/pce-ed1/check.sh                          # ⭐ 이 게임의 커밋 전 게이트
 ```
 
 ⚠ **덤프는 `work/derived/` 로 나가고 커밋하지 않는다** — 원문이다(루트 「저작권」).
-번역 정본은 `script/`(scnNNN.json · speakers.json) — 형식·재삽입 규칙은 `docs/status.md` 10절.
+번역 정본은 `script/`(scnNNN.json · sys/*.json) — 형식·재삽입 규칙은 `docs/status.md` 10절.
+🔴 **고유명사는 사전(`shared/glossary`)에서 읽는다**(루트 CLAUDE.md, 마스터 10-07) — 이 폴더에 이름 표를 새로 만들지 않고,
+사전도 이 브랜치에서 고치지 않는다(새 이름·바꿀 이름은 관리자에게 후보로). 지금 따로 든 이름 데이터와 이관 계획은 status 「남은 일」.
 
 ## 좌표 규약 — **데이터 트랙 상대 섹터(rel)** 기준이다
 

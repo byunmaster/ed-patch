@@ -92,15 +92,15 @@ def all_glyph_chars() -> set[str]:
     return chars
 
 
-def encode_tokens(text: str, table) -> bytes:
-    """`{XX}` 토큰은 그 바이트로, 나머지는 font.encode."""
+def encode_tokens(text: str, table, msg: bool = False) -> bytes:
+    """`{XX}` 토큰은 그 바이트로, 나머지는 font.encode. `msg` = 대사창 문안(시스템 메시지·전투 문구) — 공백은 반각."""
     out = bytearray()
     pos = 0
     for m in TOK.finditer(text):
-        out += font.encode(text[pos : m.start()], table)
+        out += font.encode(text[pos : m.start()], table, msg=msg)
         out += bytes.fromhex(m.group(1))
         pos = m.end()
-    out += font.encode(text[pos:], table)
+    out += font.encode(text[pos:], table, msg=msg)
     return bytes(out)
 
 
@@ -203,7 +203,8 @@ def apply(f, table, touched) -> dict:
             kr = kr_of(fam, r["jp"])
             if not kr or not r["jp"]:
                 continue
-            enc = font.encode(kr, table)
+            # 아이템 이름은 14B 고정칸이라 「성스러운 지팡이」의 공백을 **반 칸 전진 변형 코드**로 접는다(마스터 10-07)
+            enc = font.encode(kr, table, half_space=(fam == "items"))
             if len(enc) > w:
                 errors.append(f"{fam} 「{r['jp']}」→「{kr}」 {len(enc)}B > {w}B")
                 continue
@@ -298,7 +299,7 @@ def apply(f, table, touched) -> dict:
             continue
         lead = b"".join(bytes.fromhex(t) for t in r["lead"])
         tail = b"".join(bytes.fromhex(t) for t in r["tail"])
-        body = encode_tokens(kr, table)
+        body = encode_tokens(kr, table, msg=True)
         new = lead + body + tail
         orig = b6d[r["off"] : r["off"] + r["room"]]
         core_len = len(orig.rstrip(b"\xff").rstrip(b"\0"))
@@ -326,6 +327,12 @@ def apply(f, table, touched) -> dict:
             )
             continue
         plan.append([r, new, orig])
+    # 옮겨 싣는 조각의 원 자리는 `0F 새주소`(3B)만 남는다 — 그 뒤 방도 남는 자리다(10-07: 전투 문구를 PS1 기준으로
+    #   늘리자 선언한 빈 공간이 150B 모자랐다). 자리표에 먼저 넣어 두고 주소는 아래에서 채운다.
+    spill_idx = {}
+    for r, _new, orig in spills:
+        spill_idx[r["addr"]] = len(plan)
+        plan.append([r, b"\x0f\x00\x00", orig])
     # 남는 자리: 우리가 쓴 단위의 끝(종료·점프 뒤)부터 방 끝까지 00 — 한 칸 띄우고 쓴다
     slack = sorted(
         (p[0]["off"] + len(p[1]) + 1, p[0]["off"] + p[0]["room"], i) for i, p in enumerate(plan)
@@ -336,27 +343,27 @@ def apply(f, table, touched) -> dict:
     pool.check_original(S.bank_bytes)
     pool_writes = []  # (Span, 뱅크 안 오프셋, 바이트)
     spilled = {}  # 자투리로 옮긴 조각: 주소 → (새 논리 주소, 바이트)
-    for r, new, orig in spills:
+    for r, new, _orig in spills:
         for k, (lo, hi, i) in enumerate(slack):
             if hi - lo >= len(new):
                 tgt = 0x8000 + lo
                 extra.setdefault(i, bytearray()).extend(new)
                 slack[k] = (lo + len(new), hi, i)
                 spilled[r["addr"]] = (tgt, new)
-                plan.append([r, bytes([0x0F, tgt & 0xFF, tgt >> 8]), orig])
+                plan[spill_idx[r["addr"]]][1] = bytes([0x0F, tgt & 0xFF, tgt >> 8])
                 stats["sysmsg_spill"] = stats.get("sysmsg_spill", 0) + 1
                 break
         else:
-            got = pool.alloc(0x6D, len(new))
+            got = pool.alloc((0x6D, 0x74), len(new))
             if got is None:
                 errors.append(
                     f"sysmsg {r['addr']:04X} 「{r['jp']}」 {len(new)}B — 옮겨 실을 빈자리가 없다"
                 )
                 continue
             span, off = got
-            tgt = 0x8000 + off
+            tgt = span.window + off
             pool_writes.append((span, off, new, r))
-            plan.append([r, bytes([0x0F, tgt & 0xFF, tgt >> 8]), orig])
+            plan[spill_idx[r["addr"]]][1] = bytes([0x0F, tgt & 0xFF, tgt >> 8])
             stats["sysmsg_pool"] = stats.get("sysmsg_pool", 0) + 1
     for span, off, data, r in pool_writes:
         _write(
@@ -370,8 +377,8 @@ def apply(f, table, touched) -> dict:
             f"sysmsg {r['addr']:04X} → 빈 공간 {span.bank:#x}+{off:#x}",
             touched,
         )
-    moved = {r["addr"]: (0x8000 + off, data) for _s, off, data, r in pool_writes}
-    moved.update(spilled)
+    moved = {r["addr"]: (s.window + off, data, s) for s, off, data, r in pool_writes}
+    moved.update({a: (t, d, None) for a, (t, d) in spilled.items()})
     inplace = {}  # 제자리 조각: 주소 → 바이트(패딩 전)
     for i, (r, new, orig) in enumerate(plan):
         if r["addr"] not in moved:
@@ -387,10 +394,11 @@ def apply(f, table, touched) -> dict:
     for addr, (r, data) in inplace.items():
         if _read(f, 0x6D, r["off"], len(data)) != data:
             raise SysError(f"sysmsg {addr:04X} 제자리 되읽기 실패 — 글이 사라졌다")
-    for addr, (tgt, data) in moved.items():
+    for addr, (tgt, data, span) in moved.items():
         r = next(x for x in S.read_sysmsg() if x["addr"] == addr)
         head = _read(f, 0x6D, r["off"], 3)
-        body = _read(f, 0x6D, tgt - 0x8000, len(data))
+        bank, win = (span.bank, span.window) if span else (0x6D, 0x8000)
+        body = _read(f, bank, tgt - win, len(data))
         if head != bytes([0x0F, tgt & 0xFF, tgt >> 8]) or body != data:
             raise SysError(f"sysmsg {addr:04X} 옮겨 싣기 되읽기 실패")
     stats["sysmsg"] = cnt

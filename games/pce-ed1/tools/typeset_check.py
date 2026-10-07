@@ -1,7 +1,9 @@
 """조립형 시스템 문장 조판 검사 — 가장 긴 이름·도구·주문을 넣어 13칸 창으로 돌린다.
 
-필드 메시지 창은 **한 줄 13칸**이고, 넘치면 **글자 단위로** 다음 줄로 넘긴다(2026-09-26 실측: 「횃불을 사용했다.」가
-「사용했/다.」로 잘렸다). 공백도 한 칸(전각 2B)이다 — 이 창엔 반각이 없다(인터프리터가 0x24 이상을 2B 글자로 읽는다).
+필드 메시지 창은 **한 줄 13칸**이다. 원판은 넘치면 글자 단위로 넘기지만(2026-09-26 실측: 「사용했/다.」) 우리 후킹이
+셋을 고친다 — `wrap()` 이 그 런타임을 그대로 흉내 낸다(`hook._wrap_asm` · `hook._wordck_asm`):
+**어절 단위**(10-07, 마스터 09-30 「로그성 메시지도 어절 단위」) · 부호 넷은 줄 끝에 매단다 · 자동으로 넘긴 줄의
+첫 공백은 칸을 안 먹는다. 공백은 **반각 4px**(마스터 10-07 — `font.HALF_SPACE`, 렌더러 훅 `hook._narrow_asm`)이라 칸은 `px // 12` 다.
 
 문장은 **정본 조각**(`script/sys/sysmsg.json`)을 열쇠로 끌어와 조립한다 — 문안을 여기 다시 쓰지 않는다(DRY).
 조립 순서(어느 조각 뒤에 무엇이 오는가)는 화면에서 본 흐름을 적은 것이라 **추정이 섞인 줄은 `guess=True`** 로 표시한다.
@@ -20,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
 import sysbuild
 import sysstrings as S
+import typeset
 
 WIDTH = 13
 PUNCT = set(".,!?。、！？…")
@@ -120,25 +123,45 @@ def pick_josa(s):
     return out + s[i:]
 
 
+HANG = set("!,.?")  # `hook.HANG_PUNCT` — 글리프 정본 앞 넷(F024·F025·F027·F02E)
+
+
 def wrap(s):
-    """13칸 창의 줄 — 넘치면 글자 단위로 넘기고, **꽉 찬 줄 뒤의 명시 줄바꿈은 빈 줄**이 된다
-    (인터프리터가 열 13 에서 스스로 넘긴 뒤 `01` 이 한 번 더 넘긴다 — translate.compose 주석, PS1 122곳 전례).
+    """13칸 창의 줄 — 런타임(후킹 포함)을 흉내 낸다. 꽉 찬(13칸) 줄 뒤의 명시 줄바꿈은 **빈 줄이 안 된다** — `01` 은 「다음 글자 전에
+    줄 바꿈」 표시(`$6AB5` = `INC $CF15`)일 뿐이고 줄 넘김은 한 번만 일어난다. 처음엔 PS1 전례(122곳)로 「빈 줄이 된다」고 모델했지만
+    **PCE 화면이 아니었다**(10-07 `round6-wordwrap-item` — 「류난은 횃불을 사용했다.」 정확히 13칸 + `01` 뒤 「하지만…」이 바로 다음 줄).
+
+    · 칸 = `px // 12` — 글자 12px · **공백 4px(반각, 10-07)**. 칸이 13 에 닿은 뒤 오는 글자는 새 줄(`$6D95`).
+    · 어절 첫 글자(앞이 공백)에서 「칸 + 어절 길이(매다는 부호 뺌) > 13」이면 그 글자부터 새 줄(`wordck`)
+    · 칸 13 에 온 글자가 부호 넷이면 넘기지 않고 매단다(`orphan`) · 넘긴 줄 첫 공백은 칸을 안 먹는다(`eat` + `flag`)
     (줄들, 자동 넘김 자리들[(윗줄 번호, 낱말 가운데인가)]) 를 돌려준다."""
     lines, cuts = [], []
     paras = s.split("\n")
-    for k, para in enumerate(paras):
-        cur = ""
+    for para in paras:
+        cur, px = "", 0
         for j, ch in enumerate(para):
-            if len(cur) == WIDTH:
-                prev = para[j - 1]
+            prev = para[j - 1] if j else ""
+            col = px // 12
+            brk = False
+            if col >= WIDTH and ch not in HANG:
+                brk = True
+            elif prev == " " and ch != " " and col > 0:
+                n = 0
+                for c in para[j:]:
+                    if c == " ":
+                        break
+                    n += c not in HANG
+                brk = col + n > WIDTH
+            if brk:
                 mid = prev != " " and ch != " " and prev not in PUNCT and ch not in PUNCT
                 lines.append(cur)
                 cuts.append((len(lines) - 1, mid))
-                cur = ""
+                cur, px = "", 0
+                if ch == " ":
+                    continue  # 줄 머리 공백은 안 그린다(`flag`) — 화면엔 없는 것과 같다
             cur += ch
+            px += 4 if ch in typeset.NARROW else 12
         lines.append(cur)
-        if len(cur) == WIDTH and k < len(paras) - 1:
-            lines.append("")  # 자동 넘김 + 명시 줄바꿈 = 빈 줄
     return lines, cuts
 
 

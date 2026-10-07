@@ -32,6 +32,7 @@ import gfx_text
 import hook
 import hud_plate
 import lz
+import narration_gates
 import opening_sub
 import staffroll
 import sysbuild
@@ -219,7 +220,8 @@ ONLY: set[str] | None = None
 `font`(글리프 뱅크 + 진입 스텁) · `cache`(16 → 16−글리프 뱅크 칸) · `hook`(EX_GETFNT 우회) ·
 `sys`(시스템 문구) · `battle`(전투 컨테이너) · `scn`(씬 컨테이너) ·
 `band`(장 제목 띠, rel 210) · `hud`(HUD 이름판·あと·상태 글자, rel 54·55) · `box`(빈 슬롯 상자 msg1, 뱅크 0x7B 재배치) ·
-`glyph`(글리프 뱅크 적재) · `payload`(후킹 루틴 + 표를 $3B00 에 싣기)
+`glyph`(글리프 뱅크 적재) · `payload`(후킹 루틴 + 표를 `hook.HOOK_ADDR`=$2300 에 싣기) ·
+`narr`(나레이션 게이트 자막 — 게이트 + 블록 꼬리 스텁, `narration_gates.patch_block`)
 — 뒤 둘은 `font` 안에서 다시 뺄 수 있다.
 🔴 **이게 소프트락을 가르는 유일한 도구다** — 증상이 나면 하나씩 끄며 A/B 한다.
 ⚠ `font` 를 끄면 글리프가 없어 한글 자리가 통째로 안 그려진다(파일 선택에서 멈춘다) —
@@ -312,12 +314,32 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
             )
         )
     if want("hook"):
-        # 4. EX_GETFNT 호출부(본 프로그램 4곳) → $3B00
+        # 4. EX_GETFNT 호출부(본 프로그램 4곳) → `hook.HOOK_ADDR`($2300)
         tgt = hook.HOOK_ADDR.to_bytes(2, "little")
         p.append(("dialog JMP $7044", *_main(0x6C, 0x1044), b"\x4c\x60\xe0", b"\x4c" + tgt))
         p.append(("name JMP $93A3", *_main(0x6D, 0x13A3), b"\x4c\x60\xe0", b"\x4c" + tgt))
         p.append(("JSR 6C+0F5A", *_main(0x6C, 0x0F5A), b"\x20\x60\xe0", b"\x20" + tgt))
         p.append(("JSR 78+0932", *_main(0x78, 0x0932), b"\x20\x60\xe0", b"\x20" + tgt))
+        # 4-2. 🔴 반 칸(4px) 전진 — 변형 코드 · 반각 공백. 렌더러 입구 `$7047` 의 `INC $38BB`(3B)를 `JSR 새 머리`로(마스터 10-07).
+        #      새 머리는 `hook.hook_narrow()`(페이로드 안). 변형이 아닌 글자는 `INC` 만 하고 RTS → `$704A` 로 원래대로 이어진다.
+        p.append(
+            (
+                "renderer entry INC→JSR narrow",
+                *_main(0x6C, 0x1047),
+                b"\xee\xbb\x38",
+                b"\x20" + hook.NARROW_ENTRY.to_bytes(2, "little"),
+            )
+        )
+        # 4-3. 칸 수를 0 으로 만드는 두 자리(`STZ $38BB` 3B — 줄 넘김 `$6AEA` · 창 비움 `$6B73`)를 `JSR rstz` 로 — 반각 공백의 나머지도 같이 0.
+        for at, why in ((0x0AEA, "line wrap"), (0x0B73, "window clear")):
+            p.append(
+                (
+                    f"col reset STZ→JSR rstz ({why})",
+                    *_main(0x6C, at),
+                    b"\x9c\xbb\x38",
+                    b"\x20" + hook.RSTZ_ADDR.to_bytes(2, "little"),
+                )
+            )
         # 5. 로그 자동 개행 품질(①③) — 세 JSR 호출 대상을 우리 스텁으로 돌린다(원본 바이트 수 그대로,
         #    `hook.hook_wrap_fix()` 참조). $6D9C·$6723·$6730 은 전부 뱅크 0x6C(오프셋 = 논리주소−$6000).
         p.append(
@@ -344,6 +366,39 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
                 b"\x20" + hook.EAT_ADDR.to_bytes(2, "little"),
             )
         )
+    if want("narr"):
+        # 7. 나레이션 자막 상주부 — 본 프로그램 뱅크 0x6B 꼬리 FF 패딩(`$9E56~$9FFF`, 426B). 장면 코드가 돌 때
+        #    늘 `$8000` 창(MPR4)에 있다(메인 루프가 이 뱅크에서 돈다). 쓰기·실행 BP 로 라이아스 장면 · 필드 ·
+        #    전투 두 판 동안 0회 실측(2026-10-05). 씬 블록은 JSR 목적지 2B 만 바꾼다(`narration_gates`).
+        code = narration_gates.resident()
+        p.append(
+            (
+                "narration resident",
+                *_main(0x6B, narration_gates.RES_ORG - 0x8000),
+                b"\xff" * len(code),
+                code,
+            )
+        )
+        # 8. ON 자동 넘김 — 대사 엔진(뱅크 0x6C) 쪽 대기의 `LDA $CF1A` 넷을 `JSR` 훅으로(같은 3B).
+        #    훅 본체는 뱅크 0x68 꼬리 FF 패딩(`$5FBC~`, 대사 엔진이 돌 때도 `$4000` 창에 있다).
+        hook_code = narration_gates.auto_hook()
+        p.append(
+            (
+                "narration auto hook",
+                *_main(0x68, narration_gates.AUTO_ORG - 0x4000),
+                b"\xff" * len(hook_code),
+                hook_code,
+            )
+        )
+        for at in narration_gates.AUTO_SITES:
+            p.append(
+                (
+                    f"auto advance LDA $CF1A @{at:04X}",
+                    *_main(0x6C, at - 0x6000),
+                    b"\xad\x1a\xcf",
+                    b"\x20" + narration_gates.AUTO_ORG.to_bytes(2, "little"),
+                )
+            )
     return p
 
 
@@ -355,18 +410,21 @@ def apply_code_patches(
         lba = common.T2_SECTOR + rel
         mode1.write_at(f, lba, common.USER, off, new, label=label, expect=old)
         touched.append((lba, 1))
-    # 5. 글리프 뱅크 → rel 114~(뱅크 0x7C~ 적재분, 원본 0 — font.GLYPH_NBANKS 뱅크), 후킹 루틴 → rel 126 앞 256B
+    # 5. 글리프 뱅크 → rel 114~(뱅크 0x7C~0x7D 적재분, 원본 0 — font.GLYPH_NBANKS 뱅크), 후킹 루틴 → rel 126 앞 0x340B
     if not want("font"):
         return
-    if want("glyph"):  # 진단용으로 뺄 수 있다 — 뱅크 0x7C~0x7E 를 0 인 채로 두는 A/B
+    if want("glyph"):  # 진단용으로 뺄 수 있다 — 뱅크 0x7C~0x7D 를 0 인 채로 두는 A/B
         lba = common.T2_SECTOR + 114
+        # 뱅크 꼬리 = 코드: 뱅크마다 풀기 루틴(`hook.unpack_asm`, 18B → 24B) · 마지막 뱅크 맨 끝은 어절
+        #   줄바꿈 루틴(`hook.wordck`, `$6723` 경로가 MPR2 에 걸어 부른다). 글리프는 `BANK_GLYPH_END` 앞까지만.
+        glyph_bank = hook.finish_banks(glyph_bank)
         mode1.write_user_data(
             f, lba, glyph_bank, label="glyph banks", expect=b"\0" * len(glyph_bank)
         )
         touched.append((lba, len(glyph_bank) // common.USER))
-    # 루틴 + 조사 오프셋표 + 받침 비트맵 둘 — 스텁이 통째로 $3B00 으로 옮긴다(0x300B)
+    # 루틴 + 조사 코드표 + 받침 비트맵 둘 + 줄바꿈 품질 블록 — 스텁이 통째로 `HOOK_ADDR`($2300)로 옮긴다(0x340B)
     payload = hook.payload(table)
-    if want("payload"):  # 진단용 — $3B00~$3DFF 를 0 인 채로 두는 A/B(스텁은 그대로 돈다)
+    if want("payload"):  # 진단용 — `HOOK_ADDR` 자리를 0 인 채로 두는 A/B(스텁은 그대로 돈다)
         lba = common.T2_SECTOR + 126
         mode1.write_user_data(
             f, lba, bytes(payload), label="hook routine + josa tables", expect=b"\0" * len(payload)
@@ -455,11 +513,14 @@ def _build(edits_path, iso: Path, cue: Path):
         if want("box"):
             print("  " + boxpack.apply_msg1_relocation(f, touched))
         translated_ids = {int(p.stem[3:]) for p in translate.M.SCRIPT_DIR.glob("scn*.json")}
+        # 나레이션 게이트는 번역 여부와 무관하게 건다(아직 번역 전인 씬도 자막은 원문으로 나온다)
+        narr_ids = set(narration_gates.SITES) if want("narr") else set()
+        n_gates = 0
         n_msgs = 0
         for rel, c in sorted(by_rel.items()) if want("scn") else []:
-            hit = {k for k in edits if k[0] == rel} or {
-                b["id"] for b in c["blocks"]
-            } & translated_ids
+            hit = {k for k in edits if k[0] == rel} or {b["id"] for b in c["blocks"]} & (
+                translated_ids | narr_ids
+            )
             if not hit:
                 continue
             entries = []
@@ -470,6 +531,9 @@ def _build(edits_path, iso: Path, cue: Path):
                     n_msgs += n
                 if (rel, b["id"]) in edits:
                     blk = apply_edits(blk, edits[(rel, b["id"])], f"rel {rel} id {b['id']}")
+                if b["id"] in narr_ids:
+                    blk, n = narration_gates.patch_block(b["id"], blk)
+                    n_gates += n
                 if blk != b["data"]:
                     intended[(rel, b["id"])] = blk
                 entries.append((b["id"], blk))
@@ -485,6 +549,8 @@ def _build(edits_path, iso: Path, cue: Path):
                 f"  컨테이너 rel {rel}: {len(entries)}블록 · 자리 보존 · 바뀐 바이트 {moved}/{slot}"
             )
     print(f"  번역 메시지 {n_msgs}건(컨테이너마다 다시 셈) · 글리프 {len(chars)}자")
+    if want("narr") and want("scn"):
+        print(f"  나레이션 게이트 자막 {n_gates}곳(컨테이너마다 다시 셈)")
     print(f"  덮어쓰기 없음 (쓰기 구간 {ledger.verify(iso)})")
     verify_immutable(iso, touched)
     verify_readback(iso, intended, found)

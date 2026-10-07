@@ -1,7 +1,10 @@
 """대사 조판 — 공용 krwrap 을 이 창 규격(status.md 3·4절)에 맞춰 부른다.
 
-폭 13칸(한 글자 = 1칸, 전각만) · 한 창 3줄(화자가 행 0) · 페이지는 `05`
+폭 13칸(글자 = 12px 한 칸 · **공백 = 반각 4px = 1/3 칸**, 마스터 10-07) · 한 창 3줄(화자가 행 0) · 페이지는 `05`
 🔴 화자가 있으면 **첫 줄 ≤ 10칸** — 넘은 만큼 화자 이름이 밀린다(실측). 기전을 풀면 넓힌다.
+
+칸 수 = `px // 12`(런타임 `$38BB` + `hook._entry_asm` 의 나머지)다. 줄은 칸이 13 에 닿으면 인터프리터가 스스로 넘긴다 —
+그래서 **한 줄은 156px(13.0칸) 이하**로 짠다(그 안에선 칸이 13 에 닿는 건 마지막 글자뿐이라 계획한 줄 = 런타임 줄이다).
 """
 
 import sys
@@ -10,13 +13,31 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 from text import krwrap
 
-WIDTH = 13
-FIRST_WITH_SPEAKER = 10
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import font
+
+FULL = 13  # 칸이 이 수에 닿으면 인터프리터가 자동으로 넘긴다
+WIDTH = 13.0001  # 칸 단위 폭(px/12) — 156px. 부동소수 오차를 위 한 눈금(4px = 1/3 칸)보다 훨씬 작게 얹는다
+FIRST_WITH_SPEAKER = 10.0001
 LINES = 3
+SPACE_PX = 4  # 대사창 공백은 반각(`font.HALF_SPACE`) — 12px 글자 사이에서 4px 만 간다
+NARROW = (
+    " " + font.NARROW_PUNCT
+)  # 반각 폭(4px) — 공백과 반각 부호(`. , ! ?`, 렌더러가 12px 에 그린 뒤 8px 되감는다)
 
 
-def cell(_ch: str) -> float:
-    return 1.0  # 이 창엔 반각이 없다 — 공백도 전각 한 칸
+def cell(ch: str) -> float:
+    return SPACE_PX / 12 if ch in NARROW else 1.0
+
+
+def px(line: str) -> int:
+    """줄 폭(px) — 글자 12 · 공백·반각 부호 4."""
+    return sum(SPACE_PX if c in NARROW else 12 for c in line)
+
+
+def cols(line: str) -> int:
+    """줄이 닿은 칸 수(`px // 12`) — 13 이면 인터프리터가 스스로 넘긴다(그 뒤 명시 줄바꿈은 빈 줄)."""
+    return px(line) // 12
 
 
 def pages(text: str, *, speaker: bool) -> list[list[str]]:
@@ -31,12 +52,14 @@ def pages(text: str, *, speaker: bool) -> list[list[str]]:
             lines = chunk.split("\n")
             # ⚠ 창은 세 줄이다. 그리고 **빈 줄은 전각 공백 하나를 넣어 적는다** — 개행(`01`)은 「다음 글자 전에
             #   줄 바꿈」 표시라 둘을 잇달아 써도 한 줄만 넘어간다(종장 카드 화면 2026-09-25)
-            assert len(lines) <= LINES and all(len(x) <= WIDTH for x in lines), chunk
+            assert len(lines) <= LINES and all(len(x) <= FULL for x in lines), (
+                chunk
+            )  # 전각 그대로 — 공백도 12px
             out.append(lines)
             speaker = False
             continue
         pg = krwrap.wrap_pages(chunk, WIDTH, LINES, cell_width=cell)
-        if speaker and pg and pg[0] and len(pg[0][0]) > FIRST_WITH_SPEAKER:
+        if speaker and pg and pg[0] and px(pg[0][0]) > FIRST_WITH_SPEAKER * 12:
             # 첫 줄만 좁히면 되지만 krwrap 엔 줄별 폭이 없다 — 첫 창을 10칸으로 다시 짠다
             first = krwrap.wrap_pages(chunk, FIRST_WITH_SPEAKER, LINES, cell_width=cell)
             pg = (
@@ -55,7 +78,7 @@ def pages(text: str, *, speaker: bool) -> list[list[str]]:
         speaker = False  # 둘째 창부터는 화자 줄이 없다
     for p in out:
         for line in p:
-            assert len(line) <= WIDTH, (line, len(line))
+            assert px(line) <= FULL * 12, (line, px(line))
     # 🔴 **글 소실 없음** — 조판 전후 글자(공백·개행·페이지 제외)가 같아야 한다. 폭·위반만 보는 검사는 꼬리 글이
     #    조용히 사라지는 결함을 못 잡는다(PS1·ps1-ed3+4 실측, 관리자 공유 2026-09-27).
     assert ink(text) == ink("".join(l for p in out for l in p)), ("조판이 글을 잃었다", text)

@@ -71,9 +71,10 @@ def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str,
             for j, line in enumerate(pg):
                 # 🔴 **틀을 꽉 채운 줄 뒤에는 개행을 안 넣는다** — 인터프리터가 열 ≥ $99(13)에서 스스로
                 #    넘기므로 우리 `01` 이 얹히면 **빈 줄**이 된다(our-findings 2026-08-30, PS1 이 122곳).
-                if j and (verbatim or len(pg[j - 1]) < typeset.WIDTH):
+                if j and (verbatim or typeset.cols(pg[j - 1]) < typeset.FULL):
                     out.append(NL)
-                out += font.encode(line, table)
+                # 장 끝 카드(verbatim)는 원문이 전각 공백으로 맞춘 줄이라 공백을 12px 그대로 둔다
+                out += font.encode(line, table, msg=not verbatim)
     if m.terminated:
         out.append(m.tokens[-1][1])
     elif m.tokens and m.tokens[-1] in (("op", PAGE), ("op", 0x03)):
