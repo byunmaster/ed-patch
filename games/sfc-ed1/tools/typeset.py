@@ -12,17 +12,16 @@ SFC 대사창은 **17칸 × 4줄 칸 배열**이고 엔진이 글자마다 칸 �
 부호는 어절에 붙어 있으니 ① 은 넘침이 없으면 안 생긴다. 한 어절이 17칸을 넘으면 조판기로도 못 막는다(보고).
 오프닝·엔딩 크롤(`$0B:E8E5~$0B:F337`)은 다른 엔진(`open_fetch`)이고 줄을 손으로 맞춰 마스터 확인을 받았다 — 안 건드린다.
 
-🔴 **마스터 최종 판정(2026-09-27③, 전 기종 공통)** — 로그성 메시지(도구·주문 사용 등, `FIELD`)는 어절 단위
-개행을 **아예 하지 않는다.** 지금처럼 엔진이 글자 단위로 접는 대로 두고(`「…사용했 / 다.」` 허용), 전투 라운드에
-잡아 뒀던 「렌더러 훅 런타임 어절 조판」은 **취소됐다** — `wrap()` 을 FIELD 에 두 번 다시 안 건다(영구 방침,
-`Typesetter.__call__`·`check_all()` 둘 다 `FIELD` 주소는 건너뛴다). 그 대신 ① 고아 부호(`. , ! ? … !! !?` 류가
-줄 첫 칸에 홀로 옴)와 ③ 줄 첫 칸 공백만은 **막는다** — ④ 묶음 끊김은 **상시 허용**(`FIELD_ACCEPTED`).
-`check_all()` 은 각 위반 조합을 이 기준으로 갈라 `hard`(①③, 게이트가 막는다)와 `bad`(①②③④ 전부, 보고용)를
-따로 센다 — 게이트도 그 지역 위반을 숨기지 않고 표시는 한다(2026-09-27① 게이트 구멍 교훈 — 통과가 안 보이는
-위반과 같이 다니면 안 된다).
+🔴 **마스터 최종 판정(2026-10-07, 전 기종 공통) — 09-27③ 번복.** 로그성 메시지(도구·주문 사용 등,
+`FIELD`)도 **다른 영역과 똑같이 어절 단위 개행을 한다.** 09-27③ 「엔진 글자 단위 개행만, 어절 조판은
+영구 취소」는 대체됐다 — `Typesetter.__call__`·`check_all()` 둘 다 이제 `FIELD` 를 안 건너뛰고 `wrap()`
+을 건다(다만 FIELD 는 런타임 치환 후보가 **파티원뿐**이라 후보 폭표를 따로 쓴다 — `ml_field`). 엔진의
+①③ 훅(`kinsoku_carry`·재진입, hook.py)은 **그대로 둔다** — 어절 조판이 못 막는 나머지 자리(한 어절이
+17칸을 넘는 극단값 등)의 안전망이다. ④ 묶음 끊김은 더 이상 FIELD 라고 봐주지 않는다 — 다른 영역과
+같이 0이어야 한다.
 
     python3 tools/typeset.py            # 전 영역 위반 수(시스템·전투·씬) + 예
-    python3 tools/typeset.py --check    # tm-draft 제외 「본질 위반」(①③, 필드는 ④ 제외)이 있으면 실패
+    python3 tools/typeset.py --check    # tm-draft 제외 「본질 위반」이 있으면 실패
 """
 
 import argparse
@@ -176,13 +175,15 @@ class Typesetter:
     def __init__(self) -> None:
         self.dm = _dict()
         self.ml = maxlens(candidates(self.dm))
+        self.ml_field = maxlens(candidates(self.dm, field=True))
 
     def __call__(self, kr: str, addr: int) -> str:
         if CRAWL[0] <= addr <= CRAWL[1]:
             return kr
-        if addr in FIELD:
-            return kr  # 마스터 판정 2026-09-27② — 로그성 메시지는 조판기를 안 거친다(엔진 자체 개행)
-        return wrap(kr, self.dm, self.ml)
+        # 마스터 최종 판정(2026-09-30, 전 기종 공통) — 로그성 메시지도 어절 단위 개행을 한다
+        # (09-27③ 「엔진 기계적 개행만」을 대체). FIELD 는 후보 폭이 파티원뿐이라 더 좁다.
+        ml = self.ml_field if addr in FIELD else self.ml
+        return wrap(kr, self.dm, ml)
 
 
 # ── 검사 ───────────────────────────────────────────────────────────────────────────────
@@ -325,9 +326,6 @@ def targets() -> list[dict]:
     return out
 
 
-FIELD_ACCEPTED = {"④"}  # 마스터 판정 2026-09-27③ — 로그(FIELD)는 어절 끊김을 상시 허용한다(엔진 그대로)
-
-
 def check_all(typeset: bool = True) -> list[dict]:
     dm = _dict()
     sets = {f: candidates(dm, field=f) for f in (False, True)}  # 조판기와 같은 후보로 잰다
@@ -337,13 +335,13 @@ def check_all(typeset: bool = True) -> list[dict]:
     for s in targets():
         f = s["addr"] in FIELD
         reps, ml = reps_by[f], ml_by[f]
-        # 마스터 판정 2026-09-27② — 로그성 메시지(FIELD)는 조판기를 안 거친다(빌드와 같은 경로).
-        kr = s["kr"] if f else (wrap(s["kr"], dm, ml) if typeset else s["kr"])
+        # 마스터 최종 판정(2026-09-30, 전 기종 공통) — 로그성 메시지도 어절 단위 개행(빌드와 같은 경로).
+        kr = wrap(s["kr"], dm, ml) if typeset else s["kr"]
         toks = sorted(set(re.findall(r"\{(D[6-9A-F])\}", kr)))
         combos = [{}]
         for t in toks:
             combos = [dict(c, **{t: v}) for c in combos for v in reps[t]]
-        accepted = FIELD_ACCEPTED if f else set()
+        accepted: set[str] = set()
         worst, worst_hard, n_bad, n_hard = None, None, 0, 0
         for c in combos:
             lines, bad = layout(expand(kr, c, dm))
@@ -382,12 +380,9 @@ def main() -> None:
     rep = check_all(typeset=not a.raw)
     for reg, s in summary(rep).items():
         hard = s["본질위반"] - s["tm-draft"]
-        note = ""
-        if reg == "시스템(필드)" and s["위반"] > s["본질위반"]:
-            note = "  ← 어절 끊김(④)은 마스터 판정(09-27③)으로 상시 허용, 게이트는 ①③만 본다"
         mark = "🔴" if hard else ("⚠" if s["위반"] else "✅")
         print(
-            f"{mark} {reg}: 조각 {s['조각']} · 위반 {s['위반']}(본질 {s['본질위반']}·그중 tm-draft {s['tm-draft']}) {s['종류']}{note}"
+            f"{mark} {reg}: 조각 {s['조각']} · 위반 {s['위반']}(본질 {s['본질위반']}·그중 tm-draft {s['tm-draft']}) {s['종류']}"
         )
     shown = 0
     for r in sorted(rep, key=lambda r: (r["region"] != "시스템(필드)", r["addr"])):
@@ -401,12 +396,10 @@ def main() -> None:
             print(f"      |{ln:<17}|")
     # 🔴 필드만 막으면 전투·씬이 되돌아가도 초록이다(2026-09-27① 전 세션 점검 — ss-ed1+2 에서 일본어가
     #   남은 빌드가 ✅ 로 끝났다). tm-draft 꼬리(P4 대사 라운드 몫)만 할 일로 두고 나머지는 전 영역에서 막는다.
-    # ⚠ 「시스템(필드)」는 상시 예외 하나뿐 — 마스터 최종 판정(09-27③)으로 로그는 어절 단위 개행을 아예 하지
-    #   않고 엔진의 글자 단위 접기를 그대로 쓴다. 그래서 ④ 묶음 끊김은 **영구히** 허용하되, 고아 부호(①)와
-    #   줄 첫 칸 공백(③)만은 여전히 막는다 — `check_all()` 의 `hard` 가 이미 그 구분을 담아 온다.
+    # 10-07 번복 뒤로는 FIELD 도 다른 영역과 똑같이 전부(①②③④) 막는다 — 예외가 없다.
     hard = [r for r in rep if r["hard"] and r["state"] != "tm-draft"]
     if a.check and hard:
-        print(f"🔴 조판 위반 {len(hard)}건(tm-draft 제외, ④ 어절 끊김은 로그에서 상시 허용) — 커밋 불가")
+        print(f"🔴 조판 위반 {len(hard)}건(tm-draft 제외) — 커밋 불가")
         raise SystemExit(1)
 
 
