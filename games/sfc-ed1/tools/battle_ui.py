@@ -28,6 +28,7 @@ import asm65816
 import common
 import dicts
 import encode
+import namesrc
 
 # 고정 칸 문자열 표 **둘** — 둘 다 `MVN` 으로 칸 배열에 통째로 옮긴다(`hook.MVN_SITES`).
 GROUPS = [
@@ -49,7 +50,7 @@ GROUPS = [
 def rows(key: str) -> list[list[str]]:
     """한 무리를 **칸 단위 글자 목록**으로. `battle` = 격자 셋(칸 시작 0·5·10) + 이름 다섯,
     `title` = 타이틀 메뉴 세 줄."""
-    d = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    d = namesrc.battle_ui()
     g = next(x for x in GROUPS if x["key"] == key)
     n = g["cells"]
     out = []
@@ -147,7 +148,7 @@ A4_STRIDE = 8  # 한글 3음절(6B) + `$FF` 를 담는 보폭
 
 
 def bake_a4_values(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dict:
-    d = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    d = namesrc.battle_ui()
     by_jp = {x["jp"]: x["kr"] for x in d["a4_values"]}
     if bytes(rom[common.snes2off(A4_STEP_SITE) : common.snes2off(A4_STEP_SITE) + 2]) != bytes(
         [0xA9, 0x05]
@@ -222,7 +223,7 @@ def _a3_stride_patch() -> bytes:
 def bake_a3_values(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dict:
     """A3 값 8종을 **5바이트 고정 스트라이드**(한글 4B + `$FF` 1B)로 사전 뱅크에 굽고,
     즉치 4갈래 + 스트라이드 ASM 을 함께 패치한다. `org` 이어 쓴다(battle_ui.bake() 뒤)."""
-    d = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    d = namesrc.battle_ui()
     by_jp = {x["jp"]: x["kr"] for x in d["a3_values"]}
     for _row, addrs, _opts in A3_ROWS:
         for lo, hi in addrs:  # lo·hi 는 $A9(LDA #imm) **오피코드** 주소 — +1 이 피연산자다
@@ -276,7 +277,7 @@ def verify_a3_values(out: bytes, slots: list) -> dict:
     """되읽기 — 즉치 4곳이 가리키는 자리를 그대로 따라가 디코드한다."""
     n_ok = 0
     bad = []
-    d = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    d = namesrc.battle_ui()
     by_jp = {x["jp"]: x["kr"] for x in d["a3_values"]}
     for _row, addrs, opts in A3_ROWS:
         lo, hi = addrs[0]

@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import text  # noqa: I001
 import common
 import encode
+import namesrc
 
 BANK = 0x3E  # 사전 전용 확장 뱅크(표 + 문자열)
 ORG = 0x8000
@@ -66,7 +67,7 @@ def _check_setup(rom: bytes) -> None:
 
 def encode_all(rep_index: dict[str, int]) -> dict[int, list[bytes]]:
     """`textmap/dict.json` → 사전별 문자열 바이트열. 번역이 없거나 인코딩이 안 되면 **운다**."""
-    dm = json.loads((common.GAME_DIR / "textmap" / "dict.json").read_text(encoding="utf-8"))
+    dm = namesrc.dict_map()
     out: dict[int, list[bytes]] = {}
     errs = []
     for code, (_addr, n, name) in text.DICT_TABLES.items():
@@ -223,7 +224,7 @@ def verify(out: bytes, slots: list) -> dict:
     앞 단계가 깔아 둔 것을 뒤 단계가 덮어도 「자기가 쓴 직후」를 보는 되읽기는 초록이다
     (다른 트랙 실측, 관리자 중계 2026-09-07). 그래서 **마지막에 한 번 더** 본다.
     ⚠ 우리가 적어 둔 주소가 아니라 **롬에 박힌 즉치**를 따라간다 — 그래야 덮인 걸 잡는다."""
-    dm = json.loads((common.GAME_DIR / "textmap" / "dict.json").read_text(encoding="utf-8"))
+    dm = namesrc.dict_map()
     bad = []
     n_ok = 0
     for code, addr in SETUP.items():

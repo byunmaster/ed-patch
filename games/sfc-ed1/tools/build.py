@@ -27,6 +27,7 @@ import battle_ui
 import common
 import dicts
 import hook
+import namesrc
 import script
 
 OUT_NAME = {  # 경로별로 갈라 쓴다(patcher-checklist.md 3-B ② — 「어느 경로가 만들었나」를 파일명에도)
@@ -287,9 +288,7 @@ def _name_box_rows(rom: bytes) -> list[str]:
 
 def bake_name_box(out: bytearray, rom: bytes, slot, code_tile: dict[int, int]) -> list[str]:
     """이름 상자 다섯을 한글 타일로 다시 굽는다. `slot(ch)` 은 메뉴와 **같은 배정기**를 쓴다."""
-    names = json.loads(
-        (common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8")
-    )["names"]
+    names = namesrc.battle_ui()["names"]
     by_jp = {n["jp"]: n["kr"] for n in names}
     done = []
     for n, jp in enumerate(_name_box_rows(rom)):
@@ -897,7 +896,7 @@ def kr_items(
     items = body_items(rom)
     slices = segment_slices(items)
     tmap = json.loads((common.GAME_DIR / "textmap" / "segments.json").read_text(encoding="utf-8"))
-    dmap = json.loads((common.GAME_DIR / "textmap" / "dict.json").read_text(encoding="utf-8"))
+    dmap = namesrc.dict_map(rom)
     dict_kr = {k: v["kr"] for k, v in dmap.items() if v.get("kr")}
     texts = [v["kr"] for v in tmap.values() if v.get("kr")] + list(dict_kr.values())
     mmap = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
@@ -906,7 +905,7 @@ def kr_items(
     #   여기 안 넣으면 그 파일에만 있는 음절이 `rep_index` 에 없어 `encode_rows` 가 KeyError 로
     #   죽는다. 지금은 0건이지만 **다른 파일에 같은 글자가 있어서 우연히 사는 것**이라(실측
     #   2026-09-08: 51자 전부 다른 데서 왔다) 낱말 하나만 바꿔도 깨진다. 원천으로 못 박는다.
-    bmap = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    bmap = namesrc.battle_ui()
     for key in ("title", "speed", "yesno", "loose", "names"):
         texts += [x["kr"] for x in bmap.get(key, [])]
     texts += [c["kr"] for g in bmap.get("grid", []) for c in g["cols"]]

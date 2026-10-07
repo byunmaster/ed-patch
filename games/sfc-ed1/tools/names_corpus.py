@@ -23,7 +23,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import text  # noqa: I001  (common 보다 먼저)
 import common
 import textmap
+import namesrc
 import units
+
+CANON = "ed1"  # 공통 문안 정본 — PS1 기반(마스터 10-08)
+CANON_GATE = True  # 전환을 마쳤다 — check_canon.py 가 어긋남을 실패로 친다(마스터 10-08)
 
 # 우리 문안은 사전 치환 자리를 **토큰으로 품는다**(`{D0:80}` 등, 화면에선 런타임에 사전 칸의
 # 한국어로 풀린다 — `units.py:token_of`). 원문 쪽은 `text.decode()` 가 이미 그 자리를 풀어
@@ -79,7 +83,7 @@ def _dict_pairs(rom, dict_cur):
 def _slot_pairs():
     """HUD·슬롯 지명(`places.json`)과 메뉴 라벨(`menus.json`) — 고정 폭 칸이다."""
     tdir = common.GAME_DIR / "textmap"
-    for jp, kr in json.loads((tdir / "places.json").read_text(encoding="utf-8"))["names"].items():
+    for jp, kr in namesrc.places_map()["names"].items():
         yield f"place:{jp}", jp, kr or None, "slot"
     for key, v in json.loads((tdir / "menus.json").read_text(encoding="utf-8")).items():
         yield f"menu:{key}", key.split("@")[0], v.get("kr") or None, "slot"
@@ -87,11 +91,7 @@ def _slot_pairs():
 
 def pairs():
     rom = common.rom_bytes()
-    dict_cur = (
-        json.loads(textmap.DICT_PATH.read_text(encoding="utf-8"))
-        if textmap.DICT_PATH.exists()
-        else {}
-    )
+    dict_cur = namesrc.dict_map(rom)
     yield from _segment_pairs(rom, dict_cur)
     yield from _dict_pairs(rom, dict_cur)
     yield from _slot_pairs()

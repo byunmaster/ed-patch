@@ -30,10 +30,10 @@
   "canon_exception": "원문이 다르다 — SFC 는 `いどう`(속도 없음), 정본 열쇠는 `移動速度`"
  },
  "うりたい@A0D": {
-  "kr": "팔기",
+  "kr": "팝니다",
   "state": "draft",
   "budget_tiles": 4,
-  "width_tiles": 4,
+  "width_tiles": 3,
   "fits": true,
   "row": 3,
   "x0": 2,
@@ -49,10 +49,10 @@
   "x0": 2
  },
  "かいたい@A0D": {
-  "kr": "사기",
+  "kr": "삽니다",
   "state": "draft",
   "budget_tiles": 4,
-  "width_tiles": 4,
+  "width_tiles": 3,
   "fits": true,
   "row": 1,
   "x0": 2,

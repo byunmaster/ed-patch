@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import text  # noqa: F401, I001
 import common
 import hook
+import namesrc
 
 COLS = 17
 NO_HEAD = set(".,!?…:;)」』")
@@ -66,7 +67,7 @@ BATTLE = (0x07A721, 0x07C7FF)  # 시스템·전투 메시지 덩이(필드 ★ �
 
 
 def _dict() -> dict[str, str]:
-    d = json.loads((common.GAME_DIR / "textmap" / "dict.json").read_text(encoding="utf-8"))
+    d = namesrc.dict_map()
     return {k: v["kr"] for k, v in d.items()}
 
 
@@ -79,7 +80,7 @@ def candidates(dm: dict[str, str] | None = None, field: bool = False) -> dict[st
     monsters = sorted({v for k, v in dm.items() if k.startswith("D3:")})
     items = sorted({v for k, v in dm.items() if k.startswith("D2:")})
     spells = sorted({v for k, v in dm.items() if k.startswith("D4:")})
-    places = json.loads((common.GAME_DIR / "textmap" / "places.json").read_text(encoding="utf-8"))
+    places = namesrc.places_map()
     people = party if field else party + monsters
     return {
         "D6": people,

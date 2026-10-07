@@ -87,34 +87,34 @@
    "addr": "02A341",
    "cells": 13,
    "jp": "セリオス",
-   "kr": "세리오스",
+   "kr": null,
    "dict": "D0:00"
   },
   {
    "addr": "02A34E",
    "cells": 13,
    "jp": "リュナン",
-   "kr": "류난",
+   "kr": null,
    "dict": "D0:01"
   },
   {
    "addr": "02A35B",
    "cells": 13,
    "jp": "ロー",
-   "kr": "로우",
+   "kr": null,
    "dict": "D0:02"
   },
   {
    "addr": "02A368",
    "cells": 13,
    "jp": "ゲイル",
-   "kr": "게일"
+   "kr": null
   },
   {
    "addr": "02A375",
    "cells": 13,
    "jp": "ソニア",
-   "kr": "소니아"
+   "kr": null
   }
  ],
  "title": [

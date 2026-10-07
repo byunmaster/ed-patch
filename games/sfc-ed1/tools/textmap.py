@@ -58,8 +58,8 @@ MENU_KR = {
     "かいふくのじゅもん": ("회복주문", "ps1"),
     "かいふくのアイテム": ("회복아이템", "ps1"),
     "ぜんいんのせってい": ("전원의 설정", "ps1"),
-    "かいたい": ("사기", "draft"),
-    "うりたい": ("팔기", "draft"),
+    "かいたい": ("삽니다", "draft"),
+    "うりたい": ("팝니다", "draft"),
     "あと": ("남다", "ps1"),  # PS1 은 정발 「남다」(설정 「EP 남다」·HUD) — 공용 정본 `あと@경험치표시` 와 같다(09-26 정정)
 }
 TOKEN_RE = re.compile(r"\{[0-9A-F]{2}(?::[0-9A-F]{2})?\}|<[0-9A-F]{2}(?::[0-9A-F]+)?>|<@>")
@@ -248,38 +248,23 @@ def init_menus() -> dict:
 
 
 def check_glossary() -> list[tuple[str, str, str, str]]:
-    """사전(`dict.json`)의 `glossary` 항목이 **공용 정본과 같은가.** 갈리면 그 자리를 돌려준다.
+    """사전·정본에서 읽을 수 있는 이름이 **JSON 에 독자 사본으로 남아 있나** — 남았으면 그 자리를 돌려준다.
 
-    ⚠ 정본은 다른 게임의 브랜치에서도 고쳐진다(루트 CLAUDE.md) — 실제로 PS1 의 1회차 QA 가 머지되며
-    몬스터 이름 여섯이 바뀌었고(`살쾡이`→`산고양이` 등) 우리 사전만 옛 표기로 남아 있었다(2026-09-06).
-    표기가 갈리면 **인게임에서만 드러나므로** 게이트가 본다. 원문(JP)은 커밋 안 하니 롬에서 얻는다."""
-    import tm as tm_mod
+    마스터 2026-10-08: 게임 폴더에 JP→KR 표를 두지 않는다. 읽을 수 있게 된(`namesrc.resolve`) 이름은
+    `namesrc.strip()` 이 JSON 에서 걷으므로, **표기가 남아 있으면 걷기를 안 돌린 것**이다(독자 사본 = 갈릴 수 있는 사본).
+    반환 `(키, 원문, JSON 표기, 사전 표기)` — 값이 같아도 사본이라 실패로 친다."""
+    import namesrc
 
     rom = common.rom_bytes()
-    g = json.loads(tm_mod.GLOSSARY.read_text(encoding="utf-8"))["categories"]
-    # ⚠ **부류를 갈라 본다** — 같은 원문이 부류마다 다른 표기다(`カース` = 아이템 `커스` · 몬스터 `카스`).
-    #   납작하게 펴면 몬스터를 아이템 표기로 잡는 오탐이 난다(실측 2026-09-06). 순서는 `init_dict` 와 같다.
     cur = json.loads(DICT_PATH.read_text(encoding="utf-8"))
+    ov = namesrc.dict_map(rom)
     out = []
-    for code in text.DICT_TABLES:
-        cats = [DICT_CATEGORY[code]] + [
-            c for c in ("person", "place", "item", "monster") if c != DICT_CATEGORY[code]
-        ]
+    for code in namesrc._DICT_ORDER:
         for i, b in enumerate(text.dict_entries(code, rom)):
             key = f"{code:02X}:{i:02X}"
-            v = cur.get(key, {})
-            kr = v.get("kr")
-            if not kr or v.get("state") != "glossary":
-                continue
-            jp = text.decode(b).strip()
-            for c in cats:
-                d = g.get(c, {})
-                # 성별 표식이 붙은 변종으로만 정본에 있는 것이 있다(スティングビートル♀ 등)
-                cand = d.get(jp) or d.get(f"{jp}♀") or d.get(f"{jp}♂")
-                if cand:
-                    if cand.rstrip("♀♂") != kr:
-                        out.append((key, jp, kr, cand.rstrip("♀♂")))
-                    break
+            kr = cur.get(key, {}).get("kr")
+            if kr and ov[key].get("src") not in (None, "local"):
+                out.append((key, text.decode(b).strip(), kr, ov[key]["kr"]))
     return out
 
 
@@ -291,8 +276,10 @@ _KATAKANA_RUN = re.compile(r"^[゠-ヿー・]+$")
 
 def check_naming() -> list[tuple[str, str, str]]:
     """우리 초벌이 음차+음차를 띄어 쓰고 있나 — 정본이 안 든 낱말은 이쪽이 유일한 그물이다."""
+    import namesrc
+
     rom = common.rom_bytes()
-    cur = json.loads(DICT_PATH.read_text(encoding="utf-8"))
+    cur = namesrc.dict_map(rom)
     out = []
     for code in text.DICT_TABLES:
         for i, b in enumerate(text.dict_entries(code, rom)):
@@ -319,9 +306,15 @@ PS1_TERMS = [
 
 def check_terms() -> list[tuple[str, str, str]]:
     """번역 정본 셋(조각·사전·메뉴)에 PS1 과 갈린 낱말이 있나."""
+    import namesrc
+
     out = []
     for name in ("segments.json", "dict.json", "menus.json"):
-        data = json.loads((PATH.parent / name).read_text(encoding="utf-8"))
+        data = (
+            namesrc.dict_map()
+            if name == "dict.json"
+            else json.loads((PATH.parent / name).read_text(encoding="utf-8"))
+        )
         for k, v in data.items():
             kr = v.get("kr") if isinstance(v, dict) else None
             if not kr:
