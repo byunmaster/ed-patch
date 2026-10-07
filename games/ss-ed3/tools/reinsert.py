@@ -27,13 +27,32 @@ SCRIPT_DIR = os.path.join(C.GAME_DIR, "script")
 NAME_MAX = 14  # 맵 이름 최대 — 원판 최장(`ディルトの関所`·`ドルフェスの塔`·`ラグーナ船着場`)
 
 
-def load_script(stem):
+def _read_script(stem):
     p = os.path.join(SCRIPT_DIR, f"{stem}.json")
     if not os.path.exists(p):
-        return {}, {}
+        return {}
     with open(p, encoding="utf-8") as f:
-        d = json.load(f)
-    return {k: v for k, v in d.items() if not k.startswith("_")}, d.get("_jp", {})
+        return json.load(f)
+
+
+def load_script(stem):
+    """`({블록 색인: 칸 안에 **물리적으로** 들어가는 문안}, 원문 지문)`.
+
+    🔴 `_wide` 블록은 칸(원문 바이트 예산)에 안 들어가는 진짜 문안을 **맵 꼬리**에서 그린다
+    (`choice_tail.py`). 정본 JSON 의 값은 진짜 문안이고 `_wide` 가 칸 안에 둘 **대역**이다 —
+    이 함수는 대역을 돌려준다(재삽입·되풀이 검사 전부가 「칸 안에 뭐가 있나」를 묻기 때문).
+    진짜 문안이 필요하면(`이름 검사`·조판 지문) 정본 JSON 을 그대로 읽는다 — `wide()` 도 있다.
+    """
+    d = _read_script(stem)
+    script = {k: v for k, v in d.items() if not k.startswith("_")}
+    script.update(d.get("_wide", {}))
+    return script, d.get("_jp", {})
+
+
+def wide(stem):
+    """`{블록 색인: 진짜 문안}` — 칸 밖(맵 꼬리)에서 그리는 블록."""
+    d = _read_script(stem)
+    return {k: d[k] for k in d.get("_wide", {})}
 
 
 def jp_stamp(body):
