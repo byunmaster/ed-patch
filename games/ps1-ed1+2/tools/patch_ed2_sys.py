@@ -14,7 +14,7 @@ ED2 화면은 일본어로 남고, 따로 번역하면 **한 디스크가 두 �
 목적지 목록이라 접미(`の町`·`の港`)가 붙는다. 정발 ED2 의 워프 목적지 표
 (`dos_kr/ED2/F_000` 30곳)가 후자의 정본이다.
 
-⚠ **둘 다 붙여 쓴다** — 슬롯이 좁은 층이라 그렇다(`늑대입`). 대사에서는 띄운다
+⚠ **둘 다 붙여 쓴다** — 슬롯이 좁은 층이라 그렇다(`늑대의입`). 대사에서는 띄운다
 (`늑대의 입`) — [policy.md](../docs/policy.md) 「표기 방침」.
 
 ⚠ **폰트가 먼저다.** ED2.EXE 에 한글 글리프를 굽는 건 `reinsert_kr_pilot` 이 한다
@@ -609,7 +609,7 @@ HALFWIDTH_ROUTE_LABELS = (
 # 나눠 굽는다. ⚠ **이 슬롯은 11코드+널=12B 로 꽉 차 구분자('~') 넣을 자리가 없다** —
 # 66px 안에 여섯 글자(65px, 여유 1px)를 넣는 것도 빠듯해 물결표까지는 못 넣는다.
 # "큐베라"·"프로스"로 갈라 보이던 걸 "큐베라프로스" 한 덩이로 붙여 보이는 트레이드오프다
-# (마스터 062 비교 캡처로 검토·승인됨 — `.local/inbox/ps1-ed1+2/062-master-comparison.png`).
+# (마스터 062 비교 캡처로 검토·승인됨 — `.local/work/inbox/ps1-ed1+2/062-master-comparison.png`).
 HALFWIDTH_ROUTE_LABEL_HALF_JP = bytes.fromhex("b7adcdded78160ccdfdbbd")  # ｷｭﾍﾞﾗ～ﾌﾟﾛｽ
 ROUTE_LABEL_SLOT = 12
 

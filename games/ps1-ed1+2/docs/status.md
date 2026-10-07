@@ -29,7 +29,7 @@ PS1 ED1+2 는 다른 이식판의 **잣대**(`docs/ui-canon.md`)라, 정작 표�
 | C5 | 레벨업 | 🔧 | 🔧 | 검사기 통과, 이번 라운드 화면 재확인은 안 함 |
 | C6 | 승리·패배·도망 | ✅ | ✅ | `textmap/battle.json` 승리 로그 3종 등 화면 확인 |
 | D1 | 오프닝 내레이션·자막 | ✅ | ✅ | 🖥 **2026-09-15 이번 라운드 확인** — 정상 부팅으로 재생, `textmap/opening.json`·`opening_ed2.json` 문안과 일치. 스크린샷 미보관(육안 확인, 화면 자체는 화질 손실 없이 재현 가능) |
-| D2 | 장 카드·챕터 전환 | ✅ | ✅ | 🖥 **2026-09-15 확인** — ED1 "제1장 왕자의 여행"(`.local/inbox/ps1-ed1+2/d2-chapter1-ed1.png`), ED2 "서장 평화로운 나날"(`d2-chapter1-ed2.png`). `patch_gfx_cards.CARDS` 12개 중 챕터1만 실제로 봤다 — 나머지 10개는 그림 재작성 파이프라인이 같아 위험 낮음(미완주) |
+| D2 | 장 카드·챕터 전환 | ✅ | ✅ | 🖥 **2026-09-15 확인** — ED1 "제1장 왕자의 여행"(`.local/work/inbox/ps1-ed1+2/d2-chapter1-ed1.png`), ED2 "서장 평화로운 나날"(`d2-chapter1-ed2.png`). `patch_gfx_cards.CARDS` 12개 중 챕터1만 실제로 봤다 — 나머지 10개는 그림 재작성 파이프라인이 같아 위험 낮음(미완주) |
 | D3 | 엔딩·스태프롤 | ✅ | ✅ | 🖥 **2026-09-15 확인** — `movie_swap()`(`ED_MOVIE_SWAP="OPEN1=END1,OPEN2=END2"`)으로 부팅 직후 재생, `textmap/ending_ed1.json`·`ending_ed2.json` 문안과 일치(ED1: `movie-swap-ending-poc-2.png`, ED2: `d3-ending-ed2-poc.png`). 기법은 `docs/reference/our-findings.md` 참조 |
 | E1 | 타이틀 로고 | ✅ | ✅ | `ui-canon.md` ⑤(`ui-5-타이틀-컬렉션.png`·`ui-5-타이틀-ED2.png`) — 그림 |
 | E2 | 처음부터/이어하기·파일 선택 | ✅ | ✅ | 이번 라운드 D1/D2 확인 중 자연히 통과(타이틀→서브타이틀→New/Continue 메뉴 전부 한글) |
