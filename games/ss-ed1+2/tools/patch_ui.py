@@ -36,6 +36,7 @@ sys.path.insert(
     ),
 )
 
+import canon as shared_canon
 import common
 import dump_scn
 import dump_ui
@@ -53,13 +54,54 @@ ASCII_STRIDE = 11  # 11행 × 1바이트 (8×11)
 PAD = "　"  # 전각 공백 — 원본 폰트에 이미 있어 슬롯을 안 먹는다
 
 
+# 🔴 **메뉴 라벨(JP→KR)은 정본에서 읽는다**(마스터 2026-10-08 — 사전은 고유명사만, 라벨은 `shared/canon`).
+#    `script/ui.json` 의 `tables` 는 **표 구조(어느 표에 어느 JP 가 몇 번째로 오나)** 만 든다 — 값은 정본이
+#    갖는다. 정본에 없는 JP(`ＯＮ`·`ＳＡＶＥ` 처럼 원문 그대로 두는 칸)만 이 파일의 KR(None)을 따른다.
+#    같은 JP 가 자리마다 다른 말이면(強さ=상태·강함·힘, 逃げる=도망·도망간다) 정본 열쇠가 `원문@자리` 다.
+_UI_POS = {
+    "필드 메뉴": "파티메뉴",
+    "전투 명령": "전투커맨드",
+    "능력치": "능력치",
+    "EP 표시": "경험치표시",
+    "전투설정/도망": "전투설정",
+}
+
+
+def _ui_label(jp, table_name):
+    """표 칸 JP → 정본 KR. 없으면 None. ED1 정본을 먼저, 없으면 ED2(겹치는 열쇠는 값이 같다)."""
+    k = re.sub(r"[\s\u3000]", "", jp)
+    keys = ([f"{k}@{_UI_POS[table_name]}"] if table_name in _UI_POS else []) + [k]
+    for title in ("ed1", "ed2"):
+        for key in keys:
+            v = shared_canon.lookup(key, "ui", title)
+            if v is not None:
+                return v
+    return None
+
+
+def _chapter_title(jp):
+    for title in ("ed1", "ed2"):
+        v = shared_canon.lookup(jp, "chapter", title)
+        if v is not None:
+            return v
+    return None
+
+
 def load_canon():
     with open(CANON, encoding="utf-8") as f:
         d = json.load(f)
+    tables = {
+        name: [(jp, _ui_label(jp, name) or kr) for jp, kr in rows]
+        for name, rows in d["tables"].items()
+    }
+    # 챕터 카드 제목도 정본(`shared/canon` chapter — ED1 카드 표기를 모든 기종이 따른다)이 갖는다. 번호 라벨(`제１장`)만 여기.
+    cards = [
+        [jp, no, _chapter_title(jp) or title] for jp, no, title in d.get("cards", [])
+    ]
     return (
-        d["tables"],
+        tables,
         d.get("pad", {}),
-        d.get("cards", []),
+        cards,
         d.get("pad_to_jp", []),
         d.get("msgs", []),
     )
@@ -112,25 +154,15 @@ def _internal_key(jp):
     return internal_key(jp)
 
 
-# 🔴 **접미가 원문에 없는 지명 다섯**(ps1-ed1+2 실측 2026-09-12, 정본 주석과 같다) —
-#    マスクーン·セリス·リーゼル·バズヌーン·セダル. 정본은 이 다섯을 **접미 없이** 든다
-#    (`"マスクーン": "마스쿤"`), 그런데 ED2 「지명 긴꼴」 표는 원문이 **접미를 바로 구운
-#    자리**라(`マスクーンの町`) 정본 열쇠와 안 맞아 조용히 죽는다(2026-09-15, 정본이
-#    바뀌며 처음 드러났다 — `AssertionError: 정본에 없는 place`).
-#    ⇒ 다섯만 벗겨서 재조회한다. **다른 접미(港·砦·洞窟…)는 안 건드린다** — 그건 서로
-#      다른 시설이라 벗기면 안 된다(⚠ `ラルファ`가 그 예: ED1 砦 / ED2 港).
-_NO_SUFFIX_PLACES = ("マスクーン", "セリス", "リーゼル", "バズヌーン", "セダル")
-
-
+# 🔴 **칸이 원문에 접미를 구운 지명**(ED2 「지명 긴꼴」 표의 `マスクーンの町` 등)은 사전(고유명사)에 열쇠가 없다 —
+#    그 칸 꼴은 **정본**(`shared/canon` ed2 `ui`)이 든다(마스터 2026-10-08·10-07 「지명 칸은 원문 꼴 그대로」).
+#    예전엔 여기 JP 다섯(`_NO_SUFFIX_PLACES`)을 코드에 들고 접미를 벗겨 재조회했다 — 같은 지식을 코드에 둔 것이었다.
 def _place_lookup(jp, cat):
-    """`glossary.lookup` 을 먼저 그대로 쓰고, 위 다섯만 접미를 벗겨 다시 잰다."""
+    """사전(`place`)을 먼저, 없으면 정본 `ui` 의 칸 꼴(`~の町` 구운 꼴)."""
     kr = lookup(jp, cat)
     if kr is not None or cat != "place":
         return kr
-    for bare in _NO_SUFFIX_PLACES:
-        if jp == bare + "の町":
-            return lookup(bare, cat)
-    return None
+    return shared_canon.lookup(jp, "ui", "ed2") or shared_canon.lookup(jp, "ui", "ed1")
 
 
 # 🔴 **종류 말은 붙여 쓴다**(마스터 판정 (나) 2026-09-27 — PS1 과 같은 꼴). HUD·표·헤더의
@@ -394,12 +426,6 @@ DOTART_PLACES = {
     "사피아의호수": bytes(SS_SAPIA_CODES),
 }
 
-# {JP 원문: 강제 KR} — **씬 헤더 전용** 표기 오버라이드. `サピアの湖` 의 씬 헤더는 PS1 과 자모를
-# 맞춘 「사피아의호수」로 띄운다(마스터 지시 2026-10-05, "ps1에서 도트작업했던 모든것들은 새턴에도
-# 동일 적용"). 🔴 2026-10-07 판정표 D4 로 사전 값도 「사피아의호수」가 됐다 — 이 오버라이드는
-# 이제 사전과 같은 값을 못 박아 두는 방어선이다(마스터: HUD·입장 배너·워프 목록만 붙여쓰기,
-# 일반 대화는 「사피아의 호수」로 띄어쓰기).
-SCN_HEADER_WORDING = {"サピアの湖": "사피아의호수"}
 
 
 def dotart_claimed_codes():
@@ -433,7 +459,7 @@ def dotart_text_codes(rs, scn, ntabs, sysm, cards_msgs_kr):
     for _k, _n, _i, _at, _s, _jp, kr in rs:
         mark(kr)
     for _p, _l, _s, _at, _fl, jp, kr, _t in scn:
-        mark(SCN_HEADER_WORDING.get(jp, kr))
+        mark(kr)
     for t in ntabs:
         for _at, _jp, kr, _ptrs in t["recs"]:
             mark(kr)
@@ -493,7 +519,6 @@ def scn_header(d, i, places):
             continue
         kr = places.get(jp)
         if kr:
-            kr = SCN_HEADER_WORDING.get(jp, kr)
             # 🔴 널이 반드시 남아야 한다 — 꼬리 바이트(`09`)가 끝을 차지하므로 본문은 fl-2 까지.
             return s, fl, jp, _fit_place(kr, fl - 1, False, "씬 지명 헤더")
     return None

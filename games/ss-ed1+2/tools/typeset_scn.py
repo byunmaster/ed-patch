@@ -74,6 +74,7 @@ sys.path.insert(
 )
 
 import common
+import canon as shared_canon
 from glossary import table
 from text.line_key import key as line_key
 
@@ -89,6 +90,10 @@ def _names():
       남았다(2026-08-27). 216칸이 이미 정본에 있는데 안 읽고 있었다.
     """
     out = {}
+    # 화자 호칭(`%c병사%c` 같은 이름칸의 역할 이름)은 **정본**(`shared/canon` speaker)이 든다(사전 적용 2단계 —
+    # 사전은 고유명사만). ED1 을 먼저, ED2 는 없는 것만(겹치는 열쇠는 값이 같다). 사전 쪽이 이기는 순서는 그대로.
+    for t in ("ed2", "ed1"):
+        out.update(shared_canon.table("speaker", t))
     for cat in ("person", "monster", "place", "item"):
         out.update(table(cat))
     return out

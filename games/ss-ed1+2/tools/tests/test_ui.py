@@ -20,6 +20,8 @@ sys.path.insert(0, TOOLS)
 
 import dump_ui
 import patch_ui
+
+sys.path.insert(0, os.path.join(TOOLS, "..", "..", "..", "shared"))
 from patch_ui import CANON, PAD, rec_len
 
 
@@ -28,7 +30,27 @@ class TestUiCanon(unittest.TestCase):
     def setUpClass(cls):
         with open(CANON, encoding="utf-8") as f:
             d = json.load(f)
-        cls.tables, cls.pad = d["tables"], d.get("pad", {})
+        # 🔴 값은 `shared/canon` 정본이 채운다(사전 적용 2단계) — 구조 파일이 아니라 **채워진 표**를 본다.
+        cls.tables, cls.pad = patch_ui.load_canon()[0], d.get("pad", {})
+
+    def test_표_값은_정본에서_온다(self):
+        """ui.json 의 KR 은 정본에 없는 칸(`跳`)만 남는다 — 새로 자기 값을 들이면 이 테스트가 운다."""
+        with open(CANON, encoding="utf-8") as f:
+            raw = json.load(f)["tables"]
+        own = [(n, jp, kr) for n, rows in raw.items() for jp, kr in rows if kr is not None]
+        self.assertEqual(own, [("HUD 상태이상", "跳", "반")], "자기 표에 값이 늘었다 — 정본에 올린다")
+        for n, rows in raw.items():
+            for jp, kr in rows:
+                if kr is None and patch_ui._ui_label(jp, n) is None:
+                    self.assertTrue(all(ord(c) < 0x3000 or 0xFF01 <= ord(c) <= 0xFF5E or c == "\u3000" for c in jp), (n, jp))
+
+    def test_도트_지명은_사전_값이다(self):
+        """`DOTART_PLACES` 는 KR 이 열쇠다 — 사전 값이 바뀌면 도안이 조용히 안 붙는다."""
+        from glossary import table
+
+        vals = set(table("place").values())
+        for k in patch_ui.DOTART_PLACES:
+            self.assertIn(k, vals, f"사전 place 값에 없는 도트 지명: {k}")
 
     def test_표마다_줄_수가_원본과_같다(self):
         for name, _ed, ed2, _stride, n, n2 in dump_ui.TABLES:

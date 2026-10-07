@@ -59,8 +59,10 @@ MAX_SIZE = 16  # 원본 글자가 16px 격자다
 
 
 def load_canon():
-    with open(CANON, encoding="utf-8") as f:
-        return json.load(f)["cards"]
+    """카드 `[JP, 번호 라벨, 제목]` — 제목은 정본(`shared/canon` chapter)이 채운다(`patch_ui.load_canon`)."""
+    import patch_ui
+
+    return patch_ui.load_canon()[2]
 
 
 def plates(mm, files):

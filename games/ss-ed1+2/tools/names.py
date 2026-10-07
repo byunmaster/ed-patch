@@ -95,26 +95,18 @@ def internal_key(jp):
 # 「크루즈마을」→「크루즈　마을」 — sfc 「엘아스타 마을」과 같은 규칙이다. 지명 **자체에**
 # 붙은 종류 말(마을·성·동굴·탑…)만 띄운다 — 접미(`근처`·`입구`)는 `patch_ui` 몫이다.
 # ⚠ **전각 공백**이다 — HUD 가 두 바이트를 한 글자로 읽어 반각 1B 는 짝을 깬다
-#   (「곶의동굴 근틀」, `patch_ui` 접미 주석). 공유 정본(`shared/glossary`)은 안 고친다 —
-#   전각 공백은 이 기종의 인코딩 선택이라 다른 게임에 흘리면 안 된다.
-# ⚠ 목록에 없는 끝말(`입`·`변토`·`해운`·`알`·통짜 낱말)은 **일부러 뺐다** — 이름의 일부이지
-#   시설 종류가 아니다(`나락의입`·`용의알`). 긴 것부터 본다(`초가집` 이 `집` 보다 먼저).
-KIND_WORDS = (
-    "초가집",
-    "마을",
-    "항구",
-    "요새",
-    "광산",
-    "동굴",
-    "호수",
-    "섬",
-    "성",
-    "탑",
-    "묘",
-    "집",
-    "길",
-    "방",
-)
+#   (「곶의동굴 근틀」, `patch_ui` 접미 주석). 전각 공백은 이 기종의 인코딩 선택이라 공용에 안 둔다.
+# 🔴 **종류 말 목록·대사 꼴 규칙은 공용 `shared/glossary/names.py` 가 정본이다**(사전 적용 라운드 2단계,
+#    2026-10-08 — 둘이 따로 들어 있었다: 새턴이 만들어 공용으로 옮겨 간 뒤에도 여기 사본이 남았다).
+#    여기엔 이 기종 몫(전각 공백으로 띄우는 `space_kind`)만 둔다. 목록 차이: 공용엔 `통로` 가 더 있다(다른
+#    게임 지명) — 새턴 지명엔 `~통로` 가 없어 결과가 같다(`test_names`).
+import os as _os
+import sys as _sys
+
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "..", "..", "shared"))
+
+from glossary.names import ATTACHED_KINDS, KIND_WORDS  # noqa: E402,F401
+from glossary.names import dialog_place as space_place_dialog  # noqa: E402,F401
 
 
 def space_kind(kr, sp="　"):
@@ -125,27 +117,3 @@ def space_kind(kr, sp="　"):
         if kr.endswith(w) and len(kr) > len(w):
             return kr[: -len(w)] + sp + w
     return kr
-
-
-# ── 대사 속 지명 띄어쓰기 (마스터 판정 2026-09-27 — 두 기종 공통, 대사에만) ────────────────
-# HUD·표·세이브 슬롯은 붙인다(판정 (나), `patch_ui._fit_place`). **대사만** 아래 셋으로 띄운다:
-#   ① 「성」·「섬」은 붙인다 — `루디아성`·`그로스토스성`·`해적섬`
-#   ② 「~의」 뒤는 띄운다 — `국경의 동굴`·`바람의 탑`·`로엘의 집`
-#   ③ 나머지 종류 말은 띄운다 — `크루즈 마을`·`베르가 광산`·`네리아 항구`(`KIND_WORDS`)
-# ⚠ 공백은 **반각**이다 — 대사는 반각 공백이 보통 띄어쓰기다(전각은 HUD 짝수 약속 몫).
-# ⚠ 「섬」도 붙이는 끝말이다(마스터 판정 2026-09-27 — `해적섬`·`론윌섬`). 「변토」·「입」·「알」처럼
-#   목록 밖 끝말도 「~의」 뒤면 ② 로 띄운다(`네사의 변토`·`나락의 입`·`용의 알`).
-#   「의」 없이 목록 밖 끝말이면 그대로다(가짜 예: `바람굴`).
-ATTACHED_KINDS = ("성", "섬")
-
-
-def space_place_dialog(kr):
-    """대사에 쓸 지명 꼴 — 위 규칙 셋. 안 바뀌면 그대로."""
-    if not kr or " " in kr or "　" in kr:
-        return kr
-    if kr.endswith(ATTACHED_KINDS):
-        return kr
-    i = kr.rfind("의", 1, len(kr) - 1)
-    if i > 0:
-        return kr[: i + 1] + " " + kr[i + 1 :]
-    return space_kind(kr, " ")
