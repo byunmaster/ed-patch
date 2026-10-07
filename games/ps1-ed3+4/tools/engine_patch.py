@@ -1,4 +1,7 @@
-"""엔진 패치 — 대사창 공백을 8px 로 (VWF 축소판). 지금은 ED3 만.
+"""엔진 패치 — 대사창 공백을 6px(반 칸)로 (VWF 축소판). 지금은 ED3 만.
+
+🔴 2026-10-07 마스터 「대사창 공백 반각」 — 8px(2/3 칸)에서 6px(1/2 칸)로 내렸다(`typeset.WIDTHS` 가 같은 값을 쓴다).
+   아래 본문의 「8px」 는 옛 값이다.
 
 ## 왜 엔진을 고치나
 
@@ -104,7 +107,7 @@ ED3 = {
     "dead": 0x8008DAD4,
     "dead_len": 1092,
     "dead_sha1": "748d1ea80bb0dd5c9e2798f31bcea3d07f4c2fbc",
-    "table_off": 0x22C,  # SLOTW — 코드 뒤. 0x200B (칸 색인 & 0x1FF)
+    "table_off": 0x244,  # 훅 코드 상한(옛 칸 종류 표 자리 — 지금은 안 쓰고 0 으로 지운다). 죽은 함수 끝(0x444)
     "table_len": 0x200,
 }
 PATCH = {"ed3": ED3}  # ED4 는 렌더러가 따로라(0x800164F0) 아직 안 찾았다 — 없으면 건너뛴다
@@ -198,8 +201,13 @@ def asm(text, base):
             w = _i(9 if v < 0 else 0xD, 0, _reg(a[0]), v)
         elif op == "lui":
             w = _i(0xF, 0, _reg(a[0]), int(a[1], 0))
-        elif op in ("ori", "andi", "slti"):
-            w = _i({"ori": 0xD, "andi": 0xC, "slti": 0xA}[op], _reg(a[1]), _reg(a[0]), int(a[2], 0))
+        elif op in ("ori", "andi", "slti", "sltiu"):
+            w = _i(
+                {"ori": 0xD, "andi": 0xC, "slti": 0xA, "sltiu": 0xB}[op],
+                _reg(a[1]),
+                _reg(a[0]),
+                int(a[2], 0),
+            )
         elif op in _RTYPE:
             w = _r(_RTYPE[op], _reg(a[1]), _reg(a[2]), _reg(a[0]))
         elif op == "move":
@@ -265,14 +273,13 @@ def verify(words, base):
 
 
 # ── 훅 본문 ────────────────────────────────────────────────────────────────────────
-def hooks(disc, space_code, space_w):
+def hooks(disc, space_code, space_w, paren_codes=(0x7FFF, 0x7FFF), with_frame=None):
     """[워드] — 훅 본문(`dead` 에 놓인다). `verify` 까지 통과한 뒤 돌려준다.
 
     들어올 때(0x80018ACC 에서 jal): a2 = 코드, 0x10(fp) = 칸 색인 + 1. v0·v1·a0·a2 는 호출부가
     뒤에 쓰므로 **t 레지스터만** 쓴다. 돌아갈 때 a1 = 폰트 베이스(덮어쓴 두 명령을 대신한다).
     """
     p = PATCH[disc]
-    slotw = p["dead"] + p["table_off"]
     fb_hi, fb_lo = font.FONTS[disc]["ram"] >> 16, font.FONTS[disc]["ram"] & 0xFFFF
     fb_lo = fb_lo - 0x10000 if fb_lo >= 0x8000 else fb_lo  # addiu 는 부호 확장
     fb_hi += 1 if fb_lo < 0 else 0
@@ -281,14 +288,22 @@ def hooks(disc, space_code, space_w):
       li    t1, 12
       li    t2, {space_code}
       addiu t0, t0, -1              # s = 칸 색인
-      bne   a2, t2, keep
-      andi  t0, t0, 0x1ff           # (지연 슬롯 — 늘 실행) 표 범위로
-      li    t1, {space_w}
+      andi  t0, t0, 0x1ff           # 표 범위로
+      beq   a2, t2, half            # 공백 → 반 칸
+      li    t3, {paren_codes[0]}    # (지연 슬롯) 여는 괄호 `(` — 글리프 자리라 코드가 빌드마다 다르다
+      beq   a2, t3, half
+      li    t3, {paren_codes[1]}    # (지연 슬롯) 닫는 괄호 `)`
+      beq   a2, t3, half
+      sltiu t3, a2, 6               # (지연 슬롯) 코드 < 6 ?
+      beq   t3, zero, keep          # 부호 코드가 아니면 12 그대로
+      li    t2, 3                   # (지연 슬롯)
+      beq   a2, t2, keep            # 3 은 부호가 아니다(PUNCT = 1 `,` · 2 `.` · 4 `?` · 5 `!`)
+      slti  t3, a2, 1               # (지연 슬롯) 코드 0 ?
+      bne   t3, zero, keep
+      nop
+    half:
+      li    t1, {space_w}           # 공백·부호·괄호는 반 칸(6px) — 글리프의 잉크는 왼쪽 5열 안이다
     keep:
-      lui   t2, {slotw >> 16:#x}
-      ori   t2, t2, {slotw & 0xFFFF:#x}
-      addu  t3, t2, t0
-      sb    t1, 0(t3)               # ① SLOTW[s] = 폭
       lui   t4, {p["handles"] >> 16:#x}
       ori   t4, t4, {p["handles"] & 0xFFFF:#x}
       li    t5, 12                  # ② 핸들 12개를 훑는다
@@ -315,67 +330,114 @@ def hooks(disc, space_code, space_w):
       nop
     found:
       div   zero, t6, t8            # k / 열 → 나머지 = 열 번호
-      lhu   t7, 0xa(t4)             # 스프라이트 시작
-      mfhi  t5                      # col
-      lhu   t9, 8(t4)               # 행
+      li    t7, {COLS}
+      bne   t8, t7, out             # 🔴 대사창(열 24)만 만진다 — 목록·패널·팝업은 엔진 자리 그대로(원판)
+      mfhi  t5                      # (지연 슬롯) col
+      lhu   t7, 8(t4)               # 행
       nop
-      mult  t8, t9
-      mflo  t9                      # 열×행
+      mult  t8, t7
+      mflo  t7                      # 열×행 = 창의 칸 수
       nop
-      addu  t7, t7, t9              # 틀 첫 스프라이트 색인 (격자 칸 수 바로 뒤)
-      sll   t1, t7, 2
-      addu  t1, t1, t7
-      sll   t1, t1, 2               # ×20
-      lui   t3, {p["prims"] >> 16:#x}
-      ori   t3, t3, {p["prims"] & 0xFFFF:#x}
-      addu  t3, t3, t1
-      lh    t8, 8(t3)               # 틀 왼쪽 x (버퍼 0)
-      lhu   t7, 6(t4)               # 열 수
-      li    t1, {COLS}
-      bne   t7, t1, uigrid          # 🔴 대사창(열 24)만 압축한다 — 목록·패널·팝업은 원판 12px 격자
-      addiu t9, t8, 12              # ③ x = 틀.x + 12 (격자 원점) — 지연 슬롯, 늘 실행
-      move  t1, zero                # j = 0
-      subu  t3, t0, t5              # 행 첫 슬롯 = s - col
-      andi  t3, t3, 0x1ff
-      beq   t5, zero, place
-      addu  t3, t2, t3              # &SLOTW[행 첫]
-    sum:
-      lbu   t7, 0(t3)
-      addiu t1, t1, 1
-      addiu t3, t3, 1
-      addu  t9, t9, t7              # x += 앞선 칸 폭
-      bne   t1, t5, sum
-      nop
-      j     place
-      nop
-    uigrid:
-      # 페이지를 넘겨 다시 그릴 때 칸 폭 표(SLOTW)와 스프라이트 x 가 어긋나 「마」가 「ㅁ」으로 덮이고
-      # 시간 숫자가 벌어졌다(마스터 2026-10-05). UI 창은 틀 기준 + 열 × 12 로 고정한다.
-      sll   t7, t5, 3
-      sll   t1, t5, 2
-      addu  t7, t7, t1              # col × 12
-      addu  t9, t9, t7
-    place:
-      # 🔴 틀 밖으로 나가지 않게 자른다 — `▼`(다음 페이지)는 **글자를 따라오지 않고 격자
-      #    마지막 열**에 놓인다. 열이 24 → 32 가 되면서 x 가 화면 밖으로 나가 사라졌다
-      #    (유저 실측 09-07). 틀 안 마지막 칸으로 당긴다.
-      addiu t7, t8, {12 + 12 * (FRAME_COLS - 1)}
-      slt   t3, t7, t9
-      beq   t3, zero, noclamp
-      nop
-      move  t9, t7
-    noclamp:
+      addiu t7, t7, -1
+      subu  t0, t7, t6              # A = 이 창에서 이 칸 뒤에 남은 칸 수(= 뒤에 타일이 있는 칸 수)
       lhu   t7, 0xa(t4)             # 스프라이트 시작
       lui   t3, {p["prims"] >> 16:#x}
       ori   t3, t3, {p["prims"] & 0xFFFF:#x}
       addu  t7, t7, t6              # + k
-      sll   t1, t7, 2
-      addu  t1, t1, t7              # ×5
-      sll   t1, t1, 2               # ×20
-      addu  t3, t3, t1              # 스프라이트
+      sll   t9, t7, 2
+      addu  t9, t9, t7              # ×5
+      sll   t9, t9, 2               # ×20
+      addu  t3, t3, t9              # t3 = 이 칸의 스프라이트(버퍼 0)
+      # ── 줄 첫 칸이면 이 칸부터 창 끝까지(▼ 칸 빼고) 칸 자리를 원래 격자로 되돌린다.
+      #    🔴 안 찍힌 줄은 **앞 글에서 당겨진 자리 그대로 남아** 뒤쪽이 뚫려 보였다(2~3줄짜리 대사 뒤의 빈 줄, 2026-10-07).
+      #    글은 위에서 아래로 찍히니 줄 첫 칸에서 아랫줄까지 되돌리면 더 안 찍힌 줄도 원래 자리가 된다.
+      bne   t5, zero, noreset
+      nop
+      lh    t7, 8(t3)               # x0 = 행 원점(줄 첫 칸은 훅이 안 건드린다)
+      move  t8, t3                  # 스프라이트
+      move  t2, t0                  # 되돌릴 칸 수 = 뒤에 남은 칸 수(▼ 칸 제외)
+      move  t9, t7                  # x
+      li    t4, 12
+      li    t6, 24                  # 줄 안 남은 칸 수
+    rl:
+      sh    t9, 8(t8)
+      sh    t9, 0x5008(t8)
+      sh    t4, 16(t8)
+      sh    t4, 0x5010(t8)
+      addiu t9, t9, 12
+      addiu t8, t8, 20
+      addiu t6, t6, -1
+      bne   t6, zero, rl2
+      addiu t2, t2, -1              # (지연 슬롯) 남은 칸 수
+      move  t9, t7                  # 줄이 끝나면 원점으로
+      li    t6, 24
+    rl2:
+      bne   t2, zero, rl
+      nop
+    noreset:
+      li    t6, 12
+      sh    t6, 16(t3)              # 이 칸의 배경 폭을 12 로 되돌린다(앞 글자가 넓혀 놨을 수 있다)
+      sh    t6, 0x5010(t3)
+      li    t7, {COLS - 1}
+      beq   t5, t7, out             # 마지막 칸 — 다음 칸이 없다
+      nop
+      # ── 안 찍힌 칸들을 이 글자 끝에 붙인다 — **칸 x 는 앞 칸 x + 앞 칸 폭**으로 이어진다(체인).
+      #    🔴 안 찍힌 칸은 그동안 원래 격자 자리에 있어 줄 끝에 (절약한 폭)만큼 틈이 났다(대사창 배경이 뚫려 보임,
+      #    2026-10-07). 뒤 칸들을 당겨 붙이고 **틈(S)을 폭에 나눠 얹어** 맨 끝(원래 자리)까지 배경을 잇는다.
+      #    ⚠ 넓힌 칸은 **옆 타일 텍스처를 같이 읽는다** — 텍스처 한 줄이 타일 21개(u 0~240, 12 간격 — 실측: 스프라이트의
+      #    u 가 0x00~0xf0)라 u+폭 이 252 를 넘으면 다른 그림의 텍셀이 배경에 비친다(색 점). **창의 타일은 칸 수만큼뿐**이라(마지막 줄은 12칸) 그 뒤도 쓰레기다 — 칸마다 늘릴 몫을 `min(240 − u, 12 × (뒤 칸 수 − 1))` 로 막는다(마지막 칸은 `▼` 타일).
+      sll   t7, t5, 2
+      addu  t7, t7, t5
+      sll   t7, t7, 2               # col × 20
+      subu  t7, t3, t7              # 행 첫 칸 스프라이트
+      lh    t7, 8(t7)               # x0 = 행 원점
+      lh    t9, 8(t3)               # 이 칸 x
+      addiu t6, t5, 1               # col + 1
+      sll   t2, t6, 2
+      sll   t6, t6, 3
+      addu  t6, t6, t2              # 12 × (col+1)
+      addu  t9, t9, t1              # x_next = x + 폭(12 또는 6)
+      addu  t6, t6, t7              # 원래 자리: x0 + 12(col+1)
+      subu  t6, t6, t9              # S = 원래 자리 − x_next (절약한 폭, 0 이상)
+      bgez  t6, sok
+      nop
+      move  t6, zero                # 음수면(이미 오른쪽으로 밀린 칸) 늘리지 않는다
+    sok:
+      li    t7, {COLS - 1}
+      subu  t7, t7, t5              # 남은 칸 수
+    fill:
+      addiu t3, t3, 20              # 다음 칸 스프라이트
+      addiu t0, t0, -1              # 이 칸 뒤에 남은 칸 수
+      beq   t0, zero, out           # 🔴 창의 마지막 칸은 `▼`(다음 페이지) 자리다 — 건드리면 화살표 타일이 넓게 비친다
+      nop
       sh    t9, 8(t3)               # .x (버퍼 0)
-      addiu t3, t3, 0x5000
-      sh    t9, 8(t3)               # .x (버퍼 1)
+      sh    t9, 0x5008(t3)          # .x (버퍼 1)
+      lbu   t8, 12(t3)              # u (텍스처 안 자리)
+      li    t2, 240
+      subu  t8, t2, t8              # 한 줄 끝까지 = 240 − u
+      sll   t2, t0, 3
+      sll   t1, t0, 2
+      addu  t2, t2, t1              # 12 × (뒤에 타일이 있는 칸 수)
+      addiu t2, t2, -12             # 마지막 칸(`▼` 타일)은 읽지 않는다 — 읽으면 회색 화살표 타일이 배경에 비친다
+      slt   t1, t2, t8
+      beq   t1, zero, capok
+      nop
+      move  t8, t2                  # 타일이 없는 곳은 읽지 않는다(마지막 텍스처 줄은 12칸뿐 — 그 뒤는 쓰레기 텍셀)
+    capok:
+      move  t2, t6                  # e = S
+      slt   t1, t8, t2
+      beq   t1, zero, haveE
+      nop
+      move  t2, t8                  # e = 상한
+    haveE:
+      addiu t1, t2, 12              # 폭 = 12 + e
+      sh    t1, 16(t3)              # .w (버퍼 0)
+      sh    t1, 0x5010(t3)          # .w (버퍼 1)
+      addu  t9, t9, t1              # 다음 칸 x
+      subu  t6, t6, t2              # S −= e
+      addiu t7, t7, -1
+      bne   t7, zero, fill
+      nop
     out:
       lui   a1, {fb_hi:#x}
       jr    ra
@@ -432,9 +494,12 @@ def hooks(disc, space_code, space_w):
       jr    ra
       sh    v1, 0x2e(fp)
     """
+    with_frame = (COLS != FRAME_COLS) if with_frame is None else with_frame
+    if not with_frame:  # 열을 안 늘리면 틀 보정 코드는 쓰이지 않는다 — 빼서 훅 자리를 아낀다
+        src = src.split("    # ── 틀 오른쪽 변")[0]
     words, labels = asm(src, p["dead"])
     verify(words, p["dead"])
-    assert 4 * len(words) <= p["table_off"], "훅 코드가 표 자리를 침범한다"
+    assert with_frame or 4 * len(words) <= p["table_off"], "훅 코드가 죽은 함수 자리를 넘는다"
     return words, labels
 
 
@@ -476,7 +541,8 @@ def apply(exe, disc, table, space_w=None):
         for s in p["cols_sites"]:
             _expect(exe, s, (p["cols_orig"],), "창 열 수")
 
-    words, labels = hooks(disc, table[" "], space_w)
+    parens = tuple(table.get(c, 0x7FFF) for c in "()")  # 없으면 어떤 코드와도 안 맞는 값
+    words, labels = hooks(disc, table[" "], space_w, parens)
     struct.pack_into(f"<{len(words)}I", exe, d0, *words)
     t0 = d0 + p["table_off"]
     exe[t0 : t0 + p["table_len"]] = bytes(p["table_len"])
