@@ -73,6 +73,12 @@ done
 
 # 게임 브랜치가 공용·남의 게임을 건드렸나 — 공용 코드·남의 게임은 알림만(급하면 어길 수 있어야 한다).
 # 🔴 단 **정본 사전(shared/glossary·lore)을 고치면 실패**다(마스터 2026-10-07 — 워커는 독자 데이터를 못 갖는다).
+# 🔴 워크트리 안의 .local — 만들면 실패(10-07). 메인 트리 것만 쓴다(캡처가 거기 갇혀 마스터가 못 봤다).
+if [ "$(git -C "$ROOT" rev-parse --git-dir)" != "$(git -C "$ROOT" rev-parse --git-common-dir)" ] && [ -e "$ROOT/.local" ]; then
+  echo "── 워크트리 .local"
+  echo "  🔴 워크트리 안에 .local 이 있다 — 메인 트리 \$(git rev-parse --git-common-dir)/../.local 로 옮기고 지운다"
+  fail=1
+fi
 echo "── 브랜치 범위"
 scope_rc=0
 scope_out=$("$PY" "$ROOT/scripts/check/check_shared_scope.py" 2>&1) || scope_rc=$?

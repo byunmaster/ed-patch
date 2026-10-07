@@ -80,19 +80,24 @@ scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test
                        ⚠ 자격증명은 레포에 없다 — 인증은 크롬 프로필이 든다
   lib/select.sh     └ 화살표 키 선택 UI (에뮬 전용이 아니라 여기 둔다)
   worktree.sh       └ 게임별 워크트리 (originals 지역 링크까지 대신한다)
-.local/             이 머신 전용 (gitignore). 🔴 **기본값은 보존이다** — 지워도 되는 건
-                    `cache/` 하나뿐이고 리셋은 `rm -rf .local/cache` 다(`work/` 와 같은 성질).
-                    ⚠ 「gitignore 니까 재생성되겠지」가 아니다 — 안에 **되살릴 수 없는 자료**가
-                    섞여 있다(소장 공략집을 실제로 날렸다). 칸별 표는 `.local/README.md`
+.local/             이 머신 전용 — **git 이 아예 모른다**(통째 gitignore, 10-07). **「지워도 되는가」로 네 칸**이다.
+                    리셋은 `rm -rf .local/cache` 하나뿐 — 나머지 셋은 손으로만, **목록을 먼저 파일로 남기고** 정리한다
+                    (소장 공략집을 실제로 날린 적이 있다 — 「gitignore 니까 재생성되겠지」가 아니다)
+  keep/             └ 🔴 **보존 — 다시 못 구한다.** guide/(소장 공략집) · bios/ · saves/<게임>/(세이브 보관소 —
+                       세이브는 캐시·inbox 에 두지 않는다) · archive/(지운 것에서 건진 것) ·
+                       secrets.env(**바깥 서비스 열쇠는 여기 하나로** — 새 `.env` 규약을 만들지 않는다. `이름=값` 줄
+                       (`DEEPL_API_KEY` 역번역 · `GEMINI_API_KEY` 초벌), `chmod 600`. 도구는 `common.secret(이름)` 으로 읽고
+                       **환경변수가 이긴다** · 없으면 `common.need_secret` 이 둘 자리를 알려 주고 멈춘다 · 값은 로그에 안 찍는다)
+  work/             └ 🟡 작업물 — 라운드가 닫히면 **칸 안만** 정리한다. inbox/<게임>/(QA 스크린샷 —
+                       ⚠ inbox/ 바로 아래 출처 불명물은 남긴다) · capture/<게임>/(실행기 캡처, emu.sh 가 모은다)
+  ship/             └ 🟢 배포 입력 — git 밖에 두는 배포 자료. release/<태그>/(xdelta·BPS·지문) ·
+                       site-covers/(배포 페이지 표지·게임 화면 = 릴리스 site-covers)
   cache/            └ ✅ **여기만 지운다** — 에뮬 빌드·실행 사본(dosbox·mednafen·np2kai·pc98) ·
-                       내려받은 글꼴 · 패처 빌드 · 배포 레포 클론 · 템플릿 클론
-  guide/  bios/     └ 🔴 소장자 제공물. 다시 못 구한다
-  inbox/<게임>/     └ 인게임 QA 스크린샷 — 라운드가 닫히면 **칸 안만** 정리한다
-                       (⚠ `inbox/` 바로 아래엔 출처 불명물이 쌓인다 — 남긴다)
-  secrets.env       └ **바깥 서비스 열쇠는 여기 하나로** (DeepL · Gemini …). 새 `.env`
-                       규약을 만들지 않는다 — `.local/` 이 이미 그 자리다. 도구는
-                       `common.secret(이름)` 으로 읽고 **환경변수가 이긴다**.
-                       ⚠ 워크트리엔 `.local/` 이 안 따라오므로 메인 트리 것을 거슬러 찾는다
+                       내려받은 글꼴 · 패처·사이트 빌드 · 템플릿 클론
+                    ⚠ 워크트리엔 `.local/` 이 안 따라온다 — 도구는 메인 트리 것을 거슬러 찾는다(git common dir)
+                    🔴 **워크트리 안에 `.local/` 을 만들지 않는다** — `check.sh` 가 실패시킨다. 10-07 에 추적되던 README 때문에
+                       워크트리마다 `.local` 이 보였고, 다섯 워크트리에 캡처 80장이 갇혀 마스터가 못 봤다(그래서 README 를 걷었다).
+                       캡처는 **메인 트리** `$(git rev-parse --git-common-dir)/../.local/work/inbox/<게임>/` 에 둔다
 patcher/            웹 패처 일체 — index.html.tmpl · build.py · subset_font.py · fonts.css
                     빌드하면 games/*/patches/*.json 이 인라인된 자립형 HTML 하나가 나온다
 docs/               레퍼런스·공개 체크리스트·소장 컬렉션
@@ -312,7 +317,7 @@ first-parent 104 중 머지는 **5**뿐이라, 트렁크가 「타이틀이 닫�
 각 세션에 rebase 요청. 🔴 **워크트리는 만지지 않는다.** 규약 전부는
 [`docs/manager.md`](docs/manager.md). 워커 쪽 약속은 둘뿐이다 — **세션 이름 = 워크트리 이름**
 (`/rename`), 유저 판정이 필요하면 상태 문서의 **`## 유저 판정 대기`** 절에 적는다.
-스크린샷은 `.local/inbox/<게임>/` 에 두고 말로 알린다(메시지엔 이미지가 안 실린다).
+스크린샷은 `.local/work/inbox/<게임>/` 에 두고 말로 알린다(메시지엔 이미지가 안 실린다).
 
 ### ⚠ 병행의 진짜 병목은 판정이다
 

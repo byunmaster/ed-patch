@@ -56,7 +56,7 @@ scripts/            진입점 — check.sh(커밋 전) · test.sh · emu.sh(게�
 patcher/            웹 패처 · 배포 페이지(patcher/site/)
 docs/               레퍼런스 · 공개 체크리스트 · 관리자 세션 규약 · 소장 컬렉션
 originals/          원본 게임 데이터 (gitignore — 직접 소장본으로 채움)
-.local/             이 머신 전용 — 바깥 서비스 열쇠도 여기 ([.local/README.md](.local/README.md))
+.local/             이 머신 전용(git 밖) — 칸 설명은 CLAUDE.md 「저장소 맵」
 ```
 
 브랜치는 **`main` = 공통(`shared/` · `scripts/` · `docs/` · 스킬), `game/<타이틀>` = 각 게임**

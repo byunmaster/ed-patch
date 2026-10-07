@@ -143,7 +143,7 @@ def main():
     fragment = "--fragment" in argv
 
     site = json.loads(read("site.json"))
-    covers_dir = os.environ.get("SITE_COVERS") or local_dir("site-covers")
+    covers_dir = os.environ.get("SITE_COVERS") or local_dir("ship/site-covers")
     for g in site["games"]:
         cover_png = os.path.join(covers_dir, f"{g['id']}.png")
         if os.path.exists(cover_png):
@@ -240,7 +240,7 @@ def main():
         print(f"# {rel}  (fix 스펙 {len(specs)}개)")
 
     # 커버(타이틀 화면 캡처)는 git 에 넣지 않는다 — 게임 화면이라 패치 파일과 같은 취급이다.
-    #   이 머신에선 `.local/site-covers/<게임>.png` 에서, 배포 땐 워크플로가 릴리스 `site-covers` 에서 받아 온다.
+    #   이 머신에선 `.local/ship/site-covers/<게임>.png` 에서, 배포 땐 워크플로가 릴리스 `site-covers` 에서 받아 온다.
     #   site.json 의 cover 는 그림이 실제로 있을 때만 채운다(없으면 카드가 「준비 중/진행 예정」 글자를 쓴다).
     for g in site["games"]:
         src = os.path.join(covers_dir, f"{g['id']}.png")

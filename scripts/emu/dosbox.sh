@@ -110,13 +110,13 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 . "$HERE/winsize.sh"   # 창 크기 단계 넷 — 실행기 셋이 같은 눈금
 REPO=$(cd "$HERE/../.." && pwd)   # scripts/emu → 레포 루트
-# 캡처는 세 실행기 모두 **메인 트리 `.local/capture/<게임>/`** 로 모은다(마스터 10-06 「저장 경로 일원화」).
+# 캡처는 세 실행기 모두 **메인 트리 `.local/work/capture/<게임>/`** 로 모은다(마스터 10-06 「저장 경로 일원화」).
 #   워크트리에서 띄워도 메인 트리로 간다(.local 은 워크트리에 안 따라온다 — git-common-dir 로 찾는다).
 #   `.local/cache` 가 아니라 바로 아래라 **지우는 칸이 아니다** — 찍은 것은 사람이 모은 자료다.
 capture_dir() {   # $1 = 게임 칸 이름 → 만들어서 절대경로를 찍는다
   _cd=$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || true)
   case "$_cd" in "") _root=$REPO ;; /*) _root=$(cd "$_cd/.." && pwd) ;; *) _root=$(cd "$REPO/$_cd/.." && pwd) ;; esac
-  mkdir -p "$_root/.local/capture/$1" && printf '%s' "$_root/.local/capture/$1"
+  mkdir -p "$_root/.local/work/capture/$1" && printf '%s' "$_root/.local/work/capture/$1"
   return 0
 }
 # ⚠ **CLI 바이너리를 먼저 찾는다 — 앱 번들은 폴백이다**(유저 요청 2026-08-21). brew formula
