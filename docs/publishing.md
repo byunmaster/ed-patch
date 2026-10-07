@@ -1,10 +1,25 @@
-# 공개 전 점검 — 리포에 원본이 남지 않게
+# 공개 레포 점검 — 리포에 원본이 남지 않게
 
-이 저장소는 **공개를 전제로** 관리한다. 배포 창구인 `ed-patch`는 이미 공개이고,
-작업 레포도 공개하려면 소스·산출물 어디에도 원저작물의 축자 복제가 없어야 한다.
+이 저장소는 **공개돼 있다**(`byunmaster/ed-patch`, 2026-10-07). 예전엔 작업 레포는 비공개로 두고
+산출물 전용 공개 레포 `ed-patch` 에 패처 HTML 만 내보냈는데, 10-07 에 작업 레포가 그 이름을
+이어받아 공개됐고(옛 출력 레포는 지웠다 — 사본은 `.local/keep/archive`) 커밋 이력도 정리 없이
+그대로 공개했다(마스터 판정 A). 그래서 소스·산출물 어디에도 원저작물의 축자 복제가 없어야 한다.
 
 원칙은 하나다: **원본은 소장자의 디스크에만 있고, 리포에는 "어디를 어떻게 바꾸는지"와
 "제대로 된 원본이 맞는지 확인할 해시"만 둔다.**
+
+## 배포 경로 (2026-10-07)
+
+- **사이트** — `patcher/site/` 를 main 에 머지하면 `.github/workflows/pages.yml` 이 GitHub Pages 로
+  굽는다(진행 상황·배포 정보 정본은 `site.json`). 릴리스 이벤트는 main 기준으로 다시 띄운다
+  (Pages 환경이 main 배포만 받는다). 미리보기는 `python3 patcher/site/build_site.py --out .local/cache/site`.
+- **[kr] 패치 파일** — 게임의 `make_dist.py` 가 `work/dist/` 에 xdelta·BPS 를 만들고,
+  `.local/ship/release/<태그>/` 로 옮겨 릴리스(`<게임>-<트랙>-v<버전>`)에 첨부한다. 워크플로가
+  릴리스에서 받아 페이지 옆에 둔다. **git 에는 안 들어간다.**
+- **표지·게임 화면** — 릴리스 `site-covers` 의 PNG(로컬 원본은 `.local/ship/site-covers/`).
+- 원격에는 `main` 과 릴리스 태그만 둔다 — 게임 브랜치는 올리지 않는다.
+- ⚠ 옛 `scripts/patcher.sh deploy`(출력 레포 main 을 강제로 덮어쓰던 갈래)는 걷었다 — 이 레포가
+  그 이름을 이어받아, 남겨 두면 한 번에 이 레포 main 이 패처 파일 하나로 덮인다.
 
 ## 트랙별로 지키는 방식
 
@@ -15,8 +30,9 @@
   포인터**(`{f, o, l}`)를 쓰던 자리는 `tools/derive_text.py` 가 빌드 때 `originals/kr/`
   에서 문안을 꺼내 왔는데, ⚠ **2026-08-18 자체 번역 전환으로 kr 트랙은 그 길을 안 쓴다**
   (ED1·ED2 EXE 문안의 정발 포인터는 0 이다). 포인터 방식은 [fix] 트랙과 옛 자료에만 남는다.
-  → 공개 전 점검은 **`ours` 쪽**을 본다: 우리 문안이 정발을 베끼지 않았나
-  (`games/ps1-ed1+2/tools/check_forbidden.py`).
+  → 점검은 **`ours` 쪽**을 본다: 우리 문안이 정발을 베끼지 않았나
+  (`games/ps1-ed1+2/tools/check_forbidden.py` — 게임 게이트에 물려 있다). 10-04 실측: PS1 대사
+  20자↑ 일치 1.4% · 30자↑ 0줄.
 - JP 원문 키는 sha1 해시(`k`, `sha`)라 원문을 복원할 수 없다.
 - 단어 수준 명칭·라벨(아이템·몬스터·지명·메뉴)은 저작권 대상이 아니라 코드에 둬도 된다.
 
@@ -68,21 +84,20 @@ PS1 영웅전설 1+2를 실측한 수치(2026-07-30):
 
 → **[kr]은 xdelta/BPS 를 `work/`(gitignore) 빌드 산출물로 만들고, 배포 시점에 페이지가
 그걸 싣는다.** 릴리스물이 번역을 담는 것은 번역패치의 본질이라 문제없지만, git 에는
-들어가지 않는다. UI·폰트 서브셋·sha1 게이트·백업·`ed-patch` 배포 파이프라인은 그대로
-재사용하고 **입력 경로 하나만** 갈린다.
+들어가지 않는다(위 「배포 경로」 — 릴리스 첨부 → Pages 워크플로가 받아 싣는다).
 
-## 공개 전 체크리스트
+## 배포 전 체크리스트
 
 ```bash
 # 1. 패치 스펙에 원본 바이트가 없는지
 grep -rn '"from"' games/*/patches/*.json          # 0건이어야 한다
 
 # 2. 빌드 산출물(공개 페이지)에도 없는지
-python3 patcher/build.py --out work/patcher/index.html
-grep -c '"from"' work/patcher/index.html          # 0 이어야 한다
+sh scripts/patcher.sh build
+grep -c '"from"' .local/cache/patcher/index.html  # 0 이어야 한다
 
-# 3. 번역 테이블에 원문이 박혀 있지 않은지 (포인터·해시만 있어야 함)
-python3 -c "import json,glob;[print(f, sorted({k for e in json.load(open(f,encoding='utf-8'))['entries'] for k in e})) for f in glob.glob('games/*/textmap/*.json')]"
+# 3. 문안·코드·주석에 정발 문장이 박혀 있지 않은지 (게임 게이트가 돌린다)
+python3 games/ps1-ed1+2/tools/check_forbidden.py
 
 # 4. 추적되는 파일 중 게임 데이터가 섞였는지
 git ls-files | grep -iE '\.(bin|cue|iso|img|chd|mdf|exe|dll|dat)$'   # 0건이어야 한다
@@ -122,12 +137,8 @@ python3 games/dos-ed2/tools/apply_patch.py games/dos-ed2/patches/issue-1-suel-bo
 sh scripts/patcher.sh serve      # 브라우저 확인 (127.0.0.1 — file:// 로는 안 된다)
 ```
 
-## 남은 판단거리
+## 남겨 둔 경계
 
-- **작업 레포 공개 여부는 미결.** 위 조치로 "원본 축자 복제"는 없앴지만, 리버싱
-  노트(디스어셈블 발췌·오프셋 표)가 얼마나 상세한지는 별도 판단이 필요하다.
-  `games/dos-ed2/docs/*`와 `games/ps1-ed1+2/docs/*`를 공개 전에 한 번 훑는다.
-- 공개하기로 하면 `scripts/patcher.sh`의 `SRC_URL`에 소스 링크를 채운다 — 웹 패처
-  푸터에 바로 반영된다.
-- `docs/reference/_inventory/`(카페 게시판 원본 덤프)는 타인 게시글이라 gitignore
-  상태를 유지한다.
+- 리버싱 노트(디스어셈블 발췌·오프셋 표)는 공개 전 「얼마나 상세한가」가 미결이었는데, 손대지 않고 그대로
+  공개했다(10-07).
+- `docs/reference/_inventory/`(카페 게시판 원본 덤프)는 타인 게시글이라 gitignore 를 유지한다.

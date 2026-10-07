@@ -15,7 +15,7 @@
 패치 파일에는 원본 게임 데이터가 포함되지 않습니다. 적용하려면 직접 소장한 원본이
 필요합니다.
 
-## 패치 현황 (2026-10-05)
+## 패치 현황 (2026-10-07)
 
 | 게임 | 트랙 | 기종 | 상태 |
 | ---- | ---- | ---- | ---- |
@@ -33,7 +33,8 @@
 - 각 ED2(PCE · SFC · MD)는 진행 예정이고, 레트로 PC 원작군(PC-88 · MSX2 · X68000 · FM TOWNS)은 미정입니다.
 - 게임별 세부 진행은 각 게임의 상태 문서(`games/<게임>/docs/`)에 있습니다. 배포 페이지의 표는
   `patcher/site/site.json` 이 정본입니다.
-- 릴리스 태그는 `<게임>-<트랙>-v<버전>`(`ps1-ed1+2-kr-v1.0.0`)이고, 패치 파일(xdelta · BPS)은
+- 배포 페이지는 이 레포의 GitHub Pages입니다 — <https://byunmaster.github.io/ed-patch/> (`patcher/site/` 를 `main` 에 올리면 워크플로가 굽습니다).
+- 릴리스 태그는 `<게임>-<트랙>-v<버전>`(`ps1-ed1+2-kr-v1.0.0`)이고, 패치 파일(xdelta · BPS · SHA1SUMS)은
   [Releases](../../releases)에 올립니다. 레포에는 패치 파일을 넣지 않습니다.
 - 정발 복원 패치는 브라우저에서 바로 적용하는 웹 패처로도 배포합니다(파일이 서버로 올라가지 않습니다).
 
@@ -61,7 +62,8 @@ originals/          원본 게임 데이터 (gitignore — 직접 소장본으�
 
 브랜치는 **`main` = 공통(`shared/` · `scripts/` · `docs/` · 스킬), `game/<타이틀>` = 각 게임**
 으로 갈립니다. 게임끼리는 디스크 이미지가 달라 독립이라 워크트리로 병행합니다 —
-`sh scripts/worktree.sh <게임>`. 겹치는 건 공용뿐이라, 공용은 `main` 에서만 고칩니다.
+`sh scripts/worktree.sh <게임>`. 겹치는 건 공용뿐이라, 공용 코드(`shared/` · `scripts/`)는 `main` 에서만
+고칩니다. 원격에는 `main` 과 릴리스 태그만 올립니다.
 
 원본은 `originals/<지역>/<플랫폼>-ed<번호>/` 규약으로 한 벌만 둡니다
 (`kr/dos-ed2`, `jp/ps1-ed1+2`, `jp/pce-ed1`). 자세한 건
@@ -75,6 +77,7 @@ sh scripts/check.sh                      # 커밋 전 — 공용 검사 + 지금
 sh scripts/emu.sh                        # 게임 실행 (목록에서 고른다)
 sh scripts/worktree.sh <게임>            # 게임별 워크트리 (originals 링크까지)
 sh scripts/patcher.sh serve              # [fix] 웹 패처를 로컬에서 띄워 확인
+python3 patcher/site/build_site.py --out .local/cache/site   # 배포 페이지 미리보기
 ```
 
 ### 서드파티 도구

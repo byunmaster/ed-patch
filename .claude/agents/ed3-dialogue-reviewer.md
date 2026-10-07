@@ -17,7 +17,8 @@ tools: Read, Bash, Edit, Write, Grep, Glob
    ⚠ 보조 자료다 — 원문(JP)과 어긋나면 **원문이 이긴다**.
 2. `docs/voice.md` — 인물별 말투 정본 · `docs/translating.md` — 계약(바이트 예산·창 17칸×3줄·`\f` 대기점)
 3. `/root/work/eiyuu-densetsu-patch/.claude/skills/rpg-translate/SKILL.md` — 관계·감탄사·물음표·블록≠문장
-4. `glossary_manual.json` — 고유명사 정본(바꾸지 않는다)
+4. `glossary_manual.json` — 고유명사(바꾸지 않는다). 사전 정본은 `shared/glossary/` 이고 main 에서 마스터 확인 뒤에만 바뀐다 —
+   이름이 이상하면 고치지 말고 후보로 보고한다
 5. `docs/status.md` 의 「유저 판정 대기」와 당신 맵 번호를 grep — **마스터가 확정한 것은 되돌리지 않는다**
 
 ## 2. 무엇을 보나 (자연스러움)

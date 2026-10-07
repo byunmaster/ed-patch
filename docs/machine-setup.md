@@ -151,7 +151,7 @@ npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-co
 1. **레포 클론** + `originals/` 전송(15GB). `originals/` 는 gitignore 라 따라오지 않는다.
 
    ⚠ **`git config --local` 은 클론에 안 따라온다.** 이 레포는 전 히스토리가
-   `byunmaster <byunma@naver.com>` 으로 통일돼 있어(공개 준비) 전역 이름이 다르면 **커밋이
+   `byunmaster <byunma@naver.com>` 으로 통일돼 있어(공개 레포다) 전역 이름이 다르면 **커밋이
    조용히 그걸로 나간다**. 첫 커밋 전에 `git log --format='%an <%ae>' | sort -u` 로 확인할 것
    (2026-07-31 에 실제로 누락됐다).
 
@@ -207,7 +207,7 @@ npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-co
    Node 와 마찬가지로 `~/.cargo/bin` 은 비대화형 셸에서 안 잡히니 `/usr/local/bin` 에 링크한다.
    ⚠ 빌드 후 **Claude Code 재시작** — MCP 서버·어댑터·바이너리 셋이 엇갈린다.
 
-3. **BIOS** → `~/.mednafen/firmware/` (유저가 제공, **커밋 절대 금지**)
+3. **BIOS** → `~/.mednafen/firmware/` (소장자 제공 — 보관 원본은 `.local/keep/bios/`, **커밋 절대 금지**)
 
    | 시스템    | 파일                  | 필수?    |
    | --------- | --------------------- | -------- |
@@ -249,7 +249,7 @@ npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-co
 python3 games/ps1-ed1+2/tools/build.py
 ```
 
-**산출물 sha1 을 `games/ps1-ed1+2/docs/status.md` 의 「재현 기준」 표와 대조한다.**
+**산출물 sha1 을 `games/ps1-ed1+2/docs/ed1-status.md` 의 「재현 기준」 표와 대조한다.**
 맞으면 이관 성공이자 **결정성 실증**이고, 틀리면 이관 자체가 잘못된 것이라 여기서 잡힌다.
 `work/derived` 가 통째로 없으면 덤프 둘만 만들면 된다(`extract_scn.py` · `extract_dos_kr.py`).
 
@@ -260,18 +260,17 @@ python3 games/ps1-ed1+2/tools/build.py
 
 ## ⑤ 인게임 확인은 로컬에 남긴다
 
-원격 화면은 문안 확인엔 되지만 실제 플레이 QA 에는 답답하다. **빌드 산출물만 당겨온다.**
+원격 화면은 문안 확인엔 되지만 실제 플레이 QA 에는 답답하다. **빌드 산출물만 당겨온다** — 길은 둘이다.
 
-```bash
-rsync -avP --include='Eiyuu Densetsu (KR).*' --exclude='*' \
-  dev:work/eiyuu-densetsu-patch/games/ps1-ed1+2/work/build/ \
-  ~/work/eiyuu-densetsu-patch/games/ps1-ed1+2/work/build/
-```
+- **맥** — `sh scripts/pull-build.sh [필터]`. dev 의 메인 트리와 워크트리 빌드 칸을 같이 훑어 목록에서
+  고른다(예전엔 rsync 를 손으로 쳤다).
+- **폰·그 밖** — dev 의 파일서버 `python3 scripts/publish/serve.py`(:8800). 빌드 칸과 세이브를 **사본 없이
+  그 자리에서** 보여 준다(마스터 2026-09-27 — 종전엔 `.local/cache/publish/` 로 손으로 올렸고, 한 번
+  빠지면 폰에서 옛 롬이 떴다).
 
-252MB 하나라 기가비트로 3~5초다. ⚠ 당길 때 두 가지를 같이 봐야 한다 —
-**`*.failed` 는 받지 말 것**(실패한 빌드는 산출물을 무효화한다) · **sha1 을 찍어 확인할 것**
-(`BATTLE_JP=1` 빌드가 **같은 이름으로** 나온다). 낡거나 엉뚱한 이미지를 정상으로 오해하는 게
-이 레포의 1급 사고다(루트 `CLAUDE.md` 「빌드 규율」).
+⚠ 둘 다 **`*.failed` 칸은 안 내준다**(실패한 빌드는 산출물을 무효화한다). 그래도 받은 뒤
+**sha1 을 찍어 확인할 것**(`BATTLE_JP=1` 빌드가 **같은 이름으로** 나온다). 낡거나 엉뚱한 이미지를
+정상으로 오해하는 게 이 레포의 1급 사고다(루트 `CLAUDE.md` 「빌드 규율」).
 
 SMB/NFS 로 직접 마운트해 여는 것도 되지만 권하지 않는다 — 느리고, 무엇보다 **지금 무엇을
 보고 있는지 확인이 약해진다.**

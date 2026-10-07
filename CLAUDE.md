@@ -3,11 +3,13 @@
 팔콤 『영웅전설』 시리즈 패치 통합 저장소. 트랙이 셋이고 한 벌의 originals·하네스를
 공유한다. 사람용 개요는 README.md.
 
-| 트랙    | 뜻                                     | 현재 게임         |
-| ------- | -------------------------------------- | ----------------- |
-| **kr**  | 일본 원판 한글 번역 패치               | `games/ps1-ed1+2` |
-| **fix** | 국내 정발판의 이식 결함 복원(버그픽스) | `games/dos-ed2`   |
-| **mod** | 기능 개조                              | (아직 없음)       |
+| 트랙    | 뜻                                     | 게임 |
+| ------- | -------------------------------------- | ---- |
+| **kr**  | 일본 원판 한글 번역 패치               | `ps1-ed1+2`(v1.0.0 배포 · 라운드 졸업, 핫픽스만) · `ps1-ed3+4` · `ss-ed1+2` · `ss-ed3` · `pce-ed1` · `sfc-ed1` · `md-ed1` · `pc98-ed1`(레트로 PC 라운드) |
+| **fix** | 국내 정발판의 이식 결함 복원(버그픽스) | `dos-ed2`(v1.0.0) |
+| **mod** | 기능 개조                              | (없음) |
+
+배포는 레포 자체(`byunmaster/ed-patch`, 공개)의 GitHub Pages — `patcher/site/` 를 main 머지 때 워크플로가 굽는다.
 
 ## 세션 시작 시
 
@@ -19,8 +21,8 @@
    한다. 규약은 [`docs/manager.md`](docs/manager.md), 회차는 `docs/manager-log.md`.
 1. **작업할 게임의 `games/<게임>/CLAUDE.md`를 읽는다** — 트랙별 규칙은 거기 있다.
    이 파일에는 트랙과 무관한 공용 규칙만 둔다.
-2. 그 게임의 **진행 현황 문서를 읽는다** — ps1-ed1+2 는 편마다 갈렸다
-   (`docs/ed1-status.md` · `docs/ed2-status.md`), dos-ed2 는 아직 `HANDOFF.md`. **이 문서 하나로 이어서 작업할 수 있어야 한다** — 누가 오든 "지금 어디까지
+2. 그 게임의 **진행 현황 문서(`games/<게임>/docs/status.md`)를 읽는다** — ps1-ed1+2 는 편마다
+   갈렸고(`ed1-status.md` · `ed2-status.md`), dos-ed2 는 `HANDOFF.md`. **이 문서 하나로 이어서 작업할 수 있어야 한다** — 누가 오든 "지금 어디까지
    됐고 · 다음에 뭘 하고 · 어떻게 시작하는지"를 여기서 얻는다. 커밋한다(머신을 따라가야 한다).
    ⚠ 여기엔 **현재 상태 + 남은 일만** 둔다. 방침은 `policy.md`, 경위는 `devlog.md`,
    완료 이력은 커밋 히스토리다 — 섞이면 문서가 부풀어 아무도 안 읽는다(실제로 463줄까지 갔다).
@@ -53,8 +55,7 @@
 games/<게임>/       게임별 코드베이스 — tools/ docs/ patches/ textmap/ assets/ + work/
                     check.sh = **그 게임의 커밋 전 게이트**(scripts/check.sh 가 부른다)
                     typeset_fingerprint.json = 그 게임의 조판 지문(값은 게임 것)
-  ps1-ed1+2/        [kr]  PS1 영웅전설 1+2 한글패치
-  dos-ed2/          [fix] 만트라 DOS 영웅전설 II 복원
+                    게임 목록은 위 트랙 표. 게임 브랜치는 `game/<게임>`, 작업은 워크트리(`.claude/worktrees/<게임>`)
 shared/             플랫폼 공용 라이브러리 — `text/`(한글 조판 krwrap · 조사 · KSC 스캔 ·
                     맞춤법) · `glossary/`(고유명사 정본) · `fonts/`(Galmuri BDF)
                     ⚠ ISO9660·SJIS 스캔은 **여기 없다** — 게임의 `tools/common.py` 몫이다
@@ -62,7 +63,7 @@ shared/             플랫폼 공용 라이브러리 — `text/`(한글 조판 k
 scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test.sh · emu.sh(실행) ·
                     check-updates.sh · pull-build.sh · clean-build.sh · patcher.sh ·
                     worktree.sh · cafe.sh · dashboard.sh(전 트리 상태, 관리자 재료).
-                    부품은 아래 폴더로 내린다(emu/ · check/ · cafe/ · lib/ · tests/)
+                    부품은 아래 폴더로 내린다(emu/ · check/ · cafe/ · lib/ · publish/ · tests/)
   emu.sh            └ **게임 실행은 여기 하나로** — 게임 이름만 주면 알맞은 실행기로
                        띄우고 세이브까지 동기화한다(인자 없으면 목록에서 고른다)
   emu/              └ 그 아래 실행기·기전 — dosbox.sh(DOS 본체) · sync-saves.sh(세이브
@@ -79,6 +80,7 @@ scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test
                        `cafe/sources.json`, 수집물은 docs/reference/_inventory/(gitignore).
                        ⚠ 자격증명은 레포에 없다 — 인증은 크롬 프로필이 든다
   lib/select.sh     └ 화살표 키 선택 UI (에뮬 전용이 아니라 여기 둔다)
+  publish/serve.py  └ **파일서버**(:8800) — 워크트리 빌드 칸 · `~/save/<게임>` · 원본을 그 자리에서 보여 준다(폰·맥에서 받는다)
   worktree.sh       └ 게임별 워크트리 (originals 지역 링크까지 대신한다)
 .local/             이 머신 전용 — **git 이 아예 모른다**(통째 gitignore, 10-07). **「지워도 되는가」로 네 칸**이다.
                     리셋은 `rm -rf .local/cache` 하나뿐 — 나머지 셋은 손으로만, **목록을 먼저 파일로 남기고** 정리한다
@@ -98,8 +100,9 @@ scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test
                     🔴 **워크트리 안에 `.local/` 을 만들지 않는다** — `check.sh` 가 실패시킨다. 10-07 에 추적되던 README 때문에
                        워크트리마다 `.local` 이 보였고, 다섯 워크트리에 캡처 80장이 갇혀 마스터가 못 봤다(그래서 README 를 걷었다).
                        캡처는 **메인 트리** `$(git rev-parse --git-common-dir)/../.local/work/inbox/<게임>/` 에 둔다
-patcher/            웹 패처 일체 — index.html.tmpl · build.py · subset_font.py · fonts.css
-                    빌드하면 games/*/patches/*.json 이 인라인된 자립형 HTML 하나가 나온다
+patcher/            웹 패처 — index.html.tmpl · build.py(games/*/patches/*.json 을 인라인한 자립형 HTML) · subset_font.py
+  site/             └ **배포 페이지** — build_site.py · site.json(진행 상황·배포 정보 정본) · *.frag.html.
+                       main 에 머지되면 `.github/workflows/pages.yml` 이 굽는다. 미리보기: `build_site.py --out .local/cache/site`
 docs/               레퍼런스·공개 체크리스트·소장 컬렉션
                     └ patcher-checklist.md = **안전장치 열넷**(플랫폼 무관, 새 게임의 출발점)
                     └ manager.md · manager-log.md = **관리자 세션** 규약과 회차 기록
@@ -121,14 +124,11 @@ games/<게임>/work/
   derived/   OUT_DIR     원본에서 파생 — ⚠ **빌드가 읽는 입력**이다. 지우면 빌드가 안 돈다
   review/    REVIEW_DIR  검토표·페이로드 — ⚠ **원문·정발 문안 포함, 커밋 절대 금지**
   build/     BUILD_DIR   테스트 이미지(BIN/CUE) — 순수 출력, 2분이면 재생성
-  dist/      DIST_DIR    배포 차분(xdelta/BPS) — 아직 미사용
+  dist/      DIST_DIR    배포 차분(xdelta/BPS) — `make_dist.py` 가 만들고, 릴리스 땐 `.local/ship/release/<태그>/` 로 옮겨 붙인다
 ```
 
-루트에는 `work/` 를 두지 않는다. 스크립트가 만드는 머신 전용물은 **`.local/cache/`** 다
-(에뮬 빌드·실행 사본 · 패처 빌드 · 배포 레포 클론). 두 단어로 갈린다 — **`work` 는 게임 작업물,
-`.local` 은 머신 전용.** 숨김인 이유는 gitignore 라서가 아니라 사람이 거의 안 열기 때문이다.
-🔴 **`.local` 자체는 「지워도 되는 칸」이 아니다** — 소장 공략집·BIOS·열쇠가 거기 산다.
-`rm -rf` 는 **`.local/cache` 까지만**이고, 그래서 재생성물을 그 한 칸으로 몰아 뒀다.
+루트에는 `work/` 를 두지 않는다. 두 단어로 갈린다 — **`work` 는 게임 작업물, `.local` 은 머신 전용**
+(스크립트가 만드는 머신 전용물은 `.local/cache/`, 위 저장소 맵).
 
 ⚠ `derived/` 를 "산출물이니 재생성되겠지" 하고 버리면 **빌드가 아예 안 돈다**(2026-07-30 레포
 이관 때 실제로 겪었다). `derived/text/` 는 파생 출력이고, 커밋되는 소스는 `textmap/` 이다.
@@ -136,8 +136,10 @@ games/<게임>/work/
 ## 빌드 & 테스트
 
 ```bash
-python3 games/ps1-ed1+2/tools/build.py     # [kr] 전 트랙 체인 → work/build/Eiyuu Densetsu (KR).bin/.cue
+python3 games/<게임>/tools/build.py        # 게임 빌드 → work/build/<꼬리표>/ (게임마다 플래그가 다르다 — 게임 CLAUDE.md)
 sh scripts/patcher.sh serve                # [fix] 웹 패처를 로컬에서 띄워 확인
+python3 patcher/site/build_site.py --out .local/cache/site   # 배포 페이지 미리보기
+python3 scripts/publish/serve.py           # 파일서버(:8800) — 빌드·세이브를 폰·맥에서 받는다
 sh scripts/check.sh                        # ⭐ **커밋 전 이것 하나** — 전역 검사 + 게임 게이트 위임
 sh scripts/check.sh --all                  #    게이트가 있는 게임 전부
 sh scripts/test.sh                         # 단위·회귀 테스트 (공용 + 지금 게임, 원본 없이 돈다)
@@ -183,8 +185,8 @@ sh scripts/worktree.sh <게임>              # 게임별 워크트리 (originals
   세이브·설정은 물론 DOS 패치 파일을 덮어써 가며 검증할 수 있다. CD는 읽기 전용이라
   사본을 안 뜨고 originals에서 직접 마운트한다(4개 전부 떠도 사본 68MB).
   `--app`·`--debug`·`--refresh` 참조.
-- 인게임 확인: emucap MCP(mednafen) 또는 유저 DuckStation. **유저가 직접 확인하는 쪽이
-  훨씬 빠름** — 빌드 완료를 알리고 유저 스크린샷으로 검증받는 흐름 권장.
+- 인게임 확인: emucap MCP(기종별 어댑터 — mednafen · Mesen2 · np2kai …) 또는 마스터 실기·에뮬. **마스터가
+  직접 확인하는 쪽이 훨씬 빠르다** — 빌드 완료를 알리고 캡처(`.local/work/inbox/<게임>/`)로 검증받는다.
 
 - ⚠ mednafen은 디스크 캐시 → 빌드 교체 후 reset 무효. 프로세스 kill + 재launch.
 - ⚠ **문안 변경 검증에 세이브스테이트를 쓰지 말 것**(2026-08-06 실측, 다섯 번을 헛돌았다).
@@ -297,9 +299,7 @@ first-parent 104 중 머지는 **5**뿐이라, 트렁크가 「타이틀이 닫�
 `git log --first-parent main`(공용에 무엇이 얹혔나) · `--merges` 를 더하면(어느 타이틀이 닫혔나).
 
 ⚠ 지문 값은 **게임 아래**(`games/<게임>/typeset_fingerprint.json`)다 — 루트에 두면 게임이
-갱신할 때마다 공용을 건드리게 된다. 문안을 의도적으로 바꿨을 때만 `--freeze`.
-그래서 `main` 의 작업 트리엔 그 파일이 없는데, **공용을 고치는 자리가 바로 main 이다** —
-없으면 `game/<게임>` 브랜치에서 읽어 온다. 안 그러면 위험한 자리에서만 안 도는 장치가 된다.
+갱신할 때마다 공용을 건드리게 된다. 문안을 의도적으로 바꿨을 때만 `--freeze`. ⚠ `--game` 을 꼭 준다.
 
 ⚠ **`originals/` 는 gitignore 라 워크트리에 안 따라온다.** 지역 폴더(`kr`/`jp`/`us`)를 심볼릭
 링크로 이어야 도구가 원본을 찾는데, `originals/README.md` 가 추적돼 디렉터리 자체는 이미
@@ -325,10 +325,8 @@ first-parent 104 중 머지는 **5**뿐이라, 트렁크가 「타이틀이 닫�
 사람 판정이라 직렬**이라, 셋을 동시에 굴려도 속도가 3배가 되지 않는다. **판정이 적은
 구간부터** 나누는 게 이득이 크다.
 
-그래서 **워크트리는 롬분석·기계번역 전용**이고, 본 트리는 지금 굴리는 타이틀이 잡는다
-(유저 확정 2026-08-18). 트리를 나눌지의 기준은 「게임이 둘인가」가 아니라 **「세션이 둘인가」**다 —
-한 트리에서 브랜치를 갈면 그 트리에서 돌던 빌드가 **바뀐 파일을 읽고도 성공한다.**
-세션이 하나면 브랜치로 충분하다(`work/` 는 gitignore + 게임별 경로라 갈아타도 파생물이 산다).
+지금은 **게임마다 워크트리 하나 · 세션 하나**이고, 메인 트리는 관리자 세션 자리다(main 관리). 한 트리에서
+브랜치를 갈아타지 않는다 — 그 트리에서 돌던 빌드가 **바뀐 파일을 읽고도 성공한다.**
 
 ## Git 정책
 
@@ -340,8 +338,8 @@ first-parent 104 중 머지는 **5**뿐이라, 트렁크가 「타이틀이 닫�
   종전 「게임 브랜치는 그 세션이 `--force-with-lease` 로」를 대체). 게임 브랜치는 **그 세션만 쓰는
   로컬 브랜치**라 원격에 둘 까닭이 없고, 레포를 공개하면 원격 브랜치가 전부 보이므로 정리 거리만 는다.
   머지는 관리자가 **로컬 브랜치에서** 한다(워크트리는 같은 저장소라 따로 받을 필요가 없다).
-  ⚠ 원격에 남은 옛 게임 브랜치는 공개 전에 지운다(로컬에 다 있는지 먼저 확인).
-  ⚠ **`main` 푸시와 릴리스(태그·배포)는 마스터가 직접 한다.**
+  ⚠ **`main` 푸시와 릴리스(태그·배포)는 마스터가 직접 한다** — 마스터가 지시하면 관리자가 대신 민다.
+  원격엔 `main` 과 릴리스 태그(`<게임>-<트랙>-v<버전>` · `site-covers`)만 둔다(10-07 공개 전 정리 끝).
   ⚠ 히스토리를 다시 쓰기 전에 **되돌릴 좌표를 먼저 박는다**(`backup/<이름>-pre-<무엇>`, 로컬에만).
 - **브랜치 규약**(유저 확정 2026-08-18) — `main` = 공통, `game/<타이틀>` = 각 게임.
   게임 작업은 워크트리에서 굴린다(`sh scripts/worktree.sh <게임>`).
@@ -423,7 +421,7 @@ first-parent 104 중 머지는 **5**뿐이라, 트렁크가 「타이틀이 닫�
 
 ## 저작권 — 리포에 원본을 남기지 않는다
 
-이 레포는 **공개를 전제로 관리한다**(배포 페이지 `ed-patch`는 이미 공개). 그래서
+이 레포는 **공개돼 있다**(`byunmaster/ed-patch`, 2026-10-07 — 정리 전 커밋 이력도 공개). 그래서
 소스·산출물 어디에도 원저작물의 축자 복제가 남으면 안 된다. 트랙별로 지키는 방식:
 
 - **[kr] 문안은 자체 번역이다**(유저 확정 2026-08-18) — JP 원문에서 우리가 번역하고, 정발은
@@ -461,8 +459,8 @@ first-parent 104 중 머지는 **5**뿐이라, 트렁크가 「타이틀이 닫�
 - **검증한다** — `python3 games/ps1-ed1+2/tools/check_determinism.py`.
   비결정적 파생물을 치우고 재빌드해 sha1 을 대조한다. 원칙은 문서로만 두면 샌다.
 - ⚠ **머신을 옮긴 직후 정본 갱신기(`align_map.py --update`)를 돌리지 말 것** — 그 머신의
-  동점 결과를 정본으로 승격시킨다. `--diff` 로 먼저 본다. (ps1-ed1+2 는 **번역 정본**
-  `script/` 로 옮겨 가는 중이라 이 위험이 사라진다 — 손으로 쓴 문안엔 동점이 없다.)
+  동점 결과를 정본으로 승격시킨다. `--diff` 로 먼저 본다. (ps1-ed1+2 대사는 이제 **번역 정본**
+  `script/` 라 이 위험이 대사엔 없다 — 손으로 쓴 문안엔 동점이 없다.)
 
 ## 설계 원칙 — KISS · DRY · YAGNI
 
@@ -485,7 +483,7 @@ first-parent 104 중 머지는 **5**뿐이라, 트렁크가 「타이틀이 닫�
 ## 언어는 플랫폼마다 고른다 (모노레포, 유저 확정 2026-08-11)
 
 **한 언어로 통일하지 않는다.** 게임·플랫폼마다 성격이 달라서, 새 코드베이스를 열 때 그 자리에
-맞는 걸 고른다. 지금 `games/ps1-ed1+2` 는 **Python** 이다.
+맞는 걸 고른다. 지금 게임들은 전부 **Python** 이다(mednafen 패치·실행기 일부는 C++·셸).
 
 - **성능은 대개 병목이 아니다** — 실측: EDC+ECC 가 순수 파이썬으로 섹터당 1.69ms 인데, 우리는
   **바뀐 섹터만**(~1,200) 다시 쓰므로 2초다. 빌드 2분의 대부분은 텍스트 조립이고, 진짜 병목은
