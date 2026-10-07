@@ -7,7 +7,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, os.path.join(ROOT, "shared"))
 
-import glossary as G  # noqa: E402
+import glossary as G
 
 
 def test_categories_are_kept_apart():
@@ -194,7 +194,7 @@ def test_원문이_다르면_별칭이_아니다():
 
 def test_가나로_쓴_말만_옮긴다():
     """PS1 의 라틴 `SAVE`/`LOAD` 는 원문이 영문이라 이 표에 안 걸린다 — 갈린 게 아니다."""
-    assert G.lookup("セーブ", "ui") == "저장"
+    assert G.lookup("セーブ", "ui") == "세이브"  # 마스터 2026-10-07 판정표 D3 「원문이 세이브」
     assert G.diff_labels({"SAVE": "SAVE"}).unmatched == ["SAVE"]
 
 
