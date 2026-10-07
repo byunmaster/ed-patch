@@ -320,6 +320,26 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
         p.append(("name JMP $93A3", *_main(0x6D, 0x13A3), b"\x4c\x60\xe0", b"\x4c" + tgt))
         p.append(("JSR 6C+0F5A", *_main(0x6C, 0x0F5A), b"\x20\x60\xe0", b"\x20" + tgt))
         p.append(("JSR 78+0932", *_main(0x78, 0x0932), b"\x20\x60\xe0", b"\x20" + tgt))
+        # 4-2. 🔴 반 칸(4px) 전진 — 변형 코드 · 반각 공백. 렌더러 입구 `$7047` 의 `INC $38BB`(3B)를 `JSR 새 머리`로(마스터 10-07).
+        #      새 머리는 `hook.hook_narrow()`(페이로드 안). 변형이 아닌 글자는 `INC` 만 하고 RTS → `$704A` 로 원래대로 이어진다.
+        p.append(
+            (
+                "renderer entry INC→JSR narrow",
+                *_main(0x6C, 0x1047),
+                b"\xee\xbb\x38",
+                b"\x20" + hook.NARROW_ENTRY.to_bytes(2, "little"),
+            )
+        )
+        # 4-3. 칸 수를 0 으로 만드는 두 자리(`STZ $38BB` 3B — 줄 넘김 `$6AEA` · 창 비움 `$6B73`)를 `JSR rstz` 로 — 반각 공백의 나머지도 같이 0.
+        for at, why in ((0x0AEA, "line wrap"), (0x0B73, "window clear")):
+            p.append(
+                (
+                    f"col reset STZ→JSR rstz ({why})",
+                    *_main(0x6C, at),
+                    b"\x9c\xbb\x38",
+                    b"\x20" + hook.RSTZ_ADDR.to_bytes(2, "little"),
+                )
+            )
         # 5. 로그 자동 개행 품질(①③) — 세 JSR 호출 대상을 우리 스텁으로 돌린다(원본 바이트 수 그대로,
         #    `hook.hook_wrap_fix()` 참조). $6D9C·$6723·$6730 은 전부 뱅크 0x6C(오프셋 = 논리주소−$6000).
         p.append(

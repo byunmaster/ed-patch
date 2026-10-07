@@ -24,21 +24,33 @@ KNOWN_BATTLE: set[str] = {"d5d3859767b7d32d", "84bdae195eaef1c0"}
 
 
 class Typeset(unittest.TestCase):
-    def test_wrap_blank_line_after_full_line(self):
+    def test_wrap_no_blank_line_after_full_line(self):
+        """꽉 찬 13칸 줄 뒤 `01` 도 빈 줄이 아니다 — 줄 넘김은 한 번이다(10-07 화면: `round6-wordwrap-item`)."""
         lines, _ = T.wrap("가" * 13 + "\n나")
-        self.assertEqual(lines, ["가" * 13, "", "나"])
+        self.assertEqual(lines, ["가" * 13, "나"])
 
     def test_wrap_mid_word_is_flagged(self):
         lines, cuts = T.wrap("가나다라마바사아자차카타파하")
         self.assertIn("④", " ".join(T.problems(lines, cuts)))
 
     def test_wrap_word_unit(self):
-        """어절이 이 줄에 안 들어가면 어절째 넘긴다 — 열 10 + 4글자 = 14칸."""
-        lines, cuts = T.wrap("가" * 9 + " 나다라마")
-        self.assertEqual(lines, ["가" * 9 + " ", "나다라마"])
+        """어절이 이 줄에 안 들어가면 어절째 넘긴다 — 열 10 + 4글자 = 14칸. 공백은 반각(4px)이라 12px 글자 열 + 공백 1/3 열."""
+        lines, cuts = T.wrap("가" * 10 + " 나다라마")  # 124px = 열 10
+        self.assertEqual(lines, ["가" * 10 + " ", "나다라마"])
         self.assertEqual(T.problems(lines, cuts), [])
-        lines, _ = T.wrap("가" * 8 + " 나다라마")  # 13칸 — 들어간다
+        lines, _ = T.wrap(
+            "가" * 9 + " 나다라마"
+        )  # 112px = 열 9 + 4 = 13칸 — 들어간다(공백이 반각이라)
         self.assertEqual(len(lines), 1)
+
+    def test_half_spaces_add_up_to_columns(self):
+        """공백 셋 = 12px = 한 칸 — 열 12 에 공백 셋이면 13 에 닿아 다음 글자는 새 줄이다(`$38BB` + `adv4` 나머지)."""
+        lines, _ = T.wrap("가" * 12 + "   나")
+        self.assertEqual(lines, ["가" * 12 + "   ", "나"])
+        lines, _ = T.wrap(
+            "가" * 12 + "  나"
+        )  # 공백 둘 = 8px — 열 12 그대로, 글자가 이 줄 마지막 칸에 들어간다
+        self.assertEqual(lines, ["가" * 12 + "  나"])
 
     def test_wrap_hangs_punct_and_eats_space(self):
         lines, cuts = T.wrap("가" * 13 + ". 나")

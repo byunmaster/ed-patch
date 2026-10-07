@@ -35,11 +35,25 @@ LEADS_PER_BANK = 2
 GROUP_BYTES = PER_LEAD * PACKED_BYTES  # 3960
 BANK_GLYPH_END = (
     LEADS_PER_BANK * GROUP_BYTES
-)  # 0x1EF0 — 뒤 272B 는 코드 자리(풀기 루틴 · 어절 줄바꿈)
-# 마지막 글리프 뱅크 맨 끝은 런타임 어절 줄바꿈 루틴(`hook.wordck`) 자리 — 게임이 안 쓰는 우리 뱅크라서다
-#   (10-07: 뱅크 0x69·0x6A·워크 RAM `$22BC~` 의 「빈 자리」는 실행 중에 다 쓰이고 있었다)
-GLYPH_TAIL = 168  # `hook.wordck` — 앞 104B 는 풀기 루틴(`hook.unpack_asm`)
-MAX_GLYPHS = GLYPH_NBANKS * LEADS_PER_BANK * PER_LEAD  # 880
+)  # 0x1EF0 — 뒤 272B 는 풀기 루틴(`hook.unpack_asm`, 뱅크마다) 자리
+# 🔴 **마지막 글리프 뱅크 끝 `CODE_SLOTS` 칸은 코드 자리다**(10-07 반각) — 어절 줄바꿈 `hook.wordck` 과 반 칸 전진 `hook._entry_asm` 가
+#   여기 산다(게임이 안 쓰는 우리 뱅크라서다. 10-07: 뱅크 0x69·0x6A·워크 RAM `$22BC~` 의 「빈 자리」는 실행 중에 다 쓰이고 있었다).
+#   글리프 정본이 733자라 끝 칸들은 어차피 빈다 — 상한만 그만큼 준다(`MAX_GLYPHS`). 풀기 루틴 뒤 꼬리 168B 는 비어 있다.
+CODE_SLOTS = 28
+CODE_BYTES = CODE_SLOTS * PACKED_BYTES  # 504
+MAX_GLYPHS = GLYPH_NBANKS * LEADS_PER_BANK * PER_LEAD - CODE_SLOTS  # 852
+# 🔴 **반 칸(4px) 전진 변형 코드**(마스터 10-07) — 리드 F4~F7 = 「리드 F0~F3 의 같은 트레일 글자를 평소대로 그리고 +4px」.
+#    글리프 칸을 안 먹는다(글자는 그대로, 코드만 다르다). 글리프가 이 리드를 쓰기 시작하면(상한 넘김) 빌드가 멈춘다.
+#    렌더러 훅은 `hook._narrow_asm`(렌더러 입구 `$7047`).
+VARIANT_LEAD0 = LEAD0 + GLYPH_NBANKS * LEADS_PER_BANK  # F4
+VARIANT_LEADS = GLYPH_NBANKS * LEADS_PER_BANK  # 4
+assert VARIANT_LEAD0 + VARIANT_LEADS <= 0xF8  # F8 은 반각 공백, F9 는 동적 조사 전용
+# 🔴 **반각 공백**(마스터 10-07 「대사창 전체에 반각 해야지」) — 대사창(씬 대사 · 전투 문구 · 시스템 메시지)의 공백은 4px 만 간다.
+#    `F8 24` = 「안 그리고 4px 전진」(렌더러 훅 `hook._narrow_asm`). 전각 공백 `81 40`(12px)은 입장 배너 가운데맞춤·고정표·라벨 패딩이
+#    그대로 쓴다 — 그래서 **다른 코드**다.
+HALF_SPACE = bytes([0xF8, 0x24])
+# 반각 부호 — 잉크가 왼쪽 4px 안인 글리프(마스터 도트 `?` 4px 포함). 대사창에서 12px 칸에 그린 뒤 8px 되감아 4px 만 간다.
+NARROW_PUNCT = ".,!?·"  # 마스터 10-07: … ～ 「」 는 전각 유지, 나머지 부호는 반각
 # 🔴 리드 F9 는 **동적 조사** 전용으로 예약한다(글리프 배정에서 뺀다) — `F9 (0x24+종류)`.
 #    후킹 루틴이 **직전에 그린 글자**의 받침을 보고 두 글리프 중 하나를 낸다(status.md 12절).
 JOSA_LEAD = 0xF9
@@ -327,8 +341,23 @@ def needs_glyph(ch: str) -> bool:
 JOSA_TOKEN = re.compile("|".join(re.escape(p) for p in JOSA_PAIRS))
 
 
-def encode(text: str, table: dict[str, bytes]) -> bytes:
+def variant(code: bytes) -> bytes:
+    """글리프 코드 → 「그 글자를 그리고 +4px」 변형 코드(리드만 `VARIANT_LEADS` 만큼 올린다)."""
+    assert LEAD0 <= code[0] < VARIANT_LEAD0, code.hex()
+    return bytes([code[0] + VARIANT_LEAD0 - LEAD0, code[1]])
+
+
+def encode(
+    text: str, table: dict[str, bytes], half_space: bool = False, msg: bool = False
+) -> bytes:
     """우리 문안 → 게임 바이트.
+
+    `msg` — 대사창 문안(씬 대사 · 전투 문구 · 시스템 메시지)이다: 공백은 **반각**(`HALF_SPACE`, 4px) 코드로 쓴다.
+    아니면 전각 공백(`81 40`, 12px) — 입장 배너·고정표·라벨 패딩.
+
+    `half_space` — 글리프 바로 뒤의 공백을 **반 칸**으로 쓴다: 그 글자를 변형 코드(`variant`, +4px)로 바꿔 공백 바이트를
+    따로 안 먹는다(칸이 바이트로 고정된 이름표에서 「성스러운 지팡이」를 7칸 14B 에 넣는다). 글리프 뒤가 아닌 공백(앞 · 연속 ·
+    부호 뒤)은 평소처럼 전각 공백이다.
 
     `은/는`·`이/가`·`을/를`·`과/와`·`으로/로`·`아/야`·`이랑/랑` 은 **동적 조사 토큰**이다 —
     앞말이 런타임에 정해지는 자리(이름·아이템)에 그대로 쓴다. 두 글자 조사는 첫 글자만 토큰이 되고
@@ -338,7 +367,7 @@ def encode(text: str, table: dict[str, bytes]) -> bytes:
     out = bytearray()
     pos = 0
     for m in JOSA_TOKEN.finditer(text):
-        out += encode(text[pos : m.start()], table) if m.start() > pos else b""
+        out += encode(text[pos : m.start()], table, half_space, msg) if m.start() > pos else b""
         pair = m.group()
         out += josa_code(pair)
         rest = pair.split("/")[0][1:]  # 받침용의 둘째 글자(으로→로, 이랑→랑)
@@ -346,14 +375,19 @@ def encode(text: str, table: dict[str, bytes]) -> bytes:
             out += table[rest[0]]
         pos = m.end()
     if pos:
-        return bytes(out) + encode(text[pos:], table)
+        return bytes(out) + encode(text[pos:], table, half_space, msg)
+    glyph_end = -1  # 바로 앞 글자가 우리 글리프였나(그 코드가 out 끝 2B)
     for ch in text:
         if ch in table:
             out += table[ch]
+            glyph_end = len(out)
         elif ch == "\n":
             out.append(0x01)
         elif ch == " ":
-            out += b"\x81\x40"  # 공백은 전각 한 칸 — 반각은 이 창에 없다(3절)
+            if half_space and glyph_end == len(out) and LEAD0 <= out[-2] < VARIANT_LEAD0:
+                out[-2:] = variant(bytes(out[-2:]))  # 글자 + 반 칸
+            else:
+                out += HALF_SPACE if msg else b"\x81\x40"  # 전각 한 칸(12px) · 대사창은 반각(4px)
         elif needs_glyph(ch):
             raise ValueError(f"글리프 표에 없는 글자: {ch!r} — 정본에서 모은 집합이 아니다")
         else:

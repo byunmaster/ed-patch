@@ -136,6 +136,9 @@ class CPU:
         raise AssertionError("안 끝난다")
 
 
+HS = tuple(font.HALF_SPACE)  # 대사창 반각 공백 — 어절 끝 · 어절 첫 글자 판정에서 전각 공백과 같다
+
+
 class WordCk(unittest.TestCase):
     def setUp(self):
         self.m = bytearray(0x10000)
@@ -225,6 +228,28 @@ class WordCk(unittest.TestCase):
     def test_06_outside_inject_stops(self):
         self.assertEqual(self.call(CH, chars(2) + b"\x06" + chars(5), 10)[0], 0)
 
+    def test_half_space_ends_a_word(self):
+        # 반각 공백(대사창)도 어절 끝 — 열 9 + 4글자 = 13칸 들어가고, 열 10 이면 넘어간다
+        self.assertEqual(self.call(CH, chars(3) + bytes(HS), 9)[0], 0)
+        self.assertEqual(self.call(CH, chars(3) + bytes(HS), 10)[0], 1)
+
+    def test_half_space_sets_prevsp(self):
+        m = self.m
+        self.assertEqual(self.call(HS, chars(5), 5, prev_space=False), (0, 0))
+        self.assertEqual(m[self.labels["prevsp"]], 1)
+
+    def test_flag_when_wrap_on_half_space(self):
+        m = self.m
+        m[self.labels["prevsp"]] = 0
+        m[ZP + 0xF9], m[ZP + 0xF8] = HS
+        m[PEND] = 1
+        m[BUF] = 0
+        m[ZP + 0x14], m[ZP + 0x15] = BUF & 0xFF, BUF >> 8
+        m[ZP + 0x90] = 0
+        m[ZP + hook.LINE_COLS_ZP] = 13
+        CPU(m).run(hook.WORDCK_ADDR)
+        self.assertEqual(m[hook.WRAP_ADDR], 1)
+
     def test_space_sets_prevsp_and_flag(self):
         m = self.m
         # 공백 — 판정 없이 「직전이 공백」만 세운다. 보류가 없으면 flag = 0
@@ -248,8 +273,10 @@ class WordCk(unittest.TestCase):
         self.assertEqual(self.call(CH, chars(5), 12), (1, 0))
 
     def test_fits_tail(self):
-        self.assertLessEqual(len(hook._wordck_asm().bytes()), font.GLYPH_TAIL)
-        self.assertEqual(hook.WORDCK_ADDR + font.GLYPH_TAIL, (hook.WORDCK_MPR + 1) << 13)
+        self.assertLessEqual(len(hook._wordck_asm().bytes()), hook.WORDCK_ROOM)
+        self.assertEqual(
+            hook.WORDCK_ADDR + hook.WORDCK_ROOM, (hook.WORDCK_MPR << 13) + font.BANK_GLYPH_END
+        )
 
 
 if __name__ == "__main__":

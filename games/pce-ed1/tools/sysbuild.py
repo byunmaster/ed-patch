@@ -92,15 +92,15 @@ def all_glyph_chars() -> set[str]:
     return chars
 
 
-def encode_tokens(text: str, table) -> bytes:
-    """`{XX}` 토큰은 그 바이트로, 나머지는 font.encode."""
+def encode_tokens(text: str, table, msg: bool = False) -> bytes:
+    """`{XX}` 토큰은 그 바이트로, 나머지는 font.encode. `msg` = 대사창 문안(시스템 메시지·전투 문구) — 공백은 반각."""
     out = bytearray()
     pos = 0
     for m in TOK.finditer(text):
-        out += font.encode(text[pos : m.start()], table)
+        out += font.encode(text[pos : m.start()], table, msg=msg)
         out += bytes.fromhex(m.group(1))
         pos = m.end()
-    out += font.encode(text[pos:], table)
+    out += font.encode(text[pos:], table, msg=msg)
     return bytes(out)
 
 
@@ -203,7 +203,8 @@ def apply(f, table, touched) -> dict:
             kr = kr_of(fam, r["jp"])
             if not kr or not r["jp"]:
                 continue
-            enc = font.encode(kr, table)
+            # 아이템 이름은 14B 고정칸이라 「성스러운 지팡이」의 공백을 **반 칸 전진 변형 코드**로 접는다(마스터 10-07)
+            enc = font.encode(kr, table, half_space=(fam == "items"))
             if len(enc) > w:
                 errors.append(f"{fam} 「{r['jp']}」→「{kr}」 {len(enc)}B > {w}B")
                 continue
@@ -298,7 +299,7 @@ def apply(f, table, touched) -> dict:
             continue
         lead = b"".join(bytes.fromhex(t) for t in r["lead"])
         tail = b"".join(bytes.fromhex(t) for t in r["tail"])
-        body = encode_tokens(kr, table)
+        body = encode_tokens(kr, table, msg=True)
         new = lead + body + tail
         orig = b6d[r["off"] : r["off"] + r["room"]]
         core_len = len(orig.rstrip(b"\xff").rstrip(b"\0"))

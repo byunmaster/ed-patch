@@ -206,8 +206,14 @@ class GlyphBank(unittest.TestCase):
 
     def test_code_fits_tails(self):
         self.assertLessEqual(len(hook.unpack_code()), hook.UNPACK_ROOM)
-        self.assertLessEqual(len(hook._wordck_asm().bytes()), font.GLYPH_TAIL)
-        self.assertEqual(hook.UNPACK_ADDR - WIN + hook.UNPACK_ROOM + font.GLYPH_TAIL, BANK)
+        self.assertLessEqual(len(hook._wordck_asm().bytes()), hook.WORDCK_ROOM)
+        self.assertLessEqual(len(hook._entry_asm().bytes()), hook.ENTRY_ROOM)
+        self.assertEqual(hook.UNPACK_ADDR - WIN + hook.UNPACK_ROOM, BANK)
+        # 마지막 뱅크 글리프 끝 칸들이 코드 자리 — 풀기 루틴 바로 앞에서 끝난다
+        self.assertEqual(
+            hook.WORDCK_ADDR + hook.WORDCK_ROOM, (hook.WORDCK_MPR << 13) + font.BANK_GLYPH_END
+        )
+        self.assertEqual(hook.ENTRY_ROOM + hook.WORDCK_ROOM, font.CODE_BYTES)
 
     def test_hook_routine_fits(self):
         self.assertLessEqual(len(hook.hook_routine()), hook.JOSA_OFF_ADDR - hook.HOOK_ADDR)

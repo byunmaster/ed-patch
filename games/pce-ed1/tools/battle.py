@@ -363,7 +363,7 @@ def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], 
         if not _tokens_ok(TOKEN.findall(kr), jp_tok):
             errors.append(f"{where} +{u['off']:04X} 「{kr}」 제어코드가 원문과 다르다 {jp_tok}")
             continue
-        enc = encode_tokens(kr, table)
+        enc = encode_tokens(kr, table, msg=True)
         if u["term"] is not None:
             enc += bytes([u["term"]])
         if len(enc) <= u["room"]:
