@@ -115,7 +115,7 @@ class Wrap(unittest.TestCase):
 
     def check(self, raw):
         got, cpu = run(self.code, raw + b"\0")
-        ref = msgwrap.wrap(raw, retreat=False)  # 메시지 창(로그) = 글자 단위, 어절 후퇴 없음
+        ref = msgwrap.wrap(raw, retreat=True)  # 메시지 창(로그)도 어절 단위(마스터 09-30 번복)
         self.assertEqual(got, ref, raw)
         self.assertEqual(cpu.r[15], STACK, "스택")
         self.assertEqual(cpu.r[8:15], [0x80 + i for i in range(7)], "보존 레지스터")
@@ -147,12 +147,12 @@ class Wrap(unittest.TestCase):
             self.check(raw)
 
     def test_rules(self):
-        """여섯 규칙 중 이 자리 몫 — 기준 구현 결과로 본다(메시지 창 = retreat 꺼짐)."""
+        """여섯 규칙 중 이 자리 몫 — 기준 구현 결과로 본다(메시지 창도 retreat 켜짐)."""
         rnd = random.Random(1)
         alpha = [enc(c) for c in "あいうかきく。"] + [b" ", b"1", b".", b"\n"]
         for _ in range(3000):
             raw = b"".join(rnd.choice(alpha) for _ in range(rnd.randint(1, 60)))
-            got = msgwrap.wrap(raw, retreat=False)
+            got = msgwrap.wrap(raw, retreat=True)
             ls = msgwrap.lines(got)
             for a, b in zip([b"x"] + ls, ls, strict=False):  # 길이가 하나 어긋나는 짝짓기
                 # ⚠ 규칙 3 보강(「!!」 2B 고정 휴리스틱, msgwrap.py 주석)은 물러난 자리가
@@ -172,7 +172,7 @@ class Wrap(unittest.TestCase):
 
     def test_bundle_space_before_digit(self):
         s = enc("あいうえおかきくけこさし レス 1を")
-        got = msgwrap.wrap(s, retreat=False)
+        got = msgwrap.wrap(s, retreat=True)
         self.assertIn(enc("レス 1を"), got, got)
 
     def test_drawer_hang_stub(self):
@@ -204,6 +204,30 @@ class Wrap(unittest.TestCase):
         for ch in (0x2E, 0x88):
             self.assertEqual(t_of(30, ch), 1, "30열은 무조건 넘긴다")
 
+    def test_trampoline_reaches_stub(self):
+        """징검다리(`mov.l @(tp,pc),r0 · jmp @r0`)가 먼 스텁 주소로 뛰고 PR 을 안 건드린다."""
+        tramp_at = 0x0607D078
+        stub_ram = 0x060A7088
+        code, body = sh2.assemble(P.trampoline_src(stub_ram).splitlines(), tramp_at)
+        self.assertLessEqual(len(code), 12)
+        cpu = Sh2({tramp_at + i: v for i, v in enumerate(code)})
+        cpu.pc, cpu.pr = tramp_at, 0x0607D2E4
+        for _ in range(2):  # mov.l · jmp(지연 슬롯 포함)
+            cpu.step()
+        self.assertEqual(cpu.pc, stub_ram)
+        self.assertEqual(cpu.pr, 0x0607D2E4, "PR 보존 — 스텁의 rts 가 드로어로 돌아간다")
+
+    def test_stub_fits_josa_tail(self):
+        """스텁은 조사 훅 0런의 끝쪽 몫(`STUB_SPACE`)에 들고, 훅 본체와 안 겹친다."""
+        import patch_josa_hook as J
+
+        stub, _n = sh2.assemble(P.hang_stub().splitlines(), 0x060A7088)
+        self.assertLessEqual(len(stub), J.STUB_SPACE)
+        for fname, (off, size) in J.FREE.items():
+            at, _ram = P.stub_place(fname)
+            self.assertGreaterEqual(at, off + size - J.MARGIN - J.STUB_SPACE)
+            self.assertLessEqual(at + len(stub), off + size - J.MARGIN)
+
     def test_hang_sites(self):
         import common
 
@@ -211,8 +235,8 @@ class Wrap(unittest.TestCase):
             files = [common.extract(f) for f in P.FILES]
         except Exception as e:  # 원본 없는 트리 — 건너뛴다(레포 규약)
             self.skipTest(f"원본 없음: {e}")
-        for d in files:
-            _ent, _off, code, _b, _stub, hooks = P.build(d)
+        for fname, d in zip(P.FILES, files):
+            _ent, _off, code, _b, _tramp, _soff, _stub, hooks = P.build(d, fname)
             self.assertLessEqual(len(code), P.SIZE)
             for h, was, _new in hooks:
                 self.assertEqual(was, bytes.fromhex("71ff3817"))  # add #-1,r1 · cmp/gt r1,r8

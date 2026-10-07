@@ -136,10 +136,20 @@ def source():
     gotlim:
         cmp/ge r2,r11               ; used >= lim ?
         bf    place
-        ; 규칙 1(어절 후퇴) 꺼짐(마스터 확정 09-27 — 로그는 글자 단위) — 옛 재검사·재분기가
-        ; 여기 있었지만 늘 곧장 다음 줄로 떨어지므로 자리만 남기고 통째로 뺐다(8B 절약,
-        ; ③ 보강분의 자리를 만든다).
-        mov   #0,r12                ; 규칙 3 — 글자 단위로 끊는다
+        ; 규칙 1(어절 후퇴, 마스터 09-30 번복 — 로그도 어절 단위): 마지막 공백에서 끊는다.
+        ; 공백 경로(`묶음째 내린다`)와 같은 꼴 — `msgwrap.wrap` 의 `if retreat and cand >= 0`.
+        tst   r12,r12
+        bt    rule3                 ; 끊을 공백이 없다 → 규칙 3
+        mov   #{msgwrap.NL},r1
+        mov.b r1,@r12               ; out[cand] = NL
+        sub   r13,r11
+        add   #-1,r11               ; used -= cused + 1
+        mov   r12,r14
+        add   #1,r14                ; ls = cand + 1
+        mov   #0,r12                ; cand = -1
+        cmp/ge r2,r11               ; 접어도 여전히 넘치나
+        bf    place
+    rule3:
 {close_half}
         mov   #{lead - 256},r1
         extu.b r1,r1
@@ -363,23 +373,76 @@ def bsr(at, target):
     return struct.pack(">H", 0xB000 | (disp & 0xFFF))
 
 
-def build(d):
-    """`(함수 주소, 오프셋, 자리 전체 바이트, 본문 길이, [(훅 오프셋, 옛 4B, 새 4B)])`.
+def trampoline_src(stub_ram):
+    """원 함수 자리에 남는 **12B 징검다리** — 드로어의 `bsr` 이 닿는 곳(±4KB 안)에서 스텁(먼 0런)으로 뛴다.
 
-    자리 = 줄 나누기 루틴 + 리터럴 풀 + **드로어 훅 스텁**(원 함수 556B 안에 같이 든다).
+    🔴 `jmp` 라 PR 이 그대로다 — 스텁이 `rts` 로 **드로어 훅의 `bsr` 자리**로 곧장 돌아간다. r0 는 스텁이
+       어차피 먼저 덮는다(드로어 두 곳 다 복귀 뒤 r0·r1 을 다시 싣는다 — 위 「드로어 훅」 주석).
+    """
+    return f"""
+        mov.l @(tp,pc),r0
+        jmp   @r0
+        nop
+        .long tp {stub_ram}
+    """
+
+
+def stub_place(fname):
+    """스텁이 앉을 자리 — 조사 훅 0런의 **끝쪽**(`patch_josa_hook.STUB_SPACE` 로 비워 둔 몫). → (오프셋, RAM)"""
+    import patch_josa_hook as J  # ⚠ 늦게 — 조사 훅이 이 모듈의 `SIG` 를 임포트한다(순환)
+
+    off, size = J.FREE[fname]
+    at = off + size - J.MARGIN - J.STUB_SPACE
+    return at, LOAD_BASE + at
+
+
+def build(d, fname):
+    """`(함수 주소, 오프셋, 자리 전체 바이트, 본문 길이, 징검다리 주소, 스텁 오프셋, 스텁 바이트, [훅])`.
+
+    자리 = 줄 나누기 루틴 + 리터럴 풀 + **징검다리**. 드로어 훅 **스텁(56B)은 0런으로 옮겼다** — 어절 후퇴
+    (+20B)를 넣으면 본체 516B + 스텁 56B = 572B 로 원 함수 556B 를 넘기 때문이다(2026-10-07 시도는
+    8B 초과로 막혔다). 스텁은 조사 훅과 같은 0런(참조 0곳·실기 BP 2,000프레임 무접근)의 끝쪽에 둔다.
     """
     ent, off = find(d)
     code, body = assemble(ent)
-    stub_at = ent + len(code)
-    stub, _n = sh2.assemble(hang_stub().splitlines(), stub_at)
-    code = code + stub
-    assert len(code) <= SIZE, f"루틴+스텁 {len(code)}B > 원 함수 {SIZE}B"
+    tramp_at = ent + len(code)
+    stub_off, stub_ram = stub_place(fname)
+    tramp, _n = sh2.assemble(trampoline_src(stub_ram).splitlines(), tramp_at)
+    code = code + tramp
+    assert len(code) <= SIZE, f"루틴+징검다리 {len(code)}B > 원 함수 {SIZE}B"
     code = code + bytes.fromhex("0009") * ((SIZE - len(code)) // 2)
+    stub, _n = sh2.assemble(hang_stub().splitlines(), stub_ram)
+    import patch_josa_hook as J
+
+    assert len(stub) <= J.STUB_SPACE, f"스텁 {len(stub)}B > 자리 {J.STUB_SPACE}B"
     hooks = []
     for h in hang_sites(d):
         at = LOAD_BASE + h
-        hooks.append((h, bytes(d[h : h + 4]), bsr(at, stub_at) + bytes.fromhex("0009")))
-    return ent, off, code, body, stub_at, hooks
+        hooks.append((h, bytes(d[h : h + 4]), bsr(at, tramp_at) + bytes.fromhex("0009")))
+    return ent, off, code, body, tramp_at, stub_off, stub, hooks
+
+
+def verify(dst, files):
+    """되읽기 — 줄 나누기 루틴·징검다리·**0런의 스텁**·드로어 훅 둘이 그대로 들어갔나 (게이트).
+
+    🔴 스텁이 함수 밖(0런)으로 나갔으므로 **여기가 조용히 비면 드로어가 허공으로 뛴다** — 되읽기가 필수다.
+    """
+    _f2, mm2 = common.open_image(dst)
+    for fname in FILES:
+        orig = common.extract(fname)
+        ent, off, code, _body, tramp_at, stub_off, stub, hooks = build(orig, fname)
+        lba, fsize = files[fname]
+        d = common.read_extent(mm2, lba, fsize)
+        assert d[off : off + SIZE] == code, f"{fname}: 줄 나누기 되읽기 불일치"
+        assert d[stub_off : stub_off + len(stub)] == stub, f"{fname}: 훅 스텁(0런) 되읽기 불일치"
+        for h, _was, new4 in hooks:
+            assert d[h : h + 4] == new4, f"{fname} 0x{LOAD_BASE + h:08X}: 드로어 훅 되읽기 불일치"
+        print(
+            f"  ✅ 되읽기 {fname} — 줄 나누기 {SIZE}B · 징검다리 0x{tramp_at:08X} → 스텁 {len(stub)}B"
+            f"(0런 0x{LOAD_BASE + stub_off:08X}) · 드로어 훅 {len(hooks)}곳"
+        )
+    mm2.close()
+    _f2.close()
 
 
 def main():
@@ -392,11 +455,12 @@ def main():
         raise SystemExit(f"먼저 다른 패처를 돌린다 — {dst} 가 없다")
     for fname in FILES:
         orig = common.extract(fname)
-        ent, off, code, body, stub_at, hooks = build(orig)
+        ent, off, code, body, tramp_at, stub_off, stub, hooks = build(orig, fname)
         lines = sh2.verify(code, ent, body)
+        sh2.verify(stub, LOAD_BASE + stub_off, len(stub))
         print(f"{fname}: prewrap 0x{ent:08X} → 루틴 {body}B (자리 {SIZE}B) · 명령 {len(lines)}")
         print(
-            f"   드로어 훅 스텁 0x{stub_at:08X} · 자리 "
+            f"   징검다리 0x{tramp_at:08X} → 스텁 0x{LOAD_BASE + stub_off:08X}({len(stub)}B, 0런) · 자리 "
             + " · ".join(f"0x{LOAD_BASE + h:08X}" for h, _o, _n in hooks)
         )
         if "--dis" in sys.argv:
@@ -413,6 +477,13 @@ def main():
         was = bytes(orig[off : off + SIZE])
         assert cur in (was, code), f"{fname} 0x{ent:08X}: 원본도 우리 루틴도 아니다"
         with open(dst, "r+b") as f:
+            _fd, mmd = common.open_image(dst)
+            cur_stub = bytes(common.read_extent(mmd, lba, fsize)[stub_off : stub_off + len(stub)])
+            mmd.close()
+            _fd.close()
+            # ⚠ 스텁 자리 사전조건 = 「0런(비어 있음)이거나 이미 우리 스텁」 — 다시 돌려도 돈다
+            assert cur_stub in (bytes(len(stub)), stub), f"{fname} 스텁 자리 0x{stub_off:X}: 0런도 우리 스텁도 아니다"
+            common.write_at(f, lba, fsize, stub_off, stub, label=f"{fname} 훅 스텁(0런)", expect=cur_stub)
             common.write_at(f, lba, fsize, off, code, label=f"{fname} 줄 나누기", expect=cur)
             for h, was4, new4 in hooks:
                 _fd, mmd = common.open_image(dst)
@@ -424,6 +495,8 @@ def main():
                 )
                 common.write_at(f, lba, fsize, h, new4, label=f"{fname} 드로어 훅", expect=cur4)
         print("   → 넣음")
+    if apply:
+        verify(dst, files)
     if not apply:
         print("  (검산만 — 실제로 넣으려면 `--apply`)")
 

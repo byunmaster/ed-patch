@@ -48,6 +48,7 @@ FREE = {  # 파일 → (0런 시작 오프셋, 크기)
     "/ED2.BIN": (0x63CC8, 2560),
 }
 MARGIN = 0x40  # 양 끝 여유 — 계산 주소가 가장자리를 스치더라도 안 물리게
+STUB_SPACE = 64  # 🔴 0런 끝쪽에 `patch_msgwrap` 의 드로어 훅 스텁(56B)이 앉는 몫 — 이 훅은 그 앞까지만 쓴다
 LOAD_BASE = 0x06028000  # `ED.BIN`·`ED2.BIN` 적재 주소
 
 # 🔴 **자리를 손으로 안 적는다** — 편마다 주소가 다르다(ED 0x0607D504 · ED2 0x060648F8).
@@ -481,7 +482,9 @@ def build(fname, table, sites, end):
     else:
         raise SystemExit("루틴/표 배치가 안 수렴한다")
     blob = b"".join(blobs[n][0] for n in order) + table + half
-    assert len(blob) + 2 * MARGIN <= size, f"{fname}: {len(blob)}B > 자리 {size - 2 * MARGIN}B"
+    assert len(blob) + 2 * MARGIN + STUB_SPACE <= size, (
+        f"{fname}: {len(blob)}B > 자리 {size - 2 * MARGIN - STUB_SPACE}B (끝쪽 {STUB_SPACE}B 는 훅 스텁 몫)"
+    )
     dis = {n: (ram[n], sh2.verify(blobs[n][0], ram[n], blobs[n][1])) for n in order}
     return blob, at, dis
 
