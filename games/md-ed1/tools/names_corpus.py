@@ -19,11 +19,14 @@ import archives
 import battle
 import captions
 import common
+import dict_names
+import field_names
 import halfspace
 import scene
 import sysmsg
 
-
+CANON = "ed1"  # 공통 문안 정본(shared/canon) — 한 편짜리 게임 어댑터 값
+CANON_GATE = True  # 정본 어긋남을 실패로 친다(사전 적용 2단계 전환 끝, 2026-10-08)
 DIALOG, SLOT = "dialog", "slot"  # 갈래 — 메시지 창 문장(대사·전투 로그·시스템 메시지·캡션)은 지명 띄어쓰기까지 잰다, 칸·표·로그는 무시(마스터 10-07)
 
 
@@ -53,8 +56,7 @@ def _battle_pairs(rom: bytes):
     _names, strs = battle.survey(rom)
     p = common.GAME_DIR / "textmap" / "battle.json"
     kr_map = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-    mp = common.GAME_DIR / "textmap" / "monsters.json"
-    monsters = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}
+    monsters = battle.monsters(rom)
     for k, e in strs.items():
         blk, tgt = e["where"][0][0], e["where"][0][1]
         ent = kr_map.get(k)
@@ -94,19 +96,13 @@ def _captions_pairs(rom: bytes):
 
 
 def _monsters_pairs():
-    import json
-
-    p = common.GAME_DIR / "textmap" / "monsters.json"
-    d = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    d = battle.monsters(common.rom())
     for jp, v in d.items():
         yield f"monsters:{jp}", jp, (v.get("ours") or None), SLOT
 
 
 def _names_pairs():
-    import json
-
-    p = common.GAME_DIR / "textmap" / "names.json"
-    d = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    d = dict_names.names()
     for cat, tbl in d.items():
         if not isinstance(tbl, dict):
             continue
@@ -119,6 +115,12 @@ def _names_pairs():
             yield f"names:{cat}[{idx}]", jp, (halfspace.plain(ent.get("ours") or "") or None), SLOT
 
 
+def _banner_pairs():
+    """입장 배너 지명 46칸(블록 91 표) — 사전·접미 규칙에서 읽은 값(`field_names.banner_kr`)을 잰다."""
+    for i, kr, _extra, jp in field_names.ENTRIES:
+        yield f"banner:{i:02d}", jp, kr, SLOT
+
+
 def pairs():
     rom = common.rom()
     yield from _script_pairs(rom)
@@ -127,6 +129,7 @@ def pairs():
     yield from _captions_pairs(rom)
     yield from _monsters_pairs()
     yield from _names_pairs()
+    yield from _banner_pairs()
 
 
 if __name__ == "__main__":

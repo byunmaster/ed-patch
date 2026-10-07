@@ -32,6 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import archives
 import common
+import dict_names
 import scene
 import textmap
 
@@ -65,7 +66,7 @@ def names_table() -> dict[str, str]:
         for k, v in cat.items()
         if isinstance(v, str)
     }
-    tbl = json.loads((common.GAME_DIR / "textmap" / "names.json").read_text(encoding="utf-8"))
+    tbl = dict_names.names()
     for name in ("item", "spell", "place_a", "place_b"):
         for e in tbl.get(name, {}).values():
             if isinstance(e, dict) and e.get("jp") and e.get("ours"):

@@ -31,6 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
+import dict_names
 import halfspace
 
 LIMIT = 210  # 메시지 창 한 줄(px)
@@ -51,7 +52,7 @@ def longest(names: list[str]) -> str:
 
 def fillers() -> dict[str, str]:
     """빈 자리에 넣을 가장 긴 값."""
-    nm = json.loads((T / "names.json").read_text(encoding="utf-8"))
+    nm = dict_names.names()
     ours = lambda cat: [o["ours"] for o in nm[cat].values() if o.get("ours")]
     party = [re.sub(r"<[0-9a-f]+>", "", s).strip() for s in ours("party_name")]
     items = ours("item")
@@ -222,7 +223,7 @@ def battle_texts() -> list[tuple[str, str]]:
     """(이름, 조립한 문안) — 전투 영역 전부(전투 아카이브 + 코드 영역 전투 문안 + 아는 조립 순서)."""
     import battle
 
-    mons = json.loads((T / "monsters.json").read_text(encoding="utf-8"))
+    mons = battle.monsters(common.rom())
     f = fillers()
     longest_mon = longest([v["ours"] for v in mons.values() if v.get("ours")]) + "A"
     name = longest([f["name"], longest_mon])
@@ -314,7 +315,7 @@ def _jp_sysmsg() -> dict[str, str]:
 def _jp_fill() -> dict[str, str]:
     import battle
 
-    nm = json.loads((T / "names.json").read_text(encoding="utf-8"))
+    nm = dict_names.names()
     jp = lambda cat: [o["jp"] for o in nm[cat].values() if o.get("jp")]
     mons = [
         r["name"].decode("cp932", "replace")

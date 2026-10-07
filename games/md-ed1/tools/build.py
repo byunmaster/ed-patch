@@ -24,6 +24,7 @@ import archives
 import battle
 import captions
 import common
+import dict_names
 import field_hud
 import field_names
 import gfxtext
@@ -346,11 +347,11 @@ def load_textmaps() -> dict:
     """정본 전부 — 대본(script/*.json) · 표(names.json) · 시스템 메시지 · 자막 · 전투(메시지·몬스터)."""
     return {
         "maps": textmap.load_all(),
-        "names": _load(tables.NAMES_JSON),
+        "names": dict_names.names(),
         "smap": _load(sysmsg.MAP_JSON),
         "cmap": _load(captions.MAP_JSON),
         "bmap": _load(battle.MAP_JSON),
-        "monsters": _load(battle.MONSTERS_JSON),
+        "monsters": battle.monsters(common.rom()),
     }
 
 
