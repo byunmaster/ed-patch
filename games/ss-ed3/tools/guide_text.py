@@ -6,7 +6,7 @@
    `glossary_probe` 는 「그 표기가 몇 번 쓰였나」만 센다. 산출물은 `work/review`(gitignore)에
    두고 커밋하지 않는다 — 공략집은 저작물이다.
 
-⚠ 자료는 `.local/guide/`(머신 전용, 소장자 제공)에 있다. **없으면 조용히 건너뛴다** —
+⚠ 자료는 `.local/keep/guide/`(머신 전용, 소장자 제공)에 있다. **없으면 조용히 건너뛴다** —
    다른 머신·CI 에서도 도구가 돌아야 한다.
 ⚠ 파일명이 **NFD 정규화**로 저장돼 있어 셸 글롭이 안 맞는다. 파이썬에서 NFC 로 맞춰 찾는다.
 """
@@ -44,7 +44,7 @@ def _main_tree():
     return C.ROOT
 
 
-GUIDE_DIR = os.path.join(_main_tree(), ".local", "guide")
+GUIDE_DIR = os.path.join(_main_tree(), ".local", "keep", "guide")
 OUT = os.path.join(C.REVIEW_DIR, "guide_ed3.txt")
 WANT = "영웅전설 3"
 
@@ -54,7 +54,7 @@ def _nfc(s):
 
 
 def find(kind=".hwp"):
-    """`.local/guide` 에서 ED3 자료 경로 — 없으면 빈 목록."""
+    """`.local/keep/guide` 에서 ED3 자료 경로 — 없으면 빈 목록."""
     if not os.path.isdir(GUIDE_DIR):
         return []
     out = []

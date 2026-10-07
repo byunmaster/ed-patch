@@ -25,12 +25,12 @@
    AI Studio 에서 키를 새로 받아 `GEMINI_API_KEY` 로 준다. ⚠ 로그인은 브라우저가 필요하다.
 """
 
-EPILOG = """열쇠는 `.local/secrets.env` 하나에 모은다(환경변수가 이긴다):
+EPILOG = """열쇠는 `.local/keep/secrets.env` 하나에 모은다(환경변수가 이긴다):
 
   GEMINI_API_KEY=...   # 있으면 REST + 구조화 출력, 없으면 gemini-cli 로 폴백
 
 ⚠ 워크트리엔 `.local/` 이 안 따라온다 — 메인 트리에 한 번만 두면 거슬러 올라가 찾는다.
-자세한 것은 `.local/README.md`."""
+자세한 것은 루트 CLAUDE.md 의 `.local` 항목."""
 
 import argparse
 import json
@@ -49,7 +49,7 @@ import typeset as T
 
 GEMINI = os.environ.get("GEMINI_BIN", "gemini")
 MODEL = os.environ.get("GEMINI_MODEL", "")  # 비우면 각 경로의 기본 모델
-API_KEY = C.secret("GEMINI_API_KEY")  # 열쇠는 `.local/secrets.env` 하나에 모은다
+API_KEY = C.secret("GEMINI_API_KEY")  # 열쇠는 `.local/keep/secrets.env` 하나에 모은다
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
 GAME = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAX_ROUNDS = 3

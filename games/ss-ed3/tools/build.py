@@ -43,6 +43,7 @@ import subtitle_stub as SS
 import dev_options as DEV
 import voice_credits as VC
 import voice_sub as VS
+import choice_tail as CT
 
 from shared.disc import mode1
 
@@ -177,14 +178,19 @@ def patched(disc, lay=None):
                 b = d.read_extent(lba, size)
                 new, k, bad = R.patch_blocks(b, stem, table)
                 cnt = {"map": k}
-                if stem in voicetbl:
+                if stem in voicetbl or CT.has(stem):
                     #   🔴 **음성 자막** — 칸 + 글자 표를 파일 끝 섹터 여백에 붙인다.
                     #     파일이 **길어지므로** 원본도 그 여백(0)까지 같이 들어 사전조건이
                     #     서고, 디렉터리 레코드의 크기를 늘려야 엔진이 그만큼 읽는다.
                     #   🔴 그 여백이 맵마다 달라 **13 장면이 안 들어서** 파일을 트랙 1 끝으로
                     #     옮긴다(`relocate.py`). 새 자리는 빈 섹터라 원본은 0 이다.
-                    new, kv = VS.patch(new, stem, voicetbl[stem], table)
-                    cnt["voice"] = kv
+                    if stem in voicetbl:
+                        new, kv = VS.patch(new, stem, voicetbl[stem], table)
+                        cnt["voice"] = kv
+                    if CT.has(stem):
+                        #   🔴 **선택지 항목이 칸보다 길다**(`_wide`) — 진짜 글을 꼬리에 붙이고 트램펄린을 건다.
+                        new = CT.patch(new, stem, table, b)
+                        cnt["wide"] = len(R.wide(stem))
                     drl, dro = VS.dir_record(d, name)
                     sec = dirsec.setdefault(drl, [d.read_extent(drl, 2048)] * 2)
                     new_lba = lay.alloc(name, lba, len(new))
