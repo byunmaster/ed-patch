@@ -140,18 +140,11 @@ UI = {
 #    `크루즈마을 입구` 로 나온다 — 원작의 `마을/항구` 를 살리는 쪽을 택했다(유저 확정).
 PLACES_BASE, PLACES_STRIDE = 0xBE690, 14
 
-# ⭐ **워프 목록 슬롯만 다르게 쓰는 자리**(유저 확정 2026-08-30).
-# `PLACES` 의 값은 **두 소비자**가 쓴다 — ① ED.EXE 슬롯(워프 목록·HUD 조립) ② `patch_scn_headers`
-# 의 JP→KR 치환 사전. 리셸은 그 둘이 갈려야 한다:
-#   · 워프 목록에는 **`리셸항구`** 가 맞다 — 그 목적지의 HUD 플레이트가 `리셸항구` 라
-#     목록과 화면이 어긋난다(유저 QA 2026-08-30, 011 판정으로 `항`→`항구` 전환 후 값 갱신
-#     2026-09-13 — "항→항구" 가 이 자리에도 적용됐는데 주석이 옛 값 `리셸항`으로 낡아 있었다).
-#   · 치환 사전의 `リシェール`(짧은 꼴)은 **`리셸`** 이어야 한다 — ED2SCN3·7 의 플레이트
-#     다섯이 그 짧은 꼴이고 거기선 `리셸` 이 맞다.
-# 🔴 **원문이 갈린 건 판단이 아니라 자리 부족이다** — `リシェールの港` 는 15B(널 포함)라
-#    슬롯 14B 에 안 들어간다. 우리 `리셸항구` 는 9B 라 들어간다. 즉 **우리는 원문보다 일관되게
-#    갈 수 있다.** (전수 대조 2026-08-30: 두 층이 갈린 지명은 이 하나뿐이다.)
-SLOT_OVERRIDE = {"リシェール": "리셸항구"}
+# ⭐ **지명 칸(HUD·워프·입장 배너)은 그 기종 원문 꼴 그대로다**(마스터 확정 2026-10-07 — 「원본의 맛을 즐기는 것도
+# 고전게임의 묘미」). 종전(유저 확정 2026-08-30)에는 `SLOT_OVERRIDE = {"リシェール": "리셸항구"}` 로 ED.EXE 슬롯(워프 목록·
+# HUD 조립)만 `리셸항구` 로 맞췄다 — 목적지 HUD 플레이트가 `리셸항구` 라 목록과 화면이 어긋난다는 QA 때문이었는데,
+# **10-07 에 번복**했다: ED.EXE 슬롯의 원문은 `リシェール`(접미 없음) → 「리셸」, 씬 플레이트 `リシェールの港` → 「리셸항구」
+# 그대로 둔다. 같은 표(`PLACES`)가 ED.EXE 슬롯과 씬 헤더 치환 사전을 함께 먹이므로 값은 `리셸` 하나다.
 
 # ⚠ HUD 접미(`입구`)를 실내에서만 없애는 건 **이 계층에서 안 된다**(2026-08-04 실패 기록).
 # 조립 루틴(RAM 0x800856BC)은 **플레이어 월드 좌표**로만 접미를 고른다 —
@@ -232,10 +225,11 @@ PLACES = [  # (PS1 일본어, 정발 한국어) — JP는 SCN 헤더 치환 키
     # (`.. 17 80`)라 1바이트가 모자라서다. 한쪽만 바꾸면 ED1↔ED2 표기가 갈린다.
     # ⚠ 띄어쓴 `늑대의 입` 은 어느 층에서도 안 된다 — 한글부 9B(홀수)라 실내 HUD 의
     # 2바이트 단위 종단이 널을 놓친다(2026-08-04 실측).
-    # ⚠ 이 값(`늑대입`)은 **옛 축약형이다** — 정본은 `늑대의입`이고, 화면은 058 의 `restore_full_place_names`
-    #   가 칸 넉넉한 자리를 `늑대의입` 으로 덮어 맞춘다(ED2SCN7 헤더 8곳만 칸이 모자라 예외 처리).
-    #   이 값을 정본으로 읽지 말 것 — 값 정리는 PS1 핫픽스 몫(2026-10-07 관리자 기록).
-    ("狼の口", "늑대입"),
+    # 값은 정본 `늑대의입` 이다(마스터 판정 2026-10-07 — 옛 축약 「늑대입」을 이 표에서 걷었다).
+    # ⚠ 그런데 **빌드는 8B 칸(ED2SCN7 헤더)에 못 넣어** 짧은 꼴 `늑대입` 을 중간값으로 쓴다 — 아래
+    #   `BUILD_SHORT` / `places_for_build()`. 최종 이미지는 058 의 `restore_full_place_names` ·
+    #   `apply_halfwidth_hud_slots` 가 전부 `늑대의입` 으로 덮는다.
+    ("狼の口", "늑대의입"),
     # 붙여쓰기로 1B 가 남아 정발 '수정의 탑' 복원(붙여서 8B+널=9 ≤ 슬롯 9B, 2026-08-04)
     ("水晶の塔", "수정의탑"),
     ("廃坑", "폐광"),
@@ -261,12 +255,18 @@ FULL_PLACE_RESTORES = (
     ("ED.EXE", ED_LBA, ED_SIZE, 0xBE8F8, bytes.fromhex("8abf8ae990d2"), "늑대의입 ", 14),
 )
 
-# 🔴 **화면에 나가는 최종 표기**(2026-10-05). `PLACES` 의 `狼の口` 값은 빌드 **중간값**이다 —
-# 8B 칸(ED2SCN7 헤더)까지 한 표로 채우려고 짧은 꼴을 넣어 두고, 최종 이미지에서 위
-# `restore_full_place_names`(ED.EXE·ED2.EXE)와 `apply_halfwidth_hud_slots`(8B 칸, 반각)가
-# 전부 정본 「늑대의입」으로 덮는다. 실측: v1.0.0 이미지(aa240a91)에 짧은 꼴 바이트 0곳.
-# 고유명사 정본 대조(`test_tool_tables_match_shared_glossary`)는 이 최종값으로 본다.
-PLACES_ON_SCREEN = {"狼の口": "늑대의입"}
+# 🔴 **표(`PLACES`)는 정본이고, 빌드가 쓰는 값만 다르다**(2026-10-07 — 종전엔 표에 짧은 꼴을 두고 정본을
+# `PLACES_ON_SCREEN` 에 따로 들었다. 같은 지식이 두 곳이었다). 8B 칸(ED2SCN7 헤더 8곳)은 `늑대의입`(9B)이 안 들어가
+# 슬롯 assert 가 빌드를 세운다 — 그래서 **빌드 단계에서만** 짧은 꼴을 중간값으로 쓰고, 최종 이미지에서는 위
+# `restore_full_place_names`(ED.EXE·ED2.EXE)와 `apply_halfwidth_hud_slots`(8B 칸, 반각)가 전부 정본으로 덮는다.
+# 실측: v1.0.0 이미지(aa240a91)에 짧은 꼴 바이트 0곳. ⚠ 짧은 꼴은 헤더 판별(`same_len`)에도 쓰이므로 값을 바꾸면
+# 매칭되는 자리가 달라진다 — 이미지 sha1 로 확인한다.
+BUILD_SHORT = {"狼の口": "늑대입"}
+
+
+def places_for_build():
+    """빌드가 바이트로 쓰는 지명 표 — `PLACES`(정본)에서 8B 칸 중간값만 바꾼다."""
+    return [(jp, BUILD_SHORT.get(jp, kr)) for jp, kr in PLACES]
 
 
 def restore_full_place_names():
@@ -873,10 +873,9 @@ def main():
     # 진단: HUD_DIAG=noplaces 면 ED.EXE 지명표를 **일본어 그대로** 둔다. 실내 HUD 가 이 표에서
     # 오는지(→ 일본어로 뜬다) SCN 헤더에서 오는지(→ 한글 유지)를 한 판에 가르는 스위치다.
     diag_noplaces = os.environ.get("HUD_DIAG") == "noplaces"
-    for i, (_jp, kr) in enumerate(PLACES):
+    for i, (_jp, kr) in enumerate(places_for_build()):
         if diag_noplaces:
             continue
-        kr = SLOT_OVERRIDE.get(_jp, kr)  # 슬롯만 다른 자리(위 주석)
         off = PLACES_BASE + i * PLACES_STRIDE
         b = H.encode_kr(kr) + b"\x20"
         assert len(b) < PLACES_STRIDE, f"지명 초과 {kr!r} {len(b)}B"
@@ -1024,7 +1023,7 @@ def patch_scn_headers(f):
     import re
 
     jp2kr = {}
-    for jp, kr in PLACES + SCN_PLACES + _ed2_scn_places():
+    for jp, kr in places_for_build() + SCN_PLACES + _ed2_scn_places():
         jp2kr.setdefault(jp, kr)
     for jp, kr, _ in CHAR_NAMES:  # 대사 %s가 주입하는 이름 사본
         jp2kr.setdefault(jp, kr)

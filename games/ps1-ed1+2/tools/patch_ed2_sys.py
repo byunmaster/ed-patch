@@ -414,7 +414,7 @@ def ed1_canon():
         jp = _jp_at(ed, off)
         if jp:
             out.setdefault(jp, kr)
-    for jp, kr in list(P.PLACES) + list(P.SCN_PLACES):
+    for jp, kr in list(P.places_for_build()) + list(P.SCN_PLACES):
         out.setdefault(jp, kr)
     return out
 

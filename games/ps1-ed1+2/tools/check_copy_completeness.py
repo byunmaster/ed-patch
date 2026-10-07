@@ -71,7 +71,7 @@ def _place_name_jp2kr():
     import patch_sys_ui as P
 
     jp2kr = {}
-    for jp, kr in P.PLACES + P.SCN_PLACES + P._ed2_scn_places():
+    for jp, kr in P.places_for_build() + P.SCN_PLACES + P._ed2_scn_places():
         jp2kr.setdefault(jp, kr)
     for jp, kr, _ in P.CHAR_NAMES:
         jp2kr.setdefault(jp, kr)

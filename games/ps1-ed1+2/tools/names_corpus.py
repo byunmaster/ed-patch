@@ -115,7 +115,14 @@ def _scene_pairs():
             for n, name in enumerate(jp_plates):
                 shown_name = our_plates[n] if len(our_plates) == len(jp_plates) else smap.get(name)
                 yield f"{scn}:{eid}#이름창{n}", name, shown_name, "slot"
-            yield f"{scn}:{eid}", _jp(jp_body), ours_body, "dialog"
+            jb = _jp(jp_body)
+            # 본문이 **이름 하나뿐**(짧고 문장부호·공백 없음)이면 HUD·입장 배너 칸이다 — 대사가 아니다(칸 꼴로 잰다).
+            kind = (
+                "slot"
+                if 0 < len(jb.strip()) <= 12 and not re.search(r"[。、！？!?…･ 　]", jb.strip())
+                else "dialog"
+            )
+            yield f"{scn}:{eid}", jb, ours_body, kind
     if UNRENDERED:
         print(
             f"names_corpus: 화면 바이트로 못 그린 장면 블록 {len(UNRENDERED)} (script 문안으로 대신 잼)",
@@ -167,8 +174,6 @@ def _table_pairs():
     for name, tbl in tables.items():
         for jp, kr in tbl.items():
             yield f"표:{name}|{jp}", jp, _ours(kr), "slot"
-    for jp, kr in patch_sys_ui.PLACES_ON_SCREEN.items():
-        yield f"표:PLACES_ON_SCREEN|{jp}", jp, _ours(kr), "slot"
 
 
 def pairs():
