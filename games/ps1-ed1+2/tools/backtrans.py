@@ -20,13 +20,13 @@
   `\\ue000`(하드 개행). 보내기 전에 지운다(`strip_ctrl`).
 """
 
-EPILOG = """열쇠는 `.local/secrets.env` 하나에 모은다(환경변수가 이긴다):
+EPILOG = """열쇠는 `.local/keep/secrets.env` 하나에 모은다(환경변수가 이긴다):
 
   DEEPL_API_KEY=...    # https://www.deepl.com/pro-api 의 DeepL API Free — 월 50만 자
 
 ⚠ 워크트리엔 `.local/` 이 안 따라온다 — 메인 트리에 한 번만 두면 거슬러 올라가 찾는다.
 ⚠ 전량은 44만 자쯤이라 무료 한도(월 50만)를 거의 다 쓴다. `--limit` 로 나눠 도는 게 낫다.
-자세한 것은 `.local/README.md`."""
+자세한 것은 루트 CLAUDE.md 의 `.local` 항목."""
 
 import argparse
 import glob

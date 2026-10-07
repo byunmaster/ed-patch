@@ -311,7 +311,7 @@ git show game/ps1-ed1+2:games/ps1-ed1+2/textmap/ending_ed2.json   # ED2 엔딩
 
 **규칙 — 이 셋만 지키면 아무나 채울 수 있다.**
 
-1. **둘 곳**: `.local/inbox/ps1-ed1+2/` (gitignore — 이미지는 커밋하지 않는다).
+1. **둘 곳**: `.local/work/inbox/ps1-ed1+2/` (gitignore — 이미지는 커밋하지 않는다).
 2. **이름**: `ui-<절 번호>-<무엇>.png` — 절 번호가 이 문서의 절이다(`ui-1c-전투설정.png`).
 3. **채우는 법**: 아래 표의 「화면」 칸에 그 경로를 적는다. 표에 없는 화면을 찍었으면
    행을 **더한다**(지우지 않는다).

@@ -4,6 +4,8 @@
 한다**(유저 확정 2026-08-18 — 아래 「번역 정책」). 레포 공용 규칙은 루트 `CLAUDE.md`.
 
 - 타깃 원본: `originals/jp/ps1-ed1+2`
+- 🔴 **상태(2026-10-07): v1.0.0 이 배포됐고 이 게임은 라운드에서 졸업했다.** 지금은 **핫픽스·제보 이슈**가 들어올 때만
+  고치고, **배포는 이슈를 모아 한 번에** 한다. 게임 브랜치는 원격에 올리지 않는다(루트 `CLAUDE.md`).
 - ⚠ **`originals/kr/dos-ed1`·`dos-ed2`(정발)는 번역 저본이 아니다.** 2026-08-18 까지는
   저본이었고 지금은 **대조용**으로만 남는다 — `check_forbidden` 이 「우리 문안이 정발을
   베꼈나」를 재는 데 쓴다. 🔴 **번역할 때 열지 않는다.**
@@ -16,8 +18,8 @@
   조용히 바뀐다. main 에 넣고 받아 온다(루트 `CLAUDE.md`).
   ✅ **문서(`docs/` · 루트 `CLAUDE.md` · `.claude/`)는 여기서 고친다**(2026-08-24) — 글은
   바이트를 안 만들고, 머지로 올라가면 main 히스토리가 오히려 읽기 좋아진다.
-- **진행 현황을 먼저 읽는다** — **편마다 갈려 있다**: `docs/ed1-status.md` ·
-  `docs/ed2-status.md` (살아있는 상태 문서 — 세션 끝에 "현재 상태"·"다음 할 일" 갱신).
+- **진행 현황을 먼저 읽는다** — **`docs/ed1-status.md` 가 ED1·ED2 현재 상태 한 곳**이다(한 이미지라서). `docs/ed2-status.md` 는
+  ED2 고유의 열린 항목만 든다(살아있는 상태 문서 — 세션 끝에 "현재 상태"·"열린 이슈" 갱신).
   ⚠ 문서 이름은 **`ed1-`/`ed2-` 접두로 맞춘다**(유저 확정 2026-08-17) — 어느 편 것인지
   파일명만 보고 알아야 한다. 편 무관 문서는 접두 없이 둔다(`policy` · `devlog` ·
   `text-pipeline` · `jeongbal-deviations`).
@@ -132,7 +134,7 @@ python3 tools/align_map.py --update ED1SCN2  # 검토 끝난 것만 정본으로
 ## 빌드
 
 ```bash
-python3 tools/build.py     # 전 트랙 체인 → work/Eiyuu Densetsu (KR).bin/.cue
+python3 tools/build.py     # 전 트랙 체인 → work/build/<꼬리표>/Eiyuu Densetsu (KR).bin/.cue
 sh ../../scripts/test.sh   # 단위·회귀 테스트 (원본 없이 돈다 — 함정마다 하나씩 박아 둔다)
 ```
 
@@ -176,6 +178,10 @@ sh ../../scripts/test.sh   # 단위·회귀 테스트 (원본 없이 돈다 — 
 
 - 고유명사 정본은 **`shared/glossary/eiyuu.json`** + 아이템·몬스터(`patch_items`) ·
   지명(`patch_sys_ui`). 없는 이름은 **새로 만들지 말고 원음으로 적고 보고**한다.
+  🔴 **사전(`shared/glossary` · `shared/lore`)은 main 에서 마스터 확인 뒤에만 고친다**(게임 브랜치가 고치면 `check.sh` 실패) —
+  후보는 관리자에게 올린다. **게임 폴더에 새 고유명사 표(JP→KR)를 만들지 않는다.** 도구 표는 테스트가 정본과 전량 대조하지만
+  **문장 속에 박힌 이름**(`battle.json` 등)은 게이트가 없다 — 이름을 바꾸면 `battle_kr` 가 `battle.json` 을 `MONSTERS` 보다
+  먼저 읽는다는 점을 기억한다(2026-10-07 v1.0.0 에 옛 이름 22곳이 나갔다).
 - **ED1↔ED2 는 한 표기다** — 한 디스크에 두 편이 담기고 플레이어는 이어서 한다.
   `check_terms` 가 편 간 대조를 본다.
 - 표기 편차 대장 [`docs/jeongbal-deviations.md`](docs/jeongbal-deviations.md) — ⚠ 이름은
