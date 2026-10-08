@@ -70,7 +70,7 @@ python3 games/md-ed1/tools/build.py              # ⭐ 정본(script/*.json) →
 python3 games/md-ed1/tools/build.py --check      # 빌드 없이 정본 게이트만
 python3 games/md-ed1/tools/textmap.py --seed 104 # 블록 104 정본 초안(해시만) + work/derived 에 원문 골격
 python3 games/md-ed1/tools/tables.py --check     # 고정 폭 표·00 묶음 분모 (아이템·주문·지명·메뉴·설정·HUD)
-python3 games/md-ed1/tools/tables.py --seed      # textmap/names.json 초안 — glossary 로 채움
+python3 games/md-ed1/tools/tables.py --seed      # textmap/names.json 초안(UI 라벨만 — 이름 표는 `dict_names.py` 가 사전·정본에서 읽는다)
 python3 games/md-ed1/tools/gfxtext.py               # 타이틀 메뉴 그래픽 셀(변형별 색)
 python3 games/md-ed1/tools/vdp.py <덤프폴더> out.png [base] [width]  # 화면 재구성(⚠ VRAM 덤프는 바이트 스왑)
 python3 games/md-ed1/tools/vdp.py <덤프폴더> --guess                # 네임테이블 base·width 추정
