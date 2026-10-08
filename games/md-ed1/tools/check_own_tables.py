@@ -28,12 +28,14 @@ JP = re.compile(r"[぀-ヿ㐀-鿿]")
 KR = re.compile(r"[가-힣]")
 STAFFROLL: set[str] = set()  # 스태프롤 이름 표 파일(게임 폴더 기준 상대경로) — 지금 없음
 SKIP_DIRS = {"work", "docs", "__pycache__", "tests"}
+# 마스터 승인 예외 대장 — 「자리|정본 열쇠 → 사유」 라 사전이 아니다(열쇠가 자리 이름이고 값은 한국어 사유 문장)
+EXC_FILES = {"canon_exceptions.json", "names_exceptions.json"}
 
 
 def _files(suffix: str):
     for p in sorted(GAME.rglob(f"*{suffix}")):
         rel = p.relative_to(GAME)
-        if SKIP_DIRS & set(rel.parts) or str(rel) in STAFFROLL:
+        if SKIP_DIRS & set(rel.parts) or str(rel) in STAFFROLL or rel.name in EXC_FILES:
             continue
         yield p, str(rel)
 
