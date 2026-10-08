@@ -344,7 +344,20 @@ def apply(f, table, touched) -> dict:
     labels = _load("labels.json")
     b6d = S.bank_bytes(0x6D)
     cnt = 0
-    for r in S.read_labels():
+    recs = S.read_labels()
+    # 칸 경계 옮기기 — 전투 설정 「도망친다」(8B)가 칸 6B 를 넘는데, 바로 뒤 전투 커맨드 창 라벨은 「도망」이 원문
+    #   「逃げる」보다 2B 짧아 꼬리 공백이 2B 남는다. 둘 사이 00 구분자를 2B 뒤로 밀어 칸을 넘긴다
+    #   (라벨은 00 개수로 찾으므로 순서만 지키면 된다 — 직접 주소 참조 없음을 전 뱅크 검색으로 확인, 10-08).
+    shifts = []  # (구분자 자리, 원본 1B) — 아래에서 따로 쓴다
+    by_addr = {r["addr"]: r for r in recs}
+    a, b = by_addr.get(0x96F2), by_addr.get(0x96F9)
+    if a and b and a["off"] + a["room"] + 1 == b["off"] and a["room"] == 6 and b["room"] == 68:
+        sep = a["off"] + a["room"]
+        a["room"] += 2
+        b["off"] += 2
+        b["room"] -= 2
+        shifts.append((sep + 2, b6d[sep + 2 : sep + 3]))  # 새 구분자 자리(원래는 낱말 안쪽 바이트)
+    for r in recs:
         kr = label_kr(r, labels)  # labels.json(주소·원문 순)이 먼저, 없으면 정본 ui
         if kr is None:  # 정본에도 없거나 **원본 유지로 판정**(null) — 안 건드린다
             continue
@@ -374,6 +387,8 @@ def apply(f, table, touched) -> dict:
             touched,
         )
         cnt += 1
+    for at, orig in shifts:
+        _write(f, 0x6D, at - 0, b"\x00", orig, "label 구분자 이동", touched)
     stats["labels"] = cnt
     # 시스템 메시지
     msgs = _load("sysmsg.json").get("messages", {})
