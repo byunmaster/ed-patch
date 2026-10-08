@@ -61,6 +61,14 @@ echo "  ── 말투 (한 블록 안에서 높임과 반말이 섞였나)"
 # ⚠ 경고지 실패가 아니다 — 한 블록 안에서 말 상대가 바뀌는 자리가 실제로 있다
 warn 3 "$PY" "$G/tools/check_speech.py"
 
+echo "  ── 화자 이름이 본문에서 또 나가나 (F4 이름창 메아리)"
+# 🔴 게이트다 — 이름창이 제 줄에 이름을 찍는데 번역이 본문에 이름표 꼴을 옮겨 쓰면 화면에 이름이 두 번 나간다
+run 0 "$PY" "$G/tools/check_name_echo.py"
+
+echo "  ── 메뉴 라벨이 칸을 넘치나 (F5 창 프레임)"
+# 🔴 게이트다 — 바이트가 맞아도 반각이 섞이면 폭이 다르다. 받아들인 넘침은 script/window_frame_accept.json
+run 0 "$PY" "$G/tools/check_window_frame.py"
+
 echo "  ── 이름표가 자리마다 다르게 옮겨졌나"
 # 🔴 게이트다 — 라벨은 판단이 들어갈 자리가 없다(같은 사람이 두 이름으로 보인다)
 run 12 "$PY" "$G/tools/check_label.py"
