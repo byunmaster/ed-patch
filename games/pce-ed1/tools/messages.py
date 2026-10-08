@@ -300,9 +300,9 @@ def load_translations(scene_id: int) -> dict[str, dict]:
     for k, v in msgs.items():
         if "jp" in v:
             # 입장 배너(scn000) — 지명은 **사전(place)이 정본**이고 여기는 원문 지명 + 가운데맞춤 공백(`lead`·`tail`)뿐이다
-            import glossary as G  # shared/
+            import canon  # shared/
 
-            kr = G.lookup(v["jp"], "place")
+            kr = canon.lookup(v["jp"], "place", "ed1")
             if kr is None:
                 raise KeyError(f"scn{scene_id:03d} 열쇠 {k}: 사전(place)에 {v['jp']!r} 가 없다")
             v = {**v, "t": v.get("lead", "") + kr + v.get("tail", "")}

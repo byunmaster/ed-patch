@@ -48,7 +48,7 @@ CANON = "ed1"  # 공통 문안 정본 — ED1 은 PS1 씨앗(`shared/canon/ed1.j
 
 
 def glossary() -> dict[str, str]:
-    """JP → 우리 표기. **고유명사는 사전(`glossary.all_names`)이, 화자 호칭·UI 낱말은 정본(`canon`)이 준다** —
+    """JP → 우리 표기. **고유명사는 사전(`canon.all_names`)이, 화자 호칭·UI 낱말은 정본(`canon`)이 준다** —
     우리가 표를 들지 않는다(마스터 10-08 「사전 = 고유명사만 · 공통 문안은 정본」).
 
     🔴 옛 판은 정본을 **평평하게** 훑어 `_aliases` 의 값(`強さ@전투커맨드` 꼴)까지 표시 문안으로
@@ -57,10 +57,8 @@ def glossary() -> dict[str, str]:
     사전이 먼저, 그다음 화자 호칭(兵士·侍女…), 마지막이 UI 낱말(何もない…)이다.
     """
     import canon  # shared/ (common 이 sys.path 에 올린다)
-    import glossary as G
-
     out: dict[str, str] = {}
-    for _c, jp, kr in G.all_names():
+    for _c, jp, kr in canon.all_names(CANON):
         out.setdefault(jp, kr)
     for cat in ("speaker", "ui"):
         for jp, kr in canon.table(cat, CANON).items():
@@ -70,6 +68,7 @@ def glossary() -> dict[str, str]:
 
 
 # ─── 메뉴 라벨 — 정본 `ui` 낱말을 구분자(전각 공백·제어 토큰) 사이에서 읽는다 ──────────────────────────
+_JP_LETTER = re.compile("[ぁ-ヺー-ヿ㐀-鿿ｦ-ﾟ]")
 _LABEL_SEP = re.compile(r"(\{[0-9A-Fa-f]+\}|\u3000+)")
 # 같은 원문이 자리마다 다른 말일 때 어느 칸인가 — 정본 열쇠가 `원문@자리` 다. 주소로 고른다(코드 지식 — 이름이 아니다).
 LABEL_CTX = {0x9640: "능력치"}
@@ -90,6 +89,21 @@ def chapter_kr(jp: str) -> str | None:
 _FW2ASCII = str.maketrans("０１２３４５６７８９", "0123456789")
 
 
+_SLOT_CAT = {"items": ("item", "아이템칸")}  # 칸 폭 때문에 줄인 꼴은 정본에 `원문@자리` 열쇠로 둔다(마스터 10-08)
+
+
+def fixed_kr(fam: str, jp: str, names: dict, gl: dict) -> str | None:
+    """고정표 한 칸의 우리 표기 — 정본의 칸 꼴(`원문@아이템칸`)이 먼저, 그다음 임시 덮어쓰기, 마지막이 정본 일반 꼴."""
+    if fam in _SLOT_CAT:
+        import canon
+
+        cat, slot = _SLOT_CAT[fam]
+        v = canon.lookup(f"{jp}@{slot}", cat, CANON)
+        if v is not None:
+            return v
+    return names.get(fam, {}).get(jp, gl.get(jp))
+
+
 def canon_label(jp: str, addr: int | None = None) -> str | None:
     """원본 라벨(제어 토큰 `{XX}` 포함) → 정본 `ui` 로 만든 우리 라벨. 낱말 하나라도 정본에 없으면 None.
 
@@ -104,7 +118,7 @@ def canon_label(jp: str, addr: int | None = None) -> str | None:
     out = []
     any_word = False
     for i, part in enumerate(_LABEL_SEP.split(jp)):
-        if i % 2 == 1 or not part:
+        if i % 2 == 1 or not part or not _JP_LETTER.search(part):  # 구분자·부호(`：`)는 낱말이 아니다 — 그대로 둔다
             out.append(part)
             continue
         ctxs = ["전투커맨드"] if battle_cmd else []
@@ -150,12 +164,12 @@ def all_glyph_chars() -> set[str]:
     gl = glossary()
     for fam in S.FIXED:
         for r in S.read_fixed(fam):
-            kr = names.get(fam, {}).get(r["jp"], gl.get(r["jp"]))
+            kr = fixed_kr(fam, r["jp"], names, gl)
             if kr:
                 chars |= {c for c in kr if font.needs_glyph(c)}
     for fam, reader in (("speakers", S.read_speakers), ("chapter", S.read_chapter)):
         for r in reader():
-            kr = names.get(fam, {}).get(r["jp"], gl.get(r["jp"]))
+            kr = fixed_kr(fam, r["jp"], names, gl)
             if kr:
                 chars |= {c for c in kr if font.needs_glyph(c)}
     for r in S.read_labels():
@@ -279,7 +293,7 @@ def apply(f, table, touched) -> dict:
     def kr_of(fam, jp):
         if fam == "chapter" and jp not in names.get(fam, {}):
             return chapter_kr(jp)
-        return names.get(fam, {}).get(jp, gl.get(jp))
+        return fixed_kr(fam, jp, names, gl)
 
     # 고정폭 표
     for fam, (bank, base, stride, w, _n, pad, _tail) in S.FIXED.items():

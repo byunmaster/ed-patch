@@ -38,7 +38,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 import canon  # shared/ — 공통 문안 정본(ED1 = PS1 씨앗)
 import common
-import glossary as G  # shared/ — 고유명사만
 import hud_lz
 
 from shared import fonts
@@ -72,7 +71,7 @@ PAL8 = [
 ]
 
 def _person(jp: str) -> str:
-    kr = G.lookup(jp, "person")
+    kr = canon.lookup(jp, "person", "ed1")
     assert kr, f"사전에 인물 {jp!r} 가 없다"
     return kr
 
@@ -100,13 +99,13 @@ STATUS = [
     ([[0x1E, 0x1F], [0x20, 0x21]], "乱", _ui("乱")),
     ([[0x2A, 0x2B], [0x2C, 0x2D]], "毒", _ui("毒")),
     ([[0x2E, 0x2F], [0x30, 0x31]], "黙", _ui("黙")),
-    ([[0x32, 0x33], [0x34, 0x35]], "守", _ui("守", "수")),
+    ([[0x32, 0x33], [0x34, 0x35]], "守", _ui("守")),
     (
         [[0x36, 0x37], [0x38, 0x39]],
         "跳",
-        _ui("跳", "반"),
+        _ui("跳"),
     ),  # 跳ね返す = 반사(PS1 정발 표기) — PCE 엔 「呪」가 없다
-    ([[0x26, 0x27, 0x22, 0x23], [0x28, 0x29, 0x24, 0x25]], "気絶", _ui("気絶", "기절")),
+    ([[0x26, 0x27, 0x22, 0x23], [0x28, 0x29, 0x24, 0x25]], "気絶", _ui("気絶")),
 ]
 ATO = ([[0x10, 0x11]], "あと")
 

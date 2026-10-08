@@ -11,8 +11,9 @@
 자리 이름 규약: `scnNNN:<열쇠>` · `battle:<열쇠>` · `battle-name:<rel>:<블록>:<오프셋>` · `sysmsg:<주소>` ·
 `fixed:<가족>#<순번>` · `label:<주소>` · `screen:<열쇠>#<줄>` · `extras:<열쇠>#<항목>` · `inline:<열쇠>` · `hud:<원문>`.
 
-⚠ 안 내는 구간 — 원문 **글**이 없는 자리: 오프닝·나레이션 음성 자막(`script/opening_sub.json` · 음성뿐) · 엔딩 자막
-(`ending_sub.json`) · 그림 글자(장 제목 띠 `chapter_band.KR_TITLES` · 엔딩 카드 `gfx_text`). 원문 줄이 없어 짝을 못 짓는다.
+원문 **글**이 없는 자리(오프닝·엔딩 음성 자막 · 장 제목 띠 · 엔딩 카드 · 오마케 간판)는 `jp` 를 빈 줄로 **우리 줄만** 낸다(`_subs`) —
+이름 검사는 못 하지만(짝이 없다) 화면 일본어 게이트는 우리 줄의 가나·한자를 잡는다. 도감(rel 459~463)은 `_dex` — 미착수라 우리 줄 None.
+⚠ 스태프롤(`staffroll.py`)은 안 낸다 — 사람 이름만 원문이 남는 게 확정이라 일본어 게이트가 늘 울리고, 이름 표는 게임 폴더에 두는 예외(마스터 10-08).
 """
 
 import json
@@ -71,10 +72,15 @@ def _system():
     for fam in S.FIXED:
         for r in S.read_fixed(fam):
             if r["jp"]:
-                kr = names.get(fam, {}).get(r["jp"], gl.get(r["jp"]))
+                kr = sysbuild.fixed_kr(fam, r["jp"], names, gl)
                 yield (f"fixed:{fam}#{r['i']}", r["jp"], kr, "slot")
     for r in S.read_labels():
-        yield (f"label:{r['addr']:04X}", r["jp"], sysbuild.label_kr(r), "slot")  # 정본 ui 에서 읽은 라벨(+ labels.json 잔여)
+        yield (
+            f"label:{r['addr']:04X}",
+            r["jp"],
+            sysbuild.label_kr(r),
+            "slot",
+        )  # 정본 ui 에서 읽은 라벨(+ labels.json 잔여)
     screens = _load(SCRIPT / "sys" / "screens.json")
     for sc in S.read_screens():
         kr = screens.get(sc["key"])
@@ -102,11 +108,41 @@ def _hud():
         yield (f"hud:{jp}", jp, kr, "slot")
 
 
+DEX_REL, DEX_SPAN = (
+    459,
+    (0x300, 4 * 2048 + 0x200),
+)  # 몬스터 도감(rel 459~463) — 원문 평문. 번역 미착수(status 「남은 일」)
+
+
+def _dex():
+    """도감 원문 줄(우리 줄 None — 미착수). 검사기 분모에 들이고, 화면 일본어 게이트는 **알림으로만** 센다(`check_jp_left.DEFERRED`)."""
+    import coverage_scan as C
+
+    d = common.track_data(DEX_REL, 5)
+    for off, text in C.runs(d[DEX_SPAN[0] : DEX_SPAN[1]], min_chars=2):
+        yield (f"dex:{DEX_REL}:{DEX_SPAN[0] + off:04X}", text, None, "dialog")
+
+
+def _subs():
+    """원문 글이 없는 출처(음성 자막 · 그림 글자) — `jp` 는 빈 줄. 우리 줄만 낸다 → 화면 일본어 게이트가 우리 줄의 가나·한자를 잡는다."""
+    import chapter_band
+    import gfx_text
+
+    for name in ("opening_sub", "ending_sub"):
+        for i, ln in enumerate(_load(SCRIPT / f"{name}.json").get("lines", [])):
+            yield (f"{name}:{i}", "", ln[2], "dialog")
+    for i, t in enumerate(chapter_band.KR_TITLES):
+        yield (f"chapter-band:{i}", "", t, "slot")
+    for i, (t, *_rest) in enumerate(gfx_text.CARD_LINES):
+        yield (f"gfx-card:{i}", "", t, "slot")
+    yield ("gfx-banner:0", "", gfx_text.BANNER_TEXT, "slot")
+
+
 def pairs():
     """문안 전체 — 원본 파생물(`work/derived/`)이 없으면 빈 목록(이 트리는 못 잰다)."""
     if not (DERIVED / "messages").exists():
         return []
-    return [*_scenes(), *_battle(), *_system(), *_hud()]
+    return [*_scenes(), *_battle(), *_system(), *_hud(), *_dex(), *_subs()]
 
 
 if __name__ == "__main__":

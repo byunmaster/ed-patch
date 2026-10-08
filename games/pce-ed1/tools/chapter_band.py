@@ -167,7 +167,8 @@ def _kr_titles():
     _sys.path.insert(0, str(_P(__file__).resolve().parents[3] / "shared"))
     import canon
 
-    jp_kr = list(canon.table("chapter", "ed1").values())
+    # 제목 여섯만 — 같은 범주에 번호 꼴(`제목@번호`)·머리(`第１章`)가 함께 든다(정본 10-08 별칭 추가)
+    jp_kr = [kr for jp, kr in canon.table("chapter", "ed1").items() if "@" not in jp and not jp.startswith("第")]
     nums = "１２３４５"
     return tuple(
         (f"제{nums[i]}장 " if i < 5 else "종장 ") + kr for i, kr in enumerate(jp_kr)

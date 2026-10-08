@@ -14,14 +14,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import names_corpus
 
+DEFERRED = ("dex:",)  # 미착수 출처(도감) — 숫자만 알린다. 번역이 들어가면 접두어를 뺀다
 JP = re.compile("[ぁ-ヺー-ヿ㐀-鿿ｦ-ﾟ]")
 
 
 def main() -> int:
-    bad, scene_left, total = [], 0, 0
+    bad, scene_left, total, deferred = [], 0, 0, 0
     for where, jp, ours, *_ in names_corpus.pairs():
         if where.startswith("scn"):
             scene_left += ours is None
+            continue
+        if where.startswith(DEFERRED):
+            deferred += ours is None
             continue
         total += 1
         if ours is not None and JP.search(ours):
@@ -29,7 +33,7 @@ def main() -> int:
         elif ours is None and JP.search(jp):
             bad.append((where, "미번역(원문이 뜬다)", jp))
     print(
-        f"화면 일본어 검사 — 대사 외 {total}줄 · 어긋남 {len(bad)} · (씬 대사 미번역 {scene_left}줄은 P4 몫)"
+        f"화면 일본어 검사 — 대사 외 {total}줄 · 어긋남 {len(bad)} · (씬 대사 미번역 {scene_left}줄은 P4 몫 · 도감 미착수 {deferred}줄)"
     )
     for w, why, s in bad[:20]:
         print(f"  ✗ {w}  {why}: {s[:30]!r}")

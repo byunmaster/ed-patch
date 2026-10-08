@@ -10,7 +10,6 @@ JP 원문은 정본에 없다 — `work/derived/messages/scnNNN.json` 이 열쇠
 종료가 없는 조각(화자 전환·옵코드 앞에서 끊긴 메시지)은 splice 가 `0F` 로 다음 자리에 잇는다.
 """
 
-import json
 import sys
 from pathlib import Path
 
@@ -36,11 +35,10 @@ def all_glyph_chars() -> set[str]:
     # 🔑 **화면에 나가는 표기만** 공용에서 받는다(`kr_texts`) — 열쇠도 `_aliases` 도 안 온다.
     #    ⚠ `load_speakers()` 는 **맵**이라 조판이 쓰고, 글리프 커버리지는 이쪽이다.
     import canon  # shared/ — 공통 문안 정본(ED1 = PS1 씨앗)
-    import glossary as G  # shared/ — 고유명사만
 
     # 정본은 화면에 나가는 범주만(ui·speaker) — system·battle 문구 조각은 이 게임이 안 쓰는 것이 많아 글리프를 낭비한다
     canon_vals = [v for c in ("ui", "speaker") for v in canon.table(c, "ed1").values()]
-    for v in list(G.kr_texts()) + canon_vals + list(M.load_speaker_overrides().values()):
+    for v in [kr for _c, _jp, kr in canon.all_names("ed1")] + canon_vals + list(M.load_speaker_overrides().values()):
         chars |= {ch for ch in v if font.needs_glyph(ch)}
     return chars
 
