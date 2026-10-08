@@ -88,9 +88,9 @@ def enc(s):
 
 
 SAMPLES = [
-    "リュナンは たいまつを 使った。",
-    "セリオスは レス 1を となえた。 ＨＰが 30 かいふくした。",
-    "\x02セリオス\x03は ＨＰを 112 うばった!!",
+    "ミカは ランプを 使った。",
+    "ミカは ほし 1を となえた。 ＨＰが 30 ふえた。",
+    "\x02ミカ\x03は ＨＰを 112 ふやした!!",
     "あいうえおかきくけこさしすせそ たちつてと",  # 공백 없는 긴 어절 → 글자 단위
     "あいうえおかきくけこさしすせそ。",  # 고아 마침표
     "あいうえおかきくけこさしす.",  # 반각 마침표가 딱 경계에
@@ -171,9 +171,9 @@ class Wrap(unittest.TestCase):
                 self.assertNotIn(b"\n\n", got, f"빈 줄: {raw!r} → {got!r}")
 
     def test_bundle_space_before_digit(self):
-        s = enc("あいうえおかきくけこさし レス 1を")
+        s = enc("あいうえおかきくけこさし ほし 1を")
         got = msgwrap.wrap(s, retreat=True)
-        self.assertIn(enc("レス 1を"), got, got)
+        self.assertIn(enc("ほし 1を"), got, got)
 
     def test_drawer_hang_stub(self):
         """🔴 드로어 훅 — 29열(= 폭)에 **반각 꼬리 부호만** 앉힌다. 나머지는 원 판정 그대로.
