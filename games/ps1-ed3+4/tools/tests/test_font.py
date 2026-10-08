@@ -107,3 +107,23 @@ class TestDiscLayout(unittest.TestCase):
     def test_ed4_is_not_read_with_ed3_rules(self):
         """규약이 갈렸다는 것 자체를 박는다 — 같아지면 위 실측이 무너진 것이다."""
         self.assertNotEqual(font.LAYOUT["ed3"], font.LAYOUT["ed4"])
+
+
+class TestEllipsis(unittest.TestCase):
+    def test_ellipsis_is_three_bottom_dots_in_one_cell(self):
+        """🔴 말줄임은 「…」 전각 한 글자, 점 셋은 마침표와 같은 바닥 행(마스터 10-08)."""
+        g = np.asarray(font.hangul_glyph("…"))
+        rows = [r for r in range(g.shape[0]) if g[r].any()]
+        dot = np.asarray(font.hangul_glyph("."))
+        period_rows = [r for r in range(dot.shape[0]) if dot[r].any()]
+        self.assertEqual(rows, period_rows)  # 마침표와 같은 높이(바닥) — Galmuri 의 가운데 행(5)이 아니다
+        self.assertGreaterEqual(min(rows), 9)
+        self.assertEqual(int(g.sum()), 3 * int(dot.sum()))  # 점 셋
+        self.assertEqual(font.ELLIPSIS_CODE["ed3"], 3)
+
+    def test_ellipsis_encodes_to_the_reshaped_code_and_is_full_width(self):
+        import hangul_map
+        import typeset
+
+        self.assertEqual(hangul_map.encode("…", "ed3", {}), [3])
+        self.assertEqual(typeset.width_cells("…", "ed3"), 1.0)  # 반각(0.5)이 아니다

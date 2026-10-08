@@ -230,9 +230,8 @@ def _expect(exe, ram, words, what):
 
 def half_codes(table):
     """반 칸(6px) 글자의 글리프 코드 — 공백 · 괄호(글리프 자리라 빌드마다 다르다) · 부호 원본 코드 `, . ? !`(= 1·2·4·5, `hangul_map.PUNCT`)."""
-    import hangul_map
-
-    return [table[" "]] + [table[c] for c in "()" if c in table] + sorted(hangul_map.PUNCT.values())
+    # `…`(코드 3)는 전각 한 글자라 반 칸이 아니다 — `PUNCT` 값을 통째로 안 쓰고 쉼표·마침표·물음표·느낌표만 센다
+    return [table[" "]] + [table[c] for c in "()" if c in table] + [0x01, 0x02, 0x04, 0x05]
 
 
 def apply(exe, disc, table, josa=None):

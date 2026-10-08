@@ -188,6 +188,14 @@ def render(bits, width=DRAW_W):
     return "\n".join("".join("█" if v else "·" for v in row[:width]) for row in bits)
 
 
+def _galmuri_bits(ch, dy=fonts.GALMURI11_DY):
+    return fonts.galmuri("Galmuri11").bits(ch, dy=dy, rows=ROWS, width=HANGUL_W)
+
+
+def _period_bits():
+    return _galmuri_bits(".")
+
+
 def hangul_glyph(ch, dy=fonts.GALMURI11_DY):
     """한글 한 글자 → (12,12) 0/1. Galmuri11 BDF 에서 무손실로 뽑는다.
 
@@ -198,8 +206,9 @@ def hangul_glyph(ch, dy=fonts.GALMURI11_DY):
        1픽셀 아래로 밀렸다** — 원본 글리프는 0~10행을 쓴다(실측). 같은 줄에 일본어가 섞이면
        바로 보인다.
     """
-    f = fonts.galmuri("Galmuri11")
-    return f.bits(ch, dy=dy, rows=ROWS, width=HANGUL_W)
+    if ch == "…":  # Galmuri 의 `…` 는 점이 가운데 행이다 — 바닥 행으로 다시 만든다
+        return ellipsis_glyph()
+    return _galmuri_bits(ch, dy)
 
 
 # 🔴 **한 글자를 두 칸에 반씩 나눈 전용 글리프**(마스터 판정 2026-09-27, 커맨드 창 「시 스 템」).
@@ -209,6 +218,23 @@ def hangul_glyph(ch, dy=fonts.GALMURI11_DY):
 #    사용 영역 문자(U+E000~)라 문안·배정·굽기가 한글과 같은 길(글리프 자리 게이트)을 탄다.
 SPLIT = {"": ("스", "L"), "": ("스", "R")}
 SPLIT_SHIFT = PITCH // 2  # 반 칸
+
+
+# 🔴 **말줄임은 「…」 전각 한 글자, 점 셋은 한국식 바닥(마침표와 같은 행)**(마스터 10-08, 공통 번역 규칙). 원판 코드표엔 `…` 가 없고 일본식 `・`(코드 3,
+#    4~5행 가운데 점)만 있다 — 그 **코드 3 자리를 바닥 점 셋 글리프로 다시 굽고** `…` 를 거기 매단다(`hangul_map.PUNCT_ED3`): 새 슬롯이 필요 없다.
+#    안 옮긴 일본어 줄의 `・・・` 도 가운데 점이 아니라 이 모양으로 나온다(가운데 점은 어느 게임에서도 안 나온다).
+ELLIPSIS_CODE = {"ed3": 3}  # 원본 `・` 글리프 코드(ED4 는 아직 확인 전 — 안 건드린다)
+ELLIPSIS_DOT_STEP = 4  # 점 사이 간격(px) — `.` 글리프의 점은 1열, 그래서 1·5·9열
+
+
+def ellipsis_glyph():
+    """「…」 — Galmuri11 `.`(한국식 마침표, 바닥 행)를 4px 간격으로 셋 찍은 전각 칸 글리프."""
+    g = np.asarray(_period_bits(), dtype=np.uint8)
+    out = np.zeros_like(g)
+    for k in range(3):
+        sh = k * ELLIPSIS_DOT_STEP
+        out[:, sh:] |= g[:, : g.shape[1] - sh]
+    return out
 
 
 def glyph_bits(ch):

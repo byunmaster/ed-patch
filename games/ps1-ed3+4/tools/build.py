@@ -69,6 +69,10 @@ def bake_font(exe, disc, chars, table):
     # 마침표·쉼표는 **원본 자리(1=、 · 2=。)를 한국식 모양으로 다시 굽는다** — 자리를 안 쓴다.
     for ch, code in hangul_map.PUNCT.items():
         font.write_glyph(exe, code, font.hangul_glyph(ch), disc)
+    # 말줄임 「…」(전각 한 글자, 점 셋은 바닥) — 원본 `・`(코드 3) 자리. 안 옮긴 일본어 줄의 `・` 도 가운데 점이 아니게 된다(마스터 10-08)
+    for ch, code in hangul_map.punct(disc).items():
+        if ch not in hangul_map.PUNCT:
+            font.write_glyph(exe, code, font.hangul_glyph(ch), disc)
     return baked
 
 

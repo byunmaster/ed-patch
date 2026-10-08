@@ -28,6 +28,8 @@ NO_LINE_START = tuple(".,!?)」』…~、。！？")
 def line_problems(text):
     """한 줄바꿈 결과의 규칙 위반 사유들."""
     out = []
+    if "..." in text:  # 🔴 말줄임은 「…」 전각 한 글자다(마스터 10-08) — 점 셋 연속은 규칙 밖
+        out.append(f"말줄임이 `...` 이다(「…」 로): {text[:16]!r}")
     for ln in text.split("\n")[1:]:  # 첫 줄은 문장의 시작이다(「...내일부터인데」 말줄임으로 시작해도 정상) — 줄바꿈 뒤 줄만 본다
         if ln[:1] in NO_LINE_START and ln[:1]:
             out.append(f"줄 머리에 부호 {ln[:1]!r}: {ln[:12]!r}")

@@ -65,7 +65,11 @@ class TestTypesetRules(unittest.TestCase):
     def test_line_problems_ignores_the_first_line(self):
         import check_typeset_rules as C
 
-        self.assertEqual(C.line_problems("...말줄임으로 시작"), [])
+        self.assertEqual(C.line_problems("…말줄임으로 시작"), [])
+        # 🔴 말줄임은 「…」 전각 한 글자 — 점 셋 연속(`...`)이 문안에 남으면 실패(마스터 10-08)
+        self.assertTrue(C.line_problems("그러니까..."))
+        self.assertTrue(C.line_problems("아.... 그래"))
+        self.assertEqual(C.line_problems("그러니까…"), [])
         self.assertTrue(C.line_problems("첫 줄\n,둘째 줄 머리 부호"))
 
     def test_name_echo_pattern(self):

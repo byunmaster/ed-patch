@@ -67,6 +67,7 @@ import textenc
 #    새로 쓸 이유가 없다. 모양만 한국식으로 바꾼다(`PUNCT`). 여기 EXTRA 는 원본에 **없는** 것만.
 EXTRA = " "  # ⚠ 말줄임표는 마침표 셋(`...`) — 원본도 「・・・」 셋이다
 PUNCT = {",": 0x01, ".": 0x02, "?": 0x04, "!": 0x05}  # 우리 부호 → 원본 코드(모양만 다시 굽는다)
+PUNCT_ED3 = {"…": 0x03}  # ED3: 말줄임 「…」 = 원본 `・`(코드 3) 자리를 바닥 점 셋으로 다시 굽는다(`font.ellipsis_glyph`, 마스터 10-08)
 
 
 def map_path(disc):
@@ -190,7 +191,7 @@ def needed_chars(disc):
     import uitext
 
     # ⚠ PUNCT(`. , ? !`)는 원본 부호 자리를 다시 구워 쓴다 — 자리를 받으면 낭비다.
-    have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values()) | set(PUNCT)
+    have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values()) | set(PUNCT) | set(punct(disc))
     freq = collections.Counter()
     for lines in script_canon.load_effective(disc)[0].values():
         for row in lines.values():
@@ -246,6 +247,11 @@ def load(disc):
     return {ch: c for ch, c in zip(doc["chars"], doc["codes"], strict=True)}
 
 
+def punct(disc):
+    """그 디스크의 부호 → 원본 코드(다시 굽는 자리). ED3 는 말줄임 `…` 가 더해진다."""
+    return {**PUNCT, **(PUNCT_ED3 if disc == "ed3" else {})}
+
+
 def encode(text, disc, table=None):
     """문안 → 코드열. 한글·공백은 배정 자리로, 나머지는 코드표로.
 
@@ -256,7 +262,7 @@ def encode(text, disc, table=None):
     rev = {v: k for k, v in textenc.charmap(disc).items()}
     for code, ch in textenc.CONTROL.items():
         rev.setdefault(ch, code)
-    rev.update(PUNCT)  # 한국식 마침표·쉼표 → 원본 코드
+    rev.update(punct(disc))  # 한국식 마침표·쉼표(+ ED3 말줄임) → 원본 코드
     # 실행파일 글(주문·귀중품 설명)의 0x0001 은 **개행**이다 — 스캐너가 「\n」으로 읽으니 되돌린다.
     # ⚠ 그래서 그 창에서는 쉼표(→0x01)도 줄을 바꾼다. 설명문엔 쉼표를 쓰지 않는다.
     rev.setdefault("\n", 0x01)
