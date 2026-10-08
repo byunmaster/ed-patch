@@ -22,6 +22,7 @@ import build  # sweep() 만 빌려 쓴다 — 「칸엔 이미지 하나만」 �
 import common
 import font
 import hangul_map
+import script as script_canon
 import scriptmap
 import textenc
 
@@ -33,17 +34,17 @@ MEMBER = "..\\DATA\\FT0000.BIN"
 # ⚠ 실행파일 문자열은 **길이 고정**이다(표가 연속으로 붙어 있다) — 같은 코드 수로만 바꾼다.
 EXE_PLAN = {
     "ed4": [
-        (0x06DC72, "最初から始める", "처음부터 시작"),
-        (0x06DC82, "続きから始める", "계속해서 시작"),
+        (0x06DC72, (7, "632727fd"), "처음부터 시작"),  # (코드 수, 원문 sha1 앞 8자) — 원문은 커밋하지 않는다
+        (0x06DC82, (7, "b7d33f53"), "계속해서 시작"),
     ],
 }
 
 # (런 오프셋, 원문(사전조건), 우리 문안) — **총 코드 수는 원본과 같아야 한다**(아래 단언).
 # 63·64 는 첫 대사창의 1·2행이다. 20+14 를 24+10 으로 옮겨 「경계를 움직여도 되나」를 잰다.
 PLAN = [
-    (4024, "クリスチーナ。明日の準備はできているの？", "크리스티나。내일 떠날 준비는 다 했니？"),
-    (4066, "明日になって慌てないように\n", "내일 허둥대지 않도록\n"),
-    (4096, "必要なものは今日中に用意しておきなさい。", "필요한 건 오늘 안에 챙겨 두렴。"),
+    (4024, (20, "40443663"), "크리스티나。내일 떠날 준비는 다 했니？"),
+    (4066, (14, "1da308a5"), "내일 허둥대지 않도록\n"),
+    (4096, (20, "200daf55"), "필요한 건 오늘 안에 챙겨 두렴。"),
 ]
 
 
@@ -92,16 +93,15 @@ def exe_poc(a, exe, exe_lba):
     """
     rev = _rev(a.disc)
     plan = EXE_PLAN[a.disc]
-    for off, expect, kr in plan:
-        n = len(expect)
+    for off, (n, stamp), kr in plan:
         got = textenc.decode(struct.unpack_from(f"<{n}H", exe, off), a.disc)
-        if got != expect:
-            raise SystemExit(f"@0x{off:06X}: 원문이 다르다 — 「{got}」 (기대 「{expect}」)")
+        if script_canon.stamp(got) != stamp:
+            raise SystemExit(f"@0x{off:06X}: 원문이 다르다 (지문 {script_canon.stamp(got)} ≠ {stamp})")
         if len(kr) != n:
             raise SystemExit(
                 f"@0x{off:06X}: 길이가 다르다 {len(kr)} (원본 {n}) — 실행파일은 고정이다"
             )
-        print(f"  확인 @0x{off:06X} ({n}코드) 「{got}」 → 「{kr}」")
+        print(f"  확인 @0x{off:06X} ({n}코드) → 「{kr}」")
 
     # 🔴 **자리는 정본에서 온다**(`hangul_map_<disc>.json`). 그때그때 「빈 자리 앞에서부터」로
     #    잡으면 소재를 하나 더 열 때마다 자리가 밀려 **이미 넣은 문안이 다른 글자로 읽힌다.**
@@ -171,8 +171,8 @@ def main():
                 break
             codes.append(v)
         got = textenc.decode(codes, a.disc)
-        if got != expect:
-            raise SystemExit(f"@{off}: 원문이 다르다 — 「{got}」 (기대 「{expect}」)")
+        if len(codes) != expect[0] or script_canon.stamp(got) != expect[1]:
+            raise SystemExit(f"@{off}: 원문이 다르다 (지문 {script_canon.stamp(got)} ≠ {expect[1]})")
         spans.append((p, len(codes)))
         print(f"  확인 @{off} ({len(codes)}코드) {got.replace(chr(10), '/')}")
 

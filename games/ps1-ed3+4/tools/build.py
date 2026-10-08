@@ -314,6 +314,12 @@ def reinsert_names(exe, disc, table, report):
                 if len(enc_kr) > len(codes) and " " in kr:  # 칸이 모자라면 띄어쓰기부터 뺀다(표 칸과 같은 순서)
                     enc_kr = hangul_map.encode(kr.replace(" ", ""), disc, table)
                     report["gap_squeezed"] = report.get("gap_squeezed", 0) + 1
+                if len(enc_kr) > len(codes):
+                    # 정본 값이 칸에 안 들어간다 — 정본에 `원문@월드맵`(칸 때문에 줄인 꼴)이 있으면 그걸 쓴다(마스터 10-08 판정: 재배치가 안 되면 제안 값)
+                    short = glossary.lookup_shared(disc, jp + "@월드맵", "place")
+                    if short:
+                        enc_kr = hangul_map.encode(short, disc, table)
+                        report["gap_short"] = report.get("gap_short", 0) + 1
                 exetext.write_in_place(exe, off, codes, term, enc_kr)
                 seen.add(jp)
                 report["names"] += 1
@@ -506,7 +512,7 @@ def main():
         print(f"  ⬜ 아직 못 넣는 낱말 {len(left)} (표가 없는 구역 — 길이 고정)")
     if report.get("gap_put") or report.get("gap_long"):
         long_ = report.get("gap_long", [])
-        print(f"  ✅ 빈틈의 닻(표가 안 가리키는 문자열) 제자리 {report.get('gap_put', 0)}(띄어쓰기 뺌 {report.get('gap_squeezed', 0)}) · ⬜ 원문보다 길어 못 넣은 것 {len(long_)}")
+        print(f"  ✅ 빈틈의 닻(표가 안 가리키는 문자열) 제자리 {report.get('gap_put', 0)}(띄어쓰기 뺌 {report.get('gap_squeezed', 0)} · 정본의 줄인 꼴 {report.get('gap_short', 0)}) · ⬜ 원문보다 길어 못 넣은 것 {len(long_)}")
         if long_:
             print("     " + " · ".join(f"{j}→{k}" for j, k in long_[:12]))
         print("     " + " · ".join(left[:10]))

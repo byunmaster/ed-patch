@@ -2,11 +2,10 @@
 
     python3 scripts/check/check_names.py --game ps1-ed3+4 --list
 
-🔴 **이름을 안 든다**(마스터 2026-10-07). 사전은 `shared/glossary/names.py` + `shared/glossary/ed3.json`
+🔴 **이름을 안 든다**(마스터 2026-10-07). 정본은 `shared/canon`(잣대 `canon/names.py` + 고유명사 `canon/nouns/ed3.json`)
 이 보고, 여기는 **원문을 읽어 우리 줄과 짝짓기만** 한다.
 
-⚠ **ED3 디스크만이다.** `shared/glossary/ed3.json` 만 있고 ED4 사전은 아직 없다(`TITLE = "ed3"`).
-ED4 는 보류(마스터 2026-09-15)이기도 하다 — ED4 사전이 생기면 어댑터를 디스크별로 가른다.
+⚠ **ED3 디스크만이다**(`TITLE = "ed3"`). ED4 고유명사는 정본 `nouns/ed4.json` 에 있으나 ED4 는 보류(마스터 2026-09-15) — 열 때 어댑터를 디스크별로 가른다.
 
 ## 두 층
 
@@ -33,7 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import script as S
 import uitext as U
 
-TITLE = "ed3"  # 작품 사전 — shared/glossary/ed3.json (ED3 디스크만)
+TITLE = "ed3"  # 작품 정본 — shared/canon/nouns/ed3.json (ED3 디스크만)
 _DISC = "ed3"
 CANON_GATE = True  # 정본(shared/canon) 어긋남을 실패로 친다 — 사전 적용 2단계 전환 끝(10-08)
 DIALOG, SLOT = "dialog", "slot"  # 갈래 — 대사는 지명 띄어쓰기까지 잰다, UI(표·메뉴·이름 칸)는 무시한다(마스터 10-07)
@@ -72,7 +71,7 @@ def _exe_pairs():
     import exetext
     import textenc
 
-    # ⚠ 공용 검사기는 `shared/glossary`(패키지)를 먼저 import 해 이름 `glossary` 가 가려진다 — 게임 쪽 모듈은 경로로 연다.
+    # ⚠ 공용 검사기 경로엔 옛 패키지 `shared/glossary` 가 있어 이름 `glossary` 가 가려질 수 있다 — 게임 쪽 모듈은 경로로 연다.
     spec = importlib.util.spec_from_file_location("ed3_glossary", os.path.join(os.path.dirname(os.path.abspath(__file__)), "glossary.py"))
     glossary = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(glossary)

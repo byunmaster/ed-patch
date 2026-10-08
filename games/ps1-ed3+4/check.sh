@@ -81,6 +81,10 @@ echo "  ── 조사 일치(F8) · 일본어 잔존(F7)"
 run 0 "$PY" "$G/tools/check_josa.py" --disc ed3
 run 0 "$PY" "$G/tools/check_jp_left.py" --disc ed3
 
+echo "  ── 자기 표 0 (게임 폴더에 JP→KR 이름·라벨 표가 남았나)"
+# 🔴 게이트다 — 사전·정본이 유일한 출처다(마스터 10-08). 스태프롤만 예외(게임마다 제작진이 다르다).
+run 0 "$PY" "$G/tools/check_own_tables.py"
+
 echo "  ── 이름창≠본문 메아리(F4) · 조판 규칙(F3)"
 # 🔴 게이트다 — 본문이 화자 이름으로 시작하면 화면에 이름이 두 번 나온다 / 줄바꿈 뒤 줄 머리 부호·어절 쪼갬·폭 초과.
 run 0 "$PY" "$G/tools/check_name_echo.py" --disc ed3

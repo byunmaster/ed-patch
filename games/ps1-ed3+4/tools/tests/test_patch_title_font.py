@@ -247,5 +247,42 @@ class TestCodeValidity(unittest.TestCase):
             self.assertLess((p.CODE_BASE + i + 0x7EC0) & 0xFFFF, 0x1731, i)
 
 
+class TestTitleStringsFollowCanon(unittest.TestCase):
+    """🔴 타이틀 문자열의 한국어는 정본(`canon`, 원문이 같을 때)을 따른다 — 게임 쪽 사본이 갈리지 않게(마스터 10-08: 「괜찮습니까?」)."""
+
+    @staticmethod
+    def _text(data):
+        rev = {v: k for k, v in p.CODE.items()}
+        out = []
+        for i in range(0, len(data) - 2, 2):
+            c = struct.unpack(">H", data[i : i + 2])[0]
+            if c in rev:
+                out.append(rev[c])
+            elif c == 0x8148:
+                out.append("?")
+            elif c == 0x8144:
+                out.append(".")
+            elif c == 0x8140:
+                out.append(" ")
+            else:
+                out.append(str(c - 0x824F))
+        return "".join(out)
+
+    def test_system_strings_match_canon(self):
+        import glossary
+
+        canon = glossary._canon()
+
+        want = {
+            0x8F0D5: "メモリーカードのチェック中",
+            0x8F09B: "ロードします。",
+            0x8F0AB: "よろしいですか？",
+        }
+        for off, jp in want.items():
+            kr = canon.lookup(jp, "system", "ed3")
+            self.assertIsNotNone(kr, jp)
+            self.assertEqual(self._text(p.STRINGS[off][1]).replace(" ", ""), kr.replace(" ", ""), jp)
+
+
 if __name__ == "__main__":
     unittest.main()
