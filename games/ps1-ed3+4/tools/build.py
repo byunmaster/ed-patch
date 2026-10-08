@@ -22,6 +22,7 @@
 """
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -216,6 +217,15 @@ def reinsert_names(exe, disc, table, report):
     words = dict(glossary.flat(disc))
     tables = exetext.scan_tables(bytes(exe), cm) + exetext.detached_tables(bytes(exe), disc)
     seen = set()
+    # 표가 안 가리키는 문자열 — 표 재구성이 풀을 다시 쓰기 **전에** 원본에서 모은다(빈틈의 닻은 안 움직인다).
+    import dump_names
+
+    reg0 = sorted(dump_names.REGIONS[disc].items())
+    gaps_by_region = {
+        st: exetext.gap_strings(bytes(exe), tables, st, reg0[i + 1][0] if i + 1 < len(reg0) else st + 0x400)
+        for i, (st, kd) in enumerate(reg0)
+        if kd in ("item", "spell", "monster", "place", "rank", "menu")
+    }
     # 고정폭 칸(인물 이름) — 표가 없어 자리째 바꾼다. 넘치면 원문 그대로 두고 센다.
     for off, n_words, codes in exetext.fixed_slots(bytes(exe), disc):
         jp = textenc.decode(codes, disc)
@@ -285,10 +295,60 @@ def reinsert_names(exe, disc, table, report):
             continue
         exe[:] = bytearray(new)
         report["names"] += changed
+    # 🔴 **표가 안 가리키는 문자열(빈틈의 닻)** — 월드맵 장소 패널 「ディーネ / シャリネ」 따위. 자리·길이를 못 바꾸니 **제자리**로,
+    #    우리 표기가 원문보다 짧거나 같을 때만 넣는다. 넘치는 것은 원문 그대로 남기고 `gap_long` 으로 센다(옮길 포인터를 못 찾았다).
+    import dump_names
+
+    reg = sorted(dump_names.REGIONS[disc].items())
+    for i, (start, kind) in enumerate(reg):
+        if kind not in ("item", "spell", "monster", "place", "rank", "menu"):
+            continue
+        end = reg[i + 1][0] if i + 1 < len(reg) else start + 0x400
+        for off, codes, term in gaps_by_region.get(start, []):
+            jp = textenc.decode(codes, disc)
+            kr = words.get(jp)
+            if not kr or kr == jp:
+                continue
+            try:
+                enc_kr = hangul_map.encode(kr, disc, table)
+                if len(enc_kr) > len(codes) and " " in kr:  # 칸이 모자라면 띄어쓰기부터 뺀다(표 칸과 같은 순서)
+                    enc_kr = hangul_map.encode(kr.replace(" ", ""), disc, table)
+                    report["gap_squeezed"] = report.get("gap_squeezed", 0) + 1
+                exetext.write_in_place(exe, off, codes, term, enc_kr)
+                seen.add(jp)
+                report["names"] += 1
+                report["gap_put"] = report.get("gap_put", 0) + 1
+            except KeyError:
+                report["skipped_names"] += 1
+            except exetext.ExeTextError as e:
+                if "넘는다" not in str(e):
+                    raise  # 원본이 달라졌다 — 빈틈의 닻이 움직였다(구조 가정이 깨졌다)
+                report.setdefault("gap_long", []).append((jp, kr))
     # 🔴 **표가 없는 구역은 아직 못 넣는다** — 화면에 일본어가 남는다는 뜻이라 세어서 알린다.
     #    (그 구역은 길이 고정이라, 우리 표기가 원문과 글자 수가 같을 때만 넣을 수 있다.)
     report["names_left"] = sorted(set(words) - seen)
     return report
+
+
+def check_names_left(disc, report):
+    """🔴 **사전 낱말이 실행파일에서 일본어로 남는 것**을 승인 목록(`names_left_<disc>.json`)에 묶는다 — 새 구멍은 빌드를 세운다.
+
+    F7(`check_jp_left`)은 우리 문안(번역 정본·UI·사전 값)만 본다 — **구운 실행파일에 그 낱말이 실제로 들어갔는지는 안 본다.** 그 분모 밖에서
+    월드맵 장소 패널(`ディーネ`·`シャリネ`)이 일본어로 남았다(마스터 실기 10-08). 이제 `names_left`(표·빈틈·고정칸 어디에도 못 넣은 것)와
+    제자리에 안 들어간 것(`gap_long`)이 승인 밖으로 늘면 실패다. 목록에서 줄어드는 건 자유(고치면 지운다).
+    """
+    p = os.path.join(common.ROOT, f"names_left_{disc}.json")
+    if not os.path.exists(p):
+        return
+    with open(p, encoding="utf-8") as f:
+        ok = set(json.load(f)["approved"])
+    now = set(report.get("names_left", [])) | {j for j, _ in report.get("gap_long", [])}
+    new = sorted(now - ok)
+    if new:
+        raise SystemExit(
+            f"🔴 사전 낱말이 일본어로 남는다(승인 밖) {len(new)}: {' · '.join(new[:12])}\n"
+            f"   표·제자리 어디에도 못 넣었다 — 들어가게 고치거나(자리·길이), 마스터 승인 뒤 {os.path.basename(p)} 에 올린다."
+        )
 
 
 def sweep(d, keep):
@@ -427,6 +487,8 @@ def main():
     title_font_n, title_font_arcs = patch_title_font.apply(a.disc, base_arcs=arcs)
     arcs.update(title_font_arcs)  # 그림 위에 문자열을 얹는다(같은 M01.DAT 일 수 있다)
 
+    if a.test:
+        check_names_left(a.disc, report)
     lines = sum(len(v) for v in canon.values())
     skipped = report["skipped"] + report["skipped_names"]
     left = report.get("names_left", [])
@@ -442,6 +504,11 @@ def main():
         print("  🔴 **시험 빌드다** — 안 옮긴 문안은 엉뚱한 글자로 나온다. 배포물이 아니다.")
     if left:
         print(f"  ⬜ 아직 못 넣는 낱말 {len(left)} (표가 없는 구역 — 길이 고정)")
+    if report.get("gap_put") or report.get("gap_long"):
+        long_ = report.get("gap_long", [])
+        print(f"  ✅ 빈틈의 닻(표가 안 가리키는 문자열) 제자리 {report.get('gap_put', 0)}(띄어쓰기 뺌 {report.get('gap_squeezed', 0)}) · ⬜ 원문보다 길어 못 넣은 것 {len(long_)}")
+        if long_:
+            print("     " + " · ".join(f"{j}→{k}" for j, k in long_[:12]))
         print("     " + " · ".join(left[:10]))
     if report.get("squeezed"):
         print(f"  ⬜ 칸 예산 때문에 뺀 띄어쓰기 {report['squeezed']} (이름은 들어갔다)")

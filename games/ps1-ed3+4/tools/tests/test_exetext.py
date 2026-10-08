@@ -171,6 +171,45 @@ class TestDetachedAndFixed(unittest.TestCase):
             exetext.write_fixed_slot(slot, 0, 7, list(range(0x40, 0x47)))
 
 
+class TestGapStrings(unittest.TestCase):
+    """🔴 표가 안 가리키는 문자열(빈틈의 닻)을 **제자리에서만** 바꾼다 — 월드맵 장소 패널(마스터 실기 10-08)."""
+
+    def _mem(self):
+        mem = make([[0x40], [0x41, 0x42]], terms=[0x8002, 0x8000], gap=(1, [0x50, 0x51, 0x52, 0x53]))
+        t = {"table": 0, "base": 0, "n": 2}
+        return bytearray(mem), t
+
+    def test_gap_is_found_and_table_targets_are_not(self):
+        mem, t = self._mem()
+        gaps = exetext.gap_strings(bytes(mem), [t], 4, len(mem))
+        self.assertEqual([g[1] for g in gaps], [[0x50, 0x51, 0x52, 0x53]])
+
+    def test_write_in_place_keeps_length_and_term(self):
+        mem, t = self._mem()
+        off, codes, term = exetext.gap_strings(bytes(mem), [t], 4, len(mem))[0]
+        before = len(mem)
+        exetext.write_in_place(mem, off, codes, term, [0x60, 0x61])
+        self.assertEqual(len(mem), before)
+        self.assertEqual(exetext.raw_string(bytes(mem), off), ([0x60, 0x61], term))
+        # 남는 칸은 0 — 뒤 문자열의 시작은 안 움직인다
+        self.assertEqual(struct.unpack_from("<2H", mem, off + 6), (0, 0))
+
+    def test_longer_text_is_refused_and_nothing_is_written(self):
+        mem, t = self._mem()
+        off, codes, term = exetext.gap_strings(bytes(mem), [t], 4, len(mem))[0]
+        snap = bytes(mem)
+        with self.assertRaises(exetext.ExeTextError):
+            exetext.write_in_place(mem, off, codes, term, [1, 2, 3, 4, 5])
+        self.assertEqual(bytes(mem), snap)
+
+    def test_changed_original_is_refused(self):
+        mem, t = self._mem()
+        off, codes, term = exetext.gap_strings(bytes(mem), [t], 4, len(mem))[0]
+        mem[off] ^= 1
+        with self.assertRaises(exetext.ExeTextError):
+            exetext.write_in_place(mem, off, codes, term, [1])
+
+
 if __name__ == "__main__":
     unittest.main()
 

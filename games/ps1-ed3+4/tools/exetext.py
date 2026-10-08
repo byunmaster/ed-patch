@@ -214,6 +214,41 @@ def write_fixed_slot(data, off, words, codes):
     )
 
 
+def gap_strings(data, tables, start, end):
+    """[(오프셋, 코드열, 종결값)] — `[start, end)` 안에서 **어느 표도 안 가리키는** 문자열(= 빈틈의 닻).
+
+    월드맵 장소 패널의 「ディーネ / シャリネ」 같은 것이다(마스터 실기 10-08) — 코드가 절대 주소로 읽으니 **자리·길이를 못 바꾼다**
+    (`write_in_place`). 종결 바로 뒤의 종결 워드(0x0000)는 문자열 사이 간격이라 따로 안 센다.
+    """
+    pointed = set()
+    for t in tables:
+        pointed.update(t["base"] + x for x in struct.unpack_from(f"<{t['n']}H", data, t["table"]))
+    out, p = [], start
+    while p < end:
+        codes, term = raw_string(data, p)
+        if codes is None:
+            break
+        if codes and p not in pointed:
+            out.append((p, codes, term))
+        p += 2 * (len(codes) + 1)
+        while p < end and is_term(struct.unpack_from("<H", data, p)[0]):
+            p += 2
+    return out
+
+
+def write_in_place(data, off, old_codes, term, new_codes):
+    """문자열을 **제자리에서** 바꾼다 — 새 글이 더 짧거나 같을 때만(넘치면 운다). 남는 칸은 0 으로 채우고 종결은 원래 값."""
+    if len(new_codes) > len(old_codes):
+        raise ExeTextError(f"제자리 0x{off:X}: {len(new_codes)}코드는 {len(old_codes)}칸을 넘는다")
+    got, t = raw_string(data, off)
+    if got != old_codes or t != term:
+        raise ExeTextError(f"제자리 0x{off:X}: 원본이 달라졌다")
+    n = len(old_codes) + 1
+    struct.pack_into(
+        f"<{n}H", data, off, *new_codes, term, *([TERM_ZERO] * (len(old_codes) - len(new_codes)))
+    )
+
+
 def glued_entries(data, tables):
     """[(오프셋, [짝 오프셋…])] — 표가 가리키는데 **바로 앞이 종결이 아닌** 문자열과, 주소로 그 뒤 항목들.
 

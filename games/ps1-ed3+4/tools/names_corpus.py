@@ -15,6 +15,8 @@ ED4 는 보류(마스터 2026-09-15)이기도 하다 — ED4 사전이 생기면
 - **UI 문안**(메뉴·HUD·전투·시스템 메시지·주문 설명·메모) — `uitext.sites("ed3")`(실행파일에서 푼 원문)와
   `uitext.load("ed3")`(커밋된 정본). 미번역은 None.
 
+- **실행파일 낱말·문장 풀**(`exe:0x…`) — 표·빈틈의 닻을 가리지 않고 구역의 읽히는 문자열 전부. UI 정본에 든 것은 위 `ui:` 로 이미 나오니 뺀다.
+
 🔴 **안 보는 구간**(어댑터가 못 닿는 곳):
 - 그림 속 글(타이틀·오프닝·엔딩·크레딧 — `narration_ed3.json` 은 우리 문안만 있고 원문은 그림이다).
 - 타이틀 「이어서 하기」 화면(BIOS 폰트 — SLPS 의 슬롯 지명 표는 `patch_title_font` 가 사전으로 채운다).
@@ -57,7 +59,48 @@ def _ui_pairs():
         yield f"ui:0x{off:06X}", s["jp"], (kr or None), SLOT
 
 
+def _exe_pairs():
+    """실행파일 **낱말·문장 풀** 전체 중 UI 정본이 안 든 것 — 월드맵 장소 패널(`ディーネ`)이 이 분모 밖이라 검사를 빠져나갔다(마스터 실기 10-08).
+
+    표가 가리키든 안 가리키든(빈틈의 닻 포함) 구역(`dump_names.REGIONS`)의 **읽히는 문자열**(미해독 한자 `�` 가 없는 것)을 낸다.
+    우리 줄은 사전 값(없으면 None = 미번역 분모). 이름 갈래(person·item·spell·monster·place·rank)와 읽을거리(menu·text)를 같이 센다.
+    """
+    import importlib.util
+    import struct
+
+    import dump_names
+    import exetext
+    import textenc
+
+    # ⚠ 공용 검사기는 `shared/glossary`(패키지)를 먼저 import 해 이름 `glossary` 가 가려진다 — 게임 쪽 모듈은 경로로 연다.
+    spec = importlib.util.spec_from_file_location("ed3_glossary", os.path.join(os.path.dirname(os.path.abspath(__file__)), "glossary.py"))
+    glossary = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(glossary)
+
+    exe = U.exe_bytes(_DISC)
+    _, sites = U.sites(_DISC)
+    words = dict(glossary.flat(_DISC))
+    reg = sorted(dump_names.REGIONS[_DISC].items())
+    for i, (st, kind) in enumerate(reg):
+        if kind == "noise":
+            continue
+        end = reg[i + 1][0] if i + 1 < len(reg) else st + 0x400
+        p = st
+        while p < end:
+            codes, _t = exetext.raw_string(exe, p)
+            if codes is None:
+                break
+            if codes and p not in sites:
+                jp = textenc.decode(codes, _DISC)
+                if jp.strip() and "�" not in jp:
+                    yield f"exe:0x{p:06X}", jp, (words.get(jp) or None), SLOT
+            p += 2 * (len(codes) + 1)
+            while p < end and exetext.is_term(struct.unpack_from("<H", exe, p)[0]):
+                p += 2
+
+
 def pairs():
-    """[(자리, 원문 줄, 우리 줄|None, 갈래)] — ED3 문안 전체. 미번역 줄도 None. 갈래: 씬 대사 dialog · UI 문안 slot."""
+    """[(자리, 원문 줄, 우리 줄|None, 갈래)] — ED3 문안 전체. 미번역 줄도 None. 갈래: 씬 대사 dialog · UI 문안 slot · 실행파일 낱말 풀 slot."""
     yield from _scene_pairs()
     yield from _ui_pairs()
+    yield from _exe_pairs()
