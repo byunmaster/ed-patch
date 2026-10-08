@@ -49,7 +49,6 @@ from common import BUILD_DIR, ROOT, extract, write_user_data
 from ed2_monster_review import MON, decode_sjis, resolve_name
 
 IMG = f"{BUILD_DIR}/Eiyuu Densetsu (KR).bin"
-NAMES = os.path.join(ROOT, "textmap", "monsters_ed2.json")
 LINES = os.path.join(ROOT, "textmap", "monster_lines_ed2.json")
 
 JP = re.compile(r"[ぁ-んァ-ヴー一-鿿]")
@@ -237,10 +236,12 @@ def overlay_refs(orig):
 
 def plan():
     """([(lba, 오프셋, JP, KR, 슬롯)], 넘치는 것, 문안 없는 것)."""
-    with open(NAMES, encoding="utf-8") as f:
-        names = json.load(f)
-    with open(LINES, encoding="utf-8") as f:
-        hand = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+    from dict_tables import monsters_ed2
+
+    names = monsters_ed2()
+    from dict_tables import monster_lines_ed2
+
+    hand = monster_lines_ed2()
     table = auto_lines(names)
     table.update(hand)  # 손으로 정한 것이 이긴다
 

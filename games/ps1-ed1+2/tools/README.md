@@ -249,6 +249,7 @@
 | `make_dist`             | 배포 차분 — 원본→최종 이미지의 xdelta·BPS 를 `work/dist/` 에 만들고 원본에 적용해 sha1 대조. | 2026-10-05  |
 | `names_corpus`          | 이름 검사 어댑터 — 화면 문안을 「원문 줄·우리 줄」 쌍으로 공용 `scripts/check/check_names.py` 에 낸다(이름을 들지 않는다). | 2026-10-07  |
 | `check_exe_kana_left`           | **EXE(ED.EXE·ED2.EXE) 안 가나 문자열 전수** — 번역 누락·빠진 표를 잡는다. 기준선 `script/exe_kana_baseline.json`, 빌드 게이트(strict).                    | 2026-10-08  |
+| `check_own_tables`              | **게임 폴더에 자기 JP→KR 표가 남았나**(마스터 10-08) — 코드 상수·json 평탄 사전. 예외는 `own_tables_allow.json`(exempt/pending). 게이트에 물림.                  | 2026-10-08  |
 | `dict_tables`           | 사전(`shared/glossary`)·정본(`shared/canon`)에서 이름·문안 표를 읽는 어댑터 — 게임 폴더에 이름 표를 두지 않는다.   | 2026-10-08  |
 | `make_dist`             | 배포 차분 — 원본→최종 이미지의 xdelta·BPS 를 `work/dist/` 에 만들고 원본에 적용해 sha1 대조. | 2026-10-05  |
 | `names_corpus`          | 이름 검사 어댑터 — 화면 문안을 「원문 줄·우리 줄」 쌍으로 공용 `scripts/check/check_names.py` 에 낸다(이름을 들지 않는다). | 2026-10-07  |

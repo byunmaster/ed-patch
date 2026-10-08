@@ -83,6 +83,50 @@ def _dos_file(rel, game="ED1"):
         return f.read()
 
 
+# 🔴 정본(`shared/canon`)에 **같은 원문 열쇠·같은 값**으로 있는 전투 문구는 textmap 에 두 번 적지 않는다(마스터 10-08 — 한쪽만 고쳐지는 사고
+# 방지). textmap 파일의 최상위 `"canon": {해시: 범주}` 가 그 목록이고, 값은 정본에서 읽는다(정본이 바뀌면 따라온다).
+# 해시 = jkey(원문) 이라 정본 열쇠의 해시를 색인해 값을 찾는다.
+_CANON_TITLE = {"battle": "ed1", "items_battle": "ed1", "battle_ed2": "ed2"}
+_CANON_CATS = ("battle", "system", "ui")
+
+
+def canon_index(title):
+    """{해시: (범주, 열쇠, 값)} — 정본 battle·system·ui 의 열쇠를 jkey 로 색인."""
+    import sys
+
+    shared = os.path.join(ROOT, "..", "..", "shared")
+    if shared not in sys.path:
+        sys.path.insert(0, shared)
+    import canon
+
+    idx = {}
+    for cat in _CANON_CATS:
+        for k, v in canon.table(cat, title).items():
+            idx.setdefault(jkey(k), (cat, k, v))
+    return idx
+
+
+def materialize(tm, cls):
+    """textmap 문서의 `canon` 목록을 `ours` 엔트리로 풀어 준다(원본 dict 는 건드리지 않는다)."""
+    ref = tm.get("canon")
+    if not ref:
+        return tm
+    idx = canon_index(_CANON_TITLE.get(cls, "ed1"))
+    out = dict(tm)
+    out["entries"] = list(tm["entries"])
+    for h, cat in ref.items():
+        got = idx.get(h)
+        assert got and got[0] == cat, f"{cls}:{h} 정본 {cat} 에 열쇠가 없다 — 관리자 확인"
+        out["entries"].append({"k": h, "ours": got[2], "canon": cat})
+    return out
+
+
+def load_textmap(cls):
+    """textmap/<cls>.json — 정본 이관분을 풀어 준 문서."""
+    with open(os.path.join(TEXTMAP_DIR, f"{cls}.json"), encoding="utf-8") as f:
+        return materialize(json.load(f), cls)
+
+
 def ours_keys(cls):
     """`ours` 만으로 만들어지는(= 정발 대응이 아직 없는) 엔트리 키 집합.
 
@@ -97,9 +141,7 @@ def ours_keys(cls):
 
 def derive(cls):
     """textmap/<cls>.json → OrderedDict(k → 최종 문자열). sha 가드로 원본 무결성 검증."""
-    tm_path = os.path.join(TEXTMAP_DIR, f"{cls}.json")
-    with open(tm_path, encoding="utf-8") as f:
-        tm = json.load(f)
+    tm = load_textmap(cls)
     cache, out = {}, {}
 
     def piece(s):
@@ -134,7 +176,8 @@ def derive(cls):
         for a, b in e.get("fix", ()):
             val = val.replace(a, b)
         val = _PUNCT_SP.sub("", val)
-        assert _guard(val) == e["sha"], f"{cls}:{e['k']} 파생 불일치 — 원본/textmap 확인"
+        if "canon" not in e:  # 정본에서 읽는 값은 정본이 바뀌면 따라온다(가드 없음)
+            assert _guard(val) == e["sha"], f"{cls}:{e['k']} 파생 불일치 — 원본/textmap 확인"
         out[e["k"]] = val
     os.makedirs(DERIVED_DIR, exist_ok=True)
     with open(os.path.join(DERIVED_DIR, f"{cls}.json"), "w", encoding="utf-8") as f:

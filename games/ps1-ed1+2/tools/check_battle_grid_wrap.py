@@ -216,12 +216,14 @@ def apply_fixes(verbose=False):
 
 
 def scan(verbose=False):
+    from derive_text import materialize
+
     hits = []
     for tbl in TABLES:
         path = os.path.join(TEXTMAP_DIR, tbl)
         if not os.path.exists(path):
             continue
-        doc = json.load(open(path, encoding="utf-8"))
+        doc = materialize(json.load(open(path, encoding="utf-8")), tbl[:-5])  # 정본 이관분 포함
         for e in doc.get("entries", ()):
             if "ours" not in e:
                 continue

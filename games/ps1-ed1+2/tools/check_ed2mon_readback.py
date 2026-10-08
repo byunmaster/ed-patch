@@ -82,7 +82,9 @@ def check_name_coverage():
     이름+접미 조합이 나오는 모든 자리를 세고, `plan()` 이 그 자리를 **알고나 있는지**
     (fit·over·none 중 하나에라도 올랐는지)만 본다 — 몰랐으면 스캐너 사각이다.
     """
-    canon = json.load(open(os.path.join(ROOT, "textmap", "monsters_ed2.json"), encoding="utf-8"))
+    from dict_tables import monsters_ed2
+
+    canon = monsters_ed2()
     fit, over, none = names_plan()
     known = {(g, off) for lba, off, *_ in fit + over for g, (l, _s) in MON_ORIG.items() if l == lba}
     known |= {(g, off) for g, off, _jp in none}

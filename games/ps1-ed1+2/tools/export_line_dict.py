@@ -16,7 +16,7 @@
 
 ⚠ **자리**: 지금은 게임 아래다. `shared/` 로 올리는 건 **둘째 타이틀이 실재할 때**다 —
 루트 CLAUDE.md 「두 번째 소비자가 생길 때 추상화한다. 기준은 언젠가 쓸 것 같다가 아니라
-지금 둘째가 있는가」. `shared/glossary` 도 ED3 스캔이라는 소비자가 생기고서 올라갔다.
+지금 둘째가 있는가」. `shared/canon` 도 ED3 스캔이라는 소비자가 생기고서 올라갔다.
 그리고 공용은 `main` 에서만 고친다(게임 브랜치에서 고치면 다른 게임이 조용히 바뀐다).
 
   python3 tools/export_line_dict.py            # → line_dict.json (커밋 가능, sha1 키)
@@ -179,7 +179,7 @@ def _add_names(out, plain):
     🔴 **담는 것은 「우리 것이라고 증명되는 층」뿐이다.**
 
     - `line_dict` 본체 — A·B 시대(자체 번역)만
-    - 이름 정본(`shared/glossary` · `textmap/monsters_ed2`) — **낱말 수준**이라 저작권
+    - 이름 정본(`shared/canon` · `textmap/monsters_ed2`) — **낱말 수준**이라 저작권
       대상이 아니다(루트 `CLAUDE.md`)
     - `textmap/monster_lines_ed2` — 헤더가 「우리 문안」이라고 못 박았다
 
@@ -188,11 +188,11 @@ def _add_names(out, plain):
     남아 있다 — 출처가 서기 전에는 **두 번째 플랫폼으로 복제하면 안 된다.**
     """
     names = {}
-    gl = os.path.join(ROOT, "..", "..", "shared", "glossary", "eiyuu.json")
-    if os.path.exists(gl):
-        with open(gl, encoding="utf-8") as f:
-            for tbl in json.load(f)["categories"].values():
-                names.update(tbl)
+    sys.path.insert(0, os.path.join(ROOT, "..", "..", "shared"))
+    import canon as _nouns
+
+    for tbl in _nouns.nouns("ed1")["categories"].values():  # 고유명사(정본 nouns/) — ED1·ED2 같은 세계
+        names.update(tbl)
     # 화자 호칭(역할어: 복권집·여자·무기점…)은 사전이 아니라 **정본(`shared/canon` speaker)** 에 산다(마스터 2026-10-08) — 안 얹으면
     #   정형문(「~が現れた。」)·마릿수 접미 항목이 6천 개 넘게 사라진다.
     sys.path.insert(0, os.path.join(ROOT, "..", "..", "shared"))
@@ -200,14 +200,9 @@ def _add_names(out, plain):
 
     for _t in ("ed2", "ed1"):  # ED1 이 ED2 를 덮는다(`_speaker_map` 과 같은 우선권)
         names.update(_canon.table("speaker", _t))
-    for fn in ("monsters_ed2.json", "monster_lines_ed2.json"):
-        path = os.path.join(ROOT, "textmap", fn)
-        if not os.path.exists(path):
-            continue
-        with open(path, encoding="utf-8") as f:
-            for k, v in json.load(f).items():
-                if not k.startswith("_") and isinstance(v, str):
-                    names[k] = v
+    from dict_tables import monster_lines_ed2  # 몬스터 이름은 정본(canon monster)이 이미 든다
+
+    names.update(monster_lines_ed2())
 
     def put(jp, kr):
         k = key(jp)

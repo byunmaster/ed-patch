@@ -1,7 +1,7 @@
 """이름 검사 어댑터 — `scripts/check/check_names.py --game ps1-ed1+2` 가 부른다.
 
 🔴 **이름을 들지 않는다.** 화면에 나가는 문안을 **「원문 줄 · 우리 줄」 쌍**으로 읽어 넘길 뿐이고,
-어느 이름이 맞는지는 공용 사전(`shared/glossary`)이 정한다(마스터 2026-10-07 — 독자 데이터 금지).
+어느 이름이 맞는지는 공용 사전(`shared/canon`)이 정한다(마스터 2026-10-07 — 독자 데이터 금지).
 미번역 줄은 `None` 으로 낸다(분모가 거짓말을 안 하게).
 
 읽는 곳(자리 표기가 곧 출처다):
@@ -155,8 +155,9 @@ def _battle_ed2_pairs():
 
 
 def _monster_line_pairs():
-    with open(os.path.join(_GAME, "textmap", "monster_lines_ed2.json"), encoding="utf-8") as f:
-        lines = json.load(f)
+    from dict_tables import monster_lines_ed2
+
+    lines = monster_lines_ed2()
     for i, (jp, kr) in enumerate(lines.items()):
         if jp == "_":
             continue
@@ -174,8 +175,9 @@ def _table_pairs():
         "SPEAKER_DICT": align_jp_kr.SPEAKER_DICT,
         "PLACES": dict(patch_sys_ui.PLACES),
     }
-    with open(os.path.join(_GAME, "textmap", "monsters_ed2.json"), encoding="utf-8") as f:
-        tables["monsters_ed2"] = json.load(f)
+    from dict_tables import monsters_ed2
+
+    tables["monsters_ed2"] = monsters_ed2()
     for name, tbl in tables.items():
         for jp, kr in tbl.items():
             yield f"표:{name}|{jp}", jp, _ours(kr), "slot"
@@ -200,10 +202,6 @@ def _ui_pairs():
     with _quiet():
         rows, over = E.plan()
     for off, jp, kr, _slot, _enc in rows + over:
-        # ⚠ `スロット１·２` 는 정본 ed2 안에서 ui(`슬롯1`)와 system(`슬롯１` 전각)이 **서로 다른 값**이다(같은 원문 두 값) —
-        #   관리자가 한 값으로 정하기 전까지 비교에서 뺀다(10-08 후보로 올렸다). 정해지면 이 줄을 지운다.
-        if jp in ("スロット１", "スロット２"):
-            continue
         # ⚠ ED2.EXE HUD 판(0x9A1F0)·워프 사본(0x9A478)의 狼の口 는 빌드 맨 끝 `restore_full_place_names` 가 「늑대의입」으로
         #   되돌린다(칸이 넉넉한 자리) — `plan()` 은 그 전의 짧은 꼴(늑대입)이라 최종 바이트를 따라 읽는다.
         if jp == "狼の口" and off in (0x9A1F0, 0x9A478):

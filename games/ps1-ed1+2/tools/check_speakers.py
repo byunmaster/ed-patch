@@ -37,13 +37,13 @@ import reinsert_kr_pilot as R
 
 
 def _canon_persons():
-    """고유명사 정본의 인물 표 — `shared/glossary` 하나가 정본이다."""
+    """고유명사 정본의 인물 표 — `shared/canon` 하나가 정본이다."""
     sys.path.insert(0, os.path.join(R.ROOT, "..", "..", "shared"))
-    import glossary as G
+    import canon as G
 
     import canon
 
-    out = dict(G.table("person"))
+    out = dict(G.table("person", "ed1"))
     # 화자 호칭(역할어: 여관 주인·해적 선장…)은 사전이 아니라 **정본(`shared/canon` speaker)** 이 정한다(마스터 2026-10-08) —
     # 정본이 이긴다(ED1 이 ED2 를 덮는다).
     for t in ("ed2", "ed1"):
@@ -163,7 +163,7 @@ def scan_canon(verbose=False):
 
     **왜 이게 따로 필요한가.** 위 `scan` 은 「원문 화자와 우리 화자가 같은 사람인가」를 본다.
     같은 사람이면 **표기가 갈려도 통과**한다 — 그 시절엔 표기 정본이 없었기 때문이다.
-    2026-08-19 에 `shared/glossary` 가 인물 220 · 지명 97 로 채워지면서 기준이 생겼다.
+    2026-08-19 에 `shared/canon` 가 인물 220 · 지명 97 로 채워지면서 기준이 생겼다.
 
     ⚠ **정본이 없던 동안 실제로 갈렸다**(2026-08-19 실측, 131블록 13종) — `盗賊` 이
     도둑/도적, `ピート` 가 피토/피트, `フォルス` 가 폴스/훨스, `町長` 이 촌장/시장.
@@ -225,7 +225,7 @@ def scan_inline(scenes=None, verbose=False):
     전부 진짜 이름창이었다(오탐 0).
     ⚠ **화자맵(`_speaker_map`)으로 거르지 않는다** — 그건 정발 유래라 ED2 이름이 없다.
     실제로 그걸로 걸렀더니 `アトラス`·`フローラ` 가 빠져 **문제의 셋이 통째로 안 보였다**
-    (2026-09-06, 검출기가 먼저 틀린 네 번째다). 정본(`shared/glossary`)을 쓰고, 표에 없는
+    (2026-09-06, 검출기가 먼저 틀린 네 번째다). 정본(`shared/canon`)을 쓰고, 표에 없는
     이름은 **버리지 말고 따로 센다.**
     """
     canon = _canon_persons()

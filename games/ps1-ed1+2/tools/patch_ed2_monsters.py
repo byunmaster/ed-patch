@@ -4,7 +4,7 @@
 레코드는 **[이름들][대사들][능력치표]** 반복이고 이름은 레코드 머리에 붙어 있다. 구조와
 그 근거는 `docs/ed2-status.md`, 원문↔정발 짝짓기는 `tools/ed2_monster_review.py`.
 
-**정본은 `textmap/monsters_ed2.json`** 이고 이 패처는 그것만 읽는다. 짝짓기(음차 유사도)는
+**정본은 사전(`shared/canon` monster) + 키 목록 `textmap/monsters_ed2_keys.json`** 이고 이 패처는 그것만 읽는다. 짝짓기(음차 유사도)는
 제안이라 빌드 경로에 두지 않는다 — 두면 결과가 환경을 탄다(레포 제1원칙).
 
 ⚠ **개체 접미는 반각으로 쓴다**(`スライムＡ` → `슬라임A`). ED1 에서 이미 반각으로 통일했고
@@ -47,7 +47,6 @@ from patch_ed2_monster_lines import used_end as _mon_lines_used_end
 assert _MON_LINES_BASE == 0x8014A000  # 이름 표·대사 표가 같은 오버레이 베이스를 본다는 전제
 
 IMG = f"{BUILD_DIR}/Eiyuu Densetsu (KR).bin"
-CANON = os.path.join(ROOT, "textmap", "monsters_ed2.json")
 
 JP = re.compile(r"[ぁ-んァ-ヴ一-鿿]")
 CTL = re.compile(r"[\x00-\x1f]")
@@ -158,11 +157,12 @@ _CANON_JP = None
 
 
 def _canon_jp():
-    """정본(`textmap/monsters_ed2.json`) JP 키 집합 — 지연 로드, 프로세스당 한 번."""
+    """ED2 몬스터 JP 키 집합(`textmap/monsters_ed2_keys.json`) — 지연 로드, 프로세스당 한 번."""
     global _CANON_JP
     if _CANON_JP is None:
-        with open(CANON, encoding="utf-8") as f:
-            _CANON_JP = set(json.load(f))
+        from dict_tables import monsters_ed2
+
+        _CANON_JP = set(monsters_ed2())
     return _CANON_JP
 
 
@@ -300,8 +300,9 @@ def _drop_noise_prefix(items):
 
 def plan():
     """([(lba, 오프셋, 원문, KR, 슬롯)], 넘치는 것, 정본에 없는 것)."""
-    with open(CANON, encoding="utf-8") as f:
-        canon = json.load(f)
+    from dict_tables import monsters_ed2
+
+    canon = monsters_ed2()
     fit, over, none = [], [], []
     for group, (lba, size) in sorted(MON.items()):
         buf = bytes(extract(lba, size))

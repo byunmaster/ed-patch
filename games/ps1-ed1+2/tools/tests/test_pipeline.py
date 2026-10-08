@@ -787,8 +787,8 @@ def test_own_table_reads_both_key_types():
     assert "pin.get(eid)" in src and "pin.get(str(eid))" in src, "키 한 종류만 본다"
 
 
-def test_tool_tables_match_shared_glossary():
-    """🔴 고유명사 정본(`shared/glossary`)과 도구 표가 어긋나면 안 된다.
+def test_tool_tables_match_shared_canon():
+    """🔴 고유명사 정본(`shared/canon`)과 도구 표가 어긋나면 안 된다.
 
     **왜 공용에 두나.** 정발 문안을 옮기던 시절엔 저본이 표기를 대신 맞춰 줬다. 자체 번역으로
     돌아서면(유저 확정 2026-08-18) 그 역할을 할 게 없어지고, 같은 세계관인 새턴·PCE 가 이
@@ -808,7 +808,7 @@ def test_tool_tables_match_shared_glossary():
     sys.path.insert(0, _TOOLS)
     os.environ.setdefault("LOCK_BYPASS", "1")
     import align_jp_kr
-    import glossary as G
+    import canon as G
     import patch_items
     import patch_sys_ui
 
@@ -818,7 +818,7 @@ def test_tool_tables_match_shared_glossary():
 
     spk = {**canon.table("speaker", "ed2"), **canon.table("speaker", "ed1")}
     assert all(align_jp_kr.SPEAKER_DICT[k] == v for k, v in spk.items()), "SPEAKER_DICT 가 정본 화자 호칭과 갈렸다"
-    assert dict(patch_items.NAMES) == G.table("item") and dict(patch_items.MONSTERS) == G.table("monster")
+    assert dict(patch_items.NAMES) == G.table("item", "ed1") and dict(patch_items.MONSTERS) == G.table("monster", "ed1")
     pairs = {
         # 지명은 화면 최종값으로 본다 — 8B 칸용 중간값은 `places_for_build()` 에만 있다
         "place": dict(patch_sys_ui.PLACES),
@@ -827,15 +827,15 @@ def test_tool_tables_match_shared_glossary():
     # 따로 드는데 이 테스트가 안 보고 있었다 — 새턴 세션이 공용 정본을 고치자 셋이 갈렸고
     # (`인크랍`·`팡크스`·`워무드`) **아무 게이트도 안 울었다.** 표가 하나 늘 때마다 여기
     # 등재하지 않으면 그 표는 정본 밖으로 새어 나간다.
-    with open(os.path.join(os.path.dirname(_TOOLS), "textmap", "monsters_ed2.json")) as f:
-        ed2 = json.load(f)
-    pairs["monster"] = ed2
+    from dict_tables import monsters_ed2
+
+    pairs["monster"] = monsters_ed2()
     # ⚠ **정본은 상위집합이다**(2026-08-18). 내레이션에만 나오는 이름(이셀하사·론윌섬)은
     #    어느 패치 표에도 없지만 표기는 하나여야 한다. 그래서 「같다」가 아니라
     #    **「도구 표의 모든 항목이 정본과 일치한다」**를 본다 — 도구가 정본에 없는 표기를
     #    쓰거나, 같은 JP 를 다르게 읽으면 실패다.
     for cat, tool in pairs.items():
-        canon = G.table(cat)
+        canon = G.table(cat, "ed1")
         missing = sorted(set(tool) - set(canon))
         assert not missing, f"{cat}: 도구에만 있는 이름 {missing[:5]} — 정본에 등재한다"
         diff = {jp: (kr, canon[jp]) for jp, kr in tool.items() if canon[jp] != kr}
