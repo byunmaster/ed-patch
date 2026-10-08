@@ -15,16 +15,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
+import namesrc
 
 DOTS = common.GAME_DIR / "textmap" / "hud_names_8x8.txt"
 FONT = "Galmuri7.bdf"
-NAMES = [
-    "세리오스",
-    "류난",
-    "로우",
-    "게일",
-    "소니아",
-]  # 줄 틀 차례(원본 セリオス·リュナン·ロー·ゲイル·ソニア)
+JP_NAMES = ("セリオス", "リュナン", "ロー", "ゲイル", "ソニア")  # 줄 틀 차례(원본 이름)
+# 🔴 표기는 **사전에서 읽는다**(게임 폴더에 JP→KR 표를 두지 않는다 — 마스터 10-07). 사전이 바뀌면 여기가 따라가고,
+#    한글 글자가 `TILES`(타일 13장)를 넘으면 `chars()` 가 알린다.
+NAMES = [namesrc.resolve(jp, namesrc._NAME_ORDER)[0] for jp in JP_NAMES]
 ROW_BASE = 0x009A37  # 이름 줄 틀 — 8워드 × 다섯
 ROW_WORDS = 8
 ROW_ORIG = [  # 원본 틀(검증용) — [빈][이름 칸 ×6][L]

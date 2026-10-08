@@ -1,1873 +1,1903 @@
 {
  "D0:00": {
   "jp_len": 4,
-  "kr": "세리오스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:01": {
   "jp_len": 4,
-  "kr": "류난",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:02": {
   "jp_len": 2,
-  "kr": "로우",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:03": {
   "jp_len": 3,
-  "kr": "게일",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:04": {
   "jp_len": 3,
-  "kr": "소니아",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:05": {
   "jp_len": 5,
-  "kr": "페리시아",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:06": {
   "jp_len": 7,
-  "kr": "용의알",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:07": {
   "jp_len": 4,
-  "kr": "라이아스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:08": {
   "jp_len": 6,
-  "kr": "퍼거슨",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:09": {
   "jp_len": 3,
-  "kr": "아론",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:0A": {
   "jp_len": 5,
-  "kr": "제스톤",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:0B": {
   "jp_len": 4,
-  "kr": "프라토",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:0C": {
   "jp_len": 5,
-  "kr": "제르만",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:0D": {
   "jp_len": 4,
-  "kr": "리스톤",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:0E": {
   "jp_len": 4,
-  "kr": "바바라",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:0F": {
   "jp_len": 4,
-  "kr": "보아드",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:10": {
   "jp_len": 4,
-  "kr": "미랄다",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:11": {
   "jp_len": 4,
-  "kr": "아토스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:12": {
   "jp_len": 3,
-  "kr": "크레아",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:13": {
   "jp_len": 4,
-  "kr": "괴물",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:14": {
   "jp_len": 6,
-  "kr": "디나 공주",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:15": {
   "jp_len": 3,
-  "kr": "토드",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:16": {
   "jp_len": 3,
-  "kr": "보일",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:17": {
   "jp_len": 4,
-  "kr": "신시아",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:18": {
   "jp_len": 3,
-  "kr": "해리",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:19": {
   "jp_len": 9,
-  "kr": "대도 게일",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:1A": {
   "jp_len": 4,
   "kr": "두목",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:1B": {
   "jp_len": 3,
   "kr": "3세",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:1C": {
   "jp_len": 3,
-  "kr": "랄프",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:1D": {
   "jp_len": 3,
-  "kr": "한스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:1E": {
   "jp_len": 4,
-  "kr": "고든",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:1F": {
   "jp_len": 4,
-  "kr": "도르가스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:20": {
   "jp_len": 3,
-  "kr": "시녀",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:21": {
   "jp_len": 3,
-  "kr": "남자",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:22": {
   "jp_len": 4,
   "kr": "해방",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:23": {
   "jp_len": 4,
-  "kr": "도구점",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:24": {
   "jp_len": 4,
-  "kr": "아이 어머니",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:25": {
   "jp_len": 3,
-  "kr": "아이",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:26": {
   "jp_len": 3,
-  "kr": "신부",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:27": {
   "jp_len": 4,
-  "kr": "노인",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:28": {
   "jp_len": 3,
-  "kr": "여자",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:29": {
   "jp_len": 3,
-  "kr": "무기점",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:2A": {
   "jp_len": 4,
-  "kr": "라우엘",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:2B": {
   "jp_len": 5,
   "kr": "왕자님",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:2C": {
   "jp_len": 11,
   "kr": "정보상 오사문",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:2D": {
   "jp_len": 6,
-  "kr": "레지스탕스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:2E": {
   "jp_len": 3,
-  "kr": "농부",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:2F": {
   "jp_len": 4,
-  "kr": "문지기",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:30": {
   "jp_len": 3,
-  "kr": "피트",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:31": {
   "jp_len": 5,
-  "kr": "갇힌 사람",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:32": {
   "jp_len": 4,
-  "kr": "현자",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:33": {
   "jp_len": 8,
-  "kr": "밀매상",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:34": {
   "jp_len": 5,
-  "kr": "선장",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:35": {
   "jp_len": 8,
-  "kr": "여관주인",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:36": {
   "jp_len": 5,
-  "kr": "대장",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:37": {
   "jp_len": 5,
-  "kr": "몬스터",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:38": {
   "jp_len": 6,
-  "kr": "시장",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:39": {
   "jp_len": 4,
-  "kr": "폴스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:3A": {
   "jp_len": 4,
-  "kr": "에릭",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:3B": {
   "jp_len": 4,
   "kr": "동생",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:3C": {
   "jp_len": 4,
   "kr": "형",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:3D": {
   "jp_len": 4,
-  "kr": "해적",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:3E": {
   "jp_len": 4,
-  "kr": "시라스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:3F": {
   "jp_len": 5,
   "kr": "손님",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:40": {
   "jp_len": 4,
-  "kr": "어부",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:41": {
   "jp_len": 4,
-  "kr": "에리온",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:42": {
   "jp_len": 4,
-  "kr": "파우엘",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:43": {
   "jp_len": 5,
-  "kr": "촌장",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:44": {
   "jp_len": 7,
   "kr": "세리오스 왕자",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:45": {
   "jp_len": 6,
   "kr": "프레이아님",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:46": {
   "jp_len": 6,
   "kr": "에리온님",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:47": {
   "jp_len": 3,
-  "kr": "소녀",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:48": {
   "jp_len": 5,
   "kr": "보물상자",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:49": {
   "jp_len": 5,
-  "kr": "촛대",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D0:4A": {
   "jp_len": 4,
   "kr": "국왕",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:4B": {
   "jp_len": 5,
-  "kr": "상인",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:4C": {
   "jp_len": 4,
-  "kr": "토마스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:4D": {
   "jp_len": 3,
-  "kr": "홀",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:4E": {
   "jp_len": 5,
   "kr": "도련님",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:4F": {
   "jp_len": 3,
   "kr": "나",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:50": {
   "jp_len": 4,
-  "kr": "도적",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:51": {
   "jp_len": 4,
-  "kr": "공무원",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:52": {
   "jp_len": 7,
   "kr": "대통령",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:53": {
   "jp_len": 4,
-  "kr": "학자",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:54": {
   "jp_len": 5,
-  "kr": "할머니",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:55": {
   "jp_len": 3,
-  "kr": "노파",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:56": {
   "jp_len": 3,
-  "kr": "도란",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D0:57": {
   "jp_len": 4,
-  "kr": "길모아",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D0:58": {
   "jp_len": 3,
   "kr": "유적",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:00": {
   "jp_len": 5,
-  "kr": "엘아스타",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:01": {
   "jp_len": 3,
   "kr": " 마을",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:02": {
   "jp_len": 6,
-  "kr": "파렌",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:03": {
   "jp_len": 4,
   "kr": " 왕국",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:04": {
   "jp_len": 4,
   "kr": " 공국",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:05": {
   "jp_len": 6,
   "kr": " 공화국",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:06": {
   "jp_len": 6,
-  "kr": "온리크",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:07": {
   "jp_len": 4,
-  "kr": "라누라",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:08": {
   "jp_len": 5,
-  "kr": "솔디스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:09": {
   "jp_len": 5,
-  "kr": "모레스톤",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:0A": {
   "jp_len": 4,
   "kr": "곶의 ",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:0B": {
   "jp_len": 4,
-  "kr": "루디아",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:0C": {
   "jp_len": 3,
   "kr": " 마을",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:0D": {
   "jp_len": 3,
-  "kr": "크루즈",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:0E": {
   "jp_len": 3,
-  "kr": "베르가",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:0F": {
   "jp_len": 4,
   "kr": " 광산",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:10": {
   "jp_len": 3,
-  "kr": "네리아",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:11": {
   "jp_len": 3,
   "kr": " 항구",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:12": {
   "jp_len": 3,
-  "kr": "론도",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:13": {
   "jp_len": 5,
   "kr": "유혈",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:14": {
   "jp_len": 4,
-  "kr": "랄파",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:15": {
   "jp_len": 5,
-  "kr": "마스쿤",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:16": {
   "jp_len": 6,
-  "kr": "구엔의 탑",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:17": {
   "jp_len": 4,
-  "kr": "리젤",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:18": {
   "jp_len": 3,
   "kr": "의 집",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:19": {
   "jp_len": 4,
   "kr": "시련의 ",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:1A": {
   "jp_len": 3,
-  "kr": "스엘",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:1B": {
   "jp_len": 3,
-  "kr": "암다",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:1C": {
   "jp_len": 3,
-  "kr": "요르도",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:1D": {
   "jp_len": 4,
-  "kr": "낫슈",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:1E": {
   "jp_len": 6,
-  "kr": "왕가의 묘",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:1F": {
   "jp_len": 3,
-  "kr": "세리스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:20": {
   "jp_len": 5,
   "kr": "국경",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:21": {
   "jp_len": 4,
   "kr": "동굴",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:22": {
   "jp_len": 5,
-  "kr": "바즈눈",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:23": {
   "jp_len": 6,
-  "kr": "바람의 탑",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:24": {
   "jp_len": 3,
-  "kr": "카울",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:25": {
   "jp_len": 4,
-  "kr": "폐광",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:26": {
   "jp_len": 7,
-  "kr": "방풍의 동굴",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:27": {
   "jp_len": 3,
-  "kr": "루드라",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:28": {
   "jp_len": 5,
-  "kr": "리셸",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:29": {
   "jp_len": 4,
-  "kr": "나슬",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:2A": {
   "jp_len": 4,
-  "kr": "파에토",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:2B": {
   "jp_len": 5,
-  "kr": "판가스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:2C": {
   "jp_len": 7,
-  "kr": "늑대의입",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:2D": {
   "jp_len": 4,
-  "kr": "콜크스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:2E": {
   "jp_len": 8,
-  "kr": "수정의 탑",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D1:2F": {
   "jp_len": 4,
-  "kr": "쟈그리",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:00": {
   "jp_len": 5,
-  "kr": "없음",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:01": {
   "jp_len": 3,
-  "kr": "나이프",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:02": {
   "jp_len": 8,
-  "kr": "대형검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:03": {
   "jp_len": 7,
-  "kr": "소형검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:04": {
   "jp_len": 8,
-  "kr": "청동검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:05": {
   "jp_len": 5,
-  "kr": "철창",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:06": {
   "jp_len": 6,
-  "kr": "철검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:07": {
   "jp_len": 6,
-  "kr": "강철창",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:08": {
   "jp_len": 7,
-  "kr": "강철검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:09": {
   "jp_len": 5,
-  "kr": "은의 지팡이",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:0A": {
   "jp_len": 8,
-  "kr": "소나기의 검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:0B": {
   "jp_len": 6,
-  "kr": "은검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:0C": {
   "jp_len": 8,
-  "kr": "수정의 지팡이",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:0D": {
   "jp_len": 8,
-  "kr": "수정창",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:0E": {
   "jp_len": 9,
-  "kr": "수정검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:0F": {
   "jp_len": 7,
-  "kr": "백금창",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:10": {
   "jp_len": 8,
-  "kr": "백금검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:11": {
   "jp_len": 9,
-  "kr": "세라믹검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:12": {
   "jp_len": 6,
-  "kr": "성스러운 지팡이",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:13": {
   "jp_len": 6,
-  "kr": "불의 지팡이",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:14": {
   "jp_len": 6,
-  "kr": "얼음의 지팡이",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:15": {
   "jp_len": 7,
-  "kr": "번개의 지팡이",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:16": {
   "jp_len": 8,
-  "kr": "황금의 검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:17": {
   "jp_len": 7,
-  "kr": "사자의 검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:18": {
   "jp_len": 7,
-  "kr": "왕가의 검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:19": {
   "jp_len": 7,
-  "kr": "전사의 검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:1A": {
   "jp_len": 7,
-  "kr": "성스러운 검",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:1B": {
   "jp_len": 6,
-  "kr": "목자르는 낫",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:1C": {
   "jp_len": 6,
-  "kr": "다이아의 지팡이",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:1D": {
   "jp_len": 7,
-  "kr": "다이아의 검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:1E": {
   "jp_len": 9,
-  "kr": "파멸의 검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:1F": {
   "jp_len": 7,
-  "kr": "빛의 검",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:20": {
   "jp_len": 5,
-  "kr": "천 옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:21": {
   "jp_len": 9,
-  "kr": "탐험자의 옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:22": {
   "jp_len": 8,
-  "kr": "백금 갑옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:23": {
   "jp_len": 6,
-  "kr": "비단 옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:24": {
   "jp_len": 6,
-  "kr": "가죽 갑옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:25": {
   "jp_len": 8,
-  "kr": "청동 갑옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:26": {
   "jp_len": 7,
-  "kr": "사슬 갑옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:27": {
   "jp_len": 6,
-  "kr": "철 갑옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:28": {
   "jp_len": 7,
-  "kr": "강철 갑옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:29": {
   "jp_len": 6,
-  "kr": "은 갑옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:2A": {
   "jp_len": 9,
-  "kr": "수정 갑옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:2B": {
   "jp_len": 7,
-  "kr": "치유의 로브",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:2C": {
   "jp_len": 8,
-  "kr": "황금 갑옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:2D": {
   "jp_len": 7,
-  "kr": "사자의 갑옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:2E": {
   "jp_len": 7,
-  "kr": "왕가의 갑옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:2F": {
   "jp_len": 7,
-  "kr": "성스러운 갑옷",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:30": {
   "jp_len": 7,
-  "kr": "다이아 갑옷",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:31": {
   "jp_len": 7,
-  "kr": "배틀 슈트",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:32": {
   "jp_len": 8,
-  "kr": "행운의 반지",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:33": {
   "jp_len": 5,
-  "kr": "가죽 방패",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:34": {
   "jp_len": 7,
-  "kr": "청동 방패",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:35": {
   "jp_len": 5,
-  "kr": "철 방패",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:36": {
   "jp_len": 6,
-  "kr": "강철 방패",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:37": {
   "jp_len": 5,
-  "kr": "은 방패",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:38": {
   "jp_len": 8,
-  "kr": "수정 방패",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:39": {
   "jp_len": 7,
-  "kr": "백금 방패",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:3A": {
   "jp_len": 7,
-  "kr": "황금 방패",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:3B": {
   "jp_len": 6,
-  "kr": "사자의 방패",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:3C": {
   "jp_len": 6,
-  "kr": "왕가의 방패",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:3D": {
   "jp_len": 6,
-  "kr": "성스러운 방패",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:3E": {
   "jp_len": 6,
-  "kr": "다이아 방패",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:3F": {
   "jp_len": 7,
-  "kr": "고대의 방패",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:40": {
   "jp_len": 4,
-  "kr": "레스의 잎",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:41": {
   "jp_len": 4,
-  "kr": "비스의 열매",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:42": {
   "jp_len": 6,
-  "kr": "해독초",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:43": {
   "jp_len": 4,
-  "kr": "횃불",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:44": {
   "jp_len": 7,
-  "kr": "쟈그리의 지도",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:45": {
   "jp_len": 6,
-  "kr": "요슈아의 눈",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:46": {
   "jp_len": 8,
-  "kr": "고대의 검의 책",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:47": {
   "jp_len": 8,
-  "kr": "황금의 카드",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:48": {
   "jp_len": 6,
-  "kr": "약",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:49": {
   "jp_len": 7,
-  "kr": "튜트의 반지",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:4A": {
   "jp_len": 7,
-  "kr": "오프나의 반지",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:4B": {
   "jp_len": 8,
-  "kr": "길모아의 눈물",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:4C": {
   "jp_len": 5,
-  "kr": "워프의 깃털",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:4D": {
   "jp_len": 7,
-  "kr": "퀵의 반지",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:4E": {
   "jp_len": 6,
-  "kr": "워프의 날개",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:4F": {
   "jp_len": 7,
-  "kr": "드래곤의 천",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:50": {
   "jp_len": 7,
-  "kr": "발견의 방울",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:51": {
   "jp_len": 5,
-  "kr": "복권",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:52": {
   "jp_len": 4,
-  "kr": "레스의 뿌리",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:53": {
   "jp_len": 3,
-  "kr": "점토",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:54": {
   "jp_len": 8,
-  "kr": "요슈아의 거울",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:55": {
   "jp_len": 5,
-  "kr": "에릭서",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:56": {
   "jp_len": 7,
-  "kr": "황금의 열쇠",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:57": {
   "jp_len": 7,
-  "kr": "태양의 돌",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:58": {
   "jp_len": 7,
-  "kr": "길모아의 별",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:59": {
   "jp_len": 4,
-  "kr": "럼주",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:5A": {
   "jp_len": 5,
-  "kr": "수면초",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:5B": {
   "jp_len": 8,
-  "kr": "황금의 카드",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:5C": {
   "jp_len": 5,
-  "kr": "은의 피리",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:5D": {
   "jp_len": 7,
-  "kr": "길모아의 무지개",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:5E": {
   "jp_len": 4,
-  "kr": "폭약",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:5F": {
   "jp_len": 6,
-  "kr": "용의 피리",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:60": {
   "jp_len": 6,
-  "kr": "바람의 로브",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:61": {
   "jp_len": 8,
-  "kr": "불행의 타로트",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:62": {
   "jp_len": 9,
-  "kr": "행운의 타로트",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:63": {
   "jp_len": 7,
-  "kr": "발견의 피리",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:64": {
   "jp_len": 6,
-  "kr": "깜짝 상자",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:65": {
   "jp_len": 4,
-  "kr": "독침",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:66": {
   "jp_len": 7,
-  "kr": "루멘의 램프",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:67": {
   "jp_len": 5,
-  "kr": "레스의 지팡이",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:68": {
   "jp_len": 6,
-  "kr": "피코해머",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:69": {
   "jp_len": 7,
-  "kr": "타이슨펀치",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:6A": {
   "jp_len": 8,
-  "kr": "하이퍼 2000",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:6B": {
   "jp_len": 9,
-  "kr": "드래곤슬레이어",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:6C": {
   "jp_len": 7,
-  "kr": "하이퍼 660",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:6D": {
   "jp_len": 8,
-  "kr": "호출의 반지",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:6E": {
   "jp_len": 4,
-  "kr": "무",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:6F": {
   "jp_len": 9,
-  "kr": "궁극의 로브",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:70": {
   "jp_len": 9,
-  "kr": "눈 달린 신발",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:71": {
   "jp_len": 6,
-  "kr": "이상한 물병",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:72": {
   "jp_len": 4,
-  "kr": "금괴",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:73": {
   "jp_len": 9,
-  "kr": "궁극의 지팡이",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D2:74": {
   "jp_len": 9,
-  "kr": "궁극의 검",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:75": {
   "jp_len": 7,
-  "kr": "마인의 마이크",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:76": {
   "jp_len": 7,
-  "kr": "저주의 반지",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:00": {
   "jp_len": 4,
-  "kr": "슬라임",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:01": {
   "jp_len": 6,
-  "kr": "슬라임버브",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:02": {
   "jp_len": 10,
-  "kr": "캐리온크롤러",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:03": {
   "jp_len": 4,
-  "kr": "올빼미",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:04": {
   "jp_len": 4,
-  "kr": "산고양이",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:05": {
   "jp_len": 6,
-  "kr": "투구개구리",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:06": {
   "jp_len": 5,
-  "kr": "집게벌레",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:07": {
   "jp_len": 3,
-  "kr": "카자스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:08": {
   "jp_len": 3,
-  "kr": "병사",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:09": {
   "jp_len": 5,
-  "kr": "슬리퍼",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:0A": {
   "jp_len": 5,
-  "kr": "전갈거미",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:0B": {
   "jp_len": 3,
-  "kr": "아진",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:0C": {
   "jp_len": 4,
-  "kr": "카메룬",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:0D": {
   "jp_len": 3,
-  "kr": "에라비",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:0E": {
   "jp_len": 3,
-  "kr": "카스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:0F": {
   "jp_len": 3,
-  "kr": "가르고",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:10": {
   "jp_len": 8,
-  "kr": "아크담의 부하",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:11": {
   "jp_len": 6,
-  "kr": "브로우콩",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:12": {
   "jp_len": 4,
-  "kr": "사냥벌",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:13": {
   "jp_len": 6,
-  "kr": "산적새",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:14": {
   "jp_len": 5,
-  "kr": "큰가위",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:15": {
   "jp_len": 6,
-  "kr": "맹독거북",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:16": {
   "jp_len": 5,
-  "kr": "안력마",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:17": {
   "jp_len": 5,
-  "kr": "간록",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:18": {
   "jp_len": 3,
-  "kr": "발람",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:19": {
   "jp_len": 4,
-  "kr": "타루코스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:1A": {
   "jp_len": 5,
-  "kr": "데스크랩",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:1B": {
   "jp_len": 7,
-  "kr": "토터스나이트",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:1C": {
   "jp_len": 7,
-  "kr": "큰독개구리",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:1D": {
   "jp_len": 5,
-  "kr": "뿔코브라",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:1E": {
   "jp_len": 7,
-  "kr": "병정지네",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:1F": {
   "jp_len": 4,
-  "kr": "매드맨",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:20": {
   "jp_len": 3,
-  "kr": "아로마",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:21": {
   "jp_len": 5,
-  "kr": "갑옷거미",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:22": {
   "jp_len": 4,
-  "kr": "포지",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:23": {
   "jp_len": 5,
-  "kr": "킬러베어",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:24": {
   "jp_len": 5,
-  "kr": "웨어랫",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:25": {
   "jp_len": 6,
-  "kr": "오크혼",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:26": {
   "jp_len": 6,
-  "kr": "보일가드",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:27": {
   "jp_len": 6,
-  "kr": "천둥말뚝",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:28": {
   "jp_len": 6,
-  "kr": "천둥말뚝",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:29": {
   "jp_len": 3,
-  "kr": "이그",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:2A": {
   "jp_len": 8,
-  "kr": "선더하운드",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:2B": {
   "jp_len": 8,
-  "kr": "플라워리자드",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:2C": {
   "jp_len": 5,
-  "kr": "오디논",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:2D": {
   "jp_len": 9,
-  "kr": "자이언트에이프",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:2E": {
   "jp_len": 3,
-  "kr": "임프",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:2F": {
   "jp_len": 6,
-  "kr": "엄니멧돼지",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:30": {
   "jp_len": 7,
-  "kr": "액스비크",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:31": {
   "jp_len": 4,
-  "kr": "바르가",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:32": {
   "jp_len": 3,
-  "kr": "아지이",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:33": {
   "jp_len": 7,
-  "kr": "샌드이터",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:34": {
   "jp_len": 6,
-  "kr": "샐러맨더",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:35": {
   "jp_len": 7,
-  "kr": "파이어모스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:36": {
   "jp_len": 6,
-  "kr": "다크리치",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:37": {
   "jp_len": 7,
-  "kr": "데몬고스트",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:38": {
   "jp_len": 3,
-  "kr": "부하",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:39": {
   "jp_len": 4,
-  "kr": "아길",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:3A": {
   "jp_len": 8,
-  "kr": "버스트하운드",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:3B": {
   "jp_len": 5,
-  "kr": "팬텀",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:3C": {
   "jp_len": 7,
-  "kr": "암석마인",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:3D": {
   "jp_len": 5,
-  "kr": "브라카만",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:3E": {
   "jp_len": 7,
-  "kr": "스컬팽",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:3F": {
   "jp_len": 4,
-  "kr": "라도아스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:40": {
   "jp_len": 8,
-  "kr": "데스가디언",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:41": {
   "jp_len": 4,
-  "kr": "모르고스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:42": {
   "jp_len": 9,
-  "kr": "스팅비틀",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:43": {
   "jp_len": 3,
-  "kr": "골드",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:44": {
   "jp_len": 7,
-  "kr": "하이아길",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:45": {
   "jp_len": 8,
-  "kr": "다크솔저",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:46": {
   "jp_len": 5,
-  "kr": "가류바스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:47": {
   "jp_len": 6,
-  "kr": "강철 거인",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:48": {
   "jp_len": 3,
-  "kr": "자르",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:49": {
   "jp_len": 4,
-  "kr": "바르바스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:4A": {
   "jp_len": 7,
-  "kr": "블러드나이트",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:4B": {
   "jp_len": 4,
-  "kr": "자바",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:4C": {
   "jp_len": 9,
-  "kr": "선더스네이커",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:4D": {
   "jp_len": 3,
-  "kr": "그룸",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:4E": {
   "jp_len": 5,
-  "kr": "아지발",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:4F": {
   "jp_len": 8,
-  "kr": "암흑의 전사",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:50": {
   "jp_len": 5,
-  "kr": "달디아",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:51": {
   "jp_len": 6,
-  "kr": "살인어",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:52": {
   "jp_len": 6,
-  "kr": "요마도사",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:53": {
   "jp_len": 5,
-  "kr": "화염게",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:54": {
   "jp_len": 5,
-  "kr": "가바인",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:55": {
   "jp_len": 4,
-  "kr": "자그리스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:56": {
   "jp_len": 6,
-  "kr": "자데인",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:57": {
   "jp_len": 5,
-  "kr": "헤르닐드",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:58": {
   "jp_len": 5,
-  "kr": "사령관",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:59": {
   "jp_len": 4,
-  "kr": "아크담",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:5A": {
   "jp_len": 5,
-  "kr": "규리게스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:5B": {
   "jp_len": 4,
-  "kr": "베라미스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:5C": {
   "jp_len": 4,
-  "kr": "실피",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:5D": {
   "jp_len": 8,
-  "kr": "바질 실체",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:5E": {
   "jp_len": 8,
-  "kr": "바질 환체",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:5F": {
   "jp_len": 6,
-  "kr": "아그니쟈",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D3:60": {
   "jp_len": 6,
-  "kr": "아그니쟈",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:00": {
   "jp_len": 3,
-  "kr": "프람",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:01": {
   "jp_len": 3,
-  "kr": "이그나",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:02": {
   "jp_len": 4,
-  "kr": "휼",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:03": {
   "jp_len": 3,
-  "kr": "오비스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:04": {
   "jp_len": 4,
-  "kr": "사크타스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:05": {
   "jp_len": 3,
-  "kr": "사쿠토",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:06": {
   "jp_len": 3,
-  "kr": "다남",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:07": {
   "jp_len": 4,
-  "kr": "헤베달",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:08": {
   "jp_len": 4,
-  "kr": "시렌트",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:09": {
   "jp_len": 4,
-  "kr": "파페피아",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:0A": {
   "jp_len": 2,
-  "kr": "호",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:0B": {
   "jp_len": 3,
-  "kr": "푸아조",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:0C": {
   "jp_len": 4,
-  "kr": "사이레스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:0D": {
   "jp_len": 4,
-  "kr": "인파스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:0E": {
   "jp_len": 4,
-  "kr": "튜트",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:0F": {
   "jp_len": 2,
-  "kr": "세라",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:10": {
   "jp_len": 4,
-  "kr": "리파크",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:11": {
   "jp_len": 2,
-  "kr": "레스",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:12": {
   "jp_len": 3,
-  "kr": "레지나",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:13": {
   "jp_len": 3,
-  "kr": "리프",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D4:14": {
   "jp_len": 2,
-  "kr": "워프",
-  "state": "glossary"
+  "kr": null,
+  "state": "ref"
  },
  "D5:00": {
   "jp_len": 10,

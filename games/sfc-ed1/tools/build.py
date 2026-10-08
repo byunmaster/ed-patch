@@ -27,6 +27,7 @@ import battle_ui
 import common
 import dicts
 import hook
+import namesrc
 import script
 
 OUT_NAME = {  # 경로별로 갈라 쓴다(patcher-checklist.md 3-B ② — 「어느 경로가 만들었나」를 파일명에도)
@@ -287,9 +288,7 @@ def _name_box_rows(rom: bytes) -> list[str]:
 
 def bake_name_box(out: bytearray, rom: bytes, slot, code_tile: dict[int, int]) -> list[str]:
     """이름 상자 다섯을 한글 타일로 다시 굽는다. `slot(ch)` 은 메뉴와 **같은 배정기**를 쓴다."""
-    names = json.loads(
-        (common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8")
-    )["names"]
+    names = namesrc.battle_ui()["names"]
     by_jp = {n["jp"]: n["kr"] for n in names}
     done = []
     for n, jp in enumerate(_name_box_rows(rom)):
@@ -396,9 +395,7 @@ def bake_loose_boxes(out: bytearray, rom: bytes, slot, code_tile: dict[int, int]
         inv.setdefault(t, c)
     # ⚠ `menus.json` 은 열쇠가 `원문@창id` 라 **표 밖 조각을 담을 자리가 없다** — `battle_ui.json`
     #   의 `loose` 에 둔다(거기가 이미 창 아닌 고정 문자열의 자리다)
-    src = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))[
-        "loose"
-    ]
+    src = namesrc.battle_ui()["loose"]
     by_jp = {x["jp"]: x["kr"] for x in src}
     done = []
     for box in LOOSE_BOXES:
@@ -431,7 +428,7 @@ def bake_loose_boxes(out: bytearray, rom: bytes, slot, code_tile: dict[int, int]
 
 def menu_windows() -> list[tuple[str, int]]:
     """라벨이 있는 창 전부 — `menus.json` 의 키 꼬리(`…@A01`)에서 유도한다(목록을 손으로 안 든다)."""
-    labels = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
+    labels = namesrc.menus()
     ws = {(k.split("@")[1][0], int(k.split("@")[1][1:], 16)) for k in labels}
     return sorted(ws)
 
@@ -445,7 +442,7 @@ def menu_bake(out: bytearray, rom: bytes) -> dict:
     import menus
     import tiles
 
-    labels = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
+    labels = namesrc.menus()
     font = hangul_font.load_font()
     inv = menus.inverse_tile_table(rom)
     sheet = common.snes2off(text.FONT_SHEET)
@@ -496,7 +493,7 @@ def menu_bake(out: bytearray, rom: bytes) -> dict:
             attr = top[x0] & 0xFC00
             words_top, words_bot = [], []
             for ch in kr:
-                if "가" <= ch <= "힣":
+                if "가" <= ch <= "힣" or "Ａ" <= ch <= "Ｚ":  # 전각 영문(ＥＰ — 정본 표기)도 한 자 = 한 칸
                     t = slot(ch)
                     if hangul_font.CELL_W == 8:  # 한 자 = 한 칸
                         words_top.append(attr | t)
@@ -561,6 +558,17 @@ def dynamic_slots(out: bytearray, rom: bytes, resident: list[int]) -> list[int]:
     import tiles
 
     return tiles.overwritable(rom, tiles.layout_tiles(out), keep_codes(rom) | set(resident))
+
+
+def crawl_slots(out: bytearray, rom: bytes, base: list[int]) -> list[int]:
+    """오프닝·엔딩 크롤이 **더** 빌리는 코드 — 창 배치 표가 쓰는 타일은 그 화면에 없으니 인게임에서만 못 건드린다.
+    가변 폭(VWF)은 칸마다 슬롯을 새로 먹어(글리프 캐시가 안 듣는다) 한 쪽(최대 146칸)에 슬롯 79개로는 모자란다.
+    인게임(컨텍스트 0)에서는 훅이 이 슬롯을 건너뛴다(`hook.alloc` · `vwf_newslot`)."""
+    import tiles
+
+    keep = keep_codes(rom)
+    allc = tiles.overwritable(rom, set(), keep)
+    return [c for c in allc if c not in set(base)]
 
 
 def check_widen_pairs(rom: bytes, out: bytearray, originals: list) -> list:
@@ -897,17 +905,17 @@ def kr_items(
     items = body_items(rom)
     slices = segment_slices(items)
     tmap = json.loads((common.GAME_DIR / "textmap" / "segments.json").read_text(encoding="utf-8"))
-    dmap = json.loads((common.GAME_DIR / "textmap" / "dict.json").read_text(encoding="utf-8"))
+    dmap = namesrc.dict_map(rom)
     dict_kr = {k: v["kr"] for k, v in dmap.items() if v.get("kr")}
     texts = [v["kr"] for v in tmap.values() if v.get("kr")] + list(dict_kr.values())
-    mmap = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
+    mmap = namesrc.menus()
     texts += [v["kr"] for v in mmap.values() if v.get("kr")]
     # ⚠ `battle_ui.json` 도 **화면에 나가는 문안**이다 — 고정 칸 문자열·이름 상자·머리 상자.
     #   여기 안 넣으면 그 파일에만 있는 음절이 `rep_index` 에 없어 `encode_rows` 가 KeyError 로
     #   죽는다. 지금은 0건이지만 **다른 파일에 같은 글자가 있어서 우연히 사는 것**이라(실측
     #   2026-09-08: 51자 전부 다른 데서 왔다) 낱말 하나만 바꿔도 깨진다. 원천으로 못 박는다.
-    bmap = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
-    for key in ("title", "speed", "yesno", "loose", "names"):
+    bmap = namesrc.battle_ui()
+    for key in ("title", "speed", "yesno", "flee", "loose", "names", "a3_values"):
         texts += [x["kr"] for x in bmap.get(key, [])]
     texts += [c["kr"] for g in bmap.get("grid", []) for c in g["cols"]]
     import credits
@@ -961,7 +969,10 @@ def kr_items(
                 enc_override(sid, entry)
                 if enc_override is not None
                 else encode.encode(
-                    _ts(entry["kr"], common.off2snes(seg[0].off)), rep_index, dict_kr
+                    _ts(entry["kr"], common.off2snes(seg[0].off)),
+                    rep_index,
+                    dict_kr,
+                    vwf=common.VWF,  # 크롤(오프닝·엔딩)도 가변 폭 — 스태프롤은 이 경로가 아니다(마스터 10-08)
                 )
             )
         except ValueError as ex:
@@ -1363,11 +1374,13 @@ def build_kr(
             out, rom, dk["tables"], dk["지명"]["a"], dk["지명"]["next"]
         )
         led.snap(out, "사전·전투 UI 이관")
+        _base = dynamic_slots(out, rom, poc["resident_codes"])
         hk = hook.apply(
             out,
             rom,
             k["rep"],
-            dynamic_slots(out, rom, poc["resident_codes"]),
+            _base + crawl_slots(out, rom, _base),
+            xfrom=len(_base),
             item_table=dk["tables"][0xD2],
             place_tables=(dk["지명"]["a"], dk["지명"]["b"]),
             spell_table=dk["런타임 치환"]["주문 표 주소"],

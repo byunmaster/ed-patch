@@ -16,13 +16,9 @@ echo "== sfc-ed1 =="
 # 1. 원본 지문 + 내부 헤더 — 소장본이 바뀌거나 손댄 롬이면 여기서 죽는다
 "$PY" "$T/common.py"
 
-# ⚠ 조판 지문 트립와이어 — sfc-ed1 엔 조판 지문이 없다(ps1-ed1+2·ss-ed1+2 만 있다).
-#   지금은 `shared/text/krwrap` 을 안 써서 무사하지만(2026-09-15 확인), 쓰기 시작하면
-#   공용 조판이 바뀌어도 조용히 못 잡는다. **막지는 않는다** — 지문을 세우는 건 한 줄 수정이
-#   아니라서, 그 세션이 「지금 만들지 판단」하도록 알리기만 한다.
-if grep -rlq "krwrap" "$T"/*.py 2>/dev/null; then
-    echo "🔴 sfc-ed1 이 krwrap 을 쓰기 시작했다 — 조판 지문을 세울 때다(games/ps1-ed1+2 를 본뜬다)"
-fi
+# 조판 지문(F10) — 번역 문안 전량을 조판기(typeset.wrap→layout)에 태운 구역별 해시. 조판 규칙·후보·글꼴 폭이
+# 바뀌면 운다. 문안을 의도적으로 바꿨을 때만 `--freeze`(자동 갱신 금지). 값은 games/sfc-ed1/typeset_fingerprint.json.
+"$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game sfc-ed1
 
 # 2. 대본 — 포인터 표 4벌(3339·433·343·19) · 사전 6벌 · main 글자 177,108B. 스캐너가 흔들리면 운다
 "$PY" "$T/text.py" --check
@@ -51,3 +47,17 @@ fi
 #    🔴 필드·전투·씬 **전 영역**에서 tm-draft 아닌 위반이 하나라도 있으면 실패한다(종전엔 필드만 막아
 #    전투·씬이 되돌아가도 초록이었다 — 2026-09-27 전 세션 점검, 전투 조각에 위반을 넣어 실패 확인).
 "$PY" "$T/typeset.py" --check
+
+# 8. 대사창 가변 폭(VWF, `hook_vwf.py`) — **정본은 켜진 채**(마스터 판정 10-08)라 위 1~7번이 켠 경로를 본다. 꺼진 경로(`ED_VWF=0`,
+#    시험·대조용)도 같은 문안으로 조판 위반 없고 투영이 서는지 매번 본다 — 안 보면 꺼진 코드가 조용히 썩는다.
+ED_VWF=0 "$PY" "$T/typeset.py" --check
+ED_VWF=0 "$PY" "$T/build.py" --project >/dev/null
+
+# 9. 조사 일치(F8) — 을/를 받침 불일치 · 런타임 변수 뒤 고정 조사. 0건 유지. 단위 테스트가 검사기 자신을 지킨다
+"$PY" "$T/check_josa.py"
+
+# 10. 화면 일본어(F7) — 칸(사전·지명·메뉴)은 미번역 0 이어야 한다. 문장은 분모와 함께 알리기만(번역 중)
+"$PY" "$T/check_jp_left.py"
+
+# 11. 자기 표 0(마스터 10-08) — 게임 폴더에 JP→KR 표가 남았나. 정본에서 읽을 수 없는 값은 관리자 후보로 올리고 천장(own_tables_baseline.json)이 줄기만 한다
+"$PY" "$T/check_own_tables.py"

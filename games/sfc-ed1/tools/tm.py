@@ -13,13 +13,13 @@ import glob
 import json
 import re
 import sys
+import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import text  # noqa: F401, I001
 import common
 
-GLOSSARY = common.ROOT / "shared" / "glossary" / "eiyuu.json"
 # ⚠ 이 워크트리의 games/ps1-ed1+2 는 main 시점의 낡은 사본이다(창 2,818). 진행 중인 PS1 워크트리가 있으면
 #   그쪽(창 5,033)을 먼저 본다 — 번역 메모리는 최신 번역본이어야 뜻이 있다.
 _MAIN = common.ROOT.parent.parent.parent if common.ROOT.parent.name == "worktrees" else common.ROOT
@@ -31,63 +31,23 @@ _PS1_CANDIDATES = [
 PS1_SCRIPT = next((p for p in _PS1_CANDIDATES if p.is_dir()), _PS1_CANDIDATES[-1])
 
 # SFC 화자는 히라가나 보통명사가 많다 — glossary 는 한자 키라 여기서 잇는다(고유명사는 glossary 직행).
-KANA_SPEAKER = {
-    "へいし": "兵士",
-    "おとこ": "男",
-    "おんな": "女",
-    "ろうじん": "老人",
-    "とうぞく": "盗賊",
-    "どうぐや": "道具屋",
-    "しんぷ": "神父",
-    "かいぞく": "海賊",
-    "ぶきや": "武器屋",
-    "やくにん": "役人",
-    "たいちょう": "隊長",
-    "むすめ": "娘",
-    "こども": "子供",
-    "のうふ": "農夫",
-    "りょうし": "漁師",
-    "おばあさん": "おばあさん",
-    "そんちょう": "村長",
-    "けんじゃ": "賢者",
-    "やみのしょうにん": "やみの商人",
-    "ろうば": "老婆",
-    "じじょ": "侍女",
-    "しゅうじん": "囚人",
-    "せんちょう": "船長",
-    "がくしゃ": "学者",
-    "ははおや": "母親",
-    "しれいかん": "司令官",
-    "もんばん": "門番",
-    "やどやのしゅじん": "宿屋の主人",
-    "ちょうちょう": "町長",
-    "しょうにん": "商人",
-    "だいとうぞくゲイル": "大盗賊 ゲイル",
-    "ディーナひめ": "ディーナ姫",
-    "じょうほうや　おさむん": "情報屋 トミー",
-    "レジスタンス": "レジスタンス",
-    "ギルモアのほし": "ギルモアの星",
-    "ひかりのつるぎ": "光の剣",
-    "バケモノ": "バケモノ",
-    "フ・ーガソン": "ファーガソン",
-    "ラルフ・": "ラルフ",
-    "りゅうけつ": None,
-    "ナイフ": None,
-    "ショクダイ": None,
-}
 
 
 def load_glossary() -> dict[str, str]:
-    g = json.loads(GLOSSARY.read_text(encoding="utf-8"))
+    sys.path.insert(0, str(common.ROOT / "shared"))
+    import canon
+
     flat = {}
     for cat in ("person", "place", "item", "monster"):
-        for k, v in g["categories"][cat].items():
+        for k, v in canon.nouns("ed1")["categories"][cat].items():
             flat.setdefault(k, v)
     return flat
 
 
 def speaker_kr(kana: str, gl: dict[str, str]) -> str | None:
-    key = KANA_SPEAKER.get(kana, kana)
+    import namesrc
+
+    key = namesrc.kanji_of(kana)  # 가나→한자 별칭은 정본에서 읽는다(자기 표 없음, 마스터 10-08)
     return gl.get(key) if key else None
 
 

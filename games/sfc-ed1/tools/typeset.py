@@ -1,5 +1,9 @@
 """조판 — 번역문을 대사창(17칸)에 맞게 어절 단위로 개행하고(빌드가 부른다), 결과를 실제 후보로 흘려 검사한다.
 
+🔴 **폭은 px 로 잰다**(2026-10-08, 마스터 Q5 — 대사창 가변 폭 `hook_vwf.py`): 공백·`. , ? !` 는 **4px**, 그 밖의 글자는
+8px, 한 줄은 17칸 = **136px**. 칸 번호(엔진) 규칙은 그대로고, 훅이 반 칸 글자를 칸 안에 합성한다. 새 위반 ⑤ = 8px 글자가
+줄 끝 칸 경계에 걸쳐 두 줄에 갈라지는 것(한 어절이 줄보다 길 때만 생긴다).
+
 SFC 대사창은 **17칸 × 4줄 칸 배열**이고 엔진이 글자마다 칸 번호를 하나씩 올린다(`$02:DE73`) — 17칸째에서
 **단어와 상관없이 기계적으로** 다음 줄로 넘어가고, 68칸을 넘으면 한 줄 올린다(`$02:DE23`). 개행 `$CF`(`\\n`)는
 칸 번호를 「지금 줄의 끝 칸」으로 옮길 뿐이라(`$02:DE4F`) **17칸을 꽉 채운 직후의 개행은 빈 줄을 안 만든다**
@@ -35,9 +39,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import text  # noqa: F401, I001
 import common
 import hook
+import namesrc
 
 COLS = 17
+LINE_PX = COLS * 8  # 한 줄 폭(px)
+VWF = common.VWF  # 가변 폭 엔진을 켠 빌드인가(꺼져 있으면 모든 글자 8px = 예전 칸 모델)
+HALF = set(" .,?!")  # 4px 글자(VWF 일 때만) — hook_vwf.HALF_CODES 와 같다
 NO_HEAD = set(".,!?…:;)」』")
+
+
+def pxw(ch: str) -> int:
+    return 4 if (VWF and ch in HALF) else 8
+
+
+def px(s: str) -> int:
+    return sum(pxw(c) for c in s)
 CRAWL = (0x0BE8E5, 0x0BF337)  # 오프닝·엔딩 크롤 — 다른 엔진, 조판하지 않는다
 FIELD = {
     0x07A740,
@@ -66,7 +82,7 @@ BATTLE = (0x07A721, 0x07C7FF)  # 시스템·전투 메시지 덩이(필드 ★ �
 
 
 def _dict() -> dict[str, str]:
-    d = json.loads((common.GAME_DIR / "textmap" / "dict.json").read_text(encoding="utf-8"))
+    d = namesrc.dict_map()
     return {k: v["kr"] for k, v in d.items()}
 
 
@@ -79,7 +95,7 @@ def candidates(dm: dict[str, str] | None = None, field: bool = False) -> dict[st
     monsters = sorted({v for k, v in dm.items() if k.startswith("D3:")})
     items = sorted({v for k, v in dm.items() if k.startswith("D2:")})
     spells = sorted({v for k, v in dm.items() if k.startswith("D4:")})
-    places = json.loads((common.GAME_DIR / "textmap" / "places.json").read_text(encoding="utf-8"))
+    places = namesrc.places_map()
     people = party if field else party + monsters
     return {
         "D6": people,
@@ -96,12 +112,12 @@ def representatives(vals: list[str]) -> list[str]:
     """길이마다 받침 있음/없음 대표 하나씩 — 조판은 길이와 조사 길이만 탄다."""
     seen: dict[tuple[int, bool], str] = {}
     for v in vals:
-        seen.setdefault((len(v), hook.has_batchim(v[-1])), v)
+        seen.setdefault((px(v), hook.has_batchim(v[-1])), v)
     return list(seen.values())
 
 
 def maxlens(cand: dict[str, list[str]]) -> dict[str, int]:
-    return {k: max(len(v) for v in vals) for k, vals in cand.items()}
+    return {k: max(px(v) for v in vals) for k, vals in cand.items()}
 
 
 TOK = re.compile(
@@ -118,15 +134,15 @@ def wrap(kr: str, dm: dict[str, str], maxlen: dict[str, int]) -> str:
         if m.group(1):
             atoms.append((s, maxlen[m.group(1)]))
         elif m.group(2):
-            atoms.append((s, len(dm.get(m.group(2), ""))))
+            atoms.append((s, px(dm.get(m.group(2), ""))))
         elif m.group(3):
-            atoms.append((s, max(len(x) for x in m.group(3).split("/"))))
+            atoms.append((s, max(px(x) for x in m.group(3).split("/"))))
         elif s == "\n" or s in ("<EF>", "<FF>"):
             atoms.append((s, -1))
         elif s.startswith("<"):
             atoms.append((s, 0))
         else:
-            atoms.append((s, 1))
+            atoms.append((s, pxw(s)))
     out: list[str] = []
     col = 0
     for i, (s, w) in enumerate(atoms):
@@ -138,12 +154,12 @@ def wrap(kr: str, dm: dict[str, str], maxlen: dict[str, int]) -> str:
             while j < len(atoms) and atoms[j][0] != " " and atoms[j][1] != -1:
                 ww += atoms[j][1]
                 j += 1
-            if col and col + 1 + ww > COLS:
+            if col and col + pxw(" ") + ww > LINE_PX:
                 out.append("\n")
                 col = 0
             else:
                 out.append(" ")
-                col += 1
+                col += pxw(" ")
         else:
             out.append(s)
             col += w
@@ -169,6 +185,23 @@ def lossless(kr: str, res: str) -> None:
         raise TextLost(f"조판이 글을 바꿨다: {kr!r} → {res!r}")
 
 
+def indent_quotes(kr: str) -> str:
+    """크롤·엔딩 인물 대사 — 「 로 열린 말은 **둘째 줄부터 한 칸(8px) 들여** 첫 글자가 「 다음 글자와 세로로 맞게 한다(마스터 10-08).
+    들임 = 반각 공백 둘(4px×2, 줄에 이미 있던 앞 공백은 갈음). 「 와 」 를 글자 단위로 따라가므로 `」<FF>「` 처럼 쪽 사이에서
+    다시 열려도 이어진다. 명시 개행 뒤 공백은 훅이 건너뛰지 않는다(`V_NLF`)."""
+    out, inq = [], False
+    for line in kr.split("\n"):
+        if inq and line.strip():
+            line = "  " + line.lstrip(" ")
+        out.append(line)
+        for ch in line:
+            if ch == "「":
+                inq = True
+            elif ch == "」":
+                inq = False
+    return "\n".join(out)
+
+
 class Typesetter:
     """빌드가 쓰는 입구 — 사전·후보 폭을 한 번만 읽는다."""
 
@@ -179,7 +212,7 @@ class Typesetter:
 
     def __call__(self, kr: str, addr: int) -> str:
         if CRAWL[0] <= addr <= CRAWL[1]:
-            return kr
+            return indent_quotes(kr)
         # 마스터 최종 판정(2026-09-30, 전 기종 공통) — 로그성 메시지도 어절 단위 개행을 한다
         # (09-27③ 「엔진 기계적 개행만」을 대체). FIELD 는 후보 폭이 파티원뿐이라 더 좁다.
         ml = self.ml_field if addr in FIELD else self.ml
@@ -237,7 +270,7 @@ def newline_cursor(c: int) -> int:
     return (a - 1) & 0xFF
 
 
-def layout(chars: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
+def layout_cells(chars: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
     """엔진처럼 흘린다 → (줄들, 위반 목록).
 
     칸 번호는 엔진과 같게 센다 — 글자는 +1(17칸째를 넘으면 기계적으로 다음 줄), 개행은 `newline_cursor`.
@@ -303,6 +336,70 @@ def layout(chars: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
         explicit = False
         i += 1
     return ["".join(ch for ch, _u in ln) for ln in lines], bad
+
+
+def layout_px(chars: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
+    """훅(가변 폭)이 하는 대로 흘린다 → (줄들, 위반 목록).
+
+    px 커서 `X` — 글자는 `pxw` 만큼 간다. 줄 번호는 `X // 136`(엔진은 17칸마다 줄을 넘긴다). 줄 끝에 걸치는 8px 글자는
+    두 칸에 갈라져 그려지므로 ⑤. 개행은 줄을 마감하고 다음 줄 첫머리로 간다(꽉 찬 줄 뒤의 개행은 빈 줄을 안 만든다).
+    줄 첫머리가 될 공백은 훅이 버린다(`vr_sp`) — 화면에 안 남고 위반도 아니다.
+    """
+    lines: list[list[tuple[str, str]]] = [[]]
+    bad: list[str] = []
+    X = 0  # 쪽 안 px 커서
+    page_start = True
+    explicit = False  # 방금 줄이 개행으로 끝났나(기계적 넘침과 가른다)
+    i = 0
+    n = len(chars)
+    while i < n:
+        ch, u = chars[i]
+        if ch == "\f":
+            lines.append([])
+            X, page_start, explicit = 0, True, False
+            i += 1
+            continue
+        if ch == "\n":
+            if page_start:  # 쪽 첫머리 개행 — 엔진은 칸 번호를 $FF→15 로 보낸다: 다음 글자가 16칸째로 튄다
+                bad.append("② 쪽 첫머리 개행")
+                lines[-1] += [(" ", "")] * 16
+                X = 128
+            else:
+                if i and chars[i - 1][0] == "\n":
+                    bad.append("② 빈 줄(겹친 개행 — 엔진은 무시한다)")
+                if X % LINE_PX:  # 줄 끝으로 — 꽉 찬 줄이면 그대로(빈 줄을 안 만든다)
+                    X = ((X - 1) // LINE_PX + 1) * LINE_PX
+                if lines[-1]:
+                    lines.append([])
+            explicit = True
+            page_start = False
+            i += 1
+            continue
+        w = pxw(ch)
+        at_line_start = X % LINE_PX == 0
+        if ch == " " and at_line_start:
+            i += 1  # 훅: 줄 첫 칸 공백은 버린다
+            continue
+        if at_line_start and X and not explicit and lines[-1]:  # 기계적 넘침으로 새 줄 첫머리가 됐다
+            prev_ch, prev_u = lines[-1][-1]
+            lines.append([])
+            if ch in NO_HEAD:
+                bad.append("① 고아 부호")
+            if prev_ch != " " and prev_u == u:
+                bad.append("④ 묶음 끊김")
+        elif (X % LINE_PX) + w > LINE_PX:
+            bad.append("⑤ 줄 끝 걸침")
+        lines[-1].append((ch, u))
+        X += w
+        explicit = False
+        page_start = False
+        i += 1
+    return ["".join(ch for ch, _u in ln) for ln in lines], bad
+
+
+def layout(chars: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
+    """빌드 모드에 맞는 흘리기 — 가변 폭(기본, `ED_VWF=0` 이면 꺼짐)이면 px 모델, 아니면 옛 칸 모델(엔진 훅의 고아 부호 끌어오기 포함)."""
+    return layout_px(chars) if VWF else layout_cells(chars)
 
 
 def region(addr: int) -> str:

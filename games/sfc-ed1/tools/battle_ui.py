@@ -28,6 +28,7 @@ import asm65816
 import common
 import dicts
 import encode
+import namesrc
 
 # 고정 칸 문자열 표 **둘** — 둘 다 `MVN` 으로 칸 배열에 통째로 옮긴다(`hook.MVN_SITES`).
 GROUPS = [
@@ -39,6 +40,9 @@ GROUPS = [
     #    `cells` 는 **화면 칸 수**일 뿐이다(`name13` 이 모자란 칸을 공백으로 채운다).
     {"key": "speed", "table": 0x02A3CE, "count": 2, "cells": 4, "setup": (0x02A38F, 0x02A396)},
     {"key": "yesno", "table": 0x02A426, "count": 2, "cells": 3, "setup": (0x02A3E7, 0x02A3EE)},
+    # 🔵 2026-10-08 — 자동 전투 중 취소 키 창(`$0F4F=$10`, 핸들러 `$02:A430`). 「にげる／せってい」 4칸 둘 — 속도 창과 같은 꼴(포인터 표 + `LDA #$0003` + MVN).
+    #    정본 `逃げる@전투설정`(도망친다)·`戦闘設定` 이 네 칸을 꽉 쓴다.
+    {"key": "flee", "table": 0x02A47C, "count": 2, "cells": 4, "setup": (0x02A43D, 0x02A444)},
     # 🔵 2026-09-15 — A4 전투 설정 창의 **라벨 자체**. 창 표(menus.py LAYOUT_TABLES)가 굽는
     #    $03:CC1B 는 아무도 안 읽는 사본이고, 실제 드로어는 이 포인터 표를 통해 $0305 로
     #    MVN 한다(라이브 BP 로 확인 — $02:ADFA, X=포인터, count=10). 10바이트 고정칸.
@@ -49,7 +53,7 @@ GROUPS = [
 def rows(key: str) -> list[list[str]]:
     """한 무리를 **칸 단위 글자 목록**으로. `battle` = 격자 셋(칸 시작 0·5·10) + 이름 다섯,
     `title` = 타이틀 메뉴 세 줄."""
-    d = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    d = namesrc.battle_ui()
     g = next(x for x in GROUPS if x["key"] == key)
     n = g["cells"]
     out = []
@@ -147,7 +151,7 @@ A4_STRIDE = 8  # 한글 3음절(6B) + `$FF` 를 담는 보폭
 
 
 def bake_a4_values(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dict:
-    d = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    d = namesrc.battle_ui()
     by_jp = {x["jp"]: x["kr"] for x in d["a4_values"]}
     if bytes(rom[common.snes2off(A4_STEP_SITE) : common.snes2off(A4_STEP_SITE) + 2]) != bytes(
         [0xA9, 0x05]
@@ -222,7 +226,7 @@ def _a3_stride_patch() -> bytes:
 def bake_a3_values(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dict:
     """A3 값 8종을 **5바이트 고정 스트라이드**(한글 4B + `$FF` 1B)로 사전 뱅크에 굽고,
     즉치 4갈래 + 스트라이드 ASM 을 함께 패치한다. `org` 이어 쓴다(battle_ui.bake() 뒤)."""
-    d = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    d = namesrc.battle_ui()
     by_jp = {x["jp"]: x["kr"] for x in d["a3_values"]}
     for _row, addrs, _opts in A3_ROWS:
         for lo, hi in addrs:  # lo·hi 는 $A9(LDA #imm) **오피코드** 주소 — +1 이 피연산자다
@@ -276,7 +280,7 @@ def verify_a3_values(out: bytes, slots: list) -> dict:
     """되읽기 — 즉치 4곳이 가리키는 자리를 그대로 따라가 디코드한다."""
     n_ok = 0
     bad = []
-    d = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))
+    d = namesrc.battle_ui()
     by_jp = {x["jp"]: x["kr"] for x in d["a3_values"]}
     for _row, addrs, opts in A3_ROWS:
         lo, hi = addrs[0]

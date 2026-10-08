@@ -15,14 +15,14 @@ import text  # noqa: I001  (common 보다 먼저)
 import common
 import dicts
 import encode
+import namesrc
 
 TABLES = {"a": (0x02A793, 160), "b": (0x02A8B1, 149)}  # (원본 포인터 표, 항목 수)
 CELLS = 10
 
 
 def names() -> dict[str, str]:
-    d = json.loads((common.GAME_DIR / "textmap" / "places.json").read_text(encoding="utf-8"))
-    return d["names"]
+    return namesrc.places_map()["names"]
 
 
 def texts() -> list[str]:

@@ -9,6 +9,7 @@
 """
 
 import hashlib
+import os
 import sys
 from pathlib import Path
 
@@ -23,7 +24,10 @@ ORIG_DIR = ROOT / "originals" / "jp" / GAME
 WORK = GAME_DIR / "work"
 OUT_DIR = WORK / "derived"
 REVIEW_DIR = WORK / "review"
-BUILD_TAG = build_tag()
+# 대사창 가변 폭(VWF, `hook_vwf.py`) — **정본 빌드에서 켠다**(마스터 판정 2026-10-08, D안 유지).
+# 공백·`. , ? !` 가 4px 로 그려진다. 꺼진 경로(`ED_VWF=0`)는 시험·대조용으로 남기고 **다른 빌드 칸**(`<꼬리표>-novwf`)에 굽는다.
+VWF = os.environ.get("ED_VWF") != "0"
+BUILD_TAG = build_tag() + ("" if VWF else "-novwf")
 BUILD_DIR = WORK / "build"
 DIST_DIR = WORK / "dist"
 
