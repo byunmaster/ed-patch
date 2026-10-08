@@ -26,11 +26,11 @@ class TestContract(unittest.TestCase):
 
 class TestNarration(unittest.TestCase):
     def test_전각_공백으로_들여쓰면_나레이션(self):
-        t = "　　　小さな巡礼者ジュリオとクリスは\n　　　ネガル島に向かう船上で"
+        t = "　　　遠い旅人のあとを追って\n　　　海をわたる船の上で"
         self.assertTrue(T.is_narration(t))
 
     def test_보통_대사는_아니다(self):
-        self.assertFalse(T.is_narration("ここは地下の宝物庫です。\n本来なら"))
+        self.assertFalse(T.is_narration("これは試験用の文です。\nつづきの行"))
 
     def test_나레이션은_넘침을_안_잰다(self):
         """🔴 8~11줄짜리 전체화면 연출을 창 계약으로 재면 전부 오탐이 된다."""

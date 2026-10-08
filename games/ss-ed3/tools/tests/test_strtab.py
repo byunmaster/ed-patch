@@ -37,10 +37,10 @@ class TestShape(unittest.TestCase):
 
     def test_서식_제어는_허용한다(self):
         """실측: 안내문이 `00 00 09 20 20 20 …` 꼴로 늘어선다."""
-        b, off = _img(b"\x09   " + "ディスクを入れ替えて".encode("shift_jis"))
+        b, off = _img(b"\x09   " + "試験用のならびかえ".encode("shift_jis"))
         (x,) = S.strings(b)
         self.assertEqual(x["off"], off[0])
-        self.assertEqual(S.text_of(x["raw"]), "<09>   ディスクを入れ替えて")
+        self.assertEqual(S.text_of(x["raw"]), "<09>   試験用のならびかえ")
 
 
 class TestFilters(unittest.TestCase):
@@ -87,9 +87,9 @@ class TestPointers(unittest.TestCase):
 class TestRoundTrip(unittest.TestCase):
     def test_왕복이_바이트_동일(self):
         for raw in (
-            "第３章　　〜三都橋の幻影〜".encode("shift_jis"),
-            b"\x09   " + "ゲームを再スタートしてください".encode("shift_jis"),
-            "  さらに%2d%s".encode("shift_jis"),
+            "第９章　　〜試験の巻〜".encode("shift_jis"),
+            b"\x09   " + "試験をやりなおしてください".encode("shift_jis"),
+            "  もっと%2d%s".encode("shift_jis"),
         ):
             b, _ = _img(raw)
             for x in S.strings(b):

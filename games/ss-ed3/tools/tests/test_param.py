@@ -45,22 +45,22 @@ class Descriptions(unittest.TestCase):
         return bytes(b)
 
     def test_drops_ascii_dummies(self):
-        b = self._blob("ごく普通の短剣\x00剣の達人も＄認める剣\x00quux\x00Sentinel\x00")
-        self.assertEqual(P.descs(b), ["ごく普通の短剣", "剣の達人も＄認める剣"])
+        b = self._blob("試験用の短剣\x00試験の達人も＄認める剣\x00quux\x00Sentinel\x00")
+        self.assertEqual(P.descs(b), ["試験用の短剣", "試験の達人も＄認める剣"])
         self.assertEqual(P.descs(b, keep_dummy=True)[-2:], ["quux", "Sentinel"])
 
     def test_spell_area_shares_the_same_contract(self):
         # 설명 영역이 둘인데 규약이 같다 — 파서를 갈래로 나누지 않는다.
         b = bytearray(b"\x00" * P.DESC_SPELL[1])
-        enc = "敵を眠らせる。\x00".encode("shift_jis")
+        enc = "試験を眠らせる。\x00".encode("shift_jis")
         b[P.DESC_SPELL[0] : P.DESC_SPELL[0] + len(enc)] = enc
-        self.assertEqual(P.descs(bytes(b), P.DESC_SPELL), ["敵を眠らせる。"])
+        self.assertEqual(P.descs(bytes(b), P.DESC_SPELL), ["試験を眠らせる。"])
 
     def test_newline_is_a_fullwidth_char_not_a_control_byte(self):
         # `＄` 는 제어코드가 아니라 전각 문자다 — 제어 바이트로 찾으면 못 찾는다.
         self.assertEqual(len(P.DESC_NL.encode("shift_jis")), 2)
-        b = self._blob("剣の達人も＄認める剣\x00")
-        self.assertEqual(P.descs(b)[0].split(P.DESC_NL), ["剣の達人も", "認める剣"])
+        b = self._blob("試験の達人も＄認める剣\x00")
+        self.assertEqual(P.descs(b)[0].split(P.DESC_NL), ["試験の達人も", "認める剣"])
 
 
 if __name__ == "__main__":
