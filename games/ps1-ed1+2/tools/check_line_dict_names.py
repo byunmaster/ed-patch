@@ -5,7 +5,7 @@
 
 ## 왜 있나 (2026-10-07, 새턴 세션)
 
-`export_line_dict.py:_add_names()` 가 `shared/glossary`·`textmap/monsters_ed2` 를 읽어
+`export_line_dict.py:_add_names()` 가 `shared/canon`·`textmap/monsters_ed2` 를 읽어
 이름 정본과 그 정형문(`〜과의 전투다` 등)을 `line_dict.json` 에 **그 시점 사전 값으로** 구워
 넣는다. 사전이 나중에 바뀌어도(마스터 판정) **재수출을 안 돌리면 이 층은 안 따라온다** —
 실측: 炎の剣=불의 검·ガイド=가이드·バルアズス島=바라즈스섬·盗賊=도둑 판정(10-07) 뒤에도
@@ -13,7 +13,7 @@
 
 `line_dict.json` 은 **새턴의 유일한 번역 저본**이라(이 레포 PS1 이식판 중 다른 소비자가
 아직 없다) 이 층이 낡으면 **새턴 화면에 옛 이름이 그대로 나간다** — 표 검사
-(`check_glossary.py` 류)는 이 파일을 안 보므로 못 잡는다.
+(`check_names` 류)는 이 파일을 안 보므로 못 잡는다.
 
 ## 방법
 

@@ -1,0 +1,31 @@
+{
+ "_doc": "check_own_tables 예외 — exempt = 표가 아니라 규칙·장부이거나 마스터가 예외로 정한 것, pending = 정본에 아직 없는 값이라 관리자에게 후보로 올린 것(관리자가 main 정본에 올리면 읽게 바꾸고 줄을 지운다).",
+ "tools/align_jp_kr.py|KANA": {
+  "status": "exempt",
+  "why": "가나→한글 음차 **규칙**(알고리즘)이지 이름 사전이 아니다 — 정발 대조 퍼지 매칭(name_sim)과 ED2 몬스터 검토의 음차 후보 생성에만 쓴다. 번역값이 아니다"
+ },
+ "tools/align_jp_kr.py|KANA2": {
+  "status": "exempt",
+  "why": "위 KANA 의 요음·외래어 2글자 조합 — 같은 음차 규칙"
+ },
+ "tools/align_jp_kr.py|SUFFIX_RULES": {
+  "status": "exempt",
+  "why": "정발 대조 화자 매핑의 접미 규칙 2개 — 정본 거리가 아닌 도구 설정(관리자 검토 10-08, kind=script)"
+ },
+ "tools/check_onomatopoeia.py|CANON": {
+  "status": "exempt",
+  "why": "의성어 38 — check_onomatopoeia 검사기 설정이지 이름·라벨 표가 아니다(관리자 검토 10-08, kind=script)"
+ },
+ "textmap/monster_lines_ed2.json": {
+  "status": "exempt",
+  "why": "ED2 몬스터 고유 전투 대사 16(카자즘·뉴트하니·황제 고드윈 등) — 개별 문안(본문)이라 게임 폴더에 둔다(관리자 검토 10-08, kind=script)"
+ },
+ "script/exe_kana_baseline.json": {
+  "status": "exempt",
+  "why": "표가 아니라 기준선 장부(키=EXE 에 남은 가나 조각, 값=사유)"
+ },
+ "names_exceptions.json": {
+  "status": "exempt",
+  "why": "표가 아니라 마스터 승인 예외 장부(키=자리, 값=사유·approved)"
+ }
+}

@@ -118,8 +118,9 @@ def longest_names():
     names.append((PU.HERO[0x800], "ED1 주인공"))
     for kr in PS.PARTY.values():
         names.append((kr, "ED2 파티"))
-    with open(os.path.join(GAME, "textmap", "monsters_ed2.json"), encoding="utf-8") as f:
-        mon_ed2 = json.load(f)
+    from dict_tables import monsters_ed2
+
+    mon_ed2 = monsters_ed2()
     for kr in mon_ed2.values():
         names.append((kr, "ED2 몬스터"))
     for kr in PI.MONSTERS.values():
@@ -143,15 +144,11 @@ def templates():
             t = e.get("ours", "")
             if "%s" in t:
                 out.append((rel, t))
-    for rel in ("textmap/monster_lines_ed2.json",):
-        path = os.path.join(GAME, rel)
-        if not os.path.exists(path):
-            continue
-        with open(path, encoding="utf-8") as f:
-            d = json.load(f)
-        for k, v in d.items():
-            if not k.startswith("_") and "%s" in v:
-                out.append((rel, v))
+    from dict_tables import monster_lines_ed2
+
+    for v in monster_lines_ed2().values():
+        if "%s" in v:
+            out.append(("textmap/monster_lines_ed2.json", v))
     path = os.path.join(GAME, "script", "ED2MON_LINES.json")
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
@@ -226,8 +223,9 @@ def realistic_names(src):
     elif src in ED2_SRC:
         for kr in PS.PARTY.values():
             names.append((kr, "ED2 파티"))
-        with open(os.path.join(GAME, "textmap", "monsters_ed2.json"), encoding="utf-8") as f:
-            mon_ed2 = json.load(f)
+        from dict_tables import monsters_ed2
+
+        mon_ed2 = monsters_ed2()
         for kr in mon_ed2.values():
             for suf in _SUFFIXES_REAL:
                 names.append((kr + suf, "ED2 몬스터"))
@@ -235,8 +233,9 @@ def realistic_names(src):
         names.append((PU.HERO[0x800], "ED1 주인공"))
         for kr in PS.PARTY.values():
             names.append((kr, "ED2 파티"))
-        with open(os.path.join(GAME, "textmap", "monsters_ed2.json"), encoding="utf-8") as f:
-            mon_ed2 = json.load(f)
+        from dict_tables import monsters_ed2
+
+        mon_ed2 = monsters_ed2()
         for kr in mon_ed2.values():
             for suf in _SUFFIXES_REAL:
                 names.append((kr + suf, "ED2 몬스터"))

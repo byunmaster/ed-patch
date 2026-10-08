@@ -32,7 +32,7 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 from common import OUT_DIR, ROOT
 
 sys.path.insert(0, os.path.join(ROOT, "..", "..", "shared"))
-import glossary as G
+import canon as G
 
 # 🔴 **창 뒤에 개행이 오면 화자 이름창이라 대상이 아니다.**
 # `{c}シンディ{c}{n}신디, 같이.` 는 신디가 제 이름을 말하는 정상 대사고,
@@ -69,7 +69,7 @@ def _canon():
     """JP 이름 → 우리 표기(인물·지명). 이름창에 오는 것은 이 둘뿐이다."""
     out = {}
     for cat in ("person", "place"):
-        out.update(G.table(cat))
+        out.update(G.table(cat, "ed1"))
     return out
 
 

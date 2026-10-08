@@ -31,6 +31,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
+import dict_tables as D
 import reinsert_kr_pilot as R
 from check_align_fit import jp_text as _jp_text
 from check_proper_nouns import _name_in
@@ -73,16 +74,18 @@ PAIRS = (
 # ⚠ 조사 `로` 와 겹치는 `로우` 처럼 **본문 검색으로는 못 세는 이름**을 잡으려고 방향을
 # 뒤집었다(전투 시스템에서 `ロー` 가 `로` 로 나가던 자리가 실제로 있었다 — 유저가 잡았다).
 # 셋째 항목은 **제외할 낱말** — `ローブ`(로브, 옷) 는 인명이 아니다.
-NAME_PAIRS = (
-    ("ロー", "로우", ("ローブ",)),
-    ("セリオス", "세리오스", ()),
-    ("リュナン", "류난", ()),
-    ("ゲイル", "게일", ()),
-    ("ソニア", "소니아", ()),
-    ("ジェルマン", "제르만", ()),
-    ("フレイア", "프레이아", ()),
-    ("アクダム", "아크담", ()),
+# 🔴 표기는 **사전(인물 person)** 이 든다 — 여기 남는 건 「어느 이름을 볼까」(구조)와 제외어뿐이다(마스터 10-08).
+_NAME_KEYS = (
+    ("ロー", ("ローブ",)),
+    ("セリオス", ()),
+    ("リュナン", ()),
+    ("ゲイル", ()),
+    ("ソニア", ()),
+    ("ジェルマン", ()),
+    ("フレイア", ()),
+    ("アクダム", ()),
 )
+NAME_PAIRS = tuple((jp, D.person()[jp], skip) for jp, skip in _NAME_KEYS)
 
 
 def scan_names():

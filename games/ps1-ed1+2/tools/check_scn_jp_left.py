@@ -38,7 +38,8 @@ from ed2_monster_review import MON, decode_sjis
 from lock_lines import SETTLED, load_lock
 from patch_ed2_monster_lines import _live_group_lba as _live_mon  # 🔴 재배치 뒤 현재 LBA
 from patch_ed2_monster_lines import is_dialog, overlay_refs
-from patch_ed2_monsters import CANON, _enc
+from dict_tables import monsters_ed2
+from patch_ed2_monsters import _enc
 from patch_sys_ui import _scn_layout
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -278,8 +279,7 @@ def check_mon_name_coverage(*, strict=True):
     읽히면 통과. 정확한 변형별 커버리지는 052/053의 몫이고, 이 게이트는 "그 종이
     통째로 사라졌나"만 본다(가장 싼 값에 가장 넓은 방어선).
     """
-    with open(CANON, encoding="utf-8") as f:
-        canon = json.load(f)
+    canon = monsters_ed2()
     missing = []
     for stem, kr in sorted(canon.items()):
         want = _enc(kr)
@@ -324,8 +324,7 @@ def check_mon_name_no_live_jp(*, strict=True):
     ⚠ **죽은 잔존(참조 없는 JP)은 기준선으로 눌러 둔다** — 0 을 강요하면 늘 빨간불이
     된다(조판 지문·`check_original_diff`와 같은 꼴). 늘면 실패, 줄면 알린다.
     """
-    with open(CANON, encoding="utf-8") as f:
-        canon = json.load(f)  # {JP: KR}
+    canon = monsters_ed2()  # {JP: KR}
     hits = []
     for group, (lba, size) in sorted(_live_mon().items()):
         cap = (size + 2047) // 2048 * 2048
@@ -452,8 +451,7 @@ def check_mon_name_across_color_codes(*, strict=True):
     .SPLIT_SLIME_MSGS` 의 byte-assert 가 별도로 지킨다(재배치 전 원본 대조라 손 탄
     자리를 이미 막는다).
     """
-    with open(CANON, encoding="utf-8") as f:
-        canon = json.load(f)
+    canon = monsters_ed2()
     missing = []
     for stem, kr in sorted(canon.items()):
         chars = [_enc(c) for c in kr]

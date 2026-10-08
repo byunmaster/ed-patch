@@ -35,7 +35,7 @@ import reinsert_kr_pilot as R
 from patch_sys_ui import SCN_FILES
 
 sys.path.insert(0, os.path.join(R.ROOT, "..", "..", "shared"))
-import glossary as G
+import canon as G
 
 # 문장이 끝났다고 볼 꼬리. ⚠ 말줄임(`...`)도 끝이다 — 여운을 남기는 우리 관용이다.
 END = (".", "!", "?", "…", "”", "'", "」", ")")
@@ -49,7 +49,7 @@ END = (".", "!", "?", "…", "”", "'", "」", ")")
 # ⚠ 목록을 늘리려면 **다시 세어라**(위 방법). 감으로 글자를 더하면 오탐이 는다.
 ENDINGS = set("다요까지야네오라어가고군나냐게서아세죠데먼님마자만해든줘니수유소쇼는봐씨")
 
-_NAMES = frozenset(v for cat in ("person", "place") for v in G.table(cat).values())
+_NAMES = frozenset(v for cat in ("person", "place") for v in G.table(cat, "ed1").values())
 
 
 def _is_name(s):
@@ -57,7 +57,7 @@ def _is_name(s):
 
     ⚠ 종결 어미만으로는 못 가른다. `베르가`(가) · `루디아`(아) · `라누라`(라) ·
     `사제 바바라`(라) 는 끝 글자가 종결 어미와 겹쳐 그대로 새어 나왔다(실측 2026-08-19).
-    고유명사 정본(`shared/glossary`)이 채워진 뒤에야 이 판정이 가능해졌다.
+    고유명사 정본(`shared/canon`)이 채워진 뒤에야 이 판정이 가능해졌다.
     """
     t = (s or "").strip()
     return bool(t) and t in _NAMES

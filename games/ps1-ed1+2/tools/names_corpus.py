@@ -1,7 +1,7 @@
 """이름 검사 어댑터 — `scripts/check/check_names.py --game ps1-ed1+2` 가 부른다.
 
 🔴 **이름을 들지 않는다.** 화면에 나가는 문안을 **「원문 줄 · 우리 줄」 쌍**으로 읽어 넘길 뿐이고,
-어느 이름이 맞는지는 공용 사전(`shared/glossary`)이 정한다(마스터 2026-10-07 — 독자 데이터 금지).
+어느 이름이 맞는지는 공용 사전(`shared/canon`)이 정한다(마스터 2026-10-07 — 독자 데이터 금지).
 미번역 줄은 `None` 으로 낸다(분모가 거짓말을 안 하게).
 
 읽는 곳(자리 표기가 곧 출처다):
@@ -13,6 +13,7 @@
 - `ED1전투:<오프셋>` — ED1 전투 문자열(`patch_items.corpus_strings` ↔ `battle_kr`: battle.json · items_battle.json · 표).
 - `ED2전투:<오프셋>` — ED2 전투 문자열(`patch_ed2_battle.plan()`: battle_ed2.json · 공용 표). 번역 없는 것은 None.
 - `ED2몬스터대사:<n>` — `textmap/monster_lines_ed2.json`.
+- `ED1UI:<오프셋>` · `ED2UI:<오프셋>` — EXE 시스템 문자열(메뉴·상태창·전투 라벨·지명 목록·워프).
 - `표:<이름>` — 도구의 JP→KR 표(아이템·몬스터·인물·지명) 항목. **표를 새로 들지 않는다** — 이미 있는 번역 쌍을 줄로 읽는다.
 
 ⚠ **안 보는 구간**(분모에 안 든다 — 보고에 적는다): 오프닝·엔딩 내레이션(`textmap/opening*`·`ending*` 은 원문이 해시 키라
@@ -34,6 +35,10 @@ if _TOOLS not in sys.path:
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 TITLE = "eiyuu"
+# 정본(`shared/canon`)은 메뉴·호칭·시스템·전투 문구 — 장면 대사(`ED1SCN…`·`ED2SCN…`)는 범위 밖이다(마스터 10-08).
+# 같은 원문이라도 장면 대사는 장면 문체(정중체 「건넸습니다」 등)로 옮긴다.
+CANON_SKIP = r"SCN\d"
+CANON_GATE = True
 
 ED1_SCENES = [f"ED1SCN{i}" for i in range(1, 7)]
 ED2_SCENES = [f"ED2SCN{i}" for i in range(1, 14)]
@@ -150,8 +155,9 @@ def _battle_ed2_pairs():
 
 
 def _monster_line_pairs():
-    with open(os.path.join(_GAME, "textmap", "monster_lines_ed2.json"), encoding="utf-8") as f:
-        lines = json.load(f)
+    from dict_tables import monster_lines_ed2
+
+    lines = monster_lines_ed2()
     for i, (jp, kr) in enumerate(lines.items()):
         if jp == "_":
             continue
@@ -169,11 +175,38 @@ def _table_pairs():
         "SPEAKER_DICT": align_jp_kr.SPEAKER_DICT,
         "PLACES": dict(patch_sys_ui.PLACES),
     }
-    with open(os.path.join(_GAME, "textmap", "monsters_ed2.json"), encoding="utf-8") as f:
-        tables["monsters_ed2"] = json.load(f)
+    from dict_tables import monsters_ed2
+
+    tables["monsters_ed2"] = monsters_ed2()
     for name, tbl in tables.items():
         for jp, kr in tbl.items():
             yield f"표:{name}|{jp}", jp, _ours(kr), "slot"
+
+
+def _ui_pairs():
+    """EXE 시스템 문자열 — ED.EXE `patch_sys_ui.UI`(메뉴·상태창·전투커맨드·전투설정) · ED2.EXE `patch_ed2_sys.plan()`(UI·지명·워프 16B·전투 라벨).
+
+    ⚠ 지금까지 이름·정본 검사는 이 표들을 **안 쟀다** — 표 5개(`표:`)만 쟀고, UI 문자열은 정본 ui 와 대조하는 곳이 없었다
+    (10-08 전 세션 점검). 원문은 원본 EXE 의 그 오프셋 문자열, 우리 줄은 표(ED2 는 쓸 바이트 `plan()` 의 KR)다.
+    """
+    with _quiet():
+        import patch_ed2_sys as E
+        import patch_items as P
+        import patch_sys_ui as U
+
+    ed = P.extract(P.ED_LBA, P.ED_SIZE)
+    for off, kr in sorted(U.UI.items()):
+        jp = E._jp_at(ed, off)
+        if jp:
+            yield f"ED1UI:{off:#x}", jp, _ours(kr), "slot"
+    with _quiet():
+        rows, over = E.plan()
+    for off, jp, kr, _slot, _enc in rows + over:
+        # ⚠ ED2.EXE HUD 판(0x9A1F0)·워프 사본(0x9A478)의 狼の口 는 빌드 맨 끝 `restore_full_place_names` 가 「늑대의입」으로
+        #   되돌린다(칸이 넉넉한 자리) — `plan()` 은 그 전의 짧은 꼴(늑대입)이라 최종 바이트를 따라 읽는다.
+        if jp == "狼の口" and off in (0x9A1F0, 0x9A478):
+            kr = "늑대의입"
+        yield f"ED2UI:{off:#x}", jp, _ours(kr), "slot"
 
 
 def pairs():
@@ -183,3 +216,4 @@ def pairs():
     yield from _battle_ed2_pairs()
     yield from _monster_line_pairs()
     yield from _table_pairs()
+    yield from _ui_pairs()

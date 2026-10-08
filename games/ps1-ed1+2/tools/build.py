@@ -188,6 +188,10 @@ def check_screen_gates():
     # ED2.EXE 는 개수만 기준선으로 등록(2026-09-13) — 분류는 다음 라운드, 그래서 아직
     # 비strict(새 자리가 생겨도 보고만 하고 빌드는 안 막는다).
     check_original_diff.check_baseline("ED2EXE", strict=False)
+    # EXE(ED.EXE·ED2.EXE) 안 가나 문자열 전수 — 씬·ED2MON 만 보던 일본어 게이트의 빈자리(10-08 전 세션 점검).
+    import check_exe_kana_left
+
+    check_exe_kana_left.check(strict=True)
     # 사본 개수 게이트(2026-09-15) — "고치는 원본 바이트열이 이미지에 N곳인데 바뀐
     # 게 N곳 미만이면 실패". 오늘 일곱 번 겪은 "사본이 둘" 사고의 공통 축.
     import check_copy_completeness

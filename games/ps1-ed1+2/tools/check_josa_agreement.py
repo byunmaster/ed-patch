@@ -127,8 +127,10 @@ def _ours_raw():
     """
     for p in sorted(glob.glob(os.path.join(ROOT, "textmap", "*.json"))):
         name = os.path.splitext(os.path.basename(p))[0]
+        from derive_text import materialize
+
         with open(p, encoding="utf-8") as f:
-            d = json.load(f)
+            d = materialize(json.load(f), name)
 
         def walk(o):
             if isinstance(o, dict):
@@ -169,8 +171,10 @@ def _ours_lines():
     for p in sorted(glob.glob(os.path.join(ROOT, "textmap", "*.json"))):
         name = os.path.splitext(os.path.basename(p))[0]
         game = "ED2" if name.endswith("_ed2") else "ED1"
+        from derive_text import materialize
+
         with open(p, encoding="utf-8") as f:
-            yield from _walk_ours(json.load(f), name, game)
+            yield from _walk_ours(materialize(json.load(f), name), name, game)
 
 
 def scan_agreement():
