@@ -33,7 +33,7 @@ LIST_API = (
     "/articles?page={page}&pageSize={size}&sort=TIME"
 )
 ARTICLE_API = (
-    "https://apis.naver.com/cafe-web/cafe-articleapi/v3/cafes/{club}/articles/{art}"
+    "https://apis.naver.com/cafe-web/cafe-articleapi/v2.1/cafes/{club}/articles/{art}"
     "?query=&menuId={menu}&boardType=L&useCafeId=true&requestFrom=A"
 )
 # probe 용 — 카페마다 사는 API 가 달라서 순서대로 두들긴다.
