@@ -1201,13 +1201,26 @@
    "k": "bdaee52666",
    "sha": "bdaee526",
    "ours": "ＥＰ "
+  },
+  {
+   "k": "ba2915372f",
+   "ours": "이나 피해를 입히다니…",
+   "sha": "dd544231"
+  },
+  {
+   "k": "0851564601",
+   "ours": "피해를 못 입히다니…",
+   "sha": "d4d061f5"
+  },
+  {
+   "k": "755d246431",
+   "ours": "제법 손맛이 있는 놈이군.\n슬슬 제대로 해 볼까.",
+   "sha": "7516fcfb"
   }
  ],
  "canon": {
   "0b44c53ab2": "battle",
   "6478874415": "battle",
-  "ba2915372f": "battle",
-  "0851564601": "battle",
   "c13687e1a0": "battle",
   "64eba77a71": "battle",
   "5a35a4033f": "battle",
@@ -1216,7 +1229,6 @@
   "e63d36a5ce": "battle",
   "2990c6a6e2": "battle",
   "4ae687ad14": "battle",
-  "755d246431": "battle",
   "92220a80b4": "battle",
   "531efc2a82": "battle",
   "b3651fd978": "battle",

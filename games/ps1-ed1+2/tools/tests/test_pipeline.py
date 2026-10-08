@@ -32,7 +32,7 @@ def test_dot_before_bang_is_dropped():
     # ⚠ 느낌표는 **원문을 따른다**(유저 확정 2026-09-04) — 부호를 아예 안 건드린다.
     # 🔴 08-13 의 「하나로」는 근거가 **측정 오류**였다: 「JP 에 `!!` 가 0개, `!` 가 4개뿐」의
     #    그 4는 **전각 `！`** 의 수다. 반각으로 세면 `!` 1,264 · `!!` 556 이라 정반대다.
-    #    556곳에서 원문의 강세를 조용히 지우고 있었다(유저 QA: 고든 `持っていけ ドロボウ!!`).
+    #    556곳에서 원문의 강세를 조용히 지우고 있었다(유저 QA).
     assert R.fix_spacing("뭐야.!!") == "뭐야!!"  # 종결부호가 겹치면 앞 온점만 오타
     assert R.fix_spacing("안돼!! 열어줘!!") == "안돼!! 열어줘!!"
     assert R.fix_spacing("악!!!!") == "악!!!!"  # 상한도 두지 않는다 — 쓴 대로 나간다
@@ -532,7 +532,7 @@ def test_table_phase_catches_misaligned_pointer_table():
         assert R.table_phase(ptrs, n) == 0
         assert R.table_phase(ptrs[3:] + b"\x00\x00\x00", n) is not None, "위상 3을 놓쳤다"
         # 대사는 워드가 오버레이 범위에 안 들어온다 — 어느 위상에서도 표가 아니다
-        assert R.table_phase("扉には カギがかかっています。".encode("cp932") * 2, n) is None
+        assert R.table_phase("ねこが ねむっています。".encode("cp932") * 2, n) is None
 
 
 def test_mid_alias_master_is_the_shortest_copy():
@@ -543,7 +543,7 @@ def test_mid_alias_master_is_the_shortest_copy():
     """
     with R.overlay_for("ED2SCN1"):
         base = R.ov_base()
-    text = "%c扉には カギがかかっています。%c%c".encode("cp932")
+    text = "%cねこが ねむっています。%c%c".encode("cp932")
     ptrs = b"".join((base + 0x100 * i).to_bytes(4, "little") for i in range(14))
     doc = {
         "entries": [
@@ -905,9 +905,9 @@ def test_untranslated_axis_sees_nameplate_blocks():
     import check_jp_leak as L
 
     # 실제로 샜던 자리 — 이름창이 붙은 대사
-    assert L.is_dialogue("{c}男{c}{n}ここは もう 確保しました。{n}先を急いでください。{c}")
+    assert L.is_dialogue("{c}男{c}{n}ここに さくらが さいています。{n}はるが きました。{c}")
     assert L.is_dialogue(
-        "{c}%s{c}{n}ふー 助かった · · ·{c}"
+        "{c}%s{c}{n}ふー ひとやすみ · · ·{c}"
     )  # 종결 부호가 없어도 이름창이면 잡는다
     # 지명 헤더 — 잡히면 안 된다(전부 patch_sys_ui 관할이다)
     assert not L.is_dialogue("。{n}グロストス城")
@@ -919,8 +919,8 @@ def test_untranslated_axis_skips_pointer_prefix():
     """포인터 표 접두는 **꼬리만** 본다 — 앞쪽 바이트가 우연히 가나로 읽히면 오탐이 된다."""
     import check_jp_leak as L
 
-    s = "\\x34\\x9C\\x17\\x80惧\\x17\\x80{c}男{c}{n}さあ早く 先に進んでください。{c}"
-    assert L._tail(s) == "{c}男{c}{n}さあ早く 先に進んでください。{c}"
+    s = "\\x34\\x9C\\x17\\x80惧\\x17\\x80{c}男{c}{n}さあ みんな おやすみなさい。{c}"
+    assert L._tail(s) == "{c}男{c}{n}さあ みんな おやすみなさい。{c}"
 
 
 def test_onomatopoeia_table_separates_by_mora_and_sokuon():
@@ -959,7 +959,7 @@ def test_pointer_table_axis_needs_empty_tail():
     assert P.pointer_ratio(b"\x41" * 80) < 0.5, "평범한 바이트를 표로 보면 안 된다"
 
     # 꼬리에 대사가 있으면 anchor_tail — 잡으면 안 된다
-    assert P.tail_text("\\x34\\x9C\\x17\\x80{c}男{c}{n}ここは もう 確保しました。")
+    assert P.tail_text("\\x34\\x9C\\x17\\x80{c}男{c}{n}ここに さくらが さいています。")
     assert not P.tail_text("\\x34\\x9C\\x17\\x80\\xF8\\x5F\\x17\\x80")
 
 
@@ -1079,8 +1079,8 @@ def test_line_dict_key_is_platform_neutral():
     """
     from export_line_dict import key
 
-    ps1 = "{c}ライアス{c}{n}王子、ちゃんと いすに 座って{n}待っていて くだされ。"
-    sat = "%cライアス%c\n王子、ちゃんと いすに 座って\n待っていて くだされ。"
+    ps1 = "{c}ライアス{c}{n}王子、きょうは そらが{n}あおいですな。"
+    sat = "%cライアス%c\n王子、きょうは そらが\nあおいですな。"
     assert key(ps1) == key(sat), "마크업 표기가 다르면 같은 원문도 다른 키가 된다"
     assert key("あ･あ") == key("あ・あ"), "가운뎃점 세 꼴을 통일해야 한다"
     assert key("よし\x21\x21") == key("よし!!"), "이식판은 `!!` 를 문자로 쓰기도 한다"
@@ -1581,8 +1581,8 @@ def test_ed2_battle_restores_dropped_tail_newline():
     """원문 `…\\n%c` 의 꼬리 개행을 번역이 흘리면 되살린다(082). 중앙정렬 여백 줄은 둔다."""
     import patch_ed2_battle as PB
 
-    jp = "%c%s%c\nイシュタが どうしたんだ？\n%c"
-    assert PB.restore_tail_nl(jp, "%c%s%c\n이슈타가 어떻게 된 거야?%c").endswith("거야?\n%c")
+    jp = "%c%s%c\nイシュタが さがしものを しているぞ？\n%c"
+    assert PB.restore_tail_nl(jp, "%c%s%c\n이슈타가 뭘 찾고 있지?%c").endswith("있지?\n%c")
     assert PB.restore_tail_nl(jp, "a\n%c") == "a\n%c"
     title = " 영웅들의 전설 2\n               %c"
     assert PB.restore_tail_nl("\n  英雄達の伝説２\n%c", title) == title
