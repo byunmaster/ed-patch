@@ -31,6 +31,9 @@ echo "== pce-ed1 =="
 # 4-c. 화면 일본어 0 — 대사 외 자리(메뉴·시스템·전투·HUD·배너)에 가나·한자가 남지 않았나
 "$PY" "$T/check_jp_left.py"
 
+# 4-d. 나레이션 싱크 — 음성 토막마다 자막 시간이 음성 길이 ±1.5초 안(늘린 뒤). 미해결은 OPEN_RUNS 에 사유와 함께
+"$PY" "$T/voice_sync.py" --check
+
 # 5. 글리프 정본 — 코드가 세이브(BRAM)에 남으므로 순서를 못 흔든다. 새 글자는 덧붙이기만
 "$PY" "$T/freeze_glyphs.py" --check
 

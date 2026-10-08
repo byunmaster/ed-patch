@@ -130,11 +130,91 @@ SITES: dict[int, dict[int, str]] = {
 }
 
 
+FPS = 59.826  # PCE 프레임/초
+SEC_PER_SECTOR = 2048 * 2 / 16000  # 음성 1섹터 = 2048B × 2니블 ÷ 16000Hz
+SYNC_TOL = 1.5  # 초 — 음성 길이와 자막 시간이 이 안이면 맞는 것(마스터 10-08)
+VOICE_AT = re.compile(
+    rb"\x20\x15\x58.{2}(.)(.)", re.DOTALL
+)  # JSR $5815 + 인라인 4B(오프셋 2B · 섹터 수 2B)
+# 음성이 다음 게이트로 이어진다고 볼 수 없는 자리 — 하위 스크립트가 쥐는 구간이라 늘려도 안 맞는다(미해결, 표에 열려 있다고 찍는다)
+OPEN_RUNS: dict[int, str] = {
+    6: "마지막 게이트(+0x29f)가 skip — ON 경로가 `$5EC9`(객체 생성 연산)만 하고 메시지를 건너뛴다. 남은 50초 낭독 자막이 없다",
+}
+
 PRE_MAX = 10  # single_pre: OFF 경로 메시지 앞 연출 호출의 최대 길이
 
 
 class GateError(Exception):
     pass
+
+
+def gate_events(b: bytes, sid: int) -> list[tuple]:
+    """씬 `sid` 의 SITES 게이트마다 (순번, 규칙, 게이트, ON 경로 끝, 음성[(자리, 프레임)], 타이머[(자리, 프레임)])."""
+    idx = [m.start() for m in re.finditer(re.escape(GATE), b)]
+    out = []
+    for gi, rule in sorted(SITES.get(sid, {}).items()):
+        if gi >= len(idx):
+            raise GateError(f"scn{sid:03d}: 게이트 {gi} 가 없다(블록에 {len(idx)}개)")
+        o = idx[gi]
+        tgt = o + 5 + (9 if rule == "raias" else b[o + 4])
+        voices = [
+            (v.start(), ((v.group(1)[0] | v.group(2)[0] << 8) * SEC_PER_SECTOR * FPS))
+            for v in VOICE_AT.finditer(b, o + 5, tgt)
+        ]
+        timers = [
+            (t.start(), t.group(1)[0] | t.group(2)[0] << 8)
+            for t in TIMER_AT.finditer(b, o + 5, tgt)
+        ]
+        out.append((gi, rule, o, tgt, voices, timers))
+    return out
+
+
+def voice_runs(b: bytes, sid: int) -> list[dict]:
+    """음성 토막마다 「그 음성이 도는 동안 이어진 타이머들」. 다음 음성이 시작되면 끊긴다.
+    `all`(갈래)은 음성마다 자기 뒤 첫 타이머와 짝이고 음성 없는 타이머는 토막에 안 든다.
+    skip 게이트를 만나면 그 토막은 `open` — 뒤가 어디서 이어지는지 모르니 늘리지 않는다.
+    타이머 항목 = (자리, 프레임, 자막이 걸리는 타이머인가)."""
+    runs: list[dict] = []
+    cur = None
+    for gi, rule, _o, tgt, voices, timers in gate_events(b, sid):
+        if rule == "skip":
+            if cur:
+                cur["open"] = True
+            cur = None
+            continue
+        if rule == "all":
+            for k, (vp, vf) in enumerate(voices):
+                nxt = voices[k + 1][0] if k + 1 < len(voices) else tgt
+                tm = [(p, v, True) for p, v in timers if vp < p < nxt][:1]
+                runs.append({"gate": gi, "voice": vf, "timers": tm, "open": False})
+            cur = None
+            continue
+        picked = (
+            {timers[-1][0]} if rule in ("last", "last_page2") and timers else {p for p, _ in timers}
+        )
+        for p, kind, val in sorted(
+            [(p, "V", f) for p, f in voices] + [(p, "T", v) for p, v in timers]
+        ):
+            if kind == "V":
+                cur = {"gate": gi, "voice": val, "timers": [], "open": False}
+                runs.append(cur)
+            elif cur is not None:
+                cur["timers"].append((p, val, p in picked))
+    return runs
+
+
+def retime(b: bytes, sid: int) -> dict[int, int]:
+    """음성이 자막보다 `SYNC_TOL` 넘게 길면 그 토막 마지막 자막 타이머를 늘려 음성 끝에 맞춘다 — {타이머 자리: 더할 프레임}.
+    ON 경로 타이머만 바꾸므로 OFF(키 입력)는 바이트도 흐름도 그대로다. 마스터 10-08 (가)."""
+    add: dict[int, int] = {}
+    for r in voice_runs(b, sid):
+        if r["open"]:
+            continue
+        gap = r["voice"] - sum(v for _, v, _ in r["timers"])
+        patched = [p for p, _, ok in r["timers"] if ok]
+        if gap > SYNC_TOL * FPS and patched:
+            add[patched[-1]] = add.get(patched[-1], 0) + round(gap)
+    return add
 
 
 def _resident_asm() -> Asm:
@@ -248,7 +328,7 @@ def _resident_asm() -> Asm:
 
 def _prep(a: Asm) -> None:
     """자막 모드 준비. 들어올 때: $10/$11 = 메시지, f0·s0 = 시작 시각, rem·rem1 = 원래 타이머 T.
-    W = 메시지 바이트 수(끝 00 까지). 첫 쪽 마감을 `npage` 로 구하고 켠다.
+    W = 메시지 바이트 수(끝 00·06·07 까지). 첫 쪽 마감을 `npage` 로 구하고 켠다.
     `npage` 는 한 쪽을 걸으며 바이트마다 acc += T, acc ≥ W 인 동안 acc -= W 하고 시계를 한 프레임
     민다 — 곱셈·나눗셈 없이 쪽 마감 = 시작 + T·누적/W. 끝(00)에 닿으면 cs·cf = 시작 + T."""
     a.label("prep")
@@ -267,6 +347,12 @@ def _prep(a: Asm) -> None:
     a.op("INC", "abs", "W1")
     a.label("p1a")
     a.op("LDA", "izpy", 0xEC)
+    a.op("BEQ", "rel", "p1end")
+    a.op(
+        "CMP", "imm", 6
+    )  # 종료 바이트는 00·06·07 셋이다(messages.TERM) — 06/07 뒤는 다음 메시지라 셀 때 끊는다
+    a.op("BEQ", "rel", "p1end")
+    a.op("CMP", "imm", 7)
     a.op("BEQ", "rel", "p1end")
     a.op("INY")
     a.op("BNE", "rel", "p1")
@@ -324,6 +410,10 @@ def _prep(a: Asm) -> None:
     a.label("dend")
     a.op("PLA")
     a.op("LDA", "izpy", 0xEC)
+    a.op("BEQ", "rel", "last")
+    a.op("CMP", "imm", 6)
+    a.op("BEQ", "rel", "last")
+    a.op("CMP", "imm", 7)
     a.op("BEQ", "rel", "last")
     a.op("CMP", "imm", 5)
     a.op("BEQ", "rel", "brk")
@@ -423,6 +513,7 @@ def patch_block(sid: int, blk: bytes) -> tuple[bytes, int]:
     b = bytearray(blk)
     gates = [m.start() for m in re.finditer(re.escape(GATE), b)]
     picks: list[tuple[int, int, bool, int]] = []  # (타이머 자리, OFF 메시지 주소, 2쪽부터?, 타이머)
+    extra = retime(bytes(blk), sid)  # 음성이 자막보다 길면 늘린다(ON 만)
     for gi, rule in SITES.get(sid, {}).items():
         if rule == "skip":
             continue
@@ -457,6 +548,11 @@ def patch_block(sid: int, blk: bytes) -> tuple[bytes, int]:
         pick = timers[-1:] if rule in ("last", "last_page2") else timers
         for t in pick:
             timer = t.group(1)[0] | (t.group(2)[0] << 8)
+            timer += extra.get(t.start(), 0)
+            if timer > 0xFFFF:
+                raise GateError(
+                    f"scn{sid:03d} +{t.start():#x}: 늘린 타이머 {timer} 가 16비트를 넘는다"
+                )
             picks.append((t.start(), m.start(), page2, timer))
     for at, load, page2, timer in picks:
         dist = load - (at + 2)  # 상주부가 재는 기준 = 반환 주소(JSR 마지막 바이트, at+2)
