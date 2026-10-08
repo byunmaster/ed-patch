@@ -44,6 +44,7 @@ KR 에도 **그 용어의 지금 정본 번역**이 부분 문자열로 있어�
 """
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -59,9 +60,10 @@ sys.path.insert(
 
 import canon
 import common
-import glossary
+import canon as _canon_all
 import patch_ui as U
 
+_KANA_ONLY = re.compile(r"^[ぁ-ゟ]+$")
 CATEGORIES = ("item", "monster", "person")  # 사전(고유명사) — 라벨·화자 호칭은 아래 정본에서
 
 # 🔴 (path, base) 로 콕 집는다 — 용어로 통째 빼면 다른 자리의 진짜 문제까지 같이 숨는다.
@@ -113,7 +115,7 @@ def terms():
     """{JP 용어: 지금 정본 KR} — 셋 다 합친다(먼저 온 카테고리가 이긴다)."""
     out = {}
     for cat in CATEGORIES:
-        for jp, kr in glossary.table(cat).items():
+        for jp, kr in _canon_all.table(cat, "eiyuu").items():
             if kr:
                 out.setdefault(jp, kr)
     # 메뉴 라벨(ui)·화자 호칭(speaker)은 정본(`shared/canon`, 사전 적용 2단계 — 사전은 고유명사만)
@@ -122,7 +124,8 @@ def terms():
             for jp, kr in canon.table(cat, title).items():
                 # 한 글자 HUD 라벨(`眠`·`毒`…)·문장형 라벨(`何もない`)은 낱말이 아니라 산문에 우연히 낀다 —
                 # 사전 `ui` 시절에도 이 게이트의 용어가 아니었다(정본으로 옮기며 늘어난 것).
-                if kr and len(jp) > 1 and "@" not in jp and jp != "何もない":
+                # 히라가나뿐인 라벨(`なし`·`する` — 다른 기종 표를 정본이 받으며 늘었다)도 낱말이 아니라 활용 어미라 산문에 우연히 낀다.
+                if kr and len(jp) > 1 and "@" not in jp and jp != "何もない" and not _KANA_ONLY.match(jp):
                     out.setdefault(jp, kr)
     return out
 

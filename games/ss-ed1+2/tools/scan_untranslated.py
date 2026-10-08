@@ -140,12 +140,12 @@ def scan(path, mm, files):
 #
 # ⚠ 그냥 세면 늘 빨간불이라 아무도 안 본다 — **알고 남긴 것**을 여기 적고 뺀다.
 #    적을 때는 **왜 남기는지**를 같이 적는다. 「그냥 원래 그랬다」는 사유가 아니다.
+# 🔴 열쇠는 **자리(파일, 오프셋)** 다 — JP 글자를 열쇠로 든 표를 게임 폴더에 두지 않는다(마스터 2026-10-08).
 KEEP = {
-    # 「メニュートップ」를 그리고 **무한 루프로 끝나는 개발자 화면**의 글자 둘.
-    # 함수 시작(ED `0x4CBB4` · ED2 `0x03B930`)이 리터럴 포인터 0 · bsr/bra 0 — **도달 불가**.
-    # 뜻을 모르는 채 옮기면 화면에 엉뚱한 글자가 박히고, 애초에 안 뜬다(유저 판단 2026-09-06).
-    "闘": "도달 불가한 개발자 화면(メニュートップ)",
-    "働": "도달 불가한 개발자 화면(メニュートップ)",
+    ("/ED.BIN", 0x4CB9C): "도달 불가한 개발자 화면(メニュートップ) 글자 `闘`",
+    ("/ED.BIN", 0x4CBA0): "도달 불가한 개발자 화면(メニュートップ) 글자 `働`",
+    ("/ED2.BIN", 0x3B918): "도달 불가한 개발자 화면(メニュートップ) 글자 `闘`",
+    ("/ED2.BIN", 0x3B91C): "도달 불가한 개발자 화면(メニュートップ) 글자 `働`",
 }
 # SJIS 로 우연히 읽히는 **코드·자료**를 거른다.
 # ⚠ 「셋 이상 이어진 것」으로 걸렀더니 **홑글자 한자가 빠졌다** — 바로 그 `闘`·`働` 을
@@ -173,7 +173,7 @@ def untouched(path, mm, files):
     out = []
     for e in ent:
         jp, pa = e.get("text"), e.get("ptr_at")
-        if not jp or not pa or jp in KEEP or _internal_key(jp):
+        if not jp or not pa or (path, int(e["file_offset"], 16)) in KEEP or _internal_key(jp):
             continue
         if not _pure_jp(jp):
             continue  # 서식·파일명·전각 라틴·바이너리는 대상이 아니다
@@ -187,6 +187,61 @@ def untouched(path, mm, files):
         if built[at:j] == bytes.fromhex(e["raw_hex"]):
             out.append((at, jp))
     return out
+
+
+def table_cells(mm, files):
+    """**포인터 없는 고정 폭 표 칸**(`patch_ui.rows()` — 필드 메뉴·전투 명령·지명 표 셋 …) → `[(파일, 오프셋, 원문)]`.
+
+    🔴 `scan()` 은 **포인터가 가리키는 문자열**만 훑는다. 표 칸은 포인터 없이 색인으로 집으므로
+       이 게이트의 분모 밖이었다(2026-10-08 전 세션 점검 — ps1-ed3 의 월드맵 지명 목록이 같은 구멍으로
+       일본어로 남았다). 여기서는 표가 정의한 칸마다 **빌드의 그 자리**를 읽어 가나가 남았는지 본다.
+       ⚠ 원문이 가나·한자를 든 칸만 센다 — 전각 라틴(`ＳＡＶＥ`·`ＯＮ`)은 방침상 안 옮긴다.
+    """
+    import dump_ui
+    import patch_ui
+
+    out, cache = [], {}
+    for key, _name, _i, at, stride, jp, _kr in patch_ui.rows():
+        path = dump_ui.FILES[key]
+        if path not in files:
+            continue
+        if path not in cache:
+            cache[path] = bytes(common.read_extent(mm, *files[path]))
+        built = cache[path]
+        j = at
+        while j < min(len(built), at + stride) and built[j] != 0:
+            j += 1
+        now = _decode(built[at:j], False)
+        if now is None or _internal_key(now):
+            continue  # 우리 슬롯 코드가 들어갔다 — 번역된 자리다
+        if _has_kana(now) or (_JP1.search(now) and built[at:j] == _orig_bytes(path)[at:j]):
+            out.append((path, at, now))
+    return out
+
+
+def title_left(mm):
+    """`TITLE.BIN` 자막 레코드(오프닝·엔딩·스태프롤)에 가나가 남았나 → `[(구간, 번호, 문자열)]`.
+
+    🔴 이 파일은 `MAIN`·`MON`·`SCN` 목록에 없어 이 게이트의 분모 밖이었다(2026-10-08 전 세션 점검).
+       레코드 구조는 `dump_title` 이 정본이다 — 빌드를 같은 길로 읽어 가나를 센다.
+    """
+    from dump_title import LABELS, _load, runs
+
+    out = []
+    for off, recs in runs(_load(mm)):
+        for i, (t, _p, _n) in enumerate(recs):
+            if _has_kana(t):
+                out.append((LABELS[off], i, t))
+    return out
+
+
+_ORIG = {}
+
+
+def _orig_bytes(path):
+    if path not in _ORIG:
+        _ORIG[path] = bytes(common.extract(path))
+    return _ORIG[path]
 
 
 def main():
@@ -229,12 +284,20 @@ def main():
         for at, jp in untouched(path, mm, files):
             kept += 1
             print(f"  🔴 {path} 0x{at:06X} 원본 바이트 그대로 — {jp[:40]!r}")
+    # ── 표 칸 축 (포인터 없는 고정 폭 칸 — 위 `table_cells`)
+    cells = table_cells(mm, files) if every else []
+    for path, at, now in cells:
+        print(f"  🔴 {path} 0x{at:06X} 표 칸에 일본어가 남았다 — {now[:40]!r}")
+    kept += len(cells)
+    for name, i, t in title_left(mm) if every else []:
+        print(f"  🔴 /TITLE.BIN {name} #{i} 자막에 일본어가 남았다 — {t[:40]!r}")
+        kept += 1
     mm.close()
     _f.close()
     mark = "✅" if not (total or kept) else "🔴"
     print(
         f"  {mark} 파일 {len(paths)} — 남은 일본어 {total}줄 · 바이트가 원본 그대로인 자리 "
-        f"{kept} (알고 남긴 것 {len(KEEP)}종 제외)"
+        f"{kept} (알고 남긴 것 {len(KEEP)}자리 제외)"
     )
     # 🔴 **남은 일본어도 실패다**(2026-09-27). 전엔 바이트 대조만 실패로 쳐서, 가나가 남아도 종료 코드가
     #    0 이었다 — 그리고 `check.sh` 의 `step` 은 ✅ 줄만 보여 주므로 🔴 합계 줄이 **통째로 가려졌다.**

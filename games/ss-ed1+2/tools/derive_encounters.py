@@ -66,7 +66,7 @@ sys.path.insert(
 import common
 import dump_scn
 import expand_files
-from glossary import table
+from canon import table
 from names import HALF, MARKS, split_mark  # noqa: F401
 from text.josa import josa
 
@@ -208,7 +208,7 @@ def _render1(jp, mon):
 def main():
     common.verify_source()
     write = "--write" in sys.argv
-    mon = table("monster")
+    mon = table("monster", "eiyuu")
     with open(SYS_CANON, encoding="utf-8") as f:
         doc = json.load(f)
     canon = doc["lines"]

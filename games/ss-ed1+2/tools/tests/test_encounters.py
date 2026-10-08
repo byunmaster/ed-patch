@@ -20,7 +20,7 @@ sys.path.insert(0, TOOLS)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(TOOLS))), "shared"))
 
 import derive_encounters as D
-from glossary import table
+from canon import table
 
 
 class Render(unittest.TestCase):
@@ -57,7 +57,7 @@ class Render(unittest.TestCase):
 class Canon(unittest.TestCase):
     def test_names_the_audit_relies_on_exist(self):
         """훑기는 정본 표기로 판정한다 — 표에서 사라지면 조용히 0건이 된다."""
-        mon = table("monster")
+        mon = table("monster", "eiyuu")
         for jp in ("ワーラット", "ヤマネコ", "ヂガバチ", "バルガー", "バルバス"):
             self.assertIn(jp, mon)
 

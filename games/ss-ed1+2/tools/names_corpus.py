@@ -15,7 +15,7 @@
   시스템 메시지 쪽 미번역 잔존이 따로 없다(`check.sh` 가 그 축을 이미 전수로 본다).
 - **씬 지명 헤더**(`scn_header`, 498곳) — `patch_ui.scn_rows()`.
 - **챕터 카드·시스템 UI 문구**(`cards`·`msgs`, `script/ui.json`) — `patch_ui.card_rows()` ·
-  `ui.json` 의 `msgs` 목록(이미 JP·KR 짝으로 저장돼 있다).
+  `ui.json` 의 `msgs`(해시 열쇠 — JP 는 디스크에서).
 
 ⚠ **원본 이미지만 있으면 된다**(빌드 불필요) — JP 는 디스크(또는 `work/derived/scn_jp` 덤프)
 에서, KR 은 전부 커밋된 JSON 정본(`script/*.json`)에서 온다. `check_prose_glossary.py` 가
@@ -49,11 +49,11 @@ _DIALOG_FILE = re.compile(r"^/BIN/ED[12]SCN\d+\.BIN$")
 
 def _slot_block(jp):
     """줄 전체가 사전 지명(place) 하나뿐인 씬 블록 — 칸이다."""
-    from glossary import table
+    from canon import table
 
     global _PLACES
     if _PLACES is None:
-        _PLACES = set(table("place"))
+        _PLACES = set(table("place", "eiyuu"))
     return jp.replace("\u3000", " ").strip() in _PLACES
 
 
@@ -108,19 +108,18 @@ def _hdr_pairs(mm):
 
 
 def _card_pairs(mm):
-    _tables, _pad, cards, _pad_to_jp, _msgs = U.load_canon()
+    cards, _pad_to_jp, _msgs = U.load_canon()
     if not cards:
         return
     for i, (path, _lba, _size, base, _span, jp, kr) in enumerate(U.card_rows(mm, cards)):
         yield f"card:{path}@0x{base:X}", jp, kr
 
 
-def _msg_pairs():
-    _tables, _pad, _cards, _pad_to_jp, msgs = U.load_canon()
-    for i, (jp, kr) in enumerate(msgs):
-        if not jp:
-            continue
-        yield f"msg:{i}", jp, kr
+def _msg_pairs(mm):
+    """저장/로드·본체 RAM 안내문 — 새턴 고유 문안(script)이라 JP 는 디스크에서 읽는다(`patch_ui.msg_scan`)."""
+    _cards, _pad_to_jp, msgs = U.load_canon()
+    for path, _l, _s, at, _sp, _pre, kr, jp in U.msg_scan(mm, msgs):
+        yield f"msg:{path}@0x{at:X}", jp, kr
 
 
 def _item_name_pairs(mm):
@@ -134,6 +133,54 @@ def _item_name_pairs(mm):
             if not jp:
                 continue
             yield f"name:{t['path']}@0x{off:X}", jp, kr
+
+
+def _ui_table_pairs():
+    """UI 표 칸(`patch_ui.rows()` — 필드 메뉴·전투 명령·환경설정·**지명 표 셋**…, 본체 둘).
+
+    🔴 **포인터 없는 고정 폭 칸이라 「남은 일본어」 게이트(포인터 대상만 훑는다)가 못 본다**(2026-10-08
+       전 세션 점검 — ps1-ed3 월드맵 지명 목록이 같은 구멍으로 일본어로 남았다). 이름 검사에라도 들여
+       「정본에 없는 지명」·「원문이 갈린 칸」을 잡는다. KR 이 없는 칸(`kr is None`)은 미번역으로 센다.
+    """
+    for key, name, i, at, _stride, jp, kr in U.rows():
+        if not jp:
+            continue
+        yield f"ui:{key}/{name}[{i}]@0x{at:X}", jp, kr
+
+
+def _title_pairs(mm):
+    """`TITLE.BIN` 오프닝·엔딩·스태프롤 자막(`script/title.json`) — 구간 안 저장 순서는 화면의 역순."""
+    import json
+
+    from dump_title import LABELS, _load, runs
+
+    with open(os.path.join(common.GAME_DIR, "script", "title.json"), encoding="utf-8") as fh:
+        kr = json.load(fh)
+    for off, recs in runs(_load(mm)):
+        name = LABELS[off]
+        # 🔴 스태프롤은 정본 대상이 아니다(마스터 2026-10-08 — 제작진은 게임마다 다르다). 「엔딩·스태프롤」 구간은 통째로 뺀다
+        #    (엔딩 낭독과 한 구간에 섞여 있어 가를 수 없다). 화면 일본어 게이트(`scan_untranslated.title_left`)엔 남아 있다.
+        if "스태프롤" in name:
+            continue
+        lines = kr.get(name, [])
+        for i, (t, p, _n) in enumerate(recs):
+            jp = t.strip("\u3000")
+            if not jp:
+                continue
+            j = len(lines) - 1 - i
+            yield f"title:{name}#{i}@0x{p:X}", jp, (lines[j] if 0 <= j < len(lines) else None)
+
+
+def _mon_name_pairs():
+    """ED2MON01~10 몬스터 이름 칸 171 — `patch_mon_names.slots()` (사전 `monster` 에서 읽는다)."""
+    from glossary import table
+
+    import patch_mon_names as M
+
+    mon = table("monster")
+    for path in M.FILES:
+        for t, jp, kr in M.slots(path, mon):
+            yield f"monname:{path}@0x{t:X}", jp, kr
 
 
 def pairs():
@@ -157,11 +204,13 @@ def pairs():
 
         for it in sys_pairs:
             yield (*it, "slot")
-        for fn in (_hdr_pairs, _card_pairs, _item_name_pairs):
+        for fn in (_hdr_pairs, _card_pairs, _item_name_pairs, _title_pairs, _msg_pairs):
             for it in fn(mm):
+                yield (*it, "slot")
+        for fn in (_ui_table_pairs, _mon_name_pairs):
+            for it in fn():
                 yield (*it, "slot")
     finally:
         mm.close()
         f.close()
-    for it in _msg_pairs():
-        yield (*it, "slot")
+

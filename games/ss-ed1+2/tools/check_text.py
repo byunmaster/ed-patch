@@ -120,11 +120,13 @@ def _name_josa_re():
     """고유명사(사전: 사람·몬스터·지명·아이템) 바로 뒤 조사 — **명사라 오탐이 없다**(일반 낱말 뒤 `는`·`이` 는 안 본다)."""
     global _NAME_JOSA
     if _NAME_JOSA is None:
-        import glossary
+        import canon
 
         names = set()
+        from names import person_table
+
         for cat in ("person", "monster", "place", "item"):
-            for v in glossary.table(cat).values():
+            for v in (person_table() if cat == "person" else canon.table(cat, "eiyuu")).values():
                 v = v.strip()
                 if len(v) >= 2 and "가" <= v[-1] <= "힣" and " " not in v:
                     names.add(v)
@@ -288,11 +290,9 @@ def axis_space_before_punct():
         for k, v in (d.get("lines") or {}).items():
             if isinstance(v, str) and _strip_before(v, _STRIP_BEFORE) != v:
                 out.append((fn, k, v[:34], _strip_before(v, _STRIP_BEFORE)[:34]))
-        for i, pair in enumerate(d.get("msgs") or []):
-            if _strip_before(pair[1], _STRIP_BEFORE) != pair[1]:
-                out.append(
-                    (fn, f"msgs[{i}]", pair[1][:34], _strip_before(pair[1], _STRIP_BEFORE)[:34])
-                )
+        for h, kr in (d.get("msgs") or {}).items():  # `{JP sha1: KR}`
+            if _strip_before(kr, _STRIP_BEFORE) != kr:
+                out.append((fn, f"msgs[{h}]", kr[:34], _strip_before(kr, _STRIP_BEFORE)[:34]))
     return out
 
 
@@ -322,9 +322,7 @@ def axis_hardcoded_names(_rows=None):
         with open(fp, encoding="utf-8") as f:
             d = json.load(f)
         into.update(d.get("lines", {}))
-        for jp2, kr2 in d.get("msgs", []) or []:
-            if jp2 and kr2:
-                into[patch_ui.sys_key(jp2)] = kr2
+        into.update(d.get("msgs", {}) or {})  # `ui.json` msgs = `{JP sha1: KR}`
 
     out, seen = [], set()
     _f, mm = common.open_image()

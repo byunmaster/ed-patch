@@ -71,11 +71,11 @@ class DrawStatus(unittest.TestCase):
 class StatusTable(unittest.TestCase):
     def test_every_label_has_both_sites(self):
         """라벨마다 자리가 **둘**이다 — 하나만 고치면 화면에 원문이 남는다."""
-        for fo, so, jp, kr in H.STATUS:
+        for fo, so, jp in H.STATUS:
             self.assertTrue(fo and so, f"{jp}: 자리가 비었다")
-            self.assertTrue(kr.strip(), f"{jp}: 우리 표기가 없다")
-        offs = [(H.FRAME, fo) for fo, _, _, _ in H.STATUS]
-        offs += [(H.STAT, so) for _, so, _, _ in H.STATUS]
+            self.assertTrue(H.status_kr(jp).strip(), f"{jp}: 우리 표기가 없다(정본 ui)")
+        offs = [(H.FRAME, fo) for fo, _, _ in H.STATUS]
+        offs += [(H.STAT, so) for _, so, _ in H.STATUS]
         self.assertEqual(len(offs), len(set(offs)), "같은 자리를 둘이 가졌다")
 
     def test_strides_differ_per_file(self):

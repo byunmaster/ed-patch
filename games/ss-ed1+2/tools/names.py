@@ -105,8 +105,8 @@ import sys as _sys
 
 _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "..", "..", "shared"))
 
-from glossary.names import ATTACHED_KINDS, KIND_WORDS  # noqa: E402,F401
-from glossary.names import dialog_place as space_place_dialog  # noqa: E402,F401
+from canon.names import ATTACHED_KINDS, KIND_WORDS  # noqa: E402,F401
+from canon.names import dialog_place as space_place_dialog  # noqa: E402,F401
 
 
 def space_kind(kr, sp="　"):
@@ -117,3 +117,17 @@ def space_kind(kr, sp="　"):
         if kr.endswith(w) and len(kr) > len(w):
             return kr[: -len(w)] + sp + w
     return kr
+
+
+def person_table():
+    """`{JP: KR}` — 인명 사전(`person`) 위에 **화자 호칭**(정본 `speaker`, ED1 먼저·ED2 다음)을 깐 표.
+
+    🔴 옛 `glossary` 다리가 `person` 에 화자 호칭을 섞어 돌려줬다(`司令官`·`兵士` — 이름 칸·변종 접미 `兵士Ａ`).
+       정본 입구(`canon`)로 옮기며 그 합침을 **여기 한 곳에 명시**한다. 같은 열쇠는 인명이 이긴다.
+    """
+    import canon
+
+    roles = dict(canon.table("speaker", "ed1"))
+    for k, v in canon.table("speaker", "ed2").items():
+        roles.setdefault(k, v)
+    return {**roles, **canon.table("person", "eiyuu")}

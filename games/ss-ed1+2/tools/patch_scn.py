@@ -211,9 +211,9 @@ def _mon_slots(path):
     if not path.startswith("/BIN/ED2MON"):
         return frozenset()
     import patch_mon_names
-    from glossary import table
+    from canon import table
 
-    return frozenset(t for t, _jp, _kr in patch_mon_names.slots(path, table("monster")))
+    return frozenset(t for t, _jp, _kr in patch_mon_names.slots(path, table("monster", "eiyuu")))
 
 
 # 🔴 **옮기면 안 되는 자리** — 코드가 포인터가 아니라 **절대주소로 집는** 칸이 있다.

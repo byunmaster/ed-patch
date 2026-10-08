@@ -43,7 +43,7 @@ import dump_ui
 import font
 from font import byte_len, to_bytes
 from fonts import convert_chars
-from glossary import lookup, table
+from canon import lookup, table
 
 CANON = os.path.join(common.GAME_DIR, "script", "ui.json")
 SYS_CANON = os.path.join(common.GAME_DIR, "script", "system.json")
@@ -87,23 +87,54 @@ def _chapter_title(jp):
     return None
 
 
+def _cards():
+    """챕터 카드 `[JP 제목, 번호 라벨, KR 제목]` — 🔴 전부 정본(`shared/canon` chapter)에서 읽는다.
+
+    제목은 `JP제목` 열쇠, 번호 라벨(`제１장`·`종장`·`서장`)은 `JP제목@번호` 열쇠다. ED1 정본 먼저, ED2 다음 —
+    예전엔 `ui.json` 이 12장 목록을 JP 열쇠로 들고 있었다(마스터 2026-10-08 — 자기 표 금지).
+    """
+    out = []
+    for title in ("ed1", "ed2"):
+        for jp, ti in shared_canon.table("chapter", title).items():
+            if "@" in jp:
+                continue
+            # 번호 라벨(`제목@번호`)이 있는 장 제목만 — 정본엔 다른 기종의 장 표기(`第１章` 등)도 들어 있다
+            no = shared_canon.lookup(f"{jp}@번호", "chapter", title)
+            if no:
+                out.append([jp, no, ti])
+    assert len(out) == 12, f"정본 chapter 의 번호 붙은 장 제목이 12 가 아니다: {len(out)}"
+    return out
+
+
+def _canon_at(category, place):
+    """정본 `category` 의 `원문@자리` 열쇠 중 그 자리 것 → `{원문: KR}` (ED1 먼저, ED2 다음).
+
+    `@시스템` = 시스템 문자열 스캔이 통째로 집는 라벨(지명 접미 6칸·`メニュートップ`). 예전엔 `system.json` 이
+    이 JP→KR 을 해시 열쇠로 들고 있었다. (새턴 본체 RAM·세이브 안내문 `msgs` 는 새턴 고유 문안이라 정본이 아니다 —
+    `ui.json` 의 해시 열쇠 script.)
+    """
+    out = {}
+    for title in ("ed1", "ed2"):
+        for k, v in shared_canon.table(category, title).items():
+            if k.endswith("@" + place):
+                out.setdefault(k[: -len(place) - 1], v)
+    return out
+
+
+def _canon_sys_lines():
+    """`{sys_key(JP): KR}` — 시스템 문자열 스캔에 정본 라벨을 보탠다(`_canon_at("ui", "시스템")`)."""
+    return {sys_key(jp): kr for jp, kr in _canon_at("ui", "시스템").items()}
+
+
 def load_canon():
+    """`(cards, pad_to_jp, msgs{sha1: KR})` — 🔴 표 칸·카드 목록을 이 폴더에 두지 않는다. JP 는 원본에서 읽고 KR 은 정본이 갖는다
+    (`_ui_label` · `_cards`; 마스터 2026-10-08 — 워커는 JP→KR 표를 자기 폴더에 두지 않는다)."""
     with open(CANON, encoding="utf-8") as f:
         d = json.load(f)
-    tables = {
-        name: [(jp, _ui_label(jp, name) or kr) for jp, kr in rows]
-        for name, rows in d["tables"].items()
-    }
-    # 챕터 카드 제목도 정본(`shared/canon` chapter — ED1 카드 표기를 모든 기종이 따른다)이 갖는다. 번호 라벨(`제１장`)만 여기.
-    cards = [
-        [jp, no, _chapter_title(jp) or title] for jp, no, title in d.get("cards", [])
-    ]
     return (
-        tables,
-        d.get("pad", {}),
-        cards,
+        _cards(),
         d.get("pad_to_jp", []),
-        d.get("msgs", []),
+        d.get("msgs", {}),
     )
 
 
@@ -167,7 +198,7 @@ def _internal_key(jp):
 #    예전엔 여기 JP 다섯(`_NO_SUFFIX_PLACES`)을 코드에 들고 접미를 벗겨 재조회했다 — 같은 지식을 코드에 둔 것이었다.
 def _place_lookup(jp, cat):
     """사전(`place`)을 먼저, 없으면 정본 `ui` 의 칸 꼴(`~の町` 구운 꼴)."""
-    kr = lookup(jp, cat)
+    kr = lookup(jp, cat, "eiyuu")
     if kr is not None or cat != "place":
         return kr
     return shared_canon.lookup(jp, "ui", "ed2") or shared_canon.lookup(jp, "ui", "ed1")
@@ -254,7 +285,7 @@ def _fit_place(kr, room, suffixed, where):
 
 def rows():
     """`(파일키, 표이름, 색인, 오프셋, stride, JP, KR|None)` — 원본에서 읽어 정본과 짝짓는다."""
-    tables, pad, _cards, pad_to_jp, _msgs = load_canon()
+    _cards, pad_to_jp, _msgs = load_canon()
     out = []
     for key, path in dump_ui.FILES.items():
         buf = common.extract(path)
@@ -264,23 +295,16 @@ def rows():
             if off is None:
                 continue
             cnt = n2 if (col == 1 and n2) else n
-            canon = tables[name]
-            assert len(canon) >= cnt, f"{name}: 정본 {len(canon)}줄 < 원본 {cnt}줄"
+            table_rows = list(dump_ui.read_table(buf, off, stride, cnt))
+            canon = [(jp_raw, _ui_label(jp_raw, name)) for jp_raw, _at, _sl in table_rows]
             # 🔴 값이 붙는 표는 **JP 라벨 폭에 맞춰 채운다**(정본 `pad_to_jp` 주석).
             #   한글이 더 넓은 행이 있으면 표 전체를 그만큼 함께 민다.
             shift = 0
             if name in pad_to_jp:
                 shift = max((_half(k) - _half(j) for j, k in canon[:cnt] if k), default=0)
                 shift = max(shift, 0)
-            for i, (jp_raw, at, _slack) in enumerate(dump_ui.read_table(buf, off, stride, cnt)):
-                jp, kr = canon[i]
-                # 🔴 **사전조건** — 원문이 우리 생각과 다르면 그 자리에서 실패한다.
-                #   오프셋을 손으로 적었으니 배치가 어긋나면 엉뚱한 자리를 덮는다.
-                assert jp_raw == jp, (
-                    f"{key}/{name}[{i}] 0x{at:06x}: 원문이 다르다 {jp_raw!r}≠{jp!r}"
-                )
-                if kr and (w := pad.get(name)):
-                    kr = kr + PAD * (w - len(kr))
+            for i, (jp, at, _slack) in enumerate(table_rows):
+                kr = canon[i][1]
                 if kr and name in pad_to_jp:
                     kr = _pad_to(kr, _half(jp) + shift)
                 out.append((key, name, i, at, stride, jp, kr))
@@ -308,7 +332,9 @@ def rows():
             z = rec.find(b"\x00")
             assert z > 0, f"{key} 0x{at:06x}: 인명 자리에 널이 없다"
             jp = rec[:z].decode("cp932")
-            kr = lookup(jp, "person")
+            from names import person_table
+
+            kr = person_table().get(jp)
             assert kr, f"{key} 0x{at:06x}: 정본에 없는 인명 {jp!r}"
             # ⚠ 필드 **마지막 바이트가 `09`** 인 꼴이 있다(뜻은 모른다 — 씬 헤더도 같다).
             #   그 자리는 남겨야 하므로 쓰는 폭을 한 칸 줄인다. 널 패딩으로 덮으면
@@ -482,8 +508,8 @@ def check_dotart_codes(rs, scn, ntabs, sysm):
     """🔴 **게이트** — 도트가 점유한 코드가 실제 화면 글과 겹치면 그 글이 깨진다(관리자
     요청 2026-10-05, 「이식할 때 누출 검사를 같이 건다」). `DOTART_PLACES` 를 늘릴 때마다
     돈다."""
-    d = json.load(open(CANON, encoding="utf-8"))
-    cards_msgs_kr = [e[-1] for e in d.get("cards", []) + d.get("msgs", [])]
+    cards, _pj, msgs = load_canon()
+    cards_msgs_kr = [e[-1] for e in cards] + list(msgs.values())
     text_codes = dotart_text_codes(rs, scn, ntabs, sysm, cards_msgs_kr)
     clash = dotart_claimed_codes() & text_codes
     assert not clash, f"도트 코드가 실제 화면 글과 겹친다: {sorted(hex(c) for c in clash)}"
@@ -534,7 +560,7 @@ def scn_header(d, i, places):
 
 def scn_rows(mm):
     """`[(파일, lba, size, 시작, 필드길이, JP, KR, 꼬리바이트)]`."""
-    places = table("place")
+    places = table("place", "eiyuu")
     out = []
     for path, lba, size in common.iso_files(mm):
         if not SCN_RE.match(path):
@@ -624,17 +650,16 @@ def card_rows(mm, cards):
     return out
 
 
-def msg_rows(mm, msgs):
-    """SAVE/LOAD·본체 RAM 문구 — `[(파일, lba, size, 오프셋, 여유, JP, KR)]`.
+def msg_scan(mm, msgs):
+    """SAVE/LOAD·본체 RAM 문구 — `[(파일, lba, size, 오프셋, 여유, 앞바이트, KR, JP)]`. `msgs` = `{JP sha1: KR}`.
 
     🔴 **자리를 손으로 안 적는다.** 같은 JP 가 한 파일 안에 여러 번, 편마다 또 한 벌씩 있다
       (실측 61 자리 / 고유 30 종). 하나만 고치면 어떤 화면에서만 일본어가 남는다.
     ⚠ **긴 것부터 맞춘다** — 짧은 문구가 긴 문구의 부분 문자열인 자리가 있다
       (`ロードに失敗しました` ⊂ `ロードに失敗しました。`). 짧은 쪽을 먼저 물리면 긴 문장을
-      잘라 먹는다(PS1 이 같은 자리에서 물렸다 — `patch_sys_ui.MSGS` 주석).
+      잘라 먹는다(PS1 이 같은 자리에서 물렸다 — `patch_sys_ui.MSGS` 주석). `_sys_match` 가 가장 앞선(=가장 긴) 접미를 고른다.
+    🔴 JP 원문 평문을 정본에 안 둔다 — 열쇠는 sha1 이고 원문은 디스크에서 읽는다(`system.json` 과 같은 꼴).
     """
-    want = sorted(((jp, kr) for jp, kr in msgs), key=lambda x: -len(x[0]))
-    enc = [(jp, kr, jp.encode("cp932")) for jp, kr in want]
     out, seen = [], set()
     have = {p for p, _l, _s in common.iso_files(mm)}
     for path in list(dump_ui.FILES.values()) + [p for p in SYS_EXTRA_FILES if p in have]:
@@ -654,18 +679,24 @@ def msg_rows(mm, msgs):
             #   (실측: `\x06\x0b華\x06\x07zﾘゲームの記録が ありません。`). 통째 비교로는
             #   그런 자리를 통째로 놓치고, 앞 바이트를 다시 인코딩하면 포인터가 깨진다.
             #   그래서 **뒤에서 맞추고 앞은 원본 바이트 그대로** 이어 붙인다.
-            run = d[i:j]
-            hit = next(((jp, kr, b) for jp, kr, b in enc if run.endswith(b)), None)
+            run = bytes(d[i:j])
+            hit = _sys_match(run, msgs)
             if hit:
+                k, jp = hit
                 nxt = j
                 while nxt < len(d) and d[nxt] == 0:
                     nxt += 1
-                seen.add(hit[0])
-                out.append((path, lba, size, i, nxt - i, run[: len(run) - len(hit[2])], hit[1]))
+                seen.add(sys_key(jp))
+                out.append((path, lba, size, i, nxt - i, run[:k], msgs[sys_key(jp)], jp))
             i = j
-    missing = [jp for jp, _k in want if jp not in seen]
+    missing = [h for h in msgs if h not in seen]
     assert not missing, f"디스크에서 못 찾은 문구 {len(missing)}: {missing[:3]}"
     return out
+
+
+def msg_rows(mm, msgs):
+    """`msg_scan` 에서 JP 를 뗀 7값 — `[(파일, lba, size, 오프셋, 여유, 앞바이트, KR)]`."""
+    return [r[:7] for r in msg_scan(mm, msgs)]
 
 
 # ── 고유명사 표 — 아이템 · 주문 · 몬스터 (2026-08-24) ─────────────────────────
@@ -728,7 +759,9 @@ def name_canon(what):
     first = {"몬스터": "monster", "아이템": "item", "주문": "item"}[what]
     canon = {}
     for cat in (first, "item", "monster", "person", "place"):
-        for k, v in table(cat).items():
+        from names import person_table
+
+        for k, v in (person_table() if cat == "person" else table(cat, "eiyuu")).items():
             canon.setdefault(k, v)
             canon.setdefault(_nname(k), v)
     return canon
@@ -901,7 +934,7 @@ def sys_rows(mm):
     """
     with open(SYS_CANON, encoding="utf-8") as f:
         doc = json.load(f)
-    canon, exact = doc["lines"], set(doc.get("exact", []))
+    canon, exact = {**_canon_sys_lines(), **doc["lines"]}, set(doc.get("exact", []))
     skip = {}
     for key, off, n, _a, _w in NAME_TABLES:
         skip.setdefault(dump_ui.FILES[key], []).append((off, n))
@@ -1448,8 +1481,8 @@ def main():
     rs = rows()
     _f0, mm0 = common.open_image()
     scn = scn_rows(mm0)
-    cards = card_rows(mm0, load_canon()[2])
-    msgs = msg_rows(mm0, load_canon()[4])
+    cards = card_rows(mm0, load_canon()[0])
+    msgs = msg_rows(mm0, load_canon()[2])
     ntabs = name_rows(mm0)
     names = [r[2] for t in ntabs for r in t["recs"] if r[2]]
     sysm = sys_rows(mm0)

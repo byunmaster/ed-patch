@@ -75,7 +75,7 @@ sys.path.insert(
 
 import common
 import canon as shared_canon
-from glossary import table
+from canon import table
 from text.line_key import key as line_key
 
 MARK = re.compile(r"(%[csd])")
@@ -95,7 +95,7 @@ def _names():
     for t in ("ed2", "ed1"):
         out.update(shared_canon.table("speaker", t))
     for cat in ("person", "monster", "place", "item"):
-        out.update(table(cat))
+        out.update(table(cat, "eiyuu"))
     return out
 
 
@@ -705,7 +705,7 @@ def _place_forms():
     if _PLACE_FORMS is None:
         from names import ATTACHED_KINDS, space_place_dialog
 
-        vals = set(table("place").values())
+        vals = set(table("place", "eiyuu").values())
         _PLACE_FORMS = {v: w for v in vals if (w := space_place_dialog(v)) != v}
         # 「성」·「섬」은 붙인다 — 띄어 쓴 꼴(`루디아 성`)이 문안에 있으면 붙인다
         _PLACE_FORMS.update(
@@ -735,9 +735,9 @@ def _keep():
     if _KEEP is None:
         names = {"신의 아들"}
         for cat in ("item", "monster"):
-            names.update(table(cat).values())
+            names.update(table(cat, "eiyuu").values())
         for cat in ("person", "place"):
-            names.update(v for k, v in table(cat).items() if _KATA.search(k))
+            names.update(v for k, v in table(cat, "eiyuu").items() if _KATA.search(k))
         # 대사 꼴로 띄운 지명은 **전부** 한 덩어리다(조판 규칙 ④ 묶음 안 끊기 — 관리자 중계
         # 2026-09-27: 가타카나 원명뿐 아니라 `국경의 동굴`·`용의 알` 도. PS1 도 같게 간다)
         names.update(_place_forms().values())

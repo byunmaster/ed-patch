@@ -40,7 +40,7 @@ sys.path.insert(
 import common
 import dump_scr
 from fonts import galmuri
-from glossary import lookup
+from canon import lookup
 
 REVIEW = os.path.join(common.REVIEW_DIR, "scr")
 
@@ -82,15 +82,30 @@ ATO_BG, ATO_MAIN, ATO_SHADOW = 39, 35, 37  # 남색 바탕 / 밝은 파랑 획 /
 #    0(투명) 대 39(패널 남색)다. 그래서 `sweep()` 의 **바이트 지문 훑기가 못 잡았다**
 #    (원본 지문이 그대로 남아 있나만 보니까). 아래 `sweep_shape()` 가 그 구멍을 메운다.
 STATUS_STRIDE = {FRAME: ATO_STRIDE, STAT: 24}
-STATUS = [  # (FRAME 오프셋, STAT 오프셋, 원문, 우리 표기)
-    (0x2080, 0x0C00, "毒", "독"),
-    (0x2180, 0x0D80, "黙", "묵"),
-    (0x2600, 0x1380, "呪", "주"),
-    (0x1E80, 0x0900, "眠", "잠"),
-    (0x1F80, 0x0A80, "乱", "혼"),  # 정발 표기 — 음차 「란」이 아니다
-    (0x2280, 0x0F00, "守", "수"),
-    (0x2380, 0x1080, "跳", "반"),  # 跳ね返す = 반사
+# 🔴 표기(독·묵·주…)는 **정본 `shared/canon` ui** 가 갖는다 — 여기엔 자리와 원문만 둔다(마스터 2026-10-08,
+#    워커는 자기 표를 들지 않는다). `乱`=혼은 정발 표기(음차 「란」이 아니다), `跳`=반 은 跳ね返す(반사).
+STATUS = [  # (FRAME 오프셋, STAT 오프셋, 원문)
+    (0x2080, 0x0C00, "毒"),
+    (0x2180, 0x0D80, "黙"),
+    (0x2600, 0x1380, "呪"),
+    (0x1E80, 0x0900, "眠"),
+    (0x1F80, 0x0A80, "乱"),
+    (0x2280, 0x0F00, "守"),
+    (0x2380, 0x1080, "跳"),
 ]
+
+
+def status_kr(jp):
+    """상태이상 한 글자 라벨의 우리 표기 — 정본 ui(ED1 먼저, 없으면 ED2). 없으면 실패한다."""
+    import canon
+
+    for title in ("ed1", "ed2"):
+        kr = canon.lookup(jp, "ui", title)
+        if kr is not None:
+            return kr
+    raise SystemExit(f"정본 ui 에 상태이상 라벨이 없다: {jp!r} — 관리자에게 후보로 요청한다")
+
+
 STATUS_BOX = 10  # 10×10 · 스트라이드는 `ATO_STRIDE` 와 같다
 
 # `(x, 잉크, 음영)` — **오른쪽으로 한 칸 밀어** `ＨＰ`·`ＭＰ` 와 세로줄을 맞춘다
@@ -374,7 +389,7 @@ def main():
 
     made = []
     for path, start, jp in PANELS:
-        kr = lookup(jp, "person")
+        kr = lookup(jp, "person", "eiyuu")
         assert kr, f"고유명사 정본에 없다: {jp}"
         old = panel_px(parsed[path]["cells"], start)
         new, n = draw(old, kr, bdf)
@@ -409,7 +424,8 @@ def main():
 
     # ── 상태이상 라벨 일곱 × **파일 둘** (`/FRAME.DAT` · `/STAT.DAT`)
     stat, shown = [], []
-    for fo, so, jp, kr in STATUS:
+    for fo, so, jp in STATUS:
+        kr = status_kr(jp)
         for path, off in ((FRAME, fo), (STAT, so)):
             stride = STATUS_STRIDE[path]
             old_s = box(raw[path], off, STATUS_BOX, STATUS_BOX, stride)
@@ -506,16 +522,16 @@ def sweep(dst):
     fr = common.extract(FRAME, mm0)
     mm0.close()
     # 지문은 **잉크가 있는 행만** 잇는다(0행은 빈 줄이라 남의 스프라이트와도 맞는다).
-    sigs = {"あと": fr[ATO_OFF + ATO_STRIDE : ATO_OFF + ATO_STRIDE * ATO_H]}
-    for fo, _so, jp, _kr in STATUS:
-        sigs[jp] = fr[fo + ATO_STRIDE : fo + ATO_STRIDE * STATUS_BOX]
+    sigs = [("あと", fr[ATO_OFF + ATO_STRIDE : ATO_OFF + ATO_STRIDE * ATO_H])]
+    for fo, _so, jp in STATUS:
+        sigs.append((jp, fr[fo + ATO_STRIDE : fo + ATO_STRIDE * STATUS_BOX]))
     _f2, mm = common.open_image(dst)
     left = []
     for name, lba, size in common.iso_files(mm):
         if not 0 < size <= 8 << 20:
             continue
         blob = common.read_extent(mm, lba, size)
-        left += [f"{jp}@{name}" for jp, sig in sigs.items() if blob.find(sig) >= 0]
+        left += [f"{jp}@{name}" for jp, sig in sigs if blob.find(sig) >= 0]
     mm.close()
     assert not left, f"원본 라벨이 남았다 — {left}"
     n2 = sweep_shape(dst)
@@ -555,7 +571,7 @@ def sweep_shape(dst, min_run=6, strides=(10, 11, 12, 14, 16, 20, 24, 32, 40, 48)
     mm0.close()
     n = STATUS_BOX
     want = {}
-    for fo, _so, jp, _kr in STATUS:
+    for fo, _so, jp in STATUS:
         m = box(fr, fo, n, n) != 0
         a = _anchor(m)
         if a[1] >= min_run:

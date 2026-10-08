@@ -62,7 +62,7 @@ def load_canon():
     """카드 `[JP, 번호 라벨, 제목]` — 제목은 정본(`shared/canon` chapter)이 채운다(`patch_ui.load_canon`)."""
     import patch_ui
 
-    return patch_ui.load_canon()[2]
+    return patch_ui.load_canon()[0]
 
 
 def plates(mm, files):

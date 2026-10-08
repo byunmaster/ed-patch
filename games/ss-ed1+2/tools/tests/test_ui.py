@@ -1,12 +1,12 @@
 """HUD·시스템 메뉴 정본 회귀 — **원본 없이 돈다**(레포 규약).
 
 여기서 보는 건 셋이다:
-  ① 정본이 표마다 원본과 같은 줄 수인가 (한 줄 밀리면 엉뚱한 칸을 덮는다)
-  ② 문안이 레코드 폭에 드는가 (넘치면 다음 칸을 먹어 메뉴가 통째로 밀린다)
-  ③ 같은 자리를 두 표가 겹쳐 쓰지 않는가
+  ① ui.json 에 자기 표(JP→KR 칸)가 없는가
+  ② 같은 자리를 두 표가 겹쳐 쓰지 않는가
+  ③ 핀·표 이주 금지
 
 ⚠ **원문 대조는 여기서 못 한다** — 원본 디스크가 필요하다. 그건 `patch_ui.py` 의
-  사전조건(`rows()` 의 assert)이 매번 본다.
+  사전조건(폭 `assert`·되읽기)이 매번 본다.
 """
 
 import itertools
@@ -22,51 +22,23 @@ import dump_ui
 import patch_ui
 
 sys.path.insert(0, os.path.join(TOOLS, "..", "..", "..", "shared"))
-from patch_ui import CANON, PAD, rec_len
+from patch_ui import CANON
 
 
 class TestUiCanon(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
+    def test_자기_표가_없다(self):
+        """🔴 ui.json 에 JP→KR 표 칸(`tables`)을 두지 않는다(마스터 2026-10-08) — 칸은 원본에서, 값은 정본에서 읽는다."""
         with open(CANON, encoding="utf-8") as f:
             d = json.load(f)
-        # 🔴 값은 `shared/canon` 정본이 채운다(사전 적용 2단계) — 구조 파일이 아니라 **채워진 표**를 본다.
-        cls.tables, cls.pad = patch_ui.load_canon()[0], d.get("pad", {})
-
-    def test_표_값은_정본에서_온다(self):
-        """ui.json 의 KR 은 정본에 없는 칸(`跳`)만 남는다 — 새로 자기 값을 들이면 이 테스트가 운다."""
-        with open(CANON, encoding="utf-8") as f:
-            raw = json.load(f)["tables"]
-        own = [(n, jp, kr) for n, rows in raw.items() for jp, kr in rows if kr is not None]
-        self.assertEqual(own, [("HUD 상태이상", "跳", "반")], "자기 표에 값이 늘었다 — 정본에 올린다")
-        for n, rows in raw.items():
-            for jp, kr in rows:
-                if kr is None and patch_ui._ui_label(jp, n) is None:
-                    self.assertTrue(all(ord(c) < 0x3000 or 0xFF01 <= ord(c) <= 0xFF5E or c == "\u3000" for c in jp), (n, jp))
+        self.assertNotIn("tables", d, "자기 표가 되살아났다 — 정본에 올린다")
 
     def test_도트_지명은_사전_값이다(self):
         """`DOTART_PLACES` 는 KR 이 열쇠다 — 사전 값이 바뀌면 도안이 조용히 안 붙는다."""
-        from glossary import table
+        from canon import table
 
-        vals = set(table("place").values())
+        vals = set(table("place", "eiyuu").values())
         for k in patch_ui.DOTART_PLACES:
             self.assertIn(k, vals, f"사전 place 값에 없는 도트 지명: {k}")
-
-    def test_표마다_줄_수가_원본과_같다(self):
-        for name, _ed, ed2, _stride, n, n2 in dump_ui.TABLES:
-            want = max(n, n2 or 0) if ed2 else n
-            self.assertIn(name, self.tables, f"정본에 표가 없다: {name}")
-            self.assertEqual(len(self.tables[name]), want, name)
-
-    def test_문안이_레코드_폭에_든다(self):
-        for name, _ed, ed2, stride, n, n2 in dump_ui.TABLES:
-            cnt = max(n, n2 or 0) if ed2 else n
-            for i, (_jp, kr) in enumerate(self.tables[name][:cnt]):
-                if kr is None:
-                    continue
-                if w := self.pad.get(name):
-                    kr = kr + PAD * (w - len(kr))
-                self.assertLessEqual(rec_len(kr), stride, f"{name}[{i}] {kr!r}")
 
     def test_자리가_겹치지_않는다(self):
         """오프셋을 손으로 적었다 — 표 둘이 같은 칸을 물면 뒤엣것이 앞엣것을 지운다."""
@@ -81,16 +53,6 @@ class TestUiCanon(unittest.TestCase):
                     for b in range(off + i * stride, off + (i + 1) * stride):
                         self.assertNotIn(b, seen, f"0x{b:06x}: {name} 과 {seen.get(b)} 가 겹친다")
                         seen[b] = name
-
-    def test_null_은_영문_표기뿐이다(self):
-        """`null`(원본 유지)은 ＯＮ·ＥＰ 같은 영문 자리에만 쓴다 — 일본어가 남으면 안 된다."""
-        for name, rows in self.tables.items():
-            for i, (jp, kr) in enumerate(rows):
-                if kr is None:
-                    self.assertTrue(
-                        all(ord(c) < 0x3000 or 0xFF01 <= ord(c) <= 0xFF5E or c == "　" for c in jp),
-                        f"{name}[{i}] {jp!r} 가 그대로 남는다",
-                    )
 
 
 class PinnedInPlace(unittest.TestCase):

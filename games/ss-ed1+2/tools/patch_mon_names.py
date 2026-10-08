@@ -48,7 +48,7 @@ sys.path.insert(
 
 import common
 import dump_scn
-from glossary import table
+from canon import table
 from names import HALF, MARKS, PRIME, split_mark  # noqa: F401
 from patch_ui import slot_plan
 
@@ -107,7 +107,7 @@ def encode(kr, plan):
 def main():
     apply = "--apply" in sys.argv
     common.verify_source()
-    mon = table("monster")
+    mon = table("monster", "eiyuu")
     plans = {p: slots(p, mon) for p in FILES}
     krs = [kr for rows in plans.values() for _t, _jp, kr in rows]
     plan = slot_plan(krs)  # ⚠ 슬롯 정본은 여기서 안 늘린다(`patch_ui --refresh` 몫)
