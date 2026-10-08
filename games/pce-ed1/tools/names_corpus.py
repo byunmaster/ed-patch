@@ -17,6 +17,7 @@
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -39,6 +40,36 @@ def _load(p: Path):
     return json.loads(p.read_text("utf-8")) if p.exists() else {}
 
 
+_TAG = re.compile(r"\{([0-9A-Fa-f]{2,})\}")
+_HARD = re.compile(r"\{(?:00|06|07|0[Ff][0-9A-Fa-f]*)\}")  # 종료·점프
+_END = re.compile(r"(?:\{(?:00|06|07|0[Ff][0-9A-Fa-f]*)\})+$")
+
+
+def _plain(s):
+    """제어 태그를 걷어 정본의 줄 전체 대조(`^…$`)에 걸리게 한다 — 태그가 줄 끝에 붙어 정본 검사가 전투·시스템 문구를 못 쟀다(md 실측 10-08).
+    `{02}`(대상 이름 자리) → `{name}`, 줄바꿈·색·대기 따위는 글이 아니라 뺀다. 🔴 **종료·점프(`00`·`06`·`07`·`0F…`)는 뺄 수 없다** —
+    메시지 둘이 이어 붙어 정본 열쇠가 거짓으로 걸린다(「의 독이 사라졌다.」+「…입구로 돌아갑니다」). 끝에 오면 버리고, 가운데면 `┃` 로 막는다."""
+    if not isinstance(s, str):
+        return s
+    s = _END.sub("", s)
+    s = _HARD.sub("┃", s)
+    return _TAG.sub(lambda m: "{name}" if m.group(1).upper() == "02" else "", s)
+
+
+_PARTICLES = "をはがにのとでもへや"
+
+
+def _pair(jp, kr):
+    """전투·시스템 한 줄 → (원문, 우리 줄) — 태그를 걷고(`_plain`), **이름이 앞에 숨은 조각**(「は逃げ出した。」 — 엔진이 런타임에 이름을 앞에 붙인다)에는
+    양쪽에 `{name}` 을 앞세운다. 안 그러면 정본 열쇠(`{name}は逃げ出した。`)의 줄 전체 대조가 조각 줄에 안 걸려 **전투 문구의 절반을 못 쟀다**(느슨 203 중 엄격 114)."""
+    jp, kr = _plain(jp), _plain(kr)
+    if isinstance(jp, str) and jp[:1] in _PARTICLES:
+        jp = "{name}" + jp
+        if kr is not None:
+            kr = "{name}" + kr
+    return jp, kr
+
+
 def _scenes():
     for p in sorted((DERIVED / "messages").glob("scn*.json")):
         kr = M.load_translations(int(p.stem[3:]))  # 입장 배너(scn000)는 사전에서 풀린 문안
@@ -56,7 +87,7 @@ def _scenes():
 def _battle():
     kr = _load(SCRIPT / "sys" / "battle.json").get("messages", {})
     for k, r in _load(DERIVED / "battle" / "messages.json").items():
-        yield (f"battle:{k}", r["tokens"], kr.get(k), "dialog")
+        yield (f"battle:{k}", *_pair(r["tokens"], kr.get(k)), "dialog")
     names, _missing = battle.kr_names()
     for jp, spots in battle.names().items():
         for rel, blk, off in spots:
@@ -66,7 +97,7 @@ def _battle():
 def _system():
     msgs = _load(SCRIPT / "sys" / "sysmsg.json").get("messages", {})
     for r in S.read_sysmsg():
-        yield (f"sysmsg:{r['addr']:04X}", r["jp"], msgs.get(r["key"]), "dialog")
+        yield (f"sysmsg:{r['addr']:04X}", *_pair(r["jp"], msgs.get(r["key"])), "dialog")
     names = _load(SCRIPT / "sys" / "names.json")
     gl = sysbuild.glossary()
     for fam in S.FIXED:
