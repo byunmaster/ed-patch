@@ -459,16 +459,19 @@ PLACE_CELLS = 6  # 원문이 쓰는 칸(`%-12s` 가 이만큼 채운다)
 #    끝의 「LV」 가 사라졌다(2026-10-05 스테이트 주입 실측, 줄 버퍼 길이가 고정이다). 그래서 6자에서 끊고
 #    넘는 이름은 띄어쓰기를 뺀다(지금은 「수정호오솔길」 하나뿐이다 — 대사·본체 표엔 안 나오는 이름).
 PLACE_MAX = 6
-# 정본(glossary_ed3.json 의 place)에 없는 둘 — 실행파일 지명 표엔 없고 이 타이틀 표에만 있다.
+# 열쇠 목록(glossary_keys_ed3.json 의 place)에 없는 둘 — 실행파일 지명 표엔 없고 이 타이틀 표에만 있다.
 # 마스터 확정(10-05): 표기는 둘 다 맞다. 지명은 띄어쓰기를 살린다 — DOS 정발판 HUD 의 「독늪지대」는
 # 정발이 칸 예산으로 붙인 것이고 우리 정본 규칙(띄어쓰기 + 칸이 모자랄 때만 붙임)과 다르다.
-PLACE_EXTRA = {"冬至の路": "동지의 길", "毒沼地帯": "독늪 지대"}
+# 슬롯 지명 중 낱말 표 열쇠(`glossary_keys_ed3.json`)에 없는 둘 — 표기는 사전에서 읽는다(열쇠만 둔다).
+PLACE_EXTRA = ("冬至の路", "毒沼地帯")
 
 
 def _place_kr(jp):
     import glossary
 
-    kr = glossary.load("ed3")["categories"]["place"].get(jp) or PLACE_EXTRA.get(jp)
+    kr = glossary.load("ed3")["categories"]["place"].get(jp)
+    if kr is None and jp in PLACE_EXTRA:
+        kr = glossary.lookup_shared("ed3", jp, "place")
     if kr is None or not all("가" <= c <= "힣" or c == " " for c in kr):
         return None  # 「Ｆａｌｃｏｍ」 같은 칸은 원문 그대로 둔다
     if len(kr) > PLACE_MAX:
