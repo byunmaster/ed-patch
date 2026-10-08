@@ -81,7 +81,17 @@ for g in $GAMES; do
   canon_out=$("$PY" "$ROOT/scripts/check/check_canon.py" --game "$g" 2>&1) || canon_rc=$?
   printf '%s\n' "$canon_out" | sed 's/^/  /'
   if [ "$canon_rc" -eq 1 ]; then fail=1; fi
+  # 저작권 — 긴 일본어 덩이(원문 문장)가 기준선보다 늘면 실패(래칫, 10-09 저작권 정리 라운드)
+  cr_rc=0
+  cr_out=$("$PY" "$ROOT/scripts/check/check_copyright.py" --game "$g" 2>&1) || cr_rc=$?
+  printf '%s\n' "$cr_out" | sed 's/^/  /'
+  [ "$cr_rc" -eq 0 ] || fail=1
 done
+echo "── 저작권(공용)"
+cr_rc=0
+cr_out=$("$PY" "$ROOT/scripts/check/check_copyright.py" --common 2>&1) || cr_rc=$?
+printf '%s\n' "$cr_out" | sed 's/^/  /'
+[ "$cr_rc" -eq 0 ] || fail=1
 
 # 게임 브랜치가 공용·남의 게임을 건드렸나 — 공용 코드·남의 게임은 알림만(급하면 어길 수 있어야 한다).
 # 🔴 단 **정본 사전(shared/glossary·lore)을 고치면 실패**다(마스터 2026-10-07 — 워커는 독자 데이터를 못 갖는다).

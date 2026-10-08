@@ -1,0 +1,6 @@
+{
+ "_doc": "check_copyright 래칫 — 파일별 긴 일본어 덩이 수. 늘면 실패, 줄면 --freeze.",
+ "games/md-ed1/docs/devlog.md": 1,
+ "games/md-ed1/docs/status.md": 2,
+ "games/md-ed1/tools/tables.py": 1
+}
