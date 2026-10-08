@@ -812,11 +812,15 @@ def test_tool_tables_match_shared_glossary():
     import patch_items
     import patch_sys_ui
 
+    # 🔴 아이템·몬스터·인물·화자 호칭은 이제 **사전·정본에서 읽는다**(2026-10-08) — 표가 사전 자신이라 대조할 사본이 없다.
+    #    남은 사본(지명 칸 표 등)만 묶는다. 화자 호칭(역할어)은 정본 `canon.table("speaker")` 와 같아야 한다(ED1 이 ED2 를 덮음).
+    import canon
+
+    spk = {**canon.table("speaker", "ed2"), **canon.table("speaker", "ed1")}
+    assert all(align_jp_kr.SPEAKER_DICT[k] == v for k, v in spk.items()), "SPEAKER_DICT 가 정본 화자 호칭과 갈렸다"
+    assert dict(patch_items.NAMES) == G.table("item") and dict(patch_items.MONSTERS) == G.table("monster")
     pairs = {
-        "item": dict(patch_items.NAMES),
-        "monster": dict(patch_items.MONSTERS),
-        "person": dict(align_jp_kr.SPEAKER_DICT),
-        # 지명 표는 정본이다 — 8B 칸용 중간값은 `places_for_build()` 에만 있다
+        # 지명은 화면 최종값으로 본다 — 8B 칸용 중간값은 `places_for_build()` 에만 있다
         "place": dict(patch_sys_ui.PLACES),
     }
     # 🔴 **ED2 몬스터 표도 여기 묶는다**(2026-08-29). 118종을 `textmap/monsters_ed2.json` 이
@@ -825,7 +829,7 @@ def test_tool_tables_match_shared_glossary():
     # 등재하지 않으면 그 표는 정본 밖으로 새어 나간다.
     with open(os.path.join(os.path.dirname(_TOOLS), "textmap", "monsters_ed2.json")) as f:
         ed2 = json.load(f)
-    pairs["monster"] = {**pairs["monster"], **ed2}
+    pairs["monster"] = ed2
     # ⚠ **정본은 상위집합이다**(2026-08-18). 내레이션에만 나오는 이름(이셀하사·론윌섬)은
     #    어느 패치 표에도 없지만 표기는 하나여야 한다. 그래서 「같다」가 아니라
     #    **「도구 표의 모든 항목이 정본과 일치한다」**를 본다 — 도구가 정본에 없는 표기를

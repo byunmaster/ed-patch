@@ -248,8 +248,10 @@
 | `release_manifest`      | 배포용 지문표 — 원본과 결과의 체크섬 넷을 한 번에 뽑는다.                                           | 2026-08-16  |
 | `make_dist`             | 배포 차분 — 원본→최종 이미지의 xdelta·BPS 를 `work/dist/` 에 만들고 원본에 적용해 sha1 대조. | 2026-10-05  |
 | `names_corpus`          | 이름 검사 어댑터 — 화면 문안을 「원문 줄·우리 줄」 쌍으로 공용 `scripts/check/check_names.py` 에 낸다(이름을 들지 않는다). | 2026-10-07  |
+| `dict_tables`           | 사전(`shared/glossary`)·정본(`shared/canon`)에서 이름·문안 표를 읽는 어댑터 — 게임 폴더에 이름 표를 두지 않는다.   | 2026-10-08  |
 | `make_dist`             | 배포 차분 — 원본→최종 이미지의 xdelta·BPS 를 `work/dist/` 에 만들고 원본에 적용해 sha1 대조. | 2026-10-05  |
 | `names_corpus`          | 이름 검사 어댑터 — 화면 문안을 「원문 줄·우리 줄」 쌍으로 공용 `scripts/check/check_names.py` 에 낸다(이름을 들지 않는다). | 2026-10-07  |
+| `dict_tables`           | 사전(`shared/glossary`)·정본(`shared/canon`)에서 이름·문안 표를 읽는 어댑터 — 게임 폴더에 이름 표를 두지 않는다.   | 2026-10-08  |
 | `past_retarget_copy`         | 정발 "사본"을 잘못 고른 배정을 찾아 그 구간의 주류 테이블로 되돌린다.                               | 2026-08-18  |
 | `scan_tim`              | TIM 이미지 인벤토리 — 디스크에서 PS1 TIM 이미지를 스캔·렌더해 '글자 박힌 그래픽' 색출.              | 2026-07-29  |
 | `scn_callgraph`         | **코드가 어느 대사를 부르는가** — SCN 오버레이에서 호출 그래프를 뽑는다.                            | 2026-08-16  |

@@ -193,6 +193,13 @@ def _add_names(out, plain):
         with open(gl, encoding="utf-8") as f:
             for tbl in json.load(f)["categories"].values():
                 names.update(tbl)
+    # 화자 호칭(역할어: 복권집·여자·무기점…)은 사전이 아니라 **정본(`shared/canon` speaker)** 에 산다(마스터 2026-10-08) — 안 얹으면
+    #   정형문(「~が現れた。」)·마릿수 접미 항목이 6천 개 넘게 사라진다.
+    sys.path.insert(0, os.path.join(ROOT, "..", "..", "shared"))
+    import canon as _canon
+
+    for _t in ("ed2", "ed1"):  # ED1 이 ED2 를 덮는다(`_speaker_map` 과 같은 우선권)
+        names.update(_canon.table("speaker", _t))
     for fn in ("monsters_ed2.json", "monster_lines_ed2.json"):
         path = os.path.join(ROOT, "textmap", fn)
         if not os.path.exists(path):

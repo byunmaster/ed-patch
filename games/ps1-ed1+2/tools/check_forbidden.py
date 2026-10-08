@@ -515,6 +515,10 @@ def _is_declared_system_text(rel, exempt):
         return False  # 창작 서사는 관례·선언 어느 쪽을 타도 뺄 수 없다
     if "/textmap/" in rel.replace(os.sep, "/"):
         return True  # 레거시 관례 — 그대로 유지
+    # 🔴 공용 문안 정본(`shared/canon`, 2026-10-08)은 **시스템 문구·전투 문구·메뉴 라벨**이다 — 「~が現れた。」류는 누가 옮겨도
+    #   같아 정발과 겹쳐도 정상(강제 번역)이다. 씨앗이 PS1 `textmap/battle.json`(위 관례로 면제) 에서 왔으니 같은 취급.
+    if rel.replace(os.sep, "/").startswith("shared/canon/"):
+        return True
     for prefix, pats in exempt.items():
         if not (rel == prefix or rel.startswith(prefix + os.sep)):
             continue

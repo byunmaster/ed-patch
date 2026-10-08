@@ -41,7 +41,14 @@ def _canon_persons():
     sys.path.insert(0, os.path.join(R.ROOT, "..", "..", "shared"))
     import glossary as G
 
-    return dict(G.table("person"))
+    import canon
+
+    out = dict(G.table("person"))
+    # 화자 호칭(역할어: 여관 주인·해적 선장…)은 사전이 아니라 **정본(`shared/canon` speaker)** 이 정한다(마스터 2026-10-08) —
+    # 정본이 이긴다(ED1 이 ED2 를 덮는다).
+    for t in ("ed2", "ed1"):
+        out.update(canon.table("speaker", t))
+    return out
 
 
 SCRIPT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "script")

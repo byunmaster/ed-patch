@@ -222,8 +222,10 @@ def scan_item_tables():
     from patch_items import MONSTERS, NAMES
 
     bad = []
+    # 같은 원문이 아이템·몬스터 둘 다에 있고 값이 갈리면(カース 커스/카스) ED2 합본 표가 한쪽만 든다 — 사전이 범주로 가르므로 뺀다
+    split = {k for k in set(NAMES) & set(MONSTERS) if NAMES[k] != MONSTERS[k]}
     for tbl, what in ((NAMES, "아이템"), (MONSTERS, "몬스터")):
-        for k in sorted(set(tbl) & set(NAMES_ED2)):
+        for k in sorted(set(tbl) & set(NAMES_ED2) - split):
             if tbl[k] != NAMES_ED2[k]:
                 bad.append((what, k, tbl[k], NAMES_ED2[k]))
     print(f"  {'✅' if not bad else '❌'} ED1·ED2 이름표가 한 표기다 (갈린 것 {len(bad)})")
