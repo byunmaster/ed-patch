@@ -4,11 +4,11 @@
     python3 games/ss-ed3/tools/check_window_frame.py        # 게이트
     python3 games/ss-ed3/tools/check_window_frame.py -v     # 전량
 
-시스템 표(`script/system.json`)의 UI 라벨(메뉴·능력치·설정·블랙잭·낱말·지명·인물·장 제목)은 **원문 라벨이 차지하던 칸에 그대로** 들어간다
+시스템 표(정본·사전, `system_src.py`)의 UI 라벨(메뉴·능력치·설정·블랙잭·낱말·지명·인물·장 제목)은 **원문 라벨이 차지하던 칸에 그대로** 들어간다
 (`reinsert_sys` 는 바이트만 맞춘다 — 폭은 안 본다). 바이트는 맞아도 **반각이 섞이면 폭이 다르다** — 우리 폭이 원문 폭을 넘으면 칸을 넘친다.
 폭은 `typeset.cols`(숫자는 전각으로 그려지니 1칸)로 잰다. ⚠ 줄 안 공백(`\\u3000`)은 칸 맞춤이라 그대로 센다.
 
-받아들인 넘침은 `script/window_frame_accept.json`(키 = 섹션|원문, 값 = 사유). 새로 생기면 실패한다.
+받아들인 넘침은 `script/window_frame_accept.json`(키 = 섹션|우리 문안, 값 = 사유). 새로 생기면 실패한다.
 """
 
 import json
@@ -29,8 +29,9 @@ def cols(s):
 
 
 def main():
-    with open(os.path.join(C.GAME_DIR, "script", "system.json"), encoding="utf-8") as f:
-        doc = json.load(f)
+    import system_src as SYS
+
+    doc = SYS.sections()
     accept = {}
     if os.path.exists(ACCEPT):
         with open(ACCEPT, encoding="utf-8") as f:
@@ -40,7 +41,7 @@ def main():
         for jp, kr in doc[sec].items():
             n += 1
             if cols(kr) > cols(jp) + 1e-9:
-                over.append((f"{sec}|{jp}", cols(jp), cols(kr), kr))
+                over.append((f"{sec}|{kr}", cols(jp), cols(kr), kr))
     new = [o for o in over if o[0] not in accept]
     print(f"UI 라벨 {n} 중 원문보다 넓은 것 {len(over)} (받아들인 {len(over) - len(new)} · 새로 {len(new)})")
     for k, a, b, kr in over if "-v" in sys.argv else new:

@@ -143,6 +143,47 @@ def check_desc(img, files, rev):
     return n, bad
 
 
+def check_item_ptr(img, files, rev):
+    """아이템 설명 — **레코드 포인터로 따라가서** 본다(`reinsert_desc._area_free` 가 모든 포인터를 다시 쓴다).
+
+    조각 순서로 견주는 `check_desc` 는 포인터가 틀려도 통과한다 — 엔진은 순서가 아니라 레코드 `+0x40` 를 읽는다
+    (10-08: 조각을 밀었더니 뒤 아이템 설명이 빈 창이 됐다). 그래서 아이템마다 옛 포인터가 가리키던 원문 조각의 색인으로
+    우리 문안을 정하고, 새 포인터가 가리키는 조각을 풀어 견준다.
+    """
+    lba, size = files[P.PATH]
+    got = B.read_extent(img, lba, size)
+    src = P.load()
+    kr = RD.table().get("desc_item") or {}
+    off, st, cnt = P.ITEM
+    area = P.DESC_ITEM
+    base = P.ITEM[0]
+    # 옛 조각 시작 → 색인(번역 대상인 것만, 순서대로)
+    idx_of, pos, k = {}, 0, 0
+    for raw in src[area[0] : area[1]].split(b"\x00")[:-1]:
+        if raw:
+            try:
+                t = raw.decode("shift_jis")
+            except UnicodeDecodeError:
+                t = "x"
+            if not t.isascii():
+                idx_of[pos] = k
+                k += 1
+        pos += len(raw) + 1
+    bad, n = [], 0
+    for i in range(cnt):
+        a_old = int.from_bytes(src[off + i * st + 0x40 : off + i * st + 0x44], "big") + base - area[0]
+        a_new = int.from_bytes(got[off + i * st + 0x40 : off + i * st + 0x44], "big") + base
+        want = kr.get(str(idx_of.get(a_old)))
+        if want is None:
+            continue
+        n += 1
+        end = got.find(b"\x00", a_new)
+        txt = decode(got[a_new:end], rev).replace(T.DESC_NL, "")
+        if glyphs(txt) != glyphs(want):
+            bad.append((f"item#{i}(ptr)", want, txt))
+    return n, bad
+
+
 def check_sys(img, files):
     """시스템 문자열 — 표의 **원문이 이미지에 남아 있으면** 소실이다(화면에 일본어가 뜬다).
 
@@ -207,6 +248,7 @@ def main():
         for what, (n, bad) in (
             ("대사", check_maps(disc, img, files, rev_main)),
             ("설명", check_desc(img, files, rev_desc)),
+            ("설명포인터", check_item_ptr(img, files, rev_desc)),
             ("시스템", check_sys(img, files)),
         ):
             bad = [b for b in bad if (what, b[0]) not in KNOWN]

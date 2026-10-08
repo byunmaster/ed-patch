@@ -69,6 +69,14 @@ echo "  ── 메뉴 라벨이 칸을 넘치나 (F5 창 프레임)"
 # 🔴 게이트다 — 바이트가 맞아도 반각이 섞이면 폭이 다르다. 받아들인 넘침은 script/window_frame_accept.json
 run 0 "$PY" "$G/tools/check_window_frame.py"
 
+echo "  ── 게임 폴더에 자기 JP→KR 표가 남았나 (자기 표 0)"
+# 🔴 게이트다 — 고유명사·라벨·문구는 공용 사전·정본이 갖는다(마스터 10-08). 시스템 문자열도 정본에서 읽는다(`tools/system_src.py`)
+run 0 "$PY" "$G/tools/check_own_tables.py"
+
+echo "  ── 구운 이미지에 일본어가 남았나 (출처 대장 · 가나 잔존 · 사전 열쇠 정확 검색)"
+# 🔴 게이트다 — 검사기는 읽는 출처 안에서만 초록이다(ps1-ed3 월드맵 지명 사고 10-08). 받아들인 상한은 script/coverage_accept.json
+run 16 "$PY" "$G/tools/check_coverage.py" --check
+
 echo "  ── 이름표가 자리마다 다르게 옮겨졌나"
 # 🔴 게이트다 — 라벨은 판단이 들어갈 자리가 없다(같은 사람이 두 이름으로 보인다)
 run 12 "$PY" "$G/tools/check_label.py"

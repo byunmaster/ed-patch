@@ -1,4 +1,4 @@
-"""고유명사는 **공용 사전**(`shared/glossary/ed3.json`)에서만 읽는다 — 게임 폴더에 JP→KR 표를 두지 않는다.
+"""고유명사는 **공용 정본**(`shared/canon/nouns/ed3.json`, 입구 `canon.nouns`)에서만 읽는다 — 게임 폴더에 JP→KR 표를 두지 않는다.
 
 마스터 2026-10-08(사전 적용 라운드): 종전 `glossary_manual.json`(812)·`glossary_auto.json`(57 — 틀린 초벌)은 걷었다.
 읽는 쪽 도구는 전부 여기를 거친다 — 표를 읽는 방식이 도구마다 달라 어긋나던 것을 한 곳으로 모은다.
@@ -18,14 +18,14 @@ sys.path.insert(
         "shared",
     ),
 )
-import glossary as GL
+import canon as CN
 
 TITLE = "ed3"
 
 
 def categories():
     """`{범주: {JP: KR}}` — 사전 파일의 순서를 지킨다."""
-    return {c: dict(t) for c, t in GL.load(TITLE)["categories"].items()}
+    return {c: dict(t) for c, t in CN.nouns(TITLE)["categories"].items()}
 
 
 def table():
@@ -40,7 +40,7 @@ def table():
 
 def no_check():
     """일반 낱말과 겹쳐 「빠졌다」 강제를 빼는 열쇠."""
-    return set(GL.load(TITLE).get("_no_check", ()))
+    return set(CN.nouns(TITLE).get("_no_check", ()))
 
 
 def party(*jp):

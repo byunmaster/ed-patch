@@ -28,14 +28,21 @@ FIXED = {
     "디스크１로 바꿔 넣어 주세요.": 7,
 }
 
-P = "games/ss-ed3/script/system.json"
+import system_src as SYS
+
+P = SYS.KEYS
 doc = json.load(open(P, encoding="utf-8"))
 with C.open_disc(1) as d:
     blob = d.read("/0.BIN")
 
+#   🔴 문안은 정본에서 읽고, 이 도구는 **앞 공백(칸 배치)만** `script/system_keys.json` 에 쓴다.
 n = skip = 0
-for jp, kr in list(doc["notice"].items()):
-    body = kr.strip(" ")
+for it in doc["notice"]:
+    jp, kr = it[0], SYS.build(it[0], it[1], it[2], it[3], it[4] if len(it) > 4 else None)
+    if kr is None:
+        skip += 1
+        continue
+    body = SYS._TAIL.sub("", kr).strip(" ")
     if re.search(r"  +", body):
         skip += 1
         continue
@@ -65,9 +72,8 @@ for jp, kr in list(doc["notice"].items()):
     #     ⇒ 그런 줄이 있는 화면은 **가장 낮은 중심에 나머지를 맞춘다.**
     #     화면 묶음을 코드가 모르니, 겹치는 자리는 아래 표로 손수 못 박는다.
     lead = FIXED.get(body, lead)
-    new = " " * lead + body
-    if new != kr:
-        doc["notice"][jp] = new
+    if lead != it[1]:
+        it[1] = lead
         n += 1
 json.dump(doc, open(P, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 open(P, "a", encoding="utf-8").write("\n")
