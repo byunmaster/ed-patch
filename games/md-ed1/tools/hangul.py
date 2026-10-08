@@ -227,6 +227,19 @@ def ellipsis_dots(cell: int) -> list[list[int]]:
     return out
 
 
+def ellipsis_full(cell: int = 16) -> list[list[int]]:
+    """전각 칸을 채우는 말줄임표 — **네오둥근모 마침표(2×2 정사각 점)** 셋을 칸에 고르게 늘어놓는다
+    (마스터 확정 2026-10-08). 네오둥근모 자기 「…」 는 반각 칸에 1px 점 셋이라 전각 글자 옆에서 작아 보였다.
+    행은 네오둥근모 마침표와 같다(10~11행). 점 x 는 칸 폭에 비례(16칸: 2·7·12)."""
+    g = [[0] * cell for _ in range(cell)]
+    xs = [round(cell * f) for f in (0.125, 0.4375, 0.75)]
+    for x in xs:
+        for y in (cell - 6, cell - 5):
+            for dx in (0, 1):
+                g[y][x + dx] = 1
+    return g
+
+
 # 합성 글리프(코드 하나가 글자 하나가 아닌 자리) — 자리표시 문자(PUA, U+E000~)를 키로 써서
 # 기존 파이프라인(codes_for·Charset·resource0)을 그대로 통과시킨다. `needs_glyph()`는 PUA를
 # cp932 로 못 걸어 이미 "새 글리프 필요"로 잡는다(예외 경로) — 여기서 채움 행렬만 꽂아 주면
@@ -651,8 +664,13 @@ def resource5(
     by_code: dict[int, str] = {}
     for ch in chars:
         enc = cs.encode_char(ch)
-        if len(enc) == 2:  # 반각(ASCII)은 리소스 1 이 그린다
+        if len(enc) == 2:
             by_code[int.from_bytes(enc, "big")] = ch
+        elif source == "neodgm" and ch != "\n":
+            # 반각(ASCII)도 Neo 꼴로 — 문안이 `<fd05>`(반각 글꼴 5)를 켜면 이 표에서 찾는다. 표 조회는
+            # 코드가 **없으면 가장 가까운 항목으로 떨어지니**(「」가 「가」로 떴던 그 함정) 공백까지 넣는다.
+            by_code[enc[0]] = ch
+        # (neodgm 이 아니면 반각은 리소스 1 이 그린다)
     codes = sorted(by_code)
     # (BDF, 칸 안 위 여백, 칸 안 왼 여백) — 채움이 칸 0행·0열에 바로 닿으면 그쪽으로 팽창할
     # 테두리 자리가 없다(대사창 리소스0 의 GLYPH_TOP/GLYPH_LEFT 와 같은 함정, 2026-09-17
@@ -667,6 +685,8 @@ def resource5(
     if source == "neodgm":
 
         def src(ch):
+            if ch == "…":
+                return ellipsis_full(cell)
             return neodgm_fill(ch, cell, cell)
 
     else:

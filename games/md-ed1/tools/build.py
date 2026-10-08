@@ -32,6 +32,7 @@ import halfspace
 import hangul
 import josa
 import lz
+import punctwrap
 import scene
 import sysmsg
 import tables
@@ -83,6 +84,8 @@ class Rom:
         ),
         "half-tramp": (halfspace.TRAMP, halfspace.TRAMP + 6),
         "half-site": (halfspace.SITE, halfspace.SITE + 4),
+        "punct-code": (TAIL_HI - punctwrap.CODE_LEN, TAIL_HI),
+        "punct-site": (punctwrap.SITE, punctwrap.SITE + 6),
         **{f"wrap-site:{s:x}": (s, s + 4) for s in wordwrap.SITES},
         "field-hud-space-tramp": (
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE,
@@ -495,7 +498,8 @@ def main(check_only: bool = False) -> None:
     rom.write("font0-glyphs", cs.r0["desc"], orig[cs.r0["desc"] : cs.r0["desc"] + 4] + gl)
     for label, pos, body in hangul.resource1(cs):  # 반각 쉼표 — 표 0 이 비운 자리에
         rom.write(label, pos, body)
-    cap5 = {c for c in captions.font5_chars(cmap) if c.strip()}
+    # 네오둥근모는 반각도 리소스 5 로 그리니 공백(0x20)도 표에 든다 — 빠지면 조회가 첫 항목(「!」)으로 떨어진다
+    cap5 = {c for c in captions.font5_chars(cmap) if c.strip() or (c == " " and captions.FONT_SRC == "neodgm")}
     if captions.FONT_ID and cap5:  # <fd85> 를 단 자막 전용 글꼴(리소스 5, Galmuri14 14×14)
         for label, pos, body in hangul.resource5(
             cs, cap5, hangul.layout_after_r1(cs), cell=captions.FONT_CELL, source=captions.FONT_SRC
@@ -516,6 +520,12 @@ def main(check_only: bool = False) -> None:
     for label, pos, body in wordwrap.plan(orig, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE):
         rom.write(label, pos, body)
     for label, pos, body in halfspace.plan(cs, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE):
+        rom.write(label, pos, body)
+    # 2d-2. 반각 부호(. , ! ?)는 줄 끝에서 4px 더 허용 — 엔진 자동 줄바꿈이 1px 로 꺾는 것을 없앤다(마스터 10-08)
+    #       꼬리는 조사 훅 예약 **맨 끝**(훅 최대치 771B 뒤)에 둔다 — 겹치면 빌드가 막는다
+    if josa.size(cs) > JOSA_RESERVE - punctwrap.CODE_LEN:
+        raise SystemExit("조사 훅이 부호 줄바꿈 꼬리 자리를 침범한다 — JOSA_RESERVE 를 늘린다")
+    for label, pos, body in punctwrap.plan(TAIL_HI - punctwrap.CODE_LEN):
         rom.write(label, pos, body)
     # ⚠ 합성 글리프(field_hud·field_names 의 PUA 콘덴스드 슬라이스)는 뺀다 — 일부러 큰 왼쪽
     # 여백을 구워 둔 자리라(공백을 그림 안에 녹였다) 정상 글자처럼 재면 문턱이 깨진다. 이
