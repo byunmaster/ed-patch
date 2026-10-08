@@ -1,5 +1,4 @@
 {
  "_doc": "check_copyright 래칫 — 파일별 긴 일본어 덩이 수. 늘면 실패, 줄면 --freeze.",
- "shared/canon/ed1.json": 9,
- "shared/canon/ed2.json": 65
+ "shared/canon/ed2.json": 1
 }
