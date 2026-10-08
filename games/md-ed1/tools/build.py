@@ -435,6 +435,8 @@ def main(check_only: bool = False) -> None:
     # 대본 블록 91 — 문안 스트림 밖의 지명 표(입장 배너). scene.py 로는 안 보여 별도 경로로 얹는다.
     fn_base = new_blocks.get(field_names.BLOCK, bl[field_names.BLOCK][1])
     new_blocks[field_names.BLOCK] = field_names.new_block(fn_base, cs)
+    for dn in field_names.DEST_JP:  # 블록 92·93 목적지 표(같은 14B 칸 꼴)
+        new_blocks[dn] = field_names.new_dest_block(dn, new_blocks.get(dn, bl[dn][1]), cs)
     battle_blocks: dict[int, bytes] = {}
     for n, (_s, bb, _e) in enumerate(battle.blocks(orig)):
         nb = battle.plan_block(

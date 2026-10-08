@@ -64,6 +64,12 @@ def _find_hidden(data: bytes, covered: list[tuple[int, int]], known: list[tuple[
 def check() -> None:
     rom = common.rom()
     found: dict[tuple[str, int], list[tuple[int, int]]] = {}
+    # 블록 92·93 목적지 표 — field_names 가 직접 한글로 바꾼다(위 KNOWN 과 같은 이유, 오프셋은 앵커로 찾는다)
+    base0 = archives.ARCHIVES["script"][0]
+    for blk in field_names.DEST_JP:
+        at = field_names._dest_start(archives.blocks(rom, base0)[blk][1], blk)
+        n_cells = len(field_names.DEST_JP[blk])
+        KNOWN[("script", blk)] = [(at, at + n_cells * field_names.STRIDE)]
 
     base = archives.ARCHIVES["script"][0]
     for n, (_s, data, _e) in enumerate(archives.blocks(rom, base)):
@@ -86,6 +92,22 @@ def check() -> None:
             f"  숨은 텍스트(추출 도구 범위 밖 SJIS) — script {script_n}/225블록 · "
             f"battle {battle_n}/110블록 · {total}건 (보고 전용, 대사 라운드 몫 — docs/status.md 참조)"
         )
+        # 그중 **사전 이름이 든 것** — 목적지 표(블록 92·93, 2026-10-08)처럼 표인데 못 찾은 자리는 이쪽에서 드러난다.
+        # 대사 문장(미추출 장면)이 대부분이라 건수만 찍고, 표 꼴(구분자 07 로 이어진 14B 칸)이 보이면 따로 올린다.
+        sys.path.insert(0, str(common.ROOT / "shared"))
+        from glossary import names as _G
+
+        keys, _ = _G._keys(_G.load("eiyuu"))
+        blocks = {
+            ("script", n): b for n, (_s, b, _e) in enumerate(archives.blocks(rom, base0))
+        } | {("battle", n): b for n, (_s, b, _e) in enumerate(battle.blocks(rom))}
+        with_names = sum(
+            1
+            for key, runs in found.items()
+            for s, e in runs
+            if _G.find(blocks[key][s:e].decode("cp932", "replace"), keys)
+        )
+        print(f"    └ 사전 이름이 든 숨은 런 {with_names}건 — 미추출 장면 대사(대사 라운드가 채우면 이름 검사 분모에 든다)")
     else:
         print("  숨은 텍스트 스캔 — script/battle 전부 깨끗함(추출 도구가 못 보는 자리 없음)")
 

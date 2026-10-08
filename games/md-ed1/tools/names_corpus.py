@@ -121,6 +121,13 @@ def _banner_pairs():
         yield f"banner:{i:02d}", jp, kr, SLOT
 
 
+def _dest_pairs():
+    """블록 92·93 목적지 표 열 개(항구·요새·섬 · 마을) — 입장 배너와 같은 14B 칸 꼴. 점검 2026-10-08 에 빠져 있던 출처."""
+    for blk, tbl in field_names.DEST.items():
+        for i, (jp, kr) in enumerate(tbl):
+            yield f"dest:{blk}:{i:02d}", jp, kr, SLOT
+
+
 def pairs():
     rom = common.rom()
     yield from _script_pairs(rom)
@@ -130,6 +137,7 @@ def pairs():
     yield from _monsters_pairs()
     yield from _names_pairs()
     yield from _banner_pairs()
+    yield from _dest_pairs()
 
 
 if __name__ == "__main__":

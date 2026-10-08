@@ -157,7 +157,10 @@ _pua_for: dict[str, str] | None = None
 def _pua_map() -> dict[str, str]:
     global _pua_for
     if _pua_for is None:
-        uniq = sorted(set("".join(kr for _, kr, _extra, _jp in ENTRIES)))
+        uniq = sorted(
+            set("".join(kr for _, kr, _extra, _jp in ENTRIES))
+            | {ch for tbl in DEST.values() for _jp, kr in tbl for ch in kr}
+        )
         _pua_for = {ch: chr(_PUA_BASE + i) for i, ch in enumerate(uniq)}
     return _pua_for
 
@@ -210,6 +213,57 @@ def new_block(orig_data: bytes, cs) -> bytes:
     return bytes(out)
 
 
+# ── 블록 92·93 — 같은 14B 칸 꼴의 목적지 목록 (커버리지 점검 2026-10-08) ────────────────────────
+# 블록 91(입장 배너)과 같은 **가운데 정렬 14B 칸 + 0x07 구분자** 표가 블록 93(항구·요새 목적지 아홉)·블록 92(마을 하나)에도
+# 있다. 문안 스트림 밖이라 이름 검사·원문 잔존 게이트가 못 봤다 — 일본어로 남아 있었다(`names_corpus` 에 안 들어 있었다).
+# 한글은 배너와 같은 규칙(`banner_kr`, 사전 place + 원문 접미)이고, **칸 길이는 원본과 같다**(뒤 오프셋 불변).
+# 같은 갈무리14 합성 글리프(PUA)로 굽는다 — 블록 91 이 필드 지도(입장 배너), 92·93 은 같은 꼴 표를 가진 다른 지도 구역(바다·항구)이라
+# 같은 배너 루틴이 읽는다고 본다(표 꼴·구분자가 같다). 인게임 확인은 바다 구역(배 필요, 후반)에 닿을 때.
+DEST_JP = {
+    92: ["ルディアの町"],
+    93: [
+        "ネリアの港",
+        "ロンドの港",
+        "ラルファの砦",
+        "海賊島",
+        "スエルの村",
+        "ヨルドの港",
+        "ルドラの港",
+        "リシェールの港",
+        "フィーンの砦",
+    ],
+}
+DEST = {blk: [(jp, banner_kr(jp)) for jp in jps] for blk, jps in DEST_JP.items()}
+
+
+def _orig_cell(jp: str) -> bytes:
+    return _pad(jp.encode("cp932"))
+
+
+def _dest_start(data: bytes, blk: int) -> int:
+    """표 첫 칸의 시작 — 원본 첫 칸(가운데 정렬 14B)을 앵커로 찾고, 나머지 칸이 15B 간격으로 이어지는지 검산한다."""
+    jps = DEST_JP[blk]
+    first = _orig_cell(jps[0])
+    at = data.find(first + b"\x07")
+    if at < 0 or data.find(first + b"\x07", at + 1) >= 0:
+        raise SystemExit(f"블록 {blk}: 목적지 표 첫 칸이 유일하게 안 잡힌다 — 원본이 바뀌었나 확인")
+    for i, jp in enumerate(jps):
+        if data[at + i * STRIDE : at + i * STRIDE + ENTRY_LEN] != _orig_cell(jp):
+            raise SystemExit(f"블록 {blk}: 목적지 표 {i}번 칸({jp})이 원본과 다르다")
+    return at
+
+
+def new_dest_block(blk: int, orig_data: bytes, cs) -> bytes:
+    """블록 92·93 의 목적지 표를 한글로 — 칸 길이 불변, 배너와 같은 갈무리14 합성 코드."""
+    at = _dest_start(orig_data, blk)
+    out = bytearray(orig_data)
+    pua = _pua_map()
+    for i, (_jp, kr) in enumerate(DEST[blk]):
+        body = b"".join(cs.encode_char(pua[ch]) for ch in kr)
+        out[at + i * STRIDE : at + i * STRIDE + ENTRY_LEN] = _pad(body)
+    return bytes(out)
+
+
 def check() -> None:
     import archives as _archives
 
@@ -219,6 +273,9 @@ def check() -> None:
     if data[TABLE_OFF : TABLE_OFF + len(ORIG_ANCHOR)] != ORIG_ANCHOR:
         raise SystemExit(f"블록 {BLOCK}: 지명 표 앵커가 원본과 다르다")
     print(f"  대본 블록 {BLOCK} 지명 표 — 앵커 일치, 항목 {len(ENTRIES)}개")
+    for blk in DEST_JP:
+        _dest_start(bl[blk][1], blk)
+    print(f"  대본 블록 {'·'.join(map(str, DEST_JP))} 목적지 표 — 앵커 일치, 항목 {sum(len(v) for v in DEST_JP.values())}개")
 
 
 if __name__ == "__main__":

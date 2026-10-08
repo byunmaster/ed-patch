@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import battle
 import common
 import dict_names
+import field_names
 import halfspace
 
 TAG = re.compile(r"<[^>]*>")
@@ -52,6 +53,11 @@ def _entries() -> list[tuple[str, str, str, str]]:
             out.append((f"names:{cat}", kk, vv.get("jp", ""), halfspace.plain(vv.get("ours", ""))))
     for jp, v in battle.monsters(common.rom()).items():
         out.append(("monsters", jp, jp, v.get("ours", "")))
+    for i, kr, _extra, jp in field_names.ENTRIES:  # 입장 배너 46칸(사전에서 읽은 값)
+        out.append(("banner", f"{i:02d}", jp, kr))
+    for blk, tbl in field_names.DEST.items():  # 블록 92·93 목적지 표
+        for i, (jp, kr) in enumerate(tbl):
+            out.append((f"dest:{blk}", f"{i:02d}", jp, kr))
     for name, rel in MAPS.items():
         p = common.GAME_DIR / rel
         if not p.exists():
