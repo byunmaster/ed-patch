@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import battle
 import captions
 import common
+import dict_names
 import sysmsg
 import tables
 
@@ -51,7 +52,7 @@ def covered(d: bytes) -> list[tuple[int, int]]:
         lo, hi = sysmsg.span(strs, cl)
         if any(smap.get(f"{t:06x}", {}).get("ours") for t in cl):
             out.append((lo, hi))
-    names = json.loads((common.GAME_DIR / "textmap" / "names.json").read_text(encoding="utf-8"))
+    names = dict_names.names(d)
     for name, recs in tables.records(d).items():
         tbl = names.get(name, {})
         for i, (p, body) in enumerate(recs):
@@ -138,7 +139,7 @@ def scan_battle(d: bytes) -> list[tuple[str, str]]:
     import json as _json
 
     bmap = _json.loads((common.GAME_DIR / "textmap" / "battle.json").read_text(encoding="utf-8"))
-    mons = _json.loads((common.GAME_DIR / "textmap" / "monsters.json").read_text(encoding="utf-8"))
+    mons = battle.monsters(d)
     out = []
     for n, (_s, b, _e) in enumerate(battle.blocks(d)):
         cov = []

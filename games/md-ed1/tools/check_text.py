@@ -20,6 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import battle
 import common
+import dict_names
+import field_names
 import halfspace
 
 TAG = re.compile(r"<[^>]*>")
@@ -37,8 +39,6 @@ BAD_PUNCT = {
     "‥": "「…」 하나",
 }
 MAPS = {
-    "names": "textmap/names.json",
-    "monsters": "textmap/monsters.json",
     "sysmsg": "textmap/sysmsg.json",
     "captions": "textmap/captions.json",
     "battle": "textmap/battle.json",
@@ -48,6 +48,16 @@ MAPS = {
 def _entries() -> list[tuple[str, str, str, str]]:
     """[(정본, 열쇠, 원문, 우리 문안)] — 표는 두 겹이라 펼친다."""
     out = []
+    for cat, tbl in dict_names.names().items():  # 표 이름 → 항목 (사전·정본에서 읽은 값 포함)
+        for kk, vv in tbl.items():
+            out.append((f"names:{cat}", kk, vv.get("jp", ""), halfspace.plain(vv.get("ours", ""))))
+    for jp, v in battle.monsters(common.rom()).items():
+        out.append(("monsters", jp, jp, v.get("ours", "")))
+    for i, kr, _extra, jp in field_names.ENTRIES:  # 입장 배너 46칸(사전에서 읽은 값)
+        out.append(("banner", f"{i:02d}", jp, kr))
+    for blk, tbl in field_names.DEST.items():  # 블록 92·93 목적지 표
+        for i, (jp, kr) in enumerate(tbl):
+            out.append((f"dest:{blk}", f"{i:02d}", jp, kr))
     for name, rel in MAPS.items():
         p = common.GAME_DIR / rel
         if not p.exists():
@@ -56,7 +66,7 @@ def _entries() -> list[tuple[str, str, str, str]]:
         for k, v in d.items():
             if isinstance(v, dict) and "ours" in v:
                 out.append((name, k, v.get("jp", ""), v.get("ours", "")))
-            elif isinstance(v, dict):  # names.json: 표 이름 → 항목
+            elif isinstance(v, dict):  # 표 이름 → 항목
                 for kk, vv in v.items():
                     if isinstance(vv, dict):
                         out.append((f"{name}:{k}", kk, vv.get("jp", ""), halfspace.plain(vv.get("ours", ""))))
@@ -69,8 +79,7 @@ def _entries() -> list[tuple[str, str, str, str]]:
 
 def main(verbose: bool = False) -> None:
     ents = _entries()
-    mp = common.GAME_DIR / "textmap" / "monsters.json"
-    monsters = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}
+    monsters = battle.monsters(common.rom())
     leaks, puncts, terms = [], [], []
     done = {}
     for src, key, _jp, ours in ents:

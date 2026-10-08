@@ -9,7 +9,7 @@
 1. **조사 코드의 짝** — `<eb p>` 는 바로 앞이 `<02>`(배우 이름), `<ec p>` 는 `<0e>`(아이템)이어야 한다.
    핸들러가 **이름을 스스로 찾아** 끝 글자를 보기 때문에, 앞의 삽입 코드가 다르면 엉뚱한 이름의
    종성으로 조사가 갈린다(`tools/josa.py`).
-2. **p 범위** — 0 은/는 · 1 이/가 · 2 을/를.
+2. **p 범위** — 0 은/는 · 1 이/가 · 2 을/를 · 3 과/와 · 4 으로/로.
 3. **손으로 쓴 조사** — `<02>은` 처럼 이름 삽입 **바로 뒤에 조사 글자**가 오면 훅을 안 쓴 자리다.
    이름은 런타임에 바뀌므로 종성을 정적으로 맞출 수 없다.
 4. **남은 병기** — `을(를)` 류. 이름 출처가 달라 아직 훅을 못 붙인 자리들이라 **목록으로 굳혀** 두고,
@@ -27,8 +27,8 @@ import common
 
 KNOWN_JSON = common.GAME_DIR / "textmap" / "josa_sites.json"
 PAIRED = {"eb": "02", "ec": "0e"}
-BYUNGI = re.compile(r"은\(는\)|이\(가\)|을\(를\)|과\(와\)|으로\(로\)")
-HOOK = re.compile(r"<(eb|ec)(0[0-9a-f])>")
+BYUNGI = re.compile(r"은\(는\)|이\(가\)|을\(를\)|과\(와\)|와\(과\)|으로\(로\)|\(으\)로")
+HOOK = re.compile(r"<(eb|ec)([0-9a-f]{2})>")
 LITERAL = re.compile(r"<(02|0e|0b)>(은|는|이|가|을|를|과|와)(?![\w(])")
 
 
@@ -67,18 +67,21 @@ def scan() -> tuple[list[str], list[str]]:
     for name, path, txt in canon():
         for m in HOOK.finditer(txt):
             kind, p = m.group(1), int(m.group(2), 16)
-            if (p & 0x0F) > 2 or (kind == "ec" and p > 2):
+            if (p & 0x0F) > 4 or (kind == "ec" and p > 0x14):
                 errs.append(
-                    f"{name}{path}: <{kind}{m.group(2)}> — 하위 니블은 0~2, ec 는 상위 니블 없음"
+                    f"{name}{path}: <{kind}{m.group(2)}> — 하위 니블은 0~4(은/는 이/가 을/를 과/와 으로/로)"
                 )
             before = txt[: m.start()]
             # `<eb>` 는 `<02>`(배우 포인터) 또는 `<09 nn>`(파티 번호로 그린 이름) 뒤에 온다 —
             # 후자는 p 의 상위 니블로 번호를 같이 준다(`tools/josa.py`).
+            pp = int(m.group(2), 16)
             ok = before.endswith(f"<{PAIRED[kind]}>") or (
-                kind == "eb"
-                and re.search(r"<09[0-9a-f]{2}>$", before)
-                and int(m.group(2), 16) >= 0x10
+                kind == "eb" and re.search(r"<09[0-9a-f]{2}>$", before) and pp >= 0x10
             )
+            # 리더 이름(`<0b>`) 뒤 `<ebf_>` · 주문 이름(코드가 버퍼에 그린 뒤 스트림 머리) `<ec1_>` — 이전엔 정규식이
+            # `0_` 꼴만 잡아 이 둘이 **게이트에 안 보였다**(10-08 발견, 2건 + 1건)
+            ok = ok or (kind == "eb" and before.endswith("<0b>") and pp >> 4 == 0xF)
+            ok = ok or (kind == "ec" and pp >> 4 == 1 and re.fullmatch(r"(<[0-9a-f]+>)*", before))
             if not ok:
                 tail = before[-6:]
                 errs.append(f"{name}{path}: <{kind}…> 앞이 <{PAIRED[kind]}> 가 아니다 (…{tail})")

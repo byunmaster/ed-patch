@@ -163,7 +163,7 @@ def main() -> None:
             continue
         lines = [
             f"# 블록 {n:03d} — 손으로 쓸 스트림 {len(todo)}",
-            "# 인물·말투: games/ps1-ed1+2/docs/ed1-story-bible.md · 표기: shared/glossary/eiyuu.json",
+            "# 인물·말투: games/ps1-ed1+2/docs/ed1-story-bible.md · 표기: shared/canon/nouns/eiyuu.json",
             "# ⚠ 초벌은 사람 검토 전이다. 정본에 넣기 전에 `rpg-translate` §4 축 일곱으로 훑는다.",
             "",
         ]

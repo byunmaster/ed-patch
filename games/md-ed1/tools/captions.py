@@ -33,15 +33,26 @@ FAMILIES = [
 ]
 # 글꼴은 **스트림마다** 고른다 — 정본이 머리에 `<fd85>`(와이드 글꼴 5)를 달면 그 자막만 리소스 5 로 그리고
 # 끝에 `<fd80>` 으로 대사 글꼴(리소스 0)로 되돌린다. 칸 16×16·피치 16(`<fe10>`) — 한 줄 14칸.
-# 자막 글꼴 = **Galmuri11**(마스터 확정 2026-09-17 — 네오둥근모·갈무리14·갈무리11 세 후보를 같은 화면으로
+# 자막 글꼴 = **네오둥근모 16px**(마스터 확정 2026-10-08 — 원판 오프닝·엔딩 자막이 같은 굵은 글꼴이라 되돌렸다. 아래는 그 전 이력).
+# 이전 = **Galmuri11**(마스터 확정 2026-09-17 — 네오둥근모·갈무리14·갈무리11 세 후보를 같은 화면으로
 # 비교, "크게 느껴진다"는 지적에 갈무리11 로). 그 전엔 네오둥근모였다(2026-09-06, 7줄 화면도 안 잘리고
 # 여백비가 원본에 가깝다는 이유) — 그 전엔 Galmuri14 였다가 "붙어 보인다/가독성 저하"로 걷어냈다
 # (여백 좌우2px·상하4px 인 원본 대비 Galmuri14 는 1px·2px 뿐이었다). `docs/devlog.md` 2026-09-06·09-17.
 FONT_ID = 5
 FONT_TAG = "<fd85>"
+# 네오둥근모면 **반각(ASCII)도 리소스 5** 로 그린다 — 머리에 `<fd05>`(반각 글꼴 5), 끝에 `<fd00>`(반각 글꼴 되돌림).
+# 반각 글리프는 리소스 1(대사창과 공유, 원판 꼴) 뿐이라 부호가 1~2px 점이었다(마스터 2026-10-08). 전진은 피치/2 그대로.
+NARROW_ON, NARROW_OFF = "<fd05>", "<fd00>"
 FONT_CELL = int(os.environ.get("MD_CAPTION_CELL", "16"))
 # 후보 비교용 — 정본은 상수, `MD_CAPTION_FONT` 로 한 번씩 바꿔 구워 본다(실험 전용, 배포 빌드는 상수를 고친다).
-FONT_SRC = os.environ.get("MD_CAPTION_FONT", "galmuri11")
+FONT_SRC = os.environ.get("MD_CAPTION_FONT", "neodgm")
+
+
+def font_tags(ours: str) -> str:
+    """정본 문안의 글꼴 머리·꼬리에 반각 글꼴 선택을 덧붙인다(빌드 시점 — 정본은 `<fd85>`…`<fd80>` 그대로)."""
+    if FONT_SRC != "neodgm" or FONT_TAG not in ours or NARROW_ON in ours:
+        return ours
+    return ours.replace(FONT_TAG, FONT_TAG + NARROW_ON, 1).replace("<fd80>", "<fd80>" + NARROW_OFF, 1)
 WIDTH = 16  # 피치 14 × 16 = 224px
 WIDTH_P16 = 14  # 피치 16 × 14 = 224px (네오둥근모)
 OFF_MAX = 0xFFF
@@ -179,7 +190,7 @@ def check(d: bytes) -> None:
         for n, t in enumerate(narr):
             ours = tm.get(f"{t:06x}", {}).get("ours", "")
             if ours:
-                row.append(f"N{n + 1}={'64' if narr_layout(f'{t:06x}', ours)[1] else '48'}")
+                row.append(f"N{n + 1}=i{narr_layout(f'{t:06x}', ours)[1]}")
         print("  나레이션 시작 x: " + " ".join(row))
         dl = [
             t
@@ -240,46 +251,74 @@ def _width_errors(k: str, ours: str, fam: str | None = None) -> list[str]:
         # 🔴 피치 14 는 **글자 시작**이 `w − 26`px 을 넘으면 렌더러가 스스로 줄을 바꾼다 — 3줄이 되어 첫
         # 줄이 밀려 사라진다(2026-09-26 실측: 창 240 에서 15.5칸 시작 「.」은 넘어가고 15.0칸 시작 「」」은
         # 멀쩡했다. 루틴 `$a9b8` 로 확인). 폭 합만 보면 이걸 못 잡는다.
-        elif not p16 and ln and (w - cells(ln[-1])) * 14 > win - 26:
+        elif (
+            not p16
+            and ln
+            # 반각 부호(. , ! ?)는 엔진 비교에 4px 더 허용(`tools/punctwrap.py`)
+            and (w - cells(ln[-1])) * 14 > win - 26 + (4 if ln[-1] in ".,!?" else 0)
+        ):
             errs.append(
                 f"captions {k}: 끝 글자가 {w - cells(ln[-1])}칸에서 시작 — 자동 줄바꿈: {ln!r}"
             )
     return errs
 
 
-NARR_INDENT = "  "  # 반각 둘 = 14px → 창 x48 + 14 ≈ 그림 왼쪽 끝(x=64)
+# 엔딩 **나레이션** 배치(초상화 없는 화면만, 대사 장면은 `dlg_layout` 이 원래대로) — 마스터 10-08: 「그림 안에 들어오는 문장은 그림 왼쪽 끝 기준, 그림 폭을 넘치는 긴 문장은 왼쪽으로 한두 칸」
+# (한 글자 정도만 넘치면 그대로 그림 왼쪽 끝에 맞추고 오른쪽으로 삐져나가도 된다).
+# 실측(마스터 캡처 ed1-kr-0000~0031): 그림 = x64~256(폭 192) 전 장면 같다. 엔딩 피치 14·반각 7px, 글자 시작은 창 원점
+# 첫 글자 **잉크 시작 = 49 + 7n**(실화면 실측 n=0:49 · 1:56 · 3:70 — 칸 원점이 아니라 잉크 기준) ⇒ n=2 가 x≈63(그림 왼쪽 끝 64 와 1px 안). 블록(한 화면) 단위로 같은 n —
+# 줄마다 들쑥날쑥하지 않게. 이름 줄과 이어지는 줄의 상대 들여쓰기(「이름「」 폭만큼 반각)는 문안 안에 있어 그대로 유지된다.
+FRAME_X = 64
+FRAME_W = 192
+IND_BASE = 2  # 반각 둘 = 14px → 첫 글자 잉크 x≈63 (실화면 실측: 잉크 시작 = 49 + 7n)
+IND_STEP_PX = 7
+FIT_OVER_PX = 28  # 마스터 10-08: 한 글자 정도 넘침(ed1-kr-0004 = 시작 x63 에서 24px)은 그림 왼쪽 끝 기준 그대로 — 오른쪽으로 삐져나가도 된다
+CELL_PX = 14  # 엔딩 피치
+START_X = 63  # n=IND_BASE 일 때 첫 글자 잉크 시작
 
 
-def narr_layout(k: str, ours: str) -> tuple[str, bool]:
-    """나레이션 화면 배치 — 그림 왼쪽 끝(x=64)에서 시작해 창 안에 들면 x=64, 넘치면 창 원점(x=48).
+def block_indent(lines: list[str]) -> tuple[int, int]:
+    """한 화면 블록의 들여쓰기 반각 수 n 과 넘침 px. 넘침 ≤ 16px 이면 n=3(그림 왼쪽 끝), 더 넘치면 넘친 만큼(반각 단위) 왼쪽으로."""
+    import math
 
-    한 화면의 두 줄은 같은 시작(마스터 2026-09-26: 원문은 장면마다 가운데 맞춤에 가깝다 → 이 규칙으로). 정본엔
-    들여쓰기를 손으로 넣지 않는다 — 여기서 규칙으로 정한다. 반환: (배치된 문안, x=64 인가).
-    """
+    w = max((cells(ln.rstrip()) * CELL_PX for ln in lines), default=0)
+    over = START_X + w - (FRAME_X + FRAME_W)
+    if over <= FIT_OVER_PX:
+        return IND_BASE, max(0, round(over))
+    return max(0, IND_BASE - math.ceil(over / IND_STEP_PX)), round(over)
+
+
+def _place(k: str, head: str, lines: list[str], tail: str, fam: str) -> tuple[str, int]:
+    n, _over = block_indent(lines)
+    for m in range(n, -1, -1):  # 창 wrap 게이트를 못 넘으면 더 왼쪽으로
+        moved = head + "\n".join(" " * m + ln for ln in lines) + tail
+        if not _width_errors(k, moved, fam):
+            return moved, m
+    return head + "\n".join(lines) + tail, 0
+
+
+def narr_layout(k: str, ours: str) -> tuple[str, int]:
+    """나레이션 화면 배치 — `block_indent` 규칙(그림 왼쪽 끝 기준, 넘치면 왼쪽). 반환: (배치된 문안, 들여쓰기 반각 수)."""
     import re
 
     head, body, tail = re.match(r"((?:<[^>]*>)*)(.*?)((?:<[^>]*>)*)$", ours, re.DOTALL).groups()
-    lines = [ln.lstrip(" ") for ln in body.split("\n")]
-    moved = head + "\n".join(NARR_INDENT + ln for ln in lines) + tail
-    if not _width_errors(k, moved, "ending-narr"):
-        return moved, True
-    return head + "\n".join(lines) + tail, False
+    return _place(k, head, [ln.lstrip(" ") for ln in body.split("\n")], tail, "ending-narr")
 
 
-def dlg_layout(k: str, ours: str) -> tuple[str, str]:
-    """엔딩 대사 배치 — 이름 있는 화면(「이름「…」)은 그대로 x=48, **이름 없는 이어지는 화면**은 그림 왼쪽 끝(x=64)으로
-    한 칸 들인다(모든 줄에 반각 둘). 창 wrap 게이트를 못 넘으면 그대로 둔다(마스터 2026-09-26).
-    반환: (배치된 문안, "name" | "64" | "48")."""
+def dlg_layout(k: str, ours: str) -> tuple[str, int]:
+    """엔딩 대사 배치 — **원래대로**(마스터 10-08: 「캐릭터 대사 장면은 그대로 유지」): 이름 있는 화면(「이름「…」)은 그대로 x=48(n=0),
+    이름 없는 이어지는 화면은 반각 둘(14px)을 들이고, 창 wrap 게이트를 못 넘으면 그대로 둔다. 초상화가 그림 가장자리를 덮는
+    장면이라 그림 왼쪽 끝 기준 규칙(`block_indent`)을 적용하지 않는다. 반환: (배치된 문안, 들여쓰기 반각 수)."""
     import re
 
     head, body, tail = re.match(r"((?:<[^>]*>)*)(.*?)((?:<[^>]*>)*)$", ours, re.DOTALL).groups()
     first = body.split("\n")[0].lstrip(" ")
     if not first.startswith("「") and "「" in first:
-        return ours, "name"
-    moved = head + "\n".join(NARR_INDENT + ln for ln in body.split("\n")) + tail
+        return ours, 0
+    moved = head + "\n".join("  " + ln for ln in body.split("\n")) + tail
     if not _width_errors(k, moved, "ending"):
-        return moved, "64"
-    return ours, "48"
+        return moved, 2
+    return ours, 0
 
 
 def font5_chars(textmap: dict) -> set[str]:
@@ -326,6 +365,7 @@ def plan(
                 n = len(ours.split("\n"))
                 if n > MAX_LINES.get(name, 99):
                     errs.append(f"captions {k}: {n}줄 > {MAX_LINES[name]}줄 ({name})")
+                ours = font_tags(ours)
                 body = b"".join(tk.raw for tk in sysmsg._tokens_from_ours(st, ours, encode))
                 touched_fams.add(name)
             else:

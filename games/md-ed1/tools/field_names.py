@@ -18,7 +18,7 @@
 
 46개 항목 전부 **이미 있는 정본**을 재사용해 조합했다(`엘아스타`+`마을`→`엘아스타마을` 류) —
 새 표기를 짓지 않고 기존 코드를 재사용하므로 글꼴 칸이 늘지 않는다. 🔴 **정본 조회는
-`shared/glossary/eiyuu.json`(place 105항목)까지 봐야 한다** — 처음엔 `textmap/names.json`
+`shared/canon/nouns/eiyuu.json`(place 105항목)까지 봐야 한다** — 처음엔 `textmap/names.json`
 (place_a/b, 50항목)만 보고 39번을 "글로서리에 없는 새 이름"이라 음역했는데, **글로서리엔
 이미 있었다**(`ジャグリ`→`쟈그리`, place 820행 부근). names.json 은 place_a/b 두 표가 이미
 뽑아 쓴 **부분집합**이라 이걸 "정본"으로 착각하면 놓친다(관리자 지적 2026-09-27 밤). 예외 하나:
@@ -49,12 +49,13 @@
 얇아질 뿐이다.
 """
 
+import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import archives
 import common
+import dict_names
 import hangul
 
 BLOCK = 91
@@ -63,55 +64,76 @@ ENTRY_LEN = 14
 STRIDE = ENTRY_LEN + 1  # +구분자(0x07)
 ORIG_ANCHOR = bytes.fromhex("8347838b83418358835e82cc92ac")  # エルアスタの町 — 표 0번 항목 원문
 
-# (색인, 한글, 원본에서 그대로 보존하는 꼬리 바이트) — jp 는 검산 주석용
-ENTRIES = [
-    (0, "엘아스타마을", b"", "エルアスタの町"),
-    (1, "루디아마을", b"", "ルディアの町"),
-    (2, "크루즈마을", b"", "クルスの村"),
-    (3, "베르가광산", b"", "ベルガの鉱山"),
-    (4, "네리아항구", b"", "ネリアの港"),
-    (5, "론도항구", b"", "ロンドの港"),
-    (6, "랄파요새", b"", "ラルファの砦"),
-    (7, "마스쿤마을", b"", "マスクーンの町"),
-    (8, "리젤마을", b"", "リーゼルの町"),
-    (9, "스엘마을", b"", "スエルの村"),
-    (10, "암다마을", b"", "アムダの村"),
-    (11, "요르도항구", b"", "ヨルドの港"),
-    (12, "낫슈마을", b"", "ナッシュの町"),
-    (13, "세리스마을", b"", "セリスの町"),
-    (14, "바즈눈마을", b"", "バズヌーンの町"),
-    (15, "에메마을", b"", "エメの町"),
-    (16, "루드라항구", b"", "ルドラの港"),
-    (17, "카울마을", b"", "カウルの村"),
-    (18, "리셸항구", b"", "リシェールの港"),
-    (19, "나슬마을", b"", "ナスールの町"),
-    (20, "판가스마을", b"", "ファンガスの町"),
-    (21, "콜크스마을", b"", "コルクスの町"),
-    (22, "파에토마을", b"", "ファエトの村"),
-    (23, "핀요새", b"", "フィーンの砦"),
-    (24, "길모아마을", b"", "ギルモアの里"),
-    (25, "니르기드성", b"", "ニルギドの城"),
-    (26, "라스타반", b"", "ラスタバン"),
-    (27, "루디아성", b"", "ルディアの城"),
-    (28, "곶의동굴", b"", "岬の洞窟"),
-    (29, "유혈의동굴", b"", "流血の洞窟"),
-    (30, "구엔의탑", b"", "グエンの塔"),
-    (31, "시련의동굴", b"", "試練の洞窟"),
-    (32, "왕가의묘", b"", "王家の墓"),
-    (33, "국경의동굴", b"", "国境の洞窟"),
-    (34, "용의알", bytes.fromhex("83c7"), "竜の卵<83c7>"),  # 꼬리 바이트 의미 불명 — 보존
-    (35, "바람의탑", b"", "カザミの塔"),
-    (36, "방풍의동굴", b"", "風よけの穴"),
-    (37, "늑대의입", b"", "狼の口"),  # 마스터 확정 2026-09-28 — 대사 속은 "늑대의 입"(띄어씀), HUD·배너는 붙임
-    (38, "수정의탑", b"", "水晶の塔"),
-    (39, "쟈그리폐광", b"", "ジャグリの廃坑"),  # ジャグリ → 쟈그리, shared/glossary/eiyuu.json 정본(place, 820행 부근)
-    (40, "노부부의집", b"", "老夫婦の家"),
-    (41, "오레아의집", b"", "オレアの家"),
-    (42, "숲의초가집", b"", "森の一軒家"),
-    (43, "로엘의집", b"", "ロエルの家"),
-    (44, "미랄다의집", b"", "ミラルダの家"),
-    (45, "바바라의집", b"", "バーバラの家"),
+# (색인, 원본에서 그대로 보존하는 꼬리 바이트, 원문) — 한글은 사전·접미 규칙에서 읽는다(`banner_kr`).
+# 게임 폴더에 이름 표를 두지 않는다(사전 적용 2단계, 마스터 2026-10-08).
+ENTRY_JP = [
+    (0, b"", "エルアスタの町"),
+    (1, b"", "ルディアの町"),
+    (2, b"", "クルスの村"),
+    (3, b"", "ベルガの鉱山"),
+    (4, b"", "ネリアの港"),
+    (5, b"", "ロンドの港"),
+    (6, b"", "ラルファの砦"),
+    (7, b"", "マスクーンの町"),
+    (8, b"", "リーゼルの町"),
+    (9, b"", "スエルの村"),
+    (10, b"", "アムダの村"),
+    (11, b"", "ヨルドの港"),
+    (12, b"", "ナッシュの町"),
+    (13, b"", "セリスの町"),
+    (14, b"", "バズヌーンの町"),
+    (15, b"", "エメの町"),
+    (16, b"", "ルドラの港"),
+    (17, b"", "カウルの村"),
+    (18, b"", "リシェールの港"),
+    (19, b"", "ナスールの町"),
+    (20, b"", "ファンガスの町"),
+    (21, b"", "コルクスの町"),
+    (22, b"", "ファエトの村"),
+    (23, b"", "フィーンの砦"),
+    (24, b"", "ギルモアの里"),
+    (25, b"", "ニルギドの城"),
+    (26, b"", "ラスタバン"),
+    (27, b"", "ルディアの城"),
+    (28, b"", "岬の洞窟"),
+    (29, b"", "流血の洞窟"),
+    (30, b"", "グエンの塔"),
+    (31, b"", "試練の洞窟"),
+    (32, b"", "王家の墓"),
+    (33, b"", "国境の洞窟"),
+    (34, b"\x83\xc7", "竜の卵<83c7>"),
+    (35, b"", "カザミの塔"),
+    (36, b"", "風よけの穴"),
+    (37, b"", "狼の口"),
+    (38, b"", "水晶の塔"),
+    (39, b"", "ジャグリの廃坑"),
+    (40, b"", "老夫婦の家"),
+    (41, b"", "オレアの家"),
+    (42, b"", "森の一軒家"),
+    (43, b"", "ロエルの家"),
+    (44, b"", "ミラルダの家"),
+    (45, b"", "バーバラの家"),
 ]
+# 원문 접미 → 한국어 접미 — 칸은 **원문대로**(마스터 10-07): 원문에 の町·の城 가 있으면 붙이고 없으면 맨이름.
+# 지명 접미 규칙 — 정본 ui 의 `원문@지명칸` 열쇠(마스터 10-08). 게임 폴더에 표를 두지 않는다.
+SUFFIX_KR = {k.split("@")[0]: v for k, v in dict_names.canon.table("ui", "ed1").items() if k.endswith("@지명칸")}
+_SUFFIX = re.compile("^(.+?)(" + "|".join(SUFFIX_KR) + ")$")
+
+
+def banner_kr(jp: str) -> str:
+    """배너 칸 원문 → 한글. 사전 place 에 통째로 있으면 그 값, 없으면 「사전 이름 + 원문 접미」(붙여쓰기)."""
+    jp = re.sub(r"<[^>]*>", "", jp)
+    v = dict_names.from_dict(jp, ("place",))
+    if v:
+        return v
+    m = _SUFFIX.match(jp)
+    base = dict_names.from_dict(m.group(1), ("place",)) if m else None
+    if not base:
+        raise SystemExit(f"블록 91 배너 {jp!r}: 사전 place 에 없다 — 사전 후보로 올린다")
+    return base + SUFFIX_KR[m.group(2)]
+
+
+ENTRIES = [(i, banner_kr(jp), extra, jp) for i, extra, jp in ENTRY_JP]
 
 
 # ── 갈무리14 전용 합성 글리프 (마스터 확정 2026-09-28 — "입장배너 폰트크기 키울 수 있나") ──
@@ -128,7 +150,10 @@ _pua_for: dict[str, str] | None = None
 def _pua_map() -> dict[str, str]:
     global _pua_for
     if _pua_for is None:
-        uniq = sorted(set("".join(kr for _, kr, _extra, _jp in ENTRIES)))
+        uniq = sorted(
+            set("".join(kr for _, kr, _extra, _jp in ENTRIES))
+            | {ch for tbl in DEST.values() for _jp, kr in tbl for ch in kr}
+        )
         _pua_for = {ch: chr(_PUA_BASE + i) for i, ch in enumerate(uniq)}
     return _pua_for
 
@@ -181,6 +206,57 @@ def new_block(orig_data: bytes, cs) -> bytes:
     return bytes(out)
 
 
+# ── 블록 92·93 — 같은 14B 칸 꼴의 목적지 목록 (커버리지 점검 2026-10-08) ────────────────────────
+# 블록 91(입장 배너)과 같은 **가운데 정렬 14B 칸 + 0x07 구분자** 표가 블록 93(항구·요새 목적지 아홉)·블록 92(마을 하나)에도
+# 있다. 문안 스트림 밖이라 이름 검사·원문 잔존 게이트가 못 봤다 — 일본어로 남아 있었다(`names_corpus` 에 안 들어 있었다).
+# 한글은 배너와 같은 규칙(`banner_kr`, 사전 place + 원문 접미)이고, **칸 길이는 원본과 같다**(뒤 오프셋 불변).
+# 같은 갈무리14 합성 글리프(PUA)로 굽는다 — 블록 91 이 필드 지도(입장 배너), 92·93 은 같은 꼴 표를 가진 다른 지도 구역(바다·항구)이라
+# 같은 배너 루틴이 읽는다고 본다(표 꼴·구분자가 같다). 인게임 확인은 바다 구역(배 필요, 후반)에 닿을 때.
+DEST_JP = {
+    92: ["ルディアの町"],
+    93: [
+        "ネリアの港",
+        "ロンドの港",
+        "ラルファの砦",
+        "海賊島",
+        "スエルの村",
+        "ヨルドの港",
+        "ルドラの港",
+        "リシェールの港",
+        "フィーンの砦",
+    ],
+}
+DEST = {blk: [(jp, banner_kr(jp)) for jp in jps] for blk, jps in DEST_JP.items()}
+
+
+def _orig_cell(jp: str) -> bytes:
+    return _pad(jp.encode("cp932"))
+
+
+def _dest_start(data: bytes, blk: int) -> int:
+    """표 첫 칸의 시작 — 원본 첫 칸(가운데 정렬 14B)을 앵커로 찾고, 나머지 칸이 15B 간격으로 이어지는지 검산한다."""
+    jps = DEST_JP[blk]
+    first = _orig_cell(jps[0])
+    at = data.find(first + b"\x07")
+    if at < 0 or data.find(first + b"\x07", at + 1) >= 0:
+        raise SystemExit(f"블록 {blk}: 목적지 표 첫 칸이 유일하게 안 잡힌다 — 원본이 바뀌었나 확인")
+    for i, jp in enumerate(jps):
+        if data[at + i * STRIDE : at + i * STRIDE + ENTRY_LEN] != _orig_cell(jp):
+            raise SystemExit(f"블록 {blk}: 목적지 표 {i}번 칸({jp})이 원본과 다르다")
+    return at
+
+
+def new_dest_block(blk: int, orig_data: bytes, cs) -> bytes:
+    """블록 92·93 의 목적지 표를 한글로 — 칸 길이 불변, 배너와 같은 갈무리14 합성 코드."""
+    at = _dest_start(orig_data, blk)
+    out = bytearray(orig_data)
+    pua = _pua_map()
+    for i, (_jp, kr) in enumerate(DEST[blk]):
+        body = b"".join(cs.encode_char(pua[ch]) for ch in kr)
+        out[at + i * STRIDE : at + i * STRIDE + ENTRY_LEN] = _pad(body)
+    return bytes(out)
+
+
 def check() -> None:
     import archives as _archives
 
@@ -190,6 +266,9 @@ def check() -> None:
     if data[TABLE_OFF : TABLE_OFF + len(ORIG_ANCHOR)] != ORIG_ANCHOR:
         raise SystemExit(f"블록 {BLOCK}: 지명 표 앵커가 원본과 다르다")
     print(f"  대본 블록 {BLOCK} 지명 표 — 앵커 일치, 항목 {len(ENTRIES)}개")
+    for blk in DEST_JP:
+        _dest_start(bl[blk][1], blk)
+    print(f"  대본 블록 {'·'.join(map(str, DEST_JP))} 목적지 표 — 앵커 일치, 항목 {sum(len(v) for v in DEST_JP.values())}개")
 
 
 if __name__ == "__main__":

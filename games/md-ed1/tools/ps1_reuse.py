@@ -8,7 +8,7 @@
 
 - 원문 대조 키: 공백·중점·PS1 토큰(`{c}화자{c}`·`{n}`)을 걷어낸 NFKC 문자열. MD 쪽은 스트림을 페이지(05)로
   갈라 각 페이지를 PS1 창 하나와 맞댄다. **모든 페이지가 맞는 스트림만** 채운다(부분 일치는 review 로).
-- 화자 머리 스트림(`<1e>이름<04><07>`)은 `shared/glossary` person 표로 채운다.
+- 화자 머리 스트림(`<1e>이름<04><07>`)은 `shared/canon` person 표로 채운다.
 - 출처를 `src` 에 남긴다(`ps1:ED1SCN1:123`). 사람이 고친 `ours` 는 건드리지 않는다(빈 것만 채움).
 - 미일치 스트림은 work/review/ps1_reuse/NNN.txt 에 원문·근접 후보를 낸다(원문 포함 — 커밋 금지).
 
@@ -32,8 +32,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import archives
 import common
+import dict_names
 import scene
 import textmap
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from shared import canon  # noqa: E402
 
 
 def _find_ps1() -> Path:
@@ -49,7 +53,6 @@ def _find_ps1() -> Path:
 
 
 PS1 = _find_ps1()
-GLOSSARY = common.ROOT / "shared" / "glossary" / "eiyuu.json"
 
 
 def names_table() -> dict[str, str]:
@@ -60,12 +63,12 @@ def names_table() -> dict[str, str]:
     """
     out = {
         k: v
-        for cat in json.loads(GLOSSARY.read_text(encoding="utf-8"))["categories"].values()
+        for cat in canon.nouns("ed1")["categories"].values()
         if isinstance(cat, dict)
         for k, v in cat.items()
         if isinstance(v, str)
     }
-    tbl = json.loads((common.GAME_DIR / "textmap" / "names.json").read_text(encoding="utf-8"))
+    tbl = dict_names.names()
     for name in ("item", "spell", "place_a", "place_b"):
         for e in tbl.get(name, {}).values():
             if isinstance(e, dict) and e.get("jp") and e.get("ours"):

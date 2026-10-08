@@ -1,7 +1,6 @@
 """고정 폭 문안 표 — 아이템·주문·지명·메뉴/설정/상태 라벨. **제자리, 같은 폭**으로 다시 쓴다.
 
     python3 tools/tables.py --check   # 표 분모(개수·폭) 재현
-    python3 tools/tables.py --seed    # textmap/names.json 초안 — glossary 로 채울 수 있는 건 채운다
 
 레코드 = `폭 B 본문 + 구분자(06 또는 00)`. 본문은 공백 패딩(아이템은 오른쪽 정렬). 한글은 2B/칸이라
 폭 W 바이트 = W/2 칸 — 넘치면 **빌드 실패**(폭 게이트). 낱말 수준 명칭이라 원문(JP)을 정본에 담아도
@@ -77,7 +76,6 @@ ZGROUPS = [
         4,
     ),  # 타이틀: 세이브 슬롯 줄 「L00 ―――――――」×3 + 「はじめから」 (FE 10/FE 0C 피치 태그)
 ]
-NAMES_JSON = common.GAME_DIR / "textmap" / "names.json"
 
 
 # 06 종결 이름 칸 — (이름, 첫 자리, 레코드 간격, 개수, 상한) — 게임 상태 블록의 파티 레코드(+0x30, 새 게임 때 RAM 으로
@@ -142,35 +140,5 @@ def check(d: bytes) -> None:
         )
 
 
-def seed(d: bytes) -> None:
-    g = json.loads(
-        (common.ROOT / "shared" / "glossary" / "eiyuu.json").read_text(encoding="utf-8")
-    )["categories"]
-    lookup = {}
-    for cat in ("item", "place", "person", "monster"):
-        lookup.update(g[cat])
-    cur = json.loads(NAMES_JSON.read_text(encoding="utf-8")) if NAMES_JSON.exists() else {}
-    filled = 0
-    for name, recs in records(d).items():
-        tbl = cur.setdefault(name, {})
-        for i, (_, raw) in enumerate(recs):
-            jp = decode(raw).strip()
-            ent = tbl.setdefault(str(i), {"jp": jp, "ours": ""})
-            key = unicodedata.normalize("NFKC", jp)
-            if not ent["ours"] and key in lookup:
-                ent["ours"] = lookup[key]
-                ent["src"] = "glossary"
-                filled += 1
-    NAMES_JSON.parent.mkdir(exist_ok=True)
-    NAMES_JSON.write_text(json.dumps(cur, ensure_ascii=False, indent=1), encoding="utf-8")
-    tot = sum(len(t) for t in cur.values())
-    done = sum(1 for t in cur.values() for e in t.values() if e["ours"])
-    print(f"  {NAMES_JSON}: {done}/{tot} 채움 (이번 {filled})")
-
-
 if __name__ == "__main__":
-    d = common.rom()
-    if "--seed" in sys.argv:
-        seed(d)
-    else:
-        check(d)
+    check(common.rom())

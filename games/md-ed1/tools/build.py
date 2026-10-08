@@ -24,6 +24,7 @@ import archives
 import battle
 import captions
 import common
+import dict_names
 import field_hud
 import field_names
 import gfxtext
@@ -31,6 +32,7 @@ import halfspace
 import hangul
 import josa
 import lz
+import punctwrap
 import scene
 import sysmsg
 import tables
@@ -52,7 +54,7 @@ CAPTION_RESERVE = (
 # ⚠ 표는 **한글 코드 수를 따라 자란다**(종성 비트표 = 코드 하나에 1비트). 0x180 으로 재 두었더니
 # 글자 33 자를 새로 굳히자마자 2바이트가 넘쳤다(2026-09-07). 그래서 **글리프 상한**(1,370자)까지
 # 재 둔다 — 172B(한글 비트표) + 16B(반각) + 252B(기계어) + 쌍 표 ≈ 460B.
-JOSA_RESERVE = 0x280
+JOSA_RESERVE = 0x340  # 0x280→0x340: 으로/로·과/와 를 넣으며 표가 2비트(받침·ㄹ)로 커졌다 — 글리프 1,370자일 때 기계어 388 + 표 383 = 771B
 # 조사 훅 앞에 어절 줄넘김 본체(tools/wordwrap.py, 326B)를 둔다 — 넘칠 때 글자가 아니라 어절을
 # 다음 줄로 보낸다(마스터 2026-09-30 번복, 전 기종 — 09-27 밤의 글자 단위 "최종 판정"을 다시 뒤집었다)
 WRAP_RESERVE = 0x180
@@ -82,6 +84,8 @@ class Rom:
         ),
         "half-tramp": (halfspace.TRAMP, halfspace.TRAMP + 6),
         "half-site": (halfspace.SITE, halfspace.SITE + 4),
+        "punct-code": (TAIL_HI - punctwrap.CODE_LEN, TAIL_HI),
+        "punct-site": (punctwrap.SITE, punctwrap.SITE + 6),
         **{f"wrap-site:{s:x}": (s, s + 4) for s in wordwrap.SITES},
         "field-hud-space-tramp": (
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE,
@@ -333,7 +337,7 @@ def build_tables(orig: bytes, names: dict, cs: hangul.Charset) -> list[tuple[str
             out.append((f"table:{name}", pos, body))
     if over:
         raise SystemExit(
-            "표 항목이 폭을 넘는다 — textmap/names.json 을 줄인다:\n    " + "\n    ".join(over)
+            "표 항목이 폭을 넘는다 — 칸 배치(textmap/ui_layout.json)나 정본 값을 줄인다:\n    " + "\n    ".join(over)
         )
     return out
 
@@ -343,14 +347,14 @@ def _load(path):
 
 
 def load_textmaps() -> dict:
-    """정본 전부 — 대본(script/*.json) · 표(names.json) · 시스템 메시지 · 자막 · 전투(메시지·몬스터)."""
+    """정본 전부 — 대본(script/*.json) · 표(사전·정본 + ui_layout.json) · 시스템 메시지 · 자막 · 전투(메시지·몬스터)."""
     return {
         "maps": textmap.load_all(),
-        "names": _load(tables.NAMES_JSON),
+        "names": dict_names.names(),
         "smap": _load(sysmsg.MAP_JSON),
         "cmap": _load(captions.MAP_JSON),
         "bmap": _load(battle.MAP_JSON),
-        "monsters": _load(battle.MONSTERS_JSON),
+        "monsters": battle.monsters(common.rom()),
     }
 
 
@@ -373,6 +377,7 @@ def collect_chars(tm: dict) -> set[str]:
     for e in tm["monsters"].values():
         chars.update(e.get("ours", ""))
     chars.update(field_hud.chars())  # 필드 HUD 뒷말·방위(문안을 안 거친다) — 늘 굽는다
+    chars.update(josa.chars())  # 조사 훅이 그리는 글자(는은가이를을와과으로) — 늘 굽는다
     chars.update(halfspace.chars())  # 「의␣」 — 아이템 칸 14B 에 반각 공백을 녹인 합성 글자
     chars.update(field_names.chars())  # 대본 블록 91 지명 표(문안 스트림 밖) — 늘 굽는다
     return chars
@@ -430,6 +435,8 @@ def main(check_only: bool = False) -> None:
     # 대본 블록 91 — 문안 스트림 밖의 지명 표(입장 배너). scene.py 로는 안 보여 별도 경로로 얹는다.
     fn_base = new_blocks.get(field_names.BLOCK, bl[field_names.BLOCK][1])
     new_blocks[field_names.BLOCK] = field_names.new_block(fn_base, cs)
+    for dn in field_names.DEST_JP:  # 블록 92·93 목적지 표(같은 14B 칸 꼴)
+        new_blocks[dn] = field_names.new_dest_block(dn, new_blocks.get(dn, bl[dn][1]), cs)
     battle_blocks: dict[int, bytes] = {}
     for n, (_s, bb, _e) in enumerate(battle.blocks(orig)):
         nb = battle.plan_block(
@@ -493,7 +500,8 @@ def main(check_only: bool = False) -> None:
     rom.write("font0-glyphs", cs.r0["desc"], orig[cs.r0["desc"] : cs.r0["desc"] + 4] + gl)
     for label, pos, body in hangul.resource1(cs):  # 반각 쉼표 — 표 0 이 비운 자리에
         rom.write(label, pos, body)
-    cap5 = {c for c in captions.font5_chars(cmap) if c.strip()}
+    # 네오둥근모는 반각도 리소스 5 로 그리니 공백(0x20)도 표에 든다 — 빠지면 조회가 첫 항목(「!」)으로 떨어진다
+    cap5 = {c for c in captions.font5_chars(cmap) if c.strip() or (c == " " and captions.FONT_SRC == "neodgm")}
     if captions.FONT_ID and cap5:  # <fd85> 를 단 자막 전용 글꼴(리소스 5, Galmuri14 14×14)
         for label, pos, body in hangul.resource5(
             cs, cap5, hangul.layout_after_r1(cs), cell=captions.FONT_CELL, source=captions.FONT_SRC
@@ -514,6 +522,12 @@ def main(check_only: bool = False) -> None:
     for label, pos, body in wordwrap.plan(orig, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE):
         rom.write(label, pos, body)
     for label, pos, body in halfspace.plan(cs, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE):
+        rom.write(label, pos, body)
+    # 2d-2. 반각 부호(. , ! ?)는 줄 끝에서 4px 더 허용 — 엔진 자동 줄바꿈이 1px 로 꺾는 것을 없앤다(마스터 10-08)
+    #       꼬리는 조사 훅 예약 **맨 끝**(훅 최대치 771B 뒤)에 둔다 — 겹치면 빌드가 막는다
+    if josa.size(cs) > JOSA_RESERVE - punctwrap.CODE_LEN:
+        raise SystemExit("조사 훅이 부호 줄바꿈 꼬리 자리를 침범한다 — JOSA_RESERVE 를 늘린다")
+    for label, pos, body in punctwrap.plan(TAIL_HI - punctwrap.CODE_LEN):
         rom.write(label, pos, body)
     # ⚠ 합성 글리프(field_hud·field_names 의 PUA 콘덴스드 슬라이스)는 뺀다 — 일부러 큰 왼쪽
     # 여백을 구워 둔 자리라(공백을 그림 안에 녹였다) 정상 글자처럼 재면 문턱이 깨진다. 이

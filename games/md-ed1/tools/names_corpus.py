@@ -3,7 +3,7 @@
     python3 tools/names_corpus.py --check   # 분모만(블록·스트림 수) 찍는다
 
 `pairs()` = `[(자리, 원문 줄, 우리 줄 또는 None, 갈래)]` (갈래 "dialog" = 메시지 창에 나가는 문장 — script·battle·sysmsg·captions · "slot" = 이름 칸·표 — monsters·names) — **문안 전체**(script 225블록 · battle 110블록 ·
-sysmsg · captions · monsters.json · names.json, 압축 해제 기준)에 대해 낸다. 미번역은 None 으로
+sysmsg · captions · 몬스터 · 표(사전·정본), 압축 해제 기준)에 대해 낸다. 미번역은 None 으로
 내서 분모에 들게 한다(마스터 10-07 — 「9/225 만 보고 0건」이 이 구멍이었다).
 
 ⚠ **gfx_a/b/c/d 는 뺐다** — 그래픽 카드라 이름 문안이 없다(블록91 지명 표는 script 아카이브
@@ -11,6 +11,7 @@ sysmsg · captions · monsters.json · names.json, 압축 해제 기준)에 대�
 블록 단위로 또 돌지 않는다(중복 집계 방지) — `sysmsg.streams()` 가 이미 그 영역을 포함한다.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -19,12 +20,47 @@ import archives
 import battle
 import captions
 import common
+import dict_names
+import field_names
 import halfspace
 import scene
 import sysmsg
 
-
+CANON = "ed1"  # 공통 문안 정본(shared/canon) — 한 편짜리 게임 어댑터 값
+CANON_GATE = True  # 정본 어긋남을 실패로 친다(사전 적용 2단계 전환 끝, 2026-10-08)
+CANON_SKIP = r"^script:"  # 장면 대사는 정본 범위 밖(마스터 10-08) — 정본은 메뉴·호칭·시스템·전투 문구
 DIALOG, SLOT = "dialog", "slot"  # 갈래 — 메시지 창 문장(대사·전투 로그·시스템 메시지·캡션)은 지명 띄어쓰기까지 잰다, 칸·표·로그는 무시(마스터 10-07)
+
+
+_TAG = re.compile(r"<([0-9a-f]{2,6})(?::[0-9a-f]+)?(?:\|[^>]*)?>")
+_JOSA_PAIR = ("은(는)", "이(가)", "을(를)", "과(와)", "으로(로)")  # 조사 훅 하위 니블 p 0~4 (josa.py)
+_NAME_CODES = {"02", "0b", "0900", "0901", "0902", "0903", "0904", "0905"}  # 배우·리더·파티원 이름 자리
+_ITEM_CODES = {"0e"}  # 아이템·주문 이름 자리
+
+
+def _t(s):
+    """정본 검사용 줄 정규화 — **제어태그를 정본의 꼴로 푼다**(2026-10-08).
+
+    정본은 줄 전체(`^…$`)로 재고 자리표(`{name}`·`{item}`)와 병기 조사(`은(는)`)로 적혀 있다. 어댑터가 제어태그를 그대로 내면
+    (끝 `<0a|끝>`·이름 자리 `<02>`·조사 훅 `<eb00>`) 문구가 통째로 안 잡혔다 — 정본 값이 바뀌었는데 어긋남 0 이었다.
+    · 이름 자리 → `{name}` · 아이템 자리 → `{item}` · 조사 훅 `<eb|ec p>` → 병기 조사(`p` 하위 니블)
+    · 줄바꿈 `<01>` → 줄바꿈 · 나머지 제어태그(끝·쪽·참조·피치 …)는 뗀다."""
+    if not isinstance(s, str):
+        return s
+
+    def sub(m):
+        c = m.group(1)
+        if c in _NAME_CODES:
+            return "{name}"
+        if c in _ITEM_CODES:
+            return "{item}"
+        if c[:2] in ("eb", "ec") and len(c) == 4:
+            return _JOSA_PAIR[min(int(c[3], 16), 4)]
+        if c == "01":
+            return "\n"
+        return ""
+
+    return _TAG.sub(sub, s)
 
 
 def _script_pairs(rom: bytes):
@@ -53,8 +89,7 @@ def _battle_pairs(rom: bytes):
     _names, strs = battle.survey(rom)
     p = common.GAME_DIR / "textmap" / "battle.json"
     kr_map = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-    mp = common.GAME_DIR / "textmap" / "monsters.json"
-    monsters = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}
+    monsters = battle.monsters(rom)
     for k, e in strs.items():
         blk, tgt = e["where"][0][0], e["where"][0][1]
         ent = kr_map.get(k)
@@ -66,7 +101,7 @@ def _battle_pairs(rom: bytes):
         # 「{アクダム}」가 문자 그대로 비교돼 항상 어긋난 것으로 보인다.
         if ours:
             ours = battle.expand_names(ours, monsters)
-        yield f"battle:{blk:03d}:{k}", e["text"], ours or None, DIALOG
+        yield f"battle:{blk:03d}:{k}", _t(e["text"]), _t(ours or None), DIALOG
 
 
 def _sysmsg_pairs(rom: bytes):
@@ -78,7 +113,7 @@ def _sysmsg_pairs(rom: bytes):
     for addr, e in strs.items():
         jp = sysmsg.render(e["stream"])
         ours = kr_map.get(f"{addr:06x}", {}).get("ours") or None
-        yield f"sysmsg:{addr:06x}", jp, ours, DIALOG
+        yield f"sysmsg:{addr:06x}", _t(jp), _t(ours), DIALOG
 
 
 def _captions_pairs(rom: bytes):
@@ -90,23 +125,17 @@ def _captions_pairs(rom: bytes):
     for addr, e in strs.items():
         jp = e["stream"].text()
         ours = kr_map.get(f"{addr:06x}", {}).get("ours") or None
-        yield f"captions:{addr:06x}", jp, ours, DIALOG
+        yield f"captions:{addr:06x}", _t(jp), _t(ours), DIALOG
 
 
 def _monsters_pairs():
-    import json
-
-    p = common.GAME_DIR / "textmap" / "monsters.json"
-    d = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    d = battle.monsters(common.rom())
     for jp, v in d.items():
         yield f"monsters:{jp}", jp, (v.get("ours") or None), SLOT
 
 
 def _names_pairs():
-    import json
-
-    p = common.GAME_DIR / "textmap" / "names.json"
-    d = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    d = dict_names.names()
     for cat, tbl in d.items():
         if not isinstance(tbl, dict):
             continue
@@ -119,6 +148,19 @@ def _names_pairs():
             yield f"names:{cat}[{idx}]", jp, (halfspace.plain(ent.get("ours") or "") or None), SLOT
 
 
+def _banner_pairs():
+    """입장 배너 지명 46칸(블록 91 표) — 사전·접미 규칙에서 읽은 값(`field_names.banner_kr`)을 잰다."""
+    for i, kr, _extra, jp in field_names.ENTRIES:
+        yield f"banner:{i:02d}", jp, kr, SLOT
+
+
+def _dest_pairs():
+    """블록 92·93 목적지 표 열 개(항구·요새·섬 · 마을) — 입장 배너와 같은 14B 칸 꼴. 점검 2026-10-08 에 빠져 있던 출처."""
+    for blk, tbl in field_names.DEST.items():
+        for i, (jp, kr) in enumerate(tbl):
+            yield f"dest:{blk}:{i:02d}", jp, kr, SLOT
+
+
 def pairs():
     rom = common.rom()
     yield from _script_pairs(rom)
@@ -127,6 +169,8 @@ def pairs():
     yield from _captions_pairs(rom)
     yield from _monsters_pairs()
     yield from _names_pairs()
+    yield from _banner_pairs()
+    yield from _dest_pairs()
 
 
 if __name__ == "__main__":
