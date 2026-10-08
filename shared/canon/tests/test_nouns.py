@@ -7,7 +7,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, os.path.join(ROOT, "shared"))
 
-import glossary as G
+import canon as G
 
 
 def test_categories_are_kept_apart():
@@ -36,7 +36,7 @@ def test_lookup_without_category_finds_something():
 def test_table_keeps_canon_order():
     """도구가 순서에 기대는 자리가 있다(슬롯 배열) — 정본 순서를 지킨다."""
     t = list(G.table("place"))
-    raw = list(G.load()["categories"]["place"])
+    raw = list(G.nouns()["categories"]["place"])
     assert t == raw
 
 
@@ -44,6 +44,7 @@ def test_table_keeps_canon_order():
 #    새로 추가하려면 **왜 번역인지**를 같이 적는다(`naming.md` 「외래어 이름은 공백을 뗀다」).
 SPACED_OK = {
     "レストナキノコ": "`キノコ` 를 음차(`키노코`)하지 않고 **버섯**으로 번역했다 — 고유명+보통명사",
+    "ドラゴンスレイヤー": "마스터 판정(10-08 정본 후보 검토) — 「드래곤 슬레이어」 띄어 쓴다",
     # ── ui 라벨 ───────────────────────────────────────────────────────────────
     # ⚠ 이 규칙의 자는 「원문이 가타카나인가」가 아니라 **「우리가 음차했는가」**다.
     #   UI 라벨은 이름이 아니라 **말**이라 대개 음차가 아니라 번역이고, 그러면 띄우는 게
@@ -74,7 +75,6 @@ def test_katakana_names_are_joined():
         "가타카나 한 덩어리인데 우리 표기에 공백이 있다 — 붙이거나 `SPACED_OK` 에 근거와 함께 올린다:\n  "
         + "\n  ".join(f"{c} {j} → {k!r}" for c, j, k in bad)
     )
-
 
 
 # ── UI 라벨 정본 ─────────────────────────────────────────────────────────────
@@ -111,10 +111,10 @@ def test_갈렸던_다섯():
     ⚠ `強さ`(강함)와 `状態`(상태)는 **다른 말**인데 옛 표기가 둘을 뭉개고 있었다 —
     정발도 「강함」으로 썼다.
     """
-    assert G.lookup("捨てる", "ui") == "버린다"   # ↔ 버리기(PCE)
-    assert G.lookup("戦う", "ui") == "공격"       # ↔ 싸움(pc98)
-    assert G.lookup("守る", "ui") == "방어"       # ↔ 막기(pc98)
-    assert G.lookup("使う", "ui") == "사용"       # ↔ 쓰기(pc98)
+    assert G.lookup("捨てる", "ui") == "버린다"  # ↔ 버리기(PCE)
+    assert G.lookup("戦う", "ui") == "공격"  # ↔ 싸움(pc98)
+    assert G.lookup("守る", "ui") == "방어"  # ↔ 막기(pc98)
+    assert G.lookup("使う", "ui") == "사용"  # ↔ 쓰기(pc98)
 
 
 def test_한_원문이_자리마다_다르면_갈라_담는다():
@@ -189,7 +189,9 @@ def test_원문이_다르면_별칭이_아니다():
     SFC 는 `EPひょうじ` 라고 쓴다 — `経験値表示` 가 아니다. 이어 주면 **원문이 다른데
     표기를 맞추는** 꼴이 된다. 그런 자리는 그 게임이 자기 말로 두고 대장에 적는다.
     """
-    assert G.diff_labels({"EPひょうじ": "EP 표시"}).unmatched == ["EPひょうじ"]
+    # 10-08: SFC 의 `EPひょうじ` 는 **제 열쇠**로 정본에 올랐다(마스터 검토 페이지 승인) — 별칭이 아니라 따로다
+    assert "EPひょうじ" not in G.aliases("ed1")
+    assert G.lookup("EPひょうじ", "ui") == "ＥＰ표시"
 
 
 def test_가나로_쓴_말만_옮긴다():

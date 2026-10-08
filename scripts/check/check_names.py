@@ -4,7 +4,7 @@
     python3 scripts/check/check_names.py --game sfc-ed1          # 요약(분모 포함)
     python3 scripts/check/check_names.py --game sfc-ed1 --list   # 어긋난 자리 전부
 
-잣대는 `shared/glossary/names.py`(공용 하나), 게임 몫은 둘뿐이다:
+잣대는 `shared/canon/names.py`(공용 하나), 게임 몫은 둘뿐이다:
 
 - **어댑터** `games/<게임>/tools/names_corpus.py` — `TITLE`(작품 사전, 기본 `eiyuu` · ED3 는 `ed3`) 과 `pairs()`. `pairs()` 가 `(자리, 원문 줄, 우리 줄|None, 갈래)` 를 — 갈래는 "dialog"(메시지 창에 나가는 **문장** — 대사·전투 로그·시스템 메시지·자막) · "slot"(고정 폭 **칸** — HUD·워프·입장 배너·이름 칸·메뉴·표) —
   **문안 전체**에 대해 낸다. 미번역 줄도 None 으로 낸다(분모가 거짓말을 안 하게).
@@ -24,7 +24,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "shared"))
 
-from glossary.names import audit
+from canon.names import audit
 
 
 def _adapter(game):

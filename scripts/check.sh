@@ -69,12 +69,18 @@ for g in $GAMES; do
   fi
   echo "── [$g]"
   sh "$gate" || fail=1
-  # 이름 검사 — 잣대는 공용 하나(shared/glossary/names.py), 게임은 「원문 줄 · 우리 줄」 어댑터만(마스터 10-07).
+  # 이름 검사 — 잣대는 공용 하나(shared/canon/names.py), 게임은 「원문 줄 · 우리 줄」 어댑터만(마스터 10-07).
   # 🔴 어댑터가 없으면(rc 2) **실패** — 번역 게임 일곱에 다 붙었다(10-07). 번역 트랙이 아니면 해당 없음(0).
   names_rc=0
   names_out=$("$PY" "$ROOT/scripts/check/check_names.py" --game "$g" 2>&1) || names_rc=$?
   printf '%s\n' "$names_out" | sed 's/^/  /'
   if [ "$names_rc" -ne 0 ]; then fail=1; fi
+  # 정본 검사 — 고유명사가 아닌 공통 문안(메뉴 라벨·화자 호칭·시스템·전투, shared/canon · 마스터 10-08).
+  # 어댑터는 이름 검사와 같은 것. 실패는 게임이 전환을 마치고 어댑터에 CANON_GATE 를 켠 뒤부터다.
+  canon_rc=0
+  canon_out=$("$PY" "$ROOT/scripts/check/check_canon.py" --game "$g" 2>&1) || canon_rc=$?
+  printf '%s\n' "$canon_out" | sed 's/^/  /'
+  if [ "$canon_rc" -eq 1 ]; then fail=1; fi
 done
 
 # 게임 브랜치가 공용·남의 게임을 건드렸나 — 공용 코드·남의 게임은 알림만(급하면 어길 수 있어야 한다).

@@ -23,7 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 LORE = ROOT / "shared/lore/ed1.json"  # main() 이 인자로 바꾼다
-GLOSSARY = ROOT / "shared/glossary/eiyuu.json"
+GLOSSARY = ROOT / "shared/canon/nouns/eiyuu.json"
 
 # 사전 범주 → 정본 범주(주문 이름은 정본 item 에 들어 있다)
 CAT = {

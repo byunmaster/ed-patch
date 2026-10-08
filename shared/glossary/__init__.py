@@ -1,49 +1,57 @@
-"""고유명사 정본 — **JP 원문 → 우리 표기**. 플랫폼 공용.
+"""🔴 옛 입구 — 사전은 정본(`shared/canon`) 안으로 합쳤다(마스터 2026-10-08 「정본 안에 사전이 들어 있는 방식으로,
+게임들은 정본 하나만 보면 된다」). 데이터는 `shared/canon/nouns/` 에 있고 여기엔 없다.
 
-정발 문안을 옮기던 시절에는 저본이 표기를 대신 맞춰 줬다. **자체 번역으로 돌아서면
-(유저 확정 2026-08-18) 이 표가 유일한 기준점**이다 — 그리고 같은 세계관인 새턴·PCE 가
-그대로 물려받는다. 그래서 게임이 아니라 `shared/` 에 둔다(둘째 소비자가 실재한다).
-
-    from glossary import lookup, table
-    lookup("ルディア")            # '루디아'  (범주를 안 가리면 전부에서 찾는다)
-    lookup("カース", "monster")   # '카스'
-    diff_labels({"その他": "그외"})  # LabelCheck(diff=[('その他','기타','그외')], unmatched=[])
-    kr_texts()                   # 화면에 나가는 우리 표기만(글리프 커버리지용)
-    table("item")                # {JP: KR} — 순서는 정본 파일 그대로
-
-⚠ **범주별로 둔다.** 같은 JP 가 범주에 따라 다른 것을 가리킨다(`カース` = 아이템 커스 /
-몬스터 카스). 평탄한 표로 합치면 그 구별이 조용히 사라진다.
-
-⚠ **문장은 여기 오지 않는다.** 단어 수준이라 저작권 대상이 아닌 것만 둔다.
+게임 도구가 아직 `import glossary` 로 부르므로 **한 라운드만** 이 다리를 둔다 — 값·순서·동작은 옛것 그대로
+(편을 안 가린 `title="eiyuu"`, ui·화자 호칭을 person 으로도 돌려주는 옛 다리 포함). 각 게임이 `canon` 으로
+옮기면 이 패키지를 지운다. 새 코드는 `import canon` 만 쓴다.
 """
 
 import collections
-import json
-import os
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_CACHE = {}
+import canon
 
 
 def load(title="eiyuu"):
-    if title not in _CACHE:
-        with open(os.path.join(_HERE, f"{title}.json"), encoding="utf-8") as f:
-            _CACHE[title] = json.load(f)
-    return _CACHE[title]
+    """고유명사 파일 원본 — 이제 `canon.nouns(title)`."""
+    return canon.nouns(title)
+
+
+# ── 임시 다리: 메뉴 라벨(ui)은 정본(shared/canon)으로 옮겼다(마스터 2026-10-08) ─────────────────
+#   게임 도구가 아직 `glossary` 로 ui 를 묻는다(pce·sfc·ss-ed1+2). 사전 적용 라운드 2단계에서 각 게임이
+#   `canon` 을 직접 읽게 바꾸면 이 다리를 걷는다. ⚠ 이름 검사(`names.audit`)는 `load()` 를 쓰므로 ui 를
+#   **안 본다** — 라벨은 정본 검사(`scripts/check/check_canon.py`)가 잰다.
+def _bridge(title):
+    if title != "eiyuu":
+        return {}, {}
+
+    ui, roles = dict(canon.table("ui", "ed1")), dict(canon.table("speaker", "ed1"))
+    for k, v in canon.table("ui", "ed2").items():
+        ui.setdefault(k, v)
+    for k, v in canon.table("speaker", "ed2").items():
+        roles.setdefault(k, v)
+    # 화자 호칭(옛 person 의 _speaker_only 57)도 person 으로 묻는 도구가 있다(ss-ed1+2 patch_ui 이름 칸)
+    return {"ui": ui, "person": roles}, dict(canon.load("ed1").get("_aliases", {}))
+
+
+def _cats(title):
+    cats = dict(load(title)["categories"])
+    for c, extra in _bridge(title)[0].items():
+        cats[c] = {**extra, **cats.get(c, {})} if c in cats else extra
+    return cats
 
 
 def categories(title="eiyuu"):
-    return tuple(load(title)["categories"])
+    return tuple(_cats(title))
 
 
 def table(category, title="eiyuu"):
     """{JP: KR} — 정본 파일의 순서를 지킨다(도구가 순서에 기대는 자리가 있다)."""
-    return dict(load(title)["categories"][category])
+    return dict(_cats(title)[category])
 
 
 def lookup(jp, category=None, title="eiyuu"):
     """JP 표기 → 우리 표기. 못 찾으면 None."""
-    cats = load(title)["categories"]
+    cats = _cats(title)
     if category:
         return cats[category].get(jp)
     for c in cats.values():
@@ -95,8 +103,8 @@ def diff_labels(mine, category="ui", title="eiyuu"):
     줄여 쓰고 **자기 대장에 적는다**(이름 정본과 같은 규약). 그러니 이 함수는 **다름을
     알릴 뿐 옳고 그름을 말하지 않는다** — 게이트가 그 판단을 한다.
     """
-    raw = load(title)["categories"][category]
-    alias = load(title).get("_aliases", {})
+    raw = _cats(title)[category]
+    alias = {**load(title).get("_aliases", {}), **_bridge(title)[1]}
     canon = {_norm(k): v for k, v in raw.items()}
     alias = {_norm(k): _norm(v) for k, v in alias.items()}
     diff, unmatched = [], []
@@ -122,9 +130,9 @@ def kr_texts(title="eiyuu"):
     ⚠ 열쇠(JP)도 안 준다 — `強さ@파티메뉴` 처럼 **자리가 붙은 열쇠**가 있고, 그것도
     화면에 나가는 글자가 아니다.
     """
-    return [kr for c in load(title)["categories"].values() for kr in c.values()]
+    return [kr for c in _cats(title).values() for kr in c.values()]
 
 
 def all_names(title="eiyuu"):
     """[(범주, JP, KR)] — 전수 검사용."""
-    return [(c, jp, kr) for c, d in load(title)["categories"].items() for jp, kr in d.items()]
+    return [(c, jp, kr) for c, d in _cats(title).items() for jp, kr in d.items()]

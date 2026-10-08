@@ -7,7 +7,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, os.path.join(ROOT, "shared"))
 
-from glossary.names import audit, find
+from canon.names import audit, find
 
 FAKE = {
     "categories": {
@@ -139,6 +139,30 @@ def test_spaced_key_still_matches():
     assert [h.where for h in r.mismatches] == ["a"]
 
 
+def test_hiragana_alias_does_not_cross_line_break():
+    """가나 별칭은 줄바꿈·전각 공백을 못 넘는다 — `けっして　したごころ` 가 `てした` 로 잡혔다(sfc 10-08)."""
+    data = {"categories": {"person": {"手下": "부하"}}, "_aliases": {"てした": "手下"}}
+    r = audit(
+        [
+            ("a", "けっして\nしたごころ", "결코 딴마음"),
+            ("b", "けっして\u3000したごころ", "결코 딴마음"),
+        ],
+        data=data,
+    )
+    assert r.hits == []
+
+
+def test_speaker_alias_inside_longer_name_is_not_a_speaker():
+    """별칭으로 들어온 화자 호칭도 줄 전체일 때만 — `だいとうぞくゲイル` 속 `とうぞく`(sfc 10-08)."""
+    data = {
+        "categories": {"speaker": {"盗賊": "도둑"}},
+        "_aliases": {"とうぞく": "盗賊"},
+        "_speaker_only": {"keys": ["盗賊"]},
+    }
+    r = audit([("a", "だいとうぞくゲイル", "대도 게일"), ("b", "とうぞく", "도둑")], data=data)
+    assert [h.where for h in r.hits] == ["b"]
+
+
 def test_digit_width_is_ignored():
     data = {"categories": {"place": {"２階": "２층"}}}
     r = audit([("a", "２階へ", "2층으로")], data=data)
@@ -147,7 +171,7 @@ def test_digit_width_is_ignored():
 
 def test_dialog_place_form():
     """대사 꼴(마스터 09-27): 성·섬은 붙이고, 「~의」 뒤와 나머지 종류 말 앞은 띄운다."""
-    from glossary.names import dialog_place
+    from canon.names import dialog_place
 
     assert dialog_place("크루즈마을") == "크루즈 마을"
     assert dialog_place("사피아의호수") == "사피아의 호수"
@@ -219,7 +243,7 @@ def test_ed3_dictionary_is_sound():
     """ED3 정본 — 우리 표기에 일본어가 남지 않고, 확인 대기 열쇠는 본표에 있다."""
     import re
 
-    from glossary import load
+    from canon import nouns as load
 
     d = load("ed3")
     for cat, tbl in d["categories"].items():
@@ -229,6 +253,15 @@ def test_ed3_dictionary_is_sound():
         if not cat.startswith("_"):
             assert all(jp in d["categories"][cat] for jp in tbl), cat
 
+
+
+def test_slot_form_is_accepted_only_in_slots():
+    """`원문@자리` 칸 꼴은 칸(slot)에서만 정답이다 — 대사엔 칸이 없다(마스터 10-08)."""
+    data = {"categories": {"item": {"テストの杖": "테스트의 지팡이", "テストの杖@아이템칸": "테스트 지팡이"}}}
+    r = audit([("s", "テストの杖", "테스트 지팡이", "slot")], data=data)
+    assert not r.mismatches
+    r = audit([("d", "テストの杖をもらった", "테스트 지팡이를 받았다", "dialog")], data=data)
+    assert len(r.mismatches) == 1
 
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):

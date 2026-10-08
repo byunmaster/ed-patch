@@ -19,7 +19,7 @@ import json
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-with open(os.path.join(ROOT, "shared", "glossary", "eiyuu.json"), encoding="utf-8") as f:
+with open(os.path.join(ROOT, "shared", "canon", "nouns", "eiyuu.json"), encoding="utf-8") as f:
     _G = json.load(f)["categories"]
 NAMES, MONSTERS = _G["item"], _G["monster"]
 PERSONS, PLACES = _G["person"], _G["place"]
@@ -96,7 +96,7 @@ out.append("""# 아이템·주문·몬스터 매뉴얼 (ED1 · ED2)
 > 아니라 **공용**에 있다 — 새턴·PC88·PCE 로 옮겨도 `王家のつるぎ` 는 **왕가의 검**이다.
 > 바뀌는 건 대사 좌표·창 구조지 이름이 아니다.
 >
-> **정본은 `shared/glossary/eiyuu.json`** 하나다. 이 문서는 **그걸 사람이 읽게 펼친 것**이라
+> **정본은 `shared/canon/nouns/eiyuu.json`** 하나다. 이 문서는 **그걸 사람이 읽게 펼친 것**이라
 > 정본이 바뀌면 다시 뜬다 — `python3 scripts/dump_manual.py`.
 > ⚠ 게임 도구의 표(`patch_items` · `patch_ed2_sys`)는 **사본**이고, 어긋나면 회귀 테스트
 > `test_tool_tables_match_shared_glossary` 가 잡는다.

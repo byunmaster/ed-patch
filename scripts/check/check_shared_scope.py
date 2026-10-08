@@ -8,7 +8,7 @@
 
     shared/          조판(krwrap) · 조사 · SJIS · ISO9660   ← 🔴 바이트를 만든다
     scripts/         진입점                                  ← 🔴 바이트를 만든다
-    shared/glossary/ 고유명사 정본                           ← ⚠ 데이터 (바이트는 만든다)
+    shared/canon/    정본(고유명사 nouns/ + 공통 문안)        ← ⚠ 데이터 (바이트는 만든다)
     docs/            체크리스트 · reference                  ← 글
     CLAUDE.md        작업 규칙                               ← 글
     .claude/skills/  절차                                    ← 글
@@ -49,7 +49,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 # 🔴 게임 브랜치에서 고치면 **조용히** 다른 게임의 바이트가 바뀐다 — main 에서만
 CODE = ("shared/", "scripts/")
 # 🔴 정본 사전 — 게임 브랜치에서 고치면 **실패**다(2026-10-07, 08-29 의 예외를 걷었다).
-DATA = ("shared/glossary/", "shared/lore/")
+DATA = ("shared/glossary/", "shared/lore/", "shared/canon/")  # canon: 정본 — 사전을 안에 품는다(마스터 10-08)
 # 글 — 게임 브랜치에서 고쳐도 된다(2026-08-24). 세어서 보여만 주고 ⚠ 는 안 띄운다.
 PROSE = ("docs/", "CLAUDE.md", ".claude/")
 
