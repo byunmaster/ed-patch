@@ -7,6 +7,7 @@
 """
 
 import os
+import sys
 import struct
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # games/ps1-ed3+4
@@ -33,21 +34,24 @@ def main_repo():
 WORK_DIR = os.path.join(ROOT, "work")
 
 
+def _argv_disc():
+    """명령줄의 `--disc ed3|ed4`(없으면 ed3) — 빌드 꼬리표가 디스크를 따라가게."""
+    a = sys.argv
+    for i, x in enumerate(a):
+        if x == "--disc" and i + 1 < len(a):
+            return a[i + 1]
+        if x.startswith("--disc="):
+            return x.split("=", 1)[1]
+    return "ed3"
+
+
 def _build_tag():
-    """빌드 산출물을 가르는 꼬리표 — 기본은 현재 git 브랜치(`ED_BUILD_TAG` 로 덮어씀)."""
-    tag = os.environ.get("ED_BUILD_TAG")
-    if not tag:
-        try:
-            # ⚠ 워크트리에서는 `.git` 이 **파일**이라 `.git/HEAD` 가 없다 — gitdir 를 따라간다.
-            g = os.path.join(REPO, ".git")
-            if os.path.isfile(g):
-                with open(g, encoding="utf-8") as f:
-                    g = f.read().strip().split(":", 1)[1].strip()
-            with open(os.path.join(g, "HEAD"), encoding="utf-8") as f:
-                ref = f.read().strip()
-            tag = ref.rsplit("/", 1)[-1] if ref.startswith("ref:") else ref[:7]
-        except OSError:
-            tag = "local"
+    """빌드 산출물을 가르는 꼬리표 — 🔴 **디스크(편) 기준**이다: ED3 는 `ps1-ed3`, ED4 는 `ps1-ed4`(마스터 10-08).
+
+    이 트리는 브랜치가 `game/ps1-ed3+4` 라 브랜치에서 유도하면 두 이미지가 한 칸 이름(`ps1-ed3-4`)을 나눠 쓴다 — 이미지가 다르다.
+    `ED_BUILD_TAG` 로 덮어쓴다(조사용 칸은 `ps1-ed3-probe` 꼴).
+    """
+    tag = os.environ.get("ED_BUILD_TAG") or f"ps1-{_argv_disc()}"
     return "".join(c if (c.isalnum() or c in "-_.") else "-" for c in tag) or "local"
 
 
