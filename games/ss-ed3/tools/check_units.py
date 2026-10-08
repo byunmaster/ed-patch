@@ -34,7 +34,6 @@ BAD = re.compile(r"(%d|\d)[ 　]+(" + "|".join(UNITS) + r")")
 
 
 def files():
-    yield os.path.join(SCRIPT_DIR, "system.json")
     yield from sorted(glob.glob(os.path.join(SCRIPT_DIR, "MAP*.json")))
     yield from sorted(glob.glob(os.path.join(SCRIPT_DIR, "book", "BOOK*.json")))
 
@@ -58,6 +57,13 @@ def main():
     a = ap.parse_args()
 
     bad = 0
+    import system_src as SYS
+
+    #   시스템 표는 파일이 아니라 정본·사전에서 읽은 값이다 — 고칠 곳이 이쪽에 없으니 보기만 한다
+    for k, s in walk(SYS.sections()):
+        if BAD.search(s):
+            bad += 1
+            print(f"  ❌ 시스템:{'/'.join(k)}  {s!r} — 정본에서 고쳐야 한다(관리자에게)")
     for p in files():
         if not os.path.exists(p):
             continue

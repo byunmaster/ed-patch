@@ -12,7 +12,7 @@
 🔴 **포인터는 안 고친다** — 문자열 **시작 위치를 안 옮기기** 때문이다. 옮기기 시작하면
    `/0.BIN` 안의 BE32 132 곳을 전부 다시 계산해야 한다(`docs/status.md` 3절).
 
-문안은 `script/system.json` — **자체 번역**이다. 고유명사 정본(`glossary_manual.json`)과
+문안은 공용 정본(`shared/canon/ed3.json`)·사전에서 읽는다(`system_src.py` — 게임 폴더엔 엔진 열쇠 목록 `script/system_keys.json` 뿐). 고유명사 정본(공용 사전)과
 자리가 다르다: 정발 표기를 따르는 건 고유명사뿐이고, 대사·챕터는 우리가 옮긴다
 (유저 확정 2026-08-24).
 """
@@ -26,31 +26,23 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
 import hangul_map as H
 import strtab as S
+import system_src as SS
 
-SYSTEM = os.path.join(C.GAME_DIR, "script", "system.json")
 # ⚠ **인명·지명 표는 안 고친다.** 그 이름들은 **대사 안에서** 쓰이므로 표만 고치면
 #   대사와 갈린다 — 대사 쪽이 정본이다. 그래서 여기 오는 건 화면 문구뿐이다.
 
 
 def table():
-    """`{JP: KR}` — `script/system.json` 의 모든 갈래를 합친다(`_` 로 시작하는 키는 뺀다)."""
-    if not os.path.exists(SYSTEM):
-        return {}
-    with open(SYSTEM, encoding="utf-8") as f:
-        doc = json.load(f)
+    """`{JP: KR}` — 공용 정본·사전에서 읽은 모든 절을 합친다(`system_src.py`)."""
     out = {}
-    for k, v in doc.items():
-        if not k.startswith("_") and isinstance(v, dict):
-            out.update(v)
+    for v in SS.sections().values():
+        out.update(v)
     return out
 
 
 def chapter_keys():
     """메뉴 맨 위 **챕터 바**에 나가는 JP 키 — 내린 판을 쓰되 이유가 다르다(아래 🔴)."""
-    if not os.path.exists(SYSTEM):
-        return set()
-    with open(SYSTEM, encoding="utf-8") as f:
-        return set(json.load(f).get("chapter", {}))
+    return set(SS.sections().get("chapter", {}))
 
 
 #   🔴 **시스템 표는 0 행을 자르는 창(스탯)에 나간다** — 그래서 기본이 아니라 **한 행 내린
@@ -232,7 +224,7 @@ def terminator_mismatch(tbl):
 def main():
     tbl = table()
     if not tbl:
-        print("⏭ 넣을 문안이 없다 (script/system.json)")
+        print("⏭ 넣을 문안이 없다 (system_src)")
         return
     done = 0
     bad = []

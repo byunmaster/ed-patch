@@ -64,6 +64,80 @@ def table():
     return out
 
 
+def _area_free(b, area, kr, tbl, items=P.ITEM):
+    """아이템 설명 영역 — **조각 길이가 자유**다. `(bytes, 바꾼 수, 문제, 예산초과, 새 레코드 포인터 {색인: 값})`.
+
+    🔴 **조각 시작은 아이템 레코드 끝의 BE32(`+0x40`, 아이템 표 시작 `0x1CD0` 기준 상대값)가 정한다**(10-08 읽기 BP 로 확인 —
+    읽는 코드 `0x06027E4C`: 레코드 `+0x40` 값 + 표 시작 = 조각 RAM 주소). 옛 「조각마다 원문과 같은 칸」 계약은 이 포인터를
+    못 찾아 세운 우회였다 — 조각을 키우고 뒤를 밀면 뒤 조각의 포인터가 옛 자리를 가리켜 빈 창이 됐다(인게임 실측).
+    그래서 조각을 **빽빽이 다시 놓고** 모든 레코드의 포인터를 새 시작으로 고쳐 쓴다. 조각 순서·빈 조각(포인터가 가리키는
+    빈 칸 포함)·끝 더미(`quux`…`Sentinel`)는 그대로, 길이만 자유 — 총량이 영역을 넘지 않으면 된다.
+    """
+    size = area[1] - area[0]
+    parts = b[area[0] : area[1]].split(b"\x00")
+    tail = parts[-1]
+    out = bytearray()
+    bad, over = [], []
+    moved = {}  # 옛 조각 시작(영역 상대) → 새 시작
+    n = idx = 0
+    old = 0
+    for raw in parts[:-1]:
+        moved[old] = len(out)
+        old += len(raw) + 1
+        if not raw:
+            out += b"\x00"
+            continue
+        try:
+            txt = raw.decode("shift_jis")
+        except UnicodeDecodeError:
+            out += raw + b"\x00"
+            continue
+        if txt.isascii():
+            out += raw + b"\x00"
+            continue
+        s = kr.get(str(idx))
+        idx += 1
+        if s is None:
+            out += raw + b"\x00"
+            continue
+        rows = T.wrap_desc(s)
+        want = len(txt.split(T.DESC_NL))
+        #   줄 수는 원문 이하로 채워 두되(옛 계약 3 — 모자라면 끝 빈 줄), 넘는 건 창 높이(`DESC_ROWS`)까지 허용한다 —
+        #   「줄 수를 원문과 같게」도 포인터를 못 찾은 때의 우회였다(밀림의 원인은 줄이 아니라 시작 포인터).
+        rows = rows + [""] * (want - len(rows))
+        if len(rows) > T.DESC_ROWS:
+            over.append((idx - 1, len(rows), T.DESC_ROWS, s))
+            out += raw + b"\x00"
+            continue
+        enc = H.encode_kr(T.DESC_NL.join(rows), tbl)
+        #   🔴 설명문은 전각만 된다 — 반각(1B) 한 자가 끼면 엔진이 2바이트 단위로 읽다 어긋난다
+        if len(enc) % 2:
+            bad.append(f"{idx - 1}: 반각 문자가 섞였다(홀수 바이트) — {s}")
+            out += raw + b"\x00"
+            continue
+        out += enc + b"\x00"
+        n += 1
+    moved[old] = len(out)  # 꼬리 시작
+    out += tail
+    if len(out) > size:
+        over.append((-1, len(out), size, f"영역 총량 초과 {len(out) - size}B"))
+        return None, n, bad, over, {}
+    out += b"\x00" * (size - len(out))
+    #   레코드 포인터 — 조각 시작을 가리키는 값만 있어야 한다(아니면 멈춘다)
+    off, st, cnt = items
+    base = items[0]
+    ptr = {}
+    for i in range(cnt):
+        at = off + i * st + 0x40
+        v = int.from_bytes(b[at : at + 4], "big")
+        rel = base + v - area[0]
+        if rel not in moved:
+            bad.append(f"레코드 {i}: 포인터 {v:#x} 가 조각 시작이 아니다(영역 상대 {rel:#x})")
+            continue
+        ptr[i] = area[0] + moved[rel] - base
+    return bytes(out), n, bad, over, ptr
+
+
 def _area(b, area, kr, tbl):
     """한 영역을 다시 채운다 → `(bytes, 바꾼 수, 문제, 예산초과)`.
 
@@ -161,12 +235,18 @@ def patch(b, tbl, kr_tables=None, want_over=False):
         kr = kr_tables.get(name)
         if not kr:
             continue
-        seg, n, e, o = _area(b, area, kr, tbl)
+        if name == "desc_item":
+            seg, n, e, o, ptr = _area_free(b, area, kr, tbl)
+        else:
+            seg, n, e, o = _area(b, area, kr, tbl)
+            ptr = {}
         bad += e
         over += [(name, *x) for x in o]
         if seg is None:
             continue
         new[area[0] : area[1]] = seg
+        for i, v in ptr.items():
+            new[P.ITEM[0] + i * P.ITEM[1] + 0x40 : P.ITEM[0] + i * P.ITEM[1] + 0x44] = v.to_bytes(4, "big")
         total += n
     return (bytes(new), total, bad, over) if want_over else (bytes(new), total, bad)
 

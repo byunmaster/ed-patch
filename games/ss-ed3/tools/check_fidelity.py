@@ -12,7 +12,7 @@
 
 - **숫자** — 전각·반각 숫자를 정규화해 원문과 문안의 다중집합을 맞춘다.
   `５０００ピア` 의 5000 이 사라지거나 `８０` 이 `８` 이 되는 자리를 잡는다.
-- **고유명사** — 원문에 나온 표제어(`glossary_manual.json`)의 정본 표기가 문안에 있는가.
+- **고유명사** — 원문에 나온 표제어(공용 사전)의 정본 표기가 문안에 있는가.
   「라그나」로 옮겨야 할 것을 「라구나」로 쓴 자리, 아예 빠뜨린 자리를 잡는다.
 
 ⚠ **경고지 실패가 아니다.** 원문의 숫자를 우리말로 풀어 쓰는 자리가 있고(「１度」 →
@@ -28,6 +28,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
+import glossary_src as GS
 import mapfile as M
 import reinsert as R
 import typeset as T
@@ -126,12 +127,10 @@ def _has(kr, v):
 
 
 def load_gloss():
-    with open(os.path.join(GAME, "glossary_manual.json"), encoding="utf-8") as f:
-        raw = json.load(f)
-    cats = raw["categories"]
+    cats = GS.categories()
     #   ⚠ 일반 낱말과 겹치는 이름은 「빠졌다」가 늘 거짓이다 — `チップ` 는 칩이자 팁이고
     #     `リッチ` 는 인물이자 「풍족한」이다. 표기는 정본에 남기고 **강제만 뺀다.**
-    skip = set(raw.get("no_check", ()))
+    skip = GS.no_check()
     out = {}
     for name, c in cats.items():
         # ⚠ 기술명은 **일반 동사와 겹친다**(`投げる` = 「던지기」). 대사에 그 동사가 나올

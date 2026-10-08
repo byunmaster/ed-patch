@@ -161,6 +161,24 @@ def shift_right(g, width, rows, stride, dx=DX):
 LABEL_STRIPS = {502: "카트리지"}
 
 
+#   🔴 **「…」는 한국식 — 점 셋이 글자 아랫줄(마침표 높이)에 앉는다**(마스터 10-08, 전 기종). 원판 글리프는 일본식(글자 가운데 높이,
+#     4·5 행)이라 음성 자막 등 SJIS 「…」를 쓰는 모든 글꼴 경로가 가운데 점으로 나갔다. 점을 마침표 행(9·10)까지 내려 굽는다.
+#     대사 문안의 「...」(반각 점 셋)은 ASCII 글꼴 마침표라 원래 바닥이다. 무비 자막은 `movie_hardsub.ELLIPSIS_DROP` 이 같은 5 행.
+ELLIPSIS_DROP = 5
+
+
+def bake_ellipsis(out):
+    """SJIS 「…」 글리프(`font.jis_index("…")`)의 점을 `ELLIPSIS_DROP` 행 내린다 — `(바꾼 글리프 수)`."""
+    import numpy as np
+
+    idx = F.jis_index("…")
+    g = F.unpack(bytes(out), idx).copy()
+    assert g[: F.ROWS - ELLIPSIS_DROP].any() and not g[F.ROWS - ELLIPSIS_DROP :].any(), "원판 점이 가운데에 있어야 한다"
+    g = np.roll(g, ELLIPSIS_DROP, 0)
+    out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = F.pack18(g)
+    return 1
+
+
 def bake_label_strips(out, base):
     """글리프 칸에 구워진 **그림 라벨**을 한글로 다시 굽는다 — `(갈아 낀 칸 수)`.
 
@@ -298,6 +316,7 @@ def build(disc=1):
     bake_book(out)
     bake_cred(out)
     bake_label_strips(out, base)
+    bake_ellipsis(out)
     assert len(out) == len(base), (len(out), len(base))
     return bytes(out), missing
 

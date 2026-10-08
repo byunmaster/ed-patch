@@ -187,26 +187,16 @@ def judge(name, corp):
     return best[1], best[0], second[0], len(cands), why, name, tail
 
 
-MANUAL = "glossary_manual.json"
-AUTO = "glossary_auto.json"
-
-
 def merge():
-    """`{범주: {JP: KR}}` — 자동 판정 위에 **수동이 이긴다.**
+    """`{범주: {JP: KR}}` — 공용 사전(`shared/canon/nouns/ed3.json`)이 정본이다.
 
-    자동은 「코퍼스가 최다로 고른 것」이고 수동은 「사람이 근거를 보고 확정한 것」이다.
-    실측으로 갈린 자리가 있다 — `ハック`(자동 실패 → 허크) · `シャーラ`(공략집은 사라,
-    게임은 샤라) — 그래서 순서를 못 박는다.
+    종전엔 자동 판정(`glossary_auto.json`) 위에 수동(`glossary_manual.json`)을 얹었다 — 자동은 「코퍼스가 최다로
+    고른 것」이고 수동은 「사람이 근거를 보고 확정한 것」이라 수동이 이겼다(`ハック`·`シャーラ` 실측). 둘 다
+    사전으로 들어갔고 틀린 초벌(`ウルギット` 등)은 폐기했다(2026-10-08).
     """
-    out = {}
-    for name in (AUTO, MANUAL):
-        p = os.path.join(C.GAME_DIR, name)
-        if not os.path.exists(p):
-            continue
-        with open(p, encoding="utf-8") as f:
-            for cat, tbl in json.load(f).get("categories", {}).items():
-                out.setdefault(cat, {}).update(tbl)
-    return out
+    import glossary_src as GS
+
+    return GS.categories()
 
 
 def main():
@@ -263,15 +253,14 @@ def main():
     )
 
     if a.freeze:
-        out = os.path.join(C.GAME_DIR, "glossary_auto.json")
+        out = os.path.join(C.REVIEW_DIR, "glossary_probe_candidates.json")
         with open(out, "w", encoding="utf-8") as f:
             json.dump(
                 {
                     "_doc": [
-                        "ED3 고유명사 표기 — **정발 코퍼스가 판정한 자동분**. 근거는 그 표기가",
-                        "정발에서 쓰인 횟수다(`glossary_probe.py`). ⚠ 아직 후보다 —",
-                        "유저가 훑은 뒤 `glossary_manual.json` 으로 옮긴다. ⚠ 정본은 **당분간 게임 아래**다 —",
-                        "`shared/glossary/eiyuu3.json` 승격은 이 브랜치를 main 에 머지할 때 한다(2026-08-27).",
+                        "ED3 고유명사 표기 — **정발 코퍼스가 판정한 자동분**(후보). 근거는 그 표기가 정발에서 쓰인 횟수다.",
+                        "⚠ 후보일 뿐이다 — 정본은 공용 사전(`shared/canon/nouns/ed3.json`)이고 워커는 못 고친다: 관리자에게 후보로 올린다.",
+                        "⚠ 이 파일은 work/review(커밋 안 함)에 쓴다 — 게임 폴더에 표를 만들지 않는다.",
                         "⚠ 단어 표기만 담는다. 문안은 여기 오지 않는다(루트 「저작권」).",
                     ],
                     "categories": {k: dict(sorted(v.items())) for k, v in sorted(res.items())},

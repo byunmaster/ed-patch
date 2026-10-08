@@ -76,14 +76,16 @@ def blocks():
                 out.append(("씬 나레이션", f"{n[:-5]}[{k}]", v, 26))
             else:
                 out.append(("씬 대사", f"{n[:-5]}[{k}]", v, T.WIN_COLS))
-    sysd = _json(os.path.join(SCRIPT, "system.json"))
+    import system_src as SYS
+
+    sysd = SYS.sections()
     for sec in ("message", "notice", "menu", "setting", "stat", "minigame", "blackjack"):
         for jp, v in sysd.get(sec, {}).items():
             if isinstance(v, str):
                 w = 26 if sec == "notice" else T.WIN_COLS
-                out.append(("시스템", f"{sec}:{jp}", v, w))
+                out.append(("시스템", f"{sec}:{v}", v, w))
     for jp, v in sysd.get("battle", {}).items():
-        out.append(("전투", f"battle:{jp}", v, T.WIN_COLS))
+        out.append(("전투", f"battle:{v}", v, T.WIN_COLS))
     mv = _json(os.path.join(SCRIPT, "movie.json"))
     for k, v in mv.items():
         if k.startswith("M") and isinstance(v, list):

@@ -26,13 +26,13 @@ import typeset as T
 import center_narration as CN
 
 SCRIPT_DIR = os.path.join(C.GAME_DIR, "script")
-SYSTEM = os.path.join(SCRIPT_DIR, "system.json")
 LINE = re.compile(r"^(　*)((?:序章|第[０-９]章|最終章)　[^　\n]+)(　完)?$")
 
 
 def tables():
-    with open(SYSTEM, encoding="utf-8") as f:
-        d = json.load(f)
+    import system_src as SYS
+
+    d = SYS.sections()
     return d["chapter_line"], d["word"]["完"]
 
 

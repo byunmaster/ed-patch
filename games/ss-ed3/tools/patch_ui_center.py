@@ -55,8 +55,9 @@ def _person_pairs():
 
     import hangul_map as H
 
-    with open(os.path.join(C.GAME_DIR, "script", "system.json"), encoding="utf-8") as f:
-        names = json.load(f)["person"].values()
+    import system_src as SYS
+
+    names = SYS.sections()["person"].values()
     base, low = H.load(), H.load_low()
     chars = sorted({c for n in names for c in n if c in low and c in base})
     return b"".join(

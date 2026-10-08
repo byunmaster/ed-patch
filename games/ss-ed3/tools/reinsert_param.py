@@ -2,7 +2,7 @@
 
 🔴 **이게 빠져 있었다**(2026-08-27, 유저 스크린샷으로 잡혔다). 설명문(`reinsert_desc`)은
 넣고 있었는데 **이름은 아무도 안 썼다** — 장비창에 `短剣`·`布の服`·`木の盾`·`グローブ` 가
-그대로 떴다. 정본(`glossary_manual.json`)에 번역이 다 있었는데 **화면까지 갈 길이 없었다.**
+그대로 떴다. 정본(공용 사전)에 번역이 다 있었는데 **화면까지 갈 길이 없었다.**
 ⚠ 「표를 닫았다」와 「화면에 나온다」는 다른 말이다 — 이 레포가 또 물린 자리다.
 
 이름은 레코드 **앞머리의 NUL 종료 문자열**이고, 뒤가 0 으로 채워져 있어 그만큼이 칸이다.
@@ -11,12 +11,12 @@
     python3 tools/reinsert_param.py        # 넣을 수 있나 본다
 """
 
-import json
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
+import glossary_src as GS
 import hangul_map as H
 import param as P
 
@@ -37,15 +37,8 @@ def low_table():
 
 
 def table():
-    """`{JP 이름: 우리 표기}` — 정본 전부를 한 사전으로."""
-    with open(os.path.join(C.GAME_DIR, "glossary_manual.json"), encoding="utf-8") as f:
-        cats = json.load(f)["categories"]
-    out = {}
-    for c in cats.values():
-        for jp, kr in c.items():
-            if isinstance(kr, str):
-                out.setdefault(jp, kr)
-    return out
+    """`{JP 이름: 우리 표기}` — 공용 사전 전부를 한 사전으로."""
+    return GS.table()
 
 
 def room(rec):
