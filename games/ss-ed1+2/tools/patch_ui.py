@@ -438,6 +438,21 @@ def _pack_dotart_glyph(row_bits):
     return bytes(out)
 
 
+def ellipsis_glyph():
+    """`…` 11KANJI 글리프 — 점 셋을 **한국식 바닥**(글자 아랫줄, 온점과 같은 행)에 둔다.
+
+    🔴 마스터 2026-10-08: 「…」는 전각 한 글자, 점 셋은 한국식 바닥 — 일본식 가운데 점은 안 된다(전 기종·전 게임).
+       원본·Galmuri11 의 `…` 는 가운데 줄(5행)에 있다 → 같은 점 모양을 온점의 행(10행)으로 내린다.
+    """
+    g, miss = convert_chars("…")
+    assert not miss, "Galmuri11 에 …가 없다"
+    rows = [g["…"][r * 2 : r * 2 + 2] for r in range(11)]
+    assert sum(1 for r in rows if any(r)) == 1, "…의 점이 한 행이 아니다 — 모양이 바뀌었다"
+    src = next(i for i, r in enumerate(rows) if any(r))
+    rows[10], rows[src] = rows[src], b"\x00\x00"
+    return b"".join(rows)
+
+
 def bake_dotart_glyphs():
     """{코드: 11B 글리프} — `DOTART_GRIDS` 의 각 그리드를 6px씩 잘라 해당 코드에 붙인다."""
     out = {}
@@ -1678,6 +1693,11 @@ def main():
                 f, flba, fsize, idx * font.GLYPH_STRIDE, glyphs[ch], label=f"{FON} 글리프 {idx}"
             )
         print(f"  폰트 {FON}: 글리프 {len(glyphs)}자 구움")
+        common.write_at(
+            f, flba, fsize, font.game_index("…".encode("cp932")) * font.GLYPH_STRIDE, ellipsis_glyph(),
+            label=f"{FON} … 한국식 바닥",
+        )
+        print("  전각 폰트 …: 점 셋을 글자 아랫줄로 내렸다")
 
     verify(dst, rs, scn, cards + msgs, plan, files)
     verify_names(dst, ntabs, plan, files)
@@ -1738,6 +1758,9 @@ def verify(dst, rs, scn, cards, plan, files):
         o = idx * font.GLYPH_STRIDE
         if fon[o : o + font.GLYPH_STRIDE] != glyphs[ch]:
             bad.append(f"글리프 {ch!r} 슬롯 {idx} 가 안 들어갔다")
+    o = font.game_index("…".encode("cp932")) * font.GLYPH_STRIDE
+    if fon[o : o + font.GLYPH_STRIDE] != ellipsis_glyph():
+        bad.append("글리프 … 가 한국식 바닥으로 안 들어갔다")
     mm2.close()
     _f.close()
     if bad:
