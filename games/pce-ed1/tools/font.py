@@ -105,6 +105,19 @@ QUESTION_4PX_ROWS = [
 ]
 
 
+# 🔴 **「…」는 한국식 바닥(글자 아랫줄)에 점 셋**(마스터 10-08, 전 기종 공통 — 일본식 가운데 점 금지). 갈무리의 「…」 는 12행 칸의
+#   5행(한가운데)에 찍혀 있어 마침표(10행)와 높이가 달랐다 — 마침표와 같은 행에 점 셋(열 1·5·9). 오프닝·엔딩 자막(`opening_sub.render_line`)은 이미 이 꼴이다.
+ELLIPSIS_FLOOR_ROW = 10
+ELLIPSIS_FLOOR_COLS = (1, 5, 9)
+
+
+def _ellipsis_floor() -> bytes:
+    rows = [0] * (GLYPH_BYTES // 2)
+    for c in ELLIPSIS_FLOOR_COLS:
+        rows[ELLIPSIS_FLOOR_ROW] |= 0x8000 >> c
+    return b"".join(v.to_bytes(2, "big") for v in rows)
+
+
 def _question_4px() -> bytes:
     out = []
     for row in QUESTION_4PX_ROWS:
@@ -133,6 +146,8 @@ def glyph(ch: str) -> bytes:
     """한 글자 → 24B. 세로는 **베이스라인에 맞추고**(BDF `yo`) 가로는 왼쪽 정렬."""
     if ch == "?":
         return _question_4px()
+    if ch == "…":
+        return _ellipsis_floor()
     lig = next((k for k, v in LIGATURES.items() if v == ch), None)
     if lig is not None:
         a, b = (glyph(c) for c in lig)
@@ -329,6 +344,8 @@ def needs_glyph(ch: str) -> bool:
     """우리 글리프가 필요한 글자 — SJIS 전각 2바이트로 못 적는 것 전부(한글 · ASCII 부호·숫자·라틴)."""
     if ch in (" ", "\n", "\f"):
         return False
+    if ch == "…":
+        return True  # 🔴 BIOS 글꼴의 「…」(SJIS 8163)은 가운데 점이다 — 한국식 바닥 꼴은 우리 글리프로(`_ellipsis_floor`, 마스터 10-08)
     if 0xE000 <= ord(ch) <= 0xF8FF:
         return True  # 🔴 사용자 영역 — cp932 가 F040~ 외자로 인코딩해 **우리 글리프 코드(리드 F0~)와 겹친다**
     try:

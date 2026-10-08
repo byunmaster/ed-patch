@@ -8,7 +8,7 @@
   "scn168": "da39a3ee5e6b",
   "scn201": "da39a3ee5e6b",
   "scn224": "ab7d700e2cb3",
-  "battle": "a407ccf8ee3b"
+  "battle": "b7ed26f731e6"
  },
  "_doc": [
   "조판 지문 — `shared/` 변경이 다른 게임의 줄바꿈을 조용히 바꾸는 것을 잡는다.",
