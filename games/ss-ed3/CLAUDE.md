@@ -33,8 +33,9 @@
   - 정발(`originals/kr/dos-ed3`, `ED3_DT*.DAT` 평문)은 이제 **지명 표기와 대조 자료**로만
     쓴다. 단어 수준이라 저작권 대상이 아니다(루트 「저작권」).
   - 윈도 정발(`kr/win-ed3`)은 `LB DAT` 아카이브 안이 압축이라 아직 못 읽는다.
-  - 정본은 `games/ss-ed3/glossary_manual.json`(812 표제어) — 판단 근거는 그 안 `evidence` 다.
-    🔴 **사전(`shared/glossary`)으로 이관 예정이다**(관리자 10-07 — 워커는 독자 데이터를 갖지 않는다). 그때까지도 **게임 폴더에 새 JP→KR 표를 만들지 않고**,
+  - 정본은 **공용 사전 `shared/canon/nouns/ed3.json`**(고유명사)과 **정본 `shared/canon/ed3.json`**(UI·화자 호칭·시스템·전투 문구) —
+    게임 폴더의 `glossary_manual.json`(812)·`glossary_auto.json` 은 걷었다(2026-10-08 사전 적용). 도구는 `tools/glossary_src.py` 로 읽는다. 판단 근거는 사전 `_evidence` 다.
+    🔴 **사전(`shared/canon/nouns`)으로 이관 예정이다**(관리자 10-07 — 워커는 독자 데이터를 갖지 않는다). 그때까지도 **게임 폴더에 새 JP→KR 표를 만들지 않고**,
     새 이름·바꿀 이름은 **후보로 관리자에게** 올린다. 게임 브랜치는 사전을 못 고친다(`check.sh` 가 막는다).
 
 ## 원본

@@ -1,7 +1,7 @@
 # 대사를 옮기는 법 — 옮기는 사람이 여는 문서 하나
 
 > 이 문서 **하나로** 맵 하나를 끝까지 옮길 수 있어야 한다. 사람이 읽어도 에이전트가 읽어도
-> 같다. 말투 정본은 [`voice.md`](voice.md), 표기 정본은 `../glossary_manual.json`(`shared/glossary` 사전으로 이관 예정 — 새 이름은 **후보로 관리자에게**, 게임 폴더에 새 JP→KR 표를 만들지 않는다),
+> 같다. 말투 정본은 [`voice.md`](voice.md), 표기 정본은 공용 사전 `shared/canon/nouns/ed3.json`·정본 `shared/canon/ed3.json`(새 이름은 **후보로 관리자에게**, 게임 폴더에 새 JP→KR 표를 만들지 않는다),
 > 지금 어디까지 왔는지는 [`status.md`](status.md).
 
 ## 0. 순서는 맵 번호다
@@ -48,7 +48,7 @@ python3 tools/reuse_tr.py                          # 같은 원문을 쓰는 다
 4. **관계가 화계를 정한다** — 아이가 노인에게는 높임, 동행끼리는 반말. 쥬리오·크리스는
    서로 반말이고 어른에게는 높인다. 인물 관계는 `docs/reference/eiyuu-setting.md` 와
    `.local/keep/guide/` 의 공략(줄거리·정체)에서 확인한다.
-5. **고유명사는 `glossary_manual.json` 이 정본이다**(사전 이관 전). 없으면 거기 규칙대로 정하고 **후보로 올린다**.
+5. **고유명사는 공용 사전(`shared/canon/nouns/ed3.json`)이 정본이다.** 없으면 거기 규칙대로 정하고 **후보로 올린다**.
    🔴 **짧은 이름은 빈도만 보고 정하지 않는다** — 그 이름이 **어느 맵에 나오는지**까지
    맞춘다(`work/derived/map_jp/*.json` 에 맵 이름이 있다). `ゴダル`(넬바)에 `ゴーダ`(안데라)의
    표기를 붙였던 적이 있다.
@@ -91,7 +91,7 @@ python3 tools/reuse_tr.py                          # 같은 원문을 쓰는 다
 에이전트에게 주는 것은 **이 문서 · `voice.md` · 정본 · 그 맵의 배경 몇 줄**이면 된다.
 
 ⚠ 에이전트에게 **금지**시킬 것 — `git` · `reuse_tr.py` · `stamp_script.py`(둘 다 전 맵을 건드린다) ·
-`shared/`·`scripts/`·남의 `MAP*.json`·`glossary_manual.json` 수정.
+`shared/`(사전·정본 포함)·`scripts/`·남의 `MAP*.json` 수정.
 **새로 지은 이름은 보고만 하게 하고 정본에는 내가 올린다.**
 
 🔴 **`reuse_tr.py`·`stamp_script.py` 는 굴리는 중인 맵을 빼고 돌린다.** 둘 다 **전 맵을 다시
@@ -107,7 +107,7 @@ python3 tools/reuse_tr.py                          # 같은 원문을 쓰는 다
 🔴 **배치가 끝나면 반드시 이 넷을 돈다.** 안 돌리면 굴릴수록 어긋난다.
 
 ```bash
-# ① 에이전트가 새로 지은 이름을 정본 후보로 올린다(지금은 glossary_manual.json)  ← 안 하면 다음 맵에서 갈린다
+# ① 에이전트가 새로 지은 이름을 정본 후보로 올린다(관리자에게 후보로 — 사전은 워커가 못 고친다)  ← 안 하면 다음 맵에서 갈린다
 python3 tools/stamp_script.py     # ② 원문 지문 — 「어긋난 것 0」이 블록이 안 밀렸다는 증거다
 python3 tools/reuse_tr.py         # ③ 같은 원문을 쓰는 다른 맵에 퍼뜨린다
 python3 tools/reinsert.py --check && python3 tools/check_speech.py && python3 tools/check_fidelity.py
