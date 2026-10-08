@@ -192,7 +192,7 @@ def needed_chars(disc):
     # ⚠ PUNCT(`. , ? !`)는 원본 부호 자리를 다시 구워 쓴다 — 자리를 받으면 낭비다.
     have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values()) | set(PUNCT)
     freq = collections.Counter()
-    for lines in script_canon.load(disc).values():
+    for lines in script_canon.load_effective(disc)[0].values():
         for row in lines.values():
             freq.update(row["kr"])
     ui = collections.Counter()
@@ -202,7 +202,11 @@ def needed_chars(disc):
     for kr in glossary.flat(disc).values():
         names.update(kr)
 
+    import josa_rt
+
     out = list(EXTRA)
+    # 런타임 조사: 표지(굽지 않는다 — 코드만 받는다)와 조사 글자는 대사에 안 나와도 자리가 있어야 한다.
+    out += [ch for ch in josa_rt.runtime_glyphs() if ch not in have and ch not in out]
     for src in (freq, ui):
         out += [ch for ch, _ in src.most_common() if ch not in have and ch not in out]
     out += sorted(ch for ch in names if ch not in have and ch not in out)

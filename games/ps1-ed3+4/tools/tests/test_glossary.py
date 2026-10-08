@@ -21,7 +21,22 @@ class TestGlossaryShape(unittest.TestCase):
             with open(glossary.path(disc), encoding="utf-8") as f:
                 doc = json.load(f)
             self.assertEqual(doc["disc"], disc)
-            self.assertTrue(doc["categories"])
+            # ED3 는 열쇠 목록만(값은 사전에서), ED4 는 아직 옛 표
+            self.assertTrue(doc["keys"] if disc in glossary.KEYS else doc["categories"])
+
+    def test_ed3_reads_the_shared_dictionary(self):
+        """🔴 ED3 는 자기 표가 없다 — 모든 열쇠가 사전에 있고 값은 사전의 것이다(없으면 로더가 운다)."""
+        import json as _json
+
+        sh = glossary._shared("ed3")["categories"]
+        doc = glossary.load("ed3")
+        for kind, d in doc["categories"].items():
+            for jp, kr in d.items():
+                self.assertEqual(kr, sh[kind][jp], f"{kind}/{jp}")
+        with open(glossary.path("ed3"), encoding="utf-8") as f:
+            keys = _json.load(f)["keys"]
+        self.assertEqual({k: len(v) for k, v in keys.items()}, {k: len(v) for k, v in doc["categories"].items()})
+        self.assertNotIn("KR", _json.dumps(keys))  # 열쇠 파일에 표기를 두지 않는다(값이 두 곳에 있으면 갈린다)
 
     def test_kinds_are_known(self):
         for disc in DISCS:

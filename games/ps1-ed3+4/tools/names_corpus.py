@@ -33,6 +33,7 @@ import uitext as U
 
 TITLE = "ed3"  # 작품 사전 — shared/glossary/ed3.json (ED3 디스크만)
 _DISC = "ed3"
+CANON_GATE = True  # 정본(shared/canon) 어긋남을 실패로 친다 — 사전 적용 2단계 전환 끝(10-08)
 DIALOG, SLOT = "dialog", "slot"  # 갈래 — 대사는 지명 띄어쓰기까지 잰다, UI(표·메뉴·이름 칸)는 무시한다(마스터 10-07)
 
 
