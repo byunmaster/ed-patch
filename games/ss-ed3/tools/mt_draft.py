@@ -44,6 +44,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
+import glossary_src as GS
 import reinsert as R
 import typeset as T
 
@@ -74,9 +75,7 @@ def budget_bytes(s):
 
 def glossary_for(jp_all):
     """그 맵에 **실제로 나오는** 고유명사만 추린다 — 정본 전량을 던지면 프롬프트만 커진다."""
-    p = os.path.join(GAME, "glossary_manual.json")
-    with open(p, encoding="utf-8") as f:
-        cats = json.load(f)["categories"]
+    cats = GS.categories()
     out = {}
     for c in cats.values():
         for jp, kr in c.items():

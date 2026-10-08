@@ -19,13 +19,13 @@
 """
 
 import argparse
-import json
 import os
 import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
+import glossary_src as GS
 import mapfile as M
 import reinsert as R
 import typeset as T
@@ -78,8 +78,7 @@ def sentences(text):
 
 def _names():
     """정본의 우리 표기 — **긴 것부터**(짧은 이름이 긴 이름 안에 먹히지 않게)."""
-    with open(os.path.join(C.GAME_DIR, "glossary_manual.json"), encoding="utf-8") as f:
-        cats = json.load(f)["categories"]
+    cats = GS.categories()
     out = {v for c in cats.values() for v in c.values() if isinstance(v, str) and len(v) >= 2}
     return sorted(out, key=len, reverse=True)
 

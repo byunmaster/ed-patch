@@ -1,6 +1,6 @@
 """윈도 정발(신 영웅전설Ⅲ 하얀마녀, 1999) 문자열 뽑기 — **표기 대조용**.
 
-우리 표기 정본은 「정발 표기가 있으면 따른다」인데(`glossary_manual._doc`), 정발이 **둘이다** —
+우리 표기 정본은 「정발 표기가 있으면 따른다」인데(옛 `glossary_manual._doc`), 정발이 **둘이다** —
 만트라 **DOS** 판과 1999 **윈도** 판. 둘이 갈리는 자리가 실제로 있다(`칫타`/`치타` ·
 `우돌`/`우들` · `안델라`/`안데라` · `카렉`/`캐라크`). 그래서 둘 다 읽을 수 있어야 한다.
 
@@ -20,6 +20,7 @@ import json
 import os
 
 import common as C
+import glossary_src as GS
 
 EXE = os.path.join(C.ROOT, "originals", "kr", "win-ed3", "ed3_expansion.exe")
 #   ⚠ 앞쪽 9MB 는 일러스트다. 한글 밀도를 재면 0x900000 부터가 문자열 무더기다.
@@ -69,8 +70,7 @@ def main():
     win = "\n".join(ss)
     with open(os.path.join(C.OUT_DIR, "kr_corpus.json"), encoding="utf-8") as f:
         dos = json.load(f)
-    with open(os.path.join(C.GAME_DIR, "glossary_manual.json"), encoding="utf-8") as f:
-        cats = json.load(f)["categories"]
+    cats = GS.categories()
 
     def dos_n(v):
         return sum(n for k, n in dos.items() if v in k)

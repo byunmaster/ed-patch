@@ -24,6 +24,7 @@ sys.path.insert(
 )
 import common as C
 import font as F
+import glossary_src as GS
 import mapfile as M
 
 from shared.text import sjis
@@ -97,7 +98,7 @@ def lowered_chars():
     """한 행 내린 판이 필요한 글자 — **0 행을 자르는 창에 나갈 수 있는 문안 전량**.
 
     갈래 셋이다: `/0.BIN` 시스템 표(`system.json`, 챕터 바 포함 — 아래 🔴) ·
-    이름 정본(`glossary_manual.json`) · 설명문(`desc_*.json`).
+    이름 정본(공용 사전) · 설명문(`desc_*.json`).
     ⚠ **한글만** 든다. 반각·전각 숫자는 원본 자리가 0~9 행이라 0 행을 버려도 안 잘린다.
     """
     out = set()
@@ -112,10 +113,9 @@ def lowered_chars():
             continue
         for x in v.values():
             take(x)
-    with open(os.path.join(C.GAME_DIR, "glossary_manual.json"), encoding="utf-8") as f:
-        for tbl in json.load(f)["categories"].values():
-            for x in tbl.values():
-                take(x)
+    for tbl in GS.categories().values():
+        for x in tbl.values():
+            take(x)
     for n in ("desc_item", "desc_spell"):
         with open(os.path.join(C.GAME_DIR, "script", f"{n}.json"), encoding="utf-8") as f:
             for x in json.load(f).values():

@@ -22,8 +22,8 @@
 ⚠ **`shared.text.sjis`·`shared.disc`·`shared.fonts` 는 안 잰다** — 이것들은 **원문을 읽거나
 구조를 다루는 데만** 쓰인다(덤프·재삽입 좌표). 우리 한글 문안을 만들거나 화면에 놓는 자리에
 안 들어간다 — 흔들려도 **다른 게이트**(라운드트립·섹터 무결성)가 먼저 운다.
-⚠ **`shared/glossary/` 도 아직 안 읽는다**(고유명사는 `glossary_manual.json`, 승격은
-main 머지 시점 — `docs/status.md` 「남은 일」 4). 승격되면 이 지문에 구역을 더한다.
+고유명사는 공용 사전(`shared/glossary/ed3.json`)이 정본이다(2026-10-08 — 게임 폴더의 표는 걷었다). 사전은
+이 지문에 안 든다 — 이름 검사(`check_names`)와 `check_fidelity` 가 잰다.
 
 그래서 구역은 둘로 가른다:
 

@@ -28,6 +28,7 @@ sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 )
 import common as C
+import glossary_src as GS
 import lzss
 
 from shared import fonts
@@ -75,23 +76,25 @@ TAIL_CAP = (  # 마지막 네 열 (36~39)
 
 #   이름판 열넷 = 파티원. 판독은 **대사 빈도로 검산**했다(그 이름이 실제로 쓰이는가) —
 #   눈으로만 읽으면 틀린다(`ジョアンナ` 를 `ジョアッキーノ`, `バダット` 를 `バラッド` 로 봤다).
-#   ⓘ 표기는 `glossary_manual.json` 정본을 따른다.
-NAMES = {
-    0: "쥬리오",
-    1: "크리스",
-    2: "샤라",
-    3: "구스",
-    4: "로디",
-    5: "휘리",
-    6: "알프",
-    7: "모리슨",
-    8: "죠안나",
-    9: "스텔라",
-    10: "바다트",
-    11: "방방",
-    12: "듀르젤",
-    13: "루레",
-}
+#   ⓘ 표기는 공용 사전(`shared/glossary/ed3.json`)을 따른다.
+#   번호 → JP 원문. KR 은 **공용 사전**(person)에서 읽는다(2026-10-08 — 종전엔 KR 을 여기 직접 적었다).
+_PARTY_JP = (
+    "ジュリオ",  # 0
+    "クリス",
+    "シャーラ",
+    "グース",
+    "ローディ",
+    "フィリー",  # 5
+    "アルフ",
+    "モリスン",
+    "ジョアンナ",
+    "ステラ",
+    "バダット",  # 10
+    "バンバン",
+    "デュルゼル",
+    "ルーレ",
+)
+NAMES = dict(enumerate(GS.party(*_PARTY_JP)))
 
 
 def _get(buf, x, y):

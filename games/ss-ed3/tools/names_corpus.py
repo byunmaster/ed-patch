@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
 
 TITLE = "ed3"  # 작품 사전 — shared/glossary/ed3.json
+CANON_GATE = False  # 정본 검사(check_canon)는 아직 숫자만 본다 — 인라인 아이템 코드 줄 5곳이 승인 안 된 예외 후보(`canon_exceptions.json`)라 조사 훅 뒤에 켠다
 
 
 def _load(path):
