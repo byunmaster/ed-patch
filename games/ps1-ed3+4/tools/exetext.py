@@ -236,17 +236,105 @@ def gap_strings(data, tables, start, end):
     return out
 
 
-def write_in_place(data, off, old_codes, term, new_codes):
-    """문자열을 **제자리에서** 바꾼다 — 새 글이 더 짧거나 같을 때만(넘치면 운다). 남는 칸은 0 으로 채우고 종결은 원래 값."""
+def write_in_place(data, off, old_codes, term, new_codes, pad_code=None):
+    """문자열을 **제자리에서** 바꾼다 — 새 글이 더 짧거나 같을 때만(넘치면 운다). 종결은 원래 값.
+
+    🔴 **남는 칸은 `pad_code`(안 보이는 스페이스)로 글자열 끝에 채운다** — 종결 뒤를 0 으로 채우면 문자열 **구조**가 원본과 달라진다
+       (`글자 종결 0` → `글자 종결 0 0 0`). 월드맵 장소 패널 목록은 표를 안 보고 종결마다 다음 문자열로 이어 읽는 순차 스캔이라
+       빈 문자열·낯선 구조에서 목록이 끊긴다(마스터 실기 10-08 「목록이 완전히 빔」). 채움 글자는 화면엔 안 보이고 종결 뒤 바이트는 안 건드린다.
+       `pad_code=None`(옛 동작)이면 종결 뒤를 0 으로 채운다.
+    """
     if len(new_codes) > len(old_codes):
         raise ExeTextError(f"제자리 0x{off:X}: {len(new_codes)}코드는 {len(old_codes)}칸을 넘는다")
     got, t = raw_string(data, off)
     if got != old_codes or t != term:
         raise ExeTextError(f"제자리 0x{off:X}: 원본이 달라졌다")
     n = len(old_codes) + 1
-    struct.pack_into(
-        f"<{n}H", data, off, *new_codes, term, *([TERM_ZERO] * (len(old_codes) - len(new_codes)))
-    )
+    gap = len(old_codes) - len(new_codes)
+    if pad_code is not None:
+        struct.pack_into(f"<{n}H", data, off, *new_codes, *([pad_code] * gap), term)
+    else:
+        struct.pack_into(f"<{n}H", data, off, *new_codes, term, *([TERM_ZERO] * gap))
+
+
+# 🔴 **월드맵 장소 패널(`0x9B806~0x9C04C`)은 `0x8002` 로 끝나는 한 문자열 안에 글자·제어 코드가 섞인 구조다**(2026-10-08 `0x8001BEB4` 디스어셈블 +
+#    마스터 실기 「위 칸 비고·아래 겹침·목록 빔」). 그리기 함수는 첫 패스로 `0x8002` 까지 읽으며 **최상위 비트(`0x8000`~)가 없는 코드만** 글자로 센다 —
+#    `0x8000`(줄바꿈)·`0xFFFF` 같은 코드는 **제어**이고 `0x0000` 은 들여쓰기 빈 글자다(「ドルフェス ⏎ ··塔」 = 두 줄, 둘째 줄 들여 씀). 표 재구성의 칸 채움(`0xFFFF`)
+#    이 문자열 한가운데 끼면 줄바꿈으로 읽혀 둘째 줄이 밀리고, 첫 단어 종결(`0x8000`)을 문자열 끝으로 보던 빈틈 한글화는 **제어 열의 길이를 바꿨다.**
+#    그래서 이 구역은 **제어 코드 열(0x0000·최상위 비트 코드)을 원판 그대로 두고, 글자 런(연속한 글자 코드)만 같은 자리·같은 길이로** 바꾼다.
+PANEL = {"ed3": (0x9B806, 0x9C04C)}
+
+
+def is_glyph_code(w):
+    """글자 코드인가 — 0 도 제어(들여쓰기)도 아닌 `0 < w < 0x8000`."""
+    return 0 < w < 0x8000
+
+
+def match_panel_key(codes, disc, keys):
+    """코드열 → 사전 열쇠. 코드표에 없는 한자(`至` 등)가 낀 줄은 **그 자리를 와일드카드**로 보고 같은 길이·나머지 글자가 같은 열쇠를 찾는다(하나일 때만).
+
+    예: 「冬至の路」 의 `至` 는 코드표에 없어 `�xxx` 로 읽힌다 — 정확 일치만 보면 그 줄이 일본어로 남는다(마스터 실기 10-08 「毒沼地帯」 류).
+    """
+    wild = textenc.decode(codes, disc, unknown="\0")
+    if "\0" not in wild:
+        return wild if wild in keys else None
+    hits = [k for k in keys if len(k) == len(wild) and all(w == "\0" or w == c for w, c in zip(wild, k))]
+    return hits[0] if len(hits) == 1 else None
+
+
+def panel_units(data, start, end):
+    """[[(줄 시작, 줄 단어 수)…]…] — `0x8002` 로 끝나는 문자열마다 줄 목록. 줄 = 제어 코드(최상위 비트)로 끊기는 글자·0 의 연속."""
+    units, cur, p = [], [], start
+    while p < end:
+        w = struct.unpack_from("<H", data, p)[0]
+        if w >= 0x8000:
+            if w == 0x8002 and cur:
+                units.append(cur)
+                cur = []
+            p += 2
+            continue
+        q = p
+        while q < end and struct.unpack_from("<H", data, q)[0] < 0x8000:
+            q += 2
+        cur.append((p, (q - p) // 2))
+        p = q
+    if cur:
+        units.append(cur)
+    return units
+
+
+def panel_line_text(data, off, n):
+    """(앞 0 수, 글자 코드열, 뒤 0 수) — 한 줄의 들여쓰기·글자·꼬리."""
+    ws = list(struct.unpack_from(f"<{n}H", data, off))
+    a = 0
+    while a < n and ws[a] == 0:
+        a += 1
+    b = n
+    while b > a and ws[b - 1] == 0:
+        b -= 1
+    return a, ws[a:b], n - b
+
+
+def put_panel_line(data, off, n, new_codes, indent):
+    """한 줄을 **같은 칸 수** 안에서 다시 쓴다 — 왼쪽에 `indent` 칸 0(빈 글자) · 글자 · 나머지 0. 칸을 넘지 않게 `indent + 글자 ≤ n` 으로 자른다.
+
+    들여쓰기 계산은 호출부(`centered_indents`) 몫이다 — 원판은 줄마다 0 으로 들여써 가운데 맞춘다(「ドルフェス ⏎ ··塔」)."""
+    if len(new_codes) > n:
+        raise ExeTextError(f"패널 0x{off:X}: {len(new_codes)}코드는 {n}칸을 넘는다")
+    left = min(max(indent, 0), n - len(new_codes))
+    body = [0] * left + list(new_codes) + [0] * (n - left - len(new_codes))
+    struct.pack_into(f"<{n}H", data, off, *body)
+
+
+def panel_structure_problems(orig, new, start, end):
+    """제어 코드 열이 원판과 같나 — `[이유…]`. 최상위 비트 코드(줄바꿈·종결)의 **자리와 값**이 원판과 같아야 한다(게이트)."""
+    bad = []
+    for p in range(start, end, 2):
+        a = struct.unpack_from("<H", orig, p)[0]
+        b = struct.unpack_from("<H", new, p)[0]
+        if (a >= 0x8000 or b >= 0x8000) and a != b:
+            bad.append(f"0x{p:X}: 제어 코드가 바뀌었다 ({a:04x}→{b:04x})")
+    return bad
 
 
 def glued_entries(data, tables):

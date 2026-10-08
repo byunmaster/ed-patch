@@ -363,3 +363,85 @@ def hooks_b(disc, n_blist, with_josa=True):
     words, labels = E.asm(src, p["dead"])
     E.verify(words, p["dead"])
     return words, labels
+
+
+# ── 월드맵 장소 패널 가운데 정렬(마스터 10-09 「반각 가능하면 해 봐」) ───────────────────────────────
+# 패널 문자열은 대사창 훅(`0x80018ACC`)을 안 탄다 — `0x8001BEB4`(문자열 하나를 칸 스프라이트로 늘어놓는 함수, 호출처 11곳이 전부 장소 표 `0x800AAEFC` 기준 = 패널 전용)가
+# 글자마다 x 를 12px 씩 늘리고, **제어 코드(최상위 비트)** 를 만나면 줄을 바꾼다. 원판은 들여쓰기를 0 코드(12px 빈 글자)로 해 가운데를 흉내 냈는데, 줄의 칸 수(바이트)가 고정이라
+# 한글 글자 수가 갈리면 반 칸(6px)을 못 맞춘다. 그래서 **엔진이 줄마다 가운데를 계산**하게 한다: 줄 시작 x = 칸 왼쪽 + 36 − 6×(그 줄의 글자 수) (칸 폭 72px, 0 코드는 글자로 안 센다).
+# 0 코드는 이제 폭 0 이다(원판 일본어 줄도 같은 규칙으로 가운데). 세 군데를 바꾼다(PANEL_SITES) — 줄 시작(첫 줄 · 줄바꿈 뒤)과 글자 후 x 전진.
+PANEL_CODE_OFF = 0x100  # 자료 자리 안, 상태·표(OFF_BL…) 뒤
+
+
+def panel_stubs(disc):
+    """([워드], 시작 주소, {라벨: 주소}) — 패널 정렬 스텁 셋(줄 시작 · 줄바꿈 뒤 줄 시작 · x 전진)."""
+    p = E.PATCH[disc]
+    base = p["data"] + PANEL_CODE_OFF
+    src = """
+    stub_init:                              # 첫 줄 — idx 0
+      j     stub_calc
+      move  t0, zero                        # (지연 슬롯)
+    stub_line:                              # 줄바꿈 뒤 — idx = fp+0x22 + 1
+      lh    t0, 0x22(fp)
+      nop
+      addiu t0, t0, 1
+    stub_calc:
+      lw    t1, 0x60(fp)                    # 문자열
+      move  t2, zero                        # 글자 수
+    sc_loop:
+      sll   t3, t0, 1
+      addu  t3, t3, t1
+      lhu   t4, 0(t3)
+      nop
+      andi  t5, t4, 0x8000
+      bne   t5, zero, sc_done               # 제어 코드 = 줄 끝
+      nop
+      beq   t4, zero, sc_skip               # 0 = 들여쓰기 빈 글자 — 안 센다
+      nop
+      addiu t2, t2, 1
+    sc_skip:
+      j     sc_loop
+      addiu t0, t0, 1                       # (지연 슬롯)
+    sc_done:
+      sll   t3, t2, 1
+      addu  t3, t3, t2                      # 3×n
+      sll   t3, t3, 1                       # 6×n
+      lw    t6, 0x34(fp)                    # 창 핸들
+      nop
+      lhu   t6, 2(t6)                       # 칸 왼쪽 x
+      nop
+      addiu t6, t6, 36                      # + 36(= 72px 칸의 절반)
+      subu  t6, t6, t3
+      sh    t6, 0x10(fp)                    # 이 줄의 x
+      sh    t6, 0x24(fp)                    # 줄 시작 x(줄바꿈 때 쓰는 자리)
+      jr    ra
+      nop
+    stub_adv:                               # 글자 하나 뒤 x 전진 — 0 코드는 폭 0, 나머지는 12
+      lw    t0, 0x60(fp)
+      lh    t1, 0x22(fp)
+      nop
+      sll   t1, t1, 1
+      addu  t0, t0, t1
+      lhu   t2, 0(t0)
+      nop
+      beq   t2, zero, sa_store              # 0 코드 — v0(= 옛 x) 그대로
+      nop
+      addiu v0, v0, 12
+    sa_store:
+      sh    v0, 0x10(fp)
+      jr    ra
+      nop
+"""
+    words, labels = E.asm(src, base)
+    E.verify(words, base)
+    return words, base, labels
+
+
+# 고칠 자리(원본 워드 대조) — 줄 시작(첫 줄) · 줄바꿈 뒤 · x 전진. (자리, 원본 워드들, 스텁 라벨)
+PANEL_SITES = {
+    "ed3": [
+        (0x8001C138, (0x97C20010, 0x00000000, 0xA7C20024), "stub_init"),  # lhu v0,0x10(fp) · nop · sh v0,0x24(fp)
+        (0x8001C310, (0x97C20024, 0x00000000, 0xA7C20010), "stub_line"),  # lhu v0,0x24(fp) · nop · sh v0,0x10(fp)
+        (0x8001C2F0, (0x2443000C, 0xA7C30010), "stub_adv"),  # addiu v1,v0,12 · sh v1,0x10(fp)
+    ]
+}

@@ -234,6 +234,26 @@ def half_codes(table):
     return [table[" "]] + [table[c] for c in "()" if c in table] + [0x01, 0x02, 0x04, 0x05]
 
 
+def apply_panel(exe, disc):
+    """월드맵 장소 패널 가운데 정렬 — 스텁을 자료 자리 뒤쪽에 놓고 패널 그리기 함수 세 군데를 `jal` 로 잇는다(`tile_hook.PANEL_SITES`)."""
+    import tile_hook
+
+    sites = tile_hook.PANEL_SITES.get(disc)
+    if not sites:
+        return ""
+    for addr, orig, _label in sites:
+        _expect(exe, addr, orig, "월드맵 패널 그리기")
+    words, base, labels = tile_hook.panel_stubs(disc)
+    p = PATCH[disc]
+    off = _off(base)
+    assert base - p["data"] + 4 * len(words) <= p["data_len"], "패널 스텁이 자료 자리를 넘는다"
+    struct.pack_into(f"<{len(words)}I", exe, off, *words)
+    for addr, orig, label in sites:
+        jal = (3 << 26) | ((labels[label] >> 2) & 0x3FFFFFF)
+        struct.pack_into(f"<{len(orig)}I", exe, _off(addr), jal, *([0] * (len(orig) - 1)))
+    return f" · 월드맵 패널 가운데 정렬(스텁 {4 * len(words)}B @ {base:#x})"
+
+
 def apply(exe, disc, table, josa=None):
     """실행파일(bytearray)에 타일 합성 훅을 넣는다. 코드는 죽은 함수에, 자료(상태·표)는 SDK 오류 함수 자리에 둔다.
 
@@ -263,4 +283,5 @@ def apply(exe, disc, table, josa=None):
     struct.pack_into(f"<{len(words)}I", exe, d0, *words)
     exe[x0 : x0 + len(blob)] = blob
     struct.pack_into("<II", exe, _off(p["site_a"]), (3 << 26) | ((p["dead"] >> 2) & 0x3FFFFFF), 0)
-    return f"타일 합성(반 칸 {len(half)}종) · 훅 {len(words)}워드 @ {p['dead']:#x} · 자료 {len(blob)}B @ {p['data']:#x}"
+    panel = apply_panel(exe, disc)
+    return f"타일 합성(반 칸 {len(half)}종) · 훅 {len(words)}워드 @ {p['dead']:#x} · 자료 {len(blob)}B @ {p['data']:#x}{panel}"

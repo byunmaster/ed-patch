@@ -81,6 +81,10 @@ echo "  ── 조사 일치(F8) · 일본어 잔존(F7)"
 run 0 "$PY" "$G/tools/check_josa.py" --disc ed3
 run 0 "$PY" "$G/tools/check_jp_left.py" --disc ed3
 
+echo "  ── 월드맵 패널 넘침(칸 수 안에 드는가)"
+# 🔴 게이트다 — 패널 줄이 원판 칸을 넘으면 그 항목은 일본어로 남는다. (제어 열 보존은 build 가 서서 지킨다.)
+run 0 "$PY" "$G/tools/check_panel.py" --disc ed3
+
 echo "  ── 자기 표 0 (게임 폴더에 JP→KR 이름·라벨 표가 남았나)"
 # 🔴 게이트다 — 사전·정본이 유일한 출처다(마스터 10-08). 스태프롤만 예외(게임마다 제작진이 다르다).
 run 0 "$PY" "$G/tools/check_own_tables.py"

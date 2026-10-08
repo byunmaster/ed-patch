@@ -215,6 +215,49 @@ def fit_chunks(exe, t, ents, cur, krs, orig, disc, table, report):
     return reverted
 
 
+def panel_pass(exe, disc, table, words, seen, report, panel):
+    """월드맵 장소 패널 풀 — 제어 코드 열은 원판 그대로, 글자만 **패널 칸 폭 기준 가운데(반 칸은 왼쪽 내림, 두 줄 묶음은 가장 긴 줄 기준·나머지는 그 시작)** 로 같은 칸 수 안에서 바꾼다.
+
+    띄어쓰기는 늘 뺀다(원판처럼 붙여 쓴다). 칸이 모자라면(3글자 칸) 정본 `원문@월드맵` 줄인 꼴을 쓴다. 코드표에 없는 한자가 낀 줄(`冬至の路`)은 와일드카드로 열쇠를 찾는다.
+    """
+    data = bytes(exe)
+    for unit in exetext.panel_units(data, *panel):
+        parts = []  # (off, n, 원판 들여쓰기, 새 코드열 | None)
+        for off, n in unit:
+            ind, codes, _tail = exetext.panel_line_text(data, off, n)
+            new = None
+            jp = exetext.match_panel_key(codes, disc, words) if codes else None
+            kr = words.get(jp) if jp else None
+            if jp and kr == jp:
+                seen.add(jp)  # 정본이 원문 그대로(`Ｆａｌｃｏｍ`) — 바꿀 게 없다
+            elif kr:
+                try:
+                    # 패널은 원판처럼 붙여 쓴다(마스터 10-09 — 원판 패널 181줄에 띄어쓰기 0, 칸만 붙이고 대화는 그대로)
+                    enc = hangul_map.encode(kr.replace(" ", ""), disc, table)
+                    if len(enc) > len(codes):
+                        short = glossary.lookup_shared(disc, jp + "@월드맵", "place")
+                        if short:
+                            enc = hangul_map.encode(short, disc, table)
+                            report["gap_short"] = report.get("gap_short", 0) + 1
+                    if len(enc) > len(codes):
+                        report.setdefault("gap_long", []).append((jp, kr))
+                    else:
+                        new = enc
+                        seen.add(jp)
+                        report["names"] += 1
+                        report["gap_put"] = report.get("gap_put", 0) + 1
+                except KeyError:
+                    report["skipped_names"] += 1
+            parts.append((off, n, ind, new))
+        lens = [len(p[3]) for p in parts if p[3]]
+        if not lens:
+            continue
+        inds = iter([0] * len(lens))  # 가운데는 엔진이 줄마다 계산한다(`tile_hook.panel_stubs` — 12px 칸 대신 6px 해상도). 글자는 줄 머리에 붙여 쓴다
+        for off, n, _ind, new in parts:
+            if new:
+                exetext.put_panel_line(exe, off, n, new, next(inds))
+
+
 def reinsert_names(exe, disc, table, report):
     """실행파일 낱말 표에 고유명사 정본을 넣는다. 표가 없는 구역은 **길이 고정**이라 건너뛴다."""
     cm = textenc.charmap(disc)
@@ -246,8 +289,11 @@ def reinsert_names(exe, disc, table, report):
             report["skipped_names"] += 1
         except exetext.ExeTextError:
             report["over_budget"] += 1
+    panel = exetext.PANEL.get(disc)
     for t in tables:
         tbl, base, n = t["table"], t["base"], t["n"]
+        if panel and panel[0] <= base + max(struct.unpack_from(f"<{n}H", bytes(exe), tbl)) < panel[1]:
+            continue  # 월드맵 패널 풀 — 표 재구성(칸 채움 `0xFFFF`)이 제어 열을 깬다. 아래 `panel_pass` 가 제자리로 바꾼다
         ents = struct.unpack_from(f"<{n}H", bytes(exe), tbl)
         cur, krs, changed = [], [], 0
         for x in ents:
@@ -299,6 +345,8 @@ def reinsert_names(exe, disc, table, report):
             continue
         exe[:] = bytearray(new)
         report["names"] += changed
+    if panel:
+        panel_pass(exe, disc, table, words, seen, report, panel)
     # 🔴 **표가 안 가리키는 문자열(빈틈의 닻)** — 월드맵 장소 패널 「ディーネ / シャリネ」 따위. 자리·길이를 못 바꾸니 **제자리**로,
     #    우리 표기가 원문보다 짧거나 같을 때만 넣는다. 넘치는 것은 원문 그대로 남기고 `gap_long` 으로 센다(옮길 포인터를 못 찾았다).
     import dump_names
@@ -308,6 +356,8 @@ def reinsert_names(exe, disc, table, report):
         if kind not in ("item", "spell", "monster", "place", "rank", "menu"):
             continue
         end = reg[i + 1][0] if i + 1 < len(reg) else start + 0x400
+        if panel and panel[0] <= start < panel[1]:
+            continue  # 패널 풀은 `panel_pass` 가 이미 다뤘다
         for off, codes, term in gaps_by_region.get(start, []):
             jp = textenc.decode(codes, disc)
             kr = words.get(jp)
@@ -324,7 +374,7 @@ def reinsert_names(exe, disc, table, report):
                     if short:
                         enc_kr = hangul_map.encode(short, disc, table)
                         report["gap_short"] = report.get("gap_short", 0) + 1
-                exetext.write_in_place(exe, off, codes, term, enc_kr)
+                exetext.write_in_place(exe, off, codes, term, enc_kr, pad_code=table.get(" "))
                 seen.add(jp)
                 report["names"] += 1
                 report["gap_put"] = report.get("gap_put", 0) + 1
@@ -487,6 +537,11 @@ def main():
     ui_put, ui_skip = uitext.apply(exe, a.disc, enc)
     report["skipped"] += ui_skip
     reinsert_names(exe, a.disc, table, report)
+    # 🔴 불변식 — 월드맵 패널 풀의 **제어 코드 열이 원판과 같다**(글자만 바뀌었다). 어기면 패널이 비거나 줄이 밀린다(마스터 실기 10-08).
+    if a.disc in exetext.PANEL:
+        problems = exetext.panel_structure_problems(exe_orig, bytes(exe), *exetext.PANEL[a.disc])
+        if problems:
+            raise SystemExit("🔴 월드맵 패널 구조가 원판과 다르다:\n  " + "\n  ".join(problems[:10]))
     # 🔴 불변식 — 구운 UI 글이 정본과 같은가(공백 빼고). 낱말 재포장이 표를 같이 쓰므로 그 뒤에 본다.
     lost = uitext.lost_text(exe_orig, bytes(exe), a.disc, enc)
     if lost:

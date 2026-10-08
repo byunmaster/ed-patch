@@ -77,11 +77,19 @@ def load(disc):
     return _cache[disc]
 
 
+# 실행파일 낱말 표엔 코드표 밖 한자(`至`)라 **원문 그대로는 못 찾지만** 화면(월드맵 패널)에 나오는 지명 — 열쇠 목록(원본 대조 대상)엔 못 두고 값만 정본에서 읽는다.
+EXTRA_PLACES = {"ed3": ("冬至の路",)}
+
+
 def flat(disc):
-    """{원문: 우리 표기} — 갈래를 합친 평면 사전."""
+    """{원문: 우리 표기} — 갈래를 합친 평면 사전(+ 코드표 밖 한자 때문에 열쇠 목록에 못 둔 지명)."""
     out = {}
     for d in load(disc)["categories"].values():
         out.update(d)
+    for jp in EXTRA_PLACES.get(disc, ()):
+        kr = _canon().lookup(jp, "place", disc)
+        if kr:
+            out[jp] = kr
     return out
 
 
