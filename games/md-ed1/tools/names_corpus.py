@@ -3,7 +3,7 @@
     python3 tools/names_corpus.py --check   # 분모만(블록·스트림 수) 찍는다
 
 `pairs()` = `[(자리, 원문 줄, 우리 줄 또는 None, 갈래)]` (갈래 "dialog" = 메시지 창에 나가는 문장 — script·battle·sysmsg·captions · "slot" = 이름 칸·표 — monsters·names) — **문안 전체**(script 225블록 · battle 110블록 ·
-sysmsg · captions · monsters.json · names.json, 압축 해제 기준)에 대해 낸다. 미번역은 None 으로
+sysmsg · captions · 몬스터 · 표(사전·정본), 압축 해제 기준)에 대해 낸다. 미번역은 None 으로
 내서 분모에 들게 한다(마스터 10-07 — 「9/225 만 보고 0건」이 이 구멍이었다).
 
 ⚠ **gfx_a/b/c/d 는 뺐다** — 그래픽 카드라 이름 문안이 없다(블록91 지명 표는 script 아카이브

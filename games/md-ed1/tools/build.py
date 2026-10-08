@@ -337,7 +337,7 @@ def build_tables(orig: bytes, names: dict, cs: hangul.Charset) -> list[tuple[str
             out.append((f"table:{name}", pos, body))
     if over:
         raise SystemExit(
-            "표 항목이 폭을 넘는다 — textmap/names.json 을 줄인다:\n    " + "\n    ".join(over)
+            "표 항목이 폭을 넘는다 — 칸 배치(textmap/ui_layout.json)나 정본 값을 줄인다:\n    " + "\n    ".join(over)
         )
     return out
 
@@ -347,7 +347,7 @@ def _load(path):
 
 
 def load_textmaps() -> dict:
-    """정본 전부 — 대본(script/*.json) · 표(names.json) · 시스템 메시지 · 자막 · 전투(메시지·몬스터)."""
+    """정본 전부 — 대본(script/*.json) · 표(사전·정본 + ui_layout.json) · 시스템 메시지 · 자막 · 전투(메시지·몬스터)."""
     return {
         "maps": textmap.load_all(),
         "names": dict_names.names(),

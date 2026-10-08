@@ -11,7 +11,7 @@
 재삽입(제자리 우선): 이름은 제자리(비마지막 레코드 15B, 마지막은 원본 길이 이하) · 스트림은 맞으면
 제자리(0 패딩), 안 맞으면 끝에 붙이고 lea 변위·자료 A 워드를 고친다(플래그 문안은 옮기지 않는다) ·
 끝 워드 = 새 길이. 문안 속 몬스터 이름은 `{JP이름}` · `{JP이름|가}`(조사) 태그로 쓴다 — 정본은
-`monsters()` — 사전(`shared/glossary`)에서 읽는다(게임 폴더에 이름 표 없음).
+`monsters()` — 정본 고유명사(`shared/canon/nouns`)에서 읽는다(게임 폴더에 이름 표 없음).
 """
 
 import dataclasses
@@ -27,10 +27,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import archives
 import common
+import dict_names
 import scene
 import sysmsg
 
-from shared import glossary
+from shared import canon
 from shared.text import josa
 
 ARCHIVE = 0xCA94C
@@ -276,12 +277,6 @@ def check(d: bytes) -> None:
 
 # ── 정본 ───────────────────────────────────────────────────────────────────────
 
-NAME_FIX = {  # 용어집에 없는 MD 고유 표기
-    "スラッグ": "슬러그",
-    "スラッグさん": "슬러그씨",
-    "スラッグバブ": "슬러그버브",
-    "ｽﾃｨﾝｸﾞ･ﾋﾞｰﾄﾙ": "스팅비틀",
-}
 
 
 def _glossary(jp: str) -> str:
@@ -290,14 +285,15 @@ def _glossary(jp: str) -> str:
         unicodedata.normalize("NFKC", jp),
         unicodedata.normalize("NFKC", jp).replace("・", ""),
     ):
-        v = glossary.lookup(k, "monster") or glossary.lookup(k)  # 몬스터 이름 칸은 몬스터 범주가 먼저(カース: 카스 ≠ 아이템 커스)
+        # 몬스터 이름 칸은 몬스터 범주가 먼저(カース: 카스 ≠ 아이템 커스)
+        v = canon.lookup(k, "monster", "ed1") or canon.lookup(k, None, "ed1")
         if v:
             return v
-    return NAME_FIX.get(jp, "")
+    return ""
 
 
 def monsters(d: bytes) -> dict:
-    """{기본 JP 이름: {"ours": 한글}} — 사전(`shared/glossary`)·`NAME_FIX` 에서 읽는다. 게임 폴더에 표가 없다.
+    """{기본 JP 이름: {"ours": 한글}} — 정본(`shared/canon/nouns`)에서 읽는다. 게임 폴더에 표가 없다.
     못 찾는 이름은 넣지 않는다(`kr_name` 이 빌드를 세운다)."""
     names, _ = survey(d)
     out = {}

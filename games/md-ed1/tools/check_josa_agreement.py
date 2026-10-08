@@ -5,7 +5,7 @@
 
 `check_josa.py` 는 **훅**(`<02><eb…>`)의 짝과 병기를 본다. 여기는 그 바깥 — 문안에 사전 이름이 **그대로 박혀 있고**
 그 뒤에 조사 글자가 붙은 자리(`슬러그는` · `류난에게` 같은 정적 이름)를 문안 전량(번역된 줄)에서 잰다.
-- 이름 = 사전(`shared/glossary`)의 한국어 값(item·monster·person·place), 길이 2 이상, 가장 긴 것 우선.
+- 이름 = 정본 고유명사(`shared/canon/nouns`)의 한국어 값(item·monster·person·place), 길이 2 이상, 가장 긴 것 우선.
 - 조사 = 은/는 · 이/가 · 을/를 · 과/와 · 으로/로(ㄹ 받침은 「로」). 뒤가 한글이면(조사가 아니라 다음 낱말) 안 잰다.
 - 숫자 끝은 읽는 소리(1·3·6·7·8·0 받침 있음 — `josa.ASCII_FINAL`), 영문·부호 끝은 무받침.
 """
@@ -21,7 +21,7 @@ import common
 import halfspace
 import josa
 import names_corpus
-from shared import glossary
+from shared import canon
 
 PAIR = {"은": 0, "는": 0, "이": 1, "가": 1, "을": 2, "를": 2, "과": 3, "와": 3}
 # 종류: 0 은/는 · 1 이/가 · 2 을/를 · 3 과/와 — 받침 있음이면 앞 글자(은·이·을·과), 없음이면 뒤 글자(는·가·를·와)
@@ -44,7 +44,7 @@ def final_of(name: str) -> int:
 def names() -> list[str]:
     out = set()
     for cat in ("item", "monster", "person", "place"):
-        for v in glossary.table(cat).values():
+        for v in canon.table(cat, "ed1").values():
             v = halfspace.plain(v).replace(" ", "")
             if len(v) >= 2 and re.fullmatch(r"[가-힣A-Za-z0-9ＡＢＣＤ]+", v):
                 out.add(v)

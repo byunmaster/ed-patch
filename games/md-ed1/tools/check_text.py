@@ -66,7 +66,7 @@ def _entries() -> list[tuple[str, str, str, str]]:
         for k, v in d.items():
             if isinstance(v, dict) and "ours" in v:
                 out.append((name, k, v.get("jp", ""), v.get("ours", "")))
-            elif isinstance(v, dict):  # names.json: 표 이름 → 항목
+            elif isinstance(v, dict):  # 표 이름 → 항목
                 for kk, vv in v.items():
                     if isinstance(vv, dict):
                         out.append((f"{name}:{k}", kk, vv.get("jp", ""), halfspace.plain(vv.get("ours", ""))))

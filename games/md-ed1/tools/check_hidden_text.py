@@ -94,8 +94,8 @@ def check() -> None:
         )
         # 그중 **사전 이름이 든 것** — 목적지 표(블록 92·93, 2026-10-08)처럼 표인데 못 찾은 자리는 이쪽에서 드러난다.
         # 대사 문장(미추출 장면)이 대부분이라 건수만 찍고, 표 꼴(구분자 07 로 이어진 14B 칸)이 보이면 따로 올린다.
-        sys.path.insert(0, str(common.ROOT / "shared"))
-        from glossary import names as _G
+        sys.path.insert(0, str(common.ROOT))
+        from shared.canon import names as _G
 
         keys, _ = _G._keys(_G.load("eiyuu"))
         blocks = {
