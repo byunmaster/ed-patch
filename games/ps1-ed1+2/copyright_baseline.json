@@ -1,6 +1,4 @@
 {
  "_doc": "check_copyright 래칫 — 파일별 긴 일본어 덩이 수. 늘면 실패, 줄면 --freeze.",
- "games/ps1-ed1+2/script/ED1SCN2.json": 1,
- "games/ps1-ed1+2/script/ED2SCN8.json": 7,
  "games/ps1-ed1+2/tools/check_scn_jp_left.py": 3
 }
