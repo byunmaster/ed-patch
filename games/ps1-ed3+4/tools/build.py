@@ -23,6 +23,7 @@
 
 import argparse
 import os
+import re
 import shutil
 import struct
 import sys
@@ -35,12 +36,21 @@ import font
 import glossary
 import graphics
 import hangul_map
+import josa_rt
 import patch_title_font
 import script as script_canon
 import scriptmap
 import textenc
 import typeset
 import uitext
+
+
+# 이 빌드가 쓰는 아카이브 — 정규식(전체 일치). 실행파일은 따로 쓴다. 늘리면 여기에 **이유와 함께** 적는다.
+ALLOWED_WRITES = {
+    # 대사 아카이브(SC*.DAT) · 타이틀/나레이션/그림(M01·M02 .DAT — 그림이 든 파일) · 타이틀 BIOS 폰트 리다이렉트(SLPS_012.01)
+    "ed3": [r"/SCE\d/SC\d+\.DAT", r"/M0\d\.DAT", r"/SLPS_012\.01"],
+    "ed4": [r"/SCE\d/SC\d+\.DAT", r"/M0\d\.DAT", r"/SLPS_01\d\.\d\d"],
+}
 
 
 def bake_font(exe, disc, chars, table):
@@ -109,8 +119,14 @@ def reinsert_script(disc, canon, table, report):
             for i, row in sorted(lines.items()):
                 jp = jps[i][1]
                 try:
+                    # 조사 병기 → 확정/런타임 표지(조각 첫머리). 구운 글 검사도 같은 변환본으로 한다.
+                    row = dict(row, kr=josa_rt.convert(row["kr"]))
+                    lines[i] = row
                     kr = typeset.wrap(row["kr"], disc, jp=jp, floor=floors.get(i, 0))
                 except typeset.TypesetError as e:
+                    if row.get("_auto"):  # 정본 speaker 이름이 예산을 넘으면 그 이름만 일본어로 남긴다
+                        report["auto_wrap"] = report.get("auto_wrap", 0) + 1
+                        continue
                     raise SystemExit(
                         f"🔴 {path}!{nm} #{i}: 조판 예산 초과 — {e}\n"
                         f"   `script.py --check` 가 통과했다면 검사기와 빌드의 자가 다르다."
@@ -124,6 +140,11 @@ def reinsert_script(disc, canon, table, report):
                     continue
             newmem, _ = scriptmap.rebuild(mem, segs)
             check_no_text_loss(f"{path}!{nm}", newmem, lines, disc, table, report)
+            if len(newmem) > sz and all(r.get("_auto") for r in lines.values()):
+                # 정본 speaker 로만 채운 멤버가 예산을 넘으면 **그 멤버만 건너뛴다**(이름은 일본어로 남는다) — 번역 정본의 줄이
+                # 있는 멤버는 아래에서 그대로 멈춘다(자기 문안을 줄여야 하는 일).
+                report["auto_over"] = report.get("auto_over", 0) + 1
+                continue
             if len(newmem) > sz:
                 raise SystemExit(
                     f"🔴 {path}!{nm}: 멤버가 {len(newmem) - sz:+d}B 커졌다 — 예산 {sz}B\n"
@@ -344,7 +365,7 @@ def main():
     a = ap.parse_args()
     common.verify_source(a.disc)
 
-    canon = script_canon.load(a.disc)
+    canon, speakers_blocked = script_canon.load_effective(a.disc)  # 번역 정본 + 정본 speaker 로 채운 화자명
     if a.test:
         # 🔴 시험 빌드 — 「지금 보려는 것만 제대로 나오면 된다」. 안 옮긴 문안은 깨진다.
         #    자리가 닭·달걀이라(대사를 옮겨야 한자가 물러난다) 이게 없으면 초반에
@@ -378,6 +399,7 @@ def main():
         chars.update(kr)
     for row in uitext.load(a.disc).values():
         chars.update(row["kr"])
+    chars |= set(josa_rt.baked_glyphs())  # 런타임 조사 글리프는 대사에 안 나와도 굽는다
     chars = {c for c in chars if c in table}
 
     gfx_files, gfx_arcs = graphics.apply(a.disc)
@@ -385,7 +407,11 @@ def main():
     exe_lba, exe_size = fs[font.FONTS[a.disc]["exe"]]
     exe = bytearray(common.read_lba(a.disc, exe_lba, exe_size))
     baked = bake_font(exe, a.disc, chars, table)
-    engine = engine_patch.apply(exe, a.disc, table)  # 공백 8px — 그 디스크에 패치가 있으면
+    items = list(glossary.load(a.disc)["categories"].get("item", {}).values())
+    rev = {ch: c for c, ch in textenc.charmap(a.disc).items()}
+    digit_codes = {d: rev[chr(0xFF10 + int(d))] for d in "0123456789"}  # 전각 숫자 자리(원본)
+    josa = josa_rt.runtime(table, items, digit_codes) if a.disc == "ed3" else None
+    engine = engine_patch.apply(exe, a.disc, table, josa=josa)  # 안 B 타일 합성 — 그 디스크에 패치가 있으면
     exe_orig = bytes(exe)
     enc = lambda kr: hangul_map.encode(kr, a.disc, table)
     ui_put, ui_skip = uitext.apply(exe, a.disc, enc)
@@ -419,6 +445,12 @@ def main():
         print("     " + " · ".join(left[:10]))
     if report.get("squeezed"):
         print(f"  ⬜ 칸 예산 때문에 뺀 띄어쓰기 {report['squeezed']} (이름은 들어갔다)")
+    if speakers_blocked or report.get("auto_over") or report.get("auto_wrap"):
+        print(
+            f"  ⬜ 화자명(정본 speaker): 길이 고정 멤버라 못 넣은 이름 {speakers_blocked} · "
+            f"멤버 예산 초과로 건너뛴 멤버 {report.get('auto_over', 0)} · 칸 예산 초과 이름 {report.get('auto_wrap', 0)}\n"
+            f"     (일본어로 남는다 — 이벤트 VM 해독·꼬리 재배치 전까지)"
+        )
     if report["over_budget"]:
         print(
             f"  ⬜ 칸 예산을 넘어 되돌린 낱말 {report['over_budget']} (원문 그대로 남는다)\n"
@@ -434,6 +466,12 @@ def main():
         print("(dry-run)")
         return 0
 
+    # 🔴 F9 — 쓰기 집합 게이트: 이 빌드가 쓰는 파일은 **선언된 것뿐**이다(조용히 남의 파일을 쓰는 사고를 막는다).
+    unexpected = sorted(p for p in arcs if not any(re.fullmatch(pat, p) for pat in ALLOWED_WRITES[a.disc]))
+    if unexpected:
+        raise SystemExit(f"🔴 선언 안 된 파일에 쓰려 했다: {unexpected[:5]} — ALLOWED_WRITES 를 확인한다")
+    # 무변경 구간 — PS-EXE 헤더(0x800B: t_addr·크기·진입점)는 어떤 패치도 안 건드린다. 쓰기 통로가 즉시 막는다.
+    common.IMMUTABLE[(a.disc, exe_lba, exe_size)] = [("PS-EXE 헤더", 0, font.EXE_HDR, "fixed")]
     os.makedirs(common.BUILD_DIR, exist_ok=True)
     out = common.build_bin(a.disc)
     if a.test:  # 이름으로 갈라 둔다 — 시험물을 정상으로 오해하는 사고가 이 레포의 단골이다
