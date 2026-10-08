@@ -20,6 +20,7 @@ sys.path.insert(
 )
 import common as C
 import hangul_map as H
+import inline_josa as IJ
 import mapfile as M
 import typeset as T
 
@@ -46,6 +47,8 @@ def load_script(stem):
     d = _read_script(stem)
     script = {k: v for k, v in d.items() if not k.startswith("_")}
     script.update(d.get("_wide", {}))
+    #   인라인 아이템 코드 뒤 병기 조사는 빌드 때 하나로 줄인다(`inline_josa.py`) — 칸 안에 **물리적으로** 들어가는 문안이다
+    script = {k: IJ.resolve(v) if isinstance(v, str) else v for k, v in script.items()}
     return script, d.get("_jp", {})
 
 
