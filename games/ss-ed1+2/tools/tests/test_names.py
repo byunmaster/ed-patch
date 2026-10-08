@@ -19,7 +19,7 @@ sys.path.insert(0, TOOLS)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(TOOLS))), "shared"))
 
 import patch_ui
-from glossary import table
+from canon import table
 
 
 def canon():
@@ -174,7 +174,7 @@ class PlaceSpacing(unittest.TestCase):
     """
 
     def test_place_names_have_no_space(self):
-        from glossary import table
+        from canon import table
 
         bad = {jp: kr for jp, kr in table("place").items() if " " in kr}
         assert not bad, f"슬롯 표 지명에 공백이 있다 — HUD 에서 잘린다: {bad}"
@@ -192,23 +192,17 @@ class SplitWinner(unittest.TestCase):
     """
 
     def test_pinned_winners_hold(self):
+        """갈린 원문 중 아이템 범주가 낀 것은 **화면에 아이템 표기**가 나간다(규칙 — JP 표를 안 든다)."""
         import check_glossary as G
         from typeset_scn import _names
 
         merged = _names()
-        for jp, (cat, want) in G.SPLIT_WINNER.items():
-            self.assertEqual(merged.get(jp), want, f"{jp} 의 화면 표기 (못: {cat}:{want})")
-
-    def test_pins_are_not_stale(self):
-        """못 박은 원문이 **정말 범주를 가로질러 갈려 있어야** 한다."""
-        import check_glossary as G
-
-        for jp, (cat, want) in G.SPLIT_WINNER.items():
-            seen = {
-                c: table(c)[jp] for c in ("item", "monster", "person", "place") if jp in table(c)
-            }
-            self.assertGreater(len(set(seen.values())), 1, f"{jp} 는 이제 안 갈린다 — 못을 뺀다")
-            self.assertEqual(seen.get(cat), want, f"{jp} 의 {cat} 표기가 바뀌었다")
+        n = 0
+        for jp, per, _got in G.cross_category_split():
+            if sw := G.split_winner(per):
+                n += 1
+                self.assertEqual(merged.get(jp), sw[1], f"{jp} 의 화면 표기 (규칙 {sw[0]}:{sw[1]})")
+        self.assertGreater(n, 0, "아이템이 낀 갈림이 하나도 없다 — 규칙이 낡았나 보라")
 
 
 class DialogPlaceSpacing(unittest.TestCase):

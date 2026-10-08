@@ -41,7 +41,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 GAME = os.path.dirname(HERE)
 ROOT = os.path.dirname(os.path.dirname(GAME))
-MAPS = ("hangul_map_11kanji.json", "hangul_map.json")
+MAPS = ("hangul_map_11kanji.json", "hangul_map.json", "hangul_tiles.json")
 
 
 def _syl(text):
@@ -57,7 +57,7 @@ def head_version(rel):
     return _syl(r.stdout) if r.returncode == 0 and r.stdout.strip() else None
 
 
-FONTKEY = {"hangul_map_11kanji.json": "11kanji", "hangul_map.json": "kanji"}
+FONTKEY = {"hangul_map_11kanji.json": "11kanji", "hangul_map.json": "kanji", "hangul_tiles.json": "kanji"}
 
 
 def stolen(name, now):
@@ -119,6 +119,13 @@ def main():
                 f"        🔴 **원본이 쓰는 슬롯을 차지했다** {len(took)} — "
                 + " · ".join(f"{c}→{i}" for c, i in took[:8])
             )
+    # 🔴 자막 폰트(`KANJI.FON`)는 슬롯 정본이 **둘**이다(글자 `hangul_map.json` · 합성 조각 `hangul_tiles.json`) — 서로 슬롯을 겹치면
+    #    한쪽이 화면에서 사라진다. 파일 안 중복은 위에서 봤고 **파일 사이**는 여기서 본다.
+    ca, cb = (json.load(open(os.path.join(GAME, n), encoding="utf-8")) for n in ("hangul_map.json", "hangul_tiles.json"))
+    both = sorted(set(_syl(json.dumps(ca)).values()) & set(_syl(json.dumps(cb)).values()))
+    if both:
+        bad += len(both)
+        print(f"     ❌ 글자 정본과 조각 정본이 같은 슬롯을 가졌다 {len(both)} — {both[:8]}")
     if bad:
         raise SystemExit(
             "글리프 배정이 흔들렸다 — **옛 세이브의 이름이 깨지거나 원본 글자가 한글로 뜬다.**\n"

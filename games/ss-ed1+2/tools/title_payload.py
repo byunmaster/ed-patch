@@ -27,7 +27,7 @@ import common
 
 MARK = "ＣＲＥＤＩＴＳ"
 REVIEW = os.path.join(common.WORK_DIR, "review")
-GLOSS = os.path.join(common.ROOT, "shared", "glossary", "eiyuu.json")
+GLOSS = os.path.join(common.ROOT, "shared", "canon", "nouns", "eiyuu.json")
 
 
 def narration(lines):

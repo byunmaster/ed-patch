@@ -38,7 +38,7 @@ import derive_encounters as E
 import patch_scn as S
 import patch_ui as U
 import typeset_scn as T
-from glossary import table
+from canon import table
 from text.line_key import key as line_key
 
 
@@ -88,7 +88,7 @@ def _scenes(mm, out):
 
 def _ui(mm, out):
     """UI·시스템 문안 — 표마다 한 줄. `glossary.lookup` 이 여기로 들어온다."""
-    _t, _p, cards, _pj, msgs = U.load_canon()
+    cards, _pj, msgs = U.load_canon()
     out["UI/표"] = _h([f"{k}\x00{t}\x00{i}\x00{kr}" for k, t, i, _o, _s, _jp, kr in U.rows()])
     out["UI/이름"] = _h(
         [f"{tb['what']}\x00{jp}\x00{kr}" for tb in U.name_rows(mm) for _o, jp, kr, _p in tb["recs"]]
@@ -103,7 +103,7 @@ def _ui(mm, out):
 
 def _monsters(out):
     """몬스터 이름과 조우 문구 — 이름 정본 + `text.josa` 가 여기로 들어온다."""
-    mon = table("monster")
+    mon = table("monster", "eiyuu")
     got = E.monster_names(mon)
     out["몬스터/이름"] = _h([f"{jp}\x00{kr}" for jp, kr in sorted(got.items()) if kr])
     lines = set()

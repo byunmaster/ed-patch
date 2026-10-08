@@ -100,6 +100,45 @@ def check():
     return len(rows), leak, odd, wrong
 
 
+def table_base_refs():
+    """🔴 **표 기준 포인터가 안 움직였나** — 지명 표를 가리키는 코드 풀 값(`적재 주소 + 표 시작 − 한 칸 … + 표 시작`)이
+    빌드에서 원본과 같아야 한다. 표 앞 한 칸이 시스템 문자열로 잡혀 이주하면 기준 포인터가 끌려가
+    **표 전체가 엉뚱한 곳을 읽는다**(ED2 엘아스타 칸, 2026-10-08 — 정적 게이트가 하나도 안 울었다).
+    → `(깨진 수, 본 수)` 와 표본. 빌드가 없으면 None.
+    """
+    import struct
+
+    img = glob.glob(os.path.join(common.BUILD_DIR, "*.bin"))
+    if not img:
+        return None
+    f1, mm1 = common.open_image(img[0])
+    bad, seen = [], 0
+    try:
+        files = {p: (l, s) for p, l, s in common.iso_files(mm1)}
+        for key, path in dump_ui.FILES.items():
+            col = 0 if key == "ED" else 1
+            orig = common.extract(path)
+            built = common.read_extent(mm1, *files[path])
+            for name, ed, ed2, stride, _n, _n2, _cat in dump_ui.GLOSSARY_TABLES:
+                off = (ed, ed2)[col]
+                if off is None:
+                    continue
+                # 표 시작 · 한 칸 앞(표 등록 밖 첫 칸) — 둘 다 기준 포인터 후보
+                for base in (off, off - stride):
+                    want = struct.pack(">I", patch_ui.NAME_PTR_BASE + base)
+                    i = orig.find(want)
+                    while i >= 0:
+                        if i % 2 == 0:
+                            seen += 1
+                            if built[i : i + 4] != want:
+                                bad.append((path, name, i, built[i : i + 4].hex()))
+                        i = orig.find(want, i + 1)
+    finally:
+        mm1.close()
+        f1.close()
+    return len(bad), seen, bad
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--show", type=int, default=5)
@@ -119,8 +158,15 @@ def main():
             print(f"        🔴 {tag} {where}: {kr!r} {raw.hex()}")
     for where, kr, got in wrong[: a.show]:
         print(f"        🔴 {where}: {kr!r} 를 썼는데 {got!r} 이 읽힌다")
+    refs = table_base_refs()
+    if refs is not None:
+        nb, seen, bad = refs
+        print(f"     {'✅' if not nb else '❌'} 지명 표 기준 포인터 {seen}곳 — 이주로 움직인 것 {nb}")
+        for path, name, at, got in bad[: a.show]:
+            print(f"        🔴 {path} {name} 풀 0x{at:X}: 원본 값이 {got} 로 바뀌었다")
+        ok = ok and not nb
     if not ok:
-        raise SystemExit("지명 칸이 전각 짝수 약속을 어겼다")
+        raise SystemExit("지명 칸이 전각 짝수 약속을 어겼거나 표 기준 포인터가 움직였다")
     return 0
 
 

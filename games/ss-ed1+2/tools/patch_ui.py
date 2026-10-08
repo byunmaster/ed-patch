@@ -36,13 +36,14 @@ sys.path.insert(
     ),
 )
 
+import canon as shared_canon
 import common
 import dump_scn
 import dump_ui
 import font
 from font import byte_len, to_bytes
 from fonts import convert_chars
-from glossary import lookup, table
+from canon import lookup, table
 
 CANON = os.path.join(common.GAME_DIR, "script", "ui.json")
 SYS_CANON = os.path.join(common.GAME_DIR, "script", "system.json")
@@ -53,15 +54,87 @@ ASCII_STRIDE = 11  # 11행 × 1바이트 (8×11)
 PAD = "　"  # 전각 공백 — 원본 폰트에 이미 있어 슬롯을 안 먹는다
 
 
+# 🔴 **메뉴 라벨(JP→KR)은 정본에서 읽는다**(마스터 2026-10-08 — 사전은 고유명사만, 라벨은 `shared/canon`).
+#    `script/ui.json` 의 `tables` 는 **표 구조(어느 표에 어느 JP 가 몇 번째로 오나)** 만 든다 — 값은 정본이
+#    갖는다. 정본에 없는 JP(`ＯＮ`·`ＳＡＶＥ` 처럼 원문 그대로 두는 칸)만 이 파일의 KR(None)을 따른다.
+#    같은 JP 가 자리마다 다른 말이면(強さ=상태·강함·힘, 逃げる=도망·도망간다) 정본 열쇠가 `원문@자리` 다.
+_UI_POS = {
+    "필드 메뉴": "파티메뉴",
+    "전투 명령": "전투커맨드",
+    "능력치": "능력치",
+    "EP 표시": "경험치표시",
+    "전투설정/도망": "전투설정",
+}
+
+
+def _ui_label(jp, table_name):
+    """표 칸 JP → 정본 KR. 없으면 None. ED1 정본을 먼저, 없으면 ED2(겹치는 열쇠는 값이 같다)."""
+    k = re.sub(r"[\s\u3000]", "", jp)
+    keys = ([f"{k}@{_UI_POS[table_name]}"] if table_name in _UI_POS else []) + [k]
+    for title in ("ed1", "ed2"):
+        for key in keys:
+            v = shared_canon.lookup(key, "ui", title)
+            if v is not None:
+                return v
+    return None
+
+
+def _chapter_title(jp):
+    for title in ("ed1", "ed2"):
+        v = shared_canon.lookup(jp, "chapter", title)
+        if v is not None:
+            return v
+    return None
+
+
+def _cards():
+    """챕터 카드 `[JP 제목, 번호 라벨, KR 제목]` — 🔴 전부 정본(`shared/canon` chapter)에서 읽는다.
+
+    제목은 `JP제목` 열쇠, 번호 라벨(`제１장`·`종장`·`서장`)은 `JP제목@번호` 열쇠다. ED1 정본 먼저, ED2 다음 —
+    예전엔 `ui.json` 이 12장 목록을 JP 열쇠로 들고 있었다(마스터 2026-10-08 — 자기 표 금지).
+    """
+    out = []
+    for title in ("ed1", "ed2"):
+        for jp, ti in shared_canon.table("chapter", title).items():
+            if "@" in jp:
+                continue
+            # 번호 라벨(`제목@번호`)이 있는 장 제목만 — 정본엔 다른 기종의 장 표기(`第１章` 등)도 들어 있다
+            no = shared_canon.lookup(f"{jp}@번호", "chapter", title)
+            if no:
+                out.append([jp, no, ti])
+    assert len(out) == 12, f"정본 chapter 의 번호 붙은 장 제목이 12 가 아니다: {len(out)}"
+    return out
+
+
+def _canon_at(category, place):
+    """정본 `category` 의 `원문@자리` 열쇠 중 그 자리 것 → `{원문: KR}` (ED1 먼저, ED2 다음).
+
+    `@시스템` = 시스템 문자열 스캔이 통째로 집는 라벨(지명 접미 6칸·`メニュートップ`). 예전엔 `system.json` 이
+    이 JP→KR 을 해시 열쇠로 들고 있었다. (새턴 본체 RAM·세이브 안내문 `msgs` 는 새턴 고유 문안이라 정본이 아니다 —
+    `ui.json` 의 해시 열쇠 script.)
+    """
+    out = {}
+    for title in ("ed1", "ed2"):
+        for k, v in shared_canon.table(category, title).items():
+            if k.endswith("@" + place):
+                out.setdefault(k[: -len(place) - 1], v)
+    return out
+
+
+def _canon_sys_lines():
+    """`{sys_key(JP): KR}` — 시스템 문자열 스캔에 정본 라벨을 보탠다(`_canon_at("ui", "시스템")`)."""
+    return {sys_key(jp): kr for jp, kr in _canon_at("ui", "시스템").items()}
+
+
 def load_canon():
+    """`(cards, pad_to_jp, msgs{sha1: KR})` — 🔴 표 칸·카드 목록을 이 폴더에 두지 않는다. JP 는 원본에서 읽고 KR 은 정본이 갖는다
+    (`_ui_label` · `_cards`; 마스터 2026-10-08 — 워커는 JP→KR 표를 자기 폴더에 두지 않는다)."""
     with open(CANON, encoding="utf-8") as f:
         d = json.load(f)
     return (
-        d["tables"],
-        d.get("pad", {}),
-        d.get("cards", []),
+        _cards(),
         d.get("pad_to_jp", []),
-        d.get("msgs", []),
+        d.get("msgs", {}),
     )
 
 
@@ -96,7 +169,15 @@ def _pad_to(kr, target):
 #    ⚠ 「포인터가 없으면 못 옮긴다」만으로는 부족하다 — **포인터가 있는데도 못 옮기는 자리**가
 #      있다. 코드가 그 주소를 쓰는지 여부는 포인터 유무로 안 갈린다.
 #    ⚠ `ED2.BIN` 에는 이 표가 없다(원문 `入口`·`付近`·`南` 이 아예 없다).
-PINNED_INPLACE = {"/ED.BIN": (0x44BC8, 0x44BD0, 0x44BD8, 0x44BDC, 0x44BE0, 0x44BE4)}
+# 🔴 **`ED2.BIN` 0x69CE2 — ED2 「긴꼴」 지명 표의 맨 앞 칸**(`エルアスタ`, 입장 배너 표). 표 등록(`dump_ui`)은 0x69CF2 부터라
+#    이 칸만 **시스템 문자열**로 잡히는데, **그 포인터가 표 전체의 기준 포인터**다(코드가 `기준 + 색인×16` 으로 집는다).
+#    이주(sys_pack)가 이 문자열을 옮기면 기준 포인터가 새 자리로 따라가 **표 36칸을 통째로 엉뚱한 곳에서 읽는다** —
+#    실화면: 월드맵 마을 팝업이 「엘아스타」 대신 「%c%s%c에게」 템플릿을 그렸다(2026-10-08, JP 원본 같은 지점은 「エルアスタ」).
+#    ⇒ **제자리에만 쓴다**(핀). 칸 16B 에 「엘아스타마을」 12B+널이 든다.
+PINNED_INPLACE = {
+    "/ED.BIN": (0x44BC8, 0x44BD0, 0x44BD8, 0x44BDC, 0x44BE0, 0x44BE4),
+    "/ED2.BIN": (0x69CE2,),
+}
 
 SUFFIXED_TABLE = "지명"
 WIDE_SP = "\u3000"
@@ -112,25 +193,15 @@ def _internal_key(jp):
     return internal_key(jp)
 
 
-# 🔴 **접미가 원문에 없는 지명 다섯**(ps1-ed1+2 실측 2026-09-12, 정본 주석과 같다) —
-#    マスクーン·セリス·リーゼル·バズヌーン·セダル. 정본은 이 다섯을 **접미 없이** 든다
-#    (`"マスクーン": "마스쿤"`), 그런데 ED2 「지명 긴꼴」 표는 원문이 **접미를 바로 구운
-#    자리**라(`マスクーンの町`) 정본 열쇠와 안 맞아 조용히 죽는다(2026-09-15, 정본이
-#    바뀌며 처음 드러났다 — `AssertionError: 정본에 없는 place`).
-#    ⇒ 다섯만 벗겨서 재조회한다. **다른 접미(港·砦·洞窟…)는 안 건드린다** — 그건 서로
-#      다른 시설이라 벗기면 안 된다(⚠ `ラルファ`가 그 예: ED1 砦 / ED2 港).
-_NO_SUFFIX_PLACES = ("マスクーン", "セリス", "リーゼル", "バズヌーン", "セダル")
-
-
+# 🔴 **칸이 원문에 접미를 구운 지명**(ED2 「지명 긴꼴」 표의 `マスクーンの町` 등)은 사전(고유명사)에 열쇠가 없다 —
+#    그 칸 꼴은 **정본**(`shared/canon` ed2 `ui`)이 든다(마스터 2026-10-08·10-07 「지명 칸은 원문 꼴 그대로」).
+#    예전엔 여기 JP 다섯(`_NO_SUFFIX_PLACES`)을 코드에 들고 접미를 벗겨 재조회했다 — 같은 지식을 코드에 둔 것이었다.
 def _place_lookup(jp, cat):
-    """`glossary.lookup` 을 먼저 그대로 쓰고, 위 다섯만 접미를 벗겨 다시 잰다."""
-    kr = lookup(jp, cat)
+    """사전(`place`)을 먼저, 없으면 정본 `ui` 의 칸 꼴(`~の町` 구운 꼴)."""
+    kr = lookup(jp, cat, "eiyuu")
     if kr is not None or cat != "place":
         return kr
-    for bare in _NO_SUFFIX_PLACES:
-        if jp == bare + "の町":
-            return lookup(bare, cat)
-    return None
+    return shared_canon.lookup(jp, "ui", "ed2") or shared_canon.lookup(jp, "ui", "ed1")
 
 
 # 🔴 **종류 말은 붙여 쓴다**(마스터 판정 (나) 2026-09-27 — PS1 과 같은 꼴). HUD·표·헤더의
@@ -214,7 +285,7 @@ def _fit_place(kr, room, suffixed, where):
 
 def rows():
     """`(파일키, 표이름, 색인, 오프셋, stride, JP, KR|None)` — 원본에서 읽어 정본과 짝짓는다."""
-    tables, pad, _cards, pad_to_jp, _msgs = load_canon()
+    _cards, pad_to_jp, _msgs = load_canon()
     out = []
     for key, path in dump_ui.FILES.items():
         buf = common.extract(path)
@@ -224,23 +295,16 @@ def rows():
             if off is None:
                 continue
             cnt = n2 if (col == 1 and n2) else n
-            canon = tables[name]
-            assert len(canon) >= cnt, f"{name}: 정본 {len(canon)}줄 < 원본 {cnt}줄"
+            table_rows = list(dump_ui.read_table(buf, off, stride, cnt))
+            canon = [(jp_raw, _ui_label(jp_raw, name)) for jp_raw, _at, _sl in table_rows]
             # 🔴 값이 붙는 표는 **JP 라벨 폭에 맞춰 채운다**(정본 `pad_to_jp` 주석).
             #   한글이 더 넓은 행이 있으면 표 전체를 그만큼 함께 민다.
             shift = 0
             if name in pad_to_jp:
                 shift = max((_half(k) - _half(j) for j, k in canon[:cnt] if k), default=0)
                 shift = max(shift, 0)
-            for i, (jp_raw, at, _slack) in enumerate(dump_ui.read_table(buf, off, stride, cnt)):
-                jp, kr = canon[i]
-                # 🔴 **사전조건** — 원문이 우리 생각과 다르면 그 자리에서 실패한다.
-                #   오프셋을 손으로 적었으니 배치가 어긋나면 엉뚱한 자리를 덮는다.
-                assert jp_raw == jp, (
-                    f"{key}/{name}[{i}] 0x{at:06x}: 원문이 다르다 {jp_raw!r}≠{jp!r}"
-                )
-                if kr and (w := pad.get(name)):
-                    kr = kr + PAD * (w - len(kr))
+            for i, (jp, at, _slack) in enumerate(table_rows):
+                kr = canon[i][1]
                 if kr and name in pad_to_jp:
                     kr = _pad_to(kr, _half(jp) + shift)
                 out.append((key, name, i, at, stride, jp, kr))
@@ -268,7 +332,9 @@ def rows():
             z = rec.find(b"\x00")
             assert z > 0, f"{key} 0x{at:06x}: 인명 자리에 널이 없다"
             jp = rec[:z].decode("cp932")
-            kr = lookup(jp, "person")
+            from names import person_table
+
+            kr = person_table().get(jp)
             assert kr, f"{key} 0x{at:06x}: 정본에 없는 인명 {jp!r}"
             # ⚠ 필드 **마지막 바이트가 `09`** 인 꼴이 있다(뜻은 모른다 — 씬 헤더도 같다).
             #   그 자리는 남겨야 하므로 쓰는 폭을 한 칸 줄인다. 널 패딩으로 덮으면
@@ -372,6 +438,21 @@ def _pack_dotart_glyph(row_bits):
     return bytes(out)
 
 
+def ellipsis_glyph():
+    """`…` 11KANJI 글리프 — 점 셋을 **한국식 바닥**(글자 아랫줄, 온점과 같은 행)에 둔다.
+
+    🔴 마스터 2026-10-08: 「…」는 전각 한 글자, 점 셋은 한국식 바닥 — 일본식 가운데 점은 안 된다(전 기종·전 게임).
+       원본·Galmuri11 의 `…` 는 가운데 줄(5행)에 있다 → 같은 점 모양을 온점의 행(10행)으로 내린다.
+    """
+    g, miss = convert_chars("…")
+    assert not miss, "Galmuri11 에 …가 없다"
+    rows = [g["…"][r * 2 : r * 2 + 2] for r in range(11)]
+    assert sum(1 for r in rows if any(r)) == 1, "…의 점이 한 행이 아니다 — 모양이 바뀌었다"
+    src = next(i for i, r in enumerate(rows) if any(r))
+    rows[10], rows[src] = rows[src], b"\x00\x00"
+    return b"".join(rows)
+
+
 def bake_dotart_glyphs():
     """{코드: 11B 글리프} — `DOTART_GRIDS` 의 각 그리드를 6px씩 잘라 해당 코드에 붙인다."""
     out = {}
@@ -394,12 +475,6 @@ DOTART_PLACES = {
     "사피아의호수": bytes(SS_SAPIA_CODES),
 }
 
-# {JP 원문: 강제 KR} — **씬 헤더 전용** 표기 오버라이드. `サピアの湖` 의 씬 헤더는 PS1 과 자모를
-# 맞춘 「사피아의호수」로 띄운다(마스터 지시 2026-10-05, "ps1에서 도트작업했던 모든것들은 새턴에도
-# 동일 적용"). 🔴 2026-10-07 판정표 D4 로 사전 값도 「사피아의호수」가 됐다 — 이 오버라이드는
-# 이제 사전과 같은 값을 못 박아 두는 방어선이다(마스터: HUD·입장 배너·워프 목록만 붙여쓰기,
-# 일반 대화는 「사피아의 호수」로 띄어쓰기).
-SCN_HEADER_WORDING = {"サピアの湖": "사피아의호수"}
 
 
 def dotart_claimed_codes():
@@ -433,7 +508,7 @@ def dotart_text_codes(rs, scn, ntabs, sysm, cards_msgs_kr):
     for _k, _n, _i, _at, _s, _jp, kr in rs:
         mark(kr)
     for _p, _l, _s, _at, _fl, jp, kr, _t in scn:
-        mark(SCN_HEADER_WORDING.get(jp, kr))
+        mark(kr)
     for t in ntabs:
         for _at, _jp, kr, _ptrs in t["recs"]:
             mark(kr)
@@ -448,8 +523,8 @@ def check_dotart_codes(rs, scn, ntabs, sysm):
     """🔴 **게이트** — 도트가 점유한 코드가 실제 화면 글과 겹치면 그 글이 깨진다(관리자
     요청 2026-10-05, 「이식할 때 누출 검사를 같이 건다」). `DOTART_PLACES` 를 늘릴 때마다
     돈다."""
-    d = json.load(open(CANON, encoding="utf-8"))
-    cards_msgs_kr = [e[-1] for e in d.get("cards", []) + d.get("msgs", [])]
+    cards, _pj, msgs = load_canon()
+    cards_msgs_kr = [e[-1] for e in cards] + list(msgs.values())
     text_codes = dotart_text_codes(rs, scn, ntabs, sysm, cards_msgs_kr)
     clash = dotart_claimed_codes() & text_codes
     assert not clash, f"도트 코드가 실제 화면 글과 겹친다: {sorted(hex(c) for c in clash)}"
@@ -493,7 +568,6 @@ def scn_header(d, i, places):
             continue
         kr = places.get(jp)
         if kr:
-            kr = SCN_HEADER_WORDING.get(jp, kr)
             # 🔴 널이 반드시 남아야 한다 — 꼬리 바이트(`09`)가 끝을 차지하므로 본문은 fl-2 까지.
             return s, fl, jp, _fit_place(kr, fl - 1, False, "씬 지명 헤더")
     return None
@@ -501,7 +575,7 @@ def scn_header(d, i, places):
 
 def scn_rows(mm):
     """`[(파일, lba, size, 시작, 필드길이, JP, KR, 꼬리바이트)]`."""
-    places = table("place")
+    places = table("place", "eiyuu")
     out = []
     for path, lba, size in common.iso_files(mm):
         if not SCN_RE.match(path):
@@ -591,17 +665,16 @@ def card_rows(mm, cards):
     return out
 
 
-def msg_rows(mm, msgs):
-    """SAVE/LOAD·본체 RAM 문구 — `[(파일, lba, size, 오프셋, 여유, JP, KR)]`.
+def msg_scan(mm, msgs):
+    """SAVE/LOAD·본체 RAM 문구 — `[(파일, lba, size, 오프셋, 여유, 앞바이트, KR, JP)]`. `msgs` = `{JP sha1: KR}`.
 
     🔴 **자리를 손으로 안 적는다.** 같은 JP 가 한 파일 안에 여러 번, 편마다 또 한 벌씩 있다
       (실측 61 자리 / 고유 30 종). 하나만 고치면 어떤 화면에서만 일본어가 남는다.
     ⚠ **긴 것부터 맞춘다** — 짧은 문구가 긴 문구의 부분 문자열인 자리가 있다
       (`ロードに失敗しました` ⊂ `ロードに失敗しました。`). 짧은 쪽을 먼저 물리면 긴 문장을
-      잘라 먹는다(PS1 이 같은 자리에서 물렸다 — `patch_sys_ui.MSGS` 주석).
+      잘라 먹는다(PS1 이 같은 자리에서 물렸다 — `patch_sys_ui.MSGS` 주석). `_sys_match` 가 가장 앞선(=가장 긴) 접미를 고른다.
+    🔴 JP 원문 평문을 정본에 안 둔다 — 열쇠는 sha1 이고 원문은 디스크에서 읽는다(`system.json` 과 같은 꼴).
     """
-    want = sorted(((jp, kr) for jp, kr in msgs), key=lambda x: -len(x[0]))
-    enc = [(jp, kr, jp.encode("cp932")) for jp, kr in want]
     out, seen = [], set()
     have = {p for p, _l, _s in common.iso_files(mm)}
     for path in list(dump_ui.FILES.values()) + [p for p in SYS_EXTRA_FILES if p in have]:
@@ -621,18 +694,24 @@ def msg_rows(mm, msgs):
             #   (실측: `\x06\x0b華\x06\x07zﾘゲームの記録が ありません。`). 통째 비교로는
             #   그런 자리를 통째로 놓치고, 앞 바이트를 다시 인코딩하면 포인터가 깨진다.
             #   그래서 **뒤에서 맞추고 앞은 원본 바이트 그대로** 이어 붙인다.
-            run = d[i:j]
-            hit = next(((jp, kr, b) for jp, kr, b in enc if run.endswith(b)), None)
+            run = bytes(d[i:j])
+            hit = _sys_match(run, msgs)
             if hit:
+                k, jp = hit
                 nxt = j
                 while nxt < len(d) and d[nxt] == 0:
                     nxt += 1
-                seen.add(hit[0])
-                out.append((path, lba, size, i, nxt - i, run[: len(run) - len(hit[2])], hit[1]))
+                seen.add(sys_key(jp))
+                out.append((path, lba, size, i, nxt - i, run[:k], msgs[sys_key(jp)], jp))
             i = j
-    missing = [jp for jp, _k in want if jp not in seen]
+    missing = [h for h in msgs if h not in seen]
     assert not missing, f"디스크에서 못 찾은 문구 {len(missing)}: {missing[:3]}"
     return out
+
+
+def msg_rows(mm, msgs):
+    """`msg_scan` 에서 JP 를 뗀 7값 — `[(파일, lba, size, 오프셋, 여유, 앞바이트, KR)]`."""
+    return [r[:7] for r in msg_scan(mm, msgs)]
 
 
 # ── 고유명사 표 — 아이템 · 주문 · 몬스터 (2026-08-24) ─────────────────────────
@@ -695,7 +774,9 @@ def name_canon(what):
     first = {"몬스터": "monster", "아이템": "item", "주문": "item"}[what]
     canon = {}
     for cat in (first, "item", "monster", "person", "place"):
-        for k, v in table(cat).items():
+        from names import person_table
+
+        for k, v in (person_table() if cat == "person" else table(cat, "eiyuu")).items():
             canon.setdefault(k, v)
             canon.setdefault(_nname(k), v)
     return canon
@@ -868,7 +949,7 @@ def sys_rows(mm):
     """
     with open(SYS_CANON, encoding="utf-8") as f:
         doc = json.load(f)
-    canon, exact = doc["lines"], set(doc.get("exact", []))
+    canon, exact = {**_canon_sys_lines(), **doc["lines"]}, set(doc.get("exact", []))
     skip = {}
     for key, off, n, _a, _w in NAME_TABLES:
         skip.setdefault(dump_ui.FILES[key], []).append((off, n))
@@ -1415,8 +1496,8 @@ def main():
     rs = rows()
     _f0, mm0 = common.open_image()
     scn = scn_rows(mm0)
-    cards = card_rows(mm0, load_canon()[2])
-    msgs = msg_rows(mm0, load_canon()[4])
+    cards = card_rows(mm0, load_canon()[0])
+    msgs = msg_rows(mm0, load_canon()[2])
     ntabs = name_rows(mm0)
     names = [r[2] for t in ntabs for r in t["recs"] if r[2]]
     sysm = sys_rows(mm0)
@@ -1612,6 +1693,11 @@ def main():
                 f, flba, fsize, idx * font.GLYPH_STRIDE, glyphs[ch], label=f"{FON} 글리프 {idx}"
             )
         print(f"  폰트 {FON}: 글리프 {len(glyphs)}자 구움")
+        common.write_at(
+            f, flba, fsize, font.game_index("…".encode("cp932")) * font.GLYPH_STRIDE, ellipsis_glyph(),
+            label=f"{FON} … 한국식 바닥",
+        )
+        print("  전각 폰트 …: 점 셋을 글자 아랫줄로 내렸다")
 
     verify(dst, rs, scn, cards + msgs, plan, files)
     verify_names(dst, ntabs, plan, files)
@@ -1672,6 +1758,9 @@ def verify(dst, rs, scn, cards, plan, files):
         o = idx * font.GLYPH_STRIDE
         if fon[o : o + font.GLYPH_STRIDE] != glyphs[ch]:
             bad.append(f"글리프 {ch!r} 슬롯 {idx} 가 안 들어갔다")
+    o = font.game_index("…".encode("cp932")) * font.GLYPH_STRIDE
+    if fon[o : o + font.GLYPH_STRIDE] != ellipsis_glyph():
+        bad.append("글리프 … 가 한국식 바닥으로 안 들어갔다")
     mm2.close()
     _f.close()
     if bad:

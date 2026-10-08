@@ -101,6 +101,83 @@ def axis_josa(rows):
     return bad
 
 
+_JOSA_PAIR = {
+    "은": ("은", "는"),
+    "는": ("은", "는"),
+    "이": ("이", "가"),
+    "가": ("이", "가"),
+    "을": ("을", "를"),
+    "를": ("을", "를"),
+    "과": ("과", "와"),
+    "와": ("과", "와"),
+    "으로": ("으로", "로"),
+    "로": ("으로", "로"),
+}
+_NAME_JOSA = None
+
+
+def _name_josa_re():
+    """고유명사(사전: 사람·몬스터·지명·아이템) 바로 뒤 조사 — **명사라 오탐이 없다**(일반 낱말 뒤 `는`·`이` 는 안 본다)."""
+    global _NAME_JOSA
+    if _NAME_JOSA is None:
+        import canon
+
+        names = set()
+        from names import person_table
+
+        for cat in ("person", "monster", "place", "item"):
+            for v in (person_table() if cat == "person" else canon.table(cat, "eiyuu")).values():
+                v = v.strip()
+                if len(v) >= 2 and "가" <= v[-1] <= "힣" and " " not in v:
+                    names.add(v)
+        alt = "|".join(map(re.escape, sorted(names, key=len, reverse=True)))
+        _NAME_JOSA = re.compile(
+            r"(?<![가-힣])(" + alt + r")(은|는|이|가|을|를|과|와|으로|로)(?![가-힣(])"
+        )
+    return _NAME_JOSA
+
+
+def axis_name_josa(rows):
+    """⑨ 고유명사 뒤 조사 받침 일치 — 은/는 · 이/가 · 을/를 · 과/와 · 으로/로(ㄹ 받침은 `로`).
+
+    ① 은 을/를 만 봤다(F8, 기반 대조표 10-08). 일반 낱말 뒤 조사는 어미와 구분이 안 돼 오탐이 많아
+    **이름 뒤만** 잰다 — 이름 칸 516·지명·인명 522종. 전각 숫자·영문 꼬리는 받침을 몰라 건너뛴다.
+    """
+    bad = []
+    pat = _name_josa_re()
+    for path, off, _jp, kr in rows:
+        for m in pat.finditer(kr):
+            name, j = m.group(1), m.group(2)
+            a, b = _JOSA_PAIR[j]
+            f = batchim(name[-1])
+            want = b if not f else a
+            if a == "으로" and f == 8:
+                want = "로"
+            if j != want:
+                bad.append((path, off, kr[max(0, m.start() - 8) : m.end() + 8].replace("\n", "/")))
+    return bad
+
+
+_SPEAKER = re.compile(r"\s*%c([^%\n]*)%c\n")
+
+
+def axis_speaker_width(rows):
+    """⑩ 화자 이름 칸 — 이름이 한 줄(전각 14칸)에 드나. 넘으면 이름 칸에서 잘리거나 본문 첫 줄을 민다.
+
+    이름칸은 `%c이름%c\n본문` 꼴의 **블록 머리**만 센다(문장 속 `%c…%c` 는 주입 자리 — 이름칸이 아니다).
+    변수 이름(`%s`)은 건너뛴다 — 길이를 모른다. 실측 최장 11.5(2026-10-08).
+    """
+    bad = []
+    for path, off, _jp, kr in rows:
+        m = _SPEAKER.match(kr)
+        if not m or m.group(1).startswith("%"):
+            continue
+        w = typeset_scn.width(m.group(1))
+        if w > typeset_scn.COLS:
+            bad.append((path, off, m.group(1), w))
+    return bad
+
+
 def axis_var_josa(rows):
     """② 주입 자리 뒤에 조사가 한 형태로 박혔나."""
     return [(p, o, m.group(0)) for p, o, _jp, kr in rows for m in VAR.finditer(kr)]
@@ -213,11 +290,9 @@ def axis_space_before_punct():
         for k, v in (d.get("lines") or {}).items():
             if isinstance(v, str) and _strip_before(v, _STRIP_BEFORE) != v:
                 out.append((fn, k, v[:34], _strip_before(v, _STRIP_BEFORE)[:34]))
-        for i, pair in enumerate(d.get("msgs") or []):
-            if _strip_before(pair[1], _STRIP_BEFORE) != pair[1]:
-                out.append(
-                    (fn, f"msgs[{i}]", pair[1][:34], _strip_before(pair[1], _STRIP_BEFORE)[:34])
-                )
+        for h, kr in (d.get("msgs") or {}).items():  # `{JP sha1: KR}`
+            if _strip_before(kr, _STRIP_BEFORE) != kr:
+                out.append((fn, f"msgs[{h}]", kr[:34], _strip_before(kr, _STRIP_BEFORE)[:34]))
     return out
 
 
@@ -247,9 +322,7 @@ def axis_hardcoded_names(_rows=None):
         with open(fp, encoding="utf-8") as f:
             d = json.load(f)
         into.update(d.get("lines", {}))
-        for jp2, kr2 in d.get("msgs", []) or []:
-            if jp2 and kr2:
-                into[patch_ui.sys_key(jp2)] = kr2
+        into.update(d.get("msgs", {}) or {})  # `ui.json` msgs = `{JP sha1: KR}`
 
     out, seen = [], set()
     _f, mm = common.open_image()
@@ -292,6 +365,8 @@ def main():
     for title, hits in (
         ("① 을/를 받침", axis_josa(rows)),
         ("② 변수 뒤 고정 조사", axis_var_josa(rows)),
+        ("⑨ 고유명사 뒤 조사 받침", axis_name_josa(rows)),
+        ("⑩ 화자 이름 칸 폭", axis_speaker_width(rows)),
         ("③ 고정 명사 뒤 병기", axis_waste(rows)),
         ("④ 부호·표기 규약", axis_style(rows)),
         ("⑦ 손으로 박은 이름이 정본과 갈렸다", axis_hardcoded_names()),

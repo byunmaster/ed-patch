@@ -39,7 +39,9 @@ sys.path.insert(
     ),
 )
 
-import glossary
+import canon
+
+NOUN_CATS = tuple(canon.nouns("eiyuu")["categories"])  # 고유명사 범주만 — 문안 범주(ui·battle…)는 `check_canon` 몫
 
 KATA = re.compile(r"^[\u30a0-\u30ff\u31f0-\u31ff\uff66-\uff9f\u3000 =\uff1d\u30fb\uff65]+$")
 
@@ -113,9 +115,16 @@ def same_fragment_split(t, minlen=3):
 #    ⇒ `_names()` 가 내야 하는 값은 **item 쪽**이다. 그것을 여기 적고 어긋나면 **실패**시킨다.
 #
 #    ⚠ 여기 없는 갈림은 여전히 **보고만** 한다 — 어느 쪽이 맞는지는 사람이 정한다.
-SPLIT_WINNER = {
-    "カース": ("item", "커스"),
-}
+def split_winner(per):
+    """갈린 원문의 「화면에 나가는 쪽」 — 규칙: **아이템(item) 범주가 낀 갈림은 item 쪽**이다.
+
+    🔴 JP 열쇠 표를 들지 않는다(마스터 2026-10-08 — 워커는 자기 사전 금지). 예전엔 `{"カース": item/커스}`
+       를 코드에 박았는데, 그건 **규칙의 한 사례**였다 — 규칙을 적고 사례는 사전(`per`)에서 읽는다.
+    """
+    d = dict(per)
+    return ("item", d["item"]) if "item" in d else None
+
+
 
 
 def cross_category_split():
@@ -134,8 +143,8 @@ def cross_category_split():
     from typeset_scn import _names
 
     per = collections.defaultdict(dict)
-    for cat in glossary.categories():
-        for jp, kr in glossary.table(cat).items():
+    for cat in NOUN_CATS:
+        for jp, kr in canon.table(cat, "eiyuu").items():
             per[jp][cat] = kr
     merged = _names()
     out = []
@@ -145,13 +154,10 @@ def cross_category_split():
     return sorted(out)
 
 
-_UNSPLIT = object()
-
-
 def main():
     bad = 0
-    for cat in glossary.categories():
-        t = glossary.table(cat)
+    for cat in NOUN_CATS:
+        t = canon.table(cat, "eiyuu")
         split = same_source_split(t)
         if split:
             bad += len(split)
@@ -165,35 +171,28 @@ def main():
             "  \u2705 \uac19\uc740 \uc6d0\ubb38\uc774 \ub450 \ud45c\uae30\ub85c \uac08\ub9b0 \uc790\ub9ac\ub294 \uc5c6\ub2e4"
         )
     cross = cross_category_split()
-    pinned = {jp for jp, _p, _w in cross if jp in SPLIT_WINNER}
+    pinned = {jp for jp, p_, _w in cross if split_winner(p_)}
     print(
         f"  ℹ 범주를 가로질러 갈린 자리 {len(cross)}"
         f" (못 박은 것 {len(pinned)} · 판정 기다리는 것 {len(cross) - len(pinned)})"
     )
     for jp, per, win in cross:
         tail = ""
-        if jp in SPLIT_WINNER:
-            _cat, want = SPLIT_WINNER[jp]
+        if sw := split_winner(per):
+            _cat, want = sw
             tail = f"   [못 박음 {_cat}:{want}]" if win == want else ""
         print(f"     {jp} → " + " · ".join(f"{c}:{k}" for c, k in per) + f"   ⇒ 화면 {win!r}{tail}")
     # 🔴 못 박은 자리는 **계약**이다 — 어긋나면 실패.
-    win = {j: w for j, _p, w in cross}
-    for jp, (cat, want) in SPLIT_WINNER.items():
-        got = win.get(jp, _UNSPLIT)
-        if got is _UNSPLIT:
-            # 갈림이 사라졌다(정본을 합쳤거나 한쪽을 뺐다) — 못이 낡았다.
+    for jp, per, got in cross:
+        sw = split_winner(per)
+        if sw and got != sw[1]:
             bad += 1
             print(
-                f"  ❌ 못 박은 {jp} 가 이제 범주를 가로질러 갈리지 않는다 — SPLIT_WINNER 에서 뺀다"
-            )
-        elif got != want:
-            bad += 1
-            print(
-                f"  ❌ {jp} 의 화면 표기가 {got!r} 다 — {cat}:{want!r} 로 못 박아 뒀다.\n"
+                f"  ❌ {jp} 의 화면 표기가 {got!r} 다 — {sw[0]}:{sw[1]!r} 로 못 박아 뒀다.\n"
                 f"     `typeset_scn._names()` 의 범주 순서를 보라(뒤 범주가 이긴다)."
             )
 
-    frag = same_fragment_split(glossary.table("monster"))
+    frag = same_fragment_split(canon.table("monster", "eiyuu"))
     print(
         f"  \u2139 \uac19\uc740 \uc870\uac01\uc778\ub370 \ud45c\uae30\uac00 \uac08\ub9b0 \ud6c4\ubcf4 {len(frag)} (\ud310\uc815\uc740 \uc0ac\ub78c)"
     )

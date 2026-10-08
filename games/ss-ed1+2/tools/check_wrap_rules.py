@@ -174,14 +174,12 @@ def scan_message():
         s = (_NAME + kr) if kr.startswith(_LEAD) else kr
         units = _msg_units(s)
         src = b"".join(b for b, _t in units)
-        got = msgwrap.wrap(
-            src, retreat=False
-        )  # 로그(마스터 확정 09-27) — 글자 단위, 어절 후퇴 없음
+        got = msgwrap.wrap(src)  # 로그도 어절 단위(마스터 09-30 번복) — 어절 후퇴 켜짐(기계어와 같다)
         if not msgwrap.check_invariant(src, got):
             out["글 소실"].append(s[:30])
             continue
         # 되짚기 — 바이트 줄을 글자 줄로
-        # 🔴 **`%s`/`%d` 는 한 덩어리 바이트(16B)로 들어오는데, 글자 단위 접힘(retreat=False)은
+        # 🔴 **`%s`/`%d` 는 한 덩어리 바이트(16B)로 들어오는데, 글자 단위 접힘(어절보다 긴 낱말)은
         #    그 안에서도 끊을 수 있다** — 실제 이름이 채워지면 이름이 두 줄로 갈린다는 뜻이다.
         #    되짚기가 단위 경계를 벗어나면(개행이 덩어리 한가운데 온 것) `%s 도중 절단`으로
         #    세고 이 메시지는 되짚기를 멈춘다(리포트용 — 하드 실패 아님, 정확한 나머지 글은 포기).
@@ -220,7 +218,10 @@ def scan_message():
                 if b.isdigit() and f"{a} {b}" in flat:
                     bad["숫자 묶음"].append(ls[i - 1][-8:] + " / " + ls[i][:8])
                 elif f"{a} {b}" not in flat and f"{a}\n{b}" not in s:
-                    bad["긴 어절(불가피)"].append(ls[i - 1][-8:] + " / " + ls[i][:8])
+                    # 🔴 어절 후퇴가 켜졌으므로 공백 아닌 자리의 끊김은 **한 줄보다 긴 낱말일 때만** 불가피다
+                    word = ls[i - 1].rsplit(" ", 1)[-1] + ls[i].split(" ", 1)[0]
+                    key = "긴 어절(불가피)" if T.width(word) > T.COLS else "어절 중간"
+                    bad[key].append(ls[i - 1][-8:] + " / " + ls[i][:8])
         for k2, v in bad.items():
             out[k2] += v
     return len(lines) + len(combos), out

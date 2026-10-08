@@ -74,7 +74,8 @@ sys.path.insert(
 )
 
 import common
-from glossary import table
+import canon as shared_canon
+from canon import table
 from text.line_key import key as line_key
 
 MARK = re.compile(r"(%[csd])")
@@ -89,8 +90,12 @@ def _names():
       남았다(2026-08-27). 216칸이 이미 정본에 있는데 안 읽고 있었다.
     """
     out = {}
+    # 화자 호칭(`%c병사%c` 같은 이름칸의 역할 이름)은 **정본**(`shared/canon` speaker)이 든다(사전 적용 2단계 —
+    # 사전은 고유명사만). ED1 을 먼저, ED2 는 없는 것만(겹치는 열쇠는 값이 같다). 사전 쪽이 이기는 순서는 그대로.
+    for t in ("ed2", "ed1"):
+        out.update(shared_canon.table("speaker", t))
     for cat in ("person", "monster", "place", "item"):
-        out.update(table(cat))
+        out.update(table(cat, "eiyuu"))
     return out
 
 
@@ -700,7 +705,7 @@ def _place_forms():
     if _PLACE_FORMS is None:
         from names import ATTACHED_KINDS, space_place_dialog
 
-        vals = set(table("place").values())
+        vals = set(table("place", "eiyuu").values())
         _PLACE_FORMS = {v: w for v in vals if (w := space_place_dialog(v)) != v}
         # 「성」·「섬」은 붙인다 — 띄어 쓴 꼴(`루디아 성`)이 문안에 있으면 붙인다
         _PLACE_FORMS.update(
@@ -730,9 +735,9 @@ def _keep():
     if _KEEP is None:
         names = {"신의 아들"}
         for cat in ("item", "monster"):
-            names.update(table(cat).values())
+            names.update(table(cat, "eiyuu").values())
         for cat in ("person", "place"):
-            names.update(v for k, v in table(cat).items() if _KATA.search(k))
+            names.update(v for k, v in table(cat, "eiyuu").items() if _KATA.search(k))
         # 대사 꼴로 띄운 지명은 **전부** 한 덩어리다(조판 규칙 ④ 묶음 안 끊기 — 관리자 중계
         # 2026-09-27: 가타카나 원명뿐 아니라 `국경의 동굴`·`용의 알` 도. PS1 도 같게 간다)
         names.update(_place_forms().values())

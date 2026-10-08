@@ -143,13 +143,9 @@ def ours():
         if os.path.exists(p):
             with open(p, encoding="utf-8") as fh:
                 d = json.load(fh)
-            files[f] = d.get("lines", d)
-            # 🔴 `ui.json` 의 **`msgs`** 는 `lines` 가 아니라 `[JP, KR]` 목록이다(2026-09-05).
-            #    `sys_key` 로만 찾다가 **통째로 못 보고** 있었다 — 그래서 저장·로드 확인 문구
-            #    넷을 `scn.json` 의 **그늘진 사본**으로 대조해 **거짓 갈림**을 냈다.
-            for jp2, kr2 in d.get("msgs", []) or []:
-                if jp2 and kr2:
-                    files[f][U.sys_key(jp2)] = kr2
+            # 🔴 `ui.json` 의 **`msgs`** 는 `lines` 가 아니라 따로 있다(2026-09-05 — `sys_key` 로만 찾다가 저장·로드
+            #    확인 문구 넷을 `scn.json` 의 그늘진 사본으로 대조해 거짓 갈림을 냈다). 지금은 `{JP sha1: KR}` 다.
+            files[f] = dict(d.get("msgs", {}) or {}) if f == "ui" else d.get("lines", d)
 
     def get(jp):
         if jp in names:

@@ -222,6 +222,192 @@ def bake_font(plan):
     return out
 
 
+# ── 반각 진행 — 합성 타일 (마스터 2026-10-08 「오프닝·엔딩 공백·부호 반각」) ────────────────────────
+# 🔴 지난 시도(08-21)가 막힌 곳: 레코드가 **글자당 2B 고정**이고 엔진이 글자마다 **16px 전진**한다 — 반각 코드를
+#    쓸 길이 없다. 엔진을 안 고치고 넘는 길 = **줄을 비례 폭으로 한 장에 그린 뒤 16px 로 잘라, 조각마다 글리프 슬롯**
+#    (PS1 ED3 안 B 와 같은 수). 한 칸에 반각 둘이 들어가고, 레코드 길이·정렬 규칙은 그대로다.
+#    진행 폭: 공백·`. , ! ?` 8px · 한글·`…`·`～`·「」·전각 로마자 16px.
+# ⚠ 조각이 원본 글리프와 **바이트까지 같으면**(맨 앞 글자들 — 위상 0) 새 슬롯을 안 먹고 그 코드를 쓴다 — 전각 로마자·
+#    「」 처럼 원본 폰트가 가진 글자는 **원본 글리프 그대로**(모양이 화면마다 갈리지 않게), 합성 조각 속에서도 원본 글리프를 쓴다.
+# ⚠ `…` 는 **전각 한 글자**, 점 셋은 **한국식 바닥**(글자 아랫줄) — 가운데 점은 안 된다(마스터, 전 기종 규칙).
+TMAP = os.path.join(common.GAME_DIR, "hangul_tiles.json")
+HALF = " .,!?"
+BLANK_CODE = "　".encode("cp932")
+
+
+def _bits_of(raw32):
+    import numpy as np
+
+    return np.unpackbits(np.frombuffer(raw32, np.uint8).reshape(16, 2), axis=1)
+
+
+def _pack(bits):
+    import numpy as np
+
+    return np.packbits(bits.astype(np.uint8), axis=1).tobytes()
+
+
+def _neo_bits(ch, ft, w):
+    """Neo둥근모로 `ch` 를 그린 16×`w` 이진 배열. 잉크가 `w` 밖으로 나가면 실패한다."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    im = Image.new("L", (16, 16), 0)
+    ImageDraw.Draw(im).text((0, 0), ch, fill=255, font=ft)
+    b = (np.array(im) >= 128).astype(np.uint8)
+    assert not b[:, w:].any(), f"{ch!r}: 잉크가 {w}px 밖이다"
+    return b[:, :w]
+
+
+def ellipsis_bits(ft):
+    """`…` — 점 셋을 셀 폭에 고르게, 높이는 폰트의 온점(= 글자 아랫줄, 한국식 바닥)."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    dot = Image.new("L", (16, 16), 0)
+    ImageDraw.Draw(dot).text((0, 0), ".", fill=255, font=ft)
+    d = (np.array(dot) >= 128).astype(np.uint8)
+    _ys, xs = np.nonzero(d)
+    assert len(xs), "온점 글리프가 비었다"
+    w = xs.max() - xs.min() + 1
+    stamp = d[:, xs.min() : xs.max() + 1]
+    ell = np.zeros((16, 16), np.uint8)
+    span = 16 - 2 - w
+    for k in range(3):
+        x = 1 + round(span * k / 2)
+        ell[:, x : x + w] |= stamp
+    return ell
+
+
+def sjis_index(code):
+    """SJIS 2B → 글리프 인덱스(`font.sjis_of_index` 의 역). ⚠ EUC 경로(`font.jis_index`)는 `－`(전각 하이픈)처럼
+    cp932 에만 있는 글자를 못 얻는다."""
+    c1, c2 = code
+    ku1 = (c1 - 0x81) * 2 + 1 if c1 <= 0x9F else (c1 - 0xC1) * 2 + 63
+    if c2 >= 0x9F:
+        ku, ten = ku1 + 1, c2 - 0x9E
+    else:
+        ku, ten = ku1, c2 - 0x3F - (1 if c2 >= 0x80 else 0)
+    return (ku - 1) * 94 + (ten - 1)
+
+
+class Composer:
+    """줄 → 16px 조각들. 원본 `KANJI.FON` 글리프(전각 로마자·「」 …)는 원본 그대로 쓴다."""
+
+    def __init__(self):
+        from PIL import ImageFont
+
+        self.ft = ImageFont.truetype(NEODGM, 16, layout_engine=ImageFont.Layout.BASIC)
+        self.orig = bytes(common.extract("/OPENEND" + FONT16))
+        self.ell = ellipsis_bits(self.ft)
+        self.cache = {}
+
+    def unit(self, ch):
+        """`(진행 px, 16×진행 이진 배열)`"""
+        import numpy as np
+
+        if ch in self.cache:
+            return self.cache[ch]
+        if ch == " ":
+            u = (8, np.zeros((16, 8), np.uint8))
+        elif ch == "…":
+            u = (16, self.ell)
+        elif ch == "　":
+            u = (16, np.zeros((16, 16), np.uint8))
+        elif ord(ch) < 0x80:
+            u = (8, _neo_bits(ch, self.ft, 8))
+        else:
+            try:
+                idx = sjis_index(ch.encode("cp932"))
+                assert font.sjis_of_index(idx) == ch.encode("cp932"), ch
+                u = (16, _bits_of(self.orig[idx * GLYPH16 : (idx + 1) * GLYPH16]))
+            except UnicodeEncodeError:
+                u = (16, _neo_bits(ch, self.ft, 16))
+        self.cache[ch] = u
+        return u
+
+    def tiles(self, text, width, left):
+        """`[바이트 32 | None(공백)]` × `width` — `left` 가 None 이면 가운데, 아니면 그 칸 수만큼 왼쪽."""
+        import numpy as np
+
+        units = [self.unit(c) for c in text]
+        total = sum(w for w, _ in units)
+        cap = width * 16
+        assert total <= cap, f"폭 초과 {total}>{cap}px: {text!r}"
+        x = (cap - total) // 2 if left is None else min(left * 16, cap - total)
+        canvas = np.zeros((16, cap), np.uint8)
+        for w, b in units:
+            canvas[:, x : x + w] |= b
+            x += w
+        out = []
+        for k in range(width):
+            t = canvas[:, k * 16 : k * 16 + 16]
+            out.append(_pack(t) if t.any() else None)
+        return out
+
+
+def known_codes(smap, comp, lines):
+    """`{조각 바이트: 2B 코드}` — 이미 코드가 있는 조각(굽힌 글자 · 원본 글리프 · 전각 공백)."""
+    known = {}
+    for idx, g in bake_font(smap).items():
+        known.setdefault(g, font.sjis_of_index(idx))
+    for t in lines:
+        for ch in t:
+            if ord(ch) >= 0x80 and ch != "…":
+                try:
+                    code = ch.encode("cp932")
+                except UnicodeEncodeError:
+                    continue
+                idx = sjis_index(code)
+                known.setdefault(comp.orig[idx * GLYPH16 : (idx + 1) * GLYPH16], code)
+    return known
+
+
+def tile_plan(needed, known, refresh=False, persist=True):
+    """`{조각 hex: 슬롯}` — 정본이 있으면 그대로, 새 조각은 **덧붙이기만**(정렬 순서로 빈 슬롯에).
+
+    ⚠ 조용히 안 늘린다 — 새 조각이 생기면 `--refresh` 를 요구한다(문안이 바뀌었다는 뜻이다).
+    """
+    old = {}
+    if os.path.exists(TMAP):
+        with open(TMAP, encoding="utf-8") as f:
+            old = json.load(f)["syllables"]
+    want = sorted({g.hex() for g in needed if g not in known})
+    new = [h for h in want if h not in old]
+    if new:
+        assert refresh or not old, f"정본에 없는 조각 {len(new)}개 — `--refresh` 로 갱신할 것"
+        with open(HMAP, encoding="utf-8") as f:
+            char_slots = set(json.load(f)["syllables"].values())
+        taken = set(old.values()) | char_slots
+        pool = [i for i in font.free_slots("kanji") if i not in taken]
+        assert len(new) <= len(pool), f"슬롯 부족 {len(new)}>{len(pool)}"
+        for h in new:
+            old[h] = pool.pop(0)
+        if not persist:  # 🔬 `--as` 검증 치환 — 정본에 안 쓴다(슬롯 계획이 치환 문안에만 맞게 좁아지는 사고 방지)
+            print(f"  🔬 검증용 임시 조각 슬롯 {len(new)}개(정본 불변)")
+            return old
+        with open(TMAP, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "_doc": "합성 타일(16×16 조각 32B hex) → KANJI.FON 슬롯 — 덧붙이기만 (커밋 정본, patch_title.py)",
+                    "syllables": old,
+                },
+                f,
+                ensure_ascii=False,
+                indent=1,
+            )
+        print(f"  조각 슬롯 정본 갱신: {len(old)}개 (새 {len(new)}) → {TMAP}")
+    return old
+
+
+def encode_tiles(codes, nbytes):
+    """조각 코드(각 2B) → 레코드 바이트 — 접두가 있으면 앞 2B 가 제어다."""
+    body = b"".join(codes)
+    out = (PREFIX + body) if nbytes == len(body) + 2 else body
+    assert len(out) == nbytes, f"레코드 {len(out)}B ≠ {nbytes}B"
+    return out
+
+
 def encode(text, width, nbytes, left, plan=None):
     """레코드 바이트 `nbytes` — 접두가 있으면 앞 2B 가 제어(`\\x00\\x09` 등)다."""
     padded = pad(text, width, left)
@@ -272,6 +458,31 @@ def check(raw):
     return len(bad)
 
 
+def verify_tiles(dst, patch, glyphs):
+    """🔴 쓴 것을 되읽는다 — 레코드 바이트와 글리프(두 사본)가 쓴 그대로인가. 되읽기는 쓴 직후 한 곳에서."""
+    _f, mm = common.open_image(dst)
+    bad = 0
+    files = {p_: (l, s_) for p_, l, s_ in common.iso_files(mm)}
+    raw2 = _load(mm)
+    for p, rec in patch.items():
+        if raw2[p : p + len(rec)] != rec:
+            if bad < 6:
+                print(f"      ❌ 레코드 0x{p:05X} 가 쓴 것과 다르다")
+            bad += 1
+    for path_in in (FONT16, "/OPENEND" + FONT16):
+        lba, size = files[path_in]
+        blob = bytes(common.read_extent(mm, lba, size))
+        for idx, g in glyphs.items():
+            if blob[idx * GLYPH16 : (idx + 1) * GLYPH16] != g:
+                if bad < 6:
+                    print(f"      ❌ {path_in} 글리프 {idx} 가 쓴 것과 다르다")
+                bad += 1
+    print(
+        f"  {'✅' if not bad else '❌'} 되읽기: 레코드 {len(patch)} · 글리프 {len(glyphs)}×2 · 어긋남 {bad}"
+    )
+    return bad
+
+
 def verify(dst, kr, smap):
     """🔴 **쓴 것을 되읽어 정본과 맞댄다** — 이 도구의 마지막 안전판.
 
@@ -314,7 +525,8 @@ def main():
         kr = json.load(f)
     # ⚠ **여기 한 자리에서만** 조판을 적용한다 — 아래 `--as` 치환도 `verify` 되읽기도
     #   같은 문안을 보게 된다. 두 곳에서 각각 하면 되읽기 검사가 자기 자신을 통과시킨다.
-    kr = {k: [tighten(t) for t in v] for k, v in kr.items()}
+    # 🔴 예전엔 여기서 `tighten`(부호 뒤 공백 제거)을 걸었다 — 전각 격자에선 부호 셀이 뒤 여백을 이미 만들었기 때문이다.
+    #    반각 진행(합성 타일)에선 공백이 8px 로 제대로 그려지므로 **걸면 안 된다**(걸어서 「아니,어쩌면」이 붙었다, 2026-10-08).
 
     os.makedirs(BUILD, exist_ok=True)
     dst = os.path.join(BUILD, os.path.basename(common.ORIG_BIN))
@@ -368,7 +580,8 @@ def main():
     smap = slot_plan(kr, refresh="--refresh" in sys.argv)
     print(f"  한글 슬롯 {len(smap)}자")
 
-    patch = {}
+    comp = Composer()
+    jobs = []  # (오프셋, 조각들, 레코드 길이, 구간, 화면 줄)
     for name, i, p, t, width, nb in plan(raw):
         # 🔴 **저장은 역순, 정본은 화면 순서**다(`dump_title` 이 뒤집어 내보낸다).
         #   그대로 색인하면 화면에 **결말부터** 나온다 — 2026-08-21 에 실제로 그렇게 나왔다.
@@ -376,8 +589,26 @@ def main():
         line = kr[name][len(kr[name]) - 1 - i]
         mode, left = align_of(t, width)
         if mode == "center" or (name, len(kr[name]) - 1 - i) in FORCE_CENTER:
-            left = (width - len(widen(line))) // 2
-        patch[p] = encode(line, width, nb, left, smap)
+            left = None  # 줄마다 **비례 폭으로 다시 재서** 가운데(마스터 10-08)
+        jobs.append((p, comp.tiles(line, width, left), nb, name, line))
+    known = known_codes(smap, comp, [j[4] for j in jobs])
+    needed = [g for _p, tl, _n, _a, _l in jobs for g in tl if g is not None]
+    tmap = tile_plan(
+        needed, known, refresh="--refresh" in sys.argv or bool(as_arg), persist=not as_arg
+    )
+    code_of = {bytes.fromhex(h): font.sjis_of_index(slot) for h, slot in tmap.items()}
+    patch, expect_tiles = {}, set()
+    for p, tl, nb, _name, _line in jobs:
+        codes = []
+        for g in tl:
+            if g is None:
+                codes.append(BLANK_CODE)
+            else:
+                codes.append(known[g] if g in known else code_of[g])
+                if g not in known:
+                    expect_tiles.add(g)
+        patch[p] = encode_tiles(codes, nb)
+    print(f"  합성 조각: 줄 {len(jobs)} · 새 슬롯 조각 {len(expect_tiles)}종 · 기존 글리프 재사용")
 
     lo, hi = min(patch), max(p + len(r) for p, r in patch.items())
     buf = bytearray(raw[lo:hi])
@@ -406,14 +637,18 @@ def main():
     #   (`/KANJI.FON` 타이틀 · `/OPENEND/KANJI.FON` 오프닝·엔딩 모듈). 한쪽만 고치면
     #   그 모듈에서만 글자가 깨지는데, 다른 쪽이 멀쩡해서 눈치채기 어렵다.
     glyphs = bake_font(smap)
+    for h, slot in tmap.items():
+        g = bytes.fromhex(h)
+        if g in expect_tiles:
+            glyphs[slot] = g
     with open(dst, "r+b") as f:
         for path_in in (FONT16, "/OPENEND" + FONT16):
             flba, fsize = files[path_in]
             for idx, g in glyphs.items():
                 common.write_at(f, flba, fsize, idx * GLYPH16, g, label=f"{path_in} 글리프 {idx}")
             print(f"  폰트 {path_in}: 글리프 {len(glyphs)}자 구움")
-    if verify(dst, kr, smap):
-        raise SystemExit("되읽기가 정본과 다르다 — 이 이미지를 쓰지 않는다")
+    if verify_tiles(dst, patch, glyphs):
+        raise SystemExit("되읽기가 쓴 것과 다르다 — 이 이미지를 쓰지 않는다")
     print(f"  → {dst}")
 
 
