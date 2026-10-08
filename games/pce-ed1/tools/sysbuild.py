@@ -44,16 +44,113 @@ class SysError(Exception):
     pass
 
 
+CANON = "ed1"  # 공통 문안 정본 — ED1 은 PS1 씨앗(`shared/canon/ed1.json`, 마스터 10-08)
+
+
 def glossary() -> dict[str, str]:
-    """JP → 우리 표기. **공용 `glossary.all_names()` 가 준다** — 우리가 정본을 훑지 않는다.
+    """JP → 우리 표기. **고유명사는 사전(`canon.all_names`)이, 화자 호칭·UI 낱말은 정본(`canon`)이 준다** —
+    우리가 표를 들지 않는다(마스터 10-08 「사전 = 고유명사만 · 공통 문안은 정본」).
 
     🔴 옛 판은 정본을 **평평하게** 훑어 `_aliases` 의 값(`強さ@전투커맨드` 꼴)까지 표시 문안으로
     셌다(2026-09-08 실측: 게이트가 「정본에 없는 글자 `@능티`」로 울었다). **게임마다 「밑줄로
-    시작하는 절은 건너뛴다」를 알 게 아니라** 공용이 `categories` 만 준다.
+    시작하는 절은 건너뛴다」를 알 게 아니라** 공용이 `categories` 만 준다. 자리가 붙은 열쇠(`원문@자리`)는 안 낸다.
+    사전이 먼저, 그다음 화자 호칭(兵士·侍女…), 마지막이 UI 낱말(何もない…)이다.
     """
-    import glossary as G  # shared/ (common 이 sys.path 에 올린다)
+    import canon  # shared/ (common 이 sys.path 에 올린다)
+    out: dict[str, str] = {}
+    for _c, jp, kr in canon.all_names(CANON):
+        out.setdefault(jp, kr)
+    for cat in ("speaker", "ui"):
+        for jp, kr in canon.table(cat, CANON).items():
+            if "@" not in jp:
+                out.setdefault(jp, kr)
+    return out
 
-    return {jp: kr for _c, jp, kr in G.all_names()}
+
+# ─── 메뉴 라벨 — 정본 `ui` 낱말을 구분자(전각 공백·제어 토큰) 사이에서 읽는다 ──────────────────────────
+_JP_LETTER = re.compile("[ぁ-ヺー-ヿ㐀-鿿ｦ-ﾟ]")
+_LABEL_SEP = re.compile(r"(\{[0-9A-Fa-f]+\}|\u3000+)")
+# 같은 원문이 자리마다 다른 말일 때 어느 칸인가 — 정본 열쇠가 `원문@자리` 다. 주소로 고른다(코드 지식 — 이름이 아니다).
+LABEL_CTX = {0x9640: "능력치"}
+_CTX_ORDER = ("파티메뉴", "전투설정", "경험치표시")  # 주소로 안 정해지면 이 순서로 처음 있는 자리
+
+
+def chapter_kr(jp: str) -> str | None:
+    """장 제목 칸 `第１章　王子の旅立ち` → `제1장　왕자의 여행` — 제목은 정본 `chapter`, 머리 「제N장　」만 여기서 만든다."""
+    import canon
+
+    m = re.match(r"第([０-９])章　(.+)$", jp)
+    if not m:
+        return None
+    kr = canon.table("chapter", CANON).get(m.group(2))
+    return None if kr is None else f"제{m.group(1).translate(_FW2ASCII)}장　{kr}"
+
+
+_FW2ASCII = str.maketrans("０１２３４５６７８９", "0123456789")
+
+
+_SLOT_CAT = {"items": ("item", "아이템칸")}  # 칸 폭 때문에 줄인 꼴은 정본에 `원문@자리` 열쇠로 둔다(마스터 10-08)
+
+
+def fixed_kr(fam: str, jp: str, names: dict, gl: dict) -> str | None:
+    """고정표 한 칸의 우리 표기 — 정본의 칸 꼴(`원문@아이템칸`)이 먼저, 그다음 임시 덮어쓰기, 마지막이 정본 일반 꼴."""
+    if fam in _SLOT_CAT:
+        import canon
+
+        cat, slot = _SLOT_CAT[fam]
+        v = canon.lookup(f"{jp}@{slot}", cat, CANON)
+        if v is not None:
+            return v
+    return names.get(fam, {}).get(jp, gl.get(jp))
+
+
+def canon_label(jp: str, addr: int | None = None) -> str | None:
+    """원본 라벨(제어 토큰 `{XX}` 포함) → 정본 `ui` 로 만든 우리 라벨. 낱말 하나라도 정본에 없으면 None.
+
+    구분자(`{XX}` · 전각 공백 덩어리)는 그대로 두고 그 사이 낱말만 바꾼다 — 칸 정렬이 원본 배치 그대로다.
+    「戦う」가 든 줄은 전투 커맨드 창이라 `원문@전투커맨드` 열쇠를 먼저 본다.
+    """
+    import canon
+
+    ui = canon.table("ui", CANON)
+    alias = canon.load(CANON).get("_aliases", {})
+    battle_cmd = "戦う" in jp
+    out = []
+    any_word = False
+    for i, part in enumerate(_LABEL_SEP.split(jp)):
+        if i % 2 == 1 or not part or not _JP_LETTER.search(part):  # 구분자·부호(`：`)는 낱말이 아니다 — 그대로 둔다
+            out.append(part)
+            continue
+        ctxs = ["전투커맨드"] if battle_cmd else []
+        if addr in LABEL_CTX:
+            ctxs.append(LABEL_CTX[addr])
+        ctxs += _CTX_ORDER
+        kr = None
+        for key in (part, alias.get(part)):
+            if key is None:
+                continue
+            for c in ctxs:
+                kr = ui.get(f"{key}@{c}")
+                if kr is not None:
+                    break
+            if kr is None:
+                kr = ui.get(key)
+            if kr is not None:
+                break
+        if kr is None:
+            return None
+        out.append(kr)
+        any_word = True
+    return "".join(out) if any_word else None
+
+
+def label_kr(r: dict, overrides: dict | None = None) -> str | None:
+    """라벨 하나의 우리 문구 — `labels.json`(정본이 못 대는 자리·원본 유지 `null`)이 먼저, 없으면 정본에서 읽는다."""
+    ov = _load("labels.json") if overrides is None else overrides
+    for k in (f"@{r['addr']:04X}", r["jp"]):
+        if k in ov:
+            return ov[k]
+    return canon_label(r["jp"], r["addr"])
 
 
 def _load(name):
@@ -67,16 +164,17 @@ def all_glyph_chars() -> set[str]:
     gl = glossary()
     for fam in S.FIXED:
         for r in S.read_fixed(fam):
-            kr = names.get(fam, {}).get(r["jp"], gl.get(r["jp"]))
+            kr = fixed_kr(fam, r["jp"], names, gl)
             if kr:
                 chars |= {c for c in kr if font.needs_glyph(c)}
     for fam, reader in (("speakers", S.read_speakers), ("chapter", S.read_chapter)):
         for r in reader():
-            kr = names.get(fam, {}).get(r["jp"], gl.get(r["jp"]))
+            kr = fixed_kr(fam, r["jp"], names, gl)
             if kr:
                 chars |= {c for c in kr if font.needs_glyph(c)}
-    for k, v in _load("labels.json").items():
-        if k != "_doc" and v is not None:  # null = 원본 유지로 판정한 것
+    for r in S.read_labels():
+        v = label_kr(r)  # null = 원본 유지로 판정한 것 · 정본에도 없으면 None
+        if v is not None:
             chars |= {c for c in TOK.sub("", v) if font.needs_glyph(c)}
     for v in _load("sysmsg.json").get("messages", {}).values():
         chars |= {c for c in TOK.sub("", v) if font.needs_glyph(c)}
@@ -92,15 +190,15 @@ def all_glyph_chars() -> set[str]:
     return chars
 
 
-def encode_tokens(text: str, table, msg: bool = False) -> bytes:
+def encode_tokens(text: str, table, msg: bool = False, half_space: bool = False) -> bytes:
     """`{XX}` 토큰은 그 바이트로, 나머지는 font.encode. `msg` = 대사창 문안(시스템 메시지·전투 문구) — 공백은 반각."""
     out = bytearray()
     pos = 0
     for m in TOK.finditer(text):
-        out += font.encode(text[pos : m.start()], table, msg=msg)
+        out += font.encode(text[pos : m.start()], table, msg=msg, half_space=half_space)
         out += bytes.fromhex(m.group(1))
         pos = m.end()
-    out += font.encode(text[pos:], table, msg=msg)
+    out += font.encode(text[pos:], table, msg=msg, half_space=half_space)
     return bytes(out)
 
 
@@ -193,7 +291,9 @@ def apply(f, table, touched) -> dict:
     check_keys(errors)  # 정본에 써 놓고 안 붙는 열쇠부터 잡는다
 
     def kr_of(fam, jp):
-        return names.get(fam, {}).get(jp, gl.get(jp))
+        if fam == "chapter" and jp not in names.get(fam, {}):
+            return chapter_kr(jp)
+        return fixed_kr(fam, jp, names, gl)
 
     # 고정폭 표
     for fam, (bank, base, stride, w, _n, pad, _tail) in S.FIXED.items():
@@ -258,13 +358,27 @@ def apply(f, table, touched) -> dict:
     labels = _load("labels.json")
     b6d = S.bank_bytes(0x6D)
     cnt = 0
-    for r in S.read_labels():
-        kr = labels.get(
-            f"@{r['addr']:04X}", labels.get(r["jp"])
-        )  # 같은 JP 가 뜻이 다를 때 주소로 덮는다
-        if kr is None:  # 미판정이거나 **원본 유지로 판정**(null) — 둘 다 안 건드린다
+    recs = S.read_labels()
+    # 칸 경계 옮기기 — 전투 설정 「도망친다」(8B)가 칸 6B 를 넘는데, 바로 뒤 전투 커맨드 창 라벨은 「도망」이 원문
+    #   「逃げる」보다 2B 짧아 꼬리 공백이 2B 남는다. 둘 사이 00 구분자를 2B 뒤로 밀어 칸을 넘긴다
+    #   (라벨은 00 개수로 찾으므로 순서만 지키면 된다 — 직접 주소 참조 없음을 전 뱅크 검색으로 확인, 10-08).
+    shifts = []  # (구분자 자리, 원본 1B) — 아래에서 따로 쓴다
+    by_addr = {r["addr"]: r for r in recs}
+    a, b = by_addr.get(0x96F2), by_addr.get(0x96F9)
+    if a and b and a["off"] + a["room"] + 1 == b["off"] and a["room"] == 6 and b["room"] == 68:
+        sep = a["off"] + a["room"]
+        a["room"] += 2
+        b["off"] += 2
+        b["room"] -= 2
+        shifts.append((sep + 2, b6d[sep + 2 : sep + 3]))  # 새 구분자 자리(원래는 낱말 안쪽 바이트)
+    for r in recs:
+        kr = label_kr(r, labels)  # labels.json(주소·원문 순)이 먼저, 없으면 정본 ui
+        if kr is None:  # 정본에도 없거나 **원본 유지로 판정**(null) — 안 건드린다
             continue
         enc = encode_tokens(kr, table)
+        if len(enc) > r["room"]:
+            # 칸이 모자라면 공백을 반 칸 변형 코드로 접는다(아이템 이름과 같은 길 — 바이트 0, 마스터 10-07)
+            enc = encode_tokens(kr, table, half_space=True)
         if len(enc) > r["room"]:
             errors.append(f"label 「{r['jp']}」→「{kr}」 {len(enc)}B > {r['room']}B")
             continue
@@ -287,6 +401,8 @@ def apply(f, table, touched) -> dict:
             touched,
         )
         cnt += 1
+    for at, orig in shifts:
+        _write(f, 0x6D, at - 0, b"\x00", orig, "label 구분자 이동", touched)
     stats["labels"] = cnt
     # 시스템 메시지
     msgs = _load("sysmsg.json").get("messages", {})

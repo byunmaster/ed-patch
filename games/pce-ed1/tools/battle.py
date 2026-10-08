@@ -165,15 +165,19 @@ def _norm(s: str) -> str:
 
 
 def kr_names(extra: dict[str, str] | None = None) -> tuple[dict[str, str], list[str]]:
-    """JP 이름 → 우리 표기. 정본은 `shared/glossary`(몬스터·인물), `extra` 가 덮어쓴다.
+    """JP 이름 → 우리 표기. 몬스터·인물은 `shared/canon` nouns, 역할군 호칭은 `shared/canon`(speaker), `extra` 가 덮어쓴다.
 
     Ａ~Ｄ·♀♂ 꼬리는 개체 구분이라 표기에서 그대로 살린다 — 사전엔 밑말만 있다.
     """
-    g = json.loads((common.ROOT / "shared" / "glossary" / "eiyuu.json").read_text())["categories"]
+    import canon  # shared/ — 고유명사(정본 안 nouns)·역할군 호칭(speaker)
+
+    g = canon.nouns("ed1")["categories"]
     idx: dict[str, str] = {}
     for cat in ("monster", "person"):
         for k, v in g[cat].items():
             idx.setdefault(_norm(k), v)
+    for k, v in canon.table("speaker", "ed1").items():
+        idx.setdefault(_norm(k), v)
     for k, v in (extra or {}).items():
         idx[_norm(k)] = v
     out, missing = {}, []

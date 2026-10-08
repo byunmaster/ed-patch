@@ -233,7 +233,9 @@ def put_sonia(vals: dict[int, int]) -> None:
         if 0xC380 + i in vals:
             vals[0xC380 + i] = x
     tbl, _ = font.build_table(font._order_canon())
-    name = font.encode("소니아", tbl) + b"\x06"
+    import canon  # shared/ — 파티원 이름은 사전(정본 안 nouns)에서(소니아)
+
+    name = font.encode(canon.lookup("ソニア", "person", "ed1"), tbl) + b"\x06"
     for i in range(9):
         vals[0xC3B0 + i] = name[i] if i < len(name) else 0
 

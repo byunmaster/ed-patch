@@ -28,7 +28,7 @@ WIDTH = 13
 PUNCT = set(".,!?。、！？…")
 
 # 가장 긴 값(정본에서 계산) — 이름은 파티 다섯 중 최장, 대상은 파티 또는 「자신」
-ACTOR = "세리오스"
+ACTOR = sysbuild.glossary()["セリオス"]  # 파티 다섯 중 최장(사전 person)
 
 
 def _msgs():
@@ -303,10 +303,12 @@ def scene_rows():
     import typeset
 
     rows = []
+    import messages as M
+
     for p in sorted((common.GAME_DIR / "script").glob("scn*.json")):
-        for k, v in json.loads(p.read_text("utf-8")).get("messages", {}).items():
+        for k, v in M.load_translations(int(p.stem[3:])).items():
             t = v.get("t", "")
-            if not t:
+            if not t or v.get("raw"):  # 입장 배너(raw)는 가운데맞춤 고정폭 칸 — 조판 대상이 아니다
                 continue
             if "\n" in t:  # 하드 개행 창(장 끝 카드) — 줄을 손으로 맞춘 것이라 안 본다
                 continue

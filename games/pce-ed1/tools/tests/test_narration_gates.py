@@ -268,6 +268,52 @@ class PatchBlock(unittest.TestCase):
         )
         return blk, *N.patch_block(9, blk)
 
+    def voiced(self, sectors, rule="single", tail=b""):
+        """ON 경로: 음성(`JSR $5815` + 인라인 4B) → 타이머(0x080C = 2060프레임)."""
+        N.SITES = {9: {0: rule}}
+        voice = b"\x20\x15\x58\x00\x00" + bytes([sectors & 0xFF, sectors >> 8])
+        blk = (
+            b"\xea" * 4
+            + GATE
+            + bytes([0xF0, 7 + len(voice) + 2])
+            + voice
+            + TIMER
+            + b"\x80\x0b"
+            + msg(0xD5, 0xA4)
+            + tail
+            + b"\x60"
+        )
+        return blk, N.patch_block(9, blk)[0]
+
+    def timer_of(self, out):
+        t = N.TIMER_AT.search(out)  # 패치된 자리는 JSR 상주부라 안 잡힌다 — 인라인 4B 에서 읽는다
+        self.assertIsNone(t)
+        at = out.index(b"\x20" + bytes([N.ENTRY & 0xFF, N.ENTRY >> 8]))
+        return out[at + 4] | out[at + 5] << 8
+
+    def test_voice_longer_than_subtitle_extends_timer_to_voice_end(self):
+        _, out = self.voiced(240)  # 61.4초 ↔ 타이머 34.4초
+        self.assertEqual(self.timer_of(out), round(240 * N.SEC_PER_SECTOR * N.FPS))
+
+    def test_voice_within_tolerance_keeps_timer(self):
+        _, out = self.voiced(131)  # 33.5초 ↔ 34.4초 — 자막이 더 길다
+        self.assertEqual(self.timer_of(out), 0x080C)
+        _, out = self.voiced(138)  # 35.3초 — 어긋남 0.9초 < 1.5
+        self.assertEqual(self.timer_of(out), 0x080C)
+
+    def test_extending_changes_only_the_timer_bytes(self):
+        blk, out = self.voiced(240)
+        diff = [i for i in range(len(blk)) if blk[i] != out[i]]
+        self.assertTrue(all(blk.index(TIMER) <= i < blk.index(TIMER) + 7 for i in diff), diff)
+
+    def test_run_after_skip_gate_is_open_and_not_extended(self):
+        blk, _ = self.voiced(240)
+        N.SITES = {9: {0: "single", 1: "skip"}}
+        blk2 = blk[:-1] + GATE + b"\xf0\x00" + b"\x60"
+        runs = N.voice_runs(blk2, 9)
+        self.assertTrue(runs[0]["open"])
+        self.assertEqual(N.retime(blk2, 9), {})
+
     def test_only_jsr_target_changes(self):
         blk, out, n = self.single()
         self.assertEqual(n, 1)
@@ -355,6 +401,21 @@ class PatchBlock(unittest.TestCase):
         self.assertEqual(c.flag_during, 1)
         self.assertEqual(mem[N.AUTO_FLAG], 0)  # 메시지 뒤엔 자막 모드를 끈다
         self.assertEqual(waited, 2060)  # 메시지에 시간을 안 썼으니 원래 타이머만큼
+
+    def test_message_ends_at_06_or_07_not_only_00(self):
+        # 06/07 도 종료다(messages.TERM) — 뒤는 다음 메시지라 무게(W)에 안 넣는다. 안 그러면 쪽 마감이 늦게 잡혀 자막이 음성 끝 전에 끝난다(201 실측)
+        for term in (b"\x06", b"\x07"):
+            _, out, _ = self.single()
+            msg_ = b"\x82\xa0\x82\xa2\x05" + b"\x82\xa4" * 6 + term + b"\x82\xa4" * 20 + b"\x00"
+            out = bytearray(out) + b"\x00" * (0x4D5 + len(msg_) - len(out))
+            out[0x4D5 : 0x4D5 + len(msg_)] = msg_
+            mem = self.mem_with(out)
+            c = CPU(mem, 10, 30, 0)
+            c.call(N.ENTRY, N.BASE + 9 + 2, 0, 0)
+            start = 10 * 60 + 30
+            self.assertEqual(
+                c.first[0] * 60 + c.first[1] - start, 2060 * 5 // 18, term
+            )  # W=18 (00 까지면 58)
 
     def test_auto_hook(self):
         for flag, clock, pad, want in (
