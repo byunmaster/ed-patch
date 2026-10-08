@@ -132,12 +132,14 @@
  "D0:1A": {
   "jp_len": 4,
   "kr": "두목",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:1B": {
   "jp_len": 3,
   "kr": "3세",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:1C": {
   "jp_len": 3,
@@ -172,7 +174,8 @@
  "D0:22": {
   "jp_len": 4,
   "kr": "해방",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:23": {
   "jp_len": 4,
@@ -217,12 +220,14 @@
  "D0:2B": {
   "jp_len": 5,
   "kr": "왕자님",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:2C": {
   "jp_len": 11,
   "kr": "정보상 오사문",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:2D": {
   "jp_len": 6,
@@ -297,12 +302,14 @@
  "D0:3B": {
   "jp_len": 4,
   "kr": "동생",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:3C": {
   "jp_len": 4,
   "kr": "형",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:3D": {
   "jp_len": 4,
@@ -317,7 +324,8 @@
  "D0:3F": {
   "jp_len": 5,
   "kr": "손님",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:40": {
   "jp_len": 4,
@@ -342,17 +350,20 @@
  "D0:44": {
   "jp_len": 7,
   "kr": "세리오스 왕자",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:45": {
   "jp_len": 6,
   "kr": "프레이아님",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:46": {
   "jp_len": 6,
   "kr": "에리온님",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:47": {
   "jp_len": 3,
@@ -362,7 +373,8 @@
  "D0:48": {
   "jp_len": 5,
   "kr": "보물상자",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:49": {
   "jp_len": 5,
@@ -372,7 +384,8 @@
  "D0:4A": {
   "jp_len": 4,
   "kr": "국왕",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:4B": {
   "jp_len": 5,
@@ -392,12 +405,14 @@
  "D0:4E": {
   "jp_len": 5,
   "kr": "도련님",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:4F": {
   "jp_len": 3,
   "kr": "나",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:50": {
   "jp_len": 4,
@@ -412,7 +427,8 @@
  "D0:52": {
   "jp_len": 7,
   "kr": "대통령",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D0:53": {
   "jp_len": 4,
@@ -436,13 +452,14 @@
  },
  "D0:57": {
   "jp_len": 4,
-  "kr": "길모아",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D0:58": {
   "jp_len": 3,
   "kr": "유적",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:00": {
   "jp_len": 5,
@@ -452,7 +469,8 @@
  "D1:01": {
   "jp_len": 3,
   "kr": " 마을",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:02": {
   "jp_len": 6,
@@ -462,17 +480,20 @@
  "D1:03": {
   "jp_len": 4,
   "kr": " 왕국",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:04": {
   "jp_len": 4,
   "kr": " 공국",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:05": {
   "jp_len": 6,
   "kr": " 공화국",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:06": {
   "jp_len": 6,
@@ -497,7 +518,8 @@
  "D1:0A": {
   "jp_len": 4,
   "kr": "곶의 ",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:0B": {
   "jp_len": 4,
@@ -507,7 +529,8 @@
  "D1:0C": {
   "jp_len": 3,
   "kr": " 마을",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:0D": {
   "jp_len": 3,
@@ -522,7 +545,8 @@
  "D1:0F": {
   "jp_len": 4,
   "kr": " 광산",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:10": {
   "jp_len": 3,
@@ -532,7 +556,8 @@
  "D1:11": {
   "jp_len": 3,
   "kr": " 항구",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:12": {
   "jp_len": 3,
@@ -542,7 +567,8 @@
  "D1:13": {
   "jp_len": 5,
   "kr": "유혈",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:14": {
   "jp_len": 4,
@@ -567,12 +593,14 @@
  "D1:18": {
   "jp_len": 3,
   "kr": "의 집",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:19": {
   "jp_len": 4,
   "kr": "시련의 ",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:1A": {
   "jp_len": 3,
@@ -607,12 +635,14 @@
  "D1:20": {
   "jp_len": 5,
   "kr": "국경",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:21": {
   "jp_len": 4,
   "kr": "동굴",
-  "state": "draft"
+  "state": "draft",
+  "kind": "script"
  },
  "D1:22": {
   "jp_len": 5,
@@ -776,8 +806,8 @@
  },
  "D2:12": {
   "jp_len": 6,
-  "kr": "성스러운 지팡이",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:13": {
   "jp_len": 6,
@@ -816,8 +846,8 @@
  },
  "D2:1A": {
   "jp_len": 7,
-  "kr": "성스러운 검",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:1B": {
   "jp_len": 6,
@@ -921,8 +951,8 @@
  },
  "D2:2F": {
   "jp_len": 7,
-  "kr": "성스러운 갑옷",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:30": {
   "jp_len": 7,
@@ -991,8 +1021,8 @@
  },
  "D2:3D": {
   "jp_len": 6,
-  "kr": "성스러운 방패",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:3E": {
   "jp_len": 6,
@@ -1016,8 +1046,8 @@
  },
  "D2:42": {
   "jp_len": 6,
-  "kr": "해독초",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:43": {
   "jp_len": 4,
@@ -1026,8 +1056,8 @@
  },
  "D2:44": {
   "jp_len": 7,
-  "kr": "쟈그리의 지도",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:45": {
   "jp_len": 6,
@@ -1036,8 +1066,8 @@
  },
  "D2:46": {
   "jp_len": 8,
-  "kr": "고대의 검의 책",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:47": {
   "jp_len": 8,
@@ -1046,8 +1076,8 @@
  },
  "D2:48": {
   "jp_len": 6,
-  "kr": "약",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:49": {
   "jp_len": 7,
@@ -1091,8 +1121,8 @@
  },
  "D2:51": {
   "jp_len": 5,
-  "kr": "복권",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:52": {
   "jp_len": 4,
@@ -1131,13 +1161,13 @@
  },
  "D2:59": {
   "jp_len": 4,
-  "kr": "럼주",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:5A": {
   "jp_len": 5,
-  "kr": "수면초",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:5B": {
   "jp_len": 8,
@@ -1186,8 +1216,8 @@
  },
  "D2:64": {
   "jp_len": 6,
-  "kr": "깜짝 상자",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:65": {
   "jp_len": 4,
@@ -1221,8 +1251,8 @@
  },
  "D2:6B": {
   "jp_len": 9,
-  "kr": "드래곤슬레이어",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:6C": {
   "jp_len": 7,
@@ -1241,8 +1271,8 @@
  },
  "D2:6F": {
   "jp_len": 9,
-  "kr": "궁극의 로브",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:70": {
   "jp_len": 9,
@@ -1266,18 +1296,18 @@
  },
  "D2:74": {
   "jp_len": 9,
-  "kr": "궁극의 검",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:75": {
   "jp_len": 7,
-  "kr": "마인의 마이크",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D2:76": {
   "jp_len": 7,
-  "kr": "저주의 반지",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:00": {
   "jp_len": 4,
@@ -1291,8 +1321,8 @@
  },
  "D3:02": {
   "jp_len": 10,
-  "kr": "캐리온크롤러",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:03": {
   "jp_len": 4,
@@ -1376,8 +1406,8 @@
  },
  "D3:13": {
   "jp_len": 6,
-  "kr": "산적새",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:14": {
   "jp_len": 5,
@@ -1396,8 +1426,8 @@
  },
  "D3:17": {
   "jp_len": 5,
-  "kr": "간록",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:18": {
   "jp_len": 3,
@@ -1416,13 +1446,13 @@
  },
  "D3:1B": {
   "jp_len": 7,
-  "kr": "토터스나이트",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:1C": {
   "jp_len": 7,
-  "kr": "큰독개구리",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:1D": {
   "jp_len": 5,
@@ -1491,13 +1521,13 @@
  },
  "D3:2A": {
   "jp_len": 8,
-  "kr": "선더하운드",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:2B": {
   "jp_len": 8,
-  "kr": "플라워리자드",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:2C": {
   "jp_len": 5,
@@ -1506,8 +1536,8 @@
  },
  "D3:2D": {
   "jp_len": 9,
-  "kr": "자이언트에이프",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:2E": {
   "jp_len": 3,
@@ -1571,8 +1601,8 @@
  },
  "D3:3A": {
   "jp_len": 8,
-  "kr": "버스트하운드",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:3B": {
   "jp_len": 5,
@@ -1611,8 +1641,8 @@
  },
  "D3:42": {
   "jp_len": 9,
-  "kr": "스팅비틀",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:43": {
   "jp_len": 3,
@@ -1621,13 +1651,13 @@
  },
  "D3:44": {
   "jp_len": 7,
-  "kr": "하이아길",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:45": {
   "jp_len": 8,
-  "kr": "다크솔저",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:46": {
   "jp_len": 5,
@@ -1661,8 +1691,8 @@
  },
  "D3:4C": {
   "jp_len": 9,
-  "kr": "선더스네이커",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:4D": {
   "jp_len": 3,
@@ -1686,8 +1716,8 @@
  },
  "D3:51": {
   "jp_len": 6,
-  "kr": "살인어",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:52": {
   "jp_len": 6,
@@ -1751,8 +1781,8 @@
  },
  "D3:5E": {
   "jp_len": 8,
-  "kr": "바질 환체",
-  "state": "draft"
+  "kr": null,
+  "state": "ref"
  },
  "D3:5F": {
   "jp_len": 6,

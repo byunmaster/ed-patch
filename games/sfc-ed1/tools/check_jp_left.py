@@ -18,7 +18,7 @@ import names_corpus  # noqa: E402
 def main() -> int:
     tot: dict[str, int] = {}
     left: dict[str, list[str]] = {}
-    for where, jp, kr, _kind in names_corpus.pairs():
+    for where, jp, kr, _kind in names_corpus.screen_pairs():
         area = where.split(":")[0]
         tot[area] = tot.get(area, 0) + 1
         if not kr:

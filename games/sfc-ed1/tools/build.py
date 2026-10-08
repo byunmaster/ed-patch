@@ -395,9 +395,7 @@ def bake_loose_boxes(out: bytearray, rom: bytes, slot, code_tile: dict[int, int]
         inv.setdefault(t, c)
     # ⚠ `menus.json` 은 열쇠가 `원문@창id` 라 **표 밖 조각을 담을 자리가 없다** — `battle_ui.json`
     #   의 `loose` 에 둔다(거기가 이미 창 아닌 고정 문자열의 자리다)
-    src = json.loads((common.GAME_DIR / "textmap" / "battle_ui.json").read_text(encoding="utf-8"))[
-        "loose"
-    ]
+    src = namesrc.battle_ui()["loose"]
     by_jp = {x["jp"]: x["kr"] for x in src}
     done = []
     for box in LOOSE_BOXES:
@@ -430,7 +428,7 @@ def bake_loose_boxes(out: bytearray, rom: bytes, slot, code_tile: dict[int, int]
 
 def menu_windows() -> list[tuple[str, int]]:
     """라벨이 있는 창 전부 — `menus.json` 의 키 꼬리(`…@A01`)에서 유도한다(목록을 손으로 안 든다)."""
-    labels = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
+    labels = namesrc.menus()
     ws = {(k.split("@")[1][0], int(k.split("@")[1][1:], 16)) for k in labels}
     return sorted(ws)
 
@@ -444,7 +442,7 @@ def menu_bake(out: bytearray, rom: bytes) -> dict:
     import menus
     import tiles
 
-    labels = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
+    labels = namesrc.menus()
     font = hangul_font.load_font()
     inv = menus.inverse_tile_table(rom)
     sheet = common.snes2off(text.FONT_SHEET)
@@ -495,7 +493,7 @@ def menu_bake(out: bytearray, rom: bytes) -> dict:
             attr = top[x0] & 0xFC00
             words_top, words_bot = [], []
             for ch in kr:
-                if "가" <= ch <= "힣":
+                if "가" <= ch <= "힣" or "Ａ" <= ch <= "Ｚ":  # 전각 영문(ＥＰ — 정본 표기)도 한 자 = 한 칸
                     t = slot(ch)
                     if hangul_font.CELL_W == 8:  # 한 자 = 한 칸
                         words_top.append(attr | t)
@@ -910,14 +908,14 @@ def kr_items(
     dmap = namesrc.dict_map(rom)
     dict_kr = {k: v["kr"] for k, v in dmap.items() if v.get("kr")}
     texts = [v["kr"] for v in tmap.values() if v.get("kr")] + list(dict_kr.values())
-    mmap = json.loads((common.GAME_DIR / "textmap" / "menus.json").read_text(encoding="utf-8"))
+    mmap = namesrc.menus()
     texts += [v["kr"] for v in mmap.values() if v.get("kr")]
     # ⚠ `battle_ui.json` 도 **화면에 나가는 문안**이다 — 고정 칸 문자열·이름 상자·머리 상자.
     #   여기 안 넣으면 그 파일에만 있는 음절이 `rep_index` 에 없어 `encode_rows` 가 KeyError 로
     #   죽는다. 지금은 0건이지만 **다른 파일에 같은 글자가 있어서 우연히 사는 것**이라(실측
     #   2026-09-08: 51자 전부 다른 데서 왔다) 낱말 하나만 바꿔도 깨진다. 원천으로 못 박는다.
     bmap = namesrc.battle_ui()
-    for key in ("title", "speed", "yesno", "loose", "names"):
+    for key in ("title", "speed", "yesno", "flee", "loose", "names", "a3_values"):
         texts += [x["kr"] for x in bmap.get(key, [])]
     texts += [c["kr"] for g in bmap.get("grid", []) for c in g["cols"]]
     import credits

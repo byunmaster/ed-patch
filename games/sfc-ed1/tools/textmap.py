@@ -27,41 +27,7 @@ MENUS_PATH = (
     common.GAME_DIR / "textmap" / "menus.json"
 )  # 메뉴 라벨: "じゅもん@A01" → {kr, state, budget_tiles, …}
 
-# 메뉴 라벨 초안 — **PS1 트랙에서 유저가 확정한 표기**(games/ps1-ed1+2/tools/patch_sys_ui.py, 2026-08-13~17)를
-# 그대로 물려받는다. 같은 원문이 자리에 따라 갈리는 건 PS1 도 그랬다(強さ: 파티 메뉴 `상태` · 능력치 창 `힘`).
-MENU_KR = {
-    "じゅもん": ("주문", "ps1"),
-    "つかう": ("사용", "ps1"),
-    "そうび": ("장비", "ps1"),
-    "すてる": ("버린다", "ps1"),
-    "つよさ@A01": ("상태", "ps1"),
-    "つよさ@A05": ("힘", "ps1"),
-    "つよさ": ("상태", "ps1"),
-    "そのた": ("그외", "ps1"),
-    "リーダー": ("리더", "ps1"),
-    "かしこさ": ("지혜", "ps1"),
-    "すばやさ": ("민첩성", "ps1"),
-    "うん": ("행운", "ps1"),
-    "こうげき": ("공격력", "ps1"),
-    "ぼうぎょ": ("방어력", "ps1"),
-    "ロード": ("로드", "ps1"),
-    "セーブ": ("세이브", "ps1"),
-    "システム": ("시스템", "ps1"),
-    "せってい": ("설정", "draft"),
-    "レベルアップ": ("레벨업", "ps1"),
-    "EPひょうじ": ("EP표시", "draft"),
-    "いどう": ("이동", "ps1"),
-    "メッセージ": ("메시지", "ps1"),
-    "オートバトル": ("자동전투", "ps1"),
-    "オートかいふく": ("자동회복", "ps1"),
-    "たたかいのじゅもん": ("전투주문", "ps1"),
-    "かいふくのじゅもん": ("회복주문", "ps1"),
-    "かいふくのアイテム": ("회복아이템", "ps1"),
-    "ぜんいんのせってい": ("전원의 설정", "ps1"),
-    "かいたい": ("삽니다", "draft"),
-    "うりたい": ("팝니다", "draft"),
-    "あと": ("남다", "ps1"),  # PS1 은 정발 「남다」(설정 「EP 남다」·HUD) — 공용 정본 `あと@경험치표시` 와 같다(09-26 정정)
-}
+# 메뉴 라벨 표기는 **정본(shared/canon)에서 읽는다**(`namesrc.menus`) — 이 파일에 JP→KR 표를 두지 않는다(마스터 10-08).
 TOKEN_RE = re.compile(r"\{[0-9A-F]{2}(?::[0-9A-F]{2})?\}|<[0-9A-F]{2}(?::[0-9A-F]+)?>|<@>")
 JOSA_RE = re.compile(
     r"\{(은/는|이/가|을/를|와/과|으로/로|이라/라|이다/다|이/)\}"
@@ -150,7 +116,10 @@ def init_dict() -> dict:
 
     rom = common.rom_bytes()
     res = text.resolver(rom)
-    g = json.loads(tm.GLOSSARY.read_text(encoding="utf-8"))["categories"]
+    sys.path.insert(0, str(common.ROOT / "shared"))
+    import canon
+
+    g = canon.nouns("ed1")["categories"]
     kk = pykakasi.kakasi()
 
     def hira(s: str) -> str:
@@ -213,6 +182,7 @@ def init_menus() -> dict:
     # 예산은 **넓힌 뒤**(build.py WIDEN, D2=(b)) 의 창에서 잰다 — 빌드 출력 롬을 되읽는다
     import build
     import menus
+    import namesrc
 
     out, _ = build.build(common.rom_bytes())
     ls = menus.layouts(out)
@@ -223,7 +193,8 @@ def init_menus() -> dict:
             key = f"{lab['jp']}@{x['table']}{x['id']:02X}"
             if key in cur and cur[key].get("state") not in ("ps1", "draft", "todo"):
                 continue
-            kr, st = MENU_KR.get(key) or MENU_KR.get(lab["jp"]) or (None, "todo")
+            hit = namesrc._ui_hit(lab["jp"])  # 정본에서 읽는다 — 자기 표 없음(마스터 10-08)
+            kr, st = (hit[0], "ps1") if hit else (None, "todo")
             w = render_width(kr) if kr else 0
             cur[key] = {
                 "kr": kr,
@@ -270,7 +241,7 @@ def check_glossary() -> list[tuple[str, str, str, str]]:
 
 # 「가타카나 한 덩어리인데 우리 표기에 공백」 — `docs/naming.md` 의 음차+음차 규칙. 정당한 예외는
 # 원문에 번역한 보통명사가 섞인 자리뿐이고(`レストナキノコ` → 레스토나 버섯), 그건 원문이 한 덩어리가
-# 아니라 여기 안 걸린다. 정본 쪽은 `shared/glossary/tests/test_glossary.py` 가 같은 걸 본다.
+# 아니라 여기 안 걸린다. 정본 쪽은 `shared/canon/tests` 가 같은 걸 본다.
 _KATAKANA_RUN = re.compile(r"^[゠-ヿー・]+$")
 
 
@@ -286,6 +257,8 @@ def check_naming() -> list[tuple[str, str, str]]:
             key = f"{code:02X}:{i:02X}"
             kr = cur.get(key, {}).get("kr")
             jp = text.decode(b).strip()
+            if cur.get(key, {}).get("src") != "local":  # 정본이 정한 표기(예: 드래곤 슬레이어)는 마스터 확인본이다
+                continue
             if kr and " " in kr and _KATAKANA_RUN.match(jp):
                 out.append((key, jp, kr))
     return out
@@ -299,7 +272,7 @@ PS1_TERMS = [
     ("대미지", "피해", "PS1 `%d의 피해!!`(textmap/battle.json)"),
     ("데미지", "피해", "〃"),
     ("싸움에서 패", "전투에서 패", "PS1 `은(는) 전투에서 패했습니다.`"),
-    ("가지고 있었다", "갖고 있었다", "PS1 `을(를) 갖고 있었다.`"),
+    # 「가지고/갖고 있었다」는 정본(`shared/canon` ed1 「을(를) 가지고 있었다.」)이 정한다 — 정본 검사가 잰다(10-08)
     ("쓰러뜨렸다", "해치웠다", "PS1 `을(를) 해치웠다.`"),
 ]
 
@@ -313,7 +286,11 @@ def check_terms() -> list[tuple[str, str, str]]:
         data = (
             namesrc.dict_map()
             if name == "dict.json"
-            else json.loads((PATH.parent / name).read_text(encoding="utf-8"))
+            else (
+                namesrc.menus()
+                if name == "menus.json"
+                else json.loads((PATH.parent / name).read_text(encoding="utf-8"))
+            )
         )
         for k, v in data.items():
             kr = v.get("kr") if isinstance(v, dict) else None
@@ -337,9 +314,11 @@ MENUS_PATH = common.GAME_DIR / "textmap" / "menus.json"
 def check_ui_labels() -> dict:
     """{다름, 못 견춘 것, 견준 수} — 게이트는 **다름만** 실패로 친다(못 견춘 건 할 일이다)."""
     sys.path.insert(0, str(common.ROOT / "shared"))
-    import glossary
+    import canon
 
-    menus = json.loads(MENUS_PATH.read_text(encoding="utf-8"))
+    import namesrc
+
+    menus = namesrc.menus()
     mine = {}
     for k, v in menus.items():
         if not v.get("kr"):
@@ -347,7 +326,7 @@ def check_ui_labels() -> dict:
         jp = k.split("@")[0]
         site = v.get("canon_site")
         mine[f"{jp}@{site}" if site else jp] = v["kr"]
-    out = glossary.diff_labels(mine)
+    out = canon.diff_labels(mine)
     return {
         "diff": out.diff,
         "unmatched": sorted(set(out.unmatched)),

@@ -1,4 +1,4 @@
-"""sfc-ed1 이름 읽기 — 고유명사는 사전(`shared/glossary`)에서, 호칭·라벨은 정본(`shared/canon` ed1)에서 읽는다.
+"""sfc-ed1 이름 읽기 — 고유명사는 사전(`shared/canon/nouns`)에서, 호칭·라벨은 정본(`shared/canon` ed1)에서 읽는다.
 
 마스터 2026-10-08 「사전 먼저」: 게임 폴더에 JP→KR 표를 따로 두지 않는다. `textmap/dict.json`(D0~D4)·`places.json`·
 `battle_ui.json` 의 `names` 는 **원문 열쇠(와 사전에 없는 것의 임시 표기)만** 들고, 사전·정본에 있는 이름의 표기는
@@ -13,6 +13,7 @@
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -22,9 +23,8 @@ import common
 
 sys.path.insert(0, str(common.ROOT / "shared"))
 import canon  # noqa: E402
-import glossary  # noqa: E402
-from glossary import _norm  # noqa: E402
-from glossary.names import dialog_place  # noqa: E402
+from canon import _norm  # noqa: E402
+from canon.names import dialog_place  # noqa: E402
 
 TEXTMAP = common.GAME_DIR / "textmap"
 TITLE = "eiyuu"
@@ -47,14 +47,30 @@ _stores = None
 def _load():
     global _stores
     if _stores is None:
-        g, c = glossary.load(TITLE), canon.load(CANON)
-        alias = {**g.get("_aliases", {}), **c.get("_aliases", {})}
+        # 게임이 보는 입구는 `canon` 하나 — 고유명사(`canon.nouns`)·공통 문안(`canon.load`)·별칭(`canon.aliases`, 둘을 합친 것)
         _stores = {
-            "g": g["categories"],
-            "c": c["categories"],
-            "alias": {_norm(a): t for a, t in alias.items()},
+            "g": canon.nouns(CANON)["categories"],
+            "c": canon.load(CANON)["categories"],
+            "alias": {_norm(a): t for a, t in canon.aliases(CANON).items()},
         }
     return _stores
+
+
+def _fold(k):
+    """폭·공백 접기 — 반각 가타카나(`ｷｬﾘｵﾝ ｸﾛｰﾗｰ`)와 전각(`キャリオンクローラー`)은 같은 원문이다(NFKC, 공백 무시)."""
+    import unicodedata
+
+    return unicodedata.normalize("NFKC", _norm(k)).replace(" ", "").replace("\u3000", "")
+
+
+_folded: dict = {}
+
+
+def _folded_tbl(store, cat):
+    key = (store, cat)
+    if key not in _folded:
+        _folded[key] = {_fold(k): v for k, v in _load()[store].get(cat, {}).items()}
+    return _folded[key]
 
 
 def _variants(jp):
@@ -75,9 +91,16 @@ def resolve(jp, order):
                 v = tbl.get(key)
                 if v is None and key != _norm(key):
                     v = tbl.get(_norm(key))
+                if v is None:  # 폭·공백 접기(같은 원문)
+                    v = _folded_tbl(store, cat).get(_fold(key))
                 if v is not None:
                     return v, f"{store}:{cat}"
     return None
+
+
+def kanji_of(kana):
+    """가나 표기 → 별칭이 이어 주는 한자 표기(없으면 그대로)."""
+    return _load()["alias"].get(_norm(kana), kana)
 
 
 def _any_order(first):
@@ -107,19 +130,92 @@ def places_map() -> dict:
     """`places.json` — {원문: 칸 표기}. 사전 place 값은 칸 꼴 그대로(원문 꼴 그대로, 마스터 10-07)."""
     d = json.loads((TEXTMAP / "places.json").read_text(encoding="utf-8"))
     for jp in list(d["names"]):
-        hit = resolve(jp, _PLACE_ORDER)
+        hit = resolve(jp, _PLACE_ORDER) or _place_slot(jp)
         if hit:
             d["names"][jp] = hit[0]
     return d
 
 
+_SLOT_SUFFIX = re.compile(r"^(.+)(の(?:まち|しろ|むら|どうくつ|こうざん|はいこう|みなと|とう))$")
+
+
+def _place_slot(jp):
+    """칸 지명 = 정본 이름 + 접미 규칙 `のまち@지명칸` 등(마스터 10-08 — 따로 올리지 않고 조합한다)."""
+    m = _SLOT_SUFFIX.match(jp)
+    if not m:
+        return None
+    stem = resolve(m.group(1), _PLACE_ORDER)
+    suf = resolve(f"{m.group(2)}@지명칸", _any_order([]))
+    if stem and suf:
+        return stem[0] + suf[0], "g+c:지명칸"
+    return None
+
+
+_UI_KEYS = ("title", "speed", "yesno", "flee", "loose", "a4_labels", "a3_values", "a4_values")
+
+
+def _ui_hit(jp, site=None):
+    """라벨 원문 → 정본 표기(없으면 None). 창마다 말이 갈리는 열쇠는 `원문@자리`."""
+    return resolve(f"{jp}@{site}" if site else jp, _any_order([]))
+
+
+def _row_hit(x):
+    """한 줄의 정본 표기 — `canon` 필드(별칭이 아직 없는 자리의 정본 열쇠)가 있으면 그 열쇠로."""
+    if x.get("canon"):
+        return resolve(x["canon"], _any_order([]))
+    return _ui_hit(x["jp"])
+
+
+def _battle_rows(d):
+    for g in d.get("grid", []):
+        yield from g["cols"]
+    for k in _UI_KEYS:
+        yield from d.get(k, [])
+
+
 def battle_ui() -> dict:
-    """`battle_ui.json` — `names`(파티 이름 다섯)만 사전에서 읽는다. 나머지는 이 기종 문장·라벨이라 그대로."""
+    """`battle_ui.json` — 이름 다섯은 사전에서, 나머지 라벨은 정본에서 읽는다. 정본에 없는 것만 JSON 에 남는다(사전 후보)."""
     d = json.loads((TEXTMAP / "battle_ui.json").read_text(encoding="utf-8"))
     for x in d["names"]:
         hit = resolve(x["jp"], _NAME_ORDER)
         if hit:
             x["kr"] = hit[0]
+    for x in _battle_rows(d):
+        hit = _row_hit(x)
+        if hit:
+            x["kr"] = hit[0]
+    return d
+
+
+def menus() -> dict:
+    """`menus.json` — 정본에 있는 라벨 표기는 정본에서 읽는다(`canon_site` 가 있으면 `원문@자리` 열쇠)."""
+    d = json.loads((TEXTMAP / "menus.json").read_text(encoding="utf-8"))
+    for k, v in d.items():
+        hit = _ui_hit(k.split("@")[0], v.get("canon_site"))
+        if hit:
+            v["kr"] = hit[0]
+    return d
+
+
+def _chapter_kr(jp):
+    import re
+
+    m = re.match(r"^(第(\d+)章|終章)\s*(.*)$", jp)
+    if not m:
+        return None
+    hit = resolve(m.group(3), [("c", "chapter")])
+    if not hit:
+        return None
+    return (f"제{m.group(2)}장 " if m.group(2) else "종장 ") + hit[0]
+
+
+def chapters() -> dict:
+    """`chapters.json` — 장 제목은 정본 `chapter` 범주(제목 부분)에서 읽고 「제N장」·「종장」 머리만 붙인다."""
+    d = json.loads((TEXTMAP / "chapters.json").read_text(encoding="utf-8"))
+    for t in d["titles"]:
+        kr = _chapter_kr(t["jp"])
+        if kr:
+            t["kr"] = kr
     return d
 
 
@@ -132,7 +228,7 @@ def coverage(rom=None) -> dict:
         rows = [v for k, v in d.items() if k.startswith(f"{code:02X}:")]
         out[f"D{code - 0xD0}"] = (sum(1 for v in rows if v.get("src") != "local"), len(rows))
     pl = json.loads((TEXTMAP / "places.json").read_text(encoding="utf-8"))["names"]
-    out["places"] = (sum(1 for jp in pl if resolve(jp, _PLACE_ORDER)), len(pl))
+    out["places"] = (sum(1 for jp in pl if resolve(jp, _PLACE_ORDER) or _place_slot(jp)), len(pl))
     bn = json.loads((TEXTMAP / "battle_ui.json").read_text(encoding="utf-8"))["names"]
     out["battle names"] = (sum(1 for x in bn if resolve(x["jp"], _NAME_ORDER)), len(bn))
     return out
@@ -157,7 +253,7 @@ def strip() -> dict:
     )
     p = json.loads((TEXTMAP / "places.json").read_text(encoding="utf-8"))
     for jp, kr in p["names"].items():
-        if kr is not None and resolve(jp, _PLACE_ORDER):
+        if kr is not None and (resolve(jp, _PLACE_ORDER) or _place_slot(jp)):
             p["names"][jp] = None
             n["places"] += 1
     (TEXTMAP / "places.json").write_text(
@@ -168,8 +264,31 @@ def strip() -> dict:
         if x.get("kr") is not None and resolve(x["jp"], _NAME_ORDER):
             x["kr"] = None
             n["battle names"] += 1
+    n["battle ui"] = 0
+    for x in _battle_rows(b):
+        if x.get("kr") is not None and _row_hit(x):
+            x["kr"] = None
+            n["battle ui"] += 1
     (TEXTMAP / "battle_ui.json").write_text(
         json.dumps(b, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
+    )
+    m = json.loads((TEXTMAP / "menus.json").read_text(encoding="utf-8"))
+    n["menus"] = 0
+    for k, v in m.items():
+        if v.get("kr") is not None and _ui_hit(k.split("@")[0], v.get("canon_site")):
+            v["kr"] = None
+            n["menus"] += 1
+    (TEXTMAP / "menus.json").write_text(
+        json.dumps(m, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
+    )
+    c = json.loads((TEXTMAP / "chapters.json").read_text(encoding="utf-8"))
+    n["chapters"] = 0
+    for t in c["titles"]:
+        if t.get("kr") is not None and _chapter_kr(t["jp"]):
+            t["kr"] = None
+            n["chapters"] += 1
+    (TEXTMAP / "chapters.json").write_text(
+        json.dumps(c, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
     )
     return n
 

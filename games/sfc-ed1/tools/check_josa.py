@@ -48,7 +48,7 @@ def main() -> int:
     ap.add_argument("-v", action="store_true")
     args = ap.parse_args()
     n = bad = 0
-    for where, _jp, kr, _kind in names_corpus.pairs():
+    for where, _jp, kr, _kind in names_corpus.pairs(raw=True):
         if not kr:
             continue
         n += 1

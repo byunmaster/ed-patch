@@ -173,7 +173,9 @@ def bake(out: bytearray, rom: bytes) -> dict:
     sys.path.insert(0, str(common.ROOT))
     from shared.fonts import BdfFont
 
-    data = json.loads((common.GAME_DIR / "textmap" / "chapters.json").read_text(encoding="utf-8"))
+    import namesrc
+
+    data = namesrc.chapters()
     f = BdfFont(str(common.ROOT / "shared" / "fonts" / FONT))
     slots = pool(rom)
     n = 0
@@ -213,9 +215,9 @@ def main() -> None:
         from shared.fonts import BdfFont
 
         f = BdfFont(str(common.ROOT / "shared" / "fonts" / FONT))
-        for t in json.loads(
-            (common.GAME_DIR / "textmap" / "chapters.json").read_text(encoding="utf-8")
-        )["titles"]:
+        import namesrc
+
+        for t in namesrc.chapters()["titles"]:
             _w, px, (gap, sw) = fit(t["kr"], f)
             print(f"  {px:4d}/{WIDTH}px  자간{gap} 공백{sw}  {t['kr']}")
         return

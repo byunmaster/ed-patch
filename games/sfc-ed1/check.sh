@@ -58,3 +58,6 @@ ED_VWF=0 "$PY" "$T/build.py" --project >/dev/null
 
 # 10. 화면 일본어(F7) — 칸(사전·지명·메뉴)은 미번역 0 이어야 한다. 문장은 분모와 함께 알리기만(번역 중)
 "$PY" "$T/check_jp_left.py"
+
+# 11. 자기 표 0(마스터 10-08) — 게임 폴더에 JP→KR 표가 남았나. 정본에서 읽을 수 없는 값은 관리자 후보로 올리고 천장(own_tables_baseline.json)이 줄기만 한다
+"$PY" "$T/check_own_tables.py"
