@@ -355,8 +355,11 @@ def dict_width_tables() -> list[bytes]:
     return out
 
 
-def num_glyph_table() -> bytes:
-    """원판 시트의 숫자 0~9 그림(1bpp 16행, 잉크 1~6열) — 8px 진행 폭 합성(전투 로그 숫자 — 한 칸에 한 숫자라 색 칸에 맞는다)."""
+def num_glyph_table() -> tuple[bytes, bytes]:
+    """원판 시트의 숫자 0~9 그림(1bpp 16행) → (그림 160B, 진행 폭 10B).
+
+    원판 숫자는 8px 칸 안에 왼쪽 여백 1열(「1」은 2열)을 두고 앉는다 — 앞 글자와 반각 공백만 두면 간격이 반각보다 넓어 보인다(마스터 10-10 「EP  1」).
+    그림을 **왼쪽 끝으로 붙이고**(잉크 시작 0열) 진행 폭 = 잉크 폭 + 2(숫자끼리 간격은 원판대로 2px)로 둔다. 혼합 팔레트로 색 칸 정렬이 필요 없어져 가변 폭이 된다."""
     import text
     import tiles
 
@@ -364,13 +367,17 @@ def num_glyph_table() -> bytes:
     ct = tiles.code_tile(rom)
     base = common.snes2off(text.SHEET_BASE) if hasattr(text, "SHEET_BASE") else common.snes2off(0x18E02C)
     out = bytearray()
+    adv = bytearray()
     for c in range(10):
         t = ct[c]
         rows = list(rom[base + 8 * t : base + 8 * t + 8]) + list(
             rom[base + 8 * (t + 0x10) : base + 8 * (t + 0x10) + 8]
         )
-        out += bytes(rows)
-    return bytes(out)
+        cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
+        lo, hi = min(cols), max(cols)
+        out += bytes((r << lo) & 0xFF for r in rows)
+        adv.append(min(8, hi - lo + 1 + 2))
+    return bytes(out), bytes(adv)
 
 
 def raw_glyph_tables() -> tuple[bytes, bytes]:
@@ -424,11 +431,17 @@ def build_payload(
         "V_OCELL": vb + 13,  # 크롤: 이번 줄에서 만든 마지막 칸 번호(`$FF` = 줄 시작) — 대사 엔진의 `$173B` 에 해당
         "V_SH": vb + 15,  # 그림 시프트 칸수(0~7) — `vwf_blitR/L` 가 읽는다
         "V_G": vb + 16,  # 16B: 글자 그림(1bpp)
-        "V_SPX": vb + 32,  # 이번 공백의 추가 폭(0~7px) — `vwf_spgap` 이 세운다
+        "V_SPX": vb + 32,  # (안 씀 — 혼합 팔레트가 공백 틈 분산을 없앴다)
         "V_PS": vb + 33,  # 1 = 방금 조각이 끝났다($E0·$E4) — 다음 조각 첫머리에서 문장이 남은 칸에 드는지 본다(`vwf_fitchk`)
         "V_WM": vb + 34,  # 1 = `vwf_wrapchk` 의 낱말 폭 재기를 **문장 끝까지**(공백을 넘어) 한다
+        "V_CUR": vb + 35,  # 지금 글 색 바이트(`$176C`: 0 흰 · 4 · $C) — `vwf_put` 이 세운다. 대사 엔진 밖은 0
+        "V_MXD": vb + 36,  # 1 = 혼합 팔레트 칸을 만들었다 — 조각 끝에서 타일맵을 다시 만든다(`vwf_refresh`)
+        "V_SCR": vb + 37,  # 글자 그림 한 줄 임시(blit 루프)
+        "V_PALD": vb + 38,  # 남은 프레임 수 — 0 이 아니면 NMI 마다 칸 팔레트 5·6 을 CGRAM 에 쓴다(혼합 칸을 만질 때마다 255)
+        "V_PT": vb + 39,  # 8B: NMI 팔레트 임시(배경·흰·하늘·노랑 각 2B)
+        "V_WK": vb + 47,  # 1 = 지금 그림이 얹히는 칸이 혼합 칸 — 흰 글자면 흰 잉크 마스크에도 쓴다
     }
-    var_end = vb + 35
+    var_end = vb + 48
     if var_end - VAR >= 741:
         raise SystemExit(f"WRAM 무손상 구간(741B)을 넘는다: {var_end - VAR}B (슬롯 {nslot}개)")
     assert len(vram) == nslot
@@ -554,6 +567,12 @@ def build_payload(
         a.label("h_pse")
         a.lda(imm=0x01)
         a.op("sta", addr=kv["V_PS"], mode="long")
+        a.op("lda", addr=kv["V_MXD"], mode="long")  # 혼합 팔레트 칸이 생겼으면 타일맵을 다시 만든다
+        a.beq(label="h_pse3")
+        a.lda(imm=0x00)
+        a.op("sta", addr=kv["V_MXD"], mode="long")
+        a.jsr(addr="vwf_refresh", mode="abs")
+        a.label("h_pse3")
         a.jmp(addr="h_done", mode="abs")
         a.label("h_pse2")
         a.cpx(imm=0x00E2, m16=True)  # 색 시작 토큰($E2~$E3) — 팔레트는 8px 칸 단위라 색이 시작하는 자리(앞은 이미 공백이 있다)에서 칸 경계로 올린다(한 칸에 두 색이 섞이던 「슬」). 색 끝($E1)에는 틈을 넣지 않는다 — 조사가 떨어진다
@@ -585,7 +604,6 @@ def build_payload(
         a.op("sta", addr=V_IDX, mode="long")
         a.jmp(addr="h_nl", mode="abs")
         a.label("h_sp")
-        a.jsr(addr="vwf_spgap", mode="abs")  # 색 시작 앞 공백 폭 분산
         a.ldx(imm=0x0010, m16=True)  # 호출이 X 를 건드리지 않는다지만 공백 코드를 다시 못 박는다
         a.label("h_prn2")
         a.op("lda", addr="raw_jb", mode="absx")
@@ -1516,12 +1534,19 @@ def build_payload(
     a.bne(label="d_pinclr")
     if vwf:
         a.lda(imm=0x00)
-        for v in ("V_VX", "V_VX_HI", "V_VS", "V_VD", "V_VO"):
+        for v in ("V_VX", "V_VX_HI", "V_VS", "V_VD", "V_VO", "V_PS", "V_WM", "V_CUR", "V_MXD", "V_PALD", "V_WK"):
             a.op("sta", addr=kv[v], mode="long")
     a.lda(imm=MAGIC)
     a.op("sta", addr=V_MAGIC, mode="long")
     a.bra(label="d_end")
     a.label("d_go")
+    if vwf:
+        a.op("lda", addr=kv["V_PALD"], mode="long")
+        a.beq(label="d_np")
+        a.dec()
+        a.op("sta", addr=kv["V_PALD"], mode="long")
+        a.jsr(addr="vwf_nmi_pal", mode="abs")
+        a.label("d_np")
     a.lda(imm=0x80)
     a.op("sta", addr=0x2115, mode="abs")  # VMAIN — $2119 뒤 +1 워드
     a.lda(imm=DRAIN_MAX)
@@ -1720,7 +1745,8 @@ def build_payload(
         a.op("sta", addr=0x2118, mode="abs")
         a.op("lda", addr=V_UCTX, mode="long")
         a.bne(label="ur_dup")
-        a.lda(imm=0xFF)
+        a.op("lda", addr=BUF_VWF + nslot * 16, mode="longx")  # 흰 잉크 마스크 — 혼합 칸은 흰 잉크만 평면1 = 0(색인 1)
+        a.op("eor", imm=0xFF)
         a.bra(label="ur_hi")
         a.label("ur_dup")
         a.op("lda", addr=BUF_VWF, mode="longx")
@@ -1818,8 +1844,11 @@ def build_payload(
         for i, tb in enumerate(dict_width_tables()):
             a.label(f"tw_d{i}")
             a.raw(tb)
+        ntab, nadv = num_glyph_table()
         a.label("numtab")
-        a.raw(num_glyph_table())
+        a.raw(ntab)
+        a.label("numadv")
+        a.raw(nadv)
         a.label("gw")
         a.raw(glyph_widths(rep))
     blob = a.assemble()
