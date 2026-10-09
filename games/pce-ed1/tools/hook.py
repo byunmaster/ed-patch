@@ -49,6 +49,7 @@ NARROW_ROOM = HOOK_ADDR + 0x348 - NARROW_ADDR  # 페이로드 끝 `$2648` 까지
 PAYLOAD_LEN = 0x348  # 루틴 + 조사표 + 비트맵 둘 + 줄바꿈 품질 + 반 칸 전진 — 스텁이 통째로 옮긴다. `$2648` 이 측정한 구간 끝
 #   ⚠ 이 값을 안 맞추면 **뒤쪽 표만 안 옮겨져** 리드 F1 대역 글자가 조용히 다른 글자로 나온다(실측)
 assert NARROW_ADDR + NARROW_ROOM <= HOOK_ADDR + PAYLOAD_LEN
+
 # 원본 호출 대상(그대로 남는다 — 우리 스텁이 필요하면 부른다)
 ORIG_SET_PENDING = 0x6AB5  # $6D9C 가 부르던 것 — "개행 보류" 플래그(`$CF15`) 증가
 ORIG_DO_WRAP = 0x6AB9  # $6723 가 부르던 것 — 보류 플래그가 서 있으면 실제로 줄을 넘긴다
@@ -132,6 +133,7 @@ OPS = {
     ("TYA", "imp"): 0x98,
     ("TXA", "imp"): 0x8A,
     ("AND", "zp"): 0x25,
+    ("AND", "abs"): 0x2D,
     ("INX", "imp"): 0xE8,
     ("DEX", "imp"): 0xCA,
     ("LSR", "zp"): 0x46,
@@ -968,6 +970,38 @@ def _entry_asm() -> "Asm":
     return a
 
 
+# 🔴 **파티 호칭 접미(마스터 10-09: 「도망쳤다는 파티 없을 땐 세리오스는, 있을 땐 (리더)들은」)** — 전투 문구의 파티 행위자 이름은
+#   `$689C` 가 이름(`$C02D` 번 리더)을 버퍼에 옮긴 뒤 `$68A3~` 가 접미 6B(원본 「 たち」+종결 `06`)를 **언제나** 붙인다 — 혼자여도 「세리오스たち는」.
+#   `$68A5` 의 `LDA #6 / STA $21 / CLX`(5B)를 `JSR 이 루틴 / NOP / NOP` 으로 바꿔 **복사 시작(X)·길이(`$21`)** 만 정한다.
+#   자료(`$68C9`, 6B) = [들 2B][06] + 채움 — 파티 있음: X=0 · 길이 3(「들」+종결) / 혼자: X=2 · 길이 1(종결뿐).
+#   파티 판정 = 동료 레코드 셋(`$C340`·`$C380`·`$C3C0`)의 첫 바이트 비트 7(=파티 밖) 이 **셋 다** 서 있으면 혼자.
+PARTY_SUFFIX_SITE = 0x68A5
+
+
+def _party_asm() -> "Asm":
+    a = Asm(NARROW_ADDR + len(_narrow_asm().bytes()))
+    a.label("party")
+    a.op("LDA", "abs", 0xC340)
+    a.op("AND", "abs", 0xC380)
+    a.op("AND", "abs", 0xC3C0)  # 비트 7 = 셋 다 파티 밖(혼자)
+    a.op("ASL")  # C = 혼자
+    a.op("CLA")
+    a.op("ROL")  # A = 혼자 ? 1 : 0
+    a.op("ASL")  # A = 혼자 ? 2 : 0
+    a.op("TAX")  # X = 복사 시작
+    a.op("EOR", "imm", 3)  # A = 혼자 ? 1 : 3
+    a.op("STA", "zp", 0x21)  # 복사 길이
+    a.op("RTS")
+    return a
+
+
+PARTY_ADDR = _party_asm().labels["party"]
+
+
+def party_suffix() -> bytes:
+    return _party_asm().bytes()
+
+
 def hook_narrow() -> bytes:
     b = _narrow_asm().bytes()
     assert len(b) <= NARROW_ROOM, (len(b), NARROW_ROOM)
@@ -1001,6 +1035,7 @@ def payload(table) -> bytes:
     p += hook_wrap_fix()
     p += b"\0" * (NARROW_ADDR - HOOK_ADDR - len(p))
     p += hook_narrow()
+    p += party_suffix()
     p += b"\0" * (PAYLOAD_LEN - len(p))
     assert len(p) == PAYLOAD_LEN
     return bytes(p)

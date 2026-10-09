@@ -366,6 +366,28 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
                 b"\x20" + hook.EAT_ADDR.to_bytes(2, "little"),
             )
         )
+    if want("battle"):
+        # 9. 🔴 파티 행위자 이름 뒤 접미 — 엔진이 이름 뒤에 **언제나** 붙이던 「たち」(코드 뱅크 0x6C `$68C9` 의 6B 자료)가 혼자여도 화면에
+        #    「세리오스たち는 도망쳤다」로 떴다(정본 문안·검사기·화면 일본어 게이트는 다 초록). 마스터 10-09: 혼자 = 「세리오스는」 ·
+        #    파티 = 「세리오스들은」. 자료를 「들」+종결로 바꾸고, 복사 시작·길이를 파티 판정으로 정하는 루틴(`hook.party_suffix`, 페이로드 안)을
+        #    `$68A5` 의 `LDA #6/STA $21/CLX` 자리에 건다 — 혼자면 종결 `06` 하나만 복사한다.
+        deul = font.code_of(_order_index("들"))
+        p.append(
+            (
+                "party suffix data たち→들",
+                *_main(0x6C, 0x08C9),
+                b"\x20\x82\xbd\x82\xbf\x06",
+                deul + b"\x06\x06\x06\x06",
+            )
+        )
+        p.append(
+            (
+                "party suffix JSR (solo skips)",
+                *_main(0x6C, hook.PARTY_SUFFIX_SITE - 0x6000),
+                b"\xa9\x06\x85\x21\x82",
+                b"\x20" + hook.PARTY_ADDR.to_bytes(2, "little") + b"\xea\xea",
+            )
+        )
     if want("narr"):
         # 7. 나레이션 자막 상주부 — 본 프로그램 뱅크 0x6B 꼬리 FF 패딩(`$9E56~$9FFF`, 426B). 장면 코드가 돌 때
         #    늘 `$8000` 창(MPR4)에 있다(메인 루프가 이 뱅크에서 돈다). 쓰기·실행 BP 로 라이아스 장면 · 필드 ·
