@@ -535,6 +535,9 @@ def menu_bake(out: bytearray, rom: bytes) -> dict:
     import hud_names  # HUD 인물 이름(A6②) — 대사 글꼴이 아니라 HUD 전용 8×8 타일
 
     hud_names.bake(out, rom)
+    import hud_status  # HUD 상태 라벨(C4·방어) — 가나 도트 타일을 한글 8×8 로
+
+    hud_status.bake(out, rom)
     loose = bake_loose_boxes(out, rom, slot, code_tile)
     return {
         "glyphs": "".join(slot_of),
@@ -713,6 +716,9 @@ def mutable_ranges() -> list[tuple[int, int]]:
     import hud_names
 
     r += hud_names.patch_ranges()  # HUD 인물 이름 — 줄 틀 다섯 + 타일 13장
+    import hud_status
+
+    r += hud_status.patch_ranges()  # HUD 상태 라벨 — 프레임 일곱 + 타일 12장
     r += dicts.patch_ranges()
     r += battle_ui.patch_ranges()
     r += battle_ui.patch_ranges_a3()
