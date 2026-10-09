@@ -119,6 +119,15 @@ def lowered_chars():
             for x in json.load(f).values():
                 if isinstance(x, str):
                     take(x)
+    #   지명 배너(`폴티아 루데라 관문`) — 한 행 내려야 막대 안에서 위 2 · 아래 1 이 된다(`banner.py`, 마스터 10-09).
+    import glob
+
+    import banner
+
+    for path in sorted(glob.glob(os.path.join(C.GAME_DIR, "script", "MAP*.json"))):
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+        out.update(banner.chars(v for v in doc.values() if isinstance(v, str)))
     return sorted(out)
 
 

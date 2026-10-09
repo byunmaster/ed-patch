@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build
 import check_build_discs as B
 import check_sys_coverage as SC
+import choice_tail as CT
 import common as C
 import hangul_map as H
 import mapfile as M
@@ -97,6 +98,7 @@ def check_maps(disc, img, files, rev):
         got = B.read_extent(img, lba, size)
         blocks = M.blocks(src)
         slots = R.name_slots(blocks, src)
+        cover = CT.covers(src, stem)
         for key, kr in script.items():
             blk = blocks[int(key)]
             body = got[blk["off"] : blk["off"] + len(blk["body"])]
@@ -107,6 +109,10 @@ def check_maps(disc, img, files, rev):
                 #   맵 이름은 원문보다 길게 쓸 수 있다(`reinsert.NAME_MAX`) — NUL 까지 읽는다
                 body = got[blk["off"] : got.index(b"\x00", blk["off"])]
             n += 1
+            #   간판류 `_wide` 는 트램펄린이 칸 안 글 앞 몇 바이트를 덮는다(`choice_tail.covers`) — 그 글자(한글 = 2B)는 비교에서 뺀다.
+            skip = cover.get(key, 0)
+            if skip:
+                body, kr = body[skip:], kr[skip // 2 :]
             if glyphs(decode(body, rev)) != glyphs(kr):
                 bad.append((f"{stem}[{key}]", kr, decode(body, rev)))
     return n, bad
@@ -171,7 +177,9 @@ def check_item_ptr(img, files, rev):
         pos += len(raw) + 1
     bad, n = [], 0
     for i in range(cnt):
-        a_old = int.from_bytes(src[off + i * st + 0x40 : off + i * st + 0x44], "big") + base - area[0]
+        a_old = (
+            int.from_bytes(src[off + i * st + 0x40 : off + i * st + 0x44], "big") + base - area[0]
+        )
         a_new = int.from_bytes(got[off + i * st + 0x40 : off + i * st + 0x44], "big") + base
         want = kr.get(str(idx_of.get(a_old)))
         if want is None:
@@ -236,7 +244,6 @@ def check_sys(img, files):
 
 
 def main():
-    rev_main = reverse(H.load())
     rev_desc = reverse(H.load(), H.load_low())
     total, fails = 0, []
     for disc in (1, 2):
@@ -246,7 +253,7 @@ def main():
             continue
         files = {name: (lba, size) for name, lba, size, *_ in build.patched(disc)}
         for what, (n, bad) in (
-            ("대사", check_maps(disc, img, files, rev_main)),
+            ("대사", check_maps(disc, img, files, rev_desc)),  # 지명 배너는 내려앉은 글리프다
             ("설명", check_desc(img, files, rev_desc)),
             ("설명포인터", check_item_ptr(img, files, rev_desc)),
             ("시스템", check_sys(img, files)),

@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 )
+import banner
 import common as C
 import hangul_map as H
 import inline_josa as IJ
@@ -190,11 +191,16 @@ def patch_blocks(data, stem, table):
             done += 1
             continue
         jp = M.text_of(blk["body"])
+        #   지명 배너 — 전각 공백을 반각으로, 글자는 **한 행 내린 판**으로(`banner.py`)
+        enc = table
+        if banner.is_place_banner(kr):
+            kr = banner.normalize(kr)
+            enc = {**table, **H.load_low()}
         fitted, why = fit(kr, budget, T.overflows(jp), jp)
         if fitted is None:
             bad.append((key, why))
             continue
-        raw = H.encode_kr(fitted, table)
+        raw = H.encode_kr(fitted, enc)
         if len(raw) != budget:
             bad.append((key, f"길이가 변했다 {len(raw)} != {budget}"))
             continue
