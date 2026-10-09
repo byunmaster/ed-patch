@@ -88,6 +88,14 @@ PAIR_CHARS = (("은", "는"), ("이", "가"), ("을", "를"))
 DIGIT_BITS = 0b0111001011
 PAREN_L, PAREN_R = ord("("), ord(")")  # 반각 — 정본이 그렇게 쓴다
 
+#   🔴 **어절 접기**(마스터 10-10 「짧으면 한 줄, 길면 어절 개행 — 로그성 메시지니까 최대한 채우고 꽉 차면 어절 단위로」).
+#   서식의 `%s` 바로 뒤에 접기 표지(0x1F)가 있으면 스텁이 **「공백 + 이름 + 서식 꼬리」를 한 덩이**로 만들어 공백 단위로 훑으며
+#   줄 폭(`FOLD_LIMIT` 반칸)을 넘는 어절 앞 공백을 엔진 줄바꿈(0x0D)으로 바꾼다. 앞 문구 폭은 `prefix_w`(반칸)로 받는다.
+FOLD_MARK = 0x1F
+FOLD_LIMIT = 34  # 창 17칸 = 34 반칸
+FOLD_BUF = 80  # 덩이를 만들 칸(바이트)
+LIT_OFF = 0x200  # 스텁 안 상수 자리(코드 뒤) — 상수 36B 다음에 덩이 칸이 온다
+
 
 def pairs_bytes(table=None):
     """`[A_hi A_lo B_hi B_lo] × 3` — 스텁이 표로 읽는다."""
@@ -151,6 +159,9 @@ def batchim_of(arg: bytes, bits: bytes):
         return (DIGIT_BITS >> d) & 1 if 0 <= d < 10 else 0
     if last + 1 >= len(arg):
         return None
+    #   전각 숫자 `０`~`９`(0x824F~0x8258) — 반각과 같은 표(읽는 소리: 일→을 · 이→를 · 삼→을)
+    if c1 == 0x82 and 0x4F <= arg[last + 1] <= 0x58:
+        return (DIGIT_BITS >> (arg[last + 1] - 0x4F)) & 1
     idx = syl_index((c1 << 8) | arg[last + 1])
     if idx is None:
         return None
@@ -344,7 +355,7 @@ class Asm:
         return b"".join(struct.pack(">H", x) for x in self.w)
 
 
-def routine(free, tbl_addr, dbg=None):
+def routine(free, tbl_addr, dbg=None, prefix_w=0, tbuf=0):
     """`%s` 처리기 안에서 **밀어낸 6 명령**을 실행하고, 병기를 줄인 뒤 되돌아간다.
 
     진입 시점(훅 자리 `0x06065E5C`): `r1 = 0x204` · `r13`·`r14` 유효 · `r0` 자유.
@@ -354,7 +365,7 @@ def routine(free, tbl_addr, dbg=None):
     ⓘ 쌍(을/를·은/는·이/가)인지까지는 안 본다 — 바로 뒤가 `(`…`)` 인 여섯 바이트 꼴은
       우리 병기 말고 나올 데가 없다.
     """
-    LIT = 0x140  # 상수 자리 (코드가 이 앞에 들어간다)
+    LIT = LIT_OFF  # 상수 자리 (코드가 이 앞에 들어간다)
     a = Asm(free)
     lit = free + LIT
 
@@ -366,12 +377,12 @@ def routine(free, tbl_addr, dbg=None):
     a.movll(1, 13)  # mov.l @r1,r13
     a.movl_disp_l(1, 13, 12)  # mov.l @(4,r13),r12   ← 인자 문자열
 
-    for r in (1, 2, 3, 5, 6, 7):
+    for r in (1, 2, 3, 4, 5, 6, 7):
         a.pushr(r)
 
     a.mov(12, 6)
     a.tst(6, 6)
-    a.bt("out")
+    a.bt("outj")
 
     #   ── 마지막 **글자**를 앞에서부터 훑어 찾는다
     #     🔴 「뒤 2 바이트」로 잡으면 안 된다 — 이름이 **반각으로 끝날 수 있다**
@@ -398,7 +409,7 @@ def routine(free, tbl_addr, dbg=None):
     a.nop()
     a.label("scanned")
     a.tst(5, 5)
-    a.bt("out")
+    a.bt("outj")
     a.movbl(5, 1)
     a.extub(1, 1)
     a.movi(0x80, 3)
@@ -428,6 +439,9 @@ def routine(free, tbl_addr, dbg=None):
     a.movi(0, 1)
     a.bra("gotbit")
     a.nop()
+    a.label("outj")  # `bt` 는 ±256B 라 먼 `out` 은 여기를 거쳐 뛴다
+    a.bra("out")
+    a.nop()
 
     #   ── 두 바이트로 끝난다 — r1=c1, r2=c2
     a.label("two")
@@ -435,6 +449,23 @@ def routine(free, tbl_addr, dbg=None):
     a.addi(1, 0)
     a.movbl(0, 2)
     a.extub(2, 2)
+
+    #   ── 전각 숫자(`０`~`９` = 0x824F~0x8258)면 반각과 같은 표로 — 「제１을」이 아니라 「제１을(일)」 소리대로
+    a.movi(0x82, 3)
+    a.extub(3, 3)  # ⚠ `cmp/eq #imm` 은 부호확장이라 0x82 를 못 잰다 — 레지스터로
+    a.cmpeq(3, 1)
+    a.bf("notfw")
+    a.mov(2, 0)
+    a.addi(-0x4F, 0)
+    a.cmppz(0)
+    a.bf("notfw")
+    a.movi(10, 3)
+    a.cmphs(3, 0)
+    a.bt("notfw")
+    a.movl_pc(1, lit + 24)
+    a.bra("dsh")
+    a.nop()
+    a.label("notfw")
 
     # ── 슬롯 = (c1-0x81)*188 + (c2-0x40) - (c2>=0x80)
     a.mov(1, 0)
@@ -503,6 +534,13 @@ def routine(free, tbl_addr, dbg=None):
         a.addi(4, 3)
         a.movls(1, 3)
 
+    #   ── 접기 표지(`%s` 바로 뒤 0x1F)가 있으면 건너뛴다 — 병기는 그 다음부터다
+    a.movbl(2, 0)
+    a.cmpeq_i(FOLD_MARK)
+    a.bf("nomark")
+    a.addi(1, 2)
+    a.label("nomark")
+
     # ── 병기 꼴인가 — [A][(][B][)]
     a.movb_ld(2, 2)
     a.extub(0, 0)
@@ -539,7 +577,103 @@ def routine(free, tbl_addr, dbg=None):
     a.nop()
 
     a.label("out")
-    for r in (7, 6, 5, 3, 2, 1):
+    #   ── 어절 접기 — 표지가 있을 때만(이름이 없으면 건너뛴다)
+    a.tst(12, 12)
+    a.bt("fin")
+    a.movl_pc(0, lit + 12)
+    a.mov(14, 2)
+    a.add(0, 2)
+    a.movll(2, 2)  # r2 = 서식 포인터(지정자 다음)
+    a.movbl(2, 0)
+    a.cmpeq_i(FOLD_MARK)
+    a.bf("fin")
+    a.movl_pc(7, lit + 28)  # r7 = 덩이 칸
+    a.mov(7, 3)  # r3 = 쓰는 자리
+    a.movi(0x20, 0)
+    a.movbs(0, 3)
+    a.addi(1, 3)
+    a.mov(12, 4)
+    a.label("cpn")  # 이름 복사
+    a.movbl(4, 0)
+    a.tst(0, 0)
+    a.bt("cpnd")
+    a.movbs(0, 3)
+    a.addi(1, 4)
+    a.addi(1, 3)
+    a.bra("cpn")
+    a.nop()
+    a.label("cpnd")
+    a.mov(2, 4)
+    a.addi(1, 4)  # r4 = 서식 꼬리(표지 다음)
+    a.label("cpt")  # 꼬리 복사 — NUL·종결(0x10)에서 멈춘다
+    a.movbl(4, 0)
+    a.tst(0, 0)
+    a.bt("cptd")
+    a.cmpeq_i(0x10)
+    a.bt("cptd")
+    a.movbs(0, 3)
+    a.addi(1, 4)
+    a.addi(1, 3)
+    a.bra("cpt")
+    a.nop()
+    a.label("cptd")
+    a.movbs(0, 2)  # 서식: 표지 자리에 종결 바이트(또는 NUL)
+    a.movi(0, 0)
+    a.movbs(0, 3)  # 덩이 끝 NUL
+    a.addi(1, 2)
+    a.movbs(0, 2)  # 서식 다음 바이트 NUL
+    #   ── 어절 훑기: 공백마다 「다음 어절 폭」을 재서 줄 폭을 넘으면 그 공백을 0x0D 로
+    a.movl_pc(5, lit + 32)  # r5 = 앞 문구 폭(반칸)
+    a.mov(7, 3)
+    a.label("fl")
+    a.movbl(3, 0)
+    a.tst(0, 0)
+    a.bt("fd")
+    a.mov(3, 4)
+    a.addi(1, 4)
+    a.movi(0, 6)  # r6 = 어절 폭
+    a.label("ms")
+    a.movbl(4, 0)
+    a.tst(0, 0)
+    a.bt("md")
+    a.cmpeq_i(0x20)
+    a.bt("md")
+    a.movi(0x80, 1)
+    a.extub(1, 1)
+    a.extub(0, 0)
+    a.cmphs(1, 0)  # r0 >= 0x80 이면 두 바이트 글자
+    a.bf("ms1")
+    a.addi(2, 6)
+    a.addi(2, 4)
+    a.bra("ms")
+    a.nop()
+    a.label("ms1")
+    a.addi(1, 6)
+    a.addi(1, 4)
+    a.bra("ms")
+    a.nop()
+    a.label("md")
+    a.mov(5, 1)
+    a.add(6, 1)
+    a.addi(1, 1)  # r1 = col + 1 + w
+    a.movi(FOLD_LIMIT, 2)
+    a.cmpgt(2, 1)  # r1 > 한도 ?
+    a.bf("fits")
+    a.movi(0x0D, 0)
+    a.movbs(0, 3)  # 공백 → 줄바꿈
+    a.mov(6, 5)  # 새 줄: col = w
+    a.bra("nx")
+    a.nop()
+    a.label("fits")
+    a.mov(1, 5)
+    a.label("nx")
+    a.mov(4, 3)
+    a.bra("fl")
+    a.nop()
+    a.label("fd")
+    a.mov(7, 12)  # 인자 = 덩이
+    a.label("fin")
+    for r in (7, 6, 5, 4, 3, 2, 1):
         a.popr(r)
     a.movl_pc(0, lit + 16)
     a.jmp(0)
@@ -549,7 +683,16 @@ def routine(free, tbl_addr, dbg=None):
     assert len(code) <= LIT, f"코드가 상수 자리를 넘었다 ({len(code)}B > {LIT}B)"
     code += b"\x00" * (LIT - len(code))
     return code + struct.pack(
-        ">IIIIIII", SLOT0, NBITS, tbl_addr, FRAME_FMT, HOOK_RET, dbg or 0, DIGIT_BITS
+        ">IIIIIIIII",
+        SLOT0,
+        NBITS,
+        tbl_addr,
+        FRAME_FMT,
+        HOOK_RET,
+        dbg or 0,
+        DIGIT_BITS,
+        tbuf,
+        prefix_w,
     )
 
 
@@ -568,11 +711,37 @@ TBL = 0x06076170  # 490B
 TBL_ROOM = 864
 
 
-def patch(data):
-    """`/0.BIN` 에 훅을 넣는다 → `(새 bytes, 넣은 조각 수)`. 크기 불변."""
+def fold_prefix_w():
+    """어절 접기 문구(`system_src.FOLD`)의 `%s` 앞 폭(반칸) — 그 문구의 **우리 문안**에서 잰다(앞 글이 바뀌면 같이 따라온다)."""
+    import system_src as SS
+
+    widths = set()
+    for raw, kr in SS.sections().get("battle", {}).items():
+        if SS.FOLD_MARK in kr:
+            head = H.encode_kr(kr[: kr.index("%s")])
+            widths.add(sum(2 if b >= 0x80 else 1 for b in _chars(head)))
+    assert len(widths) == 1, f"접기 문구가 하나여야 한다 — 앞 폭 {sorted(widths)}"
+    return widths.pop()
+
+
+def _chars(b):
+    """바이트열 → 글자 첫 바이트들(SJIS 2바이트는 하나로)."""
+    i, out = 0, []
+    while i < len(b):
+        out.append(b[i])
+        i += 2 if b[i] >= 0x80 else 1
+    return out
+
+
+def patch(data, prefix_w=13):
+    """`/0.BIN` 에 훅을 넣는다 → `(새 bytes, 넣은 조각 수)`. 크기 불변.
+
+    `prefix_w` = 어절 접기 문구의 `%s` 앞 폭(반칸) — 빌드가 그 문구의 우리 문안에서 재서 넘긴다."""
     out = bytearray(data)
     bits = bit_table()
-    code = routine(STUB, TBL)
+    tbuf = STUB + LIT_OFF + 36
+    code = routine(STUB, TBL, prefix_w=prefix_w, tbuf=tbuf) + b"\x00" * FOLD_BUF
+    assert LIT_OFF + 36 + FOLD_BUF <= STUB_ROOM
 
     def put(addr, blob, room, expect=None):
         off = addr - BASE
