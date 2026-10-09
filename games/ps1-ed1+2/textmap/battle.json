@@ -2293,6 +2293,46 @@
    "k": "d9c7f17441",
    "ours": "소니아",
    "sha": "e9a8fbb7"
+  },
+  {
+   "k": "c38a8ded88",
+   "ours": "주변이 정적에 감싸여 모든 주문은 봉인되었다.",
+   "sha": "ae1718a7"
+  },
+  {
+   "k": "2ab24555ef",
+   "ours": "은(는) 으스스하게 일렁이고 있다.",
+   "sha": "5d75c045"
+  },
+  {
+   "k": "87d6567138",
+   "ours": "후후후\n내 힘을 똑똑히 보아라!!",
+   "sha": "200fcc73"
+  },
+  {
+   "k": "5d70e7a2d9",
+   "ours": "네 덕분에 점점 더 힘이 솟아나는군!! 크핫하하!!",
+   "sha": "4dd98ba3"
+  },
+  {
+   "k": "feca6e3a3e",
+   "ours": "크아아아아!!\n이, 이놈!! 그, 그러나 이것으로 끝났다고는 생각 마라!!",
+   "sha": "9d9f7e9d"
+  },
+  {
+   "k": "569f28d63f",
+   "ours": "은(는) 동굴 안에서는 효과가 없다는 사실을 알아차리지 못했다.",
+   "sha": "10ed9655"
+  },
+  {
+   "k": "f4b0984c6a",
+   "ours": "도망치게 둘까 보냐!!\n분수도 모르고 나에게 싸움을 걸어온 대가를 치러라!",
+   "sha": "908ac92b"
+  },
+  {
+   "k": "c8840d339f",
+   "ours": "호호호, 어리석기는. 나에게서\n도망갈 수 있다고 생각하다니!",
+   "sha": "a96fe6da"
   }
  ],
  "canon": {
@@ -2313,7 +2353,6 @@
   "2d443f2921": "battle",
   "e6b9bd5270": "battle",
   "c81ac76a0f": "battle",
-  "c38a8ded88": "battle",
   "1b83be76f4": "battle",
   "ea3acb4a29": "battle",
   "b937315422": "battle",
@@ -2325,7 +2364,6 @@
   "af2e26629f": "system",
   "06a6bf2e8a": "battle",
   "d6cbc40dc6": "battle",
-  "2ab24555ef": "battle",
   "a2121429e7": "battle",
   "5a1e407cac": "battle",
   "ca4ba70e2d": "battle",
@@ -2357,15 +2395,11 @@
   "3563c1a663": "battle",
   "6df89e9fa5": "battle",
   "665c4c680d": "battle",
-  "87d6567138": "battle",
   "cc9afb4faa": "battle",
   "2daea328a7": "battle",
   "11d11e56dd": "battle",
-  "5d70e7a2d9": "battle",
   "7a8c2e07b7": "battle",
-  "feca6e3a3e": "battle",
   "2d59ca78bf": "system",
-  "569f28d63f": "battle",
   "1485eecfab": "battle",
   "78187c822d": "battle",
   "1a318c3023": "battle",
@@ -2381,8 +2415,6 @@
   "e5a06032e5": "battle",
   "94ea890014": "battle",
   "5809324717": "battle",
-  "f4b0984c6a": "battle",
-  "c8840d339f": "system",
   "bd8bbadbc3": "battle",
   "922f495754": "battle",
   "9f7b1d3db4": "battle",

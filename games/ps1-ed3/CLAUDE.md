@@ -1,4 +1,4 @@
-# games/ps1-ed3+4 — [kr] PS1 영웅전설 III·IV 한글패치
+# games/ps1-ed3 — [kr] PS1 영웅전설 III·IV 한글패치
 
 트랙 **kr** (일본 원판 한글 번역). 루트 규칙은 `../../CLAUDE.md`, 이 파일엔 이 게임 것만 둔다.
 

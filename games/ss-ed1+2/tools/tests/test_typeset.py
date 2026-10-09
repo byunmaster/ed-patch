@@ -35,13 +35,13 @@ class Typeset(unittest.TestCase):
 
     def test_name_slots_are_translated_not_blanked(self):
         """🔴 본문 아닌 이름 자리를 비우면 화면에서 이름이 사라진다(176블록)."""
-        got, bad = self.t("%cソニア%cが 仲間になりました。%c%c", "이(가) 동료가 되었다.")
+        got, bad = self.t("%cソニア%cが 旅に出ました。%c%c", "이(가) 여행을 떠났다.")
         self.assertIsNone(bad)
-        self.assertEqual(got, "%c소니아%c이(가) 동료가 되었다.%c%c")
+        self.assertEqual(got, "%c소니아%c이(가) 여행을 떠났다.%c%c")
 
     def test_unknown_name_slot_rejects_the_block(self):
         """정본에 없는 이름 자리가 있으면 버린다 — 우리 문안이 그걸 이미 품고 있다."""
-        got, bad = self.t("%cゲイル%cは%c謎の靴%cを 見つけた。%c", "은(는) 신발을 찾았다.")
+        got, bad = self.t("%cゲイル%cは%c謎の鍵%cを 数えた。%c", "은(는) 열쇠를 세었다.")
         self.assertIsNone(got)
         self.assertIn("정본에 없는", bad)
 
@@ -63,9 +63,9 @@ class Typeset(unittest.TestCase):
 
     def test_duplicate_arg_at_body_head_is_dropped(self):
         """원문 `%s は …` + 저본 `\\x1a은(는) …` → `%s%s` 가 되면 계약이 깨진다."""
-        got, bad = self.t("%sは 読みました。%c", "\x1a은(는) 읽었다.")
+        got, bad = self.t("%sは 歌いました。%c", "\x1a은(는) 노래했다.")
         self.assertIsNone(bad)
-        self.assertEqual(got, "%s은(는) 읽었다.%c")
+        self.assertEqual(got, "%s은(는) 노래했다.%c")
 
     def test_sentence_in_speaker_slot_is_not_kept(self):
         """🔴 화자 자리에 인용문이 들면 원문을 남길 수 없다 — 두 번 나온다."""
@@ -82,24 +82,24 @@ class Typeset(unittest.TestCase):
 
     def test_body_in_single_slot_is_not_mistaken_for_speaker(self):
         """`%c본문%c%c` 은 화자가 아니다 — 개행이 없으면 화자가 아니다(203블록)."""
-        got, bad = self.t("%c粘土の型を渡しました。%c%c", "점토 거푸집을 건넸다.")
+        got, bad = self.t("%c木の皿を洗いました。%c%c", "나무 접시를 씻었다.")
         self.assertIsNone(bad)
-        self.assertEqual(got, "%c점토 거푸집을 건넸다.%c%c")
+        self.assertEqual(got, "%c나무 접시를 씻었다.%c%c")
 
     def test_marks_split_the_sentence_across_slots(self):
         """🔴 **인자가 문장을 가른 블록** — 저본을 인자에서 잘라 나눠 담는다(100블록).
 
         통째로 한 자리에 넣으면 남은 자리의 일본어 조각이 화면에 같이 뜨고, 비우면
-        인자 개수가 어긋나 계약이 깨진다. 실측에서 가장 흔한 꼴이 보물상자 94블록이다.
+        인자 개수가 어긋나 계약이 깨진다. 실측에서 가장 흔한 꼴이 항아리 94블록이다.
         """
-        jp = "%s は 宝箱を開けました。\n宝箱の中には%c%s%cが入っていました。"
-        kr = "%s은(는) 보물상자를 열었다.\n보물상자 안에는 %s이(가) 들어 있었다."
+        jp = "%s は 壺を割りました。\n壺の中には%c%s%cが入っていました。"
+        kr = "%s은(는) 커다란 항아리를 깼다.\n항아리 안에는 %s이(가) 들어 있었다."
         got, bad = self.t(jp, kr)
         self.assertIsNone(bad)
         # ⚠ 개행은 PS1 과 같은 조판(`ps1_layout` — 문장 단위·균형)이 넣은 것이다.
         #   런타임 이름은 가장 긴 값(색 쌍 안 아이템 전각 8 · 주어 파티원 4)으로 잰다.
         self.assertEqual(
-            got, "%s은(는)\n보물상자를 열었다.\n보물상자 안에는\n%c%s%c이(가)\n들어 있었다."
+            got, "%s은(는)\n커다란 항아리를 깼다.\n항아리 안에는\n%c%s%c이(가)\n들어 있었다."
         )
 
     def test_partial_canon_must_not_blank_the_rest(self):
@@ -108,8 +108,8 @@ class Typeset(unittest.TestCase):
         저본이 원문의 일부만 덮을 때, 맞춤을 넓히면 「빈 조각을 일본어 자리에 깔아 지우는」
         배치가 유효해 보인다 — 계약도 맞고 창에도 든다. 그건 **원문을 소리 없이 버리는 것**이다.
         """
-        jp = "%s は 宝箱を開けました。\n宝箱の中には%c%s%cが入っていました。"
-        got, bad = self.t(jp, "%s은(는) 보물상자를 열었다.")
+        jp = "%s は 壺を割りました。\n壺の中には%c%s%cが入っていました。"
+        got, bad = self.t(jp, "%s은(는) 항아리를 깼다.")
         self.assertIsNone(got)
         self.assertEqual(bad, "정본에 없는 이름 자리가 있다")
 
@@ -126,8 +126,8 @@ class Typeset(unittest.TestCase):
         원문은 물건 이름(`%s`)과 값(`%d`)을 둘 다 내보내는데 우리 문안은 이름을 안 부른다.
         개수가 같아야 한다고 보면 이 138이 통째로 버려진다.
         """
-        jp = "%c%s は\n%d Gold に なりますが よろしいですか？%c"
-        kr = "값은\n%d Gold가 되는데 괜찮으시겠습니까?"
+        jp = "%c%s は\n%d コイン です。%c"
+        kr = "값은\n%d 코인이다."
         got, bad = self.t(jp, kr)
         self.assertIsNone(bad)
         self.assertEqual(T.contract(got), T.contract(jp))
@@ -152,11 +152,11 @@ class Typeset(unittest.TestCase):
         된다. 바로 앞 마크업만 보는 겹침 제거는 **빈 자리가 끼면** 못 잡는다.
         그대로 내보내면 빌드에서 조용히 탈락하고 화면엔 일본어가 남는다.
         """
-        jp = "%c%s%c\n ･ ･ ローが いない !?%c"
-        got, bad = self.t(jp, "%s… 로우가 없다니!?")
+        jp = "%c%s%c\n ･ ･ ミナが いない !?%c"
+        got, bad = self.t(jp, "%s… 미나가 없다니!?")
         self.assertIsNone(bad)
         self.assertEqual(T.contract(got), T.contract(jp))
-        self.assertEqual(got, "%c%s%c\n… 로우가 없다니!?%c")
+        self.assertEqual(got, "%c%s%c\n… 미나가 없다니!?%c")
 
     def test_over_window_is_rejected(self):
         """창 총량(전각 14×5)을 넘으면 뒷줄이 잘린다 — 넣지 않는다."""
@@ -274,14 +274,14 @@ class Typeset(unittest.TestCase):
         조각(`아트라스`)은 남는다 — 예전엔 거기서 **버렸다**(화면에 일본어로 남았다).
         ⚠ **같은 이름일 때만** 통과다. 다르면 우리가 모르는 구조라 그대로 버린다.
         """
-        jp = "%cランドー%c\n下品 !?%cアトラス%c\nランドー !!%c"
+        jp = "%cランドー%c\n下手 !?%cアトラス%c\nランドー !!%c"
         nm = {"ランドー": "란도", "アトラス": "아트라스"}
-        got, bad = self.t(jp, "천박하다니!?{p}아트라스{p}란도!!", nm)
+        got, bad = self.t(jp, "서투르다니!?{p}아트라스{p}란도!!", nm)
         self.assertIsNone(bad)
-        self.assertEqual(got, "%c란도%c\n천박하다니!?%c아트라스%c\n란도!!%c")
+        self.assertEqual(got, "%c란도%c\n서투르다니!?%c아트라스%c\n란도!!%c")
         self.assertEqual(T.contract(got), T.contract(jp))
         # 다른 이름이면 여전히 버린다 — 근거가 없다
-        got2, bad2 = self.t(jp, "천박하다니!?{p}보아드{p}란도!!", nm)
+        got2, bad2 = self.t(jp, "서투르다니!?{p}보아드{p}란도!!", nm)
         self.assertIsNone(got2)
         self.assertEqual(bad2, "정본에 없는 이름 자리가 있다")
 
@@ -331,11 +331,11 @@ class WordWrap(unittest.TestCase):
         )
 
     def test_inline_color_pair_is_one_line(self):
-        _segs, groups = T.line_groups("보물상자 안에는 %c%s%c이(가) 들어 있었다.")
+        _segs, groups = T.line_groups("항아리 안에는 %c%s%c이(가) 들어 있었다.")
         self.assertEqual(groups, [[0, 1, 2]])
         _segs, groups = T.line_groups("%c케리%c\n지금까지 열심히 했습니다.%c")
         self.assertEqual(len(groups), 4, "화자 명판은 글줄 안 색 쌍이 아니다")
-        self.check("보물상자 안에는 %c%s%c이(가) 들어 있었다.")
+        self.check("항아리 안에는 %c%s%c이(가) 들어 있었다.")
 
     def test_number_is_not_split(self):
         got = self.check("%c%s%c은(는) %d Gold밖에 안 되겠는걸. 그래도 괜찮겠소?%c")

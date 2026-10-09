@@ -1,6 +1,6 @@
 """공용 이름 검사 어댑터 — **ED3 문안 전체**를 `(자리, 원문 줄, 우리 줄|None, 갈래)` 로 낸다.
 
-    python3 scripts/check/check_names.py --game ps1-ed3+4 --list
+    python3 scripts/check/check_names.py --game ps1-ed3 --list
 
 🔴 **이름을 안 든다**(마스터 2026-10-07). 정본은 `shared/canon`(잣대 `canon/names.py` + 고유명사 `canon/nouns/ed3.json`)
 이 보고, 여기는 **원문을 읽어 우리 줄과 짝짓기만** 한다.

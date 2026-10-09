@@ -67,7 +67,7 @@ class Args(unittest.TestCase):
         self.assertEqual(I.pairs_of("%c%c%cニア%c\nテスト%c", args), [])
 
     def test_digit_injection_is_not_an_escape(self):
-        """🔴 수치 두 자리도 `%c%c` 로 주입된다(`今のところ%c%c連勝`). 뒷바이트가 0x5C 가 아니다."""
+        """🔴 수치 두 자리도 `%c%c` 로 주입된다(`いまのところ%c%c連勝`). 뒷바이트가 0x5C 가 아니다."""
         args = [(0x82, 0x10), (0x53, 0x12)]
         self.assertEqual(I.pairs_of("%c%c連勝", args), [])
 
@@ -94,7 +94,7 @@ class Restore(unittest.TestCase):
         실측(2026-09-03): 2·6 이 나왔는데 옳은 값은 2·4 였다. 6 으로 붙이면 이름칸 쌍이
         본문 창으로 가서 인자 순서가 어긋난다.
         """
-        t = "%c%s%c\nやあ、ファーガ%c%cン。%c%cファーガ%c%cン%c\nへえ%c"
+        t = "%c%s%c\nねえ、ファーガ%c%cン。%c%cファーガ%c%cン%c\nふむ%c"
         jp, tails = I.restore(t, [(3, "ソ"), (7, "ソ")])
         self.assertEqual(tails, [2, 4])
         self.assertEqual(jp.count("%c"), t.count("%c") - 4)

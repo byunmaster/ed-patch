@@ -192,7 +192,7 @@ launch_plan → launch  content_path = games/pce-ed1/work/emu/ed1.cue  system=pc
     (원본 cue 는 ISO 파일명이 대문자라 못 연다 — work/emu/ 에 하드링크 + cue 사본. syscard3.pce 는
      ~/.local/share/emucap/firmware/ 에 있어야 한다)
 시스템 카드 화면 → run 탭 → 약 1,200프레임 뒤 오프닝 → run 한 번 더 → 타이틀(Beginning/Continue)
-타이틀에서 run → 약 6,000~8,000프레임 뒤 첫 대사(「侍女 / おはようございます。」)
+타이틀에서 run → 약 6,000~8,000프레임 뒤 첫 대사(시녀의 아침 인사)
 ```
 
 - 세이브스테이트: `work/emu/title.mcs`(타이틀) · `work/emu/dialog1.mcs`(첫 대사, 뱅크 0x76 에

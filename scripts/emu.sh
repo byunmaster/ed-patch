@@ -462,8 +462,8 @@ while :; do
   fi
 
   # 🔴 **`originals` 의 이름과 `games/` 의 이름이 늘 같지는 않다**(실측 2026-09-15).
-  #   합본은 `games/` 쪽만 합쳐져 있다 — `originals/jp/ps1-ed3` · `ps1-ed4` 인데
-  #   게임 폴더는 `games/ps1-ed3+4` 하나다(루트 `CLAUDE.md` 「합본은 `+`로 잇는다」).
+  #   합본은 `games/` 쪽만 합쳐져 있다 — 예전 `games/ps1-ed3+4` 가 그랬다(`originals/jp/ps1-ed3` · `ps1-ed4`).
+  #   10-09 롬 단위로 `games/ps1-ed3` 로 갈랐지만 `ps1-ed1+2`(한 디스크 합본)처럼 `+` 이름은 남을 수 있다.
   #   게임 목록은 **originals 에서 뽑으므로**(위 `games()`) `ps1-ed3` 이 그대로 GAME 이 되고,
   #   그러면 `games/ps1-ed3/work/build` 라는 **없는 칸**을 보게 된다 ⇒ 후보에 원본만 남고
   #   **빌드를 받아 놓고도 원본이 뜬다.** 조용히 틀리는 쪽이라 한참 못 알아챈다.
@@ -473,8 +473,8 @@ while :; do
     for _g in "$REPO"/games/*/; do
       _n=${_g%/}; _n=${_n##*/}
       case "$_n" in *+*) ;; *) continue ;; esac
-      _head=${_n%%+*}          # ps1-ed3+4 → ps1-ed3
-      _pre=${_head%-*}         # ps1-ed3   → ps1
+      _head=${_n%%+*}          # ps1-ed1+2 → ps1-ed1
+      _pre=${_head%-*}         # ps1-ed1   → ps1
       if [ "$1" = "$_head" ]; then printf '%s' "$_n"; return 0; fi
       for _x in $(printf '%s' "${_n#*+}" | tr '+' ' '); do
         if [ "$1" = "$_pre-ed$_x" ]; then printf '%s' "$_n"; return 0; fi

@@ -5,7 +5,7 @@
 
 | 트랙    | 뜻                                     | 게임 |
 | ------- | -------------------------------------- | ---- |
-| **kr**  | 일본 원판 한글 번역 패치               | `ps1-ed1+2`(v1.0.0 배포 · 라운드 졸업, 핫픽스만) · `ps1-ed3+4` · `ss-ed1+2` · `ss-ed3` · `pce-ed1` · `sfc-ed1` · `md-ed1` · `pc98-ed1`(레트로 PC 라운드) |
+| **kr**  | 일본 원판 한글 번역 패치               | `ps1-ed1+2`(v1.0.0 배포 · 라운드 졸업, 핫픽스만) · `ps1-ed3` · `ss-ed1+2` · `ss-ed3` · `pce-ed1` · `sfc-ed1` · `md-ed1` · `pc98-ed1`(레트로 PC 라운드) |
 | **fix** | 국내 정발판의 이식 결함 복원(버그픽스) | `dos-ed2`(v1.0.0) |
 | **mod** | 기능 개조                              | (없음) |
 
@@ -59,7 +59,8 @@ games/<게임>/       게임별 코드베이스 — tools/ docs/ patches/ textma
                     typeset_fingerprint.json = 그 게임의 조판 지문(값은 게임 것)
                     게임 목록은 위 트랙 표. 게임 브랜치는 `game/<게임>`, 작업은 워크트리(`.claude/worktrees/<게임>`)
 shared/             플랫폼 공용 라이브러리 — `text/`(한글 조판 krwrap · 조사 · KSC 스캔 ·
-                    맞춤법) · `glossary/`(고유명사 정본) · `fonts/`(Galmuri BDF)
+                    맞춤법) · `canon/`(정본 — 고유명사 `nouns/` + 공통 문안, 게임이 보는 입구 하나) ·
+                    `glossary/`(옛 입구, 한 라운드 다리) · `lore/`(공략집 사실 사전) · `fonts/`(Galmuri BDF)
                     ⚠ ISO9660·SJIS 스캔은 **여기 없다** — 게임의 `tools/common.py` 몫이다
                     (플랫폼마다 섹터 규격이 달라 아직 둘째 소비자가 없다)
 scripts/            **입구만 위에 둔다** — check.sh(커밋 전) · test.sh · emu.sh(실행) ·

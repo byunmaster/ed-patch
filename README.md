@@ -15,12 +15,12 @@
 패치 파일에는 원본 게임 데이터가 포함되지 않습니다. 적용하려면 직접 소장한 원본이
 필요합니다.
 
-## 패치 현황 (2026-10-08)
+## 패치 현황 (2026-10-09)
 
 | 게임 | 트랙 | 기종 | 상태 |
 | ---- | ---- | ---- | ---- |
 | [영웅전설 I · II](games/ps1-ed1+2/) | kr | PlayStation | ✅ v1.0.0 배포 |
-| [영웅전설 III](games/ps1-ed3+4/) | kr | PlayStation | 🔧 작업 중 |
+| [영웅전설 III](games/ps1-ed3/) | kr | PlayStation | 🔧 작업 중 |
 | 영웅전설 IV | kr | PlayStation | 진행 예정 |
 | [영웅전설 I · II](games/ss-ed1+2/) | kr | 세가새턴 | 🔧 작업 중 |
 | [영웅전설 III](games/ss-ed3/) | kr | 세가새턴 | 🔧 작업 중 |
@@ -42,13 +42,13 @@
 
 - **자체 번역입니다.** 일본 원판에서 직접 번역합니다.
 - 국내 정발판(만트라)에서는 **고유명사 표기만** 빌려 옵니다. 애매한 표현을 풀 때 참고하는 데 그칩니다.
-- 고유명사 정본은 `shared/glossary/`, 표기 원칙은 [docs/naming.md](docs/naming.md)에 있습니다.
+- 고유명사와 공통 문안(메뉴·호칭·시스템·전투 문구)의 정본은 `shared/canon/`, 표기 원칙은 [docs/naming.md](docs/naming.md), 번역 규칙은 [docs/translation-rules.md](docs/translation-rules.md)에 있습니다.
 
 ## 저장소 구조
 
 ```
 games/<게임>/       게임별 코드베이스 (도구 · 리버싱 노트 · 번역 정본 · 검사 게이트 check.sh)
-  ps1-ed1+2/        [kr]  PS1 영웅전설 I · II        ps1-ed3+4/  [kr]  PS1 영웅전설 III · IV
+  ps1-ed1+2/        [kr]  PS1 영웅전설 I · II        ps1-ed3/    [kr]  PS1 영웅전설 III · IV
   ss-ed1+2/         [kr]  새턴 영웅전설 I · II       ss-ed3/     [kr]  새턴 영웅전설 III
   pce-ed1/ sfc-ed1/ md-ed1/ pc98-ed1/   [kr]  드래곤 슬레이어 영웅전설(콘솔 · PC-98)
   dos-ed2/          [fix] 만트라 DOS 영웅전설 II 복원

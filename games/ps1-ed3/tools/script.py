@@ -4,7 +4,7 @@
 「저작권」). 그래서 정본은 **자리(색인) + 우리 문안 + 원문 지문**만 담는다:
 
 ```
-games/ps1-ed3+4/script/<disc>/<아카이브>_<멤버>.json
+games/ps1-ed3/script/<disc>/<아카이브>_<멤버>.json
   {"archive": "/SCE0/SC000.DAT", "member": "..\\\\DATA\\\\FT0000.BIN",
    "lines": {"63": {"jp": "a3f1c2d4", "kr": "크리스티나。내일 떠날 준비는 다 했니？"}}}
 ```

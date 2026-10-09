@@ -39,7 +39,7 @@
     python3 tools/list_demonstratives.py --disc ed3 --member FT0000 --show
     python3 tools/list_demonstratives.py --disc ed4 --kind made-up --show
 
-⚠ `shared/` 에 올리지 않는다 — 소비자가 둘(ps1-ed3+4 · ps1-ed1+2)인데 **같은 `script/*.json`
+⚠ `shared/` 에 올리지 않는다 — 소비자가 둘(ps1-ed3 · ps1-ed1+2)인데 **같은 `script/*.json`
 꼴**이라 복사가 싸다. 꼴이 다른 트랙(ss-ed3 는 MAP 단위 · md 는 스트림)은 그대로 못 쓴다.
 **셋째 소비자가 꼴까지 맞으면** 그때 올린다(설계 원칙 YAGNI).
 """

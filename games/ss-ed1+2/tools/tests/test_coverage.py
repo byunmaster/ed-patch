@@ -25,7 +25,7 @@ class Dumper(unittest.TestCase):
         그중 `ED1SCN27` 셋은 화면에 일본어로 남아 있었다.
         """
         self.assertFalse("　".isprintable(), "파이썬 동작이 바뀌었다 — 주석을 다시 본다")
-        raw = "『　　クリスタル水族館へ\n　　　　ようこそ !　』".encode("cp932")
+        raw = "『　　ほしぞら館へ\n　　　　ようこそ !　』".encode("cp932")
         self.assertTrue(dump_scn.plausible_text(raw), "전각 공백이 많으면 텍스트가 아니라고 한다")
         self.assertEqual(dump_scn.classify(raw + b"\x00", 0), "string")
 
@@ -45,7 +45,7 @@ class Scanner(unittest.TestCase):
         """
         # ⚠ 반각 하나를 앞에 둬 **바이트 수를 홀수로 민다** — 그래야 상한이 글자 한복판에
         #   떨어진다(전각만이면 짝수라 안 갈라져 이 함정을 못 재현한다).
-        s = "!" + "水族館へようこそ" * 20
+        s = "!" + "星空館へようこそ" * 20
         raw = s.encode("cp932")[: S.MAXLEN]
         with self.assertRaises(UnicodeDecodeError):
             raw.decode("cp932")  # 전제: 정확히 글자 한복판에서 잘린다
