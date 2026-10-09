@@ -151,7 +151,7 @@ def _place_slot(jp):
     return None
 
 
-_UI_KEYS = ("title", "speed", "yesno", "flee", "loose", "a4_labels", "a3_values", "a4_values")
+_UI_KEYS = ("title", "speed", "yesno", "flee", "retry", "loose", "a4_labels", "a3_values", "a4_values")
 
 
 def _ui_hit(jp, site=None):

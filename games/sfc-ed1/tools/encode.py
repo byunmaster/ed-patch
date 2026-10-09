@@ -103,7 +103,7 @@ CREDIT_GLYPHS = set("JDK")
 
 
 def is_glyph(ch: str) -> bool:
-    return ("가" <= ch <= "힣") or ch in GLYPH_SYMBOLS
+    return ("가" <= ch <= "힣") or ch in GLYPH_SYMBOLS or "\ue000" <= ch <= "\ue0ff"  # PUA = 반 칸 공백을 미리 합성한 칸 글리프(`battle_ui.halfspace`)
 
 
 def bad_index(i: int) -> bool:

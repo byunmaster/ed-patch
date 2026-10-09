@@ -52,11 +52,54 @@ GROUPS = [
     # 🔵 2026-10-08 — 자동 전투 중 취소 키 창(`$0F4F=$10`, 핸들러 `$02:A430`). 「にげる／せってい」 4칸 둘 — 속도 창과 같은 꼴(포인터 표 + `LDA #$0003` + MVN).
     #    정본 `逃げる@전투설정`(도망친다)·`戦闘設定` 이 네 칸을 꽉 쓴다.
     {"key": "flee", "table": 0x02A47C, "count": 2, "cells": 4, "setup": (0x02A43D, 0x02A444)},
+    # 🔵 2026-10-10 — 패배 뒤 선택 창 「さいごにでた まちにもどる / たたかいの ちょくぜんにもどる」(`$02:A48x`, 15칸 두 줄). 표를 안 돌려 일본어 가나가 한글 글리프로
+    #    깨져 보였다(마스터 「윗창 깨짐」 — 패배 화면 위쪽 창). 같은 포인터 표 꼴이라 흐름은 flee 와 같다.
+    {"key": "retry", "table": 0x02A4D4, "count": 2, "cells": 15, "setup": (0x02A495, 0x02A49C)},
     # 🔵 2026-09-15 — A4 전투 설정 창의 **라벨 자체**. 창 표(menus.py LAYOUT_TABLES)가 굽는
     #    $03:CC1B 는 아무도 안 읽는 사본이고, 실제 드로어는 이 포인터 표를 통해 $0305 로
     #    MVN 한다(라이브 BP 로 확인 — $02:ADFA, X=포인터, count=10). 10바이트 고정칸.
     {"key": "a4_labels", "table": 0x02AE59, "count": 6, "cells": 10, "setup": (0x02ADE1, 0x02ADE8)},
 ]
+
+
+# 🔵 2026-10-10 — 고정 칸 창은 VWF 경로(훅)를 안 타서 공백이 한 칸(8px)으로 찍혔다(마스터 「패배메뉴는 공백반각이 적용 안돼?」, 규칙 1-6).
+# 칸 하나가 글리프 하나라 런타임에 반 칸을 못 합성하니 **빌드에서 문자열을 4px 공백으로 미리 합성**해 칸마다 글리프(사설 영역 문자, 같은 그림은 하나)로 둔다.
+HALFSPACE_KEYS = ("retry", "a4_labels", "a4_values")
+_HS_CACHE: dict[tuple, str] = {}
+
+
+def halfspace(text: str) -> str:
+    """공백을 4px 로 둔 채 8px 칸으로 다시 끊은 문자열 — 공백 없는 글자 칸은 원래 글자, 걸친 칸은 사설 영역 글리프로 등록한다."""
+    if " " not in text:
+        return text
+    import hangul_font
+
+    font = hangul_font.load_font()
+    cols: list[list[int]] = []  # 열마다 16행 비트
+    for ch in text:
+        if ch == " ":
+            cols += [[0] * 16 for _ in range(4)]
+            continue
+        rows_ = hangul_font.render(ch, font)
+        cols += [[(r >> (7 - x)) & 1 for r in rows_] for x in range(8)]
+    out = []
+    for c0 in range(0, len(cols), 8):
+        cell = cols[c0 : c0 + 8]
+        cell += [[0] * 16 for _ in range(8 - len(cell))]
+        rows_ = tuple(sum(cell[x][y] << (7 - x) for x in range(8)) for y in range(16))
+        if not any(rows_):
+            out.append(" ")
+            continue
+        real = next((ch for ch in set(text) - {" "} if tuple(hangul_font.render(ch, font)) == rows_), None)
+        if real:
+            out.append(real)
+            continue
+        if rows_ not in _HS_CACHE:
+            ch = chr(0xE000 + len(_HS_CACHE))
+            _HS_CACHE[rows_] = ch
+            hangul_font.GLYPH_OVERRIDES[ch] = lambda r=list(rows_): list(r)
+        out.append(_HS_CACHE[rows_])
+    return "".join(out)
 
 
 def rows(key: str) -> list[list[str]]:
@@ -81,9 +124,10 @@ def rows(key: str) -> list[list[str]]:
     else:
         # `title`·`speed`·`yesno` — {jp, kr} 목록을 칸 수에 맞춰 오른쪽을 공백으로 채운다
         for t in d[key]:
-            if len(t["kr"]) > n:
+            kr = halfspace(t["kr"]) if key in HALFSPACE_KEYS else t["kr"]
+            if len(kr) > n:
                 raise SystemExit(f"{key} 줄 {t['kr']!r} 이 {n}칸을 넘는다")
-            out.append(list(t["kr"]) + [" "] * (n - len(t["kr"])))
+            out.append(list(kr) + [" "] * (n - len(kr)))
     if len(out) != g["count"]:
         raise SystemExit(f"{key} 줄이 {len(out)} — {g['count']} 이어야 한다")
     return out
@@ -175,7 +219,7 @@ def bake_a4_values(out: bytearray, rom: bytes, rep_index: dict[str, int], org: i
         if pair not in pairs:
             pairs[pair] = cur
             for jp in pair:
-                kr = by_jp[jp]
+                kr = halfspace(by_jp[jp])
                 b = bytearray()
                 for ch in kr:
                     if encode.is_glyph(ch):

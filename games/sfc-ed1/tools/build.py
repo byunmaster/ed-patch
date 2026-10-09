@@ -921,8 +921,10 @@ def kr_items(
     #   죽는다. 지금은 0건이지만 **다른 파일에 같은 글자가 있어서 우연히 사는 것**이라(실측
     #   2026-09-08: 51자 전부 다른 데서 왔다) 낱말 하나만 바꿔도 깨진다. 원천으로 못 박는다.
     bmap = namesrc.battle_ui()
-    for key in ("title", "speed", "yesno", "flee", "loose", "names", "a3_values"):
+    for key in ("title", "speed", "yesno", "flee", "retry", "loose", "names", "a3_values"):
         texts += [x["kr"] for x in bmap.get(key, [])]
+    for key in battle_ui.HALFSPACE_KEYS:  # 공백을 반 칸으로 미리 합성한 칸 글리프(사설 영역) — 글리프표에 올린다
+        texts += [battle_ui.halfspace(x["kr"]) for x in bmap.get(key, [])]
     texts += [c["kr"] for g in bmap.get("grid", []) for c in g["cols"]]
     import credits
 
@@ -1392,6 +1394,8 @@ def build_kr(
             spell_table=dk["런타임 치환"]["주문 표 주소"],
         )
         led.snap(out, "렌더러 훅")
+        if os.environ.get("ED_GALMURI_NUM"):  # 시험 빌드 — 숫자 글꼴 비교 캡처용(정본 롬 불변)
+            hook.galmuri_sheet_patch(out, rom)
 
     if with_hook:
         dicts.verify(out, k["rep"])  # 🔑 **체인이 다 끝난 롬**에서 게임의 포인터를 따라 되읽는다
@@ -1437,6 +1441,8 @@ def build_kr(
     }
     if extra is not None:
         info["opening_poc"] = extra
+    if imm and os.environ.get("ED_GALMURI_NUM"):  # 시험 빌드는 시트 숫자 타일을 일부러 바꾼다 — 게이트를 건너뛴다(정본 롬은 아니다)
+        imm = 0
     if imm:
         raise SystemExit(f"무변경 구간이 {imm}곳 바뀌었다 — 의도한 자리만 건드려야 한다")
     return bytes(out), info
