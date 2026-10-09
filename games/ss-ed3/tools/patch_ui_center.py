@@ -24,6 +24,14 @@ BASE = 0x06004000  # `/0.BIN` 적재 주소
 TEXT_Y = 0x0601016E
 TEXT_Y_ORIG = bytes.fromhex("718c")
 TEXT_Y_NEW = bytes.fromhex("718b")  # −117
+#   🔴 **대사 창의 ASCII 숫자 → 전각 변환을 걷는다**(마스터 10-09 「대사 숫자 반각」). 글자 그리기 루틴(`0x06041D74`)이 단바이트
+#   `c` 에서 `c−0x30 ≤ 9` 면 `c+0x821F`(전각 `０`~`９` 글리프)로 바꿔 그린다 — 보상 창 버퍼엔 ASCII `33 30` 이 들어 있는데 전각으로 나왔다.
+#   그 갈림 `bt/s`(`8D0C`)를 `bra`(`A00C`, 같은 목표 `0x06041D9A` = 반각 경로)로 바꾸면 **모든 대사 창의 ASCII 숫자가 반각**이 된다.
+#   ⚠ 전역이다(전투 창만 따로는 어렵다) — 문안에 **일부러 적은 전각 숫자는 그대로** 전각이다.
+DIGIT_BR = 0x06041D7E
+DIGIT_BR_ORIG = bytes.fromhex("8d0c")
+DIGIT_BR_NEW = bytes.fromhex("a00c")
+
 #   테두리 쪽은 그대로 — 안 건드린다는 걸 검산으로 못박는다.
 BORDER_Y = 0x060101A4
 BORDER_Y_ORIG = bytes.fromhex("7189")  # −119
@@ -238,6 +246,9 @@ def patch(data):
     off = TEXT_Y - BASE
     assert out[off : off + 2] == TEXT_Y_ORIG, f"{TEXT_Y:#x} 가 예상과 다르다"
     out[off : off + 2] = TEXT_Y_NEW
+    off = DIGIT_BR - BASE
+    assert out[off : off + 2] == DIGIT_BR_ORIG, f"{DIGIT_BR:#x} 가 예상과 다르다"
+    out[off : off + 2] = DIGIT_BR_NEW
     for lit in LIST_LITS:  # 목록 그리기 호출은 건드리지 않는다 — 위 🔴
         o = lit - BASE
         assert out[o : o + 4] == DRAW.to_bytes(4, "big"), f"{lit:#x} 가 예상과 다르다"
