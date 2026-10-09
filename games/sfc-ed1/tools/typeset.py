@@ -54,6 +54,8 @@ def pxw(ch: str) -> int:
 
 def px(s: str) -> int:
     return sum(pxw(c) for c in s)
+
+
 CRAWL = (0x0BE8E5, 0x0BF337)  # 오프닝·엔딩 크롤 — 다른 엔진, 조판하지 않는다
 FIELD = {
     0x07A740,
@@ -202,6 +204,20 @@ def indent_quotes(kr: str) -> str:
     return "\n".join(out)
 
 
+RUNTIME_WIDTH = re.compile(r"\{D[6-9A-D]\}")  # 폭이 런타임에 정해지는 치환 토큰(파티원·몬스터·아이템·주문·숫자·지명)
+
+
+def join_space(kr: str) -> str:
+    """로그성 조각(전투 결과·시스템)이 `.`·`!`·`?` 로 끝나면 끝에 반각 공백을 하나 둔다.
+
+    이 메시지들은 조각 하나가 한 문장이고 **엔진이 조각을 이어 한 창에 찍는다**(「회심의 일격!」 +
+    「슬라임에게 65의 피해!」 …). 일본어는 문장 사이에 공백이 없지만 한글은 번역 규칙 2-1 (부호 뒤에는 반각 공백)이
+    걸린다 — 가변 폭(VWF)에서 `!`·`.` 가 4px 라 공백이 없으면 「일격!슬라임에게」 로 붙어 보였다(2026-10-09 C3 실기).
+    문안마다 손대지 않고 **이어 붙는 자리**(조각 끝)에서 한 번에 넣는다. 조각 끝 공백은 줄 끝이면 개행으로 바뀐다.
+    """
+    return re.sub(r"([.!?])(<E[04]>)$", r"\1 \2", kr)
+
+
 class Typesetter:
     """빌드가 쓰는 입구 — 사전·후보 폭을 한 번만 읽는다."""
 
@@ -216,6 +232,12 @@ class Typesetter:
         # 마스터 최종 판정(2026-09-30, 전 기종 공통) — 로그성 메시지도 어절 단위 개행을 한다
         # (09-27③ 「엔진 기계적 개행만」을 대체). FIELD 는 후보 폭이 파티원뿐이라 더 좁다.
         ml = self.ml_field if addr in FIELD else self.ml
+        if BATTLE[0] <= addr <= BATTLE[1]:
+            kr = join_space(kr)
+            if RUNTIME_WIDTH.search(kr):
+                # 이름·주문·숫자 치환이 낀 로그는 **정적 개행을 안 건다** — 후보 중 가장 긴 이름으로 재면 짧은 이름도 일찍 꺾인다(「그러나 운 좋게 / 세리오스에게는」,
+                # 마스터 10-10). 어절 개행은 런타임 훅(`vwf_wrapchk`)이 실제 이름 폭으로 한다.
+                return kr
         return wrap(kr, self.dm, ml)
 
 
@@ -360,7 +382,9 @@ def layout_px(chars: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
             i += 1
             continue
         if ch == "\n":
-            if page_start:  # 쪽 첫머리 개행 — 엔진은 칸 번호를 $FF→15 로 보낸다: 다음 글자가 16칸째로 튄다
+            if (
+                page_start
+            ):  # 쪽 첫머리 개행 — 엔진은 칸 번호를 $FF→15 로 보낸다: 다음 글자가 16칸째로 튄다
                 bad.append("② 쪽 첫머리 개행")
                 lines[-1] += [(" ", "")] * 16
                 X = 128
@@ -380,7 +404,9 @@ def layout_px(chars: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
         if ch == " " and at_line_start:
             i += 1  # 훅: 줄 첫 칸 공백은 버린다
             continue
-        if at_line_start and X and not explicit and lines[-1]:  # 기계적 넘침으로 새 줄 첫머리가 됐다
+        if (
+            at_line_start and X and not explicit and lines[-1]
+        ):  # 기계적 넘침으로 새 줄 첫머리가 됐다
             prev_ch, prev_u = lines[-1][-1]
             lines.append([])
             if ch in NO_HEAD:
@@ -434,6 +460,8 @@ def check_all(typeset: bool = True) -> list[dict]:
         reps, ml = reps_by[f], ml_by[f]
         # 마스터 최종 판정(2026-09-30, 전 기종 공통) — 로그성 메시지도 어절 단위 개행(빌드와 같은 경로).
         kr = wrap(s["kr"], dm, ml) if typeset else s["kr"]
+        if BATTLE[0] <= s["addr"] <= BATTLE[1] and kr.startswith("\n"):
+            kr = kr[1:]  # 앞 조각에 이어 찍는 로그의 「새 줄에서 시작」 개행 — 이 검사는 조각을 따로 재서 쪽 첫머리로 오인한다(승리 로그 「ＥＰ n 포인트 획득」)
         toks = sorted(set(re.findall(r"\{(D[6-9A-F])\}", kr)))
         combos = [{}]
         for t in toks:
@@ -470,7 +498,9 @@ def summary(rep: list[dict]) -> dict[str, dict]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--check", action="store_true", help="tm-draft 아닌 위반이 한 영역이라도 있으면 실패")
+    ap.add_argument(
+        "--check", action="store_true", help="tm-draft 아닌 위반이 한 영역이라도 있으면 실패"
+    )
     ap.add_argument("--raw", action="store_true", help="조판기를 안 거친 정본 그대로 검사(비교용)")
     ap.add_argument("--show", type=int, default=12, help="예를 몇 개 보일지")
     a = ap.parse_args()

@@ -32,7 +32,16 @@ import namesrc
 
 # 고정 칸 문자열 표 **둘** — 둘 다 `MVN` 으로 칸 배열에 통째로 옮긴다(`hook.MVN_SITES`).
 GROUPS = [
-    {"key": "battle", "table": 0x02A30A, "count": 8, "cells": 13, "setup": (0x02A2C8, 0x02A2CF)},
+    # 🔴 행동자 이름 줄(커맨드 창 첫 줄)은 같은 표의 **이름 쪽(+6)** 을 `$02:A2AF`·`$02:A2B6` 이 따로 읽는다(`LDA $02A310,X`) — 여기를 안 돌리면
+    #    원본 가나 이름이 그대로 나가 한글 세션에선 빈 줄이 된다(2026-10-10 마스터 「원본에는 세리오스 이름이 나오는데」). `extra` = (lo참조, hi참조, 표 안 바이트 오프셋)
+    {
+        "key": "battle",
+        "table": 0x02A30A,
+        "count": 8,
+        "cells": 13,
+        "setup": (0x02A2C8, 0x02A2CF),
+        "extra": [(0x02A2AF, 0x02A2B6, 6)],
+    },
     {"key": "title", "table": 0x02A646, "count": 3, "cells": 12, "setup": (0x02A607, 0x02A60E)},
     # 🔵 2026-09-08 — **타이틀 흐름에서 한 칸 들어간 자리 둘.** 유저가 「여기까지 한글 되어야
     #    타이틀 닫았다」며 짚은 화면이 이 둘이다(`docs/status.md` E2).
@@ -312,7 +321,7 @@ def bake(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dic
     info = {}
     cur = org
     for g in GROUPS:
-        for addr in g["setup"]:
+        for addr in (*g["setup"], *[a for e in g.get("extra", []) for a in e[:2]]):
             if rom[common.snes2off(addr)] != 0xBF:
                 raise SystemExit(f"표 참조가 예상과 다르다 {common.fmt(addr)}")
         strs = encode_rows(g["key"], rep_index)
@@ -335,6 +344,12 @@ def bake(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dic
             out[o + 1] = (table + k) & 0xFF
             out[o + 2] = (table + k) >> 8
             out[o + 3] = dicts.BANK
+        for lo_a, hi_a, off in g.get("extra", []):  # 같은 표의 다른 자리를 읽는 참조(예: 이름 줄)
+            for k, addr in enumerate((lo_a, hi_a)):
+                o = common.snes2off(addr)
+                out[o + 1] = (table + off + k) & 0xFF
+                out[o + 2] = (table + off + k) >> 8
+                out[o + 3] = dicts.BANK
         info[g["key"]] = {"표": common.fmt((dicts.BANK << 16) | table), "줄": g["count"]}
     info["끝"] = common.fmt((dicts.BANK << 16) | cur)
     info["next"] = cur
@@ -342,7 +357,11 @@ def bake(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dic
 
 
 def patch_ranges() -> list[tuple[int, int]]:
-    return [(common.snes2off(a), common.snes2off(a) + 4) for g in GROUPS for a in g["setup"]]
+    return [
+        (common.snes2off(a), common.snes2off(a) + 4)
+        for g in GROUPS
+        for a in (*g["setup"], *[x for e in g.get("extra", []) for x in e[:2]])
+    ]
 
 
 def patch_ranges_a3() -> list[tuple[int, int]]:

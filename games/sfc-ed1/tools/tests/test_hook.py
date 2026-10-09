@@ -119,10 +119,15 @@ ENTRY = {
     "drain": (True, True, "far"),  # NMI = sep #$30 뒤
     "fetch": (True, False, "near"),
     "alloc": (True, False, "near"),
+    "q_wait": (True, False, "near"),
     "josa": (True, False, "near"),
     "upload": (True, False, "near"),
     "cache_reset": (True, False, "near"),  # 오프닝 페이지 경계에서 오너 표를 비운다
-    "kinsoku_carry": (True, False, "near"),  # 고아 부호 훅 — h_kpunct/hb_kpunct 가 jsr 로 부른다(A 8·X 16)
+    "kinsoku_carry": (
+        True,
+        False,
+        "near",
+    ),  # 고아 부호 훅 — h_kpunct/hb_kpunct 가 jsr 로 부른다(A 8·X 16)
     "font_reset": (True, True, "far"),  # 폰트 벌크카피 트램펄린 착지점 — `JSL` 로 불린다
     "open_advance": (
         True,
@@ -142,21 +147,45 @@ VWF_ENTRY = {
     "vwf_crawl_nl": (True, False, "near"),
     "vwf_newslot": (True, False, "near"),
     "vwf_clrbuf": (True, False, "near"),
-    "vwf_blit0": (True, False, "near"),
-    "vwf_blit1": (True, False, "near"),
-    "vwf_blit2": (True, False, "near"),
+    "vwf_blitR": (True, False, "near"),
+    "vwf_blitL": (True, False, "near"),
+    "vbR0": (True, False, "chunk"),
+    "vbR1": (True, False, "chunk"),
+    "vbR2": (True, False, "chunk"),
+    "vbR3": (True, False, "chunk"),
+    "vbR4": (True, False, "chunk"),
+    "vbR5": (True, False, "chunk"),
+    "vbR6": (True, False, "chunk"),
+    "vbR7": (True, False, "chunk"),
+    "vbL1": (True, False, "chunk"),
+    "vbL2": (True, False, "chunk"),
+    "vbL3": (True, False, "chunk"),
+    "vbL4": (True, False, "chunk"),
+    "vbL5": (True, False, "chunk"),
+    "vbL6": (True, False, "chunk"),
+    "vbL7": (True, False, "chunk"),
     "vwf_enq": (True, False, "near"),
     "vwf_ldg_h": (True, False, "near"),
     "vwf_ldg_r": (True, False, "near"),
+    "vwf_ldg_n": (True, False, "near"),
+    "wk_nm": (True, False, "near"),
+    "vwf_spgap": (True, False, "near"),
+    "vwf_fitchk": (True, False, "near"),
+    "vwf_csnap": (True, False, "near"),
+    "vwf_cend": (True, False, "near"),
+    "vwf_cstart": (True, False, "near"),
     "vwf_adv": (True, False, "near"),
     "vwf_put": (True, False, "near"),
     "vwf_flush": (True, False, "near"),
+    "vwf_edge": (True, False, "near"),
+    "vwf_wrapchk": (True, False, "near"),
+    "wk_addw": (True, False, "near"),
+    "ve_snap": (True, False, "chunk"),
     "vwf_glyph": (True, False, "near"),
     "vwf_raw": (True, False, "near"),
     "u_ram": (True, False, "chunk"),
     "vp_spill": (True, False, "chunk"),
     "vl_y": (True, False, "chunk"),
-
     "vr_h1": (True, False, "chunk"),
     "o_swallow": (True, False, "chunk"),
     "o_raw": (True, False, "chunk"),
@@ -202,7 +231,9 @@ class HookAsm(unittest.TestCase):
         self.rep = sorted(set("가나다라마바사아자차카타파하각논딜" + hook.josa_chars()))
         self.slots = list(range(0x20, 0x20 + 40))
         self.vram = [0x1000 + 8 * (0x30 + i) for i in range(40)]
-        self.blob, self.info = hook.build_payload(self.rep, self.slots, self.vram, vwf=self.VWF, xfrom=30)
+        self.blob, self.info = hook.build_payload(
+            self.rep, self.slots, self.vram, vwf=self.VWF, xfrom=30
+        )
         self.entry = dict(ENTRY)  # 가변 폭이 꺼졌을 때(옛 길)는 고아 부호 끌어오기가 있다
         if self.VWF:
             self.entry = {k: v for k, v in ENTRY.items() if k != "kinsoku_carry"} | VWF_ENTRY
@@ -281,8 +312,6 @@ class HookAsm(unittest.TestCase):
         self.assertEqual([s for _n, s in rows[:6]], ["은", "는", "이", "가", "을", "를"])
         self.assertEqual(rows[8], (2, "으로"))  # 받침 있음
         self.assertEqual(rows[9], (1, "로"))
-
-
 
 
 class HookAsmVwf(HookAsm):

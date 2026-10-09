@@ -1603,6 +1603,9 @@ def write_image(out: bytes, info: dict, build_path: str) -> None:
     for old in d.glob("*.sfc*"):
         old.unlink()
     dst = d / OUT_NAME[build_path]
+    failed = info.get("ok") is False
+    if failed:  # 🔴 인코딩이 실패한 조각은 **원문이 그대로 화면에 남는다**(조용히) — 이미지를 `.failed` 로 돌려 정상으로 오해하지 않게 한다
+        dst = dst.with_name(dst.name + ".failed")
     dst.write_bytes(out)
     sha = hashlib.sha1(out).hexdigest()
     (d / "manifest.json").write_text(
@@ -1614,6 +1617,11 @@ def write_image(out: bytes, info: dict, build_path: str) -> None:
         encoding="utf-8",
     )
     print(f"→ {dst}  sha1 {sha}")
+    if failed:
+        raise SystemExit(
+            f"빌드 실패 — 번역 {info.get('errors')}건이 인코딩에 실패해 원문이 남는다(2026-10-09 「ＨＰ」·「Gold」 사고): "
+            f"{info.get('error_sample')}"
+        )
 
 
 def main() -> None:

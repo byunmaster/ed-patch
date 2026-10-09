@@ -60,7 +60,9 @@ class LayoutCells(unittest.TestCase):
         lines, bad = flow_cells("가" * 17 + " 나")
         self.assertEqual(lines, ["가" * 17, "나"])  # 줄 첫 칸 공백은 칸을 안 쓰고 버린다
         self.assertEqual(bad, [])
-        self.assertEqual(flow_cells("가" * 15 + " 나다")[1], ["④ 묶음 끊김"])  # 「나|다」— 훅 대상 아님
+        self.assertEqual(
+            flow_cells("가" * 15 + " 나다")[1], ["④ 묶음 끊김"]
+        )  # 「나|다」— 훅 대상 아님
 
     def test_개행으로_넘긴_줄은_넘침이_아니다(self):
         self.assertEqual(flow_cells("가" * 16 + "\n.")[1], [])
@@ -154,7 +156,6 @@ class Lossless(unittest.TestCase):
                 typeset.lossless("가 나", bad)
 
 
-
 class IndentQuotes(unittest.TestCase):
     def test_둘째_줄부터_두_칸(self):
         self.assertEqual(
@@ -168,6 +169,27 @@ class IndentQuotes(unittest.TestCase):
 
     def test_따옴표_밖은_그대로(self):
         self.assertEqual(typeset.indent_quotes("가\n 나"), "가\n 나")
+
+
+class JoinSpace(unittest.TestCase):
+    """로그 조각 끝 부호 뒤 공백 — 엔진이 조각을 이어 찍으므로 조각 끝에서 한 번에 넣는다(번역 규칙 2-1)."""
+
+    def test_부호로_끝나는_조각은_끝에_공백(self):
+        for end in (".", "!", "?"):
+            self.assertEqual(typeset.join_space(f"가나다{end}<E0>"), f"가나다{end} <E0>")
+
+    def test_부호가_아니거나_조각_끝이_아니면_그대로(self):
+        self.assertEqual(typeset.join_space("가나다<E0>"), "가나다<E0>")
+        self.assertEqual(typeset.join_space("가나다.\n<E0>"), "가나다.\n<E0>")
+        self.assertEqual(typeset.join_space("가. 나다"), "가. 나다")
+
+    def test_전투_구역만_넣는다(self):
+        ts = typeset.Typesetter.__new__(typeset.Typesetter)
+        ts.dm, ts.ml, ts.ml_field = {}, {}, {}
+        inside = ts("가나다.<E0>", typeset.BATTLE[0])
+        outside = ts("가나다.<E0>", typeset.BATTLE[0] - 1)
+        self.assertTrue(inside.endswith(". <E0>"))
+        self.assertTrue(outside.endswith(".<E0>"))
 
 
 if __name__ == "__main__":
