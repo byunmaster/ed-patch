@@ -790,10 +790,12 @@ def name_kr(jp, canon):
     if n in canon:
         return canon[n]
     # 🔴 **변종 접미**(Ａ~）는 정본에 안 넣는다 — 같은 몸이 넷씩 늘어 표가 네 배가 된다.
-    #   `スライムＢ` = `スライム` + `B`. 붙일 때는 반각으로 붙인다(1바이트라 칸이 산다).
+    #   `スライムＢ` = `スライム` + `B`. 붙일 때는 반각으로 붙인다(마스터 10-10 — `names.HALF` 가 정본).
     #   ⚠ **Ｅ 에서 끊지 않는다** — 소환 목록은 `毒大ガエルＨ` 까지 간다(2026-08-24).
     if len(n) > 1 and "A" <= n[-1:] <= "Z" and n[:-1] in canon:
-        return canon[n[:-1]] + n[-1]
+        from names import HALF
+
+        return canon[n[:-1]] + HALF[n[-1]]
     # `〜の書`(주문책)도 파생이다 — 밑말이 주문 이름이라 정본에 따로 안 둔다.
     #   「~의 책」이다(마스터 10-06 「모든 주문은 ~의 책」 — PS1 BOOK_SUFFIX 와 같게).
     if n.endswith("の書") and n[:-2] in canon:
@@ -1246,7 +1248,10 @@ def sys_pack(sysm, ntabs, plan):
             #    정상인데 HUD 만 깨진다.** 실측: `엘아스타` 가 0x2C6A1 로 가 있었고, 그
             #    포인터 하나가 HUD 조립 루틴의 리터럴 풀(0x44E6C)에 있었다.
             #    ⚠ 홀수는 문안에 **반각이 섞이면** 자연히 생긴다(`전투 직전으로` 13B).
-            i = next((k for k, (o_, n_) in enumerate(free) if n_ - (o_ & 1) >= len(blob)), None)
+            # 🔴 **가장 꼭 맞는 조각**을 고른다(best-fit, 10-10). 가장 큰 조각부터 쓰면(first-fit) 큰 조각이 먼저 쪼개져
+            #    총량이 995B 남고도 11B 하나가 못 들어갔다 — 전각 접미로 이름 표가 1B 씩 불며 드러났다.
+            fits = [k for k, (o_, n_) in enumerate(free) if n_ - (o_ & 1) >= len(blob)]
+            i = min(fits, key=lambda k: (free[k][1], free[k][0]), default=None)
             assert i is not None, f"{path}: 자리가 모자란다 — {kr!r} {len(blob)}B"
             o, n = free.pop(i)
             if o & 1:  # 앞의 한 바이트는 버린다 — 짝수로 맞춘다

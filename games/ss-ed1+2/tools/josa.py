@@ -202,7 +202,9 @@ def fix_buffer(buf, table=None, codes=None):
                     buf[j + 4] = 0
                 prev, i, n = keep, i + 2, n + 1
                 continue
-            if lo <= code <= hi:
+            if 0x8260 <= code <= 0x8279:  # 전각 Ａ~Ｚ — 개체 접미. 같은 반각 글자로 본다
+                prev = code - 0x8260 + 0x41
+            elif lo <= code <= hi:
                 prev = code
             i += 2
         else:

@@ -317,6 +317,20 @@ def routine(base, table_at, half_at, back, pairs, *, arg="r6", pad=True, dry=Fal
         bra   loop
         nop
     notpair:
+        mov.l @(L_FA,pc),r1
+        mov   r11,r0
+        cmp/hs r1,r0                ; 전각 Ａ~Ｚ(0x8260~0x8279)? — 개체 접미
+        bf    notfw
+        mov.l @(L_FZ,pc),r1
+        cmp/hs r0,r1
+        bf    notfw
+        mov.l @(L_FA,pc),r1
+        sub   r1,r0
+        add   #65,r0
+        mov   r0,r9                 ; prev = 같은 반각 글자('A'..'Z') — 받침은 반각 표가 안다
+        bra   adv2
+        nop
+    notfw:
         mov.l @(L_LO,pc),r1
         mov   r11,r0
         cmp/hs r1,r0
@@ -366,6 +380,8 @@ def routine(base, table_at, half_at, back, pairs, *, arg="r6", pad=True, dry=Fal
         .long L_EF   0xEF
         .long L_TOP  {WORKRAM_TOP}
         .long L_LIM  {SCAN_LIMIT}
+        .long L_FA   0x8260
+        .long L_FZ   0x8279
         .long L_LO   {josa.code_span()[0]}
         .long L_HI   {josa.code_span()[1]}
         .long L_P1   {(a[0] << 16) | a[1]}
