@@ -77,6 +77,8 @@ class CPU:
                 ret = self.pc - 1
                 self.stack += [ret >> 8, ret & 0xFF]
                 self.pc = t
+            elif op == 0x48:
+                self.stack.append(self.a)
             elif op == 0x68:
                 self.a = nz(self.stack.pop())
             elif op == 0xAE:
@@ -224,6 +226,23 @@ class WordCk(unittest.TestCase):
         cpu.run(hook.WORDCK_ADDR)
         self.assertEqual(m[PEND], 0)
         self.assertEqual((cpu.x, cpu.y), (0x48, 0))
+
+    def test_jump_continues_the_word(self):
+        # 조각 이음(`0F lo hi`): 「맞」+「지」 — 앞 조각만 재면 1글자라 줄 끝(열 12)에 들어가 「지」만 넘어갔다. 이어 재면 2글자 — 열 12+2=14 → 넘긴다.
+        tail = 0xC700
+        self.m[tail : tail + 4] = chars(1) + bytes(SP)
+        jmp = b"\x0f" + tail.to_bytes(2, "little")
+        self.assertEqual(self.call(CH, jmp, 12)[0], 1)
+        self.assertEqual(self.call(CH, jmp, 11)[0], 0)  # 열 11 + 2 = 13 — 들어간다
+
+    def test_jump_chain_and_inject(self):
+        # 점프 뒤에서 이름 삽입 06 을 만나도 삽입 전 자리로 돌아가 이어 잰다(상태 X 가 점프에서 안 바뀐다)
+        tail = 0xC700
+        self.m[tail : tail + 4] = chars(1) + bytes(SP)
+        jmp = b"\x0f" + tail.to_bytes(2, "little")
+        # 이름 나머지 1 + (06 → 본문) 1 + 점프 뒤 1 = 3글자 — 열 10 + 3 = 13 → 넘긴다 / 열 9 이면 들어간다
+        self.assertEqual(self.call(CH, chars(1) + b"\x06", 10, inject=chars(1) + jmp)[0], 1)
+        self.assertEqual(self.call(CH, chars(1) + b"\x06", 9, inject=chars(1) + jmp)[0], 0)
 
     def test_06_outside_inject_stops(self):
         self.assertEqual(self.call(CH, chars(2) + b"\x06" + chars(5), 10)[0], 0)

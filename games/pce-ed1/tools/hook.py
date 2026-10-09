@@ -67,7 +67,7 @@ WORDCK_MPR = 2
 # 마지막 글리프 뱅크 끝 코드 자리(`font.CODE_SLOTS`) 앞쪽 = 반 칸 전진(`entry`), 그 뒤 = 어절 줄바꿈(`wordck`) — MPR2 창 기준
 CODE_ADDR = (WORDCK_MPR << 13) + font.BANK_GLYPH_END - font.CODE_BYTES
 ENTRY_ADDR = CODE_ADDR
-ENTRY_ROOM = 312  # 칸 분류(`pre`) · 반 칸 전진 · 부호 되감기(`post`)
+ENTRY_ROOM = 308  # 칸 분류(`pre`) · 반 칸 전진 · 부호 되감기(`post`)
 WORDCK_ADDR = ENTRY_ADDR + ENTRY_ROOM
 WORDCK_ROOM = font.CODE_BYTES - ENTRY_ROOM
 LINE_COLS_ZP = 0x99  # 줄 폭(칸) — `$6D95` 가 비교하는 그 값(로그·필드 창 13)
@@ -639,7 +639,7 @@ def _wordck_asm() -> "Asm":
     a.op("BRA", "rel", "lp")  # 끝은 늘 제어 코드(00·01·04 …)라 멈춘다
     a.label("ctl")
     a.op("CMP", "imm", 6)
-    a.op("BNE", "rel", "done")
+    a.op("BNE", "rel", "j0")
     a.op("TXA")
     a.op("BEQ", "rel", "done")
     a.op("LDX", "imm", 0)
@@ -647,6 +647,7 @@ def _wordck_asm() -> "Asm":
     a.op("STA", "zp", 0xEC)
     a.op("LDA", "zp", 0x94)
     a.op("STA", "zp", 0xED)
+    a.label("rp")  # 새 읽기 위치(`$EC/$ED`)에서 처음부터 이어 잰다
     a.op("JSR", "abs", "guard")
     a.op("LDY", "imm", 0)
     a.op("BRA", "rel", "lp")
@@ -680,6 +681,20 @@ def _wordck_asm() -> "Asm":
     a.op("BRA", "rel", "out")
     a.label("g_ok")
     a.op("RTS")
+    # 🔴 조각 이음(`0F lo hi` = 뒤 조각으로 점프): 한 낱말이 조각 경계에 걸리면(「맞」+「지 않았다」) 앞 조각만 재서 낱말이 짧게 잡혀
+    #    줄 끝에서 「맞 / 지」로 갈렸다. 점프 목적지로 읽기 위치를 옮겨 낱말 끝(공백·제어)까지 이어 잰다. 문안마다 손대지 않는다.
+    a.label("j0")
+    a.op("CMP", "imm", 0x0F)
+    a.op("BNE", "rel", "done")
+    a.op("INY")
+    a.op("LDA", "izpy", 0xEC)
+    a.op("PHA")
+    a.op("INY")
+    a.op("LDA", "izpy", 0xEC)
+    a.op("STA", "zp", 0xED)
+    a.op("PLA")
+    a.op("STA", "zp", 0xEC)
+    a.op("BRA", "rel", "rp")
     for v in ("prevsp", "cnt"):
         a.label(v)
         a.data(b"\x00")
