@@ -1,7 +1,7 @@
 #!/bin/sh
 # 이 게임의 커밋 전 게이트 — [kr] PS1 영웅전설 III·IV.
 #
-#   sh games/ps1-ed3+4/check.sh      (보통은 `sh scripts/check.sh` 가 부른다)
+#   sh games/ps1-ed3/check.sh      (보통은 `sh scripts/check.sh` 가 부른다)
 #
 # ⚠ 아직 **이미지를 굽지 않는다**(정적 분석 단계). 그래서 1급 검사는 「빌드가 되나」가
 #   아니라 **「대본을 읽는 전제가 그대로인가」**다 — 원본 지문 · 아카이브 규격 · 코드표.
@@ -151,7 +151,7 @@ echo "  ── 조판 지문 (공용이 우리 줄바꿈을 조용히 흔들지 
 #    **안 바꿨는데 뜨면 `shared/` 를 의심한다.**
 # ⚠ 헤드라인이 `tail -N` 에 잘리는 사고를 ps1-ed1+2 가 겪었다(2026-09-15) — 첫 줄 + 마지막
 #    줄만 남긴다(성공 시 한 줄이라 awk 가 중복 없이 처리한다).
-"$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game ps1-ed3+4 2>&1 \
+"$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game ps1-ed3 2>&1 \
   | awk 'NR==1{first=$0} {last=$0; n=NR} END{print first; if (n>1) print last}' \
   | sed 's/^/   /'
 

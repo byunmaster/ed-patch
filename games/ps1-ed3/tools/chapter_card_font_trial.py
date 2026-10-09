@@ -159,7 +159,7 @@ def main():
     from PIL import Image
 
     orig = _card_image()
-    neodgm_note = "정본은 neodgm 16px — build.py --test 를 돌려 games/ps1-ed3+4/work/build/ 에서 본다"
+    neodgm_note = "정본은 neodgm 16px — build.py --test 를 돌려 games/ps1-ed3/work/build/ 에서 본다"
     print(neodgm_note)
     galmuri14 = make_candidate(os.path.join(common.REPO, "shared", "fonts", "Galmuri14.bdf"))
 

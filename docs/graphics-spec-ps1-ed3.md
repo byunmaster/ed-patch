@@ -1,8 +1,8 @@
 # PS1 ED3 — 그림 속 글자 교체 사양
 
 그림에 박힌 글자(타이틀 로고·시작 버튼·장 카드·오프닝/엔딩 내레이션·크레딧)를 한글로 바꿀 때의
-규격. 자리표 정본은 `games/ps1-ed3+4/graphics_ed3.json`, 통로는 `tools/tim.py` 다.
-진행 현황(무엇이 끝났고 무엇이 남았나)은 `games/ps1-ed3+4/docs/status.md` 가 정본이다.
+규격. 자리표 정본은 `games/ps1-ed3/graphics_ed3.json`, 통로는 `tools/tim.py` 다.
+진행 현황(무엇이 끝났고 무엇이 남았나)은 `games/ps1-ed3/docs/status.md` 가 정본이다.
 
 ⚠ **원본 그림은 이 레포에 없다.** 미리보기·사양 PNG 는 `work/review/tim/ed3/_spec/` 에
    만들어 쓰고 커밋하지 않는다(`dump_tim.py --write`). 우리가 그린 한글판만
@@ -68,7 +68,7 @@
 
 ## 넣는 법
 
-1. PNG 를 `games/ps1-ed3+4/assets/graphics/ed3/` 에 둔다(내레이션은 `tools/narration.py` 가 둔다).
+1. PNG 를 `games/ps1-ed3/assets/graphics/ed3/` 에 둔다(내레이션은 `tools/narration.py` 가 둔다).
 2. `graphics_ed3.json` 의 그 항목에 `"file": "<이름>.png"` 를 적는다(덧쓰기면 `"overlay"`).
 3. `python3 tools/build.py --disc ed3` — 나머지는 빌드가 한다.
 

@@ -20,7 +20,7 @@
 | 게임 | 트랙 | 기종 | 상태 |
 | ---- | ---- | ---- | ---- |
 | [영웅전설 I · II](games/ps1-ed1+2/) | kr | PlayStation | ✅ v1.0.0 배포 |
-| [영웅전설 III](games/ps1-ed3+4/) | kr | PlayStation | 🔧 작업 중 |
+| [영웅전설 III](games/ps1-ed3/) | kr | PlayStation | 🔧 작업 중 |
 | 영웅전설 IV | kr | PlayStation | 진행 예정 |
 | [영웅전설 I · II](games/ss-ed1+2/) | kr | 세가새턴 | 🔧 작업 중 |
 | [영웅전설 III](games/ss-ed3/) | kr | 세가새턴 | 🔧 작업 중 |
@@ -48,7 +48,7 @@
 
 ```
 games/<게임>/       게임별 코드베이스 (도구 · 리버싱 노트 · 번역 정본 · 검사 게이트 check.sh)
-  ps1-ed1+2/        [kr]  PS1 영웅전설 I · II        ps1-ed3+4/  [kr]  PS1 영웅전설 III · IV
+  ps1-ed1+2/        [kr]  PS1 영웅전설 I · II        ps1-ed3/    [kr]  PS1 영웅전설 III · IV
   ss-ed1+2/         [kr]  새턴 영웅전설 I · II       ss-ed3/     [kr]  새턴 영웅전설 III
   pce-ed1/ sfc-ed1/ md-ed1/ pc98-ed1/   [kr]  드래곤 슬레이어 영웅전설(콘솔 · PC-98)
   dos-ed2/          [fix] 만트라 DOS 영웅전설 II 복원

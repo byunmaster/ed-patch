@@ -105,7 +105,7 @@ tap circle press10 after 500   # 크레딧 롤
   들어 있다. **부팅 순서·프레임 수는 미측정.**
 - ⚠ **ED4 엔 공백 8px 엔진 패치가 없다**(렌더러가 `0x800164F0` 으로 따로다) — 공백이 한 칸으로
   보이는 건 정상이다.
-- 굽기: `python3 games/ps1-ed3+4/tools/build.py --disc ed4 --test`
+- 굽기: `python3 games/ps1-ed3/tools/build.py --disc ed4 --test`
 
 ## 근거 캡처
 

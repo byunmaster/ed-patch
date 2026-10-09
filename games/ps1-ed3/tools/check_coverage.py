@@ -23,7 +23,7 @@ def main():
     if not os.path.isdir(d) or not os.listdir(d):
         raise SystemExit(
             f"⏭ 대본 덤프가 없다: {d}\n"
-            f"   `python3 games/ps1-ed3+4/tools/dump_script.py --disc {a.disc}` 부터."
+            f"   `python3 games/ps1-ed3/tools/dump_script.py --disc {a.disc}` 부터."
         )
     if not os.path.exists(textenc.charmap_path(a.disc)):
         print(f"⏭ {a.disc}: 코드표 정본이 아직 없다 (charmap_{a.disc}.json)")
