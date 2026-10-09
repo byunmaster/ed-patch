@@ -75,6 +75,25 @@ echo "  ── 고유명사 정본이 원본과 맞나"
 run 0 "$PY" "$G/tools/check_glossary.py" --disc ed3
 run 0 "$PY" "$G/tools/check_glossary.py" --disc ed4
 
+echo "  ── 조사 일치(F8) · 일본어 잔존(F7)"
+# 🔴 게이트다 — 이름 뒤 조사가 받침과 맞나·병기가 안 풀린 채 남았나 / 「옮겼다」고 올린 자리에 가나·한자가 섞였나.
+#    ⚠ 미번역은 실패가 아니다(옮긴 자리만 본다 — 늘 빨간불이면 아무도 안 본다).
+run 0 "$PY" "$G/tools/check_josa.py" --disc ed3
+run 0 "$PY" "$G/tools/check_jp_left.py" --disc ed3
+
+echo "  ── 월드맵 패널 넘침(칸 수 안에 드는가)"
+# 🔴 게이트다 — 패널 줄이 원판 칸을 넘으면 그 항목은 일본어로 남는다. (제어 열 보존은 build 가 서서 지킨다.)
+run 0 "$PY" "$G/tools/check_panel.py" --disc ed3
+
+echo "  ── 자기 표 0 (게임 폴더에 JP→KR 이름·라벨 표가 남았나)"
+# 🔴 게이트다 — 사전·정본이 유일한 출처다(마스터 10-08). 스태프롤만 예외(게임마다 제작진이 다르다).
+run 0 "$PY" "$G/tools/check_own_tables.py"
+
+echo "  ── 이름창≠본문 메아리(F4) · 조판 규칙(F3)"
+# 🔴 게이트다 — 본문이 화자 이름으로 시작하면 화면에 이름이 두 번 나온다 / 줄바꿈 뒤 줄 머리 부호·어절 쪼갬·폭 초과.
+run 0 "$PY" "$G/tools/check_name_echo.py" --disc ed3
+run 0 "$PY" "$G/tools/check_typeset_rules.py" --disc ed3
+
 echo "  ── 재삽입 구조 (포인터가 다 풀리고 항등 재구축이 바이트 동일한가)"
 # 🔴 게이트다 — 항등 재구축이 깨지면 우리 파서가 구조를 잘못 읽는 것이고,
 #    그 상태로 문안을 넣으면 **조용히** 깨진다.

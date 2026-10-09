@@ -97,7 +97,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--disc", choices=common.DISC_NAMES, default="ed3")
     a = ap.parse_args()
-    if not os.path.exists(glossary.path(a.disc)):
+    if not glossary.exists(a.disc):
         print(f"⏭ {a.disc}: 고유명사 정본이 아직 없다")
         return 0
     g = glossary.load(a.disc)

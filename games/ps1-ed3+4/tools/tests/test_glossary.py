@@ -16,12 +16,27 @@ DISCS = ("ed3", "ed4")
 
 
 class TestGlossaryShape(unittest.TestCase):
-    def test_files_exist_and_parse(self):
+    def test_sources_exist_and_parse(self):
+        """ED3 는 게임 쪽 열쇠 목록, ED4 는 정본 `nouns/ed4.json` 전체 — 게임 폴더엔 표가 없다."""
         for disc in DISCS:
-            with open(glossary.path(disc), encoding="utf-8") as f:
-                doc = json.load(f)
+            self.assertTrue(glossary.exists(disc), disc)
+            doc = glossary.load(disc)
             self.assertEqual(doc["disc"], disc)
             self.assertTrue(doc["categories"])
+        self.assertFalse(os.path.exists(os.path.join(os.path.dirname(glossary.__file__), "..", "glossary_ed4.json")))
+
+    def test_ed3_reads_the_canon(self):
+        """🔴 ED3 는 자기 표가 없다 — 모든 열쇠가 정본(`canon/nouns/ed3.json`)에 있고 값은 정본의 것이다(없으면 로더가 운다)."""
+        canon = glossary._canon()
+        sh = canon.nouns("ed3")["categories"]
+        doc = glossary.load("ed3")
+        for kind, d in doc["categories"].items():
+            for jp, kr in d.items():
+                self.assertEqual(kr, sh[kind][jp], f"{kind}/{jp}")
+        with open(os.path.join(glossary.common.ROOT, glossary.KEYS["ed3"]), encoding="utf-8") as f:
+            keys = json.load(f)["keys"]
+        self.assertEqual({k: len(v) for k, v in keys.items()}, {k: len(v) for k, v in doc["categories"].items()})
+        self.assertNotIn("KR", json.dumps(keys))  # 열쇠 파일에 표기를 두지 않는다(값이 두 곳에 있으면 갈린다)
 
     def test_kinds_are_known(self):
         for disc in DISCS:

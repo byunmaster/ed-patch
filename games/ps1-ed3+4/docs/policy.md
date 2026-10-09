@@ -8,7 +8,7 @@
 
 | 갈래 | 어디서 | 정본 |
 | --- | --- | --- |
-| 인물·지명 | **정발을 따른다**(`kr_corpus`로 센다) | `glossary_ed3.json` |
+| 인물·지명 | **정발을 따른다**(`kr_corpus`로 센다) | `shared/canon/nouns/ed3.json`(정본 — 게임 쪽엔 열쇠 목록 `glossary_keys_ed3.json` 뿐) |
 | 아이템·마법·몬스터 | 자체 번역 | 〃 |
 | **대사에만 나오는 이름** | 정발에 있으면 따르고 없으면 가나대로 | **`story-bible.md`** |
 

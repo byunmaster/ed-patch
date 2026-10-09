@@ -78,7 +78,7 @@ tap start press10 after 4500   # 타이틀 단계 — 한 프레임 깨진 그�
 tap circle press10 after 500   # 크레딧 롤
 ```
 
-`ED_BUILD_TAG` 를 갈라야 정상 빌드 칸(`ps1-ed3-4`)을 안 덮는다. **배포 빌드엔 절대 안 켠다**
+`ED_BUILD_TAG` 를 갈라야 정상 빌드 칸(`ps1-ed3`)을 안 덮는다. **배포 빌드엔 절대 안 켠다**
 (`tools/build.py:movie_swap`). 🔴 **마스터 확인 완료(2026-09-17)** — 엔딩 9장·크레딧·Fin
 캡션 전부 화면으로 확인됐다(`.local/work/inbox/ps1-ed3+4/D3-ending-01~10*.png`). 위 탭 순서는
 빠르게 훑는 용도고, **개별 화면을 하나씩 캡처하려면 `step`(입력 없이)을 200~1500프레임씩

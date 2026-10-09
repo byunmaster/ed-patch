@@ -171,6 +171,90 @@ class TestDetachedAndFixed(unittest.TestCase):
             exetext.write_fixed_slot(slot, 0, 7, list(range(0x40, 0x47)))
 
 
+class TestGapStrings(unittest.TestCase):
+    """🔴 표가 안 가리키는 문자열(빈틈의 닻)을 **제자리에서만** 바꾼다 — 월드맵 장소 패널(마스터 실기 10-08)."""
+
+    def _mem(self):
+        mem = make([[0x40], [0x41, 0x42]], terms=[0x8002, 0x8000], gap=(1, [0x50, 0x51, 0x52, 0x53]))
+        t = {"table": 0, "base": 0, "n": 2}
+        return bytearray(mem), t
+
+    def test_gap_is_found_and_table_targets_are_not(self):
+        mem, t = self._mem()
+        gaps = exetext.gap_strings(bytes(mem), [t], 4, len(mem))
+        self.assertEqual([g[1] for g in gaps], [[0x50, 0x51, 0x52, 0x53]])
+
+    def test_write_in_place_keeps_length_and_term(self):
+        mem, t = self._mem()
+        off, codes, term = exetext.gap_strings(bytes(mem), [t], 4, len(mem))[0]
+        before = len(mem)
+        exetext.write_in_place(mem, off, codes, term, [0x60, 0x61])
+        self.assertEqual(len(mem), before)
+        self.assertEqual(exetext.raw_string(bytes(mem), off), ([0x60, 0x61], term))
+        # 남는 칸은 0 — 뒤 문자열의 시작은 안 움직인다
+        self.assertEqual(struct.unpack_from("<2H", mem, off + 6), (0, 0))
+
+    def test_longer_text_is_refused_and_nothing_is_written(self):
+        mem, t = self._mem()
+        off, codes, term = exetext.gap_strings(bytes(mem), [t], 4, len(mem))[0]
+        snap = bytes(mem)
+        with self.assertRaises(exetext.ExeTextError):
+            exetext.write_in_place(mem, off, codes, term, [1, 2, 3, 4, 5])
+        self.assertEqual(bytes(mem), snap)
+
+    def test_changed_original_is_refused(self):
+        mem, t = self._mem()
+        off, codes, term = exetext.gap_strings(bytes(mem), [t], 4, len(mem))[0]
+        mem[off] ^= 1
+        with self.assertRaises(exetext.ExeTextError):
+            exetext.write_in_place(mem, off, codes, term, [1])
+
+
+class TestPanel(unittest.TestCase):
+    """🔴 월드맵 장소 패널 — `0x8002` 로 끝나는 문자열 안의 제어 열은 원판 그대로, 글자만 줄마다 가운데(마스터 실기 10-08)."""
+
+    def _mem(self, words):
+        return bytearray(struct.pack(f"<{len(words)}H", *words))
+
+    def test_units_and_lines(self):
+        # 「AAAAA ⏎ ··B」 (5자 · 들여 2 + 1자) + 끝, 그리고 단독 「CCC」
+        mem = self._mem([1, 2, 3, 4, 5, 0x8000, 0, 0, 6, 0x8002, 7, 8, 9, 0x8002])
+        units = exetext.panel_units(bytes(mem), 0, len(mem))
+        self.assertEqual(units, [[(0, 5), (12, 3)], [(20, 3)]])
+        self.assertEqual(exetext.panel_line_text(bytes(mem), 12, 3), (2, [6], 0))
+
+    def test_put_line_keeps_controls_and_indent(self):
+        mem = self._mem([1, 2, 3, 4, 5, 0x8000, 0, 0, 6, 0x8002])
+        orig = bytes(mem)
+        exetext.put_panel_line(mem, 0, 5, [9, 9, 9], 1)
+        exetext.put_panel_line(mem, 12, 3, [8], 2)
+        self.assertEqual(list(struct.unpack_from("<5H", mem, 0)), [0, 9, 9, 9, 0])
+        self.assertEqual(list(struct.unpack_from("<3H", mem, 12)), [0, 0, 8])
+        self.assertEqual(exetext.panel_structure_problems(orig, bytes(mem), 0, len(mem)), [])
+
+    def test_line_longer_than_its_span_is_refused(self):
+        mem = self._mem([1, 2, 3, 0x8002])
+        with self.assertRaises(exetext.ExeTextError):
+            exetext.put_panel_line(mem, 0, 3, [1, 2, 3, 4], 3)
+
+    def test_match_panel_key_uses_wildcards_for_codes_missing_from_the_charmap(self):
+        """코드표에 없는 한자(`冬至の路` 의 至)가 낀 줄도 사전 열쇠로 찾는다 — 못 찾으면 그 줄이 일본어로 남는다."""
+        import textenc
+
+        cm = {c: ch for c, ch in textenc.charmap("ed3").items()}
+        inv = {ch: c for c, ch in cm.items()}
+        codes = [inv["冬"], 0x7FF, inv["の"], inv["路"]]  # 0x7FF = 코드표에 없는 자리
+        self.assertEqual(exetext.match_panel_key(codes, "ed3", {"冬至の路": "동지의 길", "冬雪の路": "x"}), "冬至の路" if False else None)
+        self.assertEqual(exetext.match_panel_key(codes, "ed3", {"冬至の路": "동지의 길"}), "冬至の路")
+        self.assertEqual(exetext.match_panel_key([inv["冬"], inv["の"]], "ed3", {"冬の": "x"}), "冬の")
+
+    def test_changing_a_control_word_is_caught(self):
+        mem = self._mem([1, 2, 0x8000, 3, 0x8002])
+        orig = bytes(mem)
+        struct.pack_into("<H", mem, 4, 0xFFFF)  # 칸 채움 `0xFFFF` 가 줄바꿈 자리에 — 목록이 끊기던 사고
+        self.assertTrue(exetext.panel_structure_problems(orig, bytes(mem), 0, len(mem)))
+
+
 if __name__ == "__main__":
     unittest.main()
 

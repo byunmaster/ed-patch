@@ -108,6 +108,68 @@ def members(disc):
     return out
 
 
+def head_indices(segs):
+    """[조각 색인] — 멤버 **앞머리 블록**(첫 문장 조각 앞 — 이름·지명 토막이 모여 있다). `member_floors` 와 같은 자."""
+    return [i for i, f in member_floors(segs).items() if f == NAME_FLOOR]
+
+
+def speaker_rows(disc):
+    """({(아카이브, 멤버): {색인: {"jp","kr","_auto"}}}, 막힌 이름 수) — **화자명은 정본(`shared/canon`)의 speaker 에서 읽는다.**
+
+    마스터 10-08: UI·화자 호칭은 새 정본 한 곳 — 우리 번역 정본(`script/`)에 손으로 이름을 쓰지 않는다. 앞머리 블록 조각의
+    원문이 정본 speaker 열쇠와 같으면 그 표기를 쓴다(이미 번역 정본에 있는 줄은 그쪽이 이긴다 — `load_effective`).
+    🔴 **못 푼 포인터가 있는 멤버(길이 고정 152)는 건드리지 않는다** — 조각 길이를 바꾸면 이벤트 VM 데이터 포인터가 어긋난다
+       (`scriptmap.rebuild` 도 막는다). 그 멤버의 이름은 일본어로 남고 개수를 센다."""
+    if disc != "ed3":
+        return {}, 0
+    import sys as _sys
+
+    shared = os.path.join(os.path.dirname(os.path.dirname(common.ROOT)), "shared")
+    if shared not in _sys.path:
+        _sys.path.append(shared)  # tools/glossary.py 가 shared/glossary 를 가리지 않게 **뒤에** 둔다
+    import canon
+
+    table = canon.table("speaker", disc)
+    rows, blocked = {}, 0
+    for path, (lba, size) in sorted(common.iso_files(disc).items()):
+        if "/SC" not in path or not path.endswith(".DAT"):
+            continue
+        data = common.read_lba(disc, lba, size)
+        try:
+            _, ents = common.arc_parse(data)
+        except common.ArchiveError:
+            continue
+        for nm, off, sz in ents:
+            if not nm.endswith(".BIN") or sz < 8:
+                continue
+            try:
+                info = scriptmap.parse(data[off : off + sz])
+            except Exception:  # noqa: BLE001, S112 — 규격 밖 멤버는 check_script 가 센다
+                continue
+            segs = [(i, textenc.decode(c, disc)) for i, (_, c) in enumerate(info["segments"])]
+            risky = len(info["pointers"]) != info["resolved"]
+            for i in head_indices(segs):
+                kr = table.get(segs[i][1])
+                if not kr:
+                    continue
+                if risky:
+                    blocked += 1
+                    continue
+                rows.setdefault((path, nm), {})[i] = {"jp": stamp(segs[i][1]), "kr": kr, "_auto": True}
+    return rows, blocked
+
+
+def load_effective(disc):
+    """(번역 정본 + 정본 speaker 로 채운 앞머리 이름, 막힌 이름 수) — **빌드가 쓰는 것**. 번역 정본(`load`)은 그대로다."""
+    base = load(disc)
+    extra, blocked = speaker_rows(disc)
+    for key, rows in extra.items():
+        have = base.setdefault(key, {})
+        for i, row in rows.items():
+            have.setdefault(i, row)
+    return base, blocked
+
+
 def load(disc):
     """{(아카이브, 멤버): {색인: {"jp":…, "kr":…}}}"""
     out = {}

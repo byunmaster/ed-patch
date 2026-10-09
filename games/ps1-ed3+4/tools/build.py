@@ -22,7 +22,9 @@
 """
 
 import argparse
+import json
 import os
+import re
 import shutil
 import struct
 import sys
@@ -35,12 +37,21 @@ import font
 import glossary
 import graphics
 import hangul_map
+import josa_rt
 import patch_title_font
 import script as script_canon
 import scriptmap
 import textenc
 import typeset
 import uitext
+
+
+# 이 빌드가 쓰는 아카이브 — 정규식(전체 일치). 실행파일은 따로 쓴다. 늘리면 여기에 **이유와 함께** 적는다.
+ALLOWED_WRITES = {
+    # 대사 아카이브(SC*.DAT) · 타이틀/나레이션/그림(M01·M02 .DAT — 그림이 든 파일) · 타이틀 BIOS 폰트 리다이렉트(SLPS_012.01)
+    "ed3": [r"/SCE\d/SC\d+\.DAT", r"/M0\d\.DAT", r"/SLPS_012\.01"],
+    "ed4": [r"/SCE\d/SC\d+\.DAT", r"/M0\d\.DAT", r"/SLPS_01\d\.\d\d"],
+}
 
 
 def bake_font(exe, disc, chars, table):
@@ -58,6 +69,10 @@ def bake_font(exe, disc, chars, table):
     # 마침표·쉼표는 **원본 자리(1=、 · 2=。)를 한국식 모양으로 다시 굽는다** — 자리를 안 쓴다.
     for ch, code in hangul_map.PUNCT.items():
         font.write_glyph(exe, code, font.hangul_glyph(ch), disc)
+    # 말줄임 「…」(전각 한 글자, 점 셋은 바닥) — 원본 `・`(코드 3) 자리. 안 옮긴 일본어 줄의 `・` 도 가운데 점이 아니게 된다(마스터 10-08)
+    for ch, code in hangul_map.punct(disc).items():
+        if ch not in hangul_map.PUNCT:
+            font.write_glyph(exe, code, font.hangul_glyph(ch), disc)
     return baked
 
 
@@ -109,8 +124,14 @@ def reinsert_script(disc, canon, table, report):
             for i, row in sorted(lines.items()):
                 jp = jps[i][1]
                 try:
+                    # 조사 병기 → 확정/런타임 표지(조각 첫머리). 구운 글 검사도 같은 변환본으로 한다.
+                    row = dict(row, kr=josa_rt.convert(row["kr"]))
+                    lines[i] = row
                     kr = typeset.wrap(row["kr"], disc, jp=jp, floor=floors.get(i, 0))
                 except typeset.TypesetError as e:
+                    if row.get("_auto"):  # 정본 speaker 이름이 예산을 넘으면 그 이름만 일본어로 남긴다
+                        report["auto_wrap"] = report.get("auto_wrap", 0) + 1
+                        continue
                     raise SystemExit(
                         f"🔴 {path}!{nm} #{i}: 조판 예산 초과 — {e}\n"
                         f"   `script.py --check` 가 통과했다면 검사기와 빌드의 자가 다르다."
@@ -124,6 +145,11 @@ def reinsert_script(disc, canon, table, report):
                     continue
             newmem, _ = scriptmap.rebuild(mem, segs)
             check_no_text_loss(f"{path}!{nm}", newmem, lines, disc, table, report)
+            if len(newmem) > sz and all(r.get("_auto") for r in lines.values()):
+                # 정본 speaker 로만 채운 멤버가 예산을 넘으면 **그 멤버만 건너뛴다**(이름은 일본어로 남는다) — 번역 정본의 줄이
+                # 있는 멤버는 아래에서 그대로 멈춘다(자기 문안을 줄여야 하는 일).
+                report["auto_over"] = report.get("auto_over", 0) + 1
+                continue
             if len(newmem) > sz:
                 raise SystemExit(
                     f"🔴 {path}!{nm}: 멤버가 {len(newmem) - sz:+d}B 커졌다 — 예산 {sz}B\n"
@@ -189,12 +215,64 @@ def fit_chunks(exe, t, ents, cur, krs, orig, disc, table, report):
     return reverted
 
 
+def panel_pass(exe, disc, table, words, seen, report, panel):
+    """월드맵 장소 패널 풀 — 제어 코드 열은 원판 그대로, 글자만 **패널 칸 폭 기준 가운데(반 칸은 왼쪽 내림, 두 줄 묶음은 가장 긴 줄 기준·나머지는 그 시작)** 로 같은 칸 수 안에서 바꾼다.
+
+    띄어쓰기는 늘 뺀다(원판처럼 붙여 쓴다). 칸이 모자라면(3글자 칸) 정본 `원문@월드맵` 줄인 꼴을 쓴다. 코드표에 없는 한자가 낀 줄(`冬至の路`)은 와일드카드로 열쇠를 찾는다.
+    """
+    data = bytes(exe)
+    for unit in exetext.panel_units(data, *panel):
+        parts = []  # (off, n, 원판 들여쓰기, 새 코드열 | None)
+        for off, n in unit:
+            ind, codes, _tail = exetext.panel_line_text(data, off, n)
+            new = None
+            jp = exetext.match_panel_key(codes, disc, words) if codes else None
+            kr = words.get(jp) if jp else None
+            if jp and kr == jp:
+                seen.add(jp)  # 정본이 원문 그대로(`Ｆａｌｃｏｍ`) — 바꿀 게 없다
+            elif kr:
+                try:
+                    # 패널은 원판처럼 붙여 쓴다(마스터 10-09 — 원판 패널 181줄에 띄어쓰기 0, 칸만 붙이고 대화는 그대로)
+                    enc = hangul_map.encode(kr.replace(" ", ""), disc, table)
+                    if len(enc) > len(codes):
+                        short = glossary.lookup_shared(disc, jp + "@월드맵", "place")
+                        if short:
+                            enc = hangul_map.encode(short, disc, table)
+                            report["gap_short"] = report.get("gap_short", 0) + 1
+                    if len(enc) > len(codes):
+                        report.setdefault("gap_long", []).append((jp, kr))
+                    else:
+                        new = enc
+                        seen.add(jp)
+                        report["names"] += 1
+                        report["gap_put"] = report.get("gap_put", 0) + 1
+                except KeyError:
+                    report["skipped_names"] += 1
+            parts.append((off, n, ind, new))
+        lens = [len(p[3]) for p in parts if p[3]]
+        if not lens:
+            continue
+        inds = iter([0] * len(lens))  # 가운데는 엔진이 줄마다 계산한다(`tile_hook.panel_stubs` — 12px 칸 대신 6px 해상도). 글자는 줄 머리에 붙여 쓴다
+        for off, n, _ind, new in parts:
+            if new:
+                exetext.put_panel_line(exe, off, n, new, next(inds))
+
+
 def reinsert_names(exe, disc, table, report):
     """실행파일 낱말 표에 고유명사 정본을 넣는다. 표가 없는 구역은 **길이 고정**이라 건너뛴다."""
     cm = textenc.charmap(disc)
     words = dict(glossary.flat(disc))
     tables = exetext.scan_tables(bytes(exe), cm) + exetext.detached_tables(bytes(exe), disc)
     seen = set()
+    # 표가 안 가리키는 문자열 — 표 재구성이 풀을 다시 쓰기 **전에** 원본에서 모은다(빈틈의 닻은 안 움직인다).
+    import dump_names
+
+    reg0 = sorted(dump_names.REGIONS[disc].items())
+    gaps_by_region = {
+        st: exetext.gap_strings(bytes(exe), tables, st, reg0[i + 1][0] if i + 1 < len(reg0) else st + 0x400)
+        for i, (st, kd) in enumerate(reg0)
+        if kd in ("item", "spell", "monster", "place", "rank", "menu")
+    }
     # 고정폭 칸(인물 이름) — 표가 없어 자리째 바꾼다. 넘치면 원문 그대로 두고 센다.
     for off, n_words, codes in exetext.fixed_slots(bytes(exe), disc):
         jp = textenc.decode(codes, disc)
@@ -211,8 +289,11 @@ def reinsert_names(exe, disc, table, report):
             report["skipped_names"] += 1
         except exetext.ExeTextError:
             report["over_budget"] += 1
+    panel = exetext.PANEL.get(disc)
     for t in tables:
         tbl, base, n = t["table"], t["base"], t["n"]
+        if panel and panel[0] <= base + max(struct.unpack_from(f"<{n}H", bytes(exe), tbl)) < panel[1]:
+            continue  # 월드맵 패널 풀 — 표 재구성(칸 채움 `0xFFFF`)이 제어 열을 깬다. 아래 `panel_pass` 가 제자리로 바꾼다
         ents = struct.unpack_from(f"<{n}H", bytes(exe), tbl)
         cur, krs, changed = [], [], 0
         for x in ents:
@@ -264,10 +345,70 @@ def reinsert_names(exe, disc, table, report):
             continue
         exe[:] = bytearray(new)
         report["names"] += changed
+    if panel:
+        panel_pass(exe, disc, table, words, seen, report, panel)
+    # 🔴 **표가 안 가리키는 문자열(빈틈의 닻)** — 월드맵 장소 패널 「ディーネ / シャリネ」 따위. 자리·길이를 못 바꾸니 **제자리**로,
+    #    우리 표기가 원문보다 짧거나 같을 때만 넣는다. 넘치는 것은 원문 그대로 남기고 `gap_long` 으로 센다(옮길 포인터를 못 찾았다).
+    import dump_names
+
+    reg = sorted(dump_names.REGIONS[disc].items())
+    for i, (start, kind) in enumerate(reg):
+        if kind not in ("item", "spell", "monster", "place", "rank", "menu"):
+            continue
+        end = reg[i + 1][0] if i + 1 < len(reg) else start + 0x400
+        if panel and panel[0] <= start < panel[1]:
+            continue  # 패널 풀은 `panel_pass` 가 이미 다뤘다
+        for off, codes, term in gaps_by_region.get(start, []):
+            jp = textenc.decode(codes, disc)
+            kr = words.get(jp)
+            if not kr or kr == jp:
+                continue
+            try:
+                enc_kr = hangul_map.encode(kr, disc, table)
+                if len(enc_kr) > len(codes) and " " in kr:  # 칸이 모자라면 띄어쓰기부터 뺀다(표 칸과 같은 순서)
+                    enc_kr = hangul_map.encode(kr.replace(" ", ""), disc, table)
+                    report["gap_squeezed"] = report.get("gap_squeezed", 0) + 1
+                if len(enc_kr) > len(codes):
+                    # 정본 값이 칸에 안 들어간다 — 정본에 `원문@월드맵`(칸 때문에 줄인 꼴)이 있으면 그걸 쓴다(마스터 10-08 판정: 재배치가 안 되면 제안 값)
+                    short = glossary.lookup_shared(disc, jp + "@월드맵", "place")
+                    if short:
+                        enc_kr = hangul_map.encode(short, disc, table)
+                        report["gap_short"] = report.get("gap_short", 0) + 1
+                exetext.write_in_place(exe, off, codes, term, enc_kr, pad_code=table.get(" "))
+                seen.add(jp)
+                report["names"] += 1
+                report["gap_put"] = report.get("gap_put", 0) + 1
+            except KeyError:
+                report["skipped_names"] += 1
+            except exetext.ExeTextError as e:
+                if "넘는다" not in str(e):
+                    raise  # 원본이 달라졌다 — 빈틈의 닻이 움직였다(구조 가정이 깨졌다)
+                report.setdefault("gap_long", []).append((jp, kr))
     # 🔴 **표가 없는 구역은 아직 못 넣는다** — 화면에 일본어가 남는다는 뜻이라 세어서 알린다.
     #    (그 구역은 길이 고정이라, 우리 표기가 원문과 글자 수가 같을 때만 넣을 수 있다.)
     report["names_left"] = sorted(set(words) - seen)
     return report
+
+
+def check_names_left(disc, report):
+    """🔴 **사전 낱말이 실행파일에서 일본어로 남는 것**을 승인 목록(`names_left_<disc>.json`)에 묶는다 — 새 구멍은 빌드를 세운다.
+
+    F7(`check_jp_left`)은 우리 문안(번역 정본·UI·사전 값)만 본다 — **구운 실행파일에 그 낱말이 실제로 들어갔는지는 안 본다.** 그 분모 밖에서
+    월드맵 장소 패널(`ディーネ`·`シャリネ`)이 일본어로 남았다(마스터 실기 10-08). 이제 `names_left`(표·빈틈·고정칸 어디에도 못 넣은 것)와
+    제자리에 안 들어간 것(`gap_long`)이 승인 밖으로 늘면 실패다. 목록에서 줄어드는 건 자유(고치면 지운다).
+    """
+    p = os.path.join(common.ROOT, f"names_left_{disc}.json")
+    if not os.path.exists(p):
+        return
+    with open(p, encoding="utf-8") as f:
+        ok = set(json.load(f)["approved"])
+    now = set(report.get("names_left", [])) | {j for j, _ in report.get("gap_long", [])}
+    new = sorted(now - ok)
+    if new:
+        raise SystemExit(
+            f"🔴 사전 낱말이 일본어로 남는다(승인 밖) {len(new)}: {' · '.join(new[:12])}\n"
+            f"   표·제자리 어디에도 못 넣었다 — 들어가게 고치거나(자리·길이), 마스터 승인 뒤 {os.path.basename(p)} 에 올린다."
+        )
 
 
 def sweep(d, keep):
@@ -344,7 +485,7 @@ def main():
     a = ap.parse_args()
     common.verify_source(a.disc)
 
-    canon = script_canon.load(a.disc)
+    canon, speakers_blocked = script_canon.load_effective(a.disc)  # 번역 정본 + 정본 speaker 로 채운 화자명
     if a.test:
         # 🔴 시험 빌드 — 「지금 보려는 것만 제대로 나오면 된다」. 안 옮긴 문안은 깨진다.
         #    자리가 닭·달걀이라(대사를 옮겨야 한자가 물러난다) 이게 없으면 초반에
@@ -378,6 +519,7 @@ def main():
         chars.update(kr)
     for row in uitext.load(a.disc).values():
         chars.update(row["kr"])
+    chars |= set(josa_rt.baked_glyphs())  # 런타임 조사 글리프는 대사에 안 나와도 굽는다
     chars = {c for c in chars if c in table}
 
     gfx_files, gfx_arcs = graphics.apply(a.disc)
@@ -385,12 +527,21 @@ def main():
     exe_lba, exe_size = fs[font.FONTS[a.disc]["exe"]]
     exe = bytearray(common.read_lba(a.disc, exe_lba, exe_size))
     baked = bake_font(exe, a.disc, chars, table)
-    engine = engine_patch.apply(exe, a.disc, table)  # 공백 8px — 그 디스크에 패치가 있으면
+    items = list(glossary.load(a.disc)["categories"].get("item", {}).values())
+    rev = {ch: c for c, ch in textenc.charmap(a.disc).items()}
+    digit_codes = {d: rev[chr(0xFF10 + int(d))] for d in "0123456789"}  # 전각 숫자 자리(원본)
+    josa = josa_rt.runtime(table, items, digit_codes) if a.disc == "ed3" else None
+    engine = engine_patch.apply(exe, a.disc, table, josa=josa)  # 안 B 타일 합성 — 그 디스크에 패치가 있으면
     exe_orig = bytes(exe)
     enc = lambda kr: hangul_map.encode(kr, a.disc, table)
     ui_put, ui_skip = uitext.apply(exe, a.disc, enc)
     report["skipped"] += ui_skip
     reinsert_names(exe, a.disc, table, report)
+    # 🔴 불변식 — 월드맵 패널 풀의 **제어 코드 열이 원판과 같다**(글자만 바뀌었다). 어기면 패널이 비거나 줄이 밀린다(마스터 실기 10-08).
+    if a.disc in exetext.PANEL:
+        problems = exetext.panel_structure_problems(exe_orig, bytes(exe), *exetext.PANEL[a.disc])
+        if problems:
+            raise SystemExit("🔴 월드맵 패널 구조가 원판과 다르다:\n  " + "\n  ".join(problems[:10]))
     # 🔴 불변식 — 구운 UI 글이 정본과 같은가(공백 빼고). 낱말 재포장이 표를 같이 쓰므로 그 뒤에 본다.
     lost = uitext.lost_text(exe_orig, bytes(exe), a.disc, enc)
     if lost:
@@ -401,6 +552,8 @@ def main():
     title_font_n, title_font_arcs = patch_title_font.apply(a.disc, base_arcs=arcs)
     arcs.update(title_font_arcs)  # 그림 위에 문자열을 얹는다(같은 M01.DAT 일 수 있다)
 
+    if a.test:
+        check_names_left(a.disc, report)
     lines = sum(len(v) for v in canon.values())
     skipped = report["skipped"] + report["skipped_names"]
     left = report.get("names_left", [])
@@ -416,9 +569,20 @@ def main():
         print("  🔴 **시험 빌드다** — 안 옮긴 문안은 엉뚱한 글자로 나온다. 배포물이 아니다.")
     if left:
         print(f"  ⬜ 아직 못 넣는 낱말 {len(left)} (표가 없는 구역 — 길이 고정)")
+    if report.get("gap_put") or report.get("gap_long"):
+        long_ = report.get("gap_long", [])
+        print(f"  ✅ 빈틈의 닻(표가 안 가리키는 문자열) 제자리 {report.get('gap_put', 0)}(띄어쓰기 뺌 {report.get('gap_squeezed', 0)} · 정본의 줄인 꼴 {report.get('gap_short', 0)}) · ⬜ 원문보다 길어 못 넣은 것 {len(long_)}")
+        if long_:
+            print("     " + " · ".join(f"{j}→{k}" for j, k in long_[:12]))
         print("     " + " · ".join(left[:10]))
     if report.get("squeezed"):
         print(f"  ⬜ 칸 예산 때문에 뺀 띄어쓰기 {report['squeezed']} (이름은 들어갔다)")
+    if speakers_blocked or report.get("auto_over") or report.get("auto_wrap"):
+        print(
+            f"  ⬜ 화자명(정본 speaker): 길이 고정 멤버라 못 넣은 이름 {speakers_blocked} · "
+            f"멤버 예산 초과로 건너뛴 멤버 {report.get('auto_over', 0)} · 칸 예산 초과 이름 {report.get('auto_wrap', 0)}\n"
+            f"     (일본어로 남는다 — 이벤트 VM 해독·꼬리 재배치 전까지)"
+        )
     if report["over_budget"]:
         print(
             f"  ⬜ 칸 예산을 넘어 되돌린 낱말 {report['over_budget']} (원문 그대로 남는다)\n"
@@ -434,6 +598,12 @@ def main():
         print("(dry-run)")
         return 0
 
+    # 🔴 F9 — 쓰기 집합 게이트: 이 빌드가 쓰는 파일은 **선언된 것뿐**이다(조용히 남의 파일을 쓰는 사고를 막는다).
+    unexpected = sorted(p for p in arcs if not any(re.fullmatch(pat, p) for pat in ALLOWED_WRITES[a.disc]))
+    if unexpected:
+        raise SystemExit(f"🔴 선언 안 된 파일에 쓰려 했다: {unexpected[:5]} — ALLOWED_WRITES 를 확인한다")
+    # 무변경 구간 — PS-EXE 헤더(0x800B: t_addr·크기·진입점)는 어떤 패치도 안 건드린다. 쓰기 통로가 즉시 막는다.
+    common.IMMUTABLE[(a.disc, exe_lba, exe_size)] = [("PS-EXE 헤더", 0, font.EXE_HDR, "fixed")]
     os.makedirs(common.BUILD_DIR, exist_ok=True)
     out = common.build_bin(a.disc)
     if a.test:  # 이름으로 갈라 둔다 — 시험물을 정상으로 오해하는 사고가 이 레포의 단골이다
