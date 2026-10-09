@@ -457,6 +457,13 @@ def apply(f, table, touched) -> dict:
                 if flows_on:
                     nxt = 0x8000 + r["off"] + core_len
                     new = lead + body + tail + bytes([0x0F, nxt & 0xFF, nxt >> 8])
+                elif not (tail and (tail[-1] in TERMINAL_OPS or tail[-3:-2] == b"\x0f")):
+                    # 🔴 원문은 꼬리가 없이 **방 끝의 00 패딩**으로 끝난다 — 옮겨 싣는 자리(FF 채움)에는 그 00 이 없어
+                    #   뒤 단위의 글이 이어 읽힌다(10-10 패배 화면 「패했다.다의 온몸에 독이 퍼졌다!」). 종료 00 을 직접 붙인다.
+                    new = new + b"\x00"
+                # 옮겨 싣는 조각은 반드시 끝이 닫혀야 한다(종료 옵코드 · 점프 · 00) — 아니면 뒤 자료가 이어 읽힌다
+                if not (new[-1] == 0 or new[-1] in TERMINAL_OPS or new[-3:-2] == b"\x0f"):
+                    errors.append(f"sysmsg {r['addr']:04X} 옮겨 싣는 조각의 끝이 안 닫혔다: {new[-4:].hex()}")
                 spills.append((r, new, orig))
                 continue
             errors.append(
