@@ -15,6 +15,7 @@
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -190,16 +191,28 @@ def all_glyph_chars() -> set[str]:
     return chars
 
 
+# 뒤 조각과 한 줄로 잇는 sysmsg 단위 — 주소 → 우리 문안(끝 공백 포함). 꼬리의 개행(`01`)을 뺀다.
+#   0x9DDE = 전투 「대상 이름 + 에게」 뒤 「n의 피해!!」 조각(전수: 개행 뒤에 수치 조각이 오는 쌍은 이것 하나).
+JOIN_NEXT_LINE = {0x9DDE: "에게 "}
+
+
 def encode_tokens(text: str, table, msg: bool = False, half_space: bool = False) -> bytes:
     """`{XX}` 토큰은 그 바이트로, 나머지는 font.encode. `msg` = 대사창 문안(시스템 메시지·전투 문구) — 공백은 반각."""
     out = bytearray()
     pos = 0
     for m in TOK.finditer(text):
-        out += font.encode(text[pos : m.start()], table, msg=msg, half_space=half_space)
+        out += font.encode(_latin(text[pos : m.start()], msg), table, msg=msg, half_space=half_space)
         out += bytes.fromhex(m.group(1))
         pos = m.end()
-    out += font.encode(text[pos:], table, msg=msg, half_space=half_space)
+    out += font.encode(_latin(text[pos:], msg), table, msg=msg, half_space=half_space)
     return bytes(out)
+
+
+def _latin(t: str, msg: bool) -> str:
+    """🧪 비교용 시험 손잡이(`ED_LATIN=orig`) — 대사창 문안의 ASCII 영숫자를 **원판 BIOS 전각 글꼴**로(정본·기본 빌드는 불변). 마스터 10-11 「원판 vs 갈무리」."""
+    if msg and os.environ.get("ED_LATIN") == "orig":
+        return "".join(chr(ord(c) + 0xFEE0) if c.isascii() and c.isalnum() else c for c in t)
+    return t
 
 
 def _write(f, bank, off, data, expect, label, touched):
@@ -375,7 +388,9 @@ def apply(f, table, touched) -> dict:
         kr = label_kr(r, labels)  # labels.json(주소·원문 순)이 먼저, 없으면 정본 ui
         if kr is None:  # 정본에도 없거나 **원본 유지로 판정**(null) — 안 건드린다
             continue
-        enc = encode_tokens(kr, table)
+        # 마스터 10-10 「전투 직전으로는 공백이 전각」(규칙 1-6) — 라벨 **안의** 띄어쓰기(ASCII 공백)는 반각(앞 글자를 +4px 변형 코드로).
+        #   격자 라벨의 전각 공백(`U+3000`)은 틀 좌표에 묶인 배치 채움이라 그대로 둔다.
+        enc = encode_tokens(kr, table, half_space=(" " in kr and "\u3000" not in kr))
         if len(enc) > r["room"]:
             # 칸이 모자라면 공백을 반 칸 변형 코드로 접는다(아이템 이름과 같은 길 — 바이트 0, 마스터 10-07)
             enc = encode_tokens(kr, table, half_space=True)
@@ -414,7 +429,13 @@ def apply(f, table, touched) -> dict:
         if kr is None:
             continue
         lead = b"".join(bytes.fromhex(t) for t in r["lead"])
-        tail = b"".join(bytes.fromhex(t) for t in r["tail"])
+        tail_toks = list(r["tail"])
+        if r["addr"] in JOIN_NEXT_LINE and tail_toks[-1:] == ["01"]:
+            # 마스터 10-10 「~에게 n의 피해는 한줄로」 — 원작은 대상 이름 뒤에 개행(`01`)을 넣는다. 꼬리의 `01` 을 빼고
+            # 문안 끝 공백으로 이어 붙인다(칸이 모자라면 런타임 어절 줄바꿈이 접는다).
+            tail_toks.pop()
+            kr = JOIN_NEXT_LINE[r["addr"]]
+        tail = b"".join(bytes.fromhex(t) for t in tail_toks)
         body = encode_tokens(kr, table, msg=True)
         new = lead + body + tail
         orig = b6d[r["off"] : r["off"] + r["room"]]
@@ -529,7 +550,8 @@ def apply(f, table, touched) -> dict:
         if len(kr) != len(sc["lines"]):
             errors.append(f"screen {sc['key']} 줄 수 {len(kr)} ≠ 원본 {len(sc['lines'])}")
             continue
-        enc = [font.encode(t, table) for t in kr]
+        # 부팅 화면 줄의 ASCII 공백은 **반각 공백 코드**(`F8 24`, 4px) — `build.py` 의 「fsel」 패치가 이 화면의 위상 처리를 건다
+        enc = [font.encode(t, table, msg=(" " in t)) for t in kr]
         for ln, t, e in zip(sc["lines"], kr, enc, strict=True):
             if ln["col"] + len(e) // 2 > S.SCREEN_COLS:
                 errors.append(

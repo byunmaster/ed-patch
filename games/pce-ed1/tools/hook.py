@@ -67,7 +67,7 @@ WORDCK_MPR = 2
 # 마지막 글리프 뱅크 끝 코드 자리(`font.CODE_SLOTS`) 앞쪽 = 반 칸 전진(`entry`), 그 뒤 = 어절 줄바꿈(`wordck`) — MPR2 창 기준
 CODE_ADDR = (WORDCK_MPR << 13) + font.BANK_GLYPH_END - font.CODE_BYTES
 ENTRY_ADDR = CODE_ADDR
-ENTRY_ROOM = 308  # 칸 분류(`pre`) · 반 칸 전진 · 부호 되감기(`post`)
+ENTRY_ROOM = 509  # 칸 분류(`pre`) · 반 칸 전진 · 부호 되감기(`post`)
 WORDCK_ADDR = ENTRY_ADDR + ENTRY_ROOM
 WORDCK_ROOM = font.CODE_BYTES - ENTRY_ROOM
 LINE_COLS_ZP = 0x99  # 줄 폭(칸) — `$6D95` 가 비교하는 그 값(로그·필드 창 13)
@@ -180,6 +180,8 @@ OPS = {
     ("ORA", "absy"): 0x19,
     ("STA", "absy"): 0x99,
     ("CLX", "imp"): 0x82,
+    ("AND", "absx"): 0x3D,
+    ("SBC", "zp"): 0xE5,
 }
 
 
@@ -558,6 +560,34 @@ def unpack_code() -> bytes:
     return b
 
 
+# 🔴 반각 영숫자 표(마지막 글리프 뱅크 꼬리 — 풀기 루틴 바로 뒤 빈 자리): 리드 블록 시작 4B · 비트 마스크 8B · 비트맵 112B(리드마다 28B).
+HALF_TAB_ADDR = (WORDCK_MPR << 13) + font.BANK_GLYPH_END + len(unpack_asm().bytes())
+HALF_OFFTAB = HALF_TAB_ADDR
+HALF_BITM = HALF_OFFTAB + 4
+HALF_BITMAP = HALF_BITM + 8
+HALF_NARR = HALF_BITMAP + 4 * 28  # 4px 전진 글리프 코드 쌍 셋(i·l·I) — 모자라면 0 쌍
+HALF_TAB_LEN = 4 + 8 + 4 * 28 + 6
+HALF_WIDE = "mwMW"  # 잉크가 9px 라 8px 전진 두 조각에 안 든다 — 반각으로 안 그리고 평소 12px 칸으로 둔다
+HALF_NARROW = "ilI"  # 잉크가 3px 이하 — 4px 전진 한 조각
+assert HALF_TAB_ADDR + HALF_TAB_LEN <= (WORDCK_MPR << 13) + 0x2000
+
+
+def half_tables() -> bytes:
+    """리드 F0~F3 의 글리프 번호 → 「ASCII 영숫자」 비트맵. 정본 순서가 곧 글리프 번호다(`font._order_canon`)."""
+    bm = bytearray(4 * 28)
+    for i, ch in enumerate(font._order_canon()):
+        if ch.isascii() and ch.isalnum() and ch not in HALF_WIDE:
+            lead, tr = divmod(i, font.PER_LEAD)
+            assert lead < 4, i
+            bm[lead * 28 + tr // 8] |= 0x80 >> (tr % 8)
+    narr = b""
+    for ch in HALF_NARROW:
+        if ch in font._order_canon():
+            narr += font.code_of(font._order_canon().index(ch))
+    narr = narr.ljust(6, b"\0")
+    return bytes([0, 28, 56, 84]) + bytes(0x80 >> i for i in range(8)) + bytes(bm) + narr
+
+
 def finish_banks(glyph_bank: bytes) -> bytes:
     """글리프 뱅크에 코드를 얹는다 — 뱅크마다 꼬리에 풀기 루틴, 마지막 뱅크 글리프 끝 `CODE_SLOTS` 칸에 반 칸 전진 + 어절 줄바꿈."""
     gb = bytearray(glyph_bank)
@@ -569,6 +599,9 @@ def finish_banks(glyph_bank: bytes) -> bytes:
     at = len(gb) - 0x2000 + font.BANK_GLYPH_END - font.CODE_BYTES
     assert not gb[at : at + font.CODE_BYTES].strip(b"\0"), "글리프가 마지막 뱅크 코드 자리를 덮는다"
     gb[at : at + font.CODE_BYTES] = hook_entry() + wordck()
+    tab = len(gb) - 0x2000 + (HALF_TAB_ADDR - (WORDCK_MPR << 13))
+    assert not gb[tab : tab + HALF_TAB_LEN].strip(b"\0"), "반각 영숫자 표 자리가 비어 있지 않다"
+    gb[tab : tab + HALF_TAB_LEN] = half_tables()
     return bytes(gb)
 
 
@@ -737,7 +770,7 @@ ENG_FETCH = 0x7040  # 글리프 24B 를 `($FA)` 로 받는다(후킹 루틴 — 
 ENG_COLWRITE = 0x717A  # Y = 면 버퍼 시작 오프셋(+1 = 오른쪽 바이트) — 열 하나를 `$38C1` 에 쓰고 포인터를 한 열 앞으로
 
 
-KIND_PLAIN, KIND_VARIANT, KIND_PUNCT, KIND_SPACE, KIND_EATEN = 0, 1, 2, 3, 4
+KIND_PLAIN, KIND_VARIANT, KIND_PUNCT, KIND_SPACE, KIND_EATEN, KIND_HALF, KIND_HALF4 = 0, 1, 2, 3, 4, 5, 6
 
 
 def _narrow_codes():
@@ -771,6 +804,8 @@ def _narrow_asm() -> "Asm":
     a.label("rem")
     a.data(b"\x00")
     a.label("kind")
+    a.data(b"\x00")
+    a.label("phase")  # 반각 영숫자 두 번째 그리기의 몫(0 = 부호 · 1 = 왼쪽 4px · 2 = 오른쪽 4px)
     a.data(b"\x00")
     a.label("glue")  # X = 0(pre) / 1(post) — A 는 못 쓴다(MPR 복원), X 는 지킨다
     a.op("PHP")
@@ -810,6 +845,7 @@ def _narrow_asm() -> "Asm":
 NARROW_LABELS = _narrow_asm().labels
 REM_ADDR = NARROW_LABELS["rem"]
 KIND_ADDR = NARROW_LABELS["kind"]
+PHASE_ADDR = NARROW_LABELS["phase"]
 GLUE_ADDR = NARROW_LABELS["glue"]
 NARROW_ENTRY = NARROW_LABELS["entry"]  # `$7047` 의 새 JSR 대상
 RSTZ_ADDR = NARROW_LABELS["rstz"]  # `$6AEA`·`$6B73` 의 새 JSR 대상
@@ -832,7 +868,9 @@ def _entry_asm() -> "Asm":
     """
     a = Asm(ENTRY_ADDR)
     a.op("CPX", "imm", 0)
-    a.op("BNE", "rel", "post")
+    a.op("BEQ", "rel", "pre")
+    a.op("JMP", "abs", "post")
+    a.label("pre")
     # ── pre ──
     a.op("STZ", "abs", KIND_ADDR)
     a.op("LDA", "zp", 0xF9)
@@ -845,18 +883,22 @@ def _entry_asm() -> "Asm":
     a.op("BCC", "rel", "ispunct")
     a.op("CMP", "imm", NARROW_Q)
     a.op("BEQ", "rel", "ispunct")
-    a.op("RTS")
+    a.op("JMP", "abs", "chkh")  # 그 밖의 우리 글리프 — 반각 영숫자인지 본다
     a.label("notf0")  # 가운뎃점 — 리드가 다르다
     a.op("CMP", "imm", NARROW_DOT[0])
     a.op("BNE", "rel", "tryvar")
     a.op("LDA", "zp", 0xF8)
     a.op("CMP", "imm", NARROW_DOT[1])
     a.op("BEQ", "rel", "ispunct")
-    a.op("RTS")
+    a.op("JMP", "abs", "chkh")
     a.label("tryvar")
     a.op("AND", "imm", 0xFC)
     a.op("CMP", "imm", font.VARIANT_LEAD0)
-    a.op("BNE", "rel", "pre_done")
+    a.op("BEQ", "rel", "isvar")
+    a.op("CMP", "imm", font.LEAD0)
+    a.op("BEQ", "rel", "chkh")  # 리드 F1~F3 — 우리 글리프
+    a.op("RTS")
+    a.label("isvar")
     a.op("LDA", "zp", 0xF9)
     a.op("SBC", "imm", font.VARIANT_LEAD0 - font.LEAD0)  # CMP 가 같아서 캐리 1
     a.op("STA", "zp", 0xF9)
@@ -876,6 +918,55 @@ def _entry_asm() -> "Asm":
     a.op("STA", "abs", KIND_ADDR)
     a.label("pre_done")
     a.op("RTS")
+    # 🔴 반각 영숫자(마스터 10-09: 전투 문장은 공백·부호·**영숫자**가 반각) — 우리 글리프 코드(리드 F0~F3 · 트레일 0x24~)를 비트맵으로 가른다.
+    #    리드마다 28B(220 비트) 블록이 이어진다: 주소 = `HALF_BITMAP + 리드×28 + 트레일/8` · 비트 = 트레일 % 8(MSB 먼저).
+    a.label("chkh")
+    a.op("PHX")
+    a.op("PHY")
+    a.op("LDA", "zp", 0xF9)
+    a.op("SEC")
+    a.op("SBC", "imm", font.LEAD0)
+    a.op("TAX")
+    a.op("LDA", "absx", HALF_OFFTAB)
+    a.op("STA", "abs", BITCNT_ADDR)  # 리드 블록 시작
+    a.op("LDA", "zp", 0xF8)
+    a.op("SEC")
+    a.op("SBC", "imm", font.TRAIL0)
+    a.op("PHA")
+    a.op("LSR")
+    a.op("LSR")
+    a.op("LSR")
+    a.op("CLC")
+    a.op("ADC", "abs", BITCNT_ADDR)
+    a.op("TAY")
+    a.op("PLA")
+    a.op("AND", "imm", 7)
+    a.op("TAX")
+    a.op("LDA", "absy", HALF_BITMAP)
+    a.op("AND", "absx", HALF_BITM)
+    a.op("BEQ", "rel", "chk_out")
+    a.op("LDX", "imm", 4)  # 좁은 영문(i·l·I — 잉크 3px 이하)은 4px 전진 한 조각이다 — 코드 쌍 셋을 훑는다
+    a.label("nl")
+    a.op("LDA", "absx", HALF_NARR)
+    a.op("CMP", "zp", 0xF9)
+    a.op("BNE", "rel", "nx")
+    a.op("LDA", "absx", HALF_NARR + 1)
+    a.op("CMP", "zp", 0xF8)
+    a.op("BEQ", "rel", "nf")
+    a.label("nx")
+    a.op("DEX")
+    a.op("DEX")
+    a.op("BPL", "rel", "nl")
+    a.op("LDA", "imm", KIND_HALF)
+    a.op("BRA", "rel", "chk_st")
+    a.label("nf")
+    a.op("LDA", "imm", KIND_HALF4)
+    a.label("chk_st")
+    a.op("STA", "abs", KIND_ADDR)
+    a.label("chk_out")
+    a.op("PLY")
+    a.op("PLX")
+    a.op("RTS")
     # ── post ──
     a.label("post")
     a.op("LDA", "abs", KIND_ADDR)
@@ -886,6 +977,14 @@ def _entry_asm() -> "Asm":
     a.label("p1")
     a.op("CMP", "imm", KIND_PUNCT)
     a.op("BEQ", "rel", "punct")
+    a.op("CMP", "imm", KIND_HALF)
+    a.op("BNE", "rel", "p2")
+    a.op("JMP", "abs", "half")
+    a.label("p2")
+    a.op("CMP", "imm", KIND_HALF4)
+    a.op("BNE", "rel", "p3")
+    a.op("JMP", "abs", "half4")
+    a.label("p3")
     a.op("CMP", "imm", KIND_SPACE)
     a.op("BNE", "rel", "adv")
     a.op("DEC", "abs", ENG_COL_COUNT)  # 반각 공백은 글자 칸을 안 센다
@@ -911,6 +1010,7 @@ def _entry_asm() -> "Asm":
     a.op("RTS")
     a.label("punct")
     a.op("DEC", "abs", ENG_COL_COUNT)  # 반각 부호도 글자 칸을 안 센다
+    a.label("pun2")
     a.op("JSR", "abs", "remadd")
     a.op("LDA", "abs", ENG_TOGGLE)
     a.op("BNE", "rel", "pmid")
@@ -920,6 +1020,8 @@ def _entry_asm() -> "Asm":
     a.op("LDA", "imm", ENG_GLYPH_BUF >> 8)
     a.op("STA", "zp", 0xFB)
     a.op("JSR", "abs", ENG_FETCH)
+    a.op("CLA")
+    a.op("JSR", "abs", "mask")
     a.op("LDX", "imm", 22)
     a.label("pc")
     a.op(
@@ -944,6 +1046,8 @@ def _entry_asm() -> "Asm":
     a.op("LDA", "imm", (ENG_GLYPH_BUF + 0x20) >> 8)
     a.op("STA", "zp", 0xFB)
     a.op("JSR", "abs", ENG_FETCH)
+    a.op("LDA", "imm", 0x20)
+    a.op("JSR", "abs", "mask")
     a.op("LDX", "imm", 0x20)
     a.op("JSR", "abs", ENG_PLANES)
     a.op("LDY", "imm", 22)
@@ -970,6 +1074,61 @@ def _entry_asm() -> "Asm":
     a.op("LDY", "imm", 1)
     a.op("JSR", "abs", ENG_COLWRITE)
     a.op("STZ", "abs", ENG_TOGGLE)
+    a.op("RTS")
+    # **반각 영숫자**(kind 5): 8px 전진 = 4px 잉크 조각 둘 — 같은 글자를 반각 부호 갈래로 **두 번** 그린다. 1번은 글리프 왼쪽 4px
+    #   (`AND #$F0`), 2번은 오른쪽 4px 를 왼쪽으로 민 것(`ASL×4`) — 부호는 잉크가 왼쪽 4px 안이라야 하므로 영숫자 8px 를 둘로 쪼갠다.
+    #   칸 수는 엔진의 `INC`(+1)를 한 번만 되돌리고(`DEC`), 나머지 `rem` 은 조각마다 +4 라 8px 가 쌓인다.
+    a.label("half")
+    a.op("DEC", "abs", ENG_COL_COUNT)
+    a.op("LDA", "imm", 1)
+    a.op("STA", "abs", PHASE_ADDR)
+    a.op("JSR", "abs", "pun2")
+    a.op("LDA", "imm", 2)
+    a.op("STA", "abs", PHASE_ADDR)
+    a.op("JSR", "abs", "pun2")
+    a.op("STZ", "abs", PHASE_ADDR)
+    a.op("RTS")
+    a.label("half4")  # 좁은 영문 — 왼쪽 4px 조각 하나(4px 전진)
+    a.op("DEC", "abs", ENG_COL_COUNT)
+    a.op("LDA", "imm", 1)
+    a.op("STA", "abs", PHASE_ADDR)
+    a.op("JSR", "abs", "pun2")
+    a.op("STZ", "abs", PHASE_ADDR)
+    a.op("RTS")
+    a.label("mask")  # A = 글리프 버퍼 시작 오프셋(0 또는 0x20) — 행마다 왼쪽 바이트를 phase 대로 거른다
+    a.op("STA", "zp", 0xEC)
+    a.op("LDA", "abs", PHASE_ADDR)
+    a.op("BEQ", "rel", "mk_out")
+    a.op("LDA", "zp", 0xEC)
+    a.op("CLC")
+    a.op("ADC", "imm", 22)
+    a.op("TAX")
+    a.op("LDA", "abs", PHASE_ADDR)
+    a.op("CMP", "imm", 2)
+    a.op("BCS", "rel", "mk2")
+    a.label("mk1")
+    a.op("LDA", "absx", ENG_GLYPH_BUF)
+    a.op("AND", "imm", 0xF0)
+    a.op("STA", "absx", ENG_GLYPH_BUF)
+    a.op("DEX")
+    a.op("DEX")
+    a.op("TXA")
+    a.op("SEC")
+    a.op("SBC", "zp", 0xEC)
+    a.op("BPL", "rel", "mk1")
+    a.op("RTS")
+    a.label("mk2")
+    a.op("LDA", "absx", ENG_GLYPH_BUF)
+    for _ in range(4):
+        a.op("ASL")
+    a.op("STA", "absx", ENG_GLYPH_BUF)
+    a.op("DEX")
+    a.op("DEX")
+    a.op("TXA")
+    a.op("SEC")
+    a.op("SBC", "zp", 0xEC)
+    a.op("BPL", "rel", "mk2")
+    a.label("mk_out")
     a.op("RTS")
     a.label("remadd")
     a.op("LDA", "abs", REM_ADDR)

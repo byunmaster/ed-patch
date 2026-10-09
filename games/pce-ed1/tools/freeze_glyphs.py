@@ -30,6 +30,7 @@ def used() -> set[str]:
         | battle.glyph_chars()
         | set(font.JOSA_CHARS)
         | set(font.LIGATURES.values())
+        | set(font.DIGIT_CHARS)
     )
 
 

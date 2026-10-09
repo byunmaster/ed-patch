@@ -39,7 +39,7 @@ BANK_GLYPH_END = (
 # 🔴 **마지막 글리프 뱅크 끝 `CODE_SLOTS` 칸은 코드 자리다**(10-07 반각) — 어절 줄바꿈 `hook.wordck` 과 반 칸 전진 `hook._entry_asm` 가
 #   여기 산다(게임이 안 쓰는 우리 뱅크라서다. 10-07: 뱅크 0x69·0x6A·워크 RAM `$22BC~` 의 「빈 자리」는 실행 중에 다 쓰이고 있었다).
 #   글리프 정본이 733자라 끝 칸들은 어차피 빈다 — 상한만 그만큼 준다(`MAX_GLYPHS`). 풀기 루틴 뒤 꼬리 168B 는 비어 있다.
-CODE_SLOTS = 28
+CODE_SLOTS = 40
 CODE_BYTES = CODE_SLOTS * PACKED_BYTES  # 504
 MAX_GLYPHS = GLYPH_NBANKS * LEADS_PER_BANK * PER_LEAD - CODE_SLOTS  # 852
 # 🔴 **반 칸(4px) 전진 변형 코드**(마스터 10-07) — 리드 F4~F7 = 「리드 F0~F3 의 같은 트레일 글자를 평소대로 그리고 +4px」.
@@ -133,6 +133,8 @@ def _question_4px() -> bytes:
 #   부호 둘이 「! !」로 벌어진다. 반각 렌더러(C안)를 기다리지 않고 **두 부호를 4px 간격으로 한 글리프에** 굽고
 #   인코딩 때 바꿔 넣는다(`ligate`). 화면 폭은 오히려 한 칸 준다 — 조판·줄바꿈은 두 칸으로 세니 넘칠 일은 없다.
 LIGATURES = {"!!": "‼", "!?": "⁉"}
+# 엔진이 수치를 찍는 숫자 표(`$69D3`, 전각 SJIS 열 쌍)를 우리 글리프 코드로 바꾼다 — 그래서 열 글자가 늘 글리프 뱅크에 있어야 한다.
+DIGIT_CHARS = "0123456789"
 LIGATURE_STEP = 4  # 둘째 부호를 오른쪽으로 민 픽셀
 
 
@@ -318,7 +320,7 @@ def build_table(chars) -> tuple[dict[str, bytes], bytes]:
     배정은 **정본 순서**를 따른다(`_order_canon`). 정본에 없는 글자가 있으면 **빌드가 죽는다** —
     `python3 tools/freeze_glyphs.py` 로 뒤에 덧붙이고 커밋한다(코드가 안 밀린다).
     """
-    need = set(chars) | set(JOSA_CHARS) | set(LIGATURES.values())
+    need = set(chars) | set(JOSA_CHARS) | set(LIGATURES.values()) | set(DIGIT_CHARS)
     canon = _order_canon()
     missing = sorted(need - set(canon))
     if missing:
