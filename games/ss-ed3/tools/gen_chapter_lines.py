@@ -112,7 +112,9 @@ def main():
     ok = [r for r in rows if r[5] is not None]
     mixed = [r for r in rows if r[3] is None]
     over = [r for r in rows if r[3] is not None and r[5] is None]
-    print(f"장 표시 블록 {len(rows)}  자동 {len(ok)}  섞인 블록 {len(mixed)}  예산 초과 {len(over)}")
+    print(
+        f"장 표시 블록 {len(rows)}  자동 {len(ok)}  섞인 블록 {len(mixed)}  예산 초과 {len(over)}"
+    )
     for stem, i, jp, kr, bud, fit in rows:
         tag = "✅" if fit else ("… 나레이션 섞임(사람 몫)" if kr is None else "❌ 예산 초과")
         first = T.lines(jp)[0] if T.lines(jp) else ""
@@ -131,6 +133,8 @@ def main():
         doc.setdefault(
             "_doc", "번역 정본 — 키는 MAP 블록 색인. 장 표시 줄은 `gen_chapter_lines.py` 가 박는다."
         )
+        #   🔴 `_wide` 블록(맵 꼬리에서 그리는 카드 — `choice_tail.py`)의 정본 값은 사람이 박은 진짜 문안이다 — 예산에 맞춘 값으로 덮지 않는다
+        add = {k: v for k, v in add.items() if k not in doc.get("_wide", {})}
         doc.update(add)
         with open(p, "w", encoding="utf-8") as f:
             json.dump(doc, f, ensure_ascii=False, indent=1)

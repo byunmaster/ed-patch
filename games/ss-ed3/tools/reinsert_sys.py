@@ -20,6 +20,7 @@
 import json
 import os
 import re
+from itertools import pairwise
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -90,7 +91,9 @@ def split_lead(text):
 #   ⚠ 포인터가 하나가 아니면 멈춘다 — 다른 데서 읽는 포인터를 놓치면 **옛 자리를 읽어 빈 문자열**이 나온다.
 RELOC_AT = 0x06018A10
 RELOC_LEN = 32
-RELOCATABLE = {"/0.BIN": ("戦闘に勝った！\x00",)}  # 화면에 나가는 문구라 원문을 살리려고 옮기는 것들(키 = JP 원문 + 종결자)
+RELOCATABLE = {
+    "/0.BIN": ("戦闘に勝った！\x00",)
+}  # 화면에 나가는 문구라 원문을 살리려고 옮기는 것들(키 = JP 원문 + 종결자)
 
 
 def _relocate(out, s, raw, base):
@@ -109,16 +112,71 @@ def _relocate(out, s, raw, base):
     return None
 
 
+_CH_NO = re.compile(r"^第[０-９]章")
+
+
+def _repack_chapters(out, strs, tbl, base, enc):
+    """`/0.BIN` 챕터 바 `第N章…` 일곱 문자열을 **한 덩이로 다시 쌓는다** — 칸마다 예산(27B)이 있어 번역이 1B 만 넘어도 못 들어가던 것.
+
+    🔴 마스터 10-10 「일단 원본 따라가자」 — 번호·제목 사이를 원문처럼 전각 2칸으로 두니 `제４장` 이 28B 가 돼 예산 27B 를 1B 넘었다.
+    일곱 칸은 **28B 간격으로 이어져 있고 포인터가 각각 하나씩**이라 덩이(196B) 안에서 번역 길이대로 쌓고 포인터만 바꾸면 된다
+    (뭉친 번역 합 193B). 하나라도 개별 예산을 넘을 때만 돈다 — 안 넘으면 원래 길로 간다. 못 쌓으면 `None`(사유).
+    반환 `(처리한 JP 키 집합, 넣은 수, bad)`.
+    """
+    group = [
+        (st, lead, jp)
+        for st in strs
+        for lead, jp in [split_lead(S.text_of(st["raw"]))]
+        if _CH_NO.match(jp) and jp in tbl
+    ]
+    if not group or all(len(enc(jp)(lead + tbl[jp])) <= budget(out, st) for st, lead, jp in group):
+        return set(), 0, []
+    group.sort(key=lambda g: g[0]["off"])
+    for a, b in pairwise(group):
+        if b[0]["off"] != a[0]["off"] + budget(out, a[0]) + 1:
+            return set(), 0, [(g[2], "챕터 바 칸이 이어져 있지 않아 못 쌓는다") for g in group]
+    start = group[0][0]["off"]
+    end = group[-1][0]["off"] + budget(out, group[-1][0]) + 1
+    raws = [enc(jp)(lead + tbl[jp]) for st, lead, jp in group]
+    #   각 문자열은 **짝수 주소**에서 시작한다 — 원본이 4B 정렬이라 홀수 주소는 읽기 루틴이 처음 보는 꼴이다(워드 읽기 가능성)
+    need = sum(len(r) + 1 + (len(r) + 1) % 2 for r in raws)
+    if start % 2 or need > end - start:
+        return set(), 0, [(g[2], f"챕터 바가 덩이({end - start}B)보다 길다") for g in group]
+    refs = []
+    for st, _, jp in group:
+        old = (base + st["off"]).to_bytes(4, "big")
+        r = [i for i in range(0, len(out) - 3, 4) if out[i : i + 4] == old]
+        if len(r) != 1:
+            return set(), 0, [(jp, f"챕터 바 포인터가 {len(r)}개다(하나여야 한다)")]
+        refs.append(r[0])
+    out[start:end] = b"\x00" * (end - start)
+    at = start
+    for raw, ref in zip(raws, refs, strict=True):
+        out[at : at + len(raw)] = raw
+        out[ref : ref + 4] = (base + at).to_bytes(4, "big")
+        at += len(raw) + 1
+        at += at % 2
+    return {g[2] for g in group}, len(group), []
+
+
 def patch(data, name, tbl):
     """`(새 bytes, 넣은 수, [(JP, 사유)])` — 파일 크기 불변."""
     out = bytearray(data)
     done, bad = 0, []
     seen = set()
     low, chapters = H.load_low(), chapter_keys()
-    for s in S.strings(data, S.load_base(name)):
+    strs = S.strings(data, S.load_base(name))
+    packed = set()
+    if name == "/0.BIN":
+        packed, n, why = _repack_chapters(
+            out, strs, tbl, S.load_base(name), lambda jp: encoder(jp, low, chapters)
+        )
+        done += n
+        bad += why
+    for s in strs:
         lead, jp = split_lead(S.text_of(s["raw"]))
         kr = tbl.get(jp)
-        if kr is None:
+        if kr is None or jp in packed:
             continue
         seen.add(jp)
         raw = encoder(jp, low, chapters)(lead + kr)

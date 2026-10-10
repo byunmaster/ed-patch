@@ -45,13 +45,57 @@ def _is_sign(data, text_off, head):
     )
 
 
+_CARD_B_HEAD = bytes.fromhex("ff0019ff") + b"\x0d" * 6  # 장 카드(세로 줄바꿈형) 머리 — 글 앞 10B
+
+
+def _card_kind(data, blocks, key):
+    """장 카드 꼴인가 — `"A"` = 앞 대사에 `0E` 로 이어 붙은 카드(`10 00` 로 끝나는 세션의 끝 블록) ·
+    `"B"` = `FF 00 19 FF` + 개행 6 으로 시작해 `00 09` 로 끝나는 단독 카드 · `"C"` = 같은 머리에 `00` 한 바이트로 끝나는 카드 · 아니면 `None`."""
+    blk = blocks[int(key)]
+    off = blk["off"]
+    end = off + len(blk["body"])
+    if blk["head"] == "420e" and data[end : end + 2] == b"\x10\x00":
+        return "A"
+    if data[off - 10 : off] == _CARD_B_HEAD:
+        if data[end : end + 2] == b"\x00\x09":
+            return "B"
+        if data[end] == 0:
+            return "C"
+    return None
+
+
+def _session_start(data, blocks, key):
+    """`0E` 로 이어진 글 세션의 첫 블록 색인과 그 머리(`FF 00`) 주소 `s`."""
+    j = int(key)
+    while j > 0:
+        e = blocks[j - 1]["off"] + len(blocks[j - 1]["body"])
+        if data[e] == 0x0E and blocks[j]["off"] - e == 1:
+            j -= 1
+        else:
+            break
+    s = blocks[j]["off"] - 2
+    assert data[s : s + 2] == b"\xff\x00", (
+        f"세션 첫 블록 {j} 앞이 FF 00 이 아니다: {data[s : s + 2].hex()}"
+    )
+    return j, s
+
+
 def covers(src, stem):
-    """`{블록 색인: 칸 안 글 앞에서 트램펄린이 덮는 바이트 수}` — 되풀이 검사가 건너뛸 길이. `src` = 원본 맵. 간판류만 든다."""
+    """`{블록 색인: 칸 안 글 앞에서 트램펄린이 덮는 바이트 수}` — 되풀이 검사가 건너뛸 길이. `src` = 원본 맵.
+
+    간판류는 그 블록 자신의 글 앞 4B, 장 카드 `A` 는 **세션 첫 블록**의 글 앞 4B 를 덮는다(카드 `B` 는 글을 안 덮는다)."""
     wides = R.wide(stem)
     if not wides:
         return {}
     blocks = M.blocks(src)
-    return {k: COVER for k in wides if _is_sign(src, blocks[int(k)]["off"], blocks[int(k)]["head"])}
+    out = {}
+    for k in wides:
+        blk = blocks[int(k)]
+        if _is_sign(src, blk["off"], blk["head"]):
+            out[k] = COVER
+        elif _card_kind(src, blocks, k) == "A":
+            out[str(_session_start(src, blocks, k)[0])] = COVER
+    return out
 
 
 def has(stem):
@@ -132,6 +176,55 @@ def patch(data, stem, table, orig):
             tail = len(out) + len(out) % 2
             assert s % 2 == 0
             body = bytes(data[s:text_off]) + raw + rest + GOTO + struct.pack(">I", BASE + end)
+            out.extend(b"\x00" * (tail - len(out)))
+            out.extend(body)
+            out[s : s + TRAMP] = GOTO + struct.pack(">I", BASE + tail)
+            continue
+        elif _card_kind(data, blocks, key) == "A":
+            # 장 카드 A — 앞 대사와 `0E` 로 이어진 같은 글 세션의 끝 블록(`10 00` 로 끝난다). 글 모드 한복판엔 트램펄린을 못 놓으니
+            # (간판과 같은 이유) **세션 첫 블록의 머리(`FF 00`) 부터 `10 00` 까지** 통째로 꼬리에 옮기고 카드 글만 진짜 문안으로 바꾼다.
+            # 덮는 6B = 머리 2 + 첫 블록 글 앞 4 — `covers` 가 되풀이 검사에 알린다. 카드는 화면 전폭(24칸)이라 창 계약(17칸)은 안 본다.
+            j, s = _session_start(data, blocks, key)
+            assert s % 2 == 0, f"{stem}#{key}: 세션 머리 {s:#x} 가 홀수 주소다"
+            assert len(blocks[j]["body"]) >= COVER, (
+                f"{stem}#{key}: 세션 첫 블록 {j} 글이 {COVER}B 미만"
+            )
+            text_end = text_off + len(blk["body"])
+            end = text_end + 2
+            raw = H.encode_kr(wides[key], table)
+            if ((text_off - s) + len(raw)) % 2:
+                raw += b" "
+            tail = len(out) + len(out) % 2
+            body = (
+                bytes(data[s:text_off])
+                + raw
+                + bytes(data[text_end:end])
+                + GOTO
+                + struct.pack(">I", BASE + end)
+            )
+            out.extend(b"\x00" * (tail - len(out)))
+            out.extend(body)
+            out[s : s + TRAMP] = GOTO + struct.pack(">I", BASE + tail)
+            continue
+        elif _card_kind(data, blocks, key) in ("B", "C"):
+            # 장 카드 B·C — `FF 00 19 FF` + 개행 6 + 글 + 종결(B `00 09` · C `00`). 머리(`FF 00`)부터 6B 를 트램펄린으로 덮고(글은 안 덮는다),
+            # 꼬리에 머리 10B + 진짜 문안 + `00 09` 를 두고 종결 뒤 옵코드로 돌아온다.
+            s = text_off - len(_CARD_B_HEAD)
+            assert s % 2 == 0, f"{stem}#{key}: 카드 머리 {s:#x} 가 홀수 주소다"
+            text_end = text_off + len(blk["body"])
+            end_ops = b"\x00\x09" if data[text_end + 1] == 0x09 else b"\x00"
+            assert (text_end + len(end_ops)) % 2 == 0, f"{stem}#{key}: 복귀 주소가 홀수다"
+            raw = H.encode_kr(wides[key], table)
+            if (len(_CARD_B_HEAD) + len(raw) + len(end_ops)) % 2:
+                raw += b" "
+            tail = len(out) + len(out) % 2
+            body = (
+                bytes(data[s:text_off])
+                + raw
+                + end_ops
+                + GOTO
+                + struct.pack(">I", BASE + text_end + len(end_ops))
+            )
             out.extend(b"\x00" * (tail - len(out)))
             out.extend(body)
             out[s : s + TRAMP] = GOTO + struct.pack(">I", BASE + tail)
