@@ -85,6 +85,7 @@ MVN_SITES = [
     (0x02A3A8, 0x02A3A2),  # 메시지 속도 창 サクサク/ドキドキ (4칸) — 2026-09-08
     (0x02A400, 0x02A3FA),  # 확인 창 はい/いいえ (3칸) — 2026-09-08
     (0x02A456, 0x02A450),  # 자동 전투 취소 창 にげる/せってい (4칸) — 2026-10-08
+    (0x02A4AE, 0x02A4A8),  # 패배 뒤 선택 창 さいごにでた…/たたかいの… (15칸) — 2026-10-10
     (0x02ADFA, 0x02ADF4),  # A4 전투 설정 창 라벨 (6줄×10칸) — 2026-09-15, 라이브 BP 로 확인
     (
         0x02AF3C,
@@ -233,6 +234,29 @@ def josa_chars() -> str:
     return "".join(s for _n, s in josa_rows())
 
 
+# 영문·숫자는 원판 시트 그림(마스터 10-11) — 진행 폭 = 잉크 폭 + 2(원판 8px 칸의 좌우 여백 1열씩).
+ORIG_PAD = 2
+
+
+def glyph_rows(ch: str | None, font) -> tuple[list[int], int]:
+    """(16행 그림, 진행 폭 px). 좁은 글리프는 잉크를 왼쪽 끝으로 붙인다."""
+    import hangul_font
+
+    if ch is None:
+        return [0] * 16, 8
+    rows = hangul_font.render(ch, font)
+    # 정본 전각 ＥＰ·ＨＰ·ＭＰ 는 Condensed 전각 글리프 그대로(마스터 10-10 「mp hp ep 콘덴스드 전각」 · 10-11 PS1 에서도 「전각으로 두는 게 일관」) — 영문·숫자의 원판 전환에서 제외
+    return rows, 8
+
+
+def glyph_widths(rep: list[str | None]) -> bytes:
+    """글리프 색인 → 진행 폭(px). 훅이 읽는다(`gw`)."""
+    import hangul_font
+
+    font = hangul_font.load_font()
+    return bytes(glyph_rows(ch, font)[1] for ch in rep)
+
+
 def glyph_bytes(rep: list[str | None]) -> bytes:
     """색인 순 2bpp 32B/자 — 위 타일 8행 + 아래 8행, 평면1 = $FF.
     ⚠ 비워 둔 자리(`None`, `encode.bad_index`)도 **32B 를 차지한다** — 색인이 곧 자리여야 한다."""
@@ -243,7 +267,7 @@ def glyph_bytes(rep: list[str | None]) -> bytes:
     font = hangul_font.load_font()
     out = bytearray()
     for ch in rep:
-        rows = [0] * 16 if ch is None else hangul_font.render(ch, font)
+        rows = glyph_rows(ch, font)[0]
         for half in (0, 8):
             for r in range(8):
                 out += bytes([rows[half + r], 0xFF])
@@ -284,12 +308,85 @@ def raw_jb() -> bytes:
     return bytes(t)
 
 
+def name_width_tables() -> tuple[bytes, bytes]:
+    """행위자·대상 이름({D6}·{D7})의 렌더 폭(px) 표 — 어절 개행 어림이 읽는다. 몬스터 128(색인 = 사전 D3 색인, 원판 표 `$02:E7E0` 과 같은 차례),
+    파티·인물 128(`$02:E902` 차례 = 사전 D0). 한글·글자 8px, 공백·`.,?!` 4px. 표에 없는 자리는 4칸(32px)."""
+    import namesrc
+
+    dm = namesrc.dict_map()
+
+    def w(kr: str) -> int:
+        return sum(4 if c in " .,?!" else 8 for c in kr)
+
+    mon = bytearray([32] * 128)
+    for i in range(128):
+        kr = dm.get(f"D3:{i:02X}", {}).get("kr")
+        if kr:
+            mon[i] = min(255, w(kr))
+    pty = bytearray([32] * 128)
+    for i in range(128):
+        kr = dm.get(f"D0:{i:02X}", {}).get("kr")
+        if kr:
+            pty[i] = min(255, w(kr))
+    return bytes(mon), bytes(pty)
+
+
+def dict_width_tables() -> list[bytes]:
+    """사전 토큰 `$D0`~`$D5` 의 표기 폭(px) 표 여섯 — 색인 하위 7비트로 읽는다(어절 개행 어림). 표기 없는 자리는 16."""
+    import namesrc
+
+    dm = namesrc.dict_map()
+
+    def w(kr: str) -> int:
+        return sum(4 if c in " .,?!" else 8 for c in kr)
+
+    out = []
+    for code in range(0xD0, 0xD6):
+        t = bytearray([16] * 128)
+        for i in range(128):
+            kr = dm.get(f"{code:02X}:{i:02X}", {}).get("kr")
+            if kr:
+                t[i] = min(255, w(kr))
+        out.append(bytes(t))
+    return out
+
+
+def num_glyph_table() -> tuple[bytes, bytes]:
+    """원판 시트의 숫자 0~9 그림(1bpp 16행) → (그림 160B, 진행 폭 10B).
+
+    원판 숫자는 8px 칸 안에 왼쪽 여백 1열(「1」은 2열)을 두고 앉는다 — 앞 글자와 반각 공백만 두면 간격이 반각보다 넓어 보인다(마스터 10-10 「EP  1」).
+    그림을 **왼쪽 끝으로 붙이고**(잉크 시작 0열) 진행 폭 = 잉크 폭 + `ORIG_PAD`(2) 로 둔다. 숫자 그림은 원판 시트 그대로(마스터 10-11 「원판이 더 임팩트」).
+    혼합 팔레트로 색 칸 정렬이 필요 없어져 가변 폭이 된다."""
+    import hangul_font
+
+    out = bytearray()
+    adv = bytearray()
+    for c in range(10):
+        rows = hangul_font.render_latin_orig(str(c))
+        cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
+        lo, hi = min(cols), max(cols)
+        out += bytes((r << lo) & 0xFF for r in rows)
+        adv.append(min(8, hi - lo + 1 + ORIG_PAD))
+    return bytes(out), bytes(adv)
+
+
 def raw_glyph_tables() -> tuple[bytes, bytes]:
     """원본 1바이트 코드의 8×16 그림(1bpp) — 합성 칸이 쓴다. 인코더가 내는 코드만 그림이 있다(나머지는 `rawvalid`=0)."""
     import hangul_font
 
     font = hangul_font.load_font()
-    return hook_vwf.rawtab(encode.KR_TABLE, lambda ch: hangul_font.render(ch, font))
+    letters = set("ABCDGOL")  # 같은 몬스터 A~D · 「GOLD」의 G·O·L(D 는 A~D 와 같다) — 원판 시트 그림, 진행 폭 = 잉크+2(숫자와 같은 규칙). 크롤의 다른 글자는 본문 Condensed 그대로
+
+    def ink_adv(ch: str) -> int:
+        rows = hangul_font.render_latin_orig(ch)
+        cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
+        return min(8, max(cols) + 1 + ORIG_PAD)  # 잉크 시작 열은 그림 그대로(왼쪽 여백 1열 포함)
+
+    return hook_vwf.rawtab(
+        encode.KR_TABLE,
+        lambda ch: hangul_font.render_latin_orig(ch) if ch in letters else hangul_font.render(ch, font),
+        {ch: ink_adv(ch) for ch in letters},
+    )
 
 
 def build_payload(
@@ -333,9 +430,20 @@ def build_payload(
         "V_OPEN": vb + 12,  # 1 = 지금 오프닝·엔딩 크롤(`open_fetch`)이 부른 중 — 칸 번호를 `V_OCELL` 에서 읽는다
         "V_NLF": vb + 14,  # 1 = 방금 명시 개행(`\n`)을 받았다 — 줄 첫 공백을 **건너뛰지 않는다**(들여쓰기 의도, 마스터 10-08)
         "V_OCELL": vb + 13,  # 크롤: 이번 줄에서 만든 마지막 칸 번호(`$FF` = 줄 시작) — 대사 엔진의 `$173B` 에 해당
+        "V_SH": vb + 15,  # 그림 시프트 칸수(0~7) — `vwf_blitR/L` 가 읽는다
         "V_G": vb + 16,  # 16B: 글자 그림(1bpp)
+        "V_SPX": vb + 32,  # (안 씀 — 혼합 팔레트가 공백 틈 분산을 없앴다)
+        "V_PS": vb + 33,  # 1 = 방금 조각이 끝났다($E0·$E4) — 다음 조각 첫머리에서 문장이 남은 칸에 드는지 본다(`vwf_fitchk`)
+        "V_WM": vb + 34,  # 1 = `vwf_wrapchk` 의 낱말 폭 재기를 **문장 끝까지**(공백을 넘어) 한다
+        "V_CUR": vb + 35,  # 지금 글 색 바이트(`$176C`: 0 흰 · 4 · $C) — `vwf_put` 이 세운다. 대사 엔진 밖은 0
+        "V_MXD": vb + 36,  # 1 = 혼합 팔레트 칸을 만들었다 — 조각 끝에서 타일맵을 다시 만든다(`vwf_refresh`)
+        "V_SCR": vb + 37,  # 글자 그림 한 줄 임시(blit 루프)
+        "V_PALD": vb + 38,  # 남은 프레임 수 — 0 이 아니면 NMI 마다 칸 팔레트 5·6 을 CGRAM 에 쓴다(혼합 칸을 만질 때마다 255)
+        "V_PT": vb + 39,  # 8B: NMI 팔레트 임시(배경·흰·하늘·노랑 각 2B)
+        "V_WK": vb + 47,  # 1 = 지금 그림이 얹히는 칸이 혼합 칸 — 흰 글자면 흰 잉크 마스크에도 쓴다
+        "V_PREV": vb + 48,  # 68B: 고정 칸 창(name13)이 칸 배열을 덮기 직전의 사본 — 아직 화면에 있는 앞 창의 슬롯을 `vwf_live` 가 지킨다
     }
-    var_end = vb + 32
+    var_end = vb + 116
     if var_end - VAR >= 741:
         raise SystemExit(f"WRAM 무손상 구간(741B)을 넘는다: {var_end - VAR}B (슬롯 {nslot}개)")
     assert len(vram) == nslot
@@ -357,7 +465,7 @@ def build_payload(
         a.lda(imm=0x00)
         a.op("sta", addr=kv["V_OPEN"], mode="long")  # 대사 엔진 — 칸 번호는 `$173B`
     a.op("lda", addr=V_PEND_N, mode="long")
-    a.beq(label="h_fetch")
+    a.beq(label="h_ps")
     if vwf:  # 둘째 조사 글리프 — 슬롯 코드가 아니라 글리프 색인(두 바이트)을 들고 있다
         a.op("lda", addr=V_PEND + 0, mode="long")
         a.op("sta", addr=V_IDX, mode="long")
@@ -378,6 +486,18 @@ def build_payload(
         a.op("sta", addr=V_PEND_N, mode="long")
         a.jmp(addr="h_done", mode="abs")
 
+    a.label("h_ps")  # 조각 첫머리 — 앞 조각 뒤에 이어 쓸 때 이 문장이 줄 남은 칸에 안 들면 새 줄에서 시작한다(번역 규칙 2-10)
+    if vwf:
+        a.op("lda", addr=kv["V_PS"], mode="long")
+        a.beq(label="h_fetch")
+        a.lda(imm=0x00)
+        a.op("sta", addr=kv["V_PS"], mode="long")
+        a.jsr(addr="vwf_fitchk", mode="abs")
+        a.bcc(label="h_fetch")
+        a.ldx(imm=0x00CF, m16=True)
+        a.lda(imm=0xCF)
+        a.op("sta", addr=V_IDX, mode="long")
+        a.jmp(addr="h_nl", mode="abs")
     a.label("h_fetch")
     a.jsr(addr="fetch", mode="abs")
     a.op("sta", addr=V_IDX, mode="long")
@@ -435,6 +555,35 @@ def build_payload(
         a.cpx(imm=0x00CF, m16=True)
         a.bcc(label="h_prn")
         a.beq(label="h_nl")
+        a.cpx(imm=0x00DC, m16=True)  # 숫자 치환 토큰 — 숫자는 엔진이 노랑을 먼저 밀어 넣고 찍으니 앞 공백 칸과 색이 섞이지 않게 칸 경계로 올린다
+        a.beq(label="h_cs")
+        a.cpx(imm=0x00E1, m16=True)  # 색 끝 — 이름 뒤 반각 글자로 칸이 반쯤 찼으면 조사가 칸을 나눠 쓰지 않게(조사 쪽을 칸 경계로)
+        a.bne(label="h_ce")
+        a.jsr(addr="vwf_cend", mode="abs")
+        a.jmp(addr="h_done", mode="abs")
+        a.label("h_ce")
+        a.cpx(imm=0x00E0, m16=True)  # 조각 끝 — 다음 조각 첫머리에서 줄 남은 칸을 본다
+        a.beq(label="h_pse")
+        a.cpx(imm=0x00E4, m16=True)
+        a.bne(label="h_pse2")
+        a.label("h_pse")
+        a.lda(imm=0x01)
+        a.op("sta", addr=kv["V_PS"], mode="long")
+        a.op("lda", addr=kv["V_MXD"], mode="long")  # 혼합 팔레트 칸이 생겼으면 타일맵을 다시 만든다
+        a.beq(label="h_pse3")
+        a.lda(imm=0x00)
+        a.op("sta", addr=kv["V_MXD"], mode="long")
+        a.jsr(addr="vwf_refresh", mode="abs")
+        a.label("h_pse3")
+        a.jmp(addr="h_done", mode="abs")
+        a.label("h_pse2")
+        a.cpx(imm=0x00E2, m16=True)  # 색 시작 토큰($E2~$E3) — 팔레트는 8px 칸 단위라 색이 시작하는 자리(앞은 이미 공백이 있다)에서 칸 경계로 올린다(한 칸에 두 색이 섞이던 「슬」). 색 끝($E1)에는 틈을 넣지 않는다 — 조사가 떨어진다
+        a.bcc(label="h_ctl")
+        a.cpx(imm=0x00E4, m16=True)
+        a.bcs(label="h_ctl")
+        a.label("h_cs")
+        a.jsr(addr="vwf_cstart", mode="abs")
+        a.label("h_ctl")
         a.jmp(addr="h_done", mode="abs")  # 제어 — 그대로
         a.label("h_nl")  # 개행: 칸 안 중간이던 줄을 마감한다(다음 글자는 새 줄 첫 칸)
         a.rep(imm=0x20)
@@ -448,13 +597,26 @@ def build_payload(
         a.op("sta", addr=kv["V_NLF"], mode="long")
         a.jmp(addr="h_done", mode="abs")
         a.label("h_prn")
+        a.cpx(imm=0x0010, m16=True)  # 공백 — 뒤따르는 낱말이 줄에 안 들어가면 공백 대신 개행(런타임 어절 줄바꿈)
+        a.bne(label="h_prn2")
+        a.jsr(addr="vwf_wrapchk", mode="abs")
+        a.bcc(label="h_sp")
+        a.ldx(imm=0x00CF, m16=True)
+        a.lda(imm=0xCF)
+        a.op("sta", addr=V_IDX, mode="long")
+        a.jmp(addr="h_nl", mode="abs")
+        a.label("h_sp")
+        a.ldx(imm=0x0010, m16=True)  # 호출이 X 를 건드리지 않는다지만 공백 코드를 다시 못 박는다
+        a.label("h_prn2")
         a.op("lda", addr="raw_jb", mode="absx")
         a.cmp(imm=0xFE)
         a.beq(label="h_nojb")
         a.op("sta", addr=V_JB, mode="long")
         a.label("h_nojb")
         a.jsr(addr="vwf_raw", mode="abs")
-        a.bcs(label="h_swallow")
+        a.bcc(label="h_rawok")
+        a.jmp(addr="h_swallow", mode="abs")  # 징검다리 — 분기가 멀다
+        a.label("h_rawok")
         a.op("sta", addr=V_IDX, mode="long")
         a.jmp(addr="h_done", mode="abs")
     # (예전 길 — vwf 가 꺼졌을 때만 쓴다)
@@ -805,6 +967,21 @@ def build_payload(
     for name, pre, dest in (("name13", "n13", CELL_BASE), ("name13_v", "n13v", CELL_BASE + 10)):
         a.label(name)
         a.php()
+        if vwf:  # 앞 창(로그)이 화면에 남은 채 이 창이 칸 배열을 덮는다 — 슬롯을 지키려고 덮기 전 사본을 둔다
+            a.rep(imm=0x30)
+            a.pha()
+            a.phx()
+            a.ldx(imm=0x0000, m16=True)
+            a.sep(imm=0x20)
+            a.label(f"{pre}_sv")
+            a.op("lda", addr=CELL_BASE, mode="longx")
+            a.op("sta", addr=kv["V_PREV"], mode="longx")
+            a.inx()
+            a.cpx(imm=68, m16=True)
+            a.bne(label=f"{pre}_sv")
+            a.rep(imm=0x30)
+            a.plx()
+            a.pla()
         a.rep(imm=0x30)
         a.inc()  # A = 길이−1 → **칸 수**
         a.op("sta", addr=V_N13, mode="long")
@@ -1237,6 +1414,7 @@ def build_payload(
     a.lda(imm=0x00)
     a.label("al1")
     a.op("sta", addr=V_NEXT, mode="long")
+    a.jsr(addr="q_wait", mode="abs")  # 큐가 가득이면 NMI 가 비울 때까지 기다린다(넘치면 앞 항목이 통째로 사라진다)
     a.op("lda", addr=V_HEAD, mode="long")
     a.rep(imm=0x20)
     a.op("and", imm=0x00FF, m16=True)
@@ -1373,12 +1551,19 @@ def build_payload(
     a.bne(label="d_pinclr")
     if vwf:
         a.lda(imm=0x00)
-        for v in ("V_VX", "V_VX_HI", "V_VS", "V_VD", "V_VO"):
+        for v in ("V_VX", "V_VX_HI", "V_VS", "V_VD", "V_VO", "V_PS", "V_WM", "V_CUR", "V_MXD", "V_PALD", "V_WK"):
             a.op("sta", addr=kv[v], mode="long")
     a.lda(imm=MAGIC)
     a.op("sta", addr=V_MAGIC, mode="long")
     a.bra(label="d_end")
     a.label("d_go")
+    if vwf:
+        a.op("lda", addr=kv["V_PALD"], mode="long")
+        a.beq(label="d_np")
+        a.dec()
+        a.op("sta", addr=kv["V_PALD"], mode="long")
+        a.jsr(addr="vwf_nmi_pal", mode="abs")
+        a.label("d_np")
     a.lda(imm=0x80)
     a.op("sta", addr=0x2115, mode="abs")  # VMAIN — $2119 뒤 +1 워드
     a.lda(imm=DRAIN_MAX)
@@ -1407,6 +1592,31 @@ def build_payload(
     a.plb()
     a.plp()
     a.rtl()  # ⚠ NMI 스텁이 **JSL** 로 부른다 — RTS 로 닫으면 프레임마다 스택이 2바이트씩 어긋난다
+
+    # ── 업로드 큐가 가득이면 기다린다 ────────────────────────────────────────────────
+    # 🔴 큐는 16칸이고 NMI 가 프레임당 DRAIN_MAX 장씩 비운다. 엔진이 한 프레임에 그보다 빨리 글자를 내면(빠른 메시지 속도)
+    #    머리가 꼬리를 따라잡아 **큐가 비어 보이고 앞 항목이 통째로 사라진다** — 그 칸들은 올라가지 않아 줄 머리가
+    #    쓰레기 글자로 남았다(2026-10-09 C5 레벨업 쪽 첫 줄). 가득이면(다음 머리 == 꼬리) 꼬리가 움직일 때까지 돈다.
+    #    NMI 가 막힌 때(강제 블랭크)를 대비해 횟수를 한정한다(넘으면 그냥 쓴다 — 예전 동작).
+    #    A·X·플래그를 지킨다.
+    a.label("q_wait")
+    a.php()
+    a.sep(imm=0x20)
+    a.rep(imm=0x10)
+    a.phx()
+    a.ldx(imm=0x4000, m16=True)
+    a.label("qw_l")
+    a.op("lda", addr=V_HEAD, mode="long")
+    a.inc()
+    a.op("and", imm=QN - 1)
+    a.op("cmp", addr=V_TAIL, mode="long")
+    a.bne(label="qw_ok")
+    a.dex()
+    a.bne(label="qw_l")
+    a.label("qw_ok")
+    a.plx()
+    a.plp()
+    a.rts()
 
     # ── 글리프 한 자를 VRAM 으로 (X = 큐 칸) ────────────────────────────────────────
     a.label("upload")
@@ -1552,7 +1762,8 @@ def build_payload(
         a.op("sta", addr=0x2118, mode="abs")
         a.op("lda", addr=V_UCTX, mode="long")
         a.bne(label="ur_dup")
-        a.lda(imm=0xFF)
+        a.op("lda", addr=BUF_VWF + nslot * 16, mode="longx")  # 흰 잉크 마스크 — 혼합 칸은 흰 잉크만 평면1 = 0(색인 1)
+        a.op("eor", imm=0xFF)
         a.bra(label="ur_hi")
         a.label("ur_dup")
         a.op("lda", addr=BUF_VWF, mode="longx")
@@ -1642,6 +1853,21 @@ def build_payload(
         a.raw(rt)
         a.label("rawvalid")
         a.raw(rv)
+        tw_mon, tw_pty = name_width_tables()
+        a.label("tw_mon")
+        a.raw(tw_mon)
+        a.label("tw_pty")
+        a.raw(tw_pty)
+        for i, tb in enumerate(dict_width_tables()):
+            a.label(f"tw_d{i}")
+            a.raw(tb)
+        ntab, nadv = num_glyph_table()
+        a.label("numtab")
+        a.raw(ntab)
+        a.label("numadv")
+        a.raw(nadv)
+        a.label("gw")
+        a.raw(glyph_widths(rep))
     blob = a.assemble()
     if len(blob) > 0x8000:
         raise SystemExit(f"훅 뱅크가 넘친다: {len(blob):,}B")
@@ -1655,6 +1881,9 @@ def build_payload(
         "open_fetch": common.fmt((HOOK_BANK << 16) | a.labels["open_fetch"]),
         "open_advance": common.fmt((HOOK_BANK << 16) | a.labels["open_advance"]),
         "var_end": var_end,
+        # 라이브 디버깅(emucap BP)용 — 라벨 주소와 가변 폭 변수 주소. 롬 바이트에는 안 들어간다.
+        "labels_dbg": {k: common.fmt((HOOK_BANK << 16) | v) for k, v in a.labels.items()},
+        "vwf_vars_dbg": {k: f"${v:06X}" for k, v in kv.items()} if vwf else {},
     }
     return blob, info | {"labels": a.labels}
 
@@ -1883,3 +2112,4 @@ def patch_ranges() -> list[tuple[int, int]]:
         *[(common.snes2off(s_), common.snes2off(s_) + 3) for s_ in FONT_CALL_SITES],
         (common.snes2off(FONT_TRAMPOLINE), common.snes2off(FONT_TRAMPOLINE) + 8),
     ]
+

@@ -535,6 +535,9 @@ def menu_bake(out: bytearray, rom: bytes) -> dict:
     import hud_names  # HUD 인물 이름(A6②) — 대사 글꼴이 아니라 HUD 전용 8×8 타일
 
     hud_names.bake(out, rom)
+    import hud_status  # HUD 상태 라벨(C4·방어) — 가나 도트 타일을 한글 8×8 로
+
+    hud_status.bake(out, rom)
     loose = bake_loose_boxes(out, rom, slot, code_tile)
     return {
         "glyphs": "".join(slot_of),
@@ -713,6 +716,9 @@ def mutable_ranges() -> list[tuple[int, int]]:
     import hud_names
 
     r += hud_names.patch_ranges()  # HUD 인물 이름 — 줄 틀 다섯 + 타일 13장
+    import hud_status
+
+    r += hud_status.patch_ranges()  # HUD 상태 라벨 — 프레임 일곱 + 타일 12장
     r += dicts.patch_ranges()
     r += battle_ui.patch_ranges()
     r += battle_ui.patch_ranges_a3()
@@ -915,8 +921,10 @@ def kr_items(
     #   죽는다. 지금은 0건이지만 **다른 파일에 같은 글자가 있어서 우연히 사는 것**이라(실측
     #   2026-09-08: 51자 전부 다른 데서 왔다) 낱말 하나만 바꿔도 깨진다. 원천으로 못 박는다.
     bmap = namesrc.battle_ui()
-    for key in ("title", "speed", "yesno", "flee", "loose", "names", "a3_values"):
+    for key in ("title", "speed", "yesno", "flee", "retry", "loose", "names", "a3_values"):
         texts += [x["kr"] for x in bmap.get(key, [])]
+    for key in battle_ui.HALFSPACE_KEYS:  # 공백을 반 칸으로 미리 합성한 칸 글리프(사설 영역) — 글리프표에 올린다
+        texts += [battle_ui.halfspace(x["kr"]) for x in bmap.get(key, [])]
     texts += [c["kr"] for g in bmap.get("grid", []) for c in g["cols"]]
     import credits
 
@@ -1597,6 +1605,9 @@ def write_image(out: bytes, info: dict, build_path: str) -> None:
     for old in d.glob("*.sfc*"):
         old.unlink()
     dst = d / OUT_NAME[build_path]
+    failed = info.get("ok") is False
+    if failed:  # 🔴 인코딩이 실패한 조각은 **원문이 그대로 화면에 남는다**(조용히) — 이미지를 `.failed` 로 돌려 정상으로 오해하지 않게 한다
+        dst = dst.with_name(dst.name + ".failed")
     dst.write_bytes(out)
     sha = hashlib.sha1(out).hexdigest()
     (d / "manifest.json").write_text(
@@ -1608,6 +1619,11 @@ def write_image(out: bytes, info: dict, build_path: str) -> None:
         encoding="utf-8",
     )
     print(f"→ {dst}  sha1 {sha}")
+    if failed:
+        raise SystemExit(
+            f"빌드 실패 — 번역 {info.get('errors')}건이 인코딩에 실패해 원문이 남는다(2026-10-09 「ＨＰ」·「Gold」 사고): "
+            f"{info.get('error_sample')}"
+        )
 
 
 def main() -> None:

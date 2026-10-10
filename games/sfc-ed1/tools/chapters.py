@@ -69,44 +69,61 @@ def render(rom: bytes, row: list[int]):
 #   전송 루틴이 **뱅크 바이트를 안 쓴다** — 확장 뱅크($2E)에 두면 화면이 깨진다.
 #   ⇒ 원본 일본어 조각 자리를 **재활용**한다(고유 71개 = 2,272B) + 뱅크 안 빈 자리(47개).
 KR_BANK_LO, KR_BANK_HI = 0x188000, 0x190000
-FONT = "Galmuri11.bdf"
-DY = -2  # 흰 획 행 1~11 · 테두리 0~12 (원본 흰 획 0~11 과 아랫줄이 같다)
+FONT = "Galmuri11.bdf"  # 장 띠(그래픽)만 Galmuri11 일반 — 마스터 10-11 「메뉴 장카드 같은건 갈무리11 쓸까? 여긴 갈무리가 더 어울릴것 같은데」. 본문은 Condensed
+# 세로 — Galmuri11 은 11행이라 DY=-2(흰 획 행 1~11, 바깥 테두리 행 0~12)로 앉힌다. 원판 띠 글자는 타일 행 0~11(12행)이다.
+# DY=-3(행 0~10)으로 올려 보기도 했으나 **맨 아랫줄이 잘려 보인다**는 마스터 판정(10-11 「가운데걸로 하자 맨밑에는 좀 짤리네」)으로 -2 확정.
+DY = -2
+ADV = 12  # 글자 한 칸 진행(Galmuri11 한글·전각 숫자 DWIDTH 12)
+HALF = 6  # 반각 공백
+X0 = 3  # 첫 글자 시작 x — 원판 제1~5장 띠를 조립 표에서 재면 흰 획이 x=3(테두리 2)에서 시작한다(종장만 빽빽해 1). 마스터 10-11 「원본도 왼쪽에 딱 붙어?」
+HEAD_GAP = 2 * HALF  # 「제１장」과 제목 사이 — 반각 두 칸(새턴·PS1 통일 꼴, 마스터 10-11)
+FULLWIDTH_DIGITS = str.maketrans("0123456789", "０１２３４５６７８９")  # 번호 꼴은 정본 「제１장」(전각)
+# 종장만 136px 에 안 들어간다(159) — 글리프 가로 11→10 압축(가운데 두 열 접기)·진행 10·간격 12(반각 2칸 유지)·공백 5 → 끝 x 135(B 안, 마스터 10-11)
+SQUEEZE = {"종장": {"adv": 10, "space": 5}}
 
 
-DIGIT_SHIFT = 2  # (11-7)//2 — 숫자 글리프(원본 폭 7px 급)를 11px 칸 안에서 가운데로
+def _bits(f, ch: str, squeeze: bool) -> list:
+    b = f.bits(ch, dy=DY, rows=16, width=16)
+    if not squeeze or ch in ",.":
+        return b
+    return [list(r[:5]) + [r[5] or r[6]] + list(r[7:11]) + [0] * 6 for r in b]
 
 
-# 🔴 2026-09-15 마스터 확정 — 장 제목 숫자는 전각(11px, 다른 글자와 같은 칸)으로 간다.
-# 원본 JP 는 숫자가 7px 로 한자보다 좁았다(위 12.1 절 실측) — 그런데 그건 **원문 줄 자체가
-# 가나·숫자(좁음)·한자(네모)로 폭이 섞여 있어서** 자연스러웠던 것이다. 우리 줄은 전부 한글이라
-# 네모꼴 일색이라 **숫자 하나만 좁으면 그것만 튄다.** 원본이 그 폭을 쓴 이유가 우리 줄엔 없다
-# — 그래서 좁혀 둔 채로 안 두고 넓힌다(다음에 「원본은 좁은데 왜 넓혔지」로 되돌리지 않는다).
-# ⚠ 이 특례는 **장 제목(chapters.py)에만** 있다 — `grep isdigit tools/*.py` 로 확인, 다른
-# 숫자 표시(HUD·메뉴 등)는 이 코드를 안 거친다.
-def _metrics(txt: str, f, gap: int, sw: int) -> tuple[set, int]:
-    """(흰 획 점 집합, 폭). 글자 폭은 11(숫자도) — 숫자는 잉크를 칸 안에서 가운데로 미룬다."""
-    white, x = set(), 0
-    for ch in txt:
-        if ch == " ":
-            x += sw
-            continue
-        bits = f.bits(ch, dy=DY, rows=16, width=16)
-        shift = DIGIT_SHIFT if ch.isdigit() else 0
-        for yy in range(16):
-            for xx in range(11):
-                if bits[yy][xx]:
-                    white.add((x + xx + shift, yy))
-        x += 11 + gap
-    return white, x - gap
+def _metrics(txt: str, f, digit: set | None = None) -> tuple[set, int, int]:
+    """(흰 획 점 집합, 시작 x, 끝 x). 「제N장」 머리는 전각 숫자, 머리와 제목 사이는 반각 두 칸, 제목 안 공백은 반각 한 칸(종장만 압축 꼴).
+    왼쪽 정렬(원판 시작 x=3 에 맞춘다) — 원판도 왼쪽이다(마스터 10-11 「sfc 장띠는 원본따라가자」)."""
+    head, _, rest = txt.partition(" ")
+    sq = SQUEEZE.get(head)
+    adv, space = (sq["adv"], sq["space"]) if sq else (ADV, HALF)
+    parts = [(head.translate(FULLWIDTH_DIGITS), 0), (rest, HEAD_GAP)]
+    x0 = X0
+    white, x = set(), x0
+    for p, g in parts:
+        x += g
+        for ch in p:
+            if ch == " ":
+                x += space
+                continue
+            if digit is not None and ch in "０１２３４５６７８９":  # 원판 띠 숫자 그림(반각 8px 칸)을 전각 칸(ADV) 가운데에 — 마스터 10-11 「sfc오른쪽 숫자원판으로 가자」
+                for dx, dy in digit:
+                    white.add((x + (ADV - 8) // 2 + dx, dy))
+                x += adv
+                continue
+            bits = _bits(f, ch, bool(sq))
+            for yy in range(16):
+                for xx in range(12):
+                    if bits[yy][xx]:
+                        white.add((x + xx, yy))
+            x += HALF if ch in ",." else adv
+    return white, x0, x
 
 
-def fit(txt: str, f) -> tuple[set, int, tuple[int, int]]:
-    """폭이 136 을 넘으면 **자간 → 공백** 순으로 조인다(원본도 비례폭이라 제목마다 다르다)."""
-    for gap, sw in ((1, 6), (0, 6), (0, 5), (0, 4), (0, 3)):
-        white, w = _metrics(txt, f, gap, sw)
-        if w <= WIDTH:
-            return white, w, (gap, sw)
-    raise SystemExit(f"제목이 {WIDTH}px 에 안 들어간다: {txt!r}")
+def fit(txt: str, f, digit: set | None = None) -> tuple[set, int, int]:
+    """(흰 획, 시작 x, 끝 x) — 136px 를 넘으면 멈춘다(종장은 압축 꼴로 135)."""
+    white, x0, x = _metrics(txt, f, digit)
+    if x > WIDTH:
+        raise SystemExit(f"제목이 {WIDTH}px 에 안 들어간다: {txt!r}")
+    return white, x0, x
 
 
 def cell_bytes(white: set, cell: int) -> tuple[bytes, bytes]:
@@ -163,7 +180,22 @@ def pool(rom: bytes) -> list[int]:
         for a in range(KR_BANK_LO, KR_BANK_HI - 0x110, 0x10)
         if a not in reuse and clean(a) and blank(a) and blank(a + 0x100)
     ]
-    return reuse + extra
+    # 🔴 조각 a 는 a+$100 도 먹는다 — 빈 자리 목록에는 a 와 a+$100 이 **둘 다 시작 자리로** 올라 있어 둘을 다 쓰면 한 조각의 아랫절반을
+    #   다른 조각의 윗절반이 덮는다(종장 「그리고 영웅들의 전설」 칸 6~9 가 칸 13~16 에 덮였다, 2026-10-11 마스터 장 카드 전수 점검).
+    #   앞에서부터 고르며 이미 쓴 자리의 ±$100 은 건너뛴다.
+    out, taken = [], set()
+    for a in reuse + extra:
+        if a in taken or a + 0x100 in taken or a - 0x100 in taken:
+            continue
+        out.append(a)
+        taken.add(a)
+    return out
+
+
+def orig_digit_ink(rom: bytes, k: int) -> set:
+    """원판 k+1 장 띠의 숫자 칸(칸 2, 반각 8px·굵은 꼴)의 흰 획 점 — 테두리·바탕은 안 가져온다(우리 굽기가 테두리를 다시 두른다)."""
+    cell = render(rom, entries(rom)[k]).crop((16, 0, 24, 16))
+    return {(x, y) for y in range(14) for x in range(8) if cell.getpixel((x, y)) == 255}
 
 
 def bake(out: bytearray, rom: bytes) -> dict:
@@ -181,7 +213,7 @@ def bake(out: bytearray, rom: bytes) -> dict:
     n = 0
     done = []
     for k, t in enumerate(data["titles"]):
-        white, w, (gap, sw) = fit(t["kr"], f)
+        white, x0, w = fit(t["kr"], f, orig_digit_ink(rom, k) if t["kr"].startswith("제") else None)
         cells = -(-w // 8)  # 글자가 실제로 닿는 칸 수 — 나머지는 원본 빈 조각을 가리킨다
         if n + cells > len(slots):
             raise SystemExit(f"조각 자리가 모자란다: {n + cells} > {len(slots)}")
@@ -198,7 +230,18 @@ def bake(out: bytearray, rom: bytes) -> dict:
             o2 = common.snes2off(a + 0x100)
             out[o2 : o2 + 16] = bot
             out[e : e + 3] = a.to_bytes(3, "little")
-        done.append({"kr": t["kr"], "px": w, "cells": cells, "gap": gap, "space": sw})
+        done.append({"kr": t["kr"], "x0": x0, "end": w, "cells": cells})
+    # 구조 계약 — 조각의 윗·아랫절반(a, a+$100)이 다른 조각과 겹치면 글자가 깨진다(종장 실측). 빌드가 조용히 통과하지 않게 센다.
+    halves: dict[int, int] = {}
+    for k in range(len(data["titles"])):
+        for c in range(CELLS):
+            e = common.snes2off(TABLE + STRIDE * k + 3 * c)
+            a = int.from_bytes(out[e : e + 3], "little")
+            if a == BLANK:
+                continue
+            for h in (a, a + 0x100):
+                if halves.setdefault(h, k * CELLS + c) != k * CELLS + c:
+                    raise SystemExit(f"장 제목 조각이 겹친다: {common.fmt(h)}")
     return {"titles": done, "slots_used": n, "slots": len(slots)}
 
 
@@ -218,8 +261,8 @@ def main() -> None:
         import namesrc
 
         for t in namesrc.chapters()["titles"]:
-            _w, px, (gap, sw) = fit(t["kr"], f)
-            print(f"  {px:4d}/{WIDTH}px  자간{gap} 공백{sw}  {t['kr']}")
+            _w, x0, px = fit(t["kr"], f)
+            print(f"  {x0:3d}~{px:3d}/{WIDTH}px  {t['kr']}")
         return
     rows = entries(rom)
     for k, row in enumerate(rows):

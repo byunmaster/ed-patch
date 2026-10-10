@@ -126,7 +126,7 @@ def _extra_pairs(rom):
     for key in ("names", "title"):
         for x in bu.get(key, []):
             yield f"ui:{key}@{x['addr']}", x["jp"], x.get("kr") or None, "slot"
-    for key in ("speed", "yesno", "flee", "loose", "a4_labels", "a3_values", "a4_values"):
+    for key in ("speed", "yesno", "flee", "retry", "loose", "a4_labels", "a3_values", "a4_values"):
         for i, x in enumerate(bu.get(key, [])):
             yield f"ui:{key}[{i}]", x["jp"], x.get("kr") or None, "slot"
     for i, x in enumerate(namesrc.chapters()["titles"]):

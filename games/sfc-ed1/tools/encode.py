@@ -93,14 +93,15 @@ TOKEN_RE = re.compile(
 HALF_PUNCT = set(".,!?")
 
 # 2칸(16×16) 글리프로 가는 기호 — 반각 8px 글리프가 없는 것들. 글꼴(Neo둥근모)에서 굽는다.
-GLYPH_SYMBOLS = set("…~()·『』【】〜―ＥＰ")  # ＥＰ = 정본의 전각 표기(마스터 10-08)
+GLYPH_SYMBOLS = set("…~()·『』【】〜―ＥＰＨＭ")  # ＥＰ·ＨＰ·ＭＰ = 정본의 전각 표기(마스터 10-08, 규칙 1-4)
+# 「GOLD」 — 원판 표기도 대문자라(마스터 10-11 「SFC 원본보니 GOLD 대문자로 쓰네」) 글자 넷 모두 원판 시트 코드로 간다 — 글리프 특례 없음.
 # 스태프롤 「J.D.K.」 — J·K 는 반각 영문 표에 없고, D 는 표에 있지만 시트의 굵은 D 라 J·K 와 굵기가
 # 갈린다(마스터 지적 2026-09-26). 셋 다 글꼴 글리프로 굽는다 — 대사 인코더는 D 를 계속 표로 쓴다.
 CREDIT_GLYPHS = set("JDK")
 
 
 def is_glyph(ch: str) -> bool:
-    return ("가" <= ch <= "힣") or ch in GLYPH_SYMBOLS
+    return ("가" <= ch <= "힣") or ch in GLYPH_SYMBOLS or "\ue000" <= ch <= "\ue0ff"  # PUA = 반 칸 공백을 미리 합성한 칸 글리프(`battle_ui.halfspace`)
 
 
 def bad_index(i: int) -> bool:
@@ -192,6 +193,10 @@ def encode(
         if piece == "<@>":
             flush()
             out.parts.append(("label",))
+            # 분기 목표 — 여기로 **건너뛰어** 들어올 수 있으니 바로 앞 글자가 찍혔다고 믿을 수 없다(「…<분기>들<@>{은/는}」: 혼자일 땐 들을 건너뛰어
+            # 「세리오스은」 이 됐다, 2026-10-10 마스터). 뒤따르는 조사는 런타임이 마지막으로 찍은 글자로 고른다.
+            prev_word = ""
+            prev_runtime = True
             continue
         if piece.startswith("<"):
             flush()
