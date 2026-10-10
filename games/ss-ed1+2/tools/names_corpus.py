@@ -32,6 +32,9 @@ import common
 import patch_scn as S
 import patch_ui as U
 
+# 정본 검사(`scripts/check/check_canon.py`) — 어긋남은 실패로 친다(마스터 10-11 「정본검사는 모든 게임이 켜져있어야 하지 않아?」).
+CANON_GATE = True
+
 # 제어부호·공백만 있고 **번역할 글자가 없는** 블록 — 분모에서 뺀다(둘 다 아니면 오탐만 는다).
 _BARE = re.compile(r"(%[csd]|[\s　])+$")
 
