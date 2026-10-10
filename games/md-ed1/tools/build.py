@@ -35,6 +35,7 @@ import lz
 import punctwrap
 import scene
 import hud_status
+import spell_digit
 import sysmsg
 import tables
 import textmap
@@ -81,6 +82,7 @@ class Rom:
         "tail": (TAIL_LO, ARCHIVE_TOP),
         "josa-code": (TAIL_HI - JOSA_RESERVE, TAIL_HI),
         "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 12),
+        "josa-name-hook": (josa.NAME_FN_PATCH, josa.NAME_FN_PATCH + 6),
         "wrap-code": (TAIL_HI - JOSA_RESERVE - WRAP_RESERVE, TAIL_HI - JOSA_RESERVE),
         "wrap-tramp": (wordwrap.TRAMP, wordwrap.TRAMP + 6),
         "half-code": (
@@ -108,6 +110,7 @@ class Rom:
             f"josa-arg:{i:02x}": (josa.ARGLEN_TBL + i, josa.ARGLEN_TBL + i + 1)
             for i in (josa.IDX_ACTOR, josa.IDX_ITEM)
         },
+        "spell-digit": (spell_digit.AT, spell_digit.AT + len(spell_digit.NEW)),
         "hud-status": (hud_status.BASE, hud_status.BASE + hud_status.N * hud_status.STRIDE),
         "font0-header": (0x1A54D2, 0x1A54DE),
         "font0-table": (0x1A551A, 0x1A6080),
@@ -524,6 +527,10 @@ def main(check_only: bool = False) -> None:
         for e in names.get(grp, {}).values():
             hud_chars.update(re.sub(r"<[^>]*>", "", e.get("ours", "")))
     for label, pos, body in hangul.resource4(cs, hud_chars):  # HUD 이름 12×12
+        rom.write(label, pos, body)
+    # 2b-3. 주문 레벨 숫자를 반각으로(「레지나1을」) — 이름 버퍼 빌더의 14B
+    spell_digit.check(orig)
+    for label, pos, body in spell_digit.plan():
         rom.write(label, pos, body)
     # 2b-2. HUD 상태이상 8칸(守跳毒眠黙乱気絶 → 수·반·독·잠·묵·혼·기·절) — 무압축 타일 교체(마스터 10-10)
     for label, pos, body in hud_status.plan():
