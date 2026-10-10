@@ -100,7 +100,7 @@ ARGS[0xF8] = 1
 ARGS[0xEB] = 1
 ARGS[0xEC] = 1
 
-GOTO, CALL, CELL, CODE = "goto", "call", "cell", "code"
+GOTO, CALL, CELL, CODE, MULTI = "goto", "call", "cell", "code", "multi"
 COND = {0x11, 0x12, 0xF2, 0xF8}  # 다음 3B(대개 0F goto)를 조건부로 건너뛴다
 # 렌더 한 번을 끝내는 코드 — 00(창 닫기) · 06(그냥 반환) · 07(개행 + 대기 + 반환). 메시지 함수
 # `$60A0` 은 렌더러 `$978C` 를 한 번만 부르므로 이 셋이 곧 스트림의 끝이다. 05 는 페이지 넘김(계속).
@@ -124,6 +124,7 @@ class Token:
     code: int = -1
     ref: str | None = None  # goto/call/cell/code
     target: int = -1  # 모듈 안 오프셋(참조가 있을 때)
+    targets: tuple = ()  # MULTI(16) — 변위 다섯 각각의 착지(각자 자기 위치 기준). target = 첫째
 
     @property
     def argpos(self) -> int:
@@ -186,6 +187,12 @@ def parse_stream(b: bytes, start: int) -> Stream:
                     t.ref = None
                 else:
                     t.ref, t.target = REL16[c], t.argpos + off
+            elif c == 0x16:
+                # 파티 리더별 분기 — 변위 다섯, **각자 자기 자리 기준**(블록 34: 같은 착지 셋이 변위 240·238·236)
+                offs = struct.unpack(">5h", raw[1:11])
+                t.ref = MULTI
+                t.targets = tuple(t.argpos + 2 * k + o for k, o in enumerate(offs))
+                t.target = t.targets[0]
             elif c in (0xF5, 0xFB) and raw[1] == 0:
                 t.ref, t.target = CELL, t.argpos + 1 + struct.unpack(">h", raw[2:4])[0]
             st.tokens.append(t)
@@ -325,6 +332,8 @@ def parse_module(b: bytes) -> Module:
         for tok in st.tokens:
             if tok.ref in (GOTO, CALL):
                 work.append(tok.target)
+            elif tok.ref == MULTI:
+                work.extend(tok.targets)
             elif tok.ref == CELL:
                 cells.add(tok.target)
             elif tok.ref == CODE:
@@ -407,7 +416,11 @@ def reassemble(
             raw = bytearray(t.raw)
             tgt = pos.get(t.target, t.target) if t.ref in (GOTO, CALL) else t.target
             here = len(b) + len(out)
-            if t.code in (0xF5, 0xFB):
+            if t.ref == MULTI:
+                for k, old in enumerate(t.targets):
+                    new = pos.get(old, old)
+                    raw[1 + 2 * k : 3 + 2 * k] = struct.pack(">h", new - (here + 1 + 2 * k))
+            elif t.code in (0xF5, 0xFB):
                 rel = tgt - (here + 2)
                 raw[2:4] = struct.pack(">h", rel)
             else:
@@ -515,8 +528,8 @@ if __name__ == "__main__":
             f"셀 {tot['cells']} · 코드 호출 {tot['codes']} · 참조 파싱 실패 {tot['badref']}"
         )
         print("  미도달·실패 블록:", sorted(worst, key=lambda x: -abs(x[0]))[:12])
-        if (tot["streams"], tot["hit"], tot["tags"], tot["badref"]) != (2750, 1425, 1437, 0):
-            raise SystemExit("씬 모듈 분모가 갈렸다 (기대 2750 스트림 · 1425/1437 · 실패 0)")
+        if (tot["streams"], tot["hit"], tot["tags"], tot["badref"]) != (2928, 1429, 1437, 0):
+            raise SystemExit("씬 모듈 분모가 갈렸다 (기대 2928 스트림 · 1429/1437 · 실패 0)")
         biggest = 0
         for _, b, _ in bl:
             mod = parse_module(b)

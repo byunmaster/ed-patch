@@ -56,7 +56,7 @@ CAPTION_RESERVE = (
 # ⚠ 표는 **한글 코드 수를 따라 자란다**(종성 비트표 = 코드 하나에 1비트). 0x180 으로 재 두었더니
 # 글자 33 자를 새로 굳히자마자 2바이트가 넘쳤다(2026-09-07). 그래서 **글리프 상한**(1,370자)까지
 # 재 둔다 — 172B(한글 비트표) + 16B(반각) + 252B(기계어) + 쌍 표 ≈ 460B.
-JOSA_RESERVE = 0x340  # 0x280→0x340: 으로/로·과/와 를 넣으며 표가 2비트(받침·ㄹ)로 커졌다 — 글리프 1,370자일 때 기계어 388 + 표 383 = 771B
+JOSA_RESERVE = 0x3E0  # 0x340→0x3E0(씬 라운드 2026-10-11): 한글 1,025자에서 기계어 424 + 표 384 = 808B — 쌍 표가 크다. (0x280→0x340: 으로/로·과/와 를 넣으며 표가 2비트로 커졌다)
 # 조사 훅 앞에 어절 줄넘김 본체(tools/wordwrap.py, 326B)를 둔다 — 넘칠 때 글자가 아니라 어절을
 # 다음 줄로 보낸다(마스터 2026-09-30 번복, 전 기종 — 09-27 밤의 글자 단위 "최종 판정"을 다시 뒤집었다)
 WRAP_RESERVE = 0x180
@@ -64,8 +64,12 @@ WRAP_RESERVE = 0x180
 FIELD_HUD_RESERVE = 0x20
 # 자막 자리 **앞**에 시스템 메시지 중 꼬리로 옮기는 스트림(도망 둘, sysmsg.RELOCATE)의 칸을 둔다 — 아카이브는 그 앞까지만
 SYSMSG_TAIL = sysmsg.TAIL_SIZE
-ARCHIVE_TOP = TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE - SYSMSG_TAIL
-SYSMSG_TAIL_AT = ARCHIVE_TOP
+SYSMSG_TAIL_AT = TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE - SYSMSG_TAIL
+# 글꼴 리소스 1(반각)·5(자막)의 표·글리프 칸 — 표 0 의 빈 자리에 두면 한글이 ~1,100자를 넘을 때 안 들어간다
+# (씬 라운드 2026-10-11). 리소스 1 = 표 268B + 글리프 3.8KB, 리소스 5 = 글자당 표 2B + 글리프 64B(Neo 16×16).
+FONT_RESERVE = 0x5000
+ARCHIVE_TOP = SYSMSG_TAIL_AT - FONT_RESERVE
+FONT_AT = ARCHIVE_TOP
 
 
 BATTLE_LO, BATTLE_HI = 0x0CAB04, 0x0D85B4  # 전투 아카이브 LZ 구간(첫 블록 시작 ~ 끝 블록 끝)
@@ -80,6 +84,7 @@ class Rom:
         "battle": (BATTLE_LO, BATTLE_HI),
         "script": (SCRIPT_LO, SCRIPT_HI),
         "tail": (TAIL_LO, ARCHIVE_TOP),
+        "font-tail": (ARCHIVE_TOP, ARCHIVE_TOP + FONT_RESERVE),
         "josa-code": (TAIL_HI - JOSA_RESERVE, TAIL_HI),
         "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 12),
         "josa-name-hook": (josa.NAME_FN_PATCH, josa.NAME_FN_PATCH + 6),
@@ -511,13 +516,13 @@ def main(check_only: bool = False) -> None:
     rom.write("font0-header", cs.r0["hdr"], hdr)
     rom.write("font0-table", cs.r0["table"], tbl)
     rom.write("font0-glyphs", cs.r0["desc"], orig[cs.r0["desc"] : cs.r0["desc"] + 4] + gl)
-    for label, pos, body in hangul.resource1(cs):  # 반각 쉼표 — 표 0 이 비운 자리에
+    for label, pos, body in hangul.resource1(cs, FONT_AT):  # 반각 쉼표 — 표 0 이 비운 자리에
         rom.write(label, pos, body)
     # 네오둥근모는 반각도 리소스 5 로 그리니 공백(0x20)도 표에 든다 — 빠지면 조회가 첫 항목(「!」)으로 떨어진다
     cap5 = {c for c in captions.font5_chars(cmap) if c.strip() or (c == " " and captions.FONT_SRC == "neodgm")}
     if captions.FONT_ID and cap5:  # <fd85> 를 단 자막 전용 글꼴(리소스 5, Galmuri14 14×14)
         for label, pos, body in hangul.resource5(
-            cs, cap5, hangul.layout_after_r1(cs), cell=captions.FONT_CELL, source=captions.FONT_SRC
+            cs, cap5, hangul.layout_after_r1(cs, FONT_AT), cell=captions.FONT_CELL, source=captions.FONT_SRC, tail_end=FONT_AT + FONT_RESERVE
         ):
             rom.write(label, pos, body)
     for label, pos, body in hangul.resource2_labels():  # HUD 「ｱﾄ」 → 「남다」 (8×8, 마스터 도안)

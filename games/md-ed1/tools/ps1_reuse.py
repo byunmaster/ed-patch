@@ -68,6 +68,9 @@ def names_table() -> dict[str, str]:
         for k, v in cat.items()
         if isinstance(v, str)
     }
+    # 역할 화자(병사·남자·현자 …)는 공통 문안 정본의 `speaker` 범주에 있다
+    for k, v in canon.table("speaker", "ed1").items():
+        out.setdefault(k, v)
     tbl = dict_names.names()
     for name in ("item", "spell", "place_a", "place_b"):
         for e in tbl.get(name, {}).values():
@@ -185,7 +188,59 @@ def kr_text(s: str) -> str:
     # PS1 은 늘임표에 반각 `~` 를 쓰는데 MD 반각 글꼴(리소스 1)엔 그 글리프가 없다 —
     # 원본이 쓰는 **전각 `～`**(표 0 에 살아 있다)로 바꾼다. 안 바꾸면 빌드가 죽는다(21건).
     s = s.replace("~", "～")
+    # 안쪽 따옴표 ‘’ 는 『』 로(마스터 판정 10-11 — 표 0 에 있는 겹낫표)
+    s = s.replace("‘", "『").replace("’", "』")
+    # 마침표 셋 이상(침묵·말줄임)은 번역 규칙 1-3 대로 전각 「…」 round(n/3) 개(최소 1) — 마스터 10-11 「침묵은 전각 활용해」
+    s = re.sub(r"\.{3,}", lambda m: "…" * max(1, round(len(m.group(0)) / 3)), s)
     return re.sub(r"  +", " ", s).strip()
+
+
+_JOSA_P = {"은(는)": 0, "이(가)": 1, "을(를)": 2, "과(와)": 3, "으로(로)": 4}
+_JOSA_LIT = {"은": 0, "는": 0, "이": 1, "가": 1, "을": 2, "를": 2, "과": 3, "와": 3}
+_BYUNGI = "|".join(re.escape(k) for k in _JOSA_P)
+
+
+def hook_josa(s: str) -> str:
+    """이름 삽입 코드 바로 뒤의 병기(`을(를)`)를 **조사 훅**(`tools/josa.py`)으로 바꾼다 — 번역 규칙 3-5.
+
+    `<02>`(배우) → `<eb0p>` · `<0b>`(리더) → `<ebfp>` · `<09nn>`(파티원 nn) → `<eb(nn+1)p>` ·
+    `<0e>`(아이템, 뒤에 `<1c>` 가 와도) → `<ec0p>`. p = 0 은/는 · 1 이/가 · 2 을/를 · 3 과/와 · 4 으로/로.
+    `<1e>이름<04>` 는 고정 글자라 받침을 정적으로 보고 고른다.
+    """
+
+    def fix(m: re.Match) -> str:
+        head, tail = m.group(1), m.group(3)
+        p = _JOSA_P[tail]
+        if head == "<0b>":
+            return f"{head}<ebf{p}>"
+        if head == "<02>":
+            return f"{head}<eb0{p}>"
+        if head.startswith("<09"):
+            return f"{head}<eb{int(head[3:5], 16) + 1:x}{p}>"
+        return f"{head}{m.group(2) or ''}<ec0{p}>"
+
+    def static(m: re.Match) -> str:
+        name, tail = m.group(2), m.group(4)
+        last = name[-1]
+        has = "가" <= last <= "힣" and (ord(last) - 0xAC00) % 28 != 0
+        pair = {"은(는)": "는은", "이(가)": "가이", "을(를)": "를을", "과(와)": "와과"}[tail]
+        return f"{m.group(1)}{m.group(3) or ''}{pair[1] if has else pair[0]}"
+
+    def fix_lit(m: re.Match) -> str:
+        head, tail = m.group(1), m.group(3)
+        p = _JOSA_LIT[tail]
+        if head == "<0b>":
+            return f"{head}<ebf{p}>"
+        if head == "<02>":
+            return f"{head}<eb0{p}>"
+        return f"{head}{m.group(2) or ''}<ec0{p}>"
+
+    no_euro = _BYUNGI.replace("|" + re.escape("으로(로)"), "")
+    s = re.sub(rf"(<1e>([가-힣]+)<04>)(<1c>)?({no_euro})", static, s)
+    s = re.sub(rf"(<0b>|<02>|<09[0-9a-f]{{2}}>|<0e>)(<1c>)?({_BYUNGI})", fix, s)
+    # PS1 이 이름 삽입 뒤에 병기 없이 조사 한 글자만 쓴 자리도 훅으로(다음이 공백·부호·태그·끝일 때만)
+    lit = rf"(<0b>|<02>|<0e>)(<1c>)?([{''.join(_JOSA_LIT)}])(?=[ ,.!?…<\f]|$)"
+    return re.sub(lit, lambda m: fix_lit(m), s)
 
 
 PLACEHOLDER = re.compile(r"[\x00-\x1f]")
@@ -286,6 +341,8 @@ def ours_for(st: scene.Stream, kr_pages: list[str], speakers_kr: list[str] | Non
                 kr = (speakers_kr or [])[name_i] if name_i < len(speakers_kr or []) else None
                 out.append(kr or t.raw.decode("cp932", "replace"))
                 name_i += 1
+            elif not t.raw.decode("cp932", "replace").strip():
+                pass  # 공백뿐인 토막 — stream_pages 가 쪽으로 안 세므로 여기서도 문안을 받지 않는다
             elif not text_seen:
                 out.append(kr_pages[page_i] if page_i < len(kr_pages) else "")
                 text_seen = True
@@ -302,7 +359,9 @@ def ours_for(st: scene.Stream, kr_pages: list[str], speakers_kr: list[str] | Non
             in_name = False
             out.append("<04>")
         elif t.code == 0x05:
-            page_i += 1
+            # 문안이 없던 쪽(스트림 머리 `<05>` 등)은 쪽 번호를 안 올린다 — stream_pages 는 빈 쪽을 걸러 센다
+            if text_seen:
+                page_i += 1
             text_seen = False
             out.append("\f")
         elif t.code == 0x01:
@@ -311,7 +370,7 @@ def ours_for(st: scene.Stream, kr_pages: list[str], speakers_kr: list[str] | Non
         else:
             out.append(f"<{t.raw.hex()}>")
         prev_text = was_text
-    return "".join(out)
+    return hook_josa("".join(out))
 
 
 PROPOSAL = common.REVIEW_DIR / "ps1_reuse" / "proposal.json"

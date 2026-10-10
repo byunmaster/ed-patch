@@ -65,7 +65,8 @@ def scan_lines(lines: list[tuple[str, str]]) -> tuple[int, list[str]]:
     )
     n, errs = 0, []
     for where, ours in lines:
-        t = halfspace.plain(TAG.sub("", ours)).replace("\n", " ")
+        # `<1e>이름<04>` 의 끝은 이름창 경계다 — 태그를 걷어 이름 뒤 본문 첫 글자(「이 나라…」)가 조사로 읽히면 안 된다
+        t = halfspace.plain(TAG.sub("", ours.replace("<04>", " "))).replace("\n", " ")
         for m in pat.finditer(t):
             n += 1
             name, p = m.group(1), m.group(2)

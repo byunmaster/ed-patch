@@ -7,6 +7,7 @@
   한다(`$9C36` 이 0x40B 보폭 조탐색 뒤 역방향 정탐색).
 - 표 0 = 원본의 기호·숫자·영문 89자(코드 < 0x829B, 그대로) + 한글. 가나·한자는 버린다(번역문에 없다).
   ⇒ 한글 최대 **1,370자**. 넘치면 빌드가 죽는다 — 그때 (a) 리소스 분할로 간다.
+  (리소스 1·5 의 표·글리프는 표 0 의 빈 자리가 아니라 꼬리 글꼴 예약 칸 `build.FONT_RESERVE` 에 둔다.)
 - 글리프: Galmuri11(11×11, 셀 아래 정렬) 채움 + 테두리(8방향 팽창 − 채움, 원본 규칙 196/196 일치).
 """
 
@@ -510,7 +511,7 @@ def _pack8(rows: list[list[int]]) -> bytes:
     return bytes(sum(v << (7 - x) for x, v in enumerate(r)) for r in rows)
 
 
-def layout_after_r1(cs: "Charset") -> tuple[int, int]:
+def layout_after_r1(cs: "Charset", tail: int | None = None) -> tuple[int, int]:
     """리소스 1 을 옮긴 뒤 남는 (표 자리, 글리프 자리) — 리소스 5 가 여기서 시작한다.
 
     🔴 **더한 글자 수를 세서 쓴다.** 예전엔 `+ 1`(쉼표 한 자)로 박혀 있었는데 `EXTRA_R1` 이
@@ -523,14 +524,23 @@ def layout_after_r1(cs: "Charset") -> tuple[int, int]:
     r0, r1 = font.resources(rom)[:2]
     codes = font.codes(rom, r1)
     n1 = len(codes) + len([c for c in EXTRA_R1 if c not in codes])
+    if tail is not None:  # 꼬리 예약 칸: 리소스 1 표 → (짝수) 글리프 4+n1×stride → 리소스 5 표. 글리프 자리는 5 가 정한다(0)
+        d = tail + 2 * n1
+        d += d & 1
+        t5 = d + 4 + n1 * r1["stride"]
+        return (t5 + (t5 & 1), 0)
     tbl = r0["table"] + 2 * len(cs.entries) + 2 * n1
     gl = r0["desc"] + 4 + len(cs.entries) * r0["stride"] + 4 + n1 * r1["stride"]
     return (tbl + (tbl & 1), gl + (gl & 1))
 
 
-def resource1(cs: "Charset") -> list[tuple[str, int, bytes]]:
+def resource1(cs: "Charset", tail: int | None = None) -> list[tuple[str, int, bytes]]:
     """리소스 1(반각 8×14)에 쉼표를 더한 새 표·글리프를 표 0 이 비운 자리에 두고 헤더를 돌린다.
-    → [(라벨, 자리, 바이트)] — 라벨은 build.Rom 의 허용 구간 이름."""
+    → [(라벨, 자리, 바이트)] — 라벨은 build.Rom 의 허용 구간 이름.
+
+    `tail` 이 있으면 표·글리프를 표 0 의 빈 자리가 아니라 **꼬리의 글꼴 예약 칸**(`tail` 부터)에 둔다 —
+    한글이 1,100자를 넘으면 표 0 이 비우는 자리가 리소스 1·5 를 못 품는다(씬 라운드 실측 2026-10-11).
+    """
     rom = cs.rom
     r0, r1 = font.resources(rom)[:2]
     codes = font.codes(rom, r1)
@@ -554,17 +564,24 @@ def resource1(cs: "Charset") -> list[tuple[str, int, bytes]]:
         parts.insert(i, _pack8(fill) + _pack8(ring(fill)))
     glyphs = b"".join(parts)
     table = b"".join(struct.pack(">H", c) for c in codes)
-    tbl_at = r0["table"] + 2 * len(cs.entries)  # 표 0 바로 뒤 (짝수)
-    desc_at = r0["desc"] + 4 + len(cs.entries) * r0["stride"]  # 표 0 글리프 바로 뒤
-    if tbl_at + len(table) > r0["table_end"]:
-        raise SystemExit("표 0 이 커서 리소스 1 표를 둘 자리가 없다")
+    if tail is not None:
+        tbl_at = tail
+        desc_at = tbl_at + len(table)
+        desc_at += desc_at & 1
+        label_t = label_g = "font-tail"
+    else:
+        tbl_at = r0["table"] + 2 * len(cs.entries)  # 표 0 바로 뒤 (짝수)
+        desc_at = r0["desc"] + 4 + len(cs.entries) * r0["stride"]  # 표 0 글리프 바로 뒤
+        label_t, label_g = "font0-table", "font0-glyphs"
+        if tbl_at + len(table) > r0["table_end"]:
+            raise SystemExit("표 0 이 커서 리소스 1 표를 둘 자리가 없다")
     h = r1["hdr"]
     header = struct.pack(">III", tbl_at - h, tbl_at + len(table) - 4 - h, desc_at - h - 8)
     desc = rom[r1["desc"] : r1["desc"] + 4]
     return [
         ("font1-header", h, header),
-        ("font0-table", tbl_at, table),
-        ("font0-glyphs", desc_at, desc + glyphs),
+        (label_t, tbl_at, table),
+        (label_g, desc_at, desc + glyphs),
     ]
 
 
@@ -651,6 +668,7 @@ def resource5(
     *,
     cell: int = 14,
     source: str = "galmuri14",
+    tail_end: int = 0,
 ) -> list[tuple[str, int, bytes]]:
     """빈 리소스 5 에 **자막 전용 글꼴**을 만든다 — (라벨, 자리, 바이트). `after` = 리소스 1 이 쓴 자리 뒤.
 
@@ -703,23 +721,29 @@ def resource5(
 
     tbl_at, gl_at = after
     table = b"".join(struct.pack(">H", c) for c in codes)
+    tail_limit = None
+    if gl_at == 0:  # 꼬리 예약 칸 — 표 바로 뒤(짝수)에 글리프, 끝은 예약 칸 끝
+        gl_at = tbl_at + len(table)
+        gl_at += gl_at & 1
+        tail_limit = tail_end
     nbytes = ((cell + 7) // 8) * cell
     glyphs = bytearray()
     for c in codes:
         fill = src(by_code[c])
         glyphs += _pack_w(fill, cell) + _pack_w(ring(fill), cell)
-    if tbl_at + len(table) > r0["table_end"]:
+    if tail_limit is None and tbl_at + len(table) > r0["table_end"]:
         raise SystemExit("리소스 5 표를 둘 자리가 없다(표 0 구역 초과)")
-    end = r0["glyphs"] + r0["entries"] * r0["stride"]
+    end = tail_limit if tail_limit is not None else r0["glyphs"] + r0["entries"] * r0["stride"]
     if gl_at + 4 + len(glyphs) > end:
         raise SystemExit(f"리소스 5 글리프가 글꼴 구역을 넘는다 ({len(codes)}자)")
     h = FONT5_HDR[0]
     desc = bytes([0x01, cell, cell, nbytes])  # 두 면 · cell×cell
     header = struct.pack(">III", tbl_at - h, tbl_at + len(table) - 4 - h, gl_at - h - 8)
+    lt, lg = ("font-tail",) * 2 if tail_limit is not None else ("font0-table", "font0-glyphs")
     return [
         ("font5-header", h, header),
-        ("font0-table", tbl_at, table),
-        ("font0-glyphs", gl_at, desc + bytes(glyphs)),
+        (lt, tbl_at, table),
+        (lg, gl_at, desc + bytes(glyphs)),
     ]
 
 
