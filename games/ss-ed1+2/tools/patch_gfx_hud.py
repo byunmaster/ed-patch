@@ -75,7 +75,10 @@ ATO_BG, ATO_MAIN, ATO_SHADOW = 39, 35, 37  # 남색 바탕 / 밝은 파랑 획 /
 # ── 상태이상 라벨 — 같은 시트의 10×10 한 글자 블록들 (2026-08-24) ──────────────
 # 색은 블록마다 하나뿐이다(148 빨강 = 이상, 146 노랑 = 이로움). 바탕은 0(투명), 음영 없음.
 # 표기는 **PS1 과 같다**(`ps1-ed1+2:STATUS_ROW1`) — 같은 게임의 같은 라벨이다.
-# ⚠ `気絶` 은 여기 없다. 0x2480 의 16×15 는 글자가 아니라 디더 무늬였다(실측).
+# 🔴 `気絶` 은 **두 글자(20×10)** 라 아래 `FAINT` 가 따로 든다 — 옛 주석은 「0x2480 의 16×15 는
+#    디더 무늬」라 했으나 **그건 엉뚱한 자리**였다. 전투 HUD 의 빨간 `気絶` 배지(20×10)는
+#    `/STAT.DAT` 0x1200(스트라이드 24)에 있다 — 2026-10-09 VRAM 의 NBG0 비트맵에서 화소를 떠
+#    파일을 거꾸로 찾아 잡았다(10-07 캡처에도 일본어로 떠 있었는데 「기절 배지」로 오보했다).
 # 🔴 **여기도 파일이 둘이다**(2026-08-26, 유저 QA 로 발각 — `あと` 와 판박이).
 #    `/FRAME.DAT` 만 고쳤더니 **전투 HUD 에 `守` 가 그대로 떴다.** 필드 HUD 는 `/STAT.DAT`
 #    쪽을 읽는다. ⚠ 두 사본은 **바이트가 다르다** — 스트라이드가 16 대 24 이고 배경이
@@ -106,6 +109,7 @@ def status_kr(jp):
     raise SystemExit(f"정본 ui 에 상태이상 라벨이 없다: {jp!r} — 관리자에게 후보로 요청한다")
 
 
+FAINT = (STAT, 0x1200, "気絶")  # (파일, 오프셋, 원문) — 20×10 = 글자 둘 × 10×10, 스트라이드 24
 STATUS_BOX = 10  # 10×10 · 스트라이드는 `ATO_STRIDE` 와 같다
 
 # `(x, 잉크, 음영)` — **오른쪽으로 한 칸 밀어** `ＨＰ`·`ＭＰ` 와 세로줄을 맞춘다
@@ -343,6 +347,26 @@ def draw_status(old, kr, bdf):
     return out, int((out != old).sum())
 
 
+def draw_faint(old, kr, bdf7):
+    """기절 배지 한 글자 — **PS1 과 같은 방식**: Galmuri7 7행 글리프를 피치 10 칸에 앉힌다(마스터 10-10 「ps1처럼」).
+
+    PS1 `patch_hud_names.FAINT`(chars=기절 · pitch 10 · font7) 와 같은 결과다 — 9px 글꼴은 10×10 칸에 그리면
+    ㅓ 같은 세로획이 홀로 떨어져 읽히지 않았다. 색은 `draw_status` 와 같이 **칸의 테두리**에서 유도한다.
+    """
+    vals = np.unique(old)
+    assert len(vals) == 2, f"상태 라벨 색이 둘이 아니다: {vals.tolist()}"
+    edge = np.concatenate([old[0], old[-1], old[1:-1, 0], old[1:-1, -1]])
+    bg = int(np.bincount(edge).argmax())
+    colr = int(vals[0] if int(vals[0]) != bg else vals[1])
+    n = STATUS_BOX
+    out = np.full_like(old, bg)
+    g = bdf7.bits(kr, rows=bdf7.ascent, width=n)  # 7행 셀 · 폭 10 — xo 는 글리프가 든다
+    oy = (n - bdf7.ascent) // 2
+    ys, xs = np.nonzero(g)
+    out[oy + ys, xs] = colr
+    return out, int((out != old).sum())
+
+
 def ato_block(d, off=ATO_OFF):
     """`あと` 블록을 (10, 12) 로 떠 온다."""
     rows = [d[off + y * ATO_STRIDE : off + y * ATO_STRIDE + ATO_W] for y in range(ATO_H)]
@@ -447,6 +471,41 @@ def main():
                     f"{path} 상태 라벨 {jp}",
                 )
 
+    # ── 기절 배지 — 두 글자를 10×10 둘로 갈라 같은 방식으로 그린다
+    fpath, foff, fjp = FAINT
+    fkr = status_kr(fjp)
+    assert len(fkr) == 2, fkr
+    # ⚠ 둘을 **한 번에** 쓴다 — 스트라이드 24 에서 10행 조각 둘이 바이트 구간이 겹쳐,
+    #   따로 쓰면 둘째의 「원본이었나」 확인이 첫째가 쓴 값 때문에 실패한다.
+    stride = STATUS_STRIDE[fpath]
+    halves = []
+    for k, ch in enumerate(fkr):
+        old_s = box(raw[fpath], foff + k * STATUS_BOX, STATUS_BOX, STATUS_BOX, stride)
+        new_s, n = draw_faint(old_s, ch, galmuri("Galmuri7"))
+        assert n, f"{fpath} {fjp}[{k}]: 바뀐 화소가 0이다"
+        halves.append(new_s)
+        print(f"  {fpath} 0x{foff + k * STATUS_BOX:X}  {fjp}[{k}] → {ch} · 화소 {n} 변경")
+    # 🔴 원본 `気絶` 은 **21열**까지 그린다(絶 의 마지막 획이 20열째) — 20열만 지우면 빨간 세로획이
+    #    「기절!」 처럼 남는다(10-09 캡처로 발각). 뒤 2열을 배경으로 덮는다.
+    # ⚠ 배경은 **새 글자의 한 화소가 아니라 원본 칸의 테두리**에서 구한다 — 새 글자는 (0,0)이 잉크일 수 있다
+    #   (「기」는 그렇다 — 빨간 막대가 남았다, 10-09 캡처).
+    o0 = box(raw[fpath], foff, STATUS_BOX, STATUS_BOX, stride)
+    bg = int(np.bincount(np.concatenate([o0[0], o0[-1], o0[1:-1, 0], o0[1:-1, -1]])).argmax())
+    pad = np.full((STATUS_BOX, 2), bg, np.uint8)
+    both = np.concatenate([*halves, pad], 1)
+    stat.append((fpath, foff, stride, both))
+    if apply:
+        lba, size = files[fpath]
+        write(
+            dst,
+            lba,
+            size,
+            foff,
+            box_bytes(both, raw[fpath], foff, stride),
+            raw[fpath][foff : foff + stride * STATUS_BOX],
+            f"{fpath} 기절 배지",
+        )
+
     preview(made, parsed, new_ato, shown)
     if apply:
         verify(dst, files, made, new_ato, stat)
@@ -502,7 +561,7 @@ def verify(dst, files, made, ato, stat=None):
         lba, size = files[path]
         read[path] = common.read_extent(mm2, lba, size)
     for path, off, stride, want in stat or []:
-        got = box(read[path], off, STATUS_BOX, STATUS_BOX, stride)
+        got = box(read[path], off, want.shape[0], want.shape[1], stride)
         assert np.array_equal(got, want), f"{path} 상태 라벨 0x{off:X}: 되읽기 불일치"
     nst = len(stat or [])
     mm2.close()
