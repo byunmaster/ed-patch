@@ -40,7 +40,7 @@ import common
 import patch_crit_copy
 
 LOAD_BASE = 0x06028000
-FILES = ("/ED.BIN", "/ED2.BIN")
+FILES = ("/ED.BIN", "/ED2.BIN") + tuple(f"/BIN/ED2MON{i:02d}.BIN" for i in range(1, 11))
 UNIT = bytes.fromhex("631472012230")  # mov.b @r1+,r3 · add #1,r2 · mov.b r3,@r2
 TAIL = bytes.fromhex("611072012210")  # mov.b @r1,r1 · add #1,r2 · mov.b r1,@r2
 MIN_RUN = 4  # 이보다 짧은 언롤은 문자열 복사로 보지 않는다
@@ -96,6 +96,9 @@ def check(fname, orig, built, skip):
     for at, cap, srcs in sites(orig):
         if at in skip:
             continue
+        # 우리가 NUL 종단 루프로 바꾼 자리(`patch_namecopy`)는 제약이 없다 — 빌드에서 언롤이 사라졌다
+        if bytes(built[at : at + 6]) != UNIT:
+            continue
         for lit, _v, ln in srcs:
             off = lit - LOAD_BASE
             nv = struct.unpack(">I", bytes(built[off : off + 4]))[0]
@@ -132,11 +135,19 @@ def main():
     files = {} if listing else {p: (lba, s) for p, lba, s in common.iso_files(mm)}
 
     total, fails = 0, 0
+    global LOAD_BASE
+    import patch_ui
+
     for fname in FILES:
         orig = common.extract(fname)
+        # 🔴 오버레이(`ED2MON*`)는 적재 주소가 다르다 — 리터럴을 파일 오프셋으로 바꿀 때 쓴다(2026-10-09)
+        LOAD_BASE = patch_ui.ptr_base(fname)
         # 우리가 루프로 바꾼 자리는 제약이 없다 — 건너뛴다
-        cat, _size = patch_crit_copy.find_copy(orig)
-        skip = {at for at, _cap, _s in sites(orig) if cat <= at <= cat + 0x80}
+        if fname in ("/ED.BIN", "/ED2.BIN"):
+            cat, _size = patch_crit_copy.find_copy(orig)
+            skip = {at for at, _cap, _s in sites(orig) if cat <= at <= cat + 0x80}
+        else:
+            skip = set()
         if listing:
             print(f"=== {fname} ===")
             for at, cap, srcs in sites(orig):

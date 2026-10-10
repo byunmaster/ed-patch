@@ -40,7 +40,7 @@ class Names(unittest.TestCase):
         self.assertEqual(patch_ui.name_kr("レジナ", self.c), "레지나")
 
     def test_variant_suffix_is_halfwidth(self):
-        """`スライムＢ` = 밑말 + **반각** B. 전각으로 붙이면 1바이트가 더 든다."""
+        """`スライムＢ` = 밑말 + **반각** B(마스터 10-10 — 원판은 전각이었으나 일관성)."""
         self.assertEqual(patch_ui.name_kr("スライムＢ", self.c), "슬라임B")
         self.assertEqual(patch_ui.name_kr("スライムＡ", self.c), "슬라임A")
 

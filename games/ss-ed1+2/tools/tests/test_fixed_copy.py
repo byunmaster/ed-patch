@@ -31,7 +31,10 @@ def has_original():
 class Sites(unittest.TestCase):
     def test_every_source_fits_its_slot(self):
         """🔴 원본 문자열은 **정의상** 그 칸에 맞는다 — 안 맞으면 소스를 잘못 짚은 것이다."""
+        import patch_ui
+
         for fname in C.FILES:
+            C.LOAD_BASE = patch_ui.ptr_base(fname)  # 오버레이는 적재 주소가 다르다
             d = common.extract(fname)
             for at, cap, srcs in C.sites(d):
                 for lit, v, ln in srcs:
@@ -44,7 +47,8 @@ class Sites(unittest.TestCase):
         """회심/통한 자리(14B)는 두 편 다 있고, 우리가 루프로 바꾼 그 자리다."""
         import patch_crit_copy
 
-        for fname in C.FILES:
+        C.LOAD_BASE = 0x06028000
+        for fname in ("/ED.BIN", "/ED2.BIN"):  # 회심 복사는 본체 둘에만 있다
             d = common.extract(fname)
             at, _size = patch_crit_copy.find_copy(d)
             hit = [s for s in C.sites(d) if at <= s[0] <= at + 0x80]

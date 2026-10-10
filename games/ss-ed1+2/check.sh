@@ -81,6 +81,10 @@ echo "  ── ED2 몬스터 이름 (제자리 우선 · 넘치면 칸끼리 재
 step "몬스터 이름" "$T/patch_mon_names.py" --apply
 echo "  ── 회심/통한 복사 루프 (14B 고정 → NUL 종단)"
 step "회심 복사" "$T/patch_crit_copy.py" --apply
+echo "  ── 전투 문구 복사 길이 (원문 일본어 바이트로 박힌 상수 → 우리 문안 길이)"
+step "복사 길이" "$T/patch_msgcopy.py" --apply
+echo "  ── ED2 몬스터 이름 고정 폭 복사 (언롤 → NUL 종단 루프)"
+step "이름 복사" "$T/patch_namecopy.py" --apply
 # 🔴 **메시지 창은 그리기 전에 prewrap 이 줄을 나눈다**(2026-09-27). 원 루틴은 일본어용 글자
 #    단위라 `레스`/`1` 이 갈리고 줄머리에 공백·마침표가 왔다 — 어절 단위로 갈아 끼운다.
 #    병기는 그 앞에서 조사 훅의 `접기` 진입점이 접는다(아래 「조사 훅」). 규칙 정본 `msgwrap.py`.
