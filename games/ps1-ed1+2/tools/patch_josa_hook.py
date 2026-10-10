@@ -207,7 +207,8 @@ def fix_buffer(
                     j += 1
                 fixed += 1
                 break
-        prev = code
+        if code not in (0x8189, 0x818A):  # ♂·♀ 는 prev 를 안 바꾼다(앞 음절 기준 — asm 과 동일)
+            prev = code
         i += 2
     return fixed
 
@@ -340,13 +341,18 @@ class Asm:
     def jr(self, rs):
         self.emit(_r(0, REG[rs], 0, 0, 0, 8))
 
+    def mult(self, rs, rt):
+        self.emit(_r(0, REG[rs], REG[rt], 0, 0, 0x18))
+
+    def mflo(self, rd):
+        self.emit(_r(0, 0, 0, REG[rd], 0, 0x12))
+
     def mul_188(self, rd, rs, tmp):
-        """rd = rs*188 = rs*192 - rs*4."""
-        self.sll(rd, rs, 7)  # rs*128
-        self.sll(tmp, rs, 6)  # rs*64
-        self.addu(rd, rd, tmp)  # rs*192
-        self.sll(tmp, rs, 2)  # rs*4
-        self.subu(rd, rd, tmp)  # rs*188
+        """rd = rs*188 — mult/mflo(R3000A 은 결과를 읽을 때 인터락한다). 시프트 5명령 → 3명령
+        (2026-10-10, 전각 영문 분기 자리 확보 — 루틴이 508B 한계에 꽉 차 있었다)."""
+        self.li16(tmp, 188)
+        self.mult(rs, tmp)
+        self.mflo(rd)
 
 
 def assemble_routine(free_base, table_addr, pairs_addr):
@@ -521,13 +527,11 @@ def assemble_routine(free_base, table_addr, pairs_addr):
     a.lbu("t4", 4, "t3")
     a.sb("zero", 4, "t3")  # ← 지연 슬롯 재활용: 읽은 원본 바이트를 즉시 0으로
     a.sb("t4", 0, "t3")
-    a.bne("t4", "zero", "mvnext")
-    a.nop()
-    a.beq("zero", "zero", "setprev")
-    a.nop()
-    a.label("mvnext")
+    # 2026-10-10: 증가를 분기 지연 슬롯으로 접어 7명령 → 4명령(-12B, 전각 영문 분기 자리).
+    # 종료 때도 t3 가 한 번 더 늘지만 t3 는 스크래치라 무해하다.
+    a.bne("t4", "zero", "mv")
     a.addiu("t3", "t3", 1)
-    a.beq("zero", "zero", "mv")
+    a.beq("zero", "zero", "setprev")
     a.nop()
     a.label("nextpair")
     a.addiu("t7", "t7", 4)
@@ -536,7 +540,16 @@ def assemble_routine(free_base, table_addr, pairs_addr):
     a.nop()
 
     a.label("setprev")
-    a.addu("t1", "t2", "zero")
+    # 🔴 2026-10-11 마스터 — 이름이 **♀·♂**(SJIS 0x818A·0x8189, 「스팅비틀♀/♂」)로 끝나면 조사는 **앞 음절(틀) 기준**이다.
+    # 기호는 음절이 아니라 prev 가 무효가 돼 「스팅비틀♂은(는)」 병기가 접히지 않고 화면에 샜다(v1.0.0 부터의 결함).
+    # 기호 코드면 prev 를 **바꾸지 않고** 지나간다(상위 두 코드만 보는 `code-0x8189 < 2`; 즉시값 부호 한계로 0x8000 을 먼저 뺀다).
+    a.addiu("t3", "t2", -0x8000)
+    a.addiu("t3", "t3", -0x189)
+    a.sltiu("t3", "t3", 2)
+    a.bne("t3", "zero", "keep")
+    a.nop()
+    a.addu("t1", "t2", "zero")  # 일반 글자는 prev = 그 코드
+    a.label("keep")
     a.beq("zero", "zero", "scan")
     a.addiu("t0", "t0", 2)  # 지연 슬롯(-4B) — 무조건 분기라 항상 실행된다
 
@@ -892,6 +905,7 @@ def _emulate(code, base, mem, regs, max_steps=100000):
     r = [0] * 32
     for k, v in regs.items():
         r[REG[k]] = v
+    regs_lo = [0]
     pc, steps, pending = base, 0, None
     while True:
         if steps > max_steps:
@@ -913,6 +927,13 @@ def _emulate(code, base, mem, regs, max_steps=100000):
             if rs == REG["ra"]:
                 return r, steps
             raise AssertionError("예상 밖 jr")
+        elif op == 0 and fn == 0x18:  # mult (부호 있는 곱, LO 만 쓴다)
+            lo_hi = (r[rs] if r[rs] < 0x80000000 else r[rs] - (1 << 32)) * (
+                r[rt] if r[rt] < 0x80000000 else r[rt] - (1 << 32)
+            )
+            regs_lo[0] = lo_hi & 0xFFFFFFFF
+        elif op == 0 and fn == 0x12:  # mflo
+            r[rd] = regs_lo[0]
         elif op == 0:
             if fn in _SPECIAL:
                 r[rd] = _SPECIAL[fn](r[rs], r[rt], sh)
@@ -1021,6 +1042,18 @@ def _selftest():
         fix_buffer(probe, table, cross=LINE_STRIDE, limit=LINE_LIMIT)
         got = bytes(probe[len(line) - 6 : len(line) - 4])
         assert got == _sjis(want_j), f"{desc}: {got.hex()} ≠ {want_j}"
+    # ♀·♂ 로 끝나는 이름(2026-10-11 마스터 — 「스팅비틀♀/♂」, 조사는 앞 음절 「틀」(ㄹ 받침) 기준). 값으로 박는다.
+    for desc, tail, a_, b_, want in (
+        ("♀ 끝 + 은(는) → 은", b"\x81\x8a", "은", "는", "은"),
+        ("♂ 끝 + 은(는) → 은", b"\x81\x89", "은", "는", "은"),
+        ("♀ 끝 + 을(를) → 을", b"\x81\x8a", "을", "를", "을"),
+    ):
+        line = _sjis("스팅비틀") + tail + _sjis(a_) + P_L + _sjis(b_) + P_R
+        cases.append((desc, [line]))
+        probe = bytearray(line.ljust(LINE_STRIDE, b"\x00") + b"\x00" * LINE_STRIDE)
+        fix_buffer(probe, table, cross=LINE_STRIDE, limit=LINE_LIMIT)
+        got = bytes(probe[len(line) - 6 : len(line) - 4])
+        assert got == _sjis(want), f"{desc}: {got.hex()} ≠ {want}"
     for desc, lines in cases:
         buf = bytearray()
         for ln in lines:
