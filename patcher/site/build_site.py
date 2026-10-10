@@ -255,7 +255,10 @@ def main():
     #   배포 때는 워크플로가 릴리스에서 받아 같은 자리에 둔다(그래서 여기서는 없으면 조용히 넘어간다).
     for g in site["games"]:
         r = g.get("release") or {}
-        for name in (r.get("bps"), r.get("xdelta")):
+        # 업그레이드 사슬 칸(chain[].bps·xdelta)도 같은 자리에 둔다 — 웹 패치가 칸을 차례로 받는다
+        names = [r.get("bps"), r.get("xdelta")]
+        names += [c.get(k) for c in r.get("chain") or [] for k in ("bps", "xdelta")]
+        for name in names:
             if not name:
                 continue
             main = main_root()

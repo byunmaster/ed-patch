@@ -52,9 +52,11 @@
         <h2>파일로 받기</h2>
         <div class="in">
           <div class="row" id="dl"></div>
+          <div class="up" id="dl-up" hidden></div>
           <ol class="how" id="how">
             <li><b>xdelta</b> — Delta Patcher(윈도·맥) 에서 원본 <code>.bin</code> 과 받은 <code>.xdelta</code> 를 고르고 적용합니다. 명령줄이면 <code>xdelta3 -d -s 원본.bin 패치.xdelta 한글판.bin</code></li>
             <li><b>BPS</b> — Flips 나 Rom Patcher JS 로 적용합니다. 원본이 다르면 적용 전에 알려 줍니다.</li>
+            <li id="how-up" hidden>이미 예전 버전으로 패치한 <code>.bin</code> 을 그대로 올려도 최신으로 올려 줍니다. 패치본을 다른 형식(CHD 등)으로 바꿨다면 원본에서 다시 패치해 주세요.</li>
             <li>만든 <code>.bin</code> 옆에 같은 이름의 <code>.cue</code> 를 두고 에뮬레이터에서 <code>.cue</code> 를 엽니다. 웹 패치로 받은 <code>.zip</code> 은 풀면 둘이 같이 들어 있습니다.</li>
           </ol>
         </div>
@@ -125,8 +127,15 @@ $("info").innerHTML = [["기종", game.platform], ["원제", game.original], ...
   if (game.status === "released") {
     $("prog-title").textContent = "버전";
     const vs = game.versions || [];
-    $("stages").innerHTML = vs.length ? `<ul class="verlist">${vs.map((v) =>
-      `<li><b>v${esc(v.version)}</b><span>${esc(v.note || "")}</span></li>`).join("")}</ul>` : "";
+    //   릴리스 노트(마스터 10-11): 버전마다 notes: ["바뀐 것 한 줄", …] 이 있으면 아코디언(<details>)으로 접어 두고
+    //   펼치면 상세 내역이 나온다. 최신 버전만 처음부터 펼친다. notes 가 없는 버전은 한 줄 그대로.
+    $("stages").innerHTML = vs.length ? `<ul class="verlist">${vs.map((v, i) => {
+      const head = `<b>v${esc(v.version)}</b><span>${esc(v.note || "")}</span>${v.date ? `<small>${esc(v.date)}</small>` : ""}`;
+      const ns = v.notes || [];
+      return ns.length
+        ? `<li><details${i === 0 ? " open" : ""}><summary>${head}</summary><ul class="relnotes">${ns.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details></li>`
+        : `<li>${head}</li>`;
+    }).join("")}</ul>` : "";
   } else {
     // 단계는 한 줄로만 가지 않는다 — 앞 단계를 일부만 닫고 다음으로 넘어간 게임이 있다(마스터 10-07:
     //   「ps1 ed3 는 전투 조사 훅을 다 안 했는데 된 것처럼 나온다」). stage 앞은 기본이 「끝」이고,
@@ -153,6 +162,15 @@ $("info").innerHTML = [["기종", game.platform], ["원제", game.original], ...
   $("dl").innerHTML = dl.map(([k, v]) => v
     ? `<a class="btn" href="${esc(v)}" download>${k}</a>`
     : `<span class="btn" aria-disabled="true">${k} 준비 중</span>`).join("");
+  // 업그레이드 사슬(마스터 10-11) — 배포마다 「직전 → 새 버전」 한 칸만 만든다. 웹 패치는 올린 파일이 어느 버전인지
+  //   SHA-1 로 알아보고 남은 칸을 차례로 적용해 늘 최신으로 만든다. 파일로 받는 쪽은 칸마다 차례로 적용한다.
+  const chain = rel.chain || [];
+  $("dl-up").hidden = !chain.length;
+  $("how-up").hidden = !chain.length;
+  $("dl-up").innerHTML = chain.length ? `<p>이미 패치한 판에서 올리기 — 한 칸씩 차례로 적용합니다(웹 패치는 알아서 이어 줍니다)</p>` +
+    chain.map((c) => `<div class="row"><span class="chain">v${esc(c.from)} → v${esc(c.to)}</span>` +
+      [["xdelta", c.xdelta], ["BPS", c.bps]].filter(([, v]) => v).map(([k, v]) => `<a class="btn sm" href="${esc(v)}" download>${k}</a>`).join("") +
+      `</div>`).join("") : "";
   // 배포 전(작업 중)이면 패치하기를 막는다 — 페이지는 진행 상황과 게임 화면을 보이는 자리다
   ready = game.status === "released" && !!rel.bps;
   // ⚠ render 는 site.json 을 다시 읽은 뒤 한 번 더 불린다 — 처리 중이면 잠금을 건드리지 않는다
@@ -186,31 +204,48 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 async function process(file) {
   $("save").disabled = true; result = null; bar(0);
   const src = rel.source || {};
+  const chain = rel.chain || [];
   $("log").dataset.used = "1";
   log("", `> ${file.name}`);
   log("", `  크기 ${file.size.toLocaleString()} 바이트`, true);
-  if (src.size && file.size !== src.size) return log("err", `  ✗ 크기가 다릅니다 — 이 패치는 ${src.size.toLocaleString()} 바이트 덤프용입니다`, true);
+  // 받는 것은 원본 또는 예전 버전으로 패치한 판(chain[].sha1) — 크기가 어느 쪽과도 다르면 바로 돌려보낸다
+  const sizes = [src.size, ...chain.map((c) => c.size)].filter(Boolean);
+  if (sizes.length && !sizes.includes(file.size)) return log("err", `  ✗ 크기가 다릅니다 — 이 패치는 ${src.size.toLocaleString()} 바이트 덤프(또는 예전 버전 패치본)용입니다`, true);
   log("", "  원본 확인 중…", true); await tick();
-  const buf = new Uint8Array(await file.arrayBuffer()); bar(0.2);
+  let buf = new Uint8Array(await file.arrayBuffer()); bar(0.2);
   // SHA-1 은 WebCrypto 라 https(또는 localhost)에서만 된다. 그 밖(사내망 http 미리보기 등)에선 CRC32 로 가른다.
-  if (crypto.subtle) {
-    const sha = await EDPatch.sha1Hex(buf); bar(0.35);
-    if (sha !== src.sha1) return log("err", `  ✗ SHA-1 이 다릅니다\n    ${sha}\n  다른 판이나 손상된 덤프입니다. 오른쪽 지문과 비교해 주세요.`, true);
-    log("", "  ✓ 맞는 원본입니다 (SHA-1 일치)", true);
+  let key, mark;
+  if (crypto.subtle) { key = (x) => x.sha1; mark = await EDPatch.sha1Hex(buf); }
+  else { key = (x) => String(x.crc32 || "").toUpperCase(); mark = EDPatch.crc32(buf).toString(16).toUpperCase().padStart(8, "0"); }
+  bar(0.3);
+  const how = crypto.subtle ? "SHA-1" : "CRC32";
+  let steps;
+  if (mark === key(src)) {
+    log("", `  ✓ 맞는 원본입니다 (${how} 일치)`, true);
+    if (!rel.bps) return log("dim", "  패치 파일이 올라가면 여기서 바로 적용됩니다.", true);
+    steps = [{ bps: rel.bps, label: `원본 → v${rel.version}` }];
+  } else if (crypto.subtle && rel.output_sha1 && mark === rel.output_sha1) {
+    return log("dim", `  이미 최신(v${rel.version}) 한글판입니다 — 패치할 것이 없습니다.`, true);
   } else {
-    const crc = EDPatch.crc32(buf).toString(16).toUpperCase().padStart(8, "0"); bar(0.35);
-    if (crc !== String(src.crc32).toUpperCase()) return log("err", `  ✗ CRC32 가 다릅니다 (${crc})\n  다른 판이나 손상된 덤프입니다. 오른쪽 지문과 비교해 주세요.`, true);
-    log("", "  ✓ 맞는 원본입니다 (CRC32 일치)", true);
+    let at = chain.find((c) => key(c) === mark);
+    if (!at) return log("err", `  ✗ ${how === "SHA-1" ? "SHA-1 이" : "CRC32 가"} 다릅니다\n    ${mark}\n  다른 판이나 손상된 덤프입니다. 오른쪽 지문과 비교해 주세요.`, true);
+    log("", `  ✓ v${at.from} 패치본입니다 (${how} 일치) — v${rel.version} 으로 올립니다`, true);
+    steps = [];
+    while (at) { steps.push({ bps: at.bps, label: `v${at.from} → v${at.to}` }); at = chain.find((c) => c.from === at.to); }
   }
-  if (!rel.bps) return log("dim", "  패치 파일이 올라가면 여기서 바로 적용됩니다.", true);
-  log("", "  패치 받는 중…", true); await tick();
-  const patch = new Uint8Array(await (await fetch(rel.bps, { cache: "no-store" })).arrayBuffer()); bar(0.45);
-  log("", "  적용 중…", true); await tick();
-  try {
-    result = EDPatch.bpsApply(buf, patch, (f) => bar(0.45 + f * 0.5));
-  } catch (e) { return log("err", `  ✗ ${e.message}`, true); }
+  const span = 0.65 / steps.length;
+  for (const [i, st] of steps.entries()) {
+    const b0 = 0.3 + span * i;
+    log("", `  패치 받는 중… (${st.label})`, true); await tick();
+    const patch = new Uint8Array(await (await fetch(st.bps, { cache: "no-store" })).arrayBuffer()); bar(b0 + span * 0.2);
+    log("", "  적용 중…", true); await tick();
+    try {
+      buf = EDPatch.bpsApply(buf, patch, (f) => bar(b0 + span * (0.2 + f * 0.8)));
+    } catch (e) { return log("err", `  ✗ ${e.message}`, true); }
+  }
+  result = buf;
   bar(1);
-  log("", `  ✓ 완료 — ${rel.output}`, true);
+  log("", `  ✓ 완료 — ${rel.version ? rel.output.replace(/(\.bin)$/i, ` v${rel.version}$1`) : rel.output}`, true);
   $("save").disabled = false;
 }
 
@@ -256,9 +291,11 @@ function zipStore(files) {
 $("save").addEventListener("click", () => {
   if (!result) return;
   // .cue 는 원본 시트를 본뜬 틀(site.json 의 cue)에 결과 파일 이름만 넣는다 — 트랙 구성은 게임마다 다르다.
-  const files = [{ name: rel.output, data: result }];
-  if (rel.cue) files.push({ name: rel.output.replace(/\.bin$/i, ".cue"), data: rel.cue.replace("{bin}", rel.output) });
-  try { save(zipStore(files), rel.output.replace(/\.bin$/i, ".zip")); }
+  //   받는 이름엔 버전을 붙인다 — bin·cue·zip 모두(마스터 10-11). 게임 화면은 안 건드리고 파일만 봐도 판을 안다.
+  const out = rel.version ? rel.output.replace(/(\.bin)$/i, ` v${rel.version}$1`) : rel.output;
+  const files = [{ name: out, data: result }];
+  if (rel.cue) files.push({ name: out.replace(/\.bin$/i, ".cue"), data: rel.cue.replace("{bin}", out) });
+  try { save(zipStore(files), out.replace(/\.bin$/i, ".zip")); }
   catch (e) { log("err", `  ✗ ${e.message}`, true); }
 });
 // 처리하는 동안은 파일 고르기를 잠근다 — 두 번째 파일이 끼어들면 로그와 결과가 섞인다

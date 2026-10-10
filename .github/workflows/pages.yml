@@ -68,6 +68,12 @@ jobs:
               for f in (r.get("bps"), r.get("xdelta")):
                   if f:
                       print(tag, g["id"], f)
+              # 업그레이드 사슬 — 칸마다 그 칸을 처음 낸 릴리스(c["tag"], 없으면 c["to"] 버전 태그)에 붙어 있다
+              for c in r.get("chain") or []:
+                  ctag = c.get("tag") or f"{g['id']}-{g['track']}-v{c['to']}"
+                  for f in (c.get("bps"), c.get("xdelta")):
+                      if f:
+                          print(ctag, g["id"], f)
           PY
           while read -r tag dir file; do
             gh release download "$tag" -R "$GITHUB_REPOSITORY" -p "$file" -D "_site/$dir" --clobber

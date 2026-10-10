@@ -192,6 +192,15 @@
   .verlist li { padding: 4px 0; }
   .verlist li::marker { color: var(--muted); }
   .verlist b { margin-right: 10px; font-weight: 700; }
+  .verlist small { margin-left: 8px; color: var(--muted); font-size: .85em; white-space: nowrap; }
+  .verlist details summary { cursor: pointer; list-style: none; }
+  .verlist details summary::-webkit-details-marker { display: none; }
+  .verlist details summary::before { content: "▸"; margin-right: 6px; color: var(--muted); display: inline-block; transition: transform .15s; }
+  .verlist details[open] summary::before { transform: rotate(90deg); }
+  @media (prefers-reduced-motion: reduce) { .verlist details summary::before { transition: none; } }
+  .verlist details summary:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; border-radius: 4px; }
+  .relnotes { margin: 6px 0 2px; padding-left: 18px; list-style: circle; font-size: .92em; }
+  .relnotes li { padding: 2px 0; }
 
   /* 게임 화면 — 가로로 꽉 채우는 슬라이드 */
   .shots { margin-bottom: 28px; }
@@ -222,3 +231,10 @@
   .shots .dots { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
   .shots .dots button { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: var(--line); cursor: pointer; transition: width .15s, background .15s; }
   .shots .dots button[aria-current="true"] { width: 22px; border-radius: 4px; background: var(--accent); }
+
+/* 업그레이드 사슬 — 이미 패치한 판에서 올리는 칸별 파일(마스터 10-11) */
+.up { margin-top: 12px; display: grid; gap: 6px; }
+.up p { margin: 0; color: var(--muted); font-size: .9em; }
+.up .row { align-items: center; gap: 8px; }
+.up .chain { font-variant-numeric: tabular-nums; min-width: 9em; }
+.btn.sm { padding: 4px 10px; font-size: .85em; }
