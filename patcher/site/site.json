@@ -53,7 +53,7 @@
       "status": "released",
       "stage": "P6",
       "release": {
-        "version": "1.0.0",
+        "version": "1.1.0",
         "disc": "SLPS-01323",
         "source": {
           "file": "Legend of Heroes I & II, The - Eiyuu Densetsu (Japan).bin",
@@ -64,10 +64,21 @@
           "sha256": "6270aaad9d35c0be4292f6aa10033a55c7e24c1ffbfb62277d54af6b44c2a15c"
         },
         "output": "Eiyuu Densetsu I & II (KR).bin",
-        "bps": "ps1-ed1+2-kr-v1.0.0.bps",
-        "xdelta": "ps1-ed1+2-kr-v1.0.0.xdelta",
+        "bps": "ps1-ed1+2-kr-v1.1.0.bps",
+        "xdelta": "ps1-ed1+2-kr-v1.1.0.xdelta",
         "cue": "FILE \"{bin}\" BINARY\r\n  TRACK 01 MODE2/2352\r\n    INDEX 01 00:00:00\r\n",
-        "output_sha1": "ff8f47fd19e64c05fc8bb56c6294950d0959c9e4"
+        "output_sha1": "766c8b95cd1a0dd1042d70e96169c853114945ab",
+        "chain": [
+          {
+            "from": "1.0.0",
+            "to": "1.1.0",
+            "size": 252498960,
+            "crc32": "E74640E6",
+            "sha1": "ff8f47fd19e64c05fc8bb56c6294950d0959c9e4",
+            "bps": "ps1-ed1+2-kr-v1.0.0-to-v1.1.0.bps",
+            "xdelta": "ps1-ed1+2-kr-v1.0.0-to-v1.1.0.xdelta"
+          }
+        ]
       },
       "tags": {
         "platform": "PS1",
@@ -80,8 +91,25 @@
         "출시": "1998",
         "이식": "GMF"
       },
-      "version": "1.0.0",
+      "version": "1.1.0",
       "versions": [
+        {
+          "version": "1.1.0",
+          "date": "2026-10-11",
+          "note": "이름 바로잡기 · 전투 문장 다듬기",
+          "notes": [
+            "몬스터 이름 22곳 옛 표기 수정 및 이름·지명·화자 호칭 정본 표기로 통일",
+            "ED2 마을 입장 배너 「마을」 접미 추가 · 월드맵 지명 칸 표기 정리",
+            "대화창 영문·숫자 갈무리 반각 글꼴 적용",
+            "주문 피해 문장 「에게」 조사 수정",
+            "전투 로그 한 줄 문장의 중간 줄바꿈 31곳 해소 및 낱말 중간 줄바꿈 조치",
+            "대화창 줄 끝 부호가 다음 줄에 홀로 남던 현상 조치",
+            "이름이 ♀·♂ 로 끝날 때 조사 오류 수정",
+            "장 끝 카드 제목 간격·번호 전각 통일",
+            "ED2 마을 대사 11줄 자체 번역 문체로 교체",
+            "일부 대사 판정 반영 · 효과음 문안·말줄임 「…」 표기 정리"
+          ]
+        },
         {
           "version": "1.0.0",
           "date": "2026-10-05",

@@ -171,7 +171,12 @@ def _jp_pattern(key):
     for i, p in enumerate(parts):
         if i % 2:
             # 수 자리(`{n}`·`{m}`)는 숫자만 — `{n}下がった` 가 「ﾎﾟｲﾝﾄ下がった」에 걸렸다(md 실측 10-08)
-            out.append("[0-9０-９]+" if p in ("n", "m") else ".+?")
+            # 이름 자리(`{name}`·`{item}`·`{spell}`)는 **이름처럼 생긴 것**만 — 문장부호 없이 12자까지. 아무 글자열로 두면
+            #   `{name}⏎この氷の壁は破れん。` 이 다른 인물의 긴 대사 한 줄 전체에 걸렸다(ss ED2 카자즘 대사, 10-09).
+            #   줄은 공백을 접어(`_flat`) 재니 줄바꿈으로는 못 가른다 — 문장부호로 가른다.
+            out.append(
+                "[0-9０-９]+" if p in ("n", "m") else ".+?" if p == "unit" else r"[^。、！？!?「」『』…･]{1,12}?"
+            )
         else:
             out.append(re.escape(p))
     return "".join(out)
@@ -265,7 +270,22 @@ def audit(pairs, title):
                     k,
                     v,
                     _flat(lit),
-                    re.compile("^" + head + _jp_pattern(jp_k) + "$"),
+                    # 엔진이 문장 둘을 한 줄로 잇는 기종(pce 「…が現れた。…の群れも一緒だ。」)은 줄 끝 문장만 열쇠다 —
+                    #   앞 문장은 문장부호로 끝나야 건너뛴다(이름 자리가 앞 문장을 삼키지 않게, 10-11). 화자 줄 꼴
+                    #   (`{name}⏎…` — 이름 뒤 줄바꿈)은 줄 머리부터여야 한다 — 남의 대사 끝 문장에 걸리지 않게.
+                    #   자리표로 시작하는 열쇠만 — 고정 문구(「おぼえておれ!!」·「よろしいですか？」)는 씬 대사 끝에도
+                    #   흔히 붙는데 그건 장면 문체로 옮긴다(md·sfc·ss-ed3 실측 10-11).
+                    re.compile(
+                        "^"
+                        + (
+                            "(?:.*?[。！？!?])?"
+                            if _SLOT.match(k) and not ("\n" in k or "⏎" in k)
+                            else ""
+                        )
+                        + head
+                        + _jp_pattern(jp_k)
+                        + "$"
+                    ),
                     re.compile("^" + kr_head + _kr_pattern(_flat(v)) + "$"),
                 )
             )
@@ -293,4 +313,34 @@ def audit(pairs, title):
             elif not ok:
                 mism.append(h)
             break  # 한 줄엔 가장 긴 열쇠 하나만 — 「しかも {name}も一緒だ!!」 줄을 짧은 「{name}も一緒だ!!」 가 또 재지 않게
+    # 장 카드 — 「第N章  제목」 이 블록 한가운데(카드·띠·HUD 줄)에 있어도 잰다. chapter 는 칸(줄 전체) 범주라 블록에
+    #   든 카드 제목은 분모 밖이었다(ss-ed1+2 카드 아홉이 정본과 갈린 채 통과, 10-10). 제목은 정본 값, 번호는 전각
+    #   「제１장」(번역 규칙 1-4)이어야 한다. 제목 열쇠가 정본에 없으면(자리표 제목 등) 재지 않는다.
+    chap = cats.get("chapter", {})
+    if chap:
+        card = re.compile(r"第\s*([０-９0-9]+)\s*章[ \t　]*([^\n]+)")
+        fw = str.maketrans("0123456789", "０１２３４５６７８９")
+        carded = set()
+        card_hits, card_mism = [], []
+        for item in pairs:
+            where, jp, kr = item[:3]
+            if kr is None or not jp:
+                continue
+            for m in card.finditer(jp):
+                title = m.group(2).strip(" 　")
+                v = chap.get(title)
+                if v is None:
+                    continue
+                num = m.group(1).translate(fw)
+                # 번호 바로 뒤 제목이 그 줄 끝까지 정본 값이어야 한다 — 「여행길」 이 「여행」 에 걸리지 않게
+                kre = re.compile(r"제" + num + r"장[ \t　]*" + _kr_pattern(v) + r"[ \t　]*(?:\n|$)", re.M)
+                ok = bool(kre.search(kr))
+                h = Hit(where, "chapter", m.group(0), f"제{num}장  {v}", ok)
+                carded.add(where)
+                card_hits.append(h)
+                if not ok:
+                    card_mism.append(h)
+        # 같은 줄을 칸 잣대(제목만 따로)가 먼저 쟀으면 카드 잣대가 이긴다 — 두 번 세지 않는다
+        hits = [h for h in hits if not (h.category == "chapter" and h.where in carded)] + card_hits
+        mism = [h for h in mism if not (h.category == "chapter" and h.where in carded)] + card_mism
     return Report(r.units, r.translated, hits, mism, pendhits, r.skipped_keys, r.unlabeled)

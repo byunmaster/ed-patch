@@ -134,6 +134,39 @@ def test_slot_form_phrase_is_accepted():
     assert [h.where for h in r.hits] == ["a"] and not r.mismatches
 
 
+def test_name_slot_is_name_shaped():
+    """이름 자리는 이름처럼 생긴 것만 — 앞 대사 한 문장을 통째로 삼켜 다른 줄에 걸리면 오탐이다(ss 실측 10-09)."""
+    fake = {"categories": {"battle": {"{name}⏎コノカベハヤブレン。": "{name}⏎이 벽은 못 깬다."}}}
+    canon._CACHE["fake4"] = fake
+    try:
+        r = canon.audit(
+            [("a", "ダレカ⏎コノカベハヤブレン。", "누군가⏎이 벽은 못 깬다.", "dialog"),
+             ("b", "ナガイセリフダ。ソシテ⏎コノカベハヤブレン。", "긴 대사다. 그리고⏎이 벽은 단단하다.", "dialog")],
+            "fake4",
+        )
+    finally:
+        canon._CACHE.pop("fake4", None)
+    assert [h.where for h in r.hits] == ["a"] and not r.mismatches
+
+
+def test_chapter_card_inside_block_is_measured():
+    """블록 속 장 카드 「第N章 제목」 도 잰다 — 제목은 정본 값, 번호는 전각(번역 규칙 1-4, 10-10·10-11)."""
+    fake = {"categories": {"chapter": {"タビダチ": "여행"}}}
+    canon._CACHE["fake5"] = fake
+    try:
+        r = canon.audit(
+            [("ok", "第１章  タビダチ\n\n完", "제１장  여행\n\n끝", "dialog"),
+             ("half", "第１章  タビダチ\n\n完", "제1장  여행\n\n끝", "dialog"),
+             ("title", "第２章  タビダチ\n\n完", "제２장  여행길\n\n끝", "dialog"),
+             ("other", "第３章  ナゾ\n\n完", "제３장  수수께끼\n\n끝", "dialog")],
+            "fake5",
+        )
+    finally:
+        canon._CACHE.pop("fake5", None)
+    assert sorted(h.where for h in r.hits) == ["half", "ok", "title"]
+    assert sorted(h.where for h in r.mismatches) == ["half", "title"]
+
+
 # ⚠ 새 테스트는 이 줄 위에.
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]

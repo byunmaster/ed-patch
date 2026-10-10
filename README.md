@@ -19,7 +19,7 @@
 
 | 게임 | 트랙 | 기종 | 상태 |
 | ---- | ---- | ---- | ---- |
-| [영웅전설 I · II](games/ps1-ed1+2/) | kr | PlayStation | ✅ v1.0.0 배포 |
+| [영웅전설 I · II](games/ps1-ed1+2/) | kr | PlayStation | ✅ v1.1.0 배포 |
 | [영웅전설 III](games/ps1-ed3/) | kr | PlayStation | 🔧 작업 중 |
 | 영웅전설 IV | kr | PlayStation | 진행 예정 |
 | [영웅전설 I · II](games/ss-ed1+2/) | kr | 세가새턴 | 🔧 작업 중 |
