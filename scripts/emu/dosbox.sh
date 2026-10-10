@@ -283,7 +283,7 @@ elif [ -n "$WANT_CD" ]; then
     for ext in cue CUE iso ISO; do
       for img in "$ORIG/$sub"/*."$ext"; do
         [ -f "$img" ] || continue
-        MOUNTCD="imgmount D \"../../originals/kr/$SRC/$sub/$(basename "$img")\" -t iso"
+        MOUNTCD="imgmount D \"../../../originals/kr/$SRC/$sub/$(basename "$img")\" -t iso"
         break 3
       done
     done
