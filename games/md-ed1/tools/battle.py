@@ -384,14 +384,29 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
             out[r["name_at"] + len(enc) + 1 : r["name_at"] + len(r["name"]) + 1] = b"\x00" * tail
         changed = True
     moves = []
-    for tgt, e in refs(b).items():
+    rs = refs(b)
+    # 새 문안 본문 — 번역 없는 스트림은 None
+    bodies: dict[int, bytes | None] = {}
+    for tgt, e in rs.items():
         st = e["stream"]
         ent = textmap.get(pos_key(st, n, tgt)) or textmap.get(jp_key(st))
         if not ent or not ent.get("ours"):
+            bodies[tgt] = None
             continue
         ours = expand_names(ent["ours"], monsters)
         st = drop_goto(st, ours)
-        body = b"".join(t.raw for t in sysmsg._tokens_from_ours(st, ours, encode))
+        bodies[tgt] = b"".join(t.raw for t in sysmsg._tokens_from_ours(st, ours, encode))
+    # 🔴 스트림은 **물리적으로 이어서 흐른다** — `0A` 뒤에 바로 다음 스트림(참조 없는 연쇄)이 이어져 한 창 안에서
+    # 「…독을 뿜었다. / …는 독에 중독됐다!」 로 읽힌다. 앞 스트림이 길어져 **옮겨지면** 연쇄가 끊겨 뒷 문안이 사라지고 쓰레기가
+    # 그려진다(10-10 「조사 대신 쉼표」를 조사로 고치며 1B 가 늘어 처음 드러났다). 옮길 땐 이어지는 스트림을 **함께** 옮긴다.
+    absorbed: set[int] = set()
+    for tgt, e in rs.items():
+        if tgt in absorbed:
+            continue
+        st = e["stream"]
+        body = bodies[tgt]
+        if body is None:
+            continue
         span = st.end - tgt
         if len(body) <= span:
             out[tgt : tgt + span] = body + b"\x00" * (span - len(body))
@@ -401,8 +416,19 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
             )
             continue
         else:  # 플래그 바이트(tgt-1)는 제자리에 남는다 — 문안은 자료 A 워드·lea 로만 닿는다
-            out[tgt : st.end] = b"\x00" * span
-            moves.append((tgt, e, body))
+            full, end = body, st.end
+            members = [(tgt, e, 0)]  # (원래 자리, 항목, 옮긴 본문 안 오프셋)
+            while end in rs and not (rs[end]["lea"] or rs[end]["words"]) and end not in absorbed:
+                nxt = rs[end]
+                nb = bodies.get(end)
+                if nb is None:
+                    nb = b[end : nxt["stream"].end]  # 번역 없는 연쇄는 원본 그대로
+                absorbed.add(end)
+                members.append((end, nxt, len(full)))
+                full += nb
+                end = nxt["stream"].end
+            out[tgt:end] = b"\x00" * (end - tgt)
+            moves.append((tgt, e, full))
         changed = True
     if errs:
         raise SystemExit("\n".join(errs))
