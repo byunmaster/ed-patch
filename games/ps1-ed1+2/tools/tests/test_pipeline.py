@@ -1779,6 +1779,59 @@ def test_drawer_eager_wrap_skips_when_newline_follows():
     assert (line, col) == (8, 1)
 
 
+def test_hang_punct_hooks_every_live_drawer():
+    """🔴 살아 있는 대사 드로어는 **둘**(A·B)이고 둘 다 29열 매달기 훅이 걸려야 한다(마스터 실기 10-10).
+
+    A 만 걸었을 때 필드 대사창(전부 B)에서 「…사옵니다!!」의 둘째 「!」가 넷째 줄로 떨어졌다 —
+    조판 검사기도 prewrap 에뮬도 드로어를 안 돌려서 아무것도 못 잡았다. 원본 없는 머신에선 건너뛴다."""
+    import os
+    import struct
+
+    from common import ORIG_BIN
+
+    if not os.path.exists(ORIG_BIN):
+        return
+    import patch_hang_punct as H
+    from common import extract
+    from patch_josa_hook import site
+
+    for game in ("ED1", "ED2"):
+        st = site(game)
+        ed = bytearray(extract(st["lba"], st["size"]))
+        r = H.build_and_patch(ed, game)
+        for key in ("draw", "drawB"):
+            w = struct.unpack_from("<I", ed, H.fo(r[key]))[0]
+            assert w >> 26 == 2, f"{game} 드로어 {key} 훅(j)이 없다 — 이 드로어는 매달기가 안 먹는다"
+        assert r["drawB"] != r["draw"]
+
+
+def test_hang_stub_draw_b_reads_string_from_s7():
+    """드로어 B 는 문자열이 스택이 아니라 s7 이다 — 스텁이 `lw t0,0x20(sp)` 를 쓰면 엉뚱한 포인터를 읽는다."""
+    import patch_hang_punct as H
+
+    a = H.stub_draw(0x80100000, 0x80100200, 0x80100300, 0x80100400)
+    b = H.stub_draw(0x80100000, 0x80100200, 0x80100300, 0x80100400, str_reg="s7")
+    assert len(a) == len(b)
+    assert a[:4] != b[:4]
+    assert a[4:] == b[4:]  # 첫 명령(문자열 적재)만 다르다
+    en = H.stub_eager_nl(0x80100000, 0x80100200, line_reg="s2", str_reg="s7")
+    assert len(en) == len(H.stub_eager_nl(0x80100000, 0x80100200))
+
+
+def test_ascii_galmuri_glyphs_fit_halfwidth_cell():
+    """반각 갈무리 글리프 — 62자 · 11B · 잉크는 열 0~4 에만(열 5~7 은 자간), 빈 글자 없음."""
+    import patch_ascii_galmuri as pag
+
+    g = pag.bake()
+    assert len(g) == 62
+    for code, rows in g.items():
+        assert len(rows) == 11
+        assert any(rows), hex(code)
+        assert all(b & 0x07 == 0 for b in rows), hex(code)
+    # 내림 글자도 11행 안에 든다(g 는 마지막 행까지 잉크가 닿는다)
+    assert g[ord("g")][10] != 0
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
 
@@ -1797,3 +1850,4 @@ def test_name_echo_allows_explicit_name_segment():
     assert not E.echoes("소니아", "이(가) 동료가 되었습니다.")  # 조사만 — 정상
     assert not E.echoes("마리", "마리{p}의 ＨＰ가{p}회복되었다.")  # 이름 조각을 제 조각에 둠 — 정상
     assert E.echoes("마리", "마리의 ＨＰ가{p}회복되었다.")  # 한 조각에 섞임 — 겹침
+

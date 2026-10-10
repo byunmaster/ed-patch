@@ -70,6 +70,12 @@ SIG_EAGER = re.compile(
     rb"\x01\x00\x62\x26\x21\x98\x40\x00"
 )
 
+# 드로어 B(`0x800AD788`) 판 — `slt v0,s4,v0 ; beqz ; move s3,s1 ; addiu s2,s2,1 ; addiu s0,zero,1`.
+# 줄 카운터가 s2, 그린 글자의 마지막 바이트 인덱스가 s1(→ 지연 슬롯에서 s3 로 복사)이다.
+SIG_EAGER_B = re.compile(
+    rb"\x2a\x10\x82\x02[\s\S]{2}\x40\x10\x21\x98\x20\x02\x01\x00\x52\x26\x01\x00\x10\x24"
+)
+
 HALF_LO, HALF_N = 0x20, 0x5F  # 0x20..0x7E  = 반각
 KANA_ADD, KANA_N = 0x5F, 0x3F  # 0xA1..0xDF = 반각(반각 가나)
 HANG_TAIL = ".,!?)\"'"  # 매달 수 있는 꼬리 부호 — `reinsert_kr_pilot.HANG_TAIL` 과 같아야 한다
@@ -367,7 +373,7 @@ def stub_after_backoff(base, bo, loop_tail):
     return a.resolve()
 
 
-def stub_eager_nl(base, resume):
+def stub_eager_nl(base, resume, line_reg="s1", str_reg=None):
     """드로어가 **정확히 29열을 채운 줄** 바로 뒤의 명시 개행(`\\n`)이 빈 줄을 만들지 않게 한다.
 
     원판 드로어는 글자를 그린 직후 `열 > 한계` 면 **다음 글자를 보지 않고** 줄을 넘긴다(`s1++ · s0=1`).
@@ -384,7 +390,10 @@ def stub_eager_nl(base, resume):
     인덱스 · [sp+0x20]=문자열 · s4=한계값.
     """
     a = Asm(base)
-    _lw(a, "t0", 0x20, "sp")
+    if str_reg:  # 드로어 B — 문자열 s7, 줄 카운터 s2
+        a.addu("t0", str_reg, "zero")
+    else:
+        _lw(a, "t0", 0x20, "sp")
     a.sll("t1", "s3", 16)
     _sra(a, "t1", "t1", 16)
     a.addiu("t1", "t1", 1)  # 다음 글자
@@ -398,7 +407,7 @@ def stub_eager_nl(base, resume):
     a.addiu("s0", "s4", 1)  # 지연 슬롯: 열 = 한계+1 (개행 처리기가 공백 없이 넘긴다)
     a.label("wrap")
     _j(a, resume)
-    a.addiu("s1", "s1", 1)  # 지연 슬롯: 원 명령(줄 +1) — s0 는 이미 1
+    a.addiu(line_reg, line_reg, 1)  # 지연 슬롯: 원 명령(줄 +1) — s0 는 이미 1
     return a.resolve()
 
 
@@ -426,7 +435,7 @@ def stub_pass3_space(base, tail):
     return a.resolve()
 
 
-def stub_draw(base, normal, wrap, fall):
+def stub_draw(base, normal, wrap, fall, str_reg=None):
     """제 한계 안에서 끝나면 **정상 그리기**로, 아니면 줄바꿈으로.
 
     🔴 **틀 밖에서는 공백 패딩을 찍지 않는다.** 원판은 `열 == 한계` 에 공백 글리프
@@ -437,9 +446,13 @@ def stub_draw(base, normal, wrap, fall):
     그래서 30열에 실제로 무언가 그려지는 건 **매달린 꼬리 부호뿐**이다.
 
     레지스터: v1=열(원코드가 넘겨준다) · s3=소스 인덱스 · [sp+0x20]=문자열 · s4=한계값.
+    `str_reg` 를 주면 문자열이 스택이 아니라 그 레지스터에 있는 드로어 B(`s7`)용이다 — 나머지는 같다.
     """
     a = Asm(base)
-    _lw(a, "t0", 0x20, "sp")
+    if str_reg:
+        a.addu("t0", str_reg, "zero")
+    else:
+        _lw(a, "t0", 0x20, "sp")
     a.sll("t1", "s3", 16)
     _sra(a, "t1", "t1", 16)
     a.addu("t1", "t0", "t1")  # &str[i]
@@ -489,9 +502,14 @@ def _callers(ed, fn_ram):
 def _one(rx, ed, what):
     hits = [m.start() for m in rx.finditer(bytes(ed))]
     if what == "draw":  # ⚠ 살아 있는 드로어가 **둘**이다(2026-08-28 실측):
-        #   호출자 2곳 = 대사(`0x800B245C`) + `drawstr`(`0x800A9A60`, 그 아래 41곳) ← 우리 것
-        #   호출자 1곳 = `0x800A9A8C`(4곳) — 문자열이 `[sp+0x20]` 이 아니라 **s7** 이다
+        #   호출자 2곳 = 대사(`0x800B245C`) + `drawstr`(`0x800A9A60`, 그 아래 41곳) ← A
+        #   호출자 1곳 = `0x800A9A8C`(4곳) — 문자열이 `[sp+0x20]` 이 아니라 **s7** 이다 ← B
+        # 🔴 2026-10-10: 처음엔 A 만 걸었는데 **필드 대사창은 B 를 탄다**(실행 BP 로 확인 — 성 침실 대사·NPC 말
+        #   걸기 모두 래퍼 B → 드로어 B, A 는 한 번도 안 불린다). 그래서 29열 매달기가 대사창에선 안 먹어
+        #   「…사옵니다!!」의 둘째 「!」가 넷째 줄로 떨어졌다(마스터 실기). B 도 같은 훅을 건다.
         hits = [h for h in hits if len(_callers(ed, _fn_start(ed, h))) >= 2]
+    elif what == "drawB":
+        hits = [h for h in hits if len(_callers(ed, _fn_start(ed, h))) == 1]
     assert len(hits) == 1, f"{what} 시그니처 {len(hits)}건 — 1건이어야 한다"
     return hits[0] - 0x800 + 0x80010000
 
@@ -560,6 +578,12 @@ def free_run(ed, exclude, need):
 def build_and_patch(ed: bytearray, game: str):
     st = josa_site(game)
     p = _one(SIG_PREWRAP, ed, "prewrap")
+    # 🔴 구조 계약 — **살아 있는 드로어(호출자 1곳 이상)는 전부 걸어야 한다.** A 만 걸고 B 를 놓쳐 필드 대사창에서
+    # 매달기가 안 먹었다(2026-10-10). 새 드로어가 생기거나 호출 관계가 바뀌면 여기서 멈춘다.
+    live = [
+        h for h in (m.start() for m in SIG_DRAW.finditer(bytes(ed))) if _callers(ed, _fn_start(ed, h))
+    ]
+    assert len(live) == 2, f"{game} 살아 있는 드로어 {len(live)}곳 — A·B 둘이어야 한다(둘 다 훅을 건다)"
     d = _one(SIG_DRAW, ed, "draw")
     normal, wrap, fall = _btarget(ed, d + 8), _btarget(ed, d + 16), d + 20
 
@@ -573,6 +597,7 @@ def build_and_patch(ed: bytearray, game: str):
     # ③·④ 스텁은 **다른 런**에 둔다(이 런은 176B 뿐이다) — 오름차순 첫 자리라 결정적이다.
     # 선제 줄바꿈 자리 — 같은 드로어 함수 안(`d` 뒤 0x300B 이내)에서만 찾는다
     ed_bytes = bytes(ed)
+    ed_bytes_orig = ed_bytes
     eager = [
         m.start() - 0x800 + 0x80010000 + 12
         for m in SIG_EAGER.finditer(ed_bytes)
@@ -618,7 +643,40 @@ def build_and_patch(ed: bytearray, game: str):
         assert got == want, f"{game} 훅 0x{ram:08X} 원명령 불일치: 0x{got:08X} != 0x{want:08X}"
         ed[fo(ram) : fo(ram) + 4] = struct.pack("<I", 0x08000000 | ((target >> 2) & 0x03FFFFFF))
     limits = [_bump_limit(ed, _fn_start(ed, fo(p))), _kill_autowrap(ed)] if OVER else []
+
+    # ── 드로어 B(필드 대사창) — A 와 같은 두 훅(제 한계 판정 · 선제 줄바꿈)을 건다(2026-10-10) ──
+    # 문자열이 s7 · 줄 카운터가 s2 인 것만 다르다. 마스터 실기의 고아 「!」가 이 경로였다.
+    dB = _one(SIG_DRAW, ed, "drawB")
+    normalB, wrapB, fallB = _btarget(ed_bytes_orig, dB + 8), _btarget(ed_bytes_orig, dB + 16), dB + 20
+    eagerB = [
+        m.start() - 0x800 + 0x80010000 + 12
+        for m in SIG_EAGER_B.finditer(ed_bytes)
+        if 0 <= m.start() - 0x800 + 0x80010000 - dB < 0x300
+    ]
+    assert len(eagerB) == 1, f"{game} 드로어 B 선제 줄바꿈 자리 {len(eagerB)}곳 — 하나여야 한다"
+    eB = eagerB[0]
+    sizeB = len(stub_draw(0, normalB, wrapB, fallB, str_reg="s7")) + len(
+        stub_eager_nl(0, eB + 8, line_reg="s2", str_reg="s7")
+    )
+    offB, availB = free_run(ed, (st["josa_off"], st["data_off"], off, off2), sizeB)
+    baseB = offB - 0x800 + 0x80010000
+    drB = stub_draw(baseB, normalB, wrapB, fallB, str_reg="s7")
+    enB = stub_eager_nl(baseB + len(drB), eB + 8, line_reg="s2", str_reg="s7")
+    blobB = drB + enB
+    assert all(b == 0 for b in ed[offB : offB + len(blobB)]), "드로어 B 배치 자리가 0이 아니다"
+    ed[offB : offB + len(blobB)] = blobB
+    for ram, want, target in (
+        (dB, 0x2682FFFF, baseB),  # addiu v0, s4, -1
+        (eB, 0x26520001, baseB + len(drB)),  # addiu s2, s2, 1 — 드로어 B 선제 줄바꿈
+    ):
+        got = struct.unpack_from("<I", ed, fo(ram))[0]
+        assert got == want, f"{game} B 훅 0x{ram:08X} 원명령 불일치: 0x{got:08X} != 0x{want:08X}"
+        ed[fo(ram) : fo(ram) + 4] = struct.pack("<I", 0x08000000 | ((target >> 2) & 0x03FFFFFF))
     return {
+        "baseB": baseB,
+        "sizeB": len(blobB),
+        "availB": availB,
+        "drawB": dB,
         "prewrap": p,
         "draw": d,
         "base": base,
@@ -658,13 +716,15 @@ def main():
         r = build_and_patch(ed, game)
         verify_asm(bytes(ed[fo(r["base"]) : fo(r["base"]) + r["size"]]), r["base"], game)
         verify_asm(bytes(ed[fo(r["base2"]) : fo(r["base2"]) + r["size2"]]), r["base2"], game)
+        verify_asm(bytes(ed[fo(r["baseB"]) : fo(r["baseB"]) + r["sizeB"]]), r["baseB"], game)
         with open(target, "r+b") as f:
             n = write_user_data(f, st["lba"], ed, label=f"온점 매달기 ({game})")
         print(
             f"온점 매달기 [{game}]: {r['size']}B @0x{r['base']:08X} (여유 {r['avail'] - r['size']}B) "
             f"→ prewrap 0x{r['prewrap']:08X} · 드로어 0x{r['draw']:08X} 훅 · "
             f"한계 {FRAME}→{COL_LIMIT}열 {len(r['limits'])}곳 · 줄넘김 ③·④ {r['size2']}B "
-            f"@0x{r['base2']:08X}(여유 {r['avail2'] - r['size2']}B), 섹터 {n}개 수정"
+            f"@0x{r['base2']:08X}(여유 {r['avail2'] - r['size2']}B) · 드로어 B 0x{r['drawB']:08X} 훅 "
+            f"{r['sizeB']}B @0x{r['baseB']:08X}(여유 {r['availB'] - r['sizeB']}B), 섹터 {n}개 수정"
         )
 
 
