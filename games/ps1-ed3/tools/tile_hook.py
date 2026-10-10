@@ -22,8 +22,13 @@ OFF_RA, OFF_V0, OFF_V1, OFF_A0, OFF_A2 = 12, 16, 20, 24, 28
 OFF_OUTA, OFF_SPB = 32, 52  # 합성 버퍼 18B(+2)
 OFF_HALF = 72  # 반 칸(6px) 글자 코드 u16 목록, 0 종결(최대 8칸 = 16B)
 OFF_MK = 88  # 조사 표지 5 × 8B
-OFF_BL = 128  # 받침표 u16 목록, 0 종결
+OFF_LC, OFF_LIM = 128, 130  # 직전에 그린 글자의 열(메시지 창의 커서 점프를 알아챈다) · 줄 끝 판정 한계 px((열−1)×12)
+OFF_BL = 132  # 받침표 u16 목록, 0 종결
 HALF_SLOTS = 8
+MSG_WINDOWS = ((10, 3, 0), (17, 1, 0), (6, 4, 0), (14, 4, 0), (20, 4, 0))  # 개별 목록 (열, 행, 줄 앞 밀기 px) — 10×3 퇴각 확인 · 17×1 「대열…」 메시지(`engine_patch.LINEUP_COLS`) · 6×4 전투 square **+ 시스템 설정 창**(둘 다 창 열 6 으로 줄인 뒤 — 커서 줄 반각 `cursor_hook` 과 같은 목록) · 14×4 세이브/로드 데이터 창(제목 가운데 정렬, 마스터 10-11) · 20×4 「…괜찮습니까?」 확인 창(물음표 반각). 🔴 시스템 설정 창이 7×4 일 땐 넣지 않았다(필드 메뉴 `0x80033CDC` 계열). 열·행이 유일한 창만 센다(14×4·20×4 는 창 생성 호출이 하나씩, 실측 10-11).
+MSG_GENERIC = ((1, 3), (5, 18))  # 일반 규칙: 행 1~3 · 열 5~18 인 작은 창 + **전투 화면 영역(창 y)** — 전투 메시지 창(출현은 열이 이름 길이+4·행이 몬스터 종류 수로 **가변**이라 목록으로 못 센다: 승리·패배 10×1 · 레벨업 18×2 · 경험치·전리품 13×2 …). 열 3·4 팝업·행 4 이상(square 6×4·필드 메뉴 7×4)은 제외.
+MSG_Y = (-48, -12)  # 창 표의 y 는 화면 가운데(120) 기준 상대값(= y−120): 전투 메시지 창(y 72~108)만. 전투 밖 1·2행 창(`0x80024040` y150 · `0x80028C20` y12)은 원판 그대로 — 용도를 모르는 창을 안 바꾼다(관리자 10-10)
+MSG_OFF = 0x1C0  # 메시지 창 갈래 코드를 두는 자료 자리 안 위치(패널 스텁 `PANEL_CODE_OFF` 뒤) — 죽은 함수 자리가 모자라 밖으로 뺐다
 N_MARK = 5
 
 
@@ -177,15 +182,20 @@ def hooks_b(disc, n_blist, with_josa=True):
       nop
     found:
       li    t2, {E.COLS}
-      bne   t3, t2, out_plain               # 대사창(열 24)만 합성한다 — 목록·패널·팝업은 원판 그대로
+      beq   t3, t2, dlg                     # 대사창(열 24) · 그 밖은 전투 메시지 창만(`msg_stub`) — 목록·패널·팝업은 원판 그대로
+      div   zero, t6, t3                    # (지연 슬롯)
+      j     {S + MSG_OFF:#x}
       nop
-      div   zero, t6, t3
+    dlg:
       mfhi  t5                              # col
       addiu t2, t9, {OFF_OUTA}              # (mfhi 결과를 바로 읽지 않게 끼운 명령)
       subu  t0, t0, t5                      # t0 = 이 줄 첫 칸의 슬롯 번호
+      li    t6, 276                         # 줄 끝 한계 (열 − 1) × 12
+      sh    t6, {OFF_LIM}(t9)
       bne   t5, zero, nreset
       nop
       sh    zero, {OFF_POS}(t9)             # 줄 첫 칸 — 위치·현재 타일 초기화
+    rst:
       sw    t2, {OFF_CURP}(t9)
       sw    zero, 0(t2)
       sw    zero, 4(t2)
@@ -258,8 +268,9 @@ def hooks_b(disc, n_blist, with_josa=True):
       bne   t2, zero, loop
       nop
       lhu   t2, {OFF_POS}(t9)               # ── 위치 전진 · 현재 타일 고르기
+      lhu   t3, {OFF_LIM}(t9)
       nop
-      sltiu a1, t2, 276                     # 옛 위치 < 276 → 다음 타일이 줄 안(≤ 23번) — 넘친 조각을 써도 된다
+      sltu  a1, t2, t3                      # 옛 위치 < 한계((열 − 1) × 12 · 대사창 276) → 다음 타일이 줄 안(≤ 23번) — 넘친 조각을 써도 된다
       addu  t2, t2, t1
       sh    t2, {OFF_POS}(t9)
       addu  t3, t7, t1
@@ -363,6 +374,74 @@ def hooks_b(disc, n_blist, with_josa=True):
     words, labels = E.asm(src, p["dead"])
     E.verify(words, p["dead"])
     return words, labels
+
+
+def msg_stub(disc, labels):
+    """([워드], 시작 주소) — 전투 메시지 창(`MSG_WINDOWS`: 레벨업·경험치·전리품·승리·패배)의 갈래. 훅 `found:` 에서 `j` 로 들어온다.
+
+    그 창이 아니면 `out_plain`(원판 그대로). 맞으면 열 `col` 을 구하고, **엔진이 커서를 옮겼으면**(열이 직전 글자 + 1 이 아니면 — 이름 뒤 폭 표 · 숫자 자리)
+    위치를 `열 × 12` 로 다시 잡아 줄 처음처럼 시작한다. 레벨업 줄 「쥬리오의 레벨이 올랐습니다.」 의 어절 사이 공백이 반 칸이도록 한다(규칙 1-1, 관리자 10-09).
+    들어올 때 레지스터: t3 = 열 수 · t4 = 창 표 항목 · t6 = 칸 번호 k · t0 = 슬롯 번호 · t9 = 자료 · `div t6, t3` 은 이미 했다(지연 슬롯).
+    """
+    p = E.PATCH[disc]
+    base = p["data"] + MSG_OFF
+    op = labels["out_plain"]
+    chk = ["      lhu   t5, 8(t4)                       # 행", "      nop"]
+    for n, (c, r, bias) in enumerate(MSG_WINDOWS):
+        chk += [
+            f"      li    t2, {c}",
+            f"      bne   t3, t2, msg_n{n}",
+            "      nop",
+            f"      li    t2, {r}",
+            f"      bne   t5, t2, msg_n{n}",
+            f"      li    v1, {bias}                          # (지연 슬롯) 줄 앞 밀기",
+            "      j     msg_ok",
+            "      nop",
+            f"    msg_n{n}:",
+        ]
+    (r0, r1), (c0, c1) = MSG_GENERIC
+    chk += [
+        f"      addiu t2, t5, -{r0}",
+        f"      sltiu t2, t2, {r1 - r0 + 1}",
+        f"      beq   t2, zero, {op:#x}                  # 행이 1~2 가 아니면 원판 그대로",
+        "      nop",
+        f"      addiu t2, t3, -{c0}",
+        f"      sltiu t2, t2, {c1 - c0 + 1}",
+        f"      beq   t2, zero, {op:#x}                  # 열이 5~18 이 아니면 원판 그대로",
+        "      lh    t2, 4(t4)                       # (지연 슬롯) 창 y(화면 가운데 기준)",
+        "      nop",
+        f"      addiu t2, t2, {-MSG_Y[0]}",
+        f"      sltiu t2, t2, {MSG_Y[1] - MSG_Y[0] + 1}",
+        f"      beq   t2, zero, {op:#x}                  # 전투 화면 영역이 아니면 원판 그대로",
+        "      li    v1, 0",
+        "    msg_ok:",
+    ]
+    msg_checks = "\n".join(chk) + "\n"
+    src = f"""
+{msg_checks}      mfhi  t5                              # col
+      addiu t2, t9, {OFF_OUTA}
+      subu  t0, t0, t5
+      addiu t6, t3, -1
+      sll   t7, t6, 3
+      sll   t6, t6, 2
+      addu  t6, t6, t7                      # (열 − 1) × 12
+      sh    t6, {OFF_LIM}(t9)
+      lhu   t6, {OFF_LC}(t9)
+      sh    t5, {OFF_LC}(t9)
+      addiu t6, t6, 1
+      beq   t6, t5, {labels['nreset']:#x}    # 직전 글자 바로 다음 칸 — 이어 쓴다
+      nop
+      sll   t6, t5, 3
+      sll   t7, t5, 2
+      addu  t6, t6, t7                      # 열 × 12
+      addu  t6, t6, v1                      # + 줄 앞 밀기(가운데 정렬)
+      sh    t6, {OFF_POS}(t9)
+      j     {labels['rst']:#x}
+      nop
+"""
+    words, _ = E.asm(src, base)
+    E.verify(words, base)
+    return words, base
 
 
 # ── 월드맵 장소 패널 가운데 정렬(마스터 10-09 「반각 가능하면 해 봐」) ───────────────────────────────

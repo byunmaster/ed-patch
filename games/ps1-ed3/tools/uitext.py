@@ -66,8 +66,25 @@ def exe_bytes(disc):
 #      사라지는 회귀를 내 되돌렸다 — 그래서 소비자 쪽에서 되살린다.
 EXTRA_SITES = {
     "ed3": [
-        0x10BC
-    ],  # はい — 예/아니오 창. 앞 네 워드(1·8·2·4)는 표가 아닌 자료다(いいえ 는 보인다)
+        0x10BC,
+        0x10C2,
+        0x10DC,
+        0x10E6,
+        0x10F0,
+    ],  # はい · いいえ — 예/아니오 창(필드 이벤트·세이브 확인). 앞 네 워드(1·8·2·4)는 표가 아닌 자료다. いいえ 는 스캐너가 못 잡아 여기 둔다. 0x10DC·0x10E6·0x10F0 은 도구점 메뉴(買いたい·売りたい·換金する — 정본 사기·팔기·환전하기)
+}
+
+
+# 🔴 게임 빌드가 **나중에 직접 덮어쓰는** 자리 — `apply`·`lost_text` 가 건드리지 않는다(정본 줄은 남는다). square 창 넷째 줄(`build.square_center`)은 종결 워드(0xA1396)를
+#    뒤 표 칸(`exetext.POOL_LEFT_SLACK`)에 내주었고, 고정 칸 쓰기가 그 워드에 종결을 써 풀과 부딪친다.
+OVERRIDDEN = {
+    "ed3": {
+        0xA138E,
+        # 하위 창 가운데 정렬(`build.submenu_center` / `yesno_center`): 시스템 설정 다섯 줄 · 메시지 속도 · 세이브/로드 선택 · 키 설정 · 데이터 창 제목 셋 · 「예」
+        0xA116C, 0xA117C, 0xA118C, 0xA119C, 0xA11AC,
+        0xA11D6, 0xA11DE, 0xA11E6, 0xA11EE, 0xA11F6, 0xA1232, 0xA123C,
+        0xA120E, 0xA121E, 0xA1248, 0x10BC,
+    }
 }
 
 
@@ -241,6 +258,8 @@ def apply(exe, disc, encode):
     by_table = {}
     for off, row in sorted(canon.items()):
         s = ss.get(off)
+        if off in OVERRIDDEN.get(disc, ()):
+            continue
         if s is None or script_canon.stamp(s["jp"]) != row["jp"]:
             skipped += 1
             continue
@@ -293,6 +312,8 @@ def lost_text(orig, new, disc, encode):
     bad = []
     for off, row in sorted(load(disc).items()):
         s = ss.get(off)
+        if off in OVERRIDDEN.get(disc, ()):
+            continue
         if s is None or script_canon.stamp(s["jp"]) != row["jp"]:
             continue
         try:

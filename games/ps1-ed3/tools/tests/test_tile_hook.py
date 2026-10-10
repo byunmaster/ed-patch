@@ -50,15 +50,17 @@ def slot_of_rect(x, y):
 
 
 class Sim:
-    def __init__(self, glyphs, cols=24, rows=2, josa=None):
+    def __init__(self, glyphs, cols=24, rows=2, josa=None, y=-24):
         self.p = engine_patch.PATCH["ed3"]
         self.mem = {}
         self.vram = {}  # 슬롯 → 12행
         self.cols = cols
         self.glyphs = glyphs
         p = self.p
-        words, _ = tile_hook.hooks_b("ed3", len(josa["blist"]) if josa else 0, with_josa=josa is not None)
+        words, labels = tile_hook.hooks_b("ed3", len(josa["blist"]) if josa else 0, with_josa=josa is not None)
         self.prog = {p["dead"] + 4 * i: w for i, w in enumerate(words)}
+        mwords, mbase = tile_hook.msg_stub("ed3", labels)
+        self.prog.update({mbase + 4 * i: w for i, w in enumerate(mwords)})
         for c in glyphs:
             for i, b in enumerate(glyph_bytes(c)):
                 self.mem[FONT + c * 18 + i] = b
@@ -70,6 +72,7 @@ class Sim:
         self.w16(h, 0x8000)
         self.w16(h + 6, cols)
         self.w16(h + 8, rows)
+        self.w16(h + 4, y & 0xFFFF)
         self.w16(h + 0xE, SLOTBASE)
         half = [c for c in HALF]
         markers = josa["markers"] if josa else [(0x7FFF, 0, 0, 0)] * tile_hook.N_MARK
@@ -143,7 +146,7 @@ class Sim:
                     a, b = s32(regs[rs]), s32(regs[rt])
                     q = int(a / b)
                     lo, hi = q & 0xFFFFFFFF, (a - q * b) & 0xFFFFFFFF
-                elif fn in (0x21, 0x23, 0x24, 0x25, 0x2A):
+                elif fn in (0x21, 0x23, 0x24, 0x25, 0x2A, 0x2B):
                     a, b = regs[rs], regs[rt]
                     regs[rd] = {
                         0x21: (a + b) & 0xFFFFFFFF,
@@ -151,6 +154,7 @@ class Sim:
                         0x24: a & b,
                         0x25: a | b,
                         0x2A: int(s32(a) < s32(b)),
+                        0x2B: int(a < b),
                     }[fn]
                 else:
                     raise AssertionError(f"해석기 미지원 R {fn:#x}")
@@ -304,11 +308,69 @@ class TestTileHook(unittest.TestCase):
         self.assertEqual(touched, [])
 
     def test_non_dialogue_window_is_plain(self):
-        sim = Sim({0x100}, cols=12, rows=2)
+        sim = Sim({0x100}, cols=4, rows=2)
         R = engine_patch._R
         src = sim.run_glyph(0x100, 3)
         self.assertEqual(src, FONT + 0x100 * 18)  # 원판 그대로
         self.assertEqual(sim.loadimages, [])
+
+
+class TestMessageWindow(unittest.TestCase):
+    """전투 메시지 창(18×2: 경험치·레벨업) — 공백이 반 칸으로 합성되고, 엔진이 커서를 옮기면(이름 뒤 폭 표 · 숫자 자리) 위치가 따라온다."""
+
+    def run_msg(self, steps, cols=18, rows=2, y=-24):
+        """steps = [(칸 k, 코드)] — 칸이 연속이 아니면 엔진이 커서를 옮긴 것."""
+        sim = Sim({c for _, c in steps} | set(HALF), cols=cols, rows=rows, y=y)
+        for k, c in steps:
+            sim.run_glyph(c, k)
+        return sim
+
+    def test_half_space_packs_like_dialogue(self):
+        codes = [0x100, 0x101, 0x0F0, 0x102, 0x103]
+        sim = self.run_msg(list(enumerate(codes)))
+        for t, r in model_line(codes).items():
+            if t < 17:
+                self.assertEqual(sim.vram.get(SLOTBASE + t), r, f"타일 {t}")
+
+    def test_other_message_columns(self):
+        codes = [0x100, 0x101, 0x0F0, 0x102]
+        sim = self.run_msg(list(enumerate(codes)), cols=13)
+        for t, r in model_line(codes).items():
+            self.assertEqual(sim.vram.get(SLOTBASE + t), r, f"타일 {t}")
+
+    def test_every_listed_window_composes(self):
+        codes = [0x100, 0x0F0, 0x101]
+        shapes = [(c, r, b) for c, r, b in tile_hook.MSG_WINDOWS] + [(5, 1, 0), (7, 1, 0), (10, 2, 0), (13, 2, 0), (18, 2, 0), (14, 1, 0)]
+        for cols, rows, bias in shapes:
+            sim = self.run_msg(list(enumerate(codes)), cols=cols, rows=rows)
+            for tt, r in model_line(([0x0F0] if bias else []) + codes).items():
+                self.assertEqual(sim.vram.get(SLOTBASE + tt), r, f"{cols}x{rows} 타일 {tt}")
+
+    def test_result_window_is_left_aligned(self):
+        """10×1 승리·패배 창의 문장은 왼쪽 정렬 — 줄 앞 밀기 0."""
+        codes = [0x100, 0x101, 0x0F0, 0x102, 0x103, 0x0F1]
+        sim = self.run_msg(list(enumerate(codes)), cols=10, rows=1)
+        for tt, r in model_line(codes).items():
+            self.assertEqual(sim.vram.get(SLOTBASE + tt), r, f"타일 {tt}")
+
+    def test_non_battle_area_stays_plain(self):
+        """전투 화면 밖(y150·y12) 의 1·2행 창은 원판 그대로 — 용도를 모르는 창은 안 바꾼다."""
+        for y in (30, -108, 0):
+            sim = self.run_msg([(3, 0x100)], cols=9, rows=1, y=y)
+            self.assertEqual(sim.loadimages, [], f"y={y} 는 원판 그대로")
+
+    def test_cursor_jump_restarts_position(self):
+        """이름 세 글자 + 빈 칸 셋 뒤 커서가 3 칸으로 돌아오면(폭 표) 다음 글자는 36px 에서 시작한다."""
+        steps = [(0, 0x100), (1, 0x101), (2, 0x102), (3, 0x0F0), (4, 0x0F0), (5, 0x0F0), (3, 0x103), (4, 0x0F0), (5, 0x104)]
+        sim = self.run_msg(steps)
+        want = model_line([0x100, 0x101, 0x102, 0x103, 0x0F0, 0x104])
+        for t, r in want.items():
+            self.assertEqual(sim.vram.get(SLOTBASE + t), r, f"타일 {t}")
+
+    def test_other_window_shapes_stay_plain(self):
+        for cols, rows in ((18, 4), (19, 2), (4, 2), (3, 2), (4, 1), (6, 4), (7, 4), (10, 4), (12, 5)):
+            sim = self.run_msg([(3, 0x100)], cols=cols, rows=rows)
+            self.assertEqual(sim.loadimages, [], f"{cols}x{rows} 는 원판 그대로")
 
 
 JOSA = {

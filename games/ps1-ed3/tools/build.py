@@ -258,6 +258,129 @@ def panel_pass(exe, disc, table, words, seen, report, panel):
                 exetext.put_panel_line(exe, off, n, new, next(inds))
 
 
+# 레벨업 창(`0x8005A8F0`~`0x8005A93C`) — 이름을 `0x8001A40C` 로 그린 뒤 **커서 x 를 이름 폭 표 `[0x800A6718+2·번호]` 로 옮긴다**.
+#   표 값은 원문 이름의 글자 수(ジュリオ=4)라, 한글 이름이 짧으면 「쥬리오 　의 레벨이…」 처럼 벌어진다(마스터 실기 10-09, 관리자 「이름 칸 패딩」 짐작이 맞았다).
+#   그 표를 쓰는 코드는 이 한 군데뿐이다(lui/addiu 전수 검색) → 구운 이름 글자 수로 다시 쓴다.
+NAME_TABLE = {"ed3": (0x96E54, 0x96F18, 14)}  # (이름 표 파일 오프셋, 폭 표 오프셋, 개수) — 이름 칸 14B(7워드, 종결 0xFFFF)
+
+
+def fit_name_widths(exe, exe_orig, disc, report):
+    if disc not in NAME_TABLE:
+        return
+    names, widths, n = NAME_TABLE[disc]
+    for i in range(n):
+        def glyphs(buf):
+            ws = struct.unpack_from("<7H", buf, names + 14 * i)
+            return [w for w in ws if 0 < w < 0x8000]
+        w0 = struct.unpack_from("<H", exe_orig, widths + 2 * i)[0]
+        assert w0 == len(glyphs(exe_orig)), f"이름 폭 표 사전조건 — {i}번 원본 폭 {w0} ≠ 글자 수 {len(glyphs(exe_orig))}"
+        struct.pack_into("<H", exe, widths + 2 * i, len(glyphs(exe)))
+    report["name_widths"] = n
+
+
+# 필드 `square` 창(7×4: 상태보기·자동전투 선택·키설정변경·퇴각한다) — 한 덩어리 문자열(`0xA135C`~`0xA1397`, 30워드)에 줄마다 0x8000 이 끼고 마지막이 0x8002 다.
+#   마스터 10-11 최종: **왼쪽 정렬·6칸**(앞 여백 없음). 10-09~10 의 가운데 정렬 안(앞 전각/반 칸 — 반 칸은 커서 줄이 전각으로 그려 밀리던 문제를 `cursor_hook` 이 풀었다)은 걷었다.
+#   줄이 붙어 있어 덩어리 29워드 안에 든다.
+SQUARE = {"ed3": (0xA135C, 29)}  # (덩어리 시작 파일 오프셋, 쓰는 워드 수) — 원본은 30워드(끝 0xA1396 한 워드는 뒤 표 칸이 가져간다: exetext.POOL_LEFT_SLACK)
+SQUARE_LINES = (("상태보기", ()), ("자동전투선택", ()), ("키설정변경", ()), ("퇴각하기", ()))  # (글, 앞 여백: 0 = 전각 1칸 · " " = 반 칸) — 창 열 6(engine_patch.SQUARE_WINDOW), 띄어쓰기 없음. 🔴 마스터 판정(10-11): **왼쪽 정렬·6칸 유지**(앞 여백 없음 — 가운데 정렬 10-10 안을 걷었다). 반 칸 공백은 커서 줄도 먹는다(`cursor_hook`)
+
+
+def square_center(exe, exe_orig, disc, enc, report):
+    if disc not in SQUARE:
+        return
+    off, n = SQUARE[disc]
+    o = list(struct.unpack_from(f"<{n + 1}H", exe_orig, off))  # 원본 30워드
+    assert [x for x in o if x >= 0x8000] == [0x8000, 0x8000, 0x8000, 0x8002], f"square 창 줄 구조가 다르다 — {[hex(x) for x in o]}"
+    sp = enc(" ")[0]
+    words = []
+    for k, (txt, lead) in enumerate(SQUARE_LINES):
+        words += [0 if x == 0 else sp for x in lead] + list(enc(txt)) + [0x8002 if k == len(SQUARE_LINES) - 1 else 0x8000]
+    assert len(words) <= n, f"square 창이 덩어리({n}워드)를 넘는다 — {len(words)}"
+    words += [0x8002] * (n - len(words))
+    struct.pack_into(f"<{n}H", exe, off, *words)  # 29워드만 — 30번째 워드는 뒤 표 칸이 쓴다
+    report["square_center"] = len(words)
+
+
+# 「예／아니오」 팝업(3×2, 전투 퇴각 확인·세이브 확인 공용) — 원문 첫 줄은 「は□い」(글자·빈 칸·글자 = 3칸)이라 한글 「예」는 왼쪽에 치우친다. 마스터 10-09 「중앙정렬」 →
+#   첫 줄을 [빈 칸, 예, 빈 칸] 로 쓴다(둘째 줄 「아니오」는 3칸이라 그대로). 반 칸 합성이 필요 없어 훅 대상에 안 넣는다(0 코드 = 1칸 빈 글자).
+YESNO = {"ed3": 0xA11BC}  # 첫 줄 시작 — 원본 [글자, 0, 글자, 0x8000]
+
+
+def yesno_center(exe, exe_orig, disc, enc, report):
+    if disc not in YESNO:
+        return
+    off = YESNO[disc]
+    o = struct.unpack_from("<4H", exe_orig, off)
+    assert o[1] == 0 and o[3] == 0x8000 and 0 < o[0] < 0x8000 and 0 < o[2] < 0x8000, f"예/아니오 첫 줄 사전조건 — {[hex(x) for x in o]}"
+    yes = enc("예")
+    assert len(yes) == 1
+    struct.pack_into("<4H", exe, off, 0, yes[0], 0, 0x8000)
+    report["yesno_center"] = 1
+
+
+def yes_label_center(exe, exe_orig, disc, enc, report):
+    """같은 「예」 문자열(0x10BC)을 쓰는 3×2 확인 창들(타이틀 로드 확인 · 도구점 · 마을 아이 …) — 원문 は□い 가 3칸이라 한 글자는 가운데 칸으로 [빈 칸, 예, 종결]. 「아니오」(0x10C2)는 3칸이라 그대로."""
+    if disc != "ed3":
+        return
+    o2 = struct.unpack_from("<3H", exe_orig, 0x10BC)
+    assert 0 < o2[0] < 0x8000 and 0 < o2[1] < 0x8000 and o2[2] == 0xFFFF, f"0x10BC 사전조건 — {[hex(x) for x in o2]}"
+    struct.pack_into("<3H", exe, 0x10BC, 0, enc("예")[0], 0xFFFF)
+    report["yes_label"] = 1
+
+
+# 시스템 메뉴 하위 창 문안 가운데 정렬(마스터 10-11) — 창 열은 `engine_patch.SUBMENU_WINDOWS`. 공백 칸은 `0`(전각 빈 칸) · 반 칸은 공백 글리프(반각 허용 창: 6×4 · 14×4 → `tile_hook.MSG_WINDOWS`).
+#   표 항목 4(시스템 설정, 6×4): 다섯 줄이 한 목록이다(다섯째 「게임끝내기」는 창 행 4 밖). 줄 글자 수 ≤ 열 6 이라 **빈 칸으로 채우지 않고** 줄을 붙여 쓴다 — 남는 워드는 목록 끝(0x8002) 뒤라 읽히지 않는다.
+#   마스터 판정(10-11): 시스템 설정 창은 **왼쪽 정렬 유지·칸만 6칸**(앞 여백 없음) — 세이브／로드가 6칸에 꽉 맞는다.
+SUBMENU = {
+    "ed3": {
+        "system": (0xA116C, 40, [("", "메시지속도"), ("", "리더변경"), ("", "키설정변경"), ("", "세이브／로드"), ("", "게임끝내기")]),
+        "speed": (0xA11D6, 12, [("", "빠0름"), ("", "보0통"), ("", "느0림")]),  # 두 글자를 양 끝으로(0 = 가운데 빈 칸) — 3칸 창
+        "saveload": (0xA11EE, 8, [("", "세이브"), ("", "로0드")]),
+        "keycfg": (0xA1232, 9, [("", "노0멀"), ("", "와이드")]),  # 창 열 3
+    },
+}
+DETAIL_TITLES = {"ed3": {10: ("0000", "세이브데이터"), 11: ("000", "기록이 없습니다."), 13: ("0000 ", "로드데이터")}}  # 표 항목 → (앞 여백: 0 = 전각 1칸 · 공백 = 반 칸, 글) — 14칸 창 가운데
+
+
+def _line_words(enc, lead, txt):
+    w = [0 if c == "0" else enc(" ")[0] for c in lead]
+    out = []
+    for i, part in enumerate(txt.split("0")):
+        if i:
+            out.append(0)
+        out += list(enc(part))
+    return w + out
+
+
+def submenu_center(exe, exe_orig, disc, enc, report):
+    import engine_patch
+
+    if disc not in SUBMENU:
+        return
+    n_lines = 0
+    for off, n, lines in SUBMENU[disc].values():
+        o = struct.unpack_from(f"<{n}H", exe_orig, off)
+        assert sum(1 for x in o if x in (0x8000, 0x8002)) >= len(lines), f"하위 창 문자열 구조가 다르다 — {off:#x}"
+        words = []
+        for k, (lead, txt) in enumerate(lines):
+            words += _line_words(enc, lead, txt) + [0x8002 if k == len(lines) - 1 else 0x8000]
+        assert len(words) <= n, f"하위 창 문자열이 자리({n}워드)를 넘는다 — {off:#x} {len(words)}"
+        assert len(words) <= len(o)
+        # 중간 줄의 종결은 원본 위치와 달라도 된다(순차 읽기) — 단 마지막이 목록 끝이어야 한다
+        struct.pack_into(f"<{len(words)}H", exe, off, *words)
+        n_lines += len(lines)
+    titles = {}
+    for k, (lead, txt) in DETAIL_TITLES[disc].items():
+        titles[k] = _line_words(enc, lead, txt) + [0x8002]
+    used = engine_patch.apply_detail_titles(exe, disc, titles)
+    # 전투 「얻은 경험치」 제목 — 앞 반각 공백 둘(마스터 10-11: 제목 전체를 한 칸 가까이 오른쪽으로 — 반 칸 공백 하나로는 아직 왼쪽으로 치우쳤다) · R2 꼬리 문자열(`engine_patch.apply_exp_title`)
+    sp = enc(" ")[0]
+    _, term = exetext.raw_string(bytes(exe_orig), 0xA12AC)
+    used += engine_patch.apply_exp_title(exe, disc, [sp, sp] + list(enc("얻은 경험치")) + [term], used)
+    report["submenu_center"] = n_lines
+    report["detail_titles"] = used
+
+
 def reinsert_names(exe, disc, table, report):
     """실행파일 낱말 표에 고유명사 정본을 넣는다. 표가 없는 구역은 **길이 고정**이라 건너뛴다."""
     cm = textenc.charmap(disc)
@@ -537,6 +660,7 @@ def main():
     ui_put, ui_skip = uitext.apply(exe, a.disc, enc)
     report["skipped"] += ui_skip
     reinsert_names(exe, a.disc, table, report)
+    fit_name_widths(exe, exe_orig, a.disc, report)
     # 🔴 불변식 — 월드맵 패널 풀의 **제어 코드 열이 원판과 같다**(글자만 바뀌었다). 어기면 패널이 비거나 줄이 밀린다(마스터 실기 10-08).
     if a.disc in exetext.PANEL:
         problems = exetext.panel_structure_problems(exe_orig, bytes(exe), *exetext.PANEL[a.disc])
@@ -546,6 +670,10 @@ def main():
     lost = uitext.lost_text(exe_orig, bytes(exe), a.disc, enc)
     if lost:
         raise SystemExit("🔴 UI 글 소실:\n  " + "\n  ".join(lost[:10]))
+    square_center(exe, exe_orig, a.disc, enc, report)  # lost_text 가 글을 본 뒤에 덮는다(가운데 정렬)
+    yesno_center(exe, exe_orig, a.disc, enc, report)
+    yes_label_center(exe, exe_orig, a.disc, enc, report)
+    submenu_center(exe, exe_orig, a.disc, enc, report)
     arcs = reinsert_script(a.disc, canon, table, report)
     for path, data in gfx_arcs.items():  # 그림이 든 파일도 같이 쓴다
         arcs.setdefault(path, data)
