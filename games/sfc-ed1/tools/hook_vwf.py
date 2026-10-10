@@ -16,7 +16,7 @@
 BUF = 0x7EE100  # 슬롯별 합성 버퍼 — 16B(1bpp, 위 타일 8행 + 아래 타일 8행) × 슬롯
 HALF_CODES = (0x10, 0x83, 0x84, 0x0C, 0x0F)  # 공백 · `.` · `,` · `!` · `?`
 # 같은 몬스터가 여럿일 때 엔진이 이름 뒤에 붙이는 A~D(`$02:E0CE` 표) — 마스터 10-09 「ABCD 도 반각」: 우리 글꼴 4px 합성으로
-LETTER_CODES = (0xC3, 0xC4, 0x8F, 0x8E)
+LETTER_CODES = (0xC3, 0xC4, 0x8F, 0x8E, 0x8B, 0x8C, 0x8D)  # A·B·C·D(같은 몬스터)와 G·O·L(「GOLD」)
 
 
 def emit(a, k):
@@ -108,6 +108,8 @@ def emit(a, k):
     a.ldx(imm=0x0000, m16=True)
     a.label("vl_l")
     a.op("cmp", addr=0x000305, mode="longx")
+    a.beq(label="vl_y")
+    a.op("cmp", addr=k["V_PREV"], mode="longx")  # 앞 창 사본(고정 칸 창이 덮기 전) — 화면에 남은 로그 칸
     a.beq(label="vl_y")
     a.inx()
     a.cpx(imm=68, m16=True)
@@ -894,7 +896,7 @@ def emit(a, k):
     a.bpl(label="wk_d6e")
     lm("lda", 0x000F43)
     a.bpl(label="wk_d6e")
-    addw(4)
+    addw(8)
     a.label("wk_d6e")
     a.iny()
     a.jmp(addr="wk_c", mode="abs")
@@ -906,7 +908,7 @@ def emit(a, k):
     a.bpl(label="wk_d7e")
     lm("lda", 0x000F44)
     a.bpl(label="wk_d7e")
-    addw(4)
+    addw(8)
     a.label("wk_d7e")
     a.iny()
     a.jmp(addr="wk_c", mode="abs")
@@ -1124,9 +1126,12 @@ def emit(a, k):
     a.bne(label="vr_nsp")
     a.jmp(addr="vr_sp", mode="abs")
     a.label("vr_nsp")
-    for code in HALF_CODES[1:] + LETTER_CODES:
+    for code in HALF_CODES[1:]:
         a.cmp(imm=code)
         a.beq(label="vr_h1")
+    for code in LETTER_CODES:  # 원판 영문 — 잉크+2 진행(`rawvalid` 에 실린 폭)으로 합성(마스터 10-11 「원판」)
+        a.cmp(imm=code)
+        a.beq(label="vr_lt1")
     lm("lda", V_VO)
     a.bne(label="vr_fm")
     a.label("vr_pass")  # 칸 시작의 8px 원본 글자 — 그대로 내준다(타일은 시트에 있다)
@@ -1140,6 +1145,17 @@ def emit(a, k):
     a.rts()
     a.label("vr_h1")  # `beq` 가 멀어 가까운 징검다리를 둔다
     a.jmp(addr="vr_half", mode="abs")
+    a.label("vr_lt1")
+    a.jsr(addr="vwf_ldg_r", mode="abs")
+    lm("lda", V_VR)  # 진행 폭 = 잉크+1 — `rawvalid` 가 A~D 에서는 폭을 든다
+    a.rep(imm=0x20)
+    a.op("and", imm=0x00FF, m16=True)
+    a.tax()
+    a.sep(imm=0x20)
+    a.op("lda", addr="rawvalid", mode="absx")
+    lm("sta", V_VW)
+    a.jsr(addr="vwf_edge", mode="abs")
+    a.jmp(addr="vwf_put", mode="abs")
     a.label("vr_fm")  # 칸 중간에 오는 8px 원본 글자 — 그림이 있으면 합성, 없으면 칸 경계로 맞춘다
     a.lda(imm=0x08)
     lm("sta", V_VW)
@@ -1203,9 +1219,9 @@ def emit(a, k):
     a.rts()
 
 
-def rawtab(tbl: dict[str, int], render) -> tuple[bytes, bytes]:
+def rawtab(tbl: dict[str, int], render, adv: dict[str, int] | None = None) -> tuple[bytes, bytes]:
     """원본 1바이트 코드(0..$CE) → 16B 1bpp 그림 표(`rawtab`)와 「그림이 있나」 표(`rawvalid`, 256B).
-    `tbl` = {글자: 코드}(인코더의 `KR_TABLE`), `render(ch)` = 16행 정수 목록."""
+    `tbl` = {글자: 코드}(인코더의 `KR_TABLE`), `render(ch)` = 16행 정수 목록. `adv` = {글자: 진행 폭} — 있으면 `rawvalid` 값이 그 폭이 된다(0 아님이면 「있다」라 다른 검사는 그대로, 같은 몬스터 A~D 가 읽는다)."""
     pics = {}
     for ch, code in tbl.items():
         if code >= 0xCF or ch == "\n":
@@ -1215,5 +1231,5 @@ def rawtab(tbl: dict[str, int], render) -> tuple[bytes, bytes]:
     valid = bytearray(256)
     for code, pic in pics.items():
         rt[code * 16 : code * 16 + 16] = pic
-        valid[code] = 1
+        valid[code] = (adv or {}).get(ch, 1)
     return bytes(rt), bytes(valid)

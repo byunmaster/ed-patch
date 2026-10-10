@@ -192,3 +192,27 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# 영문·숫자 글꼴 — **원판 시트 글리프**(마스터 10-11 「sfc도 원판이 더 임팩트 있는것 같은데」). 한글은 Condensed, 장 띠는 Galmuri11 일반.
+# 경위: Condensed(10-10 초) → Galmuri11 일반(마스터 「라틴 숫자는 갈무리로」) → Condensed(「sfc는 콘덴스드만」) → 원판. 세 안을 같은 장면 실화면으로 나란히 보고 원판으로 확정.
+FULLWIDTH_LATIN = {}  # 전각 ＥＰ·ＨＰ·ＭＰ 는 원판 반각으로 바꾸지 않는다 — Condensed 전각 글리프(규칙 1-4, 마스터 10-10·10-11)
+
+
+def render_latin_orig(ch: str) -> list[int]:
+    """원판 시트의 반각 영문·숫자 그림(8×16, 1bpp 16행). 전각 ＥＰＭＨ 는 같은 반각 글자 그림. 시트에 없는 글자는 ValueError."""
+    import encode
+    import text
+    import tiles
+
+    ch = FULLWIDTH_LATIN.get(ch, ch)
+    if ch == "O":
+        # 원판 코드표가 「O」(`$8C`)를 타일 `$1BB` 로 보낸다 — 1bpp 시트(타일 `$00~$FF`) 밖이라 읽으면 쓰레기다(2026-10-11 실화면 「G□LD」). 같은 시트의 G·D 와 같은 6px 굵은 꼴로 합성한다.
+        return [0] * 4 + [0x3C] + [0x66] * 8 + [0x3C] + [0] * 2
+    code = encode.KR_TABLE.get(ch)
+    if code is None or code >= 0xCF:
+        raise ValueError(f"원판 시트에 없는 글자: {ch!r}")
+    rom = common.rom_bytes()
+    t = tiles.code_tile(rom)[code]
+    base = common.snes2off(text.SHEET_BASE) if hasattr(text, "SHEET_BASE") else common.snes2off(0x18E02C)
+    return list(rom[base + 8 * t : base + 8 * t + 8]) + list(rom[base + 8 * (t + 0x10) : base + 8 * (t + 0x10) + 8])

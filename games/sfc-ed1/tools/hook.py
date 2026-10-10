@@ -234,9 +234,8 @@ def josa_chars() -> str:
     return "".join(s for _n, s in josa_rows())
 
 
-# 영문 글꼴 글리프는 8px 칸을 다 쓰면 「G o l d」로 벌어진다 — **잉크 폭만큼만** 칸을 쓰게 한다(가변 폭, 2026-10-09).
-# 잉크를 칸 왼쪽 끝으로 붙이고 폭 = 잉크 폭 + 1(틈). 나머지 글리프는 8.
-NARROW_CHARS = set("Gold")
+# 영문·숫자는 원판 시트 그림(마스터 10-11) — 진행 폭 = 잉크 폭 + 2(원판 8px 칸의 좌우 여백 1열씩).
+ORIG_PAD = 2
 
 
 def glyph_rows(ch: str | None, font) -> tuple[list[int], int]:
@@ -246,12 +245,8 @@ def glyph_rows(ch: str | None, font) -> tuple[list[int], int]:
     if ch is None:
         return [0] * 16, 8
     rows = hangul_font.render(ch, font)
-    if ch not in NARROW_CHARS:
-        return rows, 8
-    lo = min(8 - v.bit_length() for v in rows if v)  # 가장 왼쪽 잉크 열
-    hi = max(8 - (v & -v).bit_length() for v in rows if v)  # 가장 오른쪽 잉크 열
-    rows = [(v << lo) & 0xFF for v in rows]
-    return rows, min(8, hi - lo + 1 + 1)
+    # 정본 전각 ＥＰ·ＨＰ·ＭＰ 는 Condensed 전각 글리프 그대로(마스터 10-10 「mp hp ep 콘덴스드 전각」 · 10-11 PS1 에서도 「전각으로 두는 게 일관」) — 영문·숫자의 원판 전환에서 제외
+    return rows, 8
 
 
 def glyph_widths(rep: list[str | None]) -> bytes:
@@ -360,24 +355,18 @@ def num_glyph_table() -> tuple[bytes, bytes]:
     """원판 시트의 숫자 0~9 그림(1bpp 16행) → (그림 160B, 진행 폭 10B).
 
     원판 숫자는 8px 칸 안에 왼쪽 여백 1열(「1」은 2열)을 두고 앉는다 — 앞 글자와 반각 공백만 두면 간격이 반각보다 넓어 보인다(마스터 10-10 「EP  1」).
-    그림을 **왼쪽 끝으로 붙이고**(잉크 시작 0열) 진행 폭 = 잉크 폭 + 2(숫자끼리 간격은 원판대로 2px)로 둔다. 혼합 팔레트로 색 칸 정렬이 필요 없어져 가변 폭이 된다."""
-    import text
-    import tiles
+    그림을 **왼쪽 끝으로 붙이고**(잉크 시작 0열) 진행 폭 = 잉크 폭 + `ORIG_PAD`(2) 로 둔다. 숫자 그림은 원판 시트 그대로(마스터 10-11 「원판이 더 임팩트」).
+    혼합 팔레트로 색 칸 정렬이 필요 없어져 가변 폭이 된다."""
+    import hangul_font
 
-    rom = common.rom_bytes()
-    ct = tiles.code_tile(rom)
-    base = common.snes2off(text.SHEET_BASE) if hasattr(text, "SHEET_BASE") else common.snes2off(0x18E02C)
     out = bytearray()
     adv = bytearray()
     for c in range(10):
-        t = ct[c]
-        rows = list(rom[base + 8 * t : base + 8 * t + 8]) + list(
-            rom[base + 8 * (t + 0x10) : base + 8 * (t + 0x10) + 8]
-        )
+        rows = hangul_font.render_latin_orig(str(c))
         cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
         lo, hi = min(cols), max(cols)
         out += bytes((r << lo) & 0xFF for r in rows)
-        adv.append(min(8, hi - lo + 1 + 2))
+        adv.append(min(8, hi - lo + 1 + ORIG_PAD))
     return bytes(out), bytes(adv)
 
 
@@ -386,7 +375,18 @@ def raw_glyph_tables() -> tuple[bytes, bytes]:
     import hangul_font
 
     font = hangul_font.load_font()
-    return hook_vwf.rawtab(encode.KR_TABLE, lambda ch: hangul_font.render(ch, font))
+    letters = set("ABCDGOL")  # 같은 몬스터 A~D · 「GOLD」의 G·O·L(D 는 A~D 와 같다) — 원판 시트 그림, 진행 폭 = 잉크+2(숫자와 같은 규칙). 크롤의 다른 글자는 본문 Condensed 그대로
+
+    def ink_adv(ch: str) -> int:
+        rows = hangul_font.render_latin_orig(ch)
+        cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
+        return min(8, max(cols) + 1 + ORIG_PAD)  # 잉크 시작 열은 그림 그대로(왼쪽 여백 1열 포함)
+
+    return hook_vwf.rawtab(
+        encode.KR_TABLE,
+        lambda ch: hangul_font.render_latin_orig(ch) if ch in letters else hangul_font.render(ch, font),
+        {ch: ink_adv(ch) for ch in letters},
+    )
 
 
 def build_payload(
@@ -441,8 +441,9 @@ def build_payload(
         "V_PALD": vb + 38,  # 남은 프레임 수 — 0 이 아니면 NMI 마다 칸 팔레트 5·6 을 CGRAM 에 쓴다(혼합 칸을 만질 때마다 255)
         "V_PT": vb + 39,  # 8B: NMI 팔레트 임시(배경·흰·하늘·노랑 각 2B)
         "V_WK": vb + 47,  # 1 = 지금 그림이 얹히는 칸이 혼합 칸 — 흰 글자면 흰 잉크 마스크에도 쓴다
+        "V_PREV": vb + 48,  # 68B: 고정 칸 창(name13)이 칸 배열을 덮기 직전의 사본 — 아직 화면에 있는 앞 창의 슬롯을 `vwf_live` 가 지킨다
     }
-    var_end = vb + 48
+    var_end = vb + 116
     if var_end - VAR >= 741:
         raise SystemExit(f"WRAM 무손상 구간(741B)을 넘는다: {var_end - VAR}B (슬롯 {nslot}개)")
     assert len(vram) == nslot
@@ -966,6 +967,21 @@ def build_payload(
     for name, pre, dest in (("name13", "n13", CELL_BASE), ("name13_v", "n13v", CELL_BASE + 10)):
         a.label(name)
         a.php()
+        if vwf:  # 앞 창(로그)이 화면에 남은 채 이 창이 칸 배열을 덮는다 — 슬롯을 지키려고 덮기 전 사본을 둔다
+            a.rep(imm=0x30)
+            a.pha()
+            a.phx()
+            a.ldx(imm=0x0000, m16=True)
+            a.sep(imm=0x20)
+            a.label(f"{pre}_sv")
+            a.op("lda", addr=CELL_BASE, mode="longx")
+            a.op("sta", addr=kv["V_PREV"], mode="longx")
+            a.inx()
+            a.cpx(imm=68, m16=True)
+            a.bne(label=f"{pre}_sv")
+            a.rep(imm=0x30)
+            a.plx()
+            a.pla()
         a.rep(imm=0x30)
         a.inc()  # A = 길이−1 → **칸 수**
         a.op("sta", addr=V_N13, mode="long")
@@ -2096,3 +2112,4 @@ def patch_ranges() -> list[tuple[int, int]]:
         *[(common.snes2off(s_), common.snes2off(s_) + 3) for s_ in FONT_CALL_SITES],
         (common.snes2off(FONT_TRAMPOLINE), common.snes2off(FONT_TRAMPOLINE) + 8),
     ]
+
