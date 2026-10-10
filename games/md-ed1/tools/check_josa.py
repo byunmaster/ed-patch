@@ -83,7 +83,7 @@ def scan() -> tuple[list[str], list[str]]:
             ok = ok or (kind == "eb" and before.endswith("<0b>") and pp >> 4 == 0xF)
             ok = ok or (kind == "ec" and pp >> 4 == 1 and re.fullmatch(r"(<[0-9a-f]+>)*", before))
             # 리더 이름을 **코드가** 그린 뒤 스트림 머리에 오는 `<ebf_>`(도망 단수 0x24a7e — 코드가 `<0b>` 를 그린 뒤 스트림을 부른다, 10-09)
-            ok = ok or (kind == "eb" and pp >> 4 in (0, 0xF) and re.fullmatch(r"(<[0-9a-f]+>)*", before))
+            ok = ok or (kind == "eb" and pp >> 4 in (0, 0xE, 0xF) and re.fullmatch(r"(<[0-9a-f]+>)*", before))
             # ↑ 스트림 머리의 `<eb00>`/`<ebf0>` — 코드가 배우·리더 이름을 그린 뒤 부르는 「は」 스트림(원문이 조사로 시작, 10-10)
             if not ok:
                 tail = before[-6:]
