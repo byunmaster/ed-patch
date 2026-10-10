@@ -198,7 +198,9 @@ def main():
         doc = json.load(open(p, encoding="utf-8"))
         dirty = False
         for i, budget in ids:
-            kr = doc.get(str(i))
+            #   🔴 `_wide` 블록은 **칸 안에 물리적으로 들어가는 대역**이 이 예산의 몫이다 — 진짜 문안(맵 꼬리)은 예산이 없다.
+            holder = doc["_wide"] if str(i) in doc.get("_wide", {}) else doc
+            kr = holder.get(str(i))
             if not isinstance(kr, str):
                 continue
             seen += 1
@@ -220,7 +222,7 @@ def main():
                     bad += 1
                     print(f"  ✗ {name} #{i} 가운데가 어긋난 줄이 있다")
                 else:
-                    doc[str(i)] = new
+                    holder[str(i)] = new
                     dirty = True
                     changed += 1
         if dirty:

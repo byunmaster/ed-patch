@@ -12,6 +12,7 @@ def fake():
     b = bytearray(0x40000)
     b[P.TEXT_Y - P.BASE : P.TEXT_Y - P.BASE + 2] = P.TEXT_Y_ORIG
     b[P.BORDER_Y - P.BASE : P.BORDER_Y - P.BASE + 2] = P.BORDER_Y_ORIG
+    b[P.DIGIT_BR - P.BASE : P.DIGIT_BR - P.BASE + 2] = P.DIGIT_BR_ORIG
     for lit in P.LIST_LITS:
         b[lit - P.BASE : lit - P.BASE + 4] = P.DRAW.to_bytes(4, "big")
     b[P.BANNER_LIT - P.BASE : P.BANNER_LIT - P.BASE + 4] = P.DRAW.to_bytes(4, "big")
@@ -38,6 +39,13 @@ class UiCenter(unittest.TestCase):
         # add #imm,r1 — 부호 있는 imm8: −116 → −117 (한 줄 위)
         self.assertEqual(int.from_bytes(P.TEXT_Y_ORIG[1:], "big") - 256, -116)
         self.assertEqual(int.from_bytes(P.TEXT_Y_NEW[1:], "big") - 256, -117)
+
+    def test_digit_branch_becomes_unconditional_halfwidth(self):
+        new = P.patch(fake())
+        self.assertEqual(new[P.DIGIT_BR - P.BASE : P.DIGIT_BR - P.BASE + 2], P.DIGIT_BR_NEW)
+        # bra disp12: 0x06041D7E + 4 + 2×0x0C = 0x06041D9A (반각 경로 — 원래 `bt/s` 의 목표와 같다)
+        self.assertEqual(P.DIGIT_BR + 4 + 2 * (int.from_bytes(P.DIGIT_BR_NEW, "big") & 0xFFF), 0x06041D9A)
+        self.assertEqual(P.DIGIT_BR + 4 + 2 * P.DIGIT_BR_ORIG[1], 0x06041D9A)
 
     def test_wait_routine_goes_through_the_cursor_wrapper(self):
         new = P.patch(fake())

@@ -210,7 +210,7 @@ def patched(disc, lay=None):
                     #   🔴 **동적 조사 훅** — 문안에 넣은 병기(`을(를)`)를 표시 직전에
                     #     하나로 줄인다. `%s` 에 꽂히는 건 아이템·인물 이름이라 빌드 때
                     #     앞말을 모른다. 훅이 안 돌면 병기 그대로 보인다(안 틀린다).
-                    new, hk = JOSA.patch(new)
+                    new, hk = JOSA.patch(new, JOSA.fold_prefix_w())
                     cnt["josa"] = hk
                     #   전투 위쪽 배너(기술명·승리 문구) 글자를 세로 가운데로 — 상수 하나(`patch_ui_center`).
                     new = UIC.patch(new)

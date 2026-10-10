@@ -10,7 +10,7 @@
 칸 수를 조금 적게 잡아도 **결과가 같아 보인다**(실측: 149 로 적었는데도 147 이 나왔다).
 `tests/test_param.py` 가 이 등식을 지킨다.
 
-    0x00E8  적          stride 0x4C × 94   → 고유 47
+    0x009C  적          stride 0x4C × 95   → 고유 48 (0x50 「零號機」는 시험 레코드 — 표 밖. 0x9C 「うりぼう」는 실제로 나온다)
     0x1CD0  아이템      stride 0x44 × 151  → 실제 147 (+reserve 3, 끝 Sentinel)
     0x44EC  ── 빈 영역 7,140B (전부 0) ⚠ 안 쓴다, 아래 주석
     0x60D0  아이템 설명 NUL 구분           → 132 (+ASCII 더미 4)
@@ -34,7 +34,7 @@ import common as C
 
 PATH = "/SYSTEM/PARAM.BIN"
 
-ENEMY = (0x00E8, 0x4C, 94)
+ENEMY = (0x009C, 0x4C, 95)  # 🔴 0x9C 의 「うりぼう」도 적이다 — 종전 0xE8 시작이라 번역에서 빠졌다(마스터 10-09 화면 확인)
 ITEM = (0x1CD0, 0x44, 151)
 SPELL = (0x6F8C, 0x50, 48)
 DESC_ITEM = (0x60D0, 0x6F8C)  # 아이템 설명 — NUL 구분 (start, end)

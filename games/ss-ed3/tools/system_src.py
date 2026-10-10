@@ -31,6 +31,8 @@ _TOK = re.compile(r"%\d*[sd]")
 _SLOT = re.compile(r"\{(?:name|item|spell|n|m|unit)\}")
 _TAIL = re.compile(r"[\x00-\x1f]+$")
 _cache = {}
+FOLD = -1  # 줄바꿈표지 값 — 어절 접기 문구(위 `build`)
+FOLD_MARK = "\x1f"  # 접기 표지 바이트 — 스텁이 `%s` 바로 뒤에서 본다
 
 
 def norm(raw):
@@ -75,7 +77,12 @@ def build(raw, lead, trail, nl, override=None, prefer="canon"):
     if val is None:
         return None
     val = _fill(val, raw)
-    if nl:  # nl 번째 공백이 엔진 줄바꿈
+    if nl == FOLD:
+        #   🔴 로그성 문구 — 줄바꿈 자리를 **실행 중에** 정한다(조사 훅 스텁 `patch_josa_hook` 의 접기 단계). 첫 `%s` 앞 공백을 걷고
+        #     `%s` 바로 뒤에 접기 표지(0x1F)를 단다 — 스텁이 표지를 보면 「공백 + 이름 + 뒷말」을 한 덩이로 만들어 어절 경계에서만 접는다.
+        #     표지는 화면에 안 나간다(스텁이 서식 꼬리를 종결 바이트로 잘라 낸다) — 스텁이 안 돌면 표지 글자 하나가 보일 뿐 문안은 같다.
+        val = val.replace(" %s", "%s" + FOLD_MARK, 1)
+    elif nl:  # nl 번째 공백이 엔진 줄바꿈
         at = -1
         for _ in range(nl):
             at = val.index(" ", at + 1)
