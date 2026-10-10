@@ -96,7 +96,7 @@
       "original": "英雄伝説III 白き魔女",
       "track": "kr",
       "status": "preparing",
-      "stage": "P2",
+      "stage": "P4",
       "tags": {
         "platform": "PS1",
         "series": [
@@ -109,8 +109,8 @@
           "note": "상태 창·상점 화면이 남았다"
         },
         "P2": {
-          "state": "partial",
-          "note": "전투 문안과 조사 처리"
+          "state": "done",
+          "note": "전투 문안·조사 처리·전투 창 확인"
         },
         "P3": {
           "state": "done",
@@ -149,6 +149,10 @@
         ]
       },
       "phases": {
+        "P2": {
+          "state": "done",
+          "note": "전투 문구·조사 처리 확인"
+        },
         "P6": {
           "state": "partial",
           "note": "ED1 플레이 테스트 중 · ED2 는 아직"
@@ -174,9 +178,9 @@
           "state": "partial",
           "note": "빌드 결정성 검사가 남았다"
         },
-        "P5": {
-          "state": "partial",
-          "note": "빌드 결정성 검사가 남았다"
+        "P2": {
+          "state": "done",
+          "note": "전투 문구·조사 처리 확인"
         },
         "P3": {
           "state": "done",
@@ -185,6 +189,10 @@
         "P4": {
           "state": "done",
           "note": "대사 전량과 음성 장면 자막"
+        },
+        "P5": {
+          "state": "partial",
+          "note": "빌드 결정성 검사가 남았다"
         }
       }
     },
@@ -195,7 +203,7 @@
       "original": "ドラゴンスレイヤー英雄伝説",
       "track": "kr",
       "status": "preparing",
-      "stage": "P2",
+      "stage": "P4",
       "tags": {
         "platform": "PC엔진",
         "series": [
@@ -204,8 +212,8 @@
       },
       "phases": {
         "P2": {
-          "state": "partial",
-          "note": "전투 문구 350 중 108"
+          "state": "done",
+          "note": "전투 문구·조사 처리 확인"
         },
         "P3": {
           "state": "done",
@@ -239,7 +247,7 @@
       "original": "ドラゴンスレイヤー英雄伝説",
       "track": "kr",
       "status": "preparing",
-      "stage": "P2",
+      "stage": "P4",
       "tags": {
         "platform": "슈퍼패미컴",
         "series": [
@@ -248,8 +256,8 @@
       },
       "phases": {
         "P2": {
-          "state": "partial",
-          "note": "전투 화면 확인 전 · 적 이름이 깨진다"
+          "state": "done",
+          "note": "전투 문구·조사 처리 확인"
         },
         "P3": {
           "state": "done",
@@ -283,7 +291,7 @@
       "original": "ドラゴンスレイヤー英雄伝説",
       "track": "kr",
       "status": "preparing",
-      "stage": "P2",
+      "stage": "P4",
       "tags": {
         "platform": "메가드라이브",
         "series": [
@@ -292,8 +300,8 @@
       },
       "phases": {
         "P2": {
-          "state": "partial",
-          "note": "상태이상·레벨업·승패 화면이 남았다"
+          "state": "done",
+          "note": "전투 문구·조사 처리 확인"
         },
         "P3": {
           "state": "partial",
