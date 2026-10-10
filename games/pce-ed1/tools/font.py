@@ -118,6 +118,59 @@ def _ellipsis_floor() -> bytes:
     return b"".join(v.to_bytes(2, "big") for v in rows)
 
 
+# 🔴 **「Gold」 네 글자만 원판 BIOS 글꼴 꼴**(마스터 10-11 「pce Gold만 3번 스타일로」) — 원판 전각 ｇｏｌｄ 의 잉크를 화면에서 떠 온 것.
+#   G 는 원판 9px 를 7px 로 접었고(열 4·6 뺌) o·l·d 는 원판 획 그대로. 베이스라인은 다른 글자와 같다(마지막 행 = 10).
+#   이 네 글자(ASCII G·o·l·d)는 **Gold 말고는 어디에도 안 쓰인다**(몬스터 접미 A~D 는 대문자 D 라 다른 글리프) — 그래서 글리프를
+#   통째로 갈아도 다른 글자가 안 바뀐다. 숫자·그 밖의 라틴은 Galmuri 그대로.
+GOLD_ORIG = {
+    "G": (
+        0,
+        [
+            "..###.#",
+            ".#...##",
+            "#.....#",
+            "#......",
+            "#......",
+            "#......",
+            "#...###",
+            "#....#.",
+            "#....#.",
+            ".#...#.",
+            "..####.",
+        ],
+    ),
+    "o": (4, ["..##..", ".#..#.", "#....#", "#....#", "#....#", ".#..#.", "..##.."]),
+    "l": (1, ["##", ".#", ".#", ".#", ".#", ".#", ".#", ".#", ".#", "##"]),
+    "d": (
+        1,
+        [
+            ".....#",
+            ".....#",
+            ".....#",
+            ".....#",
+            ".###.#",
+            "#...##",
+            "#....#",
+            "#....#",
+            "#...##",
+            ".###.#",
+        ],
+    ),
+}
+
+
+def _gold_orig(ch: str) -> bytes:
+    top, rows = GOLD_ORIG[ch]
+    out = [0] * 12
+    for i, row in enumerate(rows):
+        v = 0
+        for col, c in enumerate(row):
+            if c == "#":
+                v |= 0x8000 >> col
+        out[top + i] = v
+    return b"".join(v.to_bytes(2, "big") for v in out)
+
+
 def _question_4px() -> bytes:
     out = []
     for row in QUESTION_4PX_ROWS:
@@ -150,6 +203,8 @@ def glyph(ch: str) -> bytes:
         return _question_4px()
     if ch == "…":
         return _ellipsis_floor()
+    if ch in GOLD_ORIG:
+        return _gold_orig(ch)
     lig = next((k for k, v in LIGATURES.items() if v == ch), None)
     if lig is not None:
         a, b = (glyph(c) for c in lig)
