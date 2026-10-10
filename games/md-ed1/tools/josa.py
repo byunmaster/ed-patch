@@ -60,6 +60,13 @@ LEADER = 0xFF1AEC  # 리더의 레코드 번호 — 코드 `0B` 핸들러(`$A912
 PARTY_REC = 0xFF1DBC  # 레코드 배열(0x40 간격, 이름은 +0x30)
 ITEM_BUF = 0xFF2028  # 아이템 이름 버퍼
 SPELL_BUF = 0xFF3450  # 주문 이름 버퍼(EC 의 p 상위 니블 1)
+# 🔴 「마지막으로 이름을 그린 배우」 — 코드가 이름을 그린 뒤 스트림 머리의 조사(`<ebe0>`)가 읽는다. `$FF3470`(배우 포인터)은
+# 피해 줄의 **대상**이 남아 있어(코드가 몬스터 이름을 그릴 땐 안 갱신) 몬스터 행동 줄 「…B은 동전을 던졌다」가 틀렸다(10-10).
+# 이름을 그리는 `$A94A` 의 `andi.l #$ff,d0` 자리에 트램펄린을 걸어 배우 번호를 이 한 바이트에 적어 둔다.
+# $FF3484 는 롬 코드·전투 블록·씬 블록 어디에서도 안 쓰는 자리다(2026-10-10 전수).
+LASTNAME = 0xFF3484
+NAME_FN_PATCH = 0xA94E  # andi.l #$ff,d0 (6B) → jmp tramp
+NAME_FN_BACK = 0xA954
 
 # p → (받침 없음, 받침 있음)
 PAIRS = [("는", "은"), ("가", "이"), ("를", "을"), ("와", "과")]
@@ -147,6 +154,9 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int, eu: int, ro: int) -> by
     w(0x0240, 0x00F0)  # andi.w #$f0,d0
     from_ptr_br = len(b)
     w(0x6700, 0)  # beq.w from_ptr       상위 니블 0 → 배우 포인터
+    w(0x0C40, 0x00E0)  # cmpi.w #$e0,d0
+    last_br = len(b)
+    w(0x6700, 0)  # beq.w from_last      상위 니블 E → 마지막으로 이름을 그린 배우(LASTNAME)
     w(0x0C40, 0x00F0)  # cmpi.w #$f0,d0
     leader_br = len(b)
     w(0x6700, 0)  # beq.w from_leader    상위 니블 F → 리더(`<0b>` 가 그리는 이름)
@@ -160,6 +170,12 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int, eu: int, ro: int) -> by
     l(LEADER)  # move.b LEADER.l,d0
     have_idx_br2 = len(b)
     w(0x6000, 0)  # bra.w have_idx
+    from_last = len(b)
+    struct.pack_into(">h", b, last_br + 2, from_last - (last_br + 2))
+    w(0x1039)
+    l(LASTNAME)  # move.b LASTNAME.l,d0
+    have_idx_br3 = len(b)
+    w(0x6000, 0)  # bra.w have_idx
     from_ptr = len(b)
     struct.pack_into(">h", b, from_ptr_br + 2, from_ptr - (from_ptr_br + 2))
     w(0x2079)
@@ -168,6 +184,7 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int, eu: int, ro: int) -> by
     have_idx = len(b)
     struct.pack_into(">h", b, have_idx_br + 2, have_idx - (have_idx_br + 2))
     struct.pack_into(">h", b, have_idx_br2 + 2, have_idx - (have_idx_br2 + 2))
+    struct.pack_into(">h", b, have_idx_br3 + 2, have_idx - (have_idx_br3 + 2))
     w(0x0280)
     l(0x000000FF)  # andi.l #$ff,d0
     w(0xED88)  # lsl.l #6,d0
@@ -330,7 +347,16 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int, eu: int, ro: int) -> by
     w(0x5C8F)  # addq.l #6,a7
     w(0x4CDF, 0x0307)  # movem.l (a7)+,d0-d2/a0-a1
     w(0x4E75)  # rts
+    # ── 이름 그리기 트램펄린 — `$A94A` 가 배우 번호(d0)를 쓰기 전에 LASTNAME 에 적는다
+    name_tramp = len(b)
+    w(0x0280)
+    l(0x000000FF)  # andi.l #$ff,d0       (덮어쓴 원본 명령)
+    w(0x13C0)
+    l(LASTNAME)  # move.b d0,LASTNAME.l
+    w(0x4EF9)
+    l(NAME_FN_BACK)  # jmp $A954.l
     _asm.item_entry = item_entry
+    _asm.name_tramp = name_tramp
     return bytes(b)
 
 
@@ -339,6 +365,7 @@ def plan(rom: bytes, cs, at: int) -> list[tuple[str, int, bytes]]:
     body, tbl = code(at, cs)
     item_entry = at + _asm.item_entry
     out = [("josa-code", at, body + tbl)]
+    out.append(("josa-name-hook", NAME_FN_PATCH, b"\x4e\xf9" + struct.pack(">I", at + _asm.name_tramp)))
     tramp = b"\x4e\xf9" + struct.pack(">I", at) + b"\x4e\xf9" + struct.pack(">I", item_entry)
     out.append(("josa-tramp", DEAD_HANDLER, tramp))
     for i, off in ((IDX_ACTOR, DEAD_HANDLER), (IDX_ITEM, DEAD_HANDLER + 6)):
@@ -380,6 +407,8 @@ def check(d: bytes) -> None:
             raise SystemExit(f"코드 {c:02x} 의 원본 핸들러가 rts 가 아니다 @{h:#x}")
         if d[ARGLEN_TBL + idx] != 0:
             raise SystemExit(f"코드 {c:02x} 의 원본 피연산자 길이가 0 이 아니다")
+    if d[NAME_FN_PATCH : NAME_FN_PATCH + 6] != b"\x02\x80\x00\x00\x00\xff":
+        raise SystemExit("$A94E 가 andi.l #$ff,d0 가 아니다 — 이름 트램펄린 자리가 바뀌었다")
     cs = hangul.Charset(d, set(JOSA_CHARS))
     body, tbl = code(0x1F0000, cs)
     print(

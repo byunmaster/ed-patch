@@ -68,6 +68,33 @@ PINNED = {
 }
 
 
+# 묶음에서 **꼬리로 옮기는** 스트림 — 묶음이 원문 합보다 빠듯해(0x24a68~0x24aad 69B) 조사를 못 넣던 자리.
+# 참조가 절대 주소(`lea abs.l`)인 스트림만 옮길 수 있다(pc 상대는 ±32KB). 도망 둘(0x24a7a 복수 · 0x24a7e 단수):
+# 단수가 복수의 꼬리를 공유하던 걸 풀어 각자 두고, 단수에 리더 기준 조사 훅(`<ebf0>`)을 단다(마스터 10-09).
+RELOCATE = (
+    0x24A7A,
+    0x24A7E,
+    # 「하지만 운 좋게/나쁘게 …에게는 맞지 않았다」 묶음(0x24b1b~) — 원문 「運良く…には」을 PS1 꼴로 늘려(에겐→에게는 · 용케→운 좋게)
+    # 묶음이 7B 넘쳐서 옮긴다. goto 가 16비트라 서로 이어진 것(24b37→24b42→24b59)을 **함께** 옮긴다(10-10)
+    0x24B37,
+    0x24B3E,
+    0x24B42,
+    0x24B44,
+    0x24B59,
+    0x1FED2,  # 「<아이템>을 가지고 있었다.」(원문 持っていた) — 17B 칸에 20B
+)
+# 제자리 칸이 모자라는 **꼬리 스트림**(앞 스트림이 06 으로 끊기고 물리적으로 이어지는 PINNED 자리)을
+# 근처 묶음의 **남는 칸**으로 옮기고 제자리엔 goto(3B)만 둔다. 소비자(참조)가 없어 못 옮기던 자리라 들어오는 길은 그대로고,
+# goto 가 16비트 상대라 ±32KB 안의 칸만 쓴다(ROM 꼬리는 너무 멀다). 값 = 본문 뒤 되돌아갈 자리(없으면 None).
+#   0x76BE = 「回復した。」(HP·MP 회복 공용 꼬리, 끝 00 으로 끝난다)
+#   0x324DD = 미니게임 「に<수치>」 — 뒤 04(0x324E1) + 0x324E2(「のダメージ!!」, PINNED)로 되돌아간다
+TAIL_JUMP: dict[int, int | None] = {0x76BE: None, 0x324DD: 0x324E1}
+_FAKE = 1 << 24  # 옮긴 본문의 자리를 allpos 에 임시로 꽂는 키 오프셋
+_REACH = 0x7000
+
+TAIL_SIZE = 0x80  # 빌드가 꼬리에 비워 두는 칸(build.py SYSMSG_TAIL)
+
+
 def refs(d: bytes) -> dict[int, list[tuple[str, int]]]:
     """대상 → [(종류, 명령 자리)]. pc 상대는 명령+2 기준 16비트 변위, abs 는 명령+2 의 32비트."""
     out: dict[int, list[tuple[str, int]]] = {}
@@ -329,6 +356,10 @@ def _tokens_from_ours(st: scene.Stream, ours: str, encode) -> list[scene.Token]:
     return out
 
 
+def _len(toks: list[scene.Token]) -> int:
+    return sum(len(t.raw) for t in toks)
+
+
 def _emit(toks: list[scene.Token], base: int, newpos: dict[int, int]) -> bytes:
     """토큰 → 바이트. goto/call 은 새 자리 기준 오프셋(첫 인자 자리 기준), 셀/코드는 원본 절대 자리 기준."""
     out = bytearray()
@@ -347,7 +378,9 @@ def _emit(toks: list[scene.Token], base: int, newpos: dict[int, int]) -> bytes:
     return bytes(out)
 
 
-def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
+def plan(
+    d: bytes, textmap: dict, encode, tail_at: int | None = None
+) -> list[tuple[str, int, bytes]]:
     """정본 → 쓰기 목록 [(라벨, 자리, 바이트)]. 번역이 하나라도 있는 묶음만 다시 쓴다."""
     strs = streams(d)
     rs = refs(d)
@@ -355,6 +388,12 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
     over: list[str] = []
     plans = []
     allpos: dict[int, int] = {}  # 🔴 자리는 **전 묶음을 다 재 놓고** 쓴다 — goto 가 묶음을 넘는다
+    tcur = tail_at  # 꼬리로 옮기는 스트림의 다음 자리
+    moved: list[tuple[int, int, list]] = []  # (스트림, 새 자리, 토큰)
+    flowinfo: dict[
+        int, tuple[int, bool]
+    ] = {}  # 스트림 → (새 크기, 다음으로 흐르나) — 흐름 게이트용
+    jumps: dict[int, list] = {}  # TAIL_JUMP — 제자리에 안 들어가 근처 칸으로 갈 본문
     for cl in clusters(strs):
         lo, hi = span(strs, cl)
         toks = {}
@@ -391,14 +430,61 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
                     return False
             return True
 
-        size = {t: len(_emit(toks[t], t, {})) for t in cl}
+        for t in cl:
+            if (
+                t in TAIL_JUMP
+                and toks[t] is not strs[t]["stream"].tokens
+                and _len(toks[t]) > hi - lo
+            ):
+                body = list(toks[t])
+                if TAIL_JUMP[t] is not None:
+                    body.append(
+                        scene.Token(0, b"\x0f\x00\x00", "ctl", 0x0F, scene.GOTO, TAIL_JUMP[t])
+                    )
+                jumps[t] = body
+                toks[t] = [scene.Token(0, b"\x0f\x00\x00", "ctl", 0x0F, scene.GOTO, _FAKE + t)]
+        size = {t: _len(toks[t]) for t in cl}
+
+        def _flows(t, toks=toks):
+            tk = toks[t]
+            return bool(tk) and tk[-1].kind == "end" and tk[-1].code in (0x06, 0x0A, 0x0D)
+
+        # 06 으로 끝난 스트림 **바로 뒤**에 오는 스트림은 꼬리를 남과 공유하면 안 된다(공유하면 06 뒤가 비어 문장이 끊긴다 — 미니게임
+        # 「뭐야, 필요 없다고.」가 같은 문안의 뒤쪽 것에 얹혀 쪽 넘김 뒤에 안 나왔다)
+        flowers = {  # 06 으로 끝나고 원래 뒤에 다른 스트림이 이어지는 것 — 남의 꼬리에 얹히면 06 뒤가 달라진다
+            t
+            for t in cl
+            if toks[t]
+            and toks[t][-1].kind == "end"
+            and toks[t][-1].code == 0x06
+            and strs[t]["stream"].end in strs
+        }
+        flow_targets = {
+            strs[u]["stream"].end
+            for u in cl
+            if toks[u] and toks[u][-1].kind == "end" and toks[u][-1].code == 0x06
+        }
         newpos: dict[int, int] = {}
         cur = lo
         order = []
         for t in cl:
+            if t in RELOCATE and tail_at is not None and toks[t] is not strs[t]["stream"].tokens:
+                if any(k != "abs" for k, _ in strs[t]["refs"]):
+                    raise SystemExit(f"sysmsg {t:#x}: 참조가 절대 주소가 아니라 못 옮긴다")
+                newpos[t] = tcur
+                moved.append((t, tcur, toks[t]))
+                tcur += size[t]
+                continue
             placed = False
             for u in order:
-                if size[t] < size[u] and is_suffix(toks[t], toks[u]):
+                if (
+                    t not in flow_targets
+                    and (
+                        t not in flowers or strs[u]["stream"].end == strs[t]["stream"].end
+                    )  # 흐르는 스트림은 원래 호스트에만 얹는다
+                    and size[t] < size[u]
+                    and is_suffix(toks[t], toks[u])
+                ):
                     newpos[t] = newpos[u] + size[u] - size[t]
                     placed = True
                     break
@@ -406,6 +492,19 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
                 newpos[t] = cur
                 cur += size[t]
                 order.append(t)
+        # 🔴 `06`·`0A`·`0D` 로 끝나는 스트림은 **물리적으로 다음 스트림으로 흐른다**(수치를 게임이 찍은 뒤 꼬리말이 이어진다 — 「최대 ＨＰ가 ⟨수⟩
+        # 포인트 올랐다」). 묶음이 왼쪽부터 채워 끝에 0 이 남으면 06 과 다음 스트림 사이에 00 이 끼어 **문장이 거기서 끊긴다**(10-10
+        # 마스터 「최대 HP가 18 에서 메시지가 끊겼다」). 다음 스트림이 묶음 끝에 맞닿아 있으면 흐르는 사슬을 오른쪽 끝에 붙인다.
+        if order and hi in strs and strs[order[-1]]["stream"].end == hi and _flows(order[-1]):
+            chain = [order[-1]]
+            j = len(order) - 2
+            while j >= 0 and strs[order[j]]["stream"].end == order[j + 1] and _flows(order[j]):
+                chain.insert(0, order[j])
+                j -= 1
+            shift = hi - (newpos[chain[-1]] + size[chain[-1]])
+            if shift > 0 and all(t not in RELOCATE for t in chain):
+                for t in chain:
+                    newpos[t] += shift
         if cur > hi:
             over.append(
                 f"{lo:#x}~{hi:#x}: {cur - lo}B > {hi - lo}B  ({', '.join(f'{t:06x}' for t in cl)})"
@@ -416,17 +515,58 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
             raise SystemExit(
                 f"sysmsg {lo:#x}: 안 옮겨지는 참조 {', '.join(f'{t:#x}' for t in stray)}"
             )
-        plans.append((lo, hi, cl, toks, order, newpos))
+        for t in cl:
+            flowinfo[t] = (
+                size[t],
+                bool(toks[t]) and toks[t][-1].kind == "end" and toks[t][-1].code == 0x06,
+            )
+        plans.append((lo, hi, cl, toks, order, newpos, cur, []))
         allpos.update(newpos)
     if over:
         raise SystemExit(
             "sysmsg 묶음이 넘친다 — textmap/sysmsg.json 을 줄인다:\n    " + "\n    ".join(over)
         )
-    for lo, hi, cl, toks, order, newpos in plans:
+    # 🔴 흐름 게이트 — 06·0A·0D 로 끝나는 스트림 뒤엔 원래 이어지던 스트림이 **바로** 와야 한다(사이에 00 이 끼면 문장이 끊긴다)
+    broken = [
+        f"{t:#x}→{strs[t]['stream'].end:#x}"
+        for t, (sz, fl) in flowinfo.items()
+        if fl
+        and t in allpos
+        and strs[t]["stream"].end in allpos
+        and t not in RELOCATE
+        and strs[t]["stream"].end not in RELOCATE
+        and allpos[t] + sz != allpos[strs[t]["stream"].end]
+    ]
+    if broken:
+        raise SystemExit(
+            "sysmsg 흐름이 끊겼다(뒤 스트림이 바로 이어지지 않는다): " + ", ".join(broken)
+        )
+    for (
+        t,
+        jb,
+    ) in (
+        jumps.items()
+    ):  # 근처 묶음의 남는 칸에 앉힌다(끝 00 하나는 묶음 마지막 스트림 것이라 남긴다)
+        need = _len(jb)
+        for pl in sorted(plans, key=lambda q: abs(q[0] - t)):
+            lo, hi, cur, extras = pl[0], pl[1], pl[6], pl[7]
+            used = sum(_len(b) for _, b in extras)
+            at = cur + used
+            if t in pl[2] or abs(at - t) > _REACH or at + need > hi:
+                continue
+            extras.append((at, jb))
+            allpos[_FAKE + t] = at
+            break
+        else:
+            raise SystemExit(f"sysmsg {t:#x}: 근처에 옮길 남는 칸이 없다({need}B)")
+    for lo, hi, cl, toks, order, newpos, _cur, extras in plans:
         body = bytearray(b"\x00" * (hi - lo))
         for u in order:
             b = _emit(toks[u], newpos[u], allpos)
             body[newpos[u] - lo : newpos[u] - lo + len(b)] = b
+        for at, jb in extras:
+            b = _emit(jb, at, allpos)
+            body[at - lo : at - lo + len(b)] = b
         writes.append((f"sysmsg:{lo:06x}", lo, bytes(body)))
         for t in cl:
             for kind, ins in strs[t]["refs"]:
@@ -443,7 +583,17 @@ def plan(d: bytes, textmap: dict, encode) -> list[tuple[str, int, bytes]]:
                     writes.append((f"sysmsg-ref:{ins:06x}", ins + 2, struct.pack(">h", disp)))
                 else:
                     writes.append((f"sysmsg-ref:{ins:06x}", ins + 2, struct.pack(">I", newpos[t])))
+    if moved:
+        if tcur - tail_at > TAIL_SIZE:
+            raise SystemExit(f"sysmsg 꼬리 칸이 모자란다: {tcur - tail_at}B > {TAIL_SIZE}B")
+        for t, pos, tk in moved:
+            writes.append((f"sysmsg-moved:{t:06x}", pos, _emit(tk, pos, allpos)))
     return writes
+
+
+def allowed_tail(at: int) -> dict[str, tuple[int, int]]:
+    """꼬리로 옮긴 스트림 자리 — 스트림마다 라벨 하나(구간은 꼬리 칸 전체)."""
+    return {f"sysmsg-moved:{t:06x}": (at, at + TAIL_SIZE) for t in RELOCATE}
 
 
 def allowed(d: bytes) -> dict[str, tuple[int, int]]:

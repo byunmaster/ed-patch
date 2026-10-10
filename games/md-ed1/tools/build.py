@@ -34,6 +34,8 @@ import josa
 import lz
 import punctwrap
 import scene
+import hud_status
+import spell_digit
 import sysmsg
 import tables
 import textmap
@@ -60,6 +62,10 @@ JOSA_RESERVE = 0x340  # 0x280→0x340: 으로/로·과/와 를 넣으며 표가 
 WRAP_RESERVE = 0x180
 # 어절 줄넘김 앞에 필드 HUD 뒷말·방위 앞 공백 트램펄린(tools/field_hud.py, 18B)을 둔다(2026-09-27 밤)
 FIELD_HUD_RESERVE = 0x20
+# 자막 자리 **앞**에 시스템 메시지 중 꼬리로 옮기는 스트림(도망 둘, sysmsg.RELOCATE)의 칸을 둔다 — 아카이브는 그 앞까지만
+SYSMSG_TAIL = sysmsg.TAIL_SIZE
+ARCHIVE_TOP = TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE - SYSMSG_TAIL
+SYSMSG_TAIL_AT = ARCHIVE_TOP
 
 
 BATTLE_LO, BATTLE_HI = 0x0CAB04, 0x0D85B4  # 전투 아카이브 LZ 구간(첫 블록 시작 ~ 끝 블록 끝)
@@ -73,9 +79,10 @@ class Rom:
         "battle-table": (battle.ARCHIVE, battle.ARCHIVE + battle.COUNT * 4),
         "battle": (BATTLE_LO, BATTLE_HI),
         "script": (SCRIPT_LO, SCRIPT_HI),
-        "tail": (TAIL_LO, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE),
+        "tail": (TAIL_LO, ARCHIVE_TOP),
         "josa-code": (TAIL_HI - JOSA_RESERVE, TAIL_HI),
         "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 12),
+        "josa-name-hook": (josa.NAME_FN_PATCH, josa.NAME_FN_PATCH + 6),
         "wrap-code": (TAIL_HI - JOSA_RESERVE - WRAP_RESERVE, TAIL_HI - JOSA_RESERVE),
         "wrap-tramp": (wordwrap.TRAMP, wordwrap.TRAMP + 6),
         "half-code": (
@@ -103,6 +110,8 @@ class Rom:
             f"josa-arg:{i:02x}": (josa.ARGLEN_TBL + i, josa.ARGLEN_TBL + i + 1)
             for i in (josa.IDX_ACTOR, josa.IDX_ITEM)
         },
+        "spell-digit": (spell_digit.AT, spell_digit.AT + len(spell_digit.NEW)),
+        "hud-status": (hud_status.BASE, hud_status.BASE + hud_status.N * hud_status.STRIDE),
         "font0-header": (0x1A54D2, 0x1A54DE),
         "font0-table": (0x1A551A, 0x1A6080),
         "font0-glyphs": (0x1A62CE, 0x1BA1FA),
@@ -126,6 +135,7 @@ class Rom:
             dict(
                 self.ALLOWED,
                 **sysmsg.allowed(data),
+                **sysmsg.allowed_tail(SYSMSG_TAIL_AT),
                 **gfxtext.allowed(),
                 **captions.allowed(data),
                 **captions.allowed_tail(
@@ -398,7 +408,10 @@ def main(check_only: bool = False) -> None:
     cs = hangul.Charset(orig, chars)
     table_writes = build_tables(orig, names, cs)
     sys_writes = sysmsg.plan(
-        orig, {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in smap.items()}, cs.encode
+        orig,
+        {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in smap.items()},
+        cs.encode,
+        tail_at=SYSMSG_TAIL_AT,
     )
     cap_writes = captions.plan(
         orig,
@@ -465,7 +478,7 @@ def main(check_only: bool = False) -> None:
             cur, region = TAIL_LO, "tail"
         if (
             region == "tail"
-            and cur + len(packed) > TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE
+            and cur + len(packed) > ARCHIVE_TOP
         ):
             raise SystemExit("대본 아카이브가 꼬리 빈 공간도 넘는다")
         rom.write(region, cur, packed)
@@ -484,7 +497,7 @@ def main(check_only: bool = False) -> None:
             bcur, bregion = (cur if region == "tail" else TAIL_LO), "tail"
         if (
             bregion == "tail"
-            and bcur + len(packed) > TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE
+            and bcur + len(packed) > ARCHIVE_TOP
         ):
             raise SystemExit("전투 아카이브가 꼬리 빈 공간도 넘는다")
         rom.write(bregion, bcur, packed)
@@ -514,6 +527,13 @@ def main(check_only: bool = False) -> None:
         for e in names.get(grp, {}).values():
             hud_chars.update(re.sub(r"<[^>]*>", "", e.get("ours", "")))
     for label, pos, body in hangul.resource4(cs, hud_chars):  # HUD 이름 12×12
+        rom.write(label, pos, body)
+    # 2b-3. 주문 레벨 숫자를 반각으로(「레지나1을」) — 이름 버퍼 빌더의 14B
+    spell_digit.check(orig)
+    for label, pos, body in spell_digit.plan():
+        rom.write(label, pos, body)
+    # 2b-2. HUD 상태이상 8칸(守跳毒眠黙乱気絶 → 수·반·독·잠·묵·혼·기·절) — 무압축 타일 교체(마스터 10-10)
+    for label, pos, body in hud_status.plan():
         rom.write(label, pos, body)
     # 2c. 조사 훅 — 이름 뒤 조사를 런타임에 고른다(제어코드 EB·EC)
     for label, pos, body in josa.plan(orig, cs, TAIL_HI - JOSA_RESERVE):

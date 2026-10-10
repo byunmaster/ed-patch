@@ -362,6 +362,27 @@ def drop_goto(st: scene.Stream, ours: str) -> scene.Stream:
     return st
 
 
+
+# 블록 코드가 **외톨이 몬스터의 알파벳을 숨기려고** 이름 칸에 고정 주소로 06 을 쓴다 — `move.b #6,$FF1Exx.l`
+# (13FC 0006 00FF xxxx). 쓰는 자리 = 몬스터 레코드가 복사된 배우 칸(`$FF1DBC`+n·0x40+0x30, 첫 레코드가 배우 4)의
+# **원문 이름 길이**(알파벳 바로 자리)다. 우리 이름은 길이가 달라서, 길면 마지막 글자 한 바이트가 06 으로 덮여
+# 한 칸이 빈 칸이 되고(「캐리온크롤러」→「캐리온크롤 A」, 10-09 쓰기 BP 로 잡음), 짧으면 알파벳이 안 숨는다.
+# ⇒ 쓰는 자리를 **우리 알파벳 자리**(우리 이름 길이)로 옮긴다.
+LETTER_HIDE = re.compile(rb"\x13\xfc\x00\x06\x00\xff(..)", re.S)
+ACTOR0, ACTOR_REC, ACTOR_NAME = 4, 0x40, 0x30  # 첫 몬스터 레코드의 배우 번호 · 칸 크기 · 이름 오프셋
+
+
+def letter_hide_sites(b: bytes) -> list[tuple[int, int, int]]:
+    """[(명령 자리, 레코드 슬롯, 이름 안 오프셋)] — 배우 칸 범위 안의 것만."""
+    out = []
+    for m in LETTER_HIDE.finditer(b):
+        a = 0xFF0000 + struct.unpack(">H", m.group(1))[0] - 0xFF1DBC
+        if not 0 <= a < ACTOR_REC * 24:
+            continue
+        out.append((m.start(), (a - ACTOR_NAME) // ACTOR_REC - ACTOR0, (a - ACTOR_NAME) % ACTOR_REC))
+    return out
+
+
 def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes | None:
     """블록 하나의 새 바이트(바뀐 게 없으면 None)."""
     out = bytearray(b)
@@ -383,29 +404,85 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         if tail > 0:
             out[r["name_at"] + len(enc) + 1 : r["name_at"] + len(r["name"]) + 1] = b"\x00" * tail
         changed = True
+    # 알파벳 숨김 쓰기의 자리를 우리 이름 기준으로 — 원문과 맞지 않는 것(보스 등)은 건드리지 않는다
+    by_slot = {(r["start"] - REC0) // REC_STEP: r for r in records(b)}
+    for ins, slot, off in letter_hide_sites(b):
+        r = by_slot.get(slot)
+        if r is None:
+            continue
+        jp = r["name"].decode("cp932", "replace")
+        if len(base_name(jp).encode("cp932")) != off or not base_name(jp) in monsters:
+            continue
+        enc = encode(kr_name(jp, monsters))
+        new_off = len(enc) - len(encode(unicodedata.normalize("NFKC", suffix_of(jp))))
+        new_addr = 0xFF1DBC + (slot + ACTOR0) * ACTOR_REC + ACTOR_NAME + new_off
+        if new_addr != 0xFF1DBC + (slot + ACTOR0) * ACTOR_REC + ACTOR_NAME + off:
+            out[ins + 6 : ins + 8] = struct.pack(">H", new_addr & 0xFFFF)
+            changed = True
     moves = []
-    for tgt, e in refs(b).items():
+    jumps = []  # 참조를 몰라 못 옮기는 스트림 — 제자리엔 goto 만 두고 본문은 블록 끝으로(sysmsg.TAIL_JUMP 와 같은 기전)
+    rs = refs(b)
+    # 새 문안 본문 — 번역 없는 스트림은 None
+    bodies: dict[int, bytes | None] = {}
+    for tgt, e in rs.items():
         st = e["stream"]
         ent = textmap.get(pos_key(st, n, tgt)) or textmap.get(jp_key(st))
         if not ent or not ent.get("ours"):
+            bodies[tgt] = None
             continue
         ours = expand_names(ent["ours"], monsters)
         st = drop_goto(st, ours)
-        body = b"".join(t.raw for t in sysmsg._tokens_from_ours(st, ours, encode))
+        bodies[tgt] = b"".join(t.raw for t in sysmsg._tokens_from_ours(st, ours, encode))
+    # 🔴 스트림은 **물리적으로 이어서 흐른다** — `0A` 뒤에 바로 다음 스트림(참조 없는 연쇄)이 이어져 한 창 안에서
+    # 「…독을 뿜었다. / …는 독에 중독됐다!」 로 읽힌다. 앞 스트림이 길어져 **옮겨지면** 연쇄가 끊겨 뒷 문안이 사라지고 쓰레기가
+    # 그려진다(10-10 「조사 대신 쉼표」를 조사로 고치며 1B 가 늘어 처음 드러났다). 옮길 땐 이어지는 스트림을 **함께** 옮긴다.
+    absorbed: set[int] = set()
+    for tgt, e in rs.items():
+        if tgt in absorbed:
+            continue
+        st = e["stream"]
+        body = bodies[tgt]
+        if body is None:
+            continue
         span = st.end - tgt
         if len(body) <= span:
             out[tgt : tgt + span] = body + b"\x00" * (span - len(body))
+        elif not (e["lea"] or e["words"]) and span >= 3:
+            out[tgt : tgt + span] = b"\x0f\x00\x00" + b"\x00" * (span - 3)
+            jumps.append((tgt, st.end, body))
         elif not (e["lea"] or e["words"]):
             errs.append(
                 f"블록 {n} 스트림 {tgt:#x}: 제자리 {span}B 를 넘는데 참조를 모른다({len(body)}B)"
             )
             continue
         else:  # 플래그 바이트(tgt-1)는 제자리에 남는다 — 문안은 자료 A 워드·lea 로만 닿는다
-            out[tgt : st.end] = b"\x00" * span
-            moves.append((tgt, e, body))
+            full, end = body, st.end
+            members = [(tgt, e, 0)]  # (원래 자리, 항목, 옮긴 본문 안 오프셋)
+            while end in rs and not (rs[end]["lea"] or rs[end]["words"]) and end not in absorbed:
+                nxt = rs[end]
+                nb = bodies.get(end)
+                if nb is None:
+                    nb = b[end : nxt["stream"].end]  # 번역 없는 연쇄는 원본 그대로
+                absorbed.add(end)
+                members.append((end, nxt, len(full)))
+                full += nb
+                end = nxt["stream"].end
+            out[tgt:end] = b"\x00" * (end - tgt)
+            moves.append((tgt, e, full))
         changed = True
     if errs:
         raise SystemExit("\n".join(errs))
+    if jumps:
+        if len(out) & 1:
+            out.append(0)
+        for tgt, end, body in jumps:
+            new = len(out)
+            out[tgt + 1 : tgt + 3] = struct.pack(">h", new - (tgt + 1))
+            if body[-1] == 0x0A:  # 0A 은 물리적으로 다음 스트림으로 흐른다 — 원래 끝으로 되돌아간다
+                here = new + len(body)
+                body += b"\x0f" + struct.pack(">h", end - (here + 1))
+            out += body + (b"\x00" if len(body) & 1 else b"")
+        out[8:10] = struct.pack(">H", len(out))
     if moves:
         if len(out) & 1:
             out.append(0)
