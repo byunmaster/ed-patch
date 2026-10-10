@@ -420,6 +420,7 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
             out[ins + 6 : ins + 8] = struct.pack(">H", new_addr & 0xFFFF)
             changed = True
     moves = []
+    jumps = []  # 참조를 몰라 못 옮기는 스트림 — 제자리엔 goto 만 두고 본문은 블록 끝으로(sysmsg.TAIL_JUMP 와 같은 기전)
     rs = refs(b)
     # 새 문안 본문 — 번역 없는 스트림은 None
     bodies: dict[int, bytes | None] = {}
@@ -446,6 +447,9 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         span = st.end - tgt
         if len(body) <= span:
             out[tgt : tgt + span] = body + b"\x00" * (span - len(body))
+        elif not (e["lea"] or e["words"]) and span >= 3:
+            out[tgt : tgt + span] = b"\x0f\x00\x00" + b"\x00" * (span - 3)
+            jumps.append((tgt, st.end, body))
         elif not (e["lea"] or e["words"]):
             errs.append(
                 f"블록 {n} 스트림 {tgt:#x}: 제자리 {span}B 를 넘는데 참조를 모른다({len(body)}B)"
@@ -468,6 +472,17 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         changed = True
     if errs:
         raise SystemExit("\n".join(errs))
+    if jumps:
+        if len(out) & 1:
+            out.append(0)
+        for tgt, end, body in jumps:
+            new = len(out)
+            out[tgt + 1 : tgt + 3] = struct.pack(">h", new - (tgt + 1))
+            if body[-1] == 0x0A:  # 0A 은 물리적으로 다음 스트림으로 흐른다 — 원래 끝으로 되돌아간다
+                here = new + len(body)
+                body += b"\x0f" + struct.pack(">h", end - (here + 1))
+            out += body + (b"\x00" if len(body) & 1 else b"")
+        out[8:10] = struct.pack(">H", len(out))
     if moves:
         if len(out) & 1:
             out.append(0)
