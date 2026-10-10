@@ -2,7 +2,7 @@
  "_doc": "scn 88 — 2장 완료 카드(온리크 해방). 열쇠는 tools/messages.py 의 key(JP 원문 sha1), 원문 대조는 work/derived/messages/scn088.json",
  "messages": {
   "38371aaa647b9478": {
-   "t": "　제2장  침묵의 주문\n　\n　　　　　　끝"
+   "t": "　　제２장  침묵의 주문\n　\n　　　　　　끝"
   },
   "1f160a3211e33eea": {
    "t": "온리크 공국은 몬스터에게서 해방되었습니다."

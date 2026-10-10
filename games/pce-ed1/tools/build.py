@@ -15,6 +15,7 @@
 import argparse
 import contextlib
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -299,6 +300,30 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
                 + b"\x8d\x34\x85\xa9\x81\x8d\x35\x85\xa9\x40\x8d\x36\x85",
             ),
         )
+    if want("fsel"):
+        # 5-3. 🔴 부팅 파일 선택 화면의 **반 칸(4px) 공백**(마스터 10-10 「pce 불러오기 반각 적용」, 규칙 1-6).
+        #      이 화면은 글자를 칸 단위로 찍는다 — `$88F8 JSR $8974` 가 글자마다 불러, 홀짝(`Y>>1&1`)으로 정렬을 가른다:
+        #      짝 = 타일 경계에 찍고 +1 타일 · 홀 = 4px 밀어 겹쳐 찍고 +2 타일(12px 글자 둘 = 3타일).
+        #      그래서 변형 코드(+4px)는 안 먹고 공백 바이트만 빠져 글자가 붙었다(기각 실험 `rejected-boot-halfspace`).
+        #      고침: 홀짝을 **줄마다 0 으로 시작하는 변수**(`$86FA`)로 바꾸고, 반각 공백 코드(`F8 24`)는 글자를 안 찍고 위상만
+        #      넘긴다(짝 → 홀: 타일 그대로 · 홀 → 짝: +1 타일) — 4px 전진. 코드는 뱅크 0x78 의 0 런($86FA~$87F9, 256B)에 둔다
+        #      (정적 참조 0 · 파일 선택 화면 동안 읽기/쓰기 BP 0 · 게임 로드 뒤엔 다른 자료가 올라오지만 이 화면이 끝난 뒤다).
+        base = 0x86FA
+        code = bytes.fromhex(
+            "00"  # 86FA 위상 변수
+            "9cfa86" "4c808c"  # 86FB init: STZ $86FA / JMP $8C80
+            "a5f9" "c9f8" "d021"  # 8701 nb: LDA $F9 / CMP #$F8 / BNE norm
+            "a5f8" "c924" "d01b"  # 8707 LDA $F8 / CMP #$24 / BNE norm
+            "adfa86" "f010"  # 870D LDA $86FA / BEQ sp0
+            "9cfa86" "a910" "18" "65fc" "85fc" "62" "65fd" "85fd" "60"  # 8712 홀→짝: STZ, +1 타일, RTS
+            "a901" "8dfa86" "60"  # 8722 sp0: 짝→홀
+            "207489" "adfa86" "4901" "8dfa86" "60"  # 8728 norm: JSR $8974 / 위상 반전 / RTS
+        )
+        assert base + len(code) == 0x8734, hex(base + len(code))
+        p.append(("fsel code @86FA", *_main(0x78, 0x06FA), b"\0" * len(code), code))
+        p.append(("fsel line init", *_main(0x78, 0x08E6), b"\x20\x80\x8c", b"\x20\xfb\x86"))
+        p.append(("fsel blit call", *_main(0x78, 0x08F8), b"\x20\x74\x89", b"\x20\x01\x87"))
+        p.append(("fsel parity", *_main(0x78, 0x0975), b"\x98\x4a\x29\x01", b"\xad\xfa\x86\xea"))
     if want("cast"):
         # 6. 「게임 시작」 뒤 성우 크레딧의 표제 `声優出演` → `ＣＡＳＴ`(마스터 확정 2026-09-23 —
         #    이름 13개는 실존 성우라 원문 유지, 표제만). 크레딧 모듈(rel 514)이 이 SJIS 평문
@@ -364,6 +389,39 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
                 *_main(0x6C, 0x0730),
                 b"\x20\x8a\x6d",
                 b"\x20" + hook.EAT_ADDR.to_bytes(2, "little"),
+            )
+        )
+    if want("battle"):
+        # 9. 🔴 파티 행위자 이름 뒤 접미 — 엔진이 이름 뒤에 **언제나** 붙이던 「たち」(코드 뱅크 0x6C `$68C9` 의 6B 자료)가 혼자여도 화면에
+        #    「세리오스たち는 도망쳤다」로 떴다(정본 문안·검사기·화면 일본어 게이트는 다 초록). 마스터 10-09: 혼자 = 「세리오스는」 ·
+        #    파티 = 「세리오스들은」. 자료를 「들」+종결로 바꾸고, 복사 시작·길이를 파티 판정으로 정하는 루틴(`hook.party_suffix`, 페이로드 안)을
+        #    `$68A5` 의 `LDA #6/STA $21/CLX` 자리에 건다 — 혼자면 종결 `06` 하나만 복사한다.
+        deul = font.code_of(_order_index("들"))
+        p.append(
+            (
+                "party suffix data たち→들",
+                *_main(0x6C, 0x08C9),
+                b"\x20\x82\xbd\x82\xbf\x06",
+                deul + b"\x06\x06\x06\x06",
+            )
+        )
+        p.append(
+            (
+                "party suffix JSR (solo skips)",
+                *_main(0x6C, hook.PARTY_SUFFIX_SITE - 0x6000),
+                b"\xa9\x06\x85\x21\x82",
+                b"\x20" + hook.PARTY_ADDR.to_bytes(2, "little") + b"\xea\xea",
+            )
+        )
+    if want("battle") and os.environ.get("ED_LATIN") != "orig":  # 🧪 ED_LATIN=orig = 원판 BIOS 숫자표 유지(비교 시험)
+        # 10. 🔴 엔진이 수치(`{22}`)를 찍을 때 쓰는 숫자 표 `$69D3`(전각 SJIS 「０~９」 열 쌍) → 우리 ASCII 숫자 글리프 코드 —
+        #     BIOS 전각 숫자(「2 8」 벌어짐)가 우리 반각 영숫자 갈래(8px)로 그려진다(마스터 10-09).
+        p.append(
+            (
+                "number digit table 전각→글리프",
+                *_main(0x6C, 0x09D3),
+                b"".join(bytes([0x82, 0x4F + d]) for d in range(10)),
+                b"".join(font.code_of(_order_index(str(d))) for d in range(10)),
             )
         )
     if want("narr"):

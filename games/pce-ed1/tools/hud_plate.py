@@ -291,6 +291,40 @@ def find_unique(bank, piece, what):
     return i
 
 
+# ── 레벨 라벨 「LV」→「Lv」 (마스터 10-10: PS1 HUD 표기 그대로) ─────────────────────────────────────
+# BG 타일 0x18(「L」 밑줄 둘 + 「V」) 과 스프라이트 조각 12(16×8 — 「LV」 한 장)를 같이 고친다. 「V」 는 5열 × 7행(열 3~7)이라
+# 그 칸을 비우고 **소문자 v**(4행 · 열 3~7)를 아랫줄에 앉힌다. 「L」 은 그대로.
+LV_TILE = 0x18
+LV_PIECE = 12
+LV_V_COL0 = 3  # 타일 안 「V」 첫 열
+LV_V_SPR_COL0 = 11  # 조각 안 「V」 첫 열
+LV_INK, LV_BG = 11, 1  # BG 색 번호(하늘 · 바탕)
+LV_SMALL_V = [(3, 0), (3, 4), (4, 1), (4, 3), (5, 1), (5, 3), (6, 2)]  # (행, 「v」 안 열)
+
+
+def piece_px(b):
+    """스프라이트 조각 64B → (8,16) BG 색 번호 — `to_piece` 의 역."""
+    inv = {v: k for k, v in SPR_COLOR.items()}
+    a = np.zeros((8, 16), dtype=np.uint8)
+    for y in range(8):
+        for x in range(16):
+            c = 0
+            for pl in range(4):
+                w = b[pl * 16 + y * 2] | (b[pl * 16 + y * 2 + 1] << 8)
+                c |= ((w >> (15 - x)) & 1) << pl
+            a[y, x] = inv[c]
+    return a
+
+
+def lv_lower(a, col0):
+    """「V」 칸(열 col0..col0+4)을 비우고 소문자 「v」 를 그린다."""
+    a = a.copy()
+    a[0:7, col0 : col0 + 5] = LV_BG
+    for r, c in LV_SMALL_V:
+        a[r, col0 + c] = LV_INK
+    return a
+
+
 # ── 한글 그리기 ─────────────────────────────────────────────────────────────
 
 NAME_FONT = (
@@ -402,6 +436,15 @@ def build(sector=None, bat=None, spr=None):
     bank = bytearray(obank)
     ts = [bytearray(t) for t in tiles(bytes(sec))]
     orig_ts = [bytes(t) for t in ts]
+
+    # 레벨 라벨 「LV」→「Lv」 — BG 타일 · 스프라이트 조각을 같이(원본 모양을 확인하고 고친다)
+    lv_o = tile_px(orig_ts[LV_TILE])
+    assert lv_o[0, LV_V_COL0] == LV_INK and lv_o[6, LV_V_COL0 + 2] == LV_INK, "LV 타일이 원본이 아니다"
+    ts[LV_TILE] = bytearray(px_tile(lv_lower(lv_o, LV_V_COL0)))
+    lv_p = bytes(obank[piece_off(LV_PIECE) : piece_off(LV_PIECE) + 64])
+    lv_pa = piece_px(lv_p)
+    assert to_piece(lv_pa) == lv_p and lv_pa[0, LV_V_SPR_COL0] == LV_INK, "LV 조각이 원본이 아니다"
+    bank[piece_off(LV_PIECE) : piece_off(LV_PIECE) + 64] = to_piece(lv_lower(lv_pa, LV_V_SPR_COL0))
 
     # 상태 글자 · あと — 제자리
     for rows, _jp, kr in STATUS:

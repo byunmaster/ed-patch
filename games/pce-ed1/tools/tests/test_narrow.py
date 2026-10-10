@@ -182,6 +182,40 @@ class MiniCPU:
                 bit = self.fetch(1)
                 self.mpr[bit.bit_length() - 1] = self.a
                 self.mpr_log.append(self.a)
+            elif op == 0xDA:
+                self.stack.append(self.x)
+            elif op == 0xFA:
+                self.x = self.setnz(self.stack.pop())
+            elif op == 0x5A:
+                self.stack.append(self.y)
+            elif op == 0x7A:
+                self.y = self.setnz(self.stack.pop())
+            elif op == 0xAA:
+                self.x = self.setnz(self.a)
+            elif op == 0xA8:
+                self.y = self.setnz(self.a)
+            elif op == 0x8A:
+                self.a = self.setnz(self.x)
+            elif op == 0x0A:
+                self.c = self.a >> 7
+                self.a = self.setnz(self.a << 1)
+            elif op == 0xC5:  # CMP zp
+                v = self.rd(self.ZP + self.fetch(1))
+                self.c = int(self.a >= v)
+                self.setnz(self.a - v)
+            elif op == 0xE5:  # SBC zp
+                v = self.rd(self.ZP + self.fetch(1))
+                r = self.a - v - (1 - self.c)
+                self.c = int(r >= 0)
+                self.a = self.setnz(r)
+            elif op == 0x3D:  # AND abs,X
+                self.a = self.setnz(self.a & self.rd(self.fetch(2) + self.x))
+            elif op == 0x6D:  # ADC abs
+                r = self.a + self.rd(self.fetch(2)) + self.c
+                self.c = int(r > 0xFF)
+                self.a = self.setnz(r)
+            elif op == 0xE8:
+                self.x = self.setnz(self.x + 1)
             elif op == 0x60:
                 self.ret()
                 if self.pc in END:
@@ -239,7 +273,13 @@ def engine(cpu, toggle_after_draw=None):
 
 def machine(lead, trail, toggle_after_draw=1, flag=0, rem=0, col=5, toggle=1):
     """렌더러 입구 → 글리프 뱅크 코드까지 **조립 바이트 그대로**(껍데기 + pre/post). 엔진만 트랩."""
-    cpu = MiniCPU({hook.NARROW_ADDR: hook.hook_narrow(), hook.ENTRY_ADDR: hook.hook_entry()})
+    cpu = MiniCPU(
+        {
+            hook.NARROW_ADDR: hook.hook_narrow(),
+            hook.ENTRY_ADDR: hook.hook_entry(),
+            hook.HALF_TAB_ADDR: hook.half_tables(),
+        }
+    )
     cpu.m[0x2000 + 0xF9] = lead
     cpu.m[0x2000 + 0xF8] = trail
     cpu.m[hook.ENG_COL_COUNT] = col
@@ -309,7 +349,7 @@ class Stub(unittest.TestCase):
             (0xF0, 0x40),
             (0xF3, 0x30),
             (0xF0, 0x28),
-            (0xF0, 0x2F),
+            (0xF0, 0x37),
             (0xF9, 0x24),
             (0x81, 0x40),
         ):
@@ -458,6 +498,94 @@ class Punct(unittest.TestCase):
             for toggle in (0, 1):
                 cpu, _ = machine(lead, trail, toggle=toggle)
                 self.assertNotIn(hook.ENG_DRAW, run(cpu), (ch, toggle))
+
+
+class HalfAlnum(unittest.TestCase):
+    """반각 영숫자(kind 5) — 글리프를 반각 부호 갈래로 **두 번**(왼쪽 4px · 오른쪽 4px) 그려 8px 전진한다."""
+
+    CH = "0A"  # 숫자 · 영문(정본에 든 ASCII 영숫자)
+
+    def test_bitmap_marks_exactly_the_ascii_alnum_glyphs(self):
+        tab = hook.half_tables()
+        bm = tab[12:]
+        canon = font._order_canon()
+        for i, ch in enumerate(canon):
+            lead, tr = divmod(i, font.PER_LEAD)
+            bit = bm[lead * 28 + tr // 8] & (0x80 >> (tr % 8))
+            self.assertEqual(bool(bit), ch.isascii() and ch.isalnum() and ch not in "mwMW", (i, ch))
+
+    def test_from_a_boundary_two_pieces(self):
+        for ch in self.CH:
+            if ch not in font._order_canon():
+                continue
+            lead, trail = code_of(ch)
+            cpu, seen = machine(lead, trail, toggle=0)
+            calls = run(cpu)
+            self.assertEqual(
+                calls,
+                [hook.ENG_FETCH, hook.ENG_PLANES, hook.ENG_BLANK_COLS, hook.ENG_REWIND, hook.ENG_REWIND]
+                + [hook.ENG_FETCH, hook.ENG_PLANES, hook.ENG_COLWRITE],
+                ch,
+            )
+            # 둘째 조각(열 가운데 갈래)의 글리프 버퍼(+0x20) = 오른쪽 4px 를 왼쪽으로 민 것: ((0xA0+k)<<4)&0xF0
+            b = hook.ENG_GLYPH_BUF + 0x20
+            self.assertEqual([cpu.m[b + 2 * k] for k in range(12)], [(k << 4) & 0xF0 for k in range(12)], ch)
+            self.assertEqual(cpu.m[hook.ENG_COL_COUNT], 5, ch)  # 엔진의 +1 을 한 번만 되돌린다
+            self.assertEqual(cpu.m[hook.REM_ADDR], 8, ch)  # 4px × 2
+            self.assertEqual(cpu.m[hook.ENG_TOGGLE], 0, ch)  # 열 경계 → 가운데 → 경계 (8px)
+            self.assertEqual(cpu.m[hook.PHASE_ADDR], 0, ch)
+            self.assertNotIn(hook.ENG_DRAW, calls, ch)
+            self.assertEqual(cpu.stack, [], ch)
+            self.assertEqual(cpu.pc, RET_CALLER + 1)
+
+    def test_wide_letters_stay_plain(self):
+        # 잉크 9px(m·w·M·W)는 8px 두 조각에 안 든다 — 평소대로 12px 칸에 그린다(반각 갈래를 안 탄다)
+        for ch in "mwMW":
+            if ch in font._order_canon():
+                lead, trail = code_of(ch)
+                cpu, _ = machine(lead, trail, toggle=0)
+                calls = run(cpu)
+                self.assertEqual(calls, [], ch)  # 엔진을 안 부른다 — 평소 그리기로 이어진다
+
+    def test_narrow_letters_are_one_piece(self):
+        for ch in "il":
+            lead, trail = code_of(ch)
+            cpu, _ = machine(lead, trail, toggle=0)
+            calls = run(cpu)
+            self.assertEqual(
+                calls,
+                [hook.ENG_FETCH, hook.ENG_PLANES, hook.ENG_BLANK_COLS, hook.ENG_REWIND, hook.ENG_REWIND],
+                ch,
+            )  # 조각 하나 = 반각 부호와 같다
+            self.assertEqual(cpu.m[hook.REM_ADDR], 4, ch)
+            self.assertEqual(cpu.m[hook.ENG_COL_COUNT], 5, ch)
+            self.assertEqual(cpu.m[hook.PHASE_ADDR], 0, ch)
+
+    def test_first_piece_is_the_left_nibble(self):
+        lead, trail = code_of("0")
+        cpu, seen = machine(lead, trail, toggle=0)
+        calls = []
+
+        orig = cpu.traps[hook.ENG_PLANES]
+
+        def spy(c):
+            calls.append(bytes(c.m[hook.ENG_GLYPH_BUF : hook.ENG_GLYPH_BUF + 24]))
+            orig(c)
+
+        cpu.traps[hook.ENG_PLANES] = spy
+        run(cpu)
+        self.assertEqual(calls[0][0::2], bytes(0xA0 for _ in range(12)))  # 왼쪽 바이트 상위 4비트만 — 0xA0+k & 0xF0
+        self.assertEqual(calls[0][1::2], bytes(0xA0 for _ in range(12)))  # 오른쪽 := 왼쪽
+
+    def test_four_alnum_make_two_and_a_half_columns_of_rem(self):
+        lead, trail = code_of("0")
+        cpu, _ = machine(lead, trail, toggle=0)
+        for _ in range(3):  # 8px × 3 = 24px = 두 칸
+            cpu.stack = [RET_CALLER >> 8, RET_CALLER & 0xFF, RET_IN >> 8, RET_IN & 0xFF]
+            cpu.m[hook.ENG_TOGGLE] = 0
+            cpu.m[hook.PHASE_ADDR] = 0
+            cpu.run(hook.NARROW_ENTRY)
+        self.assertEqual((cpu.m[hook.REM_ADDR], cpu.m[hook.ENG_COL_COUNT]), (0, 7))  # 24px: 칸 +2 (5+... 시작 col=5 → 7)
 
 
 class Encode(unittest.TestCase):

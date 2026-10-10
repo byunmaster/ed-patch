@@ -52,9 +52,8 @@ def pages(text: str, *, speaker: bool) -> list[list[str]]:
             lines = chunk.split("\n")
             # ⚠ 창은 세 줄이다. 그리고 **빈 줄은 전각 공백 하나를 넣어 적는다** — 개행(`01`)은 「다음 글자 전에
             #   줄 바꿈」 표시라 둘을 잇달아 써도 한 줄만 넘어간다(종장 카드 화면 2026-09-25)
-            assert len(lines) <= LINES and all(len(x) <= FULL for x in lines), (
-                chunk
-            )  # 전각 그대로 — 공백도 12px
+            #   줄 폭은 **px 로** 잰다(전각 공백 12px · ASCII 공백 4px) — 칸 수(글자 수)로 재면 반 칸 공백으로 가운데를 맞춘 카드가 막힌다
+            assert len(lines) <= LINES and all(px(x) <= FULL * 12 for x in lines), chunk
             out.append(lines)
             speaker = False
             continue

@@ -16,6 +16,7 @@
 
 import itertools
 import json
+import os
 import re
 import sys
 import unicodedata
@@ -185,7 +186,9 @@ def kr_names(extra: dict[str, str] | None = None) -> tuple[dict[str, str], list[
         hit = idx.get(_norm(jp))
         if hit is None and jp and jp[-1] in "ＡＢＣＤ♀♂":
             base = idx.get(_norm(jp[:-1]))
-            hit = None if base is None else base + jp[-1]
+            # 마스터 10-10 최종: 개체 구분 Ａ~Ｄ 는 ASCII 반각(전투 문장 일관성 — 렌더러 반각 영숫자 갈래가 8px 로 그린다)
+            tail = jp[-1] if os.environ.get("ED_LATIN") == "orig" else (chr(ord(jp[-1]) - 0xFEE0) if jp[-1] in "ＡＢＣＤ" else jp[-1])
+            hit = None if base is None else base + tail
         if hit is None:
             missing.append(jp)
         else:
