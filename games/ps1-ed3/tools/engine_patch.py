@@ -282,6 +282,78 @@ def apply_lineup_window(exe, disc):
     return f" · 대열 창 열 {LINEUP_COLS}"
 
 
+# 시스템 메뉴 하위 창 — 창 생성 상수(`jal 0x800174A0` 앞 `addiu` 넷: x · y · 열 · 행)를 바꾼다. 마스터 10-11 「중앙정렬」:
+#   설정 7×4 → 6×4(x +6px 로 가운데 유지 — 줄 글자 수 4·5·6 이 열 6 에 반 칸 단위로 앉는다) · 키 설정 4×2 → 3×2(「노　멀」·「와이드」 꽉 채움) · 리더 변경 6×N → 4×N(파티 이름 최장 4글자).
+SUBMENU_WINDOWS = {
+    "ed3": [
+        (0x80033CCC, 0x24040028, 0x2404002E, "시스템 설정 x"),
+        (0x80033CD4, 0x24060007, 0x24060006, "시스템 설정 열"),
+        (0x80032BF8, 0x24060004, 0x24060003, "키 설정 열"),
+        (0x800648EC, 0x24060006, 0x24060004, "리더 변경 열"),
+    ],
+}
+
+
+def apply_submenu_windows(exe, disc):
+    sites = SUBMENU_WINDOWS.get(disc)
+    if not sites:
+        return ""
+    for addr, orig, _new, what in sites:
+        _expect(exe, addr, (orig,), f"{what} 상수")
+    for addr, _orig, new, _what in sites:
+        struct.pack_into("<I", exe, _off(addr), new)
+    return " · 하위 창 열 조정 4곳"
+
+
+# 세이브/로드 데이터 창(14×4) 제목 셋 — 원문 자리(표 항목 10·11·13, 2워드 빈 칸 + 글)가 가운데 정렬 여백을 못 담아 **문자열을 R2 꼬리로 옮기고** 읽는 곳 셋을 절대 주소로 잇는다
+#   (`lui v0, 0x801e; lw v0, 0x4b90+4k(v0)` → `lui v0, hi; ori v0, v0, lo` — 포인터 배열을 안 거친다). 소비처는 이 셋뿐(lw 전수 검색).
+DETAIL_SITES = {"ed3": {10: 0x8002DE40, 11: 0x8002E2F4, 13: 0x8002DE58}}  # 표 항목 → `lui` 자리(바로 다음 워드가 `lw`)
+
+
+def apply_detail_titles(exe, disc, strings):
+    """`strings` = {표 항목: [워드…]} — 각 문자열을 R2 꼬리에 차례로 놓고 소비처를 잇는다. 반환 = 쓴 워드 수."""
+    import cursor_hook
+
+    sites = DETAIL_SITES.get(disc)
+    if not sites:
+        return 0
+    assert set(strings) == set(sites), f"데이터 창 제목 항목이 다르다 — {sorted(strings)}"
+    cap = (cursor_hook.R2 + cursor_hook.R2_LEN - cursor_hook.STR_TAIL) // 2
+    addr, used = cursor_hook.STR_TAIL, 0
+    for k, words in sorted(strings.items()):
+        lui = sites[k]
+        _expect(exe, lui, (0x3C02801E, 0x8C420000 | (0x4B90 + 4 * k)), f"데이터 창 제목 {k} 읽는 곳")
+        used += len(words)
+        assert used <= cap, f"데이터 창 제목이 R2 꼬리를 넘는다 ({used}워드)"
+        o = _off(addr)
+        struct.pack_into(f"<{len(words)}H", exe, o, *words)
+        struct.pack_into("<II", exe, _off(lui), 0x3C020000 | (addr >> 16), 0x34420000 | (addr & 0xFFFF))
+        addr += 2 * len(words)
+    return used
+
+# 전투 「얻은 경험치」 제목(13열 창) — 시작 칸이 **상수 3**(`0x8005A290 addiu v1, zero, 3` → `창[+0x12]`)이라 열 수를 바꿔도 안 따라온다. 6코드(5.5칸)는 중심이 0.75칸 왼쪽.
+#   마스터 10-11 「경험치는 그대로, 얻은 만 0.5칸 오른쪽(공백 반각)」 → 앞 반 칸 공백이 든 7코드 문자열이 필요한데 표 풀(`0xA1272` 칸)은 한 워드도 못 늘린다.
+#   문자열을 R2 꼬리로 옮기고 주소 계산 열한 워드(`lui/lhu/…/sw 0x58(fp)`)를 `lui;ori;sw` 로 바꾼다. 이 표 항목을 읽는 곳은 여기 하나뿐(`lhu 0xA60` 전수 검색).
+EXP_TITLE_SITE = {"ed3": (0x8005A260, (0x3C03800B, 0x94630A60, 0x00000000, 0x00031042, 0x3043FFFF, 0x00601021, 0x00021840, 0x3C02800B, 0x24420A58, 0x00431821, 0xAFC30058))}
+
+
+def apply_exp_title(exe, disc, words, offset_words):
+    """`words` 를 R2 꼬리(`offset_words` 워드 뒤)에 두고 제목 주소 계산을 잇는다. 반환 = 쓴 워드 수."""
+    import cursor_hook
+
+    site = EXP_TITLE_SITE.get(disc)
+    if not site:
+        return 0
+    addr0, orig = site
+    _expect(exe, addr0, orig, "경험치 제목 주소 계산")
+    addr = cursor_hook.STR_TAIL + 2 * offset_words
+    assert offset_words + len(words) <= (cursor_hook.R2 + cursor_hook.R2_LEN - cursor_hook.STR_TAIL) // 2, "경험치 제목이 R2 꼬리를 넘는다"
+    struct.pack_into(f"<{len(words)}H", exe, _off(addr), *words)
+    new = [0x3C030000 | (addr >> 16), 0x34630000 | (addr & 0xFFFF), 0xAFC30058] + [0] * (len(orig) - 3)
+    struct.pack_into(f"<{len(new)}I", exe, _off(addr0), *new)
+    return len(words)
+
+
 def apply_square_window(exe, disc):
     sites = SQUARE_WINDOW.get(disc)
     if not sites:
@@ -341,5 +413,5 @@ def apply(exe, disc, table, josa=None):
     import cursor_hook
 
     cursor = cursor_hook.apply(exe, disc)
-    panel = apply_panel(exe, disc) + apply_result_windows(exe, disc) + apply_square_window(exe, disc) + apply_lineup_window(exe, disc) + cursor
+    panel = apply_panel(exe, disc) + apply_result_windows(exe, disc) + apply_square_window(exe, disc) + apply_submenu_windows(exe, disc) + apply_lineup_window(exe, disc) + cursor
     return f"타일 합성(반 칸 {len(half)}종) · 훅 {len(words)}워드 @ {p['dead']:#x} · 자료 {len(blob)}B @ {p['data']:#x}{panel}"

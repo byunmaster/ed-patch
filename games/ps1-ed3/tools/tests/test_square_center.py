@@ -1,4 +1,4 @@
-"""필드 square 창 가운데 정렬(`build.square_center`) — 줄마다 앞 여백이 마스터 규칙대로(6.5 · 1.5 · 1 · 1.5칸)이고 덩어리 안에 든다."""
+"""필드 square 창 왼쪽 정렬(`build.square_center`, 마스터 10-11) — 줄 앞 여백이 없고 덩어리 안에 든다."""
 
 import os
 import struct
@@ -24,7 +24,7 @@ def orig_image():
 
 
 class TestSquareCenter(unittest.TestCase):
-    def test_lines_are_centered_in_halves(self):
+    def test_lines_are_left_aligned(self):
         orig = orig_image()
         exe = bytearray(orig)
         build.square_center(exe, bytes(orig), "ed3", enc, {})
@@ -41,7 +41,7 @@ class TestSquareCenter(unittest.TestCase):
         def width(line):  # 칸 수 — 0 코드 1칸 · 반 칸 공백 0.5 · 글자 1
             return sum(1 if x == 0 or 0x100 <= x < 0x8000 else 0.5 for x in line if x < 0x8000)
 
-        self.assertEqual([width(ln) for ln in lines], [5, 6, 5.5, 5])  # 상태보기·퇴각하기 앞 1(+4글자) · 자동전투선택 6 · 키설정변경 앞 반 칸 + 5
+        self.assertEqual([width(ln) for ln in lines], [4, 6, 5, 4])  # 왼쪽 정렬(마스터 10-11) — 앞 여백 없이 글자 수 그대로
         self.assertEqual(struct.unpack_from("<H", exe, OFF + 2 * N)[0], struct.unpack_from("<H", orig, OFF + 2 * N)[0])  # 30번째 워드는 건드리지 않는다
         for ln in lines:
             self.assertLessEqual(len([x for x in ln if x < 0x8000]), 6)  # 글자 수가 열을 넘으면 줄이 접힌다

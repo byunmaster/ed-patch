@@ -15,6 +15,7 @@ R1 = 0x8008A108  # 훅 본체(428B)
 R1_LEN = 428
 R2 = 0x8008A428  # 서브루틴(368B)
 R2_LEN = 368
+STR_TAIL = R2 + 216  # R2 본체(212B) 뒤 빈 꼬리 — 세이브/로드 데이터 창 제목 문자열을 둔다(`engine_patch.apply_detail_titles`). 152B(76워드)
 R2ROW = R2 + 60  # 서브루틴 row6 시작(or24 는 R2 맨 앞 15워드)
 SITE = 0x8001A9C8  # 훅 자리: `lui v0,0x801f` · `lhu v0,0x76b8(v0)` 두 워드를 `jal 훅 · nop` 로
 SITE_ORIG = (0x3C02801F, 0x944276B8)  # lui v0,0x801f · lhu v0,0x76b8(v0)
@@ -242,6 +243,7 @@ def build(disc):
     E.verify(w2, R2)
     assert 4 * len(w1) <= R1_LEN, f"훅이 구간을 넘는다 {4 * len(w1)}B > {R1_LEN}B"
     assert 4 * len(w2) <= R2_LEN
+    assert 4 * len(w2) <= STR_TAIL - R2, f"R2 본체가 문자열 꼬리를 침범한다 ({4 * len(w2)}B)"
     site = [(3 << 26) | ((lab1["hookc"] >> 2) & 0x3FFFFFF), 0]
     return w1, w2, site, lab1
 
