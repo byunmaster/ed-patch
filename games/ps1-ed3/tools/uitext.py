@@ -71,6 +71,11 @@ EXTRA_SITES = {
 }
 
 
+# 🔴 게임 빌드가 **나중에 직접 덮어쓰는** 자리 — `apply`·`lost_text` 가 건드리지 않는다(정본 줄은 남는다). square 창 넷째 줄(`build.square_center`)은 종결 워드(0xA1396)를
+#    뒤 표 칸(`exetext.POOL_LEFT_SLACK`)에 내주었고, 고정 칸 쓰기가 그 워드에 종결을 써 풀과 부딪친다.
+OVERRIDDEN = {"ed3": {0xA138E}}
+
+
 def sites(disc):
     """{오프셋: {"jp":…, "len":코드수, "table":(주소,base,N)|None, "budget":칸 바이트}}"""
     cm = textenc.charmap(disc)
@@ -241,6 +246,8 @@ def apply(exe, disc, encode):
     by_table = {}
     for off, row in sorted(canon.items()):
         s = ss.get(off)
+        if off in OVERRIDDEN.get(disc, ()):
+            continue
         if s is None or script_canon.stamp(s["jp"]) != row["jp"]:
             skipped += 1
             continue
@@ -293,6 +300,8 @@ def lost_text(orig, new, disc, encode):
     bad = []
     for off, row in sorted(load(disc).items()):
         s = ss.get(off)
+        if off in OVERRIDDEN.get(disc, ()):
+            continue
         if s is None or script_canon.stamp(s["jp"]) != row["jp"]:
             continue
         try:

@@ -402,6 +402,11 @@ def span(data, tbl, base, n):
     return lo, hi
 
 
+# 🔴 칸 왼쪽 여유 — 어느 칸(시작 오프셋)은 **앞의 비는 워드**를 풀에 더 쓸 수 있다. ED3 전투 UI 표의 「퇴각할까요?」·「대열…」 칸(0xA1398, 48B)은 한글 문안이 한 워드 모자랐는데,
+#   바로 앞 필드 square 창 덩어리(0xA135C~)가 가운데 정렬로 29워드만 써서 **0xA1396 한 워드가 빈다**(`build.SQUARE`) — 문안을 줄이지 않고(마스터 규칙 3-6) 그 워드를 칸에 붙인다.
+POOL_LEFT_SLACK = {0xA1398: 2}  # {칸 시작: 왼쪽으로 더 쓸 수 있는 바이트}
+
+
 def chunks(data, tbl, base, n):
     """[(시작, 끝, [옛 시작…])] — 풀을 **빈틈으로 끊어** 예산 칸을 나눈다.
 
@@ -424,7 +429,7 @@ def chunks(data, tbl, base, n):
         prev_end = end
     if cur:
         out.append((cur[0][0], prev_end, [o for o, _ in cur]))
-    return out
+    return [(lo - POOL_LEFT_SLACK.get(lo, 0), hi, st) for lo, hi, st in out]
 
 
 def _share_tails(starts, base, want, terms, lo):
@@ -486,13 +491,18 @@ def rebuild(data, tbl, base, n, new_codes, cm=None, pad_code=None):
 
     out = bytearray(data)
     remap, slack, tail_pad = {}, 0, {}
-    for lo, hi, starts in chunks(data, tbl, base, n):
+    for lo_ext, hi, starts in chunks(data, tbl, base, n):
         tail_shared = False
         pool = bytearray()
+        rel = {}
         for off in starts:
             x = off - base
-            remap[x] = lo - base + len(pool)
+            rel[x] = len(pool)
             pool += struct.pack(f"<{len(want[x])}H", *want[x]) + struct.pack("<H", terms[x])
+        # 🔴 왼쪽 여유(`POOL_LEFT_SLACK`)는 **모자랄 때만** 쓴다 — 안 모자라면 원래 시작에 두어 배치가 그대로다(항등 재구축·옛 빌드 바이트 보존).
+        lo = starts[0] if starts[0] + len(pool) <= hi else lo_ext
+        for x, r in rel.items():
+            remap[x] = lo - base + r
         if lo + len(pool) > hi:
             # 🔴 넘칠 때만 **꼬리 공유** — 한 이름이 다른 이름의 꼬리(종결까지)와 같으면 따로 두지 않고 그 가운데를 가리킨다
             #    (「철열쇠」 ⊂ 「강철열쇠」). 표 포인터라 가운데를 가리켜도 된다. 넘치지 않는 칸은 배치가 그대로다

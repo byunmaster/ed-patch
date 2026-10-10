@@ -5,6 +5,7 @@
 """
 
 import os
+import struct
 import sys
 import unittest
 
@@ -42,6 +43,8 @@ class TestEnginePatch(unittest.TestCase):
             "SPB": (tile_hook.OFF_SPB, 20),
             "HALF": (tile_hook.OFF_HALF, 2 * tile_hook.HALF_SLOTS),
             "MK": (tile_hook.OFF_MK, 8 * tile_hook.N_MARK),
+            "LC": (tile_hook.OFF_LC, 2),
+            "LIM": (tile_hook.OFF_LIM, 2),
         }
         used = sorted((a, a + n, k) for k, (a, n) in spans.items())
         for (a0, b0, k0), (a1, _b1, k1) in zip(used, used[1:]):
@@ -89,3 +92,42 @@ class TestEnginePatch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestResultWindows(unittest.TestCase):
+    """승리·패배 창 열 수 상수 패치 — 디스어셈블로 검산한다(손인코딩)."""
+
+    def test_encoding_disassembles_to_addiu_a2_cols(self):
+        import capstone
+
+        md = capstone.Cs(capstone.CS_ARCH_MIPS, capstone.CS_MODE_MIPS32 | capstone.CS_MODE_LITTLE_ENDIAN)
+        word = struct.pack("<I", 0x24060000 | engine_patch.RESULT_COLS)
+        (ins,) = list(md.disasm(word, 0x80070E50))
+        self.assertEqual((ins.mnemonic, ins.op_str.replace(" ", "")), ("addiu", f"$a2,$zero,{engine_patch.RESULT_COLS:#x}"))
+
+    def test_precondition_stops_on_foreign_bytes(self):
+        exe = bytearray(engine_patch._off(0x80071134) + 8)
+        with self.assertRaises(SystemExit):
+            engine_patch.apply_result_windows(exe, "ed3")
+
+
+class TestSquareWindow(unittest.TestCase):
+    def test_encodings_disassemble(self):
+        import capstone
+
+        md = capstone.Cs(capstone.CS_ARCH_MIPS, capstone.CS_MODE_MIPS32 | capstone.CS_MODE_LITTLE_ENDIAN)
+        got = []
+        for addr, _orig, new in engine_patch.SQUARE_WINDOW["ed3"]:
+            (ins,) = list(md.disasm(struct.pack("<I", new), addr))
+            got.append((ins.mnemonic, ins.op_str.replace(" ", "")))
+        self.assertEqual(got, [("addiu", "$a0,$zero,0x70"), ("addiu", "$a2,$zero,6")])
+
+
+class TestLineupWindow(unittest.TestCase):
+    def test_encoding_disassembles(self):
+        import capstone
+
+        md = capstone.Cs(capstone.CS_ARCH_MIPS, capstone.CS_MODE_MIPS32 | capstone.CS_MODE_LITTLE_ENDIAN)
+        addr, _orig = engine_patch.LINEUP_WINDOW["ed3"]
+        (ins,) = list(md.disasm(struct.pack("<I", 0x24060000 | engine_patch.LINEUP_COLS), addr))
+        self.assertEqual((ins.mnemonic, ins.op_str.replace(" ", "")), ("addiu", "$a2,$zero,0x11"))

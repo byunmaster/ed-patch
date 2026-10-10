@@ -254,6 +254,57 @@ def apply_panel(exe, disc):
     return f" · 월드맵 패널 가운데 정렬(스텁 {4 * len(words)}B @ {base:#x})"
 
 
+# 전투 결과 창(승리·패배) — 창 생성 `jal 0x800174A0` 직전의 `addiu a2, zero, 8`(열 8 · 행 1, x=90 고정)이 **상수**라 원문 글자 수(戦闘に勝ちました=8)로 창이 정해진다.
+#   한글 「전투에 이겼습니다」는 공백 포함 9칸이라 끝 「다」가 잘렸다(마스터 10-09) → 열을 9 로 넓힌다(창은 오른쪽으로 한 칸 자란다). 같은 함수 안 창 생성 호출 다섯 중 열을 상수 8 로 주는 건 이 둘뿐이다(15·10·레지스터 인자는 다른 창).
+RESULT_WINDOWS = {
+    "ed3": [(0x80070E50, "승리"), (0x80071134, "패배")],
+}
+RESULT_COLS = 10
+
+
+# 필드 `square` 창(7×4 → 6×4) — 창 생성 상수(`0x8005C084~0x8005C090`: x=0x6A · y=0x54 · 열 7 · 행 4). 줄 글자 수가 4·6·5 라 열 7 이면 줄마다 반 칸 오차가 나는데(반 칸 공백은 커서 줄이 다시 그려지며 전각이 되어 못 쓴다 —
+#   하이라이트 줄은 명령 종류 4 로 따로 그려져 안 B 훅(종류 1)을 안 탄다), **열 6 이면 4칸·6칸 줄이 정확히 가운데**다(5칸 「키설정변경」만 반 칸). x 를 6px 옮겨 화면 가운데를 지킨다.
+SQUARE_WINDOW = {"ed3": ((0x8005C084, 0x2404006A, 0x24040070), (0x8005C08C, 0x24060007, 0x24060006))}  # (자리, 원본 워드, 새 워드)
+
+
+# 「대열을 짤 수 없어 퇴각합니다.」 창(`0x80070B88`: x=50 · y=100 · 열 15 · 행 1) — 원문 15자 꼴이라 열이 15 상수다. 한글은 공백 포함 17칸이라 끝 두 글자가 칸이 없어 잘린다(칸 수 문제) → 열 17.
+LINEUP_COLS = 17
+LINEUP_WINDOW = {"ed3": (0x80070B80, 0x2406000F)}  # (`addiu a2, zero, 15` 자리, 원본 워드)
+
+
+def apply_lineup_window(exe, disc):
+    site = LINEUP_WINDOW.get(disc)
+    if not site:
+        return ""
+    addr, orig = site
+    _expect(exe, addr, (orig,), "대열 메시지 창 열 수")
+    struct.pack_into("<I", exe, _off(addr), 0x24060000 | LINEUP_COLS)
+    return f" · 대열 창 열 {LINEUP_COLS}"
+
+
+def apply_square_window(exe, disc):
+    sites = SQUARE_WINDOW.get(disc)
+    if not sites:
+        return ""
+    for addr, orig, _new in sites:
+        _expect(exe, addr, (orig,), "square 창 생성 상수")
+    for addr, _orig, new in sites:
+        struct.pack_into("<I", exe, _off(addr), new)
+    return " · square 창 열 6"
+
+
+def apply_result_windows(exe, disc):
+    sites = RESULT_WINDOWS.get(disc)
+    if not sites:
+        return ""
+    orig = 0x24060000 | 8  # addiu a2, zero, 8
+    for addr, label in sites:
+        _expect(exe, addr, (orig,), f"{label} 창 열 수")
+    for addr, _label in sites:
+        struct.pack_into("<I", exe, _off(addr), 0x24060000 | RESULT_COLS)
+    return f" · 결과 창 열 {RESULT_COLS}"
+
+
 def apply(exe, disc, table, josa=None):
     """실행파일(bytearray)에 타일 합성 훅을 넣는다. 코드는 죽은 함수에, 자료(상태·표)는 SDK 오류 함수 자리에 둔다.
 
@@ -276,12 +327,19 @@ def apply(exe, disc, table, josa=None):
     half = half_codes(table)
     markers = josa["markers"] if josa else [(0x7FFF, 0, 0, 0)] * tile_hook.N_MARK
     blist = josa["blist"] if josa else []
-    words, _labels = tile_hook.hooks_b(disc, len(blist), with_josa=josa is not None)
+    words, labels = tile_hook.hooks_b(disc, len(blist), with_josa=josa is not None)
+    mwords, mbase = tile_hook.msg_stub(disc, labels)
     assert 4 * len(words) <= p["dead_len"], f"훅 코드가 죽은 함수 자리를 넘는다 ({4 * len(words)}B > {p['dead_len']}B)"
     blob = tile_hook.data_blob(p, half, markers, blist)
     assert len(blob) <= p["data_len"], f"자료가 자리를 넘는다 ({len(blob)}B > {p['data_len']}B)"
+    assert (mbase - p["data"]) + 4 * len(mwords) <= p["data_len"], "메시지 창 갈래가 자료 자리를 넘는다"
+    assert len(blob) <= tile_hook.PANEL_CODE_OFF, "상태·표가 패널 스텁 자리를 넘는다"
     struct.pack_into(f"<{len(words)}I", exe, d0, *words)
     exe[x0 : x0 + len(blob)] = blob
+    struct.pack_into(f"<{len(mwords)}I", exe, _off(mbase), *mwords)
     struct.pack_into("<II", exe, _off(p["site_a"]), (3 << 26) | ((p["dead"] >> 2) & 0x3FFFFFF), 0)
-    panel = apply_panel(exe, disc)
+    import cursor_hook
+
+    cursor = cursor_hook.apply(exe, disc) if cursor_hook.enabled() else ""
+    panel = apply_panel(exe, disc) + apply_result_windows(exe, disc) + apply_square_window(exe, disc) + apply_lineup_window(exe, disc) + cursor
     return f"타일 합성(반 칸 {len(half)}종) · 훅 {len(words)}워드 @ {p['dead']:#x} · 자료 {len(blob)}B @ {p['data']:#x}{panel}"

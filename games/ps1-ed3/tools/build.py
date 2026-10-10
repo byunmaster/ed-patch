@@ -258,6 +258,68 @@ def panel_pass(exe, disc, table, words, seen, report, panel):
                 exetext.put_panel_line(exe, off, n, new, next(inds))
 
 
+# 레벨업 창(`0x8005A8F0`~`0x8005A93C`) — 이름을 `0x8001A40C` 로 그린 뒤 **커서 x 를 이름 폭 표 `[0x800A6718+2·번호]` 로 옮긴다**.
+#   표 값은 원문 이름의 글자 수(ジュリオ=4)라, 한글 이름이 짧으면 「쥬리오 　의 레벨이…」 처럼 벌어진다(마스터 실기 10-09, 관리자 「이름 칸 패딩」 짐작이 맞았다).
+#   그 표를 쓰는 코드는 이 한 군데뿐이다(lui/addiu 전수 검색) → 구운 이름 글자 수로 다시 쓴다.
+NAME_TABLE = {"ed3": (0x96E54, 0x96F18, 14)}  # (이름 표 파일 오프셋, 폭 표 오프셋, 개수) — 이름 칸 14B(7워드, 종결 0xFFFF)
+
+
+def fit_name_widths(exe, exe_orig, disc, report):
+    if disc not in NAME_TABLE:
+        return
+    names, widths, n = NAME_TABLE[disc]
+    for i in range(n):
+        def glyphs(buf):
+            ws = struct.unpack_from("<7H", buf, names + 14 * i)
+            return [w for w in ws if 0 < w < 0x8000]
+        w0 = struct.unpack_from("<H", exe_orig, widths + 2 * i)[0]
+        assert w0 == len(glyphs(exe_orig)), f"이름 폭 표 사전조건 — {i}번 원본 폭 {w0} ≠ 글자 수 {len(glyphs(exe_orig))}"
+        struct.pack_into("<H", exe, widths + 2 * i, len(glyphs(exe)))
+    report["name_widths"] = n
+
+
+# 필드 `square` 창(7×4: 상태보기·자동전투 선택·키설정변경·퇴각한다) — 한 덩어리 문자열(`0xA135C`~`0xA1397`, 30워드)에 줄마다 0x8000 이 끼고 마지막이 0x8002 다.
+#   마스터 10-09: 네 줄 가운데 정렬. 🔴 **반 칸 공백은 못 쓴다** — 커서가 놓인(밝은) 줄은 다시 그려지며 반 칸 공백이 전각으로 남아 그 줄만 6px 밀린다(실측: 커서 줄에서만 +6px).
+#   그래서 **전각 빈 칸(0 코드)만**: 5칸 줄은 앞 1칸(정확히 가운데), 4칸 줄은 앞 1칸(왼쪽 1·오른쪽 2), 6칸 줄(자동전투선택)은 앞 0(왼쪽 0·오른쪽 1) — 반 칸 오차는 칸 단위 한계다.
+SQUARE = {"ed3": (0xA135C, 29)}  # (덩어리 시작 파일 오프셋, 쓰는 워드 수) — 원본은 30워드(끝 0xA1396 한 워드는 뒤 표 칸이 가져간다: exetext.POOL_LEFT_SLACK)
+SQUARE_LINES = (("상태보기", (0,)), ("자동전투선택", ()), ("키설정 변경", ()), ("퇴각하기", (0,)))  # (글, 앞 여백: 0 = 1칸) — 창 열 6(engine_patch.SQUARE_WINDOW), 전각 칸만(마스터 10-10): 4칸 줄 앞 1·뒤 1, 6칸 줄 꽉 참, 「키설정 변경」은 사이 전각 공백(훅 밖이라 한 칸)
+if os.environ.get("ED_CURSOR_HW") == "1":  # 시험 빌드(커서 줄 반각 훅): 반 칸 공백으로 가운데 정렬 — 정본 이미지는 위 전각 판
+    SQUARE_LINES = (("상태보기", (0, " ")), ("자동전투선택", ()), ("키설정 변경", ()), ("퇴각하기", (0, " ")))
+
+
+def square_center(exe, exe_orig, disc, enc, report):
+    if disc not in SQUARE:
+        return
+    off, n = SQUARE[disc]
+    o = list(struct.unpack_from(f"<{n + 1}H", exe_orig, off))  # 원본 30워드
+    assert [x for x in o if x >= 0x8000] == [0x8000, 0x8000, 0x8000, 0x8002], f"square 창 줄 구조가 다르다 — {[hex(x) for x in o]}"
+    sp = enc(" ")[0]
+    words = []
+    for k, (txt, lead) in enumerate(SQUARE_LINES):
+        words += [0 if x == 0 else sp for x in lead] + list(enc(txt)) + [0x8002 if k == len(SQUARE_LINES) - 1 else 0x8000]
+    assert len(words) <= n, f"square 창이 덩어리({n}워드)를 넘는다 — {len(words)}"
+    words += [0x8002] * (n - len(words))
+    struct.pack_into(f"<{n}H", exe, off, *words)  # 29워드만 — 30번째 워드는 뒤 표 칸이 쓴다
+    report["square_center"] = len(words)
+
+
+# 「예／아니오」 팝업(3×2, 전투 퇴각 확인·세이브 확인 공용) — 원문 첫 줄은 「は□い」(글자·빈 칸·글자 = 3칸)이라 한글 「예」는 왼쪽에 치우친다. 마스터 10-09 「중앙정렬」 →
+#   첫 줄을 [빈 칸, 예, 빈 칸] 로 쓴다(둘째 줄 「아니오」는 3칸이라 그대로). 반 칸 합성이 필요 없어 훅 대상에 안 넣는다(0 코드 = 1칸 빈 글자).
+YESNO = {"ed3": 0xA11BC}  # 첫 줄 시작 — 원본 [글자, 0, 글자, 0x8000]
+
+
+def yesno_center(exe, exe_orig, disc, enc, report):
+    if disc not in YESNO:
+        return
+    off = YESNO[disc]
+    o = struct.unpack_from("<4H", exe_orig, off)
+    assert o[1] == 0 and o[3] == 0x8000 and 0 < o[0] < 0x8000 and 0 < o[2] < 0x8000, f"예/아니오 첫 줄 사전조건 — {[hex(x) for x in o]}"
+    yes = enc("예")
+    assert len(yes) == 1
+    struct.pack_into("<4H", exe, off, 0, yes[0], 0, 0x8000)
+    report["yesno_center"] = 1
+
+
 def reinsert_names(exe, disc, table, report):
     """실행파일 낱말 표에 고유명사 정본을 넣는다. 표가 없는 구역은 **길이 고정**이라 건너뛴다."""
     cm = textenc.charmap(disc)
@@ -537,6 +599,7 @@ def main():
     ui_put, ui_skip = uitext.apply(exe, a.disc, enc)
     report["skipped"] += ui_skip
     reinsert_names(exe, a.disc, table, report)
+    fit_name_widths(exe, exe_orig, a.disc, report)
     # 🔴 불변식 — 월드맵 패널 풀의 **제어 코드 열이 원판과 같다**(글자만 바뀌었다). 어기면 패널이 비거나 줄이 밀린다(마스터 실기 10-08).
     if a.disc in exetext.PANEL:
         problems = exetext.panel_structure_problems(exe_orig, bytes(exe), *exetext.PANEL[a.disc])
@@ -546,6 +609,8 @@ def main():
     lost = uitext.lost_text(exe_orig, bytes(exe), a.disc, enc)
     if lost:
         raise SystemExit("🔴 UI 글 소실:\n  " + "\n  ".join(lost[:10]))
+    square_center(exe, exe_orig, a.disc, enc, report)  # lost_text 가 글을 본 뒤에 덮는다(가운데 정렬)
+    yesno_center(exe, exe_orig, a.disc, enc, report)
     arcs = reinsert_script(a.disc, canon, table, report)
     for path, data in gfx_arcs.items():  # 그림이 든 파일도 같이 쓴다
         arcs.setdefault(path, data)
