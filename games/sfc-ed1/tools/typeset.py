@@ -139,7 +139,7 @@ def wrap(kr: str, dm: dict[str, str], maxlen: dict[str, int]) -> str:
             atoms.append((s, px(dm.get(m.group(2), ""))))
         elif m.group(3):
             atoms.append((s, max(px(x) for x in m.group(3).split("/"))))
-        elif s == "\n" or s in ("<EF>", "<FF>"):
+        elif s == "\n" or s in ("<EF>", "<FF>", "<FE>"):  # <FE> = 호출된 조각의 끝 — 다음 조각은 새 메시지다
             atoms.append((s, -1))
         elif s.startswith("<"):
             atoms.append((s, 0))
@@ -261,7 +261,7 @@ def expand(kr: str, vals: dict[str, str], dm: dict[str, str]) -> list[tuple[str,
         elif s == "\n":
             out.append(("\n", ""))
         elif s.startswith("<"):
-            if s in ("<EF>", "<FF>"):
+            if s in ("<EF>", "<FF>", "<FE>"):
                 out.append(("\f", ""))
         else:
             out.append((s, ""))
