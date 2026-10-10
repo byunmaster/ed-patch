@@ -353,6 +353,35 @@ def axis_hardcoded_names(_rows=None):
     return out
 
 
+def axis_chapter_cards():
+    """⑪ **장 끝 카드 제목이 정본(`chapter`)과 같은가** — `script/scn.json` 의 `제N장  제목 … 끝` 꼴.
+
+    🔴 이름·정본 검사(`check_canon`)는 chapter 를 **줄 전체**로 재서, 카드처럼 한 블록 안에 든 제목은 분모 밖이다
+       (2026-10-10 — 「왕자의 여행길」·「열린 나락」·「홀려 버린 국왕」이 정본과 달랐는데 못 잡았다). 번호도 정본대로 `제１장`(전각 숫자).
+    """
+    import patch_ui
+
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(base, "script", "scn.json"), encoding="utf-8") as f:
+        lines = json.load(f)["lines"]
+    titles, nums = set(), set()
+    for ed in ("ed1", "ed2"):
+        for k, v in patch_ui.shared_canon.table("chapter", ed).items():
+            (nums if "@번호" in k or k.startswith("第") else titles).add(v)
+    out = []
+    for k, v in lines.items():
+        m = re.match(r"^(제[０-９]장|종장)  (.+?)\n\n +끝$", v)
+        if not v.endswith("끝") or "\n\n" not in v:
+            continue
+        if not m:
+            out.append(("scn.json", k, repr(v), "꼴이 다르다(「제１장  제목」 + 전각 숫자)"))
+        elif m.group(2) not in titles:
+            out.append(("scn.json", k, m.group(2), "정본 장 제목이 아니다"))
+        elif m.group(1) not in nums:
+            out.append(("scn.json", k, m.group(1), "정본 장 번호가 아니다"))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -371,6 +400,7 @@ def main():
         ("④ 부호·표기 규약", axis_style(rows)),
         ("⑦ 손으로 박은 이름이 정본과 갈렸다", axis_hardcoded_names()),
         ("⑧ 부호 앞 공백", axis_space_before_punct()),
+        ("⑪ 장 끝 카드 제목이 정본과 갈렸다", axis_chapter_cards()),
     ):
         if not hits:
             print(f"  ✅ {title}: 0건")
