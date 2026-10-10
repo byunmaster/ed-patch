@@ -133,6 +133,7 @@
 | `patch_hangul_glyph_table` | 058ⓑ 반각 한글 글리프 굽기 — ED.EXE 내장 반각 글리프 표에 10칸(늑대의입큐베라프로스) 얹기.                                  | 2026-09-15  |
 | `patch_hud_names`         | 상태창 HUD 이름판 한글화 — 0x566800 TIM(220x215 8bpp)의 캐릭터명을 한글로 (graphics-text 트랙).                             | 2026-08-17  |
 | `patch_items`             | 아이템·마법·몬스터명 정발 이식 — ED.EXE 이름 영역 재packing + lui/addiu 참조 전량 갱신.                                     | 2026-08-17  |
+| `patch_ascii_galmuri`     | 반각 영문 A–Z a–z·숫자 0–9 글리프를 GalmuriMono11 로 갈음(표 `0x80104778`, 6px 칸·잉크 5px). 마스터 10-10. | 2026-10-10  |
 | `patch_josa_hook`         | 동적 조사 훅 — 문자열 버퍼의 조사 병기(은(는)·이(가)·을(를))를 정확 조사로 재작성.                                          | 2026-08-16  |
 | `patch_hang_punct`        | 온점 매달기 훅 둘 — prewrap·드로어가 **29열을 반각 부호에만** 연다(`_hang_merge` 와 한 몸).                                 | 2026-08-28  |
 | `patch_npc_zeni_slot`     | 038 — 세레 저택 NPC 슬롯 설치 인자 한 바이트(원판 결함, 조형 id 4→6) 좌표 패치.                                            | 2026-09-15  |

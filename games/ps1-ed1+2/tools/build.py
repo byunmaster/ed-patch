@@ -299,6 +299,10 @@ def main():
     import patch_hangul_glyph_table as _phg
 
     _phg.apply()
+    # 반각 영문·숫자 갈무리(마스터 2026-10-10) — 같은 표, 한글 조각이 쓰는 칸(색인 198+)과 안 겹친다.
+    import patch_ascii_galmuri as _pag
+
+    _pag.apply()
     # 058ⓑ ④ — 글리프가 구워진 뒤에야 반각 문자열이 화면에 정상으로 나간다.
     _psu.apply_halfwidth_hud_slots()
     # 073 — 같은 이유로 글리프가 구워진 뒤에. `patch_scn_headers`(위, 사피아호수 전각)가

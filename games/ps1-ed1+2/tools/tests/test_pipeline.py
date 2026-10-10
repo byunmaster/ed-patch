@@ -1818,6 +1818,20 @@ def test_hang_stub_draw_b_reads_string_from_s7():
     assert len(en) == len(H.stub_eager_nl(0x80100000, 0x80100200))
 
 
+def test_ascii_galmuri_glyphs_fit_halfwidth_cell():
+    """반각 갈무리 글리프 — 62자 · 11B · 잉크는 열 0~4 에만(열 5~7 은 자간), 빈 글자 없음."""
+    import patch_ascii_galmuri as pag
+
+    g = pag.bake()
+    assert len(g) == 62
+    for code, rows in g.items():
+        assert len(rows) == 11
+        assert any(rows), hex(code)
+        assert all(b & 0x07 == 0 for b in rows), hex(code)
+    # 내림 글자도 11행 안에 든다(g 는 마지막 행까지 잉크가 닿는다)
+    assert g[ord("g")][10] != 0
+
+
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
 
@@ -1836,3 +1850,4 @@ def test_name_echo_allows_explicit_name_segment():
     assert not E.echoes("소니아", "이(가) 동료가 되었습니다.")  # 조사만 — 정상
     assert not E.echoes("마리", "마리{p}의 ＨＰ가{p}회복되었다.")  # 이름 조각을 제 조각에 둠 — 정상
     assert E.echoes("마리", "마리의 ＨＰ가{p}회복되었다.")  # 한 조각에 섞임 — 겹침
+
