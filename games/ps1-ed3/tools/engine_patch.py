@@ -340,6 +340,6 @@ def apply(exe, disc, table, josa=None):
     struct.pack_into("<II", exe, _off(p["site_a"]), (3 << 26) | ((p["dead"] >> 2) & 0x3FFFFFF), 0)
     import cursor_hook
 
-    cursor = cursor_hook.apply(exe, disc) if cursor_hook.enabled() else ""
+    cursor = cursor_hook.apply(exe, disc)
     panel = apply_panel(exe, disc) + apply_result_windows(exe, disc) + apply_square_window(exe, disc) + apply_lineup_window(exe, disc) + cursor
     return f"타일 합성(반 칸 {len(half)}종) · 훅 {len(words)}워드 @ {p['dead']:#x} · 자료 {len(blob)}B @ {p['data']:#x}{panel}"

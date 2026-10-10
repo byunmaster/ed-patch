@@ -41,10 +41,10 @@ class TestSquareCenter(unittest.TestCase):
         def width(line):  # 칸 수 — 0 코드 1칸 · 반 칸 공백 0.5 · 글자 1
             return sum(1 if x == 0 or 0x100 <= x < 0x8000 else 0.5 for x in line if x < 0x8000)
 
-        self.assertEqual([width(ln) for ln in lines], [5, 6, 6, 5])
+        self.assertEqual([width(ln) for ln in lines], [5, 6, 5.5, 5])  # 상태보기·퇴각하기 앞 1(+4글자) · 자동전투선택 6 · 키설정변경 앞 반 칸 + 5
         self.assertEqual(struct.unpack_from("<H", exe, OFF + 2 * N)[0], struct.unpack_from("<H", orig, OFF + 2 * N)[0])  # 30번째 워드는 건드리지 않는다
         for ln in lines:
-            self.assertLessEqual(len([x for x in ln if x < 0x8000]), 6)  # 글자 수가 열(6)을 넘으면 줄이 접힌다
+            self.assertLessEqual(len([x for x in ln if x < 0x8000]), 6)  # 글자 수가 열을 넘으면 줄이 접힌다
 
     def test_stops_on_foreign_layout(self):
         orig = bytearray(orig_image())

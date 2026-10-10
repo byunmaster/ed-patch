@@ -1,4 +1,4 @@
-"""커서 줄(글자 명령 종류 4)에 **반각 합성**을 거는 시험 훅 — `docs/cursor-line-halfwidth.md` §3·§6. 🔴 시험 빌드 전용(`ED_CURSOR_HW=1`) — 정본 이미지는 안 바꾼다.
+"""커서 줄(글자 명령 종류 4)에 **반각 합성**을 거는 훅 — `docs/cursor-line-halfwidth.md` §3·§6. 기본 빌드에 들어간다(마스터 10-10 「당연히 빌드에도 포함」, 종전 `ED_CURSOR_HW=1` 시험 손잡이는 걷었다).
 
 `0x8001A7E8`(커서가 놓인 줄을 타일로 만든다)이 글자 코드 배열(`fp+0x28`, 열 수만큼)을 채운 직후(`0x8001A9C8`)에 이 훅을 부른다. 훅은 그 줄의 **합성 타일**
 (반 칸 글자는 6px, 나머지 12px — `tile_hook` 의 24비트 시프트와 같은 계산)을 임시 버퍼에 만들고, 코드 배열을 **음수 가상 코드**로 덮는다.
@@ -22,7 +22,7 @@ R1_SHA1 = "d591f9c731a2e08e2d60836628d44ae3c107b522"  # 원본 두 구간(참조
 R2_SHA1 = "61c4151d7a3735245a7f571b2f4d1710cbece9db"
 COLS_MAX = 12  # 임시 버퍼 한계(열 + 1 타일)
 FONT = 0x8009E170
-PROTO_WINDOWS = ((6, 4),)  # 시험 빌드에서 커서 반각을 켜는 목록 창(필드 square 6×4)
+PROTO_WINDOWS = ((6, 4),)  # 시험 빌드에서 커서 반각을 켜는 목록 창(전투 square 6×4)
 
 
 def buf_layout(disc):
@@ -246,12 +246,6 @@ def build(disc):
     return w1, w2, site, lab1
 
 
-def enabled():
-    import os
-
-    return os.environ.get("ED_CURSOR_HW") == "1"
-
-
 def apply(exe, disc):
     """실행파일 bytearray 에 커서 줄 반각 훅을 넣는다(시험 빌드 전용). 사전조건(두 구간 sha1 · 훅 자리 원본 워드)이 안 맞으면 **쓰기 전에** 선다."""
     import hashlib
@@ -269,4 +263,5 @@ def apply(exe, disc):
     struct.pack_into(f"<{len(w1)}I", exe, E._off(R1), *w1)
     struct.pack_into(f"<{len(w2)}I", exe, E._off(R2), *w2)
     struct.pack_into("<II", exe, E._off(SITE), *site)
-    return f" · 커서 줄 반각 훅(시험: {4 * len(w1)}B+{4 * len(w2)}B)"
+    return f" · 커서 줄 반각 훅({4 * len(w1)}B+{4 * len(w2)}B)"
+

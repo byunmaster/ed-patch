@@ -74,6 +74,11 @@ class TestCursorHook(unittest.TestCase):
     def test_trailing_blank_cells(self):
         self.check([0x100, 0x0F0, 0x101], 6)
 
+    def test_allow_lists_agree(self):
+        """커서 줄 허용 창(`PROTO_WINDOWS`)은 대사 줄 훅 허용 목록(`MSG_WINDOWS`)의 부분집합 — 두 경로가 어긋나면 커서가 움직일 때 글자가 움직인다."""
+        self.assertTrue(set(C.PROTO_WINDOWS) <= {(c, r) for c, r, _ in tile_hook.MSG_WINDOWS})
+        self.assertIn((6, 4), C.PROTO_WINDOWS)
+
     def test_other_windows_untouched(self):
         for cols, rows, y in ((13, 4, -36), (6, 5, -36), (7, 4, -36), (9, 2, 30), (4, 2, -24)):
             cpu, S = make([0x100, 0x101, 0x102], cols, rows=rows, y=y)
