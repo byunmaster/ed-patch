@@ -21,6 +21,7 @@
 쓴다. 셀(F2·F3·F5·FB)과 코드(15)는 안 움직이므로 새 자리에서의 상대 오프셋만 재계산한다.
 """
 
+import hashlib
 import re
 import struct
 import sys
@@ -288,6 +289,10 @@ class Module:
     codes: set[int]
     bad_refs: list[int]  # goto/call 대상인데 파싱이 안 된 자리 — 재조립 전에 풀어야 한다
     tables: list[TableRef] = field(default_factory=list)
+    entries: dict[int, int] = field(default_factory=dict)  # 절대 오프셋 BE16 자리 → 스트림 시작
+    forced: dict[int, int] = field(default_factory=dict)  # 낡은 변위를 고친 lea(뿌리 규칙 밖) → 대상
+    pool_ins: int | None = None  # 문안 풀의 첫 스트림을 가리키는 lea
+    orphans: list[int] = field(default_factory=list)  # 참조 없이 앞 스트림 끝에서 이어 읽히는 스트림(ORPHANS)
 
 
 def looks_like_text(st: Stream) -> bool:
@@ -297,47 +302,237 @@ def looks_like_text(st: Stream) -> bool:
     return n >= 2 or any(t.ref or t.code == 0x1E for t in st.tokens)
 
 
-def parse_module(b: bytes) -> Module:
-    roots = lea_roots(b)
+CHAIN_HEADS = {0x08, 0x09, 0x0B, 0x0E, 0x10, 0x11, 0x12, 0x13, 0x16, 0x1E}  # 실측 뿌리 스트림 머리
+FLOW = {0x06, 0x07, 0x0A, 0x0D}  # 이 코드로 끝난 스트림은 **물리적으로 다음 스트림으로 이어진다**(상점·NPC 대사 사슬)
+
+
+def _clean(b: bytes, st: Stream) -> bool:
+    """사슬에 넣어도 되는 스트림 — 문안 꼴이고 글자 토막이 전부 SJIS 로 풀린다."""
+    if not _textlike(st):
+        return False
+    if sum(1 for t in st.tokens if t.kind == "text" for c in t.raw if is_lead(c)) < 3:
+        return False  # 화자 태그만 걸려 통과한 쓰레기(「<1e>9」)를 거른다
+    first = st.tokens[0]
+    if first.kind != "text" and first.code not in CHAIN_HEADS:
+        return False  # 표·자료가 SJIS 로 풀리는 우연(`0C xx` 로 시작)을 거른다
+    prev = None
+    for t in st.tokens:
+        if t.kind == "text":
+            try:
+                t.raw.decode("cp932")
+            except UnicodeDecodeError:
+                return False
+            if prev is not None and prev.code == 0x02 and not is_lead(t.raw[0]):
+                return False  # `02 xx` 표 항목(BE16)이 이름 삽입 + 반각 글자로 읽힌 우연
+        prev = t
+    return True
+
+
+# 블록 161(미니게임 문안, 원본 sha1) — 문안 풀 앞이 10B 밀린 채 조립돼 **문안 lea 가 전부 문장 한복판을 가리킨다**
+# (+10 하면 19곳 모두 제어코드 뒤 문장 경계, `bsr` 셋은 `48E7` 진입점). 마스터 10-11 「미니게임은 번역해 둔다」
+STALE_SHIFT = {"08ddb695eff9584f4090abbbe45ea263513f9a80": 10}
+
+
+# 연속 스트림 — 문안 호출이 `a1` 을 복원하지 않아 **앞 스트림이 00 으로 끝난 자리에서 이어 읽히는** 스트림들.
+# 가리키는 lea 가 없어 참조 규칙이 못 찾는다(숨은 일본어 덩이 56런, 마스터 10-11). 재조립이 앞 스트림만 옮기면
+# 이어 읽기가 엉뚱한 스트림으로 샌다. 원본 sha1 → 그 블록의 연속 스트림 머리들(물리 순서, 글자 없는 `00` 포함).
+# 목록 밖 자리로 넓히지 않는다. 새 바이트를 다시 읽을 땐 꼬리(옮겨 쓴 영역)의 덮이지 않은 자리가 곧 이것들이다.
+ORPHANS = {
+    "51cc4c323548de787075fd28adb96407076efd5e": [0xAE0, 0xB40],  # 33
+    "0d4db15700c95dbe70d30a80efcd8b474fa8b965": [0xAC0, 0xB7D, 0x12CD, 0x12CE, 0x13DB],  # 85
+    "ce788cd31fd939bade3b6b29732b3490d784d629": [0x9D1, 0x9F9],  # 92
+    "5803383c1252ab37f495ddd40592534c5bda3a2f": [0xEA6],  # 115
+    "44abf9621594d15e3bf8b1690d5ae11e4f6658b6": [0x794],  # 117
+    "45783940a6de82c6820dc9ecbff8606e3c9cede1": [0x7D7, 0x7D8, 0x7E5, 0x83B],  # 141
+    "b8172c01b408fec917a9d5050187c72d9d62a349": [0x1706],  # 174
+    "31cd87dd0c73bbeec77385e08be7537889519b1f": [0xE67, 0xE68],  # 176
+    "da668fd946fc8e307c6bf72574e6c6cb1c88146c": [0x86D, 0x86E],  # 223
+}
+
+
+def _walk_pool(b: bytes, first: int) -> tuple[list[int], int]:
+    """`first` 에서 연달아 읽히는 문안 스트림 머리들(글자 없는 끝 코드뿐인 줄은 건너뜀)과 풀의 끝."""
+    starts: list[int] = []
+    q = first
+    while q < len(b):
+        try:
+            st = parse_stream(b, q)
+        except (ValueError, IndexError):
+            break
+        bare = len(st.tokens) == 1 and st.tokens[0].kind == "end"
+        if not bare and not any(t.kind == "text" and any(map(is_lead, t.raw)) for t in st.tokens):
+            break
+        if not bare:
+            starts.append(q)
+        q = st.end
+        if st.tokens[-1].kind == "end" and st.tokens[-1].code == 0x00:
+            break  # 풀의 마지막 스트림은 00 으로 닫힌다 — 그 뒤는 코드다
+    return starts, q
+
+
+def fix_stale(b: bytes, shift: int) -> tuple[bytes, list[int], dict[int, int]]:
+    """(낡은 변위를 `shift` 만큼 바로잡은 사본, 문안 풀의 스트림 머리들, 고친 lea → 대상).
+    풀 = 문안 lea 중 +shift 가 깨끗한 스트림 머리(앞이 끝 코드·`rts`)인 것에서 시작해 연달아 읽히는 스트림 줄.
+    lea 는 +shift 가 풀의 머리(또는 풀 스트림 한복판 토막 머리)인 것을, 풀 안 `goto` 는 같은 만큼 고친다.
+    ⚠ **코드 쪽 분기(`bsr`·`bra`…)는 안 건드린다** — 코드도 뒤쪽 절반이 10B 밀려 있어(`bsr` 대상이 자료 한복판,
+    +10 이면 `48E7` 진입점) 고치려면 앞→뒤로 걸치는 분기를 전부 디스어셈블로 골라야 한다. 원판도 같은 상태다."""
+    leas = []
+    for m in re.finditer(rb"\x43\xfa(..)", b, re.DOTALL):
+        leas.append((m.start(), m.start() + 2 + struct.unpack(">h", m.group(1))[0] + shift))
+    ends = (0x00, 0x05, 0x06, 0x07, 0x0A, 0x0D, 0xFC, 0x75)
+    first = None
+    for _, t in sorted(leas, key=lambda x: x[1]):
+        if not 0 < t < len(b) or b[t - 1] not in ends:
+            continue
+        try:
+            st = parse_stream(b, t)
+        except (ValueError, IndexError):
+            continue
+        if _clean(b, st):
+            first = t
+            break
+    if first is None:
+        return b, [], {}
+    starts, pool_end = _walk_pool(b, first)
+
+    def inner(t: int) -> bool:
+        """풀 스트림 한복판의 토막 머리 — 앞이 끝·쪽 넘김 코드이고 거기서 읽히는 꼴이 문안이거나 끝 코드뿐이다."""
+        if not first <= t < pool_end or b[t - 1] not in ends:
+            return False
+        try:
+            st = parse_stream(b, t)
+        except (ValueError, IndexError):
+            return False
+        return (len(st.tokens) == 1 and st.tokens[0].kind == "end") or _textlike(st)
+
+    out = bytearray(b)
+    fixed: dict[int, int] = {}
+    for ins, t in leas:
+        if t in starts or inner(t):
+            out[ins + 2 : ins + 4] = struct.pack(">h", t - (ins + 2))
+            fixed[ins] = t
+    # 풀 안 `goto` 도 같은 만큼 낡았다(「会心」 뒤 goto 는 글자 한복판에 닿고, +shift 면 「痛恨」 뒤 「の 一撃」 머리)
+    for s_ in starts:
+        for tok in parse_stream(b, s_).tokens:
+            if tok.ref == GOTO and tok.target not in starts:
+                rel = struct.unpack(">h", tok.raw[1:3])[0]
+                out[tok.off + 1 : tok.off + 3] = struct.pack(">h", rel + shift)
+    return bytes(out), starts, fixed
+
+
+def parse_module(b: bytes, hint: Module | None = None) -> Module:
+    """`hint` = 원본 모듈 — 재조립한 새 바이트를 다시 읽을 때 원본이 찾은 **표 자리**(entries)를 알려 준다
+    (새 바이트에선 표가 문안 바로 앞에 붙어 있지 않아 위치만으로는 못 찾는다)."""
+    sha = hashlib.sha1(b).hexdigest()
+    if (shift := STALE_SHIFT.get(sha)) is not None:
+        b, pool, forced = fix_stale(b, shift)
+    elif hint is not None and hint.forced:
+        # 재조립한 새 바이트 — 원본이 고친 lea 자리를 그대로 뿌리로 읽고, 풀은 첫 lea 에서 다시 걷는다
+        forced = {ins: ins + 2 + struct.unpack(">h", b[ins + 2 : ins + 4])[0] for ins in hint.forced}
+        pool = _walk_pool(b, forced[hint.pool_ins])[0]
+    else:
+        pool, forced = [], {}
+    roots = lea_roots(b) | forced
     tables = table_roots(b)
     streams: dict[int, Stream] = {}
     bad: list[int] = []
     cells: set[int] = set()
     codes: set[int] = set()
     badref: list[int] = []
+    cov = bytearray(len(b))
+
+    def visit(work: list[int]) -> None:
+        while work:
+            t = work.pop()
+            if t in streams:
+                continue
+            try:
+                st = parse_stream(b, t)
+            except (ValueError, IndexError):
+                badref.append(t)
+                continue
+            streams[t] = st
+            cov[t : min(st.end, len(b))] = b"\x01" * (min(st.end, len(b)) - t)
+            # 조건부(11·12·F2·F8) 뒤의 goto 는 「3B 건너뜀」으로 넘어갈 수 있다 — 그 뒤도 뿌리다
+            if len(st.tokens) >= 2 and st.tokens[-1].code == 0x0F and st.tokens[-2].code in COND:
+                work.append(st.end)
+            for tok in st.tokens:
+                if tok.ref in (GOTO, CALL):
+                    work.append(tok.target)
+                elif tok.ref == MULTI:
+                    work.extend(tok.targets)
+                elif tok.ref == CELL:
+                    cells.add(tok.target)
+                elif tok.ref == CODE:
+                    codes.add(tok.target)
+
     work = []
     for ins, t in roots.items():
         try:
-            st = parse_stream(b, t)
+            parse_stream(b, t)
         except ValueError:
             bad.append(ins)
             continue
         work.append(t)
-    work += [tr.target for tr in tables]
-    seen = set()
-    while work:
-        t = work.pop()
-        if t in seen:
-            continue
-        seen.add(t)
-        try:
-            st = parse_stream(b, t)
-        except (ValueError, IndexError):
-            badref.append(t)
-            continue
-        streams[t] = st
-        # 조건부(11·12·F2·F8) 뒤의 goto 는 「3B 건너뜀」으로 넘어갈 수 있다 — 그 뒤도 뿌리다
-        if len(st.tokens) >= 2 and st.tokens[-1].code == 0x0F and st.tokens[-2].code in COND:
-            work.append(st.end)
-        for tok in st.tokens:
-            if tok.ref in (GOTO, CALL):
-                work.append(tok.target)
-            elif tok.ref == MULTI:
-                work.extend(tok.targets)
-            elif tok.ref == CELL:
-                cells.add(tok.target)
-            elif tok.ref == CODE:
-                codes.add(tok.target)
+    orphans = list(ORPHANS.get(sha, []))
+    work += [tr.target for tr in tables] + pool + orphans
+    visit(work)
+
+    def chain(q: int) -> list[Stream]:
+        """q 에서 흐름(FLOW 코드)을 따라가는 스트림 사슬 — 아직 안 덮인 자리만."""
+        out = []
+        while 0 <= q < len(b) and not cov[q]:
+            try:
+                st = parse_stream(b, q)
+            except (ValueError, IndexError):
+                break
+            if not _clean(b, st) or any(cov[st.start : min(st.end, len(b))]):
+                break
+            out.append(st)
+            last = st.tokens[-1]
+            if not (last.kind == "end" and last.code in FLOW):
+                break
+            q = st.end
+        return out
+
+    entries: dict[int, int] = {}
+    if hint is not None:
+        for p in hint.entries:
+            v = struct.unpack(">H", b[p : p + 2])[0]
+            entries[p] = v
+            visit([v])
+    # 흐름 이음 — 이미 찾은 스트림이 06·07·0A·0D 로 끝나고 바로 뒤에 문안이 이어진다
+    # 사슬을 한 번에 더한다(새로 더한 스트림의 이음도 같은 사슬에서 처리된다)
+    for _ in range(8):
+        grew = False
+        for st in list(streams.values()):
+            last = st.tokens[-1]
+            if last.kind == "end" and last.code in FLOW and st.end < len(b) and not cov[st.end]:
+                ch = chain(st.end)
+                if ch:
+                    visit([c.start for c in ch])
+                    grew = True
+        if hint is None:
+            grew |= _find_entries(b, cov, chain, visit, entries)
+        if not grew:
+            break
+    if hint is not None and hint.orphans:
+        # 새 바이트 — 꼬리는 스트림만 이어 붙인 영역이라, 덮이지 않은 자리가 곧 연속 스트림이다
+        q = len(hint.data) + (len(hint.data) & 1)
+        while q < len(b):
+            if q in streams:
+                q = streams[q].end
+                continue
+            if cov[q]:
+                q += 1
+                continue
+            try:
+                st = parse_stream(b, q)
+            except (ValueError, IndexError):
+                break
+            orphans.append(q)
+            visit([q])
+            q = max(st.end, q + 1)
     return Module(
         b,
         {i: t for i, t in roots.items() if i not in bad},
@@ -347,7 +542,54 @@ def parse_module(b: bytes) -> Module:
         codes,
         badref,
         tables,
+        entries,
+        forced,
+        min(forced, key=lambda i: forced[i]) if forced and hint is None else (hint.pool_ins if hint else None),
+        orphans,
     )
+
+
+def _find_entries(b, cov, chain, visit, entries) -> bool:
+    """문안 머리 바로 앞(`4E71` 은 건너뜀)에 이어 붙은 BE16 절대 오프셋 — 상점·NPC 의 「말 목록」 표.
+    값이 사슬의 스트림 시작이면 표 항목이다(사슬 안 다른 값, 예: 표 뒤 자료를 가리키는 것은 건드리지 않는다)."""
+    grew = False
+    for q in range(4, len(b)):
+        if cov[q]:
+            continue
+        r = q - 2 if b[q - 2 : q] == b"\x4e\x71" else q
+        v = struct.unpack(">H", b[r - 2 : r])[0]
+        if not q <= v < len(b):
+            continue
+        ch = chain(q)
+        if not ch:
+            continue
+        starts = {st.start for st in ch}
+        end = ch[-1].end
+        ws = []
+        extra = list(ch)
+        p = r - 2
+        while p >= 0:
+            if cov[p] or cov[p + 1]:
+                break  # 이미 문안인 자리는 표가 아니다
+            v = struct.unpack(">H", b[p : p + 2])[0]
+            if q <= v < end and v not in starts:
+                pass  # 사슬 한복판 — 글자 둘째 바이트에서 읽히는 우연이다
+            elif v in starts:
+                ws.append((p, v))
+            elif 0 < v < len(b) and not cov[v] and (c2 := chain(v)):
+                ws.append((p, v))
+                extra += c2
+            elif q <= v <= end:
+                pass  # 사슬 안/끝을 가리키는 자료 — 건드리지 않는다
+            else:
+                break
+            p -= 2
+        if q in {v for _, v in ws}:
+            for p_, v in ws:
+                entries[p_] = v
+            visit([st.start for st in extra])
+            grew = True
+    return grew
 
 
 def coverage(mod: Module) -> tuple[int, int]:
@@ -436,6 +678,11 @@ def reassemble(
         if not 0 <= v < 0x10000:
             raise ValueError(f"표 오프셋 범위 초과 @{tr.word:#x}")
         b[tr.word : tr.word + 2] = struct.pack(">H", v)
+    # 3b. 표 항목(절대 오프셋 BE16)
+    for p, v in mod.entries.items():
+        if not 0 <= pos[v] < 0x10000:
+            raise ValueError(f"표 절대 오프셋 범위 초과 @{p:#x}")
+        b[p : p + 2] = struct.pack(">H", pos[v])
     # 4. 뿌리 lea 변위
     for ins, s in mod.roots.items():
         disp = pos[s] - (ins + 2)
@@ -450,7 +697,7 @@ def verify_reassembly(
 ) -> None:
     """다시 파싱해 스트림별 토큰(raw 텍스트 + 제어코드 종류)이 의도와 같은지 본다."""
     replace = replace or {}
-    new = parse_module(new_bytes)
+    new = parse_module(new_bytes, orig)
     # 덧붙인 문안 바이트 안에서 우연히 `43 FA` 가 lea 로 읽힐 수 있다 — 원본 뿌리 자리만 맞댄다
     if any(ins not in new.roots for ins in orig.roots):
         raise ValueError("원본 뿌리가 새 모듈에서 사라졌다")
@@ -461,6 +708,8 @@ def verify_reassembly(
         remap[s] = new.roots[ins]
     for a, c in zip(orig.tables, new.tables, strict=True):
         remap[a.target] = c.target
+    for p, v in orig.entries.items():
+        remap[v] = struct.unpack(">H", new_bytes[p : p + 2])[0]
     for s, st in orig.streams.items():
         want = replace.get(s, st.tokens)
         # 뿌리가 아닌 스트림(goto/call 대상)은 뿌리에서 참조를 따라간 새 파서가 이미 품고 있다 —
@@ -528,8 +777,8 @@ if __name__ == "__main__":
             f"셀 {tot['cells']} · 코드 호출 {tot['codes']} · 참조 파싱 실패 {tot['badref']}"
         )
         print("  미도달·실패 블록:", sorted(worst, key=lambda x: -abs(x[0]))[:12])
-        if (tot["streams"], tot["hit"], tot["tags"], tot["badref"]) != (2928, 1429, 1437, 0):
-            raise SystemExit("씬 모듈 분모가 갈렸다 (기대 2928 스트림 · 1429/1437 · 실패 0)")
+        if (tot["streams"], tot["hit"], tot["tags"], tot["badref"]) != (3471, 1436, 1437, 0):
+            raise SystemExit("씬 모듈 분모가 갈렸다 (기대 3471 스트림 · 1436/1437 · 실패 0)")
         biggest = 0
         for _, b, _ in bl:
             mod = parse_module(b)

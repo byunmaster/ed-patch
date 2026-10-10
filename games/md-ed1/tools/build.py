@@ -20,6 +20,7 @@ from typing import ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(common_root := Path(__file__).resolve().parents[3] / "shared"))
+import actor_names
 import archives
 import battle
 import captions
@@ -395,6 +396,7 @@ def collect_chars(tm: dict) -> set[str]:
     chars.update(josa.chars())  # 조사 훅이 그리는 글자(는은가이를을와과으로) — 늘 굽는다
     chars.update(halfspace.chars())  # 「의␣」 — 아이템 칸 14B 에 반각 공백을 녹인 합성 글자
     chars.update(field_names.chars())  # 대본 블록 91 지명 표(문안 스트림 밖) — 늘 굽는다
+    chars.update(actor_names.chars())  # 블록 161 배우 이름 레코드(문안 스트림 밖) — 늘 굽는다
     return chars
 
 
@@ -455,6 +457,10 @@ def main(check_only: bool = False) -> None:
     new_blocks[field_names.BLOCK] = field_names.new_block(fn_base, cs)
     for dn in field_names.DEST_JP:  # 블록 92·93 목적지 표(같은 14B 칸 꼴)
         new_blocks[dn] = field_names.new_dest_block(dn, new_blocks.get(dn, bl[dn][1]), cs)
+    # 블록 161 배우 이름 레코드 둘 — 같은 길이로 덮는다
+    new_blocks[actor_names.BLOCK] = actor_names.new_block(
+        new_blocks.get(actor_names.BLOCK, bl[actor_names.BLOCK][1]), cs
+    )
     battle_blocks: dict[int, bytes] = {}
     for n, (_s, bb, _e) in enumerate(battle.blocks(orig)):
         nb = battle.plan_block(

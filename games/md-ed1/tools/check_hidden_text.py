@@ -15,6 +15,7 @@
 본다」와 충돌한다. **건수만 찍어서 줄어드는 걸 보이게 한다.**
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -23,6 +24,7 @@ import archives
 import battle
 import common
 import field_names
+import hangul
 import scene
 
 # 이미 찾아서 고친 「숨은 텍스트」 — 재발 검사가 아니라 원래 있던 자리라 계속 걸린다.
@@ -34,8 +36,15 @@ KNOWN = {
 }
 
 
-def _script_covered(data: bytes) -> list[tuple[int, int]]:
-    mod = scene.parse_module(data)
+def built_rom() -> bytes | None:
+    """구운 빌드 롬(없으면 None). 원본은 분모·대조용이고, 남은 일본어는 **구운 롬**에서 잰다."""
+    p = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_") / "ed1-kr.bin"
+    return p.read_bytes() if p.exists() else None
+
+
+def _script_covered(data: bytes, orig: bytes | None = None) -> list[tuple[int, int]]:
+    # 구운 블록은 스트림이 꼬리로 재배치돼 있어 원본 블록을 힌트로 다시 읽는다
+    mod = scene.parse_module(data, scene.parse_module(orig) if orig is not None else None)
     return [(s, st.end) for s, st in mod.streams.items()]
 
 
@@ -49,10 +58,26 @@ def _battle_covered(data: bytes) -> list[tuple[int, int]]:
     return out
 
 
-def _find_hidden(data: bytes, covered: list[tuple[int, int]], known: list[tuple[int, int]]) -> list[tuple[int, int]]:
+def hangul_codes() -> set[int]:
+    """고정된 한글 코드(`textmap/hangul_codes.json`) — 구운 롬에선 이 코드가 SJIS 꼴 런으로 보이니 일본어에서 뺀다."""
+    return set(json.loads(hangul.CODES_JSON.read_text(encoding="utf-8")).values())
+
+
+def _is_japanese(run: bytes, kr: set[int]) -> bool:
+    return any(int.from_bytes(run[i : i + 2], "big") not in kr for i in range(0, len(run) - 1, 2))
+
+
+def _find_hidden(
+    data: bytes,
+    covered: list[tuple[int, int]],
+    known: list[tuple[int, int]],
+    kr: set[int] = frozenset(),
+) -> list[tuple[int, int]]:
     hidden = []
     for m in archives.SJIS_RUN.finditer(data):
         s, e = m.start(), m.end()
+        if kr and not _is_japanese(m.group(), kr):
+            continue
         if any(cs <= s and e <= ce for cs, ce in covered):
             continue
         if any(ks <= s and e <= ke for ks, ke in known):
@@ -61,29 +86,40 @@ def _find_hidden(data: bytes, covered: list[tuple[int, int]], known: list[tuple[
     return hidden
 
 
-def check() -> None:
-    rom = common.rom()
+def scan(rom: bytes, orig: bytes) -> dict[tuple[str, int], list[tuple[int, int]]]:
+    """`rom`(구운 롬 또는 원본)의 숨은 SJIS 런. 블록 짝은 `orig` 와 맞춘다 — 원본 자신을 재면 6런이 늘 남는다."""
     found: dict[tuple[str, int], list[tuple[int, int]]] = {}
+    kr = hangul_codes() if rom is not orig else set()
     # 블록 92·93 목적지 표 — field_names 가 직접 한글로 바꾼다(위 KNOWN 과 같은 이유, 오프셋은 앵커로 찾는다)
     base0 = archives.ARCHIVES["script"][0]
     for blk in field_names.DEST_JP:
-        at = field_names._dest_start(archives.blocks(rom, base0)[blk][1], blk)
+        at = field_names._dest_start(archives.blocks(orig, base0)[blk][1], blk)
         n_cells = len(field_names.DEST_JP[blk])
         KNOWN[("script", blk)] = [(at, at + n_cells * field_names.STRIDE)]
 
     base = archives.ARCHIVES["script"][0]
+    ob = archives.blocks(orig, base)
     for n, (_s, data, _e) in enumerate(archives.blocks(rom, base)):
         known = KNOWN.get(("script", n), [])
-        hidden = _find_hidden(data, _script_covered(data), known)
+        hidden = _find_hidden(data, _script_covered(data, None if rom is orig else ob[n][1]), known, kr)
         if hidden:
             found[("script", n)] = hidden
 
     for n, (_s, data, _e) in enumerate(battle.blocks(rom)):
         known = KNOWN.get(("battle", n), [])
-        hidden = _find_hidden(data, _battle_covered(data), known)
+        hidden = _find_hidden(data, _battle_covered(data), known, kr)
         if hidden:
             found[("battle", n)] = hidden
+    return found
 
+
+def check() -> None:
+    orig = common.rom()
+    built = built_rom()
+    rom = built if built is not None else orig
+    base0 = archives.ARCHIVES["script"][0]
+    found = scan(rom, orig)
+    print(f"  숨은 텍스트 잰 대상 — {'구운 빌드 롬' if built is not None else '⚠ 빌드 없음 → 원본 롬(번역 전 수치)'}")
     if found:
         total = sum(len(h) for h in found.values())
         script_n = sum(1 for arch, _n in found if arch == "script")
