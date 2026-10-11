@@ -49,6 +49,24 @@ GLYPH_MAX = 2048  # 뱅크 둘
 HOOK_ORG = 0x8000
 TRAMPOLINE = 0x02FE52  # 뱅크 $02 빈 자리 430B
 CALL_SITE = 0x02DE0B  # JSR $E784 → JSR $FE52
+# 🔴 **빠름·멈춤(과 A 연타 skip)에선 엔진이 글자마다 창을 화면에 올리지 않는다**(`$02:DF4A` — 속도 ≥2 거나 `$1772`≠0 이면
+#    `JSR $F1AD`(→ `$00:960B` DMA)를 건너뛰고 `JMP $DF74`). 쪽이 넘어가면 엔진은 칸 배열(`$0305`)만 비우고, **화면(타일맵)엔
+#    앞 쪽이 그대로 남은 채** 새 글자를 친다 — 글자마다 `$02:B07B` 가 칸 배열 전체를 타일 표(`$010C`)로 다시 바꾸지만 그걸 VRAM 에
+#    올리는 건 쪽 끝 플러시뿐이다. 원판은 글꼴 타일이 정적이라 그동안 앞 쪽이 멀쩡히 보였지만, 우리 동적 슬롯은 새 글자가 올라올
+#    때마다 **화면에 보이는 앞 쪽의 타일을 덮는다**(2026-10-12 실측: 인트로 라이아스 쪽 넘김 — 열 글자째에서 「라이아스」→「라 ㅇ 아스」,
+#    「이제」→「ㅏ제」). ⇒ 쪽의 **첫 글자를 친 직후**(`$173B`=0) 한 번 올려 앞 쪽을 지운다 — 보통 속도가 매 글자 하는 것과 같다.
+#    건너뛰는 갈래 `$02:DF56 JMP $DF74` 를 뱅크 $02 트램펄린으로 돌린다(엔진 문맥이라 DBR=0·8비트 그대로 `JSR $F1AD`).
+FLUSH_SITE = 0x02DF56
+FLUSH_SITE_ORIG = bytes([0x4C, 0x74, 0xDF])  # JMP $DF74
+FLUSH_TRAMPOLINE = 0x02FE80
+FLUSH_TRAMP_BYTES = bytes(
+    [
+        0xAD, 0x3B, 0x17,  # LDA $173B
+        0xD0, 0x03,  # BNE +3  (첫 칸이 아니면 건너뛴다)
+        0x20, 0xAD, 0xF1,  # JSR $F1AD  (칸 > $FF 가 아니라서 `$00:960B` 까지 간다)
+        0x4C, 0x74, 0xDF,  # JMP $DF74
+    ]
+)
 # 🔴 **글자가 들어오는 문은 둘이다**(2026-09-07 실측). `$02:DDEE` 가 사전 버퍼가 켜져 있으면
 # 대본 대신 **버퍼**에서 한 바이트를 집어 같은 `$173A` 로 보낸다:
 #     $DDF9  LDA $174C,X / CMP #$FF / BNE $DE0E     ← 두 번째 문
@@ -1924,6 +1942,14 @@ def apply(
     # 1. 트램펄린: JSL 훅 + RTS (원본 JSR 과 자리를 맞춘다)
     t = common.snes2off(TRAMPOLINE)
     out[t : t + 5] = bytes([0x22, hook_addr & 0xFF, (hook_addr >> 8) & 0xFF, HOOK_BANK, 0x60])
+    ft = common.snes2off(FLUSH_TRAMPOLINE)
+    if bytes(rom[ft : ft + len(FLUSH_TRAMP_BYTES)]) != b"\xff" * len(FLUSH_TRAMP_BYTES):
+        raise SystemExit(f"쪽 첫 글자 플러시 트램펄린 자리가 비어 있지 않다 {common.fmt(FLUSH_TRAMPOLINE)}")
+    out[ft : ft + len(FLUSH_TRAMP_BYTES)] = FLUSH_TRAMP_BYTES
+    fs = common.snes2off(FLUSH_SITE)
+    if bytes(rom[fs : fs + 3]) != FLUSH_SITE_ORIG:
+        raise SystemExit(f"쪽 첫 글자 플러시 자리가 예상과 다르다: {rom[fs : fs + 3].hex()}")
+    out[fs : fs + 3] = bytes([0x4C, FLUSH_TRAMPOLINE & 0xFF, (FLUSH_TRAMPOLINE >> 8) & 0xFF])
     # 2. 소비 지점: JSR $E784 → JSR $FE52
     c = common.snes2off(CALL_SITE)
     if bytes(rom[c : c + 3]) != bytes([0x20, 0x84, 0xE7]):
@@ -2108,5 +2134,7 @@ def patch_ranges() -> list[tuple[int, int]]:
         (common.snes2off(ENDING_CTX_SITE), common.snes2off(ENDING_CTX_SITE) + 5),
         *[(common.snes2off(s_), common.snes2off(s_) + 3) for s_ in FONT_CALL_SITES],
         (common.snes2off(FONT_TRAMPOLINE), common.snes2off(FONT_TRAMPOLINE) + 8),
+        (common.snes2off(FLUSH_TRAMPOLINE), common.snes2off(FLUSH_TRAMPOLINE) + len(FLUSH_TRAMP_BYTES)),
+        (common.snes2off(FLUSH_SITE), common.snes2off(FLUSH_SITE) + 3),
     ]
 
