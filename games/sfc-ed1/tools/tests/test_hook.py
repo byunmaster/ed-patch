@@ -166,6 +166,7 @@ VWF_ENTRY = {
     "vbL7": (True, False, "chunk"),
     "vwf_enq": (True, False, "near"),
     "vwf_ldg_h": (True, False, "near"),
+    "lgh_h": (True, False, "chunk"),
     "vwf_ldg_r": (True, False, "near"),
     "vwf_ldg_n": (True, False, "near"),
     "wk_nm": (True, False, "near"),

@@ -3,7 +3,7 @@
 지금은 **원문을 글자 하나 안 바꾸고** 옮긴다. 목적은 재삽입의 뼈대 검증이다:
   · 롬 2MB 확장(LoROM 뱅크 $20~$3F)을 게임이 읽는가
   · 포인터 표 4벌 · $F9 절대 호출을 되쓴 자리를 게임이 따라오는가
-  · 원래 자리($07:A721~$0B:FE75)를 $FF 로 지워도 사는가 — 숨은 독자(코드가 직접 읽는 문안)가 없다는 증거
+  · 원래 자리($07:A721~$0B:FD03)를 $FF 로 지워도 사는가 — 숨은 독자(코드가 직접 읽는 문안)가 없다는 증거
 원본 뱅크 k 의 문안은 새 뱅크 $20+k 의 **같은 뱅크 안 주소**에 놓는다 — rel16 은 뱅크를 못 넘고,
 한 뱅크 안에서 균일하게 옮기면 상대 오프셋이 변하지 않아 옮기기 자체가 안전하다(절대 참조만 바뀐다).
 
@@ -67,7 +67,10 @@ BOX_W = 7
 # 🔴 예전엔 가나 세 행(48자리)을 통째로 빌렸다. 그러면 **쓰지도 않는 26자리가 묶여** 대사 슬롯이
 # 굶는다 — 상주와 동적이 같은 웅덩이를 나눠 쓰기 때문이다(`tools/tiles.py`). 이제 필요한 만큼만
 # 앞에서 가져가고, 남은 것이 전부 동적 슬롯이 된다.
-BODY = (text.TEXT_START, 0x0BFE76)  # 옮기는 구간(절반 열림)
+# 본체 안이지만 **코드가 읽는 자료**라 제자리에 남기는 구간 — `$02:8A3B` 표(21칸)가 가리키고 `$02:8906` 이 `lda [$3F]` 로 읽는다.
+# 본체 비우기 뒤에 원바이트를 되돌린다(안의 `EF`·`FC` 메시지는 평소대로 옮겨 가고, 이 구간의 사본만 이동본에 남는다).
+PINNED = [(0x0BE293, 0x0BE2EC)]
+BODY = (text.TEXT_START, text.TEXT_END)  # 옮기는 구간(절반 열림) — 그 뒤 $0B:FD04~FE75 는 네이티브 코드라 제자리
 HEADER_ROM_SIZE_OFF = common.HEADER_OFF + 0x17
 CHECKSUM_OFF = common.HEADER_OFF + 0x1C  # cmpl(2) + chk(2)
 
@@ -77,21 +80,42 @@ def relocation_plan(items: list[script.Item]) -> dict[int, int]:
     return {it.off: it.off + BANK_SHIFT * 0x8000 for it in items}
 
 
+def restore_pinned(out: bytearray, rom: bytes) -> None:
+    """본체를 비운 뒤 제자리 고정 구간(`PINNED`)을 원바이트로 되돌리고, 같은지 확인한다."""
+    for a, b in PINNED:
+        x, y = common.snes2off(a), common.snes2off(b)
+        out[x:y] = rom[x:y]
+        if bytes(out[x:y]) != rom[x:y]:
+            raise SystemExit(f"제자리 고정 구간이 원본과 다르다: {common.fmt(a)}")
+
+
 def body_items(rom: bytes) -> list[script.Item]:
-    return script.parse_region(
+    items = script.parse_region(
         rom, common.snes2off(BODY[0]), common.snes2off(BODY[1]), script.pointer_anchors(rom)
     )
+    # 🔴 `EE addr24` (네이티브 호출)이 본체 안을 가리키면 본체를 옮기거나 지울 때 그 호출이 `$FF` 를 실행한다.
+    #    $0B:FD04~FE75 가 코드인 걸 못 보고 문안으로 옮겼다가 238곳이 깨졌다(10-12) — 이제 본체 밖이어야 한다.
+    lo, hi = common.snes2off(BODY[0]), common.snes2off(BODY[1])
+    bad = sorted(
+        {
+            common.fmt(int.from_bytes(it.args[:3], "little"))
+            for it in items
+            if it.kind == "ctrl"
+            and it.code == 0xEE
+            and 0x8000 <= (int.from_bytes(it.args[:3], "little") & 0xFFFF)
+            and lo <= common.snes2off(int.from_bytes(it.args[:3], "little")) < hi
+        }
+    )
+    if bad:
+        raise SystemExit(f"EE 네이티브 호출이 옮기는 본체 안을 가리킨다(코드를 옮기면 깨진다): {bad}")
+    return items
 
 
 def table_targets(rom: bytes) -> set[int]:
     """메시지 포인터 표 넷이 가리키는 원문 오프셋 전부."""
-    out: set[int] = set()
-    for addr, count in text.MSG_TABLES.values():
-        base = common.snes2off(addr)
-        for i in range(count):
-            p = rom[base + 3 * i] | (rom[base + 3 * i + 1] << 8) | (rom[base + 3 * i + 2] << 16)
-            out.add(common.snes2off(p))
-    return out
+    import units
+
+    return units.table_targets(rom)
 
 
 def rewrite_tables(out: bytearray, place: dict[int, int], rom: bytes) -> int:
@@ -637,6 +661,7 @@ def build(rom: bytes) -> tuple[bytes, dict]:
     out = bytearray(rom) + bytearray(b"\xff" * (NEW_SIZE - len(rom)))
     s, e = common.snes2off(BODY[0]), common.snes2off(BODY[1])
     out[s:e] = b"\xff" * (e - s)  # 원래 자리를 비운다 — 숨은 독자 검출
+    restore_pinned(out, rom)
     ns = place[items[0].off]
     out[ns : ns + len(body)] = body
     n_ptr = rewrite_tables(out, place, rom)
@@ -803,8 +828,10 @@ def verify(rom: bytes, out: bytes, place: dict[int, int]) -> dict:
         for a, b in zip(po, pn, strict=True):
             if a == b and common.snes2off(a) not in place:
                 continue  # 안 옮긴 항목(표 자신을 가리키는 더미 · 뱅크 $05/$1E) — 비교 대상이 아니다
-            so = text.parse_span(rom, common.snes2off(a), None)[0][1]
-            sn = text.parse_span(out, common.snes2off(b), None)[0][1]
+            # 본체 끝에서 자른다 — END 없이 `F9` 로 끝나는 마지막 조각 뒤는 네이티브 코드다(`text.TEXT_END`)
+            end_o = common.snes2off(text.TEXT_END)
+            so = text.parse_span(rom, common.snes2off(a), end_o)[0][1]
+            sn = text.parse_span(out, common.snes2off(b), end_o + BANK_SHIFT * 0x8000)[0][1]
             total += 1
             if so != unshift_f9(sn):
                 mism += 1
@@ -832,9 +859,10 @@ def verify(rom: bytes, out: bytes, place: dict[int, int]) -> dict:
 KR_BANKS = [
     b
     for b in range(0x27, 0x40)
-    if b not in (0x2C, 0x2E, hook.GLYPH_BANK, dicts.BANK, hook.HOOK_BANK)
+    if b not in (0x2C, 0x2E, hook.GLYPH_BANK, hook.GLYPH_BANK2, dicts.BANK, hook.HOOK_BANK)
 ]
 BANK_CAP = 0x8000
+STUB_SIZE = 8  # 중계 조각: FC +3 · F9 abs24 · FE
 
 
 def segment_slices(items: list[script.Item]) -> list[tuple[str, int, int]]:
@@ -857,6 +885,9 @@ def segment_slices(items: list[script.Item]) -> list[tuple[str, int, int]]:
             raw = b"".join(bytes([x.code]) + x.args for x in items[start : k + 1])
             out.append((hashlib.sha1(raw).hexdigest()[:12], start, k + 1))
             start = k + 1
+    if start < len(items):  # 본체가 END 없이 끝나는 마지막 조각(`F9` 로 끝난다)
+        raw = b"".join(bytes([x.code]) + x.args for x in items[start:])
+        out.append((hashlib.sha1(raw).hexdigest()[:12], start, len(items)))
     return out
 
 
@@ -900,6 +931,7 @@ def kr_items(
     states=("reviewed", "draft", "tm-draft"),
     only: set[str] | None = None,
     enc_override=None,
+    relay_fd: frozenset = frozenset(),
 ) -> dict:
     """원문 항목 열에 번역을 끼운 새 항목 열 + 라벨 매핑 + 통계.
 
@@ -1027,7 +1059,14 @@ def kr_items(
         # 원문에서 「제어 바로 뒤 글자」를 가리키던 목표 → 그 제어의 새 자리 다음 항목
         seg_new = new[seg_new_start:]
         for j, it in enumerate(seg):
-            if it.kind == "char" and it.off in targets_all and j > 0 and seg[j - 1].kind == "ctrl":
+            # 🔴 제어 바로 뒤가 **사전 토큰**이어도 목표가 될 수 있다(표 목표 `$0B:95FB` = `<FF>{D5:24}`) —
+            #    번역문이 그 토큰을 글로 풀어 썼으면 제어 다음 자리가 새 목표다(마스터 10-11 앵커 풀기)
+            if (
+                it.kind in ("char", "dict")
+                and it.off in targets_all
+                and j > 0
+                and seg[j - 1].kind == "ctrl"
+            ):
                 prev = seg[j - 1]
                 kidx = next((seg_new_start + m for m, x in enumerate(seg_new) if x is prev), None)
                 if kidx is not None and kidx + 1 < len(new):
@@ -1046,7 +1085,7 @@ def kr_items(
                 )
         for tok, rest in dict_pool.items():
             for it in rest:
-                if it.off in targets_all:
+                if it.off in targets_all and it.off not in label_map:
                     stats["errors"].append((sid, f"분기 목표인 사전 토큰 {tok} 이 번역문에 없다"))
         assert ci == len(ctrls) and li == len(mids), sid
         stats["translated"] += 1
@@ -1067,7 +1106,8 @@ def kr_items(
         for it in items[a:e]:
             off_seg[it.off] = si
     for k, it in enumerate(new):
-        if it.kind == "ctrl" and it.code in (0xFA, 0xFC, 0xFB, 0xFD):
+        # 🔴 FC(호출)는 군집을 묶지 않는다 — 군집 밖으로 가는 호출은 아래에서 중계 조각으로 바꾼다(마스터 10-11)
+        if it.kind == "ctrl" and it.code in (0xFA, 0xFB, 0xFD):
             for t in it.targets:
                 if t in off_seg:
                     ra, rb = find(seg_of[k]), find(off_seg[t])
@@ -1114,8 +1154,37 @@ def kr_items(
         ra, rb = find(opening_slices[0]), find(si)
         if ra != rb:
             parent[rb] = ra
-    comp_of = [find(i) for i in range(len(slices))]
+    # 🔴 **군집 밖으로 가는 FC 는 중계 조각을 거친다**(마스터 10-11 「구조문제 해결해」).
+    #   FC 는 rel16 이라 같은 뱅크여야 하는데, 이걸 군집 간선으로 묶었더니 $0A·$0B 군집이 32KB 에 닿았다.
+    #   엔진 F9(절대 호출, `$02:E53F`)는 **호출 틀을 쌓지 않는다**(`$02:E7A0` 안 부름) — FC→F9 로 그냥
+    #   바꾸면 호출자의 복귀 주소(`$173C`)를 덮어쓴다. 그래서 호출자 군집 끝에 중계 조각을 둔다:
+    #   `FC +3`(바로 다음 칸을 호출 = 틀만 쌓는다) · `F9 목표` · `FE`. 호출자 → 중계 → 목표, 복귀는
+    #   목표 FE → 중계 FE → 호출자 다음 바이트. 키는 음수(가짜 오프셋)이고 자리는 pack_banks 가 준다.
+    import dataclasses
+
+    comp_pre = [find(i) for i in range(len(slices))]
+    stubs: dict[int, list[tuple[int, int]]] = {}  # 군집 → [(키, 목표 오프셋)]
+    stub_key: dict[tuple[int, int], int] = {}
+    for kk, it in enumerate(new):
+        if it.kind == "ctrl" and it.code == 0xFC and it.targets and it.targets[0] in off_seg:
+            t = it.targets[0]
+            c = comp_pre[seg_of[kk]]
+            if comp_pre[off_seg[t]] == c:
+                continue
+            key = stub_key.get((c, t))
+            if key is None:
+                fake_off -= 1
+                key = fake_off
+                stub_key[(c, t)] = key
+                stubs.setdefault(c, []).append((key, t))
+            new[kk] = dataclasses.replace(it, targets=[key])
+    for kk, it in enumerate(new):  # FD 중계 — 8비트를 넘는 슬롯이 있던 FD (build_kr 가 배치 뒤에 찾아 되돌려 준다)
+        if it.kind == "ctrl" and it.code == 0xFD and it.off in relay_fd:
+            new[kk] = dataclasses.replace(it, relay=True)
+    comp_of = comp_pre
     return {
+        "stubs": stubs,
+        "stub_of": {key: t for lst in stubs.values() for key, t in lst},
         "items": new,
         "slices": slices,
         "seg_of": seg_of,
@@ -1129,6 +1198,88 @@ def kr_items(
     }
 
 
+def verify_flow(out: bytearray, k: dict, pk: dict, full_place: dict) -> dict:
+    """🔴 **구운 롬을 읽어** 분기·호출·FD 슬롯이 정말 원문 목표의 새 자리로 닿는가 — 중계 조각(FC→FC+3·F9·FE)과
+    FD 중계(슬롯→FA→목표)를 지나서 본다. 되읽기가 「쓴 값」이 아니라 「엔진이 따라갈 길」을 재도록."""
+    new = k["items"]
+    stub_of = k["stub_of"]
+    n = {"FA": 0, "FC": 0, "FC중계": 0, "F9": 0, "FD": 0, "FD중계": 0}
+
+    def rel(o: int) -> int:
+        d = out[o + 1] | (out[o + 2] << 8)
+        return o + (d - 0x10000 if d >= 0x8000 else d)
+
+    for i, it in enumerate(new):
+        if it.kind != "ctrl" or not it.targets or it.code not in (0xF9, 0xFA, 0xFC, 0xFD):
+            continue
+        o = pk["new_off"][i]
+        if out[o] != it.code:
+            raise SystemExit(f"흐름 검증: {common.fmt(common.off2snes(o))} 첫 바이트가 {it.code:02X} 이 아니다")
+        t0 = it.targets[0]
+        if it.code == 0xF9:
+            if t0 >= 0:
+                exp = common.off2snes(full_place.get(t0, t0))
+                got = out[o + 1] | (out[o + 2] << 8) | (out[o + 3] << 16)
+                if got != exp:
+                    raise SystemExit(f"흐름 검증: F9 {common.fmt(common.off2snes(o))} {got:06X}≠{exp:06X}")
+                n["F9"] += 1
+        elif it.code == 0xFA:
+            if rel(o) != full_place.get(t0, t0):
+                raise SystemExit(
+                    f"흐름 검증: FA {common.fmt(common.off2snes(o))} 목표가 어긋난다 "
+                    f"{common.fmt(common.off2snes(rel(o)))}≠{common.fmt(common.off2snes(full_place.get(t0, t0)))}"
+                )
+            n["FA"] += 1
+        elif it.code == 0xFC:
+            dst = rel(o)
+            if t0 < 0:  # 중계: FC +3 · F9 abs · FE
+                tgt = stub_of[t0]
+                exp = common.off2snes(full_place.get(tgt, tgt))
+                st = bytes(out[dst : dst + STUB_SIZE])
+                want = bytes([0xFC, 3, 0, 0xF9]) + exp.to_bytes(3, "little") + b"\xfe"
+                if st != want or dst != full_place[t0]:
+                    raise SystemExit(f"흐름 검증: FC 중계 {common.fmt(common.off2snes(o))} 조각이 다르다")
+                n["FC중계"] += 1
+            else:
+                if dst != full_place.get(t0, t0):
+                    raise SystemExit(f"흐름 검증: FC {common.fmt(common.off2snes(o))} 목표가 어긋난다")
+                n["FC"] += 1
+        else:  # FD
+            for j, t in enumerate(it.targets):
+                if j in it.dead or t < 0:
+                    continue
+                exp = full_place.get(t, t)
+                dst = o + out[o + 1 + j]
+                if it.relay:
+                    if out[dst] != 0xFA or rel(dst) != exp:
+                        raise SystemExit(f"흐름 검증: FD 중계 {common.fmt(common.off2snes(o))} 슬롯 {j}")
+                    n["FD중계"] += 1
+                elif dst != exp:
+                    raise SystemExit(f"흐름 검증: FD {common.fmt(common.off2snes(o))} 슬롯 {j}")
+                else:
+                    n["FD"] += 1
+            if it.relay:
+                end = o + it.size
+                if out[o + 6] != 0xFA or rel(o + 6) != end:
+                    raise SystemExit(f"흐름 검증: FD 중계 {common.fmt(common.off2snes(o))} 복귀 건너뛰기")
+    return n
+
+
+def fd_overflows(k: dict, pk: dict) -> frozenset:
+    """배치 뒤 슬롯 거리가 8비트를 넘는 FD 의 원문 오프셋 — 이것들은 중계를 단다."""
+    over = set()
+    for i, it in enumerate(k["items"]):
+        if it.kind != "ctrl" or it.code != 0xFD or it.relay:
+            continue
+        for j, t in enumerate(it.targets):
+            if j in it.dead or t < 0:
+                continue
+            d = pk["place"].get(t, t) - pk["new_off"][i]
+            if not (0 <= d < 256):
+                over.add(it.off)
+    return frozenset(over)
+
+
 def pack_banks(k: dict) -> dict:
     """군집을 원문 순서대로 first-fit 으로 뱅크에 담아 place(원문 오프셋 → 새 오프셋)를 만든다."""
     new, slices, seg_of, comp_of = k["items"], k["slices"], k["seg_of"], k["comp_of"]
@@ -1139,8 +1290,10 @@ def pack_banks(k: dict) -> dict:
     comp_segs: dict[int, list[int]] = {}
     for si in range(len(slices)):
         comp_segs.setdefault(comp_of[si], []).append(si)
+    stubs = k.get("stubs", {})
     comp_size = {
         c: sum(new[i].size for si in segs for i in seg_items.get(si, []))
+        + STUB_SIZE * len(stubs.get(c, []))
         for c, segs in comp_segs.items()
     }
     banks = []  # [bank, used]
@@ -1167,6 +1320,9 @@ def pack_banks(k: dict) -> dict:
             new_off[i] = cursor[c]
             cursor[c] += new[i].size
     place: dict[int, int] = {}
+    for c, lst in stubs.items():  # 중계 조각 — 군집 끝(조각들 바로 뒤)
+        for n, (key, _t) in enumerate(lst):
+            place[key] = cursor[c] + STUB_SIZE * n
     for i, it in enumerate(new):
         if it.off >= 0:
             place[it.off] = new_off[i]
@@ -1307,13 +1463,21 @@ def build_kr(
     after=None,
     with_hook: bool = True,
 ) -> tuple[bytes, dict]:
-    k = kr_items(rom, states, only, enc_override)
-    pk = pack_banks(k)
+    relay: frozenset = frozenset()
+    while True:
+        k = kr_items(rom, states, only, enc_override, relay)
+        pk = pack_banks(k)
+        over = fd_overflows(k, pk) - relay
+        if not over:
+            break
+        relay = relay | over
+    k["stats"]["fd_relays"] = len(relay)
     new, place = k["items"], pk["place"]
     out = bytearray(rom) + bytearray(b"\xff" * (NEW_SIZE - len(rom)))
     led = Ledger(out)  # ⚠ **첫 쓰기 전에** 연다 — 본체 이관도 원장에 들어가야 한다
     s, e = common.snes2off(BODY[0]), common.snes2off(BODY[1])
     out[s:e] = b"\xff" * (e - s)
+    restore_pinned(out, rom)
     # 뱅크별로 이어 쓴다 — 항목마다 자기 새 오프셋에
     full_place = place | {it.off: pk["new_off"][i] for i, it in enumerate(new) if it.off < 0}
     unresolved = sorted(
@@ -1335,12 +1499,21 @@ def build_kr(
         )
         for t in unresolved:  # 보고를 위해 임시로 제자리(원문) — 실패로 친다
             full_place[t] = t
-    body = script.emit(new, full_place, strict=not unresolved)
+    body = script.emit(
+        new, full_place, strict=not unresolved, own=[pk["new_off"][i] for i in range(len(new))]
+    )
     pos = 0
     for i, it in enumerate(new):
         n = it.size
         out[pk["new_off"][i] : pk["new_off"][i] + n] = body[pos : pos + n]
         pos += n
+    for lst in k["stubs"].values():
+        for key, t in lst:
+            a = common.off2snes(full_place.get(t, t))
+            o = place[key]
+            out[o : o + STUB_SIZE] = bytes([0xFC, 3, 0, 0xF9]) + a.to_bytes(3, "little") + b"\xfe"
+    flow = verify_flow(out, k, pk, full_place)
+    k["stats"]["flow"] = flow
     n_ptr = rewrite_tables(out, place, rom)
     # ⚠ 본체를 $FF 로 비운 뒤 그 안의 표(alt3 는 본체 구간 안에 있다)를 다시 쓴다 —
     #   **한 덩이**라 한 단계로 센다. 원장이 잡아야 할 것은 「지웠다 다시 쓰기」가 아니라
@@ -1427,6 +1600,8 @@ def build_kr(
         "per_orig_bank_jp_kr": per_bank,
         "components": pk["n_comp"],
         "max_component": max(pk["comp_size"].values()),
+        "flow": k["stats"].get("flow"),
+        "fd_relays": k["stats"].get("fd_relays"),
         "banks_used": [(f"${b:02X}", used) for b, used in pk["banks"]],
         "pointers_rewritten": n_ptr,
         "terminators_checked": n_term,

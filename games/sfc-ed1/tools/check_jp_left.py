@@ -8,26 +8,46 @@
   python3 tools/check_jp_left.py
 """
 
+import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import common  # noqa: E402
 import names_corpus  # noqa: E402
+
+
+def data_fragments() -> set[str]:
+    """화면에 안 나온다는 근거가 있는 데이터 파편 id(textmap/data_fragments.json) — 경고로만 센다."""
+    p = common.GAME_DIR / "textmap" / "data_fragments.json"
+    return set(json.loads(p.read_text(encoding="utf-8"))["ids"]) if p.exists() else set()
 
 
 def main() -> int:
     tot: dict[str, int] = {}
     left: dict[str, list[str]] = {}
+    warn: list[str] = []  # 근거 있는 데이터 파편(경고 — 통과)
+    dead = data_fragments()
     for where, jp, kr, _kind in names_corpus.screen_pairs():
         area = where.split(":")[0]
         tot[area] = tot.get(area, 0) + 1
         if not kr:
+            if area == "seg" and where.split(":")[1].split("@")[0] in dead:
+                warn.append(where)
+                continue
             left.setdefault(area, []).append(f"{where} {jp[:14]!r}")
     bad = 0
     for area in sorted(tot):
         n = len(left.get(area, []))
+        w = len(warn) if area == "seg" else 0
         slot = area != "seg"
-        print(f"  {area:6s} 번역 {tot[area] - n:,}/{tot[area]:,} · 일본어 잔존 {n}{' ⛔' if slot and n else ''}")
+        # 🔴 근거 있는 데이터 파편(textmap/data_fragments.json)은 「경고」로 따로 센다 — 검사에는 걸리지만 통과(마스터 10-11).
+        #    목록 밖 잔존은 종전처럼 일본어 잔존으로 센다(문장은 번역 중이라 알리기만 · 칸은 실패)
+        print(
+            f"  {area:6s} 번역 {tot[area] - n - w:,}/{tot[area]:,} · 일본어 잔존 {n}"
+            + (f" · ⚠ 경고(화면에 안 나오는 데이터 파편) {w}" if w else "")
+            + (" ⛔" if slot and n else "")
+        )
         if slot and n:
             bad += n
             for s in left[area][:10]:

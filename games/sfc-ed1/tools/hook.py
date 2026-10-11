@@ -42,7 +42,10 @@ HOOK_BANK = 0x3F  # 훅 코드 + 표
 GLYPH_BANK = 0x3D  # 글리프 2bpp 32B/자
 DICT_BANK = 0x3E  # 사전·전투 UI 문자열(`tools/dicts.py`·`battle_ui.py`)
 GLYPH_BASE = (GLYPH_BANK << 16) | 0x8000
-GLYPH_MAX = 1024  # 한 뱅크 = 32,768B ÷ 32B. 넘으면 뱅크를 갈라야 한다(그때 훅도 고친다)
+GLYPH_BANK2 = 0x3C  # 둘째 글리프 뱅크 — 색인 1,024~2,047(마스터 10-11: 1,024 에 닿으면 둘째 뱅크로)
+GLYPH_BASE2 = (GLYPH_BANK2 << 16) | 0x8000
+GLYPH_BASE2_X = GLYPH_BANK2 << 16  # X(=색인×32 ≥ $8000)를 더하면 뱅크 안 $8000~ 으로 떨어진다
+GLYPH_MAX = 2048  # 뱅크 둘
 HOOK_ORG = 0x8000
 TRAMPOLINE = 0x02FE52  # 뱅크 $02 빈 자리 430B
 CALL_SITE = 0x02DE0B  # JSR $E784 → JSR $FE52
@@ -1678,64 +1681,54 @@ def build_payload(
     #    이면 평면1 을 평면0 으로 덮어써 꺼진 픽셀이 색인 0(투명)이 되게 하고, 인게임(=0)
     #    이면 원본 그대로(평면1=`$FF`, 불투명 박스)를 둔다. 소스 뱅크(`$3D`)는 그대로 —
     #    "서명"(평면1=`$FF`)은 여기 오프닝 분기를 타지 않는 인게임 타일에서는 계속 유효하다.
-    a.sep(imm=0x20)
-    a.op("lda", addr=V_UCTX, mode="long")
-    a.rep(imm=0x30)
-    a.beq(label="u1_ig")
-    a.ldy(imm=0x0008, m16=True)
-    a.label("u1")
-    a.op("lda", addr=GLYPH_BASE, mode="longx")
-    a.op("and", imm=0x00FF, m16=True)  # 평면1 을 비우고
-    a.op("sta", addr=V_U0, mode="long")
-    a.xba()  # 평면0 을 상위 바이트로 옮겨
-    a.op("ora", addr=V_U0, mode="long")  # 평면1 자리에 평면0 을 복제 — 꺼진 칸 = 색인 0(투명)
-    a.op("sta", addr=0x2118, mode="abs")
-    a.inx()
-    a.inx()
-    a.dey()
-    a.bne(label="u1")
-    a.bra(label="u1_done")
-    a.label("u1_ig")
-    a.ldy(imm=0x0008, m16=True)
-    a.label("u1i")
-    a.op("lda", addr=GLYPH_BASE, mode="longx")  # 인게임 — 원본 그대로(평면1=`$FF`, 불투명)
-    a.op("sta", addr=0x2118, mode="abs")
-    a.inx()
-    a.inx()
-    a.dey()
-    a.bne(label="u1i")
-    a.label("u1_done")
+    # 🔴 글리프 색인 1,024 이상은 **둘째 뱅크**(`GLYPH_BASE2`) — X(=색인×32)가 `$8000` 이상이면 둘째 뱅크
+    #    루프를 탄다. 한 뱅크가 32KB 라 24비트 주소가 이어지지 않는다(마스터 10-11). 뱅크마다 루프를 따로
+    #    둬서 반복 안에는 분기가 없다(NMI 드레인 시간 불변). 둘째 반 타일에서도 X 는 `$8000` 을 안 넘나든다.
+    def glyph_pass(tag: str, ig_first: bool):
+        """한 타일(8워드)을 VRAM 으로. 오프닝/스태프롤(평면1 복제)과 인게임(원본), 낮은/높은 뱅크 네 루프."""
+        base_lo, base_hi = GLYPH_BASE, GLYPH_BASE2_X
+
+        def loop(lbl, base, opening):
+            a.ldy(imm=0x0008, m16=True)
+            a.label(lbl)
+            a.op("lda", addr=base, mode="longx")
+            if opening:
+                a.op("and", imm=0x00FF, m16=True)  # 평면1 을 비우고
+                a.op("sta", addr=V_U0, mode="long")
+                a.xba()  # 평면0 을 상위 바이트로 옮겨
+                a.op("ora", addr=V_U0, mode="long")  # 평면1 자리에 평면0 을 복제 — 꺼진 칸 = 색인 0(투명)
+            a.op("sta", addr=0x2118, mode="abs")
+            a.inx()
+            a.inx()
+            a.dey()
+            a.bne(label=lbl)
+
+        a.sep(imm=0x20)
+        a.op("lda", addr=V_UCTX, mode="long")
+        a.rep(imm=0x30)
+        a.beq(label=f"{tag}_ig")
+        a.op("cpx", imm=0x8000, m16=True)
+        a.bcs(label=f"{tag}_ohi")
+        loop(f"{tag}", base_lo, True)
+        a.bra(label=f"{tag}_done")
+        a.label(f"{tag}_ig")
+        a.op("cpx", imm=0x8000, m16=True)
+        a.bcs(label=f"{tag}_ihi")
+        loop(f"{tag}i", base_lo, False)
+        a.bra(label=f"{tag}_done")
+        a.label(f"{tag}_ohi")
+        loop(f"{tag}oh", base_hi, True)
+        a.bra(label=f"{tag}_done")
+        a.label(f"{tag}_ihi")
+        loop(f"{tag}ih", base_hi, False)
+        a.label(f"{tag}_done")
+
+    glyph_pass("u1", True)
     a.op("lda", addr=V_UV, mode="long")
     a.clc()
     a.adc(imm=0x0080, m16=True)
     a.op("sta", addr=0x2116, mode="abs")
-    a.sep(imm=0x20)
-    a.op("lda", addr=V_UCTX, mode="long")
-    a.rep(imm=0x30)
-    a.beq(label="u2_ig")
-    a.ldy(imm=0x0008, m16=True)
-    a.label("u2")
-    a.op("lda", addr=GLYPH_BASE, mode="longx")
-    a.op("and", imm=0x00FF, m16=True)
-    a.op("sta", addr=V_U0, mode="long")
-    a.xba()
-    a.op("ora", addr=V_U0, mode="long")
-    a.op("sta", addr=0x2118, mode="abs")
-    a.inx()
-    a.inx()
-    a.dey()
-    a.bne(label="u2")
-    a.bra(label="u2_done")
-    a.label("u2_ig")
-    a.ldy(imm=0x0008, m16=True)
-    a.label("u2i")
-    a.op("lda", addr=GLYPH_BASE, mode="longx")
-    a.op("sta", addr=0x2118, mode="abs")
-    a.inx()
-    a.inx()
-    a.dey()
-    a.bne(label="u2i")
-    a.label("u2_done")
+    glyph_pass("u2", False)
     a.sep(imm=0x20)
     a.rts()
     if vwf:
@@ -1807,6 +1800,7 @@ def build_payload(
                 "xfrom": xfrom,
                 "QN": QN,
                 "GLYPH_BASE": GLYPH_BASE,
+                "GLYPH_BASE2_X": GLYPH_BASE2_X,
             },
         )
     code_end = a.pos
@@ -1901,7 +1895,7 @@ def apply(
     """훅 뱅크·글리프 뱅크를 놓고 **글자가 들어오는 문 셋**을 갈아 끼운다(대본 · 사전 버퍼 · 메뉴 이름)."""
     if len(rep) > GLYPH_MAX:
         raise SystemExit(
-            f"글리프 {len(rep)} > 한 뱅크 {GLYPH_MAX} — 훅의 소스 주소 계산을 넓혀야 한다"
+            f"글리프 {len(rep)} > 뱅크 둘 {GLYPH_MAX} — 셋째 뱅크가 필요하다"
         )
     if not slots:
         raise SystemExit("동적 슬롯이 하나도 없다")
@@ -1919,7 +1913,10 @@ def apply(
     out[o : o + len(blob)] = blob
     g = glyph_bytes(rep)
     go = common.snes2off(GLYPH_BASE)
-    out[go : go + len(g)] = g
+    out[go : go + min(len(g), 0x8000)] = g[:0x8000]
+    if len(g) > 0x8000:  # 색인 1,024~ 은 둘째 뱅크
+        go2 = common.snes2off(GLYPH_BASE2)
+        out[go2 : go2 + len(g) - 0x8000] = g[0x8000:]
     hook_addr = (HOOK_BANK << 16) | info["labels"]["hook"]
     buf_addr = (HOOK_BANK << 16) | info["labels"]["hookbuf"]
     drain_addr = (HOOK_BANK << 16) | info["labels"]["drain"]

@@ -41,6 +41,7 @@ def emit(a, k):
     owner_lo, owner_hi, pin = k["owner_lo"], k["owner_hi"], k["pin"]
     Q_SLOT, Q_LO, Q_HI, Q_CTX = k["Q_SLOT"], k["Q_LO"], k["Q_HI"], k["Q_CTX"]
     nslot, QN, GLYPH_BASE = k["nslot"], k["QN"], k["GLYPH_BASE"]
+    GLYPH_BASE2_X = k["GLYPH_BASE2_X"]
     G16 = V_G & 0xFFFF  # 뱅크 $7E 안의 16비트 주소 — DBR=$7E 로 바꿔 abs,Y 로 읽는다
     WOFF = nslot * 16  # 흰 잉크 마스크 버퍼(`BUF + WOFF`) — 슬롯 버퍼 뒤에 같은 모양으로 둔다
 
@@ -297,6 +298,8 @@ def emit(a, k):
     a.pha()
     a.plb()
     a.ldy(imm=0x0000, m16=True)
+    a.op("cpx", imm=0x8000, m16=True)  # 색인 1,024 이상은 둘째 글리프 뱅크(hook.py `glyph_pass` 와 같은 갈래)
+    a.bcs(label="lgh_h")
     a.label("lgh_l")
     a.op("lda", addr=GLYPH_BASE, mode="longx")
     a.op("sta", addr=G16, mode="absy")
@@ -305,6 +308,16 @@ def emit(a, k):
     a.iny()
     a.cpy(imm=0x0010, m16=True)
     a.bne(label="lgh_l")
+    a.plb()
+    a.rts()
+    a.label("lgh_h")
+    a.op("lda", addr=GLYPH_BASE2_X, mode="longx")
+    a.op("sta", addr=G16, mode="absy")
+    a.inx()
+    a.inx()
+    a.iny()
+    a.cpy(imm=0x0010, m16=True)
+    a.bne(label="lgh_h")
     a.plb()
     a.rts()
     # 원본 1바이트 글자(V_VR = 코드): 훅 뱅크의 `rawtab` 16B/자
