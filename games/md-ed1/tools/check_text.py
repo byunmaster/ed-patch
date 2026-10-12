@@ -105,6 +105,12 @@ def main(verbose: bool = False) -> None:
                 puncts.append(f"{src}[{key}]: {ch!r} → {why} — {text[:30]!r}")
         if re.search(r"…\s*\.", text):
             puncts.append(f"{src}[{key}]: 「…」 뒤 온점 — {text[:30]!r}")
+        # 2-11(마스터 10-12): 「…」 뒤에 말이 이어지면 반각 공백. 제어코드(`<03>` 대기 등)가 끼면 글자가 안 붙으니 태그를 안 걷은 `ours` 로 본다
+        # 예외(마스터 10-12): 한 낱말을 음절마다 끊어 말하는 꼴(세…리…오…스… · 조…심…해…라…)은 붙인다 — 검사에서 그 꼴을 걷고 본다(같은 소리를 되풀이하는 의성어 흑…흑…흑… 도 붙인다 — 마스터 10-13, 여는 괄호 `…(` 는 애초에 안 걸린다)
+        if re.search(r"…(?=[가-힣A-Za-z0-9])", re.sub(r"(?<![가-힣])[가-힣](?:…[가-힣])+|([가-힣]+)…(?=\\1)", "", ours)):
+            puncts.append(f"{src}[{key}]: 「…」 뒤 공백 없음(2-11) — {text[:30]!r}")
+        if re.search(r"～[.．。]", text):  # 1-7: 물결표 뒤 온점 금지
+            puncts.append(f"{src}[{key}]: 「～」 뒤 온점(1-7) — {text[:30]!r}")
         if "..." in text:
             puncts.append(f"{src}[{key}]: `...` → 전각 「…」 — {text[:30]!r}")
     print(
