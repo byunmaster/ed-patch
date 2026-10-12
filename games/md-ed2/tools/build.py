@@ -14,6 +14,7 @@ ED1 build.py 와 같은 규율을 옮겼다(루트 CLAUDE.md 「빌드 규율」
 8B)도 같이 쓴다. 아카이브는 롬 맨 끝이라 뒤로 밀려 날 참조가 없고, 줄면 남는 자리는 FF 로 채운다.
 """
 
+import json
 import re
 import struct
 import sys
@@ -21,6 +22,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import archives
+import chapters
 import common
 import dict_names
 import gfxtext
@@ -30,6 +32,7 @@ import josa
 import lz
 import punctwrap
 import scene
+import sysmsg
 import tables
 import textmap
 import wordwrap
@@ -44,7 +47,11 @@ TAIL_HI = common.FREE_TAIL[1]
 JOSA_RESERVE = 0x340  # 조사 훅 기계어+표(글리프 1,370자 상한) — 으로/로·과/와 포함
 WRAP_RESERVE = 0x180  # 어절 줄넘김 본체 326B + 반각 「의␣」 28B
 FIELD_HUD_RESERVE = 0x20  # 필드 HUD 트램펄린(이식 전 — 자리만 잡아 둔다)
-ARCHIVE_END = TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE  # 이 앞까지 아카이브가 쓴다
+SYSMSG_TAIL = sysmsg.TAIL_SIZE  # 시스템 메시지 중 꼬리로 옮기는 스트림(RELOCATE)의 칸
+ARCHIVE_END = (
+    TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - SYSMSG_TAIL
+)  # 이 앞까지 아카이브가 쓴다
+SYSMSG_TAIL_AT = ARCHIVE_END
 N_BLOCKS = archives.ARCHIVES["script"][1]
 
 
@@ -65,6 +72,8 @@ class Rom:
         **{f"table:{t[0]}": (t[1], t[1] + t[2] * t[3]) for t in tables.SLOTS},
         **gfxtext.allowed(),
         "josa-code": (TAIL_HI - JOSA_RESERVE, TAIL_HI),
+        **sysmsg.allowed(common.rom()),
+        **sysmsg.allowed_tail(SYSMSG_TAIL_AT),
         "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 12),
         "josa-name-hook": (josa.NAME_FN_PATCH, josa.NAME_FN_PATCH + 6),
         "wrap-code": (TAIL_HI - JOSA_RESERVE - WRAP_RESERVE, TAIL_HI - JOSA_RESERVE),
@@ -293,7 +302,20 @@ def build_tables(orig: bytes, names: dict, cs: hangul.Charset) -> list[tuple[str
     return out
 
 
-def collect_chars(maps: dict, names: dict | None = None) -> set[str]:
+def load_sysmsg(orig: bytes) -> dict:
+    """코드 영역 문안 정본 — `textmap/sysmsg.json` + 장 카드(정본 장 제목에서 만든다, `chapters.plan`)."""
+    smap = (
+        json.loads(sysmsg.MAP_JSON.read_text(encoding="utf-8")) if sysmsg.MAP_JSON.exists() else {}
+    )
+    for k, ours in chapters.plan(sysmsg.streams(orig)).items():
+        smap.setdefault(
+            k, {"jp": sysmsg.jp_key(sysmsg.streams(orig)[int(k, 16)]["stream"]), "ours": ""}
+        )
+        smap[k]["ours"] = ours
+    return smap
+
+
+def collect_chars(maps: dict, names: dict | None = None, smap: dict | None = None) -> set[str]:
     """정본 전체가 쓰는 글자 집합(태그 제거 · 부호 정규화 뒤) — 글꼴 표 0 과 코드 배정의 분모."""
     chars: set[str] = set()
 
@@ -306,6 +328,8 @@ def collect_chars(maps: dict, names: dict | None = None) -> set[str]:
     for t in (names or {}).values():
         for e in t.values():
             chars.update(strip(e.get("ours", "")))
+    for e in (smap or {}).values():
+        chars.update(strip(e.get("ours", "")))
     chars.update(josa.chars())  # 조사 훅이 그리는 글자(는은가이를을와과으로) — 늘 굽는다
     chars.update(halfspace.chars())  # 「의␣」 — 아이템 칸 14B 에 반각 공백을 녹인 합성 글자
     return chars
@@ -374,9 +398,16 @@ def main(check_only: bool = False) -> None:
     verify_archive_refs(orig)
     maps = textmap.load_all()
     names = dict_names.names(orig)
-    chars = collect_chars(maps, names)
+    smap = load_sysmsg(orig)
+    chars = collect_chars(maps, names, smap)
     cs = hangul.Charset(orig, chars)
     table_writes = build_tables(orig, names, cs)
+    sys_writes = sysmsg.plan(
+        orig,
+        {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in smap.items()},
+        cs.encode,
+        tail_at=SYSMSG_TAIL_AT,
+    )
     replace: dict[tuple[int, int], bytes] = {}
     for (blk, k), m in sorted(maps.items()):
         mb = textmap.module_bytes(orig, blk, k)
@@ -450,6 +481,12 @@ def main(check_only: bool = False) -> None:
     print(
         f"  어절 줄넘김 — 글자 틈 최대 {gap}px < 문턱 {wordwrap.SPACE_PX}px ≤ 공백 틈 최소 {sp}px"
     )
+    for (
+        label,
+        pos,
+        body,
+    ) in sys_writes:  # 코드 영역 문안(시스템 메시지·이벤트 대사·장 카드) 묶음 + 참조 명령
+        rom.write(label, pos, body)
     tg = names.get("title_gfx", {})  # 타이틀 시작 메뉴 — 글꼴이 아니라 셀 그림
     words = {"start": tg.get("0", {}).get("ours", ""), "continue": tg.get("1", {}).get("ours", "")}
     for label, pos, body in gfxtext.plan(orig, words):

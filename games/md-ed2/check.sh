@@ -44,3 +44,6 @@ echo "== md-ed2 =="
 "$PY" "$T/wordwrap.py" --check
 "$PY" "$T/punctwrap.py" --check
 "$PY" "$T/halfspace.py" --check
+
+# 11. 장 카드·HUD 장 제목 — 정본 장 제목 범주에서 만든 문안이 원본 스트림 자리와 맞는지(HUD 30B 계약) · 카드 스트림 제목 일치
+"$PY" "$T/chapters.py" >/dev/null

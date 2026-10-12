@@ -756,7 +756,11 @@ if __name__ == "__main__":
         rom = common.rom()
         r0 = font.resources(rom)[0]
         keep = [c for c in font.codes(rom, r0) if c <= KEEP_MAX]
-        chars = build.collect_chars(build.textmap.load_all(), build.dict_names.names())
+        chars = build.collect_chars(
+            build.textmap.load_all(),
+            build.dict_names.names(),
+            build.load_sysmsg(rom),
+        )
         codes_for({c for c in chars if needs_glyph(c, keep)}, freeze=True)
         print(f"  {CODES_JSON}: {len(json.loads(CODES_JSON.read_text(encoding='utf-8')))}자 고정")
     elif "--check" in sys.argv:
