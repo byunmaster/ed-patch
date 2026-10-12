@@ -15,6 +15,7 @@ ED1 build.py 와 같은 규율을 옮겼다(루트 CLAUDE.md 「빌드 규율」
 """
 
 import json
+import os
 import re
 import struct
 import sys
@@ -34,9 +35,11 @@ import halfspace
 import hangul
 import hud_status
 import josa
+import kana_gate
 import lz
 import places
 import punctwrap
+import repack
 import scene
 import spell_digit
 import sysmsg
@@ -51,7 +54,7 @@ ARCHIVE_BASE = archives.ARCHIVES["script"][0]
 TAIL_HI = common.FREE_TAIL[1]
 # 꼬리 **끝**에 훅 코드를 예약한다(ED1 build.py 와 같은 배치) — 아카이브는 그 앞까지만 쓴다. ED2 는 꼬리 빈 공간이 2KB 뿐이지만
 # 아카이브를 다시 눌러 16KB 를 비우므로 훅이 들어간다.
-JOSA_RESERVE = 0x340  # 조사 훅 기계어+표(글리프 1,370자 상한) — 으로/로·과/와 포함
+JOSA_RESERVE = 0x400  # 조사 훅 기계어+표(글리프 표가 한글 코드 수에 비례 — 대사 번역으로 코드 900자 넘김) — 으로/로·과/와 포함
 WRAP_RESERVE = 0x180  # 어절 줄넘김 본체 326B + 반각 「의␣」 28B
 FIELD_HUD_RESERVE = 0x20  # 필드 HUD 트램펄린(이식 전 — 자리만 잡아 둔다)
 CAPTION_RESERVE = 0xA00  # 오프닝·엔딩 자막 표+문안(captions.RELOCATE)이 앉는 꼬리 칸
@@ -149,6 +152,9 @@ class Rom:
         self.log: list[tuple[str, int, bytes]] = []
         self.allowed = dict(self.ALLOWED)
 
+    def allow(self, label: str, lo: int, hi: int) -> None:
+        self.allowed[label] = (lo, hi)
+
     def write(self, label: str, at: int, data: bytes) -> None:
         lo, hi = self.allowed[label]
         if not (lo <= at and at + len(data) <= hi):
@@ -228,6 +234,11 @@ def build_stream(
     """
     refs = [t for t in st.tokens if t.ref]
     end = next((t for t in st.tokens if t.kind == "end"), None)
+    cont = ours.endswith("<~>")  # 이어 읽기 — 끝 표식 없이 바로 뒤 글줄(꼬리를 같이 쓰는 스트림)로 이어진다. 재조립이 남는 칸을 공백으로 채운다
+    if cont:
+        ours = ours[:-3]
+        end = None
+        refs = []
     out: list[scene.Token] = []
     pending_text: list[str] = []
 
@@ -275,6 +286,12 @@ def build_stream(
             code, tgt, raw = val
             if tgt is not None:
                 m = next((t for t in refs if t.code == code and t.target == tgt), None)
+                if m is None and code == 0x0F:
+                    # 꼬리를 같이 쓰는 스트림 — 마지막 쪽을 따로 둔 스트림으로 **새로 잇는다**(고정 스트림이 안에 낀 스트림을 못 옮길 때)
+                    m = scene.Token(0, b"\x0f\x00\x00", "ctl", 0x0F, scene.GOTO, tgt)
+                    flush_text()
+                    out.append(m)
+                    continue
                 if m is None:
                     raise SystemExit(
                         f"정본의 참조 <{code:02x}:{tgt:04x}> 가 원본 스트림에 없다 @{st.start:#x}"
@@ -293,7 +310,7 @@ def build_stream(
         raise SystemExit(
             f"원본의 참조 {[hex(t.target) for t in refs]} 가 정본에 없다 @{st.start:#x}"
         )
-    if end is not None and not (out and out[-1].kind == "end"):
+    if end is not None and not (out and (out[-1].kind == "end" or out[-1].ref == scene.GOTO)):
         out.append(scene.Token(0, end.raw, "end", end.code))
     return out
 
@@ -495,6 +512,39 @@ def pack_archive(blocks: list[bytes]) -> bytes:
     return struct.pack(f">{n}I", *offs) + b"".join(packed)
 
 
+def pack_script(
+    blocks: list[bytes], free: list[tuple[int, int]]
+) -> tuple[bytes, bytes, list[tuple[int, bytes]]]:
+    """대본 블록 → (색인, 본 칸 블록들, [(자리, 압축 블록)]). 큰 블록부터 **다른 아카이브가 비운 칸**(`repack`)에 앉히고(색인은 부호 있는
+    32비트 상대 오프셋이라 앞쪽 자리도 된다) 나머지는 본 칸에 차례로 둔다."""
+    n = len(blocks)
+    packed = []
+    for b in blocks:
+        p = lz.encode(b)
+        packed.append(p + b"\x00" * (len(p) & 1))
+    iv = [[lo, hi] for lo, hi in free]
+    place: dict[int, int] = {}
+    for i in sorted(range(n), key=lambda i: -len(packed[i])):
+        c = [x for x in iv if x[1] - x[0] >= len(packed[i])]
+        if not c:
+            continue
+        x = min(c, key=lambda x: x[1] - x[0])
+        place[i] = x[0]
+        x[0] += len(packed[i])
+    main = bytearray()
+    offs = []
+    cur = 4 * n
+    for i in range(n):
+        if i in place:
+            offs.append(place[i] - ARCHIVE_BASE)
+        else:
+            offs.append(cur)
+            main += packed[i]
+            cur += len(packed[i])
+    index = struct.pack(f">{n}i", *offs)
+    return index, bytes(main), [(place[i], packed[i]) for i in sorted(place)]
+
+
 def script_blocks(
     orig: bytes, replace: dict[tuple[int, int], bytes] | None = None
 ) -> tuple[list[bytes], list[tuple[int, ...]]]:
@@ -567,6 +617,7 @@ def main(check_only: bool = False) -> None:
         CAPTION_RESERVE,
     )
     replace: dict[tuple[int, int], bytes] = {}
+    reasm_errors: list[str] = []
     for (blk, k), m in sorted(maps.items()):
         mb = banners.patch(
             (blk, k), textmap.module_bytes(orig, blk, k), lambda s: encode_tagged(s, cs)
@@ -577,6 +628,8 @@ def main(check_only: bool = False) -> None:
             if not ent.get("ours"):
                 continue
             off = int(key, 16)
+            if any(o <= off < o + banners.STRIDE * n for o, n in banners.BY_MODULE.get((blk, k), ())):
+                continue  # 지명 배너 표 칸 — banners.patch 가 굽는다(스트림 번역이 덮으면 안 된다)
             st = mod.streams.get(off)
             if st is None:
                 raise SystemExit(f"블록 {blk}-{k}: 스트림 {key} 가 없다")
@@ -587,9 +640,15 @@ def main(check_only: bool = False) -> None:
             if mb != textmap.module_bytes(orig, blk, k):  # 배너 표만 바뀐 모듈 — 같은 길이
                 replace[(blk, k)] = mb
             continue
-        new = scene.reassemble(mod, rep)
-        scene.verify_reassembly(mod, new, rep)
+        try:
+            new = scene.reassemble(mod, rep)
+            scene.verify_reassembly(mod, new, rep)
+        except (ValueError, KeyError) as e:
+            reasm_errors.append(f"블록 {blk}-{k}: {type(e).__name__} {e}")
+            continue
         replace[(blk, k)] = new
+    if reasm_errors:
+        raise SystemExit("\n".join(reasm_errors))
     for key in banners.BY_MODULE:  # 번역 정본이 없는 모듈의 배너 표
         if key not in maps and key not in replace:
             replace[key] = banners.patch(
@@ -603,27 +662,58 @@ def main(check_only: bool = False) -> None:
     )
     print(f"  배너 표 {len(banners.BY_MODULE)}모듈 {nban}항목 — 최종 모듈 바이트가 의도와 같다")
     blocks, sizes = script_blocks(orig, replace)
-    for i, b in enumerate(blocks[: archives.SCENE_BLOCKS]):
-        if len(b) > MAX_BLOCK:
-            raise SystemExit(
-                f"블록 {i}: 디코드 {len(b):,}B 가 원본 최대 {MAX_BLOCK:,}B 를 넘는다(램 버퍼 근거 없음)"
-            )
+    if os.environ.get("MD_DUMP_BLOCKS"):  # 실험용 — 번역이 든 디코드 블록을 파일로(코덱 설계 측정)
+        import pickle
+
+        Path(os.environ["MD_DUMP_BLOCKS"]).write_bytes(pickle.dumps(blocks))
+    over_blocks = [
+        f"블록 {i}: {len(b):,}B > {MAX_BLOCK:,}B (+{len(b) - MAX_BLOCK:,})"
+        for i, b in enumerate(blocks[: archives.SCENE_BLOCKS])
+        if len(b) > MAX_BLOCK
+    ]
+    if over_blocks:
+        raise SystemExit(
+            "디코드 블록이 원본 최대(램 버퍼 근거 없음)를 넘는다:\n    "
+            + "\n    ".join(over_blocks)
+        )
     for i, s in enumerate(sizes):
         if sum(s) != len(blocks[i]) and i < archives.SCENE_BLOCKS:
             raise SystemExit(f"블록 {i}: 모듈 크기 합 {sum(s)} ≠ 블록 길이 {len(blocks[i])}")
         if max(s) > scene.MODULE_MAX:
             raise SystemExit(f"블록 {i}: 모듈 {max(s)}B 가 한도 {scene.MODULE_MAX}B 를 넘는다")
-    arch = pack_archive(blocks)
+    if os.environ.get("MD_KANA_DUMP"):  # 점검용 — 남은 가나 글줄 전체를 파일로
+        _lf = kana_gate.scan(blocks[: archives.SCENE_BLOCKS], sizes)
+        Path(os.environ["MD_KANA_DUMP"]).write_text(
+            "\n".join(
+                f"{k} {h} x{n} {kana_gate.sample(blocks[: archives.SCENE_BLOCKS], sizes, k, h)}"
+                for k, c in sorted(_lf.items(), key=lambda kv: tuple(map(int, kv[0].split("-"))))
+                for h, n in c.items()
+            ),
+            encoding="utf-8",
+        )
+    kana_gate.check(blocks[: archives.SCENE_BLOCKS], sizes, freeze="--freeze-kana" in sys.argv)
+    rp_writes, rp_free, rp_info = repack.plan(
+        orig
+    )  # 다른 아카이브를 다시 눌러 만든 빈 칸 — 대본 블록이 앉는다
+    sindex, main_blocks, placed = pack_script(blocks, rp_free)
     room = ARCHIVE_END - ARCHIVE_BASE
-    if len(arch) > room:
-        raise SystemExit(f"대본 아카이브가 {len(arch) - room:,}B 넘친다 ({len(arch):,} > {room:,})")
-    # 왕복: 다시 깐 아카이브를 푼 결과가 입력과 같아야 한다
-    rt = [b for _, b, _ in archives.blocks(arch.ljust(room, b"\xff"), 0)]
+    used = len(sindex) + len(main_blocks)
+    if used > room:
+        raise SystemExit(
+            f"대본 아카이브가 {used - room:,}B 넘친다 (본 칸 {used:,} > {room:,} · 다른 칸에 앉힌 블록 {len(placed)}개 {sum(len(p) for _a, p in placed):,}B)"
+        )
+    # 왕복: 다시 깐 아카이브(본 칸 + 앉힌 블록)를 색인으로 푼 결과가 입력과 같아야 한다
+    img = bytearray(0x200000)
+    img[ARCHIVE_BASE : ARCHIVE_BASE + used] = sindex + main_blocks
+    for at, p in placed:
+        img[at : at + len(p)] = p
+    rt = [b for _, b, _ in archives.blocks(bytes(img), ARCHIVE_BASE)]
     if rt != blocks:
         raise SystemExit("재배치 왕복이 입력과 다르다")
+    gain = sum(a - b for _n, a, b in rp_info)
     print(
-        f"  대본 아카이브 {len(arch):,}B / 칸 {room:,}B (여유 {room - len(arch):,}B) · 왕복 OK · "
-        f"정본 모듈 {len(maps)} · 바뀐 모듈 {len(replace)}"
+        f"  대본 아카이브 본 칸 {used:,}B / {room:,}B (여유 {room - used:,}B) · 다른 칸에 앉힌 블록 {len(placed)}개 "
+        f"{sum(len(p) for _a, p in placed):,}B (재압축으로 {gain:,}B 확보) · 왕복 OK · 정본 모듈 {len(maps)} · 바뀐 모듈 {len(replace)}"
     )
     if check_only:
         return
@@ -657,7 +747,11 @@ def main(check_only: bool = False) -> None:
         rom.write(label, pos, body)
     # 🔴 어절 줄넘김의 공백 판정 문턱을 **구운 글꼴로 매번 다시 잰다** — 글꼴이 바뀌어 문턱이 무너지면 빌드가 실패한다
     # ⚠ 합성 글리프(field_hud 의 PUA 콘덴스드 슬라이스)는 뺀다 — 일부러 큰 왼쪽 여백을 구워 둔 자리라 정상 글자처럼 재면 문턱이 깨진다
-    normal_wide = {v for k, v in cs.hangul.items() if k not in hangul.CUSTOM_GLYPHS}
+    normal_wide = {
+        v
+        for k, v in cs.hangul.items()
+        if k not in hangul.CUSTOM_GLYPHS and k not in hangul.DEAD_CODES
+    }
     gap, sp = wordwrap.gap_gate(bytes(rom.buf), normal_wide)
     print(
         f"  어절 줄넘김 — 글자 틈 최대 {gap}px < 문턱 {wordwrap.SPACE_PX}px ≤ 공백 틈 최소 {sp}px"
@@ -729,7 +823,17 @@ def main(check_only: bool = False) -> None:
         f"  전투 아카이브 원래 자리 {len(index) + len(primary):,}B / {BATTLE_PRIMARY_END - battle.ARCHIVE:,}B · "
         f"꼬리 {len(tail):,}B / {BATTLE_TAIL_RESERVE:,}B · 바뀐 블록 {nchanged}"
     )
-    rom.write("script-archive", ARCHIVE_BASE, arch.ljust(room, b"\xff"))
+    for (
+        label,
+        pos,
+        body,
+    ) in rp_writes:  # 다시 누른 아카이브(그래픽·misc) + 색인 없이 가리키던 직접 참조
+        rom.allow(label, *repack.allowed(orig, [(label, pos, body)])[label])
+        rom.write(label, pos, body)
+    rom.write("script-archive", ARCHIVE_BASE, (sindex + main_blocks).ljust(room, b"\xff"))
+    for k, (at, p) in enumerate(placed):
+        rom.allow(f"script-placed:{k}", at, at + len(p))
+        rom.write(f"script-placed:{k}", at, p)
     rom.write(
         "scene-sizes",
         SCENE_TABLE_AT,
@@ -760,6 +864,17 @@ def main(check_only: bool = False) -> None:
         bad = [i for i, (x, y) in enumerate(zip(got_b, bblocks, strict=True)) if x != y]
         raise SystemExit(f"전투 아카이브 되읽기 불일치(블록 {bad[:8]})")
     print(f"  전투 아카이브 되읽기 OK — 색인으로 푼 {len(got_b)}블록이 의도와 같다")
+    # 🔴 다시 누른 아카이브(그래픽·misc)와 대본 아카이브(앉힌 블록 포함)를 **구운 이미지에서 색인으로** 풀어 의도와 같은지
+    for name in repack.OTHER:
+        base = archives.ARCHIVES[name][0]
+        want = [b for _s, b, _e in archives.blocks(orig, base)]
+        got = [b for _s, b, _e in archives.blocks(bytes(rom.buf), base)]
+        if got != want:
+            raise SystemExit(f"{name} 아카이브 되읽기가 원본 디코드와 다르다")
+    got_s = [b for _s, b, _e in archives.blocks(bytes(rom.buf), ARCHIVE_BASE)]
+    if got_s != blocks:
+        raise SystemExit("대본 아카이브 되읽기가 의도와 다르다")
+    print("  아카이브 되읽기 OK — 그래픽·misc 5개가 원본 디코드와, 대본 90블록이 의도와 같다")
     rom.verify_no_overlap()
     rom.verify_immutable()
     out_dir = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_")

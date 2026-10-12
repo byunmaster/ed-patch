@@ -55,3 +55,6 @@ echo "== md-ed2 =="
 "$PY" "$T/spell_digit.py"
 "$PY" "$T/hud_status.py"
 "$PY" "$T/banners.py"
+
+# 13. 번역 규칙 2-11 — 「…」 뒤 공백
+"$PY" "$T/check_ellipsis.py"

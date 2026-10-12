@@ -49,7 +49,8 @@ def table(d: bytes, base: int) -> list[int]:
     if first < 4 or first % 4 or first > 4 * 4096:
         raise ValueError(f"{base:#x}: 색인이 아니다 (첫 값 {first:#x})")
     n = first // 4
-    offs = struct.unpack(f">{n}I", d[base : base + 4 * n])
+    # 부호 있는 32비트 — 로더가 `lea (a1,d1.l),a1` 로 더하니 색인 앞쪽 자리(음수 오프셋)도 된다(`repack.py`)
+    offs = struct.unpack(f">{n}i", d[base : base + 4 * n])
     return [base + o for o in offs]
 
 

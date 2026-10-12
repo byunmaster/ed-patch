@@ -244,6 +244,7 @@ def gap_gate(rom: bytes, wide_codes: set[int]) -> tuple[int, int]:
 
     res = font.resources(rom)
     ext = []  # (전진 px, 왼쪽 잉크, 오른쪽 잉크, 안쪽 최대 틈)
+    who = []  # 틈이 큰 글자 짚기(문턱이 무너졌을 때 보고)
     for ri, adv, pick in ((0, 12, wide_codes), (1, 6, None)):
         r = res[ri]
         for i, c in enumerate(font.codes(rom, r)):
@@ -254,6 +255,7 @@ def gap_gate(rom: bytes, wide_codes: set[int]) -> tuple[int, int]:
                 continue
             inner = max((b - a - 1 for a, b in itertools.pairwise(cols)), default=0)
             ext.append((adv, cols[0], cols[-1], inner))
+            who.append((adv + 99 - cols[-1], c, adv, cols[0], cols[-1], inner))
     max_l = max(e[1] for e in ext)
     min_l = min(e[1] for e in ext)
     between = max(adv + max_l - r_ - 1 for adv, _l, r_, _i in ext)  # 공백 없이 이웃할 때
@@ -261,8 +263,10 @@ def gap_gate(rom: bytes, wide_codes: set[int]) -> tuple[int, int]:
     space = min(adv + 6 + min_l - r_ - 1 for adv, _l, r_, _i in ext)  # 사이에 공백 하나
     worst = max(between, inner)
     if not worst < SPACE_PX <= space:
+        bad = sorted(who, reverse=True)[:6]
         raise SystemExit(
             f"어절 줄넘김 문턱이 무너졌다 — 글자 틈 최대 {worst}px · 공백 틈 최소 {space}px · 문턱 {SPACE_PX}px"
+            f" · 안쪽 틈 큰 글자 코드 {[(hex(w[1]), w[2:]) for w in bad]}"
         )
     return worst, space
 

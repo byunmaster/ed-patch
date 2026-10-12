@@ -75,6 +75,11 @@ TAIL_SIZE = 0x100  # 빌드가 꼬리에 비워 두는 칸(build.SYSMSG_TAIL)
 SJIS_RUN = re.compile(rb"(?:[\x81-\x9f\xe0-\xea][\x40-\x7e\x80-\xfc]){3,}")
 
 
+# 🔴 `lea.l $82A0.l` 가 **글 포인터가 아니라 VRAM 주소**인 두 자리(타이틀 화면 — 값이 우연히 스트림 0x82A0 과 같다). 여기를 새 자리로 고치면
+# 타이틀 메뉴 셀·배경이 깨진다(마스터 10-13). `bsr $15A9A`(VRAM 쓰기 주소) · `jsr $1D76` 로 쓰는 값이다.
+NOT_REFS: frozenset[int] = frozenset({0x134A8, 0x15B0A})
+
+
 def refs(d: bytes) -> dict[int, list[tuple[str, int]]]:
     """대상 → [(종류, 명령 자리)]. pc 상대는 명령+2 기준 16비트 변위, abs 는 명령+2 의 32비트."""
     out: dict[int, list[tuple[str, int]]] = {}
@@ -88,6 +93,8 @@ def refs(d: bytes) -> dict[int, list[tuple[str, int]]]:
         d[:CODE_END],
         re.DOTALL,
     ):
+        if m.start() in NOT_REFS:
+            continue
         t = int.from_bytes(m.group(0)[2:6], "big")
         out.setdefault(t, []).append(("abs", m.start()))
     for base, n in WORD_TABLES.items():
@@ -245,7 +252,7 @@ def leftover(d: bytes, strs: dict[int, dict]) -> list[tuple[int, int]]:
 
 
 # 첫 조사(2026-10-12) 실측 — 파서·정규식을 고치면 바뀐다. 번역 때 분모로 쓴다.
-EXPECT = (215, 784)  # 스트림 · 스트림 밖 SJIS 런
+EXPECT = (214, 784)  # 스트림 · 스트림 밖 SJIS 런 (0x82A0 은 VRAM 주소라 참조가 아니다 — 215 에서 하나 빠졌다)
 
 
 def clusters(strs: dict[int, dict]) -> list[list[int]]:

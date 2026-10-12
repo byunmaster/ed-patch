@@ -247,6 +247,8 @@ def ellipsis_full(cell: int = 16) -> list[list[int]]:
 # cp932 로 못 걸어 이미 "새 글리프 필요"로 잡는다(예외 경로) — 여기서 채움 행렬만 꽂아 주면
 # 나머지(코드 배정·표0 굽기)는 한글 한 글자와 완전히 같은 길을 탄다.
 CUSTOM_GLYPHS: dict[str, list[list[int]]] = {}
+# 정본에 한 번 박혔다가 문안에서 빠진 글자 — 코드 자리는 고정(세이브 호환)이라 남지만 어디에도 안 나온다. 줄넘김 틈 게이트에서 뺀다.
+DEAD_CODES = {"･"}  # 반각 가타카나 가운뎃점(「동･료」 오타 — 「동…료」로 고침)
 
 
 def glyph_fill(ch: str) -> list[list[int]]:
@@ -254,6 +256,8 @@ def glyph_fill(ch: str) -> list[list[int]]:
         return CUSTOM_GLYPHS[ch]
     if ch == "…":
         return ellipsis_dots(CELL)
+    if ch < " ":  # 제어 문자가 한 번 정본에 박혔다(코드 자리는 고정) — 빈 글리프로 둔다
+        return [[0] * len(r) for r in ellipsis_dots(CELL)]
     g = _load_bdf(top=GLYPH_TOP, left=GLYPH_LEFT).get(ch)
     if g is None:
         raise KeyError(f"Galmuri14 에 없는 글자: {ch!r}")
