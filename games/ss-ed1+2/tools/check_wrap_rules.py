@@ -28,6 +28,11 @@
     사용자 영역 U+E000~F8FF 글자가 남았다 — cp932 가 `F0xx` 로 구워 폰트 밖 글리프가 찍힌다
                 (PS1 붙임 공백 `\ue003` 이 42블록에 새어 들어와 있었다, 2026-09-27)
     글 소실     공백·개행을 뺀 글자가 입력과 다르다 🔴
+    말줄임 붙임 「…」 뒤에 말이 바로 붙었다 — 반각 공백을 띄운다(번역 규칙 2-11, 마스터 10-12).
+                단 문장 맨 앞 「…」 는 반대로 붙인다(`…그런`, 마스터 10-13) — 띄웠으면 위반
+                줄 끝·`%c`(창 전환)·닫는 부호 앞은 안 띄운다
+    부호 겹침 순서 `?…` `!…` — 「…」 를 앞에(`…!?`, 번역 규칙 2-12, 마스터 10-13)
+    물결 마침표 `～.` — 물결표 뒤에 마침표를 붙이지 않는다(번역 규칙 1-7, 마스터 10-12)
 """
 
 import collections
@@ -42,6 +47,7 @@ import common
 import msgwrap
 import patch_scn
 import typeset_scn as T
+from text.line_key import key as line_key
 
 _SENT_END = re.compile(r"[.!?…][」』)\"']*\s*$")
 RULES = (
@@ -55,8 +61,63 @@ RULES = (
     "창 초과",
     "글 소실",
     "사용자 영역",
+    "말줄임 붙임",
+    "물결 마침표",
+    "부호 겹침 순서",
+    "말줄임 붙임(PS1 몫)",
+    "물결 마침표(PS1 몫)",
+    "부호 겹침 순서(PS1 몫)",
 )
 _WS = (" ", "\n")
+# 「…」 뒤에 곧바로 이어지는 말 — 공백·줄끝·창 전환(`%c`)·닫는/끝 부호는 제외한다.
+_ELLIPSIS_GLUED = re.compile(r"…(?!$|[\s…%」』）)\]\"'?!？！～,.、。])")
+# 예외 — 한 낱말을 음절마다 끊어 말하는 꼴(`세…리…오…스…` · `없…다…`)은 붙인다(번역 규칙 2-11, 마스터 10-12).
+#   홀로 선 음절 + `…` + 홀로 선 음절 + `…`
+_SYLLABLE_SPLIT = re.compile(r"(?<![가-힣])[가-힣]…[가-힣](?=…)")
+# 예외 둘(마스터 10-13) — 같은 소리를 되풀이하는 의성어(`흑…흑…흑…`)와 여는 괄호 앞(`…(화끈!)`)은 붙인다.
+_OPENERS = "(（「『["
+_HANGUL_RUN = re.compile(r"[가-힣]+")
+
+
+def _repeated_sound(s, at):
+    """`…`(위치 `at`) 양옆의 한글 덩이가 같다 — `흑…흑…`."""
+    left = re.search(r"[가-힣]+$", s[:at])
+    right = _HANGUL_RUN.match(s, at + 1)
+    return bool(left and right and left.group() == right.group())
+
+
+_MARK_ELLIPSIS = re.compile(r"[?!？！]…")  # 2-12 — `…!?` ✓ · `!?…` ✗ (마스터 10-13)
+_TILDE_DOT = re.compile(r"～[.。]")
+# 문장 맨 앞 「…」(마스터 10-13) — 뒤를 붙인다(`…그런 것처럼`). 말줄임(앞말 뒤 「…」)만 띄운다.
+_INIT_HEAD = re.compile(r"(?:\n|%c|\{c\}|[.!?] )$")
+
+
+def _is_init(s, at):
+    """`s[at]` 의 「…」 가 문장 맨 앞인가 — 문두·개행·창 전환·문장 끝 뒤."""
+    return at == 0 or bool(_INIT_HEAD.search(s[max(0, at - 3) : at]))
+
+
+def prose_marks(s):
+    """번역 규칙 2-11 · 1-7 — `{규칙: [표본]}` (조판 전 문안으로 잰다)."""
+    out = collections.defaultdict(list)
+    for m in _ELLIPSIS_GLUED.finditer(s):
+        if _is_init(s, m.start()):  # 문장 맨 앞 「…」 는 붙인다
+            continue
+        if s[m.end() : m.end() + 1] in _OPENERS or _repeated_sound(s, m.start()):
+            continue
+        at = max(0, m.start() - 1)
+        sp = _SYLLABLE_SPLIT.match(s, at)
+        if sp:  # 음절 끊어 말하기 — 붙여 쓴다
+            continue
+        out["말줄임 붙임"].append(s[max(0, m.start() - 6) : m.end() + 6])
+    for m in re.finditer(r"…( +)(?=[^\s…%])", s):  # 문장 맨 앞인데 띄웠다
+        if _is_init(s, m.start()):
+            out["말줄임 붙임"].append(s[max(0, m.start() - 6) : m.end() + 6])
+    for m in _MARK_ELLIPSIS.finditer(s):
+        out["부호 겹침 순서"].append(s[max(0, m.start() - 6) : m.end() + 4])
+    for m in _TILDE_DOT.finditer(s):
+        out["물결 마침표"].append(s[max(0, m.start() - 6) : m.end() + 4])
+    return out
 
 
 def _strip(s):
@@ -98,6 +159,7 @@ def scan_lines(src, ls, ends):
 def scan_scene():
     """`(블록 수, {규칙: [표본]})` — 씬 창."""
     canon = patch_scn.load_canon(quiet=True)
+    ours = patch_scn.load_ours()
     _f, mm = common.open_image()
     canon = patch_scn.augment_names(canon, mm)
     out = collections.defaultdict(list)
@@ -120,6 +182,12 @@ def scan_scene():
                 out["사용자 영역"].append(
                     f"{path.split('/')[-1]}: U+{ord(pua[0]):04X} {built[:24]!r}"
                 )
+            # 🔴 PS1 사전에서 온 줄은 PS1 정본이다(원문이 같으면 PS1 문안) — 고치는 곳은 PS1 이라
+            #    새턴 몫(`script/scn.json`)만 실패로 치고, PS1 몫은 보고 전용으로 센다.
+            own = line_key(e.get("text", "")) in ours
+            for k, v in prose_marks(built).items():
+                k = k if own else k + "(PS1 몫)"
+                out[k] += [f"{path.split('/')[-1]}: {x!r}" for x in v]
             segs, groups = T.line_groups(built)
             for g in groups:
                 # 🔴 **글줄 단위로 잰다** — 글줄 안 색 쌍(`%c이름%c`)에서 가르면 한 줄을 반씩 재서
@@ -171,10 +239,14 @@ def scan_message():
     for kr in list(lines.values()) + combos:
         if any("\ue000" <= c <= "\uf8ff" for c in kr):
             out["사용자 영역"].append(kr[:24])
+        for k2, v in prose_marks(kr).items():
+            out[k2] += v
         s = (_NAME + kr) if kr.startswith(_LEAD) else kr
         units = _msg_units(s)
         src = b"".join(b for b, _t in units)
-        got = msgwrap.wrap(src)  # 로그도 어절 단위(마스터 09-30 번복) — 어절 후퇴 켜짐(기계어와 같다)
+        got = msgwrap.wrap(
+            src
+        )  # 로그도 어절 단위(마스터 09-30 번복) — 어절 후퇴 켜짐(기계어와 같다)
         if not msgwrap.check_invariant(src, got):
             out["글 소실"].append(s[:30])
             continue
@@ -242,7 +314,13 @@ def main():
     #    ⚠ `%s` 도중 절단은 **보고 전용으로만 둔다 — 판정 대기다**(마스터 확정 「로그는 글자
     #    단위」가 실제 이름을 반으로 가를 수 있다는 뜻인지 아직 못 여쭤봤다. 하드 실패로 올리면
     #    이 라운드가 못 닫힌다).
-    _REPORT_ONLY = ("긴 어절(불가피)", "%s 도중 절단")
+    _REPORT_ONLY = (
+        "긴 어절(불가피)",
+        "%s 도중 절단",
+        "말줄임 붙임(PS1 몫)",
+        "물결 마침표(PS1 몫)",
+        "부호 겹침 순서(PS1 몫)",
+    )
     bad_total = {
         r: sum(len(b.get(r, ())) for _n, _c, b in regions) for r in RULES if r not in _REPORT_ONLY
     }
