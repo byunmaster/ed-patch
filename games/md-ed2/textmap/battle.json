@@ -1,0 +1,1475 @@
+{
+ "9df917cf0f": {
+  "ours": "<ebe0> <02><eb02> 차가운 시선으로 바라보았다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "c3ac6723c3": {
+  "ours": "<02><eb00> 두 마리로 분열해서 <06>",
+  "src": "ours:ed2-manual"
+ },
+ "eede0fcec8": {
+  "ours": "<02>와<06>",
+  "src": "canon:ed2:battle"
+ },
+ "458bde10bc": {
+  "ours": "<02>가 되었다.<0a>",
+  "src": "canon:ed2:battle"
+ },
+ "d5d601e930": {
+  "ours": "<ebe0> 촉수를 뻗었다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "9321cd1f70": {
+  "ours": "의 촉수가 <02>의 몸에 휘감겼다!!<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "b162af5a75": {
+  "ours": "<02><eb00> 껍질을 벗겨 악취를 풍겼다!! <07>",
+  "src": "ps1:ed2:ED2MON"
+ },
+ "4643851093": {
+  "ours": "<ebe0> 촉수를 뻗었다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "08d7cb4d65": {
+  "ours": "<02><eb00> 껍질을 벗겨 악취를 풍겼다!!<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "4563b6ef36": {
+  "ours": "<ebe0> 쉬고 있다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "536114ec3e": {
+  "ours": "<ebe0> 깨어났다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "f0e5cf7dee": {
+  "ours": "<ebe0> 팔이 엉켜 움직일 수 없다.<0a>",
+  "src": "ps1:ed2:monster_lines"
+ },
+ "9461e1fba8": {
+  "ours": "<02><eb00> 팔이 엉켜 있다.<0a>",
+  "src": "canon:ed2:battle"
+ },
+ "2c2f54279f": {
+  "ours": "<ebe0><06>",
+  "src": "canon:ed2:battle"
+ },
+ "761694dadb": {
+  "ours": "<02>의 팔을 풀었다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "a11030db20": {
+  "ours": "<ebe0> 물어뜯었다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "00b50d6ef9": {
+  "ours": "<ebe0> 초음파를 발했다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "cedc949e3b": {
+  "ours": "<ebe1> 공명하고 있다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "5d9e441a71": {
+  "ours": "{レイチョウ|이/가} 나타났다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "0ac57df0cf": {
+  "ours": "{レイチョウ|과/와} {パワーアングル|이/가} 나타났다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "55da534978": {
+  "ours": "디버그 테스트<07>",
+  "src": "ours:ed2-manual"
+ },
+ "76771bdd30": {
+  "ours": "<ebe0> 수상한 빛을 뿜었다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "5751c9d0f5": {
+  "ours": "<ebe0> 덮쳐들었다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "a11b2a6ba6": {
+  "ours": "<02><eb00> 방어 자세를 취했다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "d9b523f2d8": {
+  "ours": "<02>에게는 맞지 않았다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "a60250af2f": {
+  "ours": "의 창에서 불꽃이 뿜어져 나왔다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "32d11d41e0": {
+  "ours": "<ebe0> 집게를 치켜들었다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "e345b6a614": {
+  "ours": "<02><eb00> 껍질에 틀어박혔다. 방어력이 2배가 됐다.<0a>",
+  "src": "ps1:ed2:ED2MON"
+ },
+ "d5b3d747fe": {
+  "ours": "<ebe0> 껍질에 틀어박혀 있다.<0a>",
+  "src": "canon:ed2:battle"
+ },
+ "34b412a463": {
+  "ours": "<ebe0> 동료를 불렀다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "2ee44e107b": {
+  "ours": "<02><eb01> 나타났다.<0a>",
+  "src": "canon:ed2:battle"
+ },
+ "8cb49e8236": {
+  "ours": "<ebe2> 외웠다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "348514b98c": {
+  "ours": "<ebe0> 조종의 피리를 불었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "1be2ec4409": {
+  "ours": "<02><eb00><06>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "029e90c0fa": {
+  "ours": "<02>에게<06>",
+  "src": "canon:ed2:battle"
+ },
+ "07949aedf3": {
+  "ours": "<02><eb00> <0904>의 앞으로 뛰쳐나왔다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "e14a2e787d": {
+  "ours": "<02><eb00> 머리가 분열했다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "f841c2f9b5": {
+  "ours": "<ebe0> 발톱을 치켜들었다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "1abde4de00": {
+  "ours": "<ebe0> 모래 속으로 숨어들었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "0585476196": {
+  "ours": "<ebe1> 모래 속에서 튀어나왔다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "7c463e87f2": {
+  "ours": "<02><eb00> 허를 찔렸다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "9cc3694a7c": {
+  "ours": "{レミングプラス|이/가} 나타났다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "1f67b9a3bc": {
+  "ours": "{レミングプラス|과/와} {スプラッシャー|이/가} 나타났다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "a4a654fb18": {
+  "ours": "<ebe0> 물었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "71c693f4b9": {
+  "ours": "<ebe0> 발톱을 내리쳤다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "5849684bf0": {
+  "ours": "<ebe0> 주위를 뛰어다니고 있다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "b56f9d48a8": {
+  "ours": "의 급강하 공격!!<07>",
+  "src": "canon:ed2:battle"
+ },
+ "aa49bacad4": {
+  "ours": "<02>의 방어구가 부서졌다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "aa48c48406": {
+  "ours": "의 분노의 공격!!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "ce70019a5e": {
+  "ours": "<02>에게 방패를 건넸다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "a84e969ca9": {
+  "ours": "<02><eb01> 든 곤봉이 검으로 변했다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "65bf5c5228": {
+  "ours": "<ebe0> 몸통 박치기를 해 왔다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "253085d903": {
+  "ours": "<ebe0> 체액을 토했다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "1031eef7c5": {
+  "ours": "<ebe0> 보이지 않는 날개로 날갯짓했다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "00fbce7f15": {
+  "ours": ""
+ },
+ "8e17148a0e": {
+  "ours": ""
+ },
+ "9250a4783e": {
+  "ours": ""
+ },
+ "d0389efee0": {
+  "ours": "<ebe0> 한쪽 다리로 섰다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "b5fa0e9d26": {
+  "ours": "<ebe0> 쓰러진 동료를 보고 슬퍼하고 있다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "eb50d3749a": {
+  "ours": "그 마음이 닿아 <02><eb00> 되살아났다.<0a>",
+  "src": "ps1:ed2:monster_lines"
+ },
+ "c750c0da72": {
+  "ours": "하지만 주문은 실패했다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "2cbfb15379": {
+  "ours": ""
+ },
+ "5ae2c618f3": {
+  "ours": "<ebe0> 돌진해 왔다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "59ab211f97": {
+  "ours": "의 혹이 부풀어 올랐다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "6c550bc7bd": {
+  "ours": " <02><eb00> 공중에 떴다.<0a>",
+  "src": "ps1:ed2:ED2MON"
+ },
+ "a42544bd04": {
+  "ours": "<02><eb00> 상승 기류를 타고 사라져 버렸다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "82ad338794": {
+  "ours": "<ebe0> 아직 떠 있다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "ec3f0d014e": {
+  "ours": "의 고도가 내려왔다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "154bcab3a4": {
+  "ours": "의 눈이 번뜩였다!!<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "961750ed5c": {
+  "ours": "<02><eb00> <1e>번개의 지팡이<04>를 사용했다. 이그나의 효과가 있다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "20f484466f": {
+  "ours": "{ビジョー|은/는} <02><eb02> 칭찬하며 박수를 치고 있다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "e3fb876874": {
+  "ours": "<02><eb00> 수줍어한다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "56501d13dc": {
+  "ours": "<02><eb00> 혼자서 기뻐하고 있다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "8929c992bd": {
+  "ours": "<02><eb00> 뇌진탕을 일으켰다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "579381a1ef": {
+  "ours": "<02><eb00> 뇌진탕으로 못 움직인다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "62bc1ac4bb": {
+  "ours": "<10:000710>제길 내가 못 움직일 때 <06>",
+  "src": "ours:ed2-manual"
+ },
+ "607c6a5aa8": {
+  "ours": "도 피해를 주다니…<03>배로 갚아 주마!!<05><06>",
+  "src": "ours:ed2-manual"
+ },
+ "572a2a52fd": {
+  "ours": "<10:000710>바보 같은 놈 내가 못 움직이는데도 피해를 줄 수 없다니…<03>얼른 해치워 주마!!<05><06>",
+  "src": "ours:ed2-manual"
+ },
+ "91e7f1a33f": {
+  "ours": "<08><1e>{プルダーム}<04><07>",
+  "src": "canon:ed2:battle"
+ },
+ "5ebbc14a7e": {
+  "ours": "<02>의 신비한 거품이 터졌다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "2ba2586dab": {
+  "ours": "<02><eb00> 공격을 피하고 되받아쳤다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "e3884f330f": {
+  "ours": "<02><eb00> 독에 걸렸다!!<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "fda5bdec9c": {
+  "ours": "<1e>{ダリス}<04><01>흐흐흐<01>이 몸의 진정한 무서움을<01>알게 해 주지.<05><06>",
+  "src": "canon:ed2:battle"
+ },
+ "db864098b8": {
+  "ours": "<02><eb00> 기합과 함께 기를 몸에 둘렀다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "af8b51fa5f": {
+  "ours": "<08><1e>{ダリス}<04><01>크큭 뭐 건방진 것이…<03>네놈들 따위는 이대로의 힘으로 충분하다.<01>각오해라!!<05><06>",
+  "src": "ours:ed2-manual"
+ },
+ "58f2563351": {
+  "ours": "<02><eb00> 기운으로 <06>",
+  "src": "ours:ed2-manual"
+ },
+ "86b5242dcf": {
+  "ours": "<02>의 가슴을 조였다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "11f16fd083": {
+  "ours": "<ebe0> 상단 자세를 취했다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "96271b4584": {
+  "ours": "<ebe0> 검을 내리쳤다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "c6cdd0c731": {
+  "ours": "<02><eb00> 공격을 피했다.<0a>",
+  "src": "canon:ed2:battle"
+ },
+ "cf94ef330a": {
+  "ours": "<ebe0> 수염을 수상하게 움직였다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "1b6fc94761": {
+  "ours": "<02><eb01> 물을 뿜자 신비한 갓이 생겼다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "48e406049b": {
+  "ours": "<02>의 갓이 사라졌다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "d6bb4add96": {
+  "ours": "<ebe0> 화났다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "ebb197f874": {
+  "ours": "<ebe0> 동료를 불렀다.<0a>",
+  "src": "canon:ed2:battle"
+ },
+ "cf97b0e849": {
+  "ours": "<ebe0> 날개를 흔들었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "69f8bf7cb3": {
+  "ours": "<ebe0> 독을 내뿜었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "e11d3be5da": {
+  "ours": "<ebe0> 지팡이를 꽉 쥐었다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "60e03129dd": {
+  "ours": "<02><eb00> 마지막 힘을 쥐어짜서<07>",
+  "src": "ours:ed2-manual"
+ },
+ "54455fe7b2": {
+  "ours": "<02>에게 레스를 외웠다.<0a>",
+  "src": "canon:ed2:battle"
+ },
+ "764ba04bc6": {
+  "ours": "<ebe0> 도망쳤다.<0a>",
+  "src": "canon:ed2:system"
+ },
+ "c7ade9b3c2": {
+  "ours": "의 수정구슬이 빛났다!!<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "f2b1adf1c1": {
+  "ours": "<02>의 ＨＰ가 반으로 줄었다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "f9244951e9": {
+  "ours": "<02><eb00> 저주의 말을 남겼다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "fccb0fdfad": {
+  "ours": "<ebe0> 덮쳐 왔다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "a1e3ef7e27": {
+  "ours": "<ebe0> 물었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "05eef86531": {
+  "ours": "<ebe0> 울부짖고 있다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "d78d55e8e1": {
+  "ours": "멀리서 짖는 소리를 듣고 <02><eb01> 달려왔다.<0a>",
+  "src": "canon:ed2:battle"
+ },
+ "adfbf6d540": {
+  "ours": "<02><eb00> 독을 중화했다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "4e86d4715c": {
+  "ours": "<02><eb00> 독을 다 중화하지 못했다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "7e97d76361": {
+  "ours": "<ebe0> 지팡이를 치켜들었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "5a7944d666": {
+  "ours": "<02>에게 눈독을 들였다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "d6d52dc6a3": {
+  "ours": "의 발톱에 찢겼다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "4cc599e4cd": {
+  "ours": "<ebe0> 날카로운 펀치를 내질렀다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "ab6dc1332a": {
+  "ours": "<02><eb00> 머리가 마비되었다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "bd6bda1861": {
+  "ours": "<02>의 몸에 독이 퍼졌다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "6c8f7fddc0": {
+  "ours": "<ebe0> 채찍을 휘둘렀다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "5543bff498": {
+  "ours": "<02>의 채찍에서 번개가 튀었다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "14ba41f45b": {
+  "ours": "<02><eb00> 기분 좋아 보인다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "39a5d97f65": {
+  "ours": "<01><02><ff00><4e75>{ブードゥー|과/와} {シャンシャン|이/가} 나타났다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "28a9ba231f": {
+  "ours": "<ebe0> 지팡이를 휘둘렀다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "de887fb021": {
+  "ours": "<02><eb00> 정신을 차렸다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "99ef8d4f88": {
+  "ours": "<ebe0> 도움을 청했다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "9dec72ece6": {
+  "ours": "<02><eb01> 도우러 왔다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "53782cdd8f": {
+  "ours": "<01><02><ff00><4e75>{ブードゥー|이/가} 나타났다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "41c2ccc517": {
+  "ours": "<ebe0> 몸통 박치기를 했다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "7b4491d725": {
+  "ours": "공격을 받은 <02><eb01> 흥분했다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "36e4532289": {
+  "ours": "하지만 아무도 오지 않았다. <02><eb00> 마음이 서늘해지는 것을 느꼈다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "e5aa2b3ba3": {
+  "ours": "<02><eb00> 안개를 뿜었다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "6463e0f91a": {
+  "ours": "<02><eb01> 안개 속에서 나타났다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "0fe7c1601d": {
+  "ours": "<ebe0> 촉수를 뻗었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "d6cacfc1da": {
+  "ours": "에게 허를 찔렸다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "aa0c706bda": {
+  "ours": "<02>의 주위에 낀 안개가 걷히고 모습이 보이게 되었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "9e7c8bcb64": {
+  "ours": "<02><eb00> 제 몸에 쌓아 둔 <01>에너지를 단숨에 방출했다.<07>",
+  "src": "canon:ed2:battle+ps1:ed2:ED2MON"
+ },
+ "1854448666": {
+  "ours": "는 창으로 공격했다!!<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "3f2dd2b6e5": {
+  "ours": "<ebe0> ＨＰ를 회복하고 돌아왔다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "b612863ce0": {
+  "ours": "<02><eb00> 갓을 펼쳤다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "7326936cf1": {
+  "ours": ""
+ },
+ "ec6182f908": {
+  "ours": "<ebe0> 펄쩍 뛰었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "eb506d6d38": {
+  "ours": "<02><eb00> 먹이를 찾아 날아갔다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "e10180e418": {
+  "ours": "<02><eb01> 날아왔다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "dc5c719614": {
+  "ours": "<02><eb00> 무언가 기척을 느꼈다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "a8efc5594d": {
+  "ours": "<ebe0> 꼬리의 바늘을 자기 등에 찔렀다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "563a019099": {
+  "ours": "의 애완동물이 덮쳐 왔다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "44b9c9d4d6": {
+  "ours": "<02><eb00> 주문이 떨어져서 도망칠 기회를 엿보고 있다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "d8b9b475b2": {
+  "ours": "<02><eb00> 도망쳤다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "fc77ae9f20": {
+  "ours": "<02><eb00> 도망치기를 포기했다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "4572a57acb": {
+  "ours": "<ebe0> 기를 발했다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "9f069d6c74": {
+  "ours": "<02><eb00> 회복의 갑옷을 벗었다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "8775dd661f": {
+  "ours": "<02><eb00> 방어 자세를 취했다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "6b62480b43": {
+  "ours": "<08>전투에서 승리했다.<07>",
+  "src": "canon:ed2:system"
+ },
+ "5901be9fcf": {
+  "ours": "<08><0e><ec02> 가지고 있었다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "00c4fe03f8": {
+  "ours": "<02><eb00> 불꽃을 다루고 있다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "15b46b9643": {
+  "ours": "<02><eb00> 수상한 기술을 선보였다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "ada1694bfc": {
+  "ours": "<02><eb00> 독가스를 뿜었다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "2bbc523e0f": {
+  "ours": "<02><eb00> 독가스를 들이마셨다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "3a9a7a1a1a": {
+  "ours": "<ebe0> {ドラストゴースト|을/를} 불러들였다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "58875f980a": {
+  "ours": "<02><eb00> 공격 태세에 들어갔다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "3b93f2d34d": {
+  "ours": "<02><eb00> <1e>디겐스<04>의 앞에 나서서 주문을 받아냈다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "23d8ab1ea1": {
+  "ours": "<02><eb00> <1e>디겐스<04>의 앞에 나서서 검을 받아냈다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "cdae8719dc": {
+  "ours": "<02><eb00> 꼬리로 공격했다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "2a1d4485f4": {
+  "ours": "<02>의 목을 물어뜯었다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "25c34378e1": {
+  "ours": "<02><eb00> 도망쳤다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "459f05bfb5": {
+  "ours": "{ディゲンス}<06>",
+  "src": "canon:ed2:battle"
+ },
+ "8275be39c7": {
+  "ours": "<02><830283028302><02><ff00><10:000985><10:0009a8>이 얼음벽은 깨지지 않는다.<05><06>",
+  "src": "ours:ed2-manual"
+ },
+ "e8aa7d135a": {
+  "ours": "<10:000985><10:0009a8>이 얼음벽은 깨지지 않는다.<05><06>",
+  "src": "ours:ed2-manual"
+ },
+ "152823b0fa": {
+  "ours": "얼음벽은 깨지지 않는다.<0a>",
+  "src": "canon:ed2:battle"
+ },
+ "f0301eaef7": {
+  "ours": ""
+ },
+ "ae18797eb8": {
+  "ours": "<140041><10:000985>그 정도 불로는 이 벽은 깨지지 않는다.<120418><0f:000976>",
+  "src": "ours:ed2-manual"
+ },
+ "ec27e15429": {
+  "ours": "<10:00099d>이 나타났다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "0a3ff2d530": {
+  "ours": "<08><1e><10:00099d><04><01>그하하하.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "e74a56bc11": {
+  "ours": "{カザズーム}<06>",
+  "src": "canon:ed2:battle"
+ },
+ "f3834bcb63": {
+  "ours": "네놈들 따위에게 <06>",
+  "src": "ours:ed2-manual"
+ },
+ "dfc4c32e89": {
+  "ours": "<10:000985><10:0009a8>이 몸은 쓰러뜨릴 수 없다.<06>",
+  "src": "ours:ed2-manual"
+ },
+ "85eaddf73e": {
+  "ours": "<10:00099d>은 분신했다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "07e145e5eb": {
+  "ours": "<08><1e><10:00099d>A<04><01><10:00098c><10:0009a8>우리는<10:0009c6><05><06>",
+  "src": "ours:ed2-manual"
+ },
+ "de32decce0": {
+  "ours": "<1e>자기 자신<04><1f>에게<04><06>",
+  "src": "ours:ed2-manual"
+ },
+ "dd8d465a70": {
+  "ours": "<02><eb00> 부메랑을 던졌다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "578e0b9c68": {
+  "ours": "<02><eb00> 주문을 되돌렸다!!<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "e6ecd15b89": {
+  "ours": "{ドラスト|이/가} 나타났다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "65bedf136e": {
+  "ours": "<ebe1> 덤벼들었다!!<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "7b2c6c5794": {
+  "ours": "<ebe0> 수상한 선율을 연주했다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "2aea186cdd": {
+  "ours": "<01><02><02><02><02><03><ff00><4e754e754e754e75>{ワームド|이/가} 나타났다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "09ec66de17": {
+  "ours": "<ebe0> 세 번째 눈을 떴다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "ed4d644b0c": {
+  "ours": "{妖魔火砲|이/가} 나타났다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "23c6df6f0d": {
+  "ours": "의 2회 공격!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "2e35333443": {
+  "ours": "<ebe0> <0904><eb52> 재촉했다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "64bd5f26a8": {
+  "ours": "<0905>에게 재촉받은 <02><eb00> 연속 공격을 했다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "0d9028e925": {
+  "ours": "<ebe0> 꼬리로 공격했다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "ca5b80a2e5": {
+  "ours": "<02><eb00> 주문을 삼켰다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "e3aa77850e": {
+  "ours": "<02><eb00> 삼켰다가<06>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "c400a4d218": {
+  "ours": "<ebe2> 토해냈다!!<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "39c18be14e": {
+  "ours": "<ebe0> 몸이 얼어붙는 듯한 함성을 질렀다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "39c6784db9": {
+  "ours": "<ebe0> 아공간에서 무기를 가져왔다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "86d34dc81b": {
+  "ours": "<02><eb00> 죽음의 바닥에서 날아올랐다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "9f186cd8f5": {
+  "ours": ""
+ },
+ "7ab514117d": {
+  "ours": ""
+ },
+ "30f1c9f587": {
+  "ours": "<ebe0> 새끼를 낳았다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "644b4782c9": {
+  "ours": "뉴트하니 셋이 힘을 합쳤다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "4fc7af31e2": {
+  "ours": "의 심장 소리를 들었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "ae2d0ef80d": {
+  "ours": "<02><eb00> 산주머니를 냈다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "a3d40ada45": {
+  "ours": "<02>의 산주머니가 흩어졌다!!<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "75a3f352aa": {
+  "ours": "<02>의 산주머니를 부쉈다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "6e4afc994b": {
+  "ours": "<ebe0> 변신했다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "dfa2063f42": {
+  "ours": "<02><eb00> 동료에게 원한을 풀어 달라며 주문을 건넸다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "da8f0c46fe": {
+  "ours": "<ebe0> 작열하는 불꽃을 뿜어냈다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "53702e41b0": {
+  "ours": "브람나퀸을 감싸며 <02><eb01> 뛰쳐나왔다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "1902384fef": {
+  "ours": "<02>에게 새 기척이 생겼다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "08e929df01": {
+  "ours": "<02><eb01> 도우러 왔다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "da44332885": {
+  "ours": "하지만 아무도 오지 않았다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "99d4b200ee": {
+  "ours": "<02><eb00> 얼음 기둥을 날렸다!!<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "cc187fcb32": {
+  "ours": ""
+ },
+ "a7f4560777": {
+  "ours": ""
+ },
+ "bdaf513a10": {
+  "ours": "<02><eb00> 조수를 불러들였다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "babc621475": {
+  "ours": "<02>의 행운이 11 <06>",
+  "src": "ours:ed2-manual"
+ },
+ "ad90fa77e8": {
+  "ours": "올랐다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "00b89ec206": {
+  "ours": "떨어졌다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "b9f7f3047d": {
+  "ours": "{グロル|은/는} 삶겨 버렸다. <0a>",
+  "src": "ps1:ed2:ED2MON"
+ },
+ "145ad349a5": {
+  "ours": "{グロル} 주위의 물에서 이그나가 전해졌다!!<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "a615dbf086": {
+  "ours": "<05><08><02><01>제법 해볼 만한 놈이군.<01>슬슬 진심을 보여 주마.<05><06>",
+  "src": "ours:ed2-manual"
+ },
+ "94c1228da9": {
+  "ours": "<02><eb00> 크게 날갯짓했다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "32ea9f0725": {
+  "ours": "<02><eb00> 불꽃의 숨을 뿜었다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "713aefe7d3": {
+  "ours": "<02><eb00> 허공을 가르는 파동을 냈다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "2b30efcee6": {
+  "ours": "<02>에게 합계<06>",
+  "src": "canon:ed2:battle"
+ },
+ "5c61ad292d": {
+  "ours": "의 피해!!<07>",
+  "src": "canon:ed2:battle"
+ },
+ "6cee9544cc": {
+  "ours": "의 가슴이 빛났다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "d3d80996b8": {
+  "ours": "<02>의 연속 공격!!<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "968afffdf2": {
+  "ours": "<1e><10:000063><04>\n후하하하하\n내 진정한 힘을 똑똑히 알게 해 주마.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "9669e9ef28": {
+  "ours": "<04>\n후하하하하\n내 진정한 힘을 똑똑히 알게 해 주마.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "4cf3b52241": {
+  "ours": ""
+ },
+ "abff51109e": {
+  "ours": ""
+ },
+ "16e4e7998a": {
+  "ours": "하지만 <0e><ec04>는 피해를 줄 수 없다!!<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "cce3beeb19": {
+  "ours": "<ebe4>는 피해를 줄 수 없다!!<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "352e404451": {
+  "ours": "<08>{皇帝 ゴドウィン２世|을/를} 해치웠다.<07>",
+  "src": "canon:ed2:battle"
+ },
+ "f529813ce0": {
+  "ours": "의 피해!!<0a>",
+  "src": "canon:ed2:battle"
+ },
+ "82de8552a2": {
+  "ours": "의 3회 공격!!<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "95611dbc77": {
+  "ours": ""
+ },
+ "7c5049a0fc": {
+  "ours": "<1e>{レイシア}<04>가 나타났다.<05><10:000b19>자 기다렸지.\n이게 마스터가 만들어 준 검이야.<05><06>",
+  "src": "ours:ed2-manual"
+ },
+ "3f24c0d36c": {
+  "ours": "{レイシア|이/가}<06>",
+  "src": "canon:ed2:battle"
+ },
+ "a1ef8ca4b2": {
+  "ours": "<0e><ec02> 내밀었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "07b5d64f1c": {
+  "ours": "<08><10:000b18>이럴 때 농담하지 마.\n제대로 받아.<05><06>",
+  "src": "ours:ed2-manual"
+ },
+ "c388653102": {
+  "ours": "<08><10:000b18>자, 함께 싸우자.<05><06>",
+  "src": "ours:ed2-manual"
+ },
+ "659f4b540b": {
+  "ours": "<10:000b18>조금만 더 하면 되니까 약한 소리 하지 말고\n힘내.<05><06>",
+  "src": "ours:ed2-manual"
+ },
+ "ef58286ffd": {
+  "ours": "<08><1e>{レイシア}<04><07>",
+  "src": "canon:ed2:battle"
+ },
+ "418c6e3504": {
+  "ours": "<02><eb00> 물어뜯었다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "5ed803fcb8": {
+  "ours": "<02><eb01> 죽을힘을 다해 부딪쳤다!!<0a>",
+  "src": "canon:ed2:battle"
+ },
+ "de9e108dfb": {
+  "ours": "<02>의 몸에서 산이 흩어졌다!<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "1b9727e4da": {
+  "ours": "<02><eb01> 아파하는 모습에<06>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "6e86471ca3": {
+  "ours": "<02><eb00> 흥분했다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "ef3bf5094f": {
+  "ours": "<02><eb00> 공격을 견뎠다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "303bf59ded": {
+  "ours": "<02><eb00> 모습을 감췄다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "038f6609dd": {
+  "ours": "<02><eb01> 모습을 나타냈다.<0a>",
+  "src": "canon:ed2:battle"
+ },
+ "466d268f1c": {
+  "ours": "<02><eb00> 독을 만들기 시작했다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "53404e48c4": {
+  "ours": "<02><eb00> 맹독을 완성했다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "5d3e9fb4b5": {
+  "ours": "<02>의 옷에서 본체가 나왔다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "4d4ea5895c": {
+  "ours": "<02><eb00> 상황을 보고 있다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "e5f3982886": {
+  "ours": ""
+ },
+ "ad5636def5": {
+  "ours": ""
+ },
+ "299738c6b1": {
+  "ours": "<02><eb00> 자기 머리를 흔들어서 <06>",
+  "src": "ours:ed2-manual"
+ },
+ "609b84ed7d": {
+  "ours": "제정신으로 돌아왔다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "1a8bfbdba1": {
+  "ours": "억지로 눈을 떴다.<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "d319f6a60d": {
+  "ours": "<02><eb00> 동료를 불렀다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "e65049712a": {
+  "ours": "{装甲スラッグ|이/가} 떨어져 내렸다!!<0a>",
+  "src": "ours:ed2-manual"
+ },
+ "edbacca653": {
+  "ours": "<02><eb00> 크랩아머를 장비했다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "b9ea0d7362": {
+  "ours": "<02><eb00> 크랩아머의 무게로 꼼짝 못 한다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "c4a6495a1e": {
+  "ours": "<02>의 해머액스가 작열하는 도끼로 변했다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "e82cc26763": {
+  "ours": "<02>의 주위에 열풍이 일었다!!<07>",
+  "src": "ours:ed2-manual"
+ },
+ "a1cd1cb204": {
+  "ours": "<02><eb00> 빛의 고리를 날렸다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "f79249cdca": {
+  "ours": "{紅牙戦士|과/와} {ザンオー|이/가} 나타났다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "0a4634550b": {
+  "ours": "<02><eb00> 기뻐서 신이 났다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "80163f034e": {
+  "ours": "<02><eb00> 기분이 나빠졌다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "4412320fed": {
+  "ours": "<02><eb01> ＨＰ를 회복하고 나타났다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "41ae8ec55c": {
+  "ours": "<03><01><02><01><02><01><02><01><02><01><02><01><02><01><02><01><02><01><02><01><ff00><4e75>{海王騎士|이/가} 나타났다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "b0296236a3": {
+  "ours": "<02><eb00> 지팡이를 움켜쥐었다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "188bd4f9e1": {
+  "ours": "<ebe0> 점액을 내뿜었다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "5ccd4199be": {
+  "ours": "<02><eb00> 꼬리를 흔들며 웃었다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "0b31247f9b": {
+  "ours": "<02><eb00> 머리를 들고 덤벼들었다.<06>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "60feebe884": {
+  "ours": "<01><02><03><ff06>{ブラックナイツ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "2bb1947a05": {
+  "ours": "블랙나이트들이 나타났다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "dac93a32f3": {
+  "ours": "<02><eb00> 검을 휘둘렀다.<07>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "b52708df76": {
+  "ours": "블랙나이트들은(는) 결계를 쳤다. <0a>",
+  "src": "ps1:ed2:ED2MON"
+ },
+ "542b33ff6a": {
+  "ours": "<02><eb00> 결계를 쳤다.<0a>",
+  "src": "ps1:ed2:ED2MON_LINES"
+ },
+ "ba9153a0c0": {
+  "ours": "그하하하.<07>",
+  "src": "ours:ed2-manual"
+ },
+ "f5878a39a3": {
+  "ours": " 쓰러뜨릴 수 없다.<06>",
+  "src": "ours:ed2-manual"
+ },
+ "a4487cd481": {
+  "ours": "<1e>{レイシア}<04><07>",
+  "src": "ours:ed2-manual"
+ },
+ "46d234e955": {
+  "ours": "{スラッグ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "f5b0dd0edc": {
+  "ours": "{ヨークスラッグ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "152d09f568": {
+  "ours": "{赤スラッグ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "486a2acb3a": {
+  "ours": "{リンコー|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "b0e40ea8ed": {
+  "ours": "{チャンタラー|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "bbe5d7d698": {
+  "ours": "<dc>{デスバード|과/와} {チャンタラー|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "9328a2e6dd": {
+  "ours": "{カイザー|과/와} {トンキィ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "bd2a97f1c2": {
+  "ours": "{ルンバット|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "fe2018262d": {
+  "ours": "{サンリーフ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "12552f071b": {
+  "ours": "{アシカサゴ|과/와} {羽竜|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "153f738d0c": {
+  "ours": "{炎の騎士|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "2132511921": {
+  "ours": "{邪心の仮面|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "6fa19b873f": {
+  "ours": "{インクラブ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "428a18c848": {
+  "ours": "{アースワーム|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "8399940088": {
+  "ours": "{ワームマスター|과/와} {アースワーム|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "21162ebeb2": {
+  "ours": "{コラド|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "4fa9e4f0ca": {
+  "ours": "{砂もぐら|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "34eb1483b5": {
+  "ours": "{スプラッシャー|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "ab1a066137": {
+  "ours": "{トータスマン|과/와} {リザードマン|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "da0e14b631": {
+  "ours": "{冷血ガメ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "a2ccc1c8df": {
+  "ours": "{冷血ガメ|과/와} {ゴールド|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "3d61dde893": {
+  "ours": "{猛毒ナメクジ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "7d8201bec4": {
+  "ours": "{猛毒ナメクジ|과/와} {トプス|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "16326feab6": {
+  "ours": "{木人|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "9e19d65b51": {
+  "ours": "{木人|과/와} {ビルタラ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "2a33acd2b3": {
+  "ours": "{サボン|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "ae3d41f7d2": {
+  "ours": "{バカラ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "bd68f06ba4": {
+  "ours": "{グロッグガード|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "02d1cd56ef": {
+  "ours": "{ビジョー|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "8bcf4db52d": {
+  "ours": "{プルダーム|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "de7d812ef4": {
+  "ours": "{怪魚|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "5413c7753c": {
+  "ours": "{ガード|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "c6fce22c78": {
+  "ours": "{ダリス|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "483a22749b": {
+  "ours": "{ひげくじら|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "2e59be1d33": {
+  "ours": "{鋼鉄アリ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "ff916e7fa6": {
+  "ours": "{ホーボ|과/와} {毒カヅラ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "5232f7bc9a": {
+  "ours": "{イグナの使者|과/와} {バレート|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "d1d8abae45": {
+  "ours": "{触手妖虫|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "0de0b90f22": {
+  "ours": "{魔界僧|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "dea9463bc5": {
+  "ours": "{ブラムナドッグ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "9eda61f60c": {
+  "ours": "{杖使い|과/와} {ダグニア|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "bbbc956140": {
+  "ours": "{ハンタークロー|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "6240efba7b": {
+  "ours": "{雷娘|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "b719341d0f": {
+  "ours": "{クラック|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "15e6863dc2": {
+  "ours": "{ギュード|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "204a7aac90": {
+  "ours": "{デ・オクト|과/와} {ブランナ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "ef8f5902f1": {
+  "ours": "{レッドラット|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "37a8fe326b": {
+  "ours": "{モーンガー|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "7ca0c9874f": {
+  "ours": "{モーンガー|과/와} {陸クラゲ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "cc2df76729": {
+  "ours": "{モーンガー|과/와} {ロングアージ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "95cef73cf8": {
+  "ours": "{ダンキ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "5e449adbc0": {
+  "ours": "{ゴーリキュ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "695d38ed31": {
+  "ours": "{ゾリアード|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "0b9ca0b0d5": {
+  "ours": "{ダークリア|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "1c2978a3f9": {
+  "ours": "{気功うさぎ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "d176beda58": {
+  "ours": "{ヌカッチ|과/와} {甲速虫|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "016b110c4a": {
+  "ours": "{ギャノア|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "ff58dbd261": {
+  "ours": "{ポイズンガード|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "837cae4690": {
+  "ours": "{ディゲンス|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "42a9543ab8": {
+  "ours": "{スラッシュ兵|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "9e1975e3c7": {
+  "ours": "{ザコン|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "8ca4272193": {
+  "ours": "{音操り|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "5d5fffce55": {
+  "ours": "{バッファー|과/와} {ウｲーバー|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "95f1bab7fd": {
+  "ours": "{ガンス|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "78d1c88eb5": {
+  "ours": "{ジーヘッド|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "2d8a3035c2": {
+  "ours": "{甲殻亜人|과/와} {ドラウン|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "d13ab3a6a7": {
+  "ours": "{ニュート|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "a364ce7129": {
+  "ours": "{暗黒ガス|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "49f39c2fa4": {
+  "ours": "{エビューン|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "0c202005e8": {
+  "ours": "{ホログナ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "dcff8311d2": {
+  "ours": "{ブラムナクイーン|과/와} {護衛|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "15d6ad66c0": {
+  "ours": "{くぐつ戦士|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "63bce9e154": {
+  "ours": "{ワッバ|과/와} {ヒューゲス|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "52919219c0": {
+  "ours": "{グロル|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "f69a6b4711": {
+  "ours": "{ガービィ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "fe6e803125": {
+  "ours": "{ハイ･ドール|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "67fa3c3f3a": {
+  "ours": "{ダダルカ|과/와} {アクトス|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "adb704e662": {
+  "ours": "{ファンクス|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "90f9202a29": {
+  "ours": "{リーゲル|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "e85f481c7f": {
+  "ours": "{浮遊王|과/와} {毒鉱石|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "7bd947f6fe": {
+  "ours": "{ドルナー|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "7020f8e82c": {
+  "ours": "{バイオレッド|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "5c40bc9d6a": {
+  "ours": "{メタルスチーム|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "b78707e348": {
+  "ours": "{サイレント・ロード|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "737bd78889": {
+  "ours": "{ストライプツ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "41ca4584b7": {
+  "ours": "{ユアーン|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ },
+ "05caa1a163": {
+  "ours": "{ドォミィ|이/가} 나타났다.<07>",
+  "src": "ours:ed2-appear"
+ }
+}

@@ -42,6 +42,12 @@ PINNED: set[int] = {
 RELOCATE: tuple[int, ...] = (
     0x29D38,  # ED1 0x24a7a — 도망(복수) · 꼬리로 옮긴다(참조가 절대 주소인 것만 옮길 수 있다)
     0x29D3C,  # ED1 0x24a7e — 도망(단수)
+    0x29D4C,  # 「의 공격」·회심·통한·「…에는 효과가 없었다」·「아무 일도 없다」 — 절대 참조라 꼬리로 옮겨 근처 칸을 비운다(TAIL_JUMP 가 쓸 자리)
+    0x29D54,
+    0x29D60,
+    0x29E0E,
+    0x29DD9,
+    0x2468C,  # ED1 0x1fed2 — 「<0e>을 가지고 있었다.」(원문 17B 칸에 20B)
     0x29DF5,  # ED1 0x24b37 — 「運悪」 묶음(goto 가 16비트라 이어진 것을 함께)
     0x29DFC,  # ED1 0x24b3e
     0x29E00,  # ED1 0x24b42
@@ -50,10 +56,20 @@ RELOCATE: tuple[int, ...] = (
 )
 # 제자리 묶음에 안 들어가는 스트림 — 제자리엔 goto(3B)만 두고 본문은 **근처(±30KB) 다른 묶음의 남는 칸**(꼬리 이전·고정으로 비워진 자리)에
 # 앉힌다. 참조가 pc 상대(16비트)라 먼 꼬리로 못 가는 자리를 위한 길이다(ED1 TAIL_JUMP 와 같은 기전). 값 = 본문 뒤 되돌아갈 자리(없으면 None).
-TAIL_JUMP: dict[int, int | None] = {0x27CB0: None, 0x27CC3: None, 0x31026: None}
+TAIL_JUMP: dict[int, int | None] = {
+    0x27CB0: None,
+    0x27CC3: None,
+    0x31026: None,
+    # 06·0A 로 끝나 **물리적으로 다음 스트림으로 흐르는** 것은 본문 뒤에 goto 를 달아 원래 끝으로 되돌린다(ED1 0x324DD 와 같다)
+    0x29D26: 0x29D2A,  # 「<02>에게<06>」 +2B — 뒤 「의 피해!!」(고정)로 흐른다
+    0x29E22: 0x29E34,
+    0x29E34: 0x29E4E,
+}
+# 본문을 **줄바꿈(`01`) 앞뒤로 둘로 쪼개** 앞은 제자리 · 뒤는 근처 칸에 앉히고 goto 로 잇는다(마스터 10-12 「b 로 해보자」) — 화면에는 줄바꿈 자리라 안 보인다.
+TAIL_SPLIT: set[int] = {0x31026}
 _FAKE = 1 << 24
 _REACH = 0x7800  # goto 가 16비트 상대(±32KB) — 여유를 두고 30KB
-TAIL_SIZE = 0x80  # 빌드가 꼬리에 비워 두는 칸(build.SYSMSG_TAIL)
+TAIL_SIZE = 0x100  # 빌드가 꼬리에 비워 두는 칸(build.SYSMSG_TAIL)
 SJIS_RUN = re.compile(rb"(?:[\x81-\x9f\xe0-\xea][\x40-\x7e\x80-\xfc]){3,}")
 
 
@@ -143,8 +159,11 @@ def table_ranges() -> list[tuple[int, int]]:
 def streams(d: bytes) -> dict[int, dict]:
     rs = refs(d)
     out = {}
+    tbl = table_ranges()
     for t in sorted(rs):
-        if t >= CODE_END:
+        if t >= CODE_END or any(
+            a <= t < b for a, b in tbl
+        ):  # 표(tables.py)가 맡는 자리는 문안 스트림이 아니다
             continue
         try:
             st = scene.parse_stream(d, t)
@@ -224,7 +243,7 @@ def leftover(d: bytes, strs: dict[int, dict]) -> list[tuple[int, int]]:
 
 
 # 첫 조사(2026-10-12) 실측 — 파서·정규식을 고치면 바뀐다. 번역 때 분모로 쓴다.
-EXPECT = (225, 779)  # 스트림 · 스트림 밖 SJIS 런
+EXPECT = (215, 784)  # 스트림 · 스트림 밖 SJIS 런
 
 
 def clusters(strs: dict[int, dict]) -> list[list[int]]:
@@ -456,12 +475,21 @@ def plan(
         for t in order_j:
             if total <= hi - lo:
                 break
-            total -= _len(toks[t]) - 3
-            body = list(toks[t])
+            goto = scene.Token(0, b"\x0f\x00\x00", "ctl", 0x0F, scene.GOTO, _FAKE + t)
+            head: list[scene.Token] = []
+            rest = list(toks[t])
+            if t in TAIL_SPLIT:
+                i = next(
+                    (k for k, tk in enumerate(rest) if tk.kind != "text" and tk.code == 0x01), None
+                )
+                if i is not None:
+                    head, rest = rest[:i], rest[i:]
+            total -= _len(rest) - 3
+            body = list(rest)
             if TAIL_JUMP[t] is not None:
                 body.append(scene.Token(0, b"\x0f\x00\x00", "ctl", 0x0F, scene.GOTO, TAIL_JUMP[t]))
             jumps[t] = body
-            toks[t] = [scene.Token(0, b"\x0f\x00\x00", "ctl", 0x0F, scene.GOTO, _FAKE + t)]
+            toks[t] = [*head, goto]
         size = {t: _len(toks[t]) for t in cl}
 
         def _flows(t, toks=toks):

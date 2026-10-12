@@ -38,14 +38,18 @@ COUNT = 99
 REC0, REC_STEP, NAME_AT = 0x0C, 0x40, 0x30
 NAME_MAX = 15  # 16B 칸 − 06
 LEA = re.compile(rb"([\x41\x43\x45\x47\x49\x4b])\xfa(..)", re.DOTALL)  # a6(4D) 는 플래그 포인터
+APPEAR_RUN = re.compile(
+    rb"(?:[\x81-\x9f\xe0-\xea][\x40-\x7e\x80-\xfc]|[\xa1-\xdf]){2,40}"
+    rb"(?:\x82\xaa\x8c\xbb\x82\xea\x82\xbd\x81\x42|\x82\xc6\x82\xcc\x90\xed\x93\xae\x82\xbe\x81\x42)"
+)  # 「…が現れた。」 · 「…との戦闘だ。」
 FLAG = re.compile(rb"\x4d\xfa(..)(?:\x1c\x80|\x1c\xbc\x00\xff|\x1c\x86)", re.DOTALL)
-SUFFIX = re.compile(r"[Ａ-ＤA-D♀♂]$")
+SUFFIX = re.compile(r"[Ａ-ＤA-D♀♂][′″]?$")  # ED2 는 변형 표지 ′·″ 가 붙는다(붉은슬러그 Ａ′·Ｂ″)
 NAME_TAG = re.compile(r"\{([^{}|]+)(?:\|([^{}]+))?\}")
 MAP_JSON = common.GAME_DIR / "textmap" / "battle.json"
 EXPECT = (
-    269,
-    100,
-    323,
+    247,
+    119,
+    285,
 )  # 이름 · 기본 이름 · 고유 스트림(lea·플래그·자료 A + 연쇄 39, 2026-09-06 · 짧은 lea 조각 +3, 09-27)
 
 
@@ -142,6 +146,34 @@ def refs(b: bytes) -> dict[int, dict]:
     if st:
         ent(v, st)["words"].append(p)
     out.update({k: v2 for k, v2 in chain(b, out).items() if k not in out})
+    # 🔴 **등장 문구**(「Xが現れた。」·「Xとの戦闘だ。」)는 참조를 못 찾는 블록이 많다(ED2 94곳 — 이름이 문자열에 **박혀** 있다). 문안 모양으로 찾는다.
+    for m in APPEAR_RUN.finditer(b, t[3]):
+        q = m.start()
+        if any(k <= q < e["stream"].end for k, e in out.items()):
+            continue
+        st = _stream(b, q) or _short_lea(b, q)
+        if st:
+            out[q] = {"stream": st, "lea": [], "words": [], "pinned": True}
+    # 🔴 call(`10`)·goto(`0F`) 대상도 스트림이다 — ED2 보스 대사는 화자 머리·한 줄을 **하위 스트림 호출**로 조립한다(ED1 엔 거의 없었다).
+    # 참조(lea·자료 A 워드)가 없으니 **제자리에서만**(`pinned`) 다시 쓴다.
+    work = [
+        tok.target
+        for e in out.values()
+        for tok in e["stream"].tokens
+        if tok.ref in (scene.GOTO, scene.CALL)
+    ]
+    while work:
+        tg = work.pop()
+        if tg in out or not 0 <= tg < len(b):
+            continue
+        try:
+            st = scene.parse_stream(b, tg)
+        except (ValueError, IndexError):
+            continue
+        if not _has_kana(st):
+            continue
+        out[tg] = {"stream": st, "lea": [], "words": [], "pinned": True}
+        work += [tok.target for tok in st.tokens if tok.ref in (scene.GOTO, scene.CALL)]
     return dict(sorted(out.items()))
 
 
@@ -282,9 +314,10 @@ def _glossary(jp: str) -> str:
         jp,
         unicodedata.normalize("NFKC", jp),
         unicodedata.normalize("NFKC", jp).replace("・", ""),
+        unicodedata.normalize("NFKC", jp).replace(" ", ""),
     ):
         # 몬스터 이름 칸은 몬스터 범주가 먼저(カース: 카스 ≠ 아이템 커스)
-        v = canon.lookup(k, "monster", "ed1") or canon.lookup(k, None, "ed1")
+        v = canon.lookup(k, "monster", "ed2") or canon.lookup(k, None, "ed2")
         if v:
             return v
     return ""

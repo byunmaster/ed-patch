@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import archives
+import battle
 import chapters
 import common
 import dict_names
@@ -48,10 +49,26 @@ JOSA_RESERVE = 0x340  # 조사 훅 기계어+표(글리프 1,370자 상한) — 
 WRAP_RESERVE = 0x180  # 어절 줄넘김 본체 326B + 반각 「의␣」 28B
 FIELD_HUD_RESERVE = 0x20  # 필드 HUD 트램펄린(이식 전 — 자리만 잡아 둔다)
 SYSMSG_TAIL = sysmsg.TAIL_SIZE  # 시스템 메시지 중 꼬리로 옮기는 스트림(RELOCATE)의 칸
+# 🔴 씬 크기 표(블록당 BE16×4, 712B)를 **꼬리로 옮긴다** — 원래 자리(0x19DC3C)는 전투 아카이브 바로 뒤라, 전투 문안이 늘면 그 712B 가
+# 전투 아카이브의 유일한 여유다. 표를 가리키는 코드는 `lea $19DC3C.l,a1` 하나뿐(0x1A490, `verify_archive_refs` 가 지킨다)이라 피연산자만 고치면 된다.
+SCENE_TABLE_SIZE = 8 * archives.SCENE_BLOCKS
+BATTLE_TAIL_RESERVE = 0x1000  # 전투 블록이 원래 자리에 안 들어갈 때 앉는 꼬리 칸
+SCENE_REF = 0x1A492  # 0x1A490 `lea.l $19dc3c.l,a1` 의 32비트 피연산자 자리
 ARCHIVE_END = (
-    TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - SYSMSG_TAIL
+    TAIL_HI
+    - JOSA_RESERVE
+    - WRAP_RESERVE
+    - FIELD_HUD_RESERVE
+    - SYSMSG_TAIL
+    - SCENE_TABLE_SIZE
+    - BATTLE_TAIL_RESERVE
 )  # 이 앞까지 아카이브가 쓴다
-SYSMSG_TAIL_AT = ARCHIVE_END
+SCENE_TABLE_AT = ARCHIVE_END
+# 전투 아카이브 — 색인(0x18BF76, 99×4)은 제자리지만 **블록은 색인 상대 오프셋이라 어디든 앉는다**. 원래 자리(끝 0x19D96E 뒤는 다른 표라 못 쓴다 —
+# 첫 시도에서 그 718B 를 「여유」로 보고 덮어 새 게임이 까만 화면에서 멈췄다)에 먼저 채우고 넘치는 블록은 꼬리 예약 칸에 앉힌다.
+BATTLE_PRIMARY_END = 0x19D96E
+BATTLE_TAIL_AT = SCENE_TABLE_AT + SCENE_TABLE_SIZE
+SYSMSG_TAIL_AT = BATTLE_TAIL_AT + BATTLE_TAIL_RESERVE
 N_BLOCKS = archives.ARCHIVES["script"][1]
 
 
@@ -60,8 +77,11 @@ class Rom:
 
     ALLOWED: ClassVar[dict[str, tuple[int, int]]] = {
         "script-archive": (ARCHIVE_BASE, ARCHIVE_END),
-        "scene-sizes": (archives.SCENE_SIZES, archives.SCENE_SIZES + 8 * archives.SCENE_BLOCKS),
+        "scene-sizes": (SCENE_TABLE_AT, SCENE_TABLE_AT + SCENE_TABLE_SIZE),
+        "scene-ref": (SCENE_REF, SCENE_REF + 4),
         "checksum": (0x18E, 0x190),
+        "battle-archive": (battle.ARCHIVE, BATTLE_PRIMARY_END),
+        "battle-tail": (BATTLE_TAIL_AT, BATTLE_TAIL_AT + BATTLE_TAIL_RESERVE),
         # 글꼴 리소스 0(대사) · 1(반각) — ED1 구간을 같은 이동량(hangul.SHIFT)으로 옮긴 것(글꼴 구역이 바이트 동일)
         "font0-header": (0x1A54D2 + hangul.SHIFT, 0x1A54DE + hangul.SHIFT),
         "font0-table": (0x1A551A + hangul.SHIFT, 0x1A6080 + hangul.SHIFT),
@@ -315,7 +335,63 @@ def load_sysmsg(orig: bytes) -> dict:
     return smap
 
 
-def collect_chars(maps: dict, names: dict | None = None, smap: dict | None = None) -> set[str]:
+def all_chars(orig: bytes) -> set[str]:
+    """정본 전부(대본 · 표 · 코드 영역 문안 · 전투)가 쓰는 글자 — `--freeze` 와 빌드가 같은 분모를 쓴다."""
+    bmap = (
+        json.loads(battle.MAP_JSON.read_text(encoding="utf-8")) if battle.MAP_JSON.exists() else {}
+    )
+    return collect_chars(
+        textmap.load_all(), dict_names.names(orig), load_sysmsg(orig), bmap, battle.monsters(orig)
+    )
+
+
+def verify_jump_readback(buf: bytes, orig: bytes, smap: dict, encode) -> None:
+    """🔴 되읽기 게이트 — 제자리엔 goto 만 두고 본문을 다른 칸에 앉힌 스트림(`sysmsg.TAIL_JUMP`)을, **구운 이미지에서** 참조를 따라
+    goto 를 펴 읽은 글이 정본 문안과 같은지 본다. 묶음 재배치·변위 수정이 조용히 어긋나도 여기서 걸린다(마스터 10-12)."""
+    strs = sysmsg.streams(orig)
+    for t in sorted(sysmsg.TAIL_JUMP):
+        ent = smap.get(f"{t:06x}", {})
+        if not ent.get("ours"):
+            continue
+        e = strs[t]
+        toks = sysmsg._tokens_from_ours(e["stream"], normalize(ent["ours"]), encode)
+        want = b"".join(k.raw for k in toks if k.ref is None)
+        if not e["refs"]:  # 참조 없이 앞 스트림에서 흘러 닿는 꼬리 — 자기 참조로는 못 따라간다
+            continue
+        kind, ins = e["refs"][0]
+        if kind == "pc":
+            at = ins + 2 + struct.unpack(">h", buf[ins + 2 : ins + 4])[0]
+        elif kind == "abs":
+            at = struct.unpack(">I", buf[ins + 2 : ins + 6])[0]
+        else:
+            raise SystemExit(f"되읽기: {t:#x} 의 참조 종류 {kind} 를 못 따라간다")
+        got = bytearray()
+        for _hop in range(8):  # goto 사슬(최대 8)
+            st = scene.parse_stream(bytes(buf), at)
+            nxt = None
+            for k in st.tokens:
+                if k.ref == scene.GOTO:
+                    nxt = k.target
+                    break
+                if k.kind != "eof":
+                    got += k.raw
+            if nxt is None:
+                break
+            at = nxt
+        if bytes(got) != want:
+            raise SystemExit(
+                f"되읽기 불일치 {t:#x}: 구운 이미지의 글이 정본과 다르다\n  구움 {bytes(got).hex()}\n  정본 {want.hex()}"
+            )
+        print(f"  되읽기 OK {t:#x} — goto 를 펴 읽은 {len(got)}B 가 정본과 같다")
+
+
+def collect_chars(
+    maps: dict,
+    names: dict | None = None,
+    smap: dict | None = None,
+    bmap: dict | None = None,
+    monsters: dict | None = None,
+) -> set[str]:
     """정본 전체가 쓰는 글자 집합(태그 제거 · 부호 정규화 뒤) — 글꼴 표 0 과 코드 배정의 분모."""
     chars: set[str] = set()
 
@@ -330,9 +406,33 @@ def collect_chars(maps: dict, names: dict | None = None, smap: dict | None = Non
             chars.update(strip(e.get("ours", "")))
     for e in (smap or {}).values():
         chars.update(strip(e.get("ours", "")))
+    for e in (bmap or {}).values():
+        chars.update(strip(battle.expand_names(e.get("ours", ""), monsters or {})))
+    for e in (monsters or {}).values():
+        chars.update(e.get("ours", ""))
     chars.update(josa.chars())  # 조사 훅이 그리는 글자(는은가이를을와과으로) — 늘 굽는다
     chars.update(halfspace.chars())  # 「의␣」 — 아이템 칸 14B 에 반각 공백을 녹인 합성 글자
     return chars
+
+
+def pack_battle(blocks: list[bytes]) -> tuple[bytes, bytes, bytes]:
+    """전투 아카이브 → (색인, 원래 자리 블록들, 꼬리 블록들). 앞에서부터 원래 자리에 채우고 넘치면 나머지를 꼬리로.
+    색인 값은 **색인 시작 기준 오프셋**이라 꼬리 블록도 그대로 가리킨다(32비트)."""
+    n = len(blocks)
+    room = BATTLE_PRIMARY_END - battle.ARCHIVE - 4 * n
+    offs, primary, tail = [], bytearray(), bytearray()
+    for b in blocks:
+        p = lz.encode(b)
+        p += b"\x00" * (len(p) & 1)
+        if not tail and len(primary) + len(p) <= room:
+            offs.append(4 * n + len(primary))
+            primary += p
+        else:
+            offs.append(BATTLE_TAIL_AT + len(tail) - battle.ARCHIVE)
+            tail += p
+    if len(tail) > BATTLE_TAIL_RESERVE:
+        raise SystemExit(f"전투 꼬리 예약 {len(tail):,}B 가 {BATTLE_TAIL_RESERVE:,}B 를 넘는다")
+    return struct.pack(f">{n}I", *offs), bytes(primary), bytes(tail)
 
 
 def pack_archive(blocks: list[bytes]) -> bytes:
@@ -399,7 +499,11 @@ def main(check_only: bool = False) -> None:
     maps = textmap.load_all()
     names = dict_names.names(orig)
     smap = load_sysmsg(orig)
-    chars = collect_chars(maps, names, smap)
+    bmap = (
+        json.loads(battle.MAP_JSON.read_text(encoding="utf-8")) if battle.MAP_JSON.exists() else {}
+    )
+    monsters = battle.monsters(orig)
+    chars = collect_chars(maps, names, smap, bmap, monsters)
     cs = hangul.Charset(orig, chars)
     table_writes = build_tables(orig, names, cs)
     sys_writes = sysmsg.plan(
@@ -491,13 +595,49 @@ def main(check_only: bool = False) -> None:
     words = {"start": tg.get("0", {}).get("ours", ""), "continue": tg.get("1", {}).get("ours", "")}
     for label, pos, body in gfxtext.plan(orig, words):
         rom.write(label, pos, body)
+    # 전투 아카이브 — 블록마다 새 바이트(없으면 원본 디코드)를 다시 눌러 같은 자리에 깐다(남는 칸은 FF)
+    bblocks = [b for _s, b, _e in battle.blocks(orig)]
+    nchanged = 0
+    for n, b in enumerate(bblocks):
+        nb = battle.plan_block(
+            b,
+            n,
+            {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in bmap.items()},
+            monsters,
+            cs.encode,
+        )
+        if nb is not None:
+            bblocks[n] = nb
+            nchanged += 1
+    index, primary, tail = pack_battle(bblocks)
+    rom.write(
+        "battle-archive",
+        battle.ARCHIVE,
+        (index + primary).ljust(BATTLE_PRIMARY_END - battle.ARCHIVE, b"\xff"),
+    )
+    if tail:
+        rom.write("battle-tail", BATTLE_TAIL_AT, tail.ljust(BATTLE_TAIL_RESERVE, b"\xff"))
+    print(
+        f"  전투 아카이브 원래 자리 {len(index) + len(primary):,}B / {BATTLE_PRIMARY_END - battle.ARCHIVE:,}B · "
+        f"꼬리 {len(tail):,}B / {BATTLE_TAIL_RESERVE:,}B · 바뀐 블록 {nchanged}"
+    )
     rom.write("script-archive", ARCHIVE_BASE, arch.ljust(room, b"\xff"))
     rom.write(
         "scene-sizes",
-        archives.SCENE_SIZES,
+        SCENE_TABLE_AT,
         b"".join(struct.pack(">4H", *s) for s in sizes[: archives.SCENE_BLOCKS]),
     )
+    if orig[SCENE_REF - 2 : SCENE_REF + 4] != b"\x43\xf9" + struct.pack(">I", archives.SCENE_SIZES):
+        raise SystemExit("씬 크기 표를 부르는 명령(0x1A490 lea.l $19DC3C.l,a1)이 원본과 다르다")
+    rom.write("scene-ref", SCENE_REF, struct.pack(">I", SCENE_TABLE_AT))
     rom.write("checksum", 0x18E, struct.pack(">H", common.header_checksum(rom.buf)))
+    verify_jump_readback(bytes(rom.buf), orig, smap, cs.encode)
+    # 🔴 구운 이미지에서 전투 아카이브를 **색인으로** 다시 풀어 의도한 블록과 같은지 — 색인 오프셋(꼬리로 간 블록 포함)·압축·자리를 한 번에 본다
+    got_b = [b for _s, b, _e in archives.blocks(bytes(rom.buf), battle.ARCHIVE)]
+    if got_b != bblocks:
+        bad = [i for i, (x, y) in enumerate(zip(got_b, bblocks, strict=True)) if x != y]
+        raise SystemExit(f"전투 아카이브 되읽기 불일치(블록 {bad[:8]})")
+    print(f"  전투 아카이브 되읽기 OK — 색인으로 푼 {len(got_b)}블록이 의도와 같다")
     rom.verify_no_overlap()
     rom.verify_immutable()
     out_dir = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_")

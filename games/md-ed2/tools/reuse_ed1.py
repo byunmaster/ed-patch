@@ -102,7 +102,66 @@ def candidates(d: bytes) -> list[tuple[str, str, str]]:
     return out
 
 
+BATTLE_CHILD = (
+    "import sys, json\nsys.path.insert(0, 'tools')\nimport common, battle\n"
+    + KEY_SRC
+    + "d = common.rom()\nnames, strs = battle.survey(d)\nout = {}\n"
+    "for k, e in strs.items():\n"
+    "    st = e['where'][0][3]['stream']\n"
+    "    out[k] = content_key(st)\n"
+    "print(json.dumps(out))\n"
+)
+
+
+def battle_candidates() -> list[tuple[str, str, str]]:
+    """[(ED2 battle.json 열쇠, 후보 ours, 출처)] — 전투 메시지(같은 원문 내용 키). 자리 열쇠(`@블록:주소`)가 든 ED1 항목은 건너뛴다."""
+    import battle  # ED2
+
+    tools = ED1_MAIN / "games" / "md-ed1"
+    r = subprocess.run(
+        [sys.executable, "-c", BATTLE_CHILD], cwd=tools, capture_output=True, text=True, check=False
+    )
+    if r.returncode:
+        raise SystemExit(f"md-ed1 전투 도구 실행 실패: {r.stderr[-300:]}")
+    ed1_keys = json.loads(r.stdout)  # jp_key → content
+    ed1_map = json.loads((tools / "textmap" / "battle.json").read_text(encoding="utf-8"))
+    by_content: dict[str, set[str]] = {}
+    for k, c in ed1_keys.items():
+        o = ed1_map.get(k, {}).get("ours")
+        if o:
+            by_content.setdefault(c, set()).add(o)
+    _names, strs = battle.survey(common.rom())
+    out = []
+    for k, e in strs.items():
+        c = content_key(e["where"][0][3]["stream"])
+        cands = by_content.get(c)
+        if (
+            cands and len(cands) == 1
+        ):  # 같은 원문에 ED1 문안이 갈리면(자리 열쇠가 가른 것) 안 받는다
+            out.append((k, next(iter(cands)), "ed1"))
+    return out
+
+
 if __name__ == "__main__":
+    if "--battle" in sys.argv:
+        cands = battle_candidates()
+        bpath = common.GAME_DIR / "textmap" / "battle.json"
+        bm = json.loads(bpath.read_text(encoding="utf-8"))
+        new = [
+            (k, t, s)
+            for k, t, s in cands
+            if not bm.get(k, {}).get("ours") and not bm.get(k, {}).get("held")
+        ]
+        print(
+            f"  전투 메시지 {len(bm)} 중 md-ed1 같은 원문 후보 {len(cands)} · 빈 칸에 채울 것 {len(new)}"
+        )
+        if "--apply" in sys.argv:
+            for k, t, s in new:
+                bm[k]["ours"] = t
+                bm[k]["src"] = s
+            bpath.write_text(json.dumps(bm, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"  채움 {len(new)}")
+        raise SystemExit(0)
     d = common.rom()
     cands = candidates(d)
     strs = sysmsg.streams(d)
