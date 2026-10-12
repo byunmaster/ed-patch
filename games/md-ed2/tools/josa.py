@@ -1,0 +1,435 @@
+"""조사(종성) 훅 — 이름 뒤 조사를 **런타임에** 고른다. 병기 `을(를)` 을 없앤다.
+
+    python3 tools/josa.py --check    # 후킹 자리·죽은 코드·기계어 검산
+    python3 tools/josa.py --asm      # 손인코딩 기계어를 디스어셈블로 되읽어 출력
+
+## 왜 이렇게 푸는가
+
+PS1 은 조립 버퍼를 1패스로 훑어 병기를 줄이는 방식이었다. **MD 는 조립 버퍼가 없다** — 렌더러
+(`$978C`)가 스트림에서 글자를 바로 그린다. 대신 이름 삽입 코드(`02` 배우 · `0E` 아이템)가
+**렌더러를 재귀 호출**한다는 게 실마리다(`$A94A`: 이름 포인터를 a1 에 넣고 `bsr $978C`).
+⇒ 「마지막에 그린 글자」를 RAM 에 적어 두는 대신, **이름이 어디 있는지 우리가 다시 찾아** 끝 글자를
+본다. 새 RAM 을 한 칸도 안 쓴다.
+
+## 제어코드
+
+원본 문안이 **한 번도 안 쓰는** 코드 둘을 가져온다 — `EB`·`EC` 는 핸들러가 `rts` 하나뿐인 빈 코드다
+(실측 2026-09-06: 대본·전투·시스템·자막 전량에서 0회, 핸들러 `$A4D0` = rts).
+
+    EB p   배우 이름 기준 조사 — 이름은 `($FF3470)` 의 첫 바이트(배우 번호) → `$FF1DBC + n*0x40 + 0x30`
+    EC p   아이템 이름 기준 조사 — 이름 버퍼 `$FF2028`
+           p 상위 니블 = 1 이면 **주문 이름 버퍼 `$FF3450`**(시스템 메뉴 주문 사용 「…외웠다」 — 코드가
+           `lea $ff3450,a1 → jsr $60a0` 로 이름을 그린 직후 스트림 $7412 를 부른다, 2026-09-26 실측)
+    p 하위 니블 = 0 은/는 · 1 이/가 · 2 을/를 · 3 과/와 · 4 으로/로(ㄹ 받침은 「로」)
+    EB 의 p 상위 니블 = 0 이면 위 규칙, **0 이 아니면 (상위−1) 번 파티원**을 쓴다 —
+                  `<09 nn>`(번호로 이름을 그리는 코드) 뒤에 붙는 자리를 위해서다
+                  **상위 니블 = F 면 리더**(`$FF1AEC`) — `<0b>`(리더 이름) 뒤 조사. 전투의 이름 바꿈
+                  「헷갈리므로 <0b>은(는) …」(블록 71, 2026-09-27)을 위해 넣었다. 리더는 메뉴에서 바뀐다
+
+정본에선 `<02>을(를)` 대신 `<02><eb02>` 로 쓴다.
+
+## 어디에 무엇을 쓰나
+
+    0x9FE2 + i    코드별 피연산자 길이(디스패처 `$9FA0` 가 읽고 핸들러 뒤에 a1 을 그만큼 민다)
+    0xA018 + i*2  코드별 핸들러 **워드 오프셋**(0xA018 기준) — ⚠ 부호 있는 16비트라 ±32KB 안이어야 한다
+    0xA4D2~       코드 `EE` 의 죽은 핸들러 자리 — 여기에 `jmp <꼬리>.l` 트램펄린 둘을 둔다
+    꼬리          진짜 핸들러 + 종성 비트표(한글·반각) + 조사 코드 쌍
+
+종성 판정은 **비트표**다 — 한글 코드는 `hangul_codes.json` 의 등록 순서라 규칙이 없다(빌드가 표를
+만든다). 반각 표는 **숫자만 읽은 소리대로** 받침을 준다 — 0(영)·1(일)·3(삼)·6(육)·7(칠)·8(팔) = 받침 있음,
+2·4·5·9 = 없음(「레스1을 · 레스2를」). 🔴 **영문·부호 끝은 무받침**이다(기종 간 규칙, 마스터 확정 2026-09-26 —
+「올빼미A는」). 09-26 오전까지는 L·M·N·R 을 「엘·엠·엔·아르」로 읽어 받침을 줬는데 그 규칙으로 걷었다.
+"""
+
+import struct
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import common
+
+ARGLEN_TBL = 0xBF9A  # 코드별 피연산자 길이
+HANDLER_TBL = 0xBFD0  # 코드별 핸들러 워드 오프셋(이 자리 기준)
+DEAD_HANDLER = 0xC48A  # 코드 EE 의 핸들러 몸통(30B) — 원본 문안이 EE 를 안 쓴다
+CODE_ACTOR, CODE_ITEM = 0xEB, 0xEC
+IDX_ACTOR, IDX_ITEM = CODE_ACTOR - 0xCB, CODE_ITEM - 0xCB  # 표 색인(디스패처가 0xCB 를 뺀다)
+RENDER = 0xB738  # 렌더러 — a1 = 문안, d0 = 재귀 표식
+MAGIC = 0xFEDCBA98  # 이름 삽입 핸들러가 쓰는 값 그대로
+ACTOR_PTR = 0xFF3470  # 배우 레코드 포인터
+LEADER = 0xFF1AEC  # 리더의 레코드 번호 — 코드 `0B` 핸들러(`$A912`)가 이 바이트로 이름을 그린다
+PARTY_REC = 0xFF1DBC  # 레코드 배열(0x40 간격, 이름은 +0x30)
+ITEM_BUF = 0xFF2028  # 아이템 이름 버퍼
+SPELL_BUF = 0xFF3450  # 주문 이름 버퍼(EC 의 p 상위 니블 1)
+# 🔴 「마지막으로 이름을 그린 배우」 — 코드가 이름을 그린 뒤 스트림 머리의 조사(`<ebe0>`)가 읽는다. `$FF3470`(배우 포인터)은
+# 피해 줄의 **대상**이 남아 있어(코드가 몬스터 이름을 그릴 땐 안 갱신) 몬스터 행동 줄 「…B은 동전을 던졌다」가 틀렸다(10-10).
+# 이름을 그리는 `$A94A` 의 `andi.l #$ff,d0` 자리에 트램펄린을 걸어 배우 번호를 이 한 바이트에 적어 둔다.
+# $FF3484 는 롬 코드·전투 블록·씬 블록 어디에서도 안 쓰는 자리다(2026-10-10 전수).
+LASTNAME = 0xFF3484
+NAME_FN_PATCH = 0xC940  # andi.l #$ff,d0 (6B) → jmp tramp
+NAME_FN_BACK = 0xC946
+
+# p → (받침 없음, 받침 있음)
+PAIRS = [("는", "은"), ("가", "이"), ("를", "을"), ("와", "과")]
+JOSA_CHARS = "는은가이를을와과으로"  # 훅이 그리는 글자 — 글꼴 표에 코드가 있어야 한다(빌드가 chars() 로 넣는다)
+P_EURO = 4  # 으로/로 — 한 글자가 아니라 「으」+「로」/「로」라 쌍 표 밖에서 따로 그린다
+
+
+def chars() -> set[str]:
+    return set(JOSA_CHARS)
+
+
+# 반각을 한국어로 읽었을 때 받침이 있는 글자 — 숫자만(1=일 · 3=삼 · 6=육 · 7=칠 · 8=팔 · 0=영)
+ASCII_FINAL = set("013678")  # 숫자만 읽은 소리대로 — 영문·부호는 무받침(위 docstring)
+ASCII_RIEUL = set("178")  # 일·칠·팔 = ㄹ 받침 — 「레스1로」(으로/로 는 「로」)
+
+
+def bitmap(vals: list[int]) -> bytes:
+    """LSB 우선 **2비트** 표 — 값 0 = 받침 없음 · 1 = 받침 있음 · 2 = ㄹ 받침(으로/로 가 「로」).
+    핸들러가 `lsr.b d0,d1` 로 읽는다(항목 i 는 바이트 i>>2 의 비트 (i&3)*2)."""
+    out = bytearray((len(vals) + 3) // 4)
+    for i, v in enumerate(vals):
+        out[i >> 2] |= (v & 3) << ((i & 3) * 2)
+    return bytes(out)
+
+
+def final_kind(ch: str) -> int:
+    """한글 음절의 종성 — 0 없음 · 1 있음 · 2 ㄹ(종성 인덱스 8). (코드 − 0xAC00) % 28."""
+    if not ("가" <= ch <= "힣"):
+        return 0
+    j = (ord(ch) - 0xAC00) % 28
+    return 0 if j == 0 else (2 if j == 8 else 1)
+
+
+def tables(cs) -> tuple[bytes, int]:
+    """(한글 비트표 + 반각 비트표 + 조사 쌍, 한글 표 항목 수)."""
+    codes = cs.hangul  # {글자: 코드}
+    base = min(codes.values())
+    n = max(codes.values()) - base + 1
+    by_code = {v: k for k, v in codes.items()}
+    hangul = bitmap([final_kind(by_code.get(base + i, "")) for i in range(n)])
+    # 🔴 68000 은 워드를 **짝수 자리**에서만 읽는다 — 비트표가 홀수면 뒤따르는 조사 쌍 표가
+    # 홀수로 밀려 `move.w (a0,d0.w),d2` 가 어긋난 값을 집는다(2026-09-06 인게임에서 물렸다).
+    hangul += b"\x00" * (len(hangul) & 1)
+    ascii_ = bitmap(
+        [
+            (2 if chr(0x20 + i) in ASCII_RIEUL else 1 if chr(0x20 + i) in ASCII_FINAL else 0)
+            for i in range(0x60)
+        ]
+    )
+    pairs = b"".join(struct.pack(">HH", codes[a], codes[b]) for a, b in PAIRS)  # (받침 없음, 있음)
+    return hangul + ascii_ + pairs, n
+
+
+def code(at: int, cs) -> tuple[bytes, bytes]:
+    """(핸들러 기계어, 표) — `at` = 꼬리에 놓을 자리(짝수)."""
+    tbl, n = tables(cs)
+    base = min(cs.hangul.values())
+    # 표는 코드 **뒤에** 붙는데 코드 안에 표 주소가 박힌다 — 길이를 먼저 재고(1패스) 자리를 넣어 다시 짠다.
+    eu, ro = cs.hangul["으"], cs.hangul["로"]
+    body = _asm(at, None, base, n, eu, ro)
+    tbl_at = at + len(body)
+    body = _asm(at, tbl_at, base, n, eu, ro)
+    assert tbl_at == at + len(body), "코드 길이가 2패스에서 갈렸다"
+    return body, tbl
+
+
+def _asm(at: int, tbl_at: int | None, base: int, n: int, eu: int, ro: int) -> bytes:
+    """손인코딩 — 표 자리를 모르는 1패스에선 0 으로 채워 길이만 잰다."""
+    t = tbl_at if tbl_at is not None else 0
+    hangul_tbl = t
+    hangul_len = (n + 3) // 4  # 2비트 표
+    hangul_len += hangul_len & 1  # 짝수 정렬(tables() 와 같은 규칙)
+    ascii_tbl = t + hangul_len
+    pairs_tbl = ascii_tbl + 0x18
+    if tbl_at is not None:
+        assert pairs_tbl % 2 == 0 and hangul_tbl % 2 == 0, "표가 홀수 자리다 — 워드 읽기가 어긋난다"
+    b = bytearray()
+
+    def w(*vals):
+        for v in vals:
+            b.extend(struct.pack(">H", v))
+
+    def l(v):
+        b.extend(struct.pack(">I", v))
+
+    # ── EB: 배우 이름 ─────────────────────────────────────────────
+    w(0x48E7, 0xE0C0)  # movem.l d0-d2/a0-a1,-(a7)
+    w(0x7000)  # moveq #0,d0
+    w(0x1011)  # move.b (a1),d0        p
+    w(0x0240, 0x00F0)  # andi.w #$f0,d0
+    from_ptr_br = len(b)
+    w(0x6700, 0)  # beq.w from_ptr       상위 니블 0 → 배우 포인터
+    w(0x0C40, 0x00E0)  # cmpi.w #$e0,d0
+    last_br = len(b)
+    w(0x6700, 0)  # beq.w from_last      상위 니블 E → 마지막으로 이름을 그린 배우(LASTNAME)
+    w(0x0C40, 0x00F0)  # cmpi.w #$f0,d0
+    leader_br = len(b)
+    w(0x6700, 0)  # beq.w from_leader    상위 니블 F → 리더(`<0b>` 가 그리는 이름)
+    w(0xE848)  # lsr.w #4,d0
+    w(0x5340)  # subq.w #1,d0         (상위−1) 번 파티원
+    have_idx_br = len(b)
+    w(0x6000, 0)  # bra.w have_idx
+    from_leader = len(b)
+    struct.pack_into(">h", b, leader_br + 2, from_leader - (leader_br + 2))
+    w(0x1039)
+    l(LEADER)  # move.b LEADER.l,d0
+    have_idx_br2 = len(b)
+    w(0x6000, 0)  # bra.w have_idx
+    from_last = len(b)
+    struct.pack_into(">h", b, last_br + 2, from_last - (last_br + 2))
+    w(0x1039)
+    l(LASTNAME)  # move.b LASTNAME.l,d0
+    have_idx_br3 = len(b)
+    w(0x6000, 0)  # bra.w have_idx
+    from_ptr = len(b)
+    struct.pack_into(">h", b, from_ptr_br + 2, from_ptr - (from_ptr_br + 2))
+    w(0x2079)
+    l(ACTOR_PTR)  # movea.l ACTOR_PTR.l,a0
+    w(0x1010)  # move.b (a0),d0
+    have_idx = len(b)
+    struct.pack_into(">h", b, have_idx_br + 2, have_idx - (have_idx_br + 2))
+    struct.pack_into(">h", b, have_idx_br2 + 2, have_idx - (have_idx_br2 + 2))
+    struct.pack_into(">h", b, have_idx_br3 + 2, have_idx - (have_idx_br3 + 2))
+    w(0x0280)
+    l(0x000000FF)  # andi.l #$ff,d0
+    w(0xED88)  # lsl.l #6,d0
+    w(0x41F9)
+    l(PARTY_REC)  # lea PARTY_REC.l,a0
+    w(0xD1C0)  # adda.l d0,a0
+    w(0x41E8, 0x0030)  # lea $30(a0),a0
+    common_from_actor = len(b)
+    w(0x6000, 0)  # bra.w common (변위는 아래에서)
+    # ── EC: 아이템 이름 ───────────────────────────────────────────
+    item_entry = len(b)
+    w(0x48E7, 0xE0C0)  # movem.l d0-d2/a0-a1,-(a7)
+    w(0x41F9)
+    l(ITEM_BUF)  # lea ITEM_BUF.l,a0
+    w(0x0811, 0x0004)  # btst #4,(a1)       p 상위 니블 1 → 주문 이름
+    w(0x6706)  # beq.s +6
+    w(0x41F9)
+    l(SPELL_BUF)  # lea SPELL_BUF.l,a0
+    # ── 공통: 이름의 마지막 글자를 찾는다 ─────────────────────────
+    common = len(b)
+    struct.pack_into(">h", b, common_from_actor + 2, common - (common_from_actor + 2))
+    w(0x7200)  # moveq #0,d1        마지막 글자
+    scan = len(b)
+    w(0x7400)  # moveq #0,d2
+    w(0x1418)  # move.b (a0)+,d2
+    w(0x0C02, 0x0006)  # cmpi.b #6,d2
+    done_br1 = len(b)
+    w(0x6700, 0)  # beq.w done
+    w(0x4A02)  # tst.b d2
+    done_br2 = len(b)
+    w(0x6700, 0)  # beq.w done
+    w(0x0C02, 0x0081)  # cmpi.b #$81,d2
+    half_br1 = len(b)
+    w(0x6500, 0)  # bcs.w half        < 0x81 = 반각
+    w(0x0C02, 0x00A0)  # cmpi.b #$a0,d2
+    wide_br = len(b)
+    w(0x6500, 0)  # bcs.w wide        0x81~0x9F = 전각
+    w(0x0C02, 0x00E0)  # cmpi.b #$e0,d2
+    half_br2 = len(b)
+    w(0x6500, 0)  # bcs.w half        0xA0~0xDF = 반각 가나
+    wide = len(b)
+    struct.pack_into(">h", b, wide_br + 2, wide - (wide_br + 2))
+    w(0xE14A)  # lsl.w #8,d2
+    w(0x1418)  # move.b (a0)+,d2
+    half = len(b)
+    struct.pack_into(">h", b, half_br1 + 2, half - (half_br1 + 2))
+    struct.pack_into(">h", b, half_br2 + 2, half - (half_br2 + 2))
+    w(0x3202)  # move.w d2,d1
+    w(0x6000, 0)
+    struct.pack_into(">h", b, len(b) - 2, scan - (len(b) - 2))  # bra.w scan
+    # ── 종성 판정 ─────────────────────────────────────────────────
+    done = len(b)
+    struct.pack_into(">h", b, done_br1 + 2, done - (done_br1 + 2))
+    struct.pack_into(">h", b, done_br2 + 2, done - (done_br2 + 2))
+    w(0x7400)  # moveq #0,d2        종성 플래그
+    w(0x0C41, 0x0080)  # cmpi.w #$80,d1
+    wide2_br = len(b)
+    w(0x6400, 0)  # bcc.w wide2
+    w(0x0441, 0x0020)  # subi.w #$20,d1
+    pick_br1 = len(b)
+    w(0x6500, 0)  # bcs.w pick
+    w(0x0C41, 0x0060)  # cmpi.w #$60,d1
+    pick_br2 = len(b)
+    w(0x6400, 0)  # bcc.w pick
+    w(0x41F9)
+    l(ascii_tbl)  # lea ascii_tbl.l,a0
+    bit_br = len(b)
+    w(0x6000, 0)  # bra.w bit
+    wide2 = len(b)
+    struct.pack_into(">h", b, wide2_br + 2, wide2 - (wide2_br + 2))
+    # 전각 숫자 「０~９」(SJIS 0x824F~0x8258)는 반각 숫자와 같은 받침 — 주문 이름이 「레스１」꼴이다
+    # (코드 `$A74E` 가 레벨을 전각 숫자로 붙인다, 버퍼 `$FF3450` 실측 2026-09-26).
+    w(0x0C41, 0x824F)  # cmpi.w #$824f,d1
+    nd_br1 = len(b)
+    w(0x6500, 0)  # bcs.w notdig
+    w(0x0C41, 0x8259)  # cmpi.w #$8259,d1
+    nd_br2 = len(b)
+    w(0x6400, 0)  # bcc.w notdig
+    w(0x0441, 0x823F)  # subi.w #$823f,d1    → 반각 표 색인('0' = 0x10)
+    w(0x41F9)
+    l(ascii_tbl)  # lea ascii_tbl.l,a0
+    bit_br2 = len(b)
+    w(0x6000, 0)  # bra.w bit
+    notdig = len(b)
+    struct.pack_into(">h", b, nd_br1 + 2, notdig - (nd_br1 + 2))
+    struct.pack_into(">h", b, nd_br2 + 2, notdig - (nd_br2 + 2))
+    w(0x0441, base & 0xFFFF)  # subi.w #base,d1
+    pick_br3 = len(b)
+    w(0x6500, 0)  # bcs.w pick
+    w(0x0C41, n & 0xFFFF)  # cmpi.w #n,d1
+    pick_br4 = len(b)
+    w(0x6400, 0)  # bcc.w pick
+    w(0x41F9)
+    l(hangul_tbl)  # lea hangul_tbl.l,a0
+    bit = len(b)
+    struct.pack_into(">h", b, bit_br + 2, bit - (bit_br + 2))
+    struct.pack_into(">h", b, bit_br2 + 2, bit - (bit_br2 + 2))
+    w(0x3001)  # move.w d1,d0
+    w(0xE449)  # lsr.w #2,d1        2비트 표 — 바이트 = 색인 / 4
+    w(0xD0C1)  # adda.w d1,a0
+    w(0x0240, 0x0003)  # andi.w #3,d0
+    w(0xD040)  # add.w d0,d0        비트 위치 = (색인 % 4) * 2
+    w(0x1210)  # move.b (a0),d1
+    w(0xE029)  # lsr.b d0,d1
+    w(0x0241, 0x0003)  # andi.w #3,d1
+    w(0x3401)  # move.w d1,d2       종성 종류: 0 없음 · 1 있음 · 2 ㄹ
+    # ── 조사를 골라 그린다 ────────────────────────────────────────
+    pick = len(b)
+    for br in (pick_br1, pick_br2, pick_br3, pick_br4):
+        struct.pack_into(">h", b, br + 2, pick - (br + 2))
+    w(0x7000)  # moveq #0,d0
+    w(0x1011)  # move.b (a1),d0     p (피연산자 — a1 은 디스패처가 민다)
+    w(0x0240, 0x0007)  # andi.w #7,d0      하위 니블만(상위는 파티 번호)
+    w(0x0C40, P_EURO)  # cmpi.w #4,d0      으로/로 는 따로
+    p4_br = len(b)
+    w(0x6700, 0)  # beq.w p4
+    w(0x0C42, 0x0002)  # cmpi.w #2,d2      ㄹ 받침도 일반 조사에선 받침 있음
+    w(0x6602)  # bne.s +2
+    w(0x7401)  # moveq #1,d2
+    w(0xE548)  # lsl.w #2,d0        p*4
+    w(0xD442)  # add.w d2,d2        종성*2
+    w(0xD042)  # add.w d2,d0
+    w(0x41F9)
+    l(pairs_tbl)  # lea pairs_tbl.l,a0
+    w(0x3430, 0x0000)  # move.w (a0,d0.w),d2
+    w(0x4842)  # swap d2
+    w(0x343C, 0x0600)  # move.w #$0600,d2   → d2 = [코드][06][00]
+    w(0x2F02)  # move.l d2,-(a7)
+    w(0x224F)  # movea.l a7,a1
+    w(0x203C)
+    l(MAGIC)  # move.l #MAGIC,d0
+    w(0x4EB9)
+    l(RENDER)  # jsr RENDER.l
+    w(0x588F)  # addq.l #4,a7
+    w(0x4CDF, 0x0307)  # movem.l (a7)+,d0-d2/a0-a1
+    w(0x4E75)  # rts
+    # ── p = 4: 으로/로 — 받침 없음·ㄹ 받침은 「로」, 그 밖은 「으로」(문자열 6B: [으][로][06][00] 또는 [로][06][00][00 00])
+    p4 = len(b)
+    struct.pack_into(">h", b, p4_br + 2, p4 - (p4_br + 2))
+    w(0x0C42, 0x0001)  # cmpi.w #1,d2
+    ro_br = len(b)
+    w(0x6600, 0)  # bne.w ro_only
+    w(0x3F3C, 0x0600)  # move.w #$0600,-(a7)
+    w(0x3F3C, ro)  # move.w #로,-(a7)
+    w(0x3F3C, eu)  # move.w #으,-(a7)
+    render_br = len(b)
+    w(0x6000, 0)  # bra.w render
+    ro_only = len(b)
+    struct.pack_into(">h", b, ro_br + 2, ro_only - (ro_br + 2))
+    w(0x3F3C, 0x0000)  # move.w #0,-(a7)
+    w(0x3F3C, 0x0600)  # move.w #$0600,-(a7)
+    w(0x3F3C, ro)  # move.w #로,-(a7)
+    render = len(b)
+    struct.pack_into(">h", b, render_br + 2, render - (render_br + 2))
+    w(0x224F)  # movea.l a7,a1
+    w(0x203C)
+    l(MAGIC)  # move.l #MAGIC,d0
+    w(0x4EB9)
+    l(RENDER)  # jsr RENDER.l
+    w(0x5C8F)  # addq.l #6,a7
+    w(0x4CDF, 0x0307)  # movem.l (a7)+,d0-d2/a0-a1
+    w(0x4E75)  # rts
+    # ── 이름 그리기 트램펄린 — `$A94A` 가 배우 번호(d0)를 쓰기 전에 LASTNAME 에 적는다
+    name_tramp = len(b)
+    w(0x0280)
+    l(0x000000FF)  # andi.l #$ff,d0       (덮어쓴 원본 명령)
+    w(0x13C0)
+    l(LASTNAME)  # move.b d0,LASTNAME.l
+    w(0x4EF9)
+    l(NAME_FN_BACK)  # jmp $A954.l
+    _asm.item_entry = item_entry
+    _asm.name_tramp = name_tramp
+    return bytes(b)
+
+
+def plan(rom: bytes, cs, at: int) -> list[tuple[str, int, bytes]]:
+    """(라벨, 자리, 바이트) — 꼬리 `at` 에 핸들러+표, 표 둘과 트램펄린을 고친다."""
+    body, tbl = code(at, cs)
+    item_entry = at + _asm.item_entry
+    out = [("josa-code", at, body + tbl)]
+    out.append(
+        ("josa-name-hook", NAME_FN_PATCH, b"\x4e\xf9" + struct.pack(">I", at + _asm.name_tramp))
+    )
+    tramp = b"\x4e\xf9" + struct.pack(">I", at) + b"\x4e\xf9" + struct.pack(">I", item_entry)
+    out.append(("josa-tramp", DEAD_HANDLER, tramp))
+    for i, off in ((IDX_ACTOR, DEAD_HANDLER), (IDX_ITEM, DEAD_HANDLER + 6)):
+        disp = off - HANDLER_TBL
+        assert -0x8000 <= disp < 0x8000, "핸들러 표는 부호 있는 워드다 — ±32KB 안이어야 한다"
+        out.append((f"josa-tbl:{i:02x}", HANDLER_TBL + i * 2, struct.pack(">h", disp)))
+        out.append((f"josa-arg:{i:02x}", ARGLEN_TBL + i, b"\x01"))
+    return out
+
+
+def size(cs) -> int:
+    body, tbl = code(0x1F0000, cs)  # 길이만 — 자리에 안 의존한다
+    return len(body) + len(tbl)
+
+
+def verify(body: bytes, at: int) -> list[str]:
+    """디스어셈블로 되읽는다(루트 규율: 손인코딩은 검산한다)."""
+    from capstone import CS_ARCH_M68K, CS_MODE_BIG_ENDIAN, CS_MODE_M68K_000, Cs
+
+    md = Cs(CS_ARCH_M68K, CS_MODE_BIG_ENDIAN | CS_MODE_M68K_000)
+    out, p = [], 0
+    for ins in md.disasm(body, at):
+        out.append(f"{ins.address:06x}  {ins.mnemonic:9s} {ins.op_str}")
+        p = ins.address + ins.size - at
+    if p != len(body):
+        out.append(f"⚠ {len(body) - p}B 가 디코드 안 됐다 (@{at + p:#x})")
+    return out
+
+
+def check(d: bytes) -> None:
+    import font  # noqa: F401  (import 확인용)
+    import hangul
+
+    for c, idx in ((CODE_ACTOR, IDX_ACTOR), (CODE_ITEM, IDX_ITEM)):
+        h = HANDLER_TBL + int.from_bytes(
+            d[HANDLER_TBL + idx * 2 : HANDLER_TBL + idx * 2 + 2], "big"
+        )
+        if d[h] != 0x4E or d[h + 1] != 0x75:
+            raise SystemExit(f"코드 {c:02x} 의 원본 핸들러가 rts 가 아니다 @{h:#x}")
+        if d[ARGLEN_TBL + idx] != 0:
+            raise SystemExit(f"코드 {c:02x} 의 원본 피연산자 길이가 0 이 아니다")
+    if d[NAME_FN_PATCH : NAME_FN_PATCH + 6] != b"\x02\x80\x00\x00\x00\xff":
+        raise SystemExit("$A94E 가 andi.l #$ff,d0 가 아니다 — 이름 트램펄린 자리가 바뀌었다")
+    cs = hangul.Charset(d, set(JOSA_CHARS))
+    body, tbl = code(0x1F0000, cs)
+    print(
+        f"  조사 훅 — 코드 {CODE_ACTOR:02x}/{CODE_ITEM:02x} · 기계어 {len(body)}B · 표 {len(tbl)}B"
+    )
+
+
+if __name__ == "__main__":
+    d = common.rom()
+    if "--asm" in sys.argv:
+        import hangul
+
+        cs = hangul.Charset(d, set(JOSA_CHARS))
+        body, _tbl = code(0x1F0000, cs)
+        print("\n".join(verify(body, 0x1F0000)))
+    else:
+        check(d)

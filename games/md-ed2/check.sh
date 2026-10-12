@@ -35,3 +35,12 @@ echo "== md-ed2 =="
 
 # 8. 한글 코드 배정 — 커밋본과 대조(세이브 호환: 이미 있던 글자는 코드가 안 밀린다) · 글꼴 구역 지문
 "$PY" "$T/hangul.py" --check
+
+# 9. 이름·라벨 표 — 정본·사전에서 읽은 표 집계(아이템 139 · 주문 33 · 지명 5 · 메뉴 라벨 …). 정본에 없는 라벨은 건수만 알린다(관리자 후보 대기)
+"$PY" "$T/dict_names.py"
+
+# 10. 후킹 — 조사 훅(EB·EC) · 어절 줄넘김 · 반각 부호 줄 끝 · 「의␣」: 자리가 원본 그대로인가 · 기계어 크기
+"$PY" "$T/josa.py" --check
+"$PY" "$T/wordwrap.py" --check
+"$PY" "$T/punctwrap.py" --check
+"$PY" "$T/halfspace.py" --check

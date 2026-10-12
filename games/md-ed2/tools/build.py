@@ -22,16 +22,29 @@ from typing import ClassVar
 
 import archives
 import common
+import dict_names
+import gfxtext
+import halfspace
 import hangul
+import josa
 import lz
+import punctwrap
 import scene
+import tables
 import textmap
+import wordwrap
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 from text import krwrap
 
 ARCHIVE_BASE = archives.ARCHIVES["script"][0]
-ARCHIVE_END = common.FREE_TAIL[1]  # 이 앞까지 아카이브가 쓸 수 있다(마지막 2B 는 건드리지 않는다)
+TAIL_HI = common.FREE_TAIL[1]
+# 꼬리 **끝**에 훅 코드를 예약한다(ED1 build.py 와 같은 배치) — 아카이브는 그 앞까지만 쓴다. ED2 는 꼬리 빈 공간이 2KB 뿐이지만
+# 아카이브를 다시 눌러 16KB 를 비우므로 훅이 들어간다.
+JOSA_RESERVE = 0x340  # 조사 훅 기계어+표(글리프 1,370자 상한) — 으로/로·과/와 포함
+WRAP_RESERVE = 0x180  # 어절 줄넘김 본체 326B + 반각 「의␣」 28B
+FIELD_HUD_RESERVE = 0x20  # 필드 HUD 트램펄린(이식 전 — 자리만 잡아 둔다)
+ARCHIVE_END = TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE  # 이 앞까지 아카이브가 쓴다
 N_BLOCKS = archives.ARCHIVES["script"][1]
 
 
@@ -47,6 +60,32 @@ class Rom:
         "font0-table": (0x1A551A + hangul.SHIFT, 0x1A6080 + hangul.SHIFT),
         "font0-glyphs": (0x1A62CE + hangul.SHIFT, 0x1BA1FA + hangul.SHIFT),
         "font1-header": hangul.FONT1_HDR,
+        **{f"table:{t[0]}": (t[1], t[1] + (t[2] + 1) * t[4]) for t in tables.TABLES},
+        **{f"table:{g[0]}": (g[1], g[1] + 0x200) for g in tables.ZGROUPS},
+        **{f"table:{t[0]}": (t[1], t[1] + t[2] * t[3]) for t in tables.SLOTS},
+        **gfxtext.allowed(),
+        "josa-code": (TAIL_HI - JOSA_RESERVE, TAIL_HI),
+        "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 12),
+        "josa-name-hook": (josa.NAME_FN_PATCH, josa.NAME_FN_PATCH + 6),
+        "wrap-code": (TAIL_HI - JOSA_RESERVE - WRAP_RESERVE, TAIL_HI - JOSA_RESERVE),
+        "wrap-tramp": (wordwrap.TRAMP, wordwrap.TRAMP + 6),
+        "half-code": (
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE + halfspace.CODE_OFF,
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE + halfspace.CODE_OFF + halfspace.CODE_LEN,
+        ),
+        "half-tramp": (halfspace.TRAMP, halfspace.TRAMP + 6),
+        "half-site": (halfspace.SITE, halfspace.SITE + 4),
+        "punct-code": (TAIL_HI - punctwrap.CODE_LEN, TAIL_HI),
+        "punct-site": (punctwrap.SITE, punctwrap.SITE + 6),
+        **{f"wrap-site:{x:x}": (x, x + 4) for x in wordwrap.SITES},
+        **{
+            f"josa-tbl:{i:02x}": (josa.HANDLER_TBL + i * 2, josa.HANDLER_TBL + i * 2 + 2)
+            for i in (josa.IDX_ACTOR, josa.IDX_ITEM)
+        },
+        **{
+            f"josa-arg:{i:02x}": (josa.ARGLEN_TBL + i, josa.ARGLEN_TBL + i + 1)
+            for i in (josa.IDX_ACTOR, josa.IDX_ITEM)
+        },
     }
 
     def __init__(self, data: bytes):
@@ -137,7 +176,7 @@ def build_stream(
     out: list[scene.Token] = []
     pending_text: list[str] = []
 
-    def flush_text():
+    def flush_text(trail: bool = True):
         if not pending_text:
             return
         if raw_text:
@@ -155,6 +194,10 @@ def build_stream(
         body = "".join(pending_text)
         lead = " " if body[:1] == " " else ""
         pages = typeset(body, lead)
+        # 🔴 조판기는 덩이의 앞뒤 공백을 지운다 — 태그(이름 호출 등) **앞** 공백이 사라져 「이런아트라스님」이 됐다
+        # (2026-10-12 화면). 뒤 공백은 덩이 뒤에 태그가 이어질 때만 되살린다.
+        if trail and body[-1:] == " " and pages:
+            pages[-1][-1] += " "
         pending_text.clear()
         for pi, pg in enumerate(pages):
             if pi:
@@ -190,7 +233,7 @@ def build_stream(
             else:
                 flush_text()
                 out.append(scene.Token(0, raw, "ctl", code))
-    flush_text()
+    flush_text(False)
     if refs:
         raise SystemExit(
             f"원본의 참조 {[hex(t.target) for t in refs]} 가 정본에 없다 @{st.start:#x}"
@@ -210,21 +253,62 @@ def encode_tagged(s: str, cs: hangul.Charset) -> bytes:
     return out + cs.encode(s[pos:])
 
 
-def collect_chars(maps: dict) -> set[str]:
+def build_tables(orig: bytes, names: dict, cs: hangul.Charset) -> list[tuple[str, int, bytes]]:
+    """표 → (라벨, 자리, 본문). 폭 = 원본 본문 길이. 넘치는 항목은 **전부 모아** 실패로 알린다."""
+    out = []
+    over = []
+    for name, recs in tables.records(orig).items():
+        tbl = names.get(name, {})
+        align = tables.align_of(name)
+        for i, (pos, raw) in enumerate(recs):
+            ours = normalize(tbl.get(str(i), {}).get("ours", ""))
+            if not ours:
+                continue
+            enc = encode_tagged(ours, cs)
+            if name in tables.SLOT_CAP:  # 06 종결 칸 — 이름+06 만, 나머지는 원본
+                if len(enc) > tables.SLOT_CAP[name]:
+                    over.append(f"{name}[{i}] {ours!r} {len(enc)}B > {tables.SLOT_CAP[name]}B")
+                    continue
+                out.append((f"table:{name}", pos, enc + b"\x06"))
+                continue
+            w = len(raw)
+            if len(enc) > w:
+                over.append(f"{name}[{i}] {ours!r} {len(enc)}B > {w}B")
+                continue
+            n = w - len(enc)
+            if align == "right":
+                body = b" " * n + enc
+            elif align == "center":
+                # 🔴 `center` 를 안 다뤄 장 제목·지명이 **왼쪽에 붙어** 있었다(2026-09-06).
+                # 원본이 앞뒤로 공백을 나눠 넣은 자리다 — 남는 칸은 뒤에 준다(반각 6px 단위).
+                body = b" " * (n // 2) + enc + b" " * (n - n // 2)
+            else:
+                body = enc + b" " * n
+            out.append((f"table:{name}", pos, body))
+    if over:
+        raise SystemExit(
+            "표 항목이 폭을 넘는다 — 칸 배치(textmap/ui_layout.json)나 정본 값을 줄인다:\n    "
+            + "\n    ".join(over)
+        )
+    return out
+
+
+def collect_chars(maps: dict, names: dict | None = None) -> set[str]:
     """정본 전체가 쓰는 글자 집합(태그 제거 · 부호 정규화 뒤) — 글꼴 표 0 과 코드 배정의 분모."""
     chars: set[str] = set()
-    strip = lambda t: normalize(re.sub(r"<[^>]*>", "", t))
+
+    def strip(t: str) -> str:
+        return normalize(re.sub(r"<[^>]*>", "", t))
+
     for m in maps.values():
         for e in m["streams"].values():
             chars.update(strip(e.get("ours", "")))
-    chars.update(
-        set("는은가이를을와과으로")
-    )  # 조사 훅이 그릴 글자(이식 전이지만 코드를 미리 굳힌다)
-    return (
-        chars
-        if any(len(strip(e.get("ours", ""))) for m in maps.values() for e in m["streams"].values())
-        else set()
-    )
+    for t in (names or {}).values():
+        for e in t.values():
+            chars.update(strip(e.get("ours", "")))
+    chars.update(josa.chars())  # 조사 훅이 그리는 글자(는은가이를을와과으로) — 늘 굽는다
+    chars.update(halfspace.chars())  # 「의␣」 — 아이템 칸 14B 에 반각 공백을 녹인 합성 글자
+    return chars
 
 
 def pack_archive(blocks: list[bytes]) -> bytes:
@@ -289,8 +373,10 @@ def main(check_only: bool = False) -> None:
     orig = common.rom()
     verify_archive_refs(orig)
     maps = textmap.load_all()
-    chars = collect_chars(maps)
-    cs = hangul.Charset(orig, chars) if chars else None
+    names = dict_names.names(orig)
+    chars = collect_chars(maps, names)
+    cs = hangul.Charset(orig, chars)
+    table_writes = build_tables(orig, names, cs)
     replace: dict[tuple[int, int], bytes] = {}
     for (blk, k), m in sorted(maps.items()):
         mb = textmap.module_bytes(orig, blk, k)
@@ -338,13 +424,36 @@ def main(check_only: bool = False) -> None:
         return
 
     rom = Rom(orig)
-    if cs is not None:  # 글꼴 리소스 0(대사) + 반각(리소스 1)
-        hdr, tbl, gl = cs.resource0()
-        rom.write("font0-header", cs.r0["hdr"], hdr)
-        rom.write("font0-table", cs.r0["table"], tbl)
-        rom.write("font0-glyphs", cs.r0["desc"], orig[cs.r0["desc"] : cs.r0["desc"] + 4] + gl)
-        for label, pos, body in hangul.resource1(cs):
-            rom.write(label, pos, body)
+    hdr, tbl, gl = cs.resource0()  # 글꼴 리소스 0(대사) + 반각(리소스 1)
+    rom.write("font0-header", cs.r0["hdr"], hdr)
+    rom.write("font0-table", cs.r0["table"], tbl)
+    rom.write("font0-glyphs", cs.r0["desc"], orig[cs.r0["desc"] : cs.r0["desc"] + 4] + gl)
+    for label, pos, body in hangul.resource1(cs):
+        rom.write(label, pos, body)
+    for label, pos, body in table_writes:  # 고정 폭 표(아이템·주문·지명·메뉴 라벨) — 제자리
+        rom.write(label, pos, body)
+    # 조사 훅 · 어절 줄넘김 · 반각 부호 줄 끝 · 「의␣」(ED1 과 같은 훅 — 주소만 engine.py 대응)
+    halfspace.ensure_glyph()
+    for label, pos, body in josa.plan(orig, cs, TAIL_HI - JOSA_RESERVE):
+        rom.write(label, pos, body)
+    for label, pos, body in wordwrap.plan(orig, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE):
+        rom.write(label, pos, body)
+    for label, pos, body in halfspace.plan(cs, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE):
+        rom.write(label, pos, body)
+    if josa.size(cs) > JOSA_RESERVE - punctwrap.CODE_LEN:
+        raise SystemExit("조사 훅이 부호 줄바꿈 꼬리 자리를 침범한다 — JOSA_RESERVE 를 늘린다")
+    for label, pos, body in punctwrap.plan(TAIL_HI - punctwrap.CODE_LEN):
+        rom.write(label, pos, body)
+    # 🔴 어절 줄넘김의 공백 판정 문턱을 **구운 글꼴로 매번 다시 잰다** — 글꼴이 바뀌어 문턱이 무너지면 빌드가 실패한다
+    normal_wide = {v for k, v in cs.hangul.items() if k not in hangul.CUSTOM_GLYPHS}
+    gap, sp = wordwrap.gap_gate(bytes(rom.buf), normal_wide)
+    print(
+        f"  어절 줄넘김 — 글자 틈 최대 {gap}px < 문턱 {wordwrap.SPACE_PX}px ≤ 공백 틈 최소 {sp}px"
+    )
+    tg = names.get("title_gfx", {})  # 타이틀 시작 메뉴 — 글꼴이 아니라 셀 그림
+    words = {"start": tg.get("0", {}).get("ours", ""), "continue": tg.get("1", {}).get("ours", "")}
+    for label, pos, body in gfxtext.plan(orig, words):
+        rom.write(label, pos, body)
     rom.write("script-archive", ARCHIVE_BASE, arch.ljust(room, b"\xff"))
     rom.write(
         "scene-sizes",
