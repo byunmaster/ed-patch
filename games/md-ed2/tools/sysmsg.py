@@ -60,6 +60,8 @@ TAIL_JUMP: dict[int, int | None] = {
     0x27CB0: None,
     0x27CC3: None,
     0x31026: None,
+    0x249CE: None,  # 「<02>은(는) 정신이 들었다.」 정본 문안이 칸(16B)보다 길다 — 0A 로 끝나 되돌림 없음
+    0x8471: None,  # 「회복되었다.」 정본 문안이 칸(13B)보다 1B 길다 — 00 으로 끝
     # 06·0A 로 끝나 **물리적으로 다음 스트림으로 흐르는** 것은 본문 뒤에 goto 를 달아 원래 끝으로 되돌린다(ED1 0x324DD 와 같다)
     0x29D26: 0x29D2A,  # 「<02>에게<06>」 +2B — 뒤 「의 피해!!」(고정)로 흐른다
     0x29E22: 0x29E34,
@@ -152,7 +154,7 @@ def table_ranges() -> list[tuple[int, int]]:
     out = [(t[1], t[1] + (t[2] + 1) * t[4]) for t in tables.TABLES]
     out += [(g[1], g[1] + 0x200) for g in tables.ZGROUPS]
     out += [(t[1], t[1] + t[2] * t[3]) for t in tables.SLOTS]
-    out.append((0x3B326, 0x3B5A8))  # 지명 표(58칸, 06 종결 · 앞 공백으로 가운데 — 미이식)
+    out.append((0x3B256, 0x3B5A8))  # 지명 표(개수·오프셋 워드 + 65 레코드, `places.py`)
     return out
 
 

@@ -22,17 +22,23 @@ from pathlib import Path
 from typing import ClassVar
 
 import archives
+import banners
 import battle
+import captions
 import chapters
 import common
 import dict_names
+import field_hud
 import gfxtext
 import halfspace
 import hangul
+import hud_status
 import josa
 import lz
+import places
 import punctwrap
 import scene
+import spell_digit
 import sysmsg
 import tables
 import textmap
@@ -48,6 +54,7 @@ TAIL_HI = common.FREE_TAIL[1]
 JOSA_RESERVE = 0x340  # 조사 훅 기계어+표(글리프 1,370자 상한) — 으로/로·과/와 포함
 WRAP_RESERVE = 0x180  # 어절 줄넘김 본체 326B + 반각 「의␣」 28B
 FIELD_HUD_RESERVE = 0x20  # 필드 HUD 트램펄린(이식 전 — 자리만 잡아 둔다)
+CAPTION_RESERVE = 0xA00  # 오프닝·엔딩 자막 표+문안(captions.RELOCATE)이 앉는 꼬리 칸
 SYSMSG_TAIL = sysmsg.TAIL_SIZE  # 시스템 메시지 중 꼬리로 옮기는 스트림(RELOCATE)의 칸
 # 🔴 씬 크기 표(블록당 BE16×4, 712B)를 **꼬리로 옮긴다** — 원래 자리(0x19DC3C)는 전투 아카이브 바로 뒤라, 전투 문안이 늘면 그 712B 가
 # 전투 아카이브의 유일한 여유다. 표를 가리키는 코드는 `lea $19DC3C.l,a1` 하나뿐(0x1A490, `verify_archive_refs` 가 지킨다)이라 피연산자만 고치면 된다.
@@ -60,6 +67,7 @@ ARCHIVE_END = (
     - WRAP_RESERVE
     - FIELD_HUD_RESERVE
     - SYSMSG_TAIL
+    - CAPTION_RESERVE
     - SCENE_TABLE_SIZE
     - BATTLE_TAIL_RESERVE
 )  # 이 앞까지 아카이브가 쓴다
@@ -69,6 +77,7 @@ SCENE_TABLE_AT = ARCHIVE_END
 BATTLE_PRIMARY_END = 0x19D96E
 BATTLE_TAIL_AT = SCENE_TABLE_AT + SCENE_TABLE_SIZE
 SYSMSG_TAIL_AT = BATTLE_TAIL_AT + BATTLE_TAIL_RESERVE
+CAPTION_AT = SYSMSG_TAIL_AT + SYSMSG_TAIL
 N_BLOCKS = archives.ARCHIVES["script"][1]
 
 
@@ -87,13 +96,30 @@ class Rom:
         "font0-table": (0x1A551A + hangul.SHIFT, 0x1A6080 + hangul.SHIFT),
         "font0-glyphs": (0x1A62CE + hangul.SHIFT, 0x1BA1FA + hangul.SHIFT),
         "font1-header": hangul.FONT1_HDR,
+        "spell-digit": (spell_digit.AT, spell_digit.AT + len(spell_digit.NEW)),
+        "hud-status": (hud_status.BASE, hud_status.BASE + hud_status.N * hud_status.STRIDE),
+        "font2-glyphs": hangul.FONT2_GLYPHS,
+        "font4-header": hangul.FONT4_HDR,
+        "font4-table": hangul.FONT4_TABLE,
+        "font4-glyphs": hangul.FONT4_GLYPHS,
         **{f"table:{t[0]}": (t[1], t[1] + (t[2] + 1) * t[4]) for t in tables.TABLES},
         **{f"table:{g[0]}": (g[1], g[1] + 0x200) for g in tables.ZGROUPS},
         **{f"table:{t[0]}": (t[1], t[1] + t[2] * t[3]) for t in tables.SLOTS},
         **gfxtext.allowed(),
+        **places.allowed(),
+        "field-hud-space-tramp": (
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE,
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE,
+        ),
+        "field-hud-space-site": (field_hud.SPACE_SITE, field_hud.SPACE_SITE + 6),
+        "field-hud-align": (field_hud.ALIGN_SITE, field_hud.ALIGN_SITE + 4),
+        **{f"field-hud-dir:{i}": (a, a + 2) for i, (a, _c, _w) in enumerate(field_hud.DIRECTIONS)},
+        **{f"field-hud-suffix:{i}": (a, a + 4) for i, (a, _c, _w) in enumerate(field_hud.SUFFIX)},
         "josa-code": (TAIL_HI - JOSA_RESERVE, TAIL_HI),
         **sysmsg.allowed(common.rom()),
         **sysmsg.allowed_tail(SYSMSG_TAIL_AT),
+        **captions.allowed(common.rom(), CAPTION_AT, CAPTION_RESERVE),
+        "font5-header": hangul.FONT5_HDR,
         "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 12),
         "josa-name-hook": (josa.NAME_FN_PATCH, josa.NAME_FN_PATCH + 6),
         "wrap-code": (TAIL_HI - JOSA_RESERVE - WRAP_RESERVE, TAIL_HI - JOSA_RESERVE),
@@ -335,13 +361,26 @@ def load_sysmsg(orig: bytes) -> dict:
     return smap
 
 
+def load_captions() -> dict:
+    return (
+        json.loads(captions.MAP_JSON.read_text(encoding="utf-8"))
+        if captions.MAP_JSON.exists()
+        else {}
+    )
+
+
 def all_chars(orig: bytes) -> set[str]:
     """정본 전부(대본 · 표 · 코드 영역 문안 · 전투)가 쓰는 글자 — `--freeze` 와 빌드가 같은 분모를 쓴다."""
     bmap = (
         json.loads(battle.MAP_JSON.read_text(encoding="utf-8")) if battle.MAP_JSON.exists() else {}
     )
     return collect_chars(
-        textmap.load_all(), dict_names.names(orig), load_sysmsg(orig), bmap, battle.monsters(orig)
+        textmap.load_all(),
+        dict_names.names(orig),
+        load_sysmsg(orig),
+        bmap,
+        battle.monsters(orig),
+        load_captions(),
     )
 
 
@@ -391,6 +430,7 @@ def collect_chars(
     smap: dict | None = None,
     bmap: dict | None = None,
     monsters: dict | None = None,
+    cmap: dict | None = None,
 ) -> set[str]:
     """정본 전체가 쓰는 글자 집합(태그 제거 · 부호 정규화 뒤) — 글꼴 표 0 과 코드 배정의 분모."""
     chars: set[str] = set()
@@ -410,7 +450,13 @@ def collect_chars(
         chars.update(strip(battle.expand_names(e.get("ours", ""), monsters or {})))
     for e in (monsters or {}).values():
         chars.update(e.get("ours", ""))
+    for e in (cmap or {}).values():  # 오프닝·엔딩 자막(리소스 5 도 같은 글자 코드를 쓴다)
+        chars.update(strip(e.get("ours", "")))
     chars.update(josa.chars())  # 조사 훅이 그리는 글자(는은가이를을와과으로) — 늘 굽는다
+    chars.update(
+        banners.chars()
+    )  # 입장 배너 지명 사전(모듈 데이터라 문안 스트림이 아니다) — 늘 굽는다
+    chars.update(field_hud.chars())  # 필드 HUD 뒷말·방위(문안을 안 거친다) — 늘 굽는다
     chars.update(halfspace.chars())  # 「의␣」 — 아이템 칸 14B 에 반각 공백을 녹인 합성 글자
     return chars
 
@@ -503,7 +549,8 @@ def main(check_only: bool = False) -> None:
         json.loads(battle.MAP_JSON.read_text(encoding="utf-8")) if battle.MAP_JSON.exists() else {}
     )
     monsters = battle.monsters(orig)
-    chars = collect_chars(maps, names, smap, bmap, monsters)
+    cmap = load_captions()
+    chars = collect_chars(maps, names, smap, bmap, monsters, cmap)
     cs = hangul.Charset(orig, chars)
     table_writes = build_tables(orig, names, cs)
     sys_writes = sysmsg.plan(
@@ -512,9 +559,18 @@ def main(check_only: bool = False) -> None:
         cs.encode,
         tail_at=SYSMSG_TAIL_AT,
     )
+    cap_writes = captions.plan(
+        orig,
+        {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in cmap.items()},
+        cs.encode,
+        CAPTION_AT,
+        CAPTION_RESERVE,
+    )
     replace: dict[tuple[int, int], bytes] = {}
     for (blk, k), m in sorted(maps.items()):
-        mb = textmap.module_bytes(orig, blk, k)
+        mb = banners.patch(
+            (blk, k), textmap.module_bytes(orig, blk, k), lambda s: encode_tagged(s, cs)
+        )
         mod = scene.parse_module(mb)
         rep = {}
         for key, ent in m["streams"].items():
@@ -528,10 +584,24 @@ def main(check_only: bool = False) -> None:
                 raise SystemExit(f"블록 {blk}-{k} 스트림 {key}: 원문 해시가 갈렸다")
             rep[off] = build_stream(st, ent["ours"], cs, raw_text=bool(ent.get("raw")))
         if not rep:
+            if mb != textmap.module_bytes(orig, blk, k):  # 배너 표만 바뀐 모듈 — 같은 길이
+                replace[(blk, k)] = mb
             continue
         new = scene.reassemble(mod, rep)
         scene.verify_reassembly(mod, new, rep)
         replace[(blk, k)] = new
+    for key in banners.BY_MODULE:  # 번역 정본이 없는 모듈의 배너 표
+        if key not in maps and key not in replace:
+            replace[key] = banners.patch(
+                key, textmap.module_bytes(orig, *key), lambda s: encode_tagged(s, cs)
+            )
+    nban = sum(
+        banners.verify(
+            key, replace[key], textmap.module_bytes(orig, *key), lambda s: encode_tagged(s, cs)
+        )
+        for key in banners.BY_MODULE
+    )
+    print(f"  배너 표 {len(banners.BY_MODULE)}모듈 {nban}항목 — 최종 모듈 바이트가 의도와 같다")
     blocks, sizes = script_blocks(orig, replace)
     for i, b in enumerate(blocks[: archives.SCENE_BLOCKS]):
         if len(b) > MAX_BLOCK:
@@ -567,6 +637,12 @@ def main(check_only: bool = False) -> None:
         rom.write(label, pos, body)
     for label, pos, body in table_writes:  # 고정 폭 표(아이템·주문·지명·메뉴 라벨) — 제자리
         rom.write(label, pos, body)
+    for label, pos, body in places.plan(
+        orig,
+        {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in names["place_list"].items()},
+        lambda s: encode_tagged(s, cs),
+    ):  # 필드 HUD 지명 65 — 가변 폭 레코드 + 오프셋 표를 다시 깐다
+        rom.write(label, pos, body)
     # 조사 훅 · 어절 줄넘김 · 반각 부호 줄 끝 · 「의␣」(ED1 과 같은 훅 — 주소만 engine.py 대응)
     halfspace.ensure_glyph()
     for label, pos, body in josa.plan(orig, cs, TAIL_HI - JOSA_RESERVE):
@@ -580,16 +656,48 @@ def main(check_only: bool = False) -> None:
     for label, pos, body in punctwrap.plan(TAIL_HI - punctwrap.CODE_LEN):
         rom.write(label, pos, body)
     # 🔴 어절 줄넘김의 공백 판정 문턱을 **구운 글꼴로 매번 다시 잰다** — 글꼴이 바뀌어 문턱이 무너지면 빌드가 실패한다
+    # ⚠ 합성 글리프(field_hud 의 PUA 콘덴스드 슬라이스)는 뺀다 — 일부러 큰 왼쪽 여백을 구워 둔 자리라 정상 글자처럼 재면 문턱이 깨진다
     normal_wide = {v for k, v in cs.hangul.items() if k not in hangul.CUSTOM_GLYPHS}
     gap, sp = wordwrap.gap_gate(bytes(rom.buf), normal_wide)
     print(
         f"  어절 줄넘김 — 글자 틈 최대 {gap}px < 문턱 {wordwrap.SPACE_PX}px ≤ 공백 틈 최소 {sp}px"
     )
+    # 필드 HUD 뒷말(부근·입구)·방위(동서남북) — 문안을 안 거치고 코드가 SJIS 를 직접 찍는 여덟 자리 + 공백 트램펄린·정렬 상수
+    for label, pos, body in field_hud.plan(
+        cs, TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE
+    ):
+        rom.write(label, pos, body)
     for (
         label,
         pos,
         body,
     ) in sys_writes:  # 코드 영역 문안(시스템 메시지·이벤트 대사·장 카드) 묶음 + 참조 명령
+        rom.write(label, pos, body)
+    # 오프닝·엔딩 자막 — 글꼴 리소스 5(네오둥근모 16px, `<fd85>`)와 표·문안(꼬리로 옮김)
+    cap5 = {c for c in captions.font5_chars(cmap) if c.strip() or c == " "}
+    if cap5:
+        for label, pos, body in hangul.resource5(
+            cs, cap5, hangul.layout_after_r1(cs), cell=captions.FONT_CELL, source=captions.FONT_SRC
+        ):
+            rom.write(label, pos, body)
+    for label, pos, body in cap_writes:
+        rom.write(label, pos, body)
+    for label, pos, body in hangul.resource2_labels():  # HUD 「ｱﾄ」 → 「남다」 (8×8, 마스터 도안)
+        rom.write(label, pos, body)
+    hud_chars: set[str] = set()
+    for grp in ("party_rec", "party_name"):
+        for e in names.get(grp, {}).values():
+            hud_chars.update(re.sub(r"<[^>]*>", "", e.get("ours", "")))
+    for label, pos, body in hangul.resource4(cs, hud_chars):  # HUD 이름 12×12
+        rom.write(label, pos, body)
+    spell_digit.check(orig)  # 주문 레벨 숫자를 반각으로(「레지나1을」)
+    for label, pos, body in spell_digit.plan():
+        rom.write(label, pos, body)
+    for (
+        label,
+        pos,
+        body,
+    ) in hud_status.plan():  # HUD 상태이상 8칸 타일(守跳毒眠黙乱気絶 → 수·반·독·잠·묵·혼·기·절)
         rom.write(label, pos, body)
     tg = names.get("title_gfx", {})  # 타이틀 시작 메뉴 — 글꼴이 아니라 셀 그림
     words = {"start": tg.get("0", {}).get("ours", ""), "continue": tg.get("1", {}).get("ours", "")}
@@ -632,6 +740,20 @@ def main(check_only: bool = False) -> None:
     rom.write("scene-ref", SCENE_REF, struct.pack(">I", SCENE_TABLE_AT))
     rom.write("checksum", 0x18E, struct.pack(">H", common.header_checksum(rom.buf)))
     verify_jump_readback(bytes(rom.buf), orig, smap, cs.encode)
+    ncap = captions.verify_readback(
+        bytes(rom.buf),
+        orig,
+        {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in cmap.items()},
+        cs.encode,
+    )
+    nplace = places.verify_readback(
+        bytes(rom.buf),
+        orig,
+        {k: dict(v, ours=normalize(v.get("ours", ""))) for k, v in names["place_list"].items()},
+        lambda s: encode_tagged(s, cs),
+    )
+    print(f"  지명 표 되읽기 OK — 오프셋 표를 따라 읽은 레코드 {nplace}개가 의도와 같다")
+    print(f"  자막 되읽기 OK — 표 포인터를 따라 읽은 스트림 {ncap}개가 의도와 같다")
     # 🔴 구운 이미지에서 전투 아카이브를 **색인으로** 다시 풀어 의도한 블록과 같은지 — 색인 오프셋(꼬리로 간 블록 포함)·압축·자리를 한 번에 본다
     got_b = [b for _s, b, _e in archives.blocks(bytes(rom.buf), battle.ARCHIVE)]
     if got_b != bblocks:

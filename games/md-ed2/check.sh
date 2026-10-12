@@ -47,3 +47,11 @@ echo "== md-ed2 =="
 
 # 11. 장 카드·HUD 장 제목 — 정본 장 제목 범주에서 만든 문안이 원본 스트림 자리와 맞는지(HUD 30B 계약) · 카드 스트림 제목 일치
 "$PY" "$T/chapters.py" >/dev/null
+
+# 12. 오프닝·엔딩 자막 — 표 넷 · 스트림 25 분모, 줄 폭·줄 수 (되읽기는 build.py)
+"$PY" "$T/captions.py"
+"$PY" "$T/places.py"
+"$PY" "$T/field_hud.py"
+"$PY" "$T/spell_digit.py"
+"$PY" "$T/hud_status.py"
+"$PY" "$T/banners.py"

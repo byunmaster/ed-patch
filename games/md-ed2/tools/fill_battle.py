@@ -308,7 +308,7 @@ def appear_ours(st: scene.Stream, monsters: dict) -> str | None:
             return None
     m = APPEAR.match(text)
     b = BATTLE.match(text)
-    known = lambda n: bool(battle.base_name(n) in monsters or battle._glossary(battle.base_name(n)))  # noqa: E731, SLF001
+    known = lambda n: bool(battle.base_name(n) in monsters or battle._glossary(battle.base_name(n)))
     if m:
         a, c = m.group(1), m.group(2)
         if not known(a) or (c and not known(c)):

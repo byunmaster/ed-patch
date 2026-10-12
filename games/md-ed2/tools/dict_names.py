@@ -27,8 +27,6 @@ from shared import canon
 DICT_TABLES = {
     "item": ("item",),
     "spell": ("spell", "item"),
-    "place_a": ("place",),
-    "place_b": ("place",),
 }
 # 표 → 정본 범주 (UI 라벨 — 사전에 없을 때, 그리고 상점·예/아니오는 처음부터 정본)
 CANON_TABLES = {"item": "ui", "spell": "ui", "shop": "ui", "yesno": "ui"}
@@ -173,6 +171,9 @@ def names(orig: bytes | None = None) -> dict:
             if cat in widths:
                 v = fit(v, widths[cat], f"{cat}[{i}]")
             tbl[str(i)] = {"jp": jp, "ours": v, "src": src}
+    import places
+
+    out["place_list"] = places.table(orig)  # 필드 HUD 지명 65 — 가변 폭 레코드(`places.py`)
     for cat, tpls in _layout().items():
         tbl = out.setdefault(cat, {})
         for i, tpl in tpls.items():
