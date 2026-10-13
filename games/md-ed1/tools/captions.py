@@ -287,6 +287,8 @@ def _width_errors(k: str, ours: str, fam: str | None = None) -> list[str]:
     # 피치가 폭을 정한다 — **마지막** 피치 태그가 이긴다(`<fe10>` = 16 · `<fe0e>` = 14, 기본 14)
     pitches = re.findall(r"<fe(0e|10)>", ours)
     pitch = 16 if pitches and pitches[-1] == "10" else 14
+    if FONT_SRC in ("galmuri11bold", "galmuri11"):  # 굽는 쪽(`font_tags`)이 `<fe10>` 을 14 로 바꾼다 — 검사도 같은 피치로 본다
+        pitch = 14
     win = WINDOW_W.get(fam, 240)
     errs = []
     for ln in re.sub(r"<[^>]*>", "", ours).split("\n"):
