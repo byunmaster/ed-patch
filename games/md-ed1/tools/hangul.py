@@ -684,7 +684,7 @@ def resource5(
         enc = cs.encode_char(ch)
         if len(enc) == 2:
             by_code[int.from_bytes(enc, "big")] = ch
-        elif source == "neodgm" and ch != "\n":
+        elif source in ("neodgm", "galmuri14", "galmuri11bold", "galmuri11") and ch != "\n":
             # 반각(ASCII)도 Neo 꼴로 — 문안이 `<fd05>`(반각 글꼴 5)를 켜면 이 표에서 찾는다. 표 조회는
             # 코드가 **없으면 가장 가까운 항목으로 떨어지니**(「」가 「가」로 떴던 그 함정) 공백까지 넣는다.
             by_code[enc[0]] = ch
@@ -698,7 +698,9 @@ def resource5(
     _BDF = {
         "galmuri11": ("Galmuri11.bdf", 1, 1),
         "galmuri11bold": ("Galmuri11-Bold.bdf", 1, 1),
-        "galmuri14": ("Galmuri14.bdf", 1, 0),
+        # ED1 엔딩 자막 창은 첫 줄 원점에서 30행까지만 보인다(실측 10-13: top=1 이면 둘째 줄 14행째 잉크 — ㄴ·ㅇ 바닥·마침표 — 가 잘렸다)
+        # ⇒ 위 여백 0(잉크 0~13행). md-ed2 는 top=1 이다(창 높이가 달라 거기선 안 잘린다).
+        "galmuri14": ("Galmuri14.bdf", 0, 0),
     }
     if source == "neodgm":
 

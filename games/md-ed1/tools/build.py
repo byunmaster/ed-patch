@@ -525,7 +525,7 @@ def main(check_only: bool = False) -> None:
     for label, pos, body in hangul.resource1(cs, FONT_AT):  # 반각 쉼표 — 표 0 이 비운 자리에
         rom.write(label, pos, body)
     # 네오둥근모는 반각도 리소스 5 로 그리니 공백(0x20)도 표에 든다 — 빠지면 조회가 첫 항목(「!」)으로 떨어진다
-    cap5 = {c for c in captions.font5_chars(cmap) if c.strip() or (c == " " and captions.FONT_SRC == "neodgm")}
+    cap5 = {c for c in captions.font5_chars(cmap) if c.strip() or (c == " " and captions.FONT_SRC in ("neodgm", "galmuri14", "galmuri11bold", "galmuri11"))}
     if captions.FONT_ID and cap5:  # <fd85> 를 단 자막 전용 글꼴(리소스 5, Galmuri14 14×14)
         for label, pos, body in hangul.resource5(
             cs, cap5, hangul.layout_after_r1(cs, FONT_AT), cell=captions.FONT_CELL, source=captions.FONT_SRC, tail_end=FONT_AT + FONT_RESERVE
