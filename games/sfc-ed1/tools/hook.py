@@ -372,6 +372,19 @@ def dict_width_tables() -> list[bytes]:
     return out
 
 
+def check_crawl_digit_gap() -> None:
+    """크롤(오프닝·엔딩) 반각 숫자 게이트 — 「잉크 열 < 진행 폭」. 같으면 숫자 사이가 0px 라 「10여」가 「100」처럼 읽힌다(마스터 10-13)."""
+    import hangul_font
+
+    font = hangul_font.load_font()
+    for c in "0123456789":
+        rows = hangul_font.render(c, font)
+        cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
+        ink = max(cols) + 1
+        if ink >= hook_vwf.CRAWL_DIGIT_ADV:
+            raise SystemExit(f"크롤 숫자 「{c}」 잉크 {ink}열 ≥ 진행 폭 {hook_vwf.CRAWL_DIGIT_ADV}px — 간격이 없다")
+
+
 def num_glyph_table() -> tuple[bytes, bytes]:
     """원판 시트의 숫자 0~9 그림(1bpp 16행) → (그림 160B, 진행 폭 10B).
 
@@ -423,6 +436,8 @@ def build_payload(
     """훅 뱅크 하나를 통째로 만든다 — 코드가 앞, 표가 뒤. **원본을 안 읽는다**(테스트가 돌 수 있게)."""
     if vwf is None:
         vwf = common.VWF
+    if vwf:
+        check_crawl_digit_gap()
     rep_index = encode.index_map(rep)
     nslot = len(slots)
     if xfrom is None:
