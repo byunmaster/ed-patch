@@ -27,13 +27,36 @@ def _repeat(s: str, i: int) -> bool:
     return bool(m and n and m.group(1) == n.group(1))
 
 
+def _lead(s: str, i: int) -> bool:
+    """문장 맨 앞의 「…」(마스터 10-13 「이 문장 말줄임이 아니라 앞에오는 …이면 붙이는 게 맞을듯」, 전 기종): 앞이 문자열·줄의 처음(들여쓰기
+    공백뿐)이거나 문장 끝 부호·여는 따옴표다. 이 「…」 는 말줄임이 아니라 문장 머리표라 **뒤를 붙인다**."""
+    pre = s[:i].split("\n")[-1].rstrip(" ")
+    while (m := re.search(r"<(05|06|07|00|08|0a|03|04|1f|09[0-9a-f]{2})>$", pre)) is not None:
+        pre = pre[: m.start()].rstrip(" ")  # 페이지·화자 구분 태그는 건너뛴다(`<0e>` 같은 이름 변수는 글이라 안 건너뛴다)
+    return pre == "" or pre[-1] in ".?!」』「『(“"
+
+
+LEAD_SP = re.compile(r"…( +)(?=[가-힣A-Za-z0-9])")
+
+
+# 번역 규칙 2-12 — 물음표·느낌표와 「…」가 겹치면 「…」가 앞(「…?」 「…!」 「…!?」, 마스터 10-13). 「소니아!?…」 ✗.
+QE = re.compile(r"([?!？！]+)…")
+
+
 def count(s: str) -> int:
-    return sum(1 for m in CAND.finditer(s) if not (_stutter(s, m.start()) or _repeat(s, m.start())))
+    """위반 수 — ① 말줄임(앞말 뒤 「…」)에 말이 붙은 곳(예외 제외) ② 문장 맨 앞 「…」 뒤 공백 ③ 「?…」·「!…」 순서(2-12)."""
+    n = sum(1 for m in CAND.finditer(s) if not (_stutter(s, m.start()) or _repeat(s, m.start()) or _lead(s, m.start())))
+    return n + sum(1 for m in LEAD_SP.finditer(s) if _lead(s, m.start())) + len(QE.findall(s))
 
 
 def fix_text(s: str) -> str:
+    s = QE.sub(lambda m: "…" + m.group(1), s)
+    s = LEAD_SP.sub(lambda m: "…" if _lead(s, m.start()) else m.group(0), s)
     return CAND.sub(
-        lambda m: m.group(0) if (_stutter(s, m.start()) or _repeat(s, m.start())) else "… ", s
+        lambda m: m.group(0)
+        if (_stutter(s, m.start()) or _repeat(s, m.start()) or _lead(s, m.start()))
+        else "… ",
+        s,
     )
 
 

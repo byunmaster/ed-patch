@@ -771,7 +771,8 @@ def main(check_only: bool = False) -> None:
     cap5 = {c for c in captions.font5_chars(cmap) if c.strip() or c == " "}
     if cap5:
         for label, pos, body in hangul.resource5(
-            cs, cap5, hangul.layout_after_r1(cs), cell=captions.FONT_CELL, source=captions.FONT_SRC
+            cs, cap5, hangul.layout_after_r1(cs), cell=captions.FONT_CELL, source=captions.FONT_SRC,
+            narrow_adv=captions.FONT_PITCH // 2, digit_extra=captions.DIGIT_EXTRA
         ):
             rom.write(label, pos, body)
     for label, pos, body in cap_writes:

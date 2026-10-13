@@ -50,9 +50,12 @@ RELOCATE = {
 # 그리고 끝에 `<fd80>` 으로 대사 글꼴(리소스 0)로 되돌린다. md-ed1 과 같은 글꼴·같은 이유(마스터 확정 10-08).
 FONT_ID = 5
 FONT_TAG = "<fd85>"
-FONT_SRC = os.environ.get("MD_CAPTION_FONT", "neodgm")
-FONT_CELL = int(os.environ.get("MD_CAPTION_CELL", "16"))
+FONT_SRC = os.environ.get("MD_CAPTION_FONT", "galmuri11")
+FONT_CELL = int(os.environ.get("MD_CAPTION_CELL", "14"))
+FONT_PITCH = int(os.environ.get("MD_CAPTION_PITCH", "14"))  # 자막 피치(px) — 문안의 `<fe10>` 을 빌드 때 이 값으로 바꾼다
 NARROW_ON, NARROW_OFF = "<fd05>", "<fd00>"
+LINE_BASE = 16  # 렌더러 기본 줄 간격(px) — 캡처에서 쟀다(오프닝 7줄 = y 57~165)
+LINE_H = int(os.environ.get("MD_CAPTION_LINE", "0"))  # 자막 줄 간격(px) — `ff NN` 이 줄 간격을 정한다(md-ed1 실험은 18) ; 0 이면 안 건드린다
 WIDTH_P16 = 14  # 피치 16 × 14 = 224px (오프닝)
 WIDTH_P14 = 15  # 피치 14 — 원문 최장 줄이 16칸(224px)이라 창은 그 이상이다. 보수적으로 15칸
 OFF_MAX = 0xFFF
@@ -64,11 +67,46 @@ MAP_JSON = common.GAME_DIR / "textmap" / "captions.json"
 
 def font_tags(ours: str) -> str:
     """정본 문안의 글꼴 머리·꼬리에 반각 글꼴 선택을 덧붙인다(빌드 시점 — 정본은 `<fd85>`…`<fd80>` 그대로)."""
-    if FONT_SRC != "neodgm" or FONT_TAG not in ours or NARROW_ON in ours:
+    if FONT_TAG not in ours or NARROW_ON in ours:
         return ours
-    return ours.replace(FONT_TAG, FONT_TAG + NARROW_ON, 1).replace(
-        "<fd80>", "<fd80>" + NARROW_OFF, 1
-    )
+    ours = ours.replace("<fe10>", f"<fe{FONT_PITCH:02x}>")
+    on = FONT_TAG + NARROW_ON + (f"<ff{LINE_H:02x}>" if LINE_H else "")
+    off = (f"<ff{LINE_BASE:02x}>" if LINE_H else "") + "<fd80>" + NARROW_OFF
+    return widen_digits(ours.replace(FONT_TAG, on, 1).replace("<fd80>", off, 1))
+
+
+# 반각 숫자는 잉크가 전진(피치/2)에 꽉 차면 다음 글자 테두리가 오른쪽 끝을 먹는다 — md-ed1 「10여」의 「0」이 「C」로
+# 보였다(마스터 실기 10-13). 숫자 덩이만 피치를 +2 로 감싸 **전진 +1px** (한글·부호는 불변). md-ed1 `widen_digits` 와 같다.
+DIGIT_EXTRA = 2  # 반각 숫자 전진 +2px(마스터 10-13 「숫자에 공간을」 — 1px 은 「5」와 다음 글자가 붙어 보였다)
+
+
+def widen_digits(ours: str) -> str:
+    """숫자 덩이 앞뒤에 피치 태그(`<feNN>` — 현재 피치 +2 / 현재 피치)를 끼운다. 태그 안의 숫자는 건드리지 않는다."""
+    cur = FONT_PITCH
+    out = []
+    for m in re.finditer(r"<fe([0-9a-f]{2})>|<[^>]*>|(\d+)|[^<\d]+|<", ours):
+        if m.group(1):
+            cur = int(m.group(1), 16)
+        if m.group(2):
+            out.append(f"<fe{cur + 2 * DIGIT_EXTRA:02x}>{m.group(2)}<fe{cur:02x}>")
+        else:
+            out.append(m.group(0))
+    return "".join(out)
+
+
+# 엔딩 자막(나레이션·프레이아 대사) 줄 시작을 **그림 왼쪽 끝**에 맞춘다(마스터 10-13 「엔딩자막도 그림 왼쪽 끝에서 시작하자」, md-ed1
+# 방식). 그림 칸은 x80~239(실화면 실측)이고 자막 잉크는 창 왼쪽 x≈49 에서 시작하므로 줄마다 반각 공백 넷(전진 28px → 잉크 x≈77)을
+# 덧붙인다. 29px 가 상한이다 — 가장 긴 줄(「…나갈 때,」 앞 189px)이 엔진 줄바꿈 한계(214+부호 4 = 218px)에 닿는다.
+END_INDENT = 4
+
+
+def placed(k: str, ours: str) -> str:
+    """정본 문안을 화면에 놓는 꼴로 — 엔딩 가족이면 모든 줄 앞에 들여쓰기 공백(빌드 시점, 정본 `ours` 는 그대로)."""
+    if family_of(int(k, 16)) not in ("ending-a", "ending-b"):  # ending-c(마지막 문구)는 그림이 없는 검은 화면 — 원판도 창 왼쪽(x≈49)에서 시작
+        return ours
+    pad = " " * END_INDENT
+    head = re.match(r"(?:<[^>]*>)*", ours).group(0)
+    return head + pad + ours[len(head) :].replace("\n", "\n" + pad)
 
 
 def words(d: bytes, base: int) -> list[tuple[int, int, int]]:
@@ -111,20 +149,47 @@ def targets(ws: list, base: int) -> list[tuple[int, int]]:
     return [(op, base + arg if op == 0 else arg) for _pos, op, arg in ws]
 
 
-def cells(s: str) -> float:
-    """화면 칸 — 이 렌더러는 **1바이트로 싣는 글자(ASCII)가 반각**이다(ED1 실측)."""
-    return sum(0.5 if ord(c) < 0x80 else 1 for c in s)
+def advance_px(ch: str, pitch: int) -> int:
+    """글자 하나가 커서를 미는 폭(px) — 전각 = 피치 · 1바이트 글자(ASCII·공백) = 피치/2(실측: 피치 14 에서 7px)."""
+    return pitch // 2 if ord(ch) < 0x80 else pitch
+
+
+# 엔진 줄바꿈은 글자 **시작** x 로 판정한다 — 행 폭 120B(30칸=240px, `$FF1FF0+0x21`) − 13B = 107B → 시작 x > 214px 면 다음 줄,
+# 반각 부호(. , ! ?)는 punctwrap 가 자막에서 10px 더 봐 준다(224px). 2026-10-13 실측: 마침표 시작이 224px 인 줄은 글 전체가 사라졌다.
+START_MAX_PX = 214
+START_MAX_PUNCT_PX = 232  # punctwrap: 자막(피치 14)은 부호 허용 +18px (대사창은 +4px 그대로) — 218 이 아니라 232
 
 
 def _width_errors(k: str, ours: str) -> list[str]:
-    # 피치가 폭을 정한다 — **마지막** 피치 태그가 이긴다
-    pitches = re.findall(r"<fe(0e|10)>", ours)
-    limit = WIDTH_P16 if pitches and pitches[-1] == "10" else WIDTH_P14
+    """줄마다 **모든 글자의 시작 x** 를 엔진 한도와 대조한다(마지막 글자만 보면 안 된다 — 2026-10-14 「사랑하고,」 의 「고」(217px)가
+    214px 를 넘어 「고,」 만 다음 줄로 떨어졌다). 줄 안 피치 태그(`<feNN>`, 공백만 좁히는 데 쓴다)를 따라 전진을 센다 — `<fe10>` = 자막
+    기준 피치(FONT_PITCH)."""
     errs = []
-    for ln in re.sub(r"<[^>]*>", "", ours).split("\n"):
-        w = cells(ln.rstrip())
-        if w > limit:
-            errs.append(f"captions {k}: 줄 {w}칸 > {limit}: {ln!r}")
+    pitch = FONT_PITCH
+    x = 0
+    line = []  # (글자, 시작 x)
+    rows: list[list[tuple[str, int]]] = []
+    for m in re.finditer(r"<fe([0-9a-f]{2})>|<[^>]*>|\n|.", ours, re.S):
+        t = m.group(0)
+        if m.group(1):
+            v = int(m.group(1), 16)
+            pitch = FONT_PITCH if v == 0x10 else v
+        elif t == "\n":
+            rows.append(line)
+            line, x = [], 0
+        elif not t.startswith("<"):
+            line.append((t, x))
+            x += advance_px(t, pitch) + (DIGIT_EXTRA if t.isdigit() else 0)
+    rows.append(line)
+    for row in rows:
+        while row and row[-1][0] == " ":
+            row.pop()
+        for ch, st in row:
+            lim = START_MAX_PUNCT_PX if ch in ".,!?" else START_MAX_PX
+            if st > lim:
+                text = "".join(c for c, _ in row)
+                errs.append(f"captions {k}: 글자 「{ch}」 시작 {st}px > {lim}px: {text!r}")
+                break
     return errs
 
 
@@ -146,7 +211,7 @@ def check(d: bytes) -> None:
             ours = tm.get(f"{t:06x}", {}).get("ours", "")
             if not ours:
                 continue
-            errs += _width_errors(f"{t:06x}", ours)
+            errs += _width_errors(f"{t:06x}", placed(f"{t:06x}", ours))
             n = len(ours.split("\n"))
             if n > MAX_LINES[e["family"]]:
                 errs.append(f"captions {t:06x}: {n}줄 > {MAX_LINES[e['family']]}줄")
@@ -206,7 +271,7 @@ def plan(
             if ent and ent.get("ours"):
                 if ent["jp"] != sysmsg.jp_key(st):
                     raise SystemExit(f"captions {k}: 원문 해시가 갈렸다")
-                ours = ent["ours"]
+                ours = placed(k, ent["ours"])
                 errs += _width_errors(k, ours)
                 n = len(ours.split("\n"))
                 if n > MAX_LINES[name]:
@@ -301,7 +366,7 @@ def verify_readback(buf: bytes, d: bytes, textmap: dict, encode) -> int:
                 t = base + arg
                 ent = textmap.get(f"{t:06x}")
                 if ent and ent.get("ours"):
-                    ours = font_tags(ent["ours"])
+                    ours = font_tags(placed(f"{t:06x}", ent["ours"]))
                     toks = sysmsg._tokens_from_ours(strs[t]["stream"], ours, encode)
                     want = b"".join(tk.raw for tk in toks)
                 else:

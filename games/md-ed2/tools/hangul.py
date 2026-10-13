@@ -660,6 +660,8 @@ def resource5(
     *,
     cell: int = 14,
     source: str = "galmuri14",
+    narrow_adv: int = 8,
+    digit_extra: int = 0,
 ) -> list[tuple[str, int, bytes]]:
     """빈 리소스 5 에 **자막 전용 글꼴**을 만든다 — (라벨, 자리, 바이트). `after` = 리소스 1 이 쓴 자리 뒤.
 
@@ -675,11 +677,11 @@ def resource5(
         enc = cs.encode_char(ch)
         if len(enc) == 2:
             by_code[int.from_bytes(enc, "big")] = ch
-        elif source == "neodgm" and ch != "\n":
+        elif ch != "\n":
             # 반각(ASCII)도 Neo 꼴로 — 문안이 `<fd05>`(반각 글꼴 5)를 켜면 이 표에서 찾는다. 표 조회는
             # 코드가 **없으면 가장 가까운 항목으로 떨어지니**(「」가 「가」로 떴던 그 함정) 공백까지 넣는다.
             by_code[enc[0]] = ch
-        # (neodgm 이 아니면 반각은 리소스 1 이 그린다)
+        # (galmuri11 계열이면 반각은 리소스 1 이 그린다)
     codes = sorted(by_code)
     # (BDF, 칸 안 위 여백, 칸 안 왼 여백) — 채움이 칸 0행·0열에 바로 닿으면 그쪽으로 팽창할
     # 테두리 자리가 없다(대사창 리소스0 의 GLYPH_TOP/GLYPH_LEFT 와 같은 함정, 2026-09-17
@@ -689,7 +691,7 @@ def resource5(
     _BDF = {
         "galmuri11": ("Galmuri11.bdf", 1, 1),
         "galmuri11bold": ("Galmuri11-Bold.bdf", 1, 1),
-        "galmuri14": ("Galmuri14.bdf", 1, 0),
+        "galmuri14": ("Galmuri14.bdf", 0, 0),
     }
     if source == "neodgm":
 
@@ -716,6 +718,18 @@ def resource5(
     glyphs = bytearray()
     for c in codes:
         fill = src(by_code[c])
+        if c < 0x100 and by_code[c] != " ":
+            # 반각 글리프는 칸을 피치/2 만큼만 전진한다(피치 16 → 8px, 14 → 7px) — 잉크가 8열 이상이면 다음 글자와 겹친다
+            # (갈무리14 「0」은 잉크 8열 + 테두리 → 10px 가 필요해 「10여」가 「1C여」로 보였다, md-ed1 10-13 마스터 지적)
+            wide = [x for x in range(cell) if any(r[x] for r in fill)]
+            adv = narrow_adv + (digit_extra if by_code[c].isdigit() else 0)  # 숫자는 피치 태그로 전진 +digit_extra
+            if digit_extra and by_code[c].isdigit() and wide and (max(wide) - min(wide) + 1) + 2 > adv:
+                # 숫자 틈 게이트(규칙 1-5, md-ed1 과 같은 잣대) — 잉크 폭 + 2px ≤ 전진폭
+                raise SystemExit(f"숫자 {by_code[c]!r} 잉크 {max(wide) - min(wide) + 1}열 + 2 > 전진 {adv}px (붙어 보인다)")
+            if wide and max(wide) >= adv:
+                raise SystemExit(
+                    f"반각 글리프 {by_code[c]!r} 잉크가 {max(wide) + 1}열 — 전진 {adv}px 에 안 들어간다(겹침)"
+                )
         glyphs += _pack_w(fill, cell) + _pack_w(ring(fill), cell)
     if tbl_at + len(table) > r0["table_end"]:
         raise SystemExit("리소스 5 표를 둘 자리가 없다(표 0 구역 초과)")

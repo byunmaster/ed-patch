@@ -83,6 +83,10 @@ def _script_pairs(rom: bytes):
             yield f"script:{blk:03d}-{k}:{off:04x}", st.text(), ours, DIALOG
 
 
+# 칸에 박힌 이름 표 스트림(용의 알 이름 · 지명) — 칸은 붙여쓴 꼴(규칙 3-4), 대사가 아니다
+SLOT_STREAMS = frozenset({0x22C60, 0x22C6E, 0x22C7C, 0x22C8A, 0x22C98, 0x3B0B6, 0x3B22E, 0x3B23B, 0x3B248})
+
+
 def _sysmsg_pairs(rom: bytes):
     import build
 
@@ -90,7 +94,7 @@ def _sysmsg_pairs(rom: bytes):
     for addr, e in sysmsg.streams(rom).items():
         jp = sysmsg.render(e["stream"])
         ours = smap.get(f"{addr:06x}", {}).get("ours") or None
-        yield f"sysmsg:{addr:06x}", _t(jp), _t(ours), DIALOG
+        yield f"sysmsg:{addr:06x}", _t(jp), _t(ours), SLOT if addr in SLOT_STREAMS else DIALOG
 
 
 def _names_pairs(rom: bytes):

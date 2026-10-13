@@ -31,6 +31,8 @@ SITE = 0xC9B0  # cmp.b $ff2018.l,d1 (6B)
 ORIG = bytes.fromhex("b23900ff2018")
 SLACK_BYTES = 2  # 4px
 PUNCT = (0x2E, 0x2C, 0x21, 0x3F)  # . , ! ?
+CAPTION_PITCH = 0x0E  # 자막 피치 14 — `$FF2014` (md-ed2 자막은 피치 14, 숫자 덩이만 잠깐 18)
+CAPTION_EXTRA_BYTES = 7  # 자막에서만 +14px 더(합 9B=18px: 시작 214→232px) — 「사람들은 아트라스 왕자를 사랑하고,」 한 줄(231px)
 CODE_LEN = 0x30
 
 
@@ -40,9 +42,13 @@ def code() -> bytes:
         b += struct.pack(">HH", 0x0C00, c)  # cmpi.b #c,d0
         b += bytes([0x67, 0x00])  # beq.s hit (변위는 아래에서)
     b += struct.pack(">HH", 0x0C00, PUNCT[-1])  # cmpi.b #?,d0
-    b += bytes([0x66, 0x02])  # bne.s plain (addq 한 개 건너뜀)
+    b += bytes([0x66, 0x0E])  # bne.s plain (addq 2 + cmpi 8 + bne 2 + addq 2 = 14B 건너뜀)
     hit = len(b)
     b += struct.pack(">H", 0x5000 | (SLACK_BYTES << 9) | 0x01)  # addq.b #2,d1
+    # 자막(피치 16, `$FF2014`)만 부호 허용을 더 넓힌다 — 대사창(피치 12)·그 밖은 위 4px 그대로
+    b += struct.pack(">HH", 0x0C39, CAPTION_PITCH) + struct.pack(">I", 0xFF2014)  # cmpi.b #16,$FF2014.l
+    b += bytes([0x66, 0x02])  # bne.s plain
+    b += struct.pack(">H", 0x5000 | (CAPTION_EXTRA_BYTES << 9) | 0x01)  # addq.b #3,d1
     plain = len(b)
     b += bytes.fromhex("b23900ff2018")  # cmp.b $ff2018.l,d1
     b += struct.pack(">H", 0x4E75)  # rts
