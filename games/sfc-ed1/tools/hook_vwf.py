@@ -821,8 +821,15 @@ def emit(a, k):
     a.bcs(label="wk_nc")
     a.jmp(addr="wk_chr", mode="abs")
     a.label("wk_nc")
+    # 🔴 $E0(END)은 낱말 끝이다 — 예전엔 이 줄이 $E0 을 아래 토큰 갈래($D6~ 24px)로 보내, 조각의 마지막 낱말 뒤에 24px 와
+    #    **다음 조각의 첫 낱말까지** 더해 쟀다. 그래서 줄 끝의 마지막 낱말만 멀쩡히 들어갈 자리에서 새 줄로 내려갔다(엔딩 대사창
+    #    「…시작 안 / 된다고.」」 · 「않도록…」 · 「왕자님?」, 2026-10-13 BP: 마지막 공백에서 읽기 포인터가 다음 조각까지 넘어갔다).
+    a.cmp(imm=0xE0)
+    a.bne(label="wk_nc1")
+    a.jmp(addr="wk_end", mode="abs")
+    a.label("wk_nc1")
     a.cmp(imm=0xE1)
-    a.bcc(label="wk_tok")  # $CF 개행 … $E0 : 낱말 끝이 아닌 $D0~$E0 중 토큰은 아래, 나머지는 끝
+    a.bcc(label="wk_tok")  # $CF 개행 … $DF : 낱말 끝이 아닌 $D0~$DF 중 토큰은 아래, 나머지는 끝
     a.cmp(imm=0xE4)
     a.bcc(label="wk_col")  # $E1~$E3 색 — 폭 0
     a.jmp(addr="wk_end", mode="abs")
