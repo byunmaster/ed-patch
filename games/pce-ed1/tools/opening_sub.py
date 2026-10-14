@@ -51,6 +51,8 @@ W, H = 256, 232
 CELL, ADV_LATIN = 12, 8
 LEFT_MARGIN, RIGHT_MARGIN = 20, 20
 TOP, LINE_H = 44, 18
+# 🔴 그림 위 상단 배치 자막의 시작 y(프레임 행) — 별하늘 도입부(TOP)보다 위(마스터 10-15 「자막 위에 있을 때 시작 위치도 좀 위로」). 별하늘은 화면 상하 가운데라 TOP 그대로.
+TOP_PIC = 16
 # 🔴 **자막은 전 구간 상단 고정이다**(마스터 확정 2026-09-22 — 하단 배치를 거쳐 되돌렸다).
 #
 # 왜 하단을 버렸나 — 이 게임은 **장면마다 표시 행수가 다르다**(VDC 의 VDR 실측: 240 · 232 ·
@@ -78,7 +80,10 @@ SUB_MAX_ROWS = 3  # 그림 구간 자막의 최대 줄 수(이 이상은 대본�
 #   밑변이 올라가 자막도 같이 올라간다 — 실기에서 그게 보였다. 그래서 세 모드 전부 1배다.
 # 값 정하기: 가장 짧은 그림(208행)의 밑변이 프레임 238행이므로, 3줄 덩어리(50) 바닥을
 #   프레임 230 에 두면 어느 장면에서도 그림 안에 들어가고 화면에서 자리가 같다.
+BOT_LIFT = 40  # 하단 배치: 마지막 줄 위 y = BOT_BASE + BOT_LIFT. 두 줄 쪽 page_y 251 = 마지막 줄 잉크 아래 여백 16px(마스터 10-15 — ed2 대관식 기준을 16 으로 통일; 종전 36px 였다)
 BOT_BASE = 64 + 180 + 49 - 64  # 프레임 180행에서 시작 → 바닥 230행 (page_y = 프레임+49)
+BOTTOM_SCREEN_MIN = 208  # 그림 아래 하단 배치 자막이 나오는 장면의 최소 화면 높이(화면 확인)
+TOP_SCREEN_MIN = 232  # 그림 위 상단 배치 자막이 나오는 장면의 최소 화면 높이(번역 규칙 2-14 위 여백 — 화면 확인 필요)
 SHORTEST_SCREEN = 192  # 자막이 들어가야 할 화면 높이 하한. ⚠ 실측 최솟값(208)보다 낮게 잡는다
 #   — 성기게 잰 실측이 이미 한 번 틀렸다(「불」을 240 으로 봤는데 232 였다).
 LINE_CAP = 10
@@ -164,6 +169,7 @@ V_FRAME, V_EVIDX, V_PAGE, V_SCENE, V_DIRTY, V_SIG, V_INIT, V_SCNPTR, V_SIGADDR =
 Z_SRC, Z_SCN, Z_T0, Z_T1, Z_T2, Z_T3 = 0xC0, 0xC2, 0xC4, 0xC5, 0xC6, 0xC7  # ZP $2042~$20E6 은 모듈이 안 쓴다
 SPR_BASE = 36  # 우리 스프라이트 36~63 (모듈은 로고 0~39·대관식 0~21)
 SPR_PER_PAIR = 7  # 32px × 7 = 224px ≥ 216
+NPAIR = 4  # 줄 짝(두 줄) 수 — 슬롯 NPAIR×SPR_PER_PAIR 개(오프닝 28 = SAT 36~63). 엔딩은 짝 하나(2줄)면 돼 3×8=24 로 쓴다
 SPR_ATTR = 0x1188  # CGY=1(32높이) CGX=1(32폭) SPBG=1 팔레트 8
 SPR_PAL = 8
 SAT_VRAM = 0x7F00
@@ -253,33 +259,120 @@ def _adv(ch):
     return ADV_LATIN if ord(ch) < 0x1100 else CELL
 
 
+def _advs(text):
+    """글자별 전진 px. 숫자는 한 칸 더(9) 두고 숫자 뒤 한글은 1px 더 띄운다 — 1px 테두리가 맞닿아
+    「10」이 「1O」·「100」처럼 뭉치지 않게(공통 규칙 2-13, 마스터 10-13). 한글 간격은 그대로."""
+    out = []
+    for i, c in enumerate(text):
+        a = _adv(c)
+        if c.isdigit():
+            a += 1
+            if i + 1 < len(text) and ord(text[i + 1]) >= 0x1100:
+                a += 1
+        out.append(a)
+    return out
+
+
+def _fit_w(text):
+    """줄이 스트립에서 실제로 닿는 폭(px) — 전진 합은 같아도 끝 글자가 셀 끝까지 차면 1px 더 닿는다."""
+    m, e = render_line(text)
+    ink = [i for i in range(m.shape[1]) if (m[:, i] | e[:, i]).any()]
+    return ink[-1] + 1 if ink else 0
+
+
 def wrap(text, max_w=None):
+    wide = max_w is not None and max_w >= 32 * SPR_PER_PAIR  # 스프라이트 폭 가득 — 닿는 폭으로 잰다
     if max_w is None:
         max_w = WRAP_W if WRAP_W else W - LEFT_MARGIN - RIGHT_MARGIN
     words = text.split(" ")
     lines, cur, curw = [], "", 0
     for w_ in words:
-        ww = sum(_adv(c) for c in w_) + (ADV_LATIN if cur else 0)
-        if curw + ww > max_w and cur:
+        ww = sum(_advs(w_)) + (ADV_LATIN if cur else 0)
+        cand = f"{cur} {w_}" if cur else w_
+        over = (_fit_w(cand) > max_w) if wide else (curw + ww > max_w)
+        if over and cur:
             lines.append(cur)
-            cur, curw = w_, sum(_adv(c) for c in w_)
+            cur, curw = w_, sum(_advs(w_))
         else:
-            cur = f"{cur} {w_}" if cur else w_
+            cur = cand
             curw += ww
     if cur:
         lines.append(cur)
     return lines
 
 
-def render_line(text):
-    """한 줄 → (white(14×Wpx), outline(14×Wpx)) 0/1 배열. 영상 스크립트의 draw()+png() 와 같은 규칙."""
+# 🔴 줄마다 **가운데 정렬**(번역 규칙 2-14·2-8, 마스터 10-15 「음성자막은 가운데정렬 — 애니메이션 자막 느낌으로」).
+#   폭 = 글자 실제 전진 px 의 합(문장 안 공백·부호는 그 px 이 곧 반각), **줄 끝 「.」「,」「…」는 뺀다.**
+#   가운데는 프레임 가운데(CENTER_X) — 장면마다 표시 폭이 달라도 그림은 늘 프레임 가운데라 같은 값이다.
+#   줄 스트립 = 왼쪽을 `lead` 칸(16px, 안 싣는다 — 런타임이 0 으로 쓴다) + `r` px(스트립에 구워 넣는다) 비운 꼴.
+CENTER_LINES = True
+CENTER_X = 128
+TRAIL_PUNCT = ".,…"
+
+
+X_BIAS = 0  # 엔딩 8 — 장면 원점이 음수(−8)가 될 수 있어 표값에 더하고 SAT x 계산에서 뺀다
+SCENE_X_NOMINAL = 20  # 오프닝: x_base 20 = 256폭 화면, 60 = 341폭 화면(별밤 도입부 등) — 그 차(+40)만큼 가운데도 옮긴다. 엔딩은 None(전 장면 256폭)
+SCENE_CENTER_FIX = {}  # x_base → 가운데 보정 px (화면 실측으로 정한다)
+
+
+def scene_origin(x_base, scene=None):
+    """장면의 스프라이트 원점 x. 가운데 정렬이면 줄 스트립은 원점 기준이라 장면 화면 폭에 따른 가운데 차이(x_base − 공칭)만 더한다.
+    장면 항목에 `width`(표시 폭)가 있으면(엔딩) 256 보다 좁은 장면은 표시창이 (256−폭)/2 만큼 오른쪽으로 밀려 글이 그만큼 오른쪽으로 쏠리므로(240 폭 = +8px, 마스터 10-15
+    「엔딩에서 이 대사 이후 중앙정렬 안 돼 있어」) 원점을 그만큼 왼쪽으로 옮긴다."""
+    if not CENTER_LINES:
+        return x_base
+    shift = 0 if SCENE_X_NOMINAL is None else x_base - SCENE_X_NOMINAL + SCENE_CENTER_FIX.get(x_base, 0)
+    if scene is not None and "width" in scene:
+        shift -= (256 - scene["width"]) // 2
+    return max(0, CENTER_X - 16 * SPR_PER_PAIR + shift + X_BIAS)  # 자막이 없는 좁은 장면(엔딩 pre 176폭)은 음수가 될 수 있어 0 으로 자른다
+
+
+EDGE_MARGIN = 0  # 화면 좌우 안전 여백 px — 엔딩이 8 로 켠다(ending_sub)
+
+
+def _natural_d(text):
+    """줄 → 스프라이트 원점(CENTER_X − 16·SPR_PER_PAIR)에서 글자 잉크가 가운데가 되는 왼쪽 여백 px. 두 줄 시작을 맞추지 않는다(번역 규칙 2-14 최종, 마스터 10-15 「C로 하자」)."""
+    if not CENTER_LINES:
+        return 0
+    body = text.rstrip(TRAIL_PUNCT) or text
+    # 🔴 가운데는 **글자 잉크**(줄 끝 . , … 제외)의 가운데다(마스터 10-15 「중앙정렬이 제대로 안 된 것 같은데」). 전진 합의 가운데로 놓으면 첫·끝 글자의 좌우 여백
+    #   차이로 1~2px, 거기에 옛 「칸 아끼기」 보정(최대 5px 왼쪽)까지 겹쳐 줄마다 −7~+1px 로 흔들렸다(별밤 캡처로 잰 값). 잉크 가운데 = 원점 + d + (첫 열 + 끝 열)/2.
+    mb, _eb = render_line(body)
+    cols = [i for i in range(mb.shape[1]) if mb[:, i].any()]
+    ic2 = cols[0] + cols[-1]  # 잉크 가운데의 두 배(정수) — 홀수면 반 단위
+    origin = CENTER_X - 16 * SPR_PER_PAIR
+    d = (2 * (CENTER_X - origin) - ic2) // 2  # 가운데 = 원점 + d + ic2/2 → d = (목표 − ic2/2); 반 단위(홀수)는 // 로 왼쪽 내림(번역 규칙 2-14)
+    assert d >= -2, (text, d, "가운데 정렬 왼쪽 여백이 음수 — 줄이 스프라이트 폭을 넘는다")
+    d = max(d, 0)  # 스프라이트 폭 가득 찬 줄은 1~2px 오른쪽으로 밀린다
+    d = min(d, 32 * SPR_PER_PAIR - sum(_advs(text)))  # 오른쪽 끝도 스프라이트 폭(칸 수) 안에 — 가득 찬 줄은 가운데에서 몇 px 왼쪽으로 밀린다
+    if EDGE_MARGIN:  # 줄 끝 부호까지 포함한 잉크가 화면 안(좌우 EDGE_MARGIN px 안쪽)에 들어오게 — 엔딩 240폭 장면은 표시창이 8..248 이라 마침표가 잘렸다(캡처 실측 10-15)
+        mf, _ef = render_line(text)
+        full = [i for i in range(mf.shape[1]) if mf[:, i].any()]
+        if full[-1] - full[0] + 1 <= 32 * SPR_PER_PAIR - 2 * EDGE_MARGIN:  # 표시창보다 넓은 줄은 어차피 못 들어간다 — 그대로 가운데
+            d = min(d, 32 * SPR_PER_PAIR - EDGE_MARGIN - 1 - full[-1])
+            d = max(d, EDGE_MARGIN - full[0])
+    return d
+
+
+def line_geom(text):
+    """줄 → (lead 칸 수, r px) — 스프라이트 원점(CENTER_X − 16·SPR_PER_PAIR)에서 글이 가운데가 되는 왼쪽 여백."""
+    if not CENTER_LINES:
+        return 0, 0
+    d = _natural_d(text)
+    lead, r = d // 16, d % 16
+    return lead, r
+
+
+def render_line(text, left=0):
+    """한 줄 → (white(14×Wpx), outline(14×Wpx)) 0/1 배열. 영상 스크립트의 draw()+png() 와 같은 규칙. `left` = 왼쪽을 더 비울 px."""
     import numpy as np
 
     bdf = fonts.galmuri()
-    wpx = sum(_adv(c) for c in text) + 2
+    adv = _advs(text)
+    wpx = sum(adv) + 2 + left
     m = np.zeros((GLYPH_ROWS, wpx), dtype=np.uint8)
-    x = 1
-    for c in text:
+    x = 1 + left
+    for c, a_ in zip(text, adv):
         if c != " ":
             b = bdf.bits(c, dy=DY, rows=LINE_H - 2, width=CELL)[:12]  # 글리프는 0~11행
             if c == "…":  # 한국식 말줄임표 — 마침표 높이(10행)에 점 셋
@@ -288,7 +381,7 @@ def render_line(text):
             h, w_ = b.shape
             w_ = min(w_, wpx - x)  # 마지막 반각 글자는 셀(12)보다 자리(8)가 좁다 — 캔버스 안으로 자른다
             m[1 : 1 + h, x : x + w_] |= b[:, :w_]  # 테두리 1px 여유로 1행·1열 내린다
-        x += _adv(c)
+        x += a_
     edge = np.zeros_like(m)
     for dy in (-1, 0, 1):
         for dx in (-1, 0, 1):
@@ -302,8 +395,9 @@ def strip_cells(text):
     """한 줄 → 16×16 셀 바이트 목록. 셀 = plane0(14행×2B, 흰) + plane1(14행×2B, 테두리) = 56B
     (15·16행은 늘 0 이라 안 싣는다 — 런타임이 채운다). 행은 16비트 워드 리틀엔디언,
     **비트 15 가 왼쪽 픽셀**(VDC 스프라이트 규약)."""
-    m, edge = render_line(text)
-    ncell = (m.shape[1] + 15) // 16
+    m, edge = render_line(text, left=line_geom(text)[1])
+    ink = [i for i in range(m.shape[1]) if (m[:, i] | edge[:, i]).any()]
+    ncell = (ink[-1] + 1 + 15) // 16 if ink else 1  # 글이 닿는 곳까지만 — 꼬리의 빈 열(여유 2px)로 칸이 늘지 않게
     cells = []
     for c in range(ncell):
         out = bytearray()
@@ -367,7 +461,7 @@ def timeline(subs, rules):
             payload = payload.lstrip("\f")
             if t >= solo:  # 중반 그림 구간 — 이어붙이지 않고 한 문장씩 (마스터 요청 2026-09-22)
                 committed = []
-            new = ([None] if payload.startswith("\n") else []) + [lid(s) for seg in payload.lstrip("\n").split("\n") for s in wrap(seg)]
+            new = ([None] if payload.startswith("\n") else []) + [lid(s) for seg in payload.lstrip("\n").split("\n") for s in wrap(seg, PIC_WRAP_W if t >= solo else None)]
             if len(committed) + len(new) > cap:
                 committed = []
             current, cur_start = new, t
@@ -397,6 +491,10 @@ def timeline(subs, rules):
 
 
 # ── 데이터 묶기 ────────────────────────────────────────────────────────────
+# 🔴 그림 구간(solo_from 이후) 줄 폭 한계 = 스프라이트 폭 가득(마스터 10-15 「최대한 칸 늘려 두 줄에, 어쩔 수 없을 때만 3줄」). 별하늘 묶음은 연출 그대로(WRAP_W). None = 안 늘린다(엔딩).
+PIC_WRAP_W = 32 * SPR_PER_PAIR
+INTRO_PAGES: set = set()  # 별하늘 도입부 쪽(문장을 쌓는 구간) — build_all 이 채운다. 이 쪽만 TOP 에 둔다
+LEAD_TAB: list = []  # 줄마다 앞쪽 빈 칸 수(스트립에 안 싣는다) — pack_strips 가 채우고 런타임 표 `leads` 로 나간다
 STRIP_SECTORS = 0  # adpcm 모드: 스트립 섹터 수(pack_strips 가 채운다 — init 의 AD_TRANS 인자)
 
 
@@ -404,6 +502,11 @@ def pack_strips(lines):
     """줄 스트립을 뱅크에 순서대로 싣는다(8KB 경계는 안 넘긴다). → (banks{bank: bytes}, table[(bank, off, ncell)]).
     adpcm 모드면 한 덩어리로 이어 붙이고 table 의 off 는 **ADPCM 주소**다 → ({0: blob}, …)."""
     global STRIP_SECTORS
+    LEAD_TAB.clear()
+    for text in lines:
+        lead, _r = line_geom(text)
+        LEAD_TAB.append(lead)
+        assert lead + len(strip_cells(text)) <= 2 * SPR_PER_PAIR, (text, lead, "줄이 스프라이트 폭을 넘는다")
     if STRIP_MODE == "adpcm":
         blob, table = bytearray(), []
         for text in lines:
@@ -415,20 +518,19 @@ def pack_strips(lines):
         STRIP_SECTORS = (len(blob) + common.USER - 1) // common.USER
         return {0: bytes(blob)}, table
     banks = {b: bytearray() for b in STRIP_BANKS}
-    order = list(STRIP_BANKS)
-    bi = 0
-    table = []
-    for text in lines:
-        cells = strip_cells(text)
-        blob = b"".join(cells)
+    # 긴 줄부터 처음 맞는 뱅크에(줄은 뱅크를 못 넘는다) — 줄 번호는 그대로, 놓는 순서만 바꾼다(가운데 정렬로 칸이 늘어 빠듯하다)
+    blobs = [b"".join(strip_cells(t)) for t in lines]
+    table = [None] * len(lines)
+    for i in sorted(range(len(lines)), key=lambda k: (-len(blobs[k]), k)):
+        blob = blobs[i]
         assert len(blob) <= 0x2000
-        while len(banks[order[bi]]) + len(blob) > 0x2000:
-            bi += 1
-            if bi >= len(order):
-                raise SystemExit("줄 스트립이 뱅크 넷(32KB)을 넘는다")
-        b = order[bi]
-        table.append((b, len(banks[b]), len(cells)))
-        banks[b] += blob
+        for b in STRIP_BANKS:
+            if len(banks[b]) + len(blob) <= 0x2000:
+                table[i] = (b, len(banks[b]), len(blob) // CELL_BYTES)
+                banks[b] += blob
+                break
+        else:
+            raise SystemExit(f"줄 스트립이 뱅크 {len(STRIP_BANKS)}개({len(STRIP_BANKS) * 8}KB)를 넘는다")
     return {b: bytes(v) for b, v in banks.items()}, table
 
 
@@ -459,20 +561,24 @@ def page_y_table(pages, page_lay):
             #   (기계적으로 반씩 가르면 꼬리가 어색하고, 2줄까지 줄이면 뒷토막이 너무 빨리
             #    사라진다 — 마스터 실기 2026-09-22. 3줄까지가 타협점이다).
             assert n <= SUB_MAX_ROWS, (i, n, "하단 자막이 너무 길다 — script 에서 나눠라")
-            out.append(BOT_BASE)
+            out.append(BOT_BASE + BOT_LIFT - LINE_H * (n - 1))  # 마지막 줄 바닥 고정(줄 수가 달라도 같은 바닥)
         elif n and lay == "middle":
             out.append(64 + 120 - bh // 2)  # 그림 중심의 프레임 좌표는 늘 135
         else:
-            out.append(64 + TOP)
+            out.append(64 + (TOP if i in INTRO_PAGES else TOP_PIC))
     for i, (rows, y) in enumerate(zip(pages, out)):
+        # 세로 정렬(번역 규칙 2-14, 마스터 10-15): 하단 배치는 줄 수와 무관하게 **마지막 줄 바닥 고정**, 상단 배치는 위 맞춤(첫 줄 높이 고정), 가운데(암전)는 지금 자리.
         assert 0 <= y < 256, (i, y, "page_y 가 한 바이트를 넘는다")
         if not rows:
             continue
         bh = LINE_H * (len(rows) - 1) + GLYPH_ROWS
         # 가장 짧은 화면에서도 글이 화면 안에 들어가는가 — 모드마다 기준이 다르다.
-        top = (y - 64) - (240 - SHORTEST_SCREEN) // 2
+        top_screen = TOP_SCREEN_MIN if (page_lay[i] == "top" and i not in INTRO_PAGES) else SHORTEST_SCREEN  # 그림 위 상단 자막은 화면 232줄 이상 장면만(화면 확인)
+        top = (y - 64) - (240 - top_screen) // 2
         assert top >= 0, (i, top, "자막이 화면 위로 넘친다")
-        assert top + bh <= SHORTEST_SCREEN, (i, len(rows), y, top + bh, SHORTEST_SCREEN)
+        bottom_screen = BOTTOM_SCREEN_MIN if page_lay[i] == "bottom" else SHORTEST_SCREEN  # 하단 배치 자막이 나오는 장면(불·아크담)은 화면 208줄 이상
+        top = (y - 64) - (240 - bottom_screen) // 2
+        assert top + bh <= bottom_screen, (i, len(rows), y, top + bh, bottom_screen)
     return out
 
 
@@ -904,7 +1010,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("STZ", "abs", V_TMP_NUSED)  # 이번 그리기에서 쓴 청크 수
     a.label("slot_loop")
     a.op("LDA", "zp", Z_T3)
-    a.op("CMP", "imm", 4 * SPR_PER_PAIR)
+    a.op("CMP", "imm", NPAIR * SPR_PER_PAIR)
     a.op("BCC", "rel", "slot_go")
     a.op("JMP", "abs", "draw_fin")
     a.label("slot_go")
@@ -935,15 +1041,10 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("ASL")
     a.op("STA", "abs", V_TMP_C)  # 셀 번호 c = 2k
     a.op("LDA", "abs", V_TMP_LA)
-    a.op("JSR", "abs", "ncell_of")  # A ← ncell(줄) (0xFF 면 0)
-    a.op("CMP", "abs", V_TMP_C)
-    a.op("BEQ", "rel", "chk_b")
+    a.op("JSR", "abs", "line_vis")  # C=1: 이 줄이 이 슬롯 칸(2k·2k+1)에 글을 갖는다
     a.op("BCS", "rel", "slot_show")
-    a.label("chk_b")
     a.op("LDA", "abs", V_TMP_LB)
-    a.op("JSR", "abs", "ncell_of")
-    a.op("CMP", "abs", V_TMP_C)
-    a.op("BEQ", "rel", "slot_hide")
+    a.op("JSR", "abs", "line_vis")
     a.op("BCS", "rel", "slot_show")
     a.label("slot_hide")
     a.op("JSR", "abs", "sat_hide")
@@ -1031,17 +1132,48 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("STA", "abs", V_SATDIRTY)  # 그림자가 바뀌었다 — main 끝에서 flush
     a.op("RTS")
 
-    # ncell_of: A=줄 인덱스(0xFF=없음) → A=셀 수
+    # line_vis: A=줄 인덱스(0xFF=없음) → C=1 이면 이 줄이 슬롯 칸 쌍(2k, 2k+1 = V_TMP_C, V_TMP_C+1)에 글이 있다.
+    #   글이 있는 칸 = [lead, lead+ncell). 가운데 정렬로 앞이 빈 슬롯은 숨겨 청크를 아낀다.
+    a.label("line_vis")
+    a.op("CMP", "imm", 0xFF)
+    a.op("BNE", "rel", "lv_go")
+    a.op("CLC")
+    a.op("RTS")
+    a.label("lv_go")
+    a.op("JSR", "abs", "ncell_of")  # A=총 칸 수, Y=줄 인덱스
+    a.op("CMP", "abs", V_TMP_C)
+    a.op("BEQ", "rel", "lv_no")
+    a.op("BCC", "rel", "lv_no")
+    a.op("LDA", "abs", V_TMP_C)
+    a.op("INC")
+    a.op("STA", "zp", Z_T1)
+    a.op("LDA", "absy", "leads")
+    a.op("CMP", "zp", Z_T1)
+    a.op("BEQ", "rel", "lv_yes")
+    a.op("BCS", "rel", "lv_no")  # lead > 2k+1 → 이 슬롯 칸들은 앞 빈 칸
+    a.label("lv_yes")
+    a.op("SEC")
+    a.op("RTS")
+    a.label("lv_no")
+    a.op("CLC")
+    a.op("RTS")
+
+    # ncell_of: A=줄 인덱스(0xFF=없음) → A=총 칸 수(싣은 칸 + 앞쪽 빈 칸), Y=줄 인덱스
     a.label("ncell_of")
     a.op("CMP", "imm", 0xFF)
     a.op("BNE", "rel", "nc_go")
     a.op("CLA")
     a.op("RTS")
     a.label("nc_go")
+    a.op("TAY")  # Y = 줄 인덱스(leads 용)
     a.op("ASL")
     a.op("ASL")
     a.op("TAX")
     a.op("LDA", "absx", "lines+3")
+    a.op("STA", "zp", Z_T1)
+    a.op("LDA", "absy", "leads")
+    a.op("CLC")
+    a.op("ADC", "zp", Z_T1)  # 총 칸 수 = 싣은 칸 + 앞쪽 빈 칸
     a.op("RTS")
 
     # set_mawr: MAWR ← V_TMP_VLO/VHI, 선택 = VWR. (SEI 는 put_cell 안에서 건다 — 여기선 MAWR 만)
@@ -1083,6 +1215,18 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
         a.label("pc_z2")
         a.op("JMP", "abs", "pc_zero")
         a.label("pc_go")
+        # 앞쪽 빈 칸(lead): 칸 번호 < lead 면 0 칸, 아니면 싣은 칸 번호 = 칸 − lead
+        a.op("LDA", "abs", V_TMP_LINE)
+        a.op("TAX")
+        a.op("LDA", "absx", "leads")
+        a.op("STA", "zp", Z_T1)
+        a.op("LDA", "abs", V_TMP_CELL)
+        a.op("SEC")
+        a.op("SBC", "zp", Z_T1)
+        a.op("BCS", "rel", "pc_lead_ok")
+        a.op("JMP", "abs", "pc_zero")
+        a.label("pc_lead_ok")
+        a.op("STA", "abs", V_TMP_CELL)
         # src = $6000 + line.off + cell*56 ; MPR3 = line.bank. cell*56 은 16비트 누산(cell ≤ 14)
         a.op("LDA", "abs", V_TMP_LINE)
         a.op("ASL")
@@ -1133,6 +1277,17 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
         a.op("CMP", "abs", V_TMP_CELL)
         a.op("BEQ", "rel", "pc_zz")
         a.op("BCC", "rel", "pc_zz")
+        a.op("LDA", "abs", V_TMP_LINE)
+        a.op("TAX")
+        a.op("LDA", "absx", "leads")
+        a.op("STA", "zp", Z_T1)
+        a.op("LDA", "abs", V_TMP_CELL)
+        a.op("SEC")
+        a.op("SBC", "zp", Z_T1)
+        a.op("BCS", "rel", "pc_lead_ok")
+        a.op("JMP", "abs", "pc_zz")
+        a.label("pc_lead_ok")
+        a.op("STA", "abs", V_TMP_CELL)
         a.op("LDA", "abs", V_TMP_LINE)
         a.op("ASL")
         a.op("ASL")
@@ -1348,7 +1503,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("STA", "zp", Z_T0)  # hi
     a.op("LDA", "zp", Z_T1)
     a.op("CLC")
-    a.op("ADC", "imm", 32)
+    a.op("ADC", "imm", 32 - X_BIAS)  # X_BIAS: 장면 x_base 가 음수가 못 되므로 표에 +X_BIAS 해서 싣고 여기서 뺀다(엔딩 240폭 장면 원점 −8)
     a.op("STA", "absx", SAT_SHADOW + 2)
     a.op("LDA", "zp", Z_T0)
     a.op("ADC", "imm", 0)
@@ -1418,7 +1573,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
             a.op("LDA", "imm", 0x02)
             a.op("STA", "zp", 0xF7)
         a.op("ST0", "imm", 0x02)
-        a.op("LDX", "imm", (4 * SPR_PER_PAIR * 4) * 2)  # 112 워드 = 224 바이트(DEX 두 번씩)
+        a.op("LDX", "imm", (NPAIR * SPR_PER_PAIR * 4) * 2)  # 112 워드 = 224 바이트(DEX 두 번씩)
         a.label("sf_rel")
         a.op("STZ", "abs", 0x0002)
         a.op("STZ", "abs", 0x0003)
@@ -1454,7 +1609,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
         a.op("LDA", "imm", 0x00)
         a.op("STA", "zp", 0xF7)
     a.op("ST0", "imm", 0x00)  # MAWR = $7F00 + 28*4
-    a.op("LDA", "imm", (4 * SPR_PER_PAIR * 4) & 0xFF)
+    a.op("LDA", "imm", (NPAIR * SPR_PER_PAIR * 4) & 0xFF)
     a.op("STA", "abs", 0x0002)
     a.op("LDA", "imm", SAT_VRAM >> 8)
     a.op("STA", "abs", 0x0003)
@@ -1499,7 +1654,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("LDA", "absx", SAT_SHADOW)
     a.op("STA", "abs", 0x0003)
     a.op("INX")
-    a.op("CPX", "imm", 4 * SPR_PER_PAIR * 8)
+    a.op("CPX", "imm", NPAIR * SPR_PER_PAIR * 8)
     a.op("BNE", "rel", "sf_ours_w")
     a.label("sf_dma")
     if RASTER_SAFE:
@@ -1581,7 +1736,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("JSR", "abs", "sat_hide")
     a.op("INC", "zp", Z_T3)
     a.op("LDA", "zp", Z_T3)
-    a.op("CMP", "imm", 4 * SPR_PER_PAIR)
+    a.op("CMP", "imm", NPAIR * SPR_PER_PAIR)
     a.op("BNE", "rel", "ha_loop")
     a.op("LDA", "imm", 1)
     a.op("STA", "abs", V_SATDIRTY)
@@ -1597,7 +1752,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
         a.op("STZ", "abs", V_TMP_SLOT)
         a.label(f"{name}_loop")
         a.op("LDA", "abs", V_TMP_I)
-        a.op("CMP", "imm", 4 * SPR_PER_PAIR)
+        a.op("CMP", "imm", NPAIR * SPR_PER_PAIR)
         a.op("BCC", "rel", f"{name}_go")
         a.op("RTS")
         a.label(f"{name}_go")
@@ -1674,7 +1829,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.label("td_sh")
     a.op("STZ", "absx", SAT_SHADOW)
     a.op("INX")
-    a.op("CPX", "imm", 4 * SPR_PER_PAIR * 8)
+    a.op("CPX", "imm", NPAIR * SPR_PER_PAIR * 8)
     a.op("BNE", "rel", "td_sh")
     a.op("ST0", "imm", 0x00)  # MAWR = $7F00 + 36*4 (우리 항목 36~63)
     a.op("LDA", "imm", (SPR_BASE * 4) & 0xFF)
@@ -1682,7 +1837,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.op("LDA", "imm", SAT_VRAM >> 8)
     a.op("STA", "abs", 0x0003)
     a.op("ST0", "imm", 0x02)
-    a.op("LDX", "imm", 4 * SPR_PER_PAIR * 4)  # 28항목 × 4워드
+    a.op("LDX", "imm", NPAIR * SPR_PER_PAIR * 4)  # 28항목 × 4워드
     a.label("td_vr")
     a.op("STZ", "abs", 0x0002)
     a.op("STZ", "abs", 0x0003)
@@ -1729,12 +1884,14 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
     a.label("lines")
     for bank, off, ncell in lines_tab:
         a.data(bytes((bank, off & 0xFF, off >> 8, ncell)))
+    a.label("leads")  # 줄마다 앞쪽 빈 칸 수 — ncell_of 는 lead 를 더한 총 칸 수를, put_cell 은 칸 번호에서 lead 를 뺀다
+    a.data(bytes(LEAD_TAB))
     a.label("scenes")
     for s in scenes:
         qu, end, sw = s["quiet"], s["end"], s["switch"]
         chunks = list(s["chunks"])
-        chunks += [0xFF] * (4 * SPR_PER_PAIR - len(chunks))  # 0xFF = 끝 표식(draw 는 need 까지만 쓰니 안 닿는다)
-        a.data(bytes((qu & 0xFF, qu >> 8, end & 0xFF, end >> 8, sw & 0xFF, sw >> 8, s["x_base"], s["nsafe"], s.get("spr_base", SPR_BASE), s.get("game_n", 0))) + bytes(chunks))
+        chunks += [0xFF] * (NPAIR * SPR_PER_PAIR - len(chunks))  # 0xFF = 끝 표식(draw 는 need 까지만 쓰니 안 닿는다)
+        a.data(bytes((qu & 0xFF, qu >> 8, end & 0xFF, end >> 8, sw & 0xFF, sw >> 8, scene_origin(s["x_base"], s), s["nsafe"], s.get("spr_base", SPR_BASE), s.get("game_n", 0))) + bytes(chunks))
     a.data(b"\xff\xff" * 3 + b"\0" * (SCENE_ENTRY - 6))  # 끝 표식(switch=0xFFFF: 안 넘어간다)
     a.label("end")
 
@@ -1802,7 +1959,7 @@ def runtime(lines_tab, pages, events, scenes, timing, page_y) -> bytes:
 RUNTIME_LABELS: dict = {}  # 마지막으로 조립한 런타임의 라벨(apply 가 스텁 주소를 읽는다)
 
 
-SCENE_ENTRY = 10 + 4 * SPR_PER_PAIR  # quiet(2) end(2) switch(2) x_base(1) nsafe(1) spr_base(1) game_n(1) chunks(28)
+SCENE_ENTRY = 10 + NPAIR * SPR_PER_PAIR  # quiet(2) end(2) switch(2) x_base(1) nsafe(1) spr_base(1) game_n(1) chunks(28)
 SC_QUIET, SC_END, SC_SWITCH, SC_XBASE, SC_NSAFE, SC_SPRBASE, SC_GAMEN, SC_CHUNKS = 0, 2, 4, 6, 7, 8, 9, 10
 V_TMP_K, V_TMP_PAIR, V_TMP_LA, V_TMP_LB, V_TMP_C, V_TMP_CHUNK, V_TMP_VLO, V_TMP_VHI = (
     0x2360, 0x2361, 0x2362, 0x2363, 0x2364, 0x2365, 0x2366, 0x2367
@@ -1848,9 +2005,15 @@ Asm.bytes = _bytes1
 # ── 조립·적용 ──────────────────────────────────────────────────────────────
 def sprites_needed(lines, rows):
     """페이지 한 장이 먹는 스프라이트(=청크) 수 — 짝(두 줄)마다 ceil(max(ncell)/2)."""
-    nc = [len(strip_cells(t)) for t in lines]
+    span = [(line_geom(t)[0], line_geom(t)[0] + len(strip_cells(t))) for t in lines]  # 글이 있는 칸 [lead, 끝)
     r = list(rows) + [None] * (len(rows) % 2)
-    return sum((max(nc[a] if a is not None else 0, nc[b] if b is not None else 0) + 1) // 2 for a, b in zip(r[::2], r[1::2]))
+    n = 0
+    for a, b in zip(r[::2], r[1::2]):
+        for k in range(SPR_PER_PAIR):
+            c = 2 * k
+            if any(x is not None and span[x][1] > c and span[x][0] <= c + 1 for x in (a, b)):  # 런타임 line_vis 와 같은 식
+                n += 1
+    return n
 
 
 def plan_scenes(lines, pages, events, scenes, timing):
@@ -1869,9 +2032,9 @@ def plan_scenes(lines, pages, events, scenes, timing):
         take = borrow[: max(0, need - len(safe))]
         if len(take) > len(BACKUP_SLOTS):
             raise SystemExit(f"장면 {s['name']}: 빌릴 청크 {len(take)}개 > 백업 슬롯 {len(BACKUP_SLOTS)}")
-        chunks = (safe + take)[: 4 * SPR_PER_PAIR]
+        chunks = (safe + take)[: NPAIR * SPR_PER_PAIR]
         nsafe = min(len(safe), len(chunks))
-        assert len(chunks) >= need and need <= 4 * SPR_PER_PAIR
+        assert len(chunks) >= need and need <= NPAIR * SPR_PER_PAIR
         out.append(dict(s, chunks=chunks, nsafe=nsafe, need=need))
     return out
 
@@ -1880,6 +2043,9 @@ def build_all():
     sub = json.loads(SUBS.read_text(encoding="utf-8"))
     sc = json.loads(SCENES.read_text(encoding="utf-8"))["scenes"]
     lines, pages, events, page_lay = timeline(sub["lines"], sub["rules"])
+    solo = sub["rules"].get("solo_from", 1e9)
+    INTRO_PAGES.clear()
+    INTRO_PAGES.update(pg for sec, pg in events if sec < solo and pg is not None)
     sc = plan_scenes(lines, pages, events, sc, sub["timing"])
     banks, table = pack_strips(lines)
     py = page_y_table(pages, page_lay)
