@@ -35,6 +35,8 @@ import hook
 import hud_plate
 import lz
 import narration_gates
+import gwin_rt
+import voice_sched
 import opening_sub
 import staffroll
 import sysbuild
@@ -606,14 +608,17 @@ def _build(edits_path, iso: Path, cue: Path):
             print("  " + boxpack.apply_msg1_relocation(f, touched))
         translated_ids = {int(p.stem[3:]) for p in translate.M.SCRIPT_DIR.glob("scn*.json")}
         # 나레이션 게이트는 번역 여부와 무관하게 건다(아직 번역 전인 씬도 자막은 원문으로 나온다)
-        narr_ids = set(narration_gates.SITES) if want("narr") else set()
+        narr_ids = set(narration_gates.SITES) | set(narration_gates.ALWAYS) if want("narr") else set()
         n_gates = 0
+        n_gwin = 0
+        n_sched = 0
+        sched_ids = voice_sched.scene_ids() if want("narr") else set()
         n_msgs = 0
         n_dyn = 0
         n_dyn_blocks = 0
         for rel, c in sorted(by_rel.items()) if want("scn") else []:
             hit = {k for k in edits if k[0] == rel} or {b["id"] for b in c["blocks"]} & (
-                translated_ids | narr_ids
+                translated_ids | narr_ids | {int(x) for x in gwin_rt.load()} | sched_ids
             )
             if not hit:
                 continue
@@ -630,6 +635,12 @@ def _build(edits_path, iso: Path, cue: Path):
                 if b["id"] in narr_ids:
                     blk, n = narration_gates.patch_block(b["id"], blk)
                     n_gates += n
+                if b["id"] in sched_ids:  # 음성 장면 — ON 이어도 OFF 흐름 + 음성 + 전역 시각표(voice_sched)
+                    blk, n = voice_sched.patch_block(b["id"], b["data"], blk)
+                    n_sched += n
+                if want("narr") and str(b["id"]) in gwin_rt.load():  # 월드를 안 멈추는 대사창 모양 자막(장면 2 인사)
+                    blk, n = gwin_rt.patch_block(b["id"], blk)
+                    n_gwin += n
                 if dyn:  # 동적 글리프 — 머리 점프를 꼬리 스텁으로(블록 열림 훅)
                     blk = glyphdyn.attach(blk, dyn)
                     n_dyn += len(dyn)
@@ -663,7 +674,7 @@ def _build(edits_path, iso: Path, cue: Path):
             print("  " + patch_ref_table(f, refs, moves, touched))
     print(f"  번역 메시지 {n_msgs}건(컨테이너마다 다시 셈) · 상주 글리프 {len(chars)}자 · 동적 글리프 블록 {n_dyn_blocks}건(컨테이너마다 다시 셈, 글자 {n_dyn}자)")
     if want("narr") and want("scn"):
-        print(f"  나레이션 게이트 자막 {n_gates}곳(컨테이너마다 다시 셈)")
+        print(f"  나레이션 게이트 자막 {n_gates}곳 · 음성 장면 시각표 게이트 {n_sched}곳 · 대사창 모양 자막 {n_gwin}곳(컨테이너마다 다시 셈)")
     print(f"  덮어쓰기 없음 (쓰기 구간 {ledger.verify(iso)})")
     verify_immutable(iso, touched)
     verify_readback(iso, intended, found, moves)

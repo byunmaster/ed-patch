@@ -277,6 +277,12 @@ def main() -> None:
     g.add_argument("--slot", type=int, default=3)
     g.add_argument("--src", type=int, default=1, help="상태를 베낄 슬롯(파티·플래그)")
     g.add_argument("--pick", type=int, default=0, help="warps 목록에서 고를 번호")
+    g.add_argument(
+        "--fake",
+        metavar="씬:X,Y",
+        help="들어가는 워프가 없는 씬 — 같은 컨테이너의 진짜 워프(같은 장·지역)를 베껴 씬 번호와 좌표만 바꾼다(예: 6:17,9). 씬의 초기화·엔티티는 그 씬 블록이 정한다",
+    )
+    g.add_argument("--from-scene", type=int, default=41, help="--fake 가 베낄 워프의 씬")
     g.add_argument("--boost", action="store_true", help="파티 넷을 Lv99·HP9999·능력치 120 으로")
     g.add_argument("--party", action="store_true", help="동료 셋(레코드 1~3)을 파티에 넣는다")
     g.add_argument(
@@ -314,10 +320,18 @@ def main() -> None:
     src_off, src_sz = ents[a.src - 1]
     tmpl = bram[src_off : src_off + src_sz]
     vals = decode(tmpl[ENTRY_HDR : ENTRY_HDR + SAVE_LEN])
-    warps = find_warps(a.scene)
-    if not warps:
-        raise SystemExit(f"씬 {a.scene} 로 들어가는 워프가 없다")
-    wp = warps[a.pick]
+    if a.fake:
+        sc, xy = a.fake.split(":")
+        base = find_warps(a.from_scene)[0]
+        d = bytearray(base["desc"])
+        d[3 + 9] = int(sc)
+        d[3], d[4] = (int(v) for v in xy.split(","))
+        wp = {"from": base["from"], "off": base["off"], "desc": bytes(d), "xy": (d[3], d[4])}
+    else:
+        warps = find_warps(a.scene)
+        if not warps:
+            raise SystemExit(f"씬 {a.scene} 로 들어가는 워프가 없다")
+        wp = warps[a.pick]
     if not a.keep_desc:
         apply_desc(vals, wp["desc"])
         vals[CHAPTER] = chapter_of(wp["from"][0])

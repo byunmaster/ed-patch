@@ -240,10 +240,68 @@ class Asm:
         return bytes(self.out)
 
 
+# 🔴 프레임 카운터 — 장면 연출 중엔 플레이 시계(`$C1B2`)가 멈추고 `$5BCF` 는 시간 기준이 못 되며(실측 10-12) 영 페이지 `$01` 은 8비트라 모자란다.
+#   IRQ1 핸들러(`$40CF`) 끝의 `JSR $E063`(`$414F`)을 이 트램펄린으로 바꿔 끼우면 매 VBlank 에 16비트 카운터가 올라간다.
+#   ⚠ 디스크에서 바꾸면 이 페이로드가 옮겨지기 전 IRQ 가 BRK 로 죽는다 — **런타임에 상주부가 RAM 에서 바꿔 끼운다**(`narration_gates` `inst`).
+#   자리는 후킹 루틴 자리(384B) 끝의 0 패딩(루틴은 245B).
+TICK_ADDR = HOOK_ADDR + 0x100  # 루틴 끝(`$23F5`) 뒤 빈 자리 — 아래 트램펄린 40B
+FRAMECNT = HOOK_ADDR + 0x174  # 16비트(하위·상위)
+GW_FLAG = FRAMECNT + 2  # 0 이면 자막 틱 없음. 아니면 그 틱 코드가 사는 블록 뱅크 번호(MPR5 가 이 뱅크일 때만 부른다)
+IRQ_SITE = 0x414F  # 뱅크 0x68 `$40CF` 핸들러 안 `JSR $E063`
+GW_MAGIC = b"\xc7\x5e"  # 블록 꼬리의 서명 2B — 장면이 바뀌어 블록이 갈렸으면 이 자리에 이게 없다
+
+
+def tick_routine() -> bytes:
+    """VBlank 마다 부르는 트램펄린(`IRQ_SITE` 가 `JSR` 한다) — 카운터를 올리고, **자막 틱이 켜져 있으면** 씬 블록 안의 틱을 부른 뒤 원래 대상(`JMP $E063`)으로.
+
+    켜짐 조건 셋: `GW_FLAG` ≠ 0 · MPR5($A000 창) 가 `GW_FLAG` 의 뱅크 · 블록 꼬리의 서명 2B 가 맞음. 둘째·셋째는 장면이 바뀌어 틱 코드가 사라진 뒤 엉뚱한 곳을 부르지 않게 한다.
+    블록 쪽 초기화(`gwin_rt`)가 서명 주소(`TICK_SIG_OP`)·호출 대상(`TICK_CALL_OP`) 피연산자를 RAM 에서 채운다. A·X·Y 는 핸들러가 이미 저장했다.
+    """
+    c, f = FRAMECNT, GW_FLAG
+    code = bytearray()
+    br: list[int] = []  # `done` 으로 가는 분기 오프셋 자리
+
+    def b(*bs):
+        code.extend(bs)
+
+    def to_done(opcode):
+        b(opcode, 0)
+        br.append(len(code) - 1)
+
+    b(0xEE, *c.to_bytes(2, "little"), 0xD0, 0x03, 0xEE, *(c + 1).to_bytes(2, "little"))  # INC cnt · BNE +3 · INC cnt+1
+    b(0xAD, *f.to_bytes(2, "little"))  # LDA flag
+    to_done(0xF0)  # BEQ done
+    b(0x43, 0x20, 0xCD, *f.to_bytes(2, "little"))  # TMA MPR5 · CMP flag
+    to_done(0xD0)  # BNE done
+    for m in GW_MAGIC:
+        b(0xAD, 0, 0, 0xC9, m)  # LDA sig+k · CMP magic[k]
+        to_done(0xD0)
+    b(0x20, 0, 0)  # JSR tick
+    done = len(code)
+    b(0x4C, 0x63, 0xE0)
+    for i in br:
+        code[i] = done - (i + 1)
+    return bytes(code)
+
+
+def _tick_layout() -> tuple[tuple[int, int], int]:
+    """(서명 `LDA` 피연산자 둘, `JSR tick` 피연산자)의 주소."""
+    n = len(tick_routine())
+    sig0 = TICK_ADDR + 8 + 3 + 2 + 2 + 3 + 2 + 1  # 앞 부분 길이 + LDA 옵코드 1
+    return (sig0, sig0 + 7), TICK_ADDR + n - 3 - 2
+
+
+TICK_SIG_OP, TICK_CALL_OP = _tick_layout()  # 블록 쪽 초기화가 RAM 에서 채우는 피연산자 자리: 서명 `LDA` 둘 · `JSR tick`
+
+
 def hook_routine() -> bytes:
     b = _main_asm().bytes()
-    assert len(b) <= JOSA_OFF_ADDR - HOOK_ADDR, len(b)
-    return b + b"\0" * (JOSA_OFF_ADDR - HOOK_ADDR - len(b))
+    assert len(b) <= TICK_ADDR - HOOK_ADDR, len(b)
+    pad = bytearray(JOSA_OFF_ADDR - HOOK_ADDR - len(b))
+    t = tick_routine()
+    at = TICK_ADDR - HOOK_ADDR - len(b)
+    pad[at : at + len(t)] = t
+    return b + bytes(pad)
 
 
 def _main_asm() -> "Asm":

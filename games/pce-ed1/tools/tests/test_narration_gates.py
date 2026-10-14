@@ -7,10 +7,21 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import hook as hook_mod
 import narration_gates as N
 
 GATE = b"\xad\x4c\xc0"
 TIMER = b"\xa2\x0c\xa0\x08\x20\xd7\x5b"  # 0x080C 프레임 대기
+
+
+BODY = b"\x82\xa0\x00"  # 한 글자짜리 메시지 본문
+
+
+def body_at(blk, addr=0xA4D5, body=BODY):
+    """메시지 적재가 가리키는 자리에 본문을 놓는다(표를 빌드가 본문에서 만든다)."""
+    blk = bytes(blk)
+    at = addr - N.BASE
+    return blk + b"\x00" * (at - len(blk)) + body
 
 
 def msg(lo, hi, tail=b"\x20\x76\x5b"):
@@ -24,7 +35,7 @@ class CPU:
 
     def __init__(self, mem, clock_s, clock_f, read):
         self.m, self.read = mem, read
-        self.m[N.CLOCK_S], self.m[N.CLOCK_F] = clock_s, clock_f
+        self.set_count(clock_s * 60 + clock_f)
         self.a = self.x = self.y = 0
         self.c = self.z = self.n = 0
         self.sp = 0xF0
@@ -32,10 +43,14 @@ class CPU:
         self.waited = 0
         self.stack = []
 
+    def set_count(self, t):
+        self.m[N.FRAMECNT], self.m[N.FRAMECNT + 1] = t & 0xFF, (t >> 8) & 0xFF
+
+    def count(self):
+        return self.m[N.FRAMECNT] | self.m[N.FRAMECNT + 1] << 8
+
     def tick(self, n):
-        m = self.m
-        t = m[N.CLOCK_S] * 60 + m[N.CLOCK_F] + n
-        m[N.CLOCK_S], m[N.CLOCK_F] = (t // 60) & 0xFF, t % 60
+        self.set_count(self.count() + n)
 
     def call(self, entry, ret, x, y):
         """호출 자리의 `JSR entry` 를 흉내 — 반환 주소(JSR 마지막 바이트)를 스택에 넣는다."""
@@ -90,6 +105,9 @@ class CPU:
                 self.a = self.nz(m[self.b()])
             elif op == 0xBD:
                 self.a = self.nz(m[self.w() + self.x])
+            elif op == 0xB2:
+                zp = self.b()
+                self.a = self.nz(m[m[zp] | m[zp + 1] << 8])
             elif op == 0xB1:
                 zp = self.b()
                 self.a = self.nz(m[(m[zp] | m[zp + 1] << 8) + self.y])
@@ -178,8 +196,9 @@ class CPU:
                 tgt = self.w()
                 if tgt in (N.SHOW_76, N.SHOW_5B):
                     self.shown = (tgt, m[0x10] | m[0x11] << 8)
-                    self.first = (m[N.AUTO_TS], m[N.AUTO_TF])
+                    self.first = m[N.AUTO_TL] | m[N.AUTO_TH] << 8
                     self.flag_during = m[N.AUTO_FLAG]
+                    self.speed_during = m[N.SPEED]
                     self.tick(self.read)
                 elif tgt == N.WAIT_FRAMES:
                     n = self.x | self.y << 8
@@ -266,6 +285,7 @@ class PatchBlock(unittest.TestCase):
         blk = (
             b"\xea" * 4 + GATE + b"\xf0\x09" + TIMER + b"\x80\x0b" + msg(0xD5, 0xA4, tail) + b"\x60"
         )
+        blk = body_at(blk)
         return blk, *N.patch_block(9, blk)
 
     def voiced(self, sectors, rule="single", tail=b""):
@@ -283,13 +303,16 @@ class PatchBlock(unittest.TestCase):
             + tail
             + b"\x60"
         )
+        blk = body_at(blk)
         return blk, N.patch_block(9, blk)[0]
 
     def timer_of(self, out):
         t = N.TIMER_AT.search(out)  # 패치된 자리는 JSR 상주부라 안 잡힌다 — 인라인 4B 에서 읽는다
         self.assertIsNone(t)
         at = out.index(b"\x20" + bytes([N.ENTRY & 0xFF, N.ENTRY >> 8]))
-        return out[at + 4] | out[at + 5] << 8
+        tab = (out[at + 4] | out[at + 5] << 8) - N.BASE  # 쪽 마감 표 — 마지막 쪽 끝 = 타이머
+        n = out[tab]
+        return out[tab + 1 + 2 * (n - 1)] | out[tab + 2 + 2 * (n - 1)] << 8  # 마지막 쪽 끝(프레임)
 
     def test_voice_longer_than_subtitle_extends_timer_to_voice_end(self):
         _, out = self.voiced(240)  # 61.4초 ↔ 타이머 34.4초
@@ -304,7 +327,7 @@ class PatchBlock(unittest.TestCase):
     def test_extending_changes_only_the_timer_bytes(self):
         blk, out = self.voiced(240)
         diff = [i for i in range(len(blk)) if blk[i] != out[i]]
-        self.assertTrue(all(blk.index(TIMER) <= i < blk.index(TIMER) + 7 for i in diff), diff)
+        self.assertTrue(all(blk.index(TIMER) <= i < blk.index(TIMER) + 7 for i in diff if i < len(blk)), diff)
 
     def test_run_after_skip_gate_is_open_and_not_extended(self):
         blk, _ = self.voiced(240)
@@ -317,8 +340,8 @@ class PatchBlock(unittest.TestCase):
     def test_only_jsr_target_changes(self):
         blk, out, n = self.single()
         self.assertEqual(n, 1)
-        self.assertEqual(len(out), len(blk))  # 블록 길이 그대로 — 컨테이너 슬롯이 안 흔들린다
-        self.assertEqual(out[:9] + out[16:], blk[:9] + blk[16:])  # 호출 자리 7B 만
+        self.assertEqual(out[:9] + out[16 : len(blk)], blk[:9] + blk[16:])  # 호출 자리 7B 만
+        self.assertEqual(len(out), len(blk) + 3)  # 꼬리에 쪽 마감 표(쪽 수 1B + 쪽당 2B)
 
     def test_waits_timer_minus_reading_time(self):
         _, out, _ = self.single()
@@ -341,7 +364,7 @@ class PatchBlock(unittest.TestCase):
             self.assertEqual(self.go(out, 9)[1][0], want, tail.hex())
 
     def test_raias_sends_off_into_on_path(self):
-        blk = GATE + b"\xf0\x14" + TIMER + b"\x80\x0b" + msg(0xD5, 0xA4) + b"\xad\x00\xc1"
+        blk = body_at(GATE + b"\xf0\x14" + TIMER + b"\x80\x0b" + msg(0xD5, 0xA4) + b"\xad\x00\xc1")
         N.SITES = {2: {0: "raias"}}
         out, n = N.patch_block(2, blk)
         self.assertEqual((n, out[4]), (1, 0x00))
@@ -349,7 +372,7 @@ class PatchBlock(unittest.TestCase):
 
     def test_single_pre_skips_off_path_prelude(self):
         pre = b"\x20\xcd\x5b\x64\x86"
-        blk = GATE + b"\xf0\x09" + TIMER + b"\x80\x10" + pre + msg(0x42, 0xA4, b"\x20\x5b\x5b")
+        blk = body_at(GATE + b"\xf0\x09" + TIMER + b"\x80\x10" + pre + msg(0x42, 0xA4, b"\x20\x5b\x5b"), 0xA442)
         N.SITES = {9: {0: "single_pre"}}
         out, n = N.patch_block(9, blk)
         self.assertEqual((n, *self.go(out, 5)), (1, 0x080C, (N.SHOW_5B, 0xA442)))
@@ -357,20 +380,20 @@ class PatchBlock(unittest.TestCase):
     def test_on_message_first_still_shows_off_message(self):
         # ON 경로에 ON 전용 메시지가 OFF 메시지보다 먼저 있다 — 063 꼴. 거리는 빌드가 OFF 메시지로 잰다
         on = msg(0xF4, 0xAA, b"\x20\x5b\x5b")
-        blk = GATE + b"\xf0\x14" + TIMER + on + b"\x80\x0b" + msg(0xD5, 0xA4)
+        blk = body_at(GATE + b"\xf0\x14" + TIMER + on + b"\x80\x0b" + msg(0xD5, 0xA4))
         N.SITES = {9: {0: "single"}}
         out, _ = N.patch_block(9, blk)
         self.assertEqual(self.go(out, 5)[1], (N.SHOW_76, 0xA4D5))
 
     def test_single_refuses_two_timers(self):
-        blk = GATE + b"\xf0\x10" + TIMER + TIMER + b"\x80\x0b" + msg(0xD5, 0xA4)
+        blk = body_at(GATE + b"\xf0\x10" + TIMER + TIMER + b"\x80\x0b" + msg(0xD5, 0xA4))
         N.SITES = {9: {0: "single"}}
         with self.assertRaises(N.GateError):
             N.patch_block(9, blk)
 
     def test_all_gives_each_branch_its_own_timer(self):
         t2 = b"\xa2\xe0\xa0\x01\x20\xd7\x5b"  # 0x01E0
-        blk = GATE + b"\xf0\x10" + TIMER + t2 + b"\x80\x0b" + msg(0xD5, 0xA4)
+        blk = body_at(GATE + b"\xf0\x10" + TIMER + t2 + b"\x80\x0b" + msg(0xD5, 0xA4))
         N.SITES = {9: {0: "all"}}
         out, n = N.patch_block(9, blk)
         self.assertEqual(n, 2)
@@ -387,17 +410,25 @@ class PatchBlock(unittest.TestCase):
         self.assertEqual(out[5:12], TIMER)  # 앞 타이머(연출 박자)는 그대로
         self.assertEqual(self.go(out, 12)[1], (N.SHOW_76, 0xA104))
 
-    def test_page_deadlines_follow_byte_weight(self):
-        # 메시지 = 1쪽 5B(…05) · 2쪽 13B(…00) → W=18, T=0x080C(2060)
-        _, out, _ = self.single()
-        msg_ = b"\x82\xa0\x82\xa2\x05" + b"\x82\xa4" * 6 + b"\x00"
-        out = bytearray(out) + b"\x00" * (0x4D5 + len(msg_) - len(out))
-        out[0x4D5 : 0x4D5 + len(msg_)] = msg_
+    def timed(self, msg_, **kw):
+        """메시지 본문 `msg_` 로 single 블록을 패치해 상주부를 돌린다 → (CPU, 메모리, 대기 프레임)."""
+        N.SITES = {9: {0: "single"}}
+        blk = body_at(
+            b"\xea" * 4 + GATE + b"\xf0\x09" + TIMER + b"\x80\x0b" + msg(0xD5, 0xA4) + b"\x60", body=msg_
+        )
+        out, _ = N.patch_block(9, blk)
         mem = self.mem_with(out)
+        mem[N.SPEED] = 2  # 설정 값
         c = CPU(mem, 10, 30, 0)
         waited = c.call(N.ENTRY, N.BASE + 9 + 2, 0, 0)
+        return c, mem, waited
+
+    def test_page_deadlines_follow_byte_weight(self):
+        # 메시지 = 1쪽 5B(…05) · 2쪽 13B(…00) → W=18, T=0x080C(2060)
+        msg_ = b"\x82\xa0\x82\xa2\x05" + b"\x82\xa4" * 6 + b"\x00"
+        c, mem, waited = self.timed(msg_)
         start = 10 * 60 + 30
-        self.assertEqual(c.first[0] * 60 + c.first[1] - start, 2060 * 5 // 18)  # 첫 쪽 마감
+        self.assertEqual(c.first - start, 2060 * 5 // 18)  # 첫 쪽 마감
         self.assertEqual(c.flag_during, 1)
         self.assertEqual(mem[N.AUTO_FLAG], 0)  # 메시지 뒤엔 자막 모드를 끈다
         self.assertEqual(waited, 2060)  # 메시지에 시간을 안 썼으니 원래 타이머만큼
@@ -405,29 +436,104 @@ class PatchBlock(unittest.TestCase):
     def test_message_ends_at_06_or_07_not_only_00(self):
         # 06/07 도 종료다(messages.TERM) — 뒤는 다음 메시지라 무게(W)에 안 넣는다. 안 그러면 쪽 마감이 늦게 잡혀 자막이 음성 끝 전에 끝난다(201 실측)
         for term in (b"\x06", b"\x07"):
-            _, out, _ = self.single()
             msg_ = b"\x82\xa0\x82\xa2\x05" + b"\x82\xa4" * 6 + term + b"\x82\xa4" * 20 + b"\x00"
-            out = bytearray(out) + b"\x00" * (0x4D5 + len(msg_) - len(out))
-            out[0x4D5 : 0x4D5 + len(msg_)] = msg_
-            mem = self.mem_with(out)
-            c = CPU(mem, 10, 30, 0)
-            c.call(N.ENTRY, N.BASE + 9 + 2, 0, 0)
+            c, _, _ = self.timed(msg_)
             start = 10 * 60 + 30
-            self.assertEqual(
-                c.first[0] * 60 + c.first[1] - start, 2060 * 5 // 18, term
-            )  # W=18 (00 까지면 58)
+            self.assertEqual(c.first - start, 2060 * 5 // 18, term)  # W=18 (00 까지면 58)
+
+    def test_text_is_instant_and_speed_restored(self):
+        c, mem, _ = self.timed(b"\x82\xa0\x00")
+        self.assertEqual(c.speed_during, 3)  # 메시지를 띄우는 동안 즉시 찍기
+        self.assertEqual(mem[N.SPEED], 2)  # 끝나면 설정대로
+
+    def test_table_overrides_page_ends(self):
+        msg_ = b"\x82\xa0\x05\x82\xa2\x05\x82\xa4\x00"
+        t = N.page_table(msg_, 2060, ends=[3.0, 10.5, 34.0])
+        pages = [t[1 + 2 * k] | t[2 + 2 * k] << 8 for k in range(t[0])]
+        self.assertEqual(pages, [round(e * N.FPS) for e in (3.0, 10.5, 34.0)])
+        with self.assertRaises(N.GateError):
+            N.page_table(msg_, 2060, ends=[3.0])
+
+    def test_table_walks_pages_with_hook(self):
+        # 훅이 쪽마다 npage 를 부르면 표의 다음 마감이 AUTO_TS/TF 로 나온다
+        msg_ = b"\x82\xa0\x05\x82\xa2\x05\x82\xa4\x00"
+        N.SITES = {9: {0: "single"}}
+        blk = body_at(
+            b"\xea" * 4 + GATE + b"\xf0\x09" + TIMER + b"\x80\x0b" + msg(0xD5, 0xA4) + b"\x60", body=msg_
+        )
+        out, _ = N.patch_block(9, blk)
+        tab = (out[9 + 4] | out[9 + 5] << 8) - N.BASE
+        want = [out[tab + 1 + 2 * k] | out[tab + 2 + 2 * k] << 8 for k in range(out[tab])]
+        self.assertEqual(want[-1], 2060)
+        mem = self.mem_with(out)
+        c = CPU(mem, 10, 30, 0)
+        c.call(N.ENTRY, N.BASE + 9 + 2, 0, 0)
+        self.assertEqual(c.first - 630, want[0])
+
+    def test_always_site_for_voice_without_gate(self):
+        # 게이트 없이 음성 → 타이머 → (이미 들은 쪽의) 메시지 — 장면 224 꼴
+        voice = b"\x20\x15\x58\x19\x11\x11\x01"
+        timer = b"\xa2\x27\xa0\x10\x20\xd7\x5b"
+        blk = body_at(
+            b"\xea\xea" + voice + timer + b"\xa9\xff\x85\x6c\x80\x0b" + msg(0xD5, 0xA4, b"\x20\x5b\x5b") + b"\x60"
+        )
+        N.SITES, saved = {}, N.ALWAYS
+        N.ALWAYS = {9: "voice_then_msg"}
+        try:
+            out, n = N.patch_block(9, blk)
+        finally:
+            N.ALWAYS = saved
+        self.assertEqual(n, 1)
+        self.assertEqual(self.go(out, 9)[1], (N.SHOW_5B, 0xA4D5))
+
+    def test_sched_walks_global_table_and_turns_itself_off(self):
+        # 전역 시각표 — 음성 시작에서 잰 쪽 끝 시각 둘(1초 · 2.5초). 한 번 켜고 쪽이 넘어갈 때마다 다음 마감, 끝나면 자동 넘김을 끈다
+        tab = bytes([2]) + (60).to_bytes(2, "little") + (150).to_bytes(2, "little")  # 1초 · 2.5초(프레임)
+        mem = self.mem_with(tab)
+        mem[N.SPEED] = 2
+        c = CPU(mem, 10, 30, 0)
+        c.a, at = N.BASE & 0xFF, N.BASE
+        c.call(N.SCHED, 0x0100, N.BASE >> 8, 0)  # X = 표 주소 상위(A = 하위는 위에서)
+        self.assertEqual(mem[N.AUTO_FLAG], 1)
+        self.assertEqual(mem[N.SPEED], 3)
+        self.assertEqual(mem[N.AUTO_TL] | mem[N.AUTO_TH] << 8, 630 + 60)  # 시작(카운터 630) + 60프레임
+        self.assertEqual(at, N.BASE)
+        npage = N._resident_asm().labels["npage"]
+        c = CPU(mem, 10, 30, 0)
+        c.call(npage, 0x0100, 0, 0)
+        self.assertEqual(mem[N.AUTO_TL] | mem[N.AUTO_TH] << 8, 630 + 150)
+        self.assertEqual(mem[N.AUTO_FLAG], 1)  # 마지막 마감을 꺼냈지만 그 쪽이 넘어가야 끈다
+        c = CPU(mem, 10, 30, 0)
+        c.call(npage, 0x0100, 0, 0)  # 마지막 쪽이 넘어간 뒤의 호출
+        self.assertEqual(mem[N.AUTO_FLAG], 0)
+        self.assertEqual(mem[N.SPEED], 2)  # 설정대로
+
+    def test_inst_patches_irq_site_once(self):
+        mem = self.mem_with()
+        mem[N.IRQ_SITE : N.IRQ_SITE + 3] = b"\x20\x63\xe0"
+        inst = N._resident_asm().labels["inst"]
+        for _ in range(2):  # 두 번째는 그대로
+            CPU(mem, 0, 0, 0).call(inst, 0x0100, 0, 0)
+            self.assertEqual(bytes(mem[N.IRQ_SITE : N.IRQ_SITE + 3]), b"\x20" + N.TICK_ADDR.to_bytes(2, "little"))
+
+    def test_tick_routine_counts_and_chains_to_original(self):
+        t = hook_mod.tick_routine()
+        self.assertEqual(t[-3:], b"\x4c\x63\xe0")  # 끝은 원래 `JSR $E063` 대상으로
+        self.assertEqual(t[:3], b"\xee" + hook_mod.FRAMECNT.to_bytes(2, "little"))  # 먼저 카운터를 올린다
+        self.assertEqual(hook_mod.hook_routine()[hook_mod.TICK_ADDR - hook_mod.HOOK_ADDR :][: len(t)], t)
+        self.assertLess(hook_mod.TICK_ADDR + len(t), hook_mod.FRAMECNT)  # 카운터·플래그 자리를 안 덮는다
 
     def test_auto_hook(self):
         for flag, clock, pad, want in (
             (0, (5, 0), 0x00, 0x00),  # 자막 모드 아님 — 버튼 그대로
             (0, (5, 0), 0x20, 0x20),
-            (1, (4, 59), 0x00, 0x00),  # 마감 전
-            (1, (5, 10), 0x00, 0x20),  # 마감(5초 10프레임) — 자동으로 누른다
+            (1, (4, 59), 0x00, 0x00),  # 마감 전 (카운터 299 < 310)
+            (1, (5, 10), 0x00, 0x20),  # 마감(카운터 310) — 자동으로 누른다
             (1, (6, 0), 0x00, 0x20),
             (1, (4, 0), 0x40, 0x40),  # 손으로 누르면 그대로
         ):
             mem = self.mem_with()
-            mem[N.AUTO_FLAG], mem[N.AUTO_TS], mem[N.AUTO_TF] = flag, 5, 10
+            mem[N.AUTO_FLAG], mem[N.AUTO_TL], mem[N.AUTO_TH] = flag, 310 & 0xFF, 310 >> 8
             fin = N._resident_asm().labels["fin"]
             mem[fin] = 1  # 다음 쪽 계산은 끝났다고 둔다(여기선 버튼 판정만 본다)
             mem[N.PAD] = pad
