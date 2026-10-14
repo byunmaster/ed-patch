@@ -170,9 +170,19 @@ def resolve_josa(text: str, names: dict[str, str]) -> str:
     return "".join(out)
 
 
+def _mon_lookup(canon, base: str):
+    """몬스터 이름 정본 조회 — 원문 표기 차(공백·반각 숫자)는 같은 원문으로 본다(정본은 「ブラムナクイーン」「ゴドウィン２世」)."""
+    for v in (base, base.replace(" ", ""), base.replace(" ", "").replace("2", "２")):
+        r = canon.lookup(v, "monster", "ed2")
+        if r:
+            return r
+    return None
+
+
 def dict_names(src: bytes, tm_dict: dict) -> dict[str, str]:
     """사전 항목 → 한국어. `$E0`(이름 74) 는 정본에서 읽고(게임 폴더에 표를 안 둔다), 정본에 없거나 마스터 확인 대기인 건 textmap 이 덮는다."""
     import canon
+    from canon import names
 
     out = {}
     for tbl, n, jp in script.dict_entries(src):
@@ -182,7 +192,8 @@ def dict_names(src: bytes, tm_dict: dict) -> dict[str, str]:
         elif tbl == "E0":
             r = canon.lookup(jp, None, "ed2")
             if r:
-                out[key] = r
+                # 정본 지명은 **칸 꼴**(붙여 씀)이다 — 사전 `$E0` 은 대사에 나가므로 대사 꼴(종류 말·「~의」 뒤를 띄움)로 바꾼다
+                out[key] = names.dialog_place(r) if canon.lookup(jp, "place", "ed2") else r
     return out
 
 
@@ -259,7 +270,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         for _w, ss in monsters.groups(src):
             for sb in ss:
                 base, suf = monsters.split_name(monsters.decode(sb, src))
-                k = canon.lookup(base, "monster", "ed2")
+                k = _mon_lookup(canon, base)
                 if k:
                     chars |= kr.chars_of(k + suf)
         for v in kr.load("monsters").get("over", {}).values():
@@ -408,7 +419,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
                 over = mon.get("over", {}).get(f"{gi}:{si}")
                 jp = monsters.decode(sb, src)
                 base, suf = monsters.split_name(jp)
-                krn = over if over is not None else canon.lookup(base, "monster", "ed2")
+                krn = over if over is not None else _mon_lookup(canon, base)
                 if krn:
                     body = kr.encode(krn + suf, alloc)
                 else:
@@ -537,6 +548,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
 
     fix_checksum(rom)
     stats["glyphs"] = len(alloc)
+    stats["alloc"] = alloc
     stats["dropped"] = list(kr.DROPPED)
     stats["reused_jp"] = sum(1 for i in alloc.values() if 0 < i < FIRST_KR)
     return bytes(rom), writes, stats
@@ -631,6 +643,9 @@ def screen_gate(strict: bool, stats: dict) -> None:
     print(f"  화면 일본어 게이트: 대사 구간 번역 {done:,}/{total:,} · 사전 {stats['dict']} · UI 창 {stats['ui_inplace'] + stats['ui_moved']} · 칸 {stats.get('cells', 0)} · 문자열 {stats.get('spans', 0)} · 레코드 {stats.get('records', 0)} · 몬스터군 {stats.get('monsters', 0)} · 표 {stats.get('ptrs16', 0)} · 글리프 {stats['glyphs']}")
     if stats.get("missing"):
         print(f"  ⚠ 정본에 없어 원문으로 남긴 이름 {len(stats['missing'])}개(관리자에게 후보로): " + ", ".join(f"{k}[{i}]{n}" for k, i, n in stats["missing"][:12]))
+    unreach = kr.load("unreachable")
+    if unreach.get("ranges"):
+        print(f"  ⚠ 일반 플레이로 도달 불가(근거 textmap/unreachable.json)라 원문으로 둔 문자열 {len(unreach['ranges'])}곳: " + ", ".join(f"{r['a']}+{r['n']}B({r['note']})" for r in unreach["ranges"]))
     if stats.get("toolong"):
         print("  ⚠ 레코드 칸보다 길어 원문으로 남긴 이름: " + ", ".join(f"{k}[{i}]{t}({n}B>{m}B)" for k, i, t, n, m in stats["toolong"]))
     if stats.get("dropped"):
@@ -644,8 +659,10 @@ def screen_gate(strict: bool, stats: dict) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--twice", action="store_true", help="두 번 만들어 sha1 대조(결정성)")
-    ap.add_argument("--strict", action="store_true", help="일본어가 남으면 실패")
+    ap.add_argument("--strict", action="store_true", help="(기본값 — 옛 호출 호환)")
+    ap.add_argument("--lenient", action="store_true", help="번역 중간 상태 시험용 — 일본어·글리프 모자람을 실패로 안 친다")
     a = ap.parse_args()
+    a.strict = not a.lenient
     common.verify_originals()
     out = common.BUILD_DIR / common.BUILD_TAG / OUT_NAME
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -15,9 +15,18 @@ import common
 # 소비자는 `$C0:9F56` 한 곳: `adc #$81D1`(기준) · `mvn $00,$D6`(소스 뱅크) — 둘을 고친다. 길이 `$12` 는 그대로.
 FONT_BANK = 0xD8
 FONT_SLOTS = 2048  # 2바이트 코드 `$8000~$87FF` 전부
+SOUND_OPT_ADDR_LO = bytes([0x00, 0xFF])
+SOUND_OPT_ADDR_HI = bytes([0x08, 0xFF])
 PATCHES = [  # (주소, 원본 바이트, 새 바이트) — 원본이 다르면 그 자리에서 죽는다
     (0xC09F71, bytes([0xD1, 0x81]), bytes([0x00, 0x00])),
     (0xC09F81, bytes([0xD6]), bytes([FONT_BANK])),
+    # 사운드 선택 창의 옵션 칸(스테레오/모노럴) — 원본은 옵션당 6B(`mvn` 5+1)를 줄 버퍼 `$7F:D43B` 에 복사한다. 전각 4자(8B)가 들어가도록
+    # 복사를 `$D43A` 부터 8B 로 넓히고(`$D43A~D441` 은 뒤가 전부 공백 — 창 안쪽 폭 안), 원본 문자열(`$D0C3`/`$D0C9`, 뒤가 코드)은 `$C0:FF00` 으로 옮긴다.
+    (0xC0D075, bytes([0xC3, 0xD0]), SOUND_OPT_ADDR_LO),  # ldx #$D0C3 → #$FF00 (스테레오)
+    (0xC0D080, bytes([0xC9, 0xD0]), SOUND_OPT_ADDR_HI),  # ldx #$D0C9 → #$FF08 (모노럴)
+    (0xC0D083, bytes([0x3B, 0xD4]), bytes([0x3A, 0xD4])),  # ldy #$D43B → #$D43A
+    (0xC0D086, bytes([0x05]), bytes([0x07])),  # lda #$0005 → #$0007 (8B)
+    (0xC0FF08, bytes([0xFF] * 8), bytes.fromhex("D3C9D7D9" "20202020")),  # 모노럴 — 원문(반각 가타카나 4자) + 공백 4
 ]
 
 # 트램펄린 — 대사 제어코드 `$17`(원본 핸들러는 `rts` 뿐, 단위 안 출현 1회) 을 **24비트 점프**로 바꾼다: `17 lo hi bank`.

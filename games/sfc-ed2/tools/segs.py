@@ -104,7 +104,46 @@ def segments(d: bytes) -> list[tuple[int, int]]:
                 cur = None
         if cur and cur[2]:
             out.append((cur[0], cur[1]))
-    return [r for r in (_clean(d, a, b, tg) for a, b in out) if r]
+    res = [r for r in (_clean(d, a, b, tg) for a, b in out) if r]
+    return _with_extra(d, res)
+
+
+# 자동 걷이(`_clean` — 4글자 미만·반각 섞임 컷)에서 빠진 **진짜 대사·전투 문장 조각** — (시작 SNES 주소, 줄 수). 줄 = `$0A` 로 갈라진 연속 글자 구간.
+# 잡음과 가르는 근거는 눈으로 본 것이다(해독한 덩이 앞뒤 토큰·화면). 새로 찾으면 여기에 더한다.
+EXTRA = (
+    (0xC2400A, 1), (0xC25EEF, 1), (0xC43035, 1), (0xC43047, 1), (0xC4EC39, 1), (0xC5A237, 1), (0xC8ECD6, 1), (0xC90D93, 1),
+    (0xC9710C, 1), (0xCA930F, 1), (0xCABB71, 1), (0xC4303E, 1), (0xC8F5A0, 1),
+    (0xD43C6F, 1), (0xD46248, 1), (0xD46789, 1), (0xD4B416, 1), (0xD4C740, 1), (0xD4C9A1, 4), (0xD5BCD0, 1), (0xD5C24C, 1),
+    (0xD5D7BA, 2), (0xD5DEAB, 2),
+    (0xC2400F, 1), (0xC25EF4, 1), (0xC63452, 1), (0xC63A7C, 1), (0xC6401C, 1), (0xC64371, 1),
+    (0xC81AD3, 1),
+)
+
+
+def _with_extra(d: bytes, res: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    starts = {a for a, _b in res}
+    have = set()
+    for a, b in res:
+        have.update(range(a, b))
+    out = list(res)
+    for sn, cnt in EXTRA:
+        o = common.snes2off(sn)
+        for _ in range(cnt):
+            e = o
+            while e < len(d) - 1:
+                b = d[e]
+                if e != o and e in starts:
+                    break
+                if 0x80 <= b <= 0x85 or b in (0xE0, 0xE1):
+                    e += 2
+                elif b in TEXTLEVEL:
+                    e += 1
+                else:
+                    break
+            if e > o and o not in have:
+                out.append((o, e))
+            o = e + 1  # `$0A` 건너뜀
+    return sorted(set(out))
 
 
 def _clean(d: bytes, a: int, b: int, tg: set[int] | None = None) -> tuple[int, int] | None:
