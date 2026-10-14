@@ -84,18 +84,20 @@ def px_width(row: bytes) -> int:
     return w
 
 
-def put_rows(rom: bytearray, addr: int, rows: list[bytes], writes: list) -> None:
+def put_rows(rom: bytearray, addr: int, rows: list[bytes], writes: list, n: int | None = None) -> None:
     """창 블록의 줄을 **제자리**에서 바꾼다(줄 수·stride 고정). 줄 = 제어·글자 바이트(종료 `$00`·공백 채움은 여기서).
     한 줄이 stride−1 바이트를 넘으면 죽는다 — 그땐 `move_block` 으로 블록을 옮겨 stride 를 넓힌다."""
     o = common.snes2off(addr)
-    x, y, w, n, stride = rom[o : o + 5]
+    x, y, w, hn, stride = rom[o : o + 5]
+    n = n or hn  # 헤더 줄 수보다 실제 줄이 많은 블록이 있다(`$C0:F40D` — 창 제목 5줄을 색인으로 골라 쓴다)
     if len(rows) != n:
         raise SystemExit(f"{common.fmt(addr)}: 줄 수 {len(rows)} ≠ {n}")
-    for i, r in enumerate(rows):
+    for i, r in enumerate(rows):  # 먼저 전부 검사한다 — 중간에 죽으면 반쯤 쓴 블록이 남는다
         if len(r) > stride - 1:
             raise SystemExit(f"{common.fmt(addr)} 줄 {i}: {len(r)}B > stride−1={stride - 1} — 블록을 옮겨 넓혀야 한다")
         if px_width(r) > (w + 1) * 8:
             raise SystemExit(f"{common.fmt(addr)} 줄 {i}: {px_width(r)}px > 창 {(w + 1) * 8}px — w 를 넓혀야 한다")
+    for i, r in enumerate(rows):
         rom[o + 5 + i * stride : o + 5 + (i + 1) * stride] = r + b"\x20" * (stride - 1 - len(r)) + b"\x00"
     writes.append((o + 5, o + 5 + n * stride))
 

@@ -96,6 +96,49 @@ def msg_start(d: bytes, a: int, floor: int) -> int:
     return best
 
 
+def a6_targets(d: bytes) -> set[int]:
+    """`$C0~$C1` 코드가 대사 출력기 포인터(`$A6~$A8`)에 즉치로 넣는 $C0/$C1 뱅크 주소 — UI 쪽 대사형 문자열(전투 문장 조각·시스템 메시지)의 시작."""
+    import re
+
+    out = set()
+    pat = re.compile(rb"\xa9(.)\x8d\xa6\x00\xa9(.)\x8d\xa7\x00\xa9([\xc0-\xdf])", re.S)
+    for m in pat.finditer(d[: common.ROM_SIZE]):
+        out.add(m.group(3)[0] << 16 | m.group(2)[0] << 8 | m.group(1)[0])
+    return out
+
+
+def has_glyph(d: bytes, a: int, limit: int = 400) -> bool:
+    ts = tokens(d, a, a + limit)
+    return any(0x80 <= d[o] < 0x88 or 0x88 <= d[o] < 0xE0 for o, _ in ts)
+
+
+# `$C0`·`$C1` 안의 대사형 문자열 구간(전투 문장 조각 풀·시스템 메시지) — 대사 출력기(`$C0:A691`)가 읽는다. 끝은 마지막 글자 토큰 뒤(그 너머는 코드).
+EXTRA_REGIONS = (
+    (0xC17CCF, 0xC18117),  # 전투 문장 조각 풀(이름 뒤에 이어 붙는 조각 · 상태이상 · 레벨업 · 승패)
+    (0xC0EB8D, 0xC0EBE8),  # 주문 익히기 질문·결과
+    (0xC0F241, 0xC0F2B0),  # 포인트 능력 올리기
+    (0xC1E98F, 0xC1E9FC),  # 아이템 획득·버리기
+    (0xC1E518, 0xC1E531),  # 워프 안내
+    (0xC0C00E, 0xC0C013),  # 「たち」
+    (0xCB3869, 0xCB3C1D),  # 상점·시스템 문구 풀($E1 사전 항목이 가리키는 곳 포함)
+    (0xCB74B3, 0xCB7792),  # 무기고·주문서 상점 대사
+)
+
+
+def region_units(d: bytes) -> list[tuple[int, int]]:
+    out = []
+    for a, b in EXTRA_REGIONS:
+        i, end = common.snes2off(a), common.snes2off(b)
+        while i < end:
+            ts = tokens(d, i, end)
+            e = ts[-1][0] + ts[-1][1]
+            if not ts[-1][1]:
+                raise SystemExit(f"구간 {common.fmt(a)} 의 {common.fmt(common.off2snes(ts[-1][0]))} 가 문법 밖이다")
+            out.append((i, e))
+            i = e
+    return out
+
+
 def units(d: bytes) -> tuple[list[tuple[int, int]], int]:
     """$C2~$CA 뱅크의 메시지 단위 (시작, 끝) 오프셋 목록과 문법 밖에서 끊긴 덩이 수.
     $C0·$C1 의 글자 덩이는 UI 문자열(`$C0:9395` 출력기)이라 제외한다 — 문법이 다르다."""
@@ -118,7 +161,19 @@ def units(d: bytes) -> tuple[list[tuple[int, int]], int]:
     return out, bad
 
 
+def all_units(d: bytes) -> list[tuple[int, int]]:
+    """번역 대상 메시지 단위 전부 — $C2~$CA 스캔 단위 + $C0/$C1 대사형 구간."""
+    u, _bad = units(d)
+    out: list[tuple[int, int]] = []
+    for s, e in sorted(u + region_units(d)):
+        if out and s < out[-1][1]:  # 앞 단위 안에 든 중복(스캔 단위와 구간 목록이 겹친다)
+            continue
+        out.append((s, e))
+    return out
+
+
 DICTS = ((0xCB346F, 74), (0xCB354D, 30))  # `$E0` · `$E1` 사전 표(3바이트 포인터, 항목 수는 표 간격에서)
+DICTS_BY_NAME = {"E0": 0xCB346F, "E1": 0xCB354D}
 
 
 def glyph_char(code: int) -> str:
