@@ -231,7 +231,8 @@ def records_canon_chars(src: bytes, key: str, v: dict) -> set[str]:
     return out
 
 
-def build() -> tuple[bytes, list, dict]:
+def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> tuple[bytes, list, dict]:
+    """slots = 한글에 줄 글리프 색인 후보(오름차순). dead = 번역으로 옮겨 가 더는 안 읽히는 원문 구간(파일 오프셋)을 여기에 모은다."""
     src = common.rom_bytes()
     rom = bytearray(src) + bytearray(b"\xff" * (NEW_SIZE - len(src)))
     writes: list[tuple[int, int]] = []
@@ -240,7 +241,7 @@ def build() -> tuple[bytes, list, dict]:
     names = dict_names(src, dict_map)
 
     # 1. 쓰일 글자 수집 → 글리프 배정(결정적)
-    chars: set[str] = set()
+    chars = kr.Chars()
     for v in seg_map.values():
         chars |= kr.chars_of(resolve_josa(v["kr"], names))
     for v in ui_map.values():
@@ -270,7 +271,9 @@ def build() -> tuple[bytes, list, dict]:
     for v in names.values():
         chars |= kr.chars_of(v)
     chars |= kr.JOSA_CHARS
-    alloc = kr.allocate(chars)
+    for c in kr.JOSA_CHARS:
+        chars[c] += 10**6  # 조사 훅이 부르는 글자는 절대 밀려나면 안 된다
+    alloc = kr.allocate(chars, slots, lenient=lenient)
 
     far = Space(rom, writes)
     tail = Space(rom, writes, tail=True)
@@ -284,6 +287,11 @@ def build() -> tuple[bytes, list, dict]:
             addr = tail.put(data)
             base = script.DICTS_BY_NAME[tbl]
             o = common.snes2off(base) + 3 * (n - 1)
+            oa = common.snes2off(src[o] | src[o + 1] << 8 | src[o + 2] << 16)
+            oe = oa
+            while src[oe] != 0x06:
+                oe += 1
+            dead.append((oa, oe + 1))
             rom[o : o + 3] = bytes([addr & 0xFF, (addr >> 8) & 0xFF, addr >> 16])
             writes.append((o, o + 3))
             stats["dict"] += 1
@@ -295,10 +303,17 @@ def build() -> tuple[bytes, list, dict]:
         if v.get("h") and v["h"] != segs.src_hash(src, common.snes2off(addr), common.snes2off(addr) + 5 + blk["rows"] * blk["stride"]):
             raise SystemExit(f"UI 블록 {key}: 원문 해시 불일치 — 원본이 달라졌거나 textmap 이 낡았다")
         o0 = common.snes2off(addr) + 5
-        rows = [
-            kr.encode(resolve_josa(r, names), alloc) if r is not None else bytes(src[o0 + i * blk["stride"] : o0 + (i + 1) * blk["stride"] - 1]).rstrip(b" ")
-            for i, r in enumerate(v["rows"])
-        ]  # null = 원문 줄 그대로(판정 대기)
+        rows = []
+        for i, r in enumerate(v["rows"]):
+            raw = bytes(src[o0 + i * blk["stride"] : o0 + (i + 1) * blk["stride"] - 1])
+            if r is None:  # null = 정본(canon)에 같은 원문이 있으면 그 문안, 없으면 원문 줄 그대로(판정 대기)
+                import canon
+
+                jpn = ui.row_text(src, raw).strip(" 　")
+                t = canon.lookup(jpn, None, "ed2") if jpn else None
+                r = f"<1f> {t} " if t else None
+            rows.append(kr.encode(resolve_josa(r, names), alloc) if r is not None else raw.rstrip(b" "))
+        dead.append((common.snes2off(addr), common.snes2off(addr) + 5 + blk["rows"] * blk["stride"]))
         try:
             ui.put_rows(rom, addr, rows, writes, v.get("n"))
             stats["ui_inplace"] += 1
@@ -341,6 +356,7 @@ def build() -> tuple[bytes, list, dict]:
                     continue  # 정본에 없다 — 원문을 둔다(관리자에게 후보로 올린다)
             data = kr.encode(text, alloc)
             px = ui.px_width(data)
+            dead.append((common.snes2off((bank << 16) | (src[o + 2 * i] | src[o + 2 * i + 1] << 8)), common.snes2off((bank << 16) | (src[o + 2 * i] | src[o + 2 * i + 1] << 8)) + len(jpb) + 1))
             data += b" " * max(0, (pad_px - px) // 8)
             addr = local.put(bank, data + b"\x00")
             rom[o + 2 * i : o + 2 * i + 2] = bytes([addr & 0xFF, (addr >> 8) & 0xFF])
@@ -399,6 +415,7 @@ def build() -> tuple[bytes, list, dict]:
                     body = sb  # 정본에 없다 — 원문 그대로(관리자에게 후보로)
                     stats.setdefault("missing", []).append(("monster", f"{gi}:{si}", base))
                 new += bytes([len(body)]) + body
+            dead.append((common.snes2off(0xCB0000 | w), common.snes2off(0xCB0000 | w) + sum(1 + len(sb) for sb in ss)))
             addr = local.put(0xCB, bytes(new))
             rom[t + 2 * gi : t + 2 * gi + 2] = bytes([addr & 0xFF, addr >> 8])
             writes.append((t + 2 * gi, t + 2 * gi + 2))
@@ -439,12 +456,18 @@ def build() -> tuple[bytes, list, dict]:
         if v.get("h") != segs.src_hash(src, a, b):
             raise SystemExit(f"구간 {key}: 원문 해시 불일치({v.get('h')} ≠ {segs.src_hash(src, a, b)}) — textmap 이 낡았다")
         text = resolve_josa(v["kr"], names)
+        dead.append((a, b))
         if (common.off2snes(a) >> 16) == 0xD7:
             # $D7(오프닝·엔딩) — UI 출력기($C0:9395)는 트램펄린($17)을 몰라 **문자열을 옮기고 포인터를 고친다**
             data = kr.encode(text, alloc) + b"\x00"
             old = common.off2snes(a)
             refs = relocate.refs24(src, old, (a, b)) + [x for t in relocate.a6_sites(src, old) for x in ()]
             sites = relocate.a6_sites(src, old)
+            if not refs and not sites and len(data) - 1 <= b - a:  # 가리키는 포인터를 못 찾는 문자열(표 머리 앞 제어 토큰에 묻힌 첫 줄 등) — 제자리에 공백으로 채워 넣는다
+                rom[a:b] = data[:-1] + b" " * (b - a - len(data) + 1)
+                writes.append((a, b))
+                stats["seg_inplace"] += 1
+                continue
             if not refs and not sites:
                 raise SystemExit(f"구간 {key}: 이 문자열을 가리키는 포인터가 없다 — 제자리({b - a}B)에 넣을 수 있는지 확인한다")
             new = tail.put(data)
@@ -480,7 +503,7 @@ def build() -> tuple[bytes, list, dict]:
         writes.append((a, b))
 
     # 4b. 조사 훅 표 — 받침 표(글리프 색인 → 받침 유무) · 조사 쌍(코드) · 숫자(읽는 소리)
-    cls = bytearray(2048)
+    cls = bytearray(8192)
     for c, i in alloc.items():
         if "가" <= c <= "힣":
             cls[i] = 1 if (ord(c) - 0xAC00) % 28 else 0
@@ -491,7 +514,7 @@ def build() -> tuple[bytes, list, dict]:
                 raise SystemExit(f"조사 글리프 {alloc_missing!r} 가 배정 안 됐다")
     pairs = b"".join(((0x8000 + alloc[a_]).to_bytes(2, "little") + (0x8000 + alloc[b_]).to_bytes(2, "little")) for a_, b_ in kr.JOSA_PAIRS)
     digits = bytes([1, 1, 0, 1, 0, 0, 1, 1, 1, 0])  # 영 일 이 삼 사 오 육 칠 팔 구
-    for addr, data in ((patches.JOSA_TABLE, bytes(cls)), (patches.JOSA_PAIRS, pairs), (patches.JOSA_DIGITS, digits)):
+    for addr, data in ((patches.JOSA_TABLE, bytes(cls[:2048])), (patches.JOSA_PAIRS, pairs), (patches.JOSA_DIGITS, digits)):
         o = common.snes2off(addr)
         rom[o : o + len(data)] = data
         writes.append((o, o + len(data)))
@@ -505,15 +528,77 @@ def build() -> tuple[bytes, list, dict]:
         top = max(alloc.values())
         ft += b"\x00" * ((top + 1 - n0) * 18) if top + 1 > n0 else b""
     for c, i in alloc.items():
-        if i >= n0:
+        if i >= n0 or font_out:
             ft[i * 18 : (i + 1) * 18] = hangul_font.glyph12(c)
-    rom[patches.FONT_OUT : patches.FONT_OUT + len(ft)] = ft
-    writes.append((patches.FONT_OUT, patches.FONT_OUT + len(ft)))
-    assert patches.FONT_OUT >= common.ROM_SIZE
+    if font_out:
+        rom[patches.FONT_OUT : patches.FONT_OUT + len(ft)] = ft
+        writes.append((patches.FONT_OUT, patches.FONT_OUT + len(ft)))
+        assert patches.FONT_OUT >= common.ROM_SIZE
 
     fix_checksum(rom)
     stats["glyphs"] = len(alloc)
+    stats["dropped"] = list(kr.DROPPED)
+    stats["reused_jp"] = sum(1 for i in alloc.values() if 0 < i < FIRST_KR)
     return bytes(rom), writes, stats
+
+
+FIRST_KR = kr.FIRST_FREE
+TEXT_BANKS = set(range(0x00, 0x0C)) | {0x14, 0x15, 0x17}  # 파일 뱅크 번호 = $C0~$CB · $D4 · $D5 · $D7
+
+
+def _jp_kept(src: bytes, rom: bytes, dead: list) -> set[int]:
+    """번역 뒤에도 롬에 남아 읽히는 일본어 글리프 색인 — 원문 글자 덩이(최소 2자) 가운데 바뀌지 않았고 옮겨 간 구간도 아닌 자리의 코드.
+    ⚠ 보수적이다: 코드 곁 우연한 덩이도 남은 것으로 센다(자리를 덜 재활용할 뿐 깨지진 않는다)."""
+    import scan_text
+
+    merged: list[list[int]] = []
+    for x, y in sorted(dead):
+        if merged and x <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], y)
+        else:
+            merged.append([x, y])
+    starts = [m[0] for m in merged]
+    import bisect
+
+    def is_dead(p: int) -> bool:
+        k = bisect.bisect_right(starts, p) - 1
+        return k >= 0 and p < merged[k][1]
+
+    kept = set()
+    for a, b, _c in scan_text.find_runs(src, 3):
+        if (a >> 16) not in TEXT_BANKS:  # 그래픽·표 뱅크($CC~$D3 · $D6)의 우연한 덩이는 글자가 아니다 — 세면 자리를 거의 못 푼다
+            continue
+        i = a
+        while i < b:
+            if 0x80 <= src[i] <= 0x85:
+                if rom[i : i + 2] == src[i : i + 2] and not is_dead(i):
+                    kept.add(((src[i] - 0x80) << 8) | src[i + 1])
+                i += 2
+            else:
+                i += 1
+    return kept
+
+
+def _protected() -> set[int]:
+    """코드가 색인으로 직접 부르는 글자(숫자·기호 등 가나·한자가 아닌 것)는 재활용하지 않는다."""
+    import glyphmap
+
+    out = {0}
+    for i, ch in enumerate(glyphmap.TABLE):
+        o = ord(ch)
+        if not (0x3041 <= o <= 0x30FF or 0x4E00 <= o <= 0x9FFF):
+            out.add(i)
+    return out
+
+
+def build() -> tuple[bytes, list, dict]:
+    """두 번 돈다 — ① 한글 글리프를 무제한 가상 색인에 놓아 보고, 번역 뒤에도 남는 일본어 글리프를 센다(census) ② 안 남는 일본어 자리를 한글에 재활용해 실제로 굽는다."""
+    src = common.rom_bytes()
+    dead: list = []
+    rom1, _w, _s = _build(range(kr.FIRST_FREE, kr.FIRST_FREE + 6000), dead, font_out=False)
+    keep = _jp_kept(src, rom1, dead) | _protected()
+    free = [i for i in range(1, kr.FIRST_FREE) if i not in keep] + list(range(kr.FIRST_FREE, kr.LAST_SLOT + 1))
+    return _build(free, [], True, lenient=True)
 
 
 def check_immutable(rom: bytes, writes: list) -> None:
@@ -548,6 +633,10 @@ def screen_gate(strict: bool, stats: dict) -> None:
         print(f"  ⚠ 정본에 없어 원문으로 남긴 이름 {len(stats['missing'])}개(관리자에게 후보로): " + ", ".join(f"{k}[{i}]{n}" for k, i, n in stats["missing"][:12]))
     if stats.get("toolong"):
         print("  ⚠ 레코드 칸보다 길어 원문으로 남긴 이름: " + ", ".join(f"{k}[{i}]{t}({n}B>{m}B)" for k, i, t, n, m in stats["toolong"]))
+    if stats.get("dropped"):
+        print(f"  ⚠ 글리프 색인이 모자라 못 넣은 글자 {len(stats['dropped'])}개(번역이 끝나면 일본어 자리가 풀린다): " + "".join(stats["dropped"][:60]))
+        if strict:
+            raise SystemExit("글리프 모자람")
     if strict and done < total:
         raise SystemExit(f"일본어가 남았다: {total - done:,}개 구간")
 

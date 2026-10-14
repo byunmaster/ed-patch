@@ -81,12 +81,35 @@ def dump(bank: str | None, todo: bool) -> None:
 _SENT = re.compile(r"(?<=[。！？!?])")
 
 
+def _hname(jp: str) -> str:
+    """화자 머리 이름 → 정본(speaker·person)에서. 없으면 `〔원문〕`."""
+    import canon
+
+    t = jp.strip()
+    for cat in ("speaker", "person", None):
+        k = canon.lookup(t, cat, "ed2")
+        if k:
+            return k + jp[len(jp.rstrip()) :]
+    return f"〔{t}〕"
+
+
 def draft_text(jp: str, idx: dict[str, str]) -> tuple[str, int, int]:
     """원문 구간 → 초안. PS1 에 같은 문장이 있으면 그 한국어, 없으면 `〔원문〕` 표식. 줄바꿈(⏎)은 버리고(자동 조판) `<05>` 는 쪽 경계로 남긴다."""
     out, hit, tot = [], 0, 0
     # 쪽 경계 `<05>`·화자 머리 `<1e>…<04>` 는 그대로 두고 그 사이 본문을 문장으로 쪼갠다
-    parts = re.split(r"(<[0-9a-fA-F]{2}[^>]*>|<E[01]:\d+>)", jp)
+    hdr = r"<1e>[^<]*<04>"
+    parts = re.split(rf"({hdr}|<[0-9a-fA-F]{{2}}[^>]*>|<E[01]:\d+>)", jp)
+    after_hdr = False
     for part in parts:
+        if after_hdr and part.startswith("\n"):  # 화자 머리 바로 뒤 개행은 머리의 일부 — 남긴다
+            out.append("⏎")
+            part = part[1:]
+        after_hdr = False
+        if re.fullmatch(hdr, part or ""):  # 화자 머리 — 이름만 정본에서
+            m = re.fullmatch(r"<1e>([^<]*)<04>", part)
+            out.append("<1e>" + _hname(m.group(1)) + "<04>")
+            after_hdr = True
+            continue
         if re.fullmatch(r"<[0-9a-fA-F]{2}[^>]*>|<E[01]:\d+>", part or ""):
             out.append(part)
             continue
@@ -107,6 +130,8 @@ def draft(bank: str, lo: str | None, hi: str | None) -> None:
     d = common.rom_bytes()
     done = kr.load("segments")
     idx = ps1_index()
+    js = segs.jump_sources(d)
+    ends = segs.segments(d)
     n = 0
     rows = []
     for a, b in segs.segments(d):
@@ -116,7 +141,16 @@ def draft(bank: str, lo: str | None, hi: str | None) -> None:
         if lo and sid < lo or hi and sid > hi:
             continue
         txt, h, t = draft_text(segs.notation(d, a, b), idx)
-        rows.append((sid, b - a, h, t, segs.notation(d, a, b).replace("\n", "⏎"), txt))
+        frm = ""
+        if a in js:
+            tails = []
+            for so in js[a][:3]:
+                # 앞 구간의 마지막 20자
+                end = next((y for x, y in ends if x == so), None)
+                if end:
+                    tails.append("…" + segs.notation(d, so, end).replace("\n", "⏎")[-20:])
+            frm = " ← " + " | ".join(tails)
+        rows.append((sid, b - a, h, t, segs.notation(d, a, b).replace("\n", "⏎") + frm, txt))
     OUT.mkdir(parents=True, exist_ok=True)
     with (OUT / "draft.tsv").open("w", encoding="utf-8") as f:
         for r in rows:
@@ -180,6 +214,26 @@ def put(path: str) -> None:
     print(f"{n}개 병합 · 총 {len(cur):,}개" + (f" · 없는 구간 {len(missing)}: {' '.join(missing[:20])}" if missing else ""))
 
 
+def reuse() -> None:
+    """원문 바이트가 같은 구간끼리 번역을 옮긴다 — 같은 대사가 상태별로 여러 주소에 있다(같은 원문 = 같은 번역)."""
+    d = common.rom_bytes()
+    cur = kr.load("segments")
+    keep = set(kr.load("keep").get("ids", []))
+    by = {}
+    sgl = [(segs.seg_id(a), a, b) for a, b in segs.segments(d)]
+    for sid, a, b in sgl:
+        if sid in cur:
+            by.setdefault(bytes(d[a:b]), cur[sid]["kr"])
+    n = 0
+    for sid, a, b in sgl:
+        if sid not in cur and sid not in keep and bytes(d[a:b]) in by:
+            cur[sid] = {"h": segs.src_hash(d, a, b), "kr": by[bytes(d[a:b])]}
+            n += 1
+    p = kr.TEXTMAP / "segments.json"
+    p.write_text(json.dumps(cur, ensure_ascii=False, indent=0, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"같은 원문 {n}개 재사용 · 총 {len(cur):,}개")
+
+
 def stats() -> None:
     d = common.rom_bytes()
     sg = segs.segments(d)
@@ -203,6 +257,8 @@ if __name__ == "__main__":
         print(f"{len(rows)}개 → {outp}")
     elif cmd == "put":
         put(sys.argv[2])
+    elif cmd == "reuse":
+        reuse()
     elif cmd == "stats":
         stats()
     else:

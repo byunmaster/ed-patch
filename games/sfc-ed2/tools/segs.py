@@ -58,6 +58,27 @@ def excluded(off: int) -> bool:
     return any(common.snes2off(a) <= off < common.snes2off(b) for a, b in EXCLUDE)
 
 
+def jump_sources(d: bytes) -> dict[int, list[int]]:
+    """점프 목적지(파일 오프셋) → 그 점프를 거는 자리 바로 앞 글자 구간의 시작들. 번역이 앞 조각과 이어지는지 볼 때 쓴다(공유 꼬리 문장)."""
+    out: dict[int, list[int]] = {}
+    for s, e in script.all_units(d):
+        bank = (common.off2snes(s) >> 16) & 0xFF
+        last = None
+        cur = None
+        for o, ln in script.tokens(d, s, e):
+            b = d[o]
+            if b in TEXTLEVEL or b in (0xE0, 0xE1):
+                if cur is None:
+                    cur = o
+                last = cur
+            else:
+                if b in (0x0F, 0x10) and o + 2 < len(d) and last is not None:
+                    tgt = common.snes2off((bank << 16) | d[o + 1] | d[o + 2] << 8)
+                    out.setdefault(tgt, []).append(last)
+                cur = None
+    return out
+
+
 def segments(d: bytes) -> list[tuple[int, int]]:
     """(시작, 끝) 파일 오프셋 — 글자가 하나 이상 든 글자 구간만."""
     out = []

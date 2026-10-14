@@ -146,9 +146,10 @@ def units(d: bytes) -> tuple[list[tuple[int, int]], int]:
 
     out, bad, pos = [], 0, 0
     for a, b, _c in scan_text.find_runs(d):
-        if a < 0x20000 or a < pos:
+        if a < 0x20000 or b <= pos:
             continue
-        i = msg_start(d, a, pos)
+        # 앞 단위가 이 덩이의 앞머리를 먹었으면(덩이가 사전 참조·제어에서 갈렸을 때) 남은 꼬리를 pos 부터 이어 읽는다 — 예전엔 통째로 건너뛰어 대사 수백 줄이 번역 대상에서 빠졌다
+        i = pos if a < pos else msg_start(d, a, pos)
         while i < b:
             t = tokens(d, i)
             if not t[-1][1]:

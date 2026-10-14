@@ -43,11 +43,34 @@ def chars_of(text: str) -> set[str]:
     return out
 
 
-def allocate(chars) -> dict[str, int]:
+class Chars(dict):
+    """글자 → 쓰인 문안 수. `|=` 로 집합을 더하면 센다(희귀 글자부터 밀어내려고)."""
+
+    def __ior__(self, other):
+        for c in other:
+            self[c] = self.get(c, 0) + 1
+        return self
+
+
+DROPPED: list[str] = []  # 빈 색인이 모자라 못 배정한 글자(희귀한 것부터) — 번역 중간 빌드에서만 생긴다. build.py --strict 는 이게 있으면 죽는다
+
+
+def allocate(chars, slots=None, lenient=False) -> dict[str, int]:
+    """글자 → 글리프 색인. slots = 쓸 수 있는 색인 목록(오름차순) — 기본은 일본어와 안 겹치는 빈 자리. 글자는 코드 포인트 순(결정적).
+    lenient 면 자리가 모자랄 때 덜 쓰이는 글자를 공백(0)으로 두고 DROPPED 에 적는다(번역이 끝나 일본어 자리가 풀리기 전의 중간 빌드)."""
+    freq = chars if isinstance(chars, dict) else {}
     cs = sorted(set(chars) - {FULLWIDTH_SPACE})
-    if len(cs) > LAST_SLOT - FIRST_FREE + 1:
-        raise SystemExit(f"글리프 {len(cs)}자 > 빈 색인 {LAST_SLOT - FIRST_FREE + 1} — 일본어 글자가 안 남는 자리를 쓰는 census 가 필요하다")
-    alloc = {c: FIRST_FREE + i for i, c in enumerate(cs)}
+    slots = list(slots) if slots is not None else list(range(FIRST_FREE, LAST_SLOT + 1))
+    DROPPED.clear()
+    if len(cs) > len(slots):
+        if not lenient:
+            raise SystemExit(f"글리프 {len(cs)}자 > 빈 색인 {len(slots)}")
+        order = sorted(cs, key=lambda c: (-freq.get(c, 0), c))
+        DROPPED.extend(order[len(slots) :])
+        cs = sorted(order[: len(slots)])
+    alloc = {c: slots[i] for i, c in enumerate(cs)}
+    for c in DROPPED:
+        alloc[c] = 0
     alloc[FULLWIDTH_SPACE] = 0  # 원본 글리프 0 = 전각 공백
     return alloc
 
