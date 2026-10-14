@@ -39,6 +39,7 @@ import gwin_rt
 import voice_sched
 import omake_art
 import omake_font
+import syscard_screen
 import opening_sub
 import staffroll
 import sysbuild
@@ -605,6 +606,7 @@ def _build(edits_path, iso: Path, cue: Path):
         if want("sys"):  # 오마케(사운드 테스트·도감) 한글 — 전용 미니 훅 + 글리프 블록(rel 450 모듈 안 · rel 447~449) + 첫 메뉴 라벨 그림(rel 642~)
             _extras = json.loads((common.GAME_DIR / "script" / "sys" / "extras.json").read_text(encoding="utf-8"))
             print("  " + omake_font.apply(f, table, _extras, touched))
+            print("  " + syscard_screen.apply(f, touched))  # 구형 카드 안내 화면 한글 띠(코드 훅 + rel 25~27 자료)
         if want("battle"):
             print("  전투 데이터:", battle.apply(f, table, touched))
         if want("band"):
@@ -685,6 +687,7 @@ def _build(edits_path, iso: Path, cue: Path):
     verify_readback(iso, intended, found, moves)
     if want("sys"):
         print("  오마케 그림 되읽기 OK — " + omake_art.verify_iso(iso))
+        print("  " + syscard_screen.verify_iso(iso))
     if want("battle"):
         print(f"  전투 컨테이너 되읽기 OK (블록 {battle.verify(iso, table)})")
     bad = mode1.selftest(
