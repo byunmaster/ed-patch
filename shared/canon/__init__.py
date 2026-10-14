@@ -175,7 +175,7 @@ def _jp_pattern(key):
             #   `{name}⏎この氷の壁は破れん。` 이 다른 인물의 긴 대사 한 줄 전체에 걸렸다(ss ED2 카자즘 대사, 10-09).
             #   줄은 공백을 접어(`_flat`) 재니 줄바꿈으로는 못 가른다 — 문장부호로 가른다.
             out.append(
-                "[0-9０-９]+" if p in ("n", "m") else ".+?" if p == "unit" else r"[^。、！？!?「」『』…･]{1,12}?"
+                r"(?:[0-9０-９]+|%d)" if p in ("n", "m") else ".+?" if p == "unit" else r"[^。、！？!?「」『』…･]{1,12}?"
             )
         else:
             out.append(re.escape(p))

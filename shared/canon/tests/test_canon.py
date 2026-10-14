@@ -167,6 +167,17 @@ def test_chapter_card_inside_block_is_measured():
     assert sorted(h.where for h in r.mismatches) == ["half", "title"]
 
 
+def test_number_slot_accepts_format_code():
+    """수 자리(`{n}`)는 서식 코드 `%d` 도 받는다 — 새턴 원문은 숫자 대신 `%d` 를 들고 있다(ss-ed1+2 실측 10-11)."""
+    fake = {"categories": {"system": {"{n}ポイントフヤセマス。": "{n}포인트 늘릴 수 있습니다."}}}
+    canon._CACHE["fake6"] = fake
+    try:
+        r = canon.audit([("a", "%dポイントフヤセマス。", "%d포인트 늘릴 수 있습니다.", "dialog")], "fake6")
+    finally:
+        canon._CACHE.pop("fake6", None)
+    assert [h.where for h in r.hits] == ["a"] and not r.mismatches
+
+
 # ⚠ 새 테스트는 이 줄 위에.
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
