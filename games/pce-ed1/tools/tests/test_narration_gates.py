@@ -366,9 +366,74 @@ class PatchBlock(unittest.TestCase):
     def test_raias_sends_off_into_on_path(self):
         blk = body_at(GATE + b"\xf0\x14" + TIMER + b"\x80\x0b" + msg(0xD5, 0xA4) + b"\xad\x00\xc1")
         N.SITES = {2: {0: "raias"}}
+        N.VOICE0 = set()
         out, n = N.patch_block(2, blk)
         self.assertEqual((n, out[4]), (1, 0x00))
         self.assertEqual(self.go(out, 5)[1], (N.SHOW_76, 0xA4D5))
+
+    def raias_voice0(self):
+        voice = b"\x20\x15\x58\x00\x00\x20\x00"
+        pre = msg(0xD5, 0xA4)  # 인사 창(음성 호출 바로 앞)
+        blk = body_at(pre + voice + GATE + b"\xf0\x14" + TIMER + b"\x80\x0b" + msg(0xD5, 0xA4) + b"\xad\x00\xc1")
+        N.SITES = {2: {0: "raias"}}
+        N.VOICE0 = {2}
+        out, n = N.patch_block(2, blk)
+        return len(pre), voice, out, n
+
+    def test_voice_call_arms_play_start_watch(self):
+        v, voice, out, n = self.raias_voice0()
+        self.assertEqual(n, 2)  # 게이트 1 + 음성 스텁
+        self.assertEqual(out[v], 0x20)
+        self.assertEqual(out[v + 3 : v + 7], b"\xea" * 4)
+        stub = (out[v + 1] | out[v + 2] << 8) - N.BASE
+        inst = N._resident_asm().labels["inst"]
+        self.assertEqual(out[stub : stub + 3], bytes([0x20, inst & 0xFF, inst >> 8]))
+        self.assertEqual(out[stub + 3 : stub + 8], bytes([0xA9, 1, 0x8D, hook_mod.VOICE_ARM & 0xFF, hook_mod.VOICE_ARM >> 8]))
+        self.assertEqual(out[stub + 20 : stub + 28], voice + b"\x60")  # 음성은 원래 호출 그대로 · 시점도 그대로
+
+    def run_stub(self, out, at, pre):
+        """게이트 자리의 `JSR 스텁` 을 실행 — 스텁 안의 상주부 호출마다 창을 띄우고 시계를 돌린다. 반환 = (띄운 메시지 순서, 첫 마감들, 시계)."""
+        mem = self.mem_with(out)
+        for k, v in pre.items():
+            mem[k] = v
+        stub = (out[at + 1] | out[at + 2] << 8) - N.BASE
+        c = CPU(mem, 10, 30, 0)
+        shown, firsts = [], []
+        pc = N.BASE + stub
+        for _ in range(2):  # 스텁은 상주부 호출 둘(인사 · 설교)
+            self.assertEqual(mem[pc], 0x20)
+            ret = pc + 2
+            c.call(N.ENTRY, ret, 0, 0)
+            shown.append(c.shown)
+            firsts.append(c.first)
+            pc += 9 + 11  # JSR+인라인 4 · BRA 2 · 적재 11 — 인라인 건너뜀은 호출이 처리, 다음 호출로
+        return shown, firsts, c
+
+    def test_voice0_stub_shows_greeting_then_sermon_from_play_start(self):
+        v, _, out, _ = self.raias_voice0()
+        at = v + 7 + 5
+        self.assertEqual(out[at], 0x20)
+        clock = 10 * 60 + 30
+        start = clock - 150  # 소리는 150프레임 전에 시작했다(ARM = 0 → 이미 시작)
+        pre = {hook_mod.PLAYSTART: start & 0xFF, hook_mod.PLAYSTART + 1: start >> 8}
+        shown, firsts, _ = self.run_stub(out, at, pre)
+        self.assertEqual([x[1] for x in shown], [0xA4D5, 0xA4D5])
+        self.assertEqual(firsts[0], start + round(N.GREET_END[2] * N.FPS))  # 인사 창은 음성 시작 + 9.35초에 닫힌다
+        self.assertEqual(firsts[1], start + 0x080C)  # 설교 창 표의 0 도 같은 시작
+
+    def test_voice0_waits_for_play_start_then_gives_up(self):
+        v, _, out, _ = self.raias_voice0()
+        at = v + 7 + 5
+        clock = 10 * 60 + 30
+        pre = {hook_mod.VOICE_ARM: 1, hook_mod.PLAYSTART: clock & 0xFF, hook_mod.PLAYSTART + 1: clock >> 8}
+        mem = self.mem_with(out)
+        for k, val in pre.items():
+            mem[k] = val
+        c = CPU(mem, 10, 30, 0)
+        stub = (out[at + 1] | out[at + 2] << 8) - N.BASE
+        c.call(N.ENTRY, N.BASE + stub + 2, 0, 0)  # 시작이 안 보인다 — 8.5초 기다린 뒤 호출 때 값으로
+        self.assertGreater(c.count(), clock + 400)
+        self.assertEqual(mem[hook_mod.VOICE_ARM], 0)
 
     def test_single_pre_skips_off_path_prelude(self):
         pre = b"\x20\xcd\x5b\x64\x86"
@@ -510,7 +575,7 @@ class PatchBlock(unittest.TestCase):
 
     def test_inst_patches_irq_site_once(self):
         mem = self.mem_with()
-        mem[N.IRQ_SITE : N.IRQ_SITE + 3] = b"\x20\x63\xe0"
+        mem[N.IRQ_SITE : N.IRQ_SITE + 3] = b"\x20\xa5\x57"
         inst = N._resident_asm().labels["inst"]
         for _ in range(2):  # 두 번째는 그대로
             CPU(mem, 0, 0, 0).call(inst, 0x0100, 0, 0)
@@ -518,7 +583,7 @@ class PatchBlock(unittest.TestCase):
 
     def test_tick_routine_counts_and_chains_to_original(self):
         t = hook_mod.tick_routine()
-        self.assertEqual(t[-3:], b"\x4c\x63\xe0")  # 끝은 원래 `JSR $E063` 대상으로
+        self.assertEqual(t[-3:], b"\x4c\xa5\x57")  # 끝은 원래 `JSR $57A5` 대상으로
         self.assertEqual(t[:3], b"\xee" + hook_mod.FRAMECNT.to_bytes(2, "little"))  # 먼저 카운터를 올린다
         self.assertEqual(hook_mod.hook_routine()[hook_mod.TICK_ADDR - hook_mod.HOOK_ADDR :][: len(t)], t)
         self.assertLess(hook_mod.TICK_ADDR + len(t), hook_mod.FRAMECNT)  # 카운터·플래그 자리를 안 덮는다

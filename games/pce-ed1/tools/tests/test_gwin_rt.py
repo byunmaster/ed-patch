@@ -141,7 +141,7 @@ class CPU:
             elif op == 0x30: pc = rel(self.n); continue
             elif op == 0x80: pc = rel(True); continue
             elif op == 0x4C:
-                if w == 0xE063:  # 원래 IRQ 대상으로 빠져나감 = 틱 끝
+                if w == hook.IRQ_ORIG:  # 원래 IRQ 대상으로 빠져나감 = 틱 끝
                     return
                 pc = w
                 continue

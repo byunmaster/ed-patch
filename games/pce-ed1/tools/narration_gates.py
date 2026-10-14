@@ -66,6 +66,7 @@ PAT = (
     (7, 0x11),
 )  # 메시지 적재 꼴(빌드가 찾는다)
 FLAG_PAGE2 = 0x01  # 인라인 플래그 — OFF 메시지의 첫 쪽 넘김(05) 다음부터 띄운다
+FLAG_VOICE0 = 0x02  # 인라인 플래그 — 쪽 마감 표의 0 을 **음성 재생이 실제로 시작된 때**(`PLAYSTART`)에 묶는다. 아직 안 시작했으면 시작을 기다린 뒤 창을 연다
 # ── ON 자동 넘김(마스터 10-06 「on 일 때는 음성에 맞춰 자동으로 넘어가고」) ──────────────────────
 # 대사 엔진(뱅크 0x6C)의 쪽 대기 루프는 매 프레임 `LDA $CF1A`(버튼) · `AND #$60` 으로 넘길지 정한다.
 # 그 `LDA $CF1A` 넷을 같은 길이의 `JSR AUTO_ORG` 로 바꾸고, 자막 모드(`AUTO_FLAG`)일 때 플레이 시계가
@@ -133,6 +134,59 @@ SITES: dict[int, dict[int, str]] = {
     203: {0: "single", 1: "single", 2: "single", 3: "single", 4: "single"},
     204: {0: "single", 1: "single"},
 }
+
+
+# 장면 2: 음성 호출은 원판 그대로 두되, 호출 자리에서 **재생 시작을 기다리는 틱을 건다**(`VOICE_ARM`·`PLAYSTART`). 소리가 실제로 나기 시작하는 시각은 환경마다 다르다
+# (이 에뮬은 호출 뒤 0.65초, 마스터 환경은 의자에 앉은 뒤 — 10-13). 설교 창은 `FLAG_VOICE0` 로 표의 0 을 그 시작에 묶는다(없으면 늦게 뜬다).
+VOICE0 = {2}
+GREET_VOICE = re.compile(rb"\x20\x15\x58....", re.DOTALL)  # 음성 호출(JSR $5815 + 인라인 4B) — 이 장면엔 하나
+
+
+GREET_END = {2: 9.35}  # 인사 창이 닫히는 때(음성 시작 기준 초) = 설교 창이 열리는 때(실측: 음성 9초부터 설교 문안, 에뮬 10-13)
+
+
+def _voice0_stub(sid: int, out: bytearray, sermon_load: bytes, sermon_tab: int) -> bytes:
+    """장면 2 게이트 자리 스텁 — 인사 창(음성 호출 바로 앞의 메시지 적재)을 음성 시작~`GREET_END` 초 동안, 이어 설교 창을 띄운다. 반환: `JSR` 피연산자 2B.
+    상주부 호출은 인라인 4B 뒤에 `BRA +11`(건너뜀) · 메시지 적재 11B 를 두는 원래 꼴 그대로(거리 7)."""
+    call = GREET_VOICE.search(bytes(out))
+    if not call:
+        raise GateError(f"scn{sid:03d}: 음성 호출이 없다")
+    ms = [m for m in MSG.finditer(bytes(out), 0, call.start()) if m.end() == call.start()]
+    if not ms:
+        raise GateError(f"scn{sid:03d}: 음성 호출 바로 앞에 인사 메시지가 없다")
+    gload = ms[0].group(0)
+    addr = (gload[1] | gload[5] << 8) - BASE
+    gtab = page_table(bytes(out[addr : addr + 0x400]), 0, False, [GREET_END[sid]])
+    gtab_at = BASE + len(out)
+    out += gtab
+    stub_at = BASE + len(out)
+
+    def call_entry(tab_at: int, load: bytes) -> bytes:
+        return bytes([0x20, ENTRY & 0xFF, ENTRY >> 8, 7, tab_at & 0xFF, tab_at >> 8, FLAG_VOICE0, 0x80, 11]) + load
+
+    out += call_entry(gtab_at, gload) + call_entry(sermon_tab, sermon_load) + b"\x60"
+    if len(out) > 0x2000:
+        raise GateError(f"scn{sid:03d}: 인사 스텁을 붙이면 블록이 뱅크(8KB)를 넘는다")
+    return stub_at.to_bytes(2, "little")
+
+
+def _patch_greet(sid: int, out: bytearray) -> None:
+    ms = list(GREET_VOICE.finditer(bytes(out)))
+    if len(ms) != 1:
+        raise GateError(f"scn{sid:03d}: 음성 호출이 {len(ms)}곳(하나여야)")
+    m = ms[0]
+    c, ps, arm = FRAMECNT, hook.PLAYSTART, hook.VOICE_ARM
+    stub_at = BASE + len(out)
+    inst = _resident_asm().labels["inst"]
+    out += bytes(
+        [0x20, inst & 0xFF, inst >> 8]  # JSR inst — 틱 트램펄린이 아직 없으면 건다
+        + [0xA9, 1, 0x8D, arm & 0xFF, arm >> 8]  # LDA #1 · STA arm
+        + [0xAD, c & 0xFF, c >> 8, 0x8D, ps & 0xFF, ps >> 8]  # PLAYSTART = 호출 때 카운터(재생 시작이 안 보일 때 값)
+        + [0xAD, (c + 1) & 0xFF, (c + 1) >> 8, 0x8D, (ps + 1) & 0xFF, (ps + 1) >> 8]
+    ) + bytes(out[m.start() : m.start() + 7]) + b"\x60"  # 음성 호출 · RTS
+    if len(out) > 0x2000:
+        raise GateError(f"scn{sid:03d}: 음성 스텁을 붙이면 블록이 뱅크(8KB)를 넘는다")
+    out[m.start() : m.start() + 7] = b"\x20" + stub_at.to_bytes(2, "little") + b"\xea" * 4
 
 
 FPS = 59.826  # PCE 프레임/초
@@ -258,6 +312,27 @@ def _resident_asm() -> Asm:
     a.op("STA", "abs", "b0")
     a.op("LDA", "abs", FRAMECNT + 1)
     a.op("STA", "abs", "b1")
+    a.op("LDA", "abs", "mode")
+    a.op("AND", "imm", FLAG_VOICE0)
+    a.op("BEQ", "rel", "b0ok")
+    a.label("vw")  # 음성 재생 시작 대기 — 틱이 `VOICE_ARM` 을 내리면 시작한 것. 8.5초(상위 바이트 차 2)를 넘기면 호출 때 값으로 간다
+    a.op("LDA", "abs", hook.VOICE_ARM)
+    a.op("BEQ", "rel", "have")
+    a.op("LDA", "abs", FRAMECNT + 1)
+    a.op("SEC")
+    a.op("SBC", "abs", hook.PLAYSTART + 1)
+    a.op("CMP", "imm", 2)
+    a.op("BCS", "rel", "have")
+    a.op("LDX", "imm", 1)
+    a.op("LDY", "imm", 0)
+    a.op("JSR", "abs", WAIT_FRAMES)
+    a.op("BRA", "rel", "vw")
+    a.label("have")
+    a.op("LDA", "abs", hook.PLAYSTART)
+    a.op("STA", "abs", "b0")
+    a.op("LDA", "abs", hook.PLAYSTART + 1)
+    a.op("STA", "abs", "b1")
+    a.label("b0ok")
     # 메시지 적재: lo = [거리+1] · hi = [거리+5] · 표시 루틴 = [거리+9](76/0B → $5B76 · 5B/06 → $5B5B)
     a.op("LDA", "abs", "cand")
     a.op("CLC")
@@ -325,6 +400,7 @@ def _resident_asm() -> Asm:
     a.op("JSR", "abs", WAIT_FRAMES)
     a.op("BRA", "rel", "wl")
     a.label("done")
+    a.op("STZ", "abs", hook.VOICE_ARM)  # 재생 시작 대기 끝(못 봤어도)
     a.op("LDA", "abs", "old51")  # 글자 찍는 속도를 설정대로
     a.op("STA", "abs", SPEED)
     a.op("RTS")
@@ -345,7 +421,7 @@ def _prep(a: Asm) -> None:
     쪽 글자는 설정과 무관하게 **즉시** 찍는다(`$C051` = 3 — 글자 찍는 속도 표 `$5B8A` 의 0프레임 칸, 끝나면 되돌린다)."""
     # sched: 전역 시각표(장면 한 토막 전체 — 여러 메시지의 모든 쪽) 시작. A=표 주소 하위 · X=상위. 지금부터 쪽마다 표의 시각(음성 시작에서 잰다)에
     # 자동으로 넘긴다 — 메시지 사이의 월드 시간(연출)은 그대로 흐르고, 늦으면 밀린 만큼 빨리 넘어간다. 표를 다 쓴 뒤 마지막 쪽이 넘어가면 스스로 끈다
-    a.label("sched")
+    a.label("sched")  # = prep 앞에 기준 시각·전역 표시를 더한 것(코드가 같아 prep 으로 흘려 보낸다 — 상주부 자리가 빠듯하다)
     a.op("STA", "abs", "tl")
     a.op("STX", "abs", "th")
     a.op("JSR", "abs", "inst")
@@ -353,27 +429,8 @@ def _prep(a: Asm) -> None:
     a.op("STA", "abs", "b0")
     a.op("LDA", "abs", FRAMECNT + 1)
     a.op("STA", "abs", "b1")
-    a.op("LDA", "abs", SPEED)
-    a.op("STA", "abs", "old51")
-    a.op("LDA", "imm", 3)
-    a.op("STA", "abs", SPEED)
-    a.op("LDA", "abs", "tl")
-    a.op("STA", "zp", 0xEC)
-    a.op("LDA", "abs", "th")
-    a.op("STA", "zp", 0xED)
-    a.op("LDA", "izp", 0xEC)
-    a.op("STA", "abs", "n")
-    a.op("INC", "abs", "tl")
-    a.op("BNE", "rel", "s1")
-    a.op("INC", "abs", "th")
-    a.label("s1")
-    a.op("STZ", "abs", "fin")
     a.op("LDA", "imm", 1)
     a.op("STA", "abs", "glob")
-    a.op("JSR", "abs", "npage")
-    a.op("LDA", "imm", 1)
-    a.op("STA", "abs", AUTO_FLAG)
-    a.op("RTS")
     a.label("prep")
     a.op("LDA", "abs", SPEED)
     a.op("STA", "abs", "old51")
@@ -436,10 +493,10 @@ def _prep(a: Asm) -> None:
     a.op("LDA", "abs", "ch")
     a.op("STA", "abs", AUTO_TH)
     a.op("RTS")
-    # inst: IRQ1 핸들러의 `JSR $E063`(`IRQ_SITE`)을 프레임 카운터 트램펄린으로 바꿔 끼운다 — 이미 바꿨으면 그대로. 읽기·쓰기 사이 IRQ 가 못 끼게 SEI.
+    # inst: IRQ1 핸들러의 `JSR $57A5`(`IRQ_SITE`)을 프레임 카운터 트램펄린으로 바꿔 끼운다 — 이미 바꿨으면 그대로. 읽기·쓰기 사이 IRQ 가 못 끼게 SEI.
     a.label("inst")
     a.op("LDA", "abs", IRQ_SITE + 1)
-    a.op("CMP", "imm", 0x63)  # 원래 `20 63 E0` — 하위가 0x63 이 아니면 이미 바꿨다
+    a.op("CMP", "imm", hook.IRQ_ORIG & 0xFF)  # 원래 `20 A5 57` — 하위가 다르면 이미 바꿨다
     a.op("BNE", "rel", "inst1")
     a.op("PHP")
     a.op("SEI")
@@ -620,6 +677,9 @@ def patch_block(sid: int, blk: bytes) -> tuple[bytes, int]:
             raise GateError(f"scn{sid:03d}: 쪽 마감 표 {len(tab)}B 를 붙이면 블록이 뱅크(8KB)를 넘는다")
         tab_at = BASE + len(out)
         out += tab
+        if sid in VOICE0:  # 설교 창 앞에 인사(시녀 창 문안)를 음성 시각에 맞춰 띄운다 — 호출 자리는 스텁 하나로
+            out[at : at + 7] = b"\x20" + _voice0_stub(sid, out, bytes(out[load : load + 11]), tab_at) + b"\xea" * 4
+            continue
         out[at : at + 7] = bytes(
             [
                 0x20,
@@ -628,10 +688,12 @@ def patch_block(sid: int, blk: bytes) -> tuple[bytes, int]:
                 dist,
                 tab_at & 0xFF,
                 tab_at >> 8,
-                FLAG_PAGE2 if page2 else 0,
+                (FLAG_PAGE2 if page2 else 0) | (FLAG_VOICE0 if sid in VOICE0 else 0),
             ]
         )
-    return bytes(out), len(picks)
+    if sid in VOICE0:
+        _patch_greet(sid, out)
+    return bytes(out), len(picks) + (sid in VOICE0)
 
 
 def load_messages() -> dict[int, dict[int, dict]]:

@@ -27,7 +27,7 @@ import narration_gates as G
 import typeset
 import voice
 
-OPEN_DELAY = {(2, 0): 4.30}  # (씬, 게이트) → 창이 열리는 지연(초) — 실측(에뮬 10-12 scn002: 프레임 카운터 257 — 인사 자막이 IRQ 틱이라 컷신을 안 막는다)
+OPEN_DELAY = {(2, 0): 0.0}  # (씬, 게이트) → 창이 열리는 지연(초) — 장면 2 는 표의 0 이 음성 재생 시작이라 0(재생이 시작되면 창이 열린다, 10-13)
 REVIEW_VOICE = common.REVIEW_DIR / "voice"
 
 
@@ -199,7 +199,7 @@ def gwin_rows(rows: list[dict], clips: list[dict]) -> None:
     """월드를 안 멈추는 대사창 모양 자막(`gwin_rt`) — 장면 2 인사. 음성 시작에서 잰 초."""
     import gwin_rt
 
-    for sid, spec in sorted((int(k), v) for k, v in gwin_rt.load().items()):
+    for sid, spec in sorted((int(k), v) for k, v in gwin_rt.build_specs().items()):
         bf = sorted(glob.glob(str(common.OUT_DIR / "text" / f"*_{sid:03d}.bin")))
         b = Path(bf[0]).read_bytes()
         v = G.VOICE_AT.search(b)

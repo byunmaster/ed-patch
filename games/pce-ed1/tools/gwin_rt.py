@@ -10,6 +10,7 @@
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -490,6 +491,11 @@ def frames(sec: float) -> int:
 
 def load() -> dict[str, dict]:
     return json.loads(SPEC.read_text("utf-8"))["scenes"] if SPEC.exists() else {}
+
+
+def build_specs() -> dict[str, dict]:
+    """빌드에 넣을 장면 — 기본은 없음. 이동 중 대사창은 깜빡여서 못 쓴다(마스터 10-12) — 「나중에 다시 확인」 대상이라 `ED_GWIN=1` 일 때만 켠다."""
+    return load() if os.environ.get("ED_GWIN") == "1" else {}
 
 
 def validate(spec: dict) -> list[str]:

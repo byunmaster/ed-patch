@@ -618,7 +618,7 @@ def _build(edits_path, iso: Path, cue: Path):
         n_dyn_blocks = 0
         for rel, c in sorted(by_rel.items()) if want("scn") else []:
             hit = {k for k in edits if k[0] == rel} or {b["id"] for b in c["blocks"]} & (
-                translated_ids | narr_ids | {int(x) for x in gwin_rt.load()} | sched_ids
+                translated_ids | narr_ids | {int(x) for x in gwin_rt.build_specs()} | sched_ids
             )
             if not hit:
                 continue
@@ -638,7 +638,7 @@ def _build(edits_path, iso: Path, cue: Path):
                 if b["id"] in sched_ids:  # 음성 장면 — ON 이어도 OFF 흐름 + 음성 + 전역 시각표(voice_sched)
                     blk, n = voice_sched.patch_block(b["id"], b["data"], blk)
                     n_sched += n
-                if want("narr") and str(b["id"]) in gwin_rt.load():  # 월드를 안 멈추는 대사창 모양 자막(장면 2 인사)
+                if want("narr") and str(b["id"]) in gwin_rt.build_specs():  # 월드를 안 멈추는 대사창 모양 자막(장면 2 인사)
                     blk, n = gwin_rt.patch_block(b["id"], blk)
                     n_gwin += n
                 if dyn:  # 동적 글리프 — 머리 점프를 꼬리 스텁으로(블록 열림 훅)
