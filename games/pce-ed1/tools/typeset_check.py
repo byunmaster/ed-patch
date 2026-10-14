@@ -357,7 +357,46 @@ def battle_rows():
     return rows, len(msgs), mon
 
 
+def punct_rows():
+    """공통 번역 규칙 2-11(앞말 뒤 `…` 다음에 말이 이어지면 반각 공백 · 문장 맨 앞 `…` 는 붙임)·1-7(`～` 뒤 마침표 금지) — script/ 의 모든 문자열."""
+    import glob
+
+    # 예외(마스터 10-12): 한 낱말을 음절마다 끊어 말하는 꼴(세…리…오…스…)은 붙여 쓴다 — 다음 음절 하나 바로 뒤에 또 `…`
+    ell = re.compile(r"…(?=[가-힣A-Za-z0-9])(?![가-힣A-Za-z0-9]…)")
+    tilde = re.compile(r"～\.")
+    qe = re.compile(r"[?!？！]…")  # 2-12: 물음표·느낌표와 …가 겹치면 …를 앞에(…?·…!·…!?)
+    rows = []
+
+    def walk(o, f, key):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                walk(v, f, k)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v, f, key)
+        elif isinstance(o, str):
+            for rx, name in ((ell, "2-11 … 뒤 공백"), (tilde, "1-7 ～ 뒤 마침표"), (qe, "2-12 ?!… 순서")):
+                for m in rx.finditer(o):
+                    if rx is ell and re.search(r"(^|[\n\f「『(])$", o[: m.start()]):
+                        continue  # 마스터 10-13: 문장 맨 앞 `…` 는 뒤를 붙인다(앞말 뒤 말줄임만 띄운다)
+                    if rx is ell:  # 예외(마스터 10-13): 같은 소리를 되풀이하는 의성어(흑…흑…흑…)는 붙인다
+                        pre = re.search(r"([가-힣]+)$", o[: m.start()])
+                        if pre and o.startswith(pre.group(1), m.end()):
+                            continue
+                    rows.append(f"{name}: {f}:{key} ⟨{o[max(0, m.start() - 6) : m.end() + 6]!r}⟩")
+
+    for f in sorted(glob.glob(str(common.GAME_DIR / "script" / "**" / "*.json"), recursive=True)):
+        walk(json.loads(open(f, encoding="utf-8").read()), os.path.relpath(f, common.GAME_DIR), "")
+    return rows
+
+
 if __name__ == "__main__":
+    if "--punct" in sys.argv:
+        bad = punct_rows()
+        for r in bad[:100]:
+            print("  " + r)
+        print(f"부호 규칙 위반 {len(bad)}건")
+        sys.exit(1 if bad else 0)
     if "--all" in sys.argv:
         sc = scene_rows()
         bt, nbt, mon = battle_rows()
