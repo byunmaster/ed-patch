@@ -146,12 +146,18 @@ DEX_REL, DEX_SPAN = (
 
 
 def _dex():
-    """도감 원문 줄(우리 줄 None — 미착수). 검사기 분모에 들이고, 화면 일본어 게이트는 **알림으로만** 센다(`check_jp_left.DEFERRED`)."""
-    import coverage_scan as C
+    """몬스터 도감 — 이름(정본)과 설명 88건. 원문은 원본 레코드에서 읽고(커밋 안 함), 우리 줄은 정본 이름 · `script/sys/dex.json`."""
+    import omake_font as O
 
-    d = common.track_data(DEX_REL, 5)
-    for off, text in C.runs(d[DEX_SPAN[0] : DEX_SPAN[1]], min_chars=2):
-        yield (f"dex:{DEX_REL}:{DEX_SPAN[0] + off:04X}", text, None, "dialog")
+    d, recs = O._dex_original()
+    kr_desc = _load(SCRIPT / "sys" / "dex.json")["desc"]
+    kr_names = O.dex_names()
+    for k, (i, j) in enumerate(recs):
+        rec = d[i:j]
+        name = rec[1 : rec.index(b"\x04")].decode("cp932")
+        body = rec[rec.index(b"\x01\x05") + 2 : -1].replace(b"\x01", b"").decode("cp932")
+        yield (f"dex-name:{k}", name, kr_names[k], "slot")
+        yield (f"dex:{k}", body, kr_desc[k], "dialog")
 
 
 def _subs():

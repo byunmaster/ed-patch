@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import common
 import font
 import freespace
+import omake_font
 import sysstrings as S
 
 from shared.disc import mode1
@@ -262,7 +263,7 @@ def check_keys(errors: list[str]) -> dict[str, int]:
     errors += [f"screens.json 열쇠가 아무 화면과도 안 맞는다: {k!r}" for k in stray]
 
     ex = _load("extras.json")
-    ek = {g["key"] for g in S.read_extras()}
+    ek = {g["key"] for g in S.read_extras()} | {"ask"}  # 「ask」 = 도감 장 선택 질문 — `omake_font.py` 가 따로 쓴다
     stray = [k for k in ex if not k.startswith("_") and k not in ek]
     seen["extras"] = len(stray)
     errors += [f"extras.json 열쇠가 아무 덩이와도 안 맞는다: {k!r}" for k in stray]
@@ -605,7 +606,7 @@ def apply(f, table, touched) -> dict:
         if len(items) != len(g["items"]):
             errors.append(f"extras[{g['key']}] 항목 {len(items)} ≠ 원본 {len(g['items'])}")
             continue
-        blob = b"".join(font.encode(t, table) + b"\0" for t in items)
+        blob = b"".join(omake_font.encode_item(t, table) + b"\0" for t in items)  # 오마케 문구 — 공백은 반각
         if len(blob) > g["room"]:
             errors.append(f"extras[{g['key']}] {len(blob)}B > {g['room']}B")
             continue

@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import names_corpus
 
-DEFERRED = ("dex:",)  # 미착수 출처(도감) — 숫자만 알린다. 번역이 들어가면 접두어를 뺀다
+DEFERRED = ()  # 미착수 출처 — 숫자만 알린다(도감은 10-14 번역이 들어가 접두어를 뺐다)
 JP = re.compile("[ぁ-ヺー-ヿ㐀-鿿ｦ-ﾟ]")
 
 
