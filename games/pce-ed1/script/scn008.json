@@ -1,0 +1,11 @@
+{
+ "_doc": "scn 8 번역 정본 — 열쇠는 messages.py key, 원문 대조는 work/derived/messages/scn008.json",
+ "messages": {
+  "fa2af39bb0b2b4d7": {
+   "t": "은/는 보물상자를 열었다. 상자에는"
+  },
+  "307c3a628f63c549": {
+   "t": "이/가 있었다."
+  }
+ }
+}

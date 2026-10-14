@@ -176,12 +176,32 @@ def parse(block: bytes) -> list[Message]:
     for s in sorted(cands):
         if s < covered:
             continue
+        s = _skip_table_tail(block, s, cands)
         msg = _parse_from(block, s)
         if msg is None or not any(isinstance(t, str) for t in msg.tokens) and msg.speaker is None:
             continue
         msgs.append(msg)
         covered = msg.end
     return _split_pinned(block, msgs)
+
+
+def _word(block: bytes, i: int) -> int | None:
+    """i 의 16비트 값이 이 블록 안을 가리키는 주소면 그 오프셋(주소 − BASE), 아니면 None."""
+    if i < 0 or i + 1 >= len(block):
+        return None
+    w = (block[i] | block[i + 1] << 8) - BASE
+    return w if 0 <= w < len(block) else None
+
+
+def _skip_table_tail(block: bytes, s: int, starts: set[int]) -> int:
+    """**오름차순 주소 표**(연속 4 워드, 전부 `s` 뒤를 가리킨다) 의 끝 워드가 메시지 머리로 딸려 들어온 경우 2B 건너뛴다.
+    표 끝 워드(`93 A1` = $A193)가 우연히 전각 한 글자(「藤」)로 읽혀 메시지 머리에 붙었다(scn095, 10-11) — 그 위에 번역을 쓰면
+    표 항목을 덮는다. 둘째 글자부터가 진짜 대본이다.
+    (⚠ 글자가 우연히 주소처럼 읽히는 것만으로는 안 된다 — 「お」`82 A8` = $A882 도 블록 안이고 앞이 오름차순 표여도 그렇다(scn032). 끝 워드가 실제 **메시지 머리 후보**를 가리킬 때만 표 꼬리다.)"""
+    ws = [_word(block, s - 6), _word(block, s - 4), _word(block, s - 2), _word(block, s)]
+    if all(w is not None and w >= s + 2 for w in ws) and ws == sorted(set(ws)) and ws[-1] in starts:
+        return s + 2
+    return s
 
 
 def _parse_from(block: bytes, s: int, stop: int | None = None) -> Message | None:

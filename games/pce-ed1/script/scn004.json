@@ -1,0 +1,59 @@
+{
+ "_doc": "scn 4 번역 정본 — 열쇠는 messages.py key, 원문 대조는 work/derived/messages/scn004.json",
+ "messages": {
+  "ed9751c9da096d44": {
+   "jp": "ネリアの港",
+   "lead": " ",
+   "tail": " ",
+   "raw": true
+  },
+  "dfc6e902518c3bbc": {
+   "jp": "ロンドの港",
+   "lead": "  ",
+   "tail": " ",
+   "raw": true
+  },
+  "b57f759c0b5850fe": {
+   "jp": "ラルファの砦",
+   "lead": "  ",
+   "tail": " ",
+   "raw": true
+  },
+  "a3f5b2d54ec93609": {
+   "jp": "スエルの村",
+   "lead": "  ",
+   "tail": " ",
+   "raw": true
+  },
+  "94b7e764e083653d": {
+   "jp": "ヨルドの港",
+   "lead": " ",
+   "tail": " ",
+   "raw": true
+  },
+  "6b17bba484261cc9": {
+   "jp": "ルドラの港",
+   "lead": " ",
+   "tail": " ",
+   "raw": true
+  },
+  "26789d89f5bae9cf": {
+   "jp": "リシェールの港",
+   "lead": "  ",
+   "tail": " ",
+   "raw": true
+  },
+  "94e0271e6ba2445e": {
+   "jp": "フィーンの砦",
+   "lead": "  ",
+   "tail": "  ",
+   "raw": true
+  },
+  "1fa6d6848a960fc7": {
+   "jp": "海賊島",
+   "lead": "　　",
+   "tail": "　　",
+   "raw": true
+  }
+ }
+}

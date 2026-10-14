@@ -85,6 +85,13 @@ class Typeset(unittest.TestCase):
         self.assertTrue(out.startswith(full))
         self.assertNotEqual(out[len(full)], 0x01, out.hex(" "))
 
+    def test_silence_page_is_not_orphan_punct(self):
+        """부호뿐인 한 줄짜리 쪽(침묵)은 통과, 글과 한 쪽에 든 부호 줄은 계속 ①."""
+        self.assertEqual(T.problems(["…………"]), [])
+        self.assertEqual(T.problems(["!…"]), [])
+        self.assertTrue(any(x.startswith("①") for x in T.problems(["가나다", "…"])))
+        self.assertTrue(any(x.startswith("①") for x in T.problems(["…", "가나다"])))
+
     def test_scene_dialogue_has_no_violation(self):
         self.assertEqual(T.scene_rows(), [])
 

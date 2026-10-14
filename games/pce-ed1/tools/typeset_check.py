@@ -173,9 +173,12 @@ def assert_no_loss(src, lines):
 
 
 def problems(lines, cuts=()):
+    """한 쪽 전체가 부호 한 줄뿐인 침묵 쪽(「…………」 — 마스터 10-11)은 고아가 아니다.
+    다른 글과 한 쪽에 든 부호 줄(줄 머리로 넘어간 부호)만 ①로 잡는다."""
+    silence = len([x for x in lines if x]) == 1 and len(lines) == 1
     out = []
     for i, ln in enumerate(lines):
-        if ln and all(c in PUNCT for c in ln):
+        if ln and all(c in PUNCT for c in ln) and not silence:
             out.append(f"① 고아 부호 {i + 1}줄 「{ln}」")
         if ln == "" and 0 < i < len(lines) - 1:
             out.append(f"② 빈 줄 {i + 1}줄")
