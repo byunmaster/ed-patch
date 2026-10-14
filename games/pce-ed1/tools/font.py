@@ -41,7 +41,15 @@ BANK_GLYPH_END = (
 #   글리프 정본이 733자라 끝 칸들은 어차피 빈다 — 상한만 그만큼 준다(`MAX_GLYPHS`). 풀기 루틴 뒤 꼬리 168B 는 비어 있다.
 CODE_SLOTS = 40
 CODE_BYTES = CODE_SLOTS * PACKED_BYTES  # 504
-MAX_GLYPHS = GLYPH_NBANKS * LEADS_PER_BANK * PER_LEAD - CODE_SLOTS  # 852
+MAX_GLYPHS = GLYPH_NBANKS * LEADS_PER_BANK * PER_LEAD - CODE_SLOTS  # 840
+# 🔴 **씬 블록별 동적 글리프**(마스터 10-11 「구조문제 해결」 (가)) — 정본 글자(고유명사·시스템·전투·조사·숫자)와 뽑아 둔 흔한 글자는 위
+#    정본 순서대로 **상주**하고, 상한 끝 `DYN_SLOTS` 칸은 **블록이 자기 몫을 싣고 들어오는 자리**다: 블록 머리의 첫 점프를 꼬리의
+#    스텁(`glyphdyn`)으로 돌려, 블록이 열릴 때 그 블록만 쓰는 드문 글자 비트맵을 이 칸들에 복사한다. 동적 칸은 같은 리드(F3) 안에서
+#    이어져 있고 시작 번호가 8 의 배수라 받침·ㄹ 비트맵을 바이트째 덮는다.
+DYN_SLOTS = 24
+DYN0 = MAX_GLYPHS - DYN_SLOTS  # 816 — 이 번호 앞이 상주(정본 순서), 뒤가 동적
+RESIDENT_MAX = DYN0
+assert DYN0 % 8 == 0 and DYN0 // PER_LEAD == (MAX_GLYPHS - 1) // PER_LEAD
 # 🔴 **반 칸(4px) 전진 변형 코드**(마스터 10-07) — 리드 F4~F7 = 「리드 F0~F3 의 같은 트레일 글자를 평소대로 그리고 +4px」.
 #    글리프 칸을 안 먹는다(글자는 그대로, 코드만 다르다). 글리프가 이 리드를 쓰기 시작하면(상한 넘김) 빌드가 멈춘다.
 #    렌더러 훅은 `hook._narrow_asm`(렌더러 입구 `$7047`).
@@ -385,8 +393,10 @@ def build_table(chars) -> tuple[dict[str, bytes], bytes]:
             "  (순서를 바꾸면 **이전 세이브의 이름이 깨진다** — 코드가 BRAM 에 남는다)"
         )
     order = list(canon)
-    if len(order) > MAX_GLYPHS:
-        raise ValueError(f"음절 {len(order)}자 — 상한 {MAX_GLYPHS}. 결정 B 재검토(status.md 8절)")
+    if len(order) > RESIDENT_MAX:
+        raise ValueError(
+            f"상주 글자 {len(order)}자 — 상한 {RESIDENT_MAX}(동적 {DYN_SLOTS}칸은 블록이 싣는다). 결정 B 재검토(status.md 8절)"
+        )
     table = {ch: code_of(i) for i, ch in enumerate(order)}
     bank = bytearray(GLYPH_NBANKS * 0x2000)
     for i, ch in enumerate(order):
