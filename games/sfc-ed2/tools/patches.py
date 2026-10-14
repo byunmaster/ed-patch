@@ -26,7 +26,8 @@ PATCHES = [  # (주소, 원본 바이트, 새 바이트) — 원본이 다르면
     (0xC0D080, bytes([0xC9, 0xD0]), SOUND_OPT_ADDR_HI),  # ldx #$D0C9 → #$FF08 (모노럴)
     (0xC0D083, bytes([0x3B, 0xD4]), bytes([0x3A, 0xD4])),  # ldy #$D43B → #$D43A
     (0xC0D086, bytes([0x05]), bytes([0x07])),  # lda #$0005 → #$0007 (8B)
-    (0xC0FF08, bytes([0xFF] * 8), bytes.fromhex("D3C9D7D9" "20202020")),  # 모노럴 — 원문(반각 가타카나 4자) + 공백 4
+    # 세이브·로드 목록 줄 — EP 여섯 자리 숫자 바로 뒤에 지명이 붙어 「０엘아스타」 로 읽힌다(원판은 전각 지명의 여백에 기댄 꼴). 지명 복사 시작을 한 칸 뒤($7F:CD3D)로 밀어 반각 공백 하나를 둔다
+    (0xCB6A33, bytes([0xFF]), bytes([0x00])),  # ldx #$FF → #$00 (지명 복사 시작 색인)
 ]
 
 # 트램펄린 — 대사 제어코드 `$17`(원본 핸들러는 `rts` 뿐, 단위 안 출현 1회) 을 **24비트 점프**로 바꾼다: `17 lo hi bank`.
@@ -170,6 +171,67 @@ for _code, (_row, _pic) in HALF_GLYPHS.items():
     for _i, _line in enumerate(_pic):
         _data[_row + _i] = int(_line.replace("#", "1").replace(".", "0"), 2)
     PATCHES.append((HALF_BASE + (_code - 0x20) * 16, bytes(16), bytes(_data)))
+
+# 아이템 이름 15B — 이름 버퍼 `$1201~$120F`(15B, 끝 토큰 `06` 은 `$120F`)에 한 바이트짜리 반각 공백 때문에 15B 가 된 이름(성스러운 지팡이 …)이 안 든다.
+# 이름 표를 16B 칸 새 표로 옮기고(빌드가 `ITEM_TABLE` 을 쓴다) 칸 안에 끝 토큰을 직접 둔다: 복사 15B(`$C1:3365`) · 곱셈 칸 16(`$C1:334D`) · `$120F=06` 쓰기 삭제(5B nop).
+# 15B 를 꽉 채운 이름은 `06` 이 없으므로 소비자 둘(`$C0:DA00` 줄 버퍼 16B · `$C0:DD1D` 17B)의 「끝 토큰 검사」를 스텁으로 바꿔 **색인 14 에서도 멈추게** 한다.
+ITEM_STUB_A = 0xC0FC40
+ITEM_STUB_B = 0xC0FC60
+FLUSH_STUB = 0xC0FC80
+
+
+def _flush() -> bytes:
+    """`$C0:9454` 직전에 줄 끝 불완전 타일을 DMA 에 넣는다 — `$1323`=1 이면 마지막 글자의 남은 4px 가 이미 다음 캔버스 타일(`$1358`)에 들어 있다(`$C0:92F3` 이 N·N+1 두 타일에 쓴다)
+    그저 완성 타일 수에 안 세어져 버려졌을 뿐이다. 8비트 A·X, 호출은 JSL — 끝에서 원래 두 명령(`lda $119F · sta $119C`)을 실행하고 RTL."""
+    body = bytes([0xEE, 0x58, 0x13])  # inc $1358
+    head = bytes([0xAD, 0x23, 0x13, 0xF0, len(body)])  # lda $1323 · beq done
+    return head + body + bytes([0xAD, 0x9F, 0x11, 0x8D, 0x9C, 0x11, 0x6B])  # done: lda $119F · sta $119C · rtl
+
+
+_FLUSH = _flush()
+_STUB_A = bytes.fromhex("C906D0034C08DAE00ED0 04C84C1ADA4C04DA".replace(" ", ""))
+_STUB_B = bytes.fromhex("C906D0034C25DDE00ED009C8A92097 97C84C3FDD4C21DD".replace(" ", ""))
+PATCHES += [
+    (0xC13365, bytes([0x0E]), bytes([0x0F])),  # cpx #$000E → #$000F (복사 바이트 수)
+    (0xC1334D, bytes([0x0E]), bytes([0x10])),  # lda #$0E → #$10 (표 칸 크기)
+    (0xC13369, bytes.fromhex("A9068D0F12"), b"\xea" * 5),  # lda #$06 · sta $120F — 끝 토큰은 이제 표에 있다
+    (0xC0DA00, bytes.fromhex("C906F004"), bytes([0x4C, ITEM_STUB_A & 0xFF, (ITEM_STUB_A >> 8) & 0xFF, 0xEA])),
+    (0xC0DD1D, bytes.fromhex("C906F004"), bytes([0x4C, ITEM_STUB_B & 0xFF, (ITEM_STUB_B >> 8) & 0xFF, 0xEA])),
+    # 글줄 출력기 `$C0:9395` 끝(`$C0:9454`): 전각 글자(12px)가 8px 타일에 걸쳐 쌓이므로 줄 끝에 **4px 짜리 불완전 타일**(`$1323`=1)이 남으면 그 타일을 버렸다 —
+    # 줄 끝에 반각 공백을 둔 원본은 안 보이던 결함이고, 정본 표기 15B 이름(92px = 11타일 + 4px)은 마지막 글자 절반이 잘린다. 끝에서 `$1358` 을 하나 올려 그 타일도 내보낸다.
+    (0xC09454, bytes.fromhex("AD9F118D9C11"), bytes([0x22, FLUSH_STUB & 0xFF, (FLUSH_STUB >> 8) & 0xFF, FLUSH_STUB >> 16, 0xEA, 0xEA])),
+    (FLUSH_STUB, b"\xff" * len(_FLUSH), _FLUSH),
+    # 목록·장비 창 셋(`$C0:D916` 4줄 · `$C0:DA7E` 7줄 · `$C0:DF23` 필드 사용)의 폭을 한 칸 넓힌다 — 이름 12타일이 오른쪽 테두리에 안 겹치게
+    (0xC0D918, bytes([0x0B]), bytes([0x0C])),
+    (0xC0DA80, bytes([0x0B]), bytes([0x0C])),
+    (0xC0DF25, bytes([0x0B]), bytes([0x0C])),
+    # 장비 창 이름 복사(`$C0:D7BF` 계열 넷)는 복사 앞에 `$120F` 를 반각 공백으로 덮는다 — 끝 토큰 `06` 자리를 지우려는 것이나, 15B 이름은 그 자리가 마지막 글자 하위 바이트다(깨진 글자 「壁」).
+    # 덮기를 없앤다: 짧은 이름이면 `06` 이 줄에 복사되지만 출력기는 `$18` 미만 제어 바이트를 건너뛴다.
+    (0xC0D7F0, bytes.fromhex("A9208D0F12"), b"\xea" * 5),
+    (0xC0D835, bytes.fromhex("A9208D0F12"), b"\xea" * 5),
+    (0xC0D87A, bytes.fromhex("A9208D0F12"), b"\xea" * 5),
+    (0xC0D8BF, bytes.fromhex("A9208D0F12"), b"\xea" * 5),
+    (ITEM_STUB_A, b"\xff" * len(_STUB_A), _STUB_A),
+    (ITEM_STUB_B, b"\xff" * len(_STUB_B), _STUB_B),
+]
+
+# 세이브·로드 목록 줄 열 맞춤(마스터 10-13 「1 서장 L 1 E 레벨…」) — 슬롯 번호 · 장 라벨 · L 레벨 · E · EP 7자리 · 지명을 한 칸씩 띄운다.
+# 줄 버퍼 `$7F:CD28`(35B, +0 = `1F`): +1 슬롯 · +3~6 장 라벨(2칸 4B) · +8 `L` · +9~10 레벨 · +12 `E` · +13~19 EP 7자리 · +20 공백 · +21~ 지명(6자 12B 까지).
+# 반각 한 칸 8px · 전각 12px · 줄 한도 224px: 8+8+24+8+8+16+8+8+56+8 = 152px → 지명 72px(6자) 딱 맞음. EP 7자리는 원판이 7번째 자리를 `E` 칸에 덮어 쓰던 것을 칸을 따로 둔 것.
+PATCHES += [
+    (0xCB69A2, bytes([0x2A]), bytes([0x2B])),  # 장 라벨 복사 목적지 `$CD2A` → `$CD2B`(+3)
+    (0xCB69A5, bytes([0x05]), bytes([0x03])),  # 장 라벨 복사 길이 6B → 4B(`mvn` A = 길이-1)
+    (0xCB69D1, bytes([0x32]), bytes([0x31])),  # 레벨 십의 자리 `$CD32` → `$CD31`(+9)
+    (0xCB69D8, bytes([0x33]), bytes([0x32])),  # 레벨 일의 자리 `$CD33` → `$CD32`
+    (0xCB69DE, bytes([0x31]), bytes([0x30])),  # `L` `$CD31` → `$CD30`(+8)
+    # EP: 원판은 `$1B2D|$1B2E` 가 비면 `E`(`$CD35`) 아니면 7번째 자리 숫자를 그 칸에. → `E` 는 `$CD34`, 7번째 자리(`$1B2E`)는 `$CD35`(숫자 여섯은 원래대로 `$CD36~3B`)
+    (0xCB6A9F, bytes.fromhex("AD2D1B0D2E1BC920F009AD2E1B8F35CD7F8006A9458F35CD7F"),
+     bytes.fromhex("AD2E1B8F35CD7FA9458F34CD7F") + b"\xea" * 12),
+    # 🔴 줄이 224px(28타일)를 넘으면 출력기가 넘친 타일을 다음 타일 줄 자리(+28)에 써서 아랫 타일이 깨진다(둘째·셋째 줄 슬롯 번호). 원판은 지명 뒤에 반각 공백(8px)을 달고 끝 표시를 썼는데 6자 지명이면 224px 를 4px 넘는다.
+    # 지명 복사 루프(`$CB:6A34~51`)를 고쳐 ① 지명 뒤 공백을 없애고(끝 표시만) ② 12B(6자)에서 자른다 — 7자 길 이름(큐베라～프로스)은 끝 글자가 빠진다.
+    (0xCB6A34, bytes.fromhex("B7ACC920D00280 08E89F3CCD7FC880F0E8A9209F3CCD7FE8A9009F3CCD7F".replace(" ", "")),
+     bytes.fromhex("B7ACC920F00AE89F3CCD7FC8E00CD0F0E8A9009F3CCD7F") + b"\xea" * 7),
+]
 
 EXCEPT = [(common.snes2off(a), common.snes2off(a) + len(n)) for a, _o, n in PATCHES]
 FONT_OUT = common.snes2off(FONT_BANK << 16)

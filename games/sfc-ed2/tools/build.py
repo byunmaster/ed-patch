@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 import common
 import hangul_font
+import hud_tiles
 import kr
 import monsters
 import patches
@@ -83,6 +84,11 @@ LOCAL_FREE = {
     0xD4: [(0xCE60, 0xFFFF)],
     0xD5: [(0xDEF0, 0xFFFF)],
 }
+
+
+ITEM_TABLE = "$C1772D"
+ITEM_TABLE_BANK = 0xD4
+ITEM_NAME_MAX = 15
 
 
 class Local:
@@ -228,6 +234,47 @@ def ptrs16_canon_chars(src: bytes, key: str, v: dict) -> set[str]:
     return out
 
 
+def _fullwidth(t: str) -> str:
+    return "".join(chr(ord(c) + 0xFEE0) if "!" <= c <= "~" else c for c in t)
+
+
+def canon_lookup_jp(jp: str, ctx: str | None = None) -> str | None:
+    """원문 글자(ROM 에서 읽은 것) → 정본 값. 롬 글리프표가 전각 영문을 반각으로 읽으니 전각 꼴도 시도하고, 자리 구분(`원문@자리`)이 있으면 그것도 본다."""
+    import canon
+
+    for k in (jp, _fullwidth(jp)):
+        for kk in ((f"{k}@{ctx}", k) if ctx else (k,)):
+            r = canon.lookup(kk, None, "ed2")
+            if r:
+                return r
+    return None
+
+
+def ui_row(src: bytes, addr: int, i: int, r: str, ctx: str | None, jp_over: dict | None = None) -> str:
+    """ui 줄 — `{c}` 가 있으면 그 줄의 원문 글자로 정본을 조회해 채운다."""
+    if "{c}" not in r:
+        return r
+    blk = ui.parse(src, addr)
+    jp = (jp_over or {}).get(str(i)) or ui.row_text(src, blk["raw"][i]).strip(" 　")  # `jp`: 1바이트 반각 가타카나 줄처럼 글자표로 못 읽는 줄의 조회 열쇠
+    c = canon_lookup_jp(jp, ctx)
+    if not c:
+        raise SystemExit(f"UI {common.fmt(addr)}[{i}]: 정본에 「{jp}」 가 없다 — 관리자에게 후보로")
+    return r.replace("{c}", c)
+
+
+def canon_text(src: bytes, key: str, v: dict) -> str:
+    """cells·spans 의 문안 — `canon: true` 면 정본(canon ui)에서 읽어 `{c}` 자리에 넣는다(게임 폴더에 값을 두지 않는다). 원문은 `from`(없으면 자기 자리) 바이트에서 읽는다."""
+    text = v["kr"]
+    if not v.get("canon"):
+        return text
+    fa = common.snes2off(int(v.get("from", key).lstrip("$"), 16))
+    jp = segs.notation(src, fa, fa + v.get("from_n", v["n"])).strip(" 　")
+    c = canon_lookup_jp(jp, v.get("ctx"))
+    if not c:
+        raise SystemExit(f"{key}: 정본에 「{jp}」 가 없다 — 관리자에게 후보로")
+    return text.replace("{c}", c)
+
+
 def records_canon_chars(src: bytes, key: str, v: dict) -> set[str]:
     import canon
 
@@ -255,13 +302,13 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
     chars = kr.Chars()
     for v in seg_map.values():
         chars |= kr.chars_of(resolve_josa(v["kr"], names))
-    for v in ui_map.values():
-        for r in v["rows"]:
-            chars |= kr.chars_of(r) if r is not None else set()
-    for v in kr.load("cells").values():
-        chars |= kr.chars_of(v["kr"])
-    for v in kr.load("spans").values():
-        chars |= kr.chars_of(v["kr"])
+    for k, v in ui_map.items():
+        for i, r in enumerate(v["rows"]):
+            chars |= kr.chars_of(ui_row(src, int(k.lstrip("$"), 16), i, r, v.get("ctx"), v.get("jp"))) if r is not None else set()
+    for k, v in kr.load("cells").items():
+        chars |= kr.chars_of(canon_text(src, k, v))
+    for k, v in kr.load("spans").items():
+        chars |= kr.chars_of(canon_text(src, k, v))
     for key, v in kr.load("records").items():
         chars |= records_canon_chars(src, key, v)
     if kr.load("monsters"):
@@ -323,6 +370,8 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
                 jpn = ui.row_text(src, raw).strip(" 　")
                 t = canon.lookup(jpn, None, "ed2") if jpn else None
                 r = f"<1f> {t} " if t else None
+            if r is not None:
+                r = ui_row(src, addr, i, r, v.get("ctx"), v.get("jp"))
             rows.append(kr.encode(resolve_josa(r, names), alloc) if r is not None else raw.rstrip(b" "))
         dead.append((common.snes2off(addr), common.snes2off(addr) + 5 + blk["rows"] * blk["stride"]))
         try:
@@ -379,6 +428,9 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
     for key, v in sorted(kr.load("records").items()):
         base = common.snes2off(int(key.lstrip("$"), 16))
         st, cnt = v["stride"], v["count"]
+        moved = key == ITEM_TABLE  # 아이템 이름 표는 16B 칸(이름 15B + 여분) 새 표로 옮긴다 — 14B 칸에 안 드는 이름 때문(마스터 10-13)
+        newtab = bytearray() if moved else None
+        lim = ITEM_NAME_MAX if moved else st
         if v.get("h") != segs.src_hash(src, base, base + st * cnt):
             raise SystemExit(f"레코드 표 {key}: 원문 해시 불일치 — textmap 이 낡았다")
         for i in range(cnt):
@@ -391,19 +443,57 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
                 import canon
 
                 text = canon.lookup(jp, v.get("cat"), "ed2") if jp else None
+            if moved:
+                newtab += bytes(src[a : a + st]) + b"\x06\x00"  # 기본 = 원본 14B 칸 + 끝 토큰(코드가 `$120F` 에 쓰던 것) + 여분
             if not text:
                 if jp:
                     stats.setdefault("missing", []).append((key, i, jp))
                 continue
             data = kr.encode(resolve_josa(text, names), alloc)
-            if len(data) > st:
-                stats.setdefault("toolong", []).append((key, i, text, len(data), st))
+            if len(data) > lim:
+                stats.setdefault("toolong", []).append((key, i, text, len(data), lim))
+                continue
+            if moved:
+                if len(data) == ITEM_NAME_MAX:  # 15B — 끝 토큰 없이 칸을 꽉 채운다(소비자 패치가 14번 색인에서 멈춘다)
+                    newtab[-16:] = data + b"\x00"
+                else:
+                    pad = st - len(data)
+                    newtab[-16:] = b"\x80\x00" * (pad // 2) + data + (b" " if pad % 2 else b"") + b"\x06\x00"
+                stats["records"] = stats.get("records", 0) + 1
                 continue
             pad = st - len(data)
-            left = b"\x80\x00" * (pad // 2) + (b" " if pad % 2 else b"")
-            rom[a : a + st] = left + data
+            # 왼쪽은 전각 공백 쌍만 둔다(출력기가 앞쪽 `80 00` 쌍을 건너뛰어 왼쪽 정렬로 보인다). 홀수 한 바이트는 **뒤**에 둔다 —
+            # 앞에 두면 쌍 건너뛰기가 거기서 멈춰 이름이 반각 한 칸 밀린다(「천 옷」)
+            left = b"\x80\x00" * (pad // 2)
+            rom[a : a + st] = left + data + (b" " if pad % 2 else b"")
             writes.append((a, a + st))
             stats["records"] = stats.get("records", 0) + 1
+        if moved:
+            ta = local.put(ITEM_TABLE_BANK, bytes(newtab))
+            for addr3, lo in ((0xC13320, ta), (0xC1333B, ta + 76 * 16)):  # `ldx #lo` · `ldx #hi` · `ldx #bank` (id<100 · id≥100 의 시작 색인 76)
+                for k, val in enumerate((lo & 0xFF, lo >> 8, ITEM_TABLE_BANK)):
+                    o = common.snes2off(addr3 + 5 * k)
+                    rom[o : o + 1] = bytes([val])
+                    writes.append((o, o + 1))
+
+    # 3d2. HUD 그림 타일 — 인물 이름(아트라스 …)·「あと」 라벨: 갈무리7 8×8 타일을 롬 타일 세트에 굽고 이름 표(`$C0:B525`)를 다시 쓴다
+    import canon
+
+    tiles, table = hud_tiles.plan(lambda jp: canon.lookup(jp, None, "ed2"))
+    label = canon.lookup("あと@경험치표시", None, "ed2")
+    if not label:
+        raise SystemExit("HUD 라벨: 정본에 「あと@경험치표시」 가 없다")
+    tiles.update(hud_tiles.label_tiles(label))
+    for t, data in sorted(tiles.items()):
+        o = hud_tiles.tile_off(t)
+        rom[o : o + 32] = data
+        writes.append((o, o + 32))
+    o = common.snes2off(hud_tiles.NAME_TABLE)
+    if bytes(src[o : o + 16]) != hud_tiles.NAME_TABLE_ORIG:
+        raise SystemExit("HUD 이름 표가 원본과 다르다")
+    rom[o : o + 16] = table
+    writes.append((o, o + 16))
+    stats["hud_tiles"] = len(tiles)
 
     # 3e. 몬스터 이름 풀 — 군(길이 접두 문자열 묶음)을 정본 이름으로 다시 만들어 뱅크 빈 자리에 두고 포인터 표만 고친다
     mon = kr.load("monsters")
@@ -438,7 +528,8 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         n = v["n"]
         if v.get("h") != segs.src_hash(src, a, a + n):
             raise SystemExit(f"칸 {key}: 원문 해시 불일치 — textmap 이 낡았다")
-        data = kr.encode(resolve_josa(v["kr"], names), alloc)
+        text = canon_text(src, key, v)
+        data = kr.encode(resolve_josa(text, names), alloc)
         if len(data) != n:
             raise SystemExit(f"칸 {key}: 번역 {len(data)}B ≠ 원문 {n}B — <pad:{n}> 로 맞춘다")
         rom[a : a + n] = data
@@ -451,7 +542,8 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         n = v["n"]
         if v.get("h") != segs.src_hash(src, a, a + n):
             raise SystemExit(f"문자열 {key}: 원문 해시 불일치 — textmap 이 낡았다")
-        data = kr.encode(resolve_josa(v["kr"], names), alloc)
+        text = canon_text(src, key, v)
+        data = kr.encode(resolve_josa(text, names), alloc)
         if len(data) > n:
             raise SystemExit(f"문자열 {key}: 번역 {len(data)}B > 원문 {n}B — 줄이거나 이전(relocate)해야 한다")
         rom[a : a + n] = data + bytes([NOOP]) * (n - len(data))
@@ -505,6 +597,15 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             stats["seg_local"] = stats.get("seg_local", 0) + 1
         else:
             if b - a < 4:
+                # 4바이트 미만이라 트램펄린은 못 둔다 — 이 문자열을 즉치 포인터(`lda #lo/hi/bank → $A6~$A8`)로 부르는 자리를 **새 자리로 돌린다**(끝 토큰 `06`/`00` 은 원문에서 가져온다)
+                sites = relocate.a6_sites(src, common.off2snes(a))
+                if sites and src[b] in (0x00, 0x06):
+                    new = far.put(data + bytes([src[b]]))
+                    for lo, hi, bk in sites:
+                        rom[lo], rom[hi], rom[bk] = new & 0xFF, (new >> 8) & 0xFF, new >> 16
+                        writes += [(lo, lo + 1), (hi, hi + 1), (bk, bk + 1)]
+                    stats["seg_reloc"] = stats.get("seg_reloc", 0) + 1
+                    continue
                 raise SystemExit(f"구간 {key}: 원문 {b - a}B 라 트램펄린을 못 둔다 — 번역 {len(data)}B 를 {b - a}B 안으로 줄여야 한다")
             ret = common.off2snes(b)
             fa = far.put(data + bytes([TRAMP, ret & 0xFF, (ret >> 8) & 0xFF, ret >> 16]))

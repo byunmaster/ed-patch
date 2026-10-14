@@ -61,6 +61,8 @@ def allocate(chars, slots=None, lenient=False) -> dict[str, int]:
     freq = chars if isinstance(chars, dict) else {}
     cs = sorted(set(chars) - {FULLWIDTH_SPACE})
     slots = list(slots) if slots is not None else list(range(FIRST_FREE, LAST_SLOT + 1))
+    # 코드 하위 바이트가 `06` 인 슬롯은 쓰지 않는다 — 목록 창의 이름 출력기(`$C0:D9FB`·`$C0:DD18`)가 `06` 을 끝 토큰으로 읽고 앞 바이트가 `$80` 일 때만 글자의 일부로 본다(「길모아의 무지개」 가 `83 06` 에서 잘렸다)
+    slots = [i for i in slots if i & 0xFF != 0x06]
     DROPPED.clear()
     if len(cs) > len(slots):
         if not lenient:
