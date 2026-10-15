@@ -41,6 +41,7 @@ import omake_art
 import omake_font
 import syscard_screen
 import opening_sub
+import credits_kr
 import staffroll
 import sysbuild
 import translate
@@ -361,19 +362,12 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
         p.append(("fsel blit call", *_main(0x78, 0x08F8), b"\x20\x74\x89", b"\x20\x01\x87"))
         p.append(("fsel parity", *_main(0x78, 0x0975), b"\x98\x4a\x29\x01", b"\xad\xfa\x86\xea"))
     if want("cast"):
-        # 6. 「게임 시작」 뒤 성우 크레딧의 표제 `声優出演` → `ＣＡＳＴ`(마스터 확정 2026-09-23 —
-        #    이름 13개는 실존 성우라 원문 유지, 표제만). 크레딧 모듈(rel 514)이 이 SJIS 평문
-        #    (rel 517)을 BIOS 글꼴(EX_GETFNT)로 직접 그리므로 **같은 길이의 전각 영문**으로 바꾸면
-        #    코드 수정 없이 같은 자리에 나온다. 뒤의 `81 40 00`(전각 공백·종단)은 그대로 둔다.
-        p.append(
-            (
-                "cast title 声優出演→ＣＡＳＴ",
-                517,
-                0x0420,
-                "声優出演".encode("sjis"),
-                "ＣＡＳＴ".encode("sjis"),
-            )
-        )
+        # 6. 「게임 시작」 뒤 성우 크레딧의 표제 `声優出演`. 마스터 확정 2026-09-23 은 `ＣＡＳＴ`(한글이 안 되는 줄 알았다)였으나 되는 길을 찾았다(마스터 10-16) —
+        #    크레딧 모듈 안 자체 글리프 루틴(`credits_kr`). ED_CAST_EN=1 이면 옛 전각 영문.
+        if os.environ.get("ED_CAST_EN"):
+            p.append(("cast title 声優出演→ＣＡＳＴ", 517, 0x0420, "声優出演".encode("sjis"), "ＣＡＳＴ".encode("sjis")))
+        else:
+            p.extend(credits_kr.patches())
     if want("hook"):
         # 4. EX_GETFNT 호출부(본 프로그램 4곳) → `hook.HOOK_ADDR`($2300)
         tgt = hook.HOOK_ADDR.to_bytes(2, "little")
@@ -569,6 +563,7 @@ def _build(edits_path, iso: Path, cue: Path):
     # 글리프 표 = 번역 정본 전체 + PoC 편집의 음절(결정적). 표를 따로 두지 않는다(폰트 전략 §3.2)
     # 🔴 상주 표 = 늘 상주해야 하는 글자(`glyphdyn.forced_chars`) + 정본에 든 본문 글자. 정본에 없는 본문 글자는 블록이 싣는다(동적 칸).
     chars = glyphdyn.forced_chars() | (translate.all_glyph_chars() & set(font._order_canon()))
+    chars |= credits_kr.chars()  # 오프닝 성우 크레딧 글자(글리프 표는 모듈 안 0 구역에 따로 싣는다 — credits_kr)
     raw = json.loads(edits_path.read_text()) if edits_path else []
     chars |= {ch for e in raw for ch in e.get("replace_text", "") if font.needs_glyph(ch)}
     table, glyph_bank = font.build_table(chars)
