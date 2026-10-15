@@ -1,10 +1,10 @@
-"""엔딩 스태프롤(rel 909) — **사람 이름만 원문**, 나머지(역할·배역·회사·제목)는 전각 영문.
+"""엔딩 스태프롤(rel 909) — 분야 라벨·배역·제목은 **한글**(마스터 10-16), 사람·회사 이름은 원문(옛 전각 영문판은 `ED_STAFF_EN=1`).
 
     python3 games/pce-ed1/tools/staffroll.py          # 새 스태프롤 미리보기 + 폭·바이트 검사
 
-마스터 확정 2026-09-24: 「스태프 역할명은 전각영문으로 해도 충분할듯」. 한글이 아닌 이유 —
+옛 판(2026-09-24): 「스태프 역할명은 전각영문으로 해도 충분할듯」 — 한글을 못 넣는 줄 알았다:
 엔딩 모듈(rel 898)은 BIOS `EX_GETFNT` 로 직접 그리고 우리 글리프 훅이 거기엔 없다
-(오프닝 성우 크레딧 표제를 `ＣＡＳＴ` 로 비켜 간 것과 같은 판단).
+(오프닝 성우 크레딧 표제를 `ＣＡＳＴ` 로 비켜 간 것과 같은 판단). **그러나 호출부 둘의 피연산자를 돌려 자체 후킹을 두면 된다**(아래 `hook_code`, 마스터 10-16).
 
 구조(엔딩 모듈 +0x5A25~+0x62E5, 2,241B, `1A` 종단):
     줄 = … `0D 0A`, `09` = 탭(다음 32px 칸), `1B`/`1D` = 강조 여닫이, 그 밖 = **2바이트 SJIS**
@@ -16,12 +16,14 @@
    **단어 수준 라벨**이다(루트 「저작권」: 단어 라벨은 코드 유지 OK).
 """
 
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import common
+import font
 
 MODULE_REL = 898
 OFF, SIZE = 0x5A25, 2241
@@ -151,7 +153,263 @@ def fit(line: bytes) -> bytes:
     return line
 
 
+# ── 한글판(제품 기본, 마스터 10-16 「스태프롤 한글 적용하자」 · ED_STAFF_EN=1 이면 옛 전각 영문) ─────────────────────────────────────────────────────────────────────────
+# 마스터 10-15 「ed2 와 일관성: 분야 라벨 한글 · 성우 배역 이름은 정본 한글 · 사람·회사 이름은 원문」. pce-ed2 `ending.py` 와 같은 길 — 렌더러가 글자마다 부르는
+# BIOS `EX_GETFNT`(`JSR $E060`, 모듈 +0x56B3·+0x57CC) 의 피연산자를 우리 루틴으로 돌린다: 리드 `F0` 이면 자체 표(24B/자)에서 `($FA)` 로 복사, 아니면 `JMP $E060`.
+KR = not os.environ.get("ED_STAFF_EN")
+LEAD, TRAIL0 = font.LEAD0, font.TRAIL0
+SEAM_OFFS = (0x56B4, 0x57CD)  # `20 60 E0` 의 피연산자
+SEAM_OLD = b"\x60\xe0"
+BIOS_GETFNT = 0xE060
+KO_ROLE = {  # 분야 라벨(굵은 줄) — 회사·팀·스튜디오 이름은 원문 그대로 둔다
+    "制作・総指揮": "제작・총지휘",
+    "オリジナル・プログラム": "오리지널 프로그램",
+    "プログラム": "프로그램",
+    "サウンド": "사운드",
+    "作曲": "작곡",
+    "編曲": "편곡",
+    "レコーディング": "레코딩",
+    "録音": "녹음",
+    "サウンドプロデューサー": "사운드 프로듀서",
+    "ナレーション協力": "내레이션 협력",
+    "グラフィック": "그래픽",
+    "グラフィック・チーフ": "그래픽 치프",
+    "絵コンテ": "콘티",
+    "作画監督": "작화 감독",
+    "原画": "원화",
+    "ビジュアル・デモ": "비주얼 데모",
+    "ゲーム・グラフィック": "게임 그래픽",
+    "オリジナル・デザイン": "오리지널 디자인",
+    "デザイン・スタッフ": "디자인 스태프",
+    "オリジナル・シナリオ": "오리지널 시나리오",
+    "シナリオ再構成": "시나리오 재구성",
+    "テンポラリー・アドバイザー": "템포러리 어드바이저",
+    "スペシャル・サンクス": "스페셜 땡스",
+    "制作進行": "제작 진행",
+    "ディレクター": "디렉터",
+    "プロデューサー": "프로듀서",
+    "スーパーバイザー": "슈퍼바이저",
+    "エグゼクティブプロデューサー": "이그제큐티브 프로듀서",
+}
+KO_TITLE = ("드래곤 슬레이어", "영웅전설")
+KO_CAST_EXTRA = {"ナレーション": "내레이션", "大盗賊ゲイル": "대도적 게일"}
+
+
+def _cast_ko(jp: str) -> str:
+    if jp in KO_CAST_EXTRA:
+        return KO_CAST_EXTRA[jp]
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+    import canon
+
+    for cat in ("person", "speaker", "ui"):
+        r = canon.lookup(jp, cat, "ed2")  # ED1·ED2 공통 세계 — 사전 입구는 canon 하나
+        if r:
+            return r
+    raise KeyError(jp)
+
+
+def _enc_ko(text: str, idx: dict) -> bytes:
+    """한글 문안 → SJIS 2바이트열 — 한글은 리드 F0 + 트레일(0x24+번호), 공백은 전각, 가운뎃점은 `81 45`."""
+    out = bytearray()
+    for ch in text:
+        if ch == " ":
+            out += b"\x81\x40"
+        elif ch == "・":
+            out += b"\x81\x45"
+        else:
+            out += bytes([LEAD, TRAIL0 + idx[ch]])
+    return bytes(out)
+
+
+def _ko_strings() -> list[str]:
+    s = list(KO_ROLE.values()) + list(KO_TITLE) + [_cast_ko(k) for k in CAST]
+    return s
+
+
+def glyph_chars() -> list[str]:
+    return sorted({ch for t in _ko_strings() for ch in t if ord(ch) >= 0x80 and ch != "・"})
+
+
+def build_kr() -> bytes:
+    idx = {ch: i for i, ch in enumerate(glyph_chars())}
+    src = original()
+    body = src.split(b"\x1a", 1)[0]
+    lines = body.split(b"\r\n")
+    out: list[bytes] = []
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        text = ln.decode("cp932")
+        if TITLE_JP in text:
+            assert lines[i + 1] == b"", "제목 밑 빈 줄이 없다"
+            # 제목 두 줄은 둘 다 **보통 글씨(16px 전진)** 로 화면 가운데에 둔다 — 원판 일본어 제목(전각 한 줄, 앞 전각 공백 하나)과 같은 서체·간격이다.
+            #   (처음엔 아랫줄을 굵은 12px 로 해 x=0 에 붙어 작고 잘려 보였다 — 마스터 10-16 캡처)
+            for k, line in enumerate(KO_TITLE):
+                w_px = ADV_PLAIN * len(line.replace(" ", "")) + ADV_PLAIN * line.count(" ")  # 한글 하나·공백 하나 모두 16px
+                lead = max(0, (LIMIT - w_px) // 2 // ADV_PLAIN)
+                out.append(fit(sj("　") * lead + _enc_ko(line, idx)))
+            i += 2
+            continue
+        if "\x1b" in text and "\x1d" in text:
+            pre, rest = text.split("\x1b", 1)
+            mid, post = rest.split("\x1d", 1)
+            key = mid.rstrip("　")
+            if key in CAST and post:
+                ko = _cast_ko(key)
+                assert len(ko) <= CAST_COL, (key, ko)
+                b = sj(pre) + b"\x1b" + _enc_ko(ko, idx) + sj("　") * (CAST_COL - len(ko)) + b"\x1d" + sj(post)
+                assert width(b) <= LIMIT, (ko, width(b))
+                out.append(b)
+                i += 1
+                continue
+            if key in KO_ROLE:
+                b = sj(pre) + b"\x1b" + _enc_ko(KO_ROLE[key], idx) + sj(mid[len(key) :]) + b"\x1d" + sj(post)
+                out.append(fit(b))
+                i += 1
+                continue
+        out.append(ln)
+        i += 1
+    assert len(out) == len(lines), (len(out), len(lines))
+    return b"\r\n".join(out) + b"\x1a"
+
+
+def hook_code(base: int, table_lo: int, table_hi_adj: int, n_low: int) -> bytes:
+    """리드 F0 → 표에서 24B 를 `($FA)` 로 복사(BIOS 와 같은 규약: `$F9`=리드 · `$F8`=트레일), 나머지는 BIOS 로.
+    글리프 번호 < n_low 는 앞 표(`table_lo`), 이상은 둘째 표(`table_hi_adj` = 둘째 표 주소 − 24·n_low)."""
+    import hook
+
+    a = hook.Asm(base)
+    a.op("LDA", "zp", 0xF9)
+    a.op("CMP", "imm", LEAD)
+    a.op("BNE", "rel", "orig")
+    a.op("LDA", "zp", 0xF8)
+    a.op("SEC")
+    a.op("SBC", "imm", TRAIL0)
+    a.op("TAX")  # X = 글리프 번호
+    a.op("STA", "zp", 0xEC)
+    a.op("STZ", "zp", 0xED)
+    a.op("ASL", "zp", 0xEC)
+    a.op("ROL", "zp", 0xED)  # 2k
+    a.op("TXA")
+    a.op("CLC")
+    a.op("ADC", "zp", 0xEC)
+    a.op("STA", "zp", 0xEC)
+    a.op("BCC", "rel", "m3")
+    a.op("INC", "zp", 0xED)  # 3k
+    a.label("m3")
+    for _ in range(3):
+        a.op("ASL", "zp", 0xEC)
+        a.op("ROL", "zp", 0xED)  # 24k
+    a.op("CPX", "imm", n_low)
+    a.op("BCS", "rel", "hi")
+    for tbl, tail in ((table_lo, "cpy"), (table_hi_adj, None)):
+        if tail is None:
+            a.label("hi")
+        a.op("CLC")
+        a.op("LDA", "zp", 0xEC)
+        a.op("ADC", "imm", tbl & 0xFF)
+        a.op("STA", "zp", 0xEC)
+        a.op("LDA", "zp", 0xED)
+        a.op("ADC", "imm", (tbl >> 8) & 0xFF)
+        a.op("STA", "zp", 0xED)
+        if tail:
+            a.op("BRA", "rel", tail)
+    a.label("cpy")
+    a.op("LDY", "imm", 23)
+    a.label("cp")
+    a.op("LDA", "izpy", 0xEC)
+    a.op("STA", "izpy", 0xFA)
+    a.op("DEY")
+    a.op("BPL", "rel", "cp")
+    a.op("LDA", "imm", 0)
+    a.op("LDY", "imm", 31)  # 렌더러는 32B(16×16) 를 읽는다 — 뒤 8B(행 12~15)를 0 으로(안 하면 직전 글자의 찌꺼기가 아래에 붙는다, 실측)
+    a.label("z")
+    a.op("STA", "izpy", 0xFA)
+    a.op("DEY")
+    a.op("CPY", "imm", 23)
+    a.op("BNE", "rel", "z")
+    a.op("RTS")
+    a.label("orig")
+    a.op("JMP", "abs", BIOS_GETFNT)
+    return a.bytes()
+
+
+def kr_layout() -> dict:
+    """글리프 표 앞부분은 **원래 스태프롤 자리**(포인터를 옮겨 비었다, +0x5A25~, 2,241B)에 두고, 뒤는 새 텍스트 뒤 훅 루틴 곁에 둔다(자막 런타임은 그 뒤)."""
+    text = build_kr()
+    chars = glyph_chars()
+    n_low = min(len(chars), SIZE // 24)
+    t_end = NEW_OFF + len(text)
+    hook_off = (t_end + 1 + 1) & ~1
+    probe = hook_code(hook_off + 0x2000, 0, 0, n_low)
+    hi_off = (hook_off + len(probe) + 1) & ~1
+    end = hi_off + 24 * (len(chars) - n_low)
+    return {
+        "text": text,
+        "hook_off": hook_off,
+        "hi_off": hi_off,
+        "chars": chars,
+        "n_low": n_low,
+        "end": end,
+        "hook_len": len(probe),
+    }
+
+
+def end_off() -> int:
+    """스태프롤이 쓰는 모듈 오프셋의 끝(자막 런타임 코드 자리의 시작 하한)."""
+    if KR:
+        return kr_layout()["end"]
+    return NEW_OFF + len(build().split(b"\x1a", 1)[0]) + 1
+
+
+def apply_kr(f, touched) -> str:
+    from shared.disc import mode1
+
+    lay = kr_layout()
+    lba = common.T2_SECTOR + MODULE_REL
+    size = 128 * common.USER
+    text = lay["text"].split(b"\x1a", 1)[0] + b"\x1a"
+    n_low = lay["n_low"]
+    chars = lay["chars"]
+    hook = hook_code(
+        lay["hook_off"] + 0x2000,
+        OFF + 0x2000,
+        (lay["hi_off"] + 0x2000 - 24 * n_low) & 0xFFFF,
+        n_low,
+    )
+    table_lo = b"".join(font.glyph(ch) for ch in chars[:n_low])
+    table_hi = b"".join(font.glyph(ch) for ch in chars[n_low:])
+    assert lay["end"] <= 0x8000, (lay["end"], "스태프롤 한글이 모듈 창($8000) 을 넘는다")
+    orig = original()
+    spans = [
+        (NEW_OFF, text, b"\0" * len(text), "staffroll ko text"),
+        (lay["hook_off"], hook, b"\0" * len(hook), "staffroll ko hook"),
+        (OFF, table_lo, orig[: len(table_lo)], "staffroll ko glyphs(앞, 원래 자리)"),
+    ]
+    if table_hi:
+        spans.append((lay["hi_off"], table_hi, b"\0" * len(table_hi), "staffroll ko glyphs(뒤)"))
+    for off, data, expect, label in spans:
+        mode1.write_at(f, lba, size, off, data, label=label, expect=expect)
+        first, last = off // common.USER, (off + len(data) - 1) // common.USER
+        touched.append((lba + first, last - first + 1))
+    addr = NEW_OFF + 0x2000
+    old = bytes([0xA9, 0x25, 0x85, 0x10, 0xA9, 0x7A])
+    new = bytes([0xA9, addr & 0xFF, 0x85, 0x10, 0xA9, addr >> 8])
+    mode1.write_at(f, lba, size, PTR_OFF, new, label="staffroll pointer", expect=old)
+    touched.append((lba + PTR_OFF // common.USER, 1))
+    seam = (lay["hook_off"] + 0x2000).to_bytes(2, "little")
+    for off in SEAM_OFFS:
+        mode1.write_at(f, lba, size, off, seam, label="staffroll EX_GETFNT seam", expect=SEAM_OLD)
+        touched.append((lba + off // common.USER, 1))
+    return (
+        f"스태프롤 한글 텍스트 {len(text)}B · 글자 {len(chars)}(앞 표 {n_low}자는 원래 자리) · 후킹 {len(hook)}B"
+        f" → 모듈 +0x{NEW_OFF:X}~+0x{lay['end']:X}(남은 자리 {0x8000 - lay['end']}B)"
+    )
+
+
 def build() -> bytes:
+    if KR:
+        return build_kr()
     src = original()
     body = src.split(b"\x1a", 1)[0]
     lines = body.split(b"\r\n")
@@ -210,6 +468,8 @@ PTR_OFF = 0x50A6
 
 
 def apply(f, touched) -> str:
+    if KR:
+        return apply_kr(f, touched)
     from shared.disc import mode1
 
     data = build().split(b"\x1a", 1)[0] + b"\x1a"

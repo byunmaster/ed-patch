@@ -50,7 +50,7 @@ rt.IRQ_JSR_ADDR = 0x41FD  # IRQ1 핸들러의 `JSR $E063` (모듈 +0x1FD)
 rt.LOOP_JSR_ADDR = 0x404F  # 메인 루프 마지막 `JSR $414B` (+0x4F)
 rt.LOOP_TARGET = 0x414B
 rt.CODE_BANK = 0x6B
-_code_off = (staffroll.NEW_OFF + len(staffroll.build().split(b"\x1a", 1)[0]) + 1 + 0x1F) & ~0x1F
+_code_off = (staffroll.end_off() + 0x1F) & ~0x1F
 rt.CODE_OFF = _code_off  # 모듈 오프셋(= 뱅크 0x6B + (off − 0x6000))
 rt.CODE_ADDR = 0x8000 + (_code_off - 0x6000)
 rt.CODE_MAX = 0x8000 - _code_off
@@ -122,7 +122,7 @@ def _setup():
 
     sc = json.loads(rt.SCENES.read_text(encoding="utf-8"))
     rt.DONE_FRAME = sc["done_frame"]
-    assert rt.CODE_OFF >= staffroll.NEW_OFF + len(staffroll.build().split(b"\x1a", 1)[0]) + 1
+    assert rt.CODE_OFF >= staffroll.end_off()
 
 
 def build_all():
