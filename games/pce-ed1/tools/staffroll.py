@@ -1,4 +1,4 @@
-"""엔딩 스태프롤(rel 909) — 분야 라벨·배역·제목은 **한글**(마스터 10-16), 사람·회사 이름은 원문(옛 전각 영문판은 `ED_STAFF_EN=1`).
+"""엔딩 스태프롤(rel 909) — 분야 라벨·배역·제목은 **한글**(마스터 10-16), 사람·회사 이름도 한글(영문 표기는 그대로, 10-16 규칙 3-7 · 옛 전각 영문판은 `ED_STAFF_EN=1`).
 
     python3 games/pce-ed1/tools/staffroll.py          # 새 스태프롤 미리보기 + 폭·바이트 검사
 
@@ -191,8 +191,73 @@ KO_ROLE = {  # 분야 라벨(굵은 줄) — 회사·팀·스튜디오 이름은
     "スーパーバイザー": "슈퍼바이저",
     "エグゼクティブプロデューサー": "이그제큐티브 프로듀서",
 }
+# 사람·회사 이름(마스터 10-16 「아예 일본어가 안 남게」, 외래어 표기법). 읽기가 불확실하던 여섯(에비나·고라이·모모타·오야마·사와구치·타박)은 마스터 지시로 웹 조사(북미판 영문 크레딧 등)로
+# 정했다 — 근거 표는 관리자 `names-final-1016.tsv`. 열쇠 = 원문에서 전각 공백을 뺀 꼴. 영문(J.D.K. 등)은 그대로. 회사는 공식 로마자가 있으면 그 이름을 옮기고 없으면 가나를 옮긴다.
+KO_NAME = {
+    # 성우 13(오프닝 크레딧과 같은 표기)
+    "銀河万丈": "긴가 반조",
+    "大倉正章": "오쿠라 마사아키",
+    "戸谷公次": "도야 고지",
+    "田中亮一": "다나카 료이치",
+    "掛川裕彦": "가케가와 히로히코",
+    "原えりこ": "하라 에리코",
+    "皆口裕子": "미나구치 유코",
+    "宮内幸平": "미야우치 고헤이",
+    "西村知道": "니시무라 도모미치",
+    "永井一郎": "나가이 이치로",
+    "野田圭一": "노다 게이이치",
+    "寺瀬めぐみ": "데라세 메구미",
+    "郷里大輔": "고리 다이스케",
+    # 제작진
+    "芳賀孝宏": "하가 다카히로",
+    "米光亮": "요네미쓰 료",
+    "鈴木誠": "스즈키 마코토",
+    "斎藤晴夫": "사이토 하루오",
+    "星恵太": "호시 게이타",
+    "井上雅明": "이노우에 마사아키",
+    "滝本利昭": "다키모토 도시아키",
+    "古市利雄": "후루이치 도시오",
+    "藤本佳代": "후지모토 가요",
+    "松下浩美": "마쓰시타 히로미",
+    "藤沢俊幸": "후지사와 도시유키",
+    "竹内浩志": "다케우치 히로시",
+    "山口美佳": "야마구치 미카",
+    "佐々木伸": "사사키 신",
+    "守山智幸": "모리야마 도모유키",
+    "岡田寿夫": "오카다 도시오",
+    "武田真理": "다케다 마리",
+    "日高真一": "히다카 신이치",
+    "大竹浩史": "오타케 히로시",
+    "田中和恵": "다나카 가즈에",
+    "長山豊": "나가야마 유타카",
+    "進藤司": "신도 쓰카사",
+    "小林正樹": "고바야시 마사키",
+    "相田和彦": "아이다 가즈히코",
+    "\x03口岳志": "사와구치 다카시",  # 첫 글자 「澤」 는 제어코드 03 의 외자 글리프(원판 화면 확인)
+    "工藤裕司": "구도 유지",
+    "杉本悟": "스기모토 사토루",
+    "蝦名寿昌": "에비나 도시마사",
+    "近永早苗": "지카나가 사나에",
+    "牛来隆行": "고라이 다카유키",
+    "百田亮海": "모모타 료미",
+    "佐橋秀樹": "사하시 히데키",
+    "宮本徳人": "미야모토 노리히토",
+    "小山俊典": "오야마 도시노리",
+    "松永智史": "마쓰나가 사토시",
+    "木本旬": "기모토 준",
+    "中本伸一": "나카모토 신이치",
+    # 회사·팀·스튜디오
+    "日本ファルコム": "니혼 팔콤",
+    "ファルコム": "팔콤",
+    "サウンドチーム": "사운드 팀",
+    "ＭＩＴスタジオ": "ＭＩＴ 스튜디오",
+    "青二プロダクション": "아오니 프로덕션",
+    "スタジオタバック": "스튜디오 타박",  # 공식 영문 Studio Tavac 기준
+    "（スタジオライブ）": "（스튜디오 라이브）",
+    "（ＲＥＤカンパニー）": "（ＲＥＤ 컴퍼니）",
+}
 KO_TITLE = ("드래곤 슬레이어", "영웅전설")
-KO_CAST_EXTRA = {"ナレーション": "내레이션", "大盗賊ゲイル": "대도적 게일"}
+KO_CAST_EXTRA = {"ナレーション": "내레이션", "大盗賊ゲイル": "대도 게일"}
 
 
 def _cast_ko(jp: str) -> str:
@@ -208,6 +273,10 @@ def _cast_ko(jp: str) -> str:
     raise KeyError(jp)
 
 
+def _is_hangul(ch: str) -> bool:
+    return "\uac00" <= ch <= "\ud7a3"
+
+
 def _enc_ko(text: str, idx: dict) -> bytes:
     """한글 문안 → SJIS 2바이트열 — 한글은 리드 F0 + 트레일(0x24+번호), 공백은 전각, 가운뎃점은 `81 45`."""
     out = bytearray()
@@ -216,18 +285,29 @@ def _enc_ko(text: str, idx: dict) -> bytes:
             out += b"\x81\x40"
         elif ch == "・":
             out += b"\x81\x45"
-        else:
+        elif _is_hangul(ch):
             out += bytes([LEAD, TRAIL0 + idx[ch]])
+        else:
+            out += sj(ch)  # 전각 영문·괄호 — BIOS 글꼴
     return bytes(out)
 
 
 def _ko_strings() -> list[str]:
-    s = list(KO_ROLE.values()) + list(KO_TITLE) + [_cast_ko(k) for k in CAST]
+    s = list(KO_ROLE.values()) + list(KO_TITLE) + [_cast_ko(k) for k in CAST] + list(KO_NAME.values())
     return s
 
 
 def glyph_chars() -> list[str]:
-    return sorted({ch for t in _ko_strings() for ch in t if ord(ch) >= 0x80 and ch != "・"})
+    return sorted({ch for t in _ko_strings() for ch in t if _is_hangul(ch)})
+
+
+KO_CAST_COL = max(len(_cast_ko(k)) for k in CAST) + 1  # 6 — 가장 긴 배역명(디나 공주·대도 게일) 뒤에도 한 칸 띄운다(시험 캡처에서 이름에 붙었다)
+
+
+def _name_ko(jp: str, idx: dict) -> bytes:
+    """원문 이름(전각 공백 포함 가능)을 KO_NAME 으로 — 표에 없으면(보통·낮음 확신) 원문 그대로."""
+    key = jp.replace("　", "")
+    return _enc_ko(KO_NAME[key], idx) if key in KO_NAME else sj(jp)
 
 
 def build_kr() -> bytes:
@@ -256,8 +336,9 @@ def build_kr() -> bytes:
             key = mid.rstrip("　")
             if key in CAST and post:
                 ko = _cast_ko(key)
-                assert len(ko) <= CAST_COL, (key, ko)
-                b = sj(pre) + b"\x1b" + _enc_ko(ko, idx) + sj("　") * (CAST_COL - len(ko)) + b"\x1d" + sj(post)
+                assert len(ko) <= KO_CAST_COL, (key, ko)
+                # 한글 이름이 일본어보다 길다 — 앞 탭(32px)을 전각 공백(16px)으로 줄이고 이름 칸을 가장 긴 배역명 폭(+1)으로 줄여 9칸 이름이 256px 안에 든다(16+72+144=232)
+                b = sj("　") + b"\x1b" + _enc_ko(ko, idx) + sj("　") * (KO_CAST_COL - len(ko)) + b"\x1d" + _name_ko(post, idx)
                 assert width(b) <= LIMIT, (ko, width(b))
                 out.append(b)
                 i += 1
@@ -267,83 +348,43 @@ def build_kr() -> bytes:
                 out.append(fit(b))
                 i += 1
                 continue
+            if key in KO_NAME:  # 굵은 회사 줄(（스튜디오 라이브） 등)
+                b = sj(pre) + b"\x1b" + _enc_ko(KO_NAME[key], idx) + sj(mid[len(key) :]) + b"\x1d" + sj(post)
+                out.append(fit(b))
+                i += 1
+                continue
+        else:
+            core = text.lstrip("\t　")
+            if core.replace("　", "") in KO_NAME:  # 보통 글씨 이름·회사 줄 — 들여쓰기는 두고 이름만 바꾼다
+                head = text[: len(text) - len(core)]
+                out.append(fit(sj(head) + _name_ko(core, idx)))
+                i += 1
+                continue
         out.append(ln)
         i += 1
     assert len(out) == len(lines), (len(out), len(lines))
     return b"\r\n".join(out) + b"\x1a"
 
 
-def hook_code(base: int, table_lo: int, table_hi_adj: int, n_low: int) -> bytes:
-    """리드 F0 → 표에서 24B 를 `($FA)` 로 복사(BIOS 와 같은 규약: `$F9`=리드 · `$F8`=트레일), 나머지는 BIOS 로.
-    글리프 번호 < n_low 는 앞 표(`table_lo`), 이상은 둘째 표(`table_hi_adj` = 둘째 표 주소 − 24·n_low)."""
-    import hook
+def hook_code(base: int, seg_a: int, n_a: int, seg_b: int, n_b: int) -> bytes:
+    """리드 F0 → 18B 묶음 표(앞 구역 `seg_a` n_a 자 · 뒤 구역 `seg_b`)에서 24B 로 풀어 `($FA)` 에 쓴다(BIOS 와 같은 규약: `$F9`=리드 · `$F8`=트레일), 나머지는 BIOS 로.
+    풀이 루틴은 오프닝 크레딧과 같다(`credits_kr.routine`, 뱅크 걸기 없음) — 24B 표는 글자 140자에서 자막 런타임 자리를 모자라게 했다(18B 로 묶어 25% 줄임)."""
+    import credits_kr
 
-    a = hook.Asm(base)
-    a.op("LDA", "zp", 0xF9)
-    a.op("CMP", "imm", LEAD)
-    a.op("BNE", "rel", "orig")
-    a.op("LDA", "zp", 0xF8)
-    a.op("SEC")
-    a.op("SBC", "imm", TRAIL0)
-    a.op("TAX")  # X = 글리프 번호
-    a.op("STA", "zp", 0xEC)
-    a.op("STZ", "zp", 0xED)
-    a.op("ASL", "zp", 0xEC)
-    a.op("ROL", "zp", 0xED)  # 2k
-    a.op("TXA")
-    a.op("CLC")
-    a.op("ADC", "zp", 0xEC)
-    a.op("STA", "zp", 0xEC)
-    a.op("BCC", "rel", "m3")
-    a.op("INC", "zp", 0xED)  # 3k
-    a.label("m3")
-    for _ in range(3):
-        a.op("ASL", "zp", 0xEC)
-        a.op("ROL", "zp", 0xED)  # 24k
-    a.op("CPX", "imm", n_low)
-    a.op("BCS", "rel", "hi")
-    for tbl, tail in ((table_lo, "cpy"), (table_hi_adj, None)):
-        if tail is None:
-            a.label("hi")
-        a.op("CLC")
-        a.op("LDA", "zp", 0xEC)
-        a.op("ADC", "imm", tbl & 0xFF)
-        a.op("STA", "zp", 0xEC)
-        a.op("LDA", "zp", 0xED)
-        a.op("ADC", "imm", (tbl >> 8) & 0xFF)
-        a.op("STA", "zp", 0xED)
-        if tail:
-            a.op("BRA", "rel", tail)
-    a.label("cpy")
-    a.op("LDY", "imm", 23)
-    a.label("cp")
-    a.op("LDA", "izpy", 0xEC)
-    a.op("STA", "izpy", 0xFA)
-    a.op("DEY")
-    a.op("BPL", "rel", "cp")
-    a.op("LDA", "imm", 0)
-    a.op("LDY", "imm", 31)  # 렌더러는 32B(16×16) 를 읽는다 — 뒤 8B(행 12~15)를 0 으로(안 하면 직전 글자의 찌꺼기가 아래에 붙는다, 실측)
-    a.label("z")
-    a.op("STA", "izpy", 0xFA)
-    a.op("DEY")
-    a.op("CPY", "imm", 23)
-    a.op("BNE", "rel", "z")
-    a.op("RTS")
-    a.label("orig")
-    a.op("JMP", "abs", BIOS_GETFNT)
-    return a.bytes()
+    segs = [(seg_a, n_a)] + ([(seg_b, n_b)] if n_b else [])
+    return credits_kr.routine(base, segs, None)
 
 
 def kr_layout() -> dict:
-    """글리프 표 앞부분은 **원래 스태프롤 자리**(포인터를 옮겨 비었다, +0x5A25~, 2,241B)에 두고, 뒤는 새 텍스트 뒤 훅 루틴 곁에 둔다(자막 런타임은 그 뒤)."""
+    """글리프 표 앞부분은 **원래 스태프롤 자리**(포인터를 옮겨 비었다, +0x5A25~, 2,241B)에 두고, 뒤는 새 텍스트 뒤 훅 루틴 곁에 둔다(자막 런타임은 그 뒤). 글리프는 18B 묶음."""
     text = build_kr()
     chars = glyph_chars()
-    n_low = min(len(chars), SIZE // 24)
+    n_low = min(len(chars), SIZE // font.PACKED_BYTES)
     t_end = NEW_OFF + len(text)
     hook_off = (t_end + 1 + 1) & ~1
-    probe = hook_code(hook_off + 0x2000, 0, 0, n_low)
+    probe = hook_code(hook_off + 0x2000, 0, n_low, 0, len(chars) - n_low)
     hi_off = (hook_off + len(probe) + 1) & ~1
-    end = hi_off + 24 * (len(chars) - n_low)
+    end = hi_off + font.PACKED_BYTES * (len(chars) - n_low)
     return {
         "text": text,
         "hook_off": hook_off,
@@ -374,11 +415,12 @@ def apply_kr(f, touched) -> str:
     hook = hook_code(
         lay["hook_off"] + 0x2000,
         OFF + 0x2000,
-        (lay["hi_off"] + 0x2000 - 24 * n_low) & 0xFFFF,
         n_low,
+        lay["hi_off"] + 0x2000,
+        len(chars) - n_low,
     )
-    table_lo = b"".join(font.glyph(ch) for ch in chars[:n_low])
-    table_hi = b"".join(font.glyph(ch) for ch in chars[n_low:])
+    table_lo = b"".join(font.pack(font.glyph(ch)) for ch in chars[:n_low])
+    table_hi = b"".join(font.pack(font.glyph(ch)) for ch in chars[n_low:])
     assert lay["end"] <= 0x8000, (lay["end"], "스태프롤 한글이 모듈 창($8000) 을 넘는다")
     orig = original()
     spans = [

@@ -37,7 +37,9 @@ SEG_A, SEG_A_N = 0x3910, 44  # 794B
 SEG_B, SEG_B_N = 0x3287, 9  # 165B
 
 
-def routine(base: int) -> bytes:
+def routine(base: int, segs: list[tuple[int, int]], bank: int | None) -> bytes:
+    """리드 F0 + 트레일(0x24+번호) → 18B 묶음 표(`segs` = [(논리 주소, 글자 수)…], 번호 순)에서 24B 로 풀어 `($FA)` 에 쓰고 뒤 8B 는 0 으로.
+    `bank` 가 있으면 그 뱅크를 MPR5($A000)에 잠깐 건다(크레딧 모듈의 뱅크 0x69 표). 엔딩 스태프롤도 같은 루틴(`bank=None`)을 쓴다 — 영 페이지 `$EC`·`$ED` 만 쓴다."""
     a = Asm(base)
     a.op("LDA", "zp", 0xF9)
     a.op("CMP", "imm", font.LEAD0)
@@ -50,22 +52,23 @@ def routine(base: int) -> bytes:
     a.op("SEC")
     a.op("SBC", "imm", font.TRAIL0)
     a.op("TAX")  # X = k(이 표 안 번호)
-    a.op("CPX", "imm", SEG_A_N)
-    a.op("BCS", "rel", "segb")
-    a.op("LDA", "imm", (0xA000 + SEG_A - 0x2000) & 0xFF)
-    a.op("STA", "zp", 0xEC)
-    a.op("LDA", "imm", (0xA000 + SEG_A - 0x2000) >> 8)
-    a.op("STA", "zp", 0xED)
-    a.op("BRA", "rel", "lp")
-    a.label("segb")
-    a.op("TXA")
-    a.op("SEC")
-    a.op("SBC", "imm", SEG_A_N)
-    a.op("TAX")
-    a.op("LDA", "imm", (0xA000 + SEG_B - 0x2000) & 0xFF)
-    a.op("STA", "zp", 0xEC)
-    a.op("LDA", "imm", (0xA000 + SEG_B - 0x2000) >> 8)
-    a.op("STA", "zp", 0xED)
+    for n, (addr, count) in enumerate(segs):
+        last = n == len(segs) - 1
+        if not last:
+            a.op("CPX", "imm", count)
+            a.op("BCS", "rel", f"seg{n + 1}")
+        a.op("LDA", "imm", addr & 0xFF)
+        a.op("STA", "zp", 0xEC)
+        a.op("LDA", "imm", addr >> 8)
+        a.op("STA", "zp", 0xED)
+        if not last:
+            a.op("BRA", "rel", "lp")
+            a.label(f"seg{n + 1}")
+            a.op("TXA")
+            a.op("SEC")
+            a.op("SBC", "imm", count)
+            a.op("TAX")
+            # 다음 구역 머리는 다음 반복에서 넣는다
     a.label("lp")  # ptr += 18 · X
     a.op("CPX", "imm", 0)
     a.op("BEQ", "rel", "go")
@@ -79,14 +82,13 @@ def routine(base: int) -> bytes:
     a.op("DEX")
     a.op("BRA", "rel", "lp")
     a.label("go")
-    a.op("SEI")
-    a.op("TMA", "tma", 5)
-    a.op("PHA")  # 걸려 있던 MPR5 저장
-    a.op("LDA", "imm", MAP_BANK)
-    a.op("TAM", "tam", 5)
+    if bank is not None:
+        a.op("SEI")
+        a.op("TMA", "tma", 5)
+        a.op("PHA")  # 걸려 있던 MPR5 저장
+        a.op("LDA", "imm", bank)
+        a.op("TAM", "tam", 5)
     a.op("LDY", "imm", 0)
-    a.op("LDA", "imm", 6)
-    a.op("STA", "zp", 0xEE)  # 6묶음(18B → 24B)
 
     def inc(n):
         a.op("INC", "zp", 0xEC)
@@ -94,7 +96,7 @@ def routine(base: int) -> bytes:
         a.op("INC", "zp", 0xED)
         a.label(f"i{n}")
 
-    a.label("grp")
+    a.label("grp")  # 3B(2 행 낱말 셋) → 4B, 여섯 번 = 18B → 24B (Y 가 24 가 되면 끝)
     a.op("LDA", "izp", 0xEC)
     a.op("STA", "izpy", 0xFA)
     a.op("INY")  # ha
@@ -122,7 +124,7 @@ def routine(base: int) -> bytes:
         a.op("ASL")
     a.op("STA", "izpy", 0xFA)
     a.op("INY")  # lb
-    a.op("DEC", "zp", 0xEE)
+    a.op("CPY", "imm", 24)
     a.op("BNE", "rel", "grp")
     a.op("LDA", "imm", 0)
     a.label("z")  # 렌더러는 32B 를 읽는다 — 뒤 8B 는 0
@@ -130,9 +132,10 @@ def routine(base: int) -> bytes:
     a.op("INY")
     a.op("CPY", "imm", 32)
     a.op("BNE", "rel", "z")
-    a.op("PLA")
-    a.op("TAM", "tam", 5)
-    a.op("CLI")
+    if bank is not None:
+        a.op("PLA")
+        a.op("TAM", "tam", 5)
+        a.op("CLI")
     a.op("LDA", "imm", 0)
     a.op("RTS")
     return a.bytes()
@@ -190,7 +193,11 @@ def glyph_blobs() -> list[tuple[int, bytes]]:
 
 def patches() -> list[tuple[str, int, int, bytes, bytes]]:
     """build.code_patches 꼴 (라벨, rel, 구간 안 오프셋, 기대, 새값)."""
-    r = routine(logical(ROUTINE_OFF))
+    r = routine(
+        logical(ROUTINE_OFF),
+        [(0xA000 + SEG_A - 0x2000, SEG_A_N), (0xA000 + SEG_B - 0x2000, SEG_B_N)],
+        MAP_BANK,
+    )
     assert len(r) <= ROUTINE_ROOM, (len(r), ROUTINE_ROOM)
     old, new = title_bytes()
     out = [("cast title 声優出演→성우 출연", 517, 0x0420, old, new)]
