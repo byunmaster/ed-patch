@@ -214,7 +214,7 @@ def strings_of(raw_bank: bytes, off: int) -> bytes:
 def scan_literals(prog: layout.Prog) -> dict[tuple[int, int], list[int]]:
     """{(뱅크, 문자열 오프셋): [피연산자 위치(뱅크 안)]} — `JSR $503E/$4ED5 · BIT $addr` 리터럴."""
     out: dict[tuple[int, int], list[int]] = {}
-    for b in range(0x69, 0x72):
+    for b in range(0x69, 0x74):
         s = prog.o(b, 0, layout.BANK)
         for m in re.finditer(rb"\x20(?:\x3e\x50|\xd5\x4e)\x2c(..)", s, re.DOTALL):
             addr = m.group(1)[0] | m.group(1)[1] << 8

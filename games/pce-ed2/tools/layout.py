@@ -14,7 +14,7 @@ import common
 PROG_REL = 130
 BANK0 = 0x68
 BANK = 8192
-NBANKS = 10  # 뱅크 0x68~0x71
+NBANKS = 12  # 뱅크 0x68~0x73 (0x72·0x73 = 세이브 선택 화면 등 — 글 문자열만 훑는다)
 
 # 원본의 0xFF 패딩(뱅크, 오프셋, 길이) — `tools/freespace` 스캔(2026-10-12)과 런타임(첫 마을) 대조로 확인했다.
 PADDING = [
