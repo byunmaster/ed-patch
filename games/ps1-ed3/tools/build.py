@@ -361,6 +361,27 @@ def _line_words(enc, lead, txt):
     return w + out
 
 
+# 상점·소지품 낱말 — 칸 꽉 채우기 / 한 문체(마스터 10-12). (오프셋, 원본 워드, 새 문자열 — `0` 은 전각 빈 칸)
+#   도구점 「사기·팔기」는 「환전하기」 폭(4칸)에 맞춰 사이를 비운다 · 소지품 「読む」 칸(3칸, 가운데 0)은 「읽는다」로 채운다(「捨てる」 3칸은 「버린다」 — 정본 ED1·ED2 와 같은 말).
+ITEM_VERBS = {
+    "ed3": [
+        (0x10DC, (0x592, 0x42, 0x5D, 0x42, 0xFFFF), "사00기"),
+        (0x10E6, (0x593, 0x88, 0x5D, 0x42, 0xFFFF), "팔00기"),
+        (0x9D190, (0x55F, 0, 0x7E, 0xFFFF), "읽는다"),
+    ],
+}
+
+
+def item_verbs(exe, exe_orig, disc, enc, report):
+    for off, orig, txt in ITEM_VERBS.get(disc, []):
+        o = struct.unpack_from(f"<{len(orig)}H", exe_orig, off)
+        assert o == orig, f"상점·소지품 낱말 사전조건 — {off:#x} {[hex(x) for x in o]}"
+        words = _line_words(enc, "", txt) + [0xFFFF]
+        assert len(words) == len(orig), f"상점·소지품 낱말이 칸({len(orig)}워드)과 다르다 — {off:#x} {len(words)}"
+        struct.pack_into(f"<{len(words)}H", exe, off, *words)
+    report["item_verbs"] = len(ITEM_VERBS.get(disc, []))
+
+
 def submenu_center(exe, exe_orig, disc, enc, report):
     import engine_patch
 
@@ -754,6 +775,7 @@ def main():
     yesno_center(exe, exe_orig, a.disc, enc, report)
     yes_label_center(exe, exe_orig, a.disc, enc, report)
     submenu_center(exe, exe_orig, a.disc, enc, report)
+    item_verbs(exe, exe_orig, a.disc, enc, report)
     arcs = reinsert_script(a.disc, canon, table, report)
     for path, data in gfx_arcs.items():  # 그림이 든 파일도 같이 쓴다
         arcs.setdefault(path, data)

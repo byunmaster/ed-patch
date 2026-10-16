@@ -128,8 +128,10 @@ def main():
         for jp, kr in d.items():
             if kr:
                 seen[(kind, kr)].append(jp)
+    # 책 권 접미(`その１`·`第１巻`)는 원문 표기만 다르고 뜻이 같다 — 둘 다 「제１권」(마스터 10-12). 이름 낱말이 아니라 접미라 화면 구별 문제가 없다.
+    same_meaning = [{f"その{d}", f"第{d}巻"} for d in "１２３"]
     for (kind, kr), jps in sorted(seen.items()):
-        if len(jps) > 1:
+        if len(jps) > 1 and set(jps) not in same_meaning:
             fail.append(f"{kind}: 「{kr}」 가 원문 {len(jps)}개에 붙었다 — {' · '.join(jps)}")
 
     for kind in glossary.FROM_OFFICIAL:

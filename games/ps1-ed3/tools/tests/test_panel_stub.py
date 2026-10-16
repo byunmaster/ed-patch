@@ -133,7 +133,7 @@ class TestPanelStub(unittest.TestCase):
     def test_stub_and_sites_fit(self):
         p = E.PATCH["ed3"]
         self.assertLessEqual(T.PANEL_CODE_OFF + 4 * len(self.words), p["data_len"])
-        self.assertGreaterEqual(T.PANEL_CODE_OFF, T.data_size(60))  # 상태·표(받침표 60개까지) 뒤
+        self.assertGreaterEqual(T.PANEL_CODE_OFF, T.data_size(25))  # 상태·표(받침표 25개까지 — 반각 목록이 44칸으로 늘어 여유가 없다, 10-13) 뒤
 
 
 if __name__ == "__main__":
