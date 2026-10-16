@@ -223,6 +223,47 @@ def fit_chunks(exe, t, ents, cur, krs, orig, disc, table, report):
     return reverted
 
 
+def panel_grow(exe, disc, table, words, report, panel):
+    """월드맵 패널 — 정본 표기(띄어쓰기 뺀 꼴)가 원판 칸(n)보다 긴 줄은 **칸을 늘린다**(「성아랫마을」 5자 > 4칸 — 줄인 꼴 「성마을」로 안 떨어진다, 마스터 10-12 「칸 문제는 기술 먼저」).
+
+    영역 끝 0 꼬리 12B 안에서만 늘고, 장소 표를 밀린 만큼 고친다(`exetext.panel_relayout`). 창 폭이 6글자라 7글자 이상은 늘리지 않는다(`gap_long` 으로 센다)."""
+    data = bytes(exe)
+    need = {}
+    for unit in exetext.panel_units(data, *panel):
+        for off, n in unit:
+            ind, codes, _tail = exetext.panel_line_text(data, off, n)
+            jp = exetext.match_panel_key(codes, disc, words) if codes else None
+            kr = words.get(jp) if jp else None
+            if not kr or kr == jp:
+                continue
+            try:
+                enc = hangul_map.encode(kr.replace(" ", ""), disc, table)
+            except KeyError:
+                continue
+            if n < len(enc) <= 6:
+                need[off] = len(enc)
+    grown = exetext.panel_relayout(exe, disc, exetext.panel_inserts(data, disc, need)) if need else 0
+    report["panel_grown"] = grown
+    if grown:  # 🔴 검산 — 표의 모든 항목이 늘리기 전과 **같은 목록(제어 코드 뼈대)** 을 가리킨다
+        tab, n_ent = exetext.PANEL_TABLE[disc]
+
+        def skeleton(buf, off):
+            sk = []
+            while True:
+                w = struct.unpack_from("<H", buf, off)[0]
+                if w >= 0x8000:
+                    sk.append(w)
+                    if w == 0x8002:
+                        return sk
+                off += 2
+
+        for i in range(n_ent):
+            a0 = tab + struct.unpack_from("<H", data, tab + 2 * i)[0]
+            b0 = tab + struct.unpack_from("<H", bytes(exe), tab + 2 * i)[0]
+            if skeleton(data, a0) != skeleton(bytes(exe), b0):
+                raise SystemExit(f"🔴 패널 표 {i}번이 늘린 뒤 다른 목록을 가리킨다")
+
+
 def panel_pass(exe, disc, table, words, seen, report, panel):
     """월드맵 장소 패널 풀 — 제어 코드 열은 원판 그대로, 글자만 **패널 칸 폭 기준 가운데(반 칸은 왼쪽 내림, 두 줄 묶음은 가장 긴 줄 기준·나머지는 그 시작)** 로 같은 칸 수 안에서 바꾼다.
 
@@ -499,6 +540,7 @@ def reinsert_names(exe, disc, table, report):
         exe[:] = bytearray(new)
         report["names"] += changed
     if panel:
+        panel_grow(exe, disc, table, words, report, panel)
         panel_pass(exe, disc, table, words, seen, report, panel)
     # 🔴 **표가 안 가리키는 문자열(빈틈의 닻)** — 월드맵 장소 패널 「ディーネ / シャリネ」 따위. 자리·길이를 못 바꾸니 **제자리**로,
     #    우리 표기가 원문보다 짧거나 같을 때만 넣는다. 넘치는 것은 원문 그대로 남기고 `gap_long` 으로 센다(옮길 포인터를 못 찾았다).

@@ -10,6 +10,7 @@
 
 import argparse
 import os
+import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -25,7 +26,7 @@ def rows(disc):
     cm = textenc.charmap(disc)
     words = dict(glossary.flat(disc))
     canon = glossary._canon()
-    out, total = [], 0
+    out, total, grow = [], 0, 0
     for unit in exetext.panel_units(data, *exetext.PANEL[disc]):
         for off, n in unit:
             _ind, codes, _tail = exetext.panel_line_text(data, off, n)
@@ -36,10 +37,20 @@ def rows(disc):
             if not kr or kr == jp:
                 continue
             total += 1
-            cand = [kr, kr.replace(" ", ""), canon.lookup(jp + "@월드맵", "place", disc) or ""]
+            nospace = kr.replace(" ", "")
+            if len(nospace) > n and len(nospace) <= 6:
+                grow += 2 * (len(nospace) - n)  # 칸을 늘려 정본 표기 그대로 넣는다(`build.panel_grow` — 창 폭 6글자까지)
+                continue
+            cand = [kr, nospace, canon.lookup(jp + "@월드맵", "place", disc) or ""]
             fit = next((c for c in cand if c and len(c) <= n), None)
             if fit is None:
-                out.append((jp, kr, len(kr.replace(" ", "")), n, off))
+                out.append((jp, kr, len(nospace), n, off))
+    start, end = exetext.PANEL[disc]
+    tail = 0
+    while struct.unpack_from("<H", data, end - tail - 2)[0] == 0:
+        tail += 2
+    if grow > tail:
+        out.append(("(늘릴 칸 합계)", f"{grow}B", grow, tail, start))
     return out, total
 
 

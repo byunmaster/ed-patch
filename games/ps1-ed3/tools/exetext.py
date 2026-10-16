@@ -327,14 +327,75 @@ def put_panel_line(data, off, n, new_codes, indent):
 
 
 def panel_structure_problems(orig, new, start, end):
-    """제어 코드 열이 원판과 같나 — `[이유…]`. 최상위 비트 코드(줄바꿈·종결)의 **자리와 값**이 원판과 같아야 한다(게이트)."""
+    """제어 코드 열이 원판과 같나 — `[이유…]`. 최상위 비트 코드(줄바꿈·종결)의 **순서열(값)** 이 원판과 같아야 하고 영역 길이도 같아야 한다(게이트).
+
+    칸이 모자란 줄을 늘려 뒤를 밀었으므로(`panel_relayout`) 자리는 같지 않아도 된다 — 다만 순서·값이 같아야 순차 스캔이 같은 줄을 읽는다."""
+    def ctl(buf):
+        return [w for w in struct.unpack_from(f"<{(end - start) // 2}H", buf, start) if w >= 0x8000]
+
+    a, b = ctl(orig), ctl(new)
     bad = []
-    for p in range(start, end, 2):
-        a = struct.unpack_from("<H", orig, p)[0]
-        b = struct.unpack_from("<H", new, p)[0]
-        if (a >= 0x8000 or b >= 0x8000) and a != b:
-            bad.append(f"0x{p:X}: 제어 코드가 바뀌었다 ({a:04x}→{b:04x})")
+    if len(a) != len(b):
+        bad.append(f"제어 코드 수가 다르다 ({len(a)}→{len(b)})")
+    else:
+        for i, (x, y) in enumerate(zip(a, b)):
+            if x != y:
+                bad.append(f"제어 코드 {i}번째가 바뀌었다 ({x:04x}→{y:04x})")
+                if len(bad) >= 10:
+                    break
     return bad
+
+
+PANEL_TABLE = {"ed3": (0x9B6FC, 133)}  # 장소 표 — u16 항목 = 표 시작 기준 오프셋(문자열 목록 시작)
+
+
+def panel_inserts(data, disc, lines_need):
+    """`lines_need` = {줄 시작 오프셋: 필요한 칸 수} → [(끼울 자리, 늘 칸 수)] — 원판 칸(n)보다 많이 필요한 줄만."""
+    start, end = PANEL[disc]
+    out = []
+    for unit in panel_units(data, start, end):
+        for off, n in unit:
+            need = lines_need.get(off, 0)
+            if need > n:
+                out.append((off + 2 * n, need - n))
+    return out
+
+
+def panel_relayout(exe, disc, inserts):
+    """칸이 모자란 패널 줄 뒤에 빈 글자(0)를 끼워 늘린다. 뒤로 밀린 만큼 **영역 끝의 0 꼬리**를 쓰고, 장소 표 항목을 밀린 만큼 고친다.
+
+    목록은 표를 안 보고 종결마다 다음 문자열로 이어 읽는 순차 스캔이라 중간에 칸을 끼워도 읽기엔 문제없고, 표(문자열 목록 시작 오프셋)만 밀린 만큼 맞춘다.
+    """
+    if not inserts:
+        return 0
+    start, end = PANEL[disc]
+    tab, n_ent = PANEL_TABLE[disc]
+    inserts = sorted(inserts)
+    add = 2 * sum(e for _p, e in inserts)
+    tail = 0
+    while end - tail - 2 >= start and struct.unpack_from("<H", exe, end - tail - 2)[0] == 0:
+        tail += 2
+    if add > tail:
+        raise ExeTextError(f"패널 풀 꼬리({tail}B)가 늘릴 칸({add}B)에 모자란다")
+
+    def shift(off):  # 옛 오프셋 → 밀린 만큼
+        return 2 * sum(e for p, e in inserts if p <= off)
+
+    old = bytes(exe[start:end])
+    new = bytearray()
+    cur = 0
+    for p, e in inserts:
+        q = p - start
+        new += old[cur:q] + b"\0\0" * e
+        cur = q
+    new += old[cur:]
+    new = new[: len(old)]  # 꼬리 0 이 밀린 만큼 잘린다(위에서 충분함을 확인)
+    assert len(new) == len(old)
+    exe[start:end] = new
+    for i in range(n_ent):
+        v = struct.unpack_from("<H", exe, tab + 2 * i)[0]
+        struct.pack_into("<H", exe, tab + 2 * i, v + shift(tab + v))
+    return add // 2
 
 
 def glued_entries(data, tables):
