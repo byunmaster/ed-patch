@@ -31,11 +31,19 @@ SITE = 0xA9BE  # cmp.b $ff2018.l,d1 (6B)
 ORIG = bytes.fromhex("b23900ff2018")
 SLACK_BYTES = 2  # 4px
 PUNCT = (0x2E, 0x2C, 0x21, 0x3F)  # . , ! ?
+CAPTION_PITCH = 0x0E  # 자막 피치 14 — `$FF2014`(대사창은 12 라 그대로)
+CAPTION_BYTES = 4  # 자막은 **모든 글자**의 시작 허용을 8px 더(창 폭−26 → −18) — 엔딩 나레이션 x63 에서 한 줄이 나오게(마스터 10-13)
 CODE_LEN = 0x30
 
 
 def code() -> bytes:
     b = bytearray()
+    # 자막(피치 14)이면 글자 종류 상관없이 +8px 하고 바로 비교로 — 대사창(피치 12)·그 밖은 아래 부호 4px 그대로
+    b += struct.pack(">HH", 0x0C39, CAPTION_PITCH) + struct.pack(">I", 0xFF2014)  # cmpi.b #14,$FF2014.l
+    b += bytes([0x66, 0x04])  # bne.s punct
+    b += struct.pack(">H", 0x5000 | (CAPTION_BYTES << 9) | 0x01)  # addq.b #4,d1
+    b += bytes([0x60, 0x00])  # bra.s plain (변위는 아래에서)
+    base = len(b)
     for c in PUNCT[:-1]:
         b += struct.pack(">HH", 0x0C00, c)  # cmpi.b #c,d0
         b += bytes([0x67, 0x00])  # beq.s hit (변위는 아래에서)
@@ -44,10 +52,12 @@ def code() -> bytes:
     hit = len(b)
     b += struct.pack(">H", 0x5000 | (SLACK_BYTES << 9) | 0x01)  # addq.b #2,d1
     plain = len(b)
+    assert b[base - 2] == 0x60
+    b[base - 1] = plain - base
     b += bytes.fromhex("b23900ff2018")  # cmp.b $ff2018.l,d1
     b += struct.pack(">H", 0x4E75)  # rts
     # beq.s 변위 = hit − (그 명령 다음 자리)
-    for i, pos in enumerate((4, 10, 16)):
+    for i, pos in enumerate((base + 4, base + 10, base + 16)):
         assert b[pos] == 0x67
         b[pos + 1] = hit - (pos + 2)
     assert len(b) <= CODE_LEN, len(b)

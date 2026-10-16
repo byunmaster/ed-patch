@@ -33,7 +33,10 @@ FAMILIES = [
 ]
 # 글꼴은 **스트림마다** 고른다 — 정본이 머리에 `<fd85>`(와이드 글꼴 5)를 달면 그 자막만 리소스 5 로 그리고
 # 끝에 `<fd80>` 으로 대사 글꼴(리소스 0)로 되돌린다. 칸 16×16·피치 16(`<fe10>`) — 한 줄 14칸.
-# 자막 글꼴 = **네오둥근모 16px**(마스터 확정 2026-10-08 — 원판 오프닝·엔딩 자막이 같은 굵은 글꼴이라 되돌렸다. 아래는 그 전 이력).
+# 🔴 자막 글꼴 = **갈무리11 일반체 · 피치 14**(마스터 확정 10-13 「그냥 갈무리11로 가자」 — md-ed2 와 같은 값. 줄 간격 16).
+#    같은 날 갈무리14(칸 16·피치 16 — 엔딩 7화면이 2줄에 안 들어가 엔딩은 14 유지) · 갈무리11 볼드 · 세미볼드까지 구워 봤다
+#    (볼드·세미볼드는 뭉개져 탈락, 갈무리14 는 숫자 겹침). 글리프는 칸 16 에 top=1·left=1(`hangul._BDF`). 경위는 `docs/devlog.md` 10-13.
+# (이전) 자막 글꼴 = **네오둥근모 16px**(마스터 확정 2026-10-08 — 원판 오프닝·엔딩 자막이 같은 굵은 글꼴이라 되돌렸다. 아래는 그 전 이력).
 # 이전 = **Galmuri11**(마스터 확정 2026-09-17 — 네오둥근모·갈무리14·갈무리11 세 후보를 같은 화면으로
 # 비교, "크게 느껴진다"는 지적에 갈무리11 로). 그 전엔 네오둥근모였다(2026-09-06, 7줄 화면도 안 잘리고
 # 여백비가 원본에 가깝다는 이유) — 그 전엔 Galmuri14 였다가 "붙어 보인다/가독성 저하"로 걷어냈다
@@ -45,16 +48,39 @@ FONT_TAG = "<fd85>"
 NARROW_ON, NARROW_OFF = "<fd05>", "<fd00>"
 FONT_CELL = int(os.environ.get("MD_CAPTION_CELL", "16"))
 # 후보 비교용 — 정본은 상수, `MD_CAPTION_FONT` 로 한 번씩 바꿔 구워 본다(실험 전용, 배포 빌드는 상수를 고친다).
-FONT_SRC = os.environ.get("MD_CAPTION_FONT", "neodgm")
+FONT_SRC = os.environ.get("MD_CAPTION_FONT", "galmuri11")
 
 
 def font_tags(ours: str) -> str:
     """정본 문안의 글꼴 머리·꼬리에 반각 글꼴 선택을 덧붙인다(빌드 시점 — 정본은 `<fd85>`…`<fd80>` 그대로)."""
-    if FONT_SRC != "neodgm" or FONT_TAG not in ours or NARROW_ON in ours:
+    if FONT_SRC not in ("neodgm", "galmuri14", "galmuri11bold", "galmuri11") or FONT_TAG not in ours or NARROW_ON in ours:
         return ours
-    return ours.replace(FONT_TAG, FONT_TAG + NARROW_ON, 1).replace("<fd80>", "<fd80>" + NARROW_OFF, 1)
+    if FONT_SRC in ("galmuri11bold", "galmuri11"):  # 원판 실측 가로 피치 약 14px — 오프닝도 `<fe10>`(16) → `<fe0e>`(14)
+        ours = ours.replace("<fe10>", "<fe0e>")
+    ours = ours.replace(FONT_TAG, FONT_TAG + NARROW_ON, 1).replace("<fd80>", "<fd80>" + NARROW_OFF, 1)
+    return widen_digits(ours)
+
+
+# 반각 숫자는 잉크 7열이 전진 7(피치 14/2)에 꽉 차 다음 글자 테두리(칸 0열)가 숫자 오른쪽 끝을 먹는다 —
+# 「10여」의 「0」이 「C」로 보였다(마스터 실기 10-13). 숫자 덩이만 피치를 +2 로 감싸 **전진 +1px** (한글·부호는 불변).
+DIGIT_EXTRA = 2  # +1 은 「10여」가 아직 붙어 보였다(마스터 10-13 실기 캡처, 공통 규칙 1-5) — 잉크 7열 뒤 **빈 열 2**(전진 9)
+
+
+def widen_digits(ours: str) -> str:
+    """숫자 덩이 앞뒤에 피치 태그(`<feNN>` — 현재 피치 +2 / 현재 피치)를 끼운다(반각 전진 = 피치/2). 태그 안의 숫자는 건드리지 않는다."""
+    import re
+
+    cur = 16  # 자막 머리 기본 — 문안에 피치 태그가 먼저 나오므로 바로 갱신된다
+    out = []
+    for m in re.finditer(r"<fe([0-9a-f]{2})>|<[^>]*>|(\d+)|[^<\d]+|<", ours):
+        if m.group(1):
+            cur = int(m.group(1), 16)
+        if m.group(2):
+            out.append(f"<fe{cur + 2 * DIGIT_EXTRA:02x}>{m.group(2)}<fe{cur:02x}>")
+        else:
+            out.append(m.group(0))
+    return "".join(out)
 WIDTH = 16  # 피치 14 × 16 = 224px
-WIDTH_P16 = 14  # 피치 16 × 14 = 224px (네오둥근모)
 OFF_MAX = 0xFFF
 # 한 화면 줄 수 상한 — 엔딩은 **3줄이면 첫 줄이 위로 밀려 사라진다**(마스터 실기 2026-09-26, 원문도 전 화면 2줄 이하).
 # 오프닝은 7줄까지 본다(docs/status.md 「화면 줄 수 상한」).
@@ -91,6 +117,26 @@ NARR_CLEAR = bytes.fromhex(
     "203c7700000320807613228251cbfffcd0bc0100000051c9ffee46df4cdf030f4e75"
 )
 NARR_DRIVER_CALL = 0x2DE98  # 나레이션의 `jsr $14e44.l` 피연산자(0x2DE96)
+# 페이지 지움(`<08>` 핸들러 `$A162`)은 비트맵 한 줄을 **(창 폭 타일 − 2)×8 + 4 px** 까지만 채운다(창 32타일 → 244px, 창 원점 x48 + 244 = x292).
+# 줄 끝이 x293 을 넘는 글자(「…기회를 주어」의 「어」, 끝 x301)는 다음 화면에 **오른쪽 조각이 남는다**(마스터 10-13 실화면). 나레이션 창(32×6타일)만
+# 한 줄 전체(128B = 256px)를 채우게 한다 — `$A19A` 의 `lsl.l #2,d1 · addq.l #2,d1 · lsl.l #3,d2`(6B)를 `jsr 꼬리.l` 로 돌린다.
+# 이 시점 d1 = 폭타일−2 · d2 = 높이타일−2 (바이트 클린). 나레이션 창이면(30·4) +2 → +8 로, 아니면 원래 계산 그대로(대사창·그 밖 불변).
+CLEAR_SITE = 0xA19A
+CLEAR_ORIG = bytes.fromhex("e5895481e78a")
+
+
+def clear_fix() -> bytes:
+    b = bytearray()
+    b += bytes.fromhex("0c81") + struct.pack(">I", 30)  # cmpi.l #30,d1
+    b += bytes([0x66, 0x10])  # bne.s plain
+    b += bytes.fromhex("0c82") + struct.pack(">I", 4)  # cmpi.l #4,d2
+    b += bytes([0x66, 0x08])  # bne.s plain
+    b += bytes.fromhex("e589" "5081" "e78a" "4e75")  # lsl.l #2,d1 · addq.l #8,d1 · lsl.l #3,d2 · rts
+    assert len(b) == 24
+    b += bytes.fromhex("e589" "5481" "e78a" "4e75")  # plain: 원래 계산
+    return bytes(b)
+
+
 # 꼬리로 옮기는 가족 — (표 머리, 표 포인터 피연산자 자리). 드라이버는 오프코드 0 의 인자를
 # **표 머리 기준 12비트 전방 오프셋**으로 읽으므로 표와 문안을 같이 옮기면 그대로 돈다.
 # 제자리 영역이 만원이라(오프닝 1,052/1,052B · 나레이션 576/576B) 원문에 있는 말을 눌러 쓰고 있었다
@@ -234,32 +280,26 @@ def cells(s: str) -> float:
 
 
 def _width_errors(k: str, ours: str, fam: str | None = None) -> list[str]:
+    """엔진 줄바꿈은 글자 **시작** x 로 판정한다(`$a9b8`: 시작 > 창 폭 − 26px 면 다음 줄 — 줄 전체가 사라진 적이 있다).
+    마지막 글자는 시작 x 까지만 센다(전각 = 피치 · 1바이트 글자 = 피치/2). 반각 부호(. , ! ?)는 punctwrap 가 4px 더 본다."""
     import re
 
-    # 피치가 폭을 정한다 — **마지막** 피치 태그가 이긴다. 엔딩은 `<fe10><fe0e>` 라 피치 14 다
-    # (2026-09-26 실측: 전각 14px·반각 7px. 전엔 `<fe10>` 만 보고 14칸으로 막아 멀쩡한 줄을 깎았다).
+    # 피치가 폭을 정한다 — **마지막** 피치 태그가 이긴다(`<fe10>` = 16 · `<fe0e>` = 14, 기본 14)
     pitches = re.findall(r"<fe(0e|10)>", ours)
-    p16 = bool(pitches) and pitches[-1] == "10"
+    pitch = 16 if pitches and pitches[-1] == "10" else 14
+    if FONT_SRC in ("galmuri11bold", "galmuri11"):  # 굽는 쪽(`font_tags`)이 `<fe10>` 을 14 로 바꾼다 — 검사도 같은 피치로 본다
+        pitch = 14
     win = WINDOW_W.get(fam, 240)
-    limit = WIDTH_P16 if p16 else win / 14
     errs = []
     for ln in re.sub(r"<[^>]*>", "", ours).split("\n"):
         ln = ln.rstrip()
-        w = cells(ln)
-        if w > limit:
-            errs.append(f"captions {k}: 줄 {w}칸 > {limit:.2f}: {ln!r}")
-        # 🔴 피치 14 는 **글자 시작**이 `w − 26`px 을 넘으면 렌더러가 스스로 줄을 바꾼다 — 3줄이 되어 첫
-        # 줄이 밀려 사라진다(2026-09-26 실측: 창 240 에서 15.5칸 시작 「.」은 넘어가고 15.0칸 시작 「」」은
-        # 멀쩡했다. 루틴 `$a9b8` 로 확인). 폭 합만 보면 이걸 못 잡는다.
-        elif (
-            not p16
-            and ln
-            # 반각 부호(. , ! ?)는 엔진 비교에 4px 더 허용(`tools/punctwrap.py`)
-            and (w - cells(ln[-1])) * 14 > win - 26 + (4 if ln[-1] in ".,!?" else 0)
-        ):
-            errs.append(
-                f"captions {k}: 끝 글자가 {w - cells(ln[-1])}칸에서 시작 — 자동 줄바꿈: {ln!r}"
-            )
+        if not ln:
+            continue
+        start = sum((pitch / 2 + (DIGIT_EXTRA if c.isdigit() else 0)) if ord(c) < 0x80 else pitch for c in ln[:-1])
+        # 피치 14(자막)는 punctwrap 가 모든 글자 +8px(피치 16·그 밖은 끝 부호만 +4)
+        lim = win - 26 + (8 if pitch == 14 else 4 if ln[-1] in ".,!?" else 0)
+        if start > lim:
+            errs.append(f"captions {k}: 줄 마지막 글자 시작 {start:g}px > {lim}px: {ln!r}")
     return errs
 
 
@@ -272,7 +312,7 @@ FRAME_X = 64
 FRAME_W = 192
 IND_BASE = 2  # 반각 둘 = 14px → 첫 글자 잉크 x≈63 (실화면 실측: 잉크 시작 = 49 + 7n)
 IND_STEP_PX = 7
-FIT_OVER_PX = 28  # 마스터 10-08: 한 글자 정도 넘침(ed1-kr-0004 = 시작 x63 에서 24px)은 그림 왼쪽 끝 기준 그대로 — 오른쪽으로 삐져나가도 된다
+FIT_OVER_PX = 46  # 마스터 10-08: 한 글자 정도 넘침은 그림 왼쪽 끝 기준 그대로 — 오른쪽으로 삐져나가도 된다. 10-13: 나레이션 전 화면 x63(n=2), 가장 긴 줄(「…기회를 주어」 238px) 45px 넘침까지 — 창 304 안, 엔진 줄바꿈은 punctwrap 자막 +8px
 CELL_PX = 14  # 엔딩 피치
 START_X = 63  # n=IND_BASE 일 때 첫 글자 잉크 시작
 
@@ -439,6 +479,12 @@ def plan(
             writes.append(("captions-tail:narr-clear", cur, NARR_CLEAR))
             writes.append(("captions-call:narr-clear", NARR_DRIVER_CALL, struct.pack(">I", cur)))
             cur += len(NARR_CLEAR)
+            if d[CLEAR_SITE : CLEAR_SITE + 6] != CLEAR_ORIG:
+                raise SystemExit("captions: 페이지 지움 폭 자리($A19A)가 원본과 다르다")
+            cur += cur & 1
+            writes.append(("captions-tail:clear-fix", cur, clear_fix()))
+            writes.append(("captions-site:clear-fix", CLEAR_SITE, b"\x4e\xb9" + struct.pack(">I", cur)))
+            cur += len(clear_fix())
     # 표 — 참조하는 문안이 하나라도 옮겨졌으면 표 전체를 다시 쓴다(오프코드 0 워드만 바뀐다)
     for _name, bases, _area in FAMILIES:
         for base in bases:
@@ -467,9 +513,10 @@ def allowed_tail(at: int, size: int) -> dict[str, tuple[int, int]]:
 
     ⚠ 옮긴 표는 `allowed()` 가 이미 **제자리** 범위로 연 라벨과 이름이 같다. 두 자리 중 어디에 써도
     되게 **합집합**으로 넓힌다(제자리 자리는 옛 영역 지우기에 쓴다)."""
-    out = {f"captions-tail:{n}": (at, at + size) for n in [*RELOCATE, "narr-window", "narr-clear"]}
+    out = {f"captions-tail:{n}": (at, at + size) for n in [*RELOCATE, "narr-window", "narr-clear", "clear-fix"]}
     out["captions-call:narr-window"] = (NARR_CALL, NARR_CALL + 4)
     out["captions-call:narr-clear"] = (NARR_DRIVER_CALL, NARR_DRIVER_CALL + 4)
+    out["captions-site:clear-fix"] = (CLEAR_SITE, CLEAR_SITE + 6)
     out.update({f"captions-ptr:{b:06x}": (p, p + 4) for ts in RELOCATE.values() for b, p in ts})
     return out
 

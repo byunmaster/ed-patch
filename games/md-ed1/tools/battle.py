@@ -84,6 +84,27 @@ def records(b: bytes) -> list[dict]:
     return out
 
 
+def dead_names(b: bytes) -> list[dict]:
+    """사용 안 하는 슬롯(플래그 0x80)에 남은 이름 — `records()` 가 건너뛰는 4번째 자리의 잔재(블록 22·44·48·53·107).
+    원문이 화면에 뜨진 않지만 「일본어 0」 점검(마스터 10-11)에 걸려 같은 규칙으로 덮는다. 원본 길이를 넘지 않게만 쓴다.
+    [{name_at, name(bytes), term}] — term = 이름 바로 뒤가 06 인가(블록 107 은 구역 끝이라 아니다)."""
+    t = sections(b)
+    seen = {r["name_at"] for r in records(b)}
+    out = []
+    for m in archives.SJIS_RUN.finditer(b[: t[1]]):
+        s_, e_ = m.start(), m.end()
+        if s_ in seen or s_ < REC0:
+            continue
+        try:
+            jp = b[s_:e_].decode("cp932")
+        except UnicodeDecodeError:
+            continue
+        if not SUFFIX.search(jp):
+            continue
+        out.append({"name_at": s_, "name": b[s_:e_], "term": b[e_ : e_ + 1] == b"\x06"})
+    return out
+
+
 def base_name(s: str) -> str:
     return SUFFIX.sub("", s).rstrip()
 
@@ -403,6 +424,19 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         out[r["name_at"] : r["name_at"] + len(enc) + 1] = enc + b"\x06"
         if tail > 0:
             out[r["name_at"] + len(enc) + 1 : r["name_at"] + len(r["name"]) + 1] = b"\x00" * tail
+        changed = True
+    for r in dead_names(b):
+        jp = r["name"].decode("cp932")
+        if base_name(jp) not in monsters:
+            continue
+        enc = encode(kr_name(jp, monsters))
+        if len(enc) > len(r["name"]):
+            errs.append(f"블록 {n} 빈 슬롯 이름 {jp!r} {len(enc)}B > {len(r['name'])}B")
+            continue
+        at = r["name_at"]
+        out[at : at + len(r["name"])] = enc + b"\x00" * (len(r["name"]) - len(enc))
+        if r["term"]:
+            out[at + len(enc)] = 0x06
         changed = True
     # 알파벳 숨김 쓰기의 자리를 우리 이름 기준으로 — 원문과 맞지 않는 것(보스 등)은 건드리지 않는다
     by_slot = {(r["start"] - REC0) // REC_STEP: r for r in records(b)}
