@@ -14,6 +14,7 @@ import common
 PROG_REL = 130
 BANK0 = 0x68
 BANK = 8192
+OVERLAY_BANK0 = 0x72  # 이 뱅크부터는 씬 패키지가 런타임에 덮어쓴다 — 빈 칸은 문자열 전용(글리프 풀 · 코드 금지)
 NBANKS = 12  # 뱅크 0x68~0x73 (0x72·0x73 = 세이브 선택 화면 등 — 글 문자열만 훑는다)
 
 # 원본의 0xFF 패딩(뱅크, 오프셋, 길이) — `tools/freespace` 스캔(2026-10-12)과 런타임(첫 마을) 대조로 확인했다.
@@ -27,6 +28,7 @@ PADDING = [
     (0x70, 0x1E1A, 486),
     (0x6F, 0x1F3A, 198),
     (0x6E, 0x1F3C, 196),
+    (0x73, 0x0A75, 5515),  # 데이터 선택 화면 오버레이(뱅크 0x73)의 꼬리 — 화면 문자열이 한국어로 길어질 때 같은 뱅크 안으로 옮긴다. 첫 마을에서는 씬 패키지가 이 뱅크를 덮어쓰므로 런타임 불변 대조는 못 한다(화면이 지난 뒤)
 ]
 
 
@@ -164,7 +166,8 @@ class Prog:
         self.free_runs[bank] = out
 
     def runs_left(self) -> list[tuple[int, int, int]]:
-        return [(b, r[0], r[1] - r[0]) for b, rs in sorted(self.free_runs.items()) for r in rs]
+        """글리프 풀이 앉을 수 있는 빈 칸 — 뱅크 0x72~ 는 뺀다(런타임에 씬 패키지가 덮어쓰는 뱅크라 글리프 표를 두면 깨진다. 문자열 전용 칸이다)."""
+        return [(b, r[0], r[1] - r[0]) for b, rs in sorted(self.free_runs.items()) if b < OVERLAY_BANK0 for r in rs]
 
     def spans(self) -> list[tuple[int, bytes, bytes, str]]:
         """디스크에 쓸 (선형 바이트, 새 바이트, 기대 원본, 라벨). 비운 칸 중 다른 쓰기가 안 덮은 곳은 0xFF 로 채운다."""

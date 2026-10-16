@@ -11,6 +11,8 @@
 """
 
 import itertools
+import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -24,6 +26,9 @@ import jptext
 import layout
 
 CELL_PX = 12
+NUM_SPACE = {"백업경고"}  # 수 끼움(`1B`) 앞 낱말 뒤에 공백을 두는 문맥
+STYLE_BREAKS = {"슬롯줄"}  # 글 덩이를 글꼴 지정(STYLE) 코드에서도 끊는 문맥
+PLACEHOLDER = "Ｘ"  # 데이터 선택 화면 장 라벨 「Ｘ章」 의 칸 채움
 SPACE_PX = 4
 PAD = 0xA0
 SPACE = 0x60
@@ -44,6 +49,8 @@ CONTEXT = {
     (0x6F, 0x0000): "전투설정",
     (0x6F, 0x0016): "전투설정",
     (0x6F, 0x003A): "전투커맨드",
+    (0x73, 0x076F): "슬롯줄",  # 데이터 선택 화면 슬롯 줄 — 글 덩이 사이의 글꼴 지정(`04` `06`)을 지켜야 한다(덩이가 지정 코드를 삼키면 장 라벨 칸이 깨진다)
+    (0x73, 0x08DD): "백업경고",  # 「あと{n}個…」 의 「あと」 = 남은 개수(경험치 표시의 「あと」 와 다르다)
 }
 
 # 표 — (이름, 뱅크, 시작 오프셋, 끝 오프셋(배타)). 시작 주소 즉치 `LDY #hi / LDX #lo` 를 고친다. 0xC71~0xC85 는 리터럴 문자열이라 안 건드린다.
@@ -71,7 +78,21 @@ def _variants(jp: str) -> list[str]:
     return list(dict.fromkeys([jp, jp.replace("ー", "－"), jp.replace("－", "ー")]))
 
 
+def _extra() -> dict[str, str]:
+    """시험 롬 전용 후보 주입 — 정본에 아직 없는 값(관리자 승인 대기)을 화면으로 먼저 보기 위한 것. 표는 레포 밖 파일(`ED_SYS_EXTRA`)에 두고, **`test-` 꼬리표 빌드에서만** 읽는다(정본 빌드엔 못 들어간다)."""
+    path = os.environ.get("ED_SYS_EXTRA")
+    if not path or not os.environ.get("ED_BUILD_TAG", "").startswith("test-"):
+        return {}
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
 def lookup(jp: str, ctx: str | None) -> str | None:
+    ex = _extra()
+    for v in _variants(jp):
+        if ctx and f"{v}@{ctx}" in ex:
+            return ex[f"{v}@{ctx}"]
+        if v in ex:
+            return ex[v]
     for v in _variants(jp):
         if ctx:
             for c in (ctx, "경험치표시") if ctx == "onoff" else (ctx,):  # 설정 값 표의 「あと」 = 경험치 표시 문맥
@@ -140,13 +161,14 @@ def translate(raw: bytes, ctx: str | None, miss: set[str]) -> bytes | None:
     out = []
     i = 0
     changed = False
+    soft = (lambda t: _soft(t) and not (t[0] == "ctrl" and t[1][0] in STYLE)) if ctx in STYLE_BREAKS else _soft
     while i < len(toks):
-        if not _soft(toks[i]):
+        if not soft(toks[i]):
             out.append(toks[i][1])
             i += 1
             continue
         j = i
-        while j < len(toks) and _soft(toks[j]):
+        while j < len(toks) and soft(toks[j]):
             j += 1
         seg = toks[i:j]
         g = [k for k, (kind, _b) in enumerate(seg) if kind == "glyph"]
@@ -174,6 +196,8 @@ def translate(raw: bytes, ctx: str | None, miss: set[str]) -> bytes | None:
             return None
         # 가나 모드(`0E`/`0F`)는 한글 글리프에 무관하고, **켜 둔 채 한글을 그리면 첫 글자만 나온다**(실측 — 설정 창 머리) → 버린다
         keep = lambda ts: [t for t in ts if not (t[0] == "ctrl" and t[1][0] in (0x0E, 0x0F))]
+        if ctx in NUM_SPACE and j < len(toks) and toks[j][0] == "ctrl" and toks[j][1][0] == 0x1B and kr[-1] != " ":
+            kr += " "  # 「앞으로{n}개」 — 수를 끼우는 코드(`1B`) 앞은 띄어 쓴다(원문 「あと{n}個」 는 안 띄움)
         out.append(("KR", kr, _px(core), keep(pre), keep(post)))
         changed = True
         i = j
@@ -191,8 +215,13 @@ def render(plan, tab) -> bytes:
             continue
         _tag, kr, core_px, pre, post = item
         out += b"".join(b for _k, b in pre)
-        text = tab.enc(kr, space=SPACE)
-        w = sum(font.adv(c) for c in kr)
+        hold = b""
+        if kr.startswith(PLACEHOLDER):  # 자리표 「Ｘ」 — 코드가 그 2바이트를 장 글자로 덮어 쓴다(원문 SJIS 그대로 둔다)
+            hold, kr_ = b"\x82\x77", kr[1:]
+        else:
+            kr_ = kr
+        text = hold + tab.enc(kr_, space=SPACE)
+        w = sum(font.adv(c) for c in kr_) + (CELL_PX if hold else 0)
         pad_after = core_px - w  # 원문 덩이 폭(px)을 지킨다
         post_b = list(post)
         if pad_after > 0:
@@ -371,8 +400,30 @@ def plan(prog: layout.Prog, tab, report: dict | None = None) -> None:
         else:
             pending.setdefault(bank, []).append((off, raw, newb, sites))
     _place_pending(prog, pending, inplace, stat)
+    _chapter_table(prog, tab)
     if report is not None:
         report.update(stat)
+
+
+CHAPTER_TABLE = (0x73, 0x0761, 7)  # 데이터 선택 화면의 장 글자 표 — 2B × 7(序 · １ · ２ · ３ · ４ · 終 · 終). 코드(`$66FD~`)가 「Ｘ章」 의 Ｘ 칸(`$6777`)을 이 표의 글자로 덮어 쓴다
+
+
+def _chapter_table(prog: layout.Prog, tab) -> None:
+    """장 글자 표를 정본 값(열쇠 `글자@장글자`)으로 바꾼다 — 한 글자 2바이트라 길이가 같다. 정본에 없으면 그대로."""
+    bank, off, n = CHAPTER_TABLE
+    raw = prog.o(bank, off, 2 * n)
+    out = bytearray()
+    changed = False
+    for k in range(n):
+        e = raw[2 * k : 2 * k + 2]
+        kr = lookup(jptext.decode(e), "장글자")
+        if kr and len(kr) == 1:  # 한 글자(서 · 종)만 — 숫자는 정본에 안 올려 원문 전각 숫자(`１`~`４`)를 그대로 쓴다(마스터 10-16 「장 숫자는 전각」)
+            out += tab.enc(kr, space=SPACE)
+            changed = True
+        else:
+            out += e
+    if changed:
+        prog.put(bank, off, bytes(out), "chapter table")
 
 
 FAR_BANKS = (0x6A, 0x6B, 0x71, 0x6C, 0x6D)  # 문자열을 옮겨 둘 뱅크(0xFF 패딩이 넉넉한 곳)
@@ -461,7 +512,19 @@ def _remap_interior(prog: layout.Prog, bank: int, off: int, raw: bytes, newb: by
     oc, nc = _ctrl_spans(raw), _ctrl_spans(newb)
     for code_pos, k in sites:
         m = next((n for n, (p, b) in enumerate(oc) if p <= k < p + len(b)), None)
-        if m is None or len(oc) != len(nc):
+        if m is None:  # 제어가 아니라 자리표 글리프(`82 77` 「Ｘ」)를 덮어 쓰는 코드 — 새 문자열의 같은 자리표로 옮긴다
+            pos = 0
+            for kind, b in tokens(raw):
+                if kind == "glyph" and b == b"\x82\x77" and pos <= k < pos + 2:
+                    nk = newb.find(b"\x82\x77")
+                    if nk >= 0:
+                        prog.put(bank, code_pos + 1, (0x6000 + new_off + nk + (k - pos)).to_bytes(2, "little"), f"placeholder write {bank:02X}+{code_pos:04X} → +{nk + (k - pos)}")
+                        break
+                pos += len(b)
+            else:
+                INTERIOR_WARN.append(f"{bank:02X}+{off:04X} k={k} (코드 {bank:02X}+{code_pos:04X})")
+            continue
+        if len(oc) != len(nc):
             INTERIOR_WARN.append(f"{bank:02X}+{off:04X} k={k} (코드 {bank:02X}+{code_pos:04X})")
             continue
         new_k = nc[m][0] + (k - oc[m][0])

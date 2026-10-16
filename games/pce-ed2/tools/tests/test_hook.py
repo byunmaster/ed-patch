@@ -23,7 +23,7 @@ def synthetic(n: int) -> list[bytes]:
 
 def machine(glyphs: list[bytes], flags=None, josa_idx=None):
     """패치 적용 이미지 → 시뮬레이터(뱅크별 8KB, 본 프로그램은 0xFF 패딩으로 채운 가짜)."""
-    orig = bytearray(b"\xff" * (10 * layout.BANK))
+    orig = bytearray(b"\xff" * (layout.NBANKS * layout.BANK))
     seam = (hook.SEAM_BANK - layout.BANK0) * layout.BANK + hook.SEAM_OFF
     orig[seam : seam + 2] = hook.SEAM_OLD
     aseam = (hook.ASCII_SEAM_BANK - layout.BANK0) * layout.BANK + hook.ASCII_SEAM_OFF
