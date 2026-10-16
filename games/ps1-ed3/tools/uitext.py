@@ -30,6 +30,7 @@ python3 tools/uitext.py --disc ed3 --check    # 지문·길이 (게이트)
 import argparse
 import json
 import os
+import re
 import struct
 import sys
 
@@ -37,6 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
 import dump_names
 import exetext
+import poolpack
 import script as script_canon
 import textenc
 
@@ -75,6 +77,30 @@ EXTRA_SITES = {
 }
 
 
+# 🔴 스캐너 사각지대 ③ — **미해독 한자가 든 문자열**. `dump_names.strings()` 는 코드표에 없는 코드가 하나라도 끼면 그 문자열을 통째로 버린다
+#    (읽을거리 풀 0x9D830~0xA0500 에서 약 190줄이 그렇게 빠져 일본어로 남을 뻔했다 — 10-12). 이 풀은 **문자열이 이어 붙은 배열**이라 구역을
+#    직접 걷는다. `0x9EE4C~0x9F0B8` 은 종결이 0x8001·0x8002·0x8005 인 **글리프 코드 표**(글자가 아니다)라 뺀다.
+#    원문 표기는 미해독 코드를 `�<16진>` 으로 둔다(`textenc.decode` 와 같다 — 지문이 안정적이다).
+POOLS = {"ed3": [(0x9D830, 0x9EE4C), (0x9F0B8, 0xA10B0)]}  # 풀2 끝 = 마지막 흐름의 `0xFFFF` 바로 뒤(0xA10AE+2) — 표 항목 308 이 0xA108E 에서 시작해 「여검사 사피」「끝」까지 이어 읽는다
+
+
+def pool_sites(data, disc, have):
+    out = {}
+    for lo, hi in POOLS.get(disc, []):
+        p = lo
+        while p < hi:
+            codes, term = exetext.raw_string(data, p, limit=200)
+            nxt = exetext.string_end(data, p, limit=200)
+            if codes is None or nxt is None:
+                p += 2
+                continue
+            if codes and p not in have and term in (0xFFFF, 0x0) and all(c < 0x8000 for c in codes):
+                jp = textenc.decode(codes, disc)
+                out[p] = {"jp": jp, "len": len(codes), "table": None, "budget": 0}
+            p = nxt
+    return out
+
+
 # 🔴 게임 빌드가 **나중에 직접 덮어쓰는** 자리 — `apply`·`lost_text` 가 건드리지 않는다(정본 줄은 남는다). square 창 넷째 줄(`build.square_center`)은 종결 워드(0xA1396)를
 #    뒤 표 칸(`exetext.POOL_LEFT_SLACK`)에 내주었고, 고정 칸 쓰기가 그 워드에 종결을 써 풀과 부딪친다.
 OVERRIDDEN = {
@@ -86,6 +112,11 @@ OVERRIDDEN = {
         0xA120E, 0xA121E, 0xA1248, 0x10BC,
     }
 }
+
+
+def in_pool(disc, off):
+    L = poolpack.LAYOUT.get(disc)
+    return bool(L) and any(p["base"] <= off < p["end"] for p in L["pools"])
 
 
 def sites(disc):
@@ -137,6 +168,9 @@ def sites(disc):
         jp = "".join(cm[c] for c in codes)
         tb, budget = in_table.get(off, (None, 0))
         out[off] = {"jp": jp, "len": len(codes), "table": tb, "budget": budget}
+    out.update(pool_sites(data, disc, out))
+    for off, row in out.items():
+        row["pool"] = in_pool(disc, off)  # 풀 행은 `poolpack` 이 재배치·압축으로 쓴다(줄당 24코드, 원문 길이가 아니다)
     return data, out
 
 
@@ -173,7 +207,7 @@ def write_review(disc):
         out[f"0x{off:06X}"] = {
             "jp": s["jp"],
             "kr": have.get(off, {}).get("kr", ""),
-            "limit": f"{s['len']}자" if s["table"] is None else f"칸 {s['budget']}B",
+            "limit": f"{poolpack.LINE_MAX}자" if s.get("pool") else (f"{s['len']}자" if s["table"] is None else f"칸 {s['budget']}B"),
         }
     os.makedirs(os.path.dirname(review_path(disc)), exist_ok=True)
     with open(review_path(disc), "w", encoding="utf-8") as f:
@@ -218,11 +252,39 @@ def check(disc):
         if script_canon.stamp(s["jp"]) != row["jp"]:
             bad.append(f"0x{off:06X}: 원문 지문이 다르다 — 번역이 남의 자리에 붙었다")
             continue
-        if s["table"] is None and len(row["kr"]) > s["len"]:
+        cap = poolpack.LINE_MAX if s.get("pool") else s["len"]
+        if (s["table"] is None or s.get("pool")) and kr_len(row["kr"]) > cap:
             bad.append(
-                f"0x{off:06X}: 길이 초과 {len(row['kr'])} > {s['len']} — 표가 없는 자리는 고정이다"
+                f"0x{off:06X}: 길이 초과 {kr_len(row['kr'])} > {cap} — "
+                + ("읽을거리 풀은 줄당 24코드가 상한이다" if s.get("pool") else "표가 없는 자리는 고정이다")
             )
     return len(canon), len(ss), bad
+
+
+RAW_TOKEN = re.compile("\ufffd([0-9a-f]{3,4})")
+
+
+def ui_codes(encode, kr):
+    """`encode(kr)` — 단 **`�<16진>` 은 그 코드 그대로** 넣는다(원문 표기와 같은 꼴).
+
+    🔴 숫자 표식(`0xEEEE`)으로 끝난 문자열의 **다음 문자열 첫 코드는 숫자 글리프**다(그 코드 값이 곧 숫자) — 글자가 아니라서
+       코드표에 없는 값(`�1388` = 5000)이 올 수 있고, 번역이 그 코드를 **바꾸면 표시가 다른 숫자가 된다.** 그래서 원문의 그 코드를
+       번역 문안 맨 앞에 그대로 적는다(`kr_len` 도 그걸 한 코드로 센다).
+    """
+    out = []
+    pos = 0
+    for m in RAW_TOKEN.finditer(kr):
+        if m.start() > pos:
+            out += encode(kr[pos : m.start()])
+        out.append(int(m.group(1), 16))
+        pos = m.end()
+    if pos < len(kr):
+        out += encode(kr[pos:])
+    return out
+
+
+def kr_len(kr):
+    return len(RAW_TOKEN.sub("x", kr))
 
 
 def pack_fixed(exe, off, codes, orig_len, orig_term, pad_code=None):
@@ -260,11 +322,13 @@ def apply(exe, disc, encode):
         s = ss.get(off)
         if off in OVERRIDDEN.get(disc, ()):
             continue
+        if s is not None and s.get("pool"):
+            continue  # 읽을거리 풀 — `poolpack.apply` 가 따로 쓴다(재배치·압축)
         if s is None or script_canon.stamp(s["jp"]) != row["jp"]:
             skipped += 1
             continue
         try:
-            codes = encode(row["kr"])
+            codes = ui_codes(encode, row["kr"])
         except KeyError:
             skipped += 1
             continue
@@ -314,10 +378,12 @@ def lost_text(orig, new, disc, encode):
         s = ss.get(off)
         if off in OVERRIDDEN.get(disc, ()):
             continue
+        if s is not None and s.get("pool"):
+            continue  # 풀 행은 `poolpack.verify` 가 되읽어 본다
         if s is None or script_canon.stamp(s["jp"]) != row["jp"]:
             continue
         try:
-            want = encode(row["kr"].replace(" ", ""))  # ⚠ split() 은 개행(0x01)까지 지운다
+            want = ui_codes(encode, row["kr"].replace(" ", ""))  # ⚠ split() 은 개행(0x01)까지 지운다
         except KeyError:
             continue
         where = off
@@ -330,9 +396,23 @@ def lost_text(orig, new, disc, encode):
             where = base + struct.unpack_from(f"<{n}H", new, tbl)[k]
         codes, _ = exetext.raw_string(new, where)
         have = [c for c in (codes or []) if c != space]
-        if have != want and (s["table"] is not None or len(encode(row["kr"])) <= s["len"]):
+        if have != want and (s["table"] is not None or len(ui_codes(encode, row["kr"])) <= s["len"]):
             bad.append(f"0x{off:06X}: 구운 글이 정본과 다르다 ({len(have)} vs {len(want)}자)")
     return bad
+
+
+def pool_rows(disc):
+    """{오프셋: 번역문} — 읽을거리 풀에 든 정본 행(원문 지문이 맞는 것만). `poolpack.apply` 의 입력."""
+    _, ss = sites(disc)
+    out = {}
+    for off, row in load(disc).items():
+        s = ss.get(off)
+        if s is None or not s.get("pool") or off in OVERRIDDEN.get(disc, ()):
+            continue
+        if script_canon.stamp(s["jp"]) != row["jp"]:
+            continue
+        out[off] = row["kr"]
+    return out
 
 
 def main():

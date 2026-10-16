@@ -44,11 +44,15 @@ class TestUiText(unittest.TestCase):
             if not os.path.exists(uitext.canon_path(disc)):
                 continue
             have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values())
-            have |= set(hangul_map.PUNCT)  # 우리가 원본 자리에 다시 굽는 부호(, .)
+            have |= set(hangul_map.punct(disc))  # 우리가 원본 자리에 다시 굽는 부호(, . ? ! 와 ED3 의 …)
             have.add("\n")  # 0x0001 — 설명문 창의 개행(`hangul_map.encode`)
             bad = set()
             for row in uitext.load(disc).values():
-                for ch in row["kr"]:
+                for ch in uitext.RAW_TOKEN.sub("", row["kr"]):  # `�<16진>` 은 코드 그대로(숫자 글리프) — 글자가 아니다
+                    # 로마자·아라비아 숫자는 빌드가 **자리를 받아 새로 굽는다**(`hangul_map.needed_chars` 가 UI 문안의 코드표 밖 글자를 센다) —
+                    # 대사 문안이 ASCII 숫자·「Pia」를 쓰는 것과 같다. ⚠ 전각 ｉ 가 코드표에 없어 「Pia」는 ASCII 라야 쓸 수 있다.
+                    if ch.isascii() and ch.isalnum():
+                        continue
                     if (
                         "가" <= ch <= "힣" or ch == " " or ch in font.SPLIT
                     ):  # 나눈 글리프도 자리를 받는다

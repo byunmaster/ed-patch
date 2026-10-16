@@ -40,6 +40,7 @@ import graphics
 import hangul_map
 import josa_rt
 import patch_title_font
+import poolpack
 import script as script_canon
 import scriptmap
 import textenc
@@ -715,6 +716,24 @@ def main():
     enc = lambda kr: hangul_map.encode(kr, a.disc, table)
     ui_put, ui_skip = uitext.apply(exe, a.disc, enc)
     report["skipped"] += ui_skip
+    pool_pl = None
+    if a.disc in poolpack.LAYOUT:
+        # 읽을거리 풀(메모·검사교본·사피) — 재배치 + 사전 압축 + 펼침 훅. 정본 글자 = 되읽은 글자를 곧바로 대조한다.
+        pre_pool = bytes(exe)
+        pool_enc = lambda kr: uitext.ui_codes(enc, kr)
+        pool_rows = uitext.pool_rows(a.disc)
+        try:
+            pool_pl = poolpack.apply(exe, a.disc, pool_rows, pool_enc)
+        except poolpack.PoolPackError as e:
+            raise SystemExit(f"🔴 읽을거리 풀 재배치 실패: {e}")
+        bad = poolpack.verify(bytes(exe), pre_pool, a.disc, pool_rows, pool_enc, pool_pl)
+        if bad:
+            raise SystemExit("🔴 읽을거리 풀 되읽기가 정본과 다르다:\n  " + "\n  ".join(bad[:10]))
+        report["skipped"] += len(pool_pl["skipped"])
+        # 🔴 뒤 단계(낱말 재삽입·빈틈 닻 등)가 풀 영역을 덮으면 되읽기가 조용히 깨진다 — 지금 모습을 찍어 두고 끝에서 대조한다
+        pool_snap = {
+            (p["table"], p["end"]): bytes(exe[p["table"] : p["end"]]) for p in poolpack.LAYOUT[a.disc]["pools"]
+        }
     reinsert_names(exe, a.disc, table, report)
     fit_name_widths(exe, exe_orig, a.disc, report)
     # 🔴 불변식 — 월드맵 패널 풀의 **제어 코드 열이 원판과 같다**(글자만 바뀌었다). 어기면 패널이 비거나 줄이 밀린다(마스터 실기 10-08).
@@ -726,6 +745,10 @@ def main():
     lost = uitext.lost_text(exe_orig, bytes(exe), a.disc, enc)
     if lost:
         raise SystemExit("🔴 UI 글 소실:\n  " + "\n  ".join(lost[:10]))
+    if pool_pl:
+        for (lo, hi), snap in pool_snap.items():
+            if bytes(exe[lo:hi]) != snap:
+                raise SystemExit(f"🔴 읽을거리 풀 영역 {lo:#x}~{hi:#x} 을 뒤 단계가 덮었다 — 낱말 재삽입·빈틈 닻의 범위를 확인")
     square_center(exe, exe_orig, a.disc, enc, report)  # lost_text 가 글을 본 뒤에 덮는다(가운데 정렬)
     yesno_center(exe, exe_orig, a.disc, enc, report)
     yes_label_center(exe, exe_orig, a.disc, enc, report)
@@ -747,6 +770,12 @@ def main():
         f"그림 {gfx_files} · 글리프 {baked}"
     )
     print(f"  엔진: {engine or '⏭ 패치 없음 (공백도 12px)'}")
+    if pool_pl:
+        st = pool_pl["stats"]
+        print(
+            f"  읽을거리 풀: 사전 {st['dict']}항목 · 코드 {st['raw_codes']:,}→{st['comp_codes']:,} · "
+            f"풀1 {st['pools'][0][1]:,}/{st['pools'][0][0]:,}B · 풀2 {st['pools'][1][1]:,}/{st['pools'][1][0]:,}B (꼬리 {st['tail']}B 포함 영역)"
+        )
     if title_font_n:
         print(f"  타이틀 폰트: SLPS_012.01 BIOS 리다이렉트 · M01.DAT 문자열 {title_font_n}")
     if a.test:
