@@ -24,6 +24,7 @@ hook.OPS.update(
     {
         ("CLI", "imp"): 0x58,
         ("ORA", "izpy"): 0x11,
+        ("ORA", "zp"): 0x05,
         ("DEC", "zp"): 0xC6,
         ("CPX", "imm"): 0xE0,
     }
@@ -108,13 +109,19 @@ def _emit_name(a: Asm, tbl: int, bank: int) -> None:
     a.op("RTS")
 
 
-def routine(base: int, segs: list[tuple[int, int]], bank: int | None, names_tbl: int | None = None) -> bytes:
+def routine(base: int, segs: list[tuple[int, int]], bank: int | None, names_tbl: int | None = None, shift: bool = False) -> bytes:
     """리드 F0 + 트레일(0x24+번호) → 18B 묶음 표(`segs` = [(논리 주소, 글자 수)…], 번호 순)에서 24B 로 풀어 `($FA)` 에 쓰고 뒤 8B 는 0 으로.
     `bank` 가 있으면 그 뱅크를 MPR5($A000)에 잠깐 건다(크레딧 모듈의 뱅크 0x69 표). 엔딩 스태프롤도 같은 루틴(`bank=None`)을 쓴다 — 영 페이지 `$EC`·`$ED` 만 쓴다."""
     a = Asm(base)
     a.op("LDA", "zp", 0xF9)
     a.op("CMP", "imm", font.LEAD0)
-    if names_tbl is None:
+    if names_tbl is None and shift:
+        # 리드 F0 = 보통, F1 = 같은 글자를 오른쪽으로 4px 민 꼴(성과 이름 사이에 칸을 안 쓰고 반 칸 간격을 낸다 — 엔딩 스태프롤)
+        a.op("BEQ", "rel", "main")
+        a.op("CMP", "imm", font.LEAD0 + 1)
+        a.op("BEQ", "rel", "main")
+        a.op("JMP", "abs", BIOS_GETFNT)
+    elif names_tbl is None:
         a.op("BNE", "rel", "orig")
         a.op("BRA", "rel", "main")
         a.label("orig")
@@ -213,6 +220,31 @@ def routine(base: int, segs: list[tuple[int, int]], bank: int | None, names_tbl:
     a.op("INY")
     a.op("CPY", "imm", 32)
     a.op("BNE", "rel", "z")
+    if shift:
+        a.op("LDA", "zp", 0xF9)
+        a.op("CMP", "imm", font.LEAD0 + 1)
+        a.op("BNE", "rel", "fin")
+        a.op("LDY", "imm", 0)
+        a.label("sh")  # 행마다 16비트를 오른쪽으로 4비트
+        a.op("LDA", "izpy", 0xFA)
+        a.op("TAX")
+        for _ in range(4):
+            a.op("LSR")
+        a.op("STA", "izpy", 0xFA)
+        a.op("INY")
+        a.op("TXA")
+        for _ in range(4):
+            a.op("ASL")
+        a.op("STA", "zp", 0xEC)
+        a.op("LDA", "izpy", 0xFA)
+        for _ in range(4):
+            a.op("LSR")
+        a.op("ORA", "zp", 0xEC)
+        a.op("STA", "izpy", 0xFA)
+        a.op("INY")
+        a.op("CPY", "imm", 24)
+        a.op("BNE", "rel", "sh")
+        a.label("fin")
     if bank is not None:
         a.op("PLA")
         a.op("TAM", "tam", 5)

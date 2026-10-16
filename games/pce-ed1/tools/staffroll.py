@@ -157,6 +157,7 @@ def fit(line: bytes) -> bytes:
 # 마스터 10-15 「ed2 와 일관성: 분야 라벨 한글 · 성우 배역 이름은 정본 한글 · 사람·회사 이름은 원문」. pce-ed2 `ending.py` 와 같은 길 — 렌더러가 글자마다 부르는
 # BIOS `EX_GETFNT`(`JSR $E060`, 모듈 +0x56B3·+0x57CC) 의 피연산자를 우리 루틴으로 돌린다: 리드 `F0` 이면 자체 표(24B/자)에서 `($FA)` 로 복사, 아니면 `JMP $E060`.
 KR = not os.environ.get("ED_STAFF_EN")
+NAME_TIGHT = not os.environ.get("ED_NAME_F1")  # 이름 줄도 12px 전진(굵게 경로, 마스터 10-16 「12px로 바꾸자」) — ED_NAME_F1=1 이면 옛 F1 꼴
 LEAD, TRAIL0 = font.LEAD0, font.TRAIL0
 SEAM_OFFS = (0x56B4, 0x57CD)  # `20 60 E0` 의 피연산자
 SEAM_OLD = b"\x60\xe0"
@@ -255,6 +256,7 @@ KO_NAME = {
     "スタジオタバック": "스튜디오 타박",  # 공식 영문 Studio Tavac 기준
     "（スタジオライブ）": "（스튜디오 라이브）",
     "（ＲＥＤカンパニー）": "（ＲＥＤ 컴퍼니）",
+    "（ＡＤＳ）": "（ＡＤＳ）",  # 영문은 그대로 — 괄호만 안쪽 글리프
 }
 OPENING_CAST = [  # 오프닝 성우 크레딧 이름 13명(원문, 한글) — 오프닝 크레딧 모듈 안 순서($5C2B 부터 11B 간격, `credits_kr`)
     ("大倉正章", "오쿠라 마사아키"),
@@ -288,6 +290,20 @@ def _cast_ko(jp: str) -> str:
     raise KeyError(jp)
 
 
+BR_CHARS = "()"  # 전각 괄호는 자체 글리프로 — 보통/굵은 글씨 줄 모두 12px 칸 안에서 괄호 잉크를 **안쪽 가장자리**에 붙인다(반각처럼 글자에 붙는다, 마스터 10-16 「괄호는 반각」)
+BR_MAP = str.maketrans({"（": "(", "）": ")"})
+
+
+def _glyph(ch: str) -> bytes:
+    """글리프 표 한 글자 24B — 괄호는 기본 글꼴의 3px 괄호를 칸의 안쪽(여는 괄호 = 오른쪽 끝, 닫는 괄호 = 왼쪽 끝)으로 민다."""
+    g = font.glyph(ch)
+    if ch not in BR_CHARS:
+        return g
+    shift = 8 if ch == "(" else 1
+    rows = [int.from_bytes(g[2 * i : 2 * i + 2], "big") >> shift for i in range(12)]
+    return b"".join((r & 0xFFF0).to_bytes(2, "big") for r in rows)
+
+
 def _is_hangul(ch: str) -> bool:
     return "\uac00" <= ch <= "\ud7a3"
 
@@ -300,10 +316,25 @@ def _enc_ko(text: str, idx: dict) -> bytes:
             out += b"\x81\x40"
         elif ch == "・":
             out += b"\x81\x45"
-        elif _is_hangul(ch):
-            out += bytes([LEAD, TRAIL0 + idx[ch]])
+        elif _is_hangul(ch) or ch.translate(BR_MAP) in BR_CHARS:
+            out += bytes([LEAD, TRAIL0 + idx[ch.translate(BR_MAP)]])
         else:
-            out += sj(ch)  # 전각 영문·괄호 — BIOS 글꼴
+            out += sj(ch)  # 전각 영문 — BIOS 글꼴
+    return bytes(out)
+
+
+def _enc_name(text: str, idx: dict) -> bytes:
+    """사람·회사 이름(보통 글씨 줄) — 성/이름 사이 공백을 **칸으로 안 두고** 뒤 낱말의 한글을 리드 F1(오른쪽으로 4px 민 꼴)로 쓴다.
+    글자 둘 사이 틈이 4px → 8px(반각 공백 폭)가 되고 한 칸이 줄어, 9칸 이름도 원판의 이름 열(128px)에 든다(마스터 10-16 정렬·반각)."""
+    out = bytearray()
+    for n, word in enumerate(text.split(" ")):
+        for ch in word:
+            if _is_hangul(ch) or ch.translate(BR_MAP) in BR_CHARS:
+                out += bytes([LEAD + (1 if n else 0), TRAIL0 + idx[ch.translate(BR_MAP)]])
+            else:
+                out += sj(ch)
+        if n == 0 and len(text.split(" ")) > 1 and not _is_hangul(word[-1]):
+            out += b"\x81\x40"  # 영문 낱말 뒤는 전각 공백을 둔다(ＭＩＴ 스튜디오)
     return bytes(out)
 
 
@@ -313,7 +344,7 @@ def _ko_strings() -> list[str]:
 
 
 def glyph_chars() -> list[str]:
-    return sorted({ch for t in _ko_strings() for ch in t if _is_hangul(ch)})
+    return sorted({ch for t in _ko_strings() for ch in t.translate(BR_MAP) if _is_hangul(ch) or ch in BR_CHARS})
 
 
 KO_CAST_COL = max(len(_cast_ko(k)) for k in CAST) + 1  # 6 — 가장 긴 배역명(디나 공주·대도 게일) 뒤에도 한 칸 띄운다(시험 캡처에서 이름에 붙었다)
@@ -322,7 +353,13 @@ KO_CAST_COL = max(len(_cast_ko(k)) for k in CAST) + 1  # 6 — 가장 긴 배역
 def _name_ko(jp: str, idx: dict) -> bytes:
     """원문 이름(전각 공백 포함 가능)을 KO_NAME 으로 — 표에 없으면(보통·낮음 확신) 원문 그대로."""
     key = jp.replace("　", "")
-    return _enc_ko(KO_NAME[key], idx) if key in KO_NAME else sj(jp)
+    if key not in KO_NAME:
+        return sj(jp)
+    ko = KO_NAME[key]
+    if NAME_TIGHT and all(_is_hangul(c) or c == " " for c in ko):
+        # 마스터 10-16 「글자 사이 여백이 커서 띄어쓰기가 안 느껴진다」 — 이름도 굵은 줄 경로(12px 전진)로 라벨처럼 촘촘히, 성/이름 사이는 12px 칸(보통 간격 4px + 12 = 16px 이상 틈)
+        return b"\x1b" + _enc_ko(ko, idx) + b"\x1d"
+    return _enc_name(ko, idx)
 
 
 def build_kr() -> bytes:
@@ -352,8 +389,8 @@ def build_kr() -> bytes:
             if key in CAST and post:
                 ko = _cast_ko(key)
                 assert len(ko) <= KO_CAST_COL, (key, ko)
-                # 한글 이름이 일본어보다 길다 — 앞 탭(32px)을 전각 공백(16px)으로 줄이고 이름 칸을 가장 긴 배역명 폭(+1)으로 줄여 9칸 이름이 256px 안에 든다(16+72+144=232)
-                b = sj("　") + b"\x1b" + _enc_ko(ko, idx) + sj("　") * (KO_CAST_COL - len(ko)) + b"\x1d" + _name_ko(post, idx)
+                # 이름 열을 가장 긴 배역명 폭(+1칸)으로 앞당긴다 — 성/이름 사이를 칸으로 안 두니(`_enc_name`) 8칸(128px) 이름이 32+72+128=232px 안에 든다(배역 시작 x=32 는 원판 그대로)
+                b = sj(pre) + b"\x1b" + _enc_ko(ko, idx) + sj("　") * (KO_CAST_COL - len(ko)) + b"\x1d" + _name_ko(post, idx)
                 assert width(b) <= LIMIT, (ko, width(b))
                 out.append(b)
                 i += 1
@@ -387,7 +424,7 @@ def hook_code(base: int, seg_a: int, n_a: int, seg_b: int, n_b: int) -> bytes:
     import credits_kr
 
     segs = [(seg_a, n_a)] + ([(seg_b, n_b)] if n_b else [])
-    return credits_kr.routine(base, segs, None)
+    return credits_kr.routine(base, segs, None, shift=True)
 
 
 def kr_layout() -> dict:
@@ -434,8 +471,8 @@ def apply_kr(f, touched) -> str:
         lay["hi_off"] + 0x2000,
         len(chars) - n_low,
     )
-    table_lo = b"".join(font.pack(font.glyph(ch)) for ch in chars[:n_low])
-    table_hi = b"".join(font.pack(font.glyph(ch)) for ch in chars[n_low:])
+    table_lo = b"".join(font.pack(_glyph(ch)) for ch in chars[:n_low])
+    table_hi = b"".join(font.pack(_glyph(ch)) for ch in chars[n_low:])
     assert lay["end"] <= 0x8000, (lay["end"], "스태프롤 한글이 모듈 창($8000) 을 넘는다")
     orig = original()
     spans = [
