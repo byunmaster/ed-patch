@@ -11,6 +11,7 @@
 """
 
 import hashlib
+import os
 import sys
 import unicodedata
 from pathlib import Path
@@ -25,7 +26,7 @@ import canon
 
 PKG_REL = 5250
 U = common.USER
-TEXT_OFF, TEXT_END = 0x1C88, 0x2F23
+TEXT_OFF, TEXT_END = 0x1C88, 0x2840  # 🔴 스트림 끝은 0x2840 이다 — 그 뒤(0x2863~)는 대사가 아니라 **끝 장면(지구·위성) 팔레트·타일 자료**다. 예전엔 0x2F23 까지를 스트림으로 보고 글리프 표로 덮어 끝 장면이 붉게 변했다(원판은 정상, 마스터 10-15 유튜브 대조 — 자막 끈 기준 롬에서도 붉었던 건 이 패치 탓이었다)
 BIT_OFF = 0x14FF  # `2C 88 5C` 의 피연산자
 BIT_OLD = bytes([0x88, 0x5C])
 NEW_TEXT_OFF = 0x4010  # 0xFF 패딩(0x3FF4~0x5E00) 안
@@ -236,7 +237,8 @@ def build(pkg: bytes) -> tuple[bytes, list[str]]:
     return b"\r\n".join(x for x in out if x is not None), chars
 
 
-def hook_code(table_addr: int) -> bytes:
+def hook_code(table_addr: int, n_low: int, table2_adj: int) -> bytes:
+    """글리프 번호 < n_low 는 `table_addr` 표, 이상은 `table2_adj`(= 둘째 표 주소 − 24 × n_low) 를 더한다."""
     a = asm.Asm(BASE + HOOK_OFF)
     a.op("LDA", "zp", 0xF9)
     a.op("CMP", "imm", LEAD)
@@ -259,6 +261,8 @@ def hook_code(table_addr: int) -> bytes:
     for _ in range(3):
         a.op("ASL", "zp", 0xEC)
         a.op("ROL", "zp", 0xED)  # 24k
+    a.op("CPX", "imm", n_low)
+    a.op("BCS", "rel", "hi")
     a.op("CLC")
     a.op("LDA", "zp", 0xEC)
     a.op("ADC", "imm", table_addr & 0xFF)
@@ -266,6 +270,16 @@ def hook_code(table_addr: int) -> bytes:
     a.op("LDA", "zp", 0xED)
     a.op("ADC", "imm", table_addr >> 8)
     a.op("STA", "zp", 0xED)
+    a.op("BRA", "rel", "cpy")
+    a.label("hi")
+    a.op("CLC")
+    a.op("LDA", "zp", 0xEC)
+    a.op("ADC", "imm", table2_adj & 0xFF)
+    a.op("STA", "zp", 0xEC)
+    a.op("LDA", "zp", 0xED)
+    a.op("ADC", "imm", (table2_adj >> 8) & 0xFF)
+    a.op("STA", "zp", 0xED)
+    a.label("cpy")
     a.op("LDY", "imm", 23)
     a.label("cp")
     a.op("LDA", "izpy", 0xEC)
@@ -285,15 +299,19 @@ def writes(pkg: bytes):
     table = b"".join(font.glyph(ch) for ch in chars)
     base = PKG_REL * U
     assert len(new_text) <= 0x5E00 - NEW_TEXT_OFF, len(new_text)
-    assert len(table) <= TEXT_END - TEXT_OFF
-    hook = hook_code(BASE + TABLE_OFF)
+    n_low = (TEXT_END - TEXT_OFF) // 24  # 원래 스트림 자리에 들어가는 글리프 수 — 나머지는 새 스트림 뒤(0xFF 패딩)에 둔다
+    table_lo, table_hi = table[: n_low * 24], table[n_low * 24 :]
+    table2_off = NEW_TEXT_OFF + len(new_text)
+    assert table2_off + len(table_hi) <= 0x5E00, (table2_off, len(table_hi))
+    hook = hook_code(BASE + TABLE_OFF, n_low, (BASE + table2_off - 24 * n_low) & 0xFFFF)
     assert len(hook) <= 540, len(hook)
     new_bit = (BASE + NEW_TEXT_OFF).to_bytes(2, "little")
     seam = (BASE + HOOK_OFF).to_bytes(2, "little")
     out = [
         (base + NEW_TEXT_OFF, new_text, b"\xff" * len(new_text), "엔딩 스태프롤 새 스트림"),
         (base + BIT_OFF, new_bit, BIT_OLD, "엔딩 스트림 포인터"),
-        (base + TABLE_OFF, table, pkg[TABLE_OFF : TABLE_OFF + len(table)], "엔딩 한글 글리프 표"),
+        (base + TABLE_OFF, table_lo, pkg[TABLE_OFF : TABLE_OFF + len(table_lo)], "엔딩 한글 글리프 표(앞)"),
+        (base + table2_off, table_hi, b"\xff" * len(table_hi), "엔딩 한글 글리프 표(뒤)"),
         (base + HOOK_OFF, hook, bytes(len(hook)), "엔딩 글리프 후킹 루틴"),
         (base + SEAM_OFF, seam, SEAM_OLD, "엔딩 EX_GETFNT 이음매"),
     ]
@@ -301,6 +319,9 @@ def writes(pkg: bytes):
 
 
 def apply(w) -> dict:
+    if os.environ.get("ED_STAFF_OFF"):  # 시험용 — 스태프롤 패치를 빼 원판 동작과 대조한다(10-15 끝 장면 빨강 원인 가르기)
+        print("  엔딩 스태프롤: ED_STAFF_OFF — 건너뜀")
+        return {}
     pkg = common.track_data(PKG_REL, 47)
     spans, info = writes(pkg)
     for linear, new, expect, label in spans:

@@ -24,15 +24,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import battle
 import chapter
 import common
-import endcard
 import dialogue
+import endcard
+import ending
+import ending_sub
+import cardart
+import syscard
+import endtest
 import font
 import hook
 import labels
 import layout
 import lz
-import ending
-import endtest
 import opening_sub
 import package
 import repack
@@ -520,7 +523,10 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
         apply_program(w, prog, glyph24)
         intended = apply_pkg_edits(w, plan)
         opening_sub.apply(w)  # 오프닝 나레이션 자막(모듈 rel 4098 — 본 프로그램과 다른 이미지)
+        ending_sub.apply(w)  # 대관식 성우 대사 자막(패키지 38 — ADPCM 셀 데이터 + 뱅크 0x86 코드)
         ending.apply(w)  # 엔딩 스태프롤(패키지 41) — 분야 라벨·엔딩 대사 번역 + 자체 글리프 후킹
+        syscard.apply(w)  # 시스템 카드·백업 RAM 안내문 넷(패키지 20) — 번역 + 자체 글리프 후킹
+        cardart.apply(w)  # 그 화면의 그림 글자(간판 만실·여관 · 말풍선 헉 — 패키지 20 LZSS 덩이)
         if endtest.enabled():  # 엔딩 직행 시험 빌드(환경 변수 ED_ENDING_TEST=1 — 정본 빌드엔 안 들어간다)
             endtest.apply(w)
     write_review()

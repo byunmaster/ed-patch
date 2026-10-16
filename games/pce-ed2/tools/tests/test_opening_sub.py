@@ -25,7 +25,7 @@ class Pages(unittest.TestCase):
             for i, (x, yoff, cb) in enumerate(p["cells"]):
                 if i % 2 == 0:  # 32 폭 스프라이트의 시작 셀만 SAT x 가 된다
                     self.assertTrue(0 <= x + 32 <= 255, (p["lines"], x))
-                self.assertIn(yoff % (o.LINE_ACC if p["group"] else o.LINE_H), (0,))
+                self.assertEqual(yoff % (o.LINE_ACC if p["group"] else o.LINE_3 if len(p["lines"]) > 2 else o.LINE_H), 0)
                 self.assertEqual(len(cb), 64)
 
     def test_줄은_폭_상한_안이다(self):
@@ -64,10 +64,11 @@ class StarBG(unittest.TestCase):
             gaps[i + 1] = min(b["bg"]["rows"]) // 64 - max(a["bg"]["rows"]) // 64 - 1
         self.assertEqual([g for g in gaps if g], [2])  # 빈 줄은 한 곳(16px)뿐
 
-    def test_덩어리가_세로_가운데에_가깝다(self):
+    def test_마지막_단계_전체가_화면_세로_가운데다(self):
+        """두 덩이가 다 보인 마지막 단계의 세로 중심이 화면 가운데(H/2)에서 8px(한 BAT 행) 안이다 — 마스터 10-16 「우주 장면 아래쪽으로 치우친 것 같다」."""
         rows = [r // 64 for p in self.bg for r in p["bg"]["rows"]]
         top, bot = min(rows) * 8 + o.BG_SHIFT_Y, (max(rows) + 1) * 8
-        self.assertLessEqual(abs((top + bot) / 2 - o.H / 2), 4)
+        self.assertLessEqual(abs((top + bot) / 2 - o.H / 2), 8)
 
     def test_BAT_항목은_빈칸이거나_새_타일이다(self):
         import struct
@@ -79,10 +80,10 @@ class StarBG(unittest.TestCase):
                 for e in struct.unpack("<32H", body[k * 64 : k * 64 + 64]):
                     self.assertTrue(e == o.BG_BLANK or (e >> 12 == o.BG_PAL and e & 0xFFF >= o.BG_TILE0), hex(e))
 
-    def test_글_왼쪽_끝은_격자_안이다(self):
+    def test_글_줄은_격자_안이다(self):
         for p in self.bg:
             for line in p["lines"]:
-                self.assertLessEqual(o.BG_COL0 + len(o.line_tiles(line)), 32, line)
+                self.assertLessEqual(len(o.line_tiles(line)), 32, line)  # 줄마다 화면 가운데(마스터 10-15)라 시작 열은 줄마다 다르다 — 줄 폭이 32 타일 안이면 된다
 
 
 class Timeline(unittest.TestCase):

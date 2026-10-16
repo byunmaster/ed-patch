@@ -13,13 +13,14 @@ ED2 의 사정이 훨씬 단순해 새로 썼다(조사 근거: docs/devlog.md 2
   · 스프라이트 팔레트 8 은 늘 0 이다. 색은 IRQ1 이 VCE 로 올리는 **팔레트 그림자**(`$2BBB`)의 해당 항목(`$2EBD~`)에 쓴다.
   · 훅은 하나 — CD_PLAY 호출(`$5518`)을 우리 스텁으로. 스텁이 RAM(`$2300`)에 init 을 복사해 거기서 CD_READ(자막 셀 → 뱅크 0x70~)·
     CD_PLAY·IRQ 훅 설치를 한다(CD_READ 는 MPR 을 건드리므로 RAM 에서). IRQ1 의 `JSR $E063`(`$4099`)은 **런타임에** RAM 트램펄린으로 바꿔 낀다.
-  · 시각 원점: CD_PLAY 복귀에서 프레임 카운터 0(IRQ 블록이 한 번 돌 때마다 +1). 자막 시각 = AUDIO_LAG + 초 × 59.826.
+  · 시각 원점: CD_PLAY 복귀에서 프레임 카운터 0(IRQ 블록이 한 번 돌 때마다 +1). 자막 시각 = AUDIO_LAG + 초 × 59.826 (AUDIO_LAG 는 mednafen 에서 0 — 아래 상수의 실측 설명).
 
 ⚠ 셀 하나 = 16×16 스프라이트 = 64워드. 데이터는 평면 0(글자)·1(테두리)만 싣고(64B), 평면 2·3 은 런타임이 0 으로 채운다.
 """
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -51,6 +52,8 @@ V_FR, V_ON, V_UPG, V_UPB, V_UPC, V_UPN, V_UPK, V_SAVE, V_TMP = (
     0x22E0, 0x22E2, 0x22E3, 0x22E4, 0x22E5, 0x22E6, 0x22E7, 0x22E8, 0x22E9,
 )  # fmt: skip
 V_CODE, V_YL = 0x22EA, 0x22EC  # 16비트(패턴 코드 · y)
+V_F7 = 0x22EF  # IRQ 가 들어올 때 끊긴 쪽의 VDC 레지스터 선택값 — 0~2 면 끊긴 쪽이 MAWR/VWR 쓰기 한복판(게임이 그림을 CD→VRAM 으로 읽는 중일 수 있다)
+Z_DEF, DEFER_MAX = 0xCB, 90  # 연속으로 미룬 틱 수 · 그만큼 미루면 「늘 2」 구간이라 그냥 한다
 V_BG = 0x22EE  # BG 자막을 그렸으면 1 — 지울 때만 BAT 를 만진다(스킵해 타이틀로 간 뒤엔 건드리지 않는다)
 RAM_INIT, RAM_INIT_MAX = 0x2300, 0xC0
 Z_EV, Z_DP, Z_PG, Z_T0, Z_T1, Z_A, Z_B, Z_X = 0xC0, 0xC2, 0xC4, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA  # ZP $20C0~ (원판 덤프 7개에서 0)
@@ -70,17 +73,20 @@ V_OPENING = 0x2B7C  # 작업 슬롯 1 의 상태 — 오프닝 내내 0xFF(원�
 W, H = 256, 232
 CELL = 12  # 글리프 셀(px)
 ADV_LATIN = 8
-LINE_CAP = 206  # 줄 폭 상한(px) — 셀 13개(208) 안. x 가 한 바이트(≤255)에 들게 한다
+LINE_CAP = 244  # 줄 폭 상한(px) — 화면(256) 안. 16px 격자를 줄 시작에서 어긋나게 잡아(line_cells `pad`) 마지막 32 폭 스프라이트가 x≤223 에 들게 한다(마스터 10-14 「칸을 늘리자」)
 CELL_PX = 16
 GLYPH_ROWS = 14
 LINE_H = 18
 MAX_LINES = 2
-Y0 = 188  # 첫 줄 윗단(화면 행). 레터박스 그림은 184 아래가 검정이다
+BOTTOM_SINGLE = False  # 번역 규칙 2-14 — 한 줄 자막을 두 줄의 둘째 줄 높이(바닥)에. 마스터가 검은 띠 아래 한 줄을 보고 「이상하다」 해서 규칙이 다시 정해질 때까지 끈다(10-15) — 값 하나로 켠다
+Y0 = 187  # 첫 줄 윗단(화면 행) — 마지막 줄 잉크 아래끝 ~ 화면 아래끝 16px(마스터 10-15 「16px로 통일」). 레터박스 그림은 184 아래가 검정이다
+Y0_3, LINE_3 = 184, 16  # 세 줄 쪽(마스터 10-14 「건강하게 자랐다」 합침) — 검은 띠(184~232)에 들게 윗단을 올리고 줄 간격을 좁힌다
 Y0_ACC, LINE_ACC = 44, 18  # 이어 붙이는 별하늘 묶음(group)의 윗단·줄 간격 — pce-ed1 별하늘과 같은 값(마스터 10-13). ⚠ 별(스프라이트 32 개)이 행 96~160 에 몰려 스캔라인 16 스프라이트 한도를 채우므로 다섯 줄 묶음의 아랫줄이 잘릴 수 있다(24·16 으로 올렸던 이유) — 실화면 확인 결과는 devlog
 Y0_TOP = 44  # 별하늘(우주 배경) 구간은 위에서부터 — pce-ed1 오프닝 별하늘 자막과 같은 값(TOP 44, 줄 간격 LINE_H 18). 대본에서 "lay":"top" (마스터 10-13)
 DY = fonts.GALMURI11_DY
 FPS = 59.826
-AUDIO_LAG = 90  # 프레임 카운터 0(CD_PLAY 복귀) → 음성 t=0. 처음 110(pce-ed1 오프닝 자막의 실측값)이었으나 마스터가 실기에서 「자막이 음성보다 조금 늦다」(10-13) → 20프레임(0.33초) 앞당겼다. 체감값이라 마스터 확인으로 다시 다듬는다
+AUDIO_LAG = 0  # 프레임 카운터 0(CD_PLAY 복귀) → 음성 t=0. 🔴 mednafen 은 CD-DA 를 탐색 지연 없이 **즉시** 시작한다(세이브스테이트의 CDDA 읽기 위치로 실측: V_FR=19 에 20.7프레임 · V_FR=3019 에 3021.6프레임 — 오디오가 카운터보다 1~2프레임 앞). 그래서 이전 값 110→90→78 은 기준점이 틀린 채 쪽 시각(받아쓰기 t0 — 첫 쪽은 1.1초 일찍 잡혔다)으로 때운 것이다(마스터 10-14 「세리오스 목소리가 먼저 나오는데 자막이 늦게 나왔어」). 실기는 탐색 시간만큼 오디오가 늦게 시작하니 자막이 먼저 뜬다 — 실기 값은 따로 재야 한다
+END_HOLD = 30  # 음성 끝 뒤 자막을 더 두는 프레임(0.5초 — 마스터 10-14 「말끝나자마자 닫히는 게 타이트」). 다음 쪽 시작과 겹치면 다음 쪽 보이기가 대신 덮는다
 UPLOAD_LEAD = 30  # 보이기 전에 올리기 시작하는 프레임
 CELLS_PER_TICK = 2
 
@@ -91,6 +97,12 @@ def _adv(ch):
 
 def text_w(s):
     return sum(_adv(c) for c in s)
+
+
+def center_w(text):
+    """가운데 맞춤용 폭(px) — 줄 끝 「.」「,」「…」 글자는 뺀다(번역 규칙 2-8, 마스터 10-15 「마침표만 다른 두 줄은 시작이 맞는다」)."""
+    t = text.rstrip(".,…")
+    return text_w(t) + 2
 
 
 def wrap_words(text, cap=LINE_CAP):
@@ -142,24 +154,35 @@ PIC_L, PIC_R = 32, 216  # 그림 칸(화면 x, 오른쪽은 배타) — 에뮬 �
 # 별하늘은 BG 가 한 가지 빈 타일(0x7EF)뿐이다(실측: 보이는 32칸 전부) — 자막을 스프라이트가 아니라 BG 타일에 그리면 별 스프라이트의
 # 스캔라인 16 개 한도와 무관하다(다섯째 줄이 깨지던 원인). 글자는 8×8 타일(평면 0 = 글자 · 평면 1 = 테두리)로 쪼개 VRAM $4000~ 에 올리고
 # BAT(64×64, 한 줄 64 워드) 를 쪽마다 한 줄씩 채운다. 줄 높이 16(타일 둘) · 호흡 사이 한 타일 줄(8px) 빈칸.
-BG_ROW0 = 4  # 첫 글줄의 BAT 행(화면 y 32) — 9줄 144px + 빈 줄 16px = 160px 덩어리를 화면(232) 세로 가운데에: 8px 격자에서 행 4(잉크 34~192, 중심 113)가 행 5(121)보다 가운데 116 에 가깝다. 글은 줄 블록 안 2행 아래에서 시작
+BG_ROW0 = 7  # 첫 글줄의 BAT 행 — 별하늘은 줄이 쌓여 가는 누적 노출(넷 단계)이다. **마지막 단계(두 덩이 전체)가 화면 세로 가운데**에 오게 골랐다(마스터 10-16 「우주 장면 아래쪽으로 치우친 것 같다, 중앙에 오도록」 — 10-15 에 단계마다 편차의 최댓값을 줄이려 행 9 로 잡았더니 전체 장면이 +21px 아래였다). 행 7 · 글 내림 0: 마지막 단계 잉크 위·아래 여백 56·53px(실측 — 내림 2 였을 땐 58·51, 처음 행 9 는 74·35). 앞 단계(일부만 보이는 동안)는 위로 치우친다 — 마스터 판정 대기
 BG_COL0 = 6  # 글 왼쪽 끝 = 8px × 6 = 48 — pce-ed1 별하늘 캡처 실측(341 폭 화면 63px = 화면 비율 18.5% → 256 폭 47px)을 8px 격자에 맞춤. 마스터 10-13 「우주화면 글자위치는 pce-ed1 오프닝 기준」
 BG_PAL = 15  # BAT 팔레트 — 색 1 흰 · 색 2 검정(`t_f` 가 그림자에 쓴다)
 BG_TILE0 = 0x400  # 타일 번호 시작 = VRAM 워드 $4000(스프라이트 버퍼 자리 — 별하늘엔 스프라이트 자막이 없다)
 BG_TILES_MAX = (0x5300 - 0x4000) // 16  # 타일 수 상한(워드 $4000~$5300 = 304 타일 — 게임이 $5300 부터 덮어쓴다)
 BG_BLANK = 0x07EF  # 원판 BAT 의 빈 칸(팔레트 0 · 타일 0x7EF)
 # 호흡 사이 빈 줄은 없다(마스터 10-13) — 대본 `"gap": 타일 행 수` 가 있는 쪽 앞에만 둔다(「아무도 알아채지 못했다.」 다음 한 줄 = 2)
-BG_SHIFT_Y = 2  # 줄 블록(16행) 안에서 글(14행)을 내리는 양
+BG_SHIFT_Y = 0  # 줄 블록(16행) 안에서 글(14행)을 내리는 양
 BG_CLEAR_ROWS = 24  # 지울 BAT 행 수(행 5 부터)
 
 
-def line_cells(text, center=False, left=False):
-    """한 줄 → (왼쪽 시작 x, [64B 셀 | None(빈 셀)]). 셀 = 평면0 16워드 + 평면1 16워드(14·15행은 0). 행은 16비트 리틀엔디언, 비트15 = 왼쪽."""
+def line_cells(text, center=False, left=False, x0=None):
+    """한 줄 → (격자 시작 x, [64B 셀 | None(빈 셀)]). 셀 = 평면0 16워드 + 평면1 16워드(14·15행은 0). 행은 16비트 리틀엔디언, 비트15 = 왼쪽.
+    `x0` 를 주면 글 시작을 거기로(블록 맞춤). 줄이 넓어 마지막 32 폭 스프라이트가 x>223(SAT x 한 바이트 한계)이 되면 격자를 왼쪽으로 물려
+    (글 앞에 빈 열 `pad` 개) 마지막 스프라이트가 x=223 에 오게 한다 — 반환 x 는 격자 시작(음수 가능, ≥-31)."""
+    import numpy as np
+
     m, edge = render_line(text)
     wpx = m.shape[1]
     # 줄 시작은 그림 왼쪽 끝에 맞추고, 그림 폭을 넘는 줄(또는 제목 쪽 `align: center`)만 그림 가운데 기준(마스터 10-13)
-    pic_w = PIC_R - PIC_L - 2 * PIC_MARGIN
-    x0 = (PIC_L + PIC_R - wpx) // 2 if (center or (wpx - 2 > pic_w and not left)) else PIC_L + PIC_MARGIN - 1
+    if x0 is None:  # 줄마다 그림(띠) 가운데 — 마스터 10-15 「음성 자막은 가운데 정렬, 애니메이션 자막 같은 느낌으로」
+        x0 = max(0, (PIC_L + PIC_R - center_w(text)) // 2)
+    ncell = (wpx + CELL_PX - 1) // CELL_PX
+    pad = 0
+    if x0 + CELL_PX * (ncell + (ncell & 1)) - 32 > 223:
+        pad = x0 - (223 - 32 * (-(-(223 - x0) // 32)))
+        m = np.pad(m, ((0, 0), (pad, 0)))
+        edge = np.pad(edge, ((0, 0), (pad, 0)))
+        wpx += pad
     cells = []
     for c in range((wpx + CELL_PX - 1) // CELL_PX):
         out = bytearray()
@@ -173,7 +196,7 @@ def line_cells(text, center=False, left=False):
                             w |= 0x8000 >> bit
                 out += w.to_bytes(2, "little")
         cells.append(bytes(out) if any(out) else None)
-    return x0, cells
+    return x0 - pad, cells
 
 
 def line_tiles(text):
@@ -214,7 +237,8 @@ def bg_page(lines, t0, t1, grp, st, gap=0):
     new, rows = [], []
     for line in lines:
         cols = line_tiles(line)
-        assert BG_COL0 + len(cols) <= 32, (line, len(cols))
+        col0 = min(32 - len(cols), max(0, round((256 - center_w(line)) / 2 / 8)))  # 줄마다 화면 가운데(8px 격자) — 마스터 10-15
+        assert col0 + len(cols) <= 32, (line, len(cols))
         for half in (0, 1):
             ent = [BG_BLANK] * 32
             for c, pair in enumerate(cols):
@@ -226,7 +250,7 @@ def bg_page(lines, t0, t1, grp, st, gap=0):
                     idx = st["tiles"][tl] = BG_TILE0 + st["n"]
                     st["n"] += 1
                     new.append(tl)
-                ent[BG_COL0 + c] = (BG_PAL << 12) | idx
+                ent[col0 + c] = (BG_PAL << 12) | idx
             rows.append(((st["row"] + half) * 64, struct.pack("<32H", *ent)))
         st["row"] += 2
     assert st["n"] <= BG_TILES_MAX and st["row"] <= BG_ROW0 + BG_CLEAR_ROWS, (st["n"], st["row"])
@@ -280,13 +304,14 @@ def build_pages(script=None):
                 t += dur
                 continue
             for line in p:
-                x0, cs = line_cells(line, sub.get("align") == "center", sub.get("align") == "left")
+                x0, cs = line_cells(line)
                 acc.append((line, x0, cs))
             if grp is None:
                 rows, acc = acc, []
             else:
                 rows = list(acc)
-            pitch = LINE_H if grp is None else LINE_ACC
+            three = grp is None and len(rows) > 2
+            pitch = LINE_3 if three else LINE_H if grp is None else LINE_ACC
             cells = []
             for row, (_line, x0, cs) in enumerate(rows):
                 for k in range(0, len(cs), 2):  # 32×16 스프라이트 = 이웃한 셀 둘
@@ -296,7 +321,7 @@ def build_pages(script=None):
                     cells.append((x0 + CELL_PX * k, row * pitch, a or bytes(64)))
                     cells.append((x0 + CELL_PX * (k + 1), row * pitch, b or bytes(64)))
             assert len(cells) <= BUF_CELLS and len(cells) // 2 <= SLOTS, (p, len(cells))
-            pages.append({"t0": t, "t1": t + dur, "lines": [r[0] for r in rows], "cells": cells, "blob": b"".join(c[2] for c in cells), "group": grp, "y0": Y0_ACC if grp is not None else Y0_TOP if sub.get("lay") == "top" else Y0})
+            pages.append({"t0": t, "t1": t + dur, "lines": [r[0] for r in rows], "cells": cells, "blob": b"".join(c[2] for c in cells), "group": grp, "y0": Y0_ACC if grp is not None else Y0_3 if three else Y0 + (LINE_H if BOTTOM_SINGLE and len(rows) == 1 else 0), "lead": sub.get("lead", UPLOAD_LEAD)})
             t += dur
     return pages
 
@@ -338,10 +363,10 @@ def events(pages):
     for i, p in enumerate(pages):
         buf = bufs[i]
         if "bg" not in p:  # BG 쪽은 올리기 없이 보이기 때 한 번에(타일 수십 개 + BAT 줄)
-            ev.append((f(p["t0"]) - UPLOAD_LEAD, 1, i, buf))
+            ev.append((f(p["t0"]) - p.get("lead", UPLOAD_LEAD), 1, i, buf))
         ev.append((f(p["t0"]), 2, i, buf))
         nxt = f(pages[i + 1]["t0"]) if i + 1 < len(pages) else None
-        end = f(p["t1"]) + 18
+        end = f(p["t1"]) + END_HOLD
         if nxt is None or (pages[i + 1]["group"] is None or pages[i + 1]["group"] != p["group"]) and end < nxt - 12:
             ev.append((min(end, nxt - 1) if nxt else end, 3, 0, 0))
     last = pages[-1]
@@ -450,6 +475,17 @@ def tick_code(L):
     a.op("STA", "abs", PAL_BG15_C1 + 1)
     a.op("STZ", "abs", PAL_BG15_C1 + 2)
     a.op("STZ", "abs", PAL_BG15_C1 + 3)
+    a.op("LDA", "abs", V_F7)  # 끊긴 쪽이 VDC 쓰기 한복판이면 VRAM 일(올리기·보이기·지우기)을 미룬다 — 우리가 MAWR 를 옮기면 게임이 읽던 그림 데이터가 엉뚱한 곳에 들어가 그림이 잘린다(마스터 10-15)
+    a.op("CMP", "imm", 3)
+    a.op("BCS", "rel", "t_g0")
+    a.op("INC", "zp", Z_DEF)
+    a.op("LDA", "zp", Z_DEF)
+    a.op("CMP", "imm", DEFER_MAX)
+    a.op("BCS", "rel", "t_g")
+    a.op("RTS")
+    a.label("t_g0")
+    a.label("t_g")
+    a.op("STZ", "zp", Z_DEF)
     a.op("LDA", "abs", V_UPG)
     a.op("CMP", "imm", 0xFF)
     a.op("BEQ", "rel", "t_ev")
@@ -899,13 +935,16 @@ def rinit_code(L, bank, rel, nsec):
     return r
 
 
-TRAMP_LEN = 8
+TRAMP_LEN = 15
 
 
 def tramp_code(tick):
     t = A(TRAMP_IRQ)
     t.op("INC", "zp", 0x2F)  # 원래 자리가 하던 일 — 매 VBlank 프레임 수 올림 · 재진입 가드 해제
     t.op("RMB0", "zp", FLAG_ZP)
+    t.op("TSX")
+    t.op("LDA", "absx", 0x2103)  # 핸들러가 스택에 넣어 둔 $F7(끊긴 쪽의 VDC 레지스터 선택) — JSR 복귀 주소 둘 위(대관식 ending_sub 과 같은 자리)
+    t.op("STA", "abs", V_F7)
     t.op("JSR", "abs", tick)
     t.op("RTS")
     out = t.bytes()
@@ -1000,6 +1039,9 @@ def writes(pages=None):
 
 def apply(w):
     """`Writer` 에 모듈 패치와 데이터를 쓴다."""
+    if os.environ.get("ED_SUB_OFF"):  # 시험용 — 자막 없는 기준선(원판과 화면 비교용)
+        print("  오프닝 자막: ED_SUB_OFF — 건너뜀")
+        return None
     spans, info = writes()
     for linear, new, expect, label in spans:
         w.put(linear, new, expect, label)
