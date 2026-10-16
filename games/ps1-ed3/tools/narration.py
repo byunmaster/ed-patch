@@ -769,7 +769,10 @@ def draw_block(lines, w, h, font, align, left, top, pitch, gap):
             continue
         m, wid = render_line(ln, font)
         m = m[_ink_top(m) :]
-        x = (w - wid) // 2 if align == "center" else left
+        # 가운데 맞춤 폭은 줄 끝 문장부호(. , …)를 뺀 실제 픽셀 폭이다(번역 규칙 2-8, 마스터 10-13)
+        body = ln.rstrip(".,…")
+        cw = render_line(body, font)[1] if body else wid
+        x = (w - cw) // 2 if align == "center" else left
         if x < 0 or x + wid > w:
             over.append((ln, wid))
         hh = min(m.shape[0], h - y)
