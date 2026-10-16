@@ -47,6 +47,9 @@ PAGES = os.path.join(REPO, "scripts", "publish")
 EXTRA = os.path.join(REPO, ".local", "cache", "publish")
 SAVES = os.path.expanduser(os.environ.get("DEV_SAVES_DIR", "~/save"))
 HASHED = re.compile(r"^(?P<stem>.+)\.[0-9a-f]{32}\.(?P<ext>sav|srm)$")
+# 🔴 꼬리표가 `test-` 로 시작하는 칸은 시험용 — 파일서버·pull-build 목록에 안 나온다(마스터 10-15
+#    「내가 볼 빌드와 시험용빌드를 나눠서 관리」). 시험 빌드는 `ED_BUILD_TAG=test-<무엇>` 으로 굽는다.
+TEST_PREFIX = "test-"
 PLAYABLE = re.compile(r"\.(sfc|smc|md|gen|smd|bin)$", re.IGNORECASE)
 
 
@@ -72,6 +75,8 @@ def build_dirs():
             if not os.path.isdir(b):
                 continue
             for tag in os.listdir(b):
+                if tag.startswith(TEST_PREFIX):
+                    continue  # 시험용 칸은 마스터 목록에 안 보인다
                 d = os.path.realpath(os.path.join(b, tag))
                 if not os.path.isdir(d) or any(f.endswith(".failed") for f in os.listdir(d)):
                     continue
