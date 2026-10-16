@@ -361,7 +361,7 @@ def apply_exp_title(exe, disc, words, offset_words):
 
 # 가격 뒤 통화 단위 「ピア」 — 스크립트 해석기(`0x80038340`)가 숫자를 그린 뒤 **글자 둘을 상수 코드(0xC1·0x90)로 직접** 명령 버퍼에 내보낸다(번역 문안에 없다).
 #   명령 `1 · A · 개수 · 코드…` 한 덩이 + 속성 명령 `3 · A · 개수 · …` + 줄 커서 x(`obj+0x12`) 가 **2칸** 기준이다.
-#   「Pia」(3글자, 정본 표기) 로 바꾸려고 그 넷을 3 으로 올리고 글자 쓰기를 코드 상수 셋으로 다시 쓴다(마스터 10-13 「상점 고치자」).
+#   「 Pia」(공백+3글자 = 4칸, 정본 표기·숫자와 띄움 — 마스터 10-13) 로 바꾸려고 그 넷을 4 로 올리고 글자 쓰기를 코드 상수 셋으로 다시 쓴다(마스터 10-13 「상점 고치자」).
 #   ⚠ 개수만 두고 글자를 늘리면 셋째 코드가 명령으로 읽혀 해당 줄이 안 그려진다(실측 10-13, 멈춤) — 개수·속성·커서가 한 묶음이다.
 #   🔴 **`0x5e0` 은 칸 수가 아니라 명령 수다**(`0x800394f8` `addiu v1, v0, 2` = 이 단위가 내보낸 명령 둘: 글자 덩이 + 속성). 3 으로 올리면 렌더러가 없는 셋째 명령을 읽는다 —
 #   가격이 줄 앞에 오는 「구매」 줄은 우연히 멀쩡했지만 줄 중간에 오는 「판매」 줄(`그럼, N Pia에 사들이겠어`)에서 BIOS 예외로 죽었다(10-13). 이 자리는 **안 건드린다**.
@@ -381,12 +381,12 @@ CURRENCY_UNIT = {
 
 
 def currency_unit_words(codes):
-    """글자 코드 셋을 한 번에 쓰는 워드열(16워드 안) — 버퍼 포인터 `0x800c08c0` 를 한 번 읽고 셋을 쓴 뒤 6B 전진."""
-    assert len(codes) == 3 and all(0 < c < 0x8000 for c in codes)
+    """글자 코드 넷(공백·P·i·a)을 한 번에 쓰는 워드열(16워드 안) — 버퍼 포인터 `0x800c08c0` 를 한 번 읽고 넷을 쓴 뒤 8B 전진."""
+    assert len(codes) == 4 and all(0 < c < 0x8000 for c in codes)
     src = ["lui v0, 0x800c", "addiu v0, v0, 0x8c0", "lw v1, 0(v0)"]
     for k, c in enumerate(codes):
         src += [f"addiu a0, zero, {c}", f"sh a0, {2 * k}(v1)"]
-    src += ["addiu v1, v1, 6", "sw v1, 0(v0)"]
+    src += ["addiu v1, v1, 8", "sw v1, 0(v0)"]
     words, _ = asm("\n".join(src), 0x800393E4)
     assert len(words) <= 16
     return list(words) + [0] * (16 - len(words))
@@ -395,7 +395,7 @@ def currency_unit_words(codes):
 def apply_currency_unit(exe, disc, table):
     """통화 단위 「ピア」 → 「Pia」 (정본 표기). 표에 P·i·a 가 없으면 건너뛴다."""
     site = CURRENCY_UNIT.get(disc)
-    if not site or not all(c in table for c in "Pia"):
+    if not site or not all(c in table for c in " Pia"):
         return ""
     gaddr, glen = site["glyphs"]
     _expect(exe, site["count1"], (0x24040002,), "통화 단위 글자 덩이 개수")
@@ -403,12 +403,12 @@ def apply_currency_unit(exe, disc, table):
     _expect(exe, site["count3"], (0x24040002,), "통화 단위 속성 개수")
     _expect(exe, site["cells"], (0x24430002,), "통화 단위 그린 칸 수")
     _expect(exe, site["cursor"], (0x24830002,), "통화 단위 줄 커서")
-    words = currency_unit_words([table[c] for c in "Pia"])
+    words = currency_unit_words([table[c] for c in " Pia"])
     verify(words, gaddr)
-    struct.pack_into("<I", exe, _off(site["count1"]), 0x24040003)
+    struct.pack_into("<I", exe, _off(site["count1"]), 0x24040004)
     struct.pack_into(f"<{glen}I", exe, _off(gaddr), *words)
-    struct.pack_into("<I", exe, _off(site["count3"]), 0x24040003)
-    struct.pack_into("<I", exe, _off(site["cursor"]), 0x24830003)
+    struct.pack_into("<I", exe, _off(site["count3"]), 0x24040004)
+    struct.pack_into("<I", exe, _off(site["cursor"]), 0x24830004)
     return " · 통화 단위 Pia"
 
 

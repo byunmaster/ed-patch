@@ -148,10 +148,10 @@ class TestCurrencyUnit(unittest.TestCase):
         import capstone
 
         exe, site = self._exe()
-        table = {"P": 0x22F, "i": 0x230, "a": 0x1DB}
+        table = {" ": 0xE5, "P": 0x22F, "i": 0x230, "a": 0x1DB}
         self.assertTrue(engine_patch.apply_currency_unit(exe, "ed3", table))
         for key in ("count1", "count3", "cursor"):
-            self.assertEqual(struct.unpack_from("<I", exe, engine_patch._off(site[key]))[0] & 0xFFFF, 3, key)
+            self.assertEqual(struct.unpack_from("<I", exe, engine_patch._off(site[key]))[0] & 0xFFFF, 4, key)
         # 🔴 `0x5e0` 은 명령 수(칸 수 아님) — 안 건드린다(판매 줄에서 죽은 회귀)
         self.assertEqual(struct.unpack_from("<I", exe, engine_patch._off(site["cells"]))[0] & 0xFFFF, 2)
         addr = site["glyphs"][0]
@@ -159,14 +159,15 @@ class TestCurrencyUnit(unittest.TestCase):
         md = capstone.Cs(capstone.CS_ARCH_MIPS, capstone.CS_MODE_MIPS32 | capstone.CS_MODE_LITTLE_ENDIAN)
         got = [(i.mnemonic, i.op_str.replace(" ", "")) for i in md.disasm(struct.pack("<16I", *words), addr)]
         self.assertIn(("addiu", "$a0,$zero,0x22f"), got)
-        self.assertIn(("sh", "$a0,4($v1)"), got)
-        self.assertIn(("addiu", "$v1,$v1,6"), got)
+        self.assertIn(("addiu", "$a0,$zero,0xe5"), got)
+        self.assertIn(("sh", "$a0,6($v1)"), got)
+        self.assertIn(("addiu", "$v1,$v1,8"), got)
 
     def test_stops_when_original_differs(self):
         exe, site = self._exe()
         struct.pack_into("<I", exe, engine_patch._off(site["cells"]), 0)
         with self.assertRaises(SystemExit):
-            engine_patch.apply_currency_unit(exe, "ed3", {"P": 1, "i": 2, "a": 3})
+            engine_patch.apply_currency_unit(exe, "ed3", {" ": 4, "P": 1, "i": 2, "a": 3})
 
     def test_skips_without_latin_letters(self):
         exe, _ = self._exe()

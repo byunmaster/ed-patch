@@ -84,6 +84,9 @@ class TestTypesetRules(unittest.TestCase):
         self.assertTrue(C.line_problems("불렀어〜."))
         self.assertTrue(C.line_problems("어이~!"))
         self.assertEqual(C.line_problems("어이〜!"), [])
+        # 숫자와 Pia/Goa 사이 공백(마스터 10-13)
+        self.assertTrue(C.line_problems("15Pia에 사 주지."))
+        self.assertEqual(C.line_problems("15 Pia에 사 주지."), [])
 
     def test_name_echo_pattern(self):
         import check_name_echo as E
