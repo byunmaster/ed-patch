@@ -45,14 +45,21 @@ def _argv_disc():
     return "ed3"
 
 
+# 🔴 시험 빌드 전용 디버그 스위치(`debugpatch.py`) — `ED_DEBUG=1` + 꼬리표 `test-*` 또는 마스터용 `debug`. 제품·일반 시험 빌드는 이 값을 안 본다(바이트 불변).
+DEBUG = os.environ.get("ED_DEBUG") == "1"
+
+
 def _build_tag():
     """빌드 산출물을 가르는 꼬리표 — 🔴 **디스크(편) 기준**이다: ED3 는 `ps1-ed3`, ED4 는 `ps1-ed4`(마스터 10-08).
 
     이 트리는 브랜치가 `game/ps1-ed3` 라 브랜치에서 유도하면 두 이미지가 한 칸 이름(`ps1-ed3-4`)을 나눠 쓴다 — 이미지가 다르다.
     `ED_BUILD_TAG` 로 덮어쓴다(조사용 칸은 `ps1-ed3-probe` 꼴).
     """
-    tag = os.environ.get("ED_BUILD_TAG") or f"ps1-{_argv_disc()}"
-    return "".join(c if (c.isalnum() or c in "-_.") else "-" for c in tag) or "local"
+    tag = os.environ.get("ED_BUILD_TAG") or ("test-debug" if DEBUG else f"ps1-{_argv_disc()}")
+    tag = "".join(c if (c.isalnum() or c in "-_.") else "-" for c in tag) or "local"
+    if DEBUG and not (tag.startswith("test-") or tag == "debug"):  # 🔴 디버그 빌드가 제품 칸(`ps1-ed3`)·다른 칸을 못 덮게 꼬리표를 막는다
+        raise SystemExit("🔴 ED_DEBUG=1 은 시험 빌드 전용이다 — 꼬리표는 test-* 또는 debug 여야 한다(기본 test-debug, ED_BUILD_TAG 로 바꿀 때도)")
+    return tag
 
 
 BUILD_TAG = _build_tag()

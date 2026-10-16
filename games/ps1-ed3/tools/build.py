@@ -776,6 +776,11 @@ def main():
     digit_codes = {d: rev[chr(0xFF10 + int(d))] for d in "0123456789"}  # 전각 숫자 자리(원본)
     josa = josa_rt.runtime(table, items, digit_codes) if a.disc == "ed3" else None
     engine = engine_patch.apply(exe, a.disc, table, josa=josa)  # 안 B 타일 합성 — 그 디스크에 패치가 있으면
+    debug_note = None
+    if common.DEBUG:  # 🔴 시험 빌드 전용 — 스위치 없이 구운 이미지는 이 줄을 안 지난다(꼬리표 test-*·debug 는 common 이 강제)
+        import debugpatch
+
+        debug_note = debugpatch.apply(exe, a.disc, os.environ.get("ED_DEBUG_MAP", ""))
     exe_orig = bytes(exe)
     enc = lambda kr: hangul_map.encode(kr, a.disc, table)
     ui_put, ui_skip = uitext.apply(exe, a.disc, enc)
@@ -845,6 +850,8 @@ def main():
         print(f"  타이틀 폰트: SLPS_012.01 BIOS 리다이렉트 · M01.DAT 문자열 {title_font_n}")
     if a.test:
         print("  🔴 **시험 빌드다** — 안 옮긴 문안은 엉뚱한 글자로 나온다. 배포물이 아니다.")
+    if debug_note:
+        print(f"  ⚠ 디버그 빌드 — 새 게임이 {debug_note} 에서 시작한다(플레이어·파티 없음, 맵 구경 모드). 제품 이미지가 아니다.")
     if left:
         print(f"  ⬜ 아직 못 넣는 낱말 {len(left)} (표가 없는 구역 — 길이 고정)")
     if report.get("gap_put") or report.get("gap_long"):
@@ -884,8 +891,9 @@ def main():
     common.IMMUTABLE[(a.disc, exe_lba, exe_size)] = [("PS-EXE 헤더", 0, font.EXE_HDR, "fixed")]
     os.makedirs(common.BUILD_DIR, exist_ok=True)
     out = common.build_bin(a.disc)
+    suffix = " (DEBUG)" if common.DEBUG else " (TEST)"  # 🔴 디버그 이미지는 파일 이름이 달라 메모리카드(.mcr)도 따로 쓴다 — 마스터 세이브가 덮이지 않게
     if a.test:  # 이름으로 갈라 둔다 — 시험물을 정상으로 오해하는 사고가 이 레포의 단골이다
-        out = out.replace(".bin", " (TEST).bin")
+        out = out.replace(".bin", suffix + ".bin")
     tmp = out + ".part"
     shutil.copyfile(common.orig_bin(a.disc), tmp)
     _, dirpos = common.iso_tree(common.orig_bin(a.disc))
@@ -913,7 +921,7 @@ def main():
     os.replace(tmp, out)
     cue = common.build_cue(a.disc)
     if a.test:
-        cue = cue.replace(".cue", " (TEST).cue")
+        cue = cue.replace(".cue", suffix + ".cue")
     common.write_cue(cue, os.path.basename(out))
     common.write_build_manifest(a.disc, "kr", out)
     movie_swap(a.disc, out)
