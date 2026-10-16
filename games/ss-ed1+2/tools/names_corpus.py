@@ -32,6 +32,9 @@ import common
 import patch_scn as S
 import patch_ui as U
 
+# 정본 검사(`scripts/check/check_canon.py`) — 어긋남은 실패로 친다(마스터 10-11 「정본검사는 모든 게임이 켜져있어야 하지 않아?」).
+CANON_GATE = True
+
 # 제어부호·공백만 있고 **번역할 글자가 없는** 블록 — 분모에서 뺀다(둘 다 아니면 오탐만 는다).
 _BARE = re.compile(r"(%[csd]|[\s　])+$")
 
@@ -163,19 +166,38 @@ def _title_pairs(mm):
         if "스태프롤" in name:
             continue
         lines = kr.get(name, [])
-        for i, (t, p, _n) in enumerate(recs):
-            jp = t.strip("\u3000")
+        # 🔴 **문장 단위로 짝짓는다** — 줄바꿈을 PS1 과 같이 다시 끊으면(마스터 10-14 「전설의 영웅 / 세리오스, …」) 원문 줄과 우리 줄의
+        #    경계가 어긋나 이름이 옆 줄로 간다. 줄 단위로 재면 멀쩡한 문안이 「이름 없음」으로 걸린다.
+        by_screen = sorted(
+            ((len(lines) - 1 - i, t.strip("\u3000"), p, i) for i, (t, p, _n) in enumerate(recs)),
+            key=lambda x: x[0],
+        )
+        group = []
+        for j, jp, p, i in by_screen:
             if not jp:
                 continue
-            j = len(lines) - 1 - i
-            yield f"title:{name}#{i}@0x{p:X}", jp, (lines[j] if 0 <= j < len(lines) else None)
+            group.append((j, jp, p, i))
+            if _TITLE_SENT_END.search(jp):
+                yield _title_group(name, group, lines)
+                group = []
+        if group:
+            yield _title_group(name, group, lines)
+
+
+_TITLE_SENT_END = re.compile(r"(。|…|・・・+|！|？|!|\?)[」』）)]*$")
+
+
+def _title_group(name, group, lines):
+    """한 문장(원문 줄 여럿) → `(키, 원문, 우리 문안)` — 우리 문안은 같은 화면 줄들을 이은 것."""
+    krs = [lines[j] if 0 <= j < len(lines) else None for j, *_ in group]
+    kr = None if any(k is None for k in krs) else "".join(krs)
+    return f"title:{name}#{group[0][3]}@0x{group[0][2]:X}", "".join(g[1] for g in group), kr
 
 
 def _mon_name_pairs():
     """ED2MON01~10 몬스터 이름 칸 171 — `patch_mon_names.slots()` (사전 `monster` 에서 읽는다)."""
-    from glossary import table
-
     import patch_mon_names as M
+    from glossary import table
 
     mon = table("monster")
     for path in M.FILES:
@@ -213,4 +235,3 @@ def pairs():
     finally:
         mm.close()
         f.close()
-

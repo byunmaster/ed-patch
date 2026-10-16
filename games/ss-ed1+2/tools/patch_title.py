@@ -31,6 +31,11 @@ from font import byte_len, to_bytes  # noqa: F401  🔴 인코딩 규칙 정본
 TITLE = "/TITLE.BIN"
 BUILD = common.BUILD_DIR  # ⚠ 꼬리표별로 갈린다 — `common.BUILD_TAG`
 
+# 타이틀 메뉴가 부르는 시퀀스 루틴 주소(TITLE.BIN 은 0x06028000 에 적재된다) — `--entry-swap` 전용
+ENTRY_BASE = 0x06028000
+OPENING_ED1, OPENING_ED2 = ENTRY_BASE + 0x13C4, ENTRY_BASE + 0x220C
+ENDING_ED1, ENDING_ED2 = ENTRY_BASE + 0x3C78, ENTRY_BASE + 0x58EC
+
 
 def pad(text, width, left):
     """문안을 전각 `width` 칸으로 채운다 — 왼쪽 `left` 칸.
@@ -119,6 +124,16 @@ FORCE_CENTER = {
 }
 
 
+# 🔴 **오른쪽 끝을 세로선에 맞출 줄**(마스터 10-14 「ps1에서는 잘 나와」 — PS1 은 이 세 줄이 오른쪽 맞춤 계단꼴이다).
+#    원판 레코드도 이 쪽은 오른쪽 끝이 18칸(첫·셋째 줄)에 맞춰져 있다 — 한글은 줄 길이가 달라 칸 수 물려받기·가운데 맞춤으로는
+#    끝이 들쭉날쭉해진다. `(구간, 화면순서 인덱스) → 글자 끝 px`(줄 끝 `.` `,` 는 세로선 밖으로 나온다 — 2-8 과 같은 뜻).
+ALIGN_RIGHT = {
+    ("ED2 엔딩·스태프롤", 17): 272,  # 평화가 언제까지나 이어지기를.
+    ("ED2 엔딩·스태프롤", 18): 272,  # 여신 프레이아여, 언제까지나
+    ("ED2 엔딩·스태프롤", 19): 272,  # 저희를 지켜봐 주십시오…
+}
+
+
 def tighten(s):
     """부호 **뒤** 공백 한 칸을 없앤다 — 그 여백은 부호 셀이 이미 만들고 있다.
 
@@ -157,6 +172,11 @@ def slot_plan(lines_by_region, refresh=False):
         #    여기는 `TITLE.BIN` 자막 전용이라 세이브에 안 들어가지만, **같은 함정이라 같은
         #    규칙으로 닫는다**(4-D — 같은 지식이 두 곳에 있으면 갈린다).
         taken = set(old.values())
+        # 🔴 조각 정본(`hangul_tiles.json`)의 슬롯도 비킨다 — 글자·조각 정본이 슬롯을 나눠 쓰는데
+        #    조각 쪽만 글자 슬롯을 피하고 있었다(2026-10-13 「닥」이 조각 슬롯 1800 을 가져 갔다).
+        if os.path.exists(TMAP):
+            with open(TMAP, encoding="utf-8") as f:
+                taken |= set(json.load(f)["syllables"].values())
         pool = [i for i in free if i not in taken]
         for c in need:
             if c not in old:
@@ -314,6 +334,10 @@ class Composer:
             u = (16, self.ell)
         elif ch == "　":
             u = (16, np.zeros((16, 16), np.uint8))
+        elif ch.isdigit() and ord(ch) < 0x80:
+            # 🔴 반각 숫자는 **눈에 보이는 틈**을 둔다(번역 규칙 1-5, 마스터 10-13) — 잉크 7px 에 진행 8px 이면
+            #    틈이 1px 이고 그림자까지 얹으면 「10」이 「1O」·「0여」처럼 붙어 보였다. 진행을 10px 로(오른쪽 2px 여백).
+            u = (10, np.pad(_neo_bits(ch, self.ft, 8), ((0, 0), (0, 2))))
         elif ord(ch) < 0x80:
             u = (8, _neo_bits(ch, self.ft, 8))
         else:
@@ -334,7 +358,23 @@ class Composer:
         total = sum(w for w, _ in units)
         cap = width * 16
         assert total <= cap, f"폭 초과 {total}>{cap}px: {text!r}"
-        x = (cap - total) // 2 if left is None else min(left * 16, cap - total)
+        # 🔴 가운데 맞춤은 **줄 끝 문장부호(`.` `,` `…`)를 폭에서 뺀 뒤** 잰다(번역 규칙 2-8, 마스터 10-13) — 끝 부호는 글자
+        #    무게가 아니라서, 넣어서 재면 글자 덩이가 왼쪽으로 쏠려 보인다.
+        trail = 0
+        for c, (w, _b) in zip(reversed(text), reversed(units)):
+            if c not in ".,…":
+                break
+            trail += w
+        if isinstance(left, tuple):  # ("right", 오른쪽 끝 px) — 글자 끝(줄 끝 `.` `,` 뺀)을 그 세로선에 맞춘다
+            hang = 0
+            for c, (w, _b) in zip(reversed(text), reversed(units)):
+                if c not in ".,":
+                    break
+                hang += w
+            x = left[1] - (total - hang)
+        else:
+            x = (cap - (total - trail)) // 2 if left is None else min(left * 16, cap - total)
+        x = max(0, min(x, cap - total))
         canvas = np.zeros((16, cap), np.uint8)
         for w, b in units:
             canvas[:, x : x + w] |= b
@@ -561,6 +601,9 @@ def main():
             assert len(match) == 1, f"구간을 못 고르겠다 {q!r} → {match}"
             picked.append(match[0])
             src += kr[match[0]]
+        # 앞에서 몇 줄을 건너뛴다 — 호스트(ED1 오프닝 51줄)보다 긴 구간(엔딩 101줄)을 나눠 보려고
+        skip = int(next((a[10:] for a in sys.argv if a.startswith("--as-skip=")), 0))
+        src = src[skip:]
         match = [" + ".join(picked)]
         # 어느 구간 자리에 얹을지 고를 수 있다 — **도달 가능성**이 다르다.
         #   ED1 오프닝: 부팅하면 바로. ED2 오프닝: 타이틀에서 `right`→`a` (자기 그림을 쓴다).
@@ -590,6 +633,8 @@ def main():
         mode, left = align_of(t, width)
         if mode == "center" or (name, len(kr[name]) - 1 - i) in FORCE_CENTER:
             left = None  # 줄마다 **비례 폭으로 다시 재서** 가운데(마스터 10-08)
+        if (name, len(kr[name]) - 1 - i) in ALIGN_RIGHT:
+            left = ("right", ALIGN_RIGHT[(name, len(kr[name]) - 1 - i)])
         jobs.append((p, comp.tiles(line, width, left), nb, name, line))
     known = known_codes(smap, comp, [j[4] for j in jobs])
     needed = [g for _p, tl, _n, _a, _l in jobs for g in tl if g is not None]
@@ -632,6 +677,19 @@ def main():
         print(f"     🔬 그림 파일명 {n_sw}개 교체")
 
     print(f"  자막 {len(patch)}줄 교체 · 0x{lo:05X}~0x{hi:05X} ({hi - lo:,}B, 섹터 {n})")
+
+    # ⚠ **검증 전용** — 타이틀 메뉴가 부르는 시퀀스 루틴의 주소(SH-2 리터럴 풀 `0x198`·`0x19c`)를 엔딩 루틴으로 바꿔,
+    #   타이틀에서 「영웅전설 I/II」를 고르면 **오프닝 대신 엔딩 연출 그 자체**(그림·낭독·스태프롤)가 돈다.
+    #   `--as` 는 오프닝 그림 위에 엔딩 문구만 얹지만 이건 엔딩 루틴을 부른다. 🔴 배포 빌드에 켜지 않는다.
+    #   리터럴은 TITLE.BIN 적재 기준 주소(`ENTRY_BASE`)라 바이트를 직접 읽어 **옛 값을 확인**한 뒤 쓴다.
+    if "--entry-swap" in sys.argv:
+        ent = {0x198: (OPENING_ED1, ENDING_ED1), 0x19C: (OPENING_ED2, ENDING_ED2)}
+        with open(dst, "r+b") as f:
+            for at, (old_a, new_a) in ent.items():
+                got = int.from_bytes(raw[at : at + 4], "big")
+                assert got == old_a, f"리터럴 0x{at:X} 이 예상과 다르다: 0x{got:08X} != 0x{old_a:08X}"
+                common.write_at(f, lba, size, at, new_a.to_bytes(4, "big"), label=f"엔딩 루틴 진입 0x{at:X}")
+        print("     🔬 진입 교체: ED1/ED2 선택 → 엔딩 루틴 (오프닝 아님)")
 
     # 폰트 — 계획대로 글리프를 굽는다. ⚠ `KANJI.FON` 은 두 자리에 있고 **둘 다** 고쳐야 한다
     #   (`/KANJI.FON` 타이틀 · `/OPENEND/KANJI.FON` 오프닝·엔딩 모듈). 한쪽만 고치면
