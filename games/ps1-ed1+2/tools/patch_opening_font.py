@@ -256,6 +256,11 @@ def gen_glyphs(chars, narrow_singles=frozenset()):
         bits = (np.array(im) >= 128).astype(np.uint8)
         if ch == "…":
             bits = _ellipsis_bits(ft)
+        # 숫자가 든 두 글자 셀은 잉크를 **왼쪽으로 1px** 민다 — 규칙 1-5(마스터 10-13): 오프닝·엔딩 자막의
+        # 숫자는 뒤 글자와 눈에 보이는 틈을 둔다. `10` 은 잉크가 1~14px 라 뒤 글자(`여`)와 틈이 2px 뿐이어서
+        # 「10여」 가 붙어 보였다. 왼쪽 끝 열이 비어 있을 때만 민다(잉크를 잘라먹지 않는다).
+        if len(ch) == 2 and any(c.isdigit() for c in ch) and not bits[:, 0].any():
+            bits = np.roll(bits, -1, axis=1)
         if not bits.any() and not ch.isspace():
             print(f"경고: {ch!r} 글리프 없음")
         assert ft.getlength(ch) <= 16, f"{ch!r} 이 셀(16px)을 넘는다 — {ft.getlength(ch)}px"
@@ -413,6 +418,27 @@ def render_units(s):
 
 
 NARROW_SET = frozenset(NARROW)
+
+
+def center_pad(kr):
+    """줄 끝 부호(`.` `,` 는 반각 · `…` 는 전각)의 폭만큼 **앞에 반각 공백**을 얹는다.
+
+    >>> center_pad("그리고 세월은 흘렀다…")
+    '  그리고 세월은 흘렀다…'
+    >>> center_pad("그것은 실로")
+    '그것은 실로'
+    >>> center_pad("!＿앞으로 우리들의,")
+    '!＿앞으로 우리들의,'
+    """
+    if kr.startswith("!"):
+        return kr  # `!` 줄은 대화창 왼쪽 정렬 — 가운데 맞춤 대상이 아니다(빈칸을 얹으면 첫 글자가 밀린다)
+    # 줄머리 제어 글자(`~`)는 맨 앞에 둔다 — 빈칸은 그 뒤에 얹는다.
+    head, body = (kr[0], kr[1:]) if kr.startswith("~") else ("", kr)
+    if body.endswith("…"):
+        return head + "  " + body  # 전각 한 칸 = 반각 둘
+    if body.endswith((".", ",")):
+        return head + " " + body
+    return kr
 
 
 def units(s):
@@ -636,6 +662,15 @@ def patch_game(name):
             )
         )
         LINES = [(o, src_txt[i]) for i, (o, _) in enumerate(LINES[:n_show])]
+    # 가운데 맞춤에서 줄 끝 부호는 폭에서 뺀다(규칙 2-8, 마스터 10-13) — 엔진은 줄 전체 폭으로 가운데를
+    # 잡으니 **앞에 부호 폭만큼 빈칸을 얹으면** 글자 부분이 정확히 가운데로 온다(빈칸이 폭에 들어가
+    # 시작점이 부호 폭의 절반만큼 왼쪽으로 가고, 빈칸 뒤에서 글자가 시작한다).
+    # ⚠ 폭 한도(FIELD)를 넘기게 되는 줄은 빈칸을 얹지 않는다 — 줄이지는 않는다(보고 거리).
+    _padded = [(o, center_pad(kr)) for o, kr in LINES]
+    _skip = [kr for (o, kr), (_, p) in zip(LINES, _padded, strict=True) if units(p) > FIELD and p != kr]
+    LINES = [(o, p if units(p) <= FIELD else kr) for (o, kr), (_, p) in zip(LINES, _padded, strict=True)]
+    if _skip:
+        print(f"  ⚠ 가운데 맞춤 보정 못 한 줄 {len(_skip)} (폭 한도 {FIELD}유닛): {_skip}")
     # ⚠ **포인터 테이블이 가리키는데 본 구획 밖에 있는 줄**이 있다(OPEN2 `だが…` @0x17484,
     # RAM 0x80026C84). 재packing 범위(min~max 오프셋)에 넣으면 그 사이의 **코드·자료를 통째로
     # 지운다** — 그래서 따로 뺀다. 이런 줄은 원본 슬롯 안에서 **제자리 치환**한다.
