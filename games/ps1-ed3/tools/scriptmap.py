@@ -244,11 +244,20 @@ def parse(mem):
     }
 
 
-def rebuild(mem, new_segments):
+def rebuild(mem, new_segments, event_data=False):
     """풀을 새 코드열로 다시 싸고 **포인터를 다시 계산**한다.
 
     `new_segments` — 원본과 **같은 개수·같은 순서**의 [코드…] 목록. 길이는 달라도 된다.
     반환: 새 멤버 bytes. ⚠ 크기가 달라질 수 있다(호출자가 아카이브 재배치를 책임진다).
+
+    `event_data=True` — 못 푼 `0x90` 자리(조각 시작이 아닌 곳을 가리키는 것)를 **이벤트 VM 데이터로 보고** 그대로 둔 채
+    길이를 바꾼다(마스터 10-12 「재구성해」). 근거(실측, ED3 전수):
+      · 못 푼 404 중 목표가 멤버 밖 242 · 조각 한복판 162 — 풀린 33,861 은 100% 조각 시작이다.
+      · 자리가 `90 01 03 02 91 01 05 01` · `c0 90 61 60 00` 처럼 형제 opcode(0x91…)·좌표 사이에 낀 구조체 한복판이다.
+      · 한복판 값이 같은 상수로 되풀이된다(예: `FT2001` 한 멤버에서 96 이 셋) — 포인터가 아니라 상수다.
+    ⚠ 이 근거는 **정적 추정**이다(이벤트 VM 해독은 안 됐다). 그래서 되읽기 검산을 둘 더 건다 —
+      ① 스크립트 구간 `[0, TEXT_BASE)` 은 **풀린 포인터 자리 말고는 바이트 단위로 같다**(못 푼 자리 포함) ② 풀린 포인터는
+      **같은 번째 조각의 새 시작**을 가리킨다. 기본값(False)은 옛 방침(길이가 바뀌면 멈춘다).
 
     🔴 **개수·순서를 지킨다.** 포인터는 「몇 번째 조각인가」로 다시 매핑하므로, 조각을
        합치거나 나누면 매핑이 통째로 어긋난다.
@@ -275,7 +284,7 @@ def rebuild(mem, new_segments):
     #      **조각 길이를 못 바꾼다**: 그 포인터는 안 따라가서, 길이가 바뀌면 엉뚱한 자리를 가리킨다.
     #      조용히 깨지는 대신 여기서 멈춘다(「같은 길이로만」 152 멤버 — 이벤트 VM 해독 전까지).
     unresolved_n = sum(1 for _, V in info["pointers"] if base + (V & ~1) not in remap)
-    if unresolved_n and any(
+    if unresolved_n and not event_data and any(
         len(new) != len(old) for (_, old), new in zip(segs, new_segments, strict=True)
     ):
         raise ScriptError(
@@ -299,8 +308,44 @@ def rebuild(mem, new_segments):
         raise ScriptError(
             f"재구축 뒤 포인터 수가 달라졌다: {len(back['pointers'])} (원본 {len(info['pointers'])})"
         )
-    if back["resolved"] != info["resolved"]:
+    # event_data: 안 건드린 데이터 자리가 길이가 바뀐 뒤 우연히 조각 시작에 떨어질 수 있다 — 줄어드는 쪽만 오류다.
+    if back["resolved"] < info["resolved"] or (back["resolved"] != info["resolved"] and not event_data):
         raise ScriptError(
             f"풀린 포인터 수가 달라졌다: {back['resolved']} (원본 {info['resolved']})"
         )
+    verify_rebuild(mem, bytes(out), info, new_segments)
     return bytes(out), unresolved
+
+
+def verify_rebuild(mem, out, info, new_segments):
+    """🔴 구조 검산 — 「썼다」와 「다시 읽힌다」 말고 **「안 건드릴 것을 안 건드렸다」** 를 바이트로 본다.
+
+    ① 스크립트 구간은 풀린 포인터 자리(u16)만 다르다 — 못 푼 `0x90` 자리·이벤트 데이터는 바이트까지 같다.
+    ② 풀린 포인터는 **같은 번째 조각의 새 시작**을 가리킨다(번째 = 옛 풀에서 그 조각의 순서).
+    ③ 풀은 새 조각을 `0xFFFF` 로 닫아 순서대로 이어 붙인 것과 같다(꼬리 없음).
+    """
+    base = info["base"]
+    if text_base(out) != base:
+        raise ScriptError("재구축 뒤 TEXT_BASE 가 달라졌다")
+    sites = {at for at, V in info["pointers"] if base + (V & ~1) in info["starts"]}
+    touched = set()
+    for at in sites:
+        touched.update((at, at + 1))
+    for i in range(base):
+        if i not in touched and mem[i] != out[i]:
+            raise ScriptError(f"스크립트 구간 {i:#x} 가 포인터 자리가 아닌데 바뀌었다")
+    old_idx = {s: k for k, (s, _) in enumerate(info["segments"])}
+    back = parse(out)
+    new_start = [s for s, _ in back["segments"]]
+    if len(new_start) != len(new_segments):
+        raise ScriptError("재구축 뒤 조각 수가 달라졌다")
+    for at, V in info["pointers"]:
+        old = base + (V & ~1)
+        if old not in old_idx:
+            continue
+        got = struct.unpack_from("<H", out, at)[0]
+        if base + (got & ~1) != new_start[old_idx[old]] or (got & 1) != (V & 1):
+            raise ScriptError(f"포인터 {at:#x} 가 {old_idx[old]}번째 조각의 새 시작을 안 가리킨다")
+    pool = b"".join(struct.pack(f"<{len(c)}H", *c) + struct.pack("<H", TERM) for c in new_segments)
+    if bytes(out[base:]) != pool:
+        raise ScriptError("재구축 뒤 풀이 새 조각의 이음과 다르다")

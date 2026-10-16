@@ -131,3 +131,44 @@ class TestLineupWindow(unittest.TestCase):
         addr, _orig = engine_patch.LINEUP_WINDOW["ed3"]
         (ins,) = list(md.disasm(struct.pack("<I", 0x24060000 | engine_patch.LINEUP_COLS), addr))
         self.assertEqual((ins.mnemonic, ins.op_str.replace(" ", "")), ("addiu", "$a2,$zero,0x11"))
+
+
+class TestCurrencyUnit(unittest.TestCase):
+    """통화 단위 「ピア」 → 「Pia」: 네 자리(개수·속성·커서·글자 쓰기)가 한 묶음으로 바뀐다(명령 수 `0x5e0` 은 그대로)."""
+
+    def _exe(self):
+        site = engine_patch.CURRENCY_UNIT["ed3"]
+        exe = bytearray(0xB0000)
+        for key, orig in (("count1", 0x24040002), ("count3", 0x24040002), ("cells", 0x24430002), ("cursor", 0x24830002)):
+            struct.pack_into("<I", exe, engine_patch._off(site[key]), orig)
+        struct.pack_into("<16I", exe, engine_patch._off(site["glyphs"][0]), *site["glyph_orig"])
+        return exe, site
+
+    def test_rewrites_all_five_sites_and_disassembles(self):
+        import capstone
+
+        exe, site = self._exe()
+        table = {" ": 0xE5, "P": 0x22F, "i": 0x230, "a": 0x1DB}
+        self.assertTrue(engine_patch.apply_currency_unit(exe, "ed3", table))
+        for key in ("count1", "count3", "cursor"):
+            self.assertEqual(struct.unpack_from("<I", exe, engine_patch._off(site[key]))[0] & 0xFFFF, 4, key)
+        # 🔴 `0x5e0` 은 명령 수(칸 수 아님) — 안 건드린다(판매 줄에서 죽은 회귀)
+        self.assertEqual(struct.unpack_from("<I", exe, engine_patch._off(site["cells"]))[0] & 0xFFFF, 2)
+        addr = site["glyphs"][0]
+        words = struct.unpack_from("<16I", exe, engine_patch._off(addr))
+        md = capstone.Cs(capstone.CS_ARCH_MIPS, capstone.CS_MODE_MIPS32 | capstone.CS_MODE_LITTLE_ENDIAN)
+        got = [(i.mnemonic, i.op_str.replace(" ", "")) for i in md.disasm(struct.pack("<16I", *words), addr)]
+        self.assertIn(("addiu", "$a0,$zero,0x22f"), got)
+        self.assertIn(("addiu", "$a0,$zero,0xe5"), got)
+        self.assertIn(("sh", "$a0,6($v1)"), got)
+        self.assertIn(("addiu", "$v1,$v1,8"), got)
+
+    def test_stops_when_original_differs(self):
+        exe, site = self._exe()
+        struct.pack_into("<I", exe, engine_patch._off(site["cells"]), 0)
+        with self.assertRaises(SystemExit):
+            engine_patch.apply_currency_unit(exe, "ed3", {" ": 4, "P": 1, "i": 2, "a": 3})
+
+    def test_skips_without_latin_letters(self):
+        exe, _ = self._exe()
+        self.assertEqual(engine_patch.apply_currency_unit(exe, "ed3", {}), "")

@@ -231,7 +231,9 @@ def _expect(exe, ram, words, what):
 def half_codes(table):
     """반 칸(6px) 글자의 글리프 코드 — 공백 · 괄호(글리프 자리라 빌드마다 다르다) · 부호 원본 코드 `, . ? !`(= 1·2·4·5, `hangul_map.PUNCT`)."""
     # `…`(코드 3)는 전각 한 글자라 반 칸이 아니다 — `PUNCT` 값을 통째로 안 쓰고 쉼표·마침표·물음표·느낌표만 센다
-    return [table[" "]] + [table[c] for c in "()" if c in table] + [0x01, 0x02, 0x04, 0x05]
+    # + 반각 ASCII(숫자·영문·`& % ' -` — 코드표에 배정된 ASCII 전부): 전각 칸에 반각 모양 글리프가 앉아 글자 사이·뒤 부호와의 틈이 벌어지던 것(마스터 10-12 「1 G o a」 · 「쥬리오& 크리스」)
+    ascii_codes = sorted(table[c] for c in table if c.isascii() and c.isprintable() and c not in " ()")
+    return [table[" "]] + [table[c] for c in "()" if c in table] + [0x01, 0x02, 0x04, 0x05] + ascii_codes
 
 
 def apply_panel(exe, disc):
@@ -289,6 +291,7 @@ SUBMENU_WINDOWS = {
         (0x80033CCC, 0x24040028, 0x2404002E, "시스템 설정 x"),
         (0x80033CD4, 0x24060007, 0x24060006, "시스템 설정 열"),
         (0x80032BF8, 0x24060004, 0x24060003, "키 설정 열"),
+        (0x80032C1C, 0x24060004, 0x24060003, "키 설정 열(필드 메뉴판 — 같은 함수 둘째 갈래)"),
         (0x800648EC, 0x24060006, 0x24060004, "리더 변경 열"),
     ],
 }
@@ -302,7 +305,7 @@ def apply_submenu_windows(exe, disc):
         _expect(exe, addr, (orig,), f"{what} 상수")
     for addr, _orig, new, _what in sites:
         struct.pack_into("<I", exe, _off(addr), new)
-    return " · 하위 창 열 조정 4곳"
+    return " · 하위 창 열 조정 5곳"
 
 
 # 세이브/로드 데이터 창(14×4) 제목 셋 — 원문 자리(표 항목 10·11·13, 2워드 빈 칸 + 글)가 가운데 정렬 여백을 못 담아 **문자열을 R2 꼬리로 옮기고** 읽는 곳 셋을 절대 주소로 잇는다
@@ -313,12 +316,13 @@ DETAIL_SITES = {"ed3": {10: 0x8002DE40, 11: 0x8002E2F4, 13: 0x8002DE58}}  # 표 
 def apply_detail_titles(exe, disc, strings):
     """`strings` = {표 항목: [워드…]} — 각 문자열을 R2 꼬리에 차례로 놓고 소비처를 잇는다. 반환 = 쓴 워드 수."""
     import cursor_hook
+    import tile_hook
 
     sites = DETAIL_SITES.get(disc)
     if not sites:
         return 0
     assert set(strings) == set(sites), f"데이터 창 제목 항목이 다르다 — {sorted(strings)}"
-    cap = (cursor_hook.R2 + cursor_hook.R2_LEN - cursor_hook.STR_TAIL) // 2
+    cap = (cursor_hook.R2 + cursor_hook.R2_LEN - cursor_hook.STR_TAIL - tile_hook.DJUMP_LEN) // 2  # 맨 끝은 칸 연속성 서브루틴 몫
     addr, used = cursor_hook.STR_TAIL, 0
     for k, words in sorted(strings.items()):
         lui = sites[k]
@@ -340,6 +344,7 @@ EXP_TITLE_SITE = {"ed3": (0x8005A260, (0x3C03800B, 0x94630A60, 0x00000000, 0x000
 def apply_exp_title(exe, disc, words, offset_words):
     """`words` 를 R2 꼬리(`offset_words` 워드 뒤)에 두고 제목 주소 계산을 잇는다. 반환 = 쓴 워드 수."""
     import cursor_hook
+    import tile_hook
 
     site = EXP_TITLE_SITE.get(disc)
     if not site:
@@ -347,11 +352,64 @@ def apply_exp_title(exe, disc, words, offset_words):
     addr0, orig = site
     _expect(exe, addr0, orig, "경험치 제목 주소 계산")
     addr = cursor_hook.STR_TAIL + 2 * offset_words
-    assert offset_words + len(words) <= (cursor_hook.R2 + cursor_hook.R2_LEN - cursor_hook.STR_TAIL) // 2, "경험치 제목이 R2 꼬리를 넘는다"
+    assert offset_words + len(words) <= (cursor_hook.R2 + cursor_hook.R2_LEN - cursor_hook.STR_TAIL - tile_hook.DJUMP_LEN) // 2, "경험치 제목이 R2 꼬리를 넘는다"
     struct.pack_into(f"<{len(words)}H", exe, _off(addr), *words)
     new = [0x3C030000 | (addr >> 16), 0x34630000 | (addr & 0xFFFF), 0xAFC30058] + [0] * (len(orig) - 3)
     struct.pack_into(f"<{len(new)}I", exe, _off(addr0), *new)
     return len(words)
+
+
+# 가격 뒤 통화 단위 「ピア」 — 스크립트 해석기(`0x80038340`)가 숫자를 그린 뒤 **글자 둘을 상수 코드(0xC1·0x90)로 직접** 명령 버퍼에 내보낸다(번역 문안에 없다).
+#   명령 `1 · A · 개수 · 코드…` 한 덩이 + 속성 명령 `3 · A · 개수 · …` + 줄 커서 x(`obj+0x12`) 가 **2칸** 기준이다.
+#   「 Pia」(공백+3글자 = 4칸, 정본 표기·숫자와 띄움 — 마스터 10-13) 로 바꾸려고 그 넷을 4 로 올리고 글자 쓰기를 코드 상수 셋으로 다시 쓴다(마스터 10-13 「상점 고치자」).
+#   ⚠ 개수만 두고 글자를 늘리면 셋째 코드가 명령으로 읽혀 해당 줄이 안 그려진다(실측 10-13, 멈춤) — 개수·속성·커서가 한 묶음이다.
+#   🔴 **`0x5e0` 은 칸 수가 아니라 명령 수다**(`0x800394f8` `addiu v1, v0, 2` = 이 단위가 내보낸 명령 둘: 글자 덩이 + 속성). 3 으로 올리면 렌더러가 없는 셋째 명령을 읽는다 —
+#   가격이 줄 앞에 오는 「구매」 줄은 우연히 멀쩡했지만 줄 중간에 오는 「판매」 줄(`그럼, N Pia에 사들이겠어`)에서 BIOS 예외로 죽었다(10-13). 이 자리는 **안 건드린다**.
+CURRENCY_UNIT = {
+    "ed3": {
+        "count1": 0x800393D4,  # addiu a0, zero, 2  (글자 덩이 개수)
+        "glyphs": (0x800393E4, 16),  # 글자 둘을 쓰는 16워드(lui/addiu/lw ×2 묶음)
+        "count3": 0x800394A8,  # addiu a0, zero, 2  (속성 명령 개수)
+        "cells": 0x800394F8,  # addiu v1, v0, 2    (그린 **명령** 수 `0x5e0` += 2 — 칸 수가 아니다, 안 바꾼다)
+        "cursor": 0x80039518,  # addiu v1, a0, 2    (줄 커서 x += 2)
+        "glyph_orig": (
+            0x3C02800C, 0x244208C0, 0x8C430000, 0x97C40038, 0x00000000, 0xA4640000, 0x24630002, 0xAC430000,
+            0x3C02800C, 0x244208C0, 0x8C430000, 0x97C4003A, 0x00000000, 0xA4640000, 0x24630002, 0xAC430000,
+        ),
+    },
+}
+
+
+def currency_unit_words(codes):
+    """글자 코드 넷(공백·P·i·a)을 한 번에 쓰는 워드열(16워드 안) — 버퍼 포인터 `0x800c08c0` 를 한 번 읽고 넷을 쓴 뒤 8B 전진."""
+    assert len(codes) == 4 and all(0 < c < 0x8000 for c in codes)
+    src = ["lui v0, 0x800c", "addiu v0, v0, 0x8c0", "lw v1, 0(v0)"]
+    for k, c in enumerate(codes):
+        src += [f"addiu a0, zero, {c}", f"sh a0, {2 * k}(v1)"]
+    src += ["addiu v1, v1, 8", "sw v1, 0(v0)"]
+    words, _ = asm("\n".join(src), 0x800393E4)
+    assert len(words) <= 16
+    return list(words) + [0] * (16 - len(words))
+
+
+def apply_currency_unit(exe, disc, table):
+    """통화 단위 「ピア」 → 「Pia」 (정본 표기). 표에 P·i·a 가 없으면 건너뛴다."""
+    site = CURRENCY_UNIT.get(disc)
+    if not site or not all(c in table for c in " Pia"):
+        return ""
+    gaddr, glen = site["glyphs"]
+    _expect(exe, site["count1"], (0x24040002,), "통화 단위 글자 덩이 개수")
+    _expect(exe, gaddr, site["glyph_orig"], "통화 단위 글자 쓰기")
+    _expect(exe, site["count3"], (0x24040002,), "통화 단위 속성 개수")
+    _expect(exe, site["cells"], (0x24430002,), "통화 단위 그린 칸 수")
+    _expect(exe, site["cursor"], (0x24830002,), "통화 단위 줄 커서")
+    words = currency_unit_words([table[c] for c in " Pia"])
+    verify(words, gaddr)
+    struct.pack_into("<I", exe, _off(site["count1"]), 0x24040004)
+    struct.pack_into(f"<{glen}I", exe, _off(gaddr), *words)
+    struct.pack_into("<I", exe, _off(site["count3"]), 0x24040004)
+    struct.pack_into("<I", exe, _off(site["cursor"]), 0x24830004)
+    return " · 통화 단위 Pia"
 
 
 def apply_square_window(exe, disc):
@@ -413,5 +471,9 @@ def apply(exe, disc, table, josa=None):
     import cursor_hook
 
     cursor = cursor_hook.apply(exe, disc)
+    # 칸 연속성 서브루틴 — R2 사전조건(sha1)을 `cursor_hook.apply` 가 보므로 **그 뒤에** 쓴다
+    dj = tile_hook.djump_words()
+    struct.pack_into(f"<{len(dj)}I", exe, _off(tile_hook.DJUMP_ADDR), *dj)  # 칸 연속성 서브루틴(R2 맨 끝)
+    cursor += apply_currency_unit(exe, disc, table)
     panel = apply_panel(exe, disc) + apply_result_windows(exe, disc) + apply_square_window(exe, disc) + apply_submenu_windows(exe, disc) + apply_lineup_window(exe, disc) + cursor
     return f"타일 합성(반 칸 {len(half)}종) · 훅 {len(words)}워드 @ {p['dead']:#x} · 자료 {len(blob)}B @ {p['data']:#x}{panel}"

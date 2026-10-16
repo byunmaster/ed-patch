@@ -30,6 +30,7 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import arcpack
 import common
 import engine_patch
 import exetext
@@ -39,6 +40,7 @@ import graphics
 import hangul_map
 import josa_rt
 import patch_title_font
+import poolpack
 import script as script_canon
 import scriptmap
 import textenc
@@ -98,6 +100,42 @@ def check_no_text_loss(where, newmem, lines, disc, table, report):
         report["loss_checked"] = report.get("loss_checked", 0) + 1
 
 
+def encode_member(disc, path, nm, mem, lines, table, report):
+    """멤버 하나의 새 조각 코드열(`[[코드…]…]`) — **재삽입 빌드와 멤버 크기 게이트가 같은 길**을 쓴다.
+
+    `lines` 의 행은 조사 변환본으로 바뀐다(구운 글 검사가 같은 변환본을 본다).
+    """
+    info = scriptmap.parse(mem)
+    segs = [list(c) for _, c in info["segments"]]
+    jps = [(i, textenc.decode(c, disc)) for i, (_, c) in enumerate(info["segments"])]
+    # 🔴 검사기(`script.py --check`)와 **같은 자**로 조판한다 — `floor` 를 빼먹어 넘친
+    #    꼬리가 조용히 잘렸다(ED3 37줄 · ED4 59줄, 09-27).
+    floors = script_canon.member_floors(jps)
+    for i, row in sorted(lines.items()):
+        jp = jps[i][1]
+        try:
+            # 조사 병기 → 확정/런타임 표지(조각 첫머리). 구운 글 검사도 같은 변환본으로 한다.
+            row = dict(row, kr=josa_rt.convert(row["kr"]))
+            lines[i] = row
+            kr = typeset.wrap(row["kr"], disc, jp=jp, floor=floors.get(i, 0))
+        except typeset.TypesetError as e:
+            if row.get("_auto"):  # 정본 speaker 이름이 예산을 넘으면 그 이름만 일본어로 남긴다
+                report["auto_wrap"] = report.get("auto_wrap", 0) + 1
+                continue
+            raise SystemExit(
+                f"🔴 {path}!{nm} #{i}: 조판 예산 초과 — {e}\n"
+                f"   `script.py --check` 가 통과했다면 검사기와 빌드의 자가 다르다."
+            ) from e
+        try:
+            segs[i] = hangul_map.encode(kr, disc, table)
+        except KeyError:
+            # ⬜ 아직 자리를 못 받은 글자가 있다 — **원문 그대로 두고 센다.**
+            #    조용히 빼면 화면에서 그 줄만 사라진다(이 레포의 단골 사고).
+            report["skipped"] += 1
+            continue
+    return segs
+
+
 def reinsert_script(disc, canon, table, report):
     """{아카이브 경로: 새 바이트열} — 대사 재삽입. 멤버 크기는 그대로."""
     out = {}
@@ -109,58 +147,28 @@ def reinsert_script(disc, canon, table, report):
             _, ents = common.arc_parse(bytes(data))
         except common.ArchiveError:
             continue
-        touched = False
+        repl = {}
         for nm, off, sz in ents:
             lines = canon.get((path, nm))
             if not lines:
                 continue
             mem = bytes(data[off : off + sz])
-            info = scriptmap.parse(mem)
-            segs = [list(c) for _, c in info["segments"]]
-            jps = [(i, textenc.decode(c, disc)) for i, (_, c) in enumerate(info["segments"])]
-            # 🔴 검사기(`script.py --check`)와 **같은 자**로 조판한다 — `floor` 를 빼먹어 넘친
-            #    꼬리가 조용히 잘렸다(ED3 37줄 · ED4 59줄, 09-27).
-            floors = script_canon.member_floors(jps)
-            for i, row in sorted(lines.items()):
-                jp = jps[i][1]
-                try:
-                    # 조사 병기 → 확정/런타임 표지(조각 첫머리). 구운 글 검사도 같은 변환본으로 한다.
-                    row = dict(row, kr=josa_rt.convert(row["kr"]))
-                    lines[i] = row
-                    kr = typeset.wrap(row["kr"], disc, jp=jp, floor=floors.get(i, 0))
-                except typeset.TypesetError as e:
-                    if row.get("_auto"):  # 정본 speaker 이름이 예산을 넘으면 그 이름만 일본어로 남긴다
-                        report["auto_wrap"] = report.get("auto_wrap", 0) + 1
-                        continue
-                    raise SystemExit(
-                        f"🔴 {path}!{nm} #{i}: 조판 예산 초과 — {e}\n"
-                        f"   `script.py --check` 가 통과했다면 검사기와 빌드의 자가 다르다."
-                    ) from e
-                try:
-                    segs[i] = hangul_map.encode(kr, disc, table)
-                except KeyError:
-                    # ⬜ 아직 자리를 못 받은 글자가 있다 — **원문 그대로 두고 센다.**
-                    #    조용히 빼면 화면에서 그 줄만 사라진다(이 레포의 단골 사고).
-                    report["skipped"] += 1
-                    continue
-            newmem, _ = scriptmap.rebuild(mem, segs)
+            segs = encode_member(disc, path, nm, mem, lines, table, report)
+            newmem, _ = scriptmap.rebuild(mem, segs, event_data=True)
             check_no_text_loss(f"{path}!{nm}", newmem, lines, disc, table, report)
-            if len(newmem) > sz and all(r.get("_auto") for r in lines.values()):
-                # 정본 speaker 로만 채운 멤버가 예산을 넘으면 **그 멤버만 건너뛴다**(이름은 일본어로 남는다) — 번역 정본의 줄이
-                # 있는 멤버는 아래에서 그대로 멈춘다(자기 문안을 줄여야 하는 일).
-                report["auto_over"] = report.get("auto_over", 0) + 1
-                continue
-            if len(newmem) > sz:
-                raise SystemExit(
-                    f"🔴 {path}!{nm}: 멤버가 {len(newmem) - sz:+d}B 커졌다 — 예산 {sz}B\n"
-                    f"   문안을 줄이거나 아카이브 재배치가 필요하다(지금은 안 한다)."
-                )
-            data[off : off + sz] = newmem + b"\x00" * (sz - len(newmem))
+            repl[nm] = newmem
             report["members"] += 1
-            report["slack"] += sz - len(newmem)
-            touched = True
-        if touched:
-            out[path] = bytes(data)
+            report["slack"] += max(0, sz - len(newmem))
+            report["grown"] = report.get("grown", 0) + max(0, len(newmem) - sz)
+        if repl:
+            # 🔴 원본보다 커진 멤버는 아카이브 안에서 뒤 멤버를 민다(`arcpack` — 마지막 섹터 여유 안, 다른 파일은 안 옮긴다).
+            try:
+                packed, plan = arcpack.repack(bytes(data), repl)
+            except arcpack.PackError as e:
+                raise SystemExit(f"🔴 {path}: 재배치 실패 — {e}") from e
+            report["repacked"] = report.get("repacked", 0) + (1 if plan["grow"] else 0)
+            report["reclaimed"] = report.get("reclaimed", 0) + plan["reclaimed"]
+            out[path] = packed
     return out
 
 
@@ -215,6 +223,47 @@ def fit_chunks(exe, t, ents, cur, krs, orig, disc, table, report):
     return reverted
 
 
+def panel_grow(exe, disc, table, words, report, panel):
+    """월드맵 패널 — 정본 표기(띄어쓰기 뺀 꼴)가 원판 칸(n)보다 긴 줄은 **칸을 늘린다**(「성아랫마을」 5자 > 4칸 — 줄인 꼴 「성마을」로 안 떨어진다, 마스터 10-12 「칸 문제는 기술 먼저」).
+
+    영역 끝 0 꼬리 12B 안에서만 늘고, 장소 표를 밀린 만큼 고친다(`exetext.panel_relayout`). 창 폭이 6글자라 7글자 이상은 늘리지 않는다(`gap_long` 으로 센다)."""
+    data = bytes(exe)
+    need = {}
+    for unit in exetext.panel_units(data, *panel):
+        for off, n in unit:
+            ind, codes, _tail = exetext.panel_line_text(data, off, n)
+            jp = exetext.match_panel_key(codes, disc, words) if codes else None
+            kr = words.get(jp) if jp else None
+            if not kr or kr == jp:
+                continue
+            try:
+                enc = hangul_map.encode(kr.replace(" ", ""), disc, table)
+            except KeyError:
+                continue
+            if n < len(enc) <= 6:
+                need[off] = len(enc)
+    grown = exetext.panel_relayout(exe, disc, exetext.panel_inserts(data, disc, need)) if need else 0
+    report["panel_grown"] = grown
+    if grown:  # 🔴 검산 — 표의 모든 항목이 늘리기 전과 **같은 목록(제어 코드 뼈대)** 을 가리킨다
+        tab, n_ent = exetext.PANEL_TABLE[disc]
+
+        def skeleton(buf, off):
+            sk = []
+            while True:
+                w = struct.unpack_from("<H", buf, off)[0]
+                if w >= 0x8000:
+                    sk.append(w)
+                    if w == 0x8002:
+                        return sk
+                off += 2
+
+        for i in range(n_ent):
+            a0 = tab + struct.unpack_from("<H", data, tab + 2 * i)[0]
+            b0 = tab + struct.unpack_from("<H", bytes(exe), tab + 2 * i)[0]
+            if skeleton(data, a0) != skeleton(bytes(exe), b0):
+                raise SystemExit(f"🔴 패널 표 {i}번이 늘린 뒤 다른 목록을 가리킨다")
+
+
 def panel_pass(exe, disc, table, words, seen, report, panel):
     """월드맵 장소 패널 풀 — 제어 코드 열은 원판 그대로, 글자만 **패널 칸 폭 기준 가운데(반 칸은 왼쪽 내림, 두 줄 묶음은 가장 긴 줄 기준·나머지는 그 시작)** 로 같은 칸 수 안에서 바꾼다.
 
@@ -234,12 +283,13 @@ def panel_pass(exe, disc, table, words, seen, report, panel):
                 try:
                     # 패널은 원판처럼 붙여 쓴다(마스터 10-09 — 원판 패널 181줄에 띄어쓰기 0, 칸만 붙이고 대화는 그대로)
                     enc = hangul_map.encode(kr.replace(" ", ""), disc, table)
-                    if len(enc) > len(codes):
+                    # 한도 = 줄의 **칸 수 n**(들여쓰기 0 칸 포함) — 0 은 엔진 스텁이 폭 0 으로 보고 글자를 줄 머리에 붙여 가운데 맞춘다(마스터 10-12 「서쪽벌판인데 서쪽벌만」)
+                    if len(enc) > n:
                         short = glossary.lookup_shared(disc, jp + "@월드맵", "place")
                         if short:
                             enc = hangul_map.encode(short, disc, table)
                             report["gap_short"] = report.get("gap_short", 0) + 1
-                    if len(enc) > len(codes):
+                    if len(enc) > n:
                         report.setdefault("gap_long", []).append((jp, kr))
                     else:
                         new = enc
@@ -336,7 +386,7 @@ SUBMENU = {
         "system": (0xA116C, 40, [("", "메시지속도"), ("", "리더변경"), ("", "키설정변경"), ("", "세이브／로드"), ("", "게임끝내기")]),
         "speed": (0xA11D6, 12, [("", "빠0름"), ("", "보0통"), ("", "느0림")]),  # 두 글자를 양 끝으로(0 = 가운데 빈 칸) — 3칸 창
         "saveload": (0xA11EE, 8, [("", "세이브"), ("", "로0드")]),
-        "keycfg": (0xA1232, 9, [("", "노0멀"), ("", "와이드")]),  # 창 열 3
+        "keycfg": (0xA1232, 9, [("", "노멀"), ("", "와이드")]),  # 창 열 3 · 노멀은 사이 공백 없이 왼쪽 정렬(마스터 10-12)
     },
 }
 DETAIL_TITLES = {"ed3": {10: ("0000", "세이브데이터"), 11: ("000", "기록이 없습니다."), 13: ("0000 ", "로드데이터")}}  # 표 항목 → (앞 여백: 0 = 전각 1칸 · 공백 = 반 칸, 글) — 14칸 창 가운데
@@ -350,6 +400,27 @@ def _line_words(enc, lead, txt):
             out.append(0)
         out += list(enc(part))
     return w + out
+
+
+# 상점·소지품 낱말 — 칸 꽉 채우기 / 한 문체(마스터 10-12). (오프셋, 원본 워드, 새 문자열 — `0` 은 전각 빈 칸)
+#   도구점 「사기·팔기」는 「환전하기」 폭(4칸)에 맞춰 사이를 비운다 · 소지품 「読む」 칸(3칸, 가운데 0)은 「읽는다」로 채운다(「捨てる」 3칸은 「버린다」 — 정본 ED1·ED2 와 같은 말).
+ITEM_VERBS = {
+    "ed3": [
+        (0x10DC, (0x592, 0x42, 0x5D, 0x42, 0xFFFF), "사00기"),
+        (0x10E6, (0x593, 0x88, 0x5D, 0x42, 0xFFFF), "팔00기"),
+        (0x9D190, (0x55F, 0, 0x7E, 0xFFFF), "읽는다"),
+    ],
+}
+
+
+def item_verbs(exe, exe_orig, disc, enc, report):
+    for off, orig, txt in ITEM_VERBS.get(disc, []):
+        o = struct.unpack_from(f"<{len(orig)}H", exe_orig, off)
+        assert o == orig, f"상점·소지품 낱말 사전조건 — {off:#x} {[hex(x) for x in o]}"
+        words = _line_words(enc, "", txt) + [0xFFFF]
+        assert len(words) == len(orig), f"상점·소지품 낱말이 칸({len(orig)}워드)과 다르다 — {off:#x} {len(words)}"
+        struct.pack_into(f"<{len(words)}H", exe, off, *words)
+    report["item_verbs"] = len(ITEM_VERBS.get(disc, []))
 
 
 def submenu_center(exe, exe_orig, disc, enc, report):
@@ -469,6 +540,7 @@ def reinsert_names(exe, disc, table, report):
         exe[:] = bytearray(new)
         report["names"] += changed
     if panel:
+        panel_grow(exe, disc, table, words, report, panel)
         panel_pass(exe, disc, table, words, seen, report, panel)
     # 🔴 **표가 안 가리키는 문자열(빈틈의 닻)** — 월드맵 장소 패널 「ディーネ / シャリネ」 따위. 자리·길이를 못 바꾸니 **제자리**로,
     #    우리 표기가 원문보다 짧거나 같을 때만 넣는다. 넘치는 것은 원문 그대로 남기고 `gap_long` 으로 센다(옮길 포인터를 못 찾았다).
@@ -596,6 +668,55 @@ def movie_swap(disc, out):
         print(f"  🔬 동영상 구획 교체: {dst}(LBA {dst_lba}) ← {src} — 섹터 {n}")
 
 
+def sectors(n):
+    return (n + common.USER_SIZE - 1) // common.USER_SIZE
+
+
+def verify_image(disc, built, fs, exe_lba, exe_size, arcs, dirpos, resized):
+    """🔴 구운 이미지를 **다시 읽어** 검산한다 — 「썼다」와 「다시 읽힌다」는 다르다.
+
+    ① 파일 목록·LBA 가 원본과 같고, 크기는 재배치한 아카이브만 새 값이다.
+    ② 원본과 섹터 단위로 비교해 **바뀐 섹터가 선언한 자리(실행파일 · 쓴 아카이브 · 고친 디렉터리 레코드)뿐**이다 — 무변경 구간 대조.
+    ③ 쓴 아카이브를 이미지에서 되읽어 새 바이트와 같다.
+    """
+    tree, _ = common.iso_tree(built)
+    if set(tree) != set(fs):
+        raise SystemExit(f"🔴 이미지 검산: 파일 목록이 달라졌다 — {sorted(set(tree) ^ set(fs))[:5]}")
+    for path, (lba, size) in fs.items():
+        want = resized.get(path, size)
+        if tree[path] != (lba, want):
+            raise SystemExit(f"🔴 이미지 검산: {path} 이 {tree[path]} (기대 {(lba, want)})")
+    allowed = set(range(exe_lba, exe_lba + sectors(exe_size)))
+    for path in arcs:
+        lba, size = fs[path]
+        allowed |= set(range(lba, lba + sectors(max(size, resized.get(path, size)))))
+    allowed |= {dirpos[p][0] for p in resized}
+    changed = set()
+    sz = common.SECTOR
+    with open(common.orig_bin(disc), "rb") as fo, open(built, "rb") as fb:
+        lba = 0
+        while True:
+            a1, b1 = fo.read(sz * 256), fb.read(sz * 256)
+            if not a1 and not b1:
+                break
+            if len(a1) != len(b1):
+                raise SystemExit("🔴 이미지 검산: 이미지 길이가 달라졌다")
+            if a1 != b1:
+                for k in range(len(a1) // sz):
+                    if a1[k * sz : (k + 1) * sz] != b1[k * sz : (k + 1) * sz]:
+                        changed.add(lba + k)
+            lba += len(a1) // sz
+    stray = sorted(changed - allowed)
+    if stray:
+        raise SystemExit(f"🔴 이미지 검산: 선언 안 된 섹터 {len(stray)}곳이 바뀌었다 — {stray[:8]}")
+    for path, data in arcs.items():
+        lba, _ = fs[path]
+        got = common.read_lba(disc, lba, len(data), path=built)
+        if got != data:
+            raise SystemExit(f"🔴 이미지 검산: {path} 을 되읽은 것이 쓴 것과 다르다")
+    print(f"  ✅ 이미지 검산 — 바뀐 섹터 {len(changed):,} 전부 선언한 자리 · 재배치 {len(resized)}개(디렉터리 크기 갱신) · 되읽기 {len(arcs)}파일")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--disc", choices=common.DISC_NAMES, default="ed3")
@@ -659,6 +780,24 @@ def main():
     enc = lambda kr: hangul_map.encode(kr, a.disc, table)
     ui_put, ui_skip = uitext.apply(exe, a.disc, enc)
     report["skipped"] += ui_skip
+    pool_pl = None
+    if a.disc in poolpack.LAYOUT:
+        # 읽을거리 풀(메모·검사교본·사피) — 재배치 + 사전 압축 + 펼침 훅. 정본 글자 = 되읽은 글자를 곧바로 대조한다.
+        pre_pool = bytes(exe)
+        pool_enc = lambda kr: uitext.ui_codes(enc, kr)
+        pool_rows = uitext.pool_rows(a.disc)
+        try:
+            pool_pl = poolpack.apply(exe, a.disc, pool_rows, pool_enc)
+        except poolpack.PoolPackError as e:
+            raise SystemExit(f"🔴 읽을거리 풀 재배치 실패: {e}")
+        bad = poolpack.verify(bytes(exe), pre_pool, a.disc, pool_rows, pool_enc, pool_pl)
+        if bad:
+            raise SystemExit("🔴 읽을거리 풀 되읽기가 정본과 다르다:\n  " + "\n  ".join(bad[:10]))
+        report["skipped"] += len(pool_pl["skipped"])
+        # 🔴 뒤 단계(낱말 재삽입·빈틈 닻 등)가 풀 영역을 덮으면 되읽기가 조용히 깨진다 — 지금 모습을 찍어 두고 끝에서 대조한다
+        pool_snap = {
+            (p["table"], p["end"]): bytes(exe[p["table"] : p["end"]]) for p in poolpack.LAYOUT[a.disc]["pools"]
+        }
     reinsert_names(exe, a.disc, table, report)
     fit_name_widths(exe, exe_orig, a.disc, report)
     # 🔴 불변식 — 월드맵 패널 풀의 **제어 코드 열이 원판과 같다**(글자만 바뀌었다). 어기면 패널이 비거나 줄이 밀린다(마스터 실기 10-08).
@@ -670,10 +809,15 @@ def main():
     lost = uitext.lost_text(exe_orig, bytes(exe), a.disc, enc)
     if lost:
         raise SystemExit("🔴 UI 글 소실:\n  " + "\n  ".join(lost[:10]))
+    if pool_pl:
+        for (lo, hi), snap in pool_snap.items():
+            if bytes(exe[lo:hi]) != snap:
+                raise SystemExit(f"🔴 읽을거리 풀 영역 {lo:#x}~{hi:#x} 을 뒤 단계가 덮었다 — 낱말 재삽입·빈틈 닻의 범위를 확인")
     square_center(exe, exe_orig, a.disc, enc, report)  # lost_text 가 글을 본 뒤에 덮는다(가운데 정렬)
     yesno_center(exe, exe_orig, a.disc, enc, report)
     yes_label_center(exe, exe_orig, a.disc, enc, report)
     submenu_center(exe, exe_orig, a.disc, enc, report)
+    item_verbs(exe, exe_orig, a.disc, enc, report)
     arcs = reinsert_script(a.disc, canon, table, report)
     for path, data in gfx_arcs.items():  # 그림이 든 파일도 같이 쓴다
         arcs.setdefault(path, data)
@@ -691,6 +835,12 @@ def main():
         f"그림 {gfx_files} · 글리프 {baked}"
     )
     print(f"  엔진: {engine or '⏭ 패치 없음 (공백도 12px)'}")
+    if pool_pl:
+        st = pool_pl["stats"]
+        print(
+            f"  읽을거리 풀: 사전 {st['dict']}항목 · 코드 {st['raw_codes']:,}→{st['comp_codes']:,} · "
+            f"풀1 {st['pools'][0][1]:,}/{st['pools'][0][0]:,}B · 풀2 {st['pools'][1][1]:,}/{st['pools'][1][0]:,}B (꼬리 {st['tail']}B 포함 영역)"
+        )
     if title_font_n:
         print(f"  타이틀 폰트: SLPS_012.01 BIOS 리다이렉트 · M01.DAT 문자열 {title_font_n}")
     if a.test:
@@ -738,14 +888,27 @@ def main():
         out = out.replace(".bin", " (TEST).bin")
     tmp = out + ".part"
     shutil.copyfile(common.orig_bin(a.disc), tmp)
+    _, dirpos = common.iso_tree(common.orig_bin(a.disc))
+    resized = {}
     try:
         with open(tmp, "r+b") as f:
             n = common.write_user_data(f, a.disc, exe_lba, bytes(exe), label="실행파일")
             for path, data in sorted(arcs.items()):
-                lba, _size = fs[path]
+                lba, osize = fs[path]
+                if sectors(len(data)) != sectors(osize):
+                    # 🔴 섹터 수가 바뀌면 뒤 파일을 옮겨야 한다 — 그건 이 빌드가 안 한다(`arcpack` 이 미리 막는다).
+                    raise SystemExit(f"🔴 {path}: 섹터 수가 {sectors(osize)}→{sectors(len(data))} 로 바뀐다")
                 n += common.write_user_data(f, a.disc, lba, data, label=path)
+                if len(data) != osize:  # 재배치로 길어진 아카이브 — ISO 디렉터리의 파일 크기만 고친다(섹터 수는 같다)
+                    n += common.set_file_size(f, a.disc, *dirpos[path], len(data), label=f"{path} 디렉터리 레코드")
+                    resized[path] = len(data)
     except Exception:
         os.replace(tmp, out + ".failed")  # 🔴 실패한 빌드는 산출물을 무효화한다
+        raise
+    try:
+        verify_image(a.disc, tmp, fs, exe_lba, exe_size, arcs, dirpos, resized)
+    except Exception:
+        os.replace(tmp, out + ".failed")
         raise
     os.replace(tmp, out)
     cue = common.build_cue(a.disc)

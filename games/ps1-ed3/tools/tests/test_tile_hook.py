@@ -61,6 +61,7 @@ class Sim:
         self.prog = {p["dead"] + 4 * i: w for i, w in enumerate(words)}
         mwords, mbase = tile_hook.msg_stub("ed3", labels)
         self.prog.update({mbase + 4 * i: w for i, w in enumerate(mwords)})
+        self.prog.update({tile_hook.DJUMP_ADDR + 4 * i: w for i, w in enumerate(tile_hook.djump_words())})  # 칸 연속성 서브루틴
         for c in glyphs:
             for i, b in enumerate(glyph_bytes(c)):
                 self.mem[FONT + c * 18 + i] = b
@@ -295,6 +296,16 @@ class TestTileHook(unittest.TestCase):
         sim.run_glyph(0x102, 24)
         # 둘째 줄 첫 칸은 앞 줄 상태가 새지 않는다
         self.assertEqual(sim.vram[SLOTBASE + 24], tilecomp.unpack(glyph_bytes(0x102)))
+
+    def test_skipped_cell_resyncs_to_cell_grid(self):
+        """둘째 줄 첫 칸을 훅 밖(숫자 명령)이 그려 첫 글자가 열 1 에서 시작해도, 윗줄 끝 위치에서 이어 그리지 않고 열 × 12px 에 앉는다(마스터 10-13)."""
+        sim = Sim({0x100, 0x101, 0x102, 0x0F0, 0x0F1}, rows=2)
+        for k, c in enumerate([0x100, 0x0F0, 0x101, 0x0F1, 0x102]):
+            sim.run_glyph(c, k)  # 윗줄 — 위치가 윗줄 끝(열 4 근처)까지 간다
+        sim.run_glyph(0x102, 24 + 1)  # 둘째 줄 열 1 (열 0 은 숫자 명령이 그렸다)
+        self.assertEqual(sim.vram[SLOTBASE + 24 + 1], tilecomp.unpack(glyph_bytes(0x102)))
+        sim.run_glyph(0x101, 24 + 2)  # 이어지는 칸은 위치를 이어 간다(칸 건너뜀 없음)
+        self.assertEqual(sim.vram[SLOTBASE + 24 + 2], tilecomp.unpack(glyph_bytes(0x101)))
 
     def test_sprites_never_touched(self):
         """스프라이트 버퍼는 한 바이트도 안 쓴다(안 B 의 핵심)."""

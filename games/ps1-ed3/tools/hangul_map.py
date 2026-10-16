@@ -129,22 +129,51 @@ def used_codes(disc, after_patch=True):
     cm = textenc.charmap(disc)
     lba, size = common.iso_files(disc)[dump_names.EXE[disc]]
     exe = common.read_lba(disc, lba, size)
-    # ⚠ 떨어진 표(아이템 이름)도 센다 — 빠뜨리면 거기 쓰인 한자(鎧·盾·槍…)를 「빈 자리」로 보고
-    #   한글을 굽는다(2026-09-27 실측: 槍·耐·絹·疾·覇·： 여섯이 그렇게 한글 자리가 돼 있었다).
+    # 🔴 UI 정본(`ui_<disc>.json`)이 옮긴 문자열은 빌드가 한글로 덮어쓴다 — 그 문자열이 쥔 일본어 코드는 **물러난다**.
+    #    이걸 안 풀면 계산이 87자 모자랐다(필요 1,298 · 자리 1,211 → 풀면 1,367, 마스터 10-12). 낱말(glossary)·대사는 위에서 이미 푼다.
+    import uitext
+
+    done = {off for off, row in uitext.load(disc).items() if row.get("kr")} if after_patch else set()
+    used |= exe_used_codes(exe_strings(exe, disc, words), done)
+    return used
+
+
+def exe_strings(exe, disc, words):
+    """[(오프셋, 코드열)] — 실행파일의 아직 안 옮긴 낱말 구역 문자열 전량(표 · 떨어진 표 · 라벨 붙인 구역).
+
+    ⚠ 떨어진 표(아이템 이름)도 센다 — 빠뜨리면 거기 쓰인 한자(鎧·盾·槍…)를 「빈 자리」로 보고
+      한글을 굽는다(2026-09-27 실측: 槍·耐·絹·疾·覇·： 여섯이 그렇게 한글 자리가 돼 있었다).
+    """
+    cm = textenc.charmap(disc)
+    out = []
     for t in exetext.scan_tables(exe, cm) + exetext.detached_tables(exe, disc):
         for x in struct.unpack_from(f"<{t['n']}H", exe, t["table"]):
-            codes, _ = exetext.raw_string(exe, t["base"] + x)
+            off = t["base"] + x
+            codes, _ = exetext.raw_string(exe, off)
             if textenc.decode(codes or [], disc) in words:
                 continue  # 이 낱말은 정본이 옮긴다
-            used.update(codes or [])
+            out.append((off, list(codes or [])))
     # 표를 못 찾은 구역도 화면에 나간다 — 라벨 붙인 낱말 구역 전량을 더한다.
     labels = dump_names.REGIONS[disc]
     rev = {v: k for k, v in cm.items()}
     for r in dump_names.split(dump_names.regions(dump_names.strings(exe, cm)), labels):
-        for text in r["items"]:
+        for off, text in zip(r["offs"], r["items"], strict=True):
             if text in words:
                 continue
-            used.update(rev[ch] for ch in text if ch in rev)
+            out.append((off, [rev[ch] for ch in text if ch in rev]))
+    return out
+
+
+def exe_used_codes(strings, done_offsets):
+    """{코드} — 문자열 목록에서 **옮겨진 자리(done_offsets)를 뺀** 나머지가 쥔 코드.
+
+    같은 코드를 옮겨진 문자열과 안 옮겨진 문자열이 같이 쥐면 **남는다**(안 옮긴 쪽이 아직 쓴다).
+    """
+    used = set()
+    for off, codes in strings:
+        if off in done_offsets:
+            continue
+        used.update(codes)
     return used
 
 
@@ -198,7 +227,7 @@ def needed_chars(disc):
             freq.update(row["kr"])
     ui = collections.Counter()
     for row in uitext.load(disc).values():
-        ui.update(row["kr"])
+        ui.update(uitext.RAW_TOKEN.sub("", row["kr"]))  # `�<16진>` 은 코드 그대로라 글리프가 필요 없다
     names = set()
     for kr in glossary.flat(disc).values():
         names.update(kr)

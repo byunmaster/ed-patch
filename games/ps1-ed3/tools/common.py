@@ -191,7 +191,8 @@ def read_lba(disc, lba, size, path=None):
     return bytes(out[:size])
 
 
-def _walk(f, lba, size, prefix, depth, out):
+def _walk(f, lba, size, prefix, depth, out, pos=None):
+    """디렉터리를 걸어 `out[경로] = (lba, 크기)` 를 채운다. `pos` 를 주면 `pos[경로] = (디렉터리 섹터 lba, 섹터 안 오프셋)` 도."""
     data = bytearray()
     for i in range((size + USER_SIZE - 1) // USER_SIZE):
         f.seek((lba + i) * SECTOR + USER_OFF)
@@ -210,26 +211,47 @@ def _walk(f, lba, size, prefix, depth, out):
             rec[32],
         )
         name = rec[33 : 33 + nlen]
+        at = i
         i += ln
         if nlen == 1 and name in (b"\x00", b"\x01"):
             continue
         path = f"{prefix}/{name.decode('ascii', 'replace').split(';')[0]}"
         if flags & 2:
             if depth < 8:
-                _walk(f, ext, dsz, path, depth + 1, out)
+                _walk(f, ext, dsz, path, depth + 1, out, pos)
         else:
             out[path] = (ext, dsz)
+            if pos is not None:
+                pos[path] = (lba + at // USER_SIZE, at % USER_SIZE)
     return out
 
 
 def iso_files(disc):
     """{경로: (lba, size)} — 디스크의 파일 전량. PVD 에서 루트를 따라 걷는다."""
-    with open(orig_bin(disc), "rb") as f:
+    return iso_tree(orig_bin(disc))[0]
+
+
+def iso_tree(bin_path):
+    """({경로: (lba, size)}, {경로: (디렉터리 섹터 lba, 섹터 안 오프셋)}) — 아무 이미지에서나."""
+    with open(bin_path, "rb") as f:
         f.seek(16 * SECTOR + USER_OFF)
         pvd = f.read(USER_SIZE)
         root = pvd[156:190]
         rlba, rsz = struct.unpack("<I", root[2:6])[0], struct.unpack("<I", root[10:14])[0]
-        return _walk(f, rlba, rsz, "", 0, {})
+        pos = {}
+        return _walk(f, rlba, rsz, "", 0, {}, pos), pos
+
+
+def set_file_size(f, disc, dir_lba, at, new_size, *, label):
+    """ISO 디렉터리 레코드의 파일 크기(리틀·빅 엔디언 둘 다)를 고친다. 섹터 수가 안 바뀔 때만 쓴다."""
+    f.seek(dir_lba * SECTOR + USER_OFF)
+    sec = bytearray(f.read(USER_SIZE))
+    ln = sec[at]
+    if ln < 34:
+        raise ValueError(f"{label}: 디렉터리 레코드가 아니다 (@{at})")
+    sec[at + 10 : at + 14] = struct.pack("<I", new_size)
+    sec[at + 14 : at + 18] = struct.pack(">I", new_size)
+    return write_user_data(f, disc, dir_lba, bytes(sec), label=label)
 
 
 # ── GMF 아카이브 (SC*.DAT · M0*.DAT) ────────────────────────────────────────

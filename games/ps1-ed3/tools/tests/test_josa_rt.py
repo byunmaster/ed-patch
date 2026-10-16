@@ -65,12 +65,32 @@ class TestTypesetRules(unittest.TestCase):
     def test_line_problems_ignores_the_first_line(self):
         import check_typeset_rules as C
 
+        self.assertTrue(C.line_problems("… 말줄임으로 시작"))  # 문장 맨 앞 「…」 는 붙인다(마스터 10-13)
         self.assertEqual(C.line_problems("…말줄임으로 시작"), [])
+        self.assertEqual(C.line_problems("응. …그래"), [])
         # 🔴 말줄임은 「…」 전각 한 글자 — 점 셋 연속(`...`)이 문안에 남으면 실패(마스터 10-08)
         self.assertTrue(C.line_problems("그러니까..."))
         self.assertTrue(C.line_problems("아.... 그래"))
         self.assertEqual(C.line_problems("그러니까…"), [])
         self.assertTrue(C.line_problems("첫 줄\n,둘째 줄 머리 부호"))
+
+    def test_ellipsis_and_tilde_rules(self):
+        import check_typeset_rules as C
+
+        # 2-11: 「…」 뒤에 말이 이어지면 띄운다 — 예외: 음절 끊어 말하기 · 같은 소리 되풀이 · 여는 괄호
+        self.assertTrue(C.line_problems("그대도…잊었다"))
+        self.assertTrue(C.line_problems("뭐!?…"))  # 2-12
+        self.assertEqual(C.line_problems("뭐…!?"), [])
+        self.assertEqual(C.line_problems("그대도… 잊었다"), [])
+        for ok in ("세…리…오…스…", "흑…흑…흑…", "…(화끈!)"):
+            self.assertEqual(C.line_problems(ok), [], ok)
+        # 1-7: 물결표 뒤 마침표 금지 · 반각 `~` 금지(전각 〜)
+        self.assertTrue(C.line_problems("불렀어〜."))
+        self.assertTrue(C.line_problems("어이~!"))
+        self.assertEqual(C.line_problems("어이〜!"), [])
+        # 숫자와 Pia/Goa 사이 공백(마스터 10-13)
+        self.assertTrue(C.line_problems("15Pia에 사 주지."))
+        self.assertEqual(C.line_problems("15 Pia에 사 주지."), [])
 
     def test_name_echo_pattern(self):
         import check_name_echo as E

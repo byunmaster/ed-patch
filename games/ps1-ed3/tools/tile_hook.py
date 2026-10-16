@@ -20,16 +20,49 @@ import engine_patch as E
 OFF_POS, OFF_ZADV, OFF_CURP, OFF_IDX, OFF_LAST = 0, 2, 4, 10, 8  # CURP 는 4B(4~7)라 IDX 는 그 뒤
 OFF_RA, OFF_V0, OFF_V1, OFF_A0, OFF_A2 = 12, 16, 20, 24, 28
 OFF_OUTA, OFF_SPB = 32, 52  # 합성 버퍼 18B(+2)
-OFF_HALF = 72  # 반 칸(6px) 글자 코드 u16 목록, 0 종결(최대 8칸 = 16B)
-OFF_MK = 88  # 조사 표지 5 × 8B
-OFF_LC, OFF_LIM = 128, 130  # 직전에 그린 글자의 열(메시지 창의 커서 점프를 알아챈다) · 줄 끝 판정 한계 px((열−1)×12)
-OFF_BL = 132  # 받침표 u16 목록, 0 종결
-HALF_SLOTS = 8
+OFF_HALF = 72  # 반 칸(6px) 글자 코드 u16 목록, 0 종결(최대 44칸 = 88B — 공백·괄호·부호 + 반각 ASCII(숫자·영문·&%'-) 마스터 10-12)
+OFF_MK = 160  # 조사 표지 5 × 8B
+OFF_LC, OFF_LIM = 200, 202  # 직전에 그린 글자의 열(메시지 창의 커서 점프를 알아챈다) · 줄 끝 판정 한계 px((열−1)×12)
+OFF_BL = 204  # 받침표 u16 목록, 0 종결
+HALF_SLOTS = 44
 MSG_WINDOWS = ((10, 3, 0), (17, 1, 0), (6, 4, 0), (14, 4, 0), (20, 4, 0))  # 개별 목록 (열, 행, 줄 앞 밀기 px) — 10×3 퇴각 확인 · 17×1 「대열…」 메시지(`engine_patch.LINEUP_COLS`) · 6×4 전투 square **+ 시스템 설정 창**(둘 다 창 열 6 으로 줄인 뒤 — 커서 줄 반각 `cursor_hook` 과 같은 목록) · 14×4 세이브/로드 데이터 창(제목 가운데 정렬, 마스터 10-11) · 20×4 「…괜찮습니까?」 확인 창(물음표 반각). 🔴 시스템 설정 창이 7×4 일 땐 넣지 않았다(필드 메뉴 `0x80033CDC` 계열). 열·행이 유일한 창만 센다(14×4·20×4 는 창 생성 호출이 하나씩, 실측 10-11).
 MSG_GENERIC = ((1, 3), (5, 18))  # 일반 규칙: 행 1~3 · 열 5~18 인 작은 창 + **전투 화면 영역(창 y)** — 전투 메시지 창(출현은 열이 이름 길이+4·행이 몬스터 종류 수로 **가변**이라 목록으로 못 센다: 승리·패배 10×1 · 레벨업 18×2 · 경험치·전리품 13×2 …). 열 3·4 팝업·행 4 이상(square 6×4·필드 메뉴 7×4)은 제외.
 MSG_Y = (-48, -12)  # 창 표의 y 는 화면 가운데(120) 기준 상대값(= y−120): 전투 메시지 창(y 72~108)만. 전투 밖 1·2행 창(`0x80024040` y150 · `0x80028C20` y12)은 원판 그대로 — 용도를 모르는 창을 안 바꾼다(관리자 10-10)
 MSG_OFF = 0x1C0  # 메시지 창 갈래 코드를 두는 자료 자리 안 위치(패널 스텁 `PANEL_CODE_OFF` 뒤) — 죽은 함수 자리가 모자라 밖으로 뺐다
 N_MARK = 5
+DJUMP_ADDR = 0x8008A428 + 368 - 60  # R2 맨 끝 60B(`cursor_hook.R2`+`R2_LEN`−60) — 대사창 칸 연속성 서브루틴(`djump_words`)
+DJUMP_LEN = 60
+
+
+def djump_words():
+    """대사창 글자의 칸 연속성 — 입력 t5 = 열, t9 = 자료 기준. 출력 t6 = 1 이면 위치·타일 초기화 필요.
+
+    열 0 이거나 직전 글자(이 훅이 부른 마지막 글자) 바로 다음 칸이 아니면 초기화한다 — 숫자 명령처럼 훅 밖에서 그려지는 칸이 줄 첫머리·중간에 끼면
+    다음 글자가 직전 글자 뒤(= 윗줄 끝)에서 이어 그려지던 문제(마스터 10-13 「5 ……?Pia」). 건너뛴 칸은 위치를 열 × 12px 로 맞춘다."""
+    src = f"""
+    djump:
+      lhu   t3, {OFF_LC}(t9)                # 직전 글자의 열 + 1
+      addiu t7, t5, 1
+      sh    t7, {OFF_LC}(t9)
+      beq   t5, zero, dz
+      li    t6, 1                           # (지연 슬롯)
+      beq   t3, t5, dno                     # 연속
+      sll   t4, t5, 3                       # (지연 슬롯)
+      sll   t7, t5, 2
+      addu  t4, t4, t7                      # 열 × 12
+      jr    ra
+      sh    t4, {OFF_POS}(t9)               # (지연 슬롯)
+    dz:
+      jr    ra
+      sh    zero, {OFF_POS}(t9)             # (지연 슬롯) 줄 첫 칸 — 위치 0
+    dno:
+      jr    ra
+      move  t6, zero                        # (지연 슬롯)
+"""
+    words, _ = E.asm(src, DJUMP_ADDR)
+    E.verify(words, DJUMP_ADDR)
+    assert 4 * len(words) <= DJUMP_LEN, f"djump 서브루틴이 자리를 넘는다 ({4 * len(words)}B)"
+    return list(words)
 
 
 def data_size(n_blist):
@@ -192,9 +225,10 @@ def hooks_b(disc, n_blist, with_josa=True):
       subu  t0, t0, t5                      # t0 = 이 줄 첫 칸의 슬롯 번호
       li    t6, 276                         # 줄 끝 한계 (열 − 1) × 12
       sh    t6, {OFF_LIM}(t9)
-      bne   t5, zero, nreset
+      jal   {DJUMP_ADDR:#x}                 # 칸 연속성 판정(R2 꼬리 서브루틴) — t6 = 1 이면 위치·타일 초기화(줄 첫 칸 · 칸이 건너뛰었다)
       nop
-      sh    zero, {OFF_POS}(t9)             # 줄 첫 칸 — 위치·현재 타일 초기화
+      beq   t6, zero, nreset                # 직전 글자 바로 다음 칸 — 위치를 이어 간다
+      nop
     rst:
       sw    t2, {OFF_CURP}(t9)
       sw    zero, 0(t2)

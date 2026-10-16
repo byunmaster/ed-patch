@@ -77,13 +77,58 @@ def overlay(raw, t, spec):
     return bytes(out)
 
 
+def overlay_labels(raw, t, spec):
+    """크레딧 그림의 **분야 라벨 줄만** 한글로 갈아 끼운 같은 길이의 바이트열(번역 규칙 3-7 — 이름은 그대로).
+
+    줄마다 `[y0, y1, 글]` — 그 줄의 잉크 가로 범위의 가운데에 맞춰(원판 정렬을 따른다) 같은 높이에 앉힌다.
+    줄 위아래 1행까지 바탕 색인으로 비우고 잉크 색인으로 쓴다(색인 단위 — 칸 밖은 바이트까지 그대로).
+    글꼴은 Galmuri14(`narration.render_line` 과 같은 길 — 아스키 비례폭·가운데 맞춤 규칙을 한 곳에 둔다).
+    """
+    import narration
+    import numpy as np
+
+    assert t["bpp"] == 4, "4bpp 만 다룬다"
+    out = bytearray(raw)
+    stride = t["w"] * 2
+    width = t["w"] * 4
+    pix0 = t["end"] - stride * t["h"]
+    bg, ink = spec["bg"], spec["ink"]
+
+    def get(x, y):
+        v = out[pix0 + y * stride + x // 2]
+        return (v >> 4) if x & 1 else (v & 0xF)
+
+    def put(x, y, i):
+        k = pix0 + y * stride + x // 2
+        out[k] = (out[k] & 0x0F) | (i << 4) if x & 1 else (out[k] & 0xF0) | i
+
+    for y0, y1, text in spec["rows"]:
+        xs = [x for x in range(width) if any(get(x, y) != bg for y in range(y0, y1))]
+        assert xs, f"{text!r}: 줄 {y0}~{y1} 에 잉크가 없다 — 자리가 밀렸다"
+        cx = (min(xs) + max(xs)) / 2.0
+        for y in range(max(0, y0 - 1), min(t["h"], y1 + 1)):
+            for x in range(width):
+                put(x, y, bg)
+        m, _ = narration.render_line(text, spec["font"])
+        ys, cs = np.nonzero(m.any(1))[0], np.nonzero(m.any(0))[0]
+        m = m[ys.min() : ys.max() + 1, cs.min() : cs.max() + 1]
+        h, w = m.shape
+        ty, tx = max(0, (y0 + y1) // 2 - h // 2), int(round(cx - w / 2))
+        assert tx >= 0 and tx + w <= width, f"{text!r}: 가로가 그림 밖이다"
+        for r in range(h):
+            for c in range(w):
+                if m[r, c]:
+                    put(tx + c, ty + r, ink)
+    return bytes(out)
+
+
 def apply(disc):
     """(넣은 그림 수, {파일 경로: 새 바이트열}) — `file`·`overlay` 가 있는 자리만."""
     from PIL import Image
 
     want = {}
     for it in catalog(disc):
-        if it.get("file") or it.get("overlay"):
+        if it.get("file") or it.get("overlay") or it.get("labels"):
             want.setdefault(it["member"], []).append(it)
     if not want:
         return 0, {}
@@ -112,6 +157,10 @@ def apply(disc):
                 _, t = ts[it["index"]]
                 if it.get("overlay"):
                     raw = overlay(raw, t, it["overlay"])
+                    n += 1
+                    continue
+                if it.get("labels"):
+                    raw = overlay_labels(raw, t, it["labels"])
                     n += 1
                     continue
                 png = os.path.join(asset_dir(disc), it["file"])

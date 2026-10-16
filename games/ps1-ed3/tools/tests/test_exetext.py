@@ -286,3 +286,40 @@ class TestTailSharing(unittest.TestCase):
         data, n, base = self._data([[1, 2, 3], [4, 5, 3], [6, 7, 3]], 24)
         new, _ = exetext.rebuild(data, 0, base, n, [[1, 2, 3], [4, 5, 3], [6, 7, 3]])
         self.assertEqual(new, data)
+
+
+class TestPanelRelayout(unittest.TestCase):
+    """칸이 모자란 패널 줄을 늘리고 뒤·표를 민다 — 제어 코드 순서열 불변, 표는 같은 줄을 가리킨다."""
+
+    def _exe(self):
+        # 영역 [0x100, 0x120): 줄 A(3칸) 8000 줄 B(2칸) 8002 / 꼬리 0 — 표 [0x20]: A, B, 끝(8002 자리)
+        exe = bytearray(0x200)
+        words = [0x11, 0x12, 0x13, 0x8000, 0x21, 0x22, 0x8002] + [0] * 9
+        struct.pack_into(f"<{len(words)}H", exe, 0x100, *words)
+        # 표: 시작 0x20 기준 오프셋 — A=0xE0, B=0xE8, 8002=0xEE
+        struct.pack_into("<3H", exe, 0x20, 0xE0, 0xE8, 0xEE)
+        return exe
+
+    def test_grow_shifts_tail_and_table(self):
+        old = exetext.PANEL.get("ed3"), exetext.PANEL_TABLE.get("ed3")
+        exetext.PANEL["ed3"], exetext.PANEL_TABLE["ed3"] = (0x100, 0x120), (0x20, 3)
+        try:
+            exe = self._exe()
+            orig = bytes(exe)
+            ins = [(0x100 + 2 * 3, 1)]  # 줄 A 뒤에 한 칸
+            self.assertEqual(exetext.panel_relayout(exe, "ed3", ins), 1)
+            w = struct.unpack_from("<8H", exe, 0x100)
+            self.assertEqual(w, (0x11, 0x12, 0x13, 0, 0x8000, 0x21, 0x22, 0x8002))
+            self.assertEqual(struct.unpack_from("<3H", exe, 0x20), (0xE0, 0xEA, 0xF0))  # A 는 그대로, 뒤는 2B 밀림
+            self.assertEqual(exetext.panel_structure_problems(orig, bytes(exe), 0x100, 0x120), [])
+        finally:
+            exetext.PANEL["ed3"], exetext.PANEL_TABLE["ed3"] = old[0], old[1]
+
+    def test_refuses_when_tail_too_short(self):
+        old = exetext.PANEL.get("ed3"), exetext.PANEL_TABLE.get("ed3")
+        exetext.PANEL["ed3"], exetext.PANEL_TABLE["ed3"] = (0x100, 0x120), (0x20, 3)
+        try:
+            with self.assertRaises(exetext.ExeTextError):
+                exetext.panel_relayout(self._exe(), "ed3", [(0x106, 20)])
+        finally:
+            exetext.PANEL["ed3"], exetext.PANEL_TABLE["ed3"] = old[0], old[1]
