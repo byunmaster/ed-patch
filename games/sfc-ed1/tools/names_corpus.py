@@ -24,6 +24,7 @@ import text  # noqa: I001  (common 보다 먼저)
 import common
 import textmap
 import namesrc
+import chapters
 import units
 
 CANON = "ed1"  # 공통 문안 정본 — PS1 기반(마스터 10-08)
@@ -130,7 +131,12 @@ def _extra_pairs(rom):
         for i, x in enumerate(bu.get(key, [])):
             yield f"ui:{key}[{i}]", x["jp"], x.get("kr") or None, "slot"
     for i, x in enumerate(namesrc.chapters()["titles"]):
-        yield f"chapter:{i + 1}", x["jp"], x.get("kr") or None, "slot"
+        # 화면은 번호를 전각 칸에 그리고 머리와 제목 사이를 반각 두 칸으로 띄운다(chapters.py) — 정본 꼴 「제１장  제목」
+        kr = x.get("kr")
+        if kr and kr.startswith("제"):
+            head, _, rest = kr.partition(" ")
+            kr = head.translate(chapters.FULLWIDTH_DIGITS) + "  " + rest
+        yield f"chapter:{i + 1}", x["jp"], kr or None, "slot"
     import hud_names
 
     for jp, kr in zip(hud_names.JP_NAMES, hud_names.NAMES, strict=True):

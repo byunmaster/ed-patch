@@ -80,13 +80,15 @@ def speaker_before(items: list[script.Item], i: int, res) -> str | None:
 
 
 def extract(rom: bytes):
-    s, e = common.snes2off(text.TEXT_START), common.snes2off(0x0BFE76)
+    s, e = common.snes2off(text.TEXT_START), common.snes2off(text.TEXT_END)
     items = script.parse_region(rom, s, e, script.pointer_anchors(rom))
     res = text.resolver(rom)
     # 조각 번호 — END($E0/$E4) 마다 하나씩. 화자는 조각 안에서 이어진다(tm.py)
     seg_of = []
     seg = 0
-    for it in items:
+    for k, it in enumerate(items):
+        if k and common.off2snes(it.off) >> 16 != common.off2snes(items[k - 1].off) >> 16:
+            seg += 1  # 뱅크 경계에서도 끊는다(`segments`·`build.segment_slices` 와 같은 규칙)
         seg_of.append(seg)
         if it.kind == "ctrl" and it.code in (0xE0, 0xE4):
             seg += 1
@@ -120,48 +122,66 @@ def token_of(it: script.Item) -> str:
 LABEL = "<@>"  # 런 한복판에 떨어지는 분기 목표 자리 — 번역문이 같은 자리에 <@> 를 둔다(공유 꼬리 「…しますか?」)
 
 
-def segments(items: list[script.Item], res) -> list[dict]:
+def table_targets(rom: bytes) -> set[int]:
+    """메시지 포인터 표 넷이 가리키는 원문 오프셋 전부(런 한복판이면 `<@>` 자리가 된다)."""
+    out: set[int] = set()
+    for addr, count in text.MSG_TABLES.values():
+        base = common.snes2off(addr)
+        for i in range(count):
+            p = rom[base + 3 * i] | (rom[base + 3 * i + 1] << 8) | (rom[base + 3 * i + 2] << 16)
+            out.add(common.snes2off(p))
+    return out
+
+
+def segments(items: list[script.Item], res, extra_targets: set[int] = frozenset()) -> list[dict]:
     """END 사이 조각 = **번역 정본의 단위**. id 는 조각 원문 바이트의 sha1(12) — textmap 의 키다.
     `tokens` 는 글자가 아닌 항목(사전·치환·제어)을 순서대로 — 번역문은 이 토큰을 같은 순서로 품어야 한다.
     (비교·번역은 조각으로, 물리 배치는 항목 열로 — 재삽입기가 번역문의 토큰 위치대로 항목을 다시 짠다.)"""
-    targets = {t for it in items for t in it.targets}
+    targets = {t for it in items for t in it.targets} | set(extra_targets)
     out = []
+
+    def flush(cur: list[script.Item]) -> None:
+        raw = b"".join(bytes([x.code]) + x.args for x in cur)
+        toks = []
+        jp_parts = []
+        run: list[int] = []
+        for j, x in enumerate(cur):
+            mid = x.kind == "char" and x.off in targets and j > 0 and cur[j - 1].kind == "char"
+            if mid:
+                jp_parts.append(text.decode(bytes(run), res))
+                run = []
+                jp_parts.append(LABEL)
+                toks.append(LABEL)
+            if x.kind == "char":
+                run.append(x.code)
+            else:
+                jp_parts.append(text.decode(bytes(run), res))
+                run = []
+                jp_parts.append(text.decode(bytes([x.code]) + x.args, res))
+                toks.append(token_of(x))
+        jp_parts.append(text.decode(bytes(run), res))
+        out.append(
+            {
+                "id": hashlib.sha1(raw).hexdigest()[:12],
+                "seg": len(out),
+                "addr": f"{common.off2snes(cur[0].off):06X}",
+                "n_items": len(cur),
+                "tokens": toks,
+                "jp": "".join(jp_parts),
+            }
+        )
+
     cur: list[script.Item] = []
-    start = 0
     for k, it in enumerate(items):
-        cur.append(it)
-        if it.kind == "ctrl" and it.code in (0xE0, 0xE4):
-            raw = b"".join(bytes([x.code]) + x.args for x in cur)
-            toks = []
-            jp_parts = []
-            run: list[int] = []
-            for j, x in enumerate(cur):
-                mid = x.kind == "char" and x.off in targets and j > 0 and cur[j - 1].kind == "char"
-                if mid:
-                    jp_parts.append(text.decode(bytes(run), res))
-                    run = []
-                    jp_parts.append(LABEL)
-                    toks.append(LABEL)
-                if x.kind == "char":
-                    run.append(x.code)
-                else:
-                    jp_parts.append(text.decode(bytes(run), res))
-                    run = []
-                    jp_parts.append(text.decode(bytes([x.code]) + x.args, res))
-                    toks.append(token_of(x))
-            jp_parts.append(text.decode(bytes(run), res))
-            out.append(
-                {
-                    "id": hashlib.sha1(raw).hexdigest()[:12],
-                    "seg": len(out),
-                    "addr": f"{common.off2snes(items[start].off):06X}",
-                    "n_items": len(cur),
-                    "tokens": toks,
-                    "jp": "".join(jp_parts),
-                }
-            )
+        # 뱅크 경계에서도 끊는다 — 재삽입기(`build.segment_slices`)와 같은 규칙이라야 조각 id 가 맞는다
+        if cur and common.off2snes(it.off) >> 16 != common.off2snes(cur[-1].off) >> 16:
+            flush(cur)
             cur = []
-            start = k + 1
+        cur.append(it)
+        # 본체가 END 없이 끝나는 마지막 조각(`F9` 로 끝난다 — 호출 대상이 END 를 낸다)도 한 조각이다
+        if (it.kind == "ctrl" and it.code in (0xE0, 0xE4)) or k == len(items) - 1:
+            flush(cur)
+            cur = []
     for s in out:
         m = re.search(r"<COLOR_C>\s*\{([^{}]+)\}", s["jp"][:60])
         s["speaker"] = m.group(1) if m else None
@@ -209,7 +229,7 @@ def main() -> None:
         (d / "units.json").write_text(
             json.dumps(units, ensure_ascii=False, indent=0), encoding="utf-8"
         )
-        segs = segments(items, text.resolver(rom))
+        segs = segments(items, text.resolver(rom), table_targets(rom))
         (d / "segments.json").write_text(
             json.dumps(segs, ensure_ascii=False, indent=0), encoding="utf-8"
         )

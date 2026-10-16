@@ -42,10 +42,31 @@ HOOK_BANK = 0x3F  # 훅 코드 + 표
 GLYPH_BANK = 0x3D  # 글리프 2bpp 32B/자
 DICT_BANK = 0x3E  # 사전·전투 UI 문자열(`tools/dicts.py`·`battle_ui.py`)
 GLYPH_BASE = (GLYPH_BANK << 16) | 0x8000
-GLYPH_MAX = 1024  # 한 뱅크 = 32,768B ÷ 32B. 넘으면 뱅크를 갈라야 한다(그때 훅도 고친다)
+GLYPH_BANK2 = 0x3C  # 둘째 글리프 뱅크 — 색인 1,024~2,047(마스터 10-11: 1,024 에 닿으면 둘째 뱅크로)
+GLYPH_BASE2 = (GLYPH_BANK2 << 16) | 0x8000
+GLYPH_BASE2_X = GLYPH_BANK2 << 16  # X(=색인×32 ≥ $8000)를 더하면 뱅크 안 $8000~ 으로 떨어진다
+GLYPH_MAX = 2048  # 뱅크 둘
 HOOK_ORG = 0x8000
 TRAMPOLINE = 0x02FE52  # 뱅크 $02 빈 자리 430B
 CALL_SITE = 0x02DE0B  # JSR $E784 → JSR $FE52
+# 🔴 **빠름·멈춤(과 A 연타 skip)에선 엔진이 글자마다 창을 화면에 올리지 않는다**(`$02:DF4A` — 속도 ≥2 거나 `$1772`≠0 이면
+#    `JSR $F1AD`(→ `$00:960B` DMA)를 건너뛰고 `JMP $DF74`). 쪽이 넘어가면 엔진은 칸 배열(`$0305`)만 비우고, **화면(타일맵)엔
+#    앞 쪽이 그대로 남은 채** 새 글자를 친다 — 글자마다 `$02:B07B` 가 칸 배열 전체를 타일 표(`$010C`)로 다시 바꾸지만 그걸 VRAM 에
+#    올리는 건 쪽 끝 플러시뿐이다. 원판은 글꼴 타일이 정적이라 그동안 앞 쪽이 멀쩡히 보였지만, 우리 동적 슬롯은 새 글자가 올라올
+#    때마다 **화면에 보이는 앞 쪽의 타일을 덮는다**(2026-10-12 실측: 인트로 라이아스 쪽 넘김 — 열 글자째에서 「라이아스」→「라 ㅇ 아스」,
+#    「이제」→「ㅏ제」). ⇒ 쪽의 **첫 글자를 친 직후**(`$173B`=0) 한 번 올려 앞 쪽을 지운다 — 보통 속도가 매 글자 하는 것과 같다.
+#    건너뛰는 갈래 `$02:DF56 JMP $DF74` 를 뱅크 $02 트램펄린으로 돌린다(엔진 문맥이라 DBR=0·8비트 그대로 `JSR $F1AD`).
+FLUSH_SITE = 0x02DF56
+FLUSH_SITE_ORIG = bytes([0x4C, 0x74, 0xDF])  # JMP $DF74
+FLUSH_TRAMPOLINE = 0x02FE80
+FLUSH_TRAMP_BYTES = bytes(
+    [
+        0xAD, 0x3B, 0x17,  # LDA $173B
+        0xD0, 0x03,  # BNE +3  (첫 칸이 아니면 건너뛴다)
+        0x20, 0xAD, 0xF1,  # JSR $F1AD  (칸 > $FF 가 아니라서 `$00:960B` 까지 간다)
+        0x4C, 0x74, 0xDF,  # JMP $DF74
+    ]
+)
 # 🔴 **글자가 들어오는 문은 둘이다**(2026-09-07 실측). `$02:DDEE` 가 사전 버퍼가 켜져 있으면
 # 대본 대신 **버퍼**에서 한 바이트를 집어 같은 `$173A` 로 보낸다:
 #     $DDF9  LDA $174C,X / CMP #$FF / BNE $DE0E     ← 두 번째 문
@@ -351,6 +372,19 @@ def dict_width_tables() -> list[bytes]:
     return out
 
 
+def check_crawl_digit_gap() -> None:
+    """크롤(오프닝·엔딩) 반각 숫자 게이트 — 「잉크 열 < 진행 폭」. 같으면 숫자 사이가 0px 라 「10여」가 「100」처럼 읽힌다(마스터 10-13)."""
+    import hangul_font
+
+    font = hangul_font.load_font()
+    for c in "0123456789":
+        rows = hangul_font.render(c, font)
+        cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
+        ink = max(cols) + 1
+        if ink >= hook_vwf.CRAWL_DIGIT_ADV:
+            raise SystemExit(f"크롤 숫자 「{c}」 잉크 {ink}열 ≥ 진행 폭 {hook_vwf.CRAWL_DIGIT_ADV}px — 간격이 없다")
+
+
 def num_glyph_table() -> tuple[bytes, bytes]:
     """원판 시트의 숫자 0~9 그림(1bpp 16행) → (그림 160B, 진행 폭 10B).
 
@@ -402,6 +436,8 @@ def build_payload(
     """훅 뱅크 하나를 통째로 만든다 — 코드가 앞, 표가 뒤. **원본을 안 읽는다**(테스트가 돌 수 있게)."""
     if vwf is None:
         vwf = common.VWF
+    if vwf:
+        check_crawl_digit_gap()
     rep_index = encode.index_map(rep)
     nslot = len(slots)
     if xfrom is None:
@@ -1678,64 +1714,54 @@ def build_payload(
     #    이면 평면1 을 평면0 으로 덮어써 꺼진 픽셀이 색인 0(투명)이 되게 하고, 인게임(=0)
     #    이면 원본 그대로(평면1=`$FF`, 불투명 박스)를 둔다. 소스 뱅크(`$3D`)는 그대로 —
     #    "서명"(평면1=`$FF`)은 여기 오프닝 분기를 타지 않는 인게임 타일에서는 계속 유효하다.
-    a.sep(imm=0x20)
-    a.op("lda", addr=V_UCTX, mode="long")
-    a.rep(imm=0x30)
-    a.beq(label="u1_ig")
-    a.ldy(imm=0x0008, m16=True)
-    a.label("u1")
-    a.op("lda", addr=GLYPH_BASE, mode="longx")
-    a.op("and", imm=0x00FF, m16=True)  # 평면1 을 비우고
-    a.op("sta", addr=V_U0, mode="long")
-    a.xba()  # 평면0 을 상위 바이트로 옮겨
-    a.op("ora", addr=V_U0, mode="long")  # 평면1 자리에 평면0 을 복제 — 꺼진 칸 = 색인 0(투명)
-    a.op("sta", addr=0x2118, mode="abs")
-    a.inx()
-    a.inx()
-    a.dey()
-    a.bne(label="u1")
-    a.bra(label="u1_done")
-    a.label("u1_ig")
-    a.ldy(imm=0x0008, m16=True)
-    a.label("u1i")
-    a.op("lda", addr=GLYPH_BASE, mode="longx")  # 인게임 — 원본 그대로(평면1=`$FF`, 불투명)
-    a.op("sta", addr=0x2118, mode="abs")
-    a.inx()
-    a.inx()
-    a.dey()
-    a.bne(label="u1i")
-    a.label("u1_done")
+    # 🔴 글리프 색인 1,024 이상은 **둘째 뱅크**(`GLYPH_BASE2`) — X(=색인×32)가 `$8000` 이상이면 둘째 뱅크
+    #    루프를 탄다. 한 뱅크가 32KB 라 24비트 주소가 이어지지 않는다(마스터 10-11). 뱅크마다 루프를 따로
+    #    둬서 반복 안에는 분기가 없다(NMI 드레인 시간 불변). 둘째 반 타일에서도 X 는 `$8000` 을 안 넘나든다.
+    def glyph_pass(tag: str, ig_first: bool):
+        """한 타일(8워드)을 VRAM 으로. 오프닝/스태프롤(평면1 복제)과 인게임(원본), 낮은/높은 뱅크 네 루프."""
+        base_lo, base_hi = GLYPH_BASE, GLYPH_BASE2_X
+
+        def loop(lbl, base, opening):
+            a.ldy(imm=0x0008, m16=True)
+            a.label(lbl)
+            a.op("lda", addr=base, mode="longx")
+            if opening:
+                a.op("and", imm=0x00FF, m16=True)  # 평면1 을 비우고
+                a.op("sta", addr=V_U0, mode="long")
+                a.xba()  # 평면0 을 상위 바이트로 옮겨
+                a.op("ora", addr=V_U0, mode="long")  # 평면1 자리에 평면0 을 복제 — 꺼진 칸 = 색인 0(투명)
+            a.op("sta", addr=0x2118, mode="abs")
+            a.inx()
+            a.inx()
+            a.dey()
+            a.bne(label=lbl)
+
+        a.sep(imm=0x20)
+        a.op("lda", addr=V_UCTX, mode="long")
+        a.rep(imm=0x30)
+        a.beq(label=f"{tag}_ig")
+        a.op("cpx", imm=0x8000, m16=True)
+        a.bcs(label=f"{tag}_ohi")
+        loop(f"{tag}", base_lo, True)
+        a.bra(label=f"{tag}_done")
+        a.label(f"{tag}_ig")
+        a.op("cpx", imm=0x8000, m16=True)
+        a.bcs(label=f"{tag}_ihi")
+        loop(f"{tag}i", base_lo, False)
+        a.bra(label=f"{tag}_done")
+        a.label(f"{tag}_ohi")
+        loop(f"{tag}oh", base_hi, True)
+        a.bra(label=f"{tag}_done")
+        a.label(f"{tag}_ihi")
+        loop(f"{tag}ih", base_hi, False)
+        a.label(f"{tag}_done")
+
+    glyph_pass("u1", True)
     a.op("lda", addr=V_UV, mode="long")
     a.clc()
     a.adc(imm=0x0080, m16=True)
     a.op("sta", addr=0x2116, mode="abs")
-    a.sep(imm=0x20)
-    a.op("lda", addr=V_UCTX, mode="long")
-    a.rep(imm=0x30)
-    a.beq(label="u2_ig")
-    a.ldy(imm=0x0008, m16=True)
-    a.label("u2")
-    a.op("lda", addr=GLYPH_BASE, mode="longx")
-    a.op("and", imm=0x00FF, m16=True)
-    a.op("sta", addr=V_U0, mode="long")
-    a.xba()
-    a.op("ora", addr=V_U0, mode="long")
-    a.op("sta", addr=0x2118, mode="abs")
-    a.inx()
-    a.inx()
-    a.dey()
-    a.bne(label="u2")
-    a.bra(label="u2_done")
-    a.label("u2_ig")
-    a.ldy(imm=0x0008, m16=True)
-    a.label("u2i")
-    a.op("lda", addr=GLYPH_BASE, mode="longx")
-    a.op("sta", addr=0x2118, mode="abs")
-    a.inx()
-    a.inx()
-    a.dey()
-    a.bne(label="u2i")
-    a.label("u2_done")
+    glyph_pass("u2", False)
     a.sep(imm=0x20)
     a.rts()
     if vwf:
@@ -1807,6 +1833,7 @@ def build_payload(
                 "xfrom": xfrom,
                 "QN": QN,
                 "GLYPH_BASE": GLYPH_BASE,
+                "GLYPH_BASE2_X": GLYPH_BASE2_X,
             },
         )
     code_end = a.pos
@@ -1901,7 +1928,7 @@ def apply(
     """훅 뱅크·글리프 뱅크를 놓고 **글자가 들어오는 문 셋**을 갈아 끼운다(대본 · 사전 버퍼 · 메뉴 이름)."""
     if len(rep) > GLYPH_MAX:
         raise SystemExit(
-            f"글리프 {len(rep)} > 한 뱅크 {GLYPH_MAX} — 훅의 소스 주소 계산을 넓혀야 한다"
+            f"글리프 {len(rep)} > 뱅크 둘 {GLYPH_MAX} — 셋째 뱅크가 필요하다"
         )
     if not slots:
         raise SystemExit("동적 슬롯이 하나도 없다")
@@ -1919,7 +1946,10 @@ def apply(
     out[o : o + len(blob)] = blob
     g = glyph_bytes(rep)
     go = common.snes2off(GLYPH_BASE)
-    out[go : go + len(g)] = g
+    out[go : go + min(len(g), 0x8000)] = g[:0x8000]
+    if len(g) > 0x8000:  # 색인 1,024~ 은 둘째 뱅크
+        go2 = common.snes2off(GLYPH_BASE2)
+        out[go2 : go2 + len(g) - 0x8000] = g[0x8000:]
     hook_addr = (HOOK_BANK << 16) | info["labels"]["hook"]
     buf_addr = (HOOK_BANK << 16) | info["labels"]["hookbuf"]
     drain_addr = (HOOK_BANK << 16) | info["labels"]["drain"]
@@ -1927,6 +1957,14 @@ def apply(
     # 1. 트램펄린: JSL 훅 + RTS (원본 JSR 과 자리를 맞춘다)
     t = common.snes2off(TRAMPOLINE)
     out[t : t + 5] = bytes([0x22, hook_addr & 0xFF, (hook_addr >> 8) & 0xFF, HOOK_BANK, 0x60])
+    ft = common.snes2off(FLUSH_TRAMPOLINE)
+    if bytes(rom[ft : ft + len(FLUSH_TRAMP_BYTES)]) != b"\xff" * len(FLUSH_TRAMP_BYTES):
+        raise SystemExit(f"쪽 첫 글자 플러시 트램펄린 자리가 비어 있지 않다 {common.fmt(FLUSH_TRAMPOLINE)}")
+    out[ft : ft + len(FLUSH_TRAMP_BYTES)] = FLUSH_TRAMP_BYTES
+    fs = common.snes2off(FLUSH_SITE)
+    if bytes(rom[fs : fs + 3]) != FLUSH_SITE_ORIG:
+        raise SystemExit(f"쪽 첫 글자 플러시 자리가 예상과 다르다: {rom[fs : fs + 3].hex()}")
+    out[fs : fs + 3] = bytes([0x4C, FLUSH_TRAMPOLINE & 0xFF, (FLUSH_TRAMPOLINE >> 8) & 0xFF])
     # 2. 소비 지점: JSR $E784 → JSR $FE52
     c = common.snes2off(CALL_SITE)
     if bytes(rom[c : c + 3]) != bytes([0x20, 0x84, 0xE7]):
@@ -2111,5 +2149,7 @@ def patch_ranges() -> list[tuple[int, int]]:
         (common.snes2off(ENDING_CTX_SITE), common.snes2off(ENDING_CTX_SITE) + 5),
         *[(common.snes2off(s_), common.snes2off(s_) + 3) for s_ in FONT_CALL_SITES],
         (common.snes2off(FONT_TRAMPOLINE), common.snes2off(FONT_TRAMPOLINE) + 8),
+        (common.snes2off(FLUSH_TRAMPOLINE), common.snes2off(FLUSH_TRAMPOLINE) + len(FLUSH_TRAMP_BYTES)),
+        (common.snes2off(FLUSH_SITE), common.snes2off(FLUSH_SITE) + 3),
     ]
 

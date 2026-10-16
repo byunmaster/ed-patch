@@ -13,6 +13,7 @@
 버퍼 `$7E:E100~` 는 필드 이동·대사·메뉴에서 쓰기 0건을 쓰기 BP 로 확인한 구역이다(2026-10-08, status).
 """
 
+CRAWL_DIGIT_ADV = 5  # 오프닝·엔딩(크롤) 반각 숫자 진행 폭(px) — 잉크 4열 + 간격 1px(md-ed1 방식, 한글 간격은 그대로)
 BUF = 0x7EE100  # 슬롯별 합성 버퍼 — 16B(1bpp, 위 타일 8행 + 아래 타일 8행) × 슬롯
 HALF_CODES = (0x10, 0x83, 0x84, 0x0C, 0x0F)  # 공백 · `.` · `,` · `!` · `?`
 # 같은 몬스터가 여럿일 때 엔진이 이름 뒤에 붙이는 A~D(`$02:E0CE` 표) — 마스터 10-09 「ABCD 도 반각」: 우리 글꼴 4px 합성으로
@@ -41,6 +42,7 @@ def emit(a, k):
     owner_lo, owner_hi, pin = k["owner_lo"], k["owner_hi"], k["pin"]
     Q_SLOT, Q_LO, Q_HI, Q_CTX = k["Q_SLOT"], k["Q_LO"], k["Q_HI"], k["Q_CTX"]
     nslot, QN, GLYPH_BASE = k["nslot"], k["QN"], k["GLYPH_BASE"]
+    GLYPH_BASE2_X = k["GLYPH_BASE2_X"]
     G16 = V_G & 0xFFFF  # 뱅크 $7E 안의 16비트 주소 — DBR=$7E 로 바꿔 abs,Y 로 읽는다
     WOFF = nslot * 16  # 흰 잉크 마스크 버퍼(`BUF + WOFF`) — 슬롯 버퍼 뒤에 같은 모양으로 둔다
 
@@ -297,6 +299,8 @@ def emit(a, k):
     a.pha()
     a.plb()
     a.ldy(imm=0x0000, m16=True)
+    a.op("cpx", imm=0x8000, m16=True)  # 색인 1,024 이상은 둘째 글리프 뱅크(hook.py `glyph_pass` 와 같은 갈래)
+    a.bcs(label="lgh_h")
     a.label("lgh_l")
     a.op("lda", addr=GLYPH_BASE, mode="longx")
     a.op("sta", addr=G16, mode="absy")
@@ -305,6 +309,16 @@ def emit(a, k):
     a.iny()
     a.cpy(imm=0x0010, m16=True)
     a.bne(label="lgh_l")
+    a.plb()
+    a.rts()
+    a.label("lgh_h")
+    a.op("lda", addr=GLYPH_BASE2_X, mode="longx")
+    a.op("sta", addr=G16, mode="absy")
+    a.inx()
+    a.inx()
+    a.iny()
+    a.cpy(imm=0x0010, m16=True)
+    a.bne(label="lgh_h")
     a.plb()
     a.rts()
     # 원본 1바이트 글자(V_VR = 코드): 훅 뱅크의 `rawtab` 16B/자
@@ -702,7 +716,11 @@ def emit(a, k):
     # 글자가 반으로 갈려 줄 끝과 다음 줄머리에 반쪽씩 찍힌다(2026-10-09 C3 실기: 조각을 이어 붙인 로그에서 조각 끝 부호 뒤
     # 공백이 폭을 4px 어긋냈다). 문장 조각은 줄 처음에서 시작한다고 보고 조판했기 때문에 런타임에서만 알 수 있다.
     # ⇒ 이 칸의 남은 4px 는 비우고 px 커서를 다음 칸 경계(= 엔진이 다음에 쓸 칸 = 다음 줄 첫 칸)로 올려 예전 길로 보낸다.
+    # 🔴 오프닝 크롤(`V_OPEN=1`)은 줄이 17칸을 넘어 이어진다(약 20칸) — 거기선 16·33·50·67 이 줄 끝이 아니다. 스냅하면 낱말 가운데(「몬 스터들은」·
+    #    「살해당했 다는」·「왕국 은」)에 4px 공백이 생긴다(마스터 10-13 오프닝 캡처). 크롤에선 스냅을 건너뛴다.
     a.label("vwf_edge")
+    lm("lda", V_OPEN)
+    a.bne(label="ve_ret")
     lm("lda", V_VO)
     a.beq(label="ve_ret")
     a.clc()
@@ -808,8 +826,15 @@ def emit(a, k):
     a.bcs(label="wk_nc")
     a.jmp(addr="wk_chr", mode="abs")
     a.label("wk_nc")
+    # 🔴 $E0(END)은 낱말 끝이다 — 예전엔 이 줄이 $E0 을 아래 토큰 갈래($D6~ 24px)로 보내, 조각의 마지막 낱말 뒤에 24px 와
+    #    **다음 조각의 첫 낱말까지** 더해 쟀다. 그래서 줄 끝의 마지막 낱말만 멀쩡히 들어갈 자리에서 새 줄로 내려갔다(엔딩 대사창
+    #    「…시작 안 / 된다고.」」 · 「않도록…」 · 「왕자님?」, 2026-10-13 BP: 마지막 공백에서 읽기 포인터가 다음 조각까지 넘어갔다).
+    a.cmp(imm=0xE0)
+    a.bne(label="wk_nc1")
+    a.jmp(addr="wk_end", mode="abs")
+    a.label("wk_nc1")
     a.cmp(imm=0xE1)
-    a.bcc(label="wk_tok")  # $CF 개행 … $E0 : 낱말 끝이 아닌 $D0~$E0 중 토큰은 아래, 나머지는 끝
+    a.bcc(label="wk_tok")  # $CF 개행 … $DF : 낱말 끝이 아닌 $D0~$DF 중 토큰은 아래, 나머지는 끝
     a.cmp(imm=0xE4)
     a.bcc(label="wk_col")  # $E1~$E3 색 — 폭 0
     a.jmp(addr="wk_end", mode="abs")
@@ -1104,8 +1129,8 @@ def emit(a, k):
     a.cmp(imm=0x01)
     a.bne(label="vr_n2")
     a.jsr(addr="vwf_ldg_r", mode="abs")
-    a.lda(imm=0x04)
-    lm("sta", V_VW)  # 우리 글꼴 숫자(4px 폭)를 반각 칸으로 — 「10」이 붙는다
+    a.lda(imm=CRAWL_DIGIT_ADV)
+    lm("sta", V_VW)  # 우리 글꼴 숫자(잉크 4열)를 반각 칸으로 — 진행 폭 4 면 「10」이 붙어 「100」처럼 보였다(마스터 10-13) → 5(잉크 열 < 진행 폭 게이트: `hook.check_crawl_digit_gap`)
     a.jmp(addr="vwf_put", mode="abs")
     a.label("vr_n2")  # 인게임: 숫자 치환(`{DC}` 등 — 임시 문자열 모드 `$1773`≠0)으로 찍히는 숫자는 원판 꼴 그대로 8px 합성 — 칸 시작이면 8px·중간이면 얇은 4px 로 섞여 「2 9」로 벌어지고 색이 갈렸다(마스터 10-09 규칙 1-5)
     a.op("lda", addr=0x001773, mode="long")

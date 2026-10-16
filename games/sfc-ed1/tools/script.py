@@ -25,7 +25,7 @@ import common
 
 # 문안 구간 — 포인터 표·코드가 아닌, 항목이 연속하는 자리. 뱅크 $05·$1E 는 코드와 섞여 있어 포인터
 # 목표에서 END 까지만 읽는다(`from_pointers`). 본체는 표 끝부터 뱅크 $0B 의 마지막 END 까지 한 덩어리다.
-MAIN_REGION = (text.TEXT_START, 0x0BFE76)
+MAIN_REGION = (text.TEXT_START, text.TEXT_END)
 
 
 @dataclass
@@ -39,11 +39,19 @@ class Item:
         default_factory=set
     )  # $FB/$FD 의 슬롯 번호 중 항목 시작을 안 가리키는 것 — 원값 유지
 
+    relay: bool = False  # FD 중계 — 슬롯이 8비트를 넘을 때 FD 뒤에 `FA 건너뛰기` + 슬롯마다 `FA 목표` 를 둔다
+
+    def n_relays(self) -> int:
+        return sum(1 for k in range(len(self.args)) if k not in self.dead)
+
     @property
     def size(self) -> int:
         if self.kind == "raw":  # 인코더가 만든 글자 바이트열(코드 없음)
             return len(self.args)
-        return 1 + (1 if self.kind == "dict" else len(self.args))
+        n = 1 + (1 if self.kind == "dict" else len(self.args))
+        if self.relay:
+            n += 3 + 3 * self.n_relays()
+        return n
 
 
 VARIABLE = (
@@ -119,10 +127,12 @@ def resolve_targets(it: Item) -> list[int]:
     return []
 
 
-def emit(items: list[Item], place: dict[int, int], strict: bool = True) -> bytes:
+def emit(
+    items: list[Item], place: dict[int, int], strict: bool = True, own: list[int] | None = None
+) -> bytes:
     """`place[원문 오프셋] = 새 오프셋` 으로 옮겨 쓴다. 참조 인자는 라벨에서 다시 계산한다."""
     out = bytearray()
-    for it in items:
+    for idx, it in enumerate(items):
         if it.kind == "raw":
             out += it.args
             continue
@@ -130,7 +140,9 @@ def emit(items: list[Item], place: dict[int, int], strict: bool = True) -> bytes
         if it.kind == "dict":
             out += it.args
         elif it.kind == "ctrl" and it.targets:
-            new_off = place[it.off]
+            # `place[off]` 는 「그 오프셋으로 뛰면 어디인가」(조각 시작·라벨 재지정 포함)라 **항목 자신의 자리**와
+            #  다를 수 있다 — 번역문이 조각 첫 제어 앞에 글을 둔 경우. 자기 자리는 `own` 이 준다.
+            new_off = own[idx] if own is not None else place[it.off]
             c = it.code
             if c == 0xF9:
                 t = it.targets[0]
@@ -149,6 +161,26 @@ def emit(items: list[Item], place: dict[int, int], strict: bool = True) -> bytes
                         )
                     a_t = a_new  # 투영 단계: 자리만 채운다(보고에 실패로 남는다)
                 out += ((a_t - a_new) & 0xFFFF).to_bytes(2, "little")
+            elif it.relay:
+                # 🔴 FD 중계(마스터 10-11) — 한국어가 길어 슬롯이 8비트를 넘는다. 슬롯은 FD 바로 뒤의 짧은
+                #    `FA` 를 가리키고, 그 `FA`(rel16)가 진짜 목표로 뛴다. FD 는 **호출**이라 복귀 주소가
+                #    `FD+6` 이므로(`$02:E6BA`) 그 자리에 `FA 건너뛰기`를 둔다(슬롯 5개일 때만 맞다).
+                assert c == 0xFD and len(it.args) == 5, "FD 중계는 슬롯 5개일 때만"
+                skip = new_off + 6
+                end = new_off + it.size
+                relays = []
+                for k, t in enumerate(it.targets):
+                    if k in it.dead:
+                        out.append(it.args[k])
+                        continue
+                    pos = skip + 3 + 3 * len(relays)
+                    relays.append((pos, place.get(t, t)))
+                    out.append(pos - new_off)
+                out += bytes([0xFA]) + ((end - skip) & 0xFFFF).to_bytes(2, "little")
+                for pos, t in relays:
+                    if common.off2snes(pos) >> 16 != common.off2snes(t) >> 16 and strict:
+                        raise AssertionError(f"FD 중계가 뱅크를 넘는다: {common.fmt(common.off2snes(pos))}")
+                    out += bytes([0xFA]) + ((t - pos) & 0xFFFF).to_bytes(2, "little")
             else:  # FB/FD 8비트 ×n (n ≤ 5)
                 for k, t in enumerate(it.targets):
                     if k in it.dead:
