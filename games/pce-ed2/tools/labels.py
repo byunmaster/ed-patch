@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 import canon
 import compose
+import font
 import jptext
 
 CELL_PX = 12
@@ -78,7 +79,10 @@ def split(raw: bytes):
         return None  # 글 사이에 스타일 토글·가나 모드 말고 제어가 끼면 라벨이 아니다
     jp = jptext.decode(body).replace("{0E}", "").replace("{0F}", "").replace("　", "")
     px = sum(
-        {"glyph": CELL_PX, "pad": CELL_PX, "space": SPACE_PX}.get(kind, 0) for kind, _b in toks
+        font.NARROW_PX
+        if kind == "glyph" and len(_b) == 1 and 0x21 <= _b[0] <= 0x5F
+        else {"glyph": CELL_PX, "pad": CELL_PX, "space": SPACE_PX}.get(kind, 0)
+        for kind, _b in toks
     )
     return lead, trail, jp, px
 
@@ -115,7 +119,9 @@ def _pad(px: int) -> bytes:
     return bytes([PAD]) * n12 + bytes([SPACE]) * (rest // SPACE_PX)
 
 
-def edit_line(raw: bytes, tab, missing: set) -> bytes:
+def edit_line(raw: bytes, tab, missing: set, hud: bool = False) -> bytes:
+    """`hud` = 패널 지명 줄(덩이 첫 줄) — 패널 폭이 원문 글 폭보다 넓어 **가운데 맞춤 여백이 글을 오른쪽으로 민다**(10-13 「엘아스타마을」 오른쪽 치우침).
+    원문처럼 앞에 반각 공백 하나만 두고 왼쪽에서 시작한다."""
     s = split(raw)
     if s is None:
         return raw
@@ -124,15 +130,23 @@ def edit_line(raw: bytes, tab, missing: set) -> bytes:
     if kr is None:
         missing.add(jp)
         return raw
-    w = sum(SPACE_PX if c == " " else CELL_PX for c in kr)
+    w = sum(font.adv(c) for c in kr)
     if (
         w > px and " " in kr
     ):  # 칸(슬롯)은 붙여 쓰는 꼴이 규칙이다(naming.md 「지명 칸」) — 공백을 걷으면 들어가는지 본다
         kr = kr.replace(" ", "")
-        w = sum(SPACE_PX if c == " " else CELL_PX for c in kr)
+        w = sum(font.adv(c) for c in kr)
     if w > px:  # 칸을 넘는다 — 문안을 줄여야만 들어가는 칸이다(관리자 판정). 원문을 두고 모은다
         OVERFLOW[jp] = (kr, w, px)
         return raw
+    if is_monster(jp):  # 전투 이름 줄은 문장 가운데(`1B`)에 끼므로 칸 맞춤 여백을 두지 않는다 — 두면 이름 뒤에 빈틈이 생긴다(「슬라임A 에게」, 10-13 화면)
+        if re.search(r"[A-Z]$", kr):  # 구별 문자(A·B…)는 **ASCII 한 바이트** 로 낸다 — 엔진이 8px 반각으로 그린다(글리프 코드는 12px 칸이라 뒤에 빈틈이 남는다). 규칙 1-6: 전 기종 반각
+            return lead + tab.enc(kr[:-1], space=SPACE) + kr[-1].encode("ascii") + trail
+        return lead + tab.enc(kr, space=SPACE) + trail
+    if hud:
+        return lead + bytes([SPACE]) + tab.enc(kr, space=SPACE) + trail
+    if not any(kind == "pad" for kind, _b in _tokens(raw)):  # 원문이 여백 없이 칸 왼쪽부터 채운 줄(예: 왕국 이름 8글자 96px)은 왼쪽 맞춤 그대로 — 가운데 여백을 두면 글 블록이 패널 오른쪽 테두리를 넘는다(마스터 10-14 「파렌왕국」)
+        return lead + tab.enc(kr, space=SPACE) + trail
     extra = px - w
     left = (extra // 2) // SPACE_PX * SPACE_PX
     return lead + _pad(left) + tab.enc(kr, space=SPACE) + _pad(extra - left) + trail
@@ -145,7 +159,7 @@ def edit_chunk(d: bytes, tab, missing: set) -> bytes:
     like = sum(1 for l in lines[:n] if split(l) is not None)
     every = n <= 12 and like >= n - 1
     for i in range(n if every else min(1, n)):
-        lines[i] = edit_line(lines[i], tab, missing)
+        lines[i] = edit_line(lines[i], tab, missing, hud=not every)
     return b"\x00".join(lines)
 
 

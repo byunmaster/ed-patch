@@ -96,6 +96,8 @@ class Sim:
             self.wr(self.fetch16() + self.y, self.a)
         elif op == 0x64:
             self.wr(zp(), 0)
+        elif op == 0x9C:  # STZ abs
+            self.wr(self.fetch16(), 0)
         elif op == 0xA2:
             self.x = self.nz(self.fetch())
         elif op == 0xA0:
@@ -153,6 +155,21 @@ class Sim:
             c = self.c
             self.c = v >> 7
             self.wr(p, self.nz((v << 1) | c))
+        elif op == 0x1E:  # ASL abs,X
+            p = self.fetch16() + self.x
+            v = self.rd(p)
+            self.c = v >> 7
+            self.wr(p, self.nz(v << 1))
+        elif op == 0x3E:  # ROL abs,X
+            p = self.fetch16() + self.x
+            v = self.rd(p)
+            c = self.c
+            self.c = v >> 7
+            self.wr(p, self.nz((v << 1) | c))
+        elif op == 0x62:  # CLA
+            self.a = 0
+        elif op == 0xBA:  # TSX
+            self.x = self.nz(self.sp)
         elif op == 0xE6:
             p = zp()
             self.wr(p, self.nz(self.rd(p) + 1))

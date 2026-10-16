@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 import canon
+import font
 import jptext
 
 BAND_CELLS = 14
@@ -50,8 +51,8 @@ def lines(orig: bytes, tab) -> list[bytes]:
     out = []
     for raw in orig.split(b"\x00")[:KEY_LINES]:
         num, title = _entry(jptext.decode(raw))
-        disp = f"{num} {title}"
-        w_px = sum(SPACE_PX if c == " " else CELL_PX for c in disp)
+        disp = f"{num}  {title}"  # 번호–제목 간격 = 반각 공백 2칸(규칙 1-4, 마스터 10-13 · 원판은 `a0` 12px 한 칸)
+        w_px = sum(font.adv(c) for c in disp)
         if w_px > BAND_PX:
             raise ValueError(f"장 제목이 띠({BAND_PX}px)를 넘는다: {disp!r} {w_px}px")
         extra = BAND_PX - w_px

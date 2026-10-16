@@ -173,6 +173,13 @@ def _arg18(head: bytes) -> int | None:
 
 _BOUND = set(",.?!…~)」』")
 KEEP_MARKS = True  # 연출 타이밍 제어 보존 — 패키지 공간이 모자라면 빌드가 그 패키지만 끈다(`build._plan_with_local`)
+MARK_LINES: int | None = None  # 타이밍 제어를 살릴 줄 수 상한(앞 줄부터) — None 이면 전부. 공간이 모자란 패키지가 가능한 만큼만 살리게 한다
+_marks_used = 0  # 이번 계획에서 타이밍 제어를 살린 줄 수
+
+
+def reset_marks() -> None:
+    global _marks_used
+    _marks_used = 0
 
 
 def _encode(pgs: list[list[str]], marks, jp_n: int, tab) -> bytes:
@@ -182,7 +189,9 @@ def _encode(pgs: list[list[str]], marks, jp_n: int, tab) -> bytes:
     ink_pos = [i for i, ch in enumerate(flat) if ch not in " \n"]
     k = len(ink_pos)
     at: dict[int, list[bytes]] = {}
-    if KEEP_MARKS and marks and jp_n > 0 and k > 0:
+    global _marks_used
+    if KEEP_MARKS and marks and jp_n > 0 and k > 0 and (MARK_LINES is None or _marks_used < MARK_LINES):
+        _marks_used += 1
         def bound(p):  # p = 「p 번째 글자 앞」 — 글자 사이 경계인가
             if p <= 0 or p >= k:
                 return p >= k

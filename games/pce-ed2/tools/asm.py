@@ -93,6 +93,9 @@ OPS = {
     ("SBC", "abs"): 0xED,
     ("CMP", "abs"): 0xCD,
     ("ORA", "abs"): 0x0D,
+    ("TSX", "imp"): 0xBA,
+    ("ASL", "absx"): 0x1E,
+    ("ROL", "absx"): 0x3E,
 }
 
 

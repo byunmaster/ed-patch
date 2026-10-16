@@ -42,6 +42,7 @@ ORTHO = [
     ("既に", "すでに"),
     ("起ら", "起"),
     ("包まれ", "包まれ"),
+    ("かまえ", "体制"),  # PCE 「守りのかまえをとった」 = PS1 「守りの体制をとった」(같은 전투 문구의 표기차)
 ]
 
 
@@ -61,13 +62,13 @@ def index() -> dict[str, tuple[str, str, str]]:
     return _idx
 
 
-def split(raw: bytes):
+def split(raw: bytes, name_ctrl=NAME_CTRL, num_ctrl=NUM_CTRL):
     """원문 → (앞 제어 바이트, 내용 토큰, 뒤 제어 바이트). 내용 = 글리프·여백·이름/수 자리표(첫 내용부터 마지막 내용까지)."""
     toks = systext.tokens(raw)
 
     def is_content(t):
         k, b = t
-        return k != "ctrl" or b[0] in NAME_CTRL | NUM_CTRL
+        return k != "ctrl" or b[0] in name_ctrl | num_ctrl
 
     ids = [i for i, t in enumerate(toks) if is_content(t) and t[0] != "pad"]
     if not ids:
@@ -78,7 +79,7 @@ def split(raw: bytes):
     return lead, toks[first : last + 1], trail
 
 
-def template(content) -> tuple[str, list[bytes], list[bytes]]:
+def template(content, name_ctrl=NAME_CTRL, num_ctrl=NUM_CTRL) -> tuple[str, list[bytes], list[bytes]]:
     """내용 토큰 → (틀 문자열, 이름 자리표 제어 목록, 수 자리표 제어 목록)."""
     s = ""
     names: list[bytes] = []
@@ -87,10 +88,10 @@ def template(content) -> tuple[str, list[bytes], list[bytes]]:
     for k, b in content:
         if k == "ctrl":
             c = b[0]
-            if c in NAME_CTRL:
+            if c in name_ctrl:
                 s += "{name}"
                 names.append(b)
-            elif c in NUM_CTRL:
+            elif c in num_ctrl:
                 s += "{n}"
                 nums.append(b)
             elif c == 0x0E:
@@ -108,12 +109,126 @@ def template(content) -> tuple[str, list[bytes], list[bytes]]:
     return s, names, nums
 
 
-def translate(raw: bytes, tab) -> bytes | None:
-    sp = split(raw)
+def battle_josa(kr: str) -> str:
+    """이름 버퍼는 몬스터 이름 + 구별 문자(A~D)라 영문 끝 = 받침 없음(마스터 09-26) — 이름 바로 뒤 병기 조사를 빌드 때 푼다."""
+    for pair, no_batchim in (("은(는)", "는"), ("이(가)", "가"), ("을(를)", "를"), ("과(와)", "와")):
+        if kr.startswith(pair):
+            return no_batchim + kr[len(pair) :]
+    return kr
+
+
+def cover(piece: str) -> str | None:
+    """정규화한 조각을 **정본 열쇠 둘 이상의 이어 붙임**으로 덮는다(「しかし」+「運良く」 …) — 가장 적게 쪼개는 덮개, 값은 공백으로 잇는다.
+    열쇠가 `{` 자리표를 품은 것은 쓰지 않는다. 못 덮으면 None."""
+    keys = {k: v[2] for k, v in index().items() if v[0] in ("battle", "system") and "{" not in v[2] and "{" not in k}
+    n = len(piece)
+    best: list[list[str] | None] = [None] * (n + 1)
+    best[0] = []
+    for i in range(n):
+        if best[i] is None:
+            continue
+        for j in range(i + 1, n + 1):
+            v = keys.get(piece[i:j])
+            if v is not None and (best[j] is None or len(best[j]) > len(best[i]) + 1):
+                best[j] = [*best[i], v]
+    if best[n] is None or len(best[n]) < 2:
+        return None
+    return " ".join(best[n])
+
+
+def segments(raw: bytes, tab, name_ctrl, num_ctrl) -> bytes | None:
+    """문장 전체가 정본에 없을 때 — 이름·수 자리표로 **조각**을 나눠 조각마다 정본 조각(「は」 「を使った」 …)을 맞댄다.
+    자리표 사이의 줄바꿈으로만 갈린 글(「には」⏎「当たらなかった」)은 **한 문장으로 이어** 맞추고, 한국어를 첫 어절 뒤에서 다시 나눈다.
+    조각이 하나라도 없으면 None(원문 유지). 자리표·그 밖의 제어는 원문 그대로 둔다. 조사는 병기 꼴 그대로 낸다(`tab.enc` 가 앞 글자로 풀거나 훅 토큰으로)."""
+    toks = systext.tokens(raw)
+    if not any(k == "ctrl" and b[0] in name_ctrl | num_ctrl for k, b in toks):
+        return None  # 자리표 없는 문장은 조각 맞춤을 안 한다(오탐 방지)
+    out = bytearray()
+    runs: list[list] = [[]]  # 0D 로 갈린 글 조각들(자리표·그 밖 제어에서 묶음이 끝난다)
+    raws: list[list[bytes]] = [[]]
+    pieces = 0
+
+    def flush() -> bool:
+        nonlocal pieces
+        if not any(runs):
+            runs[:] = [[]]
+            raws[:] = [[]]
+            return True
+        flat = [t for r in runs for t in r]
+        jp, _n, _m = template(flat, name_ctrl, num_ctrl)
+        if not re.search(r"[぀-ヿ一-鿿]", jp):  # 가나·한자 없는 조각(여백만)은 그대로
+            for i, r in enumerate(raws):
+                out.extend(b"".join(r))
+                if i < len(raws) - 1:
+                    out.extend(b"\r")
+            runs[:] = [[]]
+            raws[:] = [[]]
+            return True
+        hit = index().get(norm(jp))
+        if hit is not None and "{" not in hit[2]:
+            kr = hit[2]
+        else:
+            kr = cover(norm(jp))
+            if kr is None:
+                return False
+        n_runs = len([r for r in runs if r])
+        if n_runs > 1 and " " in kr:  # 원문 줄 수만큼 어절 경계에서 나눈다
+            parts = kr.split(" ", n_runs - 1)
+            out.extend(b"\r".join(tab.enc(p, space=systext.SPACE) for p in parts))
+        else:
+            out.extend(tab.enc(kr, space=systext.SPACE))
+        pieces += 1
+        runs[:] = [[]]
+        raws[:] = [[]]
+        return True
+
+    for k, b in toks:
+        if k == "ctrl" and b[0] == 0x0D:
+            runs.append([])
+            raws.append([])
+        elif k == "ctrl" and b[0] not in (0x0E, 0x0F):
+            # 자리표·그 밖의 제어 — 묶음 끝. 묶음 뒤에 남은 줄바꿈은 flush 가 처리한다
+            tail_nl = len(runs) > 1 and not runs[-1]
+            if tail_nl:
+                runs.pop()
+                raws.pop()
+            had_text = any(runs)
+            if not flush():
+                return None
+            if tail_nl:
+                out.extend(b"\r")
+            elif had_text and b[0] in name_ctrl and out and out[-1] not in (0x20, 0x60, 0x0D, 0xA0):
+                out.extend(b"\x60")  # 글 뒤에 이름이 붙으면 어절 사이 공백(「운 좋게 아트라스」)
+            out.extend(b)
+        else:
+            runs[-1].append((k, b))
+            raws[-1].append(b)
+    tail_nl = len(runs) > 1 and not runs[-1]
+    if tail_nl:
+        runs.pop()
+        raws.pop()
+    if not flush() or pieces == 0:
+        return None
+    if tail_nl:
+        out.extend(b"\r")
+    return bytes(out)
+
+
+BATTLE_NAME = {0x13, 0x1A, 0x1B}  # 전투 덩이에서는 `1B` 가 행동한 쪽 이름(이름 라벨 줄이 먼저 채운 버퍼)이다
+
+
+def translate(raw: bytes, tab, battle: bool = False) -> bytes | None:
+    """`battle` = 전투 덩이의 줄 — `1B` 를 수가 아니라 이름 자리로 읽는다(원문 「{1B}の攻撃」 = 「<이름>の攻撃」)."""
+    if not battle:
+        sp_ = special(raw, tab)
+        if sp_ is not None:
+            return sp_
+    name_ctrl, num_ctrl = (BATTLE_NAME, set()) if battle else (NAME_CTRL, NUM_CTRL)
+    sp = split(raw, name_ctrl, num_ctrl)
     if sp is None:
         return None
     lead, content, trail = sp
-    tmpl, names, nums = template(content)
+    tmpl, names, nums = template(content, name_ctrl, num_ctrl)
     if not re.search(r"[぀-ヿ一-鿿]", tmpl):
         return None
     key = norm(tmpl)
@@ -127,8 +242,12 @@ def translate(raw: bytes, tab) -> bytes | None:
             prefix_name = names[0]
             names = names[1:]
     if hit is None:
-        return None
+        return segments(raw, tab, name_ctrl, num_ctrl)
     kr = hit[2]
+    if battle:
+        kr = battle_josa(kr)
+    if "\n" in tmpl and "\n" not in kr and " " in kr:  # 원문이 줄을 나눴으면(이름 + 조사 ⏎ 나머지) 한국어도 첫 어절 뒤에서 나눈다 — 한 줄로 이으면 창 폭을 넘는다
+        kr = kr.replace(" ", "\n", 1)
     n_name, n_num = kr.count("{name}"), kr.count("{n}")
     if n_name != len(names) or n_num != len(nums):
         return None
@@ -145,3 +264,27 @@ def translate(raw: bytes, tab) -> bytes | None:
             out += tab.enc(piece, space=systext.SPACE)
     out += trail
     return bytes(out)
+
+
+_EP = re.compile(rb"^(\r?EP`\x15\x85\x1b\x06)\x0e(.{4})\x0f(\x14\x04`)(.{4})(\r?)$", re.S)
+_GOLD = re.compile(rb"^(\x15\x85\x1b\x06`)GOLD(\x14\x04)`(.+?)(\x12\r?)$", re.S)
+
+
+def special(raw: bytes, tab) -> bytes | None:
+    """승리 보상 줄 둘 — 수(`1B`)·색 스타일(`06`…`04`)이 글 가운데 끼어 일반 틀로는 못 맞춘다. 구조를 확인하고 **글만** 정본으로 바꾼다.
+    ① 「EP <수> ポイント 獲得」 → 정본 「포인트 획득」(`battle` 「ﾎﾟｲﾝﾄ かくとく。」) ② 「<수> GOLD 手に入れました」 → 정본 「Gold를 얻었다.」(`system`)."""
+    m = _EP.match(raw)
+    if m and jptext.decode(b"\x0e" + m.group(2)).replace("{0E}", "") == "ポイント" and jptext.decode(m.group(4)) == "獲得":
+        kr = canon.lookup("ﾎﾟｲﾝﾄ かくとく。", "battle", "ed2")
+        if kr and len(kr.split()) == 2:
+            a, b = kr.split()
+            head = m.group(1)[:-1]  # 끝의 `06`(스타일) 제거 — 글자를 좁은 숫자 글꼴로 그려 한글이 깨진다(10-13 화면)
+            head = head.replace(b"EP`", tab.enc("ＥＰ"), 1)  # ＥＰ 는 전각, 뒤 반각 공백은 뺀다(마스터 10-13 「ＥＰ1 포인트 획득」 — 규칙 1-4 · 2-9)
+            return head + tab.enc(" ") + tab.enc(a) + m.group(3) + tab.enc(b) + m.group(5)  # 「EP n 포인트 획득」 — 수와 단위를 띄운다(규칙 1-5 · 2-9)
+    m = _GOLD.match(raw)
+    if m and jptext.decode(m.group(3)) == "手に入れました":
+        kr = canon.lookup("Gold 手に入れました。", "system", "ed2")
+        if kr and kr.startswith("Gold"):
+            # 「GOLD」 4글자는 원문 바이트(ASCII 단일 바이트)를 그대로 둔다 — 글리프 코드(2B)로 바꾸면 이 뱅크의 문자열 자리가 모자라 다른 승리 문구가 일본어로 남는다(10-13)
+            return m.group(1) + b"GOLD" + m.group(2) + tab.enc(kr[4:]) + m.group(4)
+    return None

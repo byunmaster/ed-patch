@@ -11,17 +11,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 from text import krwrap
 
+import font
+
 WIDTH = 14.0001
 LINES = 3
 SPACE_PX = 4
 
 
 def cell(ch: str) -> float:
-    return SPACE_PX / 12 if ch == " " else 1.0
+    return font.adv(ch) / 12
 
 
 def px(line: str) -> int:
-    return sum(SPACE_PX if c == " " else 12 for c in line)
+    return sum(font.adv(c) for c in line)
 
 
 def ink(s: str) -> str:

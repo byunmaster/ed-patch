@@ -1,6 +1,6 @@
-"""한글 글리프 — 12×12 비트맵 · 코드표 · 18B 묶음 (pce-ed1 `font.py` 와 같은 규약).
+"""한글 글리프 — 12×12 비트맵 · 코드표 · 16B 묶음 (pce-ed1 `font.py` 와 같은 규약).
 
-    글리프 = 12×12 → 화면용 24B(행 0~11, 2B/행, 비트 15~4). **디스크엔 12비트 행으로 묶어 18B** 로 싣는다(`pack`) —
+    글리프 = 12×12 → 화면용 24B(행 0~11, 2B/행, 비트 15~4). **디스크엔 11×11 비트로 묶어 16B** 로 싣는다(`pack`) —
     후킹 루틴(`hook.py`)이 쓸 때 24B 로 되돌린다. 코드 = 리드 `F0 + idx//220` · 트레일 `0x24 + idx%220`.
     ⚠ 트레일은 **0x00 이 아니어야 한다** — 게임의 줄 건너뛰기(`$7DC0`)가 풀린 바이트열에서 00 을 줄 끝으로 센다(트레일도 센다).
     0x24 부터 쓰는 건 ED1 과 같은 규약이다(도구가 둘을 같은 눈으로 본다).
@@ -18,7 +18,7 @@ import common
 
 FONT_BDF = common.ROOT / "shared" / "fonts" / "Galmuri11.bdf"
 GLYPH_BYTES = 24
-PACKED_BYTES = 18
+PACKED_BYTES = 16
 PER_LEAD = 220
 LEAD0 = 0xF0
 TRAIL0 = 0x24
@@ -59,25 +59,88 @@ def glyph(ch: str) -> bytes:
         out[y] = (v >> max(xo, 0)) & 0xFFF0
     if not any(out):
         raise ValueError(f"글리프가 비었다: {ch!r}")
+    if out[11] and not out[0]:  # 11×11 묶음 — 베이스라인 아래로 내려온 글자(쉼표 등)는 한 행 올린다(맨 윗행이 빈 경우만)
+        out = out[1:] + [0]
     return b"".join(v.to_bytes(2, "big") for v in out)
 
 
-def pack(g24: bytes) -> bytes:
-    """24B(행당 2B, 아래 4비트 0) → 18B(행당 12비트). 3B 가 두 행이다."""
-    out = bytearray()
-    for i in range(0, GLYPH_BYTES, 4):
-        a, b, c, d = g24[i], g24[i + 1], g24[i + 2], g24[i + 3]
-        assert b & 0x0F == 0 and d & 0x0F == 0, "행 아래 4비트가 0 이어야 한다"
-        out += bytes([a, b | (c >> 4), ((c & 0x0F) << 4) | (d >> 4)])
-    return bytes(out)
+NARROW = set(".,!?0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")  # 엔진이 ASCII 단일 바이트를 8px 반각으로 그린다(`$6448` +2) — 규칙 1-1·1-5·1-6
+SPACE_PX, NARROW_PX, CELL_PX = 4, 8, 12
 
 
-def unpack(p18: bytes) -> bytes:
+def adv(ch: str) -> int:
+    """글자가 차지하는 가로 px — 공백 4 · 반각(ASCII) 8 · 나머지 12."""
+    return SPACE_PX if ch == " " else NARROW_PX if ch in NARROW else CELL_PX
+
+
+JOSA_LEAD = LEAD0 + MAX_LEADS  # F9 — 동적 조사 토큰(트레일 = TRAIL0 + 종류). 앞 글자의 받침으로 훅이 고른다
+JOSA = [("은", "는"), ("이", "가"), ("을", "를"), ("과", "와")]  # (받침 있음, 없음)
+JOSA_PAIRS = ["은(는)", "이(가)", "을(를)", "과(와)"]
+JOSA_CHARS = "".join(a + b for a, b in JOSA)
+FLAG_BATCHIM = 0x02  # 묶음 마지막 바이트의 남는 비트 — 이 글자는 받침이 있다(훅이 LASTB 로 기억한다)
+
+
+JOSA_MARK = "\ue000\ue001\ue002\ue003"  # 동적 조사 표지(사설 영역) — `mark_josa` 가 병기를 바꾸고 `enc` 가 F9 토큰으로 낸다
+_DIGIT_BATCHIM = {"0": 1, "1": 1, "3": 1, "6": 1, "7": 1, "8": 1}  # 읽는 소리 영·일·삼·육·칠·팔 = 받침 있음(마스터 09-26)
+
+
+def _batchim_before(prev: str) -> bool | None:
+    """앞 글자의 받침 — 한글은 종성, 영문 끝 = 없음, 숫자는 읽는 소리. 판정 불가(처음·공백·기호)면 None(런타임 판정)."""
+    if "가" <= prev <= "힣":
+        return (ord(prev) - 0xAC00) % 28 != 0
+    if "A" <= prev <= "Z" or "a" <= prev <= "z":
+        return False
+    if prev in "0123456789":
+        return prev in _DIGIT_BATCHIM
+    return None
+
+
+def mark_josa(text: str) -> str:
+    """병기 조사(`은(는)` · `이(가)` · `을(를)` · `과(와)`)를 푼다 — 바로 앞 글자로 받침을 알면 **빌드 때** 고르고, 모르면(문장·조각 첫머리 =
+    런타임 이름 뒤) 표지 한 글자로 바꿔 둔다(`enc` 가 훅용 토큰으로 낸다)."""
+    out = []
+    i = 0
+    while i < len(text):
+        for k, pair in enumerate(JOSA_PAIRS):
+            if text.startswith(pair, i):
+                has = _batchim_before(out[-1]) if out else None
+                out.append(JOSA_MARK[k] if has is None else JOSA[k][0 if has else 1])
+                i += len(pair)
+                break
+        else:
+            out.append(text[i])
+            i += 1
+    return "".join(out)
+
+
+def flags(ch: str) -> int:
+    """글자의 훅용 플래그 — 받침 있는 한글이면 FLAG_BATCHIM."""
+    return FLAG_BATCHIM if "가" <= ch <= "힣" and (ord(ch) - 0xAC00) % 28 else 0
+
+
+def pack(g24: bytes, flag: int = 0) -> bytes:
+    """24B(행당 2B, 아래 4비트 0) → 16B. 글리프는 11×11(행 11·열 11 은 늘 빈다 — 11px 원천 글꼴) —
+    앞 11B = 행 0~10 의 위 8비트(열 0~7), 뒤 5B = 행 0~10 의 아래 3비트(열 8~10)를 행 순서대로 이은 33비트 + 0 채움."""
+    rows = [int.from_bytes(g24[2 * r : 2 * r + 2], "big") >> 4 for r in range(12)]  # 행당 12비트(열 0 = 최상위)
+    assert rows[11] == 0, "행 11 은 비어야 한다(11×11 묶음)"
+    assert all(v & 1 == 0 for v in rows), "열 11 은 비어야 한다(11×11 묶음)"
+    hi = bytes(v >> 4 for v in rows[:11])
+    bits = 0
+    for v in rows[:11]:
+        bits = bits << 3 | (v >> 1) & 7
+    assert flag & ~0x7F == 0
+    lo = ((bits << 7) | flag).to_bytes(5, "big")  # 33비트 → 40비트(아래 7비트 = 플래그)
+    return hi + lo
+
+
+def unpack(p16: bytes) -> bytes:
     """`pack` 의 거꾸로 — 후킹 루틴이 하는 일과 같아야 한다(테스트가 맞댄다)."""
+    bits = int.from_bytes(p16[11:16], "big") >> 7
     out = bytearray()
-    for i in range(0, PACKED_BYTES, 3):
-        a, b, c = p18[i], p18[i + 1], p18[i + 2]
-        out += bytes([a, b & 0xF0, ((b << 4) & 0xF0) | (c >> 4), (c << 4) & 0xF0])
+    for r in range(11):
+        low3 = bits >> (3 * (10 - r)) & 7
+        out += bytes([p16[r], low3 << 5])
+    out += b"\0\0"
     return bytes(out)
 
 
@@ -121,10 +184,20 @@ class GlyphTable:
         return order_
 
     def enc(self, text: str, space: int = 0x60) -> bytes:
+        text = mark_josa(text).replace("!!", "\x00")  # 「!!」 는 원판의 겹느낌표 글자(`81 62`, 12px 한 칸)로 — ASCII `!` 둘은 8px 칸이라 사이가 벌어진다(10-13)
         out = bytearray()
         for ch in text:
-            if ch == " ":
+            if ch == "\x00":
+                out += b"\x81\x62"
+            elif ch in JOSA_MARK:  # 동적 조사 — 훅이 앞 글자의 받침으로 고른다
+                k = JOSA_MARK.index(ch)
+                if self.map is None:
+                    self.chars.update(JOSA_CHARS)  # 두 꼴 다 정적 풀에 있어야 한다
+                out += bytes([JOSA_LEAD, TRAIL0 + k])
+            elif ch == " ":
                 out.append(space)
+            elif ch in NARROW:  # 반각 — 글리프 코드가 아니라 ASCII 한 바이트(엔진이 8px 로 그린다)
+                out.append(ord(ch))
             elif ch == "\n":
                 out.append(0x0D)
             elif ch == "\f":

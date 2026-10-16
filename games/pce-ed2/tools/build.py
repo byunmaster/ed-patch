@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+import battle
 import chapter
 import common
 import endcard
@@ -155,13 +156,14 @@ def _place_table(new: bytearray, local: list[str], T: int, limit: int) -> None:
     if ts < sent + 8:  # 끝 표시 8바이트(0xFF)는 남긴다
         raise TableFit(f"지역 글리프 {len(local)}자({n}B)가 꼬리 {limit - sent}B 에 안 들어간다")
     for k, ch in enumerate(local):
-        new[ts + k * font.PACKED_BYTES : ts + (k + 1) * font.PACKED_BYTES] = font.pack(font.glyph(ch))
+        new[ts + k * font.PACKED_BYTES : ts + (k + 1) * font.PACKED_BYTES] = font.pack(font.glyph(ch), font.flags(ch))
     bank, off = ts >> 13, ts & 0x1FFF
     new[T], new[T + 1] = off & 0xFF, (bank << 5) | (off >> 8)
 
 
 def _plan_one(rel, raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None, local: list[str]):
     """패키지 하나의 새 바이트 — `local` 은 이 패키지의 지역 글리프(정렬됨, 코드 = S + 순번)."""
+    dialogue.reset_marks()
     S = len(tab.map) if tab.map is not None else 0
     tab.local = {ch: S + k for k, ch in enumerate(local)}
     pkg = bytes(common.track_data(rel, PKG_SECTORS))
@@ -175,6 +177,8 @@ def _plan_one(rel, raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None,
             decoded[a] = systext.edit_menu_chunk(d, tab, MISSING_LABELS)
         else:  # 지명 라벨(패널 지명 · 왕국·도시 목록) — 정본에 없는 문구는 MISSING_LABELS 에 모은다
             decoded[a] = labels.edit_chunk(d, tab, MISSING_LABELS)
+        if battle.is_battle_chunk(d):  # 전투 덩이 — 나타남·행동 줄을 정본 battle 틀로
+            decoded[a] = battle.edit_chunk(decoded[a], tab, MISSING_LABELS)
         if not chapter.is_chapter_chunk(d):  # 장 끝 카드(정본 문안)
             decoded[a] = endcard.edit_chunk(decoded[a], tab)
             if EDIT_ANY_LABELS:  # 전투 덩이의 몬스터 이름 등 — 용량 때문에 링 창 확대(status A안) 전까지 끈다
@@ -259,12 +263,15 @@ def _search_local(rel, raw, tab: font.GlyphTable, static: set[str]):
     return best
 
 
+POOL_MARGIN = 4  # 정적 풀 용량에서 덜어 두는 글자 수 — 수집 단계 이후 늘어나는 글자(시스템 배치 · 전투 줄)의 여유
 EDIT_ANY_LABELS = False
-MARKS_OFF: list[int] = []  # 공간이 모자라 연출 타이밍 제어를 못 살린 패키지
+MARKS_PARTIAL: list[tuple[int, int]] = []  # (패키지, 살린 줄 수) — 공간이 모자라 연출 타이밍 제어를 일부만 살린 패키지
 
 
 def _plan_with_local(rel, raw, tab: font.GlyphTable, static: set[str]):
-    """연출 타이밍 제어(`10`/`11`)를 살린 채로 먼저 풀어 보고, 번역 줄 수가 줄면(공간 부족) 그 패키지만 타이밍 제어를 끈 쪽과 비교해 줄 수가 많은 쪽을 고른다."""
+    """연출 타이밍 제어(`10`/`11`)를 전부 살린 채로 먼저 풀어 보고, 번역 줄 수가 줄면(공간 부족) 타이밍 제어를 끈 쪽과 비교한다.
+    끈 쪽이 줄 수가 많으면, **번역 줄 수를 안 잃는 한 가장 많은 줄(앞 줄부터)의 타이밍 제어를 살린다**(이분 탐색) — 다 끄지 않는다."""
+    dialogue.MARK_LINES = None
     dialogue.KEEP_MARKS = True
     a = _search_local(rel, raw, tab, static)
     dialogue.KEEP_MARKS = False
@@ -273,8 +280,19 @@ def _plan_with_local(rel, raw, tab: font.GlyphTable, static: set[str]):
     if a is None and b is None:
         raise BuildError(f"패키지 {rel}: 지역 글리프 없이도 안 들어간다")
     if b is not None and (a is None or a[1].get("번역", 0) < b[1].get("번역", 0)):
-        MARKS_OFF.append(rel)
-        return b
+        want = b[1].get("번역", 0)
+        lo, hi, best = 0, 2000, b
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            dialogue.MARK_LINES = mid
+            c = _search_local(rel, raw, tab, static)
+            if c is not None and c[1].get("번역", 0) >= want:
+                best, lo = c, mid + 1
+            else:
+                hi = mid - 1
+        dialogue.MARK_LINES = None
+        MARKS_PARTIAL.append((rel, hi))  # hi = 타이밍 제어를 살린 줄 수(마지막으로 들어간 값)
+        return best
     return a
 
 
@@ -297,7 +315,7 @@ def plan_packages(raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None =
         else:
             out[rel] = _plan_one(rel, raw, tab, dialogue_allowed, [])
     if local:
-        print(f"  연출 타이밍 제어를 못 살린 패키지(공간 부족): {MARKS_OFF}")
+        print(f"  연출 타이밍 제어를 일부만 살린 패키지(공간 부족, 패키지·살린 줄 수): {MARKS_PARTIAL}")
         dialogue.STATS.clear()
         dialogue.STATS.update(totals)
         dialogue.UNFIT.clear()
@@ -321,7 +339,7 @@ def apply_pkg_edits(w: Writer, plan: dict) -> dict:
     return intended
 
 
-def plan_program(tab: font.GlyphTable, glyph24: list[bytes] | None) -> layout.Prog:
+def plan_program(tab: font.GlyphTable, glyph24: list[bytes] | None, chars: list[str] | None = None) -> layout.Prog:
     """본 프로그램 패치 계획 — 후킹 자리 예약 → 시스템 문구 배치 → (확정 단계에서) 글리프 풀. 수집 단계는 글리프 풀을 안 앉힌다."""
     prog = layout.Prog()
     hook.reserve(prog)
@@ -329,7 +347,9 @@ def plan_program(tab: font.GlyphTable, glyph24: list[bytes] | None) -> layout.Pr
     systext.OVERFLOW.clear()
     systext.plan(prog, tab)
     if glyph24 is not None:
-        hook.install(prog, glyph24)
+        flags = [font.flags(c) for c in chars] if chars else None
+        josa_idx = [tab.map[c] for pair in font.JOSA for c in pair] if tab.map else None
+        hook.install(prog, glyph24, flags, josa_idx)
     return prog
 
 
@@ -426,7 +446,8 @@ def verify_immutable(iso: Path, touched: set[int], limit_sectors: int | None) ->
 
 def build(edits_path: Path | None, trim: bool, dialogue_on: bool = True) -> Path:
     common.verify_originals()
-    out_dir = common.BUILD_DIR / common.BUILD_TAG
+    # 🔴 잘라 낸 에뮬용(트랙 1~2)은 배포용 칸에 두지 않는다 — 오디오 트랙이 빠진 이미지가 파일서버로 나가 BGM 이 안 났다(10-12)
+    out_dir = common.BUILD_DIR / (common.BUILD_TAG + ("-trim" if trim else ""))
     out_dir.mkdir(parents=True, exist_ok=True)
     iso = out_dir / "ed2.iso"
     cue = out_dir / "ed2.cue"
@@ -440,6 +461,18 @@ def build(edits_path: Path | None, trim: bool, dialogue_on: bool = True) -> Path
             iso.rename(out_dir / "ed2.iso.failed")
         raise
     return iso
+
+
+def check_full_layout(iso: Path, cue: Path) -> None:
+    """전 트랙 이미지 계약 — 원본과 같은 크기 · 같은 트랙 구성(24트랙, 오디오 포함). 오디오 바이트는 무변경 대조(verify_immutable)가 지킨다."""
+    if iso.stat().st_size != common.ORIG_ISO.stat().st_size:
+        raise BuildError(f"이미지 크기가 원본과 다르다: {iso.stat().st_size} ≠ {common.ORIG_ISO.stat().st_size}")
+    want = common.ORIG_CUE.read_text().replace(common.ORIG_ISO.name.upper(), "ed2.iso")
+    if cue.read_text() != want:
+        raise BuildError("cue 가 원본 트랙 구성과 다르다")
+    n = want.count("TRACK ")
+    if n != 24:
+        raise BuildError(f"트랙 수 {n} ≠ 24")
 
 
 def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = True) -> None:
@@ -457,13 +490,14 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
         if "ed2.iso" not in text:
             raise BuildError("cue 의 FILE 이름을 못 바꿨다")
         cue.write_text(text)
+        check_full_layout(iso, cue)
     raw = load_edits(edits_path) if edits_path else []
     tab = font.GlyphTable()
     plan_packages(raw, tab)  # ① 수집 — 글자를 모은다(패키지 · 시스템 문구)
     prog0 = plan_program(tab, None)
     allowed = None
     if dialogue_on:  # 대사 — 글리프 풀 예산 안에서 쓸 글자를 정하고, 그 글자만 쓰는 줄을 번역한다
-        cap = sum(ln // font.PACKED_BYTES for _b, _o, ln in prog0.runs_left()) - hook.MAX_RUNS
+        cap = hook.pool_capacity(prog0) - POOL_MARGIN
         caps = _pkg_caps(raw, tab)
         allowed = dialogue.choose(set(tab.chars), cap - len(tab.chars), caps)
         plan_packages(raw, tab, allowed)
@@ -477,12 +511,14 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
         (common.REVIEW_DIR / "dialogue_unfit.tsv").write_text(
             "\n".join(f"{k}\t{v}" for k, v in sorted(dialogue.UNFIT.items())) + "\n", encoding="utf-8"
         )
-    prog = plan_program(tab, glyph24)
+    prog = plan_program(tab, glyph24, chars)
     with open(iso, "r+b") as f:
         w = Writer(f)
         apply_program(w, prog, glyph24)
         intended = apply_pkg_edits(w, plan)
     write_review()
+    if systext.INTERIOR_WARN:
+        print(f"  ⚠ 문자열 안쪽 쓰기 짝을 못 찾음 {len(systext.INTERIOR_WARN)}곳: {systext.INTERIOR_WARN[:6]}")
     print(f"  덮어쓰기 없음 (쓰기 구간 {w.verify(iso)})")
     verify_immutable(iso, w.touched, limit if trim else None)
     verify_readback(iso, intended, prog)

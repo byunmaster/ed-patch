@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 import canon
 import compose
+import font
 import jptext
 import layout
 
@@ -55,6 +56,8 @@ TABLES = [
     ("status", 0x71, 0x13CD, 0x13FB),
 ]
 
+NOPAD = {"items", "spells"}  # 이름 뒤 폭 맞춤 여백을 두지 않는 표 — 문장 속 `1A` 로도 쓰인다
+
 # 개발자 오류 문구(화면에 안 뜨는 길) — 뱅크 자리가 모자랄 때 글만 줄여 자리를 만든다(제어 앞뒤는 그대로, 전각 라틴이라 일본어 게이트와 무관).
 SHRINK = {(0x6F, 0x062F): "ＶＲＡＭ　ＥＲＲ！！"}
 OVERFLOW: list[
@@ -71,10 +74,11 @@ def _variants(jp: str) -> list[str]:
 def lookup(jp: str, ctx: str | None) -> str | None:
     for v in _variants(jp):
         if ctx:
-            for cat in CATS:
-                r = canon.lookup(f"{v}@{ctx}", cat, "ed2")
-                if r:
-                    return r
+            for c in (ctx, "경험치표시") if ctx == "onoff" else (ctx,):  # 설정 값 표의 「あと」 = 경험치 표시 문맥
+                for cat in CATS:
+                    r = canon.lookup(f"{v}@{c}", cat, "ed2")
+                    if r:
+                        return r
         for cat in CATS:
             r = canon.lookup(v, cat, "ed2")
             if r:
@@ -106,8 +110,14 @@ def tokens(raw: bytes):
     return out
 
 
+def _tok_px(k: str, b: bytes) -> int:
+    if k == "glyph" and len(b) == 1 and 0x21 <= b[0] <= 0x5F:  # ASCII 단일 바이트는 8px 반각으로 그려진다
+        return font.NARROW_PX
+    return {"glyph": CELL_PX, "pad": CELL_PX, "space": SPACE_PX}.get(k, 0)
+
+
 def _px(toks) -> int:
-    return sum({"glyph": CELL_PX, "pad": CELL_PX, "space": SPACE_PX}.get(k, 0) for k, _b in toks)
+    return sum(_tok_px(k, b) for k, b in toks)
 
 
 def _padbytes(px: int) -> bytes:
@@ -153,11 +163,12 @@ def translate(raw: bytes, ctx: str | None, miss: set[str]) -> bytes | None:
         body = mode + b"".join(b for _kind, b in core)
         jp = jptext.decode(body).replace("{0E}", "").replace("{0F}", "")
         jp = re.sub(r"\{[0-9A-F ]+\}", "", jp).replace("　", "").replace("\n", "")
-        if not jp or _is_latin(jp):
+        if not jp or (_is_latin(jp) and ctx != "onoff"):
             out.append(b"".join(b for _k, b in seg))
             i = j
             continue
-        kr = lookup(jp, ctx)
+        # 설정 값 표(ＯＮ·ＯＦＦ·ＣＤ·ＰＳＧ·ＥＰ)는 **전각**으로 그린다(마스터 10-13 「전각으로 나와야함」 · 규칙 1-4) — 원판은 ASCII 반각이다
+        kr = jp if (_is_latin(jp) and ctx == "onoff") else lookup(jp, ctx)
         if kr is None:
             miss.add(jp)
             return None
@@ -181,7 +192,7 @@ def render(plan, tab) -> bytes:
         _tag, kr, core_px, pre, post = item
         out += b"".join(b for _k, b in pre)
         text = tab.enc(kr, space=SPACE)
-        w = sum(SPACE_PX if c == " " else CELL_PX for c in kr)
+        w = sum(font.adv(c) for c in kr)
         pad_after = core_px - w  # 원문 덩이 폭(px)을 지킨다
         post_b = list(post)
         if pad_after > 0:
@@ -249,7 +260,9 @@ def plan(prog: layout.Prog, tab, report: dict | None = None) -> None:
         miss = MISSING.setdefault(name, set())
         new = []
         for e in entries:
-            r = translate(e, None, miss)
+            r = translate(e, name, miss)  # 표 이름이 문맥이다(「あと@경험치표시」 · 「ＯＮ」 전각 등)
+            if r is not None and name in NOPAD:  # 문장에 끼는 이름(`1A`)은 원문 폭만큼 뒤 여백을 채우면 「횃불    을 사용했다.」 처럼 벌어진다(10-13 화면) — 가나 4칸 폭이 한글 2칸보다 넓다
+                r = [("KR", x[1], 0, x[3], x[4]) if isinstance(x, tuple) else x for x in r]
             new.append(render(r, tab) if r is not None else e)
             stat["table"] += r is not None
         blob = b"\x00".join(new) + b"\x00"
@@ -279,16 +292,22 @@ def plan(prog: layout.Prog, tab, report: dict | None = None) -> None:
     # 꼬리를 나눠 쓰는 문자열(한 문자열이 다른 문자열의 끝에서 시작) — 하나를 옮기면 다른 쪽이 깨지므로 둘 다 건드리지 않는다
     spans = sorted((bank, off, prog.o(bank, 0, layout.BANK).index(0, off)) for bank, off in lits)
     aliased = set()
-    for (b1, o1, e1), (b2, o2, _e2) in itertools.pairwise(spans):
+    tails: dict[tuple[int, int], tuple[int, int]] = {}  # 앞 문자열 → 같은 끝을 나눠 쓰는 뒤 문자열(꼬리) — 둘 다 번역하고 꼬리 포인터를 새 끝으로 옮긴다
+    for (b1, o1, e1), (b2, o2, e2) in itertools.pairwise(spans):
         if b1 == b2 and o2 <= e1:
-            aliased |= {(b1, o1), (b2, o2)}
+            if e2 == e1 and o2 > o1 and (b1, o1) not in tails:
+                tails[(b1, o1)] = (b2, o2)
+            else:
+                aliased |= {(b1, o1), (b2, o2)}
+    tail_children = set(tails.values())
     pending: dict[int, list] = {}
     inplace: dict[int, list] = {}
     for (bank, off), sites in sorted(lits.items()):
         if any(bank == tb and ta <= off < te for tb, ta, te in table_spans):
             continue
-        if (bank, off) in aliased:
-            stat["literal_kept"] += 1
+        if (bank, off) in aliased or (bank, off) in tail_children:
+            if (bank, off) not in tail_children:
+                stat["literal_kept"] += 1
             continue
         s = prog.o(bank, 0, layout.BANK)
         end = s.index(0, off)
@@ -311,12 +330,42 @@ def plan(prog: layout.Prog, tab, report: dict | None = None) -> None:
                 continue
         else:
             rendered = [render(p, tab) if not isinstance(p, bytes) else p for p in parts]
-            # 일부 줄만 정본에 걸리면(나머지는 일본어) 혼합이다 — 전체를 원문으로 둔다(문자열 전체 판정)
+            # 일부 줄만 정본에 걸리면(나머지는 일본어) 혼합이다 — 이름·수 자리표가 낀 문장은 조각 맞춤(`msgs.segments`)으로 한 번 더 본다
             if any(isinstance(p, bytes) and _has_kana_or_kanji(p) for p in parts):
-                miss.add(jptext.decode(raw).replace("\n", "/"))
+                import msgs
+
+                alt = msgs.translate(raw, tab)
+                if alt is None:  # 그래도 안 되면 문자열 전체를 원문으로 둔다(문자열 전체 판정)
+                    miss.add(jptext.decode(raw).replace("\n", "/"))
+                    stat["literal_kept"] += 1
+                    continue
+                newb = alt
+            else:
+                newb = b"\x0d".join(rendered)
+        tail = tails.get((bank, off))
+        if tail is not None:  # 꼬리 문자열(「…{14}に」 의 「に」)도 번역해 앞 문자열의 끝에 겹치게 한다 — 안 겹치면 둘 다 원문으로 둔다
+            import msgs
+
+            rawt = s[tail[1] : end]
+            tl = [translate(x, CONTEXT.get(tail), miss) for x in rawt.split(b"\x0d")]
+            newt = b"\x0d".join(render(p, tab) if p is not None else x for p, x in zip(tl, rawt.split(b"\x0d"), strict=True))
+            if newt == rawt or not newb.endswith(newt) or len(newb) == len(newt):
                 stat["literal_kept"] += 1
                 continue
-            newb = b"\x0d".join(rendered)
+            refs = [(pos, len(newb) - len(newt)) for pos in lits[tail]]
+            # 꼬리의 꼬리 — 같은 NUL 을 가리키는 **빈 문자열**(`자기 자신에게`의 「대상 없음」 항목: 아이템 사용 줄 첫 `1A`) 포인터도 새 문자열의 끝(NUL)으로 옮긴다.
+            # 안 옮기면 옛 NUL 자리가 새 글 한복판이 되어 화면에 그 꼬리가 찍힌다(10-13 「아트라스는 비를 했다.」 — 방어 준비 문장의 끝토막).
+            chain, ok = tail, True
+            while chain in tails:
+                chain = tails[chain]
+                if s[chain[1] : end] != b"":
+                    ok = False
+                    break
+                refs += [(pos, len(newb)) for pos in lits[chain]]
+            if not ok:
+                stat["literal_kept"] += 1
+                continue
+            EXTRA_REFS[(bank, off)] = refs
         if len(newb) <= len(raw):
             inplace.setdefault(bank, []).append((off, raw, newb, sites))
         else:
@@ -385,6 +434,42 @@ def _place_far(prog: layout.Prog, bank: int, item, stat: dict) -> bool:
     return True
 
 
+EXTRA_REFS: dict[tuple[int, int], list[tuple[int, int]]] = {}  # 문자열 시작 → [(꼬리 포인터 위치, 시작에서 꼬리까지 새 오프셋)]
+INTERIOR_WARN: list[str] = []  # 문자열 안쪽을 코드가 직접 쓰는데 새 문자열에 짝을 못 찾은 자리(관리자 후보 아님 — 화면에서 깨진다)
+_STORE_OPS = {0x8D, 0x8E, 0x8C, 0x9C, 0xEE, 0xCE}  # STA/STX/STY/STZ/INC/DEC abs
+
+
+def _ctrl_spans(raw: bytes) -> list[tuple[int, bytes]]:
+    """제어 토큰의 (오프셋, 바이트) 목록 — 글·여백 토큰은 건너뛴다."""
+    out, pos = [], 0
+    for kind, b in tokens(raw):
+        if kind == "ctrl" and b[0] not in (0x0E, 0x0F):  # 가나 모드 토글은 한국어에서 사라진다 — 짝 맞춤에서 뺀다
+            out.append((pos, b))
+        pos += len(b)
+    return out
+
+
+def _remap_interior(prog: layout.Prog, bank: int, off: int, raw: bytes, newb: bytes, new_off: int) -> None:
+    """🔴 게임 코드가 **문자열 안쪽을 고정 주소로 직접 쓰는** 자리를 새 문자열에 맞춘다 — 필드 메뉴는 파티가 한 명이면 마지막 줄 끝 `0D` 를 `00` 으로 덮어
+    「その他」 뒤를 자르고(주소 `$6332`), 전투 설정·도구 창은 줄머리 `01` 을 덮어 항목을 켜고 끈다. 한국어로 줄 길이가 바뀌면 그 주소가 글 한복판을 가리켜
+    **줄이 잘리거나 항목이 사라진다**(10-13 「기타」 빈칸 · 「FFFF」). 쓰는 바이트가 든 **제어 토큰의 순번**으로 새 문자열의 같은 제어 토큰 자리를 찾아 피연산자를 바꾼다."""
+    d = prog.o(bank, 0, layout.BANK)
+    lo, hi = 0x6000 + off, 0x6000 + off + len(raw)
+    sites = [(i, (d[i + 1] | d[i + 2] << 8) - lo) for i in range(len(d) - 2) if d[i] in _STORE_OPS and lo < (d[i + 1] | d[i + 2] << 8) < hi]
+    if not sites:
+        return
+    oc, nc = _ctrl_spans(raw), _ctrl_spans(newb)
+    for code_pos, k in sites:
+        m = next((n for n, (p, b) in enumerate(oc) if p <= k < p + len(b)), None)
+        if m is None or len(oc) != len(nc):
+            INTERIOR_WARN.append(f"{bank:02X}+{off:04X} k={k} (코드 {bank:02X}+{code_pos:04X})")
+            continue
+        new_k = nc[m][0] + (k - oc[m][0])
+        if new_off == off and new_k == k:
+            continue
+        prog.put(bank, code_pos + 1, (0x6000 + new_off + new_k).to_bytes(2, "little"), f"interior write {bank:02X}+{code_pos:04X} → +{new_k}")
+
+
 def _place_pending(
     prog: layout.Prog, pending: dict[int, list], inplace: dict[int, list], stat: dict
 ) -> None:
@@ -429,7 +514,10 @@ def _place_pending(
                 )
                 stat["literal_kept"] += 1
         for off, raw, newb, _s in stay:
+            _remap_interior(prog, bank, off, raw, newb, off)
             prog.put(bank, off, newb + b"\x00", f"literal {bank:02X}+{off:04X}")
+            for pos, delta in EXTRA_REFS.get((bank, off), []):
+                prog.put(bank, pos, (0x6000 + off + delta).to_bytes(2, "little"), f"literal {bank:02X}+{off:04X} tail ref")
             if len(newb) < len(raw):
                 prog.vacate(bank, off + len(newb) + 1, len(raw) - len(newb))
             stat["literal"] += 1
@@ -443,7 +531,10 @@ def _place_pending(
             first = its[0]
             prog.put(bank, n_off, newb + b"\x00", f"literal {bank:02X}+{first[0]:04X} (moved)")
             addr = 0x6000 + n_off
-            for off, _raw, _n, sites in its:
+            for off, raw_, _n, sites in its:
+                for pos, delta in EXTRA_REFS.get((bank, off), []):
+                    prog.put(bank, pos, (0x6000 + n_off + delta).to_bytes(2, "little"), f"literal {bank:02X}+{off:04X} tail ref")
+                _remap_interior(prog, bank, off, raw_, newb, n_off)
                 for pos in sites:
                     prog.put(
                         bank, pos, addr.to_bytes(2, "little"), f"literal {bank:02X}+{off:04X} ref"
