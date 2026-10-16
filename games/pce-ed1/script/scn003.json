@@ -1,0 +1,17 @@
+{
+ "_doc": "scn 3 번역 정본 — 열쇠는 messages.py key, 원문 대조는 work/derived/messages/scn003.json",
+ "messages": {
+  "b345cce4a54551cc": {
+   "jp": "ルディアの町",
+   "lead": " ",
+   "tail": " ",
+   "raw": true
+  },
+  "c7fcdf6abdc1f30e": {
+   "t": "왕자님, 힘내시지요!"
+  },
+  "06fb637804d22e64": {
+   "t": "왕자, 우리도 서두릅시다!!"
+  }
+ }
+}

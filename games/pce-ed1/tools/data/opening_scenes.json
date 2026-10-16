@@ -538,7 +538,7 @@
   {
    "name": "crowd",
    "switch": 8087,
-   "end": 8278,
+   "end": 8353,
    "x_base": 20,
    "bat": "32x64",
    "scroll": [
@@ -582,7 +582,7 @@
     99
    ],
    "changed": [],
-   "quiet": 8248,
+   "quiet": 8353,
    "_measured": {
     "hit_emu": 10649,
     "hit_v": 7998,
@@ -671,7 +671,7 @@
   },
   {
    "name": "selios",
-   "switch": 8890,
+   "switch": 8800,
    "end": 9715,
    "x_base": 20,
    "bat": "128x32",

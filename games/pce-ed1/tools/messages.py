@@ -176,16 +176,36 @@ def parse(block: bytes) -> list[Message]:
     for s in sorted(cands):
         if s < covered:
             continue
+        s = _skip_table_tail(block, s, cands)
         msg = _parse_from(block, s)
         if msg is None or not any(isinstance(t, str) for t in msg.tokens) and msg.speaker is None:
             continue
         msgs.append(msg)
         covered = msg.end
-    _mark_refs(block, msgs)
-    return msgs
+    return _split_pinned(block, msgs)
 
 
-def _parse_from(block: bytes, s: int) -> Message | None:
+def _word(block: bytes, i: int) -> int | None:
+    """i 의 16비트 값이 이 블록 안을 가리키는 주소면 그 오프셋(주소 − BASE), 아니면 None."""
+    if i < 0 or i + 1 >= len(block):
+        return None
+    w = (block[i] | block[i + 1] << 8) - BASE
+    return w if 0 <= w < len(block) else None
+
+
+def _skip_table_tail(block: bytes, s: int, starts: set[int]) -> int:
+    """**오름차순 주소 표**(연속 4 워드, 전부 `s` 뒤를 가리킨다) 의 끝 워드가 메시지 머리로 딸려 들어온 경우 2B 건너뛴다.
+    표 끝 워드(`93 A1` = $A193)가 우연히 전각 한 글자(「藤」)로 읽혀 메시지 머리에 붙었다(scn095, 10-11) — 그 위에 번역을 쓰면
+    표 항목을 덮는다. 둘째 글자부터가 진짜 대본이다.
+    (⚠ 글자가 우연히 주소처럼 읽히는 것만으로는 안 된다 — 「お」`82 A8` = $A882 도 블록 안이고 앞이 오름차순 표여도 그렇다(scn032). 끝 워드가 실제 **메시지 머리 후보**를 가리킬 때만 표 꼬리다.)"""
+    ws = [_word(block, s - 6), _word(block, s - 4), _word(block, s - 2), _word(block, s)]
+    if all(w is not None and w >= s + 2 for w in ws) and ws == sorted(set(ws)) and ws[-1] in starts:
+        return s + 2
+    return s
+
+
+def _parse_from(block: bytes, s: int, stop: int | None = None) -> Message | None:
+    """`s` 에서 메시지 하나를 읽는다. `stop` 이 있으면 거기서 끊는다(종료 없음) — 그 자리가 토큰 경계가 아니면 None."""
     i = s
     tokens: list = []
     speaker = None
@@ -194,6 +214,14 @@ def _parse_from(block: bytes, s: int) -> Message | None:
     in_speaker = False
     complex_ = False
     while i < len(block):
+        if stop is not None and i >= stop:
+            if i > stop:
+                return None  # 2바이트 글자·옵코드 한가운데 — 경계가 아니다
+            if text:
+                if in_speaker:
+                    return None
+                tokens.append("".join(text))
+            return Message(s, i, speaker, common, tokens, complex_, terminated=False)
         b = block[i]
         if is_lead(b):
             if i + 1 >= len(block):
@@ -277,6 +305,47 @@ def references(block: bytes) -> dict[int, list[int]]:
     return refs
 
 
+def _split_pinned(block: bytes, msgs: list[Message]) -> list[Message]:
+    """안쪽을 가리키는 참조가 있는 메시지를 **참조 자리에서 조각낸다**(마스터 10-11 「구조문제 해결」).
+
+    · 참조 자리가 토큰 경계가 아니면(2바이트 글자 한가운데) 우연 일치다 — 참조로 안 친다.
+    · 경계면 거기서 가른다: 앞 조각은 종료 없는 조각(재삽입 때 `0F` 로 참조 자리에 잇는다), 뒤 조각은 그
+      자리에서 새 메시지로 시작한다(참조가 그 머리를 가리키므로 안 움직인다). 글 없는 조각(옵코드만)은 메시지가
+      아니라 원본 바이트 그대로 둔다. 갈린 메시지마다 열쇠가 따로라 번역 정본도 조각별로 쓴다.
+    """
+    refs = references(block)
+    out: list[Message] = []
+    for m in msgs:
+        cuts = sorted(o for o in refs if m.start < o < m.end)
+        if not cuts:
+            out.append(m)
+            continue
+        parts: list[Message] = []
+        a = m.start
+        ok = True
+        for cut in cuts:
+            frag = _parse_from(block, a, stop=cut) if a == m.start else _parse_from(block, a, stop=cut)
+            if frag is None:
+                continue  # 경계가 아니다 — 참조가 아닌 우연
+            parts.append(frag)
+            a = cut
+        if not parts:
+            out.append(m)
+            continue
+        last = _parse_from(block, a)
+        if last is None or last.end != m.end:
+            out.append(m)
+            m.pinned = True
+            m.refs = [r for o in cuts for r in refs[o]]
+            continue
+        parts.append(last)
+        for frag in parts:
+            if frag.speaker is None and frag.common is None and not any(isinstance(t, str) for t in frag.tokens):
+                continue  # 글 없는 조각 — 원본 그대로
+            out.append(frag)
+    return out
+
+
 def _mark_refs(block: bytes, msgs: list[Message]) -> None:
     refs = references(block)
     for m in msgs:
@@ -340,12 +409,17 @@ def splice(block: bytes, edits: list[tuple[Message, bytes]]) -> bytes:
         #   옵코드 자리(m.end)에 잇는다. 그 옵코드부터 실행이 그대로 이어진다.
         room = m.end - m.start
         if not m.terminated:
+            if len(new) == room:  # 자리를 딱 채우면 뒤 바이트가 곧 이어진다 — 점프가 필요 없다
+                out[m.start : m.end] = new
+                continue
             nxt = BASE + m.end
             new = new + bytes([JUMP, nxt & 0xFF, nxt >> 8])
         if len(new) <= room:
             out[m.start : m.start + len(new)] = new
             out[m.start + len(new) : m.end] = b"\0" * (room - len(new))
             continue
+        if room < 3:
+            raise ValueError(f"메시지 +{m.start:#06x} 자리가 {room}B — `0F` 점프(3B)도 못 넣는다")
         cut = _token_boundary(new, room - 3)
         tail_addr = BASE + len(out)
         out[m.start : m.start + cut] = new[:cut]
@@ -366,9 +440,7 @@ def _token_boundary(b: bytes, limit: int) -> int:
             break
         i += ln
         last = i
-    if last == 0:
-        raise ValueError("메시지 자리가 3바이트도 안 된다")
-    return last
+    return last  # 0 이면 첫 토큰이 안 들어간다 — 자리 머리에 곧바로 `0F` 를 놓는다(자리 ≥ 3B)
 
 
 def dump_all(found) -> dict:

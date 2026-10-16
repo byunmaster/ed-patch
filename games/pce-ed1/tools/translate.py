@@ -26,20 +26,33 @@ class TranslateError(Exception):
     pass
 
 
-def all_glyph_chars() -> set[str]:
-    """정본 전체가 쓰는 우리 글리프 글자(한글·부호·숫자) — 글리프 표는 여기서 결정적으로 나온다."""
-    chars = set()
-    for p in sorted(M.SCRIPT_DIR.glob("scn*.json")):
-        for e in M.load_translations(int(p.stem[3:])).values():  # 입장 배너는 사전에서 풀린 문안
-            chars |= {ch for ch in font.expand_packed(e["t"]) if font.needs_glyph(ch)}
+def body_chars(scene_id: int) -> set[str]:
+    """씬 하나의 대사 본문이 쓰는 우리 글리프 글자(화자 이름은 `name_chars`)."""
+    out: set[str] = set()
+    for e in M.load_translations(scene_id).values():
+        out |= {ch for ch in font.expand_packed(e["t"]) if font.needs_glyph(ch)}
+    return out
+
+
+def name_chars() -> set[str]:
+    """씬 대사 밖에서 오는 우리 글리프 글자 — 공용 정본(고유명사·UI·화자)의 화면 표기. 🔴 늘 상주한다."""
     # 🔑 **화면에 나가는 표기만** 공용에서 받는다(`kr_texts`) — 열쇠도 `_aliases` 도 안 온다.
     #    ⚠ `load_speakers()` 는 **맵**이라 조판이 쓰고, 글리프 커버리지는 이쪽이다.
     import canon  # shared/ — 공통 문안 정본(ED1 = PS1 씨앗)
 
     # 정본은 화면에 나가는 범주만(ui·speaker) — system·battle 문구 조각은 이 게임이 안 쓰는 것이 많아 글리프를 낭비한다
+    chars: set[str] = set()
     canon_vals = [v for c in ("ui", "speaker") for v in canon.table(c, "ed1").values()]
     for v in [kr for _c, _jp, kr in canon.all_names("ed1")] + canon_vals + list(M.load_speaker_overrides().values()):
         chars |= {ch for ch in v if font.needs_glyph(ch)}
+    return chars
+
+
+def all_glyph_chars() -> set[str]:
+    """정본 전체가 쓰는 우리 글리프 글자(한글·부호·숫자) — 대사 본문 + 이름. 상주/동적 가름은 `glyphdyn`."""
+    chars = set(name_chars())
+    for p in sorted(M.SCRIPT_DIR.glob("scn*.json")):
+        chars |= body_chars(int(p.stem[3:]))
     return chars
 
 

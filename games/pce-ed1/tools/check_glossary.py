@@ -55,9 +55,16 @@ def canon() -> dict[str, set[str]]:
     for cat, jp, kr in all_names():
         if cat.split("@")[0] not in CATS or not kr:
             continue
-        j = _norm_jp(jp.split("@")[0])
+        j = _norm_jp(jp.split("@")[0]).replace(" ", "")  # 「大盗賊 ゲイル」 — 원문은 전각 공백을 걷어 붙으니 사전도 붙인다
         if len(j) >= 2:
             out.setdefault(j, set()).add(kr)
+    # 별칭(`_aliases`) — 같은 말의 다른 표기(「大盗賊のゲイル」)도 같은 정본으로 센다
+    import canon as _canon
+
+    for a, t in _canon.aliases("ed1").items():
+        ja, jt = _norm_jp(a.split("@")[0]).replace(" ", ""), _norm_jp(t.split("@")[0]).replace(" ", "")
+        if len(ja) >= 2 and jt in out and ja not in out:
+            out[ja] = set(out[jt])
     return out
 
 

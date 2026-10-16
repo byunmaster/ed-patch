@@ -30,11 +30,18 @@ import containers
 import ending_sub
 import font
 import gfx_text
+import glyphdyn
 import hook
 import hud_plate
 import lz
 import narration_gates
+import gwin_rt
+import voice_sched
+import omake_art
+import omake_font
+import syscard_screen
 import opening_sub
+import credits_kr
 import staffroll
 import sysbuild
 import translate
@@ -42,6 +49,7 @@ import translate
 from shared.disc import mode1
 
 SLOT_SECTORS = 16  # 컨테이너 한 칸(실측: 참조표 간격 16섹터 = 32KB)
+ENTRY_BYTES = containers.ENTRY
 BANK = 0x2000  # 풀린 블록은 뱅크 0x76 하나에 들어가야 한다
 
 
@@ -133,14 +141,50 @@ def _record_writes(ledger: WriteLedger):
         mode1.write_at, mode1.write_user_data = at, ud
 
 
-def assemble(entries: list[tuple[int, bytes]], orig: bytes, where: str = "") -> bytes:
-    """(id, 풀린 블록) 목록 → 컨테이너 바이트. 🔴 **블록을 원본 자리(`src`)에 그대로 둔다.**
+class FreePool:
+    """트랙 끝 0 구간(rel 9786~, 286섹터)에서 이사 자리를 내준다. 이미 0 이 아니면 멈춘다(`write_user_data` expect)."""
 
-    옛 판은 앞에서부터 다시 깔았는데, 우리 인코더가 원본보다 조금씩 촘촘해서 **안 고친 블록까지
-    앞으로 당겨졌다**(rel 1252 실측 −254B, blk6 은 10,542 → 10,406). 디렉터리는 따라가지만
-    **디렉터리를 안 보는 참조**가 있으면 그게 곧 소프트락이다 — 이 레포가 PS1 에서 이미 물린
-    「위치가 계약인 구간」이다(`docs/reference/our-findings.md` 재삽입 「구조 계약」).
-    ⇒ 원본 컨테이너 바이트에서 출발해 **각 블록의 원래 슬롯만 덮어쓴다.** 슬롯을 넘치면 죽는다.
+    START = 9786  # 원본에서 끝까지 0 (containers 지문 · status 2절)
+
+    def __init__(self):
+        self.next = self.START
+
+    def alloc(self, n_sec: int) -> int:
+        at = self.next
+        if at + n_sec > common.T2_LEN:
+            raise BuildError(f"이사 자리가 모자란다: rel {at} + {n_sec} > 트랙 끝 {common.T2_LEN}")
+        self.next += n_sec
+        return at
+
+
+def patch_ref_table(f, refs, moves, touched) -> str:
+    """참조표(44항목 · 3B = rel−34 16비트 + 섹터수)에서 이사한 컨테이너를 가리키는 항목을 새 자리로 고친다."""
+    n = 0
+    for i, (r, nsec) in enumerate(refs):
+        if r not in moves:
+            continue
+        new_rel, new_nsec = moves[r]
+        off = containers.REF_TABLE_OFF + 3 * i
+        old = bytes([(r - containers.REC_BASE) & 0xFF, (r - containers.REC_BASE) >> 8, nsec])
+        v = new_rel - containers.REC_BASE
+        new = bytes([v & 0xFF, v >> 8, new_nsec])
+        lba = common.T2_SECTOR + containers.REF_BANK_REL
+        mode1.write_at(
+            f, lba, 4 * common.USER, off, new, label=f"ref table #{i} rel {r}→{new_rel}", expect=old
+        )
+        touched.append((lba + off // common.USER, 1))
+        n += 1
+    return f"참조표 {n}항목을 이사 자리로 고침 (이사 {len(moves)}개)"
+
+
+def assemble(entries: list[tuple[int, bytes]], orig: bytes, where: str = "") -> bytes:
+    """(id, 풀린 블록) 목록 → 컨테이너 바이트(칸 채움 없이 쓴 만큼). 🔴 **블록을 다시 깐다**(마스터 10-11).
+
+    한글은 일본어보다 안 눌려서 블록마다 원래 슬롯을 수십~수백B 넘긴다(24컨테이너 거의 전부). 슬롯을 지키는
+    옛 규칙(「자리를 안 옮긴다」)을 풀고, **원래 src 순서대로** 앞에서부터 다시 깐다 — 게임은 씬 id 로
+    디렉터리를 찾아 블록을 푼다(`containers` 머리말). 안 고친 블록은 **원본 압축 바이트 그대로**
+    옮긴다(우리 인코더가 원본보다 촘촘해 다시 누르면 바꿀 이유 없는 바이트가 바뀐다). 같은 src 를 나눠 쓰는
+    중복 블록은 한 칸이다. 총량이 칸을 넘으면 호출자(`_build`)가 컨테이너를 이사시킨다.
     """
     for id_, blk in entries:
         if len(blk) > BANK:
@@ -150,47 +194,40 @@ def assemble(entries: list[tuple[int, bytes]], orig: bytes, where: str = "") -> 
     if [i for i, _, _ in o_ents] != [i for i, _ in entries]:
         raise BuildError(f"컨테이너 {where}: 블록 id 목록이 원본과 다르다")
 
-    # 슬롯 = 이 src 부터 **다음 src** 까지(같은 src 를 나눠 쓰는 중복 블록은 한 칸이다)
     srcs = sorted({src for _, src, _ in o_ents})
-    end_of = {s: (srcs[k + 1] if k + 1 < len(srcs) else len(orig)) for k, s in enumerate(srcs)}
     ln_of = {src: ln for _, src, ln in o_ents}  # 원본이 말하는 풀린 길이(되풀어 대조용)
+    blk_of: dict[int, bytes] = {}
+    for (id_, blk), (_, src, _) in zip(entries, o_ents, strict=True):
+        if blk_of.setdefault(src, blk) != blk:
+            raise BuildError(f"컨테이너 {where}: 같은 src {src} 를 다른 내용이 나눠 쓴다")
 
-    out = bytearray(orig)
-    done: dict[int, bytes] = {}
+    packed: dict[int, bytes] = {}
+    for src in srcs:
+        was, used = lz.decode(orig[src:], ln_of[src])
+        packed[src] = orig[src : src + used] if blk_of[src] == was else lz.encode_optimal(blk_of[src])
+    n_dir = ENTRY_BYTES * len(o_ents) + 1
+    if n_dir > srcs[0]:
+        raise BuildError(f"컨테이너 {where}: 디렉터리 {n_dir}B > 첫 블록 자리 {srcs[0]}B")
+
+    new_src: dict[int, int] = {}
+    body = bytearray(b"\0" * srcs[0])  # 첫 블록 자리는 원본 그대로(디렉터리 뒤 빈틈 포함)
+    for src in srcs:
+        new_src[src] = len(body)
+        body += packed[src]
     d = bytearray()
     for (id_, blk), (_, src, _) in zip(entries, o_ents, strict=True):
-        if src in done:
-            if done[src] != blk:
-                raise BuildError(f"컨테이너 {where}: 같은 src {src} 를 다른 내용이 나눠 쓴다")
-        else:
-            room = end_of[src] - src
-            was, _ = lz.decode(orig[src:], ln_of[src])
-            if blk != was:  # ⚠ 안 고친 블록은 **원본 바이트를 손대지 않는다** — 우리 인코더가
-                pk = lz.encode(blk)  #    조금 촘촘해 다시 누르면 바꿀 이유 없는 바이트가 다 바뀐다
-                if len(pk) > room:  # 탐욕이 넘치면 최적 파싱으로 다시(느리다 — 넘칠 때만)
-                    pk = lz.encode_optimal(blk)
-                if len(pk) > room:
-                    raise BuildError(
-                        f"컨테이너 {where} 블록 id {id_}: 압축 {len(pk)}B > 원래 슬롯 {room}B — "
-                        "자리를 옮기지 않는 게 계약이다. 문안을 줄이거나 배치를 다시 설계해라"
-                    )
-                out[src : src + len(pk)] = pk
-                out[src + len(pk) : end_of[src]] = b"\0" * (room - len(pk))
-            done[src] = blk
-        d += bytes([id_, src & 0xFF, src >> 8, len(blk) & 0xFF, len(blk) >> 8])
+        ns = new_src[src]
+        d += bytes([id_, ns & 0xFF, ns >> 8, len(blk) & 0xFF, len(blk) >> 8])
     d.append(containers.DIR_END)
-    if len(d) > srcs[0]:
-        raise BuildError(f"컨테이너 {where}: 디렉터리 {len(d)}B > 첫 블록 자리 {srcs[0]}B")
-    out[: len(d)] = d
-    out[len(d) : srcs[0]] = b"\0" * (srcs[0] - len(d))
+    body[: len(d)] = d
 
     # 자기 검산 — 우리 디코더로 되풀어 같은가(코덱 A 조건)
-    ents, _ = containers.parse_dir(bytes(out[:2048]))
+    ents, _ = containers.parse_dir(bytes(body[:2048]))
     for (id_, blk), (id2, src, ln) in zip(entries, ents, strict=True):
         assert id_ == id2 and ln == len(blk)
-        got, _ = lz.decode(bytes(out[src:]), ln)
+        got, _ = lz.decode(bytes(body[src:]), ln)
         assert got == blk, f"재조립 검산 실패 id {id_}"
-    return bytes(out)
+    return bytes(body)
 
 
 def load_edits(path: Path, table: dict[str, bytes]):
@@ -325,19 +362,12 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
         p.append(("fsel blit call", *_main(0x78, 0x08F8), b"\x20\x74\x89", b"\x20\x01\x87"))
         p.append(("fsel parity", *_main(0x78, 0x0975), b"\x98\x4a\x29\x01", b"\xad\xfa\x86\xea"))
     if want("cast"):
-        # 6. 「게임 시작」 뒤 성우 크레딧의 표제 `声優出演` → `ＣＡＳＴ`(마스터 확정 2026-09-23 —
-        #    이름 13개는 실존 성우라 원문 유지, 표제만). 크레딧 모듈(rel 514)이 이 SJIS 평문
-        #    (rel 517)을 BIOS 글꼴(EX_GETFNT)로 직접 그리므로 **같은 길이의 전각 영문**으로 바꾸면
-        #    코드 수정 없이 같은 자리에 나온다. 뒤의 `81 40 00`(전각 공백·종단)은 그대로 둔다.
-        p.append(
-            (
-                "cast title 声優出演→ＣＡＳＴ",
-                517,
-                0x0420,
-                "声優出演".encode("sjis"),
-                "ＣＡＳＴ".encode("sjis"),
-            )
-        )
+        # 6. 「게임 시작」 뒤 성우 크레딧의 표제 `声優出演`. 마스터 확정 2026-09-23 은 `ＣＡＳＴ`(한글이 안 되는 줄 알았다)였으나 되는 길을 찾았다(마스터 10-16) —
+        #    크레딧 모듈 안 자체 글리프 루틴(`credits_kr`). ED_CAST_EN=1 이면 옛 전각 영문.
+        if os.environ.get("ED_CAST_EN"):
+            p.append(("cast title 声優出演→ＣＡＳＴ", 517, 0x0420, "声優出演".encode("sjis"), "ＣＡＳＴ".encode("sjis")))
+        else:
+            p.extend(credits_kr.patches())
     if want("hook"):
         # 4. EX_GETFNT 호출부(본 프로그램 4곳) → `hook.HOOK_ADDR`($2300)
         tgt = hook.HOOK_ADDR.to_bytes(2, "little")
@@ -531,7 +561,9 @@ def _build(edits_path, iso: Path, cue: Path):
     if "ed1.iso" not in cue.read_text():
         raise BuildError("cue 의 FILE 이름을 못 바꿨다")
     # 글리프 표 = 번역 정본 전체 + PoC 편집의 음절(결정적). 표를 따로 두지 않는다(폰트 전략 §3.2)
-    chars = translate.all_glyph_chars() | sysbuild.all_glyph_chars() | battle.glyph_chars()
+    # 🔴 상주 표 = 늘 상주해야 하는 글자(`glyphdyn.forced_chars`) + 정본에 든 본문 글자. 정본에 없는 본문 글자는 블록이 싣는다(동적 칸).
+    chars = glyphdyn.forced_chars() | (translate.all_glyph_chars() & set(font._order_canon()))
+    chars |= credits_kr.chars()  # 오프닝 성우 크레딧 글자(글리프 표는 모듈 안 0 구역에 따로 싣는다 — credits_kr)
     raw = json.loads(edits_path.read_text()) if edits_path else []
     chars |= {ch for e in raw for ch in e.get("replace_text", "") if font.needs_glyph(ch)}
     table, glyph_bank = font.build_table(chars)
@@ -543,6 +575,8 @@ def _build(edits_path, iso: Path, cue: Path):
     refs = containers.referenced()
     slot_of = {r: n for r, n in refs}  # 참조표가 말하는 섹터 수
     ledger = WriteLedger()
+    free_pool = FreePool()
+    moves: dict[int, tuple[int, int]] = {}  # 옛 rel → (새 rel, 섹터 수)
     with open(iso, "r+b") as f, _record_writes(ledger):
         apply_code_patches(f, glyph_bank, table, touched)
         if want("opsub"):  # 오프닝 나레이션 자막(스프라이트) — tools/opening_sub.py
@@ -564,6 +598,10 @@ def _build(edits_path, iso: Path, cue: Path):
             print("  " + hud_plate.apply(f, touched))
         if want("sys"):
             print("  시스템 문구:", sysbuild.apply(f, table, touched))
+        if want("sys"):  # 오마케(사운드 테스트·도감) 한글 — 전용 미니 훅 + 글리프 블록(rel 450 모듈 안 · rel 447~449) + 첫 메뉴 라벨 그림(rel 642~)
+            _extras = json.loads((common.GAME_DIR / "script" / "sys" / "extras.json").read_text(encoding="utf-8"))
+            print("  " + omake_font.apply(f, table, _extras, touched))
+            print("  " + syscard_screen.apply(f, touched))  # 구형 카드 안내 화면 한글 띠(코드 훅 + rel 25~27 자료)
         if want("battle"):
             print("  전투 데이터:", battle.apply(f, table, touched))
         if want("band"):
@@ -572,46 +610,79 @@ def _build(edits_path, iso: Path, cue: Path):
             print("  " + boxpack.apply_msg1_relocation(f, touched))
         translated_ids = {int(p.stem[3:]) for p in translate.M.SCRIPT_DIR.glob("scn*.json")}
         # 나레이션 게이트는 번역 여부와 무관하게 건다(아직 번역 전인 씬도 자막은 원문으로 나온다)
-        narr_ids = set(narration_gates.SITES) if want("narr") else set()
+        narr_ids = set(narration_gates.SITES) | set(narration_gates.ALWAYS) if want("narr") else set()
         n_gates = 0
+        n_gwin = 0
+        n_sched = 0
+        sched_ids = voice_sched.scene_ids() if want("narr") else set()
         n_msgs = 0
+        n_dyn = 0
+        n_dyn_blocks = 0
         for rel, c in sorted(by_rel.items()) if want("scn") else []:
             hit = {k for k in edits if k[0] == rel} or {b["id"] for b in c["blocks"]} & (
-                translated_ids | narr_ids
+                translated_ids | narr_ids | {int(x) for x in gwin_rt.build_specs()} | sched_ids
             )
             if not hit:
                 continue
             entries = []
             for b in c["blocks"]:
                 blk = b["data"]
+                dyn: list[str] = []
                 if b["id"] in translated_ids:
-                    blk, n = translate.translate_block(b["id"], blk, table)
+                    btab, dyn = glyphdyn.block_table(table, b["id"])
+                    blk, n = translate.translate_block(b["id"], blk, btab)
                     n_msgs += n
                 if (rel, b["id"]) in edits:
                     blk = apply_edits(blk, edits[(rel, b["id"])], f"rel {rel} id {b['id']}")
                 if b["id"] in narr_ids:
                     blk, n = narration_gates.patch_block(b["id"], blk)
                     n_gates += n
+                if b["id"] in sched_ids:  # 음성 장면 — ON 이어도 OFF 흐름 + 음성 + 전역 시각표(voice_sched)
+                    blk, n = voice_sched.patch_block(b["id"], b["data"], blk)
+                    n_sched += n
+                if want("narr") and str(b["id"]) in gwin_rt.build_specs():  # 월드를 안 멈추는 대사창 모양 자막(장면 2 인사)
+                    blk, n = gwin_rt.patch_block(b["id"], blk)
+                    n_gwin += n
+                if dyn:  # 동적 글리프 — 머리 점프를 꼬리 스텁으로(블록 열림 훅)
+                    blk = glyphdyn.attach(blk, dyn)
+                    n_dyn += len(dyn)
+                    n_dyn_blocks += 1
                 if blk != b["data"]:
                     intended[(rel, b["id"])] = blk
                 entries.append((b["id"], blk))
             orig = common.track_data(rel, slot_of[rel])
             data = assemble(entries, orig, f"rel {rel}")
             slot = slot_of[rel] * common.USER
-            assert len(data) == slot, f"컨테이너 rel {rel}: {len(data)}B ≠ 칸 {slot}B"
-            lba = common.T2_SECTOR + rel
-            mode1.write_user_data(f, lba, data, label=f"container rel {rel}", expect=orig)
-            touched.append((lba, slot_of[rel]))
-            moved = sum(1 for a, b in zip(data, orig, strict=True) if a != b)
-            print(
-                f"  컨테이너 rel {rel}: {len(entries)}블록 · 자리 보존 · 바뀐 바이트 {moved}/{slot}"
-            )
-    print(f"  번역 메시지 {n_msgs}건(컨테이너마다 다시 셈) · 글리프 {len(chars)}자")
+            data_raw = data
+            if len(data) <= slot:  # 제자리 — 남는 칸은 0
+                data += b"\0" * (slot - len(data))
+                at_rel, n_sec, expect = rel, slot_of[rel], orig
+            else:  # 🔴 총량이 칸을 넘는다 (넘침 {len(data)-slot}B) → 트랙 끝 빈 구간으로 이사(참조표 항목은 아래서 고친다)
+                n_sec = -(-len(data) // common.USER)
+                data += b"\0" * (n_sec * common.USER - len(data))
+                at_rel = free_pool.alloc(n_sec)
+                expect = b"\0" * len(data)
+                moves[rel] = (at_rel, n_sec)
+                for k in [k for k in intended if k[0] == rel]:
+                    intended[(at_rel, k[1])] = intended.pop(k)
+            need = len(data_raw)
+            lba = common.T2_SECTOR + at_rel
+            mode1.write_user_data(f, lba, data, label=f"container rel {at_rel}", expect=expect)
+            touched.append((lba, n_sec))
+            moved = sum(1 for a, b in zip(data, orig, strict=False) if a != b)
+            where = f"→ rel {at_rel}({n_sec}섹터, 총량 {need}B/{slot}B) 이사" if at_rel != rel else "제자리"
+            print(f"  컨테이너 rel {rel}: {len(entries)}블록 · 다시 깖 · {where} · 바뀐 바이트 {moved}/{slot}")
+        if moves:
+            print("  " + patch_ref_table(f, refs, moves, touched))
+    print(f"  번역 메시지 {n_msgs}건(컨테이너마다 다시 셈) · 상주 글리프 {len(chars)}자 · 동적 글리프 블록 {n_dyn_blocks}건(컨테이너마다 다시 셈, 글자 {n_dyn}자)")
     if want("narr") and want("scn"):
-        print(f"  나레이션 게이트 자막 {n_gates}곳(컨테이너마다 다시 셈)")
+        print(f"  나레이션 게이트 자막 {n_gates}곳 · 음성 장면 시각표 게이트 {n_sched}곳 · 대사창 모양 자막 {n_gwin}곳(컨테이너마다 다시 셈)")
     print(f"  덮어쓰기 없음 (쓰기 구간 {ledger.verify(iso)})")
     verify_immutable(iso, touched)
-    verify_readback(iso, intended, found)
+    verify_readback(iso, intended, found, moves)
+    if want("sys"):
+        print("  오마케 그림 되읽기 OK — " + omake_art.verify_iso(iso))
+        print("  " + syscard_screen.verify_iso(iso))
     if want("battle"):
         print(f"  전투 컨테이너 되읽기 OK (블록 {battle.verify(iso, table)})")
     bad = mode1.selftest(
@@ -654,7 +725,7 @@ def verify_immutable(iso: Path, touched: list[tuple[int, int]]):
     print(f"  무변경 대조 OK (허용 {len(allowed)}섹터 밖 동일)")
 
 
-def verify_readback(iso: Path, intended, found_orig):
+def verify_readback(iso: Path, intended, found_orig, moves=None):
     data = iso.read_bytes()
     track = b"".join(
         data[
@@ -666,8 +737,23 @@ def verify_readback(iso: Path, intended, found_orig):
         for r in range(common.T2_LEN)
     )
     got = containers.scan(track)
-    if [c["rel"] for c in got] != [c["rel"] for c in found_orig]:
+    moves = moves or {}
+    want = sorted([c["rel"] for c in found_orig] + [v[0] for v in moves.values()])
+    if [c["rel"] for c in got] != want:
         raise BuildError("되읽기: 컨테이너 목록이 달라졌다")
+    # 참조표가 가리키는 (rel, 섹터수) 가 전부 스캔된 컨테이너고, 이사한 건 새 자리를 가리키나
+    b42 = track[containers.REF_BANK_REL * common.USER :][: 4 * common.USER]
+    out_refs = []
+    for i in range(containers.REF_ENTRIES):
+        e = b42[containers.REF_TABLE_OFF + 3 * i :][:3]
+        out_refs.append((containers.REC_BASE + (e[0] | e[1] << 8), e[2]))
+    in_refs = containers.referenced()
+    for (r0, n0), (r1, n1) in zip(in_refs, out_refs, strict=True):
+        if (r1, n1) != moves.get(r0, (r0, n0)):
+            raise BuildError(f"되읽기: 참조표 {(r0, n0)} → {(r1, n1)} 가 의도와 다르다")
+    scanned = {c["rel"] for c in got}
+    if {r for r, _ in out_refs} - scanned:
+        raise BuildError("되읽기: 참조표가 컨테이너가 아닌 곳을 가리킨다")
     blocks = {(c["rel"], b["id"]): b["data"] for c in got for b in c["blocks"]}
     for k, blk in intended.items():
         if blocks.get(k) != blk:

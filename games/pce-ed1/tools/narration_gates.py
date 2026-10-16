@@ -32,6 +32,7 @@ import re
 from pathlib import Path
 
 import common
+import hook
 from hook import Asm
 
 BASE = 0xA000  # 씬 블록 적재 주소(블록 오프셋 = 주소 - BASE)
@@ -44,11 +45,14 @@ MSG = re.compile(
     re.DOTALL,
 )
 
+TERM_BYTES = (0, 6, 7)  # 메시지 종료 바이트(messages.TERM)
 TIMER_AT = re.compile(rb"\xa2(.)\xa0(.)\x20\xd7\x5b", re.DOTALL)  # LDX #lo · LDY #hi · JSR $5BD7
 SHOW_5B_TAILS = (b"\x20\x5b\x5b", b"\x4c\x06\x5b")  # 나머지(JSR $5B76 · JMP $5B0B)는 $5B76 꼴
 SHOW_76, SHOW_5B = 0x5B76, 0x5B5B  # 메시지 표시 — `$10/$11` = 메시지 주소
 WAIT_FRAMES = 0x5BD7  # 게임의 코루틴 대기(X+Y×256 프레임, 0 이면 65536)
-CLOCK_F, CLOCK_S = 0xC1B2, 0xC1B3  # 플레이 시간: 초 안 프레임(0~59) · 초(하위 바이트)
+CLOCK_F, CLOCK_S = 0xC1B2, 0xC1B3  # 플레이 시간: 초 안 프레임(0~59) · 초(하위 바이트) — ⚠ 장면 연출 중엔 멈춘다(10-12 실측). 시간은 프레임 카운터(`FRAMECNT`)로 잰다
+FRAMECNT = hook.FRAMECNT  # IRQ1 트램펄린이 매 VBlank 에 올리는 16비트 카운터(하위·상위) — `inst` 가 처음 쓸 때 RAM 에서 꽂는다
+TICK_ADDR, IRQ_SITE = hook.TICK_ADDR, hook.IRQ_SITE
 RES_ORG = 0x9E56  # 상주부 — 뱅크 0x6B 꼬리 FF 패딩 `$9E56~$9FFF`(426B)
 RES_END = 0xA000
 # 🔴 뱅크 0x6A 꼬리 FF 24B(`$6B5C`)는 쓰지 않는다 — 게임이 실행 중에 쓰는 버퍼였다(10-06 실측: 부팅 뒤 RAM 에
@@ -62,10 +66,11 @@ PAT = (
     (7, 0x11),
 )  # 메시지 적재 꼴(빌드가 찾는다)
 FLAG_PAGE2 = 0x01  # 인라인 플래그 — OFF 메시지의 첫 쪽 넘김(05) 다음부터 띄운다
+FLAG_VOICE0 = 0x02  # 인라인 플래그 — 쪽 마감 표의 0 을 **음성 재생이 실제로 시작된 때**(`PLAYSTART`)에 묶는다. 아직 안 시작했으면 시작을 기다린 뒤 창을 연다
 # ── ON 자동 넘김(마스터 10-06 「on 일 때는 음성에 맞춰 자동으로 넘어가고」) ──────────────────────
 # 대사 엔진(뱅크 0x6C)의 쪽 대기 루프는 매 프레임 `LDA $CF1A`(버튼) · `AND #$60` 으로 넘길지 정한다.
 # 그 `LDA $CF1A` 넷을 같은 길이의 `JSR AUTO_ORG` 로 바꾸고, 자막 모드(`AUTO_FLAG`)일 때 플레이 시계가
-# **지금 쪽의 마감**(`AUTO_TS`·`AUTO_TF`)을 넘으면 버튼 값(`$20`)을 돌려준다 — 그 밖의 메시지는 원래 그대로.
+# **지금 쪽의 마감**(`AUTO_TL`·`AUTO_TH`)을 넘으면 버튼 값(`$20`)을 돌려준다 — 그 밖의 메시지는 원래 그대로.
 # 마감은 쪽마다 **메시지 바이트 수**(글자 2B · 줄바꿈 등 제어 1B — 사실상 글자 수)에 비례해 원래 타이머를
 # 나눈다(마지막 쪽 = 타이머 끝). 쪽이 넘어갈 때마다(자동이든 손이든) 훅이 MPR4 에 뱅크 0x6B 를 잠깐 걸어 상주부 `npage` 로
 # 다음 쪽 마감을 구한다 — 진행 상태는 상주부 자기 뱅크에 두고, 훅 쪽엔 표시·마감 3B 만 둔다.
@@ -77,12 +82,13 @@ AUTO_ORG = (
 )
 AUTO_END = 0x6000
 AUTO_SITES = (0x6BB3, 0x6BE6, 0x6C35, 0x6D38)  # 뱅크 0x6C — 쪽 대기 · 끝 대기의 `LDA $CF1A`
-AUTO_FLAG, AUTO_TS, AUTO_TF = (
+AUTO_FLAG, AUTO_TL, AUTO_TH = (
     0x5FFD,
     0x5FFE,
     0x5FFF,
-)  # 훅 뒤 3B — 자막 모드 · 지금 쪽 마감 (초, 프레임)
+)  # 훅 뒤 3B — 자막 모드 · 지금 쪽 마감(프레임 카운터 값, 하위·상위)
 PAD = 0xCF1A  # 버튼 트리거
+SPEED = 0xC051  # 글자 찍는 속도(0~3 → 글자당 1·3·5·0 프레임, 표 `$5B8A`) — 3 = 즉시
 
 
 # 씬 → {게이트 순번(블록 안 `LDA $C04C` 의 몇 번째인가): 규칙}. 순번은 번역해도 안 바뀐다(코드는
@@ -130,6 +136,59 @@ SITES: dict[int, dict[int, str]] = {
 }
 
 
+# 장면 2: 음성 호출은 원판 그대로 두되, 호출 자리에서 **재생 시작을 기다리는 틱을 건다**(`VOICE_ARM`·`PLAYSTART`). 소리가 실제로 나기 시작하는 시각은 환경마다 다르다
+# (이 에뮬은 호출 뒤 0.65초, 마스터 환경은 의자에 앉은 뒤 — 10-13). 설교 창은 `FLAG_VOICE0` 로 표의 0 을 그 시작에 묶는다(없으면 늦게 뜬다).
+VOICE0 = {2}
+GREET_VOICE = re.compile(rb"\x20\x15\x58....", re.DOTALL)  # 음성 호출(JSR $5815 + 인라인 4B) — 이 장면엔 하나
+
+
+GREET_END = {2: 9.35}  # 인사 창이 닫히는 때(음성 시작 기준 초) = 설교 창이 열리는 때(실측: 음성 9초부터 설교 문안, 에뮬 10-13)
+
+
+def _voice0_stub(sid: int, out: bytearray, sermon_load: bytes, sermon_tab: int) -> bytes:
+    """장면 2 게이트 자리 스텁 — 인사 창(음성 호출 바로 앞의 메시지 적재)을 음성 시작~`GREET_END` 초 동안, 이어 설교 창을 띄운다. 반환: `JSR` 피연산자 2B.
+    상주부 호출은 인라인 4B 뒤에 `BRA +11`(건너뜀) · 메시지 적재 11B 를 두는 원래 꼴 그대로(거리 7)."""
+    call = GREET_VOICE.search(bytes(out))
+    if not call:
+        raise GateError(f"scn{sid:03d}: 음성 호출이 없다")
+    ms = [m for m in MSG.finditer(bytes(out), 0, call.start()) if m.end() == call.start()]
+    if not ms:
+        raise GateError(f"scn{sid:03d}: 음성 호출 바로 앞에 인사 메시지가 없다")
+    gload = ms[0].group(0)
+    addr = (gload[1] | gload[5] << 8) - BASE
+    gtab = page_table(bytes(out[addr : addr + 0x400]), 0, False, [GREET_END[sid]])
+    gtab_at = BASE + len(out)
+    out += gtab
+    stub_at = BASE + len(out)
+
+    def call_entry(tab_at: int, load: bytes) -> bytes:
+        return bytes([0x20, ENTRY & 0xFF, ENTRY >> 8, 7, tab_at & 0xFF, tab_at >> 8, FLAG_VOICE0, 0x80, 11]) + load
+
+    out += call_entry(gtab_at, gload) + call_entry(sermon_tab, sermon_load) + b"\x60"
+    if len(out) > 0x2000:
+        raise GateError(f"scn{sid:03d}: 인사 스텁을 붙이면 블록이 뱅크(8KB)를 넘는다")
+    return stub_at.to_bytes(2, "little")
+
+
+def _patch_greet(sid: int, out: bytearray) -> None:
+    ms = list(GREET_VOICE.finditer(bytes(out)))
+    if len(ms) != 1:
+        raise GateError(f"scn{sid:03d}: 음성 호출이 {len(ms)}곳(하나여야)")
+    m = ms[0]
+    c, ps, arm = FRAMECNT, hook.PLAYSTART, hook.VOICE_ARM
+    stub_at = BASE + len(out)
+    inst = _resident_asm().labels["inst"]
+    out += bytes(
+        [0x20, inst & 0xFF, inst >> 8]  # JSR inst — 틱 트램펄린이 아직 없으면 건다
+        + [0xA9, 1, 0x8D, arm & 0xFF, arm >> 8]  # LDA #1 · STA arm
+        + [0xAD, c & 0xFF, c >> 8, 0x8D, ps & 0xFF, ps >> 8]  # PLAYSTART = 호출 때 카운터(재생 시작이 안 보일 때 값)
+        + [0xAD, (c + 1) & 0xFF, (c + 1) >> 8, 0x8D, (ps + 1) & 0xFF, (ps + 1) >> 8]
+    ) + bytes(out[m.start() : m.start() + 7]) + b"\x60"  # 음성 호출 · RTS
+    if len(out) > 0x2000:
+        raise GateError(f"scn{sid:03d}: 음성 스텁을 붙이면 블록이 뱅크(8KB)를 넘는다")
+    out[m.start() : m.start() + 7] = b"\x20" + stub_at.to_bytes(2, "little") + b"\xea" * 4
+
+
 FPS = 59.826  # PCE 프레임/초
 SEC_PER_SECTOR = 2048 * 2 / 16000  # 음성 1섹터 = 2048B × 2니블 ÷ 16000Hz
 SYNC_TOL = 1.5  # 초 — 음성 길이와 자막 시간이 이 안이면 맞는 것(마스터 10-08)
@@ -141,6 +200,10 @@ OPEN_RUNS: dict[int, str] = {
     6: "마지막 게이트(+0x29f)가 skip — ON 경로가 `$5EC9`(객체 생성 연산)만 하고 메시지를 건너뛴다. 남은 50초 낭독 자막이 없다",
 }
 
+# 설정과 무관하게 음성이 나가는 장면(게이트 없음) — 첫 음성 호출 바로 뒤 타이머에 자막을 건다. 장면 224 = 종장 최종보스 아그니쟈의 독백(첫 방문은
+# 음성만, 다시 오면 같은 문안을 창으로 띄운다). 장면 2 라이아스는 SITES 의 raias 규칙이 맡는다.
+ALWAYS: dict[int, str] = {224: "voice_then_msg"}
+ALWAYS_REACH = 0x40
 PRE_MAX = 10  # single_pre: OFF 경로 메시지 앞 연출 호출의 최대 길이
 
 
@@ -237,17 +300,39 @@ def _resident_asm() -> Asm:
     a.op("STA", "abs", "cand")
     a.op("INY")
     a.op("LDA", "izpy", 0x10)
-    a.op("STA", "abs", "rem")
+    a.op("STA", "abs", "tl")
     a.op("INY")
     a.op("LDA", "izpy", 0x10)
-    a.op("STA", "abs", "rem1")
+    a.op("STA", "abs", "th")
     a.op("INY")
     a.op("LDA", "izpy", 0x10)
     a.op("STA", "abs", "mode")
-    a.op("LDA", "abs", CLOCK_F)
-    a.op("STA", "abs", "f0")
-    a.op("LDA", "abs", CLOCK_S)
-    a.op("STA", "abs", "s0")
+    a.op("JSR", "abs", "inst")
+    a.op("LDA", "abs", FRAMECNT)
+    a.op("STA", "abs", "b0")
+    a.op("LDA", "abs", FRAMECNT + 1)
+    a.op("STA", "abs", "b1")
+    a.op("LDA", "abs", "mode")
+    a.op("AND", "imm", FLAG_VOICE0)
+    a.op("BEQ", "rel", "b0ok")
+    a.label("vw")  # 음성 재생 시작 대기 — 틱이 `VOICE_ARM` 을 내리면 시작한 것. 8.5초(상위 바이트 차 2)를 넘기면 호출 때 값으로 간다
+    a.op("LDA", "abs", hook.VOICE_ARM)
+    a.op("BEQ", "rel", "have")
+    a.op("LDA", "abs", FRAMECNT + 1)
+    a.op("SEC")
+    a.op("SBC", "abs", hook.PLAYSTART + 1)
+    a.op("CMP", "imm", 2)
+    a.op("BCS", "rel", "have")
+    a.op("LDX", "imm", 1)
+    a.op("LDY", "imm", 0)
+    a.op("JSR", "abs", WAIT_FRAMES)
+    a.op("BRA", "rel", "vw")
+    a.label("have")
+    a.op("LDA", "abs", hook.PLAYSTART)
+    a.op("STA", "abs", "b0")
+    a.op("LDA", "abs", hook.PLAYSTART + 1)
+    a.op("STA", "abs", "b1")
+    a.label("b0ok")
     # 메시지 적재: lo = [거리+1] · hi = [거리+5] · 표시 루틴 = [거리+9](76/0B → $5B76 · 5B/06 → $5B5B)
     a.op("LDA", "abs", "cand")
     a.op("CLC")
@@ -303,13 +388,11 @@ def _resident_asm() -> Asm:
     a.op("JSR", "abs", "npage")
     a.op("BRA", "rel", "rest")
     a.label("wl")
-    a.op("LDA", "abs", CLOCK_S)
+    a.op("LDA", "abs", FRAMECNT)  # 카운터 ≥ 마감(cl·ch) 이면 끝
     a.op("SEC")
-    a.op("SBC", "abs", "cs")
-    a.op("BMI", "rel", "more")
-    a.op("BNE", "rel", "done")
-    a.op("LDA", "abs", CLOCK_F)
-    a.op("CMP", "abs", "cf")
+    a.op("SBC", "abs", "cl")
+    a.op("LDA", "abs", FRAMECNT + 1)
+    a.op("SBC", "abs", "ch")
     a.op("BCS", "rel", "done")
     a.label("more")
     a.op("LDX", "imm", 1)
@@ -317,125 +400,112 @@ def _resident_asm() -> Asm:
     a.op("JSR", "abs", WAIT_FRAMES)
     a.op("BRA", "rel", "wl")
     a.label("done")
+    a.op("STZ", "abs", hook.VOICE_ARM)  # 재생 시작 대기 끝(못 봤어도)
+    a.op("LDA", "abs", "old51")  # 글자 찍는 속도를 설정대로
+    a.op("STA", "abs", SPEED)
     a.op("RTS")
     _prep(a)
-    for v in ("rem", "rem1", "W", "W1", "r0", "r1", "cs", "cf", "pl", "ph", "fin",
-              "f0", "s0", "mode", "cand", "kind"):  # fmt: skip
+    a.label("glob")  # 전역 시각표가 켜졌나 — 0 으로 두고 굽는다(패딩 FF 면 부팅하자마자 켜진 걸로 읽힌다)
+    a.data(b"\x00")
+    for v in ("tl", "th", "n", "cl", "ch", "fin", "b0", "b1", "mode", "cand", "kind", "old51"):  # fmt: skip
         a.label(v)
         a.data(b"\xff")  # 패딩 값 그대로 — 쓰기 전에 늘 채운다
     return a
 
 
 def _prep(a: Asm) -> None:
-    """자막 모드 준비. 들어올 때: $10/$11 = 메시지, f0·s0 = 시작 시각, rem·rem1 = 원래 타이머 T.
-    W = 메시지 바이트 수(끝 00·06·07 까지). 첫 쪽 마감을 `npage` 로 구하고 켠다.
-    `npage` 는 한 쪽을 걸으며 바이트마다 acc += T, acc ≥ W 인 동안 acc -= W 하고 시계를 한 프레임
-    민다 — 곱셈·나눗셈 없이 쪽 마감 = 시작 + T·누적/W. 끝(00)에 닿으면 cs·cf = 시작 + T."""
+    """자막 모드 준비. 들어올 때: b0·b1 = 시작 프레임 카운터, tl·th = 쪽 마감 표(블록 꼬리), $10/$11 = 메시지.
+    표 = `n` 쪽 수 + 쪽마다 프레임 거리(16비트) — **창이 열린 시각에서 그 쪽이 끝나는 때까지**의 거리. 마지막 쪽 = 원래 타이머(음성 끝).
+    표는 빌드가 만든다(`page_table`) — 쪽 나눔은 나레이션 OFF 때 대사창 그대로, 시각은 음성 박자(마스터 10-12).
+    `npage` 는 표에서 다음 쪽 마감을 꺼내 AUTO_TL·AUTO_TH 와 cl·ch 에 쓴다 — 훅이 쪽이 넘어갈 때마다 부른다.
+    쪽 글자는 설정과 무관하게 **즉시** 찍는다(`$C051` = 3 — 글자 찍는 속도 표 `$5B8A` 의 0프레임 칸, 끝나면 되돌린다)."""
+    # sched: 전역 시각표(장면 한 토막 전체 — 여러 메시지의 모든 쪽) 시작. A=표 주소 하위 · X=상위. 지금부터 쪽마다 표의 시각(음성 시작에서 잰다)에
+    # 자동으로 넘긴다 — 메시지 사이의 월드 시간(연출)은 그대로 흐르고, 늦으면 밀린 만큼 빨리 넘어간다. 표를 다 쓴 뒤 마지막 쪽이 넘어가면 스스로 끈다
+    a.label("sched")  # = prep 앞에 기준 시각·전역 표시를 더한 것(코드가 같아 prep 으로 흘려 보낸다 — 상주부 자리가 빠듯하다)
+    a.op("STA", "abs", "tl")
+    a.op("STX", "abs", "th")
+    a.op("JSR", "abs", "inst")
+    a.op("LDA", "abs", FRAMECNT)
+    a.op("STA", "abs", "b0")
+    a.op("LDA", "abs", FRAMECNT + 1)
+    a.op("STA", "abs", "b1")
+    a.op("LDA", "imm", 1)
+    a.op("STA", "abs", "glob")
     a.label("prep")
-    a.op("STZ", "abs", "W")
-    a.op("STZ", "abs", "W1")
-    a.op("LDA", "zp", 0x10)
+    a.op("LDA", "abs", SPEED)
+    a.op("STA", "abs", "old51")
+    a.op("LDA", "imm", 3)
+    a.op("STA", "abs", SPEED)
+    a.op("LDA", "abs", "tl")
     a.op("STA", "zp", 0xEC)
-    a.op("STA", "abs", "pl")
-    a.op("LDA", "zp", 0x11)
+    a.op("LDA", "abs", "th")
     a.op("STA", "zp", 0xED)
-    a.op("STA", "abs", "ph")
-    a.op("LDY", "imm", 0)
-    a.label("p1")  # W = 끝(00)까지의 바이트 수
-    a.op("INC", "abs", "W")
-    a.op("BNE", "rel", "p1a")
-    a.op("INC", "abs", "W1")
-    a.label("p1a")
-    a.op("LDA", "izpy", 0xEC)
-    a.op("BEQ", "rel", "p1end")
-    a.op(
-        "CMP", "imm", 6
-    )  # 종료 바이트는 00·06·07 셋이다(messages.TERM) — 06/07 뒤는 다음 메시지라 셀 때 끊는다
-    a.op("BEQ", "rel", "p1end")
-    a.op("CMP", "imm", 7)
-    a.op("BEQ", "rel", "p1end")
-    a.op("INY")
+    a.op("LDA", "izp", 0xEC)  # 표 머리 = 쪽 수
+    a.op("STA", "abs", "n")
+    a.op("INC", "abs", "tl")
     a.op("BNE", "rel", "p1")
-    a.op("INC", "zp", 0xED)
-    a.op("BRA", "rel", "p1")
-    a.label("p1end")
-    a.op("STZ", "abs", "r0")
-    a.op("STZ", "abs", "r1")
+    a.op("INC", "abs", "th")
+    a.label("p1")
     a.op("STZ", "abs", "fin")
-    a.op("LDA", "abs", "s0")
-    a.op("STA", "abs", "cs")
-    a.op("LDA", "abs", "f0")
-    a.op("STA", "abs", "cf")
     a.op("JSR", "abs", "npage")
     a.op("LDA", "imm", 1)
     a.op("STA", "abs", AUTO_FLAG)
     a.op("RTS")
-    # next: 한 쪽을 걷고 그 쪽 마감을 AUTO_TS·AUTO_TF 에. 훅이 쪽이 넘어갈 때마다 부른다
+    # next: 표에서 한 쪽 마감을 꺼내 AUTO_TS·AUTO_TF 에. 마지막 쪽까지 꺼내면 fin
     a.label("npage")
     a.op("LDA", "abs", "fin")
     a.op("BEQ", "rel", "ngo")
-    a.op("RTS")  # 끝까지 걸었다
+    a.op("LDA", "abs", "glob")  # 끝까지 꺼냈다 — 전역 시각표면 마지막 쪽이 넘어간 지금 자막 모드를 끝낸다
+    a.op("BEQ", "rel", "nret")
+    a.op("STZ", "abs", "glob")
+    a.op("STZ", "abs", AUTO_FLAG)
+    a.op("LDA", "abs", "old51")
+    a.op("STA", "abs", SPEED)
+    a.label("nret")
+    a.op("RTS")
     a.label("ngo")
-    a.op("LDA", "abs", "pl")
+    a.op("LDA", "abs", "tl")
     a.op("STA", "zp", 0xEC)
-    a.op("LDA", "abs", "ph")
+    a.op("LDA", "abs", "th")
     a.op("STA", "zp", 0xED)
     a.op("LDY", "imm", 0)
-    a.label("p2")
-    a.op("CLC")  # 바이트마다 acc += T
-    a.op("LDA", "abs", "r0")
-    a.op("ADC", "abs", "rem")
-    a.op("STA", "abs", "r0")
-    a.op("LDA", "abs", "r1")
-    a.op("ADC", "abs", "rem1")
-    a.op("STA", "abs", "r1")
-    a.label("div")  # acc ≥ W 인 동안 acc -= W, 시계 +1 프레임
-    a.op("LDA", "abs", "r0")
-    a.op("SEC")
-    a.op("SBC", "abs", "W")
-    a.op("PHA")
-    a.op("LDA", "abs", "r1")
-    a.op("SBC", "abs", "W1")
-    a.op("BCC", "rel", "dend")
-    a.op("STA", "abs", "r1")
-    a.op("PLA")
-    a.op("STA", "abs", "r0")
-    a.op("INC", "abs", "cf")
-    a.op("LDA", "abs", "cf")
-    a.op("CMP", "imm", 60)
-    a.op("BNE", "rel", "div")
-    a.op("STZ", "abs", "cf")
-    a.op("INC", "abs", "cs")
-    a.op("BRA", "rel", "div")
-    a.label("dend")
-    a.op("PLA")
-    a.op("LDA", "izpy", 0xEC)
-    a.op("BEQ", "rel", "last")
-    a.op("CMP", "imm", 6)
-    a.op("BEQ", "rel", "last")
-    a.op("CMP", "imm", 7)
-    a.op("BEQ", "rel", "last")
-    a.op("CMP", "imm", 5)
-    a.op("BEQ", "rel", "brk")
-    a.op("INY")
-    a.op("BNE", "rel", "p2")
-    a.op("INC", "zp", 0xED)
-    a.op("BRA", "rel", "p2")
-    a.label("last")
-    a.op("INC", "abs", "fin")
-    a.label("brk")  # 05 다음으로 위치를 옮겨 두고 마감을 내준다
-    a.op("INY")
-    a.op("TYA")
+    a.op("LDA", "izpy", 0xEC)  # 마감 = 기준 + 표의 프레임 거리(16비트)
     a.op("CLC")
-    a.op("ADC", "zp", 0xEC)
-    a.op("STA", "abs", "pl")
-    a.op("LDA", "zp", 0xED)
-    a.op("ADC", "imm", 0)
-    a.op("STA", "abs", "ph")
-    a.op("LDA", "abs", "cs")
-    a.op("STA", "abs", AUTO_TS)
-    a.op("LDA", "abs", "cf")
-    a.op("STA", "abs", AUTO_TF)
+    a.op("ADC", "abs", "b0")
+    a.op("STA", "abs", "cl")
+    a.op("INY")
+    a.op("LDA", "izpy", 0xEC)
+    a.op("ADC", "abs", "b1")
+    a.op("STA", "abs", "ch")
+    a.op("LDA", "abs", "tl")
+    a.op("CLC")
+    a.op("ADC", "imm", 2)
+    a.op("STA", "abs", "tl")
+    a.op("BCC", "rel", "nt")
+    a.op("INC", "abs", "th")
+    a.label("nt")
+    a.op("DEC", "abs", "n")
+    a.op("BNE", "rel", "no")
+    a.op("INC", "abs", "fin")
+    a.label("no")
+    a.op("LDA", "abs", "cl")
+    a.op("STA", "abs", AUTO_TL)
+    a.op("LDA", "abs", "ch")
+    a.op("STA", "abs", AUTO_TH)
+    a.op("RTS")
+    # inst: IRQ1 핸들러의 `JSR $57A5`(`IRQ_SITE`)을 프레임 카운터 트램펄린으로 바꿔 끼운다 — 이미 바꿨으면 그대로. 읽기·쓰기 사이 IRQ 가 못 끼게 SEI.
+    a.label("inst")
+    a.op("LDA", "abs", IRQ_SITE + 1)
+    a.op("CMP", "imm", hook.IRQ_ORIG & 0xFF)  # 원래 `20 A5 57` — 하위가 다르면 이미 바꿨다
+    a.op("BNE", "rel", "inst1")
+    a.op("PHP")
+    a.op("SEI")
+    a.op("LDA", "imm", TICK_ADDR & 0xFF)
+    a.op("STA", "abs", IRQ_SITE + 1)
+    a.op("LDA", "imm", TICK_ADDR >> 8)
+    a.op("STA", "abs", IRQ_SITE + 2)
+    a.op("PLP")
+    a.label("inst1")
     a.op("RTS")
 
 
@@ -447,13 +517,11 @@ def auto_hook() -> bytes:
     a.op("PHY")
     a.op("LDA", "abs", AUTO_FLAG)
     a.op("BEQ", "rel", "plain")
-    a.op("LDA", "abs", CLOCK_S)
+    a.op("LDA", "abs", FRAMECNT)  # 카운터 ≥ 마감 이면 누른다
     a.op("SEC")
-    a.op("SBC", "abs", AUTO_TS)
-    a.op("BMI", "rel", "plain")
-    a.op("BNE", "rel", "press")
-    a.op("LDA", "abs", CLOCK_F)
-    a.op("CMP", "abs", AUTO_TF)
+    a.op("SBC", "abs", AUTO_TL)
+    a.op("LDA", "abs", FRAMECNT + 1)
+    a.op("SBC", "abs", AUTO_TH)
     a.op("BCC", "rel", "plain")
     a.label("press")
     a.op("LDA", "imm", 0x20)
@@ -495,6 +563,7 @@ def resident() -> bytes:
 
 
 ENTRY = RES_ORG
+SCHED = _resident_asm().labels["sched"]  # 전역 시각표 시작(`LDA #하위 · LDX #상위 · JSR SCHED`)
 
 
 def find_load(b: bytes, start: int, end: int, skip: int = 0) -> int | None:
@@ -506,6 +575,37 @@ def find_load(b: bytes, start: int, end: int, skip: int = 0) -> int | None:
                 continue
             return c
     return None
+
+
+TIMING_FILE = common.GAME_DIR / "script" / "voice_timing.json"  # 마스터가 편집기에서 고친 쪽 끝 시각 — {"scn002@0x37": [초, …]}
+
+
+def timing_overrides() -> dict[str, list[float]]:
+    return json.loads(TIMING_FILE.read_text("utf-8")) if TIMING_FILE.exists() else {}
+
+
+def page_table(msg: bytes, timer: int, page2: bool = False, ends: list[float] | None = None) -> bytes:
+    """쪽 마감 표 — `[쪽 수] + 쪽마다 (초, 프레임)`, 창이 열린 시각에서 그 쪽이 끝날 때까지의 거리.
+    기본 = 메시지 바이트 수 비례(글자 2B · 제어 1B, 종료 바이트 포함): 쪽 끝 = floor(T × 누적/전체). 마지막 쪽 = T 그대로.
+    `ends`(초)가 있으면 그 값(마지막 쪽 포함 — 그 값이 곧 창이 닫히는 때). 쪽은 `05`(쪽 넘김)로 나뉜다."""
+    i = 0
+    if page2:  # 상주부가 첫 쪽 넘김(05) 다음부터 띄운다
+        i = msg.index(b"\x05") + 1
+    body = msg[i:]
+    end = next(k for k, c in enumerate(body) if c in TERM_BYTES)
+    w = end + 1
+    cuts = [k + 1 for k, c in enumerate(body[:end]) if c == 5]
+    frames = [timer * c // w for c in cuts] + [timer]
+    if ends is not None:
+        if len(ends) != len(frames):
+            raise GateError(f"voice_timing: 쪽 {len(frames)}개인데 시각 {len(ends)}개")
+        frames = [round(e * FPS) for e in ends]
+    out = bytearray([len(frames)])
+    for f in frames:
+        if not 0 <= f <= 0xFFFF:
+            raise GateError(f"쪽 마감 {f} 프레임이 16비트를 넘는다")
+        out += f.to_bytes(2, "little")
+    return bytes(out)
 
 
 def patch_block(sid: int, blk: bytes) -> tuple[bytes, int]:
@@ -554,25 +654,46 @@ def patch_block(sid: int, blk: bytes) -> tuple[bytes, int]:
                     f"scn{sid:03d} +{t.start():#x}: 늘린 타이머 {timer} 가 16비트를 넘는다"
                 )
             picks.append((t.start(), m.start(), page2, timer))
+    if sid in ALWAYS:  # 게이트가 없는 장면 — 첫 `JSR $5815` 바로 뒤 타이머, 그 뒤 첫 메시지 적재(음성 재생 뒤 이미 들은 쪽 분기가 띄우는 창)
+        v = VOICE_AT.search(bytes(b))
+        t = TIMER_AT.match(bytes(b), v.end()) if v else None
+        if not v or not t:
+            raise GateError(f"scn{sid:03d}: 음성 바로 뒤에 타이머가 없다")
+        m = MSG.search(bytes(b), t.end(), t.end() + ALWAYS_REACH)
+        if not m:
+            raise GateError(f"scn{sid:03d}: 타이머 뒤 {ALWAYS_REACH}B 안에 메시지가 없다")
+        picks.append((t.start(), m.start(), False, t.group(1)[0] | t.group(2)[0] << 8))
+    over = timing_overrides()
+    out = bytearray(b)
     for at, load, page2, timer in picks:
         dist = load - (at + 2)  # 상주부가 재는 기준 = 반환 주소(JSR 마지막 바이트, at+2)
         if not 0 < dist <= 0xF0:
             raise GateError(
                 f"scn{sid:03d} +{at:#x}: 메시지 적재까지 거리 {dist} — 인라인 한 바이트에 안 든다"
             )
-        b[at : at + 7] = bytes(
+        addr = (out[load + 1] | out[load + 5] << 8) - BASE
+        tab = page_table(bytes(out[addr : addr + 0x400]), timer, page2, over.get(f"scn{sid:03d}@{at:#x}"))
+        if len(out) + len(tab) > 0x2000:
+            raise GateError(f"scn{sid:03d}: 쪽 마감 표 {len(tab)}B 를 붙이면 블록이 뱅크(8KB)를 넘는다")
+        tab_at = BASE + len(out)
+        out += tab
+        if sid in VOICE0:  # 설교 창 앞에 인사(시녀 창 문안)를 음성 시각에 맞춰 띄운다 — 호출 자리는 스텁 하나로
+            out[at : at + 7] = b"\x20" + _voice0_stub(sid, out, bytes(out[load : load + 11]), tab_at) + b"\xea" * 4
+            continue
+        out[at : at + 7] = bytes(
             [
                 0x20,
                 ENTRY & 0xFF,
                 ENTRY >> 8,
                 dist,
-                timer & 0xFF,
-                timer >> 8,
-                FLAG_PAGE2 if page2 else 0,
+                tab_at & 0xFF,
+                tab_at >> 8,
+                (FLAG_PAGE2 if page2 else 0) | (FLAG_VOICE0 if sid in VOICE0 else 0),
             ]
         )
-    assert len(b) == len(blk)
-    return bytes(b), len(picks)
+    if sid in VOICE0:
+        _patch_greet(sid, out)
+    return bytes(out), len(picks) + (sid in VOICE0)
 
 
 def load_messages() -> dict[int, dict[int, dict]]:

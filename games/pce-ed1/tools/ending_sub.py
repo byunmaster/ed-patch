@@ -50,7 +50,7 @@ rt.IRQ_JSR_ADDR = 0x41FD  # IRQ1 핸들러의 `JSR $E063` (모듈 +0x1FD)
 rt.LOOP_JSR_ADDR = 0x404F  # 메인 루프 마지막 `JSR $414B` (+0x4F)
 rt.LOOP_TARGET = 0x414B
 rt.CODE_BANK = 0x6B
-_code_off = (staffroll.NEW_OFF + len(staffroll.build().split(b"\x1a", 1)[0]) + 1 + 0x1F) & ~0x1F
+_code_off = (staffroll.end_off() + 0x1F) & ~0x1F
 rt.CODE_OFF = _code_off  # 모듈 오프셋(= 뱅크 0x6B + (off − 0x6000))
 rt.CODE_ADDR = 0x8000 + (_code_off - 0x6000)
 rt.CODE_MAX = 0x8000 - _code_off
@@ -71,7 +71,17 @@ BOTTOM_ROW = 228
 rt.GAMEN_RELEASE = True  # 파티 장면 끝에 SAT 28.. 복사본을 지운다(opening_sub sat_flush 주석 — 소니아 목)
 rt.BAND_CENTER = True
 rt.RASTER_SAFE = True  # 그리기에서 SEI 를 안 건다 — 띠 RCR 이 늦으면 띠 윗단에 그림 타일이 비친다(마스터 캡처 2026-09-25)
-rt.WRAP_W = 7 * 32 - 2  # 띠엔 게임 스프라이트가 없어 스트립 7개를 다 쓴다(왼쪽 정렬, 마스터 2026-09-25)
+# 🔴 띠 자막 스트립 8개(256px) — 7개(224px)는 한 줄 「하늘과 바다에 독을 뿌리고 대지를 더럽혀」(246px)가 안 들어갔다
+#   (마스터 2026-10-14 「자막띠 늘리자. 오른쪽으로는 좀 초과해도 돼」). 짝(두 줄) 하나면 8칸 ≤ 장면 빈 청크 11, 슬롯은
+#   짝 3 × 8 = 24(SAT 36~59 — 오프닝 28 보다 작다). x_base 4 + 256 이라 오른쪽 끝 4px 은 화면 밖이다(글은 254px 안).
+rt.SPR_PER_PAIR = 8
+rt.EDGE_MARGIN = 8  # 240폭 장면 표시창 8..248 — 줄 끝 마침표까지 그 안에(opening_sub._natural_d)
+rt.PIC_WRAP_W = None  # 엔딩 줄 폭은 지금 그대로(WRAP_W)
+rt.X_BIAS = 8  # 240폭 장면 원점 −8 을 표에 +8 로 싣는다(opening_sub.scene_origin)
+rt.SCENE_X_NOMINAL = None  # 엔딩은 전 장면 256폭 — 장면 x_base 차이로 가운데를 옮기지 않는다
+rt.NPAIR = 3
+rt.SCENE_ENTRY = 10 + rt.NPAIR * rt.SPR_PER_PAIR  # 모듈 로드 때 7·4 로 정해진 값을 다시 계산한다
+rt.WRAP_W = 8 * 32 - 2  # 띠엔 게임 스프라이트가 없어 스트립을 다 쓴다(왼쪽 정렬, 마스터 2026-09-25)
 rt.BAND_FLOOR = 2  # 한 줄도 그림 밑변보다 2행 아래부터(띠가 좁은 장면 — 「어이구…」)
 VIS_BOTTOM = 232  # 띠의 보이는 바닥(프레임 행)
 rt.PAGE_Y_BIAS = 64  # page_y = 64 + 프레임 행 은 한 바이트를 넘는다 — 표엔 프레임 행만
@@ -112,7 +122,7 @@ def _setup():
 
     sc = json.loads(rt.SCENES.read_text(encoding="utf-8"))
     rt.DONE_FRAME = sc["done_frame"]
-    assert rt.CODE_OFF >= staffroll.NEW_OFF + len(staffroll.build().split(b"\x1a", 1)[0]) + 1
+    assert rt.CODE_OFF >= staffroll.end_off()
 
 
 def build_all():

@@ -1,0 +1,14 @@
+{
+ "_doc": "scn 27 번역 정본 — 열쇠는 messages.py key, 원문 대조는 work/derived/messages/scn027.json",
+ "messages": {
+  "9c8c18073fdbf0c6": {
+   "t": "외출하십니까?"
+  },
+  "472965a0239b030e": {
+   "t": "다녀오셨습니까."
+  },
+  "8f1d6d07ca2f74fa": {
+   "t": "아, 왕자님."
+  }
+ }
+}

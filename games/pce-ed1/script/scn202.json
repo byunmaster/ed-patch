@@ -1,0 +1,20 @@
+{
+ "_doc": "scn 202 번역 정본 — 열쇠는 messages.py key, 원문 대조는 work/derived/messages/scn202.json",
+ "messages": {
+  "1cafb49c069b52b5": {
+   "t": "앗, 뒤는 부탁한다."
+  },
+  "10cf7ed6ebc6ae2c": {
+   "t": "히익, 살려 줘."
+  },
+  "ec4f26caabf6f9c4": {
+   "t": "우왓, 이거 강해 보이는데."
+  },
+  "c9d90e739779ee62": {
+   "t": "이런 놈들 별것 아니라고."
+  },
+  "d25b00c949758de9": {
+   "t": "자, 기합 넣고 가자고!!"
+  }
+ }
+}

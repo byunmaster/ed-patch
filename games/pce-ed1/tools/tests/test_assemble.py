@@ -60,14 +60,23 @@ class Assemble(unittest.TestCase):
         with self.assertRaises(build.BuildError):
             build.assemble([(0, b"x" * 0x2001)], b"\0" * 0x2000, "t")
 
-    def test_원래_슬롯을_넘치면_죽는다(self):
-        """🔴 자리 보존이 계약이다 — 슬롯을 넘기면 조용히 밀지 말고 죽어야 한다."""
+    def test_슬롯을_넘쳐도_다시_깔아_담는다(self):
+        """🔴 마스터 10-11: 블록 슬롯을 지키는 옛 규칙을 풀었다 — 넘친 블록은 뒤 블록을 밀고, 디렉터리가 따라간다.
+        안 고친 블록은 원본 압축 바이트 그대로, 순서(src 오름차순)는 유지한다."""
         a = b"\x1f" + "侍女".encode("cp932") + b"\x00"
         b = b"\x4c\x10\xa0" + bytes(range(32)) + b"\x00"
         orig = synth([(0, a), (7, b)])
         big = a + "ながいながいもんく".encode("cp932") * 40 + b"\x00"
-        with self.assertRaises(build.BuildError):
-            build.assemble([(0, big), (7, b)], orig, "t")
+        out = build.assemble([(0, big), (7, b)], orig, "t")
+        ents, _ = containers.parse_dir(out[:2048])
+        self.assertLess(ents[0][1], ents[1][1])  # 순서 유지
+        for (id_, src, ln), want in zip(ents, (big, b), strict=True):
+            got, used = lz.decode(out[src:], ln)
+            self.assertEqual(got, want)
+        o_ents, _ = containers.parse_dir(orig[:2048])
+        _, osrc, oln = o_ents[1]
+        _, used = lz.decode(orig[osrc:], oln)
+        self.assertEqual(out[ents[1][1] : ents[1][1] + used], orig[osrc : osrc + used])  # 안 고친 블록 바이트 불변
 
     def test_편집은_정확히_한_번_맞아야(self):
         with self.assertRaises(build.BuildError):
