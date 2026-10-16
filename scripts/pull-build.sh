@@ -3,7 +3,7 @@
 #
 #   sh scripts/pull-build.sh          # 원격 빌드를 목록에서 고른다(space 로 여러 개)
 #   sh scripts/pull-build.sh ps1      # 걸러서 (게임·꼬리표 어느 쪽에 걸려도 된다)
-#   sh scripts/pull-build.sh --all    # 원격에 있는 것 전부
+#   sh scripts/pull-build.sh --all    # 원격에 있는 것 전부(시험용 `test-*` 칸은 늘 뺀다)
 #   sh scripts/pull-build.sh --all -j1  # 하나씩 (기본은 넷씩 동시에)
 #
 # ── 목록이 한 겹인 이유 (유저 확정 2026-08-21) ────────────────────────────────
@@ -119,6 +119,7 @@ builds() {
   | while read -r d; do
     d=${d%/}
     t=${d##*/}
+    case "$t" in test-*) continue ;; esac   # 시험용 칸은 마스터 목록에서 뺀다(꼬리표 `test-*`, 마스터 10-15)
     g=${d%/work/build/*}; g=${g##*/}      # …/games/<게임>/work/build/<꼬리표> → <게임>
     printf '%s\t%s\t%s\n' "$g" "$t" "$d"
   done | awk -F'\t' '
