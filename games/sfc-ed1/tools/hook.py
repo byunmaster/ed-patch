@@ -53,20 +53,24 @@ CALL_SITE = 0x02DE0B  # JSR $E784 → JSR $FE52
 #    `JSR $F1AD`(→ `$00:960B` DMA)를 건너뛰고 `JMP $DF74`). 쪽이 넘어가면 엔진은 칸 배열(`$0305`)만 비우고, **화면(타일맵)엔
 #    앞 쪽이 그대로 남은 채** 새 글자를 친다 — 글자마다 `$02:B07B` 가 칸 배열 전체를 타일 표(`$010C`)로 다시 바꾸지만 그걸 VRAM 에
 #    올리는 건 쪽 끝 플러시뿐이다. 원판은 글꼴 타일이 정적이라 그동안 앞 쪽이 멀쩡히 보였지만, 우리 동적 슬롯은 새 글자가 올라올
-#    때마다 **화면에 보이는 앞 쪽의 타일을 덮는다**(2026-10-12 실측: 인트로 라이아스 쪽 넘김 — 열 글자째에서 「라이아스」→「라 ㅇ 아스」,
-#    「이제」→「ㅏ제」). ⇒ 쪽의 **첫 글자를 친 직후**(`$173B`=0) 한 번 올려 앞 쪽을 지운다 — 보통 속도가 매 글자 하는 것과 같다.
-#    건너뛰는 갈래 `$02:DF56 JMP $DF74` 를 뱅크 $02 트램펄린으로 돌린다(엔진 문맥이라 DBR=0·8비트 그대로 `JSR $F1AD`).
-FLUSH_SITE = 0x02DF56
-FLUSH_SITE_ORIG = bytes([0x4C, 0x74, 0xDF])  # JMP $DF74
-FLUSH_TRAMPOLINE = 0x02FE80
-FLUSH_TRAMP_BYTES = bytes(
-    [
-        0xAD, 0x3B, 0x17,  # LDA $173B
-        0xD0, 0x03,  # BNE +3  (첫 칸이 아니면 건너뛴다)
-        0x20, 0xAD, 0xF1,  # JSR $F1AD  (칸 > $FF 가 아니라서 `$00:960B` 까지 간다)
-        0x4C, 0x74, 0xDF,  # JMP $DF74
-    ]
-)
+#    때마다 **화면에 보이는 앞 쪽의 타일을 덮는다**(2026-10-12 실측: 인트로 라이아스 쪽 넘김 — 열 글자째에서 「라이아스」→「라 ㅇ 아스」).
+# ❌ 첫 번째 해법(10-12) — **쪽의 첫 글자를 친 직후 한 번 플러시**(`$02:DF56` 트램펄린)는 앞 쪽을 지웠지만 **「빈 창 + 첫 글자」가 쪽
+#    끝 플러시까지 화면에 남았다**(마스터 10-17 「빠름이면 첫글자가 먼저 나오고 딜레이 뒤 문장이 노출, 원본은 안 그랬다」 — 5% 속도로
+#    프레임 단위 실측: 새 쪽에서 「잠」 한 글자만 뜬 채 ~6프레임). 원판은 앞 쪽이 그대로 있다가 새 쪽이 한꺼번에 뜬다. **걷었다.**
+# ✅ 지금 해법(10-17) — **쪽 지우기 직전 스냅**: `$02:E327`(`LDA $1777 / BNE` — 칸 배열을 `$10` 으로 지우는 쪽 시작 처리)의 `LDA $1777`
+#    을 `JSR $FE80`(스텁 `JSL pagesnap / LDA $1777 / RTS`)으로 돌려, 지우기 **직전** 칸 배열(= 아직 화면에 있는 앞 쪽)을 `V_PREV` 로
+#    복사한다. 슬롯 배정(`alloc`·`vwf_newslot`)이 `vwf_live` 로 `V_PREV` 의 슬롯을 건너뛰므로 새 글자가 앞 쪽 타일을 덮지 않는다.
+#    플러시가 필요 없다. (슬롯이 모자라면 `al_try` 가 한 바퀴 뒤 보호를 포기한다 — 앞 쪽 끝 글자가 잠깐 깨질 수 있다.)
+SNAP_SITE = 0x02E327
+SNAP_SITE_ORIG = bytes([0xAD, 0x77, 0x17])  # LDA $1777
+# 🔴 쪽 첫머리의 개행(10-18 전투 일괄에서 발견): 원판 개행 핸들러(`$02:DE4C`)는 `$173B` 로 줄 번호를 **나눗셈**으로 구하는데 쪽을 막 지운 뒤 값이 `$FF`(=255)
+#    라 줄 15 로 읽혀 다음 칸이 16(첫 줄 맨 끝)이 된다 → 「↵{이름}…」으로 시작하는 문안(6004 「…에게 N의 피해!」·6026)이 이름 첫 글자를 윗줄 끝에 떨군다
+#    (「로 / 우에게 39의 피해!」). 원판 가나도 같은 자리라 원판 결함이지만 한글에선 이름이 쪼개져 눈에 띈다. `LDA $173B` 를 스텁으로 돌려 `$FF` 면 0 을 준다 → 개행이 둘째 줄 머리로.
+NL_SITE = 0x02DE55
+NL_SITE_ORIG = bytes([0xAD, 0x3B, 0x17])  # LDA $173B
+NL_STUB = 0x02FE88  # LDA $173B / CMP #$FF / BNE +2 / LDA #$00 / RTS (10B)
+NL_STUB_BYTES = bytes([0xAD, 0x3B, 0x17, 0xC9, 0xFF, 0xD0, 0x02, 0xA9, 0x00, 0x60])
+SNAP_STUB = 0x02FE80  # JSL pagesnap / LDA $1777 / RTS (8B) — 원래 자리가 돌려주던 플래그(Z)를 그대로 돌려준다
 # 🔴 **글자가 들어오는 문은 둘이다**(2026-09-07 실측). `$02:DDEE` 가 사전 버퍼가 켜져 있으면
 # 대본 대신 **버퍼**에서 한 바이트를 집어 같은 `$173A` 로 보낸다:
 #     $DDF9  LDA $174C,X / CMP #$FF / BNE $DE0E     ← 두 번째 문
@@ -997,6 +1001,32 @@ def build_payload(
         a.plb()
         a.plp()
         a.rtl()
+
+    # ── 쪽 지우기 직전 스냅 ($02:E327 → JSR $FE80 → JSL 여기) ─────────────────────────
+    # `$1777`≠0 이면 엔진이 안 지우니 복사하지 않는다. 진입은 8비트(엔진 `SEP #$30`), 돌아갈 땐 상태를 그대로.
+    a.label("pagesnap")
+    if vwf:
+        a.php()
+        a.rep(imm=0x30)
+        a.pha()
+        a.phx()
+        a.sep(imm=0x20)
+        a.op("lda", addr=0x001777, mode="long")
+        a.bne(label="ps_done")
+        a.rep(imm=0x10)
+        a.ldx(imm=0x0000, m16=True)
+        a.label("ps_l")
+        a.op("lda", addr=CELL_BASE, mode="longx")
+        a.op("sta", addr=kv["V_PREV"], mode="longx")
+        a.inx()
+        a.cpx(imm=68, m16=True)
+        a.bne(label="ps_l")
+        a.label("ps_done")
+        a.rep(imm=0x30)
+        a.plx()
+        a.pla()
+        a.plp()
+    a.rtl()
 
     # ── 13칸 고정 문자열 한 줄 (전투 커맨드·파티 이름) ─────────────────────────────
     # A4 값(`$02:ADD7`, 목적지 `$030F`)도 같은 꼴 — 목적지만 다르다.
@@ -1957,14 +1987,25 @@ def apply(
     # 1. 트램펄린: JSL 훅 + RTS (원본 JSR 과 자리를 맞춘다)
     t = common.snes2off(TRAMPOLINE)
     out[t : t + 5] = bytes([0x22, hook_addr & 0xFF, (hook_addr >> 8) & 0xFF, HOOK_BANK, 0x60])
-    ft = common.snes2off(FLUSH_TRAMPOLINE)
-    if bytes(rom[ft : ft + len(FLUSH_TRAMP_BYTES)]) != b"\xff" * len(FLUSH_TRAMP_BYTES):
-        raise SystemExit(f"쪽 첫 글자 플러시 트램펄린 자리가 비어 있지 않다 {common.fmt(FLUSH_TRAMPOLINE)}")
-    out[ft : ft + len(FLUSH_TRAMP_BYTES)] = FLUSH_TRAMP_BYTES
-    fs = common.snes2off(FLUSH_SITE)
-    if bytes(rom[fs : fs + 3]) != FLUSH_SITE_ORIG:
-        raise SystemExit(f"쪽 첫 글자 플러시 자리가 예상과 다르다: {rom[fs : fs + 3].hex()}")
-    out[fs : fs + 3] = bytes([0x4C, FLUSH_TRAMPOLINE & 0xFF, (FLUSH_TRAMPOLINE >> 8) & 0xFF])
+    if common.VWF:
+        sn = (HOOK_BANK << 16) | info["labels"]["pagesnap"]
+        st = common.snes2off(SNAP_STUB)
+        stub = bytes([0x22, sn & 0xFF, (sn >> 8) & 0xFF, HOOK_BANK, 0xAD, 0x77, 0x17, 0x60])
+        if bytes(rom[st : st + len(stub)]) != b"\xff" * len(stub):
+            raise SystemExit(f"쪽 스냅 스텁 자리가 비어 있지 않다 {common.fmt(SNAP_STUB)}")
+        out[st : st + len(stub)] = stub
+        ss = common.snes2off(SNAP_SITE)
+        if bytes(rom[ss : ss + 3]) != SNAP_SITE_ORIG:
+            raise SystemExit(f"쪽 지우기 자리가 예상과 다르다: {rom[ss : ss + 3].hex()}")
+        out[ss : ss + 3] = bytes([0x20, SNAP_STUB & 0xFF, (SNAP_STUB >> 8) & 0xFF])  # JSR $FE80
+        ns = common.snes2off(NL_STUB)
+        if bytes(rom[ns : ns + len(NL_STUB_BYTES)]) != b"\xff" * len(NL_STUB_BYTES):
+            raise SystemExit(f"개행 스텁 자리가 비어 있지 않다 {common.fmt(NL_STUB)}")
+        out[ns : ns + len(NL_STUB_BYTES)] = NL_STUB_BYTES
+        nl = common.snes2off(NL_SITE)
+        if bytes(rom[nl : nl + 3]) != NL_SITE_ORIG:
+            raise SystemExit(f"개행 핸들러 자리가 예상과 다르다: {rom[nl : nl + 3].hex()}")
+        out[nl : nl + 3] = bytes([0x20, NL_STUB & 0xFF, (NL_STUB >> 8) & 0xFF])  # JSR $FE88
     # 2. 소비 지점: JSR $E784 → JSR $FE52
     c = common.snes2off(CALL_SITE)
     if bytes(rom[c : c + 3]) != bytes([0x20, 0x84, 0xE7]):
@@ -2149,7 +2190,15 @@ def patch_ranges() -> list[tuple[int, int]]:
         (common.snes2off(ENDING_CTX_SITE), common.snes2off(ENDING_CTX_SITE) + 5),
         *[(common.snes2off(s_), common.snes2off(s_) + 3) for s_ in FONT_CALL_SITES],
         (common.snes2off(FONT_TRAMPOLINE), common.snes2off(FONT_TRAMPOLINE) + 8),
-        (common.snes2off(FLUSH_TRAMPOLINE), common.snes2off(FLUSH_TRAMPOLINE) + len(FLUSH_TRAMP_BYTES)),
-        (common.snes2off(FLUSH_SITE), common.snes2off(FLUSH_SITE) + 3),
+        *(
+            [
+                (common.snes2off(SNAP_STUB), common.snes2off(SNAP_STUB) + 8),
+                (common.snes2off(SNAP_SITE), common.snes2off(SNAP_SITE) + 3),
+                (common.snes2off(NL_STUB), common.snes2off(NL_STUB) + len(NL_STUB_BYTES)),
+                (common.snes2off(NL_SITE), common.snes2off(NL_SITE) + 3),
+            ]
+            if common.VWF
+            else []
+        ),
     ]
 

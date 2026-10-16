@@ -18,6 +18,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -562,6 +563,9 @@ def menu_bake(out: bytearray, rom: bytes) -> dict:
     import hud_status  # HUD 상태 라벨(C4·방어) — 가나 도트 타일을 한글 8×8 로
 
     hud_status.bake(out, rom)
+    import monster_status  # 몬스터 상태 라벨(스프라이트 네 칸) — 파티 HUD 와 다른 길
+
+    monster_status.bake(out, rom)
     loose = bake_loose_boxes(out, rom, slot, code_tile)
     return {
         "glyphs": "".join(slot_of),
@@ -732,6 +736,10 @@ def mutable_ranges() -> list[tuple[int, int]]:
         o2 = common.snes2off(a + 0x100)
         r.append((o2, o2 + 16))
     r += hook.patch_ranges()
+    if common.DEBUG:
+        import debugpatch
+
+        r += debugpatch.patch_ranges()
     b = common.snes2off(NAME_BOX)  # 파티 이름 상자(구워진 타일맵)
     r.append((b, b + NAME_STRIDE * NAME_COUNT))
     b = common.snes2off(HUD_ATO)  # HUD E 줄 머리 「あと」 타일 두 장
@@ -744,6 +752,9 @@ def mutable_ranges() -> list[tuple[int, int]]:
     import hud_status
 
     r += hud_status.patch_ranges()  # HUD 상태 라벨 — 프레임 일곱 + 타일 12장
+    import monster_status
+
+    r += monster_status.patch_ranges()  # 몬스터 상태 라벨 — 표 8×4B + 시트 타일 10장
     r += dicts.patch_ranges()
     r += battle_ui.patch_ranges()
     r += battle_ui.patch_ranges_a3()
@@ -1049,6 +1060,15 @@ def kr_items(
                 if not it:
                     fake_off -= 1
             elif kind == "ctrl":
+                m_ = re.fullmatch(r"<([0-9A-F]{2})>", v[0])
+                # 원문에 없는 제어(예: 원판이 색을 안 쓴 문안에 색 감싸기 <E3>…<E1> 를 더한다 — 10-18)는 코드가 같은 원문 제어가 차례가 아니면 **1바이트 새 항목**으로 낸다
+                if ci >= len(ctrls) or (m_ and ctrls[ci].code != int(m_.group(1), 16) and m_.group(1) in ("E3", "E1")):
+                    if not m_:
+                        raise SystemExit(f"{sid}: 원문에 없는 제어 {v[0]} (색 감싸기 <E3>·<E1> 만 더할 수 있다)")
+                    seg_of[len(new)] = si
+                    new.append(script.Item(fake_off, "raw", -1, bytes([int(m_.group(1), 16)])))
+                    fake_off -= 1
+                    continue
                 it = ctrls[ci]
                 ci += 1
                 seg_of[len(new)] = si
@@ -1480,6 +1500,11 @@ def build_kr(
     restore_pinned(out, rom)
     # 뱅크별로 이어 쓴다 — 항목마다 자기 새 오프셋에
     full_place = place | {it.off: pk["new_off"][i] for i, it in enumerate(new) if it.off < 0}
+    # 검수 도구용(`tools/msg_addr.py`) — 원문 파일 오프셋 → 새 롬 파일 오프셋. 번호표에 없는 씬 본문(표 목표)을 하네스로 부를 때 쓴다
+    common.OUT_DIR.mkdir(parents=True, exist_ok=True)
+    (common.OUT_DIR / f"place_map{'_dbg' if common.DEBUG else ''}.json").write_text(
+        json.dumps({f"{k:06X}": f"{v:06X}" for k, v in sorted(full_place.items()) if k >= 0}), encoding="utf-8"
+    )
     unresolved = sorted(
         {
             t
@@ -1538,6 +1563,7 @@ def build_kr(
 
         _idx = _enc.index_map(k["rep"])
         dk = dicts.bake(out, rom, _idx)
+        dk["맨손"] = dicts.bake_bare_hand(out, rom)
         bu = battle_ui.bake(out, rom, _idx, dk["next"])  # 사전 바로 뒤에 이어 놓는다
         dk["전투 UI"] = bu
         a3 = battle_ui.bake_a3_values(out, rom, _idx, bu["next"])  # 그 뒤에 이어 놓는다
@@ -1567,6 +1593,10 @@ def build_kr(
             spell_table=dk["런타임 치환"]["주문 표 주소"],
         )
         led.snap(out, "렌더러 훅")
+        if common.DEBUG:  # 🔴 시험 빌드 전용 — 제품 롬(ED_DEBUG 없음)은 이 줄을 안 지난다
+            import debugpatch
+
+            dk["디버그 진입"] = debugpatch.apply(out, rom)
 
     if with_hook:
         dicts.verify(out, k["rep"])  # 🔑 **체인이 다 끝난 롬**에서 게임의 포인터를 따라 되읽는다
@@ -1779,7 +1809,10 @@ def write_image(out: bytes, info: dict, build_path: str) -> None:
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob("*.sfc*"):
         old.unlink()
-    dst = d / OUT_NAME[build_path]
+    name = OUT_NAME[build_path]
+    if common.DEBUG:  # 🔴 시험 롬은 파일명이 달라야 emucap Saves 의 제품 세이브(`…(KR).srm`)와 안 섞인다
+        name = name.replace("(KR)", "(DEBUG)")
+    dst = d / name
     failed = info.get("ok") is False
     if failed:  # 🔴 인코딩이 실패한 조각은 **원문이 그대로 화면에 남는다**(조용히) — 이미지를 `.failed` 로 돌려 정상으로 오해하지 않게 한다
         dst = dst.with_name(dst.name + ".failed")
@@ -1787,7 +1820,13 @@ def write_image(out: bytes, info: dict, build_path: str) -> None:
     sha = hashlib.sha1(out).hexdigest()
     (d / "manifest.json").write_text(
         json.dumps(
-            {"build_path": build_path, "source_sha1": common.ROM_SHA1, "output_sha1": sha, **info},
+            {
+                "build_path": build_path,
+                "source_sha1": common.ROM_SHA1,
+                "output_sha1": sha,
+                "input_fingerprint": common.rom_input_fingerprint(),  # 촬영 도구가 「지금 입력으로 구운 롬인가」를 확인한다
+                **info,
+            },
             ensure_ascii=False,
             indent=1,
         ),

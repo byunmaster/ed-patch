@@ -51,6 +51,13 @@ SETUP = {
     0xD5: 0x02E012,
 }
 IMM = (1, 6, 11)  # 루틴 안에서 lo · hi · bank 즉치의 자리
+# 원판에 없는 새 항목(원문 칸이 없다 — `dict.json` 의 해당 색인이 한글 정본). D2 의 「맨손」: 무기 번호 0(「없음」)일 때 2150 의 `{D9}` 자리에 쓴다.
+EXTRA_N = {0xD2: 1}
+BARE_HAND = 0x77  # D2:77
+BARE_SITE = 0x01F4B1  # `STA $0F42`(3B) — 반격 무효 문구(2150)에 쓸 무기 번호를 적는 자리
+BARE_SITE_ORIG = bytes([0x8D, 0x42, 0x0F])
+BARE_STUB = 0x01FFF1  # 뱅크 $01 끝의 빈 자리
+BARE_STUB_BYTES = bytes([0xC9, 0x00, 0xD0, 0x02, 0xA9, BARE_HAND, 0x8D, 0x42, 0x0F, 0x60])  # CMP #0 / BNE +2 / LDA #$77 / STA $0F42 / RTS
 
 
 def _check_setup(rom: bytes) -> None:
@@ -72,7 +79,7 @@ def encode_all(rep_index: dict[str, int]) -> dict[int, list[bytes]]:
     errs = []
     for code, (_addr, n, name) in text.DICT_TABLES.items():
         rows = []
-        for i in range(n):
+        for i in range(n + EXTRA_N.get(code, 0)):
             e = dm.get(f"{code:02X}:{i:02X}")
             kr = (e or {}).get("kr")
             if not kr:
@@ -107,6 +114,7 @@ def bake(out: bytearray, rom: bytes, rep_index: dict[str, int]) -> dict:
     for code, (_addr, n, name) in text.DICT_TABLES.items():
         strs = rows[code]
         table = cur
+        n += EXTRA_N.get(code, 0)
         cur += 2 * n
         ptr = []
         for b in strs:
@@ -209,9 +217,24 @@ def bake_runtime(
     }
 
 
+def bake_bare_hand(out: bytearray, rom: bytes) -> dict:
+    """무기 번호 0 → D2:77(맨손) — 2150 「…으로는 피해를 줄 수 없다」가 「없음으로는」 이던 것(마스터 10-18)."""
+    so, ts = common.snes2off(BARE_SITE), common.snes2off(BARE_STUB)
+    if bytes(rom[so : so + 3]) != BARE_SITE_ORIG:
+        raise SystemExit(f"반격 무효 문구 호출부가 예상과 다르다 {common.fmt(BARE_SITE)}: {rom[so : so + 3].hex()}")
+    if bytes(rom[ts : ts + len(BARE_STUB_BYTES)]) != b"\xff" * len(BARE_STUB_BYTES):
+        raise SystemExit(f"맨손 스텁 자리가 비어 있지 않다 {common.fmt(BARE_STUB)}")
+    out[ts : ts + len(BARE_STUB_BYTES)] = BARE_STUB_BYTES
+    out[so : so + 3] = bytes([0x20, BARE_STUB & 0xFF, (BARE_STUB >> 8) & 0xFF])  # JSR $FFF1
+    return {"스텁": common.fmt(BARE_STUB)}
+
+
 def patch_ranges() -> list[tuple[int, int]]:
-    """원본 1MB 안에서 바꾸는 자리 — 설정 루틴 여섯 + 런타임 치환 여섯의 즉치뿐이다."""
-    r = []
+    """원본 1MB 안에서 바꾸는 자리 — 설정 루틴 여섯 + 런타임 치환 여섯의 즉치 + 맨손 호출부·스텁."""
+    r = [
+        (common.snes2off(BARE_SITE), common.snes2off(BARE_SITE) + 3),
+        (common.snes2off(BARE_STUB), common.snes2off(BARE_STUB) + len(BARE_STUB_BYTES)),
+    ]
     for addr in [*SETUP.values(), *RUNTIME_ALL]:
         o = common.snes2off(addr)
         r += [(o + i, o + i + 1) for i in IMM]
@@ -231,7 +254,7 @@ def verify(out: bytes, slots: list) -> dict:
         o = common.snes2off(addr)
         table = (out[o + IMM[2]] << 16) | (out[o + IMM[1]] << 8) | out[o + IMM[0]]
         bank = table & 0xFF0000
-        n = text.DICT_TABLES[code][1]
+        n = text.DICT_TABLES[code][1] + EXTRA_N.get(code, 0)
         t = common.snes2off(table)
         for i in range(n):
             p = out[t + 2 * i] | (out[t + 2 * i + 1] << 8)

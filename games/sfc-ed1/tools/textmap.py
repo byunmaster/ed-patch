@@ -67,7 +67,11 @@ def check_tokens(kr: str, tokens: list[str]) -> str | None:
     got = tokens_in(kr)
     ctrl_got = [t for t in got if t.startswith("<")]
     ctrl_exp = [t for t in tokens if t.startswith("<")]
-    if ctrl_got != ctrl_exp:
+    # 색 감싸기 <E3>…<E1> 는 원문에 없어도 **쌍으로** 더할 수 있다(10-18 — 원판이 색을 안 쓴 전투 문구에 이름 색을 맞춘다). 나머지 제어는 그대로 같은 순서.
+    color = ("<E3>", "<E1>")
+    g = [t for t in ctrl_got if t not in color]
+    e = [t for t in ctrl_exp if t not in color]
+    if ctrl_got != ctrl_exp and (g != e or any(ctrl_got.count(c) < ctrl_exp.count(c) for c in color)):
         return f"제어 토큰이 다르다: 기대 {ctrl_exp} 실제 {ctrl_got}"
     dict_exp = [t for t in tokens if t.startswith("{")]
     for t in (t for t in got if t.startswith("{")):
@@ -323,8 +327,8 @@ def check_ui_labels() -> dict:
     for k, v in menus.items():
         if not v.get("kr"):
             continue
-        jp = k.split("@")[0]
-        site = v.get("canon_site")
+        jp = v.get("canon_key") or k.split("@")[0]  # `canon_key` = 원문과 다른 정본 열쇠(namesrc.menus 와 같은 규칙)
+        site = None if v.get("canon_key") else v.get("canon_site")
         mine[f"{jp}@{site}" if site else jp] = v["kr"]
     out = canon.diff_labels(mine)
     return {
