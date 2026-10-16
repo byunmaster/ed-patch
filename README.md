@@ -15,7 +15,7 @@
 패치 파일에는 원본 게임 데이터가 포함되지 않습니다. 적용하려면 직접 소장한 원본이
 필요합니다.
 
-## 패치 현황 (2026-10-11)
+## 패치 현황 (2026-10-16)
 
 | 게임 | 트랙 | 기종 | 상태 |
 | ---- | ---- | ---- | ---- |
@@ -25,12 +25,15 @@
 | [영웅전설 I · II](games/ss-ed1+2/) | kr | 세가새턴 | 🔧 작업 중 |
 | [영웅전설 III](games/ss-ed3/) | kr | 세가새턴 | 🔧 작업 중 |
 | [드래곤 슬레이어 영웅전설](games/pce-ed1/) | kr | PC엔진 CD | 🔧 작업 중 |
+| [드래곤 슬레이어 영웅전설 II](games/pce-ed2/) | kr | PC엔진 CD | 🔧 작업 중 |
 | [드래곤 슬레이어 영웅전설](games/sfc-ed1/) | kr | 슈퍼 패미컴 | 🔧 작업 중 |
+| [드래곤 슬레이어 영웅전설 II](games/sfc-ed2/) | kr | 슈퍼 패미컴 | 🔧 작업 중 |
 | [드래곤 슬레이어 영웅전설](games/md-ed1/) | kr | 메가드라이브 | 🔧 작업 중 |
+| [드래곤 슬레이어 영웅전설 II](games/md-ed2/) | kr | 메가드라이브 | 🔧 작업 중 |
 | [드래곤 슬레이어 영웅전설](games/pc98-ed1/) | kr | PC-9801 | 🔧 작업 중 (레트로 PC 라운드) |
 | [영웅전설 II](games/dos-ed2/) | fix | MS-DOS 정발(만트라) | ✅ 복원 패치 배포 |
 
-- 각 ED2(PCE · SFC · MD)는 진행 예정이고, 레트로 PC 원작군(PC-88 · MSX2 · X68000 · FM TOWNS)은 미정입니다.
+- 레트로 PC 원작군(PC-88 · MSX2 · X68000 · FM TOWNS)은 미정입니다.
 - 게임별 세부 진행은 각 게임의 상태 문서(`games/<게임>/docs/`)에 있습니다. 배포 페이지의 표는
   `patcher/site/site.json` 이 정본입니다.
 - 배포 페이지는 이 레포의 GitHub Pages입니다 — <https://byunmaster.github.io/ed-patch/> (`patcher/site/` 를 `main` 에 올리면 워크플로가 굽습니다).
@@ -51,6 +54,7 @@ games/<게임>/       게임별 코드베이스 (도구 · 리버싱 노트 · �
   ps1-ed1+2/        [kr]  PS1 영웅전설 I · II        ps1-ed3/    [kr]  PS1 영웅전설 III · IV
   ss-ed1+2/         [kr]  새턴 영웅전설 I · II       ss-ed3/     [kr]  새턴 영웅전설 III
   pce-ed1/ sfc-ed1/ md-ed1/ pc98-ed1/   [kr]  드래곤 슬레이어 영웅전설(콘솔 · PC-98)
+  pce-ed2/ sfc-ed2/ md-ed2/             [kr]  드래곤 슬레이어 영웅전설 II(콘솔)
   dos-ed2/          [fix] 만트라 DOS 영웅전설 II 복원
 shared/             공용 라이브러리 — 한글 조판(krwrap) · 조사 · 맞춤법 · 고유명사 정본 · 글꼴
 scripts/            진입점 — check.sh(커밋 전) · test.sh · emu.sh(게임 실행) · worktree.sh …

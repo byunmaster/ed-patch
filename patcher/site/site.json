@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-08",
+  "updated": "2026-10-16",
   "report": "https://tally.so/r/rjxd05",
   "stages": [
     {
@@ -245,11 +245,11 @@
         },
         "P3": {
           "state": "done",
-          "note": "오프닝 나레이션 자막까지 확인"
+          "note": "오프닝·엔딩 음성 자막 · 스태프롤 · 오마케 확인"
         },
         "P4": {
           "state": "partial",
-          "note": "씬 220 중 7 · 첫 씬 대사가 남았다"
+          "note": "씬 대사 번역 전량 · 플레이 검수가 남았다"
         }
       }
     },
@@ -259,13 +259,23 @@
       "title": "드래곤 슬레이어 영웅전설 II",
       "original": "ドラゴンスレイヤー英雄伝説 II",
       "track": "kr",
-      "status": "planned",
-      "stage": "",
+      "status": "preparing",
+      "stage": "P4",
       "tags": {
         "platform": "PC엔진",
         "series": [
           "영웅전설2"
         ]
+      },
+      "phases": {
+        "P3": {
+          "state": "done",
+          "note": "오프닝·엔딩·스태프롤 확인"
+        },
+        "P4": {
+          "state": "partial",
+          "note": "대사 번역 진행 중 · 아이템·이름이 끼는 줄이 남았다"
+        }
       }
     },
     {
@@ -289,7 +299,7 @@
         },
         "P3": {
           "state": "done",
-          "note": "오프닝·엔딩·타이틀 확인"
+          "note": "오프닝·엔딩·스태프롤 확인"
         },
         "P4": {
           "state": "partial",
@@ -303,13 +313,23 @@
       "title": "드래곤 슬레이어 영웅전설 II",
       "original": "ドラゴンスレイヤー英雄伝説 II",
       "track": "kr",
-      "status": "planned",
-      "stage": "",
+      "status": "preparing",
+      "stage": "P4",
       "tags": {
         "platform": "슈퍼패미컴",
         "series": [
           "영웅전설2"
         ]
+      },
+      "phases": {
+        "P3": {
+          "state": "done",
+          "note": "오프닝·엔딩·스태프롤 확인"
+        },
+        "P4": {
+          "state": "partial",
+          "note": "대사 번역 전량 · 플레이 검수가 남았다"
+        }
       }
     },
     {
@@ -332,8 +352,8 @@
           "note": "전투 문구·조사 처리 확인"
         },
         "P3": {
-          "state": "partial",
-          "note": "장 카드는 플레이 테스트 때 확인"
+          "state": "done",
+          "note": "오프닝·엔딩 자막 확인"
         }
       }
     },
@@ -343,13 +363,23 @@
       "title": "드래곤 슬레이어 영웅전설 II",
       "original": "ドラゴンスレイヤー英雄伝説 II",
       "track": "kr",
-      "status": "planned",
-      "stage": "",
+      "status": "preparing",
+      "stage": "P4",
       "tags": {
         "platform": "메가드라이브",
         "series": [
           "영웅전설2"
         ]
+      },
+      "phases": {
+        "P3": {
+          "state": "done",
+          "note": "오프닝·엔딩·스태프롤 확인"
+        },
+        "P4": {
+          "state": "partial",
+          "note": "대사 번역 진행 중"
+        }
       }
     },
     {
