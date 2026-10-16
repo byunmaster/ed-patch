@@ -1,0 +1,2 @@
+# 이 게임이 읽는 원본만 적는다 (scripts/worktree.sh 가 이 목록만 링크한다).
+jp/md-ed2
