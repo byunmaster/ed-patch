@@ -242,12 +242,13 @@ def panel_pass(exe, disc, table, words, seen, report, panel):
                 try:
                     # 패널은 원판처럼 붙여 쓴다(마스터 10-09 — 원판 패널 181줄에 띄어쓰기 0, 칸만 붙이고 대화는 그대로)
                     enc = hangul_map.encode(kr.replace(" ", ""), disc, table)
-                    if len(enc) > len(codes):
+                    # 한도 = 줄의 **칸 수 n**(들여쓰기 0 칸 포함) — 0 은 엔진 스텁이 폭 0 으로 보고 글자를 줄 머리에 붙여 가운데 맞춘다(마스터 10-12 「서쪽벌판인데 서쪽벌만」)
+                    if len(enc) > n:
                         short = glossary.lookup_shared(disc, jp + "@월드맵", "place")
                         if short:
                             enc = hangul_map.encode(short, disc, table)
                             report["gap_short"] = report.get("gap_short", 0) + 1
-                    if len(enc) > len(codes):
+                    if len(enc) > n:
                         report.setdefault("gap_long", []).append((jp, kr))
                     else:
                         new = enc
@@ -344,7 +345,7 @@ SUBMENU = {
         "system": (0xA116C, 40, [("", "메시지속도"), ("", "리더변경"), ("", "키설정변경"), ("", "세이브／로드"), ("", "게임끝내기")]),
         "speed": (0xA11D6, 12, [("", "빠0름"), ("", "보0통"), ("", "느0림")]),  # 두 글자를 양 끝으로(0 = 가운데 빈 칸) — 3칸 창
         "saveload": (0xA11EE, 8, [("", "세이브"), ("", "로0드")]),
-        "keycfg": (0xA1232, 9, [("", "노0멀"), ("", "와이드")]),  # 창 열 3
+        "keycfg": (0xA1232, 9, [("", "노멀"), ("", "와이드")]),  # 창 열 3 · 노멀은 사이 공백 없이 왼쪽 정렬(마스터 10-12)
     },
 }
 DETAIL_TITLES = {"ed3": {10: ("0000", "세이브데이터"), 11: ("000", "기록이 없습니다."), 13: ("0000 ", "로드데이터")}}  # 표 항목 → (앞 여백: 0 = 전각 1칸 · 공백 = 반 칸, 글) — 14칸 창 가운데

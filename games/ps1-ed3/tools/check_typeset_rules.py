@@ -12,6 +12,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -30,6 +31,8 @@ def line_problems(text):
     out = []
     if "..." in text:  # 🔴 말줄임은 「…」 전각 한 글자다(마스터 10-08) — 점 셋 연속은 규칙 밖
         out.append(f"말줄임이 `...` 이다(「…」 로): {text[:16]!r}")
+    if re.search(r"[～~][.。．]", text.replace("\n", "")):  # 🔴 물결표 뒤 마침표는 문법에 안 맞는다(번역 규칙 1-7, 마스터 10-12) — 「불렀어～.」 → 「불렀어～」
+        out.append(f"물결표(～) 뒤에 마침표: {text[:16]!r}")
     for ln in text.split("\n")[1:]:  # 첫 줄은 문장의 시작이다(「...내일부터인데」 말줄임으로 시작해도 정상) — 줄바꿈 뒤 줄만 본다
         if ln[:1] in NO_LINE_START and ln[:1]:
             out.append(f"줄 머리에 부호 {ln[:1]!r}: {ln[:12]!r}")

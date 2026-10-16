@@ -37,9 +37,9 @@ def rows(disc):
                 continue
             total += 1
             cand = [kr, kr.replace(" ", ""), canon.lookup(jp + "@월드맵", "place", disc) or ""]
-            fit = next((c for c in cand if c and len(c) <= len(codes)), None)
+            fit = next((c for c in cand if c and len(c) <= n), None)
             if fit is None:
-                out.append((jp, kr, len(kr.replace(" ", "")), len(codes), off))
+                out.append((jp, kr, len(kr.replace(" ", "")), n, off))
     return out, total
 
 
