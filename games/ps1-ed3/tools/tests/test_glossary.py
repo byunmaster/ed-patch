@@ -65,13 +65,16 @@ class TestGlossaryShape(unittest.TestCase):
         """🔴 한 갈래 안에서 두 원문이 같은 표기를 쓰면 **화면에서 구별이 안 된다.**
 
         ⚠ 갈래가 다르면 정상이다 — ED4 의 소환수는 몬스터이면서 마법 이름이다.
+        ⚠ 책 권 접미는 원문 표기만 다르고 뜻이 같다 — `その１`(검사교본)·`第１巻`(사피)는 둘 다 「제１권」
+          (마스터 10-12 「제1권 으로 나와야함」). 이름 낱말이 아니라 뒤에 붙는 접미라 화면 구별 문제가 없다.
         """
+        same_meaning = [{f"その{d}", f"第{d}巻"} for d in "１２３"]
         for disc in DISCS:
             for kind, d in glossary.load(disc)["categories"].items():
                 seen = {}
                 for jp, kr in d.items():
                     seen.setdefault(kr, []).append(jp)
-                dup = {k: v for k, v in seen.items() if len(v) > 1}
+                dup = {k: v for k, v in seen.items() if len(v) > 1 and set(v) not in same_meaning}
                 self.assertFalse(dup, f"{disc}/{kind}: 겹치는 표기 {list(dup.items())[:3]}")
 
     def test_evidence_points_at_real_entries(self):
