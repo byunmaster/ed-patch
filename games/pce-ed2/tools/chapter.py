@@ -51,13 +51,19 @@ def lines(orig: bytes, tab) -> list[bytes]:
     out = []
     for raw in orig.split(b"\x00")[:KEY_LINES]:
         num, title = _entry(jptext.decode(raw))
-        disp = f"{num}  {title}"  # 번호–제목 간격 = 반각 공백 2칸(규칙 1-4, 마스터 10-13 · 원판은 `a0` 12px 한 칸)
-        w_px = sum(font.adv(c) for c in disp)
+        # 번호–제목 간격 = 원판대로 `a0` 12px 한 칸(규칙 1-4, 마스터 10-13 「장띠 번호와 제목간격은 원판 따르자」)
+        w_px = sum(font.adv(c) for c in num) + CELL_PX + sum(font.adv(c) for c in title)
         if w_px > BAND_PX:
-            raise ValueError(f"장 제목이 띠({BAND_PX}px)를 넘는다: {disp!r} {w_px}px")
+            raise ValueError(f"장 제목이 띠({BAND_PX}px)를 넘는다: {num!r} {title!r} {w_px}px")
         extra = BAND_PX - w_px
         left = (extra // 2) // SPACE_PX * SPACE_PX
-        out.append(_pad(left) + tab.enc(disp, space=SPACE) + _pad(extra - left))
+        out.append(
+            _pad(left)
+            + tab.enc(num, space=SPACE)
+            + bytes([PAD])
+            + tab.enc(title, space=SPACE)
+            + _pad(extra - left)
+        )
     return out
 
 

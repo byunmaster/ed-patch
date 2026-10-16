@@ -31,6 +31,7 @@ import hook
 import labels
 import layout
 import lz
+import opening_sub
 import package
 import repack
 import systext
@@ -516,6 +517,7 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
         w = Writer(f)
         apply_program(w, prog, glyph24)
         intended = apply_pkg_edits(w, plan)
+        opening_sub.apply(w)  # 오프닝 나레이션 자막(모듈 rel 4098 — 본 프로그램과 다른 이미지)
     write_review()
     if systext.INTERIOR_WARN:
         print(f"  ⚠ 문자열 안쪽 쓰기 짝을 못 찾음 {len(systext.INTERIOR_WARN)}곳: {systext.INTERIOR_WARN[:6]}")
