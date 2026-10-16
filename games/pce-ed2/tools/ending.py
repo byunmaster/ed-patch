@@ -11,6 +11,7 @@
 """
 
 import hashlib
+import json
 import os
 import sys
 import unicodedata
@@ -88,6 +89,8 @@ LABELS = {
     "制作・著作": "제작・저작",
     "ﾄﾞﾗｺﾞﾝｽﾚｲﾔｰ英雄伝説": "드래곤 슬레이어 영웅전설",
 }
+# 사람·회사 이름 — 원문 줄 본문 → 한글(외래어표기법, 마스터 10-16 규칙 3-7). 확신 「높음」만(`data/staff_names.json`). 영어로 된 것(J.D.K · CD-AUDIO …)은 그대로 둔다.
+NAMES = json.loads((common.GAME_DIR / "data" / "staff_names.json").read_text(encoding="utf-8"))["names"]
 # 엔딩 대사 두 줄 — 줄 번호(스트림 안 0 기준) → (원문 줄 sha1 앞 12자리, 한국어). 원문은 저작물이라 글로 안 적고 지문으로만 확인한다.
 SENTENCES = {5: ("6cb1c062ad63", "작은 태양은 언젠가 아버지를 넘어"), 7: ("bdb9390c18cb", "커다란 태양으로 빛나리라.")}
 
@@ -98,8 +101,13 @@ INDENT_CUT = {5: 1, 7: 3}
 
 # 스태프롤 화면 폭 모형(2026-10-14 실측 — 시험 롬 캡처): 줄 시작 x=124, `09` 16px · 전각 공백 `81 40` 12px · ASCII(공백 포함) 8px · 한글 12px.
 # 화면 폭 256 이지만 오른쪽 끝 글자는 잘려 보이므로(마스터 10-14: 「프로듀ㅅ」) 줄 끝을 248px 안에 둔다.
-X0, TAB_PX, LINE_LIMIT = 124, 16, 248
-FORCE_SPLIT = {"어시스턴트 엔지니어"}  # 길이는 들어가지만 마스터가 두 줄을 원한 라벨(10-14)
+X0, TAB_PX = 124, 16
+# 줄 끝 한계 252(마스터 10-16): 시험 롬 실화면 — 끝 252 까지 글자가 온전히 그려지고(잉크 x249) 오른쪽 끝 열에 잔상이 없다. 글리프는 12px 인데 타일 8px 격자에서 시작 x 가 늘 0 또는 4(mod 8)라 안 잘린다.
+# (10-14 「프로듀ㅅ」 잘림은 끝이 256 을 넘은 줄이었을 가능성 — 한계를 248 로 잡았던 근거)
+LINE_LIMIT = 252
+STAFF_SHIFT = 8  # 스태프롤 쪽 전체를 왼쪽으로 당기는 px(마스터 10-16 D안: 라벨 132 · 이름 148 — 이름이 라벨보다 +16 인 원판 규칙을 지키며 104px 이름도 끝 252 안).
+# ⚠ 12px(C안: 라벨 128 · 이름 144)은 4px 앞 여백을 못 만들어 엔진 시작 열(BAT 열 15→14)을 당겨야 하는데, 그러면 열 14 의 그림 타일(왼쪽 틀의 오른쪽 세로 테두리 x116~122)이 글자 타일·칸 지우기에 덮여 **틀이 지워진다**(원판 대비 843~1372px/쪽, 시험 롬 실측). 앞 여백만으로 만드는 8px 이하만 쓴다.
+FORCE_SPLIT = {"어시스턴트 엔지니어", "이그제큐티브 프로듀서"}  # 길이는 들어가지만 마스터가 두 줄을 원한 라벨(10-14 · 이그제큐티브 프로듀서는 10-16 — 한 줄이면 128px 가 라벨 열에서 왼쪽 그림 틀 바로 옆까지 와 닿는다)
 LABEL_WORDS = {"女神": "여신"}  # 배역 직함 속 낱말(정본에 없다 — 관리자 후보)
 
 
@@ -117,21 +125,94 @@ def _pre_px(pre: bytes) -> int:
     return px
 
 
+def _vpx(pre: bytes) -> int:
+    """당김(`STAFF_SHIFT`)을 뺀 앞 여백 px — 줄 시작 x = 124 + 이 값(화면 기준). 앞 여백이 0 인 줄은 그대로."""
+    return max(0, _pre_px(pre) - STAFF_SHIFT)
+
+
+def _compose(px: int) -> bytes:
+    """앞 여백 px → 바이트(탭 16 · 공백 8 · 전각 공백 12 로 가장 적은 개수). 4 · 5~7 · 9~11 은 못 만든다 — 가장 가까운 윗값(8 · 12)으로."""
+    best: dict[int, list[int]] = {0: []}
+    for v in range(1, px + 9):
+        c = [best[v - t] + [t] for t in (16, 12, 8) if v - t in best]
+        if c:
+            best[v] = min(c, key=lambda a: (len(a), -a.count(16)))
+    if px not in best:
+        px = next(v for v in range(px + 1, px + 9) if v in best)
+    out = bytearray()
+    for t in sorted(best[px], reverse=True):
+        out += {16: b"\x09", 12: b"\x81\x40", 8: b"\x20"}[t]
+    return bytes(out)
+
+
+def _emit_pre(ctrl: bytes, vpx: int) -> bytes:
+    """화면 기준 앞 여백 vpx → 스트림 바이트."""
+    return ctrl + _compose(vpx)
+
+
+# 반각 부호(마스터 10-16 「문장부호는 반각」) — 1바이트로 그려 8px. 괄호는 BIOS 영문 글꼴이 굵은 「[ ]」 모양이라 패키지 안 ASCII 글리프 표(`ASCII_TABLE`)의 `(` `)` 자리를 우리 글꼴 괄호로 바꿔 쓰고,
+# 가운뎃점은 원판 반각 가나 점(`A5`, 가나 표의 이미 있는 글리프)을 쓴다.
+HALF = {"（": 0x28, "）": 0x29, "・": 0xA5, "(": 0x28, ")": 0x29}
+ASCII_TABLE = 0x3AC5  # 패키지 안 ASCII 글리프 표(문자 − 0x20 번째 16B, 위 12행이 글자) — 렌더러 `$7640`
+
+
+def paren_glyphs() -> dict[int, bytes]:
+    """우리 글꼴 괄호(3px)를 8px 칸 **안쪽 가장자리**로 민 글리프 — `(` 는 칸 오른쪽(열 4~6) · `)` 는 왼쪽(열 1~3). 글자 쪽으로 붙어 괄호 밖이 비지 않는다(pce-ed1 방식)."""
+    out = {}
+    for ch, shift in (("(", 4), (")", 1)):
+        g = font.glyph(ch)
+        rows = []
+        for y in range(12):
+            v = int.from_bytes(g[y * 2 : y * 2 + 2], "big") >> 8  # 왼쪽 8열
+            rows.append((v >> shift) & 0xFF)
+        out[ord(ch)] = bytes(rows) + bytes(4)
+    return out
+
+
 def _text_px(ko: str) -> int:
-    return sum(12 if ord(ch) >= 0x80 else 8 for ch in ko)
+    """줄 폭(px) — 끝 괄호 `)` 의 오른쪽 빈 4px 는 잉크가 아니라서 뺀다(한계 판정은 잉크 끝 기준)."""
+    w = sum(8 if ch in HALF else 12 if ord(ch) >= 0x80 else 8 for ch in ko)
+    return w - 4 if ko.endswith(("）", ")")) else w
 
 
 def _fit_pre(pre: bytes, w: int) -> bytes | None:
     """줄 끝이 한계를 넘으면 앞 공백을 줄인다(제어 바이트는 그대로, `09` → 모자란 만큼 `20`). 시작 x 124 에서도 못 들어가면 None."""
     avail = LINE_LIMIT - X0 - w
-    if _pre_px(pre) <= avail:
-        return pre
+    v = _vpx(pre)
+    ctrl = bytes(b for b in pre if b < 0x20 and b != 0x09)
+    if v <= avail:
+        return pre if not STAFF_SHIFT else _emit_pre(ctrl, v)
     if avail < 0:
         return None
-    ctrl = bytes(b for b in pre if b < 0x20 and b != 0x09)
     a = avail // TAB_PX
     b = (avail - a * TAB_PX) // 8
-    return ctrl + b"\x09" * a + b"\x20" * b
+    return _emit_pre(ctrl, a * TAB_PX + b * 8)
+
+
+def _name_indents(lines, replaced, sentences, x0=None):
+    """쪽마다 이름 줄(원판 앞 여백 ≥ 32px = `09 09`)의 시작을 한 자리로 맞춘다 — 원판 규칙(라벨 +1 탭, 쪽 안 이름 시작 x 고정)을 되살린다.
+    가장 긴 이름이 줄 끝 한계(LINE_LIMIT)를 넘으면 그 쪽의 이름 줄 전부를 같은 만큼 왼쪽으로(8px 단위) 당긴다. 상대 들여쓰기(사운드 팀 +8 · J.D.K +16)는 그대로.
+    → ({줄 번호: 새 앞 여백 px}, {줄 번호: 그 쪽의 당김 px(≤0)})"""
+    x0 = X0 if x0 is None else x0
+    out, deltas = {}, {}
+    page, members = [], []
+    for i, l in enumerate(list(lines) + [b"/*"]):
+        if i in replaced and i not in sentences:
+            members.append(i)
+            pre, ko, _suf = replaced[i]
+            if _pre_px(pre) >= 32:
+                page.append((i, _vpx(pre), _text_px(ko)))
+        if l.startswith(b"/*"):
+            delta = 0
+            if page:
+                slack = min(LINE_LIMIT - x0 - w - px for _i, px, w in page)
+                delta = min(0, slack // 8 * 8)
+                for j, px, _w in page:
+                    out[j] = px + delta
+            for j in members:
+                deltas[j] = delta
+            page, members = [], []
+    return out, deltas
 
 
 def _cast_name(key: str) -> str | None:
@@ -175,8 +256,8 @@ def _enc(text: str, idx: dict[str, int]) -> bytes:
     for ch in text:
         if ch == " ":
             out.append(0x20)
-        elif ch == "・":
-            out += b"\x81\x45"
+        elif ch in HALF:
+            out.append(HALF[ch])
         elif ord(ch) < 0x80:
             out.append(ord(ch))
         else:
@@ -205,21 +286,35 @@ def build(pkg: bytes) -> tuple[bytes, list[str]]:
         key = body.decode("cp932", errors="replace")
         if key in LABELS:
             replaced[i] = (pre, LABELS[key], suf)
+        elif key in NAMES:
+            if _pre_px(pre) == 24:  # 제작 협력 쪽 이름 다섯은 원판에서도 다른 쪽보다 8px 왼쪽(탭+공백)이었다 — 마스터 10-16 「마지막도 다른 페이지들보다 왼쪽」: 이름 열(탭 둘)로 맞춘다
+                pre = bytes(b for b in pre if b < 0x20 and b != 0x09) + b"\x09\x09"
+            # 이름 앞 제어코드 01 · 02 · 03(嶽·榊·澤 외자 글리프) · 05 06(「株」)는 원문 글자를 그리는 것이라 한글 줄에선 뗀다 — 남기면 한글 앞에 한자가 하나 더 찍힌다(시험 롬 실측)
+            replaced[i] = (bytes(b for b in pre if b not in (1, 2, 3, 5, 6)), NAMES[key], suf)
         elif cast_lo < i < cast_hi and pre.startswith(b"\x09") and not pre.startswith(b"\x09\x09") and body:
             ko = _cast_name(key)  # 배역 이름은 번역한다(마스터 10-14) — 성우 이름(`09 09` 줄)은 원문 그대로
             if ko:
                 replaced[i] = (pre, ko, suf)
-    chars = sorted({ch for _p, ko, _s in replaced.values() for ch in ko if ord(ch) >= 0x80 and ch != "・"})
+    chars = sorted({ch for _p, ko, _s in replaced.values() for ch in ko if ord(ch) >= 0x80 and ch not in "・（）"})
     assert len(chars) <= 220, len(chars)
     idx = {ch: k for k, ch in enumerate(chars)}
+    name_px, _page_delta = _name_indents(lines[:first_bin], replaced, SENTENCES)
     out: list[bytes | None] = []
     for i, l in enumerate(lines):
         if i not in replaced:
+            if STAFF_SHIFT and i < first_bin:  # 한글로 안 바꾼 줄(CD-AUDIO · PSG · ADPCM · J.D.K)도 같은 만큼 당긴다 — 안 당기면 쪽 안 라벨 열이 어긋난다(마스터 10-16)
+                _pre, _body, _suf = _split_line(l)
+                if _body and not l.startswith(b"/*"):
+                    l = _emit_pre(bytes(b for b in _pre if b < 0x20 and b != 0x09), _vpx(_pre)) + _body + _suf
             out.append(l)
             continue
         pre, ko, suf = replaced[i]
-        if i in SENTENCES:
+        if i in SENTENCES:  # 오프닝 대사 두 줄은 당기지 않는다(엔진 당김만 되돌린다)
             out.append(pre + _enc(ko, idx) + suf)
+            continue
+        if i in name_px and name_px[i] >= 0 and ko not in FORCE_SPLIT:
+            ctrl = bytes(b for b in pre if b < 0x20 and b != 0x09)
+            out.append(_emit_pre(ctrl, name_px[i]) + _enc(ko, idx) + suf)
             continue
         fit = _fit_pre(pre, _text_px(ko))
         if fit is not None and ko not in FORCE_SPLIT:
@@ -315,6 +410,9 @@ def writes(pkg: bytes):
         (base + HOOK_OFF, hook, bytes(len(hook)), "엔딩 글리프 후킹 루틴"),
         (base + SEAM_OFF, seam, SEAM_OLD, "엔딩 EX_GETFNT 이음매"),
     ]
+    for code, gl in paren_glyphs().items():  # 반각 괄호 글리프(`(` `)`)
+        o = ASCII_TABLE + (code - 0x20) * 16
+        out.append((base + o, gl, pkg[o : o + 16], f"엔딩 반각 괄호 글리프 {chr(code)}"))
     return out, {"chars": len(chars), "text": len(new_text), "hook": len(hook)}
 
 
