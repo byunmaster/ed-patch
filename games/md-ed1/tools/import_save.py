@@ -30,7 +30,10 @@ EMUCAP = Path.home() / ".local" / "share" / "emucap" / "mednafen"
 
 
 def rom_path() -> Path:
-    p = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_") / "ed1-kr.bin"
+    d = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_")
+    p = d / "ed1-kr-DEBUG.bin"  # 디버그 빌드(ED_DEBUG=1)는 파일명이 다르다 — 있으면 그쪽
+    if not p.exists():
+        p = d / "ed1-kr.bin"
     if not p.exists():
         raise SystemExit(f"빌드가 없다: {p} — python3 tools/build.py 부터")
     return p

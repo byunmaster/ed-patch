@@ -32,6 +32,11 @@ class HiddenText(unittest.TestCase):
         self.assertEqual(c._find_hidden(data, [(0, len(data))], [], KR), [])
         self.assertEqual(c._find_hidden(data, [], [(0, len(data))], KR), [])
 
+    def test_overlap_only_is_still_hidden(self):
+        """목록과 **겹치기만** 해서는 통과하지 않는다 — 스트림 앞쪽에 붙은 문장(이름 박힌 문장)도 걸린다(sfc 구멍 회귀)."""
+        data = sj("ようこそおいでくださいました") + b"\x00"
+        self.assertEqual(len(c._find_hidden(data, [(10, 20)], [], KR)), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,6 +12,7 @@
 """
 
 import json
+import os
 import re
 import struct
 import sys
@@ -74,6 +75,60 @@ FONT_AT = ARCHIVE_TOP
 
 
 BATTLE_LO, BATTLE_HI = 0x0CAB04, 0x0D85B4  # 전투 아카이브 LZ 구간(첫 블록 시작 ~ 끝 블록 끝)
+
+
+# 시험 빌드 전용 디버그 플래그(`$FF01B2`=0x62) — 부팅 `0x1085C` 의 지워진 A+B+C 검사 자리(14B:
+# move.w d0,d1 · andi.w #$70 · cmpi.w #$70 · bne.w +2)를 `move.b #$62,$FF01B2` + nop 둘로 바꾼다.
+# 앞 두 줄(패드 읽기 `jsr $A64`)은 그대로 둔다. 분석은 docs/status.md 「디버그 모드 분석」.
+DEBUG_BUILD = os.environ.get("ED_DEBUG") == "1"
+DEBUG_TAGS_OK = ("test-", "debug")  # 꼬리표 `debug` = 마스터용(인게임 QA), `test-*` = 시험
+DEBUG_OUT_NAME = "ed1-kr-DEBUG.bin"  # 🔴 제품 파일명(ed1-kr.bin)과 달라야 emucap SRAM 이름도 갈린다
+DEBUG_HDR_AT = 0x150  # 헤더 「해외판 이름」 칸(원판은 공백) — 에뮬 창·목록에 (DEBUG) 가 보이게
+DEBUG_HDR = b"DRAGON SLAYER (DEBUG)".ljust(32)
+DEBUG_SITE = 0x1085C
+DEBUG_PATCH = bytes.fromhex("13fc006200ff01b2") + bytes.fromhex("4e71") * 3  # 8B + nop×3 = 14B
+# 필드 전투 스킵 — 조우 판정 `$22FAC` 의 걸음 카운터 검사(`0x22FD8`: cmpi.b #0,$FF3609 + beq.w 12B)를 꼬리 스텁으로 돌린다.
+# 디버그 플래그($FF01B2 = 0x62)가 서 있고 **A 버튼을 누른 채** 걸으면 카운터만 줄이고 조우를 건너뛴다(A 를 떼면 평소 그대로).
+DEBUG_SKIP_SITE = 0x22FD8
+DEBUG_SKIP_STUB_AT = ARCHIVE_TOP - 0x60  # 꼬리 아카이브 구간 끝 쪽의 빈 자리(ARCHIVE_TOP = 글꼴 꼬리 시작)
+DEBUG_SKIP_STUB = bytes.fromhex(
+    "0c390062 00ff01b2 6610"  # cmpi.b #$62,$FF01B2 / bne.s 평소
+    "08390006 00ff1855 6706"  # btst #6,$FF1855(A 버튼) / beq.s 평소
+    "4ef900022fe4"  # jmp $22FE4 — 조우 없이 카운터 감소로
+    "0c390000 00ff3609 6606"  # 평소: cmpi.b #0,$FF3609 / bne.s 계속
+    "4ef900022ff2"  # jmp $22FF2 — 조우
+    "4ef900022fe4"  # 계속: jmp $22FE4
+)
+# 대사 보기(디버그 롬만) — 램 우편함 `$FFE800`(스트림 램 주소 .l)·`$FFE804`(창 종류 a5 .w)에 값을 쓰면, 필드 메인 루프의 입력 읽기
+# (`$16B0: jsr $A64` — 4프레임마다 불린다)에서 엔진 메시지 함수(`movea.l $200.w,a6 / jsr (a6)` — 씬 모듈이 NPC 대사를 부르는
+# 그 꼴)를 불러 대사를 창에 띄운다. 끝나면 `$FFE806` 에 1 을 쓴다(하네스가 읽는다). 걸어가 말 걸기 없이 씬 모듈 안 모든 스트림을
+# 실제 창에 띄우려는 것(헤드리스 `gpgx_msgview.py`). 걸음 판정(`$22FD8`)·플레이어 갱신(`$226D4`)에 먼저 걸었으나 실내·정지 중엔 안 불려 옮겼다(카운터 스텁으로 열 자리를 재서 골랐다).
+DEBUG_VIEW_SITE = 0x16B0
+DEBUG_VIEW_AT = ARCHIVE_TOP - 0xC0
+DEBUG_VIEW_BOX = 0xFFE800
+_BOX = DEBUG_VIEW_BOX.to_bytes(4, "big")
+_BOX5 = (DEBUG_VIEW_BOX + 4).to_bytes(4, "big")
+_VIEW_BODY = (
+    bytes.fromhex("48e7fffe")  # movem.l d0-d7/a0-a6,-(a7)
+    + bytes.fromhex("2279") + _BOX  # movea.l $FFE800,a1
+    + bytes.fromhex("3a79") + _BOX5  # movea.w $FFE804,a5
+    + bytes.fromhex("42b9") + _BOX  # clr.l $FFE800
+    + bytes.fromhex("2c780200")  # movea.l $200.w,a6
+    + bytes.fromhex("4e96")  # jsr (a6)
+    + bytes.fromhex("13fc000100ffe806")  # move.b #1,$FFE806 — 「끝났다」 표식
+    + bytes.fromhex("4cdf7fff")  # movem.l (a7)+,d0-d7/a0-a6
+)
+DEBUG_VIEW_STUB = (
+    bytes.fromhex("4eb900000a64")  # jsr $A64.l — 덮어쓴 원래 명령(d0 = 패드)
+    + bytes.fromhex("0c390062") + bytes.fromhex("00ff01b2")  # cmpi.b #$62,$FF01B2
+    + bytes.fromhex("66") + bytes([6 + 2 + len(_VIEW_BODY)])  # bne.s 끝
+    + bytes.fromhex("4ab9") + _BOX  # tst.l $FFE800
+    + bytes.fromhex("67") + bytes([len(_VIEW_BODY)])  # beq.s 끝
+    + _VIEW_BODY
+    + bytes.fromhex("4e75")  # rts
+)
+DEBUG_VIEW_PATCH = bytes.fromhex("4eb9") + DEBUG_VIEW_AT.to_bytes(4, "big")  # jsr 스텁 (6B, 원래와 같은 길이)
+DEBUG_SKIP_PATCH = bytes.fromhex("4ef9") + DEBUG_SKIP_STUB_AT.to_bytes(4, "big") + bytes.fromhex("4e71") * 3  # 6B + nop×3 = 12B
 
 
 class Rom:
@@ -582,6 +637,23 @@ def main(check_only: bool = False) -> None:
     # 3c. 오프닝 자막 · 엔딩 문안 영역 + 표
     for label, pos, body in cap_writes:
         rom.write(label, pos, body)
+    # 3d. 🔴 시험 빌드 전용 디버그 스위치(ED_DEBUG=1, 꼬리표 test-*) — 제품 롬에는 한 바이트도 안 닿는다
+    if DEBUG_BUILD:
+        if not common.BUILD_TAG.startswith(DEBUG_TAGS_OK):
+            raise SystemExit("ED_DEBUG=1 은 디버그 전용 꼬리표(debug · test-*)에서만 된다 — 예: ED_BUILD_TAG=debug")
+        rom.allowed["debug-flag"] = (DEBUG_SITE, DEBUG_SITE + len(DEBUG_PATCH))
+        rom.write("debug-flag", DEBUG_SITE, DEBUG_PATCH)
+        rom.allowed["debug-skip-site"] = (DEBUG_SKIP_SITE, DEBUG_SKIP_SITE + len(DEBUG_SKIP_PATCH))
+        rom.write("debug-skip-site", DEBUG_SKIP_SITE, DEBUG_SKIP_PATCH)
+        rom.allowed["debug-skip-stub"] = (DEBUG_SKIP_STUB_AT, DEBUG_SKIP_STUB_AT + len(DEBUG_SKIP_STUB))
+        rom.write("debug-skip-stub", DEBUG_SKIP_STUB_AT, DEBUG_SKIP_STUB)
+        rom.allowed["debug-view-stub"] = (DEBUG_VIEW_AT, DEBUG_VIEW_AT + len(DEBUG_VIEW_STUB))
+        rom.write("debug-view-stub", DEBUG_VIEW_AT, DEBUG_VIEW_STUB)
+        rom.allowed["debug-view-site"] = (DEBUG_VIEW_SITE, DEBUG_VIEW_SITE + len(DEBUG_VIEW_PATCH))
+        rom.write("debug-view-site", DEBUG_VIEW_SITE, DEBUG_VIEW_PATCH)
+        rom.allowed["debug-header"] = (DEBUG_HDR_AT, DEBUG_HDR_AT + len(DEBUG_HDR))
+        rom.write("debug-header", DEBUG_HDR_AT, DEBUG_HDR)
+        print("  ⚠ 디버그 빌드 — $FF01B2=0x62 (C+방향=고속 이동·벽 통과, 시스템 메뉴 「경험치UP」은 누르면 굳는다)")
     # 4. 체크섬 · 대조 · 출력
     rom.write("checksum", 0x18E, struct.pack(">H", common.header_checksum(rom.buf)))
     rom.verify_no_overlap()
@@ -592,7 +664,7 @@ def main(check_only: bool = False) -> None:
     # 거부한다(유저 맥에서 실측 2026-09-06: 성공 이미지 옆에 아침의 .failed 가 남아 못 받았다).
     for stale in out_dir.glob("*.failed"):
         stale.unlink()
-    out = out_dir / "ed1-kr.bin"
+    out = out_dir / (DEBUG_OUT_NAME if DEBUG_BUILD else "ed1-kr.bin")
     out.write_bytes(bytes(rom.buf))
     used = cur - SCRIPT_LO if region == "script" else (SCRIPT_HI - SCRIPT_LO) + (cur - TAIL_LO)
     print(
@@ -605,7 +677,7 @@ if __name__ == "__main__":
         main("--check" in sys.argv)
     except SystemExit as e:
         out_dir = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_")
-        p = out_dir / "ed1-kr.bin"
+        p = out_dir / (DEBUG_OUT_NAME if DEBUG_BUILD else "ed1-kr.bin")
         if p.exists():
             p.rename(p.with_suffix(".bin.failed"))
         raise SystemExit(f"❌ 빌드 실패: {e}") from e
