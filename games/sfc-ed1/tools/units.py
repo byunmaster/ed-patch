@@ -81,7 +81,11 @@ def speaker_before(items: list[script.Item], i: int, res) -> str | None:
 
 def extract(rom: bytes):
     s, e = common.snes2off(text.TEXT_START), common.snes2off(text.TEXT_END)
-    items = script.parse_region(rom, s, e, script.pointer_anchors(rom))
+    an = script.pointer_anchors(rom)
+    items = []
+    for a, b in text.EXTRA_REGIONS:  # 본체 밖 표 목표(`text.EXTRA_REGIONS`) — `build.body_items` 와 같은 열(본체 앞)
+        items += script.parse_region(rom, common.snes2off(a), common.snes2off(b), an)
+    items += script.parse_region(rom, s, e, an)
     res = text.resolver(rom)
     # 조각 번호 — END($E0/$E4) 마다 하나씩. 화자는 조각 안에서 이어진다(tm.py)
     seg_of = []

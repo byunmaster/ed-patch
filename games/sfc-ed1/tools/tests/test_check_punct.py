@@ -32,6 +32,7 @@ class Punct(unittest.TestCase):
         for t in ("… 그런 것처럼", "좋다. … 어라?", "이건\\n… 지도잖아"):
             self.assertEqual(len(check_punct.violations(t)), 1, t)
         self.assertEqual(check_punct.violations("뭐라고…!? 어째서"), [])
+        self.assertEqual(check_punct.violations("<E3>{D0:01}\n<E1>…무슨 일이십니까?<E0>"), [])  # 이름표 뒤도 문장 첫머리
 
     def test_물음표_느낌표와_말줄임_순서(self):
         for t in ("어떻게…!!", "소니아…!? 어째서", "뭐…?"):

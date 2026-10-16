@@ -769,8 +769,13 @@ def emit(a, k):
     lm("lda", V_WM)  # 문장 모드(`vwf_fitchk` 가 켠다)면 숫자 꼬리 규칙은 건너뛴다
     a.bne(label="wk_nn")
     lm("lda", V_VR)  # 바로 앞에 찍은 원판 글자가 숫자(0~9)면 그 뒤 공백은 줄바꿈 금지(「EP 1 포인트」가 숫자에서 갈리지 않게 — PS1 NOBREAK_SP 꼴)
-    a.cmp(imm=0x11)  # 0~9 숫자 · 0x10 = 숫자 루틴이 덧붙이는 자리 패딩 공백(그 뒤 우리 공백도 같은 숫자 꼬리다)
-    a.bcs(label="wk_nn")
+    # 🔴 숫자는 코드 $00~$09 와 숫자 루틴이 덧붙이는 자리 패딩 공백 $10 뿐이다. 예전 비교(`CMP #$11 / BCS`)는 $0A~$0F 까지 「숫자」로 읽어 **「!」($0C)·「?」($0F) 뒤의
+    #    공백도 줄바꿈 금지**가 됐다 — 「말았다! 민첩성이」 가 「민첩 / 성이」 로 낱말 가운데에서 꺾였다(qa 10-20, m20C2 · 같은 꼴 「…맞지 / 않았다.」)
+    a.cmp(imm=0x0A)
+    a.bcc(label="wk_nb")  # $00~$09 숫자
+    a.cmp(imm=0x10)
+    a.bne(label="wk_nn")  # $10 패딩 공백만 숫자 꼬리, 그 밖($0A~$0F 부호·글자 포함)은 보통 어절 줄바꿈
+    a.label("wk_nb")
     a.clc()
     a.jmp(addr="wk_fin", mode="abs")
     a.label("wk_nn")
@@ -858,6 +863,9 @@ def emit(a, k):
         a.jmp(addr="wk_end", mode="abs")
         a.label(f"wk_dp{pc:02X}")
     # 사전 토큰(코드+색인) — 실제 표기 폭을 표(`tw_d0`~`tw_d5`, 색인 하위 7비트)로 잰다. 색인 최상위 비트가 선 $D0(「파티 순서 n 번째」)만 32px 로 어림한다
+    # 🔴 위 부호 검사가 A 를 앞 바이트로 덮어 놨다 — 코드를 다시 읽어 밀어 넣는다(2026-10-19 BP 로그: 안 그러면 $D1~$D5 가 전부 `tw_d0` 표로 잰다 —
+    #    「사이레스 주문을」 의 `{D5:2D}`(16px)를 40px 로 재서 줄 끝도 아닌데 「사이레스 / 주문을 / 쓰는」 으로 갈라졌다)
+    a.op("lda", dp=0x3F, mode="indlongy")
     a.pha()
     a.iny()
     a.op("lda", dp=0x3F, mode="indlongy")

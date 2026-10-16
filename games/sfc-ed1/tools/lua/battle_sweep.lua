@@ -77,6 +77,18 @@ if FORCE >= 0 then -- 난수: `$00:957B`(나머지 N → `$0950`) · `$00:952A`(
     rk = rk + 1; wr(0x0949, (((rk + FORCE) % 2) == 0) and 0 or 0xFF)
   end, emu.callbackType.exec, 0x009579, 0x009579, emu.cpuType.snes)
 end
+local WATCH = os.getenv("BT_WATCH") -- 조사용: 롬 구간 읽기 감시 "0x02E9B4,0x02ECFF" — 16바이트 블록마다 첫 읽기의 PC 를 log 에 남긴다
+if WATCH then
+  local lo, hi = string.match(WATCH, "(%w+),(%w+)")
+  local seen = {}
+  emu.addMemoryCallback(function(addr, val)
+    local blk = addr >> 4
+    if seen[blk] then return end
+    seen[blk] = true
+    local st = emu.getState()
+    log(string.format("WATCH bf%d job=%d addr=%06X pc=%02X:%04X", bf, job, addr, st["cpu.k"], st["cpu.pc"]))
+  end, emu.callbackType.read, tonumber(lo), tonumber(hi), emu.cpuType.snes)
+end
 if TRACE then -- 조사용: 칸 번호 `$173B` 를 쓰는 PC (전투 로그 한 번)
   emu.addMemoryCallback(function(addr, val)
     if state ~= "run" then return end

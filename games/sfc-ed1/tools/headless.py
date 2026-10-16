@@ -78,7 +78,7 @@ def run(rom: Path, lua: str, out: Path, env: dict[str, str], timeout: int = 7200
         (out / "rom.json").write_text(json.dumps(rom_info, ensure_ascii=False, indent=1), encoding="utf-8")
     e = {
         **os.environ,
-        "DISPLAY": os.environ.get("DISPLAY", ":99"),
+        "DISPLAY": os.environ.get("DISPLAY") or ":99",  # 빈 문자열이어도 :99 (헤드리스 실행이 로그 없이 멎던 원인)
         "LUA_DIR": str(LUA_DIR),
         "BT_OUT": str(out),
         **env,

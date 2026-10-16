@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import text  # noqa: I001
 import common
+import tokenorder
 
 PATH = common.GAME_DIR / "textmap" / "segments.json"
 DICT_PATH = common.GAME_DIR / "textmap" / "dict.json"  # 사전 6벌: "D2:0A" → {kr, state, jp_len}
@@ -98,12 +99,14 @@ def init_from_tm(min_ratio: float) -> dict:
         s = segs[r["seg"]]
         if s["id"] in tm and tm[s["id"]].get("state") != "tm-draft":
             continue  # 사람이 손댄 항목은 덮지 않는다
-        # 토큰은 뒤에 이어 붙여 둔다 — 자리는 사람이 옮긴다(초안 표시)
+        # 토큰은 뒤에 이어 붙인 뒤 원문 자리(글 앞/뒤)로 옮긴다 — 안 옮기면 최종 롬에 「물건이옵니다.감사합니다.」 같은 꼴이 나간다
+        # (2026-10-19, `tokenorder.fix`). 글 한가운데 낀 분기는 못 옮기니 `check_token_order` 가 잡는다.
         kr = r["kr"].strip()
         tail = "".join(t for t in s["tokens"])
+        kr = tokenorder.fix(s["jp"], kr + tail, s["tokens"], True)
         tm[s["id"]] = {
             "addr": s["addr"],
-            "kr": kr + tail,
+            "kr": kr,
             "state": "tm-draft",
             "tm": {"ps1": r["ps1"], "ratio": r["ratio"]},
         }

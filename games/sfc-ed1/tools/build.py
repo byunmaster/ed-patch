@@ -90,10 +90,14 @@ def restore_pinned(out: bytearray, rom: bytes) -> None:
             raise SystemExit(f"제자리 고정 구간이 원본과 다르다: {common.fmt(a)}")
 
 
-def body_items(rom: bytes) -> list[script.Item]:
-    items = script.parse_region(
-        rom, common.snes2off(BODY[0]), common.snes2off(BODY[1]), script.pointer_anchors(rom)
-    )
+def body_items(rom: bytes, extra: bool = True) -> list[script.Item]:
+    an = script.pointer_anchors(rom)
+    items = []
+    # 본체 밖 표 목표(`text.EXTRA_REGIONS`) — 한글 경로(`kr_items`)에서만 항목 열 **앞**에 붙인다(옛 PoC 경로 `build`·`verify` 는 본체만).
+    # ⚠ 뒤에 붙이면 「END 없이 끝나는 본체 마지막 조각」이 열의 끝이 아니게 돼 종료 꼴이 달라진다(`verify_terminators` 가 잡았다).
+    for a, b in text.EXTRA_REGIONS if extra else ():
+        items += script.parse_region(rom, common.snes2off(a), common.snes2off(b), an)
+    items += script.parse_region(rom, common.snes2off(BODY[0]), common.snes2off(BODY[1]), an)
     # 🔴 `EE addr24` (네이티브 호출)이 본체 안을 가리키면 본체를 옮기거나 지울 때 그 호출이 `$FF` 를 실행한다.
     #    $0B:FD04~FE75 가 코드인 걸 못 보고 문안으로 옮겼다가 238곳이 깨졌다(10-12) — 이제 본체 밖이어야 한다.
     lo, hi = common.snes2off(BODY[0]), common.snes2off(BODY[1])
@@ -659,7 +663,7 @@ def verify_header_checksum(out: bytes) -> None:
 
 
 def build(rom: bytes) -> tuple[bytes, dict]:
-    items = body_items(rom)
+    items = body_items(rom, extra=False)
     place = relocation_plan(items)
     body = script.emit(items, place)
     out = bytearray(rom) + bytearray(b"\xff" * (NEW_SIZE - len(rom)))
@@ -784,7 +788,7 @@ def lead_collisions(rom: bytes) -> dict[int, int]:
     import encode
 
     n: dict[int, int] = {}
-    for it in body_items(rom):
+    for it in body_items(rom, extra=False):
         if it.kind == "char" and it.code in encode.LEADS:
             n[it.code] = n.get(it.code, 0) + 1
     return n
@@ -847,7 +851,7 @@ def verify(rom: bytes, out: bytes, place: dict[int, int]) -> dict:
             if so != unshift_f9(sn):
                 mism += 1
     # 3. 옮긴 본체를 라벨 모델로 다시 풀어 원본 항목 열과 같은가(참조 재계산의 역검증)
-    items_o = body_items(rom)
+    items_o = body_items(rom, extra=False)
     ns = common.snes2off(BODY[0]) + BANK_SHIFT * 0x8000
     items_n = script.parse_region(
         out, ns, ns + sum(it.size for it in items_o), script.pointer_anchors(out)
@@ -1883,7 +1887,7 @@ def main() -> None:
         return
     rom = common.rom_bytes()
     out, info = build(rom)
-    v = verify(rom, out, relocation_plan(body_items(rom)))
+    v = verify(rom, out, relocation_plan(body_items(rom, extra=False)))
     ok = (
         v["immutable_diffs"] == 0
         and v["readback_mismatch"] == 0

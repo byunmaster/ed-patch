@@ -102,7 +102,7 @@ def candidates(dm: dict[str, str] | None = None, field: bool = False) -> dict[st
     return {
         "D6": people,
         "D7": people + ["자신"],
-        "D8": party,
+        "D8": [p + " 일행" for p in party],  # 엔진이 이름 뒤에 붙이는 「 일행」(`hook.SUFFIX_TEXT`)까지
         "D9": items,
         "DB": [s + str(n) for s in spells for n in (1, 2, 3)],
         "DC": ["1", "2", "5", "10", "12", "99", "120", "999", "1285", "9999", "65535"],

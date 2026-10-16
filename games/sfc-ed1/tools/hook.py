@@ -70,6 +70,13 @@ NL_SITE = 0x02DE55
 NL_SITE_ORIG = bytes([0xAD, 0x3B, 0x17])  # LDA $173B
 NL_STUB = 0x02FE88  # LDA $173B / CMP #$FF / BNE +2 / LDA #$00 / RTS (10B)
 NL_STUB_BYTES = bytes([0xAD, 0x3B, 0x17, 0xC9, 0xFF, 0xD0, 0x02, 0xA9, 0x00, 0x60])
+# 🔴 **파티 치환 `{D8}` 은 엔진이 이름 뒤에 가나 「たち」 코드 `$20 $21` 을 직접 붙인다**(`$02:E081` — 사전 버퍼에 이름을 옮긴 뒤 두 바이트 + `$FF`). 가나 코드라
+#    우리 글꼴 슬롯 자리가 돼 「세리오스ㅅ다는」 으로 깨졌다(qa 10-19, 강제 전투 m208A 실화면). 그 자리를 **한글 「 일행」(공백 + 2바이트 둘)** 으로 갈아 끼운다
+#    — 빈 자리(`$02:FF00`)의 스텁이 같은 바이트들을 쓰고 `$E0C3` 으로 돌아간다. 글리프 색인은 빌드 때 `rep` 에서 읽는다.
+SUFFIX_SITE = 0x02E081
+SUFFIX_ORIG = bytes.fromhex("a9209d4c17a9219d4d17a9ff9d4e178031")  # 17B: たち 둘 + FF + BRA $E0C3
+SUFFIX_STUB = 0x02FF00
+SUFFIX_TEXT = " 일행"
 SNAP_STUB = 0x02FE80  # JSL pagesnap / LDA $1777 / RTS (8B) — 원래 자리가 돌려주던 플래그(Z)를 그대로 돌려준다
 # 🔴 **글자가 들어오는 문은 둘이다**(2026-09-07 실측). `$02:DDEE` 가 사전 버퍼가 켜져 있으면
 # 대본 대신 **버퍼**에서 한 바이트를 집어 같은 `$173A` 로 보낸다:
@@ -2006,6 +2013,30 @@ def apply(
         if bytes(rom[nl : nl + 3]) != NL_SITE_ORIG:
             raise SystemExit(f"개행 핸들러 자리가 예상과 다르다: {rom[nl : nl + 3].hex()}")
         out[nl : nl + 3] = bytes([0x20, NL_STUB & 0xFF, (NL_STUB >> 8) & 0xFF])  # JSR $FE88
+    # 1b. `{D8}` 뒤 「たち」 → 「 일행」 (위 SUFFIX_*)
+    suf = bytearray()
+    for ch in SUFFIX_TEXT:
+        if ch == " ":
+            suf.append(0x10)
+        else:
+            if ch not in rep:
+                raise SystemExit(f"글리프 뱅크에 {ch!r} 가 없다 — `{{D8}}` 뒤 「{SUFFIX_TEXT}」 를 못 쓴다")
+            suf += encode.glyph_code(rep.index(ch))
+    suf.append(0xFF)
+    stub = bytearray()
+    for i, b in enumerate(suf):
+        stub += bytes([0xA9, b, 0x9D, (0x174C + i) & 0xFF, (0x174C + i) >> 8])
+    stub += bytes([0x4C, 0xC3, 0xE0])  # JMP $E0C3 — 원래 BRA 의 도착점
+    so = common.snes2off(SUFFIX_STUB)
+    if bytes(rom[so : so + len(stub)]) != b"\xff" * len(stub):
+        raise SystemExit(f"{{D8}} 접미 스텁 자리가 비어 있지 않다 {common.fmt(SUFFIX_STUB)}")
+    out[so : so + len(stub)] = stub
+    sx = common.snes2off(SUFFIX_SITE)
+    if bytes(rom[sx : sx + len(SUFFIX_ORIG)]) != SUFFIX_ORIG:
+        raise SystemExit(f"{{D8}} 접미 자리가 예상과 다르다: {rom[sx : sx + 17].hex()}")
+    out[sx : sx + len(SUFFIX_ORIG)] = bytes([0x4C, SUFFIX_STUB & 0xFF, (SUFFIX_STUB >> 8) & 0xFF]) + b"\xea" * (
+        len(SUFFIX_ORIG) - 3
+    )
     # 2. 소비 지점: JSR $E784 → JSR $FE52
     c = common.snes2off(CALL_SITE)
     if bytes(rom[c : c + 3]) != bytes([0x20, 0x84, 0xE7]):
@@ -2190,6 +2221,8 @@ def patch_ranges() -> list[tuple[int, int]]:
         (common.snes2off(ENDING_CTX_SITE), common.snes2off(ENDING_CTX_SITE) + 5),
         *[(common.snes2off(s_), common.snes2off(s_) + 3) for s_ in FONT_CALL_SITES],
         (common.snes2off(FONT_TRAMPOLINE), common.snes2off(FONT_TRAMPOLINE) + 8),
+        (common.snes2off(SUFFIX_SITE), common.snes2off(SUFFIX_SITE) + len(SUFFIX_ORIG)),
+        (common.snes2off(SUFFIX_STUB), common.snes2off(SUFFIX_STUB) + 5 * (len(SUFFIX_TEXT) * 2 - 1 + 1) + 3),
         *(
             [
                 (common.snes2off(SNAP_STUB), common.snes2off(SNAP_STUB) + 8),
