@@ -31,6 +31,11 @@ from font import byte_len, to_bytes  # noqa: F401  🔴 인코딩 규칙 정본
 TITLE = "/TITLE.BIN"
 BUILD = common.BUILD_DIR  # ⚠ 꼬리표별로 갈린다 — `common.BUILD_TAG`
 
+# 타이틀 메뉴가 부르는 시퀀스 루틴 주소(TITLE.BIN 은 0x06028000 에 적재된다) — `--entry-swap` 전용
+ENTRY_BASE = 0x06028000
+OPENING_ED1, OPENING_ED2 = ENTRY_BASE + 0x13C4, ENTRY_BASE + 0x220C
+ENDING_ED1, ENDING_ED2 = ENTRY_BASE + 0x3C78, ENTRY_BASE + 0x58EC
+
 
 def pad(text, width, left):
     """문안을 전각 `width` 칸으로 채운다 — 왼쪽 `left` 칸.
@@ -672,6 +677,19 @@ def main():
         print(f"     🔬 그림 파일명 {n_sw}개 교체")
 
     print(f"  자막 {len(patch)}줄 교체 · 0x{lo:05X}~0x{hi:05X} ({hi - lo:,}B, 섹터 {n})")
+
+    # ⚠ **검증 전용** — 타이틀 메뉴가 부르는 시퀀스 루틴의 주소(SH-2 리터럴 풀 `0x198`·`0x19c`)를 엔딩 루틴으로 바꿔,
+    #   타이틀에서 「영웅전설 I/II」를 고르면 **오프닝 대신 엔딩 연출 그 자체**(그림·낭독·스태프롤)가 돈다.
+    #   `--as` 는 오프닝 그림 위에 엔딩 문구만 얹지만 이건 엔딩 루틴을 부른다. 🔴 배포 빌드에 켜지 않는다.
+    #   리터럴은 TITLE.BIN 적재 기준 주소(`ENTRY_BASE`)라 바이트를 직접 읽어 **옛 값을 확인**한 뒤 쓴다.
+    if "--entry-swap" in sys.argv:
+        ent = {0x198: (OPENING_ED1, ENDING_ED1), 0x19C: (OPENING_ED2, ENDING_ED2)}
+        with open(dst, "r+b") as f:
+            for at, (old_a, new_a) in ent.items():
+                got = int.from_bytes(raw[at : at + 4], "big")
+                assert got == old_a, f"리터럴 0x{at:X} 이 예상과 다르다: 0x{got:08X} != 0x{old_a:08X}"
+                common.write_at(f, lba, size, at, new_a.to_bytes(4, "big"), label=f"엔딩 루틴 진입 0x{at:X}")
+        print("     🔬 진입 교체: ED1/ED2 선택 → 엔딩 루틴 (오프닝 아님)")
 
     # 폰트 — 계획대로 글리프를 굽는다. ⚠ `KANJI.FON` 은 두 자리에 있고 **둘 다** 고쳐야 한다
     #   (`/KANJI.FON` 타이틀 · `/OPENEND/KANJI.FON` 오프닝·엔딩 모듈). 한쪽만 고치면
