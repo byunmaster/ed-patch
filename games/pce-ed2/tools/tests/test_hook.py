@@ -48,18 +48,49 @@ def machine(glyphs: list[bytes]):
     return sim
 
 
+def with_package(sim, local: list[bytes], with_table: bool = True):
+    """패키지 가짜 — 뱅크 0x73(머리표 · 메시지 표) + 0x74(지역 글리프 표)."""
+    b73, b74 = bytearray(8192), bytearray(8192)
+    b73[12:15] = bytes([0, 0x00, 0x02])  # 항목 4: 메시지 표 = 오프셋 0x0200
+    if with_table:
+        b73[0x200:0x202] = bytes([0x00, 0x21])  # 표 항목 0: 지역 글리프 표 = 상대 뱅크 1 + 0x0100
+    for k, g in enumerate(local):
+        b74[0x100 + 18 * k : 0x100 + 18 * (k + 1)] = font.pack(g)
+    sim.banks[0x73], sim.banks[0x74] = b73, b74
+    sim.wr(0x2041, 0x73)  # ZP $41 = 패키지 첫 뱅크
+
+
 class Hook(unittest.TestCase):
+    def test_지역_표_글리프가_풀린다(self):
+        gl, loc = synthetic(300), synthetic(5)
+        sim = machine(gl)
+        with_package(sim, loc)
+        for k in range(5):
+            r = self.call(sim, 300 + k)
+            self.assertEqual(r, -1)
+            self.assertEqual(sim.c, 0)
+            self.assertEqual(bytes(sim.ram[0x109B : 0x109B + 24]), loc[k], f"지역 {k}")
+            self.assertEqual(sim.mpr[4], 0x75, "MPR4 되돌림")
+
+    def test_지역_표가_없으면_원래_흐름(self):
+        sim = machine(synthetic(300))
+        with_package(sim, synthetic(2), with_table=False)
+        sim.x = 0x44
+        self.assertEqual(self.call(sim, 300), hook.ORIG_CHECK)
+        self.assertEqual(sim.x, 0x44)
+        self.assertEqual(sim.mpr[4], 0x75)
+
     def call(self, sim, idx: int):
         lead, trail = divmod(idx, font.PER_LEAD)
         sim.wr(0x20F9, font.LEAD0 + lead)
         sim.wr(0x20F8, font.TRAIL0 + trail)
         sim.sp = 0xFF
-        return self.follow(sim, sim.run(0x6000 + hook.HOOK_OFF))
+        return self.follow(sim, sim.run(0x6000 + hook.HOOK_OFF), 0xFF)
 
-    def follow(self, sim, r):
+    def follow(self, sim, r, base_sp=0xFF):
         """`JMP` 가 루틴 안(우리 `orig` 디딤돌)이면 따라가, 마침내 어디로 나가는지 돌려준다."""
         while r not in (-1, hook.ORIG_CHECK):
-            r = sim.run(r)
+            r = sim.run(r, base_sp=base_sp)
         return r
 
     def test_모든_글리프가_정확히_풀린다(self):

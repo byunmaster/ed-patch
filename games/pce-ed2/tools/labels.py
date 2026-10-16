@@ -147,3 +147,16 @@ def edit_chunk(d: bytes, tab, missing: set) -> bytes:
     for i in range(n if every else min(1, n)):
         lines[i] = edit_line(lines[i], tab, missing)
     return b"\x00".join(lines)
+
+
+def edit_any_lines(d: bytes, tab, missing: set, skip: set[int]) -> bytes:
+    """덩이의 **나머지 줄**(`skip` 제외)도 라벨 꼴이면 정본으로 바꾼다 — 전투 덩이의 몬스터 이름(+Ａ·Ｂ) · 지명 배너 따위. 정본에 없는 줄은 건드리지 않는다(`missing` 에 안 모은다)."""
+    lines = d.split(b"\x00")
+    for i, l in enumerate(lines[:-1]):
+        if i in skip:
+            continue
+        s = split(l)
+        if s is None or lookup(s[2]) is None:
+            continue
+        lines[i] = edit_line(l, tab, set())
+    return b"\x00".join(lines)

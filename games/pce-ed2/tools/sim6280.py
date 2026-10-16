@@ -59,10 +59,10 @@ class Sim:
         lo = self.fetch()
         return lo | self.fetch() << 8
 
-    def run(self, pc: int, until_ret_depth: int = 0, max_steps: int = 100000):
+    def run(self, pc: int, until_ret_depth: int = 0, max_steps: int = 100000, base_sp: int | None = None):
         """`pc` 에서 시작해 최상위 RTS(스택이 처음 깊이로 돌아옴)까지. JMP 는 따라간다. 반환: 도달한 `JMP` 대상 또는 None."""
         self.pc = pc
-        start_sp = self.sp
+        start_sp = self.sp if base_sp is None else base_sp  # JMP 를 따라 이어 돌 때는 처음 깊이를 유지한다
         for _ in range(max_steps):
             op = self.fetch()
             r = self.step(op, start_sp)
@@ -106,6 +106,14 @@ class Sim:
             self.cmp(self.a, self.rd(zp()))
         elif op == 0xDD:
             self.cmp(self.a, self.rd(self.fetch16() + self.x))
+        elif op == 0xCD:
+            self.cmp(self.a, self.rd(self.fetch16()))
+        elif op == 0x6D:
+            self.adc(self.rd(self.fetch16()))
+        elif op == 0xED:
+            self.adc(self.rd(self.fetch16()) ^ 0xFF)
+        elif op == 0x0D:
+            self.a = self.nz(self.a | self.rd(self.fetch16()))
         elif op == 0xE0:
             self.cmp(self.x, self.fetch())
         elif op == 0xC0:

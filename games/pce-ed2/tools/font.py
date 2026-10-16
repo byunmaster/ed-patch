@@ -113,6 +113,7 @@ class GlyphTable:
     def __init__(self):
         self.chars: set[str] = set()
         self.map: dict[str, int] | None = None
+        self.local: dict[str, int] = {}  # 패키지 지역 글리프(글자 → 코드 번호 S+k) — 패키지마다 갈아 끼운다
 
     def freeze(self) -> list[str]:
         order_ = order(self.chars)
@@ -126,9 +127,13 @@ class GlyphTable:
                 out.append(space)
             elif ch == "\n":
                 out.append(0x0D)
+            elif ch == "\f":
+                out += b"\x13\x0d"  # 쪽 넘김(`13` 뒤 줄바꿈)
             elif self.map is None:
                 self.chars.add(ch)
                 out += code(0)
-            else:
+            elif ch in self.map:
                 out += code(self.map[ch])
+            else:
+                out += code(self.local[ch])
         return bytes(out)

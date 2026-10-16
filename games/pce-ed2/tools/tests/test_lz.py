@@ -30,6 +30,17 @@ class RoundTrip(unittest.TestCase):
         d = lz.decode(p, 0, len(a))[0]
         self.assertEqual(d, a)
 
+    def test_최적_파싱은_왕복이_맞고_탐욕보다_짧거나_같다(self):
+        rnd = random.Random(3)
+        for _ in range(30):
+            n = rnd.randrange(1, 900)
+            vocab = bytes(rnd.randrange(1, 30) for _ in range(rnd.randrange(1, 12)))
+            data = bytes(rnd.choice(vocab) for _ in range(n)) + b"\x00" * rnd.randrange(0, 3)
+            p = lz.encode_opt(data)
+            out, _ = lz.decode(p + b"\0" * 4, 0, len(data))
+            self.assertEqual(out, data)
+            self.assertLessEqual(len(p), len(lz.encode(data)))
+
     def test_수작업_스트림(self):
         # 플래그 0b11000000: 리터럴 'A' 'B', 되참조 idx=0xEF len=2+1 (니블 1 상위), 되참조 idx=0xEF len=2+2 (니블 2 하위)
         # 니블 바이트 0x12: 첫 되참조 n=1 → 3 바이트, 둘째 n=2 → 4 바이트

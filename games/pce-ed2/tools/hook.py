@@ -28,7 +28,9 @@ WINDOW_MPR = 4  # 글리프 뱅크를 잠깐 거는 창 — `$8000`(씬 패키�
 WINDOW = 0x8000
 HOOK_BANK, HOOK_OFF = 0x6C, 0x1966  # 후킹 루틴 자리(0xFF 패딩) — 마운트 `$6000`(MPR3)
 
-MAX_RUNS = 8
+MAX_RUNS = 24
+PKG_BASE = 0x41  # 씬 패키지가 올라온 첫 뱅크(ZP) — 실측 0x73
+HDR_ENTRY = 12  # 패키지 머리표 항목 4(3바이트 × 4) = 메시지 표 포인터 [상대 뱅크][lo][hi]
 
 
 def _routine(nruns: int) -> asm.Asm:
@@ -64,6 +66,16 @@ def _routine(nruns: int) -> asm.Asm:
     a.op("DEX")
     a.op("BNE", "rel", "addl")
     a.label("got")  # $ED:$EC = 글리프 번호
+    a.op("LDA", "zp", 0xED)  # 정적 글리프 수(S) 이상이면 패키지 지역 표
+    a.op("CMP", "abs", "SHI")
+    a.op("BCC", "rel", "static")
+    a.op("BNE", "rel", "tolocal")
+    a.op("LDA", "zp", 0xEC)
+    a.op("CMP", "abs", "SLO")
+    a.op("BCC", "rel", "static")
+    a.label("tolocal")
+    a.op("JMP", "abs", "local")
+    a.label("static")
     a.op("LDX", "imm", 0)
     a.label("find")  # 칸을 하나씩 건너뛰며 번호가 속한 칸을 찾는다
     a.op("LDA", "zp", 0xED)
@@ -155,15 +167,83 @@ def _routine(nruns: int) -> asm.Asm:
     a.op("PLX")
     a.op("CLC")
     a.op("RTS")
+    a.label("local")  # r = 번호 - S (0~254) → 패키지 머리표에서 지역 표 위치를 읽어 마지막 칸(LOC)에 채운다
+    a.op("SEC")
+    a.op("LDA", "zp", 0xEC)
+    a.op("SBC", "abs", "SLO")
+    a.op("STA", "zp", 0xEC)
+    a.op("LDA", "zp", 0xED)
+    a.op("SBC", "abs", "SHI")
+    a.op("BNE", "rel", "lmiss0")
+    a.op("LDA", "zp", 0xEC)
+    a.op("PHA")  # r
+    a.op("PHP")
+    a.op("SEI")
+    a.op("TMA", "tma", WINDOW_MPR)
+    a.op("PHA")  # 창 원래 뱅크
+    a.op("LDA", "zp", PKG_BASE)
+    a.op("TAM", "tam", WINDOW_MPR)  # 패키지 첫 뱅크 → $8000
+    a.op("LDA", "abs", WINDOW + HDR_ENTRY + 1)
+    a.op("STA", "zp", 0xEC)  # 메시지 표 주소 lo
+    a.op("LDA", "abs", WINDOW + HDR_ENTRY + 2)
+    a.op("PHA")
+    a.op("AND", "imm", 0x1F)
+    a.op("ORA", "imm", 0x80)
+    a.op("STA", "zp", 0xED)  # 창 hi
+    a.op("PLA")
+    for _ in range(5):
+        a.op("LSR")
+    a.op("CLC")
+    a.op("ADC", "abs", WINDOW + HDR_ENTRY)  # + 상대 뱅크
+    a.op("CLC")
+    a.op("ADC", "zp", PKG_BASE)
+    a.op("TAM", "tam", WINDOW_MPR)  # 메시지 표가 든 뱅크
+    a.op("LDY", "imm", 0)
+    a.op("LDA", "izpy", 0xEC)
+    a.op("STA", "abs", "ADLO_LOC")  # 표 항목 0 = 지역 글리프 표 포인터(lo)
+    a.op("LDY", "imm", 1)
+    a.op("LDA", "izpy", 0xEC)
+    a.op("PHA")
+    a.op("ORA", "abs", "ADLO_LOC")
+    a.op("BNE", "rel", "lok")
+    a.op("PLA")  # 표 없음
+    a.op("PLA")
+    a.op("TAM", "tam", WINDOW_MPR)
+    a.op("PLP")
+    a.op("PLA")
+    a.label("lmiss0")
+    a.op("PLX")
+    a.op("JMP", "abs", "orig")
+    a.label("lok")
+    a.op("PLA")
+    a.op("PHA")
+    a.op("AND", "imm", 0x1F)
+    a.op("ORA", "imm", 0x80)
+    a.op("STA", "abs", "ADHI_LOC")
+    a.op("PLA")
+    for _ in range(5):
+        a.op("LSR")
+    a.op("CLC")
+    a.op("ADC", "zp", PKG_BASE)
+    a.op("STA", "abs", "BANKS_LOC")
+    a.op("PLA")
+    a.op("TAM", "tam", WINDOW_MPR)
+    a.op("PLP")
+    a.op("PLA")
+    a.op("STA", "zp", 0xEC)
+    a.op("LDX", "imm", nruns)
+    a.op("JMP", "abs", "found")
     # 풀 표 — 칸마다 (글리프 수 · 뱅크 · 창 주소 lo/hi)
-    a.label("CNT")
-    a.data(bytes(nruns))
-    a.label("BANKS")
-    a.data(bytes(nruns))
-    a.label("ADLO")
-    a.data(bytes(nruns))
-    a.label("ADHI")
-    a.data(bytes(nruns))
+    for name in ("CNT", "BANKS", "ADLO", "ADHI"):  # 칸 nruns 개 + 지역 표 칸(LOC = nruns) — 지역 칸은 호출 때마다 패키지 머리표에서 채운다(RAM 이라 쓸 수 있다)
+        a.label(name)
+        a.data(bytes(nruns + 1))
+    a.labels["BANKS_LOC"] = a.labels["BANKS"] + nruns
+    a.labels["ADLO_LOC"] = a.labels["ADLO"] + nruns
+    a.labels["ADHI_LOC"] = a.labels["ADHI"] + nruns
+    a.label("SLO")  # 정적 글리프 수 S(16비트) — 설치 때 채운다
+    a.data(b"\0")
+    a.label("SHI")
+    a.data(b"\0")
     return a
 
 
@@ -196,9 +276,11 @@ def install(prog: layout.Prog, glyph24: list[bytes]) -> None:
         win = WINDOW + off
         adlo[k], adhi[k] = win & 0xFF, win >> 8
     code = bytearray(a.bytes())
+    code[a.labels["SLO"] - a.org] = len(glyph24) & 0xFF
+    code[a.labels["SHI"] - a.org] = len(glyph24) >> 8
     p = a.labels["CNT"] - a.org
     for i, arr in enumerate((cnt, banks, adlo, adhi)):
-        code[p + i * MAX_RUNS : p + (i + 1) * MAX_RUNS] = arr
+        code[p + i * (MAX_RUNS + 1) : p + i * (MAX_RUNS + 1) + MAX_RUNS] = arr
     assert prog.o(SEAM_BANK, SEAM_OFF, 2) == SEAM_OLD, "이음매 원본 바이트가 다르다"
     prog.put(SEAM_BANK, SEAM_OFF, a.org.to_bytes(2, "little"), "hook seam $60D2")
     prog.put(HOOK_BANK, HOOK_OFF, bytes(code), "hook routine")

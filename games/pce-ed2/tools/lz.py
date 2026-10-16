@@ -127,3 +127,80 @@ def encode(data: bytes) -> bytes:
             widx += 1
             i += 1
     return bytes(out)
+
+
+def _emit(data: bytes, toks: list) -> bytes:
+    """토큰열 → 스트림(플래그 비트 · 니블 쌍 포장은 탐욕 인코더와 같다)."""
+    out = bytearray()
+    flag_pos = -1
+    flag_cnt = 0
+    nib_pos = -1
+    for t in toks:
+        if flag_cnt == 0:
+            flag_pos = len(out)
+            out.append(0)
+            flag_cnt = 8
+        flag_cnt -= 1
+        if t[0] == "M":
+            _k, ridx, ln = t
+            out.append(ridx)
+            v = ln - MIN_LEN
+            if nib_pos < 0:
+                nib_pos = len(out)
+                out.append(v << 4)
+            else:
+                out[nib_pos] |= v
+                nib_pos = -1
+        else:
+            out[flag_pos] |= 1 << flag_cnt
+            out.append(t[1])
+    return bytes(out)
+
+
+def encode_opt(data: bytes) -> bytes:
+    """최적 파싱(동적 계획) 인코더 — 링 창 256B · 길이 2~17 · 리터럴 9비트 / 되참조 13비트로 비용을 매겨 가장 짧은 토큰열을 고른다.
+    링은 출력의 마지막 256바이트와 같으므로(쓰기 인덱스 0xEF 시작) 거리 d(1~256)의 되참조는 `data[i-d+k]` 와 비교하면 된다
+    (겹침 포함). 결과는 `decode` 로 원문과 같음을 호출자가 검산한다(`repack` 이 그렇게 한다)."""
+    n = len(data)
+    INF = 1 << 60
+    cost = [INF] * (n + 1)
+    cost[n] = 0
+    choice: list = [None] * (n + 1)
+    last: dict[bytes, list[int]] = {}  # 2바이트 → 최근 위치들(앞에서부터 쌓는다)
+    cands: list[list[tuple[int, int]]] = [[] for _ in range(n)]  # i → [(거리, 최대 길이)]
+    for i in range(n):
+        if i + 1 < n:
+            key = data[i : i + 2]
+            lst = last.setdefault(key, [])
+            best = []
+            for j in reversed(lst):
+                d = i - j
+                if d > RING:
+                    break
+                ln = 2
+                m = min(MAX_LEN, n - i)
+                while ln < m and data[i + ln] == data[j + ln]:
+                    ln += 1
+                best.append((d, ln))
+            cands[i] = best
+            lst.append(i)
+    for i in range(n - 1, -1, -1):
+        c, ch = cost[i + 1] + 9, ("L", data[i])
+        for d, ln in cands[i]:
+            for l in range(MIN_LEN, ln + 1):
+                v = cost[i + l] + 13
+                if v < c:
+                    c, ch = v, ("M", d, l)
+        cost[i], choice[i] = c, ch
+    toks = []
+    i = 0
+    while i < n:
+        ch = choice[i]
+        if ch[0] == "L":
+            toks.append(ch)
+            i += 1
+        else:
+            _k, d, l = ch
+            toks.append(("M", ((WIDX0 + i) - d) & 0xFF, l))
+            i += l
+    return _emit(data, toks)

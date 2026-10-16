@@ -89,6 +89,10 @@ OPS = {
     ("RTS", "imp"): 0x60,
     ("TMA", "tma"): 0x43,
     ("TAM", "tam"): 0x53,
+    ("ADC", "abs"): 0x6D,
+    ("SBC", "abs"): 0xED,
+    ("CMP", "abs"): 0xCD,
+    ("ORA", "abs"): 0x0D,
 }
 
 

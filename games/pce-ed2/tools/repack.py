@@ -36,6 +36,49 @@ def text_region(pkg: bytes) -> tuple[int, int, list[tuple[int, int]]]:
 
 
 def repack(pkg: bytes, new: dict[int, bytes]) -> tuple[bytes, dict[int, int]]:
+    """**촘촘 모드**(`compact`) — 덩이를 순서대로 빈틈없이 깔아 꼬리 자유 공간을 한 덩이로 모은다(지역 글리프 표가 거기 앉는다).
+    안 고친 패키지는 건드리지 않는다(`new` 가 비면 원본 그대로). 촘촘 모드가 안 되면 제자리 · 이사(`repack_in_place`)는 시도하지 않는다 — 어차피 총량이 모자란 것이다."""
+    if not new:
+        return pkg, {}
+    return compact(pkg, new)
+
+
+def compact(pkg: bytes, new: dict[int, bytes]) -> tuple[bytes, dict[int, int]]:
+    """모든 덩이를 원래 순서대로 **빈틈없이** 다시 깐다(안 고친 덩이는 원본 바이트 그대로) — 표만 새 시작으로 바꾼다.
+    덩이를 가리키는 건 메시지 표뿐이라는 전제(이벤트 코드는 `$AF` 번호로 부른다)에 선다 — 에뮬 확인 필요."""
+    first, limit, real = text_region(pkg)
+    T, tab = package.msg_table(pkg)
+    for a in new:
+        if a not in dict(real):
+            raise RepackError(f"덩이 시작 {a} 가 표에 없다")
+    out = bytearray(pkg)
+    pos = first
+    remap: dict[int, int] = {}
+    place: dict[int, int] = {}
+    for a, b in real:
+        blob = lz.encode_opt(new[a]) if a in new else pkg[a:b]
+        if a in new:
+            back, _ = lz.decode(blob + bytes(8), 0, len(new[a]))
+            assert back == new[a], "인코더 왕복 불일치"
+        if pos + len(blob) > limit:
+            raise RepackError(f"촘촘 모드로도 안 들어간다 — 넘침 {pos + len(blob) - limit}B")
+        out[pos : pos + len(blob)] = blob
+        remap[a] = pos
+        if a in new:
+            place[a] = pos
+        pos += len(blob)
+    remap[real[-1][1]] = pos
+    out[pos:limit] = bytes([FILL]) * (limit - pos)
+    for i, p in enumerate(tab):
+        if p in remap and remap[p] != p:
+            q = remap[p]
+            bank, addr = q >> 13, q & 0x1FFF
+            out[T + 2 * i] = addr & 0xFF
+            out[T + 2 * i + 1] = (bank << 5) | (addr >> 8)
+    return bytes(out), place
+
+
+def repack_in_place(pkg: bytes, new: dict[int, bytes]) -> tuple[bytes, dict[int, int]]:
     """new = {원래 덩이 시작 오프셋: 새로 풀린 내용}. (새 패키지, {옛 시작: 새 시작} — 고친 덩이만, 제자리면 같은 값)."""
     _first, limit, real = text_region(pkg)
     T, tab = package.msg_table(pkg)
@@ -45,7 +88,7 @@ def repack(pkg: bytes, new: dict[int, bytes]) -> tuple[bytes, dict[int, int]]:
     for a, d in new.items():
         if a not in slot_end:
             raise RepackError(f"덩이 시작 {a} 가 표에 없다")
-        blob = lz.encode(d)
+        blob = lz.encode_opt(d)
         back, _ = lz.decode(blob + bytes(8), 0, len(d))
         assert back == d, "인코더 왕복 불일치"
         blobs[a] = blob
