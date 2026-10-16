@@ -147,7 +147,7 @@ def speaker_rows(disc):
             except Exception:  # noqa: BLE001, S112 — 규격 밖 멤버는 check_script 가 센다
                 continue
             segs = [(i, textenc.decode(c, disc)) for i, (_, c) in enumerate(info["segments"])]
-            risky = len(info["pointers"]) != info["resolved"]
+            risky = False  # 못 푼 포인터는 이벤트 VM 데이터로 본다(`scriptmap.rebuild(event_data=True)`) — 이름도 길이 자유다
             for i in head_indices(segs):
                 kr = table.get(segs[i][1])
                 if not kr:

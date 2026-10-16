@@ -116,6 +116,11 @@ echo "  ── 번역 정본 (원문 지문 · 조판)"
 # 🔴 게이트다 — 색인이 밀리면 **번역이 남의 자리에 붙는다.** 원문 지문이 그걸 잡는다.
 #    ⚠ 진행률은 실패로 안 친다(할 일이지 실패가 아니다).
 run 6 "$PY" "$G/tools/script.py" --disc ed3 --check
+
+echo "  ── 멤버 크기 예산 (번역이 든 아카이브가 제자리에서 재배치되나)"
+# 🔴 게이트다(래칫) — 멤버는 아카이브 안에서 크기가 고정이다. 빌드는 첫 실패에서 서므로 전수를 여기서 센다.
+#    못 줄인 초과는 member_budget_baseline.json 에 멤버별로 있고, 늘거나 새로 넘으면 실패한다(구조 일 목록).
+run 4 "$PY" "$G/tools/check_member_budget.py" --disc ed3
 run 6 "$PY" "$G/tools/script.py" --disc ed4 --check
 
 echo "  ── 그림 자리표 (글자가 박힌 그림이 그 자리인가)"

@@ -30,6 +30,7 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import arcpack
 import common
 import engine_patch
 import exetext
@@ -98,6 +99,42 @@ def check_no_text_loss(where, newmem, lines, disc, table, report):
         report["loss_checked"] = report.get("loss_checked", 0) + 1
 
 
+def encode_member(disc, path, nm, mem, lines, table, report):
+    """멤버 하나의 새 조각 코드열(`[[코드…]…]`) — **재삽입 빌드와 멤버 크기 게이트가 같은 길**을 쓴다.
+
+    `lines` 의 행은 조사 변환본으로 바뀐다(구운 글 검사가 같은 변환본을 본다).
+    """
+    info = scriptmap.parse(mem)
+    segs = [list(c) for _, c in info["segments"]]
+    jps = [(i, textenc.decode(c, disc)) for i, (_, c) in enumerate(info["segments"])]
+    # 🔴 검사기(`script.py --check`)와 **같은 자**로 조판한다 — `floor` 를 빼먹어 넘친
+    #    꼬리가 조용히 잘렸다(ED3 37줄 · ED4 59줄, 09-27).
+    floors = script_canon.member_floors(jps)
+    for i, row in sorted(lines.items()):
+        jp = jps[i][1]
+        try:
+            # 조사 병기 → 확정/런타임 표지(조각 첫머리). 구운 글 검사도 같은 변환본으로 한다.
+            row = dict(row, kr=josa_rt.convert(row["kr"]))
+            lines[i] = row
+            kr = typeset.wrap(row["kr"], disc, jp=jp, floor=floors.get(i, 0))
+        except typeset.TypesetError as e:
+            if row.get("_auto"):  # 정본 speaker 이름이 예산을 넘으면 그 이름만 일본어로 남긴다
+                report["auto_wrap"] = report.get("auto_wrap", 0) + 1
+                continue
+            raise SystemExit(
+                f"🔴 {path}!{nm} #{i}: 조판 예산 초과 — {e}\n"
+                f"   `script.py --check` 가 통과했다면 검사기와 빌드의 자가 다르다."
+            ) from e
+        try:
+            segs[i] = hangul_map.encode(kr, disc, table)
+        except KeyError:
+            # ⬜ 아직 자리를 못 받은 글자가 있다 — **원문 그대로 두고 센다.**
+            #    조용히 빼면 화면에서 그 줄만 사라진다(이 레포의 단골 사고).
+            report["skipped"] += 1
+            continue
+    return segs
+
+
 def reinsert_script(disc, canon, table, report):
     """{아카이브 경로: 새 바이트열} — 대사 재삽입. 멤버 크기는 그대로."""
     out = {}
@@ -109,58 +146,28 @@ def reinsert_script(disc, canon, table, report):
             _, ents = common.arc_parse(bytes(data))
         except common.ArchiveError:
             continue
-        touched = False
+        repl = {}
         for nm, off, sz in ents:
             lines = canon.get((path, nm))
             if not lines:
                 continue
             mem = bytes(data[off : off + sz])
-            info = scriptmap.parse(mem)
-            segs = [list(c) for _, c in info["segments"]]
-            jps = [(i, textenc.decode(c, disc)) for i, (_, c) in enumerate(info["segments"])]
-            # 🔴 검사기(`script.py --check`)와 **같은 자**로 조판한다 — `floor` 를 빼먹어 넘친
-            #    꼬리가 조용히 잘렸다(ED3 37줄 · ED4 59줄, 09-27).
-            floors = script_canon.member_floors(jps)
-            for i, row in sorted(lines.items()):
-                jp = jps[i][1]
-                try:
-                    # 조사 병기 → 확정/런타임 표지(조각 첫머리). 구운 글 검사도 같은 변환본으로 한다.
-                    row = dict(row, kr=josa_rt.convert(row["kr"]))
-                    lines[i] = row
-                    kr = typeset.wrap(row["kr"], disc, jp=jp, floor=floors.get(i, 0))
-                except typeset.TypesetError as e:
-                    if row.get("_auto"):  # 정본 speaker 이름이 예산을 넘으면 그 이름만 일본어로 남긴다
-                        report["auto_wrap"] = report.get("auto_wrap", 0) + 1
-                        continue
-                    raise SystemExit(
-                        f"🔴 {path}!{nm} #{i}: 조판 예산 초과 — {e}\n"
-                        f"   `script.py --check` 가 통과했다면 검사기와 빌드의 자가 다르다."
-                    ) from e
-                try:
-                    segs[i] = hangul_map.encode(kr, disc, table)
-                except KeyError:
-                    # ⬜ 아직 자리를 못 받은 글자가 있다 — **원문 그대로 두고 센다.**
-                    #    조용히 빼면 화면에서 그 줄만 사라진다(이 레포의 단골 사고).
-                    report["skipped"] += 1
-                    continue
-            newmem, _ = scriptmap.rebuild(mem, segs)
+            segs = encode_member(disc, path, nm, mem, lines, table, report)
+            newmem, _ = scriptmap.rebuild(mem, segs, event_data=True)
             check_no_text_loss(f"{path}!{nm}", newmem, lines, disc, table, report)
-            if len(newmem) > sz and all(r.get("_auto") for r in lines.values()):
-                # 정본 speaker 로만 채운 멤버가 예산을 넘으면 **그 멤버만 건너뛴다**(이름은 일본어로 남는다) — 번역 정본의 줄이
-                # 있는 멤버는 아래에서 그대로 멈춘다(자기 문안을 줄여야 하는 일).
-                report["auto_over"] = report.get("auto_over", 0) + 1
-                continue
-            if len(newmem) > sz:
-                raise SystemExit(
-                    f"🔴 {path}!{nm}: 멤버가 {len(newmem) - sz:+d}B 커졌다 — 예산 {sz}B\n"
-                    f"   문안을 줄이거나 아카이브 재배치가 필요하다(지금은 안 한다)."
-                )
-            data[off : off + sz] = newmem + b"\x00" * (sz - len(newmem))
+            repl[nm] = newmem
             report["members"] += 1
-            report["slack"] += sz - len(newmem)
-            touched = True
-        if touched:
-            out[path] = bytes(data)
+            report["slack"] += max(0, sz - len(newmem))
+            report["grown"] = report.get("grown", 0) + max(0, len(newmem) - sz)
+        if repl:
+            # 🔴 원본보다 커진 멤버는 아카이브 안에서 뒤 멤버를 민다(`arcpack` — 마지막 섹터 여유 안, 다른 파일은 안 옮긴다).
+            try:
+                packed, plan = arcpack.repack(bytes(data), repl)
+            except arcpack.PackError as e:
+                raise SystemExit(f"🔴 {path}: 재배치 실패 — {e}") from e
+            report["repacked"] = report.get("repacked", 0) + (1 if plan["grow"] else 0)
+            report["reclaimed"] = report.get("reclaimed", 0) + plan["reclaimed"]
+            out[path] = packed
     return out
 
 
@@ -596,6 +603,55 @@ def movie_swap(disc, out):
         print(f"  🔬 동영상 구획 교체: {dst}(LBA {dst_lba}) ← {src} — 섹터 {n}")
 
 
+def sectors(n):
+    return (n + common.USER_SIZE - 1) // common.USER_SIZE
+
+
+def verify_image(disc, built, fs, exe_lba, exe_size, arcs, dirpos, resized):
+    """🔴 구운 이미지를 **다시 읽어** 검산한다 — 「썼다」와 「다시 읽힌다」는 다르다.
+
+    ① 파일 목록·LBA 가 원본과 같고, 크기는 재배치한 아카이브만 새 값이다.
+    ② 원본과 섹터 단위로 비교해 **바뀐 섹터가 선언한 자리(실행파일 · 쓴 아카이브 · 고친 디렉터리 레코드)뿐**이다 — 무변경 구간 대조.
+    ③ 쓴 아카이브를 이미지에서 되읽어 새 바이트와 같다.
+    """
+    tree, _ = common.iso_tree(built)
+    if set(tree) != set(fs):
+        raise SystemExit(f"🔴 이미지 검산: 파일 목록이 달라졌다 — {sorted(set(tree) ^ set(fs))[:5]}")
+    for path, (lba, size) in fs.items():
+        want = resized.get(path, size)
+        if tree[path] != (lba, want):
+            raise SystemExit(f"🔴 이미지 검산: {path} 이 {tree[path]} (기대 {(lba, want)})")
+    allowed = set(range(exe_lba, exe_lba + sectors(exe_size)))
+    for path in arcs:
+        lba, size = fs[path]
+        allowed |= set(range(lba, lba + sectors(max(size, resized.get(path, size)))))
+    allowed |= {dirpos[p][0] for p in resized}
+    changed = set()
+    sz = common.SECTOR
+    with open(common.orig_bin(disc), "rb") as fo, open(built, "rb") as fb:
+        lba = 0
+        while True:
+            a1, b1 = fo.read(sz * 256), fb.read(sz * 256)
+            if not a1 and not b1:
+                break
+            if len(a1) != len(b1):
+                raise SystemExit("🔴 이미지 검산: 이미지 길이가 달라졌다")
+            if a1 != b1:
+                for k in range(len(a1) // sz):
+                    if a1[k * sz : (k + 1) * sz] != b1[k * sz : (k + 1) * sz]:
+                        changed.add(lba + k)
+            lba += len(a1) // sz
+    stray = sorted(changed - allowed)
+    if stray:
+        raise SystemExit(f"🔴 이미지 검산: 선언 안 된 섹터 {len(stray)}곳이 바뀌었다 — {stray[:8]}")
+    for path, data in arcs.items():
+        lba, _ = fs[path]
+        got = common.read_lba(disc, lba, len(data), path=built)
+        if got != data:
+            raise SystemExit(f"🔴 이미지 검산: {path} 을 되읽은 것이 쓴 것과 다르다")
+    print(f"  ✅ 이미지 검산 — 바뀐 섹터 {len(changed):,} 전부 선언한 자리 · 재배치 {len(resized)}개(디렉터리 크기 갱신) · 되읽기 {len(arcs)}파일")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--disc", choices=common.DISC_NAMES, default="ed3")
@@ -738,14 +794,27 @@ def main():
         out = out.replace(".bin", " (TEST).bin")
     tmp = out + ".part"
     shutil.copyfile(common.orig_bin(a.disc), tmp)
+    _, dirpos = common.iso_tree(common.orig_bin(a.disc))
+    resized = {}
     try:
         with open(tmp, "r+b") as f:
             n = common.write_user_data(f, a.disc, exe_lba, bytes(exe), label="실행파일")
             for path, data in sorted(arcs.items()):
-                lba, _size = fs[path]
+                lba, osize = fs[path]
+                if sectors(len(data)) != sectors(osize):
+                    # 🔴 섹터 수가 바뀌면 뒤 파일을 옮겨야 한다 — 그건 이 빌드가 안 한다(`arcpack` 이 미리 막는다).
+                    raise SystemExit(f"🔴 {path}: 섹터 수가 {sectors(osize)}→{sectors(len(data))} 로 바뀐다")
                 n += common.write_user_data(f, a.disc, lba, data, label=path)
+                if len(data) != osize:  # 재배치로 길어진 아카이브 — ISO 디렉터리의 파일 크기만 고친다(섹터 수는 같다)
+                    n += common.set_file_size(f, a.disc, *dirpos[path], len(data), label=f"{path} 디렉터리 레코드")
+                    resized[path] = len(data)
     except Exception:
         os.replace(tmp, out + ".failed")  # 🔴 실패한 빌드는 산출물을 무효화한다
+        raise
+    try:
+        verify_image(a.disc, tmp, fs, exe_lba, exe_size, arcs, dirpos, resized)
+    except Exception:
+        os.replace(tmp, out + ".failed")
         raise
     os.replace(tmp, out)
     cue = common.build_cue(a.disc)

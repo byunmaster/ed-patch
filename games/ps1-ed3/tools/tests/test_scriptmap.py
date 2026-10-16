@@ -80,6 +80,48 @@ class TestScriptMap(unittest.TestCase):
         with self.assertRaises(scriptmap.ScriptError):
             scriptmap.rebuild(mem, longer)
 
+    def test_event_data_allows_length_change(self):
+        """마스터 10-12 「재구성해」: 못 푼 `0x90` 을 이벤트 VM 데이터로 보면(`event_data=True`) 길이를 바꿔도 멈추지 않고 그 자리는 안 건드린다."""
+        mem, _ = member(32, ptr(0) + ptr(6) + ptr(1 + 2 * 3 + 2), self.segs)
+        info = scriptmap.parse(mem)
+        longer = [list(c) for _, c in info["segments"]]
+        longer[0] = longer[0] + [0x44]
+        out, unres = scriptmap.rebuild(mem, longer, event_data=True)
+        self.assertEqual(unres, 1)
+        self.assertEqual(out[:32][-6:], mem[:32][-6:])  # 못 푼 포인터 값(마지막 u16)이 그대로다
+        self.assertEqual([c for _, c in scriptmap.parse(out)["segments"]], longer)
+
+    def test_event_data_default_is_still_strict(self):
+        """기본값은 옛 방침이다 — 호출자가 켜지 않으면 못 푼 포인터 멤버의 길이 변경은 멈춘다."""
+        mem, _ = member(32, ptr(0) + ptr(6) + ptr(1 + 2 * 3 + 2), self.segs)
+        longer = [list(c) for _, c in scriptmap.parse(mem)["segments"]]
+        longer[0] = longer[0] + [0x44]
+        with self.assertRaises(scriptmap.ScriptError):
+            scriptmap.rebuild(mem, longer)
+
+    def test_event_data_script_bytes_untouched_except_pointers(self):
+        """🔴 구조 검산 — 스크립트 구간은 풀린 포인터 자리 말고는 바이트까지 같다(못 푼 자리·주변 데이터 포함)."""
+        data = bytes([0x91, 0x01, 0x05, 0x01])  # 이벤트 데이터 — 0x90 이 없는 구조체(포인터 정렬을 안 깨게 4B)
+        mem, _ = member(48, ptr(0) + data + ptr(1 + 2 * 3 + 2) + ptr(6), self.segs)
+        longer = [[0x42, 0x43, 0x44, 0x45, 0x46], [0x50], [0x60, 0x61, 0x62]]
+        out, _ = scriptmap.rebuild(mem, longer, event_data=True)
+        info = scriptmap.parse(mem)
+        sites = {at for at, V in info["pointers"] if 48 + (V & ~1) in info["starts"]}
+        touched = {b for at in sites for b in (at, at + 1)}
+        diff = {i for i in range(48) if mem[i] != out[i]}
+        self.assertTrue(diff <= touched)
+        self.assertTrue(diff)  # 풀린 포인터는 실제로 바뀌었다
+
+    def test_verify_catches_a_stray_script_byte(self):
+        """검산기가 실제로 운다 — 포인터 자리가 아닌 스크립트 바이트를 바꾼 결과는 통과시키지 않는다."""
+        info = scriptmap.parse(self.mem)
+        segs = [list(c) for _, c in info["segments"]]
+        out, _ = scriptmap.rebuild(self.mem, segs)
+        bad = bytearray(out)
+        bad[31] ^= 0xFF  # 스크립트 구간 끝(패딩) — 포인터 자리가 아니다
+        with self.assertRaises(scriptmap.ScriptError):
+            scriptmap.verify_rebuild(self.mem, bytes(bad), info, segs)
+
     def test_segment_count_must_match(self):
         with self.assertRaises(scriptmap.ScriptError):
             scriptmap.rebuild(self.mem, [[1], [2]])
