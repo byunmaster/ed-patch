@@ -21,18 +21,27 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+import chapter
 import common
 import font
 import hook
+import labels
+import layout
 import lz
 import package
 import repack
+import systext
 
 from shared.disc import mode1
 
 MIRROR = 36864
 MIRROR_SPAN = (2, 12286)  # 거울이 같은 rel 범위(common.py 게이트가 확인)
 PKG_SECTORS = 128  # 패키지 칸(간격) — 실제 로드는 78섹터지만 칸 전체를 다룬다
+
+
+MISSING_LABELS: set[str] = (
+    set()
+)  # 정본에 없어 못 바꾼 라벨 문구(원문 일본어 — 관리자 후보, work/review 로만 쓴다)
 
 
 class BuildError(Exception):
@@ -95,23 +104,55 @@ class Writer:
 
 
 def load_edits(path: Path):
-    raw = json.loads(path.read_text())
-    return raw
+    return json.loads(path.read_text())
 
 
-def glyph_chars(raw) -> list[str]:
-    return font.order(ch for e in raw for ch in e.get("replace_text", "") if ch not in " \n")
+def family_rels() -> list[int]:
+    """장 제목 덩이를 가진 패키지의 rel(앞 사본). 머리표(`4c ×3`) 섹터를 훑어 첫 덩이가 장 제목 꼴인 것만."""
+    out = []
+    for rel in range(2, MIRROR_SPAN[1]):
+        u = common.user_sector(rel)
+        if not (u[0] == 0x4C and u[3] == 0x4C and u[6] == 0x4C):
+            continue
+        pkg = bytes(common.track_data(rel, PKG_SECTORS))
+        try:
+            _t, tab = package.msg_table(pkg)
+            if len(tab) < 14 or len(set(tab[1:14])) != 1:
+                continue
+            ch = dict(package.chunks(pkg))
+            d, _ = package.decode_chunk(pkg, tab[1], ch[tab[1]])
+        except (IndexError, KeyError, ValueError):
+            continue
+        if not chapter.is_chapter_chunk(d):
+            continue
+        try:
+            repack.text_region(pkg)
+        except repack.RepackError:
+            print(
+                f"  ⚠ 패키지 rel {rel}: 끝 표시 꼴이 달라 장 제목을 못 고친다(건너뜀 — status 「남은 일」)"
+            )
+            continue
+        out.append(rel)
+    return out
 
 
-def apply_pkg_edits(w: Writer, raw, table: dict[str, int]) -> dict:
-    """패키지마다 덩이를 고쳐 다시 싣는다. 반환: 되읽기 대조용 {rel: (새 패키지 바이트, {새 시작: 풀린 내용})}."""
-    intended = {}
-    for rel in sorted({e["pkg"] for e in raw}):
+def plan_packages(raw, tab: font.GlyphTable) -> dict:
+    """패키지마다 새 바이트를 계획한다. 수집 단계(`tab.map is None`)에선 글자만 모은다. 반환 {rel: (원본, 새, 배치, 바뀐 덩이)}."""
+    rels = sorted(set(family_rels()) | {e["pkg"] for e in raw})
+    out = {}
+    for rel in rels:
         pkg = bytes(common.track_data(rel, PKG_SECTORS))
         ch = [(a, b) for a, b in package.chunks(pkg) if pkg[a : a + 8] != package.SENTINEL]
         decoded = {a: package.decode_chunk(pkg, a, b)[0] for a, b in ch}
         orig_decoded = dict(decoded)
-        for e in (x for x in raw if x["pkg"] == rel):
+        for a, d in orig_decoded.items():
+            if chapter.is_chapter_chunk(d):  # 장 제목 띠(장 카드)
+                decoded[a] = chapter.edit(d, tab)
+            elif systext.is_menu_chunk(d):  # 상점·예/아니오 메뉴 덩이
+                decoded[a] = systext.edit_menu_chunk(d, tab, MISSING_LABELS)
+            else:  # 지명 라벨(패널 지명 · 왕국·도시 목록) — 정본에 없는 문구는 MISSING_LABELS 에 모은다
+                decoded[a] = labels.edit_chunk(d, tab, MISSING_LABELS)
+        for e in (x for x in raw if x["pkg"] == rel):  # PoC 찾아 바꾸기
             find = bytes.fromhex(e["find_hex"])
             hits = [(a, d.count(find)) for a, d in decoded.items() if find in d]
             if len(hits) != 1 or hits[0][1] != 1:
@@ -122,7 +163,7 @@ def apply_pkg_edits(w: Writer, raw, table: dict[str, int]) -> dict:
             rep = (
                 bytes.fromhex(e["replace_hex"])
                 if "replace_hex" in e
-                else font.encode(e["replace_text"], table)
+                else tab.enc(e["replace_text"])
             )
             decoded[a] = decoded[a].replace(find, rep)
         changed = {a: d for a, d in decoded.items() if d != orig_decoded[a]}
@@ -130,24 +171,68 @@ def apply_pkg_edits(w: Writer, raw, table: dict[str, int]) -> dict:
             new, place = repack.repack(pkg, changed)
         except repack.RepackError as ex:
             raise BuildError(f"패키지 {rel}: {ex}") from ex
+        out[rel] = (pkg, new, place, changed)
+    return out
+
+
+def apply_pkg_edits(w: Writer, plan: dict) -> dict:
+    """계획대로 쓴다. 반환: 되읽기 대조용 {rel: (새 패키지 바이트, {새 시작: 풀린 내용})}."""
+    intended = {}
+    for rel, (pkg, new, place, changed) in sorted(plan.items()):
         diff = [i for i in range(len(pkg)) if pkg[i] != new[i]]
+        if not diff:
+            continue
         lo, hi = diff[0], diff[-1] + 1
         w.put(rel * common.USER + lo, new[lo:hi], pkg[lo:hi], f"package rel {rel} text +{lo}")
         intended[rel] = (new, {place[a]: d for a, d in changed.items()})
-        moved = sum(1 for a in changed if place[a] != a)
-        print(
-            f"  패키지 rel {rel}: 덩이 {len(changed)}개 교체(이사 {moved}) · 바뀐 바이트 {len(diff)}"
-        )
+    moved = sum(1 for _p, _n, place, _c in plan.values() for a, s in place.items() if a != s)
+    print(f"  패키지 {len(intended)}개 · 덩이 이사 {moved}")
     return intended
 
 
-def apply_hook(w: Writer, glyph24: list[bytes]) -> None:
-    for lin, new, old, label in hook.build(glyph24):
-        w.put(lin, new, old, label)
-    print(f"  후킹 루틴 + 글리프 풀 {len(glyph24)}자")
+def plan_program(tab: font.GlyphTable, glyph24: list[bytes] | None) -> layout.Prog:
+    """본 프로그램 패치 계획 — 후킹 자리 예약 → 시스템 문구 배치 → (확정 단계에서) 글리프 풀. 수집 단계는 글리프 풀을 안 앉힌다."""
+    prog = layout.Prog()
+    hook.reserve(prog)
+    systext.MISSING.clear()
+    systext.OVERFLOW.clear()
+    systext.plan(prog, tab)
+    if glyph24 is not None:
+        hook.install(prog, glyph24)
+    return prog
 
 
-def verify_readback(iso: Path, intended: dict, glyph24: list[bytes]) -> None:
+def write_review() -> None:
+    """관리자에게 올릴 후보(정본에 없는 문구 · 칸을 넘는 라벨)를 work/review 로만 쓴다 — 원문이라 커밋하지 않는다."""
+    lines = [f"[패키지 라벨] {x}" for x in sorted(MISSING_LABELS)]
+    lines += [
+        f"[칸 초과] {k} → {v[0]} ({v[1]}px > {v[2]}px)" for k, v in sorted(labels.OVERFLOW.items())
+    ]
+    lines += [
+        f"[뱅크 자리 부족] {b:02X}+{o:04X} {old}B → {new}B  {jp}"
+        for b, o, old, new, jp in sorted(systext.OVERFLOW)
+    ]
+    for k, v in sorted(systext.MISSING.items()):
+        lines += [f"[시스템 {k}] {x}" for x in sorted(v)]
+    if not lines:
+        return
+    out = common.REVIEW_DIR / "missing_labels.txt"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(
+        f"  정본에 없거나 칸을 넘는 라벨 {len(lines)}개 → {out.relative_to(common.ROOT)} (관리자 후보)"
+    )
+
+
+def apply_program(w: Writer, prog: layout.Prog, glyph24: list[bytes]) -> None:
+    for lin, new, old, label in prog.spans():
+        w.put(lin, new, old, f"prog {label}")
+    print(
+        f"  본 프로그램 쓰기 {len(prog.spans())}곳 · 글리프 풀 {len(glyph24)}자 · 남은 자유 공간 {sum(r[2] for r in prog.runs_left())}B"
+    )
+
+
+def verify_readback(iso: Path, intended: dict, prog: layout.Prog) -> None:
     """구운 이미지를 다시 읽어: 패키지가 의도한 바이트이고(거울 포함) · 고친 덩이가 의도대로 풀리고 · 글리프 풀이 `font` 와 같다."""
 
     def track(rel, n):
@@ -169,14 +254,15 @@ def verify_readback(iso: Path, intended: dict, glyph24: list[bytes]) -> None:
                 if back != d:
                     raise BuildError(f"되읽기: rel {r} 덩이 {start} 가 의도와 다르다")
                 n += 1
-    for lin, new, _old, label in hook.build(glyph24):
+    spans = prog.spans()
+    for lin, new, _old, label in spans:
         rel = lin // common.USER
         got = track(rel, (lin % common.USER + len(new) + common.USER - 1) // common.USER)[
             lin % common.USER :
         ][: len(new)]
         if got != new:
-            raise BuildError(f"되읽기: {label} 가 다르다")
-    print(f"  되읽기 OK (고친 덩이 {n} · 글리프 {len(glyph24)})")
+            raise BuildError(f"되읽기: 프로그램 「{label}」 가 다르다")
+    print(f"  되읽기 OK (고친 덩이 {n} · 프로그램 쓰기 {len(spans)})")
 
 
 def verify_immutable(iso: Path, touched: set[int], limit_sectors: int | None) -> None:
@@ -241,16 +327,21 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool) -> None:
             raise BuildError("cue 의 FILE 이름을 못 바꿨다")
         cue.write_text(text)
     raw = load_edits(edits_path) if edits_path else []
-    chars = glyph_chars(raw)
-    table = {ch: i for i, ch in enumerate(chars)}
+    tab = font.GlyphTable()
+    plan_packages(raw, tab)  # ① 수집 — 글자를 모은다(패키지 · 시스템 문구)
+    plan_program(tab, None)
+    chars = tab.freeze()  # ② 번호 확정(코드포인트순, 결정적)
     glyph24 = [font.glyph(ch) for ch in chars]
+    plan = plan_packages(raw, tab)  # ③ 같은 계획을 진짜 코드로 다시
+    prog = plan_program(tab, glyph24)
     with open(iso, "r+b") as f:
         w = Writer(f)
-        apply_hook(w, glyph24)
-        intended = apply_pkg_edits(w, raw, table)
+        apply_program(w, prog, glyph24)
+        intended = apply_pkg_edits(w, plan)
+    write_review()
     print(f"  덮어쓰기 없음 (쓰기 구간 {w.verify(iso)})")
     verify_immutable(iso, w.touched, limit if trim else None)
-    verify_readback(iso, intended, glyph24)
+    verify_readback(iso, intended, prog)
     bad = mode1.selftest(
         iso, lbas=(common.T2_SECTOR + 2, common.T2_SECTOR + 386, common.T2_SECTOR + 4098)
     )

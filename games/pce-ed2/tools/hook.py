@@ -18,10 +18,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import asm
 import font
+import layout
 
-PROG_REL = 130  # 본 프로그램(뱅크 0x68~) 디스크 시작 — 뱅크 b 는 rel 130 + (b-0x68)*4
-BANK0 = 0x68
-BANK = 8192
 SEAM_BANK, SEAM_OFF = 0x6C, 0x00D3  # `$60D2: JSR $60EA` 의 피연산자(2B)
 SEAM_OLD = bytes([0xEA, 0x60])
 ORIG_CHECK = 0x60EA
@@ -30,25 +28,7 @@ WINDOW_MPR = 4  # 글리프 뱅크를 잠깐 거는 창 — `$8000`(씬 패키�
 WINDOW = 0x8000
 HOOK_BANK, HOOK_OFF = 0x6C, 0x1966  # 후킹 루틴 자리(0xFF 패딩) — 마운트 `$6000`(MPR3)
 
-# 본 프로그램 안의 0xFF 패딩(디스크 원본 · 런타임 첫 마을 상태 둘 다 0xFF 로 안 변함 — 2026-10-12 실측).
-# (뱅크, 뱅크 안 오프셋, 길이). 후킹 루틴 칸(0x6C)은 앞쪽을 루틴이 쓰고 남는 꼬리를 풀에 준다.
-PADDING = [
-    (0x6B, 0x10C4, 3900),
-    (0x71, 0x13FB, 3077),
-    (0x6A, 0x15B0, 2640),
-    (0x6C, 0x1966, 1690),
-    (0x69, 0x1DB4, 588),
-    (0x6D, 0x1DC5, 571),
-    (0x70, 0x1E1A, 486),
-    (0x6F, 0x1F3A, 198),
-    (0x6E, 0x1F3C, 196),
-]
 MAX_RUNS = 8
-
-
-def linear(bank: int, off: int) -> int:
-    """뱅크:오프셋 → 데이터 트랙 유저 데이터 선형 바이트(rel*2048 + 오프셋)."""
-    return PROG_REL * 2048 + (bank - BANK0) * BANK + off
 
 
 def _routine(nruns: int) -> asm.Asm:
@@ -187,64 +167,44 @@ def _routine(nruns: int) -> asm.Asm:
     return a
 
 
-def plan(nglyphs: int) -> list[tuple[int, int, int]]:
-    """글리프 `nglyphs` 개를 놓을 칸 — [(뱅크, 오프셋, 글리프 수)]. 큰 패딩부터 채운다(칸 수를 줄인다).
+def reserve(prog: layout.Prog) -> int:
+    """후킹 루틴 자리를 자유 공간에서 뺀다. 반환 = 루틴 길이."""
+    n = len(_routine(MAX_RUNS).bytes())
+    prog.reserve(HOOK_BANK, HOOK_OFF, n)
+    return n
 
-    칸 하나가 255 개를 넘기지 않게 쪼갠다(루틴이 개수를 1바이트로 센다).
-    """
-    routine = _routine(MAX_RUNS).bytes()
-    hook_end = HOOK_OFF + len(routine)
-    pads = []
-    for bank, off, ln in PADDING:
-        if (bank, off) == (HOOK_BANK, HOOK_OFF):
-            skip = (len(routine) + 1) & ~1  # 루틴 + 표 뒤부터
-            off, ln = off + skip, ln - skip
-        pads.append((bank, off, ln))
+
+def install(prog: layout.Prog, glyph24: list[bytes]) -> None:
+    """후킹 이음매 · 루틴 · 글리프 풀(남은 자유 공간 — 큰 칸부터 255개씩)을 장부에 적는다. `reserve` 뒤, 다른 자리 배정이 끝난 뒤에 부른다."""
     runs = []
-    left = nglyphs
-    for bank, off, ln in sorted(pads, key=lambda p: -p[2]):
+    left = len(glyph24)
+    for bank, off, ln in sorted(prog.runs_left(), key=lambda p: (-p[2], p[0], p[1])):
         while left > 0 and ln >= font.PACKED_BYTES and len(runs) < MAX_RUNS:
             n = min(left, ln // font.PACKED_BYTES, 255)
             runs.append((bank, off, n))
             off += n * font.PACKED_BYTES
             ln -= n * font.PACKED_BYTES
             left -= n
-    assert hook_end < 0x2000
     if left > 0:
         raise ValueError(
-            f"글리프 {nglyphs} 개가 풀(패딩 {sum(p[2] for p in PADDING)}B)에 안 들어간다 (+{left})"
+            f"글리프 {len(glyph24)} 개가 풀에 안 들어간다 (+{left}) — 자유 공간 {sum(p[2] for p in prog.runs_left())}B"
         )
-    return runs
-
-
-def build(glyph24: list[bytes]) -> list[tuple[int, bytes, bytes | None, str]]:
-    """(선형 바이트, 새 바이트, 기대 원본|None, 라벨) 목록 — 디스크에 쓸 후킹 패치 전부."""
-    runs = plan(len(glyph24))
     a = _routine(MAX_RUNS)
-    # 표 채우기 — 모자란 칸은 0 개
-    cnt = bytearray(MAX_RUNS)
-    banks = bytearray(MAX_RUNS)
-    adlo = bytearray(MAX_RUNS)
-    adhi = bytearray(MAX_RUNS)
+    cnt, banks, adlo, adhi = (bytearray(MAX_RUNS) for _ in range(4))
     for k, (bank, off, n) in enumerate(runs):
         cnt[k], banks[k] = n, bank
         win = WINDOW + off
         adlo[k], adhi[k] = win & 0xFF, win >> 8
     code = bytearray(a.bytes())
-    cnt_pos = a.labels["CNT"] - a.org
-    code[cnt_pos : cnt_pos + MAX_RUNS] = cnt
-    code[cnt_pos + MAX_RUNS : cnt_pos + 2 * MAX_RUNS] = banks
-    code[cnt_pos + 2 * MAX_RUNS : cnt_pos + 3 * MAX_RUNS] = adlo
-    code[cnt_pos + 3 * MAX_RUNS : cnt_pos + 4 * MAX_RUNS] = adhi
-    out = [
-        (linear(SEAM_BANK, SEAM_OFF), (a.org).to_bytes(2, "little"), SEAM_OLD, "hook seam $60D2"),
-        (linear(HOOK_BANK, HOOK_OFF), bytes(code), b"\xff" * len(code), "hook routine"),
-    ]
+    p = a.labels["CNT"] - a.org
+    for i, arr in enumerate((cnt, banks, adlo, adhi)):
+        code[p + i * MAX_RUNS : p + (i + 1) * MAX_RUNS] = arr
+    assert prog.o(SEAM_BANK, SEAM_OFF, 2) == SEAM_OLD, "이음매 원본 바이트가 다르다"
+    prog.put(SEAM_BANK, SEAM_OFF, a.org.to_bytes(2, "little"), "hook seam $60D2")
+    prog.put(HOOK_BANK, HOOK_OFF, bytes(code), "hook routine")
     i = 0
     for bank, off, n in runs:
         blob = b"".join(font.pack(g) for g in glyph24[i : i + n])
-        out.append(
-            (linear(bank, off), blob, b"\xff" * len(blob), f"glyph run {bank:02X}+{off:04X}")
-        )
+        prog.put(bank, off, blob, f"glyph run {bank:02X}+{off:04X}")
+        prog.reserve(bank, off, len(blob))
         i += n
-    return out

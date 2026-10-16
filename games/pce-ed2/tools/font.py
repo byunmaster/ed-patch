@@ -103,3 +103,32 @@ def encode(text: str, table: dict[str, int]) -> bytes:
         else:
             out += code(table[ch])
     return bytes(out)
+
+
+class GlyphTable:
+    """글리프 번호 배정 — 두 단계로 쓴다. ① 수집(`map is None`): `enc` 가 글자를 모으고 길이만 맞는 자리 코드를 낸다
+    ② 확정(`freeze`): 모은 글자를 코드포인트순으로 번호 매기고, 같은 호출이 진짜 코드를 낸다.
+    한글 2바이트·공백 1바이트라 **길이는 번호와 무관**하다 — 그래서 수집 단계와 확정 단계의 바이트 길이가 같다."""
+
+    def __init__(self):
+        self.chars: set[str] = set()
+        self.map: dict[str, int] | None = None
+
+    def freeze(self) -> list[str]:
+        order_ = order(self.chars)
+        self.map = {ch: i for i, ch in enumerate(order_)}
+        return order_
+
+    def enc(self, text: str, space: int = 0x60) -> bytes:
+        out = bytearray()
+        for ch in text:
+            if ch == " ":
+                out.append(space)
+            elif ch == "\n":
+                out.append(0x0D)
+            elif self.map is None:
+                self.chars.add(ch)
+                out += code(0)
+            else:
+                out += code(self.map[ch])
+        return bytes(out)

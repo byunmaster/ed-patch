@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import font
 import hook
+import layout
 import sim6280
 
 
@@ -22,11 +23,23 @@ def synthetic(n: int) -> list[bytes]:
 
 def machine(glyphs: list[bytes]):
     """패치 적용 이미지 → 시뮬레이터(뱅크별 8KB, 본 프로그램은 0xFF 패딩으로 채운 가짜)."""
-    banks = {b: bytearray(b"\xff" * 8192) for b in range(0x68, 0x72)}
-    for lin, new, _old, _label in hook.build(glyphs):
-        rel_off = lin - hook.PROG_REL * 2048
-        b, off = hook.BANK0 + rel_off // 8192, rel_off % 8192
-        if _label.startswith("hook seam"):
+    orig = bytearray(b"\xff" * (10 * layout.BANK))
+    seam = (hook.SEAM_BANK - layout.BANK0) * layout.BANK + hook.SEAM_OFF
+    orig[seam : seam + 2] = hook.SEAM_OLD
+    for b, o, n in layout.ZERO_PADDING:  # 0 칸
+        z = (b - layout.BANK0) * layout.BANK + o
+        orig[z : z + n] = bytes(n)
+    prog = layout.Prog(orig=bytes(orig))
+    hook.reserve(prog)
+    hook.install(prog, glyphs)
+    banks = {
+        b: bytearray(orig[(b - 0x68) * layout.BANK : (b - 0x67) * layout.BANK])
+        for b in range(0x68, 0x72)
+    }
+    for lin, new, _old, label in prog.spans():
+        rel_off = lin - layout.PROG_REL * 2048
+        b, off = layout.BANK0 + rel_off // layout.BANK, rel_off % layout.BANK
+        if label.startswith("hook seam"):
             continue  # 이음매는 호출자 쪽이다 — 아래에서 직접 호출한다
         banks[b][off : off + len(new)] = new
     # MPR: 0 = 하드웨어, 1 = 작업 RAM, 2 = 0x68, 3 = 0x6C, 4 = 임의(씬 패키지), 5~7 = 0xF9..
