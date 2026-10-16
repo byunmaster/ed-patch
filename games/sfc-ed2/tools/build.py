@@ -309,6 +309,10 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         chars |= kr.chars_of(canon_text(src, k, v))
     for k, v in kr.load("spans").items():
         chars |= kr.chars_of(canon_text(src, k, v))
+    for v in kr.load("opsplit").values():
+        chars |= kr.chars_of(v["kr"])
+    for v in kr.load("listsplit").values():
+        chars |= kr.chars_of(v["kr"])
     for key, v in kr.load("records").items():
         chars |= records_canon_chars(src, key, v)
     if kr.load("monsters"):
@@ -613,6 +617,47 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             rom[a + 4 : b] = bytes([NOOP]) * (b - a - 4)
             stats["seg_tramp"] += 1
         writes.append((a, b))
+
+    # 4a. 오프닝 줄 나눔(`opsplit.json`) — 폭이 넘치는 줄을 둘로 나눈다. 둘째 줄은 원판의 빈 줄 문자열(`$D7:xxxx`, 2B)이 있던 자리라 **새 문자열을 두고 포인터 표 항목을 돌린다**
+    # (스크립트 `$C1:CD3D` 의 해당 자리 `02`(빈 줄) → 줄 번호 는 patches.py).
+    for key, v in sorted(kr.load("opsplit").items()):
+        old = int(key.lstrip("$"), 16)
+        refs = relocate.refs24(src, old, None)
+        if len(refs) != 1:
+            raise SystemExit(f"opsplit {key}: 포인터 표 항목이 {len(refs)}곳 — 하나여야 한다")
+        new = tail.put(kr.encode(v["kr"], alloc) + b"\x00")
+        rom[refs[0] : refs[0] + 3] = bytes([new & 0xFF, (new >> 8) & 0xFF, new >> 16])
+        writes.append((refs[0], refs[0] + 3))
+        stats["opsplit"] = stats.get("opsplit", 0) + 1
+
+    # 4a'. 인물 소개 쪽 줄 추가(`listsplit.json`) — 쪽 하나가 문자열 포인터 목록(`$D7:xxxx`, 3B씩)과 줄 종류 표(`$C1:xxxx`: 0 첫 줄 · 1 중간 · 2 끝 · FF 끝남)로 돌아간다.
+    # 줄을 하나 더하려면 두 표를 **새로 만들어 꼬리에 두고** 그 목록을 읽는 코드의 즉치 3곳(`A9 lo`·`A9 hi`·`A9 bank` → `$63~$65`)과 종류 표 읽는 곳(`BF lo hi bank`)을 돌린다.
+    # 포인터는 위 4(대사 구간 이전)가 **이미 고친 rom 의 목록**에서 복사한다 — 원판 목록을 그대로 읽으면 옛 주소가 된다.
+    for key, v in sorted(kr.load("listsplit").items()):
+        sn = lambda t: common.snes2off(int(t.lstrip("$"), 16))  # noqa: E731
+        lst, kinds, after = sn(key), sn(v["kinds"]), v["after"]
+        pcode, kcode = sn(v["code_list"]), sn(v["code_kinds"])
+        la = int(key.lstrip("$"), 16)
+        if bytes(src[pcode + 1 : pcode + 12 : 5]) != bytes([la & 0xFF, (la >> 8) & 0xFF, la >> 16]):
+            raise SystemExit(f"listsplit {key}: 목록을 읽는 코드 {v['code_list']} 의 즉치가 다르다")
+        ka = int(v["kinds"].lstrip("$"), 16)
+        if bytes(src[kcode : kcode + 4]) != bytes([0xBF, ka & 0xFF, (ka >> 8) & 0xFF, ka >> 16]):
+            raise SystemExit(f"listsplit {key}: 종류 표를 읽는 코드 {v['code_kinds']} 가 다르다")
+        n = 0
+        while src[kinds + n] != 0xFF:
+            n += 1
+        ent = [bytes(rom[lst + 3 * i : lst + 3 * i + 3]) for i in range(n)]
+        kd = bytes(src[kinds : kinds + n + 1])
+        newstr = tail.put(kr.encode(v["kr"], alloc) + b"\x00")
+        ent.insert(after + 1, bytes([newstr & 0xFF, (newstr >> 8) & 0xFF, newstr >> 16]))
+        kd = kd[: after + 1] + bytes([1]) + kd[after + 1 :]
+        nl, nk = tail.put(b"".join(ent)), tail.put(kd)
+        for off, val in ((pcode + 1, nl & 0xFF), (pcode + 6, (nl >> 8) & 0xFF), (pcode + 11, nl >> 16)):
+            rom[off] = val
+            writes.append((off, off + 1))
+        rom[kcode + 1 : kcode + 4] = bytes([nk & 0xFF, (nk >> 8) & 0xFF, nk >> 16])
+        writes.append((kcode + 1, kcode + 4))
+        stats["listsplit"] = stats.get("listsplit", 0) + 1
 
     # 4b. 조사 훅 표 — 받침 표(글리프 색인 → 받침 유무) · 조사 쌍(코드) · 숫자(읽는 소리)
     cls = bytearray(8192)

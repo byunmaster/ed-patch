@@ -39,6 +39,10 @@ def _bdf() -> dict[int, tuple[list[int], int, int, int, int]]:
 # 갈무리의 「…」 는 가운데(yoff 5)에 있지만 번역 규칙 1-3 은 **점이 바닥**이다 — 바닥(yoff 0)에 앉힌다
 YOFF_OVERRIDE = {0x2026: 0}
 
+# 글리프 전체를 셀 안에서 오른쪽으로 민 열 수 — 출력기가 만드는 윤곽(그림자)은 잉크 왼쪽 1열이 필요한데 셀 0열 잉크는 그 열이 칸 밖이라 잘린다(마스터 10-13 「맨 왼쪽 1px」).
+# 잉크 11열(0~10)이 1~11열로 앉아 자간은 그대로고, 줄 끝 글자의 오른쪽 윤곽 1열이 대신 칸 밖으로 나간다.
+SHIFT_X = 1
+
 
 def glyph12(ch: str) -> bytes:
     """글자 하나 → 18바이트 글리프(11×11 잉크, 왼쪽 위 — BBX 오프셋대로 앉힌다: 아랫줄 = 기준선)."""
@@ -52,7 +56,8 @@ def glyph12(ch: str) -> bytes:
     for i, r in enumerate(bits):
         y = top + i
         if 0 <= y < 12:
-            rows[y] = (r << (12 - xo - w)) & 0xFFF if 12 - xo - w >= 0 else (r >> (xo + w - 12)) & 0xFFF
+            sh = 12 - xo - SHIFT_X - w  # 오른쪽으로 SHIFT_X 열 밀어 앉힌다(왼쪽 윤곽 열 확보)
+            rows[y] = (r << sh) & 0xFFF if sh >= 0 else (r >> -sh) & 0xFFF
     out = bytearray()
     for k in range(0, 12, 2):
         v = (rows[k] << 12) | rows[k + 1]
