@@ -66,7 +66,9 @@ WRAP_RESERVE = 0x180
 FIELD_HUD_RESERVE = 0x20
 # 자막 자리 **앞**에 시스템 메시지 중 꼬리로 옮기는 스트림(도망 둘, sysmsg.RELOCATE)의 칸을 둔다 — 아카이브는 그 앞까지만
 SYSMSG_TAIL = sysmsg.TAIL_SIZE
-SYSMSG_TAIL_AT = TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE - SYSMSG_TAIL
+SYSMSG_TAIL_AT = (
+    TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE - SYSMSG_TAIL
+)
 # 글꼴 리소스 1(반각)·5(자막)의 표·글리프 칸 — 표 0 의 빈 자리에 두면 한글이 ~1,100자를 넘을 때 안 들어간다
 # (씬 라운드 2026-10-11). 리소스 1 = 표 268B + 글리프 3.8KB, 리소스 5 = 글자당 표 2B + 글리프 64B(Neo 16×16).
 FONT_RESERVE = 0x5000
@@ -90,7 +92,9 @@ DEBUG_PATCH = bytes.fromhex("13fc006200ff01b2") + bytes.fromhex("4e71") * 3  # 8
 # 필드 전투 스킵 — 조우 판정 `$22FAC` 의 걸음 카운터 검사(`0x22FD8`: cmpi.b #0,$FF3609 + beq.w 12B)를 꼬리 스텁으로 돌린다.
 # 디버그 플래그($FF01B2 = 0x62)가 서 있고 **A 버튼을 누른 채** 걸으면 카운터만 줄이고 조우를 건너뛴다(A 를 떼면 평소 그대로).
 DEBUG_SKIP_SITE = 0x22FD8
-DEBUG_SKIP_STUB_AT = ARCHIVE_TOP - 0x60  # 꼬리 아카이브 구간 끝 쪽의 빈 자리(ARCHIVE_TOP = 글꼴 꼬리 시작)
+DEBUG_SKIP_STUB_AT = (
+    ARCHIVE_TOP - 0x60
+)  # 꼬리 아카이브 구간 끝 쪽의 빈 자리(ARCHIVE_TOP = 글꼴 꼬리 시작)
 DEBUG_SKIP_STUB = bytes.fromhex(
     "0c390062 00ff01b2 6610"  # cmpi.b #$62,$FF01B2 / bne.s 평소
     "08390006 00ff1855 6706"  # btst #6,$FF1855(A 버튼) / beq.s 평소
@@ -110,9 +114,12 @@ _BOX = DEBUG_VIEW_BOX.to_bytes(4, "big")
 _BOX5 = (DEBUG_VIEW_BOX + 4).to_bytes(4, "big")
 _VIEW_BODY = (
     bytes.fromhex("48e7fffe")  # movem.l d0-d7/a0-a6,-(a7)
-    + bytes.fromhex("2279") + _BOX  # movea.l $FFE800,a1
-    + bytes.fromhex("3a79") + _BOX5  # movea.w $FFE804,a5
-    + bytes.fromhex("42b9") + _BOX  # clr.l $FFE800
+    + bytes.fromhex("2279")
+    + _BOX  # movea.l $FFE800,a1
+    + bytes.fromhex("3a79")
+    + _BOX5  # movea.w $FFE804,a5
+    + bytes.fromhex("42b9")
+    + _BOX  # clr.l $FFE800
     + bytes.fromhex("2c780200")  # movea.l $200.w,a6
     + bytes.fromhex("4e96")  # jsr (a6)
     + bytes.fromhex("13fc000100ffe806")  # move.b #1,$FFE806 — 「끝났다」 표식
@@ -120,15 +127,23 @@ _VIEW_BODY = (
 )
 DEBUG_VIEW_STUB = (
     bytes.fromhex("4eb900000a64")  # jsr $A64.l — 덮어쓴 원래 명령(d0 = 패드)
-    + bytes.fromhex("0c390062") + bytes.fromhex("00ff01b2")  # cmpi.b #$62,$FF01B2
-    + bytes.fromhex("66") + bytes([6 + 2 + len(_VIEW_BODY)])  # bne.s 끝
-    + bytes.fromhex("4ab9") + _BOX  # tst.l $FFE800
-    + bytes.fromhex("67") + bytes([len(_VIEW_BODY)])  # beq.s 끝
+    + bytes.fromhex("0c390062")
+    + bytes.fromhex("00ff01b2")  # cmpi.b #$62,$FF01B2
+    + bytes.fromhex("66")
+    + bytes([6 + 2 + len(_VIEW_BODY)])  # bne.s 끝
+    + bytes.fromhex("4ab9")
+    + _BOX  # tst.l $FFE800
+    + bytes.fromhex("67")
+    + bytes([len(_VIEW_BODY)])  # beq.s 끝
     + _VIEW_BODY
     + bytes.fromhex("4e75")  # rts
 )
-DEBUG_VIEW_PATCH = bytes.fromhex("4eb9") + DEBUG_VIEW_AT.to_bytes(4, "big")  # jsr 스텁 (6B, 원래와 같은 길이)
-DEBUG_SKIP_PATCH = bytes.fromhex("4ef9") + DEBUG_SKIP_STUB_AT.to_bytes(4, "big") + bytes.fromhex("4e71") * 3  # 6B + nop×3 = 12B
+DEBUG_VIEW_PATCH = bytes.fromhex("4eb9") + DEBUG_VIEW_AT.to_bytes(
+    4, "big"
+)  # jsr 스텁 (6B, 원래와 같은 길이)
+DEBUG_SKIP_PATCH = (
+    bytes.fromhex("4ef9") + DEBUG_SKIP_STUB_AT.to_bytes(4, "big") + bytes.fromhex("4e71") * 3
+)  # 6B + nop×3 = 12B
 
 
 class Rom:
@@ -200,7 +215,8 @@ class Rom:
                 **gfxtext.allowed(),
                 **captions.allowed(data),
                 **captions.allowed_tail(
-                    TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE, CAPTION_RESERVE
+                    TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE,
+                    CAPTION_RESERVE,
                 ),
             ),
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE - CAPTION_RESERVE,
@@ -255,9 +271,12 @@ class Rom:
 
 
 def normalize(text: str) -> str:
-    """부호 규칙(유저 확정 2026-09-05): 온점·쉼표·공백은 반각, 「…」은 전각 하나, 「…」 뒤에 온점 없음."""
+    """부호 규칙(유저 확정 2026-09-05): 온점·쉼표·공백은 반각, 「…」 뒤에 온점 없음.
+
+    ⚠ 「…」 **연속을 하나로 합치지 않는다**(10-18 — 옛 `re.sub(r"…+", "…")` 가 규칙 1-3 「원문 점 n 개 → …×round(n/3)」의 침묵 대사
+    「……………」를 화면에서 「…」 하나로 줄이고 있었다. 문안·검사는 다 통과하고 **화면에서만 틀린** 부류).
+    """
     text = text.replace("...", "…").replace("‥", "…").replace("。", ".").replace("、", ",")
-    text = re.sub(r"…+", "…", text)
     text = re.sub(r"…\s*[.。]", "…", text)
     return text
 
@@ -301,7 +320,7 @@ def build_stream(
     out: list[scene.Token] = []
     pending_text: list[str] = []
 
-    def flush_text():
+    def flush_text(at_end: bool = False, join: bool = False, brk: bool = False):
         if not pending_text:
             return
         if raw_text:
@@ -319,6 +338,18 @@ def build_stream(
         body = "".join(pending_text)
         lead = " " if body[:1] == " " else ""
         pages = typeset(body, lead)
+        if lead and not pages and not at_end:
+            # 조각이 공백 하나뿐이면(`<ebf0> <0e>…` — 「일행은 」과 품목 이름 사이) 조판기가 빈 쪽으로 보고 버려
+            # 「일행은약초를」로 붙는다(sfc-ed2 가 같은 결함을 찾았다 10-19). 끝 코드 앞 공백만 버린다.
+            pages = [[lead]]
+        # 조각 **끝** 공백도 조판기가 지운다(`제 이름은 <0901>입니다` 가 「이름은류난」으로 붙는다 — 10-19
+        # 전수 검수). 뒤에 이름·품목 코드가 이어지는 자리라 되살린다. 줄이 가득 차 못 붙이면 줄바꿈이 대신한다.
+        # `join` = 뒤에 같은 쪽의 글이 이어 찍히는 자리(참조 · 줄·쪽 넘김 아닌 모든 제어코드(`<03>`·`<11..>`·`<12..>`·`<14..>`…) · 되돌림 끝 `<06>`) —
+        # 문장 끝 부호로 끝났으면 이음새에 공백 하나를 낸다(「찾아왔다.안으로」 — 원문엔 없던 이음새 공백).
+        want = body.endswith(" ") or (join and body[-1:] in ".?!…")
+        if not at_end and not brk and want and body.strip() and pages and pages[-1]:
+            if not pages[-1][-1].endswith(" ") and krwrap.text_width(pages[-1][-1] + " ") <= WIDTH:
+                pages[-1][-1] += " "
         pending_text.clear()
         for pi, pg in enumerate(pages):
             if pi:
@@ -335,7 +366,7 @@ def build_stream(
             # 🔴 예전엔 `\f` 를 본문에 이어 붙여 조판기에 맡겼는데, **뒤에 제어코드가 오면**
             # 조판기가 빈 쪽으로 보고 버려 `<05>` 가 통째로 사라졌다(2026-09-07 실측: 퍼거슨 대화에서
             # 왕자의 말과 퍼거슨의 대답이 한 창에 붙었다). 쪽 넘김은 **여기서** 토큰으로 낸다.
-            flush_text()
+            flush_text(brk=True)
             out.append(scene.Token(0, b"\x05", "ctl", 0x05))
         else:
             code, tgt, raw = val
@@ -346,15 +377,15 @@ def build_stream(
                         f"정본의 참조 <{code:02x}:{tgt:04x}> 가 원본 스트림에 없다 @{st.start:#x}"
                     )
                 refs.remove(m)
-                flush_text()
+                flush_text(join=True)
                 out.append(m)
             elif code in scene.END:
-                flush_text()
+                flush_text(at_end=code != 0x06, join=code == 0x06)
                 out.append(scene.Token(0, bytes([code]), "end", code))
             else:
-                flush_text()
+                flush_text(join=code not in (0x01, 0x05), brk=code in (0x01, 0x05))
                 out.append(scene.Token(0, raw, "ctl", code))
-    flush_text()
+    flush_text(at_end=True)
     if refs:
         raise SystemExit(
             f"원본의 참조 {[hex(t.target) for t in refs]} 가 정본에 없다 @{st.start:#x}"
@@ -408,7 +439,8 @@ def build_tables(orig: bytes, names: dict, cs: hangul.Charset) -> list[tuple[str
             out.append((f"table:{name}", pos, body))
     if over:
         raise SystemExit(
-            "표 항목이 폭을 넘는다 — 칸 배치(textmap/ui_layout.json)나 정본 값을 줄인다:\n    " + "\n    ".join(over)
+            "표 항목이 폭을 넘는다 — 칸 배치(textmap/ui_layout.json)나 정본 값을 줄인다:\n    "
+            + "\n    ".join(over)
         )
     return out
 
@@ -542,10 +574,7 @@ def main(check_only: bool = False) -> None:
         packed = packed + (b"\x00" if len(packed) & 1 else b"")
         if region == "script" and cur + len(packed) > SCRIPT_HI:
             cur, region = TAIL_LO, "tail"
-        if (
-            region == "tail"
-            and cur + len(packed) > ARCHIVE_TOP
-        ):
+        if region == "tail" and cur + len(packed) > ARCHIVE_TOP:
             raise SystemExit("대본 아카이브가 꼬리 빈 공간도 넘는다")
         rom.write(region, cur, packed)
         table[n * 4 : n * 4 + 4] = struct.pack(">I", cur - base)
@@ -561,10 +590,7 @@ def main(check_only: bool = False) -> None:
         packed = packed + (b"\x00" if len(packed) & 1 else b"")
         if bregion == "battle" and bcur + len(packed) > BATTLE_HI:
             bcur, bregion = (cur if region == "tail" else TAIL_LO), "tail"
-        if (
-            bregion == "tail"
-            and bcur + len(packed) > ARCHIVE_TOP
-        ):
+        if bregion == "tail" and bcur + len(packed) > ARCHIVE_TOP:
             raise SystemExit("전투 아카이브가 꼬리 빈 공간도 넘는다")
         rom.write(bregion, bcur, packed)
         btable[n * 4 : n * 4 + 4] = struct.pack(">I", bcur - bbase)
@@ -580,10 +606,20 @@ def main(check_only: bool = False) -> None:
     for label, pos, body in hangul.resource1(cs, FONT_AT):  # 반각 쉼표 — 표 0 이 비운 자리에
         rom.write(label, pos, body)
     # 네오둥근모는 반각도 리소스 5 로 그리니 공백(0x20)도 표에 든다 — 빠지면 조회가 첫 항목(「!」)으로 떨어진다
-    cap5 = {c for c in captions.font5_chars(cmap) if c.strip() or (c == " " and captions.FONT_SRC in ("neodgm", "galmuri14", "galmuri11bold", "galmuri11"))}
+    cap5 = {
+        c
+        for c in captions.font5_chars(cmap)
+        if c.strip()
+        or (c == " " and captions.FONT_SRC in ("neodgm", "galmuri14", "galmuri11bold", "galmuri11"))
+    }
     if captions.FONT_ID and cap5:  # <fd85> 를 단 자막 전용 글꼴(리소스 5, Galmuri14 14×14)
         for label, pos, body in hangul.resource5(
-            cs, cap5, hangul.layout_after_r1(cs, FONT_AT), cell=captions.FONT_CELL, source=captions.FONT_SRC, tail_end=FONT_AT + FONT_RESERVE
+            cs,
+            cap5,
+            hangul.layout_after_r1(cs, FONT_AT),
+            cell=captions.FONT_CELL,
+            source=captions.FONT_SRC,
+            tail_end=FONT_AT + FONT_RESERVE,
         ):
             rom.write(label, pos, body)
     for label, pos, body in hangul.resource2_labels():  # HUD 「ｱﾄ」 → 「남다」 (8×8, 마스터 도안)
@@ -620,7 +656,9 @@ def main(check_only: bool = False) -> None:
     # 글리프들은 로그 렌더러($978C)를 안 타는 고정폭 HUD 전용이라 애초에 안 재도 된다.
     normal_wide = {v for k, v in cs.hangul.items() if k not in hangul.CUSTOM_GLYPHS}
     gap, sp = wordwrap.gap_gate(bytes(rom.buf), normal_wide)
-    print(f"  어절 줄넘김 — 글자 틈 최대 {gap}px < 문턱 {wordwrap.SPACE_PX}px ≤ 공백 틈 최소 {sp}px")
+    print(
+        f"  어절 줄넘김 — 글자 틈 최대 {gap}px < 문턱 {wordwrap.SPACE_PX}px ≤ 공백 틈 최소 {sp}px"
+    )
     # 2e. 필드 HUD 뒷말(부근·입구)·방위(동서남북) — 문안을 안 거치고 코드가 SJIS 를 직접 찍는 여덟 자리
     field_hud_tramp_at = TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE
     for label, pos, body in field_hud.plan(cs, field_hud_tramp_at):
@@ -640,12 +678,17 @@ def main(check_only: bool = False) -> None:
     # 3d. 🔴 시험 빌드 전용 디버그 스위치(ED_DEBUG=1, 꼬리표 test-*) — 제품 롬에는 한 바이트도 안 닿는다
     if DEBUG_BUILD:
         if not common.BUILD_TAG.startswith(DEBUG_TAGS_OK):
-            raise SystemExit("ED_DEBUG=1 은 디버그 전용 꼬리표(debug · test-*)에서만 된다 — 예: ED_BUILD_TAG=debug")
+            raise SystemExit(
+                "ED_DEBUG=1 은 디버그 전용 꼬리표(debug · test-*)에서만 된다 — 예: ED_BUILD_TAG=debug"
+            )
         rom.allowed["debug-flag"] = (DEBUG_SITE, DEBUG_SITE + len(DEBUG_PATCH))
         rom.write("debug-flag", DEBUG_SITE, DEBUG_PATCH)
         rom.allowed["debug-skip-site"] = (DEBUG_SKIP_SITE, DEBUG_SKIP_SITE + len(DEBUG_SKIP_PATCH))
         rom.write("debug-skip-site", DEBUG_SKIP_SITE, DEBUG_SKIP_PATCH)
-        rom.allowed["debug-skip-stub"] = (DEBUG_SKIP_STUB_AT, DEBUG_SKIP_STUB_AT + len(DEBUG_SKIP_STUB))
+        rom.allowed["debug-skip-stub"] = (
+            DEBUG_SKIP_STUB_AT,
+            DEBUG_SKIP_STUB_AT + len(DEBUG_SKIP_STUB),
+        )
         rom.write("debug-skip-stub", DEBUG_SKIP_STUB_AT, DEBUG_SKIP_STUB)
         rom.allowed["debug-view-stub"] = (DEBUG_VIEW_AT, DEBUG_VIEW_AT + len(DEBUG_VIEW_STUB))
         rom.write("debug-view-stub", DEBUG_VIEW_AT, DEBUG_VIEW_STUB)
@@ -653,7 +696,9 @@ def main(check_only: bool = False) -> None:
         rom.write("debug-view-site", DEBUG_VIEW_SITE, DEBUG_VIEW_PATCH)
         rom.allowed["debug-header"] = (DEBUG_HDR_AT, DEBUG_HDR_AT + len(DEBUG_HDR))
         rom.write("debug-header", DEBUG_HDR_AT, DEBUG_HDR)
-        print("  ⚠ 디버그 빌드 — $FF01B2=0x62 (C+방향=고속 이동·벽 통과, 시스템 메뉴 「경험치UP」은 누르면 굳는다)")
+        print(
+            "  ⚠ 디버그 빌드 — $FF01B2=0x62 (C+방향=고속 이동·벽 통과, 시스템 메뉴 「경험치UP」은 누르면 굳는다)"
+        )
     # 4. 체크섬 · 대조 · 출력
     rom.write("checksum", 0x18E, struct.pack(">H", common.header_checksum(rom.buf)))
     rom.verify_no_overlap()

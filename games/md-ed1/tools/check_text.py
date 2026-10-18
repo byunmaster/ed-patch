@@ -27,6 +27,8 @@ import halfspace
 TAG = re.compile(r"<[^>]*>")
 NAME_TAG = re.compile(r"\{([^{}|]+)(?:\|[^{}]+)?\}")  # 전투 문안의 몬스터 이름 자리(빌드가 채운다)
 KANA_KANJI = re.compile(r"[぀-ヿ㐀-鿿]")
+# PS1 내부 자리표시 문자(사용자 영역 U+E000~U+F8FF — 붙임 공백 U+E003 등). MD 에서는 다른 글리프로 구워진다(md-ed2 발견 10-18)
+PUA = re.compile(r"[\ue000-\uf8ff]")
 # 부호 규칙(유저 확정 2026-09-05): 온점·쉼표·공백은 반각, 「…」은 전각 하나, 「…」 뒤에 온점 없음
 BAD_PUNCT = {
     "。": "반각 온점 `.`",
@@ -88,6 +90,8 @@ def main(verbose: bool = False) -> None:
         if not ours:
             continue
         text = TAG.sub("", ours)
+        if PUA.search(ours):
+            leaks.append(f"{src}[{key}]: 사용자 영역 문자 U+{ord(PUA.search(ours).group()):04X} (PS1 자리표시 — 뜻대로 바꾼다) — {text[:30]!r}")
         for nm in NAME_TAG.findall(
             text
         ):  # 이름 자리 — **빌드와 같은 판정**으로 푼다(정본 → 용어집)
@@ -116,6 +120,19 @@ def main(verbose: bool = False) -> None:
             puncts.append(f"{src}[{key}]: 「…」 뒤 공백 없음(2-11) — {text[:30]!r}")
         if re.search(r"～[.．。]", text):  # 1-7: 물결표 뒤 온점 금지
             puncts.append(f"{src}[{key}]: 「～」 뒤 온점(1-7) — {text[:30]!r}")
+        # 2-1·2-2·1-4(마스터 10-08): 부호 뒤 무공백 · 부호 앞 공백 · ASCII HP/MP/EP — 이름·아이템 자리(<02> 등)는 글자로, 줄·쪽 제어는 줄바꿈으로 놓고 본다
+        flat = re.sub(
+            r"<(?:02|0b|0e|09\d\d|1e|e[bc][0-9a-f]{2})>",
+            "⟦N⟧",
+            ours,
+        )
+        flat = TAG.sub("\n", flat)
+        if re.search(r"[,.!?][가-힣A-Za-z0-9]", flat):
+            puncts.append(f"{src}[{key}]: 부호 뒤 공백 없음(2-1) — {text[:30]!r}")
+        if re.search(r" [,.!?]", flat):
+            puncts.append(f"{src}[{key}]: 부호 앞 공백(2-2) — {text[:30]!r}")
+        if re.search(r"(?<![A-Za-z])(?:EP|MP|HP)(?![a-z])", flat) and not src.startswith("names"):
+            puncts.append(f"{src}[{key}]: ASCII HP/MP/EP → 전각(1-4) — {text[:30]!r}")
         if "..." in text:
             puncts.append(f"{src}[{key}]: `...` → 전각 「…」 — {text[:30]!r}")
     print(
