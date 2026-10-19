@@ -29,8 +29,26 @@ SEQ = re.compile(rb"\x0f\x90(..)((?:\x01\x90..)*)\x00", re.S)
 DEFAULT_CUE = "work/build/ps1-ed3/Eiyuu Densetsu III (KR) (TEST).cue"
 
 
-def boot(emu, state_path=None):
-    """새 게임 → FT0000 필드. 상태 파일이 있으면 그걸 쓴다."""
+def rom_sha(cue):
+    import hashlib
+
+    h = hashlib.sha1()
+    with open(os.path.splitext(cue)[0] + ".bin", "rb") as f:
+        for blk in iter(lambda: f.read(1 << 22), b""):
+            h.update(blk)
+    return h.hexdigest()[:12]
+
+
+def boot(emu, state_path=None, cue=None):
+    """새 게임 → FT0000 필드. 상태 파일이 있으면 그걸 쓴다.
+    ⚠ 상태는 **굽은 롬의 글리프 표까지** 품는다 — 롬이 바뀌면 옛 상태가 옛 글자로 그린다(10-20 실측: 새 롬인데 「줄」이 「앗」으로 나왔다).
+    그래서 상태 옆에 롬 sha 를 적어 두고 다르면 새로 만든다."""
+    if state_path and cue:
+        stamp = state_path + ".sha"
+        sha = rom_sha(cue)
+        if os.path.exists(state_path) and (not os.path.exists(stamp) or open(stamp).read() != sha):
+            os.remove(state_path)
+        open(stamp, "w").write(sha)
     if state_path and os.path.exists(state_path):
         emu.run(5)
         emu.load(state_path)
@@ -213,7 +231,7 @@ def chapter_ends(a):
     os.makedirs(a.out, exist_ok=True)
     emu = H.Emu(a.cue)  # ⚠ 한 프로세스에서 코어를 두 번 띄우면 죽는다 — 하나로 돌리고 상태를 다시 불러온다
     state = a.state or os.path.join(a.out, "_boot.state")
-    boot(emu, state)
+    boot(emu, state, a.cue)
     for name in CHAPTER_ENDS:
         emu.load(state)
         emu.run(30)
@@ -247,7 +265,7 @@ def main():
     maps = a.maps.split(",") if a.maps else [n for n, ch, _p, _a in warp_table.table("ed3") if ch and ch[0] == a.chapter]
     assert maps, "--maps 또는 --chapter 가 필요하다"
     emu = H.Emu(a.cue)
-    boot(emu, a.state)
+    boot(emu, a.state, a.cue)
     cur = 0
     os.makedirs(a.out, exist_ok=True)
     idx_path = os.path.join(a.out, "index.tsv")
@@ -264,7 +282,8 @@ def main():
         index = []
         snap = os.path.join(d, "_start.state")
         emu.save(snap)
-        seqs = LOADED.get("seqs") or sequences(emu)
+        # 입장 이벤트 전(LOADED)·후 두 번 읽어 **더 많은 쪽**을 쓴다 — 이벤트가 길면 뒤쪽이 0 이 되고(SETTLE=300), 로드가 느린 맵은 앞쪽이 아직 옛 블록이다(MR4300 실측)
+        seqs = max(LOADED.get("seqs") or [], sequences(emu), key=len)
         if a.max_seq:
             seqs = seqs[: a.max_seq]
         paths = []
