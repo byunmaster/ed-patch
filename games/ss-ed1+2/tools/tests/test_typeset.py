@@ -367,14 +367,29 @@ class ChainBreak(unittest.TestCase):
         self.assertEqual(T.chain_break("聖なるたてを装備しました。%c", "방패를 장비했습니다.%c"), "방패를 장비했습니다.%c")
         self.assertEqual(T.chain_break("ひとこと。\n", "한마디.\n"), "한마디.\n")
 
-    def test_mid_sentence_block_keeps_reading_on(self):
-        """문장 중간에서 끊긴 블록은 이어 읽히는 게 맞다 — 개행을 넣지 않는다."""
+    def test_mid_sentence_block_also_gets_a_break(self):
+        """문장 중간에서 끊긴 블록도 끊는다 — 다음 블록이 공백 없이 붙고 합친 줄이 넘쳐 낱말 한가운데서 접힌다(10-19)."""
         got = T.chain_break("ベルガの鉱山で 落盤が起こって", "베르가 광산에서 낙반이 나서")
-        self.assertEqual(got, "베르가 광산에서 낙반이 나서")
+        self.assertEqual(got, "베르가 광산에서 낙반이 나서\n")
 
-    def test_short_original_line_is_left_alone(self):
-        """원문 줄이 안 찼으면 원문도 같은 줄에 이어졌다 — 우리도 그대로."""
-        self.assertEqual(T.chain_break("はい。", "예."), "예.")
+    def test_key_wait_continuation_breaks_before_overflowing_word(self):
+        """제어값 9 뒤 글이 같은 줄에 이어지는데 첫 어절이 14.0 을 넘으면 9 뒤에 개행 — 어절 한가운데서 접히지 않게(10-19)."""
+        jp = "%c男%c\nそんなこと知るか。%cえっ!?%cそうだろ!!%c"
+        built = "%c란도%c\n그런 걸 알 리가 없잖아.%c응!?%c그렇지!!%c"
+        self.assertEqual(T.ctl_newline(jp, built, [0, 0, 9, 9, 0]), "%c란도%c\n그런 걸 알 리가 없잖아.%c\n응!?%c그렇지!!%c")
+
+    def test_original_trailing_newline_is_restored(self):
+        """원문이 개행으로 끝나면(사전은 끝 개행을 안 담는다) 우리도 끝 개행 — 안 그러면 다음 블록이 같은 줄에 붙는다."""
+        self.assertEqual(T.chain_break("%c兵士%c\nこれは 王子さま。\n", "%c병사%c\n아, 왕자님."), "%c병사%c\n아, 왕자님.\n")
+        self.assertEqual(T.chain_break("ひとこと。\n", "한마디.\n"), "한마디.\n")
+
+    def test_runtime_value_and_bare_names_are_left_alone(self):
+        self.assertEqual(T.chain_break("ひろった%s", "주웠다%s"), "주웠다%s")
+        self.assertEqual(T.chain_break("エルアスタ", "엘아스타"), "엘아스타")
+
+    def test_short_original_line_gets_the_break_too(self):
+        """원문 줄이 안 찼어도 끊는다 — 한국어는 같은 줄에 이으면 공백이 없어 붙는다."""
+        self.assertEqual(T.chain_break("はい。", "예."), "예.\n")
 
     def test_only_story_scenes_get_the_break(self):
         """전투 메시지·백업 RAM 안내 창은 줄 넘김이 달라 안 건드린다 — `chain` 은 씬 대사 창에서만 켠다."""

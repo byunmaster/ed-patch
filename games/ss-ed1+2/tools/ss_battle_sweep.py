@@ -23,7 +23,6 @@ import os
 import struct
 import sys
 
-import numpy as np
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -36,6 +35,26 @@ PARTY_COPIES = (0x06094FD0, 0x06095E74, 0x0609E210, 0x0609E690)
 PARTY = 0x0609E690
 MON, STRIDE_MON = 0x0609F560, 104
 RNG_PTR = 0x06094FC4
+
+# 게임별 상수 — ED2 는 위 값, ED1 은 `ED.BIN` 조우 함수 `0x0603E45C` (객체 표 0x060B8A20 +15 가 그룹).
+# 그룹을 읽는 두 자리는 `6320`(mov.b @r2,r3) → `E3NN`(mov #NN,r3). 값은 정적 분석, 실측은 게임별 주석 참고.
+GAMES = {
+    "ed2": dict(
+        sites=(0x0602F14E, 0x0602F17C),
+        orig=b"\x64\x90",
+        op=0xE4,  # 6490 → E4NN
+        groups="1-99",
+        state="ed2_field",
+    ),
+    "ed1": dict(
+        sites=(0x0603E4A8, 0x0603E4FC),
+        orig=b"\x63\x20",
+        op=0xE3,  # 6320 → E3NN
+        groups="1-110",
+        state="ed1_field",
+    ),
+}
+GAME = GAMES["ed2"]
 MSG_BOX = (148, 230, 15, 205)  # y0 y1 x0 x1 — 아래 메시지 창
 MENU_ROWS = ((168, 182), (186, 200), (204, 218))  # 명령 3줄
 
@@ -82,10 +101,13 @@ def has_text(crop):
     return w.sum() > 15
 
 
-def names_in_battle(h, inv):
+def names_in_battle(h, inv, skip_empty=False):
     out = []
+    mon, stride = GAME.get("mon", (MON, STRIDE_MON))
     for k in range(4):
-        raw = h.peek(MON + STRIDE_MON * k + 1, 24)
+        if skip_empty and h.peek(mon + stride * k, 1)[0] == 0:
+            continue
+        raw = h.peek(mon + stride * k + 1, 24)
         raw = raw.split(b"\x00")[0]
         if not raw:
             continue
@@ -115,8 +137,9 @@ def inverse_map():
 def start_battle(h, nav_state, g):
     h.load(nav_state)
     h.run(5)
-    for a in (0x0602F14E, 0x0602F17C):
-        h.poke(a, bytes([0xE4, g]))
+    for a in GAME["sites"]:
+        assert h.peek(a, 2) in (GAME["orig"], bytes([GAME["op"], h.peek(a + 1, 1)[0]])), hex(a)
+        h.poke(a, bytes([GAME["op"], g]))
     n = 0
     while be32(h.peek(MON + 0x1C, 4)) == 0 and n < 80:
         h.held = {H.BTN["right" if n % 2 == 0 else "left"]}
@@ -139,6 +162,17 @@ def run_group(h, nav_state, g, turns, outdir, inv, attempts=6):
         nav_turn_done = False
         obj = be32(h.peek(RNG_PTR, 4))
         local = 0
+        # 🔴 글이 그려지는 도중 프레임을 찍지 않는다(2026-10-19 qa — 「독광석은 ㅇ .」 175곳): 같은 크롭이 3번 연속 폴링(27프레임)
+        #    안 바뀌면 다 그려진 것이다. 글이 사라질 때(메뉴·빈 창)는 마지막 프레임을 쓴다.
+        pend_key, pend_n, pend_fr = None, 0, None
+
+        def commit(key, fr_):
+            nonlocal caps
+            if key is not None and key not in seen:
+                seen.add(key)
+                caps += 1
+                Image.fromarray(fr_).save(os.path.join(gdir, f"m{caps:02d}.png"))
+
         while t < turns and local < 6000:
             for pc_ in PARTY_COPIES:
                 h.poke(pc_ + 4, h.peek(pc_ + 8, 4))
@@ -149,11 +183,15 @@ def run_group(h, nav_state, g, turns, outdir, inv, attempts=6):
             if h.peek(PARTY + 0x46, 1) == b"\x01":  # 기절 — 이 시도는 여기까지
                 break
             if is_menu(fr):
+                commit(pend_key, pend_fr)
+                pend_key, pend_n, pend_fr = None, 0, None
                 if names is None:
                     names = names_in_battle(h, inv)
                     Image.fromarray(fr).save(os.path.join(gdir, "menu.png"))
                 if not nav_turn_done:
-                    h.poke(obj + 48, struct.pack(">I", 0x1234 + t * 7919 + g * 104729 + tries * 31337))
+                    h.poke(
+                        obj + 48, struct.pack(">I", 0x1234 + t * 7919 + g * 104729 + tries * 31337)
+                    )
                     for b in ("up", "up", "left", "left", "right", "right", "c"):
                         h.press(b, 4, 8)
                     t += 1
@@ -165,11 +203,25 @@ def run_group(h, nav_state, g, turns, outdir, inv, attempts=6):
                     crop = msg_crop(fr)
                     if has_text(crop):
                         key = hashlib.md5(crop.tobytes()).hexdigest()
-                        if key not in seen:
-                            seen.add(key)
-                            caps += 1
-                            Image.fromarray(fr).save(os.path.join(gdir, f"m{caps:02d}.png"))
-    return {"group": g, "status": "ok", "monsters": names or [], "turns": t, "tries": tries, "captures": caps}
+                        if key == pend_key:
+                            pend_n += 1
+                            if pend_n >= 3:
+                                commit(pend_key, pend_fr)
+                        else:
+                            if pend_n < 3:
+                                pass  # 도중 프레임은 버린다 — 다음 글이 이어 그려지는 중
+                            pend_key, pend_n, pend_fr = key, 1, fr.copy()
+                    else:
+                        commit(pend_key, pend_fr)
+                        pend_key, pend_n, pend_fr = None, 0, None
+    return {
+        "group": g,
+        "status": "ok",
+        "monsters": names or [],
+        "turns": t,
+        "tries": tries,
+        "captures": caps,
+    }
 
 
 def fast_win(h, frames=3600):
@@ -211,6 +263,125 @@ def contact_sheet(gdir, cols=3):
     return path
 
 
+# ── ED1 (2026-10-19) — 전투가 **완전 자동**이다(명령 메뉴 없음, 파티가 알아서 공격, `c` 로 메시지를 넘긴다).
+# 그래서 ED2 처럼 방어를 고를 필요가 없고, 몬스터 HP 를 높게 묶어 두고 `c` 를 연타하며 메시지를 캡처한다.
+ED1_MON = (0x060BCD00, 64)  # 몬스터 슬롯 4칸: +0 번호 · +1 이름(SJIS, NUL) · +0x1C HP(BE32)
+GAMES["ed1"]["mon"] = ED1_MON
+ED1_PARTY_HP = (
+    0x060AF5F4,
+    0x060B0400,
+    0x060B8824,
+    0x060B8CA4,
+)  # HP 사본 넷(+4 에 최대), 파티원 간격 108
+ED1_GROUP = 0x060BF370  # 현재 조우 그룹 바이트(`0x06050280` 이 쓴다)
+ED1_MSG_BOX = (146, 232, 14, 206)  # 아래 메시지 창 y0 y1 x0 x1
+ED1_NO_GROUP = (5, 6, 35, 36, 37, 38, 39, 40)  # 점프표(0x060504D0)가 기본값 — 편성 없음
+
+
+def ed1_boot_to_field(h):
+    """타이틀 → 이어하기 → 슬롯 3 → 크루즈마을 부근 해안(바다가 막아 주는 자리, 몬스터 셋이 배회)."""
+    h.run(2500)
+    h.press("start", 6, 120)
+    h.press("c", 5, 300)
+    h.run(1500)
+    h.press("start", 6, 200)  # 오프닝 건너뛰기 → 「처음부터 / 이어하기」
+    h.run(1600)  # 타이틀 메뉴가 입력을 받을 때까지(실측: 곧바로 right 를 누르면 무시된다)
+    for names, hold, after in (
+        ("right", 5, 20), ("c", 5, 150), ("c", 5, 100), ("down", 5, 10), ("down", 5, 10),
+        ("c", 5, 60), ("c", 5, 250),
+    ):  # fmt: skip
+        h.press(names, hold, after)
+    h.run(300)
+    h.held = {H.BTN["down"]}
+    h.run(300)  # 마을 출구 → 해안 필드
+    h.held = set()
+    h.run(20)
+
+
+def ed1_fill_party(h):
+    for base in ED1_PARTY_HP:
+        for m in range(4):
+            a = base + 108 * m
+            h.poke(a, h.peek(a + 4, 4))
+
+
+def ed1_start_battle(h, nav_state, g):
+    h.load(nav_state)
+    h.run(5)
+    for a in GAME["sites"]:
+        assert h.peek(a, 2) in (GAME["orig"], bytes([GAME["op"], h.peek(a + 1, 1)[0]])), hex(a)
+        h.poke(a, bytes([GAME["op"], g]))
+    for n in range(40):  # 오른쪽 셋 → 위 → … (실측: 오른쪽 셋째 걸음에서 해안 몬스터와 닿는다)
+        d = ("right", "right", "right", "up", "left", "up", "left", "down")[n % 8]
+        h.held = {H.BTN[d]}
+        h.run(40)
+        h.held = set()
+        h.run(10)
+        if h.peek(ED1_GROUP, 1)[0] == g:
+            return True
+    return False
+
+
+def ed1_run_group(h, nav_state, g, frames, outdir, inv):
+    gdir = os.path.join(outdir, f"g{g:03d}")
+    if not ed1_start_battle(h, nav_state, g):
+        return {"group": g, "status": "조우 안 걸림"}
+    os.makedirs(gdir, exist_ok=True)
+    mon, stride = ED1_MON
+    h.run(120)
+    names = None
+    seen, caps, y0, y1, x0, x1 = set(), 0, *ED1_MSG_BOX
+    Image.fromarray(h.frame).save(os.path.join(gdir, "menu.png"))
+
+    def pin(hp):
+        for k in range(4):
+            a = mon + stride * k + 0x1C
+            if be32(h.peek(a, 4)):
+                h.poke(a, struct.pack(">I", hp))
+
+    t = 0
+    total = frames + 1500
+    while t < total:
+        ed1_fill_party(h)
+        pin(0x7FFF if t < frames else 1)  # 앞 구간은 안 죽이고 · 뒤 구간은 죽여서 승리 문구까지
+        h.run(3)
+        t += 3
+        if names is None and t >= 450:  # 슬롯 이름은 전투 그림이 올라온 뒤에야 찬다
+            names = [n for k, n in enumerate(names_in_battle(h, inv, skip_empty=True)) if n]
+        if t % 21 == 0:
+            h.press("c", 3, 0)
+        if t % 9 == 0:
+            crop = h.frame[y0:y1, x0:x1]
+            if has_text(crop):
+                key = hashlib.md5(crop.tobytes()).hexdigest()
+                if key not in seen:
+                    seen.add(key)
+                    caps += 1
+                    Image.fromarray(h.frame).save(os.path.join(gdir, f"m{caps:02d}.png"))
+        if (
+            t > frames
+            and all(be32(h.peek(mon + stride * k + 0x1C, 4)) == 0 for k in range(4))
+            and t > frames + 900
+        ):
+            break
+    return {"group": g, "status": "ok", "monsters": names or [], "frames": t, "captures": caps}
+
+
+def ed1_contact_sheet(gdir, cols=3):
+    fs = sorted(f for f in os.listdir(gdir) if f.startswith("m") and f.endswith(".png"))
+    if not fs:
+        return None
+    y0, y1, x0, x1 = ED1_MSG_BOX
+    w, hh = x1 - x0, y1 - y0
+    sheet = Image.new("RGB", (cols * (w + 4), ((len(fs) + cols - 1) // cols) * (hh + 4)))
+    for i, f in enumerate(fs):
+        im = Image.open(os.path.join(gdir, f)).crop((x0, y0, x1, y1))
+        sheet.paste(im, ((i % cols) * (w + 4), (i // cols) * (hh + 4)))
+    path = os.path.join(gdir, "sheet.png")
+    sheet.save(path)
+    return path
+
+
 def parse_groups(s):
     out = []
     for part in s.split(","):
@@ -224,28 +395,48 @@ def parse_groups(s):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--game", choices=sorted(GAMES), default="ed2")
+    ap.add_argument(
+        "--frames", type=int, default=1800, help="[ed1] 몬스터를 안 죽이고 버티는 프레임"
+    )
     ap.add_argument("--groups", default="62")
     ap.add_argument("--turns", type=int, default=20)
     ap.add_argument("--out", required=True)
     ap.add_argument("--cue", default=None)
     ap.add_argument("--bkr", default=DEFAULT_BKR)
-    ap.add_argument("--nav-only", action="store_true", help="필드 상태만 만들고 끝낸다(병렬 실행 전)")
+    ap.add_argument(
+        "--nav-only", action="store_true", help="필드 상태만 만들고 끝낸다(병렬 실행 전)"
+    )
     a = ap.parse_args()
     import common
+
+    global GAME
+    GAME = GAMES[a.game]
+    if a.game == "ed1" and a.groups == "62":
+        a.groups = GAME["groups"]
 
     cue = a.cue or os.path.join(common.BUILD_DIR, "The_Legend_of_Heroes_I&II.cue")
     so = os.path.join(H.CACHE, "beetle-saturn", "src", "mednafen_saturn_libretro.so")
     os.makedirs(a.out, exist_ok=True)
     h = H.Harness(so, cue, a.out, bkr=a.bkr)
-    nav = os.path.join(H.CACHE, "beetle-saturn", f"ed2_field_{image_key(cue)}.state")
+    nav = os.path.join(H.CACHE, "beetle-saturn", f"{GAME['state']}_{image_key(cue)}.state")
     if not os.path.exists(nav):
-        boot_to_field(h)
+        (ed1_boot_to_field if a.game == "ed1" else boot_to_field)(h)
         h.save(nav)
     if a.nav_only:
         return
     inv = inverse_map()
     rows = []
     for g in parse_groups(a.groups):
+        if a.game == "ed1":
+            if g in ED1_NO_GROUP:
+                continue
+            r = ed1_run_group(h, nav, g, a.frames, a.out, inv)
+            if r.get("status") == "ok":
+                ed1_contact_sheet(os.path.join(a.out, f"g{g:03d}"))
+            rows.append(r)
+            print(json.dumps(r, ensure_ascii=False), flush=True)
+            continue
         r = run_group(h, nav, g, a.turns, a.out, inv)
         rows.append(r)
         if r.get("status") == "ok":

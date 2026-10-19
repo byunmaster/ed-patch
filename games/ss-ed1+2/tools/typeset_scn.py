@@ -596,7 +596,22 @@ def ctl_newline(jp, built, args):
         if built[b.end() : b.end() + 1] == "\n" or _last_width(built[: b.start()]) + CTL_PAUSE_W > COLS:
             continue
         ins.append(b.end())
-    for at in reversed(ins):
+    # 🔴 **우리 줄이 짧아 9 뒤 글이 같은 줄에 이어지는데 첫 어절이 안 들어가면** 엔진이 어절 한가운데서 접는다(2026-10-19
+    #    대사 보기 — ED2 씬 11 「없잖아.[키]응!?[키]그/렇지!!」). 이어 쓰는 칸은 `앞 줄 폭 + 2.0` 부터다 — 첫 어절이 거기서
+    #    14.0 을 넘으면 9 **뒤에** 개행을 둬 새 줄에서 시작하게 한다.
+    for k, m in enumerate(spb):
+        if m.group() != "%c" or k >= len(args) or args[k] != 9:
+            continue
+        rest = built[m.end() :]
+        if not rest or rest[0] == "\n" or m.end() in ins:
+            continue
+        w0 = _last_width(built[: m.start()])
+        if w0 == 0.0:
+            continue  # 줄이 비었다 — 새 줄 머리에서 시작한다
+        first = re.match(r"[^ \n%]+", rest)
+        if first and w0 + CTL_PAUSE_W + width(first.group()) > COLS:
+            ins.append(m.end())
+    for at in sorted(set(ins), reverse=True):
         built = built[:at] + "\n" + built[at:]
     return built
 
@@ -607,12 +622,29 @@ def _last_width(text):
     return width(ls[-1]) if ls else 0.0
 
 
+_PROSE = re.compile(r"[ぁ-ん、。！？]")  # 가나 히라가나·문장부호가 있으면 이어 쓰는 **문장**이다(이름·아이템 한 덩이가 아니다)
+
+
 def chain_break(jp, built):
-    if not jp or jp.endswith(("%c", "\n")) or built.endswith(("%c", "\n")):
+    """이어 쓰는 블록(끝에 `%c`·개행이 없다)의 끝에 개행을 더한다 — 다음 블록이 같은 줄 꼬리에 붙지 않게.
+
+    🔴 **문장 끝만이 아니라 문장 중간 끝도 넣는다**(2026-10-19 헤드리스 전 씬 대사 보기 — ED2 씬 5·11·12·15·27·28 에서
+       「스코트는지진이」「그/런」「대/지진」: 다음 블록이 앞 블록 꼬리에 **공백 없이** 붙고, 합친 줄이 14칸을 넘어 엔진이
+       낱말 한가운데서 접었다). 블록은 따로 조판돼 **앞 블록의 끝 폭을 모른다** — 그래서 블록 끝에서 줄을 끊어 두면
+       각 블록의 첫 줄이 새 줄에서 시작해 우리가 접은 자리 그대로 읽힌다. 옛 규칙(「문장 중간은 이어 읽힌다」)은
+       한국어에선 공백이 없어 틀렸다.
+    ⚠ 우리 끝 줄이 14.0 을 넘어(꼬리 부호가 걸친 14.5) 엔진이 스스로 넘기는 줄은 건드리지 않는다 — 개행을 더하면 빈 줄이다.
+    ⚠ 끝이 `%s`/`%d`(런타임 값 — 뒤에 「말이군」 같은 조각이 이어 붙는다)이거나 이름·아이템 한 덩이(가나 문장이 아님)는 안 건드린다.
+    """
+    # 🔴 **원문이 개행으로 끝나는데 우리 문안엔 끝 개행이 없다**(139블록, 2026-10-19 — 「아, 왕자님.엘아스타에 가…」: 다음 블록이
+    #    같은 줄 꼬리에 붙었다). 사전은 문안만 담아 끝 개행을 안 갖는다 — 원문 개행을 되살린다(14.5 로 걸쳐 엔진이 넘기는 줄 제외).
+    if jp and jp.endswith("\n") and not built.endswith(("%c", "\n")):
+        return built if _last_width(built) > COLS else built + "\n"
+    if not jp or jp.endswith(("%c", "\n")) or built.endswith(("%c", "\n", " ")):
         return built
-    if not jp.rstrip(" \u3000").endswith(SENTENCE_END):
+    if jp.endswith(("%s", "%d")) or built.endswith(("%s", "%d")) or not _PROSE.search(jp):
         return built
-    if _last_width(jp) < COLS or _last_width(built) > COLS:
+    if _last_width(built) > COLS:
         return built
     return built + "\n"
 
@@ -895,6 +927,12 @@ def ps1_layout(seg, cols=float(COLS)):
         sum(map(_cell, ln)) > COLS and not h for ln, h in zip(ls, hung, strict=True)
     ):
         return None
+    # 🔴 **씬 창에선 반각 꼬리 부호가 29열에 앉지 않는다**(2026-10-19 헤드리스 전 씬 대사 보기 — ED2 씬 3 id9
+    #    「…사 주세요.한 장에」: 14.5 줄 끝의 `.` 가 **다음 줄 머리로 떨어졌다**). 걸침 훅(`patch_msgwrap.hang_stub`)은
+    #    29열 창(전투 로그) 몫이고 씬 창은 14.0 에서 시작하는 글자를 꺾는다 — 위 모듈 주석이 이미 「조판만으론 못
+    #    한다」고 적은 자리다. 그런 줄이 있으면 한 칸 좁혀(13.5) 다시 돌고, 그래도 안 되면 어절 단위 개행(`wordwrap`)으로 간다.
+    if any(hung):
+        return ps1_layout(seg, cols - 0.5) if cols == float(COLS) else None
     # 매단 줄 뒤엔 개행도 공백도 안 넣는다 — 엔진이 부호를 그린 뒤 스스로 넘긴다
     last = len(ls) - 1
     new = "".join(
