@@ -112,7 +112,7 @@ class _Stop(Exception):
     pass
 
 
-def simulate(d, base, start):
+def simulate(d, base, start, faults=None):
     """`start` 의 `mov.l @(d,pc),r1` 부터 돌려 `[(목적지, 소스 주소, 바이트)]` 와 소스 시작 주소를 낸다.
 
     - 목적지: 정수(절대) 또는 `("rN", 오프셋)`(들어올 때 레지스터 기준 — 몬스터 슬롯 base 가 이쪽이다)
@@ -177,7 +177,9 @@ def simulate(d, base, start):
                 raise _Stop
             return None
         if op == 0xE:  # mov #imm,Rn
-            if a == 1:
+            if (
+                a == 1 and imm != 0
+            ):  # `mov #0,r1` 은 우리 루프의 꼬리 — 뒤로 흘러내리는지 보려면 계속 돈다
                 raise _Stop
             R[a] = _sx8(imm) & 0xFFFFFFFF
             return None
@@ -198,6 +200,10 @@ def simulate(d, base, start):
                     raise _Stop
                 o = addr - base
                 if not (0 <= o < n):
+                    # 🔴 주소 0 근처를 읽으면 **낙하**다 — 한 루프가 끝나 다음 루프로 흘러들어가 r1 이 어긋난 것
+                    #   (2026-10-19 나무인간C 이름이 통째로 빈 사고). 정상 코드는 널 지대를 안 읽는다.
+                    if faults is not None and addr < 0x01000000:
+                        faults.append(pc_)
                     raise _Stop
                 if lo == 4 and a != b:
                     R[b] = add(R[b], 1)
@@ -274,7 +280,19 @@ def semantic_check(orig, built, base):
         seen += 1
         o_nul = any(b == 0 for _d, _s, b in wr)
         o_len = bytes(orig[src0 - base : src0 - base + 64]).find(0)
-        got = simulate(built, base, pc)
+        flt = []
+        got = simulate(built, base, pc, flt)
+        if flt:
+            bad.append(
+                (
+                    pc,
+                    o_len,
+                    -1,
+                    0,
+                    f"낙하 — 0x{flt[0]:08X} 에서 널 주소를 읽는다(루프가 끝나고 다음 루프로 흘러들었다)",
+                )
+            )
+            continue
         bw = [w for w in got[0] if got[1] is not None and got[1] <= w[1] < got[1] + 64]
         if got[1] is None:
             bad.append((pc, o_len, -1, 0, "시작이 사라졌다 — 복사 자리가 바뀌었다"))
@@ -299,6 +317,40 @@ def semantic_check(orig, built, base):
         elif not o_nul and our > len(bw):
             bad.append((pc, o_len, our, len(bw), "칸을 넘는다 — 뒤가 잘린다"))
     return bad, seen
+
+
+def _has_halfwidth_kana(b):
+    """SJIS 바이트열에 **단독 반각 가나**(0xA1~0xDF)가 있나 — 2바이트 글자의 뒷바이트는 안 센다."""
+    i = 0
+    while i < len(b):
+        c = b[i]
+        if 0x81 <= c <= 0x9F or 0xE0 <= c <= 0xFC:
+            i += 2
+        elif 0xA1 <= c <= 0xDF:
+            return True
+        else:
+            i += 1
+    return False
+
+
+def kana_sources(orig, built, base):
+    """`[(시작 pc, 소스 주소, 길이)]` — 복사 소스가 **빌드에서도 반각 가나**인 자리(번역이 안 간 이름).
+
+    🔴 복사 코드가 맞아도 퍼 나르는 문자열이 일본어면 화면에 그대로 나간다(2026-10-19 ED1 「ｼﾞｬｰﾃﾞｲﾝｿﾞﾝﾋﾞA」 — 길이는 맞아서
+       위 두 검사가 다 통과했다). 원본 소스가 반각 가나가 아니었던 자리는 안 센다.
+    """
+    out = []
+    for pc, src, _wr in copy_sites(orig, base):
+        got = simulate(built, base, pc)
+        if got[1] is None:
+            continue
+        z = bytes(built[got[1] - base : got[1] - base + 64]).find(0)
+        o = bytes(orig[src - base : src - base + 64])
+        if _has_halfwidth_kana(
+            bytes(built[got[1] - base : got[1] - base + z])
+        ) and _has_halfwidth_kana(o[: max(o.find(0), 0)]):
+            out.append((pc, got[1], z))
+    return out
 
 
 def check(fname, orig, built, skip):
@@ -387,6 +439,12 @@ def main():
                 print(f"     0x{pc:08X}: 원본 {ln}B · 우리 {our}B · 복사 {n}B — {why}")
         else:
             print(f"  ✅ {fname}: 의미 검사 — 복사 {seen}곳 전부 NUL 까지 나간다")
+        kana = kana_sources(orig, built, LOAD_BASE)
+        fails += len(kana)
+        for pc, src, ln in kana:
+            print(
+                f"  ❌ {fname}: 0x{pc:08X} 복사 소스 0x{src:08X} 가 반각 가나 {ln}B — 번역이 안 갔다"
+            )
         if unread:
             # ⚠ 「못 쟀다」는 실패가 아니라 **안 본 것**이다 — 조용히 넘기지 않는다
             print(

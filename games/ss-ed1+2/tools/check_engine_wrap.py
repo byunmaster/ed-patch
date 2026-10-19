@@ -64,7 +64,7 @@ def main():
             jp = e.get("text", "")
             # ⚠ 주입 `%c` 쌍이 든 블록은 **되살린 원문**으로 조판해야 이름칸이 붙는다.
             w = [] if why is not None else None
-            built = patch_scn.canon_of(canon, jp, sites.get(int(e["file_offset"], 16)), w, path)
+            built = patch_scn.canon_of(canon, jp, sites.get(int(e["file_offset"], 16)), w, path, int(e["file_offset"], 16))
             if not built:
                 continue
             blocks += 1

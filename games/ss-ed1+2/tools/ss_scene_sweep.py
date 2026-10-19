@@ -34,6 +34,7 @@
 - 수치 `0x060A07C8`(dword · 상점 값 `n Gold`).
 변형 `a` = 받침 없는 이름 · 최장 아이템 · 한 자리 / `b` = 받침 있는 이름 · 짧은 아이템 · 다섯 자리. 캡처 이름 `idNNN_a_pK.png`.
 ⚠ 이 표들이 안 덮는 인자(주문 · 지명 · 다른 수치 칸)는 그대로 빈칸/0 이다.
+ED1 은 `ED1_ARGS`(아래 「ED1」 절 끝) — 파티 레코드 0x060B8808+108k(k=0~4) · 아이템 이름표 0x060BE470(32B×117) · 상점 값 0x060BF368.
 
 ## ED1 (`--game ed1`, 2026-10-19 실측 — 구조는 ED2 와 같되 주소가 다르고 **씬 파일 하나에 지역 모듈이 여럿**이다)
 - 씬 파일은 RAM `0x060D0000` 에 올라온다. 번호→스크립트 함수는 포인터 등록이 아니라 **본체(ED.BIN) 하드코딩**이다 —
@@ -43,6 +44,8 @@
 - 번호 → 대화창 = `ED.BIN 0x06040538(r4=번호)`(ED2 의 0x06054AF8 과 같은 모양: 스크립트 받기 · 준비 0x0604085C · 그리기 0x06040580 · 마무리 0x060408B0).
   프레임 틱 = `ED.BIN 0x0608083C`(모드 바이트 `0x060BF315`, 모드 ≤14, 앞 6명령 `…e10e`).
 - 스크립트 버퍼 규약은 ED2 와 같다(`02` 창 시작 · `01` 이름 끝 · `0a` 줄 · `08` 창 끝 · `06` 끝).
+
+- `--args`: sprintf(`0x06095BCC`)의 %s 는 파티 레코드·아이템 이름표(번호는 상점 구조 0x060BF350+7+슬롯 바이트)에서, %d(상점 값)는 0x060BF368 에서 온다. NPC 이름은 씬 안 상수다.
 
 ⚠ 번호마다 스테이트를 되돌린다 — 한 번호의 이벤트가 만든 플래그·NPC 이동이 다음 번호에 새지 않게.
 """
@@ -192,8 +195,8 @@ def hook_patch_to(target):
 
 
 def valid_script(script):
-    """스크립트 버퍼 모양 검사 — `02`(창 시작)로 시작한다(함수 후보가 엉뚱한 것이면 걸러낸다)."""
-    return script[:1] == b"\x02"
+    """스크립트 버퍼 모양 검사 — `02`(창 시작) 또는 글자코드로 시작한다(함수 후보가 엉뚱한 것이면 걸러낸다)."""
+    return script[:1] == b"\x02" or script[0] >= 0x80  # 화자 없는 독백·메뉴 문구는 02 없이 글자코드로 시작한다(씬 17·21 실측)
 
 
 def boot_to_field_ed1(h):
@@ -275,16 +278,28 @@ def ed1_dispatch_targets(ed):
 
 
 def ed1_text_fns(d, targets):
-    """씬 파일 `d` 안의 지역 모듈별 번호→스크립트 함수들. 서명 = 앞 24워드에 `cmp/hi r1,r4`(3416)와 `jmp @r0`(402b),
-    뒤 0x700B 안에 `strcpy`(0x06095C28) 호출 리터럴."""
+    """씬 파일 `d` 안의 지역 모듈별 번호→스크립트 함수들. 서명 = **함수 머리**(첫 명령이 `mov.l rN,@-r15` 푸시) +
+    앞 48워드에 `cmp/hi r1,r4`(3416) · 56워드에 `jmp @r0`(402b) + 뒤 0x700B 안에 `strcpy`(0x06095C28) 호출 리터럴.
+    🔴 머리 조건이 없으면 **함수 중간**(다른 씬에서 머리였던 주소)이 통과해 돌아오지 않는다(2026-10-19 씬 16·25 실측 —
+    그리고 진짜 머리(prologue 가 길어 cmp 가 24워드 밖)는 걸러졌다). 이 주소 집합은 본체의 모든 씬 합집합이라 씬마다 맞는 것만 남는다."""
     out = []
     for v in targets:
         o = v - SCN_BASE
-        if o < 0 or o + 0x60 > len(d):
+        if o < 0 or o + 0x80 > len(d):
             continue
-        w = struct.unpack(">24H", d[o : o + 48])
-        if 0x3416 in w and 0x402B in w and STRCPY in d[o : o + 0x700]:
+        w = struct.unpack(">64H", d[o : o + 128])
+        if (w[0] & 0xFF0F) != 0x2F06:
+            continue
+        if 0x3416 in w[:48] and 0x402B in w[:56] and STRCPY in d[o : o + 0x700]:
             out.append(v)
+    if not out:  # 본체 분배기 리터럴에 이 씬의 함수가 없다(씬 24·28 실측) — 씬 파일 안을 직접 훑어 같은 서명의 머리를 찾는다
+        prev = -4
+        for o in range(0, len(d) - 0x80, 2):
+            w = struct.unpack(">64H", d[o : o + 128])
+            if (w[0] & 0xFF0F) == 0x2F06 and 0x3416 in w[:48] and 0x402B in w[:56] and STRCPY in d[o : o + 0x1000]:
+                if o - prev > 2:  # 연속한 푸시 열은 맨 앞 하나만(그 뒤는 같은 함수의 중간)
+                    out.append(SCN_BASE + o)
+                prev = o
     return out
 
 
@@ -301,6 +316,19 @@ def window_sig(frame):
         return None
     y0, y1 = int(rows.min()), int(rows.max())
     return hashlib.md5(frame[y0 : y1 - 15, WIN_X0:WIN_X1].tobytes()).hexdigest()
+
+
+def window_blank(frame):
+    """대화창은 떠 있는데 안이 비었나(글자 픽셀 15 미만) — `[끝]` 뒤 `0b`(상점·질문 메뉴 코드)가 이어지는 번호에서 메뉴가 안 그려진 빈 창이 남는다.
+    🔴 이걸 「쪽」으로 찍지 않는다(2026-10-19 manager — ED1 SCN05 id225·226 의 빈 여분 쪽 6장)."""
+    m = (frame[:, WIN_X0:WIN_X1] == NAVY).all(axis=2)
+    rows = np.where(m.sum(axis=1) > 120)[0]
+    if len(rows) < 30:
+        return False
+    y0, y1 = int(rows.min()) + 4, int(rows.max()) - 4
+    inner = frame[y0:y1, 20:200]
+    nonbg = ~(inner == NAVY).all(axis=2) & (inner.max(axis=2) > 120)
+    return int(nonbg.sum()) < 15
 
 
 def trim(buf):
@@ -327,7 +355,7 @@ def expected_pages(script):
     return n
 
 
-def wait_done(h, n0, maxf=60):
+def wait_done(h, n0, maxf=int(os.environ.get("SWEEP_WAITF", "60"))):  # 환경변수로 늘려 느린 함수를 가린다
     f = 0
     while g32(h, MB + 8) == n0 and f < maxf:
         h.run(1)
@@ -347,6 +375,31 @@ def read_script(h, snap, fn, i):
     return ok, trim(h.peek(BUF, 0x400))
 
 
+POKES = []  # [(주소, 바이트)] — `--poke 주소:헥스`
+RECHECK = False  # `--recheck`: 쪽을 찍은 뒤 60프레임 더 두고 다시 비교한다(도중 프레임이 없는지 — 완성 근거)
+RECHECK_LOG = []  # [(태그, 쪽 번호, 다른 글자 픽셀 수)]
+
+
+def win_text_mask(frame):
+    """대화창 안의 글자(흰·노랑) 마스크 — ▽ 깜박임·배경은 뺀다. 창을 못 찾으면 None."""
+    blue = (frame[:, :, 0] < 20) & (frame[:, :, 1] < 20) & (frame[:, :, 2] > 100) & (frame[:, :, 2] < 160)
+    ys = np.where(blue[:, 20])[0]
+    if len(ys) < 20:
+        return None
+    runs, s, prev = [], ys[0], ys[0]
+    for y in ys[1:]:
+        if y != prev + 1:
+            runs.append((s, prev))
+            s = y
+        prev = y
+    runs.append((s, prev))
+    r = max(runs, key=lambda x: x[1] - x[0])
+    if r[1] - r[0] < 50:
+        return None
+    c = frame[r[0] : r[1] + 1, 16:200].astype(int)
+    return ((c[:, :, 0] > 200) & (c[:, :, 1] > 200) & (c[:, :, 2] > 200)) | ((c[:, :, 0] > 200) & (c[:, :, 1] > 200) & (c[:, :, 2] < 120))
+
+
 def play_id(h, snap, i, outdir, tag, maxpolls=900):
     """번호 i 를 대화창으로 띄워 쪽마다 찍는다 → (캡처 파일 목록, 사유).
 
@@ -355,6 +408,8 @@ def play_id(h, snap, i, outdir, tag, maxpolls=900):
     """
     restore(h, snap)
     h.run(1)
+    for addr, data in POKES:  # 시험 문자 주입(`--poke`) — 번호를 부르기 직전에 RAM 의 문안을 덮는다
+        h.poke(addr, data)
     n0 = g32(h, MB + 8)
     p32(h, MB + 4, i)
     p32(h, MB, EVENT_RUN)
@@ -381,10 +436,21 @@ def play_id(h, snap, i, outdir, tag, maxpolls=900):
         absent = 0
         stable = stable + 1 if sig == last else 1
         last = sig
-        if stable >= 3 and sig != cap_sig:
+        if stable >= 3 and sig != cap_sig and window_blank(h.frame):
+            if returned:  # 돌아온 뒤 빈 창 = 메뉴 코드(`0b`) 뒤 — 쪽이 아니다
+                return shots, "끝"
+            cap_sig = sig
+            h.press("c", 4, 2)
+            stable = 0
+        elif stable >= 3 and sig != cap_sig:
             name = f"{tag}_p{len(shots) + 1}.png"
             Image.fromarray(h.frame).save(os.path.join(outdir, name))
             shots.append(name)
+            if RECHECK:  # 60프레임 더 두고 글자가 그대로인지 — 도중 프레임이었다면 더 그려진다
+                m1 = win_text_mask(h.frame)
+                h.run(60)
+                m2 = win_text_mask(h.frame)
+                RECHECK_LOG.append((tag, len(shots), -1 if m1 is None or m2 is None or m1.shape != m2.shape else int((m1 != m2).sum())))
             cap_sig, stable, nudges = sig, 0, 0
             if returned:  # 돌아온 뒤의 창 = 질문 — 눌러서 상점·메뉴로 들어가지 않는다
                 return shots, "끝"
@@ -406,6 +472,14 @@ def play_id(h, snap, i, outdir, tag, maxpolls=900):
 ITEM_TAB, ITEM_STRIDE, ITEM_N, ITEM_NAME_MAX = 0x0609F870, 32, 120, 16  # 이름표 · 칸 · 칸 수(0~119, 120 부터는 다른 구조 — 덮으면 깨진다) · 이름 필드
 PARTY_TAB, PARTY_STRIDE, PARTY_IDX, PARTY_NAME_MAX = 0x0609E1F8, 108, range(1, 5), 12  # 칸 0·5 이상은 이름이 아닌 구조다
 NUM_ADDR = 0x060A07C8  # 상점 값(dword) — `%d Gold`
+# ED1 (씬 코드의 sprintf 인자 리터럴에서 실측, 2026-10-19): 서식은 `%c%s%c …%d Gold` 처럼 sprintf(0x06095BCC)(r4=버퍼, r5=서식, r6…) 로 채운다.
+#  %s(화자 이름) = 파티 레코드 0x060B8874+108k(k=0~3, 이름 앞 12B) — 0x060B8808(k=-1)도 씬 8·9·10·13 이 이름으로 읽는다. NPC 이름은 씬 안 상수라 주입이 필요 없다.
+#  %s(아이템) = 이름표 0x060BE470+32×아이템번호(0~116, 이름 앞 16B). 번호는 상점 구조 0x060BF350+7+슬롯 / 소지품 0x060BC490 바이트에서 오고, 기본 0 = 빈 이름이다.
+#  %d(상점 값) = 상점 구조 0x060BF350+24 (dword).
+ED1_ARGS = dict(
+    item_tab=0x060BE470, item_stride=32, item_n=117, item_name_max=16,
+    party_tab=0x060B8808, party_stride=108, party_idx=range(0, 5), party_name_max=12, num_addr=0x060BF350 + 24,
+)
 ARG_VARIANTS = {
     "a": dict(person="아트라스", item="프레이아의 미소", num=5),  # 받침 없음 · 최장(7.5칸) · 한 자리
     "b": dict(person="류난", item="횃불", num=50000),  # 받침 있음 · 짧은 이름 · 다섯 자리
@@ -425,13 +499,17 @@ def encode_name(kr, limit):
 def inject_args(h, var):
     """RAM 표에 변형 `var` 의 대표 값을 쓴다(롬 불변). 번호마다 스냅샷을 되돌리므로 **스냅샷 찍기 전에** 부른다."""
     v = ARG_VARIANTS[var]
-    item = encode_name(v["item"], ITEM_NAME_MAX)
-    for k in range(ITEM_N):
-        h.poke(ITEM_TAB + ITEM_STRIDE * k, item)
-    person = encode_name(v["person"], PARTY_NAME_MAX)
-    for k in PARTY_IDX:
-        h.poke(PARTY_TAB + PARTY_STRIDE * k, person)
-    p32(h, NUM_ADDR, v["num"])
+    c = ED1_ARGS if GAME == "ed1" else dict(
+        item_tab=ITEM_TAB, item_stride=ITEM_STRIDE, item_n=ITEM_N, item_name_max=ITEM_NAME_MAX,
+        party_tab=PARTY_TAB, party_stride=PARTY_STRIDE, party_idx=PARTY_IDX, party_name_max=PARTY_NAME_MAX, num_addr=NUM_ADDR,
+    )
+    item = encode_name(v["item"], c["item_name_max"])
+    for k in range(c["item_n"]):
+        h.poke(c["item_tab"] + c["item_stride"] * k, item)
+    person = encode_name(v["person"], c["party_name_max"])
+    for k in c["party_idx"]:
+        h.poke(c["party_tab"] + c["party_stride"] * k, person)
+    p32(h, c["num_addr"], v["num"])
 
 
 def parse_range(s, lo=1):
@@ -463,11 +541,16 @@ def main():
     )
     ap.add_argument("--state", default=None, help="필드 상태 파일(없으면 이미지 지문으로 찾고, 그것도 없으면 부팅해서 만든다)")
     ap.add_argument("--probe-only", action="store_true", help="번호별 스크립트 버퍼만 읽는다(찍지 않음)")
+    ap.add_argument("--recheck", action="store_true", help="쪽마다 60프레임 더 두고 글자 마스크를 다시 비교해 `recheck.json` 에 남긴다(완성 근거 표본 검사)")
+    ap.add_argument("--poke", action="append", default=[], help="번호 호출 직전에 RAM 을 덮는다 — 주소:헥스(여러 번 가능). 하네스 대 실게임 창 비교용 시험 문자")
     ap.add_argument("--modules", default=None, help="ED1: 씬 파일 안의 지역 모듈 번호(0부터) 지정, 기본 전부")
     a = ap.parse_args()
+    global RECHECK
+    RECHECK = a.recheck
+    for spec in a.poke:
+        ad, hx = spec.split(":")
+        POKES.append((int(ad, 16), bytes.fromhex(hx)))
     configure(a.game)
-    if a.game == "ed1" and a.args:
-        sys.exit("--args 는 아직 ED2 만 (ED1 의 아이템·파티 이름표 주소 미확인)")
     import common
 
     cue = a.cue or os.path.join(common.BUILD_DIR, "The_Legend_of_Heroes_I&II.cue")
@@ -500,6 +583,10 @@ def main():
             print("없는 씬", name, flush=True)
             continue
         d = common.read_extent(mm, *fl[name])
+        # 실험용 — 환경변수 SWEEP_PATCH='{"ED2SCN34": {"0x6ca": "08"}}' 로 씬 파일 바이트를 RAM 적재 전에 바꾼다(롬 불변)
+        for off_s, hx in json.loads(os.environ.get("SWEEP_PATCH", "{}")).get(f"{TAG}SCN{sc:02d}", {}).items():
+            o, bb = int(off_s, 16), bytes.fromhex(hx)
+            d = d[:o] + bb + d[o + len(bb) :]
         if a.game == "ed1":
             fns = ed1_text_fns(d, ed_targets)
         else:
@@ -521,12 +608,15 @@ def main():
             restore(h, base)
             h.run(1)
             h.poke(SCN_BASE, d)
+            if os.environ.get("SWEEP_PATCH"):
+                print("  [patch] RAM", h.peek(SCN_BASE + 0x6c0, 16).hex(), flush=True)
             if a.game == "ed1":
                 h.poke(DISPATCH, hook_patch_to(fn))  # 분배기 → 이 모듈의 번호→스크립트 함수
             else:
                 p32(h, PTR_TEXT, fn)
             h.run(2)
             base_scn = snapshot(h)
+            nids_mod = 0
             variants = a.args.split(",") if a.args else [None]
             ids = parse_range(a.ids) if a.ids else range(a.max_id + 1)
             mtag = f"_m{mi}" if mi else ""
@@ -536,8 +626,13 @@ def main():
                     inject_args(h, var)
                     h.run(1)
                 snap = snapshot(h)
+                nbad = 0
                 for i in ids:
+                    if nbad >= 6 and nids_mod == 0:  # 앞 번호 여섯이 전부 안 돌아오면 이 후보는 번호→스크립트 함수가 아니다
+                        print(f"  (건너뜀) m{mi} {fn:#x} — 번호 6개가 안 돌아온다(함수 후보 아님)", flush=True)
+                        break
                     ok, script = read_script(h, snap, fn, i)
+                    nbad = 0 if ok else nbad + 1
                     if not ok or not script or (a.game == "ed1" and not valid_script(script)):
                         if os.environ.get("SWEEP_DEBUG") and script:
                             print(f"  (거름) m{mi} id{i:03d} {script[:24].hex()}", flush=True)
@@ -557,6 +652,7 @@ def main():
                             ent["status"] = f"쪽 수 불일치(기대 {ent['expected']})"
                         nshots += len(shots)
                     nids += 1
+                    nids_mod += 1
                     index.append(ent)
                     lab = f" [{var}]" if var else ""
                     print(
@@ -566,6 +662,11 @@ def main():
         print(f"{TAG}SCN{sc:02d}: 번호 {nids}개 · 캡처 {nshots}장", flush=True)
         index.sort(key=lambda e: (e["scene"], e.get("module", 0), e["id"], e.get("args", "")))
         json.dump(index, open(index_path, "w"), ensure_ascii=False, indent=1)
+        if RECHECK:
+            rp = os.path.join(a.out, "recheck.json")
+            old = json.load(open(rp)) if os.path.exists(rp) else []
+            json.dump(old + [list(x) for x in RECHECK_LOG], open(rp, "w"), ensure_ascii=False)
+            RECHECK_LOG.clear()
 
 
 if __name__ == "__main__":

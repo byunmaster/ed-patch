@@ -75,6 +75,7 @@ sys.path.insert(
 
 import common
 import canon as shared_canon
+from font import HALF_QUOTES  # 반각으로 그려지는 곡선 따옴표 — 폭 0.5
 from canon import table
 from text.line_key import key as line_key
 
@@ -119,7 +120,7 @@ def _josa_inner(t):
 
 def width(s):
     """전각 칸 수 — 반각은 0.5 로 센다(엔진이 그렇게 접는다). 병기는 접은 폭."""
-    return sum(0.5 if c.isascii() else 1 for c in fold_josa(s))
+    return sum(0.5 if c.isascii() or c in HALF_QUOTES else 1 for c in fold_josa(s))
 
 
 def fits(body):
@@ -480,8 +481,16 @@ def _lay(texts, marks, pieces, at, names, sp):
         #    보인다 — 계약도 맞고 창에도 든다. 그런데 그건 **원문을 소리 없이 버리는 것**이다.
         if not piece.strip() and texts[free[0]].strip():
             return None
-        out[free[0]] = _lead_nl(texts[free[0]]) + piece
+        out[free[0]] = _lead_nl(texts[free[0]]) + piece + _tail_nl(texts, free[0])
     return out
+
+
+def _tail_nl(texts, i):
+    """원문 글 자리가 개행으로 끝나고 **뒤에 글이 더 이어지면** 그 개행을 되살린다 — 저본은 문안만 담아 이 개행을 안 갖는다.
+    🔴 안 살리면 다음 화자 이름이 앞 줄 끝에 붙는다(ED2 씬 35 「란도!!플로라」, 2026-10-19 qa). 블록 끝 개행은 `chain_break` 몫이라 여긴 안 건드린다."""
+    if texts[i].endswith("\n") and any(t.strip() for t in texts[i + 1 :]):
+        return "\n"
+    return ""
 
 
 def _join(out, marks):
@@ -495,6 +504,10 @@ def contract(t):
 
 # PS1 표기 → 새턴 표기. ⚠ **하나라도 남기면 화면에 글자로 찍힌다**(모듈 주석).
 _PS1_MARKUP = [
+    # 🔴 **조사 병기 바로 뒤의 `{p}` 는 인라인 아이템 자리다** — PS1 조판은 그것을 「앞 공백 + 아이템 이름」으로 푼다(`\x1a은(는){p}을(를) 집었다.` →
+    #    `…은(는) 아이템을(를)`). 새턴은 `{p}` 를 그냥 `%c` 로 옮겨 공백 없이 붙었다(「아트라스는프레이아의 미소를」 — ED2SCN37 상자, 2026-10-20 qa).
+    #    저본 전량에서 이 꼴은 이 한 줄뿐이다(`){p}` 1건). 페이지 넘김이 조사 병기와 조사 병기 사이에 올 수는 없다.
+    ("){p}", ") {p}"),
     ("{n}", "\n"),
     ("\x0a", "\n"),
     ("{p}", "%c"),
@@ -525,6 +538,9 @@ def to_saturn(kr):
     """
     for a, b in _PS1_MARKUP:
         kr = kr.replace(a, b)
+    # 🔴 **ASCII 물결 `~` 는 새턴 11ASCII.FON 에 글리프가 없다**(0x7E = 11바이트 전부 0 — 2026-10-19 qa 「살려 줘~ 내가」가 빈칸).
+    #    원판 폰트가 가진 전각 `～`(0x8160, 가는 물결)로 바꾼다 — 규칙 1-2(～ 전각 유지)와도 맞다.
+    kr = kr.replace("~", "～")
     # 🔴 ＥＰ·ＭＰ·ＨＰ 는 **전각을 지킨다**(번역 규칙 1-4, 마스터 10-08 — PS1 정본과 같게, 「알파벳 전부 반각」의 예외. 10-18 관리자 판정)
     kr = _STAT_RE.sub(lambda m: m.group(0).translate(_FULLW), kr.translate(_HALFW))
     return None if _LEFTOVER.search(kr) else kr
@@ -754,7 +770,7 @@ def _wordwrap(seg, tokens):
 def measure(t):
     """엔진 접기 모델(`wrap`)에 태울 꼴 — 색 쌍은 폭 0, 런타임 인자는 **가장 긴 값**."""
     t = _SUBJECT.sub("가" * _PARTY_W, t)
-    return t.replace("%c", "").replace("%s", "가" * 8).replace("%d", "99999")  # 병기는 `wrap` 이 접어서 잰다
+    return t.replace("\x08", "\n").replace("%c", "").replace("%s", "가" * 8).replace("%d", "99999")  # 병기는 `wrap` 이 접어서 잰다 · `\x08`(창 끝) 은 줄 바꿈으로 잰다
 
 
 def _inline(inner, after):
@@ -802,7 +818,10 @@ def wrap_block(built):
     out = []
     for g in groups:
         t = "%c".join(segs[i] for i in g)
-        out.append(ps1_layout(t) or wordwrap(t))
+        # 🔴 글줄 끝 개행은 보존한다 — 조판기는 줄을 다시 짜며 끝 개행을 먹는다(다음 `%c` 화자 이름이 앞 줄 끝에 붙던 자리)
+        tail = "\n" if t.endswith("\n") and not t.endswith("\n\n") and t.strip("\n") else ""
+        t = t.rstrip("\n") if tail else t
+        out.append((ps1_layout(t) or wordwrap(t)) + tail)
     return "%c".join(out)
 
 
@@ -827,7 +846,7 @@ _KATA = re.compile(r"[ァ-ヴー]{2,}")
 
 
 def _cell(ch):
-    return _SENT_W.get(ch, 0.5 if ch.isascii() else 1.0)
+    return _SENT_W.get(ch, 0.5 if ch.isascii() or ch in HALF_QUOTES else 1.0)
 
 
 _PLACE_RE = None

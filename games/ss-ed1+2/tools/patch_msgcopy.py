@@ -85,7 +85,39 @@ def sites(d, base, mc, strs):
         z = bytes(d[o : o + 200]).find(0)
         if z < 0:
             continue
-        out.append((pc, w & 0xFF, src, z + 1))
+        need = z + 1
+        # 🔴 **공유 꼬리** — 이 길이 상수를 쓰는 코드로 **여러 분기가 점프해 들어올 수 있다**(`mov.l 문구,r5 · bra 꼬리 · nop`). 가장 가까운 r5 하나만 보면
+        #    나머지 분기의 더 긴 문구가 상수에서 잘린다(2026-10-20 ED1 「강철 거인이 나타끄」 — 21B 문구가 N=17 에서 끊겨 「났」의 첫 바이트만 남아 깨진 글리프,
+        #    「아지이가 나타났다」·「가르고가 나타났다」는 마침표 소실). 점프해 오는 **모든 분기의 소스** 중 가장 긴 것까지 맞춘다.
+        for cs in caller_sources(d, base, pc, strs):
+            zz = bytes(d[cs - base : cs - base + 200]).find(0)
+            if zz >= 0:
+                need = max(need, zz + 1)
+        out.append((pc, w & 0xFF, src, need))
+    return out
+
+
+def caller_sources(d, base, pc, strs):
+    """`mov #N,r6`(pc) 의 진입점(바로 앞 명령)으로 점프하는 `bra` 들의 소스 문구 주소들 — `bra` 앞(`mov.l …,r5 · bra`) 또는 지연 슬롯(`bra · mov.l …,r5`)의 r5 리터럴."""
+    entry = pc - 2
+    out = []
+    for q in range(0, len(d) - 3, 2):
+        w = (d[q] << 8) | d[q + 1]
+        if (w & 0xF000) != 0xA000:
+            continue
+        disp = w & 0xFFF
+        if disp & 0x800:
+            disp -= 0x1000
+        if q + 4 + disp * 2 != entry:
+            continue
+        for lq in (q - 2, q + 2):
+            if lq < 0 or lq + 2 > len(d):
+                continue
+            x = (d[lq] << 8) | d[lq + 1]
+            if (x & 0xF000) == 0xD000 and (x & 0x0F00) == 0x0500:
+                v = _lit(d, base, lq, x)
+                if v in strs:
+                    out.append(v)
     return out
 
 

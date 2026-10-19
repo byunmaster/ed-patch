@@ -1083,7 +1083,20 @@ def sys_rows(mm):
             i = j
     missing = [k for k in canon if k not in seen]
     assert not missing, f"디스크에서 못 찾은 시스템 메시지 {len(missing)}: {missing[:4]}"
-    return out
+    return _drop_mon_name_rows(out)
+
+
+def _drop_mon_name_rows(rows):
+    """🔴 **몬스터 이름 칸은 `patch_mon_names` 것이다 — 시스템 행에서 뺀다**(2026-10-19 qa r4, ED2MON07 0xA10).
+    정본 몬스터 이름(`ウィーバー` → 와이바)이 시스템 정본(`_canon_sys_lines`)에도 들어 있어 같은 칸이 시스템 행으로도 잡혔다. 그러면 `sys_pack` 이 그 칸을
+    풀로 보고 다른 문구(`%c%s%cに` → 「에게 」)를 거기 깔고, 뒤 단계 `patch_mon_names` 가 이름을 **제자리**에 다시 써서 덮는다 — 문구 포인터가 이름을 가리켰다
+    (「…에게 」 자리에 「콘B」). 한 칸에 주인 둘(`_no_double_owner` 와 같은 부류)."""
+    import patch_mon_names as M
+    from canon import table
+
+    mon = table("monster", "eiyuu")
+    owned = {p: {t for t, _jp, _kr in M.slots(p, mon)} for p in {r[0] for r in rows if r[0] in SYS_EXTRA_FILES}}
+    return [r for r in rows if r[3] not in owned.get(r[0], ())]
 
 
 def _no_double_owner(inplace, sysm):
@@ -1355,7 +1368,7 @@ def kanji_gaps(krs, orig_kanji):
     need = set()
     for kr in krs:
         for ch in kr or "":
-            if "가" <= ch <= "힣" or ch.isascii() or ch.isspace():
+            if "가" <= ch <= "힣" or ch.isascii() or ch.isspace() or ch in font.HALF_QUOTES:
                 continue  # ⚠ 전각 공백(`\u3000`)은 빈 글리프가 정답이다 — 반각 0x20 과 같다
             try:
                 b = ch.encode("cp932")
@@ -1402,6 +1415,31 @@ def bake_ascii(chars):
     for ch in chars:
         bits = bdf.bits(ch, dy=-3, rows=11, width=8)
         assert bits.any(), f"Galmuri11 에 없는 반각 글자 {ch!r}"
+        if ch == ",":
+            # 🔴 **쉼표는 꼬리가 11행 밖으로 잘려 마침표와 똑같아진다**(2026-10-20 qa r5 「붉은 슬라임A. 붉은 슬라임B」 — 쉼표 3,983곳 전부 마침표로 그려졌다).
+            #    Galmuri11 쉼표는 점(10행)+꼬리(11행)인데 `dy=-3` 으로 11행에 맞추면 꼬리 행이 없다. 한 행 올려 점 9행·꼬리 10행으로 직접 둔다.
+            bits[:] = 0
+            bits[9, 1] = 1
+            bits[10, 0] = 1
+        out[ch] = np.packbits(bits, axis=1).tobytes()
+        assert len(out[ch]) == ASCII_STRIDE
+    return out
+
+
+def bake_half_quotes(chars):
+    """반각 곡선 따옴표 글리프 — Galmuri11 의 좁은 따옴표를 8×11 칸에 놓되, **여는 쪽은 칸 오른쪽 끝·닫는 쪽은 왼쪽 끝**에 잉크를 붙인다
+    (옆 글자에 붙어 읽힌다, 마스터 10-19). 위치는 `font.HALF_QUOTES` 코드(원판 반각 폰트에서 비어 있고 안 쓰이는 칸)."""
+    import numpy as np
+    from fonts import galmuri
+
+    bdf = galmuri()
+    out = {}
+    for ch in chars:
+        bits = bdf.bits(ch, dy=-3, rows=11, width=8)
+        assert bits.any(), f"Galmuri11 에 없는 따옴표 {ch!r}"
+        cols = np.where(bits.any(axis=0))[0]
+        shift = (7 - cols.max()) if ch in font.HALF_QUOTE_OPENING else -cols.min()
+        bits = np.roll(bits, shift, axis=1)
         out[ch] = np.packbits(bits, axis=1).tobytes()
         assert len(out[ch]) == ASCII_STRIDE
     return out
@@ -1539,6 +1577,22 @@ def main():
     if bad:
         raise SystemExit(f"❌ 폭을 넘는 레코드 {bad}건 — 넣기 전에 문안을 줄인다")
     print("  ✅ 원문 대조 · 폭 검사 통과")
+    if "--verify-final" in sys.argv:
+        # 🔴 체인이 **끝난** 최종 이미지에서 이 패처의 되읽기를 다시 한다 — 단계 직후에만 돌면 뒤 단계가 덮어쓴 것을 아무도 못 본다(2026-10-19 ED2MON 꼬리).
+        dst = os.path.join(common.BUILD_DIR, os.path.basename(common.ORIG_BIN))
+        if not os.path.exists(dst):
+            raise SystemExit("되읽기(최종): 빌드 이미지가 없다 — 먼저 빌드한다")
+        with open(HMAP, encoding="utf-8") as f_:
+            syl = json.load(f_)["syllables"]
+        plan = {c: (font.sjis_of_index(i), i) for c, i in syl.items()}
+        _fo, mmo = common.open_image()
+        files = common.dst_files(dst, mmo)
+        # ⚠ 재배치로 LBA·크기가 바뀐 파일이 있다 — 행의 (lba, size) 를 **최종 이미지의 것**으로 바꿔 넘긴다
+        sysm_f = [(r[0], *files[r[0]], *r[3:]) if r[0] in files else r for r in sysm]
+        verify(dst, rs, scn, cards + msgs, plan, files)
+        verify_names(dst, ntabs, plan, files)
+        verify_sys(dst, sysm_f, plan, files)
+        return
     if "--apply" not in sys.argv:
         return
 
@@ -1551,14 +1605,14 @@ def main():
     #    주고 `--refresh` 를 돌렸더니 UI 글자 10자가 날아갔다).
     import patch_scn
 
-    plan = slot_plan(
+    all_krs = (
         [r[6] for r in rs]
         + [r[6] for r in scn]
         + [r[6] for r in cards + msgs + sysm]
         + names
-        + patch_scn.all_texts(),  # ⚠ 인자 없이 — 이 시점엔 `mm0` 이 이미 닫혀 있다
-        refresh="--refresh" in sys.argv,
-    )
+        + patch_scn.all_texts()  # ⚠ 인자 없이 — 이 시점엔 `mm0` 이 이미 닫혀 있다
+    )  # 🔴 글자 슬롯 계획과 폰트 구멍 검사(`kanji_gaps`)가 **같은 목록**을 본다 — 따로 두니 한쪽만 빠져 ‘ ’ 가 빈 칸으로 나왔다
+    plan = slot_plan(all_krs, refresh="--refresh" in sys.argv)
     print(f"  한글 슬롯 {len(plan)}자")
 
     _f, mm = common.open_image(dst)
@@ -1648,6 +1702,17 @@ def main():
                 )
             print(f"  반각 폰트 {FON_ASCII}: 원본에 없던 {''.join(gaps)!r} 구움")
 
+        # ── 반각 곡선 따옴표 — 쓰이는 것만 굽는다(코드는 `font.HALF_QUOTES`, 원판에서 비어 있고 안 쓰이는 칸이어야 한다)
+        used_q = sorted({c for kr in all_krs for c in (kr or "") if c in font.HALF_QUOTES})
+        if used_q:
+            alba, asize = files[FON_ASCII]
+            orig_ascii = common.extract(FON_ASCII)
+            for ch, g in bake_half_quotes(used_q).items():
+                off = font.HALF_QUOTES[ch] * ASCII_STRIDE
+                assert not any(orig_ascii[off : off + ASCII_STRIDE]), f"{ch!r} 코드 {font.HALF_QUOTES[ch]:#x} 칸이 원판에서 안 비었다"
+                common.write_at(f, alba, asize, off, g, label=f"{FON_ASCII} 반각 따옴표 {ch!r}")
+            print(f"  반각 폰트 {FON_ASCII}: 곡선 따옴표 {''.join(used_q)!r} 구움")
+
         # ── 반각 도트 글리프 — DOTART_PLACES 가 실제로 scn 헤더에 쓰인 지명만 굽는다
         used_dotart = sorted(
             {kr for _p, _l, _s, _at, _fl, _jp, kr, _t in scn if kr in DOTART_PLACES}
@@ -1670,10 +1735,7 @@ def main():
             print(f"  반각 도트 {FON_ASCII}: {n_codes}칸 구움 ({'·'.join(used_dotart)})")
 
         # ── 전각 폰트의 구멍 — 원본에 글리프가 없는 전각 글자(말줄임표 등)
-        kgaps = kanji_gaps(
-            [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs + sysm] + names,
-            common.extract(FON),
-        )
+        kgaps = kanji_gaps(all_krs, common.extract(FON))
         if kgaps:
             kg, kmiss = convert_chars("".join(kgaps))
             assert not kmiss, f"Galmuri11 에 없는 전각 글자: {''.join(kmiss)}"
@@ -1718,7 +1780,8 @@ def decode(b, inv):
     while j < len(b):
         n = 2 if (0x81 <= b[j] <= 0x9F or 0xE0 <= b[j] <= 0xFC) else 1
         w = b[j : j + n]
-        out.append(inv.get(w) or w.decode("cp932", "replace"))
+        q = {v: k for k, v in font.HALF_QUOTES.items()}.get(w[0]) if len(w) == 1 else None  # 반각 곡선 따옴표 코드
+        out.append(inv.get(w) or q or w.decode("cp932", "replace"))
         j += n
     return "".join(out)
 
@@ -1811,13 +1874,15 @@ def verify_sys(dst, sysm, plan, files):
         d = cache[path]
         # 제자리에 박은 자리(포인터가 없거나 `PINNED_INPLACE`)는 그 자리를 그대로 읽는다.
         movable = ptrs and at not in PINNED_INPLACE.get(path, ())
-        a = int.from_bytes(d[ptrs[0] : ptrs[0] + 4], "big") - ptr_base(path) if movable else at
-        j = a + len(pre)
-        while j < len(d) and d[j] != 0:
-            j += 1
-        got = decode(d[a + len(pre) : j], inv)
-        assert got == kr, f"{path} 0x{a:06X}: 되읽기 {got!r} ≠ {kr!r}"
-        n += 1
+        # 🔴 **모든 포인터**를 따라간다(첫 포인터만 보던 때 두 번째 포인터가 엉뚱한 문구를 가리켜도 통과했다, 2026-10-19 ED2MON04)
+        for q in ptrs if movable else [None]:
+            a = int.from_bytes(d[q : q + 4], "big") - ptr_base(path) if movable else at
+            j = a + len(pre)
+            while j < len(d) and d[j] != 0:
+                j += 1
+            got = decode(d[a + len(pre) : j], inv)
+            assert got == kr, f"{path} 0x{a:06X}: 되읽기 {got!r} ≠ {kr!r}"
+            n += 1
     mm2.close()
     _f2.close()
     print(f"  ✅ 되읽기 시스템 메시지 {n}자리 (포인터 추적)")

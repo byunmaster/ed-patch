@@ -51,7 +51,7 @@ GAMES = {
         orig=b"\x63\x20",
         op=0xE3,  # 6320 → E3NN
         groups="1-110",
-        state="ed1_field",
+        state="ed1_battle_field"  # 🔴 씬 하네스(`ss_scene_sweep`)의 `ed1_field_*` 와 **다른 칸** — 같은 이름이면 서로의 상태(슬롯 1 성 vs 슬롯 3 해안)를 읽어 「조우 안 걸림」이 된다(2026-10-19),
     ),
 }
 GAME = GAMES["ed2"]
@@ -64,8 +64,13 @@ def be32(b):
 
 
 def image_key(cue):
-    st = os.stat(cue.replace(".cue", ".bin"))
-    return hashlib.sha1(f"{st.st_size}:{int(st.st_mtime)}".encode()).hexdigest()[:10]
+    """필드 상태 파일 이름표 — **이미지 내용 해시**다. 세이브스테이트는 옛 롬의 RAM(글리프 표·글·코드)을 되살리므로 롬이 다르면 상태도 달라야 한다.
+    (옛 열쇠는 크기:mtime 이라 mtime 을 보존해 복사한 같은 크기의 다른 롬이 옛 상태를 물려받을 수 있었다 — 2026-10-20 ps1-ed3 「줄→앗」 사고 점검.)"""
+    h = hashlib.sha1()
+    with open(cue.replace(".cue", ".bin"), "rb") as f:
+        while b := f.read(1 << 24):
+            h.update(b)
+    return h.hexdigest()[:10]
 
 
 def boot_to_field(h):
@@ -84,6 +89,32 @@ def boot_to_field(h):
         h.press(names, hold, after)
 
 
+# 🔴 파티 이름 버퍼 채우기(2026-10-19) — 강제 조우로 띄운 전투에서 전투 문구의 `%s`(대상·행위자가 파티원) 이름이 **빈칸**으로 찍힌다
+#    (「…에게 41의 피해」 앞 이름 없음 — 원본 JP 이미지에서도 똑같다 = 하네스 조건). 이름 표 칸 0(ED2 0x0609E1F8 · ED1 0x060B8808)이 비어 있다.
+#    그 칸에 대표 이름을 매 틀 써 준다(롬 불변, 화면 판정용). ED1 은 받침 없는/있는 이름을 번갈아 써 두 조사 꼴이 다 나오게 한다.
+PARTY_NAME_TAB = {"ed2": (0x0609E1F8, 12, ("아트라스",)), "ed1": (0x060B8808, 12, ("세리오스", "류난"))}
+FILL_NAMES = True
+# 🔴 표시 이름은 이름 표 칸 0 이 아니라 **파티 슬롯 1**(칸 0 + 0x6C — ED2 0x0609E264 · ED1 0x060B8874 = 세리오스, 슬롯 2 = 류난)에서 읽힌다(2026-10-20 RAM 스캔).
+#    칸 0 만 덮으면 `--party-name` 이 안 먹는다(a/b 판이 같은 화면). `--party-name` 이 줄 때만 슬롯 1 도 덮는다.
+PARTY_NAME_EXTRA = {}
+PARTY_NAME_ADDRS = {"ed2": (0x06095024, 0x06095EC8, 0x0609E264, 0x0609E6E4), "ed1": (0x060B8874, 0x060B8CF4, 0x060B88E0, 0x060B8D60)}  # RAM 스캔(데이터 영역)에서 이름이 있던 자리
+
+
+def fill_names(h, game, t=0):
+    if not FILL_NAMES:
+        return
+    import josa
+
+    sc = josa.slot_codes()
+    addr, lim, names = PARTY_NAME_TAB[game]
+    kr = names[(t // 450) % len(names)]
+    raw = b"".join(b" " if c == " " else struct.pack(">H", sc[c]) for c in kr)
+    assert len(raw) < lim
+    h.poke(addr, raw.ljust(lim, b"\x00"))
+    for ex in PARTY_NAME_EXTRA.get(game, ()):  # `--party-name` — 실제 표시 이름 칸도 같이 덮는다(이름 + 종단만 — 이웃 필드를 안 건드린다)
+        h.poke(ex, raw + b"\x00\x00")
+
+
 def is_menu(frame):
     """명령 창(공격/주문/방어 …) 인가 — 세 줄 모두에 흰 글자가 있다."""
     sub = frame[:, 15:200].astype(int)
@@ -94,6 +125,14 @@ def is_menu(frame):
 def msg_crop(frame):
     y0, y1, x0, x1 = MSG_BOX
     return frame[y0:y1, x0:x1]
+
+
+def text_mask(crop):
+    """글자(흰·노랑)만 남긴 마스크 — ▽ 깜박임·배경 변화에 안 흔들리는 안정 판정용."""
+    c = crop.astype(int)
+    white = (c[:, :, 0] > 200) & (c[:, :, 1] > 200) & (c[:, :, 2] > 200)
+    yel = (c[:, :, 0] > 200) & (c[:, :, 1] > 200) & (c[:, :, 2] < 120)
+    return white | yel
 
 
 def has_text(crop):
@@ -134,9 +173,12 @@ def inverse_map():
     return C._inv_map()
 
 
+PRE_IDLE = 0  # `--pre-idle N` — 조우를 걸기 전에 N 프레임 더 둔다(게임 난수가 프레임마다 흘러 난수 편성의 다른 변형이 나온다 — ED2 그룹 25 의 빌타라 편성)
+
+
 def start_battle(h, nav_state, g):
     h.load(nav_state)
-    h.run(5)
+    h.run(5 + PRE_IDLE)
     for a in GAME["sites"]:
         assert h.peek(a, 2) in (GAME["orig"], bytes([GAME["op"], h.peek(a + 1, 1)[0]])), hex(a)
         h.poke(a, bytes([GAME["op"], g]))
@@ -150,12 +192,12 @@ def start_battle(h, nav_state, g):
     return be32(h.peek(MON + 0x1C, 4)) != 0
 
 
-def run_group(h, nav_state, g, turns, outdir, inv, attempts=6):
+def run_group(h, nav_state, g, turns, outdir, inv, attempts=6, start=None):
     """한 그룹 — 파티가 쓰러지면(독 등) 같은 그룹을 **다른 시드로 다시** 띄워 턴을 채운다(캡처는 이어 쌓는다)."""
     gdir = os.path.join(outdir, f"g{g:02d}")
     seen, caps, t, names, tries, frames = set(), 0, 0, None, 0, 0
     while t < turns and tries < attempts:
-        if not start_battle(h, nav_state, g):
+        if not (start(h) if start else start_battle(h, nav_state, g)):  # start: 특수 전투(83)는 앞 전투를 이어받아야 돈다 — 진입을 호출자가 정한다
             return {"group": g, "status": "조우 안 걸림"}
         os.makedirs(gdir, exist_ok=True)
         tries += 1
@@ -176,6 +218,7 @@ def run_group(h, nav_state, g, turns, outdir, inv, attempts=6):
         while t < turns and local < 6000:
             for pc_ in PARTY_COPIES:
                 h.poke(pc_ + 4, h.peek(pc_ + 8, 4))
+            fill_names(h, "ed2")
             h.run(3)
             local += 3
             frames += 3
@@ -202,11 +245,17 @@ def run_group(h, nav_state, g, turns, outdir, inv, attempts=6):
                 if local % 9 == 0:
                     crop = msg_crop(fr)
                     if has_text(crop):
-                        key = hashlib.md5(crop.tobytes()).hexdigest()
+                        # 🔴 키는 **글자 마스크**(흰·노랑)로 만든다 — 대기 커서 ▽(하늘색)가 깜박이면 크롭 해시가 계속 바뀌어 안정 판정이 영영 안 선다(보스 대사 그룹 63)
+                        key = hashlib.md5(text_mask(crop).tobytes()).hexdigest()
                         if key == pend_key:
                             pend_n += 1
                             if pend_n >= 3:
                                 commit(pend_key, pend_fr)
+                            # 🔴 **입력을 기다리는 대사는 키를 줘야 넘어간다**(보스 시작 대사 — 그룹 63 카자즘 「크하하하하 너희 따위가…」가 ▽ 에서 영영 멈췄다, 10-20).
+                            #    일반 전투 문구는 자동으로 넘어가므로, 같은 화면이 8번(72프레임) 연속 안 바뀔 때만 한 번 누른다.
+                            if pend_n >= 8:
+                                h.press("c", 3, 20)
+                                pend_n = 3
                         else:
                             if pend_n < 3:
                                 pass  # 도중 프레임은 버린다 — 다음 글이 이어 그려지는 중
@@ -214,9 +263,13 @@ def run_group(h, nav_state, g, turns, outdir, inv, attempts=6):
                     else:
                         commit(pend_key, pend_fr)
                         pend_key, pend_n, pend_fr = None, 0, None
+    # 🔴 **「ok」는 시도가 안 죽었다는 뜻이 아니다 — 요청한 턴을 다 채웠을 때만 ok**(2026-10-20: 그룹 63 카자즘이 턴 0 인데 ok 였고 manifest 분모에 묻혔다).
+    #    턴이 모자라거나 몬스터 이름을 못 읽었으면 `short` — 분모를 채우지 못한 그룹으로 따로 센다.
+    short = t < turns or not names
     return {
         "group": g,
-        "status": "ok",
+        "status": "short" if short else "ok",
+        **({"short_why": f"턴 {t}/{turns}" + ("" if names else " · 몬스터 이름 못 읽음")} if short else {}),
         "monsters": names or [],
         "turns": t,
         "tries": tries,
@@ -339,32 +392,55 @@ def ed1_run_group(h, nav_state, g, frames, outdir, inv):
             if be32(h.peek(a, 4)):
                 h.poke(a, struct.pack(">I", hp))
 
+    pend = [None, 0, None]  # [크롭 해시, 연속 폴링 수, 프레임]
+
+    def commit(key, fr_):
+        nonlocal caps
+        if key is not None and key not in seen:
+            seen.add(key)
+            caps += 1
+            Image.fromarray(fr_).save(os.path.join(gdir, f"m{caps:02d}.png"))
+
     t = 0
     total = frames + 1500
     while t < total:
         ed1_fill_party(h)
+        fill_names(h, "ed1", t)
         pin(0x7FFF if t < frames else 1)  # 앞 구간은 안 죽이고 · 뒤 구간은 죽여서 승리 문구까지
         h.run(3)
         t += 3
         if names is None and t >= 450:  # 슬롯 이름은 전투 그림이 올라온 뒤에야 찬다
             names = [n for k, n in enumerate(names_in_battle(h, inv, skip_empty=True)) if n]
-        if t % 21 == 0:
+        if t % 45 == 0:  # 키 간격이 짧으면 글이 안정 구간 없이 계속 바뀐다(옛 21프레임 → 덜 그려진 장 205, 10-19)
             h.press("c", 3, 0)
         if t % 9 == 0:
             crop = h.frame[y0:y1, x0:x1]
             if has_text(crop):
                 key = hashlib.md5(crop.tobytes()).hexdigest()
-                if key not in seen:
-                    seen.add(key)
-                    caps += 1
-                    Image.fromarray(h.frame).save(os.path.join(gdir, f"m{caps:02d}.png"))
+                if key == pend[0]:
+                    pend[1] += 1
+                    if pend[1] >= 2:  # 같은 크롭이 두 번 연속 폴링(18프레임) 안 바뀌면 다 그려진 것
+                        commit(key, pend[2])
+                else:
+                    pend[:] = [key, 1, h.frame.copy()]
+            else:
+                commit(*([pend[0], pend[2]] if pend[0] else [None, None]))  # 글이 사라질 때는 마지막 프레임을 쓴다
+                pend[:] = [None, 0, None]
         if (
             t > frames
             and all(be32(h.peek(mon + stride * k + 0x1C, 4)) == 0 for k in range(4))
             and t > frames + 900
         ):
             break
-    return {"group": g, "status": "ok", "monsters": names or [], "frames": t, "captures": caps}
+    short = caps == 0 or not names  # ED1 은 프레임 수로 돈다 — 캡처가 하나도 없거나 이름을 못 읽으면 short
+    return {
+        "group": g,
+        "status": "short" if short else "ok",
+        **({"short_why": ("캡처 0" if caps == 0 else "") + ("" if names else " 몬스터 이름 못 읽음")} if short else {}),
+        "monsters": names or [],
+        "frames": t,
+        "captures": caps,
+    }
 
 
 def ed1_contact_sheet(gdir, cols=3):
@@ -399,6 +475,13 @@ def main():
     ap.add_argument(
         "--frames", type=int, default=1800, help="[ed1] 몬스터를 안 죽이고 버티는 프레임"
     )
+    ap.add_argument("--no-fill-names", action="store_true", help="파티 이름 버퍼를 채우지 않는다(원 하네스 조건)")
+    ap.add_argument(
+        "--party-name",
+        default=None,
+        help="파티 이름을 한 가지로 고정한다(받침 있음/없음 두 판 비교 — 기본은 ED1 두 이름을 번갈아)",
+    )
+    ap.add_argument("--pre-idle", type=int, default=0, help="조우를 걸기 전에 더 두는 프레임 수(난수 편성의 다른 변형)")
     ap.add_argument("--groups", default="62")
     ap.add_argument("--turns", type=int, default=20)
     ap.add_argument("--out", required=True)
@@ -410,8 +493,15 @@ def main():
     a = ap.parse_args()
     import common
 
-    global GAME
+    global GAME, FILL_NAMES
     GAME = GAMES[a.game]
+    global PRE_IDLE
+    PRE_IDLE = a.pre_idle
+    FILL_NAMES = not a.no_fill_names
+    if a.party_name:
+        addr, lim, _ = PARTY_NAME_TAB[a.game]
+        PARTY_NAME_TAB[a.game] = (addr, lim, (a.party_name,))
+        PARTY_NAME_EXTRA[a.game] = PARTY_NAME_ADDRS[a.game]
     if a.game == "ed1" and a.groups == "62":
         a.groups = GAME["groups"]
 
@@ -445,6 +535,10 @@ def main():
     tag = a.groups.replace(",", "_")
     with open(os.path.join(a.out, f"table_{tag}.json"), "w") as f:
         json.dump(rows, f, ensure_ascii=False, indent=1)
+    cnt = {}
+    for r in rows:
+        cnt[r["status"]] = cnt.get(r["status"], 0) + 1
+    print(f"요약 {cnt} — short(분모를 못 채움) {[r['group'] for r in rows if r['status'] == 'short']} · 안 걸림 {[r['group'] for r in rows if r['status'] == '조우 안 걸림']}", flush=True)
 
 
 if __name__ == "__main__":

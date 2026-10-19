@@ -26,7 +26,8 @@ class Canon(unittest.TestCase):
     def test_targets_are_scene_files_only(self):
         """🔴 본체는 대상이 아니다 — 부팅 경로이고, 다른 패처가 그 전제에 얹혀 있다."""
         for p in R.targets():
-            self.assertTrue(p.startswith("/BIN/") and "SCN" in p, f"{p}: 씬 파일이 아니다")
+            # 씬 파일과 몬스터 오버레이(`ED2MON*` — 같은 방식으로 디렉터리가 읽는 `/BIN/` 파일, 쓰는 도구는 빌드 LBA 를 쓴다: 아래 테스트가 지킨다)
+            self.assertTrue(p.startswith("/BIN/") and ("SCN" in p or "ED2MON" in p), f"{p}: 씬·몬스터 파일이 아니다")
             self.assertNotIn(p, ("/ED.BIN", "/ED2.BIN"))
 
     def test_writers_take_their_extent_from_the_build(self):

@@ -270,6 +270,58 @@ def write_user_data(f, lba, data, *, label, expect=None):
     return last - first + 1
 
 
+LEDGER = os.path.join(BUILD_DIR, "write_ledger.jsonl")
+
+
+def _ledger(abs_start, n, label, data, offset=None):
+    """🔴 **쓰기 장부** — 모든 쓰기(도구 · 절대 위치 · 길이 · 라벨 · 내용 지문)를 남긴다(2026-10-19 qa r4: 두 패처가 같은 ED2MON 꼬리를 덮어써 전투 문구 14곳이
+    엉뚱한 문구로 나갔다 — 각 단계의 되읽기는 자기 단계 직후만 봐서 못 잡았다). `check_write_overlap` 이 서로 다른 도구가 같은 바이트를 쓴 자리를 모은다.
+    빌드 한 번의 기록이다 — 첫 단계(`patch_title`)가 새로 시작한다."""
+    import json
+
+    try:
+        with open(LEDGER, "a", encoding="utf-8") as lf:
+            lf.write(
+                json.dumps(
+                    {"t": os.path.basename(sys.argv[0]), "a": abs_start, "n": n, "l": label, "h": hashlib.md5(bytes(data)).hexdigest()[:8], "z": int(not any(data)), "d": bytes(data).hex(), "o": offset},
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    except OSError:
+        pass  # 장부는 감사용이다 — 못 써도 빌드를 막지 않는다
+
+
+def ledger_owned(lba, size, me):
+    """이 파일(`lba`~`size`B)에서 **다른 도구가 이미 쓴 구간**(전부 0 인 쓰기는 초기화라 제외) → `[(시작, 끝)]` 파일 내부 오프셋, 합친 것.
+
+    🔴 「원본과 바이트가 같으면 손대지 않은 자리」로 보면 안 된다 — 남이 쓴 바이트가 **우연히 원문과 같을 수 있다**(챕터 카드 꼬리 `%c\\0`: patch_ui 가 쓴 것인데 JP 와 같아
+    뒤 단계가 자리로 오인해 대사를 덮어썼다, 2026-10-19 ED2 제1장 카드 「끝지상의 먹을거리…」). 쓰기 장부(`_ledger`)가 정답이다."""
+    import json
+
+    lo, hi = lba * USER_SIZE, lba * USER_SIZE + size
+    out = []
+    try:
+        with open(LEDGER, encoding="utf-8") as lf:
+            for ln in lf:
+                r = json.loads(ln)
+                if r["t"] == me or r.get("z"):
+                    continue
+                a, e = max(r["a"], lo), min(r["a"] + r["n"], hi)
+                if e > a:
+                    out.append((a - lo, e - lo))
+    except OSError:
+        return []
+    out.sort()
+    merged = []
+    for a, e in out:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], e)
+        else:
+            merged.append([a, e])
+    return [(a, e) for a, e in merged]
+
+
 def write_at(f, lba, size, offset, data, *, label, expect=None):
     """ISO 파일 안의 `offset` 위치에 `data` 를 덮어쓴다(파일 크기 불변).
 
@@ -287,4 +339,5 @@ def write_at(f, lba, size, offset, data, *, label, expect=None):
     if expect is not None and bytes(buf[head : head + len(data)]) != expect:
         raise AssertionError(f"쓰기 사전조건 불일치 — `{label}` @0x{offset:X}")
     buf[head : head + len(data)] = data
+    _ledger(lba * USER_SIZE + offset, len(data), label, data, offset)  # `o` = 파일 내 오프셋 — 절대 위치는 단계 중간의 재배치(LBA 이동)로 달라진다
     return write_user_data(f, s_lba, bytes(buf), label=label)

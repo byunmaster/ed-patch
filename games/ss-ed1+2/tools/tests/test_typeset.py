@@ -21,6 +21,14 @@ class Typeset(unittest.TestCase):
     def t(self, jp, kr, names=None):
         return T.typeset(jp, kr, NAMES if names is None else names)
 
+    def test_curly_quotes_are_half_width_one_byte(self):
+        """‘ ’ “ ” 는 반각 — 폭 0.5, 1B 코드(11KANJI 전각 칸이 비어 화면에 빈 칸이던 것, 2026-10-19 qa r6 → 마스터 「반각으로」)."""
+        import font
+
+        self.assertEqual(T.width("“빛”"), 0.5 + 1 + 0.5)
+        self.assertEqual(font.to_bytes("‘가’", {"가": (b"\x88\xa0", 1)}), bytes([0x60]) + b"\x88\xa0" + bytes([0x7B]))
+        self.assertEqual(font.byte_len("“가”"), 2 + 2)  # 따옴표 1B 둘 + 가(슬롯 2B) — 계획 없이 근사하는 길이도 같다
+
     def test_speaker_newline_survives(self):
         """🔴 화자와 본문을 가르는 개행을 지우면 본문이 화자 줄에 붙는다(8,657블록)."""
         got, bad = self.t("%c兵士%c\n本文だ。%c", "본문이다.")
@@ -377,6 +385,10 @@ class ChainBreak(unittest.TestCase):
         jp = "%c男%c\nそんなこと知るか。%cえっ!?%cそうだろ!!%c"
         built = "%c란도%c\n그런 걸 알 리가 없잖아.%c응!?%c그렇지!!%c"
         self.assertEqual(T.ctl_newline(jp, built, [0, 0, 9, 9, 0]), "%c란도%c\n그런 걸 알 리가 없잖아.%c\n응!?%c그렇지!!%c")
+
+    def test_ascii_tilde_becomes_fullwidth(self):
+        """새턴 11ASCII 에 `~` 글리프가 없다 — 전각 `～` 로(10-19 qa 「살려 줘~」 빈칸)."""
+        self.assertEqual(T.to_saturn("살려 줘~ 내가"), "살려 줘～ 내가")
 
     def test_original_trailing_newline_is_restored(self):
         """원문이 개행으로 끝나면(사전은 끝 개행을 안 담는다) 우리도 끝 개행 — 안 그러면 다음 블록이 같은 줄에 붙는다."""

@@ -80,7 +80,7 @@ def corpus():
             jp, off = e.get("text", ""), int(e["file_offset"], 16)
             if off in mine:
                 continue
-            kr = patch_scn.canon_of(canon, jp, sites.get(off), path=path)
+            kr = patch_scn.canon_of(canon, jp, sites.get(off), path=path, off=off)
             if kr and patch_scn.contract(kr) == patch_scn.contract(jp):
                 out.append((path, off, jp, kr))
     mm.close()

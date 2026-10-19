@@ -370,7 +370,12 @@ def second_pass(fname, orig, built, base):
                 new[c : c + 2] = NOP
             code = loop_f1(base + o + 2, pl["rb"], pl["imm0"])
             new[o + 2 : o + 2 + F1_LOOP] = code
-            pads.append(list(pl["pad"]))
+            p0, pe = pl["pad"]
+            if pe - p0 >= 4:
+                # 🔴 루프 뒤로 **흘러내리지 않게** 패드 끝으로 건너뛴다 — 패드에 다른 루프가 놓여도 안전하다
+                new[p0 : p0 + 4] = _bra(base + p0, base + pe, 0x0009)
+                p0 += 4
+            pads.append([p0, pe])
         else:
             todo.append(o)
     rest = []
@@ -414,6 +419,120 @@ def second_pass(fname, orig, built, base):
             rest.append(o)
     assert not rest, f"{fname}: 못 고친 이름 복사 {[hex(base + o) for o in rest]} — 새 꼴이다"
     return new
+
+
+# ── 셋째 패스: 복사 **소스**가 번역 안 된 반각 가나로 남은 자리 (2026-10-19, ED1 「ｼﾞｬｰﾃﾞｲﾝｿﾞﾝﾋﾞA」) ───────────────
+#
+# 복사 코드가 맞아도 **퍼 나르는 원본 문자열**이 일본어면 화면에 그대로 나간다. `ED.BIN` 의 코드 영역에는 몬스터 이름을
+# 문자열째 들고 `mov.l @(d,pc),r1` 로 집어 슬롯에 복사하는 자리가 있고, 그 이름 중 다섯(자데인좀비 A·B ×2 · 파이어모스D)은
+# 어느 패처도 안 건드렸다 — 몬스터 이름 표(`patch_ui`)에도, 오버레이 이름 칸(`patch_mon_names`)에도 없는 **코드 속 소스**다.
+# 🔴 반각 가나라고 「내부 열쇠」(`names.internal_key`)가 아니다: 그 규칙은 **표를 열쇠로 찾는 코드**가 있는 자리(지명·이름 표)를
+#    지키는 것이고, 여기는 **리터럴 풀 한 곳이 가리키는 화면용 복사 소스**다 — 다른 코드가 이 문자열을 열쇠로 읽지 않는다.
+#    그 근거를 코드로 못 박는다: 풀 포인터가 **전부** `mov.l @(d,pc),rN` 으로 적재되는 자리만 바꾼다(`literal_only`).
+#    표 안의 포인터거나 비교 열쇠일 수 있는 자리는 **건드리지 않고 보고**한다.
+def literal_only(d, base, t):
+    """`t`(파일 오프셋)의 문자열을 가리키는 포인터가 있고 **전부** pc 상대 리터럴이면 True — 표·열쇠가 아니라는 근거."""
+    pat = (base + t).to_bytes(4, "big")
+    refs, i = [], 0
+    while (j := d.find(pat, i)) >= 0:
+        refs.append(j)
+        i = j + 1
+    if not refs:
+        return False
+    for j in refs:
+        lit = base + j
+        ok = False
+        for p in range(max(0, j - 1020), j, 2):
+            w = _w(d, p)
+            if (w & 0xF000) == 0xD000 and ((base + p + 4) & ~3) + (w & 0xFF) * 4 == lit:
+                ok = True
+                break
+        if not ok:
+            return False
+    return True
+
+
+def kana_plan(orig, cur, base, rows, to_bytes):
+    """`({오프셋: 새 바이트}, [(오프셋, JP, KR, 왜)])` — 아직 원문인 이름 소스를 정본 이름으로.
+
+    `rows` 는 `patch_mon_names.slots` 의 `[(오프셋, JP, KR+접미)]`. 자리는 원문 바이트 수 + NUL — 넘치면 건드리지 않고 보고한다.
+    """
+    patches, skipped = {}, []
+    for t, jp, kr in rows:
+        n = len(jp.encode("cp932"))
+        if bytes(cur[t : t + n]) != bytes(orig[t : t + n]):
+            continue  # 이미 다른 패처가 넣었다
+        body = to_bytes(kr)
+        # 자리 = 원문 + NUL, 그리고 **뒤 정렬 패딩의 0**(다음 문자열은 4B 경계에서 시작한다 — 그 틈을 가리키는 포인터가 없을 때만)
+        cap = n + 1
+        gap_end = (base + t + n + 1 + 3) & ~3
+        pad = gap_end - (base + t + n + 1)
+        if (
+            pad
+            and bytes(cur[t + n + 1 : t + n + 1 + pad]) == bytes(pad)
+            and all(
+                (base + a).to_bytes(4, "big") not in bytes(cur)
+                for a in range(t + n + 1, t + n + 1 + pad)
+            )
+        ):
+            cap += pad
+        if len(body) + 1 > cap:
+            skipped.append((t, jp, kr, f"{len(body) + 1}B > 자리 {cap}B"))
+        elif not literal_only(cur, base, t):
+            skipped.append((t, jp, kr, "리터럴 풀 소스가 아니다(표·열쇠일 수 있다)"))
+        else:
+            patches[t] = body + b"\x00" * (cap - len(body))
+    return patches, skipped
+
+
+def kana_main(apply, dst, files):
+    """셋째 패스 실행 — 본체(`ED.BIN`·`ED2.BIN`)의 코드 속 몬스터 이름 소스."""
+    import patch_mon_names as M
+    from canon import table
+    from font import to_bytes
+    from patch_ui import slot_plan
+
+    mon = table("monster", "eiyuu")
+    f2, mm2 = common.open_image(dst)
+    left = 0
+    try:
+        for fname in ("/ED.BIN", "/ED2.BIN"):
+            base = U.ptr_base(fname)
+            lba, fsize = files[fname]
+            orig = bytes(common.extract(fname))
+            cur = bytes(common.read_extent(mm2, lba, fsize))
+            rows = M.slots(fname, mon)
+            plan = slot_plan([kr for _t, _j, kr in rows])
+            patches, skipped = kana_plan(
+                orig, cur, base, rows, lambda kr, plan=plan: to_bytes(kr, plan)
+            )
+            for t, jp, kr, why in skipped:
+                print(f"  ⚠ {fname}: 0x{base + t:08X} {jp!r}→{kr!r} 못 바꿨다 — {why}")
+            left += len(skipped)
+            for t, body in sorted(patches.items()):
+                print(
+                    f"  {fname}: 0x{base + t:08X} 이름 소스 {rows_name(rows, t)} → {len(body.rstrip(bytes(1)))}B"
+                )
+            if apply and patches:
+                with open(dst, "r+b") as f:
+                    for t, body in patches.items():
+                        common.write_at(
+                            f,
+                            lba,
+                            fsize,
+                            t,
+                            body,
+                            label=f"{fname} 이름 소스",
+                            expect=cur[t : t + len(body)],
+                        )
+    finally:
+        mm2.close()
+        f2.close()
+    assert left == 0, f"이름 소스 {left}곳을 못 바꿨다 — 위 목록"
+
+
+def rows_name(rows, t):
+    return next((jp for o, jp, _k in rows if o == t), "?")
 
 
 def second_main(apply, dst, files):
@@ -493,6 +612,7 @@ def main():
                     )
     mmd.close()
     second_main(apply, dst, files)
+    kana_main(apply, dst, files)
     if apply:
         print(f"  → 넣음 · {total}곳 (이미 넣었으면 0)")
         # 🔴 되읽기 — 넣은 뒤엔 어긋나는 언롤이 **0** 이어야 한다(`check_fixed_copy` 와 같은 눈금)

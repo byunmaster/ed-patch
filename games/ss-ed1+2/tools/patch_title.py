@@ -578,6 +578,8 @@ def main():
     print(f"  원본 복사 → {dst}")
     shutil.copy2(common.ORIG_BIN, dst)
     shutil.copy2(common.ORIG_CUE, os.path.join(BUILD, os.path.basename(common.ORIG_CUE)))
+    if os.path.exists(common.LEDGER):
+        os.remove(common.LEDGER)  # 쓰기 장부는 새 이미지부터(`common._ledger`)
 
     _f2, mm2 = common.open_image(dst)
     files = {p_: (l, s_) for p_, l, s_ in common.iso_files(mm2)}

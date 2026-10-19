@@ -172,7 +172,7 @@ def scan_scene():
         sites = patch_scn.sites_for(path)
         for e in entries:
             built = patch_scn.canon_of(
-                canon, e.get("text", ""), sites.get(int(e["file_offset"], 16)), path=path
+                canon, e.get("text", ""), sites.get(int(e["file_offset"], 16)), path=path, off=int(e["file_offset"], 16)
             )
             if not built:
                 continue
