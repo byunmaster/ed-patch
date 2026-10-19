@@ -230,6 +230,9 @@ def _textlike(st: Stream) -> bool:
     return sj >= 3
 
 
+EVENT_TABLE_REG = re.compile(rb"\x46\xdf\x48\xe7..\x3a\x7c(?:\x83\xe8|\x84\x28)", re.DOTALL)
+
+
 def lea_roots(b: bytes) -> dict[int, int]:
     """`lea x(pc),a1` 중 문안 뿌리 (명령 오프셋 → 스트림 시작).
     (a) 바로 뒤(또는 `46DF` 하나 건너)에 `movea.w #MSG,a5` 가 오거나, (b) 가리키는 곳이 내용상 문안.
@@ -239,6 +242,11 @@ def lea_roots(b: bytes) -> dict[int, int]:
         disp = struct.unpack(">h", m.group(1))[0]
         t = m.start() + 2 + disp
         if not 0 <= t < len(b):
+            continue
+        # 🔴 이벤트 표 등록(`lea 표,a1; 46DF; 48E7 …; movea.w #$83E8|#$8428,a5; … jsr (a6)`) 은 문안이 아니다 — 표 첫 항목 `80 00 1E 1C …` 의
+        # 0x1E 가 화자 태그로 읽혀 「문안다움」 검사를 통과하면 재조립이 표를 문안 풀로 옮기고 원래 자리를 0 으로 지워, 이벤트 조회가
+        # 한글 글자 바이트(≥0x80 = 와일드카드)를 항목으로 읽어 맵 전체가 이벤트 타일이 된다(10-20 씬 179 LOAD 후 map=0000 폭주, 16씬 영향).
+        if EVENT_TABLE_REG.match(b, m.start() + 4):
             continue
         by_id = m.group(3) is not None and struct.unpack(">H", m.group(3))[0] in MSG_IDS
         if not by_id:
@@ -605,6 +613,27 @@ def coverage(mod: Module) -> tuple[int, int]:
 # ── 재조립 ─────────────────────────────────────────────────────────────────────
 
 
+GOTO_CODE = 0x0F
+LAST_POS: dict[int, int] = {}
+
+
+def _fall_successor(mod: Module, s: int) -> int | None:
+    """스트림 `s` 가 끝난 뒤 **물리적으로 이어 읽힐 수 있는** 원본 스트림의 시작(없으면 None).
+
+    이어 읽히는 끝 = 조건 분기(`11/12 xxxx` + `0F yyyy` — 조건이 맞으면 goto 를 건너뛴다)."""
+    t = mod.streams[s].tokens
+    if not (
+        len(t) >= 2
+        and t[-1].kind == "ctl"
+        and t[-1].code == GOTO_CODE
+        and t[-2].kind == "ctl"
+        and t[-2].code in (0x11, 0x12)
+    ):
+        return None
+    end = s + sum(len(x.raw) for x in t)
+    return end if end in mod.streams else None
+
+
 def _emit_stream(tokens: list[Token]) -> int:
     return sum(len(t.raw) for t in tokens) + (1 if tokens and tokens[-1].kind == "eof" else 0)
 
@@ -640,18 +669,44 @@ def reassemble(
         b.append(0)
     order = sorted(mod.streams)
     toks = {s: replace.get(s, mod.streams[s].tokens) for s in order}
-    # 1. 새 자리
+    # 1. 새 자리 — 방출 순서 = 원본 시작 순서 + **이어 읽기 꼬리 복사본**.
+    #    조건 분기(`11/12 xxxx` + `0F yyyy`)는 조건이 맞으면 goto 를 건너뛰고 **물리적으로 바로 뒤 바이트**를 읽는다.
+    #    원본에선 앞 스트림 둘이 같은 꼬리를 나눠 쓰기도 한다(뒤 스트림이 앞 스트림의 접미 — 195 보일 대사:
+    #    0705 ⊃ 0733, 둘 다 끝이 0x7C5 꼬리). 여기선 스트림마다 따로 쓰므로 꼬리를 **그 스트림 바로 뒤에 한 벌 더** 둔다.
+    emit: list[tuple[int | None, list[Token]]] = []
+    for i, s in enumerate(order):
+        emit.append((s, toks[s]))
+        nxt = order[i + 1] if i + 1 < len(order) else None
+        need, hops = _fall_successor(mod, s), 0
+        while need is not None and need != nxt and hops < 64:
+            emit.append((None, toks[need]))  # 꼬리 복사본 — 참조되지 않는 익명 방출
+            need, hops = _fall_successor(mod, need), hops + 1
+    # 게이트: 이어 읽기가 있는 스트림 바로 뒤 방출이 정말 그 원본 꼬리(토큰 그대로)인가 — 아니면 조건이 맞을 때 엉뚱한 글로 샌다.
+    for i, (s, _tk) in enumerate(emit):
+        if s is None:
+            continue
+        need = _fall_successor(mod, s)
+        if need is not None and (i + 1 >= len(emit) or emit[i + 1][1] is not toks[need]):
+            raise ValueError(f"스트림 {s:#x} 의 이어 읽기 꼬리 {need:#x} 가 바로 뒤에 놓이지 않았다")
+    for i, (s, tk) in enumerate(emit):  # 꼬리 복사본이 다시 이어 읽기를 가지면 그 꼬리도 바로 뒤여야 한다
+        if s is not None:
+            continue
+        origin = next((k for k, v in toks.items() if v is tk), None)
+        need = _fall_successor(mod, origin) if origin is not None else None
+        if need is not None and (i + 1 >= len(emit) or emit[i + 1][1] is not toks[need]):
+            raise ValueError(f"꼬리 복사본 {origin:#x} 의 이어 읽기 꼬리 {need:#x} 가 바로 뒤에 놓이지 않았다")
     pos = {}
     cur = len(b)
-    for s in order:
-        pos[s] = cur
-        cur += _emit_stream(toks[s])
+    for s, tk in emit:
+        if s is not None:
+            pos[s] = cur
+        cur += _emit_stream(tk)
     if cur > MODULE_MAX:
         raise ValueError(f"모듈이 {cur}B — 한도 {MODULE_MAX}B 를 넘는다")
     # 2. 내보내기
     out = bytearray()
-    for s in order:
-        for t in toks[s]:
+    for _s, tk in emit:
+        for t in tk:
             if t.ref is None:
                 out += t.raw
                 continue
@@ -669,9 +724,11 @@ def reassemble(
                 rel = tgt - (here + 1)
                 raw[1:3] = struct.pack(">h", rel)
             out += raw
-        if toks[s] and toks[s][-1].kind == "eof":
+        if tk and tk[-1].kind == "eof":
             out.append(0)
     b += out
+    LAST_POS.clear()
+    LAST_POS.update(pos)  # 검수 도구용 — 원본 스트림 시작 → 새 자리
     # 3. 표 항목
     for tr in mod.tables:
         v = pos[tr.target] - tr.base
@@ -777,8 +834,8 @@ if __name__ == "__main__":
             f"셀 {tot['cells']} · 코드 호출 {tot['codes']} · 참조 파싱 실패 {tot['badref']}"
         )
         print("  미도달·실패 블록:", sorted(worst, key=lambda x: -abs(x[0]))[:12])
-        if (tot["streams"], tot["hit"], tot["tags"], tot["badref"]) != (3471, 1436, 1437, 0):
-            raise SystemExit("씬 모듈 분모가 갈렸다 (기대 3471 스트림 · 1436/1437 · 실패 0)")
+        if (tot["streams"], tot["hit"], tot["tags"], tot["badref"]) != (3452, 1436, 1437, 0):
+            raise SystemExit("씬 모듈 분모가 갈렸다 (기대 3452 스트림 · 1436/1437 · 실패 0)")
         biggest = 0
         for _, b, _ in bl:
             mod = parse_module(b)
@@ -788,3 +845,32 @@ if __name__ == "__main__":
         if biggest > MODULE_MAX:
             raise SystemExit(f"항등 재조립 모듈이 한도를 넘는다 {biggest}")
         print(f"  항등 재조립 225블록 검증 OK (최대 {biggest:,}B / 한도 {MODULE_MAX:,}B)")
+
+
+def event_tables(b: bytes) -> list[bytes]:
+    """모듈 안 이벤트 표 등록(`lea 표,a1; 46DF; 48E7 …; movea.w #$83E8|#$8428,a5`) 마다 표 바이트(항목 … 끝 FF 까지)."""
+    out = []
+    for m in re.finditer(rb"\x43\xfa(..)", b, re.DOTALL):
+        if not EVENT_TABLE_REG.match(b, m.start() + 4):
+            continue
+        p = m.start() + 2 + struct.unpack(">h", m.group(1))[0]
+        q = p
+        # 항목 길이는 첫 바이트가 정한다(조회 루틴 `$1D4AA`: 비트5 → 12B · 비트6 → 8B · 아니면 6B, 첫 바이트 FF 가 끝)
+        while 0 <= q < len(b) and b[q] != 0xFF and q - p < 12 * 300:
+            q += 12 if b[q] & 0x20 else 8 if b[q] & 0x40 else 6
+        out.append(bytes(b[p : q + 1]))
+    return out
+
+
+def verify_event_tables(orig_mods: list[bytes], new_mods: list[bytes]) -> int:
+    """게이트 — 모든 모듈에서 이벤트 표가 원판과 한글 롬이 **바이트까지 같은가**(표가 문안 풀로 옮겨져 0 이 되거나 한글 바이트가
+    섞이면 이벤트 조회가 맵 전체를 이벤트 타일로 읽는다 — 씬 179 LOAD 폭주). → 검사한 표 수."""
+    n = 0
+    for i, (jb, kb) in enumerate(zip(orig_mods, new_mods, strict=True)):
+        jt, kt = event_tables(jb), event_tables(kb)
+        if jt != kt:
+            raise SystemExit(
+                f"씬 {i} 이벤트 표가 원판과 다르다(표 {len(jt)}→{len(kt)}) — 재조립이 표를 문안으로 옮겼다"
+            )
+        n += len(jt)
+    return n

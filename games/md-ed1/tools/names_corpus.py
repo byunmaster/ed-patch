@@ -83,6 +83,50 @@ def _script_pairs(rom: bytes):
             yield f"script:{n:03d}:{off:04x}", jp, ours, DIALOG
 
 
+_FLOW = re.compile(r"<(0f|10):([0-9a-f]+)>")
+_COND = re.compile(r"<1[12][0-9a-f]{4}>$")
+
+
+def _expand(texts: dict[int, str], off: int, depth: int = 0, seen: frozenset = frozenset()) -> str:
+    """한 문장이 조각 여럿(goto `<0f:T>` · call `<10:T>`)으로 이어진 것을 **한 줄로** 펼친다 — 조각 단위로만 재면 이어진 자리를
+    검사기 셋(이름·정본·인사)이 못 본다(sfc-ed2 10-20). 조건(`<11…>`/`<12…>`) 바로 뒤 goto 는 「참이면 건너뜀」이라 아래로 이어 읽는다."""
+    t = texts.get(off)
+    if t is None or depth > 8 or off in seen:
+        return t or ""
+    seen = seen | {off}
+    out, pos = [], 0
+    for m in _FLOW.finditer(t):
+        head = t[pos : m.start()]
+        out.append(head)
+        pos = m.end()
+        tgt = int(m.group(2), 16)
+        if m.group(1) == "0f" and _COND.search(head):
+            continue  # 조건 참이면 goto 를 건너뛴다 — 아래로 이어 읽는다
+        out.append(_expand(texts, tgt, depth + 1, seen))
+        if m.group(1) == "0f":
+            return "".join(out)  # goto 는 돌아오지 않는다
+    out.append(t[pos:])
+    return "".join(out)
+
+
+def _script_joined_pairs(rom: bytes):
+    """이어진 문장 — goto·call 로 다른 스트림을 부르는 스트림만 펼친 한 줄로 한 번 더 낸다(원문·우리 둘 다)."""
+    import json
+
+    base = archives.ARCHIVES["script"][0]
+    for n, (_s, data, _e) in enumerate(archives.blocks(rom, base)):
+        mod = scene.parse_module(data)
+        p = common.GAME_DIR / "script" / f"{n:03d}.json"
+        kr = json.loads(p.read_text(encoding="utf-8")).get("streams", {}) if p.exists() else {}
+        jp_t = {off: st.text() for off, st in mod.streams.items()}
+        kr_t = {int(k, 16): v.get("ours") or "" for k, v in kr.items()}
+        for off in sorted(mod.streams):
+            if not (_FLOW.search(jp_t[off]) or _FLOW.search(kr_t.get(off, ""))):
+                continue
+            ours = _expand(kr_t, off) if kr_t.get(off) else None
+            yield f"scriptj:{n:03d}:{off:04x}", _expand(jp_t, off), ours, DIALOG
+
+
 def _battle_pairs(rom: bytes):
     import json
 
@@ -164,6 +208,7 @@ def _dest_pairs():
 def pairs():
     rom = common.rom()
     yield from _script_pairs(rom)
+    yield from _script_joined_pairs(rom)
     yield from _battle_pairs(rom)
     yield from _sysmsg_pairs(rom)
     yield from _captions_pairs(rom)

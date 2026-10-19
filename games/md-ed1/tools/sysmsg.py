@@ -75,14 +75,15 @@ RELOCATE = (
     0x24A7A,
     0x24A7E,
     # 「하지만 운 좋게/나쁘게 …에게는 맞지 않았다」 묶음(0x24b1b~) — 원문 「運良く…には」을 PS1 꼴로 늘려(에겐→에게는 · 용케→운 좋게)
-    # 묶음이 7B 넘쳐서 옮긴다. goto 가 16비트라 서로 이어진 것(24b37→24b42→24b59)을 **함께** 옮긴다(10-10)
-    0x24B37,
+    # 묶음이 7B 넘쳐서 옮긴다(10-10). 🔴 **「그러나 ⟨값⟩」(0x24b30, pc 상대 참조라 못 옮긴다) 바로 뒤 0x24b37 과 그 goto 대상 0x24b42 는 제자리**에
+    # 남긴다 — 10-10 엔 24b37 까지 꼬리로 옮겨 06 뒤가 00 이 돼 「그러나 ⟨값⟩에게는 통하지 않았다」(운 나쁘게 누락)로 뜻이 바뀌었다(10-20 style).
+    # 대신 abs 참조만 있는 24b3e·24b44 를 옮기고, 둘이 goto 하는 24b59 는 꼬리에 **사본**을 둔다(TAIL_COPY — goto 16비트라 제자리 것에 못 닿는다).
     0x24B3E,
-    0x24B42,
     0x24B44,
-    0x24B59,
     0x1FED2,  # 「<아이템>을 가지고 있었다.」(원문 持っていた) — 17B 칸에 20B
 )
+# 제자리에도 두고 꼬리에도 **사본**을 두는 스트림 — 꼬리로 옮긴 스트림의 goto 가 16비트라 제자리 것에 못 닿을 때(위 24b3e·24b44 → 24b59).
+TAIL_COPY = (0x24B59,)
 # 제자리 칸이 모자라는 **꼬리 스트림**(앞 스트림이 06 으로 끊기고 물리적으로 이어지는 PINNED 자리)을
 # 근처 묶음의 **남는 칸**으로 옮기고 제자리엔 goto(3B)만 둔다. 소비자(참조)가 없어 못 옮기던 자리라 들어오는 길은 그대로고,
 # goto 가 16비트 상대라 ±32KB 안의 칸만 쓴다(ROM 꼬리는 너무 멀다). 값 = 본문 뒤 되돌아갈 자리(없으면 None).
@@ -245,8 +246,18 @@ def clusters(strs: dict[int, dict]) -> list[list[int]]:
     return out
 
 
+# 머리 조각을 **앞 묶음의 남는 1B** 로 넓힌다(경계 이동) — 값 = 새 시작 자리. 앞 묶음은 그만큼 끝이 줄어든다.
+#   0x7634 = 「…의 방어력이 <06>」(원문 「の防御力が」 — 「이」가 빠져 있었다). 칸 12B 에 13B 라, 앞 0x762a 「 뺏었다!」
+#   (원판 10B 칸을 우리 문안 9B 로 쓰고 남은 1B — 원판에선 그 자리가 스트림 끝 0A)에서 1B 를 빌려 0x7633 에서 시작한다. 들어오는 길은 호출식(0x758a·0x75c6 의 `10 call`)
+#   뿐이고 둘 다 같은 묶음(0x73fe)이라 `_emit` 이 allpos 로 새 자리를 따라간다. 앞 묶음 안 참조는 없다(refs 비어 있음).
+BORROW = {0x7634: 0x7633}
+
+
 def span(strs: dict[int, dict], cl: list[int]) -> tuple[int, int]:
-    return cl[0], max(strs[t]["stream"].end for t in cl)
+    lo, hi = cl[0], max(strs[t]["stream"].end for t in cl)
+    lo = BORROW.get(lo, lo)
+    hi = BORROW.get(hi, hi)
+    return lo, hi
 
 
 def jp_key(st: scene.Stream) -> str:
@@ -378,6 +389,17 @@ def _emit(toks: list[scene.Token], base: int, newpos: dict[int, int]) -> bytes:
     return bytes(out)
 
 
+def _entry(d: bytes, strs: dict, e: int) -> int:
+    """`06` 스트림이 끝난 자리 `e` 에서 물리적으로 이어 읽으면 닿는 **스트림 시작** — 사이에 단독 제어 바이트(`08 06` · `0e`)가 끼면 그 뒤.
+    없으면 e 자신."""
+    if e in strs:
+        return e
+    for k in range(1, 4):
+        if e + k in strs and 0 not in d[e : e + k]:
+            return e + k
+    return e
+
+
 def plan(
     d: bytes, textmap: dict, encode, tail_at: int | None = None
 ) -> list[tuple[str, int, bytes]]:
@@ -390,6 +412,7 @@ def plan(
     allpos: dict[int, int] = {}  # 🔴 자리는 **전 묶음을 다 재 놓고** 쓴다 — goto 가 묶음을 넘는다
     tcur = tail_at  # 꼬리로 옮기는 스트림의 다음 자리
     moved: list[tuple[int, int, list]] = []  # (스트림, 새 자리, 토큰)
+    copies: dict[int, int] = {}  # TAIL_COPY — 스트림 → 꼬리 사본 자리
     flowinfo: dict[
         int, tuple[int, bool]
     ] = {}  # 스트림 → (새 크기, 다음으로 흐르나) — 흐름 게이트용
@@ -408,6 +431,13 @@ def plan(
                 touched = True
             else:
                 toks[t] = st.tokens
+            # 🔴 `06` 으로 끝난 머리 스트림(능력치·HP '…가/를') 바로 뒤의 `0F off16` 꼬리 goto 는 스트림 밖 3B 라 재배치가 버렸다 —
+            # 「…방어력 5세리오스의 민첩성이」(꼬리 「올랐다/내려갔다」 누락, 10-20 qa). 토큰으로 되붙인다
+            tk = toks[t]
+            if (tk and tk[-1].kind == "end" and tk[-1].code == 0x06 and st.end not in strs
+                    and d[st.end] == 0x0F and not any(x.ref == scene.GOTO for x in tk)):
+                tgt = st.end + 1 + struct.unpack(">h", d[st.end + 1 : st.end + 3])[0]
+                toks[t] = list(tk) + [scene.Token(0, b"\x0f\x00\x00", "ctl", 0x0F, scene.GOTO, tgt)]
         if not touched:
             for t in cl:
                 allpos.setdefault(t, t)  # 안 건드린 묶음은 제자리
@@ -468,6 +498,10 @@ def plan(
         cur = lo
         order = []
         for t in cl:
+            if t in TAIL_COPY and tail_at is not None:
+                copies[t] = tcur
+                moved.append((t, tcur, toks[t]))
+                tcur += size[t]
             if t in RELOCATE and tail_at is not None and toks[t] is not strs[t]["stream"].tokens:
                 if any(k != "abs" for k, _ in strs[t]["refs"]):
                     raise SystemExit(f"sysmsg {t:#x}: 참조가 절대 주소가 아니라 못 옮긴다")
@@ -495,14 +529,37 @@ def plan(
         # 🔴 `06`·`0A`·`0D` 로 끝나는 스트림은 **물리적으로 다음 스트림으로 흐른다**(수치를 게임이 찍은 뒤 꼬리말이 이어진다 — 「최대 ＨＰ가 ⟨수⟩
         # 포인트 올랐다」). 묶음이 왼쪽부터 채워 끝에 0 이 남으면 06 과 다음 스트림 사이에 00 이 끼어 **문장이 거기서 끊긴다**(10-10
         # 마스터 「최대 HP가 18 에서 메시지가 끊겼다」). 다음 스트림이 묶음 끝에 맞닿아 있으면 흐르는 사슬을 오른쪽 끝에 붙인다.
-        if order and hi in strs and strs[order[-1]]["stream"].end == hi and _flows(order[-1]):
+        # 🔴 `06` 으로 끝나는 마지막 스트림은 **hi 가 스트림 시작이 아니어도**(뒤가 `<0e>` 따위 단독 제어 바이트 — 0x75ed) 맞닿아야 한다:
+        # 아니면 06 과 `0e` 사이에 00 이 끼어 「{item} 안에는 {값}」에서 끊긴다(10-20 style 검수, 0x75e0)
+        if (
+            order
+            and strs[order[-1]]["stream"].end == hi
+            and _flows(order[-1])
+            and (hi in strs or (toks[order[-1]][-1].code == 0x06 and d[hi] != 0))
+        ):
             chain = [order[-1]]
             j = len(order) - 2
             while j >= 0 and strs[order[j]]["stream"].end == order[j + 1] and _flows(order[j]):
                 chain.insert(0, order[j])
                 j -= 1
             shift = hi - (newpos[chain[-1]] + size[chain[-1]])
-            if shift > 0 and all(t not in RELOCATE for t in chain):
+            # 🔴 사슬 머리가 **참조 없이 앞 바이트에서 물리적으로 이어 들어오는 PINNED 꼬리**(앞 스트림의 04 뒤 등)면 오른쪽으로 밀지 않는다 —
+            # 밀면 앞 04 와 문안 사이에 00 이 끼어 꼬리가 끊긴다(미니게임 「…에 ⟨수치⟩의 대미지!!」 0x324e2, 「HP·MP 를 N 빼앗았다」 0x762a).
+            # 🔴 사슬 머리가 묶음 맨 앞이고 **앞 `06` 스트림이 단독 제어 바이트(`08 06`)를 건너 이어 들어오면** 밀지 않는다 — 앞에 00 이 끼어
+            # 「{값}{값}의 공격」이 끊긴다(미니게임 0x324bb, 10-20)
+            entered = chain[0] == order[0] and any(
+                u in strs and strs[u]["stream"].end <= lo
+                and _entry(d, strs, strs[u]["stream"].end) == lo
+                and d[strs[u]["stream"].end - 1] == 0x06
+                for u in strs
+                if strs[u]["stream"].end > lo - 4
+            )
+            if (
+                shift > 0
+                and not entered
+                and all(t not in RELOCATE for t in chain)
+                and strs[chain[0]]["refs"]
+            ):
                 for t in chain:
                     newpos[t] += shift
         if cur > hi:
@@ -519,6 +576,7 @@ def plan(
             flowinfo[t] = (
                 size[t],
                 bool(toks[t]) and toks[t][-1].kind == "end" and toks[t][-1].code == 0x06,
+                toks[t][-1].target if toks[t] and toks[t][-1].ref == scene.GOTO else None,
             )
         plans.append((lo, hi, cl, toks, order, newpos, cur, []))
         allpos.update(newpos)
@@ -526,17 +584,31 @@ def plan(
         raise SystemExit(
             "sysmsg 묶음이 넘친다 — textmap/sysmsg.json 을 줄인다:\n    " + "\n    ".join(over)
         )
-    # 🔴 흐름 게이트 — 06·0A·0D 로 끝나는 스트림 뒤엔 원래 이어지던 스트림이 **바로** 와야 한다(사이에 00 이 끼면 문장이 끊긴다)
-    broken = [
-        f"{t:#x}→{strs[t]['stream'].end:#x}"
-        for t, (sz, fl) in flowinfo.items()
-        if fl
-        and t in allpos
-        and strs[t]["stream"].end in allpos
-        and t not in RELOCATE
-        and strs[t]["stream"].end not in RELOCATE
-        and allpos[t] + sz != allpos[strs[t]["stream"].end]
-    ]
+    # 🔴 흐름 게이트 — 06 으로 끝나는 스트림 뒤엔 원래 이어지던 바이트(`st.end`)가 **바로** 와야 한다(사이에 00 이 끼면 문장이 끊긴다).
+    # ⚠ RELOCATE·TAIL_JUMP 를 면제하지 않는다(10-20) — 면제했던 탓에 「그러나 ⟨값⟩」(0x24b30) 뒤 「운 나쁘게…」(0x24b37, RELOCATE)가
+    # 꼬리로 이사하고 제자리에 00 이 남아 뜻이 바뀐 걸 못 잡았다. 이어 읽는 자리가 스트림 시작이 아니어도(단독 `<0e>` 0x75ed) 같다.
+    # 길은 둘 — ① 06 이 바로 이어지는 바이트 앞에 놓인다 ② 06 뒤에 `0F` goto 가 붙어 이어질 자리를 가리킨다(꼬리로 이사한 경우).
+    broken = []
+    for t, (sz, fl, gt) in flowinfo.items():
+        if t in jumps or t not in allpos:
+            continue
+        e = strs[t]["stream"].end
+        if d[e] == 0x00 and e not in strs:  # 원본도 06 뒤가 00 — 이어지는 길이 아니다(0x7406 「자기 자신에게」 따위)
+            continue
+        ent = _entry(d, strs, e)
+        cont = allpos.get(ent, ent) - (ent - e)
+        okgoto = {e}
+        if d[e] == 0x0F:  # 원본 06 바로 뒤의 `0F off16` — 위에서 토큰으로 되붙인 꼬리 goto
+            okgoto.add(e + 1 + struct.unpack(">h", d[e + 1 : e + 3])[0])
+        if fl and allpos[t] + sz != cont:
+            broken.append(f"{t:#x}→{ent:#x}(바로 안 이어짐: {allpos[t] + sz:#x} != {cont:#x})")
+        elif (
+            gt is not None
+            and strs[t]["stream"].tokens[-1].kind == "end"
+            and strs[t]["stream"].tokens[-1].code == 0x06
+            and gt not in okgoto
+        ):
+            broken.append(f"{t:#x}→{e:#x}(goto 가 딴 데: {gt:#x})")
     if broken:
         raise SystemExit(
             "sysmsg 흐름이 끊겼다(뒤 스트림이 바로 이어지지 않는다): " + ", ".join(broken)
@@ -586,14 +658,16 @@ def plan(
     if moved:
         if tcur - tail_at > TAIL_SIZE:
             raise SystemExit(f"sysmsg 꼬리 칸이 모자란다: {tcur - tail_at}B > {TAIL_SIZE}B")
+        # 꼬리로 옮긴 스트림의 goto 는 사본으로 간다(제자리 것은 16비트로 안 닿는다)
+        mp = {**allpos, **copies}
         for t, pos, tk in moved:
-            writes.append((f"sysmsg-moved:{t:06x}", pos, _emit(tk, pos, allpos)))
+            writes.append((f"sysmsg-moved:{t:06x}", pos, _emit(tk, pos, mp)))
     return writes
 
 
 def allowed_tail(at: int) -> dict[str, tuple[int, int]]:
     """꼬리로 옮긴 스트림 자리 — 스트림마다 라벨 하나(구간은 꼬리 칸 전체)."""
-    return {f"sysmsg-moved:{t:06x}": (at, at + TAIL_SIZE) for t in RELOCATE}
+    return {f"sysmsg-moved:{t:06x}": (at, at + TAIL_SIZE) for t in (*RELOCATE, *TAIL_COPY)}
 
 
 def allowed(d: bytes) -> dict[str, tuple[int, int]]:

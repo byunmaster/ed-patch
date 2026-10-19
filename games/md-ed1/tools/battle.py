@@ -458,6 +458,8 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
     rs = refs(b)
     # 새 문안 본문 — 번역 없는 스트림은 None
     bodies: dict[int, bytes | None] = {}
+    btoks: dict[int, list] = {}  # 새 문안의 토큰 — 문안 한복판을 겨냥한 쓰기 자리를 옮길 때 쓴다
+    newpos: dict[int, int] = {}  # 스트림 시작(원본) → 새 몸이 놓인 자리
     for tgt, e in rs.items():
         st = e["stream"]
         ent = textmap.get(pos_key(st, n, tgt)) or textmap.get(jp_key(st))
@@ -466,11 +468,13 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
             continue
         ours = expand_names(ent["ours"], monsters)
         st = drop_goto(st, ours)
-        bodies[tgt] = b"".join(t.raw for t in sysmsg._tokens_from_ours(st, ours, encode))
+        btoks[tgt] = list(sysmsg._tokens_from_ours(st, ours, encode))
+        bodies[tgt] = b"".join(t.raw for t in btoks[tgt])
     # 🔴 스트림은 **물리적으로 이어서 흐른다** — `0A` 뒤에 바로 다음 스트림(참조 없는 연쇄)이 이어져 한 창 안에서
     # 「…독을 뿜었다. / …는 독에 중독됐다!」 로 읽힌다. 앞 스트림이 길어져 **옮겨지면** 연쇄가 끊겨 뒷 문안이 사라지고 쓰레기가
     # 그려진다(10-10 「조사 대신 쉼표」를 조사로 고치며 1B 가 늘어 처음 드러났다). 옮길 땐 이어지는 스트림을 **함께** 옮긴다.
     absorbed: set[int] = set()
+    moved_heads: dict[int, list] = {}
     for tgt, e in rs.items():
         if tgt in absorbed:
             continue
@@ -479,8 +483,13 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         if body is None:
             continue
         span = st.end - tgt
-        if len(body) <= span:
+        # 🔴 바로 뒤에 참조 없는 연쇄 스트림이 이어지는데(「…민첩성이 <1e>07」+「<04>내려가고 말았다」, 「…뿜었다.<0a>」+「…중독됐다」) 우리
+        # 문안이 **더 짧으면** 제자리에 쓰고 0 으로 메우는 순간 연쇄가 끊겨 꼬리가 사라진다(10-20 qa 「…민첩성이」에서 끝남) —
+        # 그런 머리는 연쇄와 **함께 옮긴다**(아래 else 갈래).
+        chain_next = st.end in rs and not (rs[st.end]["lea"] or rs[st.end]["words"])
+        if len(body) <= span and not (chain_next and len(body) < span and (e["lea"] or e["words"])):
             out[tgt : tgt + span] = body + b"\x00" * (span - len(body))
+            newpos[tgt] = tgt
         elif not (e["lea"] or e["words"]) and span >= 3:
             out[tgt : tgt + span] = b"\x0f\x00\x00" + b"\x00" * (span - 3)
             jumps.append((tgt, st.end, body))
@@ -492,6 +501,7 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         else:  # 플래그 바이트(tgt-1)는 제자리에 남는다 — 문안은 자료 A 워드·lea 로만 닿는다
             full, end = body, st.end
             members = [(tgt, e, 0)]  # (원래 자리, 항목, 옮긴 본문 안 오프셋)
+            moved_heads[tgt] = members
             while end in rs and not (rs[end]["lea"] or rs[end]["words"]) and end not in absorbed:
                 nxt = rs[end]
                 nb = bodies.get(end)
@@ -511,6 +521,7 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
             out.append(0)
         for tgt, end, body in jumps:
             new = len(out)
+            newpos[tgt] = new
             out[tgt + 1 : tgt + 3] = struct.pack(">h", new - (tgt + 1))
             if body[-1] == 0x0A:  # 0A 은 물리적으로 다음 스트림으로 흐른다 — 원래 끝으로 되돌아간다
                 here = new + len(body)
@@ -523,6 +534,8 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         placed = []
         for _tgt, e, body in moves:
             new = len(out)
+            for orig_at, _ent, off in moved_heads[_tgt]:
+                newpos[orig_at] = new + off
             placed.append((new, e, body))
             out += body + (b"\x00" if len(body) & 1 else b"")
             for ins in e["lea"]:
@@ -540,7 +553,138 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
                 )
             for p in e["words"]:
                 assert struct.unpack(">H", out[p : p + 2])[0] == new, (n, hex(p))
+    # 🔴 블록 코드가 **문안 한복판**의 제어 바이트(개행 01·종결 07)를 런타임에 덮어쓰는 자리(`lea d(pc),aN` → `move.b …,(aN)`) —
+    # 원판에선 그 바이트가 문안 안에 있지만 우리 문안은 길이가 달라 그 오프셋에 다른 글자가 온다(블록 89 「하이아길도」의 「아」 뒷바이트
+    # 0xDA 가 01 로 덮여 「하이 길도」, 블록 67 은 옮겨 간 문안 대신 0 패딩에 써서 「게다가 임프도 함께다!!」 누락, 10-20).
+    # 원본 문안의 n번째 같은 제어 토큰을 우리 문안의 n번째 같은 토큰으로 이어 변위를 다시 쓴다.
+    for ins, tgt0, k, raw in mid_stream_writes(b, rs):
+        if tgt0 not in newpos or tgt0 not in btoks:
+            continue  # 안 바뀐 스트림 — 원본 그대로
+        at, seen = newpos[tgt0], 0
+        for t in btoks[tgt0]:
+            if t.raw == raw:
+                if seen == k:
+                    break
+                seen += 1
+            at += len(t.raw)
+        else:
+            errs.append(f"블록 {n} 쓰기 자리 {ins:#x}: 새 문안에 {raw.hex()} 토큰 {k + 1}번째가 없다")
+            continue
+        disp = at - (ins + 2)
+        assert -0x8000 <= disp < 0x8000
+        out[ins + 2 : ins + 4] = struct.pack(">h", disp)
+        changed = True
+    # 🔴 스트림 안의 `10`(call)·`0F`(goto) 는 **토큰 자리 기준 16비트 상대 변위**다 — 원본 토큰을 그대로 쓰면 문안 길이가 달라지거나
+    # 스트림이 옮겨졌을 때 변위가 틀어진다(블록 42: 화자 【아크담】 call 둘이 빠지고 도망 갈래에 쓰레기 글자, 최후 대사 화자 call 이
+    # 블록 밖을 가리켰다, 10-20 style 검수). 새 토큰 자리 기준으로 다시 쓴다. 목적지가 옮겨졌으면 새 자리.
+    for tgt0, e in rs.items():
+        toks = btoks.get(tgt0, e["stream"].tokens)
+        at = newpos.get(tgt0, tgt0)
+        for t in toks:
+            if t.ref in (scene.CALL, scene.GOTO) and len(t.raw) == 3:
+                dest = newpos.get(t.target, t.target)
+                for s0, e2 in rs.items():  # 목적지가 바뀐 문안의 한복판이면 이을 수 없다
+                    if s0 < t.target < e2["stream"].end and (s0 in btoks or newpos.get(s0, s0) != s0):
+                        errs.append(f"블록 {n} {t.ref} {at:#x} → {t.target:#x} 가 바뀐 스트림 {s0:#x} 한복판")
+                        break
+                disp = dest - (at + 1)
+                assert -0x8000 <= disp < 0x8000
+                if out[at + 1 : at + 3] != struct.pack(">h", disp):
+                    out[at + 1 : at + 3] = struct.pack(">h", disp)
+                    changed = True
+            at += len(t.raw)
+    if errs:
+        raise SystemExit("\n".join(errs))
     return bytes(out) if changed else None
+
+
+def mid_stream_writes(b: bytes, rs: dict[int, dict]) -> list[tuple[int, int, int, bytes]]:
+    """원본 블록에서 `lea d(pc),aN` 의 대상이 **스트림 한복판의 제어 토큰**인 자리 → [(명령 자리, 스트림 시작, 같은 토큰 중 n번째, 토큰 바이트)]."""
+    out = []
+    for m in re.finditer(rb"([\x41\x43\x45\x47\x49\x4b\x4d])\xfa(..)", b, re.DOTALL):
+        i = m.start()
+        t = i + 2 + struct.unpack(">h", m.group(2))[0]
+        for s0, e in rs.items():
+            st = e["stream"]
+            if not (s0 < t < st.end):
+                continue
+            pos = s0
+            same: dict[bytes, int] = {}
+            for tk in st.tokens:
+                if pos == t and tk.kind in ("ctl", "end") and len(tk.raw) == 1:
+                    out.append((i, s0, same.get(tk.raw, 0), tk.raw))
+                    break
+                same[tk.raw] = same.get(tk.raw, 0) + 1
+                pos += len(tk.raw)
+            break
+    return out
+
+
+def _skeleton(st: scene.Stream) -> list[tuple[str, int]]:
+    """번역돼도 변하지 않는 골격 — 화자 표지(1E)·그 닫는 04·끝 코드. (개행·페이지 수는 번역이 바꾼다.)"""
+    return [(t.kind, t.code) for t in st.tokens if t.kind == "end" or t.code in (0x1E, 0x04)]
+
+
+def verify_calls(orig: bytes, new: bytes) -> int:
+    """게이트 — 전투 블록 스트림 안의 call(`10`)·goto(`0F`)가 우리 롬에서도 **원판과 같은 골격의 스트림**(번역돼 옮겨졌으면 그 새 자리)을
+    가리키는가. 원 스트림 → 새 스트림은 lea·자료 A 워드(재배치가 고쳐 주는 참조)를 따라 짝짓는다. 변위를 원본 그대로 두면 블록 42 처럼
+    착지가 엉뚱한 자리(화자 call 이 블록 밖)로 간다. → 검사한 call/goto 수."""
+    n_ok = 0
+    for n, ((_s, jb, _e), (_s2, kb, _e2)) in enumerate(zip(blocks(orig), blocks(new), strict=True)):
+        jr = refs(jb)
+
+        def new_start(e):
+            if e["lea"]:
+                i = e["lea"][0]
+                return i + 2 + struct.unpack(">h", kb[i + 2 : i + 4])[0]
+            if e["words"]:
+                return struct.unpack(">H", kb[e["words"][0] : e["words"][0] + 2])[0]
+            return None
+
+        for tgt, e in jr.items():
+            calls = [t for t in e["stream"].tokens if t.ref in (scene.CALL, scene.GOTO)]
+            if not calls:
+                continue
+            ns = new_start(e)
+            if ns is None:
+                continue
+            try:
+                nst = scene.parse_stream(kb, ns)
+            except (ValueError, IndexError):
+                raise SystemExit(f"블록 {n} 스트림 {tgt:#x}: 새 롬 {ns:#x} 가 안 풀린다") from None
+            ncalls = [t for t in nst.tokens if t.ref in (scene.CALL, scene.GOTO)]
+            if [t.ref for t in calls] != [t.ref for t in ncalls]:
+                continue  # drop_goto 로 goto 를 버린 스트림 — 우리 문안은 끝 코드로 닫힌다
+            for t, nt in zip(calls, ncalls, strict=True):
+                n_ok += 1
+                if t.target in jr:  # 원판 착지가 문안 스트림 — 새 착지가 같은 골격이어야 한다
+                    want = _skeleton(jr[t.target]["stream"])
+                    try:
+                        got = _skeleton(scene.parse_stream(kb, nt.target))
+                    except (ValueError, IndexError):
+                        got = None
+                    if got != want:
+                        raise SystemExit(
+                            f"블록 {n} 스트림 {tgt:#x}→{ns:#x} 의 {t.ref}: 착지 {nt.target:#x} 의 골격이 원판 "
+                            f"{t.target:#x} 와 다르다"
+                        )
+    return n_ok
+
+
+def verify_mid_writes(orig: bytes, new: bytes) -> int:
+    """게이트 — 원판에서 블록 코드가 스트림 한복판 제어 바이트에 쓰는 자리가 우리 롬에서도 **같은 값의 제어 바이트**를 가리키는가.
+    (글자 뒷바이트나 0 패딩을 가리키면 「하이 길도」(블록 89)·문장 누락(블록 67)이 된다.) → 검사한 자리 수."""
+    n_sites = 0
+    for n, ((_s, jb, _e), (_s2, kb, _e2)) in enumerate(zip(blocks(orig), blocks(new), strict=True)):
+        for ins, _s0, _k, raw in mid_stream_writes(jb, refs(jb)):
+            n_sites += 1
+            t = ins + 2 + struct.unpack(">h", kb[ins + 2 : ins + 4])[0]
+            if kb[t : t + 1] != raw:
+                raise SystemExit(
+                    f"블록 {n} 쓰기 자리 {ins:#x} 가 우리 롬에서 제어 바이트 {raw.hex()} 를 안 가리킨다 "
+                    f"(@{t:#x} = {kb[t : t + 1].hex()}) — 블록 코드가 문안 글자를 덮어쓴다"
+                )
+    return n_sites
 
 
 if __name__ == "__main__":

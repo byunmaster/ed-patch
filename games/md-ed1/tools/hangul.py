@@ -785,3 +785,30 @@ if __name__ == "__main__":
     elif "--preview" in sys.argv:
         i = sys.argv.index("--preview")
         preview(sys.argv[i + 2], Path(sys.argv[i + 1]))
+
+
+# 🔴 구운 글리프끼리 비트맵이 같으면 **서로 다른 글자가 같은 모양으로 그려진다**(ss-ed1+2 10-20: 반각 쉼표가 마침표와 같은 비트맵으로
+# 구워져 쉼표 3,983곳이 전부 마침표로 그려졌다 — 원본 글꼴 파일만 보면 안 보이고 **롬에서 읽어야** 보인다).
+# 허용 = 의도된 같은 모양: 합성 코드(「의␣」·「운␣」 — 본 글자와 같은 비트맵에 전진만 다르다)와 원판 자체의 줄표 셋(ー―－).
+ORIGINAL_SAME = ({0x815B, 0x815C, 0x817C},)
+
+
+def verify_glyph_distinct(rom: bytes, composites: tuple[tuple[int, int], ...]) -> int:
+    """구운 롬의 글꼴 리소스 0(전각)·1(반각) 글리프를 읽어 같은 비트맵 쌍을 센다. 허용 밖이면 실패. → 허용된 같은 묶음 수."""
+    allowed = [set(c) for c in composites] + [set(g) for g in ORIGINAL_SAME]
+    n = 0
+    for ri, r in enumerate(font.resources(rom)[:2]):
+        seen: dict[tuple, list[int]] = {}
+        for i, c in enumerate(font.codes(rom, r)):
+            key = tuple(tuple(map(tuple, font.glyph(rom, r, i, p))) for p in (0, 1))
+            seen.setdefault(key, []).append(c)
+        for key, grp in seen.items():
+            if len(grp) < 2 or not any(any(row) for row in key[0]):
+                continue  # 빈 글리프(공백)끼리는 같아도 된다
+            if not any(set(grp) == a for a in allowed):
+                raise SystemExit(
+                    f"구운 글리프가 서로 같다(리소스 {ri}): {[hex(c) for c in grp]} — 서로 다른 글자가 같은 모양으로 그려진다. "
+                    "의도된 합성 코드·원판 줄표가 아니면 글리프를 고친다"
+                )
+            n += 1
+    return n

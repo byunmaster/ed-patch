@@ -159,6 +159,7 @@ class Rom:
         "josa-code": (TAIL_HI - JOSA_RESERVE, TAIL_HI),
         "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 12),
         "josa-name-hook": (josa.NAME_FN_PATCH, josa.NAME_FN_PATCH + 6),
+        "josa-mon-hook": (josa.NAME_MON_PATCH, josa.NAME_MON_PATCH + 6),
         "wrap-code": (TAIL_HI - JOSA_RESERVE - WRAP_RESERVE, TAIL_HI - JOSA_RESERVE),
         "wrap-tramp": (wordwrap.TRAMP, wordwrap.TRAMP + 6),
         "half-code": (
@@ -347,9 +348,17 @@ def build_stream(
         # `join` = 뒤에 같은 쪽의 글이 이어 찍히는 자리(참조 · 줄·쪽 넘김 아닌 모든 제어코드(`<03>`·`<11..>`·`<12..>`·`<14..>`…) · 되돌림 끝 `<06>`) —
         # 문장 끝 부호로 끝났으면 이음새에 공백 하나를 낸다(「찾아왔다.안으로」 — 원문엔 없던 이음새 공백).
         want = body.endswith(" ") or (join and body[-1:] in ".?!…")
-        if not at_end and not brk and want and body.strip() and pages and pages[-1]:
-            if not pages[-1][-1].endswith(" ") and krwrap.text_width(pages[-1][-1] + " ") <= WIDTH:
-                pages[-1][-1] += " "
+        if (
+            not at_end
+            and not brk
+            and want
+            and body.strip()
+            and pages
+            and pages[-1]
+            and not pages[-1][-1].endswith(" ")
+            and krwrap.text_width(pages[-1][-1] + " ") <= WIDTH
+        ):
+            pages[-1][-1] += " "
         pending_text.clear()
         for pi, pg in enumerate(pages):
             if pi:
@@ -520,6 +529,7 @@ def main(check_only: bool = False) -> None:
     base = archives.ARCHIVES["script"][0]
     bl = archives.blocks(orig, base)
     new_blocks: dict[int, bytes] = {}
+    posdump: dict[int, dict[int, int]] = {}
     for n, m in sorted(maps.items()):
         s, b, e = bl[n]
         mod = scene.parse_module(b)
@@ -537,8 +547,14 @@ def main(check_only: bool = False) -> None:
         if not replace:
             continue
         new = scene.reassemble(mod, replace)
+        if os.environ.get("ED_DUMP_POS"):
+            posdump[n] = dict(scene.LAST_POS)
         scene.verify_reassembly(mod, new, replace)
         new_blocks[n] = new
+    if posdump:  # 검수용(ED_DUMP_POS=1): 씬별 「원본 스트림 시작 → 새 자리」 — 롬 바이트에는 영향이 없다
+        (common.BUILD_DIR / "pos.json").write_text(
+            json.dumps({str(k): {hex(a): hex(b) for a, b in v.items()} for k, v in posdump.items()})
+        )
     # 대본 블록 91 — 문안 스트림 밖의 지명 표(입장 배너). scene.py 로는 안 보여 별도 경로로 얹는다.
     fn_base = new_blocks.get(field_names.BLOCK, bl[field_names.BLOCK][1])
     new_blocks[field_names.BLOCK] = field_names.new_block(fn_base, cs)
@@ -702,6 +718,20 @@ def main(check_only: bool = False) -> None:
     # 4. 체크섬 · 대조 · 출력
     rom.write("checksum", 0x18E, struct.pack(">H", common.header_checksum(rom.buf)))
     rom.verify_no_overlap()
+    nsame = hangul.verify_glyph_distinct(
+        bytes(rom.buf), tuple((cs.hangul[p], cs.hangul[b]) for p, b in halfspace.COMPOSITES)
+    )
+    print(f"  구운 글리프 중복 — 허용된 같은 묶음 {nsame}(합성 글자·원판 줄표), 그 밖 0")
+    _sc = archives.ARCHIVES["script"][0]
+    nev = scene.verify_event_tables(
+        [b for _s, b, _e in archives.blocks(orig, _sc)],
+        [b for _s, b, _e in archives.blocks(bytes(rom.buf), _sc)],
+    )
+    print(f"  씬 이벤트 표 {nev}개 — 전부 원판과 바이트까지 같다")
+    nwr = battle.verify_mid_writes(orig, bytes(rom.buf))
+    print(f"  전투 블록 코드의 문안 한복판 쓰기 {nwr}곳 — 전부 우리 롬에서도 같은 제어 바이트를 가리킨다")
+    ncall = battle.verify_calls(orig, bytes(rom.buf))
+    print(f"  전투 스트림 call·goto {ncall}개 — 전부 원판과 같은 골격의 스트림을 가리킨다")
     rom.verify_immutable()
     out_dir = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_")
     out_dir.mkdir(parents=True, exist_ok=True)
