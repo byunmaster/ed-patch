@@ -33,6 +33,10 @@ import patch_scn as S
 import patch_ui as U
 
 # 정본 검사(`scripts/check/check_canon.py`) — 어긋남은 실패로 친다(마스터 10-11 「정본검사는 모든 게임이 켜져있어야 하지 않아?」).
+# 정본(`shared/canon`)은 메뉴·호칭·시스템·전투 문구 — 장면 대사(`ED1SCN…`·`ED2SCN…`)는 정본 「문구」 검사의 범위 밖이다(마스터 10-08, PS1 어댑터와 같은 기준).
+# 같은 꼴의 원문이라도 장면 대사는 장면 문체로 옮긴다(보물상자 「宝箱の中には…」 — 정본 열쇠의 `{name}` 자리를 고정 명사 「宝箱」에 맞춰 오탐했다).
+# ⚠ 이름 검사(`check_names`)는 그대로 장면 대사를 잰다.
+CANON_SKIP = r"SCN\d"
 CANON_GATE = True
 
 # 제어부호·공백만 있고 **번역할 글자가 없는** 블록 — 분모에서 뺀다(둘 다 아니면 오탐만 는다).
@@ -92,7 +96,7 @@ def _scn_pairs(mm):
             eid = e.get("entry_id", e.get("file_offset"))
             where = f"scn:{path}#{eid}"
             site = sites.get(int(e["file_offset"], 16))
-            kr = S.canon_of(canon, jp, site)
+            kr = S.canon_of(canon, jp, site, path=path)
             yield where, jp, kr
 
 

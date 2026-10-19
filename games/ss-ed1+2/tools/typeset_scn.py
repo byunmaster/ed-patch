@@ -99,9 +99,27 @@ def _names():
     return out
 
 
+# 🔴 **병기(`은(는)`·`이(가)`·`을(를)`)는 접은 폭으로 잰다**(2026-10-17 마스터 — 보물상자 창이 짧게 끊겼다).
+#    조사 훅은 글자를 **그리기 전에** 병기를 한 음절로 접는다 — 그래서 화면에서 `을(를)`(전각 3.0)은 한 칸이다
+#    (실측: ED1 왕가의 장비 창 — 접은 폭으로 계산한 줄 끝에서 정확히 「를」이 고아가 됐다). 접기 전 폭으로 재면
+#    병기마다 2칸을 헛셈해 줄을 일찍 넘긴다(`%s은(는) 보물상자를 열었다.` 가 14.5 로 보여 두 줄이 됐다).
+JOSA = ("은(는)", "이(가)", "을(를)")
+_JOSA_RE = re.compile("|".join(re.escape(j) for j in JOSA))
+
+
+def fold_josa(s):
+    """병기 → 한 음절(폭 계산용 — 첫 글자만 남긴다)."""
+    return _JOSA_RE.sub(lambda m: m.group(0)[0], s)
+
+
+def _josa_inner(t):
+    """병기 **안쪽** 자리들(첫 글자 뒤 셋) — 여기서 끊으면 병기가 갈린다."""
+    return {i for m in _JOSA_RE.finditer(t) for i in range(m.start() + 1, m.end())}
+
+
 def width(s):
-    """전각 칸 수 — 반각은 0.5 로 센다(엔진이 그렇게 접는다)."""
-    return sum(0.5 if c.isascii() else 1 for c in s)
+    """전각 칸 수 — 반각은 0.5 로 센다(엔진이 그렇게 접는다). 병기는 접은 폭."""
+    return sum(0.5 if c.isascii() else 1 for c in fold_josa(s))
 
 
 def fits(body):
@@ -171,7 +189,11 @@ def wrap(seg):
       원문 위치를 되짚으면 어긋난다(실측 2026-08-30 — `nudge` 가 엉뚱한 자리를 잘랐다).
     """
     out, cur, w, start = [], "", 0.0, 0
+    zero = _josa_inner(seg)  # 병기 뒤 세 글자 — 접히므로 폭이 없다
     for i, ch in enumerate(seg):
+        if i in zero:
+            cur += ch
+            continue
         if ch == "\n":
             out.append((cur, start))
             # 🔴 **넘친 줄 뒤의 개행은 빈 줄을 하나 더 만든다**(2026-09-27 실기). 엔진은 줄이
@@ -327,7 +349,7 @@ def _orphans(ls):
 
 def _mark_inner(t):
     """마크업(`%c`·`%s`·`%d`) **내부**의 자리들 — 여기서 자르면 계약이 깨진다."""
-    return {i for m in MARK.finditer(t) for i in range(m.start() + 1, m.end())}
+    return {i for m in MARK.finditer(t) for i in range(m.start() + 1, m.end())} | _josa_inner(t)
 
 
 def split(jp):
@@ -489,6 +511,8 @@ _HALFW = {
     c: c - 0xFEE0
     for c in list(range(0xFF21, 0xFF3B)) + list(range(0xFF41, 0xFF5B)) + list(range(0xFF10, 0xFF1A))
 }
+_STAT_RE = re.compile(r"(?:(?<![A-Za-z])|(?<=%c))(?:EP|MP|HP)(?![A-Za-z])")  # `%cEP` 의 c 는 마크업이다  # 반각으로 바뀐 뒤의 꼴 — 다시 전각으로
+_FULLW = {c: c + 0xFEE0 for c in range(0x41, 0x5B)}
 _LEFTOVER = re.compile(r"\{[a-z]+\}|[\x00-\x09\x0b-\x1f\x7f]")
 
 
@@ -501,22 +525,96 @@ def to_saturn(kr):
     """
     for a, b in _PS1_MARKUP:
         kr = kr.replace(a, b)
-    kr = kr.translate(_HALFW)
+    # 🔴 ＥＰ·ＭＰ·ＨＰ 는 **전각을 지킨다**(번역 규칙 1-4, 마스터 10-08 — PS1 정본과 같게, 「알파벳 전부 반각」의 예외. 10-18 관리자 판정)
+    kr = _STAT_RE.sub(lambda m: m.group(0).translate(_FULLW), kr.translate(_HALFW))
     return None if _LEFTOVER.search(kr) else kr
 
 
-def typeset(jp, kr, names, why=None):
+# 🔴 **저본의 개행이 원문보다 많으면 그건 PS1 엔진이 접은 자리다**(2026-10-17 마스터 — 보물상자 창이 「세리오스는 / 보물상자를
+#    열었다. / 상자 안에는 / 레스의 잎이 / 들어 있었다.」 로 짧게 끊겼다). 사전(`line_dict`)은 문안만 담는 게 원칙인데
+#    PS1 엔진 메시지류(보물상자 등 109블록)는 PS1 이 줄을 미리 접어 `{n}` 을 박아 두었다. 그 개행을 하드 개행으로 두면
+#    창 폭을 못 채운다 — 원문(JP)이 가진 개행 수를 넘는 저본 개행은 공백으로 풀어 **어절 단위로 다시 접는다**.
+#    ⚠ 빈 줄(`\n\n`)·탭 정렬은 안 건드린다(장 끝 카드 등 — `ps1_layout` 와 같은 예외).
+def soften_breaks(jp, kr):
+    if not kr or "\n\n" in kr or "\t" in kr or kr.count("\n") <= jp.count("\n"):
+        return kr
+    return re.sub(r"(?<!\n)\n(?!\n)", " ", kr)
+
+
+def typeset(jp, kr, names, why=None, chain=False, ctl=None):
     """`(우리 블록, 못 한 이유)` — 원문 마크업을 그대로 두고 텍스트만 간다.
 
     ⚠ 마지막에 **금칙 밀어내기**를 건다(`nudge`) — 엔진이 접은 뒤 부호가 줄머리에
       떨어지는 자리를 미리 끊는다. 개행만 넣으므로 구조 계약은 그대로다.
     ⚠ `why` 에 리스트를 주면 **밀어내기가 포기한 사유**가 담긴다(계측용 — `check_engine_wrap`).
       실패 사유(둘째 반환값)와는 다른 것이다.
+    ⚠ `chain=True` 면 이어 쓰는 블록의 줄 끝 개행을 더한다(`chain_break`) — **이야기 씬 대사 창에만**
+      쓴다(`patch_scn.canon_of(path=…)`). 전투 메시지·백업 RAM 안내 창은 줄 넘김이 달라 안 건드린다.
     """
-    built, bad = _typeset(jp, space_places(kr), names)
+    built, bad = _typeset(jp, space_places(soften_breaks(jp, kr)), names)
     if built is None:
         return None, bad
-    return "%c".join(nudge(seg, why) for seg in wrap_block(built).split("%c")), None
+    out = "%c".join(nudge(seg, why) for seg in wrap_block(built).split("%c"))
+    out = chain_break(jp, out) if chain else out
+    return (ctl_newline(jp, out, ctl) if ctl else out), None
+
+
+# 🔴 **이어 쓰는 블록은 줄이 안 갈린다**(2026-10-16 실기 — 장비 메시지 셋이 한 줄로 이어졌다).
+#    `%c`(창 넘김)도 개행도 없이 끝나는 블록은 **다음 블록이 같은 창에 이어서 그려진다.** 원문은
+#    줄이 **꽉 차서 끝나** 엔진이 알아서 다음 줄로 넘겼는데(예: 「聖なるつるぎを装備しました。」 =
+#    전각 14), 우리 문안은 그 줄을 다 안 채워서(13.5) 다음 블록의 첫 글자가 **같은 줄 꼬리에**
+#    붙는다 — 「…장비했습니다.성」 / 「스러운 갑옷을 …」. 31블록(장비 셋·가게 「어서 오십시오.」 뒤
+#    「무슨 용무이십니까?」 …)이 그랬다.
+#    규칙: ① 원문이 이어 쓰는 블록이고 ② 원문 마지막 줄이 꽉 찼고(14.0 이상) ③ 원문이 문장 끝
+#    부호로 끝나고(문장 중간에서 끊긴 블록은 이어 읽히는 게 맞다) ④ 우리 마지막 줄이 14.0 을
+#    **넘지 않으면**(14.5 = 꼬리 부호가 걸친 줄은 엔진이 스스로 넘긴다 — 개행을 더하면 빈 줄)
+#    끝에 개행 하나를 둔다. 줄이 넘겨질 자리에 우리가 먼저 넘기는 것뿐이라 **문안은 안 바뀐다.**
+SENTENCE_END = ("。", "！", "？", "!", "?")
+
+# 🔴 **제어값 9(`%c` 인자) 뒤에 이어 쓰는 문장도 줄이 안 갈린다**(2026-10-17 엔진 베드 실측). 9 는 키 대기 후 **폭 2.0 의 빈 칸**을
+#    그리고 같은 줄에서 다음 글을 잇는다 — 원문은 줄이 꽉 차 끝나(14.0) 다음 문장이 저절로 다음 줄로 갔다. 우리 줄이 짧으면
+#    다음 문장이 같은 줄 꼬리에 붙는다. 9 **뒤에** 개행을 두면 새 줄에서 시작한다(앞에 두면 2.0 칸 들여쓰기가 난다). 단 우리 줄 폭 + 2.0 이
+#    14.0 을 넘으면 개행이 빈 줄을 만든다 — 그런 줄은 건드리지 않는다(이쪽은 콜사이트 패치 `patch_scn.CTL_PATCHES`).
+CTL_PAUSE_W = 2.0
+
+
+def ctl_newline(jp, built, args):
+    spj = list(MARK.finditer(jp))
+    spb = list(MARK.finditer(built))
+    if len(spj) != len(spb) or len(args) < len(spj):
+        return built
+    ins = []
+    for k, m in enumerate(spj):
+        if m.group() != "%c" or args[k] != 9:
+            continue
+        before, after = jp[: m.start()], jp[m.end() :]
+        if before.endswith(("\n", "%s")) or not after.strip("\n") or after.startswith("\n"):
+            continue
+        if not before.rstrip(" \u3000").endswith(SENTENCE_END) or _last_width(before) < COLS:
+            continue
+        b = spb[k]
+        if built[b.end() : b.end() + 1] == "\n" or _last_width(built[: b.start()]) + CTL_PAUSE_W > COLS:
+            continue
+        ins.append(b.end())
+    for at in reversed(ins):
+        built = built[:at] + "\n" + built[at:]
+    return built
+
+
+def _last_width(text):
+    """마지막 `%c` 조각이 엔진에서 접힌 **끝 줄의 폭**(전각 칸). 줄이 없으면 0."""
+    ls = lines(text.split("%c")[-1])
+    return width(ls[-1]) if ls else 0.0
+
+
+def chain_break(jp, built):
+    if not jp or jp.endswith(("%c", "\n")) or built.endswith(("%c", "\n")):
+        return built
+    if not jp.rstrip(" \u3000").endswith(SENTENCE_END):
+        return built
+    if _last_width(jp) < COLS or _last_width(built) > COLS:
+        return built
+    return built + "\n"
 
 
 # ── 어절 단위 줄바꿈 (마스터 확정 2026-09-27 — 조판 여섯 규칙은 씬까지 전 영역) ──────────
@@ -555,6 +653,10 @@ def _units(seg, tokens=None):
     tokens = _TOKENS if tokens is None else tokens
     out, i = [], 0
     while i < len(seg):
+        if seg[i : i + 4] in JOSA:  # 병기는 한 덩어리(접은 한 음절 폭)
+            out.append((_HOLE, seg[i : i + 4]))
+            i += 4
+            continue
         t = seg[i : i + 2]
         if t == "%s" and _is_subject(seg, i):
             out.append((_HOLE * _PARTY_W, t))
@@ -620,7 +722,7 @@ def _wordwrap(seg, tokens):
 def measure(t):
     """엔진 접기 모델(`wrap`)에 태울 꼴 — 색 쌍은 폭 0, 런타임 인자는 **가장 긴 값**."""
     t = _SUBJECT.sub("가" * _PARTY_W, t)
-    return t.replace("%c", "").replace("%s", "가" * 8).replace("%d", "99999")
+    return t.replace("%c", "").replace("%s", "가" * 8).replace("%d", "99999")  # 병기는 `wrap` 이 접어서 잰다
 
 
 def _inline(inner, after):
@@ -685,7 +787,9 @@ def wrap_block(built):
 #   정본이 게임 쪽에 둘로 갈려 있다. `shared/` 로 올릴 후보(관리자에게 넘김, 4-D).
 _NB = "\ue014"  # 붙임 공백 자리표 — 조판 뒤 공백으로 되돌린다(화면에 안 나간다)
 _SENT = {"%s": "\ue010", "%S": "\ue011", "%d": "\ue012", "%c": "\ue013"}  # %S = 주어 파티원
+_JOSA_PH = dict(zip(JOSA, ("\ue015", "\ue016", "\ue017")))  # 병기 자리표 — 접은 한 칸
 _SENT_W = {"\ue010": 8.0, "\ue011": float(_PARTY_W), "\ue012": 2.5, "\ue013": 0.0, _NB: 0.5}
+_SENT_W.update({v: 1.0 for v in _JOSA_PH.values()})
 _NUM_UNIT = re.compile(r"(?<=[0-9\ue012]) (?=Gold)")  # PS1 `_NUM_UNIT` — 금액과 단위
 _KATA = re.compile(r"[ァ-ヴー]{2,}")
 
@@ -749,8 +853,11 @@ def _keep():
 _KEEP = None
 
 
-def ps1_layout(seg):
-    """글줄 하나를 PS1 과 같게 조판한다. 새턴 제약을 못 지키면 None."""
+def ps1_layout(seg, cols=float(COLS)):
+    """글줄 하나를 PS1 과 같게 조판한다. 새턴 제약을 못 지키면 None.
+
+    `cols` — 줄 폭. 런타임 인자가 든 줄이 14.5 로 걸치면 한 칸 좁혀(13.5) 다시 돈다(아래).
+    """
     from text import krwrap
 
     if "\n\n" in seg or "\t" in seg or any("\ue000" <= c <= "\uf8ff" for c in seg):
@@ -762,12 +869,14 @@ def ps1_layout(seg):
     t = _SUBJECT.sub("%S", body)
     for k, v in _SENT.items():
         t = t.replace(k, v)
+    for k, v in _JOSA_PH.items():
+        t = t.replace(k, v)
     for n in _keep():
         t = t.replace(n, n.replace(" ", _NB))
     t = _NUM_UNIT.sub(_NB, t)
     pages = krwrap.wrap_pages(
         t,
-        float(COLS),
+        cols,
         WIN_ROWS,
         break_char="\n",
         cell_width=_cell,
@@ -777,6 +886,11 @@ def ps1_layout(seg):
     )
     ls = _hang_merge([ln for pg in pages for ln in pg])
     hung = [_hung(ln) for ln in ls]
+    # 🔴 런타임 인자(`%s`·`%d`)가 든 줄은 **걸친 줄로 치지 않는다**(2026-10-17). 걸친 줄은 개행을 안 넣고 엔진이 14.5 에서
+    #    스스로 넘기길 기대하는데, 인자는 **가장 긴 값**으로 잰 폭이라 실제 이름이 짧으면 줄이 안 차서 다음 문장이
+    #    「열었다.상자」 처럼 공백 없이 붙는다. 그런 줄은 이 배치를 버리고 어절 단위 개행(`wordwrap`)으로 간다.
+    if any(h and any(c in ln for c in ("\ue010", "\ue011", "\ue012")) for h, ln in zip(hung, ls, strict=True)):
+        return ps1_layout(seg, cols - 0.5) if cols == float(COLS) else None
     if len(ls) > WIN_ROWS or any(
         sum(map(_cell, ln)) > COLS and not h for ln, h in zip(ls, hung, strict=True)
     ):
@@ -802,6 +916,8 @@ def ps1_layout(seg):
 def _unsent(t):
     for k, v in _SENT.items():
         t = t.replace(v, "%s" if k == "%S" else k)
+    for k, v in _JOSA_PH.items():
+        t = t.replace(v, k)
     return t
 
 

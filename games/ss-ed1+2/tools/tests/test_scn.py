@@ -284,6 +284,26 @@ class Scn(unittest.TestCase):
         self.assertEqual(len(puts), 1)
         self.assertEqual(len(left), 1)
 
+    def test_silence_dots_rule_1_3(self):
+        """규칙 1-3 — 점 14개 침묵 줄은 「…」 5개. 다른 길이·이미 「…」 인 줄은 그대로."""
+        self.assertEqual(S.silence_dots("." * 14), "…" * 5)
+        self.assertEqual(S.silence_dots("%c병사%c\n" + "." * 14 + "%c"), "%c병사%c\n" + "…" * 5 + "%c")
+        self.assertEqual(S.silence_dots("두 달 남짓" + "." * 12), "두 달 남짓" + "." * 12)  # 열쇠 없으면 그대로
+        self.assertEqual(S.silence_dots("딸이" + "." * 12, "b9ed32bfb0b41137"), "딸이……")  # 원문 7점 → 2
+        self.assertEqual(S.silence_dots("남짓" + "." * 12, "e0553b61c5a084dd"), "남짓………")  # 원문 9점 → 3
+        self.assertEqual(S.silence_dots("…" * 5), "…" * 5)
+
+    def test_comma_rule_2_13(self):
+        """규칙 2-13 ⑨ — 연결어미 `는데·지만·만` 뒤 쉼표: 앞 절 11음절 이하면 빼고 12음절 이상이면 남긴다."""
+        self.assertEqual(S.comma_rule("찾아왔는데, 없었다."), "찾아왔는데 없었다.")  # 5음절
+        self.assertEqual(S.comma_rule("죄송합니다만, 부탁드립니다."), "죄송합니다만 부탁드립니다.")
+        long_ = "이렇게나 오랫동안 기다리고 있었는데, 정말 늦었군."  # 앞 절 12음절 이상
+        self.assertEqual(S.comma_rule(long_), long_)
+        self.assertEqual(S.comma_rule("가만, 기다려."), "가만, 기다려.")  # 부사 `가만` 은 안 본다
+        # 문장 경계 뒤에서 다시 센다
+        self.assertEqual(S.comma_rule("아주 길게 오랫동안 이야기했다. 그런데, 좋다."), "아주 길게 오랫동안 이야기했다. 그런데, 좋다.")
+        self.assertEqual(S.comma_rule("아주 길게 오랫동안 이야기했다.{p}가는데, 왔다."), "아주 길게 오랫동안 이야기했다.{p}가는데 왔다.")
+
     def test_migrate_is_deterministic(self):
         """오프셋 순으로 깐다 — 입력 순서가 달라도 같은 배치가 나와야 한다(제1원칙)."""
         mk = lambda o: (o, "칸을 넘는다", "jp", {"ptr_at": [], "raw_hex": ""}, b"y" * 4)

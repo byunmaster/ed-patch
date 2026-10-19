@@ -10,6 +10,29 @@ sys.path.insert(0, TOOLS)
 import check_text
 
 
+class Pua(unittest.TestCase):
+    def test_PUA_가_섞이면_잡히고_공백은_통과(self):
+        rows = [("p", 0, "", "약초\ue003말이군."), ("p", 1, "", "약초 말이군."), ("p", 2, "", "가\uf8ffa")]
+        self.assertEqual([h[1] for h in check_text.axis_pua(rows)], [0, 2])
+
+    def test_to_saturn_이_E003_을_공백으로(self):
+        import typeset_scn
+
+        self.assertEqual(typeset_scn.to_saturn("%s\ue003말이군."), "%s 말이군.")
+
+
+class VarLeadSpace(unittest.TestCase):
+    def test_변수_뒤_조각_첫_공백을_조판기가_안_지운다(self):
+        import typeset_scn
+
+        for jp, kr, want in (
+            ("%sだね。\n", "\x1a 말이군.", "%s 말이군."),
+            ("%d ゴールドで\n", "\x1b Gold에 사 주지.", "%d Gold에 사 주지."),
+        ):
+            out, why = typeset_scn.typeset(jp, typeset_scn.to_saturn(kr), {})
+            self.assertEqual((out, why), (want, None))
+
+
 class NameJosa(unittest.TestCase):
     def rows(self, *kr):
         return [("p", i, "", t) for i, t in enumerate(kr)]

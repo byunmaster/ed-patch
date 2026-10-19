@@ -77,9 +77,9 @@ def _scenes(mm, out):
                 continue
             site = sites.get(off)
             if site:
-                built, bad = S.canon_of(canon, jp, site), None
+                built, bad = S.canon_of(canon, jp, site, path=path), None
             else:
-                built, bad = T.typeset(jp, raw, names)
+                built, bad = T.typeset(jp, raw, names, chain=bool(S.DIALOG_RE.match(path)))
             # ⚠ 실패 사유도 담는다 — 「조판이 되던 게 안 된다」도 조판 변화다
             acc.append(f"{off:x}\x00{bad or built}")
         if acc:

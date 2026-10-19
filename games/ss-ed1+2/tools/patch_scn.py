@@ -72,6 +72,14 @@ DUMP = os.path.join(common.OUT_DIR, "scn_jp")
 _ROOT = os.path.dirname(os.path.dirname(common.GAME_DIR))
 LINE_DICT = os.path.join(_ROOT, "games", "ps1-ed1+2", "line_dict.json")
 LINE_DICT_REF = "game/ps1-ed1+2:games/ps1-ed1+2/line_dict.json"
+# 「どうも ありがとう」 · 「また来てくれよ」 · 「どれを買うんだ？」 · 「〈품목〉だね。…」 · 「ちょっと待ってくれ」
+SHOP_1018 = {
+    "29507f69cbcab430": "정말 고마워.",
+    "c29f621c8e7746c2": "또 와 줘.",
+    "6f9f9a990a77e2f8": "어느 걸 살 거야?",
+    "a00ede6f5de63402": "\ue003말이군.\n정말 고마워.",
+    "0921377dcf4a6ca7": "잠깐 기다려 줘.",
+}
 # 🔴 **본체 둘도 대사를 갖는다** — ED2 오프닝 프롤로그가 `/ED2.BIN` 안에 있다(실측: 저본이
 #    ED.BIN 419 · ED2.BIN 145 블록에 붙는다). 씬 파일이 아니라고 빼 두면 그만큼이 영영
 #    일본어로 남는다. 대신 그 둘은 **주인이 여럿**이라(시스템 메시지 · 표 · 고유명사 ·
@@ -255,7 +263,7 @@ def _movable(off, n, e, table=frozenset()):
     )
 
 
-def _needs_pack(run, canon, d, skip_offs, built, sites):
+def _needs_pack(run, canon, d, skip_offs, built, sites, path=None):
     """이 구간에 **제 칸을 넘는 블록**이 있나 — 있으면 구간을 통째로 다시 깐다."""
     if not canon:
         return False
@@ -264,7 +272,7 @@ def _needs_pack(run, canon, d, skip_offs, built, sites):
             continue
         span = (run[idx + 1][0] - off) if idx + 1 < len(run) else n
         jp = e.get("text", "")
-        kr = canon_of(canon, jp, (sites or {}).get(off))
+        kr = canon_of(canon, jp, (sites or {}).get(off), path=path)
         if kr is None or contract(kr) != contract(jp):
             continue
         if len(_encode(kr)) + 1 > span:
@@ -273,7 +281,16 @@ def _needs_pack(run, canon, d, skip_offs, built, sites):
 
 
 def rebuild(
-    run, canon, d, skip_offs=frozenset(), built=None, spare=None, sites=None, done=None, spans=None
+    run,
+    canon,
+    d,
+    skip_offs=frozenset(),
+    built=None,
+    spare=None,
+    sites=None,
+    done=None,
+    spans=None,
+    path=None,
 ):
     """`(새 바이트, [(ptr_at, 새 주소 오프셋)], [건너뛴 이유])` — 구간을 다시 깐다.
 
@@ -295,7 +312,7 @@ def rebuild(
     #    ⇒ 넘치는 구간만 **모든 옮길 수 있는 블록**을 이주 풀에 넘긴다. 배치는 `migrate` 가
     #      한다(FFD · 짝수 주소 · 인접 병합 · 못 놓은 것의 칸은 안 내주는 고정점).
     #    ⚠ **안 넘치는 구간은 손대지 않는다** — 옮길 이유가 없는데 옮기면 포인터만 흔든다.
-    packed = _needs_pack(run, canon, d, skip_offs, built, sites)
+    packed = _needs_pack(run, canon, d, skip_offs, built, sites, path)
     table = _stride_table(run) if packed else frozenset()
     for idx, (off, n, e) in enumerate(run):
         # 🔴 **블록은 자기 칸에 머문다 — 당기지 않는다.** 칸은 `(내용+NUL)` 을 4바이트
@@ -309,7 +326,7 @@ def rebuild(
         raw = bytes.fromhex(e["raw_hex"])
         jp = e.get("text", "")
         site = (sites or {}).get(off)
-        kr = None if off in skip_offs else canon_of(canon, jp, site)
+        kr = None if off in skip_offs else canon_of(canon, jp, site, path=path)
         use = raw
         if kr is not None:
             if contract(kr) != contract(jp):
@@ -383,13 +400,57 @@ def all_texts(mm=None):
             continue
         sites = sites_for(path)
         for e in got[1]:
-            kr = canon_of(canon, e.get("text", ""), sites.get(int(e["file_offset"], 16)))
+            kr = canon_of(canon, e.get("text", ""), sites.get(int(e["file_offset"], 16)), path=path)
             if kr:
                 out.append(kr)
     if close:
         mm.close()
         _f.close()
     return out
+
+
+_SILENCE = re.compile(r"(?<!\.)\.{14}(?!\.)")
+
+
+# 🔴 문장 속 점 꼴 — **원문(JP) 점 개수 n → 「…」 round(n/3)개**(규칙 1-3). 우리 문안의 ASCII 점 수(12개)가 아니라 원문 점 수로 센다.
+#    열쇠 = 그 줄 원문의 line_key. 값 = 원문 점 개수에서 나온 「…」 개수(9점 → 3 · 7점 → 2).
+_DOTS_FROM_JP = {"e0553b61c5a084dd": 3, "b9ed32bfb0b41137": 2}
+
+
+def silence_dots(text, key=None):
+    """🔴 규칙 1-3 — 원문 점 n개 → 「…」 round(n/3)개(마스터 10-18).
+
+    · 점만 14개인 침묵 줄(원문 14점) → 「…」 5개. 저본 읽는 자리에서 바꾼다 — PS1 이 같은 값으로 고쳐 머지되면 할 일이 없다.
+    · 문장 속 12개 꼴은 `_DOTS_FROM_JP` 의 열쇠로 원문 점 수에서 센다(없는 열쇠는 안 건드린다).
+    """
+    text = _SILENCE.sub("…" * 5, text)
+    n = _DOTS_FROM_JP.get(key)
+    if n:
+        text = re.sub(r"\.{12}", "…" * n, text)
+    return text
+
+
+_CONNECT = re.compile(r"(는데|지만|(?<=[다네지세니련])만),")
+_BOUNDARY = re.compile(r"\{p\}|\{n\}|%c|[\n.!?…]")
+
+
+def comma_rule(text):
+    """🔴 규칙 2-13 ⑨(마스터 10-18) — `~는데,` `~지만,` `~만,` 뒤 쉼표는 **앞 절이 11음절 이하면 뺀다**(12음절 이상이면 남긴다).
+
+    앞 절 = 같은 문장의 처음(개행·창 넘김·문장부호 뒤)부터 그 어미까지의 한글 음절. 연결어미 `만` 은 앞이 서술 어미(다·네·지·세·니·련)일 때만
+    본다 — `가만,` `다만,` 같은 부사는 건드리지 않는다. PS1 이 같은 규칙으로 저본을 고쳐 머지되면 이 함수는 할 일이 없다(쉼표가 이미 없다).
+    """
+    out, last = [], 0
+    for m in _CONNECT.finditer(text):
+        cut = 0
+        for b in _BOUNDARY.finditer(text, 0, m.start()):
+            cut = b.end()
+        syl = len(re.findall(r"[가-힣]", text[cut : m.end() - 1]))
+        if syl <= 11:
+            out.append(text[last : m.end() - 1])  # 쉼표만 뺀다
+            last = m.end()
+    out.append(text[last:])
+    return "".join(out)
 
 
 def load_canon(quiet=False):
@@ -420,6 +481,11 @@ def load_canon(quiet=False):
         raw, where = r.stdout, f"game/ps1-ed1+2 {sha}"
     lines = json.loads(raw)["lines"]
     got = {k: v["t"] for k, v in lines.items() if isinstance(v, dict) and v.get("t")}
+    # 🔴 상점 문구 — 원문 말투를 따라 줄마다(마스터 10-18 「상점 문구 ok」). PS1 브랜치에는 들어갔으나
+    #    main 에 머지되기 전이라 이 트리의 사전은 옛 값이다. **머지 뒤 사전이 같은 값이 되면 이 표를 걷는다.**
+    for k, v in SHOP_1018.items():
+        if k in got:
+            got[k] = v
     # 🔴 **새턴 전용 문안을 덮어 얹는다** — PS1 사전이 영영 못 채우는 자리다(781블록:
     #    이식판이 갈린 문안 763 + 저작권 분류로 막힌 19). 겹치면 우리 것이 이긴다.
     # ⚠ **정본 이름과 통째로 같은 블록**은 사전을 안 거친다 — 아이템·지명이 한 블록으로
@@ -431,6 +497,7 @@ def load_canon(quiet=False):
     got.update(add)
     ours = load_ours()
     got.update(ours)
+    got = {k: comma_rule(silence_dots(v, k)) for k, v in got.items()}
     if not quiet:
         print(
             f"  저본 {len(got):,}원문 — {where} + 정본 이름 {len(add):,} + 새턴 전용 {len(ours):,}"
@@ -530,7 +597,7 @@ def load_ours():
 _NAMES = None
 
 
-def _canon_get(canon, jp, jp_mark=None, why=None):
+def _canon_get(canon, jp, jp_mark=None, why=None, chain=False, ctl=None):
     """원문 → **조판까지 끝난** 우리 블록. 없거나 조판이 안 되면 None.
 
     🔴 사전은 **문안만** 담는다(화자·창 전환·개행이 없다). 그대로 넣으면 구조 계약이
@@ -551,7 +618,7 @@ def _canon_get(canon, jp, jp_mark=None, why=None):
         _NAMES = typeset_scn._names()
     import typeset_scn
 
-    built, _bad = typeset_scn.typeset(jp_mark or jp, kr, _NAMES, why)
+    built, _bad = typeset_scn.typeset(jp_mark or jp, kr, _NAMES, why, chain, ctl)
     return built
 
 
@@ -570,20 +637,43 @@ def sites_for(path):
     return _SITES.get(path, {})
 
 
-def canon_of(canon, jp, site=None, why=None):
+DIALOG_RE = re.compile(r"^/BIN/ED[12]SCN\d+\.BIN$")
+
+
+# 🔴 **콜사이트 인자(제어값) 패치** — `블록 오프셋 → [(코드 자리, 원본 명령어, 새 명령어)]`. 그 블록을 **실제로 번역했을 때만** 쓴다.
+#    `%c` 는 sprintf 인자 한 바이트(제어코드)다(`docs/reference/our-findings.md`). 제어값 9 는 「키 대기 + 폭 2.0 의 빈 칸」이라
+#    한 줄이 꽉 차게 끝나는 일본어 문안을 전제로 다음 문장을 같은 줄에 이어 붙인다 — 한국어 줄 폭에선 이어 붙은 줄이 꼬이고
+#    빈 칸이 줄머리에 남는다(ED1 왕가의 장비 셋 — 마스터 10-17 캡처). **10(개행, 대기 없음)으로 바꿔 한 창에 세 줄**이 한 번에 뜬다
+#    (ED2 장비와 같은 모양, 엔진 베드 실측). 8(쪽 넘김)은 키를 세 번 눌러야 해서 안 갔다.
+#    ⚠ `mov #9,r2` 하나를 두 인자가 같이 쓴다(밀어 넣기 둘) — 그 명령어 하나가 둘을 다 바꾼다.
+CTL_PATCHES = {
+    "/BIN/ED1SCN01.BIN": {0x1B84: [(0x20F6, 0xE209, 0xE20A)]},
+}
+
+
+def canon_of(canon, jp, site=None, why=None, path=None):
     """조판까지 끝난 우리 블록 — 주입 쌍이 있으면 되살렸다 되돌린다.
 
     🔴 **`_canon_get` 을 직접 부르지 않는다.** 부르는 자리가 넷인데(재삽입 · 슬롯 계획 ·
        집계 · 이주) 한 곳만 빠뜨리면 **그 자리에서만 이름이 일본어**가 되거나 글리프가
        계획에서 빠진다(화면에서 글자가 사라진다).
     """
+    # 🔴 `path` 를 주면 그 파일이 **이야기 씬**인가를 본다 — 이어 쓰는 블록의 줄 끝 개행은 씬 대사 창에만
+    #    넣는다(`typeset_scn.chain_break`). 안 주면(None) 넣지 않는다 — 그래서 **빌드와 검사가 같은
+    #    결과를 보려면 모두 path 를 줘야 한다.**
+    chain = bool(path and DIALOG_RE.match(path))
+    ctl = None
+    if chain and not site:  # 주입 쌍 블록은 `%c` 수가 달라 인자를 못 맞춘다
+        import callargs
+
+        ctl = callargs.for_file(path).get(jp)
     if not site:
-        return _canon_get(canon, jp, why=why)
+        return _canon_get(canon, jp, why=why, chain=chain, ctl=ctl)
     import inject_pairs as ip
 
     pairs = sorted((int(i), ch) for i, ch in site["glyphs"].items())
     jp_mark, tails = ip.restore(jp, pairs)
-    kr = _canon_get(canon, jp, jp_mark, why)
+    kr = _canon_get(canon, jp, jp_mark, why, chain)
     return None if kr is None else ip.reinsert(kr, tails)
 
 
@@ -655,6 +745,16 @@ def _hook_span(path):
         return None
     off, size = got
     return off, off + size  # 🔴 **0런 전체**를 훅 것으로 본다 — 길이는 문안 따라 자란다
+
+
+def _hook_pool(path):
+    """조사 훅이 이주 풀에 내준 틈 — `[(오프셋, 길이)]`. ⚠ 훅 쪽이 자리를 정한다(`patch_josa_hook.pool_spare`)."""
+    try:
+        import patch_josa_hook as H
+    except Exception:  # noqa: BLE001
+        return []
+    got = H.pool_spare(path)
+    return [got] if got else []
 
 
 def _measured_free(path):
@@ -982,9 +1082,11 @@ def main():
             matched += sum(
                 1
                 for o, _n, e in run
-                if o not in mine and canon_of(canon, e.get("text", ""), isites.get(o))
+                if o not in mine and canon_of(canon, e.get("text", ""), isites.get(o), path=path)
             )
-            blob, moves, dropped = rebuild(run, canon, d, mine, built, spare, isites, done, spans)
+            blob, moves, dropped = rebuild(
+                run, canon, d, mine, built, spare, isites, done, spans, path
+            )
             start = run[0][0]
             orig = d[start : start + len(blob)]
             if blob == orig:
@@ -999,7 +1101,7 @@ def main():
         pinned += sum(1 for e in entries if not e.get("ptr_at"))
         puts, mptrs, left = (
             migrate(
-                over, _base, size, bsize, list(spare) + _measured_free(path), spans, built, d
+                over, _base, size, bsize, list(spare) + _measured_free(path) + _hook_pool(path), spans, built, d
             )
             if canon
             else ([], [], over)
@@ -1023,6 +1125,10 @@ def main():
             site = isites.get(o)
             if site:
                 codes.extend((int(a, 16), int(w[1], 16)) for a, w in site["words"].items())
+            for at, old_w, new_w in CTL_PATCHES.get(path, {}).get(o, ()):
+                # 🔴 사전조건 — 원본 그 자리가 정말 기대한 명령어인가(체크리스트 2)
+                assert int.from_bytes(d[at : at + 2], "big") == old_w, f"{path} 0x{at:X} 가 원본이 아니다"
+                codes.append((at, new_w))
         injected += len(codes) // 2
         if apply:
             if not os.path.exists(dst):

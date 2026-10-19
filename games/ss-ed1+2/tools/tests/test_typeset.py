@@ -99,7 +99,7 @@ class Typeset(unittest.TestCase):
         # ⚠ 개행은 PS1 과 같은 조판(`ps1_layout` — 문장 단위·균형)이 넣은 것이다.
         #   런타임 이름은 가장 긴 값(색 쌍 안 아이템 전각 8 · 주어 파티원 4)으로 잰다.
         self.assertEqual(
-            got, "%s은(는)\n커다란 항아리를 깼다.\n항아리 안에는\n%c%s%c이(가)\n들어 있었다."
+            got, "%s은(는) 커다란\n항아리를 깼다.\n항아리 안에는\n%c%s%c이(가)\n들어 있었다."
         )
 
     def test_partial_canon_must_not_blank_the_rest(self):
@@ -349,3 +349,50 @@ class WordWrap(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+class ChainBreak(unittest.TestCase):
+    """🔴 이어 쓰는 블록(끝에 `%c`·개행이 없다)은 다음 블록이 같은 줄 꼬리에 붙는다 — 장비 메시지 셋이 한 줄로
+    이어졌다(2026-10-16 실기). 원문은 줄이 꽉 차 끝나 엔진이 넘겼으나 우리 문안은 안 채운다."""
+
+    def test_full_line_sentence_gets_a_break(self):
+        got = T.chain_break("%c聖なるつるぎを装備しました。", "%c성스러운 검을 장비했습니다.")
+        self.assertEqual(got, "%c성스러운 검을 장비했습니다.\n")
+
+    def test_hanging_tail_is_left_alone(self):
+        """꼬리 부호가 걸쳐 14.5 가 된 줄은 엔진이 스스로 넘긴다 — 개행을 더하면 빈 줄이 난다."""
+        got = T.chain_break("聖なるヨロイを装備しました。", "성스러운 갑옷을 장비했습니다.")
+        self.assertEqual(got, "성스러운 갑옷을 장비했습니다.")
+
+    def test_page_end_and_newline_end_are_left_alone(self):
+        self.assertEqual(T.chain_break("聖なるたてを装備しました。%c", "방패를 장비했습니다.%c"), "방패를 장비했습니다.%c")
+        self.assertEqual(T.chain_break("ひとこと。\n", "한마디.\n"), "한마디.\n")
+
+    def test_mid_sentence_block_keeps_reading_on(self):
+        """문장 중간에서 끊긴 블록은 이어 읽히는 게 맞다 — 개행을 넣지 않는다."""
+        got = T.chain_break("ベルガの鉱山で 落盤が起こって", "베르가 광산에서 낙반이 나서")
+        self.assertEqual(got, "베르가 광산에서 낙반이 나서")
+
+    def test_short_original_line_is_left_alone(self):
+        """원문 줄이 안 찼으면 원문도 같은 줄에 이어졌다 — 우리도 그대로."""
+        self.assertEqual(T.chain_break("はい。", "예."), "예.")
+
+    def test_only_story_scenes_get_the_break(self):
+        """전투 메시지·백업 RAM 안내 창은 줄 넘김이 달라 안 건드린다 — `chain` 은 씬 대사 창에서만 켠다."""
+        jp, kr = "聖なるつるぎを装備しました。", "성스러운 검을 장비했습니다."
+        self.assertEqual(T.typeset(jp, kr, NAMES)[0], kr)
+        self.assertEqual(T.typeset(jp, kr, NAMES, chain=True)[0], kr + "\n")
+        import patch_scn as S
+
+        self.assertTrue(S.DIALOG_RE.match("/BIN/ED2SCN06.BIN"))
+        for p in ("/ED.BIN", "/ED2.BIN", "/BIN/ED2MON03.BIN"):
+            self.assertFalse(S.DIALOG_RE.match(p))
+
+    def test_josa_is_measured_folded(self):
+        """🔴 병기는 접은 폭으로 잰다(조사 훅이 그리기 전에 한 음절로 접는다) — 접기 전 폭으로 재면 줄을 일찍 넘긴다."""
+        self.assertEqual(T.width("왕가의 검을(를)"), T.width("왕가의 검을"))
+        got, bad = T.typeset("%sは 宝箱を開けました。", "%s은(는) 보물상자를 열었다.", NAMES)
+        self.assertIsNone(bad)
+        # 접은 폭이면 한 줄(14.5 걸침)에 들 것 같지만 런타임 이름(`%s`)이 든 줄은 걸친 줄로 안 친다 — 한 어절만 내린다
+        self.assertEqual(got, "%s은(는) 보물상자를\n열었다.")
+        got, bad = T.typeset("ええ。", "예, 그렇습니다 정말로 그렇지요 맞아요 네.", NAMES)
+        self.assertIsNone(bad)

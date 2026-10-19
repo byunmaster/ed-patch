@@ -58,7 +58,7 @@ def check():
                 if not pa:
                     # ① 포인터가 없는데 우리 문안이 붙으면 **머리가 남의 것일 수 있다**
                     if off not in mine and patch_scn.canon_of(
-                        canon, e.get("text", ""), sites.get(off)
+                        canon, e.get("text", ""), sites.get(off), path=name
                     ):
                         pinned.append((name, off, (e.get("text") or "")[:20]))
                     continue
