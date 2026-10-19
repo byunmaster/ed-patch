@@ -6,7 +6,7 @@
 사전(고유명사) → 정본(UI 라벨) 순으로 찾는다. **이름 표는 게임 폴더에 없다**(마스터 2026-10-08 「자기사전 금지」) — 라벨 칸의 배치(공백 수·태그)만 `textmap/ui_layout.json`
 에 있고(한글 없음, 정본 열쇠로 가리킨다), 정본·사전에 아직 없는 값은 `PENDING`(관리자 후보 대기)에서 읽는다.
 
-- 칸 폭: 사전 값이 칸(아이템 14B)을 넘으면 ① 「의 」를 합성 글자 「의␣」(`halfspace.PUA`, 2B)로 바꾸고
+- 칸 폭: 사전 값이 칸(아이템 14B)을 넘으면 ① 「의 」·「운 」을 합성 글자 「의␣」·「운␣」(`halfspace.COMPOSITES`, 2B)로 차례로 바꾸고
   ② 그래도 넘으면 띄어쓰기를 뗀다(예전 「glossary→7칸(띄어쓰기 제거)」 규칙 그대로).
 - 몬스터 이름은 `battle.monsters()` — 같은 사전을 읽는다.
 """
@@ -85,9 +85,17 @@ def fit(value: str, width: int, name: str) -> str:
     """사전 값을 폭 `width`B 칸에 맞춘다. 못 맞추면 빌드 실패로 둔다(호출쪽이 알린다)."""
     if _bytes(value) <= width:
         return value
-    v = value.replace("의 ", halfspace.PUA, 1) if "의 " in value else value
-    if _bytes(v) <= width:
-        return v
+    v = value
+    for (
+        pua,
+        base,
+    ) in (
+        halfspace.COMPOSITES
+    ):  # 「의␣」 → 「운␣」 순으로 하나씩 녹여 본다(합성 글자 = 글자 + 반각 공백)
+        if base + " " in v:
+            v = v.replace(base + " ", pua, 1)
+            if _bytes(v) <= width:
+                return v
     v = v.replace(" ", "")
     if _bytes(v) > width:
         raise SystemExit(
@@ -99,7 +107,9 @@ def fit(value: str, width: int, name: str) -> str:
 # ── 임시: 정본·사전에 아직 없는 값 — 관리자에게 후보로 올렸다(마스터 2026-10-08 「자기사전 금지」) ──────────────
 # 열쇠 = `<범주>:<원문>`(범주는 정본 `ui`·`chapter` / 사전 `person` / 표 예외 `table`). 관리자가 main 정본에 올리면
 # 읽는 쪽이 정본 값을 먼저 쓰므로 **그때 이 줄을 지운다**(`check_own_tables.py` 가 남아 있으면 알린다).
-PENDING: dict[str, str] = {}  # 정본·사전에 올릴 후보 대기 — 지금은 비었다(마스터 2026-10-08). 새로 생기면 열쇠 `<범주>:<원문>` 으로 적고 관리자에게 올린다
+PENDING: dict[
+    str, str
+] = {}  # 정본·사전에 올릴 후보 대기 — 지금은 비었다(마스터 2026-10-08). 새로 생기면 열쇠 `<범주>:<원문>` 으로 적고 관리자에게 올린다
 
 
 def _layout() -> dict:
@@ -145,7 +155,10 @@ def names(orig: bytes | None = None) -> dict:
         tbl = out.setdefault(cat, {})
         for i, (_pos, raw) in enumerate(recs[cat]):
             jp = tables.decode(raw).strip()
-            v, src = PENDING.get(f"table:{cat}:{jp}"), "pending"  # 표 예외(사전과 다르게 쓰기로 한 칸)가 먼저
+            v, src = (
+                PENDING.get(f"table:{cat}:{jp}"),
+                "pending",
+            )  # 표 예외(사전과 다르게 쓰기로 한 칸)가 먼저
             if v is not None:
                 pass
             elif cat in CANON_FIRST:
@@ -167,7 +180,9 @@ def names(orig: bytes | None = None) -> dict:
             if cat in recs:
                 jp = tables.decode(recs[cat][int(i)][1]).strip()
             else:  # 그래픽 셀 낱말(타이틀) — 원문이 롬 표에 없다: 템플릿의 열쇠가 원문이다
-                jp = next(t.split(":", 1)[1] for t in tpl if isinstance(t, str) and t.startswith("="))
+                jp = next(
+                    t.split(":", 1)[1] for t in tpl if isinstance(t, str) and t.startswith("=")
+                )
             tbl[i] = {"jp": jp, "ours": compose(tpl), "src": "canon"}
     return out
 

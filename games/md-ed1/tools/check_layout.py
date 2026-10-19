@@ -41,7 +41,7 @@ T = common.GAME_DIR / "textmap"
 
 def width(s: str) -> int:
     return sum(
-        FULL + halfspace.EXTRA_PX if c == halfspace.PUA else HALF if ord(c) < 0x80 else FULL
+        FULL + halfspace.EXTRA_PX if c in halfspace.PUAS else HALF if ord(c) < 0x80 else FULL
         for c in s
     )
 

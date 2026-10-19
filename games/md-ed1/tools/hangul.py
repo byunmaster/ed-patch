@@ -304,6 +304,8 @@ def needs_glyph(ch: str, keep_codes: list[int]) -> bool:
     """새 글리프가 필요한 글자 — 한글, 그리고 원본 표에도 ASCII 에도 없는 기호(…‘’“” 등)."""
     if is_hangul(ch):
         return True
+    if ch in QUOTES_HALF:
+        return False
     if 0x20 <= ord(ch) < 0x7F or ch in "\n\f":
         return False
     try:
@@ -398,6 +400,8 @@ class Charset:
     def encode_char(self, ch: str) -> bytes:
         if ch in self.hangul:
             return struct.pack(">H", self.hangul[ch])
+        if ch in QUOTES_HALF:
+            return bytes([QUOTES_HALF[ch]])  # 반각(리소스 1) 따옴표 — 번역 규칙 1-2
         if 0x20 <= ord(ch) < 0x7F:
             if ord(ch) not in self.half:
                 raise SystemExit(
@@ -496,8 +500,45 @@ PERIOD_FILL_GALMURI = ["........"] * 11 + ["..#....."] + ["........"] * 2
 COMMA_FILL_GALMURI = ["........"] * 11 + ["..#....."] + [".#......"] + ["........"]
 # MD_PUNCT_SRC=original 로 되돌릴 수 있는 손잡이는 남긴다(비교·회귀용) — 정본은 galmuri.
 PUNCT_SRC = _os.environ.get("MD_PUNCT_SRC", "galmuri")
+# 따옴표 “ ” 는 반각(마스터 10-19, 번역 규칙 1-2) — 리소스 1 의 안 쓰는 ASCII 자리(`·~)를 빌려 글리프를 넣고
+# 문안의 “ ” 를 그 바이트로 낸다. 잉크는 여는 쪽은 오른쪽, 닫는 쪽은 왼쪽(뒤·앞 글자에 붙도록).
+QUOTES_HALF = {"“": 0x60, "”": 0x7E}
+QUOTE_OPEN_FILL = [
+    "........",
+    "........",
+    "...#..#.",
+    "..#..#..",
+    "..##.##.",
+    "..##.##.",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+]
+QUOTE_CLOSE_FILL = [
+    "........",
+    "........",
+    ".##.##..",
+    ".##.##..",
+    "..#..#..",
+    ".#..#...",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+]
 EXTRA_R1 = {
     0x28: PAREN_L_FILL,
+    QUOTES_HALF["“"]: QUOTE_OPEN_FILL,
+    QUOTES_HALF["”"]: QUOTE_CLOSE_FILL,
     0x29: PAREN_R_FILL,
     0x2C: (lambda: COMMA_FILL_GALMURI if PUNCT_SRC == "galmuri" else COMMA_FILL),
 }
