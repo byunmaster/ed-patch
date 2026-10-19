@@ -61,7 +61,7 @@ DICT_CATEGORY = {
 }
 
 
-def check_tokens(kr: str, tokens: list[str]) -> str | None:
+def check_tokens(kr: str, tokens: list[str], extra_pages: int = 0) -> str | None:
     """번역문의 토큰 계약. **제어 토큰(`<..>`, `<@>` 포함)은 전부 같은 순서로** 있어야 한다 — 빠지면 분기·페이지가
     사라진다. **사전·치환 토큰(`{..}`)은 빼도 되고 어순을 바꿔도 된다**(글자만 찍는다 — 「キャリオンク{ロー}ラー」처럼
     이름 조각을 재활용한 자리는 번역문이 통째로 쓰는 게 맞다). 원문에 없는 토큰을 더하면 안 된다."""
@@ -72,6 +72,13 @@ def check_tokens(kr: str, tokens: list[str]) -> str | None:
     color = ("<E3>", "<E1>")
     g = [t for t in ctrl_got if t not in color]
     e = [t for t in ctrl_exp if t not in color]
+    # 쪽 나눔 — 문안이 창에 안 들어가 원문에 없는 `<FF>` 를 더한 조각은 `extra_pages`(정본 조각 필드)만큼 더 있어도 된다(마스터 10-19, 론도항구 신부).
+    # 어느 `<FF>` 가 더해진 것인지는 모르니 하나를 빼서 기대와 같아지면 통과다(그때 비교는 더한 쪽을 뺀 열로).
+    if extra_pages == 1 and g.count("<FF>") == e.count("<FF>") + 1:
+        if any(t == "<FF>" and g[:i] + g[i + 1 :] == e for i, t in enumerate(g)):
+            ctrl_got = [t for t in ctrl_got if t in color]  # 색 쌍 몫만 남겨 아래 비교에 들어간다
+            ctrl_exp = [t for t in ctrl_exp if t in color]
+            g = e = []
     if ctrl_got != ctrl_exp and (g != e or any(ctrl_got.count(c) < ctrl_exp.count(c) for c in color)):
         return f"제어 토큰이 다르다: 기대 {ctrl_exp} 실제 {ctrl_got}"
     dict_exp = [t for t in tokens if t.startswith("{")]
@@ -357,7 +364,7 @@ def check() -> dict:
         if not s:
             unknown += 1
             continue
-        err = check_tokens(v["kr"], s["tokens"])
+        err = check_tokens(v["kr"], s["tokens"], v.get("extra_pages", 0))
         if err:
             bad.append((k, err))
     gl = check_glossary()

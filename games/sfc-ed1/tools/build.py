@@ -961,6 +961,7 @@ def kr_items(
     dmap = namesrc.dict_map(rom)
     dict_kr = {k: v["kr"] for k, v in dmap.items() if v.get("kr")}
     texts = [v["kr"] for v in tmap.values() if v.get("kr")] + list(dict_kr.values())
+    texts += [v["pointer_tail"]["text"] for v in tmap.values() if v.get("pointer_tail")]  # 포인터 전용 별도 메시지의 글자
     mmap = namesrc.menus()
     texts += [v["kr"] for v in mmap.values() if v.get("kr")]
     # ⚠ `battle_ui.json` 도 **화면에 나가는 문안**이다 — 고정 칸 문자열·이름 상자·머리 상자.
@@ -1050,6 +1051,13 @@ def kr_items(
         ci = 0
         li = 0
         seg_new_start = len(new)
+        # 쪽 나눔(정본 조각 필드 `extra_pages`·`extra_ff`, 마스터 10-19) — 원문에 없는 `<FF>` 는 번역문 `<FF>` 중 `extra_ff`(1부터, 몇 번째인가)번째를 1바이트 새 항목으로 낸다
+        # (순서 짝짓기에 맡기면 더한 `<FF>` 가 원문 `<FF>` 뒤 제어를 끌어와 쪽 하나가 조용히 사라진다 — 신부 줄에서 발견).
+        extra_ff = int(entry.get("extra_ff", 0))
+        extra_code = int(entry.get("extra_code", "FF"), 16)  # 더한 쪽 나눔의 바이트 — `E0`=같은 메시지 안에서 키를 기다린 뒤 지우고 이어 읽는다 · `FF`=메시지 끝(그 뒤는 포인터 표의 다음 번호)
+        ff_seen = 0
+        if extra_ff and extra_code == 0xFF:  # 🔴 `$FF` 는 메시지 끝이다 — 더한 쪽은 포인터 표 어느 번호도 안 가리켜 영영 안 뜬다(2026-10-19, 신부 02A7 실화면). 쪽 더하기는 `$E0` 만 허용
+            stats["errors"].append((sid, "원문에 없는 쪽 나눔을 `$FF` 로 더할 수 없다 — extra_code: \"E0\"(같은 메시지 안 쪽 넘김)만 허용"))
         for kind, *v in enc.parts:
             if kind == "bytes":
                 seg_of[len(new)] = si
@@ -1065,6 +1073,13 @@ def kr_items(
                     fake_off -= 1
             elif kind == "ctrl":
                 m_ = re.fullmatch(r"<([0-9A-F]{2})>", v[0])
+                if extra_ff and v[0] == "<FF>":
+                    ff_seen += 1
+                    if ff_seen == extra_ff:  # 더한 쪽 나눔 — 원문 항목을 먹지 않는다
+                        seg_of[len(new)] = si
+                        new.append(script.Item(fake_off, "raw", -1, bytes([extra_code])))
+                        fake_off -= 1
+                        continue
                 # 원문에 없는 제어(예: 원판이 색을 안 쓴 문안에 색 감싸기 <E3>…<E1> 를 더한다 — 10-18)는 코드가 같은 원문 제어가 차례가 아니면 **1바이트 새 항목**으로 낸다
                 if ci >= len(ctrls) or (m_ and ctrls[ci].code != int(m_.group(1), 16) and m_.group(1) in ("E3", "E1")):
                     if not m_:
@@ -1075,6 +1090,13 @@ def kr_items(
                     continue
                 it = ctrls[ci]
                 ci += 1
+                # 🔴 번역문 제어 토큰과 롬에 나가는 원문 제어 항목의 **코드가 같아야 한다** — 순서 짝짓기가 어긋나면(원문에 없는 `<FF>` 를 더하는 등) 다른 제어가
+                #    그 자리에 나가 쪽·분기가 **조용히 사라진다**(2026-10-19 신부 줄). 게이트: 토큰 코드 ≠ 항목 코드면 실패.
+                m_code = re.match(r"<([0-9A-F]{2})", v[0])
+                if m_code and int(m_code.group(1), 16) != it.code:
+                    stats["errors"].append(
+                        (sid, f"제어 토큰 {v[0]} 자리에 원문 제어 {it.code:02X} 가 나간다 — 쪽 나눔 등을 더했으면 조각 필드 extra_ff 가 필요하다")
+                    )
                 seg_of[len(new)] = si
                 new.append(it)
             else:  # label
@@ -1112,6 +1134,32 @@ def kr_items(
                 if it.off in targets_all and it.off not in label_map:
                     stats["errors"].append((sid, f"분기 목표인 사전 토큰 {tok} 이 번역문에 없다"))
         assert ci == len(ctrls) and li == len(mids), sid
+        # 🔴 포인터 전용 별도 메시지(정본 조각 필드 `pointer_tail` = {table, id, text}, 마스터 10-19 「이스터에그는 론도 항구 신부 한 자리에만」):
+        #    조각 끝(원문 END 뒤 — 흐름이 안 닿는 자리)에 새 메시지를 1바이트 항목들로 덧붙이고, 포인터 표 `table[id]` 가 **그 첫 항목**을 가리키게 한다.
+        #    공용 조각(여러 NPC 가 호출하는 신부 문안)은 보통 문안 그대로 두고, 그 번호 하나만 별도 문안을 쓰게 한다.
+        tail = entry.get("pointer_tail")
+        if tail:
+            try:
+                enc_t = encode.encode(_ts(tail["text"], common.off2snes(seg[0].off)), rep_index, dict_kr, vwf=common.VWF)
+            except ValueError as ex:
+                stats["errors"].append((sid, f"pointer_tail: {ex}"))
+                enc_t = None
+            if enc_t is not None:
+                first_key = fake_off
+                for kind, *v in enc_t.parts:
+                    if kind in ("bytes", "dict"):
+                        seg_of[len(new)] = si
+                        new.append(script.Item(fake_off, "raw", -1, v[0] if kind == "bytes" else v[1]))
+                        fake_off -= 1
+                    elif kind == "ctrl":
+                        m_t = re.fullmatch(r"<([0-9A-F]{2})>", v[0])
+                        if not m_t:
+                            stats["errors"].append((sid, f"pointer_tail 은 인자 없는 제어({v[0]})만 쓸 수 있다"))
+                            continue
+                        seg_of[len(new)] = si
+                        new.append(script.Item(fake_off, "raw", -1, bytes([int(m_t.group(1), 16)])))
+                        fake_off -= 1
+                stats.setdefault("ptr_overrides", {})[(tail["table"], int(tail["id"], 16))] = first_key
         stats["translated"] += 1
         stats["runtime_josa"] += enc.runtime_josa
         stats["jp_bytes"] += sum(it.size for it in seg)
@@ -1420,6 +1468,11 @@ class Ledger:
         return {k: len(v) for k, v in self.by_stage.items()}
 
 
+# 첫 종료 코드가 원판과 달라도 되는 메시지 — 번역문이 같은 메시지 안에 **쪽 넘김 `$E0`**(+`extra_code`)을 더한 자리(신부 02A7 — 첫 쪽 끝이 `$E0`, 마지막이 원판대로 `$FF`).
+# `$E0` 뒤 바이트는 원판 꼴(`$E4` 여부)이 아니라 더한 쪽의 머리말(`$E3`)이다. 끝 꼴(마지막 `$FF`)은 위 `extra_ff` 게이트와 코드 대조가 지킨다.
+TERMINATOR_EXEMPT = {("main", 0x02A7): "신부 이스터에그 — 번호 02A7 만 별도 메시지(`pointer_tail`, 첫 쪽 끝이 `$E0`)를 가리킨다"}
+
+
 def verify_terminators(rom: bytes, out: bytes) -> int:
     """메시지마다 **첫 종료 코드의 꼴**이 원판과 같은가 — 화면을 보는 게이트.
 
@@ -1467,6 +1520,8 @@ def verify_terminators(rom: bytes, out: bytes) -> int:
             if common.snes2off(a) < common.snes2off(text.TEXT_START):
                 continue  # 표 구간을 가리키는 항목(alt1[0] 등) — 문안이 아니다
             seen += 1
+            if (name, i) in TERMINATOR_EXEMPT:
+                continue
             wa, wb = first_end(rom, a, False), first_end(out, b, True)
             # 종료 코드와 「그 다음이 $E4 인가」만 본다 — 그 뒤 바이트는 번역으로 달라진다
             if (wa[0], wa[1] == 0xE4) != (wb[0], wb[1] == 0xE4):
@@ -1544,6 +1599,9 @@ def build_kr(
     flow = verify_flow(out, k, pk, full_place)
     k["stats"]["flow"] = flow
     n_ptr = rewrite_tables(out, place, rom)
+    for (tname, tid), key in k["stats"].get("ptr_overrides", {}).items():  # 포인터 전용 별도 메시지(`pointer_tail`)
+        tb = common.snes2off(text.MSG_TABLES[tname][0]) + 3 * tid
+        out[tb : tb + 3] = common.off2snes(full_place[key]).to_bytes(3, "little")
     # ⚠ 본체를 $FF 로 비운 뒤 그 안의 표(alt3 는 본체 구간 안에 있다)를 다시 쓴다 —
     #   **한 덩이**라 한 단계로 센다. 원장이 잡아야 할 것은 「지웠다 다시 쓰기」가 아니라
     #   **다른 단계가 남의 자리를 먹는 것**이다(2026-09-07 원장을 켜자마자 이 둘이 먼저 걸렸다).
@@ -1628,6 +1686,7 @@ def build_kr(
         "errors": len(st["errors"]),
         "error_sample": st["errors"][:6],
         "glyphs": len(k["rep"]),
+        "repertoire": [c or "" for c in k["rep"]],  # 글리프 색인 → 글자(빈 자리 ""). 짝 대조 디코더(`pairdec.py`)가 롬에서 읽은 대사 바이트를 한글로 되돌린다
         "runtime_josa_codes": st["runtime_josa"],
         "translated_jp_bytes": st["jp_bytes"],
         "translated_kr_bytes": st["kr_bytes"],

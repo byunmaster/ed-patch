@@ -26,6 +26,7 @@
 같은 것 하나를 그대로 쓴다(오프닝·인게임은 동시에 안 돌아 충돌하지 않는다).
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -60,7 +61,7 @@ CALL_SITE = 0x02DE0B  # JSR $E784 → JSR $FE52
 # ✅ 지금 해법(10-17) — **쪽 지우기 직전 스냅**: `$02:E327`(`LDA $1777 / BNE` — 칸 배열을 `$10` 으로 지우는 쪽 시작 처리)의 `LDA $1777`
 #    을 `JSR $FE80`(스텁 `JSL pagesnap / LDA $1777 / RTS`)으로 돌려, 지우기 **직전** 칸 배열(= 아직 화면에 있는 앞 쪽)을 `V_PREV` 로
 #    복사한다. 슬롯 배정(`alloc`·`vwf_newslot`)이 `vwf_live` 로 `V_PREV` 의 슬롯을 건너뛰므로 새 글자가 앞 쪽 타일을 덮지 않는다.
-#    플러시가 필요 없다. (슬롯이 모자라면 `al_try` 가 한 바퀴 뒤 보호를 포기한다 — 앞 쪽 끝 글자가 잠깐 깨질 수 있다.)
+#    플러시가 필요 없다. (슬롯이 모자라면 한 바퀴 뒤 **앞 쪽** 보호만 포기한다(`V_LM`) — 앞 쪽 끝 글자가 잠깐 깨질 수 있다. 지금 쪽 칸은 끝까지 지킨다.)
 SNAP_SITE = 0x02E327
 SNAP_SITE_ORIG = bytes([0xAD, 0x77, 0x17])  # LDA $1777
 # 🔴 쪽 첫머리의 개행(10-18 전투 일괄에서 발견): 원판 개행 핸들러(`$02:DE4C`)는 `$173B` 로 줄 번호를 **나눗셈**으로 구하는데 쪽을 막 지운 뒤 값이 `$FF`(=255)
@@ -150,6 +151,18 @@ NMI_STUB = 0x00FF20  # 뱅크 $00 빈 자리 160B
 NMI_ORIG = 0xACA9
 QN = 16  # 글리프 큐 칸 수(2의 거듭제곱)
 DRAIN_MAX = 8  # 한 프레임에 올릴 글리프 수 — 32B×2 씩이라 여유 있다
+# 🔴 슬롯 한도(2026-10-20 qa 「기다 . 주시옵소서」): 한 쪽이 쓰는 슬롯은 합성 칸 수(칸 배열 17×4 = 68)가 상한이고, 거기에 고정 칸(HUD 지명·파티 이름 — 실측 최대 2, 메뉴에선 더)을
+#    예산으로 얹은 값이 슬롯 수 안에 들어야 **지금 쪽은 반드시 자기 슬롯을 갖는다**(앞 쪽 사본 보호는 `V_LM` 2단계로 양보). 넘으면 빌드가 선다.
+PAGE_CELLS = 68
+PIN_BUDGET = 32
+PHASE2 = os.environ.get("ED_NO_PHASE2") != "1"  # 조사용: 2단계 배정을 끄고 옛 동작(한 바퀴 실패 시 그냥 뺏기)과 대조한다 — 시험 빌드 전용
+
+
+def slot_budget_problems(nslot: int) -> list[str]:
+    need = PAGE_CELLS + PIN_BUDGET
+    return [f"슬롯 {nslot}개 < 쪽 칸 {PAGE_CELLS} + 고정 칸 예산 {PIN_BUDGET} = {need} — 지금 쪽이 슬롯을 뺏긴다"] if nslot < need else []
+
+
 REALLOC_MARGIN = 20  # 캐시 히트인데 남은 수명이 이만큼 미만이면 새 슬롯으로 옮긴다(`alloc` 주석)
 
 # 🔴 **여섯째 문 — 오프닝(D1)은 인게임과 완전히 다른 경로다**(2026-09-15 실기 확정, status 13절).
@@ -399,19 +412,16 @@ def check_crawl_digit_gap() -> None:
 def num_glyph_table() -> tuple[bytes, bytes]:
     """원판 시트의 숫자 0~9 그림(1bpp 16행) → (그림 160B, 진행 폭 10B).
 
-    원판 숫자는 8px 칸 안에 왼쪽 여백 1열(「1」은 2열)을 두고 앉는다 — 앞 글자와 반각 공백만 두면 간격이 반각보다 넓어 보인다(마스터 10-10 「EP  1」).
-    그림을 **왼쪽 끝으로 붙이고**(잉크 시작 0열) 진행 폭 = 잉크 폭 + `ORIG_PAD`(2) 로 둔다. 숫자 그림은 원판 시트 그대로(마스터 10-11 「원판이 더 임팩트」).
-    혼합 팔레트로 색 칸 정렬이 필요 없어져 가변 폭이 된다."""
+    🔴 **원판 그대로**(마스터 10-19 「굵은걸로 통일하자」): 그림은 시트 그대로(잉크 1~6열 — 「1」만 2~5열, 앞뒤 여백 1px)이고 진행 폭은 8px 다.
+    원판 대사 렌더러가 숫자를 시트 타일 하나(8px 전진)로 찍는다 — 원판 JP 캡처(v0891 「ゲイル3せい」)의 숫자 타일이 시트 그림과 픽셀 단위로 일치한다.
+    예전엔 그림을 왼쪽 끝으로 붙이고 진행 = 잉크+2 로 둬 {DC} 숫자만 앞 글자에 붙고 뒤가 벌어졌다(왼쪽 쏠림)."""
     import hangul_font
 
     out = bytearray()
     adv = bytearray()
     for c in range(10):
-        rows = hangul_font.render_latin_orig(str(c))
-        cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
-        lo, hi = min(cols), max(cols)
-        out += bytes((r << lo) & 0xFF for r in rows)
-        adv.append(min(8, hi - lo + 1 + ORIG_PAD))
+        out += bytes(hangul_font.render_latin_orig(str(c)))
+        adv.append(8)
     return bytes(out), bytes(adv)
 
 
@@ -425,7 +435,7 @@ def raw_glyph_tables() -> tuple[bytes, bytes]:
     def ink_adv(ch: str) -> int:
         rows = hangul_font.render_latin_orig(ch)
         cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
-        return min(8, max(cols) + 1 + ORIG_PAD)  # 잉크 시작 열은 그림 그대로(왼쪽 여백 1열 포함)
+        return 8  # 원판 그대로 — 영문도 시트 타일 하나(8px 전진, 마스터 10-19 「숫자 영문은 원문 그대로」)
 
     return hook_vwf.rawtab(
         encode.KR_TABLE,
@@ -489,8 +499,13 @@ def build_payload(
         "V_PT": vb + 39,  # 8B: NMI 팔레트 임시(배경·흰·하늘·노랑 각 2B)
         "V_WK": vb + 47,  # 1 = 지금 그림이 얹히는 칸이 혼합 칸 — 흰 글자면 흰 잉크 마스크에도 쓴다
         "V_PREV": vb + 48,  # 68B: 고정 칸 창(name13)이 칸 배열을 덮기 직전의 사본 — 아직 화면에 있는 앞 창의 슬롯을 `vwf_live` 가 지킨다
+        # 🔴 슬롯 배정 2단계(2026-10-20 qa 「기다 . 주시옵소서」 — 글리프 누락): 0 = 지금 쪽 칸 **과** 앞 쪽 사본(`V_PREV`)을 지킨다 · 1 = **지금 쪽 칸만** 지킨다.
+        #    쪽이 가득(칸 68)이고 앞 쪽도 가득이면 150 슬롯 중 고정 칸을 뺀 나머지가 모자라 한 바퀴 돌아도 빈 슬롯이 없었고, 옛 코드는 그때 **지금 쪽 칸의 슬롯을 그냥 뺏었다**
+        #    (앞 줄 글자가 뒷 글자 그림으로 바뀜 — 빠른 속도에서 앞 쪽이 화면에 남아 보호가 필요한 경로라 쪽 사이 직전 대사 순서에 따라 **가끔** 터졌다).
+        #    앞 쪽 보호는 포기할 수 있어도(앞 쪽 끝 글자가 잠깐 깨질 뿐) 지금 쪽은 못 포기한다 — 한 바퀴 실패하면 모드 1 로 다시 돈다.
+        "V_LM": vb + 116,
     }
-    var_end = vb + 116
+    var_end = vb + 117
     if var_end - VAR >= 741:
         raise SystemExit(f"WRAM 무손상 구간(741B)을 넘는다: {var_end - VAR}B (슬롯 {nslot}개)")
     assert len(vram) == nslot
@@ -1437,6 +1452,9 @@ def build_payload(
     a.jmp(addr="al_ret", mode="abs")  # `bra` 로는 안 닿을 수 있다 — 아래 al_miss 본문이 길다
 
     a.label("al_miss")
+    if vwf:
+        a.lda(imm=0x00)
+        a.op("sta", addr=kv["V_LM"], mode="long")  # 모드 0: 지금 쪽 + 앞 쪽 보호(`vwf_live`)
     a.lda(imm=nslot)
     a.op("sta", addr=V_T0, mode="long")  # 한 바퀴 넘게 돌지 않게(전부 고정일 리는 없지만)
     a.label("al_try")
@@ -1472,6 +1490,14 @@ def build_payload(
     a.dec()
     a.op("sta", addr=V_T0, mode="long")
     a.bne(label="al_try")
+    if vwf and PHASE2:  # 한 바퀴 다 보호 대상 — 앞 쪽 보호를 포기하고 **지금 쪽 칸만** 지키며 한 바퀴 더(모드 1). 모드 1 에서도 실패하면(지금 쪽이 슬롯 전부 — 불가능에 가깝다) 그냥 쓴다
+        a.op("lda", addr=kv["V_LM"], mode="long")
+        a.bne(label="al_take")
+        a.lda(imm=0x01)
+        a.op("sta", addr=kv["V_LM"], mode="long")
+        a.lda(imm=nslot)
+        a.op("sta", addr=V_T0, mode="long")
+        a.jmp(addr="al_try", mode="abs")
     a.label("al_take")
     a.op("lda", addr=V_NEXT, mode="long")
     a.cmp(imm=nslot)
@@ -1514,6 +1540,9 @@ def build_payload(
     a.op("sta", addr=owner_lo, mode="longx")
     a.op("lda", addr=V_IDX + 1, mode="long")
     a.op("sta", addr=owner_hi, mode="longx")
+    if vwf:
+        a.lda(imm=0x00)
+        a.op("sta", addr=kv["V_LM"], mode="long")
     a.op("lda", addr="slot_code", mode="absx")
     a.label("al_ret")
     a.rts()
@@ -1867,6 +1896,7 @@ def build_payload(
                 "Q_HI": Q_HI,
                 "Q_CTX": Q_CTX,
                 "nslot": nslot,
+                "PHASE2": PHASE2,
                 "xfrom": xfrom,
                 "QN": QN,
                 "GLYPH_BASE": GLYPH_BASE,
@@ -1969,6 +1999,8 @@ def apply(
         )
     if not slots:
         raise SystemExit("동적 슬롯이 하나도 없다")
+    if (bad := slot_budget_problems(len(slots))):  # 실제 빌드에서만 — 단위 테스트는 슬롯 40개짜리 작은 페이로드를 쓴다
+        raise SystemExit("; ".join(bad))
     tile = tiles.code_tile(rom)
     blob, info = build_payload(
         rep,

@@ -97,7 +97,7 @@ GLYPH_SYMBOLS = set("…~()·『』【】〜―ＥＰＨＭ")  # ＥＰ·ＨＰ�
 # 「GOLD」 — 원판 표기도 대문자라(마스터 10-11 「SFC 원본보니 GOLD 대문자로 쓰네」) 글자 넷 모두 원판 시트 코드로 간다 — 글리프 특례 없음.
 # 스태프롤 「J.D.K.」 — J·K 는 반각 영문 표에 없고, D 는 표에 있지만 시트의 굵은 D 라 J·K 와 굵기가
 # 갈린다(마스터 지적 2026-09-26). 셋 다 글꼴 글리프로 굽는다 — 대사 인코더는 D 를 계속 표로 쓴다.
-CREDIT_GLYPHS = set("JDK")
+CREDIT_GLYPHS = set("JDK．")  # 「．」 = 전각 점 — 스태프롤 「J.D.K.」 의 원판 8px 점(hangul_font 에서 원판 그림을 읽는다)
 
 
 def is_glyph(ch: str) -> bool:
