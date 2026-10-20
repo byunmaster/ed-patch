@@ -1008,7 +1008,43 @@ def kr_items(
 
     _ts = typeset.Typesetter()
     fake_off = -1
+    # 🔴 **참조된 다음 조각으로 흘러내리는 `$E0`** — 원문은 `<E0>` 다음 바이트가 곧 이어 읽는 대본이다. 다음 조각이 제 포인터·분기도 받으면
+    #    `fallthrough_pairs` 가 군집에서 빼므로(사슬이 79KB 가 된다) 새 배치에서 이웃이 달라져 **엉뚱한 문장으로 흘러 들어갔다**(10-20 style
+    #    「이웃 조각이 끼어든」 부류 — 신부 옆 노인이 여관 권유 대신 1000 GOLD 치유를 못 하던 것). 그 자리에 `F9 목표 · FE`(절대 호출 + 되돌림)를 심어 원래 이웃으로 잇는다.
+    refs_all = set(script.pointer_anchors(rom))
+    for it0 in items:
+        refs_all.update(it0.targets)
+    fall_set = set(fallthrough_pairs(items, slices, rom))
+    pending_tail: list = []  # [(조각 번호, 꼬리 메시지 항목들)] — 사슬 끝에서 내보낸다
+    jump_after: dict[int, int] = {}  # 조각 번호 → 이어질 다음 조각 시작 오프셋
+    for si in range(len(slices) - 1):
+        la, lb = slices[si], slices[si + 1]
+        last, nxt = items[la[2] - 1], items[lb[1]]
+        if (
+            last.code == 0xE0
+            and si not in fall_set
+            and nxt.off in refs_all
+            and last.off + 1 == nxt.off
+            and common.off2snes(last.off) >> 16 == common.off2snes(nxt.off) >> 16
+        ):
+            jump_after[si] = nxt.off
+    stats["ff_jumps"] = len(jump_after)
     for si, (sid, a, e) in enumerate(slices):
+        if si - 1 in jump_after:
+            # `FA` 는 같은 뱅크여야 해서 군집이 43,873B 로 부풀어 뱅크를 넘었다 — 절대 호출 `F9 목표` + `FE`(되돌림)로 잇는다. 목표가 `FF`/`E4`
+            # 로 메시지를 끝내면 그대로 끝나고, 호출 문맥이면 `FE` 가 호출자에게 되돌려 준다(중계 조각과 같은 꼴).
+            seg_of[len(new)] = si - 1
+            new.append(script.Item(fake_off, "ctrl", 0xF9, b"\x00\x00\x00", targets=[jump_after[si - 1]]))
+            fake_off -= 1
+            seg_of[len(new)] = si - 1
+            new.append(script.Item(fake_off, "ctrl", 0xFE, b""))
+            fake_off -= 1
+        if pending_tail and si > 0 and si - 1 not in fall_set:  # 흘러내림 사슬이 앞 조각에서 끝났다 — 보류한 꼬리 메시지를 여기에 둔다
+            for _t_si, t_items in pending_tail:
+                for it_t in t_items:
+                    seg_of[len(new)] = si - 1  # 배치는 조각 번호로 묶는다 — 꼬리를 사슬 끝 조각 묶음에 넣어야 거기 놓인다
+                    new.append(it_t)
+            pending_tail.clear()
         seg = items[a:e]
         start_of[seg[0].off] = len(new)
         entry = tmap.get(sid)
@@ -1135,7 +1171,7 @@ def kr_items(
                     stats["errors"].append((sid, f"분기 목표인 사전 토큰 {tok} 이 번역문에 없다"))
         assert ci == len(ctrls) and li == len(mids), sid
         # 🔴 포인터 전용 별도 메시지(정본 조각 필드 `pointer_tail` = {table, id, text}, 마스터 10-19 「이스터에그는 론도 항구 신부 한 자리에만」):
-        #    조각 끝(원문 END 뒤 — 흐름이 안 닿는 자리)에 새 메시지를 1바이트 항목들로 덧붙이고, 포인터 표 `table[id]` 가 **그 첫 항목**을 가리키게 한다.
+        #    흘러내림 사슬이 끝난 자리(아래 `pending_tail`)에 새 메시지를 1바이트 항목들로 두고, 포인터 표 `table[id]` 가 **그 첫 항목**을 가리키게 한다.
         #    공용 조각(여러 NPC 가 호출하는 신부 문안)은 보통 문안 그대로 두고, 그 번호 하나만 별도 문안을 쓰게 한다.
         tail = entry.get("pointer_tail")
         if tail:
@@ -1146,24 +1182,32 @@ def kr_items(
                 enc_t = None
             if enc_t is not None:
                 first_key = fake_off
+                t_items = []
                 for kind, *v in enc_t.parts:
                     if kind in ("bytes", "dict"):
-                        seg_of[len(new)] = si
-                        new.append(script.Item(fake_off, "raw", -1, v[0] if kind == "bytes" else v[1]))
+                        t_items.append(script.Item(fake_off, "raw", -1, v[0] if kind == "bytes" else v[1]))
                         fake_off -= 1
                     elif kind == "ctrl":
                         m_t = re.fullmatch(r"<([0-9A-F]{2})>", v[0])
                         if not m_t:
                             stats["errors"].append((sid, f"pointer_tail 은 인자 없는 제어({v[0]})만 쓸 수 있다"))
                             continue
-                        seg_of[len(new)] = si
-                        new.append(script.Item(fake_off, "raw", -1, bytes([int(m_t.group(1), 16)])))
+                        t_items.append(script.Item(fake_off, "raw", -1, bytes([int(m_t.group(1), 16)])))
                         fake_off -= 1
+                # 🔴 꼬리는 **흘러내림 사슬이 끝난 뒤**에 둔다(조각 바로 뒤도 앞도 아니다) — `<E0>`(쪽 넘김)은 다음 바이트를 이어 읽어서, 꼬리가 조각 사이에 끼면
+                #    이 조각이나 앞 조각을 거쳐 오는 다른 번호(02A8·02AE 제물 마을 집 · 02B4~·0AC8~)가 경고문으로 흘러 들어간다(10-20 style 재검 회귀).
+                #    꼬리는 `<FF>`(메시지 끝)로 닫히므로 사슬 끝에 두면 아무도 안 흘러든다.
+                pending_tail.append((si, t_items))
                 stats.setdefault("ptr_overrides", {})[(tail["table"], int(tail["id"], 16))] = first_key
         stats["translated"] += 1
         stats["runtime_josa"] += enc.runtime_josa
         stats["jp_bytes"] += sum(it.size for it in seg)
         stats["kr_bytes"] += sum(it.size for it in new[start_of[seg[0].off] :])
+    for _t_si, t_items in pending_tail:  # 마지막 사슬 끝
+        for it_t in t_items:
+            seg_of[len(new)] = len(slices) - 1
+            new.append(it_t)
+    pending_tail.clear()
     # 군집: rel16(FA/FC/FB/FD)으로 이어진 조각은 같은 뱅크에 있어야 한다
     parent = list(range(len(slices)))
 
@@ -1470,7 +1514,11 @@ class Ledger:
 
 # 첫 종료 코드가 원판과 달라도 되는 메시지 — 번역문이 같은 메시지 안에 **쪽 넘김 `$E0`**(+`extra_code`)을 더한 자리(신부 02A7 — 첫 쪽 끝이 `$E0`, 마지막이 원판대로 `$FF`).
 # `$E0` 뒤 바이트는 원판 꼴(`$E4` 여부)이 아니라 더한 쪽의 머리말(`$E3`)이다. 끝 꼴(마지막 `$FF`)은 위 `extra_ff` 게이트와 코드 대조가 지킨다.
-TERMINATOR_EXEMPT = {("main", 0x02A7): "신부 이스터에그 — 번호 02A7 만 별도 메시지(`pointer_tail`, 첫 쪽 끝이 `$E0`)를 가리킨다"}
+TERMINATOR_EXEMPT = {
+    ("main", 0x02A7): "신부 이스터에그 — 번호 02A7 만 별도 메시지(`pointer_tail`, 첫 쪽 끝이 `$E0`)를 가리킨다",
+    ("main", 0x04FD): "칼 꽂기 — 머리 덩이가 `FA` 로 끝나고 원판은 그 뒤 **네이티브 코드를 선형으로 읽어** 종료 꼴이 우연이다(`text.MINIGAME_RUNS`)",
+    ("main", 0x0B40): "돌 놓기 — 같은 사정(`text.MINIGAME_RUNS`). 점프로 닿는 조각들은 각자의 종료 꼴을 다른 번호처럼 본다",
+}
 
 
 def verify_terminators(rom: bytes, out: bytes) -> int:
@@ -1665,6 +1713,18 @@ def build_kr(
         battle_ui.verify(out, k["rep"])
         battle_ui.verify_a3_values(out, k["rep"])
     n_term = verify_terminators(rom, out)
+    # 재배치 장부(마스터 10-22) — 이번 빌드가 실제로 한 재배치를 좌표·종류·사유로 뽑는다. `check_ctrl_flow.py` 가 커밋 장부와 대조한다
+    import relocations
+
+    tails = set(k["stats"].get("ptr_overrides", {}))
+    ptr_rows = []
+    for tname, (taddr, tcount) in text.MSG_TABLES.items():
+        tb = common.snes2off(taddr)
+        for ti in range(tcount):
+            a0, a1 = bytes(rom[tb + 3 * ti : tb + 3 * ti + 3]), bytes(out[tb + 3 * ti : tb + 3 * ti + 3])
+            if a0 != a1:
+                ptr_rows.append((tname, ti, int.from_bytes(a0, "little"), int.from_bytes(a1, "little"), (tname, ti) in tails))
+    reloc_tsv = relocations.render(relocations.rows(k, pk, full_place, place, rom, out, ptr_rows, BODY, PINNED))
     out[HEADER_ROM_SIZE_OFF] = 0x0B
     fix_checksum(out)
     verify_header_checksum(out)
@@ -1704,6 +1764,7 @@ def build_kr(
         "hook": hk,
         "dicts": dk,
         "written_by_stage": led.report(),
+        "_relocations_tsv": reloc_tsv,  # main() 이 빼서 빌드 칸에 쓴다(JSON 출력엔 안 나간다)
     }
     if extra is not None:
         info["opening_poc"] = extra
@@ -1940,9 +2001,12 @@ def main() -> None:
     if a.project or a.kr:
         rom = common.rom_bytes()
         out, info = build_kr(rom, with_hook=not a.no_hook)
+        reloc_tsv = info.pop("_relocations_tsv", None)
         print(json.dumps(info, ensure_ascii=False, indent=1))
         if a.kr:
             write_image(out, info, "kr")
+            if reloc_tsv is not None:
+                (common.BUILD_DIR / common.BUILD_TAG / "relocations.tsv").write_text(reloc_tsv, encoding="utf-8")
         return
     rom = common.rom_bytes()
     out, info = build(rom)

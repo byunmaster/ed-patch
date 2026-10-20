@@ -40,6 +40,7 @@ import text  # noqa: F401, I001
 import common
 import hook
 import namesrc
+from shared.text.krwrap import split_reason  # 이어지는 어절 판정 정본(마스터 10-21) — 규칙을 다시 짓지 않는다
 
 COLS = 17
 LINE_PX = COLS * 8  # 한 줄 폭(px)
@@ -127,6 +128,21 @@ TOK = re.compile(
 )
 
 
+def _txt(atom: tuple[str, int]) -> str:
+    """어절 판정에 쓰는 글 — 폭 0 제어 토큰(`<E0>` 등)은 뺀다(안 빼면 「있다.<E0>」 가 보조용언 목록에 안 걸린다)."""
+    s, w = atom
+    return "" if s.startswith("<") and w == 0 else s
+
+
+def _word(atoms: list[tuple[str, int]], i: int) -> str:
+    """atoms[i] 부터 다음 공백·줄 초기화 앞까지의 글."""
+    t = ""
+    while i < len(atoms) and atoms[i][0] != " " and atoms[i][1] != -1:
+        t += _txt(atoms[i])
+        i += 1
+    return t
+
+
 # ── 조판기 ─────────────────────────────────────────────────────────────────────────────
 def wrap(kr: str, dm: dict[str, str], maxlen: dict[str, int]) -> str:
     """명시 개행·페이지 사이 한 줄을 어절로 채우다가 17칸을 넘을 어절 앞 공백을 `\\n` 으로 바꾼다."""
@@ -147,24 +163,40 @@ def wrap(kr: str, dm: dict[str, str], maxlen: dict[str, int]) -> str:
             atoms.append((s, pxw(s)))
     out: list[str] = []
     col = 0
+    prev = ""  # 지금 어절의 글(split_reason 입력)
     for i, (s, w) in enumerate(atoms):
         if w == -1:
             out.append(s)
             col = 0
+            prev = ""
         elif s == " ":
-            j, ww = i + 1, 0  # 다음 어절 폭
+            j, ww, nxt = i + 1, 0, ""  # 다음 어절 폭
             while j < len(atoms) and atoms[j][0] != " " and atoms[j][1] != -1:
                 ww += atoms[j][1]
+                nxt += _txt(atoms[j])
                 j += 1
+            # 앞뒤 어절이 한 덩어리(본용언+보조용언 등)면 뒤 어절까지 한 단위로 센다 — 단위가 한 줄보다 길면 포기
+            while j < len(atoms) and atoms[j][0] == " " and split_reason(nxt, _word(atoms, j + 1)):
+                k, w2, t2 = j + 1, 0, ""
+                while k < len(atoms) and atoms[k][0] != " " and atoms[k][1] != -1:
+                    w2 += atoms[k][1]
+                    t2 += _txt(atoms[k])
+                    k += 1
+                if ww + pxw(" ") + w2 > LINE_PX:
+                    break
+                ww += pxw(" ") + w2
+                nxt, j = t2, k
             if col and col + pxw(" ") + ww > LINE_PX:
                 out.append("\n")
                 col = 0
             else:
                 out.append(" ")
                 col += pxw(" ")
+            prev = ""
         else:
             out.append(s)
             col += w
+            prev += _txt((s, w))
     res = "".join(out)
     lossless(kr, res)
     return res

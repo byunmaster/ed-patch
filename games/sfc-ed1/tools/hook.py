@@ -143,6 +143,9 @@ PLACE_SITES = [  # (덩이 시작 = `LDA 표,X`, 패딩 루프, 트램펄린, �
     # 필드 주문 목록(B2) — 주문 표 `$03:EEDD` 를 같은 꼴로 `$0305` 에 옮기고 레벨 숫자를 붙여 5칸으로 채운다
     # (2026-09-26 실기, 칸 배열 쓰기 BP). 한글 표는 `dicts.bake_runtime` 이 만든다.
     (0x02AFCC, 0x02AFED, 0x02FE7A, "spellcopy", bytes([0xBF, 0xDD, 0xEE, 0x03])),
+    # 상점 주문 목록(오레아 `$0B:FE88` → `JSL $02:8038` 창 0x18) — `$02:A1CD` 는 위와 **글자까지 같은 복사 덩이**다(주문 표 `$03:EEDD` → `$0305`).
+    # 이걸 안 고쳐 원판 가나 이름이 한글 시트로 그려져 반폭 조각으로 뭉개졌다(2026-10-21 qa 「에가2·회비1」). 같은 트램펄린·같은 훅을 쓴다.
+    (0x02A1CD, 0x02A1EE, 0x02FE7A, "spellcopy", bytes([0xBF, 0xDD, 0xEE, 0x03])),
 ]
 CELL_BASE = 0x000305  # `LDY #$0305` — 패치할 때 자리마다 확인한다
 CELLS = 0x000305  # 칸 배열(WRAM 미러) — long 으로 써서 DB 에 안 기댄다
@@ -2125,9 +2128,11 @@ def apply(
                 )
             pa = (HOOK_BANK << 16) | info["labels"][label]
             to = common.snes2off(tramp)
-            if bytes(rom[to : to + 5]) != b"\xff" * 5:
-                raise SystemExit(f"지명 트램펄린 자리가 비어 있지 않다 {common.fmt(tramp)}")
-            out[to : to + 5] = bytes([0x22, pa & 0xFF, (pa >> 8) & 0xFF, HOOK_BANK, 0x60])
+            tr = bytes([0x22, pa & 0xFF, (pa >> 8) & 0xFF, HOOK_BANK, 0x60])
+            if bytes(out[to : to + 5]) != tr:  # 같은 트램펄린을 여러 자리가 나눠 쓴다(주문 목록 둘) — 두 번째부터는 이미 같은 값이다
+                if bytes(rom[to : to + 5]) != b"\xff" * 5:
+                    raise SystemExit(f"지명 트램펄린 자리가 비어 있지 않다 {common.fmt(tramp)}")
+                out[to : to + 5] = tr
             n = join - site
             blk = bytearray([0xEA]) * n
             blk[0:3] = bytes([0x20, tramp & 0xFF, (tramp >> 8) & 0xFF])

@@ -99,6 +99,64 @@ def _segment_pairs(rom, dict_cur, raw=False):
         )
 
 
+_JP_CALL = re.compile(r"<CALL [0-9a-f]{4}>")
+_KR_CALL = re.compile(r"<FC:[0-9A-F]{4}>")
+
+
+def _joined_pairs(rom, dict_cur, raw=False):
+    """🔴 **호출로 이어진 문장을 한 줄로** — 앞 조각 끝 「이거 」 + 호출 조각 「왕자님」 처럼 한 문장이 `FC` 호출로 둘 이상의 조각에 걸치면
+    조각 단위 검사는 이어진 자리를 못 본다(이름·정본·인사 검사 셋이 다 그랬다 — sfc-ed2 에서 622단위, 10-20). 호출 자리에 **호출 조각의 글(`<FE>` 까지)을
+    끼워 넣은** 줄을 따로 낸다. 호출 목표가 조각 첫머리인 것만(중간 진입은 조각 글을 자를 수 없다)."""
+    items, _ = units.extract(rom)
+    res = text.resolver(rom)
+    segs = units.segments(items, res)
+    tm = textmap.load()
+    k, start_of, spans = 0, {}, []
+    for i, s in enumerate(segs):
+        start_of[items[k].off] = i
+        spans.append((k, k + s["n_items"]))
+        k += s["n_items"]
+
+    def cut(txt, mark):
+        return txt.split(mark, 1)[0] if txt else txt
+
+    for i, s in enumerate(segs):
+        a, b = spans[i]
+        calls = [it.targets[0] for it in items[a:b] if it.kind == "ctrl" and it.code == 0xFC and it.targets]
+        if not calls:
+            continue
+        v = tm.get(s["id"])
+        kr = v.get("kr") if v else None
+        jp_parts, kr_parts = iter(calls), iter(calls)
+        n_join = 0
+
+        def jp_sub(m):
+            nonlocal n_join
+            t = start_of.get(next(jp_parts, None))
+            if t is None:
+                return m.group(0)
+            n_join += 1
+            return cut(segs[t]["jp"], "<RETURN>")
+
+        def kr_sub(m):
+            t = start_of.get(next(kr_parts, None))
+            c = tm.get(segs[t]["id"]) if t is not None else None
+            if not c or not c.get("kr"):
+                return m.group(0)
+            return cut(c["kr"], "<FE>")
+
+        jp = _JP_CALL.sub(jp_sub, s["jp"])
+        if not n_join:
+            continue
+        krj = _KR_CALL.sub(kr_sub, kr) if kr else None
+        yield (
+            f"join:{s['id']}@{s['addr']}",
+            _bare(jp) if raw else norm_jp(_bare(jp)),
+            (_resolve_tokens(krj, dict_cur) if raw else norm_kr(_resolve_tokens(krj, dict_cur))) if krj else None,
+            "dialog",
+        )
+
+
 def _dict_pairs(rom, dict_cur):
     for code in text.DICT_TABLES:
         for i, b in enumerate(text.dict_entries(code, rom)):
@@ -169,6 +227,7 @@ def pairs(raw=False):
     rom = common.rom_bytes()
     dict_cur = namesrc.dict_map(rom)
     yield from _segment_pairs(rom, dict_cur, raw)
+    yield from _joined_pairs(rom, dict_cur, raw)
     yield from _dict_pairs(rom, dict_cur)
     yield from _slot_pairs()
     yield from _extra_pairs(rom)
