@@ -89,6 +89,7 @@ def _scn_pairs(mm):
         if not got:
             continue
         sites = S.sites_for(path)
+        seq = []  # (열쇠, 위치, 원문, 우리 문안) — 파일 안 블록 순서
         for e in got[1]:
             jp = e.get("text", "")
             if not jp:
@@ -97,7 +98,23 @@ def _scn_pairs(mm):
             where = f"scn:{path}#{eid}"
             site = sites.get(int(e["file_offset"], 16))
             kr = S.canon_of(canon, jp, site, path=path)
+            seq.append((S.line_key(jp), where, jp, kr))
             yield where, jp, kr
+        # 🔴 **이어진 문장은 한 줄로도 낸다**(2026-10-20 sfc-ed2 실측 부류 — 어댑터가 조각 단위로만 줄을 내면 한 문장이 블록 여럿에 걸친 자리를 이름·정본·인사
+        #    검사기 셋이 다 못 본다). 같은 창에 이어 그려지는 블록 묶음(`script/key_cont.json` `chains`)을 파일 안에서 찾아 원문·우리 문안을 이어 붙인 줄을 더한다.
+        game = "ED1" if "/ED1SCN" in path else "ED2"
+        keys = [s[0] for s in seq]
+        for chain in S._scn_chains().get(game, ()):
+            n = len(chain)
+            for i in range(len(keys) - n + 1):
+                if keys[i : i + n] == list(chain):
+                    part = seq[i : i + n]
+                    krs = [x[3] for x in part]
+                    yield (
+                        f"{part[0][1]}+{n}",
+                        "".join(x[2] for x in part),
+                        None if any(k is None for k in krs) else "".join(krs),
+                    )
 
 
 def _sys_pairs(mm):

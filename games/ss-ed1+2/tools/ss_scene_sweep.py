@@ -483,6 +483,10 @@ ED1_ARGS = dict(
 ARG_VARIANTS = {
     "a": dict(person="아트라스", item="프레이아의 미소", num=5),  # 받침 없음 · 최장(7.5칸) · 한 자리
     "b": dict(person="류난", item="횃불", num=50000),  # 받침 있음 · 짧은 이름 · 다섯 자리
+    # 🔴 `ja`·`jb` = a·b 와 같은 자리에 **ASCII 값** — 원판(JP) 롬에는 한글 글자 슬롯이 없어 한글 값을 넣으면 엉뚱한 글자가 찍힌다.
+    #    원판·한글 롬의 같은 번호·같은 변수 자리를 가리는 짝 촬영(`qa/orig-check`)에서 원판은 이 값으로 돌린다(같은 번호·같은 쪽 단위).
+    "ja": dict(person="ATLAS", item="ITEM-A", num=5),
+    "jb": dict(person="RYUNAN", item="TORCH", num=50000),
 }
 
 
@@ -491,7 +495,7 @@ def encode_name(kr, limit):
     import josa
 
     sc = josa.slot_codes()
-    out = b"".join(b" " if c == " " else struct.pack(">H", sc[c]) for c in kr)
+    out = b"".join(bytes([ord(c)]) if c == " " or c.isascii() else struct.pack(">H", sc[c]) for c in kr)
     assert len(out) < limit, f"{kr}: {len(out)}B ≥ {limit}"
     return out.ljust(limit, b"\x00")
 
