@@ -196,6 +196,13 @@ def _internal_key(jp):
 # 🔴 **칸이 원문에 접미를 구운 지명**(ED2 「지명 긴꼴」 표의 `マスクーンの町` 등)은 사전(고유명사)에 열쇠가 없다 —
 #    그 칸 꼴은 **정본**(`shared/canon` ed2 `ui`)이 든다(마스터 2026-10-08·10-07 「지명 칸은 원문 꼴 그대로」).
 #    예전엔 여기 JP 다섯(`_NO_SUFFIX_PLACES`)을 코드에 들고 접미를 벗겨 재조회했다 — 같은 지식을 코드에 둔 것이었다.
+def _route_name(jp):
+    """길 이름 `ｲｼｭﾀ～ｲｽﾞｰ`(반각 가나 + 전각 물결) → 한국어. 씬 정본(`script/scn.json`)이 같은 문자열을 번역해 둔다(ED2SCN46·47 헤더) — 같은 말을 한 곳에서 읽는다."""
+    import patch_scn
+
+    return patch_scn.load_canon(quiet=True).get(patch_scn.line_key(jp))
+
+
 def _place_lookup(jp, cat):
     """사전(`place`)을 먼저, 없으면 정본 `ui` 의 칸 꼴(`~の町` 구운 꼴)."""
     kr = lookup(jp, cat, "eiyuu")
@@ -319,7 +326,8 @@ def rows():
                     continue
                 if _internal_key(jp):
                     continue  # 반각 내부 키 — 화면에 안 나온다(아래 헬퍼 주석)
-                kr = _place_lookup(jp, cat)
+                kr = _route_name(jp) if "\uff5e" in jp else None  # 길 이름 「A～B」 — HUD 표시명(씬 정본이 이미 번역한 같은 문자열)
+                kr = kr or _place_lookup(jp, cat)
                 # 🔴 조용히 건너뛰지 않는다 — 한 칸만 일본어로 남으면 화면에서 바로 튄다.
                 assert kr, f"{key}/{name}[{i}] 0x{at:06x}: 정본에 없는 {cat} {jp!r}"
                 kr = _fit_place(kr, stride, name == SUFFIXED_TABLE, f"{key}/{name}")

@@ -77,6 +77,9 @@ def lookup(jp, table, *, fold=True):
     return None if kr is None else kr + sfx
 
 
+ROUTE_NAME = re.compile("^[\uff66-\uff9f]+\uff5e[\uff66-\uff9f\u57ce]+$")  # 반각 가나 + 전각 물결 + 반각 가나 또는 「城」
+
+
 def internal_key(jp):
     """**게임 내부 키**인가 — 반각 가나가 섞였으면 그렇다.
 
@@ -88,7 +91,10 @@ def internal_key(jp):
     🔴 실측 2026-08-29: 이 규칙이 `patch_ui` 에만 있어서, 이름 유도를 붙인 `patch_scn` 이
        **내부 키 19곳을 번역했다.** 그래서 여기로 모았다.
     """
-    return any("\uff66" <= c <= "\uff9f" for c in jp)
+    # 🔴 **길 이름 「A～B」는 키가 아니다**(2026-10-20 style — ED2 전투 HUD 지명 표 0x6C56A 의 길 이름 열한 칸 `ｲｼｭﾀ～ｲｽﾞｰ`·`ｳｲﾙ～城` 등이 일본어로 남았다. 위
+    #    「두 번 헛짚었다」가 이 칸들을 통째로 키로 뭉쳤다). HUD 에 그대로 뜨는 표시명이고 같은 문자열이 씬 헤더(ED2SCN46·47)에선 이미 번역돼 있다.
+    #    ⚠ 「전각 글자가 섞이면 키 아님」으로 넓히지 않았다 — 코드·데이터 덩어리(`ED.BIN` 0x76650 …)가 일본어로 보이는 오탐이 난다.
+    return any("\uff66" <= c <= "\uff9f" for c in jp) and not ROUTE_NAME.match(jp)
 
 
 # ── 지명의 종류 말 띄우기 (마스터 확정 2026-09-27) ────────────────────────────────
