@@ -15,6 +15,7 @@
 #     --no-sync  세이브 동기화를 끈다
 #     --no-keys  키 배치 맞추기를 건너뛴다(기본은 맞춘다 — mednafen_keys.py)
 #     --no-video 영상 규격 맞추기를 건너뛴다(기본은 맞춘다 — mednafen_video.py).
+#     --card F   구형 시스템 카드로(PCE CD) — F 는 mednafen firmware 안 파일, `old` = syscard2.pce
 #     --size N   창 크기 1 매우 작음 · 2 작음(기본) · 3 보통 · 4 큼
 #                mednafen 은 설정으로, np2kai 는 `NP2KAI_WIN_SIZE` 로 받는다.
 #                ⚠ 실행 중에는 **⌥- / ⌥+**(한 단계씩) · **⌥1~4**(바로 지정).
@@ -352,19 +353,33 @@ case "${1:-}" in
   *) GAME=$1; shift ;;
 esac
 
-ORIG=0; SYNC=1; KEYS=1; VIDEO=1; IMAGE=; EXTRA=""
-for a in "$@"; do
+ORIG=0; SYNC=1; KEYS=1; VIDEO=1; IMAGE=; EXTRA=""; CARD=
+# ⚠ `-설정 값` 꼴의 **값**은 이미지로 읽지 않는다 — `-pce.cdbios syscard2.pce` 의 값이
+#   `*.pce` 에 걸려 「이미지 없음」으로 죽었다(마스터 10-22). 그래서 for 가 아니라 while 로
+#   돌며 실행기 옵션 바로 뒤 인자는 값으로 넘긴다(`--size` 의 shift 도 이제 실제로 먹는다).
+while [ $# -gt 0 ]; do
+  a=$1
   case "$a" in
     --orig) ORIG=1 ;;
     --no-sync) SYNC=0 ;;
     --no-keys) KEYS=0 ;;
     --no-video) VIDEO=0 ;;
     --size) shift; VIDEO_SIZE="${1:-2}" ;;
-    --size=*) VIDEO_SIZE="${1#*=}" ;;
+    --size=*) VIDEO_SIZE="${a#*=}" ;;
+    # 구형 시스템 카드로 띄운다(PCE CD — 카드 버전 안내 화면 확인용, 마스터 10-22).
+    # 값은 mednafen firmware 폴더 안 파일 이름이다. `old` 는 syscard2.pce 의 줄임.
+    --card) shift; _c=${1:-old}; [ "$_c" = old ] && _c=syscard2.pce
+            CARD=$_c ;;
     *.cue|*.ccd|*.toc|*.m3u|*.zip|*.bin|*.iso|*.sfc|*.smc|*.smd|*.md|*.gen|*.pce)
       IMAGE=$a ;;
-    *) EXTRA="$EXTRA $a" ;;                # 실행기 설정 덮어쓰기 등
+    -*) EXTRA="$EXTRA $a"                  # 실행기 설정 덮어쓰기 — 값이 따라오면 같이 넘긴다
+        case "${2:-}" in
+          ''|-*|*.cue|*.ccd|*.toc|*.m3u|*.zip|*.bin|*.iso|*.sfc|*.smc|*.smd|*.md|*.gen) ;;
+          *) shift; EXTRA="$EXTRA $1" ;;
+        esac ;;
+    *) EXTRA="$EXTRA $a" ;;
   esac
+  shift
 done
 
 # ── 게임 → 이미지 (Esc 로 되돌아온다) ────────────────────────────────────────
@@ -572,6 +587,10 @@ if [ "$RUNNER" = ppsspp ]; then
 fi
 
 # ── 펌웨어 ──────────────────────────────────────────────────────────────────
+# ⚠ **시스템 카드는 매번 명시한다** — mednafen 은 명령줄로 준 설정도 종료할 때 cfg 에 써 둬서,
+#   `--card old` 로 한 번 켜면 다음 실행도 구형 카드로 떴다(마스터 10-22). 그래서 --card 가 없으면
+#   정식 카드(syscard3.pce)를 늘 넘겨 되돌린다.
+if [ "$MOD" = pce ]; then EXTRA="$EXTRA -pce.cdbios ${CARD:-syscard3.pce}"; fi
 FW=$(firmware_of "$MOD")
 if [ -n "$FW" ]; then
   have=0
