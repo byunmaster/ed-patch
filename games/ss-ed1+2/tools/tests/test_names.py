@@ -90,7 +90,7 @@ class VariantSuffix(unittest.TestCase):
     def test_suffix_beyond_e(self):
         c = patch_ui.name_canon("몬스터")
         for suf in "ABCDEFGH":
-            self.assertEqual(patch_ui.name_kr(f"毒大ガエル{suf}", c), f"큰독개구리{suf}")
+            self.assertEqual(patch_ui.name_kr(f"毒大ガエル{suf}", c), f"큰 독개구리{suf}")
 
 
 class MonsterCellSuffix(unittest.TestCase):
