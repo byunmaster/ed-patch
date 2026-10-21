@@ -28,4 +28,5 @@ if ! flock -n "$LOCK" true 2>/dev/null; then
   echo "⏳ 무거운 일 대기 — 지금: $(cat "$WHO" 2>/dev/null || echo '?')" >&2
 fi
 # 잠금을 쥔 채로 명령을 돌린다 — 끝나거나 죽으면 커널이 풀어 준다(남는 잠금 파일 걱정 없음)
-exec flock "$LOCK" sh -c 'printf "%s\n" "$1" > "$2"; shift 2; exec "$@"' _ "$me" "$WHO" "$@"
+# 줄 선 시각(me 안)과 따로 **잡은 시각**을 적는다 — 줄 선 시각만 보이면 오래 기다린 묶음이 오래 쥔 것처럼 보였다(10-19)
+exec flock "$LOCK" sh -c 'printf "%s · 잡음 %s\n" "$1" "$(date +%H:%M)" > "$2"; shift 2; exec "$@"' _ "$me" "$WHO" "$@"
