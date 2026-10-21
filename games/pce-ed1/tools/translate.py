@@ -34,6 +34,36 @@ def body_chars(scene_id: int) -> set[str]:
     return out
 
 
+def _jp_corpus() -> str:
+    """이 게임 원문 전체(씬 대사·시스템 표·전투 표의 JP 문자열)를 한 덩이로 — 정본 이름이 이 게임에 나오나 가르는 데 쓴다.
+    ⚠ 부분 문자열 일치라 넉넉하게 잡힌다(과포함은 안전, 누락은 없다). 파생물이 없으면 죽는다 — 조용히 전체로 돌아가지 않는다."""
+    import glob
+    import json
+
+    out: list[str] = []
+
+    def walk(o) -> None:
+        if isinstance(o, str):
+            out.append(o)
+        elif isinstance(o, dict):
+            for k, v in o.items():
+                out.append(str(k))
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    import common
+
+    root = common.OUT_DIR
+    files = [f for d in ("messages", "sys", "battle") for f in sorted(glob.glob(str(root / d / "*.json")))]
+    if not files:
+        raise FileNotFoundError(f"원문 파생물이 없다: {root}/(messages|sys|battle)")
+    for f in files:
+        walk(json.loads(Path(f).read_text("utf-8")))
+    return "\n".join(out)
+
+
 def name_chars() -> set[str]:
     """씬 대사 밖에서 오는 우리 글리프 글자 — 공용 정본(고유명사·UI·화자)의 화면 표기. 🔴 늘 상주한다."""
     # 🔑 **화면에 나가는 표기만** 공용에서 받는다(`kr_texts`) — 열쇠도 `_aliases` 도 안 온다.
@@ -43,7 +73,12 @@ def name_chars() -> set[str]:
     # 정본은 화면에 나가는 범주만(ui·speaker) — system·battle 문구 조각은 이 게임이 안 쓰는 것이 많아 글리프를 낭비한다
     chars: set[str] = set()
     canon_vals = [v for c in ("ui", "speaker") for v in canon.table(c, "ed1").values()]
-    for v in [kr for _c, _jp, kr in canon.all_names("ed1")] + canon_vals + list(M.load_speaker_overrides().values()):
+    # 🔴 고유명사는 **이 게임 원문에 실제로 나오는 이름만** — 정본은 ED1·ED2 공통이라 전체를 잡으면 다른 게임이 이름을
+    #    더할 때마다 이 게임의 상주 칸이 깎인다(10-18 「흰슬러그」·「넬」). 안 나오는 이름의 글자는 상주 대상이 아니고,
+    #    대사 본문에만 쓰이면 `body_chars` → 블록 동적 칸으로 간다. 상주 순서(`glyph_order.json`)는 안 건드린다.
+    corpus = _jp_corpus()
+    names = [kr for _c, jp, kr in canon.all_names("ed1") if jp in corpus]
+    for v in names + canon_vals + list(M.load_speaker_overrides().values()):
         chars |= {ch for ch in v if font.needs_glyph(ch)}
     return chars
 

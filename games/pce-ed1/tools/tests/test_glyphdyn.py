@@ -70,6 +70,11 @@ class DynGlyph(unittest.TestCase):
             self.assertFalse(set(dyn) & canon)
 
     def test_늘_상주할_글자는_정본에_다_있다(self):
+        import common
+
+        # 상주 이름은 이 게임 원문 파생물로 고른다 — 원본이 없는 트리(main)에선 잴 수 없다(게임 트리에서 돈다)
+        if not any((common.OUT_DIR / d).is_dir() for d in ("messages", "sys", "battle")):
+            self.skipTest("원문 파생물이 없다(원본 없는 트리)")
         self.assertFalse(G.forced_chars() - set(font._order_canon()))
 
 
