@@ -175,7 +175,11 @@ def _jp_pattern(key):
             #   `{name}⏎この氷の壁は破れん。` 이 다른 인물의 긴 대사 한 줄 전체에 걸렸다(ss ED2 카자즘 대사, 10-09).
             #   줄은 공백을 접어(`_flat`) 재니 줄바꿈으로는 못 가른다 — 문장부호로 가른다.
             out.append(
-                r"(?:[0-9０-９]+|%d)" if p in ("n", "m") else ".+?" if p == "unit" else r"[^。、！？!?「」『』…･]{1,12}?"
+                r"(?:[0-9０-９]+|%d)"
+                if p in ("n", "m")
+                else ".+?"
+                if p == "unit"
+                else r"[^。、！？!?「」『』…･]{1,12}?"
             )
         else:
             out.append(re.escape(p))
@@ -187,7 +191,8 @@ def _kr_pattern(val):
     out = []
     pos = 0
     for m in re.finditer(
-        r"\{(?:name|item|spell|n|m|unit)\}|(은|이|을|과|와|으로)\((는|가|를|와|과|로)\)|\s+", val
+        r"\{(?:name|item|spell|n|m|unit)\}|(은|이|을|과|와|으로)\((는|가|를|와|과|로)\)|\((이|으)\)|\s+",
+        val,
     ):
         out.append(re.escape(val[pos : m.start()]))
         tok = m.group(0)
@@ -195,6 +200,10 @@ def _kr_pattern(val):
             out.append(".+?")
         elif tok.strip() == "":
             out.append(r"\s*")
+        elif m.group(3):
+            # 앞 병기 「(이)라고」·「(으)로」 — 받침에 따라 접은 꼴(「이라고」·「라고」)도 같은 정본이다. 새턴 조사 훅은
+            #   이 꼴을 못 접어 이름이 늘 받침 없는 자리(`{name}'`)에선 빌드가 「라고」로 접는다(ss-ed1+2 qa g072, 10-19)
+            out.append(f"(?:{re.escape(tok)}|{m.group(3)})?")
         else:
             a, b = m.group(1), m.group(2)
             out.append(f"(?:{re.escape(tok)}|{a}|{b})")
@@ -204,6 +213,21 @@ def _kr_pattern(val):
 
 
 _PARTICLES = set("をはがにのとでもへや")
+
+
+_KR_END = re.compile(r"[.!?！？。…]$")
+
+
+def _end_family(key):
+    """열쇠 끝 부호의 갈래 — 마침(。.) · 느낌(!！) · 물음(?？). 줄 끝은 같은 갈래면 개수·폭이 달라도 된다."""
+    last = key.rstrip()[-1]
+    # 부호가 아예 없는 줄도 받는다 — 원문이 끝 부호를 생략한 완결 꼬리(「…を使った」)가 있다. 머리 조각과는
+    #   우리 줄이 문장으로 끝나는지로 가른다(아래 `_KR_END`, sfc-ed2 10-21)
+    if last in "!！":
+        return "(?:[!！]+)?$"
+    if last in "?？":
+        return "(?:[?？!！]*[?？][!！]*)?$"
+    return "(?:[。．.]+)?$"
 
 
 def _flat(s):
@@ -245,6 +269,14 @@ def audit(pairs, title):
         for k, v in cats.get(c, {}).items():
             if "@" in k:
                 slot_alts.setdefault((c, k.split("@", 1)[0]), []).append(v)
+    # 끝 부호만 다른 열쇠가 둘 이상이면(「…現れた!!」→「…들이 나타났다!!」 · 「…現れた」→「…이(가) 나타났다.」) 값이
+    #   다르니 부호 있는 열쇠는 부호까지 맞아야 잡는다 — 부호를 떼고 재면 서로 엉킨다(pce-ed1 실측 10-21: 17줄 오탐)
+    _END = "。！？!?．."
+    core_n = {}
+    for c in PHRASES:
+        for k in cats.get(c, {}):
+            if "@" not in k:
+                core_n[_flat(k).rstrip(_END)] = core_n.get(_flat(k).rstrip(_END), 0) + 1
     for c in PHRASES:
         for k, v in cats.get(c, {}).items():
             if "@" in k:
@@ -259,7 +291,17 @@ def audit(pairs, title):
             # 🔴 **줄 전체로** 잰다 — 조각을 문장 속에서 찾으면 씬 대사의 「しかし」·「何もない」까지 걸린다
             #   (PS1 실측 10-08: 자기 씨앗으로 쟀는데 263 어긋남, 전부 씬 대사). 엔진이 이름 뒤에 붙여 찍는
             #   조각(`をもっていた。`)은 앞에 이름 자리가 숨어 있다.
-            jp_k = _flat(k)
+            # 끝 부호(。！？)는 기종마다 원문이 다르다 — 열쇠 끝 부호를 떼고 원문 줄 끝 부호는 있어도 없어도 같은
+            #   원문으로 친다(md-ed2 「…遠ぼえをしている。」가 열쇠 「…遠ぼえをしている」에 안 걸려 정본 검사가
+            #   어긋남 0 으로 지나갔다, 10-21)
+            jp_k = _flat(k).rstrip(_END)
+            strict = core_n.get(jp_k, 0) > 1 and jp_k != _flat(k)
+            if strict:
+                jp_k = _flat(k)
+            # 부호 없는 열쇠에 값도 문장으로 안 끝나면(「{name}に触れた」→「{name}에 닿은」 — 관형절 조각) 완결문
+            #   (「…に触れた。」)에 걸면 안 된다 — 부호 접힘이 다른 열쇠의 정답 줄을 오탐으로 세웠다(md-ed1 10-21)
+            elif jp_k == _flat(k) and not re.search(r"[.!?！？。]$", (v or "").strip()):
+                strict = True
             # 숨은 이름 자리는 **이름처럼 생긴 것**만 — 짧고 문장부호·공백이 없다(「催眠術を使った。」 같은
             #   대사 한 줄이 「を使った。」 조각에 걸렸다, ss-ed1+2 실측 10-08)
             head = r"[^。、！？!?\s]{1,10}?" if jp_k[:1] in _PARTICLES else ""
@@ -269,7 +311,7 @@ def audit(pairs, title):
                     c,
                     k,
                     v,
-                    _flat(lit),
+                    _flat(lit).rstrip(_END),
                     # 엔진이 문장 둘을 한 줄로 잇는 기종(pce 「…が現れた。…の群れも一緒だ。」)은 줄 끝 문장만 열쇠다 —
                     #   앞 문장은 문장부호로 끝나야 건너뛴다(이름 자리가 앞 문장을 삼키지 않게, 10-11). 화자 줄 꼴
                     #   (`{name}⏎…` — 이름 뒤 줄바꿈)은 줄 머리부터여야 한다 — 남의 대사 끝 문장에 걸리지 않게.
@@ -284,9 +326,21 @@ def audit(pairs, title):
                         )
                         + head
                         + _jp_pattern(jp_k)
-                        + "$"
+                        # 열쇠가 부호로 끝나면 줄도 **같은 갈래** 부호로 끝나야 한다(。↔. · !!↔！ · ？↔?) —
+                        #   「炎に触れた」(머리 조각)가 「に触れた。」에(ps1-ed1+2), 「は助けを呼んだ！」가
+                        #   「を呼んだ。」에 걸렸다(pce-ed1) — 둘 다 10-21
+                        + (
+                            "$"
+                            if strict
+                            else _end_family(_flat(k))
+                            if _flat(k) != _flat(k).rstrip(_END)
+                            else "[。！？!?．.]*$"
+                        )
                     ),
-                    re.compile("^" + kr_head + _kr_pattern(_flat(v)) + "$"),
+                    # 끝 부호(. !! ?)는 기종마다 원문을 따른다(마스터 10-18) — 정본 값 끝 부호는 있어도 없어도 맞다
+                    re.compile(
+                        "^" + kr_head + _kr_pattern(_flat(v).rstrip(".!?！？。")) + "[.!?！？。]*$"
+                    ),
                 )
             )
     # 구체적인 열쇠 먼저 — 자리표를 뺀 글자 수로 센다. 원문 길이로 세면 「しかし{name}では…」(자리표 6자)가
@@ -300,8 +354,17 @@ def audit(pairs, title):
         for c, k, v, lit, jre, kre in phrases:
             if lit not in fj or not jre.search(fj):
                 continue
+            # 부호로 끝나는 열쇠인데 원문 줄에 끝 부호가 없으면 — 우리 줄도 문장으로 끝날 때만 같은 문장이다.
+            #   「炎に触れた」→「불꽃에 닿은 」(뒤 조각으로 이어지는 머리)는 건너뛰고, 「…を使った」→
+            #   「…을(를) 사용했다.」(부호만 생략한 꼬리)는 잰다(ps1-ed1+2 · sfc-ed2 10-21)
+            if (
+                _flat(k) != _flat(k).rstrip(_END)
+                and fj[-1:] not in _END
+                and not _KR_END.search(_flat(kr))
+            ):
+                continue
             alts = pend.get(c, {}).get(k)
-            fk = _flat(kr)
+            fk = _flat(kr).replace("<@>", "")  # 도착점 표지(md-ed2 `<@>`)는 글자가 아니다(10-21)
             ok = bool(kre.search(fk)) or any(
                 re.search("^.*?" + _kr_pattern(_flat(a)) + "$", fk)
                 for a in (alts or []) + slot_alts.get((c, k), [])
@@ -333,7 +396,9 @@ def audit(pairs, title):
                     continue
                 num = m.group(1).translate(fw)
                 # 번호 바로 뒤 제목이 그 줄 끝까지 정본 값이어야 한다 — 「여행길」 이 「여행」 에 걸리지 않게
-                kre = re.compile(r"제" + num + r"장[ \t　]*" + _kr_pattern(v) + r"[ \t　]*(?:\n|$)", re.M)
+                kre = re.compile(
+                    r"제" + num + r"장[ \t　]*" + _kr_pattern(v) + r"[ \t　]*(?:\n|$)", re.M
+                )
                 ok = bool(kre.search(kr))
                 h = Hit(where, "chapter", m.group(0), f"제{num}장  {v}", ok)
                 carded.add(where)

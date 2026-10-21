@@ -76,6 +76,19 @@ def main(argv=None):
         if skip and skip.search(str(item[0])):
             continue
         by_title.setdefault(which(item[0]), []).append(item)
+    # 편을 어댑터가 안 정하고 자리 이름(`ED2…`)으로 가르는 기본값인데 ED2 게임에서 ed2 줄이 하나도 없으면, 그 게임은
+    #   ED2 를 ED1 정본으로 재고 있는 것이다 — 어긋남 0 이 나와도 거짓이다(pce-ed2 실측 10-21, ED2 값이 하나도 안 잡혔다)
+    fallback = not (
+        getattr(mod, "canon_title", None)
+        or getattr(mod, "TITLE", "eiyuu") == "ed3"
+        or getattr(mod, "CANON", None)
+    )
+    if fallback and re.search(r"ed2", a.game) and "ed2" not in by_title:
+        print(
+            f"❌ 정본 검사 [{a.game}] — 어댑터가 정본 편(`CANON`)을 안 정해 ED2 를 ed1 정본으로 잰다."
+            ' `names_corpus.py` 에 CANON = "ed2" 를 두십시오'
+        )
+        return 1
     approved, unsigned = _exceptions(a.game)
     gate = bool(getattr(mod, "CANON_GATE", False))
     rc = 0
