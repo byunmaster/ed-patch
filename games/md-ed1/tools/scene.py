@@ -634,6 +634,22 @@ def _fall_successor(mod: Module, s: int) -> int | None:
     return end if end in mod.streams else None
 
 
+def _successor(mod: Module, s: int) -> int | None:
+    """`s` 바로 뒤에 **물리적으로 붙어 읽혀야 하는** 원본 스트림의 시작 — 조건 분기 꼬리(`_fall_successor`) 또는
+    **끝 코드(06·07·0A·0D) 사슬**(`FLOW` — 끝 코드로 돌아온 뒤 엔진이 다음 바이트를 이어 읽는다: 상점·NPC 대사 사슬).
+
+    사슬을 안 챙기면 같은 끝을 나눠 쓰는 접미 스트림(앞 스트림 한복판에서 시작해 같은 곳에서 끝나는 것 — 154: 0x246 ⊃ 0x25b)이
+    정렬 순서상 사이에 끼어 **바로 뒤가 엉뚱한 복사본**이 된다(구조 대조 10-22: 154 해적 문장 중복 · 41 끝 코드 06 이 하나 더).
+    """
+    if (fall := _fall_successor(mod, s)) is not None:
+        return fall
+    t = mod.streams[s].tokens
+    if t and t[-1].kind == "end" and t[-1].code in FLOW:
+        end = s + sum(len(x.raw) for x in t)
+        return end if end in mod.streams else None
+    return None
+
+
 def _emit_stream(tokens: list[Token]) -> int:
     return sum(len(t.raw) for t in tokens) + (1 if tokens and tokens[-1].kind == "eof" else 0)
 
@@ -677,22 +693,22 @@ def reassemble(
     for i, s in enumerate(order):
         emit.append((s, toks[s]))
         nxt = order[i + 1] if i + 1 < len(order) else None
-        need, hops = _fall_successor(mod, s), 0
+        need, hops = _successor(mod, s), 0
         while need is not None and need != nxt and hops < 64:
             emit.append((None, toks[need]))  # 꼬리 복사본 — 참조되지 않는 익명 방출
-            need, hops = _fall_successor(mod, need), hops + 1
+            need, hops = _successor(mod, need), hops + 1
     # 게이트: 이어 읽기가 있는 스트림 바로 뒤 방출이 정말 그 원본 꼬리(토큰 그대로)인가 — 아니면 조건이 맞을 때 엉뚱한 글로 샌다.
     for i, (s, _tk) in enumerate(emit):
         if s is None:
             continue
-        need = _fall_successor(mod, s)
+        need = _successor(mod, s)
         if need is not None and (i + 1 >= len(emit) or emit[i + 1][1] is not toks[need]):
             raise ValueError(f"스트림 {s:#x} 의 이어 읽기 꼬리 {need:#x} 가 바로 뒤에 놓이지 않았다")
     for i, (s, tk) in enumerate(emit):  # 꼬리 복사본이 다시 이어 읽기를 가지면 그 꼬리도 바로 뒤여야 한다
         if s is not None:
             continue
         origin = next((k for k, v in toks.items() if v is tk), None)
-        need = _fall_successor(mod, origin) if origin is not None else None
+        need = _successor(mod, origin) if origin is not None else None
         if need is not None and (i + 1 >= len(emit) or emit[i + 1][1] is not toks[need]):
             raise ValueError(f"꼬리 복사본 {origin:#x} 의 이어 읽기 꼬리 {need:#x} 가 바로 뒤에 놓이지 않았다")
     pos = {}

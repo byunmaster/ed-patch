@@ -637,6 +637,14 @@ def plan(
         for u in order:
             b = _emit(toks[u], newpos[u], allpos)
             body[newpos[u] - lo : newpos[u] - lo + len(b)] = b
+        # 🔴 끝 코드(06·0A·0D)로 끝나 **뒤 스트림으로 이어 읽히는** 마지막 스트림이 제자리 칸보다 짧으면 사이 00 이 문장을 끊는다(미니게임
+        # 0x324bb 「…공격<0a>」→ 0x324c2 「…피해가 없었다」 — 구조 대조 10-22). 앞 스트림은 참조가 없어 오른쪽으로 못 민다 — 남는 칸을 공백으로 메워
+        # 이어 읽기가 공백을 지나 꼬리에 닿게 한다(공백은 글자라 창을 닫지 않는다). 칸이 없으면(딱 맞으면) 그대로.
+        last = order[-1] if order else None
+        if last is not None and strs[last]["stream"].end == hi and hi in strs and toks[last] and toks[last][-1].kind == "end" and toks[last][-1].code in (0x06, 0x0A, 0x0D):
+            e0 = newpos[last] - lo + len(_emit(toks[last], newpos[last], allpos))
+            if e0 < hi - lo:
+                body[e0 : hi - lo] = b"\x20" * (hi - lo - e0)
         for at, jb in extras:
             b = _emit(jb, at, allpos)
             body[at - lo : at - lo + len(b)] = b

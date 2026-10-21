@@ -74,7 +74,9 @@ class StalePool(unittest.TestCase):
         scene.verify_reassembly(orig, new_bytes)
         new = scene.parse_module(new_bytes, orig)
         strip = lambda m: sorted(re.sub(r"<0f\w+→goto:0x\w+>", "<goto>", st.text()) for st in m.streams.values())  # noqa: E731
-        self.assertEqual(strip(new), strip(orig))
+        # 끝 코드 사슬의 **꼬리 복사본**(scene._successor — 접미 스트림이 사이에 끼면 사슬 다음 스트림을 바로 뒤에 한 벌 더 둔다)은 같은 문안의 사본이라 집합으로 맞댄다
+        self.assertEqual(sorted(set(strip(new))), sorted(set(strip(orig))))
+        self.assertGreaterEqual(len(strip(new)), len(strip(orig)))
         # goto 는 새 자리의 「の 一撃 !!」 로 닿는다
         g = next(t for st in new.streams.values() for t in st.tokens if t.ref == scene.GOTO)
         self.assertEqual(new.streams[g.target].text(), "の 一撃 !!<07|끝>")

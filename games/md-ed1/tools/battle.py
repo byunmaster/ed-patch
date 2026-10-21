@@ -487,6 +487,29 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         # 문안이 **더 짧으면** 제자리에 쓰고 0 으로 메우는 순간 연쇄가 끊겨 꼬리가 사라진다(10-20 qa 「…민첩성이」에서 끝남) —
         # 그런 머리는 연쇄와 **함께 옮긴다**(아래 else 갈래).
         chain_next = st.end in rs and not (rs[st.end]["lea"] or rs[st.end]["words"])
+        if chain_next and len(body) < span and not (e["lea"] or e["words"]):
+            # 🔴 머리도 **참조 없는 사슬 스트림**(pinned — 블록 53 「…민첩성이 <06>」)이면 제자리에서 0 으로 메우는 순간 06 과 꼬리 사이에 00 이 끼어
+            # 「세리오스의 민첩성이 1」에서 끝난다(꼬리 「떨어졌다!!」 증발, 구조 대조 10-22 · 하네스 실측). 사슬 전체를 **붙여서** 제자리에 쓴다 —
+            # 남는 0 은 사슬 맨 끝(끝 코드 뒤)으로 간다. 꼬리의 옛 자리는 참조가 없어(이어 읽기로만 닿는다) 비워도 된다.
+            group = [(tgt, body)]
+            gend = st.end
+            while gend in rs and not (rs[gend]["lea"] or rs[gend]["words"]) and gend not in absorbed:
+                nb = bodies.get(gend)
+                if nb is None:
+                    nb = b[gend : rs[gend]["stream"].end]  # 번역 없는 꼬리는 원본 그대로
+                group.append((gend, nb))
+                gend = rs[gend]["stream"].end
+            full = b"".join(x for _p, x in group)
+            if len(full) <= gend - tgt:
+                out[tgt:gend] = full + b"\x00" * (gend - tgt - len(full))
+                off = 0
+                for pos, x in group:
+                    newpos[pos] = tgt + off
+                    off += len(x)
+                    if pos != tgt:
+                        absorbed.add(pos)
+                changed = True
+                continue
         if len(body) <= span and not (chain_next and len(body) < span and (e["lea"] or e["words"])):
             out[tgt : tgt + span] = body + b"\x00" * (span - len(body))
             newpos[tgt] = tgt
