@@ -244,8 +244,52 @@ def test_보조용언_목록은_QA_가_증거한_꼴만_넣는다():
     쏟아졌다 — `_is_infinitive` 는 **모음만** 보므로 본용언·명사·고유명사를 못 가른다.
     ⇒ 목록은 닫아 두고 **QA 가 증거한 꼴만** 넣는다. 아래 둘이 그렇게 들어왔다.
     """
-    assert split_reason("서", "있던") == "본용언+보조용언"        # 013 「서 있던」
-    assert split_reason("묵어", "보자고") == "본용언+보조용언"      # 025 「묵어 보자고」
+    assert split_reason("서", "있던") == "본용언+보조용언"  # 013 「서 있던」
+    assert split_reason("묵어", "보자고") == "본용언+보조용언"  # 025 「묵어 보자고」
+    assert split_reason("사", "오라고") == "본용언+보조용언"  # sfc-ed2 10-21 「사 오라고」
+    for a, b in [
+        ("무너져", "버리다니"),
+        ("물리쳐", "주었다네"),
+        ("돌아가", "주시지요"),
+        ("사라져", "버렸어"),
+        ("달아나", "있었습니다"),
+        ("들어", "보았습니다만"),
+    ]:
+        assert split_reason(a, b) == "본용언+보조용언", (a, b)  # sfc-ed2 qa 10-21
+    for a, b in [
+        ("와", "주셨네"),
+        ("묻혀", "있었다니"),
+        ("구해", "주신"),
+        ("봐", "버렸어요"),
+        ("설명해", "드리겠사옵니다"),
+    ]:
+        assert split_reason(a, b) == "본용언+보조용언", (a, b)
+    for a, b in [("주무시고", "계셔서"), ("복구되고", "나면"), ("빌려주고", "있네")]:
+        assert split_reason(a, b) == "-고+보조용언", (a, b)
+    assert split_reason("그리고", "말했다") is None
+    # 활용 생성(10-21 sfc-ed1 qa) — 목록에 한 꼴씩 더하지 않고 어간×어미로 만든다
+    for a, b in [
+        ("보여", "주시지"),
+        ("해", "주지"),
+        ("가르쳐", "드리세요"),
+        ("해", "줄게"),
+        ("구해", "줍니다"),
+        ("도와", "드렸습니다"),
+    ]:
+        assert split_reason(a, b) == "본용언+보조용언", (a, b)
+    assert split_reason("바다", "가운데") is None  # 어간 접두 매칭을 안 쓰는 까닭
+    assert split_reason("400", "Gold는") == "숫자+단위"  # pce-ed1 10-21
+    assert split_reason("60000～100000", "Gold쯤") == "숫자+단위"  # md-ed2 style 10-21 범위 숫자
+    assert split_reason("어느", "정도는") == "관형사·부사 고아"
+    assert split_reason("전", "세계의") == "관형사·부사 고아"
+    assert split_reason("갚아", "주마.") == "본용언+보조용언"  # pce-ed1 style 10-21
+    assert split_reason("점거해", "버렸으니까") == "본용언+보조용언"  # ss-ed1+2 style 10-21
+    assert split_reason("드리도록", "하겠습니다.") == "-도록/-어 하다"
+    assert split_reason("싶어", "하는데") == "-도록/-어 하다"
+    assert (
+        split_reason("나가지", "말래요.") == "-지 못하다/않다"
+    )  # sfc-ed2 style 10-21 「-지 말다」
+    assert split_reason("400", "개를") is None  # 한글 단위는 이미 붙여 쓴다(1-5)
 
 
 def test_split_reason_names_the_unit():
@@ -277,8 +321,10 @@ def test_tail_orphan_pull_keeps_units():
 def test_lone_line_merges_down_into_its_sentence():
     # 위도우 방지가 내린 어절이 뒷문장이 붙으면서 **가운데 고아**로 남던 자리
     # (유저 QA 2026-08-31 `으쓱해질` 이 홀로 한 줄). 같은 문장인 뒷줄에 붙인다.
+    # 10-21: 「게다」(것이다)를 의존명사로 묶자 `으쓱해질 게다.` 가 처음부터 한 줄이 돼 고아 자체가 안 생긴다
+    #   — 뒷문장은 문장 경계라 새 줄에 남는다(합치기는 가운데 고아만 본다).
     out = wrap_pages("그러면 나도 어깨가 으쓱해질 게다. 왓핫하.", width=14, lines_per_page=6)
-    assert out == [["그러면 나도 어깨가", "으쓱해질 게다. 왓핫하."]], out
+    assert out == [["그러면 나도 어깨가", "으쓱해질 게다.", "왓핫하."]], out
 
 
 def test_lone_line_merges_up_when_down_does_not_fit():
@@ -311,3 +357,42 @@ def _run():
 
 if __name__ == "__main__":
     sys.exit(0 if _run() else 1)
+
+
+def test_more_bound_nouns_and_aux_forms():
+    """「것」 준말·서술격 꼬리 의존명사, 생성 보조용언 꼴(sfc-ed2 style 10-21 — 가짜 문장)."""
+    assert split_reason("이긴", "건") == "관형형+의존명사"
+    assert split_reason("있을", "거야") == "관형형+의존명사"
+    assert split_reason("잡을", "뿐일세") == "관형형+의존명사"
+    assert split_reason("가라앉을", "때까지") == "관형형+의존명사"
+    assert split_reason("구해", "주었으면") == "본용언+보조용언"
+    assert split_reason("물어", "봤으나") == "본용언+보조용언"
+    assert split_reason("이상해", "보이니") == "본용언+보조용언"
+    assert split_reason("되어", "있으니까") == "본용언+보조용언"
+    assert split_reason("두고", "있었지") == "-고+보조용언"
+    assert split_reason("알고", "있겠지") == "-고+보조용언"
+    assert split_reason("바다", "건너") is None
+
+
+def test_aux_and_bound_more_endings():
+    """sfc-ed2 재검 16 낮음 — 가짜 어절로 판정만 본다."""
+    assert split_reason("답해", "주겠는가") == "본용언+보조용언"
+    assert split_reason("속아", "버렸다니까") == "본용언+보조용언"
+    assert split_reason("해", "보자는") == "본용언+보조용언"
+    assert split_reason("숨어", "있다네") == "본용언+보조용언"
+    assert split_reason("괴롭히고", "있다는") == "-고+보조용언"
+    assert split_reason("가지고", "있잖아") == "-고+보조용언"
+    assert split_reason("만나고", "싶다고") == "-고+보조용언"
+    assert split_reason("구출하는", "것인가") == "관형형+의존명사"
+    assert split_reason("있었을", "뿐이에요") == "관형형+의존명사"
+    assert split_reason("재미있는", "것이로군") == "관형형+의존명사"
+    assert split_reason("첫", "문을") == "관형사·부사 고아"
+    assert split_reason("만들어", "버린단") == "본용언+보조용언"
+    assert split_reason("쳐들어가는", "것쯤") == "관형형+의존명사"
+    assert split_reason("찾는", "거였지") == "관형형+의존명사"
+    assert split_reason("모든", "사람의") == "관형사·부사 고아"
+    assert split_reason("싫어하는", "걸까요?") == "관형형+의존명사"
+    assert split_reason("알고", "있구먼") == "-고+보조용언"
+    assert split_reason("알고", "있는가?") == "-고+보조용언"
+    assert split_reason("맞을", "뿐이고") == "관형형+의존명사"
+    assert split_reason("수", "있는") == "수+있다/없다"
