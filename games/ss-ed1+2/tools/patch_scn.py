@@ -74,7 +74,7 @@ LINE_DICT = os.path.join(_ROOT, "games", "ps1-ed1+2", "line_dict.json")
 LINE_DICT_REF = "game/ps1-ed1+2:games/ps1-ed1+2/line_dict.json"
 # 「どうも ありがとう」 · 「また来てくれよ」 · 「どれを買うんだ？」 · 「〈품목〉だね。…」 · 「ちょっと待ってくれ」
 SHOP_1018 = {
-    "29507f69cbcab430": "정말 고마워.",
+    "29507f69cbcab430": "정말 고마워요.",  # 해요체 가게(ED2SCN27) — 합쇼체 가게(ED1SCN16)는 scn_at 로 「정말 감사합니다.」(PS1 역할군 목록 E, 마스터 10-20)
     "c29f621c8e7746c2": "또 와 줘.",
     "6f9f9a990a77e2f8": "어느 걸 살 거야?",
     "a00ede6f5de63402": "\ue003말이군.\n정말 고마워.",
@@ -1360,7 +1360,7 @@ def main():
             matched += sum(
                 1
                 for o, _n, e in run
-                if o not in mine and canon_of(canon, e.get("text", ""), isites.get(o), path=path)
+                if o not in mine and canon_of(canon, e.get("text", ""), isites.get(o), path=path, off=o)
             )
             blob, moves, dropped = rebuild(
                 run, canon, d, mine, built, spare, isites, done, spans, path

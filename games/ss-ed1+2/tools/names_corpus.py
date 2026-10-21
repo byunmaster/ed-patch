@@ -97,7 +97,7 @@ def _scn_pairs(mm):
             eid = e.get("entry_id", e.get("file_offset"))
             where = f"scn:{path}#{eid}"
             site = sites.get(int(e["file_offset"], 16))
-            kr = S.canon_of(canon, jp, site, path=path)
+            kr = S.canon_of(canon, jp, site, path=path, off=int(e["file_offset"], 16))
             seq.append((S.line_key(jp), where, jp, kr))
             yield where, jp, kr
         # 🔴 **이어진 문장은 한 줄로도 낸다**(2026-10-20 sfc-ed2 실측 부류 — 어댑터가 조각 단위로만 줄을 내면 한 문장이 블록 여럿에 걸친 자리를 이름·정본·인사
