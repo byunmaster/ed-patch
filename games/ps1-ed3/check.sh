@@ -168,6 +168,10 @@ elif ls "$_gd"/*.failed "$_gd"/*.part >/dev/null 2>&1; then echo "   🔴 실패
 else echo "   ✅ 실빌드 — $(sha1sum "$_bin" | cut -c1-12) · $(( $(wc -c < "$_bin") / 1048576 ))MB"
   # 구운 글꼴에서 서로 같은 그림인 글리프 쌍(쉼표=마침표 사고, ss-ed1+2 10-20) — 롬에서 읽어 센다
   "$PY" "$G/tools/check_glyph_dups.py" "$_bin" || fail=1
+  # 🔴 구조 대조(마스터 10-22) — 원본과 구운 이미지의 대본 멤버를 **글자 바이트를 뺀 제어 구조**(스크립트 바이트·포인터 서수·조각 수·종결·꼬리 채움·숫자 표식)로
+  #    한 블록씩 맞댄다. 재배치·채움이 다음 블록 호출을 막는 사고(ss-ed3 10-21 FF FF 채움)를 정적으로 잡는다. 장부 `relocations.tsv` 는 이 검사가 이미지에서 뽑는다
+  #    (의도한 변화일 때만 `STRUCT_WRITE_LEDGER=1 sh scripts/check.sh` 로 다시 쓴다).
+  "$PY" "$G/tools/check_structure.py" "$_bin" ${STRUCT_WRITE_LEDGER:+--write-ledger} || fail=1
 fi
 rm -rf "$_gd"
 
