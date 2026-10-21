@@ -263,6 +263,27 @@ def _movable(off, n, e, table=frozenset()):
     )
 
 
+RELOC_OFF_FILE = os.path.join(common.GAME_DIR, "script", "relocation_off.txt")
+_RELOC_OFF = None
+
+
+def reloc_off(path, e):
+    """🔴 **재배치 장부 스위치**(마스터 10-22 「정 안되면 나중에 되돌려야할수도 있으니」) — 이 블록을 **옮기지 않는다**.
+
+    `script/relocation_off.txt`(또는 환경변수 `ED_RELOC_OFF=<목록 파일>`)에 장부(`relocations.tsv`)의 블록 키(`ED1SCN08#170`)를 한 줄씩 적는다(`#` 주석).
+    켜진 블록은 제자리 칸에 **맞으면 제자리에 넣고**(구간 재깔기에서도 안 옮긴다), 칸을 넘으면 번역을 못 넣어 **원문 일본어로 남는다**(잔존 게이트가 울린다 —
+    되돌리면 생기는 일). 기본(파일 없음)은 아무것도 안 끈다 — 빌드 바이트가 안 바뀐다.
+    """
+    global _RELOC_OFF
+    if _RELOC_OFF is None:
+        src = os.environ.get("ED_RELOC_OFF") or RELOC_OFF_FILE
+        _RELOC_OFF = set()
+        if os.path.exists(src):
+            with open(src, encoding="utf-8") as f:
+                _RELOC_OFF = {ln.split("#", 1)[0].strip() + "#" + ln.split("#", 1)[1].split()[0] for ln in f if ln.strip() and not ln.lstrip().startswith("#") and "#" in ln}
+    return bool(path) and f"{os.path.basename(path)[:-4]}#{e.get('entry_id')}" in _RELOC_OFF
+
+
 def _needs_pack(run, canon, d, skip_offs, built, sites, path=None):
     """이 구간에 **제 칸을 넘는 블록**이 있나 — 있으면 구간을 통째로 다시 깐다."""
     if not canon:
@@ -338,8 +359,12 @@ def rebuild(
                 # ⚠ 인코딩을 **여기서 들고 나간다** — 확장 영역으로 이주할 쪽이 다시
                 #   조판·인코딩하면 두 곳에서 갈릴 수 있다(같은 문안을 두 번 만들지 않는다).
                 enc = _encode(kr)
-                skipped.append((off, f"칸을 넘는다 {len(enc)}B > {n}B", jp[:18], e, enc))
-            elif packed and _movable(off, n, e, table):
+                if reloc_off(path, e):
+                    # 장부 스위치 — 옮기지 않는다(번역을 못 넣고 원문이 남는다)
+                    skipped.append((off, f"장부 스위치로 이주를 껐다 — 칸을 넘는다 {len(enc)}B > {n}B", jp[:18], e, None))
+                else:
+                    skipped.append((off, f"칸을 넘는다 {len(enc)}B > {n}B", jp[:18], e, enc))
+            elif packed and _movable(off, n, e, table) and not reloc_off(path, e):
                 # 구간을 다시 깐다 — 자리는 `migrate` 가 정하고 여기선 원본을 남긴다
                 skipped.append((off, "구간을 다시 깐다", jp[:18], e, _encode(kr)))
             else:
@@ -1018,6 +1043,74 @@ def _measured_free(path):
     return _MFREE.get(path, [])
 
 
+def protected_tails(d, base, entries):
+    """**남이 포인터로 들어오는 블록 꼬리** → `[(시작, 끝)]`(정렬·병합) — 이주 풀이 못 쓰는 자리(마스터 10-22).
+
+    🔴 원본의 정렬된 4바이트 값 중 목표가 어떤 블록의 **꼬리(종단 NUL · 0 채움 · `0x09`)** 안(블록 시작은 아님)인 것이 있다 — 덤프에 없는 리터럴 풀 포인터(빈 문자열 `00 00 00 09`
+       로 들어오는 자리, 실측 5곳). 풀이 그 꼬리를 재사용하면 그 포인터를 쓰는 쪽이 **우리 글자를 읽는다**(pce-ed1 이 잡은 꼴 — 한 메시지의 끝 점프가 다른 메시지의 종단 00 으로
+       들어오는데 우리 스텁이 그 00 을 덮었다). 「실제로 불리나」를 증명하려 하지 않고 **원판대로 보존**한다 — 비용은 몇 바이트.
+    ⚠ `check_structure.tail_entry_changed` 가 같은 것을 **따로** 센다(검사기는 빌더와 코드를 나누지 않는다).
+    """
+    import bisect
+
+    spans = sorted((int(e["file_offset"], 16), int(e["file_offset"], 16) + len(bytes.fromhex(e["raw_hex"])) + 1) for e in entries)
+    starts = [a for a, _ in spans]
+    out = []
+    for q in range(0, len(d) - 3, 2):
+        w = int.from_bytes(d[q : q + 4], "big") - base
+        if not (0 <= w < len(d)):
+            continue
+        i = bisect.bisect_right(starts, w) - 1
+        if i < 0:
+            continue
+        s_, e_ = spans[i]
+        if w == s_ or not (w >= e_ - 1):
+            continue
+        t = e_ - 1
+        while t < len(d) and d[t] == 0:
+            t += 1
+        if t < len(d) and d[t] == 0x09 and t > e_ - 1:
+            t += 1
+        t = max(t, e_)
+        if w < t:
+            out.append((w, t))
+    out.sort()
+    merged = []
+    for a, b in out:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    return [tuple(x) for x in merged]
+
+
+_PROT = {}
+
+
+def protected_tails_of(path):
+    """`protected_tails` 를 파일 이름으로 — 원본 이미지에서 읽는다(`patch_ui` 가 쓴다). → `(원본 바이트, [(시작, 끝)])`."""
+    if path not in _PROT:
+        got = load(path)
+        out = ([], b"")
+        if got:
+            _f, mm = common.open_image(common.ORIG_BIN)
+            lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
+            d = bytes(common.read_extent(mm, lba, size))
+            out = (protected_tails(d, got[0], got[1]), d)
+        _PROT[path] = out
+    return _PROT[path]
+
+
+def _merge_ranges(rs):
+    out = []
+    for a, b in sorted((int(x), int(y)) for x, y in rs):
+        if out and a <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return [tuple(x) for x in out]
+
+
 def _minus(holes, owned):
     """`holes`(`[[시작, 길이]]`)에서 `owned`(`[(시작, 끝)]`) 구간을 뺀다 — 쓰기 장부가 말하는 「남이 쓴 자리」."""
     out = []
@@ -1380,7 +1473,7 @@ def main():
         puts, mptrs, left = (
             migrate(
                 over, _base, size, bsize, list(spare) + _measured_free(path) + _hook_pool(path), spans, built, d,
-                common.ledger_owned(lba, bsize, os.path.basename(sys.argv[0])),
+                _merge_ranges(list(common.ledger_owned(lba, bsize, os.path.basename(sys.argv[0]))) + protected_tails(d, _base, entries)),
             )
             if canon
             else ([], [], over)

@@ -876,10 +876,24 @@ def _ptrs_to(d, at, base=NAME_PTR_BASE):
 
 def name_pack(t, plan):
     """표 하나 → `(새 바이트, {포인터 오프셋: 새 값})`. 안 넣는 칸은 원문을 그대로 옮긴다."""
+    import patch_scn
+
+    prot, od = patch_scn.protected_tails_of(t["path"])
+    prot = [(a, b) for a, b in prot if t["off"] <= a < t["off"] + t["room"]]
     buf, moves = bytearray(), {}
     for _at, jp, kr, ptrs in t["recs"]:
         new_at = t["off"] + len(buf)
         body = to_bytes(kr, plan) if kr else jp.encode("cp932")
+        # 🔴 남이 포인터로 들어오는 꼬리(빈 문자열 자리, 마스터 10-22)는 **원판 그대로** 둔다 — 겹치면 그 뒤로 건너뛴다
+        for a_, b_ in prot:
+            if new_at < b_ and new_at + len(body) + 2 > a_:
+                buf += b"\x00" * max(0, a_ - t["off"] - len(buf)) if a_ > new_at else b""
+                new_at = t["off"] + len(buf)
+                if new_at < b_:
+                    buf += od[new_at:b_]
+                    if len(buf) & 1:
+                        buf += b"\x00"
+                    new_at = t["off"] + len(buf)
         buf += body + b"\x00"
         if len(buf) & 1:  # 2바이트 정렬 — 원본도 짝수 자리에 깐다
             buf += b"\x00"
@@ -887,7 +901,11 @@ def name_pack(t, plan):
             moves[p] = NAME_PTR_BASE + new_at
     assert len(buf) <= t["room"], f"{t['path']} {t['what']}: {len(buf)}B > 자리 {t['room']}B"
     t["used"] = len(buf)  # 뒤 여유는 시스템 메시지의 도너로 쓴다(`sys_pack`)
-    return bytes(buf) + b"\x00" * (t["room"] - len(buf)), moves
+    out = bytearray(bytes(buf) + b"\x00" * (t["room"] - len(buf)))
+    for a_, b_ in prot:  # 칸 뒤 여유 안의 보호 구간도 원판 바이트로
+        lo, hi = a_ - t["off"], min(b_ - t["off"], t["room"])
+        out[lo:hi] = od[a_ : a_ + (hi - lo)]
+    return bytes(out), moves
 
 
 # ── 시스템 메시지 — 전투·보상·상태 (2026-08-24) ──────────────────────────────
@@ -1195,6 +1213,22 @@ def sys_pack(sysm, ntabs, plan):
             if t["path"] == path and t["room"] > t["used"]:
                 pool.append((t["off"] + t["used"], t["room"] - t["used"]))
         pool.sort()
+        # 🔴 **남이 포인터로 들어오는 꼬리는 풀이 아니다**(마스터 10-22) — 풀 조각에서 도려낸다(원판 바이트 그대로 남는다)
+        import patch_scn
+
+        _prot = patch_scn.protected_tails_of(path)[0]
+        _cut = []
+        for at, n in pool:
+            cur = at
+            for a_, b_ in _prot:
+                if b_ <= cur or a_ >= at + n:
+                    continue
+                if a_ > cur:
+                    _cut.append((cur, a_ - cur))
+                cur = max(cur, b_)
+            if cur < at + n:
+                _cut.append((cur, at + n - cur))
+        pool = _cut
         # 🔴 **붙어 있는 칸은 하나로 합친다**(2026-08-24). 배정은 칸을 넘지 못하므로,
         #   합치지 않으면 총량이 남는데도 조각이 다 작아 큰 문안이 갈 데가 없어진다 —
         #   실측 ED2 는 256B 가 남은 채 25B 하나를 못 넣고 죽었다. 레코드의 span 은
