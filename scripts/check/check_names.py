@@ -93,6 +93,14 @@ def main(argv=None):
         print(f"  ✗ {h.where}  {h.jp} → 사전 「{h.canon}」 이 우리 줄에 없다")
     if not a.list and len(left) > 10:
         print(f"  … 외 {len(left) - 10} (--list)")
+    print(
+        f"  대사 속 이름 띄어쓰기 — 잰 이름 {r.spacing_checked} · 어긋남 {len(r.spacing)}"
+        + (" (알림 — 실패 아님)" if r.spacing else "")
+        + (" ⚠ 0 개를 쟀다 — 어댑터가 대사 갈래를 안 내는가" if not r.spacing_checked else "")
+    )
+    if r.spacing:
+        for h in r.spacing if a.list else r.spacing[:5]:
+            print(f"    ␣ {h.where}  {h.jp} → 정본 「{h.canon}」 을 띄어 썼다")
     for h in r.pending[:5]:
         print(f"  ⏳ {h.where}  {h.jp} — 사전 확인 대기(_pending) 이름이 화면에 쓰인다")
     return 1 if left else 0

@@ -33,7 +33,9 @@ from . import nouns as load
 
 Hit = collections.namedtuple("Hit", "where category jp canon ok")
 Report = collections.namedtuple(
-    "Report", "units translated hits mismatches pending skipped_keys unlabeled"
+    "Report",
+    "units translated hits mismatches pending skipped_keys unlabeled spacing spacing_checked",
+    defaults=((), 0),
 )
 
 MIN_KEY = 2
@@ -79,6 +81,7 @@ KIND_WORDS = (
     "항구",
     "요새",
     "광산",
+    "폐광",  # ED1 ジャグリのはいこう — 칸 「쟈그리폐광」 · 대사 「쟈그리 폐광」(규칙 ③, 10-21 sfc-ed1 qa)
     "동굴",
     "호수",
     "통로",  # ED3 地下通路 → 대사 「지하 통로」(10-07)
@@ -265,7 +268,8 @@ def audit(pairs, title="eiyuu", data=None):
     slot_forms = _slot_forms(data)
     pend = _pending(data)
     units = translated = 0
-    hits, pending = [], []
+    hits, pending, spacing = [], [], []
+    spacing_checked = 0  # 띄어쓰기를 잰 대사 속 이름 수 — 0 건이 「안 쟀다」와 갈리게 분모를 낸다
     unlabeled = 0
     for item in pairs:
         where, jp, kr = item[:3]
@@ -315,9 +319,29 @@ def audit(pairs, title="eiyuu", data=None):
                 hits.append(Hit(where, "place@대사", canon_jp, "/".join(sorted(want)), ok))
             else:
                 want = set(canon) | (slot_forms.get(k, set()) if kind == SLOT else set())
-                ok = any(_flat(c) in flat for c in want)
+                # 끝 부호(. !! ?)는 기종마다 원문을 따른다(마스터 10-18 「끝 부호는 기종마다 원문 따름」) —
+                #   정본 값의 끝 부호만 다른 줄은 어긋남이 아니다(새턴 「삼켰다」 · PCE 「삼켰다.」)
+                ok = any(_flat(c) in flat or _flat(c).rstrip(".!?！？。") in flat for c in want)
                 hits.append(Hit(where, cat, canon_jp, "/".join(sorted(want)), ok))
+                # 대사 속 이름의 **띄어쓰기**(알림만 — 실패로 치지 않는다, 10-21 sfc-ed2 「장갑 슬라임」) —
+                #   위 비교는 공백을 지워 「붙여 쓸 이름을 띄운」 줄을 못 잡는다. 줄바꿈만 지우고(이름 속 줄바꿈은
+                #   같은 표기) 정본 꼴 그대로 있는지 본다. 정본이 띄운 이름은 거꾸로 붙여 쓴 줄을 잡는다.
+                if ok and kind == DIALOG:
+                    joined = "".join(kr.splitlines()).translate(_HALF)
+                    nospace = [c for c in want if c and not any(ch.isspace() for ch in c)]
+                    if nospace:
+                        spacing_checked += 1
+                        if not any(c in joined for c in nospace):
+                            spacing.append(hits[-1])
+                    else:
+                        # 반대쪽 — 정본이 띄어 쓴 이름을 붙여 쓴 줄(10-21 「노예 상인」 · 마스터 「띄어쓰는게 맞고」).
+                        #   줄바꿈은 띄어쓰기 자리로 본다(`노예\n상인` = 띄움).
+                        spacing_checked += 1
+                        if not any(_spaced(c) in spaced for c in want if c):
+                            spacing.append(hits[-1])
             if k in pend or _key(canon_jp) in pend:
                 pending.append(hits[-1])
     mism = [h for h in hits if not h.ok]
-    return Report(units, translated, hits, mism, pending, skipped, unlabeled)
+    return Report(
+        units, translated, hits, mism, pending, skipped, unlabeled, spacing, spacing_checked
+    )

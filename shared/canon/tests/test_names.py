@@ -254,17 +254,46 @@ def test_ed3_dictionary_is_sound():
             assert all(jp in d["categories"][cat] for jp in tbl), cat
 
 
-
 def test_slot_form_is_accepted_only_in_slots():
     """`원문@자리` 칸 꼴은 칸(slot)에서만 정답이다 — 대사엔 칸이 없다(마스터 10-08)."""
-    data = {"categories": {"item": {"テストの杖": "테스트의 지팡이", "テストの杖@아이템칸": "테스트 지팡이"}}}
+    data = {
+        "categories": {
+            "item": {"テストの杖": "테스트의 지팡이", "テストの杖@아이템칸": "테스트 지팡이"}
+        }
+    }
     r = audit([("s", "テストの杖", "테스트 지팡이", "slot")], data=data)
     assert not r.mismatches
     r = audit([("d", "テストの杖をもらった", "테스트 지팡이를 받았다", "dialog")], data=data)
     assert len(r.mismatches) == 1
+
 
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
             fn()
     print("ok")
+
+
+def test_dialog_name_spacing_is_noticed():
+    """대사 속 붙여 쓸 이름을 띄우면 알림(spacing)에 든다 — 이름 속 줄바꿈은 같은 표기로 본다."""
+    bad = audit([("x", "ホムラノケンだ", "불의검이다", "dialog")], data=FAKE)
+    assert bad.mismatches == [] and [h.where for h in bad.spacing] == [
+        "x"
+    ]  # 정본이 띄운 이름을 붙임
+    wrapped = audit([("x2", "ホムラノケンだ", "불의\n검이다", "dialog")], data=FAKE)
+    assert wrapped.spacing == []  # 띄어쓰기 자리의 줄바꿈은 띄움
+    data = {"categories": {"monster": {"ソウコウスライム": "장갑슬라임"}}}
+    r = audit([("y", "ソウコウスライムがおちた", "장갑 슬라임이 떨어졌다", "dialog")], data=data)
+    assert r.mismatches == [] and [h.where for h in r.spacing] == ["y"]
+    assert r.spacing_checked == 1
+    ok = audit([("z", "ソウコウスライムがおちた", "장갑\n슬라임이 떨어졌다", "dialog")], data=data)
+    assert ok.spacing == []
+    slot = audit([("w", "ソウコウスライム", "장갑 슬라임", "slot")], data=data)
+    assert slot.spacing == []
+
+
+def test_closed_mine_is_spaced_in_dialog():
+    """「폐광」은 종류 말 — 대사에서 띄운다(규칙 ③). 칸 꼴은 붙인 채."""
+    from canon.names import dialog_place
+
+    assert dialog_place("쟈그리폐광") == "쟈그리 폐광"
