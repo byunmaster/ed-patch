@@ -39,7 +39,7 @@ local function bandhash()
       local v=b[o+x+1] or 0
       if x<=200 then h=(h*33+v)%4294967296 end
       local r,g,bb=(v>>16)&255,(v>>8)&255,v&255
-      if r>=200 and g>=200 and bb>=200 then tx=tx+1 end  -- 밝은 글자(흰·회색·황갈색 — 창마다 글자 색이 다르다). 초록 지도·하늘색 틀은 뺀다
+      if (r>=200 and g>=200 and bb>=200) or (math.abs(r-182)<=8 and math.abs(g-147)<=8 and math.abs(bb-92)<=8) then tx=tx+1 end  -- 글자 잉크: 흰색 · 황갈색(색 글자 창)  -- 밝은 글자(흰·회색·황갈색 — 창마다 글자 색이 다르다). 초록 지도·하늘색 틀은 뺀다
     end
   end
   for y=190,199 do local o=y*256
@@ -55,8 +55,11 @@ local ui=0         -- 지금 단위(1..#UNITS)
 local RA=nil       -- 첫 호출의 복귀 주소(= 호출 지점 + 4) — 단위 끝 판정
 local state="boot"
 local need_write=false
+local VARNAME=os.getenv("SW_VARNAME")  -- 이름 변수 버퍼 `$1201`(토큰 `0e` 가 찍는 아이템 이름)에 넣을 대표 이름(hex) — 비어 있으면 변수로 시작하는 단위는 글자가 안 찍힌다(원판 롬도 같다)
 local function setptr()
-  if ui>=1 and ui<=#UNITS then local a=UNITS[ui]; wr(0xA6,a&255); wr(0xA7,(a>>8)&255); wr(0xA8,(a>>16)&255); need_write=false end
+  if ui>=1 and ui<=#UNITS then local a=UNITS[ui]; wr(0xA6,a&255); wr(0xA7,(a>>8)&255); wr(0xA8,(a>>16)&255); need_write=false
+    if VARNAME then local k=0; for h in VARNAME:gmatch("%x%x") do wr(0x1201+k,tonumber(h,16)); k=k+1 end end
+  end
 end
 local function next_unit()
   ui=ui+1
@@ -112,7 +115,7 @@ emu.addMemoryCallback(function()
     if prevh~=nil and h==prevh then stable=stable+1 else stable=0; if prevh~=nil then changed=true end end
     prevh=h
     if not shotdone and pressn==0 then
-      local ready=stable>=DEB and (uf-arrow_t)<=40 and (changed or sincepress>=120)
+      local ready=stable>=DEB and tx>=TXMIN and (uf-arrow_t)<=40  -- 글자 잉크가 있어야 쪽으로 친다(▼만 있고 글자가 없는 닫힌 창 뒤 장을 안 찍는다) and (changed or sincepress>=120)
       local tmo=sincepress>=PMAX
       if ready or tmo then
         pg=pg+1

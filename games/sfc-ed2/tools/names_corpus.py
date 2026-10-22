@@ -51,4 +51,38 @@ def pairs():
         if v:
             ko = _E.sub(lambda m: kr_dict.get(f"E{m.group(1)}:{m.group(2)}", ""), v["kr"])
         out.append((sid, _norm(jp), _norm(ko) if ko is not None else None, "dialog"))
+    out += _unit_rows(d, jp_dict, kr_dict)
     return out
+
+
+def _unit_rows(d, jp_dict, kr_dict):
+    """구간이 둘 이상이거나 호출 조각(`$10`)을 끼는 대사 단위는 **이어 붙인 한 줄**로도 낸다 — 구간 단위로만 보면 「이거」+호출 「왕자님」 같은 이음새 인사가 안 보인다(10-20 style: 병사 인사 「이거 왕자님」이 통과했다).
+    구운 롬이 있을 때만 낸다(한국어 쪽을 롬에서 읽는다 — 정리는 check.sh 가 빌드 뒤에 돌리므로 항상 있다)."""
+    built = common.BUILD_DIR / "sfc-ed2" / "Dragon Slayer - Eiyuu Densetsu 2 (KR).sfc"
+    if not built.exists():
+        return []
+    import bisect
+
+    import romdump
+
+    kb = built.read_bytes()
+    dj, dk = romdump.Dec(d, False), romdump.Dec(kb, True, romdump.kr_glyph_map(kb))
+    starts = sorted(a for a, _b in segs.segments(d))
+    rows = []
+    for s, e in script.all_units(d):
+        i, j = bisect.bisect_left(starts, s), bisect.bisect_left(starts, e)
+        has_call = any(d[p] == 0x10 for p, _ln in script.tokens(d, s, e))
+        if j - i < 2 and not has_call:
+            continue
+        o = s + 4 if d[s : s + 4] == b"\x5c\x0b\x8f\xc1" else s
+        try:
+            tj, tk = dj.walk(o), dk.walk(o)
+        except Exception:
+            continue
+        rows.append((f"U{common.off2snes(o):06X}", _unit_norm(tj), _unit_norm(tk), "dialog"))
+    return rows
+
+
+def _unit_norm(t: str) -> str:
+    t = t.replace("↵", " ").replace("⏎", "|").replace("〔", "|").replace("〕", "|").replace("{", "").replace("}", "")
+    return _norm(t)

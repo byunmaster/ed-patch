@@ -2,7 +2,7 @@
 
 dialog_sweep.lua 는 **창 안쪽이 DEB 프레임 안 변할 때까지 기다렸다가 찍고 그다음에 A 를 누른다**(sfc-ed1 MV_DEBOUNCE 와 같은 방식) —
 그래서 `pNN.png` 는 글자가 다 나온 쪽이고 타이핑 중간 장은 애초에 안 찍힌다. 대기 한도를 넘으면 `pNN_timeout.png` 로 남기고 로그에 TIMEOUT 줄이 선다.
-`manifest.tsv`(단위·쪽 수·timeout 쪽 수·검은 그림 수 — 0 이어야 한다) — timeout 이 0 이 아닌 단위는 그 번호만 대기를 늘려 다시 찍는다.
+`manifest.tsv`(단위·쪽 수·timeout 쪽 수·검은 그림 수 — 0 이어야 한다 · 글자 없는 쪽 수 — 목표 화면이 아닌 빈 창) — timeout 이 0 이 아닌 단위는 그 번호만 대기를 늘려 다시 찍는다.
 
     python3 prune.py <out 폴더>   # <out>/c*/raw/<단위>/*.png → 제자리 교체 + <out>/manifest.tsv
 """
@@ -24,6 +24,7 @@ for ud in sorted(glob.glob(f"{sys.argv[1]}/c*/raw/*")):
     pages = [f for f in fs if os.path.basename(f).startswith("p")]
     tmo = [f for f in pages if "_timeout" in f]
     black = 0
+    blank = 0  # 글자 잉크가 없는 쪽(창 안쪽 흰·황갈 글자 픽셀 6개 미만) — 목표 화면이 아닌 빈 창
     for f in fs:
         im = Image.open(f).convert("RGB")
         if im.size[1] > REGD[3] - REGD[1]:  # 이미 잘린 그림(높이 96)은 다시 자르지 않는다 — 다시 자르면 범위 밖이라 검은 그림이 된다(10-20 사고)
@@ -32,5 +33,14 @@ for ud in sorted(glob.glob(f"{sys.argv[1]}/c*/raw/*")):
         n += 1
         if im.getextrema() == ((0, 0), (0, 0), (0, 0)):
             black += 1
-    man.write(f"{os.path.basename(ud)}\t{len(pages)}\t{len(tmo)}\t{black}\n")
+        if os.path.basename(f).startswith("p"):
+            px, ink = im.load(), 0
+            for yy in range(8, 76):
+                for xx in range(16, 240):
+                    r_, g_, b_ = px[xx, yy][:3]
+                    if (r_ >= 200 and g_ >= 200 and b_ >= 200) or (abs(r_ - 182) <= 8 and abs(g_ - 147) <= 8 and abs(b_ - 92) <= 8):
+                        ink += 1
+            if ink < 6:
+                blank += 1
+    man.write(f"{os.path.basename(ud)}\t{len(pages)}\t{len(tmo)}\t{black}\t{blank}\n")
 print("처리", n)

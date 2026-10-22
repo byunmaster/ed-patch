@@ -237,6 +237,25 @@ def call_texts(text: str, seg_off: int, seg_map: dict, sg: dict) -> dict[str, st
     return out
 
 
+BATTLE_NAME_W = 20  # 몬스터 이름(+접미 A~D) 가운데 가장 긴 폭(사일런트로드B · 스트라이프츠A) — 단위는 조판 폭(전각 한글 3 · 반각 2)
+BATTLE_PREFIX_W = 6  # 두 이름이 이어지는 「A와 B가 나타났다」 앞에 붙는 표시 글자(`kkk`)
+
+
+def battle_typeset(text: str) -> str:
+    """전투 문구는 앞에 이름(몬스터·파티, 런타임 변수)이 붙어 문안 쪽 폭만으로는 줄 폭을 모른다 — 그 자리를 가장 긴 이름 폭으로 잡고 어절 단위로 줄을 나눈다.
+    (엔진은 줄이 넘치면 낱말 가운데서 끊는다 — 「날아갔/다.」. 손으로 줄바꿈을 넣으면 문안이 바뀔 때 다시 깨진다.)"""
+    m = re.match(r"((?:<02>)?)(\{\*[^{}]*\})", text)
+    if m and "\n" not in text and "<1e>" not in text:
+        rest = text[m.end(1) :]
+        names = {"E0:999": "가나다라마바A"}  # 폭 3×6+2 = 20
+        out = typeset.typeset("<E0:999>" + rest, names).replace("<E0:999>", "", 1)
+        return m.group(1) + out
+    if text.endswith(" 나타났다.") and "<" not in text and "\n" not in text:
+        names = {"E0:998": "kkk"}  # 폭 6
+        return typeset.typeset("<E0:998>" + text, names).replace("<E0:998>", "", 1)
+    return text
+
+
 def collect_texts(src: bytes) -> tuple[dict, dict, dict]:
     seg_map = kr.load("segments")
     ui_map = kr.load("ui")
@@ -637,6 +656,8 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             continue
         if 0xC2 <= (common.off2snes(a) >> 16) <= 0xCB and not v.get("raw"):  # $C2~$CB 대사 — 대사창 규격으로 조판(`raw: true` 면 그대로)
             text = typeset.typeset(text, {**names, **e1w, **call_texts(text, a, seg_map, sg)})
+        elif (common.off2snes(a) >> 16) in (0xD4, 0xD5) and not v.get("raw"):  # $D4·$D5 전투 문구 — 앞에 오는 이름(변수)의 폭을 가장 긴 이름으로 잡고 어절 단위로 나눈다
+            text = battle_typeset(text)
         data = kr.encode(text, alloc)
         if len(data) <= b - a:
             rom[a:b] = data + bytes([NOOP]) * (b - a - len(data))
@@ -736,6 +757,9 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
     for c, i in alloc.items():
         if i >= n0 or font_out:
             ft[i * 18 : (i + 1) * 18] = hangul_font.glyph12(c)
+    if font_out and 2 not in alloc.values():
+        # 색인 2 = 일본어 「。」 — 「정말 고마워」 조각 뒤처럼 구간 밖 2바이트 코드로 남는 자리가 있어 화면에 그대로 나간다(마스터 규칙: 마침표는 반각 「.」). 모양을 「.」로 바꾼다
+        ft[2 * 18 : 3 * 18] = hangul_font.glyph12(".")
     if font_out:
         rom[patches.FONT_OUT : patches.FONT_OUT + len(ft)] = ft
         writes.append((patches.FONT_OUT, patches.FONT_OUT + len(ft)))

@@ -144,7 +144,7 @@ def dialog(a) -> None:
         od.mkdir(parents=True, exist_ok=True)
         lst = od / "list.txt"
         lst.write_text("\n".join(f"{u:06X} {caps[u]}" for u in units[k : k + a.per]) + "\n")
-        tasks.append((HERE / "dialog_sweep.lua", {"SW_OUT": str(od), "SW_STATE": str(st), "SW_LIST": str(lst), "SW_MAXF": str(a.maxf)}))
+        tasks.append((HERE / "dialog_sweep.lua", {"SW_OUT": str(od), "SW_STATE": str(st), "SW_LIST": str(lst), "SW_MAXF": str(a.maxf), **({"SW_VARNAME": a.varname} if a.varname else {})}))
     pool(tasks, rom, a.procs)
     print("끝:", out)
 
@@ -174,6 +174,7 @@ def main() -> None:
     p.add_argument("--maxf", type=int, default=3000)
     p.add_argument("--only", default="", help="단위 주소 목록 파일(한 줄에 hex 하나) — 이 단위들만 찍는다")
     p.add_argument("--cbase", type=int, default=9000, help="--only 일 때 청크 번호 시작(회차마다 다르게)")
+    p.add_argument("--varname", default="", help="이름 변수 버퍼($1201)에 넣을 대표 아이템 이름(hex 바이트, 끝 토큰 06 포함)")
     p.add_argument("--out", default="", help="산출 폴더(메인 트리 .local/work/inbox/... 에 직접 둘 때)")
     p.add_argument("--procs", type=int, default=4)
     p.add_argument("--tag", default="run")

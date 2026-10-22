@@ -54,6 +54,7 @@ RULES = [
     ("2-1 부호 뒤 공백 없이 글자", lambda t: bool(re.search(r"(?<![A-Za-z0-9])[.,!?][가-힣]", t))),
     ("2-2 부호 앞 공백", lambda t: bool(re.search(r"[가-힣A-Za-z0-9] [.,!?]", t))),
     ("3-5 병기 조사 을(를)류", lambda t: bool(re.search(r"[은는이가을를](?=\()|\([은는이가을를]\)|을\(를\)|이\(가\)|은\(는\)", t))),
+    ("3-5 조사 쌍 순서 거꾸로(받침 있음/없음 순서여야 — {과/와}·{은/는}·{이/가}·{을/를}·{으로/로})", lambda t: bool(re.search(r"\{\*?(와/과|는/은|가/이|를/을|로/으로|라/이라|야/이야|랑/이랑)\}", t))),
     ("PUA 문자 섞임(U+E000~F8FF — PS1 붙임 공백 등 자리표시)", lambda t: bool(re.search("[\ue000-\uf8ff]", t))),
     ("가나·한자 잔존", lambda t: bool(re.search(r"[぀-ヿ一-鿿]", t))),
 ]
@@ -141,6 +142,20 @@ def main() -> None:
             miss_jp.append(k_)
     fails += len(miss_jp)
     print(f"  문안 지도에 없는 구간의 일본어(가나·한자 3자↑): 본 구간 {len(sg):,} · 걸림 {len(miss_jp)}" + (" " + " ".join(miss_jp[:8]) if miss_jp else ""))
+    # 사전(`$E0` 이름 · `$E1` 문장 끝맺음) 전 항목이 번역됐나 — 항목은 사전 표·정본 이름 또는 대사 구간(`$E1` 일부는 구간으로 번역돼 있다) 중 하나로 한국어가 있어야 한다(10-20 style: E1:1·11·12 가 일본어로 나갔다)
+    base1 = {t_: common.snes2off(v_) for t_, v_ in __import__("script").DICTS_BY_NAME.items()}
+    dict_jp = []
+    for tbl_, n_, jp_ in __import__("script").dict_entries(src):
+        if f"{tbl_}:{n_}" in names:
+            continue
+        o_ = base1[tbl_] + 3 * (n_ - 1)
+        a_ = common.snes2off(src[o_] | src[o_ + 1] << 8 | src[o_ + 2] << 16)
+        if segs.seg_id(a_) in seg_map:
+            continue
+        if re.search(r"[ぁ-んァ-ン一-龥]", jp_):
+            dict_jp.append(f"{tbl_}:{n_}")
+    fails += len(dict_jp)
+    print(f"  사전 항목 번역(일본어 남은 항목): 걸림 {len(dict_jp)}" + (" " + " ".join(dict_jp[:12]) if dict_jp else ""))
     # 구운 글리프끼리 같은 비트맵이면 실패(ss-ed1+2 발견 — 행 맞춤으로 쉼표 꼬리 행이 잘려 쉼표가 마침표와 같은 모양으로 구워졌다)
     import hangul_font
     import font
