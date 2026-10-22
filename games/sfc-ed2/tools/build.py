@@ -18,6 +18,7 @@
 """
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -810,7 +811,11 @@ def main() -> None:
     a = ap.parse_args()
     a.strict = not a.lenient
     common.verify_originals()
-    out = common.BUILD_DIR / common.BUILD_TAG / OUT_NAME
+    if os.environ.get("ED_DEBUG") == "1" and not (common.BUILD_TAG.startswith("test-") or common.BUILD_TAG == "debug"):  # 제품 칸을 지우기 전에 막는다
+        raise SystemExit("ED_DEBUG=1 은 꼬리표 test-* 또는 debug(마스터용)에서만 — ED_BUILD_TAG=debug 를 준다")
+    # 디버그 롬은 파일명을 달리한다 — 에뮬 세이브(.srm)가 롬 이름으로 갈려서, 같은 이름이면 제품 세이브에 매직 코드 아이템이 섞인다
+    name = OUT_NAME.replace(".sfc", " (DEBUG).sfc") if os.environ.get("ED_DEBUG") == "1" else OUT_NAME
+    out = common.BUILD_DIR / common.BUILD_TAG / name
     out.parent.mkdir(parents=True, exist_ok=True)
     failed = out.with_name(out.name + ".failed")
     for p in (out, failed):
@@ -822,6 +827,13 @@ def main() -> None:
             raise SystemExit("비결정적 — 같은 입력에서 sha1 이 갈렸다")
         check_immutable(rom, writes)
         screen_gate(a.strict, stats)
+        if os.environ.get("ED_DEBUG") == "1":  # 시험 빌드 전용 — 제품 롬(스위치 없음)은 바이트 하나도 안 바뀐다
+            import debug_patch
+
+            r = bytearray(debug_patch.apply(rom))
+            fix_checksum(r)
+            rom = bytes(r)
+            print("  ⚠ ED_DEBUG=1 — 디버그 입력 훅이 든 시험 롬이다(배포·제품 아님)")
     except BaseException:
         failed.write_bytes(rom)
         raise
