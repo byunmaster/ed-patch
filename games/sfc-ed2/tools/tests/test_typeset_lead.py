@@ -20,5 +20,20 @@ class Lead(unittest.TestCase):
         self.assertNotIn(" ", typeset.typeset("<1e>남자<04>\n 가나", {}).split("<04>")[1][:2])
 
 
+class Continuation(unittest.TestCase):
+    def test_end_state_last_line(self):
+        self.assertEqual(typeset.end_state("가나\n다라마", {}), (9, 1))
+        self.assertEqual(typeset.end_state("가나<05>다라", {}), (6, 0))
+
+    def test_continuation_starts_at_lead_width(self):
+        # 앞 구간이 줄 폭 36 까지 썼으면 「나다라마바사」(18)는 남은 14로 안 들어가 다음 줄로 간다
+        t = typeset.typeset(" 가나다라 마바사아자차", {}, (36, 0))
+        self.assertIn("\n", t)
+        self.assertEqual(typeset.typeset(" 가나", {}, (0, 0)), " 가나")
+
+    def test_glued_first_word_not_wrapped(self):
+        self.assertTrue(typeset.typeset("{*이/가} 가나", {}, (48, 0)).startswith("{*이/가}"))
+
+
 if __name__ == "__main__":
     unittest.main()

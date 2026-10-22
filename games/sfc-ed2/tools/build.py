@@ -624,6 +624,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
     # 4. 대사 구간 — 짧으면 제자리, 길면 트램펄린
     e1w = e1_texts(src, seg_map)
     sg = {segs.seg_id(a): (a, b) for a, b in segs.segments(src)}
+    typeset_end: dict[int, tuple[str, dict]] = {}  # 구간 끝 오프셋 → (조판한 문안, 폭 표) — 바로 이어지는 다음 구간의 시작 줄 폭
     for key, v in sorted(seg_map.items()):
         if key not in sg:
             raise SystemExit(f"textmap 구간 {key} 가 원본에 없다")
@@ -655,7 +656,10 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             stats["seg_reloc"] = stats.get("seg_reloc", 0) + 1
             continue
         if 0xC2 <= (common.off2snes(a) >> 16) <= 0xCB and not v.get("raw"):  # $C2~$CB 대사 — 대사창 규격으로 조판(`raw: true` 면 그대로)
-            text = typeset.typeset(text, {**names, **e1w, **call_texts(text, a, seg_map, sg)})
+            tw = {**names, **e1w, **call_texts(text, a, seg_map, sg)}
+            pv = typeset_end.get(a)  # 바로 앞 구간이 이 자리에서 이어지면(이름 변수 뒤 조각) 그 줄의 남은 폭에서 시작한다
+            text = typeset.typeset(text, tw, typeset.end_state(pv[0], pv[1]) if pv else None)
+            typeset_end[b] = (text, tw)
         elif (common.off2snes(a) >> 16) in (0xD4, 0xD5) and not v.get("raw"):  # $D4·$D5 전투 문구 — 앞에 오는 이름(변수)의 폭을 가장 긴 이름으로 잡고 어절 단위로 나눈다
             text = battle_typeset(text)
         data = kr.encode(text, alloc)
@@ -889,7 +893,6 @@ JUNK_PIECES = {
 }
 # 일본어이긴 한데 **쓰이는지 못 찾은** 조각 — 실패로 치지 않고 매 빌드 경고로 남긴다(호출처를 찾으면 구간으로 올리거나 JUNK 로 내린다)
 PENDING_PIECES = {
-    0xD49A81,  # `ポイズン` 8B — $D4 AI 곁
     0xCB3869,  # `$E1` 사전 항목 0 `Gold になるけど` — 번역문이 `<E1:0>` 을 안 쓴다(메시지 목표 게이트가 사전 참조로 실측)
     0xCB393E,  # `$E1` 항목 10·11 `だな。`·`だね。` — 원문 참조 61곳은 번역문에서 어미로 풀어 써서 참조가 사라졌다
 }

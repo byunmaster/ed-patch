@@ -250,6 +250,16 @@ PATCHES += [
     ),
 ]
 
+# 낱말 단위 줄바꿈(마스터 10-21 「전투 줄바꿈은 구조로」) — 메시지 출력기는 줄 폭을 넘으면 **글자 가운데서** 끊는다(「회복되/었다」). 정적 조판은 이름·숫자 같은 런타임 변수가 앞에 붙는 조각의 앞 줄 폭을 모른다.
+# 출력기 반각 글자 길(`$C0:A894 jmp $A96C`)에 끼어, 공백(`$20`) 앞에서 **뒤따르는 낱말**의 폭(전각 3 · 반각 2 단위, 사전·함수·제어 토큰에서 멈춤)을 앞질러 읽고
+# 지금 줄 폭(`$1B13`) + 공백 2 + 낱말 폭이 50 을 넘으면 공백을 찍지 않고 줄바꿈(`$C0:AEB6`)한다. 낱말이 없으면(공백 뒤가 곧 제어 토큰) 그대로 찍는다. 정적 조판이 이미 맞춘 줄은 이 조건이 안 걸린다.
+WRAP_STUB = 0xC0FD00
+_WRAP = bytes.fromhex("c920f0084c6ca9a9204c6ca9ad131bf0f65aa20000b7a6c8c921901ec9809016c988900cc9e0900ec9f0b00ec9e2900ac8e8e8e880dfe8e880db7a8af0c9186d131b6902c93390bf5a20b6ae7a60")
+PATCHES += [
+    (0xC0A894, bytes([0x4C, 0x6C, 0xA9]), bytes([0x4C, WRAP_STUB & 0xFF, (WRAP_STUB >> 8) & 0xFF])),
+    (WRAP_STUB, b"\xff" * len(_WRAP), _WRAP),
+]
+
 EXCEPT = [(common.snes2off(a), common.snes2off(a) + len(n)) for a, _o, n in PATCHES]
 FONT_OUT = common.snes2off(FONT_BANK << 16)
 

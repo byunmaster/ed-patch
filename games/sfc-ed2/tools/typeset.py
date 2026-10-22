@@ -31,9 +31,20 @@ def width(tok: str, names: dict | None = None) -> int:
     return 2 if 0x20 <= ord(tok) <= 0x7E else 3
 
 
-def typeset(text: str, names: dict | None = None) -> str:
-    """줄바꿈·쪽 넘김을 넣은 문안. 이미 든 `⏎`/`<05>` 는 강제로 지킨다."""
+def end_state(text: str, names: dict | None = None) -> tuple[int, int]:
+    """조판된 문안이 끝난 자리의 (마지막 줄 폭, 이 쪽에 쓴 완결 줄 수) — 바로 이어지는 다음 구간이 이 줄에서 이어 쓰도록 넘겨 준다."""
+    text = re.sub(r"<1e>.*?<04>\n?", "", text, flags=re.S)
+    text = text.rsplit("<05>", 1)[-1]
+    rows = text.count("\n")
+    last = text.rsplit("\n", 1)[-1]
+    return sum(width(t, names) for t in _TOK.findall(last)), rows
+
+
+def typeset(text: str, names: dict | None = None, lead: tuple[int, int] | None = None) -> str:
+    """줄바꿈·쪽 넘김을 넣은 문안. 이미 든 `⏎`/`<05>` 는 강제로 지킨다.
+    `lead` = (앞 구간이 끝난 줄 폭, 쪽에 쓴 줄 수) — 앞 구간 끝에 이어 붙는 구간(이름 변수 뒤 조각)은 그 줄의 남은 폭에서 시작한다."""
     # 화자 머리(`<1e>이름<04>` + 뒤 개행)와 맨 앞 개행은 폭·줄 수에 안 센다 — 자리표시자로 바꿨다가 되돌린다
+    lead_ok = bool(lead) and not text.startswith(("<1e>", "\n"))  # 맨 앞이 화자 머리·개행이면 새 줄에서 시작한다
     heads: list[str] = []
 
     def hold(m):
@@ -61,6 +72,9 @@ def typeset(text: str, names: dict | None = None) -> str:
     out: list[str] = []
     u = 0  # 현재 줄 폭
     rows = 0  # 이 쪽에 이미 쓴 완결 줄 수
+    if lead_ok:
+        u, rows = lead
+    glued = bool(lead_ok and u and not text[:1].isspace())  # 앞 구간 글자에 바로 붙는 첫 어절은 줄을 바꾸지 않는다(이름과 조사가 갈린다)
     header = False
 
     def newline():
@@ -105,6 +119,11 @@ def typeset(text: str, names: dict | None = None) -> str:
                     newline()
                 out.append(t)
                 u += wt
+            continue
+        if glued:
+            glued = False
+            out.extend(w)
+            u += ww
             continue
         if u + ww > LINE_UNITS:
             # 앞 공백 제거 후 줄바꿈(쪽이 차면 쪽 넘김)

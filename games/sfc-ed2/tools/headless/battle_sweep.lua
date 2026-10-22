@@ -99,12 +99,22 @@ local superseded=0
 local DEB=tonumber(os.getenv("SW_DEBOUNCE") or "8")
 local PMAX=tonumber(os.getenv("SW_PAGEMAX") or "150")
 local prevh,stable,lasth=nil,0,nil
+local lasttx,lasth_cur=0,nil
+local TXMIN=tonumber(os.getenv("SW_TXMIN") or "6")  -- 창 안쪽 글자 픽셀 하한 — 창이 열렸지만 글이 아직 안 나온 빈 창을 쪽으로 안 찍는다(10-20: 첫 「나타났다」 쪽이 전 그룹 빈 창이었다)
 local function bandhash()
   local b=emu.getScreenBuffer(); local h=5381
+  local tx=0
   for y=148,218,2 do local o=y*256
-    for x=8,248,2 do h=(h*33+(b[o+x+1] or 0))%4294967296 end
+    for x=8,248,2 do
+      local v=b[o+x+1] or 0
+      h=(h*33+v)%4294967296
+      if y>=156 and y<=204 then
+        local r,g,bb=(v>>16)&255,(v>>8)&255,v&255
+        if (r>=200 and g>=200 and bb>=200) or (math.abs(r-182)<=8 and math.abs(g-147)<=8 and math.abs(bb-92)<=8) then tx=tx+1 end
+      end
+    end
   end
-  return h
+  return h,tx
 end
 local function boost()
   for i=0,3 do
@@ -120,7 +130,11 @@ emu.addMemoryCallback(function()
   msgn=msgn+1
   local p=rd(0xA6)|(rd(0xA7)<<8)|(rd(0xA8)<<16)
   log(string.format("M %d %d %06X",job,bf,p))
-  if cur~=nil then log(string.format("SUPERSEDED %d %d",job,cur.start)); superseded=superseded+1 end
+  if cur~=nil then
+    log(string.format("SUPERSEDED %d %d",job,cur.start)); superseded=superseded+1
+    -- 다음 호출이 이전 문구를 지우기 직전 화면 — 글자가 나와 있으면 찍는다(출현 문구가 곧바로 다른 메시지로 바뀌는 그룹이 첫 쪽 없이 지나갔다)
+    if lasttx>=TXMIN and lasth_cur~=lasth then shot(string.format("%s/%05d_m%d_sup.png",dir,bf,cur.n)); lasth=lasth_cur end
+  end
   cur={start=bf, n=msgn}   -- 찍기 전에 기다린다: 창 안쪽이 안정될 때까지(아래 NMI 쪽에서 찍는다)
   boost()
   if state=="run" then
@@ -145,11 +159,12 @@ emu.addMemoryCallback(function()
   if state=="run" or state=="finish" then
     if not pending then bf=bf+1 end
     if cur~=nil then
-      local h=bandhash()
+      local h,tx=bandhash()
+      lasttx=tx; lasth_cur=h
       if prevh~=nil and h==prevh then stable=stable+1 else stable=0 end
       prevh=h
       local age=bf-cur.start
-      if stable>=DEB and age>=10 and h~=lasth then
+      if stable>=DEB and age>=10 and h~=lasth and tx>=TXMIN then
         shot(string.format("%s/%05d_m%d.png",dir,bf,cur.n)); lasth=h; cur=nil
       elseif age>=PMAX then
         shot(string.format("%s/%05d_m%d_timeout.png",dir,bf,cur.n)); log(string.format("TIMEOUT %d bf=%d msg=%d stable=%d",job,bf,cur.n,stable)); lasth=h; cur=nil

@@ -132,6 +132,8 @@ def dialog(a) -> None:
     caps = {common.off2snes(s): 2 * (script.render(d, s).count("<05>") + 1) + 1 for s, _e in allu}  # 쪽 상한 — 원문 쪽 수의 두 배 + 1(번역이 쪽을 더 쪼갤 수 있다). 지난 뒤 이어지는 필드 이벤트 대사를 안 찍으려고
     if a.only:
         want = [int(x.split()[0], 16) for x in Path(a.only).read_text().split("\n") if x.strip()]
+        for u in want:  # 단위 시작이 아닌 주소(단독 시작 메시지)는 그 자리에서 쪽 상한을 센다
+            caps.setdefault(u, 2 * (script.render(d, common.snes2off(u)).count("<05>") + 1) + 1)
         units = want[a.skip :]  # 못 닿은 단위만 다시(--only 목록, --skip/--limit 은 그 목록 안에서)
     else:
         units = units[a.skip :]

@@ -65,6 +65,7 @@ class Dec:
         self.kr = is_kr
         self.g = gmap or {}
         self.dicts = {k: common.snes2off(v) for k, v in script.DICTS_BY_NAME.items()}
+        self.vis: set[int] = set()  # walk 가 지나간 토큰 시작(파일 오프셋) — 단위 시작에서 닿지 않는 메시지(코드가 포인터로 부르는 것)를 가르는 데 쓴다
 
     def glyph(self, code: int) -> str:
         i = code - 0x8000
@@ -90,6 +91,7 @@ class Dec:
         steps = 0
         while steps < limit and o < len(d):
             steps += 1
+            self.vis.add(o)
             b = d[o]
             if self.kr and b == TRAMP:
                 tg = d[o + 1] | d[o + 2] << 8 | d[o + 3] << 16
@@ -209,6 +211,30 @@ def main() -> None:
             capped += 1
         cnt[mark] += 1
         rows.append(f"{common.off2snes(o):06X}\t{esc(tj)}\t{esc(tk)}\t{mark}")
+    # 단위 시작에서 닿지 않는 메시지 — 코드가 포인터로 직접 부르는 것(예: 술집 주인 꾸중 뒤 대사). 단위 목록에는 없지만 화면엔 나온다
+    nd = 0
+    for tbl, n_, _jpt in script.dict_entries(jp):  # 방문 표시용 — 사전 항목도 한 번 지난다
+        try:
+            dj.dict_text(int(tbl[1]), n_, 0)
+        except Exception:
+            pass
+    solo = 0
+    for s0, _e0 in segs.segments(jp):
+        if s0 in dj.vis:
+            continue
+        try:
+            tj = dj.walk(s0)
+        except Exception:
+            tj = "{해독 실패}"
+        try:
+            tk = dk.walk(s0)
+        except Exception:
+            tk = "{해독 실패}"
+        if not tj.strip("↵⏎ 　〔〕"):
+            continue
+        mk = "단독 시작" if tk.strip("↵⏎ 　〔〕") else "원판만 단독 시작"
+        rows.append(f"{common.off2snes(s0):06X}\t{esc(tj)}\t{esc(tk)}\t{mk}")
+        solo += 1
     nd = 0
     for tbl, n_, _jpt in script.dict_entries(jp):  # 사전 항목(이름 `$E0` · 문장 끝맺음 `$E1`)도 짝으로
         try:
@@ -227,7 +253,7 @@ def main() -> None:
     (out / "manifest.md").write_text(
         f"""# sfc-ed2 롬 대사집 짝 표 — manifest
 - 원판 롬 sha1 `{sj}` · 한글 롬 sha1 `{sk}`
-- 분모: 대사 단위 {len(units):,}(`script.all_units`) + 사전 항목 {nd}(`E0:n`·`E1:n`) — 전투 문구·시스템 메시지(`$C0/$C1`·`$D4/$D5`)는 같은 단위 목록 안에 있다. UI 창 블록·고정폭 칸·고정 표(이름·아이템·주문 표)는 이 표에 아직 없다
+- 분모: 대사 단위 {len(units):,}(`script.all_units`) + 단위 시작에서 닿지 않는 단독 시작 메시지 {solo}(표시 `단독 시작`) + 사전 항목 {nd}(`E0:n`·`E1:n`) — 전투 문구·시스템 메시지(`$C0/$C1`·`$D4/$D5`)는 같은 단위 목록 안에 있다. UI 창 블록·고정폭 칸·고정 표(이름·아이템·주문 표)는 이 표에 아직 없다
 - 길이 상한(10만 토큰)에 걸린 행 {capped}(0 이어야 한다 — 잘린 행은 끝에 `{{…상한}}`)
 - 표시별: 원판만 {cnt['원판만']} · 한글만 {cnt['한글만']} · 둘 다 빔 {cnt['둘 다 빔']} · 포인터 공유 {cnt['포인터 공유']} · 표시 없음(정상 짝) {cnt['']}
 - 방법: 롬 바이트를 토큰 문법(`script.py`)으로 읽는다. 한글 롬은 트램펄린(`$17`)·같은 뱅크 점프(`$0F`)를 따라가고, 글리프 번호→글자는 롬의 글리프 표 비트맵을 글꼴 원천과 맞춰 되짚는다. 호출(`$10`)·사전(`$E0/$E1`)은 펼친다(`$E0` 이름은 `{{…}}`).
