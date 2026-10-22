@@ -32,6 +32,7 @@ import kr
 import monsters
 import patches
 import relocate
+import scan_text
 import script
 import segs
 import typeset
@@ -549,8 +550,25 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             raise SystemExit(f"문자열 {key}: 원문 해시 불일치 — textmap 이 낡았다")
         text = canon_text(src, key, v)
         data = kr.encode(resolve_josa(text, names), alloc)
+        if v.get("move"):
+            # 뱅크 $CB 빈 자리로 옮기고 `ldx #imm16`(`A2 lo hi`) 자리 — `move` 의 주소들 — 의 즉치를 돌린다. 복사 길이(`mvn`)가 원문(26B)보다 넓어졌으므로(patches.py `CB:66F3`)
+            # 끝 토큰 뒤를 0 으로 채워 둔다(옆 문자열의 앞머리가 버퍼에 딸려 들어가지 않게)
+            pad = v.get("pad", 30)
+            if len(data) + 1 > pad:
+                raise SystemExit(f"문자열 {key}: 번역 {len(data)}B 가 복사 길이 {pad}B 를 넘는다")
+            new = local.put(0xCB, data + b"\x00" * (pad - len(data)))
+            for site in v["move"]:
+                so = common.snes2off(int(site.lstrip("$"), 16))
+                if src[so] != 0xA2 or src[so + 1 : so + 3] != bytes([a & 0xFF, (common.off2snes(a) >> 8) & 0xFF]):
+                    raise SystemExit(f"문자열 {key}: {site} 가 `ldx #{key[-4:]}` 가 아니다")
+                rom[so + 1 : so + 3] = bytes([new & 0xFF, new >> 8])
+                writes.append((so + 1, so + 3))
+            rom[a : a + n] = bytes([NOOP]) * n
+            writes.append((a, a + n))
+            stats["spans"] = stats.get("spans", 0) + 1
+            continue
         if len(data) > n:
-            raise SystemExit(f"문자열 {key}: 번역 {len(data)}B > 원문 {n}B — 줄이거나 이전(relocate)해야 한다")
+            raise SystemExit(f"문자열 {key}: 번역 {len(data)}B > 원문 {n}B — 줄이거나 이전(`move`)해야 한다")
         rom[a : a + n] = data + bytes([NOOP]) * (n - len(data))
         writes.append((a, a + n))
         stats["spans"] = stats.get("spans", 0) + 1
@@ -803,6 +821,142 @@ def screen_gate(strict: bool, stats: dict) -> None:
         raise SystemExit(f"일본어가 남았다: {total - done:,}개 구간")
 
 
+# 번역 대상이 아닌 「글자처럼 읽히는 데이터」 — 그래픽·표·AI 데이터 잡음(SNES 시작, 끝 미포함). 새로 걸리면 **눈으로 보고** 여기 더하거나 번역한다.
+JUNK_RUNS = (
+    (0xC081EE, 0xC08213), (0xC08B71, 0xC08B8D), (0xC0C9CA, 0xC0C9E6), (0xC0ECAE, 0xC0ECC9),  # $C0 표 잡음
+    (0xCCF9A2, 0xCCF9FD), (0xCDE7DC, 0xCDEA83), (0xD30965, 0xD30986),  # 그래픽·표 데이터
+    (0xD48059, 0xD48081), (0xD48175, 0xD4819D),  # 몬스터 AI 데이터 안 잡음
+)
+# $D4·$D5 런에서 구간을 뺀 남은 조각 중 **글자가 아닌 것**(눈으로 확인) — 시작 SNES 주소
+JUNK_PIECES = {
+    0xD4122D,  # 숫자 표 + 코드(`育吉勉` 꼴 잡음)
+    0xD47EB6, 0xD47EBE, 0xD47EC6, 0xD47ECE,  # 코드 곁 `「」リ` 꼴 잡음
+    0xC103CD, 0xCB42BD,  # 표·그래픽 잡음(디코드하면 `ぴぴぶまオト` 꼴)
+}
+# 일본어이긴 한데 **쓰이는지 못 찾은** 조각 — 실패로 치지 않고 매 빌드 경고로 남긴다(호출처를 찾으면 구간으로 올리거나 JUNK 로 내린다)
+PENDING_PIECES = {
+    0xD49A81,  # `ポイズン` 8B — $D4 AI 곁
+    0xCB3869,  # `$E1` 사전 항목 0 `Gold になるけど` — 번역문이 `<E1:0>` 을 안 쓴다(메시지 목표 게이트가 사전 참조로 실측)
+    0xCB393E,  # `$E1` 항목 10·11 `だな。`·`だね。` — 원문 참조 61곳은 번역문에서 어미로 풀어 써서 참조가 사라졌다
+}
+
+
+def residual_jp_gate(src: bytes, rom: bytes, strict: bool) -> None:
+    """**롬 전체** 일본어 잔존 게이트 — 번역 분모(`segs.segments`)가 놓친 문안을 잡는다.
+    원문에서 가나·한자 12자↑ 런을 찾아, 최종 롬에서 바이트가 그대로이고 **번역 대상으로 알려진 자리**(구간·EXCLUDE·도달 불가·잡음 표) 밖이면 실패.
+    (10-18: 두 종 등장 첫 메시지 둘이 `_clean` 에 걷혀 분모 밖에서 화면 일본어로 나왔다 — 분모 안만 세는 게이트로는 안 잡혔다.)"""
+    known = [(a, b) for a, b in segs.segments(src)]
+    for a, b in segs.EXCLUDE + JUNK_RUNS:
+        known.append((common.snes2off(a), common.snes2off(b)))
+    for r in kr.load("unreachable").get("ranges", []):
+        a = common.snes2off(int(r["a"].lstrip("$"), 16))
+        known.append((a, a + r["n"]))
+    bad = []
+    for s, e, n in scan_text.find_runs(src, 12):
+        if rom[s:e] == src[s:e] and not any(s < b and a < e for a, b in known):
+            bad.append((s, e, n))
+    # 문장 뱅크($C1~$CB 대사·메시지, $D4·$D5 전투 AI) — 런이 알려진 구간과 **겹치기만** 해도 통과시키면 구간 앞쪽 이름 박힌 문장(「…が現れた。」)이 통째로 샌다
+    # (10-18 메탈스팀 군 화면 일본어). 그래서 런에서 알려진 자리를 **뺀 나머지 조각**을 본다 — 짧은 문장도 잡도록 최소 5자(10B)·가나 3자.
+    # 잡음 실측(10-18): 이 조건에서 걸린 건 $C1·$CB 의 표·그래픽 둘 + 아래 PENDING 둘뿐이다($CC~ 는 그래픽 뱅크라 보지 않는다).
+    kn = sorted(known)
+    pending = []
+    for s, e, n in scan_text.find_runs(src, 3):
+        bank = common.off2snes(s) >> 16
+        if not (0xC1 <= bank <= 0xCB or bank in (0xD4, 0xD5)):
+            continue
+        cur, pieces = s, []
+        for a, b in kn:
+            if b <= cur or a >= e:
+                continue
+            if a > cur:
+                pieces.append((cur, a))
+            cur = max(cur, b)
+        if cur < e:
+            pieces.append((cur, e))
+        for ps, pe in pieces:
+            sn = common.off2snes(ps)
+            if pe - ps < 10 or rom[ps:pe] != src[ps:pe] or sn in JUNK_PIECES:
+                continue
+            if len(re.findall(r"[ぁ-ヿ]", segs.notation(src, ps, pe))) < 3:
+                continue
+            (pending if sn in PENDING_PIECES else bad).append((ps, pe, (pe - ps) // 2))
+    if pending:
+        print("  ⚠ 호출처 미확인 일본어 조각 " + ", ".join(f"${common.off2snes(s):06X}+{e - s}B" for s, e, _n in pending) + " — 전수 검수 때 화면으로 본다")
+    if bad:
+        print(f"  ⚠ 번역 분모 밖 일본어 런 {len(bad)}곳: " + ", ".join(f"${common.off2snes(s):06X}+{e - s}B({n}자)" for s, e, n in bad[:12]))
+        if strict:
+            raise SystemExit("분모 밖 일본어 런 — 구간 목록(segs.EXTRA)에 더하거나 build.JUNK_RUNS 에 근거와 함께 올린다")
+
+
+# 메시지 목표 게이트의 잡음 — `$A6` 즉치 패턴에 걸렸지만 코드·그래픽을 글자로 잘못 읽은 자리(디코드하면 `？ツ` 꼴), 눈으로 확인
+POINTER_NOISE = {0xC12E04, 0xC13B15}
+
+
+def message_targets(src: bytes) -> dict[str, set[int]]:
+    """대사 출력기가 **들어가는 자리**(파일 오프셋) 전부, 출처별로 — ① 코드가 `$A6~$A8` 에 즉치로 넣는 포인터 ② 대사 단위 안의 점프·호출(`$0F`·`$10`) 목표.
+    (둘 다 구간 목록이 훑는 곳 밖을 가리킬 수 있다 — sfc-ed1 에서 포인터 표가 목록 밖을 가리켜 장면 대사 101개가 일본어로 남았다.)"""
+    a6 = {common.snes2off(p) for p in script.a6_targets(src) if p not in POINTER_NOISE}
+    jmp = set()
+    for s, e in script.all_units(src):
+        bank = (common.off2snes(s) >> 16) & 0xFF
+        if not (0xC0 <= bank <= 0xCC or bank == 0xD7):  # 그래픽·코드 뱅크($CD~$D6)의 가짜 점프는 보지 않는다(실측 13곳 전부 잡음)
+            continue
+        for o, _ln in script.tokens(src, s, e):
+            if src[o] in (0x0F, 0x10) and o + 2 < len(src):
+                jmp.add(common.snes2off((bank << 16) | src[o + 1] | src[o + 2] << 8))
+    return {"a6": a6, "jump": jmp}
+
+
+def pointer_target_gate(src: bytes, rom: bytes, strict: bool) -> None:
+    """**메시지 목표 게이트** — 메시지가 시작하는 자리 전부(`message_targets`)가 번역 단위(`segs.segments`·EXCLUDE·도달 불가 표) 안인가.
+    목표에서 첫 글자 토큰을 찾아(앞의 제어 토큰은 건너뜀) 그 자리가 단위 밖이고 롬에서도 안 바뀌었으면 실패. 더해, 번역문이 쓰는 사전 참조(`<E1:n>`)의 항목이 번역됐는지도 본다."""
+    import bisect
+
+    S = segs.segments(src)
+    starts = [a for a, _b in S]
+    ends = [b for _a, b in S]
+    unreach = [(common.snes2off(int(r["a"].lstrip("$"), 16)), common.snes2off(int(r["a"].lstrip("$"), 16)) + r["n"]) for r in kr.load("unreachable").get("ranges", [])]
+
+    def covered(o: int) -> bool:
+        i = bisect.bisect_right(starts, o) - 1
+        return (i >= 0 and starts[i] <= o < ends[i]) or segs.excluded(o) or any(a <= o < b for a, b in unreach)
+
+    def first_char(o: int) -> int | None:
+        for t, ln in script.tokens(src, o, o + 300):
+            b = src[t]
+            if 0x80 <= b < 0x88 or 0x88 <= b < 0xE0 or 0xE2 <= b < 0xF0:
+                return t
+            if b in script.ENDS:
+                return None
+        return None
+
+    tg = message_targets(src)
+    bad, n_char = [], 0
+    for kind, offs in tg.items():
+        for o in sorted(offs):
+            t = first_char(o)
+            if t is None:
+                continue
+            n_char += 1
+            if not covered(t) and rom[t : t + 2] == src[t : t + 2]:
+                bad.append((kind, o))
+    # 사전 참조 — 번역문이 가리키는 `$E1` 항목이 일본어 그대로면 화면에 샌다
+    used = {int(m.group(1)) for v in kr.load("segments").values() for m in re.finditer(r"<E1:(\d+)>", v["kr"])}
+    used = {n for n in used if n < script.DICTS[1][1]}  # 사전 항목 수(30) 밖 `<E1:n>` 은 앞머리 잡음 토큰(예: `$C850DB` 앞의 `<E1:80>`) — 사전 참조가 아니다
+    base = common.snes2off(script.DICTS_BY_NAME["E1"])
+    for n in sorted(used):
+        p = base + 3 * n
+        o = common.snes2off(src[p] | src[p + 1] << 8 | src[p + 2] << 16)
+        t = first_char(o)
+        if t is not None and rom[p : p + 3] == src[p : p + 3] and rom[t : t + 2] == src[t : t + 2]:
+            bad.append((f"E1:{n}", o))
+    print(f"  메시지 목표 {sum(len(v) for v in tg.values()):,}(즉치 {len(tg['a6']):,} · 점프 {len(tg['jump']):,}) 중 글자 든 {n_char:,} · 목록 밖 {len(bad)}")
+    if bad:
+        print("  ⚠ 번역 단위 밖 메시지 목표: " + ", ".join(f"{k}→${common.off2snes(o):06X}" for k, o in bad[:12]))
+        if strict:
+            raise SystemExit("메시지 목표가 번역 단위 밖 — segs.EXTRA 에 더하거나(글자면) build.POINTER_NOISE 에 근거와 함께")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--twice", action="store_true", help="두 번 만들어 sha1 대조(결정성)")
@@ -827,6 +981,8 @@ def main() -> None:
             raise SystemExit("비결정적 — 같은 입력에서 sha1 이 갈렸다")
         check_immutable(rom, writes)
         screen_gate(a.strict, stats)
+        residual_jp_gate(common.rom_bytes(), rom, a.strict)
+        pointer_target_gate(common.rom_bytes(), rom, a.strict)
         if os.environ.get("ED_DEBUG") == "1":  # 시험 빌드 전용 — 제품 롬(스위치 없음)은 바이트 하나도 안 바뀐다
             import debug_patch
 

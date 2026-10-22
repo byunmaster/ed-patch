@@ -84,7 +84,7 @@ def typeset(text: str, names: dict | None = None) -> str:
             page()
             continue
         if t0 == " ":
-            if u == 0:  # 줄 첫 공백 금지
+            if u == 0 and (out or heads):  # 줄 첫 공백 금지 — 단 문안 맨 앞은 앞 구간 끝의 이름 변수에 이어 붙는 자리라 남긴다
                 continue
             if u + 2 > LINE_UNITS:
                 continue
