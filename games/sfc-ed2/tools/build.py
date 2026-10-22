@@ -208,6 +208,35 @@ def dict_names(src: bytes, tm_dict: dict) -> dict[str, str]:
 # ───────────────────────── 조립 ─────────────────────────
 
 
+def e1_texts(src: bytes, seg_map: dict) -> dict[str, str]:
+    """`$E1` 사전 항목(문장 끝맺음 등)의 한국어 — 이 문자열들은 사전 표가 아니라 **대사 구간**으로 번역돼 있다(표 포인터는 그대로, 구간이 제자리에 덮인다).
+    조판기가 줄 폭을 셀 때 쓴다(이게 없으면 토큰 폭이 0 이라 뒤 문장이 줄 밖으로 넘치고, 토큰 바로 뒤 공백이 「줄 첫 공백」으로 지워졌다)."""
+    out = {}
+    base = common.snes2off(script.DICTS_BY_NAME["E1"])
+    for tbl, n, _jp in script.dict_entries(src):
+        if tbl != "E1":
+            continue
+        o = base + 3 * (n - 1)
+        a = common.snes2off(src[o] | src[o + 1] << 8 | src[o + 2] << 16)
+        v = seg_map.get(segs.seg_id(a))
+        if v:
+            out[f"E1:{n}"] = re.sub(r"<[^>]*>", "", v["kr"])
+    return out
+
+
+def call_texts(text: str, seg_off: int, seg_map: dict, sg: dict) -> dict[str, str]:
+    """이 구간이 부르는 조각(`<10 lo hi>`)의 한국어 — 같은 뱅크 안 주소다. 조판기가 폭을 세는 데 쓴다."""
+    out = {}
+    bank = (common.off2snes(seg_off) >> 16) & 0xFF
+    for m in re.finditer(r"<10 ([0-9a-f]{2}) ([0-9a-f]{2})>", text):
+        lo, hi = m.group(1), m.group(2)
+        tgt = segs.seg_id(common.snes2off((bank << 16) | int(hi, 16) << 8 | int(lo, 16)))
+        v = seg_map.get(tgt)
+        if v:
+            out[f"call:{lo}{hi}"] = v["kr"]
+    return out
+
+
 def collect_texts(src: bytes) -> tuple[dict, dict, dict]:
     seg_map = kr.load("segments")
     ui_map = kr.load("ui")
@@ -464,14 +493,14 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
                     newtab[-16:] = data + b"\x00"
                 else:
                     pad = st - len(data)
-                    newtab[-16:] = b"\x80\x00" * (pad // 2) + data + (b" " if pad % 2 else b"") + b"\x06\x00"
+                    newtab[-16:] = b"\x80\x00" * (pad // 2) + data + (b"\x06" if pad % 2 else b"") + b"\x06\x00"  # 홀수 한 바이트는 반각 공백이 아니라 끝 토큰으로 채운다 — 공백이면 대사에서 이름 뒤 조사 앞에 한 칸이 찍힌다(「카논의 친서 를」, 원판은 없음)
                 stats["records"] = stats.get("records", 0) + 1
                 continue
             pad = st - len(data)
             # 왼쪽은 전각 공백 쌍만 둔다(출력기가 앞쪽 `80 00` 쌍을 건너뛰어 왼쪽 정렬로 보인다). 홀수 한 바이트는 **뒤**에 둔다 —
             # 앞에 두면 쌍 건너뛰기가 거기서 멈춰 이름이 반각 한 칸 밀린다(「천 옷」)
             left = b"\x80\x00" * (pad // 2)
-            rom[a : a + st] = left + data + (b" " if pad % 2 else b"")
+            rom[a : a + st] = left + data + (b"\x06" if pad % 2 else b"")
             writes.append((a, a + st))
             stats["records"] = stats.get("records", 0) + 1
         if moved:
@@ -574,6 +603,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         stats["spans"] = stats.get("spans", 0) + 1
 
     # 4. 대사 구간 — 짧으면 제자리, 길면 트램펄린
+    e1w = e1_texts(src, seg_map)
     sg = {segs.seg_id(a): (a, b) for a, b in segs.segments(src)}
     for key, v in sorted(seg_map.items()):
         if key not in sg:
@@ -606,7 +636,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             stats["seg_reloc"] = stats.get("seg_reloc", 0) + 1
             continue
         if 0xC2 <= (common.off2snes(a) >> 16) <= 0xCB and not v.get("raw"):  # $C2~$CB 대사 — 대사창 규격으로 조판(`raw: true` 면 그대로)
-            text = typeset.typeset(text, names)
+            text = typeset.typeset(text, {**names, **e1w, **call_texts(text, a, seg_map, sg)})
         data = kr.encode(text, alloc)
         if len(data) <= b - a:
             rom[a:b] = data + bytes([NOOP]) * (b - a - len(data))

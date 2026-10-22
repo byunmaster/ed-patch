@@ -15,6 +15,7 @@
 """
 
 import argparse
+import hashlib
 import os
 import shutil
 import subprocess
@@ -71,6 +72,17 @@ def setup() -> None:
     print("Mesen 사본:", MESEN)
 
 
+def rom_sha(rom: Path) -> str:
+    return hashlib.sha1(Path(rom).read_bytes()).hexdigest()
+
+
+def check_state(kind: str, rom: Path) -> None:
+    """상태 파일은 옛 롬의 RAM(글리프 표·텍스트·코드)을 되살린다 — 만든 롬과 지금 롬이 다르면 촬영을 거부한다(ps1-ed3 에서 「줄」이 「앗」으로 나온 사고)."""
+    sf = WORK / f"S_{kind}.sha1"
+    if not sf.exists() or sf.read_text().strip() != rom_sha(rom):
+        raise SystemExit(f"상태 파일 S_{kind}.bin 은 이 롬({rom_sha(rom)[:8]})으로 만든 것이 아니다 — `mkstate {kind}` 를 다시 돌린다")
+
+
 def mkstate(kind: str, rom: Path) -> None:
     WORK.mkdir(parents=True, exist_ok=True)
     out = WORK / f"S_{kind}.bin"
@@ -81,21 +93,23 @@ def mkstate(kind: str, rom: Path) -> None:
     run_mesen(rom, lua, env).wait()
     if not out.exists():
         raise SystemExit("상태 파일이 안 만들어졌다 — 부팅 입력 타이밍(프레임)이 롬과 맞는지 본다")
-    print(out, out.stat().st_size, "B")
+    (WORK / f"S_{kind}.sha1").write_text(rom_sha(rom) + "\n")
+    print(out, out.stat().st_size, "B", "rom", rom_sha(rom)[:8])
 
 
 def battle(a) -> None:
     rom = Path(a.rom)
     st = WORK / "S_battle.bin"
+    check_state("battle", rom)
     if not st.exists():
         raise SystemExit("먼저 mkstate battle")
     groups = parse_ids(a.groups, 98)
     seeds = [int(x) for x in a.seeds.split(",")]
-    out = OUTROOT / "battle" / a.tag
+    out = Path(a.out) if getattr(a, "out", "") else OUTROOT / "battle" / a.tag
     jobs = [(i, s) for s in seeds for i in groups]
     tasks = []
     for k in range(0, len(jobs), a.jpp):
-        od = out / f"c{k // a.jpp:03d}"
+        od = out / f"c{a.cbase + k // a.jpp:03d}"
         od.mkdir(parents=True, exist_ok=True)
         env = {"SW_OUT": str(od), "SW_STATE": str(st), "SW_FRAMES": str(a.frames), "SW_JOBS": ",".join(f"{i}:{s}" for i, s in jobs[k : k + a.jpp])}
         tasks.append((HERE / "battle_sweep.lua", env))
@@ -108,19 +122,28 @@ def dialog(a) -> None:
 
     rom = Path(a.rom)
     st = WORK / "S_dialog.bin"
+    check_state("dialog", rom)
     if not st.exists():
         raise SystemExit("먼저 mkstate dialog")
     d = common.rom_bytes()
-    units = [common.off2snes(s) for s, _e in script.all_units(d)]
+    # 인라인 메시지 호출(`jml $C1:8F0B` = 5C 0B 8F C1)의 4바이트는 메시지가 아니라 호출 명령이다 — 포인터를 그 뒤로(실게임은 그 뒤를 읽는다. 안 그러면 화자 이름 머리가 두 번 그려진다)
+    allu = [(s + 4 if d[s : s + 4] == b"\x5c\x0b\x8f\xc1" else s, e) for s, e in script.all_units(d)]
+    units = [common.off2snes(s) for s, _e in allu]
+    caps = {common.off2snes(s): 2 * (script.render(d, s).count("<05>") + 1) + 1 for s, _e in allu}  # 쪽 상한 — 원문 쪽 수의 두 배 + 1(번역이 쪽을 더 쪼갤 수 있다). 지난 뒤 이어지는 필드 이벤트 대사를 안 찍으려고
+    if a.only:
+        want = [int(x.split()[0], 16) for x in Path(a.only).read_text().split("\n") if x.strip()]
+        units = want[a.skip :]  # 못 닿은 단위만 다시(--only 목록, --skip/--limit 은 그 목록 안에서)
+    else:
+        units = units[a.skip :]
     if a.limit:
         units = units[: a.limit]
-    out = OUTROOT / "dialog" / a.tag
+    out = Path(a.out) if a.out else OUTROOT / "dialog" / a.tag
     tasks = []
     for k in range(0, len(units), a.per):
-        od = out / f"c{k // a.per:04d}"
+        od = out / f"c{(a.cbase if a.only else 0) + (a.skip + k) // a.per:04d}"
         od.mkdir(parents=True, exist_ok=True)
         lst = od / "list.txt"
-        lst.write_text("\n".join(f"{u:06X}" for u in units[k : k + a.per]) + "\n")
+        lst.write_text("\n".join(f"{u:06X} {caps[u]}" for u in units[k : k + a.per]) + "\n")
         tasks.append((HERE / "dialog_sweep.lua", {"SW_OUT": str(od), "SW_STATE": str(st), "SW_LIST": str(lst), "SW_MAXF": str(a.maxf)}))
     pool(tasks, rom, a.procs)
     print("끝:", out)
@@ -141,11 +164,17 @@ def main() -> None:
     p.add_argument("--jpp", type=int, default=6)
     p.add_argument("--procs", type=int, default=4)
     p.add_argument("--tag", default="run")
+    p.add_argument("--out", default="")
+    p.add_argument("--cbase", type=int, default=0)
     p = sub.add_parser("dialog")
     p.add_argument("--rom", default=str(DEFAULT_ROM))
     p.add_argument("--limit", type=int, default=0)
+    p.add_argument("--skip", type=int, default=0, help="앞에서 건너뛸 단위 수(--per 의 배수로 — 청크 번호가 이어진다)")
     p.add_argument("--per", type=int, default=20, help="프로세스당 단위 수")
-    p.add_argument("--maxf", type=int, default=900)
+    p.add_argument("--maxf", type=int, default=3000)
+    p.add_argument("--only", default="", help="단위 주소 목록 파일(한 줄에 hex 하나) — 이 단위들만 찍는다")
+    p.add_argument("--cbase", type=int, default=9000, help="--only 일 때 청크 번호 시작(회차마다 다르게)")
+    p.add_argument("--out", default="", help="산출 폴더(메인 트리 .local/work/inbox/... 에 직접 둘 때)")
     p.add_argument("--procs", type=int, default=4)
     p.add_argument("--tag", default="run")
     p = sub.add_parser("report")

@@ -20,6 +20,10 @@ def width(tok: str, names: dict | None = None) -> int:
         m = re.match(r"<E([01]):(\d+)>", tok)
         t = names.get(f"E{m.group(1)}:{m.group(2)}", "") if m else ""
         return sum(2 if 0x20 <= ord(c) <= 0x7E else 3 for c in t)
+    if tok.startswith("<10 ") and names is not None:  # 호출(`$10 lo hi`) — 같은 뱅크 조각 문자열을 끼워 넣는다. 폭은 대상 조각의 문안 폭(빌드가 `call:lohi` 로 넣어 준다)
+        m = re.match(r"<10 ([0-9a-f]{2}) ([0-9a-f]{2})>", tok)
+        t = names.get(f"call:{m.group(1)}{m.group(2)}", "") if m else ""
+        return sum(2 if 0x20 <= ord(c) <= 0x7E else 3 for c in re.sub(r"<[^>]*>", "", t))
     if tok.startswith("{*"):
         return 3  # 런타임 조사는 전각 한 글자
     if tok.startswith("<"):

@@ -20,6 +20,10 @@ BLANK_OK = {"$CABB71", "$CABE62", "$CAC11D", "$CAC705", "$CAC9B6"}
 # 예외(근거): 스태프롤 말장난 줄 — 원문 그대로 「?」 뒤에 글자가 이어진다
 EXEMPT = {"2-1 부호 뒤 공백 없이 글자": ("세계 최초?의 ",)}
 # 제어 토큰 순서 대조의 예외(근거): 원문 구간 안에 없던 화자 머리를 우리 문안이 이 구간에서 열었다 — 앞 구간 끝의 이름 변수와 이어지는 자리
+# 구간 맨 앞의 표시용 제어 바이트(NPC 말머리 표시 등 — 원문에선 글자처럼 읽히는 1~2바이트 코드)를 `<hh …>` 원시 바이트로 그대로 둔 구간: 원문 표기에는 태그로 안 나오므로 맨 앞 태그만 떼고 비교한다
+RAW_PREFIX = {"$C2D63E", "$C85D29", "$C49552", "$C5A640", "$C5BFC1", "$C5BF71", "$C494E1", "$C85CF0"}
+# 문안 지도에 없어도 되는 구간(근거): `$D5BD76` = 코드 바이트가 글자로 읽힌 것 · `$D7E11A` = 엔딩 원본 줄(번역본은 새 자리로 옮겨졌고 이 자리를 가리키는 포인터가 없다 — 10-20 정적 확인)
+MISSING_OK = {"$D5BD76", "$D7E11A"}
 CTL_EXEMPT = {"$C5521A", "$CB74B3"}
 PUNCT_LEAD = re.compile(r"^[.,!?…」』)~:;]")
 
@@ -87,6 +91,7 @@ def main() -> None:
 
     seg_map, _, dict_map = build.collect_texts(src)
     names = build.dict_names(src, dict_map)
+    e1w = build.e1_texts(src, seg_map)
     sg = {segs.seg_id(a): (a, b) for a, b in segs.segments(src)}
     seen = {"2-3 줄 머리 고아 부호": 0, "2-4 빈 줄": 0, "2-5 줄 첫 공백": 0, "폭 50단위 초과": 0}
     bad = {k: [] for k in seen}
@@ -96,7 +101,7 @@ def main() -> None:
         if not (0xC2 <= (common.off2snes(a) >> 16) <= 0xCB) or v.get("raw"):
             continue
         n += 1
-        t = typeset.typeset(build.resolve_josa(v["kr"], names), names)
+        t = typeset.typeset(build.resolve_josa(v["kr"], names), {**names, **e1w, **build.call_texts(v["kr"], a, seg_map, sg)})
         t = re.sub(r"<1e>.*?<04>\n?", "", t, flags=re.S)
         for pi, page in enumerate(t.split("<05>")):
             lines = page.split("\n")
@@ -121,10 +126,46 @@ def main() -> None:
         a, b = sg[key]
         if key in CTL_EXEMPT:
             continue
-        if ctl_seq(segs.notation(src, a, b)) != ctl_seq(v["kr"]):
+        kr_t = re.sub(r"^<[0-9a-f ]+>", "", v["kr"]) if key in RAW_PREFIX else v["kr"]
+        if ctl_seq(segs.notation(src, a, b)) != ctl_seq(kr_t):
             ctl_order.append(key)
     fails += len(ctl_order)
     print(f"  제어 토큰 순서(원문 대조): 본 {len(seg_map):,}구간 · 걸림 {len(ctl_order)}" + (" " + " ".join(ctl_order[:8]) if ctl_order else ""))
+    # 문안 지도에 없는 구간에 일본어가 남았나(10-20 qa: 상점 「팔기」 질문 등 8구간이 지도에서 빠진 채 일본어로 나갔다 — 일본어 잔존 게이트는 지도에 있는 구간만 분모로 봐서 이 구멍을 못 봤다)
+    miss_jp = []
+    for a_, b_ in sorted(segs.segments(src)):
+        k_ = segs.seg_id(a_)
+        if k_ in seg_map or k_ in MISSING_OK:
+            continue
+        if re.search(r"[ぁ-ん一-龥]{3,}", segs.notation(src, a_, b_)):
+            miss_jp.append(k_)
+    fails += len(miss_jp)
+    print(f"  문안 지도에 없는 구간의 일본어(가나·한자 3자↑): 본 구간 {len(sg):,} · 걸림 {len(miss_jp)}" + (" " + " ".join(miss_jp[:8]) if miss_jp else ""))
+    # 구운 글리프끼리 같은 비트맵이면 실패(ss-ed1+2 발견 — 행 맞춤으로 쉼표 꼬리 행이 잘려 쉼표가 마침표와 같은 모양으로 구워졌다)
+    import hangul_font
+    import font
+
+    used = set()
+    for _g, txt in texts:
+        for tk in kr._TOK.finditer(txt):
+            if tk.group(5) and tk.group(5) != "\n":
+                used.add(tk.group(5))
+    dup: list = []
+    full = {}
+    for c in sorted(x for x in used if ord(x) > 0x7E):
+        full.setdefault(hangul_font.glyph12(c), []).append(c)
+    dup += [v for v in full.values() if len(v) > 1]
+    built = common.BUILD_DIR / "sfc-ed2" / "Dragon Slayer - Eiyuu Densetsu 2 (KR).sfc"
+    if built.exists():  # 반각은 구운 롬의 표에서 읽는다(원본 글꼴 파일이 아니라)
+        bb = built.read_bytes()
+        half = {}
+        for c in sorted(x for x in used if 0x21 <= ord(x) <= 0x7E):
+            code = 0x22 if c == "?" else ord(c)
+            a0 = font.HALF_BASE + (code - 0x20) * font.HALF_STRIDE
+            half.setdefault(bytes(bb[a0 : a0 + font.HALF_STRIDE]), []).append(c)
+        dup += [v for v in half.values() if len(v) > 1]
+    fails += len(dup)
+    print(f"  글리프 비트맵 중복(전각 원천·반각 구운 롬): 본 {len(used)}자 · 걸림 {len(dup)}" + (f" {dup[:4]}" if dup else "") + ("" if built.exists() else " (구운 롬 없어 반각은 못 잼)"))
     print("  안 잼: 2-8 가운데 맞춤 픽셀(크레딧·카드는 직접 배치) · 2-10 한 줄 문장(전투 조각은 런타임 줄바꿈) · 2-13 쉼표 한국식(판단) · 3-1 맞춤법(공용 spellcheck 미연결) · 3-2 화자 이름 띄어쓰기 · 3-4 지명 칸/대화(이름 검사가 맡음) · 3-7 스태프롤(수동) · 4-x 문체")
     if fails:
         sys.exit(f"규칙 위반 {fails}곳")

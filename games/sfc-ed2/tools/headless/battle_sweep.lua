@@ -33,6 +33,7 @@ local msgn=0
 local finish_at=nil
 local dir=nil
 local function start_job()
+  cur=nil
   job=job+1; shots={}
   if job>#JOBS then log("ALLDONE f="..f); LOG:close(); emu.stop(0); return end
   local idx,seed=JOBS[job][1],JOBS[job][2]
@@ -93,6 +94,18 @@ emu.addMemoryCallback(function()
 end, emu.callbackType.exec, 0xC11E3A, 0xC11E3A, emu.cpuType.snes)
 local shots={}
 local hit={}
+cur=nil
+local superseded=0
+local DEB=tonumber(os.getenv("SW_DEBOUNCE") or "8")
+local PMAX=tonumber(os.getenv("SW_PAGEMAX") or "150")
+local prevh,stable,lasth=nil,0,nil
+local function bandhash()
+  local b=emu.getScreenBuffer(); local h=5381
+  for y=148,218,2 do local o=y*256
+    for x=8,248,2 do h=(h*33+(b[o+x+1] or 0))%4294967296 end
+  end
+  return h
+end
 local function boost()
   for i=0,3 do
     wr16(0x050F+i*0x40,999); wr16(0x0511+i*0x40,999)
@@ -107,8 +120,8 @@ emu.addMemoryCallback(function()
   msgn=msgn+1
   local p=rd(0xA6)|(rd(0xA7)<<8)|(rd(0xA8)<<16)
   log(string.format("M %d %d %06X",job,bf,p))
-  shot(string.format("%s/%05d.png",dir,bf))
-  for _,dl in ipairs({40,90}) do shots[#shots+1]={bf+dl,string.format("%s/%05d_p%d.png",dir,bf,dl)} end
+  if cur~=nil then log(string.format("SUPERSEDED %d %d",job,cur.start)); superseded=superseded+1 end
+  cur={start=bf, n=msgn}   -- 찍기 전에 기다린다: 창 안쪽이 안정될 때까지(아래 NMI 쪽에서 찍는다)
   boost()
   if state=="run" then
     local ph=(bf//1000)%2
@@ -131,6 +144,17 @@ emu.addMemoryCallback(function()
   end
   if state=="run" or state=="finish" then
     if not pending then bf=bf+1 end
+    if cur~=nil then
+      local h=bandhash()
+      if prevh~=nil and h==prevh then stable=stable+1 else stable=0 end
+      prevh=h
+      local age=bf-cur.start
+      if stable>=DEB and age>=10 and h~=lasth then
+        shot(string.format("%s/%05d_m%d.png",dir,bf,cur.n)); lasth=h; cur=nil
+      elseif age>=PMAX then
+        shot(string.format("%s/%05d_m%d_timeout.png",dir,bf,cur.n)); log(string.format("TIMEOUT %d bf=%d msg=%d stable=%d",job,bf,cur.n,stable)); lasth=h; cur=nil
+      end
+    end
     if #shots>0 then
       local keep={}
       for _,e in ipairs(shots) do if e[1]==bf then shot(e[2]) elseif e[1]>bf then keep[#keep+1]=e end end
