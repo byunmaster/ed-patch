@@ -319,6 +319,36 @@ def typeset(text: str, lead: str = "") -> list[list[str]]:
     return pages
 
 
+JOIN_PAGED: list[str] = []  # 이음 글이 쪽에 안 들어가 `<03>` → `<05>` 로 바꾼 자리(블록:키) — 빌드 끝에 알린다
+WHERE = ""  # 지금 짜는 스트림(블록:키)
+
+
+def typeset_after(body: str, lead: str, cur: float, lines: int) -> tuple[list[list[str]], bool | str]:
+    """앞 조각이 이미 `cur` 칸을 쓴 줄에 이어 찍히는 글의 조판 → (쪽 목록, 첫 줄을 새 줄로 시작하나).
+
+    조판기는 첫 줄 폭을 못 바꾸므로 `cur` 칸을 채우는 앞붙이 낱말을 달아 짠 뒤 떼어 낸다(어림은 반 칸 넉넉한 쪽).
+    첫 낱말조차 안 들어가면 앞붙이 줄만 남는다 — 그 줄을 지우고 `True`(새 줄로 시작)를 낸다.
+    ⚠ 쪽 줄 수(`LINES`)를 넘으면 `"page"` — 부른 쪽이 앞의 `<03>` 을 `<05>` 로 바꾼다."""
+    k = int(cur + 0.5) if cur % 1 == 0 else int(cur)  # 앞붙이 + 공백 한 칸(0.5)이 cur 이상이 되게
+    fill = "가" * k
+    pages = typeset(fill + " " + body.strip())
+    first = pages[0][0]
+    if first == fill:
+        pages[0] = pages[0][1:]
+        if not pages[0]:
+            pages = pages[1:]
+        used = lines + len(pages[0]) if pages else lines
+        brk = True
+    else:
+        pages[0][0] = lead + first[k + 1 :] if lead else first[k + 1 :]
+        used = lines - 1 + len(pages[0])
+        brk = False
+    if used > LINES:
+        # 쪽에 안 들어간다 — 키 대기(`<03>`)를 쪽 넘김(`<05>`)으로 바꿔 새 쪽 머리에서 시작한다(키 입력은 그대로 한 번)
+        return typeset(body, lead), "page"
+    return pages, brk
+
+
 def build_stream(
     st: scene.Stream, ours: str, cs: hangul.Charset, *, raw_text: bool = False
 ) -> list[scene.Token]:
@@ -331,6 +361,10 @@ def build_stream(
     end = next((t for t in st.tokens if t.kind == "end"), None)
     out: list[scene.Token] = []
     pending_text: list[str] = []
+    # `<03>`(키 대기) 뒤 글은 **앞 글과 같은 줄에 이어 찍힌다**(원판도 그렇다). 조판기는 조각마다 줄 머리부터 짜므로
+    # 앞 조각이 쓴 폭 `cur` 을 첫 줄 폭에서 빼 줘야 한다(10-23 밤샘 — 「30 Gold면 충분하다.」 뒤 「가자!!」가 18칸을 넘었다).
+    # None = 모른다(이름·수치 삽입 뒤 등 — 그땐 지금까지처럼 줄 머리로 짠다). `lines` = 이 쪽에서 쓴 줄 수.
+    st_join = {"cur": 0.0, "lines": 1}
 
     def flush_text(at_end: bool = False, join: bool = False, brk: bool = False):
         if not pending_text:
@@ -350,6 +384,10 @@ def build_stream(
         body = "".join(pending_text)
         lead = " " if body[:1] == " " else ""
         pages = typeset(body, lead)
+        cur = st_join["cur"]
+        lead_break = False
+        if cur and pages and cur + krwrap.text_width(pages[0][0]) > WIDTH:
+            pages, lead_break = typeset_after(body, lead, cur, st_join["lines"])
         if lead and not pages and not at_end:
             # 조각이 공백 하나뿐이면(`<ebf0> <0e>…` — 「일행은 」과 품목 이름 사이) 조판기가 빈 쪽으로 보고 버려
             # 「일행은약초를」로 붙는다(sfc-ed2 가 같은 결함을 찾았다 10-19). 끝 코드 앞 공백만 버린다.
@@ -371,13 +409,27 @@ def build_stream(
         ):
             pages[-1][-1] += " "
         pending_text.clear()
+        if lead_break == "page" and out and out[-1].kind == "ctl" and out[-1].code == 0x03:
+            out[-1] = scene.Token(0, b"\x05", "ctl", 0x05)
+            JOIN_PAGED.append(WHERE)
+            st_join.update(cur=0.0, lines=1)
+        elif lead_break:
+            out.append(scene.Token(0, b"\x01", "ctl", 0x01))
+            st_join["lines"] += 1
+            st_join["cur"] = 0.0
         for pi, pg in enumerate(pages):
             if pi:
                 out.append(scene.Token(0, b"\x05", "ctl", 0x05))
+                st_join["lines"] = 1
+                st_join["cur"] = 0.0
             for li, ln in enumerate(pg):
                 if li:
                     out.append(scene.Token(0, b"\x01", "ctl", 0x01))
+                    st_join["lines"] += 1
+                    st_join["cur"] = 0.0
                 out.append(scene.Token(0, cs.encode(ln), "text"))
+                if st_join["cur"] is not None:
+                    st_join["cur"] += krwrap.text_width(ln)
 
     for kind, val in textmap.parse_ours(ours):
         if kind == "text":
@@ -388,6 +440,7 @@ def build_stream(
             # 왕자의 말과 퍼거슨의 대답이 한 창에 붙었다). 쪽 넘김은 **여기서** 토큰으로 낸다.
             flush_text(brk=True)
             out.append(scene.Token(0, b"\x05", "ctl", 0x05))
+            st_join.update(cur=0.0, lines=1)
         else:
             code, tgt, raw = val
             if tgt is not None:
@@ -399,12 +452,22 @@ def build_stream(
                 refs.remove(m)
                 flush_text(join=True)
                 out.append(m)
+                st_join["cur"] = None  # 호출·분기가 채우는 폭은 모른다
             elif code in scene.END:
                 flush_text(at_end=code != 0x06, join=code == 0x06)
                 out.append(scene.Token(0, bytes([code]), "end", code))
             else:
                 flush_text(join=code not in (0x01, 0x05), brk=code in (0x01, 0x05))
                 out.append(scene.Token(0, raw, "ctl", code))
+                if code == 0x01:
+                    if st_join.get("prev") not in (0x04, 0x09):  # 이름표(`<1e>…<04>`·`<09nn>`) 뒤 `<01>` 은 머리줄 — 글 줄이 아니다
+                        st_join["lines"] += 1
+                    st_join["cur"] = 0.0
+                elif code == 0x05:
+                    st_join.update(cur=0.0, lines=1)
+                elif code != 0x03:
+                    st_join["cur"] = None  # 이름·수치 삽입 등 — 폭을 모른다
+                st_join["prev"] = code
     flush_text(at_end=True)
     if refs:
         raise SystemExit(
@@ -508,6 +571,7 @@ def collect_chars(tm: dict) -> set[str]:
 
 
 def main(check_only: bool = False) -> None:
+    global WHERE
     orig = common.rom()
     tm = load_textmaps()
     maps, names, smap, cmap, bmap, monsters = (
@@ -554,6 +618,7 @@ def main(check_only: bool = False) -> None:
                 raise SystemExit(f"블록 {n}: 스트림 {k} 가 없다")
             if textmap.jp_key(st) != ent["jp"]:
                 raise SystemExit(f"블록 {n} 스트림 {k}: 원문 해시가 갈렸다")
+            WHERE = f"{n:03d}:{k}"
             replace[off] = build_stream(st, ent["ours"], cs, raw_text=bool(ent.get("raw")))
         if not replace:
             continue
@@ -562,6 +627,8 @@ def main(check_only: bool = False) -> None:
             posdump[n] = dict(scene.LAST_POS)
         scene.verify_reassembly(mod, new, replace)
         new_blocks[n] = new
+    if JOIN_PAGED:
+        print(f"  이음 글 {len(JOIN_PAGED)}곳은 쪽에 안 들어가 `<03>` → `<05>` : {' '.join(JOIN_PAGED)}")
     if posdump:  # 검수용(ED_DUMP_POS=1): 씬별 「원본 스트림 시작 → 새 자리」 — 롬 바이트에는 영향이 없다
         (common.BUILD_DIR / "pos.json").write_text(
             json.dumps({str(k): {hex(a): hex(b) for a, b in v.items()} for k, v in posdump.items()})
