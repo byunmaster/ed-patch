@@ -107,5 +107,28 @@ class StubAndHookRules(unittest.TestCase):
         self.assertTrue(cs._must_adjoin(end06, False, six=False))  # 참조 없는 꼬리는 06 이든 어디든 바로 붙어야 한다
 
 
+class SharedTailEntry(unittest.TestCase):
+    """남이 들어오는 바이트 — 다른 스트림 한복판(접미 공유)으로 들어오는 목표를 우리가 덮으면 우는가(pce-ed1 10-22 꼴)."""
+
+    @staticmethod
+    def mod(tail: bytes) -> bytes:
+        # A = あ <01> い <00> 에 뒤 채움 둘, 뿌리 둘 — 하나는 A 머리, 하나는 A 의 종료 바이트 `00`(B = 끝 코드 하나, 접미 공유)
+        ent = len(LEA) + 2 + len(MSG)
+        head_len = 2 * ent + 2
+        a = b"\x82\xa0\x01\x82\xa2" + tail
+        b_at = head_len + 5
+        head = LEA + struct.pack(">h", head_len - 2) + MSG + LEA + struct.pack(">h", b_at - (ent + 2)) + MSG + b"\x4e\x75"
+        return head + a
+
+    def test_untouched_is_clean(self):
+        m = self.mod(b"\x00\x00\x00")
+        self.assertEqual(cs.compare_module(m, m)[0], [])
+
+    def test_stub_over_shared_terminator_is_caught(self):
+        orig = self.mod(b"\x00\x00\x00")
+        bad = self.mod(b"\x0f\x00\x10")  # A 가 넘쳐 제자리 끝에 둔 goto 스텁이 B 가 들어오는 종료 바이트 `00` 을 덮었다
+        self.assertTrue(cs.compare_module(orig, bad)[0])
+
+
 if __name__ == "__main__":
     unittest.main()

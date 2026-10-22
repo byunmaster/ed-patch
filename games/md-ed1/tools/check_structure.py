@@ -174,6 +174,22 @@ def compare_module(orig_b: bytes, new_b: bytes, block: int = -1) -> tuple[list[s
     while work:
         visit(*work.pop())
     stat["paired"] = len({o for o, _ in seen})
+    # 남이 들어오는 바이트 — 원본에서 **다른 스트림 한복판**으로 점프·참조가 들어오는 자리(접미 공유)를 우리가 덮지 않았나(pce-ed1 10-22:
+    # A 가 넘쳐 제자리 끝에 둔 점프 스텁이 원본 종료 바이트를 덮었는데 B 의 끝 점프가 바로 그 바이트로 들어와 스텁 주소를 글자로 읽었다).
+    # 새 모듈에서도 그 목표가 **다른 새 스트림 안**이면(여전히 공유) 공유 구간은 원본과 바이트까지 같아야 한다.
+    o_ext = sorted((s, st.end) for s, st in orig.streams.items())
+    n_ext = sorted((s, st.end) for s, st in [*new.streams.items(), *extra.items()])
+    for o, n in pair.items():
+        if o in EXEMPT.get(block, {}) or not any(s < o < e for s, e in o_ext):
+            continue
+        so = orig.streams[o]
+        if any(s < n < e for s, e in n_ext):
+            length = so.end - o
+            if new_b[n : n + length] != orig_b[o : o + length]:
+                errs.append(
+                    f"원본 {o:#x} 는 다른 스트림 한복판으로 들어오는 목표(접미 공유)인데 새 {n:#x} 도 공유 구간이라 "
+                    f"바이트가 원본과 같아야 하나 달라졌다(덮인 종료·스텁)"
+                )
     # 장부(relocations.py)용 — 옮긴 스트림 · 꼬리 복사본 · 쪽 넘김 수 · 원본 자리를 0 으로 비운 바이트
     stat["moved"] = sum(1 for o, n in pair.items() if o != n)
     stat["copies"] = len(seen) - len(first)  # 같은 원본 스트림의 두 번째 이후 새 사본(꼬리 복사본)
@@ -348,6 +364,14 @@ def compare_sysmsg(orig_rom: bytes, new_rom: bytes) -> tuple[list[str], int, int
             errs.append(f"시스템 {t:#x}: 참조가 서로 다른 새 자리로 갈렸다 {sorted(hex(v) for v in vals)}")
         if vals:
             image[t] = _follow_stub(orig_rom, new_rom, min(vals))
+    # 남이 들어오는 바이트 — 다른 문안 한복판(접미 공유)으로 들어오는 목표의 진입 바이트가 스텁·글자로 덮이지 않았나(pce-ed1 10-22)
+    ext = sorted((t, e["stream"].end) for t, e in S.items())
+    interior = [t for t, _ in ext if any(a < t < b for a, b in ext)]
+    for t in interior:
+        if t in image:
+            first_new = min({nref(k, ins) for k, ins in S[t]["refs"]})
+            if new_rom[first_new] == 0x0F and orig_rom[t] != 0x0F:
+                errs.append(f"시스템 {t:#x}: 다른 문안 한복판으로 들어오는 목표인데 새 {first_new:#x} 의 진입 바이트가 점프 스텁이다")
     ok = 0
     seen: set[tuple[int, int]] = set()
     work = list(image.items())

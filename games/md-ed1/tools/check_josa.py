@@ -77,7 +77,7 @@ def scan() -> tuple[list[str], list[str]]:
             pp = int(m.group(2), 16)
             # `<0e><1c>` — 아이템 이름 뒤 `<1c>`(원문이 이름과 조사 사이에 두는 코드)는 건너뛴다
             ok = before.removesuffix("<1c>").endswith(f"<{PAIRED[kind]}>") or (
-                kind == "eb" and re.search(r"<09[0-9a-f]{2}>$", before) and pp >= 0x10
+                kind == "eb" and re.search(r"<09[0-9a-f]{2}>$", before.removesuffix("<1c>")) and pp >= 0x10
             )
             # 리더 이름(`<0b>`) 뒤 `<ebf_>` · 주문 이름(코드가 버퍼에 그린 뒤 스트림 머리) `<ec1_>` — 이전엔 정규식이
             # `0_` 꼴만 잡아 이 둘이 **게이트에 안 보였다**(10-08 발견, 2건 + 1건)
