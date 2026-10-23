@@ -70,7 +70,7 @@ def jp_stamp(body):
     return hashlib.sha1(body).hexdigest()[:8]
 
 
-def fit(text, budget, jp_over=None, jp_text=None):
+def fit(text, budget, jp_over=None, jp_text=None, cap=False):
     """우리 문안을 원문 바이트 예산에 맞춘다 — `(맞춘 문안, 사유)`.
 
     ⚠ `jp_over` 는 **원문이 이미 넘치는 페이지**다(`typeset.overflows` 의 결과).
@@ -92,7 +92,7 @@ def fit(text, budget, jp_over=None, jp_text=None):
     #   있는데(엔진이 접는다) 거기서 17 칸까지만 채우면 자리가 모자라 재삽입이 통째로
     #   거부된다 — 문안이 예산보다 **짧은데도** 실패한다(2026-08-25 세 블록에서 물렸다).
     width = T.SCREEN_COLS if T.is_narration(text) else T.WIN_COLS
-    if jp_text:
+    if jp_text and not cap:
         width = max(width, *(int(T.cols(x)) for x in T.lines(jp_text) or [T.WIN_COLS]))
     out = T.pad_to_budget(text, budget, width)
     if out is None:
@@ -101,6 +101,62 @@ def fit(text, budget, jp_over=None, jp_text=None):
         have = T.body_bytes(text)
         return None, f"예산 {budget}B 에 못 맞춘다(문안 {have}B)"
     return out, None
+
+
+SLACK = b"\xff\xff"  # 스크립트 무동작 패딩(`script_ops` — `FF FF` 는 2 바이트 무동작, 원작자도 쓴다)
+TERM_ENDS = (0x10, 0x0E)  # 본문 종결 뒤 `00` 이 글 모드를 끝내는 꼴(`10 00` · `0E 00`) — 그 뒤엔 무동작 패딩을 놓아도 된다
+
+
+#   🔴 **글 모드 안에서 화면에 안 나오는 한 바이트** — `0E`(키 대기 뒤 같은 글 모드가 이어지는 코드)로 끝나는 블록엔 `FF FF` 를 못 둔다(글자 코드로 읽힌다).
+#   대사 보기 하네스로 후보를 하나씩 시험했다(`filler_probe.py`, 10-20): 0x1A 는 원판 문안에 한 번도 안 나오는 제어 코드고,
+#   본문 끝·줄 사이 어디에 4 개씩 놓아도 화면이 기준과 **픽셀까지 같고** 스크립트가 정상 종료한다 — 엔진이 모르는 코드는 건너뛴다.
+FILL = b"\x1a"
+
+
+def fit_fill(text, budget, jp_over=None):
+    """`(문안, 채움 수)` — 줄을 공백으로 채우지 않고 **남는 바이트는 본문 끝에 무동작 `1A` 로** 둔다. 못 하면 `None`.
+    종결 바이트가 무엇이든(`10 00` · `0E` + 연결) 쓸 수 있다 — 종결은 제자리다."""
+    over = [] if os.environ.get("ED_RULER") else T.overflows(text)
+    if over and jp_over:
+        allow = dict(jp_over)
+        over = [(i, n) for i, n in over if n > max(T.WIN_ROWS, allow.get(i, 0))]
+    if over:
+        return None
+    have = T.body_bytes(text)
+    if have > budget:
+        return None
+    return text, budget - have
+
+
+def slack_ok(data, off, budget):
+    """블록 뒤가 `<종결> 00` 이라 **글 모드가 끝난 자리**인가 — 거기에는 `FF FF` 를 깔아도 화면에 안 나온다."""
+    e = off + budget
+    return e + 1 < len(data) and data[e] in TERM_ENDS and data[e + 1] == 0
+
+
+def fit_slack(text, budget, jp_over=None):
+    """`(문안, 무동작 쌍 수)` — 줄을 공백으로 채우지 않고 **남는 바이트는 종결 뒤 `FF FF` 로** 둔다. 못 하면 `None`.
+
+    🔴 10-19 대사 보기로 잡은 결함: 원문이 17 칸을 넘겨 한 줄로 쓴 블록은 예산이 커서 `fit` 이 줄 끝을 **원문 폭까지** 전각 공백으로 채웠고,
+    그 줄이 창 폭(17 칸)을 넘으면 엔진이 자동으로 줄을 바꾼 뒤 `0D` 가 **빈 줄을 하나 더** 만들었다(235 블록 · MAP001:18 「촌장님께 가서…」).
+    남는 바이트는 글이 아니라 **글 모드가 끝난 뒤**에 두면 된다. 홀수 바이트는 반각 하나로 맞춘다."""
+    over = [] if os.environ.get("ED_RULER") else T.overflows(text)
+    if over and jp_over:
+        allow = dict(jp_over)
+        over = [(i, n) for i, n in over if n > max(T.WIN_ROWS, allow.get(i, 0))]
+    if over:
+        return None
+    have = T.body_bytes(text)
+    if have > budget:
+        return None
+    if (budget - have) % 2:
+        text = T.pad_to_budget(text, have + 1, T.WIN_COLS) or T.pad_to_budget(
+            text, have + 1, T.WIN_COLS, keep_last=False
+        )
+        if text is None:
+            return None
+        have += 1
+    return text, (budget - have) // 2
 
 
 NAME_STRIDE = 32  # 맵의 인물 이름표는 **32B 칸**이 이어진 표다(`0x14` 이상 화자 번호 = 표 색인) — 이름 뒤는 0 으로 비어 있다
@@ -196,11 +252,45 @@ def patch_blocks(data, stem, table):
         if banner.is_place_banner(kr):
             kr = banner.normalize(kr)
             enc = {**table, **H.load_low()}
-        fitted, why = fit(kr, budget, T.overflows(jp), jp)
+        #   ① 줄 폭을 17 칸으로 **묶고** 공백으로 채워 본다(원문 폭까지 열던 옛 길은 마지막 수단).
+        fitted, why = fit(kr, budget, T.overflows(jp), jp, cap=True)
+        if fitted is not None:
+            slack = 0
+        elif slack_ok(data, blk["off"], budget):
+            #   ② 안 되면 남는 바이트를 글 모드 뒤 `FF FF` 로(빈 줄 결함을 안 만든다)
+            r = fit_slack(kr, budget, T.overflows(jp))
+            if r is not None:
+                fitted, slack = r
+        fill = 0
+        if fitted is None:
+            #   ③ 종결이 뭐든 쓸 수 있는 채움 — 본문 끝에 `1A`(화면에 안 나오는 제어 코드)
+            r = fit_fill(kr, budget, T.overflows(jp))
+            if r is not None:
+                fitted, fill = r
+                slack = 0
+        if fitted is None:
+            fitted, why = fit(kr, budget, T.overflows(jp), jp)  # ④ 옛 길
+            slack = 0
         if fitted is None:
             bad.append((key, why))
             continue
         raw = H.encode_kr(fitted, enc)
+        if slack:
+            if len(raw) + 2 * slack != budget:
+                bad.append((key, f"무동작 쌍 계산이 어긋났다 {len(raw)}+2×{slack} != {budget}"))
+                continue
+            at = blk["off"]
+            end = at + budget + 2  # 본문 + 종결 + `00`
+            out[at:end] = raw + bytes([data[at + budget], 0]) + SLACK * slack
+            done += 1
+            continue
+        if fill:
+            if len(raw) + fill != budget:
+                bad.append((key, f"채움 계산이 어긋났다 {len(raw)}+{fill} != {budget}"))
+                continue
+            out[blk["off"] : blk["off"] + budget] = raw + FILL * fill
+            done += 1
+            continue
         if len(raw) != budget:
             bad.append((key, f"길이가 변했다 {len(raw)} != {budget}"))
             continue

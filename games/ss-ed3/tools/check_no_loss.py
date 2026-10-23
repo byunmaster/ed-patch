@@ -109,10 +109,18 @@ def check_maps(disc, img, files, rev):
                 #   맵 이름은 원문보다 길게 쓸 수 있다(`reinsert.NAME_MAX`) — NUL 까지 읽는다
                 body = got[blk["off"] : got.index(b"\x00", blk["off"])]
             n += 1
+            #   🔴 남는 바이트를 글 모드 뒤 `FF FF` 로 둔 블록(`reinsert.fit_slack`) — 본문은 그 앞에서 끝난다
+            ext = got[blk["off"] : blk["off"] + len(blk["body"]) + 4]  # 무동작 쌍이 본문 칸 밖으로 걸칠 수 있다(`10 00 FF FF` 가 칸 끝에서 시작)
+            for end in (b"\x10\x00\xff\xff", b"\x0e\x00\xff\xff"):
+                cut = ext.find(end)
+                if 0 <= cut <= len(body):
+                    body = ext[:cut]
+                    break
             #   간판류 `_wide` 는 트램펄린이 칸 안 글 앞 몇 바이트를 덮는다(`choice_tail.covers`) — 그 글자(한글 = 2B)는 비교에서 뺀다.
             skip = cover.get(key, 0)
             if skip:
                 body, kr = body[skip:], kr[skip // 2 :]
+            body = bytes(body).rstrip(R.FILL)  # 본문 끝의 무동작 채움(`1A`, `reinsert.fit_fill`)은 글이 아니다
             if glyphs(decode(body, rev)) != glyphs(kr):
                 bad.append((f"{stem}[{key}]", kr, decode(body, rev)))
     return n, bad

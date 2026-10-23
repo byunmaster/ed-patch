@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import center_narration as CN
 import common as C
 import typeset as T
+import voice_sub as VS
 
 SCRIPT = os.path.join(C.GAME_DIR, "script")
 ACCEPT = os.path.join(SCRIPT, "typeset6_accept.json")
@@ -39,8 +40,13 @@ def _json(path):
         return json.load(f)
 
 
-def check(text, width=T.WIN_COLS):
-    """`[규칙]` — 한 블록에서 걸린 규칙 번호(줄마다 하나씩)."""
+def check(text, width=T.WIN_COLS, fold=True):
+    """`[규칙]` — 한 블록에서 걸린 규칙 번호(줄마다 하나씩).
+
+    `fold` = 엔진이 줄을 **자동으로 접는가**. 대사창·나레이션·시스템은 접는다(줄 끝 반각 부호가 폭−1 을 넘으면 다음 줄로 밀려
+    홀로 선다 → ①). 음성 자막은 **스텁이 18칸 글자 버퍼에 직접 그리고 접지 않는다** — 그래서 ① 은 「줄 칸수 > 폭」(넘침)만 본다.
+    실측(10-21, 스텁 변수 주입 하네스): 18.0칸 줄(글자 17.5 + 마침표/느낌표 0.5 · 전각 18자)은 부호까지 잘리지 않고 그려지며
+    마지막 칸이 오른쪽 장식 테두리에 붙을 뿐이다(`inbox/ss-ed3/stub-probe/zoom_abc.png`). 18칸 초과는 `voice_sub.entry` 가 빌드에서 막는다."""
     hits = []
     for pg in text.replace("\r", "\n").split("\f"):
         vis = [T.visible(x) for x in pg.split("\n")]
@@ -51,7 +57,7 @@ def check(text, width=T.WIN_COLS):
         for i, x in enumerate(vis):
             if not x:
                 continue
-            if T.orphans(x, width) or T.cols(x) > width:
+            if (fold and T.orphans(x, width)) or T.cols(x) > width:
                 hits.append("①")
             if x.startswith(" "):
                 hits.append("③")
@@ -97,7 +103,7 @@ def blocks():
             continue
         for j, h in enumerate(v.get("hooks", []) + v.get("items", [])):
             if h.get("lines"):
-                out.append(("음성 자막", f"{k}#{j}", "\n".join(h["lines"]), T.WIN_COLS))
+                out.append(("음성 자막", f"{k}#{j}", "\n".join(h["lines"]), VS.MAX_COLS))  # 자막 글자 버퍼는 18칸(대사창 17 보다 한 칸 넓다)
     return out
 
 
@@ -106,7 +112,7 @@ def findings():
     out = {}
     for area, key, text, w in blocks():
         seen = {}
-        for r in check(text, w):
+        for r in check(text, w, fold=area != "음성 자막"):
             seen[r] = seen.get(r, 0) + 1
             out[f"{key}|{r}{'' if seen[r] == 1 else seen[r]}"] = (area, text)
     return out
