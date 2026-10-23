@@ -210,7 +210,7 @@ def patch_blocks(
     msgs = _msgs()
     hit = 0
     nmsg = 0
-    for b in blocks:
+    for bi, b in enumerate(blocks):
         data = bytearray(b["data"])
         targets: dict[int, str] = {}
         for r in records(bytes(data)):
@@ -257,7 +257,7 @@ def patch_blocks(
             data[off : off + room] = enc + bytes(room - len(enc))
             hit += 1
         moved: list[dict] = []
-        nmsg += patch_msgs(data, msgs, table, errors, f"rel{rel} blk", moved)
+        nmsg += patch_msgs(data, msgs, table, errors, f"rel{rel} blk", moved, f"{rel}:{bi}")
         check_moved(bytes(data), moved, errors, f"rel{rel} blk")
         MOVED_COUNT[0] += len(moved)
         b["data"] = bytes(data)
@@ -343,6 +343,13 @@ def _msgs() -> dict[str, str]:
     return json.loads(f.read_text()).get("messages", {}) if f.exists() else {}
 
 
+def _positional() -> dict[str, dict]:
+    """자리별 문안 — 같은 일본어 조각이 한 블록 안 여러 자리에 있어(열쇠 공유) 한 문맥만 다르게 써야 할 때: `{"<rel>:<블록>:<오프셋 4자리 16진>": {"key": 열쇠, "t": 문안}}`.
+    열쇠가 그 자리의 원문과 같을 때만 쓴다(원문이 바뀌면 조용히 안 먹는 대신 이 검사가 잡는다)."""
+    f = common.GAME_DIR / "script" / "sys" / "battle.json"
+    return json.loads(f.read_text()).get("positional", {}) if f.exists() else {}
+
+
 # 블록이 자랄 수 있는 상한 — **전투 화면에서 잰 값**(2026-09-06, 슬라임전 뱅크 0x74 덤프).
 # 블록은 +0x400 에 풀리고, 그 위로 게임이 실제로 쓰는 첫 자리가 **+0x0B00** 이다(그 사이 1,340B 는
 # 전투 내내 0). 🔴 정적으로 「원본에서 0 이 아닌 첫 자리」로 잡았던 가설은 +0xF0A(2,826B)라
@@ -366,7 +373,13 @@ def _tokens_ok(kr_tok: list[str], jp_tok: list[str]) -> bool:
 
 
 def patch_msgs(
-    data: bytearray, msgs: dict[str, str], table, errors: list[str], where: str, moved: list | None = None
+    data: bytearray,
+    msgs: dict[str, str],
+    table,
+    errors: list[str],
+    where: str,
+    moved: list | None = None,
+    ctx: str = "",
 ) -> int:
     """전투 문구를 갈아 끼운다. **자리를 안 옮기고**, 넘치면 `0F` 로 블록 꼬리에 잇는다.
 
@@ -384,12 +397,21 @@ def patch_msgs(
     ⚠ 꼬리(원래 자리의 남은 바이트)는 **0 으로 지운다**(10-07 — 처음엔 「못 본 참조가 가리켜도 그 자리만
     일본어」라며 원문을 남겼는데, 전량 번역에서 그 죽은 원문이 컨테이너 칸을 넘겼다). 최악은 「그 자리만 빈 글」이다.
     """
+    import font
     from sysbuild import encode_tokens
 
     n = 0
     ind_offs = {r["ind"] - LOAD_ADDR for r in records(bytes(data)) if r["ind"] is not None}
+    pos = _positional()
     for u in msg_units(bytes(data)):
-        kr = msgs.get(msg_key(u["body"]))
+        key = msg_key(u["body"])
+        kr = msgs.get(key)
+        at = f"{ctx}:{u['off']:04X}"
+        if at in pos:
+            if pos[at]["key"] != key:
+                errors.append(f"{where} +{u['off']:04X} 자리별 문안의 열쇠가 그 자리 원문과 다르다 — 원문이 바뀌었나")
+            else:
+                kr = pos[at]["t"]
         if not kr:
             continue
         jp_tok = TOKEN.findall(render(u["body"]))
@@ -415,7 +437,16 @@ def patch_msgs(
             # 🔴 **단순 읽기 종단**(`04` 화자 이름 칸 · `06` 이름 문자열)은 인터프리터가 아니라 **종단까지 글자만 읽는 루틴**이 읽는다 — `0F` 점프를 못 따라가
             #   「규리게스」 뒤에 점프 바이트가 글자로 찍혔다(10-21 「규리게스게」). 이 단위는 **종단을 글 바로 뒤에 두고** 제자리에 쓴다(원문 찌꺼기는 종단 뒤라 안 읽힌다).
             if len(enc) <= u["room"]:
-                data[u["off"] : u["off"] + u["room"]] = enc + bytes(u["room"] - len(enc))
+                gap = u["room"] - len(enc)
+                if u["off"] not in ind_offs:
+                    # 🔴 화자 이름 칸 `1F 이름 04` 의 종단 04 는 **명령 흐름 안**이다 — 뒤에 `01`·대사가 이어진다(10-21 「규리게스」 뒤 대사가 안 나왔다: 04 를 앞당기고 0 으로
+                    #   채우자 `00`(끝) 에서 멈췄다). 종단을 원래 자리에 두고 **앞을 반각 공백으로 채운다**(글자 뒤라 안 보인다). 이름 문자열(`06`)은 종단에서 읽기가 끝나 0 채움으로 된다.
+                    if gap % 2:
+                        errors.append(f"{where} +{u['off']:04X} 「{kr}」 화자 칸 빈틈 {gap}B 가 홀수 — 반각 공백(2B)으로 못 채운다")
+                        continue
+                    enc = enc[:-1] + font.HALF_SPACE * (gap // 2) + enc[-1:]
+                    gap = 0
+                data[u["off"] : u["off"] + u["room"]] = enc + bytes(gap)
                 n += 1
                 continue
             errors.append(f"{where} +{u['off']:04X} 「{kr}」 이름 칸이 {len(enc)}B > {u['room']}B (단순 읽기 문자열은 옮길 수 없다)")
@@ -501,7 +532,7 @@ def glyph_chars(extra: dict[str, str] | None = None) -> set[str]:
 
     kr, _ = kr_names(extra)
     chars = {c for v in kr.values() for c in v if font.needs_glyph(c)}
-    for v in _msgs().values():
+    for v in [*_msgs().values(), *(e["t"] for e in _positional().values())]:
         chars |= {c for c in TOKEN.sub("", v) if font.needs_glyph(c)}
     return chars
 

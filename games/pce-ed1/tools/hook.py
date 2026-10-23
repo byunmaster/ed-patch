@@ -419,6 +419,30 @@ def _main_asm() -> "Asm":
     a.label("not_ours")
     a.op("JMP", "abs", EXT_ADDR + EXT_JOSA_OFF)
     a.label("calc")
+    a.op("JSR", "abs", "josa_has")  # 받침 판정 → HASBAT (`pre` 도 같은 루틴을 부른다)
+    a.label("decide")
+    a.op("LDA", "abs", HASBAT_ADDR)
+    a.op("BNE", "rel", "has_batchim")
+    # 받침 없음 → 표의 둘째 항목: (k×2+1)×2 = k×4+2
+    a.op("LDA", "zp", 0xF8)
+    a.op("SEC")
+    a.op("SBC", "imm", font.TRAIL0)
+    a.op("ASL")
+    a.op("INC")
+    a.op("BRA", "rel", "josa_lookup")
+    a.label("has_batchim")
+    a.op("LDA", "zp", 0xF8)
+    a.op("SEC")
+    a.op("SBC", "imm", font.TRAIL0)
+    a.op("ASL")
+    a.label("josa_lookup")
+    a.op("ASL")
+    a.op("TAX")  # 받침 k×4 · 무받침 k×4+2
+    a.op("LDA", "absx", JOSA_OFF_ADDR)  # 표 = (트레일, 리드) — 보통 글자 길로 낸다
+    a.op("STA", "zp", 0xEC)
+    a.op("LDA", "absx", JOSA_OFF_ADDR + 1)
+    a.op("JMP", "abs", "fetch")
+    a.label("josa_has")
     # 인덱스 = (리드−F0)×220 + (트레일−0x24) → $EC/$ED
     a.op("SEC")
     a.op("SBC", "imm", font.LEAD0)
@@ -450,32 +474,12 @@ def _main_asm() -> "Asm":
     a.op("SEC")
     a.op("SBC", "imm", font.TRAIL0)
     a.op("CMP", "imm", 4)
-    a.op("BNE", "rel", "decide")
+    a.op("BNE", "rel", "hdone")
     _bit(a, RIEUL_ADDR, "ri")
-    a.op("BEQ", "rel", "decide")
+    a.op("BEQ", "rel", "hdone")
     a.op("STZ", "abs", HASBAT_ADDR)
-    a.label("decide")
-    a.op("LDA", "abs", HASBAT_ADDR)
-    a.op("BNE", "rel", "has_batchim")
-    # 받침 없음 → 표의 둘째 항목: (k×2+1)×2 = k×4+2
-    a.op("LDA", "zp", 0xF8)
-    a.op("SEC")
-    a.op("SBC", "imm", font.TRAIL0)
-    a.op("ASL")
-    a.op("INC")
-    a.op("BRA", "rel", "josa_lookup")
-    a.label("has_batchim")
-    a.op("LDA", "zp", 0xF8)
-    a.op("SEC")
-    a.op("SBC", "imm", font.TRAIL0)
-    a.op("ASL")
-    a.label("josa_lookup")
-    a.op("ASL")
-    a.op("TAX")  # 받침 k×4 · 무받침 k×4+2
-    a.op("LDA", "absx", JOSA_OFF_ADDR)  # 표 = (트레일, 리드) — 보통 글자 길로 낸다
-    a.op("STA", "zp", 0xEC)
-    a.op("LDA", "absx", JOSA_OFF_ADDR + 1)
-    a.op("JMP", "abs", "fetch")
+    a.label("hdone")
+    a.op("RTS")
     a.label("idx_lo")
     a.data(bytes((i * font.PER_LEAD) & 0xFF for i in range(10)))
     a.label("idx_hi")
@@ -697,6 +701,45 @@ def half_tables() -> bytes:
     return bytes([0, 28, 56, 84]) + bytes(0x80 >> i for i in range(8)) + bytes(bm) + narr
 
 
+# 🔴 `으로/로` 무받침 — **그리지도 전진하지도 않는다**(10-21 「나이프로로는」). 문안은 「{으로/로}로」 꼴이고(`font.encode` 가 둘째 글자 「로」를 보통 글자로 낸다)
+#   토큰은 받침 있으면 「으」, 없으면 **아무것도 안 낸다**(KIND_EATEN — 반각 공백 먹기와 같은 갈래: 칸 수도 안 센다). 판정은 EX_GETFNT 대체 루틴의 `josa_has`
+#   를 그대로 부른다. 직전 글자가 우리 글자가 아니면(원문 SJIS) 무받침으로 본다. 자리는 반각 영숫자 표 뒤 꼬리(39B).
+JOSA_PRE_ADDR = HALF_TAB_ADDR + HALF_TAB_LEN
+
+
+def _josa_pre_asm() -> "Asm":
+    a = Asm(JOSA_PRE_ADDR)
+    a.op("LDA", "zp", 0xF9)
+    a.op("CMP", "imm", font.JOSA_LEAD)
+    a.op("BNE", "rel", "ret")
+    a.op("LDA", "zp", 0xF8)
+    a.op("CMP", "imm", font.TRAIL0 + 4)
+    a.op("BNE", "rel", "ret")
+    a.op("PHX")
+    a.op("PHY")
+    a.op("LDA", "abs", LAST_ADDR)
+    a.op("CMP", "imm", font.LEAD0)
+    a.op("BCC", "rel", "eat")
+    a.op("JSR", "abs", MAIN_LABELS["josa_has"])
+    a.op("LDA", "abs", HASBAT_ADDR)
+    a.op("BNE", "rel", "out")
+    a.label("eat")
+    a.op("LDA", "imm", KIND_EATEN)
+    a.op("STA", "abs", KIND_ADDR)
+    a.label("out")
+    a.op("PLY")
+    a.op("PLX")
+    a.label("ret")
+    a.op("RTS")
+    return a
+
+
+def josa_pre() -> bytes:
+    b = _josa_pre_asm().bytes()
+    assert JOSA_PRE_ADDR + len(b) <= (WORDCK_MPR << 13) + 0x2000, len(b)
+    return b
+
+
 def finish_banks(glyph_bank: bytes) -> bytes:
     """글리프 뱅크에 코드를 얹는다 — 뱅크마다 꼬리에 풀기 루틴, 마지막 뱅크 글리프 끝 `CODE_SLOTS` 칸에 반 칸 전진 + 어절 줄바꿈."""
     gb = bytearray(glyph_bank)
@@ -711,6 +754,9 @@ def finish_banks(glyph_bank: bytes) -> bytes:
     tab = len(gb) - 0x2000 + (HALF_TAB_ADDR - (WORDCK_MPR << 13))
     assert not gb[tab : tab + HALF_TAB_LEN].strip(b"\0"), "반각 영숫자 표 자리가 비어 있지 않다"
     gb[tab : tab + HALF_TAB_LEN] = half_tables()
+    jp = josa_pre()
+    assert not gb[tab + HALF_TAB_LEN : tab + HALF_TAB_LEN + len(jp)].strip(b"\0"), "조사 선처리 자리가 비어 있지 않다"
+    gb[tab + HALF_TAB_LEN : tab + HALF_TAB_LEN + len(jp)] = jp
     return bytes(gb)
 
 
@@ -1006,7 +1052,7 @@ def _entry_asm() -> "Asm":
     a.op("BEQ", "rel", "isvar")
     a.op("CMP", "imm", font.LEAD0)
     a.op("BEQ", "rel", "chkh")  # 리드 F1~F3 — 우리 글리프
-    a.op("RTS")
+    a.op("JMP", "abs", JOSA_PRE_ADDR)  # 조사 토큰 — `으로/로` 무받침이면 안 그린다
     a.label("isvar")
     a.op("LDA", "zp", 0xF9)
     a.op("SBC", "imm", font.VARIANT_LEAD0 - font.LEAD0)  # CMP 가 같아서 캐리 1
@@ -1341,6 +1387,9 @@ def _bit(a: "Asm", table_addr: int, tag: str) -> None:
     a.label(f"{tag}_done")
     a.op("LDA", "zp", 0xEE)
     a.op("AND", "imm", 1)
+
+
+MAIN_LABELS = _main_asm().labels  # EX_GETFNT 대체(조사 포함) 루틴의 라벨 — `pre` 가 `josa_pre` 로 뛴다
 
 
 def _mul24(a: "Asm") -> None:

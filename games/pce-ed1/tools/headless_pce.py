@@ -185,7 +185,15 @@ def run(n):
         core.retro_run()
         frames += 1
         if TRACE and TRACE[2] <= frames - TRACE[1] < TRACE[3]:
-            Image.fromarray(state["frame"]).save(os.path.join(TRACE[0], f"{frames - TRACE[1]:06d}.png"))
+            if os.environ.get("PCE_WATCH"):  # 「주소:길이,…」 — 프레임마다 워크 RAM 값을 `<접두>_w.tsv` 로(그림은 안 저장)
+                row = [str(frames - TRACE[1])]
+                for it in os.environ["PCE_WATCH"].split(","):
+                    ad, ln = it.split(":")
+                    row.append(C.string_at(ram(ad), int(ln)).hex())
+                with open(TRACE[0] + "_w.tsv", "a") as wf:
+                    wf.write("\t".join(row) + "\n")
+            else:
+                Image.fromarray(state["frame"]).save(os.path.join(TRACE[0], f"{frames - TRACE[1]:06d}.png"))
 
 
 def ram(a):

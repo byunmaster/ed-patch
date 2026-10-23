@@ -214,6 +214,27 @@ class MiniCPU:
                 r = self.a + self.rd(self.fetch(2)) + self.c
                 self.c = int(r > 0xFF)
                 self.a = self.setnz(r)
+            elif op == 0x65:  # ADC zp
+                r = self.a + self.rd(self.ZP + self.fetch(1)) + self.c
+                self.c = int(r > 0xFF)
+                self.a = self.setnz(r)
+            elif op == 0x46:  # LSR zp
+                at = self.ZP + self.fetch(1)
+                v = self.rd(at)
+                self.c = v & 1
+                self.wr(at, self.setnz(v >> 1))
+            elif op == 0x66:  # ROR zp
+                at = self.ZP + self.fetch(1)
+                v = self.rd(at)
+                r = (v >> 1) | (self.c << 7)
+                self.c = v & 1
+                self.wr(at, self.setnz(r))
+            elif op == 0xB5:  # LDA zp,X
+                self.a = self.setnz(self.rd(self.ZP + self.fetch(1) + self.x))
+            elif op == 0x25:  # AND zp
+                self.a = self.setnz(self.a & self.rd(self.ZP + self.fetch(1)))
+            elif op == 0x1A:  # INC A
+                self.a = self.setnz(self.a + 1)
             elif op == 0xE8:
                 self.x = self.setnz(self.x + 1)
             elif op == 0x60:
@@ -278,6 +299,7 @@ def machine(lead, trail, toggle_after_draw=1, flag=0, rem=0, col=5, toggle=1):
             hook.NARROW_ADDR: hook.hook_narrow(),
             hook.ENTRY_ADDR: hook.hook_entry(),
             hook.HALF_TAB_ADDR: hook.half_tables(),
+            hook.JOSA_PRE_ADDR: hook.josa_pre(),
         }
     )
     cpu.m[0x2000 + 0xF9] = lead
@@ -341,6 +363,48 @@ class Layout(unittest.TestCase):
             c = code_of(ch)
             self.assertEqual(c[0], font.LEAD0, ch)
             self.assertTrue(c[1] < hook.NARROW_LOW or c[1] == hook.NARROW_Q, ch)
+
+
+class JosaEuro(unittest.TestCase):
+    """`으로/로`(종류 4) 토큰 — 받침 없는(또는 ㄹ받침) 말 뒤에서는 **그리지도 전진하지도 않는다**(10-21 「나이프로로는」)."""
+
+    def machine(self, last_ch, trail=0x28):
+        order = font._order_canon()
+        has, rieul = font.batchim_tables(order)
+        cpu, _seen = machine(0xF9, trail)
+        for at, blob in {
+            hook.HOOK_ADDR: hook.hook_routine(),
+            hook.BATCHIM_ADDR: has[:110],
+            hook.RIEUL_ADDR: rieul[:110],
+        }.items():
+            cpu.m[at : at + len(blob)] = blob
+        c = code_of(last_ch)
+        cpu.m[hook.LAST_ADDR], cpu.m[hook.LAST_ADDR + 1] = c
+        return cpu
+
+    def test_받침_없으면_안_그린다(self):
+        cpu = self.machine("프")  # 나이프 — 무받침 → 「로」 한 글자만
+        calls = run(cpu)
+        self.assertEqual(calls, [])  # 엔진을 안 부른다(안 그린다)
+        self.assertEqual(cpu.m[hook.ENG_COL_COUNT], 5)  # `INC` 를 `DEC` 로 되돌려 칸을 안 센다
+        self.assertEqual(cpu.pc, RET_CALLER + 1)  # `$704A` 를 건너뛴다(복귀를 버렸다)
+
+    def test_ㄹ받침도_안_그린다(self):
+        cpu = self.machine("길")
+        run(cpu)
+        self.assertEqual(cpu.pc, RET_CALLER + 1)
+
+    def test_받침_있으면_평소대로_그린다(self):
+        cpu = self.machine("검")  # 소형검 — ㅁ 받침 → 「으」+「로」
+        calls = run(cpu)
+        self.assertEqual(calls, [])
+        self.assertEqual(cpu.m[hook.ENG_COL_COUNT], 6)
+        self.assertEqual(cpu.pc, RET_IN + 1)  # 평소 그리기로 이어진다
+
+    def test_다른_조사는_건드리지_않는다(self):
+        cpu = self.machine("프", trail=0x24)  # 은/는
+        run(cpu)
+        self.assertEqual(cpu.pc, RET_IN + 1)
 
 
 class Stub(unittest.TestCase):

@@ -97,7 +97,10 @@ class SimpleAndShort(unittest.TestCase):
         B.patch_msgs(data, {B.msg_key(us[0]["body"]): "은는오"}, self.table, errs, "t", moved)
         self.assertEqual((errs, moved), ([], []))
         self.assertNotIn(0x0F, data[: len(d)])  # 점프 없음
-        self.assertEqual(data[1 + 6], 0x04)  # 종단 바로 뒤(글 3자 6B 다음)
+        # 종단 04 는 명령 흐름 안이라 **원래 자리**(방 끝)에 두고 앞을 반각 공백으로 채운다 — 앞당기고 0 을 채우면 `00`(끝)에서 멈춰 뒤 대사가 안 나온다(10-21)
+        self.assertEqual(data[1 + 10], 0x04)
+        self.assertEqual(bytes(data[1 + 6 : 1 + 10]), font.HALF_SPACE * 2)
+        self.assertEqual(data[1 + 11], 0x01)  # 뒤 흐름이 그대로
 
     def test_한두_글자_가나_조각을_단위로_잡는다(self):
         d = bytes([0x02]) + sj("は") + bytes([0x01, 0x0A]) + b"\xff" * 4
@@ -107,6 +110,36 @@ class SimpleAndShort(unittest.TestCase):
         B.patch_msgs(data, {B.msg_key(us[0]["body"]): "은/는"}, self.table, errs, "t", moved)
         self.assertEqual(errs, [])
         self.assertEqual(bytes(data[1:3]), font.josa_code("은/는"))
+
+
+class Positional(unittest.TestCase):
+    """같은 원문 조각이 한 블록에 둘 — 열쇠가 같아 문안이 하나뿐인데, 한 자리만 다르게 쓴다(`positional`)."""
+
+    def setUp(self):
+        self.table, _ = font.build_table(set("은는오리나아가다운하지만"))
+        self.d = sj("ああああ") + bytes([0x01, 0x0A, 0x02]) + sj("ああああ") + bytes([0x01, 0x0A]) + b"\xff" * 4
+        self.us = B.msg_units(self.d)
+        self.key = B.msg_key(self.us[0]["body"])
+        self.assertEqual(len(self.us), 2)
+        self.assertEqual(self.key, B.msg_key(self.us[1]["body"]))
+        self._orig = B._positional
+
+    def tearDown(self):
+        B._positional = self._orig
+
+    def test_그_자리만_다르게_쓴다(self):
+        B._positional = lambda: {f"9:0:{self.us[1]['off']:04X}": {"key": self.key, "t": "가다"}}
+        data, errs = bytearray(self.d), []
+        B.patch_msgs(data, {self.key: "은는오리"}, self.table, errs, "t", None, "9:0")
+        self.assertEqual(errs, [])
+        a, b = data[self.us[0]["off"] : self.us[0]["off"] + 8], data[self.us[1]["off"] : self.us[1]["off"] + 8]
+        self.assertNotEqual(bytes(a[:4]), bytes(b[:4]))  # 첫 자리 「은는」 · 둘째 자리 「가다」
+
+    def test_열쇠가_다르면_빌드가_운다(self):
+        B._positional = lambda: {f"9:0:{self.us[1]['off']:04X}": {"key": "0" * 16, "t": "가다"}}
+        errs = []
+        B.patch_msgs(bytearray(self.d), {self.key: "은는오리"}, self.table, errs, "t", None, "9:0")
+        self.assertTrue(errs)
 
 
 if __name__ == "__main__":

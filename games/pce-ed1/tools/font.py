@@ -453,6 +453,8 @@ def encode(
     for m in JOSA_TOKEN.finditer(text):
         out += encode(text[pos : m.start()], table, half_space, msg) if m.start() > pos else b""
         pair = m.group()
+        if pair == "이랑/랑":  # 「으로/로」와 같은 꼴(둘째 글자를 문안이 든다)인데 무받침 선처리(`hook.josa_pre`)는 `으로/로` 만 안다 — 무받침에서 「랑랑」이 나온다
+            raise ValueError("조사 「이랑/랑」 은 안 쓴다 — 무받침 뒤에서 「랑」이 겹친다(hook.josa_pre 는 으로/로 전용)")
         out += josa_code(pair)
         rest = pair.split("/")[0][1:]  # 받침용의 둘째 글자(으로→로, 이랑→랑)
         if rest:
