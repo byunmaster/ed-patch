@@ -150,8 +150,25 @@ def _battle_ed2_pairs():
     fit, over, none = B2.plan()
     for fo, jp, kr, _slot in fit + over:
         yield f"ED2전투:{fo:#x}", _jp(jp), _ours(kr), "dialog"
+    # 번역 표(`patch_ed2_battle`)에 없는 ED2.EXE 문자열 — 셋으로 가른다.
+    #  ① 화면에 안 나가는 것(SDK 디버그 영문 · `%4d` 류 서식 · 빈 문자열)은 **분모 밖**이다 —
+    #     가나·한자가 없으면 번역할 글이 없다. 2026-10-18 실측 65건(SDK 44 · 서식 13 · 빈 8).
+    #  ② 가나·한자가 있는데 **다른 패처가 옮기는 것** — 시나리오 아이템 칸(0xD4870~, `patch_ed2_sys`
+    #     의 정본 표)과 메모리카드 문구(`patch_sys_ui.MSGS`). 빌드 바이트와 같은 값인지는
+    #     `check_ed2_sys_corpus` 가 이미지에서 대조한다.
+    #  ③ 그 밖은 정말 없는 것 → None(분모에 든다).
+    import re
+
+    import patch_ed2_sys as S2
+    import patch_sys_ui as SU
+
+    canon = S2.apply_canon()
+    msgs = dict(SU.MSGS)
     for fo, jp in none:
-        yield f"ED2전투:{fo:#x}", _jp(jp), None, "dialog"
+        if not re.search(r"[぀-ヿ一-鿿]", jp):
+            continue  # ① 분모 밖
+        kr = canon.get(jp) or msgs.get(jp)
+        yield f"ED2전투:{fo:#x}", _jp(jp), _ours(kr) if kr is not None else None, "dialog"
 
 
 def _monster_line_pairs():

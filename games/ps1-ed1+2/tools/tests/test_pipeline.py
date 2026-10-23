@@ -704,7 +704,8 @@ def test_copyright_gate_sees_sentences_and_ignores_spacing():
 
 def re_sub_in(src):
     """공백을 지우고 비교하는가."""
-    return 're.sub(r"\\s+", "", data)' in src or 'sub(r"\\s+", "", data)' in src
+    # `_WS` = `[\\s\\ue003]+` — 붙임 공백(E003)도 공백으로 친다
+    return 're.sub(_WS, "", data)' in src or 're.sub(r"\\s+", "", data)' in src
 
 
 def test_tool_index_covers_all_tools():
@@ -1452,7 +1453,9 @@ def test_frame_full_line_drops_our_newline():
     full = "그런 놈들한테 맡길 순 없잖아."  # 14.5슬롯 = 29열
     assert abs(sum(R.cell_w(c) for c in full) - R.FRAME_SLOTS) < 1e-9, "예시가 틀을 안 채운다"
     assert R._fills_frame(full)
-    assert R.join_lines([full, "우리가 모셔다 드리지."]) == full + "우리가 모셔다 드리지."
+    # 🔴 10-19: 꽉 찬 줄 뒤에도 개행을 **넣는다** — 빼면 공백도 사라져 엔진이 앞 공백에서 꺾고
+    #    `아.우리가` 처럼 두 문장이 붙는다(~100곳). 빈 줄은 드로어 훅(`stub_eager_nl`)이 막는다.
+    assert R.join_lines([full, "우리가 모셔다 드리지."]) == full + "\n우리가 모셔다 드리지."
 
     # ⚠ 안 찬 줄은 그대로 개행으로 잇는다
     short = "짧은 줄."

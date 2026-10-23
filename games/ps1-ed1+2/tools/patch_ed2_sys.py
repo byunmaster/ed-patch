@@ -28,11 +28,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import hangul_map as H
-import patch_sys_ui as P
 import re
 
 import dict_tables as D
+import hangul_map as H
+import patch_sys_ui as P
 from common import BUILD_DIR, extract, write_user_data
 
 ED2_LBA, ED2_SIZE = 756, 872448
@@ -287,7 +287,6 @@ def ed1_canon():
 
 def plan():
     """[(오프셋, JP, KR, 슬롯B)] — 쓸 것 전부. 슬롯 초과는 여기서 걸러 보고한다."""
-    import re
 
     buf = extract(ED2_LBA, ED2_SIZE)
     canon = ed1_canon()
@@ -530,11 +529,11 @@ def fix_halfwidth_route_labels(buf):
     return n
 
 
-def apply():
-    rows, over = plan()
-    for off, jp, kr, slot, enc in over:
-        print(f"  ⚠ 슬롯 초과 — {off:#07x} {jp!r} → {kr!r} ({len(enc) + 1}B > {slot}B)")
-    buf = bytearray(extract(ED2_LBA, ED2_SIZE, path=IMG))
+def apply_canon():
+    """{원본 JP: 우리 표기} — `apply()` 가 이름 구획(REPACK·FIXED_SLOTS)에 쓰는 표.
+
+    코퍼스 어댑터(`names_corpus`)도 이 표를 읽는다 — 같은 값을 두 곳에 적지 않는다.
+    """
     canon = ed1_canon()
     canon.update(PARTY)
     canon.update(MENU_EXTRA)
@@ -546,6 +545,15 @@ def apply():
     canon.update({k: v for k, v in PI.MONSTERS.items() if k not in canon})
     for jp, kr in list(canon.items()):
         canon.setdefault(jp + "の書", kr + BOOK_SUFFIX)
+    return canon
+
+
+def apply():
+    rows, over = plan()
+    for off, jp, kr, slot, enc in over:
+        print(f"  ⚠ 슬롯 초과 — {off:#07x} {jp!r} → {kr!r} ({len(enc) + 1}B > {slot}B)")
+    buf = bytearray(extract(ED2_LBA, ED2_SIZE, path=IMG))
+    canon = apply_canon()
     repack_names(buf, canon)
     relocate_fixed_items(buf, canon)
     fill_fixed(buf, canon)

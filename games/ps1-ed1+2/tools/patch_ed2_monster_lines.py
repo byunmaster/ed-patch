@@ -61,14 +61,22 @@ APPEAR = re.compile(r"^(.+?)(?:と(.+?))?が現れた。$")
 BATTLE = re.compile(r"^(.+?)との戦闘だ。$")
 
 
-def is_dialog(s):
+def is_dialog(s, allow_nl=False):
     """대사인가 — 이진 자료를 걸러낸다.
+
+    `allow_nl` — 줄바꿈(`\\n`)을 제어 문자로 치지 않는다. 계획(`plan`)은 옛 동작을 지키려 끄고,
+    잔존 게이트(`check_scn_jp_left.scan_mon`)만 켠다 — 줄바꿈이 든 일본어 대사가 통째로 새는 걸 막는다.
 
     ⚠ 규칙 셋이 다 필요하다. ①**세 글자 미만은 자료다**(2바이트 값 하나가 한자로 읽힌다 —
     `筧` 이 269번 나온다). ②**가나가 없으면 자료다**(대사엔 조사가 반드시 낀다). ③사용자
     영역 글자가 있으면 자료다. 하나라도 빼면 수백 개가 샌다.
     """
-    if len(s) < 3 or PUA.search(s) or CTL.search(s) or not KANA.search(s):
+    if (
+        len(s) < 3
+        or PUA.search(s)
+        or CTL.search(s.replace("\n", "") if allow_nl else s)
+        or not KANA.search(s)
+    ):
         return False
     core = re.sub(r"%[csd]|[!?！？。、…・\s]", "", s)
     return bool(core) and len(JP.findall(core)) / len(core) >= 0.8
@@ -234,6 +242,9 @@ def overlay_refs(orig):
     return refs, lui_use
 
 
+PARTICLE_PIECES = ("は", "に")
+
+
 def plan():
     """([(lba, 오프셋, JP, KR, 슬롯)], 넘치는 것, 문안 없는 것)."""
     from dict_tables import monsters_ed2
@@ -244,6 +255,11 @@ def plan():
     hand = monster_lines_ed2()
     table = auto_lines(names)
     table.update(hand)  # 손으로 정한 것이 이긴다
+    # 홑글자 조사 조각(`は`·`に`)은 뒤에 다른 문자열이 바로 이어 붙는다(이름 뒤 · `%d` 앞) — 일본어는
+    # 붙여 써도 되지만 한국어는 띄운다. 값은 정본 그대로, 뒷공백은 여기서 붙인다(정본에 공백 꼴을 올리지 않는다).
+    for jp in PARTICLE_PIECES:
+        if jp in table:
+            table[jp] = table[jp] + " "
 
     fit, move, over, none = [], [], [], []
     for group, (lba, size) in sorted(MON.items()):
@@ -306,6 +322,18 @@ def used_end(buf):
     """
     last = max((k for k in range(len(buf) - 1, -1, -1) if buf[k]), default=-1)
     return (min(last + 2, len(buf)) + 3) & ~3 if last >= 0 else 0
+
+
+def _hi_stable(data, orig, lui_off, op):
+    """꼬리 재배치 뒤에도 이 `lui` 의 상위 16비트가 그대로인가(꼬리 시작 ~ +0x1000 구간)."""
+    old_hi = struct.unpack_from("<I", orig, lui_off)[0] & 0xFFFF
+    for dst in (len(data), len(data) + 0x1000):
+        new = BASE + ((dst + 3) & ~3)
+        lo = new & 0xFFFF
+        hi = (new >> 16) if op == MIPS_ORI else (new >> 16) + (1 if lo & 0x8000 else 0)
+        if hi != old_hi:
+            return False
+    return True
 
 
 def _relocate(buf, orig, moves):
@@ -563,8 +591,14 @@ def _apply_sha_table():
                         # 게이트) — 그 lui 의 상위값을 바꾸면 그 lui 를 같이 쓰는 다른
                         # 참조까지 엉뚱한 주소를 가리킨다. 미리 걸러 `_relocate` 를 통째로
                         # 죽이지 않는다(2026-09-13 실측: `0xD574` 공유로 배치 전체가 멈췄다).
+                        # ⚠ 단 **꼬리 주소의 상위 16비트가 그 lui 의 값과 같으면 lui 를 안 건드리므로
+                        # 공유해도 안전**하다(2026-10-18, 2:0x940 「울부짖는다」 — lui 를 쓰는 둘째
+                        # 대상은 오독된 홀수 주소였고, 꼬리는 0x8015xxxx 에 머문다). 같은지는
+                        # 꼬리 시작·꼬리 시작+0x1000 두 지점으로 재고, 어긋나면 `_relocate` 의
+                        # assert 가 크게 죽는다(조용히 틀리지 않는다).
                         shared = i in refs and any(
-                            len(lui_use[lui_off]) > 1 for _imm_off, lui_off, _op in refs[i]
+                            len(lui_use[lui_off]) > 1 and not _hi_stable(data, orig, lui_off, op)
+                            for _imm_off, lui_off, op in refs[i]
                         )
                         if i in refs and not shared:
                             moves.append((i, jp, kr, slot))

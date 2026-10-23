@@ -49,6 +49,15 @@ from text import line_key as _LK
 OUT = os.path.join(ROOT, "line_dict.json")
 # 인자 센티널 — 담되 **표시**한다. 자리가 플랫폼마다 달라 그대로는 못 붙인다.
 FMT = re.compile(r"[\x17\x1a\x1b]")
+# 🔴 PS1 내부 자리표시(PUA)는 수출하지 않는다 — 다른 기종이 그대로 가져가면 그 기종 글꼴에서 엉뚱한 글리프로 구워진다
+#    (md-ed2 10-18: 75스트림). 뜻은 `docs/policy.md` 「PUA 자리표시」 표. 사전에는 화면에 나가는 꼴(공백)로 푼다.
+_PUA_EXPORT = {"\ue003": " "}
+
+
+def export_text(t):
+    for k, v in _PUA_EXPORT.items():
+        t = t.replace(k, v)
+    return t
 
 
 # 마크업·부호를 **플랫폼 중립꼴**로 되돌리는 표. 덤퍼마다 표기가 다르다 —
@@ -152,6 +161,7 @@ def collect():
             s, t = jp.get(eid, ""), (cur.get(eid) or {}).get("t")
             if not s or not t:
                 continue
+            t = export_text(t)
             k = key(s)
             if k in out and out[k]["t"] != t:
                 split += 1  # 같은 원문에 두 문안 — dupfill 이 놓친 자리
@@ -167,6 +177,8 @@ def collect():
 
 # 이름 뒤에 붙는 개체 구분자 — 새턴은 `スライムＡ`·`スライムB` 처럼 전각·반각을 섞어 쓴다.
 _SUFFIX = "\uff21\uff22\uff23\uff24\uff25ABCDE"
+# 🔴 우리 쪽 구분자는 전 몬스터 반각이다(규칙 1-6, 마스터 10-10) — 원문 열쇠가 전각 `Ａ` 여도 문안은 `A`.
+_HALF = {chr(0xFF21 + i): chr(0x41 + i) for i in range(5)}
 
 
 def _add_names(out, plain):
@@ -191,7 +203,9 @@ def _add_names(out, plain):
     sys.path.insert(0, os.path.join(ROOT, "..", "..", "shared"))
     import canon as _nouns
 
-    for tbl in _nouns.nouns("ed1")["categories"].values():  # 고유명사(정본 nouns/) — ED1·ED2 같은 세계
+    for tbl in _nouns.nouns("ed1")[
+        "categories"
+    ].values():  # 고유명사(정본 nouns/) — ED1·ED2 같은 세계
         names.update(tbl)
     # 화자 호칭(역할어: 복권집·여자·무기점…)은 사전이 아니라 **정본(`shared/canon` speaker)** 에 산다(마스터 2026-10-08) — 안 얹으면
     #   정형문(「~が現れた。」)·마릿수 접미 항목이 6천 개 넘게 사라진다.
@@ -214,7 +228,7 @@ def _add_names(out, plain):
     for jp, kr in names.items():
         put(jp, kr)
         for suf in _SUFFIX:
-            put(jp + suf, kr + suf)
+            put(jp + suf, kr + _HALF.get(suf, suf))
     # 정형문 — 이름이 문자열에 **박혀 있어서** 조사까지 정적으로 정해진다(`patch_ed2_monster_lines`)
     for jp, kr in names.items():
         put(f"{jp}が現れた。", f"{kr}{_josa(kr, ('이', '가'))} 나타났다.")

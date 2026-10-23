@@ -25,25 +25,35 @@ from common import BUILD_DIR, ROOT, extract
 IMG = f"{BUILD_DIR}/Eiyuu Densetsu (KR).bin"
 BASELINE = os.path.join(ROOT, "script", "exe_kana_baseline.json")
 EXES = {"ED.EXE": (257, 1021952), "ED2.EXE": (756, 872448)}
-_RUN = re.compile(rb"(?:[\x20-\x7e]|[\x81-\x9f\xe0-\xfc][\x40-\x7e\x80-\xfc]|[\xa1-\xdf]){3,}")
+_RUN = re.compile(rb"(?:[\x20-\x7e]|[\x81-\x9f\xe0-\xfc][\x40-\x7e\x80-\xfc]|[\xa1-\xdf]){2,}")
 _KANA = re.compile(r"[ぁ-ゖァ-ヺ]")
+
+
+def kana_runs(buf):
+    """[(오프셋, 문자열)] — 가나 2자 이상이 든 SJIS 런.
+
+    ⚠ **「알려진(번역된) 구간과 겹치는지」를 보지 않는다** — 런 하나하나에 가나가 있나만 본다.
+    그래서 한글 슬롯(번역된 자리)이 앞뒤에 붙어 있어도 가나 둘이면 걸린다(회귀 테스트:
+    `test_jp_gates.py`). 임계는 실측으로 정했다(2026-10-18): 런 최소 3→2자(여기 반영) 는 같은 3건·신규 0,
+    **가나 1자로 낮추면 코드 바이트 오탐이 305건**이라 못 낮춘다 — 가나 1자짜리 조각은 이
+    게이트가 원리상 못 본다(되읽기·화면 몫).
+    """
+    hits = []
+    for m in _RUN.finditer(buf):
+        try:
+            s = m.group().decode("cp932")
+        except UnicodeDecodeError:
+            continue
+        if len(_KANA.findall(s)) >= 2:
+            hits.append((m.start(), s))
+    return hits
 
 
 def scan(img=IMG):
     """{파일: [(오프셋, 문자열)]} — 가나 2자 이상이 든 SJIS 런."""
-    out = {}
-    for name, (lba, size) in EXES.items():
-        buf = bytes(extract(lba, size, path=img))
-        hits = []
-        for m in _RUN.finditer(buf):
-            try:
-                s = m.group().decode("cp932")
-            except UnicodeDecodeError:
-                continue
-            if len(_KANA.findall(s)) >= 2:
-                hits.append((m.start(), s))
-        out[name] = hits
-    return out
+    return {
+        name: kana_runs(bytes(extract(lba, size, path=img))) for name, (lba, size) in EXES.items()
+    }
 
 
 def check(strict=True, img=IMG):
@@ -58,7 +68,9 @@ def check(strict=True, img=IMG):
     for n, o, s in new[:20]:
         print(f"    ❌ {n} @{o:#x} {s!r}")
     if new and strict:
-        raise SystemExit("EXE 에 일본어 가나 문자열이 새로 남았다 — 번역 누락이거나 기준선에 사유를 적어야 한다")
+        raise SystemExit(
+            "EXE 에 일본어 가나 문자열이 새로 남았다 — 번역 누락이거나 기준선에 사유를 적어야 한다"
+        )
     return len(new)
 
 
