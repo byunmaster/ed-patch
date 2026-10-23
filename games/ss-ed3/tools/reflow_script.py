@@ -57,9 +57,10 @@ def _fits(line):
 
 def _wrap_sentence(s, width):
     """한 줄보다 긴 문장을 어절 단위로 — `krwrap.wrap` 은 끝 글자 폭을 몰라, 접히는 줄이 나오면 한 칸 줄여 다시 나눈다."""
-    for w in (width, width - 0.5, width - 1):
+    for w in (width, width - 0.5, width - 1, width - 1.5, width - 2, width - 2.5, width - 3):
         out = krwrap.wrap(s, w, cell_width=_cell)
-        if all(_fits(x) for x in out):
+        # 줄 끝 쉼표는 `fix_line_commas` 가 지운다(규칙 2-13) — 쉼표 바로 뒤에서 나누면 글자가 사라지니 그런 나눔은 안 쓴다
+        if all(_fits(x) for x in out) and not any(x.endswith(",") for x in out[:-1]):
             return out
     return None
 
@@ -111,10 +112,9 @@ def reflow_page(page, names, width=WIDTH):
 
 
 def feasible_for(data, blocks):
-    """`열쇠 → (문안 → 칸 안에 들어가나)` — 재삽입(`reinsert.patch_blocks`)과 같은 길(① 폭 묶음 ② 종결 뒤 무동작 ③ 옛 길)을 그대로 물어본다.
+    """`열쇠 → (문안 → 칸 안에 들어가나)` — 재삽입(`reinsert.patch_blocks`)과 같은 길(① 폭 묶음 ② `1A` 채움 ③ 옛 길)을 그대로 물어본다.
 
-    🔴 줄이 줄면 줄 끝 공백으로 남는 바이트를 흡수할 자리도 준다 — 번역이 원문보다 훨씬 짧은 블록은 **원문 줄 수가 곧 패딩 자리**였다.
-    그런 블록은 종결 뒤 무동작(`FF FF`)을 못 쓰는 꼴(뒤에 화자 전환이 이어지는 자리)이면 다시 못 나눈다 — 그 쪽은 원문 구조를 둔다."""
+    🔴 줄이 줄면 남는 바이트를 `1A` 채움이 흡수한다(종결 뒤 `FF FF` 패딩은 다음 대사가 안 불려 10-22 에 걷었다 — `reinsert.py` 머리 주석)."""
 
     def make(key):
         blk = blocks[int(key)]
@@ -126,8 +126,6 @@ def feasible_for(data, blocks):
             kr = R.IJ.resolve(kr)
             if R.fit(kr, budget, jo, jp, cap=True)[0] is not None:
                 return True
-            if R.slack_ok(data, blk["off"], budget) and R.fit_slack(kr, budget, jo) is not None:
-                return True
             if R.fit_fill(kr, budget, jo) is not None:  # 무동작 `1A` 채움 — 종결이 뭐든 된다
                 return True
             return R.fit(kr, budget, jo, jp)[0] is not None
@@ -137,8 +135,20 @@ def feasible_for(data, blocks):
     return make
 
 
+def _letters(s):
+    return re.sub(r"\s", "", s.replace(GLUE, ""))
+
+
 def reflow(text, names, ok=None):
-    """`ok(문안)` 이 주어지면 그 문안이 칸에 들어갈 때만 쪽을 바꾼다 — 쪽마다 차례로 시험한다."""
+    """`ok(문안)` 이 주어지면 그 문안이 칸에 들어갈 때만 쪽을 바꾼다 — 쪽마다 차례로 시험한다.
+
+    🔴 줄 위치와 공백만 바뀌어야 한다 — 글자(공백·개행 빼고)가 달라지면 멈춘다(10-22: 줄 끝 쉼표가 지워져 나간 4건)."""
+    out = _reflow(text, names, ok)
+    assert _letters(out) == _letters(text), f"재조판이 글자를 바꿨다: {text!r} → {out!r}"
+    return out
+
+
+def _reflow(text, names, ok=None):
     if T.is_narration(text):
         return text
     pages = text.split(T.PAGE)

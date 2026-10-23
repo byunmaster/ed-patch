@@ -165,6 +165,13 @@ run 0 "$PY" "$G/tools/check_build_discs.py"
 echo "  ── 글 소실 없음 (구운 이미지를 되풀어 문안과 대조)"
 run 3 "$PY" "$G/tools/check_no_loss.py"
 
+# 🔴 게이트다 — **구조 대조**(10-22). 글 소실·길이 검사는 글자만 보고, 대사 보기 하네스는 블록을 따로 띄운다 — 둘 다 통과한 채
+#    「종결 뒤 FF FF 패딩 1,046블록」이 새 게임 첫 장면의 크리스 대사를 지웠다. 원본과 구운 맵에서 **글 바이트를 뺀 제어 열**이
+#    같은지(틈 바이트 · `01 xx` 주입 · 화자 머리 · 종결 · 옮긴 몸의 복귀)를 본다. 의도한 변화는 `structure_allow.json` 에 근거와 함께 적은 꼴만 통과하고,
+#    구운 재배치는 `relocations.tsv`(장부)에 전부 있어야 한다 — 낡으면 `check_structure.py --ledger` 로 다시 쓴다.
+echo "  ── 구조 대조 (원본 ↔ 구운 맵의 제어 열 · 재배치 장부)"
+run 6 "$PY" "$G/tools/check_structure.py"
+
 if [ "$fail" -ne 0 ]; then
   echo "  ❌ [ss-ed3] 게이트 실패"
   exit 1

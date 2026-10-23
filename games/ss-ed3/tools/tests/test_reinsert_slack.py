@@ -1,4 +1,4 @@
-"""재삽입 — 줄 폭 상한(17 칸)과 무동작 패딩(`FF FF`) (원본 없이 돈다)."""
+"""재삽입 — 줄 폭 상한(17 칸) — 종결 뒤 `FF FF` 패딩은 없다 (원본 없이 돈다)."""
 
 import os
 import sys
@@ -20,20 +20,10 @@ class Slack(unittest.TestCase):
         self.assertTrue(max(T.cols(x) for x in T.lines(old)) > 17)
         self.assertTrue(all(T.cols(x) <= 17 for x in T.lines(new)))
 
-    def test_slack_pairs_and_parity(self):
-        t, m = R.fit_slack("가나다\n라마", 30)
-        self.assertEqual(T.body_bytes(t) + 2 * m, 30)
-        t, m = R.fit_slack("가나다\n라마", 31)  # 홀수 — 반각 하나가 줄에 들어간다
-        self.assertEqual(T.body_bytes(t) + 2 * m, 31)
-
-    def test_slack_none_when_too_long(self):
-        self.assertIsNone(R.fit_slack("가나다라마바사", 4))
-
-    def test_slack_ok_needs_ended_text_mode(self):
-        d = bytes([0xFF, 0xFF, 0x10, 0x00, 0x09])
-        self.assertTrue(R.slack_ok(d, 0, 2))
-        self.assertFalse(R.slack_ok(bytes([0, 0, 0x0E, 0x02, 0x00]), 0, 2))  # 글 모드가 이어진다
-        self.assertFalse(R.slack_ok(d, 0, 99))
+    def test_no_ff_ff_slack_path(self):
+        # 🔴 10-22: 종결 뒤 `FF FF` 패딩은 다음 대사가 안 불려 걷었다 — 되살아나지 않게
+        self.assertFalse(hasattr(R, "fit_slack"))
+        self.assertFalse(hasattr(R, "slack_ok"))
 
 
 if __name__ == "__main__":
