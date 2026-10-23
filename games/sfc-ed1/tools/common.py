@@ -27,9 +27,32 @@ REVIEW_DIR = WORK / "review"
 # 대사창 가변 폭(VWF, `hook_vwf.py`) — **정본 빌드에서 켠다**(마스터 판정 2026-10-08, D안 유지).
 # 공백·`. , ? !` 가 4px 로 그려진다. 꺼진 경로(`ED_VWF=0`)는 시험·대조용으로 남기고 **다른 빌드 칸**(`<꼬리표>-novwf`)에 굽는다.
 VWF = os.environ.get("ED_VWF") != "0"
-BUILD_TAG = build_tag() + ("" if VWF else "-novwf")
+# 🔴 시험 빌드 전용 디버그 진입(`debugpatch.py`) — `ED_DEBUG=1` 이면 꼬리표가 `test-debug` 로 **강제**된다(제품 칸을 못 덮는다).
+DEBUG = os.environ.get("ED_DEBUG") == "1"
+# 꼬리표는 `test-*`(시험) 또는 `debug`(마스터용 디버그 빌드)만 받는다 — 그 밖의 값·미지정은 `test-debug` 로 강제한다(제품 칸 `<브랜치>` 를 못 덮는다).
+_DEBUG_TAGS_OK = lambda t: bool(t) and (t == "debug" or t.startswith("test-"))  # noqa: E731
+_DEBUG_TAG = os.environ.get("ED_BUILD_TAG") if _DEBUG_TAGS_OK(os.environ.get("ED_BUILD_TAG")) else "test-debug"
+BUILD_TAG = (_DEBUG_TAG if DEBUG else build_tag()) + ("" if VWF else "-novwf")
 BUILD_DIR = WORK / "build"
 DIST_DIR = WORK / "dist"
+
+
+def rom_input_fingerprint() -> str:
+    """ROM 바이트를 만드는 입력의 지문 — 빌드 도구(`tools/*.py`) + 번역 정본(`textmap/*.json`) + 공용 조판(`shared/text/*.py`).
+
+    빌드가 이 값을 `manifest.json` 에 적고, 촬영 도구(`headless.py`)가 지금 값과 같을 때만 시작한다 — 옛 롬으로 전수 촬영해 놓고
+    최신처럼 보고하는 사고(2026-10-19: 신부 E0·엘리베이터 부호가 없는 롬으로 6천 장)를 막는다. 시험·Lua·문서는 롬에 안 닿아 뺀다.
+    """
+    h = hashlib.sha1()
+    parts = [
+        # 검사기(`check_*.py`)·촬영 실행기(`headless.py`)는 롬을 안 만든다 — 손봐도 롬이 낡았다고 하지 않는다
+        *sorted(f for f in (GAME_DIR / "tools").glob("*.py") if f.name != "headless.py" and not f.name.startswith("check_")),
+        *sorted((GAME_DIR / "textmap").glob("*.json")),
+        *sorted((ROOT / "shared" / "text").glob("*.py")),
+    ]
+    for f in parts:
+        h.update(f.relative_to(ROOT).as_posix().encode() + b"\0" + f.read_bytes() + b"\0")
+    return h.hexdigest()
 
 # 소장본은 압축 안 한 순정 .sfc 파일이다(mednafen 은 zip 도 읽지만 도구는 파일을 직접 연다 —
 # `scripts/emu.sh` 는 그쪽대로 알아서 찾는다). 헤더 없는 1MB 순수 롬 — 복사기 헤더(512B) 가

@@ -18,6 +18,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -89,10 +90,14 @@ def restore_pinned(out: bytearray, rom: bytes) -> None:
             raise SystemExit(f"제자리 고정 구간이 원본과 다르다: {common.fmt(a)}")
 
 
-def body_items(rom: bytes) -> list[script.Item]:
-    items = script.parse_region(
-        rom, common.snes2off(BODY[0]), common.snes2off(BODY[1]), script.pointer_anchors(rom)
-    )
+def body_items(rom: bytes, extra: bool = True) -> list[script.Item]:
+    an = script.pointer_anchors(rom)
+    items = []
+    # 본체 밖 표 목표(`text.EXTRA_REGIONS`) — 한글 경로(`kr_items`)에서만 항목 열 **앞**에 붙인다(옛 PoC 경로 `build`·`verify` 는 본체만).
+    # ⚠ 뒤에 붙이면 「END 없이 끝나는 본체 마지막 조각」이 열의 끝이 아니게 돼 종료 꼴이 달라진다(`verify_terminators` 가 잡았다).
+    for a, b in text.EXTRA_REGIONS if extra else ():
+        items += script.parse_region(rom, common.snes2off(a), common.snes2off(b), an)
+    items += script.parse_region(rom, common.snes2off(BODY[0]), common.snes2off(BODY[1]), an)
     # 🔴 `EE addr24` (네이티브 호출)이 본체 안을 가리키면 본체를 옮기거나 지울 때 그 호출이 `$FF` 를 실행한다.
     #    $0B:FD04~FE75 가 코드인 걸 못 보고 문안으로 옮겼다가 238곳이 깨졌다(10-12) — 이제 본체 밖이어야 한다.
     lo, hi = common.snes2off(BODY[0]), common.snes2off(BODY[1])
@@ -562,6 +567,9 @@ def menu_bake(out: bytearray, rom: bytes) -> dict:
     import hud_status  # HUD 상태 라벨(C4·방어) — 가나 도트 타일을 한글 8×8 로
 
     hud_status.bake(out, rom)
+    import monster_status  # 몬스터 상태 라벨(스프라이트 네 칸) — 파티 HUD 와 다른 길
+
+    monster_status.bake(out, rom)
     loose = bake_loose_boxes(out, rom, slot, code_tile)
     return {
         "glyphs": "".join(slot_of),
@@ -655,7 +663,7 @@ def verify_header_checksum(out: bytes) -> None:
 
 
 def build(rom: bytes) -> tuple[bytes, dict]:
-    items = body_items(rom)
+    items = body_items(rom, extra=False)
     place = relocation_plan(items)
     body = script.emit(items, place)
     out = bytearray(rom) + bytearray(b"\xff" * (NEW_SIZE - len(rom)))
@@ -732,6 +740,10 @@ def mutable_ranges() -> list[tuple[int, int]]:
         o2 = common.snes2off(a + 0x100)
         r.append((o2, o2 + 16))
     r += hook.patch_ranges()
+    if common.DEBUG:
+        import debugpatch
+
+        r += debugpatch.patch_ranges()
     b = common.snes2off(NAME_BOX)  # 파티 이름 상자(구워진 타일맵)
     r.append((b, b + NAME_STRIDE * NAME_COUNT))
     b = common.snes2off(HUD_ATO)  # HUD E 줄 머리 「あと」 타일 두 장
@@ -744,6 +756,9 @@ def mutable_ranges() -> list[tuple[int, int]]:
     import hud_status
 
     r += hud_status.patch_ranges()  # HUD 상태 라벨 — 프레임 일곱 + 타일 12장
+    import monster_status
+
+    r += monster_status.patch_ranges()  # 몬스터 상태 라벨 — 표 8×4B + 시트 타일 10장
     r += dicts.patch_ranges()
     r += battle_ui.patch_ranges()
     r += battle_ui.patch_ranges_a3()
@@ -773,7 +788,7 @@ def lead_collisions(rom: bytes) -> dict[int, int]:
     import encode
 
     n: dict[int, int] = {}
-    for it in body_items(rom):
+    for it in body_items(rom, extra=False):
         if it.kind == "char" and it.code in encode.LEADS:
             n[it.code] = n.get(it.code, 0) + 1
     return n
@@ -836,7 +851,7 @@ def verify(rom: bytes, out: bytes, place: dict[int, int]) -> dict:
             if so != unshift_f9(sn):
                 mism += 1
     # 3. 옮긴 본체를 라벨 모델로 다시 풀어 원본 항목 열과 같은가(참조 재계산의 역검증)
-    items_o = body_items(rom)
+    items_o = body_items(rom, extra=False)
     ns = common.snes2off(BODY[0]) + BANK_SHIFT * 0x8000
     items_n = script.parse_region(
         out, ns, ns + sum(it.size for it in items_o), script.pointer_anchors(out)
@@ -946,6 +961,7 @@ def kr_items(
     dmap = namesrc.dict_map(rom)
     dict_kr = {k: v["kr"] for k, v in dmap.items() if v.get("kr")}
     texts = [v["kr"] for v in tmap.values() if v.get("kr")] + list(dict_kr.values())
+    texts += [v["pointer_tail"]["text"] for v in tmap.values() if v.get("pointer_tail")]  # 포인터 전용 별도 메시지의 글자
     mmap = namesrc.menus()
     texts += [v["kr"] for v in mmap.values() if v.get("kr")]
     # ⚠ `battle_ui.json` 도 **화면에 나가는 문안**이다 — 고정 칸 문자열·이름 상자·머리 상자.
@@ -992,7 +1008,43 @@ def kr_items(
 
     _ts = typeset.Typesetter()
     fake_off = -1
+    # 🔴 **참조된 다음 조각으로 흘러내리는 `$E0`** — 원문은 `<E0>` 다음 바이트가 곧 이어 읽는 대본이다. 다음 조각이 제 포인터·분기도 받으면
+    #    `fallthrough_pairs` 가 군집에서 빼므로(사슬이 79KB 가 된다) 새 배치에서 이웃이 달라져 **엉뚱한 문장으로 흘러 들어갔다**(10-20 style
+    #    「이웃 조각이 끼어든」 부류 — 신부 옆 노인이 여관 권유 대신 1000 GOLD 치유를 못 하던 것). 그 자리에 `F9 목표 · FE`(절대 호출 + 되돌림)를 심어 원래 이웃으로 잇는다.
+    refs_all = set(script.pointer_anchors(rom))
+    for it0 in items:
+        refs_all.update(it0.targets)
+    fall_set = set(fallthrough_pairs(items, slices, rom))
+    pending_tail: list = []  # [(조각 번호, 꼬리 메시지 항목들)] — 사슬 끝에서 내보낸다
+    jump_after: dict[int, int] = {}  # 조각 번호 → 이어질 다음 조각 시작 오프셋
+    for si in range(len(slices) - 1):
+        la, lb = slices[si], slices[si + 1]
+        last, nxt = items[la[2] - 1], items[lb[1]]
+        if (
+            last.code == 0xE0
+            and si not in fall_set
+            and nxt.off in refs_all
+            and last.off + 1 == nxt.off
+            and common.off2snes(last.off) >> 16 == common.off2snes(nxt.off) >> 16
+        ):
+            jump_after[si] = nxt.off
+    stats["ff_jumps"] = len(jump_after)
     for si, (sid, a, e) in enumerate(slices):
+        if si - 1 in jump_after:
+            # `FA` 는 같은 뱅크여야 해서 군집이 43,873B 로 부풀어 뱅크를 넘었다 — 절대 호출 `F9 목표` + `FE`(되돌림)로 잇는다. 목표가 `FF`/`E4`
+            # 로 메시지를 끝내면 그대로 끝나고, 호출 문맥이면 `FE` 가 호출자에게 되돌려 준다(중계 조각과 같은 꼴).
+            seg_of[len(new)] = si - 1
+            new.append(script.Item(fake_off, "ctrl", 0xF9, b"\x00\x00\x00", targets=[jump_after[si - 1]]))
+            fake_off -= 1
+            seg_of[len(new)] = si - 1
+            new.append(script.Item(fake_off, "ctrl", 0xFE, b""))
+            fake_off -= 1
+        if pending_tail and si > 0 and si - 1 not in fall_set:  # 흘러내림 사슬이 앞 조각에서 끝났다 — 보류한 꼬리 메시지를 여기에 둔다
+            for _t_si, t_items in pending_tail:
+                for it_t in t_items:
+                    seg_of[len(new)] = si - 1  # 배치는 조각 번호로 묶는다 — 꼬리를 사슬 끝 조각 묶음에 넣어야 거기 놓인다
+                    new.append(it_t)
+            pending_tail.clear()
         seg = items[a:e]
         start_of[seg[0].off] = len(new)
         entry = tmap.get(sid)
@@ -1035,6 +1087,13 @@ def kr_items(
         ci = 0
         li = 0
         seg_new_start = len(new)
+        # 쪽 나눔(정본 조각 필드 `extra_pages`·`extra_ff`, 마스터 10-19) — 원문에 없는 `<FF>` 는 번역문 `<FF>` 중 `extra_ff`(1부터, 몇 번째인가)번째를 1바이트 새 항목으로 낸다
+        # (순서 짝짓기에 맡기면 더한 `<FF>` 가 원문 `<FF>` 뒤 제어를 끌어와 쪽 하나가 조용히 사라진다 — 신부 줄에서 발견).
+        extra_ff = int(entry.get("extra_ff", 0))
+        extra_code = int(entry.get("extra_code", "FF"), 16)  # 더한 쪽 나눔의 바이트 — `E0`=같은 메시지 안에서 키를 기다린 뒤 지우고 이어 읽는다 · `FF`=메시지 끝(그 뒤는 포인터 표의 다음 번호)
+        ff_seen = 0
+        if extra_ff and extra_code == 0xFF:  # 🔴 `$FF` 는 메시지 끝이다 — 더한 쪽은 포인터 표 어느 번호도 안 가리켜 영영 안 뜬다(2026-10-19, 신부 02A7 실화면). 쪽 더하기는 `$E0` 만 허용
+            stats["errors"].append((sid, "원문에 없는 쪽 나눔을 `$FF` 로 더할 수 없다 — extra_code: \"E0\"(같은 메시지 안 쪽 넘김)만 허용"))
         for kind, *v in enc.parts:
             if kind == "bytes":
                 seg_of[len(new)] = si
@@ -1049,8 +1108,31 @@ def kr_items(
                 if not it:
                     fake_off -= 1
             elif kind == "ctrl":
+                m_ = re.fullmatch(r"<([0-9A-F]{2})>", v[0])
+                if extra_ff and v[0] == "<FF>":
+                    ff_seen += 1
+                    if ff_seen == extra_ff:  # 더한 쪽 나눔 — 원문 항목을 먹지 않는다
+                        seg_of[len(new)] = si
+                        new.append(script.Item(fake_off, "raw", -1, bytes([extra_code])))
+                        fake_off -= 1
+                        continue
+                # 원문에 없는 제어(예: 원판이 색을 안 쓴 문안에 색 감싸기 <E3>…<E1> 를 더한다 — 10-18)는 코드가 같은 원문 제어가 차례가 아니면 **1바이트 새 항목**으로 낸다
+                if ci >= len(ctrls) or (m_ and ctrls[ci].code != int(m_.group(1), 16) and m_.group(1) in ("E3", "E1")):
+                    if not m_:
+                        raise SystemExit(f"{sid}: 원문에 없는 제어 {v[0]} (색 감싸기 <E3>·<E1> 만 더할 수 있다)")
+                    seg_of[len(new)] = si
+                    new.append(script.Item(fake_off, "raw", -1, bytes([int(m_.group(1), 16)])))
+                    fake_off -= 1
+                    continue
                 it = ctrls[ci]
                 ci += 1
+                # 🔴 번역문 제어 토큰과 롬에 나가는 원문 제어 항목의 **코드가 같아야 한다** — 순서 짝짓기가 어긋나면(원문에 없는 `<FF>` 를 더하는 등) 다른 제어가
+                #    그 자리에 나가 쪽·분기가 **조용히 사라진다**(2026-10-19 신부 줄). 게이트: 토큰 코드 ≠ 항목 코드면 실패.
+                m_code = re.match(r"<([0-9A-F]{2})", v[0])
+                if m_code and int(m_code.group(1), 16) != it.code:
+                    stats["errors"].append(
+                        (sid, f"제어 토큰 {v[0]} 자리에 원문 제어 {it.code:02X} 가 나간다 — 쪽 나눔 등을 더했으면 조각 필드 extra_ff 가 필요하다")
+                    )
                 seg_of[len(new)] = si
                 new.append(it)
             else:  # label
@@ -1088,10 +1170,44 @@ def kr_items(
                 if it.off in targets_all and it.off not in label_map:
                     stats["errors"].append((sid, f"분기 목표인 사전 토큰 {tok} 이 번역문에 없다"))
         assert ci == len(ctrls) and li == len(mids), sid
+        # 🔴 포인터 전용 별도 메시지(정본 조각 필드 `pointer_tail` = {table, id, text}, 마스터 10-19 「이스터에그는 론도 항구 신부 한 자리에만」):
+        #    흘러내림 사슬이 끝난 자리(아래 `pending_tail`)에 새 메시지를 1바이트 항목들로 두고, 포인터 표 `table[id]` 가 **그 첫 항목**을 가리키게 한다.
+        #    공용 조각(여러 NPC 가 호출하는 신부 문안)은 보통 문안 그대로 두고, 그 번호 하나만 별도 문안을 쓰게 한다.
+        tail = entry.get("pointer_tail")
+        if tail:
+            try:
+                enc_t = encode.encode(_ts(tail["text"], common.off2snes(seg[0].off)), rep_index, dict_kr, vwf=common.VWF)
+            except ValueError as ex:
+                stats["errors"].append((sid, f"pointer_tail: {ex}"))
+                enc_t = None
+            if enc_t is not None:
+                first_key = fake_off
+                t_items = []
+                for kind, *v in enc_t.parts:
+                    if kind in ("bytes", "dict"):
+                        t_items.append(script.Item(fake_off, "raw", -1, v[0] if kind == "bytes" else v[1]))
+                        fake_off -= 1
+                    elif kind == "ctrl":
+                        m_t = re.fullmatch(r"<([0-9A-F]{2})>", v[0])
+                        if not m_t:
+                            stats["errors"].append((sid, f"pointer_tail 은 인자 없는 제어({v[0]})만 쓸 수 있다"))
+                            continue
+                        t_items.append(script.Item(fake_off, "raw", -1, bytes([int(m_t.group(1), 16)])))
+                        fake_off -= 1
+                # 🔴 꼬리는 **흘러내림 사슬이 끝난 뒤**에 둔다(조각 바로 뒤도 앞도 아니다) — `<E0>`(쪽 넘김)은 다음 바이트를 이어 읽어서, 꼬리가 조각 사이에 끼면
+                #    이 조각이나 앞 조각을 거쳐 오는 다른 번호(02A8·02AE 제물 마을 집 · 02B4~·0AC8~)가 경고문으로 흘러 들어간다(10-20 style 재검 회귀).
+                #    꼬리는 `<FF>`(메시지 끝)로 닫히므로 사슬 끝에 두면 아무도 안 흘러든다.
+                pending_tail.append((si, t_items))
+                stats.setdefault("ptr_overrides", {})[(tail["table"], int(tail["id"], 16))] = first_key
         stats["translated"] += 1
         stats["runtime_josa"] += enc.runtime_josa
         stats["jp_bytes"] += sum(it.size for it in seg)
         stats["kr_bytes"] += sum(it.size for it in new[start_of[seg[0].off] :])
+    for _t_si, t_items in pending_tail:  # 마지막 사슬 끝
+        for it_t in t_items:
+            seg_of[len(new)] = len(slices) - 1
+            new.append(it_t)
+    pending_tail.clear()
     # 군집: rel16(FA/FC/FB/FD)으로 이어진 조각은 같은 뱅크에 있어야 한다
     parent = list(range(len(slices)))
 
@@ -1396,6 +1512,15 @@ class Ledger:
         return {k: len(v) for k, v in self.by_stage.items()}
 
 
+# 첫 종료 코드가 원판과 달라도 되는 메시지 — 번역문이 같은 메시지 안에 **쪽 넘김 `$E0`**(+`extra_code`)을 더한 자리(신부 02A7 — 첫 쪽 끝이 `$E0`, 마지막이 원판대로 `$FF`).
+# `$E0` 뒤 바이트는 원판 꼴(`$E4` 여부)이 아니라 더한 쪽의 머리말(`$E3`)이다. 끝 꼴(마지막 `$FF`)은 위 `extra_ff` 게이트와 코드 대조가 지킨다.
+TERMINATOR_EXEMPT = {
+    ("main", 0x02A7): "신부 이스터에그 — 번호 02A7 만 별도 메시지(`pointer_tail`, 첫 쪽 끝이 `$E0`)를 가리킨다",
+    ("main", 0x04FD): "칼 꽂기 — 머리 덩이가 `FA` 로 끝나고 원판은 그 뒤 **네이티브 코드를 선형으로 읽어** 종료 꼴이 우연이다(`text.MINIGAME_RUNS`)",
+    ("main", 0x0B40): "돌 놓기 — 같은 사정(`text.MINIGAME_RUNS`). 점프로 닿는 조각들은 각자의 종료 꼴을 다른 번호처럼 본다",
+}
+
+
 def verify_terminators(rom: bytes, out: bytes) -> int:
     """메시지마다 **첫 종료 코드의 꼴**이 원판과 같은가 — 화면을 보는 게이트.
 
@@ -1443,6 +1568,8 @@ def verify_terminators(rom: bytes, out: bytes) -> int:
             if common.snes2off(a) < common.snes2off(text.TEXT_START):
                 continue  # 표 구간을 가리키는 항목(alt1[0] 등) — 문안이 아니다
             seen += 1
+            if (name, i) in TERMINATOR_EXEMPT:
+                continue
             wa, wb = first_end(rom, a, False), first_end(out, b, True)
             # 종료 코드와 「그 다음이 $E4 인가」만 본다 — 그 뒤 바이트는 번역으로 달라진다
             if (wa[0], wa[1] == 0xE4) != (wb[0], wb[1] == 0xE4):
@@ -1480,6 +1607,11 @@ def build_kr(
     restore_pinned(out, rom)
     # 뱅크별로 이어 쓴다 — 항목마다 자기 새 오프셋에
     full_place = place | {it.off: pk["new_off"][i] for i, it in enumerate(new) if it.off < 0}
+    # 검수 도구용(`tools/msg_addr.py`) — 원문 파일 오프셋 → 새 롬 파일 오프셋. 번호표에 없는 씬 본문(표 목표)을 하네스로 부를 때 쓴다
+    common.OUT_DIR.mkdir(parents=True, exist_ok=True)
+    (common.OUT_DIR / f"place_map{'_dbg' if common.DEBUG else ''}.json").write_text(
+        json.dumps({f"{k:06X}": f"{v:06X}" for k, v in sorted(full_place.items()) if k >= 0}), encoding="utf-8"
+    )
     unresolved = sorted(
         {
             t
@@ -1515,6 +1647,9 @@ def build_kr(
     flow = verify_flow(out, k, pk, full_place)
     k["stats"]["flow"] = flow
     n_ptr = rewrite_tables(out, place, rom)
+    for (tname, tid), key in k["stats"].get("ptr_overrides", {}).items():  # 포인터 전용 별도 메시지(`pointer_tail`)
+        tb = common.snes2off(text.MSG_TABLES[tname][0]) + 3 * tid
+        out[tb : tb + 3] = common.off2snes(full_place[key]).to_bytes(3, "little")
     # ⚠ 본체를 $FF 로 비운 뒤 그 안의 표(alt3 는 본체 구간 안에 있다)를 다시 쓴다 —
     #   **한 덩이**라 한 단계로 센다. 원장이 잡아야 할 것은 「지웠다 다시 쓰기」가 아니라
     #   **다른 단계가 남의 자리를 먹는 것**이다(2026-09-07 원장을 켜자마자 이 둘이 먼저 걸렸다).
@@ -1538,6 +1673,7 @@ def build_kr(
 
         _idx = _enc.index_map(k["rep"])
         dk = dicts.bake(out, rom, _idx)
+        dk["맨손"] = dicts.bake_bare_hand(out, rom)
         bu = battle_ui.bake(out, rom, _idx, dk["next"])  # 사전 바로 뒤에 이어 놓는다
         dk["전투 UI"] = bu
         a3 = battle_ui.bake_a3_values(out, rom, _idx, bu["next"])  # 그 뒤에 이어 놓는다
@@ -1567,12 +1703,28 @@ def build_kr(
             spell_table=dk["런타임 치환"]["주문 표 주소"],
         )
         led.snap(out, "렌더러 훅")
+        if common.DEBUG:  # 🔴 시험 빌드 전용 — 제품 롬(ED_DEBUG 없음)은 이 줄을 안 지난다
+            import debugpatch
+
+            dk["디버그 진입"] = debugpatch.apply(out, rom)
 
     if with_hook:
         dicts.verify(out, k["rep"])  # 🔑 **체인이 다 끝난 롬**에서 게임의 포인터를 따라 되읽는다
         battle_ui.verify(out, k["rep"])
         battle_ui.verify_a3_values(out, k["rep"])
     n_term = verify_terminators(rom, out)
+    # 재배치 장부(마스터 10-22) — 이번 빌드가 실제로 한 재배치를 좌표·종류·사유로 뽑는다. `check_ctrl_flow.py` 가 커밋 장부와 대조한다
+    import relocations
+
+    tails = set(k["stats"].get("ptr_overrides", {}))
+    ptr_rows = []
+    for tname, (taddr, tcount) in text.MSG_TABLES.items():
+        tb = common.snes2off(taddr)
+        for ti in range(tcount):
+            a0, a1 = bytes(rom[tb + 3 * ti : tb + 3 * ti + 3]), bytes(out[tb + 3 * ti : tb + 3 * ti + 3])
+            if a0 != a1:
+                ptr_rows.append((tname, ti, int.from_bytes(a0, "little"), int.from_bytes(a1, "little"), (tname, ti) in tails))
+    reloc_tsv = relocations.render(relocations.rows(k, pk, full_place, place, rom, out, ptr_rows, BODY, PINNED))
     out[HEADER_ROM_SIZE_OFF] = 0x0B
     fix_checksum(out)
     verify_header_checksum(out)
@@ -1594,6 +1746,7 @@ def build_kr(
         "errors": len(st["errors"]),
         "error_sample": st["errors"][:6],
         "glyphs": len(k["rep"]),
+        "repertoire": [c or "" for c in k["rep"]],  # 글리프 색인 → 글자(빈 자리 ""). 짝 대조 디코더(`pairdec.py`)가 롬에서 읽은 대사 바이트를 한글로 되돌린다
         "runtime_josa_codes": st["runtime_josa"],
         "translated_jp_bytes": st["jp_bytes"],
         "translated_kr_bytes": st["kr_bytes"],
@@ -1611,6 +1764,7 @@ def build_kr(
         "hook": hk,
         "dicts": dk,
         "written_by_stage": led.report(),
+        "_relocations_tsv": reloc_tsv,  # main() 이 빼서 빌드 칸에 쓴다(JSON 출력엔 안 나간다)
     }
     if extra is not None:
         info["opening_poc"] = extra
@@ -1779,7 +1933,10 @@ def write_image(out: bytes, info: dict, build_path: str) -> None:
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob("*.sfc*"):
         old.unlink()
-    dst = d / OUT_NAME[build_path]
+    name = OUT_NAME[build_path]
+    if common.DEBUG:  # 🔴 시험 롬은 파일명이 달라야 emucap Saves 의 제품 세이브(`…(KR).srm`)와 안 섞인다
+        name = name.replace("(KR)", "(DEBUG)")
+    dst = d / name
     failed = info.get("ok") is False
     if failed:  # 🔴 인코딩이 실패한 조각은 **원문이 그대로 화면에 남는다**(조용히) — 이미지를 `.failed` 로 돌려 정상으로 오해하지 않게 한다
         dst = dst.with_name(dst.name + ".failed")
@@ -1787,7 +1944,13 @@ def write_image(out: bytes, info: dict, build_path: str) -> None:
     sha = hashlib.sha1(out).hexdigest()
     (d / "manifest.json").write_text(
         json.dumps(
-            {"build_path": build_path, "source_sha1": common.ROM_SHA1, "output_sha1": sha, **info},
+            {
+                "build_path": build_path,
+                "source_sha1": common.ROM_SHA1,
+                "output_sha1": sha,
+                "input_fingerprint": common.rom_input_fingerprint(),  # 촬영 도구가 「지금 입력으로 구운 롬인가」를 확인한다
+                **info,
+            },
             ensure_ascii=False,
             indent=1,
         ),
@@ -1838,13 +2001,16 @@ def main() -> None:
     if a.project or a.kr:
         rom = common.rom_bytes()
         out, info = build_kr(rom, with_hook=not a.no_hook)
+        reloc_tsv = info.pop("_relocations_tsv", None)
         print(json.dumps(info, ensure_ascii=False, indent=1))
         if a.kr:
             write_image(out, info, "kr")
+            if reloc_tsv is not None:
+                (common.BUILD_DIR / common.BUILD_TAG / "relocations.tsv").write_text(reloc_tsv, encoding="utf-8")
         return
     rom = common.rom_bytes()
     out, info = build(rom)
-    v = verify(rom, out, relocation_plan(body_items(rom)))
+    v = verify(rom, out, relocation_plan(body_items(rom, extra=False)))
     ok = (
         v["immutable_diffs"] == 0
         and v["readback_mismatch"] == 0

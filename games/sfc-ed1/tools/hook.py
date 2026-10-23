@@ -26,6 +26,7 @@
 같은 것 하나를 그대로 쓴다(오프닝·인게임은 동시에 안 돌아 충돌하지 않는다).
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -53,20 +54,31 @@ CALL_SITE = 0x02DE0B  # JSR $E784 → JSR $FE52
 #    `JSR $F1AD`(→ `$00:960B` DMA)를 건너뛰고 `JMP $DF74`). 쪽이 넘어가면 엔진은 칸 배열(`$0305`)만 비우고, **화면(타일맵)엔
 #    앞 쪽이 그대로 남은 채** 새 글자를 친다 — 글자마다 `$02:B07B` 가 칸 배열 전체를 타일 표(`$010C`)로 다시 바꾸지만 그걸 VRAM 에
 #    올리는 건 쪽 끝 플러시뿐이다. 원판은 글꼴 타일이 정적이라 그동안 앞 쪽이 멀쩡히 보였지만, 우리 동적 슬롯은 새 글자가 올라올
-#    때마다 **화면에 보이는 앞 쪽의 타일을 덮는다**(2026-10-12 실측: 인트로 라이아스 쪽 넘김 — 열 글자째에서 「라이아스」→「라 ㅇ 아스」,
-#    「이제」→「ㅏ제」). ⇒ 쪽의 **첫 글자를 친 직후**(`$173B`=0) 한 번 올려 앞 쪽을 지운다 — 보통 속도가 매 글자 하는 것과 같다.
-#    건너뛰는 갈래 `$02:DF56 JMP $DF74` 를 뱅크 $02 트램펄린으로 돌린다(엔진 문맥이라 DBR=0·8비트 그대로 `JSR $F1AD`).
-FLUSH_SITE = 0x02DF56
-FLUSH_SITE_ORIG = bytes([0x4C, 0x74, 0xDF])  # JMP $DF74
-FLUSH_TRAMPOLINE = 0x02FE80
-FLUSH_TRAMP_BYTES = bytes(
-    [
-        0xAD, 0x3B, 0x17,  # LDA $173B
-        0xD0, 0x03,  # BNE +3  (첫 칸이 아니면 건너뛴다)
-        0x20, 0xAD, 0xF1,  # JSR $F1AD  (칸 > $FF 가 아니라서 `$00:960B` 까지 간다)
-        0x4C, 0x74, 0xDF,  # JMP $DF74
-    ]
-)
+#    때마다 **화면에 보이는 앞 쪽의 타일을 덮는다**(2026-10-12 실측: 인트로 라이아스 쪽 넘김 — 열 글자째에서 「라이아스」→「라 ㅇ 아스」).
+# ❌ 첫 번째 해법(10-12) — **쪽의 첫 글자를 친 직후 한 번 플러시**(`$02:DF56` 트램펄린)는 앞 쪽을 지웠지만 **「빈 창 + 첫 글자」가 쪽
+#    끝 플러시까지 화면에 남았다**(마스터 10-17 「빠름이면 첫글자가 먼저 나오고 딜레이 뒤 문장이 노출, 원본은 안 그랬다」 — 5% 속도로
+#    프레임 단위 실측: 새 쪽에서 「잠」 한 글자만 뜬 채 ~6프레임). 원판은 앞 쪽이 그대로 있다가 새 쪽이 한꺼번에 뜬다. **걷었다.**
+# ✅ 지금 해법(10-17) — **쪽 지우기 직전 스냅**: `$02:E327`(`LDA $1777 / BNE` — 칸 배열을 `$10` 으로 지우는 쪽 시작 처리)의 `LDA $1777`
+#    을 `JSR $FE80`(스텁 `JSL pagesnap / LDA $1777 / RTS`)으로 돌려, 지우기 **직전** 칸 배열(= 아직 화면에 있는 앞 쪽)을 `V_PREV` 로
+#    복사한다. 슬롯 배정(`alloc`·`vwf_newslot`)이 `vwf_live` 로 `V_PREV` 의 슬롯을 건너뛰므로 새 글자가 앞 쪽 타일을 덮지 않는다.
+#    플러시가 필요 없다. (슬롯이 모자라면 한 바퀴 뒤 **앞 쪽** 보호만 포기한다(`V_LM`) — 앞 쪽 끝 글자가 잠깐 깨질 수 있다. 지금 쪽 칸은 끝까지 지킨다.)
+SNAP_SITE = 0x02E327
+SNAP_SITE_ORIG = bytes([0xAD, 0x77, 0x17])  # LDA $1777
+# 🔴 쪽 첫머리의 개행(10-18 전투 일괄에서 발견): 원판 개행 핸들러(`$02:DE4C`)는 `$173B` 로 줄 번호를 **나눗셈**으로 구하는데 쪽을 막 지운 뒤 값이 `$FF`(=255)
+#    라 줄 15 로 읽혀 다음 칸이 16(첫 줄 맨 끝)이 된다 → 「↵{이름}…」으로 시작하는 문안(6004 「…에게 N의 피해!」·6026)이 이름 첫 글자를 윗줄 끝에 떨군다
+#    (「로 / 우에게 39의 피해!」). 원판 가나도 같은 자리라 원판 결함이지만 한글에선 이름이 쪼개져 눈에 띈다. `LDA $173B` 를 스텁으로 돌려 `$FF` 면 0 을 준다 → 개행이 둘째 줄 머리로.
+NL_SITE = 0x02DE55
+NL_SITE_ORIG = bytes([0xAD, 0x3B, 0x17])  # LDA $173B
+NL_STUB = 0x02FE88  # LDA $173B / CMP #$FF / BNE +2 / LDA #$00 / RTS (10B)
+NL_STUB_BYTES = bytes([0xAD, 0x3B, 0x17, 0xC9, 0xFF, 0xD0, 0x02, 0xA9, 0x00, 0x60])
+# 🔴 **파티 치환 `{D8}` 은 엔진이 이름 뒤에 가나 「たち」 코드 `$20 $21` 을 직접 붙인다**(`$02:E081` — 사전 버퍼에 이름을 옮긴 뒤 두 바이트 + `$FF`). 가나 코드라
+#    우리 글꼴 슬롯 자리가 돼 「세리오스ㅅ다는」 으로 깨졌다(qa 10-19, 강제 전투 m208A 실화면). 그 자리를 **한글 「 일행」(공백 + 2바이트 둘)** 으로 갈아 끼운다
+#    — 빈 자리(`$02:FF00`)의 스텁이 같은 바이트들을 쓰고 `$E0C3` 으로 돌아간다. 글리프 색인은 빌드 때 `rep` 에서 읽는다.
+SUFFIX_SITE = 0x02E081
+SUFFIX_ORIG = bytes.fromhex("a9209d4c17a9219d4d17a9ff9d4e178031")  # 17B: たち 둘 + FF + BRA $E0C3
+SUFFIX_STUB = 0x02FF00
+SUFFIX_TEXT = " 일행"
+SNAP_STUB = 0x02FE80  # JSL pagesnap / LDA $1777 / RTS (8B) — 원래 자리가 돌려주던 플래그(Z)를 그대로 돌려준다
 # 🔴 **글자가 들어오는 문은 둘이다**(2026-09-07 실측). `$02:DDEE` 가 사전 버퍼가 켜져 있으면
 # 대본 대신 **버퍼**에서 한 바이트를 집어 같은 `$173A` 로 보낸다:
 #     $DDF9  LDA $174C,X / CMP #$FF / BNE $DE0E     ← 두 번째 문
@@ -131,6 +143,9 @@ PLACE_SITES = [  # (덩이 시작 = `LDA 표,X`, 패딩 루프, 트램펄린, �
     # 필드 주문 목록(B2) — 주문 표 `$03:EEDD` 를 같은 꼴로 `$0305` 에 옮기고 레벨 숫자를 붙여 5칸으로 채운다
     # (2026-09-26 실기, 칸 배열 쓰기 BP). 한글 표는 `dicts.bake_runtime` 이 만든다.
     (0x02AFCC, 0x02AFED, 0x02FE7A, "spellcopy", bytes([0xBF, 0xDD, 0xEE, 0x03])),
+    # 상점 주문 목록(오레아 `$0B:FE88` → `JSL $02:8038` 창 0x18) — `$02:A1CD` 는 위와 **글자까지 같은 복사 덩이**다(주문 표 `$03:EEDD` → `$0305`).
+    # 이걸 안 고쳐 원판 가나 이름이 한글 시트로 그려져 반폭 조각으로 뭉개졌다(2026-10-21 qa 「에가2·회비1」). 같은 트램펄린·같은 훅을 쓴다.
+    (0x02A1CD, 0x02A1EE, 0x02FE7A, "spellcopy", bytes([0xBF, 0xDD, 0xEE, 0x03])),
 ]
 CELL_BASE = 0x000305  # `LDY #$0305` — 패치할 때 자리마다 확인한다
 CELLS = 0x000305  # 칸 배열(WRAM 미러) — long 으로 써서 DB 에 안 기댄다
@@ -139,6 +154,18 @@ NMI_STUB = 0x00FF20  # 뱅크 $00 빈 자리 160B
 NMI_ORIG = 0xACA9
 QN = 16  # 글리프 큐 칸 수(2의 거듭제곱)
 DRAIN_MAX = 8  # 한 프레임에 올릴 글리프 수 — 32B×2 씩이라 여유 있다
+# 🔴 슬롯 한도(2026-10-20 qa 「기다 . 주시옵소서」): 한 쪽이 쓰는 슬롯은 합성 칸 수(칸 배열 17×4 = 68)가 상한이고, 거기에 고정 칸(HUD 지명·파티 이름 — 실측 최대 2, 메뉴에선 더)을
+#    예산으로 얹은 값이 슬롯 수 안에 들어야 **지금 쪽은 반드시 자기 슬롯을 갖는다**(앞 쪽 사본 보호는 `V_LM` 2단계로 양보). 넘으면 빌드가 선다.
+PAGE_CELLS = 68
+PIN_BUDGET = 32
+PHASE2 = os.environ.get("ED_NO_PHASE2") != "1"  # 조사용: 2단계 배정을 끄고 옛 동작(한 바퀴 실패 시 그냥 뺏기)과 대조한다 — 시험 빌드 전용
+
+
+def slot_budget_problems(nslot: int) -> list[str]:
+    need = PAGE_CELLS + PIN_BUDGET
+    return [f"슬롯 {nslot}개 < 쪽 칸 {PAGE_CELLS} + 고정 칸 예산 {PIN_BUDGET} = {need} — 지금 쪽이 슬롯을 뺏긴다"] if nslot < need else []
+
+
 REALLOC_MARGIN = 20  # 캐시 히트인데 남은 수명이 이만큼 미만이면 새 슬롯으로 옮긴다(`alloc` 주석)
 
 # 🔴 **여섯째 문 — 오프닝(D1)은 인게임과 완전히 다른 경로다**(2026-09-15 실기 확정, status 13절).
@@ -388,19 +415,16 @@ def check_crawl_digit_gap() -> None:
 def num_glyph_table() -> tuple[bytes, bytes]:
     """원판 시트의 숫자 0~9 그림(1bpp 16행) → (그림 160B, 진행 폭 10B).
 
-    원판 숫자는 8px 칸 안에 왼쪽 여백 1열(「1」은 2열)을 두고 앉는다 — 앞 글자와 반각 공백만 두면 간격이 반각보다 넓어 보인다(마스터 10-10 「EP  1」).
-    그림을 **왼쪽 끝으로 붙이고**(잉크 시작 0열) 진행 폭 = 잉크 폭 + `ORIG_PAD`(2) 로 둔다. 숫자 그림은 원판 시트 그대로(마스터 10-11 「원판이 더 임팩트」).
-    혼합 팔레트로 색 칸 정렬이 필요 없어져 가변 폭이 된다."""
+    🔴 **원판 그대로**(마스터 10-19 「굵은걸로 통일하자」): 그림은 시트 그대로(잉크 1~6열 — 「1」만 2~5열, 앞뒤 여백 1px)이고 진행 폭은 8px 다.
+    원판 대사 렌더러가 숫자를 시트 타일 하나(8px 전진)로 찍는다 — 원판 JP 캡처(v0891 「ゲイル3せい」)의 숫자 타일이 시트 그림과 픽셀 단위로 일치한다.
+    예전엔 그림을 왼쪽 끝으로 붙이고 진행 = 잉크+2 로 둬 {DC} 숫자만 앞 글자에 붙고 뒤가 벌어졌다(왼쪽 쏠림)."""
     import hangul_font
 
     out = bytearray()
     adv = bytearray()
     for c in range(10):
-        rows = hangul_font.render_latin_orig(str(c))
-        cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
-        lo, hi = min(cols), max(cols)
-        out += bytes((r << lo) & 0xFF for r in rows)
-        adv.append(min(8, hi - lo + 1 + ORIG_PAD))
+        out += bytes(hangul_font.render_latin_orig(str(c)))
+        adv.append(8)
     return bytes(out), bytes(adv)
 
 
@@ -414,7 +438,7 @@ def raw_glyph_tables() -> tuple[bytes, bytes]:
     def ink_adv(ch: str) -> int:
         rows = hangul_font.render_latin_orig(ch)
         cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
-        return min(8, max(cols) + 1 + ORIG_PAD)  # 잉크 시작 열은 그림 그대로(왼쪽 여백 1열 포함)
+        return 8  # 원판 그대로 — 영문도 시트 타일 하나(8px 전진, 마스터 10-19 「숫자 영문은 원문 그대로」)
 
     return hook_vwf.rawtab(
         encode.KR_TABLE,
@@ -478,8 +502,13 @@ def build_payload(
         "V_PT": vb + 39,  # 8B: NMI 팔레트 임시(배경·흰·하늘·노랑 각 2B)
         "V_WK": vb + 47,  # 1 = 지금 그림이 얹히는 칸이 혼합 칸 — 흰 글자면 흰 잉크 마스크에도 쓴다
         "V_PREV": vb + 48,  # 68B: 고정 칸 창(name13)이 칸 배열을 덮기 직전의 사본 — 아직 화면에 있는 앞 창의 슬롯을 `vwf_live` 가 지킨다
+        # 🔴 슬롯 배정 2단계(2026-10-20 qa 「기다 . 주시옵소서」 — 글리프 누락): 0 = 지금 쪽 칸 **과** 앞 쪽 사본(`V_PREV`)을 지킨다 · 1 = **지금 쪽 칸만** 지킨다.
+        #    쪽이 가득(칸 68)이고 앞 쪽도 가득이면 150 슬롯 중 고정 칸을 뺀 나머지가 모자라 한 바퀴 돌아도 빈 슬롯이 없었고, 옛 코드는 그때 **지금 쪽 칸의 슬롯을 그냥 뺏었다**
+        #    (앞 줄 글자가 뒷 글자 그림으로 바뀜 — 빠른 속도에서 앞 쪽이 화면에 남아 보호가 필요한 경로라 쪽 사이 직전 대사 순서에 따라 **가끔** 터졌다).
+        #    앞 쪽 보호는 포기할 수 있어도(앞 쪽 끝 글자가 잠깐 깨질 뿐) 지금 쪽은 못 포기한다 — 한 바퀴 실패하면 모드 1 로 다시 돈다.
+        "V_LM": vb + 116,
     }
-    var_end = vb + 116
+    var_end = vb + 117
     if var_end - VAR >= 741:
         raise SystemExit(f"WRAM 무손상 구간(741B)을 넘는다: {var_end - VAR}B (슬롯 {nslot}개)")
     assert len(vram) == nslot
@@ -998,6 +1027,32 @@ def build_payload(
         a.plp()
         a.rtl()
 
+    # ── 쪽 지우기 직전 스냅 ($02:E327 → JSR $FE80 → JSL 여기) ─────────────────────────
+    # `$1777`≠0 이면 엔진이 안 지우니 복사하지 않는다. 진입은 8비트(엔진 `SEP #$30`), 돌아갈 땐 상태를 그대로.
+    a.label("pagesnap")
+    if vwf:
+        a.php()
+        a.rep(imm=0x30)
+        a.pha()
+        a.phx()
+        a.sep(imm=0x20)
+        a.op("lda", addr=0x001777, mode="long")
+        a.bne(label="ps_done")
+        a.rep(imm=0x10)
+        a.ldx(imm=0x0000, m16=True)
+        a.label("ps_l")
+        a.op("lda", addr=CELL_BASE, mode="longx")
+        a.op("sta", addr=kv["V_PREV"], mode="longx")
+        a.inx()
+        a.cpx(imm=68, m16=True)
+        a.bne(label="ps_l")
+        a.label("ps_done")
+        a.rep(imm=0x30)
+        a.plx()
+        a.pla()
+        a.plp()
+    a.rtl()
+
     # ── 13칸 고정 문자열 한 줄 (전투 커맨드·파티 이름) ─────────────────────────────
     # A4 값(`$02:ADD7`, 목적지 `$030F`)도 같은 꼴 — 목적지만 다르다.
     for name, pre, dest in (("name13", "n13", CELL_BASE), ("name13_v", "n13v", CELL_BASE + 10)):
@@ -1400,6 +1455,9 @@ def build_payload(
     a.jmp(addr="al_ret", mode="abs")  # `bra` 로는 안 닿을 수 있다 — 아래 al_miss 본문이 길다
 
     a.label("al_miss")
+    if vwf:
+        a.lda(imm=0x00)
+        a.op("sta", addr=kv["V_LM"], mode="long")  # 모드 0: 지금 쪽 + 앞 쪽 보호(`vwf_live`)
     a.lda(imm=nslot)
     a.op("sta", addr=V_T0, mode="long")  # 한 바퀴 넘게 돌지 않게(전부 고정일 리는 없지만)
     a.label("al_try")
@@ -1435,6 +1493,14 @@ def build_payload(
     a.dec()
     a.op("sta", addr=V_T0, mode="long")
     a.bne(label="al_try")
+    if vwf and PHASE2:  # 한 바퀴 다 보호 대상 — 앞 쪽 보호를 포기하고 **지금 쪽 칸만** 지키며 한 바퀴 더(모드 1). 모드 1 에서도 실패하면(지금 쪽이 슬롯 전부 — 불가능에 가깝다) 그냥 쓴다
+        a.op("lda", addr=kv["V_LM"], mode="long")
+        a.bne(label="al_take")
+        a.lda(imm=0x01)
+        a.op("sta", addr=kv["V_LM"], mode="long")
+        a.lda(imm=nslot)
+        a.op("sta", addr=V_T0, mode="long")
+        a.jmp(addr="al_try", mode="abs")
     a.label("al_take")
     a.op("lda", addr=V_NEXT, mode="long")
     a.cmp(imm=nslot)
@@ -1477,6 +1543,9 @@ def build_payload(
     a.op("sta", addr=owner_lo, mode="longx")
     a.op("lda", addr=V_IDX + 1, mode="long")
     a.op("sta", addr=owner_hi, mode="longx")
+    if vwf:
+        a.lda(imm=0x00)
+        a.op("sta", addr=kv["V_LM"], mode="long")
     a.op("lda", addr="slot_code", mode="absx")
     a.label("al_ret")
     a.rts()
@@ -1830,6 +1899,7 @@ def build_payload(
                 "Q_HI": Q_HI,
                 "Q_CTX": Q_CTX,
                 "nslot": nslot,
+                "PHASE2": PHASE2,
                 "xfrom": xfrom,
                 "QN": QN,
                 "GLYPH_BASE": GLYPH_BASE,
@@ -1932,6 +2002,8 @@ def apply(
         )
     if not slots:
         raise SystemExit("동적 슬롯이 하나도 없다")
+    if (bad := slot_budget_problems(len(slots))):  # 실제 빌드에서만 — 단위 테스트는 슬롯 40개짜리 작은 페이로드를 쓴다
+        raise SystemExit("; ".join(bad))
     tile = tiles.code_tile(rom)
     blob, info = build_payload(
         rep,
@@ -1957,14 +2029,49 @@ def apply(
     # 1. 트램펄린: JSL 훅 + RTS (원본 JSR 과 자리를 맞춘다)
     t = common.snes2off(TRAMPOLINE)
     out[t : t + 5] = bytes([0x22, hook_addr & 0xFF, (hook_addr >> 8) & 0xFF, HOOK_BANK, 0x60])
-    ft = common.snes2off(FLUSH_TRAMPOLINE)
-    if bytes(rom[ft : ft + len(FLUSH_TRAMP_BYTES)]) != b"\xff" * len(FLUSH_TRAMP_BYTES):
-        raise SystemExit(f"쪽 첫 글자 플러시 트램펄린 자리가 비어 있지 않다 {common.fmt(FLUSH_TRAMPOLINE)}")
-    out[ft : ft + len(FLUSH_TRAMP_BYTES)] = FLUSH_TRAMP_BYTES
-    fs = common.snes2off(FLUSH_SITE)
-    if bytes(rom[fs : fs + 3]) != FLUSH_SITE_ORIG:
-        raise SystemExit(f"쪽 첫 글자 플러시 자리가 예상과 다르다: {rom[fs : fs + 3].hex()}")
-    out[fs : fs + 3] = bytes([0x4C, FLUSH_TRAMPOLINE & 0xFF, (FLUSH_TRAMPOLINE >> 8) & 0xFF])
+    if common.VWF:
+        sn = (HOOK_BANK << 16) | info["labels"]["pagesnap"]
+        st = common.snes2off(SNAP_STUB)
+        stub = bytes([0x22, sn & 0xFF, (sn >> 8) & 0xFF, HOOK_BANK, 0xAD, 0x77, 0x17, 0x60])
+        if bytes(rom[st : st + len(stub)]) != b"\xff" * len(stub):
+            raise SystemExit(f"쪽 스냅 스텁 자리가 비어 있지 않다 {common.fmt(SNAP_STUB)}")
+        out[st : st + len(stub)] = stub
+        ss = common.snes2off(SNAP_SITE)
+        if bytes(rom[ss : ss + 3]) != SNAP_SITE_ORIG:
+            raise SystemExit(f"쪽 지우기 자리가 예상과 다르다: {rom[ss : ss + 3].hex()}")
+        out[ss : ss + 3] = bytes([0x20, SNAP_STUB & 0xFF, (SNAP_STUB >> 8) & 0xFF])  # JSR $FE80
+        ns = common.snes2off(NL_STUB)
+        if bytes(rom[ns : ns + len(NL_STUB_BYTES)]) != b"\xff" * len(NL_STUB_BYTES):
+            raise SystemExit(f"개행 스텁 자리가 비어 있지 않다 {common.fmt(NL_STUB)}")
+        out[ns : ns + len(NL_STUB_BYTES)] = NL_STUB_BYTES
+        nl = common.snes2off(NL_SITE)
+        if bytes(rom[nl : nl + 3]) != NL_SITE_ORIG:
+            raise SystemExit(f"개행 핸들러 자리가 예상과 다르다: {rom[nl : nl + 3].hex()}")
+        out[nl : nl + 3] = bytes([0x20, NL_STUB & 0xFF, (NL_STUB >> 8) & 0xFF])  # JSR $FE88
+    # 1b. `{D8}` 뒤 「たち」 → 「 일행」 (위 SUFFIX_*)
+    suf = bytearray()
+    for ch in SUFFIX_TEXT:
+        if ch == " ":
+            suf.append(0x10)
+        else:
+            if ch not in rep:
+                raise SystemExit(f"글리프 뱅크에 {ch!r} 가 없다 — `{{D8}}` 뒤 「{SUFFIX_TEXT}」 를 못 쓴다")
+            suf += encode.glyph_code(rep.index(ch))
+    suf.append(0xFF)
+    stub = bytearray()
+    for i, b in enumerate(suf):
+        stub += bytes([0xA9, b, 0x9D, (0x174C + i) & 0xFF, (0x174C + i) >> 8])
+    stub += bytes([0x4C, 0xC3, 0xE0])  # JMP $E0C3 — 원래 BRA 의 도착점
+    so = common.snes2off(SUFFIX_STUB)
+    if bytes(rom[so : so + len(stub)]) != b"\xff" * len(stub):
+        raise SystemExit(f"{{D8}} 접미 스텁 자리가 비어 있지 않다 {common.fmt(SUFFIX_STUB)}")
+    out[so : so + len(stub)] = stub
+    sx = common.snes2off(SUFFIX_SITE)
+    if bytes(rom[sx : sx + len(SUFFIX_ORIG)]) != SUFFIX_ORIG:
+        raise SystemExit(f"{{D8}} 접미 자리가 예상과 다르다: {rom[sx : sx + 17].hex()}")
+    out[sx : sx + len(SUFFIX_ORIG)] = bytes([0x4C, SUFFIX_STUB & 0xFF, (SUFFIX_STUB >> 8) & 0xFF]) + b"\xea" * (
+        len(SUFFIX_ORIG) - 3
+    )
     # 2. 소비 지점: JSR $E784 → JSR $FE52
     c = common.snes2off(CALL_SITE)
     if bytes(rom[c : c + 3]) != bytes([0x20, 0x84, 0xE7]):
@@ -2021,9 +2128,11 @@ def apply(
                 )
             pa = (HOOK_BANK << 16) | info["labels"][label]
             to = common.snes2off(tramp)
-            if bytes(rom[to : to + 5]) != b"\xff" * 5:
-                raise SystemExit(f"지명 트램펄린 자리가 비어 있지 않다 {common.fmt(tramp)}")
-            out[to : to + 5] = bytes([0x22, pa & 0xFF, (pa >> 8) & 0xFF, HOOK_BANK, 0x60])
+            tr = bytes([0x22, pa & 0xFF, (pa >> 8) & 0xFF, HOOK_BANK, 0x60])
+            if bytes(out[to : to + 5]) != tr:  # 같은 트램펄린을 여러 자리가 나눠 쓴다(주문 목록 둘) — 두 번째부터는 이미 같은 값이다
+                if bytes(rom[to : to + 5]) != b"\xff" * 5:
+                    raise SystemExit(f"지명 트램펄린 자리가 비어 있지 않다 {common.fmt(tramp)}")
+                out[to : to + 5] = tr
             n = join - site
             blk = bytearray([0xEA]) * n
             blk[0:3] = bytes([0x20, tramp & 0xFF, (tramp >> 8) & 0xFF])
@@ -2149,7 +2258,17 @@ def patch_ranges() -> list[tuple[int, int]]:
         (common.snes2off(ENDING_CTX_SITE), common.snes2off(ENDING_CTX_SITE) + 5),
         *[(common.snes2off(s_), common.snes2off(s_) + 3) for s_ in FONT_CALL_SITES],
         (common.snes2off(FONT_TRAMPOLINE), common.snes2off(FONT_TRAMPOLINE) + 8),
-        (common.snes2off(FLUSH_TRAMPOLINE), common.snes2off(FLUSH_TRAMPOLINE) + len(FLUSH_TRAMP_BYTES)),
-        (common.snes2off(FLUSH_SITE), common.snes2off(FLUSH_SITE) + 3),
+        (common.snes2off(SUFFIX_SITE), common.snes2off(SUFFIX_SITE) + len(SUFFIX_ORIG)),
+        (common.snes2off(SUFFIX_STUB), common.snes2off(SUFFIX_STUB) + 5 * (len(SUFFIX_TEXT) * 2 - 1 + 1) + 3),
+        *(
+            [
+                (common.snes2off(SNAP_STUB), common.snes2off(SNAP_STUB) + 8),
+                (common.snes2off(SNAP_SITE), common.snes2off(SNAP_SITE) + 3),
+                (common.snes2off(NL_STUB), common.snes2off(NL_STUB) + len(NL_STUB_BYTES)),
+                (common.snes2off(NL_SITE), common.snes2off(NL_SITE) + 3),
+            ]
+            if common.VWF
+            else []
+        ),
     ]
 

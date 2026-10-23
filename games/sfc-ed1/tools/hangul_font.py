@@ -73,7 +73,29 @@ def _ellipsis_low() -> list[int]:
     return rows
 
 
-GLYPH_OVERRIDES = {"…": _ellipsis_low}
+def _orig_logo(i: int) -> list[int]:
+    """원판 스태프롤 로고 블록(`$04:FD41`, 반전 저장·2바이트/행)의 8×16 그림 — i 번째 타일(위)+i+16(아래). 코드 `$C5`=J(6) · `$C6`=K(7)."""
+    import common
+
+    rom = common.rom_bytes()
+    o = common.snes2off(0x04FD41)
+    return [(~rom[o + 16 * (i + 16 * part) + 2 * r]) & 0xFF for part in (0, 1) for r in range(8)]
+
+
+def _orig_dot() -> list[int]:
+    """원판 스태프롤 「J.D.K.」 점(코드 `$0E` = 타일 `$1BA`, `$18:EC2C` 의 2bpp 두 평면 AND) — 8px 칸 한 칸."""
+    import common
+
+    rom = common.rom_bytes()
+    o = common.snes2off(0x18EC2C) + 16 * (0x1BA - 0x180)
+    top = [rom[o + 2 * r] & rom[o + 2 * r + 1] for r in range(8)]
+    o2 = common.snes2off(0x18EC2C) + 16 * (0x1CA - 0x180)
+    bot = [rom[o2 + 2 * r] & rom[o2 + 2 * r + 1] for r in range(8)]
+    return top + bot
+
+
+# 스태프롤 「J.D.K.」 는 원판 그림 그대로(D 도 시트 글자 — 스태프롤은 D 를 글리프로 내서 Condensed 가 나왔다, 실화면으로 확인)(마스터 10-19 「원판 그대로」): J·K·점은 원판 로고 블록·HUD 타일을 읽어 글리프로 쓴다(전각 점 「．」 = 8px 칸 점)
+GLYPH_OVERRIDES = {"…": _ellipsis_low, "D": lambda: render_latin_orig("D"), "J": lambda: _orig_logo(6), "K": lambda: _orig_logo(7), "．": _orig_dot}
 
 
 def render(ch: str, font) -> list[int]:

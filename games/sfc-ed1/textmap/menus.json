@@ -164,13 +164,13 @@
  },
  "せってい@A06": {
   "kr": null,
-  "state": "draft",
+  "state": "ps1",
   "budget_tiles": 6,
   "width_tiles": 4,
   "fits": true,
   "row": 7,
   "x0": 2,
-  "canon_exception": "가리키는 게 다르다 — 우리 `せってい` 는 시스템 창의 **한 항목**이고 정본 `戦闘設定` 은 **그 창 이름**이다"
+  "canon_key": "戦闘設定"
  },
  "ぜんいんのせってい@A0C": {
   "kr": null,

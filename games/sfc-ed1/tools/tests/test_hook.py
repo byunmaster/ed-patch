@@ -117,6 +117,7 @@ ENTRY = {
     "name13": (False, False, "far"),  # 13칸 고정 — 다섯째 문(원본은 MVN). 호출자가 REP #$30
     "name13_v": (False, False, "far"),  # A4 값(목적지 $030F)
     "drain": (True, True, "far"),  # NMI = sep #$30 뒤
+    "pagesnap": (True, True, "far"),  # 쪽 지우기 직전 스냅($02:E327) — 엔진 SEP #$30 문맥(가변 폭 꺼짐이면 RTL 하나)
     "fetch": (True, False, "near"),
     "alloc": (True, False, "near"),
     "q_wait": (True, False, "near"),

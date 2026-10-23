@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import text  # noqa: I001
 import common
+import tokenorder
 
 PATH = common.GAME_DIR / "textmap" / "segments.json"
 DICT_PATH = common.GAME_DIR / "textmap" / "dict.json"  # 사전 6벌: "D2:0A" → {kr, state, jp_len}
@@ -60,14 +61,25 @@ DICT_CATEGORY = {
 }
 
 
-def check_tokens(kr: str, tokens: list[str]) -> str | None:
+def check_tokens(kr: str, tokens: list[str], extra_pages: int = 0) -> str | None:
     """번역문의 토큰 계약. **제어 토큰(`<..>`, `<@>` 포함)은 전부 같은 순서로** 있어야 한다 — 빠지면 분기·페이지가
     사라진다. **사전·치환 토큰(`{..}`)은 빼도 되고 어순을 바꿔도 된다**(글자만 찍는다 — 「キャリオンク{ロー}ラー」처럼
     이름 조각을 재활용한 자리는 번역문이 통째로 쓰는 게 맞다). 원문에 없는 토큰을 더하면 안 된다."""
     got = tokens_in(kr)
     ctrl_got = [t for t in got if t.startswith("<")]
     ctrl_exp = [t for t in tokens if t.startswith("<")]
-    if ctrl_got != ctrl_exp:
+    # 색 감싸기 <E3>…<E1> 는 원문에 없어도 **쌍으로** 더할 수 있다(10-18 — 원판이 색을 안 쓴 전투 문구에 이름 색을 맞춘다). 나머지 제어는 그대로 같은 순서.
+    color = ("<E3>", "<E1>")
+    g = [t for t in ctrl_got if t not in color]
+    e = [t for t in ctrl_exp if t not in color]
+    # 쪽 나눔 — 문안이 창에 안 들어가 원문에 없는 `<FF>` 를 더한 조각은 `extra_pages`(정본 조각 필드)만큼 더 있어도 된다(마스터 10-19, 론도항구 신부).
+    # 어느 `<FF>` 가 더해진 것인지는 모르니 하나를 빼서 기대와 같아지면 통과다(그때 비교는 더한 쪽을 뺀 열로).
+    if extra_pages == 1 and g.count("<FF>") == e.count("<FF>") + 1:
+        if any(t == "<FF>" and g[:i] + g[i + 1 :] == e for i, t in enumerate(g)):
+            ctrl_got = [t for t in ctrl_got if t in color]  # 색 쌍 몫만 남겨 아래 비교에 들어간다
+            ctrl_exp = [t for t in ctrl_exp if t in color]
+            g = e = []
+    if ctrl_got != ctrl_exp and (g != e or any(ctrl_got.count(c) < ctrl_exp.count(c) for c in color)):
         return f"제어 토큰이 다르다: 기대 {ctrl_exp} 실제 {ctrl_got}"
     dict_exp = [t for t in tokens if t.startswith("{")]
     for t in (t for t in got if t.startswith("{")):
@@ -94,12 +106,14 @@ def init_from_tm(min_ratio: float) -> dict:
         s = segs[r["seg"]]
         if s["id"] in tm and tm[s["id"]].get("state") != "tm-draft":
             continue  # 사람이 손댄 항목은 덮지 않는다
-        # 토큰은 뒤에 이어 붙여 둔다 — 자리는 사람이 옮긴다(초안 표시)
+        # 토큰은 뒤에 이어 붙인 뒤 원문 자리(글 앞/뒤)로 옮긴다 — 안 옮기면 최종 롬에 「물건이옵니다.감사합니다.」 같은 꼴이 나간다
+        # (2026-10-19, `tokenorder.fix`). 글 한가운데 낀 분기는 못 옮기니 `check_token_order` 가 잡는다.
         kr = r["kr"].strip()
         tail = "".join(t for t in s["tokens"])
+        kr = tokenorder.fix(s["jp"], kr + tail, s["tokens"], True)
         tm[s["id"]] = {
             "addr": s["addr"],
-            "kr": kr + tail,
+            "kr": kr,
             "state": "tm-draft",
             "tm": {"ps1": r["ps1"], "ratio": r["ratio"]},
         }
@@ -323,8 +337,8 @@ def check_ui_labels() -> dict:
     for k, v in menus.items():
         if not v.get("kr"):
             continue
-        jp = k.split("@")[0]
-        site = v.get("canon_site")
+        jp = v.get("canon_key") or k.split("@")[0]  # `canon_key` = 원문과 다른 정본 열쇠(namesrc.menus 와 같은 규칙)
+        site = None if v.get("canon_key") else v.get("canon_site")
         mine[f"{jp}@{site}" if site else jp] = v["kr"]
     out = canon.diff_labels(mine)
     return {
@@ -350,7 +364,7 @@ def check() -> dict:
         if not s:
             unknown += 1
             continue
-        err = check_tokens(v["kr"], s["tokens"])
+        err = check_tokens(v["kr"], s["tokens"], v.get("extra_pages", 0))
         if err:
             bad.append((k, err))
     gl = check_glossary()

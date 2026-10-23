@@ -191,7 +191,8 @@ def menus() -> dict:
     """`menus.json` — 정본에 있는 라벨 표기는 정본에서 읽는다(`canon_site` 가 있으면 `원문@자리` 열쇠)."""
     d = json.loads((TEXTMAP / "menus.json").read_text(encoding="utf-8"))
     for k, v in d.items():
-        hit = _ui_hit(k.split("@")[0], v.get("canon_site"))
+        # `canon_key` = 이 자리의 정본 열쇠가 원문과 다를 때(예: 시스템 창의 「せってい」 항목이 가리키는 창 이름 「戦闘設定」)
+        hit = resolve(v["canon_key"], _any_order([])) if v.get("canon_key") else _ui_hit(k.split("@")[0], v.get("canon_site"))
         if hit:
             v["kr"] = hit[0]
     return d

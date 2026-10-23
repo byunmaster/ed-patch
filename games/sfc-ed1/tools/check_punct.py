@@ -25,7 +25,12 @@ def _repeated_sound(text: str, i: int) -> bool:
 
 def _sentence_initial(text: str, i: int) -> bool:
     """문장 맨 앞의 `…`(마스터 10-13) — 앞이 없거나 줄바꿈·공백·「 뒤. 뒤는 붙인다(…그런 것처럼). `?…` 처럼 앞말에 붙은 건 말줄임이다."""
-    return i == 0 or text[i - 1] in "\n \u300c" or text[max(0, i - 2) : i] == "\\n"
+    return (
+        i == 0
+        or text[i - 1] in "\n \u300c"
+        or text[max(0, i - 2) : i] == "\\n"
+        or text[max(0, i - 4) : i] == "<E1>"  # 화자 이름표 바로 뒤도 문장 맨 앞이다
+    )
 
 
 def _in_chain(text: str, i: int) -> bool:

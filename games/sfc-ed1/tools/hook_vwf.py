@@ -107,22 +107,37 @@ def emit(a, k):
     #    살아 있는 칸은 건너뛴다. 칸 배열은 68바이트라 한 번에 훑는다.
     a.label("vwf_live")
     a.op("lda", addr="slot_code", mode="absx")
+    a.pha()
     a.ldx(imm=0x0000, m16=True)
     a.label("vl_l")
     a.op("cmp", addr=0x000305, mode="longx")
     a.beq(label="vl_y")
+    a.inx()
+    a.cpx(imm=68, m16=True)
+    a.bne(label="vl_l")
+    a.op("lda", addr=k["V_LM"], mode="long")  # 모드 1 = 지금 쪽 칸만 지킨다(앞 쪽 사본 보호 포기 — `hook.py` V_LM 주석)
+    a.bne(label="vl_n")
+    a.pla()
+    a.pha()
+    a.ldx(imm=0x0000, m16=True)
+    a.label("vl_p")
     a.op("cmp", addr=k["V_PREV"], mode="longx")  # 앞 창 사본(고정 칸 창이 덮기 전) — 화면에 남은 로그 칸
     a.beq(label="vl_y")
     a.inx()
     a.cpx(imm=68, m16=True)
-    a.bne(label="vl_l")
+    a.bne(label="vl_p")
+    a.label("vl_n")
+    a.pla()
     a.clc()
     a.rts()
     a.label("vl_y")
+    a.pla()
     a.sec()
     a.rts()
 
     a.label("vwf_newslot")
+    a.lda(imm=0x00)
+    lm("sta", k["V_LM"])  # 모드 0: 지금 쪽 + 앞 쪽 보호
     a.lda(imm=nslot)
     lm("sta", V_T0)
     a.label("vn_try")
@@ -155,6 +170,14 @@ def emit(a, k):
     a.dec()
     lm("sta", V_T0)
     a.bne(label="vn_try")
+    if k.get("PHASE2", True):
+        lm("lda", k["V_LM"])  # 한 바퀴 실패 — 앞 쪽 보호를 포기하고 지금 쪽 칸만 지키며 한 바퀴 더. 그래도 실패면 그냥 쓴다
+        a.bne(label="vn_take")
+        a.lda(imm=0x01)
+        lm("sta", k["V_LM"])
+        a.lda(imm=nslot)
+        lm("sta", V_T0)
+        a.jmp(addr="vn_try", mode="abs")
     a.label("vn_take")
     lm("lda", V_NEXT)
     a.cmp(imm=nslot)
@@ -178,6 +201,8 @@ def emit(a, k):
     a.lda(imm=0xFF)
     a.op("sta", addr=owner_lo, mode="longx")
     a.op("sta", addr=owner_hi, mode="longx")
+    a.lda(imm=0x00)
+    lm("sta", k["V_LM"])  # 모드 0 복귀
     lm("lda", V_T1)
     a.rts()
 
@@ -769,8 +794,13 @@ def emit(a, k):
     lm("lda", V_WM)  # 문장 모드(`vwf_fitchk` 가 켠다)면 숫자 꼬리 규칙은 건너뛴다
     a.bne(label="wk_nn")
     lm("lda", V_VR)  # 바로 앞에 찍은 원판 글자가 숫자(0~9)면 그 뒤 공백은 줄바꿈 금지(「EP 1 포인트」가 숫자에서 갈리지 않게 — PS1 NOBREAK_SP 꼴)
-    a.cmp(imm=0x11)  # 0~9 숫자 · 0x10 = 숫자 루틴이 덧붙이는 자리 패딩 공백(그 뒤 우리 공백도 같은 숫자 꼬리다)
-    a.bcs(label="wk_nn")
+    # 🔴 숫자는 코드 $00~$09 와 숫자 루틴이 덧붙이는 자리 패딩 공백 $10 뿐이다. 예전 비교(`CMP #$11 / BCS`)는 $0A~$0F 까지 「숫자」로 읽어 **「!」($0C)·「?」($0F) 뒤의
+    #    공백도 줄바꿈 금지**가 됐다 — 「말았다! 민첩성이」 가 「민첩 / 성이」 로 낱말 가운데에서 꺾였다(qa 10-20, m20C2 · 같은 꼴 「…맞지 / 않았다.」)
+    a.cmp(imm=0x0A)
+    a.bcc(label="wk_nb")  # $00~$09 숫자
+    a.cmp(imm=0x10)
+    a.bne(label="wk_nn")  # $10 패딩 공백만 숫자 꼬리, 그 밖($0A~$0F 부호·글자 포함)은 보통 어절 줄바꿈
+    a.label("wk_nb")
     a.clc()
     a.jmp(addr="wk_fin", mode="abs")
     a.label("wk_nn")
@@ -858,6 +888,9 @@ def emit(a, k):
         a.jmp(addr="wk_end", mode="abs")
         a.label(f"wk_dp{pc:02X}")
     # 사전 토큰(코드+색인) — 실제 표기 폭을 표(`tw_d0`~`tw_d5`, 색인 하위 7비트)로 잰다. 색인 최상위 비트가 선 $D0(「파티 순서 n 번째」)만 32px 로 어림한다
+    # 🔴 위 부호 검사가 A 를 앞 바이트로 덮어 놨다 — 코드를 다시 읽어 밀어 넣는다(2026-10-19 BP 로그: 안 그러면 $D1~$D5 가 전부 `tw_d0` 표로 잰다 —
+    #    「사이레스 주문을」 의 `{D5:2D}`(16px)를 40px 로 재서 줄 끝도 아닌데 「사이레스 / 주문을 / 쓰는」 으로 갈라졌다)
+    a.op("lda", dp=0x3F, mode="indlongy")
     a.pha()
     a.iny()
     a.op("lda", dp=0x3F, mode="indlongy")
@@ -1196,7 +1229,14 @@ def emit(a, k):
     a.sep(imm=0x20)
     a.op("lda", addr="rawvalid", mode="absx")
     a.beq(label="vr_snap")
+    lm("lda", V_VR)  # 숫자(<$0A)는 원판 굵은 그림(`numtab`)으로 합성한다 — rawtab 은 Condensed 라 칸 중간에서만 가는 숫자가 나왔다(마스터 10-19 「굵은걸로 통일」)
+    a.cmp(imm=0x0A)
+    a.bcs(label="vr_fmr")
+    a.jsr(addr="vwf_ldg_n", mode="abs")
+    a.bra(label="vr_fmw")
+    a.label("vr_fmr")
     a.jsr(addr="vwf_ldg_r", mode="abs")
+    a.label("vr_fmw")
     a.lda(imm=0x08)
     lm("sta", V_VW)
     a.jmp(addr="vwf_put", mode="abs")
