@@ -91,7 +91,7 @@ def all_glyph_chars() -> set[str]:
     return chars
 
 
-def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str, str]) -> bytes:
+def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str, str], lead_px: int = 0) -> bytes:
     out = bytearray()
     if m.speaker is not None:
         name = speakers.get(m.speaker, m.speaker)
@@ -116,6 +116,7 @@ def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str,
         pgs = typeset.pages(
             font.expand_packed(tr["t"].lstrip(" ")),
             speaker=m.speaker is not None or m.common is not None,
+            lead_px=lead_px,
         )
         # 하드 개행이 든 화자 없는 창(장 끝 카드)은 줄을 그대로 둔 것이라 **개행도 그대로** 넣는다 —
         # 꽉 찬 제목 줄 뒤의 빈 줄이 먹혔다(종장 카드 화면 2026-09-25: 13칸 제목 바로 밑에 「끝」).
@@ -138,6 +139,48 @@ def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str,
     return bytes(out)
 
 
+def continuation_leads(block: bytes, msgs: list, trs: dict, speakers: dict) -> dict[str, int]:
+    """앞 메시지가 찍던 줄 끝에 **이어 붙는** 메시지의 {열쇠: 이미 쓴 폭(px)}.
+
+    앞 메시지는 종료 없이 옵코드(`10`·`0F`·`0D` …)로 끝나고, 그 옵코드 바로 뒤에서 이 메시지가 시작한다 — 같은 창이 이어져 줄 끝에서 이어 쓴다. `10` 호출(공유 하위 문구,
+    예: 「아니, 세리오스 왕자님!!」)이면 그 문구의 폭도 얹는다. 런타임 어절 검사는 앞 메시지가 쓴 폭을 몰라 낱말 가운데서 끊는다(씬 64, 10-22) — 조판기가 이 폭을 알고 짠다.
+    """
+    by_start = {m.start: m for m in msgs}
+
+    def last_line(m) -> str:
+        tr = trs.get(m.key)
+        if not tr or not tr.get("t"):
+            return ""
+        sp = m.speaker is not None or m.common is not None
+        pg = typeset.pages(font.expand_packed(tr["t"].lstrip(" ")), speaker=sp)
+        return pg[-1][-1] if pg and pg[-1] else ""
+
+    leads: dict[str, int] = {}
+    for a in msgs:
+        if a.terminated or a.end + 3 > len(block):
+            continue
+        op = block[a.end]
+        ln = M.OTHER_OPS.get(op)
+        n = by_start.get(a.end + ln) if ln else None
+        if n is None or n.speaker is not None or n.common is not None:
+            continue
+        if n.tokens and n.tokens[0] == ("op", NL):
+            continue
+        if a.tokens and a.tokens[-1] in (("op", NL), ("op", PAGE), ("op", 0x03)):
+            la = ""
+        else:
+            la = last_line(a)
+        lp = ""
+        if op == 0x10:  # 공유 하위 문구 호출
+            tgt = by_start.get((block[a.end + 1] | block[a.end + 2] << 8) - M.BASE)
+            if tgt is not None:
+                lp = last_line(tgt)
+        lead = typeset.px(la) + (typeset.SPACE_PX if la and lp else 0) + typeset.px(lp)
+        if 0 < lead < typeset.FULL * 12:  # 줄이 꽉 찼으면 인터프리터가 이미 넘겼다 — 새 줄에서 시작
+            leads[n.key] = lead
+    return leads
+
+
 def translate_block(scene_id: int, block: bytes, table: dict[str, bytes]) -> tuple[bytes, int]:
     """번역이 있는 메시지를 합성해 splice. (새 블록, 넣은 메시지 수)."""
     trs = M.load_translations(scene_id)
@@ -147,6 +190,7 @@ def translate_block(scene_id: int, block: bytes, table: dict[str, bytes]) -> tup
     msgs = M.parse(block)
     edits = []
     seen = set()
+    leads = continuation_leads(block, msgs, trs, speakers)
     for m in msgs:
         tr = trs.get(m.key)
         if tr is None and m.speaker in speakers and not m.jp.strip():
@@ -159,7 +203,7 @@ def translate_block(scene_id: int, block: bytes, table: dict[str, bytes]) -> tup
             raise TranslateError(
                 f"scn {scene_id} 열쇠 {m.key}: pinned(안쪽 참조) — 자리 규칙으로 못 넣는다"
             )
-        edits.append((m, compose(m, tr, table, speakers)))
+        edits.append((m, compose(m, tr, table, speakers, lead_px=leads.get(m.key, 0))))
         seen.add(m.key)
     missing = set(trs) - seen
     if missing:

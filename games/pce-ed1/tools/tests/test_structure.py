@@ -85,6 +85,30 @@ class Structure(unittest.TestCase):
         self.assertEqual(len(tsv.splitlines()[0].split("\t")), 8)
 
 
+class ReferencedTerminator(unittest.TestCase):
+    """다른 코드가 가리키는 종료 바이트(`0F` 목표)를 우리 점프가 덮으면 우는지 — 씬 12 라우엘 「오. 오시합니다」(10-22)."""
+
+    def test_overwriting_a_jump_target_terminator_is_a_violation(self):
+        import messages as MM
+
+        orig = ORIG[:M1] + b"\x0f" + (MM.BASE + M1 - 1).to_bytes(2, "little") + bytes(3)  # 뒤 옵코드가 메시지 끝 `00` 으로 점프
+        # 제자리 끝(종료 바이트 자리)까지 점프 주소로 덮은 사본
+        bad = bytearray(orig)
+        bad[M1 - 3 : M1] = b"\x0f\x00\xa1"
+        rec = S.BlockRec(1, 2, orig)
+        rec.add("translate", orig, bytes(bad) + bytes(8))
+        _rows, viol = S.analyze_block(rec)
+        self.assertTrue(any("점프 목표" in v for v in viol), viol)
+
+    def test_unreferenced_terminator_may_be_overwritten_by_the_jump(self):
+        rec = S.BlockRec(1, 2, ORIG)
+        bad = bytearray(ORIG)
+        bad[M1 - 3 : M1] = b"\x0f\x00\xa1"
+        rec.add("translate", ORIG, bytes(bad) + bytes(8))
+        _rows, viol = S.analyze_block(rec)
+        self.assertFalse(any("점프 목표" in v for v in viol), viol)
+
+
 class BattleStructure(unittest.TestCase):
     """전투 블록(`analyze_battle_block`) — 가짜 바이트(전각 가나 셋 + 종단 `0A`)."""
 

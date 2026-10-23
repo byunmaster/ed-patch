@@ -44,10 +44,21 @@ def cols(line: str) -> int:
     return px(line) // 12
 
 
-def pages(text: str, *, speaker: bool) -> list[list[str]]:
-    """문안 → [[줄…], …]. `\\n` 은 하드 개행, `\\f` 는 강제 페이지."""
+def pages(text: str, *, speaker: bool, lead_px: int = 0) -> list[list[str]]:
+    """문안 → [[줄…], …]. `\\n` 은 하드 개행, `\\f` 는 강제 페이지.
+
+    `lead_px` — 이 메시지가 **앞 메시지가 찍던 줄 끝에 이어 붙을 때** 그 줄이 이미 쓴 폭(px). 첫 줄은 남은 폭에 맞춰 짜고, 첫 낱말이 안 들어가면 첫 줄을 빈 줄('' = 명시 개행)로 둬
+    본문 첫머리에서 줄을 넘긴다(씬 64 「세리/오스」 — 런타임 어절 검사는 앞 메시지가 쓴 폭을 몰라 낱말 가운데서 글자 단위로 끊는다).
+    """
     out: list[list[str]] = []
+    first_chunk = True
     for chunk in text.split("\f"):
+        if first_chunk and lead_px and "\n" not in chunk:
+            first_chunk = False
+            out.extend(_pages_after_lead(chunk, lead_px))
+            speaker = False
+            continue
+        first_chunk = False
         if "\n" in chunk and not speaker:
             # 🔴 **하드 개행이 든 창은 줄을 그대로 둔다**(빈 줄·앞 공백 포함) — krwrap 은
             #    protect_hard 여도 빈 줄과 줄머리 공백을 지워 장 끝 「완」 카드가 「…여행 완」 한 줄로
@@ -74,22 +85,12 @@ def pages(text: str, *, speaker: bool) -> list[list[str]]:
                 speaker = False
                 continue
             # 줄 계획이 창에 안 맞으면(편집기가 여러 메시지를 `\n` 으로 이어 보여 줄 때 등) 종전대로 조판기에 맡긴다.
-        pg = krwrap.wrap_pages(chunk, WIDTH, LINES, cell_width=cell)
-        if speaker and pg and pg[0] and px(pg[0][0]) > FIRST_WITH_SPEAKER * 12:
-            # 첫 줄만 좁히면 되지만 krwrap 엔 줄별 폭이 없다 — 첫 창을 10칸으로 다시 짠다
-            first = krwrap.wrap_pages(chunk, FIRST_WITH_SPEAKER, LINES, cell_width=cell)
-            pg = (
-                first[:1]
-                + krwrap.wrap_pages(
-                    "\n".join(l for p in first[1:] for l in p),
-                    WIDTH,
-                    LINES,
-                    cell_width=cell,
-                    protect_hard=False,
-                )
-                if len(first) > 1
-                else first
-            )
+        pg = _wrap_chunk(chunk, speaker, WIDTH, FIRST_WITH_SPEAKER)
+        if _fused_boundary(pg):
+            # 🔴 **줄 끝이 반각 부호로 칸 13 에 딱 닿은 줄 뒤에 다음 줄이 이어지면**(우리는 개행·공백을 안 낸다 — 인터프리터가 스스로 넘기므로) 런타임 어절 검사(`wordck`)가
+            #    「부호.다음줄첫말」을 **공백 없는 한 어절**로 보고 통째로 아랫줄로 내려 계획과 다른 줄이 된다(「구원받았습니다.감사드립니다.」「하던데,당신들도」 — 마스터 qa 10-22).
+            #    반 칸 좁혀 다시 짠다 — 그러면 그 줄은 칸 12 라 명시 개행이 나가고 어절이 안 붙는다.
+            pg = _wrap_chunk(chunk, speaker, WIDTH - 0.5, FIRST_WITH_SPEAKER - 0.5)
         out.extend(pg)
         speaker = False  # 둘째 창부터는 화자 줄이 없다
     for p in out:
@@ -99,6 +100,62 @@ def pages(text: str, *, speaker: bool) -> list[list[str]]:
     #    조용히 사라지는 결함을 못 잡는다(PS1·ps1-ed3+4 실측, 관리자 공유 2026-09-27).
     assert ink(text) == ink("".join(l for p in out for l in p)), ("조판이 글을 잃었다", text)
     return out
+
+
+def _pages_after_lead(chunk: str, lead_px: int) -> list[list[str]]:
+    """앞 줄에 `lead_px` 가 이미 찍힌 채 이어 붙는 쪽 — 첫 줄을 남은 폭에, 나머지는 보통 폭에 짠다."""
+    rem = FULL * 12 - lead_px - SPACE_PX  # 칸 13 에 닿으면 인터프리터가 스스로 넘기므로 한 눈금(4px) 덜 쓴다
+    words = chunk.split()
+    first: list[str] = []
+    acc = 0
+    for w in words:
+        add = px(w) + (SPACE_PX if first else 0)
+        if acc + add > rem:
+            break
+        first.append(w)
+        acc += add
+    rest = " ".join(words[len(first) :])
+    flat: list[str] = []
+    if rest:
+        for p in krwrap.wrap_pages(rest, WIDTH, 1000, cell_width=cell):
+            flat += p
+    head = " ".join(first)  # 비면 '' — 명시 개행(compose 가 빈 줄 뒤 줄 앞에 개행을 낸다)
+    take = LINES - 1
+    pages_out = [[head] + flat[:take]]
+    flat = flat[take:]
+    while flat:
+        pages_out.append(flat[:LINES])
+        flat = flat[LINES:]
+    return pages_out
+
+
+def _wrap_chunk(chunk: str, speaker: bool, width: float, first: float) -> list[list[str]]:
+    pg = krwrap.wrap_pages(chunk, width, LINES, cell_width=cell)
+    if speaker and pg and pg[0] and px(pg[0][0]) > first * 12:
+        # 첫 줄만 좁히면 되지만 krwrap 엔 줄별 폭이 없다 — 첫 창을 10칸으로 다시 짠다
+        fp = krwrap.wrap_pages(chunk, first, LINES, cell_width=cell)
+        pg = (
+            fp[:1]
+            + krwrap.wrap_pages(
+                "\n".join(l for p in fp[1:] for l in p),
+                width,
+                LINES,
+                cell_width=cell,
+                protect_hard=False,
+            )
+            if len(fp) > 1
+            else fp
+        )
+    return pg
+
+
+def _fused_boundary(pg: list[list[str]]) -> bool:
+    """뒤에 줄이 이어지는데 반각 부호로 끝나 칸 13 에 닿은 줄이 있나(`translate.compose` 는 꽉 찬 줄 뒤에 개행을 안 낸다)."""
+    for p in pg:
+        for j, ln in enumerate(p[:-1]):
+            if ln and ln[-1] in NARROW and ln[-1] != " " and cols(ln) >= FULL:
+                return True
+    return False
 
 
 def ink(s: str) -> str:

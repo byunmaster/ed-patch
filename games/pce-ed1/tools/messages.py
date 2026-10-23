@@ -443,9 +443,25 @@ class _Speakers(dict):
 
 
 # ─── 재삽입 ──────────────────────────────────────────────────────────────────
+def protected_terminators(block: bytes) -> set[int]:
+    """다른 코드가 **점프해 오는 종료 바이트**의 오프셋 — 넘침 점프(`0F 주소` 3B)가 그 `00` 을 덮으면 안 된다.
+    `references` 는 스크립트 `0F` 를 소음이라 뺐지만, 목표가 **어느 메시지의 종료 바이트와 정확히 같은** `0F 주소` 만 골라 본다(우연히 겹칠 확률이 낮다 — 걸려도 비용은 1B)."""
+    msgs = parse(block)
+    term = {m.end - 1 for m in msgs if m.terminated}
+    out = {t for t in term if t in references(block)}
+    n = len(block)
+    for j in range(n - 2):
+        if block[j] == JUMP:
+            w = block[j + 1] | block[j + 2] << 8
+            if BASE <= w < BASE + n and w - BASE in term:
+                out.add(w - BASE)
+    return out
+
+
 def splice(block: bytes, edits: list[tuple[Message, bytes]]) -> bytes:
     """메시지들을 제자리에 쓰고, 넘치면 `0F` 로 블록 끝에 잇는다. 기존 주소는 하나도 안 움직인다."""
     out = bytearray(block)
+    guarded = protected_terminators(block)  # 다른 코드가 점프해 오는 종료 바이트(`0F 1E A6` → 옛 메시지의 `00`)
     for m, new in edits:
         if m.pinned:
             raise ValueError(
@@ -466,7 +482,12 @@ def splice(block: bytes, edits: list[tuple[Message, bytes]]) -> bytes:
             continue
         if room < 3:
             raise ValueError(f"메시지 +{m.start:#06x} 자리가 {room}B — `0F` 점프(3B)도 못 넣는다")
-        cut = _token_boundary(new, room - 3)
+        # 🔴 **종료 바이트가 다른 곳의 점프 목표면 그 `00` 을 지키고 한 바이트 먼저 끊는다** — 넘칠 때 제자리 끝의 `0F 주소`(3B)가 종료 바이트 자리까지 덮으면, 그 자리로 오던
+        #    다른 메시지의 `0F`(예: 씬 12 라우엘의 끝 옵코드 `0F 1E A6` → 옛 메시지의 `00`)가 우리 점프 주소 상위 바이트로 떨어져 뒤 글자를 줄줄이 읽는다(씬 12 「오. 오시합니다」, 마스터 qa 10-22).
+        guard = 1 if (m.end - 1) in guarded else 0
+        if room - 3 - guard < 0:
+            raise ValueError(f"메시지 +{m.start:#06x} 자리가 {room}B — 종료 바이트 보호({guard}B)+`0F` 점프(3B)가 안 들어간다")
+        cut = _token_boundary(new, room - 3 - guard)
         tail_addr = BASE + len(out)
         out[m.start : m.start + cut] = new[:cut]
         out[m.start + cut : m.start + cut + 3] = bytes([JUMP, tail_addr & 0xFF, tail_addr >> 8])

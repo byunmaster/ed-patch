@@ -164,12 +164,17 @@ def _check_translate(rec: BlockRec, before: bytes, after: bytes, viol: list[str]
     msgs = M.parse(before)
     spans = [(m.start, m.end) for m in msgs]
     kinds = defaultdict(list)
+    guarded = M.protected_terminators(before)  # 다른 코드가 점프해 오는 종료 바이트
     for m in msgs:
         seg_old = before[m.start : m.end]
         seg = after[m.start : m.end]
         if seg == seg_old:
             continue
         where = f"{sid} +{m.start:#06x}"
+        if m.terminated and (m.end - 1) in guarded and after[m.end - 1] != before[m.end - 1]:
+            viol.append(
+                f"{where}: 종료 바이트(+{m.end - 1:#06x})가 다른 코드의 점프 목표인데 {after[m.end - 1]:02X} 로 바뀌었다(원본 {before[m.end - 1]:02X}) — 그리로 오는 흐름이 뒤 글자를 읽는다"
+            )
         _opening_ok(m, seg, where, viol)
         kind, end, info = _walk(after, m.start, m.end, L, where, viol)
         if kind == "bad":
