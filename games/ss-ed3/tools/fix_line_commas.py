@@ -26,6 +26,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -55,8 +56,67 @@ def strip_line_commas(text):
     return T.PAGE.join(pages), n
 
 
+def strip_page_commas(text):
+    """`(고친 텍스트, 뺀 수)` — **쪽 끝**(`\\f` 앞 마지막 줄 끝)의 쉼표를 뺀다(마스터 10-18 규칙 2-13 재검수 — 쪽 끝도 줄 끝이다).
+
+    ⚠ 옛 판정(09-06)은 「다음 창으로 이어진다는 표시」라 살렸으나, 2-13 은 줄 끝 쉼표를 빼라 하고 쪽 끝을 가르지 않는다.
+    경계 사례(① 다음 쪽이 「아니」로 말을 고침 · ② 짧은 말 셋 이상의 나열 끝)는 건드리지 않고 남긴다 — 손으로 본다."""
+    if T.is_narration(text):
+        return text, 0
+    pages = text.split(T.PAGE)
+    n = 0
+    for i in range(len(pages) - 1):
+        rows = pages[i].split(T.NL)
+        last = max((j for j, r in enumerate(rows) if r.strip()), default=-1)
+        if last < 0 or not rows[last].endswith(","):
+            continue
+        frag = re.split(r"[.!?…〜~]", " ".join(rows))[-1]
+        el = [e.strip() for e in frag.split(",") if e.strip()]
+        if pages[i + 1].lstrip().startswith("아니"):
+            continue
+        if len(el) >= 3 and all(len(e) <= 10 for e in el) and el[0] not in CALLS:
+            continue
+        rows[last] = rows[last][:-1]
+        pages[i] = T.NL.join(rows)
+        n += 1
+    return T.PAGE.join(pages), n
+
+
+#   대조·양보 연결어미 — `~는데,` `~지만,` `~합니다만,` (「다만」 단독은 접속부사라 여기가 아니다)
+CONTRAST_END = re.compile(r"(?:데|지만|[네다]만)$")
+CONTRAST_SHORT = 11  # 앞 절이 이 음절 수 이하면 쉼표를 뺀다(규칙 2-13 ⑨, 마스터 10-18)
+
+
+def strip_contrast_commas(text):
+    """`(고친 텍스트, 뺀 수)` — `~는데,` `~지만,` `~만,` 뒤 쉼표를 **앞 절이 11음절 이하일 때** 뺀다(2-13 ⑨).
+
+    앞 절 = 직전 문장 부호(`. ? ! … ,` 쪽 경계)부터 이 쉼표까지의 한글 음절. 12음절 이상이면 쉼이 필요해 남긴다."""
+    if T.is_narration(text):
+        return text, 0
+    out, n, i = [], 0, 0
+    for m in re.finditer(",", text):
+        j = m.start()
+        k = j
+        while k > 0 and text[k - 1] not in ".?!…,\f":
+            k -= 1
+        seg = re.sub(r"[\s\u3000]", "", text[k:j])
+        if len(seg) > 2 and CONTRAST_END.search(seg):
+            if len(re.findall(r"[가-힣]", seg)) <= CONTRAST_SHORT:
+                out.append(text[i:j])
+                i = j + 1
+                n += 1
+    out.append(text[i:])
+    return "".join(out), n
+
+
+#   부르는 말·감탄이 말머리에 오는 꼴 — 이것들로 시작하면 쉼표 덩이가 나열이 아니다
+CALLS = ("이봐", "자", "그럼", "저기", "어", "아", "앗", "음", "오", "여어", "그래", "네", "에", "저", "아아", "오오", "어머")
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--pages", action="store_true", help="쪽 끝 쉼표도 뺀다(규칙 2-13)")
+    ap.add_argument("--contrast", action="store_true", help="`~는데,` `~지만,` 앞 절 11음절 이하면 뺀다(2-13 ⑨)")
     ap.add_argument("--apply", action="store_true", help="정본을 고친다")
     ap.add_argument("--check", action="store_true", help="남아 있으면 1 로 죽는다 (게이트)")
     a = ap.parse_args()
@@ -70,6 +130,12 @@ def main():
             if k.startswith("_") or not isinstance(v, str):
                 continue
             new, cnt = strip_line_commas(v)
+            if a.pages:
+                new, c2 = strip_page_commas(new)
+                cnt += c2
+            if a.contrast:
+                new, c3 = strip_contrast_commas(new)
+                cnt += c3
             if cnt:
                 doc[k] = new
                 n += cnt

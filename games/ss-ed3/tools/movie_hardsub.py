@@ -55,6 +55,14 @@ BOTTOM = 10  # 마지막 줄 밑 여백
 DY = fonts.GALMURI11_DY  # 게임 폰트와 같은 베이스라인 보정
 CELL = 12  # 한 글자를 찍는 칸 (한글 자리 폭)
 ADV_LATIN = 8
+#   🔴 숫자는 한 칸 더 준다 — 갈무리 숫자는 잉크 7px·전진 8px 라 「22」 가 1px 틈뿐이다(검은 테두리에 싸여 빡빡).
+#   공통 규칙 1-5 「반각 숫자는 글자 사이에 눈에 보이는 틈」(마스터 10-13). 숫자 든 자막만 열쇠가 바뀐다.
+DIGIT_EXTRA = 1
+#   가운데 맞춤은 줄 끝 문장부호(`. , ? ! …`)를 폭에서 뺀다 — 공통 규칙 2-8(마스터 10-13 「끝에 ...도 폭에서 빼는게 자연스러울 것 같아」).
+#   🔴 **이 계산판으로 굽는 편만** 열쇠가 바뀐다(오프닝·엔딩 라운드: M00·M16·M18). 나머지 편은 옛 가운데 계산 그대로 캐시에 남는다 —
+#   열쇠를 전부 바꾸면 이미 구운 편이 「안 구움」으로 빠져 빌드에서 자막이 사라진다.
+CENTER_V2 = {"M00", "M16", "M18"}
+TAIL_PUNCT = ".,?!…"
 #   갈무리11 의 「…」는 일본식(글자 가운데 높이)이다 — 한국식은 마침표 높이(바닥)다.
 #   글리프를 마침표 행까지 내려 찍는다(마스터 폰 확인 09-26). 문안은 그대로 둔다.
 ELLIPSIS_DROP = 5
@@ -62,10 +70,12 @@ ELLIPSIS_DROP = 5
 
 def _adv(ch):
     """그 글자가 먹는 가로 자리 — 갈무리11 실측(라틴 8 · 한글 12)."""
+    if ch.isdigit() and ord(ch) < 0x80:
+        return ADV_LATIN + DIGIT_EXTRA
     return ADV_LATIN if ord(ch) < 0x1100 else CELL
 
 
-def _draw(text):
+def _draw(text, trim=False):
     """자막 한 장 → `(H, W)` 0/1 배열. 여러 줄은 `\\n` 으로 가른다."""
     import numpy as np
 
@@ -74,7 +84,7 @@ def _draw(text):
     out = np.zeros((H, W), dtype=np.uint8)
     top0 = H - BOTTOM - LINE_H * len(rows)
     for r, line in enumerate(rows):
-        wpx = sum(_adv(c) for c in line)
+        wpx = sum(_adv(c) for c in (line.rstrip(TAIL_PUNCT) if trim else line))
         x = (W - wpx) // 2
         y = top0 + r * LINE_H
         for c in line:
@@ -89,12 +99,12 @@ def _draw(text):
     return out
 
 
-def png(text, path):
+def png(text, path, trim=False):
     """자막 한 장을 RGBA PNG 로 — 흰 글자 + 검은 1px 테두리(영상 위에서 읽히게)."""
     import numpy as np
     from PIL import Image
 
-    m = _draw(text)
+    m = _draw(text, trim)
     edge = np.zeros_like(m)
     for dy in (-1, 0, 1):
         for dx in (-1, 0, 1):
@@ -131,6 +141,10 @@ def enc_key(name, size):
     h = hashlib.sha1()
     h.update(json.dumps(lines(name), ensure_ascii=False).encode())
     h.update(f"|{size}|{W}x{H}|{LINE_H}|{BOTTOM}|{DY}|{CELL}|{ADV_LATIN}|".encode())
+    if any(c.isdigit() and ord(c) < 0x80 for x in lines(name) for c in x[-1]):
+        h.update(f"dig{DIGIT_EXTRA}|".encode())
+    if name in CENTER_V2:
+        h.update(b"ctr2|")
     if any("…" in x[-1] for x in lines(name)):
         h.update(f"ell{ELLIPSIS_DROP}|".encode())
     h.update(ffmpeg_ver().encode())
@@ -374,7 +388,7 @@ def burn(name, disc, quiet=False):
     ins, chain, cur = [], [], "0:v"
     for i, (a, b, t) in enumerate(subs):
         p = os.path.join(d0, f"s{i:03d}.png")
-        png(t, p)
+        png(t, p, name in CENTER_V2)
         ins += ["-i", p]
         nxt = f"v{i}"
         chain.append(f"[{cur}][{i + 1}:v]overlay=0:0:enable='between(t,{a},{b})'[{nxt}]")
@@ -473,7 +487,7 @@ def main():
         for n in todo:
             for i, (_, _, t) in enumerate(lines(n)[:3]):
                 p = os.path.join(C.REVIEW_DIR, f"{n}_sub{i}.png")
-                png(t, p)
+                png(t, p, n in CENTER_V2)
                 print(f"  {p}")
         return 0
 
