@@ -55,8 +55,9 @@ def main() -> None:
         t = S.korean(b"".join(x.raw for x in st.tokens if x.kind == "text"), rev)
         return sum(1 for ch in t if "가" <= ch <= "힣") >= 2 or "…" in t
 
-    def prime(m):
+    def prime(m, st):
         c.load_state(armed)
+        S.set_speed(c, S.speed_for(st))
         c.poke(S.MOD_AT, m)
         for n in range(4):
             c.poke(PARTY + n * STEP + AT, name)
@@ -77,7 +78,7 @@ def main() -> None:
             if real(st) and any(t.kind == "ctl" and t.code in VARS for t in st.tokens)
         ]
         for o, st in todo:
-            prime(m)
+            prime(m, st)
             txt = S.korean(b"".join(t.raw for t in st.tokens if t.kind == "text"), rev)
             d = out / key
             d.mkdir(exist_ok=True)

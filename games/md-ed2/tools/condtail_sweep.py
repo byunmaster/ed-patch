@@ -100,6 +100,7 @@ def shoot(side, sel):
         m = om if side == "o" else nm
         for s, t, _sn, tail in rows:
             c.load_state(st)
+            S.set_speed(c, 1)  # 보통(원판 대조는 같은 속도로)
             c.poke(S.MOD_AT, m)
             off = t if side == "o" else tail
             n, status = S.say(c, S.MOD_AT + off, d, f"{s:04x}_{side}_{off:04x}")

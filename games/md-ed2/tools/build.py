@@ -28,6 +28,7 @@ import battle
 import captions
 import chapters
 import common
+import ctl_toggle_scan
 import debug_build
 import dict_names
 import field_hud
@@ -56,7 +57,7 @@ TAIL_HI = common.FREE_TAIL[1]
 # 꼬리 **끝**에 훅 코드를 예약한다(ED1 build.py 와 같은 배치) — 아카이브는 그 앞까지만 쓴다. ED2 는 꼬리 빈 공간이 2KB 뿐이지만
 # 아카이브를 다시 눌러 16KB 를 비우므로 훅이 들어간다.
 JOSA_RESERVE = 0x400  # 조사 훅 기계어+표(글리프 표가 한글 코드 수에 비례 — 대사 번역으로 코드 900자 넘김) — 으로/로·과/와 포함
-WRAP_RESERVE = 0x180  # 어절 줄넘김 본체 326B + 반각 「의␣」 28B
+WRAP_RESERVE = 0x260  # 어절 줄넘김 본체 540B(이름 속 틈 검사 포함) + 반각 「의␣」·「′」 되감기 50B
 FIELD_HUD_RESERVE = 0x20  # 필드 HUD 트램펄린(이식 전 — 자리만 잡아 둔다)
 CAPTION_RESERVE = 0xA00  # 오프닝·엔딩 자막 표+문안(captions.RELOCATE)이 앉는 꼬리 칸
 SYSMSG_TAIL = sysmsg.TAIL_SIZE  # 시스템 메시지 중 꼬리로 옮기는 스트림(RELOCATE)의 칸
@@ -127,6 +128,8 @@ class Rom:
         "font5-header": hangul.FONT5_HDR,
         "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 12),
         "josa-name-hook": (josa.NAME_FN_PATCH, josa.NAME_FN_PATCH + 6),
+        "josa-mon-hook": (josa.MON_HEAD_PATCH, josa.MON_HEAD_PATCH + 6),
+        "josa-head2-hook": (josa.HEAD2_PATCH, josa.HEAD2_PATCH + 10),
         "wrap-code": (TAIL_HI - JOSA_RESERVE - WRAP_RESERVE, TAIL_HI - JOSA_RESERVE),
         "wrap-tramp": (wordwrap.TRAMP, wordwrap.TRAMP + 6),
         "half-code": (
@@ -137,6 +140,7 @@ class Rom:
         "half-site": (halfspace.SITE, halfspace.SITE + 4),
         "punct-code": (TAIL_HI - punctwrap.CODE_LEN, TAIL_HI),
         "punct-site": (punctwrap.SITE, punctwrap.SITE + 6),
+        **{f"hang:{at:x}": (at, at + len(new) // 2) for at, _o, new, _w in punctwrap.HANG_PATCHES},
         **{f"wrap-site:{x:x}": (x, x + 4) for x in wordwrap.SITES},
         **{
             f"josa-tbl:{i:02x}": (josa.HANDLER_TBL + i * 2, josa.HANDLER_TBL + i * 2 + 2)
@@ -236,6 +240,20 @@ def build_stream(
     조판기는 줄을 strip 하고 다시 감기 때문에 「30바이트 고정」 같은 계약을 조용히 깬다.
     """
     refs = [t for t in st.tokens if t.ref]
+    # 상점 표 머리(`<포인터 워드들+4E71>` 원판 바이트 그대로) — 파서가 워드의 앞 바이트(`10`·`0F`·`F2`…)를 호출·분기로 읽은 참조는 **자료**다. 머리 구간의 참조는
+    # 정본에 안 적어도 되고(원본 토큰으로 되살리면 재조립이 변위를 다시 재 워드가 망가진다 — 064-1·069-3), 머리는 바이트 그대로 나간다.
+    hm = re.match(r"<((?:[0-9a-f]{2}){3,})>", ours)
+    head_toks: list[scene.Token] = []
+    if hm and bytes.fromhex(hm.group(1)).endswith(b"\x4e\x71"):
+        head_end = st.start + len(hm.group(1)) // 2
+        refs = [t for t in refs if t.off >= head_end]
+        # 머리 토큰은 원본 파서가 가른 그대로, 단 참조 표시는 뗀다(재조립이 변위를 다시 재지 못하게) — 구운 바이트를 다시 파싱한 토큰열과 맞는다
+        for t in st.tokens:
+            if t.off >= head_end:
+                break
+            raw = t.raw[: head_end - t.off]
+            head_toks.append(scene.Token(t.off, raw, t.kind, t.code))
+        ours = ours[hm.end() :]
     end = next((t for t in st.tokens if t.kind == "end"), None)
     cont = ours.endswith(
         "<~>"
@@ -244,7 +262,7 @@ def build_stream(
         ours = ours[:-3]
         end = None
         refs = []
-    out: list[scene.Token] = []
+    out: list[scene.Token] = list(head_toks)
     pending_text: list[str] = []
 
     def flush_text(trail: bool = True):
@@ -263,7 +281,9 @@ def build_stream(
                         out.append(scene.Token(0, cs.encode(ln), "text"))
             return
         body = "".join(pending_text)
-        if body and not body.strip():  # 변수 사이 공백 하나(`<eb00> <0e>`) — 조판기가 빈 덩이로 지운다(10-19)
+        if (
+            body and not body.strip()
+        ):  # 변수 사이 공백 하나(`<eb00> <0e>`) — 조판기가 빈 덩이로 지운다(10-19)
             pending_text.clear()
             out.append(scene.Token(0, cs.encode(body.replace("\n", " ")), "text"))
             return
@@ -435,6 +455,8 @@ def verify_jump_readback(buf: bytes, orig: bytes, smap: dict, encode) -> None:
             at = ins + 2 + struct.unpack(">h", buf[ins + 2 : ins + 4])[0]
         elif kind == "abs":
             at = struct.unpack(">I", buf[ins + 2 : ins + 6])[0]
+        elif kind.startswith("tbl:"):  # 워드 표 — 표 시작 + 워드 = 스트림 시작(`kind` 의 16진이 표 시작)
+            at = int(kind[4:], 16) + struct.unpack(">H", buf[ins : ins + 2])[0]
         else:
             raise SystemExit(f"되읽기: {t:#x} 의 참조 종류 {kind} 를 못 따라간다")
         got = bytearray()
@@ -605,6 +627,205 @@ def verify_archive_refs(d: bytes) -> None:
         raise SystemExit(f"아카이브를 가리키는 코드가 알려진 것과 다르다: {sorted(map(hex, got))}")
 
 
+# 씬 모듈의 「무기 번호로 では/ので 4B 를 글 한복판에 덮는」 루틴(보스 82 와 같은 문장) — 한글은 4B 덮기가 안 되니(받침·무기 이름이 가변) 정본 두 문안으로 가르고
+# 루틴을 「무기 번호로 둘 중 하나의 주소를 골라 문구를 찍는 `lea` 의 변위 워드에 쓴다」로 바꾼다(자기 수정 — 원본도 같은 방식으로 문안을 고쳤다).
+# 정본(ed2.json 607·608): 무기 「하지만 {이름}은(는) 통하지\n않는다!!」 · 맨손 「하지만 맨손으로는 피해를 줄 수 없다!!」.
+WEAPON_BRANCH = {
+    (23, 1): {
+        "routine": 0x11C8,  # 원본 루틴 48B(`48E7 0060` … `4E75`)
+        "print_lea": 0x11B2,  # `lea $138A(pc),a1` — 문구를 찍는 곳
+        "eq": 0x138A,  # 장비 문안(=이 스트림의 번역)
+        "bare": "하지만 맨손으로는 피해를 줄 수 없다!!<0a>",
+    }
+}
+WEAPON_ROUTINE_HEAD = bytes.fromhex("48e7006040e745fa")  # 원본 루틴 머리(검산)
+
+
+def apply_weapon_branch(blk, k, new, mod, cs):
+    cfg = WEAPON_BRANCH.get((blk, k))
+    if cfg is None:
+        return new
+    rt, pl = cfg["routine"], cfg["print_lea"]
+    out = bytearray(new)
+    if bytes(out[rt : rt + 8]) != WEAPON_ROUTINE_HEAD or bytes(out[pl : pl + 2]) != b"\x43\xfa":
+        raise SystemExit(f"{blk}-{k}: 무기 분기 루틴/출력 lea 가 원본과 다르다")
+    st = mod.streams[cfg["eq"]]
+    eq = scene.pair_streams(mod, new)[1][cfg["eq"]]
+    body = b"".join(t.raw for t in build_stream(st, cfg["bare"], cs))
+    # 맨손 문구는 **죽은 글 칸**(옮겨진·줄어든 스트림의 옛 자리 — 원판 스트림 칸 안이고 지금 0)에 앉힌다 — 모듈 끝에 덧붙이면 디코드 블록이 원본 최대를 넘는다
+    covered = bytearray(len(out))
+    for s_, st_ in mod.streams.items():
+        covered[s_ : st_.end] = b"\x01" * (st_.end - s_)
+    # 지금 **쓰이는** 스트림(끝 표지 `00` 까지)은 빈 칸이 아니다 — 스트림 끝의 0 바이트를 죽은 칸으로 오인해 맨손 문구가 씬 끝 `00` 을 덮었다(씬023-1:1614, 10-20)
+    live, _pair = scene.pair_streams(mod, new)
+    for s_, st_ in live.streams.items():
+        covered[s_ : st_.end] = b"\x00" * (st_.end - s_)
+    need = len(body) + 2  # 뒤에 0 한 칸(끝 표지 뒤 여백)
+    bare = -1
+    for a in range(len(out) - need):
+        if a & 1 == 0 and all(covered[x] and out[x] == 0 for x in range(a, a + need)):
+            bare = a
+            break
+    if bare < 0:
+        if len(out) & 1:
+            out.append(0)
+        bare = len(out)
+        out += body
+        if len(out) & 1:
+            out.append(0)
+    else:
+        out[bare : bare + len(body)] = body
+
+    def disp(at: int, target: int) -> bytes:  # lea d16(pc),aN — 확장 워드는 at+2
+        return struct.pack(">h", target - (at + 2))
+
+    code = bytearray()
+    code += bytes.fromhex("48e78060")  # movem.l d0/a1-a2,-(a7)
+    code += bytes.fromhex("43fa") + disp(rt + 4, eq)  # lea eq(pc),a1
+    code += bytes.fromhex("4a00")  # tst.b d0   (무기 번호)
+    code += bytes.fromhex("6604")  # bne.s +4   (장비 있음 → eq)
+    code += bytes.fromhex("43fa") + disp(rt + 12, bare)  # lea bare(pc),a1
+    code += bytes.fromhex("45fa") + disp(rt + 16, pl + 2)  # lea <출력 lea 의 변위 워드>(pc),a2
+    code += bytes.fromhex("2009")  # move.l a1,d0
+    code += bytes.fromhex("908a")  # sub.l a2,d0
+    code += bytes.fromhex("3480")  # move.w d0,(a2)   — 출력 lea 의 변위로
+    code += bytes.fromhex("4cdf0601")  # movem.l (a7)+,d0/a1-a2
+    code += bytes.fromhex("4e75")  # rts
+    code += b"\x4e\x71" * ((48 - len(code)) // 2)  # nop 로 원본 칸(48B)을 채운다
+    assert len(code) == 48, len(code)
+    out[rt : rt + 48] = code
+    out[pl + 2 : pl + 4] = disp(pl, eq)  # 기본값 = 장비 문구
+    return bytes(out)
+
+
+def head_table_streams(m: dict) -> frozenset[int]:
+    """정본 항목 가운데 상점 표 머리(`<포인터 워드들+4E71>` 로 시작)인 스트림 시작들."""
+    out = set()
+    for key, ent in m["streams"].items():
+        mm = re.match(r"<((?:[0-9a-f]{2}){3,})>", ent.get("ours") or "")
+        if mm and mm.group(1).endswith("4e71"):
+            out.add(int(key, 16))
+    return frozenset(out)
+
+
+def fix_head_words(new: bytes, mod, rep) -> tuple[bytes, int]:
+    """상점 표 머리의 포인터 워드를 새 자리로 다시 쓴다 → (바이트, 고친 워드 수).
+
+    워드 0 은 원판에서 `표 시작 + 머리 길이` — 표 바로 뒤 첫 문안(= 안쪽 스트림 I 와 같은 글)이다. 번역으로 I 가 옮겨져도 표의 **자기 복사본**(머리 + 같은 글)이 있으니 그리로 돌린다.
+    다른 워드는 가리키던 문안(가장 안쪽 스트림)의 새 자리 + 안쪽 오프셋으로 돌린다(제자리면 그대로)."""
+    _k, pair = scene.pair_streams(mod, new)
+    om = mod.data
+    out = bytearray(new)
+    n = 0
+    for o, st in mod.streams.items():
+        if o not in rep or o not in pair:
+            continue
+        j = next(
+            (x for x in range(o + 2, min(o + 12, st.end), 2) if om[x : x + 2] == b"\x4e\x71"), None
+        )
+        if j is None or j - o < 4:
+            continue
+        hl = j + 2 - o
+        nw = pair[o]
+        for i in range(0, hl - 2, 2):
+            w = struct.unpack(">H", om[o + i : o + i + 2])[0]
+            if w == o + hl:
+                tgt = nw + hl
+            else:
+                owner = max(
+                    (x for x, sx in mod.streams.items() if x <= w < sx.end and x != o), default=None
+                )
+                if owner is None or owner not in pair:
+                    continue
+                tgt = pair[owner] + (w - owner)
+            if struct.unpack(">H", out[nw + i : nw + i + 2])[0] != tgt:
+                out[nw + i : nw + i + 2] = struct.pack(">H", tgt)
+                n += 1
+    return bytes(out), n
+
+
+def verify_head_tables(new: bytes, mod, rep) -> int:
+    """🔴 상점 표 머리(원판 `[포인터 워드 ×N] 4E71 …`)가 구운 모듈에서 맞는지 본다 → 검사한 표 수.
+
+    표의 워드는 **같은 모듈 안 문안의 자리**다. 번역으로 문안이 옮겨지거나 머리가 글자로 오인돼 바이트가 바뀌면(2026-10-20: 064-1·069-3 은 `10 xx` 가 호출로 읽혀 변위가 다시 재졌고,
+    073-1 은 머리 뒤에 「お」 가 남고, 074-2 는 워드 하나·`4E71` 이 빠졌다) 메뉴가 엉뚱한 곳을 읽는다. ① 머리 끝의 `4E71`(머리 워드 자리)이 그대로 ② 워드 0 = 표 자기 복사본 ③ 나머지 워드는
+    제자리 그대로(바이트 같음)이거나 가리키던 문안의 새 자리."""
+    _k, pair = scene.pair_streams(mod, new)
+    om = mod.data
+    n = 0
+    for o, st in mod.streams.items():
+        if o not in rep or o not in pair:
+            continue
+        j = next(
+            (x for x in range(o + 2, min(o + 12, st.end), 2) if om[x : x + 2] == b"\x4e\x71"), None
+        )
+        if j is None or j - o < 4:
+            continue
+        hl = j + 2 - o
+        nw = pair[o]
+        if bytes(new[nw + hl - 2 : nw + hl]) != b"\x4e\x71":
+            raise ValueError(
+                f"상점 표 머리 @{o:#x} 의 머리 워드 자리(4E71)가 원판과 다르다({bytes(new[nw + hl - 2 : nw + hl]).hex()})"
+            )
+        for i in range(0, hl - 2, 2):
+            w = struct.unpack(">H", om[o + i : o + i + 2])[0]
+            nv = struct.unpack(">H", new[nw + i : nw + i + 2])[0]
+            if w == o + hl:
+                if nv != nw + hl:
+                    raise ValueError(
+                        f"상점 표 머리 @{o:#x} 워드 0 이 표 자기 복사본({nw + hl:#x})이 아니다({nv:#x})"
+                    )
+                continue
+            if nv == w and bytes(new[w : w + 4]) == bytes(om[w : w + 4]):
+                continue  # 제자리 그대로
+            owner = max(
+                (x for x, sx in mod.streams.items() if x <= w < sx.end and x != o), default=None
+            )
+            # 워드가 스트림 **한 바이트 앞**(아이템 코드 `0E` 가 파서에선 스트림 밖 — 「{item}…」 문구)을 가리킨다 — 그 바이트가 제자리고 뒤 스트림이 제자리(또는 제자리 goto 스텁)면 된다
+            if (
+                owner is None
+                and (w + 1) in mod.streams
+                and (w + 1) in pair
+                and nv == w
+                and new[w] == om[w]
+                and (pair[w + 1] == w + 1 or new[w + 1] == 0x0F)
+            ):
+                continue
+            if owner is None or owner not in pair or pair[owner] + (w - owner) != nv:
+                raise ValueError(
+                    f"상점 표 머리 @{o:#x} 의 워드 {w:#x}→{nv:#x} 가 가리키는 문안과 어긋난다"
+                )
+        n += 1
+    return n
+
+
+def repoint_shared_heads(new: bytes, mod, rep_keys) -> tuple[bytes, int]:
+    """🔴 머리 워드를 런타임에 쓰는 `lea`(원판 `4E71` 자리 — 상점 표 「…더는 못 가지실 것 같군요」 류)를 **바깥 복사본**으로 돌린다.
+
+    원판은 안쪽 스트림 I(`4E71` 로 시작)가 바깥 스트림 O(앞 포인터 워드 표 + I) 의 **꼬리**라 한 번 쓰면 둘 다 고쳐졌다. 번역으로 O 가 옮겨지면 복사본이 둘이라
+    코드는 I 의 복사본만 고치고, 표를 읽는 서비스는 O 의 복사본(머리 워드 자리 `4E71` 그대로 = NOP 워드)을 읽는다(2026-10-20 unicorn 으로 확인).
+    I 의 `lea` 변위를 O 새 자리 + (I−O) 로 바꾼다 — 두 복사본의 그 자리 바이트가 같을 때만."""
+    _kmod, pair = scene.pair_streams(mod, new)
+    out = bytearray(new)
+    n = 0
+    for ins, s in mod.roots.items():
+        if s not in rep_keys:
+            continue
+        outer = next((o for o, st in mod.streams.items() if o < s < st.end), None)
+        if outer is None or outer not in pair or s not in pair:
+            continue
+        cand = pair[outer] + (s - outer)
+        cur = pair[s]
+        ln = min(mod.streams[s].end - s, 8)
+        if cand == cur or bytes(out[cand : cand + ln]) != bytes(out[cur : cur + ln]):
+            continue
+        if bytes(out[cand : cand + 2]) != b"\x4e\x71":
+            continue
+        out[ins + 2 : ins + 4] = struct.pack(">h", cand - (ins + 2))
+        n += 1
+    return bytes(out), n
+
+
 def main(check_only: bool = False) -> None:
     debug_build.check_tag()  # 꼬리표와 디버그 스위치가 어긋나면 일을 시작하기 전에 거부한다
     orig = common.rom()
@@ -635,6 +856,10 @@ def main(check_only: bool = False) -> None:
     )
     replace: dict[tuple[int, int], bytes] = {}
     reasm_errors: list[str] = []
+    n_evt = 0
+    n_repoint = 0
+    n_heads = 0
+    n_headwords = 0
     for (blk, k), m in sorted(maps.items()):
         mb = banners.patch(
             (blk, k), textmap.module_bytes(orig, blk, k), lambda s: encode_tagged(s, cs)
@@ -661,13 +886,35 @@ def main(check_only: bool = False) -> None:
             continue
         try:
             new = scene.reassemble(mod, rep)
-            scene.verify_reassembly(mod, new, rep)
+            scene.verify_reassembly(mod, new, rep, head_table_streams(m))
+            scene.verify_cond_tails(
+                mod, new, rep
+            )  # 조건 분기 뒤 물리적 꼬리가 원판과 같은지(10-19 md-ed1 발견)
+            n_evt += scene.verify_event_tables(
+                mod.data, new, rep
+            )  # 이벤트 표가 바이트까지 같은지(10-20 md-ed1 발견)
+            new = ctl_toggle_scan.neutralize(
+                blk, k, new
+            )  # 코드가 글 한복판 4B 를 덮는 자리를 자료 위로(10-20)
+            new, n_rp = repoint_shared_heads(new, mod, set(rep))
+            n_repoint += n_rp
+            new, n_hw = fix_head_words(new, mod, rep)
+            n_headwords += n_hw
+            n_heads += verify_head_tables(new, mod, rep)
+            new = apply_weapon_branch(
+                blk, k, new, mod, cs
+            )  # 023-1 「…무기 では/ので」 — 정본 두 문안 + 무기 번호 분기
         except (ValueError, KeyError) as e:
             reasm_errors.append(f"블록 {blk}-{k}: {type(e).__name__} {e}")
             continue
         replace[(blk, k)] = new
     if reasm_errors:
         raise SystemExit("\n".join(reasm_errors))
+    print(f"  이벤트 표 {n_evt}개(재조립 모듈 안) — 원판과 바이트까지 같다")
+    print(f"  머리 워드 쓰기 lea {n_repoint}곳을 바깥 복사본으로 돌렸다")
+    print(
+        f"  상점 표 머리 {n_heads}개 — 머리 워드 자리(4E71)·포인터 워드 {n_headwords}개를 새 자리로 고쳐 의도와 같다"
+    )
     for key in banners.BY_MODULE:  # 번역 정본이 없는 모듈의 배너 표
         if key not in maps and key not in replace:
             replace[key] = banners.patch(

@@ -25,9 +25,20 @@ LATE = 0  # 자연 문구가 이만큼 나온 뒤에 강제(--late N)
 
 
 def find_base(c, blk: bytes) -> int | None:
+    """블록이 RAM 에 놓인 기준 주소. 앞 24바이트(0x40~)가 0 이 많아 여러 곳에 맞을 수 있다(블록 62 는 두 곳 — 첫 후보가 틀려 문구가 깨져 찍혔다) — 후보마다 블록 전체와 같은 바이트 수를 세어 가장 닮은 곳을 고른다."""
     ram = c.ram(0xFF0000, 0x10000)
-    i = ram.find(blk[0x40:0x58])
-    return None if i < 0 else 0xFF0000 + i - 0x40
+    pat = blk[0x40:0x58]
+    best, best_at = -1, None
+    i = ram.find(pat)
+    while i >= 0:
+        at = i - 0x40
+        if at >= 0:
+            seg = ram[at : at + len(blk)]
+            score = sum(1 for a, b in zip(seg, blk) if a == b)
+            if score > best:
+                best, best_at = score, at
+        i = ram.find(pat, i + 1)
+    return None if best_at is None else 0xFF0000 + best_at
 
 
 def main() -> None:
@@ -75,6 +86,7 @@ def main() -> None:
         if f"{b}\t{off:#x}" in done:
             continue
         c.load_state(armed)
+        S.set_speed(c)  # 기본 멈춤 — 글이 한 번에 떠야 쓰는 중 프레임(깨진 첫 글자)이 안 찍힌다
         c.poke(BS.FORCE, b"\x00\x00")  # 자연 난수
         c.poke(0x1AFF, bytes([idl[b] >> 8]))
         c.poke(0x3606, bytes([idl[b] & 255]))

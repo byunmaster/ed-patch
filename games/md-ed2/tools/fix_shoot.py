@@ -48,6 +48,7 @@ def shoot(side: str, items: list[tuple[str, int]], out: Path) -> None:
         d = out / key
         d.mkdir(exist_ok=True)
         c.load_state(st)
+        S.set_speed(c, 1)  # 보통(원판 대조는 같은 속도로)
         c.poke(S.MOD_AT, m)
         n, status = S.say(c, S.MOD_AT + at, d, f"{off:04x}_{side}")
         with tsv.open("a", encoding="utf-8") as f:

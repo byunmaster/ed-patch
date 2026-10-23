@@ -63,6 +63,7 @@ SITES = (0xB816, 0xB87E)  # bsr.w $A0A0 — 넓은 글자 · 좁은 글자 넘�
 NEWLINE, SCROLL, REFRESH, BG_TEST = 0xC058, 0xCA2C, 0xC6F8, 0x103A0
 TRAMP = josa.DEAD_HANDLER + 12
 PITCH, CURSOR, PTR, LINE_H, BG = 0xFF2014, 0xFF2018, 0xFF2004, 0xFF2015, 0xFF2012
+NAME_COL = 0xFF1A5F  # 이름 그리기 시작 칸(바이트) — 이름 트램펄린 셋이 적는다(josa.py)
 SPACE_PX = 4  # 공백으로 치는 빈 세로줄 수(px) — 위 docstring 의 실측
 
 
@@ -158,17 +159,106 @@ def code(at: int) -> bytes:
     a.dbra(1, "col")
     a.w(0x5242)  # addq.w #1,d2
     a.w(0x0C42, SPACE_PX)  # cmpi.w #4,d2
-    a.br(0x64, "found")
+    a.br(0x64, "fchk")
     a.w(0x5343)  # subq.w #1,d3
     a.br(0x60, "loop")
     a.label("ink")
     a.w(0x7400)  # moveq #0,d2
     a.w(0x5343)  # subq.w #1,d3
     a.br(0x60, "loop")
+    # ── 빈 틈 왼쪽 6px(글자 칸 반)의 9행 아래에 잉크가 하나도 없으면 공백이 아니라 떠 있는 부호다 ──
+    # 이름 꼬리 「′」(0x818C: 글리프 0~5행인데 테두리까지 버퍼 0~8행 · 오른쪽 빈 칸 4px)가 공백으로 읽혀 바로 뒤 조사 「와」만
+    # 다음 줄로 넘어가던 것(b02 「슬러그B′ / 와」). 한글·영문·숫자·마침표는 칸 오른쪽 반의 9행 아래에 잉크가 닿는다
+    # (b02 줄 비트맵 실측: 틈 7곳 중 「′」 하나만 아래가 빈다).
+    a.label("fchk")
+    a.w(0x4A43)  # tst.w d3
+    a.br(0x67, "found")  # 틈이 줄 머리까지 — 왼쪽 세로줄 없음
+    a.w(0x2F06)  # move.l d6,-(a7)
+    a.w(0x3C03)  # move.w d3,d6
+    a.w(0x5346)  # subq.w #1,d6                  q = 틈 바로 왼쪽 세로줄
+    a.w(0x7405)  # moveq #5,d2                   6 줄
+    a.label("colc")
+    a.w(0x4A46)  # tst.w d6
+    a.br(0x6B, "floating")
+    a.w(0x3006)  # move.w d6,d0
+    a.w(0xE248)  # lsr.w #1,d0
+    a.w(0x41F6, 0x0000)  # lea 0(a6,d0.w),a0
+    a.w(0x7209)  # moveq #9,d1
+    a.w(0xC2C7)  # mulu.w d7,d1
+    a.w(0xD1C1)  # adda.l d1,a0                  9행째부터
+    a.w(0x3204)  # move.w d4,d1
+    a.w(0x0441, 0x000A)  # subi.w #10,d1          행 수 − 9 − 1
+    a.label("rowa")
+    a.w(0x1010)  # move.b (a0),d0
+    a.w(0x0806, 0x0000)  # btst #0,d6
+    a.br(0x66, "lowa")
+    a.w(0xE808)  # lsr.b #4,d0
+    a.label("lowa")
+    a.w(0x0200, 0x000F)  # andi.b #$0F,d0
+    a.w(0xB005)  # cmp.b d5,d0
+    a.br(0x66, "realink")  # 아래쪽에 잉크 — 글자 끝, 공백이 맞다
+    a.w(0xD1C7)  # adda.l d7,a0
+    a.dbra(1, "rowa")
+    a.w(0x5346)  # subq.w #1,d6
+    a.dbra(2, "colc")
+    a.label("floating")  # 6줄 모두 아래가 비었다 → 떠 있는 부호, 틈 찾기를 계속
+    a.w(0x2C1F)  # move.l (a7)+,d6
+    a.w(0x7400)  # moveq #0,d2
+    a.w(0x5343)  # subq.w #1,d3
+    a.br(0x60, "loop")
+    a.label("realink")
+    a.w(0x2C1F)  # move.l (a7)+,d6
     # ── 공백 뒤 어절: W = (px+4)/2, n = k − W ──
     a.label("found")
     a.w(0x5843)  # addq.w #4,d3
     a.w(0xE24B)  # lsr.w #1,d3                   W
+    # ── 틈이 몬스터·배우 **이름 속**(「붉은 슬러그B′」)이면 이름째 새 줄로 — 이름 첫 칸 S 로 W 를 당긴다 ──
+    # S = 이름 트램펄린이 적어 둔 그리기 시작 칸(NAME_COL) · 이름 = LASTNAME 레코드(+0x30)의 글자 폭 합 E. S < W < E 이고 S > 0 이면 W = S.
+    a.w(0x7000)  # moveq #0,d0
+    a.w(0x1039), a.l(NAME_COL)  # move.b NAME_COL.l,d0     S
+    a.br(0x67, "nn")  # S = 0 → 줄 머리거나 기록 없음
+    a.w(0xB043)  # cmp.w d3,d0
+    a.br(0x64, "nn")  # S ≥ W → 틈은 이름 앞
+    a.w(0xB046)  # cmp.w d6,d0
+    a.br(0x64, "nn")  # S ≥ k → 옛 줄의 기록
+    a.w(0x7200)  # moveq #0,d1
+    a.w(0x1239), a.l(josa.LASTNAME)  # move.b LASTNAME.l,d1
+    a.w(0xED49)  # lsl.w #6,d1
+    a.w(0x41F9), a.l(josa.PARTY_REC + 0x30)  # lea $FF1DEC.l,a0
+    a.w(0xD0C1)  # adda.w d1,a0                  이름 첫 바이트
+    a.w(0x7400)  # moveq #0,d2                   폭(바이트 = 2px)
+    a.label("nwalk")
+    a.w(0x7200)  # moveq #0,d1
+    a.w(0x1218)  # move.b (a0)+,d1
+    a.w(0x0C01, 0x0020)  # cmpi.b #$20,d1
+    a.br(0x65, "nend")  # 제어 코드 = 이름 끝
+    a.w(0x0C01, 0x0080)  # cmpi.b #$80,d1
+    a.br(0x65, "nnar")
+    a.w(0x0C01, 0x00A0)  # cmpi.b #$A0,d1
+    a.br(0x65, "nwid")
+    a.w(0x0C01, 0x00E0)  # cmpi.b #$E0,d1
+    a.br(0x65, "nnar")
+    a.label("nwid")  # 넓은 글자: 12px(6B), 「′」(0x818C)는 그린 뒤 4px 되감겨 8px(4B)
+    a.w(0x0C01, 0x0081)  # cmpi.b #$81,d1
+    a.br(0x66, "nw6")
+    a.w(0x0C10, 0x008C)  # cmpi.b #$8C,(a0)
+    a.br(0x66, "nw6")
+    a.w(0x5842)  # addq.w #4,d2
+    a.w(0x5288)  # addq.l #1,a0
+    a.br(0x60, "nwalk")
+    a.label("nw6")
+    a.w(0x5C42)  # addq.w #6,d2
+    a.w(0x5288)  # addq.l #1,a0
+    a.br(0x60, "nwalk")
+    a.label("nnar")  # 좁은 글자 6px(3B)
+    a.w(0x5642)  # addq.w #3,d2
+    a.br(0x60, "nwalk")
+    a.label("nend")
+    a.w(0xD440)  # add.w d0,d2                   E = S + 폭
+    a.w(0xB642)  # cmp.w d2,d3
+    a.br(0x64, "nn")  # W ≥ E → 틈은 이름 뒤
+    a.w(0x3600)  # move.w d0,d3                  W = S
+    a.label("nn")
     a.w(0x3406)  # move.w d6,d2
     a.w(0x9443)  # sub.w d3,d2                   n
     a.w(0x48E7, 0x3000)  # movem.l d2-d3,-(a7)

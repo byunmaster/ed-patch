@@ -26,6 +26,27 @@ import scene
 
 SAY, BUSY = 0xFF1A1C, 0xFF1A20
 MOD_AT = 0xFF6650
+MSG_SPEED_AT = 0xFF1B05  # 시스템 설정 「메시지속도」 — 0 빠름 · 1 보통 · 2 느림 · 3 멈춤(한 번에 표시). 설정 메뉴 전후 RAM 비교로 찾음(10-19)
+
+
+def set_speed(c, v: int | None = None) -> None:
+    """메시지 속도 — 인자 없으면 환경변수 `MSG_SPEED`(0 빠름·1 보통·2 느림·3 멈춤), 그것도 없으면 **멈춤**(3: 글이 한 번에 뜬다, 마스터 10-19).
+    멈춤 표본 검사(`speed_check.py`): 새 롬 79쪽 중 보통과 다른 15쪽·원판 41쪽 중 12쪽은 전부 ▼ 대기 커서 위상 차(글자 같음) — 결함 후보 0."""
+    if v is None:
+        import os
+
+        v = int(os.environ.get("MSG_SPEED", MSG_STOP))
+    c.poke(MSG_SPEED_AT, bytes([v]))
+
+
+MSG_STOP = 3
+
+
+def speed_for(st) -> int | None:
+    """스트림 하나의 속도 — `end 06`(번호 찍고 뒤 글로 이어짐)으로 끝나는 조각은 멈춤에서 키 대기 없이 곧바로 이어 닫혀 글이 한 프레임도 안 남는다
+    (표본 3/32, 원판도 같은 조각은 0쪽) → 그런 조각만 보통 속도로 찍는다."""
+    t = st.tokens[-1] if st.tokens else None
+    return 1 if t is not None and t.kind == "end" and t.code == 0x06 else None
 
 
 def built_modules(rom: bytes):
@@ -61,6 +82,15 @@ def korean(raw: bytes, rev: dict) -> str:
     return s
 
 
+def _ink(frame) -> int:
+    """대사 영역의 글자색(흰색·주황) 픽셀 수 — `blank_pages.ink` 와 같은 잣대."""
+    a = np.asarray(frame).astype(int)[146:206, 36:292]
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    white = (r > 215) & (g > 215) & (b > 215)
+    orange = (r > 215) & (g > 140) & (g < 215) & (b < 120)
+    return int(white.sum() + orange.sum())
+
+
 def say(c, addr: int, outdir: Path, tag: str, maxf: int = 1500) -> tuple[int, str]:
     """스트림 하나를 띄워 화면을 남긴다 → (캡처 수, 상태)."""
     c.poke(SAY, struct.pack(">I", addr))
@@ -76,11 +106,30 @@ def say(c, addr: int, outdir: Path, tag: str, maxf: int = 1500) -> tuple[int, st
     last = None
     shots = 0
     R = slice(120, 224)  # 대사창 영역(▼ 깜박임·스프라이트는 위쪽·작아서 쪽 구분에 쓰지 않는다)
+    base = c.frame[R].copy()
+    cand, cand_ink = (
+        None,
+        -1,
+    )  # 메시지 속도 「멈춤」: 글이 한 번에 뜨고 키 대기 없이 닫히는 스트림은 90프레임 주기에 못 잡힌다 — 글이 뜬 마지막 멈춘 화면을 남겨 둔다
     f = -1
     while f < maxf:
         f += 1
         c.run(1)
+        if (
+            shots == 0 and f < 400
+        ):  # 한 프레임씩 — 「멈춤」은 글이 뜨자마자 창이 닫힐 수 있다(글이 있던 마지막 화면을 남긴다)
+            now = c.frame[R]
+            if int((np.abs(now.astype(int) - base.astype(int)).sum(axis=2) > 0).sum()) > 200:
+                # 글자가 가장 많이 보이는 프레임을 남긴다 — 마지막 프레임은 창이 닫히는 중이라 줄이 반쯤 잘려 있었다(10-20 qa 못 읽음 7행)
+                ink = _ink(c.frame)
+                if cand is None or ink >= cand_ink:
+                    cand, cand_ink = c.frame.copy(), ink
         if not c.ram(BUSY, 1)[0]:
+            if shots == 0 and cand is not None:
+                from PIL import Image
+
+                Image.fromarray(cand).save(str(outdir / f"{tag}_01.png"))
+                return 1, "끝(키 대기 없이 닫힘)"
             return shots, "끝"
         if f % 90 == 89:  # 90프레임마다: 글이 다 찍혔을 시간 — 달라졌으면 캡처하고 확인 키로 넘긴다
             cur = c.frame[R].copy()
@@ -156,6 +205,7 @@ def main() -> None:
         if (sel and key not in sel) or key in done:
             continue
         mod = scene.parse_module(m)
+
         # 🔴 한글(또는 「…」)이 실제로 든 스트림만 — parse_module 이 코드 바이트(`40e7 46df` 따위)를 글로 읽은 가짜 스트림이 섞여 있다(캡처의 15% 가 빈 창·깨진 화면)
         def real(st):
             t = korean(b"".join(x.raw for x in st.tokens if x.kind == "text"), rev)
@@ -165,12 +215,14 @@ def main() -> None:
         if limit:
             todo = todo[:limit]
         c.load_state(armed)
+        set_speed(c, speed_for(mod.streams[todo[0][0]]) if todo else None)
         c.poke(MOD_AT, m)
         for n, (o, st) in enumerate(todo):
             if (
                 n
             ):  # 스트림마다 상태를 되돌린다 — 끝난 뒤 이벤트(암전·이동)가 다음 스트림에 번지지 않게
                 c.load_state(armed)
+                set_speed(c, speed_for(st))
                 c.poke(MOD_AT, m)
             txt = korean(b"".join(t.raw for t in st.tokens if t.kind == "text"), rev)
             d = out / key

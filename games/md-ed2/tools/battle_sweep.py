@@ -185,7 +185,7 @@ def run_block(
             p = outdir / f"b{n:02d}" / f"{k:02d}.png"
             c.shot(str(p))
             shots.append(p)
-            if k >= 40:
+            if k - start >= 40:  # 시도마다 40장 — k 는 시도를 넘어 이어지므로 첫 시도가 40장을 채우면 뒤 시도(다른 난수 상수)가 한 장 만에 끊겼다(보스 블록 62·64·95 미도달 원인)
                 break
         else:
             idle += 1

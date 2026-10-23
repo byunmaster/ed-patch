@@ -15,6 +15,7 @@ SJIS 가 ~2만 자 있고, 0x32000~0x3BFFF(≈40KB)는 **화자 태그(1E 이름
 import re
 import struct
 import sys
+from itertools import pairwise
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -54,6 +55,7 @@ RELOCATE: tuple[int, ...] = (
     0x29E02,  # ED1 0x24b44
     0x29E17,  # ED1 0x24b59
     0x33384,  # 「더는 못 들겠네…」 노인 상점 — 절대 참조라 꼬리로 옮겨 근처(0x30FF6 의 TAIL_JUMP 본문이 앉을) 칸을 만든다(58B)
+    0x8448,  # 「…의 효과가 있다.」 — 절대 참조뿐이라 꼬리로 옮겨 15B 를 비운다(능력치 올림 조각 goto 3B 를 고정하며 0x8471 TAIL_JUMP 가 쓰던 남는 칸이 사라졌다)
     0x27308,  # 「블랙나이트들이 나타났다.」(정본 무리 이름) — 칸(29B 묶음)보다 1B 길다, 절대 참조라 꼬리로(마스터 10-18)
 )
 # 제자리 묶음에 안 들어가는 스트림 — 제자리엔 goto(3B)만 두고 본문은 **근처(±30KB) 다른 묶음의 남는 칸**(꼬리 이전·고정으로 비워진 자리)에
@@ -70,9 +72,16 @@ TAIL_JUMP: dict[int, int | None] = {
     0x29D26: 0x29D2A,  # 「<02>에게<06>」 +2B — 뒤 「의 피해!!」(고정)로 흐른다
     0x29E22: 0x29E34,
     0x29E34: 0x29E4E,
+    # 능력치 조각 머리에 주격 조사(이/가, 정본 「의 공격력이 {n} 올랐다.」)를 더하니 칸(13·11·11·12B)을 1B 넘는다 — TAIL_FIT: 제자리엔 칸에 들어가는 만큼 + goto, 나머지(「이 」)만 근처 칸으로
+    0x834E: 0x835B,
+    0x8378: 0x8383,
+    0x8386: 0x8391,
+    0x83E8: None,  # 호출되는 조각(06 = 돌아옴) — 되돌아갈 goto 가 필요 없다
 }
 # 본문을 **줄바꿈(`01`) 앞뒤로 둘로 쪼개** 앞은 제자리 · 뒤는 근처 칸에 앉히고 goto 로 잇는다(마스터 10-12 「b 로 해보자」) — 화면에는 줄바꿈 자리라 안 보인다.
 TAIL_SPLIT: set[int] = {0x31026}
+# 본문을 **칸이 허락하는 만큼만 제자리에 두고**(글자 경계에서 자른다) 나머지만 근처 칸에 앉힌다 — 줄바꿈이 없어 TAIL_SPLIT 을 못 쓰는 짧은 조각용(능력치 머리 「의 공격력|이 」)
+TAIL_FIT: set[int] = {0x834E, 0x8378, 0x8386, 0x83E8, 0x8471}  # 0x8471 = 「】 회복되었다.」 앞 공백 +1B
 _FAKE = 1 << 24
 _REACH = 0x7800  # goto 가 16비트 상대(±32KB) — 여유를 두고 30KB
 TAIL_SIZE = 0x140  # 빌드가 꼬리에 비워 두는 칸(build.SYSMSG_TAIL)
@@ -115,7 +124,10 @@ def _textlike(st: scene.Stream) -> bool:
     skip = {
         i + 1
         for i, t in enumerate(st.tokens[:-1])
-        if t.kind == "ctl" and t.code == 0xF8 and st.tokens[i + 1].kind == "text" and len(st.tokens[i + 1].raw) == 2
+        if t.kind == "ctl"
+        and t.code == 0xF8
+        and st.tokens[i + 1].kind == "text"
+        and len(st.tokens[i + 1].raw) == 2
     }
     txt = b"".join(t.raw for i, t in enumerate(st.tokens) if t.kind == "text" and i not in skip)
     sj = 0
@@ -241,7 +253,8 @@ def streams(d: bytes) -> dict[int, dict]:
         for e in list(out.values()):
             tk = e["stream"].tokens
             flows = bool(tk) and (
-                (tk[-1].kind == "end" and tk[-1].code in (0x06, 0x0A, 0x0D)) or scene.is_cond_goto(tk)
+                (tk[-1].kind == "end" and tk[-1].code in (0x06, 0x0A, 0x0D))
+                or scene.is_cond_goto(tk)
             )  # 조건부 goto 도 거짓이면 바로 뒤 스트림으로 흘러간다(scene.is_cond_goto)
             if not flows:
                 continue
@@ -252,11 +265,15 @@ def streams(d: bytes) -> dict[int, dict]:
                 st = scene.parse_stream(d, n)
             except (ValueError, IndexError):
                 continue
-            if st.end - n > (MAX_STREAM if scene.is_cond_goto(tk) else 400) or not any(
-                t2.kind == "text" and len(t2.raw) >= 2 for t2 in st.tokens
+            # 🔴 꼬리가 **goto 하나뿐**인 것(「의 민첩성이 ⟨06⟩ 0F 00xx」 — 수치를 찍은 뒤 「올랐다」 꼬리로 가는 3B)도 흐름 꼬리다. 글이 없어 옛 규칙이 버려서
+            # 묶음 재조립이 그 3B 를 지워 「방어력 42」 뒤에 「올랐다」가 안 나왔다(대사 보기 qa, 10-19) — 3B 스트림으로 세고 제자리 고정한다.
+            lone_goto = len(st.tokens) == 1 and st.tokens[0].ref == scene.GOTO
+            if not lone_goto and (
+                st.end - n > (MAX_STREAM if scene.is_cond_goto(tk) else 400)
+                or not any(t2.kind == "text" and len(t2.raw) >= 2 for t2 in st.tokens)
             ):
                 continue
-            if not (_textlike(st) or _short_kana(st)):
+            if not (lone_goto or _textlike(st) or _short_kana(st)):
                 continue
             out[n] = {"stream": st, "refs": []}
             PINNED.add(n)
@@ -280,7 +297,10 @@ def leftover(d: bytes, strs: dict[int, dict]) -> list[tuple[int, int]]:
 
 
 # 첫 조사(2026-10-12) 실측 — 파서·정규식을 고치면 바뀐다. 번역 때 분모로 쓴다.
-EXPECT = (223, 698)  # 스트림 · 스트림 밖 SJIS 런 (0x82A0 은 VRAM 주소라 참조가 아니다 — 215 에서 하나 빠졌다)
+EXPECT = (
+    233,
+    698,
+)  # 스트림 · 스트림 밖 SJIS 런. 223 → 233: 흐름 꼬리 goto 3B 스트림을 세기 시작했다(10-19). 0x82A0 은 VRAM 주소라 참조가 아니다
 
 
 def clusters(strs: dict[int, dict]) -> list[list[int]]:
@@ -429,6 +449,34 @@ def _tokens_from_ours(st: scene.Stream, ours: str, encode) -> list[scene.Token]:
     return out
 
 
+def _split_fit(toks: list[scene.Token], cap: int) -> tuple[list[scene.Token], list[scene.Token]]:
+    """토큰열을 앞 `cap − 3`B(+ goto 3B 가 제자리 칸에 든다)까지와 나머지로 가른다. 글자 토큰은 글자 경계(한글 2B · 반각 1B)에서 자른다."""
+    budget, used = cap - 3, 0
+    head: list[scene.Token] = []
+    for i, tk in enumerate(toks):
+        if tk.kind == "end":
+            return head, toks[i:]
+        if tk.kind == "text":
+            raw, j = tk.raw, 0
+            while j < len(raw):
+                w = 1 if raw[j] < 0x80 else 2
+                if used + j + w > budget:
+                    break
+                j += w
+            if j == len(raw):
+                head.append(tk)
+                used += j
+                continue
+            if j:
+                head.append(scene.Token(tk.off, raw[:j], "text"))
+            return head, [scene.Token(0, raw[j:], "text"), *toks[i + 1 :]]
+        if used + len(tk.raw) > budget:
+            return head, toks[i:]
+        head.append(tk)
+        used += len(tk.raw)
+    return head, []
+
+
 def _len(toks: list[scene.Token]) -> int:
     return sum(len(t.raw) for t in toks)
 
@@ -521,6 +569,8 @@ def plan(
                 )
                 if i is not None:
                     head, rest = rest[:i], rest[i:]
+            elif t in TAIL_FIT:
+                head, rest = _split_fit(rest, hi - lo)
             total -= _len(rest) - 3
             body = list(rest)
             if TAIL_JUMP[t] is not None:
@@ -579,6 +629,7 @@ def plan(
         # 🔴 `06`·`0A`·`0D` 로 끝나는 스트림은 **물리적으로 다음 스트림으로 흐른다**(수치를 게임이 찍은 뒤 꼬리말이 이어진다 — 「최대 ＨＰ가 ⟨수⟩
         # 포인트 올랐다」). 묶음이 왼쪽부터 채워 끝에 0 이 남으면 06 과 다음 스트림 사이에 00 이 끼어 **문장이 거기서 끊긴다**(10-10
         # 마스터 「최대 HP가 18 에서 메시지가 끊겼다」). 다음 스트림이 묶음 끝에 맞닿아 있으면 흐르는 사슬을 오른쪽 끝에 붙인다.
+        free_from = cur  # 꼬리 본문(extras)을 앉힐 수 있는 빈 칸의 시작 — 흐르는 사슬을 오른쪽으로 밀면 그 앞 틈이 빈 칸이다
         if order and hi in strs and strs[order[-1]]["stream"].end == hi and _flows(order[-1]):
             chain = [order[-1]]
             j = len(order) - 2
@@ -587,8 +638,19 @@ def plan(
                 j -= 1
             shift = hi - (newpos[chain[-1]] + size[chain[-1]])
             if shift > 0 and all(t not in RELOCATE for t in chain):
+                old = dict(newpos)
+                free_from = min(old[t] for t in chain)
                 for t in chain:
                     newpos[t] += shift
+                # 🔴 꼬리를 공유해 **다른 스트림의 안쪽에 앉은** 스트림(`0x846F` ← `0x8466` 의 `1E 06`)도 같이 민다 — 안 밀면 흐름 게이트가
+                # 「뒤 스트림이 안 이어진다」로 잘못 막는다(0x8448 을 꼬리로 옮겨 묶음 앞이 비며 처음 드러났다, 10-19)
+                for t in cl:
+                    if t in order:
+                        continue
+                    for u in chain:
+                        if old[u] <= old[t] < old[u] + size[u]:
+                            newpos[t] += shift
+                            break
         if cur > hi:
             over.append(
                 f"{lo:#x}~{hi:#x}: {cur - lo}B > {hi - lo}B  ({', '.join(f'{t:06x}' for t in cl)})"
@@ -604,7 +666,7 @@ def plan(
                 size[t],
                 bool(toks[t]) and toks[t][-1].kind == "end" and toks[t][-1].code == 0x06,
             )
-        plans.append((lo, hi, cl, toks, order, newpos, cur, []))
+        plans.append((lo, hi, cl, toks, order, newpos, free_from, []))
         allpos.update(newpos)
     if over:
         raise SystemExit(
@@ -635,15 +697,47 @@ def plan(
         for pl in sorted(plans, key=lambda q: abs(q[0] - t)):
             lo, hi, cur, extras = pl[0], pl[1], pl[6], pl[7]
             used = sum(_len(b) for _, b in extras)
-            at = cur + used
-            if t in pl[2] or abs(at - t) > _REACH or at + need > hi:
+            last = pl[3][pl[4][-1]][-1] if pl[4] and pl[3][pl[4][-1]] else None
+            # 묶음 마지막 스트림이 06·0A·0D 로 끝나면 물리적으로 그 뒤로 흐른다 — 꼬리 본문을 바로 뒤에 앉히면 능력치 문구 뒤에 「이 N」이 붙어 나온다(00 하나를 사이에 둔다)
+            # 오른쪽으로 민 묶음은 머리 **앞**에 빈 칸이 생긴다 — 그 칸은 흐름이 안 들어오니 00 이 필요 없다. 마지막 스트림 **뒤**의 칸만 센다
+            tail_end = max((pl[5][u] + _len(pl[3][u]) for u in pl[4]), default=lo)
+            # 단, 이어지는 곳이 우리가 옮기는 스트림(RELOCATE·TAIL_JUMP 대상)이면 그 본문이 바로 뒤에 앉아야 흐름이 산다(0x29DEE 「그러나 <06>」→「혼란한 상태다」)
+            nxt = strs[pl[4][-1]]["stream"].end if pl[4] else None
+            hold = (
+                1
+                if cur >= tail_end
+                and last is not None
+                and last.kind == "end"
+                and last.code in (0x06, 0x0A, 0x0D)
+                and nxt not in RELOCATE
+                and nxt not in jumps
+                else 0
+            )
+            at = cur + hold + used
+            # 🔴 빈 칸의 끝은 `hi` 가 아니라 **cur 뒤에서 처음 시작하는 스트림**이다 — 흐르는 사슬을 묶음 오른쪽 끝에 붙이면(위 shift) 사슬이 cur~hi 안쪽에 앉아 있어,
+            # `hi` 까지를 빈 칸으로 보면 꼬리 본문이 사슬 위에 겹쳐 앉는다(0x8466 「ＭＰ가」 가 0x8471 꼬리의 「회복되었다」에 덮였다, 10-20)
+            limit = min([pl[5][u] for u in pl[2] if pl[5][u] >= cur] + [hi])
+            if t in pl[2] or abs(at - t) > _REACH or at + need > limit:
                 continue
             extras.append((at, jb))
             allpos[_FAKE + t] = at
             break
         else:
-            raise SystemExit(f"sysmsg {t:#x}: 근처에 옮길 남는 칸이 없다({need}B)")
+            near = ", ".join(
+                f"{q[0]:#x}~{q[1]:#x}:{q[1] - q[6] - sum(_len(bb) for _, bb in q[7])}B"
+                for q in sorted(plans, key=lambda q: abs(q[0] - t))[:40]
+            )
+            raise SystemExit(
+                f"sysmsg {t:#x}: 근처에 옮길 남는 칸이 없다({need}B) — 가까운 묶음 남는 칸: {near}"
+            )
     for lo, hi, cl, toks, order, newpos, _cur, extras in plans:
+        spans = sorted(
+            [(newpos[u], newpos[u] + _len(toks[u])) for u in order]
+            + [(at, at + _len(jb)) for at, jb in extras]
+        )
+        for (_a1, b1), (a2, _b2) in pairwise(spans):
+            if a2 < b1:
+                raise SystemExit(f"sysmsg {lo:#x}~{hi:#x}: 놓인 스트림 둘이 겹친다 @{a2:#x}")
         body = bytearray(b"\x00" * (hi - lo))
         for u in order:
             b = _emit(toks[u], newpos[u], allpos)
