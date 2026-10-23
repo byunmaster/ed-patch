@@ -119,10 +119,10 @@ def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str,
         )
         # 하드 개행이 든 화자 없는 창(장 끝 카드)은 줄을 그대로 둔 것이라 **개행도 그대로** 넣는다 —
         # 꽉 찬 제목 줄 뒤의 빈 줄이 먹혔다(종장 카드 화면 2026-09-25: 13칸 제목 바로 밑에 「끝」).
-        verbatim = "\n" in tr["t"] and m.speaker is None and m.common is None
         for i, pg in enumerate(pgs):
             if i:
                 out.append(PAGE)
+            verbatim = isinstance(pg, typeset.Card)  # 쪽마다 — 한 문안 안에 카드 쪽과 줄 계획 쪽이 섞일 수 있다
             for j, line in enumerate(pg):
                 # 🔴 **틀을 꽉 채운 줄 뒤에는 개행을 안 넣는다** — 인터프리터가 열 ≥ $99(13)에서 스스로
                 #    넘기므로 우리 `01` 이 얹히면 **빈 줄**이 된다(our-findings 2026-08-30, PS1 이 122곳).

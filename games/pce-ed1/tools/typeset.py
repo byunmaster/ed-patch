@@ -26,6 +26,10 @@ NARROW = (
 )  # 반각 폭(4px) — 공백과 반각 부호(`. , ! ?`, 렌더러가 12px 에 그린 뒤 8px 되감는다)
 
 
+class Card(list):
+    """장 끝 카드 쪽 — 줄을 그대로(빈 줄·앞 공백 포함) 내는 쪽. 일반 쪽은 그냥 list."""
+
+
 def cell(ch: str) -> float:
     return SPACE_PX / 12 if ch in NARROW else 1.0
 
@@ -54,9 +58,22 @@ def pages(text: str, *, speaker: bool) -> list[list[str]]:
             #   줄 바꿈」 표시라 둘을 잇달아 써도 한 줄만 넘어간다(종장 카드 화면 2026-09-25)
             #   줄 폭은 **px 로** 잰다(전각 공백 12px · ASCII 공백 4px) — 칸 수(글자 수)로 재면 반 칸 공백으로 가운데를 맞춘 카드가 막힌다
             assert len(lines) <= LINES and all(px(x) <= FULL * 12 for x in lines), chunk
-            out.append(lines)
+            # 장 끝 카드는 빈 줄·앞 공백이 든다 → 개행을 그대로 낸다(`Card`). 그 밖은 정본이 줄을 직접 짠 **줄 계획**(띄어 쓴 아이템 이름을
+            # 줄 사이에서 안 갈리게)이라 일반 줄처럼 다룬다 — 꽉 찬 줄 뒤엔 개행을 안 낸다(`translate`).
+            card = any(not x or x[0] in " \u3000" for x in lines)
+            out.append(Card(lines) if card else lines)
             speaker = False
             continue
+        if "\n" in chunk and speaker:
+            # 🔴 **화자 창의 하드 개행은 의도적 줄 지정이다**(재검 11, 10-21 — 「길모아의 / 별이라는 건가?」처럼 띄어 쓴 아이템 이름이
+            #    줄 사이에서 갈릴 때 정본에서 `\n` 으로 이름 뒤에서 끊는다). krwrap 의 균형 짜기가 지워 버리므로 줄을 그대로 둔다 —
+            #    첫 줄은 화자 이름 곁이라 10칸, 나머지는 13칸, 창은 세 줄.
+            lines = chunk.split("\n")
+            if len(lines) <= LINES and px(lines[0]) <= FIRST_WITH_SPEAKER * 12 and all(px(x) <= FULL * 12 for x in lines[1:]):
+                out.append(lines)
+                speaker = False
+                continue
+            # 줄 계획이 창에 안 맞으면(편집기가 여러 메시지를 `\n` 으로 이어 보여 줄 때 등) 종전대로 조판기에 맡긴다.
         pg = krwrap.wrap_pages(chunk, WIDTH, LINES, cell_width=cell)
         if speaker and pg and pg[0] and px(pg[0][0]) > FIRST_WITH_SPEAKER * 12:
             # 첫 줄만 좁히면 되지만 krwrap 엔 줄별 폭이 없다 — 첫 창을 10칸으로 다시 짠다

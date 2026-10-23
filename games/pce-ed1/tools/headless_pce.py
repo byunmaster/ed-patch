@@ -148,10 +148,19 @@ def inp(port, dev, idx, id_):
     return 1 if (port == 0 and dev == 1 and id_ in state["held"]) else 0
 
 
+AUDIO_OUT = open(os.environ["PCE_AUDIO"], "wb") if os.environ.get("PCE_AUDIO") else None  # 소리를 raw s16 스테레오로 저장(음성 겹침 비교용)
+
+
+def audio_batch(data, n):
+    if AUDIO_OUT is not None and n:
+        AUDIO_OUT.write(C.string_at(data, n * 4))
+    return n
+
+
 cbs = [
     ENV(env),
     VID(vid),
-    AUD(lambda d, n: n),
+    AUD(audio_batch),
     AUS(lambda l, r: None),
     POLL(lambda: None),
     INP(inp),
@@ -229,6 +238,17 @@ for step in json.load(open(SCRIPT)):
     elif op == "shot":
         shot(step[1])
         print("shot", step[1], "frame", frames, flush=True)
+    elif op == "holdpeek":  # ["holdpeek", 버튼들, 프레임, 주소, 길이] — 쥔 채 10프레임마다 값을 찍는다(입력이 어디에 반영되는지 찾는 용)
+        state["held"] = {BTN[b] for b in step[1].split("+")}
+        for _ in range(step[2] // 10):
+            run(10)
+            print("hp", frames, C.string_at(ram(step[3]), step[4]).hex(), flush=True)
+        state["held"] = set()
+    elif op == "holdpoke":  # ["holdpoke", 주소, 값hex, 프레임] — 매 프레임 값을 써 넣는다(코어가 막는 ←+→ 같은 입력을 패드 변수에 직접)
+        b = bytes.fromhex(step[2])
+        for _ in range(step[3]):
+            C.memmove(ram(step[1]), b, len(b))
+            run(1)
     elif op == "peek":
         print(
             "peek", step[1], C.string_at(ram(step[1]), step[2]).hex(), "frame", frames, flush=True

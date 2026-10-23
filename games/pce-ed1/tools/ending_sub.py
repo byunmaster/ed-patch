@@ -58,7 +58,7 @@ rt.INIT_WINDOW = 0xA000  # CD_PLAY 때 MPR5 = 0x6B
 rt.STRIP_MODE = "adpcm"
 rt.ADPCM_BASE = 0x8000
 rt.CELL_BUF = 0x3C00  # 엔딩 내내 0 인 워크 RAM($3AF0~$3DA1, 덤프 79장)
-rt.DATA_REL = 434  # 빈 섹터 rel 422~449 중 오프닝(422~433) 뒤
+rt.DATA_REL = 436  # 빈 섹터 rel 422~449 중 오프닝(422~433) 뒤
 rt.YADJ_MAX = 49  # 144줄 화면 = (240−144)/2 = 48
 rt.SUB_MAX_ROWS = 2
 rt.SHORTEST_SCREEN = 144
