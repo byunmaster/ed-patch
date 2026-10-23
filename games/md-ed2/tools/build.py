@@ -42,6 +42,7 @@ import lz
 import places
 import punctwrap
 import repack
+import reloc_ledger as RL
 import scene
 import spell_digit
 import sysmsg
@@ -695,6 +696,7 @@ def apply_weapon_branch(blk, k, new, mod, cs):
     assert len(code) == 48, len(code)
     out[rt : rt + 48] = code
     out[pl + 2 : pl + 4] = disp(pl, eq)  # 기본값 = 장비 문구
+    RL.add("코드 패치", rt, rt, "무기 `では/ので` 4B 덮어쓰기 루틴(48B)을 자기 수정 lea 루틴으로 교체 + 맨손 문구를 죽은 칸/모듈 끝에", RL.EVID_PATCH, RL.UNDO_PATCH, key=f"{blk:03d}-{k}")
     return bytes(out)
 
 
@@ -740,6 +742,7 @@ def fix_head_words(new: bytes, mod, rep) -> tuple[bytes, int]:
                 tgt = pair[owner] + (w - owner)
             if struct.unpack(">H", out[nw + i : nw + i + 2])[0] != tgt:
                 out[nw + i : nw + i + 2] = struct.pack(">H", tgt)
+                RL.add("포인터", nw + i, tgt, "상점 표 머리 포인터 워드를 새 문안 자리로 다시 썼다", RL.EVID_VM, "되돌리기 수단 없음 — 되돌리면 워드가 옛 번지(남의 글·빈 칸)를 가리킨다")
                 n += 1
     return bytes(out), n
 
@@ -822,11 +825,13 @@ def repoint_shared_heads(new: bytes, mod, rep_keys) -> tuple[bytes, int]:
         if bytes(out[cand : cand + 2]) != b"\x4e\x71":
             continue
         out[ins + 2 : ins + 4] = struct.pack(">h", cand - (ins + 2))
+        RL.add("포인터", ins + 2, cand, "머리 워드를 런타임에 쓰는 lea 를 바깥 복사본으로 돌렸다(안쪽·바깥 복사본이 갈라진 상점 표)", RL.EVID_VM, "되돌리기 수단 없음 — 되돌리면 쓰는 쪽과 읽는 쪽이 갈라져 NOP 워드를 읽는다(상점 메뉴 오작동)")
         n += 1
     return bytes(out), n
 
 
 def main(check_only: bool = False) -> None:
+    RL.reset()
     debug_build.check_tag()  # 꼬리표와 디버그 스위치가 어긋나면 일을 시작하기 전에 거부한다
     orig = common.rom()
     verify_archive_refs(orig)
@@ -885,6 +890,7 @@ def main(check_only: bool = False) -> None:
                 replace[(blk, k)] = mb
             continue
         try:
+            RL.begin(f"{blk:03d}-{k}")
             new = scene.reassemble(mod, rep)
             scene.verify_reassembly(mod, new, rep, head_table_streams(m))
             scene.verify_cond_tails(
@@ -1165,6 +1171,7 @@ def main(check_only: bool = False) -> None:
         stale.unlink()
     out = out_dir / debug_build.rom_name()
     out.write_bytes(bytes(rom.buf))
+    RL.write_tsv(out_dir / "relocations.build.tsv", RL.rows())  # 재배치 장부(빌드가 실제로 한 것) — struct_check --ledger 가 커밋 장부와 맞댄다
     print(f"  {out} — 쓰기 {len(rom.log)}건 · sha1 {common.sha1_of_bytes(bytes(rom.buf))[:8]}…")
 
 

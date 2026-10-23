@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import archives
 import common
+import reloc_ledger as RL
 import scene
 import sysmsg
 
@@ -568,6 +569,7 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
     for (gn, gjp), gk in GROW_RECORDS.items():
         if gn == n and any(r["name"].decode("cp932", "replace") == gjp for r in records(b)):
             b = grow_records(b, gk)
+            RL.add("옮김", sections(b)[1] - gk, sections(b)[1], f"레코드 구역 끝에 {gk}B 를 끼워 넣어 뒤 구역을 통째로 민다(마지막 이름 칸 16B 확보)", "battle.grow_records — 구역 표(헤더 5워드) 재측정", "되돌리기 수단 없음 — 이름 칸이 12B 뿐이라 한글 이름이 안 들어간다", key=f"전투{n:03d}")
     out = bytearray(b)
     changed = False
     errs = []
@@ -601,6 +603,7 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         new_addr = 0xFF1DBC + (slot + ACTOR0) * ACTOR_REC + ACTOR_NAME + new_off
         if new_addr != 0xFF1DBC + (slot + ACTOR0) * ACTOR_REC + ACTOR_NAME + off:
             out[ins + 6 : ins + 8] = struct.pack(">H", new_addr & 0xFFFF)
+            RL.add("포인터", ins + 6, new_addr & 0xFFFF, "알파벳 숨김 쓰기 주소를 한글 이름 길이 기준으로 다시 잰다", RL.EVID_BATTLE, RL.UNDO_NONE, key=f"전투{n:03d}")
             changed = True
     moves = []
     jump_at: dict[int, int] = {}  # 제자리엔 goto 스텁만 두고 본문을 끝에 놓은 스트림 → 본문 자리
@@ -675,6 +678,8 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         for tgt, end, body in jumps:
             new = len(out)
             jump_at[tgt] = new
+            RL.add("옮김", tgt, new, f"번역 글 {len(body)}B > 제자리 {end - tgt}B(칸 넘침) — 참조를 몰라 본문을 블록 끝으로", RL.EVID_BATTLE, RL.UNDO_NONE, key=f"전투{n:03d}")
+            RL.add("스텁", tgt, new, "제자리에 goto 스텁(3B) — 읽기가 옛 자리에서 시작한다", RL.EVID_BATTLE, RL.UNDO_NONE, key=f"전투{n:03d}")
             out[tgt + 1 : tgt + 3] = struct.pack(">h", new - (tgt + 1))
             if body[-1] == 0x0A:  # 0A 은 물리적으로 다음 스트림으로 흐른다 — 원래 끝으로 되돌아간다
                 here = new + len(body)
@@ -688,6 +693,11 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         for _tgt, e, body, members in moves:
             new = len(out)
             move_at.update({m_: new + off_ for m_, _e2, off_ in members})
+            RL.add("옮김", _tgt, new, f"번역 글이 제자리 칸을 넘는다 — 이어지는 스트림 {len(members)}개를 한 덩이로 블록 끝에(옛 칸은 0)", RL.EVID_BATTLE, RL.UNDO_NONE, key=f"전투{n:03d}")
+            for ins in e["lea"]:
+                RL.add("포인터", ins + 2, new, "lea 변위 재측정 — 옮긴 본문을 가리킨다", RL.EVID_BATTLE, RL.UNDO_POINTER, key=f"전투{n:03d}")
+            for p in e["words"]:
+                RL.add("포인터", p, new, "자료 A 워드 재측정 — 옮긴 본문을 가리킨다", RL.EVID_BATTLE, RL.UNDO_POINTER, key=f"전투{n:03d}")
             placed.append((new, e, body))
             out += body + (b"\x00" if len(body) & 1 else b"")
             for ins in e["lea"]:
@@ -744,6 +754,7 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
                     )
                 rel = sum(len(t.raw) for t in news[:idx])
             mid[tt] = base + rel
+            RL.add("포인터", tt, mid[tt], f"글 한복판으로 부르는 call·goto 의 도착점을 새 본문 안 같은 지점으로 재측정(스트림 {k_:#06x} 안)", RL.EVID_BATTLE, RL.UNDO_POINTER, key=f"전투{n:03d}")
     fin.update(mid)
     for tgt, e in rs.items():
         if n == BOSS_BLOCK and tgt in BOSS_STREAMS:
@@ -766,6 +777,7 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
             pos += len(t.raw)
     if n == BOSS_BLOCK:
         patch_boss_block(out, b, rs, textmap, monsters, encode)
+        RL.add("코드 패치", BOSS_ROUTINE, BOSS_ROUTINE, "블록 82 `では/ので` 4B 덮어쓰기 루틴(36B)을 자기 수정 lea 루틴으로 교체 + 독립 문안 둘을 블록 끝에", RL.EVID_PATCH, RL.UNDO_PATCH, key=f"전투{n:03d}")
         changed = True
     return bytes(out) if changed else None
 

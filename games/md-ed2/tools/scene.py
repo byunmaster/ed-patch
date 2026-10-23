@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import reloc_ledger as RL  # noqa: E402
 
 LOAD = 0xFF6650  # 모듈 로드 주소
 MODULE_MAX = 0x4000  # 0xFFA650 이 다음 버퍼(엔진 참조 3곳) — 미확정, 실측 최대 모듈 11,562B
@@ -693,6 +694,7 @@ def reassemble(
                     f"이어 읽기 스트림 @{s_:#x} 이 칸({full}B)보다 길다({new_len[s_]}B) — 번역을 줄인다"
                 )
             if new_len[s_] < full:
+                RL.add("채움", s_, None, f"이어 읽기 스트림 — 뒤 글줄까지 공백 {full - new_len[s_]}B 로 칸을 꽉 채운다", RL.EVID_FILL, RL.UNDO_FILL)
                 toks[s_] = [*tk_, Token(0, b" " * (full - new_len[s_]), "text")]
                 new_len[s_] = full
 
@@ -761,8 +763,10 @@ def reassemble(
             toks[m] = tk
             new_len[m] += 3
             tail_stub.add(m)
+            RL.add("스텁", m, None, f"제자리에서 줄어든 조건 분기 앞 스트림 — 남는 {d}B 에 goto 꼬리 스텁(3B)", RL.EVID_VM, RL.UNDO_FILL)
             return
         ti = next(x for x in range(len(tk) - 3, -1, -1) if tk[x].kind == "text")
+        RL.add("채움", m, None, f"제자리에서 줄어든 묶음 앞 스트림 — 끝을 지키려 공백 {d}B", RL.EVID_FILL, RL.UNDO_FILL)
         tk[ti] = Token(tk[ti].off, tk[ti].raw + b" " * d, "text", tk[ti].code)
         toks[m] = tk
         new_len[m] = old_len[m]
@@ -846,6 +850,7 @@ def reassemble(
                 toks[s_] = tk
                 new_len[s_] += 3
                 tail_stub.add(s_)
+                RL.add("스텁", s_, t_, "옮겨진 조건 분기 본문 뒤에 goto 꼬리 스텁(3B) — 꼬리를 둘 이상이 이어받는다", RL.EVID_VM, RL.UNDO_NONE)
         elif s_ in replace and new_len[s_] < old_len[s_]:
             # 제자리에서 **줄어든** 앞 스트림 — 끝이 당겨져 바로 뒤가 0 패딩이 된다. 남는 칸이 3B 이상이면 `goto T` 스텁을 붙이고, 아니면 공백으로 끝을 지킨다
             tk = list(toks[s_])
@@ -855,10 +860,12 @@ def reassemble(
                     toks[s_] = tk
                     new_len[s_] += 3
                     tail_stub.add(s_)
+                    RL.add("스텁", s_, t_, "제자리에서 줄어든 조건 분기 — 남는 칸에 goto 꼬리 스텁(3B)", RL.EVID_VM, RL.UNDO_FILL)
                 else:
                     ti = next((x for x in range(len(tk) - 3, -1, -1) if tk[x].kind == "text"), None)
                     if ti is not None:
                         d = old_len[s_] - new_len[s_]
+                        RL.add("채움", s_, None, f"제자리에서 줄어든 조건 분기 — 공백 {d}B 로 끝을 지킨다(3B 미만이라 스텁 불가)", RL.EVID_FILL, RL.UNDO_FILL)
                         tk[ti] = Token(tk[ti].off, tk[ti].raw + b" " * d, "text", tk[ti].code)
                         toks[s_] = tk
                         new_len[s_] = old_len[s_]
@@ -948,6 +955,28 @@ def reassemble(
             )
     if cur > MODULE_MAX:
         raise ValueError(f"모듈이 {cur}B — 한도 {MODULE_MAX}B 를 넘는다")
+    for s in sorted(moved):
+        why = (
+            "안쪽 스트림 칸을 바깥 글이 차지해 같이 옮김"
+            if s in forced
+            else f"번역 글 {new_len[s]}B > 제자리 {room(s)}B(칸 넘침)"
+            if too_big(s)
+            else "조건 분기 묶음이라 같이 옮김(꼬리가 물리적으로 이어져야 한다)"
+        )
+        RL.add("옮김", s, pos[s], why + f" · 옛 칸 {dead_end[s] - s}B 는 0 으로 지움", RL.EVID_VM, RL.UNDO_NONE)
+        if s in stub_at:
+            RL.add("스텁", s, pos[s], "옛 시작 자리에 goto 스텁(3B) — 고정·허브·묶음 글줄은 읽기가 그 자리에서 시작한다", RL.EVID_VM, RL.UNDO_NONE)
+    for ins, s in sorted(mod.roots.items()):
+        if pos[s] != s:
+            RL.add("포인터", ins, pos[s], f"뿌리 lea 변위 재측정 — 가리키는 스트림 {s:#06x} 이 옮겨졌다", RL.EVID_VM, RL.UNDO_POINTER)
+    for tr in mod.tables:
+        if pos[tr.target] != tr.target:
+            RL.add("포인터", tr.word, pos[tr.target], f"표 항목 워드 재측정 — 표가 가리키는 스트림 {tr.target:#06x} 이 옮겨졌다", RL.EVID_VM, RL.UNDO_POINTER)
+    for s in order:
+        if s not in moved and s not in shrunk:
+            for t_ in mod.streams[s].tokens:
+                if t_.ref in (GOTO, CALL) and pos.get(t_.target, t_.target) != t_.target:
+                    RL.add("포인터", t_.off, pos[t_.target], f"{'goto' if t_.ref == GOTO else 'call'} 변위 재측정 — 대상 {t_.target:#06x} 이 옮겨졌다", RL.EVID_VM, RL.UNDO_POINTER)
     out = bytearray()
     for s in order:
         if s in moved:

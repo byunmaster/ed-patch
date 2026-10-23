@@ -43,6 +43,11 @@ ls "$BUILD_TAG_DIR"/*.bin >/dev/null 2>&1 || { echo "❌ 빌드 산출물이 없
 #     md-ed1 에서 「하이 길도」 빈 글리프·문장 누락으로 나왔다(10-20). 쓰기 자리 n · 어긋남 m, 어긋남이 있으면 실패. 허용·중화는 ctl_toggle_scan.py 의 표(사유 포함).
 "$PY" "$T/ctl_toggle_scan.py" "$BUILD_TAG_DIR"/*.bin
 
+# 5e. 🔴 구조 대조 — 원판과 구운 롬의 모든 대사 블록(씬 모듈 356 · 전투 99)을 「제어 코드 열」(글자·쪽·줄 배치를 뺀 goto·call·조건·종결·인자)로 블록마다 맞댄다.
+#     ss-ed3 10-21: 재조판 때 끝에 넣은 채움 바이트가 다음 블록 호출을 막아 첫 장면 대사가 빠졌다(하네스·한 블록씩 보기로는 안 보인다). 허용 목록은 struct_check.py(사유 + 엔진 근거).
+#     재배치 장부(games/md-ed2/relocations.tsv)가 빌드와 다르면(= 장부에 없는 재배치) 같이 실패한다. 갱신: struct_check.py --update-ledger
+"$PY" "$T/struct_check.py" "$BUILD_TAG_DIR"/ed2-kr.bin
+
 # 6. 코드 영역 문안 census — 참조로 잡히는 스트림 178 · 스트림 밖 일본어 808런(캡션·이름 표·메뉴 라벨 등 — 번역 때 분류)
 "$PY" "$T/sysmsg.py"
 

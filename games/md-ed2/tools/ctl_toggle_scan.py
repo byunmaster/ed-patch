@@ -59,6 +59,9 @@ def neutralize(blk: int, k: int, module: bytes) -> bytes:
         if out[i : i + 2] != b"\x45\xfa":
             raise SystemExit(f"{key} {i:#x} 가 lea d(pc),a2 가 아니다 — 중화 자리가 바뀌었다")
         out[i + 2 : i + 4] = struct.pack(">h", tgt - (i + 2))
+        import reloc_ledger as RL
+
+        RL.add("포인터", i + 2, tgt, "코드가 글 한복판 4B 를 덮는 lea 를 자료 위로 돌렸다(중화) — 한글 글자가 안 깨진다", RL.EVID_VM, "되돌리기 수단 없음 — 되돌리면 원판 루틴이 한글 글자 한복판 4B 를 덮는다", key=key)
     return bytes(out)
 
 
