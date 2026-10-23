@@ -68,7 +68,7 @@ def decode_chunk(pkg: bytes, start: int, end: int) -> tuple[bytes, int]:
     last = start
     try:
         hit = None  # 끝에 닿은 토큰 — 그 토큰이 내는 바이트는 끝까지 받는다(되참조는 입력을 먼저 다 읽는다)
-        for b, pos, _w, _r in lz.walk(pkg, start):
+        for b, pos, _w, _r in lz.walk(pkg, start, auto512=True):  # 첫 바이트 00 = 512B 링 변형(642 전용 — lz.py 머리말)
             if hit is not None and pos != hit:
                 break
             out.append(b)

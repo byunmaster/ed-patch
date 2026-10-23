@@ -49,6 +49,7 @@ import residual_gate
 import systext
 import wrap
 import longline
+import lzring
 import narrow
 
 from shared.disc import mode1
@@ -213,7 +214,7 @@ def _plan_one(rel, raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None,
         decoded[a] = decoded[a].replace(find, rep)
     changed = {a: d for a, d in decoded.items() if d != orig_decoded[a]}
     try:
-        new, place = repack.repack(pkg, changed)
+        new, place = repack.repack(pkg, changed, ring512=rel in lzring.PKGS)
     except repack.RepackError as ex:
         raise BuildError(f"패키지 {rel}: {ex}") from ex
     if dialogue_allowed is not None and any(sp.rel == rel for sp in codestr.SPECS):  # 코드 영역의 일본어 문장(메시지 표 밖) — 0xFF 패딩으로 옮기고 포인터를 돌린다
@@ -374,6 +375,7 @@ def plan_program(tab: font.GlyphTable, glyph24: list[bytes] | None, chars: list[
     hook.reserve(prog)
     wrap.reserve(prog)
     longline.reserve(prog)
+    lzring.reserve(prog)
     narrow.reserve(prog)
     debugsw.reserve(prog)
     systext.MISSING.clear()
@@ -390,6 +392,7 @@ def plan_program(tab: font.GlyphTable, glyph24: list[bytes] | None, chars: list[
         hook.install(prog, glyph24, flags, josa_idx)
         wrap.install(prog)
         longline.install(prog)
+        lzring.install(prog)  # 642 전용 512B 링 복호 변형(표식 덩이만 — 나머지는 원판 경로)
         narrow.install(prog)
         debugsw.install(prog)  # 디버그 메뉴 숨김 제스처(필드에서 RUN+I+II) — 제품 롬에 들어간다(마스터 10-21 판정 19 A)
     return prog
@@ -443,7 +446,7 @@ def verify_readback(iso: Path, intended: dict, prog: layout.Prog) -> None:
             if got != want:
                 raise BuildError(f"되읽기: rel {r} 패키지가 의도와 다르다")
             for start, d in chunks.items():
-                back, _ = lz.decode(got, start, len(d))
+                back, _ = lz.decode(got, start, len(d), auto512=True)
                 if back != d:
                     raise BuildError(f"되읽기: rel {r} 덩이 {start} 가 의도와 다르다")
                 n += 1

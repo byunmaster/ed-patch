@@ -90,6 +90,10 @@ class Sim:
             self.wr(zp(), self.a)
         elif op == 0x8D:
             self.wr(self.fetch16(), self.a)
+        elif op == 0x8E:  # STX abs
+            self.wr(self.fetch16(), self.x)
+        elif op == 0x86:  # STX zp
+            self.wr(zp(), self.x)
         elif op == 0x9D:
             self.wr(self.fetch16() + self.x, self.a)
         elif op == 0x99:
@@ -243,6 +247,29 @@ class Sim:
         elif op == 0x92:  # STA (zp)
             p = zp()
             self.wr(self.rd(p) | self.rd(p + 1) << 8, self.a)
+        elif op == 0x1A:  # INC A
+            self.a = self.nz(self.a + 1)
+        elif op == 0xEE:  # INC abs
+            p = self.fetch16()
+            self.wr(p, self.nz(self.rd(p) + 1))
+        elif op == 0xCE:  # DEC abs
+            p = self.fetch16()
+            self.wr(p, self.nz(self.rd(p) - 1))
+        elif op == 0x49:  # EOR #imm
+            self.a = self.nz(self.a ^ self.fetch())
+        elif op == 0x46:  # LSR zp
+            p = zp()
+            v = self.rd(p)
+            self.c = v & 1
+            self.wr(p, self.nz(v >> 1))
+        elif op == 0x66:  # ROR zp
+            p = zp()
+            v = self.rd(p)
+            c = self.c
+            self.c = v & 1
+            self.wr(p, self.nz((v >> 1) | c << 7))
+        elif op == 0x82:  # CLX
+            self.x = 0
         elif op == 0xFE:  # INC abs,X
             p = self.fetch16() + self.x
             self.wr(p, self.nz(self.rd(p) + 1))

@@ -69,5 +69,46 @@ class RoundTrip(unittest.TestCase):
         self.rt(b"A" * 100)
 
 
+class Ring512(unittest.TestCase):
+    """642 전용 512B 링 변형(표식 `7C` + 니블 = 길이 3비트·인덱스 9번째 비트)."""
+
+    def test_표식은_정상_256_스트림의_첫_바이트가_될_수_없다(self):
+        rnd = random.Random(11)
+        self.assertEqual(lz.MARK2 & 0x80, 0)
+        for _ in range(50):
+            data = bytes(rnd.randrange(256) for _ in range(rnd.randrange(1, 200)))
+            self.assertEqual(lz.encode_opt(data)[0] & 0x80, 0x80)  # 첫 토큰 = 리터럴 → 최상위 비트 1
+
+    def test_왕복_자동_표식_검출(self):
+        rnd = random.Random(5)
+        for _ in range(40):
+            n = rnd.randrange(1, 1500)
+            vocab = bytes(rnd.randrange(1, 40) for _ in range(rnd.randrange(1, 30)))
+            data = bytes(rnd.choice(vocab) for _ in range(n))
+            p = lz.encode_opt512(data)
+            self.assertEqual(p[0], lz.MARK2)
+            out, used = lz.decode(p + b"\0" * 4, 0, len(data), auto512=True)
+            self.assertEqual(out, data)
+            self.assertLessEqual(used, len(p))
+
+    def test_창이_512라서_256을_넘는_거리도_참조한다(self):
+        rnd = random.Random(2)
+        blk = bytes(rnd.randrange(1, 256) for _ in range(300))
+        data = blk + bytes(rnd.randrange(1, 256) for _ in range(150)) + blk  # 두 번째 blk 는 거리 450
+        self.assertLess(len(lz.encode_opt512(data)), len(lz.encode_opt(data)) - 100)
+        self.assertEqual(lz.decode(lz.encode_opt512(data) + bytes(4), 0, len(data), auto512=True)[0], data)
+
+    def test_표식_없으면_자동_검출도_256(self):
+        data = b"abcabcabc" * 7
+        p = lz.encode_opt(data)
+        self.assertEqual(lz.decode(p + bytes(4), 0, len(data), auto512=True)[0], data)
+
+    def test_입력_위치는_표식_한_바이트를_포함한다(self):
+        data = b"xyz"
+        p = lz.encode_opt512(data)
+        _out, used = lz.decode(p + bytes(4), 0, len(data), auto512=True)
+        self.assertEqual(used, len(p))  # 플래그 1 + 리터럴 3 + 표식 1 = 5
+
+
 if __name__ == "__main__":
     unittest.main()
