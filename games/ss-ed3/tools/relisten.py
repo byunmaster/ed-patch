@@ -97,6 +97,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("names", nargs="+", help="V15 V16 …")
     ap.add_argument("--range", help="초 구간 a,b — 그 안만, 마디마다 따로 받아쓴다")
+    ap.add_argument(
+        "--slice",
+        help="초 구간 a,b — 마디 가르기를 건너뛰고 그 구간을 통째로(작은 소리가 에너지 구간에 안 잡힐 때). "
+        "구간 안 최대 진폭을 0.9 로 키운다(--no-norm 으로 끈다) — Whisper 는 클립 단위로 정규화하므로 조용한 말이 큰 소리에 묻히지 않게 구간을 좁힌다",
+    )
+    ap.add_argument("--no-norm", action="store_true")
+    ap.add_argument("--hint", default="", help="프롬프트에 덧붙일 말 — 들리는 낱말 후보(예: ほれ、どうか)")
     args = ap.parse_args()
     rng = tuple(float(x) for x in args.range.split(",")) if args.range else None
 
@@ -105,7 +112,7 @@ def main():
         "language": "japanese",
         "task": "transcribe",
         "num_beams": BEAMS,
-        "prompt_ids": p.tokenizer.get_prompt_ids(NAMES, return_tensors="pt"),
+        "prompt_ids": p.tokenizer.get_prompt_ids(NAMES + args.hint, return_tensors="pt"),
     }
 
     def hear(a, a0, a1, pad=0.2, stamps=False):
@@ -115,8 +122,20 @@ def main():
         return (t, T._chunks(r, max(0.0, a0 - pad))) if stamps else t
 
     for name in args.names:
-        a, sr = T.load_wav(os.path.join(T.C.REVIEW_DIR, "sap", f"{name}.wav"))
+        a, sr = T.load_wav(os.path.join(T.C.REVIEW_DIR, "cpk" if name.startswith("M") else "sap", f"{name}.wav"))  # M** 무비 · V** 인게임 음성
         a = T.resample(a, sr)
+        if args.slice:  # 통째 받아쓰기 — 산출 JSON 은 안 쓴다(결과는 화면 출력만)
+            a0, a1 = (float(x) for x in args.slice.split(","))
+            x = a[int(a0 * T.SR) : int(a1 * T.SR)]
+            pk = float(abs(x).max()) if len(x) else 0.0
+            if not args.no_norm and pk > 0:
+                x = x * (0.9 / pk)
+            r = p(x, generate_kwargs=gk, return_timestamps=True)
+            print(f"── {name} 통째 {a0}~{a1}s (최대 진폭 {pk:.3f}{'' if args.no_norm else ' → 0.9'})")
+            print(f"  ▣ {(r.get('text') or '').strip()}", flush=True)
+            for c in T._chunks(r, a0):
+                print(f"      ┊ {c['start']:6.1f} {c['jp']}", flush=True)
+            continue
         segs = split_long(fine_segments(a), envelope(a))
         if rng:
             segs = [(s, e) for s, e in segs if e > rng[0] and s < rng[1]]

@@ -122,6 +122,26 @@ class Chain(unittest.TestCase):
             VS.entry({"off": 0, "lines": ["a", "b", "c"], "who": "n", "dur": 1.0}, None)
         VS.entry({"off": 0, "lines": ["a", "b", "c"], "dur": 1.0}, None)
 
+    def test_pos_top_sets_the_expression_word_bit_and_splits_the_window(self):
+        """`pos: top` 는 표정 워드의 0x80 비트 — 기본(bottom)은 안 켠다. 위·아래가 다르면 같은 화자여도 창을 새로 띄운다."""
+        h = {"off": 0, "lines": ["a"], "who": "n", "speaker": 1, "expr": 3, "dur": 1.0}
+        self.assertEqual(struct.unpack(">H", VS.entry(h, None)[4:6])[0], 3)
+        self.assertEqual(
+            struct.unpack(">H", VS.entry(dict(h, pos="top"), None)[4:6])[0], 3 | VS.POS_TOP
+        )
+        with self.assertRaises(SystemExit):
+            VS.entry(dict(h, pos="middle"), None)
+        with self.assertRaises(SystemExit):
+            VS.entry(dict(h, expr=VS.POS_TOP), None)
+        a = {"off": 0, "lines": ["a"], "who": "n", "speaker": 1, "dur": 1.0}
+        b = dict(a, pos="top")
+        VS.link([a, b], [0, 1])
+        self.assertFalse(a.get("_hold"))
+
+    def test_stub_top_window_constants_match_the_engine(self):
+        """위 창 좌표는 원판 창 그리기(0x06010520~)·얼굴 쓰기(0x06010AB4)의 값이다 — 스텁이 같은 수를 쓴다."""
+        self.assertEqual((SS.TOP_X, SS.TOP_Y, SS.POS_TOP), (0x138, 0x28, VS.POS_TOP))
+
     def test_same_speaker_swaps_text_instead_of_reopening(self):
         """같은 화자가 이어지면 창은 그대로 두고 글만 **교체**한다(스크롤 아님) — 앞 칸은 「다음 칸까지」(0) 로 붙잡힌다."""
         hooks = [

@@ -137,6 +137,10 @@ run 2 "$PY" "$G/tools/check_pua.py"
 echo "  ── 구운 부호 글리프끼리 같은 비트맵이 없나 (쉼표가 마침표로 보이는 사고 — ss-ed1+2 10-20)"
 run 2 "$PY" "$G/tools/check_glyph_dups.py"
 
+echo "  ── 음성 자막 연속 두 줄 사이 0.5초 미만 틈 (마스터 10-22 — 대사창이 깜박 사라진다)"
+# 🔴 게이트다 — 앞 줄 닫힘을 다음 줄 열림에 붙인다(`check_voice_gaps.py --fix`). 구조상 못 붙이면 `voice_gap_allow.json` 에 사유와 함께
+run 0 "$PY" "$G/tools/check_voice_gaps.py"
+
 echo "  ── 원문에 있던 것이 사라지지 않았나 (숫자 · 고유명사)"
 warn 3 "$PY" "$G/tools/check_fidelity.py"
 
