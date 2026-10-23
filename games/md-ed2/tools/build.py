@@ -193,9 +193,8 @@ class Rom:
 
 
 def normalize(text: str) -> str:
-    """부호 규칙(유저 확정 2026-09-05): 온점·쉼표·공백은 반각, 「…」은 전각 하나, 「…」 뒤에 온점 없음."""
+    """부호 규칙(유저 확정 2026-09-05): 온점·쉼표·공백은 반각, 「…」은 전각(연속은 그대로 — 규칙 1-3: 원문 점 n개 → 「…」 round(n/3)개, 옛 「하나로 줄이기」는 걷었다 10-18), 「…」 뒤에 온점 없음."""
     text = text.replace("...", "…").replace("‥", "…").replace("。", ".").replace("、", ",")
-    text = re.sub(r"…+", "…", text)
     text = re.sub(r"…\s*[.。]", "…", text)
     return text
 
@@ -262,6 +261,10 @@ def build_stream(
                         out.append(scene.Token(0, cs.encode(ln), "text"))
             return
         body = "".join(pending_text)
+        if body and not body.strip():  # 변수 사이 공백 하나(`<eb00> <0e>`) — 조판기가 빈 덩이로 지운다(10-19)
+            pending_text.clear()
+            out.append(scene.Token(0, cs.encode(body.replace("\n", " ")), "text"))
+            return
         lead = " " if body[:1] == " " else ""
         pages = typeset(body, lead)
         # 🔴 조판기는 덩이의 앞뒤 공백을 지운다 — 태그(이름 호출 등) **앞** 공백이 사라져 「이런아트라스님」이 됐다
@@ -862,6 +865,9 @@ def main(check_only: bool = False) -> None:
             f"  ⚠ 디버그 스위치 켜짐({debug_build.ENV}=1) — 시험·마스터 디버그 전용, 패치 {ndbg}곳(제품 롬 아님)"
         )
     rom.write("checksum", 0x18E, struct.pack(">H", common.header_checksum(rom.buf)))
+    kana_gate.check_rom(
+        bytes(rom.buf), freeze="--freeze-kana" in sys.argv
+    )  # 최종 롬 전체 일본어 잔존(대본 밖 포함)
     verify_jump_readback(bytes(rom.buf), orig, smap, cs.encode)
     ncap = captions.verify_readback(
         bytes(rom.buf),

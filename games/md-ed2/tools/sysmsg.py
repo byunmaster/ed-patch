@@ -53,6 +53,8 @@ RELOCATE: tuple[int, ...] = (
     0x29E00,  # ED1 0x24b42
     0x29E02,  # ED1 0x24b44
     0x29E17,  # ED1 0x24b59
+    0x33384,  # 「더는 못 들겠네…」 노인 상점 — 절대 참조라 꼬리로 옮겨 근처(0x30FF6 의 TAIL_JUMP 본문이 앉을) 칸을 만든다(58B)
+    0x27308,  # 「블랙나이트들이 나타났다.」(정본 무리 이름) — 칸(29B 묶음)보다 1B 길다, 절대 참조라 꼬리로(마스터 10-18)
 )
 # 제자리 묶음에 안 들어가는 스트림 — 제자리엔 goto(3B)만 두고 본문은 **근처(±30KB) 다른 묶음의 남는 칸**(꼬리 이전·고정으로 비워진 자리)에
 # 앉힌다. 참조가 pc 상대(16비트)라 먼 꼬리로 못 가는 자리를 위한 길이다(ED1 TAIL_JUMP 와 같은 기전). 값 = 본문 뒤 되돌아갈 자리(없으면 None).
@@ -62,6 +64,7 @@ TAIL_JUMP: dict[int, int | None] = {
     0x31026: None,
     0x249CE: None,  # 「<02>은(는) 정신이 들었다.」 정본 문안이 칸(16B)보다 길다 — 0A 로 끝나 되돌림 없음
     0x271D8: None,  # 「요마화포가 나타났다.」(21B)가 칸(19B)보다 길다 — 0A 로 끝나 되돌림 없음(규칙 3-6: 줄이지 않고 근처 칸으로)
+    0x30FF6: None,  # 「어떤 능력을 상승시킬까요?」 정본 문안이 칸(23B)보다 길다 — 제자리엔 goto 만, 본문은 근처 칸(0x33384 를 꼬리로 비운 자리)
     0x8471: None,  # 「회복되었다.」 정본 문안이 칸(13B)보다 1B 길다 — 00 으로 끝
     # 06·0A 로 끝나 **물리적으로 다음 스트림으로 흐르는** 것은 본문 뒤에 goto 를 달아 원래 끝으로 되돌린다(ED1 0x324DD 와 같다)
     0x29D26: 0x29D2A,  # 「<02>에게<06>」 +2B — 뒤 「의 피해!!」(고정)로 흐른다
@@ -72,7 +75,7 @@ TAIL_JUMP: dict[int, int | None] = {
 TAIL_SPLIT: set[int] = {0x31026}
 _FAKE = 1 << 24
 _REACH = 0x7800  # goto 가 16비트 상대(±32KB) — 여유를 두고 30KB
-TAIL_SIZE = 0x100  # 빌드가 꼬리에 비워 두는 칸(build.SYSMSG_TAIL)
+TAIL_SIZE = 0x140  # 빌드가 꼬리에 비워 두는 칸(build.SYSMSG_TAIL)
 SJIS_RUN = re.compile(rb"(?:[\x81-\x9f\xe0-\xea][\x40-\x7e\x80-\xfc]){3,}")
 
 
@@ -108,7 +111,13 @@ def refs(d: bytes) -> dict[int, list[tuple[str, int]]]:
 
 def _textlike(st: scene.Stream) -> bool:
     """문안인가 — 코드·표가 스트림으로 읽힌 것을 거른다(ED1 `_textlike` 와 같은 기준)."""
-    txt = b"".join(t.raw for t in st.tokens if t.kind == "text")
+    # F8(조건) 의 인자 바이트(`84 3F` 꼴)가 텍스트 토큰으로 읽힌다 — 문안이 아니니 뺀다(코드 영역 노인 대화 0x32E7E 가 이것 때문에 분모에서 빠졌다, 2026-10-18)
+    skip = {
+        i + 1
+        for i, t in enumerate(st.tokens[:-1])
+        if t.kind == "ctl" and t.code == 0xF8 and st.tokens[i + 1].kind == "text" and len(st.tokens[i + 1].raw) == 2
+    }
+    txt = b"".join(t.raw for i, t in enumerate(st.tokens) if t.kind == "text" and i not in skip)
     sj = 0
     i = 0
     while i < len(txt):
@@ -153,6 +162,18 @@ def _short_kana(st: scene.Stream) -> bool:
             else:
                 i += 1
     return False
+
+
+# 참조가 없어(코드가 기준 주소에서 계산해 고르거나 쓰이지 않는 사본) 위 탐색이 못 잡는 문안 — 롬 전체 잔존 게이트(`kana_gate.check_rom`)가 가나 런으로
+# 찾아냈다(2026-10-18). **제자리 고정**(옮기면 계산 주소가 어긋난다)이라 번역은 원문 칸 안에 들어가야 한다.
+EXTRA_PINNED = (
+    0x8400,  # 「…늘었다」 — 0x83F4(올랐다)·0x840A(내려갔다)와 같은 꼴의 변형 꼬리(ED1 0x764C)
+    0x840A,  # 「…내려갔다」 (ED1 0x7656)
+    0x29DC8,  # 「<0e>を持っていた」 — 0x2468C 와 같은 문안의 참조 없는 사본
+    0x30FF6,  # 「どの力を高めますか？」 (ED1 0x2A9D6) — 0x31026 「その力はこれ以上…」 바로 앞 묶음
+    0x3100E,  # 「これでよろしいですか？」 (ED1 0x2A9EE)
+)
+PINNED |= set(EXTRA_PINNED)
 
 
 def table_ranges() -> list[tuple[int, int]]:
@@ -219,7 +240,10 @@ def streams(d: bytes) -> dict[int, dict]:
         again = False
         for e in list(out.values()):
             tk = e["stream"].tokens
-            if not tk or tk[-1].kind != "end" or tk[-1].code not in (0x06, 0x0A, 0x0D):
+            flows = bool(tk) and (
+                (tk[-1].kind == "end" and tk[-1].code in (0x06, 0x0A, 0x0D)) or scene.is_cond_goto(tk)
+            )  # 조건부 goto 도 거짓이면 바로 뒤 스트림으로 흘러간다(scene.is_cond_goto)
+            if not flows:
                 continue
             n = e["stream"].end
             if n in out or not 0 <= n < CODE_END or any(a <= n < b for a, b in table_ranges()):
@@ -228,7 +252,7 @@ def streams(d: bytes) -> dict[int, dict]:
                 st = scene.parse_stream(d, n)
             except (ValueError, IndexError):
                 continue
-            if st.end - n > 400 or not any(
+            if st.end - n > (MAX_STREAM if scene.is_cond_goto(tk) else 400) or not any(
                 t2.kind == "text" and len(t2.raw) >= 2 for t2 in st.tokens
             ):
                 continue
@@ -237,6 +261,9 @@ def streams(d: bytes) -> dict[int, dict]:
             out[n] = {"stream": st, "refs": []}
             PINNED.add(n)
             again = True
+    for t in EXTRA_PINNED:
+        if t not in out:
+            out[t] = {"stream": scene.parse_stream(d, t), "refs": []}
     return dict(sorted(out.items()))
 
 
@@ -253,7 +280,7 @@ def leftover(d: bytes, strs: dict[int, dict]) -> list[tuple[int, int]]:
 
 
 # 첫 조사(2026-10-12) 실측 — 파서·정규식을 고치면 바뀐다. 번역 때 분모로 쓴다.
-EXPECT = (214, 784)  # 스트림 · 스트림 밖 SJIS 런 (0x82A0 은 VRAM 주소라 참조가 아니다 — 215 에서 하나 빠졌다)
+EXPECT = (223, 698)  # 스트림 · 스트림 밖 SJIS 런 (0x82A0 은 VRAM 주소라 참조가 아니다 — 215 에서 하나 빠졌다)
 
 
 def clusters(strs: dict[int, dict]) -> list[list[int]]:

@@ -800,8 +800,8 @@ def reassemble(
     for x in forced:
         moved.update(members[group[x]])
     for s in sorted(moved):
-        if s in mod.pinned and s in mod.hubs and old_len[s] >= 3:
-            stub_at.add(s)  # 허브는 옛 자리에 스텁만 남기고 본문을 옮긴다
+        if s in mod.pinned and old_len[s] >= 3:
+            stub_at.add(s)  # 허브·고정 글줄은 옛 자리에 goto 스텁(3B)만 남기고 본문을 옮긴다 — 읽기가 그 자리에서 시작하므로 스텁이 먼저 읽힌다(10-18: 상점 「…이군요」 43곳을 줄이지 않고 넣으려고)
         elif s in mod.pinned:
             raise ValueError(
                 f"제자리 고정 스트림 @{s:#x} 이 원래 칸({old_len[s]}B)보다 길다({new_len[s]}B) — 번역을 줄인다"
@@ -983,10 +983,11 @@ def verify_reassembly(
         ):
             continue
         got = new.streams[remap[s]]
-        if s in orig.hubs and s in orig.pinned and got.tokens and got.tokens[0].ref == GOTO:
+        if s in orig.pinned and got.tokens and got.tokens[0].ref == GOTO:
             w0 = want[0] if want else None
             if not (w0 is not None and w0.ref == GOTO and w0.target == got.tokens[0].target):
-                got = new.streams[got.tokens[0].target]  # 스텁 → 옮긴 본문
+                tgt = got.tokens[0].target  # 스텁 → 옮긴 본문(고정 글줄은 새 파서가 스트림으로 안 잡아 직접 읽는다)
+                got = new.streams[tgt] if tgt in new.streams else parse_stream(new.data, tgt)
         a = [
             (t.kind, t.code, t.raw.rstrip(b" ") if t.kind == "text" else t.raw[:1])
             for t in _lead_merge(want)

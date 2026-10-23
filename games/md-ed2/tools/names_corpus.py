@@ -18,9 +18,7 @@ import scene
 import sysmsg
 
 CANON = "ed2"  # 공통 문안 정본(shared/canon)
-CANON_GATE = (
-    False  # 정본 어긋남을 실패로 치는 전환은 시스템 메시지·전투 문안이 정본과 맞은 뒤에 켠다
-)
+CANON_GATE = True  # 정본 어긋남을 실패로 친다(2026-10-18 어긋남 0 — 이후 커밋은 이 게이트 아래에서)
 CANON_SKIP = (
     r"^script:"  # 장면 대사는 정본 범위 밖(마스터 10-08) — 정본은 메뉴·호칭·시스템·전투 문구
 )
@@ -86,12 +84,18 @@ def _script_pairs(rom: bytes):
 # 칸에 박힌 이름 표 스트림(용의 알 이름 · 지명) — 칸은 붙여쓴 꼴(규칙 3-4), 대사가 아니다
 SLOT_STREAMS = frozenset({0x22C60, 0x22C6E, 0x22C7C, 0x22C8A, 0x22C98, 0x3B0B6, 0x3B22E, 0x3B23B, 0x3B248})
 
+# 화면에 안 나가는 죽은 자료 — 롬 전체에서 가리키는 곳이 0(절대 32비트·pc 상대 lea/pea·16비트 상대 워드 탐색, 테스트가 고정한다).
+# 0x29DC8 = 0x2468C 「…을 가지고 있었다」의 참조 없는 사본(칸 17B 제자리 고정). 참조가 생기면 테스트가 깨지니 그때 분모에 되돌린다.
+DEAD_STREAMS = frozenset({0x29DC8})
+
 
 def _sysmsg_pairs(rom: bytes):
     import build
 
     smap = build.load_sysmsg(rom)
     for addr, e in sysmsg.streams(rom).items():
+        if addr in DEAD_STREAMS:
+            continue
         jp = sysmsg.render(e["stream"])
         ours = smap.get(f"{addr:06x}", {}).get("ours") or None
         yield f"sysmsg:{addr:06x}", _t(jp), _t(ours), SLOT if addr in SLOT_STREAMS else DIALOG

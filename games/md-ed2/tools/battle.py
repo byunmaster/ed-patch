@@ -39,9 +39,9 @@ REC0, REC_STEP, NAME_AT = 0x0C, 0x40, 0x30
 NAME_MAX = 15  # 16B 칸 − 06
 LEA = re.compile(rb"([\x41\x43\x45\x47\x49\x4b])\xfa(..)", re.DOTALL)  # a6(4D) 는 플래그 포인터
 APPEAR_RUN = re.compile(
-    rb"(?:[\x81-\x9f\xe0-\xea][\x40-\x7e\x80-\xfc]|[\xa1-\xdf]){2,40}"
-    rb"(?:\x82\xaa\x8c\xbb\x82\xea\x82\xbd\x81\x42|\x82\xc6\x82\xcc\x90\xed\x93\xae\x82\xbe\x81\x42)"
-)  # 「…が現れた。」 · 「…との戦闘だ。」
+    rb"(?:[\x81-\x9f\xe0-\xea][\x40-\x7e\x80-\xfc]|[\xa1-\xdf]|\x20){2,40}"
+    rb"(?:\x82\xaa\x8c\xbb\x82\xea\x82\xbd\x81\x42|\x82\xc6\x82\xcc\x90\xed\x93\xac\x82\xbe\x81\x42)"
+)  # 「…が現れた。」 · 「…との戦闘だ。」 — 이름 사이 공백(「皇帝 ゴドウィン２世」)도 받는다(블록 81 등장 문구가 일본어로 남았다, 10-18)
 FLAG = re.compile(rb"\x4d\xfa(..)(?:\x1c\x80|\x1c\xbc\x00\xff|\x1c\x86)", re.DOTALL)
 SUFFIX = re.compile(r"[Ａ-ＤA-D♀♂][′″]?$")  # ED2 는 변형 표지 ′·″ 가 붙는다(붉은슬러그 Ａ′·Ｂ″)
 NAME_TAG = re.compile(r"\{([^{}|]+)(?:\|([^{}]+))?\}")
@@ -49,7 +49,7 @@ MAP_JSON = common.GAME_DIR / "textmap" / "battle.json"
 EXPECT = (
     247,
     119,
-    285,
+    373,
 )  # 이름 · 기본 이름 · 고유 스트림(lea·플래그·자료 A + 연쇄 39, 2026-09-06 · 짧은 lea 조각 +3, 09-27)
 
 
@@ -69,18 +69,20 @@ def records(b: bytes) -> list[dict]:
     while p + NAME_AT < t[1]:
         nxt = p + REC_STEP
         last = nxt >= t[1]
-        if not b[p] & 0x80:
-            q = b.index(0x06, p + NAME_AT)
-            name = b[p + NAME_AT : q]
+        if True:  # 0x80 표시 레코드(C·D 칸)도 런타임엔 쓰인다 — 실측 블록 0·3·29 RAM 에 일본어 이름 「ッグＣ」로 올라온다(2026-10-18)
+            at = p + NAME_AT
+            # 짧은 레코드 꼴(블록 59 등): 0x80 표시 레코드에서 표준 이름 자리가 0xFF 로 비고 이름이 머리 13B 뒤(+0xD)에 따로 있다
+            if b[p] & 0x80 and b[at] == 0xFF and 0x81 <= b[p + 0xD] <= 0x9F:
+                at = p + 0xD
+            q = b.index(0x06, at)
+            name = b[at:q]
             out.append(
                 {
                     "start": p,
-                    "name_at": p + NAME_AT,
+                    "name_at": at,
                     "name": name,
                     "last": last,
-                    "cap": (t[1] - (p + NAME_AT) - 1)
-                    if last
-                    else NAME_MAX,  # 마지막은 06 뒤 패딩까지
+                    "cap": (t[1] - at - 1) if last else NAME_MAX,  # 마지막은 06 뒤 패딩까지
                 }
             )
         p = nxt
@@ -94,6 +96,11 @@ def base_name(s: str) -> str:
 def suffix_of(s: str) -> str:
     m = SUFFIX.search(s)
     return m.group(0) if m else ""
+
+
+def suffix_kr(s: str) -> str:
+    """접미 Ａ~Ｄ 반각 + ″ 는 한 글자 그대로(NFKC 가 ′′ 두 글자로 펴 이름 칸이 1B 넘친다 — 붉은 슬러그Ｂ″)."""
+    return unicodedata.normalize("NFKC", suffix_of(s)).replace("′′", "″")
 
 
 def _stream(b: bytes, tgt: int):
@@ -372,7 +379,7 @@ def kr_name(jp: str, monsters: dict) -> str:
     kr = ent.get("ours", "") if ent else (_glossary(base) or "")
     if not kr:
         raise SystemExit(f"battle: 몬스터 이름 정본이 없다 {base!r}")
-    return kr + unicodedata.normalize("NFKC", suffix_of(jp))
+    return kr + suffix_kr(jp)
 
 
 def expand_names(text: str, monsters: dict) -> str:
@@ -488,8 +495,42 @@ def patch_boss_block(
     out[8:10] = struct.pack(">H", len(out))
 
 
+# 마지막 레코드(D 칸)는 레코드 구역이 4B 짧은 블록에서 잘려 이름 칸이 짧다(구역 1 끝 = 구역 2 시작이라 12B 뿐 — 정상 블록은 16B).
+# 「炎の騎士Ｄ」→「불꽃의 기사D」 12B + 06 이 안 들어간다. 줄이지 않고 **레코드 구역 끝에 4B 를 끼워 넣어** 정상 블록 꼴(16B)로 만든다(`grow_records`).
+GROW_RECORDS = {(11, "炎の騎士Ｄ"): 4}
+
+
+def grow_records(b: bytes, k: int) -> bytes:
+    """레코드 구역(구역 1) 끝에 0 을 `k`B 끼운다 — 헤더 경계 넷과 블록 안 **절대 오프셋 워드**(스트림 시작·구역 경계를 가리키는 것)를 +k,
+    pc 상대 참조는 구역 2 이후끼리라 그대로. 가리키는 워드를 정확히 못 세면(헤더 밖 3개 초과·레코드 구역 안) 멈춘다."""
+    t = list(struct.unpack(">6H", b[:12]))
+    t1 = t[1]
+    targets = {x for x in refs(b) if x >= t1} | {x for x in t[2:5]}
+    out = bytearray(b[:t1] + bytes(k) + b[t1:])
+    hits = []
+    for i in range(12, len(b) - 1, 2):
+        v = struct.unpack(">H", b[i : i + 2])[0]
+        if v in targets:
+            if i < t1:
+                raise SystemExit(
+                    f"grow_records: 레코드 구역 안 {i:#x} 에 오프셋 후보 {v:#x} — 사람이 확인한다"
+                )
+            hits.append(i)
+    if len(hits) > 6:
+        raise SystemExit(f"grow_records: 오프셋 워드 후보 {len(hits)} > 6 — 사람이 확인한다")
+    for i in hits:
+        v = struct.unpack(">H", b[i : i + 2])[0]
+        out[i + k : i + k + 2] = struct.pack(">H", v + k)
+    for j in range(1, 6):
+        out[2 * j : 2 * j + 2] = struct.pack(">H", t[j] + k)
+    return bytes(out)
+
+
 def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes | None:
     """블록 하나의 새 바이트(바뀐 게 없으면 None)."""
+    for (gn, gjp), gk in GROW_RECORDS.items():
+        if gn == n and any(r["name"].decode("cp932", "replace") == gjp for r in records(b)):
+            b = grow_records(b, gk)
     out = bytearray(b)
     changed = False
     errs = []
@@ -516,10 +557,10 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         if r is None:
             continue
         jp = r["name"].decode("cp932", "replace")
-        if len(base_name(jp).encode("cp932")) != off or not base_name(jp) in monsters:
+        if base_name(jp) not in monsters or len(base_name(jp).encode("cp932")) != off:
             continue
         enc = encode(kr_name(jp, monsters))
-        new_off = len(enc) - len(encode(unicodedata.normalize("NFKC", suffix_of(jp))))
+        new_off = len(enc) - len(encode(suffix_kr(jp)))
         new_addr = 0xFF1DBC + (slot + ACTOR0) * ACTOR_REC + ACTOR_NAME + new_off
         if new_addr != 0xFF1DBC + (slot + ACTOR0) * ACTOR_REC + ACTOR_NAME + off:
             out[ins + 6 : ins + 8] = struct.pack(">H", new_addr & 0xFFFF)
