@@ -56,6 +56,10 @@ echo "== pce-ed1 =="
 # 6. 빌드 — 코드 패치 사전조건 · 시스템 문구 자리 · 컨테이너 재조립 · 무변경 대조 · 되읽기
 "$PY" "$T/build.py"
 
+# 6-a. 재배치 장부 — 빌드가 한 재배치(꼬리 이음·채움·스텁·이사 …)를 구조 대조(build.py → structure.py, 위반 = 빌드 실패)로 잡아 낸 장부와 커밋된
+#       games/pce-ed1/relocations.tsv 를 비교한다. 장부에 없는 (블록, 종류)가 새로 생기면 실패(마스터 10-22 — 재배치 사고를 정적으로 막는다)
+"$PY" "$T/check_relocations.py"
+
 # 6-b. 롬 전체 잔존 일본어 — 디스크를 직접 훑어 빌드가 안 바꾼 일본어 런(4자 이상)이 기준선(`script/coverage_baseline.json`) 밖에 생기면 실패(10-18).
 #      기준선의 부류별 수는 `coverage_scan.py` 출력 — 「화면 문장 후보 — 미판정」 15런은 번역 대상일 수 있다
 "$PY" "$T/coverage_scan.py" --check

@@ -197,6 +197,7 @@ def kr_names(extra: dict[str, str] | None = None) -> tuple[dict[str, str], list[
 
 
 MOVED_COUNT = [0]  # 옮겨 실은 문구 총수(영향 범위 보고용)
+STRUCT_RECS: list[tuple[int, int, bytes, bytes]] = []  # (컨테이너 rel, 블록 번호, 원본 데이터, 새 데이터) — 구조 대조(structure.verify_battle)용
 
 
 # 이름 칸도 `msg=True` 로 쓴다(10-21): 안 그러면 이름 안의 공백이 전각(12px)으로 나가 「큰  독개구리A에게」처럼 벌어진다 — 문구 안의 같은 이름(「큰 독개구리의 무리가」)은 반각(4px)이라 둘이 어긋났다.
@@ -260,6 +261,7 @@ def patch_blocks(
         nmsg += patch_msgs(data, msgs, table, errors, f"rel{rel} blk", moved, f"{rel}:{bi}")
         check_moved(bytes(data), moved, errors, f"rel{rel} blk")
         MOVED_COUNT[0] += len(moved)
+        STRUCT_RECS.append((rel, bi, bytes(b["data"]), bytes(data)))
         b["data"] = bytes(data)
     return blocks, hit, nmsg
 
@@ -272,6 +274,7 @@ def apply(f, table, touched, extra: dict[str, str] | None = None) -> dict:
     if missing:
         raise ValueError("몬스터 표기 미등재: " + " · ".join(missing))
     MOVED_COUNT[0] = 0
+    STRUCT_RECS.clear()
     errors: list[str] = []
     n = 0
     m = 0

@@ -13,6 +13,7 @@
 """
 
 import argparse
+from collections import Counter
 import contextlib
 import json
 import os
@@ -39,6 +40,7 @@ import gwin_rt
 import voice_sched
 import omake_art
 import omake_font
+import structure
 import syscard_screen
 import opening_sub
 import credits_kr
@@ -596,6 +598,7 @@ def _build(edits_path, iso: Path, cue: Path):
     by_rel = {c["rel"]: c for c in found}
     touched: list[tuple[int, int]] = []  # (첫 파일 섹터, 섹터 수)
     intended: dict[tuple[int, int], bytes] = {}
+    recs: dict[tuple[int, int], structure.BlockRec] = {}  # 재배치 장부·구조 대조(structure.py)
     refs = containers.referenced()
     slot_of = {r: n for r, n in refs}  # 참조표가 말하는 섹터 수
     ledger = WriteLedger()
@@ -653,21 +656,33 @@ def _build(edits_path, iso: Path, cue: Path):
             for b in c["blocks"]:
                 blk = b["data"]
                 dyn: list[str] = []
+                rec = structure.BlockRec(rel, b["id"], b["data"])  # 재배치 장부·구조 대조용 단계 기록(structure.py)
+                _s = blk
                 if b["id"] in translated_ids:
                     btab, dyn = glyphdyn.block_table(table, b["id"])
                     blk, n = translate.translate_block(b["id"], blk, btab)
                     n_msgs += n
+                    rec.add("translate", _s, blk)
+                    _s = blk
                 if (rel, b["id"]) in edits:
                     blk = apply_edits(blk, edits[(rel, b["id"])], f"rel {rel} id {b['id']}")
+                    rec.add("edits", _s, blk)
+                    _s = blk
                 if b["id"] in narr_ids:
                     blk, n = narration_gates.patch_block(b["id"], blk, btab if b["id"] in translated_ids else None)
                     n_gates += n
+                    rec.add("narr", _s, blk)
+                    _s = blk
                 if b["id"] in sched_ids:  # 음성 장면 — ON 이어도 OFF 흐름 + 음성 + 전역 시각표(voice_sched)
                     blk, n = voice_sched.patch_block(b["id"], b["data"], blk)
                     n_sched += n
+                    rec.add("sched", _s, blk)
+                    _s = blk
                 if want("narr") and str(b["id"]) in gwin_rt.build_specs():  # 월드를 안 멈추는 대사창 모양 자막(장면 2 인사)
                     blk, n = gwin_rt.patch_block(b["id"], blk)
                     n_gwin += n
+                    rec.add("gwin", _s, blk)
+                    _s = blk
                 if os.environ.get("ED_VIEWER"):  # 🔴 디버그 전용 — 대사 보기(tools/viewer.py). 꼬리표는 test- 로 시작해야 한다
                     assert common.BUILD_TAG.startswith("test-"), "ED_VIEWER 는 시험 빌드(ED_BUILD_TAG=test-*)에서만"
                     lo_hi = os.environ["ED_VIEWER"]  # "1" = 전부 · "3-110" = 그 씬 번호만(스텁이 이사 자리를 넘겨서 반씩 굽는다)
@@ -675,13 +690,20 @@ def _build(edits_path, iso: Path, cue: Path):
                     only = json.loads(os.environ.get("ED_VIEWER_ADDRS", "{}"))  # 주소 목록이 있으면 그 씬만 스텁을 단다(시험용 — 이사 자리를 아낀다)
                     if int(lo) <= b["id"] <= int(hi) and (not only or str(b["id"]) in only):
                         viewer_idx.append(viewer.index(b["id"], b["data"]))
+                        _s = blk
                         blk = viewer.patch_block(blk, b["data"], b["id"])
+                        rec.add("viewer", _s, blk)
                 if dyn:  # 동적 글리프 — 머리 점프를 꼬리 스텁으로(블록 열림 훅)
+                    _s = blk
                     blk = glyphdyn.attach(blk, dyn)
                     n_dyn += len(dyn)
                     n_dyn_blocks += 1
+                    rec.add("dyn", _s, blk)
                 if blk != b["data"]:
+                    if rec.final != blk:
+                        raise BuildError(f"rel {rel} id {b['id']}: 단계 기록(structure)이 최종 블록과 다르다 — 기록 안 하는 단계가 블록을 바꿨다")
                     intended[(rel, b["id"])] = blk
+                    recs[(rel, b["id"])] = rec
                 entries.append((b["id"], blk))
             orig = common.track_data(rel, slot_of[rel])
             data = assemble(entries, orig, f"rel {rel}")
@@ -719,6 +741,28 @@ def _build(edits_path, iso: Path, cue: Path):
     print(f"  덮어쓰기 없음 (쓰기 구간 {ledger.verify(iso)})")
     verify_immutable(iso, touched)
     verify_readback(iso, intended, found, moves)
+    if want("scn"):
+        led, viol, summ = structure.verify_all(recs, sum(len(c["blocks"]) for c in found), moves)
+        if want("battle"):  # 전투 컨테이너 문구 단위 — 같은 대조(structure.analyze_battle_block)
+            bl, bv, bs = structure.verify_battle(battle.STRUCT_RECS)
+            led += bl
+            viol += bv
+            summ["battle"] = bs
+        if want("sys"):  # 시스템 메시지(뱅크 0x6D) 제어 열 + 라벨 구분자 — 구운 이미지를 읽어 대조(structure.verify_sys)
+            sl, sv, sp, ss = structure.verify_sys(iso)
+            led += sl
+            viol += sv
+            summ["sys"] = ss
+            if sp:
+                print(f"  ⚠ 구조 대조 보류 {len(sp)}건(의도 확인 대기 — structure.PENDING): " + " | ".join(sp))
+        (iso.parent / "relocations.tsv").write_text(structure.ledger_tsv(led), encoding="utf-8")  # 장부 = 씬 + 전투 + 시스템(커밋 대상은 check_relocations.py --freeze)
+        kinds_n = Counter(k for _b, k, _c in led)
+        print(
+            f"  구조 대조: 씬 블록 {summ['compared']}/{summ['total']}(나머지는 번역·패치가 안 닿은 블록 = 원본 그대로) · 전투 블록 {summ.get('battle', {}).get('compared', 0)}/{summ.get('battle', {}).get('total', 0)} · 시스템 메시지 {summ.get('sys', {}).get('compared', 0)}/{summ.get('sys', {}).get('total', 0)} · 위반 {len(viol)} · "
+            f"재배치 장부 {len(led)}행(" + " ".join(f"{k} {v}" for k, v in sorted(kinds_n.items())) + ")"
+        )
+        if viol:
+            raise BuildError("구조 대조 위반 %d건:\n  " % len(viol) + "\n  ".join(viol[:40]) + ("\n  …" if len(viol) > 40 else ""))
     if want("sys"):
         print("  오마케 그림 되읽기 OK — " + omake_art.verify_iso(iso))
         print("  " + syscard_screen.verify_iso(iso))
