@@ -46,7 +46,9 @@ function label(site, g) {
   return "";
 }
 
-const tags = (g) => `<span class="tag plat">${esc(g.tags.platform)}</span>` + g.tags.series.map((t) => `<span class="tag">${esc(t)}</span>`).join("");
+// 버전 태그 — 배포한 판의 버전(site.json 의 version). 작업 중인 게임은 버전이 없어 붙지 않는다(마스터 10-23).
+const ver = (g) => g.version ? `<span class="tag ver">v${esc(g.version)}</span>` : "";
+const tags = (g) => `<span class="tag plat">${esc(g.tags.platform)}</span>` + g.tags.series.map((t) => `<span class="tag">${esc(t)}</span>`).join("") + ver(g);
 
 // 커버 — 우리 한글패치를 적용한 타이틀 화면 캡처(site.json 의 cover). 없으면 상태 글자만 둔다.
 const cover = (g) => g.cover
