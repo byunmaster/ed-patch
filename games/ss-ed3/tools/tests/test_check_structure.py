@@ -55,3 +55,29 @@ class Structure(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JumpTargets(unittest.TestCase):
+    """pce-ed1 10-22 꼴 — 남의 점프가 들어오는 종료 바이트를 우리 스텁이 덮으면 울어야 한다."""
+
+    def maps(self):
+        pad = b"\x00" * 40
+        body = b"\x41" * 8 + b"\x00" + b"\x41" * 8  # 종료 00 이 오프셋 8 + base
+        base = M.NAME_OFF + 64
+        orig = bytearray(base) + body + pad
+        orig[:4] = b"\x00\x00\x00\x00"
+        end = base + 8
+        j = base + 30
+        orig[j : j + 6] = b"\xfd\x00" + (S.BASE + end).to_bytes(4, "big")
+        return orig, end
+
+    def test_catches_overwritten_target(self):
+        orig, end = self.maps()
+        built = bytearray(orig)
+        built[end : end + 6] = b"\xfd\x00\x00\x30\x00\x00"  # 스텁 주소가 종료 바이트를 덮었다
+        # 목표가 트램펄린 시작이 아니면(놓은 p 가 아니다) 운다 — 여기서는 tramps 를 비워 호출한다
+        self.assertTrue(S.target_damage(orig, built, []))
+
+    def test_clean_build_passes(self):
+        orig, _ = self.maps()
+        self.assertEqual(S.target_damage(orig, bytearray(orig), []), [])

@@ -91,7 +91,7 @@ MAP001	229	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(
 MAP001	231	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP001	234	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP001	234	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
-MAP002	45	스텁(옮김)	0x13a84	0x165a4	복귀 0x13ad2	structure_allow.json › 스텁(옮김)
+MAP002	45	스텁(옮김)	0x13a84	0x165d6	복귀 0x13ad2	structure_allow.json › 스텁(옮김)
 MAP002	57	스텁(음성 자막)	0x1405c	0x15ec0	복귀 0x14068	structure_allow.json › 스텁(음성 자막)
 MAP002	57	스텁(음성 자막)	0x1406c	0x15ee0	복귀 0x14074	structure_allow.json › 스텁(음성 자막)
 MAP002	8	재조판(0D)	3	2	줄 수	structure_allow.json › 재조판(0D)
@@ -1523,6 +1523,7 @@ MAP015	356	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(
 MAP015	357	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP015	357	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
 MAP015	358	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
+MAP016	149	스텁(옮김)	0x10a4c	0x13b70	복귀 0x10a6a	structure_allow.json › 스텁(옮김)
 MAP016	1	이름 칸	0xdd80	+1B	칸 뒤 0 구간까지 늘려 씀	structure_allow.json › 이름 칸
 MAP016	11	이름 칸	0xdec0	+1B	칸 뒤 0 구간까지 늘려 씀	structure_allow.json › 이름 칸
 MAP016	30	이름 칸	0xe120	+1B	칸 뒤 0 구간까지 늘려 씀	structure_allow.json › 이름 칸
@@ -2383,7 +2384,8 @@ MAP021	490	재조판(0D)	1	2	줄 수	structure_allow.json › 재조판(0D)
 MAP021	491	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP021	494	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP021	498	재조판(0D)	2	1	줄 수	structure_allow.json › 재조판(0D)
-MAP022	503	스텁(옮김)	0x18f6a	0x1a430	복귀 0x18f9a	structure_allow.json › 스텁(옮김)
+MAP022	363	스텁(음성 자막)	0x15de8	0x1a430	복귀 0x15ee6	structure_allow.json › 스텁(음성 자막)
+MAP022	503	스텁(옮김)	0x18f6a	0x1a53a	복귀 0x18f9a	structure_allow.json › 스텁(옮김)
 MAP022	36	재조판(0D)	4	3	줄 수	structure_allow.json › 재조판(0D)
 MAP022	38	재조판(0D)	2	0	줄 수	structure_allow.json › 재조판(0D)
 MAP022	38	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
@@ -2884,7 +2886,8 @@ MAP025	20	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1
 MAP025	21	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP025	21	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
 MAP025	22	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
-MAP026	899	스텁(옮김)	0x1d926	0x1fe94	복귀 0x1da38	structure_allow.json › 스텁(옮김)
+MAP026	859	스텁(옮김)	0x1cb78	0x1fe94	복귀 0x1cba8	structure_allow.json › 스텁(옮김)
+MAP026	899	스텁(옮김)	0x1d926	0x1fecc	복귀 0x1da38	structure_allow.json › 스텁(옮김)
 MAP026	6	이름 칸	0xc0d6	+1B	칸 뒤 0 구간까지 늘려 씀	structure_allow.json › 이름 칸
 MAP026	12	이름 칸	0xc19e	+2B	칸 뒤 0 구간까지 늘려 씀	structure_allow.json › 이름 칸
 MAP026	13	이름 칸	0xc1b6	+5B	칸 뒤 0 구간까지 늘려 씀	structure_allow.json › 이름 칸
@@ -3250,7 +3253,6 @@ MAP026	868	재조판(0D)	2	1	줄 수	structure_allow.json › 재조판(0D)
 MAP026	870	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP026	871	재조판(0D)	4	2	줄 수	structure_allow.json › 재조판(0D)
 MAP026	872	재조판(0D)	2	1	줄 수	structure_allow.json › 재조판(0D)
-MAP026	874	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP026	875	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP026	876	재조판(0D)	0	1	줄 수	structure_allow.json › 재조판(0D)
 MAP026	878	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
@@ -3543,6 +3545,7 @@ MAP029	300	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(
 MAP029	311	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP029	313	재조판(0D)	2	1	줄 수	structure_allow.json › 재조판(0D)
 MAP029	313	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
+MAP030	26	스텁(옮김)	0xdfaa	0x10274	복귀 0xe017	structure_allow.json › 스텁(옮김)
 MAP030	17	재조판(0D)	0	1	줄 수	structure_allow.json › 재조판(0D)
 MAP030	19	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP030	19	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
@@ -5454,8 +5457,6 @@ MAP051	28	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP051	31	재조판(0D)	2	1	줄 수	structure_allow.json › 재조판(0D)
 MAP051	34	재조판(0D)	1	2	줄 수	structure_allow.json › 재조판(0D)
 MAP051	39	재조판(0D)	2	3	줄 수	structure_allow.json › 재조판(0D)
-MAP051	41	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
-MAP051	41	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
 MAP051	44	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP051	55	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP051	55	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
@@ -5477,8 +5478,6 @@ MAP051	89	재조판(0D)	2	1	줄 수	structure_allow.json › 재조판(0D)
 MAP051	92	재조판(0D)	2	1	줄 수	structure_allow.json › 재조판(0D)
 MAP051	94	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP051	94	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
-MAP051	105	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
-MAP051	105	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
 MAP052		스텁(음성 자막)	0x145a4	0x15360	복귀 0x145ae	structure_allow.json › 스텁(음성 자막)
 MAP052		스텁(음성 자막)	0x14610	0x15380	복귀 0x1461a	structure_allow.json › 스텁(음성 자막)
 MAP052		스텁(음성 자막)	0x14684	0x153e0	복귀 0x1468c	structure_allow.json › 스텁(음성 자막)
@@ -6253,6 +6252,7 @@ MAP070	273	재조판(0D)	2	1	줄 수	structure_allow.json › 재조판(0D)
 MAP070	277	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP070	277	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
 MAP070	279	재조판(0D)	2	1	줄 수	structure_allow.json › 재조판(0D)
+MAP071	23	스텁(옮김)	0x71d0	0x9864	복귀 0x71f0	structure_allow.json › 스텁(옮김)
 MAP071	14	이름 칸	0x672c	+5B	칸 뒤 0 구간까지 늘려 씀	structure_allow.json › 이름 칸
 MAP071	15	이름 칸	0x674c	+3B	칸 뒤 0 구간까지 늘려 씀	structure_allow.json › 이름 칸
 MAP071	16	이름 칸	0x676c	+3B	칸 뒤 0 구간까지 늘려 씀	structure_allow.json › 이름 칸
@@ -6904,8 +6904,6 @@ MAP084	408	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP084	408	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
 MAP084	418	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP084	418	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
-MAP084	420	재조판(0D)	2	0	줄 수	structure_allow.json › 재조판(0D)
-MAP084	420	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
 MAP084	422	재조판(0D)	2	1	줄 수	structure_allow.json › 재조판(0D)
 MAP084	425	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP084	428	재조판(0D)	2	1	줄 수	structure_allow.json › 재조판(0D)
@@ -6944,8 +6942,6 @@ MAP084	501	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP084	501	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
 MAP084	511	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP084	511	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
-MAP084	513	재조판(0D)	2	0	줄 수	structure_allow.json › 재조판(0D)
-MAP084	513	채움(1A)	0	있음	남는 바이트	structure_allow.json › 채움(1A)
 MAP084	515	재조판(0D)	2	1	줄 수	structure_allow.json › 재조판(0D)
 MAP085	3	이름 칸	0x13340	+1B	칸 뒤 0 구간까지 늘려 씀	structure_allow.json › 이름 칸
 MAP085	4	이름 칸	0x13360	+1B	칸 뒤 0 구간까지 늘려 씀	structure_allow.json › 이름 칸
@@ -7119,7 +7115,7 @@ MAP086	445	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP086	454	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP086	460	재조판(0D)	1	0	줄 수	structure_allow.json › 재조판(0D)
 MAP001		파일 이전	LBA 3373 · 128148B	LBA 141961 · 128200B	꼬리 증설	structure_allow.json › 파일 이전
-MAP002		파일 이전	LBA 3671 · 89792B	LBA 142024 · 91642B	꼬리 증설	structure_allow.json › 파일 이전
+MAP002		파일 이전	LBA 3671 · 89792B	LBA 142024 · 91692B	꼬리 증설	structure_allow.json › 파일 이전
 MAP003		파일 이전	LBA 3959 · 82704B	LBA 142069 · 84952B	꼬리 증설	structure_allow.json › 파일 이전
 MAP005		파일 이전	LBA 4466 · 65488B	LBA 142111 · 66478B	꼬리 증설	structure_allow.json › 파일 이전
 MAP006		파일 이전	LBA 4692 · 120760B	LBA 142144 · 123674B	꼬리 증설	structure_allow.json › 파일 이전
@@ -7127,29 +7123,32 @@ MAP011		파일 이전	LBA 6061 · 91984B	LBA 142205 · 92092B	꼬리 증설	stru
 MAP013		파일 이전	LBA 6640 · 93120B	LBA 142250 · 93516B	꼬리 증설	structure_allow.json › 파일 이전
 MAP014		파일 이전	LBA 6920 · 117056B	LBA 142296 · 118488B	꼬리 증설	structure_allow.json › 파일 이전
 MAP015		파일 이전	LBA 7162 · 115864B	LBA 142354 · 118122B	꼬리 증설	structure_allow.json › 파일 이전
-MAP017		파일 이전	LBA 7742 · 73104B	LBA 142412 · 73920B	꼬리 증설	structure_allow.json › 파일 이전
-MAP019		파일 이전	LBA 8240 · 84684B	LBA 142449 · 87158B	꼬리 증설	structure_allow.json › 파일 이전
-MAP020		파일 이전	LBA 8449 · 116524B	LBA 142492 · 116578B	꼬리 증설	structure_allow.json › 파일 이전
-MAP022		파일 이전	LBA 9044 · 107568B	LBA 142549 · 107624B	꼬리 증설	structure_allow.json › 파일 이전
-MAP023		파일 이전	LBA 9333 · 122988B	LBA 142602 · 123098B	꼬리 증설	structure_allow.json › 파일 이전
-MAP026		파일 이전	LBA 10116 · 130708B	LBA 142663 · 130990B	꼬리 증설	structure_allow.json › 파일 이전
-MAP028		파일 이전	LBA 10605 · 93456B	LBA 142727 · 93510B	꼬리 증설	structure_allow.json › 파일 이전
-MAP031		파일 이전	LBA 11381 · 110960B	LBA 142773 · 112090B	꼬리 증설	structure_allow.json › 파일 이전
-MAP032		파일 이전	LBA 11665 · 78172B	LBA 142828 · 78678B	꼬리 증설	structure_allow.json › 파일 이전
-MAP035		파일 이전	LBA 12513 · 68256B	LBA 142867 · 69752B	꼬리 증설	structure_allow.json › 파일 이전
-MAP038		파일 이전	LBA 13234 · 71784B	LBA 142902 · 71840B	꼬리 증설	structure_allow.json › 파일 이전
-MAP039		파일 이전	LBA 13455 · 46376B	LBA 142938 · 46430B	꼬리 증설	structure_allow.json › 파일 이전
-MAP041		파일 이전	LBA 13884 · 35632B	LBA 142961 · 35892B	꼬리 증설	structure_allow.json › 파일 이전
-MAP042		파일 이전	LBA 14102 · 108944B	LBA 142979 · 109000B	꼬리 증설	structure_allow.json › 파일 이전
-MAP046		파일 이전	LBA 15227 · 86000B	LBA 143033 · 88016B	꼬리 증설	structure_allow.json › 파일 이전
-MAP047		파일 이전	LBA 15507 · 93464B	LBA 143076 · 95126B	꼬리 증설	structure_allow.json › 파일 이전
-MAP049		파일 이전	LBA 16024 · 84504B	LBA 143123 · 85554B	꼬리 증설	structure_allow.json › 파일 이전
-MAP052		파일 이전	LBA 16817 · 86860B	LBA 143165 · 90570B	꼬리 증설	structure_allow.json › 파일 이전
-MAP054		파일 이전	LBA 17297 · 70232B	LBA 143210 · 70286B	꼬리 증설	structure_allow.json › 파일 이전
-MAP056		파일 이전	LBA 17763 · 113840B	LBA 143245 · 115738B	꼬리 증설	structure_allow.json › 파일 이전
-MAP060		파일 이전	LBA 18784 · 94688B	LBA 143302 · 99350B	꼬리 증설	structure_allow.json › 파일 이전
-MAP065		파일 이전	LBA 19869 · 97280B	LBA 143351 · 97636B	꼬리 증설	structure_allow.json › 파일 이전
-MAP066		파일 이전	LBA 20149 · 51488B	LBA 143399 · 53818B	꼬리 증설	structure_allow.json › 파일 이전
-MAP076		파일 이전	LBA 22610 · 119008B	LBA 143426 · 120828B	꼬리 증설	structure_allow.json › 파일 이전
-MAP083		파일 이전	LBA 23810 · 87480B	LBA 143485 · 91048B	꼬리 증설	structure_allow.json › 파일 이전
-MAP084		파일 이전	LBA 24082 · 84940B	LBA 143530 · 85050B	꼬리 증설	structure_allow.json › 파일 이전
+MAP016		파일 이전	LBA 7485 · 80752B	LBA 142412 · 80790B	꼬리 증설	structure_allow.json › 파일 이전
+MAP017		파일 이전	LBA 7742 · 73104B	LBA 142452 · 73920B	꼬리 증설	structure_allow.json › 파일 이전
+MAP019		파일 이전	LBA 8240 · 84684B	LBA 142489 · 87158B	꼬리 증설	structure_allow.json › 파일 이전
+MAP020		파일 이전	LBA 8449 · 116524B	LBA 142532 · 116578B	꼬리 증설	structure_allow.json › 파일 이전
+MAP022		파일 이전	LBA 9044 · 107568B	LBA 142589 · 107890B	꼬리 증설	structure_allow.json › 파일 이전
+MAP023		파일 이전	LBA 9333 · 122988B	LBA 142642 · 123098B	꼬리 증설	structure_allow.json › 파일 이전
+MAP026		파일 이전	LBA 10116 · 130708B	LBA 142703 · 131046B	꼬리 증설	structure_allow.json › 파일 이전
+MAP028		파일 이전	LBA 10605 · 93456B	LBA 142767 · 93510B	꼬리 증설	structure_allow.json › 파일 이전
+MAP030		파일 이전	LBA 11179 · 66164B	LBA 142813 · 66282B	꼬리 증설	structure_allow.json › 파일 이전
+MAP031		파일 이전	LBA 11381 · 110960B	LBA 142846 · 112090B	꼬리 증설	structure_allow.json › 파일 이전
+MAP032		파일 이전	LBA 11665 · 78172B	LBA 142901 · 78678B	꼬리 증설	structure_allow.json › 파일 이전
+MAP035		파일 이전	LBA 12513 · 68256B	LBA 142940 · 69752B	꼬리 증설	structure_allow.json › 파일 이전
+MAP038		파일 이전	LBA 13234 · 71784B	LBA 142975 · 71840B	꼬리 증설	structure_allow.json › 파일 이전
+MAP039		파일 이전	LBA 13455 · 46376B	LBA 143011 · 46430B	꼬리 증설	structure_allow.json › 파일 이전
+MAP041		파일 이전	LBA 13884 · 35632B	LBA 143034 · 35892B	꼬리 증설	structure_allow.json › 파일 이전
+MAP042		파일 이전	LBA 14102 · 108944B	LBA 143052 · 109000B	꼬리 증설	structure_allow.json › 파일 이전
+MAP046		파일 이전	LBA 15227 · 86000B	LBA 143106 · 88016B	꼬리 증설	structure_allow.json › 파일 이전
+MAP047		파일 이전	LBA 15507 · 93464B	LBA 143149 · 95126B	꼬리 증설	structure_allow.json › 파일 이전
+MAP049		파일 이전	LBA 16024 · 84504B	LBA 143196 · 85554B	꼬리 증설	structure_allow.json › 파일 이전
+MAP052		파일 이전	LBA 16817 · 86860B	LBA 143238 · 90570B	꼬리 증설	structure_allow.json › 파일 이전
+MAP054		파일 이전	LBA 17297 · 70232B	LBA 143283 · 70286B	꼬리 증설	structure_allow.json › 파일 이전
+MAP056		파일 이전	LBA 17763 · 113840B	LBA 143318 · 115738B	꼬리 증설	structure_allow.json › 파일 이전
+MAP060		파일 이전	LBA 18784 · 94688B	LBA 143375 · 99350B	꼬리 증설	structure_allow.json › 파일 이전
+MAP065		파일 이전	LBA 19869 · 97280B	LBA 143424 · 97636B	꼬리 증설	structure_allow.json › 파일 이전
+MAP066		파일 이전	LBA 20149 · 51488B	LBA 143472 · 53818B	꼬리 증설	structure_allow.json › 파일 이전
+MAP071		파일 이전	LBA 21335 · 39012B	LBA 143499 · 39052B	꼬리 증설	structure_allow.json › 파일 이전
+MAP076		파일 이전	LBA 22610 · 119008B	LBA 143519 · 120784B	꼬리 증설	structure_allow.json › 파일 이전
+MAP083		파일 이전	LBA 23810 · 87480B	LBA 143578 · 91048B	꼬리 증설	structure_allow.json › 파일 이전
+MAP084		파일 이전	LBA 24082 · 84940B	LBA 143623 · 85050B	꼬리 증설	structure_allow.json › 파일 이전

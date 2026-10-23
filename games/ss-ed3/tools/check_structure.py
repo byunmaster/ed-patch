@@ -90,6 +90,49 @@ def trampolines(orig, built):
     return out
 
 
+def jump_targets(orig):
+    """`{목표 오프셋: 출처}` — 원본의 `FD 00/01/03/04 <주소4>` 점프·호출·분기와 헤더 포인터표가 가리키는 자리.
+
+    🔴 남이 들어오는 바이트를 우리가 바꿨나(pce-ed1 10-22): 메시지 A 가 넘쳐 제자리 끝에 놓은 점프 스텁이 원본 종료 바이트까지 덮었는데
+    다른 메시지 B 의 끝 점프가 바로 그 바이트로 들어와 B 가 스텁 주소를 글자로 읽었다. `FD` 는 SJIS 선두 바이트가 아니라 글 속에서 안 나온다.
+    """
+    n = len(orig)
+    out = {}
+    if orig[: len(M.MAGIC)] == M.MAGIC:
+        for i in range(M.PTR_N):
+            t = int.from_bytes(orig[M.PTR_OFF + i * 4 : M.PTR_OFF + i * 4 + 4], "big") - BASE
+            if 0 <= t < n:
+                out.setdefault(t, f"포인터표 {i}")
+    for m in re.finditer(b"\xfd[\x00\x01\x03\x04]", bytes(orig)):
+        q = m.start()
+        if q + 6 > n:
+            continue
+        t = int.from_bytes(orig[q + 2 : q + 6], "big") - BASE
+        if 0 <= t < n:
+            out.setdefault(t, f"{orig[q + 1]:02X}@{q:#x}")
+    return out
+
+
+def target_damage(orig, built, tramps):
+    """`[(목표, 출처, 원본 바이트, 구운 바이트)]` — 목표의 **제어 바이트**(글이 아닌 것)가 바뀌었거나 덮였다.
+
+    목표가 글 머리면 글이 바뀌는 게 정상이라 보지 않는다(제어 바이트 `<0x20`·`FD/FE/FF` 만). 놓은 트램펄린 시작(`FD 00 <꼬리>`)은 허용.
+    """
+    ok_tramp = {p for p, _t, _r, _g in tramps}
+    bad = []
+    for t, src in sorted(jump_targets(orig).items()):
+        b0 = orig[t]
+        if not (b0 < 0x20 or b0 >= 0xFD):
+            continue
+        n = 2 if b0 >= 0xFD else 1
+        if bytes(built[t : t + n]) == bytes(orig[t : t + n]):
+            continue
+        if t in ok_tramp and bytes(built[t : t + 2]) == GOTO:
+            continue
+        bad.append((t, src, bytes(orig[t : t + 6]).hex(), bytes(built[t : t + 6]).hex()))
+    return bad
+
+
 def compare_map(stem, orig, built, allow):
     """`(어긋남 목록, 장부 행, 통계)`."""
     bad, rows = [], []
@@ -117,6 +160,9 @@ def compare_map(stem, orig, built, allow):
         rows.append((stem, key, "스텁(옮김)", f"{p:#x}", f"{t:#x}", f"복귀 {r:#x}"))
         if o_tok != b_tok:
             bad.append((stem, p, "옮긴 몸의 제어 열이 원본 구간과 다르다", (o_tok, b_tok)))
+
+    for t, src, ob, bb in target_damage(orig, built, tr):
+        bad.append((stem, t, f"점프·포인터 목표 바이트가 바뀌었다 (출처 {src})", (ob, bb)))
 
     def inwin(a, b):
         return any(a < r and b > p for p, r in wins)

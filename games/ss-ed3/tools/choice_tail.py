@@ -95,16 +95,22 @@ def _linked(data, prev, blk):
         return True
     if gap == 1 + hl:  # `0E` + 화자 머리
         return data[e + 1 : e + 1 + hl] == bytes.fromhex(blk["head"])
-    return gap == 3 + hl and data[e + 1 : e + 3] == b"\x09\x00"  # `0E 09 00` + 화자 머리
+    #   `0E 09 00` / `0E 09 0E` / `0E 09 0D` + 화자 머리 — 뒤쪽 둘은 MAP030 #26→#27 · MAP022 #363→#364 에서 나왔다(10-22, 4-9 반영). 꼬리에는 바이트 그대로 복사하므로
+    #   09 뒤 바이트의 뜻을 몰라도 같은 글 세션 안에서 옮기는 한 의미가 안 바뀐다.
+    return gap == 3 + hl and data[e + 1 : e + 3] in (b"\x09\x00", b"\x09\x0e", b"\x09\x0d")
 
 
 def _is_speaker(data, blocks, key):
     """화자 대사 꼴인가 — 머리가 `FF 00` 이 아니고(`02 xx` 같은 화자 머리) `0E` 로 이어진 글 세션의 블록."""
     blk = blocks[int(key)]
-    if blk["head"] == "ff00" or int(key) == 0:
+    if int(key) == 0:
         return False
     if _card_kind(data, blocks, key) is not None:
         return False
+    if blk["head"] == "ff00":
+        #   `FF 00` 머리 블록이 글 세션의 **첫 블록**(뒤 블록과 `0E` 로 이어짐)이면 그 머리가 곧 세션 머리다 — MAP022 #363(10-22)
+        k = int(key)
+        return k + 1 < len(blocks) and _linked(data, blk, blocks[k + 1])
     # 세션 한복판이거나, `FF 00` + 화자 머리로 열리는 세션의 첫 블록
     return _linked(data, blocks[int(key) - 1], blk) or data[blk["off"] - 4 : blk["off"] - 2] == b"\xff\x00"
 
