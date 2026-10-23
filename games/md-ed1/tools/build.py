@@ -282,6 +282,14 @@ def normalize(text: str) -> str:
     return text
 
 
+# 띄어 쓰되 줄에서 갈리면 안 되는 정본 이름(마스터 10-21 「노예 상인」 — 줄이 「노예」/「상인」으로 갈리면 읽기 나쁘다).
+# 조판 동안만 붙임 공백(PUA, ps1 `NOBREAK_SP` 와 같은 값)으로 두고 끝나면 보통 공백으로 되돌린다.
+# ⚠ 조판 중 폭은 1.0(공백 0.5 보다 넓다)이라 줄이 반 칸 일찍 끊길 수 있다 — 넘치는 쪽이 아니라 안전하다.
+NOBREAK_SP = "\ue003"
+# ⚠ 임시 — 이름을 여기 박아 둔 것은 임시다(관리자 10-21). 정본이 띄운 이름 전반을 공용 krwrap 의 비끊김 공백으로 받는 일은 라운드 뒤 main 과제.
+NOBREAK_NAMES = ("노예 상인",)
+
+
 def typeset(text: str, lead: str = "") -> list[list[str]]:
     """자유 문안 → 페이지(줄 목록). `\\f` 는 강제 페이지.
 
@@ -291,12 +299,15 @@ def typeset(text: str, lead: str = "") -> list[list[str]]:
     (2026-09-07 초벌 시험에서 잡았다). ⚠ 폭 검사는 **붙인 뒤**에 한다.
     """
     text = normalize(text)
+    for nm in NOBREAK_NAMES:
+        text = text.replace(nm, nm.replace(" ", NOBREAK_SP))
     pages = []
     for chunk in text.split("\f"):
         chunk = chunk.strip()
         if not chunk:
             continue
         pages += krwrap.wrap_pages(chunk, width=WIDTH, lines_per_page=LINES, strip_after="")
+    pages = [[ln.replace(NOBREAK_SP, " ") for ln in pg] for pg in pages]
     if lead and pages and pages[0]:
         pages[0][0] = lead + pages[0][0]
     for pg in pages:
