@@ -72,6 +72,25 @@ def own() -> dict:
     return _own
 
 
+OVERLAY = common.GAME_DIR / "data" / "ps1_overlay.tsv"
+_overlay: dict | None = None
+
+
+def ps1_kr(scn: int, i: int) -> str | None:
+    """PS1 블록의 한국어 — `data/ps1_overlay.tsv`(PS1 역할군 등급 고침을 먼저 따르는 임시 층)가 있으면 그것, 없으면 PS1 script."""
+    global _overlay
+    if _overlay is None:
+        _overlay = {}
+        if OVERLAY.exists():
+            for ln in OVERLAY.read_text(encoding="utf-8").splitlines():
+                if ln and not ln.startswith("#"):
+                    sc, bi, tx = ln.split("\t")[:3]
+                    _overlay[(int(sc), int(bi))] = tx
+    if (scn, i) in _overlay:
+        return _overlay[(scn, i)]
+    return _load()[0][scn].get(str(i), {}).get("t")
+
+
 def kr_sentences(t: str) -> list[str]:
     """PS1 한국어 블록 → 문장 목록(`. ? !` 뒤 공백에서 끊는다) — 짝 정본의 문장 자르기(`refs` 의 `[씬, 번호, 시작, 끝)`)와 같은 칼이다(`align_check.jp_sentences` 와 문장 수가 같아야 쓴다)."""
     t = re.sub(r"\s+", " ", t.replace("\ue003", " ")).strip()
@@ -83,7 +102,7 @@ def ps1_text(refs) -> str | None:
     ps1, _ = _load()
     parts = []
     for scn, i, *cut in refs:
-        t = ps1[scn].get(str(i), {}).get("t")
+        t = ps1_kr(scn, i)
         if t is None or re.search(r"\{[^}]*\}|[\x00-\x1f]", t.replace("\n", " ")):
             return None
         t = t.replace("\ue003", " ")  # PS1 붙임 공백(사설 영역) — 그대로 두면 이쪽 글리프 표지(JOSA_MARK)로 읽혀 엉뚱한 글자로 구워진다
@@ -168,6 +187,8 @@ def candidates(rel: int, chunk: int, decoded: bytes):
                 MISSING_SPEAKERS[jp] += 1
                 UNFIT[f"{rel}:{chunk}:{li}"] = f"화자 정본 없음: {jp}"
                 continue
+        if spk and p.speaker is not None and txt.startswith(spk) and txt[len(spk) : len(spk) + 1] in "은는이가을를의도와과":  # `{16}항목 이름{14}는…` — 머리 상자가 이름을 이미 그린다. PS1 문안은 이름을 글에 또 담아 「{16}격파의 검{14}격파의 검은…」 이 된다(10-20 qa 1538:14:23) — 글 머리의 이름을 걷고 조사만 남긴다
+            txt = txt[len(spk) :]
         out.append((li, p, spk, txt))
     return out
 
@@ -183,7 +204,11 @@ def _arg18(head: bytes) -> int | None:
     return None
 
 
+MARK_FAVOR = (1282,)  # 멈춤을 일부만 살리는 패키지(빌드 로그 「연출 타이밍 제어를 일부만 살린 패키지」) — 정적 풀의 남는 자리를 이 패키지의 글자에 먼저 준다
 _BOUND = set(",.?!…~～)」』")
+_SENT_PUNCT = set(".?!")
+_PUNCT_RUN = set("!?.…")  # 문장 끝 부호 덩어리를 이루는 글자 — 덩어리 안에서는 멈추지 않는다
+_DET = frozenset("이 그 저 이런 그런 저런 어떤 무슨 어느 새 헌 첫 온 모든 각 매 한 두 세 네 옛 웬 아무 다른 여러 온갖 이러한 그러한 저러한".split())  # 관형사 — 뒤에 명사가 와야 말이 되는 낱말
 KEEP_MARKS = True  # 연출 타이밍 제어 보존 — 패키지 공간이 모자라면 빌드가 그 패키지만 끈다(`build._plan_with_local`)
 MARK_LINES: int | None = None  # 타이밍 제어를 살릴 줄 수 상한(앞 줄부터) — None 이면 전부. 공간이 모자란 패키지가 가능한 만큼만 살리게 한다
 _marks_used = 0  # 이번 계획에서 타이밍 제어를 살린 줄 수
@@ -209,13 +234,30 @@ def _encode(pgs: list[list[str]], marks, jp_n: int, tab) -> bytes:
                 return p >= k
             i = ink_pos[p]
             prev = flat[ink_pos[p - 1]]
-            return flat[i - 1] in " \n" or prev in _BOUND
+            if flat[i - 1] not in " \n" and prev not in _BOUND:
+                return False
+            if prev in _PUNCT_RUN and flat[i] in _PUNCT_RUN:  # 「!!」 「?!」 「…!」 한가운데는 경계가 아니다 — 멈춤이 느낌표 둘 사이에 끼었다(10-21 style 514:21:64)
+                return False
+            w = ""  # 바로 앞 어절 — 관형사(「이」 「그」 …) 뒤에서는 멈추지 않는다(「이 {멈춤} 사람들과」 — 원판은 「この人たちと」 뒤에서 멈춘다, 10-20 style 898:23:56)
+            j = ink_pos[p - 1]
+            while j >= 0 and flat[j] not in " \n":
+                w = flat[j] + w
+                j -= 1
+            return w not in _DET
 
-        for n, b in marks:
+        sent_ends = [q for q in range(1, k + 1) if bound(q) and flat[ink_pos[q - 1]] in _SENT_PUNCT]  # 한글 문장 끝 뒤 경계
+
+        taken: set[int] = set()  # 이미 멈춤이 놓인 경계 — 둘째 멈춤이 같은 자리에 붙으면(「{멈춤}{멈춤}마스터는」) 다음으로 가까운 경계로 민다(10-21 style 재검 15, 1282:22:19)
+        for mk in marks:
+            n, b, after_end = (*mk, False)[:3]  # 2-튜플(문장 끝 정보 없음)도 받는다
             if b[:1] == b"\x11" and len(b) == 3 and not 0x30 <= b[2] <= 0x39:
                 b = b[:2] + b"0"  # 멈춤 `11 nn nn` 의 둘째 인자가 숫자가 아닌 원문(`11 35 74`)은 엔진이 첫 인자까지만 읽고 둘째를 글자로 찍는다 — 한글 앞에 낱자가 찍혔다(실화면 2690:16120:13 「ㅗ우리한테」, 10-19 전수 촬영)
             t = max(1, min(k, round(n / jp_n * k)))
-            best = min((q for q in range(max(1, t - 6), min(k, t + 6) + 1) if bound(q)), key=lambda q: (abs(q - t), q), default=t)
+            if after_end and sent_ends:  # 원문 멈춤이 문장 끝 뒤(「むかえられるんだ。{p}」)면 글자 비율이 아니라 **한글 문장 끝 뒤**에 놓는다 — 비율로만 가면 「황제 {멈춤}폐하께」처럼 명사구 안에 떨어진다(10-20 style 1282:22:64)
+                best = min(sent_ends, key=lambda q: (abs(q - t), q))
+            else:
+                best = min((q for q in range(max(1, t - 6), min(k, t + 6) + 1) if bound(q) and q not in taken), key=lambda q: (abs(q - t), q), default=t)
+            taken.add(best)
             at.setdefault(best, []).append(b)
     out = bytearray()
     ink = 0
@@ -367,7 +409,11 @@ def choose(have: set[str], budget: int, caps: dict[int, int] | None = None) -> s
             for rel, cs in pc.items():
                 if best in cs:
                     miss[rel] -= 1
-    for ch, _n in sorted(freq.items(), key=lambda kv: (-kv[1], kv[0])):
+    # 남는 자리는 **연출 멈춤을 일부만 살린 패키지**(`MARK_FAVOR` — 꼬리 자리가 모자라 멈춤을 못 살리는 곳)가 쓰는 글자부터 — 그 글자가 정적 풀에 있으면 그 패키지의 지역 글리프(16B 씩)가 줄어 그만큼 멈춤(3B 씩)이 산다(10-20 1282 멈춤 7개 소실)
+    def favor(ch: str) -> int:
+        return sum(1 for rel in MARK_FAVOR if ch in pc.get(rel, ()))
+
+    for ch, _n in sorted(freq.items(), key=lambda kv: (-favor(kv[0]), -kv[1], kv[0])):
         if ch not in allowed and added < budget:
             allowed.add(ch)
             added += 1

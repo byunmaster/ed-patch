@@ -25,6 +25,8 @@ import msgs
 import package
 
 TITLE = "eiyuu"
+CANON = "ed2"  # 공통 문안 정본 — PS1 ED2 기반(마스터 10-08). 안 두면 ed1 정본으로 재서 ED2 값(길게 울부짖고 · 포효를 내질렀다 …)이 안 잡힌다(10-21)
+CANON_SKIP = r"^script:"  # 장면 대사(전투 덩이 밖 줄)는 정본 범위 밖(마스터 10-08) — 정본은 메뉴·호칭·시스템·전투 문구
 CANON_GATE = True  # 정본(shared/canon) 어긋남을 실패로 친다 — 어긋남 0 확인 뒤 켬(마스터 10-18 재검수)
 _TAG = re.compile(r"\{[^}]*\}")
 _JP = re.compile(r"[぀-ヿ一-鿿]")
@@ -35,7 +37,7 @@ def _plain(raw: bytes) -> str:
 
 
 def _kr_of_template(tmpl: str) -> str:
-    return re.sub(r"\{[@!]\d+\}", "", tmpl).replace("\n", " ").replace("\f", " ")
+    return ctrllines.strip_refs(tmpl).replace("\n", " ").replace("\f", " ")
 
 
 def _label_kr(line: bytes) -> str | None:
@@ -61,7 +63,42 @@ def _battle_kr(line: bytes) -> str | None:
     return hit[2].replace("\n", " ")
 
 
+_SENT_END = re.compile(r"[。！？｜!?」』]$")
+
+
+def _joined(out: list) -> list:
+    """한 문장이 **줄 둘 이상**에 이어진 곳을 한 줄로도 낸다(10-20 sfc-ed2 부류 — 조각 단위로만 내면 이어진 자리를 검사기 셋이 못 본다).
+    같은 덩이의 바로 다음 줄이고, 앞 줄 원문이 문장 끝(。！？｜」)으로 안 끝나면 이어진 것으로 보고 `<앞>+<뒤>` 열쇠로 원문·한글을 이어 낸다(셋 이상도 잇는다)."""
+    extra = []
+    i = 0
+    while i < len(out) - 1:
+        where, jp, kr, kind = out[i]
+        j = i
+        while (
+            kind == "dialog"
+            and kr
+            and j + 1 < len(out)
+            and out[j + 1][3] == "dialog"
+            and out[j + 1][2]
+            and out[j + 1][0].rsplit(":", 1)[0] == where.rsplit(":", 1)[0]
+            and int(out[j + 1][0].rsplit(":", 1)[1]) == int(out[j][0].rsplit(":", 1)[1]) + 1
+            and not _SENT_END.search(out[j][1])
+        ):
+            j += 1
+        if j > i:
+            extra.append(("+".join(out[k][0] for k in range(i, j + 1)), "".join(out[k][1] for k in range(i, j + 1)), " ".join(out[k][2] for k in range(i, j + 1)), "dialog"))
+            i = j
+        else:
+            i += 1
+    return extra
+
+
 def pairs():
+    out = _pairs_lines()
+    return out + _joined(out)
+
+
+def _pairs_lines():
     out = []
     ctab = ctrllines.table()
     for rel in sorted(dialogue.package_chars()):
@@ -80,6 +117,7 @@ def pairs():
                 if not _JP.search(jp):
                     continue
                 where = f"{rel}:{a}:{i}"
+                dwhere = where if is_battle else "script:" + where  # 장면 대사는 정본(공통 문안) 범위 밖 — `CANON_SKIP` 이 건너뛴다(마스터 10-08). 이름 검사는 그대로 잰다
                 if chapter.is_chapter_chunk(d) and i < chapter.KEY_LINES:  # 장 제목 띠 — 정본 `chapter` 범주(번호 + 제목)
                     try:
                         out.append((where, jp, " ".join(chapter._entry(jp)), "slot"))
@@ -92,15 +130,15 @@ def pairs():
                     continue
                 if i in cand:
                     spk, txt = cand[i]
-                    out.append((where, jp, ((spk + " ") if spk else "") + txt.replace("\f", " "), "dialog"))
+                    out.append((dwhere, jp, ((spk + " ") if spk else "") + txt.replace("\f", " "), "dialog"))
                     continue
                 skel, _c, _h = ctrllines.parse(line)
                 t = ctab.get(ctrllines.key_of(skel))
                 if t is not None:
-                    out.append((where, jp, _kr_of_template(t), "dialog"))
+                    out.append((dwhere, jp, _kr_of_template(t), "dialog"))
                     continue
                 kr = _battle_kr(line) if is_battle else None
                 if kr is None and is_battle:
                     kr = battle.appear_text(line)
-                out.append((where, jp, kr, "dialog"))
+                out.append((dwhere, jp, kr, "dialog"))
     return out

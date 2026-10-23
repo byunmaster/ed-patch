@@ -296,6 +296,8 @@ def translate(raw: bytes, tab, battle: bool = False) -> bytes | None:
     if n_name != len(names) or n_num != len(nums):
         return None
     out = bytearray(lead) + prefix_name
+    if prefix_name and tmpl.startswith("{name}\n"):  # 원문이 이름 자리 바로 뒤에서 줄을 바꾼다(보스 대사의 이름 머리 — `{0C}{name}↵본문`) — 한국어도 이름 뒤에서 바꾼다. 안 하면 본문이 이름에 붙어 나온다(10-21 재검 13 1026:40:6)
+        out += b"\x0d"
     ni = ki = 0
     for piece in re.split(r"(\{name\}|\{n\})", kr):
         if piece == "{name}":

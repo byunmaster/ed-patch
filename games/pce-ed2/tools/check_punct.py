@@ -84,7 +84,7 @@ def corpus():
                 dots = sum(3 if c == "…" else 1 for c in src if c in "･・…")
                 yield f"{rel}:{a}:{li}", "dlg", txt, dots
     for k, v in ctrllines.table().items():
-        yield k, "tmpl", re.sub(r"\{[@!]\d+\}", "", v).replace("\\n", "\n").replace("\f", "\n"), None  # 틀의 `\\n` 은 줄바꿈 — 공백이 아니다(`? ……\\n그` 는 붙임이 맞다)
+        yield k, "tmpl", ctrllines.strip_refs(v).replace("\\n", "\n").replace("\f", "\n"), None  # 틀의 `\\n` 은 줄바꿈 — 공백이 아니다(`? ……\\n그` 는 붙임이 맞다)
     for f in ("opening_sub", "ending_sub"):
         for i, s in enumerate(json.loads((GAME / "data" / f"{f}.json").read_text(encoding="utf-8"))["subs"]):
             yield f"{f}[{i}]", "sub", s["text"].replace("\n", " "), None

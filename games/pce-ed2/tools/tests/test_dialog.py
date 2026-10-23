@@ -86,6 +86,24 @@ class TestMarkArgs(unittest.TestCase):
         self.assertIn(b"\x1150", out)
 
 
+class TestSentenceEndMark(unittest.TestCase):
+    def test_문장_끝_뒤_멈춤은_한글_문장_끝_뒤에_놓는다(self):
+        """원문 멈춤이 문장 끝 부호 바로 뒤면 글자 비율이 아니라 한글 문장 끝 뒤 — 「황제 {멈춤}폐하께」 방지(1282:22:64)."""
+        import dialogue
+        import font
+
+        txt = "그래서 황제 폐하께 가는 거다. 다음 말이다."
+        tab = font.GlyphTable()
+        tab.map = {c: i for i, c in enumerate(sorted(set(txt)))}
+        # 원문 12자 중 뒤쪽(7자)에서 멈춤 — 비율로는 「황제」 근처, 문장 끝 표지가 있으면 「거다.」 뒤
+        pgs = [[txt]]
+        marks = [(7, b"\x11" + b"30", True)]
+        out = dialogue._encode(pgs, marks, 12, tab)
+        i = out.index(b"\x1130")
+        before = out[:i]
+        self.assertTrue(before.rstrip(b"`").endswith(b"."), before)  # 「…거다.」 뒤(공백 `60` 은 있어도 된다)
+
+
 class TestEngineWrap(unittest.TestCase):
     def test_줄_끝_부호가_168px_에_닿으면_엔진이_부호만_다음_줄로_꺾는다(self):
         """실측: `가`×12 + 공백 + `가` + `.` 은 168px 인데 엔진은 반각 부호도 12px 한 칸으로 재 `.` 만 떨어뜨린다 — 조판이 먼저 꺾는다."""

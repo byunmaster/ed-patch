@@ -531,8 +531,8 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
         cue.write_text(text)
         check_full_layout(iso, cue)
     raw = load_edits(edits_path) if edits_path else []
-    margin = POOL_MARGIN
-    while True:  # 정적 풀이 넘치면(수집 뒤 늘어난 글자) 여유를 그만큼 늘려 처음부터 다시 — 상수 여유가 모자라도 빌드가 안 깨진다
+    def attempt(margin: int):
+        """한 번의 계획 — 정적 풀 여유 `margin` 으로 글자를 고르고 끝까지 계획한다. 풀이 넘치면 `hook.PoolOverflow`."""
         tab = font.GlyphTable()
         plan_packages(raw, tab)  # ① 수집 — 글자를 모은다(패키지 · 시스템 문구)
         prog0 = plan_program(tab, None)
@@ -544,17 +544,33 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
             plan_packages(raw, tab, allowed)
         dialogue.STATS.clear()
         dialogue.UNFIT.clear()
+        MARKS_PARTIAL.clear()
         chars = tab.freeze()  # ② 번호 확정(코드포인트순, 결정적)
         glyph24 = [font.glyph(ch) for ch in chars]
         plan = plan_packages(raw, tab, set(tab.map), local=dialogue_on)  # ③ 같은 계획을 진짜 코드로 다시(+ 패키지별 지역 글리프)
+        prog = plan_program(tab, glyph24, chars)
+        return tab, plan, prog, glyph24, chars
+
+    margin = POOL_MARGIN
+    while True:  # 정적 풀이 넘치면(수집 뒤 늘어난 글자) 여유를 그만큼 늘려 처음부터 다시 — 상수 여유가 모자라도 빌드가 안 깨진다
         try:
-            prog = plan_program(tab, glyph24, chars)
+            tab, plan, prog, glyph24, chars = attempt(margin)
             break
         except hook.PoolOverflow as e:
             if not dialogue_on:
                 raise
             margin += e.over
             print(f"  글리프 풀 {e.over}자 초과 — 여유를 {margin} 로 늘려 다시 고른다")
+    if dialogue_on:  # 정적 풀에 **쓰이지 않은 허용 글자·여유**가 남는다(허용 글자 중 실제 번역에 안 쓰인 것 + 안전 여유) — 여유를 줄여 가며(음수 포함) 들어가는 한 가장 많은 글자를 정적으로 둔다. 정적이 되면 그 글자는 패키지 지역 글리프(16B 씩)에서 빠져 연출 멈춤(3B 씩)이 산다(10-20 1282 멈춤)
+        for step in (8, 4, 2, 1):
+            while margin - step >= POOL_MARGIN - 16:
+                try:
+                    tab2, plan2, prog2, glyph242, chars2 = attempt(margin - step)
+                except hook.PoolOverflow:
+                    break
+                margin -= step
+                tab, plan, prog, glyph24, chars = tab2, plan2, prog2, glyph242, chars2
+        print(f"  글리프 풀 여유 {margin} · 정적 글리프 {len(chars)}자")
     if dialogue_on:
         print(f"  대사 줄: 번역 {dialogue.STATS['번역']} · 글리프 예산 밖(원문 유지) {dialogue.STATS['예산 밖']} · 18 인자 불가 {dialogue.STATS['18 인자 불가']} · 화자 정본 없음 {sum(1 for v in dialogue.UNFIT.values() if v.startswith('화자'))}")
         (common.REVIEW_DIR / "dialogue_unfit.tsv").write_text(

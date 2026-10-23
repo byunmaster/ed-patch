@@ -55,7 +55,7 @@ def load():
             k = (scn, e["entry_id"])
             if e.get("kind") == "block" and k in by:
                 by[k]["jp_sents"] = jp_sentences(e["text"])
-                by[k]["kr_sents"] = dialogue.kr_sentences(kr[scn].get(str(e["entry_id"]), {}).get("t") or "")
+                by[k]["kr_sents"] = dialogue.kr_sentences(dialogue.ps1_kr(scn, e["entry_id"]) or "")
     order: dict[int, list] = {}
     for b in ps1:
         order.setdefault(b["scn"], []).append((b["scn"], b["id"]))

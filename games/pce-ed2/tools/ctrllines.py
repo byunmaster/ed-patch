@@ -127,7 +127,12 @@ def table() -> dict[str, str]:
     return _table
 
 
-_REF = re.compile(r"\{([@!])(\d+)\}")
+_REF = re.compile(r"\{([@!])(\d+)\}|\{\$((?:[0-9A-Fa-f]{2})+)\}")  # `{$8267}` = 원문 글꼴 코드(SJIS) 그대로 — 강조(`06`) 안에서 우리 글리프는 깨지므로(좁은 숫자 글꼴) 원판 글자를 쓴다(ＨＰ)
+
+
+def strip_refs(tmpl: str) -> str:
+    """틀 → 화면 글(검사용) — 제어 자리표는 지우고 `{$..}` 는 SJIS 글자로 푼다."""
+    return _REF.sub(lambda m: bytes.fromhex(m.group(3)).decode("cp932") if m.group(3) else "", tmpl)
 
 
 def build(raw: bytes, tmpl: str, tab, system: bool = False) -> bytes:
@@ -140,6 +145,10 @@ def build(raw: bytes, tmpl: str, tab, system: bool = False) -> bytes:
     for m in _REF.finditer(tmpl):
         if m.start() > pos:
             out += tab.enc(tmpl[pos : m.start()])
+        if m.group(3):
+            out += bytes.fromhex(m.group(3))
+            pos = m.end()
+            continue
         n = int(m.group(2))
         if n >= len(ctrls):
             raise ValueError(f"제어 {n} 번이 없다(원문 제어 {len(ctrls)}개)")
