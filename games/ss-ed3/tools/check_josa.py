@@ -52,6 +52,8 @@ PAIRS = (
     ("이라는", "라는"),
     ("이란", "란"),
     ("이라고", "라고"),
+    ("이랑", "랑"),
+    ("이에요", "예요"),
 )
 FLAT = {j: (i, k == 0) for i, p in enumerate(PAIRS) for k, j in enumerate(p)}
 
@@ -66,6 +68,16 @@ def names():
     return sorted(out, key=len, reverse=True)
 
 
+def _flat(d):
+    for k, v in d.items():
+        if k.startswith("_"):
+            continue
+        acc = []
+        _walk(v, acc)
+        for x in acc:
+            yield k, x
+
+
 def scan(paths):
     bad = []
     pat = None
@@ -75,14 +87,13 @@ def scan(paths):
     pat = re.compile(
         "("
         + "|".join(re.escape(n) for n in ns)
-        + r")(이라는|라는|이란|이라고|라고|은|는|이|가|을|를|과|와|란)(?![가-힣])"
+        + r")(이라는|라는|이란|이라고|라고|이랑|이에요|예요|은|는|이|가|을|를|과|와|란|랑)(?![가-힣])"
     )
     for f in paths:
         with open(f, encoding="utf-8") as fh:
             d = json.load(fh)
-        for k, v in d.items():
-            if k.startswith("_") or not isinstance(v, str):
-                continue
+        #   🔴 중첩된 값(voice.json 의 줄 목록·movie.json 의 [시작,끝,문안])까지 펴서 본다 — 최상위 문자열만 보면 음성·무비 자막이 분모 밖이었다(10-18)
+        for k, v in _flat(d):
             for m in pat.finditer(v):
                 name, j = m.group(1), m.group(2)
                 has = batchim(name[-1]) != 0

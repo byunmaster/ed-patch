@@ -127,6 +127,16 @@ run 4 "$PY" "$G/tools/center_narration.py" --check
 echo "  ── 조판 여섯 규칙 (전 영역 · 대장 밖 새 위반)"
 run 2 "$PY" "$G/tools/check_typeset6.py" --check
 
+echo "  ── 「…」 뒤 붙임 · 「～.」 (공통 번역 규칙 2-11 · 1-7)"
+# 🔴 게이트다 — 「…」 뒤에 말이 이어지면 반각 공백, 물결표 뒤 마침표 금지(마스터 10-12). `--apply` 가 공백을 넣는다.
+run 2 "$PY" "$G/tools/check_ellipsis_space.py"
+
+echo "  ── 문안에 PUA(U+E000~F8FF) 문자가 섞였나 (다른 기종 문안 이식 사고)"
+run 2 "$PY" "$G/tools/check_pua.py"
+
+echo "  ── 구운 부호 글리프끼리 같은 비트맵이 없나 (쉼표가 마침표로 보이는 사고 — ss-ed1+2 10-20)"
+run 2 "$PY" "$G/tools/check_glyph_dups.py"
+
 echo "  ── 원문에 있던 것이 사라지지 않았나 (숫자 · 고유명사)"
 warn 3 "$PY" "$G/tools/check_fidelity.py"
 
