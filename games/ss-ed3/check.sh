@@ -69,6 +69,10 @@ echo "  ── 메뉴 라벨이 칸을 넘치나 (F5 창 프레임)"
 # 🔴 게이트다 — 바이트가 맞아도 반각이 섞이면 폭이 다르다. 받아들인 넘침은 script/window_frame_accept.json
 run 0 "$PY" "$G/tools/check_window_frame.py"
 
+echo "  ── 인라인 아이템 코드에 이름이 꽂힌 뒤 줄 폭 (글자 한복판 접힘)"
+# 🔴 게이트다 — 조판기는 `<01><번호>` 를 폭 0 으로 읽는다. 이름을 꽂으면 17칸을 넘어 엔진이 어절 한복판에서 접는다(10-23 실측 12블록)
+run 0 "$PY" "$G/tools/check_inline_width.py"
+
 echo "  ── 게임 폴더에 자기 JP→KR 표가 남았나 (자기 표 0)"
 # 🔴 게이트다 — 고유명사·라벨·문구는 공용 사전·정본이 갖는다(마스터 10-08). 시스템 문자열도 정본에서 읽는다(`tools/system_src.py`)
 run 0 "$PY" "$G/tools/check_own_tables.py"
