@@ -27,6 +27,7 @@ import codestr
 import common
 import ctrllines
 import debugmode
+import debugsw
 import dialogue
 import endcard
 import ending
@@ -374,6 +375,7 @@ def plan_program(tab: font.GlyphTable, glyph24: list[bytes] | None, chars: list[
     wrap.reserve(prog)
     longline.reserve(prog)
     narrow.reserve(prog)
+    debugsw.reserve(prog)
     systext.MISSING.clear()
     systext.OVERFLOW.clear()
     systext.plan(prog, tab)
@@ -389,6 +391,7 @@ def plan_program(tab: font.GlyphTable, glyph24: list[bytes] | None, chars: list[
         wrap.install(prog)
         longline.install(prog)
         narrow.install(prog)
+        debugsw.install(prog)  # 디버그 메뉴 숨김 제스처(필드에서 RUN+I+II) — 제품 롬에 들어간다(마스터 10-21 판정 19 A)
     return prog
 
 

@@ -47,7 +47,5 @@ def enabled() -> bool:
 
 
 def apply(w) -> None:
-    for (bank, off), orig, new, label in (GATE, GATE2, KEY):
-        lin = 130 * common.USER + (bank - BANK0) * BANK + off
-        w.put(lin, new, orig, label)
-    print("  ⚠ 디버그 빌드 — 개발기 게이트 해제 · 메뉴 키 = RUN + II (제품 롬엔 없다)")
+    """디버그 메뉴는 이제 제품 롬의 숨김 제스처(`debugsw`, 필드에서 RUN+I+II)다 — 시험 빌드(`ED_DEBUG=1`)·마스터용 `debug` 꼬리표도 같은 롬이다. 여기선 따로 쓸 게 없다."""
+    print("  ⚠ 디버그 빌드 — 디버그 메뉴는 제품과 같은 숨김 제스처(필드에서 RUN + I + II)")
