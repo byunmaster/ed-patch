@@ -27,13 +27,26 @@ _PARTICLES = {"은": 1, "는": 0, "이": 1, "가": 0, "을": 1, "를": 0, "과":
 _TOKEN = re.compile("|".join(re.escape(k) for k in sorted(josa_rt._PAIRS, key=len, reverse=True)))
 
 
+# 이름 뒤 조사처럼 보이지만 낱말인 것(이름 `사나`·`가나`·`렌지` 뒤 「이」 — 사나이·가나이(인물)·렌지이(늘임)). 늘 새로 잡히는 오탐이면 여기 사유와 함께 더한다.
+WORDS_NOT_NAMES = {"사나이", "가나이", "렌지이"}
+
+
 def names(disc):
     out = set(glossary.flat(disc).values())
     sys.path.append(os.path.join(os.path.dirname(os.path.dirname(common.ROOT)), "shared"))
     import canon
 
     out |= set(canon.table("speaker", disc).values()) if disc == "ed3" else set()
-    return sorted((n for n in out if len(n) >= 2 and " " not in n), key=len, reverse=True)
+    # 🔴 열쇠 목록 밖 고유명사도(10-18, md-ed2 발견: 이름을 정본으로 바꾸며 조사를 안 고친 줄) — 정본 전 범주 값 + 공백 없는 꼴. 열쇠 목록만 보던 때는 1,074곳, 전 범주로 넓히면 2,176곳.
+    cats = json.load(open(os.path.join(os.path.dirname(os.path.dirname(common.ROOT)), "shared", "canon", "nouns", f"{disc}.json"), encoding="utf-8"))["categories"]
+    for d in cats.values():
+        for v in d.values():
+            if isinstance(v, str):
+                v = v.split("@")[0].strip()
+                if re.fullmatch(r"[가-힣 ]{2,}", v):
+                    out.add(v)
+                    out.add(v.replace(" ", ""))
+    return sorted((n for n in out if len(n) >= 2), key=len, reverse=True)
 
 
 def texts(disc):
@@ -62,7 +75,7 @@ def check(disc):
                 need = _PARTICLES[mo.group(2)]
                 k = josa_rt.klass(mo.group(1)[-1])
                 has = 1 if k else 0
-                if k is not None and has != need:
+                if k is not None and has != need and kr[mo.start() : mo.start() + len(mo.group(0)) + 1].rstrip(" ,.!?…") not in WORDS_NOT_NAMES and not any(w in kr for w in WORDS_NOT_NAMES if mo.group(0) in w):
                     bad.append(f"{where}: 「{mo.group(0)}」 받침과 조사가 안 맞는다")
     return bad, leftover, seen
 

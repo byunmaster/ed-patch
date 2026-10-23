@@ -70,6 +70,7 @@ class TestTypesetRules(unittest.TestCase):
         self.assertEqual(C.line_problems("응. …그래"), [])
         # 🔴 말줄임은 「…」 전각 한 글자 — 점 셋 연속(`...`)이 문안에 남으면 실패(마스터 10-08)
         self.assertTrue(C.line_problems("그러니까..."))
+        self.assertTrue(C.line_problems("그건.."))  # 점 둘도 「…」 로(번역 규칙 1-3)
         self.assertTrue(C.line_problems("아.... 그래"))
         self.assertEqual(C.line_problems("그러니까…"), [])
         self.assertTrue(C.line_problems("첫 줄\n,둘째 줄 머리 부호"))
