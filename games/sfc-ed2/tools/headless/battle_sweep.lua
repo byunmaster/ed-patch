@@ -133,7 +133,7 @@ emu.addMemoryCallback(function()
   if cur~=nil then
     log(string.format("SUPERSEDED %d %d",job,cur.start)); superseded=superseded+1
     -- 다음 호출이 이전 문구를 지우기 직전 화면 — 글자가 나와 있으면 찍는다(출현 문구가 곧바로 다른 메시지로 바뀌는 그룹이 첫 쪽 없이 지나갔다)
-    if lasttx>=TXMIN and lasth_cur~=lasth then shot(string.format("%s/%05d_m%d_sup.png",dir,bf,cur.n)); lasth=lasth_cur end
+    if cur.n==1 and lasttx>=TXMIN and lasth_cur~=lasth then shot(string.format("%s/%05d_m%d_sup.png",dir,bf,cur.n)); lasth=lasth_cur end
   end
   cur={start=bf, n=msgn}   -- 찍기 전에 기다린다: 창 안쪽이 안정될 때까지(아래 NMI 쪽에서 찍는다)
   boost()

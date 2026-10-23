@@ -19,6 +19,7 @@ import glyphmap
 import hangul_font
 import kr
 import patches
+import relocate
 import script
 import segs
 
@@ -169,6 +170,23 @@ def esc(s: str) -> str:
     return s.replace("\t", " ").replace("\n", " ")
 
 
+def kr_start(jp: bytes, kb: bytes, o: int) -> int:
+    """한글 롬에서 이 원문 문자열이 있는 곳. `$D7`(오프닝·엔딩) 문자열은 **옮기고 포인터를 고쳤으므로** 원래 자리엔 원문 바이트가 남는다 —
+    원문 시작을 가리키던 포인터(3바이트 · `$A6~$A8` 즉치)가 한글 롬에서 가리키는 새 자리를 따라간다. 못 찾으면 제자리."""
+    a = common.off2snes(o)
+    if (a >> 16) != 0xD7:
+        return o
+    for x in relocate.refs24(jp, a, (o, o + 1)):
+        n = kb[x] | kb[x + 1] << 8 | kb[x + 2] << 16
+        if n != a:
+            return common.snes2off(n)
+    for lo, hi, bk in relocate.a6_sites(jp, a):
+        n = kb[lo] | kb[hi] << 8 | kb[bk] << 16
+        if n != a:
+            return common.snes2off(n)
+    return o
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
@@ -187,15 +205,16 @@ def main() -> None:
             if s <= tgt < e:
                 shared.add(s)
     capped = 0
-    rows, cnt = [], {"원판만": 0, "한글만": 0, "둘 다 빔": 0, "포인터 공유": 0, "": 0}
+    rows, cnt = [], {"원판만": 0, "한글만": 0, "둘 다 빔": 0, "포인터 공유": 0, "원문 바이트 그대로": 0, "그래픽·표 데이터": 0, "": 0}
     for s, e in units:
         o = s + 4 if jp[s : s + 4] == b"\x5c\x0b\x8f\xc1" else s
         try:
             tj = dj.walk(o)
         except Exception:
             tj = "{해독 실패}"
+        dk.vis = set()
         try:
-            tk = dk.walk(o)
+            tk = dk.walk(kr_start(jp, kb, o))
         except Exception:
             tk = "{해독 실패}"
         mark = ""
@@ -207,6 +226,11 @@ def main() -> None:
             mark = "한글만"
         elif s in shared:
             mark = "포인터 공유"
+        unchanged = s == kr_start(jp, kb, s) and kb[s:e] == jp[s:e] and tj.strip("↵⏎ 　〔〕")
+        if not mark and unchanged and 0xCC <= (common.off2snes(s) >> 16) <= 0xCF:
+            mark = "그래픽·표 데이터"  # 그래픽 뱅크($CC~$CF) — 바이트를 글자 토큰으로 읽은 잡음이고 한글 롬도 바이트가 그대로다(빌드의 일본어 게이트도 이 뱅크는 안 본다)
+        elif not mark and unchanged and all(s <= x < e for x in dk.vis) and re.search("[ぁ-んァ-ヶ]", tj) and len(tj.strip("↵⏎ 　")) > 2:
+            mark = "원문 바이트 그대로"  # 한글 롬이 이 구간을 안 건드렸고 다른 곳으로 뻗지도 않는다 — 글리프 번호가 한글로 재배정돼 한글 쪽이 깨져 읽힌다(옛 표·미참조 잔재). 화면에 나가는 구간이면 일본어 게이트가 먼저 잡는다
         if getattr(dj, "capped", False) or getattr(dk, "capped", False) or "{…상한}" in tj + tk:
             capped += 1
         cnt[mark] += 1
@@ -227,7 +251,7 @@ def main() -> None:
         except Exception:
             tj = "{해독 실패}"
         try:
-            tk = dk.walk(s0)
+            tk = dk.walk(kr_start(jp, kb, s0))
         except Exception:
             tk = "{해독 실패}"
         if not tj.strip("↵⏎ 　〔〕"):
@@ -235,6 +259,16 @@ def main() -> None:
         mk = "단독 시작" if tk.strip("↵⏎ 　〔〕") else "원판만 단독 시작"
         rows.append(f"{common.off2snes(s0):06X}\t{esc(tj)}\t{esc(tk)}\t{mk}")
         solo += 1
+    # 제자리 치환 문자열(spans) 중 위 행에 자기 주소로 안 나오는 `$D7` — 포인터 표 머리와 붙은 단위(`$D7:E10E`)는 표 바이트를 글자로 읽다 끊겨 한글 쪽이 비므로 따로 행을 둔다
+    have = {r.split("\t", 1)[0] for r in rows}
+    nsp = 0
+    for key in kr.load("spans"):
+        ad = int(key.lstrip("$"), 16)
+        if (ad >> 16) != 0xD7 or f"{ad:06X}" in have:
+            continue
+        o_ = common.snes2off(ad)
+        rows.append(f"{ad:06X}\t{esc(dj.walk(o_))}\t{esc(dk.walk(kr_start(jp, kb, o_)))}\t문자열")
+        nsp += 1
     nd = 0
     for tbl, n_, _jpt in script.dict_entries(jp):  # 사전 항목(이름 `$E0` · 문장 끝맺음 `$E1`)도 짝으로
         try:
@@ -253,9 +287,9 @@ def main() -> None:
     (out / "manifest.md").write_text(
         f"""# sfc-ed2 롬 대사집 짝 표 — manifest
 - 원판 롬 sha1 `{sj}` · 한글 롬 sha1 `{sk}`
-- 분모: 대사 단위 {len(units):,}(`script.all_units`) + 단위 시작에서 닿지 않는 단독 시작 메시지 {solo}(표시 `단독 시작`) + 사전 항목 {nd}(`E0:n`·`E1:n`) — 전투 문구·시스템 메시지(`$C0/$C1`·`$D4/$D5`)는 같은 단위 목록 안에 있다. UI 창 블록·고정폭 칸·고정 표(이름·아이템·주문 표)는 이 표에 아직 없다
+- 분모: 대사 단위 {len(units):,}(`script.all_units`) + 단위 시작에서 닿지 않는 단독 시작 메시지 {solo}(표시 `단독 시작`) + 제자리 치환 문자열 {nsp}(표시 `문자열`) + 사전 항목 {nd}(`E0:n`·`E1:n`) — 전투 문구·시스템 메시지(`$C0/$C1`·`$D4/$D5`)는 같은 단위 목록 안에 있다. UI 창 블록·고정폭 칸·고정 표(이름·아이템·주문 표)는 이 표에 아직 없다
 - 길이 상한(10만 토큰)에 걸린 행 {capped}(0 이어야 한다 — 잘린 행은 끝에 `{{…상한}}`)
-- 표시별: 원판만 {cnt['원판만']} · 한글만 {cnt['한글만']} · 둘 다 빔 {cnt['둘 다 빔']} · 포인터 공유 {cnt['포인터 공유']} · 표시 없음(정상 짝) {cnt['']}
+- 표시별: 원판만 {cnt['원판만']} · 한글만 {cnt['한글만']} · 둘 다 빔 {cnt['둘 다 빔']} · 포인터 공유 {cnt['포인터 공유']} · 원문 바이트 그대로 {cnt['원문 바이트 그대로']} · 그래픽·표 데이터 {cnt['그래픽·표 데이터']} · 표시 없음(정상 짝) {cnt['']}
 - 방법: 롬 바이트를 토큰 문법(`script.py`)으로 읽는다. 한글 롬은 트램펄린(`$17`)·같은 뱅크 점프(`$0F`)를 따라가고, 글리프 번호→글자는 롬의 글리프 표 비트맵을 글꼴 원천과 맞춰 되짚는다. 호출(`$10`)·사전(`$E0/$E1`)은 펼친다(`$E0` 이름은 `{{…}}`).
 - 한계: 조건 토큰(`$11~$14`)은 두 갈래를 위에서 아래로 이어서 적는다 · 선택 분기·계산 값·이름 버퍼 변수는 `{{…}}` 표식뿐 · 글리프를 못 되짚은 글자는 `？`.
 """,

@@ -17,6 +17,7 @@ local UNITS={}
 local CAPS={}
 if os.getenv("SW_LIST") then for line in io.lines(os.getenv("SW_LIST")) do local a=tonumber(line:match("%x+"),16); if a then UNITS[#UNITS+1]=a; CAPS[#UNITS]=tonumber(line:match("%x+%s+(%d+)")) or 60 end end end
 local TXMIN=tonumber(os.getenv("SW_TXMIN") or "6")  -- 창 안쪽 글자 픽셀 하한(「……」만 있는 쪽도 넘도록 낮게)
+local CLOSEMUL=tonumber(os.getenv("SW_CLOSEMUL") or "2")  -- 쪽 사이 지움 시간이 긴 단위는 올린다(닫힘으로 오판해 뒷 쪽이 안 찍힌다)
 local DEB=tonumber(os.getenv("SW_DEBOUNCE") or "8")   -- 대화창 안쪽이 이만큼 프레임 안 변해야 찍는다(sfc-ed1 MV_DEBOUNCE 와 같은 방식)
 local PMAX=tonumber(os.getenv("SW_PAGEMAX") or "300") -- 쪽당 최대 대기(프레임) — 넘으면 timeout 으로 적고 그대로 찍는다
 local S1=nil
@@ -128,7 +129,7 @@ emu.addMemoryCallback(function()
     elseif shotdone and changed then
       shotdone=false; stable=0
     end
-    if pg>0 and not shotdone and pressn==0 and stable>=DEB*2 and tx<TXMIN then
+    if pg>0 and not shotdone and pressn==0 and stable>=DEB*CLOSEMUL and tx<TXMIN then
       return finish("closed")
     end
   end

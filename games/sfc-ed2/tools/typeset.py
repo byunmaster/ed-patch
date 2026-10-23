@@ -8,6 +8,11 @@
 """
 
 import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+from text import krwrap  # 줄바꿈 금지 판정(본용언+보조용언 등)의 정본 — 규칙을 다시 짓지 않는다(DRY)
 
 LINE_UNITS = 50
 PAGE_ROWS = 3
@@ -31,6 +36,20 @@ def width(tok: str, names: dict | None = None) -> int:
     return 2 if 0x20 <= ord(tok) <= 0x7E else 3
 
 
+def _plain(w: list, names: dict | None) -> str | None:
+    """어절의 이음 판정용 글자 — 사전 이름 토큰(`<E0:n>`·`<E1:n>`)은 조판기가 아는 이름 글자로 풀고, 그 밖의 제어·런타임 토큰이 끼면 None."""
+    out = []
+    for t in w:
+        m = re.match(r"<E([01]):(\d+)>$", t)
+        if m and names is not None and names.get(f"E{m.group(1)}:{m.group(2)}"):
+            out.append(names[f"E{m.group(1)}:{m.group(2)}"])
+        elif t[0] in "<{":
+            return None
+        else:
+            out.append(t)
+    return "".join(out)
+
+
 def end_state(text: str, names: dict | None = None) -> tuple[int, int]:
     """조판된 문안이 끝난 자리의 (마지막 줄 폭, 이 쪽에 쓴 완결 줄 수) — 바로 이어지는 다음 구간이 이 줄에서 이어 쓰도록 넘겨 준다."""
     text = re.sub(r"<1e>.*?<04>\n?", "", text, flags=re.S)
@@ -40,7 +59,31 @@ def end_state(text: str, names: dict | None = None) -> tuple[int, int]:
     return sum(width(t, names) for t in _TOK.findall(last)), rows
 
 
-def typeset(text: str, names: dict | None = None, lead: tuple[int, int] | None = None) -> str:
+RULE = True  # 쪽 나눔 — 문장 단위(아래 `_typeset` 의 `cur`). `tools/sim_pagebreak.py` 가 끄고 켜서 잰다
+SPLITS: list = []  # (종류, 어절 색인) — 쪽 사이에서 문장이 갈린 자리(시뮬레이션 계측, 조판 결과엔 영향 없음)
+
+
+class _Fail(Exception):
+    pass
+
+
+def typeset(text, names=None, lead=None):
+    skip: set = set()
+    while True:
+        del SPLITS[:]
+        try:
+            return _typeset(text, names, lead, skip)
+        except _Fail as e:
+            skip.add(e.args[0])
+
+
+_END = set(".!?…」』~")
+
+
+def _typeset(text: str, names: dict | None, lead: tuple[int, int] | None, skip: set) -> str:
+    """쪽 나눔은 문장 단위다(마스터 「이어지는 어절은 한 줄에」의 쪽 단위 적용, 10-21): 줄이 넘쳐 쪽이 넘어가는 자리가 문장 한가운데이고
+    그 문장이 새 쪽에서 시작하면 한 쪽(3줄)에 들어가면, 문장 앞에서 쪽을 넘긴다. 한 쪽보다 긴 문장은 그대로 둔다(`skip` — 다시 돌린다).
+    손 개행이 만드는 쪽 넘김은 번역자가 정한 자리라 건드리지 않는다."""
     """줄바꿈·쪽 넘김을 넣은 문안. 이미 든 `⏎`/`<05>` 는 강제로 지킨다.
     `lead` = (앞 구간이 끝난 줄 폭, 쪽에 쓴 줄 수) — 앞 구간 끝에 이어 붙는 구간(이름 변수 뒤 조각)은 그 줄의 남은 폭에서 시작한다."""
     # 화자 머리(`<1e>이름<04>` + 뒤 개행)와 맨 앞 개행은 폭·줄 수에 안 센다 — 자리표시자로 바꿨다가 되돌린다
@@ -69,6 +112,20 @@ def typeset(text: str, names: dict | None = None, lead: tuple[int, int] | None =
             cur.append(t)
     if cur:
         words.append(cur)
+    starts = set()
+    prev_end = True
+    for i, w in enumerate(words):
+        if w[0] in (" ", "\n"):
+            continue
+        if w[0] == "<05>":
+            prev_end = True
+            continue
+        if prev_end:
+            starts.add(i)
+        pl = re.sub(r"<[^>]*>|\{\*[^{}/]+/[^{}/]+\}", "", "".join(w))
+        prev_end = bool(pl) and pl[-1] in _END
+    cur = None  # (어절 색인, out 길이, 줄 폭, 쪽 줄 수) — 지금 문장의 시작 자리
+    tried: set = set()
     out: list[str] = []
     u = 0  # 현재 줄 폭
     rows = 0  # 이 쪽에 이미 쓴 완결 줄 수
@@ -82,18 +139,34 @@ def typeset(text: str, names: dict | None = None, lead: tuple[int, int] | None =
         out.append("\n")
         u = 0
         rows += 1
+        linewords.clear()
 
     def page():
         nonlocal u, rows
         out.append("<05>")
         u = 0
         rows = 0
+        linewords.clear()
 
     started = False
-    for w in words:
+    linewords: list[tuple[int, list, int, str | None]] = []  # 이 줄의 낱말들 (out 색인, 토큰, 폭, 글자) — 뒤 낱말과 한 덩어리면 함께 다음 줄로 보낸다
+    wi = -1
+    while wi + 1 < len(words):
+        wi += 1
+        w = words[wi]
         t0 = w[0]
+        if wi in starts:
+            cur = (wi, len(out), u, rows)
+        if t0 == "\n" and linewords and linewords[-1][3]:
+            # 번역에 손으로 넣은 개행이 한 덩어리(본용언+보조용언 등)를 가르면 공백으로 읽는다 — 어디서 끊을지는 조판기가 정한다
+            nxt = next((x for x in words[wi + 1 :] if x[0] not in (" ", "\n")), None)
+            if nxt and nxt[0] != "<05>" and _plain(nxt, names) and krwrap.split_reason(linewords[-1][3], _plain(nxt, names)):
+                w = [" "]
+                t0 = " "
         if t0 == "\n":
             if rows + 1 >= PAGE_ROWS:
+                if linewords and not (linewords[-1][3] and linewords[-1][3][-1] in _END):
+                    SPLITS.append(("hand", wi))
                 page()  # 강제 개행이 쪽을 넘기면 쪽 넘김으로
             else:
                 newline()
@@ -127,13 +200,44 @@ def typeset(text: str, names: dict | None = None, lead: tuple[int, int] | None =
             continue
         if u + ww > LINE_UNITS:
             # 앞 공백 제거 후 줄바꿈(쪽이 차면 쪽 넘김)
+            if rows + 1 >= PAGE_ROWS and RULE and cur and cur[0] != wi and cur[0] not in skip and not (cur[2] == 0 and cur[3] == 0) and not lead_ok:
+                if cur[0] in tried:
+                    raise _Fail(cur[0])
+                tried.add(cur[0])
+                del out[cur[1] :]
+                while out and out[-1] == " ":
+                    out.pop()
+                if out and out[-1] == "\n":
+                    out.pop()
+                page()
+                wi = cur[0] - 1
+                continue
+            plain = _plain(w, names)
+            carry: list = []
+            if plain:  # 본용언+보조용언 등 — 앞 낱말(들)을 함께 다음 줄로(`사` / `오라고` → `사 오라고`, `해 줄 거야`)
+                k, first = len(linewords), plain
+                while k > 1 and linewords[k - 1][3] and krwrap.split_reason(linewords[k - 1][3], first):
+                    k -= 1
+                    first = linewords[k][3]
+                if k < len(linewords) and sum(x[2] + 2 for x in linewords[k:]) + ww <= LINE_UNITS:
+                    carry = linewords[k:]
+                    del out[carry[0][0] :]
             while out and out[-1] == " ":
                 out.pop()
             if rows + 1 >= PAGE_ROWS:
+                if wi not in starts:
+                    SPLITS.append(("auto-long" if (cur and cur[0] in skip) else "auto-pgstart" if (cur and cur[2]==0 and cur[3]==0) else "auto-other", wi))
                 page()
             else:
                 newline()
+            u = 0
+            for x in carry:
+                linewords.append((len(out), x[1], x[2], x[3]))
+                out.extend(x[1])
+                out.append(" ")
+                u += x[2] + 2
         # 줄 머리 부호 고아 방지는 어절 단위라 자연히 지켜진다
+        linewords.append((len(out), w, ww, _plain(w, names)))
         out.extend(w)
         u += ww
     s = "".join(out)

@@ -35,5 +35,26 @@ class Continuation(unittest.TestCase):
         self.assertTrue(typeset.typeset("{*이/가} 가나", {}, (48, 0)).startswith("{*이/가}"))
 
 
+class AuxKeepTogether(unittest.TestCase):
+    def test_main_plus_auxiliary_verb_not_split(self):
+        # 본용언+보조용언(`사` + `오라고`) 은 줄이 갈려도 함께 간다 — 판정은 공용 krwrap.split_reason
+        t = typeset.typeset("표가 없잖아. 저쪽에서 사 오라고.", {})
+        self.assertIn("\n사 오라고", t)
+
+    def test_plain_wrap_unchanged(self):
+        t = typeset.typeset("가나다라마바사아자 차카타파하가나다 라마바사아자차", {})
+        self.assertNotIn("\n ", t)
+
+
+class HandNewlineInsideUnit(unittest.TestCase):
+    def test_hand_newline_inside_aux_chain_is_soft(self):
+        # 번역에 손으로 넣은 개행이 본용언+보조용언 사이면 공백으로 읽고 조판기가 끊는다
+        t = typeset.typeset("딱하다 싶으시면 뭐라도 사\n가 주십시오.", {})
+        self.assertIn("\n사 가 주십시오.", t)
+
+    def test_hand_newline_elsewhere_kept(self):
+        self.assertEqual(typeset.typeset("가나다\n라마바", {}), "가나다\n라마바")
+
+
 if __name__ == "__main__":
     unittest.main()
