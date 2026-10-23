@@ -112,6 +112,25 @@ def pointer_sites(mem):
     return out
 
 
+def dialogue_targets(mem):
+    """([목표 수], [조각 시작을 못 맞힌 (자리, 목표)]) — **대사 포인터(`0x0F 0x90 <u16>`)** 만 본다(ED3 풀 규격).
+
+    🔴 번역 단위 목록이 풀의 모든 `0xFFFF` 조각이라, 목록 밖 대사는 「포인터가 조각 시작을 못 맞히는」 꼴로만 생긴다(sfc-ed1 에서
+    장면 대사 101개가 목록 밖이라 일본어로 남았다 — 10-18). 다른 연산자 뒤의 `0x90` 은 이벤트 VM 자료 바이트와 구별되지 않아(404개 중
+    242개가 멤버 밖을 가리킨다) 게이트로 안 건다 — 개수만 센다(`parse` 의 `resolved`)."""
+    if layout(mem) != LAYOUT_POOL:
+        return [], []
+    info = parse(mem)
+    tot, miss = [], []
+    for at, t, _odd in info["targets"]:
+        p = at - 1 if mem[at - 1] == PTR_OP else at - 2
+        if p >= 1 and mem[p - 1] == 0x0F:
+            tot.append(t)
+            if t not in info["starts"]:
+                miss.append((at, t))
+    return tot, miss
+
+
 def segments(mem):
     """[(시작 오프셋, [코드…])] — 풀의 0xFFFF 로 갈린 조각 전부(짧은 것도 남긴다)."""
     base = text_base(mem)
@@ -222,6 +241,45 @@ def rebuild_table(mem, new_segments):
     if [c for _, c in back["segments"]] != [list(c) for c in new_segments]:
         raise ScriptError("되읽은 조각이 넣은 것과 다르다")
     return bytes(out), 0
+
+
+def window_chains(mem, info=None):
+    """[[조각 번호…]] — 대사 창 하나(`0F 90 V (01 90 W)* 00` 시퀀스)가 이어 보이는 조각들. 조각 하나가 한 줄이다.
+
+    포인터 자리 `q` 는 짝수 오프셋이고 이어지는 `01 90 W` 는 4바이트 뒤(`q+4`)다. 첫 포인터 앞은 `0F 90`(맞춤 패드 한 바이트 허용)이어야 한다.
+    포인터가 조각 시작을 못 맞히면 그 창은 건너뛴다(이벤트 자료로 본다)."""
+    if info is None:
+        if layout(mem) != LAYOUT_POOL:
+            return []
+        info = parse(mem)
+    idx = {s: i for i, (s, _c) in enumerate(info["segments"])}
+    base = info["base"]
+    sites = info["pointers"]
+    at_of = {q: v for q, v in sites}
+    out, used = [], set()
+    for q, v in sites:
+        if q in used:
+            continue
+        i = q - 1
+        if mem[i] != PTR_OP:
+            i -= 1  # 맞춤 패드
+        if i < 1 or mem[i] != PTR_OP or mem[i - 1] != 0x0F:
+            continue
+        chain, cq = [], q
+        while True:
+            t = base + (at_of[cq] & ~1)
+            if t not in idx:
+                chain = None
+                break
+            chain.append(idx[t])
+            used.add(cq)
+            if mem[cq + 2 : cq + 4] == b"\x01\x90" and (cq + 4) in at_of:
+                cq += 4
+                continue
+            break
+        if chain and mem[cq + 2 : cq + 3] == b"\x00":
+            out.append(chain)
+    return out
 
 
 def parse(mem):

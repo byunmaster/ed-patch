@@ -96,7 +96,9 @@ class TestTypeset(unittest.TestCase):
         floors = script.member_floors(segs)
         self.assertEqual(floors[0], script.NAME_FLOOR)
         self.assertEqual(floors[1], script.NAME_FLOOR)
-        self.assertEqual(typeset.wrap("크리스 엄마", "ed3", jp="クリスの母", floor=floors[0]), "크리스 엄마")
+        self.assertEqual(
+            typeset.wrap("크리스 엄마", "ed3", jp="クリスの母", floor=floors[0]), "크리스 엄마"
+        )
         with self.assertRaises(typeset.TypesetError):  # 바닥이 없으면 예전 사고가 그대로 난다
             typeset.wrap("크리스 엄마", "ed3", jp="クリスの母")
 
@@ -106,6 +108,48 @@ class TestTypeset(unittest.TestCase):
         a = typeset.wrap("우리 문안을 여러 번 조판해도 같은 결과", "ed3", jp=jp, floor=24)
         b = typeset.wrap("우리 문안을 여러 번 조판해도 같은 결과", "ed3", jp=jp, floor=24)
         self.assertEqual(a, b)
+
+    def test_extra_line_is_allowed_only_for_listed_originals(self):
+        """한 줄 예산 조각은 `extra_lines.json` 지문에 든 것만 둘째 줄을 받는다(가짜 원문으로 확인)."""
+        import hashlib
+
+        jp = "가짜 원문 한 줄"
+        key = hashlib.sha1(jp.encode("utf-8")).hexdigest()[:8]
+        self.assertEqual(typeset.budget("ed3", jp)[1], 1)
+        typeset.EXTRA_LINES[key] = 2
+        try:
+            self.assertEqual(typeset.budget("ed3", jp)[1], 2)
+        finally:
+            del typeset.EXTRA_LINES[key]
+
+    def test_wrap_breaks_at_a_word_when_glyphs_exceed_the_grid(self):
+        """슬롯 폭 안이어도 공백 포함 글리프가 24열을 넘으면 어절 경계에서 접는다(엔진은 24칸째에서 어절 한복판을 접는다)."""
+        t = "책등에 『하얀마녀의 말』이라고 적힌 책이 있다."
+        out = typeset.wrap(t, "ed3", width=24, lines=2)
+        self.assertEqual(out.replace("\n", " "), t)
+        self.assertTrue(all(len(x) <= typeset.COLS["ed3"] for x in out.split("\n")))
+        self.assertTrue(typeset.violations(t, "ed3"))  # 한 줄로는 격자 열을 넘는다(게이트가 잡는다)
+
+    def test_pad_rows_fills_the_first_row_to_the_grid(self):
+        """구울 꼴 — 개행은 없고 첫 줄을 공백 글리프로 열 24 까지 채워 둘째 줄이 어절 머리에서 시작한다. 한 줄이면 그대로."""
+        self.assertEqual(typeset.pad_rows("가나다", "ed3"), "가나다")
+        out = typeset.pad_rows("가나다\n라마바", "ed3")
+        self.assertEqual(len(out), typeset.COLS["ed3"] + 3)
+        self.assertEqual(out[: typeset.COLS["ed3"]], "가나다" + " " * (typeset.COLS["ed3"] - 3))
+        self.assertNotIn("\n", out)
+        with self.assertRaises(typeset.TypesetError):
+            typeset.pad_rows("가" * 25 + "\n나", "ed3")
+
+    def test_wrap_keeps_edge_spaces_next_to_engine_variables(self):
+        """변수(이름·수치·아이템) 바로 뒤/앞에 붙는 조각의 앞뒤 공백은 조판이 먹지 않는다 — 먹으면 이름과 말이 붙는다(10-18 sfc-ed2·pce-ed1)."""
+        for text in (" 받을게.", "쥬리오는 ", " 많아서는 ", "가 나"):
+            out = typeset.wrap(text, "ed3", width=20, lines=2)
+            self.assertEqual(
+                len(out) - len(out.lstrip(" ")), len(text) - len(text.lstrip(" ")), text
+            )
+            self.assertEqual(
+                len(out) - len(out.rstrip(" ")), len(text) - len(text.rstrip(" ")), text
+            )
 
 
 if __name__ == "__main__":

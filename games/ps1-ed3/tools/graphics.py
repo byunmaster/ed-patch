@@ -82,6 +82,8 @@ def overlay_labels(raw, t, spec):
 
     줄마다 `[y0, y1, 글]` — 그 줄의 잉크 가로 범위의 가운데에 맞춰(원판 정렬을 따른다) 같은 높이에 앉힌다.
     줄 위아래 1행까지 바탕 색인으로 비우고 잉크 색인으로 쓴다(색인 단위 — 칸 밖은 바이트까지 그대로).
+    🔴 `dead_rows` — 크레딧 두루마리가 **그리지 않는 그림 행**(조각 이음매의 마지막 행 · 쪽 끝 235~255, 실측 10-17 행 번호 눈금).
+    원본에선 늘 빈 행이라 안 보이지만 우리 글자가 걸리면 그 줄만 잘린다(「션」 ㄴ 바닥). 걸리면 빌드가 선다.
     글꼴은 Galmuri14(`narration.render_line` 과 같은 길 — 아스키 비례폭·가운데 맞춤 규칙을 한 곳에 둔다).
     """
     import narration
@@ -115,6 +117,8 @@ def overlay_labels(raw, t, spec):
         h, w = m.shape
         ty, tx = max(0, (y0 + y1) // 2 - h // 2), int(round(cx - w / 2))
         assert tx >= 0 and tx + w <= width, f"{text!r}: 가로가 그림 밖이다"
+        dead = [y for y in spec.get("dead_rows", []) if ty <= y < ty + h]
+        assert not dead, f"{text!r}: 화면에 안 그려지는 행 {dead} 에 잉크가 걸린다(dead_rows)"
         for r in range(h):
             for c in range(w):
                 if m[r, c]:

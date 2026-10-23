@@ -237,8 +237,31 @@ def ellipsis_glyph():
     return out
 
 
+# 🔴 **마스터가 도트판에서 직접 찍은 반각 글리프**(마스터 10-21 「Pia」 도안 — 「i」를 「P」에서 한 열 떼어 P·i·a 간격을 바로잡음).
+#    정본이다 — 다시 그리거나 자간을 만지지 않는다. 12행 × 11열(HANGUL_W, 12열째는 늘 빔). `#` = 켠 점.
+#    ASCII 「i」 한 글자가 쓰이는 모든 글에 같이 적용된다(「Pia」 말고도).
+MASTER_DOTS = {
+    "i": (
+        "...........",
+        "..#........",
+        "...........",
+        "..#........",
+        "..#........",
+        "..#........",
+        "..#........",
+        "..#........",
+        "..#........",
+        "..#........",
+        "..#........",
+        "...........",
+    ),
+}
+
+
 def glyph_bits(ch):
     """굽을 글리프 한 칸 — 한글은 `hangul_glyph`, 나눈 글자는 그 글자를 반 칸 밀어 자른 조각."""
+    if ch in MASTER_DOTS:
+        return np.array([[c == "#" for c in row] for row in MASTER_DOTS[ch]], dtype=np.uint8)
     if ch not in SPLIT:
         return hangul_glyph(ch)
     base, side = SPLIT[ch]

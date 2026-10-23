@@ -15,6 +15,8 @@
 """
 
 import argparse
+import hashlib
+import json
 import os
 import sys
 
@@ -63,6 +65,35 @@ def width_cells(text, disc="ed3"):
     return sum(cell_width(ch, disc) for ch in text)
 
 
+def _extra_lines():
+    """{원문 지문: 줄 수} — 한 줄 예산인 조각 중 **두 줄로 푸는 것**(`extra_lines.json`, 지문만 — 원문은 안 둔다).
+
+    엔진엔 대사 개행이 없고 글자가 **격자 24칸째에서 저절로 접힌다**(시험 롬 실측 10-18, 접히는 자리는 글자 수(공백 포함)로 정해진다 —
+    슬롯 폭이 아니다). 그래서 24글리프를 넘는 번역은 한 줄로 못 맞추지만, 첫 줄을 **공백 글리프로 24칸까지 채우면** 다음 어절이
+    둘째 줄 머리에서 시작한다(`pad_rows`). 창은 4행이라 둘째 줄이 창 안에 그려지고 쪽 넘김도 정상이다."""
+    path = os.path.join(common.ROOT, "extra_lines.json")
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as f:
+        return {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+
+
+EXTRA_LINES = _extra_lines()
+
+
+def pad_rows(text, disc):
+    """두 줄 조각을 **구울 꼴**로 — 첫 줄을 공백 글리프로 격자 열까지 채우고 개행은 없앤다(엔진이 24칸째에서 접는다).
+
+    줄이 하나뿐이면 그대로다. 줄 수는 `extra_lines.json` 이 정한 조각만 둘이 된다."""
+    rows = text.split("\n")
+    if len(rows) == 1:
+        return text
+    cols = COLS[disc]
+    if len(rows) != 2 or not cols or len(rows[0]) > cols:
+        raise TypesetError(f"두 줄을 격자에 못 맞춘다: {text!r}")
+    return rows[0] + " " * (cols - len(rows[0])) + rows[1]
+
+
 def budget(disc, jp, floor=0):
     """(폭, 줄 수) — **그 조각의 원문이 쓴 만큼**. 상한을 넘지 않는다.
 
@@ -79,7 +110,89 @@ def budget(disc, jp, floor=0):
     #    ⇒ `floor` 로 **그 멤버의 최대 폭**을 받아 바닥으로 깐다. 줄 수는 창 높이라 그대로 둔다.
     if floor:
         w = max(w, floor)
-    return min(w, lim["width"]), min(max(len(ls), 1), lim["lines"])
+    n = min(max(len(ls), 1), lim["lines"])
+    if jp is not None:
+        n = max(n, EXTRA_LINES.get(hashlib.sha1(jp.encode("utf-8")).hexdigest()[:8], 0))
+    return min(w, lim["width"]), n
+
+
+# ── 창 단위 재조판(마스터 10-20 「어절단위 개행」 · 규칙 2-6·2-10) ──────────────────────────────────
+# 한 창 = `0F 90 V (01 90 W)* 00` 시퀀스 하나이고, 조각 하나가 한 줄이다(조각이 빈 꼬리면 그 줄은 안 그려진다 — 10-20 실측).
+# 원문 줄 구조를 따르지 않고 창 문장을 이어 **창 폭(24글리프)을 채워** 어절 경계에서 다시 나눈다. 쪽(=시퀀스) 경계는 그대로.
+BIND = "\ue000"  # 띄어 쓴 정본 이름의 공백을 임시로 바꾸는 사적 문자(줄바꿈 금지) — 끝나면 공백으로 되돌린다
+
+
+def _bind_names():
+    """[(이름, 묶은 이름)] — 정본 nouns 중 공백이 든 이름(긴 것부터)."""
+    from shared import canon
+
+    names = sorted({kr for _c, _jp, kr in canon.all_names("ed3") if " " in kr}, key=len, reverse=True)
+    return [(n, n.replace(" ", BIND)) for n in names]
+
+
+_BOUND = None
+
+
+def _cw(ch, disc):
+    return cell_width(" " if ch == BIND else ch, disc)
+
+
+def _fits(line, disc, cols):
+    return len(line) <= cols and sum(_cw(c, disc) for c in line) <= cols
+
+
+def reflow(texts, disc="ed3", cols=None):
+    """창 하나의 조각들 → 같은 개수의 조각(앞에서부터 한 줄씩, 남는 꼬리는 빈 문자열). 못 하면 None(원래 구조 유지).
+
+    규칙: 문장을 이어 놓고 ① 앞 줄 남은 칸에 문장이 **통째로** 들어가면 거기 잇고(2-10) ② 아니면 새 줄에서 시작하며 ③ 한 줄보다
+    긴 문장만 어절 경계로 나눈다(2-6). 띄어 쓴 정본 이름은 한 어절로 묶는다. 줄이 조각 수보다 늘면 None.
+    변수가 끼는 창(조각 앞뒤 공백 · 런타임 조사 표지 · 병기 `(이)` · 개행)은 건드리지 않는다."""
+    global _BOUND
+    import josa_rt
+
+    cols = cols or COLS[disc] or 24
+    if any(
+        not t or t != t.strip(" ") or "\n" in t or josa_rt._TOKEN.search(t) or t[0] in josa_rt.MARKER_CHARS or t.startswith("\u3000")
+        for t in texts
+    ):
+        return None
+    if _BOUND is None:
+        _BOUND = _bind_names()
+    para = " ".join(texts)
+    for name, bound in _BOUND:
+        para = para.replace(name, bound)
+    rows, cur = [], ""
+    for sent in krwrap.split_sentences(para):
+        cand = f"{cur} {sent}" if cur else sent
+        if _fits(cand, disc, cols):
+            cur = cand
+        elif _fits(sent, disc, cols):
+            rows.append(cur)
+            cur = sent
+        else:  # 한 줄보다 긴 문장 — 새 줄에서 시작해 어절 경계로 나눈다(2-10: 앞 줄에 통째로 안 들어가면 새 줄)
+            if cur:
+                rows.append(cur)
+            width = float(cols)
+            while True:
+                out = krwrap.wrap(
+                    sent,
+                    width=width,
+                    cell_width=lambda ch: _cw(ch, disc),
+                    strip_after=STRIP_AFTER[disc],
+                )
+                if all(_fits(x, disc, cols) for x in out) or width <= 4:
+                    break
+                width -= 0.5
+            if not all(_fits(x, disc, cols) for x in out):
+                return None
+            rows += out[:-1]
+            cur = out[-1]
+    if cur:
+        rows.append(cur)
+    rows = [r.replace(BIND, " ") for r in rows]
+    if len(rows) > len(texts) or "".join("".join(rows).split()) != "".join("".join(texts).split()):
+        return None
+    return rows + [""] * (len(texts) - len(rows))
 
 
 class TypesetError(Exception):
@@ -111,12 +224,19 @@ def wrap(text, disc, jp=None, width=None, lines=None, floor=0):
         )
         width = width if width is not None else w
         lines = lines if lines is not None else n
-    out = krwrap.wrap(
-        text.replace("\n", " "),
-        width=width,
-        cell_width=lambda ch: cell_width(ch, disc),
-        strip_after=STRIP_AFTER[disc],
-    )
+    cols = COLS[disc]
+    while True:
+        out = krwrap.wrap(
+            text.replace("\n", " "),
+            width=width,
+            cell_width=lambda ch: cell_width(ch, disc),
+            strip_after=STRIP_AFTER[disc],
+        )
+        # 🔴 슬롯 폭 안이어도 **글리프(공백 포함)가 격자 열을 넘으면** 엔진이 어절 한복판에서 접는다 — 줄 수 여유가 있을 때만
+        #    폭을 반 칸씩 줄여 어절 경계에서 접는다(여유가 없으면 아래에서 운다 / 한 줄이면 `violations` 가 잡는다).
+        if not cols or len(out) >= lines or max(len(x) for x in out) <= cols or width <= 4:
+            break
+        width -= 0.5
     if len(out) > lines:
         raise TypesetError(f"{len(out)}줄 > 예산 {lines}줄 (폭 {width:g}): {text!r}")
     res = lead + "\n".join(out) + trail

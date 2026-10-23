@@ -100,6 +100,23 @@ def check_no_text_loss(where, newmem, lines, disc, table, report):
         report["loss_checked"] = report.get("loss_checked", 0) + 1
 
 
+def reflow_windows(mem, info, lines, disc):
+    """{조각 번호: 새 줄 글} — 창 단위 재조판 대상(`typeset.reflow`). 같은 조각이 둘 이상의 창에 걸리면 건드리지 않는다."""
+    chains = scriptmap.window_chains(mem, info)
+    use = {}
+    for ch in chains:
+        for i in ch:
+            use[i] = use.get(i, 0) + 1
+    out = {}
+    for ch in chains:
+        if any(i not in lines or use[i] != 1 or lines[i].get("_auto") for i in ch):
+            continue
+        rows = typeset.reflow([josa_rt.convert(lines[i]["kr"]) for i in ch], disc)
+        if rows is not None:
+            out.update(zip(ch, rows))
+    return out
+
+
 def encode_member(disc, path, nm, mem, lines, table, report):
     """멤버 하나의 새 조각 코드열(`[[코드…]…]`) — **재삽입 빌드와 멤버 크기 게이트가 같은 길**을 쓴다.
 
@@ -111,13 +128,19 @@ def encode_member(disc, path, nm, mem, lines, table, report):
     # 🔴 검사기(`script.py --check`)와 **같은 자**로 조판한다 — `floor` 를 빼먹어 넘친
     #    꼬리가 조용히 잘렸다(ED3 37줄 · ED4 59줄, 09-27).
     floors = script_canon.member_floors(jps)
+    reflowed = reflow_windows(mem, info, lines, disc) if disc == "ed3" else {}
     for i, row in sorted(lines.items()):
         jp = jps[i][1]
         try:
-            # 조사 병기 → 확정/런타임 표지(조각 첫머리). 구운 글 검사도 같은 변환본으로 한다.
-            row = dict(row, kr=josa_rt.convert(row["kr"]))
-            lines[i] = row
-            kr = typeset.wrap(row["kr"], disc, jp=jp, floor=floors.get(i, 0))
+            if i in reflowed:  # 창 단위 재조판(어절 단위·창 폭 채움) — 줄바꿈이 이미 조각 경계로 정해졌다
+                lines[i] = row = dict(row, kr=reflowed[i])
+                kr = row["kr"]
+            else:
+                # 조사 병기 → 확정/런타임 표지(조각 첫머리). 구운 글 검사도 같은 변환본으로 한다.
+                row = dict(row, kr=josa_rt.convert(row["kr"]))
+                lines[i] = row
+                kr = typeset.wrap(row["kr"], disc, jp=jp, floor=floors.get(i, 0))
+                kr = typeset.pad_rows(kr, disc)  # 두 줄 조각 — 첫 줄을 공백으로 격자 열까지 채워 둘째 줄을 어절 머리에서 시작시킨다
         except typeset.TypesetError as e:
             if row.get("_auto"):  # 정본 speaker 이름이 예산을 넘으면 그 이름만 일본어로 남긴다
                 report["auto_wrap"] = report.get("auto_wrap", 0) + 1
@@ -776,6 +799,11 @@ def main():
     digit_codes = {d: rev[chr(0xFF10 + int(d))] for d in "0123456789"}  # 전각 숫자 자리(원본)
     josa = josa_rt.runtime(table, items, digit_codes) if a.disc == "ed3" else None
     engine = engine_patch.apply(exe, a.disc, table, josa=josa)  # 안 B 타일 합성 — 그 디스크에 패치가 있으면
+    debug_note = None
+    if common.DEBUG:  # 🔴 시험 빌드 전용 — 스위치 없이 구운 이미지는 이 줄을 안 지난다(꼬리표 test-*·debug 는 common 이 강제)
+        import debugpatch
+
+        debug_note = debugpatch.apply(exe, a.disc, os.environ.get("ED_DEBUG_MAP", ""))
     exe_orig = bytes(exe)
     enc = lambda kr: hangul_map.encode(kr, a.disc, table)
     ui_put, ui_skip = uitext.apply(exe, a.disc, enc)
@@ -845,6 +873,8 @@ def main():
         print(f"  타이틀 폰트: SLPS_012.01 BIOS 리다이렉트 · M01.DAT 문자열 {title_font_n}")
     if a.test:
         print("  🔴 **시험 빌드다** — 안 옮긴 문안은 엉뚱한 글자로 나온다. 배포물이 아니다.")
+    if debug_note:
+        print(f"  ⚠ 디버그 빌드 — 새 게임이 {debug_note} 에서 시작한다(플레이어·파티 없음, 맵 구경 모드). 제품 이미지가 아니다.")
     if left:
         print(f"  ⬜ 아직 못 넣는 낱말 {len(left)} (표가 없는 구역 — 길이 고정)")
     if report.get("gap_put") or report.get("gap_long"):
@@ -884,8 +914,9 @@ def main():
     common.IMMUTABLE[(a.disc, exe_lba, exe_size)] = [("PS-EXE 헤더", 0, font.EXE_HDR, "fixed")]
     os.makedirs(common.BUILD_DIR, exist_ok=True)
     out = common.build_bin(a.disc)
+    suffix = " (DEBUG)" if common.DEBUG else " (TEST)"  # 🔴 디버그 이미지는 파일 이름이 달라 메모리카드(.mcr)도 따로 쓴다 — 마스터 세이브가 덮이지 않게
     if a.test:  # 이름으로 갈라 둔다 — 시험물을 정상으로 오해하는 사고가 이 레포의 단골이다
-        out = out.replace(".bin", " (TEST).bin")
+        out = out.replace(".bin", suffix + ".bin")
     tmp = out + ".part"
     shutil.copyfile(common.orig_bin(a.disc), tmp)
     _, dirpos = common.iso_tree(common.orig_bin(a.disc))
@@ -907,13 +938,19 @@ def main():
         raise
     try:
         verify_image(a.disc, tmp, fs, exe_lba, exe_size, arcs, dirpos, resized)
+        if a.disc == "ed3":  # 🔴 이미지 전체 잔존 — 정본 밖에 원문이 남았나(기준선 `image_residue_baseline.json` 보다 늘면 선다)
+            import check_image_residue as residue_gate
+
+            up, _down = residue_gate.judge(residue_gate.scan(tmp), residue_gate.load_baseline())
+            if up:
+                raise SystemExit("🔴 이미지 잔존 — 알려진 자리 밖에 원문 런이 남았다:\n  " + "\n  ".join(up[:20]))
     except Exception:
         os.replace(tmp, out + ".failed")
         raise
     os.replace(tmp, out)
     cue = common.build_cue(a.disc)
     if a.test:
-        cue = cue.replace(".cue", " (TEST).cue")
+        cue = cue.replace(".cue", suffix + ".cue")
     common.write_cue(cue, os.path.basename(out))
     common.write_build_manifest(a.disc, "kr", out)
     movie_swap(a.disc, out)

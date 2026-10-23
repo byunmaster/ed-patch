@@ -50,6 +50,73 @@ def _scene_pairs():
             yield f"scn:{key}[{i}]", jp, (kr or None), DIALOG
 
 
+def _crosses(nm, chain, jp_of, names):
+    """이름 `nm` 이 **조각 경계에 걸쳐** 나오는 자리가 있나. 걸친 자리가 조각 하나에 온전히 든 **다른 이름**과 겹치면(「アンデラ|城下町」의
+    「城」 — 「アンデラ城」 과 「城下町」 이 한 글자를 나눠 쓴다) 이름 둘이 서로 먹는 것이니 세지 않는다."""
+    joined = "".join(jp_of[i] for i in chain)
+    bounds, pos = [], 0
+    for i in chain:
+        bounds.append((pos, pos + len(jp_of[i])))
+        pos += len(jp_of[i])
+    inside = []  # 조각 하나 안에 온전히 든 이름의 (시작, 끝)
+    for lo, hi in bounds:
+        seg = joined[lo:hi]
+        for other in names:
+            k = seg.find(other)
+            while k >= 0:
+                inside.append((lo + k, lo + k + len(other)))
+                k = seg.find(other, k + 1)
+    k = joined.find(nm)
+    while k >= 0:
+        span = (k, k + len(nm))
+        whole = any(lo <= span[0] and span[1] <= hi for lo, hi in bounds)
+        if not whole and not any(a < span[1] and span[0] < b for a, b in inside):
+            return True
+        k = joined.find(nm, k + 1)
+    return False
+
+
+def _window_pairs():
+    """**이어진 문장** — 대사 창(`0F 90 …` 시퀀스) 하나의 조각들을 한 줄로 낸다(sfc-ed2 10-20: 조각 단위로만 재면 이름·정본·인사가 조각 경계에
+    걸쳐 둘로 갈린 자리를 못 본다). 조각 단위 짝은 그대로 두고 **창 단위 짝을 더한다**(`scn:<키>#win<n>`) — 번역 안 된 조각이 낀 창은 건너뛴다."""
+    import common
+    import scriptmap
+
+    import sys as _sys
+
+    shared = os.path.join(os.path.dirname(os.path.dirname(common.ROOT)), "shared")
+    if shared not in _sys.path:
+        _sys.path.append(shared)
+    import canon as _canon
+
+    names = sorted({jp for _c, jp, _kr in _canon.all_names(TITLE) if len(jp) >= 2}, key=len, reverse=True)
+    canon = S.load(_DISC)
+    fs = common.iso_files(_DISC)
+    for archive, member, segs in S.members(_DISC):
+        have = canon.get((archive, member), {})
+        if not have:
+            continue
+        lba, size = fs[archive]
+        data = common.read_lba(_DISC, lba, size)
+        _, ents = common.arc_parse(data)
+        off, sz = next((o, z) for n, o, z in ents if n == member)
+        mem = data[off : off + sz]
+        info = scriptmap.parse(mem)
+        jp_of = dict(segs)
+        key = S.key_of(archive, member)
+        for n, chain in enumerate(scriptmap.window_chains(mem, info)):
+            if len(chain) < 2:
+                continue
+            krs = [have.get(i, {}).get("kr") for i in chain]
+            if any(not k for k in krs) or any(i not in jp_of for i in chain):
+                continue
+            joined = "".join(jp_of[i] for i in chain)
+            # 조각 하나 안에 온전히 든 이름은 조각 단위 짝이 이미 잰다 — **조각 경계에 걸친 이름이 있는 창**만 더한다(이중 계상·승인 예외 중복을 피한다).
+            if not any(_crosses(nm, chain, jp_of, names) for nm in names):
+                continue
+            yield f"scn:{key}#win{n}", joined, " ".join(krs), DIALOG
+
+
 def _ui_pairs():
     _, sites = U.sites(_DISC)
     have = U.load(_DISC)
@@ -101,5 +168,6 @@ def _exe_pairs():
 def pairs():
     """[(자리, 원문 줄, 우리 줄|None, 갈래)] — ED3 문안 전체. 미번역 줄도 None. 갈래: 씬 대사 dialog · UI 문안 slot · 실행파일 낱말 풀 slot."""
     yield from _scene_pairs()
+    yield from _window_pairs()
     yield from _ui_pairs()
     yield from _exe_pairs()

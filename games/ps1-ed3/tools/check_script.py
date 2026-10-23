@@ -39,7 +39,7 @@ def scan(disc, limit=None):
             mem = data[o : o + msz]
             base = scriptmap.text_base(mem)
             if not (2 < base < msz):
-                rows.append((path, name, None, 0, 0, False))
+                rows.append((path, name, None, 0, 0, False, 0, []))
                 continue
             info = scriptmap.parse(mem)
             try:
@@ -47,7 +47,8 @@ def scan(disc, limit=None):
                 ident = out == mem
             except scriptmap.ScriptError:
                 ident = False
-            rows.append((path, name, base, len(info["pointers"]), info["resolved"], ident))
+            dt, dm = scriptmap.dialogue_targets(mem)
+            rows.append((path, name, base, len(info["pointers"]), info["resolved"], ident, len(dt), dm))
         if limit and len(rows) >= limit:
             break
     return rows
@@ -77,11 +78,17 @@ def main():
     print(
         f"  길이 자유로 다룰 수 있음: {len(clean):,}  · 못 푼 자리 있음(이벤트 데이터로 보고 길이 자유): {len(risky):,}"
     )
-    for path, n, base, np_, nr, _ident in broken[:8]:
+    for path, n, base, np_, nr, _ident, _dt, _dm in broken[:8]:
         print(f"  🔴 {path} {n}: 항등 재구축 실패 (base={base} 포인터 {np_} 풀림 {nr})")
     if broken:
         print("  🔴 파서가 구조를 잘못 읽고 있다 — 이 상태로 문안을 넣으면 조용히 깨진다")
-    return 1 if broken else 0
+    # 🔴 대사 포인터(0F 90)가 번역 단위(조각 시작)를 못 맞히면 그 대사는 번역 목록 밖이라 일본어로 남는다(sfc-ed1 101곳, 10-18)
+    dlg = sum(r[6] for r in known)
+    lost = [(r[0], r[1], at, t) for r in known for at, t in r[7]]
+    print(f"  대사 포인터(0F 90) 목표 {dlg:,} · 번역 단위 밖 {len(lost):,}")
+    for path, n, at, t in lost[:8]:
+        print(f"  🔴 {path} {n}: 대사 포인터 @{at} → {t} 이 조각 시작이 아니다")
+    return 1 if broken or lost else 0
 
 
 if __name__ == "__main__":
