@@ -151,6 +151,22 @@ def dialog(a) -> None:
     print("끝:", out)
 
 
+def trace(a) -> None:
+    """구조 흐름 추적(`trace_play.lua`) — 단위 목록(`--list`, 비면 필드 첫 장면 연속 재생)을 자연 진행으로 돌려 구조 토큰 (주소, 바이트) 열을 `<out>/trace.txt` 에 남긴다."""
+    rom = Path(a.rom)
+    check_state("dialog", rom)
+    od = Path(a.out)
+    od.mkdir(parents=True, exist_ok=True)
+    (od / "trace.txt").unlink(missing_ok=True)
+    env = {"SW_OUT": str(od), "SW_STATE": str(WORK / "S_dialog.bin"), "SW_MAXF": str(a.maxf)}
+    if a.list:
+        env["SW_LIST"] = a.list
+    if a.all:
+        env["SW_ALL"] = "1"
+    run_mesen(rom, HERE / "trace_play.lua", env).wait()
+    print("끝:", od / "trace.txt")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -180,6 +196,12 @@ def main() -> None:
     p.add_argument("--out", default="", help="산출 폴더(메인 트리 .local/work/inbox/... 에 직접 둘 때)")
     p.add_argument("--procs", type=int, default=4)
     p.add_argument("--tag", default="run")
+    p = sub.add_parser("trace")
+    p.add_argument("--rom", default=str(DEFAULT_ROM))
+    p.add_argument("--list", default="")
+    p.add_argument("--out", required=True)
+    p.add_argument("--maxf", type=int, default=2500)
+    p.add_argument("--all", action="store_true", help="구조 토큰만이 아니라 읽는 토큰 전부")
     p = sub.add_parser("report")
     p.add_argument("out")
     a = ap.parse_args()
@@ -191,6 +213,8 @@ def main() -> None:
         battle(a)
     elif a.cmd == "dialog":
         dialog(a)
+    elif a.cmd == "trace":
+        trace(a)
     else:
         subprocess.run([sys.executable, str(HERE / "report.py"), a.out, str(Path(a.out) / "sheets")], check=True)
 

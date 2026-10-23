@@ -52,6 +52,31 @@ TAIL_END = (patches.FONT_BANK << 16) | 0xEFFF  # $D8:F000~ 은 조사 훅 표
 FAR_BANKS = list(range(0xD9, 0xE0))
 
 
+# 재배치 장부(`games/sfc-ed2/relocations.tsv`) — 빌드가 **실제로 한** 재배치(옮김·쪽 넘김·채움·스텁·포인터)를 그 자리에서 적는다(손으로 안 씀).
+# 구조 대조 검사(`check_structure.py`)가 같은 장부를 허용 목록의 출처로 쓴다. 되돌리기 스위치: 환경변수 `ED_RELOC_OFF`(키 목록 또는 `@파일`) — 대사 구간 키는 원문 바이트 그대로 두고,
+# `쪽:<키>` 는 그 구간만 쪽 나눔 규칙(문장 단위)을 끈다.
+LEDGER: list = []
+EV = {  # 종류별 엔진 근거(짧은 꼴 — 풀이는 `check_structure.ALLOWED`)
+    "채움": "$C0:AEA3(rts) · 디스패치 $C0:AB28",
+    "쪽 넘김": "$05 핸들러 $C0:AC95",
+    "옮김": "$17 스텁 $C0:FB10 · $0F $C0:AD89",
+    "스텁": "$0F $C0:AD89 · 코드 패치(patches.py)",
+    "포인터": "$A6~$A8 즉치 · 출력기 $C0:A691/$C0:9395",
+}
+
+
+def rec(kind: str, key: str, orig: int, new: int | None, why: str, n_new: int = 0, revert: str = "되돌리기 수단 없음") -> None:
+    """장부 한 줄 — orig/new 는 SNES 24비트 주소(None 이면 제자리)."""
+    LEDGER.append({"key": key, "kind": kind, "orig": orig, "new": new if new is not None else orig, "why": why, "n_new": n_new, "revert": revert})
+
+
+def _off_keys() -> set[str]:
+    v = os.environ.get("ED_RELOC_OFF", "").strip()
+    if v.startswith("@"):
+        v = Path(v[1:]).read_text(encoding="utf-8")
+    return {x for x in re.split(r"[,\s]+", v) if x}
+
+
 class Space:
     """확장 영역 배치기 — 항목이 뱅크 경계를 넘지 않게 순서대로 놓는다(결정적)."""
 
@@ -224,6 +249,40 @@ def e1_texts(src: bytes, seg_map: dict) -> dict[str, str]:
     return out
 
 
+_NONTEXT_END = {0x00, 0x03, 0x06, 0x07}  # 이 토큰을 만나면 줄이 이어지지 않는다(끝·리턴 등)
+
+
+def jump_leads(src: bytes, seg_map: dict, sg: dict, names: dict, e1w: dict) -> dict[str, tuple[int, int]]:
+    """점프(`$0F`)로 들어오는 조각(공유 꼬리) → 점프 직전 조각이 끝난 자리. 조판기는 꼬리를 한 줄 전체 폭으로 짜므로, 앞 조각이 이미 쓴 폭·줄을 모르면
+    꼬리 첫 줄이 넘치거나(엔진이 낱말 가운데서 끊는다) 쪽이 3줄을 넘는다. 호출자가 여럿이면 가장 빡빡한 자리(`typeset.worse`)를 쓴다.
+    앞 조각의 자리는 점프 없이 조판한 결과로 잰다(꼬리가 꼬리를 부르는 사슬은 한 단계만 본다). 호출(`$10`)은 부른 쪽이 폭을 이미 세므로 뺀다."""
+    ends = {b: k for k, (a, b) in sg.items()}
+    st: dict[int, tuple[int, int]] = {}  # 구간 끝 오프셋 → 끝난 자리
+    for key, v in sorted(seg_map.items()):
+        a, b = sg[key]
+        if not (0xC2 <= (common.off2snes(a) >> 16) <= 0xCB) or v.get("raw"):
+            continue
+        text = resolve_josa(v["kr"], names)
+        tw = {**names, **e1w, **call_texts(text, a, seg_map, sg)}
+        pv = st.get(a)
+        st[b] = typeset.chain_state(typeset.typeset(text, tw, pv), pv, tw)
+    out: dict[str, tuple[int, int]] = {}
+    for s_, e_ in script.all_units(src):
+        bank = (common.off2snes(s_) >> 16) & 0xFF
+        last = None
+        for o, ln in script.tokens(src, s_, e_):
+            bb = src[o]
+            if bb in segs.TEXTLEVEL or bb in (0xE0, 0xE1):
+                last = o + ln
+            elif bb in _NONTEXT_END:
+                last = None
+            elif bb == 0x0F and o + 2 < len(src) and last in ends and last in st:
+                tk = segs.seg_id(common.snes2off((bank << 16) | src[o + 1] | src[o + 2] << 8))
+                if tk in seg_map and st[last] != (0, 0):
+                    out[tk] = typeset.worse(out.get(tk), st[last])
+    return out
+
+
 def call_texts(text: str, seg_off: int, seg_map: dict, sg: dict) -> dict[str, str]:
     """이 구간이 부르는 조각(`<10 lo hi>`)의 한국어 — 같은 뱅크 안 주소다. 조판기가 폭을 세는 데 쓴다."""
     out = {}
@@ -344,7 +403,11 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
     src = common.rom_bytes()
     rom = bytearray(src) + bytearray(b"\xff" * (NEW_SIZE - len(src)))
     writes: list[tuple[int, int]] = []
+    del LEDGER[:]
+    off_keys = _off_keys()
     apply_patches(rom)
+    for nm, ad, ln, why in (("STUB", patches.STUB_ADDR, len(patches.STUB), "`$17` 트램펄린 핸들러(대사 구간을 확장 뱅크로 옮기는 24비트 점프)"), ("LOADER_STUB", patches.LOADER_STUB_ADDR, len(patches.LOADER_STUB), "창 블록 로더를 24비트 복사 루프로 돌림(블록을 확장 뱅크로 옮기려고)"), ("JOSA_STUB1", patches.JOSA_STUB1, 0x60, "조사 훅 — 전각 글리프 가져오기에 걸린다"), ("JOSA_STUB2", patches.JOSA_STUB2, 0x40, "조사 훅 — 반각 글리프에 걸린다")):
+        rec("스텁", f"patch:{nm}", ad, ad, why, ln, "되돌리기 수단 없음(코드 패치 — 끄면 이 스텁을 부르는 옮김 블록 전부가 죽는다)")
     seg_map, ui_map, dict_map = collect_texts(src)
     names = dict_names(src, dict_map)
 
@@ -406,6 +469,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             dead.append((oa, oe + 1))
             rom[o : o + 3] = bytes([addr & 0xFF, (addr >> 8) & 0xFF, addr >> 16])
             writes.append((o, o + 3))
+            rec("포인터", f"dict:{key}", common.off2snes(oa), addr, f"사전 항목을 꼬리로 옮긴다({len(data)}B) — 포인터 표 3바이트만 돌린다", len(data))
             stats["dict"] += 1
 
     # 3. UI 창 블록 — 제자리가 되면 제자리, 아니면 꼬리로 옮겨 stride·w 를 넓힌다
@@ -432,7 +496,9 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             ui.put_rows(rom, addr, rows, writes, v.get("n"))
             stats["ui_inplace"] += 1
         except SystemExit:
+            _new = tail.cur
             tail.cur = ui.move_block(rom, src, addr, tail.cur, rows, writes)
+            rec("옮김", f"ui{key}", addr, _new, "창 블록이 제자리에 안 들어가 꼬리로 옮기고 stride·폭을 넓힌다 — 즉치 포인터를 전부 돌린다", tail.cur - _new)
             stats["ui_moved"] += 1
 
     # 3a. 16비트 포인터 표(같은 뱅크 안 문자열) — 지역명 등. 번역은 정본(canon)에서 읽고, 정본에 없는 건 textmap 의 over 가 채운다
@@ -475,6 +541,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             addr = local.put(bank, data + b"\x00")
             rom[o + 2 * i : o + 2 * i + 2] = bytes([addr & 0xFF, (addr >> 8) & 0xFF])
             writes.append((o + 2 * i, o + 2 * i + 2))
+            rec("포인터", f"ptrs16{key}[{i}]", (bank << 16) | (src[o + 2 * i] | src[o + 2 * i + 1] << 8), (bank << 16) | addr, "지역명 표 항목을 뱅크 빈 자리로 옮긴다 — 16비트 포인터 표 항목만 돌린다", len(data) + 1)
             stats["ptrs16"] = stats.get("ptrs16", 0) + 1
     stats["missing"] = missing
 
@@ -524,6 +591,8 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             stats["records"] = stats.get("records", 0) + 1
         if moved:
             ta = local.put(ITEM_TABLE_BANK, bytes(newtab))
+            rec("옮김", f"records{key}", int(key.lstrip("$"), 16), (ITEM_TABLE_BANK << 16) | ta, "아이템 이름 표를 16B 칸으로 넓혀 옮긴다(이름 15B 가 14B 칸에 안 든다 — 마스터 10-13)", len(newtab))
+            rec("포인터", f"records{key}:code", 0xC13320, 0xC13320, "표를 읽는 코드의 `ldx #lo/#hi/#bank` 즉치 여섯 곳을 새 표로 돌린다", 6)
             for addr3, lo in ((0xC13320, ta), (0xC1333B, ta + 76 * 16)):  # `ldx #lo` · `ldx #hi` · `ldx #bank` (id<100 · id≥100 의 시작 색인 76)
                 for k, val in enumerate((lo & 0xFF, lo >> 8, ITEM_TABLE_BANK)):
                     o = common.snes2off(addr3 + 5 * k)
@@ -574,6 +643,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             addr = local.put(0xCB, bytes(new))
             rom[t + 2 * gi : t + 2 * gi + 2] = bytes([addr & 0xFF, addr >> 8])
             writes.append((t + 2 * gi, t + 2 * gi + 2))
+            rec("포인터", f"monster{gi}", 0xCB0000 | w, 0xCB0000 | addr, "몬스터 이름 군을 뱅크 빈 자리로 옮긴다 — 군 포인터 표 항목만 돌린다", len(new))
             stats["monsters"] = stats.get("monsters", 0) + 1
 
     # 3b. 고정 길이 칸(cells) — 코드가 `mvn` 으로 줄 버퍼에 복사하는 값 상수(OFF·速い…): 같은 길이로 제자리 치환(길이가 달라지면 죽는다)
@@ -613,26 +683,34 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
                 writes.append((so + 1, so + 3))
             rom[a : a + n] = bytes([NOOP]) * n
             writes.append((a, a + n))
+            rec("옮김", f"span{key}", int(key.lstrip("$"), 16), 0xCB0000 | new, "문장이 원문 칸에 안 들어가 `$CB` 빈 자리로 옮긴다(`ldx #imm16` 즉치를 돌린다)", pad)
+            rec("채움", f"span{key}:old", int(key.lstrip("$"), 16), None, "옮긴 뒤 원문 칸 전체를 `$16` 으로 채운다", n)
             stats["spans"] = stats.get("spans", 0) + 1
             continue
         if len(data) > n:
             raise SystemExit(f"문자열 {key}: 번역 {len(data)}B > 원문 {n}B — 줄이거나 이전(`move`)해야 한다")
         rom[a : a + n] = data + bytes([NOOP]) * (n - len(data))
         writes.append((a, a + n))
+        if n > len(data):
+            rec("채움", f"span{key}", int(key.lstrip("$"), 16), None, f"번역 {len(data)}B < 칸 {n}B — 남는 자리를 `$16` 으로 채운다", n - len(data))
         stats["spans"] = stats.get("spans", 0) + 1
 
     # 4. 대사 구간 — 짧으면 제자리, 길면 트램펄린
     e1w = e1_texts(src, seg_map)
     sg = {segs.seg_id(a): (a, b) for a, b in segs.segments(src)}
-    typeset_end: dict[int, tuple[str, dict]] = {}  # 구간 끝 오프셋 → (조판한 문안, 폭 표) — 바로 이어지는 다음 구간의 시작 줄 폭
+    typeset_end: dict[int, tuple[int, int]] = {}  # 구간 끝 오프셋 → 끝난 자리(줄 폭, 쪽 줄 수) — 바로 이어지는 다음 구간의 시작 자리
+    jump_lead = jump_leads(src, seg_map, sg, names, e1w)  # 점프·호출로 이어 붙는 조각(공유 꼬리)이 앞 조각 줄에서 이어 쓰는 자리 — 가장 빡빡한 호출자 기준
     for key, v in sorted(seg_map.items()):
         if key not in sg:
             raise SystemExit(f"textmap 구간 {key} 가 원본에 없다")
         a, b = sg[key]
         if v.get("h") != segs.src_hash(src, a, b):
             raise SystemExit(f"구간 {key}: 원문 해시 불일치({v.get('h')} ≠ {segs.src_hash(src, a, b)}) — textmap 이 낡았다")
+        if key in off_keys or "*" in off_keys:  # 되돌리기 스위치(ED_RELOC_OFF) — 이 구간은 원문 바이트 그대로 둔다
+            continue
         text = resolve_josa(v["kr"], names)
         dead.append((a, b))
+        rv = f"ED_RELOC_OFF={key} → 원문 유지(일본어 노출)"
         if (common.off2snes(a) >> 16) == 0xD7:
             # $D7(오프닝·엔딩) — UI 출력기($C0:9395)는 트램펄린($17)을 몰라 **문자열을 옮기고 포인터를 고친다**
             data = kr.encode(text, alloc) + b"\x00"
@@ -642,11 +720,13 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             if not refs and not sites and len(data) - 1 <= b - a:  # 가리키는 포인터를 못 찾는 문자열(표 머리 앞 제어 토큰에 묻힌 첫 줄 등) — 제자리에 공백으로 채워 넣는다
                 rom[a:b] = data[:-1] + b" " * (b - a - len(data) + 1)
                 writes.append((a, b))
+                rec("채움", key, old, None, f"오프닝·엔딩 문자열 번역 {len(data) - 1}B < 원문 {b - a}B — 가리키는 포인터가 없어 제자리에 반각 공백으로 채운다", b - a - len(data) + 1, rv)
                 stats["seg_inplace"] += 1
                 continue
             if not refs and not sites:
                 raise SystemExit(f"구간 {key}: 이 문자열을 가리키는 포인터가 없다 — 제자리({b - a}B)에 넣을 수 있는지 확인한다")
             new = tail.put(data)
+            rec("포인터", key, old, new, f"오프닝·엔딩 문자열 번역 {len(data) - 1}B → 꼬리로 옮기고 포인터 {len(refs) + len(sites)}곳을 돌린다(UI 출력기 `$C0:9395` 는 트램펄린을 모른다)", len(data), rv)
             for x in refs:
                 rom[x : x + 3] = bytes([new & 0xFF, (new >> 8) & 0xFF, new >> 16])
                 writes.append((x, x + 3))
@@ -657,14 +737,21 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             continue
         if 0xC2 <= (common.off2snes(a) >> 16) <= 0xCB and not v.get("raw"):  # $C2~$CB 대사 — 대사창 규격으로 조판(`raw: true` 면 그대로)
             tw = {**names, **e1w, **call_texts(text, a, seg_map, sg)}
-            pv = typeset_end.get(a)  # 바로 앞 구간이 이 자리에서 이어지면(이름 변수 뒤 조각) 그 줄의 남은 폭에서 시작한다
-            text = typeset.typeset(text, tw, typeset.end_state(pv[0], pv[1]) if pv else None)
-            typeset_end[b] = (text, tw)
+            pv = typeset.worse(typeset_end.get(a), jump_lead.get(key))  # 바로 앞 구간이 이 자리에서 이어지거나(이름 변수 뒤 조각) 점프로 들어오면(공유 꼬리) 그 줄의 남은 폭에서 시작한다
+            pre05 = sum(1 for o, _ln in script.tokens(src, a, b) if o < b and src[o] == 0x05)  # 원문 구간이 이미 가진 쪽 넘김 — 그보다 늘어난 몫이 재배치(번역자가 소스에 더한 것 + 조판기가 넘침에서 넣은 것)
+            typeset.RULE = f"쪽:{key}" not in off_keys and "쪽:*" not in off_keys
+            text = typeset.typeset(text, tw, pv)
+            typeset.RULE = True
+            if text.count("<05>") > pre05:
+                rec("쪽 넘김", key, common.off2snes(a), None, f"원문 구간보다 쪽 넘김이 {text.count('<05>') - pre05}개 늘었다(번역이 소스에 더한 것 + 쪽 3줄이 넘쳐 조판기가 넣은 것)", text.count("<05>") - pre05, f"ED_RELOC_OFF=쪽:{key} → 문장 단위 규칙만 끔(넘침 쪽 넘김은 남음)")
+            typeset_end[b] = typeset.chain_state(text, pv, tw)
         elif (common.off2snes(a) >> 16) in (0xD4, 0xD5) and not v.get("raw"):  # $D4·$D5 전투 문구 — 앞에 오는 이름(변수)의 폭을 가장 긴 이름으로 잡고 어절 단위로 나눈다
             text = battle_typeset(text)
         data = kr.encode(text, alloc)
         if len(data) <= b - a:
             rom[a:b] = data + bytes([NOOP]) * (b - a - len(data))
+            if b - a > len(data):
+                rec("채움", key, common.off2snes(a), None, f"번역 {len(data)}B < 원문 {b - a}B — 남는 {b - a - len(data)}B 를 `$16` 으로 채운다", b - a - len(data), rv)
             stats["seg_inplace"] += 1
         elif b - a == 3 and (common.off2snes(a) >> 16) in LOCAL_FREE:
             # 3바이트 구간: 같은 뱅크 점프(`$0F lo hi`)로 뱅크 안 빈 자리에 둔다
@@ -672,6 +759,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             ret = common.off2snes(b) & 0xFFFF
             fa = local.put(bank, data + bytes([0x0F, ret & 0xFF, ret >> 8]))
             rom[a : a + 3] = bytes([0x0F, fa & 0xFF, fa >> 8])
+            rec("스텁", key, common.off2snes(a), (bank << 16) | fa, f"원문 3B 구간에 번역 {len(data)}B 가 안 들어가 같은 뱅크 점프로 뱅크 빈 자리에 둔다", len(data) + 3, rv)
             stats["seg_local"] = stats.get("seg_local", 0) + 1
         else:
             if b - a < 4:
@@ -679,6 +767,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
                 sites = relocate.a6_sites(src, common.off2snes(a))
                 if sites and src[b] in (0x00, 0x06):
                     new = far.put(data + bytes([src[b]]))
+                    rec("포인터", key, common.off2snes(a), new, f"원문 {b - a}B 구간에 번역 {len(data)}B 가 안 들어가고 트램펄린(4B)도 못 둔다 — 이 구간을 부르는 즉치 포인터 {len(sites)}곳을 새 자리로 돌린다", len(data) + 1, rv)
                     for lo, hi, bk in sites:
                         rom[lo], rom[hi], rom[bk] = new & 0xFF, (new >> 8) & 0xFF, new >> 16
                         writes += [(lo, lo + 1), (hi, hi + 1), (bk, bk + 1)]
@@ -689,6 +778,9 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             fa = far.put(data + bytes([TRAMP, ret & 0xFF, (ret >> 8) & 0xFF, ret >> 16]))
             rom[a : a + 4] = bytes([TRAMP, fa & 0xFF, (fa >> 8) & 0xFF, fa >> 16])
             rom[a + 4 : b] = bytes([NOOP]) * (b - a - 4)
+            rec("옮김", key, common.off2snes(a), fa, f"번역 {len(data)}B > 원문 {b - a}B — 머리 4B 를 `17` 트램펄린으로 덮고 확장 뱅크로 옮긴다(끝에 `17 ret`)", len(data) + 4, rv)
+            if b - a > 4:
+                rec("채움", f"{key}:old", common.off2snes(a) + 4, None, f"옮긴 뒤 원문 구간 남는 {b - a - 4}B 를 `$16` 으로 채운다", b - a - 4, rv)
             stats["seg_tramp"] += 1
         writes.append((a, b))
 
@@ -702,6 +794,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         new = tail.put(kr.encode(v["kr"], alloc) + b"\x00")
         rom[refs[0] : refs[0] + 3] = bytes([new & 0xFF, (new >> 8) & 0xFF, new >> 16])
         writes.append((refs[0], refs[0] + 3))
+        rec("포인터", f"opsplit{key}", old, new, "오프닝 줄을 둘로 나눈다 — 둘째 줄을 꼬리에 두고 포인터 표 항목을 돌린다", len(kr.encode(v["kr"], alloc)) + 1)
         stats["opsplit"] = stats.get("opsplit", 0) + 1
 
     # 4a'. 인물 소개 쪽 줄 추가(`listsplit.json`) — 쪽 하나가 문자열 포인터 목록(`$D7:xxxx`, 3B씩)과 줄 종류 표(`$C1:xxxx`: 0 첫 줄 · 1 중간 · 2 끝 · FF 끝남)로 돌아간다.
@@ -726,6 +819,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         ent.insert(after + 1, bytes([newstr & 0xFF, (newstr >> 8) & 0xFF, newstr >> 16]))
         kd = kd[: after + 1] + bytes([1]) + kd[after + 1 :]
         nl, nk = tail.put(b"".join(ent)), tail.put(kd)
+        rec("옮김", f"listsplit{key}", la, nl, "인물 소개 쪽에 줄을 더한다 — 포인터 목록과 줄 종류 표를 새로 만들어 꼬리에 두고 읽는 코드 즉치를 돌린다", len(ent) * 3 + len(kd) + 4)
         for off, val in ((pcode + 1, nl & 0xFF), (pcode + 6, (nl >> 8) & 0xFF), (pcode + 11, nl >> 16)):
             rom[off] = val
             writes.append((off, off + 1))
@@ -771,6 +865,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
 
     fix_checksum(rom)
     stats["glyphs"] = len(alloc)
+    stats["ledger"] = list(LEDGER)
     stats["alloc"] = alloc
     stats["dropped"] = list(kr.DROPPED)
     stats["reused_jp"] = sum(1 for i in alloc.values() if 0 < i < FIRST_KR)
@@ -1014,6 +1109,20 @@ def pointer_target_gate(src: bytes, rom: bytes, strict: bool) -> None:
             raise SystemExit("메시지 목표가 번역 단위 밖 — segs.EXTRA 에 더하거나(글자면) build.POINTER_NOISE 에 근거와 함께")
 
 
+LEDGER_PATH = common.GAME_DIR / "relocations.tsv"
+LEDGER_HEAD = ["블록 키", "종류", "원래 좌표", "새 좌표", "새 길이(B)", "사유", "엔진 근거", "되돌리면 생기는 일"]
+
+
+def ledger_text(ledger: list) -> str:
+    """재배치 장부 — 좌표·종류·사유만(원문 바이트·문장은 안 넣는다). 빌드가 뽑는다(손으로 안 씀)."""
+    rows = sorted(ledger, key=lambda r: (r["orig"], r["kind"], r["key"]))
+    out = ["\t".join(LEDGER_HEAD)]
+    for r in rows:
+        new = "제자리" if r["new"] == r["orig"] else common.fmt(r["new"])
+        out.append("\t".join([r["key"], r["kind"], common.fmt(r["orig"]), new, str(r["n_new"]), r["why"], EV[r["kind"]], r["revert"]]))
+    return "\n".join(out) + "\n"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--twice", action="store_true", help="두 번 만들어 sha1 대조(결정성)")
@@ -1051,6 +1160,11 @@ def main() -> None:
         failed.write_bytes(rom)
         raise
     out.write_bytes(rom)
+    if not _off_keys() and os.environ.get("ED_DEBUG") != "1":
+        LEDGER_PATH.write_text(ledger_text(stats["ledger"]), encoding="utf-8")
+        from collections import Counter
+
+        print("  재배치 장부(relocations.tsv): " + " · ".join(f"{k} {n}" for k, n in sorted(Counter(r["kind"] for r in stats["ledger"]).items())))
     print(f"{out.name}  {len(rom):,}B  sha1={common.sha1_of(rom)}")
 
 

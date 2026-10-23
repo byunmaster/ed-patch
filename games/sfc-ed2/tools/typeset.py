@@ -53,10 +53,30 @@ def _plain(w: list, names: dict | None) -> str | None:
 def end_state(text: str, names: dict | None = None) -> tuple[int, int]:
     """조판된 문안이 끝난 자리의 (마지막 줄 폭, 이 쪽에 쓴 완결 줄 수) — 바로 이어지는 다음 구간이 이 줄에서 이어 쓰도록 넘겨 준다."""
     text = re.sub(r"<1e>.*?<04>\n?", "", text, flags=re.S)
+    head_nl = text.startswith("\n") and "<05>" not in text  # 맨 앞 개행은 앞 구간 화자 머리의 개행이라 본문 줄이 아니다
     text = text.rsplit("<05>", 1)[-1]
-    rows = text.count("\n")
+    rows = text.count("\n") - head_nl
     last = text.rsplit("\n", 1)[-1]
     return sum(width(t, names) for t in _TOK.findall(last)), rows
+
+
+def chain_state(text: str, lead: tuple[int, int] | None, names: dict | None = None) -> tuple[int, int]:
+    """`end_state` 의 이어 쓰기 판 — `text` 가 `lead`(앞 구간이 끝난 줄 폭, 쪽 줄 수)에서 이어 쓰였다면 끝난 자리. 줄바꿈·쪽 넘김이 없으면 앞 구간의 줄 폭·줄 수를 이어받는다."""
+    if "<05>" in text or not lead or text.startswith(_FRESH):
+        return end_state(text, names)
+    t = re.sub(r"<1e>.*?<04>\n?", "", text, flags=re.S)
+    last = t.rsplit("\n", 1)[-1]
+    w = sum(width(x, names) for x in _TOK.findall(last))
+    if "\n" in t:
+        return w, lead[1] + t.count("\n")
+    return lead[0] + w, lead[1]
+
+
+def worse(a: tuple[int, int] | None, b: tuple[int, int] | None) -> tuple[int, int] | None:
+    """두 이어 쓰기 자리 가운데 더 빡빡한 쪽(성분별 큰 값) — 한 조각에 여러 길이 들어올 때 모두에 맞는 조판을 얻는다."""
+    if a is None or b is None:
+        return a or b
+    return max(a[0], b[0]), max(a[1], b[1])
 
 
 RULE = True  # 쪽 나눔 — 문장 단위(아래 `_typeset` 의 `cur`). `tools/sim_pagebreak.py` 가 끄고 켜서 잰다
@@ -78,6 +98,7 @@ def typeset(text, names=None, lead=None):
 
 
 _END = set(".!?…」』~")
+_FRESH = ("<1e>", "\n", "<08>", "<02>", "<05>")  # 맨 앞이 화자 머리·개행·쪽 넘김이면 새 자리에서 시작한다 — 앞 구간 줄에 안 이어진다
 
 
 def _typeset(text: str, names: dict | None, lead: tuple[int, int] | None, skip: set) -> str:
@@ -87,7 +108,7 @@ def _typeset(text: str, names: dict | None, lead: tuple[int, int] | None, skip: 
     """줄바꿈·쪽 넘김을 넣은 문안. 이미 든 `⏎`/`<05>` 는 강제로 지킨다.
     `lead` = (앞 구간이 끝난 줄 폭, 쪽에 쓴 줄 수) — 앞 구간 끝에 이어 붙는 구간(이름 변수 뒤 조각)은 그 줄의 남은 폭에서 시작한다."""
     # 화자 머리(`<1e>이름<04>` + 뒤 개행)와 맨 앞 개행은 폭·줄 수에 안 센다 — 자리표시자로 바꿨다가 되돌린다
-    lead_ok = bool(lead) and not text.startswith(("<1e>", "\n"))  # 맨 앞이 화자 머리·개행이면 새 줄에서 시작한다
+    lead_ok = bool(lead) and not text.startswith(_FRESH)  # 맨 앞이 화자 머리·개행이면 새 줄에서 시작한다
     heads: list[str] = []
 
     def hold(m):
