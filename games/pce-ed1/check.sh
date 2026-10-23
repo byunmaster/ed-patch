@@ -60,6 +60,9 @@ echo "== pce-ed1 =="
 #      기준선의 부류별 수는 `coverage_scan.py` 출력 — 「화면 문장 후보 — 미판정」 15런은 번역 대상일 수 있다
 "$PY" "$T/coverage_scan.py" --check
 
+# 6-c. 구운 글리프 중복 — 롬에서 읽은 글리프 뱅크에 같은 비트맵 글자 쌍이 있으면 실패(10-20, 새턴에서 쉼표 꼬리 행이 잘려 쉼표 3,983곳이 마침표로 그려졌다)
+"$PY" "$T/check_glyph_dups.py"
+
 # 7. 조판 지문 — 공용(shared/text)이 이 게임의 줄바꿈을 흔들면 운다. 문안을 의도적으로 바꿨을 때만 --freeze
 echo "-- 조판 지문 --"
 "$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game pce-ed1

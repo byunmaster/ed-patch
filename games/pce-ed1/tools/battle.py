@@ -216,6 +216,22 @@ def patch_blocks(
             if r["ind"] is not None:
                 # 간접이면 **대상 문자열**을 갈아 끼운다 — 칸에는 주소와 꼬리가 그대로 남는다.
                 base = name[: len(name) - len(r["tail"])] if r["tail"] else name
+                if len(r["tail"]) > 1:
+                    # 🔴 꼬리가 개체 기호 한 글자(Ａ~Ｄ·♀♂)가 아니라 **말 하나**(「…ゾンビＡ」)면 「일본어 꼬리 길이만큼 뒤를 자른다」가 틀린다
+                    #    (실측 10-20: 「자데인좀비A」에서 4자를 잘라 대상이 「자데」가 되고 꼬리 「ゾンビＡ」는 일본어로 남았다 — 짝 표가 잡았다).
+                    #    밑말(대상)의 우리 표기를 같은 밑말의 개체 이름(「…Ａ」)에서 따고, 나머지를 꼬리로 칸에 다시 쓴다.
+                    jp_base = r["jp"][: len(r["jp"]) - len(r["tail"])]
+                    kb = next((v[:-1] for k, v in kr.items() if k.startswith(jp_base) and len(k) == len(jp_base) + 1 and k[-1] in "ＡＢＣＤ♀♂"), None)
+                    if kb and name.startswith(kb) and name != kb:
+                        base = kb
+                        enc_tail = font.encode(name[len(kb) :], table) + b"\x06"
+                        old_tail = len(r["tail"].encode("cp932")) + 1
+                        if len(enc_tail) > old_tail:
+                            errors.append(f"이름 꼬리 「{name[len(kb):]}」 {len(enc_tail)}B > {old_tail}B (rel{rel} +{r['off']:04X})")
+                        else:
+                            at = r["off"] + NAME_OFF + 3
+                            data[at : at + old_tail] = enc_tail + b"\0" * (old_tail - len(enc_tail))
+                            hit += 1
                 old = targets.setdefault(r["ind"], base)
                 if old != base:
                     errors.append(f"간접 이름 충돌 rel{rel} +{r['ind']:04X}: {old} vs {base}")

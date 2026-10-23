@@ -45,6 +45,7 @@ import credits_kr
 import staffroll
 import sysbuild
 import translate
+import viewer
 
 from shared.disc import mode1
 
@@ -638,6 +639,7 @@ def _build(edits_path, iso: Path, cue: Path):
         n_msgs = 0
         n_dyn = 0
         n_dyn_blocks = 0
+        viewer_idx: list[dict] = []
         for rel, c in sorted(by_rel.items()) if want("scn") else []:
             hit = {k for k in edits if k[0] == rel} or {b["id"] for b in c["blocks"]} & (
                 translated_ids | narr_ids | {int(x) for x in gwin_rt.build_specs()} | sched_ids
@@ -663,6 +665,14 @@ def _build(edits_path, iso: Path, cue: Path):
                 if want("narr") and str(b["id"]) in gwin_rt.build_specs():  # 월드를 안 멈추는 대사창 모양 자막(장면 2 인사)
                     blk, n = gwin_rt.patch_block(b["id"], blk)
                     n_gwin += n
+                if os.environ.get("ED_VIEWER"):  # 🔴 디버그 전용 — 대사 보기(tools/viewer.py). 꼬리표는 test- 로 시작해야 한다
+                    assert common.BUILD_TAG.startswith("test-"), "ED_VIEWER 는 시험 빌드(ED_BUILD_TAG=test-*)에서만"
+                    lo_hi = os.environ["ED_VIEWER"]  # "1" = 전부 · "3-110" = 그 씬 번호만(스텁이 이사 자리를 넘겨서 반씩 굽는다)
+                    lo, _, hi = (lo_hi if "-" in lo_hi else "0-999").partition("-")
+                    only = json.loads(os.environ.get("ED_VIEWER_ADDRS", "{}"))  # 주소 목록이 있으면 그 씬만 스텁을 단다(시험용 — 이사 자리를 아낀다)
+                    if int(lo) <= b["id"] <= int(hi) and (not only or str(b["id"]) in only):
+                        viewer_idx.append(viewer.index(b["id"], b["data"]))
+                        blk = viewer.patch_block(blk, b["data"], b["id"])
                 if dyn:  # 동적 글리프 — 머리 점프를 꼬리 스텁으로(블록 열림 훅)
                     blk = glyphdyn.attach(blk, dyn)
                     n_dyn += len(dyn)
@@ -694,6 +704,12 @@ def _build(edits_path, iso: Path, cue: Path):
             print(f"  컨테이너 rel {rel}: {len(entries)}블록 · 다시 깖 · {where} · 바뀐 바이트 {moved}/{slot}")
         if moves:
             print("  " + patch_ref_table(f, refs, moves, touched))
+    if os.environ.get("ED_VIEWER"):  # 대사 보기 색인(번호표 → 원본 열쇠) — 원문 열쇠만(문안 없음), 커밋 안 함
+        import json as _json
+
+        common.REVIEW_DIR.mkdir(parents=True, exist_ok=True)
+        (common.REVIEW_DIR / "viewer_index.json").write_text(_json.dumps(viewer_idx, ensure_ascii=False), "utf-8")
+        print(f"  대사 보기 색인 {len(viewer_idx)}블록 · 개수 어긋남 {sum(not v['ok'] for v in viewer_idx)}")
     print(f"  번역 메시지 {n_msgs}건(컨테이너마다 다시 셈) · 상주 글리프 {len(chars)}자 · 동적 글리프 블록 {n_dyn_blocks}건(컨테이너마다 다시 셈, 글자 {n_dyn}자)")
     if want("narr") and want("scn"):
         print(f"  나레이션 게이트 자막 {n_gates}곳 · 음성 장면 시각표 게이트 {n_sched}곳 · 대사창 모양 자막 {n_gwin}곳(컨테이너마다 다시 셈)")

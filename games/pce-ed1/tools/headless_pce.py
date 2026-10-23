@@ -5,6 +5,8 @@
 ⚠ 부팅 타이밍이 emucap 과 다르다(타이틀이 더 늦게 온다) — 입력은 화면 확인으로 맞춘다. 패드는 코어 포트 장치를 JOYPAD 로 지정해야 먹는다.
 스크립트 연산: wait N · press "i+run" 프레임 [뒤프레임] · shot 이름 · peek 주소(CPU $2000~$3FFF) 길이 · poke 주소 hex ·
               until 주소 hex 최대프레임 (워크 RAM 바이트 열이 나올 때까지) · save 파일 · load 파일
+              view 접두 최대쪽수 [크롭 y0 y1] — 대사 보기 빌드용 닫힌 고리: 화면이 멈추면(12프레임 같음) 찍고(+ZP $10/$11 = 메시지 포인터 기록) I 를 누른다.
+              화면이 600프레임 안 바뀌면 끝(멈춤·종료)으로 보고 멈춘다. 색인은 `<출력>/view.tsv`.
 """
 
 import ctypes as C
@@ -108,6 +110,24 @@ def vid(data, w, h, pitch):
         state["frame"] = a[:, :, [2, 1, 0]].copy()
 
 
+WIN_BG = (0, 0, 106)  # 대사창 바탕색(343×243 프레임, 실측 — 창은 플레이어 위치에 따라 위쪽·아래쪽에 뜬다)
+
+
+def winbox(frame):
+    """대사창 안쪽 잘라내기 — 바탕색 픽셀의 경계 상자(왼쪽 지도 영역 x<225). 창이 없으면 None."""
+    reg = frame[20:240, 10:225]
+    m = (reg[:, :, 0] == WIN_BG[0]) & (reg[:, :, 1] == WIN_BG[1]) & (reg[:, :, 2] == WIN_BG[2])
+    if int(m.sum()) < 3000:
+        return None
+    ys = np.nonzero(m.sum(axis=1) > 40)[0]
+    xs = np.nonzero(m.sum(axis=0) > 12)[0]
+    if not len(ys) or not len(xs):
+        return None
+    return reg[ys[0] : ys[-1] + 1, xs[0] : xs[-1] + 1]
+
+
+def same_win(a, b):
+    return a is not None and b is not None and a.shape == b.shape and np.array_equal(a, b)
 # beetle-pce 패드: PCE I = RetroPad B(0), II = RetroPad A(8), SELECT=2, RUN=START(3)
 BTN = {"i": 8, "ii": 0, "select": 2, "run": 3, "up": 4, "down": 5, "left": 6, "right": 7}
 
@@ -184,6 +204,86 @@ for step in json.load(open(SCRIPT)):
             run(1)
             n += 1
         print("until", step[1], "hit" if n < step[3] else "timeout", "frame", frames, flush=True)
+    elif op == "view":
+        prefix, maxp = step[1], step[2]
+        crop = (step[3], step[4]) if len(step) > 4 else None
+        idx = open(os.path.join(OUT, "view.tsv"), "a", encoding="utf-8")
+        prev, same, last_shot, shown, stall, last_mk, run_mk = None, 0, None, 0, 0, 0, 0
+        shot_marks, fb_mk, fb_at, fb_done, progress = set(), -1, 0, True, frames
+        for _ in range(maxp * 700):
+            run(1)
+            cur = state["frame"]
+            # 🔴 창이 없거나 쪽 대기가 없는 메시지(상점 토막 등)는 위 안정 판정에 안 걸린다 — 번호가 바뀐 지 50프레임 뒤에도 그 번호로 찍힌 게 없으면 전체 화면을 한 장 찍는다(5열 = 1, 「창 근거 없음」)
+            mk_now = int.from_bytes(C.string_at(ram("$3FF8"), 2), "little")
+            if mk_now != fb_mk:
+                fb_mk, fb_at, fb_done, progress = mk_now, frames, mk_now in shot_marks, frames
+            if frames - progress > 2000:  # 번호도 안 바뀌고 쪽도 안 찍힌 채 2000프레임 — 닫히지 않는 메시지. 호출부가 이 번호를 건너뛰고 다시 돈다
+                print("stall 300 mk", mk_now.to_bytes(2, "little").hex(), "timeout", flush=True)
+                break
+            elif not fb_done and frames - fb_at >= 50 and shown < maxp:
+                name = f"{prefix}{shown:04d}"
+                img = cur if crop is None else cur[crop[0] : crop[1]]
+                Image.fromarray(img).save(os.path.join(OUT, name + ".png"))
+                idx.write(f"{name}\t{mk_now.to_bytes(2, 'little').hex()}\t{frames}\t0\t1\n")
+                idx.flush()
+                shot_marks.add(mk_now)
+                progress = frames
+                fb_done = True
+                shown += 1
+            # 🔴 멈췄나는 **대사창 안쪽만** 본다 — 지도의 물결·깜박이는 타일 때문에 전체 화면은 12프레임 같은 때가 없어 창이 떠 있어도 한 장도 못 찍었다(씬 126, 실측)
+            win = winbox(cur)
+            if same_win(win, prev):
+                same += 1
+            else:
+                same = 0
+            prev = win
+            if same == 12 and win is not None and not same_win(win, last_shot):
+                ptr = C.string_at(ram("$3FF8"), 2).hex()
+                mk = int.from_bytes(bytes.fromhex(ptr), "little")
+                if mk < last_mk:  # 번호가 되감기면 스텁이 한 바퀴 돌고 다시 들어온 것 — 한 바퀴만 찍는다
+                    break
+                run_mk = run_mk + 1 if mk == last_mk else 0
+                if run_mk >= 30:  # 같은 번호에서 30쪽이 넘게 이어지면 닫히지 않는 창·되풀이 — 이 번호만 더는 안 찍는다(호출부가 「반복」으로 적는다)
+                    print("view loop mk", mk, flush=True)
+                    break
+                last_mk = mk
+                shot_marks.add(mk)
+                progress = frames
+                name = f"{prefix}{shown:04d}"
+                img = cur if crop is None else cur[crop[0] : crop[1]]
+                Image.fromarray(img).save(os.path.join(OUT, name + ".png"))
+                last_shot = win.copy()
+                # 완성 근거 = ▼ 대기 커서 — 쪽이 뜬 뒤 60프레임 동안 창 안쪽이 둘 이상으로 바뀌면(깜박임) 글이 다 나온 쪽이다(실측: 씬 126 은 90프레임에 2가지)
+                seen = {win.tobytes()}
+                for _ in range(60):
+                    run(1)
+                    w2 = winbox(state["frame"])
+                    seen.add(w2.tobytes() if w2 is not None else b"")
+                cur_flag = 1 if len(seen) > 1 else 0
+                idx.write(f"{name}\t{ptr}\t{frames}\t{cur_flag}\t0\n")
+                idx.flush()
+                shown += 1
+                stall = 0
+                if shown >= maxp:
+                    break
+                state["held"] = {BTN["i"]}
+                run(6)
+                state["held"] = set()
+                run(6)
+            elif same >= 12:
+                stall += 1
+                if stall in (60, 180, 300):  # 닫히지 않는 창 — 다른 버튼으로 풀리는지(II·RUN·I) 본다
+                    b = {60: "ii", 180: "run", 300: "i"}[stall]
+                    print("stall", stall, "mk", C.string_at(ram("$3FF8"), 2).hex(), "press", b, flush=True)
+                    state["held"] = {BTN[b]}
+                    run(6)
+                    state["held"] = set()
+                    run(6)
+                if stall > 600:
+                    break
+        Image.fromarray(state["frame"] if crop is None else state["frame"][crop[0] : crop[1]]).save(os.path.join(OUT, prefix + "END.png"))
+        idx.close()
+        print("view", prefix, "shots", shown, "frame", frames, flush=True)
     elif op == "save":
         n = core.retro_serialize_size()
         b = C.create_string_buffer(n)
