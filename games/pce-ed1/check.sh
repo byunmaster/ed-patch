@@ -46,6 +46,10 @@ echo "== pce-ed1 =="
 # 6. 빌드 — 코드 패치 사전조건 · 시스템 문구 자리 · 컨테이너 재조립 · 무변경 대조 · 되읽기
 "$PY" "$T/build.py"
 
+# 6-b. 롬 전체 잔존 일본어 — 디스크를 직접 훑어 빌드가 안 바꾼 일본어 런(4자 이상)이 기준선(`script/coverage_baseline.json`) 밖에 생기면 실패(10-18).
+#      기준선의 부류별 수는 `coverage_scan.py` 출력 — 「화면 문장 후보 — 미판정」 15런은 번역 대상일 수 있다
+"$PY" "$T/coverage_scan.py" --check
+
 # 7. 조판 지문 — 공용(shared/text)이 이 게임의 줄바꿈을 흔들면 운다. 문안을 의도적으로 바꿨을 때만 --freeze
 echo "-- 조판 지문 --"
 "$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game pce-ed1
