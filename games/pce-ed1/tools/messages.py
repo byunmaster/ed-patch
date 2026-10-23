@@ -135,17 +135,41 @@ def _known_speakers() -> frozenset[str]:
     return _KNOWN
 
 
+class _Run:
+    """`SJIS_RUN` 매치처럼 쓰는 런 — 피연산자를 뗀 뒤의 구간."""
+
+    def __init__(self, a: int, b: int, block: bytes):
+        self._a, self._b, self._blk = a, b, block
+
+    def start(self) -> int:
+        return self._a
+
+    def group(self) -> bytes:
+        return self._blk[self._a : self._b]
+
+
+def _runs(block: bytes, operands: set[int], min_chars: int = 2):
+    """대본 런(오프셋 구간) — 분기 주소 바이트(피연산자)를 뺀다.
+
+    🔴 분기 옵코드(`0F lo hi`)의 피연산자가 우연히 유효한 전각 코드면 **바로 뒤 대본과 한 런으로 붙는다**(`0F E9 A0` + 「強情な…」).
+    예전엔 런의 첫 글자가 피연산자와 겹치면 런 **통째로** 버려서, 점프 바로 뒤에 오는 대본이 목록에서 사라져 화면에
+    일본어로 남았다(scn095 「強情な奴だな！！」 등 10-18, `check_ptr_targets`). 이제 피연산자 두 바이트만 떼고 나머지를 런으로 본다.
+    """
+    for m in SJIS_RUN.finditer(block):
+        a, b = m.start(), m.end()
+        while a < b and (a in operands or a + 1 in operands):
+            a += 2 if a in operands else b - a  # 피연산자 자리면 2B 떼고, 한 칸 어긋난 겹침이면 런을 버린다
+        if (b - a) // 2 >= min_chars:
+            yield a, b
+
+
 def parse(block: bytes) -> list[Message]:
     """열개 후보(화자 머리 `1F` · 공용 화자 `09 nn` · 대본 런)를 앞에서부터 파싱한다."""
     cands = set()
     known = _known_speakers()
     operands = branch_operands(block)  # 분기 주소 바이트 — 메시지 머리로 안 삼는다(devlog 09-07 ③)
-    for m in SJIS_RUN.finditer(block):
-        # 🔴 분기 옵코드의 주소 바이트가 우연히 유효한 전각 코드면 이 런에 걸린다 — 거기서 메시지를
-        #    열면 번역이 그 점프 주소를 덮어써 진행이 깨진다. 런의 첫 글자(2B)가 피연산자와
-        #    겹치면 통째로 버린다.
-        if m.start() in operands or m.start() + 1 in operands:
-            continue
+    for rs, re_ in _runs(block, operands):
+        m = _Run(rs, re_, block)
         # 코드 안의 우연한 한자 두 글자를 거른다 — 셋 이상이거나 가나·부호가 있어야 대본이다
         # 🔴 단 **정본에 있는 화자 이름은 안 버린다.** 순한자 두 글자 화자(「兵士」 등)가 `1F` 없이
         #    서면 이 필터가 통째로 먹는다 — 검사기는 **자기 입력 밖을 못 보므로** 안 운다
@@ -155,11 +179,7 @@ def parse(block: bytes) -> list[Message]:
         if len(m.group()) < 6 and not KANA.search(txt) and txt not in known:
             continue
         cands.add(m.start())
-    runs = {
-        m.start()
-        for m in SJIS_RUN.finditer(block)
-        if m.start() not in operands and m.start() + 1 not in operands
-    }  # 길이 불문 런(화자 이름은 한두 글자다) — 여기서도 피연산자를 뺀다
+    runs = {rs for rs, _re in _runs(block, operands, min_chars=1)}  # 길이 불문 런(화자 이름은 한두 글자다) — 여기서도 피연산자를 뺀다
     for i in range(len(block) - 3):
         if i in operands:  # 분기 주소 자리에서 화자·공용 머리를 열지 않는다
             continue
@@ -393,7 +413,33 @@ def load_speakers() -> dict[str, str]:
     out = dict(sysbuild.glossary())
     if SPEAKERS.exists():
         out.update(json.loads(SPEAKERS.read_text()))
-    return out
+    return _Speakers(out)
+
+
+def _nsp(s: str) -> str:
+    """화자 열쇠 비교용 — 공백(반각·전각)을 뗀다. 정본은 「大盗賊 ゲイル」(반각 공백)인데 롬 화자는 「大盗賊ゲイル」·「情報屋　トミー」(전각 공백)라 공백 차이로 놓쳤다(10-20 짝 표 — 화자 28행이 일본어로 남음)."""
+    return s.replace(" ", "").replace("\u3000", "")
+
+
+class _Speakers(dict):
+    """화자 이름 → 우리 표기. **공백 없음·반각·전각을 같은 것으로** 보고 찾는다(`.items()` 의 열쇠는 정본 그대로)."""
+
+    def __init__(self, d):
+        super().__init__(d)
+        self._n = {_nsp(k): v for k, v in d.items()}
+
+    def get(self, k, default=None):
+        v = self._n.get(_nsp(k)) if isinstance(k, str) else None
+        return v if v is not None else super().get(k, default)
+
+    def __contains__(self, k):
+        return isinstance(k, str) and (_nsp(k) in self._n or super().__contains__(k))
+
+    def __getitem__(self, k):
+        v = self.get(k)
+        if v is None:
+            raise KeyError(k)
+        return v
 
 
 # ─── 재삽입 ──────────────────────────────────────────────────────────────────

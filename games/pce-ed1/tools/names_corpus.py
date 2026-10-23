@@ -84,6 +84,73 @@ def _scenes():
             )
 
 
+SLOT_OPS = frozenset(range(0x0A, 0x0F))  # 이름·아이템·수 자리 — 엔진이 런타임에 글을 끼운다
+
+
+def _joined():
+    """**이어진 문장** — 메시지 조각(종료 없이 옵코드 앞에서 끊긴 것)을 그 뒤로 이어 읽히는 메시지와 한 줄로 낸다.
+
+    🔴 이 어댑터는 조각 단위로만 줄을 내서 이름 슬롯·점프로 이어진 문장(「…제르만」+슬롯+「제르만님께서도」)을 이름·정본·인사 검사기 셋이 못 봤다
+    (sfc-ed2 실측 부류, 10-20). 조각 끝에서 앞으로 **글이 아닌 바이트**(슬롯·쪽·조건 옵코드)를 건너 다음 메시지 머리나 `0F` 점프 목적지에 닿으면
+    둘을 이어 한 줄로 낸다(슬롯 자리는 `{name}`). 자리 이름 `scnNNN:<열쇠>+<열쇠>`.
+    """
+    import containers
+
+    blocks = {}
+    for c in containers.scan():
+        for b in c["blocks"]:
+            blocks.setdefault(b["id"], b["data"])
+    for p in sorted((DERIVED / "messages").glob("scn*.json")):
+        sid = int(p.stem[3:])
+        blk = blocks.get(sid)
+        if blk is None:
+            continue
+        kr = M.load_translations(sid)
+        msgs = {m.start: m for m in M.parse(blk)}
+        for m in msgs.values():
+            if m.terminated or m.pinned:
+                continue
+            i, slot, seen = m.end, False, 0
+            nxt = []
+            while i < len(blk) and seen < 12:
+                seen += 1
+                if i in msgs and i != m.start:
+                    nxt.append((msgs[i], slot))
+                    break
+                b = blk[i]
+                if b == 0x0F and i + 2 < len(blk):
+                    t = (blk[i + 1] | blk[i + 2] << 8) - M.BASE
+                    if t in msgs:
+                        nxt.append((msgs[t], slot))
+                    break
+                if b in SLOT_OPS:
+                    slot = True
+                    i += 1
+                elif b in (0x01, 0x03, 0x05):
+                    i += 1
+                elif 0x11 <= b <= 0x15 and i + 2 < len(blk):  # 조건·플래그 — 한 갈래만(떨어지는 쪽 + 점프 목적지)
+                    t = (blk[i + 1] | blk[i + 2] << 8) - M.BASE
+                    if t in msgs and t != m.start:
+                        nxt.append((msgs[t], slot))
+                    i += 3
+                else:
+                    break
+            for n, sl in nxt:
+                a, b2 = kr.get(m.key) or {}, kr.get(n.key) or {}
+                ta, tb = a.get("t"), b2.get("t")
+                # 화자 머리만 든 메시지(원문이 공백·개행뿐)는 번역기가 정본 화자 사전으로 자동 번역한다(`translate_block`) — 항목이 없어도 번역된 쪽이다
+                ta = "" if ta is None and not m.jp.strip() else ta
+                tb = "" if tb is None and not n.jp.strip() else tb
+                if ta is None or tb is None:  # 한쪽이라도 번역이 없으면 이은 줄이 아니다 — 미번역은 조각 줄이 이미 센다(화면 일본어 게이트가 이은 줄을 또 세지 않게)
+                    continue
+                yield (
+                    f"scn{sid:03d}:{m.key}+{n.key}",
+                    m.jp + ("{name}" if sl else "") + n.jp,
+                    ta + ("{name}" if sl else "") + tb,
+                    "dialog",
+                )
+
+
 def _battle():
     kr = _load(SCRIPT / "sys" / "battle.json").get("messages", {})
     for k, r in _load(DERIVED / "battle" / "messages.json").items():
@@ -179,7 +246,7 @@ def pairs():
     """문안 전체 — 원본 파생물(`work/derived/`)이 없으면 빈 목록(이 트리는 못 잰다)."""
     if not (DERIVED / "messages").exists():
         return []
-    return [*_scenes(), *_battle(), *_system(), *_hud(), *_dex(), *_subs()]
+    return [*_scenes(), *_joined(), *_battle(), *_system(), *_hud(), *_dex(), *_subs()]
 
 
 if __name__ == "__main__":

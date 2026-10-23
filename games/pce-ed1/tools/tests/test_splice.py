@@ -118,6 +118,17 @@ class FullLine(unittest.TestCase):
         out = translate.compose(msg, {"t": text}, table, {})
         self.assertIn(bytes([translate.NL]), out)
 
+    def test_줄머리_공백은_조판기가_먹어도_남는다(self):
+        import font
+        import translate
+
+        table, _bank = font.build_table("가나다")
+        msg = M.Message(0, 4, None, None, [("op", 0x00)])
+        sp = font.encode(" ", table, msg=True)
+        out = translate.compose(msg, {"t": " 가나다"}, table, {})
+        self.assertTrue(out.startswith(sp), out.hex())
+        self.assertFalse(translate.compose(msg, {"t": "가나다"}, table, {}).startswith(sp))
+
 
 if __name__ == "__main__":
     unittest.main()

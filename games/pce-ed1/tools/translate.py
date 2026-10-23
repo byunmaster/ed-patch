@@ -108,8 +108,14 @@ def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str,
         #    `krwrap` 은 공용(`shared/`)이라 이 게임에서 못 고친다 — 문안 쪽에서 통째로 비켜 간다.
         out += font.encode(tr["t"], table)
     else:
+        # 🔴 **줄머리 공백은 조판기가 지우므로 여기서 따로 낸다** — 앞 메시지가 찍은 품목 이름 바로 뒤에 이어지는 문안
+        #    (「약초 말이군. 정말 고마워.」)은 이름과 띄어야 하는데, `krwrap` 이 줄머리 공백을 먹어 「약초말이군」으로 붙었다.
+        lead_sp = len(tr["t"]) - len(tr["t"].lstrip(" "))
+        if lead_sp:
+            out += font.encode(" " * lead_sp, table, msg=True)
         pgs = typeset.pages(
-            font.expand_packed(tr["t"]), speaker=m.speaker is not None or m.common is not None
+            font.expand_packed(tr["t"].lstrip(" ")),
+            speaker=m.speaker is not None or m.common is not None,
         )
         # 하드 개행이 든 화자 없는 창(장 끝 카드)은 줄을 그대로 둔 것이라 **개행도 그대로** 넣는다 —
         # 꽉 찬 제목 줄 뒤의 빈 줄이 먹혔다(종장 카드 화면 2026-09-25: 13칸 제목 바로 밑에 「끝」).
@@ -143,7 +149,7 @@ def translate_block(scene_id: int, block: bytes, table: dict[str, bytes]) -> tup
     seen = set()
     for m in msgs:
         tr = trs.get(m.key)
-        if tr is None and m.speaker in speakers and not m.jp:
+        if tr is None and m.speaker in speakers and not m.jp.strip():
             tr = {
                 "t": ""
             }  # 이름만 있는 메시지(이벤트 코드가 화자 표시용으로 부른다) — speakers.json 으로 자동
@@ -160,4 +166,65 @@ def translate_block(scene_id: int, block: bytes, table: dict[str, bytes]) -> tup
         raise TranslateError(
             f"scn {scene_id}: 정본 열쇠 {sorted(missing)} 가 블록에 없다(원문이 바뀌었나)"
         )
-    return M.splice(block, edits), len(edits)
+    return apply_orphans(scene_id, block, M.splice(block, edits), table, speakers), len(edits)
+
+
+# 🔴 **메시지 밖에 서 있는 조각** — `messages.parse` 는 두 글자 미만의 가나·한 글자 화자 머리를 메시지로 안 잡아 번역이 닿지 않고 일본어가 그대로 남았다
+#    (10-20 짝 표·화면 확인 — 마스터 「A」):
+#    ① 슬롯 옵코드(`0B`·`0E`) 곁의 한 글자 조사 「は」「を」 → 같은 2바이트 동적 조사 토큰(`F9 24` 은/는 · `F9 26` 을/를). 슬롯 이름 바로 뒤에 붙으면
+#       「류난은약초를」처럼 붙어서 반 칸 공백(`F8 24`)을 더 넣는 자리는 공간이 모자라 **블록 끝으로 잇는다**(`0F` 점프 · 같은 방식 splice).
+#    ② 한 글자 화자 머리 「男」「女」「娘」(`1F 이름 04`) → 정본 화자 표기(남자·여자·소녀). 이름칸이 더 길어 역시 블록 끝으로 잇는다.
+#    바이트가 기대와 다르면 빌드가 죽는다 — 원문과 다른 글자는 건드리지 않는다.
+def _orphan_patches() -> dict[int, list[tuple[int, bytes, bytes]]]:
+    j = font.josa_code
+    sp = font.HALF_SPACE
+    return {
+        # 씬 50 갈래 이음: 「また」 뒤 조건(11 00 04)이 참이면 「盗ま」 조각 → 점프로 「荒らされている」 한가운데(れている)로 들어가 두 갈래가 꼬리를 나눠 쓴다.
+        #   한글은 두 갈래가 각자 끝까지 쓰므로(「도둑맞았어.」·「뒤져져 있어.」) 「盗ま」 조각 뒤 점프 목적지를 꼬리 한가운데가 아니라 다음 메시지(0xC1A)로 돌린다.
+        50: [(0xC06, b"\x0f\x0f\xac", b"\x0f\x1a\xac")],
+        56: [(0x879, b"\x82\xcd", j("은/는")), (0x87D, b"\x82\xf0", j("을/를"))],
+        133: [(0x2C6, b"\x0b\x82\xcd\x0e", b"\x0b" + j("은/는") + sp + b"\x0e")],
+        195: [(0xADC, b"\x0b\x82\xcd", b"\x0b" + j("은/는") + sp)],
+        197: [
+            (0x923, b"\x0b\x82\xcd\x0e", b"\x0b" + j("은/는") + sp + b"\x0e"),
+            (0x927, b"\x82\xf0", j("을/를")),
+        ],
+        220: [(0x4C2, b"\x82\xcd", j("은/는"))],
+    }
+
+
+ORPHAN_SPEAKERS = ("男", "女", "娘")
+
+
+def apply_orphans(
+    scene_id: int, orig: bytes, block: bytes, table: dict[str, bytes], speakers: dict[str, str]
+) -> bytes:
+    """`orig` = 번역 전 블록(주소 기준 · 메시지 칸 판별), `block` = splice 결과(제자리 + 끝에 이은 꼬리)."""
+    patches = list(_orphan_patches().get(scene_id, []))
+    spans = [(m.start, m.end) for m in M.parse(orig)]
+    for i in range(len(orig) - 3):
+        if orig[i] == 0x1F and orig[i + 3] == 0x04 and not any(a <= i < b for a, b in spans):
+            try:
+                nm = orig[i + 1 : i + 3].decode("cp932")
+            except UnicodeDecodeError:
+                continue
+            if nm in ORPHAN_SPEAKERS and nm in speakers:
+                patches.append((i, orig[i : i + 4], b"\x1f" + font.encode(speakers[nm], table) + b"\x04"))
+    if not patches:
+        return block
+    out = bytearray(block)
+    for off, old, new in patches:
+        if bytes(orig[off : off + len(old)]) != old:
+            raise TranslateError(
+                f"scn {scene_id} +{off:#06x}: 조각 자리가 {old.hex()} 가 아니다({bytes(orig[off:off+len(old)]).hex()}) — 원문이 바뀌었나"
+            )
+        if len(new) <= len(old):
+            out[off : off + len(new)] = new
+            continue
+        if len(old) < 3:
+            raise TranslateError(f"scn {scene_id} +{off:#06x}: 자리 {len(old)}B 라 점프(3B)를 못 둔다")
+        at = M.BASE + len(out)  # 끝에 이은 꼬리: 새 바이트 + 원래 자리 뒤로 되돌아가는 점프
+        back = M.BASE + off + len(old)
+        out += new + bytes([0x0F, back & 0xFF, back >> 8])
+        out[off : off + 3] = bytes([0x0F, at & 0xFF, at >> 8])
+    return bytes(out)

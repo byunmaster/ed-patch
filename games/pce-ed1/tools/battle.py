@@ -373,6 +373,16 @@ def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], 
         enc = encode_tokens(kr, table, msg=True)
         if u["term"] is not None:
             enc += bytes([u["term"]])
+        if u.get("back") is not None:  # 머리 + 점프 문구 — 늘 블록 끝으로 옮기고 끝에서 원래 흐름(꼬리 단위의 끝 바이트)으로 되돌아간다
+            if len(data) + len(enc) + 3 > SAFE_UNPACKED:
+                errors.append(f"{where} +{u['off']:04X} 「{kr}」 블록이 자란다 — 상한 {SAFE_UNPACKED}B")
+                continue
+            tgt = LOAD_ADDR + len(data)
+            data += enc + bytes([0x0F, u["back"] & 0xFF, u["back"] >> 8])
+            data[u["off"] : u["off"] + 3] = bytes([0x0F, tgt & 0xFF, tgt >> 8])
+            data[u["off"] + 3 : u["off"] + u["room"]] = bytes(u["room"] - 3)
+            n += 1
+            continue
         if len(enc) <= u["room"]:
             data[u["off"] : u["off"] + len(enc)] = enc
             n += 1
@@ -525,7 +535,12 @@ def text_runs(data: bytes, start: int) -> list[tuple[int, int, int | None]]:
 
 
 def msg_units(data: bytes) -> list[dict]:
-    """전투 문구 단위. 탐욕 범위를 **코드 참조에서 끊어** 공유 조각을 지킨다."""
+    """전투 문구 단위. 탐욕 범위를 **코드 참조에서 끊어** 공유 조각을 지킨다. 머리 + 점프 문구는 `jump_tail_units`."""
+    base = _msg_units(data)
+    return sorted(base + jump_tail_units(data, base), key=lambda u: u["off"])
+
+
+def _msg_units(data: bytes) -> list[dict]:
     start = len(records(data)) * REC
     refs = code_refs(data)
     out = []
@@ -541,6 +556,44 @@ def msg_units(data: bytes) -> list[dict]:
                     "room": (hi - lo) + (1 if last and term is not None else 0),
                 }
             )
+    return out
+
+
+def jump_tail_units(data: bytes, units: list[dict]) -> list[dict]:
+    """**짧은 머리 + `0F` 점프로 다른 단위 한가운데에 잇는** 문구(머리 여럿 달린 몬스터 「…の左の頭は」 — 오른쪽 문구의 「の頭は…」 뒤쪽으로 점프).
+
+    🔴 이걸 단위로 안 잡으면 두 가지가 샌다(10-18): ① 머리(「の左」)가 일본어로 남고 ② 점프 목적지가 **우리가 번역해 놓은 오른쪽 문구 한가운데**
+    라 쓰레기 글자를 읽는다(원문 바이트 기준 오프셋이라 한글 코드 한가운데에 떨어진다). 그래서 머리 + 목적지 꼬리를 **한 문장으로 펴서**(「の左の頭は{01}…」)
+    단위로 두고, 번역은 통째로 쓴다 — 머리 자리(`0F`+주소 3B 포함)에 들어가면 제자리, 넘치면 블록 끝으로 잇는다(`patch_msgs`).
+    목적지 쪽(오른쪽 문구)은 그대로 자기 단위다.
+    """
+    n = len(data)
+    spans = [(u["off"], u["off"] + len(u["body"])) for u in units]
+    out = []
+    i = len(records(data)) * REC
+    while i < n - 3:
+        if not is_char(data, i) or any(a <= i < b for a, b in spans):
+            i += 1
+            continue
+        j = i
+        while j < n - 1 and is_char(data, j):
+            j += 2
+        if j > i and data[j] == 0x0F and j + 2 < n:
+            t = (data[j + 1] | data[j + 2] << 8) - LOAD_ADDR
+            for u in units:
+                a, b = u["off"], u["off"] + len(u["body"])
+                if a < t < b and is_char(data, t):
+                    out.append(
+                        {
+                            "off": i,
+                            "body": data[i:j] + data[t:b],
+                            "term": None,  # 끝 바이트는 원래 흐름이 가진다 — 번역 끝에서 `back` 으로 되돌아가 그 바이트부터 이어진다
+                            "room": (j + 3) - i,
+                            "back": LOAD_ADDR + b,
+                        }
+                    )
+                    break
+        i = j + 1 if j > i else i + 1
     return out
 
 

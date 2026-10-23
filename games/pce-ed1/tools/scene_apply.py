@@ -42,8 +42,13 @@ def validate(n: int, new: dict[str, str]) -> list[str]:
             for ch in set(src):
                 if font.needs_glyph(ch):
                     font.glyph(ch)
+            # 장 끝 카드(화자 없고 하드 개행이 든 문안)는 줄을 그대로 쓴다(`translate.compose` 의 verbatim) — 전각 공백으로 맞춘 줄이라
+            # 조판기의 「낱말 가운데 끊김」(④)을 대지 않는다. 5장·종장 포함 여섯 장 카드가 이 오탐으로 걸렸다(10-18).
+            verbatim = "\n" in t and known[k]["speaker"] is None and known[k]["common"] is None
             for pg in typeset.pages(src, speaker=known[k]["speaker"] is not None):
                 for p in T.problems(pg, T.scene_cuts(src, pg)):
+                    if verbatim and p.startswith("④"):
+                        continue
                     if not p.startswith("②") and not (p.startswith("①") and len(pg) == 1):  # 한 줄짜리 침묵 창은 정상
                         errs.append(f"{k}: {p}")
         except Exception as e:  # noqa: BLE001 — 글리프 없음·조판 실패를 한 줄로 알린다
