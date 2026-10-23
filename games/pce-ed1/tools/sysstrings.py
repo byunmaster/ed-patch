@@ -242,7 +242,13 @@ def read_screens():
 INLINE = {
     #  key: (bank, off, room)   room 은 06 까지 포함
     "field": (0x6D, 0x12CB, 13),  # 오버월드 HUD 이름
+    # 던전 게임오버 뒤 「<지명>の入口に戻ります」 확인 문구 — 앞의 `10 7D C0` 호출이 지명을 찍고 이 글이 이어진다.
+    # 뱅크 0x74 의 지명 표 바로 뒤에 박힌 **인라인 메시지**(07 종단)라 sysmsg 분할이 못 본다(실측: 전투 촬영 10-20).
+    "return_prompt": (0x74, 0x1E79, 37),  # room 은 07 까지 포함
 }
+MSG_INLINE = {"return_prompt"}  # 「이름 06」이 아니라 「문안 07」 꼴
+# 칸이 모자라면 앞쪽만 제자리에 쓰고 `0F 주소`(3B)로 풀의 빈 자리에 이어 쓴다 — 같은 글을 가리키는 코드가 셋(본 프로그램 둘 ·
+# 씬 컨테이너 안 압축 조각 하나)이라 **포인터를 옮기지 않고** 원래 자리에서 뛰게 한다.
 
 
 def read_inline():
@@ -256,7 +262,7 @@ def read_inline():
                 "bank": bank,
                 "off": off,
                 "room": room,
-                "jp": seg.split(b"\x06")[0].decode("cp932"),
+                "jp": (seg.split(b"\x07")[0] if key in MSG_INLINE else seg.split(b"\x06")[0]).decode("cp932"),
             }
         )
     return out

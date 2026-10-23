@@ -115,7 +115,7 @@ WIN_BG = (0, 0, 106)  # 대사창 바탕색(343×243 프레임, 실측 — 창�
 
 def winbox(frame):
     """대사창 안쪽 잘라내기 — 바탕색 픽셀의 경계 상자(왼쪽 지도 영역 x<225). 창이 없으면 None."""
-    reg = frame[20:240, 10:225]
+    reg = frame[54:240, 10:225]  # 제목 띠(y<54)도 같은 바탕색이라 빈 쪽으로 찍혔다 — 지도 영역(안쪽)만
     m = (reg[:, :, 0] == WIN_BG[0]) & (reg[:, :, 1] == WIN_BG[1]) & (reg[:, :, 2] == WIN_BG[2])
     if int(m.sum()) < 3000:
         return None
@@ -124,6 +124,18 @@ def winbox(frame):
     if not len(ys) or not len(xs):
         return None
     return reg[ys[0] : ys[-1] + 1, xs[0] : xs[-1] + 1]
+
+
+VICTORY_LINE = np.asarray(Image.open(os.path.join(os.path.dirname(__file__), "victory_line.png")).convert("RGB"))
+
+
+def is_victory(frame):
+    """전투 승리 창(첫 줄 「…승리했다.」) 인가 — 창이 위·아래 어디에 떠도 찾도록 세로로 밀어 가며 비교."""
+    h, w = VICTORY_LINE.shape[:2]
+    for y in range(54, 214 - h):
+        if np.array_equal(frame[y : y + h, 38 : 38 + w], VICTORY_LINE):
+            return True
+    return False
 
 
 def same_win(a, b):
@@ -164,11 +176,16 @@ if BRAM:
 frames = 0
 
 
+TRACE = None  # battle 의 dense — 전투 시작 기준 프레임 번호가 [lo, hi) 면 <접두>_d/ 에 저장. 관찰·I 누름 구간도 빠짐없이
+
+
 def run(n):
     global frames
     for _ in range(n):
         core.retro_run()
         frames += 1
+        if TRACE and TRACE[2] <= frames - TRACE[1] < TRACE[3]:
+            Image.fromarray(state["frame"]).save(os.path.join(TRACE[0], f"{frames - TRACE[1]:06d}.png"))
 
 
 def ram(a):
@@ -188,6 +205,19 @@ for step in json.load(open(SCRIPT)):
         run(step[2])
         state["held"] = set()
         run(step[3] if len(step) > 3 else 20)
+    elif op == "wait":  # ["wait", 프레임]
+        run(step[1])
+    elif op == "encounter":
+        # ["encounter", 번호hex] — 조우 번호(`$3FFA`)를 넣고 걸어서 전투 화면이 뜰 때까지만(디버그 롬 전용). 그 뒤 조작은 스크립트가 한다(자동전투 끄기·커맨드 창 촬영)
+        C.memmove(ram("3FFA"), bytes.fromhex(step[1]), len(step[1]) // 2)
+        walked = 0
+        while walked < 400 and float((state["frame"][50:170, 35:215].sum(axis=2) == 0).mean()) < 0.5:
+            state["held"] = {BTN["down" if walked % 2 == 0 else "up"]}
+            run(16)
+            state["held"] = set()
+            run(10)
+            walked += 1
+        print("encounter", step[1], "walked", walked, "frame", frames, flush=True)
     elif op == "shot":
         shot(step[1])
         print("shot", step[1], "frame", frames, flush=True)
@@ -284,6 +314,100 @@ for step in json.load(open(SCRIPT)):
         Image.fromarray(state["frame"] if crop is None else state["frame"][crop[0] : crop[1]]).save(os.path.join(OUT, prefix + "END.png"))
         idx.close()
         print("view", prefix, "shots", shown, "frame", frames, flush=True)
+    elif op == "battle":
+        # 전투 한 판 촬영(디버그 롬 ED_BATTLE_DBG 전용 — 조우 번호를 `$3FFA` 에서 읽는다): ["battle", 접두, 번호hex, 최대쪽수]
+        #   조우 번호를 poke → 위아래로 걸어 전투 화면(지도 영역이 까맣다)이 뜨길 기다림 → 메시지 창이 12프레임 멈추면 찍고 I → 필드로 돌아오면 끝.
+        prefix, enc, maxp = step[1], step[2], step[3]
+        dense = step[4] if len(step) > 4 else 0  # >0 이면 전투 프레임을 전부 `<접두>_d/` 에 저장(어디서 글이 빠지는지 볼 때) · step[5:7] = 저장할 프레임 범위 [시작, 끝)
+        if dense:
+            os.makedirs(os.path.join(OUT, prefix + "_d"), exist_ok=True)
+        C.memmove(ram("3FFA"), bytes.fromhex(enc), len(enc) // 2)
+
+        def dark(fr):
+            reg = fr[50:170, 35:215]
+            return float((reg.sum(axis=2) == 0).mean())
+
+        walked = 0
+        while walked < 400 and dark(state["frame"]) < 0.5:
+            state["held"] = {BTN["down" if walked % 2 == 0 else "up"]}
+            run(16)
+            state["held"] = set()
+            run(10)
+            walked += 1
+        idx = open(os.path.join(OUT, "battle.tsv"), "a", encoding="utf-8")
+        if dark(state["frame"]) < 0.5:
+            idx.write(f"{prefix}\t{enc}\tNO_ENCOUNTER\t{walked}\n")
+            idx.close()
+            print("battle", prefix, "no encounter", flush=True)
+            continue
+        TRACE = (os.path.join(OUT, prefix + "_d"), frames, step[5] if len(step) > 5 else 0, step[6] if len(step) > 6 else 10**9) if dense else None
+        prev, same, last_shot, shown, stall, quiet = None, 0, None, 0, 0, 0
+        victory = None  # 승리 창을 찍은 뒤 더 찍은 쪽 수(None = 아직 못 찍음)
+        for _ in range(maxp * 700):
+            run(1)
+            cur = state["frame"]
+            win = winbox(cur)
+            same = same + 1 if same_win(win, prev) else 0
+            prev = win
+            if dark(cur) < 0.05 and win is None:
+                quiet += 1
+                if quiet > 25 and shown >= 3:  # 필드로 돌아와 25프레임 — 전투 끝(한 판만. 더 두면 같은 자리에서 다음 조우가 붙는다)
+                    break
+            else:
+                quiet = 0
+            if same == 12 and win is not None and not same_win(win, last_shot):
+                name = f"{prefix}_{shown:03d}"
+                Image.fromarray(cur).save(os.path.join(OUT, name + ".png"))
+                last_shot = win.copy()
+                seen = {win.tobytes()}
+                vname = None
+                if victory is not None:
+                    victory += 1
+                elif is_victory(cur):
+                    victory = 0
+                    vname = name
+                shown += 1
+                # 찍은 뒤 60프레임 관찰 — 이 사이 창이 저절로 다음 쪽으로 넘어가며 승리 창이 여기서 떴다(블라인드였다).
+                # 눈을 떼지 않고, 12프레임 선 승리 창이면 그 쪽도 찍는다(다른 쪽은 아래 본 루프가 찍는다)
+                ow, oc = None, 0
+                for _ in range(60):
+                    run(1)
+                    w2 = winbox(state["frame"])
+                    seen.add(w2.tobytes() if w2 is not None else b"")
+                    oc = oc + 1 if same_win(w2, ow) else 0
+                    ow = w2
+                    if oc == 12 and w2 is not None and victory is None and not same_win(w2, last_shot) and is_victory(state["frame"]):
+                        vname = f"{prefix}_{shown:03d}"
+                        Image.fromarray(state["frame"]).save(os.path.join(OUT, vname + ".png"))
+                        last_shot = w2.copy()
+                        victory = 0
+                        shown += 1
+                idx.write(f"{name}\t{enc}\t{frames}\t{1 if len(seen) > 1 else 0}\n")
+                if vname:
+                    idx.write(f"{prefix}\t{enc}\tVICTORY\t{vname}\n")  # 이 쪽이 승리 문구 — 뒤 쪽(레벨 업 등)은 3쪽까지만 더 찍고 끝낸다
+                idx.flush()
+                stall = 0
+                if shown >= maxp or (victory is not None and victory >= 3):
+                    break
+                state["held"] = {BTN["i"]}
+                run(6)
+                state["held"] = set()
+                run(6)
+            elif same >= 12:
+                stall += 1
+                if stall in (60, 180):
+                    state["held"] = {BTN["i"]}
+                    run(6)
+                    state["held"] = set()
+                    run(6)
+                if stall > 400:
+                    idx.write(f"{prefix}\t{enc}\tSTALL\t{frames}\n")
+                    break
+        TRACE = None
+        Image.fromarray(state["frame"]).save(os.path.join(OUT, f"{prefix}_END.png"))
+        idx.write(f"{prefix}\t{enc}\tEND\tshots={shown} walked={walked}\n")
+        idx.close()
+        print("battle", prefix, "enc", enc, "shots", shown, "walked", walked, "frame", frames, flush=True)
     elif op == "save":
         n = core.retro_serialize_size()
         b = C.create_string_buffer(n)

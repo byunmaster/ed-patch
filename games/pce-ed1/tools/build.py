@@ -508,6 +508,9 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
                     b"\x20" + hook.BLINK_ADDR.to_bytes(2, "little"),
                 )
             )
+    if os.environ.get("ED_BATTLE_DBG"):  # 🔴 디버그 전용 — 전투 일괄 촬영(10-20): 조우 번호를 카드 RAM `$C05F` 가 아니라 워크 RAM `$3FFA` 에서 읽는다(하네스가 poke 한다)
+        assert common.BUILD_TAG.startswith("test-"), "ED_BATTLE_DBG 는 시험 빌드(ED_BUILD_TAG=test-*)에서만"
+        p.append(("battle debug LDA $C05F→$3FFA", 94, 1564, b"\x5f\xc0", b"\xfa\x3f"))
     return p
 
 

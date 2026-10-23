@@ -188,7 +188,7 @@ def all_glyph_chars() -> set[str]:
             chars |= {c for t in v for c in t if font.needs_glyph(c)}
     for k, v in _load("inline.json").items():
         if not k.startswith("_"):
-            chars |= {c for c in v if font.needs_glyph(c)}
+            chars |= {c for c in TOK.sub("", v) if font.needs_glyph(c)}
     return chars
 
 
@@ -214,6 +214,22 @@ def _latin(t: str, msg: bool) -> str:
     if msg and os.environ.get("ED_LATIN") == "orig":
         return "".join(chr(ord(c) + 0xFEE0) if c.isascii() and c.isalnum() else c for c in t)
     return t
+
+
+def _split_inline(kr: str, table, room: int, pool):
+    """인라인 메시지(07 종단) → (제자리 앞쪽, 풀로 갈 뒤쪽|None, 풀 자리|None). 다 들어가면 뒤쪽이 없다."""
+    parts = [m for m in re.findall(r"\{[0-9A-F]{2}\}|.", kr, flags=re.S)]
+    encs = [encode_tokens(t, table, msg=True) for t in parts]
+    full = b"".join(encs) + b"\x07"
+    if len(full) <= room:
+        return full, None, None
+    n, k = 0, 0
+    while k < len(encs) and n + len(encs[k]) + 3 <= room:  # 이어쓰기 `0F lo hi` 3B 를 남긴다
+        n += len(encs[k])
+        k += 1
+    head = b"".join(encs[:k])
+    rest = b"".join(encs[k:]) + b"\x07"
+    return head, rest, pool.alloc((0x6D, 0x74), len(rest))
 
 
 def _write(f, bank, off, data, expect, label, touched):
@@ -486,18 +502,26 @@ def apply(f, table, touched) -> dict:
     # 🆕 09-26: 자투리가 모자라면 **선언한 빈 공간**(freespace.SPANS)으로 — 원본 기대 바이트부터 검산
     pool = freespace.Pool(freespace.spans())
     pool.check_original(S.bank_bytes)
+    # 칸이 모자라는 인라인 메시지는 앞쪽만 제자리에 쓰고 뒤쪽을 풀로 보낸다(`0F` 이어쓰기) — **먼저** 자리를 잡는다
+    reloc_plan = {}
+    for ir in S.read_inline():
+        kr = _load("inline.json").get(ir["key"])
+        if kr and ir["key"] in S.MSG_INLINE:
+            reloc_plan[ir["key"]] = _split_inline(kr, table, ir["room"], pool)
     pool_writes = []  # (Span, 뱅크 안 오프셋, 바이트)
     spilled = {}  # 자투리로 옮긴 조각: 주소 → (새 논리 주소, 바이트)
-    for r, new, _orig in spills:
-        for k, (lo, hi, i) in enumerate(slack):
-            if hi - lo >= len(new):
-                tgt = 0x8000 + lo
-                extra.setdefault(i, bytearray()).extend(new)
-                slack[k] = (lo + len(new), hi, i)
-                spilled[r["addr"]] = (tgt, new)
-                plan[spill_idx[r["addr"]]][1] = bytes([0x0F, tgt & 0xFF, tgt >> 8])
-                stats["sysmsg_spill"] = stats.get("sysmsg_spill", 0) + 1
-                break
+    # 큰 조각부터, 맞는 자투리 중 **가장 작은 것**에(best-fit) — 먼저 온 순서대로 첫 칸에 넣으면 큰 조각이 풀로 밀려 풀이 1~2B 모자랐다(10-21)
+    for r, new, _orig in sorted(spills, key=lambda s: -len(s[1])):
+        fit = [(hi - lo, k) for k, (lo, hi, i) in enumerate(slack) if hi - lo >= len(new)]
+        if fit:
+            k = min(fit)[1]
+            lo, hi, i = slack[k]
+            tgt = 0x8000 + lo
+            extra.setdefault(i, bytearray()).extend(new)
+            slack[k] = (lo + len(new), hi, i)
+            spilled[r["addr"]] = (tgt, new)
+            plan[spill_idx[r["addr"]]][1] = bytes([0x0F, tgt & 0xFF, tgt >> 8])
+            stats["sysmsg_spill"] = stats.get("sysmsg_spill", 0) + 1
         else:
             got = pool.alloc((0x6D, 0x74), len(new))
             if got is None:
@@ -632,7 +656,19 @@ def apply(f, table, touched) -> dict:
         kr = inline.get(r["key"])
         if not kr:
             continue
-        enc = font.encode(kr, table) + b"\x06"
+        if r["key"] in S.MSG_INLINE:
+            head, rest, got = reloc_plan[r["key"]]
+            if rest is not None:
+                if got is None:
+                    errors.append(f"inline[{r['key']}] 뒷 조각 {len(rest)}B — 옮겨 실을 빈자리가 없다")
+                    continue
+                span, off = got
+                _write(f, span.bank, off, rest, bytes([span.fill]) * len(rest), f"inline {r['key']} 이어쓰기", touched)
+                tgt = span.window + off
+                head += bytes([0x0F, tgt & 0xFF, tgt >> 8])
+            enc = head + b"\0" * (r["room"] - len(head))
+        else:
+            enc = font.encode(kr, table) + b"\x06"
         if len(enc) > r["room"]:
             errors.append(f"inline[{r['key']}] 「{kr}」 {len(enc)}B > {r['room']}B")
             continue
