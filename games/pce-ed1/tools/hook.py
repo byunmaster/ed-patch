@@ -298,6 +298,35 @@ def tick_routine() -> bytes:
     return bytes(code)
 
 
+# 🔴 나레이션 ON 자막 모드에서 대사창 넘김 커서(▽)를 숨긴다(마스터 10-16 「나래이션 일 때 대사창 커서도 안 나오게」).
+#   커서는 엔진 뱅크 0x6C 의 `$6CC3` 가 매 프레임 상태 바이트(`$3559,X` 비트6)를 16프레임마다 뒤집어 깜빡인다(비트6=1 이 꺼진 쪽).
+#   그 `JSR $6CC3` 넷(`$6BAA`·`$6BDD`·`$6C2C`·`$6D23`)을 이 루틴으로 돌린다 — 원래 루틴을 부른 뒤 자막 모드(`BLINK_FLAG`)면 비트6 을 1 로 고정.
+#   X 는 `$6CC3` 가 남긴 커서 번호 그대로, A·Y 는 호출부(`$4FD8` 인자)가 쓰므로 비트6 이 1 인 원래 결과와 같은 꼴로 돌려준다.
+BLINK_ADDR = TICK_ADDR + 0x50  # 틱 트램펄린 끝($2443) 뒤 빈 자리 — FRAMECNT($2474) 앞
+BLINK_FLAG = 0x5FFD  # narration_gates.AUTO_FLAG — 자막 모드(뱅크 0x68 꼬리 `$5FFD`, 늘 `$4000` 창에 있다). 같은 값임을 테스트가 본다
+BLINK_ORIG = 0x6CC3  # 원래 깜빡임 루틴(뱅크 0x6C)
+
+
+def blink_routine() -> bytes:
+    return bytes(
+        [0x20, *BLINK_ORIG.to_bytes(2, "little")]  # JSR $6CC3
+        + [0xAD, *BLINK_FLAG.to_bytes(2, "little"), 0xF0, 8]  # LDA mode · BEQ out
+        + [0xBD, 0x59, 0x35, 0x09, 0x40, 0x9D, 0x59, 0x35]  # LDA $3559,X · ORA #$40 · STA $3559,X
+        + [0x60]  # out: RTS
+    )
+
+
+# 🔴 나레이션 자막 모드 자동 넘김 때 넘김 효과음(`JSR $67EC` → 효과음 0x14)을 끈다(마스터 10-17). 호출 셋(`$6BFF`·`$6C3C`·`$6D3F`)을 이 거름 루틴으로 돌린다:
+#   자막 모드(`BLINK_FLAG`)면 소리 없이 돌아가고 아니면 원래 `$67EC`. 자리 = 깜빡임 루틴 뒤 빈 자리(`$2461~$2473`, 19B 중 9B).
+#   ⚠ 엔진 뱅크 0x6C 의 0 런(`$6973`)은 빈 자리가 아니다 — `STA $6973,X` 로 쓰이는 인덱스 표다(devlog 10-16). 처음 거기 얹었다가 옮겼다.
+QUIET_ADDR = BLINK_ADDR + 0x12
+QUIET_ORIG = 0x67EC
+
+
+def quiet_routine() -> bytes:
+    return bytes([0xAD, *BLINK_FLAG.to_bytes(2, "little"), 0xD0, 0x03, 0x4C, *QUIET_ORIG.to_bytes(2, "little"), 0x60])  # LDA mode · BNE +3 · JMP $67EC · RTS
+
+
 def _tick_layout() -> tuple[tuple[int, int], int]:
     """(서명 `LDA` 피연산자 둘, `JSR tick` 피연산자)의 주소."""
     n = len(tick_routine())
@@ -315,6 +344,14 @@ def hook_routine() -> bytes:
     t = tick_routine()
     at = TICK_ADDR - HOOK_ADDR - len(b)
     pad[at : at + len(t)] = t
+    bl = blink_routine()
+    assert TICK_ADDR + len(t) <= BLINK_ADDR and BLINK_ADDR + len(bl) <= FRAMECNT, (len(t), len(bl))
+    at = BLINK_ADDR - HOOK_ADDR - len(b)
+    pad[at : at + len(bl)] = bl
+    qr = quiet_routine()
+    assert BLINK_ADDR + len(bl) <= QUIET_ADDR and QUIET_ADDR + len(qr) <= FRAMECNT, (len(bl), len(qr))
+    at = QUIET_ADDR - HOOK_ADDR - len(b)
+    pad[at : at + len(qr)] = qr
     return b + bytes(pad)
 
 

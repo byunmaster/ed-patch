@@ -487,6 +487,26 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
                     b"\x20" + narration_gates.AUTO_ORG.to_bytes(2, "little"),
                 )
             )
+        # 8-2. 자막 모드 자동 넘김의 넘김 효과음 끄기 — `JSR $67EC` 셋을 후킹 페이로드 안 거름 루틴으로(같은 3B)
+        for at in narration_gates.QUIET_SITES:
+            p.append(
+                (
+                    f"quiet page-turn SFX JSR $67EC @{at:04X}",
+                    *_main(0x6C, at - 0x6000),
+                    b"\x20" + hook.QUIET_ORIG.to_bytes(2, "little"),
+                    b"\x20" + hook.QUIET_ADDR.to_bytes(2, "little"),
+                )
+            )
+        # 9. 자막 모드에선 넘김 커서(▽)를 숨긴다 — 깜빡임 `JSR $6CC3` 넷을 후킹 페이로드 안 루틴으로(같은 3B)
+        for at in narration_gates.BLINK_SITES:
+            p.append(
+                (
+                    f"hide cursor blink JSR $6CC3 @{at:04X}",
+                    *_main(0x6C, at - 0x6000),
+                    b"\x20" + hook.BLINK_ORIG.to_bytes(2, "little"),
+                    b"\x20" + hook.BLINK_ADDR.to_bytes(2, "little"),
+                )
+            )
     return p
 
 
@@ -635,7 +655,7 @@ def _build(edits_path, iso: Path, cue: Path):
                 if (rel, b["id"]) in edits:
                     blk = apply_edits(blk, edits[(rel, b["id"])], f"rel {rel} id {b['id']}")
                 if b["id"] in narr_ids:
-                    blk, n = narration_gates.patch_block(b["id"], blk)
+                    blk, n = narration_gates.patch_block(b["id"], blk, btab if b["id"] in translated_ids else None)
                     n_gates += n
                 if b["id"] in sched_ids:  # 음성 장면 — ON 이어도 OFF 흐름 + 음성 + 전역 시각표(voice_sched)
                     blk, n = voice_sched.patch_block(b["id"], b["data"], blk)
