@@ -165,7 +165,10 @@ _bin=$(ls "$_gd"/*.bin 2>/dev/null | head -1 || true)
 if [ "$_brc" -ne 0 ]; then echo "   🔴 빌드가 실패했다(rc $_brc)"; fail=1
 elif [ -z "$_bin" ] || [ ! -s "$_bin" ]; then echo "   🔴 빌드가 성공했다는데 산출물이 없다"; fail=1
 elif ls "$_gd"/*.failed "$_gd"/*.part >/dev/null 2>&1; then echo "   🔴 실패·미완 산출물이 남았다"; fail=1
-else echo "   ✅ 실빌드 — $(sha1sum "$_bin" | cut -c1-12) · $(( $(wc -c < "$_bin") / 1048576 ))MB"; fi
+else echo "   ✅ 실빌드 — $(sha1sum "$_bin" | cut -c1-12) · $(( $(wc -c < "$_bin") / 1048576 ))MB"
+  # 구운 글꼴에서 서로 같은 그림인 글리프 쌍(쉼표=마침표 사고, ss-ed1+2 10-20) — 롬에서 읽어 센다
+  "$PY" "$G/tools/check_glyph_dups.py" "$_bin" || fail=1
+fi
 rm -rf "$_gd"
 
 echo "  ── 조판 지문 (공용이 우리 줄바꿈을 조용히 흔들지 않나)"

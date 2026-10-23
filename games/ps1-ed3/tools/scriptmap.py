@@ -248,9 +248,10 @@ def window_chains(mem, info=None):
 
     포인터 자리 `q` 는 짝수 오프셋이고 이어지는 `01 90 W` 는 4바이트 뒤(`q+4`)다. 첫 포인터 앞은 `0F 90`(맞춤 패드 한 바이트 허용)이어야 한다.
     포인터가 조각 시작을 못 맞히면 그 창은 건너뛴다(이벤트 자료로 본다)."""
-    if layout(mem) != LAYOUT_POOL:
-        return []
-    info = info or parse(mem)
+    if info is None:
+        if layout(mem) != LAYOUT_POOL:
+            return []
+        info = parse(mem)
     idx = {s: i for i, (s, _c) in enumerate(info["segments"])}
     base = info["base"]
     sites = info["pointers"]

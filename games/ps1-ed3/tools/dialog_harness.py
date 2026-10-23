@@ -24,6 +24,7 @@ import warp_table
 PTR = 0x800DD6F8
 BASE = 0x800DD730
 BUF = 0x801F4000  # 빈 RAM(코드 영역에 쓰면 코어가 죽는다)
+LOADED = {}
 SEQ = re.compile(rb"\x0f\x90(..)((?:\x01\x90..)*)\x00", re.S)
 DEFAULT_CUE = "work/build/ps1-ed3/Eiyuu Densetsu III (KR) (TEST).cue"
 
@@ -54,11 +55,13 @@ def settle(emu, presses=60):
         emu.press("cross", 6, 25)
 
 
-def inject(emu, script):
-    """스크립트를 한 번만 돌린다: 포인터 꽂기 → 2프레임 → 복구."""
+def inject(emu, script, d=0):
+    """스크립트를 한 번만 돌린다: 포인터 꽂기 → 2프레임 → 복구.
+    `d` = 시작 정렬(0/1) — 🔴 `0x90` 연산자는 **램 주소 짝수에 맞춰 읽으므로**(앞에 맞춤 패드가 낀다) 원래 `0F` 가 놓였던 주소의 홀짝을 지켜야 한다.
+    안 지키면 패드가 연산자로 읽혀 포인터가 엉뚱해지고 글자판 쓰레기(노이즈)가 찍힌다(10-20 qa 노이즈 창의 정체)."""
     old = emu.u32(PTR)
-    emu.poke(BUF, script + b"\x00\x00")
-    emu.poke(PTR, BUF.to_bytes(4, "little"))
+    emu.poke(BUF + d, script + b"\x00\x00")
+    emu.poke(PTR, (BUF + d).to_bytes(4, "little"))
     emu.run(2)
     emu.poke(PTR, old.to_bytes(4, "little"))
 
@@ -87,11 +90,16 @@ def wait_map(emu, limit=1500):
         if emu.u32(BASE) != before and emu.u32(PTR) != BUF:
             break
     emu.run(120)
-    settle(emu, 60)
+    LOADED["seqs"] = sequences(emu)  # 입장 이벤트를 넘기기 전에 읽는다 — 오래 넘기면 이벤트가 다른 맵으로 보내 블록이 바뀐다(SETTLE=300 실측: 시퀀스 0)
+    LOADED["base"] = emu.u32(BASE)
+    settle(emu, int(os.environ.get("SETTLE", "60")))  # 입장 이벤트가 긴 맵은 더 넘긴다(`SETTLE=250`) — 안 넘기면 모든 캡처가 입장 대사 하나로 굳는다(FT3005 실측)
 
 
 def sequences(emu, size=0x4000):
     blk = emu.peek(emu.u32(BASE), size)
+    tb = int.from_bytes(blk[:2], "little")  # TEXT_BASE — 스크립트 구간은 [2, TEXT_BASE). 그 뒤(문자열 풀·다음 메모리)에서 우연히 맞은 `0F 90` 은 대사가 아니다
+    if 2 < tb <= size:
+        blk = blk[:tb]
     out = []
     for m in SEQ.finditer(blk):
         a = m.start()
@@ -100,12 +108,69 @@ def sequences(emu, size=0x4000):
     return out
 
 
-def stable(emu, cap=900):
-    """글자가 다 찍혀 화면이 멎을 때까지(30프레임 연속 같음 — 글자가 한 자씩 찍히는 틈을 넘긴다)."""
+def windows(emu, size=0x6000):
+    """[(창 번호 n, 주입 바이트, 정렬 d)] — 램의 맵 블록에서 **대사 창(`0F 90 V (01 90 W)* 00`)만** 꺼낸다. `scriptmap.window_chains` 와 같은 알고리즘이라
+    번호 n 이 짝 표(`pair_table`)의 창 번호와 같다. 포인터 목표가 조각 시작이 아닌 가짜(데이터 `0F 90 00 20` …)는 걸러진다 — 옛 `sequences` 는
+    그런 가짜를 대사로 찍어 글자판 쓰레기(노이즈) 창을 냈고 진짜 창을 놓치기도 했다(FT4300: 창 39 ↔ 옛 32, 10-20)."""
+    import scriptmap
+
+    blk = emu.u32(BASE)
+    mem = emu.peek(blk, size)
+    tb = int.from_bytes(mem[:2], "little")
+    if not 2 < tb <= size - 4:
+        return []
+    segs = scriptmap.segments(mem)
+    info = {"segments": segs, "base": tb, "pointers": scriptmap.pointer_sites(mem)}
+    out = []
+    # 체인 → 바이트: 첫 포인터 자리 q 에서 되짚어 `0F`(+앞 `12 n`)부터 끝 `00` 까지
+    sites = dict(info["pointers"])
+    idx = {s: i for i, (s, _c) in enumerate(segs)}
+    used = set()
+    n = 0
+    for q, _v in info["pointers"]:
+        if q in used:
+            continue
+        i = q - 1
+        if mem[i] != 0x90:
+            i -= 1
+        if i < 1 or mem[i] != 0x90 or mem[i - 1] != 0x0F:
+            continue
+        cq, ok = q, True
+        while True:
+            t = tb + (sites[cq] & ~1)
+            if t not in idx:
+                ok = False
+                break
+            used.add(cq)
+            if mem[cq + 2 : cq + 4] == b"\x01\x90" and (cq + 4) in sites:
+                cq += 4
+                continue
+            break
+        if not ok or mem[cq + 2 : cq + 3] != b"\x00":
+            continue
+        a = i - 1
+        pre = mem[a - 2 : a] if a >= 2 and mem[a - 2] == 0x12 else b""
+        d = ((blk + a) - (BUF + len(pre))) & 1  # 0F 가 원래 놓인 주소의 홀짝에 맞춘다
+        out.append((n, pre + mem[a : cq + 3], d))
+        n += 1
+    return out
+
+
+def stable(emu, cap=900, base=None):
+    """글자가 다 찍혀 화면이 멎을 때까지(30프레임 연속 같음 — 글자가 한 자씩 찍히는 틈을 넘긴다).
+    `base`(주입 전 화면)가 있으면 **대사창 띠만, 오른쪽 끝 24px(대기 커서 ▽ 깜박임)를 빼고** 비교한다 —
+    전체 화면을 비교하면 배경 애니메이션·커서 때문에 글이 다 찍혀도 영영 안 멎는다(10-20 실측: 미정지 39%)."""
     same, last = 0, None
-    for _ in range(cap):
+    for i in range(cap):
         emu.run(1)
-        cur = emu.frame.tobytes()
+        if base is not None:
+            b = band(base, emu.frame) if i >= 20 else None
+            if b is None:
+                same, last = 0, None
+                continue
+            cur = emu.frame[b[0] : b[1], :-24].tobytes()
+        else:
+            cur = emu.frame.tobytes()
         same = same + 1 if cur == last else 0
         last = cur
         if same >= 30:
@@ -199,7 +264,7 @@ def main():
         index = []
         snap = os.path.join(d, "_start.state")
         emu.save(snap)
-        seqs = sequences(emu)
+        seqs = LOADED.get("seqs") or sequences(emu)
         if a.max_seq:
             seqs = seqs[: a.max_seq]
         paths = []
@@ -208,7 +273,7 @@ def main():
             emu.run(2)
             base = emu.frame.copy()
             inject(emu, s)
-            ok = stable(emu)
+            ok = stable(emu, base=base)
             b = band(base, emu.frame)
             p = os.path.join(d, f"{k:03d}.png")
             img = emu.frame if b is None else emu.frame[b[0] : b[1]]
