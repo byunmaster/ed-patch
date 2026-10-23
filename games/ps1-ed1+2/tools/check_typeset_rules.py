@@ -93,12 +93,19 @@ def check_window(w):
     return out
 
 
+SCRIPT_PREFIX_SILENT = {("ED2SCN12", "158")}
+
+
 def scan(scenes=None, verbose=False):
     import reinsert_kr_pilot as R
 
     counts = {}
     rows = []
     for scn, eid, _jp, cand, _t in R.iter_candidates(scenes):
+        # 20바이트 스크립트 접두(제어·표 바이트)가 든 침묵 블록은 접두가 글자로 읽혀 줄 폭이 부풀어 오탐한다 —
+        # 접두는 엔진이 안 그린다(ED2SCN12 jp158, `NAMEONLY_FORCE`). 점 줄 자체는 규칙 1-3 에 맞다.
+        if (scn, str(eid)) in SCRIPT_PREFIX_SILENT:
+            continue
         area = scn[:3]
         for w in windows(R.render_bytes(cand)):
             for rule, ln in check_window(w):

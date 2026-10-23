@@ -26,6 +26,7 @@ import shutil
 import sys
 
 import hangul_map
+from patch_hangul_glyph_table import QUOTE_CODES
 from common import (
     BUILD_DIR,
     MIPS_ADDIU,
@@ -225,6 +226,9 @@ def encode_ext(text):
             out += MC + PS + MC
         elif ch == " ":
             out.append(0x20)
+        elif ch in QUOTE_CODES:
+            # 반각 여닫는 따옴표 “ ” — 전용 글리프 코드(patch_hangul_glyph_table)
+            out.append(QUOTE_CODES[ch])
         elif ch in HALF_PUNCT or ch.isascii() and ch.isalnum():
             # 반각 부호·숫자·알파벳 — 1바이트 경로(0.5슬롯). JP 원본도 "400"·"Gold"를
             # 1바이트 ASCII로 저장·렌더(jp1172 실증 = 글리프 존재 보증, 유저 제안 07-26)
@@ -998,7 +1002,7 @@ def cell_w(ch):
         return (NAME_SLOTS if ch == JOSA_NAME else ITEM_SLOTS) + 1
     if ch == NOBREAK_SP:
         return 0.5  # 보통 공백과 같은 폭(조판 후 공백으로 되돌린다)
-    return 0.5 if ch == " " or ch in HALF_PUNCT or (ch.isascii() and ch.isalnum()) else 1.0
+    return 0.5 if ch == " " or ch in HALF_PUNCT or ch in QUOTE_CODES or (ch.isascii() and ch.isalnum()) else 1.0
 
 
 # 의도적 개행 마커 — line_overrides가 삽입한다. 일반 페이지 경계 개행(\n)과 구분해
@@ -1448,6 +1452,11 @@ INLINE_NAME = set()
 # 「저자 `{p}` 경계 → 창」이 안 맞아 재조판으로 넘어간 블록 (build_block 이 채운다).
 # ⚠ 게이트가 아니라 **계측**이다 — 인라인 이름창 블록엔 정당한 불일치가 있다.
 WINDOW_REFIT = []
+# 침묵 블록인데 앞에 스크립트 접두 바이트가 있어(`jp_has_header`·플레이트 꼴 검사에 안 걸리는) 이름창만 번역 등록에서
+# 빠지던 자리. 본문(・・・)은 JP 통과, 이름창만 번역한다 — 우리 문안이 접두 창에 들어가 「점 / 이름 / 점」 세 쪽으로 나갔다
+# (ED2SCN12 jp158, 2026-10-20 style 짝 표 · 화면 실측).
+NAMEONLY_FORCE = {("ED2SCN12", 158)}
+
 FIXED_RUNS = {
     # jp28 왕가의 검·갑옷·방패 장비 이벤트(오프닝 탈출) — **번역해서 짧아지자 깨졌다**
     # (유저 QA 2026-08-19). 창 14·개행 5·`%c` 배열이 JP 와 **완전히 일치**하는데도 첫 창만
@@ -1710,6 +1719,7 @@ def stock_build(raw):
 # 인라인이라 build_from_template 채우기로는 %d가 유실된다. STOCK처럼 %c/%s/%d 순서를 그대로
 # 재현하는 전용 빌더로 KR을 심는다(은(는)은 조사 훅이 아이템명 받침 보고 교정).
 SHOP_PRICE = "__shop_price__"
+SHOP_PRICE_OURS = {}  # {eid: 정본 문안(script t) | None} — 씬 단위, load_translations 가 채운다
 # ⚠ 어미까지 물면 **사투리 사본을 놓친다** — 스엘 도구점은 `になるけんど` 다(SCN3 3곳이
 # 일본어로 나가고 있었다, 2026-08-10). 다른 조건(`%s`+`%d`+`Gold`+`%c`3개)이 이미
 # 좁으니 어간까지만 본다.
@@ -1721,7 +1731,23 @@ def is_shop_price(raw):
     return PS in t and PD in t and b"Gold" in t and _SJIS_NARU in t and t.count(MC) == 3
 
 
-def shop_price_build(raw):
+def shop_price_ours(scn_name, eid):
+    """그 블록의 **정본 문안**(script `t`) — 없으면 None(기본 3줄 꼴로 폴백)."""
+    ov = _load_overrides().get(scn_name, {}).get(str(eid)) or {}
+    return ov.get("ours")
+
+
+# 정본 문안이 없을 때만 쓰는 폴백(가게 말투를 모르는 사본) — 정본이 있으면 **절대 이 값을 쓰지 않는다**.
+_SHOP_PRICE_FALLBACK = ("\ue003값은", "\x1b Gold가 되는데", "괜찮으시겠습니까?")
+
+
+def shop_price_lines(ours):
+    """정본 문안 → 줄 목록. `{n}` 이 줄 경계이고, 앞 붙임 공백(U+E003)은 일반 공백 한 칸으로 낸다."""
+    lines = ours.split("{n}") if ours else _SHOP_PRICE_FALLBACK
+    return [ln.replace("\ue003", " ") for ln in lines]
+
+
+def shop_price_build(raw, ours=None):
     """상점 가격 프롬프트 KR 재조립(%c/%s/%d 순서 = 원본).
 
     조사 훅(0x800B2054·0x800B1D60)은 대사 렌더러 체인만 걸려 상점 프롬프트엔 안 탄다
@@ -1729,20 +1755,19 @@ def shop_price_build(raw):
     없어 은(는)을 정적 확정할 수도 없다 → **도구점은 문안 자체를 조사가 필요 없게** 짠다:
     살 때는 아이템명 뒤에 서술을 바로 붙이고(`…이군요`), 팔 때는 조사를 **고정 명사 '값'**에
     붙인다(받침 있는 '값'에 은 고정이라 아이템 무관).
-    "횃불 값은 %d Gold가 되는데 괜찮으시겠습니까?\""""
-    return (
-        MC
-        + PS
-        + MC
-        + encode_ext(" 값은")
-        + b"\x0a"
-        + PD
-        + encode_ext(" Gold가 되는데")
-        + b"\x0a"
-        + encode_ext("괜찮으시겠습니까?")
-        + b"\x0a"
-        + MC
-    )
+
+    🔴 **줄 문안은 정본(script)에서 가져온다**(2026-10-20 — style 전수 검수). 예전엔 마지막 줄을
+    `괜찮으시겠습니까?` 로 코드에 박아, 가게별 말투(해요·하게·하우·반말·사투리)가 전부 합쇼체로
+    튀고 「그래도」가 빠졌다(ED1·ED2 21곳). 줄 수도 정본을 따른다 — 2줄짜리(`…되는데?`)는 3째 줄이
+    없다. `%c` 3개·`%s`·`%d` 순서(구조 계약)는 그대로다.
+    """
+    lines = shop_price_lines(ours)
+    blk = MC + PS + MC
+    for i, ln in enumerate(lines):
+        if i:
+            blk += b"\x0a"
+        blk += encode_ext(ln)
+    return blk + b"\x0a" + MC
 
 
 # ── ED.EXE 도너 공간 — size 퇴출 블록의 이주지 ─────────────────────────────
@@ -1843,7 +1868,12 @@ def _punct_dots_kr(txt):
     core = "".join(txt.split())
     if not core or any(c not in _DOTS for c in core):
         return None
-    return "".join(_DOTS[c] for c in core)
+    dots = "".join(_DOTS[c] for c in core)
+    # 규칙 1-3 — 온점이 8개 이상 이어진 침묵은 「…」(온점 둘 = 한 글자)로 낸다. 반각 온점 열네 개가 그대로 나가
+    # `check_typeset_rules` ④ 에 걸렸다(ED2SCN12 jp158, 2026-10-20). 짧은 점줄(「･ ･ ･」)은 그대로 둔다.
+    if len(dots) >= 8 and set(dots) == {"."}:
+        return "…" * (len(dots) // 2)
+    return dots
 
 
 # 리터럴 이름·아이템만 든 창 — `%cゲイル%cが仲間に加わりました。` 의 `ゲイル` 자리.
@@ -2632,6 +2662,26 @@ def _fixed_eids_all():
     return frozenset(out)
 
 
+_SJIS_CHEST_LITERAL = "宝箱の中には".encode("cp932")  # 아이템 이름이 리터럴 색 창인 비정형 보물상자(ED2SCN8 261)
+
+
+def restore_win_end_nl(cand, raw):
+    """원본 창이 개행으로 끝나는 자리를 우리 창에도 되살린다 — 아이템 이름 창 앞.
+
+    조판기는 창 끝의 개행을 버린다. 그러면 「상자에는 밀조주가 있었다.」 뒤에 이름 창(`%c밀조주%c`)이 같은 줄로
+    이어져 한 줄이 29열을 넘고, 엔진이 **색 창 안 낱말 한복판**에서 꺾는다(「밀조 / 주를 얻었다」, 2026-10-20 화면 실측).
+    개행만 되살린다(공백 채움은 줄을 더 늘려 빈 줄을 만들었다)."""
+    jw, kw = raw.rstrip(b"\x00").split(MC), cand.rstrip(b"\x00").split(MC)
+    if len(jw) != len(kw):
+        return cand
+    segs = [
+        k + b"\x0a" if j.endswith(b"\x0a") and k and not k.endswith(b"\x0a") else k
+        for j, k in zip(jw, kw)
+    ]
+    out = MC.join(segs)
+    return out + b"\x00" * (-len(out) % 4 or 4)
+
+
 def pad_windows(cand, raw, eid):
     """창(`%c` 구간)마다 **원본 길이까지 공백으로 채운다** — `FIXED_RUNS` 블록만.
 
@@ -2724,7 +2774,7 @@ def build_candidate(raw, t, eid):
         if cand is not None:
             cand += b"\x00" * (-len(cand) % 4 or 4)
     elif t[0] is SHOP_PRICE:  # 상점 가격 프롬프트: %d 인라인 보존 전용 빌더
-        cand, from_tpl = shop_price_build(raw), True
+        cand, from_tpl = shop_price_build(raw, SHOP_PRICE_OURS.get(eid)), True
         cand += b"\x00" * (-len(cand) % 4 or 4)
     elif t[0] is BLANK:
         cand, from_tpl = blank_build(raw), True
@@ -2773,6 +2823,8 @@ def build_candidate(raw, t, eid):
         cand = resolve_static_josa(cand)
     if cand is not None and eid in _fixed_eids_all():
         cand = pad_windows(cand, raw, eid)
+    if cand is not None and _SJIS_CHEST_LITERAL in raw:
+        cand = restore_win_end_nl(cand, raw)
     if cand is not None and eid in COLOR_WRAP:
         on, off = COLOR_WRAP[eid]
         c = cand.rstrip(b"\x00")
@@ -3616,6 +3668,7 @@ def load_translations(align_name, scn_name):
     # parse_kr가 재현 못 해 fmt_drop으로 빠지거나 주입 자리가 깨진 채 나가기 때문.
     STOCK_KINDS.clear()
     STOCK_MID.clear()
+    SHOP_PRICE_OURS.clear()
     n_price = 0
     for e in jp_doc["entries"]:
         if e.get("raw_hex"):
@@ -3633,6 +3686,7 @@ def load_translations(align_name, scn_name):
                 STOCK_MID[e["entry_id"]] = (_i, _k)
             elif is_shop_price(raw):  # 상점 가격 프롬프트(%d 인라인) — 전용 빌더
                 out[e["entry_id"]] = (SHOP_PRICE,)
+                SHOP_PRICE_OURS[e["entry_id"]] = shop_price_ours(scn_name, e["entry_id"])
                 n_price += 1
     if STOCK_KINDS:
         print(f"  정형 블록(보물상자) {len(STOCK_KINDS)}건 등록")
@@ -3659,7 +3713,9 @@ def load_translations(align_name, scn_name):
         # 걸린다(전 씬 500건 이상이 후보로 올라와 제외 목록만 부풀었다, 2026-08-10).
         # 진짜 플레이트는 짧고 개행이 없고 `%c` 가 셋이다.
         _t = raw.rstrip(b"\x00")
-        if not jp_has_header(raw) and not (
+        if (scn_name, e["entry_id"]) in NAMEONLY_FORCE:
+            pass
+        elif not jp_has_header(raw) and not (
             len(_t) <= 24
             and b"\n" not in _t
             and _t.count(MC) == 3
@@ -3669,9 +3725,12 @@ def load_translations(align_name, scn_name):
         body = [w for kind, w in wins if kind == "body"]
         # ⚠ **이름창만 있는 블록**도 여기 든다(`%cドルカスの手下%c%c`) — 채울 본문이 없어
         # `build_from_template` 이 SkipBlock 을 던지고 일본어로 남았다(SCN6 실측 2026-08-10).
-        if body and all(
-            _tpl_punct_only(w) or _tpl_name_only(w) or not any(tk[0] == "t" for tk in w)
-            for w in body
+        if body and (
+            (scn_name, e["entry_id"]) in NAMEONLY_FORCE
+            or all(
+                _tpl_punct_only(w) or _tpl_name_only(w) or not any(tk[0] == "t" for tk in w)
+                for w in body
+            )
         ):
             out[e["entry_id"]] = (NAMEONLY,)
             n_no += 1

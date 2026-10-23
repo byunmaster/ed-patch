@@ -54,6 +54,11 @@ FMT = re.compile(r"[\x17\x1a\x1b]")
 _PUA_EXPORT = {"\ue003": " "}
 
 
+# 마스터 확정으로 문안이 갈리는 두 키 — 최빈 규칙을 적용하지 않고 종전 값(먼저 만난 쪽)을 유지한다.
+#   상점 「だね。どうも ありがとう」(가게마다 말투) · 보물상자 4창.
+_INTENDED_SPLIT = {"a00ede6f5de63402", "ff5c7322de758e6b"}
+
+
 def export_text(t):
     for k, v in _PUA_EXPORT.items():
         t = t.replace(k, v)
@@ -141,6 +146,7 @@ def collect():
     """{sha1: {"t": 문안, "n": 블록수, "fmt": 인자 있음}} · 평문 대조표"""
     era = A.scan()
     out, plain, split = {}, {}, 0
+    votes, first = {}, {}
     for path in sorted(glob.glob(os.path.join(ROOT, "script", "ED*SCN*.json"))):
         scn = os.path.basename(path)[:-5]
         jp_path = os.path.join(OUT_DIR, "scn_jp", f"{scn}.json")
@@ -163,14 +169,23 @@ def collect():
                 continue
             t = export_text(t)
             k = key(s)
-            if k in out and out[k]["t"] != t:
-                split += 1  # 같은 원문에 두 문안 — dupfill 이 놓친 자리
-                continue
-            e = out.setdefault(k, {"t": t, "n": 0})
-            e["n"] += 1
-            if FMT.search(t):
-                e["fmt"] = True
-            plain.setdefault(k, (s, t))
+            votes.setdefault(k, {})
+            votes[k][t] = votes[k].get(t, 0) + 1
+            first.setdefault(k, s)
+    # 🔴 **같은 원문에 문안이 둘이면 최빈 문안이 이긴다**(10-19 — 「먼저 만난 쪽」이 이기던 때 신부 「困ったことが…」
+    #    45블록 문안 대신 론도항구 이스터에그(n=1)가 사전에 올라, 이 사전을 그대로 읽은 새턴 신부 45블록이 전부 이스터에그가 됐다).
+    #    동수면 먼저 본(정렬 순서) 문안 — 결정적이다. 개별 자리는 각 플랫폼의 덮어쓰기(align_overrides 등)가 맡는다.
+    for k, c in votes.items():
+        best = max(c, key=lambda t: c[t])  # dict 는 삽입 순서 — 동수면 먼저 들어온 쪽
+        if k in _INTENDED_SPLIT:
+            best = next(iter(c))  # 마스터 확정 갈림은 종전대로(먼저 만난 쪽)
+        if len(c) > 1:
+            split += 1  # 같은 원문에 두 문안 — dupfill 이 놓친 자리
+        e = out.setdefault(k, {"t": best, "n": 0})
+        e["n"] = sum(c.values())
+        if FMT.search(best):
+            e["fmt"] = True
+        plain.setdefault(k, (first[k], best))
     _add_names(out, plain)
     return out, plain, split
 

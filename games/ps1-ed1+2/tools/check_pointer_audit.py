@@ -51,7 +51,8 @@ SYS_RESTORED_OK = {0x9A1F0, 0x9A478}
 # ④ 허용 겹침 — 위 머리말의 암묵 계약. (파일 오프셋 반열린 구간)
 ALLOWED_OVERLAP = {"ED.EXE": [(0x4EA0, 0x4EAB)], "ED2.EXE": []}
 # ④ 뒤 단계(훅·글리프·이름 복사·지명 복원)가 문안 패처가 쓴 바이트를 다시 바꾼 자리 — 지명 복원 2바이트씩이 전부다.
-ALLOWED_LATE_TOUCH = {"ED.EXE": 2, "ED2.EXE": 2}
+# + `patch_battle_frag_space` 가 수치 없는 조각 참조 하나의 addiu 하위 16비트(+1, 최대 2바이트)를 공백 뒤로 돌린다(ED2.EXE 1곳)
+ALLOWED_LATE_TOUCH = {"ED.EXE": 2, "ED2.EXE": 2 + 2}
 
 # 이미지가 이 파일들보다 오래되면 「안 쟀다」
 _SOURCE_GLOBS = ("patch_*.py", "reinsert_kr_pilot.py", "build.py", "hangul_map.py", "common.py")
@@ -105,6 +106,18 @@ def audit_refs(orig, final, expected):
             else:
                 bad.append((label, imm, exp, got))
     return total, ok, bad, noref
+
+
+def split_space_repoint(bad, allowed):
+    """불일치 중 **기대 문자열이 앞 공백으로 시작하고 실제가 그 공백 뒤**인 것(patch_battle_frag_space 의 수치 없는 참조)을 가른다.
+    개수가 `allowed`(EXPECT)를 넘으면 넘은 만큼은 설명 안 되는 불일치로 남긴다. 반환 (설명 안 되는 것, 공백 뒤 참조 수)."""
+    keep, n = [], 0
+    for label, imm, exp, got in bad:
+        if n < allowed and got is not None and exp[:1] == b" " and got == exp[1:]:
+            n += 1
+        else:
+            keep.append((label, imm, exp, got))
+    return keep, n
 
 
 def diff_offsets(a, b):
@@ -181,6 +194,13 @@ def _quiet_import(*names):
     return mods
 
 
+def _frag_expect():
+    """patch_battle_frag_space 가 공백 뒤로 돌리는 수치 없는 참조 수({EXE: n})."""
+    import patch_battle_frag_space as F
+
+    return F.EXPECT
+
+
 def run_pointer_audit(img):
     """반환 ([(이름, 항목, 포인터, 일치, 불일치목록, 참조0건)], ED2 시스템 위치 대조 불일치[(off, exp, got)])."""
     from common import extract
@@ -195,6 +215,8 @@ def run_pointer_audit(img):
         fit, over, _none = EB.plan()
     exp = [(("ED2전투", fo), PI.ram_of(fo), EB._enc(kr)) for fo, _jp, kr, _slot in fit + over]
     t, k, bad, nr = audit_refs(o2, f2, exp)
+    bad, sp = split_space_repoint(bad, _frag_expect()["ED2.EXE"])
+    k += sp  # 수치 없는 조각 참조는 공백 뒤를 가리키는 게 정상(patch_battle_frag_space)
     rows.append(("ED2.EXE 전투 문안", len(exp), t, k, bad, nr))
 
     # ED2.EXE 이름 구획
@@ -255,6 +277,8 @@ def run_pointer_audit(img):
         kr = PI.BATTLE_OFF_KR.get(fo) or PI.battle_kr(jp)
         exp.append((("ED1전투", fo), PI.ram_of(fo), PI.enc(kr)))
     t, k, bad, nr = audit_refs(o1, f1, exp)
+    bad, sp = split_space_repoint(bad, _frag_expect()["ED.EXE"])
+    k += sp
     rows.append(("ED.EXE 전투 코퍼스", len(exp), t, k, bad, nr))
     return rows, sys_bad
 

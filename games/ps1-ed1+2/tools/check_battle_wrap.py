@@ -22,6 +22,10 @@
 ⚠ **게이트가 아니다.** 꼬리가 짧아도 문장에 따라 자연스러운 자리가 있고, 무엇보다 고치려면
 문안을 줄여야 한다 — 사람이 판정한다. `%d` 가 든 조각은 숫자 자릿수가 가변이라 건너뛴다.
 
+✅ **10-21 모델 교정** — 줄바꿈 모델이 **어절 단위**(+ 매달기 훅의 30열째)로 바뀌었다(`_wrap`).
+옛 모델은 `폭 % 29` 로 글자 단위 꺾임을 가정해 「꼬리 1~2칼럼」 경고(실제로는 어절째 내려가 부호 혼자 안
+떨어지는 줄)를 과장해 셌다 — 아래 3건·14건 판정은 그 옛 모델 기준이다.
+
 ⚠ **지금 남은 3건은 「그대로 둔다」로 판정이 끝났다**(유저 확정 2026-08-17). 꼬리는 **잘리는
 게 아니라 다음 줄로 넘어갈 뿐**이고, 전투 로그는 워크슬롯(`0x800F1718`, stride 66)을 도는
 **흐르는 로그**라 줄이 하나 늘어도 잃는 게 없다. 잘림이 걸리는 건 창 줄 수가 고정된 SCN 대사
@@ -75,6 +79,48 @@ def _expand(line):
     return s
 
 
+HANG_TAIL = ".,!?"  # 온점 매달기 훅(patch_hang_punct)이 30열째를 여는 반각 꼬리 부호
+
+
+def _wrap(s):
+    """엔진 줄바꿈 모델 — **어절 단위**(공백에서 꺾는다) · 어절이 한 줄(29)보다 길 때만 글자 단위.
+
+    ⚠ 10-21 실측(test- 빌드, ED1 승리 문구): 30칼럼 「…아주 기쁘다.」가 **부호만 홀로 떨어지지
+    않고 「기쁘다.」 어절째** 다음 줄로 내려갔다(`sweep/hang-test/victory-30col-31col.png`).
+    옛 모델(`폭 % 29`)은 글자 단위로 꺾는다고 보고 「꼬리 1~2칼럼」을 과장해 셌다.
+    매달기 훅이 열어 주는 30열째(꼬리 부호)는 **어절 중간을 꺾을 때만** 쓰인다.
+    """
+    lines, cur = [], ""
+    for tok in s.split(" "):
+        while cols(tok) > COLS:  # 한 어절이 한 줄보다 길다 → 글자 단위
+            room, i, w = COLS, 0, 0
+            while i < len(tok) and w + cols(tok[i]) <= room:
+                w += cols(tok[i])
+                i += 1
+            if i < len(tok) and tok[i] in HANG_TAIL and i == len(tok) - 1:
+                i += 1  # 마지막 글자가 꼬리 부호면 30열째에 매단다
+            head, tok = tok[:i], tok[i:]
+            if cur:
+                lines.append(cur)
+                cur = ""
+            lines.append(head)
+            if not tok:
+                break
+        else:
+            if not cur:
+                cur = tok
+            elif cols(cur) + 1 + cols(tok) <= COLS:
+                cur += " " + tok
+            else:
+                lines.append(cur)
+                cur = tok
+            continue
+        cur = ""
+    if cur or not lines:
+        lines.append(cur)
+    return lines, None
+
+
 def scan(verbose=False):
     orig = P.extract(P.ED_LBA, P.ED_SIZE)
     seen, hits = set(), []
@@ -87,10 +133,12 @@ def scan(verbose=False):
             s = line.strip()
             if not s or "%d" in s:  # 숫자 자릿수가 가변이라 못 잰다
                 continue
-            w = cols(_expand(s))
-            tail = w % COLS
-            if w > COLS and 0 < tail <= TAIL_MIN:
-                hits.append((w, tail, _expand(s)))
+            e = _expand(s)
+            w = cols(e)
+            lines, mid = _wrap(e)
+            tail = cols(lines[-1])
+            if w > COLS and len(lines) > 1 and tail <= TAIL_MIN:
+                hits.append((w, tail, e))
     hits.sort(key=lambda h: (h[1], -h[0]))
     # ⚠ 요약은 **마지막에** — `check.sh` 가 각 검사기 출력을 `tail -3` 으로 줄여 보여준다.
     for w, tail, s in hits if verbose else hits[:3]:

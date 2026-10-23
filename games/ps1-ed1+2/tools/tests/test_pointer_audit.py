@@ -118,6 +118,17 @@ def test_baseline_signature_changes_when_the_final_string_changes():
     assert A.mon_signature(b"AB") == A.mon_signature(b"AB")
 
 
+def test_space_repoint_is_tolerated_only_up_to_expected_count():
+    exp = b" x"
+    one = [("l", 1, exp, b"x")]
+    keep, n = A.split_space_repoint(one, 1)
+    assert keep == [] and n == 1
+    keep, n = A.split_space_repoint(one + one, 1)  # 기대보다 많으면 넘은 것은 불일치로 남는다
+    assert len(keep) == 1 and n == 1
+    keep, n = A.split_space_repoint([("l", 1, b"x", b"y")], 1)  # 공백 뒤가 아니면 불일치
+    assert len(keep) == 1 and n == 0
+
+
 if __name__ == "__main__":
     import tempfile
 

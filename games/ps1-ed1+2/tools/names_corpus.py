@@ -87,6 +87,34 @@ def _blocks(R, scn):
             yield eid, raw[eid], cand
 
 
+_END_JP = re.compile(r"[。！？!?」』…･・]\s*$|[〜~]\s*$")
+_END_KR = re.compile(r"[.!?…」』~]\s*$")
+
+
+def _chain_pairs(scn, rows):
+    """끝이 열린 대사 블록(문장 부호로 안 끝남)이 다음 번호 블록과 이어지는 **문장 단위** 줄을 낸다."""
+    i = 0
+    while i < len(rows):
+        eid, jb, kb, kind = rows[i]
+        j = i
+        while (
+            j + 1 < len(rows)
+            and rows[j][3] == "dialog"
+            and rows[j][2] is not None
+            and not _END_JP.search(rows[j][1])
+            and not _END_KR.search(rows[j][2])
+            and rows[j + 1][0] == rows[j][0] + 1
+            and rows[j + 1][3] == "dialog"
+            and rows[j + 1][2] is not None
+        ):
+            j += 1
+        if j > i:
+            jp_join = "".join(r[1] for r in rows[i : j + 1])
+            kr_join = " ".join(r[2] for r in rows[i : j + 1])
+            yield f"{scn}:{eid}~{rows[j][0]}", jp_join, kr_join, "dialog"
+        i = j + 1
+
+
 def _scene_pairs():
     with _quiet():
         import reinsert_kr_pilot as R
@@ -97,6 +125,7 @@ def _scene_pairs():
             continue
         with open(path, encoding="utf-8") as f:
             script = json.load(f)
+        rows = []
         for eid, jp, cand in _blocks(R, scn):
             text = jp.decode("cp932", errors="replace")
             # 이름창 = `%c이름%c` 바로 뒤에 개행이 오는 것 — 창마다 하나씩 있고 블록 한복판에도 나온다(화자가 바뀐다).
@@ -128,6 +157,11 @@ def _scene_pairs():
                 else "dialog"
             )
             yield f"{scn}:{eid}", jb, ours_body, kind
+            rows.append((eid, jb, ours_body, kind))
+        # 🔴 이어진 문장 — 한 문장이 블록 둘 이상에 걸치면(chain·subs·`%c`) 블록 단위로만 재던 검사가 **이어진 자리**를 못 봤다
+        #   (이름·정본·인사 검사 셋 모두 — sfc-ed2 10-20). 끝이 문장 부호가 아닌 블록이 바로 다음 번호 블록으로 이어지면
+        #   그 둘을 한 줄로 이어 「원문 줄 · 우리 줄」 쌍을 더 낸다(원문은 붙여, 우리는 공백 하나로).
+        yield from _chain_pairs(scn, rows)
     if UNRENDERED:
         print(
             f"names_corpus: 화면 바이트로 못 그린 장면 블록 {len(UNRENDERED)} (script 문안으로 대신 잼)",

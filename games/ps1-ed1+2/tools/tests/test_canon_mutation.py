@@ -31,8 +31,12 @@ def _measured_battle(title):
 
 
 def _mutate(kr):
-    # 마지막 글자를 다른 글자로 — 정본 값과 안 맞게 한다
-    return kr[:-1] + ("뷁" if kr[-1] != "뷁" else "뷂")
+    # 끝 부호를 뺀 **마지막 글자**를 다른 글자로 — 정본 값과 안 맞게 한다.
+    # ⚠ 부호(.!?…)를 바꾸면 안 된다 — 정본 검사는 끝 부호 차이를 어긋남으로 안 친다(10-18 · 10-21 9edf26edf).
+    i = len(kr)
+    while i > 1 and kr[i - 1] in ".!?…。！？~ ":
+        i -= 1
+    return kr[: i - 1] + ("뷁" if kr[i - 1] != "뷁" else "뷂") + kr[i:]
 
 
 def test_synthetic_tagged_lines_are_measured():
