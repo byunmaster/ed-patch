@@ -32,8 +32,42 @@ run() {
   [ -f "$1" ] || return 0   # 글롭이 안 맞으면 패턴 그대로 들어온다
   printf '\n=== %s\n' "${1#"$ROOT"/}"
   ran=$((ran + 1))
-  "$PY" "$1" || fail=1
+  if grep -q "__main__" "$1"; then
+    "$PY" "$1" || fail=1
+  else
+    # 🔴 직접 실행 꼬리가 없는 파일은 그냥 돌리면 **정의만 하고 아무것도 안 돈 채 통과**한다
+    #   (10-20 실측: unittest 클래스만 있고 꼬리가 없는 파일 다섯이 몇 주째 「통과」였다).
+    #   꼬리에 기대지 않고 여기서 TestCase 와 맨 test_* 함수를 직접 모아 돌린다.
+    "$PY" "$RUNNER" "$1" || fail=1
+  fi
 }
+
+# `TEST_SHARED_ONLY=1` — 공용 테스트만(main 의 check.sh 가 쓴다: 게임 테스트는 따로 알림으로 돈다).
+#   ⚠ 읽고 바로 지운다 — 남겨 두면 test.sh 를 부르는 테스트(없는 게임 검사 등)까지 물려받는다.
+SHARED_ONLY=${TEST_SHARED_ONLY:-}
+unset TEST_SHARED_ONLY
+GAME_LIST=""
+[ "$SHARED_ONLY" = 1 ] || GAME_LIST=$(sh "$ROOT/scripts/check/which_game.sh" "$@")
+
+RUNNER=$(mktemp "${TMPDIR:-/tmp}/test-runner.XXXXXX.py")
+trap 'rm -f "$RUNNER"' EXIT
+cat > "$RUNNER" <<'EOF'
+import os, runpy, sys, unittest
+path = sys.argv[1]
+sys.path.insert(0, os.path.dirname(os.path.abspath(path)))
+ns = runpy.run_path(path, run_name="__test__")
+suite = unittest.TestSuite()
+for v in ns.values():
+    if isinstance(v, type) and issubclass(v, unittest.TestCase) and v.__module__ == "__test__":
+        suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(v))
+funcs = [v for k, v in ns.items() if k.startswith("test_") and callable(v) and not isinstance(v, type)]
+for f in funcs:
+    suite.addTest(unittest.FunctionTestCase(f))
+if suite.countTestCases() == 0:
+    print("❌ 테스트를 하나도 못 찾았다 — 이름이 test_* 인가?")
+    sys.exit(1)
+sys.exit(0 if unittest.TextTestRunner(verbosity=1).run(suite).wasSuccessful() else 1)
+EOF
 
 # ⚠ 목록을 손으로 들지 않는다 — **자리로** 찾는다. `scripts/*/tests/` 까지 보는 이유는
 #   테스트가 **검사 대상 옆**에 살기 때문이다(check/tests · 나중에 emu/tests …).
@@ -41,7 +75,7 @@ for t in "$ROOT"/scripts/*/tests/test_*.py "$ROOT"/shared/*/tests/test_*.py; do
   run "$t"
 done
 
-for g in $(sh "$ROOT/scripts/check/which_game.sh" "$@"); do
+for g in $GAME_LIST; do
   # 🔴 **없는 게임이면 실패다.** 글롭이 안 맞으면 `run` 이 조용히 넘어가서, 이름을 잘못
   #   유도한 채로 **「✅ 전부 통과」** 가 찍힌다 — 초록이 「깨끗하다」가 아니라 「아무도 안
   #   돌렸다」가 되는 자리다(2026-09-14, `game/<게임>-re` 워크트리 실측).

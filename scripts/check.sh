@@ -37,12 +37,31 @@ WHY=$(sh "$ROOT/scripts/check/which_game.sh" --why "$@")
 echo "── 단위·회귀 테스트 (공용 + $(echo "$GAMES" | tr '\n' ' '))"
 # 성공이면 조용히, 실패면 **무엇이** 틀렸는지 꼬리를 보인다 — 「❌ 테스트 실패」 한 줄로는
 #   다시 돌려 봐야 원인을 안다(pce 제보 2026-09-27).
-tout=$(sh "$ROOT/scripts/test.sh" $GAMES 2>&1) || {
-  echo "❌ 테스트 실패 — sh scripts/test.sh $(echo "$GAMES" | tr '\n' ' ')"
-  echo "$tout" | tail -20 | sed 's/^/     /'
-  exit 1
-}
-echo "  ✅ 통과"
+# 🔴 main(fallback)에서는 **공용 테스트만 막는다** — 게임 테스트는 돌려서 알림만 한다(마스터 10-21
+#   「정본변경이 확정되면 main에서 바꾸고 각 워커가 리베이스로 받아가야지」). main 에 머지돼 있는 게임
+#   데이터는 정본보다 늦을 수밖에 없다 — 정본을 먼저 바꾸면 그 게임 테스트(정본 대조·글리프 배정)가
+#   빨개지는 게 정상이고, 고치는 자리는 rebase 받은 **그 게임 브랜치**다(거기서는 실패로 막는다).
+if [ "$WHY" = "fallback" ]; then
+  tout=$(TEST_SHARED_ONLY=1 sh "$ROOT/scripts/test.sh" 2>&1) || {
+    echo "❌ 공용 테스트 실패 — TEST_SHARED_ONLY=1 sh scripts/test.sh"
+    echo "$tout" | tail -20 | sed 's/^/     /'
+    exit 1
+  }
+  echo "  ✅ 공용 통과"
+  for g in $GAMES; do
+    gout=$(sh "$ROOT/scripts/test.sh" "$g" 2>&1) || {
+      echo "  ⚠ [$g] 게임 테스트 실패(알림 — main 의 머지본이 정본보다 늦은 것일 수 있다, rebase 뒤 그 게임에서 고친다)"
+      echo "$gout" | grep -E "AssertionError|FAIL|Error" | head -3 | sed 's/^/       /'
+    }
+  done
+else
+  tout=$(sh "$ROOT/scripts/test.sh" $GAMES 2>&1) || {
+    echo "❌ 테스트 실패 — sh scripts/test.sh $(echo "$GAMES" | tr '\n' ' ')"
+    echo "$tout" | tail -20 | sed 's/^/     /'
+    exit 1
+  }
+  echo "  ✅ 통과"
+fi
 
 fail=0
 if [ "$WHY" = "fallback" ]; then
@@ -81,6 +100,17 @@ for g in $GAMES; do
   canon_out=$("$PY" "$ROOT/scripts/check/check_canon.py" --game "$g" 2>&1) || canon_rc=$?
   printf '%s\n' "$canon_out" | sed 's/^/  /'
   if [ "$canon_rc" -eq 1 ]; then fail=1; fi
+  # 인사 「これは」 직역 — 「이거 이거」·「이거 ○○ 왕자님」 이 우리 줄에 나가면 실패(rpg-translate 09-08 규칙,
+  # 마스터 10-20 「이거 이거 는 제발 좀 안나오게 하자」). 어댑터는 이름 검사와 같은 것.
+  greet_rc=0
+  greet_out=$("$PY" "$ROOT/scripts/check/check_greeting.py" --game "$g" 2>&1) || greet_rc=$?
+  printf '%s\n' "$greet_out" | sed 's/^/  /'
+  [ "$greet_rc" -eq 0 ] || fail=1
+  # 맞춤법 규칙 — 「-옵시다」 같은 비문은 실패, 한 단어를 띄운 꼴은 알림(문맥 확인 — 마스터 10-23).
+  sp_rc=0
+  sp_out=$("$PY" "$ROOT/scripts/check/check_spell_rules.py" --game "$g" 2>&1) || sp_rc=$?
+  printf '%s\n' "$sp_out" | sed 's/^/  /'
+  [ "$sp_rc" -eq 0 ] || fail=1
   # 저작권 — 긴 일본어 덩이(원문 문장)가 기준선보다 늘면 실패(래칫, 10-09 저작권 정리 라운드)
   cr_rc=0
   cr_out=$("$PY" "$ROOT/scripts/check/check_copyright.py" --game "$g" 2>&1) || cr_rc=$?
