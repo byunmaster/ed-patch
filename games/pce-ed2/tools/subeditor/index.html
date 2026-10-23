@@ -1,0 +1,548 @@
+<title>영웅전설 II 음성 자막 편집기</title>
+<style>
+/* 왼쪽: 256×232 게임 화면 크기의 자막 미리보기 + 재생·타임라인·예산 / 오른쪽: 쪽(대사)마다 문안·화자·열림·닫힘·쪽 나눔·코멘트. 색은 PC엔진 대사창의 남색에 맞췄다. */
+:root{
+  --bg:#eef0f6; --panel:#ffffff; --ink:#1b1e2c; --muted:#636a82; --line:#d5d9e6;
+  --accent:#34469a; --accent-soft:#dfe4f7; --edited:#23704f; --edited-soft:#d9efe3; --warn:#a4392d; --warn-soft:#f8e0dc;
+  --caution:#8a5a00; --caution-soft:#f6e6c8;
+  --now:#fff2cf; --note:#7a4d12; --note-soft:#f6e6c8; --reply:#1d5d8a; --reply-soft:#dcecf7;
+  --stage:#0b0b12; --pic:#2a2c3a; --band:#000; --sub:#ffffff; --sub-ol:#000000;
+  --tl-ok:#8aa0e8; --tl-bad:#e0675a; --tl-tr:#d9a300;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#12131c; --panel:#1b1d2a; --ink:#e8eaf4; --muted:#9aa1bb; --line:#33364a;
+    --accent:#9fb0ff; --accent-soft:#252c55; --edited:#7fd0a6; --edited-soft:#1b3328; --warn:#ee9488; --warn-soft:#3d2320;
+    --caution:#e8c27f; --caution-soft:#3a2f1a;
+    --now:#3a3420; --note:#e8c27f; --note-soft:#3a2f1a; --reply:#8cc4ee; --reply-soft:#1c3144;
+    --pic:#262838; --tl-ok:#6f86d6; --tl-bad:#ee8579; --tl-tr:#e2b52a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12131c; --panel:#1b1d2a; --ink:#e8eaf4; --muted:#9aa1bb; --line:#33364a;
+  --accent:#9fb0ff; --accent-soft:#252c55; --edited:#7fd0a6; --edited-soft:#1b3328; --warn:#ee9488; --warn-soft:#3d2320;
+  --caution:#e8c27f; --caution-soft:#3a2f1a;
+  --now:#3a3420; --note:#e8c27f; --note-soft:#3a2f1a; --reply:#8cc4ee; --reply-soft:#1c3144;
+  --pic:#262838; --tl-ok:#6f86d6; --tl-bad:#ee8579; --tl-tr:#e2b52a;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 "Pretendard","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;padding-left:max(0px,env(safe-area-inset-left,0px));padding-right:max(0px,env(safe-area-inset-right,0px))}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px}
+h1{font-size:17px;margin:0 0 8px;letter-spacing:-.01em;text-wrap:balance}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tab{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer;font-variant-numeric:tabular-nums}
+.tab[aria-current="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.tab .n{opacity:.7;margin-left:5px;font-size:11px}
+.tab .e{color:var(--edited);font-weight:700;margin-left:4px}
+.tab .c{color:var(--note);font-weight:700;margin-left:4px}
+.tab[aria-current="true"] .e,.tab[aria-current="true"] .c{color:var(--panel)}
+.status{font-size:12px;color:var(--muted);margin-top:6px}
+.status b{color:var(--ink)}
+main{display:grid;grid-template-columns:minmax(0,500px) minmax(0,1fr);gap:16px;padding:16px;max-width:1400px;margin:0 auto}
+.player{position:sticky;top:calc(env(safe-area-inset-top,0px) + 100px);align-self:start;display:grid;gap:8px;min-width:0}
+.stage-wrap{border-radius:8px;overflow:hidden;background:var(--stage);position:relative;aspect-ratio:256/232;width:100%}
+.stage{position:absolute;left:0;top:0;width:256px;height:232px;transform-origin:0 0;background:var(--pic);overflow:hidden}
+.stage .bar{position:absolute;left:0;right:0;background:var(--band)}
+.stage .ph{position:absolute;inset:0;display:grid;place-items:center;color:#69708f;font-size:12px}
+.sl{position:absolute;white-space:pre;font:12px/16px "Galmuri11","Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif;color:var(--sub);display:flex}
+.sl span{display:inline-block;overflow:visible;text-shadow:-1px 0 var(--sub-ol),1px 0 var(--sub-ol),0 -1px var(--sub-ol),0 1px var(--sub-ol),-1px -1px var(--sub-ol),1px -1px var(--sub-ol),-1px 1px var(--sub-ol),1px 1px var(--sub-ol)}
+.sl.over span{text-decoration:underline wavy #ff5a4a}
+.clock-on{position:absolute;right:4px;top:3px;font:10px/1 system-ui;color:#8d93b8;font-variant-numeric:tabular-nums}
+.transport{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.transport button,.transport select{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:4px 10px;cursor:pointer}
+.transport .play{min-width:72px;background:var(--accent);border-color:var(--accent);color:var(--panel);font-weight:700}
+.transport input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
+.transport .t{font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted);min-width:7.5em;text-align:right}
+.opt{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.tl{position:relative;height:44px;background:var(--panel);border:1px solid var(--line);border-radius:6px;cursor:pointer;overflow:hidden}
+.tl i{position:absolute;height:12px;border-radius:2px;background:var(--tl-ok);opacity:.9}
+.tl i.bad{background:var(--tl-bad)}
+.tl i.r0{top:4px}.tl i.r1{top:18px}
+.tl u{position:absolute;top:0;bottom:0;width:1px;background:var(--tl-tr);opacity:.8;text-decoration:none}
+.tl s{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);text-decoration:none}
+.tl .band{position:absolute;bottom:0;height:6px;background:var(--muted);opacity:.35}
+.tlkey{font-size:11px;color:var(--muted);display:flex;gap:12px;flex-wrap:wrap}
+.budget{display:grid;gap:4px;font-size:12px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.budget .b{display:grid;grid-template-columns:7.5em 1fr auto;gap:8px;align-items:center}
+.budget .bar2{height:7px;border-radius:4px;background:var(--line);overflow:hidden}
+.budget .bar2 span{display:block;height:100%;background:var(--accent)}
+.budget .b.over .bar2 span{background:var(--tl-bad)}
+.budget .b.over .v{color:var(--warn);font-weight:700}
+.budget .v{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.list{display:grid;gap:8px;min-width:0}
+.row{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:6px;min-width:0}
+.row.now{background:var(--now)}
+.row.edited{border-color:var(--edited);box-shadow:inset 3px 0 0 var(--edited)}
+.meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px}
+.time{font-variant-numeric:tabular-nums;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:5px;padding:2px 7px;font:inherit;font-size:12px;cursor:pointer}
+.idx{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+select{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:5px;padding:2px 4px;max-width:100%}
+.badge{font-size:11px;border-radius:4px;padding:1px 6px}
+.badge.edit{background:var(--edited-soft);color:var(--edited);font-weight:700}
+.badge.note{background:var(--note-soft);color:var(--note);font-weight:700}
+.revert{margin-left:auto;border:0;background:none;color:var(--muted);font:inherit;font-size:12px;cursor:pointer;text-decoration:underline}
+textarea{width:100%;font:inherit;font-size:15px;line-height:1.5;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--bg);color:var(--ink);resize:vertical;min-height:2.6em}
+textarea.cm{font-size:13px;min-height:2.2em;border-style:dashed}
+textarea.cm:not(:placeholder-shown){border-style:solid;border-color:var(--note)}
+.reply{font-size:13px;background:var(--reply-soft);color:var(--ink);border-radius:6px;padding:6px 9px;white-space:pre-wrap}
+.reply b{color:var(--reply)}
+.timing{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-size:12px;color:var(--muted)}
+.timing .grp{display:inline-flex;align-items:center;gap:4px}
+.timing input{width:5.8em;font:inherit;font-size:13px;font-variant-numeric:tabular-nums;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:5px;padding:2px 5px}
+.timing input.cuts{width:11em}
+.timing input.chg{border-color:var(--edited);color:var(--edited);font-weight:700}
+.timing button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:5px;padding:1px 6px;cursor:pointer}
+.issues{display:grid;gap:3px;font-size:12px}
+.issues div{border-radius:5px;padding:2px 8px}
+.issues .err{background:var(--warn-soft);color:var(--warn)}
+.issues .wrn{background:var(--caution-soft);color:var(--caution)}
+.issues .inf{background:var(--accent-soft);color:var(--ink)}
+.stt{font-size:12px;color:var(--muted);white-space:pre-wrap;font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic",system-ui,sans-serif}
+.stt b{font-family:"Pretendard","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;font-weight:700;color:var(--ink)}
+.orig{font-size:12px;color:var(--muted)}
+.orig s{opacity:.8}
+.pg{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.banner{margin:8px 16px 0;padding:8px 12px;border-radius:6px;background:var(--accent-soft);color:var(--ink);font-size:13px}
+.banner.warn{background:var(--note-soft)}
+@media (max-width:900px){main{grid-template-columns:1fr}.player{position:static}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+
+<header>
+  <h1>영웅전설 II · 음성 자막 편집기</h1>
+  <nav class="tabs" id="tabs" aria-label="구간"></nav>
+  <div class="status" id="status">불러오는 중…</div>
+</header>
+<p class="banner" id="banner" hidden></p>
+<p class="banner warn">문안의 <b>줄바꿈</b>은 자막의 줄 나눔이고, <b>|</b> 를 쓰면 쪽이 나뉩니다. 한 쪽은 한 화면에 한 번에 뜨는 덩이입니다. 시각은 음성 시작 기준 초입니다. 예산·줄 폭 경고는 편집기 안의 <b>근사 계산</b>이고, 최종 판정은 반영할 때 빌드 게이트가 합니다.</p>
+<main>
+  <section class="player">
+    <audio id="aud" preload="auto"></audio>
+    <div class="stage-wrap" id="swrap"><div class="stage" id="stage" aria-live="off"></div></div>
+    <div class="transport">
+      <button class="play" id="play" aria-label="재생">▶ 재생</button>
+      <input type="range" id="seek" min="0" max="100" step="0.05" value="0" aria-label="재생 위치">
+      <span class="t" id="clock">0:00.0 / 0:00.0</span>
+    </div>
+    <div class="transport">
+      <label class="opt">속도 <select id="rate"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option></select></label>
+      <label class="opt"><input type="checkbox" id="follow" checked> 재생 줄 따라가기</label>
+    </div>
+    <div class="tl" id="tl" aria-label="시각표"></div>
+    <div class="tlkey" id="tlkey"></div>
+    <div class="budget" id="budget"></div>
+    <p class="hint">위 화면은 입력한 문안·시각대로 그린 256×232 미리보기입니다. 글꼴·배경 그림은 실제 게임과 다릅니다. 닫는 시각은 음성 끝에서 0.5초 더 두는 규칙까지 적용해 그립니다. 줄의 시각 버튼을 누르면 1초 앞에서 재생합니다. 음성은 디스크 음성을 낮은 음질로 줄인 것입니다.</p>
+  </section>
+  <section class="list" id="list" aria-live="polite"></section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const r2 = x => Math.round(x * 100) / 100;
+const fmt = t => { t = Math.max(0, t || 0); const m = Math.floor(t / 60), s = (t % 60).toFixed(1).padStart(4, "0"); return `${m}:${s}`; };
+const FIELDS = ["kr", "spk", "ts", "te", "cuts", "comment"];
+let D = null, C = {}, ROWS = [], BYCLIP = new Map(), BYKEY = new Map();
+let edits = {}, replies = {}, db = null, clip = "open";
+const key = d => `${d.clip}-${d.idx}`;
+const SPEAKERS = ["", "나레이션", "아트라스", "플로라", "란도", "프레이아", "세리오스", "디나"];
+
+/* ── 조판·예산 계산(빌드 opening_sub.py / ending_sub.py 와 같은 식의 근사) ── */
+const adv = ch => ch.codePointAt(0) < 0x1100 ? C.ADV_LATIN : C.CELL;
+const textW = s => { let w = 0; for (const ch of s) w += adv(ch); return w; };
+const centerW = s => textW(s.replace(/[.,…]+$/, "")) + 2;
+function wrapWords(text, cap) {
+  const lines = []; let cur = "";
+  for (const w of text.split(" ")) {
+    const t = cur ? `${cur} ${w}` : w;
+    if (textW(t) + 2 > cap && cur) { lines.push(cur); cur = w; } else cur = t;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function splitPages(text) {
+  if (text.includes("|") || text.includes("\n")) return text.split("|").map(p => p.split("\n"));
+  const ls = wrapWords(text, C.LINE_CAP), out = [];
+  for (let i = 0; i < ls.length; i += 2) out.push(ls.slice(i, i + 2));
+  return out;
+}
+const INK_PUNCT = 3;
+function lineCells(line) {
+  const w = textW(line) + 2, nc = Math.ceil(w / 16), slots = new Array(nc).fill(0);
+  let x = 1;
+  for (const ch of line) { // 글자 잉크는 칸 전체가 아니다 — 쉼표·마침표 등 반각 부호는 왼쪽 3px 안쪽에만 찍힌다(빌드 셀 수와 대조해 맞춤)
+    const a = adv(ch), ink = ch === " " ? 0 : a === C.ADV_LATIN && /[.,!?:;'"]/.test(ch) ? INK_PUNCT : a;
+    if (ink) for (let i = Math.floor(x / 16); i <= Math.floor((x + ink - 1) / 16) && i < nc; i++) slots[i] = 1;
+    x += a; }
+  let cells = 0;
+  for (let k = 0; k < nc; k += 2) if (slots[k] || slots[k + 1]) cells += 2;
+  return cells;
+}
+const pageCells = lines => lines.reduce((a, l) => a + lineCells(l), 0);
+const inBand = t => C.BAND.some(([a, b]) => a <= t && t <= b);
+const endTime = t1 => {
+  const end = t1 + C.END_HOLD / C.FPS;
+  for (const t of C.TRANSITIONS) if (t1 < t && t <= end + C.CUT_GUARD) return t - C.CUT_GUARD;
+  return end;
+};
+
+const defaults = d => ({ kr: d.sub.text, spk: d.sub.speaker || (d.clip === "open" ? "나레이션" : ""), ts: d.sub.t0, te: d.sub.t1, cuts: d.sub.cuts || [], comment: "" });
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function cur(d) {
+  const e = edits[key(d)] || {}, c = defaults(d), base = defaults(d);
+  for (const f of FIELDS) if (e[f] !== undefined) c[f] = e[f];
+  c.edited = ["kr", "spk", "ts", "te", "cuts"].some(f => e[f] !== undefined && !same(e[f], base[f]));
+  c.noted = !!(e.comment && e.comment.trim());
+  c.reply = replies[key(d)] || "";
+  return c;
+}
+/* 한 행(대본 한 항목) → 쪽 목록 [{t0,t1,lines,k,cells}] — 쪽 시각은 cuts 가 있으면 그것, 없으면 글자 수 비례 */
+function pagesOf(d, c) {
+  const pgs = splitPages(c.kr.replace(/\n+$/, "")), n = pgs.length;
+  const wts = pgs.map(p => p.reduce((a, l) => a + [...l].length, 0)), tot = wts.reduce((a, b) => a + b, 0) || 1;
+  const cuts = c.cuts && c.cuts.length === n - 1 && n > 1 ? c.cuts : null;
+  const starts = cuts ? [c.ts, ...cuts, c.te] : null;
+  const out = []; let t = c.ts;
+  const same0 = c.kr === d.sub.text && n === d.cells0.length;
+  pgs.forEach((lines, k) => {
+    const t0 = cuts ? starts[k] : t, dur = cuts ? starts[k + 1] - starts[k] : (c.te - c.ts) * wts[k] / tot;
+    out.push({ t0, t1: t0 + dur, lines, k, cells: same0 ? d.cells0[k] : pageCells(lines) });
+    t += dur;
+  });
+  return out;
+}
+/* 구간 전체 쪽 목록(시간순) — 닫는 시각·미리보기·경고의 공통 입력 */
+function allPages(cl) {
+  const out = [];
+  for (const d of BYCLIP.get(cl)) {
+    const c = cur(d);
+    for (const p of pagesOf(d, c)) out.push({ ...p, d, c, group: d.sub.group, lay: d.sub.lay, top: (d.sub.top || []).includes(p.k) });
+  }
+  out.sort((a, b) => a.t0 - b.t0);
+  out.forEach((p, i) => { p.next = out[i + 1] || null; });
+  for (const p of out) p.vend = visibleEnd(cl, p);
+  return out;
+}
+function visibleEnd(cl, p) {
+  const nxt = p.next ? p.next.t0 : null;
+  if (cl === "open") {
+    let end = p.t1 + C.END_HOLD / C.FPS;
+    if (p.group != null) { // 별하늘 묶음: 같은 묶음의 마지막 쪽이 닫힐 때 같이 지운다
+      let q = p; while (q.next && q.next.group === p.group) q = q.next;
+      end = q.t1 + C.END_HOLD / C.FPS; return end;
+    }
+    return nxt !== null && !(end < nxt - 12 / C.FPS) ? nxt : end;
+  }
+  const end = endTime(p.t1);
+  return nxt !== null && !(end < nxt - (C.UPLOAD_LEAD_END + 2) / C.FPS) ? nxt : end;
+}
+const capOf = p => p.d.clip === "open" ? C.LINE_CAP : (p.top ? C.TOP_CAP : inBand((p.t0 + p.t1) / 2) ? C.BAND_CAP : C.END_LINE_CAP);
+
+/* ── 경고 ── */
+function issues(d, c, pages) {
+  const out = [], add = (lv, m) => out.push([lv, m]);
+  if (!(c.te > c.ts)) add("err", "닫힘이 열림보다 앞섭니다.");
+  const base = defaults(d);
+  if (c.kr !== base.kr || !same(c.cuts, base.cuts)) {
+    const n = pages.length, nb = d.cells0.length;
+    if (c.cuts.length && c.cuts.length !== n - 1) add("err", `쪽 나눔 시각이 ${c.cuts.length}개인데 쪽은 ${n}개입니다. ${n - 1}개가 필요합니다(비우면 글자 수 비례).`);
+    if (d.clip === "end" && n !== nb) add("err", `쪽 수가 ${nb} → ${n} 로 바뀝니다. 대관식은 쪽마다 VRAM 자리를 에뮬 스냅샷으로 배정해 두어서(ending_vram.json), 쪽 수가 바뀌면 배정을 새로 만들어야 합니다. 반영 때 별도 작업이 듭니다.`);
+  }
+  pages.forEach(p => {
+    const tag = pages.length > 1 ? `${p.k + 1}쪽: ` : "";
+    const grouped = d.clip === "open" && d.sub.group != null;
+    const cap = capOf({ d, top: (d.sub.top || []).includes(p.k), t0: p.t0, t1: p.t1 });
+    p.lines.forEach((l, i) => { const w = textW(l) + 2; if (w > cap) add("err", `${tag}${i + 1}줄이 너무 깁니다(${w}px, 한도 ${cap}px).`); });
+    if (p.lines.length > 3) add("err", `${tag}줄이 ${p.lines.length}줄입니다(최대 3).`);
+    else if (p.lines.length === 3 && !grouped) add("inf", `${tag}세 줄 쪽은 줄 간격이 좁아집니다.`);
+    if (!grouped) {
+      if (d.clip === "open") {
+        if (p.cells > C.OPEN_BUF[0]) add("err", `${tag}셀 ${p.cells}개(한 쪽 상한 ${C.OPEN_BUF[0]}).`);
+        else if (p.cells > C.OPEN_BUF[1]) add("wrn", `${tag}셀 ${p.cells}개 — ${C.OPEN_BUF[1]}개를 넘는 쪽은 짝수 번째 쪽에만 둘 수 있습니다.`);
+        if (Math.floor(p.cells / 2) > C.OPEN_SLOTS) add("err", `${tag}스프라이트 ${p.cells / 2}개(슬롯 ${C.OPEN_SLOTS}).`);
+      } else {
+        if (p.cells > C.END_BUF) add("err", `${tag}셀 ${p.cells}개(한 쪽 상한 ${C.END_BUF}).`);
+        if ((p.cells + 1) >> 1 > C.END_SLOTS) add("err", `${tag}스프라이트 ${(p.cells + 1) >> 1}개(슬롯 ${C.END_SLOTS}).`);
+      }
+    }
+    const chars = p.lines.join("").replace(/\s/g, "").length, dur = p.t1 - p.t0;
+    if (dur > 0 && chars / dur > 6.5) add("wrn", `${tag}읽는 속도 ${(chars / dur).toFixed(1)}자/초(기준 6자/초) — 너무 빠를 수 있습니다.`);
+    if (dur < 0.4) add("wrn", `${tag}길이 ${dur.toFixed(2)}초로 짧습니다.`);
+    if (d.clip === "end") for (const T of C.TRANSITIONS) if (p.t0 < T - 0.02 && T < p.t1) { add("err", `${tag}장면 전환 ${T}초를 가로지릅니다. 전환 앞에서 쪽을 나누세요(자막은 전환을 넘어 이어지지 않습니다).`); break; }
+  });
+  return out;
+}
+
+/* ── 예산 ── */
+function budgets() {
+  const o = allPages("open").filter(p => p.group == null), e = allPages("end");
+  const oc = BYCLIP.get("open").reduce((a, d) => a + (d.sub.group != null ? 0 : pagesOf(d, cur(d)).reduce((s, p) => s + p.cells, 0)), 0);
+  const oc0 = BYCLIP.get("open").reduce((a, d) => a + (d.sub.group != null ? 0 : d.cells0.reduce((s, v) => s + v, 0)), 0);
+  const calc = rows => {
+    let P = 0, rec = 0, cells = 0;
+    const ps = [];
+    for (const d of rows) for (const p of pagesOf(d, cur(d))) { ps.push(p); }
+    ps.sort((a, b) => a.t0 - b.t0);
+    ps.forEach((p, i) => { P++; rec += 6 + 4 * ((p.cells + 1) >> 1); cells += p.cells; p.nx = ps[i + 1] || null; });
+    let ev = 1;
+    ps.forEach(p => { ev += 2; const end = endTime(p.t1), nx = p.nx ? p.nx.t0 : null; if (nx === null || end < nx - (C.UPLOAD_LEAD_END + 2) / C.FPS) ev++; });
+    return { bytes: 2 * P + rec + 5 * ev, P, ev, cells };
+  };
+  const rows = BYCLIP.get("end");
+  const now = calc(rows);
+  // 기준: 편집 없는 상태의 같은 식 값
+  const saved = edits; edits = {}; const orig = calc(rows); edits = saved;
+  const module = C.END_MODULE0 + (now.bytes - orig.bytes);
+  const blob = C.END_BLOB0 + (now.cells - orig.cells) * 64;
+  return [
+    { label: "오프닝 셀 합", v: oc, max: Math.max(C.OPEN_CELLS0, oc), txt: `${oc} (현재 빌드 ${C.OPEN_CELLS0})`, over: false, note: "별하늘 묶음 제외 합. 총합 상한은 없고 쪽당 상한이 있습니다." },
+    { label: "대관식 코드·표", v: module, max: C.END_MODULE_MAX, txt: `${module} / ${C.END_MODULE_MAX} B`, over: module > C.END_MODULE_MAX },
+    { label: "대관식 셀 데이터", v: blob, max: C.END_DATA_MAX, txt: `${blob} / ${C.END_DATA_MAX} B`, over: blob > C.END_DATA_MAX },
+    { label: "대관식 쪽 수", v: now.P, max: C.END_PAGES0, txt: `${now.P} (현재 ${C.END_PAGES0})`, over: now.P !== C.END_PAGES0 },
+  ];
+}
+function renderBudget() {
+  $("budget").innerHTML = budgets().map(b => `<div class="b${b.over ? " over" : ""}"><span>${b.label}</span><div class="bar2"><span style="width:${Math.min(100, 100 * b.v / b.max)}%"></span></div><span class="v">${b.txt}</span></div>`).join("");
+}
+
+/* ── 탭·행 ── */
+const rowsOf = cl => BYCLIP.get(cl) || [];
+function renderTabs() {
+  $("tabs").innerHTML = D.clips.map(k => {
+    const rows = rowsOf(k.clip), e = rows.filter(d => cur(d).edited).length, n = rows.filter(d => cur(d).noted).length;
+    return `<button class="tab" aria-current="${k.clip === clip}" data-c="${k.clip}">${esc(k.title)}<span class="n">${rows.length}쪽</span>${e ? `<span class="e">✎${e}</span>` : ""}${n ? `<span class="c">💬${n}</span>` : ""}</button>`;
+  }).join("");
+  const all = ROWS.map(cur), te = all.filter(c => c.edited).length, tn = all.filter(c => c.noted).length;
+  $("status").innerHTML = `고친 항목 <b>${te}</b> · 코멘트 <b>${tn}</b> · 전체 ${ROWS.length}항목${db ? " · 저장됨(공유)" : ""}`;
+}
+function spkSelect(c) {
+  const names = [...SPEAKERS]; if (c.spk && !names.includes(c.spk)) names.push(c.spk);
+  return `<label>화자 <select data-k="spk">${names.map(n => `<option value="${esc(n)}"${n === c.spk ? " selected" : ""}>${n || "(미정)"}</option>`).join("")}<option value="__custom">직접 입력…</option></select></label>`;
+}
+function timing(d, c) {
+  const e = edits[key(d)] || {}, base = defaults(d);
+  const cs = e.ts !== undefined && e.ts !== base.ts, ce = e.te !== undefined && e.te !== base.te, cc = e.cuts !== undefined && !same(e.cuts, base.cuts);
+  return `<div class="timing">
+    <span class="grp">열림 <input type="number" step="0.05" min="0" data-t="ts" value="${c.ts}" class="${cs ? "chg" : ""}" aria-label="열림 시각(초)">
+      <button data-nudge="ts:-0.1" title="0.1초 앞">−</button><button data-nudge="ts:0.1" title="0.1초 뒤">+</button><button data-now="ts" title="재생 위치를 열림 시각으로">지금</button></span>
+    <span class="grp">닫힘 <input type="number" step="0.05" min="0" data-t="te" value="${c.te}" class="${ce ? "chg" : ""}" aria-label="닫힘 시각(초, 음성 끝)">
+      <button data-nudge="te:-0.1" title="0.1초 앞">−</button><button data-nudge="te:0.1" title="0.1초 뒤">+</button><button data-now="te" title="재생 위치를 닫힘 시각으로">지금</button></span>
+    <span class="grp">쪽 나눔 <input class="cuts ${cc ? "chg" : ""}" type="text" inputmode="decimal" data-cuts value="${esc((c.cuts || []).join(", "))}" placeholder="비움=글자 수 비례" aria-label="쪽 나눔 시각(초, 쉼표로 구분)"><button data-cutnow title="재생 위치를 쪽 나눔 시각에 더하기">지금 추가</button></span>
+    <span>길이 ${(c.te - c.ts).toFixed(2)}초</span></div>`;
+}
+function wordsNear(c) {
+  if (clip !== "open") return "";
+  const ws = D.words.filter(w => w.t1 >= c.ts - 0.5 && w.t0 <= c.te + 0.5);
+  return ws.length ? `<div class="stt"><b>받아쓰기</b> ${ws.map(w => `${w.t0.toFixed(1)}~${w.t1.toFixed(1)} ${esc(w.w)}`).join("\n")}</div>` : "";
+}
+function renderList() {
+  $("list").innerHTML = rowsOf(clip).map(d => {
+    const c = cur(d), base = defaults(d), pages = pagesOf(d, c), iss = issues(d, c, pages);
+    const pg = pages.map(p => `${p.k + 1}쪽 ${p.t0.toFixed(2)}~${p.t1.toFixed(2)}초 · 셀 ${d.sub.group != null ? "BG" : p.cells}`).join("  |  ");
+    return `<article class="row${c.edited ? " edited" : ""}" data-key="${key(d)}">
+      <div class="meta">
+        <button class="time" data-seek="${c.ts}" title="1초 앞에서 재생">${fmt(c.ts)}</button>
+        <span class="idx">#${d.idx + 1}${d.sub.group != null ? " · 별하늘" : ""}</span>${spkSelect(c)}
+        ${c.edited ? `<span class="badge edit">수정됨</span>` : ""}${c.noted ? `<span class="badge note">코멘트</span>` : ""}
+        ${c.edited || c.noted ? `<button class="revert">되돌리기</button>` : ""}
+      </div>
+      <textarea rows="${Math.max(2, c.kr.split("\n").length)}" aria-label="자막" data-f="kr">${esc(c.kr)}</textarea>
+      ${c.kr !== base.kr ? `<div class="orig">원래: <s>${esc(base.kr).replace(/\n/g, " ⏎ ")}</s></div>` : ""}
+      ${c.spk !== base.spk ? `<div class="orig">원래 화자: <s>${esc(base.spk || "—")}</s></div>` : ""}
+      ${wordsNear(c)}
+      ${timing(d, c)}
+      <div class="pg">${pg}</div>
+      <div class="issues">${iss.map(([lv, m]) => `<div class="${lv === "err" ? "err" : lv === "wrn" ? "wrn" : "inf"}">${esc(m)}</div>`).join("")}</div>
+      <textarea class="cm" rows="1" data-f="comment" placeholder="이 항목에 대한 코멘트 (워커가 읽고 아래에 답합니다)" aria-label="코멘트">${esc(c.comment)}</textarea>
+      ${c.reply ? `<div class="reply"><b>워커 답변</b> ${esc(c.reply)}</div>` : ""}
+    </article>`;
+  }).join("");
+  const a = $("aud"), src = `audio/${clip}.mp3`;
+  if (!a.src.endsWith(src)) { a.src = src; a.playbackRate = +$("rate").value; }
+  renderTimeline(); renderBudget(); drawStage();
+}
+
+/* ── 저장 ── */
+const timers = {};
+function save(d, patch) {
+  const k = key(d), base = defaults(d);
+  const next = { ...(edits[k] || {}), ...patch };
+  for (const f of FIELDS) if (next[f] !== undefined && (same(next[f], base[f]) || (f === "comment" && !next[f]))) delete next[f];
+  const empty = Object.keys(next).length === 0;
+  if (empty) delete edits[k]; else edits[k] = next;
+  clearTimeout(timers[k]);
+  timers[k] = setTimeout(async () => {
+    if (!db) return;
+    try {
+      if (empty) { if (!replies[k]) await db.doc(`edits/${k}`).delete(); else await db.doc(`edits/${k}`).set({ clip: d.clip, idx: d.idx, reply: replies[k], at: new Date().toISOString() }); }
+      else await db.doc(`edits/${k}`).set({ clip: d.clip, idx: d.idx, ...next, ...(replies[k] ? { reply: replies[k] } : {}), at: new Date().toISOString() });
+    } catch (e) { $("banner").hidden = false; $("banner").textContent = `저장하지 못했습니다(${e.code || "오류"}). 잠시 뒤 다시 고쳐 주세요.`; }
+  }, 500);
+  renderTabs();
+}
+
+/* ── 미리보기 ── */
+const aud = $("aud");
+function activePages(t) {
+  const ps = allPages(clip), hit = ps.filter(p => t >= p.t0 && t < p.vend);
+  if (!hit.length) return [];
+  const last = hit[hit.length - 1];
+  if (last.group != null) return hit.filter(p => p.group === last.group); // 별하늘 묶음은 쌓인다
+  return [last];
+}
+function lineY(clipId, p, n, i, single, band) {
+  if (p.lay === "top" || p.group != null) return 44 + i * 18;
+  if (p.top) return 16 + i * 18;
+  if (n >= 3) return clipId === "end" ? 187 - 18 * (n - 2) + i * 18 : 184 + i * 16;
+  const single1 = clipId === "end" ? (n === 1 && !band ? 18 : 0) : 0;
+  return 187 + single1 + i * 18;
+}
+let lastSig = "";
+function drawStage() {
+  const t = aud.currentTime || 0, st = $("stage");
+  const act = activePages(t);
+  const band = clip === "end" && inBand(t);
+  const sig = act.map(p => `${p.d.idx}.${p.k}.${p.lines.join("/")}`).join("|") + (band ? "b" : "");
+  if (sig !== lastSig) {
+    lastSig = sig;
+    let h = `<div class="ph">${clip === "end" ? "대관식 장면(그림 없음)" : "오프닝 슬라이드(그림 없음)"}</div>`;
+    if (band) h += `<div class="bar" style="top:0;height:55px"></div><div class="bar" style="top:183px;height:49px"></div>`;
+    else if (clip === "open") h += `<div class="bar" style="top:184px;height:48px"></div>`;
+    for (const p of act) {
+      const isGroup = p.group != null;
+      p.lines.forEach((l, i) => {
+        const n = p.lines.length, y = lineY(clip, p, n, i, n === 1, band);
+        const x = Math.max(0, Math.round(((clip === "open" && !isGroup ? 124 : 128) * 2 - centerW(l)) / 2));
+        const over = textW(l) + 2 > capOf(p);
+        h += `<div class="sl${over ? " over" : ""}" style="left:${x}px;top:${y}px">${[...l].map(ch => `<span style="width:${adv(ch)}px">${ch === " " ? "&nbsp;" : esc(ch)}</span>`).join("")}</div>`;
+      });
+    }
+    h += `<div class="clock-on" id="ck"></div>`;
+    st.innerHTML = h;
+  }
+  const ck = st.querySelector("#ck"); if (ck) ck.textContent = `${t.toFixed(2)}초`;
+  const dur = isFinite(aud.duration) ? aud.duration : 0;
+  $("clock").textContent = `${fmt(t)} / ${fmt(dur)}`;
+  const sk = $("seek"); if (document.activeElement !== sk) { sk.max = dur || 100; sk.value = t; }
+  const tl = document.querySelector("#tl s"); if (tl && dur) tl.style.left = `${100 * t / dur}%`;
+  const ky = act.length ? key(act[act.length - 1].d) : null;
+  for (const row of document.querySelectorAll(".row")) {
+    const on = row.dataset.key === ky;
+    if (on !== row.classList.contains("now")) { row.classList.toggle("now", on); if (on && $("follow").checked && !aud.paused) row.scrollIntoView({ block: "center", behavior: "smooth" }); }
+  }
+}
+function fitStage() { const w = $("swrap").clientWidth; $("stage").style.transform = `scale(${w / 256})`; }
+new ResizeObserver(fitStage).observe($("swrap"));
+function renderTimeline() {
+  const ps = allPages(clip), dur = isFinite(aud.duration) && aud.duration > 0 ? aud.duration : (clip === "open" ? 143 : 301);
+  let h = "";
+  if (clip === "end") {
+    for (const [a, b] of C.BAND) h += `<div class="band" style="left:${100 * a / dur}%;width:${100 * (b - a) / dur}%"></div>`;
+    for (const T of C.TRANSITIONS) h += `<u style="left:${100 * T / dur}%"></u>`;
+  }
+  ps.forEach((p, i) => {
+    const bad = clip === "end" && C.TRANSITIONS.some(T => p.t0 < T - 0.02 && T < p.t1);
+    h += `<i class="r${i % 2}${bad ? " bad" : ""}" style="left:${100 * p.t0 / dur}%;width:${Math.max(0.3, 100 * (p.vend - p.t0) / dur)}%" title="${esc(p.lines.join(" / "))}"></i>`;
+  });
+  h += `<s style="left:0"></s>`;
+  $("tl").innerHTML = h;
+  $("tlkey").innerHTML = `<span>막대 = 쪽이 화면에 있는 구간</span>${clip === "end" ? `<span style="color:var(--tl-tr)">│ 장면 전환</span><span>회색 띠 = 세피아 레터박스</span><span style="color:var(--tl-bad)">붉은 막대 = 전환 가로지름</span>` : ""}`;
+}
+$("tl").addEventListener("click", e => {
+  const r = $("tl").getBoundingClientRect(), dur = isFinite(aud.duration) ? aud.duration : 0;
+  if (dur) { aud.currentTime = dur * (e.clientX - r.left) / r.width; drawStage(); }
+});
+let raf = 0;
+function loop() { drawStage(); raf = aud.paused ? 0 : requestAnimationFrame(loop); }
+aud.addEventListener("play", () => { $("play").textContent = "❚❚ 멈춤"; if (!raf) raf = requestAnimationFrame(loop); });
+aud.addEventListener("pause", () => { $("play").textContent = "▶ 재생"; drawStage(); });
+aud.addEventListener("ended", () => { $("play").textContent = "▶ 재생"; });
+aud.addEventListener("loadedmetadata", () => { renderTimeline(); });
+for (const ev of ["seeked", "timeupdate", "durationchange"]) aud.addEventListener(ev, () => { if (aud.paused) drawStage(); });
+$("play").addEventListener("click", () => { if (aud.paused) aud.play().catch(() => {}); else aud.pause(); });
+$("seek").addEventListener("input", e => { aud.currentTime = +e.target.value; drawStage(); });
+$("rate").addEventListener("change", e => { aud.playbackRate = +e.target.value; });
+function playFrom(t) { aud.currentTime = Math.max(0, t); aud.play().catch(() => {}); }
+
+/* ── 목록 조작 ── */
+$("tabs").addEventListener("click", e => {
+  const b = e.target.closest(".tab"); if (!b) return;
+  clip = b.dataset.c; try { localStorage.setItem("se-clip", clip); } catch (_) {}
+  aud.pause(); lastSig = ""; renderTabs(); renderList(); window.scrollTo({ top: 0 });
+});
+const rowOf = el => { const row = el.closest(".row"); return row && { row, d: BYKEY.get(row.dataset.key) }; };
+function setTime(d, f, v) {
+  const c = cur(d); v = r2(Math.max(0, v));
+  if (f === "ts" && v >= c.te) { save(d, { ts: v, te: r2(v + (c.te - c.ts)) }); lastSig = ""; renderList(); return; }
+  if (f === "te" && v <= c.ts) v = r2(c.ts + 0.1);
+  save(d, { [f]: v }); lastSig = ""; renderList();
+}
+$("list").addEventListener("click", e => {
+  const r = rowOf(e.target); if (!r) return; const { d } = r;
+  const sk = e.target.closest("[data-seek]"); if (sk) playFrom(+sk.dataset.seek - 1);
+  const nd = e.target.closest("[data-nudge]"); if (nd) { const [f, dl] = nd.dataset.nudge.split(":"); setTime(d, f, cur(d)[f] + +dl); }
+  const nw = e.target.closest("[data-now]"); if (nw) setTime(d, nw.dataset.now, aud.currentTime);
+  if (e.target.closest("[data-cutnow]")) { const c = cur(d), v = r2(aud.currentTime); save(d, { cuts: [...(c.cuts || []), v].sort((a, b) => a - b) }); lastSig = ""; renderList(); }
+  if (e.target.closest(".revert")) { delete edits[key(d)]; save(d, {}); lastSig = ""; renderList(); }
+});
+$("list").addEventListener("change", e => {
+  const r = rowOf(e.target); if (!r) return; const { d } = r;
+  if (e.target.dataset.k === "spk") {
+    const v = e.target.value;
+    if (v === "__custom") {
+      const lab = e.target.closest("label");
+      lab.innerHTML = `화자 <input type="text" data-k="spkname" placeholder="이름 입력 후 Enter" aria-label="화자 이름" style="width:9em;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);padding:2px 5px">`;
+      lab.querySelector("input").focus(); return;
+    }
+    save(d, { spk: v }); renderList();
+  } else if (e.target.dataset.k === "spkname") {
+    const nm = e.target.value.trim(); if (!nm) { renderList(); return; }
+    save(d, { spk: nm }); renderList();
+  } else if (e.target.dataset.t) {
+    const v = parseFloat(e.target.value); if (!isFinite(v)) { renderList(); return; }
+    setTime(d, e.target.dataset.t, v);
+  } else if ("cuts" in e.target.dataset) {
+    const vs = e.target.value.split(/[,\s]+/).filter(Boolean).map(Number);
+    if (vs.some(v => !isFinite(v))) { renderList(); return; }
+    save(d, { cuts: vs.map(r2).sort((a, b) => a - b) }); lastSig = ""; renderList();
+  }
+});
+$("list").addEventListener("input", e => {
+  if (e.target.tagName !== "TEXTAREA") return;
+  const r = rowOf(e.target); if (!r) return;
+  save(r.d, { [e.target.dataset.f]: e.target.value });
+  r.row.classList.toggle("edited", cur(r.d).edited);
+  if (e.target.dataset.f === "kr") { lastSig = ""; renderBudget(); renderTimeline(); drawStage(); }
+});
+$("list").addEventListener("blur", e => { if (e.target.tagName === "TEXTAREA") { lastSig = ""; renderList(); } }, true);
+
+async function boot() {
+  try { D = await (await fetch("data.json")).json(); }
+  catch (e) { $("status").textContent = "자료를 불러오지 못했습니다."; return; }
+  C = D.consts; ROWS = D.rows;
+  for (const d of ROWS) { if (!BYCLIP.has(d.clip)) BYCLIP.set(d.clip, []); BYCLIP.get(d.clip).push(d); BYKEY.set(key(d), d); }
+  for (const l of BYCLIP.values()) l.sort((a, b) => a.idx - b.idx);
+  try { const s = localStorage.getItem("se-clip"); if (s && BYCLIP.has(s)) clip = s; } catch (_) {}
+  fitStage(); renderTabs(); renderList();
+  const c = window.claude && await window.claude.use("db");
+  if (!c) { $("banner").hidden = false; $("banner").textContent = "이 화면에서는 저장소에 연결하지 못해 고친 값이 저장되지 않습니다. claude.ai 에서 로그인한 채로 열어 주세요."; return; }
+  db = c;
+  db.collection("edits").onSnapshot(snap => {
+    const next = {}, rep = {};
+    for (const doc of snap.docs) {
+      const x = doc.data(); if (!x) continue;
+      const o = {}; for (const f of FIELDS) if (x[f] !== undefined && x[f] !== null && x[f] !== "" && !(Array.isArray(x[f]) && f !== "cuts")) o[f] = x[f];
+      if (Object.keys(o).length) next[doc.id] = o;
+      if (x.reply) rep[doc.id] = x.reply;
+    }
+    edits = next; replies = rep;
+    const ae = document.activeElement, active = ae && (ae.tagName === "TEXTAREA" || ae.tagName === "INPUT");
+    lastSig = ""; renderTabs(); if (!active) renderList();
+  }, err => { $("banner").hidden = false; $("banner").textContent = `저장소 읽기 실패(${err.code}).`; });
+}
+boot();
+</script>

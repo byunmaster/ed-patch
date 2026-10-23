@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 import canon
 import compose
 import font
+import dis6280
 import jptext
 import layout
 
@@ -70,6 +71,7 @@ SHRINK = {(0x6F, 0x062F): "ＶＲＡＭ　ＥＲＲ！！"}
 OVERFLOW: list[
     tuple[int, int, int, int, str]
 ] = []  # 같은 뱅크에 자리가 없어 못 바꾼 문자열 (뱅크, 오프셋, 원래 B, 필요 B, 원문)
+KEPT: set[tuple[int, int]] = set()  # 마지막 plan 에서 원문 그대로 둔 리터럴 문자열(뱅크, 오프셋)
 MISSING: dict[str, set[str]] = {}  # 문맥/표 → 정본에 없는 원문 문구
 
 
@@ -241,11 +243,11 @@ def strings_of(raw_bank: bytes, off: int) -> bytes:
 
 
 def scan_literals(prog: layout.Prog) -> dict[tuple[int, int], list[int]]:
-    """{(뱅크, 문자열 오프셋): [피연산자 위치(뱅크 안)]} — `JSR $503E/$4ED5 · BIT $addr` 리터럴."""
+    """{(뱅크, 문자열 오프셋): [피연산자 위치(뱅크 안)]} — `JSR $503E/$4ED5/$4ED1 · BIT $addr` 리터럴(`$4ED1` = 레벨업·능력치 문구 — 10-16 화면 일본어 점검에서 빠진 것을 찾았다)."""
     out: dict[tuple[int, int], list[int]] = {}
     for b in range(0x69, 0x74):
         s = prog.o(b, 0, layout.BANK)
-        for m in re.finditer(rb"\x20(?:\x3e\x50|\xd5\x4e)\x2c(..)", s, re.DOTALL):
+        for m in re.finditer(rb"\x20(?:\x3e\x50|\xd5\x4e|\xd1\x4e)\x2c(..)", s, re.DOTALL):
             addr = m.group(1)[0] | m.group(1)[1] << 8
             if 0x6000 <= addr < 0x8000:
                 out.setdefault((b, addr - 0x6000), []).append(m.start(1))
@@ -264,9 +266,37 @@ def table_sites(prog: layout.Prog, bank: int, base_off: int) -> list[tuple[int, 
     return out
 
 
+# 죽은 자료 — 원판 개발자의 **전투 디버그 정보 문구**(뱅크 0x70 `+0B20`~`+0C2F`, 271B: 「…デバッグ情報…」·「基本の強さ」 따위 SJIS 문자열 14개가 이어진다).
+# 출력 루틴(`$7AF7~$7B2D`, 입구 `$7AED`)을 부르는 곳이 코드 전수에 없고 실전투에서도 안 나온다(10-15 관리자 확정 — status 「전투 디버그 문구는 도달 경로 없음」).
+# 안 번역하고 두던 자리를 글리프 풀에 돌려준다(16글자) — 긴 대사 이어 풀기 루틴(`longline`)이 가져간 자리를 메운다.
+DEAD_DEBUG = (
+    (0x70, 0x0B20, 0x0C2F - 0x0B20, bytes.fromhex("0c138282bf82e182"), bytes.fromhex("a4ba20d5")),
+    # 같은 죽은 기능의 출력 루틴 `$7AED`~`$7B2D`(진입 `STZ $3390`; 뒤의 인라인 문구 `$7B2E` 는 시스템 문구 계획이 쓰는 자리라 남긴다) — 호출자 0(전 뱅크 `$7AED`·`$7AF7` 피연산자 검색 · 전투 5회 BP 0 히트). `$7B4A` 는 `$630A` 가 쓰는 산 보조 루틴이라 남긴다.
+    (0x70, 0x1AED, 0x1B2E - 0x1AED, bytes.fromhex("9c9033"), bytes.fromhex("82b582")),
+)
+
+
+def reclaim_dead(prog: layout.Prog) -> int:
+    """죽은 디버그 문구 자리를 비워 자유 공간으로 돌려준다. 시작·끝 바이트가 기대와 다르면 멈춘다(자리를 잘못 잡으면 산 코드를 지운다)."""
+    n = 0
+    for bank, off, ln, head, tail in DEAD_DEBUG:
+        assert prog.o(bank, off, len(head)) == head, f"죽은 디버그 문구 시작 바이트가 다르다 {bank:02X}+{off:04X}"
+        assert prog.o(bank, off + ln, len(tail)) == tail, f"죽은 디버그 문구 끝 다음 바이트가 다르다 {bank:02X}+{off + ln:04X}"
+        prog.vacate(bank, off, ln)
+        n += ln
+    return n
+
+
 def plan(prog: layout.Prog, tab, report: dict | None = None) -> None:
     """장부(`prog`)에 시스템 문구 패치를 적는다. 수집 단계(`tab.map is None`)에서도 같은 모양으로 돈다."""
     stat = {"literal": 0, "literal_kept": 0, "table": 0, "moved": 0}
+    KEPT.clear()
+    _RELAY.clear()
+
+    def _kept():  # 원문 그대로 둔 문자열(뱅크, 오프셋) — 화면 일본어 점검용(`systext.KEPT`)
+        stat["literal_kept"] += 1
+        KEPT.add((bank, off))
+
     # ⓪ 줄이기 — 개발자 오류 문구
     for (bank, off), text in SHRINK.items():
         raw0 = strings_of(prog.o(bank, 0, layout.BANK), off)
@@ -336,41 +366,47 @@ def plan(prog: layout.Prog, tab, report: dict | None = None) -> None:
             continue
         if (bank, off) in aliased or (bank, off) in tail_children:
             if (bank, off) not in tail_children:
-                stat["literal_kept"] += 1
+                _kept()
             continue
         s = prog.o(bank, 0, layout.BANK)
         end = s.index(0, off)
         raw = s[off:end]
-        miss = MISSING.setdefault("literal", set())
-        parts = []
-        # 줄바꿈(0D)으로 줄을 나눠 줄마다 번역한다 — 한 줄이라도 정본에 없으면 문자열 전체를 원문으로 둔다
-        lines = raw.split(b"\x0d")
-        for line in lines:
-            r = translate(line, CONTEXT.get((bank, off)), miss)
-            parts.append(r if r is not None else line)
-        if all(isinstance(p, bytes) for p in parts):
-            import msgs  # 지연 임포트 — msgs 가 이 모듈을 쓴다
+        import ctrllines  # 지연 임포트 — ctrllines 는 이 모듈을 안 쓰지만 순서를 맞춘다
 
-            newb = msgs.translate(raw, tab)  # 자리표(이름·수)가 낀 문장 — 정본 문장 틀과 맞댄다
-            if newb is None:
-                if _has_kana_or_kanji(raw):
-                    miss.add(jptext.decode(raw).replace("\n", "/"))
-                stat["literal_kept"] += 1
-                continue
+        ct = ctrllines.table().get("s" + ctrllines.key_of(ctrllines.parse(raw, True)[0]))  # 제어 낀 문자열(레벨업·능력치 …)은 틀 번역이 먼저다
+        if ct is not None:
+            newb = ctrllines.build(raw, ct, tab, True)
         else:
-            rendered = [render(p, tab) if not isinstance(p, bytes) else p for p in parts]
-            # 일부 줄만 정본에 걸리면(나머지는 일본어) 혼합이다 — 이름·수 자리표가 낀 문장은 조각 맞춤(`msgs.segments`)으로 한 번 더 본다
-            if any(isinstance(p, bytes) and _has_kana_or_kanji(p) for p in parts):
-                import msgs
+            miss = MISSING.setdefault("literal", set())
+            parts = []
+            # 줄바꿈(0D)으로 줄을 나눠 줄마다 번역한다 — 한 줄이라도 정본에 없으면 문자열 전체를 원문으로 둔다
+            lines = raw.split(b"\x0d")
+            for line in lines:
+                r = translate(line, CONTEXT.get((bank, off)), miss)
+                parts.append(r if r is not None else line)
+            if all(isinstance(p, bytes) for p in parts):
+                import msgs  # 지연 임포트 — msgs 가 이 모듈을 쓴다
 
-                alt = msgs.translate(raw, tab)
-                if alt is None:  # 그래도 안 되면 문자열 전체를 원문으로 둔다(문자열 전체 판정)
-                    miss.add(jptext.decode(raw).replace("\n", "/"))
-                    stat["literal_kept"] += 1
+                newb = msgs.translate(raw, tab)  # 자리표(이름·수)가 낀 문장 — 정본 문장 틀과 맞댄다
+                if newb is None:
+                    if _has_kana_or_kanji(raw):
+                        miss.add(jptext.decode(raw).replace("\n", "/"))
+                    _kept()
                     continue
-                newb = alt
             else:
-                newb = b"\x0d".join(rendered)
+                rendered = [render(p, tab) if not isinstance(p, bytes) else p for p in parts]
+                # 일부 줄만 정본에 걸리면(나머지는 일본어) 혼합이다 — 이름·수 자리표가 낀 문장은 조각 맞춤(`msgs.segments`)으로 한 번 더 본다
+                if any(isinstance(p, bytes) and _has_kana_or_kanji(p) for p in parts):
+                    import msgs
+
+                    alt = msgs.translate(raw, tab)
+                    if alt is None:  # 그래도 안 되면 문자열 전체를 원문으로 둔다(문자열 전체 판정)
+                        miss.add(jptext.decode(raw).replace("\n", "/"))
+                        _kept()
+                        continue
+                    newb = alt
+                else:
+                    newb = b"\x0d".join(rendered)
         tail = tails.get((bank, off))
         if tail is not None:  # 꼬리 문자열(「…{14}に」 의 「に」)도 번역해 앞 문자열의 끝에 겹치게 한다 — 안 겹치면 둘 다 원문으로 둔다
             import msgs
@@ -379,7 +415,7 @@ def plan(prog: layout.Prog, tab, report: dict | None = None) -> None:
             tl = [translate(x, CONTEXT.get(tail), miss) for x in rawt.split(b"\x0d")]
             newt = b"\x0d".join(render(p, tab) if p is not None else x for p, x in zip(tl, rawt.split(b"\x0d"), strict=True))
             if newt == rawt or not newb.endswith(newt) or len(newb) == len(newt):
-                stat["literal_kept"] += 1
+                _kept()
                 continue
             refs = [(pos, len(newb) - len(newt)) for pos in lits[tail]]
             # 꼬리의 꼬리 — 같은 NUL 을 가리키는 **빈 문자열**(`자기 자신에게`의 「대상 없음」 항목: 아이템 사용 줄 첫 `1A`) 포인터도 새 문자열의 끝(NUL)으로 옮긴다.
@@ -392,7 +428,7 @@ def plan(prog: layout.Prog, tab, report: dict | None = None) -> None:
                     break
                 refs += [(pos, len(newb)) for pos in lits[chain]]
             if not ok:
-                stat["literal_kept"] += 1
+                _kept()
                 continue
             EXTRA_REFS[(bank, off)] = refs
         if len(newb) <= len(raw):
@@ -434,49 +470,73 @@ def _far_ok(prog: layout.Prog, bank: int, item) -> bool:
     return all(s0[p - 4 : p] == b"\x20\x3e\x50\x2c" for p in item[3])
 
 
+# 공용 중계(뱅크 0x68 의 0 칸, `$4000` 에 늘 걸려 있다) — 호출부 6B 를 `JSR 중계 · 뱅크 · 주소(lo hi)` 로 바꾸면 **문자열마다 중계를 안 만든다**.
+# (예전엔 문자열마다 22B 짜리 중계를 만들어 0 칸 257B 가 금방 동나 뱅크 0x6F 의 승리·도망·레벨업 문구를 못 옮겼다 — 10-16 화면 일본어 점검.)
+# 하는 일은 `$503E` 와 같다: 인라인 3바이트를 읽어 MPR4 에 그 뱅크를 걸고 `$7C/$7D` 를 주고 `$5066`(복사 루프)을 부른 뒤 MPR4 를 되돌리고, 돌아갈 주소를 +3 해 인라인 바이트를 건너뛴다.
+RELAY_CODE = bytes(
+    [
+        0x43, 0x10,  # TMA #$10      (MPR4 저장)
+        0x48,  # PHA
+        0xBA,  # TSX
+        0xBD, 0x02, 0x21,  # LDA $2102,X   (돌아갈 주소 lo)
+        0x85, 0x3F,  # STA $3F
+        0xBD, 0x03, 0x21,  # LDA $2103,X   (hi)
+        0x85, 0x40,  # STA $40
+        0xA0, 0x01,  # LDY #1
+        0xB1, 0x3F,  # LDA ($3F),Y   (뱅크)
+        0x53, 0x10,  # TAM #$10
+        0xC8,  # INY
+        0xB1, 0x3F,  # LDA ($3F),Y   (주소 lo)
+        0x85, 0x7C,  # STA $7C
+        0xC8,  # INY
+        0xB1, 0x3F,  # LDA ($3F),Y   (주소 hi)
+        0x85, 0x7D,  # STA $7D
+        0x18,  # CLC
+        0xBD, 0x02, 0x21,  # LDA $2102,X
+        0x69, 0x03,  # ADC #3
+        0x9D, 0x02, 0x21,  # STA $2102,X
+        0x90, 0x03,  # BCC +3
+        0xFE, 0x03, 0x21,  # INC $2103,X
+        0x20, 0x66, 0x50,  # JSR $5066
+        0x68,  # PLA
+        0x53, 0x10,  # TAM #$10
+        0x60,  # RTS
+    ]
+)
+_RELAY: list[int] = []  # 공용 중계의 `$4000` 기준 주소(한 번만 만든다)
+
+
+def _relay_addr(prog: layout.Prog) -> int | None:
+    if not _RELAY:
+        if not prog.fits(0x68, len(RELAY_CODE)):
+            return None
+        off = prog.alloc(0x68, len(RELAY_CODE))
+        prog.put(0x68, off, RELAY_CODE, "literal 공용 중계")
+        _RELAY.append(0x4000 + off)
+    return _RELAY[0]
+
+
 def _place_far(prog: layout.Prog, bank: int, item, stat: dict) -> bool:
-    """같은 뱅크에 자리가 없는 문자열을 **다른 뱅크로** 옮긴다. 호출부 `JSR $503E · BIT $addr`(6B)를 `JSR 중계 · NOP×3` 으로 바꾸고,
-    중계(뱅크 0x68 의 0 칸, `$4000` 에 늘 걸려 있다)가 문자열 뱅크를 MPR4(`$8000`)에 걸어 `$7C/$7D` 를 주고 `$5066`(복사 루프)을 부른 뒤 되돌린다.
-    `$503E` 가 하는 일은 피연산자 읽기 + `$7C/$7D` 설정 + `$5066` 분기뿐이라 같은 결과다. `$4ED5` 변형 호출부는 못 바꾼다(False)."""
+    """같은 뱅크에 자리가 없는 문자열을 **다른 뱅크로** 옮긴다. 호출부 `JSR $503E · BIT $addr`(6B)를 `JSR 공용중계 · 뱅크 · 주소` 로 바꾼다(위 `RELAY_CODE`).
+    `$4ED5`·`$4ED1` 변형 호출부(화면 쪽 인쇄 루틴이 문자열을 직접 읽는다)는 못 옮긴다(False)."""
     off, raw, newb, sites = item
     s0 = prog.o(bank, 0, layout.BANK)
     if any(s0[p - 4 : p] != b"\x20\x3e\x50\x2c" for p in sites):
         return False
     far = next((b for b in FAR_BANKS if b != bank and prog.fits(b, len(newb) + 1)), None)
-    if far is None or not prog.fits(0x68, 22):
+    if far is None:
+        return False
+    t_addr = _relay_addr(prog)
+    if t_addr is None:
         return False
     f_off = prog.alloc(far, len(newb) + 1)
-    t_off = prog.alloc(0x68, 22)
     win = 0x8000 + f_off
-    code = bytes(
-        [
-            0x43,
-            0x10,
-            0x48,
-            0xA9,
-            far,
-            0x53,
-            0x10,
-            0xA9,
-            win & 0xFF,
-            0x85,
-            0x7C,
-            0xA9,
-            win >> 8,
-            0x85,
-            0x7D,
-        ]
-        + [0x20, 0x66, 0x50, 0x68, 0x53, 0x10, 0x60]
-    )
-    assert len(code) == 22
     prog.put(far, f_off, newb + b"\x00", f"literal {bank:02X}+{off:04X} (far)")
-    prog.put(0x68, t_off, code, f"literal {bank:02X}+{off:04X} relay")
-    t_addr = 0x4000 + t_off
     for p in sites:
         prog.put(
             bank,
             p - 4,
-            bytes([0x20, t_addr & 0xFF, t_addr >> 8, 0xEA, 0xEA, 0xEA]),
+            bytes([0x20, t_addr & 0xFF, t_addr >> 8, far, win & 0xFF, win >> 8]),
             f"literal {bank:02X}+{off:04X} call",
         )
     prog.vacate(bank, off, len(raw) + 1)
@@ -500,13 +560,60 @@ def _ctrl_spans(raw: bytes) -> list[tuple[int, bytes]]:
     return out
 
 
+def _boundaries(d: bytes) -> list[int]:
+    """뱅크 안에서 **명령 첫 바이트임이 확실한** 오프셋 — `JSR/JMP abs`(같은 창 `$6000~$7FFF`) · 분기 대상."""
+    out = set()
+    for i in range(len(d) - 2):
+        op = d[i]
+        if op in (0x20, 0x4C):  # JSR / JMP abs
+            a = d[i + 1] | d[i + 2] << 8
+            if 0x6000 <= a < 0x8000:
+                out.add(a - 0x6000)
+        elif op in (0x10, 0x30, 0x50, 0x70, 0x80, 0x90, 0xB0, 0xD0, 0xF0):  # 분기(상대)
+            t = i + 2 + (d[i + 1] - 256 if d[i + 1] > 127 else d[i + 1])
+            if 0 <= t < len(d):
+                out.add(t)
+    return sorted(out)
+
+
+_BOUND: dict[int, list[int]] = {}
+
+
+def _inside_operand(d: bytes, i: int) -> bool:
+    """`d[i]` 가 앞 명령의 **피연산자 바이트**인가 — 가까운 확실한 명령 시작(`_boundaries`)에서 앞으로 해독해 `i` 를 건너뛰면 참.
+    (10-16: 문자열 안쪽 쓰기 보정이 `99 EE E7 60`(= `STA $E7EE,Y · RTS`)의 `EE E7 60` 을 `INC $60E7` 로 오인해 **코드 두 바이트를 고쳐 써** 부팅 직후 폭주했다.)
+    확실한 시작이 둘 미만이면 거짓(옛 동작)이다."""
+    key = id(d)
+    bl = _BOUND.get(key)
+    if bl is None:
+        _BOUND.clear()
+        bl = _BOUND[key] = _boundaries(d)
+    import bisect
+
+    k = bisect.bisect_right(bl, i) - 1
+    votes = []  # 가까운 확실한 시작 여섯에서 각각 앞으로 해독 — 가짜 시작(데이터 속 `20 xx xx`)이 섞여도 다수결로 거른다
+    for b in bl[max(0, k - 5) : k + 1]:
+        if i - b > 256:
+            continue
+        pos = b
+        while pos < i:
+            op = d[pos]
+            pos += dis6280.SIZE[dis6280.OPS[op][1]] if op in dis6280.OPS else 1
+        votes.append(pos > i)
+    return len(votes) >= 2 and sum(votes) * 2 > len(votes)
+
+
 def _remap_interior(prog: layout.Prog, bank: int, off: int, raw: bytes, newb: bytes, new_off: int) -> None:
     """🔴 게임 코드가 **문자열 안쪽을 고정 주소로 직접 쓰는** 자리를 새 문자열에 맞춘다 — 필드 메뉴는 파티가 한 명이면 마지막 줄 끝 `0D` 를 `00` 으로 덮어
     「その他」 뒤를 자르고(주소 `$6332`), 전투 설정·도구 창은 줄머리 `01` 을 덮어 항목을 켜고 끈다. 한국어로 줄 길이가 바뀌면 그 주소가 글 한복판을 가리켜
     **줄이 잘리거나 항목이 사라진다**(10-13 「기타」 빈칸 · 「FFFF」). 쓰는 바이트가 든 **제어 토큰의 순번**으로 새 문자열의 같은 제어 토큰 자리를 찾아 피연산자를 바꾼다."""
     d = prog.o(bank, 0, layout.BANK)
     lo, hi = 0x6000 + off, 0x6000 + off + len(raw)
-    sites = [(i, (d[i + 1] | d[i + 2] << 8) - lo) for i in range(len(d) - 2) if d[i] in _STORE_OPS and lo < (d[i + 1] | d[i + 2] << 8) < hi]
+    sites = [
+        (i, (d[i + 1] | d[i + 2] << 8) - lo)
+        for i in range(len(d) - 2)
+        if d[i] in _STORE_OPS and lo < (d[i + 1] | d[i + 2] << 8) < hi and not _inside_operand(d, i)
+    ]
     if not sites:
         return
     oc, nc = _ctrl_spans(raw), _ctrl_spans(newb)

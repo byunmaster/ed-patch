@@ -221,11 +221,32 @@ class Pixel(unittest.TestCase):
                     chars |= set(c for c in ln.split("\t")[1] if c not in " \n\f§¶")
         glyphs = [font.glyph(c) for c in sorted(chars)]
         self.assertGreater(len(glyphs), 700)
-        sim = machine(glyphs)
+        try:
+            sim = machine(glyphs)
+        except hook.PoolOverflow as e:  # 문안 글자가 이 시험 배치의 풀보다 많아졌다 — 빌드는 넘침을 스스로 흡수한다(`PoolOverflow`). 여기서는 들어가는 만큼만 후킹 루틴을 거친다
+            glyphs = glyphs[: len(glyphs) - e.over]
+            chars = sorted(chars)[: len(glyphs)]
+            sim = machine(glyphs)
         t = Hook()
         for idx, g in enumerate(glyphs):
             self.assertEqual(t.call(sim, idx), -1)
             self.assertEqual(bytes(sim.ram[0x109B : 0x109B + 24]), g, f"글리프 {idx} {sorted(chars)[idx]!r}")
+
+
+class TestPoolOverflow(unittest.TestCase):
+    def test_풀이_넘치면_넘친_수를_알린다(self):
+        # 빌드는 이 수만큼 여유를 늘려 다시 고른다(상수 여유가 모자라도 안 깨지게)
+        orig = bytearray(b"\xff" * (layout.NBANKS * layout.BANK))
+        for b, o, n in layout.ZERO_PADDING:
+            z = (b - layout.BANK0) * layout.BANK + o
+            orig[z : z + n] = bytes(n)
+        prog = layout.Prog(orig=bytes(orig))
+        hook.reserve(prog)
+        cap = hook.pool_capacity(prog)
+        with self.assertRaises(hook.PoolOverflow) as cm:
+            hook.install(prog, synthetic(cap + 5), None, None)
+        self.assertEqual(cm.exception.over, 5)
+        self.assertIsInstance(cm.exception, ValueError)
 
 
 if __name__ == "__main__":

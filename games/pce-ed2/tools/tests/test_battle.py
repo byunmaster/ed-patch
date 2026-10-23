@@ -16,6 +16,11 @@ APPEAR = bytes.fromhex("0ebdd7b2d10f618cbbdac0" "12")  # 「スライムが現�
 
 
 class Battle(unittest.TestCase):
+    def test_최종_보스_덩이는_행동_이름_줄_둘로_전투_덩이다(self):
+        act = bytes.fromhex("1bc98d558c82" "0d")  # 「{1B}の攻撃」
+        self.assertTrue(battle.is_battle_chunk(b"\x41\x00" + act + b"\x00" + act + b"\x00"))
+        self.assertFalse(battle.is_battle_chunk(b"\x41\x00" + act + b"\x00"))  # 하나뿐이면 일반 덩이
+
     def test_EP_줄은_06_스타일을_빼고_글만_바뀐다(self):
         tab = font.GlyphTable()
         out = msgs.special(EP, tab)
@@ -39,6 +44,7 @@ class Battle(unittest.TestCase):
         tab = font.GlyphTable()
         out = battle._appear(APPEAR, tab, set())
         self.assertTrue(out.endswith(b"\x12"))
+        self.assertNotIn(b"\r", out)  # 줄은 엔진이 어절 단위로 넘긴다
         self.assertEqual(sorted(tab.chars), sorted(set("슬라임이 나타났다") - {" "}))
 
     def test_전투_1B_줄은_이름_자리로_읽는다(self):

@@ -35,15 +35,15 @@ def text_region(pkg: bytes) -> tuple[int, int, list[tuple[int, int]]]:
     return real[0][0], end, real
 
 
-def repack(pkg: bytes, new: dict[int, bytes]) -> tuple[bytes, dict[int, int]]:
+def repack(pkg: bytes, new: dict[int, bytes], ring512: bool = False) -> tuple[bytes, dict[int, int]]:
     """**촘촘 모드**(`compact`) — 덩이를 순서대로 빈틈없이 깔아 꼬리 자유 공간을 한 덩이로 모은다(지역 글리프 표가 거기 앉는다).
     안 고친 패키지는 건드리지 않는다(`new` 가 비면 원본 그대로). 촘촘 모드가 안 되면 제자리 · 이사(`repack_in_place`)는 시도하지 않는다 — 어차피 총량이 모자란 것이다."""
     if not new:
         return pkg, {}
-    return compact(pkg, new)
+    return compact(pkg, new, ring512)
 
 
-def compact(pkg: bytes, new: dict[int, bytes]) -> tuple[bytes, dict[int, int]]:
+def compact(pkg: bytes, new: dict[int, bytes], ring512: bool = False) -> tuple[bytes, dict[int, int]]:
     """모든 덩이를 원래 순서대로 **빈틈없이** 다시 깐다(안 고친 덩이는 원본 바이트 그대로) — 표만 새 시작으로 바꾼다.
     덩이를 가리키는 건 메시지 표뿐이라는 전제(이벤트 코드는 `$AF` 번호로 부른다)에 선다 — 에뮬 확인 필요."""
     first, limit, real = text_region(pkg)
@@ -57,8 +57,12 @@ def compact(pkg: bytes, new: dict[int, bytes]) -> tuple[bytes, dict[int, int]]:
     place: dict[int, int] = {}
     for a, b in real:
         blob = lz.encode_opt(new[a]) if a in new else pkg[a:b]
+        if a in new and ring512:  # 642 전용 — 512B 링 변형이 더 짧으면 그쪽(표식 1B 포함), 아니면 256B 그대로
+            alt = lz.encode_opt512(new[a])
+            if len(alt) < len(blob):
+                blob = alt
         if a in new:
-            back, _ = lz.decode(blob + bytes(8), 0, len(new[a]))
+            back, _ = lz.decode(blob + bytes(8), 0, len(new[a]), auto512=True)
             assert back == new[a], "인코더 왕복 불일치"
         if pos + len(blob) > limit:
             raise RepackError(f"촘촘 모드로도 안 들어간다 — 넘침 {pos + len(blob) - limit}B")

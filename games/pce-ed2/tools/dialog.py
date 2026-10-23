@@ -77,7 +77,7 @@ class Frame:
     speaker: bytes | None
     post: bytes  # `14` 뒤 ~ 본문 첫 글자 앞의 제어(`0D` · `10 33` …)
     tail: bytes  # 본문 끝 뒤의 제어(`13` · `11 33 30` · `12` …)
-    marks: tuple = ()  # 본문 한복판의 연출 타이밍 제어 `(앞선 원문 글자 수, 바이트)` — 번역문의 구절 경계에 되살린다
+    marks: tuple = ()  # 본문 한복판의 연출 타이밍 제어 `(앞선 원문 글자 수, 바이트, 문장 끝 뒤인가)` — 번역문의 구절 경계에 되살린다
     jp_n: int = 0  # 본문 원문 글자 수(공백 제외)
 
 
@@ -108,6 +108,17 @@ def parse_frame(line: bytes) -> Frame | None:
     if not t_ids:
         return None
     first, last = t_ids[0], t_ids[-1]
+    # 줄이 쪽 대기(`13`)·`12` **뒤에 여백 글자만** 달고 끝나면(「…休んでいってくれ。{13}　」) 그 제어와 여백은 본문이 아니라 꼬리다 — 본문으로 세면 끝 대기가
+    # 쪽 가름 속으로 들어가 다시 짤 때 사라진다(10-22 구조 대조에서 발견: 642:28:31 의 끝 `13` 이 빠져 창이 키를 안 기다렸다).
+    blank = {b"\x20", b"\xa0", b"`", b"\x81\x40"}
+    q = last
+    while q > first and toks[q][0] == "t" and toks[q][1] in blank:
+        q -= 1
+    if q < last and toks[q][0] == "c" and toks[q][1][0] in (0x12, 0x13):
+        r = q
+        while r > first and not (toks[r][0] == "t" and toks[r][1] not in blank):
+            r -= 1
+        last = r
     for k, b in toks[first : last + 1]:
         if k == "spk" or (k == "c" and b[0] not in MID_OK):
             return None
@@ -116,18 +127,23 @@ def parse_frame(line: bytes) -> Frame | None:
         return None
     sp = s_ids[0] if s_ids else None
     j = lambda a, b: b"".join(x for _k, x in toks[a:b])  # noqa: E731
-    marks, n = [], 0
+    marks, n, end = [], 0, False
     for k, b in toks[first : last + 1]:
         if k == "t":
             if b not in (b"\xa0", b"`"):  # 여백(12px)·반각 공백은 글자로 안 센다
                 n += 1
+                end = b in _SENT_END
         elif k == "c" and b[0] in (0x10, 0x11):
-            marks.append((n, b))
+            marks.append((n, b, end))  # 셋째 = 이 멈춤 바로 앞 글자가 문장 끝 부호인가
     if sp is None:
         return Frame(j(0, first), None, b"", j(last + 1, len(toks)), tuple(marks), n)
-    post = j(sp + 1, first)
-    post = post.replace(b"\x0e", b"").replace(b"\x0f", b"")  # 화자 글자의 가나 모드 짝 — 한글엔 없다
+    # 화자 글자의 가나 모드 짝(`0E`/`0F` 단독 제어) — 한글엔 없다. ⚠ 바이트 단위로 지우면 `11 37 0F` 의 둘째 인자 `0F` 까지 지워 뒤 글 첫 바이트를 인자로 먹는다(642:28:47, 10-18)
+    post = b"".join(x for _k, x in toks[sp + 1 : first] if x not in (b"\x0e", b"\x0f"))
     return Frame(j(0, sp), toks[sp][1], post, j(last + 1, len(toks)), tuple(marks), n)
+
+
+# 문장 끝 글자(원문) — SJIS 。！？ · 단일 바이트 가나 점 `A1` · 전각 ASCII ！？ · `｜`(=!!). 멈춤이 이 글자 바로 뒤면 한글도 문장 끝 뒤에 놓는다(`dialogue._encode`)
+_SENT_END = {b"\x81\x42", b"\x81\x49", b"\x81\x48", b"\xa1", b"\x21", b"\x3f", b"\x7c"}
 
 
 HARD_OK = {0x12, 0x1C}  # 문장 사이에 끼는 연출 제어 — 글을 가르지만 뜻은 「말 바꿈」 · 「창 비움」
@@ -175,13 +191,14 @@ def parse_segments(line: bytes) -> Seg | None:
         else:
             lead = b"".join(b for _k, b in run[: ids[0]])
             tail = b"".join(b for _k, b in run[ids[-1] + 1 :])
-            marks, n = [], 0
+            marks, n, end = [], 0, False
             for k, b in run[ids[0] : ids[-1] + 1]:
                 if k == "t":
                     if b not in (b"\xa0", b"`"):
                         n += 1
+                        end = b in _SENT_END
                 elif b[0] in (0x10, 0x11):
-                    marks.append((n, b))
+                    marks.append((n, b, end))
             items.append(("t", lead, tail, jptext.decode(b"".join(b for _k, b in run[ids[0] : ids[-1] + 1])), tuple(marks), n))
         run.clear()
 

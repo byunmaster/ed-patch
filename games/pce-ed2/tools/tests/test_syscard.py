@@ -22,6 +22,28 @@ class SysCard(unittest.TestCase):
         self.assertLessEqual(syscard.HOOK_OFF + len(hook) + 24 * len(specs), syscard.FREE_END)
         self.assertLess(len(specs), 0xE0 - syscard.TRAIL0)  # 트레일 바이트 범위
 
+    def test_줄은_화면_가운데에서_4px_안이고_끝_말줄임은_계산에서_뺀다(self):
+        # 줄 가운데 맞춤(마스터 10-22) — 이상값(`x0_for`)과 실제 시작 x 의 차가 4px 이내
+        for mi, msg in enumerate(syscard.MESSAGES):
+            for r, line in enumerate(msg):
+                self.assertLessEqual(abs(syscard.X0[mi][r] - syscard.x0_for(mi, r, line)), 4, (mi, r, line))
+        # 끝 「…」「.」「,」 는 가운데 계산에서 빠진다: 같은 앞부분이면 이상 시작 x 가 같다
+        self.assertEqual(syscard.x0_for(0, 0, "가나다……"), syscard.x0_for(0, 0, "가나다"))
+
+    def test_반각_영문_뒤_한글은_2px_벌어진다(self):
+        a, wa = syscard.render("RAM에")
+        b, wb = syscard.render("RAM 에")
+        self.assertEqual(wa - (syscard.NARROW_ADV * 3 + syscard.HANGUL_ADV), syscard.GAP_LATIN_HANGUL)
+        self.assertEqual(wb - (syscard.NARROW_ADV * 3 + syscard.SPACE_ADV + syscard.HANGUL_ADV), 0)  # 공백 뒤엔 벌리지 않는다
+
+    def test_말줄임은_한국식_바닥이다(self):
+        import font
+
+        g = font.glyph("…")
+        rows = [int.from_bytes(g[2 * y : 2 * y + 2], "big") for y in range(12)]
+        self.assertEqual([y for y, v in enumerate(rows) if v], [font.ELLIPSIS_FLOOR_ROW])  # 점 셋이 마침표 행 하나에만
+        self.assertEqual(rows[font.ELLIPSIS_FLOOR_ROW], sum(0x8000 >> c for c in font.ELLIPSIS_FLOOR_COLS))
+
     def test_조각은_24바이트이고_공백은_반각이다(self):
         specs, _ = syscard.glyph_set()
         self.assertTrue(all(len(sp) == 24 for sp in specs))

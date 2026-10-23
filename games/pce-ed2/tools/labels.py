@@ -99,7 +99,13 @@ def is_monster(jp: str) -> bool:
 
 
 def _lookup(jp: str) -> str | None:
-    for v in dict.fromkeys([jp, jp.replace("ー", "－")]):
+    import systext  # 시험 롬 전용 후보 주입(`ED_SYS_EXTRA`, test- 꼬리표만) — 정본 확정 전 칸·화면 검증용
+
+    ex = systext._extra()
+    if jp in ex:
+        return ex[jp]
+    # 정본 표기와 원문 표기의 잔차: 장음 ー↔－ · 가운뎃점 ・↔･(정본은 반각 가나 점) · 작은 ィ ↔ イ(「クィーン」=「クイーン」)
+    for v in dict.fromkeys([jp, jp.replace("ー", "－"), jp.replace("・", "･"), jp.replace("クィ", "クイ")]):
         for cat in ("ui", "place", "monster"):
             r = canon.lookup(v, cat, "ed2")
             if r:
@@ -132,11 +138,12 @@ def edit_line(raw: bytes, tab, missing: set, hud: bool = False) -> bytes:
         return raw
     w = sum(font.adv(c) for c in kr)
     if (
-        w > px and " " in kr
-    ):  # 칸(슬롯)은 붙여 쓰는 꼴이 규칙이다(naming.md 「지명 칸」) — 공백을 걷으면 들어가는지 본다
+        w > px and " " in kr and not is_monster(jp)
+    ):  # (몬스터 이름은 칸이 없다 — 공백을 걷으면 「붉은슬라임A」 가 되어 틀 줄의 「붉은 슬라임A」 와 갈린다, qa 10-20) 칸(슬롯)은 붙여 쓰는 꼴이 규칙이다(naming.md 「지명 칸」) — 공백을 걷으면 들어가는지 본다
         kr = kr.replace(" ", "")
         w = sum(font.adv(c) for c in kr)
-    if w > px:  # 칸을 넘는다 — 문안을 줄여야만 들어가는 칸이다(관리자 판정). 원문을 두고 모은다
+    if w > px and not is_monster(jp):  # (몬스터 이름은 전투 메시지 창으로만 흘러 칸 폭이 없다 — 전투 화면은 이름 목록 창이 없다, 10-16 실측)
+        # 칸을 넘는다 — 문안을 줄여야만 들어가는 칸이다(관리자 판정). 원문을 두고 모은다
         OVERFLOW[jp] = (kr, w, px)
         return raw
     if is_monster(jp):  # 전투 이름 줄은 문장 가운데(`1B`)에 끼므로 칸 맞춤 여백을 두지 않는다 — 두면 이름 뒤에 빈틈이 생긴다(「슬라임A 에게」, 10-13 화면)

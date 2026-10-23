@@ -41,23 +41,57 @@ MESSAGES = [
     ("백업 RAM에", "빈 공간이 없습니다……"),
     ("백업 RAM이", "초기화되지 않았습니다."),
 ]
-X0 = [(38, 50), (54, 80), (84, 48), (84, 48)]  # 줄 시작 x(px, 14칸 = 224px 안)
 SPACE_ADV, NARROW_ADV, HANGUL_ADV, DOT_ADV = 8, 8, 12, 4  # 점·쉼표는 글리프가 왼쪽 2px 뿐이라 4px
+
+
+GAP_LATIN_HANGUL = 2  # 반각 영문·숫자 바로 뒤에 한글이 오면 전진 폭 +2px(「RAM에」 의 M 과 「에」 가 붙어 보였다 — 마스터 10-22). 문안은 그대로, 조판만
+
+
+def _hangul(ch: str) -> bool:
+    return 0xAC00 <= ord(ch) <= 0xD7A3
 
 
 def render(line: str):
     """줄 → (행 12개 정수[폭 1000px 안 왼쪽 정렬], 폭 px)."""
     rows = [0] * 12
     x = 0
+    prev_latin = False
     for ch in line:
         if ch == " ":
             x += SPACE_ADV
+            prev_latin = False
             continue
+        if prev_latin and _hangul(ch):
+            x += GAP_LATIN_HANGUL
         g = font.glyph(ch)
         for y in range(12):
             rows[y] |= (int.from_bytes(g[2 * y : 2 * y + 2], "big") >> 4) << (1000 - x - 12)
         x += DOT_ADV if ch in ".," else NARROW_ADV if ch in font.NARROW else HANGUL_ADV
+        prev_latin = ch in font.NARROW and ch not in ".,"
     return rows, x
+
+
+# 줄 가운데 맞춤(마스터 10-22 「카드 중앙정렬」): 줄마다 **글자 잉크의 가운데가 화면 가운데(x=128)** — 줄 끝 「.」「,」「…」 는 계산에서 뺀다(번역 규칙 2-8, 마스터 10-22
+# 「문장끝 …은 계산하지 말고 정렬」 — 그 글자는 가운데에서 뒤로 매달린다). 14칸 줄의 칸 원점(화면 x)은 제품 롬 실화면으로 쟀다(비트맵을 칸 원점+X0 에 놓고 캡처와 픽셀이
+# 0 어긋남으로 맞췄다) — 줄1 은 8(셋째 메시지만 24), 줄2 는 −8(셋째 메시지만 8).
+ROW_ORIGIN = [(8, -8), (8, -8), (24, 8), (8, -8)]
+CENTER_X = 128
+
+
+def _ink_span(line: str) -> tuple[int, int]:
+    rows, _w = render(line)
+    cols = [x for x in range(1000) if any((r >> (1000 - x - 1)) & 1 for r in rows)]
+    return cols[0], cols[-1] + 1
+
+
+def x0_for(mi: int, r: int, line: str) -> int:
+    l, rr = _ink_span(line.rstrip(".,…"))
+    return round(CENTER_X - (l + rr) / 2) - ROW_ORIGIN[mi][r]
+
+
+# 줄 시작 x(`ROW_ORIGIN` 기준 px). 이상값(`x0_for`)에서 **±4px 안**으로 골라 고유 24B 조각 수를 빈 자리 한도 47 개에 맞췄다(정확 탐색 — ±3 이내에는 47 개 안의 해가 없다,
+# 편차 제곱합 최소 해). 이상값 대비 편차: −2 −1 +2 +4 / 0 +4 0 −4 (`test_syscard_layout` 이 지킨다).
+X0 = [(45, 73), (61, 116), (70, 68), (86, 68)]
 
 
 def line_cells(line: str, x0: int) -> list:

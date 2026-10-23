@@ -24,15 +24,16 @@ class ParseFrame(unittest.TestCase):
         self.assertIsNone(dialog.parse_frame(b"\x16\x8e\x98\x14\xa1\x16\x8e\x98\x14\xa2"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 def test_ellipsis_spacing_rule_2_11():
     import typeset
 
     assert typeset.spaced("그대도…잊었다") == "그대도… 잊었다"
-    assert typeset.spaced("………프레이아님!!") == "……… 프레이아님!!"
+    assert typeset.spaced("그래………프레이아님!!") == "그래……… 프레이아님!!"
+    # 문장 맨 앞 `…` 는 붙인다(마스터 10-13) — 앞말 뒤의 말줄임이 아니다
+    assert typeset.spaced("………프레이아님!!") == "………프레이아님!!"
+    assert typeset.spaced("…라우엘까지… 알겠어요") == "…라우엘까지… 알겠어요"
+    assert typeset.spaced("어라?! …아트라스 왕자님?") == "어라?! …아트라스 왕자님?"
     assert typeset.spaced("말이지…") == "말이지…"
     assert typeset.spaced("그래…?!") == "그래…?!"
     assert typeset.spaced("그래…」") == "그래…」"
@@ -56,3 +57,59 @@ def test_ellipsis_onomatopoeia_and_brackets():
     assert typeset.spaced("그래…「응」") == "그래…「응」"
     assert typeset.spaced('그래…"') == '그래…"'
     assert typeset.spaced("그대도…잊었다") == "그대도… 잊었다"
+
+
+class PostCtrl(unittest.TestCase):
+    def test_화자_뒤_멈춤_인자의_0F_는_지우지_않는다(self):
+        # `11 37 0F` 는 인자 둘 — 가나 모드 짝 `0F` 단독만 지운다(옛 바이트 치환은 인자를 먹어 뒤 글 첫 바이트가 인자가 됐다)
+        raw = bytes.fromhex("1030160e6765140d103411370f6fb3bcc3") + b"\x11\x31\x30"
+        f = dialog.parse_frame(raw)
+        self.assertIsNotNone(f)
+        self.assertIn(b"\x11\x37\x0f", f.post)
+        raw2 = bytes.fromhex("160e6765140f0d6fb3bc")  # 단독 0F 는 지운다
+        self.assertNotIn(b"\x0f", dialog.parse_frame(raw2).post)
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TestMarkArgs(unittest.TestCase):
+    def test_멈춤_인자가_숫자가_아니면_0으로_고친다(self):
+        """원문 `11 35 74`(둘째 인자가 숫자가 아님) — 한글 앞에 낱자가 찍히던 것."""
+        import dialogue
+        import font
+
+        tab = font.GlyphTable()
+        tab.map = {c: i for i, c in enumerate("가나다")}
+        out = dialogue._encode([["가나다"]], [(1, b"\x115t")], 3, tab)
+        self.assertNotIn(b"t", out)
+        self.assertIn(b"\x1150", out)
+
+
+class TestSentenceEndMark(unittest.TestCase):
+    def test_문장_끝_뒤_멈춤은_한글_문장_끝_뒤에_놓는다(self):
+        """원문 멈춤이 문장 끝 부호 바로 뒤면 글자 비율이 아니라 한글 문장 끝 뒤 — 「황제 {멈춤}폐하께」 방지(1282:22:64)."""
+        import dialogue
+        import font
+
+        txt = "그래서 황제 폐하께 가는 거다. 다음 말이다."
+        tab = font.GlyphTable()
+        tab.map = {c: i for i, c in enumerate(sorted(set(txt)))}
+        # 원문 12자 중 뒤쪽(7자)에서 멈춤 — 비율로는 「황제」 근처, 문장 끝 표지가 있으면 「거다.」 뒤
+        pgs = [[txt]]
+        marks = [(7, b"\x11" + b"30", True)]
+        out = dialogue._encode(pgs, marks, 12, tab)
+        i = out.index(b"\x1130")
+        before = out[:i]
+        self.assertTrue(before.rstrip(b"`").endswith(b"."), before)  # 「…거다.」 뒤(공백 `60` 은 있어도 된다)
+
+
+class TestEngineWrap(unittest.TestCase):
+    def test_줄_끝_부호가_168px_에_닿으면_엔진이_부호만_다음_줄로_꺾는다(self):
+        """실측: `가`×12 + 공백 + `가` + `.` 은 168px 인데 엔진은 반각 부호도 12px 한 칸으로 재 `.` 만 떨어뜨린다 — 조판이 먼저 꺾는다."""
+        import typeset
+
+        for t in ("배 고장은 이제 다 고쳤습니다.", "사시겠어요? 역시 그러시군요."):
+            for pg in typeset.pages(t):
+                for line in pg:
+                    self.assertFalse(typeset.engine_wraps(line), line)

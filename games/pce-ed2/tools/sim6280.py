@@ -90,6 +90,10 @@ class Sim:
             self.wr(zp(), self.a)
         elif op == 0x8D:
             self.wr(self.fetch16(), self.a)
+        elif op == 0x8E:  # STX abs
+            self.wr(self.fetch16(), self.x)
+        elif op == 0x86:  # STX zp
+            self.wr(zp(), self.x)
         elif op == 0x9D:
             self.wr(self.fetch16() + self.x, self.a)
         elif op == 0x99:
@@ -98,6 +102,8 @@ class Sim:
             self.wr(zp(), 0)
         elif op == 0x9C:  # STZ abs
             self.wr(self.fetch16(), 0)
+        elif op == 0xA6:  # LDX zp
+            self.x = self.nz(self.rd(zp()))
         elif op == 0xA2:
             self.x = self.nz(self.fetch())
         elif op == 0xA0:
@@ -168,6 +174,8 @@ class Sim:
             self.wr(p, self.nz((v << 1) | c))
         elif op == 0x62:  # CLA
             self.a = 0
+        elif op == 0x3A:  # DEC A
+            self.a = self.nz(self.a - 1)
         elif op == 0xBA:  # TSX
             self.x = self.nz(self.sp)
         elif op == 0xE6:
@@ -227,6 +235,44 @@ class Sim:
             }[op]
             if take:
                 self.pc = (self.pc + d) & 0xFFFF
+        elif op == 0x20:  # JSR
+            t = self.fetch16()
+            ret = (self.pc - 1) & 0xFFFF
+            self.push(ret >> 8)
+            self.push(ret & 0xFF)
+            self.pc = t
+        elif op == 0xB2:  # LDA (zp)
+            p = zp()
+            self.a = self.nz(self.rd(self.rd(p) | self.rd(p + 1) << 8))
+        elif op == 0x92:  # STA (zp)
+            p = zp()
+            self.wr(self.rd(p) | self.rd(p + 1) << 8, self.a)
+        elif op == 0x1A:  # INC A
+            self.a = self.nz(self.a + 1)
+        elif op == 0xEE:  # INC abs
+            p = self.fetch16()
+            self.wr(p, self.nz(self.rd(p) + 1))
+        elif op == 0xCE:  # DEC abs
+            p = self.fetch16()
+            self.wr(p, self.nz(self.rd(p) - 1))
+        elif op == 0x49:  # EOR #imm
+            self.a = self.nz(self.a ^ self.fetch())
+        elif op == 0x46:  # LSR zp
+            p = zp()
+            v = self.rd(p)
+            self.c = v & 1
+            self.wr(p, self.nz(v >> 1))
+        elif op == 0x66:  # ROR zp
+            p = zp()
+            v = self.rd(p)
+            c = self.c
+            self.c = v & 1
+            self.wr(p, self.nz((v >> 1) | c << 7))
+        elif op == 0x82:  # CLX
+            self.x = 0
+        elif op == 0xFE:  # INC abs,X
+            p = self.fetch16() + self.x
+            self.wr(p, self.nz(self.rd(p) + 1))
         elif op == 0x4C:
             return self.fetch16()
         elif op == 0x60:

@@ -43,8 +43,23 @@ def _load_bdf():
     return _cache
 
 
+# 🔴 **「…」는 한국식 바닥(글자 아랫줄)에 점 셋**(번역 규칙 1-3, 마스터 10-08·10-22 「…이 일본식이야」). 갈무리의 「…」 는 12행 칸의 5행(한가운데)에 찍혀 있어
+#   마침표(10행)와 높이가 달랐다 — 마침표와 같은 행에 점 셋(열 1·5·9, pce-ed1 `font._ellipsis_floor` 와 같은 꼴). 오프닝·엔딩 자막(`opening_sub.render_line`)은 이미 이 꼴이다.
+ELLIPSIS_FLOOR_ROW = 10
+ELLIPSIS_FLOOR_COLS = (1, 5, 9)
+
+
+def _ellipsis_floor() -> bytes:
+    rows = [0] * 12
+    for c in ELLIPSIS_FLOOR_COLS:
+        rows[ELLIPSIS_FLOOR_ROW] |= 0x8000 >> c
+    return b"".join(v.to_bytes(2, "big") for v in rows)
+
+
 def glyph(ch: str) -> bytes:
     """한 글자 → 24B. 세로는 베이스라인에 맞추고 가로는 왼쪽 정렬."""
+    if ch == "…":
+        return _ellipsis_floor()
     g = _load_bdf().get(ord(ch))
     if g is None:
         raise KeyError(f"글꼴에 없는 글자: {ch!r} (U+{ord(ch):04X})")
