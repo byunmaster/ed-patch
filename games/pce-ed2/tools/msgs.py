@@ -78,6 +78,10 @@ def split(raw: bytes, name_ctrl=NAME_CTRL, num_ctrl=NUM_CTRL):
     if not ids:
         return None
     first, last = ids[0], ids[-1]
+    # 끝의 전각 공백 글자(`20`)가 제어(`12` 대기 · `0D` 줄바꿈) **뒤에** 붙은 줄(「が助けにきた{12}↵　」)은 그 공백을 내용으로 세지 않는다 — 내용으로 세면 가운데 낀 `12 0D` 가 내용 토큰으로
+    # 들어가 틀(「…」)로 바뀔 때 통째 버려졌다(10-22 구조 대조에서 발견: 다섯 패키지의 「{name}이(가) 도우러 왔다.」 가 끝 대기(`12`)를 잃었다). 뒤 제어로 둬 그대로 이어 붙인다.
+    while last > first and toks[last] == ("glyph", b" ") and toks[last - 1][0] == "ctrl" and toks[last - 1][1][0] not in name_ctrl | num_ctrl:
+        last = max(i for i in ids if i < last)
     lead = b"".join(b for _k, b in toks[:first])
     trail = b"".join(b for _k, b in toks[last + 1 :])
     return lead, toks[first : last + 1], trail

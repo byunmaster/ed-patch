@@ -26,6 +26,11 @@ echo "== pce-ed2 =="
 # 5. 배포 칸의 이미지가 전 트랙인가(오디오 포함) — 잘린 에뮬용이 거기 있으면 BGM 이 안 난다
 "$PY" "$T/check_build_layout.py"
 
+# 5-1. 구조 대조(마스터 10-22 「재배치사고 막는 정적검사」) — 원본과 새 이미지의 모든 대사 덩이·줄에서 글자 바이트를 뺀 제어 열을 맞댄다(표·별칭 · 덩이 이음 · 줄 수 · 구조 제어 · FF 채움).
+#      허용(쪽 넘김 증감 · 틀 · 상수 이름)은 규칙으로 검출해 개수를 센다 — 그 밖의 어긋남은 실패. 재배치 장부(`relocations.tsv`)는 빌드가 한 재배치에서 자동으로 뽑고 커밋된 것과 다르면 실패.
+"$PY" "$T/structcheck.py" --gate --iso "$ROOT/games/pce-ed2/work/build/pce-ed2-trim/ed2.iso"
+"$PY" "$T/relocations.py" --gate --iso "$ROOT/games/pce-ed2/work/build/pce-ed2-trim/ed2.iso"
+
 # 5-2. 제어 낀 줄 틀(`data/ctrl_lines.tsv`) — 모든 틀이 원본 줄에 맞고(낡은 틀 0) 제어 번호·구조 제어 검증을 통과해야 한다
 "$PY" "$T/ctrllines.py" --verify
 

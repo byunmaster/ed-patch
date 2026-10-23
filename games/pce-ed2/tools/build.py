@@ -596,6 +596,10 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
     if systext.INTERIOR_WARN:
         print(f"  ⚠ 문자열 안쪽 쓰기 짝을 못 찾음 {len(systext.INTERIOR_WARN)}곳: {systext.INTERIOR_WARN[:6]}")
     print(f"  덮어쓰기 없음 (쓰기 구간 {w.verify(iso)})")
+    # 재배치 장부(`relocations.py`)의 프로그램 쪽 재료 — 쓰기 장부(라벨 · 선형 좌표 · 길이). 원문 바이트는 안 남긴다
+    (common.REVIEW_DIR / "prog_writes.tsv").write_text(
+        "# 라벨\t선형 유저 바이트\t길이(B) — build.Writer.spans\n" + "".join(f"{lab}\t{lin}\t{len(data)}\n" for lin, data, lab in sorted(w.spans)), encoding="utf-8"
+    )
     verify_immutable(iso, w.touched, limit if trim else None)
     verify_readback(iso, intended, prog)
     bad = mode1.selftest(

@@ -108,6 +108,17 @@ def parse_frame(line: bytes) -> Frame | None:
     if not t_ids:
         return None
     first, last = t_ids[0], t_ids[-1]
+    # 줄이 쪽 대기(`13`)·`12` **뒤에 여백 글자만** 달고 끝나면(「…休んでいってくれ。{13}　」) 그 제어와 여백은 본문이 아니라 꼬리다 — 본문으로 세면 끝 대기가
+    # 쪽 가름 속으로 들어가 다시 짤 때 사라진다(10-22 구조 대조에서 발견: 642:28:31 의 끝 `13` 이 빠져 창이 키를 안 기다렸다).
+    blank = {b"\x20", b"\xa0", b"`", b"\x81\x40"}
+    q = last
+    while q > first and toks[q][0] == "t" and toks[q][1] in blank:
+        q -= 1
+    if q < last and toks[q][0] == "c" and toks[q][1][0] in (0x12, 0x13):
+        r = q
+        while r > first and not (toks[r][0] == "t" and toks[r][1] not in blank):
+            r -= 1
+        last = r
     for k, b in toks[first : last + 1]:
         if k == "spk" or (k == "c" and b[0] not in MID_OK):
             return None
