@@ -867,14 +867,14 @@ def key_cont_fix(jp, kr, path, ctl=None):
     커서 폭은 대사 보기 실측에서 뽑은 정본(`script/key_cont.json` — `derive_key_cont.py`)이 든다. 첫 어절이 안 들어가면
     블록 머리에 개행, 첫 줄 일부만 들어가면 어절 경계에서 개행 — **글은 안 바뀐다.** 열쇠가 없거나 마크업이 첫 줄에 있으면 손대지 않는다."""
     global _KEY_CONT
-    if kr is None or not path:
-        return kr
-    if _KEY_CONT is None:
+    if _KEY_CONT is None:  # 🔴 표 적재가 먼저다 — `kr=None` 표 적재 호출(`_scn_chains` · `_scn_cuts`)이 조기 반환에 막혀 조용히 빈 표를 돌려주던 약점(10-23)
         try:
             with open(KEY_CONT_JSON, encoding="utf-8") as f:
                 _KEY_CONT = json.load(f)
         except OSError:
             _KEY_CONT = {}
+    if kr is None or not path:
+        return kr
     game = "ED1" if "/ED1SCN" in path else "ED2"
     k = line_key(jp)
     # 🔴 새 화자 창(`[창]`)이 앞 글 끝에 바로 붙는 자리 — 이름이 앞 줄 끝에 붙는다(「란도!!플로라」, 2026-10-19 qa). 이름 앞에서 줄을 바꾼다.
