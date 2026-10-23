@@ -60,7 +60,11 @@ def _internal_key(s):
        가 반각 `ﾎﾟｲﾝﾄ` 때문에 내부 키로 걸러져 **화면에 일본어가 남았는데 0줄**이었다(마스터 화면).
        내부 키(`ｲｼｭﾀ～ｲｽﾞｰ`·`ｳｲﾙ～城`)는 한자·물결은 섞여도 **히라가나는 안 쓴다.**
     """
-    return any("ｦ" <= c <= "ﾟ" for c in s) and not any("ぁ" <= c <= "ゟ" for c in s)
+    # 🔴 규칙은 `names.internal_key` 가 정본이다(사본을 두지 않는다 — 여기만 「반각 가나가 섞이면 키」로 넓어 있던 탓에 ED2 전투 HUD 길 이름 열한 칸
+    #    `ｲｼｭﾀ～ｲｽﾞｰ`·`ｳｲﾙ～城` 이 일본어로 남았는데 이 게이트가 0줄이라 했다, 2026-10-20 style). 전각 물결·한자가 섞이면 표시명이다.
+    from names import internal_key
+
+    return internal_key(s) and not any("ぁ" <= c <= "ゟ" for c in s)
 
 
 def _decode(raw, capped):

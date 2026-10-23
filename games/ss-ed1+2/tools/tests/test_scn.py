@@ -284,6 +284,26 @@ class Scn(unittest.TestCase):
         self.assertEqual(len(puts), 1)
         self.assertEqual(len(left), 1)
 
+    def test_silence_dots_rule_1_3(self):
+        """규칙 1-3 — 점 14개 침묵 줄은 「…」 5개. 다른 길이·이미 「…」 인 줄은 그대로."""
+        self.assertEqual(S.silence_dots("." * 14), "…" * 5)
+        self.assertEqual(S.silence_dots("%c병사%c\n" + "." * 14 + "%c"), "%c병사%c\n" + "…" * 5 + "%c")
+        self.assertEqual(S.silence_dots("두 달 남짓" + "." * 12), "두 달 남짓" + "." * 12)  # 열쇠 없으면 그대로
+        self.assertEqual(S.silence_dots("딸이" + "." * 12, "b9ed32bfb0b41137"), "딸이……")  # 원문 7점 → 2
+        self.assertEqual(S.silence_dots("남짓" + "." * 12, "e0553b61c5a084dd"), "남짓………")  # 원문 9점 → 3
+        self.assertEqual(S.silence_dots("…" * 5), "…" * 5)
+
+    def test_comma_rule_2_13(self):
+        """규칙 2-13 ⑨ — 연결어미 `는데·지만·만` 뒤 쉼표: 앞 절 11음절 이하면 빼고 12음절 이상이면 남긴다."""
+        self.assertEqual(S.comma_rule("찾아왔는데, 없었다."), "찾아왔는데 없었다.")  # 5음절
+        self.assertEqual(S.comma_rule("죄송합니다만, 부탁드립니다."), "죄송합니다만 부탁드립니다.")
+        long_ = "이렇게나 오랫동안 기다리고 있었는데, 정말 늦었군."  # 앞 절 12음절 이상
+        self.assertEqual(S.comma_rule(long_), long_)
+        self.assertEqual(S.comma_rule("가만, 기다려."), "가만, 기다려.")  # 부사 `가만` 은 안 본다
+        # 문장 경계 뒤에서 다시 센다
+        self.assertEqual(S.comma_rule("아주 길게 오랫동안 이야기했다. 그런데, 좋다."), "아주 길게 오랫동안 이야기했다. 그런데, 좋다.")
+        self.assertEqual(S.comma_rule("아주 길게 오랫동안 이야기했다.{p}가는데, 왔다."), "아주 길게 오랫동안 이야기했다.{p}가는데 왔다.")
+
     def test_migrate_is_deterministic(self):
         """오프셋 순으로 깐다 — 입력 순서가 달라도 같은 배치가 나와야 한다(제1원칙)."""
         mk = lambda o: (o, "칸을 넘는다", "jp", {"ptr_at": [], "raw_hex": ""}, b"y" * 4)
@@ -405,6 +425,132 @@ class NameRules(unittest.TestCase):
             assert patch_scn._internal_key(t) == names.internal_key(t), t
             assert patch_ui._internal_key(t) == names.internal_key(t), t
             assert patch_ui._nname(t) == names.bare(t), t
+
+
+class KeyContFix(unittest.TestCase):
+    """키 대기 뒤 이어 그려지는 블록의 첫 줄을 남은 폭에 맞춘다(10-19) — 낱말 한가운데 접힘 방지."""
+
+    def setUp(self):
+        import patch_scn as S
+
+        self.S = S
+        S._KEY_CONT = {"ED2": {S.line_key("JPA"): 9.0}}
+
+    def tearDown(self):
+        self.S._KEY_CONT = None
+
+    def test_first_word_that_does_not_fit_goes_to_a_new_line(self):
+        # 남은 폭 14 − 9 = 5.0 — 「죄수번호」(4.0)는 들어가고 「죄수번호 893번이군.」(첫 줄 전체)은 안 들어간다 → 어절 경계에서 끊는다
+        got = self.S.key_cont_fix("JPA", "죄수번호 893번이군.%c", "/BIN/ED2SCN32.BIN")
+        self.assertEqual(got, " 죄수번호\n893번이군.%c")
+
+    def test_long_first_word_gets_a_leading_newline(self):
+        got = self.S.key_cont_fix("JPA", "어마어마하게큰낱말이다.%c", "/BIN/ED2SCN32.BIN")
+        self.assertEqual(got, "\n어마어마하게큰낱말이다.%c")
+
+    def test_unknown_key_or_fitting_line_is_left_alone(self):
+        self.assertEqual(self.S.key_cont_fix("JPB", "죄수번호 893번이군.%c", "/BIN/ED2SCN32.BIN"), "죄수번호 893번이군.%c")
+        self.assertEqual(self.S.key_cont_fix("JPA", "응!?%c", "/BIN/ED2SCN32.BIN"), " 응!?%c")  # 들어가면 앞 공백 하나
+
+    def test_new_speaker_window_after_text_breaks_the_line(self):
+        self.S._KEY_CONT = {"nl": {"ED2": [self.S.line_key("JPN")]}}
+        self.assertEqual(self.S.key_cont_fix("JPN", "%c플로라%c\n란도 씨.%c", "/BIN/ED2SCN35.BIN"), "\n%c플로라%c\n란도 씨.%c")
+
+
+class UntouchedTail(unittest.TestCase):
+    """꼬리(확장 영역)는 `patch_ui` 가 먼저 깐 문안 위에 덮어쓰면 안 된다 — 0 으로 비어 있는 구간만 자리다(ED2MON04 0x4D78, 10-19)."""
+
+    def test_tail_skips_bytes_already_written_by_another_patcher(self):
+        import patch_scn as S
+
+        orig = bytes(8)  # 원본 8B
+        built = bytes(8) + b"\x41\x42\x43\x00" + bytes(6)  # 꼬리 8.. : 먼저 깐 3자 + NUL, 그 뒤 6B 는 빔
+        got = S._untouched([[8, 10]], built, orig)
+        self.assertEqual(got, [[12, 6]])  # 3자(8~10)를 건너뛰고, 그 문자열의 종단 NUL(11)도 앞 문자열 몫이라 12 부터
+
+    def test_empty_tail_is_still_free(self):
+        import patch_scn as S
+
+        self.assertEqual(S._untouched([[4, 6]], bytes(10), bytes(4)), [[4, 6]])
+
+
+class ContinuationFix(unittest.TestCase):
+    """키 대기 뒤 이어 그려지는 글의 첫 줄 — 낱말이 끊기거나 앞 글에 붙지 않게(2026-10-19 qa r6)."""
+
+    def test_inner_key_wait_gets_space_and_word_boundary(self):
+        """블록 안쪽 키 대기(`%c`=9) 뒤: 앞 글 바로 뒤에 이어지므로 공백 하나, 안 들어가는 어절은 다음 줄로(「미안 미안.나도 한 번 / 쯤」)."""
+        import patch_scn as S
+
+        got = S.key_cont_fix("x", "%c%s%c\n아니 뭐, 미안 미안.%c나도 한 번쯤\n해 보고 싶었거든.%c", "/BIN/ED1SCN24.BIN", [2, "?", 1, 9, 8])
+        self.assertEqual(got, "%c%s%c\n아니 뭐, 미안 미안.%c 나도 한\n번쯤 해 보고 싶었거든.%c")
+
+    def test_cursor_at_line_start_adds_no_space(self):
+        """커서가 줄 맨 앞(폭 0)이면 앞 글이 없다 — 이음 공백을 넣지 않는다(SCN08 id075 「 그렇게 많이는」)."""
+        import patch_scn as S
+
+        S.key_cont_fix("x", "y", "/BIN/ED1SCN08.BIN")  # 표 적재
+        S._KEY_CONT["ED1"]["zz-zero"] = 0
+        orig = S.line_key
+        S.line_key = lambda jp: "zz-zero"
+        try:
+            got = S.key_cont_fix("x", "그렇게 많이는\n못 지니시겠지요!!%c", "/BIN/ED1SCN08.BIN")
+        finally:
+            S.line_key = orig
+            del S._KEY_CONT["ED1"]["zz-zero"]
+        self.assertEqual(got, "그렇게 많이는\n못 지니시겠지요!!%c")
+
+    def test_best_cut_never_follows_a_speaker_header(self):
+        import patch_scn as S
+
+        lines = ["가나다.", "라마바.", "류난", "모, 몸이", "않습니다."]
+        self.assertEqual(S.best_cut(lines, 2, 4, hdr={2}), 2)  # 머리 줄(2) 앞 — 화자 교대
+        self.assertNotEqual(S.best_cut(lines, 2, 4, hdr={1}), 2)  # 머리 줄 바로 뒤는 건너뛴다
+
+
+class AutoSplit(unittest.TestCase):
+    """5행 넘는 쪽을 창 끝(08)으로 가른다 — 문안은 안 바뀐다(10-19)."""
+
+    def test_header_plus_five_lines_is_split_at_a_sentence_end(self):
+        import patch_scn as S
+
+        kr = "%c남자%c\n가나다.\n라마바.\n사아자.\n차카타.\n파하."
+        got = S.auto_split(kr, 5)
+        self.assertEqual(got.replace("\x08", "\n"), kr)  # 글은 그대로
+        self.assertIn("\x08", got)
+        self.assertEqual(S.auto_split("%c남자%c\n가.\n나.\n다.", 5), "%c남자%c\n가.\n나.\n다.")  # 한도 이내는 손 안 댐
+
+    def test_cut_after_speaker_header_moves_before_it(self):
+        """표 컷이 머리 줄 뒤(1)여도 머리 앞(0)으로 — 머리 바로 뒤 창 끝은 안 갈려 본문이 창 아래로 넘쳤다(ED1SCN23 m2, 10-19 qa r6)."""
+        import patch_scn as S
+
+        S.key_cont_fix("x", "y", "/BIN/ED1SCN23.BIN")  # 표 적재
+        S._KEY_CONT.setdefault("pages", {}).setdefault("ED1", {})["zz-test"] = [1]
+        orig = S.line_key
+        S.line_key = lambda jp: "zz-test"
+        try:
+            got = S.page_split("x", "%c류난%c\n모, 몸이 말을\n않습니다!!%c", "/BIN/ED1SCN23.BIN")
+        finally:
+            S.line_key = orig
+            del S._KEY_CONT["pages"]["ED1"]["zz-test"]
+        self.assertTrue(got.startswith("\x08%c류난%c"))
+        self.assertNotRegex(got, r"%c[^%\n]+%c\x08")
+
+    def test_new_speaker_row_is_the_preferred_cut(self):
+        import patch_scn as S
+
+        kr = "%c세리오스%c\n있다!!\n알이야!!\n%c게일%c\n어디 어디,\n좀 보여 줘.%c"
+        got = S.auto_split(kr, 5)
+        self.assertIn("알이야!!\x08%c게일%c", got)
+
+    def test_ed1_six_rows_need_a_short_last_line(self):
+        """ED1 은 6행까지 — 단 꽉 찬 쪽의 마지막 줄이 ▽ 칸(7.5)을 넘으면 그 쪽만 가른다(원판 ▽ 는 아래 가운데, 10-19)."""
+        import patch_scn as S
+
+        short = "%c남자%c\n가나다.\n라마바.\n사아자.\n차카타.\n파하."  # 머리 + 5줄 = 6행, 마지막 줄 짧음
+        self.assertNotIn("\x08", S.auto_split(short, 6, 7.5))
+        long_last = "%c남자%c\n가나다.\n라마바.\n사아자.\n차카타.\n파하파하파하파하파하."  # 마지막 줄 5.5칸이면 통과, 더 길면 가른다
+        long_last = long_last.replace("파하파하파하파하파하.", "파하파하파하파하파하파하파하파하.")
+        self.assertIn("\x08", S.auto_split(long_last, 6, 7.5))
 
 
 if __name__ == "__main__":

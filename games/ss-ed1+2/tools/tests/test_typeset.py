@@ -21,6 +21,14 @@ class Typeset(unittest.TestCase):
     def t(self, jp, kr, names=None):
         return T.typeset(jp, kr, NAMES if names is None else names)
 
+    def test_curly_quotes_are_half_width_one_byte(self):
+        """‘ ’ “ ” 는 반각 — 폭 0.5, 1B 코드(11KANJI 전각 칸이 비어 화면에 빈 칸이던 것, 2026-10-19 qa r6 → 마스터 「반각으로」)."""
+        import font
+
+        self.assertEqual(T.width("“빛”"), 0.5 + 1 + 0.5)
+        self.assertEqual(font.to_bytes("‘가’", {"가": (b"\x88\xa0", 1)}), bytes([0x60]) + b"\x88\xa0" + bytes([0x7B]))
+        self.assertEqual(font.byte_len("“가”"), 2 + 2)  # 따옴표 1B 둘 + 가(슬롯 2B) — 계획 없이 근사하는 길이도 같다
+
     def test_speaker_newline_survives(self):
         """🔴 화자와 본문을 가르는 개행을 지우면 본문이 화자 줄에 붙는다(8,657블록)."""
         got, bad = self.t("%c兵士%c\n本文だ。%c", "본문이다.")
@@ -99,7 +107,7 @@ class Typeset(unittest.TestCase):
         # ⚠ 개행은 PS1 과 같은 조판(`ps1_layout` — 문장 단위·균형)이 넣은 것이다.
         #   런타임 이름은 가장 긴 값(색 쌍 안 아이템 전각 8 · 주어 파티원 4)으로 잰다.
         self.assertEqual(
-            got, "%s은(는)\n커다란 항아리를 깼다.\n항아리 안에는\n%c%s%c이(가)\n들어 있었다."
+            got, "%s은(는) 커다란\n항아리를 깼다.\n항아리 안에는\n%c%s%c이(가)\n들어 있었다."
         )
 
     def test_partial_canon_must_not_blank_the_rest(self):
@@ -349,3 +357,69 @@ class WordWrap(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+class ChainBreak(unittest.TestCase):
+    """🔴 이어 쓰는 블록(끝에 `%c`·개행이 없다)은 다음 블록이 같은 줄 꼬리에 붙는다 — 장비 메시지 셋이 한 줄로
+    이어졌다(2026-10-16 실기). 원문은 줄이 꽉 차 끝나 엔진이 넘겼으나 우리 문안은 안 채운다."""
+
+    def test_full_line_sentence_gets_a_break(self):
+        got = T.chain_break("%c聖なるつるぎを装備しました。", "%c성스러운 검을 장비했습니다.")
+        self.assertEqual(got, "%c성스러운 검을 장비했습니다.\n")
+
+    def test_hanging_tail_is_left_alone(self):
+        """꼬리 부호가 걸쳐 14.5 가 된 줄은 엔진이 스스로 넘긴다 — 개행을 더하면 빈 줄이 난다."""
+        got = T.chain_break("聖なるヨロイを装備しました。", "성스러운 갑옷을 장비했습니다.")
+        self.assertEqual(got, "성스러운 갑옷을 장비했습니다.")
+
+    def test_page_end_and_newline_end_are_left_alone(self):
+        self.assertEqual(T.chain_break("聖なるたてを装備しました。%c", "방패를 장비했습니다.%c"), "방패를 장비했습니다.%c")
+        self.assertEqual(T.chain_break("ひとこと。\n", "한마디.\n"), "한마디.\n")
+
+    def test_mid_sentence_block_also_gets_a_break(self):
+        """문장 중간에서 끊긴 블록도 끊는다 — 다음 블록이 공백 없이 붙고 합친 줄이 넘쳐 낱말 한가운데서 접힌다(10-19)."""
+        got = T.chain_break("ベルガの鉱山で 落盤が起こって", "베르가 광산에서 낙반이 나서")
+        self.assertEqual(got, "베르가 광산에서 낙반이 나서\n")
+
+    def test_key_wait_continuation_breaks_before_overflowing_word(self):
+        """제어값 9 뒤 글이 같은 줄에 이어지는데 첫 어절이 14.0 을 넘으면 9 뒤에 개행 — 어절 한가운데서 접히지 않게(10-19)."""
+        jp = "%c男%c\nそんなこと知るか。%cえっ!?%cそうだろ!!%c"
+        built = "%c란도%c\n그런 걸 알 리가 없잖아.%c응!?%c그렇지!!%c"
+        self.assertEqual(T.ctl_newline(jp, built, [0, 0, 9, 9, 0]), "%c란도%c\n그런 걸 알 리가 없잖아.%c\n응!?%c그렇지!!%c")
+
+    def test_ascii_tilde_becomes_fullwidth(self):
+        """새턴 11ASCII 에 `~` 글리프가 없다 — 전각 `～` 로(10-19 qa 「살려 줘~」 빈칸)."""
+        self.assertEqual(T.to_saturn("살려 줘~ 내가"), "살려 줘～ 내가")
+
+    def test_original_trailing_newline_is_restored(self):
+        """원문이 개행으로 끝나면(사전은 끝 개행을 안 담는다) 우리도 끝 개행 — 안 그러면 다음 블록이 같은 줄에 붙는다."""
+        self.assertEqual(T.chain_break("%c兵士%c\nこれは 王子さま。\n", "%c병사%c\n아, 왕자님."), "%c병사%c\n아, 왕자님.\n")
+        self.assertEqual(T.chain_break("ひとこと。\n", "한마디.\n"), "한마디.\n")
+
+    def test_runtime_value_and_bare_names_are_left_alone(self):
+        self.assertEqual(T.chain_break("ひろった%s", "주웠다%s"), "주웠다%s")
+        self.assertEqual(T.chain_break("エルアスタ", "엘아스타"), "엘아스타")
+
+    def test_short_original_line_gets_the_break_too(self):
+        """원문 줄이 안 찼어도 끊는다 — 한국어는 같은 줄에 이으면 공백이 없어 붙는다."""
+        self.assertEqual(T.chain_break("はい。", "예."), "예.\n")
+
+    def test_only_story_scenes_get_the_break(self):
+        """전투 메시지·백업 RAM 안내 창은 줄 넘김이 달라 안 건드린다 — `chain` 은 씬 대사 창에서만 켠다."""
+        jp, kr = "聖なるつるぎを装備しました。", "성스러운 검을 장비했습니다."
+        self.assertEqual(T.typeset(jp, kr, NAMES)[0], kr)
+        self.assertEqual(T.typeset(jp, kr, NAMES, chain=True)[0], kr + "\n")
+        import patch_scn as S
+
+        self.assertTrue(S.DIALOG_RE.match("/BIN/ED2SCN06.BIN"))
+        for p in ("/ED.BIN", "/ED2.BIN", "/BIN/ED2MON03.BIN"):
+            self.assertFalse(S.DIALOG_RE.match(p))
+
+    def test_josa_is_measured_folded(self):
+        """🔴 병기는 접은 폭으로 잰다(조사 훅이 그리기 전에 한 음절로 접는다) — 접기 전 폭으로 재면 줄을 일찍 넘긴다."""
+        self.assertEqual(T.width("왕가의 검을(를)"), T.width("왕가의 검을"))
+        got, bad = T.typeset("%sは 宝箱を開けました。", "%s은(는) 보물상자를 열었다.", NAMES)
+        self.assertIsNone(bad)
+        # 접은 폭이면 한 줄(14.5 걸침)에 들 것 같지만 런타임 이름(`%s`)이 든 줄은 걸친 줄로 안 친다 — 한 어절만 내린다
+        self.assertEqual(got, "%s은(는) 보물상자를\n열었다.")
+        got, bad = T.typeset("ええ。", "예, 그렇습니다 정말로 그렇지요 맞아요 네.", NAMES)
+        self.assertIsNone(bad)

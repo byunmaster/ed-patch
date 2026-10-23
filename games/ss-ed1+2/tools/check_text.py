@@ -80,12 +80,24 @@ def corpus():
             jp, off = e.get("text", ""), int(e["file_offset"], 16)
             if off in mine:
                 continue
-            kr = patch_scn.canon_of(canon, jp, sites.get(off))
+            kr = patch_scn.canon_of(canon, jp, sites.get(off), path=path, off=off)
             if kr and patch_scn.contract(kr) == patch_scn.contract(jp):
                 out.append((path, off, jp, kr))
     mm.close()
     _f.close()
     return out
+
+
+_PUA = re.compile("[\ue000-\uf8ff]")
+
+
+def axis_pua(rows):
+    """⑫ 우리 문안에 사용자 영역(PUA) 글자가 남았다 — PS1 내부 자리표시(U+E003 붙임 공백 등)다.
+
+    ⚠ 새턴 인코딩은 cp932 라 PUA 를 `F0 xx` 로 구워 폰트 밖 글자가 찍힌다(md-ed2 에서 「약초구말이군」 75스트림).
+      `typeset_scn.to_saturn` 이 U+E003 을 공백으로 바꾼다 — 그 뒤에도 남으면 실패.
+    """
+    return [(f, o, m.group().encode("unicode_escape").decode(), kr) for f, o, _jp, kr in rows for m in _PUA.finditer(kr)]
 
 
 def axis_josa(rows):
@@ -125,10 +137,11 @@ def _name_josa_re():
         names = set()
         from names import person_table
 
-        for cat in ("person", "monster", "place", "item"):
+        # 🔴 정본 전 범주(주문 포함)·**띄어 쓴 이름도** 본다(2026-10-18 전수 — 예전엔 공백 든 이름 「검은 기사」류를 통째로 건너뛰었다)
+        for cat in ("person", "monster", "place", "item", "spell"):
             for v in (person_table() if cat == "person" else canon.table(cat, "eiyuu")).values():
                 v = v.strip()
-                if len(v) >= 2 and "가" <= v[-1] <= "힣" and " " not in v:
+                if len(v) >= 2 and "가" <= v[-1] <= "힣":
                     names.add(v)
         alt = "|".join(map(re.escape, sorted(names, key=len, reverse=True)))
         _NAME_JOSA = re.compile(
@@ -196,8 +209,11 @@ def axis_style(rows):
     bad = []
     for path, off, _jp, kr in rows:
         body = MARKUP.sub("", kr)
-        if FULLW.search(body):
+        # ＥＰ·ＭＰ·ＨＰ 는 전각이 규칙이다(번역 규칙 1-4, 10-08) — 반각으로 쓴 쪽이 어긋남
+        if FULLW.search(re.sub("[ＥＭＨ]Ｐ", "", body)):
             bad.append((path, off, "전각 영숫자", body[:40]))
+        if re.search(r"(?<![A-Za-z])(?:EP|MP|HP)(?![A-Za-z])", body):
+            bad.append((path, off, "ＥＰ·ＭＰ·ＨＰ 반각", body[:40]))
         if HALFKANA.search(body):
             bad.append((path, off, "반각 가나", body[:40]))
         # 🔴 **창마다 잰다**(2026-08-29). 예전엔 블록 하나를 창 하나로 보고 통째로 쟀는데,
@@ -401,6 +417,7 @@ def main():
         ("⑦ 손으로 박은 이름이 정본과 갈렸다", axis_hardcoded_names()),
         ("⑧ 부호 앞 공백", axis_space_before_punct()),
         ("⑪ 장 끝 카드 제목이 정본과 갈렸다", axis_chapter_cards()),
+        ("⑫ 문안에 PUA 글자가 섞였다", axis_pua(rows)),
     ):
         if not hits:
             print(f"  ✅ {title}: 0건")

@@ -72,14 +72,15 @@ def _scenes(mm, out):
             off = int(e["file_offset"], 16)
             if not jp or off in mine:
                 continue
-            raw = canon.get(line_key(jp))
+            at = S._scn_at(path, off)  # 한 자리만 다른 문안(scn_at)도 조판기에 태운다
+            raw = at if at is not None else canon.get(line_key(jp))
             if raw is None:
                 continue
             site = sites.get(off)
             if site:
-                built, bad = S.canon_of(canon, jp, site), None
+                built, bad = S.canon_of(canon, jp, site, path=path, off=off), None
             else:
-                built, bad = T.typeset(jp, raw, names)
+                built, bad = T.typeset(jp, raw, names, chain=bool(S.DIALOG_RE.match(path)))
             # ⚠ 실패 사유도 담는다 — 「조판이 되던 게 안 된다」도 조판 변화다
             acc.append(f"{off:x}\x00{bad or built}")
         if acc:

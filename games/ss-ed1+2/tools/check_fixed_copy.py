@@ -90,6 +90,269 @@ def sites(d):
     return out
 
 
+# ── 의미 검사: 복사 자리를 **돌려서** 잰다 (2026-10-19) ────────────────────────────────
+#
+# 위 `sites`/`check` 는 `add #1,r2` 연속 꼴 하나만 안다. 그런데 몬스터 슬롯 B·C 이름은 **고정 오프셋**으로 한 바이트씩 쓴다
+#
+#     mov.b @r1+,r2 · add #104,r3 · mov.b r2,@r3 · mov r7,r3     (… #105, #106 … 로 이어 간다)
+#
+# 이 꼴은 UNIT 에 안 걸려 검산에서 통째로 빠졌다 → 「나무인愛」·「지팡이품」(이름 뒤가 잘림)이 화면까지 갔다.
+# 꼴을 하나씩 더 외우면 다음 변형에서 또 샌다 — 그래서 **꼴이 아니라 효과**를 잰다: `mov.l @(d,pc),r1`
+# 로 소스를 적재하는 자리마다 작은 해석기로 돌려, 그 소스 문자열의 바이트가 **어디로 몇 개 나가는지** 센다.
+# 레지스터 값은 모르는 채(기호)로 두고 소스 바이트에만 꼬리표를 단다. 분기·루프·지연 슬롯·중간 진입(`bra`)도 같은 눈금이다.
+SIM_STEPS = 400
+SIM_MIN_COPY = 3  # 이보다 적게 나가면 문자열 복사가 아니다
+
+
+def _sx8(v):
+    return v - 256 if v & 0x80 else v
+
+
+class _Stop(Exception):
+    pass
+
+
+def simulate(d, base, start, faults=None):
+    """`start` 의 `mov.l @(d,pc),r1` 부터 돌려 `[(목적지, 소스 주소, 바이트)]` 와 소스 시작 주소를 낸다.
+
+    - 목적지: 정수(절대) 또는 `("rN", 오프셋)`(들어올 때 레지스터 기준 — 몬스터 슬롯 base 가 이쪽이다)
+    - 소스 바이트는 파일에서 **실제로** 읽는다(우리 문안이 들어간 빌드 이미지에서도 같은 눈금)
+    - `r1` 을 다른 것으로 덮으면(다음 복사의 시작) 거기서 멈춘다 · 모르는 명령도 멈춘다
+    """
+    n = len(d)
+
+    def word(a):
+        o = a - base
+        return (d[o] << 8) | d[o + 1] if 0 <= o < n - 1 else None
+
+    def lit32(a):
+        o = a - base
+        return int.from_bytes(bytes(d[o : o + 4]), "big") if 0 <= o <= n - 4 else None
+
+    # 레지스터는 전부 **같은 기호 기준**(`"R"`)에서 시작한다 — 슬롯 base 가 r7·r8·r5 중 무엇이든 `r3 = rB` 로 시작하는
+    # 원본 언롤과 `mov rB,r3` 로 시작하는 우리 루프가 같은 목적지(`R+104`)로 읽혀야 비교가 된다.
+    R = [("R", 0) for _ in range(16)]
+    writes = []
+
+    def add(v, c):
+        if isinstance(v, int):
+            return (v + c) & 0xFFFFFFFF
+        if isinstance(v, tuple) and len(v) == 2 and isinstance(v[0], str):
+            return (v[0], v[1] + c)
+        raise _Stop
+
+    def val(r):
+        return R[r]
+
+    T = None
+    pc = start
+    src0 = None
+
+    def step_one(pc_):
+        """한 명령. `(다음 pc 오버라이드 또는 None, 분기 종류)` — 분기는 호출부가 지연 슬롯을 돌린다."""
+        nonlocal T, src0
+        w = word(pc_)
+        if w is None:
+            raise _Stop
+        op, a, b, lo = w >> 12, (w >> 8) & 15, (w >> 4) & 15, w & 15
+        imm = w & 0xFF
+        if w == 0x0009:  # nop
+            return None
+        if op == 0xD:  # mov.l @(disp,pc),Rn
+            v = lit32(((pc_ + 4) & ~3) + imm * 4)
+            if v is None:
+                raise _Stop
+            if a == 1:
+                if src0 is not None:
+                    raise _Stop  # 다음 복사의 시작
+                src0 = v
+            R[a] = v
+            return None
+        if op == 0x9:  # mov.w @(disp,pc),Rn
+            o = pc_ + 4 + imm * 2 - base
+            if not (0 <= o < n - 1):
+                raise _Stop
+            R[a] = (((d[o] << 8) | d[o + 1]) ^ 0x8000) - 0x8000 & 0xFFFFFFFF
+            if a == 1 and src0 is not None:
+                raise _Stop
+            return None
+        if op == 0xE:  # mov #imm,Rn
+            if (
+                a == 1 and imm != 0
+            ):  # `mov #0,r1` 은 우리 루프의 꼬리 — 뒤로 흘러내리는지 보려면 계속 돈다
+                raise _Stop
+            R[a] = _sx8(imm) & 0xFFFFFFFF
+            return None
+        if op == 0x7:  # add #imm,Rn
+            if a == 1 and not (src0 is not None and isinstance(R[1], int)):
+                raise _Stop
+            R[a] = add(R[a], _sx8(imm))
+            return None
+        if op == 0x6:
+            if lo == 3:  # mov Rm,Rn
+                if a == 1:
+                    raise _Stop
+                R[a] = R[b]
+                return None
+            if lo in (0, 4):  # mov.b @Rm(+),Rn
+                addr = R[b]
+                if not isinstance(addr, int):
+                    raise _Stop
+                o = addr - base
+                if not (0 <= o < n):
+                    # 🔴 주소 0 근처를 읽으면 **낙하**다 — 한 루프가 끝나 다음 루프로 흘러들어가 r1 이 어긋난 것
+                    #   (2026-10-19 나무인간C 이름이 통째로 빈 사고). 정상 코드는 널 지대를 안 읽는다.
+                    if faults is not None and addr < 0x01000000:
+                        faults.append(pc_)
+                    raise _Stop
+                if lo == 4 and a != b:
+                    R[b] = add(R[b], 1)
+                R[a] = ("b", addr, d[o])
+                return None
+            raise _Stop
+        if op == 0x2:
+            if lo == 0:  # mov.b Rm,@Rn
+                v = R[b]
+                if isinstance(v, tuple) and v[0] == "b":
+                    writes.append((R[a], v[1], v[2]))
+                return None
+            if lo == 8:  # tst Rm,Rn
+                x, y = R[a], R[b]
+                if isinstance(x, tuple) and x[0] == "b":
+                    x = x[2]
+                if isinstance(y, tuple) and y[0] == "b":
+                    y = y[2]
+                if not (isinstance(x, int) and isinstance(y, int)):
+                    raise _Stop
+                T = (x & y) == 0
+                return None
+            raise _Stop
+        if op == 0x8 and a in (0x9, 0xB, 0xD, 0xF):  # bt · bf · bt/s · bf/s
+            if T is None:
+                raise _Stop
+            take = T if a in (0x9, 0xD) else not T
+            tgt = pc_ + 4 + _sx8(imm) * 2
+            return ("cond", take, tgt, a in (0xD, 0xF))
+        if op == 0xA:  # bra
+            return ("bra", True, pc_ + 4 + (((w & 0xFFF) ^ 0x800) - 0x800) * 2, True)
+        raise _Stop
+
+    try:
+        for _ in range(SIM_STEPS):
+            r = step_one(pc)
+            if r is None:
+                pc += 2
+                continue
+            _k, take, tgt, has_delay = r
+            if has_delay:
+                r2 = step_one(pc + 2)
+                if r2 is not None:
+                    raise _Stop
+            pc = tgt if take else pc + (4 if has_delay else 2)
+    except _Stop:
+        pass
+    return writes, src0
+
+
+def copy_sites(d, base):
+    """`[(시작 pc, 소스 주소, 쓰기 목록)]` — 소스 문자열 바이트를 `SIM_MIN_COPY` 개 이상 내보내는 자리."""
+    out = []
+    for pc in range(0, len(d) - 4, 2):
+        if d[pc] != 0xD1:
+            continue
+        writes, src0 = simulate(d, base, base + pc)
+        if src0 is None:
+            continue
+        mine = [w for w in writes if src0 <= w[1] < src0 + 64]
+        if len(mine) >= SIM_MIN_COPY:
+            out.append((base + pc, src0, mine))
+    return out
+
+
+def semantic_check(orig, built, base):
+    """`([(시작 pc, 원본 길이, 우리 길이, 나간 바이트 수, 왜)], 본 자리 수)` — 우리 이름이 **잘리는** 자리.
+
+    기준은 위 `check` 와 같다(원본이 NUL 까지 넣던 자리는 우리도 넣어야 · 고정 폭이면 칸을 넘지 말아야). 다른 건
+    **우리 것을 실제로 돌린** 결과로 잰다는 것 — 루프로 바꾼 자리는 NUL 까지 나가므로 저절로 통과한다.
+    """
+    bad, seen = [], 0
+    for pc, src0, wr in copy_sites(orig, base):
+        seen += 1
+        o_nul = any(b == 0 for _d, _s, b in wr)
+        o_len = bytes(orig[src0 - base : src0 - base + 64]).find(0)
+        flt = []
+        got = simulate(built, base, pc, flt)
+        if flt:
+            bad.append(
+                (
+                    pc,
+                    o_len,
+                    -1,
+                    0,
+                    f"낙하 — 0x{flt[0]:08X} 에서 널 주소를 읽는다(루프가 끝나고 다음 루프로 흘러들었다)",
+                )
+            )
+            continue
+        bw = [w for w in got[0] if got[1] is not None and got[1] <= w[1] < got[1] + 64]
+        if got[1] is None:
+            bad.append((pc, o_len, -1, 0, "시작이 사라졌다 — 복사 자리가 바뀌었다"))
+            continue
+        z = bytes(built[got[1] - base : got[1] - base + 64]).find(0)
+        our = 64 if z < 0 else z
+        nul = any(b == 0 for _d, _s, b in bw)
+        # 목적지가 그대로여야 한다 — 루프가 엉뚱한 곳에 쓰면 NUL 이 나가도 이름이 안 간다
+        if bw and wr and bw[0][0] != wr[0][0]:
+            bad.append((pc, o_len, our, len(bw), f"목적지가 바뀌었다 {wr[0][0]} → {bw[0][0]}"))
+            continue
+        if o_nul and not nul:
+            bad.append(
+                (
+                    pc,
+                    o_len,
+                    our,
+                    len(bw),
+                    "종단이 안 나간다 — 이름 뒤가 잘리고 직전 내용이 이어진다",
+                )
+            )
+        elif not o_nul and our > len(bw):
+            bad.append((pc, o_len, our, len(bw), "칸을 넘는다 — 뒤가 잘린다"))
+    return bad, seen
+
+
+def _has_halfwidth_kana(b):
+    """SJIS 바이트열에 **단독 반각 가나**(0xA1~0xDF)가 있나 — 2바이트 글자의 뒷바이트는 안 센다."""
+    i = 0
+    while i < len(b):
+        c = b[i]
+        if 0x81 <= c <= 0x9F or 0xE0 <= c <= 0xFC:
+            i += 2
+        elif 0xA1 <= c <= 0xDF:
+            return True
+        else:
+            i += 1
+    return False
+
+
+def kana_sources(orig, built, base):
+    """`[(시작 pc, 소스 주소, 길이)]` — 복사 소스가 **빌드에서도 반각 가나**인 자리(번역이 안 간 이름).
+
+    🔴 복사 코드가 맞아도 퍼 나르는 문자열이 일본어면 화면에 그대로 나간다(2026-10-19 ED1 「ｼﾞｬｰﾃﾞｲﾝｿﾞﾝﾋﾞA」 — 길이는 맞아서
+       위 두 검사가 다 통과했다). 원본 소스가 반각 가나가 아니었던 자리는 안 센다.
+    """
+    out = []
+    for pc, src, _wr in copy_sites(orig, base):
+        got = simulate(built, base, pc)
+        if got[1] is None:
+            continue
+        z = bytes(built[got[1] - base : got[1] - base + 64]).find(0)
+        o = bytes(orig[src - base : src - base + 64])
+        if _has_halfwidth_kana(
+            bytes(built[got[1] - base : got[1] - base + z])
+        ) and _has_halfwidth_kana(o[: max(o.find(0), 0)]):
+            out.append((pc, got[1], z))
+    return out
+
+
 def check(fname, orig, built, skip):
     """`([(리터럴, 원본길이, 우리길이, 복사길이, 왜)], [못 잰 리터럴]) — 어긋난 것만."""
     bad, unread = [], []
@@ -164,8 +427,24 @@ def main():
             continue
         n = len(sites(orig))
         total += n
-        bad, unread = check(fname, orig, common.read_extent(mm, *files[fname]), skip)
+        built = common.read_extent(mm, *files[fname])
+        bad, unread = check(fname, orig, built, skip)
         fails += len(bad)
+        # 🔴 꼴이 아니라 **효과**로 한 번 더 잰다 — 위 `check` 가 못 보는 꼴(고정 오프셋 · 공유 런 중간 진입 · 짧은 런)
+        sem, seen = semantic_check(orig, built, LOAD_BASE)
+        fails += len(sem)
+        if sem:
+            print(f"  ❌ {fname}: 의미 검사 — 복사 {seen}곳 중 {len(sem)}곳에서 이름이 잘린다")
+            for pc, ln, our, n, why in sem:
+                print(f"     0x{pc:08X}: 원본 {ln}B · 우리 {our}B · 복사 {n}B — {why}")
+        else:
+            print(f"  ✅ {fname}: 의미 검사 — 복사 {seen}곳 전부 NUL 까지 나간다")
+        kana = kana_sources(orig, built, LOAD_BASE)
+        fails += len(kana)
+        for pc, src, ln in kana:
+            print(
+                f"  ❌ {fname}: 0x{pc:08X} 복사 소스 0x{src:08X} 가 반각 가나 {ln}B — 번역이 안 갔다"
+            )
         if unread:
             # ⚠ 「못 쟀다」는 실패가 아니라 **안 본 것**이다 — 조용히 넘기지 않는다
             print(

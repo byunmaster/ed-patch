@@ -127,5 +127,15 @@ class PlaceFields(unittest.TestCase):
         self.assertEqual(_walk(b"\x88\xa0\x81\x40\x88\xa1"), (0, False))
 
 
+class AsciiGlyphs(unittest.TestCase):
+    def test_comma_is_not_a_period(self):
+        """🔴 반각 쉼표는 마침표와 **다른 모양**이어야 한다 — 꼬리가 11행 밖으로 잘려 쉼표 3,983곳이 마침표로 그려졌다(2026-10-20 qa r5)."""
+        g = patch_ui.bake_ascii([",", "."])
+        self.assertNotEqual(g[","], g["."])
+        self.assertEqual(len(g[","]), patch_ui.ASCII_STRIDE)
+        # 쉼표는 두 행(점 + 꼬리)을 쓴다
+        self.assertGreaterEqual(sum(1 for b in g[","] if b), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -49,7 +49,7 @@ sys.path.insert(
 import common
 import dump_scn
 from canon import table
-from names import HALF, MARKS, PRIME, split_mark  # noqa: F401
+from names import HALF, MARKS, PRIME, bare, split_mark  # noqa: F401
 from patch_ui import slot_plan
 
 FILES = [f"/BIN/ED2MON{i:02d}.BIN" for i in range(1, 11)]
@@ -59,8 +59,26 @@ FILES = [f"/BIN/ED2MON{i:02d}.BIN" for i in range(1, 11)]
 MAXNAME = 20
 
 
+def resolve(jp, mon, folded):
+    """`(우리 표기, 접미)` — 정확한 원문 → 접은 꼴(반각 가나 · 공백 · 중점) 순.
+
+    🔴 원본에는 이름이 **반각 가나**로 든 칸이 있다(`ﾄﾞﾗｽﾄｺﾞｰｽﾄＡ` · `ﾌﾞﾗﾑﾅ ｸｲｰﾝ` · `ｻｲﾚﾝﾄ･ﾛｰﾄﾞＡ`).
+       글자 그대로 찾으면 **정본에 있는데도 그 칸만 조용히 슬롯에서 빠져** 반각 가나가 화면에
+       나갔다(2026-10-18 전투 일괄 중 발견). 같은 말의 다른 표기 = 같은 원문이다.
+    """
+    kr, mark = split_mark(jp, mon)
+    if kr:
+        return kr, mark
+    return split_mark(bare(jp), folded)
+
+
+def folded_table(mon):
+    return {bare(k): v for k, v in mon.items()}
+
+
 def slots(path, mon):
     """`[(오프셋, JP, KR)]` — 그 파일의 이름 칸. **포인터 대상만** 본다."""
+    folded = folded_table(mon)
     d = bytes(common.extract(path))
     base = dump_scn.base_for(os.path.basename(path))
     assert base, path
@@ -81,7 +99,7 @@ def slots(path, mon):
             jp = d[t:j].decode("cp932")
         except UnicodeDecodeError:
             continue
-        kr, mark = split_mark(jp, mon)
+        kr, mark = resolve(jp, mon, folded)
         if kr:
             out.append((t, jp, kr + mark))
     return sorted(out)
@@ -188,6 +206,7 @@ def main():
     print(f"  이름 {total}칸 · 자리를 옮긴 것 {moved}")
     if apply:
         verify(dst, placed, plan, files)
+        left_over(dst, files, mon)
     else:
         print("  (검산만 — 실제로 넣으려면 `--apply`)")
     mm.close()
@@ -211,6 +230,40 @@ def verify(dst, placed, plan, files):
     mm2.close()
     _f2.close()
     print(f"  ✅ 되읽기 몬스터 이름 {n}칸 (자리 추적)")
+
+
+def left_over(dst, files, mon):
+    """🔴 **정본에 있는 이름이 원문 꼴로 남았나** — 남았으면 실패. 포인터로 찾는 `slots()` 와 **독립**으로,
+    NUL 로 끊은 모든 문자열을 접은 꼴(`resolve`)로 정본에 대 본다.
+
+    왜: `slots()` 가 글자 그대로만 찾던 때 반각 가나 이름 5칸이 조용히 빠졌다. 「남은 일본어」 게이트는
+    반각 가나를 바이너리로 보고 거르므로(`scan_untranslated._JPOK`) 그 구멍을 못 봤다.
+    """
+    import re
+
+    folded = folded_table(mon)
+    _f, mm = common.open_image(dst)
+    bad = []
+    for path in FILES:
+        d = common.read_extent(mm, *files[path])
+        for m in re.finditer(rb"[\x81-\x9f\xe0-\xef\xa1-\xdf][\x20-\x7e\x40-\xfc\xa1-\xdf]{1,38}", d):
+            try:
+                jp = m.group().decode("cp932")
+            except UnicodeDecodeError:
+                continue
+            if m.end() < len(d) and d[m.end()] != 0:
+                continue
+            if m.start() > 0 and d[m.start() - 1] >= 0x20:
+                continue
+            kr, _mark = resolve(jp, mon, folded)
+            if kr:
+                bad.append((path, m.start(), jp, kr))
+    mm.close()
+    _f.close()
+    assert not bad, "정본에 있는 몬스터 이름이 원문 꼴로 남았다:\n" + "\n".join(
+        f"  {p} 0x{o:X} {jp!r} → {kr!r}" for p, o, jp, kr in bad
+    )
+    print("  ✅ 원문 꼴로 남은 정본 몬스터 이름 0")
 
 
 def _decode(b, inv):

@@ -33,6 +33,10 @@ import patch_scn as S
 import patch_ui as U
 
 # 정본 검사(`scripts/check/check_canon.py`) — 어긋남은 실패로 친다(마스터 10-11 「정본검사는 모든 게임이 켜져있어야 하지 않아?」).
+# 정본(`shared/canon`)은 메뉴·호칭·시스템·전투 문구 — 장면 대사(`ED1SCN…`·`ED2SCN…`)는 정본 「문구」 검사의 범위 밖이다(마스터 10-08, PS1 어댑터와 같은 기준).
+# 같은 꼴의 원문이라도 장면 대사는 장면 문체로 옮긴다(보물상자 「宝箱の中には…」 — 정본 열쇠의 `{name}` 자리를 고정 명사 「宝箱」에 맞춰 오탐했다).
+# ⚠ 이름 검사(`check_names`)는 그대로 장면 대사를 잰다.
+CANON_SKIP = r"SCN\d"
 CANON_GATE = True
 
 # 제어부호·공백만 있고 **번역할 글자가 없는** 블록 — 분모에서 뺀다(둘 다 아니면 오탐만 는다).
@@ -85,6 +89,7 @@ def _scn_pairs(mm):
         if not got:
             continue
         sites = S.sites_for(path)
+        seq = []  # (열쇠, 위치, 원문, 우리 문안) — 파일 안 블록 순서
         for e in got[1]:
             jp = e.get("text", "")
             if not jp:
@@ -92,8 +97,24 @@ def _scn_pairs(mm):
             eid = e.get("entry_id", e.get("file_offset"))
             where = f"scn:{path}#{eid}"
             site = sites.get(int(e["file_offset"], 16))
-            kr = S.canon_of(canon, jp, site)
+            kr = S.canon_of(canon, jp, site, path=path, off=int(e["file_offset"], 16))
+            seq.append((S.line_key(jp), where, jp, kr))
             yield where, jp, kr
+        # 🔴 **이어진 문장은 한 줄로도 낸다**(2026-10-20 sfc-ed2 실측 부류 — 어댑터가 조각 단위로만 줄을 내면 한 문장이 블록 여럿에 걸친 자리를 이름·정본·인사
+        #    검사기 셋이 다 못 본다). 같은 창에 이어 그려지는 블록 묶음(`script/key_cont.json` `chains`)을 파일 안에서 찾아 원문·우리 문안을 이어 붙인 줄을 더한다.
+        game = "ED1" if "/ED1SCN" in path else "ED2"
+        keys = [s[0] for s in seq]
+        for chain in S._scn_chains().get(game, ()):
+            n = len(chain)
+            for i in range(len(keys) - n + 1):
+                if keys[i : i + n] == list(chain):
+                    part = seq[i : i + n]
+                    krs = [x[3] for x in part]
+                    yield (
+                        f"{part[0][1]}+{n}",
+                        "".join(x[2] for x in part),
+                        None if any(k is None for k in krs) else "".join(krs),
+                    )
 
 
 def _sys_pairs(mm):

@@ -176,13 +176,22 @@ def main():
 #   하나를 어떻게 바이트로 적나** 하나뿐이다.
 
 
+# 🔴 곡선 따옴표 ‘ ’ “ ” 는 **반각**이다(번역 규칙 1-2, 마스터 2026-10-19 「쌍따옴표는 반각으로」). 11KANJI.FON 의 전각 칸은 비어 있고(JIS 1구 38~41점)
+#    11ASCII.FON 에도 글리프가 없어, 원판 반각 폰트에서 비어 있고 어디에도 안 쓰이는 코드 넷(`` ` `` `{` `|` `}`)에 Galmuri11 글리프를 굽는다
+#    (`patch_ui.bake_half_quotes` — 여는 쪽은 칸 오른쪽 끝·닫는 쪽은 왼쪽 끝에 잉크를 붙인다). 문안은 곡선 따옴표 그대로, 바이트만 1B 코드다.
+HALF_QUOTES = {"‘": 0x60, "’": 0x7B, "“": 0x7C, "”": 0x7D}
+HALF_QUOTE_OPENING = ("‘", "“")
+
+
 def to_bytes(kr, plan):
     """우리 문안 → 바이트. 한글은 **슬롯 SJIS**, 나머지는 cp932.
 
     🔴 한글은 cp932 로 인코딩이 안 된다 — 안 쓰는 글리프 슬롯에 배정하고 **그 슬롯의
        SJIS 코드**로 적는다(`hangul_map_11kanji.json`, 이 게임의 근간).
     """
-    return b"".join(plan[c][0] if plan and c in plan else c.encode("cp932") for c in kr)
+    return b"".join(
+        bytes([HALF_QUOTES[c]]) if c in HALF_QUOTES else plan[c][0] if plan and c in plan else c.encode("cp932") for c in kr
+    )
 
 
 def byte_len(kr):
@@ -193,6 +202,9 @@ def byte_len(kr):
     """
     n = 0
     for ch in kr:
+        if ch in HALF_QUOTES:
+            n += 1
+            continue
         try:
             n += len(ch.encode("cp932"))
         except UnicodeEncodeError:

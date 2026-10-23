@@ -72,6 +72,14 @@ DUMP = os.path.join(common.OUT_DIR, "scn_jp")
 _ROOT = os.path.dirname(os.path.dirname(common.GAME_DIR))
 LINE_DICT = os.path.join(_ROOT, "games", "ps1-ed1+2", "line_dict.json")
 LINE_DICT_REF = "game/ps1-ed1+2:games/ps1-ed1+2/line_dict.json"
+# 「どうも ありがとう」 · 「また来てくれよ」 · 「どれを買うんだ？」 · 「〈품목〉だね。…」 · 「ちょっと待ってくれ」
+SHOP_1018 = {
+    "29507f69cbcab430": "정말 고마워요.",  # 해요체 가게(ED2SCN27) — 합쇼체 가게(ED1SCN16)는 scn_at 로 「정말 감사합니다.」(PS1 역할군 목록 E, 마스터 10-20)
+    "c29f621c8e7746c2": "또 와 줘.",
+    "6f9f9a990a77e2f8": "어느 걸 살 거야?",
+    "a00ede6f5de63402": "\ue003말이군.\n정말 고마워.",
+    "0921377dcf4a6ca7": "잠깐 기다려 줘.",
+}
 # 🔴 **본체 둘도 대사를 갖는다** — ED2 오프닝 프롤로그가 `/ED2.BIN` 안에 있다(실측: 저본이
 #    ED.BIN 419 · ED2.BIN 145 블록에 붙는다). 씬 파일이 아니라고 빼 두면 그만큼이 영영
 #    일본어로 남는다. 대신 그 둘은 **주인이 여럿**이라(시스템 메시지 · 표 · 고유명사 ·
@@ -255,7 +263,28 @@ def _movable(off, n, e, table=frozenset()):
     )
 
 
-def _needs_pack(run, canon, d, skip_offs, built, sites):
+RELOC_OFF_FILE = os.path.join(common.GAME_DIR, "script", "relocation_off.txt")
+_RELOC_OFF = None
+
+
+def reloc_off(path, e):
+    """🔴 **재배치 장부 스위치**(마스터 10-22 「정 안되면 나중에 되돌려야할수도 있으니」) — 이 블록을 **옮기지 않는다**.
+
+    `script/relocation_off.txt`(또는 환경변수 `ED_RELOC_OFF=<목록 파일>`)에 장부(`relocations.tsv`)의 블록 키(`ED1SCN08#170`)를 한 줄씩 적는다(`#` 주석).
+    켜진 블록은 제자리 칸에 **맞으면 제자리에 넣고**(구간 재깔기에서도 안 옮긴다), 칸을 넘으면 번역을 못 넣어 **원문 일본어로 남는다**(잔존 게이트가 울린다 —
+    되돌리면 생기는 일). 기본(파일 없음)은 아무것도 안 끈다 — 빌드 바이트가 안 바뀐다.
+    """
+    global _RELOC_OFF
+    if _RELOC_OFF is None:
+        src = os.environ.get("ED_RELOC_OFF") or RELOC_OFF_FILE
+        _RELOC_OFF = set()
+        if os.path.exists(src):
+            with open(src, encoding="utf-8") as f:
+                _RELOC_OFF = {ln.split("#", 1)[0].strip() + "#" + ln.split("#", 1)[1].split()[0] for ln in f if ln.strip() and not ln.lstrip().startswith("#") and "#" in ln}
+    return bool(path) and f"{os.path.basename(path)[:-4]}#{e.get('entry_id')}" in _RELOC_OFF
+
+
+def _needs_pack(run, canon, d, skip_offs, built, sites, path=None):
     """이 구간에 **제 칸을 넘는 블록**이 있나 — 있으면 구간을 통째로 다시 깐다."""
     if not canon:
         return False
@@ -264,7 +293,7 @@ def _needs_pack(run, canon, d, skip_offs, built, sites):
             continue
         span = (run[idx + 1][0] - off) if idx + 1 < len(run) else n
         jp = e.get("text", "")
-        kr = canon_of(canon, jp, (sites or {}).get(off))
+        kr = canon_of(canon, jp, (sites or {}).get(off), path=path, off=off)
         if kr is None or contract(kr) != contract(jp):
             continue
         if len(_encode(kr)) + 1 > span:
@@ -273,7 +302,16 @@ def _needs_pack(run, canon, d, skip_offs, built, sites):
 
 
 def rebuild(
-    run, canon, d, skip_offs=frozenset(), built=None, spare=None, sites=None, done=None, spans=None
+    run,
+    canon,
+    d,
+    skip_offs=frozenset(),
+    built=None,
+    spare=None,
+    sites=None,
+    done=None,
+    spans=None,
+    path=None,
 ):
     """`(새 바이트, [(ptr_at, 새 주소 오프셋)], [건너뛴 이유])` — 구간을 다시 깐다.
 
@@ -295,7 +333,7 @@ def rebuild(
     #    ⇒ 넘치는 구간만 **모든 옮길 수 있는 블록**을 이주 풀에 넘긴다. 배치는 `migrate` 가
     #      한다(FFD · 짝수 주소 · 인접 병합 · 못 놓은 것의 칸은 안 내주는 고정점).
     #    ⚠ **안 넘치는 구간은 손대지 않는다** — 옮길 이유가 없는데 옮기면 포인터만 흔든다.
-    packed = _needs_pack(run, canon, d, skip_offs, built, sites)
+    packed = _needs_pack(run, canon, d, skip_offs, built, sites, path)
     table = _stride_table(run) if packed else frozenset()
     for idx, (off, n, e) in enumerate(run):
         # 🔴 **블록은 자기 칸에 머문다 — 당기지 않는다.** 칸은 `(내용+NUL)` 을 4바이트
@@ -309,7 +347,7 @@ def rebuild(
         raw = bytes.fromhex(e["raw_hex"])
         jp = e.get("text", "")
         site = (sites or {}).get(off)
-        kr = None if off in skip_offs else canon_of(canon, jp, site)
+        kr = None if off in skip_offs else canon_of(canon, jp, site, path=path, off=off)
         use = raw
         if kr is not None:
             if contract(kr) != contract(jp):
@@ -321,8 +359,12 @@ def rebuild(
                 # ⚠ 인코딩을 **여기서 들고 나간다** — 확장 영역으로 이주할 쪽이 다시
                 #   조판·인코딩하면 두 곳에서 갈릴 수 있다(같은 문안을 두 번 만들지 않는다).
                 enc = _encode(kr)
-                skipped.append((off, f"칸을 넘는다 {len(enc)}B > {n}B", jp[:18], e, enc))
-            elif packed and _movable(off, n, e, table):
+                if reloc_off(path, e):
+                    # 장부 스위치 — 옮기지 않는다(번역을 못 넣고 원문이 남는다)
+                    skipped.append((off, f"장부 스위치로 이주를 껐다 — 칸을 넘는다 {len(enc)}B > {n}B", jp[:18], e, None))
+                else:
+                    skipped.append((off, f"칸을 넘는다 {len(enc)}B > {n}B", jp[:18], e, enc))
+            elif packed and _movable(off, n, e, table) and not reloc_off(path, e):
                 # 구간을 다시 깐다 — 자리는 `migrate` 가 정하고 여기선 원본을 남긴다
                 skipped.append((off, "구간을 다시 깐다", jp[:18], e, _encode(kr)))
             else:
@@ -383,13 +425,57 @@ def all_texts(mm=None):
             continue
         sites = sites_for(path)
         for e in got[1]:
-            kr = canon_of(canon, e.get("text", ""), sites.get(int(e["file_offset"], 16)))
+            kr = canon_of(canon, e.get("text", ""), sites.get(int(e["file_offset"], 16)), path=path, off=int(e["file_offset"], 16))
             if kr:
                 out.append(kr)
     if close:
         mm.close()
         _f.close()
     return out
+
+
+_SILENCE = re.compile(r"(?<!\.)\.{14}(?!\.)")
+
+
+# 🔴 문장 속 점 꼴 — **원문(JP) 점 개수 n → 「…」 round(n/3)개**(규칙 1-3). 우리 문안의 ASCII 점 수(12개)가 아니라 원문 점 수로 센다.
+#    열쇠 = 그 줄 원문의 line_key. 값 = 원문 점 개수에서 나온 「…」 개수(9점 → 3 · 7점 → 2).
+_DOTS_FROM_JP = {"e0553b61c5a084dd": 3, "b9ed32bfb0b41137": 2}
+
+
+def silence_dots(text, key=None):
+    """🔴 규칙 1-3 — 원문 점 n개 → 「…」 round(n/3)개(마스터 10-18).
+
+    · 점만 14개인 침묵 줄(원문 14점) → 「…」 5개. 저본 읽는 자리에서 바꾼다 — PS1 이 같은 값으로 고쳐 머지되면 할 일이 없다.
+    · 문장 속 12개 꼴은 `_DOTS_FROM_JP` 의 열쇠로 원문 점 수에서 센다(없는 열쇠는 안 건드린다).
+    """
+    text = _SILENCE.sub("…" * 5, text)
+    n = _DOTS_FROM_JP.get(key)
+    if n:
+        text = re.sub(r"\.{12}", "…" * n, text)
+    return text
+
+
+_CONNECT = re.compile(r"(는데|지만|(?<=[다네지세니련])만),")
+_BOUNDARY = re.compile(r"\{p\}|\{n\}|%c|[\n.!?…]")
+
+
+def comma_rule(text):
+    """🔴 규칙 2-13 ⑨(마스터 10-18) — `~는데,` `~지만,` `~만,` 뒤 쉼표는 **앞 절이 11음절 이하면 뺀다**(12음절 이상이면 남긴다).
+
+    앞 절 = 같은 문장의 처음(개행·창 넘김·문장부호 뒤)부터 그 어미까지의 한글 음절. 연결어미 `만` 은 앞이 서술 어미(다·네·지·세·니·련)일 때만
+    본다 — `가만,` `다만,` 같은 부사는 건드리지 않는다. PS1 이 같은 규칙으로 저본을 고쳐 머지되면 이 함수는 할 일이 없다(쉼표가 이미 없다).
+    """
+    out, last = [], 0
+    for m in _CONNECT.finditer(text):
+        cut = 0
+        for b in _BOUNDARY.finditer(text, 0, m.start()):
+            cut = b.end()
+        syl = len(re.findall(r"[가-힣]", text[cut : m.end() - 1]))
+        if syl <= 11:
+            out.append(text[last : m.end() - 1])  # 쉼표만 뺀다
+            last = m.end()
+    out.append(text[last:])
+    return "".join(out)
 
 
 def load_canon(quiet=False):
@@ -420,6 +506,11 @@ def load_canon(quiet=False):
         raw, where = r.stdout, f"game/ps1-ed1+2 {sha}"
     lines = json.loads(raw)["lines"]
     got = {k: v["t"] for k, v in lines.items() if isinstance(v, dict) and v.get("t")}
+    # 🔴 상점 문구 — 원문 말투를 따라 줄마다(마스터 10-18 「상점 문구 ok」). PS1 브랜치에는 들어갔으나
+    #    main 에 머지되기 전이라 이 트리의 사전은 옛 값이다. **머지 뒤 사전이 같은 값이 되면 이 표를 걷는다.**
+    for k, v in SHOP_1018.items():
+        if k in got:
+            got[k] = v
     # 🔴 **새턴 전용 문안을 덮어 얹는다** — PS1 사전이 영영 못 채우는 자리다(781블록:
     #    이식판이 갈린 문안 763 + 저작권 분류로 막힌 19). 겹치면 우리 것이 이긴다.
     # ⚠ **정본 이름과 통째로 같은 블록**은 사전을 안 거친다 — 아이템·지명이 한 블록으로
@@ -431,6 +522,7 @@ def load_canon(quiet=False):
     got.update(add)
     ours = load_ours()
     got.update(ours)
+    got = {k: comma_rule(silence_dots(v, k)) for k, v in got.items()}
     if not quiet:
         print(
             f"  저본 {len(got):,}원문 — {where} + 정본 이름 {len(add):,} + 새턴 전용 {len(ours):,}"
@@ -530,7 +622,7 @@ def load_ours():
 _NAMES = None
 
 
-def _canon_get(canon, jp, jp_mark=None, why=None):
+def _canon_get(canon, jp, jp_mark=None, why=None, chain=False, ctl=None):
     """원문 → **조판까지 끝난** 우리 블록. 없거나 조판이 안 되면 None.
 
     🔴 사전은 **문안만** 담는다(화자·창 전환·개행이 없다). 그대로 넣으면 구조 계약이
@@ -551,7 +643,7 @@ def _canon_get(canon, jp, jp_mark=None, why=None):
         _NAMES = typeset_scn._names()
     import typeset_scn
 
-    built, _bad = typeset_scn.typeset(jp_mark or jp, kr, _NAMES, why)
+    built, _bad = typeset_scn.typeset(jp_mark or jp, kr, _NAMES, why, chain, ctl)
     return built
 
 
@@ -570,21 +662,285 @@ def sites_for(path):
     return _SITES.get(path, {})
 
 
-def canon_of(canon, jp, site=None, why=None):
+DIALOG_RE = re.compile(r"^/BIN/ED[12]SCN\d+\.BIN$")
+
+
+# 🔴 **콜사이트 인자(제어값) 패치** — `블록 오프셋 → [(코드 자리, 원본 명령어, 새 명령어)]`. 그 블록을 **실제로 번역했을 때만** 쓴다.
+#    `%c` 는 sprintf 인자 한 바이트(제어코드)다(`docs/reference/our-findings.md`). 제어값 9 는 「키 대기 + 폭 2.0 의 빈 칸」이라
+#    한 줄이 꽉 차게 끝나는 일본어 문안을 전제로 다음 문장을 같은 줄에 이어 붙인다 — 한국어 줄 폭에선 이어 붙은 줄이 꼬이고
+#    빈 칸이 줄머리에 남는다(ED1 왕가의 장비 셋 — 마스터 10-17 캡처). **10(개행, 대기 없음)으로 바꿔 한 창에 세 줄**이 한 번에 뜬다
+#    (ED2 장비와 같은 모양, 엔진 베드 실측). 8(쪽 넘김)은 키를 세 번 눌러야 해서 안 갔다.
+#    ⚠ `mov #9,r2` 하나를 두 인자가 같이 쓴다(밀어 넣기 둘) — 그 명령어 하나가 둘을 다 바꾼다.
+CTL_PATCHES = {
+    "/BIN/ED1SCN01.BIN": {0x1B84: [(0x20F6, 0xE209, 0xE20A)]},
+}
+
+
+SCN_AT_JSON = os.path.join(common.GAME_DIR, "script", "scn_at.json")
+_SCN_AT = None
+
+
+def _scn_at(path, off):
+    """`script/scn_at.json` — **한 자리만** 다른 문안(원문이 같은 블록 중 그 한 자리). `{파일: {"0x오프셋": 문안}}`."""
+    global _SCN_AT
+    if _SCN_AT is None:
+        try:
+            with open(SCN_AT_JSON, encoding="utf-8") as f:
+                _SCN_AT = {k: {int(o, 16): v for o, v in d.items()} for k, d in json.load(f).items() if not k.startswith("_")}
+        except OSError:
+            _SCN_AT = {}
+    return _SCN_AT.get(path, {}).get(off) if path and off is not None else None
+
+
+def canon_of(canon, jp, site=None, why=None, path=None, off=None):
     """조판까지 끝난 우리 블록 — 주입 쌍이 있으면 되살렸다 되돌린다.
+
+    `off` 를 주면 그 자리만의 문안(`scn_at.json`)이 사전을 이긴다 — 원문이 같은 다른 자리는 그대로다.
 
     🔴 **`_canon_get` 을 직접 부르지 않는다.** 부르는 자리가 넷인데(재삽입 · 슬롯 계획 ·
        집계 · 이주) 한 곳만 빠뜨리면 **그 자리에서만 이름이 일본어**가 되거나 글리프가
        계획에서 빠진다(화면에서 글자가 사라진다).
     """
+    # 🔴 `path` 를 주면 그 파일이 **이야기 씬**인가를 본다 — 이어 쓰는 블록의 줄 끝 개행은 씬 대사 창에만
+    #    넣는다(`typeset_scn.chain_break`). 안 주면(None) 넣지 않는다 — 그래서 **빌드와 검사가 같은
+    #    결과를 보려면 모두 path 를 줘야 한다.**
+    egg = _scn_at(path, off)
+    if egg is not None:
+        canon = {**canon, line_key(jp): egg}
+    chain = bool(path and DIALOG_RE.match(path))
+    ctl = None
+    if chain and not site:  # 주입 쌍 블록은 `%c` 수가 달라 인자를 못 맞춘다
+        import callargs
+
+        ctl = callargs.for_file(path).get(jp)
     if not site:
-        return _canon_get(canon, jp, why=why)
+        kr = _canon_get(canon, jp, why=why, chain=chain, ctl=ctl)
+        return page_split(jp, key_cont_fix(jp, kr, path, ctl), path) if chain else kr
     import inject_pairs as ip
 
     pairs = sorted((int(i), ch) for i, ch in site["glyphs"].items())
     jp_mark, tails = ip.restore(jp, pairs)
-    kr = _canon_get(canon, jp, jp_mark, why)
+    kr = _canon_get(canon, jp, jp_mark, why, chain)
     return None if kr is None else ip.reinsert(kr, tails)
+
+
+# 원판 쪽 한도(이름 한 행 포함) — 게이트(`check_page_rows`)가 같은 값을 읽는다.
+#   ED2 5행(이름 + 본문 4줄, 6째 행은 ▽ 자리) · ED1 6행(이름 + 본문 5줄) — 원판 JP 캡처 대조(2026-10-19, inbox jp-cmp/scene-ed2·scene-ed1).
+PAGE_LIMIT = {"ED1": 6, "ED2": 5}
+# 🔴 ▽(다음 쪽 표시)는 **창 아래 가운데**다 — 원판 ED1 캡처(jp-cmp/scene-ed1/ED1SCN23/id003_m1_p1.png 등 셋)에서 ▽ 의 x 는 105~111 px, 글자는 x=13 에서
+#   시작하고 전각 한 칸이 12 px 라 (105−13)/12 = 7.67 칸. ED1 의 **6행 쪽은 마지막 줄 폭이 이 칸 안**이어야 ▽ 와 안 겹친다(원판 마지막 줄은 짧다). 넘으면 그 쪽만 가른다.
+TRI_W = {"ED1": 7.0}
+_HDR = re.compile(r"%c[^%\n]+%c\n")  # 화자 머리 `%c이름%c` + 개행 — 한 행
+_SENT_END = (".", "!", "?", "…", "다", "요", "죠", "네", "군")
+
+
+_CLAUSE_END = ("만", "는데", "지만", "며", "니까", "라서", "으며", "으나", "한데", "인데", "에는", "고도")
+
+
+def best_cut(lines, lo, hi, hdr=frozenset()):
+    """쪽을 가를 자리(새 쪽이 시작할 줄 번호 c, lo ≤ c ≤ hi) — 문장 끝 줄 뒤를 가장 좋게, 연결어미(~만·~는데·~지만…)로 끝난 줄 뒤를 다음으로 본다.
+    갈린 뒤 새 쪽에 한 줄만 남는 자리(고아)는 깎고, 점수가 같으면 앞 쪽에 더 담는 쪽(2026-10-19 qa — 문장 한가운데서 갈리던 3쪽).
+    `hdr` = 화자 머리 줄 번호들 — 머리 줄 **뒤**는 못 가르고(이름만 앞 쪽에 남는다), 머리 **앞**(화자 교대)이 가장 좋다."""
+    n = len(lines)
+    best, best_s = hi, None
+    for c in range(max(lo, 1), hi + 1):
+        if c >= n:
+            break
+        if (c - 1) in hdr:
+            continue
+        ln = lines[c - 1].rstrip().rstrip(",")
+        sc = 0
+        if c in hdr:
+            sc += 5
+        elif lines[c - 1].rstrip().endswith(_SENT_END_PUNCT):
+            sc += 4
+        elif ln.endswith(_CLAUSE_END) or lines[c - 1].rstrip().endswith(","):
+            sc += 3
+        rem = n - c
+        sc += 2 if rem >= 2 else -2
+        sc += 0.7 * c  # 앞 쪽을 더 채운다 — 문장 끝(+4)이 이르게 잡혀 앞 쪽이 두 줄로 남는 일을 막는다(qa r6 SCN12 「지날 수 없는데」 뒤)
+        if best_s is None or sc >= best_s:
+            best, best_s = c, sc
+    return best
+
+
+_SENT_END_PUNCT = (".", "!", "?", "…", "」")
+
+
+def _row_w(line):
+    """한 줄의 전각 칸 폭 — 색 표지·화자 머리 자리표시는 폭이 없다."""
+    from typeset_scn import width
+
+    return width(re.sub(r"%c|\x01\d+\x02", "", line))
+
+
+def auto_split(kr, limit, tri_w=None):
+    """🔴 블록 **안**에서 쪽(화자 머리 + 본문)이 한도를 넘으면 문장 끝 줄 앞에서 창 끝(`\\x08`)으로 가른다 — 문안은 안 바뀐다.
+    화자 머리(`%c이름%c`) 한 줄도 한 행이다. 화자가 바뀌는 자리를 가장 먼저, 없으면 문장 끝 줄 뒤에서 가른다.
+    블록 여럿에 걸치는 쪽은 못 센다 — 그건 대사 보기 실측 표(`pages`)가 든다."""
+    hdrs = []
+
+    def mask(m):
+        hdrs.append(m.group())
+        return f"\x01{len(hdrs) - 1}\x02\n"  # 머리 한 행(자체 개행 포함)
+
+    t = _HDR.sub(mask, kr)
+    out = []
+    for part in re.split(r"(%c|\x08)", t):
+        if part in ("%c", "\x08") or not part:
+            out.append(part)
+            continue
+        tail = "\n" if part.endswith("\n") else ""
+        lines = part[: len(part) - len(tail)].split("\n")
+
+        def cap_of(ls):
+            """이 쪽이 담을 수 있는 행 — 한도 행을 꽉 채우면 마지막 줄이 ▽ 칸(`tri_w`)을 넘지 않아야 한다."""
+            if tri_w is not None and len(ls) == limit and _row_w(ls[-1]) > tri_w:
+                return limit - 1
+            return limit
+
+        if len(lines) <= cap_of(lines):
+            out.append(part)
+            continue
+        pages = []
+        while len(lines) > cap_of(lines):
+            cap = min(limit, len(lines) - 1) if len(lines) > limit else limit - 1
+            cut = cap
+            for k in range(cap, 0, -1):  # 화자 머리 행이 우선
+                if lines[k].startswith("\x01"):
+                    cut = k
+                    break
+            else:
+                cut = best_cut(lines, 2, cap)
+            pages.append("\n".join(lines[:cut]))
+            lines = lines[cut:]
+        pages.append("\n".join(lines))
+        out.append("\x08".join(pages) + tail)
+    t = "".join(out)
+    return re.sub(r"\x01(\d+)\x02\n", lambda m: hdrs[int(m.group(1))], t)
+
+
+def page_split(jp, kr, path):
+    """🔴 쪽(창 한 장)이 5행(이름 + 본문 4줄)을 넘는 자리에서 **쪽을 가른다**(2026-10-19 원판 JP 대조 — 6째 행은 ▽ 자리, 우리 6행 쪽이 ▽ 와 겹친다).
+
+    창 끝 제어값 `08` 을 글 안에 **그대로** 넣는다 — 키 대기 뒤 창을 비우고 다음 글이 새 쪽 맨 위에서 시작한다(실측: 씬 34 번호 43 에 `08` 을 넣자
+    쪽이 하나 늘고 「앞으론 조심하고.」가 새 쪽으로 갔다). `%c` 가 아니라 **구조 계약(마크업 수)은 안 변한다.**
+    ① 대사 보기 실측에서 뽑은 정본(`script/key_cont.json` 의 `pages` — `derive_key_cont.py`)이 **블록 여럿에 걸친 쪽**을 든다: `{열쇠: [줄 번호…]}` —
+    그 블록의 줄 번호 j 앞(j=0 이면 블록 머리)에서 가른다. ② 그 뒤 블록 **안**에서 한도를 넘는 쪽은 `auto_split` 이 가른다."""
+    if kr is None or not path:
+        return kr
+    key_cont_fix(jp, None, path)  # 표 적재(None 은 그대로 돌려준다)
+    game = "ED1" if "/ED1SCN" in path else "ED2"
+    cuts = (_KEY_CONT or {}).get("pages", {}).get(game, {}).get(line_key(jp))
+    if cuts and "\x08" not in kr:
+        lines = kr.split("\n")
+        if len(lines) > 1 and re.fullmatch(r"%c[^%\n]+%c", lines[0]) and 1 in cuts and 0 not in cuts:
+            cuts = [0 if c == 1 else c for c in cuts]  # 화자 머리 뒤에서는 못 가른다(안 갈리고 본문이 창 아래로 넘친다) — 머리 앞에서
+        out = []
+        for i, ln in enumerate(lines):
+            out.append(("\x08" + ln) if (i in cuts and i > 0) else ln)
+        text = "\n".join(out).replace("\n\x08", "\x08")  # 가르는 자리의 개행은 창 끝이 대신한다
+        kr = ("\x08" + text) if 0 in cuts else text
+    return auto_split(kr, PAGE_LIMIT[game], TRI_W.get(game))
+
+
+def _scn_chains():
+    """체인 구조(`chains` — 대사 보기 실측의 쪽별 블록 열쇠 열) — 게이트(`check_page_rows`)가 읽는다."""
+    key_cont_fix("", None, "/BIN/ED2SCN01.BIN")  # 표 적재
+    return (_KEY_CONT or {}).get("chains", {})
+
+
+def _scn_cuts():
+    """쪽 가르기 표(`pages`) — 게이트(`check_page_rows`)가 읽는다."""
+    key_cont_fix("", None, "/BIN/ED2SCN01.BIN")  # 표 적재
+    return (_KEY_CONT or {}).get("pages", {})
+
+
+KEY_CONT_JSON = os.path.join(common.GAME_DIR, "script", "key_cont.json")
+_KEY_CONT = None
+
+
+def key_cont_fix(jp, kr, path, ctl=None):
+    """🔴 키 대기(제어값 9) 뒤 **같은 줄에서 이어 그려지는 블록**의 첫 줄을 남은 폭에 맞춘다(2026-10-19 qa — 「보여라.죄수번호 8/93번」).
+
+    블록은 따로 조판돼 앞 줄이 어디서 끝났는지 모르므로 첫 줄이 남은 폭(`14.0 − 커서 폭`)을 넘으면 엔진이 낱말 한가운데서 접는다.
+    커서 폭은 대사 보기 실측에서 뽑은 정본(`script/key_cont.json` — `derive_key_cont.py`)이 든다. 첫 어절이 안 들어가면
+    블록 머리에 개행, 첫 줄 일부만 들어가면 어절 경계에서 개행 — **글은 안 바뀐다.** 열쇠가 없거나 마크업이 첫 줄에 있으면 손대지 않는다."""
+    global _KEY_CONT
+    if _KEY_CONT is None:  # 🔴 표 적재가 먼저다 — `kr=None` 표 적재 호출(`_scn_chains` · `_scn_cuts`)이 조기 반환에 막혀 조용히 빈 표를 돌려주던 약점(10-23)
+        try:
+            with open(KEY_CONT_JSON, encoding="utf-8") as f:
+                _KEY_CONT = json.load(f)
+        except OSError:
+            _KEY_CONT = {}
+    if kr is None or not path:
+        return kr
+    game = "ED1" if "/ED1SCN" in path else "ED2"
+    k = line_key(jp)
+    # 🔴 새 화자 창(`[창]`)이 앞 글 끝에 바로 붙는 자리 — 이름이 앞 줄 끝에 붙는다(「란도!!플로라」, 2026-10-19 qa). 이름 앞에서 줄을 바꾼다.
+    if k in _KEY_CONT.get("nl", {}).get(game, ()) and kr.startswith("%c"):
+        return "\n" + kr
+    from typeset_scn import COLS, width
+
+    def cont(cursor, rest):
+        """커서(`cursor` 칸)에서 이어 그려지는 글 `rest` 의 첫 줄 조각(다음 개행·`%` 표지 앞까지)을 남은 폭에 맞춘다.
+        키 대기는 빈 칸을 안 그린다(실측) — 앞 글 바로 뒤에 이어 그려 「좋아.그럼」으로 붙는다. 읽히게 앞에 공백 하나(0.5)를 둔다.
+        첫 어절이 안 들어가면 머리에 개행, 첫 줄 일부만 들어가면 어절 경계에서 개행(글은 안 바뀐다). 남은 칸이 없으면 개행
+        (「…충분하다.가 / 자!!」 — 마지막 반 칸에 한 글자만 붙어 낱말이 끊겼다, 2026-10-19 qa r6)."""
+        seg = re.match(r"(?:[^\n%]|%c)*", rest).group()  # `%c`(색·쪽 표지)는 폭이 없다 — 한 줄 전체로 잰다
+        plain = seg.replace("%c", "")
+        if not plain.strip() or seg.startswith((" ", "\n")) or cursor >= COLS or cursor <= 0:
+            return rest  # 이미 줄 끝이면 엔진이 새 줄로 접는다 · 커서가 줄 맨 앞이면 이을 앞 글이 없다(「 그렇게 많이는」 줄머리 공백, qa r8)
+        sp = "" if plain.startswith(("은(는)", "이(가)", "을(를)", "와(과)")) else " "  # 이름 뒤 조사 병기는 이름에 바로 붙는다
+        avail = COLS - cursor - len(sp) * 0.5
+        if avail <= 0:
+            return "\n" + rest
+        if width(plain) <= avail:
+            return sp + rest
+        words = seg.split(" ")
+        acc, fit = 0.0, 0
+        for n, wd in enumerate(words):
+            add = width(wd.replace("%c", "")) + (0.5 if n else 0.0)
+            if acc + add > avail:
+                break
+            acc += add
+            fit = n + 1
+        if fit == 0:
+            return "\n" + rest
+        moved, tail = " ".join(words[fit:]), rest[len(seg) :]
+        nl = re.match(r"\n([^\n% ][^\n%]*)", tail)
+        if nl and width(moved.replace("%c", "") + " " + nl.group(1)) <= COLS:  # 옮긴 어절을 다음 줄에 합쳐 짧은 토막 줄을 안 만든다
+            moved, tail = moved + " " + nl.group(1), tail[nl.end() :]
+        return sp + " ".join(words[:fit]) + "\n" + moved + tail
+
+    w0 = _KEY_CONT.get(game, {}).get(k)
+    if w0 is not None:
+        # 블록 머리 — 맨 앞 `%c` 가 색 켜기(1·2·3)면 그 뒤 글이 앞 블록 줄에 이어진다(화자 머리가 아닌 경우)
+        lead = ""
+        if kr.startswith("%c") and not re.match(r"%c[^%\n]+%c\n", kr) and ctl and ctl[0] in (1, 2, 3):
+            lead, kr = "%c", kr[2:]
+        if not kr.startswith(("%", "\n")):
+            kr = lead + cont(w0, kr)
+        else:
+            kr = lead + kr
+    # 🔴 블록 **안**의 키 대기(`%c` = 9) 뒤 글 — 같은 줄에 이어 그려진다(「미안 미안.나도 한 번 / 쯤」, 2026-10-19 qa r6)
+    if ctl and 9 in ctl:
+        marks = list(re.finditer(r"%[csd]", kr))
+        out = []
+        for mi, mk in enumerate(marks):
+            if mi >= len(ctl) or ctl[mi] != 9:
+                continue
+            ls = kr.rfind("\n", 0, mk.start()) + 1
+            prior = kr[ls : mk.start()]
+            if "%" in prior or (ls == 0 and w0 is None):
+                continue  # 이름 인자(%s)·앞 블록에서 이어진 줄은 폭을 모른다
+            cursor = width(prior) + (w0 if ls == 0 and w0 is not None else 0.0)
+            end = mk.end()
+            nxt = marks[mi + 1].start() if mi + 1 < len(marks) else len(kr)
+            out.append((end, nxt, cont(cursor, kr[end:nxt])))
+        for end, nxt, fixed in reversed(out):  # 뒤에서부터 — 앞쪽 자리가 안 밀린다
+            kr = kr[:end] + fixed + kr[nxt:]
+    return kr
 
 
 def _moved(entries, ptrs, at):
@@ -657,6 +1013,16 @@ def _hook_span(path):
     return off, off + size  # 🔴 **0런 전체**를 훅 것으로 본다 — 길이는 문안 따라 자란다
 
 
+def _hook_pool(path):
+    """조사 훅이 이주 풀에 내준 틈 — `[(오프셋, 길이)]`. ⚠ 훅 쪽이 자리를 정한다(`patch_josa_hook.pool_spare`)."""
+    try:
+        import patch_josa_hook as H
+    except Exception:  # noqa: BLE001
+        return []
+    got = H.pool_spare(path)
+    return [got] if got else []
+
+
 def _measured_free(path):
     """실측 0런에서 **훅이 쓰는 구간을 뺀** 나머지."""
     global _MFREE
@@ -675,6 +1041,92 @@ def _measured_free(path):
                 out.append((a, n))
             _MFREE[p] = out
     return _MFREE.get(path, [])
+
+
+def protected_tails(d, base, entries):
+    """**남이 포인터로 들어오는 블록 꼬리** → `[(시작, 끝)]`(정렬·병합) — 이주 풀이 못 쓰는 자리(마스터 10-22).
+
+    🔴 원본의 정렬된 4바이트 값 중 목표가 어떤 블록의 **꼬리(종단 NUL · 0 채움 · `0x09`)** 안(블록 시작은 아님)인 것이 있다 — 덤프에 없는 리터럴 풀 포인터(빈 문자열 `00 00 00 09`
+       로 들어오는 자리, 실측 5곳). 풀이 그 꼬리를 재사용하면 그 포인터를 쓰는 쪽이 **우리 글자를 읽는다**(pce-ed1 이 잡은 꼴 — 한 메시지의 끝 점프가 다른 메시지의 종단 00 으로
+       들어오는데 우리 스텁이 그 00 을 덮었다). 「실제로 불리나」를 증명하려 하지 않고 **원판대로 보존**한다 — 비용은 몇 바이트.
+    ⚠ `check_structure.tail_entry_changed` 가 같은 것을 **따로** 센다(검사기는 빌더와 코드를 나누지 않는다).
+    """
+    import bisect
+
+    spans = sorted((int(e["file_offset"], 16), int(e["file_offset"], 16) + len(bytes.fromhex(e["raw_hex"])) + 1) for e in entries)
+    starts = [a for a, _ in spans]
+    out = []
+    for q in range(0, len(d) - 3, 2):
+        w = int.from_bytes(d[q : q + 4], "big") - base
+        if not (0 <= w < len(d)):
+            continue
+        i = bisect.bisect_right(starts, w) - 1
+        if i < 0:
+            continue
+        s_, e_ = spans[i]
+        if w == s_ or not (w >= e_ - 1):
+            continue
+        t = e_ - 1
+        while t < len(d) and d[t] == 0:
+            t += 1
+        if t < len(d) and d[t] == 0x09 and t > e_ - 1:
+            t += 1
+        t = max(t, e_)
+        if w < t:
+            out.append((w, t))
+    out.sort()
+    merged = []
+    for a, b in out:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    return [tuple(x) for x in merged]
+
+
+_PROT = {}
+
+
+def protected_tails_of(path):
+    """`protected_tails` 를 파일 이름으로 — 원본 이미지에서 읽는다(`patch_ui` 가 쓴다). → `(원본 바이트, [(시작, 끝)])`."""
+    if path not in _PROT:
+        got = load(path)
+        out = ([], b"")
+        if got:
+            _f, mm = common.open_image(common.ORIG_BIN)
+            lba, size = next((l, s) for p, l, s in common.iso_files(mm) if p == path)
+            d = bytes(common.read_extent(mm, lba, size))
+            out = (protected_tails(d, got[0], got[1]), d)
+        _PROT[path] = out
+    return _PROT[path]
+
+
+def _merge_ranges(rs):
+    out = []
+    for a, b in sorted((int(x), int(y)) for x, y in rs):
+        if out and a <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return [tuple(x) for x in out]
+
+
+def _minus(holes, owned):
+    """`holes`(`[[시작, 길이]]`)에서 `owned`(`[(시작, 끝)]`) 구간을 뺀다 — 쓰기 장부가 말하는 「남이 쓴 자리」."""
+    out = []
+    for a, n in holes:
+        cur, end = a, a + n
+        for s, e in owned:
+            if e <= cur or s >= end:
+                continue
+            if s > cur:
+                out.append([cur, s - cur])
+            cur = max(cur, e)
+            if cur >= end:
+                break
+        if cur < end:
+            out.append([cur, end - cur])
+    return out
 
 
 def _untouched(holes, built, d):
@@ -697,8 +1149,25 @@ def _untouched(holes, built, d):
     for a, n in holes:
         i = a
         while i < a + n:
-            if i >= len(d) or i >= len(built):  # 꼬리 — 우리 자리다
-                out.append([i, a + n - i])
+            if i >= len(d) or i >= len(built):
+                # 🔴 **꼬리는 「우리 자리」가 아니다 — 0 으로 비어 있는 구간만 자리다**(2026-10-19 qa r4 「는 동료를 불렀다」).
+                #    `patch_ui.sys_pack` 도 ED2MON 꼬리를 풀로 쓰고 **먼저** 돈다 — 꼬리 맨 앞(원 크기 바로 뒤)부터 시스템 문안을 깔아 둔다.
+                #    여기서 꼬리를 통째로 비었다고 보면 같은 주소부터 대사를 다시 깔아 **앞 문자열 위에 덮어쓴다**(MON04 0x4D78:
+                #    「…은(는) 검을 내리쳤다.」 위에 「은(는) 동료를 불렀다.」 — 포인터 둘이 같은 곳을 가리키고 앞 문구 꼬리 「쳤다.」가 남았다).
+                #    앞 문자열의 종단 NUL(0) 한 바이트는 그 문자열 몫이라 자리에서 뺀다.
+                end, k = min(a + n, len(built)), i
+                while k < end:
+                    if built[k] != 0:
+                        k += 1
+                        continue
+                    s = k
+                    while k < end and built[k] == 0:
+                        k += 1
+                    st = s + 1 if s > 0 and built[s - 1] != 0 else s
+                    if k - st > 0:
+                        out.append([st, k - st])
+                if a + n > len(built):  # 이미지 끝 너머(있다면)는 비었다
+                    out.append([max(i, len(built)), a + n - max(i, len(built))])
                 break
             j = i
             while j < a + n and j < len(d) and j < len(built) and built[j] == d[j]:
@@ -713,7 +1182,7 @@ def _untouched(holes, built, d):
     return [h for h in out if h[1] > 0]
 
 
-def migrate(over, base, tail_at, tail_end, spare=(), spans=None, built=None, d=None):
+def migrate(over, base, tail_at, tail_end, spare=(), spans=None, built=None, d=None, owned=()):
     """칸을 넘는 블록을 옮긴다 → `([(오프셋, 바이트)], [(ptr, 새 주소)], 남은 것)`.
 
     🔴 **원본 칸을 앞으로 당기지 않는다.** PS1 이 쓴 2단계다 — 참조만 새 주소로 돌린다.
@@ -743,7 +1212,7 @@ def migrate(over, base, tail_at, tail_end, spare=(), spans=None, built=None, d=N
     blocked = set()
     for _ in range(len(over) + 1):
         puts, ptrs, left = _place(
-            over, base, tail_at, tail_end, spare, blocked, spans or {}, built, d
+            over, base, tail_at, tail_end, spare, blocked, spans or {}, built, d, owned
         )
         now = {o for o, _jp in left}
         if now == blocked:
@@ -752,7 +1221,7 @@ def migrate(over, base, tail_at, tail_end, spare=(), spans=None, built=None, d=N
     return puts, ptrs, left
 
 
-def _place(over, base, tail_at, tail_end, spare, blocked, spans, built=None, d=None):
+def _place(over, base, tail_at, tail_end, spare, blocked, spans, built=None, d=None, owned=()):
     """`migrate` 의 한 회차 — `blocked` 의 칸은 풀에 안 넣는다."""
     # 풀 = [꼬리] + [비워질 칸] + [짧아져 남은 칸 뒷부분]. 칸은 자기 글자 자리만 낸다.
     free = [[tail_at, tail_end - tail_at]] if tail_end > tail_at else []
@@ -783,6 +1252,8 @@ def _place(over, base, tail_at, tail_end, spare, blocked, spans, built=None, d=N
     # 🔴 **남이 이미 쓴 구간은 자리가 아니다** — 합친 **뒤에** 자른다(합치기 전에 자르면
     #    조각 경계가 늘어 큰 문안이 갈 데가 없어진다).
     free = _untouched(free, built, d)
+    # 🔴 쓰기 장부가 아는 「남이 쓴 자리」는 바이트가 원문과 같아 보여도 자리가 아니다(`common.ledger_owned`)
+    free = _minus(free, owned) if owned else free
     free.sort()
     puts, ptrs, left = [], [], []
     for off, _why, jp, e, enc in sorted(over, key=lambda r: (-len(r[4]), r[0])):
@@ -982,9 +1453,11 @@ def main():
             matched += sum(
                 1
                 for o, _n, e in run
-                if o not in mine and canon_of(canon, e.get("text", ""), isites.get(o))
+                if o not in mine and canon_of(canon, e.get("text", ""), isites.get(o), path=path, off=o)
             )
-            blob, moves, dropped = rebuild(run, canon, d, mine, built, spare, isites, done, spans)
+            blob, moves, dropped = rebuild(
+                run, canon, d, mine, built, spare, isites, done, spans, path
+            )
             start = run[0][0]
             orig = d[start : start + len(blob)]
             if blob == orig:
@@ -999,7 +1472,8 @@ def main():
         pinned += sum(1 for e in entries if not e.get("ptr_at"))
         puts, mptrs, left = (
             migrate(
-                over, _base, size, bsize, list(spare) + _measured_free(path), spans, built, d
+                over, _base, size, bsize, list(spare) + _measured_free(path) + _hook_pool(path), spans, built, d,
+                _merge_ranges(list(common.ledger_owned(lba, bsize, os.path.basename(sys.argv[0]))) + protected_tails(d, _base, entries)),
             )
             if canon
             else ([], [], over)
@@ -1023,6 +1497,10 @@ def main():
             site = isites.get(o)
             if site:
                 codes.extend((int(a, 16), int(w[1], 16)) for a, w in site["words"].items())
+            for at, old_w, new_w in CTL_PATCHES.get(path, {}).get(o, ()):
+                # 🔴 사전조건 — 원본 그 자리가 정말 기대한 명령어인가(체크리스트 2)
+                assert int.from_bytes(d[at : at + 2], "big") == old_w, f"{path} 0x{at:X} 가 원본이 아니다"
+                codes.append((at, new_w))
         injected += len(codes) // 2
         if apply:
             if not os.path.exists(dst):

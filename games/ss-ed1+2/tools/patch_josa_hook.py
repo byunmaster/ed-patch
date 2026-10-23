@@ -49,6 +49,10 @@ FREE = {  # 파일 → (0런 시작 오프셋, 크기)
 }
 MARGIN = 0x40  # 양 끝 여유 — 계산 주소가 가장자리를 스치더라도 안 물리게
 STUB_SPACE = 64  # 🔴 0런 끝쪽에 `patch_msgwrap` 의 드로어 훅 스텁(56B)이 앉는 몫 — 이 훅은 그 앞까지만 쓴다
+# 🔴 **스텁 앞 틈의 일부를 이주 풀에 내준다**(2026-10-18) — 훅 몸통(≈2,286B)과 스텁 자리(`STUB_SPACE`) 사이에는 안 쓰는 틈이 있다
+#    (ED.BIN 82B). `ED.BIN` 은 이주 풀이 꼭 맞아 ＥＰ·ＭＰ·ＨＰ 전각(+4B)에 블록 하나가 일본어로 남았다(연속 11B 모자람, 완전탐색으로 확인).
+#    틈의 **스텁 쪽 끝**에서 `POOL_BORROW` 만큼만 떼어 주고 나머지(훅이 자랄 여유)는 그대로 둔다. 양 끝 MARGIN 은 건드리지 않는다.
+POOL_BORROW = {"/ED.BIN": 18}
 LOAD_BASE = 0x06028000  # `ED.BIN`·`ED2.BIN` 적재 주소
 
 # 🔴 **자리를 손으로 안 적는다** — 편마다 주소가 다르다(ED 0x0607D504 · ED2 0x060648F8).
@@ -498,8 +502,9 @@ def build(fname, table, sites, end):
     else:
         raise SystemExit("루틴/표 배치가 안 수렴한다")
     blob = b"".join(blobs[n][0] for n in order) + table + half
-    assert len(blob) + 2 * MARGIN + STUB_SPACE <= size, (
-        f"{fname}: {len(blob)}B > 자리 {size - 2 * MARGIN - STUB_SPACE}B (끝쪽 {STUB_SPACE}B 는 훅 스텁 몫)"
+    lend = POOL_BORROW.get(fname, 0)
+    assert len(blob) + 2 * MARGIN + STUB_SPACE + lend <= size, (
+        f"{fname}: {len(blob)}B > 자리 {size - 2 * MARGIN - STUB_SPACE - lend}B (끝쪽 {STUB_SPACE}B 는 훅 스텁 몫 · {lend}B 는 이주 풀 몫)"
     )
     dis = {n: (ram[n], sh2.verify(blobs[n][0], ram[n], blobs[n][1])) for n in order}
     return blob, at, dis
@@ -603,3 +608,12 @@ def verify(dst, files, table):
 
 if __name__ == "__main__":
     main()
+
+
+def pool_spare(fname):
+    """이주 풀에 내준 틈 `(오프셋, 길이)` — 없으면 `None`. 스텁 자리 바로 앞(`patch_msgwrap.stub_place` 와 같은 식)."""
+    n = POOL_BORROW.get(fname, 0)
+    if not n:
+        return None
+    off, size = FREE[fname]
+    return off + size - MARGIN - STUB_SPACE - n, n
