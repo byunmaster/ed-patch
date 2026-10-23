@@ -100,6 +100,23 @@ def check_no_text_loss(where, newmem, lines, disc, table, report):
         report["loss_checked"] = report.get("loss_checked", 0) + 1
 
 
+def reflow_windows(mem, info, lines, disc):
+    """{조각 번호: 새 줄 글} — 창 단위 재조판 대상(`typeset.reflow`). 같은 조각이 둘 이상의 창에 걸리면 건드리지 않는다."""
+    chains = scriptmap.window_chains(mem, info)
+    use = {}
+    for ch in chains:
+        for i in ch:
+            use[i] = use.get(i, 0) + 1
+    out = {}
+    for ch in chains:
+        if any(i not in lines or use[i] != 1 or lines[i].get("_auto") for i in ch):
+            continue
+        rows = typeset.reflow([josa_rt.convert(lines[i]["kr"]) for i in ch], disc)
+        if rows is not None:
+            out.update(zip(ch, rows))
+    return out
+
+
 def encode_member(disc, path, nm, mem, lines, table, report):
     """멤버 하나의 새 조각 코드열(`[[코드…]…]`) — **재삽입 빌드와 멤버 크기 게이트가 같은 길**을 쓴다.
 
@@ -111,13 +128,19 @@ def encode_member(disc, path, nm, mem, lines, table, report):
     # 🔴 검사기(`script.py --check`)와 **같은 자**로 조판한다 — `floor` 를 빼먹어 넘친
     #    꼬리가 조용히 잘렸다(ED3 37줄 · ED4 59줄, 09-27).
     floors = script_canon.member_floors(jps)
+    reflowed = reflow_windows(mem, info, lines, disc) if disc == "ed3" else {}
     for i, row in sorted(lines.items()):
         jp = jps[i][1]
         try:
-            # 조사 병기 → 확정/런타임 표지(조각 첫머리). 구운 글 검사도 같은 변환본으로 한다.
-            row = dict(row, kr=josa_rt.convert(row["kr"]))
-            lines[i] = row
-            kr = typeset.wrap(row["kr"], disc, jp=jp, floor=floors.get(i, 0))
+            if i in reflowed:  # 창 단위 재조판(어절 단위·창 폭 채움) — 줄바꿈이 이미 조각 경계로 정해졌다
+                lines[i] = row = dict(row, kr=reflowed[i])
+                kr = row["kr"]
+            else:
+                # 조사 병기 → 확정/런타임 표지(조각 첫머리). 구운 글 검사도 같은 변환본으로 한다.
+                row = dict(row, kr=josa_rt.convert(row["kr"]))
+                lines[i] = row
+                kr = typeset.wrap(row["kr"], disc, jp=jp, floor=floors.get(i, 0))
+                kr = typeset.pad_rows(kr, disc)  # 두 줄 조각 — 첫 줄을 공백으로 격자 열까지 채워 둘째 줄을 어절 머리에서 시작시킨다
         except typeset.TypesetError as e:
             if row.get("_auto"):  # 정본 speaker 이름이 예산을 넘으면 그 이름만 일본어로 남긴다
                 report["auto_wrap"] = report.get("auto_wrap", 0) + 1

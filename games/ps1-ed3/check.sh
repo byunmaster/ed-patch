@@ -82,6 +82,8 @@ run 0 "$PY" "$G/tools/check_josa.py" --disc ed3
 run 0 "$PY" "$G/tools/check_jp_left.py" --disc ed3
 # 🔴 문안에 사용자 영역(PUA) 글자가 섞이면 실패 — 다른 기종 문안을 가져오다 딸려 온 자리표시 글자가 다른 글리프로 구워진다(10-18 md-ed2). 일부러 쓰는 것은 허용 목록.
 run 0 "$PY" "$G/tools/check_pua.py"
+echo "  ── 창 단위 재조판 (어절 단위 · 한 줄 24글리프 · 띄어 쓴 정본 이름 한 줄 — 마스터 10-20)"
+run 0 "$PY" "$G/tools/check_reflow.py"
 
 echo "  ── 월드맵 패널 넘침(칸 수 안에 드는가)"
 # 🔴 게이트다 — 패널 줄이 원판 칸을 넘으면 그 항목은 일본어로 남는다. (제어 열 보존은 build 가 서서 지킨다.)

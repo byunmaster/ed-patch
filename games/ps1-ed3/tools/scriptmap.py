@@ -243,6 +243,44 @@ def rebuild_table(mem, new_segments):
     return bytes(out), 0
 
 
+def window_chains(mem, info=None):
+    """[[조각 번호…]] — 대사 창 하나(`0F 90 V (01 90 W)* 00` 시퀀스)가 이어 보이는 조각들. 조각 하나가 한 줄이다.
+
+    포인터 자리 `q` 는 짝수 오프셋이고 이어지는 `01 90 W` 는 4바이트 뒤(`q+4`)다. 첫 포인터 앞은 `0F 90`(맞춤 패드 한 바이트 허용)이어야 한다.
+    포인터가 조각 시작을 못 맞히면 그 창은 건너뛴다(이벤트 자료로 본다)."""
+    if layout(mem) != LAYOUT_POOL:
+        return []
+    info = info or parse(mem)
+    idx = {s: i for i, (s, _c) in enumerate(info["segments"])}
+    base = info["base"]
+    sites = info["pointers"]
+    at_of = {q: v for q, v in sites}
+    out, used = [], set()
+    for q, v in sites:
+        if q in used:
+            continue
+        i = q - 1
+        if mem[i] != PTR_OP:
+            i -= 1  # 맞춤 패드
+        if i < 1 or mem[i] != PTR_OP or mem[i - 1] != 0x0F:
+            continue
+        chain, cq = [], q
+        while True:
+            t = base + (at_of[cq] & ~1)
+            if t not in idx:
+                chain = None
+                break
+            chain.append(idx[t])
+            used.add(cq)
+            if mem[cq + 2 : cq + 4] == b"\x01\x90" and (cq + 4) in at_of:
+                cq += 4
+                continue
+            break
+        if chain and mem[cq + 2 : cq + 3] == b"\x00":
+            out.append(chain)
+    return out
+
+
 def parse(mem):
     """{base, pointers, segments, targets} — 규격을 판정해 알맞은 파서로 보낸다."""
     if layout(mem) == LAYOUT_TABLE:
