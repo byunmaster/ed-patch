@@ -49,6 +49,20 @@ from text import line_key as _LK
 OUT = os.path.join(ROOT, "line_dict.json")
 # 인자 센티널 — 담되 **표시**한다. 자리가 플랫폼마다 달라 그대로는 못 붙인다.
 FMT = re.compile(r"[\x17\x1a\x1b]")
+# 🔴 PS1 내부 자리표시(PUA)는 수출하지 않는다 — 다른 기종이 그대로 가져가면 그 기종 글꼴에서 엉뚱한 글리프로 구워진다
+#    (md-ed2 10-18: 75스트림). 뜻은 `docs/policy.md` 「PUA 자리표시」 표. 사전에는 화면에 나가는 꼴(공백)로 푼다.
+_PUA_EXPORT = {"\ue003": " "}
+
+
+# 마스터 확정으로 문안이 갈리는 두 키 — 최빈 규칙을 적용하지 않고 종전 값(먼저 만난 쪽)을 유지한다.
+#   상점 「だね。どうも ありがとう」(가게마다 말투) · 보물상자 4창.
+_INTENDED_SPLIT = {"a00ede6f5de63402", "ff5c7322de758e6b"}
+
+
+def export_text(t):
+    for k, v in _PUA_EXPORT.items():
+        t = t.replace(k, v)
+    return t
 
 
 # 마크업·부호를 **플랫폼 중립꼴**로 되돌리는 표. 덤퍼마다 표기가 다르다 —
@@ -132,6 +146,7 @@ def collect():
     """{sha1: {"t": 문안, "n": 블록수, "fmt": 인자 있음}} · 평문 대조표"""
     era = A.scan()
     out, plain, split = {}, {}, 0
+    votes, first = {}, {}
     for path in sorted(glob.glob(os.path.join(ROOT, "script", "ED*SCN*.json"))):
         scn = os.path.basename(path)[:-5]
         jp_path = os.path.join(OUT_DIR, "scn_jp", f"{scn}.json")
@@ -152,21 +167,33 @@ def collect():
             s, t = jp.get(eid, ""), (cur.get(eid) or {}).get("t")
             if not s or not t:
                 continue
+            t = export_text(t)
             k = key(s)
-            if k in out and out[k]["t"] != t:
-                split += 1  # 같은 원문에 두 문안 — dupfill 이 놓친 자리
-                continue
-            e = out.setdefault(k, {"t": t, "n": 0})
-            e["n"] += 1
-            if FMT.search(t):
-                e["fmt"] = True
-            plain.setdefault(k, (s, t))
+            votes.setdefault(k, {})
+            votes[k][t] = votes[k].get(t, 0) + 1
+            first.setdefault(k, s)
+    # 🔴 **같은 원문에 문안이 둘이면 최빈 문안이 이긴다**(10-19 — 「먼저 만난 쪽」이 이기던 때 신부 「困ったことが…」
+    #    45블록 문안 대신 론도항구 이스터에그(n=1)가 사전에 올라, 이 사전을 그대로 읽은 새턴 신부 45블록이 전부 이스터에그가 됐다).
+    #    동수면 먼저 본(정렬 순서) 문안 — 결정적이다. 개별 자리는 각 플랫폼의 덮어쓰기(align_overrides 등)가 맡는다.
+    for k, c in votes.items():
+        best = max(c, key=lambda t: c[t])  # dict 는 삽입 순서 — 동수면 먼저 들어온 쪽
+        if k in _INTENDED_SPLIT:
+            best = next(iter(c))  # 마스터 확정 갈림은 종전대로(먼저 만난 쪽)
+        if len(c) > 1:
+            split += 1  # 같은 원문에 두 문안 — dupfill 이 놓친 자리
+        e = out.setdefault(k, {"t": best, "n": 0})
+        e["n"] = sum(c.values())
+        if FMT.search(best):
+            e["fmt"] = True
+        plain.setdefault(k, (first[k], best))
     _add_names(out, plain)
     return out, plain, split
 
 
 # 이름 뒤에 붙는 개체 구분자 — 새턴은 `スライムＡ`·`スライムB` 처럼 전각·반각을 섞어 쓴다.
 _SUFFIX = "\uff21\uff22\uff23\uff24\uff25ABCDE"
+# 🔴 우리 쪽 구분자는 전 몬스터 반각이다(규칙 1-6, 마스터 10-10) — 원문 열쇠가 전각 `Ａ` 여도 문안은 `A`.
+_HALF = {chr(0xFF21 + i): chr(0x41 + i) for i in range(5)}
 
 
 def _add_names(out, plain):
@@ -191,7 +218,9 @@ def _add_names(out, plain):
     sys.path.insert(0, os.path.join(ROOT, "..", "..", "shared"))
     import canon as _nouns
 
-    for tbl in _nouns.nouns("ed1")["categories"].values():  # 고유명사(정본 nouns/) — ED1·ED2 같은 세계
+    for tbl in _nouns.nouns("ed1")[
+        "categories"
+    ].values():  # 고유명사(정본 nouns/) — ED1·ED2 같은 세계
         names.update(tbl)
     # 화자 호칭(역할어: 복권집·여자·무기점…)은 사전이 아니라 **정본(`shared/canon` speaker)** 에 산다(마스터 2026-10-08) — 안 얹으면
     #   정형문(「~が現れた。」)·마릿수 접미 항목이 6천 개 넘게 사라진다.
@@ -214,7 +243,7 @@ def _add_names(out, plain):
     for jp, kr in names.items():
         put(jp, kr)
         for suf in _SUFFIX:
-            put(jp + suf, kr + suf)
+            put(jp + suf, kr + _HALF.get(suf, suf))
     # 정형문 — 이름이 문자열에 **박혀 있어서** 조사까지 정적으로 정해진다(`patch_ed2_monster_lines`)
     for jp, kr in names.items():
         put(f"{jp}が現れた。", f"{kr}{_josa(kr, ('이', '가'))} 나타났다.")

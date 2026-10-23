@@ -47,7 +47,10 @@ gate_fail() {
 #   창 틀이 갉힌다). 계측을 스크래치로 날리면 다음 사람이 또 잰다 — 늘 도는 축으로 남긴다.
 # 🔴 2026-09-27: check_typeset_rules(씬 조판 ①~④) · check_prewrap_rules(런타임 줄넘김 ①~④·⑦·⑧,
 #   ~90초 — 빌드 EXE 의 prewrap 을 통째로 실행한다) 추가. 둘 다 만들어 놓고 게이트에 안 물려 있었다.
-for t in check_own_tables check_tail_cut check_terms check_spellings check_forbidden check_proper_nouns check_battle_wrap check_battle_grid_wrap check_punct check_ellipsis check_name_echo check_onomatopoeia check_pointer_tables check_iso_layout check_readback check_movie_coverage check_card_centering check_window_nl check_log_register check_register_vs_jp check_jp_left check_scn_jp_left check_shop_verbs check_variants check_leader_variants check_window_frame check_typeset_rules check_prewrap_rules; do
+# 🔴 2026-10-22: check_scn_structure 추가(마스터 「재배치사고 막는 정적검사」) — 원본↔최종 이미지의 대사 블록을 글자 빼고
+#   제어 코드 열로 짝지어 비교 + 포인터 착지 + 빈틈 + 재배치 장부(relocations.tsv) 일치. ss-ed3 에서 채움 바이트가
+#   다음 블록 호출을 막아 첫 장면 대사가 빠진 사고(10-21)가 문안·조판 게이트로는 안 잡혀서다.
+for t in check_own_tables check_ed2_sys_corpus check_ptr_target_coverage check_scn_structure check_tail_cut check_terms check_spellings check_forbidden check_proper_nouns check_battle_wrap check_battle_grid_wrap check_punct check_ellipsis check_name_echo check_onomatopoeia check_pointer_tables check_iso_layout check_readback check_movie_coverage check_card_centering check_window_nl check_log_register check_register_vs_jp check_jp_left check_scn_jp_left check_shop_verbs check_variants check_leader_variants check_window_frame check_scene_buf check_pointer_audit check_glyph_pairs check_jp_left_overlay check_hardcoded_ko check_ed2_stale_strcat check_battle_number_space check_typeset_rules check_prewrap_rules; do
   out=$("$PY" "$T/$t.py" 2>&1) || gate_fail "$t" "$out"
   echo "$out" | tail -3 | sed 's/^/     /'
 done

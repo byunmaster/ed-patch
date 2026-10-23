@@ -19,6 +19,7 @@
 import bisect
 import contextlib
 import functools
+import hashlib
 import json
 import os
 import re
@@ -26,6 +27,7 @@ import shutil
 import sys
 
 import hangul_map
+from patch_hangul_glyph_table import QUOTE_CODES
 from common import (
     BUILD_DIR,
     MIPS_ADDIU,
@@ -225,6 +227,9 @@ def encode_ext(text):
             out += MC + PS + MC
         elif ch == " ":
             out.append(0x20)
+        elif ch in QUOTE_CODES:
+            # 반각 여닫는 따옴표 “ ” — 전용 글리프 코드(patch_hangul_glyph_table)
+            out.append(QUOTE_CODES[ch])
         elif ch in HALF_PUNCT or ch.isascii() and ch.isalnum():
             # 반각 부호·숫자·알파벳 — 1바이트 경로(0.5슬롯). JP 원본도 "400"·"Gold"를
             # 1바이트 ASCII로 저장·렌더(jp1172 실증 = 글리프 존재 보증, 유저 제안 07-26)
@@ -998,7 +1003,7 @@ def cell_w(ch):
         return (NAME_SLOTS if ch == JOSA_NAME else ITEM_SLOTS) + 1
     if ch == NOBREAK_SP:
         return 0.5  # 보통 공백과 같은 폭(조판 후 공백으로 되돌린다)
-    return 0.5 if ch == " " or ch in HALF_PUNCT or (ch.isascii() and ch.isalnum()) else 1.0
+    return 0.5 if ch == " " or ch in HALF_PUNCT or ch in QUOTE_CODES or (ch.isascii() and ch.isalnum()) else 1.0
 
 
 # 의도적 개행 마커 — line_overrides가 삽입한다. 일반 페이지 경계 개행(\n)과 구분해
@@ -1150,10 +1155,15 @@ def _fills_frame(ln):
 
 
 def join_lines(lines):
-    """페이지의 줄들을 잇는다 — 틀을 꽉 채운 줄 뒤에는 개행을 빼고 잇는다."""
+    """페이지의 줄들을 개행으로 잇는다(꽉 찬 줄 뒤도 — 아래 주석)."""
     out = []
     for i, ln in enumerate(lines):
-        if i and not _fills_frame(lines[i - 1]):
+        if i:
+            # 🔴 꽉 찬 줄 뒤에도 개행을 **넣는다**(2026-10-19 전수 캡처). 예전엔 「엔진이 알아서 넘긴다」며
+            #    개행을 뺐는데, 그러면 공백도 같이 사라져 엔진이 29열에서 안 넘기고 **앞 공백에서 꺾어**
+            #    `현자일세.그대들에게` 처럼 두 문장이 한 낱말로 붙었다(구운 이미지 ~100곳). 빈 줄 문제는
+            #    10-03 에 드로어 훅(`patch_hang_punct.stub_eager_nl` — 29열 줄 뒤 `\n` 이면 선제 줄바꿈을
+            #    건너뜀)이 고쳤고, 캡처로 `일세.\n그대들에게` 가 정상으로 그려짐을 확인했다.
             out.append("\n")
         out.append(ln)
     return "".join(out)
@@ -1443,6 +1453,11 @@ INLINE_NAME = set()
 # 「저자 `{p}` 경계 → 창」이 안 맞아 재조판으로 넘어간 블록 (build_block 이 채운다).
 # ⚠ 게이트가 아니라 **계측**이다 — 인라인 이름창 블록엔 정당한 불일치가 있다.
 WINDOW_REFIT = []
+# 침묵 블록인데 앞에 스크립트 접두 바이트가 있어(`jp_has_header`·플레이트 꼴 검사에 안 걸리는) 이름창만 번역 등록에서
+# 빠지던 자리. 본문(・・・)은 JP 통과, 이름창만 번역한다 — 우리 문안이 접두 창에 들어가 「점 / 이름 / 점」 세 쪽으로 나갔다
+# (ED2SCN12 jp158, 2026-10-20 style 짝 표 · 화면 실측).
+NAMEONLY_FORCE = {("ED2SCN12", 158)}
+
 FIXED_RUNS = {
     # jp28 왕가의 검·갑옷·방패 장비 이벤트(오프닝 탈출) — **번역해서 짧아지자 깨졌다**
     # (유저 QA 2026-08-19). 창 14·개행 5·`%c` 배열이 JP 와 **완전히 일치**하는데도 첫 창만
@@ -1705,6 +1720,7 @@ def stock_build(raw):
 # 인라인이라 build_from_template 채우기로는 %d가 유실된다. STOCK처럼 %c/%s/%d 순서를 그대로
 # 재현하는 전용 빌더로 KR을 심는다(은(는)은 조사 훅이 아이템명 받침 보고 교정).
 SHOP_PRICE = "__shop_price__"
+SHOP_PRICE_OURS = {}  # {eid: 정본 문안(script t) | None} — 씬 단위, load_translations 가 채운다
 # ⚠ 어미까지 물면 **사투리 사본을 놓친다** — 스엘 도구점은 `になるけんど` 다(SCN3 3곳이
 # 일본어로 나가고 있었다, 2026-08-10). 다른 조건(`%s`+`%d`+`Gold`+`%c`3개)이 이미
 # 좁으니 어간까지만 본다.
@@ -1716,7 +1732,23 @@ def is_shop_price(raw):
     return PS in t and PD in t and b"Gold" in t and _SJIS_NARU in t and t.count(MC) == 3
 
 
-def shop_price_build(raw):
+def shop_price_ours(scn_name, eid):
+    """그 블록의 **정본 문안**(script `t`) — 없으면 None(기본 3줄 꼴로 폴백)."""
+    ov = _load_overrides().get(scn_name, {}).get(str(eid)) or {}
+    return ov.get("ours")
+
+
+# 정본 문안이 없을 때만 쓰는 폴백(가게 말투를 모르는 사본) — 정본이 있으면 **절대 이 값을 쓰지 않는다**.
+_SHOP_PRICE_FALLBACK = ("\ue003값은", "\x1b Gold가 되는데", "괜찮으시겠습니까?")
+
+
+def shop_price_lines(ours):
+    """정본 문안 → 줄 목록. `{n}` 이 줄 경계이고, 앞 붙임 공백(U+E003)은 일반 공백 한 칸으로 낸다."""
+    lines = ours.split("{n}") if ours else _SHOP_PRICE_FALLBACK
+    return [ln.replace("\ue003", " ") for ln in lines]
+
+
+def shop_price_build(raw, ours=None):
     """상점 가격 프롬프트 KR 재조립(%c/%s/%d 순서 = 원본).
 
     조사 훅(0x800B2054·0x800B1D60)은 대사 렌더러 체인만 걸려 상점 프롬프트엔 안 탄다
@@ -1724,20 +1756,19 @@ def shop_price_build(raw):
     없어 은(는)을 정적 확정할 수도 없다 → **도구점은 문안 자체를 조사가 필요 없게** 짠다:
     살 때는 아이템명 뒤에 서술을 바로 붙이고(`…이군요`), 팔 때는 조사를 **고정 명사 '값'**에
     붙인다(받침 있는 '값'에 은 고정이라 아이템 무관).
-    "횃불 값은 %d Gold가 되는데 괜찮으시겠습니까?\""""
-    return (
-        MC
-        + PS
-        + MC
-        + encode_ext(" 값은")
-        + b"\x0a"
-        + PD
-        + encode_ext(" Gold가 되는데")
-        + b"\x0a"
-        + encode_ext("괜찮으시겠습니까?")
-        + b"\x0a"
-        + MC
-    )
+
+    🔴 **줄 문안은 정본(script)에서 가져온다**(2026-10-20 — style 전수 검수). 예전엔 마지막 줄을
+    `괜찮으시겠습니까?` 로 코드에 박아, 가게별 말투(해요·하게·하우·반말·사투리)가 전부 합쇼체로
+    튀고 「그래도」가 빠졌다(ED1·ED2 21곳). 줄 수도 정본을 따른다 — 2줄짜리(`…되는데?`)는 3째 줄이
+    없다. `%c` 3개·`%s`·`%d` 순서(구조 계약)는 그대로다.
+    """
+    lines = shop_price_lines(ours)
+    blk = MC + PS + MC
+    for i, ln in enumerate(lines):
+        if i:
+            blk += b"\x0a"
+        blk += encode_ext(ln)
+    return blk + b"\x0a" + MC
 
 
 # ── ED.EXE 도너 공간 — size 퇴출 블록의 이주지 ─────────────────────────────
@@ -1838,7 +1869,12 @@ def _punct_dots_kr(txt):
     core = "".join(txt.split())
     if not core or any(c not in _DOTS for c in core):
         return None
-    return "".join(_DOTS[c] for c in core)
+    dots = "".join(_DOTS[c] for c in core)
+    # 규칙 1-3 — 온점이 8개 이상 이어진 침묵은 「…」(온점 둘 = 한 글자)로 낸다. 반각 온점 열네 개가 그대로 나가
+    # `check_typeset_rules` ④ 에 걸렸다(ED2SCN12 jp158, 2026-10-20). 짧은 점줄(「･ ･ ･」)은 그대로 둔다.
+    if len(dots) >= 8 and set(dots) == {"."}:
+        return "…" * (len(dots) // 2)
+    return dots
 
 
 # 리터럴 이름·아이템만 든 창 — `%cゲイル%cが仲間に加わりました。` 의 `ゲイル` 자리.
@@ -2627,6 +2663,26 @@ def _fixed_eids_all():
     return frozenset(out)
 
 
+_SJIS_CHEST_LITERAL = "宝箱の中には".encode("cp932")  # 아이템 이름이 리터럴 색 창인 비정형 보물상자(ED2SCN8 261)
+
+
+def restore_win_end_nl(cand, raw):
+    """원본 창이 개행으로 끝나는 자리를 우리 창에도 되살린다 — 아이템 이름 창 앞.
+
+    조판기는 창 끝의 개행을 버린다. 그러면 「상자에는 밀조주가 있었다.」 뒤에 이름 창(`%c밀조주%c`)이 같은 줄로
+    이어져 한 줄이 29열을 넘고, 엔진이 **색 창 안 낱말 한복판**에서 꺾는다(「밀조 / 주를 얻었다」, 2026-10-20 화면 실측).
+    개행만 되살린다(공백 채움은 줄을 더 늘려 빈 줄을 만들었다)."""
+    jw, kw = raw.rstrip(b"\x00").split(MC), cand.rstrip(b"\x00").split(MC)
+    if len(jw) != len(kw):
+        return cand
+    segs = [
+        k + b"\x0a" if j.endswith(b"\x0a") and k and not k.endswith(b"\x0a") else k
+        for j, k in zip(jw, kw)
+    ]
+    out = MC.join(segs)
+    return out + b"\x00" * (-len(out) % 4 or 4)
+
+
 def pad_windows(cand, raw, eid):
     """창(`%c` 구간)마다 **원본 길이까지 공백으로 채운다** — `FIXED_RUNS` 블록만.
 
@@ -2719,7 +2775,7 @@ def build_candidate(raw, t, eid):
         if cand is not None:
             cand += b"\x00" * (-len(cand) % 4 or 4)
     elif t[0] is SHOP_PRICE:  # 상점 가격 프롬프트: %d 인라인 보존 전용 빌더
-        cand, from_tpl = shop_price_build(raw), True
+        cand, from_tpl = shop_price_build(raw, SHOP_PRICE_OURS.get(eid)), True
         cand += b"\x00" * (-len(cand) % 4 or 4)
     elif t[0] is BLANK:
         cand, from_tpl = blank_build(raw), True
@@ -2768,6 +2824,8 @@ def build_candidate(raw, t, eid):
         cand = resolve_static_josa(cand)
     if cand is not None and eid in _fixed_eids_all():
         cand = pad_windows(cand, raw, eid)
+    if cand is not None and _SJIS_CHEST_LITERAL in raw:
+        cand = restore_win_end_nl(cand, raw)
     if cand is not None and eid in COLOR_WRAP:
         on, off = COLOR_WRAP[eid]
         c = cand.rstrip(b"\x00")
@@ -2911,6 +2969,13 @@ def build_candidate(raw, t, eid):
     return cand, None
 
 
+# ── 재배치 장부 재료 — 빌드가 **실제로 한** 재배치를 여기 모은다(손으로 쓰지 않는다) ──────────────
+# `rebuild()` 가 돌 때마다 비우고 채운다(공유 lui 충돌 해소 루프가 여러 번 돌리므로 마지막 판이 남는다).
+# 소비자: `_reloc_record()` → `work/derived/scn_reloc.json` → `check_scn_structure.py`(게이트) · `relocations.tsv`(장부).
+_RUNS = []  # (구간 시작, 구간 끝, 블록 수, 끝 00패딩 바이트, 길이고정 여부)
+_PIN_OVR = []  # (종류 room|tail, eid, 새 길이, 끝 00패딩 바이트) — 앵커 접미·접두 꼬리 제자리 덮어쓰기
+
+
 def reflow_run(region, run, run_start, run_end, translations, excluded, fixed, layout):
     """자유 구간 [run_start, run_end)(앵커 사이)에 자유 블록들을 재배치.
 
@@ -2961,6 +3026,7 @@ def reflow_run(region, run, run_start, run_end, translations, excluded, fixed, l
         pos += len(new)
     for p in range(pos, run_end):  # 앞선 축소분 → 00패딩(다음 앵커 위치 고정)
         region[p] = 0
+    _RUNS.append((run_start, run_end, len(run), run_end - pos, bool(fixed)))
 
 
 # ── 메인 ────────────────────────────────────────────────────────────────────
@@ -3611,6 +3677,7 @@ def load_translations(align_name, scn_name):
     # parse_kr가 재현 못 해 fmt_drop으로 빠지거나 주입 자리가 깨진 채 나가기 때문.
     STOCK_KINDS.clear()
     STOCK_MID.clear()
+    SHOP_PRICE_OURS.clear()
     n_price = 0
     for e in jp_doc["entries"]:
         if e.get("raw_hex"):
@@ -3628,6 +3695,7 @@ def load_translations(align_name, scn_name):
                 STOCK_MID[e["entry_id"]] = (_i, _k)
             elif is_shop_price(raw):  # 상점 가격 프롬프트(%d 인라인) — 전용 빌더
                 out[e["entry_id"]] = (SHOP_PRICE,)
+                SHOP_PRICE_OURS[e["entry_id"]] = shop_price_ours(scn_name, e["entry_id"])
                 n_price += 1
     if STOCK_KINDS:
         print(f"  정형 블록(보물상자) {len(STOCK_KINDS)}건 등록")
@@ -3654,7 +3722,9 @@ def load_translations(align_name, scn_name):
         # 걸린다(전 씬 500건 이상이 후보로 올라와 제외 목록만 부풀었다, 2026-08-10).
         # 진짜 플레이트는 짧고 개행이 없고 `%c` 가 셋이다.
         _t = raw.rstrip(b"\x00")
-        if not jp_has_header(raw) and not (
+        if (scn_name, e["entry_id"]) in NAMEONLY_FORCE:
+            pass
+        elif not jp_has_header(raw) and not (
             len(_t) <= 24
             and b"\n" not in _t
             and _t.count(MC) == 3
@@ -3664,9 +3734,12 @@ def load_translations(align_name, scn_name):
         body = [w for kind, w in wins if kind == "body"]
         # ⚠ **이름창만 있는 블록**도 여기 든다(`%cドルカスの手下%c%c`) — 채울 본문이 없어
         # `build_from_template` 이 SkipBlock 을 던지고 일본어로 남았다(SCN6 실측 2026-08-10).
-        if body and all(
-            _tpl_punct_only(w) or _tpl_name_only(w) or not any(tk[0] == "t" for tk in w)
-            for w in body
+        if body and (
+            (scn_name, e["entry_id"]) in NAMEONLY_FORCE
+            or all(
+                _tpl_punct_only(w) or _tpl_name_only(w) or not any(tk[0] == "t" for tk in w)
+                for w in body
+            )
         ):
             out[e["entry_id"]] = (NAMEONLY,)
             n_no += 1
@@ -3935,6 +4008,8 @@ def rebuild(
 
     region = bytearray(data[:text_end])  # 앵커·pinned는 원본 그대로 유지
     layout = []
+    _RUNS.clear()
+    _PIN_OVR.clear()
     i, n = 0, len(blocks)
     while i < n:
         if blocks[i]["pinned"]:
@@ -3945,6 +4020,7 @@ def rebuild(
                     region[b["off"] : b["off"] + len(cand)] = cand
                     for p in range(b["off"] + len(cand), b["off"] + b["room"]):
                         region[p] = 0
+                    _PIN_OVR.append(("room", b["eid"], len(cand), b["room"] - len(cand)))
                 else:
                     excluded[b["eid"]] = reason or "anchor_room_size"
             elif b["tail"] is not None:  # 앵커 접두 블록의 꼬리 대사만 제자리 덮어쓰기
@@ -3957,6 +4033,7 @@ def rebuild(
                     region[s : s + len(cand)] = cand
                     for p in range(s + len(cand), b["off"] + len(b["raw"])):
                         region[p] = 0  # 남는 자리는 0패딩 — 블록 경계·앵커 위치 불변
+                    _PIN_OVR.append(("tail", b["eid"], len(cand), room - len(cand)))
                 else:
                     excluded[b["eid"]] = reason or "anchor_tail_size"
             layout.append((b["off"], len(b["raw"]), b["off"], len(b["raw"]), b["eid"]))
@@ -3986,6 +4063,101 @@ def build_scene(name, lba, size, identity, fixed):
     identity=True면 검증만(원본과 바이트 동일 확인, 반환 bytes=None)."""
     with overlay_for(name):
         return _build_scene(name, lba, size, identity, fixed)
+
+
+# 씬별 재배치 기록 — `_build_scene` 이 채우고 `main()` 이 `work/derived/scn_reloc.json` 으로 쓴다.
+RELOC = {}
+
+
+def _struct_why(name, eid):
+    """구조(제어 바이트 열)가 원본과 달라진 블록의 **의도 표** — 빌드가 이 표에 넣은 블록만 허용된다.
+
+    표는 모두 의도해 제어 바이트를 바꾸는 오버라이드다(각 표 주석에 근거): 색코드(0x01~0x03 — 원본도
+    같은 방식을 쓴다·텍스트 안 단독 제어바이트 실측)·이름판(`NAME_PLATE`)·이름창 접기·개행 오버라이드.
+    표에 없는 구조 변화는 `check_scn_structure` 가 실패로 친다."""
+    why = []
+    for label, tab in (
+        ("COLOR_WRAP", COLOR_WRAP),
+        ("COLOR_BODY", COLOR_BODY),
+        ("COLOR_LEAD", COLOR_LEAD),
+        ("COLOR_ITEM", COLOR_ITEM),
+        ("NAME_PLATE", NAME_PLATE),
+        ("FOLD_NAME", FOLD_NAME),
+        ("NL_WINS", NL_WINS),
+        ("LEAD_NL_DROP", LEAD_NL_DROP),
+    ):
+        if eid in tab:
+            why.append(label)
+    if (name, eid) in NAME_STUBS:
+        why.append("NAME_STUBS")
+    if name == "ED2SCN8" and eid == 0:
+        why.append("ED2SCN8_JP0_SPLIT")
+    return why
+
+
+def _reloc_record(
+    name, lba, size, data, text_end, entries, layout, translations, excluded, donor_placed,
+    ext_base, stock_alias, stock_mid, stub_info, arg_applied, ptr_moved, ptr_sites, out_file,
+):
+    """씬 하나의 재배치 기록(JSON 직렬화 가능, **원문·번역 바이트 없음** — 좌표·종류·개수만).
+
+    `check_scn_structure.py` 가 이걸 원본·최종 이미지와 대조하고, `relocations.tsv`(장부)를 여기서 뽑는다.
+    구조 열 비교(`scn_structure.classify`)는 여기서 **번역된 블록마다** 한 번 돌려 어긋남 분류만 남긴다."""
+    import scn_structure as SS
+
+    raw = {e["entry_id"]: bytes.fromhex(e["raw_hex"]) for e in entries if e.get("raw_hex")}
+    blocks, struct = [], {}
+    for old_off, old_len, new_off, new_len, eid in layout:
+        tr = eid in translations and eid not in excluded
+        h = hashlib.sha1(bytes(out_file[new_off : new_off + new_len])).hexdigest()[:10]
+        blocks.append([eid, old_off, old_len, new_off, new_len, int(tr), excluded.get(eid, ""), h])
+        if tr and eid in raw:
+            nb = bytes(out_file[new_off : new_off + new_len])
+            kinds = SS.classify(raw[eid], nb)
+            if kinds:
+                struct[eid] = {
+                    "kinds": kinds,
+                    "old": SS.sk_str(raw[eid]),
+                    "new": SS.sk_str(nb),
+                    "why": _struct_why(name, eid),
+                }
+    for eid, (_kind, _off, cand) in donor_placed.items():
+        kinds = SS.classify(raw[eid], cand) if eid in raw else []
+        if kinds:
+            struct[eid] = {
+                "kinds": kinds,
+                "old": SS.sk_str(raw[eid]),
+                "new": SS.sk_str(cand),
+                "why": _struct_why(name, eid),
+            }
+    return {
+        "scene": name,
+        "orig_lba": lba,
+        "orig_size": size,
+        "text_end": text_end,
+        "new_size": len(out_file),
+        "ext_base": ext_base,
+        "ov_base": ov_base(),
+        "blocks": blocks,
+        "runs": [list(r) for r in _RUNS],
+        "pin_ovr": [list(r) for r in _PIN_OVR],
+        "donors": {str(e): [k, o, len(c)] for e, (k, o, c) in donor_placed.items()},
+        "alias": {str(k): v for k, v in stock_alias.items()},
+        "mid": {str(k): list(v) for k, v in stock_mid.items()},
+        "stubs": stub_info,
+        "args": [list(a) for a in arg_applied],
+        "ptr_moved": {str(k): v for k, v in ptr_moved.items()},
+        "ptr_sites": [list(x) for x in ptr_sites],
+        "struct": {str(k): v for k, v in struct.items()},
+        "special": ["ED2SCN8:0"] if name == "ED2SCN8" else [],
+    }
+
+
+def _switch_off(var, key=None):
+    """되돌리기 스위치 — 환경 변수 `var` 가 `1`/`all` 이거나 `씬:eid` 목록에 key 가 있으면 참.
+    장부(`relocations.tsv`)의 블록 키로 종류별·블록별로 끌 수 있다(예: `PILOT_NO_STUBS=ED2SCN8:12`)."""
+    v = os.environ.get(var, "")
+    return v in ("1", "all") or (key is not None and key in v.split(","))
 
 
 def _build_scene(name, lba, size, identity, fixed):
@@ -4043,8 +4215,8 @@ def _build_scene(name, lba, size, identity, fixed):
     # 리타깃**한다(공간 소모 0으로 전 사본 번역 — 곶의 동굴 사본 퇴출 실측 07-26). 블록 선두
     # 참조(delta 0)만 대상 — 원본 바이트는 제자리에 남으므로 delta 참조는 그대로 안전하다.
     def compute_stock_alias():
-        if fixed or identity:
-            return {}
+        if fixed or identity or _switch_off("PILOT_NO_ALIAS"):
+            return {}, {}
         masters, alias = {}, {}
         for s_eid, kind in STOCK_KINDS.items():
             if s_eid in translations and s_eid not in excluded:
@@ -4114,7 +4286,7 @@ def _build_scene(name, lba, size, identity, fixed):
     ext_used = 0
     ext_base = len(data)
     ext_cap = scn_extra(name, len(data)) if not identity and not fixed else 0
-    if not identity and not fixed and (DONOR_RUNS or ext_cap):
+    if not identity and not fixed and (DONOR_RUNS or ext_cap) and not _switch_off("PILOT_NO_DONOR"):
         raw_by_eid = {
             e["entry_id"]: bytes.fromhex(e["raw_hex"]) for e in entries if e.get("raw_hex")
         }
@@ -4162,6 +4334,7 @@ def _build_scene(name, lba, size, identity, fixed):
     # 포인터 패치 뒤 — 같은 워드를 ref 패처가 만지므로 마지막에 덮어써야 한다)
     ext_custom = []  # (ext 내 오프셋, bytes)
     stub_patches = []  # (call_off, [words])
+    stub_info = []  # 장부용 — 이름 스텁마다 배치 좌표와 엔진 근거 주소
     if not identity and not fixed:
         for (scn, eid), cfg in NAME_STUBS.items():
             if scn != name:
@@ -4169,6 +4342,8 @@ def _build_scene(name, lba, size, identity, fixed):
             t = translations.get(eid)
             if not t or eid in excluded or t[0] in (STOCK, NAMEONLY):
                 continue
+            if _switch_off("PILOT_NO_STUBS", f"{name}:{eid}"):
+                continue  # 되돌리기 스위치 — 이 블록은 원판 방식(이름 없이)으로 둔다
             try:
                 blk = build_block(t[0], t[1], header=True, hdr_fmt=True)
             except SkipBlock:
@@ -4207,6 +4382,17 @@ def _build_scene(name, lba, size, identity, fixed):
                 0x08000000 | ((cfg["resume"] >> 2) & 0x3FFFFFF),  # j resume(flush)
                 0,  # nop (delay)
             ]
+            stub_info.append(
+                {
+                    "eid": eid,
+                    "blk_off": blk_off,
+                    "blk_len": len(blk),
+                    "stub_off": stub_off,
+                    "call_off": cfg["call_off"],
+                    "sprintf": cfg["sprintf"],
+                    "resume": cfg["resume"],
+                }
+            )
             ext_custom.append((blk_off - ext_base, blk))
             ext_custom.append(
                 (stub_off - ext_base, b"".join(w.to_bytes(4, "little") for w in words))
@@ -4230,15 +4416,21 @@ def _build_scene(name, lba, size, identity, fixed):
         out_file += ext_blob
         assert ov_base() + len(out_file) <= OVERLAY_RAM_LIMIT, f"{name} 확장 RAM 상한 초과"
     patched = 0
+    ptr_moved = {}  # 원 소유 블록 eid → 주소가 실제로 바뀐 참조 수(장부 「포인터」)
+    ptr_sites = []  # (addiu_off, lui_off, 새 주소) — 구조 대조 검사가 이미지에서 다시 읽어 맞춘다
     for addiu_off, lui_off, op, addr in refs:
         if addiu_off < text_end or lui_off < text_end:
             continue  # 텍스트 영역 내 우연 일치는 패치 대상 아님
         (_, eid), delta = owner(addr - ov_base())
+        o_eid, o_delta, via = eid, delta, "b"
         if delta == 0 and eid in stock_alias:
             eid = stock_alias[eid]
+            via = "a"
         elif eid in stock_mid and delta == stock_mid[eid][0]:
             eid, delta = stock_mid[eid][1], 0
+            via = "m"
         if delta == 0 and eid in donor_placed:
+            via = "d"
             kind, off, _c = donor_placed[eid]
             new_addr = (ov_base() + off) if kind == "ext" else (off + ED_EXE_RAM)
         else:
@@ -4250,13 +4442,18 @@ def _build_scene(name, lba, size, identity, fixed):
         patch_word_imm(out_file, lui_off, hi)
         patch_word_imm(out_file, addiu_off, lo)
         patched += 1
+        ptr_sites.append((addiu_off, lui_off, new_addr, o_delta, via, o_eid))
+        if new_addr != addr:
+            ptr_moved[o_eid] = ptr_moved.get(o_eid, 0) + 1
 
     # 주입 %c쌍 블록의 콜사이트 인자 패치(0x83/0x5C→공백) — 번역이 실제로 들어갈 때만.
     # 블록이 제외돼 JP가 남으면 원본 인자를 보존해야 ソ가 그대로 나온다.
+    arg_applied = []  # 장부용 — (eid, 코드 오프셋)
     for (scn, eid), patches in SCN_ARG_PATCHES.items():
         if scn == name and eid in translations and eid not in excluded:
             for off, word in patches:
                 out_file[off : off + 4] = word.to_bytes(4, "little")
+                arg_applied.append((eid, off))
 
     # 이름 스텁 콜사이트 교체 — ref 패처가 같은 워드(lui)를 만진 뒤에 덮어써야 한다.
     # 교체 다음의 죽은 lui/addiu 워드(j가 건너뜀)는 ref 패치 잔해가 남아도 무해.
@@ -4311,6 +4508,10 @@ def _build_scene(name, lba, size, identity, fixed):
         f"{sorted(set(excluded.values()))}{parse_skip}{ov}{donor_s}, 포인터 {patched}건, "
         f"사용 0x{used:X}/0x{text_end:X})"
     )
+    RELOC[name] = _reloc_record(
+        name, lba, size, data, text_end, entries, layout, translations, excluded, donor_placed,
+        ext_base, stock_alias, stock_mid, stub_info, arg_applied, ptr_moved, ptr_sites, out_file,
+    )
     return out_file, stats, {off: cand for k, off, cand in donor_placed.values() if k == "ed"}
 
 
@@ -4345,12 +4546,17 @@ def main():
                 dir_moves.append((f"{name}.BIN;1", new_lba, len(out_file)))
                 built[new_lba] = out_file
                 layout_manifest[name] = {"lba": new_lba, "size": len(out_file)}
+                RELOC[name]["new_lba"] = new_lba
                 print(f"  {name}: {size}→{len(out_file)}B, LBA {lba}→{new_lba} (DUMMY 재배치)")
             else:
                 built[lba] = out_file
                 layout_manifest[name] = {"lba": lba, "size": size}
+                RELOC[name]["new_lba"] = lba
             total_tr += int(stats.split("재삽입 ")[1].split("블록")[0])
         donor_all.update(donor)
+    if RELOC and not identity:
+        with open(os.path.join(OUT_DIR, "scn_reloc.json"), "w", encoding="utf-8") as f:
+            json.dump({"scenes": RELOC, "fixed": fixed}, f, ensure_ascii=False)
     if identity:
         print("전 씬 아이덴티티 라운드트립 OK")
         return

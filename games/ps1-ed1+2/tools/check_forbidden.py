@@ -103,7 +103,7 @@ def _corpus_lines():
 
         for _rel in _M.KR_SPANS:
             for _o, _l, _t in _M.kr_lines(_rel):
-                if len(re.sub(r"\s+", "", _t)) >= 6:
+                if len(re.sub(_WS, "", _t)) >= 6:
                     out.add(_t.strip())
     except Exception:  # 원본이 없는 머신 — 위 dos_kr 과 같은 취급
         pass
@@ -177,7 +177,7 @@ def scan_similar(threshold=0.90, report=0.80):
 
     from common import ROOT
 
-    lines = [re.sub(r"\s+", "", s) for s in _corpus_lines()]
+    lines = [re.sub(_WS, "", s) for s in _corpus_lines()]
     grams = collections.defaultdict(list)
     for s in lines:
         for i in range(len(s) - 19):
@@ -202,7 +202,7 @@ def scan_similar(threshold=0.90, report=0.80):
         with open(path, encoding="utf-8") as f:
             doc = json.load(f)
         for eid, v in doc.items():
-            t = re.sub(r"\s+", "", v.get("t", ""))
+            t = re.sub(_WS, "", v.get("t", ""))
             best = 0.0
             for i in range(len(t) - 19):
                 for cand in grams.get(t[i : i + 20], ()):
@@ -239,6 +239,10 @@ def scan_similar(threshold=0.90, report=0.80):
 #    창작성이 낮아 자연스러운 한국어가 한 자리로 모인다(방침 08-04). 다르게 쓰면 **더 나쁜
 #    한국어**가 되므로 다시 쓰지 않고 자리를 콕 집어 둔다. ⚠ 등록 조건은 둘 — ① 정발을 안 보고
 #    쓴 것이 확실하고 ② 원문이 상투적이라 대안이 어색하다. 스토리 대사는 여기 오지 않는다.
+# 공백 제거 때 붙임 공백(U+E003, `NOBREAK_SP`)도 공백이다 — 안 지우면 그 자리 문안이 정발과 같아도 못 찾는다
+# (2026-10-19 실측: 「왕자님!! 류난!! 게일!!」 줄이 E003 때문에 한동안 게이트에 안 걸렸다).
+_WS = r"[\s\ue003]+"
+
 CANON_CONVERGED_OK = {
     ("ED1SCN4", "293"),  # 무기·방어구점 입장 인사 — 상점 인사
     # 아래는 **길 안내·설명 평서문**이다. 원문이 평범해 한국어가 한 가지로 수렴한다
@@ -266,6 +270,8 @@ CANON_CONVERGED_OK = {
     ("ED1SCN4", "552"),  # (원문 생략 — 신시아에게 말을 전해 달라는 부탁) — 어순까지 강제된다
     ("ED1SCN2", "85"),  # (원문 생략 — 「너희도 파렌 사람이었지」 하는 확인)
     ("ED1SCN2", "271"),  # (원문 생략 — 로우가 오지 않았느냐고 묻는 대사) — 더듬는 사과 + 질문
+    # 마스터 10-19 「예외로 두자. 누가 번역해도 그렇게 나올것 같아.」 — 이 줄 하나만(문안이 정확히 같을 때만 통과)
+    ("ED1SCN4", "570"),  # 왕자님·류난·게일을 부르며 사정을 묻는 외침
 }
 
 
@@ -353,7 +359,7 @@ def _homage_texts():
         if not hit:
             print(f"      ⚠ 오마주 등록 자리가 없다: {fn} k={key} (좌표가 바뀌었나)")
             continue
-        out.add(re.sub(r"\s+", "", hit[0]["ours"]))
+        out.add(re.sub(_WS, "", hit[0]["ours"]))
     return out
 
 
@@ -371,7 +377,7 @@ def _converged_texts():
         with open(p, encoding="utf-8") as f:
             v = json.load(f).get(eid) or {}
         if v.get("t"):
-            out.add(re.sub(r"\s+", "", v["t"]))
+            out.add(re.sub(_WS, "", v["t"]))
     return out
 
 
@@ -398,7 +404,7 @@ def scan_canon(verbose=False):
     if not lines:
         print("  ⏭ 정발 코퍼스가 없어 건너뜀")
         return 0
-    flat = {re.sub(r"\s+", "", s) for s in lines}
+    flat = {re.sub(_WS, "", s) for s in lines}
     # ⚠ **반대 방향도 본다.** 정발 엔트리는 문장 끝에 공백이 없는 자리가 많아(`일이야.자네가`)
     # `_sentences` 가 못 가르고 **한 줄로 뭉친다** — 그러면 우리 `t` 가 그 줄보다 **짧아서**
     # 전체 일치로는 영영 안 걸린다. 우리 문안이 정발 엔트리의 **일부**인 자리도 유출이다
@@ -428,7 +434,7 @@ def scan_canon(verbose=False):
             t = ((v.get("t") or v.get("ours")) or "").strip()
             if not t or not re.search(r"[가-힣]{2,}", t):
                 continue
-            ft = re.sub(r"\s+", "", t)
+            ft = re.sub(_WS, "", t)
             if (scn, eid) in CANON_CONVERGED_OK:
                 continue
             if ft in flat or (len(ft) >= 20 and ft in joined):
@@ -562,17 +568,17 @@ def scan_repo(verbose=False):
             # (`부상자는대체 어디에 있는거야?`) 우리는 띄어 쓴다 — 띄어쓰기만 다듬어 옮겨
             # 적으면 **글자는 그대로인데 검사기가 통과시킨다**(실측 2026-08-18: 그 부류가
             # 대부분이었다). 저작권은 표현이 문제지 공백이 문제가 아니다.
-            flat = re.sub(r"\s+", "", data)
-            hit = [s for s in lines if re.sub(r"\s+", "", s) in flat]
+            flat = re.sub(_WS, "", data)
+            hit = [s for s in lines if re.sub(_WS, "", s) in flat]
             # 우연 수렴으로 등록된 자리는 뺀다. ⚠ 문자열을 코드에 박지 않고 **정본에서 읽어
             # 온다** — 박으면 그게 곧 「문안이 코드에 남는 것」이라 체계가 무너진다.
             # ⚠ **포함 관계로 본다** — 예외는 블록 전체 문안으로 등록되는데 여기서 걸리는 건
             #   그 안의 **문장 조각**이다(코퍼스가 문장 단위로도 색인된다). 같은지만 보면
             #   등록해도 계속 운다(2026-08-18 실측).
             ok = _converged_texts() | _homage_texts()
-            stock = {re.sub(r"\s+", "", t) for t in CORPUS_STOCK_FRAGMENTS}
-            hit = [h for h in hit if re.sub(r"\s+", "", h) not in stock]
-            hit = [h for h in hit if not any(re.sub(r"\s+", "", h) in t for t in ok)]
+            stock = {re.sub(_WS, "", t) for t in CORPUS_STOCK_FRAGMENTS}
+            hit = [h for h in hit if re.sub(_WS, "", h) not in stock]
+            hit = [h for h in hit if not any(re.sub(_WS, "", h) in t for t in ok)]
             if hit:
                 rel = os.path.relpath(path, root)
                 # 🔴 **선언된 시스템 문구는 강제 번역**이라 우연 일치가 정상이다 —

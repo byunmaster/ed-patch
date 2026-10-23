@@ -264,7 +264,11 @@ def main():
     # 조우 코드의 이름 복사가 JP 길이로 굳어 있어 긴 한글 이름이 잘린다(QA 129) —
     # 이름표 재배치가 끝난 **뒤**에 복사를 널까지 도는 루프로 바꾼다.
     run("patch_ed2_name_copy.py")
+    # 몬스터 행동 함수가 안 채운 임시 버퍼를 strcat 하는 원본 결함 — 스택 찌꺼기가 문구에 붙는다(10-20 s94_09)
+    run("patch_ed2_stale_strcat.py")
     run("patch_items.py")  # ED.EXE 아이템·마법명 (FINAL 제자리 갱신)
+    # 수치 뒤 조각의 앞 공백(textmap) — 수치 없는 참조만 공백 뒤로 돌린다(patch_items·patch_ed2_battle 뒤)
+    run("patch_battle_frag_space.py")
     # 줄머리 공백 훅(patch_battle_wrap.py)은 **미채택 확정**(2026-07-23 유저 결정, 보류 아님).
     # 구현·검증까지 끝냈으나 ①differential로 인트로 정지와 무관함이 확인돼 실익이 없었고
     # ②매 문자 분기를 거는 런타임 비용·리스크보다, 화면을 보고 그때그때 텍스트 데이터를

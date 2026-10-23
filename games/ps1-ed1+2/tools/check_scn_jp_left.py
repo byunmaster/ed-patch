@@ -34,11 +34,11 @@ os.environ.setdefault("LOCK_BYPASS", "1")
 
 import reinsert_kr_pilot as R
 from common import BUILD_DIR, OUT_DIR, extract
+from dict_tables import monsters_ed2
 from ed2_monster_review import MON, decode_sjis
 from lock_lines import SETTLED, load_lock
 from patch_ed2_monster_lines import _live_group_lba as _live_mon  # 🔴 재배치 뒤 현재 LBA
 from patch_ed2_monster_lines import is_dialog, overlay_refs
-from dict_tables import monsters_ed2
 from patch_ed2_monsters import _enc
 from patch_sys_ui import _scn_layout
 
@@ -225,7 +225,7 @@ def scan_mon():
             if j < 0:
                 break
             s = decode_sjis(data[i:j]) if 2 <= j - i <= 200 else None
-            if s and is_dialog(s):
+            if s and is_dialog(s, allow_nl=True):  # 줄바꿈 든 일본어 대사도 센다
                 hits[f"{group}:{i:#x}"] = s
             i = j + 1
     return hits

@@ -87,6 +87,34 @@ def _blocks(R, scn):
             yield eid, raw[eid], cand
 
 
+_END_JP = re.compile(r"[。！？!?」』…･・]\s*$|[〜~]\s*$")
+_END_KR = re.compile(r"[.!?…」』~]\s*$")
+
+
+def _chain_pairs(scn, rows):
+    """끝이 열린 대사 블록(문장 부호로 안 끝남)이 다음 번호 블록과 이어지는 **문장 단위** 줄을 낸다."""
+    i = 0
+    while i < len(rows):
+        eid, jb, kb, kind = rows[i]
+        j = i
+        while (
+            j + 1 < len(rows)
+            and rows[j][3] == "dialog"
+            and rows[j][2] is not None
+            and not _END_JP.search(rows[j][1])
+            and not _END_KR.search(rows[j][2])
+            and rows[j + 1][0] == rows[j][0] + 1
+            and rows[j + 1][3] == "dialog"
+            and rows[j + 1][2] is not None
+        ):
+            j += 1
+        if j > i:
+            jp_join = "".join(r[1] for r in rows[i : j + 1])
+            kr_join = " ".join(r[2] for r in rows[i : j + 1])
+            yield f"{scn}:{eid}~{rows[j][0]}", jp_join, kr_join, "dialog"
+        i = j + 1
+
+
 def _scene_pairs():
     with _quiet():
         import reinsert_kr_pilot as R
@@ -97,6 +125,7 @@ def _scene_pairs():
             continue
         with open(path, encoding="utf-8") as f:
             script = json.load(f)
+        rows = []
         for eid, jp, cand in _blocks(R, scn):
             text = jp.decode("cp932", errors="replace")
             # 이름창 = `%c이름%c` 바로 뒤에 개행이 오는 것 — 창마다 하나씩 있고 블록 한복판에도 나온다(화자가 바뀐다).
@@ -128,6 +157,11 @@ def _scene_pairs():
                 else "dialog"
             )
             yield f"{scn}:{eid}", jb, ours_body, kind
+            rows.append((eid, jb, ours_body, kind))
+        # 🔴 이어진 문장 — 한 문장이 블록 둘 이상에 걸치면(chain·subs·`%c`) 블록 단위로만 재던 검사가 **이어진 자리**를 못 봤다
+        #   (이름·정본·인사 검사 셋 모두 — sfc-ed2 10-20). 끝이 문장 부호가 아닌 블록이 바로 다음 번호 블록으로 이어지면
+        #   그 둘을 한 줄로 이어 「원문 줄 · 우리 줄」 쌍을 더 낸다(원문은 붙여, 우리는 공백 하나로).
+        yield from _chain_pairs(scn, rows)
     if UNRENDERED:
         print(
             f"names_corpus: 화면 바이트로 못 그린 장면 블록 {len(UNRENDERED)} (script 문안으로 대신 잼)",
@@ -150,8 +184,25 @@ def _battle_ed2_pairs():
     fit, over, none = B2.plan()
     for fo, jp, kr, _slot in fit + over:
         yield f"ED2전투:{fo:#x}", _jp(jp), _ours(kr), "dialog"
+    # 번역 표(`patch_ed2_battle`)에 없는 ED2.EXE 문자열 — 셋으로 가른다.
+    #  ① 화면에 안 나가는 것(SDK 디버그 영문 · `%4d` 류 서식 · 빈 문자열)은 **분모 밖**이다 —
+    #     가나·한자가 없으면 번역할 글이 없다. 2026-10-18 실측 65건(SDK 44 · 서식 13 · 빈 8).
+    #  ② 가나·한자가 있는데 **다른 패처가 옮기는 것** — 시나리오 아이템 칸(0xD4870~, `patch_ed2_sys`
+    #     의 정본 표)과 메모리카드 문구(`patch_sys_ui.MSGS`). 빌드 바이트와 같은 값인지는
+    #     `check_ed2_sys_corpus` 가 이미지에서 대조한다.
+    #  ③ 그 밖은 정말 없는 것 → None(분모에 든다).
+    import re
+
+    import patch_ed2_sys as S2
+    import patch_sys_ui as SU
+
+    canon = S2.apply_canon()
+    msgs = dict(SU.MSGS)
     for fo, jp in none:
-        yield f"ED2전투:{fo:#x}", _jp(jp), None, "dialog"
+        if not re.search(r"[぀-ヿ一-鿿]", jp):
+            continue  # ① 분모 밖
+        kr = canon.get(jp) or msgs.get(jp)
+        yield f"ED2전투:{fo:#x}", _jp(jp), _ours(kr) if kr is not None else None, "dialog"
 
 
 def _monster_line_pairs():

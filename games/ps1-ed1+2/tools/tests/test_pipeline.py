@@ -704,7 +704,8 @@ def test_copyright_gate_sees_sentences_and_ignores_spacing():
 
 def re_sub_in(src):
     """공백을 지우고 비교하는가."""
-    return 're.sub(r"\\s+", "", data)' in src or 'sub(r"\\s+", "", data)' in src
+    # `_WS` = `[\\s\\ue003]+` — 붙임 공백(E003)도 공백으로 친다
+    return 're.sub(_WS, "", data)' in src or 're.sub(r"\\s+", "", data)' in src
 
 
 def test_tool_index_covers_all_tools():
@@ -1452,7 +1453,9 @@ def test_frame_full_line_drops_our_newline():
     full = "그런 놈들한테 맡길 순 없잖아."  # 14.5슬롯 = 29열
     assert abs(sum(R.cell_w(c) for c in full) - R.FRAME_SLOTS) < 1e-9, "예시가 틀을 안 채운다"
     assert R._fills_frame(full)
-    assert R.join_lines([full, "우리가 모셔다 드리지."]) == full + "우리가 모셔다 드리지."
+    # 🔴 10-19: 꽉 찬 줄 뒤에도 개행을 **넣는다** — 빼면 공백도 사라져 엔진이 앞 공백에서 꺾고
+    #    `아.우리가` 처럼 두 문장이 붙는다(~100곳). 빈 줄은 드로어 훅(`stub_eager_nl`)이 막는다.
+    assert R.join_lines([full, "우리가 모셔다 드리지."]) == full + "\n우리가 모셔다 드리지."
 
     # ⚠ 안 찬 줄은 그대로 개행으로 잇는다
     short = "짧은 줄."
@@ -1830,6 +1833,26 @@ def test_ascii_galmuri_glyphs_fit_halfwidth_cell():
         assert all(b & 0x07 == 0 for b in rows), hex(code)
     # 내림 글자도 11행 안에 든다(g 는 마지막 행까지 잉크가 닿는다)
     assert g[ord("g")][10] != 0
+
+
+def test_halfwidth_curly_quotes_have_own_glyph_codes():
+    """반각 여닫는 따옴표 “ ”(마스터 10-19) — 전용 반각 코드 1바이트·0.5슬롯, 글리프는 여는 쪽 잉크 오른쪽 · 닫는 쪽 왼쪽,
+    다른 반각 글리프 칸과 안 겹치고 열 6·7 은 비어 있다(062)."""
+    import patch_hangul_glyph_table as G
+
+    op_code, cl_code = G.QUOTE_CODES["\u201c"], G.QUOTE_CODES["\u201d"]
+    assert R.encode_ext("\u201c가\u201d") == bytes([op_code]) + R.encode_ext("가") + bytes([cl_code])
+    assert R.cell_w("\u201c") == 0.5 and R.cell_w("\u201d") == 0.5
+    g = G.bake_glyphs()
+    op, cl = g[op_code], g[cl_code]
+    for rows in (op, cl):
+        assert len(rows) == 11 and any(rows) and all(b & 0x03 == 0 for b in rows)
+    assert all(b & 0xC0 == 0 for b in op)  # 여는 쪽 — 열 0·1 비움(잉크 오른쪽)
+    assert all(b & 0x04 == 0 for b in cl)  # 닫는 쪽 — 열 5 비움(잉크 왼쪽)
+    # 코드가 SCN 대사 사용 17종·이미 구운 칸·특수 주소와 안 겹친다
+    used = {0xB2, 0xDE, 0xAD, 0xBD, 0xCD, 0xB7, 0xD7, 0xB0, 0xCC, 0xD9, 0xBC, 0xC0, 0xDF, 0xDB, 0xB3, 0xB1, 0xDD}
+    assert not ({op_code, cl_code} & (used | {0xAF, 0xDC}))
+    assert not (set(G.GLYPH_ROWS) - {op_code, cl_code}) & {op_code, cl_code}
 
 
 if __name__ == "__main__":

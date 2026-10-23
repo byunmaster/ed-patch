@@ -103,6 +103,11 @@ GLYPH_ROWS = {
     0xBB: (211, bytes.fromhex("484848fc48484808081020")),  # ｻ
     0xD5: (260, bytes.fromhex("000078080808080808fc00")),  # ﾕ
     0xD6: (262, bytes.fromhex("00f8080808f8080808f800")),  # ﾖ
+    # 반각 여닫는 큰따옴표 “ ”(마스터 10-19 「쌍따옴표는 반각」·「여닫는 따옴표」) — ASCII `"` 는 여닫이 구분이 없다.
+    # 코드 0xD8(ﾘ)·0xDA(ﾚ): SCN 대사 사용 17종(`b2 de ad bd cd b7 d7 b0 cc d9 bc c0 df db b3 b1 dd`)에 없고 이미 구운 칸·특수 주소
+    # (0xAF·0xDC)에도 안 든다. 색인은 「0xD7~0xDB = b + 0x30」(devlog 062) — 원본 글리프가 ﾘ·ﾚ 모양인 것으로 검산했다.
+    0xD8: (264, bytes.fromhex("0088888888888808102040")),  # ﾘ → “
+    0xDA: (266, bytes.fromhex("0040404040404448506000")),  # ﾚ → ”
 }
 
 # 마스터 확정(2026-09-22) — 66px 11조각 가득 쓰기. 순서가 화면 좌→우.
@@ -172,6 +177,33 @@ ROUTE_GRID = (
 )
 
 
+# 반각 따옴표 — 글자 → 코드. 문안 인코더(`reinsert_kr_pilot.encode_ext`)·폭 계산이 이 표를 읽는다.
+QUOTE_CODES = {"\u201c": 0xD8, "\u201d": 0xDA}
+# Galmuri11-Condensed 의 U+201C·U+201D(4×3 비트)를 6px 칸 윗줄 0~2행에 놓는다 — 원본 ASCII 따옴표처럼 맨 위 정렬.
+# 여는 쪽은 잉크를 칸 **오른쪽**(열 2~5), 닫는 쪽은 **왼쪽**(열 0~3)에 붙인다(마스터 지시) — 한글과 사이가 벌어지지 않는다.
+QUOTE_GRID = {
+    0xD8: (
+        "...#.#",
+        "..#.#.",
+        "..#.#.",
+    ),
+    0xDA: (
+        ".#.#..",
+        ".#.#..",
+        "#.#...",
+    ),
+}
+
+
+def slice_quotes():
+    """{코드: 11B 글리프} — 윗줄 3행 도안, 나머지 행 0."""
+    out = {}
+    for code, rows in QUOTE_GRID.items():
+        grid = [[1 if ch == "#" else 0 for ch in row] for row in rows] + [[0] * 6] * 8
+        out[code] = _pack_glyph(grid)
+    return out
+
+
 def _pack_glyph(bits6):
     """(11,6) 0/1 배열 → 11바이트, 행당 1B, MSB=왼쪽 픽셀. 열 6·7 은 항상 0(062 핵심)."""
     out = bytearray(11)
@@ -205,6 +237,7 @@ def bake_glyphs():
     out.update(slice_grid(HUD_GRID, HUD_CODES))
     out.update(slice_grid(ROUTE_GRID, ROUTE_CODES))
     out.update(slice_grid(SAPIA_GRID, SAPIA_CODES))
+    out.update(slice_quotes())
     assert set(out) == set(GLYPH_ROWS), (
         f"조각 배정과 GLYPH_ROWS 코드 집합이 다르다: {set(out) ^ set(GLYPH_ROWS)}"
     )

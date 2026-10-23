@@ -421,7 +421,7 @@ SPLIT_SLIME_MSGS = (
         0x1DC,
         bytes.fromhex("2563 90d4 8358 8389 2563 2563 8343 8380 8260 8166 2563".replace(" ", "")),
         _halfwidth_marks(
-            bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 2563 2563 90d1 4181 6625 63".replace(" ", ""))
+            bytes.fromhex("2563 8dd1 90b8 20 8f5c 8bf1 2563 2563 90d1 4181 6625 63".replace(" ", ""))
         ),
     ),
     (
@@ -429,7 +429,7 @@ SPLIT_SLIME_MSGS = (
         0x1F4,
         bytes.fromhex("2563 90d4 8358 8389 8343 8380 8260 8168 2563".replace(" ", "")),
         _halfwidth_marks(
-            bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 90d1 4181 6825 63".replace(" ", ""))
+            bytes.fromhex("2563 8dd1 90b8 20 8f5c 8bf1 90d1 4181 6825 63".replace(" ", ""))
         ),
     ),
     (
@@ -437,7 +437,7 @@ SPLIT_SLIME_MSGS = (
         0x208,
         bytes.fromhex("2563 90d4 8358 8389 2563 2563 8343 8380 8261 8166 2563".replace(" ", "")),
         _halfwidth_marks(
-            bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 2563 2563 90d1 4281 6625 63".replace(" ", ""))
+            bytes.fromhex("2563 8dd1 90b8 20 8f5c 8bf1 2563 2563 90d1 4281 6625 63".replace(" ", ""))
         ),
     ),
     (
@@ -445,7 +445,7 @@ SPLIT_SLIME_MSGS = (
         0x220,
         bytes.fromhex("2563 90d4 8358 8389 8343 8380 8261 8168 2563".replace(" ", "")),
         _halfwidth_marks(
-            bytes.fromhex("2563 8dd1 90b8 8f5c 8bf1 90d1 4281 6825 63".replace(" ", ""))
+            bytes.fromhex("2563 8dd1 90b8 20 8f5c 8bf1 90d1 4281 6825 63".replace(" ", ""))
         ),
     ),
 )

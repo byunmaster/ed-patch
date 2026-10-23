@@ -304,6 +304,11 @@ HALFWIDTH_HUD_SLOT_SPECS = (
     ("ED2SCN7", 0x885F, bytes.fromhex("8abf8ae990d20000")),
 )
 
+# 앞 문안 길이에 따라 오프셋이 밀리는 슬롯(텍스트 영역 끝 안) — 원본의 앞 7B 문맥. 정확 위치에 없을 때만 쓴다.
+SHIFTABLE_SLOT_CONTEXT = {
+    ("ED2SCN7", 0x885F): bytes.fromhex("25630000ff4324"),
+}
+
 # 🔴 되돌림 대상 — **죽은 옛 사본**(ED1SCN5 재배치 전, 원래 `SCN_FILES` 의 LBA 1555)에
 # 반각을 잘못 넣었던 3곳. 해는 없지만(아무도 안 읽는다) **다음 사람이 "고쳤는데 왜
 # 안 뜨지"로 또 밟는다** — 원본 바이트로 되돌리고 이 표에 이유를 남긴다. **이 LBA 는
@@ -362,6 +367,22 @@ def apply_halfwidth_hud_slots():
         cur = bytes(buf[off : off + 8])
         if cur == want:  # 재빌드 — 이미 우리 값
             continue
+        if cur != orig and (scn, off) in SHIFTABLE_SLOT_CONTEXT:
+            # 🔴 이 슬롯은 **텍스트 영역 끝 안**에 있어 앞 문안 길이에 따라 오프셋이 밀린다
+            # (ED2SCN7 문안을 8B 줄이자 0x885F → 0x8857, 10-21). 앞 7B 문맥+원본 8B 로 창 안에서 찾는다.
+            ctx = SHIFTABLE_SLOT_CONTEXT[(scn, off)]
+            hay = bytes(buf)
+            lo, hi = max(0, off - 0x400), min(len(hay), off + 0x400)
+            pat = ctx + orig
+            hits = [i + len(ctx) for i in range(lo, hi) if hay[i : i + len(pat)] == pat]
+            if len(hits) == 1:
+                off = hits[0]
+                label = f"{scn}@0x{off:X}(밀린 슬롯)"
+                cur = bytes(buf[off : off + 8])
+                if cur == want:
+                    continue
+            else:
+                raise AssertionError(f"058 HUD 반각 슬롯 {label} 문맥 탐색 실패: 후보 {len(hits)}곳")
         assert cur == orig, (
             f"058 HUD 반각 슬롯 {label}(lba{lba}) 불일치: {cur.hex()} != {orig.hex()}"
         )
