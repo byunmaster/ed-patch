@@ -78,6 +78,51 @@ def write_wav(path, samples: list[int]) -> None:
         w.writeframes(struct.pack(f"<{len(samples)}h", *(v << 4 for v in samples)))
 
 
+def decode_clean(data: bytes, hp_hz: float = 30.0, gain: float = 12.0) -> list[int]:
+    """들어 보기용 디코드 — 12비트 포화(±2047)를 풀고 직류를 걷는다(마스터 10-22 「음성이 깨끗하지가 않아」).
+    `decode` 는 누산기를 ±2047 에 묶어 직류가 흘러간 구간이 **납작하게 잘린다**(씬 클립 표본의 0.1~1.5% · 파고율 2~3 — 정상 음성은 7~8). 묶지 않고 누산한 뒤
+    1극 고역통과(30Hz)로 직류를 걷으면 파고율이 7~8 로 돌아온다(에뮬 출력 녹음의 파고율 7 과 같다). 16비트 정수로 돌려 주며 최대치가 16비트를 넘길 클립은 이득을 줄인다.
+    ⚠ 받아쓰기·검산(`decode`)은 종전 그대로다 — 이 함수는 사람이 귀로 듣는 용도."""
+    import math
+
+    fl, s, idx, p, xp = [], 0, 0, 0.0, 0.0
+    a = math.exp(-2 * math.pi * hp_hz / RATE)
+    for byte in data:
+        for nib in (byte & 0x0F, byte >> 4):
+            step = _STEP[idx]
+            d = step >> 3
+            if nib & 1:
+                d += step >> 2
+            if nib & 2:
+                d += step >> 1
+            if nib & 4:
+                d += step
+            s = s - d if nib & 8 else s + d
+            idx = max(0, min(48, idx + _ADJ[nib & 7]))
+            p = a * (p + s - xp)
+            xp = s
+            fl.append(p)
+    peak = max(max(fl), -min(fl), 1.0)
+    g = min(gain, 30000.0 / peak)  # 크게 흘러간 클립(카드 안내 음성)은 최대치를 ±30000 에 맞춘다
+    return [int(round(v * g)) for v in fl]
+
+
+def clip_clean(rel: int, sectors: int) -> list[int]:
+    return decode_clean(common.track_data(rel, sectors))
+
+
+def write_wav_clean(path, samples: list[int]) -> None:
+    """`decode_clean` 결과(이미 16비트)를 그대로 쓴다."""
+    import struct
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(RATE)
+        w.writeframes(struct.pack(f"<{len(samples)}h", *samples))
+
+
 def stt(path) -> list[dict]:
     """로컬 Whisper(large-v3-turbo) 초벌 — 구간 시각과 함께."""
     import numpy as np

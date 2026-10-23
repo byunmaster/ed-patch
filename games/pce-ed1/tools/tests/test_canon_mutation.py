@@ -29,7 +29,8 @@ class CanonMutation(unittest.TestCase):
     def test_wrong_line_is_caught(self):
         base = canon.audit(self.pairs, "ed1")
         self.assertEqual(base.mismatches, [], "시험 전제 — 지금 어긋남 0")
-        phrase = [h for h in base.hits if h.category in ("battle", "system")]
+        pend = {x.where for x in base.pending}  # 판정 대기 열쇠는 어느 값이든 통과시킨다 — 변이를 못 잡는 게 정상
+        phrase = [h for h in base.hits if h.category in ("battle", "system") and h.where not in pend]
         self.assertGreater(len(phrase), 100)
         by_where = {p[0]: p for p in self.pairs}
         for h in phrase[:: max(1, len(phrase) // 25)]:  # 고루 25개

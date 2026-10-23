@@ -49,8 +49,12 @@ TERM_BYTES = (0, 6, 7)  # 메시지 종료 바이트(messages.TERM)
 TIMER_AT = re.compile(rb"\xa2(.)\xa0(.)\x20\xd7\x5b", re.DOTALL)  # LDX #lo · LDY #hi · JSR $5BD7
 SHOW_5B_TAILS = (b"\x20\x5b\x5b", b"\x4c\x06\x5b")  # 나머지(JSR $5B76 · JMP $5B0B)는 $5B76 꼴
 SHOW_76, SHOW_5B = 0x5B76, 0x5B5B  # 메시지 표시 — `$10/$11` = 메시지 주소
+CLOSE_WINDOW = 0x5B0E  # 대화 끝 꼬리(맵 뱅크 복귀 · 화면 갱신 — 스크립트가 끝에서 `JMP` 하는 곳). 간격에서 창을 닫을 때 부른다
 WAIT_FRAMES = 0x5BD7  # 게임의 코루틴 대기(X+Y×256 프레임, 0 이면 65536)
-CLOCK_F, CLOCK_S = 0xC1B2, 0xC1B3  # 플레이 시간: 초 안 프레임(0~59) · 초(하위 바이트) — ⚠ 장면 연출 중엔 멈춘다(10-12 실측). 시간은 프레임 카운터(`FRAMECNT`)로 잰다
+CLOCK_F, CLOCK_S = (
+    0xC1B2,
+    0xC1B3,
+)  # 플레이 시간: 초 안 프레임(0~59) · 초(하위 바이트) — ⚠ 장면 연출 중엔 멈춘다(10-12 실측). 시간은 프레임 카운터(`FRAMECNT`)로 잰다
 FRAMECNT = hook.FRAMECNT  # IRQ1 트램펄린이 매 VBlank 에 올리는 16비트 카운터(하위·상위) — `inst` 가 처음 쓸 때 RAM 에서 꽂는다
 TICK_ADDR, IRQ_SITE = hook.TICK_ADDR, hook.IRQ_SITE
 RES_ORG = 0x9E56  # 상주부 — 뱅크 0x6B 꼬리 FF 패딩 `$9E56~$9FFF`(426B)
@@ -82,13 +86,26 @@ AUTO_ORG = (
 )
 AUTO_END = 0x6000
 AUTO_SITES = (0x6BB3, 0x6BE6, 0x6C35, 0x6D38)  # 뱅크 0x6C — 쪽 대기 · 끝 대기의 `LDA $CF1A`
+BLINK_SITES = (
+    0x6BAA,
+    0x6BDD,
+    0x6C2C,
+    0x6D23,
+)  # 뱅크 0x6C — 넘김 커서 깜빡임 `JSR $6CC3` 넷(자막 모드에선 `hook.blink_routine` 이 숨긴다)
 AUTO_FLAG, AUTO_TL, AUTO_TH = (
     0x5FFD,
     0x5FFE,
     0x5FFF,
 )  # 훅 뒤 3B — 자막 모드 · 지금 쪽 마감(프레임 카운터 값, 하위·상위)
+# 자막 모드 자동 넘김의 넘김 효과음 끄기(마스터 10-17): 엔진 뱅크 0x6C 의 호출 셋(`JSR $67EC`)을 `hook.quiet_routine` 으로 돌린다(거름 루틴은 후킹 페이로드에 산다).
+QUIET_SITES = (0x6BFF, 0x6C3C, 0x6D3F)
+
+
 PAD = 0xCF1A  # 버튼 트리거
 SPEED = 0xC051  # 글자 찍는 속도(0~3 → 글자당 1·3·5·0 프레임, 표 `$5B8A`) — 3 = 즉시
+# 자막 쪽은 글자를 글자당 1프레임으로 찍는다(0). 「즉시」(3)로 한 프레임에 몰아 찍으면 그 프레임의 VRAM 쓰기·글꼴 호출이 길어져 래스터 IRQ 가 밀리고 쪽 전환 때 화면 전체가
+# 1~2프레임 튄다(씬 2 설교 23.3초·29.0초 전환 — 일반 여러 쪽 대사는 설정 속도로 여러 프레임에 걸쳐 찍어 안 튄다. 10-22 실측: 1프레임/글자로 바꾸자 3600프레임에서 튐 0).
+SUB_SPEED = 0
 
 
 # 씬 → {게이트 순번(블록 안 `LDA $C04C` 의 몇 번째인가): 규칙}. 순번은 번역해도 안 바뀐다(코드는
@@ -139,15 +156,234 @@ SITES: dict[int, dict[int, str]] = {
 # 장면 2: 음성 호출은 원판 그대로 두되, 호출 자리에서 **재생 시작을 기다리는 틱을 건다**(`VOICE_ARM`·`PLAYSTART`). 소리가 실제로 나기 시작하는 시각은 환경마다 다르다
 # (이 에뮬은 호출 뒤 0.65초, 마스터 환경은 의자에 앉은 뒤 — 10-13). 설교 창은 `FLAG_VOICE0` 로 표의 0 을 그 시작에 묶는다(없으면 늦게 뜬다).
 VOICE0 = {2}
-GREET_VOICE = re.compile(rb"\x20\x15\x58....", re.DOTALL)  # 음성 호출(JSR $5815 + 인라인 4B) — 이 장면엔 하나
+GREET_VOICE = re.compile(
+    rb"\x20\x15\x58....", re.DOTALL
+)  # 음성 호출(JSR $5815 + 인라인 4B) — 이 장면엔 하나
 
 
-GREET_END = {2: 9.35}  # 인사 창이 닫히는 때(음성 시작 기준 초) = 설교 창이 열리는 때(실측: 음성 9초부터 설교 문안, 에뮬 10-13)
+# 인사 창 문안(마스터 10-17 — 종전엔 호출 바로 앞의 **시녀** 메시지를 그대로 띄웠다): 음성 받아쓰기(Whisper 강제 점수, 10-17)로 라이아스「おはようございます、セリオス王子」→
+# 세리오스「おはよう、ライアスじい」. 쪽마다 (화자, 문안, 열림 초, 닫힘 초) — 음성 시작(`PLAYSTART`) 기준. 열림 None = 앞 쪽 닫힘(처음 쪽은 즉시).
+# 첫 쪽은 음성 시작 + 3.0초에 연다(마스터 10-18 「음성에 맞춰 띄우는게 좋을듯」 — 앞 무음 구간). 문안 인코딩에 글리프 표가 필요해 `patch_block(…, table)` 가 있을 때만 쓰고, 없으면 옛 꼴.
+# 편집기 값은 `voice_timing.json` 의 `scn002@greet`(쪽마다 [열림, 닫힘])이 덮는다.
+GREET_PAGES = {
+    2: [
+        ("라이아스", "좋은 아침이옵니다, 세리오스 왕자님.", 3.0, 6.7),
+        ("세리오스", "좋은 아침, 라이아스 할아범.", None, 9.35),
+    ]
+}
+GREET_KEY = {2: "scn002@greet"}
+GREET_LEGACY_END = {2: 9.35}  # 표가 없는 옛 꼴(시녀 메시지 그대로)의 닫힘
+GAP_TOL = 0.4  # 초 — 앞 쪽 닫힘과 다음 쪽 열림 사이가 이보다 길면 창을 닫고 다시 연다(메시지를 쪽 단위로 가른다). 짧으면 한 메시지 안 자동 넘김
 
 
-def _voice0_stub(sid: int, out: bytearray, sermon_load: bytes, sermon_tab: int) -> bytes:
-    """장면 2 게이트 자리 스텁 — 인사 창(음성 호출 바로 앞의 메시지 적재)을 음성 시작~`GREET_END` 초 동안, 이어 설교 창을 띄운다. 반환: `JSR` 피연산자 2B.
-    상주부 호출은 인라인 4B 뒤에 `BRA +11`(건너뜀) · 메시지 적재 11B 를 두는 원래 꼴 그대로(거리 7)."""
+def greet_message(sid: int, table: dict[str, bytes]) -> bytes:
+    """`GREET_PAGES` → 대사창 메시지 바이트(`1F 화자 04` + 문안 + `05` 쪽 넘김 … + `00`)."""
+    import font
+    import typeset
+
+    out = bytearray()
+    for i, (who, text, *_t) in enumerate(GREET_PAGES[sid]):
+        if i:
+            out.append(0x05)
+        out += (
+            b"\x1f" + font.encode(who, table, msg=True) + b"\x04\x01"
+        )  # 화자 뒤 개행(번역 메시지의 원문 꼴)
+        pgs = typeset.pages(font.expand_packed(text), speaker=True)
+        if len(pgs) != 1:
+            raise GateError(f"scn{sid:03d}: 인사 쪽 {i} 가 한 쪽에 안 든다({len(pgs)}쪽)")
+        for j, line in enumerate(pgs[0]):
+            if j and typeset.cols(pgs[0][j - 1]) < typeset.FULL:
+                out.append(0x01)
+            out += font.encode(line, table, msg=True)
+    return bytes(out) + b"\x00"
+
+
+Item = tuple[float | None, float]  # (열림 초 | None, 닫힘 초)
+
+
+def norm_items(raw: list) -> list[Item]:
+    """`voice_timing.json` 값 → 쪽마다 (열림|None, 닫힘). 숫자 = 닫힘만(옛 꼴), `[열림, 닫힘]` 쌍."""
+    out: list[Item] = []
+    for x in raw:
+        if isinstance(x, (int, float)):
+            out.append((None, float(x)))
+        else:
+            o, c = x
+            out.append((None if o is None else float(o), float(c)))
+    return out
+
+
+def split_pages(msg: bytes) -> tuple[bytes, list[bytes], bytes]:
+    """메시지 → (화자 머리 `1F 이름 04 [01]` 또는 빈 것, 쪽 본문들, 종료 바이트). 쪽은 `05` 로 나뉜다(`page_table` 과 같은 단순 스캔)."""
+    end = next(k for k, c in enumerate(msg) if c in TERM_BYTES)
+    h = 0
+    if msg[:1] == b"\x1f":
+        h = msg.index(4) + 1
+        if msg[h : h + 1] == b"\x01":
+            h += 1
+    return msg[:h], msg[h:end].split(b"\x05"), msg[end : end + 1]
+
+
+def seg_message(msg: bytes, a: int, b: int) -> bytes:
+    """쪽 a~b 만 든 메시지 — 화자 머리를 앞에 붙이고(쪽이 자기 머리를 갖고 있으면 그대로), 마지막 쪽을 안 포함하면 `00` 으로 닫는다."""
+    hdr, pages, term = split_pages(msg)
+    body = b"\x05".join(pages[a : b + 1])
+    pre = b"" if body[:1] == b"\x1f" else hdr
+    return pre + body + (term if b == len(pages) - 1 else b"\x00")
+
+
+def plan_segments(items: list[Item]) -> tuple[int, list[tuple[int, int, int]], list[int]]:
+    """쪽 (열림, 닫힘) → (처음 열림 프레임, [(첫 쪽, 끝 쪽, 열림 프레임)…], 닫힘 프레임들).
+    다음 쪽 열림이 앞 쪽 닫힘보다 `GAP_TOL` 넘게 늦으면 거기서 가른다(앞 쪽 닫힘이 창 닫힘, 다음 열림이 새 창)."""
+    cl = [round(c * FPS) for _o, c in items]
+    op = [None if o is None else round(o * FPS) for o, _c in items]
+    for k, c in enumerate(cl):
+        if c <= (op[k] or 0) or (k and c <= cl[k - 1]):
+            raise GateError(f"쪽 {k}: 시각이 앞뒤가 안 맞는다(열림 {op[k]} · 닫힘 {c} 프레임)")
+    lead = op[0] or 0
+    segs, a, open_a = [], 0, lead
+    for k in range(1, len(items)):
+        o = cl[k - 1] if op[k] is None else max(op[k], cl[k - 1])
+        if o - cl[k - 1] > round(GAP_TOL * FPS):
+            segs.append((a, k - 1, open_a))
+            a, open_a = k, o
+    segs.append((a, len(items) - 1, open_a))
+    return lead, segs, cl
+
+
+def _wait_ps(org: int, frames: int) -> bytes:
+    """스텁 머리 — 음성 재생 시작(`VOICE_ARM` 이 내려감, 8.5초 넘기면 포기)을 기다린 뒤 `PLAYSTART` 에서 `frames`(16비트)가 지날 때까지 1프레임씩 양보한다."""
+    if not 0 < frames <= 0xFFFF:
+        raise GateError(f"열림 지연 {frames} 프레임이 16비트 밖이다")
+    a = Asm(org)
+    a.label("vw")
+    a.op("LDA", "abs", hook.VOICE_ARM)
+    a.op("BEQ", "rel", "d")
+    a.op("LDA", "abs", FRAMECNT + 1)
+    a.op("SEC")
+    a.op("SBC", "abs", hook.PLAYSTART + 1)
+    a.op("CMP", "imm", 2)
+    a.op("BCS", "rel", "d")
+    a.op("LDX", "imm", 1)
+    a.op("LDY", "imm", 0)
+    a.op("JSR", "abs", WAIT_FRAMES)
+    a.op("BRA", "rel", "vw")
+    a.label("d")  # 지난 프레임(16비트) = 카운터 − PLAYSTART, ≥ frames 면 끝
+    a.op("LDA", "abs", FRAMECNT)
+    a.op("SEC")
+    a.op("SBC", "abs", hook.PLAYSTART)
+    a.op("TAX")
+    a.op("LDA", "abs", FRAMECNT + 1)
+    a.op("SBC", "abs", hook.PLAYSTART + 1)
+    a.op("TAY")
+    a.op("TXA")
+    a.op("SEC")
+    a.op("SBC", "imm", frames & 0xFF)
+    a.op("TYA")
+    a.op("SBC", "imm", frames >> 8)
+    a.op("BCS", "rel", "go")
+    a.op("LDX", "imm", 1)
+    a.op("LDY", "imm", 0)
+    a.op("JSR", "abs", WAIT_FRAMES)
+    a.op("BRA", "rel", "d")
+    a.label("go")
+    return a.bytes()
+
+
+def _wait(frames: int) -> bytes:
+    """`LDX · LDY · JSR $5BD7` — 게임 코루틴이 `frames` 프레임 쉰다."""
+    if not 0 < frames <= 0xFFFF:
+        raise GateError(f"대기 {frames} 프레임이 16비트 밖이다")
+    return bytes(
+        [0xA2, frames & 0xFF, 0xA0, frames >> 8, 0x20, WAIT_FRAMES & 0xFF, WAIT_FRAMES >> 8]
+    )
+
+
+def _frames_table(frames: list[int]) -> bytes:
+    out = bytearray([len(frames)])
+    for f in frames:
+        if not 0 <= f <= 0xFFFF:
+            raise GateError(f"쪽 마감 {f} 프레임이 16비트를 넘는다")
+        out += f.to_bytes(2, "little")
+    return bytes(out)
+
+
+def _call_entry(tab_at: int, load: bytes, flags: int) -> bytes:
+    """상주부 호출 — 인라인 4B 뒤에 `BRA +11`(건너뜀) · 메시지 적재 11B 를 두는 원래 꼴 그대로(거리 7)."""
+    return (
+        bytes([0x20, ENTRY & 0xFF, ENTRY >> 8, 7, tab_at & 0xFF, tab_at >> 8, flags, 0x80, 11])
+        + load
+    )
+
+
+def _with_msg(load: bytes, at: int) -> bytes:
+    """메시지 적재 11B 의 피연산자(`A9 lo · 85 · A9 hi`)를 새 메시지 주소로."""
+    return load[:1] + bytes([at & 0xFF]) + load[2:5] + bytes([at >> 8]) + load[6:]
+
+
+def _emit_units(
+    sid: int, out: bytearray, units: list[tuple[bytes, int, list[Item]]], absolute: bool
+) -> bytes:
+    """스텁(블록 꼬리) — 단위(메시지 적재 11B, 메시지 위치, 쪽 (열림, 닫힘))마다 열림 대기 → 상주부 호출을 이어 붙인다. 반환: `JSR` 피연산자 2B.
+    `absolute`(장면 2) = 시각이 음성 재생 시작(`PLAYSTART`) 기준 · 아니면 스텁 시작(게이트 도달) 기준. 쪽 간격이 `GAP_TOL` 넘으면 쪽 단위 메시지로 갈라 창을 닫았다 연다.
+    열림 대기는 상주부가 아니라 여기서 한다(상주부 여유 2B — 마스터 10-18)."""
+    calls: list[
+        tuple[int, int, bytes, int]
+    ] = []  # (대기 프레임, 표 주소, 적재, 단위 안 열림 프레임)
+    lead0 = 0
+    prev_close = 0
+    for ui, (load, addr, items) in enumerate(units):
+        n_pages = len(split_pages(bytes(out[addr : addr + 0x400]))[1])
+        if n_pages != len(items):
+            raise GateError(f"scn{sid:03d}: 쪽 {n_pages}개인데 시각 {len(items)}개")
+        _lead, segs, cl = plan_segments(items)
+        full = len(segs) == 1
+        for si, (a, b, open_f) in enumerate(segs):
+            if full:
+                msg_at, ld = BASE + addr, load
+            else:
+                msg_at = BASE + len(out)
+                seg = seg_message(bytes(out[addr : addr + 0x400]), a, b)
+                out += seg
+                ld = _with_msg(load, msg_at)
+            base = 0 if absolute else open_f
+            tab_at = BASE + len(out)
+            out += _frames_table([cl[k] - base for k in range(a, b + 1)])
+            if ui == 0 and si == 0:
+                lead0, wait = open_f, 0
+            else:
+                wait = max(0, open_f - prev_close)
+            calls.append((wait, tab_at, ld, open_f))
+            prev_close = cl[b]
+    stub_at = BASE + len(out)
+    stub = bytearray()
+    flags = FLAG_VOICE0 if absolute else 0
+    if lead0 > 0:
+        stub += _wait_ps(stub_at, lead0) if absolute else _wait(lead0)
+    first_call = True
+    for wait, tab_at, ld, _o in calls:
+        if wait > 0:
+            if not first_call:  # 창이 열려 있다 — 간격 동안 닫는다
+                stub += bytes([0x20, CLOSE_WINDOW & 0xFF, CLOSE_WINDOW >> 8])
+            stub += _wait(wait)
+        stub += _call_entry(tab_at, ld, flags)
+        first_call = False
+    stub += b"\x60"
+    out += stub
+    if len(out) > 0x2000:
+        raise GateError(f"scn{sid:03d}: 열림 스텁을 붙이면 블록이 뱅크(8KB)를 넘는다")
+    return stub_at.to_bytes(2, "little")
+
+
+def _scene2_stub(
+    sid: int,
+    out: bytearray,
+    sermon_load: bytes,
+    sermon_addr: int,
+    sermon_items: list[Item],
+    table: dict[str, bytes] | None,
+) -> bytes:
+    """장면 2 게이트 자리 스텁 — 인사 창(음성 호출 바로 앞의 메시지 적재)에 이어 설교 창을 띄운다(둘 다 음성 시작 기준). 반환: `JSR` 피연산자 2B."""
     call = GREET_VOICE.search(bytes(out))
     if not call:
         raise GateError(f"scn{sid:03d}: 음성 호출이 없다")
@@ -156,18 +392,24 @@ def _voice0_stub(sid: int, out: bytearray, sermon_load: bytes, sermon_tab: int) 
         raise GateError(f"scn{sid:03d}: 음성 호출 바로 앞에 인사 메시지가 없다")
     gload = ms[0].group(0)
     addr = (gload[1] | gload[5] << 8) - BASE
-    gtab = page_table(bytes(out[addr : addr + 0x400]), 0, False, [GREET_END[sid]])
-    gtab_at = BASE + len(out)
-    out += gtab
-    stub_at = BASE + len(out)
-
-    def call_entry(tab_at: int, load: bytes) -> bytes:
-        return bytes([0x20, ENTRY & 0xFF, ENTRY >> 8, 7, tab_at & 0xFF, tab_at >> 8, FLAG_VOICE0, 0x80, 11]) + load
-
-    out += call_entry(gtab_at, gload) + call_entry(sermon_tab, sermon_load) + b"\x60"
-    if len(out) > 0x2000:
-        raise GateError(f"scn{sid:03d}: 인사 스텁을 붙이면 블록이 뱅크(8KB)를 넘는다")
-    return stub_at.to_bytes(2, "little")
+    if (
+        table is not None and sid in GREET_PAGES
+    ):  # 우리 인사 문안을 블록 꼬리에 얹고 적재를 그리로 돌린다
+        msg_at = BASE + len(out)
+        out += greet_message(sid, table)
+        gload = _with_msg(gload, msg_at)
+        addr = msg_at - BASE
+        raw = timing_overrides().get(GREET_KEY[sid])
+        gitems = norm_items(raw) if raw else [(o, c) for _w, _t, o, c in GREET_PAGES[sid]]
+        if len(gitems) != len(GREET_PAGES[sid]):
+            raise GateError(
+                f"voice_timing {GREET_KEY[sid]}: 쪽 {len(GREET_PAGES[sid])}개인데 시각 {len(gitems)}개"
+            )
+    else:
+        gitems = [(None, GREET_LEGACY_END[sid])]
+    return _emit_units(
+        sid, out, [(gload, addr, gitems), (sermon_load, sermon_addr, sermon_items)], True
+    )
 
 
 def _patch_greet(sid: int, out: bytearray) -> None:
@@ -178,12 +420,23 @@ def _patch_greet(sid: int, out: bytearray) -> None:
     c, ps, arm = FRAMECNT, hook.PLAYSTART, hook.VOICE_ARM
     stub_at = BASE + len(out)
     inst = _resident_asm().labels["inst"]
-    out += bytes(
-        [0x20, inst & 0xFF, inst >> 8]  # JSR inst — 틱 트램펄린이 아직 없으면 건다
-        + [0xA9, 1, 0x8D, arm & 0xFF, arm >> 8]  # LDA #1 · STA arm
-        + [0xAD, c & 0xFF, c >> 8, 0x8D, ps & 0xFF, ps >> 8]  # PLAYSTART = 호출 때 카운터(재생 시작이 안 보일 때 값)
-        + [0xAD, (c + 1) & 0xFF, (c + 1) >> 8, 0x8D, (ps + 1) & 0xFF, (ps + 1) >> 8]
-    ) + bytes(out[m.start() : m.start() + 7]) + b"\x60"  # 음성 호출 · RTS
+    out += (
+        bytes(
+            [0x20, inst & 0xFF, inst >> 8]  # JSR inst — 틱 트램펄린이 아직 없으면 건다
+            + [0xA9, 1, 0x8D, arm & 0xFF, arm >> 8]  # LDA #1 · STA arm
+            + [
+                0xAD,
+                c & 0xFF,
+                c >> 8,
+                0x8D,
+                ps & 0xFF,
+                ps >> 8,
+            ]  # PLAYSTART = 호출 때 카운터(재생 시작이 안 보일 때 값)
+            + [0xAD, (c + 1) & 0xFF, (c + 1) >> 8, 0x8D, (ps + 1) & 0xFF, (ps + 1) >> 8]
+        )
+        + bytes(out[m.start() : m.start() + 7])
+        + b"\x60"
+    )  # 음성 호출 · RTS
     if len(out) > 0x2000:
         raise GateError(f"scn{sid:03d}: 음성 스텁을 붙이면 블록이 뱅크(8KB)를 넘는다")
     out[m.start() : m.start() + 7] = b"\x20" + stub_at.to_bytes(2, "little") + b"\xea" * 4
@@ -197,7 +450,7 @@ VOICE_AT = re.compile(
 )  # JSR $5815 + 인라인 4B(오프셋 2B · 섹터 수 2B)
 # 음성이 다음 게이트로 이어진다고 볼 수 없는 자리 — 하위 스크립트가 쥐는 구간이라 늘려도 안 맞는다(미해결, 표에 열려 있다고 찍는다)
 OPEN_RUNS: dict[int, str] = {
-    6: "마지막 게이트(+0x29f)가 skip — ON 경로가 `$5EC9`(객체 생성 연산)만 하고 메시지를 건너뛴다. 남은 50초 낭독 자막이 없다",
+    6: "게이트 자막은 마지막 게이트(+0x29f, `$5EC9`)에서 막혀 24초뿐이다 — 전체 74초는 **전역 시각표**(`script/voice_sched.json` 씬 6, 받아쓰기 문장 시각 · OFF 흐름 실측 전)가 덮는다. 이 표는 게이트 자막만 센다",
 }
 
 # 설정과 무관하게 음성이 나가는 장면(게이트 없음) — 첫 음성 호출 바로 뒤 타이머에 자막을 건다. 장면 224 = 종장 최종보스 아그니쟈의 독백(첫 방문은
@@ -315,7 +568,9 @@ def _resident_asm() -> Asm:
     a.op("LDA", "abs", "mode")
     a.op("AND", "imm", FLAG_VOICE0)
     a.op("BEQ", "rel", "b0ok")
-    a.label("vw")  # 음성 재생 시작 대기 — 틱이 `VOICE_ARM` 을 내리면 시작한 것. 8.5초(상위 바이트 차 2)를 넘기면 호출 때 값으로 간다
+    a.label(
+        "vw"
+    )  # 음성 재생 시작 대기 — 틱이 `VOICE_ARM` 을 내리면 시작한 것. 8.5초(상위 바이트 차 2)를 넘기면 호출 때 값으로 간다
     a.op("LDA", "abs", hook.VOICE_ARM)
     a.op("BEQ", "rel", "have")
     a.op("LDA", "abs", FRAMECNT + 1)
@@ -405,7 +660,9 @@ def _resident_asm() -> Asm:
     a.op("STA", "abs", SPEED)
     a.op("RTS")
     _prep(a)
-    a.label("glob")  # 전역 시각표가 켜졌나 — 0 으로 두고 굽는다(패딩 FF 면 부팅하자마자 켜진 걸로 읽힌다)
+    a.label(
+        "glob"
+    )  # 전역 시각표가 켜졌나 — 0 으로 두고 굽는다(패딩 FF 면 부팅하자마자 켜진 걸로 읽힌다)
     a.data(b"\x00")
     for v in ("tl", "th", "n", "cl", "ch", "fin", "b0", "b1", "mode", "cand", "kind", "old51"):  # fmt: skip
         a.label(v)
@@ -418,10 +675,12 @@ def _prep(a: Asm) -> None:
     표 = `n` 쪽 수 + 쪽마다 프레임 거리(16비트) — **창이 열린 시각에서 그 쪽이 끝나는 때까지**의 거리. 마지막 쪽 = 원래 타이머(음성 끝).
     표는 빌드가 만든다(`page_table`) — 쪽 나눔은 나레이션 OFF 때 대사창 그대로, 시각은 음성 박자(마스터 10-12).
     `npage` 는 표에서 다음 쪽 마감을 꺼내 AUTO_TL·AUTO_TH 와 cl·ch 에 쓴다 — 훅이 쪽이 넘어갈 때마다 부른다.
-    쪽 글자는 설정과 무관하게 **즉시** 찍는다(`$C051` = 3 — 글자 찍는 속도 표 `$5B8A` 의 0프레임 칸, 끝나면 되돌린다)."""
+    쪽 글자는 설정과 무관하게 글자당 1프레임(`SUB_SPEED`)으로 찍는다 — 끝나면 설정대로 되돌린다."""
     # sched: 전역 시각표(장면 한 토막 전체 — 여러 메시지의 모든 쪽) 시작. A=표 주소 하위 · X=상위. 지금부터 쪽마다 표의 시각(음성 시작에서 잰다)에
     # 자동으로 넘긴다 — 메시지 사이의 월드 시간(연출)은 그대로 흐르고, 늦으면 밀린 만큼 빨리 넘어간다. 표를 다 쓴 뒤 마지막 쪽이 넘어가면 스스로 끈다
-    a.label("sched")  # = prep 앞에 기준 시각·전역 표시를 더한 것(코드가 같아 prep 으로 흘려 보낸다 — 상주부 자리가 빠듯하다)
+    a.label(
+        "sched"
+    )  # = prep 앞에 기준 시각·전역 표시를 더한 것(코드가 같아 prep 으로 흘려 보낸다 — 상주부 자리가 빠듯하다)
     a.op("STA", "abs", "tl")
     a.op("STX", "abs", "th")
     a.op("JSR", "abs", "inst")
@@ -434,7 +693,7 @@ def _prep(a: Asm) -> None:
     a.label("prep")
     a.op("LDA", "abs", SPEED)
     a.op("STA", "abs", "old51")
-    a.op("LDA", "imm", 3)
+    a.op("LDA", "imm", SUB_SPEED)
     a.op("STA", "abs", SPEED)
     a.op("LDA", "abs", "tl")
     a.op("STA", "zp", 0xEC)
@@ -455,7 +714,9 @@ def _prep(a: Asm) -> None:
     a.label("npage")
     a.op("LDA", "abs", "fin")
     a.op("BEQ", "rel", "ngo")
-    a.op("LDA", "abs", "glob")  # 끝까지 꺼냈다 — 전역 시각표면 마지막 쪽이 넘어간 지금 자막 모드를 끝낸다
+    a.op(
+        "LDA", "abs", "glob"
+    )  # 끝까지 꺼냈다 — 전역 시각표면 마지막 쪽이 넘어간 지금 자막 모드를 끝낸다
     a.op("BEQ", "rel", "nret")
     a.op("STZ", "abs", "glob")
     a.op("STZ", "abs", AUTO_FLAG)
@@ -510,7 +771,8 @@ def _prep(a: Asm) -> None:
 
 
 def auto_hook() -> bytes:
-    """대사 엔진 쪽 대기의 `LDA $CF1A` 대신. 자막 모드이고 시계가 지금 쪽 마감을 넘었으면 A=$20(버튼).
+    """대사 엔진 쪽 대기의 `LDA $CF1A` 대신. 자막 모드이고 시계가 지금 쪽 마감을 넘었으면 A=$20(버튼),
+    **마감 전이면 A=0(손으로 누른 버튼은 무시)**. 자막 모드가 아니면 원래 버튼 값.
     쪽이 넘어가면(자동이든 손이든) 뱅크 0x6B 를 MPR4 에 잠깐 걸고 상주부 `npage` 로 다음 마감을 구한다."""
     a = Asm(AUTO_ORG)
     a.op("PHX")
@@ -522,10 +784,15 @@ def auto_hook() -> bytes:
     a.op("SBC", "abs", AUTO_TL)
     a.op("LDA", "abs", FRAMECNT + 1)
     a.op("SBC", "abs", AUTO_TH)
-    a.op("BCC", "rel", "plain")
+    a.op(
+        "BCC", "rel", "blank"
+    )  # 마감 전 — 버튼은 무시한다(마스터 10-16 「나레이션 on 일 때 키입력으로 대사 안 넘어가게」)
     a.label("press")
     a.op("LDA", "imm", 0x20)
     a.op("BRA", "rel", "hit")
+    a.label("blank")
+    a.op("LDA", "imm", 0)
+    a.op("BRA", "rel", "out")
     a.label("plain")
     a.op("LDA", "abs", PAD)
     a.op("AND", "imm", 0x60)
@@ -577,15 +844,19 @@ def find_load(b: bytes, start: int, end: int, skip: int = 0) -> int | None:
     return None
 
 
-TIMING_FILE = common.GAME_DIR / "script" / "voice_timing.json"  # 마스터가 편집기에서 고친 쪽 끝 시각 — {"scn002@0x37": [초, …]}
+TIMING_FILE = (
+    common.GAME_DIR / "script" / "voice_timing.json"
+)  # 마스터가 편집기에서 고친 쪽 끝 시각 — {"scn002@0x37": [초, …]}
 
 
 def timing_overrides() -> dict[str, list[float]]:
     return json.loads(TIMING_FILE.read_text("utf-8")) if TIMING_FILE.exists() else {}
 
 
-def page_table(msg: bytes, timer: int, page2: bool = False, ends: list[float] | None = None) -> bytes:
-    """쪽 마감 표 — `[쪽 수] + 쪽마다 (초, 프레임)`, 창이 열린 시각에서 그 쪽이 끝날 때까지의 거리.
+def page_frames(
+    msg: bytes, timer: int, page2: bool = False, ends: list[float] | None = None
+) -> list[int]:
+    """쪽 마감 프레임들 — 창이 열린 시각에서 그 쪽이 끝날 때까지의 거리.
     기본 = 메시지 바이트 수 비례(글자 2B · 제어 1B, 종료 바이트 포함): 쪽 끝 = floor(T × 누적/전체). 마지막 쪽 = T 그대로.
     `ends`(초)가 있으면 그 값(마지막 쪽 포함 — 그 값이 곧 창이 닫히는 때). 쪽은 `05`(쪽 넘김)로 나뉜다."""
     i = 0
@@ -600,15 +871,17 @@ def page_table(msg: bytes, timer: int, page2: bool = False, ends: list[float] | 
         if len(ends) != len(frames):
             raise GateError(f"voice_timing: 쪽 {len(frames)}개인데 시각 {len(ends)}개")
         frames = [round(e * FPS) for e in ends]
-    out = bytearray([len(frames)])
-    for f in frames:
-        if not 0 <= f <= 0xFFFF:
-            raise GateError(f"쪽 마감 {f} 프레임이 16비트를 넘는다")
-        out += f.to_bytes(2, "little")
-    return bytes(out)
+    return frames
 
 
-def patch_block(sid: int, blk: bytes) -> tuple[bytes, int]:
+def page_table(
+    msg: bytes, timer: int, page2: bool = False, ends: list[float] | None = None
+) -> bytes:
+    """쪽 마감 표 — `[쪽 수] + 쪽마다 프레임`(`page_frames`)."""
+    return _frames_table(page_frames(msg, timer, page2, ends))
+
+
+def patch_block(sid: int, blk: bytes, table: dict[str, bytes] | None = None) -> tuple[bytes, int]:
     """씬 `sid` 블록의 나레이션 게이트에 자막 스텁을 건다. (새 블록, 바꾼 타이머 수)."""
     b = bytearray(blk)
     gates = [m.start() for m in re.finditer(re.escape(GATE), b)]
@@ -654,7 +927,9 @@ def patch_block(sid: int, blk: bytes) -> tuple[bytes, int]:
                     f"scn{sid:03d} +{t.start():#x}: 늘린 타이머 {timer} 가 16비트를 넘는다"
                 )
             picks.append((t.start(), m.start(), page2, timer))
-    if sid in ALWAYS:  # 게이트가 없는 장면 — 첫 `JSR $5815` 바로 뒤 타이머, 그 뒤 첫 메시지 적재(음성 재생 뒤 이미 들은 쪽 분기가 띄우는 창)
+    if (
+        sid in ALWAYS
+    ):  # 게이트가 없는 장면 — 첫 `JSR $5815` 바로 뒤 타이머, 그 뒤 첫 메시지 적재(음성 재생 뒤 이미 들은 쪽 분기가 띄우는 창)
         v = VOICE_AT.search(bytes(b))
         t = TIMER_AT.match(bytes(b), v.end()) if v else None
         if not v or not t:
@@ -672,14 +947,43 @@ def patch_block(sid: int, blk: bytes) -> tuple[bytes, int]:
                 f"scn{sid:03d} +{at:#x}: 메시지 적재까지 거리 {dist} — 인라인 한 바이트에 안 든다"
             )
         addr = (out[load + 1] | out[load + 5] << 8) - BASE
-        tab = page_table(bytes(out[addr : addr + 0x400]), timer, page2, over.get(f"scn{sid:03d}@{at:#x}"))
+        raw = over.get(f"scn{sid:03d}@{at:#x}")
+        items = norm_items(raw) if raw else None
+        paired = bool(items) and any(o is not None for o, _c in items)
+        if paired and page2:
+            raise GateError(
+                f"scn{sid:03d} +{at:#x}: 둘째 쪽부터 띄우는 게이트(last_page2)는 열림 시각을 못 쓴다"
+            )
+        if (
+            sid in VOICE0 or paired
+        ):  # 열림 대기·쪽 단위 창이 필요하면 호출 자리는 스텁 하나로(상주부는 그대로)
+            if sid in VOICE0:
+                if not items:  # 시각표가 없으면 글자 수 비례 닫힘(열림 = 앞 쪽 닫힘)
+                    items = [
+                        (None, f / FPS)
+                        for f in page_frames(bytes(out[addr : addr + 0x400]), timer, False, None)
+                    ]
+                out[at : at + 7] = (
+                    b"\x20"
+                    + _scene2_stub(sid, out, bytes(out[load : load + 11]), addr, items, table)
+                    + b"\xea" * 4
+                )
+            else:
+                out[at : at + 7] = (
+                    b"\x20"
+                    + _emit_units(sid, out, [(bytes(out[load : load + 11]), addr, items)], False)
+                    + b"\xea" * 4
+                )
+            continue
+        tab = page_table(
+            bytes(out[addr : addr + 0x400]), timer, page2, [c for _o, c in items] if items else None
+        )
         if len(out) + len(tab) > 0x2000:
-            raise GateError(f"scn{sid:03d}: 쪽 마감 표 {len(tab)}B 를 붙이면 블록이 뱅크(8KB)를 넘는다")
+            raise GateError(
+                f"scn{sid:03d}: 쪽 마감 표 {len(tab)}B 를 붙이면 블록이 뱅크(8KB)를 넘는다"
+            )
         tab_at = BASE + len(out)
         out += tab
-        if sid in VOICE0:  # 설교 창 앞에 인사(시녀 창 문안)를 음성 시각에 맞춰 띄운다 — 호출 자리는 스텁 하나로
-            out[at : at + 7] = b"\x20" + _voice0_stub(sid, out, bytes(out[load : load + 11]), tab_at) + b"\xea" * 4
-            continue
         out[at : at + 7] = bytes(
             [
                 0x20,
@@ -688,7 +992,7 @@ def patch_block(sid: int, blk: bytes) -> tuple[bytes, int]:
                 dist,
                 tab_at & 0xFF,
                 tab_at >> 8,
-                (FLAG_PAGE2 if page2 else 0) | (FLAG_VOICE0 if sid in VOICE0 else 0),
+                FLAG_PAGE2 if page2 else 0,
             ]
         )
     if sid in VOICE0:

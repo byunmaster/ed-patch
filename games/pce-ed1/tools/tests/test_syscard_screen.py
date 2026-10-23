@@ -15,23 +15,91 @@ class SyscardScreen(unittest.TestCase):
         self.assertEqual(entry, 0x6240)
         self.assertLessEqual(len(S.build_tramp()), 15)  # $4000~$5FFF 안 0 틈(이미지 +0x1845)
 
-    def test_data_fits_rel_25_to_27_and_ends_with_zero(self):
+    def test_data_fits_rel_25_to_27(self):
         data = S.build_data()
         self.assertLessEqual(len(data), S.DATA_MAX)
-        self.assertEqual(data[-1], 0)
+        self.assertEqual(len(data), S.HDR_BYTES + S.FIX_BYTES + (1 + len(S.SUBS)) * S.SUB_BYTES)
 
-    def test_text_fits_the_band_and_tiles_follow_the_original_format(self):
-        tiles, bat, _w = S.build_tiles()
-        self.assertLessEqual(len(tiles), len(S.TILE_SLOTS))
-        for tb in tiles.values():
-            self.assertEqual(len(tb), 32)
-            self.assertTrue(all(tb[i] == 0xFF for i in range(0, 16, 2)))  # 평면 0 전부 1
-            self.assertEqual(tb[1:16:2], tb[16:32:2])  # 평면 1~3 = 같은 글자 행
-            self.assertEqual(tb[16:32:2], tb[17:32:2])
-        for row in S.BAT_ROWS:
-            self.assertEqual(len(bat[row]), 32)
-            for w in bat[row]:
-                self.assertTrue(w == S.BLANK_ENTRY or (w & 0xF000) == 0x1000 and (w & 0xFFF) in tiles)
+    def test_schedule_is_sorted_and_ends_with_the_static_band(self):
+        ev = S.schedule_frames()
+        self.assertEqual([n for _f, n in ev], [1, 2, 3, 4, 0])
+        self.assertEqual(sorted(f for f, _n in ev), [f for f, _n in ev])
+        data = S.build_data()
+        for i, (fr, n) in enumerate(ev):
+            self.assertEqual(data[i * 3 : i * 3 + 3], bytes((fr & 0xFF, fr >> 8, n)))
+        self.assertEqual(data[len(ev) * 3 : len(ev) * 3 + 2], b"\x00\xff")  # 끝 표시(상위 FF)
+
+    def test_we_never_touch_the_egg_tiles(self):
+        # 🔴 달걀 그림 아랫부분 = 행 23 열 21~27(타일 $211~$217, 8줄 전부) — BAT 도 타일 데이터도 안 건드린다(마스터 10-17)
+        self.assertNotIn(23, S.BAT_ROWS)
+        self.assertGreater(S.FIRST_TILE, 0x217)
+        self.assertLessEqual(S.FIRST_TILE + 128, 0x300)  # 스프라이트 패턴(0x384~) 앞
+        self.assertEqual(S.SUB_TILE, S.FIX_TILE + 64)
+        self.assertEqual(len(S.BAT_ROWS) * 32, 128)
+
+    def test_tiles_follow_the_speaker_colored_outline_format(self):
+        # 외곽선 = 팔레트 1 의 색 2(노랑 — 평면 1 만) · 3(파랑 — 평면 0·1) · 까만 테두리 = 색 0(평면 0·1 모두 0). 글자 = 색 15(평면 0~3 전부).
+        for mode in (S.MODE_YELLOW, S.MODE_BLUE, S.MODE_BLACK):
+            tiles = S.band_tiles(S.SUBS[0][0], mode=mode)
+            self.assertEqual(len(tiles), 64)
+            for tb in tiles:
+                self.assertEqual(len(tb), 32)
+                self.assertEqual(tb[16:32:2], tb[17:32:2])  # 평면 2 = 평면 3
+                for k in range(8):
+                    p0, p1, g = tb[2 * k], tb[2 * k + 1], tb[16 + 2 * k]
+                    self.assertEqual(p1 & g, g)  # 글자 픽셀은 평면 1 도 선다
+                    self.assertEqual(p0 & g, g)  # 글자 = 색 15
+                    outline = p1 & ~g  # 글자가 아닌데 평면 1 이 선 곳 = 색 있는 외곽선
+                    if mode == S.MODE_BLUE:
+                        self.assertEqual(p0, 0xFF)  # 색 3
+                    elif mode == S.MODE_YELLOW:
+                        self.assertEqual(p0 & outline, 0)  # 색 2 — 평면 0 = 0
+                    else:
+                        self.assertEqual(outline, 0)  # 까만 테두리 — 색 있는 픽셀 없음
+        black = S.band_tiles(S.SUBS[0][0], mode=S.MODE_BLACK)
+        self.assertTrue(any(~(tb[2 * k] | tb[2 * k + 1]) & 0xFF for tb in black for k in range(8)))  # 색 0(평면 0·1 모두 0) 픽셀 = 까만 외곽선
+        fixed = S.band_tiles(None, fixed=True)
+        for tb in fixed:  # 고정 문구는 외곽선 없음 — 평면 0 전부 1(원판 글씨 타일 규약)
+            self.assertTrue(all(tb[i] == 0xFF for i in range(0, 16, 2)))
+        self.assertTrue(any(tb[2 * k + 1] for tb in S.band_tiles(S.SUBS[0][0]) for k in range(8)))
+
+    def test_speaker_modes_and_routine_live_in_the_data_header(self):
+        data = S.build_data()
+        self.assertEqual(len(S.SUB_SPEAKERS), len(S.SUBS))
+        self.assertEqual(data[S.MODE_OFF], S.MODE_YELLOW)  # 빈 띠
+        for n, spk in enumerate(S.SUB_SPEAKERS, 1):
+            self.assertEqual(data[S.MODE_OFF + n], S.SPEAKER_MODE[spk])
+        rt = S.build_routine()
+        self.assertEqual(data[S.ROUT_OFF : S.ROUT_OFF + len(rt)], rt)
+        self.assertLessEqual(S.ROUT_OFF + len(rt), S.HDR_BYTES)
+        self.assertEqual(S.DRAWROWS_ADDR, S._DRAWROWS_ADDR)  # 훅 본체의 JMP 가 가리키는 자리 = 타일 펴기 루틴 머리(팔레트 초기화 뒤)
+        code, _e = S.build_code()
+        self.assertIn(b"\x4c" + S.DRAWROWS_ADDR.to_bytes(2, "little"), code)
+        self.assertGreater(S.MODE_OFF, 17)  # 시각표(3B × 5 + 끝 2B)와 안 겹친다
+
+    def test_ink_rows_follow_the_m12_layout(self):
+        import numpy as np
+
+        def rows(mask_bytes, tile_row0):  # 마스크 바이트 → 잉크가 있는 화면 y 목록
+            ys = set()
+            for i, b in enumerate(mask_bytes):
+                if b:
+                    tr, rem = divmod(i, S.ROW_BYTES)
+                    ys.add(8 * (tile_row0 + tr) - 1 + rem // 32)
+            return ys
+
+        fy = rows(S.fixed_bytes(), 24)
+        self.assertEqual((min(fy), max(fy)), (191, 201))  # 원판 글씨 줄 그대로
+        for text, _s in S.SUBS:
+            raw = S.sub_bytes(text)
+            wy, ey = rows(raw[: S.ROW_BYTES * 2], 26), rows(raw[S.ROW_BYTES * 2 :], 26)
+            self.assertEqual(max(ey), 219)  # 외곽선 바닥 = 화면 아래 끝(231)에서 12px
+            self.assertEqual((min(wy), max(wy)), (208, 218)) if text.startswith("3.00") else self.assertLessEqual(max(wy), 218)
+            self.assertGreater(min(ey) - max(fy), 4)  # 고정 문구와 5px 이상 띄운다
+
+    def test_every_subtitle_fits_the_band(self):
+        for text, _s in S.SUBS:
+            S.sub_bytes(text)  # 256px 를 넘으면 단언 실패 — 3번은 공백 6px 로 한 줄
 
     def test_original_gap_is_still_zero_before_patch(self):
         # 방어: 이미지 안 훅 자리가 원판 0 이어야 한다는 가정(원본이 있을 때만 확인 — 없으면 건너뜀).

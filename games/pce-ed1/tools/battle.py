@@ -196,6 +196,11 @@ def kr_names(extra: dict[str, str] | None = None) -> tuple[dict[str, str], list[
     return out, sorted(missing)
 
 
+MOVED_COUNT = [0]  # 옮겨 실은 문구 총수(영향 범위 보고용)
+STRUCT_RECS: list[tuple[int, int, bytes, bytes]] = []  # (컨테이너 rel, 블록 번호, 원본 데이터, 새 데이터) — 구조 대조(structure.verify_battle)용
+
+
+# 이름 칸도 `msg=True` 로 쓴다(10-21): 안 그러면 이름 안의 공백이 전각(12px)으로 나가 「큰  독개구리A에게」처럼 벌어진다 — 문구 안의 같은 이름(「큰 독개구리의 무리가」)은 반각(4px)이라 둘이 어긋났다.
 def patch_blocks(
     rel: int, kr: dict[str, str], table, errors: list[str]
 ) -> tuple[list[dict], int, int]:
@@ -206,7 +211,7 @@ def patch_blocks(
     msgs = _msgs()
     hit = 0
     nmsg = 0
-    for b in blocks:
+    for bi, b in enumerate(blocks):
         data = bytearray(b["data"])
         targets: dict[int, str] = {}
         for r in records(bytes(data)):
@@ -216,11 +221,27 @@ def patch_blocks(
             if r["ind"] is not None:
                 # 간접이면 **대상 문자열**을 갈아 끼운다 — 칸에는 주소와 꼬리가 그대로 남는다.
                 base = name[: len(name) - len(r["tail"])] if r["tail"] else name
+                if len(r["tail"]) > 1:
+                    # 🔴 꼬리가 개체 기호 한 글자(Ａ~Ｄ·♀♂)가 아니라 **말 하나**(「…ゾンビＡ」)면 「일본어 꼬리 길이만큼 뒤를 자른다」가 틀린다
+                    #    (실측 10-20: 「자데인좀비A」에서 4자를 잘라 대상이 「자데」가 되고 꼬리 「ゾンビＡ」는 일본어로 남았다 — 짝 표가 잡았다).
+                    #    밑말(대상)의 우리 표기를 같은 밑말의 개체 이름(「…Ａ」)에서 따고, 나머지를 꼬리로 칸에 다시 쓴다.
+                    jp_base = r["jp"][: len(r["jp"]) - len(r["tail"])]
+                    kb = next((v[:-1] for k, v in kr.items() if k.startswith(jp_base) and len(k) == len(jp_base) + 1 and k[-1] in "ＡＢＣＤ♀♂"), None)
+                    if kb and name.startswith(kb) and name != kb:
+                        base = kb
+                        enc_tail = font.encode(name[len(kb) :], table, msg=True) + b"\x06"
+                        old_tail = len(r["tail"].encode("cp932")) + 1
+                        if len(enc_tail) > old_tail:
+                            errors.append(f"이름 꼬리 「{name[len(kb):]}」 {len(enc_tail)}B > {old_tail}B (rel{rel} +{r['off']:04X})")
+                        else:
+                            at = r["off"] + NAME_OFF + 3
+                            data[at : at + old_tail] = enc_tail + b"\0" * (old_tail - len(enc_tail))
+                            hit += 1
                 old = targets.setdefault(r["ind"], base)
                 if old != base:
                     errors.append(f"간접 이름 충돌 rel{rel} +{r['ind']:04X}: {old} vs {base}")
                 continue
-            enc = font.encode(name, table) + b"\x06"
+            enc = font.encode(name, table, msg=True) + b"\x06"
             if len(enc) > NAME_LEN:
                 errors.append(f"몬스터 「{r['jp']}」→「{name}」 {len(enc)}B > {NAME_LEN}B")
                 continue
@@ -229,13 +250,18 @@ def patch_blocks(
             hit += 1
         for off, base in targets.items():
             room = len(bytes(data[off:]).split(b"\x06")[0]) + 1
-            enc = font.encode(base, table) + b"\x06"
+            enc = font.encode(base, table, msg=True) + b"\x06"
             if len(enc) > room:
                 errors.append(f"긴 이름 「{base}」 {len(enc)}B > {room}B (rel{rel} +{off:04X})")
                 continue
-            data[off : off + len(enc)] = enc
+            # 새 이름 종단 뒤 원문 가나 꼬리는 0 으로(안 읽히는 찌꺼기가 압축을 먹는다 — 컨테이너 칸이 빠듯하다)
+            data[off : off + room] = enc + bytes(room - len(enc))
             hit += 1
-        nmsg += patch_msgs(data, msgs, table, errors, f"rel{rel} blk")
+        moved: list[dict] = []
+        nmsg += patch_msgs(data, msgs, table, errors, f"rel{rel} blk", moved, f"{rel}:{bi}")
+        check_moved(bytes(data), moved, errors, f"rel{rel} blk")
+        MOVED_COUNT[0] += len(moved)
+        STRUCT_RECS.append((rel, bi, bytes(b["data"]), bytes(data)))
         b["data"] = bytes(data)
     return blocks, hit, nmsg
 
@@ -247,6 +273,8 @@ def apply(f, table, touched, extra: dict[str, str] | None = None) -> dict:
     kr, missing = kr_names(extra)
     if missing:
         raise ValueError("몬스터 표기 미등재: " + " · ".join(missing))
+    MOVED_COUNT[0] = 0
+    STRUCT_RECS.clear()
     errors: list[str] = []
     n = 0
     m = 0
@@ -277,7 +305,7 @@ def apply(f, table, touched, extra: dict[str, str] | None = None) -> dict:
             touched.append((lba + i, 1))
     if errors:
         raise ValueError("전투 이름 " + str(len(errors)) + "건:\n  " + "\n  ".join(errors))
-    return {"monsters": n, "msgs": m}
+    return {"monsters": n, "msgs": m, "moved": MOVED_COUNT[0]}
 
 
 def verify(iso: Path, table, extra: dict[str, str] | None = None) -> int:
@@ -318,6 +346,13 @@ def _msgs() -> dict[str, str]:
     return json.loads(f.read_text()).get("messages", {}) if f.exists() else {}
 
 
+def _positional() -> dict[str, dict]:
+    """자리별 문안 — 같은 일본어 조각이 한 블록 안 여러 자리에 있어(열쇠 공유) 한 문맥만 다르게 써야 할 때: `{"<rel>:<블록>:<오프셋 4자리 16진>": {"key": 열쇠, "t": 문안}}`.
+    열쇠가 그 자리의 원문과 같을 때만 쓴다(원문이 바뀌면 조용히 안 먹는 대신 이 검사가 잡는다)."""
+    f = common.GAME_DIR / "script" / "sys" / "battle.json"
+    return json.loads(f.read_text()).get("positional", {}) if f.exists() else {}
+
+
 # 블록이 자랄 수 있는 상한 — **전투 화면에서 잰 값**(2026-09-06, 슬라임전 뱅크 0x74 덤프).
 # 블록은 +0x400 에 풀리고, 그 위로 게임이 실제로 쓰는 첫 자리가 **+0x0B00** 이다(그 사이 1,340B 는
 # 전투 내내 0). 🔴 정적으로 「원본에서 0 이 아닌 첫 자리」로 잡았던 가설은 +0xF0A(2,826B)라
@@ -340,7 +375,15 @@ def _tokens_ok(kr_tok: list[str], jp_tok: list[str]) -> bool:
     return all(j == "01" for j in it)
 
 
-def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], where: str) -> int:
+def patch_msgs(
+    data: bytearray,
+    msgs: dict[str, str],
+    table,
+    errors: list[str],
+    where: str,
+    moved: list | None = None,
+    ctx: str = "",
+) -> int:
     """전투 문구를 갈아 끼운다. **자리를 안 옮기고**, 넘치면 `0F` 로 블록 꼬리에 잇는다.
 
     자리에 들어가면 제자리에 쓴다. 넘치면 원래 자리엔 `0F <주소>` 셋만 남기고 **문안 전체**를
@@ -357,11 +400,21 @@ def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], 
     ⚠ 꼬리(원래 자리의 남은 바이트)는 **0 으로 지운다**(10-07 — 처음엔 「못 본 참조가 가리켜도 그 자리만
     일본어」라며 원문을 남겼는데, 전량 번역에서 그 죽은 원문이 컨테이너 칸을 넘겼다). 최악은 「그 자리만 빈 글」이다.
     """
+    import font
     from sysbuild import encode_tokens
 
     n = 0
+    ind_offs = {r["ind"] - LOAD_ADDR for r in records(bytes(data)) if r["ind"] is not None}
+    pos = _positional()
     for u in msg_units(bytes(data)):
-        kr = msgs.get(msg_key(u["body"]))
+        key = msg_key(u["body"])
+        kr = msgs.get(key)
+        at = f"{ctx}:{u['off']:04X}"
+        if at in pos:
+            if pos[at]["key"] != key:
+                errors.append(f"{where} +{u['off']:04X} 자리별 문안의 열쇠가 그 자리 원문과 다르다 — 원문이 바뀌었나")
+            else:
+                kr = pos[at]["t"]
         if not kr:
             continue
         jp_tok = TOKEN.findall(render(u["body"]))
@@ -373,8 +426,47 @@ def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], 
         enc = encode_tokens(kr, table, msg=True)
         if u["term"] is not None:
             enc += bytes([u["term"]])
-        if len(enc) <= u["room"]:
-            data[u["off"] : u["off"] + len(enc)] = enc
+        if u.get("back") is not None:  # 머리 + 점프 문구 — 늘 블록 끝으로 옮기고 끝에서 원래 흐름(꼬리 단위의 끝 바이트)으로 되돌아간다
+            if len(data) + len(enc) + 3 > SAFE_UNPACKED:
+                errors.append(f"{where} +{u['off']:04X} 「{kr}」 블록이 자란다 — 상한 {SAFE_UNPACKED}B")
+                continue
+            tgt = LOAD_ADDR + len(data)
+            data += enc + bytes([0x0F, u["back"] & 0xFF, u["back"] >> 8])
+            data[u["off"] : u["off"] + 3] = bytes([0x0F, tgt & 0xFF, tgt >> 8])
+            data[u["off"] + 3 : u["off"] + u["room"]] = bytes(u["room"] - 3)
+            n += 1
+            continue
+        if simple_unit(data, u, ind_offs):
+            # 🔴 **단순 읽기 종단**(`04` 화자 이름 칸 · `06` 이름 문자열)은 인터프리터가 아니라 **종단까지 글자만 읽는 루틴**이 읽는다 — `0F` 점프를 못 따라가
+            #   「규리게스」 뒤에 점프 바이트가 글자로 찍혔다(10-21 「규리게스게」). 이 단위는 **종단을 글 바로 뒤에 두고** 제자리에 쓴다(원문 찌꺼기는 종단 뒤라 안 읽힌다).
+            if len(enc) <= u["room"]:
+                gap = u["room"] - len(enc)
+                if u["off"] not in ind_offs:
+                    # 🔴 화자 이름 칸 `1F 이름 04` 의 종단 04 는 **명령 흐름 안**이다 — 뒤에 `01`·대사가 이어진다(10-21 「규리게스」 뒤 대사가 안 나왔다: 04 를 앞당기고 0 으로
+                    #   채우자 `00`(끝) 에서 멈췄다). 종단을 원래 자리에 두고 **앞을 반각 공백으로 채운다**(글자 뒤라 안 보인다). 이름 문자열(`06`)은 종단에서 읽기가 끝나 0 채움으로 된다.
+                    if gap % 2:
+                        errors.append(f"{where} +{u['off']:04X} 「{kr}」 화자 칸 빈틈 {gap}B 가 홀수 — 반각 공백(2B)으로 못 채운다")
+                        continue
+                    enc = enc[:-1] + font.HALF_SPACE * (gap // 2) + enc[-1:]
+                    gap = 0
+                data[u["off"] : u["off"] + u["room"]] = enc + bytes(gap)
+                n += 1
+                continue
+            errors.append(f"{where} +{u['off']:04X} 「{kr}」 이름 칸이 {len(enc)}B > {u['room']}B (단순 읽기 문자열은 옮길 수 없다)")
+            continue
+        blen0 = len(u["body"])  # 원래 본문 길이 — 종단 바이트(있으면)는 data[off + blen0] 에 산다
+        enc_nt = enc[:-1] if u["term"] is not None else enc  # 종단 없는 글
+        if len(enc_nt) == blen0:  # 딱 맞는다 — 종단은 제자리 것
+            data[u["off"] : u["off"] + blen0] = enc_nt
+            n += 1
+            continue
+        if len(enc_nt) + 3 <= blen0:
+            # 🔴 **짧으면 종단을 앞당겨 쓰지 않는다**(10-21) — 앞당긴 종단 뒤에 원문 찌꺼기(「…あげた。」 꼬리)가 남아 그대로 읽혀
+            #   「!! 다!!」가 찍혔다(아지발 비명). 글 뒤에 `0F` 로 **원래 종단 자리**로 건너뛴다(옮겨 싣는 쪽과 같은 꼴). 남은 칸은 0.
+            back = LOAD_ADDR + u["off"] + blen0
+            data[u["off"] : u["off"] + blen0] = enc_nt + bytes([0x0F, back & 0xFF, back >> 8]) + bytes(blen0 - len(enc_nt) - 3)
+            if moved is not None:
+                moved.append({"off": u["off"], "tgt": None, "blen": blen0, "term": u["term"], "tail_end": u["off"] + len(enc_nt)})
             n += 1
             continue
         # 넘친다 — `0F` 로 잇는다
@@ -383,22 +475,59 @@ def patch_msgs(data: bytearray, msgs: dict[str, str], table, errors: list[str], 
                 f"{where} +{u['off']:04X} 「{kr}」 자리가 {u['room']}B 라 0F 도 못 넣는다"
             )
             continue
-        if len(data) + len(enc) > SAFE_UNPACKED:
+        assert u["term"] is not None, f"{where} +{u['off']:04X} 흐르는 단위를 옮길 수 없다"
+        blen = len(u["body"])
+        # 🔴 옮긴 글은 **끝나고 원래 흐름으로 되돌아와야 한다**(10-21). 종단 바이트(`01`·`0A`·`1F` …)는 문장 끝이 아니라 **다음 바이트로 이어지는
+        #   제어코드**다 — 원문은 종단 뒤에 `0A`·`02`(이름 자리)·다음 문구가 이어진다. 종단까지 꼬리로 옮기면 흐름이 **꼬리에 덧붙인 다음
+        #   문구**로 새서 ① 뒤 문구에서 이름(`02`)이 빠지고(「는 싹 지워졌다.」) ② 엉뚱한 조각이 끼었다(아지발전 「!! 다!!」).
+        #   그래서 종단 바이트는 **제자리에 남기고**, 꼬리는 종단 없이 쓰고 `0F` 로 그 종단 바이트에 되돌린다(`back` 단위와 같은 꼴).
+        if len(data) + len(enc) + 3 > SAFE_UNPACKED:
             errors.append(
-                f"{where} +{u['off']:04X} 「{kr}」 블록이 {len(data) + len(enc)}B 로 자란다"
+                f"{where} +{u['off']:04X} 「{kr}」 블록이 {len(data) + len(enc) + 3}B 로 자란다"
                 f" — 상한 {SAFE_UNPACKED}B"
             )
             continue
         tgt = LOAD_ADDR + len(data)
-        data += enc
+        if blen < 3:
+            # 본문이 3B 미만(한두 글자 조사 조각)이면 머리 `0F 주소`(3B)가 종단 자리까지 덮는다 → 종단은 꼬리에 두고 **종단 다음 바이트**로 돌아간다
+            back = LOAD_ADDR + u["off"] + u["room"]
+            data += enc + bytes([0x0F, back & 0xFF, back >> 8])
+            data[u["off"] : u["off"] + 3] = bytes([0x0F, tgt & 0xFF, tgt >> 8])
+            if moved is not None:
+                moved.append({"off": u["off"], "tgt": tgt - LOAD_ADDR, "blen": blen, "term": None, "tail_end": len(data) - 3, "back": back})
+            n += 1
+            continue
+        back = LOAD_ADDR + u["off"] + blen
+        data += enc[:-1] + bytes([0x0F, back & 0xFF, back >> 8])  # enc 끝 = 종단 바이트(위에서 붙였다) — 제자리 것을 쓴다
         data[u["off"] : u["off"] + 3] = bytes([0x0F, tgt & 0xFF, tgt >> 8])
-        # 남은 원래 자리는 0 으로 — 아무도 안 읽는 원문이 압축을 먹었다(10-07: 전투 문안 전량을 옮기자 컨테이너
-        #   셋이 칸을 0.6~0.9KB 넘었고, 이걸로 들었다). 단위는 코드 참조에서 이미 끊겨 있어(`msg_units`) 이 안을
-        #   가리키는 알려진 참조는 없다. 끝이 없는(다음 단위로 흐르는) 단위는 옮기면 흐름이 끊기니 막는다.
-        assert u["term"] is not None, f"{where} +{u['off']:04X} 흐르는 단위를 옮길 수 없다"
-        data[u["off"] + 3 : u["off"] + u["room"]] = bytes(u["room"] - 3)
+        # 남은 원래 자리는 0 으로(10-07: 아무도 안 읽는 원문이 압축을 먹었다) — 단 종단 바이트(+blen)는 남긴다
+        data[u["off"] + 3 : u["off"] + blen] = bytes(blen - 3)
+        if moved is not None:
+            moved.append({"off": u["off"], "tgt": tgt - LOAD_ADDR, "blen": blen, "term": u["term"], "tail_end": len(data) - 3})
         n += 1
     return n
+
+
+def simple_unit(data: bytes, u: dict, ind_offs: set[int]) -> bool:
+    """종단까지 **글자만 읽는 루틴**이 읽는 단위인가 — 몬스터 이름 문자열(레코드의 간접 이름 대상) · 화자 이름 칸(`1F 이름 04`). 이 읽기는 `0F` 점프를 못 따라간다."""
+    return u["off"] in ind_offs or (u["term"] == 0x04 and u["off"] > 0 and data[u["off"] - 1] == 0x1F)
+
+
+def check_moved(data: bytes, moved: list[dict], errors: list[str], where: str) -> None:
+    """🔴 옮겨 실은 문구마다 (1) 원래 자리의 종단 바이트가 그대로 남아 있고 (2) 원래 자리 머리가 `0F <꼬리>` 이며 (3) 꼬리 끝이 그 종단으로 돌아가는 `0F` 로 닫히나.
+    하나라도 어기면 빌드 실패 — 옮긴 글이 원래 흐름(이름 자리 `02`·다음 문구)으로 못 돌아오면 주어가 비거나 엉뚱한 글이 낀다(10-21)."""
+    for m in moved:
+        off, blen = m["off"], m["blen"]
+        back = data[m["tail_end"] + 1] | data[m["tail_end"] + 2] << 8
+        if m["tgt"] is not None:  # 블록 끝으로 옮긴 문구 — 원래 자리 머리가 꼬리를 가리킨다
+            tail_ptr = data[off + 1] | data[off + 2] << 8
+            if data[off] != 0x0F or tail_ptr - LOAD_ADDR != m["tgt"]:
+                errors.append(f"{where} +{off:04X} 옮긴 문구 머리가 꼬리를 못 가리킨다")
+        if m["term"] is not None and data[off + blen] != m["term"]:
+            errors.append(f"{where} +{off:04X} 원래 종단 바이트 {m['term']:02X} 가 제자리에 없다")
+        want = m.get("back", LOAD_ADDR + off + blen)
+        if data[m["tail_end"]] != 0x0F or back != want:
+            errors.append(f"{where} +{off:04X} 꼬리 끝이 종단으로 돌아가는 0F 로 안 닫힌다")
 
 
 def glyph_chars(extra: dict[str, str] | None = None) -> set[str]:
@@ -406,7 +535,7 @@ def glyph_chars(extra: dict[str, str] | None = None) -> set[str]:
 
     kr, _ = kr_names(extra)
     chars = {c for v in kr.values() for c in v if font.needs_glyph(c)}
-    for v in _msgs().values():
+    for v in [*_msgs().values(), *(e["t"] for e in _positional().values())]:
         chars |= {c for c in TOKEN.sub("", v) if font.needs_glyph(c)}
     return chars
 
@@ -525,7 +654,40 @@ def text_runs(data: bytes, start: int) -> list[tuple[int, int, int | None]]:
 
 
 def msg_units(data: bytes) -> list[dict]:
-    """전투 문구 단위. 탐욕 범위를 **코드 참조에서 끊어** 공유 조각을 지킨다."""
+    """전투 문구 단위. 탐욕 범위를 **코드 참조에서 끊어** 공유 조각을 지킨다. 머리 + 점프 문구는 `jump_tail_units`, 한두 글자 조사 조각은 `short_units`."""
+    base = _msg_units(data)
+    base = base + short_units(data, base)
+    return sorted(base + jump_tail_units(data, base), key=lambda u: u["off"])
+
+
+def short_units(data: bytes, units: list[dict]) -> list[dict]:
+    """**한두 글자 가나 조각**(「は」「に」「では」) — 이름 자리(`02`·`06`) 뒤에 붙는 조사다. `text_runs` 는 3자 미만을 글자 런으로 안 잡아(우연한 SJIS 쌍을
+    거르려고) 이 조각이 일본어로 남았다(10-21 QA: 「아지이Aは세리오스に 호3을」·「나이프では」 — 전투 블록 6곳 8조각). 앞뒤가 제어코드이고
+    가나·부호만인 런만 잡는다. 번역(`battle.json`)에 열쇠가 있을 때만 건드리므로 오탐이 있어도 화면은 안 바뀐다.
+
+    ⚠ 모든 가나가 조사는 아니다 — 열쇠는 본문(`は`) 해시라 같은 글자는 한 문안을 공유한다(「は」 → 「은/는」, 이름 뒤 주어 조사)."""
+    start = len(records(data)) * REC
+    spans = [(u["off"], u["off"] + len(u["body"])) for u in units]
+    operands = branch_operands(data)
+    out = []
+    i = start
+    while i < len(data) - 1:
+        if i in operands or not is_char(data, i) or any(a <= i < b for a, b in spans):
+            i += 1
+            continue
+        j = i
+        while j < len(data) - 1 and is_char(data, j):
+            j += 2
+        n = (j - i) // 2
+        if n < 3 and (i == start or data[i - 1] < MSG_TERM) and j < len(data) and data[j] < MSG_TERM:
+            txt = data[i:j].decode("cp932")
+            if all("\u3040" <= c <= "\u30ff" or c in "、。！？ー" for c in txt):
+                out.append({"off": i, "body": data[i:j], "term": data[j], "room": (j - i) + 1})
+        i = j if j > i else i + 1
+    return out
+
+
+def _msg_units(data: bytes) -> list[dict]:
     start = len(records(data)) * REC
     refs = code_refs(data)
     out = []
@@ -541,6 +703,44 @@ def msg_units(data: bytes) -> list[dict]:
                     "room": (hi - lo) + (1 if last and term is not None else 0),
                 }
             )
+    return out
+
+
+def jump_tail_units(data: bytes, units: list[dict]) -> list[dict]:
+    """**짧은 머리 + `0F` 점프로 다른 단위 한가운데에 잇는** 문구(머리 여럿 달린 몬스터 「…の左の頭は」 — 오른쪽 문구의 「の頭は…」 뒤쪽으로 점프).
+
+    🔴 이걸 단위로 안 잡으면 두 가지가 샌다(10-18): ① 머리(「の左」)가 일본어로 남고 ② 점프 목적지가 **우리가 번역해 놓은 오른쪽 문구 한가운데**
+    라 쓰레기 글자를 읽는다(원문 바이트 기준 오프셋이라 한글 코드 한가운데에 떨어진다). 그래서 머리 + 목적지 꼬리를 **한 문장으로 펴서**(「の左の頭は{01}…」)
+    단위로 두고, 번역은 통째로 쓴다 — 머리 자리(`0F`+주소 3B 포함)에 들어가면 제자리, 넘치면 블록 끝으로 잇는다(`patch_msgs`).
+    목적지 쪽(오른쪽 문구)은 그대로 자기 단위다.
+    """
+    n = len(data)
+    spans = [(u["off"], u["off"] + len(u["body"])) for u in units]
+    out = []
+    i = len(records(data)) * REC
+    while i < n - 3:
+        if not is_char(data, i) or any(a <= i < b for a, b in spans):
+            i += 1
+            continue
+        j = i
+        while j < n - 1 and is_char(data, j):
+            j += 2
+        if j > i and data[j] == 0x0F and j + 2 < n:
+            t = (data[j + 1] | data[j + 2] << 8) - LOAD_ADDR
+            for u in units:
+                a, b = u["off"], u["off"] + len(u["body"])
+                if a < t < b and is_char(data, t):
+                    out.append(
+                        {
+                            "off": i,
+                            "body": data[i:j] + data[t:b],
+                            "term": None,  # 끝 바이트는 원래 흐름이 가진다 — 번역 끝에서 `back` 으로 되돌아가 그 바이트부터 이어진다
+                            "room": (j + 3) - i,
+                            "back": LOAD_ADDR + b,
+                        }
+                    )
+                    break
+        i = j + 1 if j > i else i + 1
     return out
 
 

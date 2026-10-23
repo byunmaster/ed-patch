@@ -298,6 +298,52 @@ def tick_routine() -> bytes:
     return bytes(code)
 
 
+# 🔴 나레이션 ON 자막 모드에서 대사창 넘김 커서(▽)를 숨긴다(마스터 10-16 「나래이션 일 때 대사창 커서도 안 나오게」).
+#   커서는 엔진 뱅크 0x6C 의 `$6CC3` 가 매 프레임 상태 바이트(`$3559,X` 비트6)를 16프레임마다 뒤집어 깜빡인다(비트6=1 이 꺼진 쪽).
+#   그 `JSR $6CC3` 넷(`$6BAA`·`$6BDD`·`$6C2C`·`$6D23`)을 이 루틴으로 돌린다 — 원래 루틴을 부른 뒤 자막 모드(`BLINK_FLAG`)면 비트6 을 1 로 고정.
+#   X 는 `$6CC3` 가 남긴 커서 번호 그대로, A·Y 는 호출부(`$4FD8` 인자)가 쓰므로 비트6 이 1 인 원래 결과와 같은 꼴로 돌려준다.
+BLINK_ADDR = TICK_ADDR + 0x50  # 틱 트램펄린 끝($2443) 뒤 빈 자리 — FRAMECNT($2474) 앞
+BLINK_FLAG = 0x5FFD  # narration_gates.AUTO_FLAG — 자막 모드(뱅크 0x68 꼬리 `$5FFD`, 늘 `$4000` 창에 있다). 같은 값임을 테스트가 본다
+BLINK_ORIG = 0x6CC3  # 원래 깜빡임 루틴(뱅크 0x6C)
+
+
+def blink_routine() -> bytes:
+    return bytes(
+        [0x20, *BLINK_ORIG.to_bytes(2, "little")]  # JSR $6CC3
+        + [0xAD, *BLINK_FLAG.to_bytes(2, "little"), 0xF0, 8]  # LDA mode · BEQ out
+        + [0xBD, 0x59, 0x35, 0x09, 0x40, 0x9D, 0x59, 0x35]  # LDA $3559,X · ORA #$40 · STA $3559,X
+        + [0x60]  # out: RTS
+    )
+
+
+# 🔴 나레이션 자막 모드 자동 넘김 때 넘김 효과음(`JSR $67EC` → 효과음 0x14)을 끈다(마스터 10-17). 호출 셋(`$6BFF`·`$6C3C`·`$6D3F`)을 이 거름 루틴으로 돌린다:
+#   자막 모드(`BLINK_FLAG`)면 소리 없이 돌아가고 아니면 원래 `$67EC`. 자리 = 깜빡임 루틴 뒤 빈 자리(`$2461~$2473`, 19B 중 9B).
+#   ⚠ 엔진 뱅크 0x6C 의 0 런(`$6973`)은 빈 자리가 아니다 — `STA $6973,X` 로 쓰이는 인덱스 표다(devlog 10-16). 처음 거기 얹었다가 옮겼다.
+QUIET_ADDR = BLINK_ADDR + 0x11  # 깜빡임 루틴(17B) 바로 뒤
+QUIET_ORIG = 0x67EC
+
+
+def quiet_routine() -> bytes:
+    return bytes([0xAD, *BLINK_FLAG.to_bytes(2, "little"), 0xD0, 0x03, 0x4C, *QUIET_ORIG.to_bytes(2, "little"), 0x60])  # LDA mode · BNE +3 · JMP $67EC · RTS
+
+
+# 🔴 나레이션 자막 모드에서 **화자 이름 글자에도 글자 사이 대기를 건다**(마스터 10-23 「화자 바뀔 때만 흔들린다」 → 흔들림 원인 확정).
+#   엔진 글자 찍기(뱅크 0x6C `$66DC`: `LDA $8A · CMP #$06 · BEQ $6712`)는 글자색이 6(노랑 = 화자 이름)이면 대기를 건너뛴다 — 그래서 이름 2~4번째 글자와 이름 뒤 본문 첫 글자가
+#   한 틱에 몰린다(글리프 한 자가 프레임의 약 0.3 → 4자 ≈ 1.2프레임). 컷신이 흐르는 자막 모드에선 그 틱이 BG 스크롤 갱신을 한 프레임 밀어 화면 배경이 튄다.
+#   그 4바이트를 `JSR 이 루틴 · NOP` 으로 돌린다: 색이 6 이어도 자막 모드(`BLINK_FLAG`)면 Z=0(= 대기를 건다), 아니면 원래 비교 결과 그대로(OFF·일반·전투 = 원판 동작).
+#   A 는 이 뒤 곧바로 덮이니 상관없고 X·Y 는 건드리지 않는다. 자리 = 거름 루틴 뒤 빈 자리(`$246A~$2473`, 10B 에 꼭 맞는다).
+NAMEWAIT_SITE = 0x66DC  # 뱅크 0x6C
+NAMEWAIT_ADDR = QUIET_ADDR + 9  # 거름 루틴(9B) 바로 뒤
+
+
+def namewait_routine() -> bytes:
+    return bytes(
+        [0xA5, 0x8A, 0xC9, 0x06, 0xD0, 0x03]  # LDA $8A · CMP #6 · BNE out(다르면 Z=0 그대로)
+        + [0xAD, *BLINK_FLAG.to_bytes(2, "little")]  # LDA mode — 색 6 이면 자막 모드일 때 Z=0, 아니면 Z=1
+        + [0x60]  # out: RTS
+    )
+
+
 def _tick_layout() -> tuple[tuple[int, int], int]:
     """(서명 `LDA` 피연산자 둘, `JSR tick` 피연산자)의 주소."""
     n = len(tick_routine())
@@ -315,6 +361,18 @@ def hook_routine() -> bytes:
     t = tick_routine()
     at = TICK_ADDR - HOOK_ADDR - len(b)
     pad[at : at + len(t)] = t
+    bl = blink_routine()
+    assert TICK_ADDR + len(t) <= BLINK_ADDR and BLINK_ADDR + len(bl) <= FRAMECNT, (len(t), len(bl))
+    at = BLINK_ADDR - HOOK_ADDR - len(b)
+    pad[at : at + len(bl)] = bl
+    qr = quiet_routine()
+    assert BLINK_ADDR + len(bl) <= QUIET_ADDR and QUIET_ADDR + len(qr) <= FRAMECNT, (len(bl), len(qr))
+    at = QUIET_ADDR - HOOK_ADDR - len(b)
+    pad[at : at + len(qr)] = qr
+    nw = namewait_routine()
+    assert QUIET_ADDR + len(qr) <= NAMEWAIT_ADDR and NAMEWAIT_ADDR + len(nw) <= FRAMECNT, (len(qr), len(nw))
+    at = NAMEWAIT_ADDR - HOOK_ADDR - len(b)
+    pad[at : at + len(nw)] = nw
     return b + bytes(pad)
 
 
@@ -382,6 +440,30 @@ def _main_asm() -> "Asm":
     a.label("not_ours")
     a.op("JMP", "abs", EXT_ADDR + EXT_JOSA_OFF)
     a.label("calc")
+    a.op("JSR", "abs", "josa_has")  # 받침 판정 → HASBAT (`pre` 도 같은 루틴을 부른다)
+    a.label("decide")
+    a.op("LDA", "abs", HASBAT_ADDR)
+    a.op("BNE", "rel", "has_batchim")
+    # 받침 없음 → 표의 둘째 항목: (k×2+1)×2 = k×4+2
+    a.op("LDA", "zp", 0xF8)
+    a.op("SEC")
+    a.op("SBC", "imm", font.TRAIL0)
+    a.op("ASL")
+    a.op("INC")
+    a.op("BRA", "rel", "josa_lookup")
+    a.label("has_batchim")
+    a.op("LDA", "zp", 0xF8)
+    a.op("SEC")
+    a.op("SBC", "imm", font.TRAIL0)
+    a.op("ASL")
+    a.label("josa_lookup")
+    a.op("ASL")
+    a.op("TAX")  # 받침 k×4 · 무받침 k×4+2
+    a.op("LDA", "absx", JOSA_OFF_ADDR)  # 표 = (트레일, 리드) — 보통 글자 길로 낸다
+    a.op("STA", "zp", 0xEC)
+    a.op("LDA", "absx", JOSA_OFF_ADDR + 1)
+    a.op("JMP", "abs", "fetch")
+    a.label("josa_has")
     # 인덱스 = (리드−F0)×220 + (트레일−0x24) → $EC/$ED
     a.op("SEC")
     a.op("SBC", "imm", font.LEAD0)
@@ -413,32 +495,12 @@ def _main_asm() -> "Asm":
     a.op("SEC")
     a.op("SBC", "imm", font.TRAIL0)
     a.op("CMP", "imm", 4)
-    a.op("BNE", "rel", "decide")
+    a.op("BNE", "rel", "hdone")
     _bit(a, RIEUL_ADDR, "ri")
-    a.op("BEQ", "rel", "decide")
+    a.op("BEQ", "rel", "hdone")
     a.op("STZ", "abs", HASBAT_ADDR)
-    a.label("decide")
-    a.op("LDA", "abs", HASBAT_ADDR)
-    a.op("BNE", "rel", "has_batchim")
-    # 받침 없음 → 표의 둘째 항목: (k×2+1)×2 = k×4+2
-    a.op("LDA", "zp", 0xF8)
-    a.op("SEC")
-    a.op("SBC", "imm", font.TRAIL0)
-    a.op("ASL")
-    a.op("INC")
-    a.op("BRA", "rel", "josa_lookup")
-    a.label("has_batchim")
-    a.op("LDA", "zp", 0xF8)
-    a.op("SEC")
-    a.op("SBC", "imm", font.TRAIL0)
-    a.op("ASL")
-    a.label("josa_lookup")
-    a.op("ASL")
-    a.op("TAX")  # 받침 k×4 · 무받침 k×4+2
-    a.op("LDA", "absx", JOSA_OFF_ADDR)  # 표 = (트레일, 리드) — 보통 글자 길로 낸다
-    a.op("STA", "zp", 0xEC)
-    a.op("LDA", "absx", JOSA_OFF_ADDR + 1)
-    a.op("JMP", "abs", "fetch")
+    a.label("hdone")
+    a.op("RTS")
     a.label("idx_lo")
     a.data(bytes((i * font.PER_LEAD) & 0xFF for i in range(10)))
     a.label("idx_hi")
@@ -660,6 +722,45 @@ def half_tables() -> bytes:
     return bytes([0, 28, 56, 84]) + bytes(0x80 >> i for i in range(8)) + bytes(bm) + narr
 
 
+# 🔴 `으로/로` 무받침 — **그리지도 전진하지도 않는다**(10-21 「나이프로로는」). 문안은 「{으로/로}로」 꼴이고(`font.encode` 가 둘째 글자 「로」를 보통 글자로 낸다)
+#   토큰은 받침 있으면 「으」, 없으면 **아무것도 안 낸다**(KIND_EATEN — 반각 공백 먹기와 같은 갈래: 칸 수도 안 센다). 판정은 EX_GETFNT 대체 루틴의 `josa_has`
+#   를 그대로 부른다. 직전 글자가 우리 글자가 아니면(원문 SJIS) 무받침으로 본다. 자리는 반각 영숫자 표 뒤 꼬리(39B).
+JOSA_PRE_ADDR = HALF_TAB_ADDR + HALF_TAB_LEN
+
+
+def _josa_pre_asm() -> "Asm":
+    a = Asm(JOSA_PRE_ADDR)
+    a.op("LDA", "zp", 0xF9)
+    a.op("CMP", "imm", font.JOSA_LEAD)
+    a.op("BNE", "rel", "ret")
+    a.op("LDA", "zp", 0xF8)
+    a.op("CMP", "imm", font.TRAIL0 + 4)
+    a.op("BNE", "rel", "ret")
+    a.op("PHX")
+    a.op("PHY")
+    a.op("LDA", "abs", LAST_ADDR)
+    a.op("CMP", "imm", font.LEAD0)
+    a.op("BCC", "rel", "eat")
+    a.op("JSR", "abs", MAIN_LABELS["josa_has"])
+    a.op("LDA", "abs", HASBAT_ADDR)
+    a.op("BNE", "rel", "out")
+    a.label("eat")
+    a.op("LDA", "imm", KIND_EATEN)
+    a.op("STA", "abs", KIND_ADDR)
+    a.label("out")
+    a.op("PLY")
+    a.op("PLX")
+    a.label("ret")
+    a.op("RTS")
+    return a
+
+
+def josa_pre() -> bytes:
+    b = _josa_pre_asm().bytes()
+    assert JOSA_PRE_ADDR + len(b) <= (WORDCK_MPR << 13) + 0x2000, len(b)
+    return b
+
+
 def finish_banks(glyph_bank: bytes) -> bytes:
     """글리프 뱅크에 코드를 얹는다 — 뱅크마다 꼬리에 풀기 루틴, 마지막 뱅크 글리프 끝 `CODE_SLOTS` 칸에 반 칸 전진 + 어절 줄바꿈."""
     gb = bytearray(glyph_bank)
@@ -674,6 +775,9 @@ def finish_banks(glyph_bank: bytes) -> bytes:
     tab = len(gb) - 0x2000 + (HALF_TAB_ADDR - (WORDCK_MPR << 13))
     assert not gb[tab : tab + HALF_TAB_LEN].strip(b"\0"), "반각 영숫자 표 자리가 비어 있지 않다"
     gb[tab : tab + HALF_TAB_LEN] = half_tables()
+    jp = josa_pre()
+    assert not gb[tab + HALF_TAB_LEN : tab + HALF_TAB_LEN + len(jp)].strip(b"\0"), "조사 선처리 자리가 비어 있지 않다"
+    gb[tab + HALF_TAB_LEN : tab + HALF_TAB_LEN + len(jp)] = jp
     return bytes(gb)
 
 
@@ -969,7 +1073,7 @@ def _entry_asm() -> "Asm":
     a.op("BEQ", "rel", "isvar")
     a.op("CMP", "imm", font.LEAD0)
     a.op("BEQ", "rel", "chkh")  # 리드 F1~F3 — 우리 글리프
-    a.op("RTS")
+    a.op("JMP", "abs", JOSA_PRE_ADDR)  # 조사 토큰 — `으로/로` 무받침이면 안 그린다
     a.label("isvar")
     a.op("LDA", "zp", 0xF9)
     a.op("SBC", "imm", font.VARIANT_LEAD0 - font.LEAD0)  # CMP 가 같아서 캐리 1
@@ -1304,6 +1408,9 @@ def _bit(a: "Asm", table_addr: int, tag: str) -> None:
     a.label(f"{tag}_done")
     a.op("LDA", "zp", 0xEE)
     a.op("AND", "imm", 1)
+
+
+MAIN_LABELS = _main_asm().labels  # EX_GETFNT 대체(조사 포함) 루틴의 라벨 — `pre` 가 `josa_pre` 로 뛴다
 
 
 def _mul24(a: "Asm") -> None:

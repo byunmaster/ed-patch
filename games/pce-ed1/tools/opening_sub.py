@@ -104,7 +104,7 @@ CODE_ADDR = 0x8000 + (CODE_OFF - 0x4000)
 #   내놓았다**(아래 BACKUP_SLOTS 에서 0x6A +0x1800 을 뺐다). 최대 빌림이 19개라 23칸으로도
 #   남는다 — `plan_scenes` 가 넘치면 빌드에서 막는다.
 CODE_MAX = 0x5A00 - CODE_OFF  # 뱅크 0x6A +0x1A00 까지(3.2KB) — 그 뒤 1.5KB 가 백업 슬롯
-DATA_REL = 422  # 빈 섹터 rel 422~449(28개, 원판 0) — 우리는 12개만 쓴다
+DATA_REL = 422  # 빈 섹터 rel 422~449(28개, 원판 0) — 오프닝이 422~434(13개), 엔딩이 436~448(13개)
 STRIP_BANKS = (0x85, 0x86, 0x87)  # 오프닝 내내 0 인 뱅크(덤프 29개 실측)
 STRIP_BANK_SECTORS = {0x85: 0, 0x86: 4, 0x87: 8}  # DATA_REL 기준 섹터 오프셋
 CELL_BYTES = GLYPH_ROWS * 2 * 2  # 셀 = plane0 14행 + plane1 14행, 행마다 2B = 56B
@@ -132,7 +132,7 @@ NAME = "opening"  # 빌드 라벨
 CODE_BANK = 0x6A  # 코드가 사는 뱅크(트램펄린이 MPR4 에 건다)
 LOOP_TARGET = 0x43F3  # 메인 루프 훅 자리의 원래 JSR 대상
 YADJ_MAX = 33  # 화면 높이 보정 상한(+1). 오프닝 화면은 208줄까지라 32 면 충분했다
-STRIP_MODE = "bank"  # "bank" = CD_READ 로 뱅크에 · "adpcm" = AD_TRANS 로 ADPCM RAM 에(엔딩)
+STRIP_MODE = "adpcm"  # "bank" = CD_READ 로 뱅크에(24,576B 한도) · "adpcm" = AD_TRANS 로 ADPCM RAM 에 — 오프닝도 이쪽(10-21: N:15 스트립 288B 초과를 공간 기술로 해결, 음성 겹침은 소리 비교로 확인)
 ADPCM_BASE = 0x8000  # adpcm 모드: 스트립을 싣는 ADPCM 주소
 CELL_BUF = 0x3C00  # adpcm 모드: 셀 하나(56B)를 AD_READ 로 받아 두는 RAM
 INIT_WINDOW = None  # CD_PLAY 때 코드 뱅크가 $8000 창에 없으면 그 창 주소(스텁을 거친다)
