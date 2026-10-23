@@ -30,6 +30,7 @@ import common as C
 import hangul_map as H
 import movie_hardsub as MV
 import patch_josa_hook as JOSA
+import patch_notice_x as NX
 import patch_ui_center as UIC
 import reinsert as R
 import reinsert_battle as RBT
@@ -215,6 +216,9 @@ def patched(disc, lay=None):
                     #   전투 위쪽 배너(기술명·승리 문구) 글자를 세로 가운데로 — 상수 하나(`patch_ui_center`).
                     new = UIC.patch(new)
                     cnt["ui_center"] = 1
+                    #   안내 화면 줄을 줄마다 화면 정중앙에 — 그리기 호출의 x 즉값을 줄마다 다시 쓴다(`patch_notice_x`).
+                    new = NX.patch(new)
+                    cnt["notice_x"] = 1
                     #   🔴 **음성 자막 렌더러** — 컷신 위에 우리 창을 그리는 스텁과 훅.
                     #     조사 스텁 뒤 같은 문자열 구역을 쓰므로 그 다음에 넣는다.
                     if voicetbl:
