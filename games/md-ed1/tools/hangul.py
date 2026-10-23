@@ -304,6 +304,8 @@ def needs_glyph(ch: str, keep_codes: list[int]) -> bool:
     """새 글리프가 필요한 글자 — 한글, 그리고 원본 표에도 ASCII 에도 없는 기호(…‘’“” 등)."""
     if is_hangul(ch):
         return True
+    if ch in QUOTES_HALF:
+        return False
     if 0x20 <= ord(ch) < 0x7F or ch in "\n\f":
         return False
     try:
@@ -398,6 +400,8 @@ class Charset:
     def encode_char(self, ch: str) -> bytes:
         if ch in self.hangul:
             return struct.pack(">H", self.hangul[ch])
+        if ch in QUOTES_HALF:
+            return bytes([QUOTES_HALF[ch]])  # 반각(리소스 1) 따옴표 — 번역 규칙 1-2
         if 0x20 <= ord(ch) < 0x7F:
             if ord(ch) not in self.half:
                 raise SystemExit(
@@ -496,8 +500,45 @@ PERIOD_FILL_GALMURI = ["........"] * 11 + ["..#....."] + ["........"] * 2
 COMMA_FILL_GALMURI = ["........"] * 11 + ["..#....."] + [".#......"] + ["........"]
 # MD_PUNCT_SRC=original 로 되돌릴 수 있는 손잡이는 남긴다(비교·회귀용) — 정본은 galmuri.
 PUNCT_SRC = _os.environ.get("MD_PUNCT_SRC", "galmuri")
+# 따옴표 “ ” 는 반각(마스터 10-19, 번역 규칙 1-2) — 리소스 1 의 안 쓰는 ASCII 자리(`·~)를 빌려 글리프를 넣고
+# 문안의 “ ” 를 그 바이트로 낸다. 잉크는 여는 쪽은 오른쪽, 닫는 쪽은 왼쪽(뒤·앞 글자에 붙도록).
+QUOTES_HALF = {"“": 0x60, "”": 0x7E}
+QUOTE_OPEN_FILL = [
+    "........",
+    "........",
+    "...#..#.",
+    "..#..#..",
+    "..##.##.",
+    "..##.##.",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+]
+QUOTE_CLOSE_FILL = [
+    "........",
+    "........",
+    ".##.##..",
+    ".##.##..",
+    "..#..#..",
+    ".#..#...",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+]
 EXTRA_R1 = {
     0x28: PAREN_L_FILL,
+    QUOTES_HALF["“"]: QUOTE_OPEN_FILL,
+    QUOTES_HALF["”"]: QUOTE_CLOSE_FILL,
     0x29: PAREN_R_FILL,
     0x2C: (lambda: COMMA_FILL_GALMURI if PUNCT_SRC == "galmuri" else COMMA_FILL),
 }
@@ -785,3 +826,30 @@ if __name__ == "__main__":
     elif "--preview" in sys.argv:
         i = sys.argv.index("--preview")
         preview(sys.argv[i + 2], Path(sys.argv[i + 1]))
+
+
+# 🔴 구운 글리프끼리 비트맵이 같으면 **서로 다른 글자가 같은 모양으로 그려진다**(ss-ed1+2 10-20: 반각 쉼표가 마침표와 같은 비트맵으로
+# 구워져 쉼표 3,983곳이 전부 마침표로 그려졌다 — 원본 글꼴 파일만 보면 안 보이고 **롬에서 읽어야** 보인다).
+# 허용 = 의도된 같은 모양: 합성 코드(「의␣」·「운␣」 — 본 글자와 같은 비트맵에 전진만 다르다)와 원판 자체의 줄표 셋(ー―－).
+ORIGINAL_SAME = ({0x815B, 0x815C, 0x817C},)
+
+
+def verify_glyph_distinct(rom: bytes, composites: tuple[tuple[int, int], ...]) -> int:
+    """구운 롬의 글꼴 리소스 0(전각)·1(반각) 글리프를 읽어 같은 비트맵 쌍을 센다. 허용 밖이면 실패. → 허용된 같은 묶음 수."""
+    allowed = [set(c) for c in composites] + [set(g) for g in ORIGINAL_SAME]
+    n = 0
+    for ri, r in enumerate(font.resources(rom)[:2]):
+        seen: dict[tuple, list[int]] = {}
+        for i, c in enumerate(font.codes(rom, r)):
+            key = tuple(tuple(map(tuple, font.glyph(rom, r, i, p))) for p in (0, 1))
+            seen.setdefault(key, []).append(c)
+        for key, grp in seen.items():
+            if len(grp) < 2 or not any(any(row) for row in key[0]):
+                continue  # 빈 글리프(공백)끼리는 같아도 된다
+            if not any(set(grp) == a for a in allowed):
+                raise SystemExit(
+                    f"구운 글리프가 서로 같다(리소스 {ri}): {[hex(c) for c in grp]} — 서로 다른 글자가 같은 모양으로 그려진다. "
+                    "의도된 합성 코드·원판 줄표가 아니면 글리프를 고친다"
+                )
+            n += 1
+    return n

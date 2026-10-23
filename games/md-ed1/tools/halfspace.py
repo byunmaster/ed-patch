@@ -40,39 +40,51 @@ import josa
 
 PUA = ""  # 「의␣」 자리표시 — 문안엔 이 글자 하나로 적는다
 BASE = "의"
+# 합성 글자 목록(자리표시, 바탕 글자) — 첫째가 원조 「의␣」, 둘째 「운␣」는 「성스러운 지팡이」(15B → 14B) 용(마스터 승인 10-19
+# 「안깨지면 그렇게 진행하자」). 렌더러 후킹은 목록 전체를 같은 방식으로 본다.
+COMPOSITES = ((PUA, BASE), ("\ue201", "운"))
+PUA2 = COMPOSITES[1][0]
+PUAS = tuple(p for p, _ in COMPOSITES)
 SPACE = " "
 EXTRA_BYTES = 2  # 4px = 4bpp 2바이트(위 ⚠)
 SITE = 0x9898  # bsr.w $9b32
 DRAW = 0x9B32
 TRAMP = josa.DEAD_HANDLER + 18
 CODE_OFF = 0x150  # wrap 꼬리 예약 안 오프셋(wordwrap 본체 326B = 0x146 뒤)
-CODE_LEN = 28
+CODE_LEN = 34
 EXTRA_PX = EXTRA_BYTES * 2
 
 
 def plain(s: str) -> str:
     """검사·사전 대조용 — 합성 글자를 보통 글자 + 반각 공백으로 펼친다."""
-    return s.replace(PUA, BASE + SPACE)
+    for pua, base in COMPOSITES:
+        s = s.replace(pua, base + SPACE)
+    return s
 
 
 def ensure_glyph() -> None:
-    hangul.CUSTOM_GLYPHS.setdefault(PUA, hangul.glyph_fill(BASE))
+    for pua, base in COMPOSITES:
+        hangul.CUSTOM_GLYPHS.setdefault(pua, hangul.glyph_fill(base))
 
 
 def chars() -> set[str]:
     ensure_glyph()
-    return {PUA}
+    return set(PUAS)
 
 
 def code(cs) -> bytes:
-    c = int.from_bytes(cs.encode_char(PUA), "big")
+    c1, c2 = (int.from_bytes(cs.encode_char(p), "big") for p in PUAS)
     b = bytearray()
-    b += struct.pack(">HH", 0x0C40, c)  # cmpi.w #CODE,d0
-    b += bytes([0x67, 0x06])  # beq.s +6
+    b += struct.pack(">HH", 0x0C40, c1)  # cmpi.w #CODE1,d0
+    b += bytes([0x67, 0x0C])  # beq.s → 합성 처리(+12)
+    b += struct.pack(">HH", 0x0C40, c2)  # cmpi.w #CODE2,d0
+    b += bytes([0x67, 0x06])  # beq.s → 합성 처리(+6)
     b += struct.pack(">H", 0x4EF9) + struct.pack(">I", DRAW)  # jmp $9b32.l (보통 글자)
     b += struct.pack(">H", 0x4EB9) + struct.pack(">I", DRAW)  # jsr $9b32.l
     b += struct.pack(">H", 0x5088 | (EXTRA_BYTES << 9) | 2)  # addq.l #n,a2
-    b += struct.pack(">H", 0x5039 | (EXTRA_BYTES << 9)) + struct.pack(">I", 0xFF2018)  # addq.b #n,$FF2018.l
+    b += struct.pack(">H", 0x5039 | (EXTRA_BYTES << 9)) + struct.pack(
+        ">I", 0xFF2018
+    )  # addq.b #n,$FF2018.l
     b += struct.pack(">H", 0x4E75)  # rts
     assert len(b) == CODE_LEN, len(b)
     return bytes(b)
@@ -101,7 +113,7 @@ if __name__ == "__main__":
     if "--asm" in sys.argv:
 
         class _CS:
-            hangul = {PUA: 0}
+            hangul = dict.fromkeys(PUAS, 0)
 
             def encode_char(self, _c):
                 return b"\xaa\xbb"

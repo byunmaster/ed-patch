@@ -98,6 +98,39 @@ class BuildStream(unittest.TestCase):
         out = build.build_stream(st, "<0900>가\f<1e>병사<04>나", self.FakeCharset())
         self.assertIn(0x05, [t.code for t in out])
 
+    def _blank_stream(self, ours, tail):
+        st = scene.Stream.__new__(scene.Stream)
+        st.tokens = [tok(b"\x0b", "ctl", 0x0B), tok(b"\x0e", "ctl", 0x0E)] + tail
+        st.start = 0
+        return build.build_stream(st, ours, self.FakeCharset())
+
+    def test_blank_fragment_between_variables_survives(self):
+        """`<ebf0> <0e>` — 훅과 품목 이름 사이 공백 하나짜리 조각이 조판기에 버려져 「일행은약초」로 붙었다."""
+        out = self._blank_stream(
+            "<0b><ebf0> <0e><ec02> 발견했다.<07>",
+            [tok(b"\x07", "end", 0x07)],
+        )
+        raws = [t.raw for t in out]
+        self.assertIn(b" ", raws)
+
+    def test_trailing_space_before_variable_survives(self):
+        """`제 이름은 <0e>입니다` — 조각 끝 공백도 조판기가 지워 「이름은류난」으로 붙었다(10-19 전수 검수)."""
+        out = self._blank_stream(
+            "<0b>제 이름은 <0e>입니다.<07>",
+            [tok(b"\x07", "end", 0x07)],
+        )
+        texts = [t.raw for t in out if t.kind == "text"]
+        self.assertTrue(texts[0].endswith(b" "), texts)
+
+    def test_blank_fragment_before_final_end_is_dropped(self):
+        out = self._blank_stream("<0b><ebf0> <00>", [tok(b"\x00", "end", 0x00)])
+        self.assertNotIn(b" ", [t.raw for t in out])
+
+    def test_blank_fragment_before_return_end_survives(self):
+        """`<0b><ebf0> <06>` — 되돌림 끝(06) 조각의 공백은 호출한 쪽 글과의 이음새라 남긴다(「세리오스는이상한」)."""
+        out = self._blank_stream("<0b><ebf0> <06>", [tok(b"\x06", "end", 0x06)])
+        self.assertIn(b" ", [t.raw for t in out])
+
 
 class Typeset(unittest.TestCase):
     def test_lead_space_survives(self):

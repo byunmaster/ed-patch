@@ -61,15 +61,16 @@ def agrees(name: str, p: str) -> bool:
 def scan_lines(lines: list[tuple[str, str]]) -> tuple[int, list[str]]:
     """[(자리, 문안)] → (잰 자리 수, 어긋남 목록)."""
     pat = re.compile(
-        "(" + "|".join(re.escape(n) for n in names()) + r")(으로|로|은|는|이|가|을|를|과|와)(?![가-힣])"
+        "(" + "|".join(" ?".join(map(re.escape, n)) for n in names()) + r")(으로|로|은|는|이|가|을|를|과|와)(?![가-힣])"
     )
     n, errs = 0, []
     for where, ours in lines:
         # `<1e>이름<04>` 의 끝은 이름창 경계다 — 태그를 걷어 이름 뒤 본문 첫 글자(「이 나라…」)가 조사로 읽히면 안 된다
-        t = halfspace.plain(TAG.sub("", ours.replace("<04>", " "))).replace("\n", " ")
+        # `<1e>아이템<04><1c>를` — 문장 안에서 색을 입힌 이름은 `<04><1c>` 로 닫히고 조사가 **바로** 붙는다(공백 아님).
+        t = halfspace.plain(TAG.sub("", ours.replace("<04><1c>", "").replace("<04>", " "))).replace("\n", " ")
         for m in pat.finditer(t):
             n += 1
-            name, p = m.group(1), m.group(2)
+            name, p = m.group(1).replace(" ", ""), m.group(2)  # 이름 안 공백은 글자 판정에 영향 없다
             if not agrees(name, p):
                 f = final_of(name)
                 errs.append(f"{where}: 「{name}{p}」 — 받침 {'없음' if f == 0 else 'ㄹ' if f == 2 else '있음'}")

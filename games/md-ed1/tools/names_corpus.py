@@ -83,6 +83,50 @@ def _script_pairs(rom: bytes):
             yield f"script:{n:03d}:{off:04x}", jp, ours, DIALOG
 
 
+_FLOW = re.compile(r"<(0f|10):([0-9a-f]+)>")
+_COND = re.compile(r"<1[12][0-9a-f]{4}>$")
+
+
+def _expand(texts: dict[int, str], off: int, depth: int = 0, seen: frozenset = frozenset()) -> str:
+    """한 문장이 조각 여럿(goto `<0f:T>` · call `<10:T>`)으로 이어진 것을 **한 줄로** 펼친다 — 조각 단위로만 재면 이어진 자리를
+    검사기 셋(이름·정본·인사)이 못 본다(sfc-ed2 10-20). 조건(`<11…>`/`<12…>`) 바로 뒤 goto 는 「참이면 건너뜀」이라 아래로 이어 읽는다."""
+    t = texts.get(off)
+    if t is None or depth > 8 or off in seen:
+        return t or ""
+    seen = seen | {off}
+    out, pos = [], 0
+    for m in _FLOW.finditer(t):
+        head = t[pos : m.start()]
+        out.append(head)
+        pos = m.end()
+        tgt = int(m.group(2), 16)
+        if m.group(1) == "0f" and _COND.search(head):
+            continue  # 조건 참이면 goto 를 건너뛴다 — 아래로 이어 읽는다
+        out.append(_expand(texts, tgt, depth + 1, seen))
+        if m.group(1) == "0f":
+            return "".join(out)  # goto 는 돌아오지 않는다
+    out.append(t[pos:])
+    return "".join(out)
+
+
+def _script_joined_pairs(rom: bytes):
+    """이어진 문장 — goto·call 로 다른 스트림을 부르는 스트림만 펼친 한 줄로 한 번 더 낸다(원문·우리 둘 다)."""
+    import json
+
+    base = archives.ARCHIVES["script"][0]
+    for n, (_s, data, _e) in enumerate(archives.blocks(rom, base)):
+        mod = scene.parse_module(data)
+        p = common.GAME_DIR / "script" / f"{n:03d}.json"
+        kr = json.loads(p.read_text(encoding="utf-8")).get("streams", {}) if p.exists() else {}
+        jp_t = {off: st.text() for off, st in mod.streams.items()}
+        kr_t = {int(k, 16): v.get("ours") or "" for k, v in kr.items()}
+        for off in sorted(mod.streams):
+            if not (_FLOW.search(jp_t[off]) or _FLOW.search(kr_t.get(off, ""))):
+                continue
+            ours = _expand(kr_t, off) if kr_t.get(off) else None
+            yield f"scriptj:{n:03d}:{off:04x}", _expand(jp_t, off), ours, DIALOG
+
+
 def _battle_pairs(rom: bytes):
     import json
 
@@ -128,6 +172,55 @@ def _captions_pairs(rom: bytes):
         yield f"captions:{addr:06x}", _t(jp), _t(ours), DIALOG
 
 
+def _battle_joined_pairs(rom: bytes):
+    """값 이음 줄 — 끝 코드 `06`(게임이 수치를 끼워 넣는 자리)으로 끝난 머리 + **참조 없이 바로 이어 읽히는 꼬리**를 한 줄로 이어 한 번 더 낸다
+    (`06` 자리에 원문은 `%d`, 우리 줄은 `{n}`). 정본 열쇠는 값까지 이은 한 줄(「の素早さが{n}下がった!!」)인데 문안은 머리·꼬리 스트림으로
+    갈려 있어 조각 단위로는 어떤 열쇠도 안 걸렸다(md-ed1 10-22: 「…민첩성이 1내려갔다」가 정본 검사를 지났다). 조각 단위 줄은 그대로 두고
+    이은 줄만 덧붙이므로 분모가 흔들리지 않는다."""
+    import json
+
+    p = common.GAME_DIR / "textmap" / "battle.json"
+    kr_map = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    monsters = battle.monsters(rom)
+
+    def ours_of(st, n, tgt):
+        ent = kr_map.get(battle.pos_key(st, n, tgt)) or kr_map.get(battle.jp_key(st))
+        o = ent.get("ours") if ent else None
+        return battle.expand_names(o, monsters) if o else None
+
+    for n, (_s, b, _e) in enumerate(battle.blocks(rom)):
+        rs = battle.refs(b)
+        for tgt, e in rs.items():
+            st = e["stream"]
+            if not (st.tokens and st.tokens[-1].code == 0x06 and st.end in rs):
+                continue
+            nx = rs[st.end]
+            if nx["lea"] or nx["words"]:
+                continue  # 다음 스트림이 자기 참조를 가지면 이웃일 뿐 — 이음이 아니다
+            jp = st.text().replace("<06|끝>", "%d") + nx["stream"].text()
+            a, c = ours_of(st, n, tgt), ours_of(nx["stream"], n, st.end)
+            ours = (a.replace("<06>", "{n}") + c) if a and c else None
+            yield f"battlej:{n:03d}:{tgt:04x}", _t(jp), _t(ours), DIALOG
+
+
+def _sysmsg_joined_pairs(rom: bytes):
+    """시스템 메시지 값 이음 줄 — 위와 같다(끝 코드 06 머리 + 바로 이어지는 꼬리)."""
+    import json
+
+    strs = sysmsg.streams(rom)
+    p = common.GAME_DIR / "textmap" / "sysmsg.json"
+    kr_map = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    for addr, e in strs.items():
+        st = e["stream"]
+        if not (st.tokens and st.tokens[-1].code == 0x06 and st.end in strs):
+            continue
+        jp = sysmsg.render(st).replace("<06>", "%d") + sysmsg.render(strs[st.end]["stream"])
+        a = kr_map.get(f"{addr:06x}", {}).get("ours")
+        c = kr_map.get(f"{st.end:06x}", {}).get("ours")
+        ours = (a.replace("<06>", "{n}") + c) if a and c else None
+        yield f"sysmsgj:{addr:06x}", _t(jp), _t(ours), DIALOG
+
+
 def _monsters_pairs():
     d = battle.monsters(common.rom())
     for jp, v in d.items():
@@ -164,8 +257,11 @@ def _dest_pairs():
 def pairs():
     rom = common.rom()
     yield from _script_pairs(rom)
+    yield from _script_joined_pairs(rom)
     yield from _battle_pairs(rom)
+    yield from _battle_joined_pairs(rom)
     yield from _sysmsg_pairs(rom)
+    yield from _sysmsg_joined_pairs(rom)
     yield from _captions_pairs(rom)
     yield from _monsters_pairs()
     yield from _names_pairs()

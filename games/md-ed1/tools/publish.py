@@ -2,6 +2,7 @@
 
     python3 tools/publish.py          # 게시(기존 세이브가 다르면 .bak 로 남긴다)
     python3 tools/publish.py --dry    # 무엇을 어디로 옮길지만 보인다
+    python3 tools/publish.py --debug  # 디버그 빌드(꼬리표 debug)를 debug/ 칸에 — 제품 칸·세이브 정본은 안 건드린다
 
 왜 필요한가 — mednafen 은 `<롬 이름>.<롬 md5>.sav` 를 읽는다. 빌드를 다시 구우면 md5 가 바뀌어 **맥에서
 `emu.sh md-ed1` 로 띄울 때 엔딩 전 세이브가 없어진다**(마스터 지적 2026-09-27). 그래서 게시 = 롬 + 그 md5
@@ -53,6 +54,21 @@ def _put(src: Path, dst: Path, dry: bool) -> None:
         shutil.copyfile(src, dst)
 
 
+DEBUG_ROM = common.GAME_DIR / "work" / "build" / "debug" / "ed1-kr-DEBUG.bin"
+DEBUG_NAME = "Dragon Slayer - Eiyuu Densetsu (DEBUG)"
+
+
+def main_debug(dry: bool) -> None:
+    """디버그 롬은 **이름이 달라** SRAM 도 따로다 — 마스터 세이브는 `.srm` 을 같은 이름으로 복사해 넣는다."""
+    if not DEBUG_ROM.exists():
+        raise SystemExit(f"디버그 빌드가 없다: {DEBUG_ROM} — ED_DEBUG=1 ED_BUILD_TAG=debug 로 굽는다")
+    md5 = hashlib.md5(DEBUG_ROM.read_bytes()).hexdigest()
+    print(f"디버그 롬 md5 {md5}")
+    _put(DEBUG_ROM, PUB / "debug" / f"{DEBUG_NAME}.md", dry)
+    _put(SLOTS, PUB / "debug" / f"{DEBUG_NAME}.srm", dry)
+    _put(SLOTS, PUB / "saves" / f"ed1-kr-DEBUG.{md5}.sav", dry)
+
+
 def main(dry: bool) -> None:
     if not ROM.exists():
         raise SystemExit(f"빌드가 없다: {ROM}")
@@ -73,4 +89,7 @@ def main(dry: bool) -> None:
 
 
 if __name__ == "__main__":
-    main("--dry" in sys.argv)
+    if "--debug" in sys.argv:
+        main_debug("--dry" in sys.argv)
+    else:
+        main("--dry" in sys.argv)
