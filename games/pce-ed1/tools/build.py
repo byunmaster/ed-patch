@@ -490,6 +490,15 @@ def code_patches() -> list[tuple[str, int, int, bytes, bytes]]:
                     b"\x20" + narration_gates.AUTO_ORG.to_bytes(2, "little"),
                 )
             )
+        # 8-3. 자막 모드 화자 이름 글자 대기(흔들림 — `hook.namewait_routine`) — 엔진 글자 찍기 `LDA $8A · CMP #$06`(4B)을 `JSR 훅 · NOP` 으로
+        p.append(
+            (
+                f"name-char wait LDA $8A/CMP #6 @{hook.NAMEWAIT_SITE:04X}",
+                *_main(0x6C, hook.NAMEWAIT_SITE - 0x6000),
+                b"\xa5\x8a\xc9\x06",
+                b"\x20" + hook.NAMEWAIT_ADDR.to_bytes(2, "little") + b"\xea",
+            )
+        )
         # 8-2. 자막 모드 자동 넘김의 넘김 효과음 끄기 — `JSR $67EC` 셋을 후킹 페이로드 안 거름 루틴으로(같은 3B)
         for at in narration_gates.QUIET_SITES:
             p.append(

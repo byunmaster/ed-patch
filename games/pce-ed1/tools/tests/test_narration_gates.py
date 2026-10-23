@@ -587,7 +587,7 @@ class PatchBlock(unittest.TestCase):
 
     def test_text_is_instant_and_speed_restored(self):
         c, mem, _ = self.timed(b"\x82\xa0\x00")
-        self.assertEqual(c.speed_during, 3)  # 메시지를 띄우는 동안 즉시 찍기
+        self.assertEqual(c.speed_during, N.SUB_SPEED)  # 메시지를 띄우는 동안 글자당 1프레임
         self.assertEqual(mem[N.SPEED], 2)  # 끝나면 설정대로
 
     def test_table_overrides_page_ends(self):
@@ -647,7 +647,7 @@ class PatchBlock(unittest.TestCase):
         c.a, at = N.BASE & 0xFF, N.BASE
         c.call(N.SCHED, 0x0100, N.BASE >> 8, 0)  # X = 표 주소 상위(A = 하위는 위에서)
         self.assertEqual(mem[N.AUTO_FLAG], 1)
-        self.assertEqual(mem[N.SPEED], 3)
+        self.assertEqual(mem[N.SPEED], N.SUB_SPEED)
         self.assertEqual(
             mem[N.AUTO_TL] | mem[N.AUTO_TH] << 8, 630 + 60
         )  # 시작(카운터 630) + 60프레임
@@ -749,6 +749,26 @@ class PatchBlock(unittest.TestCase):
             self.assertEqual(
                 mem[0x3559 + 2], 0x83 | bit6, flag
             )  # 자막 모드면 비트6 고정(숨김), 아니면 원래 결과
+            self.assertEqual((c.x, c.y), (2, 0x23))
+
+    def test_namewait_only_in_subtitle_mode_for_name_color(self):
+        # 색 6(화자 이름)이면 자막 모드에서만 Z=0(= 글자 대기를 건다), 아니면 원래 `CMP #$06` 결과 그대로 · X·Y 불변
+        nw = hook_mod.namewait_routine()
+        self.assertEqual(len(nw), 10)
+        self.assertLessEqual(hook_mod.QUIET_ADDR + len(hook_mod.quiet_routine()), hook_mod.NAMEWAIT_ADDR)
+        self.assertLessEqual(hook_mod.NAMEWAIT_ADDR + len(nw), hook_mod.FRAMECNT)
+        self.assertEqual(
+            hook_mod.hook_routine()[hook_mod.NAMEWAIT_ADDR - hook_mod.HOOK_ADDR :][: len(nw)], nw
+        )
+        for flag, color, want_z in ((0, 6, 1), (1, 6, 0), (0, 3, 0), (1, 3, 0), (0, 7, 0)):
+            mem = self.mem_with()
+            mem[hook_mod.NAMEWAIT_ADDR : hook_mod.NAMEWAIT_ADDR + len(nw)] = nw
+            mem[N.AUTO_FLAG] = flag
+            mem[0x8A] = mem[0x208A] = color  # 제로 페이지(모의 CPU 는 $00xx · 실기는 $20xx)
+            c = CPU(mem, 0, 0, 0)
+            c.pc, c.x, c.y = hook_mod.NAMEWAIT_ADDR, 2, 0x23
+            c.run()
+            self.assertEqual(c.z, want_z, (flag, color))
             self.assertEqual((c.x, c.y), (2, 0x23))
 
     def test_resident_fits_padding(self):

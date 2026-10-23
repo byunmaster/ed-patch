@@ -31,6 +31,7 @@ OPEN_DELAY = {
     (2, 0): 0.0
 }  # (씬, 게이트) → 창이 열리는 지연(초) — 장면 2 는 표의 0 이 음성 재생 시작이라 0(재생이 시작되면 창이 열린다, 10-13)
 REVIEW_VOICE = common.REVIEW_DIR / "voice"
+CARD_VOICE_REL, CARD_VOICE_SECTORS = 8887, 56  # 구형 시스템 카드 안내 화면 음성 — 옛 wav(`syscard-voice.wav`)의 첫 표본으로 디스크에서 찾았다(10-22)
 
 
 def main_tree() -> Path:
@@ -140,7 +141,9 @@ def stt_for(rel: int) -> list[dict]:
     p = REVIEW_VOICE / f"r{rel}.json"
     if not p.exists():
         return []
-    return json.loads(p.read_text("utf-8")).get("stt", [])
+    seg = json.loads(p.read_text("utf-8")).get("stt", [])
+    # 받아쓰기 출력(`voice_words.py` 25초 조각)이 글자 중간에서 잘려 U+FFFD 가 남은 구간이 있다(r1762 · r7412, 10-22) — 편집기에는 「…」 로 낸다
+    return [{**x, "jp": x["jp"].replace("\ufffd", "…")} for x in seg]
 
 
 def build() -> tuple[list[dict], list[dict]]:
@@ -321,7 +324,7 @@ def greet_rows(rows: list[dict], clips: list[dict]) -> None:
 
 
 def syscard_rows(rows: list[dict], clips: list[dict]) -> None:
-    """구형 시스템 카드 안내 화면(`syscard_screen`) 음성 자막 — 음성 시작 기준 시각. 화자는 아직 정해지지 않았다(디나·세리오스 — 마스터 판정 대기)."""
+    """구형 시스템 카드 안내 화면(`syscard_screen`) 음성 자막 — 음성 시작 기준 시각. 화자·시각은 마스터가 편집기에서 지정했다(10-21) — `S.SUB_SPEAKERS`."""
     import syscard_screen as S
 
     rows_ = []
@@ -338,7 +341,7 @@ def syscard_rows(rows: list[dict], clips: list[dict]) -> None:
                 "jp": "",
                 "kr": text,
                 "stt": "",
-                "speaker_name": "",
+                "speaker_name": S.SUB_SPEAKERS[i],
                 "t_start": start,
                 "t_end": end,
                 "video": "syscard.mp4",
@@ -500,13 +503,10 @@ def main() -> int:
         if c.get("skipped"):
             continue
         p = out / c["wav"]
-        if not p.exists() and c.get("rel") is None:  # 카드 화면 음성 — 따로 뽑아 둔 wav
-            src = REVIEW_VOICE / "syscard.wav"
-            if src.exists():
-                p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_bytes(src.read_bytes())
+        if not p.exists() and c.get("rel") is None:  # 카드 화면 음성 — 디스크 rel 8887 × 56섹터(안내 프로그램 `AD_CPLAY` 의 음성)
+            voice.write_wav_clean(p, voice.clip_clean(CARD_VOICE_REL, CARD_VOICE_SECTORS))
         elif not p.exists():
-            voice.write_wav(p, voice.clip(c["rel"], c["sectors"]))
+            voice.write_wav_clean(p, voice.clip_clean(c["rel"], c["sectors"]))  # 직류·포화 정리판(`voice.decode_clean`)
         n += 1
     done = [c for c in clips if not c.get("skipped")]
     print(

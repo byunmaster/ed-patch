@@ -319,12 +319,29 @@ def blink_routine() -> bytes:
 # 🔴 나레이션 자막 모드 자동 넘김 때 넘김 효과음(`JSR $67EC` → 효과음 0x14)을 끈다(마스터 10-17). 호출 셋(`$6BFF`·`$6C3C`·`$6D3F`)을 이 거름 루틴으로 돌린다:
 #   자막 모드(`BLINK_FLAG`)면 소리 없이 돌아가고 아니면 원래 `$67EC`. 자리 = 깜빡임 루틴 뒤 빈 자리(`$2461~$2473`, 19B 중 9B).
 #   ⚠ 엔진 뱅크 0x6C 의 0 런(`$6973`)은 빈 자리가 아니다 — `STA $6973,X` 로 쓰이는 인덱스 표다(devlog 10-16). 처음 거기 얹었다가 옮겼다.
-QUIET_ADDR = BLINK_ADDR + 0x12
+QUIET_ADDR = BLINK_ADDR + 0x11  # 깜빡임 루틴(17B) 바로 뒤
 QUIET_ORIG = 0x67EC
 
 
 def quiet_routine() -> bytes:
     return bytes([0xAD, *BLINK_FLAG.to_bytes(2, "little"), 0xD0, 0x03, 0x4C, *QUIET_ORIG.to_bytes(2, "little"), 0x60])  # LDA mode · BNE +3 · JMP $67EC · RTS
+
+
+# 🔴 나레이션 자막 모드에서 **화자 이름 글자에도 글자 사이 대기를 건다**(마스터 10-23 「화자 바뀔 때만 흔들린다」 → 흔들림 원인 확정).
+#   엔진 글자 찍기(뱅크 0x6C `$66DC`: `LDA $8A · CMP #$06 · BEQ $6712`)는 글자색이 6(노랑 = 화자 이름)이면 대기를 건너뛴다 — 그래서 이름 2~4번째 글자와 이름 뒤 본문 첫 글자가
+#   한 틱에 몰린다(글리프 한 자가 프레임의 약 0.3 → 4자 ≈ 1.2프레임). 컷신이 흐르는 자막 모드에선 그 틱이 BG 스크롤 갱신을 한 프레임 밀어 화면 배경이 튄다.
+#   그 4바이트를 `JSR 이 루틴 · NOP` 으로 돌린다: 색이 6 이어도 자막 모드(`BLINK_FLAG`)면 Z=0(= 대기를 건다), 아니면 원래 비교 결과 그대로(OFF·일반·전투 = 원판 동작).
+#   A 는 이 뒤 곧바로 덮이니 상관없고 X·Y 는 건드리지 않는다. 자리 = 거름 루틴 뒤 빈 자리(`$246A~$2473`, 10B 에 꼭 맞는다).
+NAMEWAIT_SITE = 0x66DC  # 뱅크 0x6C
+NAMEWAIT_ADDR = QUIET_ADDR + 9  # 거름 루틴(9B) 바로 뒤
+
+
+def namewait_routine() -> bytes:
+    return bytes(
+        [0xA5, 0x8A, 0xC9, 0x06, 0xD0, 0x03]  # LDA $8A · CMP #6 · BNE out(다르면 Z=0 그대로)
+        + [0xAD, *BLINK_FLAG.to_bytes(2, "little")]  # LDA mode — 색 6 이면 자막 모드일 때 Z=0, 아니면 Z=1
+        + [0x60]  # out: RTS
+    )
 
 
 def _tick_layout() -> tuple[tuple[int, int], int]:
@@ -352,6 +369,10 @@ def hook_routine() -> bytes:
     assert BLINK_ADDR + len(bl) <= QUIET_ADDR and QUIET_ADDR + len(qr) <= FRAMECNT, (len(bl), len(qr))
     at = QUIET_ADDR - HOOK_ADDR - len(b)
     pad[at : at + len(qr)] = qr
+    nw = namewait_routine()
+    assert QUIET_ADDR + len(qr) <= NAMEWAIT_ADDR and NAMEWAIT_ADDR + len(nw) <= FRAMECNT, (len(qr), len(nw))
+    at = NAMEWAIT_ADDR - HOOK_ADDR - len(b)
+    pad[at : at + len(nw)] = nw
     return b + bytes(pad)
 
 

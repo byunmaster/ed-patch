@@ -37,19 +37,45 @@ class SyscardScreen(unittest.TestCase):
         self.assertEqual(S.SUB_TILE, S.FIX_TILE + 64)
         self.assertEqual(len(S.BAT_ROWS) * 32, 128)
 
-    def test_tiles_follow_the_original_format_with_black_outline(self):
-        tiles = S.band_tiles(S.SUBS[0][0])
-        self.assertEqual(len(tiles), 64)
-        for tb in tiles:
-            self.assertEqual(len(tb), 32)
-            self.assertEqual(tb[1:16:2], tb[16:32:2])  # 평면 1 = 평면 2 = 평면 3 = 글자
-            self.assertEqual(tb[16:32:2], tb[17:32:2])
-            for k in range(8):  # 글자 픽셀은 외곽선 픽셀이 아니다(평면 0 = 1)
-                self.assertEqual(tb[2 * k + 1] & ~tb[2 * k], 0)
+    def test_tiles_follow_the_speaker_colored_outline_format(self):
+        # 외곽선 = 팔레트 1 의 색 2(노랑 — 평면 1 만) · 3(파랑 — 평면 0·1) · 까만 테두리 = 색 0(평면 0·1 모두 0). 글자 = 색 15(평면 0~3 전부).
+        for mode in (S.MODE_YELLOW, S.MODE_BLUE, S.MODE_BLACK):
+            tiles = S.band_tiles(S.SUBS[0][0], mode=mode)
+            self.assertEqual(len(tiles), 64)
+            for tb in tiles:
+                self.assertEqual(len(tb), 32)
+                self.assertEqual(tb[16:32:2], tb[17:32:2])  # 평면 2 = 평면 3
+                for k in range(8):
+                    p0, p1, g = tb[2 * k], tb[2 * k + 1], tb[16 + 2 * k]
+                    self.assertEqual(p1 & g, g)  # 글자 픽셀은 평면 1 도 선다
+                    self.assertEqual(p0 & g, g)  # 글자 = 색 15
+                    outline = p1 & ~g  # 글자가 아닌데 평면 1 이 선 곳 = 색 있는 외곽선
+                    if mode == S.MODE_BLUE:
+                        self.assertEqual(p0, 0xFF)  # 색 3
+                    elif mode == S.MODE_YELLOW:
+                        self.assertEqual(p0 & outline, 0)  # 색 2 — 평면 0 = 0
+                    else:
+                        self.assertEqual(outline, 0)  # 까만 테두리 — 색 있는 픽셀 없음
+        black = S.band_tiles(S.SUBS[0][0], mode=S.MODE_BLACK)
+        self.assertTrue(any(~(tb[2 * k] | tb[2 * k + 1]) & 0xFF for tb in black for k in range(8)))  # 색 0(평면 0·1 모두 0) 픽셀 = 까만 외곽선
         fixed = S.band_tiles(None, fixed=True)
         for tb in fixed:  # 고정 문구는 외곽선 없음 — 평면 0 전부 1(원판 글씨 타일 규약)
             self.assertTrue(all(tb[i] == 0xFF for i in range(0, 16, 2)))
-        self.assertTrue(any(tb[2 * k + 1] for tb in tiles for k in range(8)))
+        self.assertTrue(any(tb[2 * k + 1] for tb in S.band_tiles(S.SUBS[0][0]) for k in range(8)))
+
+    def test_speaker_modes_and_routine_live_in_the_data_header(self):
+        data = S.build_data()
+        self.assertEqual(len(S.SUB_SPEAKERS), len(S.SUBS))
+        self.assertEqual(data[S.MODE_OFF], S.MODE_YELLOW)  # 빈 띠
+        for n, spk in enumerate(S.SUB_SPEAKERS, 1):
+            self.assertEqual(data[S.MODE_OFF + n], S.SPEAKER_MODE[spk])
+        rt = S.build_routine()
+        self.assertEqual(data[S.ROUT_OFF : S.ROUT_OFF + len(rt)], rt)
+        self.assertLessEqual(S.ROUT_OFF + len(rt), S.HDR_BYTES)
+        self.assertEqual(S.DRAWROWS_ADDR, S._DRAWROWS_ADDR)  # 훅 본체의 JMP 가 가리키는 자리 = 타일 펴기 루틴 머리(팔레트 초기화 뒤)
+        code, _e = S.build_code()
+        self.assertIn(b"\x4c" + S.DRAWROWS_ADDR.to_bytes(2, "little"), code)
+        self.assertGreater(S.MODE_OFF, 17)  # 시각표(3B × 5 + 끝 2B)와 안 겹친다
 
     def test_ink_rows_follow_the_m12_layout(self):
         import numpy as np

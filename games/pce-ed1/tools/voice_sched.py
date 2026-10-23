@@ -88,6 +88,11 @@ def voice_of(blk: bytes, gate: int) -> tuple[int, int]:
     gates = [m.start() for m in re.finditer(re.escape(G.GATE), blk)]
     o = gates[gate]
     v = G.VOICE_AT.search(blk, o + 5, o + 5 + blk[o + 4])
+    if not v:  # `voice_from` 로 앞 게이트가 틀 때 — 호출은 다른 게이트의 ON 경로에 있다
+        for g2 in gates:
+            v = G.VOICE_AT.search(blk, g2 + 5, g2 + 5 + blk[g2 + 4])
+            if v:
+                break
     if not v:
         raise SchedError(f"게이트 {gate}: ON 경로에 음성 호출이 없다")
     return voice.VOICE_BASE + (blk[v.start() + 3] | blk[v.start() + 4] << 8), blk[v.start() + 5] | blk[v.start() + 6] << 8
@@ -133,13 +138,25 @@ def patch_block(sid: int, orig: bytes, blk: bytes) -> tuple[bytes, int]:
         if kind == "off":
             out[o : o + 3] = b"\xa9\x00\xea"  # LDA #0 · NOP — Z 가 서서 BEQ 가 OFF 경로로 간다
             continue
-        tgt = o + 5 + out[o + 4]
-        v = G.VOICE_AT.search(bytes(out), o + 5, tgt)
+        # `voice_from` — 음성 호출이 **다른 게이트**의 ON 경로에 있을 때(씬 18: 음성 첫 문장은 앞 창의 대사라 앞 게이트에서 틀어야 한다) 그 게이트에서 호출 바이트를 가져온다.
+        # 가져온 게이트는 `force_off` 에 들어 있어야 한다(ON 경로를 안 타서 음성이 두 번 나가지 않는다).
+        src = gates[spec["voice_from"]] if "voice_from" in spec else o
+        if "voice_from" in spec and spec["voice_from"] not in spec.get("force_off", []):
+            raise SchedError(f"scn{sid:03d}: voice_from {spec['voice_from']} 가 force_off 에 없다 — 음성이 두 번 난다")
+        tgt = src + 5 + out[src + 4]
+        v = G.VOICE_AT.search(bytes(out), src + 5, tgt)
         if not v:
             raise SchedError(f"scn{sid:03d} 게이트 {gi}: ON 경로에 음성 호출이 없다")
         voice_call = bytes(out[v.start() : v.start() + 7])  # JSR $5815 + 인라인 4B
         # ON 경로가 음성 앞에서 하던 일(플래그 세우기 등)을 같이 옮긴다 — `copy_prefix`. 위치 독립이고 호출·점프가 없는 바이트만(예: `LDA · ORA · STA`)
-        prefix = bytes(out[o + 5 : v.start()]) if spec.get("copy_prefix") else b""
+        if spec.get("copy_prefix"):
+            if "voice_from" in spec:  # 음성 게이트의 ON 경로 전체(메시지 없이 플래그만 세우고 끝나는 꼴)를 옮긴다 — 끝의 `BRA`(2B)는 뺀다
+                end = o + 5 + out[o + 4]
+                prefix = bytes(out[o + 5 : end - 2]) if out[end - 2] == 0x80 else bytes(out[o + 5 : end])
+            else:
+                prefix = bytes(out[o + 5 : v.start()])
+        else:
+            prefix = b""
         if len(prefix) > 24:
             raise SchedError(f"scn{sid:03d} 게이트 {gi}: ON 앞부분이 {len(prefix)}B — 손으로 보고 정한다(copy_prefix 상한 24B)")
         tab = table(spec)

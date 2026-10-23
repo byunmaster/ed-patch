@@ -28,13 +28,20 @@ ALIGN = "center"  # "center" | "left"(원판은 왼쪽 x=2 부터 폭 가득)
 # 🔴 음성 자막(마스터 10-16 「카드화면 음성 자막」) — 같은 띠에 음성 시작(`$180C` 비트3)부터 (문안, 시작 초). 문안·시각은 값 하나씩이다.
 #   받아쓰기·파형 근거는 docs/devlog.md 10-16 — 문안은 관리자·마스터 확정 전 초안.
 SUBS = [
-    ("시스템 카드의 버전이 다릅니다.", 0.4),
-    ("게임을 시작하려면", 3.3),
+    ("시스템 카드의 버전이 다릅니다.", 1.5),
+    ("게임을 시작하려면", 4.5),
     ("3.00 이상의 시스템 카드를 사용해 주세요.", 5.7),
-    ("자세한 내용은 설명서를 봐 줘.", 8.5),
+    ("자세한 내용은 설명서를 봐 줘.", 9.0),
 ]
+# 🔴 화자별 외곽선 색(마스터 10-21 편집기 「화자 지정」 — 세리오스 노랑 · 디나 파랑 · 둘이 함께 말하면 색 없이 까만 테두리, 마스터 10-22). 자막과 같은 차례.
+SUB_SPEAKERS = ("세리오스&디나", "세리오스", "세리오스", "디나")
+MODE_YELLOW, MODE_BLUE, MODE_BLACK = 0, 1, 2
+SPEAKER_MODE = {"세리오스": MODE_YELLOW, "디나": MODE_BLUE, "세리오스&디나": MODE_BLACK}
+# VCE 색(GGGRRRBBB 9비트) — 외곽선은 팔레트 1 의 색 2(노랑)·3(파랑). 글씨 띠 타일만 팔레트 1 을 쓴다고 보고 덮는다(화면 실측으로 확인).
+OUT_YELLOW, OUT_BLUE = 0x1B9, 0x117
+OUT_IDX = 0x12  # 팔레트 1(16~31) 의 색 2
 SUB_SPACE = 6  # 자막 공백 전진 px(기본 8) — 3번이 한 줄(256px)에 들어가게(마스터 10-17 「원문 말씨」)
-VOICE_END_S = 12.6  # 마지막 문장 끝(파형 에너지가 바닥으로 떨어지는 때)
+VOICE_END_S = 12.0  # 마지막 문장 끝(파형 에너지가 바닥으로 떨어지는 때)
 TAIL_S = 0.5  # 말 끝 +0.5초(번역 규칙 2-15) 뒤 고정 문구로 복귀
 FPS = 60
 HDR_BYTES = 0x100  # 시각표 칸
@@ -56,6 +63,9 @@ CODE_MAX = 0x223F + 577 - CODE_OFF
 DATA_OFF = 0xA800  # rel 25 시작 = 뱅크 0x85 +0x800
 DATA_BANK, DATA_ADDR = 0x85, 0xA800
 DATA_MAX = (27 - 25 + 1) * common.USER
+MODE_OFF = 0x20  # 헤더 +0x20 + n(0~4): 띠 n 의 화자 모드(0 노랑 · 1 파랑 · 2 까만 테두리)
+ROUT_OFF = 0x30  # 헤더 +0x30~ — 타일 펴기 루틴(`build_routine`). 자료 뱅크(MPR5)가 걸려 있을 때만 부른다
+ROUTINE_ADDR = DATA_ADDR + ROUT_OFF
 FLAG_ADDR = 0x3090  # 원판 0 인 작업 RAM
 BAT_ROWS = (24, 25, 26, 27)  # 우리가 쓰는 타일 행. 🔴 행 23(y 183~190, 열 21~27)은 달걀 그림 아랫부분(타일 `$211~$217`) — BAT 도 타일 데이터도 안 건드린다(마스터 10-17 「훼손하지 말자」)
 BAT_STRIDE = 64  # BAT 한 행 = 64 워드
@@ -84,13 +94,14 @@ def render_mask(text: str):
     return band, x0
 
 
-def tile_bytes(rows8, outline8=None) -> bytes:
-    """8행 글자 비트(행마다 정수 0~255, 왼쪽 = MSB) → 32B. 평면 0 = 외곽선이 아닌 곳 1(배경 색 1 · 글자 15), 평면 1~3 = 글자.
-    외곽선 픽셀은 색 번호 0(투명 → 뒤 배경색 = 검정). 외곽선이 없으면(None) 평면 0 전부 1 — 원판 글씨 타일 규약(덤프 실측)과 같다."""
+def tile_bytes(rows8, outline8=None, blue=False, black=False) -> bytes:
+    """8행 글자 비트(행마다 정수 0~255, 왼쪽 = MSB) → 32B. 평면 0 = 외곽선이 아닌 곳 1(배경 색 1 · 글자 15), 평면 1 = 글자 | 외곽선, 평면 2·3 = 글자.
+    외곽선 픽셀은 색 2(노랑 — 평면 1 만) 또는 `blue` 면 색 3(평면 0·1), `black` 이면 색 0(투명 → 뒤 검정 — 평면 1 에도 외곽선을 안 넣는다)
+    — 훅의 `build_routine` 이 펴는 그대로(팔레트는 `OUT_YELLOW`·`OUT_BLUE`). 외곽선이 없으면(None) 평면 0 전부 1 — 원판 글씨 타일 규약(덤프 실측)과 같다."""
     out = bytearray()
     for k, b in enumerate(rows8):
         e = outline8[k] if outline8 else 0
-        out += bytes((0xFF & ~e, b))  # 평면 0·1
+        out += bytes((0xFF if blue else 0xFF & ~e, b if black else b | e))  # 평면 0·1
     for b in rows8:
         out += bytes((b, b))  # 평면 2·3
     return bytes(out)
@@ -177,7 +188,12 @@ def sub_bytes(text: str | None) -> bytes:
     return w + e
 
 
-def band_tiles(text: str | None, fixed: bool = False) -> list[bytes]:
+def _is_blue(mode: int, col: int) -> bool:
+    """이 타일 열의 외곽선이 파랑인가 — 훅(`build_routine`)과 같은 규칙: 모드 1 = 파랑 · 그 밖 노랑(모드 2 = 까만 테두리는 색 자체가 없다)."""
+    return mode == MODE_BLUE
+
+
+def band_tiles(text: str | None, fixed: bool = False, mode: int = MODE_YELLOW) -> list[bytes]:
     """마스크를 훅이 펴는 그대로 → 32B 타일(고정 문구 64장 · 자막 64장). 테스트·미리보기용 — 훅 동작의 기준."""
     if fixed:
         raw = fixed_bytes()
@@ -185,7 +201,7 @@ def band_tiles(text: str | None, fixed: bool = False) -> list[bytes]:
     raw = sub_bytes(text)
     w, e = raw[:ROW_BYTES * 2], raw[ROW_BYTES * 2 :]
     return [
-        tile_bytes([w[(r * 8 + k) * 32 + c] for k in range(8)], [e[(r * 8 + k) * 32 + c] for k in range(8)])
+        tile_bytes([w[(r * 8 + k) * 32 + c] for k in range(8)], [e[(r * 8 + k) * 32 + c] for k in range(8)], blue=_is_blue(mode, c), black=mode == MODE_BLACK)
         for r in range(2)
         for c in range(32)
     ]
@@ -207,7 +223,12 @@ def build_data() -> bytes:
         hdr += bytes((fr & 0xFF, fr >> 8, n))
     hdr += b"\x00\xff"
     assert len(hdr) <= HDR_BYTES, len(hdr)
+    assert len(hdr) <= MODE_OFF, len(hdr)
     out = bytearray(hdr) + bytes(HDR_BYTES - len(hdr))
+    for n in range(1 + len(SUBS)):  # 띠 n 의 화자 모드(0 = 빈 띠 — 아무 값)
+        out[MODE_OFF + n] = SPEAKER_MODE[SUB_SPEAKERS[n - 1]] if n else MODE_YELLOW
+    rt = build_routine()
+    out[ROUT_OFF : ROUT_OFF + len(rt)] = rt
     out += fixed_bytes()
     for text in [None] + [t for t, _s in SUBS]:
         out += sub_bytes(text)
@@ -247,6 +268,7 @@ S_STATE, S_CNT, S_T0, S_VF, S_IDX, S_DRAWN, S_DL, S_ROWS, S_TCALL, S_LAST8, S_VL
     FLAG_ADDR + 14,  # 타일을 쓸 VRAM 워드 주소(하위·상위) — `drawrows` 인자
     FLAG_ADDR + 15,
 )
+S_MODE, S_BLUE, S_E = FLAG_ADDR + 11, FLAG_ADDR + 16, FLAG_ADDR + 17  # 화자 모드 · 이 열이 파랑인가 · 외곽선 바이트 임시
 START_OFFS = 39  # 래퍼가 소리 시작을 못 봤을 때의 대비값 — 호출 → 소리가 나기까지 프레임(v2.1 에뮬 실측 RdAddr)
 RISE_LAT = 14  # `$180C` 비트3 이 오른 뒤 소리가 실제로 나기까지(v2.1 에뮬 실측: 비트3 상승 ≈ 호출+25, 소리 ≈ 호출+39). 
 PLAYING_LAT = 7  # 래퍼가 돌아왔을 때 비트3 이 이미 서 있으면 소리 시작 ≈ 지금 + 이 값. 실측(에뮬): v1.0 은 BIOS 가 재생 시작까지 기다렸다 돌아와 소리 = 지금(0), v2.1 은 비트3 이 서고 14프레임 뒤 소리 — 둘의 가운데로 잡는다(±7프레임 ≈ 0.12초)
@@ -262,6 +284,7 @@ def build_code() -> tuple[bytes, int]:
     매 호출(메인 루프 한 바퀴 ≈ 한 프레임): ① 프레임 카운터++ ② `$180C` 비트3 이 오르면 그때 카운터 = 음성 시작
     ③ 띠를 한 번 그린다(원판 글씨 타일이 보일 때 — 그림이 다 올라온 뒤) ④ 음성 시작 뒤엔 시각표를 보며 띠를 갈아 끼운다. 끝(고정 문구 복귀) 뒤엔 아무것도 안 한다.
     """
+    build_routine()  # 자료 뱅크 쪽 루틴 — `DRAWROWS_ADDR` 를 얻는다
     entry = LOGICAL0 + CODE_OFF
     a = Asm(entry)
     vdc_sel = 0x0000
@@ -290,6 +313,7 @@ def build_code() -> tuple[bytes, int]:
     a.op("BNE", "rel", "go")
     a.op("RTS")  # 끝났다
     a.label("go")
+    a.op("JSR", "abs", "pal")  # 외곽선 색을 매 프레임 다시 쓴다(안내 프로그램이 팔레트를 덮어써도 우리 색이 이긴다)
     a.op("LDA", "zp", FRAME8_ZP)  # 경과(16비트) += ISR 카운터 증가분
     a.op("SEC")
     a.op("SBC", "abs", S_LAST8)
@@ -397,6 +421,17 @@ def build_code() -> tuple[bytes, int]:
     a.op("STA", "abs", vdc_sel)
     a.op("CLI")
     a.op("RTS")
+    # ── 외곽선 색: VCE $0402/$0403 = 색 번호, $0404/$0405 = 색(하위·상위 — 상위를 쓰면 번호가 1 늘어난다) ──
+    a.label("pal")
+    a.op("LDA", "imm", OUT_IDX)
+    a.op("STA", "abs", 0x0402)
+    a.op("STZ", "abs", 0x0403)
+    for col in (OUT_YELLOW, OUT_BLUE):
+        a.op("LDA", "imm", col & 0xFF)
+        a.op("STA", "abs", 0x0404)
+        a.op("LDA", "imm", col >> 8)
+        a.op("STA", "abs", 0x0405)
+    a.op("RTS")
     # ── enter/leave: MPR5 에 자료 뱅크 · $FC~$FF 보존 ──
     a.label("enter")
     a.op("PLX")  # 반환 주소를 잠시 치운다
@@ -424,6 +459,7 @@ def build_code() -> tuple[bytes, int]:
     a.op("RTS")
     # ── 자막 띠 n(A): 글자·외곽선 마스크 포인터를 정하고 `drawrows` 로 ──
     a.label("drawset")
+    a.op("TAX")
     a.op("ASL", "imp")
     a.op("ASL", "imp")  # n × 4 = n × 0x400 의 상위 바이트
     a.op("CLC")
@@ -439,58 +475,10 @@ def build_code() -> tuple[bytes, int]:
     a.op("STA", "abs", S_VLO)
     a.op("LDA", "imm", (SUB_TILE * 16) >> 8)
     a.op("STA", "abs", S_VHI)
-    # ── 타일 행 2줄(64장)을 펴 VRAM 에: 평면 0 = ~외곽선 · 평면 1~3 = 글자. 글자 포인터 `$FC`, 외곽선 포인터 `$FA`, VRAM 워드 주소 S_VLO/S_VHI ──
+    a.op("LDA", "absx", DATA_ADDR + MODE_OFF)  # X = 띠 번호 n(함수 머리에서 TAX) — 화자 모드 칸
+    a.op("STA", "abs", S_MODE)
     a.label("drawrows")
-    a.op("LDA", "imm", 0x00)
-    a.op("STA", "abs", vdc_sel)  # MAWR
-    a.op("LDA", "abs", S_VLO)
-    a.op("STA", "abs", lo)
-    a.op("LDA", "abs", S_VHI)
-    a.op("STA", "abs", hi)
-    a.op("LDA", "imm", 0x02)
-    a.op("STA", "abs", vdc_sel)  # VWR
-    a.op("LDA", "imm", 2)
-    a.op("STA", "abs", S_ROWS)
-    a.label("row")
-    a.op("LDA", "imm", 0)
-    a.op("STA", "zp", 0xFE)
-    a.label("col")
-    a.op("LDX", "zp", 0xFE)
-    a.op("TXA")
-    a.op("TAY")
-    a.op("LDX", "imm", 8)
-    a.label("pa")
-    a.op("LDA", "izpy", 0xFA)
-    a.op("EOR", "imm", 0xFF)
-    a.op("STA", "abs", lo)
-    a.op("LDA", "izpy", 0xFC)
-    a.op("STA", "abs", hi)
-    a.op("TYA")
-    a.op("CLC")
-    a.op("ADC", "imm", 32)
-    a.op("TAY")
-    a.op("DEX")
-    a.op("BNE", "rel", "pa")
-    a.op("LDX", "imm", 8)
-    a.label("pb")
-    a.op("LDA", "izpy", 0xFC)
-    a.op("STA", "abs", lo)
-    a.op("STA", "abs", hi)
-    a.op("TYA")
-    a.op("CLC")
-    a.op("ADC", "imm", 32)
-    a.op("TAY")
-    a.op("DEX")
-    a.op("BNE", "rel", "pb")
-    a.op("INC", "zp", 0xFE)
-    a.op("LDA", "zp", 0xFE)
-    a.op("CMP", "imm", 32)
-    a.op("BNE", "rel", "col")
-    a.op("INC", "zp", 0xFD)
-    a.op("INC", "zp", 0xFB)
-    a.op("DEC", "abs", S_ROWS)
-    a.op("BNE", "rel", "row")
-    a.op("RTS")
+    a.op("JMP", "abs", DRAWROWS_ADDR)  # 타일 행 2줄(64장) 펴기 — 자료 뱅크로 옮겼다(훅 코드 자리가 꽉 차서)
     # ── BAT 행 24~27 → 타일 FIRST_TILE~ 연속(팔레트 1) ──
     a.label("drawbat")
     a.op("LDA", "imm", FIRST_TILE & 0xFF)
@@ -576,6 +564,108 @@ def build_code() -> tuple[bytes, int]:
     global _WRAP_ENTRY
     _WRAP_ENTRY = a.labels["wrapplay"]
     return code, entry
+
+
+DRAWROWS_ADDR = ROUTINE_ADDR  # 루틴 머리 = 타일 펴기
+
+
+def build_routine() -> bytes:
+    """자료 뱅크 헤더 `+ROUT_OFF~` 의 코드 — 타일 행 2줄(64장)을 펴 VRAM 에. (외곽선 색 VCE 쓰기는 훅 본체 `pal` — 매 프레임 다시 쓴다: 안내 프로그램이 팔레트를 덮어써 한 번만 쓰면 원판 색이 이긴다, 10-22 실측)
+   평면 0 = ~외곽선(파랑이면 전부 1) · 평면 1 = 글자|외곽선(까만 테두리면 글자만) · 평면 2·3 = 글자 → 외곽선 픽셀은 색 2(노랑) · 3(파랑) · 0(까만 테두리).
+    글자 포인터 `$FC`, 외곽선 포인터 `$FA`, VRAM 워드 주소 S_VLO/S_VHI, 화자 모드 S_MODE."""
+    a = Asm(ROUTINE_ADDR)
+    vdc_sel = 0x0000
+    lo, hi = 0x0002, 0x0003
+    # ── 타일 펴기 ──
+    a.label("drawrows")
+    a.op("LDA", "imm", 0x00)
+    a.op("STA", "abs", vdc_sel)  # MAWR
+    a.op("LDA", "abs", S_VLO)
+    a.op("STA", "abs", lo)
+    a.op("LDA", "abs", S_VHI)
+    a.op("STA", "abs", hi)
+    a.op("LDA", "imm", 0x02)
+    a.op("STA", "abs", vdc_sel)  # VWR
+    a.op("LDA", "imm", 2)
+    a.op("STA", "abs", S_ROWS)
+    a.label("row")
+    a.op("LDA", "imm", 0)
+    a.op("STA", "zp", 0xFE)
+    a.label("col")
+    # 이 띠의 외곽선: 모드 2 = 까만 테두리(색 0) · 모드 1 = 파랑(색 3) · 그 밖 노랑(색 2)
+    a.op("LDA", "abs", S_MODE)
+    a.op("CMP", "imm", MODE_BLUE)
+    a.op("BEQ", "rel", "isblue")
+    a.op("LDA", "imm", 0)
+    a.op("BRA", "rel", "setcol")
+    a.label("isblue")
+    a.op("LDA", "imm", 1)
+    a.label("setcol")
+    a.op("STA", "abs", S_BLUE)
+    a.op("LDA", "zp", 0xFE)
+    a.op("TAY")
+    a.op("LDX", "imm", 8)
+    a.label("pa")
+    a.op("LDA", "izpy", 0xFA)  # 외곽선 바이트
+    a.op("STA", "abs", S_E)
+    a.op("LDA", "abs", S_MODE)
+    a.op("CMP", "imm", MODE_BLACK)
+    a.op("BEQ", "rel", "blk")
+    a.op("LDA", "abs", S_BLUE)
+    a.op("BEQ", "rel", "yel")
+    a.op("LDA", "imm", 0xFF)  # 파랑: 색 3 = 평면 0·1 모두 1
+    a.op("BRA", "rel", "p0")
+    a.label("yel")
+    a.op("LDA", "abs", S_E)  # 노랑: 색 2 = 평면 1 만 → 평면 0 = ~외곽선
+    a.op("EOR", "imm", 0xFF)
+    a.label("p0")
+    a.op("STA", "abs", lo)
+    a.op("LDA", "izpy", 0xFC)
+    a.op("ORA", "abs", S_E)  # 평면 1 = 글자 | 외곽선
+    a.op("STA", "abs", hi)
+    a.op("BRA", "rel", "pdone")
+    a.label("blk")  # 까만 테두리: 평면 0 = ~외곽선 · 평면 1 = 글자(외곽선 픽셀 = 색 0)
+    a.op("LDA", "abs", S_E)
+    a.op("EOR", "imm", 0xFF)
+    a.op("STA", "abs", lo)
+    a.op("LDA", "izpy", 0xFC)
+    a.op("STA", "abs", hi)
+    a.label("pdone")
+    a.op("TYA")
+    a.op("CLC")
+    a.op("ADC", "imm", 32)
+    a.op("TAY")
+    a.op("DEX")
+    a.op("BNE", "rel", "pa")
+    a.op("LDX", "imm", 8)
+    a.label("pb")
+    a.op("LDA", "izpy", 0xFC)
+    a.op("STA", "abs", lo)
+    a.op("STA", "abs", hi)
+    a.op("TYA")
+    a.op("CLC")
+    a.op("ADC", "imm", 32)
+    a.op("TAY")
+    a.op("DEX")
+    a.op("BNE", "rel", "pb")
+    a.op("INC", "zp", 0xFE)
+    a.op("LDA", "zp", 0xFE)
+    a.op("CMP", "imm", 32)
+    a.op("BNE", "rel", "col")
+    a.op("INC", "zp", 0xFD)
+    a.op("INC", "zp", 0xFB)
+    a.op("DEC", "abs", S_ROWS)
+    a.op("BNE", "rel", "row")
+    a.op("RTS")
+    code = a.bytes()
+    assert a.labels["drawrows"] == DRAWROWS_ADDR, hex(a.labels["drawrows"])  # 훅 본체가 이 주소로 뛴다
+    global _DRAWROWS_ADDR
+    _DRAWROWS_ADDR = a.labels["drawrows"]
+    assert len(code) <= HDR_BYTES - ROUT_OFF, len(code)
+    return code
+
+
+_DRAWROWS_ADDR = 0
 
 
 _WRAP_ENTRY = 0

@@ -27,7 +27,7 @@ _COMMON = subprocess.check_output(
     cwd=os.path.dirname(os.path.abspath(__file__)),
 ).strip()
 HERE = os.path.join(os.path.dirname(os.path.abspath(_COMMON)), ".local", "cache", "libretro")
-SYS = os.path.join(HERE, "system")
+SYS = os.environ.get("PCE_SYSTEM") or os.path.join(HERE, "system")  # 폴더 안 `syscard3.pce` — 구형 시스템 카드(v2.1 등) 시험은 사본을 그 이름으로 둔 폴더를 준다
 SAVE = os.path.join(HERE, "save")
 os.makedirs(OUT, exist_ok=True)
 core = C.CDLL(os.environ.get("CORE", os.path.join(HERE, "mednafen_pce_libretro.so")))
