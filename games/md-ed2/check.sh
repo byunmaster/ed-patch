@@ -48,6 +48,9 @@ ls "$BUILD_TAG_DIR"/*.bin >/dev/null 2>&1 || { echo "❌ 빌드 산출물이 없
 #     재배치 장부(games/md-ed2/relocations.tsv)가 빌드와 다르면(= 장부에 없는 재배치) 같이 실패한다. 갱신: struct_check.py --update-ledger
 "$PY" "$T/struct_check.py" "$BUILD_TAG_DIR"/ed2-kr.bin
 
+# 5f. 이어 붙는 조각의 줄 폭 — 호출 조각·<03>·goto 꼬리로 한 줄에 이어 쓰이는 글이 17.5칸을 넘는 줄(기준선 래칫 · 분모 0 실패, 10-23)
+"$PY" "$T/check_join_width.py" "$BUILD_TAG_DIR"/ed2-kr.bin
+
 # 6. 코드 영역 문안 census — 참조로 잡히는 스트림 178 · 스트림 밖 일본어 808런(캡션·이름 표·메뉴 라벨 등 — 번역 때 분류)
 "$PY" "$T/sysmsg.py"
 

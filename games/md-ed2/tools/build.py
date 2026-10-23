@@ -204,24 +204,62 @@ def normalize(text: str) -> str:
     return text
 
 
-def typeset(text: str, lead: str = "") -> list[list[str]]:
-    """자유 문안 → 페이지(줄 목록). `\\f` 는 강제 페이지.
+BREAKS_ADDED: list[int] = []  # 이어질 조각 앞에 줄바꿈을 넣은 자리
+PREFIX_UNFIT: list[str] = []  # 앞 폭을 반영 못 한 덩이(붙은 어절이 넘침) — 빌드 끝에 건수를 알린다
+
+
+def _fill(w: float) -> str:
+    """앞에 이미 쓰인 폭 w 칸을 **붙은 글자**로 흉내 낸다(조판기가 첫 줄 폭을 알게). 0.5 칸은 올림(안전 쪽) —
+    공백으로 흉내 내면 거기서 끊을 자리가 생긴다."""
+    return "가" * min(-int(-w // 1), int(WIDTH))
+
+
+def typeset(
+    text: str, lead: str = "", prefix_w: float = 0.0, brk: bool = False
+) -> list[list[str]]:
+    """자유 문안 → 페이지(줄 목록). `\f` 는 강제 페이지.
 
     `lead` 는 **첫 줄 앞에 그대로 붙는** 글자다(조판기가 지우면 안 되는 자리). 조사 훅 뒤의
     공백이 그것이다 — `<0e><ec01> 들어 있었습니다.` 에서 앞 공백이 없으면 화면이
     「눈물이들어 있었습니다」가 된다. krwrap 도 typeset 도 앞 공백을 지우므로 따로 받는다
     (2026-09-07 초벌 시험에서 잡았다). ⚠ 폭 검사는 **붙인 뒤**에 한다.
+
+    `prefix_w` 는 **같은 줄에 이미 쓰인 폭**이다(10-23) — 앞 조각(호출한 이름 조각·`<03>` 앞 글·앞 덩이)이
+    첫 줄을 이미 채웠는데 조판기가 그걸 모르면 첫 줄을 한 줄 전체 폭으로 짜 화면에서 넘친다. 같은 폭의 붙은
+    글자를 앞에 달아 감싼 뒤 떼어 낸다(붙여 둔 이유: 실제 화면도 앞 조각과 글이 붙어 있다). 첫 줄이 떼고 나면
+    비면 그 앞에서 줄이 갈린 것이다(첫 줄 = "").
+    `brk` 는 앞 글이 문장 부호로 끝나 **거기서 갈려도 되는** 경우다 — 붙은 글자 사이엔 조판기가 끊을 자리가 없어,
+    앞 글(`…로군.`)과 다음 글이 붙은 채 17.5칸을 넘으면 어디서도 못 갈랐다. 가짜 공백을 끼워 끊을 자리를 주고, 안 갈리면 떼어 낸다.
     """
     text = normalize(text)
     pages = []
+    filler = _fill(prefix_w) if prefix_w > 0 else ""
+    sep = " " if filler and brk and not lead else ""
     for chunk in text.split("\f"):
         chunk = chunk.strip()
         if not chunk:
             continue
+        if filler and not pages:
+            pages += krwrap.wrap_pages(
+                filler + sep + lead + chunk, width=WIDTH, lines_per_page=LINES, strip_after=""
+            )
+            if not pages[0][0].startswith(filler):
+                raise SystemExit(f"앞 폭 흉내가 줄 머리에서 갈렸다: {pages[0][0]!r} / {chunk[:20]!r}")
+            if sep and not pages[0][0].startswith(filler + sep):
+                if pages[0][0].rstrip() != filler:
+                    raise SystemExit(f"앞 폭 흉내가 줄 머리에서 갈렸다: {pages[0][0]!r}")
+                pages[0][0] = filler + sep  # 갈렸다 — 뗀 뒤 첫 줄은 빈 줄
+            continue
         # 앞 공백(lead)이 첫 줄에 붙으므로 **그 쪽 줄 폭을 공백만큼 줄여** 감싼다 — 붙인 뒤 17.5칸을 넘던 일(「<이름> 왕자 뒤를…」)
         w = WIDTH - krwrap.text_width(lead) if lead and not pages else WIDTH
         pages += krwrap.wrap_pages(chunk, width=w, lines_per_page=LINES, strip_after="")
-    if lead and pages and pages[0]:
+    if filler and pages:
+        if any(krwrap.text_width(ln.rstrip()) > WIDTH for ln in pages[0]):
+            # 앞 글과 붙은 어절이 끊을 자리 없이 넘친다(`프래드`+`였지.`) — 정적으로 못 가른다. 옛 조판으로 두고 런타임 어절 줄넘김에 맡긴다
+            PREFIX_UNFIT.append(text[:24])
+            return typeset(text, lead)
+        pages[0][0] = pages[0][0][len(filler) + len(sep) :]
+    elif lead and pages and pages[0]:
         pages[0][0] = lead + pages[0][0]
     for pg in pages:
         if len(pg) > LINES:
@@ -232,8 +270,46 @@ def typeset(text: str, lead: str = "") -> list[list[str]]:
     return pages
 
 
+def _frag_width(ours: str) -> float:
+    """호출 조각 문안 → 같은 줄에 더하는 폭(태그·변수는 0, 줄바꿈이 있으면 마지막 줄만). 이름 칸(`<1e>…<04>`) 글은 대사 줄이 아니다 —
+    `<07>` 로 끝나는 조각(화자 이름 호출)은 줄이 비워진다."""
+    if ours.rstrip().endswith("<07>"):
+        return 0.0
+    ours = re.sub(r"<1e>.*?<04>", "", ours)
+    t = re.sub(r"<[0-9a-f:|]*>", lambda m: "\n" if m.group(0) in ("<01>", "<05>") else "", ours)
+    t = t.split("\f")[-1].split("\n")[-1]
+    return krwrap.text_width(normalize(t))
+
+
+_BRK_AFTER = frozenset(".!?…,)」』 ")
+
+
+def _frag_last(ours: str) -> str:
+    """호출 조각 문안의 마지막 글자(태그 뗀 뒤). 비면 빈 글자 — 끊을 자리를 알 수 없다."""
+    if ours.rstrip().endswith("<07>"):
+        return ""
+    t = re.sub(r"<[0-9a-f:|]*>", "", re.sub(r"<1e>.*?<04>", "", ours).split("\f")[-1].split("\n")[-1])
+    return t[-1:]
+
+
+def _first_line_w(ours: str) -> float:
+    """이어질 조각(goto 꼬리·call)의 **첫 줄** 폭 — 맨 앞 태그를 건너뛰고 첫 태그·줄바꿈 전 글을 조판기에 한 번 태운 첫 줄."""
+    if ours.lstrip().startswith("<1e>"):
+        return 0.0
+    m = re.match(r"(?:<[^>]*>)*([^<\f\n]*)", ours)
+    t = normalize(m.group(1)).strip() if m else ""
+    if not t:
+        return 0.0
+    return krwrap.text_width(krwrap.wrap_pages(t, width=WIDTH, lines_per_page=LINES, strip_after="")[0][0])
+
+
 def build_stream(
-    st: scene.Stream, ours: str, cs: hangul.Charset, *, raw_text: bool = False
+    st: scene.Stream,
+    ours: str,
+    cs: hangul.Charset,
+    *,
+    raw_text: bool = False,
+    frags: dict[int, str] | None = None,
 ) -> list[scene.Token]:
     """정본 한 항목 → 새 토큰 목록. 참조 토큰은 원본 토큰을 그대로(오프셋은 재조립이 다시 잰다).
 
@@ -265,6 +341,26 @@ def build_stream(
         refs = []
     out: list[scene.Token] = list(head_toks)
     pending_text: list[str] = []
+    # 같은 줄에 이미 쓰인 폭(10-23) — 줄바꿈·쪽 넘김·이름 칸 뒤로 0. 호출한 조각(`frags`: 원본 오프셋 → 정본 문안)의 글도 센다.
+    line = {"w": 0.0, "name": False, "last": "", "n": 0}  # n = 쪽 안 줄 번호(0 부터)
+
+    def break_before(tgt: int):
+        """이어질 조각의 첫 줄이 이 줄에 안 들어가면(앞 글이 끊을 자리에서 끝났을 때) 그 앞에서 줄을 가른다(10-23)."""
+        fw = _first_line_w(frags.get(tgt, "")) if frags else 0.0
+        if (
+            fw
+            and out
+            and out[-1].kind == "text"  # 조건 코드(F8 …)와 꼬리 goto 사이는 끼우지 않는다 — 파서가 조건 꼬리를 못 읽는다
+            and not line["name"]
+            and line["w"] > 0
+            and line["w"] + fw > WIDTH
+            and line["last"] in _BRK_AFTER
+            and line["n"] < LINES - 1
+        ):
+            out.append(scene.Token(0, b"\x01", "ctl", 0x01))
+            line["w"], line["last"] = 0.0, ""
+            line["n"] += 1
+            BREAKS_ADDED.append(tgt)
 
     def flush_text(trail: bool = True):
         if not pending_text:
@@ -287,6 +383,8 @@ def build_stream(
         ):  # 변수 사이 공백 하나(`<eb00> <0e>`) — 조판기가 빈 덩이로 지운다(10-19)
             pending_text.clear()
             out.append(scene.Token(0, cs.encode(body.replace("\n", " ")), "text"))
+            if not line["name"]:
+                line["w"] += krwrap.text_width(body.replace("\n", " "))
             return
         # 🔴 덩이 가장자리의 `\n` 은 조판기가 **조용히 버린다**(10-19 qa: 「배를 타시겠습니까?」 뒤 줄바꿈이 사라져 다음 글이 붙었다) —
         # 제어코드·덩이 끝 앞뒤 줄바꿈은 `<01>` 태그로 쓴다. (덩이 가운데 `\n` 은 공백이다.)
@@ -296,19 +394,40 @@ def build_stream(
                 f"덩이 가장자리 `\\n` 은 조판기가 버린다 @{st.start:#x} — `<01>` 태그를 쓴다: {body[:30]!r}"
             )
         lead = " " if body[:1] == " " else ""
-        pages = typeset(body, lead)
+        if line["name"]:  # 이름 칸 글 — 대사 줄이 아니다
+            pages = typeset(body, lead)
+            pending_text.clear()
+            for pi, pg in enumerate(pages):
+                if pi:
+                    out.append(scene.Token(0, b"\x05", "ctl", 0x05))
+                for li, ln in enumerate(pg):
+                    if li:
+                        out.append(scene.Token(0, b"\x01", "ctl", 0x01))
+                    out.append(scene.Token(0, cs.encode(ln), "text"))
+            return
+        pages = typeset(body, lead, line["w"], line["last"] in _BRK_AFTER)
         # 🔴 조판기는 덩이의 앞뒤 공백을 지운다 — 태그(이름 호출 등) **앞** 공백이 사라져 「이런아트라스님」이 됐다
         # (2026-10-12 화면). 뒤 공백은 덩이 뒤에 태그가 이어질 때만 되살린다.
         if trail and body[-1:] == " " and pages:
             pages[-1][-1] += " "
         pending_text.clear()
+        pre = line["w"]
         for pi, pg in enumerate(pages):
             if pi:
                 out.append(scene.Token(0, b"\x05", "ctl", 0x05))
+                pre = 0.0
+                line["n"] = 0
             for li, ln in enumerate(pg):
                 if li:
                     out.append(scene.Token(0, b"\x01", "ctl", 0x01))
-                out.append(scene.Token(0, cs.encode(ln), "text"))
+                    pre = 0.0
+                    line["n"] += 1
+                if ln:
+                    out.append(scene.Token(0, cs.encode(ln), "text"))
+                pre += krwrap.text_width(ln)
+        line["w"] = pre + (0.5 if trail and body[-1:] == " " and pages else 0.0)
+        last_ln = pages[-1][-1] if pages and pages[-1] else ""
+        line["last"] = last_ln[-1:] if last_ln else (line["last"] if pre else "")
 
     for kind, val in textmap.parse_ours(ours):
         if kind == "text":
@@ -319,6 +438,7 @@ def build_stream(
             # 왕자의 말과 퍼거슨의 대답이 한 창에 붙었다). 쪽 넘김은 **여기서** 토큰으로 낸다.
             flush_text()
             out.append(scene.Token(0, b"\x05", "ctl", 0x05))
+            line["w"], line["last"], line["n"] = 0.0, "", 0
         else:
             code, tgt, raw = val
             if tgt is not None:
@@ -327,6 +447,7 @@ def build_stream(
                     # 꼬리를 같이 쓰는 스트림 — 마지막 쪽을 따로 둔 스트림으로 **새로 잇는다**(고정 스트림이 안에 낀 스트림을 못 옮길 때)
                     m = scene.Token(0, b"\x0f\x00\x00", "ctl", 0x0F, scene.GOTO, tgt)
                     flush_text()
+                    break_before(tgt)
                     out.append(m)
                     continue
                 if m is None:
@@ -335,13 +456,24 @@ def build_stream(
                     )
                 refs.remove(m)
                 flush_text()
+                break_before(tgt)
                 out.append(m)
+                if code == 0x10 and frags and not line["name"]:
+                    line["w"] += _frag_width(frags.get(tgt, ""))
+                    line["last"] = _frag_last(frags.get(tgt, ""))
             elif code in scene.END:
                 flush_text()
                 out.append(scene.Token(0, bytes([code]), "end", code))
             else:
                 flush_text()
                 out.append(scene.Token(0, raw, "ctl", code))
+                if code in (0x01, 0x05):
+                    line["w"], line["last"] = 0.0, ""
+                    line["n"] = line["n"] + 1 if code == 0x01 else 0
+                elif code == 0x1E:
+                    line["name"] = True
+                elif code == 0x04:
+                    line["name"], line["w"] = False, 0.0
     flush_text(False)
     if refs:
         raise SystemExit(
@@ -871,6 +1003,7 @@ def main(check_only: bool = False) -> None:
         )
         mod = scene.parse_module(mb)
         rep = {}
+        frags = {int(k_, 16): e_["ours"] for k_, e_ in m["streams"].items() if e_.get("ours")}
         for key, ent in m["streams"].items():
             if not ent.get("ours"):
                 continue
@@ -884,7 +1017,9 @@ def main(check_only: bool = False) -> None:
                 raise SystemExit(f"블록 {blk}-{k}: 스트림 {key} 가 없다")
             if textmap.jp_key(st) != ent["jp"]:
                 raise SystemExit(f"블록 {blk}-{k} 스트림 {key}: 원문 해시가 갈렸다")
-            rep[off] = build_stream(st, ent["ours"], cs, raw_text=bool(ent.get("raw")))
+            rep[off] = build_stream(
+                st, ent["ours"], cs, raw_text=bool(ent.get("raw")), frags=frags
+            )
         if not rep:
             if mb != textmap.module_bytes(orig, blk, k):  # 배너 표만 바뀐 모듈 — 같은 길이
                 replace[(blk, k)] = mb
@@ -918,6 +1053,10 @@ def main(check_only: bool = False) -> None:
         raise SystemExit("\n".join(reasm_errors))
     print(f"  이벤트 표 {n_evt}개(재조립 모듈 안) — 원판과 바이트까지 같다")
     print(f"  머리 워드 쓰기 lea {n_repoint}곳을 바깥 복사본으로 돌렸다")
+    print(f"  이어질 조각 앞 줄바꿈 {len(BREAKS_ADDED)}곳")
+    print(
+        f"  앞 폭 반영 못 한 덩이 {len(PREFIX_UNFIT)}개 — 앞 글과 붙은 어절이 끊을 자리 없이 넘쳐 런타임 어절 줄넘김에 맡긴다"
+    )
     print(
         f"  상점 표 머리 {n_heads}개 — 머리 워드 자리(4E71)·포인터 워드 {n_headwords}개를 새 자리로 고쳐 의도와 같다"
     )

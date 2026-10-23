@@ -51,6 +51,15 @@ class StructCheck(unittest.TestCase):
         self.assertGreaterEqual(c, 1)
         self.assertEqual(len(bad), 1)
 
+    def test_inbound_target_overwritten_by_stub_fails(self):
+        # 글 A 끝으로 들어오는 점프의 목표(종료 바이트 06)를 다른 쪽이 점프 스텁으로 덮었다 — 목표 바이트 검사(pce-ed1 10-22 꼴)
+        o = KANA + b"\x0f\x00\x02" + b"\x06" + b"\x00" * 4
+        n = KANA + b"\x0f\x00\x02" + b"\x0f\x00\x01" + b"\x06" + b"\x00"
+        _c, _t, _u, bad0, _a = self.pair(o, o)
+        self.assertEqual(bad0, [])
+        _c, _t, _u, bad, _a = self.pair(o, n)
+        self.assertTrue(any(b[3] == 0 and b[4] == [("end", 6)] for b in bad))
+
     def test_dropped_goto_fails(self):
         o = KANA + b"\x0f\x00\x04" + b"\x00\x00" + KANA + b"\x06"  # goto 다음 글 스트림
         n = KANA + b"\x06"  # 호출·분기가 사라졌다

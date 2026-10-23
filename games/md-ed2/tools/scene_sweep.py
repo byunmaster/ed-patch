@@ -1,7 +1,7 @@
 """전 씬 대사 일괄 — 헤드리스(`headless.py`) 위에서 `test-battle` 롬의 대사 우편함 `SAY`($FF1A1C)로 스트림을 하나씩 띄워 화면을 남긴다.
 
     ED_BUILD_TAG=test-battle python3 tools/test_battle.py          # 후크 롬(대사 우편함 포함)
-    python3 tools/scene_sweep.py [BBB-K ...] [--out DIR] [--limit N]
+    python3 tools/scene_sweep.py [BBB-K | BBB-K:오프셋 ...] [--out DIR] [--limit N]   # 오프셋을 주면 그 스트림만(고친 창 재촬영)
 
 모듈(대본 블록 × 4)을 구운 롬에서 풀어 RAM `$FF6650` 에 올리고(필드 상태 위에), 그 모듈의 스트림마다 `SAY` = 스트림 주소를 쓴 뒤 한 걸음 걸어 후크가
 메시지 서비스 `0x85E2`(a1 = 스트림)를 부르게 한다. 서비스가 도는 동안 `BUSY`($FF1A20) = 1. 화면이 가만히 서면(깜박이는 ▼ 는 무시) 캡처하고 확인 키로 넘긴다.
@@ -186,6 +186,7 @@ def main() -> None:
         else:
             sel.append(args[i])
             i += 1
+    modsel = {x.split(":")[0] for x in sel}
     out.mkdir(parents=True, exist_ok=True)
     rom = BS.ROM.read_bytes()
     codes = json.loads(
@@ -202,7 +203,7 @@ def main() -> None:
     done = set(done_f.read_text().split()) if done_f.exists() else set()
     for bi, k, m in mods:
         key = f"{bi:03d}-{k}"
-        if (sel and key not in sel) or key in done:
+        if (sel and key not in modsel) or key in done:
             continue
         mod = scene.parse_module(m)
 
@@ -212,6 +213,9 @@ def main() -> None:
             return sum(1 for ch in t if "가" <= ch <= "힣") >= 2 or "…" in t
 
         todo = [(o, st) for o, st in sorted(mod.streams.items()) if real(st)]
+        pick = {int(x.split(":")[1], 16) for x in sel if x.startswith(key + ":")}
+        if pick:
+            todo = [(o, st) for o, st in todo if o in pick]
         if limit:
             todo = todo[:limit]
         c.load_state(armed)

@@ -226,7 +226,32 @@ def compare_module(om: bytes, nm: bytes, tag: str):
             k = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
             bad.append((tag, s, n, k, a[k : k + 2], b[k : k + 2]))
         cmp_n += 1
+    bad += inbound_check(om, nm, omod, nmod, pair, tag)
     return cmp_n, len(omod.streams), unpaired, bad, allow
+
+
+def inbound_check(om: bytes, nm: bytes, omod, nmod, pair, tag: str):
+    """남이 점프·호출·lea 로 들어오는 목표 스트림이 새 롬에서 그대로인가 — 글 없는 제어 스트림(끝 코드 하나 등)은 스텁을 따라가지 않고 그 자리의 열을 그대로 맞댄다.
+    메시지 A 가 넘쳐 제자리 끝에 놓은 점프 스텁이 원본 종료 바이트를 덮었는데 메시지 B 의 끝 점프가 그 바이트로 들어오는 꼴(pce-ed1 10-22)을 잡는다."""
+    targets = {t.target for st in omod.streams.values() for t in st.tokens if t.ref in (scene.GOTO, scene.CALL)}
+    targets |= set(omod.roots.values())
+    bad = []
+    for t in sorted(targets):
+        ost = omod.streams.get(t)
+        if ost is None or any(x.kind == "text" for x in ost.tokens):
+            continue
+        oc = cols(ost.tokens)
+        if not oc or any(e[0] == "ref" for e in oc):
+            continue
+        n = pair.get(t, t)
+        try:
+            nst = nmod.streams.get(n) or scene.parse_stream(nm, n)
+        except (ValueError, IndexError):
+            bad.append((tag, t, n, 0, oc, [("unparsable",)]))
+            continue
+        if any(x.kind == "text" for x in nst.tokens[:1]) or cols(nst.tokens) != oc:
+            bad.append((tag, t, n, 0, oc, cols(nst.tokens)[:3]))
+    return bad
 
 
 def _follow_b(kb: bytes, n: int, want_goto_end: bool, depth=8):
