@@ -419,6 +419,75 @@ def letter_hide_sites(b: bytes) -> list[tuple[int, int, int]]:
     return out
 
 
+BOSS_BLOCK = 82  # 고드윈 2세 — 「ダメージを与えられない」 변형 문구(무기 장비 / 맨손)
+BOSS_STREAMS = (
+    0xA0C,
+    0xA13,
+)  # 원문: 앞 일곱 바이트(「しかし」+이름 제어)와 그 뒤 4B 가 런타임에 덮이는 꼬리
+BOSS_ROUTINE = 0x8DE  # 4B 를 덮어쓰던 루틴(36B) — 무기 번호(d0)가 0 이면 `ので`, 아니면 `では` 를 `$A13` 머리에 복사
+BOSS_PRINT_LEA = 0x8CC  # `lea $A0C(pc),a1` — 문구를 찍는 곳(확장 워드 = 변위)
+BOSS_ROUTINE_OLD = bytes.fromhex(
+    "48e7006045fa012f43fa001ac0006600000643fa001414d914d914d914d94cdf06004e75"
+)
+
+
+def patch_boss_block(
+    out: bytearray, b: bytes, rs: dict, textmap: dict, monsters: dict, encode
+) -> None:
+    """블록 82 — 원문은 문장 하나(`しかし`+이름+`ではダメージ…`)의 **머리 4바이트를 코드가 덮어** 변형(`では`/`ので`)을 만든다. 한글은
+    칸(4B)·받침(무기 이름이 가변) 때문에 그 방식이 안 되고, 덮어쓴 일본어 조사가 화면에 남았다(2026-10-18 실측).
+    정본 두 문장(무기 「…{이름}은(는) 통하지 않는다」 · 맨손 「…맨손으로는 피해를 줄 수 없다」)을 **독립 문안 둘**로 블록 끝에 놓고,
+    루틴을 「무기 번호로 둘 중 하나의 주소를 골라 문구 출력 `lea` 의 변위 워드에 쓴다」로 바꾼다(자기 수정 — 원본도 같은 방식으로 문안을
+    고쳤다). 이름 뒤 조사는 아이템 이름 조사 훅(`<ec00>` 은/는)이 런타임에 고른다."""
+    if b[BOSS_ROUTINE : BOSS_ROUTINE + len(BOSS_ROUTINE_OLD)] != BOSS_ROUTINE_OLD:
+        raise SystemExit("블록 82 4B 덮어쓰기 루틴이 원본과 다르다 — 엔진 주소가 밀렸나")
+    bodies = []
+    for tgt in BOSS_STREAMS:
+        st = rs[tgt]["stream"]
+        ent = textmap.get(pos_key(st, BOSS_BLOCK, tgt)) or textmap.get(jp_key(st))
+        if not ent or not ent.get("ours"):
+            raise SystemExit(f"블록 82 {tgt:#x} 문안이 정본(textmap)에 없다")
+        ours = expand_names(ent["ours"], monsters)
+        st2 = drop_goto(st, ours)
+        bodies.append(b"".join(t.raw for t in sysmsg._tokens_from_ours(st2, ours, encode)))
+    pos = []
+    for body in bodies:
+        if len(out) & 1:
+            out.append(0)
+        pos.append(len(out))
+        out += body
+    if len(out) & 1:
+        out.append(0)
+    # 원문 일본어 지우기 — 옛 문구 꼬리와 `では`/`ので` 자료 8B
+    span = rs[BOSS_STREAMS[0]]["stream"].end - BOSS_STREAMS[0]
+    out[BOSS_STREAMS[0] : BOSS_STREAMS[0] + span] = b"\x00" * span
+    out[0x902:0x90A] = b"\x00" * 8
+    eq, bare = pos
+
+    def lea_at(at: int, target: int) -> bytes:  # lea d16(pc),aN — 확장 워드는 at+2
+        return struct.pack(">h", target - (at + 2))
+
+    code = bytearray()
+    code += bytes.fromhex("48e78060")  # movem.l d0/a1-a2,-(a7)
+    code += bytes.fromhex("43fa") + lea_at(BOSS_ROUTINE + 4, eq)  # lea eq(pc),a1
+    code += bytes.fromhex("4a00")  # tst.b d0   (무기 번호)
+    code += bytes.fromhex("6604")  # bne.s +4   (장비 있음 → eq)
+    code += bytes.fromhex("43fa") + lea_at(BOSS_ROUTINE + 12, bare)  # lea bare(pc),a1
+    code += bytes.fromhex("45fa") + lea_at(
+        BOSS_ROUTINE + 16, BOSS_PRINT_LEA + 2
+    )  # lea <변위 워드>(pc),a2
+    code += bytes.fromhex("2009")  # move.l a1,d0
+    code += bytes.fromhex("908a")  # sub.l a2,d0
+    code += bytes.fromhex("3480")  # move.w d0,(a2)   — 출력 lea 의 변위로
+    code += bytes.fromhex("4cdf0601")  # movem.l (a7)+,d0/a1-a2
+    code += bytes.fromhex("4e75")  # rts
+    code += bytes.fromhex("4e714e71")  # nop nop
+    assert len(code) == 36, len(code)
+    out[BOSS_ROUTINE : BOSS_ROUTINE + 36] = code
+    out[BOSS_PRINT_LEA + 2 : BOSS_PRINT_LEA + 4] = lea_at(BOSS_PRINT_LEA, eq)  # 기본값 = 장비 문구
+    out[8:10] = struct.pack(">H", len(out))
+
+
 def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes | None:
     """블록 하나의 새 바이트(바뀐 게 없으면 None)."""
     out = bytearray(b)
@@ -463,8 +532,8 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
     for tgt, e in rs.items():
         st = e["stream"]
         ent = textmap.get(pos_key(st, n, tgt)) or textmap.get(jp_key(st))
-        if not ent or not ent.get("ours"):
-            bodies[tgt] = None
+        if not ent or not ent.get("ours") or (n == BOSS_BLOCK and tgt in BOSS_STREAMS):
+            bodies[tgt] = None  # 보스 블록의 두 변형 문구는 `patch_boss_block` 이 따로 놓는다
             continue
         ours = expand_names(ent["ours"], monsters)
         st = drop_goto(st, ours)
@@ -542,6 +611,9 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
                 )
             for p in e["words"]:
                 assert struct.unpack(">H", out[p : p + 2])[0] == new, (n, hex(p))
+    if n == BOSS_BLOCK:
+        patch_boss_block(out, b, rs, textmap, monsters, encode)
+        changed = True
     return bytes(out) if changed else None
 
 

@@ -28,6 +28,7 @@ import battle
 import captions
 import chapters
 import common
+import debug_build
 import dict_names
 import field_hud
 import gfxtext
@@ -110,6 +111,7 @@ class Rom:
         **{f"table:{t[0]}": (t[1], t[1] + t[2] * t[3]) for t in tables.SLOTS},
         **gfxtext.allowed(),
         **places.allowed(),
+        **debug_build.allowed(),
         "field-hud-space-tramp": (
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE,
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE,
@@ -234,7 +236,9 @@ def build_stream(
     """
     refs = [t for t in st.tokens if t.ref]
     end = next((t for t in st.tokens if t.kind == "end"), None)
-    cont = ours.endswith("<~>")  # 이어 읽기 — 끝 표식 없이 바로 뒤 글줄(꼬리를 같이 쓰는 스트림)로 이어진다. 재조립이 남는 칸을 공백으로 채운다
+    cont = ours.endswith(
+        "<~>"
+    )  # 이어 읽기 — 끝 표식 없이 바로 뒤 글줄(꼬리를 같이 쓰는 스트림)로 이어진다. 재조립이 남는 칸을 공백으로 채운다
     if cont:
         ours = ours[:-3]
         end = None
@@ -590,6 +594,7 @@ def verify_archive_refs(d: bytes) -> None:
 
 
 def main(check_only: bool = False) -> None:
+    debug_build.check_tag()  # 꼬리표와 디버그 스위치가 어긋나면 일을 시작하기 전에 거부한다
     orig = common.rom()
     verify_archive_refs(orig)
     maps = textmap.load_all()
@@ -628,7 +633,9 @@ def main(check_only: bool = False) -> None:
             if not ent.get("ours"):
                 continue
             off = int(key, 16)
-            if any(o <= off < o + banners.STRIDE * n for o, n in banners.BY_MODULE.get((blk, k), ())):
+            if any(
+                o <= off < o + banners.STRIDE * n for o, n in banners.BY_MODULE.get((blk, k), ())
+            ):
                 continue  # 지명 배너 표 칸 — banners.patch 가 굽는다(스트림 번역이 덮으면 안 된다)
             st = mod.streams.get(off)
             if st is None:
@@ -771,8 +778,13 @@ def main(check_only: bool = False) -> None:
     cap5 = {c for c in captions.font5_chars(cmap) if c.strip() or c == " "}
     if cap5:
         for label, pos, body in hangul.resource5(
-            cs, cap5, hangul.layout_after_r1(cs), cell=captions.FONT_CELL, source=captions.FONT_SRC,
-            narrow_adv=captions.FONT_PITCH // 2, digit_extra=captions.DIGIT_EXTRA
+            cs,
+            cap5,
+            hangul.layout_after_r1(cs),
+            cell=captions.FONT_CELL,
+            source=captions.FONT_SRC,
+            narrow_adv=captions.FONT_PITCH // 2,
+            digit_extra=captions.DIGIT_EXTRA,
         ):
             rom.write(label, pos, body)
     for label, pos, body in cap_writes:
@@ -843,6 +855,12 @@ def main(check_only: bool = False) -> None:
     if orig[SCENE_REF - 2 : SCENE_REF + 4] != b"\x43\xf9" + struct.pack(">I", archives.SCENE_SIZES):
         raise SystemExit("씬 크기 표를 부르는 명령(0x1A490 lea.l $19DC3C.l,a1)이 원본과 다르다")
     rom.write("scene-ref", SCENE_REF, struct.pack(">I", SCENE_TABLE_AT))
+    debug_build.check_tag()
+    ndbg = debug_build.apply(rom)
+    if ndbg:
+        print(
+            f"  ⚠ 디버그 스위치 켜짐({debug_build.ENV}=1) — 시험·마스터 디버그 전용, 패치 {ndbg}곳(제품 롬 아님)"
+        )
     rom.write("checksum", 0x18E, struct.pack(">H", common.header_checksum(rom.buf)))
     verify_jump_readback(bytes(rom.buf), orig, smap, cs.encode)
     ncap = captions.verify_readback(
@@ -883,7 +901,7 @@ def main(check_only: bool = False) -> None:
     # 🔴 지난 실패 표식을 지운다 — pull-build.sh 는 .failed 가 하나라도 있으면 그 칸을 통째로 거부한다
     for stale in out_dir.glob("*.failed"):
         stale.unlink()
-    out = out_dir / "ed2-kr.bin"
+    out = out_dir / debug_build.rom_name()
     out.write_bytes(bytes(rom.buf))
     print(f"  {out} — 쓰기 {len(rom.log)}건 · sha1 {common.sha1_of_bytes(bytes(rom.buf))[:8]}…")
 
@@ -893,7 +911,7 @@ if __name__ == "__main__":
         main("--check" in sys.argv)
     except SystemExit as e:
         out_dir = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_")
-        p = out_dir / "ed2-kr.bin"
+        p = out_dir / debug_build.rom_name()
         if p.exists():
             p.rename(p.with_suffix(".bin.failed"))
         raise SystemExit(f"❌ 빌드 실패: {e}") from e

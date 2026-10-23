@@ -165,6 +165,10 @@ def names(orig: bytes | None = None) -> dict:
                     v, src = from_dict(jp, DICT_TABLES[cat]), "glossary"
                 if v is None and cat in CANON_TABLES:
                     v, src = from_canon(jp, CANON_TABLES[cat]), "canon"
+                if (
+                    v is None and cat in CANON_TABLES
+                ):  # 「何もない → 없음」 — 정본 battle 범주(범주 ui 에 없다)
+                    v, src = from_canon(jp, "battle"), "canon"
             if v is None:
                 tbl[str(i)] = {"jp": jp, "ours": "", "src": ""}
                 continue
