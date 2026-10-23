@@ -1,0 +1,172 @@
+-- sfc-ed2 대사 직접 호출 일괄((b) 방식) — 필드 첫 메시지 호출 지점의 상태를 열고, 단위마다 $A6~$A8 포인터만 바꿔 같은 메시지 루틴으로 찍는다.
+-- 환경변수: SW_OUT · SW_STATE(필드 첫 A6E8 입구 상태 파일, 없으면 부팅해서 만든다 SW_MKSTATE) · SW_LIST("SNES주소 hex" 줄 파일) · SW_MAXF(단위당 프레임 상한)
+local OUT=os.getenv("SW_OUT") or "out"
+local WR=emu.memType.snesWorkRam
+local SM=emu.memType.snesMemory
+local f=0
+local LOG=io.open(OUT.."/log.txt","a")
+local function log(s) LOG:write(s.."\n"); LOG:flush() end
+local function rd(a) return emu.read(a,WR,false) end
+local function wr(a,v) emu.write(a,v,WR) end
+local function shot(path) local h=io.open(path,"wb"); h:write(emu.takeScreenshot()); h:close() end
+local sched={ [100]={"start"}, [1700]={"a"}, [2300]={"down",5}, [2400]={"a"}, [3000]={"a"} }
+local MAXF=tonumber(os.getenv("SW_MAXF") or "900")
+local STATEFILE=os.getenv("SW_STATE")
+local MK=os.getenv("SW_MKSTATE")
+local UNITS={}
+local CAPS={}
+if os.getenv("SW_LIST") then for line in io.lines(os.getenv("SW_LIST")) do local a=tonumber(line:match("%x+"),16); if a then UNITS[#UNITS+1]=a; CAPS[#UNITS]=tonumber(line:match("%x+%s+(%d+)")) or 60 end end end
+local TXMIN=tonumber(os.getenv("SW_TXMIN") or "6")  -- 창 안쪽 글자 픽셀 하한(「……」만 있는 쪽도 넘도록 낮게)
+local CLOSEMUL=tonumber(os.getenv("SW_CLOSEMUL") or "2")  -- 쪽 사이 지움 시간이 긴 단위는 올린다(닫힘으로 오판해 뒷 쪽이 안 찍힌다)
+local DEB=tonumber(os.getenv("SW_DEBOUNCE") or "8")   -- 대화창 안쪽이 이만큼 프레임 안 변해야 찍는다(sfc-ed1 MV_DEBOUNCE 와 같은 방식)
+local PMAX=tonumber(os.getenv("SW_PAGEMAX") or "300") -- 쪽당 최대 대기(프레임) — 넘으면 timeout 으로 적고 그대로 찍는다
+local S1=nil
+local pg=0          -- 단위 안 쪽 번호
+local prevh=nil     -- 직전 프레임 창 안쪽 해시
+local h0=nil        -- 단위 시작 직후 해시(글이 한 번도 안 변했는지 가리는 용)
+local stable=0      -- 같은 해시가 이어진 프레임 수
+local shotdone=false
+local arrow_t=-999   -- ▼ 가 마지막으로 보인 프레임(깜박이므로 최근 N프레임 안에 한 번이라도 보이면 된다)
+local pressn=0      -- A 를 누르고 있는 남은 프레임
+local sincepress=0  -- 마지막 A(또는 단위 시작) 뒤 프레임
+local changed=false -- 눌렀거나 시작한 뒤 한 번이라도 해시가 변했나
+local function bandhash()
+  local b=emu.getScreenBuffer()
+  local h=5381
+  local ar=0   -- ▼ 대기 커서(노란 픽셀) — 쪽이 다 나와 키를 기다린다는 근거
+  local tx=0   -- 글자 픽셀(거의 흰색) 수 — 빈 창·열리기 전·닫힌 뒤를 쪽으로 안 찍으려고
+  for y=136,204,2 do local o=y*256
+    for x=16,240,2 do
+      local v=b[o+x+1] or 0
+      if x<=200 then h=(h*33+v)%4294967296 end
+      local r,g,bb=(v>>16)&255,(v>>8)&255,v&255
+      if (r>=200 and g>=200 and bb>=200) or (math.abs(r-182)<=8 and math.abs(g-147)<=8 and math.abs(bb-92)<=8) then tx=tx+1 end  -- 글자 잉크: 흰색 · 황갈색(색 글자 창)  -- 밝은 글자(흰·회색·황갈색 — 창마다 글자 색이 다르다). 초록 지도·하늘색 틀은 뺀다
+    end
+  end
+  for y=190,199 do local o=y*256
+    for x=230,242 do
+      local v=b[o+x+1] or 0
+      if ((v>>16)&255)>200 and ((v>>8)&255)>150 and (v&255)<90 then ar=ar+1 end
+    end
+  end
+  return h,tx,ar
+end
+local uf=0         -- 단위 프레임
+local ui=0         -- 지금 단위(1..#UNITS)
+local RA=nil       -- 첫 호출의 복귀 주소(= 호출 지점 + 4) — 단위 끝 판정
+local state="boot"
+local need_write=false
+local VARNAME=os.getenv("SW_VARNAME")  -- 이름 변수 버퍼 `$1201`(토큰 `0e` 가 찍는 아이템 이름)에 넣을 대표 이름(hex) — 비어 있으면 변수로 시작하는 단위는 글자가 안 찍힌다(원판 롬도 같다)
+local function setptr()
+  if ui>=1 and ui<=#UNITS then local a=UNITS[ui]; wr(0xA6,a&255); wr(0xA7,(a>>8)&255); wr(0xA8,(a>>16)&255); need_write=false
+    if VARNAME then local k=0; for h in VARNAME:gmatch("%x%x") do wr(0x1201+k,tonumber(h,16)); k=k+1 end end
+  end
+end
+local function next_unit()
+  ui=ui+1
+  if ui>#UNITS then log("ALLDONE"); LOG:close(); emu.stop(0); return false end
+  uf=0; need_write=true; state="run"
+  arrow_t=-999; pg=0; prevh=nil; h0=nil; stable=0; shotdone=false; pressn=0; sincepress=0; changed=false
+  os.execute(string.format("mkdir -p %s/raw/%06X",OUT,UNITS[ui]))
+  log(string.format("UNIT %d %06X",ui,UNITS[ui]))
+  return true
+end
+-- ① 필드에서 첫 메시지 호출 입구 — 상태 저장(및 복귀 주소 기록)
+emu.addMemoryCallback(function()
+  if S1==nil and state=="boot" then
+    local st=emu.getState()
+    local sp=st["cpu.sp"]
+    RA=emu.read(sp+1,SM,false)|(emu.read(sp+2,SM,false)<<8)|(emu.read(sp+3,SM,false)<<16)
+    S1=emu.createSavestate()
+    log(string.format("S1 f=%d ra=%06X ptr=%06X",f,RA,rd(0xA6)|(rd(0xA7)<<8)|(rd(0xA8)<<16)))
+    if MK then local h=io.open(MK,"wb"); h:write(S1); h:close(); LOG:close(); emu.stop(0) return end
+    state="idle"
+    if next_unit() then emu.loadSavestate(S1); setptr() end
+  end
+end, emu.callbackType.exec, 0xC0A6E8, 0xC0A6E8, emu.cpuType.snes)
+local nmi=0xC00FC0
+emu.addMemoryCallback(function()
+  if STATEFILE and S1==nil then
+    local h=io.open(STATEFILE,"rb"); S1=h:read("*a"); h:close()
+    log("S1 loaded from file")
+    state="idle"
+    if next_unit() then emu.loadSavestate(S1); setptr() end
+    return
+  end
+  if state~="run" then return end
+  if need_write then
+    need_write=false
+    local a=UNITS[ui]
+    wr(0xA6,a&255); wr(0xA7,(a>>8)&255); wr(0xA8,(a>>16)&255)
+  end
+  uf=uf+1
+  local function finish(why)
+    shot(string.format("%s/raw/%06X/%05d_end.png",OUT,UNITS[ui],uf))
+    log(string.format("END %d %06X %s pages=%d f=%d",ui,UNITS[ui],why,pg,uf))
+    state="between"
+    emu.loadSavestate(S1)
+    if next_unit() then setptr() end
+  end
+  if pressn>0 then pressn=pressn-1 end
+  sincepress=sincepress+1
+  if uf>=3 then
+    local h,tx,ar=bandhash()
+    if ar>=4 then arrow_t=uf end
+    if h0==nil then h0=h end
+    if prevh~=nil and h==prevh then stable=stable+1 else stable=0; if prevh~=nil then changed=true end end
+    prevh=h
+    if not shotdone and pressn==0 then
+      local ready=stable>=DEB and tx>=TXMIN and (uf-arrow_t)<=40  -- 글자 잉크가 있어야 쪽으로 친다(▼만 있고 글자가 없는 닫힌 창 뒤 장을 안 찍는다) and (changed or sincepress>=120)
+      local tmo=sincepress>=PMAX
+      if ready or tmo then
+        pg=pg+1
+        shot(string.format("%s/raw/%06X/p%02d%s.png",OUT,UNITS[ui],pg,tmo and not ready and "_timeout" or ""))
+        if tmo and not ready then log(string.format("TIMEOUT %d %06X page=%d arrow=%s stable=%d tx=%d",ui,UNITS[ui],pg,(uf-arrow_t)<=40 and "y" or "n",stable,tx)) end
+        shotdone=true; pressn=6; sincepress=0; changed=false
+      end
+    elseif shotdone and pressn==0 and sincepress>=90 and not changed then
+      return finish("nochange")
+    elseif shotdone and changed then
+      shotdone=false; stable=0
+    end
+    if pg>0 and not shotdone and pressn==0 and stable>=DEB*CLOSEMUL and tx<TXMIN then
+      return finish("closed")
+    end
+  end
+  if pg>=(CAPS[ui] or 60) and shotdone and pressn==0 then return finish("pagecap") end
+  if uf>=MAXF then
+    shot(string.format("%s/raw/%06X/%05d_end.png",OUT,UNITS[ui],uf))
+    log(string.format("END %d %06X maxf",ui,UNITS[ui]))
+    state="between"
+    emu.loadSavestate(S1)
+    if not next_unit() then return end
+    setptr()
+  end
+end, emu.callbackType.exec, nmi, nmi, emu.cpuType.snes)
+-- ② 메시지 루틴이 호출자로 돌아오는 자리 — 단위 끝(원래 이벤트가 이어지므로 여기서 끊는다)
+local ra_set=false
+emu.addMemoryCallback(function()
+  if state=="run" and uf>5 then
+    shot(string.format("%s/raw/%06X/%05d_end.png",OUT,UNITS[ui],uf))
+    log(string.format("END %d %06X ret f=%d",ui,UNITS[ui],uf))
+    state="between"
+    emu.loadSavestate(S1)
+    if next_unit() then setptr() end
+  end
+end, emu.callbackType.exec, 0xC18F14, 0xC18F14, emu.cpuType.snes)
+local wf=0
+local lastui=0
+emu.addEventCallback(function()
+  f=f+1
+  if state=="run" then
+    if ui~=lastui then lastui=ui; wf=0 end
+    wf=wf+1
+    if wf>MAXF+900 then log(string.format("HANG %d %06X wf=%d",ui,UNITS[ui],wf)); LOG:close(); emu.stop(3) end  -- 코드가 멈춰 NMI 가 안 도는 단위(비대사·잘못된 시작) — 프로세스를 끊고 그 단위는 목록에서 뺀다
+  end
+end, emu.eventType.endFrame)
+emu.addEventCallback(function()
+  local b={}
+  if S1==nil then for k,v in pairs(sched) do local L=v[2] or 20; if f>=k and f<k+L then b[v[1]]=true end end end
+  if state=="run" and pressn>0 then b["a"]=true end
+  emu.setInput(b,0)
+end, emu.eventType.inputPolled)
