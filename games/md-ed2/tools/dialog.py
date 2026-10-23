@@ -123,6 +123,15 @@ def ps1_index() -> dict:
     return _idx
 
 
+_SLUG_JOSA = {"이": "가", "은": "는", "을": "를", "과": "와", "으로": "로"}
+
+
+def _fix_josa_slug(s: str) -> str:
+    return re.sub(
+        r"슬러그(이|은|을|과|으로)(?![가-힣])", lambda m: "슬러그" + _SLUG_JOSA[m.group(1)], s
+    )
+
+
 def fix_kr(s: str) -> str:
     """PS1 한국어 → 우리 표기(물결은 전각, 점 셋은 …)."""
     s = s.replace("{p}", "").replace(
@@ -130,6 +139,9 @@ def fix_kr(s: str) -> str:
     )  # PS1 표지: {p} = 쪽 가름 · {n} = 줄바꿈 — 우리는 조판기가 가른다
     for a, b in SWAP_KR.items():
         s = s.replace(a, b)
+    s = _fix_josa_slug(
+        s
+    )  # 슬라임→슬러그 로 이름만 바꾸면 PS1 의 받침 있는 조사가 남는다(「슬러그이」)
     s = s.replace("~", "～").replace("...", "…")
     s = s.replace("～.", "～")  # 번역 규칙 1-7: 물결표 뒤에 마침표를 붙이지 않는다
     return fix_ellipsis(s)  # 번역 규칙 2-11: 「…」 뒤에 말이 이어지면 띄운다(말더듬 예외 포함)

@@ -28,6 +28,8 @@ import battle
 import captions
 import chapters
 import common
+import ctl_toggle_scan
+import debug_build
 import dict_names
 import field_hud
 import gfxtext
@@ -40,6 +42,7 @@ import lz
 import places
 import punctwrap
 import repack
+import reloc_ledger as RL
 import scene
 import spell_digit
 import sysmsg
@@ -55,7 +58,7 @@ TAIL_HI = common.FREE_TAIL[1]
 # 꼬리 **끝**에 훅 코드를 예약한다(ED1 build.py 와 같은 배치) — 아카이브는 그 앞까지만 쓴다. ED2 는 꼬리 빈 공간이 2KB 뿐이지만
 # 아카이브를 다시 눌러 16KB 를 비우므로 훅이 들어간다.
 JOSA_RESERVE = 0x400  # 조사 훅 기계어+표(글리프 표가 한글 코드 수에 비례 — 대사 번역으로 코드 900자 넘김) — 으로/로·과/와 포함
-WRAP_RESERVE = 0x180  # 어절 줄넘김 본체 326B + 반각 「의␣」 28B
+WRAP_RESERVE = 0x260  # 어절 줄넘김 본체 540B(이름 속 틈 검사 포함) + 반각 「의␣」·「′」 되감기 50B
 FIELD_HUD_RESERVE = 0x20  # 필드 HUD 트램펄린(이식 전 — 자리만 잡아 둔다)
 CAPTION_RESERVE = 0xA00  # 오프닝·엔딩 자막 표+문안(captions.RELOCATE)이 앉는 꼬리 칸
 SYSMSG_TAIL = sysmsg.TAIL_SIZE  # 시스템 메시지 중 꼬리로 옮기는 스트림(RELOCATE)의 칸
@@ -110,6 +113,7 @@ class Rom:
         **{f"table:{t[0]}": (t[1], t[1] + t[2] * t[3]) for t in tables.SLOTS},
         **gfxtext.allowed(),
         **places.allowed(),
+        **debug_build.allowed(),
         "field-hud-space-tramp": (
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE,
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE,
@@ -125,6 +129,8 @@ class Rom:
         "font5-header": hangul.FONT5_HDR,
         "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 12),
         "josa-name-hook": (josa.NAME_FN_PATCH, josa.NAME_FN_PATCH + 6),
+        "josa-mon-hook": (josa.MON_HEAD_PATCH, josa.MON_HEAD_PATCH + 6),
+        "josa-head2-hook": (josa.HEAD2_PATCH, josa.HEAD2_PATCH + 10),
         "wrap-code": (TAIL_HI - JOSA_RESERVE - WRAP_RESERVE, TAIL_HI - JOSA_RESERVE),
         "wrap-tramp": (wordwrap.TRAMP, wordwrap.TRAMP + 6),
         "half-code": (
@@ -135,6 +141,7 @@ class Rom:
         "half-site": (halfspace.SITE, halfspace.SITE + 4),
         "punct-code": (TAIL_HI - punctwrap.CODE_LEN, TAIL_HI),
         "punct-site": (punctwrap.SITE, punctwrap.SITE + 6),
+        **{f"hang:{at:x}": (at, at + len(new) // 2) for at, _o, new, _w in punctwrap.HANG_PATCHES},
         **{f"wrap-site:{x:x}": (x, x + 4) for x in wordwrap.SITES},
         **{
             f"josa-tbl:{i:02x}": (josa.HANDLER_TBL + i * 2, josa.HANDLER_TBL + i * 2 + 2)
@@ -191,29 +198,68 @@ class Rom:
 
 
 def normalize(text: str) -> str:
-    """부호 규칙(유저 확정 2026-09-05): 온점·쉼표·공백은 반각, 「…」은 전각 하나, 「…」 뒤에 온점 없음."""
+    """부호 규칙(유저 확정 2026-09-05): 온점·쉼표·공백은 반각, 「…」은 전각(연속은 그대로 — 규칙 1-3: 원문 점 n개 → 「…」 round(n/3)개, 옛 「하나로 줄이기」는 걷었다 10-18), 「…」 뒤에 온점 없음."""
     text = text.replace("...", "…").replace("‥", "…").replace("。", ".").replace("、", ",")
-    text = re.sub(r"…+", "…", text)
     text = re.sub(r"…\s*[.。]", "…", text)
     return text
 
 
-def typeset(text: str, lead: str = "") -> list[list[str]]:
-    """자유 문안 → 페이지(줄 목록). `\\f` 는 강제 페이지.
+BREAKS_ADDED: list[int] = []  # 이어질 조각 앞에 줄바꿈을 넣은 자리
+PREFIX_UNFIT: list[str] = []  # 앞 폭을 반영 못 한 덩이(붙은 어절이 넘침) — 빌드 끝에 건수를 알린다
+
+
+def _fill(w: float) -> str:
+    """앞에 이미 쓰인 폭 w 칸을 **붙은 글자**로 흉내 낸다(조판기가 첫 줄 폭을 알게). 0.5 칸은 올림(안전 쪽) —
+    공백으로 흉내 내면 거기서 끊을 자리가 생긴다."""
+    return "가" * min(-int(-w // 1), int(WIDTH))
+
+
+def typeset(
+    text: str, lead: str = "", prefix_w: float = 0.0, brk: bool = False
+) -> list[list[str]]:
+    """자유 문안 → 페이지(줄 목록). `\f` 는 강제 페이지.
 
     `lead` 는 **첫 줄 앞에 그대로 붙는** 글자다(조판기가 지우면 안 되는 자리). 조사 훅 뒤의
     공백이 그것이다 — `<0e><ec01> 들어 있었습니다.` 에서 앞 공백이 없으면 화면이
     「눈물이들어 있었습니다」가 된다. krwrap 도 typeset 도 앞 공백을 지우므로 따로 받는다
     (2026-09-07 초벌 시험에서 잡았다). ⚠ 폭 검사는 **붙인 뒤**에 한다.
+
+    `prefix_w` 는 **같은 줄에 이미 쓰인 폭**이다(10-23) — 앞 조각(호출한 이름 조각·`<03>` 앞 글·앞 덩이)이
+    첫 줄을 이미 채웠는데 조판기가 그걸 모르면 첫 줄을 한 줄 전체 폭으로 짜 화면에서 넘친다. 같은 폭의 붙은
+    글자를 앞에 달아 감싼 뒤 떼어 낸다(붙여 둔 이유: 실제 화면도 앞 조각과 글이 붙어 있다). 첫 줄이 떼고 나면
+    비면 그 앞에서 줄이 갈린 것이다(첫 줄 = "").
+    `brk` 는 앞 글이 문장 부호로 끝나 **거기서 갈려도 되는** 경우다 — 붙은 글자 사이엔 조판기가 끊을 자리가 없어,
+    앞 글(`…로군.`)과 다음 글이 붙은 채 17.5칸을 넘으면 어디서도 못 갈랐다. 가짜 공백을 끼워 끊을 자리를 주고, 안 갈리면 떼어 낸다.
     """
     text = normalize(text)
     pages = []
+    filler = _fill(prefix_w) if prefix_w > 0 else ""
+    sep = " " if filler and brk and not lead else ""
     for chunk in text.split("\f"):
         chunk = chunk.strip()
         if not chunk:
             continue
-        pages += krwrap.wrap_pages(chunk, width=WIDTH, lines_per_page=LINES, strip_after="")
-    if lead and pages and pages[0]:
+        if filler and not pages:
+            pages += krwrap.wrap_pages(
+                filler + sep + lead + chunk, width=WIDTH, lines_per_page=LINES, strip_after=""
+            )
+            if not pages[0][0].startswith(filler):
+                raise SystemExit(f"앞 폭 흉내가 줄 머리에서 갈렸다: {pages[0][0]!r} / {chunk[:20]!r}")
+            if sep and not pages[0][0].startswith(filler + sep):
+                if pages[0][0].rstrip() != filler:
+                    raise SystemExit(f"앞 폭 흉내가 줄 머리에서 갈렸다: {pages[0][0]!r}")
+                pages[0][0] = filler + sep  # 갈렸다 — 뗀 뒤 첫 줄은 빈 줄
+            continue
+        # 앞 공백(lead)이 첫 줄에 붙으므로 **그 쪽 줄 폭을 공백만큼 줄여** 감싼다 — 붙인 뒤 17.5칸을 넘던 일(「<이름> 왕자 뒤를…」)
+        w = WIDTH - krwrap.text_width(lead) if lead and not pages else WIDTH
+        pages += krwrap.wrap_pages(chunk, width=w, lines_per_page=LINES, strip_after="")
+    if filler and pages:
+        if any(krwrap.text_width(ln.rstrip()) > WIDTH for ln in pages[0]):
+            # 앞 글과 붙은 어절이 끊을 자리 없이 넘친다(`프래드`+`였지.`) — 정적으로 못 가른다. 옛 조판으로 두고 런타임 어절 줄넘김에 맡긴다
+            PREFIX_UNFIT.append(text[:24])
+            return typeset(text, lead)
+        pages[0][0] = pages[0][0][len(filler) + len(sep) :]
+    elif lead and pages and pages[0]:
         pages[0][0] = lead + pages[0][0]
     for pg in pages:
         if len(pg) > LINES:
@@ -224,8 +270,46 @@ def typeset(text: str, lead: str = "") -> list[list[str]]:
     return pages
 
 
+def _frag_width(ours: str) -> float:
+    """호출 조각 문안 → 같은 줄에 더하는 폭(태그·변수는 0, 줄바꿈이 있으면 마지막 줄만). 이름 칸(`<1e>…<04>`) 글은 대사 줄이 아니다 —
+    `<07>` 로 끝나는 조각(화자 이름 호출)은 줄이 비워진다."""
+    if ours.rstrip().endswith("<07>"):
+        return 0.0
+    ours = re.sub(r"<1e>.*?<04>", "", ours)
+    t = re.sub(r"<[0-9a-f:|]*>", lambda m: "\n" if m.group(0) in ("<01>", "<05>") else "", ours)
+    t = t.split("\f")[-1].split("\n")[-1]
+    return krwrap.text_width(normalize(t))
+
+
+_BRK_AFTER = frozenset(".!?…,)」』 ")
+
+
+def _frag_last(ours: str) -> str:
+    """호출 조각 문안의 마지막 글자(태그 뗀 뒤). 비면 빈 글자 — 끊을 자리를 알 수 없다."""
+    if ours.rstrip().endswith("<07>"):
+        return ""
+    t = re.sub(r"<[0-9a-f:|]*>", "", re.sub(r"<1e>.*?<04>", "", ours).split("\f")[-1].split("\n")[-1])
+    return t[-1:]
+
+
+def _first_line_w(ours: str) -> float:
+    """이어질 조각(goto 꼬리·call)의 **첫 줄** 폭 — 맨 앞 태그를 건너뛰고 첫 태그·줄바꿈 전 글을 조판기에 한 번 태운 첫 줄."""
+    if ours.lstrip().startswith("<1e>"):
+        return 0.0
+    m = re.match(r"(?:<[^>]*>)*([^<\f\n]*)", ours)
+    t = normalize(m.group(1)).strip() if m else ""
+    if not t:
+        return 0.0
+    return krwrap.text_width(krwrap.wrap_pages(t, width=WIDTH, lines_per_page=LINES, strip_after="")[0][0])
+
+
 def build_stream(
-    st: scene.Stream, ours: str, cs: hangul.Charset, *, raw_text: bool = False
+    st: scene.Stream,
+    ours: str,
+    cs: hangul.Charset,
+    *,
+    raw_text: bool = False,
+    frags: dict[int, str] | None = None,
 ) -> list[scene.Token]:
     """정본 한 항목 → 새 토큰 목록. 참조 토큰은 원본 토큰을 그대로(오프셋은 재조립이 다시 잰다).
 
@@ -233,14 +317,50 @@ def build_stream(
     조판기는 줄을 strip 하고 다시 감기 때문에 「30바이트 고정」 같은 계약을 조용히 깬다.
     """
     refs = [t for t in st.tokens if t.ref]
+    # 상점 표 머리(`<포인터 워드들+4E71>` 원판 바이트 그대로) — 파서가 워드의 앞 바이트(`10`·`0F`·`F2`…)를 호출·분기로 읽은 참조는 **자료**다. 머리 구간의 참조는
+    # 정본에 안 적어도 되고(원본 토큰으로 되살리면 재조립이 변위를 다시 재 워드가 망가진다 — 064-1·069-3), 머리는 바이트 그대로 나간다.
+    hm = re.match(r"<((?:[0-9a-f]{2}){3,})>", ours)
+    head_toks: list[scene.Token] = []
+    if hm and bytes.fromhex(hm.group(1)).endswith(b"\x4e\x71"):
+        head_end = st.start + len(hm.group(1)) // 2
+        refs = [t for t in refs if t.off >= head_end]
+        # 머리 토큰은 원본 파서가 가른 그대로, 단 참조 표시는 뗀다(재조립이 변위를 다시 재지 못하게) — 구운 바이트를 다시 파싱한 토큰열과 맞는다
+        for t in st.tokens:
+            if t.off >= head_end:
+                break
+            raw = t.raw[: head_end - t.off]
+            head_toks.append(scene.Token(t.off, raw, t.kind, t.code))
+        ours = ours[hm.end() :]
     end = next((t for t in st.tokens if t.kind == "end"), None)
-    cont = ours.endswith("<~>")  # 이어 읽기 — 끝 표식 없이 바로 뒤 글줄(꼬리를 같이 쓰는 스트림)로 이어진다. 재조립이 남는 칸을 공백으로 채운다
+    cont = ours.endswith(
+        "<~>"
+    )  # 이어 읽기 — 끝 표식 없이 바로 뒤 글줄(꼬리를 같이 쓰는 스트림)로 이어진다. 재조립이 남는 칸을 공백으로 채운다
     if cont:
         ours = ours[:-3]
         end = None
         refs = []
-    out: list[scene.Token] = []
+    out: list[scene.Token] = list(head_toks)
     pending_text: list[str] = []
+    # 같은 줄에 이미 쓰인 폭(10-23) — 줄바꿈·쪽 넘김·이름 칸 뒤로 0. 호출한 조각(`frags`: 원본 오프셋 → 정본 문안)의 글도 센다.
+    line = {"w": 0.0, "name": False, "last": "", "n": 0}  # n = 쪽 안 줄 번호(0 부터)
+
+    def break_before(tgt: int):
+        """이어질 조각의 첫 줄이 이 줄에 안 들어가면(앞 글이 끊을 자리에서 끝났을 때) 그 앞에서 줄을 가른다(10-23)."""
+        fw = _first_line_w(frags.get(tgt, "")) if frags else 0.0
+        if (
+            fw
+            and out
+            and out[-1].kind == "text"  # 조건 코드(F8 …)와 꼬리 goto 사이는 끼우지 않는다 — 파서가 조건 꼬리를 못 읽는다
+            and not line["name"]
+            and line["w"] > 0
+            and line["w"] + fw > WIDTH
+            and line["last"] in _BRK_AFTER
+            and line["n"] < LINES - 1
+        ):
+            out.append(scene.Token(0, b"\x01", "ctl", 0x01))
+            line["w"], line["last"] = 0.0, ""
+            line["n"] += 1
+            BREAKS_ADDED.append(tgt)
 
     def flush_text(trail: bool = True):
         if not pending_text:
@@ -258,20 +378,56 @@ def build_stream(
                         out.append(scene.Token(0, cs.encode(ln), "text"))
             return
         body = "".join(pending_text)
+        if (
+            body and not body.strip()
+        ):  # 변수 사이 공백 하나(`<eb00> <0e>`) — 조판기가 빈 덩이로 지운다(10-19)
+            pending_text.clear()
+            out.append(scene.Token(0, cs.encode(body.replace("\n", " ")), "text"))
+            if not line["name"]:
+                line["w"] += krwrap.text_width(body.replace("\n", " "))
+            return
+        # 🔴 덩이 가장자리의 `\n` 은 조판기가 **조용히 버린다**(10-19 qa: 「배를 타시겠습니까?」 뒤 줄바꿈이 사라져 다음 글이 붙었다) —
+        # 제어코드·덩이 끝 앞뒤 줄바꿈은 `<01>` 태그로 쓴다. (덩이 가운데 `\n` 은 공백이다.)
+        edge = body.strip(" ")
+        if edge[:1] == "\n" or edge[-1:] == "\n":
+            raise SystemExit(
+                f"덩이 가장자리 `\\n` 은 조판기가 버린다 @{st.start:#x} — `<01>` 태그를 쓴다: {body[:30]!r}"
+            )
         lead = " " if body[:1] == " " else ""
-        pages = typeset(body, lead)
+        if line["name"]:  # 이름 칸 글 — 대사 줄이 아니다
+            pages = typeset(body, lead)
+            pending_text.clear()
+            for pi, pg in enumerate(pages):
+                if pi:
+                    out.append(scene.Token(0, b"\x05", "ctl", 0x05))
+                for li, ln in enumerate(pg):
+                    if li:
+                        out.append(scene.Token(0, b"\x01", "ctl", 0x01))
+                    out.append(scene.Token(0, cs.encode(ln), "text"))
+            return
+        pages = typeset(body, lead, line["w"], line["last"] in _BRK_AFTER)
         # 🔴 조판기는 덩이의 앞뒤 공백을 지운다 — 태그(이름 호출 등) **앞** 공백이 사라져 「이런아트라스님」이 됐다
         # (2026-10-12 화면). 뒤 공백은 덩이 뒤에 태그가 이어질 때만 되살린다.
         if trail and body[-1:] == " " and pages:
             pages[-1][-1] += " "
         pending_text.clear()
+        pre = line["w"]
         for pi, pg in enumerate(pages):
             if pi:
                 out.append(scene.Token(0, b"\x05", "ctl", 0x05))
+                pre = 0.0
+                line["n"] = 0
             for li, ln in enumerate(pg):
                 if li:
                     out.append(scene.Token(0, b"\x01", "ctl", 0x01))
-                out.append(scene.Token(0, cs.encode(ln), "text"))
+                    pre = 0.0
+                    line["n"] += 1
+                if ln:
+                    out.append(scene.Token(0, cs.encode(ln), "text"))
+                pre += krwrap.text_width(ln)
+        line["w"] = pre + (0.5 if trail and body[-1:] == " " and pages else 0.0)
+        last_ln = pages[-1][-1] if pages and pages[-1] else ""
+        line["last"] = last_ln[-1:] if last_ln else (line["last"] if pre else "")
 
     for kind, val in textmap.parse_ours(ours):
         if kind == "text":
@@ -282,6 +438,7 @@ def build_stream(
             # 왕자의 말과 퍼거슨의 대답이 한 창에 붙었다). 쪽 넘김은 **여기서** 토큰으로 낸다.
             flush_text()
             out.append(scene.Token(0, b"\x05", "ctl", 0x05))
+            line["w"], line["last"], line["n"] = 0.0, "", 0
         else:
             code, tgt, raw = val
             if tgt is not None:
@@ -290,6 +447,7 @@ def build_stream(
                     # 꼬리를 같이 쓰는 스트림 — 마지막 쪽을 따로 둔 스트림으로 **새로 잇는다**(고정 스트림이 안에 낀 스트림을 못 옮길 때)
                     m = scene.Token(0, b"\x0f\x00\x00", "ctl", 0x0F, scene.GOTO, tgt)
                     flush_text()
+                    break_before(tgt)
                     out.append(m)
                     continue
                 if m is None:
@@ -298,13 +456,24 @@ def build_stream(
                     )
                 refs.remove(m)
                 flush_text()
+                break_before(tgt)
                 out.append(m)
+                if code == 0x10 and frags and not line["name"]:
+                    line["w"] += _frag_width(frags.get(tgt, ""))
+                    line["last"] = _frag_last(frags.get(tgt, ""))
             elif code in scene.END:
                 flush_text()
                 out.append(scene.Token(0, bytes([code]), "end", code))
             else:
                 flush_text()
                 out.append(scene.Token(0, raw, "ctl", code))
+                if code in (0x01, 0x05):
+                    line["w"], line["last"] = 0.0, ""
+                    line["n"] = line["n"] + 1 if code == 0x01 else 0
+                elif code == 0x1E:
+                    line["name"] = True
+                elif code == 0x04:
+                    line["name"], line["w"] = False, 0.0
     flush_text(False)
     if refs:
         raise SystemExit(
@@ -419,6 +588,8 @@ def verify_jump_readback(buf: bytes, orig: bytes, smap: dict, encode) -> None:
             at = ins + 2 + struct.unpack(">h", buf[ins + 2 : ins + 4])[0]
         elif kind == "abs":
             at = struct.unpack(">I", buf[ins + 2 : ins + 6])[0]
+        elif kind.startswith("tbl:"):  # 워드 표 — 표 시작 + 워드 = 스트림 시작(`kind` 의 16진이 표 시작)
+            at = int(kind[4:], 16) + struct.unpack(">H", buf[ins : ins + 2])[0]
         else:
             raise SystemExit(f"되읽기: {t:#x} 의 참조 종류 {kind} 를 못 따라간다")
         got = bytearray()
@@ -589,7 +760,211 @@ def verify_archive_refs(d: bytes) -> None:
         raise SystemExit(f"아카이브를 가리키는 코드가 알려진 것과 다르다: {sorted(map(hex, got))}")
 
 
+# 씬 모듈의 「무기 번호로 では/ので 4B 를 글 한복판에 덮는」 루틴(보스 82 와 같은 문장) — 한글은 4B 덮기가 안 되니(받침·무기 이름이 가변) 정본 두 문안으로 가르고
+# 루틴을 「무기 번호로 둘 중 하나의 주소를 골라 문구를 찍는 `lea` 의 변위 워드에 쓴다」로 바꾼다(자기 수정 — 원본도 같은 방식으로 문안을 고쳤다).
+# 정본(ed2.json 607·608): 무기 「하지만 {이름}은(는) 통하지\n않는다!!」 · 맨손 「하지만 맨손으로는 피해를 줄 수 없다!!」.
+WEAPON_BRANCH = {
+    (23, 1): {
+        "routine": 0x11C8,  # 원본 루틴 48B(`48E7 0060` … `4E75`)
+        "print_lea": 0x11B2,  # `lea $138A(pc),a1` — 문구를 찍는 곳
+        "eq": 0x138A,  # 장비 문안(=이 스트림의 번역)
+        "bare": "하지만 맨손으로는 피해를 줄 수 없다!!<0a>",
+    }
+}
+WEAPON_ROUTINE_HEAD = bytes.fromhex("48e7006040e745fa")  # 원본 루틴 머리(검산)
+
+
+def apply_weapon_branch(blk, k, new, mod, cs):
+    cfg = WEAPON_BRANCH.get((blk, k))
+    if cfg is None:
+        return new
+    rt, pl = cfg["routine"], cfg["print_lea"]
+    out = bytearray(new)
+    if bytes(out[rt : rt + 8]) != WEAPON_ROUTINE_HEAD or bytes(out[pl : pl + 2]) != b"\x43\xfa":
+        raise SystemExit(f"{blk}-{k}: 무기 분기 루틴/출력 lea 가 원본과 다르다")
+    st = mod.streams[cfg["eq"]]
+    eq = scene.pair_streams(mod, new)[1][cfg["eq"]]
+    body = b"".join(t.raw for t in build_stream(st, cfg["bare"], cs))
+    # 맨손 문구는 **죽은 글 칸**(옮겨진·줄어든 스트림의 옛 자리 — 원판 스트림 칸 안이고 지금 0)에 앉힌다 — 모듈 끝에 덧붙이면 디코드 블록이 원본 최대를 넘는다
+    covered = bytearray(len(out))
+    for s_, st_ in mod.streams.items():
+        covered[s_ : st_.end] = b"\x01" * (st_.end - s_)
+    # 지금 **쓰이는** 스트림(끝 표지 `00` 까지)은 빈 칸이 아니다 — 스트림 끝의 0 바이트를 죽은 칸으로 오인해 맨손 문구가 씬 끝 `00` 을 덮었다(씬023-1:1614, 10-20)
+    live, _pair = scene.pair_streams(mod, new)
+    for s_, st_ in live.streams.items():
+        covered[s_ : st_.end] = b"\x00" * (st_.end - s_)
+    need = len(body) + 2  # 뒤에 0 한 칸(끝 표지 뒤 여백)
+    bare = -1
+    for a in range(len(out) - need):
+        if a & 1 == 0 and all(covered[x] and out[x] == 0 for x in range(a, a + need)):
+            bare = a
+            break
+    if bare < 0:
+        if len(out) & 1:
+            out.append(0)
+        bare = len(out)
+        out += body
+        if len(out) & 1:
+            out.append(0)
+    else:
+        out[bare : bare + len(body)] = body
+
+    def disp(at: int, target: int) -> bytes:  # lea d16(pc),aN — 확장 워드는 at+2
+        return struct.pack(">h", target - (at + 2))
+
+    code = bytearray()
+    code += bytes.fromhex("48e78060")  # movem.l d0/a1-a2,-(a7)
+    code += bytes.fromhex("43fa") + disp(rt + 4, eq)  # lea eq(pc),a1
+    code += bytes.fromhex("4a00")  # tst.b d0   (무기 번호)
+    code += bytes.fromhex("6604")  # bne.s +4   (장비 있음 → eq)
+    code += bytes.fromhex("43fa") + disp(rt + 12, bare)  # lea bare(pc),a1
+    code += bytes.fromhex("45fa") + disp(rt + 16, pl + 2)  # lea <출력 lea 의 변위 워드>(pc),a2
+    code += bytes.fromhex("2009")  # move.l a1,d0
+    code += bytes.fromhex("908a")  # sub.l a2,d0
+    code += bytes.fromhex("3480")  # move.w d0,(a2)   — 출력 lea 의 변위로
+    code += bytes.fromhex("4cdf0601")  # movem.l (a7)+,d0/a1-a2
+    code += bytes.fromhex("4e75")  # rts
+    code += b"\x4e\x71" * ((48 - len(code)) // 2)  # nop 로 원본 칸(48B)을 채운다
+    assert len(code) == 48, len(code)
+    out[rt : rt + 48] = code
+    out[pl + 2 : pl + 4] = disp(pl, eq)  # 기본값 = 장비 문구
+    RL.add("코드 패치", rt, rt, "무기 `では/ので` 4B 덮어쓰기 루틴(48B)을 자기 수정 lea 루틴으로 교체 + 맨손 문구를 죽은 칸/모듈 끝에", RL.EVID_PATCH, RL.UNDO_PATCH, key=f"{blk:03d}-{k}")
+    return bytes(out)
+
+
+def head_table_streams(m: dict) -> frozenset[int]:
+    """정본 항목 가운데 상점 표 머리(`<포인터 워드들+4E71>` 로 시작)인 스트림 시작들."""
+    out = set()
+    for key, ent in m["streams"].items():
+        mm = re.match(r"<((?:[0-9a-f]{2}){3,})>", ent.get("ours") or "")
+        if mm and mm.group(1).endswith("4e71"):
+            out.add(int(key, 16))
+    return frozenset(out)
+
+
+def fix_head_words(new: bytes, mod, rep) -> tuple[bytes, int]:
+    """상점 표 머리의 포인터 워드를 새 자리로 다시 쓴다 → (바이트, 고친 워드 수).
+
+    워드 0 은 원판에서 `표 시작 + 머리 길이` — 표 바로 뒤 첫 문안(= 안쪽 스트림 I 와 같은 글)이다. 번역으로 I 가 옮겨져도 표의 **자기 복사본**(머리 + 같은 글)이 있으니 그리로 돌린다.
+    다른 워드는 가리키던 문안(가장 안쪽 스트림)의 새 자리 + 안쪽 오프셋으로 돌린다(제자리면 그대로)."""
+    _k, pair = scene.pair_streams(mod, new)
+    om = mod.data
+    out = bytearray(new)
+    n = 0
+    for o, st in mod.streams.items():
+        if o not in rep or o not in pair:
+            continue
+        j = next(
+            (x for x in range(o + 2, min(o + 12, st.end), 2) if om[x : x + 2] == b"\x4e\x71"), None
+        )
+        if j is None or j - o < 4:
+            continue
+        hl = j + 2 - o
+        nw = pair[o]
+        for i in range(0, hl - 2, 2):
+            w = struct.unpack(">H", om[o + i : o + i + 2])[0]
+            if w == o + hl:
+                tgt = nw + hl
+            else:
+                owner = max(
+                    (x for x, sx in mod.streams.items() if x <= w < sx.end and x != o), default=None
+                )
+                if owner is None or owner not in pair:
+                    continue
+                tgt = pair[owner] + (w - owner)
+            if struct.unpack(">H", out[nw + i : nw + i + 2])[0] != tgt:
+                out[nw + i : nw + i + 2] = struct.pack(">H", tgt)
+                RL.add("포인터", nw + i, tgt, "상점 표 머리 포인터 워드를 새 문안 자리로 다시 썼다", RL.EVID_VM, "되돌리기 수단 없음 — 되돌리면 워드가 옛 번지(남의 글·빈 칸)를 가리킨다")
+                n += 1
+    return bytes(out), n
+
+
+def verify_head_tables(new: bytes, mod, rep) -> int:
+    """🔴 상점 표 머리(원판 `[포인터 워드 ×N] 4E71 …`)가 구운 모듈에서 맞는지 본다 → 검사한 표 수.
+
+    표의 워드는 **같은 모듈 안 문안의 자리**다. 번역으로 문안이 옮겨지거나 머리가 글자로 오인돼 바이트가 바뀌면(2026-10-20: 064-1·069-3 은 `10 xx` 가 호출로 읽혀 변위가 다시 재졌고,
+    073-1 은 머리 뒤에 「お」 가 남고, 074-2 는 워드 하나·`4E71` 이 빠졌다) 메뉴가 엉뚱한 곳을 읽는다. ① 머리 끝의 `4E71`(머리 워드 자리)이 그대로 ② 워드 0 = 표 자기 복사본 ③ 나머지 워드는
+    제자리 그대로(바이트 같음)이거나 가리키던 문안의 새 자리."""
+    _k, pair = scene.pair_streams(mod, new)
+    om = mod.data
+    n = 0
+    for o, st in mod.streams.items():
+        if o not in rep or o not in pair:
+            continue
+        j = next(
+            (x for x in range(o + 2, min(o + 12, st.end), 2) if om[x : x + 2] == b"\x4e\x71"), None
+        )
+        if j is None or j - o < 4:
+            continue
+        hl = j + 2 - o
+        nw = pair[o]
+        if bytes(new[nw + hl - 2 : nw + hl]) != b"\x4e\x71":
+            raise ValueError(
+                f"상점 표 머리 @{o:#x} 의 머리 워드 자리(4E71)가 원판과 다르다({bytes(new[nw + hl - 2 : nw + hl]).hex()})"
+            )
+        for i in range(0, hl - 2, 2):
+            w = struct.unpack(">H", om[o + i : o + i + 2])[0]
+            nv = struct.unpack(">H", new[nw + i : nw + i + 2])[0]
+            if w == o + hl:
+                if nv != nw + hl:
+                    raise ValueError(
+                        f"상점 표 머리 @{o:#x} 워드 0 이 표 자기 복사본({nw + hl:#x})이 아니다({nv:#x})"
+                    )
+                continue
+            if nv == w and bytes(new[w : w + 4]) == bytes(om[w : w + 4]):
+                continue  # 제자리 그대로
+            owner = max(
+                (x for x, sx in mod.streams.items() if x <= w < sx.end and x != o), default=None
+            )
+            # 워드가 스트림 **한 바이트 앞**(아이템 코드 `0E` 가 파서에선 스트림 밖 — 「{item}…」 문구)을 가리킨다 — 그 바이트가 제자리고 뒤 스트림이 제자리(또는 제자리 goto 스텁)면 된다
+            if (
+                owner is None
+                and (w + 1) in mod.streams
+                and (w + 1) in pair
+                and nv == w
+                and new[w] == om[w]
+                and (pair[w + 1] == w + 1 or new[w + 1] == 0x0F)
+            ):
+                continue
+            if owner is None or owner not in pair or pair[owner] + (w - owner) != nv:
+                raise ValueError(
+                    f"상점 표 머리 @{o:#x} 의 워드 {w:#x}→{nv:#x} 가 가리키는 문안과 어긋난다"
+                )
+        n += 1
+    return n
+
+
+def repoint_shared_heads(new: bytes, mod, rep_keys) -> tuple[bytes, int]:
+    """🔴 머리 워드를 런타임에 쓰는 `lea`(원판 `4E71` 자리 — 상점 표 「…더는 못 가지실 것 같군요」 류)를 **바깥 복사본**으로 돌린다.
+
+    원판은 안쪽 스트림 I(`4E71` 로 시작)가 바깥 스트림 O(앞 포인터 워드 표 + I) 의 **꼬리**라 한 번 쓰면 둘 다 고쳐졌다. 번역으로 O 가 옮겨지면 복사본이 둘이라
+    코드는 I 의 복사본만 고치고, 표를 읽는 서비스는 O 의 복사본(머리 워드 자리 `4E71` 그대로 = NOP 워드)을 읽는다(2026-10-20 unicorn 으로 확인).
+    I 의 `lea` 변위를 O 새 자리 + (I−O) 로 바꾼다 — 두 복사본의 그 자리 바이트가 같을 때만."""
+    _kmod, pair = scene.pair_streams(mod, new)
+    out = bytearray(new)
+    n = 0
+    for ins, s in mod.roots.items():
+        if s not in rep_keys:
+            continue
+        outer = next((o for o, st in mod.streams.items() if o < s < st.end), None)
+        if outer is None or outer not in pair or s not in pair:
+            continue
+        cand = pair[outer] + (s - outer)
+        cur = pair[s]
+        ln = min(mod.streams[s].end - s, 8)
+        if cand == cur or bytes(out[cand : cand + ln]) != bytes(out[cur : cur + ln]):
+            continue
+        if bytes(out[cand : cand + 2]) != b"\x4e\x71":
+            continue
+        out[ins + 2 : ins + 4] = struct.pack(">h", cand - (ins + 2))
+        RL.add("포인터", ins + 2, cand, "머리 워드를 런타임에 쓰는 lea 를 바깥 복사본으로 돌렸다(안쪽·바깥 복사본이 갈라진 상점 표)", RL.EVID_VM, "되돌리기 수단 없음 — 되돌리면 쓰는 쪽과 읽는 쪽이 갈라져 NOP 워드를 읽는다(상점 메뉴 오작동)")
+        n += 1
+    return bytes(out), n
+
+
 def main(check_only: bool = False) -> None:
+    RL.reset()
+    debug_build.check_tag()  # 꼬리표와 디버그 스위치가 어긋나면 일을 시작하기 전에 거부한다
     orig = common.rom()
     verify_archive_refs(orig)
     maps = textmap.load_all()
@@ -618,37 +993,73 @@ def main(check_only: bool = False) -> None:
     )
     replace: dict[tuple[int, int], bytes] = {}
     reasm_errors: list[str] = []
+    n_evt = 0
+    n_repoint = 0
+    n_heads = 0
+    n_headwords = 0
     for (blk, k), m in sorted(maps.items()):
         mb = banners.patch(
             (blk, k), textmap.module_bytes(orig, blk, k), lambda s: encode_tagged(s, cs)
         )
         mod = scene.parse_module(mb)
         rep = {}
+        frags = {int(k_, 16): e_["ours"] for k_, e_ in m["streams"].items() if e_.get("ours")}
         for key, ent in m["streams"].items():
             if not ent.get("ours"):
                 continue
             off = int(key, 16)
-            if any(o <= off < o + banners.STRIDE * n for o, n in banners.BY_MODULE.get((blk, k), ())):
+            if any(
+                o <= off < o + banners.STRIDE * n for o, n in banners.BY_MODULE.get((blk, k), ())
+            ):
                 continue  # 지명 배너 표 칸 — banners.patch 가 굽는다(스트림 번역이 덮으면 안 된다)
             st = mod.streams.get(off)
             if st is None:
                 raise SystemExit(f"블록 {blk}-{k}: 스트림 {key} 가 없다")
             if textmap.jp_key(st) != ent["jp"]:
                 raise SystemExit(f"블록 {blk}-{k} 스트림 {key}: 원문 해시가 갈렸다")
-            rep[off] = build_stream(st, ent["ours"], cs, raw_text=bool(ent.get("raw")))
+            rep[off] = build_stream(
+                st, ent["ours"], cs, raw_text=bool(ent.get("raw")), frags=frags
+            )
         if not rep:
             if mb != textmap.module_bytes(orig, blk, k):  # 배너 표만 바뀐 모듈 — 같은 길이
                 replace[(blk, k)] = mb
             continue
         try:
+            RL.begin(f"{blk:03d}-{k}")
             new = scene.reassemble(mod, rep)
-            scene.verify_reassembly(mod, new, rep)
+            scene.verify_reassembly(mod, new, rep, head_table_streams(m))
+            scene.verify_cond_tails(
+                mod, new, rep
+            )  # 조건 분기 뒤 물리적 꼬리가 원판과 같은지(10-19 md-ed1 발견)
+            n_evt += scene.verify_event_tables(
+                mod.data, new, rep
+            )  # 이벤트 표가 바이트까지 같은지(10-20 md-ed1 발견)
+            new = ctl_toggle_scan.neutralize(
+                blk, k, new
+            )  # 코드가 글 한복판 4B 를 덮는 자리를 자료 위로(10-20)
+            new, n_rp = repoint_shared_heads(new, mod, set(rep))
+            n_repoint += n_rp
+            new, n_hw = fix_head_words(new, mod, rep)
+            n_headwords += n_hw
+            n_heads += verify_head_tables(new, mod, rep)
+            new = apply_weapon_branch(
+                blk, k, new, mod, cs
+            )  # 023-1 「…무기 では/ので」 — 정본 두 문안 + 무기 번호 분기
         except (ValueError, KeyError) as e:
             reasm_errors.append(f"블록 {blk}-{k}: {type(e).__name__} {e}")
             continue
         replace[(blk, k)] = new
     if reasm_errors:
         raise SystemExit("\n".join(reasm_errors))
+    print(f"  이벤트 표 {n_evt}개(재조립 모듈 안) — 원판과 바이트까지 같다")
+    print(f"  머리 워드 쓰기 lea {n_repoint}곳을 바깥 복사본으로 돌렸다")
+    print(f"  이어질 조각 앞 줄바꿈 {len(BREAKS_ADDED)}곳")
+    print(
+        f"  앞 폭 반영 못 한 덩이 {len(PREFIX_UNFIT)}개 — 앞 글과 붙은 어절이 끊을 자리 없이 넘쳐 런타임 어절 줄넘김에 맡긴다"
+    )
+    print(
+        f"  상점 표 머리 {n_heads}개 — 머리 워드 자리(4E71)·포인터 워드 {n_headwords}개를 새 자리로 고쳐 의도와 같다"
+    )
     for key in banners.BY_MODULE:  # 번역 정본이 없는 모듈의 배너 표
         if key not in maps and key not in replace:
             replace[key] = banners.patch(
@@ -771,8 +1182,13 @@ def main(check_only: bool = False) -> None:
     cap5 = {c for c in captions.font5_chars(cmap) if c.strip() or c == " "}
     if cap5:
         for label, pos, body in hangul.resource5(
-            cs, cap5, hangul.layout_after_r1(cs), cell=captions.FONT_CELL, source=captions.FONT_SRC,
-            narrow_adv=captions.FONT_PITCH // 2, digit_extra=captions.DIGIT_EXTRA
+            cs,
+            cap5,
+            hangul.layout_after_r1(cs),
+            cell=captions.FONT_CELL,
+            source=captions.FONT_SRC,
+            narrow_adv=captions.FONT_PITCH // 2,
+            digit_extra=captions.DIGIT_EXTRA,
         ):
             rom.write(label, pos, body)
     for label, pos, body in cap_writes:
@@ -843,7 +1259,16 @@ def main(check_only: bool = False) -> None:
     if orig[SCENE_REF - 2 : SCENE_REF + 4] != b"\x43\xf9" + struct.pack(">I", archives.SCENE_SIZES):
         raise SystemExit("씬 크기 표를 부르는 명령(0x1A490 lea.l $19DC3C.l,a1)이 원본과 다르다")
     rom.write("scene-ref", SCENE_REF, struct.pack(">I", SCENE_TABLE_AT))
+    debug_build.check_tag()
+    ndbg = debug_build.apply(rom)
+    if ndbg:
+        print(
+            f"  ⚠ 디버그 스위치 켜짐({debug_build.ENV}=1) — 시험·마스터 디버그 전용, 패치 {ndbg}곳(제품 롬 아님)"
+        )
     rom.write("checksum", 0x18E, struct.pack(">H", common.header_checksum(rom.buf)))
+    kana_gate.check_rom(
+        bytes(rom.buf), freeze="--freeze-kana" in sys.argv
+    )  # 최종 롬 전체 일본어 잔존(대본 밖 포함)
     verify_jump_readback(bytes(rom.buf), orig, smap, cs.encode)
     ncap = captions.verify_readback(
         bytes(rom.buf),
@@ -883,8 +1308,9 @@ def main(check_only: bool = False) -> None:
     # 🔴 지난 실패 표식을 지운다 — pull-build.sh 는 .failed 가 하나라도 있으면 그 칸을 통째로 거부한다
     for stale in out_dir.glob("*.failed"):
         stale.unlink()
-    out = out_dir / "ed2-kr.bin"
+    out = out_dir / debug_build.rom_name()
     out.write_bytes(bytes(rom.buf))
+    RL.write_tsv(out_dir / "relocations.build.tsv", RL.rows())  # 재배치 장부(빌드가 실제로 한 것) — struct_check --ledger 가 커밋 장부와 맞댄다
     print(f"  {out} — 쓰기 {len(rom.log)}건 · sha1 {common.sha1_of_bytes(bytes(rom.buf))[:8]}…")
 
 
@@ -893,7 +1319,7 @@ if __name__ == "__main__":
         main("--check" in sys.argv)
     except SystemExit as e:
         out_dir = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_")
-        p = out_dir / "ed2-kr.bin"
+        p = out_dir / debug_build.rom_name()
         if p.exists():
             p.rename(p.with_suffix(".bin.failed"))
         raise SystemExit(f"❌ 빌드 실패: {e}") from e

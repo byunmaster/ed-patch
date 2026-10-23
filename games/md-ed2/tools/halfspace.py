@@ -45,8 +45,9 @@ EXTRA_BYTES = 2  # 4px = 4bpp 2바이트(위 ⚠)
 SITE = 0xB844  # bsr.w $9b32
 DRAW = 0xBAEA
 TRAMP = josa.DEAD_HANDLER + 18
-CODE_OFF = 0x150  # wrap 꼬리 예약 안 오프셋(wordwrap 본체 326B = 0x146 뒤)
-CODE_LEN = 28
+CODE_OFF = 0x220  # wrap 꼬리 예약 안 오프셋(wordwrap 본체 540B = 0x21C 뒤)
+CODE_LEN = 50
+PRIME = 0x818C  # 이름 꼬리 「′」(원판 글자) — 글리프 잉크가 왼쪽 7px 뿐이고 오른쪽 5px 가 비어 조사가 떠 보였다
 EXTRA_PX = EXTRA_BYTES * 2
 
 
@@ -68,13 +69,19 @@ def code(cs) -> bytes:
     c = int.from_bytes(cs.encode_char(PUA), "big")
     b = bytearray()
     b += struct.pack(">HH", 0x0C40, c)  # cmpi.w #CODE,d0
-    b += bytes([0x67, 0x06])  # beq.s +6
+    b += bytes([0x67, 0x0C])  # beq.s A (+12)
+    b += struct.pack(">HH", 0x0C40, PRIME)  # cmpi.w #0x818C,d0
+    b += bytes([0x67, 0x16])  # beq.s B (+22)
     b += struct.pack(">H", 0x4EF9) + struct.pack(">I", DRAW)  # jmp $9b32.l (보통 글자)
+    # A: 「의␣」 — 그린 뒤 4px 더 전진
     b += struct.pack(">H", 0x4EB9) + struct.pack(">I", DRAW)  # jsr $9b32.l
     b += struct.pack(">H", 0x5088 | (EXTRA_BYTES << 9) | 2)  # addq.l #n,a2
-    b += struct.pack(">H", 0x5039 | (EXTRA_BYTES << 9)) + struct.pack(
-        ">I", 0xFF2018
-    )  # addq.b #n,$FF2018.l
+    b += struct.pack(">H", 0x5039 | (EXTRA_BYTES << 9)) + struct.pack(">I", 0xFF2018)  # addq.b #n,$FF2018.l
+    b += struct.pack(">H", 0x4E75)  # rts
+    # B: 이름 꼬리 「′」 — 오른쪽 빈 칸 5px 를 4px 되감아 뒤 글자(조사)가 바로 붙게 한다
+    b += struct.pack(">H", 0x4EB9) + struct.pack(">I", DRAW)  # jsr $9b32.l
+    b += struct.pack(">H", 0x5188 | (EXTRA_BYTES << 9) | 2)  # subq.l #n,a2
+    b += struct.pack(">H", 0x5139 | (EXTRA_BYTES << 9)) + struct.pack(">I", 0xFF2018)  # subq.b #n,$FF2018.l
     b += struct.pack(">H", 0x4E75)  # rts
     assert len(b) == CODE_LEN, len(b)
     return bytes(b)

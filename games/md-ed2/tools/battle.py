@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import archives
 import common
+import reloc_ledger as RL
 import scene
 import sysmsg
 
@@ -39,17 +40,18 @@ REC0, REC_STEP, NAME_AT = 0x0C, 0x40, 0x30
 NAME_MAX = 15  # 16B 칸 − 06
 LEA = re.compile(rb"([\x41\x43\x45\x47\x49\x4b])\xfa(..)", re.DOTALL)  # a6(4D) 는 플래그 포인터
 APPEAR_RUN = re.compile(
-    rb"(?:[\x81-\x9f\xe0-\xea][\x40-\x7e\x80-\xfc]|[\xa1-\xdf]){2,40}"
-    rb"(?:\x82\xaa\x8c\xbb\x82\xea\x82\xbd\x81\x42|\x82\xc6\x82\xcc\x90\xed\x93\xae\x82\xbe\x81\x42)"
-)  # 「…が現れた。」 · 「…との戦闘だ。」
+    rb"(?:[\x81-\x9f\xe0-\xea][\x40-\x7e\x80-\xfc]|[\xa1-\xdf]|\x20){2,40}"
+    rb"(?:\x82\xaa\x8c\xbb\x82\xea\x82\xbd\x81\x42|\x82\xc6\x82\xcc\x90\xed\x93\xac\x82\xbe\x81\x42)"
+)  # 「…が現れた。」 · 「…との戦闘だ。」 — 이름 사이 공백(「皇帝 ゴドウィン２世」)도 받는다(블록 81 등장 문구가 일본어로 남았다, 10-18)
 FLAG = re.compile(rb"\x4d\xfa(..)(?:\x1c\x80|\x1c\xbc\x00\xff|\x1c\x86)", re.DOTALL)
 SUFFIX = re.compile(r"[Ａ-ＤA-D♀♂][′″]?$")  # ED2 는 변형 표지 ′·″ 가 붙는다(붉은슬러그 Ａ′·Ｂ″)
 NAME_TAG = re.compile(r"\{([^{}|]+)(?:\|([^{}]+))?\}")
+ANCHOR = "<@>"  # 정본 문안 속 도착점 표지 — 다른 스트림이 글 한복판으로 부르는 자리
 MAP_JSON = common.GAME_DIR / "textmap" / "battle.json"
 EXPECT = (
     247,
     119,
-    285,
+    373,
 )  # 이름 · 기본 이름 · 고유 스트림(lea·플래그·자료 A + 연쇄 39, 2026-09-06 · 짧은 lea 조각 +3, 09-27)
 
 
@@ -69,18 +71,20 @@ def records(b: bytes) -> list[dict]:
     while p + NAME_AT < t[1]:
         nxt = p + REC_STEP
         last = nxt >= t[1]
-        if not b[p] & 0x80:
-            q = b.index(0x06, p + NAME_AT)
-            name = b[p + NAME_AT : q]
+        if True:  # 0x80 표시 레코드(C·D 칸)도 런타임엔 쓰인다 — 실측 블록 0·3·29 RAM 에 일본어 이름 「ッグＣ」로 올라온다(2026-10-18)
+            at = p + NAME_AT
+            # 짧은 레코드 꼴(블록 59 등): 0x80 표시 레코드에서 표준 이름 자리가 0xFF 로 비고 이름이 머리 13B 뒤(+0xD)에 따로 있다
+            if b[p] & 0x80 and b[at] == 0xFF and 0x81 <= b[p + 0xD] <= 0x9F:
+                at = p + 0xD
+            q = b.index(0x06, at)
+            name = b[at:q]
             out.append(
                 {
                     "start": p,
-                    "name_at": p + NAME_AT,
+                    "name_at": at,
                     "name": name,
                     "last": last,
-                    "cap": (t[1] - (p + NAME_AT) - 1)
-                    if last
-                    else NAME_MAX,  # 마지막은 06 뒤 패딩까지
+                    "cap": (t[1] - at - 1) if last else NAME_MAX,  # 마지막은 06 뒤 패딩까지
                 }
             )
         p = nxt
@@ -94,6 +98,11 @@ def base_name(s: str) -> str:
 def suffix_of(s: str) -> str:
     m = SUFFIX.search(s)
     return m.group(0) if m else ""
+
+
+def suffix_kr(s: str) -> str:
+    """접미 Ａ~Ｄ 반각 + ″ 는 한 글자 그대로(NFKC 가 ′′ 두 글자로 펴 이름 칸이 1B 넘친다 — 붉은 슬러그Ｂ″)."""
+    return unicodedata.normalize("NFKC", suffix_of(s)).replace("′′", "″")
 
 
 def _stream(b: bytes, tgt: int):
@@ -122,6 +131,12 @@ def _short_lea(b: bytes, tgt: int):
 
 def refs(b: bytes) -> dict[int, dict]:
     """스트림 시작 → {stream, lea:[명령 자리], words:[자료 A 의 워드 자리], pinned}."""
+    return _refs(b)[0]
+
+
+def _refs(b: bytes) -> tuple[dict[int, dict], dict[int, scene.Stream]]:
+    """(`refs`, 징검다리) — 징검다리 = call/goto 로 닿지만 글이 없어 문안으로 안 잡힌 조각(`call 조각; end` 꼴). 글은 아니나 **피연산자는 옮김 뒤에 다시 재야 한다**."""
+    bridges: dict[int, scene.Stream] = {}
     t = sections(b)
     out: dict[int, dict] = {}
 
@@ -170,11 +185,41 @@ def refs(b: bytes) -> dict[int, dict]:
             st = scene.parse_stream(b, tg)
         except (ValueError, IndexError):
             continue
-        if not _has_kana(st):
-            continue
-        out[tg] = {"stream": st, "lea": [], "words": [], "pinned": True}
+        # 🔴 가나가 없는 조각도 **따라는 간다** — `call 조각; end` 꼴의 징검다리(블록 62 0xA0D)를 건너뛰면 그 뒤의 「を使った。」가 샌다.
+        # 한자만 있는 짧은 이름 조각(블록 82 0x63 「皇帝 」)은 화면에 나가니 문안으로 받는다(한자는 한글 슬롯과 코드가 겹쳐 엉뚱한 글자가 뜬다).
+        inside = any(
+            k < tg < e["stream"].end for k, e in out.items()
+        )  # 남의 글 한복판 꼬리 — 따로 문안이 아니다(그 글을 다시 쓸 때 같이 간다)
+        in_records = tg < t[1]  # 레코드 영역의 이름은 몬스터 이름 표 몫(`chain` 이 잡는다)
+        if not inside and (_short_kanji(st) or (_has_kana(st) and not in_records)):
+            out[tg] = {"stream": st, "lea": [], "words": [], "pinned": True}
+        elif not any(t.kind == "text" for t in st.tokens):
+            bridges[tg] = st
         work += [tok.target for tok in st.tokens if tok.ref in (scene.GOTO, scene.CALL)]
-    return dict(sorted(out.items()))
+    return dict(sorted(out.items())), bridges
+
+
+def _short_kanji(st: scene.Stream) -> bool:
+    """한자가 든 짧은(<16B) 조각 — 조각 전체가 SJIS 로 풀려야 하고 한자 한 자 이상(화자 이름 앞부분 「皇帝 」 같은 것)."""
+    if st.end - st.tokens[0].off >= 16:
+        return False
+    txt = b"".join(t.raw for t in st.tokens if t.kind == "text")
+    n, i = 0, 0
+    while i < len(txt):
+        if scene.is_lead(txt[i]):
+            if i + 1 >= len(txt):
+                return False
+            try:
+                ch = txt[i : i + 2].decode("cp932")
+            except UnicodeDecodeError:
+                return False
+            n += "一" <= ch <= "鿿"
+            i += 2
+        elif txt[i] in (0x20, 0x21):
+            i += 1
+        else:
+            return False
+    return n >= 1
 
 
 def _has_kana(st: scene.Stream) -> bool:
@@ -372,7 +417,7 @@ def kr_name(jp: str, monsters: dict) -> str:
     kr = ent.get("ours", "") if ent else (_glossary(base) or "")
     if not kr:
         raise SystemExit(f"battle: 몬스터 이름 정본이 없다 {base!r}")
-    return kr + unicodedata.normalize("NFKC", suffix_of(jp))
+    return kr + suffix_kr(jp)
 
 
 def expand_names(text: str, monsters: dict) -> str:
@@ -419,8 +464,112 @@ def letter_hide_sites(b: bytes) -> list[tuple[int, int, int]]:
     return out
 
 
+BOSS_BLOCK = 82  # 고드윈 2세 — 「ダメージを与えられない」 변형 문구(무기 장비 / 맨손)
+BOSS_STREAMS = (
+    0xA0C,
+    0xA13,
+)  # 원문: 앞 일곱 바이트(「しかし」+이름 제어)와 그 뒤 4B 가 런타임에 덮이는 꼬리
+BOSS_ROUTINE = 0x8DE  # 4B 를 덮어쓰던 루틴(36B) — 무기 번호(d0)가 0 이면 `ので`, 아니면 `では` 를 `$A13` 머리에 복사
+BOSS_PRINT_LEA = 0x8CC  # `lea $A0C(pc),a1` — 문구를 찍는 곳(확장 워드 = 변위)
+BOSS_ROUTINE_OLD = bytes.fromhex(
+    "48e7006045fa012f43fa001ac0006600000643fa001414d914d914d914d94cdf06004e75"
+)
+
+
+def patch_boss_block(
+    out: bytearray, b: bytes, rs: dict, textmap: dict, monsters: dict, encode
+) -> None:
+    """블록 82 — 원문은 문장 하나(`しかし`+이름+`ではダメージ…`)의 **머리 4바이트를 코드가 덮어** 변형(`では`/`ので`)을 만든다. 한글은
+    칸(4B)·받침(무기 이름이 가변) 때문에 그 방식이 안 되고, 덮어쓴 일본어 조사가 화면에 남았다(2026-10-18 실측).
+    정본 두 문장(무기 「…{이름}은(는) 통하지 않는다」 · 맨손 「…맨손으로는 피해를 줄 수 없다」)을 **독립 문안 둘**로 블록 끝에 놓고,
+    루틴을 「무기 번호로 둘 중 하나의 주소를 골라 문구 출력 `lea` 의 변위 워드에 쓴다」로 바꾼다(자기 수정 — 원본도 같은 방식으로 문안을
+    고쳤다). 이름 뒤 조사는 아이템 이름 조사 훅(`<ec00>` 은/는)이 런타임에 고른다."""
+    if b[BOSS_ROUTINE : BOSS_ROUTINE + len(BOSS_ROUTINE_OLD)] != BOSS_ROUTINE_OLD:
+        raise SystemExit("블록 82 4B 덮어쓰기 루틴이 원본과 다르다 — 엔진 주소가 밀렸나")
+    bodies = []
+    for tgt in BOSS_STREAMS:
+        st = rs[tgt]["stream"]
+        ent = textmap.get(pos_key(st, BOSS_BLOCK, tgt)) or textmap.get(jp_key(st))
+        if not ent or not ent.get("ours"):
+            raise SystemExit(f"블록 82 {tgt:#x} 문안이 정본(textmap)에 없다")
+        ours = expand_names(ent["ours"], monsters)
+        st2 = drop_goto(st, ours)
+        bodies.append(b"".join(t.raw for t in sysmsg._tokens_from_ours(st2, ours, encode)))
+    pos = []
+    for body in bodies:
+        if len(out) & 1:
+            out.append(0)
+        pos.append(len(out))
+        out += body
+    if len(out) & 1:
+        out.append(0)
+    # 원문 일본어 지우기 — 옛 문구 꼬리와 `では`/`ので` 자료 8B
+    span = rs[BOSS_STREAMS[0]]["stream"].end - BOSS_STREAMS[0]
+    out[BOSS_STREAMS[0] : BOSS_STREAMS[0] + span] = b"\x00" * span
+    out[0x902:0x90A] = b"\x00" * 8
+    eq, bare = pos
+
+    def lea_at(at: int, target: int) -> bytes:  # lea d16(pc),aN — 확장 워드는 at+2
+        return struct.pack(">h", target - (at + 2))
+
+    code = bytearray()
+    code += bytes.fromhex("48e78060")  # movem.l d0/a1-a2,-(a7)
+    code += bytes.fromhex("43fa") + lea_at(BOSS_ROUTINE + 4, eq)  # lea eq(pc),a1
+    code += bytes.fromhex("4a00")  # tst.b d0   (무기 번호)
+    code += bytes.fromhex("6604")  # bne.s +4   (장비 있음 → eq)
+    code += bytes.fromhex("43fa") + lea_at(BOSS_ROUTINE + 12, bare)  # lea bare(pc),a1
+    code += bytes.fromhex("45fa") + lea_at(
+        BOSS_ROUTINE + 16, BOSS_PRINT_LEA + 2
+    )  # lea <변위 워드>(pc),a2
+    code += bytes.fromhex("2009")  # move.l a1,d0
+    code += bytes.fromhex("908a")  # sub.l a2,d0
+    code += bytes.fromhex("3480")  # move.w d0,(a2)   — 출력 lea 의 변위로
+    code += bytes.fromhex("4cdf0601")  # movem.l (a7)+,d0/a1-a2
+    code += bytes.fromhex("4e75")  # rts
+    code += bytes.fromhex("4e714e71")  # nop nop
+    assert len(code) == 36, len(code)
+    out[BOSS_ROUTINE : BOSS_ROUTINE + 36] = code
+    out[BOSS_PRINT_LEA + 2 : BOSS_PRINT_LEA + 4] = lea_at(BOSS_PRINT_LEA, eq)  # 기본값 = 장비 문구
+    out[8:10] = struct.pack(">H", len(out))
+
+
+# 마지막 레코드(D 칸)는 레코드 구역이 4B 짧은 블록에서 잘려 이름 칸이 짧다(구역 1 끝 = 구역 2 시작이라 12B 뿐 — 정상 블록은 16B).
+# 「炎の騎士Ｄ」→「불꽃의 기사D」 12B + 06 이 안 들어간다. 줄이지 않고 **레코드 구역 끝에 4B 를 끼워 넣어** 정상 블록 꼴(16B)로 만든다(`grow_records`).
+GROW_RECORDS = {(11, "炎の騎士Ｄ"): 4}
+
+
+def grow_records(b: bytes, k: int) -> bytes:
+    """레코드 구역(구역 1) 끝에 0 을 `k`B 끼운다 — 헤더 경계 넷과 블록 안 **절대 오프셋 워드**(스트림 시작·구역 경계를 가리키는 것)를 +k,
+    pc 상대 참조는 구역 2 이후끼리라 그대로. 가리키는 워드를 정확히 못 세면(헤더 밖 3개 초과·레코드 구역 안) 멈춘다."""
+    t = list(struct.unpack(">6H", b[:12]))
+    t1 = t[1]
+    targets = {x for x in refs(b) if x >= t1} | {x for x in t[2:5]}
+    out = bytearray(b[:t1] + bytes(k) + b[t1:])
+    hits = []
+    for i in range(12, len(b) - 1, 2):
+        v = struct.unpack(">H", b[i : i + 2])[0]
+        if v in targets:
+            if i < t1:
+                raise SystemExit(
+                    f"grow_records: 레코드 구역 안 {i:#x} 에 오프셋 후보 {v:#x} — 사람이 확인한다"
+                )
+            hits.append(i)
+    if len(hits) > 6:
+        raise SystemExit(f"grow_records: 오프셋 워드 후보 {len(hits)} > 6 — 사람이 확인한다")
+    for i in hits:
+        v = struct.unpack(">H", b[i : i + 2])[0]
+        out[i + k : i + k + 2] = struct.pack(">H", v + k)
+    for j in range(1, 6):
+        out[2 * j : 2 * j + 2] = struct.pack(">H", t[j] + k)
+    return bytes(out)
+
+
 def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes | None:
     """블록 하나의 새 바이트(바뀐 게 없으면 None)."""
+    for (gn, gjp), gk in GROW_RECORDS.items():
+        if gn == n and any(r["name"].decode("cp932", "replace") == gjp for r in records(b)):
+            b = grow_records(b, gk)
+            RL.add("옮김", sections(b)[1] - gk, sections(b)[1], f"레코드 구역 끝에 {gk}B 를 끼워 넣어 뒤 구역을 통째로 민다(마지막 이름 칸 16B 확보)", "battle.grow_records — 구역 표(헤더 5워드) 재측정", "되돌리기 수단 없음 — 이름 칸이 12B 뿐이라 한글 이름이 안 들어간다", key=f"전투{n:03d}")
     out = bytearray(b)
     changed = False
     errs = []
@@ -447,28 +596,43 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         if r is None:
             continue
         jp = r["name"].decode("cp932", "replace")
-        if len(base_name(jp).encode("cp932")) != off or not base_name(jp) in monsters:
+        if base_name(jp) not in monsters or len(base_name(jp).encode("cp932")) != off:
             continue
         enc = encode(kr_name(jp, monsters))
-        new_off = len(enc) - len(encode(unicodedata.normalize("NFKC", suffix_of(jp))))
+        new_off = len(enc) - len(encode(suffix_kr(jp)))
         new_addr = 0xFF1DBC + (slot + ACTOR0) * ACTOR_REC + ACTOR_NAME + new_off
         if new_addr != 0xFF1DBC + (slot + ACTOR0) * ACTOR_REC + ACTOR_NAME + off:
             out[ins + 6 : ins + 8] = struct.pack(">H", new_addr & 0xFFFF)
+            RL.add("포인터", ins + 6, new_addr & 0xFFFF, "알파벳 숨김 쓰기 주소를 한글 이름 길이 기준으로 다시 잰다", RL.EVID_BATTLE, RL.UNDO_NONE, key=f"전투{n:03d}")
             changed = True
     moves = []
+    jump_at: dict[int, int] = {}  # 제자리엔 goto 스텁만 두고 본문을 끝에 놓은 스트림 → 본문 자리
+    move_at: dict[int, int] = {}  # 옮겨진 스트림(연쇄 포함) → 새 자리
     jumps = []  # 참조를 몰라 못 옮기는 스트림 — 제자리엔 goto 만 두고 본문은 블록 끝으로(sysmsg.TAIL_JUMP 와 같은 기전)
-    rs = refs(b)
+    rs, bridges = _refs(b)
     # 새 문안 본문 — 번역 없는 스트림은 None
     bodies: dict[int, bytes | None] = {}
+    anchors: dict[int, list[int]] = {}  # 스트림 → 정본 `<@>` 자리의 새 본문 안 오프셋
+    toks_used: dict[
+        int, list
+    ] = {}  # 새 본문의 토큰(참조 태그는 원본 토큰 — 상대 변위를 자리가 정해진 뒤 다시 잰다)
     for tgt, e in rs.items():
         st = e["stream"]
         ent = textmap.get(pos_key(st, n, tgt)) or textmap.get(jp_key(st))
-        if not ent or not ent.get("ours"):
-            bodies[tgt] = None
+        if not ent or not ent.get("ours") or (n == BOSS_BLOCK and tgt in BOSS_STREAMS):
+            bodies[tgt] = None  # 보스 블록의 두 변형 문구는 `patch_boss_block` 이 따로 놓는다
             continue
         ours = expand_names(ent["ours"], monsters)
         st = drop_goto(st, ours)
-        bodies[tgt] = b"".join(t.raw for t in sysmsg._tokens_from_ours(st, ours, encode))
+        if ANCHOR in ours:  # 글 한복판으로 부르는 call 의 도착점 — 앞부분 길이를 재 둔다(아래 mid 표)
+            parts = ours.split(ANCHOR)
+            anchors[tgt] = []
+            for k_ in range(1, len(parts)):
+                pre = sysmsg._tokens_from_ours(st, ANCHOR.join(parts[:k_]).replace(ANCHOR, ""), encode)
+                anchors[tgt].append(sum(len(t.raw) for t in pre[:-1]))  # 끝 토큰(덧붙은 것)은 뺀다
+            ours = ours.replace(ANCHOR, "")
+        toks_used[tgt] = sysmsg._tokens_from_ours(st, ours, encode)
+        bodies[tgt] = b"".join(t.raw for t in toks_used[tgt])
     # 🔴 스트림은 **물리적으로 이어서 흐른다** — `0A` 뒤에 바로 다음 스트림(참조 없는 연쇄)이 이어져 한 창 안에서
     # 「…독을 뿜었다. / …는 독에 중독됐다!」 로 읽힌다. 앞 스트림이 길어져 **옮겨지면** 연쇄가 끊겨 뒷 문안이 사라지고 쓰레기가
     # 그려진다(10-10 「조사 대신 쉼표」를 조사로 고치며 1B 가 늘어 처음 드러났다). 옮길 땐 이어지는 스트림을 **함께** 옮긴다.
@@ -504,7 +668,7 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
                 full += nb
                 end = nxt["stream"].end
             out[tgt:end] = b"\x00" * (end - tgt)
-            moves.append((tgt, e, full))
+            moves.append((tgt, e, full, members))
         changed = True
     if errs:
         raise SystemExit("\n".join(errs))
@@ -513,6 +677,9 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
             out.append(0)
         for tgt, end, body in jumps:
             new = len(out)
+            jump_at[tgt] = new
+            RL.add("옮김", tgt, new, f"번역 글 {len(body)}B > 제자리 {end - tgt}B(칸 넘침) — 참조를 몰라 본문을 블록 끝으로", RL.EVID_BATTLE, RL.UNDO_NONE, key=f"전투{n:03d}")
+            RL.add("스텁", tgt, new, "제자리에 goto 스텁(3B) — 읽기가 옛 자리에서 시작한다", RL.EVID_BATTLE, RL.UNDO_NONE, key=f"전투{n:03d}")
             out[tgt + 1 : tgt + 3] = struct.pack(">h", new - (tgt + 1))
             if body[-1] == 0x0A:  # 0A 은 물리적으로 다음 스트림으로 흐른다 — 원래 끝으로 되돌아간다
                 here = new + len(body)
@@ -523,8 +690,14 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         if len(out) & 1:
             out.append(0)
         placed = []
-        for _tgt, e, body in moves:
+        for _tgt, e, body, members in moves:
             new = len(out)
+            move_at.update({m_: new + off_ for m_, _e2, off_ in members})
+            RL.add("옮김", _tgt, new, f"번역 글이 제자리 칸을 넘는다 — 이어지는 스트림 {len(members)}개를 한 덩이로 블록 끝에(옛 칸은 0)", RL.EVID_BATTLE, RL.UNDO_NONE, key=f"전투{n:03d}")
+            for ins in e["lea"]:
+                RL.add("포인터", ins + 2, new, "lea 변위 재측정 — 옮긴 본문을 가리킨다", RL.EVID_BATTLE, RL.UNDO_POINTER, key=f"전투{n:03d}")
+            for p in e["words"]:
+                RL.add("포인터", p, new, "자료 A 워드 재측정 — 옮긴 본문을 가리킨다", RL.EVID_BATTLE, RL.UNDO_POINTER, key=f"전투{n:03d}")
             placed.append((new, e, body))
             out += body + (b"\x00" if len(body) & 1 else b"")
             for ins in e["lea"]:
@@ -542,6 +715,70 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
                 )
             for p in e["words"]:
                 assert struct.unpack(">H", out[p : p + 2])[0] == new, (n, hex(p))
+    # 🔴 call(`10`)·goto(`0F`) 의 피연산자는 **피연산자 자리 기준 상대 변위**다 — 스트림이 옮겨지면(또는 부르는 대상이 옮겨지면) 원본 값 그대로는
+    # 엉뚱한 곳(남의 글 한복판·빈 칸)으로 간다(블록 62 보스 대사: 화자 이름 호출이 빗나가 쓰레기 글자가 떴다). 자리가 다 정해진 뒤 모두 다시 잰다.
+    fin = {
+        t_: move_at.get(t_, t_) for t_ in rs
+    }  # 부르는 쪽이 가야 할 자리(스텁이 제자리에 남는 jump 는 제자리)
+    # 🔴 남의 글 **한복판**으로 부르는 call(블록 62 카자즘: 「크하하하.」 꼬리 0x98C · 「쓰러뜨릴 수 없다.」 꼬리 0x9C6)은 그 글이 다시 쓰이거나 옮겨지면
+    # 빈 칸으로 간다(전 판부터 「크하하하.」·「쓰러뜨릴 수 없다」가 비었다). 새 본문 안의 같은 자리로 다시 잰다 — 토큰 경계면 토큰 수로, 글 속이면 정본의 `<@>` 로.
+    mid: dict[int, int] = {}
+    inside_t: dict[int, set[int]] = {}
+    for toks_ in [toks_used.get(k_) or e["stream"].tokens for k_, e in rs.items()] + [
+        st_.tokens for st_ in bridges.values()
+    ]:  # 새 본문에서 call 이 빠진 사본(`의 2회 공격!!` — 원본의 goto 를 안 쓴다)은 건너뛴다
+        for t in toks_:
+            if t.ref in (scene.GOTO, scene.CALL) and t.target is not None and t.target not in rs:
+                for k_, e_ in rs.items():
+                    if k_ < t.target < e_["stream"].end:
+                        inside_t.setdefault(k_, set()).add(t.target)
+    for k_, tset in inside_t.items():
+        if bodies.get(k_) is None:
+            continue
+        base = move_at.get(k_, jump_at.get(k_, k_))
+        olds = rs[k_]["stream"].tokens
+        news = toks_used[k_]
+        for i_, tt in enumerate(sorted(tset)):
+            if k_ in anchors:
+                rel = anchors[k_][i_]
+            else:
+                cum, idx = 0, None
+                for j_, t in enumerate(olds):
+                    if k_ + cum == tt:
+                        idx = j_
+                        break
+                    cum += len(t.raw)
+                if idx is None or any(t.kind == "text" for t in news[:idx]):
+                    raise SystemExit(
+                        f"블록 {n} 스트림 {k_:#x}: 글 한복판 {tt:#x} 로 부르는 call 이 있다 — 정본에 `<@>` 로 도착점을 표시해야 한다"
+                    )
+                rel = sum(len(t.raw) for t in news[:idx])
+            mid[tt] = base + rel
+            RL.add("포인터", tt, mid[tt], f"글 한복판으로 부르는 call·goto 의 도착점을 새 본문 안 같은 지점으로 재측정(스트림 {k_:#06x} 안)", RL.EVID_BATTLE, RL.UNDO_POINTER, key=f"전투{n:03d}")
+    fin.update(mid)
+    for tgt, e in rs.items():
+        if n == BOSS_BLOCK and tgt in BOSS_STREAMS:
+            continue
+        if tgt in move_at:
+            pos = move_at[tgt]
+        elif tgt in jump_at:
+            pos = jump_at[tgt]
+        else:
+            pos = tgt
+        for t in toks_used.get(tgt) or e["stream"].tokens:
+            if t.ref in (scene.GOTO, scene.CALL) and t.target is not None:
+                new_t = fin.get(t.target, t.target)
+                out[pos + 1 : pos + 3] = struct.pack(">h", new_t - (pos + 1))
+            pos += len(t.raw)
+    for pos, st in bridges.items():  # 징검다리는 안 옮긴다 — 부르는 대상이 옮겨졌을 때만 다시 잰다
+        for t in st.tokens:
+            if t.ref in (scene.GOTO, scene.CALL) and t.target is not None:
+                out[pos + 1 : pos + 3] = struct.pack(">h", fin.get(t.target, t.target) - (pos + 1))
+            pos += len(t.raw)
+    if n == BOSS_BLOCK:
+        patch_boss_block(out, b, rs, textmap, monsters, encode)
+        RL.add("코드 패치", BOSS_ROUTINE, BOSS_ROUTINE, "블록 82 `では/ので` 4B 덮어쓰기 루틴(36B)을 자기 수정 lea 루틴으로 교체 + 독립 문안 둘을 블록 끝에", RL.EVID_PATCH, RL.UNDO_PATCH, key=f"전투{n:03d}")
+        changed = True
     return bytes(out) if changed else None
 
 

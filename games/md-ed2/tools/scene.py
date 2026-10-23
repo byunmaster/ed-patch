@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import reloc_ledger as RL  # noqa: E402
 
 LOAD = 0xFF6650  # 모듈 로드 주소
 MODULE_MAX = 0x4000  # 0xFFA650 이 다음 버퍼(엔진 참조 3곳) — 미확정, 실측 최대 모듈 11,562B
@@ -114,7 +115,9 @@ END = {
 }  # 0D($A22C)·0A($A202) 핸들러는 07 핸들러로 끝난다 — 0A 는 「대기·계속」이 아니라 끝(2026-09-05 전투 블록에서 확정)
 REL16 = {0x0F: GOTO, 0x10: CALL, 0x15: CODE, 0xF2: CELL, 0xF3: CELL}
 
-SPEAKER = re.compile(rb"\x1e((?:[\x81-\x9f\xe0-\xea][\x40-\x7e\x80-\xfc]|\x20){1,12})\x04")  # 이름 안 반각 공백 허용(「教育係 ラウエル」)
+SPEAKER = re.compile(
+    rb"\x1e((?:[\x81-\x9f\xe0-\xea][\x40-\x7e\x80-\xfc]|\x20){1,12})\x04"
+)  # 이름 안 반각 공백 허용(「教育係 ラウエル」)
 
 
 @dataclass
@@ -231,7 +234,9 @@ def _textlike(st: Stream) -> bool:
 KANA_RUN = re.compile(rb"(?:\x82[\x9f-\xf1]|\x83[\x40-\x96]){2,}")
 SLOT_TABLE = re.compile(rb"(?:[\x20-\x7e\x81-\x9f\xe0-\xea\x40-\xfc]{14}\x07){3,}")
 LEA_A1 = b"\x43"
-LEA_OTHER = b"\x41\x45\x47\x49\x4b\x4d"  # a0 a2 a3 a4 a5 a6 — 대사 상점 따위가 a3·a6 로 문안을 가리킨다
+LEA_OTHER = (
+    b"\x41\x45\x47\x49\x4b\x4d"  # a0 a2 a3 a4 a5 a6 — 대사 상점 따위가 a3·a6 로 문안을 가리킨다
+)
 
 
 def lea_roots(
@@ -510,13 +515,19 @@ def parse_module(
             tcd: set[int] = set()
             tbr: list[int] = []
             tseen = set(seen)
-            explore([w for _, w in tab if w not in streams and not cov[w]], tmp, tcl, tcd, tbr, tseen)
+            explore(
+                [w for _, w in tab if w not in streams and not cov[w]], tmp, tcl, tcd, tbr, tseen
+            )
             spans = sorted({(w_, parse_stream(b, w_).end) for _, w_ in tab if w_ in tmp})
             if any(a_[1] > b_[0] for a_, b_ in itertools.pairwise(spans)):
                 p += 1  # 연속한 작은 수 표(id) — 가리킨 스트림끼리 겹친다
                 continue
             newcov = cover(tmp.values())
-            if not tbr and not any(newcov[i] for i in roots) and not any(newcov[q_] for q_, _ in tab):
+            if (
+                not tbr
+                and not any(newcov[i] for i in roots)
+                and not any(newcov[q_] for q_, _ in tab)
+            ):
                 tables = [*tables, *(TableRef(q_, 0, w_) for q_, w_ in tab)]
                 streams.update(tmp)
                 cells |= tcl
@@ -529,7 +540,9 @@ def parse_module(
     # 4단계: 그래도 남은 **가나 글줄**(상점 대사 따위 — 코드가 계산한 자리로만 읽는다)은 글줄이 시작하는 자리를 스트림으로 **제자리 고정**한다.
     # 참조가 없으니 옮길 수 없다(번역은 원래 칸 안에서만) — 시작은 글줄을 왼쪽으로(SJIS 쌍 · 공백) 늘려 잡는다.
     cov = cover(streams.values())
-    for j in sorted(pin_force or ()):  # 재조립 검증 — 번역으로 가나가 사라진 고정 스트림은 가나 글줄 규칙으로 못 찾는다
+    for j in sorted(
+        pin_force or ()
+    ):  # 재조립 검증 — 번역으로 가나가 사라진 고정 스트림은 가나 글줄 규칙으로 못 찾는다
         if j in streams or cov[j]:
             continue
         try:
@@ -539,7 +552,9 @@ def parse_module(
         streams[j] = st4
         pinned.add(j)
         cov = cover(streams.values())
-    slots = bytearray(len(b))  # 지명 배너 표(14B 칸 + 07 구분자 반복) — banners.py 가 칸 단위로 굽는다, 스트림이 아니다
+    slots = bytearray(
+        len(b)
+    )  # 지명 배너 표(14B 칸 + 07 구분자 반복) — banners.py 가 칸 단위로 굽는다, 스트림이 아니다
     for ms in SLOT_TABLE.finditer(b):
         slots[ms.start() : ms.end()] = b"\x01" * (ms.end() - ms.start())
     for m4 in KANA_RUN.finditer(b):
@@ -564,9 +579,7 @@ def parse_module(
         if hit and not (
             # 꼬리를 같이 쓰는 글줄 — 겹친 토큰이 끝에 몰려 있고 거기서 시작해 같은 자리에서 끝나는 스트림이 이미 있다
             all(cov[t.off] for t in st4.tokens if t.off >= hit[0])
-            and any(
-                s0 > j and s0 <= hit[0] and st0.end == st4.end for s0, st0 in streams.items()
-            )
+            and any(s0 > j and s0 <= hit[0] and st0.end == st4.end for s0, st0 in streams.items())
         ):
             continue
         streams[j] = st4
@@ -677,8 +690,11 @@ def reassemble(
             inn_ = [x for x in order if s_ < x < s_ + old_len[s_]]
             full = (min(inn_) - s_) if inn_ else old_len[s_]
             if new_len[s_] > full:
-                raise ValueError(f"이어 읽기 스트림 @{s_:#x} 이 칸({full}B)보다 길다({new_len[s_]}B) — 번역을 줄인다")
+                raise ValueError(
+                    f"이어 읽기 스트림 @{s_:#x} 이 칸({full}B)보다 길다({new_len[s_]}B) — 번역을 줄인다"
+                )
             if new_len[s_] < full:
+                RL.add("채움", s_, None, f"이어 읽기 스트림 — 뒤 글줄까지 공백 {full - new_len[s_]}B 로 칸을 꽉 채운다", RL.EVID_FILL, RL.UNDO_FILL)
                 toks[s_] = [*tk_, Token(0, b" " * (full - new_len[s_]), "text")]
                 new_len[s_] = full
 
@@ -698,9 +714,12 @@ def reassemble(
             continue
         if inn and new_len[s] > min(inn) - s and new_len[s] <= old_len[s]:
             tb = {t.off for t in mod.streams[s].tokens}
-            mv = [x for x in inn if x in tb]  # 토큰 경계에서 시작하는 안쪽 스트림 — 옮겨야 한다(번역 필요)
-            if all(x in replace and x not in mod.pinned and x not in forced for x in mv) and all(
-                x in tb or x not in replace for x in inn
+            mv = [
+                x for x in inn if x in tb
+            ]  # 토큰 경계에서 시작하는 안쪽 스트림 — 옮겨야 한다(번역 필요)
+            if (
+                all(x in replace and x not in mod.pinned and x not in forced for x in mv)
+                and all(x in tb or x not in replace for x in inn)
             ):  # 토큰 한가운데서 시작하는 것은 글자 중간을 가리킨 쓰레기 — 건드리지 않고 바깥 글이 덮는다
                 absorbed.add(s)
                 forced.update(mv)
@@ -731,7 +750,28 @@ def reassemble(
         members.setdefault(group[s], []).append(s)
     moved: set[int] = set()
     stub_at: set[int] = set()
-    for g, ms in members.items():
+    tail_stub: set[int] = set()  # 꼬리 goto 스텁을 더 붙인 조건 분기 스트림
+
+    def _shrunk_front(m: int) -> None:
+        """묶음 앞 스트림이 제자리에서 줄었다 — 끝이 당겨져 뒤 꼬리를 놓치지 않게 끝을 지킨다.
+        남는 칸이 3B 이상이면 **공백으로 채우지 않고** 조건 분기 뒤에 `goto 꼬리` 스텁을 붙인다(조건이 맞아 goto 를 건너뛰면 이 스텁이 꼬리로 잇는다 —
+        공백 패딩은 줄 가운데 넓은 빈칸·이름 칸 부풀림·줄 넘침 빈 줄로 보였다, 10-19 qa). 3B 미만이면 공백 1~2칸으로 끝을 지킨다."""
+        tk = list(toks[m])
+        d = old_len[m] - new_len[m]
+        if d >= 3 and is_cond_goto(tk) and m in chain:
+            tk.append(Token(m, b"\x0f\x00\x00", "ctl", 0x0F, GOTO, chain[m]))
+            toks[m] = tk
+            new_len[m] += 3
+            tail_stub.add(m)
+            RL.add("스텁", m, None, f"제자리에서 줄어든 조건 분기 앞 스트림 — 남는 {d}B 에 goto 꼬리 스텁(3B)", RL.EVID_VM, RL.UNDO_FILL)
+            return
+        ti = next(x for x in range(len(tk) - 3, -1, -1) if tk[x].kind == "text")
+        RL.add("채움", m, None, f"제자리에서 줄어든 묶음 앞 스트림 — 끝을 지키려 공백 {d}B", RL.EVID_FILL, RL.UNDO_FILL)
+        tk[ti] = Token(tk[ti].off, tk[ti].raw + b" " * d, "text", tk[ti].code)
+        toks[m] = tk
+        new_len[m] = old_len[m]
+
+    for ms in members.values():
         if len(ms) > 1:
             rep_ms = [m for m in ms if m in replace]
             if not rep_ms:
@@ -750,21 +790,12 @@ def reassemble(
             if ok:
                 for m in rep_ms:
                     if m != ms[-1] and new_len[m] < old_len[m]:
-                        tk = list(toks[m])
-                        ti = next(x for x in range(len(tk) - 3, -1, -1) if tk[x].kind == "text")
-                        d = old_len[m] - new_len[m]
-                        tk[ti] = Token(tk[ti].off, tk[ti].raw + b" " * d, "text", tk[ti].code)
-                        toks[m] = tk
-                        new_len[m] = old_len[m]
+                        _shrunk_front(m)
             else:
                 # 앞쪽(고정 스트림 포함)이 칸 안에 들면 제자리에 두고 **뒤쪽만 옮긴다** — 옛 시작 자리에 goto 스텁을 둬 조건이 거짓일 때
                 # 물리적으로 이어지던 흐름을 새 자리로 잇는다.
                 j = next(
-                    (
-                        i
-                        for i in range(1, len(ms))
-                        if ms[i] in rep_ms and (too_big(ms[i]))
-                    ),
+                    (i for i in range(1, len(ms)) if ms[i] in rep_ms and (too_big(ms[i]))),
                     None,
                 )
                 pre_ok = j is not None
@@ -772,10 +803,12 @@ def reassemble(
                     for m in ms[:j]:
                         if m not in rep_ms:
                             continue
-                        if too_big(m):
-                            pre_ok = False
-                        elif new_len[m] < old_len[m] and not any(
-                            x.kind == "text" for x in toks[m][: max(len(toks[m]) - 2, 0)]
+                        if (
+                            too_big(m)
+                            or new_len[m] < old_len[m]
+                            and not any(
+                                x.kind == "text" for x in toks[m][: max(len(toks[m]) - 2, 0)]
+                            )
                         ):
                             pre_ok = False
                     if pre_ok and old_len[ms[j]] < 3:
@@ -783,12 +816,7 @@ def reassemble(
                 if pre_ok:
                     for m in ms[:j]:
                         if m in rep_ms and new_len[m] < old_len[m]:
-                            tk = list(toks[m])
-                            ti = next(x for x in range(len(tk) - 3, -1, -1) if tk[x].kind == "text")
-                            d = old_len[m] - new_len[m]
-                            tk[ti] = Token(tk[ti].off, tk[ti].raw + b" " * d, "text", tk[ti].code)
-                            toks[m] = tk
-                            new_len[m] = old_len[m]
+                            _shrunk_front(m)
                     moved.update(ms[j:])
                     stub_at.add(ms[j])
                 else:
@@ -800,12 +828,49 @@ def reassemble(
     for x in forced:
         moved.update(members[group[x]])
     for s in sorted(moved):
-        if s in mod.pinned and s in mod.hubs and old_len[s] >= 3:
-            stub_at.add(s)  # 허브는 옛 자리에 스텁만 남기고 본문을 옮긴다
+        if s in mod.pinned and old_len[s] >= 3:
+            stub_at.add(
+                s
+            )  # 허브·고정 글줄은 옛 자리에 goto 스텁(3B)만 남기고 본문을 옮긴다 — 읽기가 그 자리에서 시작하므로 스텁이 먼저 읽힌다(10-18: 상점 「…이군요」 43곳을 줄이지 않고 넣으려고)
         elif s in mod.pinned:
             raise ValueError(
                 f"제자리 고정 스트림 @{s:#x} 이 원래 칸({old_len[s]}B)보다 길다({new_len[s]}B) — 번역을 줄인다"
             )
+    # 🔴 **꼬리를 둘 이상이 이어받는 조건 분기**(바깥 스트림 S 와 그 안쪽에서 시작하는 S′ 가 같은 끝에서 같은 꼬리 T 로 흐른다 — md-ed1 24씬 29곳, 10-19):
+    # 묶음은 T 를 마지막 S 하나에만 붙인다 — 나머지는 조건이 맞아 goto 를 건너뛰면 **물리적으로 바로 뒤**(0 이나 남의 스트림 머리)를 읽는다.
+    #  · S 가 옮겨졌으면 본문 바로 뒤에 `goto T` 3B 를 한 벌 더 둔다(조건 참이면 건너뛴 goto 다음의 이 스텁이 T 로 잇는다)
+    #  · S 는 제자리인데 T 가 옮겨졌으면 T 의 옛 시작 자리에 스텁을 둔다
+    for s_, t_ in sorted(chain.items()):
+        if group[s_] == group[t_]:
+            continue
+        if s_ in moved:
+            tk = list(toks[s_])
+            if tk and tk[-1].kind not in ("end", "eof"):
+                tk.append(Token(s_, b"\x0f\x00\x00", "ctl", 0x0F, GOTO, t_))
+                toks[s_] = tk
+                new_len[s_] += 3
+                tail_stub.add(s_)
+                RL.add("스텁", s_, t_, "옮겨진 조건 분기 본문 뒤에 goto 꼬리 스텁(3B) — 꼬리를 둘 이상이 이어받는다", RL.EVID_VM, RL.UNDO_NONE)
+        elif s_ in replace and new_len[s_] < old_len[s_]:
+            # 제자리에서 **줄어든** 앞 스트림 — 끝이 당겨져 바로 뒤가 0 패딩이 된다. 남는 칸이 3B 이상이면 `goto T` 스텁을 붙이고, 아니면 공백으로 끝을 지킨다
+            tk = list(toks[s_])
+            if tk and tk[-1].kind not in ("end", "eof"):
+                if old_len[s_] - new_len[s_] >= 3:
+                    tk.append(Token(s_, b"\x0f\x00\x00", "ctl", 0x0F, GOTO, t_))
+                    toks[s_] = tk
+                    new_len[s_] += 3
+                    tail_stub.add(s_)
+                    RL.add("스텁", s_, t_, "제자리에서 줄어든 조건 분기 — 남는 칸에 goto 꼬리 스텁(3B)", RL.EVID_VM, RL.UNDO_FILL)
+                else:
+                    ti = next((x for x in range(len(tk) - 3, -1, -1) if tk[x].kind == "text"), None)
+                    if ti is not None:
+                        d = old_len[s_] - new_len[s_]
+                        RL.add("채움", s_, None, f"제자리에서 줄어든 조건 분기 — 공백 {d}B 로 끝을 지킨다(3B 미만이라 스텁 불가)", RL.EVID_FILL, RL.UNDO_FILL)
+                        tk[ti] = Token(tk[ti].off, tk[ti].raw + b" " * d, "text", tk[ti].code)
+                        toks[s_] = tk
+                        new_len[s_] = old_len[s_]
+        if t_ in moved and old_len[t_] >= 3 and s_ not in moved:
+            stub_at.add(t_)
     shrunk = {s for s in replace if s in mod.streams and s not in moved}
     # 옮긴 스트림의 옛 칸은 죽은 자리 — 0. 단 **그 안에서 다른 스트림이 시작하면**(꼬리를 같이 쓰는 스트림) 그 시작 앞까지만 죽은 자리다
     dead_end = {}
@@ -850,8 +915,10 @@ def reassemble(
         free = sorted(cut)
     merged: list[list[int]] = []
     for a_, b_ in free:
-        if merged and merged[-1][1] == a_:
-            merged[-1][1] = b_
+        # 🔴 겹치는 칸도 한 덩이로 합친다 — 옛 코드는 「맞닿은」 칸만 합쳐서, 같은 죽은 자리가 두 번 올라오면(옮긴 스트림 + 그 안쪽 스트림의 옛 칸) 서로 다른 두 묶음이
+        # 같은 자리에 앉았다(씬058-1: 0x4A6 과 0x863 이 둘 다 0x762 — 한쪽 대사가 남의 대사로 덮였다, 10-20 짝 표)
+        if merged and a_ <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b_)
         else:
             merged.append([a_, b_])
     units = []
@@ -880,8 +947,36 @@ def reassemble(
         for m in u:
             pos[m] = cur
             cur += new_len[m] + (1 if toks[m] and toks[m][-1].kind == "eof" else 0)
+    spans = sorted((pos[m], pos[m] + new_len[m]) for u in units for m in u)
+    for (a1, b1), (a2, _b2) in zip(spans, spans[1:], strict=False):
+        if a2 < b1:
+            raise ValueError(
+                f"옮긴 스트림 둘이 같은 자리에 앉았다 @{a2:#x} (앞 {a1:#x}~{b1:#x}) — 빈 칸 계산이 틀렸다"
+            )
     if cur > MODULE_MAX:
         raise ValueError(f"모듈이 {cur}B — 한도 {MODULE_MAX}B 를 넘는다")
+    for s in sorted(moved):
+        why = (
+            "안쪽 스트림 칸을 바깥 글이 차지해 같이 옮김"
+            if s in forced
+            else f"번역 글 {new_len[s]}B > 제자리 {room(s)}B(칸 넘침)"
+            if too_big(s)
+            else "조건 분기 묶음이라 같이 옮김(꼬리가 물리적으로 이어져야 한다)"
+        )
+        RL.add("옮김", s, pos[s], why + f" · 옛 칸 {dead_end[s] - s}B 는 0 으로 지움", RL.EVID_VM, RL.UNDO_NONE)
+        if s in stub_at:
+            RL.add("스텁", s, pos[s], "옛 시작 자리에 goto 스텁(3B) — 고정·허브·묶음 글줄은 읽기가 그 자리에서 시작한다", RL.EVID_VM, RL.UNDO_NONE)
+    for ins, s in sorted(mod.roots.items()):
+        if pos[s] != s:
+            RL.add("포인터", ins, pos[s], f"뿌리 lea 변위 재측정 — 가리키는 스트림 {s:#06x} 이 옮겨졌다", RL.EVID_VM, RL.UNDO_POINTER)
+    for tr in mod.tables:
+        if pos[tr.target] != tr.target:
+            RL.add("포인터", tr.word, pos[tr.target], f"표 항목 워드 재측정 — 표가 가리키는 스트림 {tr.target:#06x} 이 옮겨졌다", RL.EVID_VM, RL.UNDO_POINTER)
+    for s in order:
+        if s not in moved and s not in shrunk:
+            for t_ in mod.streams[s].tokens:
+                if t_.ref in (GOTO, CALL) and pos.get(t_.target, t_.target) != t_.target:
+                    RL.add("포인터", t_.off, pos[t_.target], f"{'goto' if t_.ref == GOTO else 'call'} 변위 재측정 — 대상 {t_.target:#06x} 이 옮겨졌다", RL.EVID_VM, RL.UNDO_POINTER)
     out = bytearray()
     for s in order:
         if s in moved:
@@ -920,9 +1015,7 @@ def reassemble(
 
 def _flat(tokens) -> bytes:
     """토큰 → 바이트(참조 변위는 0 으로 — 재조립이 새 자리로 다시 쟀다)."""
-    out = b"".join(
-        t.raw[:1] + b"\x00" * (len(t.raw) - 1) if t.ref else t.raw for t in tokens
-    )
+    out = b"".join(t.raw[:1] + b"\x00" * (len(t.raw) - 1) if t.ref else t.raw for t in tokens)
     return out + (b"\x00" if tokens and tokens[-1].kind == "eof" else b"")
 
 
@@ -945,7 +1038,10 @@ def _lead_merge(tokens):
 
 
 def verify_reassembly(
-    orig: Module, new_bytes: bytes, replace: dict[int, list[Token]] | None = None
+    orig: Module,
+    new_bytes: bytes,
+    replace: dict[int, list[Token]] | None = None,
+    skip: frozenset[int] = frozenset(),
 ) -> None:
     """다시 파싱해 스트림별 토큰(raw 텍스트 + 제어코드 종류)이 의도와 같은지 본다."""
     replace = replace or {}
@@ -962,7 +1058,9 @@ def verify_reassembly(
         c = new_by_word.get((a.word, a.base))
         if c is not None:
             remap[a.target] = c.target
-    protected = bytearray(len(orig.data))  # 표 워드 · 머리 표 레코드 — 재조립이 바이트를 고친다(겹친 쓰레기 스트림은 비교 대상이 아니다)
+    protected = bytearray(
+        len(orig.data)
+    )  # 표 워드 · 머리 표 레코드 — 재조립이 바이트를 고친다(겹친 쓰레기 스트림은 비교 대상이 아니다)
     for a in orig.tables:
         protected[a.word : a.word + 2] = b"\x01\x01"
     for e, ln in orig.entries.items():
@@ -971,6 +1069,8 @@ def verify_reassembly(
         remap[s] = s  # 제자리 고정
     for s, st in orig.streams.items():
         want = replace.get(s, st.tokens)
+        if s in skip:
+            continue  # 머리가 자료인 스트림(상점 표) — 별도 게이트(`build.verify_head_tables`)가 본다
         if s in replace and want and want[-1].kind not in ("end", "eof") and want[-1].ref != GOTO:
             continue  # 이어 읽기 스트림 — 뒤 글줄까지 한 글줄로 읽힌다
         # 뿌리가 아닌 스트림(goto/call 대상)은 뿌리에서 참조를 따라간 새 파서가 이미 품고 있다 —
@@ -983,10 +1083,13 @@ def verify_reassembly(
         ):
             continue
         got = new.streams[remap[s]]
-        if s in orig.hubs and s in orig.pinned and got.tokens and got.tokens[0].ref == GOTO:
+        if s in orig.pinned and got.tokens and got.tokens[0].ref == GOTO:
             w0 = want[0] if want else None
             if not (w0 is not None and w0.ref == GOTO and w0.target == got.tokens[0].target):
-                got = new.streams[got.tokens[0].target]  # 스텁 → 옮긴 본문
+                tgt = got.tokens[
+                    0
+                ].target  # 스텁 → 옮긴 본문(고정 글줄은 새 파서가 스트림으로 안 잡아 직접 읽는다)
+                got = new.streams[tgt] if tgt in new.streams else parse_stream(new.data, tgt)
         a = [
             (t.kind, t.code, t.raw.rstrip(b" ") if t.kind == "text" else t.raw[:1])
             for t in _lead_merge(want)
@@ -999,6 +1102,15 @@ def verify_reassembly(
         ]
         if want and want[-1].kind == "eof":
             a.append(("end", 0, b"\x00"))
+        if (
+            len(g) == len(a) + 1
+            and g[-1] == ("ctl", 0x0F, b"\x0f")
+            and a
+            and a[-1] == ("ctl", 0x0F, b"\x0f")
+        ):
+            g = g[
+                :-1
+            ]  # 꼬리를 이어받는 조건 분기에 더한 `goto T` 스텁(재조립이 붙인다) — 의도한 토큰열 뒤의 덤
         if a != g and _flat(_lead_merge(want)) == _flat(got.tokens):
             continue  # 접두 쓰레기 바이트를 `<4c>` 로 낸 꼴 — 토큰 종류만 다르고 바이트는 같다(참조 변위는 새 자리라 뺀다)
         if a != g:
@@ -1012,6 +1124,171 @@ def verify_reassembly(
     lost_tables = sum(1 for a in orig.tables if (a.word, a.base) not in new_by_word)
     if len(new.streams) + lost_tables < len(orig.streams):
         raise ValueError(f"스트림 수가 줄었다 {len(orig.streams)} → {len(new.streams)}")
+
+
+def _norm_tokens(toks) -> list:
+    return [
+        (t.kind, t.code, t.raw.rstrip(b" ") if t.kind == "text" else t.raw[:1])
+        for t in _lead_merge(toks)
+        if t.kind != "eof"
+    ]
+
+
+def pair_streams(orig: Module, new_bytes: bytes) -> tuple[Module, dict[int, int]]:
+    """원판 스트림 → 새 모듈 스트림 짝(진입점 뿌리·표·고정에서 시작해 goto·call·조건 꼬리를 같이 걸어 짝지음) → (새 모듈, {원판 시작: 새 시작})."""
+    new = parse_module(new_bytes, set(orig.roots), set(orig.entries), set(orig.pinned))
+    pair: dict[int, int] = {}
+    for ins, s in orig.roots.items():
+        if ins in new.roots:
+            pair[s] = new.roots[ins]
+    for s in orig.pinned:
+        pair.setdefault(s, s)
+    for a in orig.tables:
+        c = {(c.word, c.base): c for c in new.tables}.get((a.word, a.base))
+        if c is not None:
+            pair[a.target] = c.target
+    follow = _follower(new)
+    work = list(pair)
+    seen: set[int] = set()
+    while work:
+        s = work.pop()
+        if s in seen or s not in orig.streams:
+            continue
+        seen.add(s)
+        so = orig.streams[s]
+        # 원판이 goto 하나뿐인 스트림이면 새 쪽도 그 스텁 자체를 본다 — 따라가 버리면 한 단계 건너뛴 목적지 스트림의 참조와 어긋나게 짝지어진다
+        lone = len(so.tokens) == 1 and so.tokens[0].ref == GOTO
+        if s in orig.pinned or lone:
+            sn = new.streams.get(pair[s])
+            if sn is None and lone:
+                try:
+                    sn = parse_stream(new.data, pair[s])
+                except (ValueError, IndexError):
+                    sn = None
+        else:
+            sn = follow(pair[s])
+        if sn is None:
+            continue
+        ot = [t for t in so.tokens if t.ref in (GOTO, CALL) and t.target is not None]
+        nt = [t for t in sn.tokens if t.ref in (GOTO, CALL) and t.target is not None]
+        if len(ot) == len(nt):
+            for a, b in zip(ot, nt, strict=True):
+                if a.target not in pair:
+                    pair[a.target] = b.target
+                    work.append(a.target)
+        e = so.end
+        if is_cond_goto(so.tokens) and e in orig.streams and e not in pair:
+            pair[e] = sn.end
+            work.append(e)
+    return new, pair
+
+
+def _follower(new: Module):
+    def follow(n: int):
+        st = new.streams.get(n)
+        if st is None:
+            try:
+                st = parse_stream(new.data, n)
+            except (ValueError, IndexError):
+                return None
+        if len(st.tokens) == 1 and st.tokens[0].ref == GOTO and st.tokens[0].target is not None:
+            return follow(st.tokens[0].target)
+        return st
+
+    return follow
+
+
+def cond_tail_report(
+    orig: Module,
+    new_bytes: bytes,
+    replace: dict[int, list[Token]] | None = None,
+    rows: list[tuple[int, int, int, int]] | None = None,
+) -> tuple[int, int, list[str], list[str]]:
+    """조건 분기(11·12·F2·F6·F8 + 0F) 스트림 **바로 뒤 바이트**가 원판의 꼬리 스트림과 같은지 센다 → (분모, 일치, 불일치, 못 잰 것).
+
+    원판은 조건이 맞으면 goto 를 건너뛰고 **물리적으로 바로 뒤**를 읽는다 — 앞 스트림만 옮기거나 늘리면 그 자리에 남의 스트림 머리가 와
+    남의 문장으로 샌다(md-ed1 24씬 29곳, 10-19). 모든 진입점(뿌리·goto·call 대상)에서 원본·새 모듈을 **같이 걸어** 짝을 짓고 짝마다 꼬리를 맞댄다.
+    옛 자리에 goto 스텁만 둔 꼬리는 스텁을 따라가 비교한다(의미가 같다)."""
+    replace = replace or {}
+    new, pair = pair_streams(orig, new_bytes)
+    follow = _follower(new)
+    total = ok = 0
+    bad: list[str] = []
+    unmapped: list[str] = []
+    protected = bytearray(
+        len(orig.data)
+    )  # 표 워드 · 머리 표 레코드 — 재조립이 바이트를 고치는 자료다(그 안에서 우연히 스트림으로 읽힌 것은 대상이 아니다)
+    for a in orig.tables:
+        protected[a.word : a.word + 2] = b"\x01\x01"
+    for e_, ln in orig.entries.items():
+        protected[e_ : e_ + ln] = b"\x01" * ln
+    for s, so in sorted(orig.streams.items()):
+        if not is_cond_goto(so.tokens):
+            continue
+        if any(protected[t.off] for t in so.tokens):
+            continue
+        total += 1
+        t = so.end
+        if t not in orig.streams:
+            unmapped.append(f"{s:#x}(꼬리가 스트림 아님)")
+            continue
+        if s not in pair:
+            unmapped.append(f"{s:#x}(진입점 못 찾음)")
+            continue
+        sn = new.streams.get(pair[s]) or parse_stream(new.data, pair[s])
+        if len(sn.tokens) == 1 and sn.tokens[0].ref == GOTO:
+            sn = follow(pair[s])  # 제자리 스텁 → 옮긴 본문
+        if sn is None:
+            bad.append(f"{s:#x}(새 스트림을 못 읽음)")
+            continue
+        if rows is not None:
+            rows.append(
+                (s, t, pair[s], sn.end)
+            )  # (원판 S, 원판 꼬리 T, 새 S, 새 꼬리 자리) — 화면 대조용
+        want = replace.get(t, orig.streams[t].tokens)
+        if len(want) == 1 and want[0].ref == GOTO:
+            # 꼬리 자체가 goto 하나 — 새 자리에서도 goto 하나여야 하고 목적지가 짝(원본 목적지의 새 자리)이어야 한다
+            try:
+                raw = parse_stream(new.data, sn.end)
+            except (ValueError, IndexError):
+                raw = None
+            tgt = pair.get(want[0].target)
+
+            def _dest(
+                a: int,
+            ) -> int:  # goto 하나뿐인 자리를 따라 최종 목적지(꼬리 스텁이 꼬리 자체를 가리켜도 같은 곳이다)
+                for _ in range(8):
+                    st_ = new.streams.get(a)
+                    if st_ is None or len(st_.tokens) != 1 or st_.tokens[0].ref != GOTO:
+                        break
+                    a = st_.tokens[0].target
+                return a
+
+            if (
+                raw is not None
+                and len(raw.tokens) >= 1
+                and raw.tokens[0].ref == GOTO
+                and (tgt is None or _dest(raw.tokens[0].target) == _dest(tgt))
+            ):
+                ok += 1
+            else:
+                bad.append(f"{s:#x}→{t:#x}(꼬리 goto)")
+            continue
+        tn = follow(sn.end)
+        if tn is not None and _norm_tokens(tn.tokens) == _norm_tokens(want):
+            ok += 1
+        else:
+            gn = _norm_tokens(tn.tokens)[:2] if tn is not None else None
+            bad.append(f"{s:#x}→{t:#x} 새={gn} 원={_norm_tokens(want)[:2]}")
+    return total, ok, bad, unmapped
+
+
+def verify_cond_tails(orig: Module, new_bytes: bytes, replace=None) -> None:
+    total, _ok, bad, _unmapped = cond_tail_report(orig, new_bytes, replace)
+    if bad:
+        raise ValueError(
+            f"조건 분기 뒤 꼬리가 원판과 다르다 {len(bad)}/{total}: {', '.join(bad[:6])}"
+        )
 
 
 if __name__ == "__main__":
@@ -1050,3 +1327,53 @@ if __name__ == "__main__":
         )
     if reasm_fail:
         raise SystemExit(f"항등 재조립 실패 수가 갈렸다 (기대 0): {reasm_fail}")
+
+
+_LEA_RE = re.compile(rb"[\x41\x43\x45\x47\x49\x4b\x4d]\xfa..", re.DOTALL)
+_EVENT_REG = (
+    b"\x2a\x7c\x00\x00\x83\xe8",
+    b"\x2a\x7c\x00\x00\x84\x28",
+)  # movea.l #$83E8|#$8428,a5 — 이벤트 표 등록 서비스
+
+
+def event_table_sites(m: bytes) -> list[tuple[int, int]]:
+    """(lea 자리, 표 자리) — `lea 표(pc),aN` 뒤 48B 안에서 이벤트 표 등록 서비스(`movea.l #$83E8|#$8428,a5`)를 부르는 것.
+    이 표는 글이 아니라 맵 이벤트 자료다 — 빌드의 문안 뿌리 찾기가 오인해 문안 풀로 옮기고 제자리를 0 으로 지우면 맵 전체가 이벤트 타일이 된다(md-ed1 16씬, 10-20)."""
+    out = []
+    for mm in _LEA_RE.finditer(m):
+        i = mm.start()
+        t = i + 2 + struct.unpack(">h", m[i + 2 : i + 4])[0]
+        if 0 <= t < len(m) and any(x in m[i + 4 : i + 52] for x in _EVENT_REG):
+            out.append((i, t))
+    return out
+
+
+def event_table_extent(m: bytes, t: int) -> int:
+    """이벤트 표의 끝 — 머리(`FF FF` 로 끝난다) 뒤에 8B 항목 `xx xx xx xx 06 (80|84) 00 00` 이 이어지는 만큼. 머리를 못 찾으면 0x30B."""
+    h = m.find(b"\xff\xff", t, t + 32)
+    if h < 0:
+        return min(t + 0x30, len(m))
+    p = h + 2
+    while (
+        p + 8 <= len(m)
+        and m[p + 4] == 0x06
+        and m[p + 5] in (0x80, 0x84)
+        and m[p + 6 : p + 8] == b"\x00\x00"
+    ):
+        p += 8
+    return p
+
+
+def verify_event_tables(orig_bytes: bytes, new_bytes: bytes, replace: dict | None = None) -> int:
+    """원판과 새 모듈의 이벤트 표가 바이트까지 같은지 본다 → 표 수. 표 범위는 `event_table_extent`, 번역된 스트림이 표 자리를 덮으면(표를 글로 오인) 실패."""
+    starts = sorted(replace or {})
+    sites = event_table_sites(orig_bytes)
+    for i, t in sites:
+        end = event_table_extent(orig_bytes, t)
+        if any(t <= s_ < end for s_ in starts):
+            raise ValueError(
+                f"이벤트 표 @{t:#x}(lea@{i:#x}) 안에 번역 스트림이 시작한다 — 표를 글로 오인했다"
+            )
+        if new_bytes[t:end] != orig_bytes[t:end]:
+            raise ValueError(f"이벤트 표 @{t:#x}(lea@{i:#x}) 가 원판과 다르다({end - t}B)")
+    return len(sites)

@@ -63,10 +63,23 @@ SPELL_BUF = 0xFF3450  # 주문 이름 버퍼(EC 의 p 상위 니블 1)
 # 🔴 「마지막으로 이름을 그린 배우」 — 코드가 이름을 그린 뒤 스트림 머리의 조사(`<ebe0>`)가 읽는다. `$FF3470`(배우 포인터)은
 # 피해 줄의 **대상**이 남아 있어(코드가 몬스터 이름을 그릴 땐 안 갱신) 몬스터 행동 줄 「…B은 동전을 던졌다」가 틀렸다(10-10).
 # 이름을 그리는 `$A94A` 의 `andi.l #$ff,d0` 자리에 트램펄린을 걸어 배우 번호를 이 한 바이트에 적어 둔다.
-# $FF3484 는 롬 코드·전투 블록·씬 블록 어디에서도 안 쓰는 자리다(2026-10-10 전수).
-LASTNAME = 0xFF3484
+# 🔴 자리는 $FF1A5E 다 — 처음엔 $FF3484 였는데 그곳은 **게임 난수표($FF3480~$FF34B6, 55B)의 안쪽**이다(`$1D67A` 근방의 뺄셈 순환 난수가 난수를 부를 때마다 이 바이트들을 다시 쓴다).
+# 「롬 코드에 참조 0회」 전수(10-10)는 **절대 주소 참조만** 봤고 난수표는 색인으로 접근한다(`(a4,d2.w)`)는 걸 놓쳤다 → 몬스터 행동 줄 조사가 난수 바이트를 읽어 「뇌랑는」·「지팡이술사은」
+# (10-20 qa). $FF1910~$FF1A65 는 필드·전투에서 안 쓰는 영(0) 틈이고(코드의 첫 참조는 $FF1A66), 시험 후크(test_battle)도 $FF1A5E 는 안 쓴다.
+LASTNAME = 0xFF1A5E
+NAME_COL = 0xFF1A5F  # 이름 그리기 시작 칸(`$FF2018` 사본) — 어절 줄넘김이 「틈이 이름 속인가」를 가린다
 NAME_FN_PATCH = 0xC940  # andi.l #$ff,d0 (6B) → jmp tramp
 NAME_FN_BACK = 0xC946
+# 🔴 둘째 길 — 몬스터 행동 줄 머리의 이름은 `$A94A` 를 **안 거친다**: `$28658` 의 블록 코드가 행동 배우 레코드(`$FF3470`+0x30)의 이름을 임시 버퍼(`1e` + 16B)에 복사해
+# 렌더러로 바로 그린다(md-ed1 `$2347E` 와 같은 꼴, md-ed1 세션이 먼저 찾았다 10-20). 그래서 LASTNAME 트램펄린이 안 돌아 직전 파티 이름이 남았다 — 이 줄 머리(`movea.l $FF3470.l,a3`, 6B)에도
+# 걸어 레코드 byte0(배우 번호)을 LASTNAME 에 적는다.
+MON_HEAD_PATCH = 0x28660
+MON_HEAD_BACK = 0x28666
+# 🔴 셋째 길(진짜 범인) — **`$2214`**: 서비스 `$2892E`·`$2895E` 가 부르는 「배우 이름 머리」 그리기. 배우 레코드는 **a1** 로 받는다(`$FF3470` 이 아니다 — 서비스가 임시로 바꿔 놓고 되돌린다).
+# 몬스터 기본 공격 줄(「뇌랑는 채찍을 휘둘렀다」)의 머리가 여기서 그려지고 `$A94A`·`$28658` 둘 다 안 거친다. `lea $30(a1),a1` + `lea $FFFE82.l,a2`(10B)를 트램펄린으로.
+HEAD2_PATCH = 0x2228
+HEAD2_BACK = 0x2232
+HEAD2_ORIG = bytes.fromhex("43e9003045f900fffe82")
 
 # p → (받침 없음, 받침 있음)
 PAIRS = [("는", "은"), ("가", "이"), ("를", "을"), ("와", "과")]
@@ -358,10 +371,37 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int, eu: int, ro: int) -> by
     l(0x000000FF)  # andi.l #$ff,d0       (덮어쓴 원본 명령)
     w(0x13C0)
     l(LASTNAME)  # move.b d0,LASTNAME.l
+    w(0x13F9)
+    l(0x00FF2018)
+    l(NAME_COL)  # move.b $FF2018.l,NAME_COL.l
     w(0x4EF9)
     l(NAME_FN_BACK)  # jmp $A954.l
+    # ── 몬스터 행동 줄 머리 트램펄린 — 원본 `movea.l $FF3470.l,a3` 를 하고 레코드 byte0 을 LASTNAME 에 적는다
+    mon_tramp = len(b)
+    w(0x2679)
+    l(ACTOR_PTR)  # movea.l ACTOR_PTR.l,a3     (덮어쓴 원본 명령)
+    w(0x13D3)
+    l(LASTNAME)  # move.b (a3),LASTNAME.l
+    w(0x13F9)
+    l(0x00FF2018)
+    l(NAME_COL)  # move.b $FF2018.l,NAME_COL.l
+    w(0x4EF9)
+    l(MON_HEAD_BACK)  # jmp $28666.l
+    head2_tramp = len(b)
+    w(0x43E9, 0x0030)  # lea $30(a1),a1                  (덮어쓴 원본)
+    w(0x13E9, 0xFFD0)
+    l(LASTNAME)  # move.b -$30(a1),LASTNAME.l         레코드 byte0 = 배우 번호
+    w(0x13F9)
+    l(0x00FF2018)
+    l(NAME_COL)  # move.b $FF2018.l,NAME_COL.l
+    w(0x45F9)
+    l(0x00FFFE82)  # lea $FFFE82.l,a2                    (덮어쓴 원본)
+    w(0x4EF9)
+    l(HEAD2_BACK)  # jmp $2232.l
     _asm.item_entry = item_entry
     _asm.name_tramp = name_tramp
+    _asm.mon_tramp = mon_tramp
+    _asm.head2_tramp = head2_tramp
     return bytes(b)
 
 
@@ -372,6 +412,16 @@ def plan(rom: bytes, cs, at: int) -> list[tuple[str, int, bytes]]:
     out = [("josa-code", at, body + tbl)]
     out.append(
         ("josa-name-hook", NAME_FN_PATCH, b"\x4e\xf9" + struct.pack(">I", at + _asm.name_tramp))
+    )
+    out.append(
+        ("josa-mon-hook", MON_HEAD_PATCH, b"\x4e\xf9" + struct.pack(">I", at + _asm.mon_tramp))
+    )
+    out.append(
+        (
+            "josa-head2-hook",
+            HEAD2_PATCH,
+            b"\x4e\xf9" + struct.pack(">I", at + _asm.head2_tramp) + b"\x4e\x71\x4e\x71",
+        )
     )
     tramp = b"\x4e\xf9" + struct.pack(">I", at) + b"\x4e\xf9" + struct.pack(">I", item_entry)
     out.append(("josa-tramp", DEAD_HANDLER, tramp))
@@ -416,6 +466,10 @@ def check(d: bytes) -> None:
             raise SystemExit(f"코드 {c:02x} 의 원본 피연산자 길이가 0 이 아니다")
     if d[NAME_FN_PATCH : NAME_FN_PATCH + 6] != b"\x02\x80\x00\x00\x00\xff":
         raise SystemExit("$A94E 가 andi.l #$ff,d0 가 아니다 — 이름 트램펄린 자리가 바뀌었다")
+    if d[MON_HEAD_PATCH : MON_HEAD_PATCH + 6] != b"\x26\x79\x00\xff\x34\x70":
+        raise SystemExit("$28660 이 movea.l $FF3470.l,a3 가 아니다 — 몬스터 행동 줄 머리 트램펄린 자리가 바뀌었다")
+    if d[HEAD2_PATCH : HEAD2_PATCH + 10] != HEAD2_ORIG:
+        raise SystemExit("$2228 이 lea $30(a1),a1 + lea $FFFE82.l,a2 가 아니다 — 배우 이름 머리($2214) 트램펄린 자리가 바뀌었다")
     cs = hangul.Charset(d, set(JOSA_CHARS))
     body, tbl = code(0x1F0000, cs)
     print(
