@@ -130,3 +130,11 @@ class TestUiText(unittest.TestCase):
         uitext.pack_fixed(exe, 0, [0x50], orig_len=3, orig_term=0x8000, pad_code=None)
         got = struct.unpack_from("<2H", exe, 0)
         self.assertEqual(got, (0x50, 0x8000))
+
+    def test_table_target_outside_the_lists_is_caught(self):
+        """🔴 표가 가리키는데 번역 자리 목록 밖인 문자열은 일본어로 남는다(sfc-ed1 101곳, 10-18) — 목록 밖 목표 합성."""
+        covered = {0x100, 0x110}
+        out = uitext.table_targets_outside(
+            [0x100, 0x110, 0x120, 0x500, 0x600, 0x700], covered, (0x500, 0x580), {0x600: "허용"}, lambda o: o == 0x700
+        )
+        self.assertEqual(out, [0x120])

@@ -915,6 +915,12 @@ def main():
         raise
     try:
         verify_image(a.disc, tmp, fs, exe_lba, exe_size, arcs, dirpos, resized)
+        if a.disc == "ed3":  # 🔴 이미지 전체 잔존 — 정본 밖에 원문이 남았나(기준선 `image_residue_baseline.json` 보다 늘면 선다)
+            import check_image_residue as residue_gate
+
+            up, _down = residue_gate.judge(residue_gate.scan(tmp), residue_gate.load_baseline())
+            if up:
+                raise SystemExit("🔴 이미지 잔존 — 알려진 자리 밖에 원문 런이 남았다:\n  " + "\n  ".join(up[:20]))
     except Exception:
         os.replace(tmp, out + ".failed")
         raise

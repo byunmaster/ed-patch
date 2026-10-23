@@ -80,6 +80,8 @@ echo "  ── 조사 일치(F8) · 일본어 잔존(F7)"
 #    ⚠ 미번역은 실패가 아니다(옮긴 자리만 본다 — 늘 빨간불이면 아무도 안 본다).
 run 0 "$PY" "$G/tools/check_josa.py" --disc ed3
 run 0 "$PY" "$G/tools/check_jp_left.py" --disc ed3
+# 🔴 문안에 사용자 영역(PUA) 글자가 섞이면 실패 — 다른 기종 문안을 가져오다 딸려 온 자리표시 글자가 다른 글리프로 구워진다(10-18 md-ed2). 일부러 쓰는 것은 허용 목록.
+run 0 "$PY" "$G/tools/check_pua.py"
 
 echo "  ── 월드맵 패널 넘침(칸 수 안에 드는가)"
 # 🔴 게이트다 — 패널 줄이 원판 칸을 넘으면 그 항목은 일본어로 남는다. (제어 열 보존은 build 가 서서 지킨다.)
@@ -147,6 +149,22 @@ echo "  ── 실행파일 낱말 표 (항등 재구축이 바이트 동일한�
 #    여기서 같이 본다.
 run 6 "$PY" "$G/tools/exetext.py" --disc ed3 --check
 run 6 "$PY" "$G/tools/exetext.py" --disc ed4 --check
+
+echo "  ── 실제 빌드 (시험 롬을 끝까지 굽는다 — 쓰기 단계에서만 나는 실패까지 잡는다)"
+# 🔴 정적 검사기도 `--dry-run`(쓰기 직전에 돌려보낸다)도 **쓰기 단계에서만 나는 실패**는 못 본다(md-ed2 가 낡은 이미지를 초록으로 보고한 구멍,
+#    10-18). 그래서 **낡은 이미지·`.failed`·`.part` 를 먼저 지우고** 시험 꼬리표(`test-gate`)로 실제로 굽는다. 종료 코드가 0 이 아니거나
+#    · 산출물이 없거나 · 비었거나 · `.failed`/`.part` 가 남았으면 실패다. 이미지는 확인 뒤 지운다(칸을 안 채운다). 제품 롬은 글리프
+#    정본이 아직 없어 못 굽는다(`--test` 가 가장 가까운 실빌드). 무거운 일이라 `heavy.sh` 로 줄을 선다. 약 2분.
+_gd="$G/work/build/test-gate"
+rm -rf "$_gd"
+_bout=$(ED_BUILD_TAG=test-gate sh "$ROOT/scripts/heavy.sh" "$PY" "$G/tools/build.py" --disc ed3 --test 2>&1) && _brc=0 || _brc=$?
+printf '%s\n' "$_bout" | tail -3 | sed 's/^/   /'
+_bin=$(ls "$_gd"/*.bin 2>/dev/null | head -1 || true)
+if [ "$_brc" -ne 0 ]; then echo "   🔴 빌드가 실패했다(rc $_brc)"; fail=1
+elif [ -z "$_bin" ] || [ ! -s "$_bin" ]; then echo "   🔴 빌드가 성공했다는데 산출물이 없다"; fail=1
+elif ls "$_gd"/*.failed "$_gd"/*.part >/dev/null 2>&1; then echo "   🔴 실패·미완 산출물이 남았다"; fail=1
+else echo "   ✅ 실빌드 — $(sha1sum "$_bin" | cut -c1-12) · $(( $(wc -c < "$_bin") / 1048576 ))MB"; fi
+rm -rf "$_gd"
 
 echo "  ── 조판 지문 (공용이 우리 줄바꿈을 조용히 흔들지 않나)"
 # ⚠ **락도 관측 대장도 조판을 안 본다**(화자 + 창 본문만 해시). `tools/typeset.py` 가

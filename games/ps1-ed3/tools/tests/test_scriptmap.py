@@ -68,6 +68,23 @@ class TestScriptMap(unittest.TestCase):
         starts = [s for s, _ in info["segments"]]
         self.assertEqual(sorted(t for _, t, _ in info["targets"]), sorted(starts))
 
+    def test_dialogue_pointer_outside_unit_list_is_caught(self):
+        """🔴 대사 포인터(0F 90)가 조각 시작을 못 맞히면 그 대사는 번역 단위 밖이다(sfc-ed1 101곳 — 10-18). 목록 밖 목표 합성."""
+        dlg = lambda V: b"\x0f\x90" + struct.pack("<H", V)  # 0x0F 가 짝수 자리(2)에 놓이면 0x90 뒤 u16 이 정렬된다
+        ok, _ = member(32, dlg(0) + dlg(6), self.segs)
+        self.assertEqual(scriptmap.dialogue_targets(ok), ([32, 38], []))
+        bad, _ = member(32, dlg(0) + dlg(1 + 2 * 3 + 2), self.segs)  # 두 번째 = 조각 한복판
+        tot, miss = scriptmap.dialogue_targets(bad)
+        self.assertEqual(len(tot), 2)
+        self.assertEqual(len(miss), 1)
+        out, _ = member(32, dlg(0) + dlg(9000), self.segs)  # 풀 밖
+        self.assertEqual(len(scriptmap.dialogue_targets(out)[1]), 1)
+
+    def test_non_dialogue_pointer_is_not_gated(self):
+        """대사 연산자(0F) 뒤가 아닌 0x90 은 자료 바이트와 구별되지 않아 게이트로 안 건다(개수만)."""
+        mem, _ = member(32, ptr(0) + ptr(9000), self.segs)
+        self.assertEqual(scriptmap.dialogue_targets(mem)[1], [])
+
     def test_unresolved_pointer_forbids_length_change(self):
         """🔴 조각 한복판을 가리키는 못 푼 포인터가 있으면 길이를 바꿀 수 없다(같은 길이는 된다)."""
         mem, _ = member(32, ptr(0) + ptr(6) + ptr(1 + 2 * 3 + 2), self.segs)  # 마지막 = 조각 한복판

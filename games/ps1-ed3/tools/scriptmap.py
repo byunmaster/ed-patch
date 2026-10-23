@@ -112,6 +112,25 @@ def pointer_sites(mem):
     return out
 
 
+def dialogue_targets(mem):
+    """([목표 수], [조각 시작을 못 맞힌 (자리, 목표)]) — **대사 포인터(`0x0F 0x90 <u16>`)** 만 본다(ED3 풀 규격).
+
+    🔴 번역 단위 목록이 풀의 모든 `0xFFFF` 조각이라, 목록 밖 대사는 「포인터가 조각 시작을 못 맞히는」 꼴로만 생긴다(sfc-ed1 에서
+    장면 대사 101개가 목록 밖이라 일본어로 남았다 — 10-18). 다른 연산자 뒤의 `0x90` 은 이벤트 VM 자료 바이트와 구별되지 않아(404개 중
+    242개가 멤버 밖을 가리킨다) 게이트로 안 건다 — 개수만 센다(`parse` 의 `resolved`)."""
+    if layout(mem) != LAYOUT_POOL:
+        return [], []
+    info = parse(mem)
+    tot, miss = [], []
+    for at, t, _odd in info["targets"]:
+        p = at - 1 if mem[at - 1] == PTR_OP else at - 2
+        if p >= 1 and mem[p - 1] == 0x0F:
+            tot.append(t)
+            if t not in info["starts"]:
+                miss.append((at, t))
+    return tot, miss
+
+
 def segments(mem):
     """[(시작 오프셋, [코드…])] — 풀의 0xFFFF 로 갈린 조각 전부(짧은 것도 남긴다)."""
     base = text_base(mem)

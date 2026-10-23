@@ -73,7 +73,8 @@ EXTRA_SITES = {
         0x10DC,
         0x10E6,
         0x10F0,
-    ],  # はい · いいえ — 예/아니오 창(필드 이벤트·세이브 확인). 앞 네 워드(1·8·2·4)는 표가 아닌 자료다. いいえ 는 스캐너가 못 잡아 여기 둔다. 0x10DC·0x10E6·0x10F0 은 도구점 메뉴(買いたい·売りたい·換金する — 정본 사기·팔기·환전하기)
+        0x97D8E,
+    ],  # 0x97D8E = 주문 설명 문장(스캐너가 앞 자료와 한 덩어리로 읽고 버린다 — 10-18 CANON 전수에서 잡음) · はい · いいえ — 예/아니오 창(필드 이벤트·세이브 확인). 앞 네 워드(1·8·2·4)는 표가 아닌 자료다. いいえ 는 스캐너가 못 잡아 여기 둔다. 0x10DC·0x10E6·0x10F0 은 도구점 메뉴(買いたい·売りたい·換金する — 정본 사기·팔기·환전하기)
 }
 
 
@@ -165,9 +166,9 @@ def sites(disc):
         if off in out:
             continue
         codes, _ = exetext.raw_string(data, off)
-        if not codes or any(c not in cm for c in codes):
+        if not codes or any(c not in cm and c != 1 for c in codes):
             continue
-        jp = "".join(cm[c] for c in codes)
+        jp = "".join(cm.get(c, "\n") for c in codes)  # 0x1 = 줄바꿈(스캐너 `newline=True` 와 같은 읽기)
         tb, budget = in_table.get(off, (None, 0))
         out[off] = {"jp": jp, "len": len(codes), "table": tb, "budget": budget}
     out.update(pool_sites(data, disc, out))
@@ -261,6 +262,45 @@ def check(disc):
                 + ("읽을거리 풀은 줄당 24코드가 상한이다" if s.get("pool") else "표가 없는 자리는 고정이다")
             )
     return len(canon), len(ss), bad
+
+
+# 🔴 표(포인터) 목표가 번역 자리 목록 밖인가 — sfc-ed1 에서 번역 단위 목록 밖을 가리키는 포인터 때문에 대사 101개가 일본어로 남았다(10-18).
+#    실행파일 낱말·문장 표의 모든 목표는 UI 자리 ∪ 낱말 구역(고유명사 정본이 번역) ∪ 월드맵 패널(`check_panel`) 중 하나여야 한다.
+TARGET_ALLOW = {
+    "ed3": {
+        0x976D6: "미해독 한자 조각 표(0x8CAB4) — 글자 목록, 화면 문장 아님",
+        0x97CB8: "주문 이름 `ハチよせ` — 표 첫 항목(스캐너 사각지대 ①), 낱말 경로(고유명사 정본 100%)가 번역",
+        0x9976C: "몬스터 이름 `イノシシ` — 같은 사유",
+    }
+}
+PANEL_RANGE = {"ed3": (0x9B806, 0x9C04C)}
+
+
+def table_targets_outside(targets, covered, panel, allow, is_empty):
+    """표 목표 중 번역 자리(`covered`) · 패널 범위 · 빈 문자열 · 허용 목록 어디에도 없는 오프셋들(순수 함수 — 합성 테스트용)."""
+    lo, hi = panel
+    return sorted(
+        o for o in set(targets) if o not in covered and not (lo <= o < hi) and o not in allow and not is_empty(o)
+    )
+
+
+def check_table_targets(disc):
+    """(표 목표 수, 번역 자리 밖 [오프셋…])"""
+    data, ss = sites(disc)
+    cm = textenc.charmap(disc)
+    labels = dump_names.REGIONS[disc]
+    regs = dump_names.split(dump_names.regions(dump_names.strings(data, cm, max_len=64, newline=True)), labels)
+    covered = set(ss) | {o for r in regs for o in r["offs"]}
+    tables = exetext.scan_tables(data, cm) + exetext.detached_tables(data, disc)
+    targets = [off for t in tables for _lo, _hi, starts in exetext.chunks(data, t["table"], t["base"], t["n"]) for off in starts]
+
+    def is_empty(o):
+        codes, _ = exetext.raw_string(data, o)
+        return not codes
+
+    return len(set(targets)), table_targets_outside(
+        targets, covered, PANEL_RANGE.get(disc, (0, 0)), TARGET_ALLOW.get(disc, {}), is_empty
+    )
 
 
 RAW_TOKEN = re.compile("\ufffd([0-9a-f]{3,4})")
@@ -435,6 +475,13 @@ def main():
     print(f"{a.disc}: UI 문안 {n}/{total}줄 ({n * 100 // max(total, 1)}%)")
     for m in bad[:10]:
         print(f"  🔴 {m}")
+    if a.check and a.disc in TARGET_ALLOW:
+        nt, outside = check_table_targets(a.disc)
+        print(f"{a.disc}: 표 목표 {nt} · 번역 자리 밖 {len(outside)}")
+        for o in outside[:10]:
+            print(f"  🔴 0x{o:06X}: 표가 가리키는데 UI 자리·낱말 구역·패널 어디에도 없다 — 번역 목록 밖")
+        if outside:
+            return 1
     if a.check:
         print(f"{a.disc}: UI 문안 — {'🔴 어긋났다' if bad else '✅ 원본과 맞는다'}")
         return 1 if bad else 0
