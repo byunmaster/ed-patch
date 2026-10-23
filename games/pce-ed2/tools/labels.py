@@ -138,8 +138,8 @@ def edit_line(raw: bytes, tab, missing: set, hud: bool = False) -> bytes:
         return raw
     w = sum(font.adv(c) for c in kr)
     if (
-        w > px and " " in kr
-    ):  # 칸(슬롯)은 붙여 쓰는 꼴이 규칙이다(naming.md 「지명 칸」) — 공백을 걷으면 들어가는지 본다
+        w > px and " " in kr and not is_monster(jp)
+    ):  # (몬스터 이름은 칸이 없다 — 공백을 걷으면 「붉은슬라임A」 가 되어 틀 줄의 「붉은 슬라임A」 와 갈린다, qa 10-20) 칸(슬롯)은 붙여 쓰는 꼴이 규칙이다(naming.md 「지명 칸」) — 공백을 걷으면 들어가는지 본다
         kr = kr.replace(" ", "")
         w = sum(font.adv(c) for c in kr)
     if w > px and not is_monster(jp):  # (몬스터 이름은 전투 메시지 창으로만 흘러 칸 폭이 없다 — 전투 화면은 이름 목록 창이 없다, 10-16 실측)

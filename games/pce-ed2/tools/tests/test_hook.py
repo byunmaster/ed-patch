@@ -228,5 +228,21 @@ class Pixel(unittest.TestCase):
             self.assertEqual(bytes(sim.ram[0x109B : 0x109B + 24]), g, f"글리프 {idx} {sorted(chars)[idx]!r}")
 
 
+class TestPoolOverflow(unittest.TestCase):
+    def test_풀이_넘치면_넘친_수를_알린다(self):
+        # 빌드는 이 수만큼 여유를 늘려 다시 고른다(상수 여유가 모자라도 안 깨지게)
+        orig = bytearray(b"\xff" * (layout.NBANKS * layout.BANK))
+        for b, o, n in layout.ZERO_PADDING:
+            z = (b - layout.BANK0) * layout.BANK + o
+            orig[z : z + n] = bytes(n)
+        prog = layout.Prog(orig=bytes(orig))
+        hook.reserve(prog)
+        cap = hook.pool_capacity(prog)
+        with self.assertRaises(hook.PoolOverflow) as cm:
+            hook.install(prog, synthetic(cap + 5), None, None)
+        self.assertEqual(cm.exception.over, 5)
+        self.assertIsInstance(cm.exception, ValueError)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -266,6 +266,27 @@ def table_sites(prog: layout.Prog, bank: int, base_off: int) -> list[tuple[int, 
     return out
 
 
+# 죽은 자료 — 원판 개발자의 **전투 디버그 정보 문구**(뱅크 0x70 `+0B20`~`+0C2F`, 271B: 「…デバッグ情報…」·「基本の強さ」 따위 SJIS 문자열 14개가 이어진다).
+# 출력 루틴(`$7AF7~$7B2D`, 입구 `$7AED`)을 부르는 곳이 코드 전수에 없고 실전투에서도 안 나온다(10-15 관리자 확정 — status 「전투 디버그 문구는 도달 경로 없음」).
+# 안 번역하고 두던 자리를 글리프 풀에 돌려준다(16글자) — 긴 대사 이어 풀기 루틴(`longline`)이 가져간 자리를 메운다.
+DEAD_DEBUG = (
+    (0x70, 0x0B20, 0x0C2F - 0x0B20, bytes.fromhex("0c138282bf82e182"), bytes.fromhex("a4ba20d5")),
+    # 같은 죽은 기능의 출력 루틴 `$7AED`~`$7B2D`(진입 `STZ $3390`; 뒤의 인라인 문구 `$7B2E` 는 시스템 문구 계획이 쓰는 자리라 남긴다) — 호출자 0(전 뱅크 `$7AED`·`$7AF7` 피연산자 검색 · 전투 5회 BP 0 히트). `$7B4A` 는 `$630A` 가 쓰는 산 보조 루틴이라 남긴다.
+    (0x70, 0x1AED, 0x1B2E - 0x1AED, bytes.fromhex("9c9033"), bytes.fromhex("82b582")),
+)
+
+
+def reclaim_dead(prog: layout.Prog) -> int:
+    """죽은 디버그 문구 자리를 비워 자유 공간으로 돌려준다. 시작·끝 바이트가 기대와 다르면 멈춘다(자리를 잘못 잡으면 산 코드를 지운다)."""
+    n = 0
+    for bank, off, ln, head, tail in DEAD_DEBUG:
+        assert prog.o(bank, off, len(head)) == head, f"죽은 디버그 문구 시작 바이트가 다르다 {bank:02X}+{off:04X}"
+        assert prog.o(bank, off + ln, len(tail)) == tail, f"죽은 디버그 문구 끝 다음 바이트가 다르다 {bank:02X}+{off + ln:04X}"
+        prog.vacate(bank, off, ln)
+        n += ln
+    return n
+
+
 def plan(prog: layout.Prog, tab, report: dict | None = None) -> None:
     """장부(`prog`)에 시스템 문구 패치를 적는다. 수집 단계(`tab.map is None`)에서도 같은 모양으로 돈다."""
     stat = {"literal": 0, "literal_kept": 0, "table": 0, "moved": 0}

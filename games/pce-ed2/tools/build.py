@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import battle
 import chapter
+import codestr
 import common
 import ctrllines
 import debugmode
@@ -45,6 +46,9 @@ import package
 import repack
 import residual_gate
 import systext
+import wrap
+import longline
+import narrow
 
 from shared.disc import mode1
 
@@ -211,6 +215,13 @@ def _plan_one(rel, raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None,
         new, place = repack.repack(pkg, changed)
     except repack.RepackError as ex:
         raise BuildError(f"패키지 {rel}: {ex}") from ex
+    if dialogue_allowed is not None and any(sp.rel == rel for sp in codestr.SPECS):  # 코드 영역의 일본어 문장(메시지 표 밖) — 0xFF 패딩으로 옮기고 포인터를 돌린다
+        nb = bytearray(new)
+        try:
+            codestr.apply(rel, pkg, nb, tab)
+        except (ValueError, KeyError) as ex:  # KeyError = 글자가 풀 밖 — package_chars 에 넣었으니 일어나면 안 된다
+            raise BuildError(f"패키지 {rel}: 코드 문자열 — {ex}") from ex
+        new = bytes(nb)
     if local:
         nb = bytearray(new)
         T0, _tb = package.msg_table(pkg)
@@ -253,6 +264,8 @@ def _missing_chars(rel, static: set[str]):
         d = package.decode_chunk(pkg, a, b)[0]
         for _li, _p, spk, txt in dialogue.candidates(rel, a, d):
             cnt.update(set(c for c in "".join(txt + (spk or "")) if c not in " \u3000\n\f§") - static)
+    for c in codestr.chars_by_pkg().get(rel, set()) - static:  # 코드 영역 문장의 글자는 줄 하나가 아니라 필수다 — 맨 앞에
+        cnt[c] += 10_000
     return [c for c, _n in sorted(cnt.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
@@ -276,7 +289,7 @@ def _search_local(rel, raw, tab: font.GlyphTable, static: set[str]):
     return best
 
 
-POOL_MARGIN = 4  # 정적 풀 용량에서 덜어 두는 글자 수 — 수집 단계 이후 늘어나는 글자(시스템 배치 · 전투 줄)의 여유
+POOL_MARGIN = 3  # 정적 풀 용량에서 덜어 두는 글자 수 — 수집 단계 이후 늘어나는 글자(시스템 배치 · 전투 줄)의 여유
 import os as _os
 EDIT_ANY_LABELS = _os.environ.get("ED_ANY_LABELS") != "0"  # 전투 덩이 몬스터 이름 라벨 등 — 용량이 모자라 꺼 뒀으나 11×11 묶음 풀 이후 들어간다(10-16 실측). 끄려면 ED_ANY_LABELS=0
 MARKS_PARTIAL: list[tuple[int, int]] = []  # (패키지, 살린 줄 수) — 공간이 모자라 연출 타이밍 제어를 일부만 살린 패키지
@@ -356,14 +369,26 @@ def apply_pkg_edits(w: Writer, plan: dict) -> dict:
 def plan_program(tab: font.GlyphTable, glyph24: list[bytes] | None, chars: list[str] | None = None) -> layout.Prog:
     """본 프로그램 패치 계획 — 후킹 자리 예약 → 시스템 문구 배치 → (확정 단계에서) 글리프 풀. 수집 단계는 글리프 풀을 안 앉힌다."""
     prog = layout.Prog()
+    systext.reclaim_dead(prog)  # 죽은 전투 디버그 문구 271B → 글리프 풀
     hook.reserve(prog)
+    wrap.reserve(prog)
+    longline.reserve(prog)
+    narrow.reserve(prog)
     systext.MISSING.clear()
     systext.OVERFLOW.clear()
     systext.plan(prog, tab)
     if glyph24 is not None:
         flags = [font.flags(c) for c in chars] if chars else None
         josa_idx = [tab.map[c] for pair in font.JOSA for c in pair] if tab.map else None
+        seen_bm: dict[bytes, str] = {}
+        for ch_, g_ in zip(chars or [], glyph24, strict=False):  # 구운 글리프끼리 같은 비트맵이면 실패(ss-ed1+2 10-20: 쉼표가 마침표와 같은 비트맵으로 구워져 3,983곳이 전부 마침표였다)
+            if g_ in seen_bm:
+                raise BuildError(f"구운 글리프끼리 같은 비트맵: 「{seen_bm[g_]}」 = 「{ch_}」")
+            seen_bm[g_] = ch_
         hook.install(prog, glyph24, flags, josa_idx)
+        wrap.install(prog)
+        longline.install(prog)
+        narrow.install(prog)
     return prog
 
 
@@ -506,26 +531,35 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
         cue.write_text(text)
         check_full_layout(iso, cue)
     raw = load_edits(edits_path) if edits_path else []
-    tab = font.GlyphTable()
-    plan_packages(raw, tab)  # ① 수집 — 글자를 모은다(패키지 · 시스템 문구)
-    prog0 = plan_program(tab, None)
-    allowed = None
-    if dialogue_on:  # 대사 — 글리프 풀 예산 안에서 쓸 글자를 정하고, 그 글자만 쓰는 줄을 번역한다
-        cap = hook.pool_capacity(prog0) - POOL_MARGIN
-        caps = _pkg_caps(raw, tab)
-        allowed = dialogue.choose(set(tab.chars), cap - len(tab.chars), caps)
-        plan_packages(raw, tab, allowed)
-    dialogue.STATS.clear()
-    dialogue.UNFIT.clear()
-    chars = tab.freeze()  # ② 번호 확정(코드포인트순, 결정적)
-    glyph24 = [font.glyph(ch) for ch in chars]
-    plan = plan_packages(raw, tab, set(tab.map), local=dialogue_on)  # ③ 같은 계획을 진짜 코드로 다시(+ 패키지별 지역 글리프)
+    margin = POOL_MARGIN
+    while True:  # 정적 풀이 넘치면(수집 뒤 늘어난 글자) 여유를 그만큼 늘려 처음부터 다시 — 상수 여유가 모자라도 빌드가 안 깨진다
+        tab = font.GlyphTable()
+        plan_packages(raw, tab)  # ① 수집 — 글자를 모은다(패키지 · 시스템 문구)
+        prog0 = plan_program(tab, None)
+        allowed = None
+        if dialogue_on:  # 대사 — 글리프 풀 예산 안에서 쓸 글자를 정하고, 그 글자만 쓰는 줄을 번역한다
+            cap = hook.pool_capacity(prog0) - margin
+            caps = _pkg_caps(raw, tab)
+            allowed = dialogue.choose(set(tab.chars), cap - len(tab.chars), caps)
+            plan_packages(raw, tab, allowed)
+        dialogue.STATS.clear()
+        dialogue.UNFIT.clear()
+        chars = tab.freeze()  # ② 번호 확정(코드포인트순, 결정적)
+        glyph24 = [font.glyph(ch) for ch in chars]
+        plan = plan_packages(raw, tab, set(tab.map), local=dialogue_on)  # ③ 같은 계획을 진짜 코드로 다시(+ 패키지별 지역 글리프)
+        try:
+            prog = plan_program(tab, glyph24, chars)
+            break
+        except hook.PoolOverflow as e:
+            if not dialogue_on:
+                raise
+            margin += e.over
+            print(f"  글리프 풀 {e.over}자 초과 — 여유를 {margin} 로 늘려 다시 고른다")
     if dialogue_on:
         print(f"  대사 줄: 번역 {dialogue.STATS['번역']} · 글리프 예산 밖(원문 유지) {dialogue.STATS['예산 밖']} · 18 인자 불가 {dialogue.STATS['18 인자 불가']} · 화자 정본 없음 {sum(1 for v in dialogue.UNFIT.values() if v.startswith('화자'))}")
         (common.REVIEW_DIR / "dialogue_unfit.tsv").write_text(
             "\n".join(f"{k}\t{v}" for k, v in sorted(dialogue.UNFIT.items())) + "\n", encoding="utf-8"
         )
-    prog = plan_program(tab, glyph24, chars)
     with open(iso, "r+b") as f:
         w = Writer(f)
         apply_program(w, prog, glyph24)
@@ -558,6 +592,9 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
         if errs:
             raise BuildError("잔존 게이트: " + " / ".join(errs))
         print(f"  잔존 게이트 OK (본편 {len(package.CLEAN)}개 패키지 · 알려진 잔존 {len(now)}줄)")
+    import romtag
+
+    romtag.stamp(str(iso))
     print(f"빌드 OK: {iso}  sha1 {common.sha1_of(iso)}")
 
 

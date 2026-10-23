@@ -32,6 +32,15 @@ WINDOW = 0x8000
 HOOK_BANK, HOOK_OFF = 0x6C, 0x1966  # 후킹 루틴 자리(0xFF 패딩) — 마운트 `$6000`(MPR3)
 
 MAX_RUNS = 24
+
+
+class PoolOverflow(ValueError):
+    """정적 글리프 풀이 넘쳤다 — `over` 자. 빌드는 여유를 그만큼 늘려 다시 고른다."""
+
+    def __init__(self, over: int, msg: str):
+        super().__init__(msg)
+        self.over = over
+
 PKG_BASE = 0x41  # 씬 패키지가 올라온 첫 뱅크(ZP) — 실측 0x73
 HDR_ENTRY = 12  # 패키지 머리표 항목 4(3바이트 × 4) = 메시지 표 포인터 [상대 뱅크][lo][hi]
 
@@ -334,8 +343,8 @@ def install(prog: layout.Prog, glyph24: list[bytes], flags: list[int] | None = N
             ln -= n * font.PACKED_BYTES
             left -= n
     if left > 0:
-        raise ValueError(
-            f"글리프 {len(glyph24)} 개가 풀에 안 들어간다 (+{left}) — 자유 공간 {sum(p[2] for p in prog.runs_left())}B"
+        raise PoolOverflow(
+            left, f"글리프 {len(glyph24)} 개가 풀에 안 들어간다 (+{left}) — 자유 공간 {sum(p[2] for p in prog.runs_left())}B"
         )
     a = _routine(MAX_RUNS)
     cnt, banks, adlo, adhi = (bytearray(MAX_RUNS) for _ in range(4))

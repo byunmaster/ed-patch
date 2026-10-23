@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 import battle
+import chapter
 import common
 import ctrllines
 import dialogue
@@ -24,6 +25,7 @@ import msgs
 import package
 
 TITLE = "eiyuu"
+CANON_GATE = True  # 정본(shared/canon) 어긋남을 실패로 친다 — 어긋남 0 확인 뒤 켬(마스터 10-18 재검수)
 _TAG = re.compile(r"\{[^}]*\}")
 _JP = re.compile(r"[぀-ヿ一-鿿]")
 
@@ -52,7 +54,11 @@ def _battle_kr(line: bytes) -> str | None:
     hit = msgs.index().get(msgs.norm(tmpl))
     if hit is None and msgs.norm(tmpl).startswith("{name}"):
         hit = msgs.index().get(msgs.norm(tmpl)[len("{name}") :])
-    return None if hit is None else hit[2].replace("\n", " ")
+    if hit is None:  # 긴 행동 문장 — 해시 열쇠 표(원문이 소스에 못 있다)
+        key = msgs.norm(tmpl)
+        v = msgs.long_hit(key) or (msgs.long_hit(key[len("{name}") :]) if key.startswith("{name}") else None)
+        return v.replace("\n", " ") if v else None
+    return hit[2].replace("\n", " ")
 
 
 def pairs():
@@ -74,6 +80,12 @@ def pairs():
                 if not _JP.search(jp):
                     continue
                 where = f"{rel}:{a}:{i}"
+                if chapter.is_chapter_chunk(d) and i < chapter.KEY_LINES:  # 장 제목 띠 — 정본 `chapter` 범주(번호 + 제목)
+                    try:
+                        out.append((where, jp, " ".join(chapter._entry(jp)), "slot"))
+                    except KeyError:
+                        out.append((where, jp, None, "slot"))
+                    continue
                 kr = _label_kr(line)  # 칸에 담긴 이름이 먼저다(PS1 짝이 붙은 지명 줄도 칸 꼴이 맞다)
                 if kr is not None:
                     out.append((where, jp, kr, "slot"))
@@ -88,5 +100,7 @@ def pairs():
                     out.append((where, jp, _kr_of_template(t), "dialog"))
                     continue
                 kr = _battle_kr(line) if is_battle else None
+                if kr is None and is_battle:
+                    kr = battle.appear_text(line)
                 out.append((where, jp, kr, "dialog"))
     return out

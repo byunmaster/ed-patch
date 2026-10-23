@@ -125,8 +125,8 @@ def parse_frame(line: bytes) -> Frame | None:
             marks.append((n, b))
     if sp is None:
         return Frame(j(0, first), None, b"", j(last + 1, len(toks)), tuple(marks), n)
-    post = j(sp + 1, first)
-    post = post.replace(b"\x0e", b"").replace(b"\x0f", b"")  # 화자 글자의 가나 모드 짝 — 한글엔 없다
+    # 화자 글자의 가나 모드 짝(`0E`/`0F` 단독 제어) — 한글엔 없다. ⚠ 바이트 단위로 지우면 `11 37 0F` 의 둘째 인자 `0F` 까지 지워 뒤 글 첫 바이트를 인자로 먹는다(642:28:47, 10-18)
+    post = b"".join(x for _k, x in toks[sp + 1 : first] if x not in (b"\x0e", b"\x0f"))
     return Frame(j(0, sp), toks[sp][1], post, j(last + 1, len(toks)), tuple(marks), n)
 
 

@@ -72,15 +72,27 @@ def own() -> dict:
     return _own
 
 
+def kr_sentences(t: str) -> list[str]:
+    """PS1 한국어 블록 → 문장 목록(`. ? !` 뒤 공백에서 끊는다) — 짝 정본의 문장 자르기(`refs` 의 `[씬, 번호, 시작, 끝)`)와 같은 칼이다(`align_check.jp_sentences` 와 문장 수가 같아야 쓴다)."""
+    t = re.sub(r"\s+", " ", t.replace("\ue003", " ")).strip()
+    return [x for x in re.split(r"(?<=[.?!])\s+(?=\S)", t) if x]
+
+
 def ps1_text(refs) -> str | None:
     """PS1 블록들 → 한국어 문안(블록 사이 `\\f`, 블록 안 개행은 공백). 값 넣기가 있으면 None."""
     ps1, _ = _load()
     parts = []
-    for scn, i in refs:
+    for scn, i, *cut in refs:
         t = ps1[scn].get(str(i), {}).get("t")
         if t is None or re.search(r"\{[^}]*\}|[\x00-\x1f]", t.replace("\n", " ")):
             return None
-        parts.append(re.sub(r" +", " ", t.replace("\n", " ")).strip())
+        t = t.replace("\ue003", " ")  # PS1 붙임 공백(사설 영역) — 그대로 두면 이쪽 글리프 표지(JOSA_MARK)로 읽혀 엉뚱한 글자로 구워진다
+        t = re.sub(r" +", " ", t.replace("\n", " ")).strip()
+        if cut:  # 블록의 일부 문장만(`[씬, 번호, 시작, 끝]`) — PS1 이 이웃 대사까지 한 블록에 묶은 곳
+            ks = kr_sentences(t)
+            assert cut[1] <= len(ks), f"PS1 {scn}:{i} 문장 자르기 {cut} — 한글 문장 {len(ks)}개(짝 정본과 어긋났다 — align_check --apply)"
+            t = " ".join(ks[cut[0] : cut[1]])
+        parts.append(t)
     return "\f".join(parts)
 
 
@@ -171,7 +183,7 @@ def _arg18(head: bytes) -> int | None:
     return None
 
 
-_BOUND = set(",.?!…~)」』")
+_BOUND = set(",.?!…~～)」』")
 KEEP_MARKS = True  # 연출 타이밍 제어 보존 — 패키지 공간이 모자라면 빌드가 그 패키지만 끈다(`build._plan_with_local`)
 MARK_LINES: int | None = None  # 타이밍 제어를 살릴 줄 수 상한(앞 줄부터) — None 이면 전부. 공간이 모자란 패키지가 가능한 만큼만 살리게 한다
 _marks_used = 0  # 이번 계획에서 타이밍 제어를 살린 줄 수
@@ -200,6 +212,8 @@ def _encode(pgs: list[list[str]], marks, jp_n: int, tab) -> bytes:
             return flat[i - 1] in " \n" or prev in _BOUND
 
         for n, b in marks:
+            if b[:1] == b"\x11" and len(b) == 3 and not 0x30 <= b[2] <= 0x39:
+                b = b[:2] + b"0"  # 멈춤 `11 nn nn` 의 둘째 인자가 숫자가 아닌 원문(`11 35 74`)은 엔진이 첫 인자까지만 읽고 둘째를 글자로 찍는다 — 한글 앞에 낱자가 찍혔다(실화면 2690:16120:13 「ㅗ우리한테」, 10-19 전수 촬영)
             t = max(1, min(k, round(n / jp_n * k)))
             best = min((q for q in range(max(1, t - 6), min(k, t + 6) + 1) if bound(q)), key=lambda q: (abs(q - t), q), default=t)
             at.setdefault(best, []).append(b)
@@ -308,6 +322,10 @@ def package_chars() -> dict[int, set[str]]:
         d = package.decode_chunk(p, a, ch[a])[0]
         for _li, _pf, spk, txt in candidates(rel, a, d):
             out.setdefault(rel, set()).update(typeset.ink(txt + (spk or "")))
+    import codestr
+
+    for rel, cs in codestr.chars_by_pkg().items():  # 메시지 표 밖 코드 문장(10-18)도 그 패키지가 쓰는 글자다
+        out.setdefault(rel, set()).update(cs)
     return out
 
 

@@ -98,6 +98,8 @@ class Sim:
             self.wr(zp(), 0)
         elif op == 0x9C:  # STZ abs
             self.wr(self.fetch16(), 0)
+        elif op == 0xA6:  # LDX zp
+            self.x = self.nz(self.rd(zp()))
         elif op == 0xA2:
             self.x = self.nz(self.fetch())
         elif op == 0xA0:
@@ -168,6 +170,8 @@ class Sim:
             self.wr(p, self.nz((v << 1) | c))
         elif op == 0x62:  # CLA
             self.a = 0
+        elif op == 0x3A:  # DEC A
+            self.a = self.nz(self.a - 1)
         elif op == 0xBA:  # TSX
             self.x = self.nz(self.sp)
         elif op == 0xE6:

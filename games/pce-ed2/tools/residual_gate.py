@@ -23,7 +23,7 @@ import package
 
 KNOWN = common.GAME_DIR / "data" / "jp_residual.tsv"
 JP = re.compile(r"[ぁ-んァ-ヶ一-龥]")
-MIN_JP = 4  # 줄 하나에 일본어 글자가 이만큼↑이면 잔존으로 센다
+MIN_JP = 1  # 줄 하나에 일본어 글자가 이만큼↑이면 잔존으로 센다 — 4 로 두면 짧은 문장(「はい」 류)이 샌다(10-18 md-ed1 발견)
 
 # 본편 밖 — 근거는 `docs/status.md` 「장면 패키지 전수(10-18)」 · 전수표는 레포 밖(.local/work/inbox/pce-ed2/foundation/scene_census.tsv)
 BATTLE_TEST = {16, 17, 18, 19, 28, 29}  # 제목 덩이 「…バトルテスト」 · 전투 덩이 30/30/20/18/30/30 — 개발자용 전투 시험 장면, 정상 진행에서 닿는지 미확인(마스터 판단 거리)
@@ -83,9 +83,29 @@ def residual(rel: int, track) -> dict[str, str]:
             isb = False
         for li, (x, y) in enumerate(zip(lo, lb, strict=True)):
             t = re.sub(r"\{[^}]*\}|[-]", "", jptext.decode(x))
-            if len(JP.findall(t)) >= MIN_JP and x == y:
+            if len(JP.findall(t)) >= MIN_JP and jp_left(y):
                 out[f"{rel}:{m}:{li}"] = "행동" if (isb or b"\x1b" in x[:3]) else "기타"  # 1B = 행동한 쪽 이름 자리표(이름 + 술어 꼴)
     return out
+
+
+def jp_left(built: bytes) -> bool:
+    """롬의 줄에 **원본 일본어 글리프**가 하나라도 남았나 — 한글 글리프 코드(리드 `F0~F9`)는 일본어 글꼴 표에 없어 `{HHHH}` 로 풀리므로 그것을 지운 나머지에 가나·한자가 있으면 남은 것이다.
+    ⚠ 「줄이 원본과 바이트까지 같다」는 옛 판정은 구멍이었다 — 이름만 일본어로 남은 줄(앞 이름 + 번역된 꼬리)은 번역된 구간이 겹쳐 있어 통과했다(sfc-ed2 가 같은 구멍을 찾았다, 10-18)."""
+    return bool(JP.search(re.sub(r"\{[^}]*\}|[-]", "", jptext.decode(built))))
+
+
+CODE_JP = re.compile(rb"(?:\x82[\x9f-\xf1]|\x83[\x40-\x96]){4,}")  # SJIS 가나(히라가나 82 9F-F1 · 가타카나 83 40-96) 4자↑ 연속
+
+
+def code_jp(pkg: bytes) -> list[int]:
+    """패키지의 **메시지 표 앞 코드 영역**에 일본어 가나 문장이 남은 오프셋. 번역 단위 목록(메시지 표 목표)도 `residual()` 도 못 보는 자리다 —
+    10-18 재검수에서 `JSR $403C · BIT 포인터` 인라인 문자열 4종 6곳(능력치 감소·합계 피해 …)이 롬에 그대로 있었다. 한글 글리프는 리드 `F0~F9` 라 이 패턴에 안 걸린다."""
+    try:
+        t, tab = package.msg_table(pkg)
+        first = min(p for p in tab if p > t)
+    except Exception:
+        return []
+    return [m.start() for m in CODE_JP.finditer(pkg[:first])]
 
 
 def known() -> dict[str, str]:
@@ -112,6 +132,9 @@ def evaluate(iso: Path) -> tuple[list[str], dict[str, str]]:
     now = {}
     for r in package.CLEAN:
         now.update(residual(r, track))
+        left = code_jp(track(r))
+        if left:
+            errs.append(f"패키지 {r}: 코드 영역에 일본어 문장 {len(left)}곳 {[hex(o) for o in left[:4]]} — `codestr.py` 에 넣어 한국어로 옮긴다")
     kn = known()
     key = lambda s: tuple(int(x) for x in s.split(":"))  # noqa: E731
     new = sorted(set(now) - set(kn), key=key)

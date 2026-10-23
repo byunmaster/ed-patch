@@ -6,6 +6,7 @@
 자리표 개수·순서가 안 맞거나 정본에 없으면 None(원문 유지 — 관리자 후보). 한국어 조사는 정본의 `은(는)` 같은 정적 꼴이다(동적 조사는 P2 훅).
 """
 
+import hashlib
 import re
 import sys
 import unicodedata
@@ -112,12 +113,21 @@ def template(content, name_ctrl=NAME_CTRL, num_ctrl=NUM_CTRL) -> tuple[str, list
     return s, names, nums
 
 
+BATTLE_JOSA = "none"  # 이 덩이의 이름 버퍼 받침 부류 — "none"(영문 끝/받침 없음) · "yes"(받침) · "dyn"(섞임 — 병기 그대로 두어 런타임 훅이 푼다). `battle.edit_chunk` 가 덩이마다 정한다.
+
+
 def battle_josa(kr: str) -> str:
-    """이름 버퍼는 몬스터 이름 + 구별 문자(A~D)라 영문 끝 = 받침 없음(마스터 09-26) — 이름 바로 뒤 병기 조사를 빌드 때 푼다."""
-    for pair, no_batchim in (("은(는)", "는"), ("이(가)", "가"), ("을(를)", "를"), ("과(와)", "와")):
+    """이름 버퍼는 **그 덩이의 이름 줄**이다 — 몬스터 이름 + 구별 문자(A~D)면 영문 끝 = 받침 없음(마스터 09-26), 구별 문자 없는 단독 몬스터(산산 · 파워앵글)는 이름 끝 글자의
+    받침으로 푼다(qa 10-20 「산산가」 「파워앵글는」). 부류가 섞이면 병기를 그대로 둔다(런타임 훅). 이름 바로 뒤 병기 조사를 빌드 때 푼다."""
+    if BATTLE_JOSA == "dyn":
+        return kr
+    for pair, no_batchim, batchim in (("은(는)", "는", "은"), ("이(가)", "가", "이"), ("을(를)", "를", "을"), ("과(와)", "와", "과")):
         if kr.startswith(pair):
-            return no_batchim + kr[len(pair) :]
+            return (batchim if BATTLE_JOSA == "yes" else no_batchim) + kr[len(pair) :]
     return kr
+
+
+_JOSA_HEAD = re.compile(r"^(은\(는\)|이\(가\)|을\(를\)|과\(와\)|와\(과\)|으로\(로\)|로\(으로\))")
 
 
 def cover(piece: str) -> str | None:
@@ -136,7 +146,10 @@ def cover(piece: str) -> str | None:
                 best[j] = [*best[i], v]
     if best[n] is None or len(best[n]) < 2:
         return None
-    return " ".join(best[n])
+    out = best[n][0]
+    for v in best[n][1:]:
+        out += ("" if _JOSA_HEAD.match(v) else " ") + v  # 조사로 시작하는 조각(「은(는) 도망쳤다.」)은 앞 조각(「들」)에 붙인다 — 띄우면 「들 은」 이 된다(10-20 style 4909)
+    return out
 
 
 def segments(raw: bytes, tab, name_ctrl, num_ctrl) -> bytes | None:
@@ -220,6 +233,27 @@ def segments(raw: bytes, tab, name_ctrl, num_ctrl) -> bytes | None:
 BATTLE_NAME = {0x07, 0x13, 0x1A, 0x1B}  # 전투 덩이에서는 `1B` 가 행동한 쪽 이름(이름 라벨 줄이 먼저 채운 버퍼)이고 `07` 이 대상 쪽 이름이다
 
 
+_long: dict[str, str] | None = None
+
+
+def long_lines() -> dict[str, str]:
+    """긴 전투 행동 문장(원문 20자↑ — 정본·소스에 못 둔다) — `data/battle_long.tsv` 의 해시 열쇠 → 한국어."""
+    global _long
+    if _long is None:
+        _long = {}
+        f = Path(__file__).resolve().parents[1] / "data" / "battle_long.tsv"
+        if f.exists():
+            for ln in f.read_text(encoding="utf-8").splitlines():
+                if ln and not ln.startswith("#"):
+                    k, v = ln.split("\t", 1)
+                    _long[k] = v
+    return _long
+
+
+def long_hit(key: str) -> str | None:
+    return long_lines().get(hashlib.sha1(key.encode()).hexdigest()[:12])
+
+
 def translate(raw: bytes, tab, battle: bool = False) -> bytes | None:
     """`battle` = 전투 덩이의 줄 — `1B` 를 수가 아니라 이름 자리로 읽는다(원문 「{1B}の攻撃」 = 「<이름>の攻撃」)."""
     if not battle:
@@ -244,12 +278,19 @@ def translate(raw: bytes, tab, battle: bool = False) -> bytes | None:
         if hit is not None:
             prefix_name = names[0]
             names = names[1:]
+    if hit is None and battle:  # 긴 행동 문장 — 해시 열쇠(원문이 소스에 없다). 이름 자리 머리를 뺀 꼴과 통째 꼴 둘 다 본다
+        v = long_hit(key) or (long_hit(key[len("{name}") :]) if key.startswith("{name}") and names else None)
+        if v is not None:
+            hit = ("battle", "", v)
+            if long_hit(key) is None:
+                prefix_name = names[0]
+                names = names[1:]
     if hit is None:
         return segments(raw, tab, name_ctrl, num_ctrl)
     kr = hit[2]
     if battle:
-        kr = battle_josa(kr)
-    if "\n" in tmpl and "\n" not in kr and " " in kr:  # 원문이 줄을 나눴으면(이름 + 조사 ⏎ 나머지) 한국어도 첫 어절 뒤에서 나눈다 — 한 줄로 이으면 창 폭을 넘는다
+        kr = battle_josa(kr.replace("\n", " "))  # 로그성 메시지 — 개행을 빼고 엔진이 어절 단위로 넘긴다(`wrap.py`, 마스터 10-18)
+    elif "\n" in tmpl and "\n" not in kr and " " in kr:  # 원문이 줄을 나눴으면(이름 + 조사 ⏎ 나머지) 한국어도 첫 어절 뒤에서 나눈다 — 한 줄로 이으면 창 폭을 넘는다
         kr = kr.replace(" ", "\n", 1)
     n_name, n_num = kr.count("{name}"), kr.count("{n}")
     if n_name != len(names) or n_num != len(nums):
