@@ -21,9 +21,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
 
 ACCEPT = os.path.join(C.GAME_DIR, "script", "coverage_accept.json")
-#   히라가나 둘 이상이 낀 가나 3 자↑ — 가타카나만인 연속은 글리프 데이터와 구분이 안 된다
+#   히라가나가 하나라도 낀 가나 3 자↑(10-18 — 「둘 이상」이었을 땐 「ホルクの」처럼 히라가나 하나로 끝나는 덩이가 샜다) — 가타카나만인 연속은 글리프 데이터와 구분이 안 된다
 _KANA = re.compile(rb"(?:\x82[\x9f-\xf1]|\x83[\x40-\x96]|\x81[\x5b\x45\x41\x42]){3,}")
-_HIRA = re.compile(rb"(?:\x82[\x9f-\xf1]){2,}")
+_HIRA = re.compile(rb"\x82[\x9f-\xf1]")
 _SKIP = (".FON", ".CPK", ".DAT")  # 글꼴·영상·사운드 — 데이터라 잡음이다
 
 
@@ -93,10 +93,28 @@ def dict_keys():
     return {k: v for k, v in out.items() if len(k) >= 2}
 
 
+_KANA_CH = re.compile("[\u3040-\u30ff\uff66-\uff9f]")
+
+
+def untouched_blocks(o_blocks, n_blocks):
+    """원본에 가나가 든 맵 블록 중 **구운 이미지에 바이트 그대로 남은 것**의 수 — 길이 하한이 없다.
+
+    🔴 연속 길이로 재면(`kana_runs` 의 3 자↑) 「ティ変更」 같은 **짧은 문장이 샌다**(10-18 실측: MAP006#0 이 가나 덩이 2 자라 위 게이트에
+       안 잡혔다 — sfc-ed2·md-ed1 이 같은 모양의 구멍을 찾았다). 맵 블록은 경계를 알므로 길이 대신 「번역되어 바뀌었나」를 본다.
+    `o_blocks`·`n_blocks` 는 `mapfile.blocks()` 결과(dict, 키 `body`)."""
+    import mapfile as M
+
+    now = {bytes(b["body"]) for b in n_blocks}
+    return sum(
+        1 for b in o_blocks if _KANA_CH.search(M.text_of(b["body"])) and bytes(b["body"]) in now
+    )
+
+
 def residual():
     """`[(디스크, 파일, 원본 수, 구움 수, 예)]` — 구운 이미지에 가나가 남은 파일."""
     import build
     import check_build_discs as B
+    import mapfile as M
 
     out = []
     keys = dict_keys()
@@ -110,17 +128,21 @@ def residual():
             for n, lba, size in d.files():
                 if size == 0 or n.endswith(_SKIP):
                     continue
-                o = kana_runs(d.read_extent(lba, size))
+                ob = d.read_extent(lba, size)
+                o = kana_runs(ob)
                 nl, ns = new.get(n, (lba, size))
                 got = B.read_extent(img, nl, ns)
                 r = kana_runs(got)
+                nblk = untouched_blocks(M.blocks(ob), M.blocks(got)) if C.is_map_file(n)[0] else 0
                 #   🔴 사전 열쇠 정확 검색 — 출처 목록을 손으로 열거하면 숨은 표를 놓친다(md 실측: 목적지 표 10칸)
                 hit = {k: got.count(e) for k, e in keys.items() if e in got}
-                if r or hit:
+                if r or hit or nblk:
                     ex = " / ".join(x.decode("shift_jis", "replace") for x in r[:3])
                     if hit:
                         ex += "  [사전 열쇠] " + ", ".join(f"{k}×{c}" for k, c in sorted(hit.items())[:6])
-                    out.append((disc, n, len(o), len(r), sum(hit.values()), ex))
+                    if nblk:
+                        ex += f"  [안 바뀐 블록] {nblk}"
+                    out.append((disc, n, len(o), len(r), sum(hit.values()), nblk, ex))
     return out
 
 
@@ -138,10 +160,13 @@ def main():
         ok = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
     bad = []
     print("  ── 구운 이미지의 가나 잔존")
-    for disc, n, no, nr, nk, ex in residual():
-        cap, kcap = ok.get(n, {}).get("max", 0), ok.get(n, {}).get("keys", 0)
-        good = nr <= cap and nk <= kcap
-        print(f"  {'✅' if good else '❌'} disc{disc} {n}: 가나 {no} → {nr} (≤{cap}) · 사전 열쇠 {nk} (≤{kcap})  {ex}")
+    for disc, n, no, nr, nk, nb, ex in residual():
+        cap, kcap, bcap = (ok.get(n, {}).get(k, 0) for k in ("max", "keys", "blocks"))
+        good = nr <= cap and nk <= kcap and nb <= bcap
+        print(
+            f"  {'✅' if good else '❌'} disc{disc} {n}: 가나 {no} → {nr} (≤{cap}) · 사전 열쇠 {nk} (≤{kcap})"
+            f" · 안 바뀐 블록 {nb} (≤{bcap})  {ex}"
+        )
         if not good:
             bad.append(n)
     if bad and a.check:

@@ -97,6 +97,8 @@ PRELOAD = 0xFFFF  # 프레임 자리에 이것이 오면 미리 싣기 목록
 #   ⓘ 시간은 글자 수로 어림한다 — 음성 구간(VAD)을 직접 재는 것보다 거칠지만 **다음 칸이
 #     오면 어차피 갈아 끼우므로** 길게 잡아도 겹치지 않는다. 짧은 침묵에는 창이 사라진다.
 #     정본에 `dur`(초)를 적으면 그걸 쓴다. `dur: 0` 은 「다음 칸까지」다.
+#   🔴 **`dur` 는 말이 끝난 뒤 0.5초 여유까지 잡는다**(마스터 10-15 「모든 음성대사는 말끝나고 0.5초 여유」) — 다음 칸이 그 안에 오면 거기서 갈아 끼운다.
+#     ⚠ 짧은 칸(`MERGE_SHORT` 미만)은 `dur` 를 늘리면 이웃과의 묶음이 풀린다(V18 「간다!」) — 그런 칸은 그 밑에서 멈춘다.
 #   🔴 **장면의 마지막 칸은 0 이면 안 된다** — 뒤에 갈아 끼울 칸이 없어 창이 다음 맵까지
 #     남는다(`plan()` 이 막는다).
 DUR_BASE, DUR_PER_CHAR = 0.9, 0.22
@@ -109,6 +111,17 @@ def duration(h):
     return DUR_BASE + DUR_PER_CHAR * sum(len(t) for t in h["lines"])
 
 
+POS_TOP = 0x80  # 표정 워드의 이 비트 = 대사창을 위에 띄운다(`pos: "top"`) — 스텁이 읽고 떼어 낸다. 표정 값은 이보다 작아야 한다
+
+
+def pos(h):
+    """`"top"` 이면 원판 위 창(winx 0x138·winy 0x28, 얼굴 오른쪽), 아니면 아래(기본). 마스터가 편집기에서 줄마다 고른다(10-11)."""
+    p = h.get("pos", "bottom")
+    if p not in ("top", "bottom"):
+        raise SystemExit(f"{h.get('off', '?')}: pos 는 top/bottom 이다 — {p!r}")
+    return p
+
+
 def face(h):
     """`(얼굴, 표정)` — `face` 가 있으면 그것, 없으면 `speaker` 가 전역 인물일 때만."""
     if "face" in h:
@@ -119,13 +132,9 @@ def face(h):
     return int(sp), int(h.get("expr", 0))
 
 
-#   🔴 음성 자막의 `?`·`!` 는 **전각**으로 찍는다(마스터 10-01 「물음표 느낌표가 작다」) — 반각은 ASCII 글리프(6px)라 한글(12px)
-#   옆에서 작아 보인다. 전각 칸은 엔진 일본어 글리프(`？！`)를 쓴다.
-_FW = str.maketrans({"?": "？", "!": "！"})
-
-
-def fw(t):
-    return t.translate(_FW)
+#   🔴 음성 자막의 문장부호·공백·숫자는 **전부 반각**이다(마스터 10-16 「모든 인게임 음성자막에서 문장부호, 공백, 숫자는 반각이야」).
+#     ⚠ 10-01 에 「물음표 느낌표가 작다」며 `?`·`!` 만 전각(`？！`)으로 찍게 했던 변환(`fw`)을 걷었다 — 공통 규칙 1-1 과 어긋나 있었다.
+#     문안은 ASCII 그대로 인코딩된다(`hangul_map.encode_kr`).
 
 
 def entry(h, table=None):
@@ -146,7 +155,6 @@ def entry(h, table=None):
     room = MAX_LINES - (1 if who else 0)
     if len(lines) > room:
         raise SystemExit(f"{h['off']:#x}: 줄이 {room} 을 넘는다({len(lines)}) — 이름 줄 몫을 뺀다")
-    lines = [fw(t) for t in lines]
     for t in [who, *lines]:
         if "\n" in t:
             raise SystemExit(f"{h['off']:#x}: 줄 안에 개행 — `lines` 를 나눠 적는다: {t!r}")
@@ -157,6 +165,10 @@ def entry(h, table=None):
     if not 0 <= frames < PRELOAD:
         raise SystemExit(f"{h['off']:#x}: 표시 시간이 범위 밖이다 ({frames} 프레임)")
     fid, expr = face(h) if lines else (NO_FACE, 0)
+    if expr >= POS_TOP:
+        raise SystemExit(f"{h['off']:#x}: 표정 {expr} 이 위치 비트({POS_TOP:#x})와 겹친다")
+    if lines and pos(h) == "top":
+        expr |= POS_TOP
     out = struct.pack(">HHH", frames, fid, expr)
     out += H.encode_kr(who, table) + b"\x00"
     out += b"".join(H.encode_kr(t, table) + b"\x00" for t in lines) + b"\x00"
@@ -268,7 +280,7 @@ _ENDS = (".", "?", "!", "？", "！", ",", "…", "~")
 
 def reflow(segments, room):
     """줄들을 이어 `room` 줄 이내·줄당 `MAX_COLS` 칸 이내로 다시 접는다 → 줄 목록 또는 `None`(안 들어감)."""
-    words = [fw(w) for seg in segments for w in seg.split()]
+    words = [w for seg in segments for w in seg.split()]
     best = None
     for k in range(0 if room >= 1 else 1, len(words)):
         # k = 첫 줄 어절 수(0 이면 한 줄)
@@ -291,6 +303,7 @@ def _close(a, b):
         a.get("who")
         and a.get("who") == b.get("who")
         and face(a) == face(b)
+        and pos(a) == pos(b)
         and a["off"] == b["off"]
         and (int(b.get("delay", 0)) - int(a.get("delay", 0))) / FPS
         - a.get("_dur0", a.get("dur", 0))
@@ -373,6 +386,7 @@ def link(hooks, order):
             and h.get("who", "")
             and h.get("who") == prev.get("who")
             and face(h) == face(prev)
+            and pos(h) == pos(prev)  # 위·아래가 바뀌면 창을 새로 띄운다
             #   말 사이가 `HOLD_GAP` 초 넘게 비면(뜸을 들이면) 닫고 새로 띄운다 — 자리가 다르면 간격을 못 재니 이어진 것으로 본다
             and ((_gap(prev, h) or 0) < HOLD_GAP)
         )

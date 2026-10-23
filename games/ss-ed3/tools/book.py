@@ -253,7 +253,61 @@ def split_to(text, widths):
     return rows + [""] * (ln - len(rows)), True
 
 
+def orphans(rows):
+    """줄 첫머리의 닫는 부호 + 줄 끝의 여는 부호 수 — 책 화면은 줄 폭이 **고정**이라 이 부호가 홀로 서면 읽기 나쁘다."""
+    n = 0
+    for i, r in enumerate(rows):
+        s = r.lstrip(INDENT)
+        if i and s and s[0] in PUNCT:
+            n += 1
+        if i < len(rows) - 1 and r.rstrip(INDENT) and r.rstrip(INDENT)[-1] in OPEN:
+            n += 1
+    return n
+
+
+def deorphan(text, widths):
+    """부호 고아가 남았으면 **띄어쓰기를 하나씩 빼 보며** 고아가 줄고 낱말 갈림이 안 느는 첫 안을 고른다 → `(문안, 뺀 수)`.
+
+    🔴 10-19 대사 보기 검수에서 책 40 권 1,220 줄 중 **27 줄**이 줄 첫머리 마침표·쉼표로 나왔다. `split_to` 의 DP 는 고아(5)를 낱말 갈림(10)보다
+    싸게 쳐서 「줄이 꽉 차 물리적으로 못 옮긴다」고 남겼지만, 앞 줄의 공백 하나를 빼면 부호가 앞 줄에 붙는 자리가 있다.
+    (`fit_spaces` 와 같은 길 — 원문 일본어엔 띄어쓰기가 없고 한 칸이 곧 한 글자라 공백부터 줄인다.)"""
+    rows, ok = split_to(text, widths)
+    if not ok:
+        return text, 0
+    have, cuts = orphans(rows), word_cuts(text, rows)
+    dropped = 0
+    for _ in range(4):
+        if not have:
+            break
+        ch = list(text)
+        cand = []
+        for i, c in enumerate(ch):
+            if c != "　" or (i == 0):
+                continue
+            j = i + 1
+            while j < len(ch) and ch[j] not in ("　", "|"):
+                j += 1
+            cand.append((j - i - 1, -i, i))
+        for _, _, i in sorted(cand):
+            t = "".join(ch[:i] + ch[i + 1 :])
+            r2, ok2 = split_to(t, widths)
+            if ok2 and orphans(r2) < have and word_cuts(t, r2) <= cuts:
+                text, rows, have, cuts = t, r2, orphans(r2), word_cuts(t, r2)
+                dropped += 1
+                break
+        else:
+            break
+    return text, dropped
+
+
 def fit_spaces(text, widths):
+    """칸에 안 들어가면 띄어쓰기를 줄이고, 들어간 뒤 **부호 고아**가 남으면 `deorphan` 으로 한 번 더 줄인다 → `(문안, 뺀 개수)`."""
+    t, n = _fit_spaces(text, widths)
+    t2, m = deorphan(t, widths)
+    return t2, n + m
+
+
+def _fit_spaces(text, widths):
     """칸에 안 들어가면 **띄어쓰기를 필요한 만큼만** 줄인다 → `(문안, 뺀 개수)`.
 
     🔴 원문 일본어엔 띄어쓰기가 아예 없다 — 한 칸이 곧 한 글자다. 우리 한글은 어절 공백이

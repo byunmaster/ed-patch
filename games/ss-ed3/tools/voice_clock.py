@@ -76,6 +76,81 @@ def arm_site(mapno, ff42):
     raise SystemExit("arm 자리를 못 찾았다")
 
 
+def preload_site(mapno, ff42):
+    """`(off, len)` — `FF 42` **바로 앞** 옵코드 묶음(6~14B). 얼굴을 음성 전에 싣는 후킹 자리.
+
+    뒤에서 거꾸로 못 읽으므로 앞 `FF 42` 직전 16B 안의 짝수 시작점마다 앞으로 읽어 `FF 42` 에 정확히 닿는 것 중
+    가장 짧은 것을 고른다. ⚠ 정적 후보라 **실제로 실행되는지는 에뮬로 본다**(죽은 코드면 얼굴이 안 뜬다).
+    """
+    best = None
+    for st in range(ff42 - 14, ff42 - 5):
+        total, ok = 0, False
+        for off, tag, ln, _ in S.ops(f"MAP{mapno:03d}", st, 8):
+            if off != st + total:
+                break
+            if off == ff42:
+                ok = True
+                break
+            if ln is None or tag in ("본문",) or tag.startswith("FD 0"):
+                break
+            total += 2 + ln
+        if ok and 6 <= total <= DISPLACED_MAX and (best is None or total < best[1]):
+            best = (st, total)
+    if best is None:
+        raise SystemExit(f"MAP{mapno:03d} {ff42:#x}: 미리 싣기 자리를 못 찾았다")
+    return best
+
+
+def fd03_site(mapno, ff42):
+    """`(off, 12)` — `FF 42` 앞이 **대기 루프 조건분기(`FD 03`, 12B)** 인 장면의 미리 싣기 자리(V02·V07·V09).
+
+    `FD 03` 은 길이를 못 풀어(`script_ops`) 위 `preload_site` 가 실패한다. 하지만 이 셋은 모양이 같다 —
+    `FD 03 · 목표 4B(절대, 바로 앞 FF 19) · 조건 `40 00 00 01` · 끝 `00 00`` = 12B 로 닫히고, 그 뒤 짧은 옵코드(`FF 36`·`FF 46`, 4B)
+    하나만 거쳐 `FF 42` 에 닿는다. 목표가 절대주소라 칸 안에서 실행해도 같다. **모양이 안 맞거나 다른 곳에서 이 자리로 뛰는 참조가
+    있으면 거부한다**(10-19 V07·V09 — V02 와 같은 근거).
+    """
+    with C.open_disc(1) as d:
+        b = d.read(f"/MAP/MAP{mapno:03d}.BIN")
+    for tail in (0, 4):
+        fd = ff42 - tail - 12
+        if b[fd : fd + 2] != b"\xfd\x03" or b[fd + 6 : fd + 12] != bytes.fromhex("400000010000"):
+            continue
+        if tail and b[fd + 12 : fd + 14] not in (b"\xff\x36", b"\xff\x46"):
+            continue
+        tgt = struct.unpack(">I", b[fd + 2 : fd + 6])[0] - 0x200000
+        if b[tgt : tgt + 2] != b"\xff\x19" or tgt + 2 != fd:
+            continue
+        for a in range(fd, ff42 + 1, 2):
+            pat = struct.pack(">I", 0x200000 + a)
+            if pat in b:
+                raise SystemExit(f"MAP{mapno:03d}: {a:#x} 로 뛰는 참조가 있다 — 칸 안에서 실행하면 달라진다")
+        return fd, 12
+    raise SystemExit(f"MAP{mapno:03d} {ff42:#x}: FD 03 모양이 아니다")
+
+
+def add_preload(doc, vid):
+    """voice.json 의 시계 장면 `vid` 에 `clock.preload` 를 달고 항목의 `face: null` 을 걷는다(`speaker` 가 얼굴을 정한다)."""
+    mapno, ff42 = SCENES[vid]
+    ent = doc[vid]
+    try:
+        off, ln = preload_site(mapno, ff42)
+    except SystemExit:
+        off, ln = fd03_site(mapno, ff42)
+    faces = {it["speaker"] for it in ent["items"] if it.get("speaker") is not None and it["speaker"] < VS.GLOBAL_CAST}
+    for it in ent["items"]:
+        if it.get("face", 0) is None:
+            del it["face"]
+    ent["clock"]["preload"] = {
+        "off": off,
+        "len": ln,
+        "wait": 20 * len(faces) + 10,  # 얼굴 한 장 ~20프레임(10-16 V18 실측)
+        "_t": f"음성 앞 FF 42 직전 옵코드 묶음({ln}B) — 얼굴 {len(faces)}종을 싣고 간다",
+        "_why": "얼굴은 음성 전에 미리 싣는다(음성 중엔 CD 가 음성 것). 한 장에 ~12프레임 + 여유 30 만큼 멈춘다. 정적 후보 — 에뮬로 실행 확인",
+    }
+    ent["_scene"] = ent["_scene"].replace("얼굴 없음", "얼굴 = speaker")
+    return off, ln, len(faces)
+
+
 def durations(items):
     """표시 초 — 글자 수 어림, 다음 항목 시작 +0.4초를 넘기지 않는다(마지막은 어림 그대로)."""
     out = []
@@ -114,11 +189,25 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sites", action="store_true")
     ap.add_argument("--write", nargs="*")
+    ap.add_argument("--preload", nargs="*", help="voice.json 의 시계 장면에 미리 싣기 자리를 단다(항목은 그대로)")
     a = ap.parse_args()
     if a.sites:
         for v, (m, o) in SCENES.items():
             off, ln, sk, unk = arm_site(m, o)
             print(f"{v} MAP{m:03d} FF42={o:#x} arm={off:#x} len={ln} 건너뛴 대기 {sk}프레임 ({sk / VS.CLOCK_FPS:.2f}초) {unk or ''}")
+    if a.preload is not None:
+        with open(VS.SCRIPT, encoding="utf-8") as f:
+            doc = json.load(f)
+        for v in a.preload or SCENES:
+            try:
+                off, ln, nf = add_preload(doc, v)
+            except SystemExit as e:
+                print(f"{v}: 건너뜀 — {e} (FF 42 앞이 조건분기라 묶음을 못 만든다 → 얼굴 없이 이름만)")
+                continue
+            print(f"{v}: 미리 싣기 {off:#x} len={ln} 얼굴 {nf}종")
+        with open(VS.SCRIPT, "w", encoding="utf-8") as f:
+            json.dump(doc, f, ensure_ascii=False, indent=1)
+            f.write("\n")
     if a.write is not None:
         path = VS.SCRIPT
         with open(path, encoding="utf-8") as f:

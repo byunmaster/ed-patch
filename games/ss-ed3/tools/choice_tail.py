@@ -69,15 +69,66 @@ def _session_start(data, blocks, key):
     j = int(key)
     while j > 0:
         e = blocks[j - 1]["off"] + len(blocks[j - 1]["body"])
-        if data[e] == 0x0E and blocks[j]["off"] - e == 1:
+        if _linked(data, blocks[j - 1], blocks[j]):
             j -= 1
         else:
             break
     s = blocks[j]["off"] - 2
+    if data[s : s + 2] != b"\xff\x00" and data[s - 4 : s] == b"\xff\x00\x09\x0e":
+        s -= 4  # `FF 00 09 0E` + 화자 머리 — 덮는 6B 가 머리 2 + 09 0E + 화자 머리 2 라 글은 안 덮는다
+    elif data[s : s + 2] != b"\xff\x00" and data[s - 2 : s] == b"\xff\x00":
+        s -= 2  # `FF 00` + 화자 머리 — 덮는 6B 가 글 앞 2B 까지 간다
     assert data[s : s + 2] == b"\xff\x00", (
         f"세션 첫 블록 {j} 앞이 FF 00 이 아니다: {data[s : s + 2].hex()}"
     )
     return j, s
+
+
+def _linked(data, prev, blk):
+    """`blk` 가 `prev` 와 `0E` 로 이어진 같은 글 세션인가 — `0E` 바로 뒤 글이거나, `0E 09 00` 뒤 화자 머리(`02 xx`)가 붙은 꼴."""
+    e = prev["off"] + len(prev["body"])
+    if data[e] != 0x0E:
+        return False
+    gap = blk["off"] - e
+    hl = len(bytes.fromhex(blk["head"]))
+    if gap == 1:
+        return True
+    if gap == 1 + hl:  # `0E` + 화자 머리
+        return data[e + 1 : e + 1 + hl] == bytes.fromhex(blk["head"])
+    #   `0E 09 00` / `0E 09 0E` / `0E 09 0D` + 화자 머리 — 뒤쪽 둘은 MAP030 #26→#27 · MAP022 #363→#364 에서 나왔다(10-22, 4-9 반영). 꼬리에는 바이트 그대로 복사하므로
+    #   09 뒤 바이트의 뜻을 몰라도 같은 글 세션 안에서 옮기는 한 의미가 안 바뀐다.
+    return gap == 3 + hl and data[e + 1 : e + 3] in (b"\x09\x00", b"\x09\x0e", b"\x09\x0d")
+
+
+def _is_speaker(data, blocks, key):
+    """화자 대사 꼴인가 — 머리가 `FF 00` 이 아니고(`02 xx` 같은 화자 머리) `0E` 로 이어진 글 세션의 블록."""
+    blk = blocks[int(key)]
+    if int(key) == 0:
+        return False
+    if _card_kind(data, blocks, key) is not None:
+        return False
+    if blk["head"] == "ff00":
+        #   `FF 00` 머리 블록이 글 세션의 **첫 블록**(뒤 블록과 `0E` 로 이어짐)이면 그 머리가 곧 세션 머리다 — MAP022 #363(10-22)
+        k = int(key)
+        return k + 1 < len(blocks) and _linked(data, blk, blocks[k + 1])
+    # 세션 한복판이거나, `FF 00` + 화자 머리로 열리는 세션의 첫 블록
+    return _linked(data, blocks[int(key) - 1], blk) or data[blk["off"] - 4 : blk["off"] - 2] == b"\xff\x00"
+
+
+def _session_end(data, blocks, key, stem):
+    """블록 `key` 부터 `0E`·`0F` 로 이어 `10 00` 까지 — 끝(`10 00` 뒤) 주소."""
+    for j in range(int(key), len(blocks)):
+        bj = blocks[j]
+        end = bj["off"] + len(bj["body"])
+        if data[end : end + 2] == b"\x10\x00":
+            return end + 2
+        if data[end] == 0x0E and data[end + 1 : end + 3] == b"\x00\x09":
+            return end + 3  # `0E 00 09` — 글 모드를 `00` 으로 닫고 다음 옵코드로
+        if data[end] not in (0x0E, 0x0F):
+            raise SystemExit(
+                f"{stem}#{key}: 세션 끝(10 00)을 못 찾았다 — 블록 {j} 뒤 {data[end : end + 2].hex()}"
+            )
+    raise SystemExit(f"{stem}#{key}: 세션 끝(10 00)을 못 찾았다")
 
 
 def covers(src, stem):
@@ -95,6 +146,10 @@ def covers(src, stem):
             out[k] = COVER
         elif _card_kind(src, blocks, k) == "A":
             out[str(_session_start(src, blocks, k)[0])] = COVER
+        elif _is_speaker(src, blocks, k):
+            j, s = _session_start(src, blocks, k)
+            if TRAMP - (blocks[j]["off"] - s) > 0:  # 덮는 6B 가 글 앞까지 가는 꼴
+                out[str(j)] = TRAMP - (blocks[j]["off"] - s)
     return out
 
 
@@ -224,6 +279,37 @@ def patch(data, stem, table, orig):
                 + end_ops
                 + GOTO
                 + struct.pack(">I", BASE + text_end + len(end_ops))
+            )
+            out.extend(b"\x00" * (tail - len(out)))
+            out.extend(body)
+            out[s : s + TRAMP] = GOTO + struct.pack(">I", BASE + tail)
+            continue
+        elif _is_speaker(data, blocks, key):
+            # 화자 대사 — 앞 블록과 `0E` 로 이어진 글 세션의 한복판(또는 끝) 블록. 글 모드 한복판엔 트램펄린을 못 놓으니(간판·카드 A 와
+            # 같은 이유) **세션 첫 블록의 머리(`FF 00`) 부터 `10 00` 까지** 통째로 꼬리에 옮기고 이 블록의 글만 진짜 문안으로 바꾼다.
+            # 덮는 6B = 머리 2 + 첫 블록 글 앞 4 — `covers` 가 되풀이 검사에 알린다.
+            T_over = T.overflows(wides[key])
+            if T_over:
+                raise SystemExit(
+                    f"{stem}#{key}: 긴 글이 창 계약(17×{T.WIN_ROWS})을 넘는다 — 페이지 {T_over}"
+                )
+            j, s = _session_start(data, blocks, key)
+            assert s % 2 == 0, f"{stem}#{key}: 세션 머리 {s:#x} 가 홀수 주소다"
+            assert len(blocks[j]["body"]) >= max(0, TRAMP - (blocks[j]["off"] - s)), (
+                f"{stem}#{key}: 세션 첫 블록 {j} 글이 덮는 길이 미만"
+            )
+            text_end = text_off + len(blk["body"])
+            end = _session_end(data, blocks, key, stem)
+            raw = H.encode_kr(wides[key], table)
+            if ((text_off - s) + len(raw) + (end - text_end)) % 2:
+                raw += b" "
+            tail = len(out) + len(out) % 2
+            body = (
+                bytes(data[s:text_off])
+                + raw
+                + bytes(data[text_end:end])
+                + GOTO
+                + struct.pack(">I", BASE + end)
             )
             out.extend(b"\x00" * (tail - len(out)))
             out.extend(body)

@@ -94,6 +94,11 @@ F_EXPR = 0x06093FF0
 F_WINX = 0x0609402C
 F_WINY = 0x06093EF0
 WIN_X, WIN_Y = 0x40, 0xC4
+#   🔴 위 창 — 원판 창 그리기(`0x06010520~`, 위치 변수 `0x06093E64` 가 1 일 때)가 쓰는 값 그대로다(2026-10-11 디스어셈블).
+#     테두리 = 가로 뒤집기(CTRL 0x10) · XA −164 · YA −112, 글자 = XA −124 · YA −102(아래: 테두리 −92·48, 글자 −76·58).
+#     얼굴(`0x06010AB4`) = winx 0x138 · winy 0x28. 위·아래는 글자 한 벌의 표정 워드 0x80 비트(`voice_sub.POS_TOP`)가 정한다.
+TOP_X, TOP_Y = 0x138, 0x28
+POS_TOP = 0x80
 NAME_COLOR, BODY_COLOR = 14, 15  # 엔진 대사창과 같다 — 이름은 14(연청), 본문은 15(흰)
 
 #   ── 스텁 변수 표(코드 바로 뒤, 4 정렬) — 오프셋
@@ -182,6 +187,12 @@ class Asm:
         self._e(0x7000 | (n << 8) | (i & 0xFF))
 
     # ── 판단·흐름 ────────────────────────────────────────────────
+    def tst_i(self, i):  # tst #imm,R0      1100 1000 iiiiiiii  (T = (R0 & imm) == 0)
+        self._e(0xC800 | (i & 0xFF))
+
+    def and_i(self, i):  # and #imm,R0      1100 1001 iiiiiiii  (T 는 안 바뀐다)
+        self._e(0xC900 | (i & 0xFF))
+
     def tst(self, n, m):  # tst Rm,Rn        0010 nnnn mmmm 1000
         self._e(0x2008 | (n << 8) | (m << 4))
 
@@ -479,6 +490,8 @@ def build():
     a.label("draw")
     a.bsr("face_apply")
     a.nop()
+    a.bsr("set_pos")
+    a.nop()
     #   버퍼를 지운다 — clear(버퍼, 길이)
     a.movl_pc(4, "BUF")
     a.movl_pc(5, "BUFLEN")
@@ -568,6 +581,22 @@ def build():
     #   ── 하위 루틴 셋 (bsr 로 온다 — PR 은 위에서 이미 스택에 있다)
     #   face_write(r2=얼굴, r3=표정): 창 좌표 + 얼굴 + 표정을 엔진 변수에 쓴다. r0·r1 을 쓴다
     a.label("face_write")
+    a.mov(0, 3)
+    a.tst_i(POS_TOP)  # T = 아래
+    a.and_i(~POS_TOP & 0xFF)
+    a.mov(3, 0)  # r3 = 위치 비트를 뗀 표정
+    a.bt("fw_bottom")
+    a.movl_pc(1, "F_WINX")
+    a.movi(0, TOP_X >> 3)  # 0x138 도 imm8 를 넘는다 — 8 로 나눠 넣고 셋 시프트
+    a.shll(0)
+    a.shll(0)
+    a.shll(0)
+    a.movw_to(1, 0)
+    a.movl_pc(1, "F_WINY")
+    a.movi(0, TOP_Y)
+    a.bra("fw_id")
+    a.movw_to(1, 0)
+    a.label("fw_bottom")
     a.movl_pc(1, "F_WINX")
     a.movi(0, WIN_X)
     a.movw_to(1, 0)
@@ -575,10 +604,46 @@ def build():
     a.movi(0, WIN_Y >> 1)  # 0xC4 는 imm8 로 부호가 붙는다 — 반을 넣고 왼쪽 시프트
     a.shll(0)
     a.movw_to(1, 0)
+    a.label("fw_id")
     a.movl_pc(1, "F_ID")
     a.movw_to(1, 2)
     a.movl_pc(1, "F_EXPR")
     a.movw_to(1, 3)
+    a.rts()
+    a.nop()
+    #   set_pos(r9 = <얼굴 표정> 쌍): 창 테두리·글자 스프라이트의 좌표·뒤집기를 위/아래로 쓴다. r0~r3 을 쓴다
+    a.label("set_pos")
+    a.movw_d_r0(9, 2)
+    a.tst_i(POS_TOP)  # T = 아래
+    a.movl_pc(1, "TPL")  # r1 = 테두리, r2 = 글자 (mov·add 는 T 를 안 바꾼다)
+    a.mov(2, 1)
+    a.add(2, 32)
+    a.bt("sp_bottom")
+    a.movi(3, 16)  # 가로 뒤집기
+    a.movw_to(1, 3)
+    a.movi(0, -164 >> 1)
+    a.shll(0)
+    a.movw_r0_d(1, 12)
+    a.movi(0, -112)
+    a.movw_r0_d(1, 14)
+    a.movi(0, -124 >> 1)
+    a.shll(0)
+    a.movw_r0_d(2, 12)
+    a.bra("sp_ret")
+    a.movi(0, -102)
+    a.label("sp_bottom")
+    a.movi(3, 0)
+    a.movw_to(1, 3)
+    a.movi(0, -92 >> 1)
+    a.shll(0)
+    a.movw_r0_d(1, 12)
+    a.movi(0, 48)
+    a.movw_r0_d(1, 14)
+    a.movi(0, -76)
+    a.movw_r0_d(2, 12)
+    a.movi(0, 58)
+    a.label("sp_ret")
+    a.movw_r0_d(2, 14)
     a.rts()
     a.nop()
     #   face_apply(r9 = <얼굴 표정> 쌍): 지금 얼굴과 같으면 그대로. 다르면 보이기/갈기/치우기.

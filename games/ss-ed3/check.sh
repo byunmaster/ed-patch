@@ -69,6 +69,10 @@ echo "  ── 메뉴 라벨이 칸을 넘치나 (F5 창 프레임)"
 # 🔴 게이트다 — 바이트가 맞아도 반각이 섞이면 폭이 다르다. 받아들인 넘침은 script/window_frame_accept.json
 run 0 "$PY" "$G/tools/check_window_frame.py"
 
+echo "  ── 인라인 아이템 코드에 이름이 꽂힌 뒤 줄 폭 (글자 한복판 접힘)"
+# 🔴 게이트다 — 조판기는 `<01><번호>` 를 폭 0 으로 읽는다. 이름을 꽂으면 17칸을 넘어 엔진이 어절 한복판에서 접는다(10-23 실측 12블록)
+run 0 "$PY" "$G/tools/check_inline_width.py"
+
 echo "  ── 게임 폴더에 자기 JP→KR 표가 남았나 (자기 표 0)"
 # 🔴 게이트다 — 고유명사·라벨·문구는 공용 사전·정본이 갖는다(마스터 10-08). 시스템 문자열도 정본에서 읽는다(`tools/system_src.py`)
 run 0 "$PY" "$G/tools/check_own_tables.py"
@@ -127,6 +131,20 @@ run 4 "$PY" "$G/tools/center_narration.py" --check
 echo "  ── 조판 여섯 규칙 (전 영역 · 대장 밖 새 위반)"
 run 2 "$PY" "$G/tools/check_typeset6.py" --check
 
+echo "  ── 「…」 뒤 붙임 · 「～.」 (공통 번역 규칙 2-11 · 1-7)"
+# 🔴 게이트다 — 「…」 뒤에 말이 이어지면 반각 공백, 물결표 뒤 마침표 금지(마스터 10-12). `--apply` 가 공백을 넣는다.
+run 2 "$PY" "$G/tools/check_ellipsis_space.py"
+
+echo "  ── 문안에 PUA(U+E000~F8FF) 문자가 섞였나 (다른 기종 문안 이식 사고)"
+run 2 "$PY" "$G/tools/check_pua.py"
+
+echo "  ── 구운 부호 글리프끼리 같은 비트맵이 없나 (쉼표가 마침표로 보이는 사고 — ss-ed1+2 10-20)"
+run 2 "$PY" "$G/tools/check_glyph_dups.py"
+
+echo "  ── 음성 자막 연속 두 줄 사이 0.5초 미만 틈 (마스터 10-22 — 대사창이 깜박 사라진다)"
+# 🔴 게이트다 — 앞 줄 닫힘을 다음 줄 열림에 붙인다(`check_voice_gaps.py --fix`). 구조상 못 붙이면 `voice_gap_allow.json` 에 사유와 함께
+run 0 "$PY" "$G/tools/check_voice_gaps.py"
+
 echo "  ── 원문에 있던 것이 사라지지 않았나 (숫자 · 고유명사)"
 warn 3 "$PY" "$G/tools/check_fidelity.py"
 
@@ -154,6 +172,13 @@ run 0 "$PY" "$G/tools/check_build_discs.py"
 #    ⚠ 1 분쯤 걸린다(두 장 전량 되읽기). 이미지가 없으면 스스로 건너뛴다.
 echo "  ── 글 소실 없음 (구운 이미지를 되풀어 문안과 대조)"
 run 3 "$PY" "$G/tools/check_no_loss.py"
+
+# 🔴 게이트다 — **구조 대조**(10-22). 글 소실·길이 검사는 글자만 보고, 대사 보기 하네스는 블록을 따로 띄운다 — 둘 다 통과한 채
+#    「종결 뒤 FF FF 패딩 1,046블록」이 새 게임 첫 장면의 크리스 대사를 지웠다. 원본과 구운 맵에서 **글 바이트를 뺀 제어 열**이
+#    같은지(틈 바이트 · `01 xx` 주입 · 화자 머리 · 종결 · 옮긴 몸의 복귀)를 본다. 의도한 변화는 `structure_allow.json` 에 근거와 함께 적은 꼴만 통과하고,
+#    구운 재배치는 `relocations.tsv`(장부)에 전부 있어야 한다 — 낡으면 `check_structure.py --ledger` 로 다시 쓴다.
+echo "  ── 구조 대조 (원본 ↔ 구운 맵의 제어 열 · 재배치 장부)"
+run 6 "$PY" "$G/tools/check_structure.py"
 
 if [ "$fail" -ne 0 ]; then
   echo "  ❌ [ss-ed3] 게이트 실패"

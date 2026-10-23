@@ -43,6 +43,30 @@ def _map_pairs():
             #   갈래: 대사 머리는 `02xx`(화자) · `42xx` · `ff00`(나레이션) 뿐이다 — 그 밖(`00xx` 이름 칸·선택지 · 맵 이름 라벨의 임의 머리)은 비대사
             kind = "dialog" if b["head"][:2] in ("02", "42", "ff") else "slot"
             yield f"{stem}#{i}", b["text"], v if isinstance(v, str) else None, kind
+        yield from _chains(stem, blocks, kr)
+
+
+def _chains(stem, blocks, kr):
+    """🔴 `0E`(키 대기 뒤 같은 글 모드가 이어짐)로 이어 붙은 **연결 블록**은 한 문장이 조각 여럿에 걸칠 수 있다 — 조각마다만 재면 이어진 자리(이름이 조각 경계에 걸친 줄 ·
+    문장 끝 호응)를 검사기 셋(이름·정본·인사)이 못 본다(sfc-ed2 10-20). 연결 묶음(둘 이상)을 쪽 넘김(`\\f`)으로 이은 한 줄로 **추가로** 낸다 — 조각 줄은 그대로 둔다(승인 예외 열쇠가 조각 자리를 가리킨다)."""
+    import mapfile as M
+
+    i = 0
+    while i < len(blocks):
+        j = i
+        while (
+            j + 1 < len(blocks)
+            and blocks[j].get("term") == 0x0E
+            and blocks[j + 1]["head"][:2] in ("02", "42", "ff")
+            and blocks[j + 1]["off"] - blocks[j]["off"] == len(M.encode_text(blocks[j]["text"])) + 3
+        ):
+            j += 1
+        if j > i and blocks[i]["head"][:2] in ("02", "42", "ff"):
+            jp = "\f".join(blocks[k]["text"] for k in range(i, j + 1))
+            parts = [kr.get(str(k)) for k in range(i, j + 1)]
+            v = "\f".join(parts) if all(isinstance(x, str) for x in parts) else None
+            yield f"{stem}#{i}+{j}", jp, v, "dialog"
+        i = j + 1
 
 
 def _book_pairs():
