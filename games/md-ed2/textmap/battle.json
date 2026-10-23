@@ -52,7 +52,7 @@
   "src": "canon:ed2:battle"
  },
  "2c2f54279f": {
-  "ours": "<ebe0><06>",
+  "ours": "<ebe0> <06>",
   "src": "canon:ed2:battle"
  },
  "761694dadb": {
@@ -132,11 +132,11 @@
   "src": "ours:ed2-manual"
  },
  "1be2ec4409": {
-  "ours": "<02><eb00><06>",
+  "ours": "<02><eb00> <06>",
   "src": "ps1:ed2:ED2MON_LINES"
  },
  "029e90c0fa": {
-  "ours": "<02>에게<06>",
+  "ours": "<02>에게 <06>",
   "src": "canon:ed2:battle"
  },
  "07949aedf3": {
@@ -975,7 +975,7 @@
   "src": "ps1:ed2:ED2MON_LINES"
  },
  "1b9727e4da": {
-  "ours": "<02><eb01> 아파하는 모습에<06>",
+  "ours": "<02><eb01> 아파하는 모습에 <06>",
   "src": "ps1:ed2:ED2MON_LINES"
  },
  "6e86471ca3": {

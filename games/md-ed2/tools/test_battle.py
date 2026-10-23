@@ -32,6 +32,11 @@ CAPCNT = 0xFF1A14  # 캡처 카운터(워드)
 EXIT_AT = 0xBAE4  # movem.l (a7)+,d0-d7/a3-a5 ; rts — 렌더러 출구
 MONON = 0xFF1A16  # 0 이 아니면 몬스터 HP 고정을 켠다(에이전트가 조우를 열기 전에 1 로 쓴다)
 MAIL = 0xFF1A18  # 워프 우편함(0x80~0x99) — 걸음마다 확인해 한 번 실행하고 비운다
+SAY = 0xFF1A1C  # 대사 우편함(롱) — 0 이 아니면 그 주소를 a1(스트림)로 메시지 서비스 0x85E2 를 한 번 부르고 비운다(전 씬 대사 일괄 검수)
+PRE = 0xFF1A26  # 롱(a5 값) — 0 이 아니면 대사 서비스 앞에 그 서비스(예 0x042D)를 먼저 부른다(d4 = $FF1CBE 워드 − 2, 실물 씬 코드와 같은 인자)
+SAYTMP = 0xFF1A22  # 대사 주소 사본(앞 서비스가 a1 을 망가뜨린다)
+FORCEMSG = 0xFF1A28  # 롱 — 0 이 아니면 렌더러가 **다음에** 그리는 문안 대신 이 스트림을 그린다(전투 중 조건부 문구를 실제 전투 창에서 직접 부른다)
+BUSY = 0xFF1A20  # 대사 서비스가 도는 동안 1
 WARP = 0x35E0  # 워프 실행기(d0 = 0x80 + 목록 색인)
 TICK_AT = 0x188A2  # 필드 걸음 후크 자리(movem.l d0,-(a7) + cmpi.b #$62,$FF01B2 앞 6B)
 TICK_RET = 0x188AE
@@ -91,6 +96,11 @@ def hook_code(entry_old: bytes) -> tuple[bytes, int, int, int]:  # (코드, RNGF
     # HUD 스크래치 버퍼(0xFFF000~, 숫자가 계속 바뀌어 매번 「새 문구」가 된다 — 실측)는 건너뛴다
     emit(bytes.fromhex("b3fc") + struct.pack(">I", 0xFFF000))  # cmpa.l #$FFF000,a1
     bra(0x64, "SEEN")  # bcc.s SEEN
+    emit(bytes.fromhex("4ab9") + struct.pack(">I", FORCEMSG))  # tst.l FORCEMSG
+    bra(0x67, "NOFORCE")
+    emit(bytes.fromhex("2279") + struct.pack(">I", FORCEMSG))  # movea.l FORCEMSG,a1
+    emit(bytes.fromhex("42b9") + struct.pack(">I", FORCEMSG))  # clr.l FORCEMSG
+    label("NOFORCE")
     # 열쇠 = 스트림 앞 10바이트의 회전 xor 해시(주소로 보면 같은 문구가 버퍼마다 「새 것」이 된다 — 실측)
     emit(bytes.fromhex("2649"))  # movea.l a1,a3
     emit(bytes.fromhex("7c00"))  # moveq #0,d6
@@ -148,6 +158,30 @@ def hook_code(entry_old: bytes) -> tuple[bytes, int, int, int]:  # (코드, RNGF
     # 필드 매 걸음 후크 `0x188A2`(디버그 C+방향 검사 바로 앞) — 우편함 `MAIL`($FF1A18)이 0 이 아니면 그 값을 d0 로 워프 실행기 `0x35E0` 을 한 번 부른다
     # (워프의 날개 목록 `0x32B3F` 의 항목 id 0x80~0x99 — 방문 플래그와 목록 검사를 거치지 않고 곧장 이동). 밀려난 `movem.l d0,-(a7)` + `cmpi.b #$62,$FF01B2` 는 여기서 대신 실행한다.
     label("TICK")
+    emit(bytes.fromhex("4ab9") + struct.pack(">I", SAY))  # tst.l SAY
+    bra(0x67, "NOSAY")
+    emit(bytes.fromhex("48e7fffe"))  # movem.l d0-d7/a0-a6,-(a7)
+    emit(bytes.fromhex("2279") + struct.pack(">I", SAY))  # movea.l SAY,a1
+    emit(bytes.fromhex("23f9") + struct.pack(">II", SAY, SAYTMP))  # move.l SAY,SAYTMP
+    emit(bytes.fromhex("42b9") + struct.pack(">I", SAY))  # clr.l SAY
+    emit(bytes.fromhex("13fc0001") + struct.pack(">I", BUSY))  # move.b #1,BUSY
+    emit(bytes.fromhex("4ab9") + struct.pack(">I", PRE))  # tst.l PRE
+    bra(0x67, "NOPRE")
+    emit(bytes.fromhex("3839") + struct.pack(">I", 0xFF1CBE))  # move.w $FF1CBE,d4
+    emit(bytes.fromhex("5504"))  # subq.b #2,d4
+    emit(bytes.fromhex("3a04"))  # move.w d4,d5
+    emit(bytes.fromhex("e04d"))  # lsr.w #8,d5
+    emit(bytes.fromhex("2a79") + struct.pack(">I", PRE))  # movea.l PRE,a5
+    emit(bytes.fromhex("2c780200"))  # movea.l $200.w,a6
+    emit(bytes.fromhex("4e96"))  # jsr (a6)
+    emit(bytes.fromhex("2279") + struct.pack(">I", SAYTMP))  # movea.l SAYTMP,a1
+    label("NOPRE")
+    emit(bytes.fromhex("2a7c000085e2"))  # movea.l #$85E2,a5
+    emit(bytes.fromhex("2c780200"))  # movea.l $200.w,a6
+    emit(bytes.fromhex("4e96"))  # jsr (a6)
+    emit(bytes.fromhex("4239") + struct.pack(">I", BUSY))  # clr.b BUSY
+    emit(bytes.fromhex("4cdf7fff"))  # movem.l (a7)+,d0-d7/a0-a6
+    label("NOSAY")
     emit(bytes.fromhex("4a39") + struct.pack(">I", MAIL))  # tst.b MAIL
     bra(0x67, "NOREQ")
     emit(bytes.fromhex("48e7fffe"))  # movem.l d0-d7/a0-a6,-(a7)

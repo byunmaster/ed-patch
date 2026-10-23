@@ -48,5 +48,28 @@ class NoStrayPua(unittest.TestCase):
         self.assertEqual(bad, [])
 
 
+class NoEdgeNewline(unittest.TestCase):
+    def test_script_chunk_edge_newline_is_a_tag(self):
+        """문안 덩이(제어코드·쪽 가름 사이) 가장자리의 `\\n` 은 조판기가 조용히 버린다 — `<01>` 태그여야 한다(10-19 qa 「배를 타시겠습니까?」 뒤 줄바꿈 소실)."""
+        import glob
+        import json
+
+        import textmap
+
+        bad = []
+        for f in glob.glob(str(HERE / "script" / "*.json")):
+            for k, v in json.loads(Path(f).read_text(encoding="utf-8"))["streams"].items():
+                chunk = ""
+                for kind, val in [*textmap.parse_ours(v.get("ours", "")), ("end", None)]:
+                    if kind == "text":
+                        chunk += val
+                        continue
+                    edge = chunk.strip(" ")
+                    if edge[:1] == "\n" or edge[-1:] == "\n":
+                        bad.append((Path(f).name, k, chunk[:20]))
+                    chunk = ""
+        self.assertEqual(bad, [])
+
+
 if __name__ == "__main__":
     unittest.main()

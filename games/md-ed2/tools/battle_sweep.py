@@ -11,6 +11,7 @@
 조우 id 는 표 `0x18BEAE`(색인 = 블록) 의 값, `$FF1AFF` = 상위 · `$FF3606` = 하위.
 """
 
+import re
 import struct
 import sys
 from pathlib import Path
@@ -23,6 +24,7 @@ import headless
 ROM = common.WORK / "build" / "test-battle" / "ed2-kr (TESTBATTLE).bin"
 SAVE = Path.home() / "save" / "md-ed2" / "ed2-kr (DEBUG).sav"
 CAP, TABLE, FORCE = 0xFF1A14, 0xFF1910, 0xFF1A10
+CONSTS = [0, 36, 72, 108, 144, 180, 216, 255]  # 난수표 상수 — 기술 8개까지 각각 고른다
 
 
 def key(bs: bytes) -> int:
@@ -105,6 +107,25 @@ def names(bl, n: int) -> str:
     return "/".join(outs)
 
 
+PARTY_NAME = None  # --names a|b: 파티 레코드 넷의 이름을 받침 없는/있는 이름으로(조사 확인) — a=「란도플로라스」 b=「란도플로신」
+NAMES_AB = {"a": "란도플로라스", "b": "란도플로신"}
+
+
+def poke_names(c) -> None:
+    if PARTY_NAME is None:
+        return
+    import json
+
+    import common
+
+    codes = json.loads(
+        (common.GAME_DIR / "textmap" / "hangul_codes.json").read_text(encoding="utf-8")
+    )
+    nm = b"".join(codes[ch].to_bytes(2, "big") for ch in NAMES_AB[PARTY_NAME]) + b"\x06\x00"
+    for n in range(4):
+        c.poke(0xFF1DBC + n * 0x40 + 0x30, nm)
+
+
 def run_block(
     c,
     armed: bytes,
@@ -117,8 +138,10 @@ def run_block(
     shots: list[Path],
     start: int,
     force: int = 1,
+    const: int | None = None,
 ):
     c.load_state(armed)
+    poke_names(c)
     c.poke(
         FORCE, bytes([force])
     )  # 0 = 자연 난수 · 1 = 순열(기술은 고루 나오지만 보스 주문·대상 번호가 범위 밖으로 나가 글이 깨질 수 있다 — 실측)
@@ -134,6 +157,10 @@ def run_block(
     k = start
     for f in range(frames):
         c.run(1)
+        if (
+            const is not None and f % 2 == 0
+        ):  # 난수표 `$FF3480`(55B)을 한 값으로 — 행동 선택이 (값×기술 수)>>8 로 고정된다(md-ed1 gpgx_battle 방식)
+            c.poke(0xFF3480, bytes([const]) * 55)
         if (
             f % 2 == 0 and k > start
         ):  # 몬스터가 한 방에 죽지 않게 매 두 프레임 HP 를 채운다(후크의 갱신은 렌더러 호출 때뿐이다)
@@ -188,7 +215,7 @@ def sheet(paths: list[Path], dst: Path, cols: int = 3):
 def main() -> None:
     args = [a for a in sys.argv[1:]]
     out = headless._common_dir() / ".local" / "work" / "inbox" / "md-ed2" / "battle-all-hl"
-    frames, retries = 4000, 2
+    frames, retries = 4000, 8
     sel = []
     i = 0
     while i < len(args):
@@ -200,6 +227,10 @@ def main() -> None:
             i += 2
         elif args[i] == "--retries":
             retries = int(args[i + 1])
+            i += 2
+        elif args[i] == "--names":
+            global PARTY_NAME
+            PARTY_NAME = args[i + 1]
             i += 2
         else:
             sel.append(int(args[i]))
@@ -216,14 +247,30 @@ def main() -> None:
         tsv.write_text(
             "블록\t조우id\t몬스터\t참조 스트림\t나온 수\t미도달 오프셋\t캡처 수\n", encoding="utf-8"
         )
+    have = {int(m) for m in re.findall(r"^(\d+)\t", tsv.read_text(encoding="utf-8"), re.MULTILINE)}
     for n in todo:
+        if n in have:  # 끝낸 블록은 건너뛴다(묶음이 시간 제한에 잘려도 이어 받는다)
+            continue
         refs = block_streams(rom, bl, n)
         keys: set[int] = set()
         shots: list[Path] = []
         k = 0
         for attempt in range(retries + 1):
+            # 시도 0 = 순열, 1.. = 자연 난수 + 난수표 상수(CONSTS) — 몬스터 기술 전부를 한 번씩 고르게 한다
+            cv = None if attempt == 0 else CONSTS[(attempt - 1) % len(CONSTS)]
             k = run_block(
-                c, armed, n, idl[n], out, frames, 0x40 * attempt, keys, shots, k, int(attempt > 0)
+                c,
+                armed,
+                n,
+                idl[n],
+                out,
+                frames,
+                (0x40 * attempt) & 255,
+                keys,
+                shots,
+                k,
+                1 if attempt == 0 else 0,
+                cv,
             )
             miss = [o for o, kk in refs if kk not in keys]
             if not miss:

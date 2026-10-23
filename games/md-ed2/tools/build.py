@@ -213,7 +213,9 @@ def typeset(text: str, lead: str = "") -> list[list[str]]:
         chunk = chunk.strip()
         if not chunk:
             continue
-        pages += krwrap.wrap_pages(chunk, width=WIDTH, lines_per_page=LINES, strip_after="")
+        # 앞 공백(lead)이 첫 줄에 붙으므로 **그 쪽 줄 폭을 공백만큼 줄여** 감싼다 — 붙인 뒤 17.5칸을 넘던 일(「<이름> 왕자 뒤를…」)
+        w = WIDTH - krwrap.text_width(lead) if lead and not pages else WIDTH
+        pages += krwrap.wrap_pages(chunk, width=w, lines_per_page=LINES, strip_after="")
     if lead and pages and pages[0]:
         pages[0][0] = lead + pages[0][0]
     for pg in pages:
@@ -265,6 +267,13 @@ def build_stream(
             pending_text.clear()
             out.append(scene.Token(0, cs.encode(body.replace("\n", " ")), "text"))
             return
+        # 🔴 덩이 가장자리의 `\n` 은 조판기가 **조용히 버린다**(10-19 qa: 「배를 타시겠습니까?」 뒤 줄바꿈이 사라져 다음 글이 붙었다) —
+        # 제어코드·덩이 끝 앞뒤 줄바꿈은 `<01>` 태그로 쓴다. (덩이 가운데 `\n` 은 공백이다.)
+        edge = body.strip(" ")
+        if edge[:1] == "\n" or edge[-1:] == "\n":
+            raise SystemExit(
+                f"덩이 가장자리 `\\n` 은 조판기가 버린다 @{st.start:#x} — `<01>` 태그를 쓴다: {body[:30]!r}"
+            )
         lead = " " if body[:1] == " " else ""
         pages = typeset(body, lead)
         # 🔴 조판기는 덩이의 앞뒤 공백을 지운다 — 태그(이름 호출 등) **앞** 공백이 사라져 「이런아트라스님」이 됐다
