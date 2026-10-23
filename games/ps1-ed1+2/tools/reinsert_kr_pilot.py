@@ -19,6 +19,7 @@
 import bisect
 import contextlib
 import functools
+import hashlib
 import json
 import os
 import re
@@ -2968,6 +2969,13 @@ def build_candidate(raw, t, eid):
     return cand, None
 
 
+# ── 재배치 장부 재료 — 빌드가 **실제로 한** 재배치를 여기 모은다(손으로 쓰지 않는다) ──────────────
+# `rebuild()` 가 돌 때마다 비우고 채운다(공유 lui 충돌 해소 루프가 여러 번 돌리므로 마지막 판이 남는다).
+# 소비자: `_reloc_record()` → `work/derived/scn_reloc.json` → `check_scn_structure.py`(게이트) · `relocations.tsv`(장부).
+_RUNS = []  # (구간 시작, 구간 끝, 블록 수, 끝 00패딩 바이트, 길이고정 여부)
+_PIN_OVR = []  # (종류 room|tail, eid, 새 길이, 끝 00패딩 바이트) — 앵커 접미·접두 꼬리 제자리 덮어쓰기
+
+
 def reflow_run(region, run, run_start, run_end, translations, excluded, fixed, layout):
     """자유 구간 [run_start, run_end)(앵커 사이)에 자유 블록들을 재배치.
 
@@ -3018,6 +3026,7 @@ def reflow_run(region, run, run_start, run_end, translations, excluded, fixed, l
         pos += len(new)
     for p in range(pos, run_end):  # 앞선 축소분 → 00패딩(다음 앵커 위치 고정)
         region[p] = 0
+    _RUNS.append((run_start, run_end, len(run), run_end - pos, bool(fixed)))
 
 
 # ── 메인 ────────────────────────────────────────────────────────────────────
@@ -3999,6 +4008,8 @@ def rebuild(
 
     region = bytearray(data[:text_end])  # 앵커·pinned는 원본 그대로 유지
     layout = []
+    _RUNS.clear()
+    _PIN_OVR.clear()
     i, n = 0, len(blocks)
     while i < n:
         if blocks[i]["pinned"]:
@@ -4009,6 +4020,7 @@ def rebuild(
                     region[b["off"] : b["off"] + len(cand)] = cand
                     for p in range(b["off"] + len(cand), b["off"] + b["room"]):
                         region[p] = 0
+                    _PIN_OVR.append(("room", b["eid"], len(cand), b["room"] - len(cand)))
                 else:
                     excluded[b["eid"]] = reason or "anchor_room_size"
             elif b["tail"] is not None:  # 앵커 접두 블록의 꼬리 대사만 제자리 덮어쓰기
@@ -4021,6 +4033,7 @@ def rebuild(
                     region[s : s + len(cand)] = cand
                     for p in range(s + len(cand), b["off"] + len(b["raw"])):
                         region[p] = 0  # 남는 자리는 0패딩 — 블록 경계·앵커 위치 불변
+                    _PIN_OVR.append(("tail", b["eid"], len(cand), room - len(cand)))
                 else:
                     excluded[b["eid"]] = reason or "anchor_tail_size"
             layout.append((b["off"], len(b["raw"]), b["off"], len(b["raw"]), b["eid"]))
@@ -4050,6 +4063,101 @@ def build_scene(name, lba, size, identity, fixed):
     identity=True면 검증만(원본과 바이트 동일 확인, 반환 bytes=None)."""
     with overlay_for(name):
         return _build_scene(name, lba, size, identity, fixed)
+
+
+# 씬별 재배치 기록 — `_build_scene` 이 채우고 `main()` 이 `work/derived/scn_reloc.json` 으로 쓴다.
+RELOC = {}
+
+
+def _struct_why(name, eid):
+    """구조(제어 바이트 열)가 원본과 달라진 블록의 **의도 표** — 빌드가 이 표에 넣은 블록만 허용된다.
+
+    표는 모두 의도해 제어 바이트를 바꾸는 오버라이드다(각 표 주석에 근거): 색코드(0x01~0x03 — 원본도
+    같은 방식을 쓴다·텍스트 안 단독 제어바이트 실측)·이름판(`NAME_PLATE`)·이름창 접기·개행 오버라이드.
+    표에 없는 구조 변화는 `check_scn_structure` 가 실패로 친다."""
+    why = []
+    for label, tab in (
+        ("COLOR_WRAP", COLOR_WRAP),
+        ("COLOR_BODY", COLOR_BODY),
+        ("COLOR_LEAD", COLOR_LEAD),
+        ("COLOR_ITEM", COLOR_ITEM),
+        ("NAME_PLATE", NAME_PLATE),
+        ("FOLD_NAME", FOLD_NAME),
+        ("NL_WINS", NL_WINS),
+        ("LEAD_NL_DROP", LEAD_NL_DROP),
+    ):
+        if eid in tab:
+            why.append(label)
+    if (name, eid) in NAME_STUBS:
+        why.append("NAME_STUBS")
+    if name == "ED2SCN8" and eid == 0:
+        why.append("ED2SCN8_JP0_SPLIT")
+    return why
+
+
+def _reloc_record(
+    name, lba, size, data, text_end, entries, layout, translations, excluded, donor_placed,
+    ext_base, stock_alias, stock_mid, stub_info, arg_applied, ptr_moved, ptr_sites, out_file,
+):
+    """씬 하나의 재배치 기록(JSON 직렬화 가능, **원문·번역 바이트 없음** — 좌표·종류·개수만).
+
+    `check_scn_structure.py` 가 이걸 원본·최종 이미지와 대조하고, `relocations.tsv`(장부)를 여기서 뽑는다.
+    구조 열 비교(`scn_structure.classify`)는 여기서 **번역된 블록마다** 한 번 돌려 어긋남 분류만 남긴다."""
+    import scn_structure as SS
+
+    raw = {e["entry_id"]: bytes.fromhex(e["raw_hex"]) for e in entries if e.get("raw_hex")}
+    blocks, struct = [], {}
+    for old_off, old_len, new_off, new_len, eid in layout:
+        tr = eid in translations and eid not in excluded
+        h = hashlib.sha1(bytes(out_file[new_off : new_off + new_len])).hexdigest()[:10]
+        blocks.append([eid, old_off, old_len, new_off, new_len, int(tr), excluded.get(eid, ""), h])
+        if tr and eid in raw:
+            nb = bytes(out_file[new_off : new_off + new_len])
+            kinds = SS.classify(raw[eid], nb)
+            if kinds:
+                struct[eid] = {
+                    "kinds": kinds,
+                    "old": SS.sk_str(raw[eid]),
+                    "new": SS.sk_str(nb),
+                    "why": _struct_why(name, eid),
+                }
+    for eid, (_kind, _off, cand) in donor_placed.items():
+        kinds = SS.classify(raw[eid], cand) if eid in raw else []
+        if kinds:
+            struct[eid] = {
+                "kinds": kinds,
+                "old": SS.sk_str(raw[eid]),
+                "new": SS.sk_str(cand),
+                "why": _struct_why(name, eid),
+            }
+    return {
+        "scene": name,
+        "orig_lba": lba,
+        "orig_size": size,
+        "text_end": text_end,
+        "new_size": len(out_file),
+        "ext_base": ext_base,
+        "ov_base": ov_base(),
+        "blocks": blocks,
+        "runs": [list(r) for r in _RUNS],
+        "pin_ovr": [list(r) for r in _PIN_OVR],
+        "donors": {str(e): [k, o, len(c)] for e, (k, o, c) in donor_placed.items()},
+        "alias": {str(k): v for k, v in stock_alias.items()},
+        "mid": {str(k): list(v) for k, v in stock_mid.items()},
+        "stubs": stub_info,
+        "args": [list(a) for a in arg_applied],
+        "ptr_moved": {str(k): v for k, v in ptr_moved.items()},
+        "ptr_sites": [list(x) for x in ptr_sites],
+        "struct": {str(k): v for k, v in struct.items()},
+        "special": ["ED2SCN8:0"] if name == "ED2SCN8" else [],
+    }
+
+
+def _switch_off(var, key=None):
+    """되돌리기 스위치 — 환경 변수 `var` 가 `1`/`all` 이거나 `씬:eid` 목록에 key 가 있으면 참.
+    장부(`relocations.tsv`)의 블록 키로 종류별·블록별로 끌 수 있다(예: `PILOT_NO_STUBS=ED2SCN8:12`)."""
+    v = os.environ.get(var, "")
+    return v in ("1", "all") or (key is not None and key in v.split(","))
 
 
 def _build_scene(name, lba, size, identity, fixed):
@@ -4107,8 +4215,8 @@ def _build_scene(name, lba, size, identity, fixed):
     # 리타깃**한다(공간 소모 0으로 전 사본 번역 — 곶의 동굴 사본 퇴출 실측 07-26). 블록 선두
     # 참조(delta 0)만 대상 — 원본 바이트는 제자리에 남으므로 delta 참조는 그대로 안전하다.
     def compute_stock_alias():
-        if fixed or identity:
-            return {}
+        if fixed or identity or _switch_off("PILOT_NO_ALIAS"):
+            return {}, {}
         masters, alias = {}, {}
         for s_eid, kind in STOCK_KINDS.items():
             if s_eid in translations and s_eid not in excluded:
@@ -4178,7 +4286,7 @@ def _build_scene(name, lba, size, identity, fixed):
     ext_used = 0
     ext_base = len(data)
     ext_cap = scn_extra(name, len(data)) if not identity and not fixed else 0
-    if not identity and not fixed and (DONOR_RUNS or ext_cap):
+    if not identity and not fixed and (DONOR_RUNS or ext_cap) and not _switch_off("PILOT_NO_DONOR"):
         raw_by_eid = {
             e["entry_id"]: bytes.fromhex(e["raw_hex"]) for e in entries if e.get("raw_hex")
         }
@@ -4226,6 +4334,7 @@ def _build_scene(name, lba, size, identity, fixed):
     # 포인터 패치 뒤 — 같은 워드를 ref 패처가 만지므로 마지막에 덮어써야 한다)
     ext_custom = []  # (ext 내 오프셋, bytes)
     stub_patches = []  # (call_off, [words])
+    stub_info = []  # 장부용 — 이름 스텁마다 배치 좌표와 엔진 근거 주소
     if not identity and not fixed:
         for (scn, eid), cfg in NAME_STUBS.items():
             if scn != name:
@@ -4233,6 +4342,8 @@ def _build_scene(name, lba, size, identity, fixed):
             t = translations.get(eid)
             if not t or eid in excluded or t[0] in (STOCK, NAMEONLY):
                 continue
+            if _switch_off("PILOT_NO_STUBS", f"{name}:{eid}"):
+                continue  # 되돌리기 스위치 — 이 블록은 원판 방식(이름 없이)으로 둔다
             try:
                 blk = build_block(t[0], t[1], header=True, hdr_fmt=True)
             except SkipBlock:
@@ -4271,6 +4382,17 @@ def _build_scene(name, lba, size, identity, fixed):
                 0x08000000 | ((cfg["resume"] >> 2) & 0x3FFFFFF),  # j resume(flush)
                 0,  # nop (delay)
             ]
+            stub_info.append(
+                {
+                    "eid": eid,
+                    "blk_off": blk_off,
+                    "blk_len": len(blk),
+                    "stub_off": stub_off,
+                    "call_off": cfg["call_off"],
+                    "sprintf": cfg["sprintf"],
+                    "resume": cfg["resume"],
+                }
+            )
             ext_custom.append((blk_off - ext_base, blk))
             ext_custom.append(
                 (stub_off - ext_base, b"".join(w.to_bytes(4, "little") for w in words))
@@ -4294,15 +4416,21 @@ def _build_scene(name, lba, size, identity, fixed):
         out_file += ext_blob
         assert ov_base() + len(out_file) <= OVERLAY_RAM_LIMIT, f"{name} 확장 RAM 상한 초과"
     patched = 0
+    ptr_moved = {}  # 원 소유 블록 eid → 주소가 실제로 바뀐 참조 수(장부 「포인터」)
+    ptr_sites = []  # (addiu_off, lui_off, 새 주소) — 구조 대조 검사가 이미지에서 다시 읽어 맞춘다
     for addiu_off, lui_off, op, addr in refs:
         if addiu_off < text_end or lui_off < text_end:
             continue  # 텍스트 영역 내 우연 일치는 패치 대상 아님
         (_, eid), delta = owner(addr - ov_base())
+        o_eid, o_delta, via = eid, delta, "b"
         if delta == 0 and eid in stock_alias:
             eid = stock_alias[eid]
+            via = "a"
         elif eid in stock_mid and delta == stock_mid[eid][0]:
             eid, delta = stock_mid[eid][1], 0
+            via = "m"
         if delta == 0 and eid in donor_placed:
+            via = "d"
             kind, off, _c = donor_placed[eid]
             new_addr = (ov_base() + off) if kind == "ext" else (off + ED_EXE_RAM)
         else:
@@ -4314,13 +4442,18 @@ def _build_scene(name, lba, size, identity, fixed):
         patch_word_imm(out_file, lui_off, hi)
         patch_word_imm(out_file, addiu_off, lo)
         patched += 1
+        ptr_sites.append((addiu_off, lui_off, new_addr, o_delta, via, o_eid))
+        if new_addr != addr:
+            ptr_moved[o_eid] = ptr_moved.get(o_eid, 0) + 1
 
     # 주입 %c쌍 블록의 콜사이트 인자 패치(0x83/0x5C→공백) — 번역이 실제로 들어갈 때만.
     # 블록이 제외돼 JP가 남으면 원본 인자를 보존해야 ソ가 그대로 나온다.
+    arg_applied = []  # 장부용 — (eid, 코드 오프셋)
     for (scn, eid), patches in SCN_ARG_PATCHES.items():
         if scn == name and eid in translations and eid not in excluded:
             for off, word in patches:
                 out_file[off : off + 4] = word.to_bytes(4, "little")
+                arg_applied.append((eid, off))
 
     # 이름 스텁 콜사이트 교체 — ref 패처가 같은 워드(lui)를 만진 뒤에 덮어써야 한다.
     # 교체 다음의 죽은 lui/addiu 워드(j가 건너뜀)는 ref 패치 잔해가 남아도 무해.
@@ -4375,6 +4508,10 @@ def _build_scene(name, lba, size, identity, fixed):
         f"{sorted(set(excluded.values()))}{parse_skip}{ov}{donor_s}, 포인터 {patched}건, "
         f"사용 0x{used:X}/0x{text_end:X})"
     )
+    RELOC[name] = _reloc_record(
+        name, lba, size, data, text_end, entries, layout, translations, excluded, donor_placed,
+        ext_base, stock_alias, stock_mid, stub_info, arg_applied, ptr_moved, ptr_sites, out_file,
+    )
     return out_file, stats, {off: cand for k, off, cand in donor_placed.values() if k == "ed"}
 
 
@@ -4409,12 +4546,17 @@ def main():
                 dir_moves.append((f"{name}.BIN;1", new_lba, len(out_file)))
                 built[new_lba] = out_file
                 layout_manifest[name] = {"lba": new_lba, "size": len(out_file)}
+                RELOC[name]["new_lba"] = new_lba
                 print(f"  {name}: {size}→{len(out_file)}B, LBA {lba}→{new_lba} (DUMMY 재배치)")
             else:
                 built[lba] = out_file
                 layout_manifest[name] = {"lba": lba, "size": size}
+                RELOC[name]["new_lba"] = lba
             total_tr += int(stats.split("재삽입 ")[1].split("블록")[0])
         donor_all.update(donor)
+    if RELOC and not identity:
+        with open(os.path.join(OUT_DIR, "scn_reloc.json"), "w", encoding="utf-8") as f:
+            json.dump({"scenes": RELOC, "fixed": fixed}, f, ensure_ascii=False)
     if identity:
         print("전 씬 아이덴티티 라운드트립 OK")
         return
