@@ -24,7 +24,7 @@ import typeset
 MAP = common.GAME_DIR / "data" / "align_map.json"
 PS1 = common.ROOT / "games" / "ps1-ed1+2" / "script"
 GOOD = 0.9
-SPEAKER_CATS = ("speaker", "person")
+SPEAKER_CATS = ("speaker", "person", "item")  # item = 「{16}切符{14}を渡しました」처럼 화자 자리에 항목 이름이 오는 줄(10-16)
 FALLBACK_SPEAKERS: dict = {}  # 정본에 없어 PS1 화자를 쓴 것(관리자 후보)
 MISSING_SPEAKERS: Counter = Counter()  # 정본에 없는 화자(관리자 후보)
 

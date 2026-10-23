@@ -59,6 +59,9 @@ def index() -> dict[str, tuple[str, str, str]]:
         for cat in ("battle", "system", "ui"):
             for k, v in canon.table(cat, "ed2").items():
                 _idx.setdefault(norm(k), (cat, k, v))
+        for k, v in systext._extra().items():  # 시험 빌드 전용 후보 주입(정본 확정 전 검증용 — `systext._extra` 가 test- 꼬리표일 때만 연다)
+            if "@" not in k:
+                _idx.setdefault(norm(k), ("battle", k, v))
     return _idx
 
 
@@ -214,7 +217,7 @@ def segments(raw: bytes, tab, name_ctrl, num_ctrl) -> bytes | None:
     return bytes(out)
 
 
-BATTLE_NAME = {0x13, 0x1A, 0x1B}  # 전투 덩이에서는 `1B` 가 행동한 쪽 이름(이름 라벨 줄이 먼저 채운 버퍼)이다
+BATTLE_NAME = {0x07, 0x13, 0x1A, 0x1B}  # 전투 덩이에서는 `1B` 가 행동한 쪽 이름(이름 라벨 줄이 먼저 채운 버퍼)이고 `07` 이 대상 쪽 이름이다
 
 
 def translate(raw: bytes, tab, battle: bool = False) -> bytes | None:

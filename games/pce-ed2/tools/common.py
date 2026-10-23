@@ -25,6 +25,8 @@ WORK = GAME_DIR / "work"
 OUT_DIR = WORK / "derived"
 REVIEW_DIR = WORK / "review"
 BUILD_TAG = build_tag()
+# 마스터가 보는 확인용 꼬리표는 이미지 이름을 달리해 세이브를 가른다(파일서버가 `<롬이름>.sav` 로 세이브를 짓는다 — 제품 `ed2` 와 안 섞인다)
+ROM_STEM = {"syscard-check": "ed2 (SYSCARD)", "debug": "ed2 (DEBUG)"}.get(BUILD_TAG, "ed2")
 BUILD_DIR = WORK / "build"
 DIST_DIR = WORK / "dist"
 # 에뮬 실행용 cue 사본 자리 — 원본 cue 가 ISO 파일명을 대문자로 적어 리눅스에서 못 찾는다.

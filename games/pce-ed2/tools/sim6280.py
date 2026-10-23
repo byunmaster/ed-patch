@@ -227,6 +227,21 @@ class Sim:
             }[op]
             if take:
                 self.pc = (self.pc + d) & 0xFFFF
+        elif op == 0x20:  # JSR
+            t = self.fetch16()
+            ret = (self.pc - 1) & 0xFFFF
+            self.push(ret >> 8)
+            self.push(ret & 0xFF)
+            self.pc = t
+        elif op == 0xB2:  # LDA (zp)
+            p = zp()
+            self.a = self.nz(self.rd(self.rd(p) | self.rd(p + 1) << 8))
+        elif op == 0x92:  # STA (zp)
+            p = zp()
+            self.wr(self.rd(p) | self.rd(p + 1) << 8, self.a)
+        elif op == 0xFE:  # INC abs,X
+            p = self.fetch16() + self.x
+            self.wr(p, self.nz(self.rd(p) + 1))
         elif op == 0x4C:
             return self.fetch16()
         elif op == 0x60:

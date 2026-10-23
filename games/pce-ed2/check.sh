@@ -26,5 +26,8 @@ echo "== pce-ed2 =="
 # 5. 배포 칸의 이미지가 전 트랙인가(오디오 포함) — 잘린 에뮬용이 거기 있으면 BGM 이 안 난다
 "$PY" "$T/check_build_layout.py"
 
+# 5-2. 제어 낀 줄 틀(`data/ctrl_lines.tsv`) — 모든 틀이 원본 줄에 맞고(낡은 틀 0) 제어 번호·구조 제어 검증을 통과해야 한다
+"$PY" "$T/ctrllines.py" --verify
+
 # 6. 번역 규칙 부호(2-11 문장 맨 앞 … 뒤 붙임 · 2-12 …가 ?!보다 앞) — 우리 문안 전체
 "$PY" "$T/check_punct.py"

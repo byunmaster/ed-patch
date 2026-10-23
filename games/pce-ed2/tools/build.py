@@ -24,6 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import battle
 import chapter
 import common
+import ctrllines
+import debugmode
 import dialogue
 import endcard
 import ending
@@ -33,12 +35,15 @@ import syscard
 import endtest
 import font
 import hook
+import hudplate
+import syscardcheck
 import labels
 import layout
 import lz
 import opening_sub
 import package
 import repack
+import residual_gate
 import systext
 
 from shared.disc import mode1
@@ -191,6 +196,8 @@ def _plan_one(rel, raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None,
                 decoded[a] = labels.edit_any_lines(decoded[a], tab, MISSING_LABELS, dialogue.covered(rel, a))
         if dialogue_allowed is not None and not chapter.is_chapter_chunk(d):
             decoded[a] = dialogue.edit_chunk(rel, a, decoded[a], tab, dialogue_allowed | set(local))
+        if not chapter.is_chapter_chunk(d):  # 제어(이름·항목·수·쪽 넘김)가 낀 줄 — 틀 번역(수령·상점·보물상자·화자 머리줄 …)
+            decoded[a] = ctrllines.edit_chunk(d, decoded[a], tab, dialogue.STATS)
     for e in (x for x in raw if x["pkg"] == rel):  # PoC 찾아 바꾸기
         find = bytes.fromhex(e["find_hex"])
         hits = [(a, d.count(find)) for a, d in decoded.items() if find in d]
@@ -270,7 +277,8 @@ def _search_local(rel, raw, tab: font.GlyphTable, static: set[str]):
 
 
 POOL_MARGIN = 4  # 정적 풀 용량에서 덜어 두는 글자 수 — 수집 단계 이후 늘어나는 글자(시스템 배치 · 전투 줄)의 여유
-EDIT_ANY_LABELS = False
+import os as _os
+EDIT_ANY_LABELS = _os.environ.get("ED_ANY_LABELS") != "0"  # 전투 덩이 몬스터 이름 라벨 등 — 용량이 모자라 꺼 뒀으나 11×11 묶음 풀 이후 들어간다(10-16 실측). 끄려면 ED_ANY_LABELS=0
 MARKS_PARTIAL: list[tuple[int, int]] = []  # (패키지, 살린 줄 수) — 공간이 모자라 연출 타이밍 제어를 일부만 살린 패키지
 
 
@@ -455,16 +463,16 @@ def build(edits_path: Path | None, trim: bool, dialogue_on: bool = True) -> Path
     # 🔴 잘라 낸 에뮬용(트랙 1~2)은 배포용 칸에 두지 않는다 — 오디오 트랙이 빠진 이미지가 파일서버로 나가 BGM 이 안 났다(10-12)
     out_dir = common.BUILD_DIR / (common.BUILD_TAG + ("-trim" if trim else ""))
     out_dir.mkdir(parents=True, exist_ok=True)
-    iso = out_dir / "ed2.iso"
-    cue = out_dir / "ed2.cue"
-    for p in (iso, cue, out_dir / "ed2.iso.failed"):
+    iso = out_dir / f"{common.ROM_STEM}.iso"
+    cue = out_dir / f"{common.ROM_STEM}.cue"
+    for p in (iso, cue, out_dir / f"{common.ROM_STEM}.iso.failed"):
         if p.exists():
             p.unlink()
     try:
         _build(edits_path, iso, cue, trim, dialogue_on)
     except Exception:
         if iso.exists():
-            iso.rename(out_dir / "ed2.iso.failed")
+            iso.rename(out_dir / f"{common.ROM_STEM}.iso.failed")
         raise
     return iso
 
@@ -473,7 +481,7 @@ def check_full_layout(iso: Path, cue: Path) -> None:
     """전 트랙 이미지 계약 — 원본과 같은 크기 · 같은 트랙 구성(24트랙, 오디오 포함). 오디오 바이트는 무변경 대조(verify_immutable)가 지킨다."""
     if iso.stat().st_size != common.ORIG_ISO.stat().st_size:
         raise BuildError(f"이미지 크기가 원본과 다르다: {iso.stat().st_size} ≠ {common.ORIG_ISO.stat().st_size}")
-    want = common.ORIG_CUE.read_text().replace(common.ORIG_ISO.name.upper(), "ed2.iso")
+    want = common.ORIG_CUE.read_text().replace(common.ORIG_ISO.name.upper(), f"{common.ROM_STEM}.iso")
     if cue.read_text() != want:
         raise BuildError("cue 가 원본 트랙 구성과 다르다")
     n = want.count("TRACK ")
@@ -487,13 +495,13 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
         with open(common.ORIG_ISO, "rb") as a, open(iso, "wb") as b:
             b.write(a.read(limit * common.RAW))
         cue.write_text(
-            'FILE "ed2.iso" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n'
+            f'FILE "{common.ROM_STEM}.iso" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n'
             "  TRACK 02 MODE1/2352\n    PREGAP 00:03:00\n    INDEX 01 00:44:71\n"
         )
     else:
         shutil.copyfile(common.ORIG_ISO, iso)
-        text = common.ORIG_CUE.read_text().replace(common.ORIG_ISO.name.upper(), "ed2.iso")
-        if "ed2.iso" not in text:
+        text = common.ORIG_CUE.read_text().replace(common.ORIG_ISO.name.upper(), f"{common.ROM_STEM}.iso")
+        if f"{common.ROM_STEM}.iso" not in text:
             raise BuildError("cue 의 FILE 이름을 못 바꿨다")
         cue.write_text(text)
         check_full_layout(iso, cue)
@@ -527,8 +535,13 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
         ending.apply(w)  # 엔딩 스태프롤(패키지 41) — 분야 라벨·엔딩 대사 번역 + 자체 글리프 후킹
         syscard.apply(w)  # 시스템 카드·백업 RAM 안내문 넷(패키지 20) — 번역 + 자체 글리프 후킹
         cardart.apply(w)  # 그 화면의 그림 글자(간판 만실·여관 · 말풍선 헉 — 패키지 20 LZSS 덩이)
+        hudplate.apply(w)  # HUD 판 라벨 「アト」 → 「남다」(마스터 도트, pce-ed1 정본 그대로 — 판 타일 묶음 rel 186)
+        if syscardcheck.enabled():  # 마스터 확인용(꼬리표 syscard-check) — 새 게임이 카드 안내 화면으로 간다
+            syscardcheck.apply(w)
         if endtest.enabled():  # 엔딩 직행 시험 빌드(환경 변수 ED_ENDING_TEST=1 — 정본 빌드엔 안 들어간다)
             endtest.apply(w)
+        if debugmode.enabled():  # 디버그 빌드(ED_DEBUG=1 + test-* 꼬리표 — 제품 롬엔 안 들어간다)
+            debugmode.apply(w)
     write_review()
     if systext.INTERIOR_WARN:
         print(f"  ⚠ 문자열 안쪽 쓰기 짝을 못 찾음 {len(systext.INTERIOR_WARN)}곳: {systext.INTERIOR_WARN[:6]}")
@@ -540,6 +553,11 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
     )
     if bad:
         raise BuildError(f"EDC/ECC 자기검증 실패: {bad}")
+    if dialogue_on and not trim and not common.BUILD_TAG.startswith("test-"):  # 10-18 장면 패키지 전수 잔존 게이트(패키지 21 누락 재발 방지)
+        errs, now = residual_gate.evaluate(iso)
+        if errs:
+            raise BuildError("잔존 게이트: " + " / ".join(errs))
+        print(f"  잔존 게이트 OK (본편 {len(package.CLEAN)}개 패키지 · 알려진 잔존 {len(now)}줄)")
     print(f"빌드 OK: {iso}  sha1 {common.sha1_of(iso)}")
 
 

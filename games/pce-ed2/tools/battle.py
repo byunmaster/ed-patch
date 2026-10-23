@@ -71,10 +71,10 @@ def edit_chunk(d: bytes, tab, missing: set) -> bytes:
     n = len(lines) - 1
     for i in range(n):
         raw = lines[i]
-        if i == 0:
+        if i == 0 or (APPEAR in _plain(raw) and not raw.startswith(b"\x1b")):  # 나타남 줄이 첫 줄이 아닌 덩이(「木人が現れた」 — 앞에 「…と…が現れた」 줄이 따로 있다)
             lines[i] = _appear(raw, tab, missing)
             continue
-        if not raw.startswith(b"\x1b"):
+        if not raw.startswith((b"\x1b", b"\x07")):  # `1B`(행동한 쪽) · `07`(대상 쪽) 이름으로 시작하는 줄
             continue
         new = msgs.translate(raw, tab, battle=True)
         if new is None:
