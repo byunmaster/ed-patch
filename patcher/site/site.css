@@ -109,7 +109,10 @@
      320×224 · 350×240 · 560×240 …)이지만 TV 에선 모두 4:3 이었다 — 잘라 내지 않고 펴서 통째로 보인다. */
   .cover:not(.empty) { background: var(--scr); }
   .cover img { width: 100%; height: 100%; object-fit: fill; image-rendering: pixelated; }
-  .cover.wide img { object-fit: contain; }   /* 이미 16:9 로 늘어난 녹화본 — 비율을 지킨다 */
+  .cover.wide img { object-fit: contain; }
+  .cover.trim img { object-fit: cover; }   /* 검은 테두리를 잘라 구운 표지 — 칸을 채운다 */   /* 이미 16:9 로 늘어난 녹화본 — 비율을 지킨다 */
+  .cover.art { background: var(--surface-2); }
+  .cover.art img { object-fit: contain; image-rendering: auto; }   /* 상자 그림 — 사진이라 비율·보간을 지킨다 */
   .cover.empty span { font: 700 18px/1.4 var(--text-f); color: var(--muted); text-align: center; padding: 0 8px; }
   .card.undecided { opacity: .55; }   /* 할지 정하지 않은 작품은 카드 전체를 흐리게 */
   .card .body { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; flex: 1; }

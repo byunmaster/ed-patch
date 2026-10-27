@@ -140,7 +140,8 @@
           "date": "2026-10-05",
           "note": "첫 배포 — 영웅전설 I·II 한글화"
         }
-      ]
+      ],
+      "art": "ps1 - Legend of Heroes I & II.png"
     },
     {
       "id": "ps1-ed3",
@@ -177,7 +178,8 @@
           "state": "partial",
           "note": "화면 일본어 0 · 대본 구조 대조 452/452 어긋남 0 · 줄바꿈 조판 정적 점검 · 이어 붙는 조각 공백과 선택지 창 폭은 화면 확인이 남았다"
         }
-      }
+      },
+      "art": "ps1 - Legend of Heroes III.png"
     },
     {
       "id": "ps1-ed4",
@@ -185,13 +187,36 @@
       "title": "영웅전설 IV",
       "original": "英雄伝説IV 朱紅い雫",
       "track": "kr",
-      "status": "planned",
-      "stage": "",
+      "status": "preparing",
+      "stage": "P4",
       "tags": {
         "platform": "PS1",
         "series": [
           "영웅전설4"
         ]
+      },
+      "art": "ps1 - Legend of Heroes IV.png",
+      "phases": {
+        "P0": {
+          "state": "done",
+          "note": "원본 분석 · 무변경 왕복 · 재삽입 파이프라인 · 대본 24,499조각"
+        },
+        "P1": {
+          "state": "partial",
+          "note": "UI 문안 923건 · 반각·조사 처리 · 타이틀·메뉴·로드 화면 확인 · 상점·여관·세이브 창은 화면 확인이 남았다"
+        },
+        "P2": {
+          "state": "partial",
+          "note": "몬스터·전투 문안 번역 · 전투 화면 확인이 남았다"
+        },
+        "P3": {
+          "state": "partial",
+          "note": "오프닝 내레이션·가사 확인 · 엔딩·스태프롤 확인이 남았다"
+        },
+        "P4": {
+          "state": "done",
+          "note": "대사 24,474줄 번역"
+        }
       }
     },
     {
@@ -234,7 +259,8 @@
           "state": "partial",
           "note": "새 게임 첫 장면 연속 재생 ED1·ED2 확인 · 마스터 플레이 테스트는 남았다"
         }
-      }
+      },
+      "art": "saturn - Legend of Heroes I & II.png"
     },
     {
       "id": "ss-ed3",
@@ -279,7 +305,8 @@
           "state": "partial",
           "note": "첫 장면부터 이어 가며 확인 중, 선택지 창 폭·이음 블록 첫 줄은 인게임 확인이 남았다"
         }
-      }
+      },
+      "art": "saturn - Legend of Heroes III.png"
     },
     {
       "id": "pce-ed1",
@@ -312,7 +339,8 @@
           "state": "partial",
           "note": "화면 일본어 0 · 줄바꿈 · 구조 대조(재배치 장부) 정적 점검 통과 · 이어 붙는 줄과 씬 6·18 음성 싱크는 인게임 확인이 남았다"
         }
-      }
+      },
+      "art": "pce - Dragon Slayer.png"
     },
     {
       "id": "pce-ed2",
@@ -353,7 +381,8 @@
           "state": "partial",
           "note": "구조 대조·잔존 일본어·이음 첫 줄 폭·선택지 창은 정적 점검 · 일부 화면 확인이 남았다"
         }
-      }
+      },
+      "art": "pce - Dragon Slayer II.png"
     },
     {
       "id": "sfc-ed1",
@@ -386,7 +415,8 @@
           "state": "partial",
           "note": "화면 일본어 0·구조 대조(점프·호출 목표 3,071곳 바뀜 0)·선택지·메뉴 칸 넘침 0은 정적 확인 · 이어지는 대사 첫 줄 폭은 일부만 정적으로 측정 · 인게임 검수는 남았다"
         }
-      }
+      },
+      "art": "sfc - Dragon Slayer.png"
     },
     {
       "id": "sfc-ed2",
@@ -427,7 +457,8 @@
           "state": "partial",
           "note": "구조 대조(제어 코드 열·재배치 장부)·줄바꿈·이어 쓰기 첫 줄 폭 정적 점검 통과 · 공유 꼬리 3곳(화면 미확인)과 상점 화면·세이브 호환이 남았다"
         }
-      }
+      },
+      "art": "sfc - Dragon Slayer II.png"
     },
     {
       "id": "md-ed1",
@@ -464,7 +495,8 @@
           "state": "partial",
           "note": "줄바꿈·구조 대조·이음 첫 줄 폭 정적 점검 끝 · 이벤트 모드 씬 일부와 사슬 연속 재생은 화면 확인이 남았다"
         }
-      }
+      },
+      "art": "md - Dragon Slayer.png"
     },
     {
       "id": "md-ed2",
@@ -497,7 +529,8 @@
           "state": "partial",
           "note": "롬 전체 일본어 잔존·구조 대조·이음 첫 줄 폭 게이트 통과(정적) — 화면 확인은 대사 보기 촬영 표본뿐, 상점 일부·몇몇 조각은 정적 확인만 남았다"
         }
-      }
+      },
+      "art": "md - Dragon Slayer II.png"
     },
     {
       "id": "pc88-ed1",

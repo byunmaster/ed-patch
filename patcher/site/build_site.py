@@ -49,6 +49,17 @@ def main_root():
         return ROOT
 
 
+# 마스터 소장 그림 — 카드 표지(상자 그림 `_cover`)·상세 페이지 게임 화면(`_screenshot`, `<게임>--NN.png`).
+#   HDD 소장 폴더가 정본이다(docs/machine-setup.md, 마스터 10-25). 없는 머신(배포 워크플로 포함)에선 예전 칸
+#   (`SITE_COVERS` · `.local/ship/site-covers`)으로 물러난다 — 거기엔 릴리스 `site-covers` 에 올린 같은 그림이 있다.
+ART_DIR = os.environ.get("SITE_ART") or "/mnt/originals/_cover"
+SHOT_DIR = os.environ.get("SITE_SHOTS") or "/mnt/originals/_screenshot"
+# 게임 화면 캡처는 저장소에 커밋한다(마스터 10-28 「스크린샷을 git에 넣어도 상관없지 않나」 — 한글이 보이는
+#   것만 골라 넣었다). `shots/<게임>--NN.png` 는 상세 페이지 넘김, `shots/<게임>.png` 는 상자 그림이 없는 게임의
+#   카드 표지. 상자 그림(`_cover`)은 원저작물이라 저장소에 넣지 않고 예전처럼 릴리스 `site-covers` 로 받는다.
+SHOTS = os.path.join(HERE, "shots")
+
+
 def local_dir(name):
     """`.local/<name>` — 워크트리엔 `.local/` 이 안 따라오므로 메인 트리 것을 거슬러 찾는다(루트 CLAUDE.md)."""
     for base in (ROOT, main_root()):
@@ -144,23 +155,52 @@ def main():
 
     site = json.loads(read("site.json"))
     covers_dir = os.environ.get("SITE_COVERS") or local_dir("ship/site-covers")
+    shot_dir = SHOTS
+    src_of = {}
+    crop_of = {}  # 카드 표지를 테두리 잘라 구울 칸 → (자를 상자, 구울 크기)  # 굽는 칸 이름 → 원본 경로(site.json 엔 안 싣는다 — 머신 경로라)
     for g in site["games"]:
-        cover_png = os.path.join(covers_dir, f"{g['id']}.png")
+        # 카드 표지는 인게임 캡처(마스터 10-28 「인게임 캡쳐를 카드로 쓰는게 낫겠다」) — 그 게임의 첫 화면
+        #   `shots/<게임>--00.png`(마스터 「타이틀이미지들을 파일명 00으로」). `shots/<게임>.png` 가 있으면 그게 이긴다.
+        #   상자 그림은 캡처가 하나도 없을 때만.
+        cover_png = os.path.join(SHOTS, f"{g['id']}.png")
+        firsts = sorted(glob.glob(os.path.join(SHOTS, f"{glob.escape(g['id'])}--*.png")))
+        if not os.path.exists(cover_png) and firsts:
+            cover_png = firsts[0]
+        art = os.path.join(ART_DIR, g["art"]) if g.get("art") else None
+        if art and not os.path.exists(art):
+            art = os.path.join(covers_dir, f"{g['id']}.png")  # 배포 워크플로 — 릴리스에서 받은 상자 그림
+        if not os.path.exists(cover_png) and art and os.path.exists(art):
+            cover_png = art  # 상자 그림이 있으면 그걸 카드에(같은 이름 covers/<게임>.png 로 굽는다)
         if os.path.exists(cover_png):
             g["cover"] = f"covers/{g['id']}.png"
-            # 기종 화면(내부 해상도 그대로의 캡처)은 TV 처럼 4:3 으로 편다. 녹화본처럼 이미 16:9 로
-            # 늘어난 그림은 펴면 찌그러지니 비율을 지켜 검은 바탕에 앉힌다(카드에서 `wide`).
-            # ⚠ 「가로가 길다」로 가르면 안 된다 — PS1 고해상도 모드는 560×240(2.33)인데도 4:3 화면이다.
-            #   16:9 에 딱 맞는 것만 녹화본으로 본다.
-            from PIL import Image
+            src_of[g["cover"]] = cover_png
+            if cover_png == art:
+                g["cover_art"] = True  # 상자 그림 — 화면 캡처처럼 4:3 으로 펴지 않고 비율을 지킨다
+            else:
+                # 기종 화면(내부 해상도 그대로의 캡처)은 TV 처럼 4:3 으로 편다. 녹화본처럼 이미 16:9 로
+                # 늘어난 그림은 펴면 찌그러지니 비율을 지켜 검은 바탕에 앉힌다(카드에서 `wide`).
+                # ⚠ 「가로가 길다」로 가르면 안 된다 — PS1 고해상도 모드는 560×240(2.33)인데도 4:3 화면이다.
+                #   16:9 에 딱 맞는 것만 녹화본으로 본다.
+                from PIL import Image
 
-            with Image.open(cover_png) as im:
-                if abs(im.width / im.height - 16 / 9) < 0.02:
-                    g["cover_wide"] = True
+                with Image.open(cover_png) as im:
+                    if abs(im.width / im.height - 16 / 9) < 0.02:
+                        g["cover_wide"] = True
+                    else:
+                        # 타이틀이 검은 테두리 안에 작게 앉은 캡처(PS1 IV 등)는 카드에선 테두리를 잘라 칸을
+                        #   채운다(마스터 10-28 「이건 왜 카드화면에 꽉 안차?」). 4:3 으로 편 화면 기준의 비율을
+                        #   지켜 굽고 카드에선 object-fit: cover. 상세 페이지 넘김 그림은 그대로 둔다.
+                        bb = im.convert("L").point(lambda v: 255 if v > 12 else 0).getbbox()
+                        if bb and (bb[2] - bb[0] < im.width * 0.9 or bb[3] - bb[1] < im.height * 0.9):
+                            cw, ch = bb[2] - bb[0], bb[3] - bb[1]
+                            disp = (cw / im.width * 4) / (ch / im.height * 3)
+                            crop_of[g["cover"]] = (bb, (round(ch * disp), ch))
+                            g["cover_trim"] = True
         # 상세 페이지 넘김용 게임 화면 — 같은 칸의 `<게임>--NN.png`(이름순)
-        shots = sorted(glob.glob(os.path.join(covers_dir, f"{glob.escape(g['id'])}--*.png")))
+        shots = sorted(glob.glob(os.path.join(shot_dir, f"{glob.escape(g['id'])}--*.png")))
         if shots:
             g["shots"] = [f"covers/{os.path.basename(x)}" for x in shots]
+            src_of.update({f"covers/{os.path.basename(x)}": x for x in shots})
     css, bps, slider, theme = read("site.css"), read("bps.js"), read("slider.js"), read("theme.js")
     index_t, game_t, fix_t = read("index.frag.html"), read("game.frag.html"), read("fix.frag.html")
     data = json.dumps(site, ensure_ascii=False).replace("</", "<\\/")
@@ -242,14 +282,17 @@ def main():
     # 커버(타이틀 화면 캡처)는 git 에 넣지 않는다 — 게임 화면이라 패치 파일과 같은 취급이다.
     #   이 머신에선 `.local/ship/site-covers/<게임>.png` 에서, 배포 땐 워크플로가 릴리스 `site-covers` 에서 받아 온다.
     #   site.json 의 cover 는 그림이 실제로 있을 때만 채운다(없으면 카드가 「준비 중/진행 예정」 글자를 쓴다).
-    for g in site["games"]:
-        src = os.path.join(covers_dir, f"{g['id']}.png")
-        if g.get("cover"):
-            os.makedirs(os.path.join(out, "covers"), exist_ok=True)
-            shutil.copy(src, os.path.join(out, "covers", f"{g['id']}.png"))
-        for x in g.get("shots", []):
-            os.makedirs(os.path.join(out, "covers"), exist_ok=True)
-            shutil.copy(os.path.join(covers_dir, os.path.basename(x)), os.path.join(out, x))
+    #   배포 전엔 굽힌 `covers/*.png` 를 그대로 릴리스 `site-covers` 에 올린다(상자 그림도 `<게임>.png` 이름으로 들어 있다).
+    for rel, src in src_of.items():
+        os.makedirs(os.path.join(out, "covers"), exist_ok=True)
+        if rel in crop_of:
+            from PIL import Image
+
+            box, size = crop_of[rel]
+            with Image.open(src) as im:
+                im.crop(box).resize(size, Image.NEAREST).save(os.path.join(out, rel))
+            continue
+        shutil.copy(src, os.path.join(out, rel))
 
     # 이 머신에서 미리 볼 때 — 패치 파일을 게임 빌드 칸(work/dist, 워크트리가 이긴다)에서 옆에 둔다.
     #   배포 때는 워크플로가 릴리스에서 받아 같은 자리에 둔다(그래서 여기서는 없으면 조용히 넘어간다).

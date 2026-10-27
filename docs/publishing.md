@@ -16,7 +16,8 @@
 - **[kr] 패치 파일** — 게임의 `make_dist.py` 가 `work/dist/` 에 xdelta·BPS 를 만들고,
   `.local/ship/release/<태그>/` 로 옮겨 릴리스(`<게임>-<트랙>-v<버전>`)에 첨부한다. 워크플로가
   릴리스에서 받아 페이지 옆에 둔다. **git 에는 안 들어간다.**
-- **표지·게임 화면** — 릴리스 `site-covers` 의 PNG(로컬 원본은 `.local/ship/site-covers/`).
+- **게임 화면 캡처** — 저장소 `patcher/site/shots/` 에 커밋한다(마스터 10-28, 한글이 보이는 것만 골라 넣었다). `<게임>--NN.png` 는 상세 페이지 넘김, `<게임>.png` 는 상자 그림이 없는 게임의 카드 표지. 새 캡처는 이 폴더에 넣고 커밋 → main 푸시면 Pages 가 굽는다.
+- **상자 그림(카드 표지)** — 원저작물이라 저장소에 넣지 않고 릴리스 `site-covers` 에 둔다. 원본은 HDD `/mnt/originals/_cover`(`site.json` 의 `art` 가 파일 이름). 🔴 **배포할 때마다** main 푸시 뒤 `python3 scripts/publish/sync_site_art.py` 를 돌린다 — 바뀐 상자 그림만 릴리스에 올리고 pages 워크플로를 다시 띄운다.
 - 원격에는 `main` 과 릴리스 태그만 둔다 — 게임 브랜치는 올리지 않는다.
 - ⚠ 옛 `scripts/patcher.sh deploy`(출력 레포 main 을 강제로 덮어쓰던 갈래)는 걷었다 — 이 레포가
   그 이름을 이어받아, 남겨 두면 한 번에 이 레포 main 이 패처 파일 하나로 덮인다.

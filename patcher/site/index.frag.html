@@ -50,9 +50,9 @@ function label(site, g) {
 const ver = (g) => g.version ? `<span class="tag ver">v${esc(g.version)}</span>` : "";
 const tags = (g) => `<span class="tag plat">${esc(g.tags.platform)}</span>` + g.tags.series.map((t) => `<span class="tag">${esc(t)}</span>`).join("") + ver(g);
 
-// 커버 — 우리 한글패치를 적용한 타이틀 화면 캡처(site.json 의 cover). 없으면 상태 글자만 둔다.
+// 커버 — 상자 그림(site.json 의 art, 마스터 소장 `_cover`) 또는 우리 한글패치를 적용한 타이틀 화면 캡처. 없으면 상태 글자만 둔다.
 const cover = (g) => g.cover
-  ? `<div class="cover${g.cover_wide ? " wide" : ""}"><img src="${esc(g.cover)}" alt="${esc(g.title)} 한글판 타이틀 화면" loading="lazy"></div>`
+  ? `<div class="cover${g.cover_wide ? " wide" : ""}${g.cover_art ? " art" : ""}${g.cover_trim ? " trim" : ""}"><img src="${esc(g.cover)}" alt="${esc(g.title)} ${g.cover_art ? "표지" : "한글판 타이틀 화면"}" loading="lazy"></div>`
   : `<div class="cover empty" aria-hidden="true"><span>${esc(STATUS[g.status])}</span></div>`;
 
 function card(site, g) {
