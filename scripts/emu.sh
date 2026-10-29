@@ -67,10 +67,10 @@ REPO=$(cd "$HERE/.." && pwd)
 # 캡처는 세 실행기 모두 **메인 트리 `.local/work/capture/<게임>/`** 로 모은다(마스터 10-06 「저장 경로 일원화」).
 #   워크트리에서 띄워도 메인 트리로 간다(.local 은 워크트리에 안 따라온다 — git-common-dir 로 찾는다).
 #   `.local/cache` 가 아니라 바로 아래라 **지우는 칸이 아니다** — 찍은 것은 사람이 모은 자료다.
+_cd=$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || true)
+case "$_cd" in "") MAIN_ROOT=$REPO ;; /*) MAIN_ROOT=$(cd "$_cd/.." && pwd) ;; *) MAIN_ROOT=$(cd "$REPO/$_cd/.." && pwd) ;; esac
 capture_dir() {   # $1 = 게임 칸 이름 → 만들어서 절대경로를 찍는다
-  _cd=$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || true)
-  case "$_cd" in "") _root=$REPO ;; /*) _root=$(cd "$_cd/.." && pwd) ;; *) _root=$(cd "$REPO/$_cd/.." && pwd) ;; esac
-  mkdir -p "$_root/.local/work/capture/$1" && printf '%s' "$_root/.local/work/capture/$1"
+  mkdir -p "$MAIN_ROOT/.local/work/capture/$1" && printf '%s' "$MAIN_ROOT/.local/work/capture/$1"
   return 0
 }
 HELPERS="$HERE/emu"                   # 실행기 본체·기전은 여기 모여 있다
@@ -306,7 +306,7 @@ build_dirs() {
 #   「어느 빌드를 보고 있나」가 이 레포에서 하루를 태우는 축이라 고르는 자리에서 보여야 한다.
 #   ⚠ CD 이미지는 수백 MB 라 한 번 재는 데 한두 초 — (경로·크기·시각)으로 캐시한다
 #     (`.local/cache/emu-sha1.tsv`). 목록은 다시 그릴 때마다 줄을 부르므로 **캐시만 읽는다.**
-SHA_CACHE="$REPO/.local/cache/emu-sha1.tsv"
+SHA_CACHE="$MAIN_ROOT/.local/cache/emu-sha1.tsv"   # 워크트리에서 돌려도 메인 트리 칸으로(10-25 — 워크트리 안 .local 이 게이트를 막았다)
 _img_file() {
   _f=$1
   case "$_f" in

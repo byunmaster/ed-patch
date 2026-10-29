@@ -111,7 +111,7 @@ while [ $# -gt 0 ]; do
 done
 [ "$JOBS" -ge 1 ] 2>/dev/null || { echo "⛔ -j 는 1 이상의 수: $JOBS" >&2; exit 2; }
 
-# 원격 빌드 칸 전부 — 최신순. `게임<탭>꼬리표<탭>원격경로` 로 뱉는다.
+# 원격 빌드 칸 전부 — 게임별로 묶고 그 안은 최신순. `게임<탭>꼬리표<탭>원격경로` 로 뱉는다.
 # ⚠ 글로브는 **원격 셸**이 편다(그래서 따옴표로 감싸지 않는다).
 builds() {
   ssh "$HOST" "ls -dt $REMOTE_REPO/games/*/work/build/*/ \
@@ -127,7 +127,8 @@ builds() {
     { key = $1 FS $2; isw = (index($3, "/.claude/worktrees/") > 0)
       if (!(key in idx)) { idx[key] = ++n; line[n] = $0; wt[key] = isw }
       else if (isw && !wt[key]) { line[idx[key]] = $0; wt[key] = 1 } }
-    END { for (i = 1; i <= n; i++) print line[i] }'
+    END { for (i = 1; i <= n; i++) print line[i] }' \
+  | LC_ALL=C sort -s -t"$TAB" -k1,1   # 기종(게임 이름)별로 묶고 그 안은 최신순 — emu.sh 목록과 같은 순서(마스터 10-28)
 }
 
 # 출처 — 워크트리면 그 이름, 아니면 main. 같은 게임·꼬리표가 둘일 때 이것으로 가른다.

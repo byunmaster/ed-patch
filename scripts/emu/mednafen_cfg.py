@@ -24,15 +24,31 @@ def cfg_path() -> pathlib.Path:
     return pathlib.Path(base) / "mednafen.cfg"
 
 
-def apply(text: str, settings: dict, *, verbose: bool = False):
+def keep_pads(current: str, value: str) -> str:
+    """정본 값 뒤에 지금 줄의 **게임패드 바인딩**(`joystick …` 대안)을 그대로 이어 붙인다.
+
+    🔴 **왜**(마스터 2026-10-30 「emu.sh 도 게임패드 연결하면 게임패드로」). 키 정본은 키보드만
+      적는데 실행마다 줄을 통째로 덮어서, 마스터가 게임 안(Alt+Shift+1)에서 패드를 물려 놔도
+      **다음 실행에 지워졌다.** 패드 장치 번호는 기기마다 달라 정본에 적을 수 없으니, 정본은
+      키보드 몫만 정하고 패드 몫은 사람이 물린 것을 지킨다. 대안은 `||` 로 갈린다.
+    """
+    pads = [p.strip() for p in current.split("||") if "joystick" in p]
+    have = [p.strip() for p in value.split("||")]
+    return " || ".join(have + [p for p in pads if p not in have])
+
+
+def apply(text: str, settings: dict, *, verbose: bool = False, pads: bool = False):
     """`settings` 를 cfg 본문에 반영한 결과를 돌려준다.
 
     반환: (새 본문, 바꿈, 이미 맞음, 없음). `verbose` 면 바뀌는 줄을 찍는다(--check).
+    `pads` 면 지금 줄의 게임패드 바인딩을 지킨다(`keep_pads`) — 키 배치만 쓴다.
     """
     changed = same = missing = 0
     for name, value in settings.items():
+        m = re.search(rf"^{re.escape(name)} .*$", text, re.MULTILINE)
+        if m and pads:
+            value = keep_pads(m.group(0)[len(name) + 1 :], value)
         want = f"{name} {value}"
-        m = re.search(rf"^{re.escape(name)} .*$", text, re.M)
         if not m:
             # ⚠ **이건 「그 이름을 지금 바이너리가 모른다」는 뜻이다.** 오타일 수도 있지만
             #   우리가 소스에 더한 명령(`command.scale_*`)이면 **패치 안 된 mednafen 이 떴다는
@@ -52,14 +68,16 @@ def apply(text: str, settings: dict, *, verbose: bool = False):
     return text, changed, same, missing
 
 
-def run(settings: dict, *, label: str, check: bool = False, quiet: bool = False) -> int:
+def run(
+    settings: dict, *, label: str, check: bool = False, quiet: bool = False, pads: bool = False
+) -> int:
     """cfg 를 읽어 반영하고 결과를 한 줄로 알린다. 스크립트 둘의 `main()` 이 이걸 부른다."""
     p = cfg_path()
     if not p.exists():
         print(f"⛔ cfg 가 없다: {p} — mednafen 을 한 번 실행하면 생긴다")
         return 1
 
-    text, changed, same, missing = apply(p.read_text(), settings, verbose=check)
+    text, changed, same, missing = apply(p.read_text(), settings, verbose=check, pads=pads)
     if check:
         print(f"\n맞음 {same} · 다름 {changed} · 없음 {missing}")
         return 0

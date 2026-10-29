@@ -16,9 +16,9 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import mednafen_cfg  # noqa: E402
-import mednafen_keys  # noqa: E402
-import mednafen_video  # noqa: E402
+import mednafen_cfg
+import mednafen_keys
+import mednafen_video
 
 CFG = "ss.videoip 1\nss.stretch aspect_mult2\nss.scanlines 0\n"
 
@@ -31,6 +31,23 @@ class TestApply(unittest.TestCase):
         self.assertEqual((changed, same, missing), (1, 1, 1))
         self.assertIn("ss.videoip 0\n", text)
         self.assertNotIn("ss.nosuch", text)  # 없는 줄을 새로 만들지 않는다
+
+    def test_pads_kept(self):
+        """패드 바인딩은 실행마다 지워지지 않는다(마스터 10-30) — 키보드 몫만 정본으로 되돌린다."""
+        cfg = "psx.input.port1.gamepad.cross keyboard 0x0 99 || joystick 0x0003abcd button_1\n"
+        text, changed, _, _ = mednafen_cfg.apply(
+            cfg, {"psx.input.port1.gamepad.cross": "keyboard 0x0 22"}, pads=True
+        )
+        self.assertEqual(changed, 1)
+        self.assertIn(
+            "psx.input.port1.gamepad.cross keyboard 0x0 22 || joystick 0x0003abcd button_1\n", text
+        )
+        again = mednafen_cfg.apply(
+            text, {"psx.input.port1.gamepad.cross": "keyboard 0x0 22"}, pads=True
+        )
+        self.assertEqual(again[1:3], (0, 1))  # 두 번째는 이미 맞음 — 패드 몫이 불어나지 않는다
+        plain = mednafen_cfg.apply(cfg, {"psx.input.port1.gamepad.cross": "keyboard 0x0 22"})
+        self.assertNotIn("joystick", plain[0])  # 영상 등 pads 없는 쪽은 예전 그대로
 
     def test_check_does_not_touch_text(self):
         text, changed, _, _ = mednafen_cfg.apply(CFG, {"ss.videoip": "0"}, verbose=True)

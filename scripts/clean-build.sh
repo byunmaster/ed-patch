@@ -155,10 +155,11 @@ slots() {
     else
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$kb" "$g" "$t" "$((kb / 1024))" "$bmark" slot "$d"
     fi
-  # 칸 크기 내림차순 → 같은 칸끼리 묶고(경로) → 그 안에서 failed 가 rest 보다 먼저.
+  # 게임(기종)별로 묶고(마스터 10-28 「기종별로 정렬」) → 그 안은 칸 크기 내림차순 → 같은 칸끼리(경로) →
+  # 그 안에서 failed 가 rest 보다 먼저.
   # ⚠ 종류를 ASCII(`failed`/`rest`/`slot`)로 두는 건 **이 정렬 때문**이다 — 한글이면
   #   순서가 로케일을 탄다.
-  done | sort -t"$TAB" -k1,1nr -k7,7 -k6,6 | cut -f2-
+  done | LC_ALL=C sort -t"$TAB" -k2,2 -k1,1nr -k7,7 -k6,6 | cut -f2-
 }
 
 # 줄에서 n 번째 칸을 꺼낸다 (1-based) — `게임 꼬리표 MB 표시 종류 경로`.

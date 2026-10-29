@@ -35,7 +35,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import mednafen_cfg  # noqa: E402
+import mednafen_cfg
 
 # SDL 스캔코드
 KEY = {
@@ -220,7 +220,10 @@ def main() -> int:
     ap.add_argument("--check", action="store_true", help="바꾸지 않고 현재 값만 본다")
     ap.add_argument("--quiet", action="store_true", help="바뀐 게 있을 때만 말한다")
     args = ap.parse_args()
-    return mednafen_cfg.run(settings(), label="키 배치", check=args.check, quiet=args.quiet)
+    # 패드 바인딩은 지킨다 — 키보드 몫만 정본이다(mednafen_cfg.keep_pads)
+    return mednafen_cfg.run(
+        settings(), label="키 배치", check=args.check, quiet=args.quiet, pads=True
+    )
 
 
 if __name__ == "__main__":
