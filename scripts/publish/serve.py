@@ -24,6 +24,19 @@
 ⚠ **세이브 짝**: 롬 칸 목록에 `<롬이름>.srm` 을 가상으로 끼운다. 가리키는 곳은 `~/save/<게임>/`
    의 해시 없는 `<롬이름>.sav|.srm` 이 있으면 그것, 없으면 해시 붙은 것 중 비어 있지 않은 제일
    새것이다 — `scripts/emu/save_unhash.py` 와 같은 규칙이라 맥의 emu.sh 와 폰이 같은 세이브를 본다.
+
+── 스팀덱 QA 앱용 API(`scripts/deck/edqa.py`, 마스터 2026-10-30) ─────────────────────────
+    GET    /api/builds                     게임별 빌드 칸과 파일(크기·시각·sha1) — 기종 순으로
+    GET    /api/saves/<게임>               세이브 정본 칸의 파일(이름·크기·시각)
+    PUT    /api/save/<게임>/<파일>         세이브 정본에 쓴다(`.bak` 한 세대 · 빈 세이브 거절)
+    PUT    /api/save/<게임>/state/<파일>   스테이트를 쌓는다(덮지 않는다)
+    GET    /api/qa/<게임>                  빌드별 QA 캡처와 메모
+    GET    /api/cover/<게임>               카드 표지 — 배포 페이지와 같은 상자 그림(site.json `art`)
+    PUT    /api/qa/<게임>/<꼬리표>/new.png  캡처를 다음 번호로 받는다(X-Saved-As: NNN)
+    PUT    /api/qa/<게임>/<꼬리표>/NNN.txt  메모를 쓴다(빈 메모 = 지움)
+    DELETE /api/qa/<게임>/<꼬리표>/NNN      캡처·메모를 `.trash/` 로 옮긴다(지우지 않는다)
+    /<게임>/qa/<꼬리표>/NNN.png             캡처 그림
+캡처 자리는 `.local/work/inbox/<게임>/deck/<꼬리표>/` — 워커가 마스터 캡처를 읽는 그 수신함이다.
 """
 
 import argparse
@@ -31,6 +44,7 @@ import email.utils
 import hashlib
 import html
 import io
+import json
 import mimetypes
 import os
 import re
@@ -51,6 +65,130 @@ HASHED = re.compile(r"^(?P<stem>.+)\.[0-9a-f]{32}\.(?P<ext>sav|srm)$")
 #    「내가 볼 빌드와 시험용빌드를 나눠서 관리」). 시험 빌드는 `ED_BUILD_TAG=test-<무엇>` 으로 굽는다.
 TEST_PREFIX = "test-"
 PLAYABLE = re.compile(r"\.(sfc|smc|md|gen|smd|bin)$", re.IGNORECASE)
+INBOX = os.path.join(REPO, ".local", "work", "inbox")
+# 목록 정렬 — 기종별(마스터 10-30 「정렬은 기종별로」). 여기 없는 기종은 뒤에 이름순.
+PLATFORMS = ("ps1", "ss", "pce", "sfc", "md", "dos", "pc98")
+GAME_RE = re.compile(r"^[a-z0-9]+-ed[0-9+]+$")
+TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+NUM_RE = re.compile(r"^[0-9]{3,}$")
+SAVE_RE = re.compile(r"^[^/\\]+$")
+_QA_LOCK = threading.Lock()
+
+
+def platform_of(game):
+    return game.split("-", 1)[0]
+
+
+def platform_key(game):
+    p = platform_of(game)
+    return (PLATFORMS.index(p) if p in PLATFORMS else len(PLATFORMS), game)
+
+
+def known_game(game):
+    return bool(GAME_RE.match(game)) and (
+        os.path.isdir(os.path.join(REPO, "games", game)) or game in build_dirs()
+    )
+
+
+def qa_dir(game, tag=None):
+    d = os.path.join(INBOX, game, "deck")
+    return os.path.join(d, tag) if tag else d
+
+
+def qa_items(game):
+    """{꼬리표: [{n, memo, size, mtime}]} — 번호순."""
+    out = []
+    base = qa_dir(game)
+    if not os.path.isdir(base):
+        return out
+    for tag in sorted(os.listdir(base)):
+        d = os.path.join(base, tag)
+        if tag.startswith(".") or not os.path.isdir(d):
+            continue
+        items = []
+        for f in sorted(os.listdir(d)):
+            n, ext = os.path.splitext(f)
+            if ext != ".png" or not NUM_RE.match(n):
+                continue
+            st = os.stat(os.path.join(d, f))
+            memo_p = os.path.join(d, n + ".txt")
+            memo = open(memo_p, encoding="utf-8").read() if os.path.isfile(memo_p) else ""  # noqa: SIM115
+            items.append({"n": n, "memo": memo, "size": st.st_size, "mtime": st.st_mtime})
+        if items:
+            out.append({"tag": tag, "items": items})
+    return out
+
+
+def qa_next(d):
+    """다음 캡처 번호 — 휴지통에 간 번호도 다시 쓰지 않는다(워커가 번호로 부른다)."""
+    nums = [0]
+    for sub in (d, os.path.join(os.path.dirname(d), ".trash")):
+        if os.path.isdir(sub):
+            for f in os.listdir(sub):
+                m = re.match(r"^(?:.*?-)?([0-9]{3,})\.", f)
+                if m and (sub == d or f.startswith(os.path.basename(d) + "-")):
+                    nums.append(int(m[1]))
+    return f"{max(nums) + 1:03d}"
+
+
+SITE_JSON = os.path.join(REPO, "patcher", "site", "site.json")
+ART_DIR = os.environ.get("SITE_ART") or "/mnt/originals/_cover"
+
+
+def cover_of(game):
+    """카드 표지 — 배포 페이지(`patcher/site/build_site.py`)와 같은 순서로 찾는다: 소장 상자 그림(site.json
+    `art`) → 릴리스에서 받은 `.local/ship/site-covers/<게임>.png` → 저장소 게임 화면 `shots/<게임>--00.png`."""
+    try:
+        with open(SITE_JSON, encoding="utf-8") as f:
+            art = next((g.get("art") for g in json.load(f)["games"] if g.get("id") == game), None)
+    except (OSError, ValueError, KeyError):
+        art = None
+    for p in (
+        os.path.join(ART_DIR, art) if art else None,
+        os.path.join(REPO, ".local", "ship", "site-covers", f"{game}.png"),
+        os.path.join(REPO, "patcher", "site", "shots", f"{game}--00.png"),
+    ):
+        if p and os.path.isfile(p):
+            return p
+    return None
+
+
+def builds_listing():
+    """/api/builds — 기종 순 · 게임 이름 순 · 꼬리표 순. sha1 은 큰 파일이면 계산 중(None)일 수 있다."""
+    games = []
+    for g, tags in sorted(build_dirs().items(), key=lambda kv: platform_key(kv[0])):
+        builds = []
+        for t, d in sorted(tags.items()):
+            files = []
+            for f in sorted(os.listdir(d)):
+                p = os.path.join(d, f)
+                if f.startswith(".") or not os.path.isfile(p):
+                    continue
+                st = os.stat(p)
+                files.append(
+                    {
+                        "name": f,
+                        "size": st.st_size,
+                        "mtime": st.st_mtime,
+                        "sha1": sha1_of(p, wait=False),
+                    }
+                )
+            builds.append({"tag": t, "files": files})
+        games.append({"game": g, "platform": platform_of(g), "builds": builds})
+    return {"platforms": list(PLATFORMS), "games": games}
+
+
+def saves_listing(game):
+    d = os.path.join(SAVES, game)
+    out = []
+    if os.path.isdir(d):
+        for f in sorted(os.listdir(d)):
+            p = os.path.join(d, f)
+            if f.startswith(".") or f.endswith((".bak", ".tmp")) or not os.path.isfile(p):
+                continue
+            st = os.stat(p)
+            out.append({"name": f, "size": st.st_size, "mtime": st.st_mtime})
+    return out
 
 
 def build_dirs():
@@ -125,8 +263,12 @@ def _sha1_now(p, key):
         _SHA[key] = h.hexdigest()
 
 
-def sha1_of(p):
-    """파일 sha1 — (경로·크기·시각)으로 캐시. 큰 파일(64MB+)은 뒤에서 계산하고 그동안은 None."""
+def sha1_of(p, wait=True):
+    """파일 sha1 — (경로·크기·시각)으로 캐시. 큰 파일(64MB+)은 뒤에서 계산하고 그동안은 None.
+
+    `wait=False` 면 작은 파일도 뒤에서 센다 — 목록 API 가 빌드 칸 전부를 한 요청 안에서 세다
+    덱 앱의 10초 제한을 넘겼다(10-30 실측: 워커들이 다시 얹고 재빌드해 시각이 다 바뀐 직후).
+    """
     st = os.stat(p)
     key = (p, st.st_size, st.st_mtime)
     with _SHA_LOCK:
@@ -135,7 +277,7 @@ def sha1_of(p):
         if _SHA.get(("busy",) + key):
             return None
         _SHA[("busy",) + key] = True
-    if st.st_size < _SHA_BIG:
+    if wait and st.st_size < _SHA_BIG:
         _sha1_now(p, key)
         return _SHA[key]
     threading.Thread(target=_sha1_now, args=(p, key), daemon=True).start()
@@ -222,6 +364,9 @@ def resolve(parts):
     elif head == "original" and originals_of(game):
         base = originals_of(game)
         virt = {}
+    elif head == "qa" and known_game(game):
+        base = qa_dir(game)
+        virt = {}
     else:
         base = os.path.join(extra, head)
         virt = {}
@@ -241,8 +386,35 @@ class Handler(SimpleHTTPRequestHandler):
             return None
         return parts
 
+    def _json(self, obj, code=HTTPStatus.OK):
+        data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        return io.BytesIO(data)
+
+    def _api_get(self, parts):
+        if parts == ["api", "builds"]:
+            return self._json(builds_listing())
+        if len(parts) == 3 and parts[1] == "cover" and known_game(parts[2]):
+            p = cover_of(parts[2])
+            if p:
+                return self._file(p)
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return None
+        if len(parts) == 3 and parts[1] in ("saves", "qa") and known_game(parts[2]):
+            if parts[1] == "saves":
+                return self._json({"game": parts[2], "files": saves_listing(parts[2])})
+            return self._json({"game": parts[2], "tags": qa_items(parts[2])})
+        self.send_error(HTTPStatus.NOT_FOUND)
+        return None
+
     def send_head(self):
         parts = self._parts()
+        if parts and parts[0] == "api":
+            return self._api_get(parts)
         r = resolve(parts) if parts is not None else None
         if r is None:
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -348,6 +520,9 @@ class Handler(SimpleHTTPRequestHandler):
         """
         parts = self._parts()
         n = int(self.headers.get("Content-Length") or 0)
+        if parts and parts[0] == "api":
+            self._api_put(parts, n)
+            return
         if (
             parts
             and len(parts) == 3
@@ -387,6 +562,125 @@ class Handler(SimpleHTTPRequestHandler):
         print(f"세이브 받음: {game} → {os.path.basename(target)} ({len(data)}B)", file=sys.stderr)
         self.send_response(HTTPStatus.NO_CONTENT)
         self.end_headers()
+
+    def _done(self, code=HTTPStatus.NO_CONTENT, saved_as=None):
+        self.send_response(code)
+        if saved_as:
+            self.send_header("X-Saved-As", urllib.parse.quote(saved_as))
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _api_put(self, parts, n):
+        """덱 앱의 올리기 — 세이브 정본 · 스테이트 · QA 캡처 · 메모."""
+        if len(parts) < 4 or not known_game(parts[2]):
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        kind, game, rest = parts[1], parts[2], parts[3:]
+        if kind == "save":
+            if not 0 < n <= 64 << 20:
+                self.send_error(HTTPStatus.BAD_REQUEST)
+                return
+            data = self.rfile.read(n)
+            if len(rest) == 2 and rest[0] == "state" and SAVE_RE.match(rest[1]):
+                # 스테이트는 쌓기만 한다 — 같은 이름이 있으면 거절(앱이 시각을 붙여 보낸다)
+                d = os.path.join(SAVES, game, "state")
+                os.makedirs(d, exist_ok=True)
+                out = os.path.join(d, rest[1])
+                if os.path.exists(out):
+                    self.send_error(HTTPStatus.CONFLICT)
+                    return
+                with open(out + ".tmp", "wb") as f:
+                    f.write(data)
+                os.replace(out + ".tmp", out)
+                print(f"스테이트 받음(덱): {game} → state/{rest[1]}", file=sys.stderr)
+                self._done(HTTPStatus.CREATED, rest[1])
+                return
+            if len(rest) != 1 or not SAVE_RE.match(rest[0]) or rest[0].endswith((".bak", ".tmp")):
+                self.send_error(HTTPStatus.BAD_REQUEST)
+                return
+            if len(set(data)) <= 1:
+                self.send_error(HTTPStatus.UNPROCESSABLE_ENTITY, "blank save")
+                return
+            target = os.path.join(SAVES, game, rest[0])
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            if os.path.isfile(target):
+                if open(target, "rb").read() == data:  # noqa: SIM115
+                    self._done()
+                    return
+                shutil.copy2(target, target + ".bak")
+            with open(target + ".tmp", "wb") as f:
+                f.write(data)
+            os.replace(target + ".tmp", target)
+            print(f"세이브 받음(덱): {game} → {rest[0]} ({len(data)}B)", file=sys.stderr)
+            self._done()
+            return
+        if kind == "qa" and len(rest) == 2 and TAG_RE.match(rest[0]):
+            tag, fname = rest
+            d = qa_dir(game, tag)
+            if fname == "new.png":
+                if not 0 < n <= 16 << 20:
+                    self.send_error(HTTPStatus.BAD_REQUEST)
+                    return
+                data = self.rfile.read(n)
+                if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+                    self.send_error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+                    return
+                with _QA_LOCK:
+                    os.makedirs(d, exist_ok=True)
+                    num = qa_next(d)
+                    with open(os.path.join(d, num + ".png"), "wb") as f:
+                        f.write(data)
+                print(f"QA 캡처 받음(덱): {game}/{tag}/{num}.png", file=sys.stderr)
+                self._done(HTTPStatus.CREATED, num)
+                return
+            num, ext = os.path.splitext(fname)
+            if (
+                ext == ".txt"
+                and NUM_RE.match(num)
+                and os.path.isfile(os.path.join(d, num + ".png"))
+            ):
+                if not 0 <= n <= 64 << 10:
+                    self.send_error(HTTPStatus.BAD_REQUEST)
+                    return
+                memo = self.rfile.read(n).decode("utf-8", "replace").strip()
+                p = os.path.join(d, num + ".txt")
+                if memo:
+                    with open(p, "w", encoding="utf-8") as f:
+                        f.write(memo + "\n")
+                elif os.path.isfile(p):
+                    os.remove(p)
+                self._done()
+                return
+        self.send_error(HTTPStatus.BAD_REQUEST)
+
+    def do_DELETE(self):
+        """QA 캡처 지우기 — 실제로는 `deck/.trash/<꼬리표>-NNN.<시각>.*` 로 옮긴다(되살릴 수 있게)."""
+        parts = self._parts()
+        if (
+            not parts
+            or len(parts) != 5
+            or parts[:2] != ["api", "qa"]
+            or not known_game(parts[2])
+            or not TAG_RE.match(parts[3])
+            or not NUM_RE.match(parts[4])
+        ):
+            self.send_error(HTTPStatus.BAD_REQUEST)
+            return
+        game, tag, num = parts[2:]
+        d = qa_dir(game, tag)
+        if not os.path.isfile(os.path.join(d, num + ".png")):
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        trash = os.path.join(qa_dir(game), ".trash")
+        os.makedirs(trash, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        with _QA_LOCK:
+            for ext in (".png", ".txt"):
+                p = os.path.join(d, num + ext)
+                if os.path.isfile(p):
+                    os.replace(p, os.path.join(trash, f"{tag}-{num}.{stamp}{ext}"))
+        print(f"QA 캡처 휴지통(덱): {game}/{tag}/{num}", file=sys.stderr)
+        self._done()
 
     def copyfile(self, source, outputfile):
         shutil.copyfileobj(source, outputfile, 1 << 20)
