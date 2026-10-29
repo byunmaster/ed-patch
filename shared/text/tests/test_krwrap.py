@@ -339,6 +339,38 @@ def test_lone_line_kept_when_sentence_ends():
     assert out == [["마스쿤을…", "마을을…", "구해 주시오!"]], out
 
 
+def test_split_reason_gaps_1028():
+    """2-16 잔여(ss-ed1+2 10-28) · 마스터 10-29 pce-ed1 화면 「괘씸한 / 자는」."""
+    assert split_reason("괘씸한", "자는") == "관형형+의존명사"
+    assert split_reason("그럴", "리가") == "관형형+의존명사"
+    assert split_reason("시키는", "대로") == "관형형+의존명사"
+    assert split_reason("하는", "법이다.") == "관형형+의존명사"
+    assert split_reason("모르는", "척") == "관형형+의존명사"
+    assert split_reason("세리오스", "공은") == "이름+호칭"
+    assert split_reason("아트라스", "군이랬던가?") == "이름+호칭"
+    assert split_reason("입", "밖에") == "관용구"
+    assert split_reason("가", "다오.") == "본용언+보조용언"
+    # 오탐 막기
+    assert split_reason("나는", "공을") is None
+    assert split_reason("할", "자신이") is None or split_reason("할", "자신이") == "관형사형 고아"
+
+
+def test_max_lines_extra_line_1029():
+    """줄이 남으면 한 줄 더 써서 갈림을 없앤다(마스터 10-29). 안 주면 종전 그대로."""
+    t = "막았다는 얘기다만 세리오스 공은 어찌 된 것이냐?"
+    assert wrap(t, 13) == ["막았다는 얘기다만 세리오스", "공은 어찌 된 것이냐?"]
+    assert wrap(t, 13, max_lines=2) == wrap(t, 13)
+    assert wrap(t, 13, max_lines=3) == ["막았다는 얘기다만", "세리오스 공은", "어찌 된 것이냐?"]
+
+
+def test_wrap_pages_unsplit_fill_1029():
+    """줄이 남는 쪽에서만 한 줄 더 써 갈림을 없앤다(N3). 기본은 종전 그대로."""
+    t = "막았다는 얘기다만 세리오스 공은 어찌 된 것이냐?"
+    assert wrap_pages(t, 13, 3) == [["막았다는 얘기다만 세리오스", "공은 어찌 된 것이냐?"]]
+    assert wrap_pages(t, 13, 3, unsplit_fill=True) == [["막았다는 얘기다만", "세리오스 공은", "어찌 된 것이냐?"]]
+    assert wrap_pages(t, 13, 2, unsplit_fill=True) == wrap_pages(t, 13, 2)
+
+
 def _run():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     passed = 0
@@ -355,8 +387,6 @@ def _run():
     return passed == len(fns)
 
 
-if __name__ == "__main__":
-    sys.exit(0 if _run() else 1)
 
 
 def test_more_bound_nouns_and_aux_forms():
@@ -396,3 +426,32 @@ def test_aux_and_bound_more_endings():
     assert split_reason("알고", "있는가?") == "-고+보조용언"
     assert split_reason("맞을", "뿐이고") == "관형형+의존명사"
     assert split_reason("수", "있는") == "수+있다/없다"
+
+
+def test_split_reason_aux_constructions_1026():
+    # 2-16 재검(마스터 10-26 「개행을 가독성 좋게」) — 워커 표본에서 새로 갈린 보조 구문
+    assert split_reason("오게", "된") == "-게 되다"
+    assert split_reason("혼인하기로", "되어") == "-기로 하다/되다"
+    assert split_reason("가기로", "했다.") == "-기로 하다/되다"
+    assert split_reason("싶다고", "해서") == "-다고 하다"
+    assert split_reason("떨어지지", "뭐야.") == "-지 뭐야"
+    assert split_reason("늘어놓는", "쪽이") == "관형형+의존명사"
+    # 오탐 거르기 — 어미가 맞아도 뒤가 다른 말이면 안 묶는다
+    assert split_reason("빠르게", "달려") is None
+    assert split_reason("그렇다고", "말했다") is None
+    assert split_reason("남", "쪽으로") is None
+    assert split_reason("해", "둬야겠구나.") == "본용언+보조용언"  # ss-ed3 10-26
+    assert split_reason("찾아", "줘야지") == "본용언+보조용언"
+    assert split_reason("고기일지도", "몰라.") == "-ㄹ지도 모르다"
+    assert split_reason("어쩌면", "봐야") is None  # 앞이 -아/어 가 아니면 안 묶는다
+    assert split_reason("하면", "되나요?") == "-면 되다"
+    assert split_reason("하면", "좋겠어") is None
+    assert split_reason("수는", "없어") == "수+있다/없다"  # sfc-ed2 10-26
+    assert split_reason("짓게", "하고") == "-게 하다"
+    assert split_reason("아트라스", "군,") == "이름+호칭"  # ps1-ed1+2 10-26
+    assert split_reason("토마스", "씨") == "이름+호칭"
+
+
+if __name__ == "__main__":
+    sys.exit(0 if _run() else 1)
+

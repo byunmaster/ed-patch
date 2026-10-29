@@ -144,6 +144,8 @@ def main():
         print(f"      {s}: {old.get(s)} → {now[s]}")
     if diff:
         print("      문안을 바꿨으면 `--freeze`. **안 바꿨는데 떴으면 `shared/` 를 의심한다.**")
+        # 🔴 실패로 친다(마스터 10-29 판정 N4) — 경고만 찍으면 아무도 안 본다(10-29 PS1 III 가 공용 변경을 놓쳤다).
+        return 1
     return 0
 
 
