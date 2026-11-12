@@ -37,6 +37,8 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import chapter_end
+import place_labels
 import common
 import scriptmap
 
@@ -45,6 +47,8 @@ TERM = 0xFFFF
 NUM_MARK = 0xEEEE
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEDGER = os.path.join(HERE, "relocations.tsv")
+PL_KEYS = place_labels.member_keys()  # 장 끝 지명 라벨 시트·AM3(`place_labels.py`)
+CE_KEYS = chapter_end.member_keys()  # 장 끝 띠 시트·ANM(`chapter_end.py`) — 의도한 그림 교체
 ARCS = lambda files: sorted(p for p in files if p.startswith("/SCE") and p.endswith(".DAT"))
 
 EVIDENCE = {
@@ -214,6 +218,14 @@ def main():
             is_script = n.upper().startswith("..\\DATA\\") and n.upper().endswith(".BIN")
             if mx == my:
                 st["같음"] += 1
+            elif key in PL_KEYS:
+                st["지명 라벨 교체"] += 1
+                errors += place_labels.member_problems(key, mx, my)
+                continue
+            elif key in CE_KEYS:
+                st["장 끝 띠 그림 교체"] += 1
+                errors += chapter_end.member_problems(key, mx, my)
+                continue
             elif not is_script:
                 errors.append(f"{key}: 대본이 아닌 멤버가 바뀜")
                 continue

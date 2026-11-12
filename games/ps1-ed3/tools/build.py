@@ -78,6 +78,9 @@ def bake_font(exe, disc, chars, table):
     return baked
 
 
+KAGI_TR = str.maketrans({v: k for k, v in font.KAGI.items()})  # 「」 → 반 칸 글리프 사설 글자(대사 조각만)
+
+
 def check_no_text_loss(where, newmem, lines, disc, table, report):
     """🔴 불변식 — **정본 글자 = 구운 글자**(공백·개행 빼고). 조판·인코딩·풀 재포장 어디서
     빠져도 여기서 멈춘다. 「넘치면 멈춤」(`typeset.wrap`)은 한 경로만 막는다 — 09-27 꼬리 잘림은
@@ -86,7 +89,7 @@ def check_no_text_loss(where, newmem, lines, disc, table, report):
     space = table.get(" ")
     got = scriptmap.parse(newmem)["segments"]
     for i, row in lines.items():
-        want_text = "".join(row["kr"].split())
+        want_text = "".join(row["kr"].split()).translate(KAGI_TR)
         try:
             want = hangul_map.encode(want_text, disc, table)
         except KeyError:
@@ -108,10 +111,13 @@ def reflow_windows(mem, info, lines, disc):
         for i in ch:
             use[i] = use.get(i, 0) + 1
     out = {}
-    for ch in chains:
-        if any(i not in lines or use[i] != 1 or lines[i].get("_auto") for i in ch):
-            continue
-        rows = typeset.reflow([josa_rt.convert(lines[i]["kr"]) for i in ch], disc)
+    texts = [
+        None
+        if any(i not in lines or use[i] != 1 or lines[i].get("_auto") for i in ch)
+        else [josa_rt.convert(lines[i]["kr"]) for i in ch]
+        for ch in chains
+    ]
+    for ch, rows in zip(chains, typeset.reflow_member(texts, disc), strict=True):
         if rows is not None:
             out.update(zip(ch, rows))
     return out
@@ -150,7 +156,7 @@ def encode_member(disc, path, nm, mem, lines, table, report):
                 f"   `script.py --check` 가 통과했다면 검사기와 빌드의 자가 다르다."
             ) from e
         try:
-            segs[i] = hangul_map.encode(kr, disc, table)
+            segs[i] = hangul_map.encode(kr.translate(KAGI_TR), disc, table)  # 대사 「」 → 반 칸 글리프
         except KeyError:
             # ⬜ 아직 자리를 못 받은 글자가 있다 — **원문 그대로 두고 센다.**
             #    조용히 빼면 화면에서 그 줄만 사라진다(이 레포의 단골 사고).
@@ -406,13 +412,13 @@ def yes_label_center(exe, exe_orig, disc, enc, report):
 #   마스터 판정(10-11): 시스템 설정 창은 **왼쪽 정렬 유지·칸만 6칸**(앞 여백 없음) — 세이브／로드가 6칸에 꽉 맞는다.
 SUBMENU = {
     "ed3": {
-        "system": (0xA116C, 40, [("", "메시지속도"), ("", "리더변경"), ("", "키설정변경"), ("", "세이브／로드"), ("", "게임끝내기")]),
-        "speed": (0xA11D6, 12, [("", "빠0름"), ("", "보0통"), ("", "느0림")]),  # 두 글자를 양 끝으로(0 = 가운데 빈 칸) — 3칸 창
+        "system": (0xA116C, 40, [("", "메시지 속도"), ("", "리더 변경"), ("", "키설정 변경"), ("", "세이브／로드"), ("", "게임끝내기")]),  # 마스터 10-25 B안: 반각 공백(커서 줄 반각 훅이 6×4 창을 받는다 — 줄당 글리프 ≤ 6)
+        "speed": (0xA11D6, 12, [("", "빠름"), ("", "보통"), ("", "느림")]),  # 2칸 창(마스터 10-25 「단어를 공백으로 쪼개지 않는다」 — 열 3→2, ED4 와 같은 꼴)
         "saveload": (0xA11EE, 8, [("", "세이브"), ("", "로0드")]),
         "keycfg": (0xA1232, 9, [("", "노멀"), ("", "와이드")]),  # 창 열 3 · 노멀은 사이 공백 없이 왼쪽 정렬(마스터 10-12)
     },
 }
-DETAIL_TITLES = {"ed3": {10: ("0000", "세이브데이터"), 11: ("000", "기록이 없습니다."), 13: ("0000 ", "로드데이터")}}  # 표 항목 → (앞 여백: 0 = 전각 1칸 · 공백 = 반 칸, 글) — 14칸 창 가운데
+DETAIL_TITLES = {"ed3": {10: ("0000", "세이브데이터"), 11: ("00 ", "데이터가 없습니다."), 13: ("0000 ", "로드데이터")}}  # 표 항목 → (앞 여백: 0 = 전각 1칸 · 공백 = 반 칸, 글) — 14칸 창 가운데
 
 
 def _line_words(enc, lead, txt):
@@ -786,6 +792,7 @@ def main():
         chars.update(kr)
     for row in uitext.load(a.disc).values():
         chars.update(row["kr"])
+    chars |= set(font.KAGI)  # 대사 「」 반 칸 글리프
     chars |= set(josa_rt.baked_glyphs())  # 런타임 조사 글리프는 대사에 안 나와도 굽는다
     chars = {c for c in chars if c in table}
 
@@ -812,7 +819,7 @@ def main():
     if a.disc in poolpack.LAYOUT:
         # 읽을거리 풀(메모·검사교본·사피) — 재배치 + 사전 압축 + 펼침 훅. 정본 글자 = 되읽은 글자를 곧바로 대조한다.
         pre_pool = bytes(exe)
-        pool_enc = lambda kr: uitext.ui_codes(enc, kr)
+        pool_enc = lambda kr: uitext.ui_codes(enc, kr.translate(KAGI_TR))  # 본문 창은 대사창과 같은 24×4 — 「」『』 반각(규칙 1-2, 마스터 10-27)
         pool_rows = uitext.pool_rows(a.disc)
         try:
             pool_pl = poolpack.apply(exe, a.disc, pool_rows, pool_enc)
@@ -851,6 +858,23 @@ def main():
         arcs.setdefault(path, data)
     title_font_n, title_font_arcs = patch_title_font.apply(a.disc, base_arcs=arcs)
     arcs.update(title_font_arcs)  # 그림 위에 문자열을 얹는다(같은 M01.DAT 일 수 있다)
+    ce_note = None
+    if a.disc == "ed3":  # 장 끝 띠 제목(「…おわり」·「次章…」) 한글화 — 시트·ANM 다시 쓰기(`chapter_end.py`)
+        import chapter_end
+
+        ce_note = chapter_end.apply(a.disc, arcs)
+        print(f"  🖼 장 끝 띠 {len(ce_note)}장 — 타일 사용 " + " ".join(f"{n}:{u}/{p}" for n, u, p in ce_note))
+    if a.disc == "ed3":  # 장 끝 지명 라벨 한글화 — 글자 타일·AM3 라벨 칸 워드(`place_labels.py`)
+        import place_labels
+
+        pl_note = place_labels.apply(a.disc, arcs)
+        print("  🏷 장 끝 지명 라벨 " + " · ".join(f"{n}: " + ", ".join(f"{j}→{k}" for j, k in r["labels"].items()) for n, r in pl_note))
+    gt4000_note = None
+    if a.disc == "ed3" and os.environ.get("ED_GT4000") == "1":  # 🔴 시험 빌드 전용(꼬리표 test-*) — 스위치 없으면 이 줄을 안 지난다
+        import gt4000_patch
+
+        gt4000_note = gt4000_patch.apply(a.disc, arcs)
+        print(f"  🧪 {gt4000_note}")
 
     if a.test:
         check_names_left(a.disc, report)

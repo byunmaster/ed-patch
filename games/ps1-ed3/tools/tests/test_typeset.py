@@ -58,9 +58,9 @@ class TestTypeset(unittest.TestCase):
         self.assertEqual(typeset.cell_width("가", "ed3"), 1)
         self.assertEqual(typeset.cell_width(" ", "ed4"), 1)
         self.assertAlmostEqual(typeset.width_cells("가 나", "ed3"), 2 + 6 / 12)
-        for p in ",.?!()":  # 부호도 반 칸(마스터 10-07) — 엔진 훅의 부호 코드와 같은 집합이다
+        for p in ",.?!()「」『』":  # 부호도 반 칸(마스터 10-07) — 엔진 훅의 부호 코드와 같은 집합이다
             self.assertAlmostEqual(typeset.cell_width(p, "ed3"), 6 / 12, msg=p)
-        for p in "…～「」":  # 전각 유지(마스터 10-07)
+        for p in "…～":  # 전각 유지(마스터 10-07) — 「」『』 는 대사에서 반 칸(마스터 10-26, `font.KAGI`)
             self.assertEqual(typeset.cell_width(p, "ed3"), 1, p)
 
     def test_grid_columns_cap_the_glyph_count(self):

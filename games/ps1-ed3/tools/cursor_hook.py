@@ -21,15 +21,15 @@ SITE = 0x8001A9C8  # 훅 자리: `lui v0,0x801f` · `lhu v0,0x76b8(v0)` 두 워�
 SITE_ORIG = (0x3C02801F, 0x944276B8)  # lui v0,0x801f · lhu v0,0x76b8(v0)
 R1_SHA1 = "d591f9c731a2e08e2d60836628d44ae3c107b522"  # 원본 두 구간(참조 0·범위 BP 0회로 검증한 죽은 코드)
 R2_SHA1 = "61c4151d7a3735245a7f571b2f4d1710cbece9db"
-COLS_MAX = 12  # 임시 버퍼 한계(열 + 1 타일)
+COLS_MAX = 14  # 임시 버퍼 한계(열 + 1 타일) — 14열 데이터 창(세이브/로드)까지(10-25)
 FONT = 0x8009E170
-PROTO_WINDOWS = ((6, 4),)  # 시험 빌드에서 커서 반각을 켜는 목록 창(전투 square 6×4)
+PROTO_WINDOWS = ((6, 4), (14, 4))  # 시험 빌드에서 커서 반각을 켜는 목록 창(전투 square 6×4)
 
 
 def buf_layout(disc):
     """(버퍼 주소, 가상 코드 시작) — 주소는 자료 자리 안, FONT − 18·m."""
     p = E.PATCH[disc]
-    base = p["data"] + 780  # 메시지 갈래 뒤 — 길이는 test 가 지킨다
+    base = p["data"] + 762  # 메시지 갈래(끝 748) 뒤 — 열 14 면 (14+1)×18 = 270B 가 자료 자리 끝(0x418)에 닿아야 한다(780 은 2B 넘친다)
     while (FONT - base) % 18:
         base += 1
     v0 = (base - FONT) // 18

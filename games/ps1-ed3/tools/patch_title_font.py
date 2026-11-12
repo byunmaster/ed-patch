@@ -130,6 +130,9 @@ GLYPHS = [
     "록",
     "없",
     "습",  # 기록이 없습니다. (이·니·다 는 위에서 재사용)
+    "데",
+    "터",
+    "가",  # 데이터가 없습니다.(10-25 — 기·록 은 이제 안 쓰이나 코드 자리는 그대로 둔다)
 ]
 CODE_BASE = 0x889F
 CODE = {ch: CODE_BASE + i for i, ch in enumerate(GLYPHS)}
@@ -179,15 +182,19 @@ for _off, (_budget, _data) in STRINGS.items():
 
 
 # SLPS_012.01 안 문자열(RAM 주소) — 「データがありません」 한 줄(@6 색 + 전각 공백 + 9칸 + @%x).
-# 원문 9칸과 같은 9칸으로 쓴다(길이 고정): 「기록이 없습니다.」 — ED3.EXE 쪽 문안과 같다.
+# 「데이터가 없습니다.」(10-25 마스터 — ED4·세이브 창과 같게)는 10칸이라 원문 9칸(26B)보다 2B 길다 — 문자열 뒤 **0 패딩 2B**(다음 문자열은 4B 경계
+# 0x80010C04)가 비어 있어 제자리에서 28B 로 늘린다(그리는 쪽은 널 종결 루프 — 길이 상수 없음). 패딩이 0 인지 `apply` 가 단언한다.
 SLPS_DATA_STR = 0x80010BE8
 SLPS_DATA_ORIG = b"@6\x81\x40" + "データがありません".encode("cp932") + b"@%x\x00"
+SLPS_DATA_ROOM = 28  # 원문 26B + 뒤 패딩 2B
 
 
 def slps_data_string():
-    text = b"".join(_c(ch) if ch != "." else _fullwidth(".") for ch in "기록이 없습니다.")
-    assert len(text) == 18
-    return b"@6\x81\x40" + text + b"@%x\x00"
+    text = b"".join(_c(ch) if ch != "." else _fullwidth(".") for ch in "데이터가 없습니다.")
+    assert len(text) == 20
+    out = b"@6\x81\x40" + text + b"@%x\x00"
+    assert len(out) == SLPS_DATA_ROOM
+    return out
 
 
 REG = {
@@ -535,10 +542,12 @@ def apply(disc, base_arcs=None):
     parts, _entry = build_payload(glyphs)
 
     poke(HOOK_ADDR, build_hook_patch())
-    # 「データがありません」 → 「기록이 없습니다.」 (길이 고정 — 원문과 검산)
+    # 「データがありません」 → 「데이터가 없습니다.」 (패딩 2B 를 먹는다 — 원문과 검산)
     off = T_HEADER + (SLPS_DATA_STR - T_ADDR)
     assert bytes(exe[off : off + len(SLPS_DATA_ORIG)]) == SLPS_DATA_ORIG, "SLPS 문자열이 달라졌다"
     if MODE != "base":
+        pad = bytes(exe[off + len(SLPS_DATA_ORIG) : off + SLPS_DATA_ROOM])
+        assert pad == b"\0" * (SLPS_DATA_ROOM - len(SLPS_DATA_ORIG)), f"SLPS 문자열 뒤 패딩이 비어 있지 않다 — {pad.hex()}"
         poke(SLPS_DATA_STR, slps_data_string())
     for ram, _jp, kr in places:
         if kr is not None:

@@ -256,6 +256,10 @@ def check(disc):
             bad.append(f"0x{off:06X}: 원문 지문이 다르다 — 번역이 남의 자리에 붙었다")
             continue
         cap = poolpack.LINE_MAX if s.get("pool") else s["len"]
+        # 빌드가 나중에 직접 덮어쓰는 자리(`OVERRIDDEN`)는 원문 칸 길이가 상한이 아니다 — 그 자리를 쓰는 쪽(`build.DETAIL_TITLES` 등)이 자기 예산을 단언한다
+        #   (데이터 창 제목은 R2 꼬리로 옮겨져 「데이터가 없습니다.」 10자가 들어간다 — 10-25).
+        if off in OVERRIDDEN.get(disc, ()):
+            continue
         if (s["table"] is None or s.get("pool")) and kr_len(row["kr"]) > cap:
             bad.append(
                 f"0x{off:06X}: 길이 초과 {kr_len(row['kr'])} > {cap} — "

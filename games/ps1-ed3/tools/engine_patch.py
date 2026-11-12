@@ -233,7 +233,8 @@ def half_codes(table):
     # `…`(코드 3)는 전각 한 글자라 반 칸이 아니다 — `PUNCT` 값을 통째로 안 쓰고 쉼표·마침표·물음표·느낌표만 센다
     # + 반각 ASCII(숫자·영문·`& % ' -` — 코드표에 배정된 ASCII 전부): 전각 칸에 반각 모양 글리프가 앉아 글자 사이·뒤 부호와의 틈이 벌어지던 것(마스터 10-12 「1 G o a」 · 「쥬리오& 크리스」)
     ascii_codes = sorted(table[c] for c in table if c.isascii() and c.isprintable() and c not in " ()")
-    return [table[" "]] + [table[c] for c in "()" if c in table] + [0x01, 0x02, 0x04, 0x05] + ascii_codes
+    kagi = [table[c] for c in font.KAGI if c in table]  # 대사 「」 반 칸 글리프(마스터 10-26)
+    return [table[" "]] + [table[c] for c in "()" if c in table] + [0x01, 0x02, 0x04, 0x05] + ascii_codes + kagi
 
 
 def apply_panel(exe, disc):
@@ -293,6 +294,8 @@ SUBMENU_WINDOWS = {
         (0x80032BF8, 0x24060004, 0x24060003, "키 설정 열"),
         (0x80032C1C, 0x24060004, 0x24060003, "키 설정 열(필드 메뉴판 — 같은 함수 둘째 갈래)"),
         (0x800648EC, 0x24060006, 0x24060004, "리더 변경 열"),
+        (0x8003293C, 0x24040064, 0x2404006A, "메시지 속도 x"),
+        (0x80032944, 0x24060003, 0x24060002, "메시지 속도 열"),
     ],
 }
 
@@ -305,7 +308,7 @@ def apply_submenu_windows(exe, disc):
         _expect(exe, addr, (orig,), f"{what} 상수")
     for addr, _orig, new, _what in sites:
         struct.pack_into("<I", exe, _off(addr), new)
-    return " · 하위 창 열 조정 5곳"
+    return f" · 하위 창 열 조정 {len(sites)}곳"
 
 
 # 세이브/로드 데이터 창(14×4) 제목 셋 — 원문 자리(표 항목 10·11·13, 2워드 빈 칸 + 글)가 가운데 정렬 여백을 못 담아 **문자열을 R2 꼬리로 옮기고** 읽는 곳 셋을 절대 주소로 잇는다
@@ -464,6 +467,10 @@ def apply(exe, disc, table, josa=None):
     assert len(blob) <= p["data_len"], f"자료가 자리를 넘는다 ({len(blob)}B > {p['data_len']}B)"
     assert (mbase - p["data"]) + 4 * len(mwords) <= p["data_len"], "메시지 창 갈래가 자료 자리를 넘는다"
     assert len(blob) <= tile_hook.PANEL_CODE_OFF, "상태·표가 패널 스텁 자리를 넘는다"
+    import cursor_hook as _ch
+
+    assert mbase + 4 * len(mwords) <= _ch.buf_layout(disc)[0], "메시지 창 갈래가 커서 줄 임시 버퍼를 침범한다"
+    assert _ch.buf_layout(disc)[0] + (_ch.COLS_MAX + 1) * 18 <= p["data"] + p["data_len"], "커서 줄 임시 버퍼가 자료 자리 끝을 넘는다"
     struct.pack_into(f"<{len(words)}I", exe, d0, *words)
     exe[x0 : x0 + len(blob)] = blob
     struct.pack_into(f"<{len(mwords)}I", exe, _off(mbase), *mwords)

@@ -235,6 +235,7 @@ def needed_chars(disc):
     import josa_rt
 
     out = list(EXTRA)
+    out += [ch for ch in font.KAGI if ch not in have]  # 대사 「」 반 칸 글리프(font.KAGI)
     # 런타임 조사: 표지(굽지 않는다 — 코드만 받는다)와 조사 글자는 대사에 안 나와도 자리가 있어야 한다.
     out += [ch for ch in josa_rt.runtime_glyphs() if ch not in have and ch not in out]
     for src in (freq, ui):

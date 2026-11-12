@@ -73,7 +73,7 @@ echo "  ── 고유명사 정본이 원본과 맞나"
 # 🔴 게이트다 — 「원본에 없는 항목」과 「한 표기가 원문 둘에」는 판단이 안 드는 사고다.
 #    ⚠ 아직 안 옮긴 낱말은 **실패로 안 친다**(할 일이지 실패가 아니다).
 run 0 "$PY" "$G/tools/check_glossary.py" --disc ed3
-run 0 "$PY" "$G/tools/check_glossary.py" --disc ed4
+# ED4 정본 대조는 ps1-ed4 게이트로 옮김(10-24, 정본이 씬 대본 이름까지 담게 됨)
 
 echo "  ── 조사 일치(F8) · 일본어 잔존(F7)"
 # 🔴 게이트다 — 이름 뒤 조사가 받침과 맞나·병기가 안 풀린 채 남았나 / 「옮겼다」고 올린 자리에 가나·한자가 섞였나.
@@ -84,6 +84,11 @@ run 0 "$PY" "$G/tools/check_jp_left.py" --disc ed3
 run 0 "$PY" "$G/tools/check_pua.py"
 echo "  ── 창 단위 재조판 (어절 단위 · 한 줄 24글리프 · 띄어 쓴 정본 이름 한 줄 — 마스터 10-20)"
 run 0 "$PY" "$G/tools/check_reflow.py"
+
+echo "  ── 줄·쪽 나눔 지표 (번역 규칙 2-16 — 래칫: 기준선보다 늘면 실패)"
+# 🔴 게이트다(래칫, 마스터 10-26) — 쪽 끝 한 어절 고아(a) · 문장 중간 한 낱말로 끝나는 쪽(b) · 문장 중간 손 개행(c) · 절째 내리면 들어가는데 쪼갠 줄(d)을
+#    조판 결과 전수로 센다. 눈으로 검수한 뒤에도 남던 부류라 기계 지표로 잡는다. 기준선은 `wrap_metrics_baseline.json`.
+run 0 "$PY" "$G/tools/wrap_metrics.py" --check
 
 echo "  ── 월드맵 패널 넘침(칸 수 안에 드는가)"
 # 🔴 게이트다 — 패널 줄이 원판 칸을 넘으면 그 항목은 일본어로 남는다. (제어 열 보존은 build 가 서서 지킨다.)
@@ -172,6 +177,8 @@ else echo "   ✅ 실빌드 — $(sha1sum "$_bin" | cut -c1-12) · $(( $(wc -c <
   #    한 블록씩 맞댄다. 재배치·채움이 다음 블록 호출을 막는 사고(ss-ed3 10-21 FF FF 채움)를 정적으로 잡는다. 장부 `relocations.tsv` 는 이 검사가 이미지에서 뽑는다
   #    (의도한 변화일 때만 `STRUCT_WRITE_LEDGER=1 sh scripts/check.sh` 로 다시 쓴다).
   "$PY" "$G/tools/check_structure.py" "$_bin" ${STRUCT_WRITE_LEDGER:+--write-ledger} || fail=1
+  # 🔴 낱말 표 재삽입 대조(관리자 10-24, sfc-ed2 사고 — 이름 군의 길이 0 패딩을 빠뜨려 빈 슬롯이 다음 이름을 읽었다) — 실행파일 표를 원본과 항목마다 맞댄다(빈 항목·종결·별칭).
+  "$PY" "$G/tools/check_table_padding.py" "$_bin" || fail=1
 fi
 rm -rf "$_gd"
 
