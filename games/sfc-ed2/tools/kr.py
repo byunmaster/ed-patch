@@ -23,7 +23,7 @@ FULLWIDTH_SPACE = "　"
 KAGI = {"「": 0x5B, "」": 0x5D, "『": 0x5C, "』": 0x5E}  # 낫표는 반각 칸(8px) — 마스터 도안 E·E2판(10-26), 글리프는 patches.KAGI_PIC·KAGI2_PIC
 
 # 전각 영문·숫자는 번역 글꼴(갈무리)이 아니라 원판 글리프 그대로 쓴다 — 마스터 10-27(규칙 1-8 글꼴 고르기: sfc 는 원본). 원판 전각 표: 숫자 0~9 = 색인 16~25 · A~Z = 26~51
-ORIG_LATIN = {**{chr(0xFF10 + i): 16 + i for i in range(10)}, **{chr(0xFF21 + i): 26 + i for i in range(26)}}
+ORIG_LATIN = {**{chr(0xFF10 + i): 16 + i for i in range(10)}, **{chr(0xFF21 + i): 26 + i for i in range(26)}, "～": 7}  # ～ 는 원판 전각 글리프(색인 7) — 마스터 11-06 「원판에 같은 글자가 있는 것만 원판으로」
 
 HALF_OK = set(" !?-.,0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")  # 반각 글꼴에 실제 모양이 있는 ASCII
 JOSA_PAIRS = (("은", "는"), ("이", "가"), ("을", "를"), ("과", "와"))  # 런타임 조사 쌍(받침 있음, 없음) — patches.JOSA_BASE+k

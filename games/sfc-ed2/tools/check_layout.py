@@ -1,6 +1,6 @@
 """조판 결과 지표 래칫 — 번역 문안 전량을 빌드와 같은 길로 조판한 결과에서 줄·쪽 나눔 결함을 센다(규칙 2-16 a~e). 값은 `layout_baseline.json` 보다 **늘면 실패**, 줄면 `--freeze`.
 
-    python3 check_layout.py [--freeze] [--list 지표]      # 지표: orphan · midpage · lonepunct · leadspace · overwide · compound
+    python3 check_layout.py [--freeze] [--list 지표]      # 지표: orphan · midpage · lonepunct · leadspace · overwide · compound · fewer
 
   a orphan     쪽 끝 한 어절 고아 — 둘 이상의 쪽 가운데 마지막 쪽이 낱말 하나뿐이고 앞 쪽이 문장 끝이 아니다
   b midpage    문장 중간 한 낱말 쪽 — 쪽 끝 줄이 낱말 하나이고 문장 끝 부호가 아니다
@@ -9,6 +9,7 @@
   f regress    퇴행 — 원판 조판엔 없던 끊김이 보조용언·의존명사·관형사 고아에 걸리거나 한 줄이던 문장이 갈렸다(조판기가 이런 이동은 거부한다)
   h2 balance   창 분배 — 창이 둘 이상인 구간에서 창 수를 안 늘리고 고르게 나눌 수 있는데 창 줄 수 차가 2 이상이다(쪽 경계는 문장 끝·절 경계로만 옮긴다 — 지표만, 재배치는 안 한다)
   i lean       붙임 포기 — 2-6 보조용언 붙임을 지키면 원문 창보다 쪽이 느는 구간이 붙임을 포기하고 창 수를 지킨 수(한도, 규칙 2-17)
+  j fewer     창 줄임 — 조판 결과의 본문 창(쪽) 수가 입력 문안(원문 창 구조)보다 적다(원문 두 창을 한 창에 합쳤다, 규칙 2-17). 끝 `<05>` 반복은 창이 아니라 센 대상 밖
   e compound   굳은 [명사+명사] 구가 줄·쪽 끝에서 갈렸다 — 앞 어절이 조사·어미로 안 끝나고 같은 이음이 문안 전량에 2회 이상"""
 
 import json
@@ -26,7 +27,17 @@ BASE = Path(__file__).resolve().parents[1] / "layout_baseline.json"
 _END = ".!?…~」』"
 _PART = set("은는이가을를의에도와과로고며면만다요죠네까니라야지든나서게데기해히")  # 조사·어미로 끝나는 어절은 굳은 구의 앞 마디가 아니다
 OLD = False
-KEYS = ["orphan", "midpage", "lonepunct", "leadspace", "overwide", "compound", "regress", "balance", "lean"]
+KEYS = ["orphan", "midpage", "lonepunct", "leadspace", "overwide", "compound", "regress", "balance", "lean", "fewer"]
+
+
+def body_windows(t: str) -> int:
+    """본문 창 수 = 끝의 `<05>` 반복을 뗀 뒤 남은 `<05>` 수(+1 창). 끝 `<05>` 는 마지막 창의 닫힘이라 창 수에 안 든다."""
+    return re.sub(r"(<05>)+$", "", t).count("<05>")
+
+
+def fewer_windows(src: str, out: str) -> bool:
+    """입력 문안보다 창이 적으면 True — 원문 창을 합친 것."""
+    return body_windows(out) < body_windows(src)
 
 
 SRC: dict = {}
@@ -72,6 +83,8 @@ def measure(res: dict[str, str]) -> dict[str, list[str]]:
     for k, t in res.items():
         pages = _pages(t)
         pages = [p for p in pages if any(l.strip() for l in p)]
+        if fewer_windows(SRC.get(k, ""), t):
+            out["fewer"].append(k)
         if T.rebalance(t, SRC.get(k, "<05>")) != t:  # 제약 안에서 더 고르게 나눌 수 있는 구간(원본 손 쪽나눔·화자 머리·이어 쓰기는 분모 밖)
             out["balance"].append(k)
         for i, p in enumerate(pages):

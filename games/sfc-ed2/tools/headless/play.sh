@@ -25,6 +25,6 @@ rm -rf "$OUT"; mkdir -p "$OUT" "$HOMEDIR/.config/MesenCE/Saves"
 rm -f "$HOMEDIR"/.config/MesenCE/Saves/*.srm
 MESEN=$G/work/derived/headless/mesen/Mesen
 env HOME=$HOMEDIR SW_OUT=$OUT SW_STATE=$ST SW_OFF=$OFF SW_SCRIPT="${SCRIPT:-}" SW_SHOTS="${SHOTS:-}" SW_MAXF="${MAXF:-$((OFF+600))}" \
- ${IN_SRM:+SW_LOADSRM=$IN_SRM} ${OUT_SRM:+SW_DUMPSRM=$OUT_SRM} ${POKE:+SW_POKE=$POKE} ${DUMPW:+SW_DUMPW=$DUMPW} ${TRACE:+SW_TRACE=$TRACE} ${DUMPV:+SW_DUMPV=$DUMPV} ${DUMPWN:+SW_DUMPWN=$DUMPWN} ${WWATCH:+SW_WWATCH=$WWATCH} ${RACE:+SW_RACE=$RACE} DISPLAY=${DISPLAY:-:99} \
+ ${IN_SRM:+SW_LOADSRM=$IN_SRM} ${OUT_SRM:+SW_DUMPSRM=$OUT_SRM} ${POKE:+SW_POKE=$POKE} ${DUMPW:+SW_DUMPW=$DUMPW} ${TRACE:+SW_TRACE=$TRACE} ${DUMPV:+SW_DUMPV=$DUMPV} ${DUMPWN:+SW_DUMPWN=$DUMPWN} ${WWATCH:+SW_WWATCH=$WWATCH} ${NAV:+SW_NAV=$NAV} ${WANDER:+SW_WANDER=$WANDER} ${SHOPHIT:+SW_SHOPHIT=1} ${EXECLOG:+SW_EXECLOG=$EXECLOG} ${MOVE:+SW_MOVE=$MOVE} ${MOVEREC:+SW_MOVEREC=$MOVEREC} ${MSG:+SW_MSG=$MSG} ${RACE:+SW_RACE=$RACE} ${RWATCH:+SW_RWATCH=$RWATCH} ${POKEFROM:+SW_POKEFROM=$POKEFROM} ${CARD:+SW_CARD=$CARD} DISPLAY=${DISPLAY:-:99} \
  "$MESEN" --testRunner "$ROM" "$G/tools/headless/pad_script.lua" --timeout=1800 --debug.scriptWindow.allowIoOsAccess=true --preferences.singleInstance=false --snes.port1.type=SnesController --donotSaveSettings >/dev/null 2>&1 || true
 grep -v '^f=' "$OUT/log.txt" 2>/dev/null || echo "(로그 없음 — 에뮬이 죽었다. 다시 돈다)"
