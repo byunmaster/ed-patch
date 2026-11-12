@@ -111,7 +111,7 @@ def battle(a) -> None:
     for k in range(0, len(jobs), a.jpp):
         od = out / f"c{a.cbase + k // a.jpp:03d}"
         od.mkdir(parents=True, exist_ok=True)
-        env = {"SW_OUT": str(od), "SW_STATE": str(st), "SW_FRAMES": str(a.frames), "SW_JOBS": ",".join(f"{i}:{s}" for i, s in jobs[k : k + a.jpp])}
+        env = {"SW_OUT": str(od), "SW_STATE": str(st), "SW_FRAMES": str(a.frames), "SW_JOBS": ",".join(f"{i}:{s}" for i, s in jobs[k : k + a.jpp]), **({"SW_WIN": "1", "SW_NOSHOT": "1", "SW_FORCE": "0", **({"SW_WINKILL": "1"} if a.kill else {})} if a.win else {})}
         tasks.append((HERE / "battle_sweep.lua", env))
     pool(tasks, rom, a.procs)
     print("끝:", out)
@@ -184,6 +184,8 @@ def main() -> None:
     p.add_argument("--tag", default="run")
     p.add_argument("--out", default="")
     p.add_argument("--cbase", type=int, default=0)
+    p.add_argument("--kill", action="store_true", help="--win 과 함께: 적 칸을 죽음 표시(0x80)로 직접 쓴다 — 적 HP 를 1 로 해도 아군이 행동하지 않아 안 끝나는 군(군7 등, 원판도 같다)의 승리·복귀 처리를 본다")
+    p.add_argument("--win", action="store_true", help="완료 시험 — 적 HP 1·촬영 없음(멈춘 작업만 한 장)·난수 강제 끔. `END …reentry` = 필드 복귀, `END …timeout` = 멈춤")
     p = sub.add_parser("dialog")
     p.add_argument("--rom", default=str(DEFAULT_ROM))
     p.add_argument("--limit", type=int, default=0)

@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 import common
+import debug_patch
 import hangul_font
 import hud_tiles
 import kr
@@ -322,6 +323,38 @@ def collect_texts(src: bytes) -> tuple[dict, dict, dict]:
     return seg_map, ui_map, dict_map
 
 
+def ptrs16_entry(src: bytes, base: int, w: int, v: dict) -> bytes:
+    """16비트 포인터 표 항목의 원문 바이트(끝 토큰 앞까지). `term` 이 있으면 그 토큰(몬스터 일람 = 07)까지 — 글리프 둘째 바이트가 07 일 수 있어 토큰 단위로 걷는다."""
+    a = common.snes2off(((base >> 16) << 16) | w)
+    e = a
+    term = v.get("term", 0)
+    while src[e] != term:
+        e += script.token_len(src, e) if term else 1
+    return bytes(src[a:e])
+
+
+def viewer_name(canon, jp: str):
+    """몬스터 일람 이름 → 정본. 접미 A~D·숫자(「ガード1」)는 이름 뒤에 그대로 붙인다."""
+    base, suf = monsters.split_name(jp)
+    k = _mon_lookup(canon, base)
+    if k:
+        return k + suf
+    m = re.match(r"^(.+?)([0-9１-９])$", jp)
+    if m:
+        k = _mon_lookup(canon, m.group(1))
+        if k:
+            return k + m.group(2)
+    return None
+
+
+def ptrs16_text(src: bytes, jpb: bytes, v: dict, canon):
+    """항목 하나의 한국어 — 일람(`mon`)은 사전 참조를 펼친 이름을 정본으로, 그 밖은 지역명 규칙(정본 범주 조회)."""
+    if v.get("mon"):
+        return viewer_name(canon, monsters.decode(jpb, src))
+    jpn = ui.row_text(src, jpb).rstrip(" 　")
+    return canon.lookup(jpn, v.get("cat"), "ed2") if jpn else ""
+
+
 def ptrs16_canon_chars(src: bytes, key: str, v: dict) -> set[str]:
     import canon
 
@@ -332,12 +365,7 @@ def ptrs16_canon_chars(src: bytes, key: str, v: dict) -> set[str]:
         if str(i) in v.get("over", {}):
             continue
         w = src[o + 2 * i] | src[o + 2 * i + 1] << 8
-        a = common.snes2off(((base >> 16) << 16) | w)
-        e = a
-        while src[e] != 0:
-            e += 1
-        jpn = ui.row_text(src, src[a:e]).rstrip(" 　")
-        t = canon.lookup(jpn, v.get("cat"), "ed2") if jpn else None
+        t = ptrs16_text(src, ptrs16_entry(src, base, w, v), v, canon)
         if t:
             out |= kr.chars_of(t)
     return out
@@ -406,7 +434,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
     del LEDGER[:]
     off_keys = _off_keys()
     apply_patches(rom)
-    for nm, ad, ln, why in (("STUB", patches.STUB_ADDR, len(patches.STUB), "`$17` 트램펄린 핸들러(대사 구간을 확장 뱅크로 옮기는 24비트 점프)"), ("LOADER_STUB", patches.LOADER_STUB_ADDR, len(patches.LOADER_STUB), "창 블록 로더를 24비트 복사 루프로 돌림(블록을 확장 뱅크로 옮기려고)"), ("JOSA_STUB1", patches.JOSA_STUB1, 0x60, "조사 훅 — 전각 글리프 가져오기에 걸린다"), ("JOSA_STUB2", patches.JOSA_STUB2, 0x40, "조사 훅 — 반각 글리프에 걸린다")):
+    for nm, ad, ln, why in (("STUB", patches.STUB_ADDR, len(patches.STUB), "`$17` 트램펄린 핸들러(대사 구간을 확장 뱅크로 옮기는 24비트 점프)"), ("LOADER_STUB", patches.LOADER_STUB_ADDR, len(patches.LOADER_STUB), "창 블록 로더를 24비트 복사 루프로 돌림(블록을 확장 뱅크로 옮기려고)"), ("JOSA_STUB1", patches.JOSA_STUB1, 0x60, "조사 훅 — 전각 글리프 가져오기에 걸린다"), ("JOSA_STUB2", patches.JOSA_STUB2, 0x40, "조사 훅 — 반각 글리프에 걸린다"), ("DEBUG_INPUT", debug_patch.CMD_STUB, len(debug_patch.stub()), "디버그 입구 — 입력 루프(`$C1:E306`)에서 L+R+Select 1초(열쇠)와 켜진 뒤의 명령 조합을 읽는다")):
         rec("스텁", f"patch:{nm}", ad, ad, why, ln, "되돌리기 수단 없음(코드 패치 — 끄면 이 스텁을 부르는 옮김 블록 전부가 죽는다)")
     seg_map, ui_map, dict_map = collect_texts(src)
     names = dict_names(src, dict_map)
@@ -515,12 +543,10 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         jps = []
         for i in range(v["count"]):
             w = src[o + 2 * i] | src[o + 2 * i + 1] << 8
-            a = common.snes2off((bank << 16) | w)
-            e = a
-            while src[e] != 0:
-                e += 1
-            jps.append(src[a:e])
-            pad_px = max(pad_px, ui.px_width(src[a:e]))
+            jpb = ptrs16_entry(src, base, w, v)
+            jps.append(jpb)
+            if not v.get("mon"):
+                pad_px = max(pad_px, ui.px_width(jpb))
         for i, jpb in enumerate(jps):
             over = v.get("over", {}).get(str(i))
             jp = segs.notation(src, 0, 0) if False else None
@@ -529,16 +555,16 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             else:
                 import canon
 
-                jpn = ui.row_text(src, jpb).rstrip(" 　")
-                text = canon.lookup(jpn, v.get("cat"), "ed2") if jpn else ""
+                text = ptrs16_text(src, jpb, v, canon)
                 if text is None:
-                    missing.append((key, i, jpn))
+                    missing.append((key, i, monsters.decode(jpb, src) if v.get("mon") else ui.row_text(src, jpb).rstrip(" 　")))
                     continue  # 정본에 없다 — 원문을 둔다(관리자에게 후보로 올린다)
             data = kr.encode(text, alloc)
             px = ui.px_width(data)
             dead.append((common.snes2off((bank << 16) | (src[o + 2 * i] | src[o + 2 * i + 1] << 8)), common.snes2off((bank << 16) | (src[o + 2 * i] | src[o + 2 * i + 1] << 8)) + len(jpb) + 1))
-            data += b" " * max(0, (pad_px - px) // 8)
-            addr = local.put(bank, data + b"\x00")
+            if not v.get("mon"):
+                data += b" " * max(0, (pad_px - px) // 8)
+            addr = local.put(bank, data + bytes([v.get("term", 0)]))
             rom[o + 2 * i : o + 2 * i + 2] = bytes([addr & 0xFF, (addr >> 8) & 0xFF])
             writes.append((o + 2 * i, o + 2 * i + 2))
             rec("포인터", f"ptrs16{key}[{i}]", (bank << 16) | (src[o + 2 * i] | src[o + 2 * i + 1] << 8), (bank << 16) | addr, "지역명 표 항목을 뱅크 빈 자리로 옮긴다 — 16비트 포인터 표 항목만 돌린다", len(data) + 1)
@@ -1131,10 +1157,7 @@ def main() -> None:
     a = ap.parse_args()
     a.strict = not a.lenient
     common.verify_originals()
-    if os.environ.get("ED_DEBUG") == "1" and not (common.BUILD_TAG.startswith("test-") or common.BUILD_TAG == "debug"):  # 제품 칸을 지우기 전에 막는다
-        raise SystemExit("ED_DEBUG=1 은 꼬리표 test-* 또는 debug(마스터용)에서만 — ED_BUILD_TAG=debug 를 준다")
-    # 디버그 롬은 파일명을 달리한다 — 에뮬 세이브(.srm)가 롬 이름으로 갈려서, 같은 이름이면 제품 세이브에 매직 코드 아이템이 섞인다
-    name = OUT_NAME.replace(".sfc", " (DEBUG).sfc") if os.environ.get("ED_DEBUG") == "1" else OUT_NAME
+    name = OUT_NAME
     out = common.BUILD_DIR / common.BUILD_TAG / name
     out.parent.mkdir(parents=True, exist_ok=True)
     failed = out.with_name(out.name + ".failed")
@@ -1149,18 +1172,11 @@ def main() -> None:
         screen_gate(a.strict, stats)
         residual_jp_gate(common.rom_bytes(), rom, a.strict)
         pointer_target_gate(common.rom_bytes(), rom, a.strict)
-        if os.environ.get("ED_DEBUG") == "1":  # 시험 빌드 전용 — 제품 롬(스위치 없음)은 바이트 하나도 안 바뀐다
-            import debug_patch
-
-            r = bytearray(debug_patch.apply(rom))
-            fix_checksum(r)
-            rom = bytes(r)
-            print("  ⚠ ED_DEBUG=1 — 디버그 입력 훅이 든 시험 롬이다(배포·제품 아님)")
     except BaseException:
         failed.write_bytes(rom)
         raise
     out.write_bytes(rom)
-    if not _off_keys() and os.environ.get("ED_DEBUG") != "1":
+    if not _off_keys():
         LEDGER_PATH.write_text(ledger_text(stats["ledger"]), encoding="utf-8")
         from collections import Counter
 

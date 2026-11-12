@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
+import debug_patch
 
 # 글꼴 이전 — 전각 글리프표를 `$D8:0000` 으로 옮긴다(원본은 `$D6:81D1`, 반각 글꼴 앞이라 1,284자뿐).
 # 소비자는 `$C0:9F56` 한 곳: `adc #$81D1`(기준) · `mvn $00,$D6`(소스 뱅크) — 둘을 고친다. 길이 `$12` 는 그대로.
@@ -259,6 +260,9 @@ PATCHES += [
     (0xC0A894, bytes([0x4C, 0x6C, 0xA9]), bytes([0x4C, WRAP_STUB & 0xFF, (WRAP_STUB >> 8) & 0xFF])),
     (WRAP_STUB, b"\xff" * len(_WRAP), _WRAP),
 ]
+
+# 디버그 입구(마스터 10-24 — 제품 롬에 넣는다): 열쇠 Start+A+B 1초 · 켜진 뒤 L+R+Select 명령. 설명은 `debug_patch.py`.
+PATCHES += debug_patch.patches()
 
 EXCEPT = [(common.snes2off(a), common.snes2off(a) + len(n)) for a, _o, n in PATCHES]
 FONT_OUT = common.snes2off(FONT_BANK << 16)

@@ -40,7 +40,7 @@ local function bandhash()
       local v=b[o+x+1] or 0
       if x<=200 then h=(h*33+v)%4294967296 end
       local r,g,bb=(v>>16)&255,(v>>8)&255,v&255
-      if (r>=200 and g>=200 and bb>=200) or (math.abs(r-182)<=8 and math.abs(g-147)<=8 and math.abs(bb-92)<=8) then tx=tx+1 end  -- 글자 잉크: 흰색 · 황갈색(색 글자 창)  -- 밝은 글자(흰·회색·황갈색 — 창마다 글자 색이 다르다). 초록 지도·하늘색 틀은 뺀다
+      if (r>=200 and g>=200 and bb>=200) or (math.abs(r-182)<=8 and math.abs(g-147)<=8 and math.abs(bb-92)<=8) or (math.abs(r-222)<=8 and math.abs(g-41)<=8 and math.abs(bb-82)<=8) or (math.abs(r-24)<=8 and math.abs(g-198)<=8 and math.abs(bb-24)<=8) or (math.abs(r-206)<=8 and math.abs(g-181)<=8 and math.abs(bb-49)<=8) then tx=tx+1 end  -- 글자 잉크: 흰색 · 황갈색(색 글자 창)  -- 밝은 글자(흰·회색·황갈색 — 창마다 글자 색이 다르다). 초록 지도·하늘색 틀은 뺀다
     end
   end
   for y=190,199 do local o=y*256
@@ -57,8 +57,19 @@ local RA=nil       -- 첫 호출의 복귀 주소(= 호출 지점 + 4) — 단�
 local state="boot"
 local need_write=false
 local VARNAME=os.getenv("SW_VARNAME")  -- 이름 변수 버퍼 `$1201`(토큰 `0e` 가 찍는 아이템 이름)에 넣을 대표 이름(hex) — 비어 있으면 변수로 시작하는 단위는 글자가 안 찍힌다(원판 롬도 같다)
+local FLAGS=os.getenv("SW_FLAGS")  -- 호출 단위의 분기를 맞추는 플래그(hex 번호[=0], 쉼표) — 번호 n 은 WRAM $0167+(n>>3) 의 비트 n&7
+local function setflags()
+  if not FLAGS then return end
+  for tok in FLAGS:gmatch("[^,]+") do
+    local n,v=tok:match("(%x+)=?(%d?)"); n=tonumber(n,16)
+    local a=0x167+(n>>3); local m=1<<(n&7); local c=rd(a)
+    if v=="0" then c=c&(~m&255) else c=c|m end
+    wr(a,c)
+  end
+end
 local function setptr()
   if ui>=1 and ui<=#UNITS then local a=UNITS[ui]; wr(0xA6,a&255); wr(0xA7,(a>>8)&255); wr(0xA8,(a>>16)&255); need_write=false
+    setflags()
     if VARNAME then local k=0; for h in VARNAME:gmatch("%x%x") do wr(0x1201+k,tonumber(h,16)); k=k+1 end end
   end
 end

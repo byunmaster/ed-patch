@@ -12,7 +12,13 @@ local function wr(a,v) emu.write(a,v,WR) end
 local function wr16(a,v) wr(a,v&255); wr(a+1,(v>>8)&255) end
 local LOG=io.open(OUT.."/log.txt","a")
 local function log(s) LOG:write(s.."\n"); LOG:flush() end
-local function shot(path)
+local NOSHOT=(os.getenv("SW_NOSHOT") or "0")=="1"  -- 완료 시험(촬영 안 함) — 멈춤(`_end` 가 timeout 으로 끝난 작업)만 한 장 남긴다
+local DUMP=tonumber(os.getenv("SW_DUMP") or "0"); if DUMP==0 then DUMP=nil end
+local WINKILL=(os.getenv("SW_WINKILL") or "0")=="1"  -- 진단: 적 칸을 죽음 표시(0x80)로 직접 쓴다
+local WRAMDUMP=tonumber(os.getenv("SW_WRAMDUMP") or "0"); if WRAMDUMP==0 then WRAMDUMP=nil end
+local WINMODE=(os.getenv("SW_WIN") or "0")=="1"    -- 완료 시험: 첫 메시지부터 적 HP 1 로 두고 이겨서 필드로 돌아오는지만 본다
+local function shot(path,force)
+  if NOSHOT and not force then return end
   local png=emu.takeScreenshot()
   local h=io.open(path,"wb"); h:write(png); h:close()
 end
@@ -71,6 +77,7 @@ emu.addMemoryCallback(function()
     st["cpu.pc"]=0x2663; st["cpu.k"]=0xC1; st["cpu.a"]=nOf(idx)
     emu.setState(st)
     wr16(0x1C24, (seed*40503+12345)&0xFFFF)
+    for a_,v_ in string.gmatch(os.getenv("SW_POKE") or "","(%x+)=(%x+)") do wr(tonumber(a_,16),tonumber(v_,16)) end  -- 진단: 전투 시작 직전 WRAM 주입("1325=20,…")
   end
 end, emu.callbackType.exec, 0xC19FDC, 0xC19FDC, emu.cpuType.snes)
 local SM=emu.memType.snesMemory
@@ -137,14 +144,34 @@ emu.addMemoryCallback(function()
   end
   cur={start=bf, n=msgn}   -- 찍기 전에 기다린다: 창 안쪽이 안정될 때까지(아래 NMI 쪽에서 찍는다)
   boost()
-  if state=="run" then
+  if state=="run" and not WINMODE then
     local ph=(bf//1000)%2
     enemies(function(b) wr16(b+6,9999); wr16(b+4, ph==0 and 9999 or 2500) end)
   else
-    enemies(function(b) wr16(b+4,1) end)
+    enemies(function(b) if WINKILL then wr16(b+4,0); wr(b,rd(b)|0x80) elseif rd16(b+4)>1 then wr16(b+4,1) end end)  -- 0 이 된 적을 1 로 되살리지 않는다(되살리면 쓰러뜨릴 수 없다)
   end
 end, emu.callbackType.exec, 0xC0A6E8, 0xC0A6E8, emu.cpuType.snes)
-emu.addEventCallback(function() f=f+1 end, emu.eventType.endFrame)
+local WTRP=tonumber(os.getenv("SW_WTRAP") or "0")  -- 진단: 이 주소(24비트 hex, WRAM 은 7E 뱅크)에 쓰기가 일어날 때 PC·값(앞 N개)
+if WTRP~=0 then local wn=0
+  emu.addMemoryCallback(function(addr,val)
+    wn=wn+1; if wn>(tonumber(os.getenv("SW_TRAPN") or "3")) then return end
+    local q=emu.getState(); log(string.format("WTRAP bf=%d pc=%02X:%04X val=%02X",bf,q["cpu.k"],q["cpu.pc"],val or -1))
+  end, emu.callbackType.write, WTRP, WTRP, emu.cpuType.snes)
+end
+local TRP=tonumber(os.getenv("SW_TRAP") or "0")  -- 진단: 이 SNES 주소(hex)에 처음 닿을 때 레지스터·스택을 로그로(멈춘 군에서 어디서 들어왔나)
+if TRP~=0 then local n=0
+  emu.addMemoryCallback(function()
+    if bf<(tonumber(os.getenv("SW_TRAPFROM") or "0")) then return end
+    n=n+1; if n>(tonumber(os.getenv("SW_TRAPN") or "3")) then return end
+    local q=emu.getState(); local sp=q["cpu.sp"]; local t={}
+    for k=1,24 do t[#t+1]=string.format("%02X",emu.read(sp+k,emu.memType.snesMemory,false)) end
+    log(string.format("TRAP bf=%d pc=%02X:%04X a=%04X x=%04X y=%04X sp=%04X stk=%s",bf,q["cpu.k"],q["cpu.pc"],q["cpu.a"],q["cpu.x"],q["cpu.y"],sp,table.concat(t," ")))
+  end, emu.callbackType.exec, TRP, tonumber(os.getenv("SW_TRAPEND") or TRP), emu.cpuType.snes)
+end
+emu.addEventCallback(function() f=f+1
+  if DUMP and f%DUMP==0 and (state=="run" or state=="finish") then local q=emu.getState(); local sp=q["cpu.sp"]; local t={}; for k=1,20 do t[#t+1]=string.format("%02X",emu.read(sp+k,emu.memType.snesMemory,false)) end
+    log(string.format("EF bf=%d %02X:%04X a=%04X x=%04X y=%04X d=%04X sp=%04X stk=%s",bf,q["cpu.k"],q["cpu.pc"],q["cpu.a"],q["cpu.x"],q["cpu.y"],q["cpu.d"],sp,table.concat(t," "))) end
+end, emu.eventType.endFrame)
 local nmi=0xC00FC0
 local nmi_full=nmi
 local STATEFILE=os.getenv("SW_STATE")
@@ -175,9 +202,16 @@ emu.addMemoryCallback(function()
       for _,e in ipairs(shots) do if e[1]==bf then shot(e[2]) elseif e[1]>bf then keep[#keep+1]=e end end
       shots=keep
     end
+    if WRAMDUMP and bf==WRAMDUMP then local h=io.open(OUT.."/wram_"..bf..".bin","wb"); local t={}; for a=0,0x1FFF do t[#t+1]=string.char(rd(a)) end; h:write(table.concat(t)); h:close() end  -- 진단: WRAM 0000~1FFF 통째
+    if DUMP and bf%DUMP==0 then  -- 진단: 8칸(아군 0~3·적 4~7)의 0x40B 상태를 로그로 — 멈춘 군의 원인 찾기(10-24)
+      local st_=emu.getState(); log(string.format("PC bf=%d %02X:%04X a=%04X",bf,st_["cpu.k"],st_["cpu.pc"],st_["cpu.a"]))
+      for i=0,7 do local b=0x050B+i*0x40; local t={}
+        for k=0,0x3F do t[#t+1]=string.format("%02X",rd(b+k)) end
+        log(string.format("S bf=%d slot=%d %s",bf,i,table.concat(t," "))) end
+    end
     if state=="run" and bf>=FRAMES then state="finish"; finish_at=bf; log("FINISH "..job.." bf="..bf) end
     if state=="finish" and bf>=finish_at+300 then
-      shot(string.format("%s/%05d_end.png",dir,bf))
+      shot(string.format("%s/%05d_end.png",dir,bf),true)
       log(string.format("END %d bf=%d msgs=%d timeout",job,bf,msgn))
       state="between"
       emu.loadSavestate(S0)
@@ -191,5 +225,6 @@ emu.addEventCallback(function()
   if S0==nil then
     for k,v in pairs(sched) do local L=v[2] or 20; if f>=k and f<k+L then b[v[1]]=true end end
   end
+  if WINMODE and S0~=nil and (state=="run" or state=="finish") and f%24<3 then b.a=true end  -- 승리·획득 메시지는 키 대기 — 완료 시험은 A 를 눌러 넘긴다
   emu.setInput(b,0)
 end, emu.eventType.inputPolled)
