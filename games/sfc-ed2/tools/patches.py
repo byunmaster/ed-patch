@@ -215,6 +215,38 @@ PATCHES += [
     (0xC0D835, bytes.fromhex("A9208D0F12"), b"\xea" * 5),
     (0xC0D87A, bytes.fromhex("A9208D0F12"), b"\xea" * 5),
     (0xC0D8BF, bytes.fromhex("A9208D0F12"), b"\xea" * 5),
+    # 🔴 가게 목록(`$C0:DCB7~DD88`)의 이름 칸 채우기 — 이름 뒤를 `80 00`(2B) 쌍으로 채워 색인 `$11` 에 닿으면(`cpy #$11 · beq`) 끝낸다. 원판 이름은 전부 짝수 바이트라 색인이 홀수로 떨어지지만,
+    # 우리 이름은 반각 공백이 있으면 홀수 바이트(끝 토큰 `06` 도 홀수 칸)라 색인이 짝수로 떨어져 **`$11` 에 영원히 못 닿고 무한 루프**(가게를 열면 멈춘다 — 10-24 가게 화면 시험에서 발견).
+    # `beq` → `bcs`(`$11` 이상이면 끝): 짝수일 땐 한 쌍을 더 써 색인 `$11`(다음 칸 가격 자리 — 뒤에서 가격 숫자가 덮어쓴다)까지 쓰고 끝난다.
+    (0xC0DD37, bytes([0xF0]), bytes([0xB0])),
+    # 🔴 전투 AI 가 이름 버퍼(`$063B`·`$067B`·`$06BB`·`$06FB`, 칸 0x40)에 쓰는 자리는 **원문 이름 길이**(가나 2B 씩)를 박아 둔다 — 「이름만(접미 떼고)」 `06` 을 끝에 쓰거나 접미 글자(`80 1A`)를 이어 붙인다.
+    # 우리 이름은 길이가 다르고(붉은 슬라임 11B = 원문 10B + 1) 접미가 반각 ASCII(1B)라 끝 토큰이 글자 코드 가운데(`84 24` → `84 06`)에 박혀 「임」 자리가 쓰지 않는 슬롯 `$0406` 의 깨진 글자로 찍혔다(10-24 붉은 슬라임 글줄 겹침).
+    # 군2(붉은 슬라임 — 본문 10B→11B): `$D4:3179`(접미 뗀 이름 끝 `$0645`→`$0646`) · `$D4:2F12`(접미 `80 1A`(2B) → ASCII `A` 한 자를 `$0646` 에) — 뒤의 `lda #$06 / sta $0647` 은 그대로 맞다.
+    # 군24(木人 4B→8B, ビルタラ 8B→6B): `$D4:54F5`(`$063F`→`$0643`) · `$D4:5501`(`$06C3`→`$06C1`).
+    (0xD42F12, bytes.fromhex("A2801A8E4506"), bytes.fromhex("A9418D4606EA")),
+    (0xD43179, bytes.fromhex("8D4506"), bytes.fromhex("8D4606")),
+    (0xD454F5, bytes.fromhex("8D3F06"), bytes.fromhex("8D4306")),
+    (0xD45501, bytes.fromhex("8DC306"), bytes.fromhex("8DC106")),
+    # 같은 부류를 군 → AI 스크립트 표(`$D4:2AFD`, 3B × 99 — 군 번호 순)로 찾아 맞췄다(10-24, 실행 없이 정적으로):
+    # · 군9 `$D4:3C17`(파워앵글 접미 뗀 이름 끝 +14 → +8) · 군36 `$D4:6E66`(독덩굴 +8 → +6) · 군62 `$D4:A617`(카자줌 접미 `80 1A` 둘 → ASCII `A` 를 +6, 끝 +7) · 군71 `$D4:B6CD`(+10 → +6)
+    # · 소환 군 넷 — 이름 버퍼 4번째(`$06FB`)의 접미 글자를 「다음 글자 카운터」로 읽고(`lda`) 올리고(`inc`) 처음 값을 심는다(`lda #글자 / sta`). 원문은 접미 글자 둘째 바이트(`80 1A`의 `1A`), 우리는 반각 ASCII 한 바이트라 자리가 다르다:
+    #   군52(단키 본문 4B → `$06FF`) · 군35(강철개미 8B → `$0703`) · 군47(데·옥토 8B → `$0703`) · 군40(블램나독 8B → `$0703` — 원문도 ASCII 접미라 글자 값은 그대로)
+    (0xD43C17, bytes.fromhex("8D8906"), bytes.fromhex("8D8306")),
+    (0xD46E66, bytes.fromhex("8D8306"), bytes.fromhex("8D8106")),
+    (0xD4A617, bytes.fromhex("A9808D4506A91A8D4606A9068D4706"), bytes.fromhex("A9418D4106A9068D4206EAEAEAEAEA")),
+    (0xD4B6CD, bytes.fromhex("8D4506"), bytes.fromhex("8D4106")),
+    (0xD48D0D, bytes.fromhex("AD0207"), bytes.fromhex("ADFF06")),
+    (0xD48D16, bytes.fromhex("EE0207"), bytes.fromhex("EEFF06")),
+    (0xD48D4A, bytes.fromhex("A91D8D0207"), bytes.fromhex("A9448DFF06")),
+    (0xD46C98, bytes.fromhex("AD0407"), bytes.fromhex("AD0307")),
+    (0xD46CA1, bytes.fromhex("EE0407"), bytes.fromhex("EE0307")),
+    (0xD46CD5, bytes.fromhex("A91D8D0407"), bytes.fromhex("A9448D0307")),
+    (0xD47602, bytes.fromhex("AD0907"), bytes.fromhex("AD0307")),
+    (0xD4760C, bytes.fromhex("8D0907"), bytes.fromhex("8D0307")),
+    (0xD476C3, bytes.fromhex("8D0907"), bytes.fromhex("8D0307")),
+    (0xD4822A, bytes.fromhex("AD0607"), bytes.fromhex("AD0307")),
+    (0xD48233, bytes.fromhex("EE0607"), bytes.fromhex("EE0307")),
+    (0xD484EC, bytes.fromhex("A91C8D0607"), bytes.fromhex("A9438D0307")),
     (ITEM_STUB_A, b"\xff" * len(_STUB_A), _STUB_A),
     (ITEM_STUB_B, b"\xff" * len(_STUB_B), _STUB_B),
 ]

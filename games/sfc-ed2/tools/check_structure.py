@@ -236,7 +236,7 @@ FALSE_TOKENS = {
 ALLOWED["가짜 토큰(코드 바이트)"] = ("코드 영역이 대사 단위로 잘못 읽힌 점프 토큰을 구조 대조에서 뺀다", "스캐너가 코드 바이트를 글자 구간으로 읽었다", "해당 주소 앞뒤가 코드(디스어셈블 확인)이고 번역 구간이 아니다")
 
 
-def check_outside(src: bytes, rom: bytes, units, spans) -> tuple[int, list]:
+def check_outside(src: bytes, rom: bytes, units, spans, code_patches=()) -> tuple[int, list]:
     """구간 밖 구조 토큰이 원본과 같은가 + 점프·호출 목적지가 다시 쓴 구간의 한가운데가 아닌가."""
     import bisect
 
@@ -254,6 +254,8 @@ def check_outside(src: bytes, rom: bytes, units, spans) -> tuple[int, list]:
                 break
             sp = inside(o)
             if sp is not None:
+                continue
+            if any(o < pe and ps < o + ln for ps, pe in code_patches):  # 코드 패치(`patches.PATCHES`)가 일부러 바꾼 자리 — 단위 찾기가 코드 조각을 대사로 잘못 센 자리(전투 AI 등)
                 continue
             n += 1
             if rom[o : o + ln] != src[o : o + ln]:
@@ -369,10 +371,16 @@ def run(rom: bytes, src: bytes | None = None, table: Path | None = None) -> dict
         if (common.off2snes(a) >> 16) == 0xD7:  # 오프닝·엔딩 문자열 — 포인터 표 항목을 돌리는 별도 길(장부 「포인터」)이라 여기선 제외
             rows.append({"a": a, "b": b, "kind": "D7(범위 밖)", "ok": True, "why": "", "added05": 0, "pad": 0, "header": 0})
             continue
-        rows.append(check_segment(src, rom, a, b, a6.get(a), key, key in seg_map))
-    rewritten = [(a, b) for a, b in spans if segs.seg_id(a) in seg_map]
+        pl = build.TABLE_PREFIX.get(key, 0)  # 머리의 문자열 포인터 표(번역이 안 덮는다) — 구간은 표 뒤에서 시작한다
+        r = check_segment(src, rom, a + pl, b, a6.get(a), key, key in seg_map)
+        r["a"] = a  # 장부 열쇠(구간 id)는 원래 시작 주소
+        rows.append(r)
+    rewritten = [(a + build.TABLE_PREFIX.get(segs.seg_id(a), 0), b) for a, b in spans if segs.seg_id(a) in seg_map]
     units = [(u0, u1) for u0, u1 in _s.all_units(src) if not segs.excluded(u0) and (common.off2snes(u0) >> 16) not in (0xC0, 0xC1, 0xD7)]
-    n_out, bad_out = check_outside(src, rom, units, rewritten)
+    import patches as _p
+
+    code_patches = [(common.snes2off(a_), common.snes2off(a_) + len(old)) for a_, old, _new in _p.PATCHES]
+    n_out, bad_out = check_outside(src, rom, units, rewritten, code_patches)
     kinds = Counter()
     for r in rows:
         if r["ok"] and r["kind"] != "제자리":

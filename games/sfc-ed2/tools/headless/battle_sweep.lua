@@ -29,6 +29,14 @@ local function nOf(idx)
   elseif idx<0x51 then return 0x40+idx-0x3D
   else return 0x60+idx-0x51 end
 end
+local WW=os.getenv("SW_WWATCH")  -- "시작,끝"(hex WRAM) 쓰기 로그 — 「W 프레임 주소=값 PC」
+if WW then
+  local a0,a1=WW:match("(%x+),(%x+)")
+  emu.addMemoryCallback(function(a,v)
+    local st=emu.getState()
+    log(string.format("W f=%d %04X=%02X %02X:%04X",f,a,v,st["cpu.k"] or 0,st["cpu.pc"] or 0))
+  end,emu.callbackType.write,tonumber(a0,16),tonumber(a1,16),emu.cpuType.snes,emu.memType.snesWorkRam)
+end
 local sched={ [100]={"start"}, [1700]={"a"}, [2300]={"down",5}, [2400]={"a"}, [3000]={"a"} }
 local S0=nil
 local job=0          -- 지금 도는 작업(1~#JOBS), 0=부팅 중
@@ -142,6 +150,34 @@ emu.addMemoryCallback(function()
     -- 다음 호출이 이전 문구를 지우기 직전 화면 — 글자가 나와 있으면 찍는다(출현 문구가 곧바로 다른 메시지로 바뀌는 그룹이 첫 쪽 없이 지나갔다)
     if cur.n==1 and lasttx>=TXMIN and lasth_cur~=lasth then shot(string.format("%s/%05d_m%d_sup.png",dir,bf,cur.n)); lasth=lasth_cur end
   end
+  -- 진단(10-24 붉은 슬라임): 이름 버퍼(`$063B` 계열) 바이트를 로그로 남기고 SW_NAMEMODE=nospace(공백 삭제)·fwspace(공백→전각 공백 `80 00`)로 바꿔 글줄 겹침이 공백 탓인지 가른다
+  if (p==0x63B or p==0x67B or p==0x6BB or p==0x6FB) then
+    local mode=os.getenv("SW_NAMEMODE")
+    local t={}; local i=0
+    while i<24 do local v=rd(p+i); t[#t+1]=v; if v==6 or v==0 then break end; i=i+1 end
+    local hex={} for _,v in ipairs(t) do hex[#hex+1]=string.format("%02X",v) end
+    log(string.format("NAME %06X bf=%d %s",p,bf,table.concat(hex," ")))
+    local raw={} for k=0,19 do raw[#raw+1]=string.format("%02X",rd(p+k)) end
+    log(string.format("NAMERAW %06X bf=%d %s",p,bf,table.concat(raw," ")))
+    if mode and mode:sub(1,3)=="sub" then  -- 진단: `84 06`(「임」 코드) → `84 NN`(sub07 = 07)
+      local nn=tonumber(mode:sub(4),16)
+      for k=0,18 do if rd(p+k)==0x84 and rd(p+k+1)==0x06 then wr(p+k+1,nn); log("NAME sub "..k) end end
+    end
+    if mode=="nospace" or mode=="fwspace" then
+      local out={}
+      local k=1
+      while k<=#t do
+        local v=t[k]
+        if v==0x20 then
+          if mode=="fwspace" then out[#out+1]=0x80; out[#out+1]=0x00 end
+        elseif v>=0x80 and v<=0x87 then out[#out+1]=v; out[#out+1]=t[k+1]; k=k+1
+        else out[#out+1]=v end
+        k=k+1
+      end
+      for j,v in ipairs(out) do wr(p+j-1,v) end
+      log("NAME->"..mode)
+    end
+  end
   cur={start=bf, n=msgn}   -- 찍기 전에 기다린다: 창 안쪽이 안정될 때까지(아래 NMI 쪽에서 찍는다)
   boost()
   if state=="run" and not WINMODE then
@@ -158,6 +194,32 @@ if WTRP~=0 then local wn=0
     local q=emu.getState(); log(string.format("WTRAP bf=%d pc=%02X:%04X val=%02X",bf,q["cpu.k"],q["cpu.pc"],val or -1))
   end, emu.callbackType.write, WTRP, WTRP, emu.cpuType.snes)
 end
+-- 진단: 주소 범위(SW_WRANGE="시작-끝" hex 24비트, WRAM 은 7E/7F 뱅크)의 쓰기를 전투 프레임 SW_WFROM~SW_WTO 사이에 전부(최대 SW_WMAX 줄) 로그 — 누가 어느 타일을 덮는지(10-24 붉은 슬라임 글줄 겹침)
+local WRG=os.getenv("SW_WRANGE")
+if WRG then
+  local lo,hi=WRG:match("(%x+)-(%x+)"); lo=tonumber(lo,16); hi=tonumber(hi,16)
+  local wf,wt,wm=tonumber(os.getenv("SW_WFROM") or "0"),tonumber(os.getenv("SW_WTO") or "99999"),tonumber(os.getenv("SW_WMAX") or "4000"); local wc=0
+  emu.addMemoryCallback(function(addr,val)
+    if bf<wf or bf>wt then return end
+    wc=wc+1; if wc>wm then return end
+    local q=emu.getState()
+    local pb=os.getenv("SW_WPCBANK")  -- 진단: 이 뱅크(hex, 콤마)의 PC 쓰기만 — 전투 AI(`$D4`·`$D5`)가 이름 버퍼를 건드리는 곳
+    if pb then local ok=false for b in pb:gmatch("%x+") do if tonumber(b,16)==q["cpu.k"] then ok=true end end if not ok then wc=wc-1 return end end
+    log(string.format("WR j=%d bf=%d pc=%02X:%04X addr=%06X val=%02X",(JOBS[job] and JOBS[job][1]) or -1,bf,q["cpu.k"],q["cpu.pc"],addr,val or -1))
+  end, emu.callbackType.write, lo, hi, emu.cpuType.snes)
+end
+-- 진단: 전투 프레임 SW_VRAMDUMP(콤마 목록)에 캔버스(WRAM $7F:BF28~$C627)와 VRAM 전체를 파일로 — 글줄 타일이 VRAM 에서 덮였는지(10-24)
+local VD={} for v in (os.getenv("SW_VRAMDUMP") or ""):gmatch("%d+") do VD[tonumber(v)]=true end
+emu.addEventCallback(function()
+  if VD[bf] then
+    local h=io.open(string.format("%s/canvas_%05d.bin",OUT,bf),"wb"); for i=0,0x6FF do h:write(string.char(emu.read(0x7FBF28+i,emu.memType.snesMemory,false))) end h:close()
+    local g=io.open(string.format("%s/vram_%05d.bin",OUT,bf),"wb"); for i=0,0xFFFF do g:write(string.char(emu.read(i,emu.memType.snesVideoRam,false))) end g:close()
+    log("VRAMDUMP bf="..bf)
+  end
+end, emu.eventType.endFrame)
+-- 진단: 이 주소들(SW_EXECLIST, hex 콤마)에 실행이 닿으면 군·프레임을 로그 — 전투 AI 의 이름 버퍼 쓰기 자리가 어느 군에서 도는지(10-24)
+for v in (os.getenv("SW_EXECLIST") or ""):gmatch("%x+") do local ad=tonumber(v,16)
+  emu.addMemoryCallback(function() log(string.format("EXEC %06X j=%d bf=%d",ad,(JOBS[job] and JOBS[job][1]) or -1,bf)) end, emu.callbackType.exec, ad, ad, emu.cpuType.snes) end
 local TRP=tonumber(os.getenv("SW_TRAP") or "0")  -- 진단: 이 SNES 주소(hex)에 처음 닿을 때 레지스터·스택을 로그로(멈춘 군에서 어디서 들어왔나)
 if TRP~=0 then local n=0
   emu.addMemoryCallback(function()

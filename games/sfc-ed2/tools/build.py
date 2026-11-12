@@ -47,6 +47,11 @@ EXCEPT = [(CHK_OFF, CHK_OFF + 4)] + patches.EXCEPT
 NOOP = 0x16  # 대사 제어코드 `$16` = 핸들러가 `rts` 뿐인 빈 토큰(남는 자리 채움)
 TRAMP = patches.TRAMP_CODE
 
+# 구간 머리에 붙은 문자열 포인터 표의 바이트 수 — 가게 대사(「어느 걸 파시겠습니까요?」 따위)는 [포인터 3~4개 + 문자열들] 꼴이고, 표 머리 주소를 코드가 `lda #lo/hi/bank` 로 읽는다.
+# 번역이 짧으면 제자리라 표가 그대로지만 길면 구간 머리를 트램펄린으로 덮어 표가 날아간다(`$C49552`·`$C5BF71`·`$C6AAA0`) — 그래서 이 구간은 **표 뒤(진짜 시작)** 에서 시작한다.
+# 나머지 표 구간(`$C2D63E`·`$C494E1`·`$C5A640`·`$C5BFC1`)은 번역 글에 표 바이트(`<hh …>`)를 그대로 싣는다(제자리에 들어가 표가 보존된다).
+TABLE_PREFIX = {"$C49552": 8, "$C5BF71": 6, "$C6AAA0": 6}
+
 # 확장 뱅크 배치: `$D8` = 글꼴(0x0000~0x8FFF) + 꼬리(0xA000~: 창 블록·사전) · `$D9~$DF` = 대사 번역문
 TAIL_START = (patches.FONT_BANK << 16) | 0xA000
 TAIL_END = (patches.FONT_BANK << 16) | 0xEFFF  # $D8:F000~ 은 조사 훅 표
@@ -282,6 +287,19 @@ def jump_leads(src: bytes, seg_map: dict, sg: dict, names: dict, e1w: dict) -> d
                 if tk in seg_map and st[last] != (0, 0):
                     out[tk] = typeset.worse(out.get(tk), st[last])
     return out
+
+
+def call_lead(src: bytes, a: int, seg_map: dict, names: dict, tw: dict) -> tuple[int, int] | None:
+    """구간 바로 앞이 호출(`$10 lo hi`)이면 부른 조각(이름 「아트라스」·「왕자님」)이 이 줄에 먼저 나간다 — 그 폭만큼 이 구간 첫 줄이 이미 차 있다(안 세면 엔진이 낱말 가운데서 끊는다 — 마스터 10-25 「여행을」 홀로 한 줄)."""
+    if a < 3 or src[a - 3] != 0x10:
+        return None
+    bank = (common.off2snes(a) >> 16) & 0xFF
+    tgt = segs.seg_id(common.snes2off((bank << 16) | src[a - 2] | src[a - 1] << 8))
+    v = seg_map.get(tgt)
+    if not v:
+        return None
+    st = typeset.end_state(resolve_josa(v["kr"], names), tw)
+    return st if st != (0, 0) else None
 
 
 def call_texts(text: str, seg_off: int, seg_map: dict, sg: dict) -> dict[str, str]:
@@ -656,15 +674,22 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             new = bytearray()
             for si, sb in enumerate(ss):
                 over = mon.get("over", {}).get(f"{gi}:{si}")
+                # 이름 뒤에 제어 토큰 꼬리(`0C …` — 군33 넷째 「ガードD」 뒤 `0C 80 7E 80`)가 붙은 원문은 꼬리를 그대로 두고 앞만 번역한다(꼬리가 끼면 접미 판별이 깨져 일본어가 남았다 — 10-24)
+                cut = next((o for o, _ln in script.tokens(sb, 0, len(sb)) if sb[o] == 0x0C), None)
+                ntail = bytes(sb[cut:]) if cut is not None else b""
+                sb = bytes(sb[:cut]) if cut is not None else sb
                 jp = monsters.decode(sb, src)
                 base, suf = monsters.split_name(jp)
                 krn = over if over is not None else _mon_lookup(canon, base)
                 if krn:
-                    body = kr.encode(krn + suf, alloc)
+                    body = kr.encode(krn + suf, alloc) + ntail
+                    if gi == 2 and len(body) != 12:  # 분열 표지 코드(`$D4:2FEC`·`$D4:3011`)가 이름 버퍼 +12 에 박는다 — 이름이 12B 가 아니면 표지가 이름 속에 들어간다
+                        raise SystemExit(f"군2 {si}번 이름 {len(body)}B ≠ 12B — 슬라임 분열 표지 자리(patches.py)를 다시 본다")
                 else:
-                    body = sb  # 정본에 없다 — 원문 그대로(관리자에게 후보로)
+                    body = sb + ntail  # 정본에 없다 — 원문 그대로(관리자에게 후보로)
                     stats.setdefault("missing", []).append(("monster", f"{gi}:{si}", base))
                 new += bytes([len(body)]) + body
+            new += b"\x00" * (4 - len(ss))  # 원판은 4마리 미만 군에 길이 0 칸을 채워 둔다 — 빈 슬롯의 이름 복사(`$C1:6570`)가 거기서 멈춘다. 빼면 다음 군의 이름이 빈 슬롯에 복사돼 군82 전투가 멈춘다(10-24)
             dead.append((common.snes2off(0xCB0000 | w), common.snes2off(0xCB0000 | w) + sum(1 + len(sb) for sb in ss)))
             addr = local.put(0xCB, bytes(new))
             rom[t + 2 * gi : t + 2 * gi + 2] = bytes([addr & 0xFF, addr >> 8])
@@ -725,6 +750,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
     e1w = e1_texts(src, seg_map)
     sg = {segs.seg_id(a): (a, b) for a, b in segs.segments(src)}
     typeset_end: dict[int, tuple[int, int]] = {}  # 구간 끝 오프셋 → 끝난 자리(줄 폭, 쪽 줄 수) — 바로 이어지는 다음 구간의 시작 자리
+    typeset.GLUE_PAIRS = typeset.compound_pairs(resolve_josa(v["kr"], names) for v in seg_map.values())  # 굳은 명사구는 줄 사이에서 안 갈린다(규칙 2-16 e) — 줄·쪽 수가 안 늘 때만
     jump_lead = jump_leads(src, seg_map, sg, names, e1w)  # 점프·호출로 이어 붙는 조각(공유 꼬리)이 앞 조각 줄에서 이어 쓰는 자리 — 가장 빡빡한 호출자 기준
     for key, v in sorted(seg_map.items()):
         if key not in sg:
@@ -734,6 +760,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             raise SystemExit(f"구간 {key}: 원문 해시 불일치({v.get('h')} ≠ {segs.src_hash(src, a, b)}) — textmap 이 낡았다")
         if key in off_keys or "*" in off_keys:  # 되돌리기 스위치(ED_RELOC_OFF) — 이 구간은 원문 바이트 그대로 둔다
             continue
+        a += TABLE_PREFIX.get(key, 0)  # 앞 N바이트는 문자열 포인터 표 — 가게 코드가 표 머리 주소를 즉치로 써서 읽는다. 번역이 표를 덮으면(트램펄린 머리 4B) 포인터가 깨진다
         text = resolve_josa(v["kr"], names)
         dead.append((a, b))
         rv = f"ED_RELOC_OFF={key} → 원문 유지(일본어 노출)"
@@ -763,7 +790,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             continue
         if 0xC2 <= (common.off2snes(a) >> 16) <= 0xCB and not v.get("raw"):  # $C2~$CB 대사 — 대사창 규격으로 조판(`raw: true` 면 그대로)
             tw = {**names, **e1w, **call_texts(text, a, seg_map, sg)}
-            pv = typeset.worse(typeset_end.get(a), jump_lead.get(key))  # 바로 앞 구간이 이 자리에서 이어지거나(이름 변수 뒤 조각) 점프로 들어오면(공유 꼬리) 그 줄의 남은 폭에서 시작한다
+            pv = typeset.worse(typeset.worse(typeset_end.get(a), jump_lead.get(key)), call_lead(src, a, seg_map, names, tw))  # 바로 앞 구간이 이 자리에서 이어지거나(이름 변수 뒤 조각) 점프로 들어오면(공유 꼬리) 그 줄의 남은 폭에서 시작한다
             pre05 = sum(1 for o, _ln in script.tokens(src, a, b) if o < b and src[o] == 0x05)  # 원문 구간이 이미 가진 쪽 넘김 — 그보다 늘어난 몫이 재배치(번역자가 소스에 더한 것 + 조판기가 넘침에서 넣은 것)
             typeset.RULE = f"쪽:{key}" not in off_keys and "쪽:*" not in off_keys
             text = typeset.typeset(text, tw, pv)
@@ -942,8 +969,8 @@ def _protected() -> set[int]:
     out = {0}
     for i, ch in enumerate(glyphmap.TABLE):
         o = ord(ch)
-        if not (0x3041 <= o <= 0x30FF or 0x4E00 <= o <= 0x9FFF):
-            out.add(i)
+        if not (0x3041 <= o <= 0x30FF or 0x4E00 <= o <= 0x9FFF) or o in (0x309B, 0x309C):
+            out.add(i)  # ゛·゜(색인 14·15)는 슬라임 분열 표지로 코드(`$D4:2FF1`·`$D4:3016`)가 직접 박는다 — 원판 모양이 「A′」·「A″」 틱이라 한글(「·」·「…」)로 재활용하면 「A·」·「A…」 로 보인다(마스터 10-25)
     return out
 
 

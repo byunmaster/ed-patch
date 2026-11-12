@@ -28,7 +28,8 @@ def run(rule: bool) -> tuple[dict, dict]:
         text = build.resolve_josa(v["kr"], names)
         tw = {**names, **e1w, **build.call_texts(text, a, seg_map, sg)}
         pv = end.get(a)
-        res[key] = T.typeset(text, tw, T.end_state(pv[0], pv[1]) if pv else None)
+        lead = T.worse(T.end_state(pv[0], pv[1]) if pv else None, build.call_lead(src, a, seg_map, names, tw))
+        res[key] = T.typeset(text, tw, lead)
         end[b] = (res[key], tw)
         spl[key] = list(T.SPLITS)
     T.RULE = True
