@@ -143,8 +143,8 @@ HUD_COUNT = 64
 
 
 def scan_hud(rom: bytes) -> list[str]:
-    """2-8 HUD 지명 박스 가운데 맞춤(마스터 11-04/05) — 새 표의 지명마다 (앞 패딩 + 글자 폭/2) 가 박스 가운데(36px)에서 4px(반각 공백 한 칸의 반)를 넘게 어긋나면 센다.
-    글자가 박스보다 넓은 이름(길 이름)은 가운데 맞출 수 없어 뺀다. 토큰은 전각 `$80~$87`+1B(2B 12px) · 그 밖 1B 8px."""
+    """2-8 HUD 지명 박스 가운데 맞춤(마스터 11-04/05) — 새 표의 지명마다 (앞 패딩 + 글자 폭/2) 가 박스 가운데(36px)에서 딱 가운데(±1px)가 아니면서 왼쪽으로 3.5px 넘게 쏠려도(왼 ≤ 오, 마스터 11-08) 센다.
+    글자가 박스보다 넓은 이름(길 이름)은 가운데 맞출 수 없어 뺀다. 토큰은 전각 `$80~$87`+1B(2B 12px) · `$14` 4px · 그 밖 1B 8px."""
     base = common.snes2off(HUD_TABLE)
     out = []
     for i in range(HUD_COUNT):
@@ -156,18 +156,21 @@ def scan_hud(rom: bytes) -> list[str]:
             toks.append(rom[a : a + n])
             a += n
         lead = 0
-        while lead < len(toks) and toks[lead] in (b" ", b"\x80\x00"):
+        while lead < len(toks) and toks[lead] in (b" ", b"\x80\x00", b"\x14"):
             lead += 1
         end = len(toks)
-        while end > lead and toks[end - 1] in (b" ", b"\x80\x00"):
+        while end > lead and toks[end - 1] in (b" ", b"\x80\x00", b"\x14"):
             end -= 1
-        px = lambda ts: sum(12 if len(t) == 2 else 8 for t in ts)
+        px = lambda ts: sum(12 if len(t) == 2 else 4 if t == b"\x14" else 8 for t in ts)
         core, pad = px(toks[lead:end]), px(toks[:lead])
         if core == 0 or core >= HUD_BOX_PX:
             continue
         off = pad + core / 2 - HUD_BOX_PX / 2
-        if abs(off) > 4:
-            out.append(f"HUD[{i}] 앞 패딩 {pad}px · 글자 {core}px · 가운데 어긋남 {off:+.1f}px")
+        # 마스터 11-08: 딱 가운데가 안 되면 왼쪽 여백을 더 짧게(왼 ≤ 오) — 패딩은 4px 단위(`$14` 4px 빈 칸 · 반각 8 · 전각 12)라 모자람은 4px 미만이다.
+        # 획이 칸 오른쪽 끝에서 1px 비므로 off 는 (패딩−want)−0.5: 딱 가운데(±1px, off −1~0)거나 왼쪽 여백이 짧아야(off −3.5 이상 0 이하, 4px 단위 한계) 한다.
+        bad = abs(off + 0.5) > 2.0  # 마스터 11-09 「최대한 가운데」: 패딩이 want 에 가장 가까운 4px 배수(거리 ≤ 2px)
+        if bad:
+            out.append(f"HUD[{i}] 앞 패딩 {pad}px · 글자 {core}px · 가운데 어긋남 {off:+.1f}px (최대한 가운데 — 거리 ≤ 2px)")
     return out
 
 

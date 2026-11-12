@@ -62,6 +62,28 @@ if RW then
     if not seen[key] then seen[key]=true; rh:write(k.." "..key.."\n"); rh:flush() end
   end,emu.callbackType.read,tonumber(a0,16),tonumber(a1,16),emu.cpuType.snes,emu.memType.snesWorkRam)
 end
+-- SW_XWATCH="시작,끝[;시작,끝…]"(hex 24비트 SNES 주소) — 구간의 **실행**을 (PC)별 한 번씩 xw.txt 로(「죽은 코드·빈 공간」 판정의 반증 — 원판 롬으로 주요 흐름을 돌려 0 히트인지 본다)
+local XW=os.getenv("SW_XWATCH")
+if XW then
+  local xh=io.open(OUT.."/xw.txt","w")
+  local seen={}
+  for s0,e0 in XW:gmatch("(%x+),(%x+)") do
+    emu.addMemoryCallback(function(a,v)
+      if not seen[a] then seen[a]=true; xh:write(string.format("%d %06X\n",f-OFF,a)); xh:flush() end
+    end,emu.callbackType.exec,tonumber(s0,16),tonumber(e0,16),emu.cpuType.snes)
+  end
+end
+-- SW_ROMREAD="시작,끝[;시작,끝…]"(hex 24비트 SNES 주소) — 구간의 **읽기**를 주소별 한 번씩 rr.txt 로(데이터 구간이 읽히는지 — 「빈 공간」 판정의 반증, 양성 대조는 바로 앞 원판 데이터 구간을 같이 준다)
+local RR=os.getenv("SW_ROMREAD")
+if RR then
+  local rh=io.open(OUT.."/rr.txt","w")
+  local seen={}
+  for s0,e0 in RR:gmatch("(%x+),(%x+)") do
+    emu.addMemoryCallback(function(a,v)
+      if not seen[a] then seen[a]=true; local st=emu.getState(); rh:write(string.format("%d %06X %02X:%04X\n",f-OFF,a,st["cpu.k"] or 0,st["cpu.pc"] or 0)); rh:flush() end
+    end,emu.callbackType.read,tonumber(s0,16),tonumber(e0,16),emu.cpuType.snes)
+  end
+end
 if TR then
   local function cb(a,v)
     local k=f-OFF
@@ -106,8 +128,19 @@ emu.addEventCallback(function()
   if os.getenv("SW_DUMPSRM") and f==(tonumber(os.getenv("SW_MAXF") or "4300")) then
     local fh=io.open(os.getenv("SW_DUMPSRM"),"wb"); for i=0,0x1FFF do fh:write(string.char(emu.read(i,SR,false))) end fh:close(); log("SRM dumped")
   end
-  if os.getenv("SW_POKE") and f%20==0 and k>=(tonumber(os.getenv("SW_POKEFROM") or "0")) then  -- 진단·플레이: WRAM 주입("addr=val,…" hex, 20프레임마다) — 돈·경험치 부스트용(플래그·진행 변수는 만지지 않는다)
-    for a_,v_ in string.gmatch(os.getenv("SW_POKE"),"(%x+)=(%x+)") do wr(tonumber(a_,16),tonumber(v_,16)) end
+  if os.getenv("SW_POKE") and f%20==0 and k>=(tonumber(os.getenv("SW_POKEFROM") or "0")) and k<=(tonumber(os.getenv("SW_POKETO") or "99999999")) then  -- 진단·플레이: WRAM 주입("addr=val,…" hex, 20프레임마다) — 돈·경험치 부스트용(플래그·진행 변수는 만지지 않는다)
+    for a_,v_ in string.gmatch(os.getenv("SW_POKE"),"(%x+)=(%x+)") do
+      local ad=tonumber(a_,16)
+      -- SW_POKESTABLE=1: 값이 직전 틱과 같을 때만 쓴다 — 적이 회복하는 동안(HP 가 틱마다 올라간다) 덮어쓰면 회복 처리가 끝나지 않는다
+      if os.getenv("SW_POKESTABLE") then
+        local cur=rd(ad); PSL=PSL or {}
+        if PSL[ad]==cur then wr(ad,tonumber(v_,16)) end
+        PSL[ad]=rd(ad)
+      else wr(ad,tonumber(v_,16)) end
+    end
+  end
+  if os.getenv("SW_POKEOR") and f%20==0 and k>=(tonumber(os.getenv("SW_POKEFROM") or "0")) then  -- 기존 값에 비트를 OR("addr=bits,…" hex) — 적 칸 죽음 표시(0x80)처럼 값을 덮지 않고 켠다(battle_sweep 킬 모드와 같다)
+    for a_,v_ in string.gmatch(os.getenv("SW_POKEOR"),"(%x+)=(%x+)") do wr(tonumber(a_,16),rd(tonumber(a_,16))|tonumber(v_,16)) end
   end
   if f>(tonumber(os.getenv("SW_MAXF") or "4300")) then log("DONE"); LOG:close(); emu.stop(0) end
 end, emu.eventType.endFrame)
@@ -174,6 +207,21 @@ if os.getenv("SW_SHOPHIT") then
     for _,h in ipairs(hits) do
       local d=f-h
       if d>=30 and d<=600 and d%30==0 then shot(string.format("shop%d_%d",h-OFF,d)) end
+    end
+  end,emu.eventType.endFrame)
+end
+
+-- SW_PCSAMP="시작,끝,간격"(OFF 기준 프레임) — 프레임 끝마다(간격) PC·스택 12바이트를 pcsamp.txt 에 — 멈춤(무한 루프) 자리 찾기
+if os.getenv("SW_PCSAMP") then
+  local a0,a1,st0=os.getenv("SW_PCSAMP"):match("(%-?%d+),(%-?%d+),(%d+)")
+  a0,a1,st0=tonumber(a0),tonumber(a1),tonumber(st0)
+  local PS=io.open(OUT.."/pcsamp.txt","a")
+  emu.addEventCallback(function()
+    local k=f-OFF
+    if k>=a0 and k<=a1 and (k-a0)%st0==0 then
+      local q=emu.getState(); local sp=q["cpu.sp"]; local t={}
+      for i=1,12 do t[#t+1]=string.format("%02X",emu.read(sp+i,emu.memType.snesMemory,false)) end
+      PS:write(string.format("%d %02X:%04X sp=%04X %s\n",k,q["cpu.k"],q["cpu.pc"],sp,table.concat(t," "))); PS:flush()
     end
   end,emu.eventType.endFrame)
 end
@@ -258,6 +306,38 @@ if SCD then
       end
     end
   end,emu.callbackType.exec,0xC00FC0,0xC00FC0,emu.cpuType.snes)
+end
+-- SW_PC="프레임;SNES주소hex[:값]|…"(OFF 기준 · :값이면 A 레지스터도 쓴다 — 조우 번호 따위) — 이벤트 루틴(`jml $C1:2663` 전투 호출을 낀 `$C4:8600` 따위)을 필드에서 직접 실행한다(PC 만 바꾼다, 8비트 모드). 전투 뒤 이음 글을 닿게 하는 시험용 — 진행 변수는 실제와 다르므로 화면 문안 근거로만.
+local SPC=os.getenv("SW_PC")
+if SPC then
+  local jobs={}
+  for jf,ad,ra in SPC:gmatch("(%d+);(%x+):?(%x*)") do jobs[#jobs+1]={tonumber(jf),tonumber(ad,16),false,ra~="" and tonumber(ra,16) or nil} end
+  emu.addMemoryCallback(function()
+    for _,jb in ipairs(jobs) do
+      if not jb[3] and f>=OFF+jb[1] then
+        jb[3]=true
+        local st=emu.getState(); st["cpu.pc"]=jb[2]&0xFFFF; st["cpu.k"]=(jb[2]>>16)&255; st["cpu.ps"]=(st["cpu.ps"] or 0)|0x30; st["cpu.dbr"]=0; if jb[4] then st["cpu.a"]=jb[4] end
+        emu.setState(st)
+        local h=io.open(OUT.."/move.txt","a"); h:write(string.format("PC f=%d %06X\n",f-OFF,jb[2])); h:close()
+        return
+      end
+    end
+  end,emu.callbackType.exec,0xC00FC0,0xC00FC0,emu.cpuType.snes)
+end
+-- SW_EXECPOKE="프레임;주소;wram=값,wram=값" — 그 프레임 이후 처음 그 주소가 **실행**될 때 WRAM 을 쓴다(말 걸기 흐름이 포인터를 읽기 직전에 바꿔 끼운다 — 여관 주인 대사를 실제 말 걸기 경로로 부르려고)
+local XPK=os.getenv("SW_EXECPOKE")
+if XPK then
+  for one in XPK:gmatch("[^|]+") do  -- `|` 로 여럿(장 이음 시험: 장마다 한 번씩)
+    local fr,ad,lst=one:match("(%d+);(%x+);(.+)")
+    fr=tonumber(fr); ad=tonumber(ad,16)
+    local done=false
+    emu.addMemoryCallback(function()
+      if done or f<OFF+fr then return end
+      done=true
+      for wa,wv in lst:gmatch("(%x+)=(%x+)") do emu.write(tonumber(wa,16),tonumber(wv,16),emu.memType.snesWorkRam) end
+      local h=io.open(OUT.."/move.txt","a"); h:write(string.format("EXECPOKE f=%d %06X\n",f-OFF,ad)); h:close()
+    end,emu.callbackType.exec,ad,ad,emu.cpuType.snes)
+  end
 end
 local SMG=os.getenv("SW_MSG")
 if SMG then

@@ -35,7 +35,7 @@ class T(unittest.TestCase):
         self.assertEqual(hits("C20000", "아트라스, 일행은 쓰러졌다.")["K13_conn"], [])
 
     def test_hud(self):
-        # 합성 롬 — 지명 64칸이 전부 같은 문자열을 가리킨다: 글자 4자(48px) 앞에 전각 공백 하나(12px)면 가운데(24px 여백), 패딩 없으면 어긋남
+        # 합성 롬 — 지명 64칸이 전부 같은 문자열을 가리킨다: 글자 4자(48px)는 want 11.5 → 전각 공백(12px, 딱 가운데 ±1px)이 맞고, 반각 공백(8px, 4px 모자람)은 왼으로 너무 쏠려 어긋남, 패딩 없음(−24px)도 어긋남
         def rom_with(entry: bytes) -> bytes:
             rom = bytearray(0x190000)
             base = C.common.snes2off(C.HUD_TABLE)
@@ -45,7 +45,10 @@ class T(unittest.TestCase):
             return bytes(rom)
 
         word = bytes.fromhex("83c28398836b84f7")  # 글자 4자(2B씩)
+        self.assertEqual(len(C.scan_hud(rom_with(b" " + word + b"  "))), C.HUD_COUNT)
         self.assertEqual(C.scan_hud(rom_with(b"\x80\x00" + word + b"  ")), [])
+        self.assertEqual(len(C.scan_hud(rom_with(b"\x80\x00\x80\x00" + word + b"  "))), C.HUD_COUNT)  # 24px 패딩은 오른쪽으로 쏠린다
+        self.assertEqual(C.scan_hud(rom_with(b"\x14" + b" " + word + b"  ")), [])  # `$14` 4px 빈 칸 12px = 전각 공백과 같다
         self.assertEqual(len(C.scan_hud(rom_with(word + b"    "))), C.HUD_COUNT)
         self.assertEqual(C.scan_hud(rom_with(bytes.fromhex("83c2") * 7)), [])  # 박스보다 넓은 이름은 센 대상이 아니다
 

@@ -75,11 +75,11 @@ def row_text(d: bytes, raw: bytes) -> str:
 
 
 def px_width(row: bytes) -> int:
-    """줄의 화면 가로(px): 전각 12 · 반각 8 · 제어 0."""
+    """줄의 화면 가로(px): 전각 12 · 반각 8 · 4px 빈 칸(`$14`) 4 · 그 밖 제어 0."""
     i, w = 0, 0
     while i < len(row) and row[i] != 0:
-        ln = script.token_len(row, i) or 1
-        w += 12 if (0x80 <= row[i] < 0x88 or 0xE2 <= row[i] < 0xF0) else (8 if 0x20 <= row[i] < 0xE0 else 0)
+        ln = 1 if row[i] == 0x14 else (script.token_len(row, i) or 1)  # UI 출력기에서 `$14` 는 1바이트 4px 빈 칸 — 대사 쪽 조건 코드(3B)로 읽으면 뒤 글자를 삼킨다
+        w += 12 if (0x80 <= row[i] < 0x88 or 0xE2 <= row[i] < 0xF0) else (8 if 0x20 <= row[i] < 0xE0 else (4 if row[i] == 0x14 else 0))  # `$14` = 4px 빈 칸(patches.SKIP4_CODE)
         i += ln
     return w
 

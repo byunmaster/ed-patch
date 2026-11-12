@@ -10,6 +10,10 @@
   h2 balance   창 분배 — 창이 둘 이상인 구간에서 창 수를 안 늘리고 고르게 나눌 수 있는데 창 줄 수 차가 2 이상이다(쪽 경계는 문장 끝·절 경계로만 옮긴다 — 지표만, 재배치는 안 한다)
   i lean       붙임 포기 — 2-6 보조용언 붙임을 지키면 원문 창보다 쪽이 느는 구간이 붙임을 포기하고 창 수를 지킨 수(한도, 규칙 2-17)
   j fewer     창 줄임 — 조판 결과의 본문 창(쪽) 수가 입력 문안(원문 창 구조)보다 적다(원문 두 창을 한 창에 합쳤다, 규칙 2-17). 끝 `<05>` 반복은 창이 아니라 센 대상 밖
+  k joined    고정 배치 합침 — 입력 문안의 빈 줄·둘째 줄부터의 앞 공백 줄(가운데 맞춤 카드·간판 따위의 고정 배치)이 조판 결과에서 줄었다(손 개행을 문장 중간 줄바꿈으로 읽어 합쳤다, 3장 카드 11-06). 의도한 자리는 textmap `raw`
+  l more      창 늘어남(상한) — 조판 결과의 본문 창 수가 입력(원문 창 구조)보다 많다. **전수 194 가 용량 때문**이다 — 규칙을 끈 기본 조판(`RULESOFF`)도 같은 창 수라 쪽 위치만 다시 짜서 드는 곳이 0(11-06 전수). 한국어가 원문 칸보다 길어 3줄 쪽에 안 들어가는 곳이고, 문안을 줄이지 않는 것이 규칙 2-17(마스터 10-31)이라 줄이지 않는다 — 늘면 실패(래칫)
+  m emptywin  빈 창 — 조판 결과에 본문 가운데 `<05><05>`(내용 없는 대사창, ▼만 기다린다)가 있는데 입력엔 없다(쪽 끝 앞 개행이 줄 배치와 겹침, 마스터 실플레이 11-06 빈 대사창). 0 이어야 한다
+  n blankline 빈 줄 개행(규칙 2-18, 마스터 11-08) — 쪽(둘째 창부터) 머리가 빈 줄이거나 창 안쪽에 빈 줄이 낀다. 구간 머리의 `\\n` 은 화자 줄 개행(헤더가 앞 조각에 있다)이라 화면에 빈 줄이 안 생겨 센 대상 밖(원판도 같은 구조 — 11-08 화면 확인)
   e compound   굳은 [명사+명사] 구가 줄·쪽 끝에서 갈렸다 — 앞 어절이 조사·어미로 안 끝나고 같은 이음이 문안 전량에 2회 이상"""
 
 import json
@@ -27,7 +31,7 @@ BASE = Path(__file__).resolve().parents[1] / "layout_baseline.json"
 _END = ".!?…~」』"
 _PART = set("은는이가을를의에도와과로고며면만다요죠네까니라야지든나서게데기해히")  # 조사·어미로 끝나는 어절은 굳은 구의 앞 마디가 아니다
 OLD = False
-KEYS = ["orphan", "midpage", "lonepunct", "leadspace", "overwide", "compound", "regress", "balance", "lean", "fewer"]
+KEYS = ["orphan", "midpage", "lonepunct", "leadspace", "overwide", "compound", "regress", "balance", "lean", "fewer", "joined", "more", "emptywin", "blankline"]
 
 
 def body_windows(t: str) -> int:
@@ -38,6 +42,21 @@ def body_windows(t: str) -> int:
 def fewer_windows(src: str, out: str) -> bool:
     """입력 문안보다 창이 적으면 True — 원문 창을 합친 것."""
     return body_windows(out) < body_windows(src)
+
+
+def joined_windows(src: str, out: str) -> int:
+    """고정 배치가 든 창에서 빈 줄(둘째 줄부터 가운데) 또는 앞 공백 줄이 조판 결과에서 줄어든 창 수."""
+    n = 0
+    for a, b in zip(src.split("<05>"), out.split("<05>")):
+        al = re.sub(r"<1e>.*?<04>\n?", "", a).split("\n")
+        bl = re.sub(r"<1e>.*?<04>\n?", "", b).split("\n")
+        blank_a = sum(1 for l in al[1:-1] if not l.strip())
+        blank_b = sum(1 for l in bl[1:-1] if not l.strip())
+        lead_a = sum(1 for l in al[1:] if l.startswith(" "))
+        lead_b = sum(1 for l in bl[1:] if l.startswith(" "))
+        if blank_b < blank_a or lead_b < lead_a:
+            n += 1
+    return n
 
 
 SRC: dict = {}
@@ -85,6 +104,17 @@ def measure(res: dict[str, str]) -> dict[str, list[str]]:
         pages = [p for p in pages if any(l.strip() for l in p)]
         if fewer_windows(SRC.get(k, ""), t):
             out["fewer"].append(k)
+        if body_windows(t) > body_windows(SRC.get(k, "")):
+            out["more"].append(k)
+        if "<05><05>" in re.sub(r"(<05>)+$", "", t) and "<05><05>" not in SRC.get(k, ""):
+            out["emptywin"].append(k)
+        _ws = re.sub(r"<1e>.*?<04>\n?", "", t, flags=re.S).split("<05>")
+        for _i, _w in enumerate(_ws):
+            _ls = re.sub(r"<[^>]*>", "", _w).split("\n")
+            if any(l.strip() for l in _ls) and ((_i > 0 and len(_ls) > 1 and not _ls[0].strip()) or any(not l.strip() for l in _ls[1:-1])):
+                out["blankline"].append(f"{k} 창{_i}")
+        if joined_windows(SRC.get(k, ""), t):
+            out["joined"].append(k)
         if T.rebalance(t, SRC.get(k, "<05>")) != t:  # 제약 안에서 더 고르게 나눌 수 있는 구간(원본 손 쪽나눔·화자 머리·이어 쓰기는 분모 밖)
             out["balance"].append(k)
         for i, p in enumerate(pages):

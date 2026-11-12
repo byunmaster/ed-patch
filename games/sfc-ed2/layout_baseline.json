@@ -8,5 +8,9 @@
  "regress": 0,
  "balance": 0,
  "lean": 44,
- "fewer": 0
+ "fewer": 0,
+ "joined": 0,
+ "more": 193,
+ "emptywin": 0,
+ "blankline": 2
 }

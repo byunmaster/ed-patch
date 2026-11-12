@@ -156,8 +156,13 @@ def fix_checksum(rom: bytearray) -> None:
     rom[CHK_OFF + 2 : CHK_OFF + 4] = s.to_bytes(2, "little")
 
 
+FULLSUF = os.environ.get("ED_FULLSUF", "1") != "0"  # 몬스터 접미 A~D 를 원판 전각 2B 코드로(patches.apply_fullsuf, 마스터 11-08) — `ED_FULLSUF=0` 이면 옛 반각 접미
+
+
 def apply_patches(rom: bytearray) -> None:
     for addr, old, new in patches.PATCHES:
+        if FULLSUF and addr in patches.FULLSUF_DROP:  # 전각 접미 꼴에서는 원판 코드를 operand 만 바꿔 쓴다(patches.apply_fullsuf)
+            continue
         o = common.snes2off(addr)
         if bytes(rom[o : o + len(old)]) != old:
             raise SystemExit(f"패치 자리가 원본과 다르다: {common.fmt(addr)} {bytes(rom[o : o + len(old)]).hex()} ≠ {old.hex()}")
@@ -333,7 +338,7 @@ def typeset_seg(text: str, src: bytes, b: int, seg_map: dict, names: dict, tw: d
         sp = text[len(body) :]
         out = (fn or typeset.typeset)(body + ph, tw, pv)
         return (out[: -len(ph)] if out.endswith(ph) else out) + sp
-    return (fn or typeset.typeset)(text, tw, pv)
+    return typeset.no_empty_window(text, tw, pv, fn)
 
 
 def call_texts(text: str, seg_off: int, seg_map: dict, sg: dict) -> dict[str, str]:
@@ -376,17 +381,22 @@ def collect_texts(src: bytes) -> tuple[dict, dict, dict]:
 
 
 PLACE_TABLE = "$CB30E9"  # 지역명 표(HUD 위치 표시 · 세이브 줄) — 16비트 포인터 64
+COND_CHARS = "큐베라프로스"  # HUD 55 콘덴스드 글자 — 반각 코드 0x3A.. 에 차례로(원판이 안 쓰는 빈 글리프)
+HUD_COND_ID = 55
 HUD_BOX_PX = 72  # 필드 HUD 지명 박스 안쪽 폭 — 타일 21~29(x 168~240), 글자는 x 168 부터 찍힌다(캡처 실측 11-05)
 
 
 def hud_lead(px: int) -> bytes:
-    """가운데 맞춤 앞 패딩 — 반각 공백(`$20` 8px) a개 + 전각 공백(`$8000` 12px) b개, 8a+12b 가 (박스 폭−글자 폭)/2 에 가장 가깝게(같으면 글자 수 적은 쪽).
+    """가운데 맞춤 앞 패딩 — 4px 빈 칸(`$14`, patches.SKIP4) c개 + 반각 공백(`$20` 8px) a개 + 전각 공백(`$8000` 12px) b개.
+    마스터 11-09(규칙 2-8 「최대한 가운데」): (박스 폭−글자 폭−1)/2 에 **가장 가까운** 패딩(4px 단위), 거리가 같을 때만 왼쪽 여백이 짧은 쪽.
     글자가 박스보다 넓으면(길 이름 「큐베라～프로스」) 패딩 없음."""
-    want = (HUD_BOX_PX - px) / 2
+    want = (HUD_BOX_PX - px - 1) / 2  # 획이 칸 오른쪽 끝에서 1px 비어 있다(실화면 64칸 실측 11-08: 보정 없으면 24곳이 오른쪽으로 2.5px 쏠림)
     if want <= 0:
         return b""
-    _, _, a, b = min((abs(8 * a + 12 * b - want), a + b, a, b) for a in range(10) for b in range(7))
-    return b"\x80\x00" * b + b"\x20" * a
+    cands = [(4 * c + 8 * a + 12 * b, c + a + b, c, a, b) for c in range(2) for a in range(10) for b in range(7)]
+    # 마스터 11-09 「최대한 가운데」: 가능한 패딩 중 want 에 가장 가까운 것, 같은 거리면 왼쪽 여백이 짧은 쪽
+    _, _, c, a, b = min(cands, key=lambda x: (abs(x[0] - want), x[0], x[1]))
+    return b"\x80\x00" * b + b"\x20" * a + bytes([patches.SKIP4_CODE]) * c
 
 
 def hud_names_table(cores: dict[int, bytes], count: int) -> bytes:
@@ -397,7 +407,10 @@ def hud_names_table(cores: dict[int, bytes], count: int) -> bytes:
     for i in range(count):
         ptrs.append(base + 2 * count + len(body))
         c = cores[i]
-        body += hud_lead(ui.px_width(c)) + c + b"\x00"
+        lead = hud_lead(ui.px_width(c))
+        used = ui.px_width(lead + c) if lead else ui.px_width(c)
+        # 뒤 공백으로 박스 끝까지 지운다 — 원판 지명도 뒤에 `$20` 을 달아 앞 지명의 남은 타일을 덮는다(11-06 「네리아r」 찌꺼기: 짧은 이름 뒤 칸이 안 지워짐)
+        body += lead + c + b"\x20" * max(0, (HUD_BOX_PX - used) // 8) + b"\x00"
     table = b"".join(p.to_bytes(2, "little") for p in ptrs) + bytes(body)
     assert (patches.HUD_NAMES & 0xFFFF) + len(table) - 1 <= (patches.HUD_NAMES_END & 0xFFFF), "HUD 지명 표가 $D8:FFFF 를 넘는다"
     return table
@@ -654,6 +667,16 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             stats["ptrs16"] = stats.get("ptrs16", 0) + 1
     stats["missing"] = missing
     if hud_cores:
+        # HUD 55 「큐베라～프로스」: 12px 글자로는 84px 라 박스(72px)에서 「스」가 잘린다 → 갈무리 콘덴스드 반각 글리프(빈 코드 0x3A~0x3F, 8px)로 60px. 「～」 는 원판 전각 그대로(마스터 11-10)
+        cond = {ch: 0x3A + k for k, ch in enumerate(COND_CHARS)}
+        assert hud_cores[HUD_COND_ID] == kr.encode("큐베라～프로스", alloc), "HUD 55 문안이 바뀌었다"
+        tilde = kr.encode("～", alloc)
+        hud_cores[HUD_COND_ID] = bytes(cond[c] for c in "큐베라") + tilde + bytes(cond[c] for c in "프로스")
+        for ch, code in cond.items():
+            go = common.snes2off(patches.HALF_BASE) + (code - 0x20) * 16
+            assert not any(src[go : go + 16]), f"반각 코드 {code:#x} 가 비어 있지 않다"
+            rom[go : go + 16] = hangul_font.cond_half(ch)
+            writes.append((go, go + 16))
         table = hud_names_table(hud_cores, kr.load("ptrs16")[PLACE_TABLE]["count"])
         o = common.snes2off(patches.HUD_NAMES)
         rom[o : o + len(table)] = table
@@ -714,6 +737,23 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
                     rom[o : o + 1] = bytes([val])
                     writes.append((o, o + 1))
 
+    # 3d1. 주문책 이름 접미 — 아이템 번호 `$80~` 의 이름은 코드(`$C1:32DF~32F4`)가 주문 이름 8B 뒤에 「の書」 5B 를 롬 `$C1:3436` 에서
+    # 베껴 붙여 만든다(대사·표 어디에도 없어 「레스の書를 받았습니다」로 샜다, 11-07). 접미를 한국어 「의 책」+끝 토큰으로 새 자리에 두고
+    # `lda $C1:342E,x`(x=8 부터) 의 기점과 반복 끝(5B→6B)을 돌린다.
+    _c = common.snes2off(0xC132EA)
+    _e = common.snes2off(0xC132F2)
+    if src[_c : _c + 4] != bytes.fromhex("BF2E34C1") or src[_e : _e + 2] != bytes.fromhex("E00D"):
+        raise SystemExit("주문책 접미 읽기 코드가 예상과 다르다 — `$C1:32EA` 점검")
+    _suf = kr.encode("의 책", alloc)
+    if len(_suf) > 5:
+        raise SystemExit(f"주문책 접미 「의 책」 {len(_suf)}B > 5B")
+    _suf = _suf + b"\x06" * (6 - len(_suf))
+    _sa = local.put(ITEM_TABLE_BANK, _suf) - 8
+    for _o, _v in ((_c + 1, bytes([_sa & 0xFF, (_sa >> 8) & 0xFF, ITEM_TABLE_BANK])), (_e + 1, b"\x0e")):
+        rom[_o : _o + len(_v)] = _v
+        writes.append((_o, _o + len(_v)))
+    rec("포인터", "spellbook-suffix", 0xC13436, (ITEM_TABLE_BANK << 16) | (_sa + 8), "주문책 이름 접미 「の書」(코드가 `$C1:3436` 에서 5B 를 베낀다)를 「의 책」으로 새 자리에 두고 읽는 코드 즉치 기점·반복 끝(5→6B)을 돌린다", len(_suf))
+
     # 3d2. HUD 그림 타일 — 인물 이름(아트라스 …)·「あと」 라벨: 갈무리7 8×8 타일을 롬 타일 세트에 굽고 이름 표(`$C0:B525`)를 다시 쓴다
     import canon
 
@@ -741,6 +781,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         t = common.snes2off(monsters.TABLE)
         if mon.get("h") != segs.src_hash(src, t, t + 2 * monsters.GROUPS):
             raise SystemExit("몬스터 포인터 표 원문 해시 불일치")
+        lk: dict = {}
         for gi, (w, ss) in enumerate(monsters.groups(src)):
             new = bytearray()
             for si, sb in enumerate(ss):
@@ -753,8 +794,16 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
                 base, suf = monsters.split_name(jp)
                 krn = over if over is not None else _mon_lookup(canon, base)
                 if krn:
+                    lk[(gi, si)] = len(kr.encode(krn, alloc))
+                tail2 = sb[:-2] if len(sb) >= 4 and sb[-2] == 0x80 and sb[-1] in (0x0E, 0x0F) else sb  # 슬라임 분열 표지(`゛`·`゜`)는 런타임이 박는다 — 앞 접미 글자만 본다
+                full = FULLSUF and suf and len(tail2) >= 2 and tail2[-2] == 0x80 and 0x1A <= tail2[-1] <= 0x1D  # 원판 접미가 전각 코드(`80 1A~1D`)인 이름만
+                if krn and full:
+                    body = kr.encode(krn, alloc) + bytes([0x80, tail2[-1]]) + ntail
+                    if gi == 2 and len(body) != 13:
+                        raise SystemExit(f"군2 {si}번 이름 {len(body)}B ≠ 13B — 전각 접미 꼴의 분열 표지 자리(patches.apply_fullsuf)를 다시 본다")
+                elif krn:
                     body = kr.encode(krn + suf, alloc) + ntail
-                    if gi == 2 and len(body) != 12:  # 분열 표지 코드(`$D4:2FEC`·`$D4:3011`)가 이름 버퍼 +12 에 박는다 — 이름이 12B 가 아니면 표지가 이름 속에 들어간다
+                    if gi == 2 and not FULLSUF and len(body) != 12:  # 분열 표지 코드(`$D4:2FEC`·`$D4:3011`)가 이름 버퍼 +12 에 박는다 — 이름이 12B 가 아니면 표지가 이름 속에 들어간다
                         raise SystemExit(f"군2 {si}번 이름 {len(body)}B ≠ 12B — 슬라임 분열 표지 자리(patches.py)를 다시 본다")
                 else:
                     body = sb + ntail  # 정본에 없다 — 원문 그대로(관리자에게 후보로)
@@ -767,6 +816,10 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             writes.append((t + 2 * gi, t + 2 * gi + 2))
             rec("포인터", f"monster{gi}", 0xCB0000 | w, 0xCB0000 | addr, "몬스터 이름 군을 뱅크 빈 자리로 옮긴다 — 군 포인터 표 항목만 돌린다", len(new))
             stats["monsters"] = stats.get("monsters", 0) + 1
+        if FULLSUF:
+            _fs = patches.apply_fullsuf(rom, src, lk)
+            writes += _fs
+            stats["fullsuf_sites"] = len(_fs)
 
     # 3b. 고정 길이 칸(cells) — 코드가 `mvn` 으로 줄 버퍼에 복사하는 값 상수(OFF·速い…): 같은 길이로 제자리 치환(길이가 달라지면 죽는다)
     for key, v in sorted(kr.load("cells").items()):
@@ -839,7 +892,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             # $D7(오프닝·엔딩) — UI 출력기($C0:9395)는 트램펄린($17)을 몰라 **문자열을 옮기고 포인터를 고친다**
             data = kr.encode(text, alloc) + b"\x00"
             old = common.off2snes(a)
-            refs = relocate.refs24(src, old, (a, b)) + [x for t in relocate.a6_sites(src, old) for x in ()]
+            refs = relocate.refs24(src, old, (a, b), {0xD7})  # 포인터 표는 $D7 안에 있다 — 다른 뱅크의 같은 세 바이트는 음악·팔레트·이벤트 표의 우연 일치(11-07 $D6:3189 BGM)
             sites = relocate.a6_sites(src, old)
             if not refs and not sites and len(data) - 1 <= b - a:  # 가리키는 포인터를 못 찾는 문자열(표 머리 앞 제어 토큰에 묻힌 첫 줄 등) — 제자리에 공백으로 채워 넣는다
                 rom[a:b] = data[:-1] + b" " * (b - a - len(data) + 1)
@@ -989,6 +1042,17 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             continue  # 원판 전각 영문·숫자 글리프 그대로
         if i >= n0 or font_out:
             ft[i * 18 : (i + 1) * 18] = hangul_font.glyph12(c)
+    # 원판 전각 숫자(색인 16~25)를 1px 위로 — 한글 잉크는 y 18~28, 원판 숫자는 19~29 라 장 제목 띠에서 숫자만 1px 아래였다(마스터 11-10). 0행은 비어 있어 잘림 없음.
+    for i in range(16, 26):
+        if i < n0 or font_out:
+            rows = []
+            for k in range(0, 18, 3):
+                v = int.from_bytes(ft[i * 18 + k : i * 18 + k + 3], "big")
+                rows += [(v >> 12) & 0xFFF, v & 0xFFF]
+            assert rows[0] == 0, f"숫자 글리프 {i} 첫 줄이 비어 있지 않다"
+            rows = rows[1:] + [0]
+            for j in range(6):
+                ft[i * 18 + 3 * j : i * 18 + 3 * j + 3] = ((rows[2 * j] << 12) | rows[2 * j + 1]).to_bytes(3, "big")
     if font_out and 2 not in alloc.values():
         # 색인 2 = 일본어 「。」 — 「정말 고마워」 조각 뒤처럼 구간 밖 2바이트 코드로 남는 자리가 있어 화면에 그대로 나간다(마스터 규칙: 마침표는 반각 「.」). 모양을 「.」로 바꾼다
         ft[2 * 18 : 3 * 18] = hangul_font.glyph12(".")
@@ -1276,6 +1340,7 @@ def main() -> None:
         rom, writes, stats = build()
         if a.twice and common.sha1_of(build()[0]) != common.sha1_of(rom):
             raise SystemExit("비결정적 — 같은 입력에서 sha1 이 갈렸다")
+        relocate.check_sites()
         check_immutable(rom, writes)
         screen_gate(a.strict, stats)
         residual_jp_gate(common.rom_bytes(), rom, a.strict)

@@ -75,3 +75,20 @@ if __name__ == "__main__":
             v = int.from_bytes(g[k : k + 3], "big")
             for r in ((v >> 12) & 0xFFF, v & 0xFFF):
                 print("".join("#" if (r >> (11 - x)) & 1 else "." for x in range(12)))
+
+
+# 콘덴스드 반각 글리프 — HUD 「큐베라～프로스」(박스 72px 에 12px 글자 6개+「～」 = 84px 가 안 든다, 마스터 11-10 「여기만 갈무리 콘덴스드」).
+COND_BDF = common.ROOT / "shared" / "fonts" / "Galmuri11-Condensed.bdf"
+
+
+def cond_half(ch: str) -> bytes:
+    """콘덴스드 글자 → 반각 8×16 글리프 16B(잉크 오른쪽 1열 밀기 — 윤곽 열, 행 14 가 기준선 아래)."""
+    t = COND_BDF.read_text(encoding="latin1")
+    m = re.search(r"ENCODING %d\n(.*?)ENDCHAR" % ord(ch), t, re.S).group(1)
+    w, h, xo, yo = map(int, re.search(r"BBX (.*)", m).group(1).split())
+    rows = [int(x, 16) >> (len(x) * 4 - w) for x in re.search(r"BITMAP\n(.*)", m, re.S).group(1).split()]
+    g = [0] * 16
+    top = 14 - (yo + h)
+    for i, r in enumerate(rows):
+        g[top + i] = ((r << (8 - w - xo)) & 0xFF) >> 1
+    return bytes(g)

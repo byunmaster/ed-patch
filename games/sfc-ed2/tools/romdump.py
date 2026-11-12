@@ -69,6 +69,7 @@ class Dec:
         self.kr = is_kr
         self.g = gmap or {}
         self.dicts = {k: common.snes2off(v) for k, v in script.DICTS_BY_NAME.items()}
+        self.colors = False  # True 면 색 코드(`$04`·`$18~$1F`)를 `\x01hh` 표식으로 남긴다(check_color_rom 전용)
         self.vis: set[int] = set()  # walk 가 지나간 토큰 시작(파일 오프셋) — 단위 시작에서 닿지 않는 메시지(코드가 포인터로 부르는 것)를 가르는 데 쓴다
 
     def glyph(self, code: int) -> str:
@@ -113,6 +114,8 @@ class Dec:
                 o += 1
                 continue
             ln = script.token_len(d, o)
+            if self.colors and (b == 0x04 or 0x18 <= b <= 0x1F):
+                out.append("\x01%02x" % b)
             if ln is None:
                 out.append("{?%02x}" % b)
                 break

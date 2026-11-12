@@ -23,6 +23,8 @@ CANON_GATE = True  # 전환을 마쳤다 — check_canon.py 가 어긋남을 실
 _E = re.compile(r"<E([01]):(\d+)>")
 _JOSA = re.compile(r"\{\*?([^{}/]+)/([^{}/]+)\}")
 _TAG = re.compile(r"<[^<>]*>")
+# 대사 줄이 아니라 **지명 자리**(필드 HUD 가 지명 번호·상태에 따라 대신 그리는 문자열) — 정본 지명 꼴(붙여 씀)과 대조한다. `$C0:C0D6`: `$0100`=`$20` 이면 표 대신 이 줄(「竜の卵」)
+SLOT_SEGS = {"$C0EBDC"}
 
 
 def _norm(t: str) -> str:
@@ -50,7 +52,7 @@ def pairs():
         ko = None
         if v:
             ko = _E.sub(lambda m: kr_dict.get(f"E{m.group(1)}:{m.group(2)}", ""), v["kr"])
-        out.append((sid, _norm(jp), _norm(ko) if ko is not None else None, "dialog"))
+        out.append((sid, _norm(jp), _norm(ko) if ko is not None else None, "slot" if sid in SLOT_SEGS else "dialog"))
     out += _unit_rows(d, jp_dict, kr_dict)
     return out
 
@@ -79,6 +81,8 @@ def _unit_rows(d, jp_dict, kr_dict):
             tj, tk = dj.walk(o), dk.walk(o)
         except Exception:
             continue
+        if any(s <= common.snes2off(int(x[1:], 16)) < e for x in SLOT_SEGS):
+            continue  # 지명 자리(UI 출력기 문자열)를 낀 단위 — 대사 워커는 UI 제어코드 `$14`(4px 빈 칸)를 대사 조건 코드로 읽어 글자를 삼킨다. 그 줄은 위 구간 행(slot)이 잰다
         rows.append((f"U{common.off2snes(o):06X}", _unit_norm(tj), _unit_norm(tk), "dialog"))
     return rows
 

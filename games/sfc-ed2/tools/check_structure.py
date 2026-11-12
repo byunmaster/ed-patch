@@ -197,6 +197,7 @@ def diff_seq(orig: list[int], built: list[int]) -> tuple[bool, int]:
 
 # 번역이 원문에 없던 화자 머리 `<1e>이름<04>` 를 붙인 구간(check_rules.CTL_EXEMPT 와 같은 목록) — `$1E`·`$04` 는 색 코드(`$18~$1F` 점프표 핸들러)라 글자 앞뒤에 놓여도 흐름을 안 바꾼다
 HEADER_ADDED = {"$C5521A"}
+UI_SEGS = {"$C0EBDC"}  # 필드 HUD 가 지명 번호·상태에 따라 대신 그리는 UI 문자열(names_corpus.SLOT_SEGS 와 같은 자리)
 ALLOWED["화자 머리 추가"] = (
     "원문에 없는 `<1e>이름<04>`(색 코드 쌍)를 구간 앞에 붙인다",
     "말하는 사람이 원문 구간에서 안 드러나 번역에서 밝힌다",
@@ -204,10 +205,28 @@ ALLOWED["화자 머리 추가"] = (
 )
 
 
+def _ui_clean(body: bytes) -> bool:
+    """UI 문자열 바이트 열 — 전각(`$80~$87`+1B 짝) · 반각 `$20~$7F` · `$14`(4px) · `$16` · 끝 `$00` 만."""
+    i = 0
+    while i < len(body):
+        x = body[i]
+        if 0x80 <= x < 0x88:
+            i += 2
+            continue
+        if not (x in (0x14, 0x16, 0x00) or 0x20 <= x < 0x80):
+            return False
+        i += 1
+    return True
+
+
 def check_segment(src: bytes, rom: bytes, a: int, b: int, sites=None, key: str = "", translated: bool = True) -> dict:
     if not translated:  # 원문 유지(번역 안 한 구간) — 바이트가 그대로여야 한다
         ok = bytes(rom[a:b]) == bytes(src[a:b])
         return {"a": a, "b": b, "kind": "원문 유지", "ok": ok, "why": "" if ok else "번역 안 한 구간인데 바이트가 바뀌었다", "added05": 0, "pad": 0, "header": 0}
+    if key in UI_SEGS:  # UI 출력기(`$C0:9395`) 문자열 — 대사 토큰 규칙을 안 따른다(`$14` 는 대사에선 조건 코드라 토큰 따라가기가 뒤 글자를 삼킨다). 원문에 제어 코드가 없고 번역이 글자·`$14`(4px 빈 칸)·`$16`·끝 `$00` 뿐인지 본다
+        body = bytes(rom[a:b])
+        ok = not ctrl_seq(src, [(o, ln) for o, ln in script.tokens(src, a, b) if o < b]) and _ui_clean(body)
+        return {"a": a, "b": b, "kind": "제자리", "ok": ok, "why": "" if ok else "UI 문자열에 글자·`$14` 밖의 코드가 있다", "added05": 0, "pad": 0, "header": 0}
     f = follow(rom, src, a, b, sites)
     row = {"a": a, "b": b, "kind": f["kind"], "ok": False, "why": f["why"], "added05": 0, "pad": 0, "header": 0}
     if not f["ok"]:

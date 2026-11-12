@@ -442,6 +442,15 @@ def typeset(text, names=None, lead=None):
     return _sentence_break(r, text)
 
 
+def no_empty_window(text, names=None, lead=None, fn=None):
+    """`typeset` 결과에 내용 없는 쪽(`<05><05>`)이 끼면 — 쪽 끝 앞 개행이 줄 배치와 겹친 것(11-06 $C83508, ▼만 기다리는 빈 대사창) — 그 개행만 떼고 다시 조판한다."""
+    fn = fn or typeset
+    out = fn(text, names, lead)
+    if "\n<05>" in text and "<05><05>" in re.sub(r"(<05>)+$", "", out):
+        out = fn(re.sub(r"\n+(<05>)", r"\1", text), names, lead)
+    return out
+
+
 _SENT_LINE_END = re.compile(r"[.!?…~」』]+\)?$")
 
 
