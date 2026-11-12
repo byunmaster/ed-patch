@@ -906,6 +906,8 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         top = max(alloc.values())
         ft += b"\x00" * ((top + 1 - n0) * 18) if top + 1 > n0 else b""
     for c, i in alloc.items():
+        if c in kr.ORIG_LATIN:
+            continue  # 원판 전각 영문·숫자 글리프 그대로
         if i >= n0 or font_out:
             ft[i * 18 : (i + 1) * 18] = hangul_font.glyph12(c)
     if font_out and 2 not in alloc.values():
