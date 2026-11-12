@@ -20,6 +20,7 @@ SLOT_TAB = 0x800DE4B8
 SLOTBASE = 0x5A
 LOADIMAGE = 0x8008A8DC
 FP = 0x801F0000
+SPACE = 0x0F0
 HALF = (0x0F0, 0x0F1)  # 반 칸 글자 코드(공백·부호 흉내)
 BLANK = 0x0F0
 MARK_EUN = 0x7000  # 조사 표지 코드(은/는)
@@ -59,8 +60,11 @@ class Sim:
         p = self.p
         words, labels = tile_hook.hooks_b("ed3", len(josa["blist"]) if josa else 0, with_josa=josa is not None)
         self.prog = {p["dead"] + 4 * i: w for i, w in enumerate(words)}
-        mwords, mbase = tile_hook.msg_stub("ed3", labels)
+        mwords, mbase = tile_hook.msg_stub("ed3", labels, SPACE)
         self.prog.update({mbase + 4 * i: w for i, w in enumerate(mwords)})
+        for i, w in enumerate(mwords):  # 코드 뒤 창 표는 자료로도 읽힌다
+            for j in range(4):
+                self.mem[mbase + 4 * i + j] = (w >> (8 * j)) & 0xFF
         self.prog.update({tile_hook.DJUMP_ADDR + 4 * i: w for i, w in enumerate(tile_hook.djump_words())})  # 칸 연속성 서브루틴
         for c in glyphs:
             for i, b in enumerate(glyph_bytes(c)):
@@ -297,6 +301,23 @@ class TestTileHook(unittest.TestCase):
         # 둘째 줄 첫 칸은 앞 줄 상태가 새지 않는다
         self.assertEqual(sim.vram[SLOTBASE + 24], tilecomp.unpack(glyph_bytes(0x102)))
 
+    def test_zero_code_indent_is_half(self):
+        """줄 머리(열 0)의 글리프 코드 0 은 반 칸 — 뒤 글자가 6px 에서 시작한다. 줄 안의 코드 0 은 원판대로 한 칸(마스터 11-09)."""
+        sim = Sim({0x100, 0x101, 0} | set(HALF))
+        for k, c in enumerate([0, 0x100, 0x101]):
+            sim.run_glyph(c, k)
+        want = model_line([0, 0x100, 0x101], half=tuple(HALF) + (0,))
+        for t, r in want.items():
+            self.assertEqual(sim.vram.get(SLOTBASE + t), r, f"타일 {t}")
+
+    def test_zero_code_inside_line_stays_full(self):
+        sim = Sim({0x100, 0x101, 0} | set(HALF))
+        for k, c in enumerate([0x100, 0, 0x101]):
+            sim.run_glyph(c, k)
+        want = model_line([0x100, 0, 0x101])
+        for t, r in want.items():
+            self.assertEqual(sim.vram.get(SLOTBASE + t), r, f"타일 {t}")
+
     def test_skipped_cell_resyncs_to_cell_grid(self):
         """둘째 줄 첫 칸을 훅 밖(숫자 명령)이 그려 첫 글자가 열 1 에서 시작해도, 윗줄 끝 위치에서 이어 그리지 않고 열 × 12px 에 앉는다(마스터 10-13)."""
         sim = Sim({0x100, 0x101, 0x102, 0x0F0, 0x0F1}, rows=2)
@@ -379,9 +400,34 @@ class TestMessageWindow(unittest.TestCase):
             self.assertEqual(sim.vram.get(SLOTBASE + t), r, f"타일 {t}")
 
     def test_other_window_shapes_stay_plain(self):
-        for cols, rows in ((18, 4), (19, 2), (4, 2), (3, 2), (4, 1), (6, 4), (7, 4), (10, 4), (12, 5)):
+        for cols, rows in ((18, 4), (19, 2), (4, 2), (3, 2), (4, 1), (6, 4), (7, 4), (9, 4), (12, 5)):
             sim = self.run_msg([(3, 0x100)], cols=cols, rows=rows)
             self.assertEqual(sim.loadimages, [], f"{cols}x{rows} 는 원판 그대로")
+
+
+class TestListWindow(unittest.TestCase):
+    """목록 창(열 10·11): 공백(코드 SPACE)만 반 칸, 다른 반 칸 글자(0x0F1)는 전각 폭."""
+
+    def check(self, codes, cols=11, rows=8):
+        sim = Sim(set(codes) | set(HALF), cols=cols, rows=rows, y=40)
+        for k, c in enumerate(codes):
+            sim.run_glyph(c, k)
+        for t, r in model_line(codes, half=(SPACE,)).items():
+            if t < cols - 1:
+                self.assertEqual(sim.vram.get(SLOTBASE + t), r, f"타일 {t}")
+
+    def test_space_is_half_width(self):
+        self.check([0x100, 0x101, SPACE, 0x102, 0x103])
+
+    def test_other_half_codes_stay_full(self):
+        self.check([0x100, 0x0F1, 0x101, SPACE, 0x102])
+
+    def test_both_list_widths(self):
+        for cols in (8, 9, 10, 11):
+            self.check([0x100, SPACE, 0x101, 0x102], cols=cols)
+
+    def test_few_rows_still_list(self):
+        self.check([0x100, SPACE, 0x101], cols=11, rows=2)
 
 
 JOSA = {
@@ -391,6 +437,7 @@ JOSA = {
         (0x7002, 0x205, 0x206, 0),
         (0x7003, 0x207, 0x208, 0),
         (0x7004, 0x209, BLANK, 3),  # (으) — 받침 없거나 ㄹ 이면 안 그림
+        (0x7005, 0x20A, BLANK, 1),  # (이) 서술격 — 받침(ㄹ 포함) 있으면 「이」, 없으면 안 그림
     ],
     "blist": [0x300, 0x301 | 0x8000],  # 받침 있는 끝 글자 · ㄹ 받침
 }
@@ -448,6 +495,11 @@ class TestTileHookJosa(unittest.TestCase):
     def test_eu_ro_skipped_after_open_syllable_and_rieul(self):
         self.run_codes([0x100, 0x7004, 0x102, 0x103])  # 받침 없음 — 으 를 안 그리고 전진 0
         self.run_codes([0x301, 0x7004, 0x102, 0x103])  # ㄹ
+
+    def test_copula_i_draws_after_batchim_and_rieul_skips_open(self):
+        self.run_codes([0x300, 0x7005, 0x102, 0x103])  # 받침 → 이
+        self.run_codes([0x301, 0x7005, 0x102, 0x103])  # ㄹ 받침도 받침 → 이
+        self.run_codes([0x100, 0x7005, 0x102, 0x103])  # 받침 없음 → 안 그리고 전진 0
 
     def test_skipped_marker_keeps_last_glyph(self):
         self.run_codes([0x300, 0x7004, 0x7000, 0x104])  # (으) 가 앞에서 그려졌으니 은/는 은 「으」 기준

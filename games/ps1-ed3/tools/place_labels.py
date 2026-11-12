@@ -90,10 +90,10 @@ LABELS = {
         "sheet": "..\\MAP\\B_510.TI3",
         "labels": [
             ("テグラ", [36802, 35778, 35714], [100, 105, 88]),
-            ("ネルバ城", [37442, 37506, 37570, 37634], [87, 104, 89, None]),
+            ("ネルバ城", [37442, 37506, 37570, 37634], [87, 104, 89, 99]),
             ("チッタ", [34754, 33730, 33666], [71, 72, 73]),
             ("テュエール", [36609, 36673, 34498, 35522, 36546], [100, 101, 102, 103, 104]),
-            ("ロップ島", [35458, 38530, 38594, 38658], [121, 72, 122, None]),
+            ("ロップ島", [35458, 38530, 38594, 38658], [121, 72, 122, 123]),
         ],
     },
     "GT42V0": {
@@ -108,14 +108,20 @@ LABELS = {
 }
 
 
-def korean(jp):
-    """정본(`shared/canon` 지명)에서 한글 표기 — 없으면 SystemExit(조용히 일본어로 두지 않는다)."""
+def korean(jp, cells=None):
+    """정본(`shared/canon` 지명)에서 한글 표기 — 없으면 SystemExit(조용히 일본어로 두지 않는다).
+
+    🔴 ED3 는 지명을 **띄어 쓴다**(마스터 10-29 「일본어 원문은 원래 띄어쓰기가 없어서 한국어로는 띄어쓰는 게 맞아. ed1,2 는 HUD 에 공간이 부족해서
+    어쩔 수 없었던 거고」 — 칸·대사·월드맵 패널 모두). 라벨 칸은 칸 하나에 글자 하나라 **공백도 한 칸**을 먹는다 — 띄운 꼴이 칸 수에 들면 그대로,
+    안 들면(「리즈의 집」 5자 > 4칸) 붙여 쓴다(10-07 「칸만 붙여쓰기」의 남은 자리)."""
     import canon
 
     kr = canon.lookup(jp, "place", "ed3")
     if not kr:
         raise SystemExit(f"🔴 지명 라벨 {jp!r} 의 정본 표기가 없다 — 관리자에게 후보를 올린다")
-    return kr.replace(" ", "")  # 지명 칸은 붙여쓴다(칸 하나에 글자 하나 — 대화 속 띄어쓰기와 다르다, 마스터 10-07 「칸만 붙여쓰기」)
+    if cells is not None and len(kr) > cells:
+        return kr.replace(" ", "")
+    return kr
 
 
 def glyph_tile(font, ch, white, outline, transparent=255):
@@ -184,7 +190,7 @@ def plan_map(name, am3_raw, pix, font, pal_rgb=None):
     cfg = LABELS[name]
     labels = cfg["labels"]
     w = np.frombuffer(am3_raw, "<u2").copy()
-    kr = {jp: korean(jp) for jp, _w, _t in labels}
+    kr = {jp: korean(jp, len(t)) for jp, _w, t in labels}
     # 타일 → [(워드, 라벨 원문)] — 그 타일을 가리키는 칸들
     cells_of = {}
     for jp, words, tiles in labels:
@@ -227,11 +233,15 @@ def plan_map(name, am3_raw, pix, font, pal_rgb=None):
         o = min(
             offs,
             key=lambda o: sum(
-                1000 if tiles[o + i] is None else int(tile_glyph.get(tiles[o + i], ch) != ch) for i, ch in enumerate(s)
+                1000 if tiles[o + i] is None else int(tile_glyph.get(tiles[o + i], ch) != ch)
+                for i, ch in enumerate(s)
+                if ch != " "
             ),
         )
-        glyph_cells[jp] = set(range(o, o + m))
+        glyph_cells[jp] = {o + i for i, ch in enumerate(s) if ch != " "}  # 공백 칸은 글자 없이 빈 칸으로 둔다
         for i, ch in enumerate(s):
+            if ch == " ":
+                continue
             t = tiles[o + i]
             if t is None:
                 raise SystemExit(f"🔴 {name}: {jp} 의 글자 칸 {o + i} 에 타일을 모른다 — 칸이 모자라다")

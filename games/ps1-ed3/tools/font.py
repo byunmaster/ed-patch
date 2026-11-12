@@ -428,6 +428,13 @@ HUD_DOTS = {
 #    반 칸 글자는 칸의 **왼쪽 6열**만 그리므로 닫는 쪽은 6~11열을 0~5열로 옮겨 굽는다. 가로줄이 4px 그대로라 잘려 짧아 보이지 않는다.
 #    대사 조각에서만 `build.encode_member` 가 이 부호를 사설 글자로 바꿔 인코딩한다(UI·이름 속 부호는 원판 전각 그대로).
 KAGI = {"\ue011": "「", "\ue012": "」", "\ue013": "『", "\ue014": "』"}
+# 목록 창(소지품·상점)은 공백 코드도 전각 12px 로 그려 반각 틈을 못 낸다(대사창 훅만 반각) — 「검사교본 1」 의 틈(마스터 11-08·11-09 「띄어쓰기는 반각」)은
+# **왼쪽 반 칸이 빈 숫자 글리프**(한 칸 12px 안에 6px 빈칸 + 숫자)로 만든다. 대사창은 원래 「반각 공백 6 + 숫자 6」 이라 화면이 같다.
+LEAD_DIGITS = {"\ue021": "1", "\ue022": "2", "\ue023": "3"}
+# 「사피 제N권」 — 「⎵제」(반 칸 빈 + 제 왼쪽 반) · 「제 오른쪽 반 + 숫자」 두 칸으로 「⎵제N」 을 반 칸 밀어 한 칸 폭 틈을 반각으로 만든다(권 은 그대로)
+JE_LEAD = "\ue031"
+JE_DIGIT = {chr(0xE040 + n): str(n) for n in range(1, 10)}
+SERIES_GLYPHS = {**LEAD_DIGITS, JE_LEAD: None, **JE_DIGIT}  # 늘 굽는 사설 글자(문안엔 안 나오고 build 가 코드로 꽂는다)
 KAGI_DOTS = {
     "「」": (
         "####........",
@@ -489,6 +496,25 @@ def glyph_bits(ch):
             for c, v in enumerate(row):
                 if v == "#" and (c < 6) == (KAGI[ch] == pair[0]):
                     g[r, c % 6] = 1
+        return g
+    if ch == JE_LEAD or ch in JE_DIGIT:
+        je = np.asarray(hangul_glyph("제"), dtype=np.uint8)
+        g = np.zeros((ROWS, CELL), dtype=np.uint8)
+        h = SPLIT_SHIFT
+        if ch == JE_LEAD:
+            g[: je.shape[0], h : 2 * h] = je[:, :h]  # 왼쪽 반 칸은 비우고 제 의 왼쪽 6열
+        else:
+            right = je[:, h:]  # 제 의 오른쪽(11 − 6 = 5열)
+            g[: je.shape[0], : right.shape[1]] = right
+            d = np.asarray(hangul_glyph(JE_DIGIT[ch]), dtype=np.uint8)
+            w = min(d.shape[1], h)
+            g[: d.shape[0], h : h + w] = np.maximum(g[: d.shape[0], h : h + w], d[:, :w])
+        return g
+    if ch in LEAD_DIGITS:
+        g = np.zeros((ROWS, CELL), dtype=np.uint8)
+        d = np.asarray(hangul_glyph(LEAD_DIGITS[ch]), dtype=np.uint8)
+        w = min(d.shape[1], CELL - SPLIT_SHIFT)
+        g[: d.shape[0], SPLIT_SHIFT : SPLIT_SHIFT + w] = d[:, :w]
         return g
     if ch in FULL_DOTS:
         g = np.zeros((ROWS, CELL), dtype=np.uint8)

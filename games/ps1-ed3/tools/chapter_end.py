@@ -389,7 +389,7 @@ def chapter_titles():
 
 
 SHRINKS = (0, 2, 4, 6, 1, 3, 5, 7)
-SHIFTS = (0, -4, 4, -8, 8, -2, 2, -6, 6, -10, 10, -1, 1, -3, 3, -5, 5, -7, 7, -12, 12)
+SHIFTS = (0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6, -7, 7, -8, 8, -10, 10, -12, 12)  # 가운데에서 가까운 순(2-8)
 GROW_MAX = 300  # 시트 압축이 원본 멤버보다 커도 되는 바이트(아카이브 마지막 섹터 여유 안 — 최소 여유 324B 에서 잡았다)
 CHAPTERS = ["MT70V0", "MR43V0", "AT09V0", "CT22V0", "OT12V0", "ST12V0", "GT42V0"]  # 서장~제6장 끝
 
@@ -525,62 +525,56 @@ def plan_chapter(L, name, font, n, titles, shapes, teaser="다음 장", gap=1, m
     pix0, anm0, pool0 = pix.copy(), bytearray(anm), list(pool)
     # 🔴 칸이 모자라면(타일 풀 60~72개 · 줄 폭 256px) 줄 모양을 바꿔 가며 다시 시도한다 — 낱말 빈칸 줄이기 → 글자 간격 0 → 줄 가운데 옮기기.
     #    첫 시도(shrink 0·gap 그대로·가운데)는 이전과 같다. 줄 모양이 타일 경계에 어떻게 얹히느냐로 쓰는 타일 수가 갈린다(같은 글자도 다른 타일).
+    #    🔴 줄 **가운데는 마지막에** 옮긴다(2-8, 마스터 11-03 — 줄 좌우 여백 차 1px 이하) — 빈칸·간격을 줄여 칸을 맞추는 것이 먼저고, 그래도 안 되면 그때 가운데를 옮긴다.
     err = None
-    for shrink in SHRINKS:
-        for g in dict.fromkeys((gap, 0)):
-            for shift in SHIFTS:
-                pix[:] = pix0
-                anm = bytearray(anm0)
-                pool = list(pool0)
-                try:
-                    report, canv = _lines(
-                        L,
-                        name,
-                        v,
-                        font,
-                        pa,
-                        pb,
-                        pix,
-                        anm,
-                        base,
-                        cells,
-                        strips,
-                        quotes,
-                        tr,
-                        tr_idx,
-                        body_idx,
-                        shadow_idx,
-                        pool,
-                        g,
-                        shrink,
-                        shift,
+    tries = [(sh, shrink, g) for sh in SHIFTS for shrink in SHRINKS for g in dict.fromkeys((gap, 0))]
+    for shift, shrink, g in tries:
+        pix[:] = pix0
+        anm = bytearray(anm0)
+        pool = list(pool0)
+        try:
+            report, canv = _lines(
+                L,
+                name,
+                v,
+                font,
+                pa,
+                pb,
+                pix,
+                anm,
+                base,
+                cells,
+                strips,
+                quotes,
+                tr,
+                tr_idx,
+                body_idx,
+                shadow_idx,
+                pool,
+                g,
+                shrink,
+                shift,
+            )
+            if (
+                max_len is not None
+            ):  # 🔴 압축이 멤버 + 여유를 넘으면 아카이브가 섹터를 넘는다 — 다른 줄 모양으로 다시
+                raw2 = bytearray(raw)
+                raw2[off : off + pix.size] = pix.tobytes()
+                if len(gmfz.wrap(bytes(raw2))) > max_len:
+                    raise PlanError(
+                        f"압축 {len(gmfz.wrap(bytes(raw2)))}B 가 상한 {max_len}B 를 넘는다"
                     )
-                    if (
-                        max_len is not None
-                    ):  # 🔴 압축이 멤버 + 여유를 넘으면 아카이브가 섹터를 넘는다 — 다른 줄 모양으로 다시
-                        raw2 = bytearray(raw)
-                        raw2[off : off + pix.size] = pix.tobytes()
-                        if len(gmfz.wrap(bytes(raw2))) > max_len:
-                            raise PlanError(
-                                f"압축 {len(gmfz.wrap(bytes(raw2)))}B 가 상한 {max_len}B 를 넘는다"
-                            )
-                except PlanError as e:
-                    err = e
-                    continue
-                report.update(
-                    name=name,
-                    pool=len(pool0),
-                    body_idx=body_idx,
-                    shadow_idx=shadow_idx,
-                    pool_left=len(pool),
-                    tried=(shrink, g, shift),
-                )
-                break
-            else:
-                continue
-            break
-        else:
+        except PlanError as e:
+            err = e
             continue
+        report.update(
+            name=name,
+            pool=len(pool0),
+            body_idx=body_idx,
+            shadow_idx=shadow_idx,
+            pool_left=len(pool),
+            tried=(shrink, g, shift),
+        )
         break
     else:
         raise err

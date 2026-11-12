@@ -26,6 +26,9 @@ EXE = "/ED3.EXE"
 SKIP_TABLES = {0x9B6FC}  # 월드맵 패널
 SKIP_STRINGS = (0xA1160, 0xA1258)  # 오프셋 범위(파일) — 이 안을 가리키는 항목은 건너뛴다
 ZERO_IS_GLYPH = {0x9D0F6}  # 0 이 글자인 표
+# 번호 아이템 「검사교본 N」(원문 「剣士教本」+0+「その１」) — 이름과 접미 사이 종결 0 이 전각 한 칸으로 그려져 틈이 넓어(마스터 11-08 「띄어쓰기는 반각」)
+# 그 0 을 반각 공백 코드로 바꿨다(`build.reinsert_names`). 그래서 이 항목들은 종결이 0 → 0xFFFF 로 바뀐다 — 의도된 변경이라 이 셋만 허용한다.
+SPACE_FOR_ZERO = set(X.SERIES_ENTRIES)  # 사피 제1~9권(#107~114·118) + 검사교본 1~3(#115~117) — 원판 문자열 시작(파일 오프셋)
 
 
 def _read(data, off, zero_is_glyph):
@@ -64,7 +67,7 @@ def compare(orig, new, tables):
                 continue
             if (len(co) == 0) != (len(cn) == 0):
                 out.append(f"표 0x{tbl:X} #{i}: 빈 항목 불일치(원본 {len(co)}자 → 구움 {len(cn)}자) — 빈 슬롯이 다른 항목을 읽게 된다")
-            if to != tn:
+            if to != tn and not (base + eo[i] in SPACE_FOR_ZERO and to == 0 and tn == 0xFFFF):
                 out.append(f"표 0x{tbl:X} #{i}: 종결이 바뀌었다(원본 0x{to:04X} → 구움 0x{tn:04X})")
         groups = {}
         for i, x in enumerate(eo):

@@ -31,6 +31,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import arcpack
+import choice_cols
 import common
 import engine_patch
 import exetext
@@ -38,6 +39,7 @@ import font
 import glossary
 import graphics
 import hangul_map
+import tile_hook
 import josa_rt
 import patch_title_font
 import poolpack
@@ -68,6 +70,10 @@ def bake_font(exe, disc, chars, table):
             continue
         font.write_glyph(exe, table[ch], font.glyph_bits(ch), disc)
         baked += 1
+    # 목록 창 반 칸 틈 숫자(font.LEAD_DIGITS) — 문안엔 안 나오고 `reinsert_names` 가 코드로 꽂으니 여기서 늘 굽는다(`--test` 배정에선 건너뛴다)
+    for ch in font.SERIES_GLYPHS:
+        if ch in table:
+            font.write_glyph(exe, table[ch], font.glyph_bits(ch), disc)
     # 마침표·쉼표는 **원본 자리(1=、 · 2=。)를 한국식 모양으로 다시 굽는다** — 자리를 안 쓴다.
     for ch, code in hangul_map.PUNCT.items():
         font.write_glyph(exe, code, font.hangul_glyph(ch), disc)
@@ -94,7 +100,8 @@ def check_no_text_loss(where, newmem, lines, disc, table, report):
             want = hangul_map.encode(want_text, disc, table)
         except KeyError:
             continue  # 원문 그대로 남는 조각 — report["skipped"] 가 센다
-        have = [c for c in got[i][1] if c != space]
+        full = table.get("\u3000")  # 가운데 맞춤 줄(장 끝 문구)의 전각 공백 — 정본에선 공백이라 센 글자에서 뺀다
+        have = [c for c in got[i][1] if c != space and c != full]
         if have != want:
             raise SystemExit(
                 f"🔴 {where} #{i}: 구운 글이 정본과 다르다(공백 빼고 {len(have)} vs {len(want)}자)\n"
@@ -104,8 +111,9 @@ def check_no_text_loss(where, newmem, lines, disc, table, report):
 
 
 def reflow_windows(mem, info, lines, disc):
-    """{조각 번호: 새 줄 글} — 창 단위 재조판 대상(`typeset.reflow`). 같은 조각이 둘 이상의 창에 걸리면 건드리지 않는다."""
-    chains = scriptmap.window_chains(mem, info)
+    """{조각 번호: 새 줄 글} — 창 단위 재조판 대상(`typeset.reflow`). **쪽(op 02)마다 한 단위**다(`scriptmap.window_pages`, 마스터 11-03 2-10 정적 전수 —
+    쪽이 낀 창은 조판기를 못 타 한 줄에 들어갈 문장이 둘로 쪼개져 있었다). 같은 조각이 둘 이상의 창에 걸리면 건드리지 않는다."""
+    chains = scriptmap.window_pages(mem, info)
     use = {}
     for ch in chains:
         for i in ch:
@@ -184,6 +192,10 @@ def reinsert_script(disc, canon, table, report):
             mem = bytes(data[off : off + sz])
             segs = encode_member(disc, path, nm, mem, lines, table, report)
             newmem, _ = scriptmap.rebuild(mem, segs, event_data=True)
+            # 선택지 창 열(`3B` 연산 둘째 바이트 = 열×2)을 가장 긴 항목 폭에 맞춘다 — 스크립트 크기 불변(바이트 하나, `choice_cols.py`)
+            if disc == "ed3" and scriptmap.layout(mem) == scriptmap.LAYOUT_POOL:
+                newmem, _chg = choice_cols.patch(newmem, scriptmap.parse(mem), lambda i, L=lines: L[i]["kr"] if i in L else None)
+                report["choice_cols"] = report.get("choice_cols", 0) + len(_chg)
             check_no_text_loss(f"{path}!{nm}", newmem, lines, disc, table, report)
             repl[nm] = newmem
             report["members"] += 1
@@ -240,6 +252,7 @@ def fit_chunks(exe, t, ents, cur, krs, orig, disc, table, report):
                 krs[i], cur[i] = kr, hangul_map.encode(kr, disc, table)
             need = chunk_need()
             report["squeezed"] = report.get("squeezed", 0) + 1
+            report.setdefault("squeezed_names", []).append(kr)
         while need > hi - lo:
             grown = [ids for ids in idx.values() if len(cur[ids[0]]) > len(orig[ids[0]])]
             if not grown:
@@ -252,10 +265,28 @@ def fit_chunks(exe, t, ents, cur, krs, orig, disc, table, report):
     return reverted
 
 
+def panel_row_width(enc, space):
+    """패널 한 줄의 화면 폭(px) — 엔진 스텁(`tile_hook.panel_stubs`)과 같은 셈: 공백 6 · 글자 12 · 0 코드(들여쓰기) 0. 칸(72px)을 넘으면 그 줄만 글자 간격 11px(공백은 6 그대로)로 줄어든다."""
+    w = sum(6 if c == space else 12 for c in enc if c)
+    n = sum(1 for c in enc if c and c != space)
+    return w if w <= tile_hook.PANEL_ROW_PX else w - n
+
+
+def panel_enc(kr, disc, table):
+    """패널 줄 글자 코드 — ED3 지명은 띄어 쓴다(마스터 10-29·11-11). 띄어 쓴 꼴이 칸(72px)에 안 들면(줄어든 11px 간격으로도) 붙인다(마스터 11-11 「6글자 초과만 글자 간격 11px」)."""
+    enc = hangul_map.encode(kr, disc, table)
+    if panel_row_width(enc, table[" "]) > tile_hook.PANEL_ROW_PX:
+        enc = hangul_map.encode(kr.replace(" ", ""), disc, table)
+    return enc
+
+
 def panel_grow(exe, disc, table, words, report, panel):
     """월드맵 패널 — 정본 표기(띄어쓰기 뺀 꼴)가 원판 칸(n)보다 긴 줄은 **칸을 늘린다**(「성아랫마을」 5자 > 4칸 — 줄인 꼴 「성마을」로 안 떨어진다, 마스터 10-12 「칸 문제는 기술 먼저」).
 
     영역 끝 0 꼬리 12B 안에서만 늘고, 장소 표를 밀린 만큼 고친다(`exetext.panel_relayout`). 창 폭이 6글자라 7글자 이상은 늘리지 않는다(`gap_long` 으로 센다)."""
+    data0 = bytes(exe)
+    # 앞 0(들여쓰기)을 먼저 걷어 풀 꼬리를 넓힌다(11-11: 스텁이 글자 수로 가운데 맞추므로 앞 0 은 쓸모없고 262B 를 먹었다) — 띄어쓰기를 살릴 여유
+    report["panel_freed"] = exetext.panel_strip_leads(exe, disc)
     data = bytes(exe)
     need = {}
     for unit in exetext.panel_units(data, *panel):
@@ -266,14 +297,14 @@ def panel_grow(exe, disc, table, words, report, panel):
             if not kr or kr == jp:
                 continue
             try:
-                enc = hangul_map.encode(kr.replace(" ", ""), disc, table)
+                enc = panel_enc(kr, disc, table)
             except KeyError:
                 continue
-            if n < len(enc) <= 6:
+            if n < len(enc) <= 7 and panel_row_width(enc, table[" "]) <= tile_hook.PANEL_ROW_PX:
                 need[off] = len(enc)
     grown = exetext.panel_relayout(exe, disc, exetext.panel_inserts(data, disc, need)) if need else 0
     report["panel_grown"] = grown
-    if grown:  # 🔴 검산 — 표의 모든 항목이 늘리기 전과 **같은 목록(제어 코드 뼈대)** 을 가리킨다
+    if grown or report["panel_freed"]:  # 🔴 검산 — 표의 모든 항목이 늘리기 전과 **같은 목록(제어 코드 뼈대)** 을 가리킨다
         tab, n_ent = exetext.PANEL_TABLE[disc]
 
         def skeleton(buf, off):
@@ -287,9 +318,9 @@ def panel_grow(exe, disc, table, words, report, panel):
                 off += 2
 
         for i in range(n_ent):
-            a0 = tab + struct.unpack_from("<H", data, tab + 2 * i)[0]
+            a0 = tab + struct.unpack_from("<H", data0, tab + 2 * i)[0]
             b0 = tab + struct.unpack_from("<H", bytes(exe), tab + 2 * i)[0]
-            if skeleton(data, a0) != skeleton(bytes(exe), b0):
+            if skeleton(data0, a0) != skeleton(bytes(exe), b0):
                 raise SystemExit(f"🔴 패널 표 {i}번이 늘린 뒤 다른 목록을 가리킨다")
 
 
@@ -311,14 +342,14 @@ def panel_pass(exe, disc, table, words, seen, report, panel):
             elif kr:
                 try:
                     # 패널은 원판처럼 붙여 쓴다(마스터 10-09 — 원판 패널 181줄에 띄어쓰기 0, 칸만 붙이고 대화는 그대로)
-                    enc = hangul_map.encode(kr.replace(" ", ""), disc, table)
+                    enc = panel_enc(kr, disc, table)  # 마스터 10-29·11-11: ED3 지명은 칸에서도 띄어 쓴다 — 타이틀 슬롯·인게임 슬롯이 같은 표기(창 폭 6글자 초과만 붙임)
                     # 한도 = 줄의 **칸 수 n**(들여쓰기 0 칸 포함) — 0 은 엔진 스텁이 폭 0 으로 보고 글자를 줄 머리에 붙여 가운데 맞춘다(마스터 10-12 「서쪽벌판인데 서쪽벌만」)
                     if len(enc) > n:
                         short = glossary.lookup_shared(disc, jp + "@월드맵", "place")
                         if short:
                             enc = hangul_map.encode(short, disc, table)
                             report["gap_short"] = report.get("gap_short", 0) + 1
-                    if len(enc) > n:
+                    if len(enc) > n or panel_row_width(enc, table[" "]) > tile_hook.PANEL_ROW_PX:
                         report.setdefault("gap_long", []).append((jp, kr))
                     else:
                         new = enc
@@ -418,7 +449,7 @@ SUBMENU = {
         "keycfg": (0xA1232, 9, [("", "노멀"), ("", "와이드")]),  # 창 열 3 · 노멀은 사이 공백 없이 왼쪽 정렬(마스터 10-12)
     },
 }
-DETAIL_TITLES = {"ed3": {10: ("0000", "세이브데이터"), 11: ("00 ", "데이터가 없습니다."), 13: ("0000 ", "로드데이터")}}  # 표 항목 → (앞 여백: 0 = 전각 1칸 · 공백 = 반 칸, 글) — 14칸 창 가운데
+DETAIL_TITLES = {"ed3": {10: ("000 ", "세이브 데이터"), 11: ("0", "데이터가 없습니다."), 13: ("0000", "로드 데이터")}}  # 표 항목 → (앞 여백: 0 = 전각 1칸 · 공백 = 반 칸, 글) — 14칸 창 가운데
 
 
 def _line_words(enc, lead, txt):
@@ -520,7 +551,7 @@ def reinsert_names(exe, disc, table, report):
         ents = struct.unpack_from(f"<{n}H", bytes(exe), tbl)
         cur, krs, changed = [], [], 0
         for x in ents:
-            codes, _ = exetext.raw_string(bytes(exe), base + x)
+            codes, term0 = exetext.raw_string(bytes(exe), base + x)
             codes = codes or []
             jp = textenc.decode(codes, disc)
             kr = words.get(jp)
@@ -528,7 +559,13 @@ def reinsert_names(exe, disc, table, report):
                 seen.add(jp)
             if kr and kr != jp:
                 try:
-                    cur.append(hangul_map.encode(kr, disc, table))
+                    # 종결이 0x0000 이고 바로 뒤에 접미 문자열이 이어 붙는 이름(「サフィー」+「第２巻」)은 이름 끝에 띄어쓰기를 둔다 — 0 은 폭이 없어 안 두면 「사피제2권」으로 붙는다(10-28)
+                    nxt = struct.unpack_from("<H", bytes(exe), base + x + 2 * (len(codes) + 1))[0] if term0 == exetext.TERM_ZERO else None
+                    sep = [table[" "]] if nxt is not None and not exetext.is_term(nxt) and not kr.endswith(" ") else []
+                    enc_kr = hangul_map.encode(kr, disc, table)
+                    if len(enc_kr) + len(sep) > len(codes):  # 칸(원문 글자 수)을 넘으면 띄어쓰기를 안 둔다 — 넘치면 접미 문자열을 덮는다
+                        sep = []
+                    cur.append(enc_kr + sep)
                     krs.append(kr)
                     changed += 1
                     continue
@@ -585,6 +622,14 @@ def reinsert_names(exe, disc, table, report):
         for off, codes, term in gaps_by_region.get(start, []):
             jp = textenc.decode(codes, disc)
             kr = words.get(jp)
+            if jp in ("その１", "その２", "その３"):
+                # 「剣士教本」+0+「その１」 — 접미는 정본 아이템 값(「검사교본 1」)에서 이름 몫을 뺀 나머지(「 1」)다. 원문에 「第N巻」이 없으니 「제N권」을 안 붙인다(10-28)
+                full = glossary.lookup_shared(disc, "剣士教本 " + jp, "item")
+                head = words.get("剣士教本", "")
+                if full and head and full.startswith(head):
+                    # 🔴 앞 공백을 뺀다(마스터 11-07 「검사교본과 숫자가 너무 떨어져 있다」) — 이름 뒤 종결 0 이 한 칸을 차지해(목록·대사 모두) 접미 앞 공백까지 두면 두 칸 벌어진다.
+                    #    접미 뒤 채움 공백(`pad_code`)은 보이지 않는다 — 결과는 「검사교본 1」(정본 꼴, 한 칸)
+                    kr = full[len(head) :].lstrip(" ")
             if not kr or kr == jp:
                 continue
             try:
@@ -598,7 +643,16 @@ def reinsert_names(exe, disc, table, report):
                     if short:
                         enc_kr = hangul_map.encode(short, disc, table)
                         report["gap_short"] = report.get("gap_short", 0) + 1
-                exetext.write_in_place(exe, off, codes, term, enc_kr, pad_code=table.get(" "))
+                numbered = jp in ("その１", "その２", "その３")
+                # 🔴 번호 접미(「검사교본 1」)는 이름과 접미 사이 종결 0 이 **전각 한 칸(12px)** 공백으로 그려져 틈이 넓다(마스터 11-08 「띄어쓰기는 반각」 —
+                #    11-07 에 앞 공백만 뺐으나 0 칸이 그대로). 그 0 을 **반각 공백 코드**로 바꾸면 6px 이 된다(헤드리스 도구 목록 대조 확인).
+                #    접미 뒤 채움 공백도 반각 둘(12px)이라 「1 ⎵⎵ 인가?」 로 넓었다 — 숫자 접미는 종결 뒤 0 채움으로 바꿔 화면엔 안 그린다.
+                if numbered:
+                    prev = struct.unpack_from("<H", exe, off - 2)[0]
+                    if prev != exetext.TERM_ZERO:
+                        raise SystemExit(f"🔴 번호 접미 앞 코드가 0 이 아니다: {prev:#x} @ {off - 2:#x}")
+                    struct.pack_into("<H", exe, off - 2, table[" "])
+                exetext.write_in_place(exe, off, codes, term, enc_kr, pad_code=None if numbered else table.get(" "))
                 seen.add(jp)
                 report["names"] += 1
                 report["gap_put"] = report.get("gap_put", 0) + 1
@@ -608,6 +662,49 @@ def reinsert_names(exe, disc, table, report):
                 if "넘는다" not in str(e):
                     raise  # 원본이 달라졌다 — 빈틈의 닻이 움직였다(구조 가정이 깨졌다)
                 report.setdefault("gap_long", []).append((jp, kr))
+    # 🔴 이름+접미 한 문자열(「사피」+0+「제N권」) — 이름 칸(원문 4글자)을 못 채운 만큼 채움 0 이 전각 칸으로 그려져 「사피⎵⎵⎵제9권」 처럼 벌어진다
+    #    (마스터 11-09 「사피도 권수 사이에 공백이 많아」). 0 을 전부 걷고 이름·접미 사이에 반각 공백 코드 하나만 둔다 — 종결 뒤는 0 채움(화면에 안 그린다).
+    for t in tables:
+        tbl, base, n = t["table"], t["base"], t["n"]
+        for x in struct.unpack_from(f"<{n}H", bytes(exe), tbl):
+            a = base + x
+            if a not in exetext.SERIES_ENTRIES:
+                continue
+            w, k = [], a
+            while True:
+                c = struct.unpack_from("<H", exe, k)[0]
+                w.append(c)
+                k += 2
+                if c == exetext.TERM_FFFF or len(w) > 40:
+                    break
+            if w[-1] != exetext.TERM_FFFF or w[0] == 0:
+                continue
+            sp = table[" "]
+            body = [c for c in w[:-1] if c != 0]
+            out, prev_sp = [], False
+            for c in body:
+                if c == sp and prev_sp:
+                    continue
+                prev_sp = c == sp
+                out.append(c)
+            if sp not in out:
+                continue  # 이름과 접미 사이 공백 코드가 있는 꼴만(사피·검사교본 계열) — 다른 이름은 건드리지 않는다
+            # 번호 접미(「검사교본 1」)는 [공백][숫자] 를 **반 칸 빈 숫자 글리프 하나**로 바꾼다 — 목록 창은 공백 코드도 12px 로 그려 반각 틈이 안 난다
+            lead = {table[d]: table[g] for g, d in font.LEAD_DIGITS.items()}
+            if len(out) >= 2 and out[-2] == sp and out[-1] in lead:
+                out[-2:] = [lead[out[-1]]]
+                report["series_lead"] = report.get("series_lead", 0) + 1
+            # 「사피 ⎵ 제 N 권」 → 「사피 [⎵제][제N] 권」 — 같은 반 칸 틈을 이름+접미 둘째 형태에도(제 가 한 칸이라 두 칸으로 나눠 반 칸 민다)
+            je = table["제"]
+            if len(out) >= 4 and out[-4] == sp and out[-3] == je:
+                n_ch = cm.get(out[-2])
+                if n_ch and n_ch in "１２３４５６７８９":
+                    out[-4:-1] = [table[font.JE_LEAD], table[chr(0xE040 + "１２３４５６７８９".index(n_ch) + 1)]]
+                    report["series_je"] = report.get("series_je", 0) + 1
+            new = out + [exetext.TERM_FFFF]
+            if new != w[: len(new)] or any(w[len(new) :]):
+                struct.pack_into(f"<{len(w)}H", exe, a, *(new + [0] * (len(w) - len(new))))
+                report["series_tight"] = report.get("series_tight", 0) + 1
     # 🔴 **표가 없는 구역은 아직 못 넣는다** — 화면에 일본어가 남는다는 뜻이라 세어서 알린다.
     #    (그 구역은 길이 고정이라, 우리 표기가 원문과 글자 수가 같을 때만 넣을 수 있다.)
     report["names_left"] = sorted(set(words) - seen)
@@ -840,6 +937,9 @@ def main():
         problems = exetext.panel_structure_problems(exe_orig, bytes(exe), *exetext.PANEL[a.disc])
         if problems:
             raise SystemExit("🔴 월드맵 패널 구조가 원판과 다르다:\n  " + "\n  ".join(problems[:10]))
+        problems = exetext.panel_width_problems(bytes(exe), *exetext.PANEL[a.disc], enc(" ")[0], tile_hook.PANEL_ROW_PX)
+        if problems:
+            raise SystemExit("🔴 월드맵 패널 줄 폭이 칸(72px)을 넘는다(글자 간격 11px 로도):\n  " + "\n  ".join(problems[:10]))
     # 🔴 불변식 — 구운 UI 글이 정본과 같은가(공백 빼고). 낱말 재포장이 표를 같이 쓰므로 그 뒤에 본다.
     lost = uitext.lost_text(exe_orig, bytes(exe), a.disc, enc)
     if lost:
@@ -908,7 +1008,7 @@ def main():
             print("     " + " · ".join(f"{j}→{k}" for j, k in long_[:12]))
         print("     " + " · ".join(left[:10]))
     if report.get("squeezed"):
-        print(f"  ⬜ 칸 예산 때문에 뺀 띄어쓰기 {report['squeezed']} (이름은 들어갔다)")
+        print(f"  ⬜ 칸 예산 때문에 뺀 띄어쓰기 {report['squeezed']} (이름은 들어갔다) — {report.get('squeezed_names')}")
     if speakers_blocked or report.get("auto_over") or report.get("auto_wrap"):
         print(
             f"  ⬜ 화자명(정본 speaker): 길이 고정 멤버라 못 넣은 이름 {speakers_blocked} · "

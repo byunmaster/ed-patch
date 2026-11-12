@@ -237,7 +237,7 @@ def half_codes(table):
     return [table[" "]] + [table[c] for c in "()" if c in table] + [0x01, 0x02, 0x04, 0x05] + ascii_codes + kagi
 
 
-def apply_panel(exe, disc):
+def apply_panel(exe, disc, space):
     """월드맵 장소 패널 가운데 정렬 — 스텁을 자료 자리 뒤쪽에 놓고 패널 그리기 함수 세 군데를 `jal` 로 잇는다(`tile_hook.PANEL_SITES`)."""
     import tile_hook
 
@@ -246,11 +246,18 @@ def apply_panel(exe, disc):
         return ""
     for addr, orig, _label in sites:
         _expect(exe, addr, orig, "월드맵 패널 그리기")
-    words, base, labels = tile_hook.panel_stubs(disc)
+    words, base, labels, init = tile_hook.panel_stubs(disc, space)
     p = PATCH[disc]
     off = _off(base)
     assert base - p["data"] + 4 * len(words) <= p["data_len"], "패널 스텁이 자료 자리를 넘는다"
     struct.pack_into(f"<{len(words)}I", exe, off, *words)
+    # 첫 줄 진입 스텁은 R1(커서 줄 훅) 꼬리 — 커서 훅이 쓴 끝(R1+412) 뒤 16B 안, 검증 구간(428B) 안이다. 커서 훅이 쓴 뒤여야 한다(apply 순서)
+    import cursor_hook
+
+    r1_used = 4 * len(cursor_hook.build(disc, space)[0])
+    assert tile_hook.PANEL_INIT_ADDR == cursor_hook.R1 + r1_used, "패널 첫 줄 스텁 자리가 R1 꼬리가 아니다"
+    assert r1_used + 4 * len(init) <= cursor_hook.R1_LEN, "패널 첫 줄 스텁이 R1 검증 구간을 넘는다"
+    struct.pack_into(f"<{len(init)}I", exe, _off(tile_hook.PANEL_INIT_ADDR), *init)
     for addr, orig, label in sites:
         jal = (3 << 26) | ((labels[label] >> 2) & 0x3FFFFFF)
         struct.pack_into(f"<{len(orig)}I", exe, _off(addr), jal, *([0] * (len(orig) - 1)))
@@ -273,6 +280,8 @@ SQUARE_WINDOW = {"ed3": ((0x8005C084, 0x2404006A, 0x24040070), (0x8005C08C, 0x24
 # 「대열을 짤 수 없어 퇴각합니다.」 창(`0x80070B88`: x=50 · y=100 · 열 15 · 행 1) — 원문 15자 꼴이라 열이 15 상수다. 한글은 공백 포함 17칸이라 끝 두 글자가 칸이 없어 잘린다(칸 수 문제) → 열 17.
 LINEUP_COLS = 17
 LINEUP_WINDOW = {"ed3": (0x80070B80, 0x2406000F)}  # (`addiu a2, zero, 15` 자리, 원본 워드)
+# x 도 같이 옮긴다 — 열만 늘리면 창이 오른쪽으로 치우친다(11-07 관리자: 원판은 가운데). 원판 중심 = 50 + 15×12/2 = 140 → x = 140 − 17×12/2 = 38.
+LINEUP_X = {"ed3": (0x80070B78, 0x24040032, 0x24040026)}  # (`addiu a0, zero, 0x32` 자리, 원본 워드, 새 워드)
 
 
 def apply_lineup_window(exe, disc):
@@ -282,7 +291,39 @@ def apply_lineup_window(exe, disc):
     addr, orig = site
     _expect(exe, addr, (orig,), "대열 메시지 창 열 수")
     struct.pack_into("<I", exe, _off(addr), 0x24060000 | LINEUP_COLS)
-    return f" · 대열 창 열 {LINEUP_COLS}"
+    xa, xo, xn = LINEUP_X[disc]
+    _expect(exe, xa, (xo,), "대열 메시지 창 x")
+    struct.pack_into("<I", exe, _off(xa), xn)
+    return f" · 대열 창 열 {LINEUP_COLS} · x {xn & 0xFFFF}"
+
+
+# 이벤트 「소지품 고르기」 목록 창(연산 0x40 핸들러 `0x80074184`: x=80 · y=27 · 열 8 · 행 8) — 원문 아이템 이름 최장 7자라 열 8 이 맞았지만 한글은 8~9자(「마법저항의 반지Ⅱ」 9 ·
+#   「왕자의 커틀러스」 8 …)라 이름+개수가 8칸을 넘는다 → 같은 x(80)의 구매·판매 목록과 같은 **열 11** 로(11-07 정적 전수 — ps1-ed4 의 「목록 창 폭 < 이름 최장」 부류).
+ITEMSEL_COLS = 11
+ITEMSEL_WINDOW = {"ed3": (0x800741B0, 0x24060008)}  # (`addiu a2, zero, 8` 자리, 원본 워드)
+# 메인 메뉴 목록 창 — 같은 8열 상수(`addiu a2, zero, 8` = 창 생성 `jal 0x800174A0` 바로 앞 둘째 인자 자리). 화면 확인(11-07 헤드리스, 소지품 RAM 주입):
+#   「도구」 목록(x=88)은 「마법저항의 반지Ⅱ·Ⅲ」 끝 글자가 잘림 → 열 11. 「장비」 목록(x=54)은 오른쪽 능력치 패널(x=190)에 닿지 않는 열 10(폭 136 → 54..190, 접미까지 보임).
+INVLIST_WINDOWS = {
+    "ed3": [
+        (0x8002804C, 0x24060008, 11, "도구 목록 열"),
+        (0x800276AC, 0x24060008, 10, "장비 목록 열"),
+    ],
+}
+
+
+def apply_itemsel_window(exe, disc):
+    site = ITEMSEL_WINDOW.get(disc)
+    if not site:
+        return ""
+    addr, orig = site
+    _expect(exe, addr, (orig,), "소지품 고르기 창 열 수")
+    struct.pack_into("<I", exe, _off(addr), 0x24060000 | ITEMSEL_COLS)
+    note = f" · 소지품 고르기 창 열 {ITEMSEL_COLS}"
+    for a, o, cols, what in INVLIST_WINDOWS.get(disc, []):
+        _expect(exe, a, (o,), what)
+        struct.pack_into("<I", exe, _off(a), 0x24060000 | cols)
+        note += f" · {what} {cols}"
+    return note
 
 
 # 시스템 메뉴 하위 창 — 창 생성 상수(`jal 0x800174A0` 앞 `addiu` 넷: x · y · 열 · 행)를 바꾼다. 마스터 10-11 「중앙정렬」:
@@ -461,7 +502,7 @@ def apply(exe, disc, table, josa=None):
     markers = josa["markers"] if josa else [(0x7FFF, 0, 0, 0)] * tile_hook.N_MARK
     blist = josa["blist"] if josa else []
     words, labels = tile_hook.hooks_b(disc, len(blist), with_josa=josa is not None)
-    mwords, mbase = tile_hook.msg_stub(disc, labels)
+    mwords, mbase = tile_hook.msg_stub(disc, labels, table[" "])
     assert 4 * len(words) <= p["dead_len"], f"훅 코드가 죽은 함수 자리를 넘는다 ({4 * len(words)}B > {p['dead_len']}B)"
     blob = tile_hook.data_blob(p, half, markers, blist)
     assert len(blob) <= p["data_len"], f"자료가 자리를 넘는다 ({len(blob)}B > {p['data_len']}B)"
@@ -470,17 +511,17 @@ def apply(exe, disc, table, josa=None):
     import cursor_hook as _ch
 
     assert mbase + 4 * len(mwords) <= _ch.buf_layout(disc)[0], "메시지 창 갈래가 커서 줄 임시 버퍼를 침범한다"
-    assert _ch.buf_layout(disc)[0] + (_ch.COLS_MAX + 1) * 18 <= p["data"] + p["data_len"], "커서 줄 임시 버퍼가 자료 자리 끝을 넘는다"
+    assert _ch.buf_layout(disc)[0] + (_ch.COLS_MAX + 1) * 18 <= _ch.allow_addr(disc), "커서 줄 임시 버퍼가 허용 판정 서브루틴을 침범한다"
     struct.pack_into(f"<{len(words)}I", exe, d0, *words)
     exe[x0 : x0 + len(blob)] = blob
     struct.pack_into(f"<{len(mwords)}I", exe, _off(mbase), *mwords)
     struct.pack_into("<II", exe, _off(p["site_a"]), (3 << 26) | ((p["dead"] >> 2) & 0x3FFFFFF), 0)
     import cursor_hook
 
-    cursor = cursor_hook.apply(exe, disc)
+    cursor = cursor_hook.apply(exe, disc, table[" "])
     # 칸 연속성 서브루틴 — R2 사전조건(sha1)을 `cursor_hook.apply` 가 보므로 **그 뒤에** 쓴다
     dj = tile_hook.djump_words()
     struct.pack_into(f"<{len(dj)}I", exe, _off(tile_hook.DJUMP_ADDR), *dj)  # 칸 연속성 서브루틴(R2 맨 끝)
     cursor += apply_currency_unit(exe, disc, table)
-    panel = apply_panel(exe, disc) + apply_result_windows(exe, disc) + apply_square_window(exe, disc) + apply_submenu_windows(exe, disc) + apply_lineup_window(exe, disc) + cursor
+    panel = apply_panel(exe, disc, table[" "]) + apply_result_windows(exe, disc) + apply_square_window(exe, disc) + apply_submenu_windows(exe, disc) + apply_lineup_window(exe, disc) + apply_itemsel_window(exe, disc) + cursor
     return f"타일 합성(반 칸 {len(half)}종) · 훅 {len(words)}워드 @ {p['dead']:#x} · 자료 {len(blob)}B @ {p['data']:#x}{panel}"

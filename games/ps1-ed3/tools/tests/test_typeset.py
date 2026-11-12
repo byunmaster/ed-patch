@@ -140,6 +140,14 @@ class TestTypeset(unittest.TestCase):
         with self.assertRaises(typeset.TypesetError):
             typeset.pad_rows("가" * 25 + "\n나", "ed3")
 
+    def test_centered_line_keeps_its_full_width_spaces(self):
+        """가운데 맞춤 줄(전각 공백으로 시작 — 장 끝 문구, 마스터 11-10)은 줄 속 전각 공백도 지킨다. 그 밖의 줄은 종전대로 반각으로 눌린다."""
+        jp = "\u3000" * 6 + "第１章\u3000テグラの宝石\u3000完"
+        got = typeset.wrap("\u3000\u3000 제１장\u3000테그라의 보석\u3000끝", "ed3", jp=jp)
+        self.assertEqual(got, "\u3000\u3000 제１장\u3000테그라의 보석\u3000끝")
+        plain = typeset.wrap("제１장\u3000테그라의 보석\u3000끝", "ed3", jp=jp)
+        self.assertEqual(plain, "제１장 테그라의 보석 끝")
+
     def test_wrap_keeps_edge_spaces_next_to_engine_variables(self):
         """변수(이름·수치·아이템) 바로 뒤/앞에 붙는 조각의 앞뒤 공백은 조판이 먹지 않는다 — 먹으면 이름과 말이 붙는다(10-18 sfc-ed2·pce-ed1)."""
         for text in (" 받을게.", "쥬리오는 ", " 많아서는 ", "가 나"):

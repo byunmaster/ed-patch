@@ -454,7 +454,82 @@ def _wrap_sentence(sent, disc, cols):
     return out if all(_fits(x, disc, cols) for x in out) else None
 
 
-def reflow(texts, disc="ed3", cols=None, rule216=True):
+PAGE_ROWS = (3, 4)  # 엔진이 쪽을 넘기는 줄 수 — 이름표(화자)가 있는 창은 3줄, 없는 창은 4줄(11-06 화면 실측: FT3001 창 0·22, MT2100 창 14)
+
+
+def blank_page(rows):
+    """조각 수 `len(rows)` 중 글 있는 줄이 앞에 몰려 **글 없는 조각만으로 한 쪽이 서면** 참 — 엔진은 그 빈 쪽에서도 확인 키를 기다린다.
+    이름표 유무를 정적으로 못 가르므로 쪽 크기 3·4 둘 다 본다(11-06: 5조각에 글 3~4줄이면 둘째 쪽이 빈 창으로 떴다)."""
+    n = sum(1 for r in rows if r.strip())
+    return any(n <= p * c < len(rows) for p in PAGE_ROWS for c in range(1, len(rows)))
+
+
+STATS = {"sentence": 0, "clause": 0, "cols": 0, "kept": 0}  # 빈 쪽 해소 방법별 창 수(11-06 관리자 보고용 — 문장 경계 · 절 경계 · 좁은 칸 · 원 구조 유지)
+
+
+def _cuts(row, clause):
+    """줄 안에서 나눌 수 있는 자리 [k] (row[k] == " ") — 앞이 문장 끝이면 문장 경계, `clause` 면 쉼표·연결어미 뒤(`clause_bound`, 2-16 ②)도."""
+    words = row.split(" ")
+    out, pos = [], 0
+    for k in range(len(words) - 1):
+        pos += len(words[k])
+        if (words[k] and words[k + 1]) and (
+            krwrap.is_sentence_end(words[k]) or (clause and clause_bound(words, k))
+        ):
+            out.append(pos)
+        pos += 1
+    return out
+
+
+def _split_blank(rows, clause):
+    """빈 쪽을 줄 쪼개기로 푼다(2-17 > 2-10/2-16 — 마스터 11-06 규칙 순서): 한 줄에 두 문장 이상이면 문장 경계에서, 원래 쪽 경계에 가장 가까운 줄부터.
+    `clause` 면 쉼표 뒤도 쓴다(한 문장뿐인 창). 줄이 하나 늘 때마다 꼬리 빈 조각 하나를 먹는다. 글은 안 줄인다(공백 하나가 줄 바꿈이 될 뿐)."""
+    r = list(rows)
+    while blank_page(r):
+        if r[-1] != "":
+            return None
+        best = None
+        for i, row in enumerate(r):
+            for k in _cuts(row, clause):
+                d = min(min((i + 1) % p, p - (i + 1) % p) for p in PAGE_ROWS)
+                if best is None or d < best[0]:
+                    best = (d, i, k)
+        if best is None:
+            return None
+        _d, i, k = best
+        r[i : i + 1] = [r[i][:k], r[i][k + 1 :]]
+        r.pop()
+    last = [x for x in r if x.strip()][-1]
+    if " " not in last and len(last) <= 4:  # 마지막 쪽에 낱말 하나만 외롭게 남기지 않는다(고아)
+        return None
+    return r
+
+
+def reflow(texts, disc="ed3", cols=None, rule216=True, glue=()):
+    """`_reflow` 결과가 빈 쪽을 만들면 푼다 — ① 문장 경계 쪼개기 ② 절 경계(쉼표) 쪼개기 ③ 칸 수를 줄인 재조판 ④ 안 되면 None(원래 구조 유지)."""
+    rows = _reflow(texts, disc, cols, rule216, glue)
+    if rows is None or not blank_page(rows):
+        return rows
+    base = None
+    for clause, name in ((False, "sentence"), (True, "clause")):
+        alt = _split_blank(rows, clause)
+        if alt is not None:
+            if base is None:
+                base = _reflow(texts, disc, cols, False, glue) or texts
+            if regressions(base, alt):  # 규칙 전 조판보다 나빠지면(새 끊김) 이 방법은 쓰지 않는다
+                continue
+            STATS[name] += rule216
+            return alt
+    for c in range((cols or COLS[disc] or 24) - 1, 11, -1):
+        alt = _reflow(texts, disc, c, rule216, glue)
+        if alt is not None and not blank_page(alt):
+            STATS["cols"] += rule216
+            return alt
+    STATS["kept"] += rule216
+    return None
+
+
+def _reflow(texts, disc="ed3", cols=None, rule216=True, glue=()):
     """창 하나의 조각들 → 같은 개수의 조각(앞에서부터 한 줄씩, 남는 꼬리는 빈 문자열). 못 하면 None(원래 구조 유지).
 
     규칙: 문장을 이어 놓고 ① 앞 줄 남은 칸에 문장이 **통째로** 들어가면 거기 잇고(2-10) ② 아니면 새 줄에서 시작하며 ③ 한 줄보다
@@ -469,10 +544,13 @@ def reflow(texts, disc="ed3", cols=None, rule216=True):
         or t != t.strip(" ")
         or "\n" in t
         or josa_rt._TOKEN.search(t)
+        or josa_rt._COPULA.match(t)
         or t[0] in josa_rt.MARKER_CHARS
         or t.startswith("\u3000")
         for t in texts
-    ):
+    ) or any(
+        t.startswith("…") and not krwrap.is_sentence_end(texts[k - 1]) for k, t in enumerate(texts) if k
+    ):  # 앞 조각이 문장 중간에서 끝나고 다음 조각이 「…」 로 시작하면 줄 머리 말줄임이다 — 이어 붙이면 줄 가운데 「…」 뒤가 붙는다(2-11)
         return None
     if _BOUND is None:
         _BOUND = _bind_names()
@@ -480,8 +558,17 @@ def reflow(texts, disc="ed3", cols=None, rule216=True):
     for name, bound in _BOUND:
         para = para.replace(name, bound)
     para = bind_runs(para)
+    for x, y in glue:  # 굳은 명사구로 갈린 쌍은 한 덩이로 묶어 다시 나눈다
+        para = para.replace(f"{x} {y}", x + BIND + y)
     rows, cur = [], ""
+    sents = []
     for sent in krwrap.split_sentences(para):
+        # 「…!』입니다」 처럼 닫는 부호 바로 뒤에 글이 붙어 있으면 공유 분리기가 둘로 쪼갠다 — 원문에 공백이 없었으니 다시 붙인다(공백을 새로 넣지 않는다)
+        if sents and sents[-1] + sent in para and sents[-1] + " " + sent not in para:
+            sents[-1] += sent
+        else:
+            sents.append(sent)
+    for sent in sents:
         cand = f"{cur} {sent}" if cur else sent
         if _fits(cand, disc, cols):
             cur = cand
@@ -517,6 +604,44 @@ def reflow(texts, disc="ed3", cols=None, rule216=True):
         if regressions(base or texts, rows):
             REJECTED.append(regressions(base or texts, rows))
             return base  # 규칙 전 조판(재조판을 못 타던 창이면 None — 원고 줄 구조 그대로)
+        # 굳은 명사구가 갈리면(2-16 ④) 한 줄 문장(2-10)을 살리려 구를 가르면 안 된다 — 문장을 이어 채운 배치로 다시 해 보고, 그래도 갈리면 옛 배치
+        orig = [r for t in texts for r in wrap(t, disc).split("\n") if r.strip()]  # 원고 구조 그대로 구운 꼴
+        e0 = phrase_violations(orig)
+        if phrase_violations(rows) > e0:
+            pairs = tuple(
+                (u.split()[-1], v.split()[0])
+                for u, v in zip(rows, rows[1:], strict=False)
+                if u.split() and v.split() and not krwrap.is_sentence_end(u) and split_phrase(u, v)
+            )
+            if pairs and not glue:
+                alt = reflow(texts, disc, cols, glue=pairs)
+                if (
+                    alt
+                    and phrase_violations([r for r in alt if r.strip()]) <= e0
+                    and not regressions(base or texts, alt)
+                ):
+                    return alt
+            dense = _wrap_sentence(para, disc, cols)
+            for alt in (
+                rebreak(dense, lambda t: _wrap_sentence(t, disc, cols), disc, cols) if dense else None,
+                dense,
+                _wrap_sentence(para, disc, cols - 2),
+            ):
+                alt = fix_phrases(alt, disc, cols) if alt else None
+                if not alt:
+                    continue
+                alt = [r.replace(BIND, " ") for r in alt]
+                if len(alt) > len(texts):
+                    continue
+                alt = alt + [""] * (len(texts) - len(alt))
+                if phrase_violations([r for r in alt if r.strip()]) <= e0 and not regressions(
+                    base or texts, alt
+                ):
+                    return alt
+            REJECTED.append(["굳은 명사구가 갈림 — 옛 배치"])
+            if base and phrase_violations([r for r in base if r.strip()]) <= e0:
+                return base
+            return None
     return rows
 
 
@@ -567,7 +692,15 @@ def reflow_member(texts_per_chain, disc="ed3", cols=None):
     rows = [None if t is None else reflow(t, disc, cols) for t in texts_per_chain]
     caps = [len(t) if t is not None else 0 for t in texts_per_chain]
     bal = balance_windows(rows, caps, disc, cols or COLS[disc] or 24)
-    return [None if r is None else r + [""] * (c - len(r)) for r, c in zip(bal, caps, strict=True)]
+    out = [None if r is None else r + [""] * (c - len(r)) for r, c in zip(bal, caps, strict=True)]
+    # 균형 잡기가 줄을 앞 창에서 덜어 빈 쪽을 만들면 그 창만 균형 전 줄로 되돌린다
+    return [
+        o if o is None or not blank_page(o) else (r if r is not None and not blank_page(r) else o)
+        for o, r in zip(out, [None if r is None else r + [""] * (c - len(r)) for r, c in zip(rows, caps, strict=True)])
+    ]
+
+
+_FULL_KEEP = "\ue000"  # wrap() 안에서만 쓰는 전각 공백 자리표
 
 
 class TypesetError(Exception):
@@ -589,7 +722,7 @@ def wrap(text, disc, jp=None, width=None, lines=None, floor=0):
     """
     if not text.strip():
         return ""
-    lead = text[: len(text) - len(text.lstrip(" "))]
+    lead = text[: len(text) - len(text.lstrip(" \u3000"))]  # 앞 공백 — 반각·전각 모두(가운데 맞춤 줄, 마스터 11-10)
     trail = text[len(text.rstrip(" ")) :]
     if width is None or lines is None:
         w, n = (
@@ -600,13 +733,19 @@ def wrap(text, disc, jp=None, width=None, lines=None, floor=0):
         width = width if width is not None else w
         lines = lines if lines is not None else n
     cols = COLS[disc]
+    # 🔴 줄이 전각 공백(U+3000)으로 **시작**하면 가운데 맞춤 줄이다(장 끝 문구, 마스터 11-10 「장번호[전각]제목[전각]끝」) — 줄 속 전각 공백도
+    #    krwrap 이 반각으로 눌러 버리지 않게 사설 글자로 가렸다가 되돌린다. 그 밖의 줄은 종전대로(전각 공백 → 반각).
+    keep_full = lead.startswith("\u3000")
+    body = text[len(lead) :].replace("\u3000", _FULL_KEEP) if keep_full else text
     while True:
         out = krwrap.wrap(
-            text.replace("\n", " "),
+            body.replace("\n", " "),
             width=width,
             cell_width=lambda ch: cell_width(ch, disc),
             strip_after=STRIP_AFTER[disc],
         )
+        if keep_full:
+            out = [x.replace(_FULL_KEEP, "\u3000") for x in out]
         # 🔴 슬롯 폭 안이어도 **글리프(공백 포함)가 격자 열을 넘으면** 엔진이 어절 한복판에서 접는다 — 줄 수 여유가 있을 때만
         #    폭을 반 칸씩 줄여 어절 경계에서 접는다(여유가 없으면 아래에서 운다 / 한 줄이면 `violations` 가 잡는다).
         if not cols or len(out) >= lines or max(len(x) for x in out) <= cols or width <= 4:

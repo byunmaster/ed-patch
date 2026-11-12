@@ -315,6 +315,22 @@ class TestPanelRelayout(unittest.TestCase):
         finally:
             exetext.PANEL["ed3"], exetext.PANEL_TABLE["ed3"] = old[0], old[1]
 
+    def test_strip_leads_frees_tail_and_remaps_table(self):
+        old = exetext.PANEL.get("ed3"), exetext.PANEL_TABLE.get("ed3")
+        exetext.PANEL["ed3"], exetext.PANEL_TABLE["ed3"] = (0x100, 0x120), (0x20, 3)
+        try:
+            exe = bytearray(0x200)
+            words = [0, 0, 0x11, 0x12, 0x8000, 0, 0x21, 0x8002] + [0] * 8
+            struct.pack_into(f"<{len(words)}H", exe, 0x100, *words)
+            struct.pack_into("<3H", exe, 0x20, 0xE0, 0xEA, 0xEE)  # A=줄 시작, B=0x8000 뒤 줄, 8002 자리
+            orig = bytes(exe)
+            self.assertEqual(exetext.panel_strip_leads(exe, "ed3"), 3)  # 앞 0 둘 + 하나
+            self.assertEqual(struct.unpack_from("<8H", exe, 0x100), (0x11, 0x12, 0x8000, 0x21, 0x8002, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)[:8])
+            self.assertEqual(struct.unpack_from("<3H", exe, 0x20), (0xE0, 0xE6, 0xE8))
+            self.assertEqual(exetext.panel_structure_problems(orig, bytes(exe), 0x100, 0x120), [])
+        finally:
+            exetext.PANEL["ed3"], exetext.PANEL_TABLE["ed3"] = old[0], old[1]
+
     def test_refuses_when_tail_too_short(self):
         old = exetext.PANEL.get("ed3"), exetext.PANEL_TABLE.get("ed3")
         exetext.PANEL["ed3"], exetext.PANEL_TABLE["ed3"] = (0x100, 0x120), (0x20, 3)

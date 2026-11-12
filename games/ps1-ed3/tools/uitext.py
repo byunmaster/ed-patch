@@ -74,7 +74,10 @@ EXTRA_SITES = {
         0x10E6,
         0x10F0,
         0x97D8E,
-    ],  # 0x97D8E = 주문 설명 문장(스캐너가 앞 자료와 한 덩어리로 읽고 버린다 — 10-18 CANON 전수에서 잡음) · はい · いいえ — 예/아니오 창(필드 이벤트·세이브 확인). 앞 네 워드(1·8·2·4)는 표가 아닌 자료다. いいえ 는 스캐너가 못 잡아 여기 둔다. 0x10DC·0x10E6·0x10F0 은 도구점 메뉴(買いたい·売りたい·換金する — 정본 사기·팔기·환전하기)
+        0x9D0C8,
+        0x9D0D6,
+        0x9D0E4,
+    ],  # 0x97D8E = 주문 설명 문장(스캐너가 앞 자료와 한 덩어리로 읽고 버린다 — 10-18 CANON 전수에서 잡음) · はい · いいえ — 예/아니오 창(필드 이벤트·세이브 확인). 앞 네 워드(1·8·2·4)는 표가 아닌 자료다. いいえ 는 스캐너가 못 잡아 여기 둔다. 0x10DC·0x10E6·0x10F0 은 도구점 메뉴(買いたい·売りたい·換金する — 정본 사기·팔기·환전하기) · 0x9D0C8·0x9D0D6·0x9D0E4 = 장비 해제 명령 셋(구역 라벨이 noise 라 스캐너가 버렸다 — 11-07 「원문이 그대로 남은 문자열」 전수에서 잡음, 제품 롬엔 코드 재배정으로 깨진 글자가 나갈 뻔함)
 }
 
 
@@ -186,15 +189,65 @@ def load(disc):
     return {int(k, 16): v for k, v in doc["strings"].items()}
 
 
+def load_padded(disc):
+    """{오프셋: {"jp": 지문, "kr": 문안}} — 앞에 0x0000 패드(가운데 정렬 빈 글자)가 붙은 문자열.
+
+    🔴 이 문자열은 표 항목이 **패드 첫 0 을 가리켜** 스캐너(`raw_string`)가 「빈 문자열」로 읽는다 — 그래서 `strings` 에 못 들어간다(10-28 검수: 세이브/로드
+       화면의 「セーブデータ」·「データがありません」·「ロードデータ」가 일본어로 남았다). 오프셋은 패드 첫 0 자리, 지문은 패드를 뺀 원문이다.
+    """
+    p = canon_path(disc)
+    if not os.path.exists(p):
+        return {}
+    with open(p, encoding="utf-8") as f:
+        doc = json.load(f)
+    return {int(k, 16): v for k, v in doc.get("padded", {}).items()}
+
+
+def apply_padded(exe, disc, encode):
+    """(넣은 수, 건너뛴 수) — 패드 문자열을 **제자리**에서 바꾼다(패드 + 글자 칸 수 안에서 가운데, 종결은 그대로)."""
+    cm = textenc.charmap(disc)
+    put = skipped = 0
+    for off, row in sorted(load_padded(disc).items()):
+        p = off
+        while struct.unpack_from("<H", exe, p)[0] == 0:
+            p += 2
+        z = (p - off) // 2
+        chars = []
+        while not exetext.is_term(w := struct.unpack_from("<H", exe, p)[0]):
+            chars.append(w)
+            p += 2
+        if script_canon.stamp(textenc.decode(chars, disc)) != row["jp"]:
+            skipped += 1  # 원본이 달라졌다 — 조용히 덮지 않는다
+            continue
+        try:
+            codes = ui_codes(encode, row["kr"])
+        except KeyError:
+            skipped += 1
+            continue
+        cap = z + len(chars)
+        if len(codes) > cap:
+            skipped += 1
+            continue
+        slack = cap - len(codes)
+        new = [0] * (slack // 2) + codes + [0] * (slack - slack // 2)
+        struct.pack_into(f"<{cap}H", exe, off, *new)
+        put += 1
+    return put, skipped
+
+
 def save(disc, rows):
     rows = {f"0x{o:06X}": v for o, v in sorted(rows.items()) if v.get("kr")}
     p = canon_path(disc)
+    padded = {f"0x{o:06X}": v for o, v in sorted(load_padded(disc).items())}
     if not rows:
-        if os.path.exists(p):
+        if os.path.exists(p) and not padded:
             os.remove(p)
-        return
+            return
+    doc = {"disc": disc, "strings": rows}
+    if padded:
+        doc["padded"] = padded
     with open(p, "w", encoding="utf-8") as f:
-        json.dump({"disc": disc, "strings": rows}, f, ensure_ascii=False, indent=1)
+        json.dump(doc, f, ensure_ascii=False, indent=1)
 
 
 def review_path(disc):
@@ -405,7 +458,8 @@ def apply(exe, disc, encode):
             continue
         exe[:] = bytearray(new)
         put += len(want)
-    return put, skipped
+    p2, s2 = apply_padded(exe, disc, encode)
+    return put + p2, skipped + s2
 
 
 def lost_text(orig, new, disc, encode):

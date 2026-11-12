@@ -70,7 +70,7 @@ class TestPlaceLabels(unittest.TestCase):
         for name, cfg in PL.LABELS.items():
             for jp, words, tiles in cfg["labels"]:
                 self.assertEqual(len(words), len(tiles), f"{name} {jp}")
-                kr = PL.korean(jp)
+                kr = PL.korean(jp, len(tiles))
                 known = [t for t in tiles if t is not None]
                 self.assertLessEqual(len(kr), len(known), f"{name} {jp} → {kr}")
                 self.assertEqual(len(set(words)), len(words), f"{name} {jp}: 워드가 겹친다")

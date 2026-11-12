@@ -45,7 +45,7 @@ class TestConvert(unittest.TestCase):
             josa_rt.runtime(table, ["철검"], {d: 29 + int(d) for d in "0123456789"})
         table["검"] = 0x800
         d = josa_rt.runtime(table, ["철검"], {k: 29 + int(k) for k in "0123456789"})
-        self.assertEqual(len(d["markers"]), 5)
+        self.assertEqual(len(d["markers"]), 6)
         self.assertIn(0x800, d["blist"])
 
 

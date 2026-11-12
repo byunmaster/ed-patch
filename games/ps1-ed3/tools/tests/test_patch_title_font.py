@@ -284,5 +284,18 @@ class TestTitleStringsFollowCanon(unittest.TestCase):
             self.assertEqual(self._text(p.STRINGS[off][1]).replace(" ", ""), kr.replace(" ", ""), jp)
 
 
+class SlpsDataString(unittest.TestCase):
+    def test_no_data_line_stays_within_ten_cells(self):
+        """「데이터가 없습니다.」 줄 — 그리는 쪽은 한 줄 10칸까지만 처리해 그 뒤 `@%x`(색 복원)를 못 읽는다(11-07 마스터: 페이지를 갔다 오면 세이브가 주황색)."""
+        import patch_title_font as P
+
+        out = P.slps_data_string()
+        self.assertTrue(out.startswith(b"@6") and out.rstrip(b"\0").endswith(b"@%x"))
+        body = out[2 : out.index(b"@%x")]
+        self.assertEqual(len(body) // 2, 11)  # 앞 공백 + 「데이터가 없습니다.」 10칸 — 줄 길이 상한(`ROW_TYPE_NEW`)을 28B 로 올려야 색 복원 `@%x` 까지 읽힌다
+        self.assertGreaterEqual(P.ROW_TYPE_NEW & 0xFF, 2 + len(body) + 2)  # `@6` + 글 + 복원 `@7`
+        self.assertEqual(body[:2], b"\x81\x40")  # 앞 한 칸 들여쓰기(원판과 같게)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -102,7 +102,7 @@ def windows(disc="ed3"):
         off, sz = next((o, s) for n, o, s in ents if n == nm)
         mem = data[off : off + sz]
         info = scriptmap.parse(mem)
-        chains = scriptmap.window_chains(mem, info)
+        chains = scriptmap.window_pages(mem, info)
         use = collections.Counter(i for c in chains for i in c)
         texts = [
             None

@@ -90,6 +90,13 @@ echo "  ── 줄·쪽 나눔 지표 (번역 규칙 2-16 — 래칫: 기준선�
 #    조판 결과 전수로 센다. 눈으로 검수한 뒤에도 남던 부류라 기계 지표로 잡는다. 기준선은 `wrap_metrics_baseline.json`.
 run 0 "$PY" "$G/tools/wrap_metrics.py" --check
 
+echo "  ── 한 줄 문장(2-10) · 쉼표(2-13) 정적 전수 (래칫 — 마스터 11-03)"
+# 🔴 게이트다 — 한 줄에 드는 문장이 두 줄로 쪼개진 창 · 「뺀다」 부류 쉼표 후보를 구운 글로 센다. 후보는 결함 수가 아니다(남기는 부류가 섞임) —
+#    명백한 꼴만 고치고 나머지는 `screen_rules_baseline.json` 에 둔다. 기준선보다 늘면 실패.
+run 0 "$PY" "$G/tools/check_screen_rules.py" --check
+echo "  ── 가운데 맞춤 전수(2-8) — 줄 끝 부호를 뺀 실제 픽셀 폭, 좌우 여백 차 1px (마스터 11-03)"
+run 0 "$PY" "$G/tools/check_centered.py"
+
 echo "  ── 월드맵 패널 넘침(칸 수 안에 드는가)"
 # 🔴 게이트다 — 패널 줄이 원판 칸을 넘으면 그 항목은 일본어로 남는다. (제어 열 보존은 build 가 서서 지킨다.)
 run 0 "$PY" "$G/tools/check_panel.py" --disc ed3
@@ -102,6 +109,13 @@ echo "  ── 이름창≠본문 메아리(F4) · 조판 규칙(F3)"
 # 🔴 게이트다 — 본문이 화자 이름으로 시작하면 화면에 이름이 두 번 나온다 / 줄바꿈 뒤 줄 머리 부호·어절 쪼갬·폭 초과.
 run 0 "$PY" "$G/tools/check_name_echo.py" --disc ed3
 run 0 "$PY" "$G/tools/check_typeset_rules.py" --disc ed3
+
+echo "  ── 마스터 판정 문안 (되돌림 방지 — master_rulings.json)"
+# 🔴 게이트다 — 검수·재조판이 마스터 판정을 원문만 보고 되돌린 사고(ss-ed3 10-29: 「로그 씨」 세 번 · 「폐하」)를 막는다. 판정을 받으면 json 에 한 줄 더한다.
+run 0 "$PY" scripts/check/master_rulings.py --game ps1-ed3
+run 0 "$PY" "$G/tools/check_var_spacing.py"
+echo "  ── 구운 조판 전수 (첫 칸 공백 · 고아 부호 · 빈 줄 · 부호 앞뒤 공백 · 낱말 속 접힘 · 넘침 — 마스터 10-31)"
+run 0 "$PY" "$G/tools/check_baked_layout.py"
 
 echo "  ── 재삽입 구조 (포인터가 다 풀리고 항등 재구축이 바이트 동일한가)"
 # 🔴 게이트다 — 항등 재구축이 깨지면 우리 파서가 구조를 잘못 읽는 것이고,
@@ -179,6 +193,13 @@ else echo "   ✅ 실빌드 — $(sha1sum "$_bin" | cut -c1-12) · $(( $(wc -c <
   "$PY" "$G/tools/check_structure.py" "$_bin" ${STRUCT_WRITE_LEDGER:+--write-ledger} || fail=1
   # 🔴 낱말 표 재삽입 대조(관리자 10-24, sfc-ed2 사고 — 이름 군의 길이 0 패딩을 빠뜨려 빈 슬롯이 다음 이름을 읽었다) — 실행파일 표를 원본과 항목마다 맞댄다(빈 항목·종결·별칭).
   "$PY" "$G/tools/check_table_padding.py" "$_bin" || fail=1
+  # 🔴 구운 이미지 일본어 잔존(마스터 11-05 0.1.0 「화면 일본어 0」) — `check_jp_left` 는 정본(`script/`·`ui_*`·낱말)만 읽어 **이미지에 원문이 남았는지**를 못 본다.
+  #    이미지에서 출발해 원본과 같은 5코드↑ 런을 센다(기준선 `image_residue_baseline.json` — 알려진 8곳). 늘면 실패.
+  "$PY" "$G/tools/check_image_residue.py" --built "$_bin" || fail=1
+  #    선택지 창 폭(마스터 11-06) — 이미지의 `3B` 열이 가장 긴 항목 폭에 맞는가.
+  "$PY" "$G/tools/check_choice_cols.py" --built "$_bin" || fail=1
+  "$PY" "$G/tools/check_free_refs.py" --built "$_bin" || fail=1
+  "$PY" "$G/tools/check_exe_jp_left.py" --built "$_bin" || fail=1
 fi
 rm -rf "$_gd"
 
@@ -190,9 +211,17 @@ echo "  ── 조판 지문 (공용이 우리 줄바꿈을 조용히 흔들지 
 #    **안 바꿨는데 뜨면 `shared/` 를 의심한다.**
 # ⚠ 헤드라인이 `tail -N` 에 잘리는 사고를 ps1-ed1+2 가 겪었다(2026-09-15) — 첫 줄 + 마지막
 #    줄만 남긴다(성공 시 한 줄이라 awk 가 중복 없이 처리한다).
-"$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game ps1-ed3 2>&1 \
-  | awk 'NR==1{first=$0} {last=$0; n=NR} END{print first; if (n>1) print last}' \
-  | sed 's/^/   /'
+# 🔴 지문이 바뀌면 **rc 1** 이다(마스터 10-29 N4) — 파이프(`| awk`)가 rc 를 삼켜 경고로만 남던 것을 고쳤다.
+#    출력을 파일로 받아 rc 를 따로 잡고, 실패면 `fail=1`.
+_fpf=$(mktemp)
+"$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game ps1-ed3 >"$_fpf" 2>&1 && _fprc=0 || _fprc=$?
+awk 'NR==1{first=$0} {last=$0; n=NR} END{print first; if (n>1) print last}' "$_fpf" | sed 's/^/   /'
+if [ "$_fprc" -ne 0 ]; then
+  echo "   🔴 조판 지문이 바뀌었다(rc $_fprc) — 문안을 바꿨으면 --freeze, 안 바꿨으면 shared/ 를 의심한다"
+  head -12 "$_fpf" | sed 's/^/   /'
+  fail=1
+fi
+rm -f "$_fpf"
 
 if [ "$fail" -eq 0 ]; then echo "  ✅ 통과"; else echo "  🔴 실패"; fi
 exit "$fail"

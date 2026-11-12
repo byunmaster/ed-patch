@@ -38,8 +38,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import chapter_end
-import place_labels
+import choice_cols
 import common
+import place_labels
 import scriptmap
 
 DISC = "ed3"
@@ -115,6 +116,17 @@ def compare_member(x, y, kr_dec, allow_hi):
     touched = set()
     for at in resolved:
         touched.update((at, at + 1))
+    # 선택지 창 열 바이트(`3B` 연산 둘째 바이트, `choice_cols.py`)는 의도한 변경이다 — `choice_cols` 가 구운 글로 계산한 값과 **정확히 같을 때만** 허용한다
+    ysegs = real_segments(y, base)
+    for cp, _c, _r, ids in choice_cols.scan(x, i):
+        if cp + 2 >= base or x[cp + 2] == y[cp + 2] or max(ids) >= len(ysegs):
+            continue
+        try:
+            px = max(choice_cols.item_px(kr_dec(ysegs[k][1])) for k in ids)
+        except Exception:  # noqa: BLE001 — 읽을 수 없으면 허용하지 않는다(아래 bad 로 잡힌다)
+            continue
+        if y[cp + 2] == 2 * choice_cols.need_cols(px):
+            touched.add(cp + 2)
     bad = [k for k in range(2, base) if k not in touched and x[k] != y[k]]
     if bad:
         errs.append(f"스크립트 바이트 {len(bad)}곳이 포인터 자리가 아닌데 바뀜 (첫 {bad[0]:#x})")

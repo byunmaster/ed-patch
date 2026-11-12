@@ -135,7 +135,43 @@ def used_codes(disc, after_patch=True):
 
     done = {off for off, row in uitext.load(disc).items() if row.get("kr")} if after_patch else set()
     used |= exe_used_codes(exe_strings(exe, disc, words), done)
+    if after_patch:
+        used |= kr_charmap_codes(disc)
     return used
+
+
+def kr_charmap_codes(disc):
+    """{코드} — **우리 한국어 문안이 코드표 글자(Ⅰ·Ⅱ·Ⅲ·전각 영문·숫자…)로 그대로 쥐는** 코드.
+
+    🔴 이 코드들은 원본 자리에 그 글자 그림이 있다. 한글에 내주면 같은 코드가 화면에서 한글로 그려진다
+       (10-28 검수: 「민첩의 반지Ⅰ」→「민첩의 반지이」 — Ⅰ·Ⅱ 자리(0x719·0x71A)를 「이」「부」가 차지했다).
+       원본 문자열이 물러나도 우리 문안이 같은 글자를 쓰면 자리는 계속 쓰인다.
+    """
+    import collections
+
+    import glossary
+    import script as script_canon
+    import uitext
+
+    cm = textenc.charmap(disc)
+    inv = {ch: c for c, ch in cm.items()}
+    hang = set(textenc.CONTROL.values())
+    seen = collections.Counter()
+    for lines in script_canon.load_effective(disc)[0].values():
+        for row in lines.values():
+            seen.update(row["kr"])
+    for row in uitext.load(disc).values():
+        seen.update(uitext.RAW_TOKEN.sub("", row["kr"]))
+    for kr in glossary.flat(disc).values():
+        seen.update(kr)
+    out = set()
+    for ch in seen:
+        if ch in hang or ch not in inv:
+            continue
+        if "\uac00" <= ch <= "\ud7a3":  # 한글 음절은 코드표에 있어도(한자 자리 재사용) 자리를 새로 받는다
+            continue
+        out.add(inv[ch])
+    return out
 
 
 def exe_strings(exe, disc, words):
@@ -236,6 +272,7 @@ def needed_chars(disc):
 
     out = list(EXTRA)
     out += [ch for ch in font.KAGI if ch not in have]  # 대사 「」 반 칸 글리프(font.KAGI)
+    out += [ch for ch in font.SERIES_GLYPHS if ch not in have]  # 목록 창 「검사교본 1」·「사피 제N권」 반 칸 틈 글리프(font.SERIES_GLYPHS)
     # 런타임 조사: 표지(굽지 않는다 — 코드만 받는다)와 조사 글자는 대사에 안 나와도 자리가 있어야 한다.
     out += [ch for ch in josa_rt.runtime_glyphs() if ch not in have and ch not in out]
     for src in (freq, ui):

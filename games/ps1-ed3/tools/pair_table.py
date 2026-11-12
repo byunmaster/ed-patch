@@ -17,6 +17,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
 import exetext
+import font
 import hangul_map
 import poolpack
 import scriptmap
@@ -25,6 +26,7 @@ import uitext
 
 DISC = "ed3"
 UNK = "{{c{:03x}}}"
+KAGI_BACK = str.maketrans(font.KAGI)
 
 
 def kr_decoder(table):
@@ -45,7 +47,7 @@ def kr_decoder(table):
             if w == textenc.TERM:
                 break
             out.append(rev.get(w) if w in rev else UNK.format(w))
-        return "".join(out)
+        return "".join(out).translate(KAGI_BACK)  # 반 칸 낫표 글리프(사설 글자) → 「」『』
 
     return dec
 
@@ -69,15 +71,117 @@ def clean(s):
     return s.replace("\t", " ").replace("\n", "↵")
 
 
+def picture_rows(cnt):
+    """그림에 박힌 글(오프닝·엔딩 내레이션 · 크레딧 라벨 · 장 끝 띠) — 대사 바이트가 아니라 **그림**이라 코드열이 없다.
+
+    한글 = 커밋된 정본(`narration_ed3.json` · `graphics_ed3.json` · 정본 장 제목). 원판 = 내레이션은 `work/review/narration_draft.md`(로컬 전용 — 없으면 빈칸),
+    크레딧·띠는 원판이 그림 픽셀이라 글로 없다(자리만 적는다). 일본어 글자가 없어도(별밭·빈 장 포함) 행을 둔다.
+    """
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    import json
+
+    out = []
+    nar = json.load(open(os.path.join(here, "narration_ed3.json"), encoding="utf-8"))["groups"]
+    by = {g["name"]: g["lines"] for g in nar}
+    # 원판 = 초벌 대조표(로컬)에서 절마다 원문 열을 읽는다
+    jp_sec = {}
+    draft = os.path.join(here, "work", "review", "narration_draft.md")
+    if os.path.exists(draft):
+        sec = None
+        for ln in open(draft, encoding="utf-8"):
+            ln = ln.rstrip("\n")
+            m = re.match(r"## (오프닝 [①②③④]|엔딩 액자|엔딩)", ln)
+            if m:
+                sec = m.group(1)
+                jp_sec[sec] = []
+            elif sec and ln.startswith("|") and not ln.startswith("| ---") and "원문" not in ln:
+                cells = [c.strip() for c in ln.strip("|").split("|")]
+                if len(cells) >= 3:  # 엔딩 표: 자리 | 원문 | 한국어
+                    jp_sec[sec].append((cells[0].strip("`"), cells[1]))
+                else:
+                    jp_sec[sec].append(("", cells[0]))
+
+    def jp_of(sec, key=None):
+        r = jp_sec.get(sec)
+        if r is None:
+            return ""
+        if key is None:
+            return "↵".join(x for _a, x in r)
+        cur, res = None, []
+        for a_, x in r:
+            if a_:
+                cur = a_
+            if cur == key:
+                res.append(x)
+        return "↵".join(res)
+
+    pics = [
+        ("오프닝①(DATA3_0)", "opening_intro", jp_of("오프닝 ①")),
+        ("오프닝②(DATA3_1)", "opening_legend", jp_of("오프닝 ②")),
+        ("오프닝③두루마리앞(DATA2_3+4)", "opening_scroll_1", jp_of("오프닝 ③")),
+        ("오프닝④두루마리뒤(DATA2_6+7)", "opening_scroll_2", jp_of("오프닝 ④")),
+    ]
+    for i in (1, 3, 4, 5, 6, 7, 8, 9):
+        pics.append((f"엔딩_{i}(ENDDATA1_{i})", f"ending_{i}", jp_of("엔딩", f"_{i}")))
+    pics.append(("엔딩 액자(ENDDATA2_1)", "ending_frame", jp_of("엔딩 액자")))
+    for label, name, jp in pics:
+        kr = "↵".join(by[name])
+        rows_ = (f"그림:{label}", jp or "(원문 초벌 대조표 없음)", kr, "그림 글")
+        out.append(rows_)
+        cnt["그림 내레이션"] += 1
+
+    g = json.load(open(os.path.join(here, "graphics_ed3.json"), encoding="utf-8"))["images"]
+    for im in g:
+        if im.get("kind") != "credits":
+            continue
+        tag = f"그림:크레딧({im['member'].split('!')[-1]}[{im['index']}])"
+        labels = im.get("labels")
+        if not labels:
+            out.append((tag, "(그림 — 글자 없는 빈 장)", "(그대로)", "그림 글 · 원판 빈 장"))
+            cnt["그림 크레딧 빈 장"] += 1
+            continue
+        for y0, y1, kr in labels["rows"]:
+            out.append((f"{tag}y{y0}-{y1}", "(그림 픽셀 — 원판 일본어)", kr, "그림 글"))
+            cnt["그림 크레딧 줄"] += 1
+
+    # 장 끝 띠 — 정본 장 제목(원문|한글)으로 「…おわり」·「次章…」 두 줄을 짝으로
+    import chapter_end
+
+    titles = chapter_end.chapter_titles()
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "shared"))
+    import canon
+
+    jp_t = {}
+    for jp, kr in canon.table("ui", DISC).items():
+        if "〜" in jp:
+            continue
+        if jp.startswith("序章　"):
+            jp_t[0] = jp.split("　", 1)[1]
+        elif jp.startswith("第") and len(jp) > 3 and jp[2] == "章" and jp[3] == "　" and jp[1] in "１２３４５６７":
+            jp_t["１２３４５６７".index(jp[1]) + 1] = jp.split("　", 1)[1]
+    for n in range(7):
+        a_kr, b_kr = chapter_end.line_parts(n, titles)
+        txt = lambda parts: "".join(v if k in ("text", "q") else " " for k, v in parts if k != "gap" or v >= 7)
+        pre = "序章" if n == 0 else f"第{'１２３４５６７'[n - 1]}章"
+        out.append((f"그림:장끝띠{n}A", f"{pre}「{jp_t.get(n, '?')}」…おわり (띠 그림)", " ".join(txt(a_kr).split()), "그림 글 · 원판 문구는 정본 제목으로 복원"))
+        out.append((f"그림:장끝띠{n}B", f"次章「{jp_t.get(n + 1, '?')}」 (띠 그림)", " ".join(txt(b_kr).split()), "그림 글 · 원판 문구는 정본 제목으로 복원"))
+        cnt["그림 장끝 띠"] += 2
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--kr-cue", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--product", action="store_true", help="제품 롬 — 글리프 배정을 정본(hangul_map_ed3.json)에서 읽는다(시험 롬이 아니다)")
     a = ap.parse_args()
     binp = os.path.splitext(a.kr_cue)[0] + ".bin"
     tree = common.iso_tree(binp)[0]
-    need = list(hangul_map.EXTRA) + hangul_map.needed_chars(DISC)
-    table, _short = hangul_map.assign(DISC, hangul_map.test_slots(DISC), chars=need)
+    if a.product:
+        table = hangul_map.load(DISC)
+    else:
+        need = list(hangul_map.EXTRA) + hangul_map.needed_chars(DISC)
+        table, _short = hangul_map.assign(DISC, hangul_map.test_slots(DISC), chars=need)
     kdec = kr_decoder(table)
     # 🔴 디코더 글자표 = 굽은 글리프 — 이미지가 **다른 시점의 배정**으로 구워졌으면 글자가 돌려 읽힌다(10-20: 검→허→좀 순환, 롬이 문안 수정 전이었다).
     #    굽은 글리프 비트맵을 이 표의 글자 그림과 대조해 어긋나면 멈춘다.
@@ -96,6 +200,8 @@ def main():
         w[: want.shape[0], : want.shape[1]] = want
         if not (w == got).all():
             skew.append(ch)
+    # 영문 대문자·숫자는 반각 훅(HUD 글꼴·전각 Ｌ 등)이 다른 그림으로 구워 정본 글자 그림과 다른 게 정상이다 — 한글·부호가 어긋날 때만 멈춘다
+    skew = [ch for ch in skew if not (a.product and ch.isascii())]
     if len(skew) > 5:
         raise SystemExit(f"🔴 굽은 이미지의 글리프가 이 코드의 배정과 다르다({len(skew)}자: {''.join(skew[:20])}) — 롬을 지금 HEAD 로 다시 굽는다")
     jdec = lambda codes: textenc.decode(codes, DISC, unknown=UNK)
@@ -172,7 +278,14 @@ def main():
     pre = bytearray(exe_o)
     uitext.apply(pre, DISC, enc)
     work = bytearray(pre)
-    pl = poolpack.apply(work, DISC, uitext.pool_rows(DISC), lambda kr: uitext.ui_codes(enc, kr))
+    # 🔴 사전(DTE)은 풀 문안 전체에서 짜이므로 빌드와 **같은 입력**이어야 같은 사전이 나온다 — 빌드는 풀 본문의 「」『』 를 반 칸 글리프로 바꿔 넣는다(build.py `pool_enc`).
+    #    이걸 빠뜨리면 사전이 달라져 풀 380행이 낱말째 엉뚱하게 읽힌다(10-28 검수에서 「폴티아국」→「움직국」).
+    kagi_tr = str.maketrans({v: k for k, v in font.KAGI.items()})
+    pl = poolpack.apply(work, DISC, uitext.pool_rows(DISC), lambda kr: uitext.ui_codes(enc, kr.translate(kagi_tr)))
+    # 풀 사전이 맞는지 — 새로 짠 사전이 굽은 이미지의 사전 자리와 같아야 한다(다르면 멈춘다)
+    dsz = 4 * len(pl["merges"])
+    if bytes(work[pl["dict_off"] : pl["dict_off"] + dsz]) != bytes(k_exe[pl["dict_off"] : pl["dict_off"] + dsz]):
+        raise SystemExit("🔴 풀 사전이 굽은 이미지와 다르다 — 풀 행을 못 믿는다(문안·글자표가 이미지와 같은 시점인지)")
     got = poolpack.read_streams(k_exe, DISC, pl["merges"])
     L = poolpack.LAYOUT[DISC]
     for pi, pool in enumerate(L["pools"]):
@@ -275,6 +388,8 @@ def main():
         rows.append((f"UI@{off:#x}", clean(jp), "(번역 안 됨)" if tag == "원판만" else clean(kr), tag or moved))
         cnt["UI " + (tag or moved.split(" ")[0] or "정상")] += 1
 
+    for r in picture_rows(cnt):
+        rows.append(r)
     os.makedirs(a.out, exist_ok=True)
     with open(os.path.join(a.out, "pairs.tsv"), "w", encoding="utf-8") as f:
         f.write("번호\t원판\t한글\t표시\n")

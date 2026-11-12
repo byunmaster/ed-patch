@@ -35,6 +35,18 @@ class TestTablePadding(unittest.TestCase):
         b = make([[1, 2], [7], [3], [4, 5]], {2: 0xFFFF})
         self.assertTrue(any("종결" in p for p in T.compare(a, b, [(0, 0, 4)])))
 
+    def test_numbered_item_zero_to_ffff_is_allowed_only_there(self):
+        a = make([[1, 2], [7], [3], [4, 5]], {2: 0})
+        b = make([[1, 2], [7], [3], [4, 5]], {2: 0xFFFF})
+        self.assertTrue(any("종결" in p for p in T.compare(a, b, [(0, 0, 4)])))
+        off = struct.unpack_from("<H", a, 4)[0]
+        old = T.SPACE_FOR_ZERO
+        T.SPACE_FOR_ZERO = {off}
+        try:
+            self.assertEqual(T.compare(a, b, [(0, 0, 4)]), [])
+        finally:
+            T.SPACE_FOR_ZERO = old
+
     def test_alias_split_is_flagged(self):
         a = bytearray(make([[1], [2], [3], [4]]))
         struct.pack_into("<H", a, 2, struct.unpack_from("<H", a, 0)[0])  # 항목 1 이 0 과 같은 자리

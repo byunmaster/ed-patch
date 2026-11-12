@@ -50,6 +50,37 @@ def _h(parts):
     return h.hexdigest()[:12]
 
 
+def _reflow_zones(disc):
+    """{`ed3:reflow:아카이브!멤버`: sha1} — **롬에 실제로 구워지는 줄**(창 단위 재조판 `build.reflow_windows`).
+
+    🔴 `typeset.wrap` 만 재면 지문이 reflow 를 못 본다 — 공용 줄바꿈 보강(`180f64cd1`)이 창 11개를 옮겼는데 지문은 그대로였다(10-29).
+    창은 원본 멤버의 포인터 구조에서 오므로 원본이 없는 머신(main 트리 등)에서는 이 구역을 건너뛴다."""
+    if disc != "ed3":
+        return {}
+    try:
+        import build
+        import scriptmap
+
+        canon, _ = script_canon.load_effective(disc)
+        iso = common.iso_files(disc)
+    except (OSError, SystemExit):  # 원본 디스크가 없다 — wrap 구역만으로 지문을 낸다
+        return {}
+    out = {}
+    for (path, nm), lines in sorted(canon.items()):
+        try:
+            lba, size = iso[path]
+            data = common.read_lba(disc, lba, size)
+            _, ents = common.arc_parse(data)
+            off, sz = next((o, s) for n, o, s in ents if n == nm)
+        except (OSError, KeyError, StopIteration):
+            return {}
+        mem = data[off : off + sz]
+        rows = build.reflow_windows(mem, scriptmap.parse(mem), lines, disc)
+        if rows:
+            out[f"{disc}:reflow:{path}!{nm}"] = _h(f"{i}\x00{rows[i]}" for i in sorted(rows))
+    return out
+
+
 def fingerprint():
     """{구역: sha1} — `ed3:아카이브!멤버` · `ed3:ui` 등."""
     out = {}
@@ -67,6 +98,8 @@ def fingerprint():
                 parts.append(f"{i}\x00{wrapped}")
             region = f"{disc}:{archive}!{member}"
             out[region] = _h(parts)
+
+        out.update(_reflow_zones(disc))
 
         ui_parts = []
         for key, row in sorted(uitext.load(disc).items()):
