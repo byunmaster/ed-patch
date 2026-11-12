@@ -375,6 +375,34 @@ def collect_texts(src: bytes) -> tuple[dict, dict, dict]:
     return seg_map, ui_map, dict_map
 
 
+PLACE_TABLE = "$CB30E9"  # 지역명 표(HUD 위치 표시 · 세이브 줄) — 16비트 포인터 64
+HUD_BOX_PX = 72  # 필드 HUD 지명 박스 안쪽 폭 — 타일 21~29(x 168~240), 글자는 x 168 부터 찍힌다(캡처 실측 11-05)
+
+
+def hud_lead(px: int) -> bytes:
+    """가운데 맞춤 앞 패딩 — 반각 공백(`$20` 8px) a개 + 전각 공백(`$8000` 12px) b개, 8a+12b 가 (박스 폭−글자 폭)/2 에 가장 가깝게(같으면 글자 수 적은 쪽).
+    글자가 박스보다 넓으면(길 이름 「큐베라～프로스」) 패딩 없음."""
+    want = (HUD_BOX_PX - px) / 2
+    if want <= 0:
+        return b""
+    _, _, a, b = min((abs(8 * a + 12 * b - want), a + b, a, b) for a in range(10) for b in range(7))
+    return b"\x80\x00" * b + b"\x20" * a
+
+
+def hud_names_table(cores: dict[int, bytes], count: int) -> bytes:
+    """HUD 전용 지명 표 `$D8:F900` — 16비트 포인터 `count`개(뱅크는 `$D8`) + 앞 패딩을 붙인 문자열(끝 `$00`). 세이브 줄은 옛 표(`$CB:30E9`)를 그대로 읽는다."""
+    base = patches.HUD_NAMES & 0xFFFF
+    body = bytearray()
+    ptrs = []
+    for i in range(count):
+        ptrs.append(base + 2 * count + len(body))
+        c = cores[i]
+        body += hud_lead(ui.px_width(c)) + c + b"\x00"
+    table = b"".join(p.to_bytes(2, "little") for p in ptrs) + bytes(body)
+    assert (patches.HUD_NAMES & 0xFFFF) + len(table) - 1 <= (patches.HUD_NAMES_END & 0xFFFF), "HUD 지명 표가 $D8:FFFF 를 넘는다"
+    return table
+
+
 def ptrs16_entry(src: bytes, base: int, w: int, v: dict) -> bytes:
     """16비트 포인터 표 항목의 원문 바이트(끝 토큰 앞까지). `term` 이 있으면 그 토큰(몬스터 일람 = 07)까지 — 글리프 둘째 바이트가 07 일 수 있어 토큰 단위로 걷는다."""
     a = common.snes2off(((base >> 16) << 16) | w)
@@ -584,6 +612,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
     # 3a. 16비트 포인터 표(같은 뱅크 안 문자열) — 지역명 등. 번역은 정본(canon)에서 읽고, 정본에 없는 건 textmap 의 over 가 채운다
     local = Local(rom, src, writes)
     missing = []
+    hud_cores: dict[int, bytes] = {}
     for key, v in sorted(kr.load("ptrs16").items()):
         base = int(key.lstrip("$"), 16)
         bank = base >> 16
@@ -613,6 +642,8 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
                     continue  # 정본에 없다 — 원문을 둔다(관리자에게 후보로 올린다)
             data = kr.encode(text, alloc)
             px = ui.px_width(data)
+            if key == PLACE_TABLE:
+                hud_cores[i] = data
             dead.append((common.snes2off((bank << 16) | (src[o + 2 * i] | src[o + 2 * i + 1] << 8)), common.snes2off((bank << 16) | (src[o + 2 * i] | src[o + 2 * i + 1] << 8)) + len(jpb) + 1))
             if not v.get("mon"):
                 data += b" " * max(0, (pad_px - px) // 8)
@@ -622,6 +653,12 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             rec("포인터", f"ptrs16{key}[{i}]", (bank << 16) | (src[o + 2 * i] | src[o + 2 * i + 1] << 8), (bank << 16) | addr, "지역명 표 항목을 뱅크 빈 자리로 옮긴다 — 16비트 포인터 표 항목만 돌린다", len(data) + 1)
             stats["ptrs16"] = stats.get("ptrs16", 0) + 1
     stats["missing"] = missing
+    if hud_cores:
+        table = hud_names_table(hud_cores, kr.load("ptrs16")[PLACE_TABLE]["count"])
+        o = common.snes2off(patches.HUD_NAMES)
+        rom[o : o + len(table)] = table
+        writes.append((o, o + len(table)))
+        stats["hud_names"] = len(hud_cores)
 
     # 3d. 고정폭 레코드 표(records) — 아이템·주문 이름. 원문 이름은 레코드에서 읽어 정본(canon)으로 번역하고, 오른쪽 정렬로 채운다
     for key, v in sorted(kr.load("records").items()):

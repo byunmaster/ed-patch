@@ -8,6 +8,7 @@
   d leadspace  첫 칸 공백 — 줄(화자 머리 뒤·구간 첫 줄 제외) 첫머리가 공백 / overwide = 한 줄이 50 폭을 넘는다
   f regress    퇴행 — 원판 조판엔 없던 끊김이 보조용언·의존명사·관형사 고아에 걸리거나 한 줄이던 문장이 갈렸다(조판기가 이런 이동은 거부한다)
   h2 balance   창 분배 — 창이 둘 이상인 구간에서 창 수를 안 늘리고 고르게 나눌 수 있는데 창 줄 수 차가 2 이상이다(쪽 경계는 문장 끝·절 경계로만 옮긴다 — 지표만, 재배치는 안 한다)
+  i lean       붙임 포기 — 2-6 보조용언 붙임을 지키면 원문 창보다 쪽이 느는 구간이 붙임을 포기하고 창 수를 지킨 수(한도, 규칙 2-17)
   e compound   굳은 [명사+명사] 구가 줄·쪽 끝에서 갈렸다 — 앞 어절이 조사·어미로 안 끝나고 같은 이음이 문안 전량에 2회 이상"""
 
 import json
@@ -25,7 +26,7 @@ BASE = Path(__file__).resolve().parents[1] / "layout_baseline.json"
 _END = ".!?…~」』"
 _PART = set("은는이가을를의에도와과로고며면만다요죠네까니라야지든나서게데기해히")  # 조사·어미로 끝나는 어절은 굳은 구의 앞 마디가 아니다
 OLD = False
-KEYS = ["orphan", "midpage", "lonepunct", "leadspace", "overwide", "compound", "regress", "balance"]
+KEYS = ["orphan", "midpage", "lonepunct", "leadspace", "overwide", "compound", "regress", "balance", "lean"]
 
 
 SRC: dict = {}
@@ -61,6 +62,7 @@ def typeset_all(glue: bool = True) -> dict[str, str]:
 
 def _pages(text: str) -> list[list[str]]:
     t = re.sub(r"<1e>.*?<04>\n?", "", text, flags=re.S)
+    t = re.sub(r"<E[01]:\d+>", "\x01", t)  # 이름 변수 자리 — 줄 머리 부호가 이름 뒤 조각이면 고아 부호가 아니다
     return [[re.sub(r"<[^>]*>", "", l) for l in p.split("\n") if re.sub(r"<[^>]*>", "", l).strip() or l.startswith(" ")] for p in t.split("<05>")]
 
 
@@ -85,7 +87,7 @@ def measure(res: dict[str, str]) -> dict[str, list[str]]:
                     out["lonepunct"].append(k)
                 if ln.startswith(" ") and ln.strip() and (i or j):
                     out["leadspace"].append(k)
-                if sum(T.width(c) for c in re.sub(r"\{\*[^}]*\}", "가", ln).replace(T.NBSP, " ")) > 50:
+                if sum(T.width(c) for c in re.sub(r"\{\*[^}]*\}", "가", ln).replace("\x01", "").replace(T.NBSP, " ")) > 50:
                     out["overwide"].append(k)
             lines = [l.strip() for l in p]
             for a, b in zip(lines, lines[1:]):
@@ -100,12 +102,15 @@ def main() -> None:
     if "--old" in sys.argv:  # 규칙 이전 조판(원판 줄·쪽 나눔) — 전→후 비교용
         OLD = True
         T.CLAUSE, T.LINE_CLAUSE, T.SOFTNL = 0, 0, 0
+    T.LEANS.clear()
     res = typeset_all(glue=not OLD)
+    lean_texts = set(T.LEANS)
     m = measure(res)
+    m["lean"] = sorted(k for k, a in ARGS.items() if a[0] in lean_texts)  # 붙임을 포기해 창 수를 지킨 구간 — 퇴행 판정에서 뺀다(규칙 2-17)
     if not OLD:
         m["regress"] = []
         for k, t in res.items():
-            if k not in RULESOFF:
+            if k not in RULESOFF or k in m["lean"]:
                 continue
             bad = T.regress_net(RULESOFF[k], t)
             if bad:  # 쪽·줄이 늘어 보강 규칙을 포기한 문안(typeset.typeset)은 보강 전 규칙으로 판정한다

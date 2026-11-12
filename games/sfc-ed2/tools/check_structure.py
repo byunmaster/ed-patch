@@ -330,8 +330,8 @@ def check_extension(rom: bytes, ledger: list[dict]) -> list[str]:
     for r in ledger:
         if r["new"] != r["orig"] or r["kind"] in ("스텁",):
             cover.append((common.snes2off(r["new"]), common.snes2off(r["new"]) + r["n_new"]))
-    # 고정 영역 — 글꼴 표(`$D8:0000~9FFF`)·조사 표(`$D8:F000~F83F`): 대사 재배치가 아니라 글리프·조사 훅 자료다(구조와 무관)
-    fixed = [(patches.FONT_OUT, patches.FONT_OUT + 0xA000), (common.snes2off(patches.JOSA_TABLE), common.snes2off(patches.JOSA_PAIRS) + 0x40)]
+    # 고정 영역 — 글꼴 표(`$D8:0000~9FFF`)·조사 표(`$D8:F000~F83F`)·HUD 지명 표(`$D8:F900~`, 가운데 맞춤 — patches.HUD_NAMES): 대사 재배치가 아니라 글리프·조사 훅·HUD 자료다(구조와 무관)
+    fixed = [(patches.FONT_OUT, patches.FONT_OUT + 0xA000), (common.snes2off(patches.JOSA_TABLE), common.snes2off(patches.JOSA_PAIRS) + 0x40), (common.snes2off(patches.HUD_NAMES), common.snes2off(patches.HUD_NAMES_END) + 1)]
     regions = [(common.ROM_SIZE, len(rom))] + [(((bank - 0xC0) << 16) + a, ((bank - 0xC0) << 16) + b + 1) for bank, rs in build.LOCAL_FREE.items() for a, b in rs]
     bad = []
     for lo, hi in regions:

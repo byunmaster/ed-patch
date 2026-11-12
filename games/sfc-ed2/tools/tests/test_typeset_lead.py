@@ -39,7 +39,8 @@ class AuxKeepTogether(unittest.TestCase):
     def test_main_plus_auxiliary_verb_not_split(self):
         # 본용언+보조용언(`사` + `오라고`) 은 줄이 갈려도 함께 간다 — 판정은 공용 krwrap.split_reason
         t = typeset.typeset("표가 없잖아. 저쪽에서 사 오라고.", {})
-        self.assertIn("\n사 오라고", t)
+        self.assertNotIn("사\n오라고", t)
+        self.assertEqual(t, "표가 없잖아.\n저쪽에서 사 오라고.")  # 한 줄 문장(2-10)이 새 줄에서 시작
 
     def test_plain_wrap_unchanged(self):
         t = typeset.typeset("가나다라마바사아자 차카타파하가나다 라마바사아자차", {})

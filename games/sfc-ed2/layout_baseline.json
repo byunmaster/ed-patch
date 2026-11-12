@@ -1,10 +1,11 @@
 {
- "orphan": 4,
- "midpage": 9,
+ "orphan": 2,
+ "midpage": 7,
  "lonepunct": 2,
- "leadspace": 6,
+ "leadspace": 0,
  "overwide": 0,
- "compound": 14,
+ "compound": 13,
  "regress": 0,
- "balance": 0
+ "balance": 0,
+ "lean": 44
 }

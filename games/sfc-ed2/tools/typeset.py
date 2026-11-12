@@ -127,11 +127,16 @@ def _is_new_reason(r: str, b: str) -> bool:
     return r == "본용언+보조용언" and w.startswith(("다오", "달라", "달란"))
 
 
+_NO_GEON = False  # 「건·게·걸」 이음 예외를 끈 조판(창 내용 보존 판정의 기준 — `typeset`)
+
+
 def _split_reason(a: str, b: str):
     """공용 판정(`krwrap.split_reason`) + 이 게임의 로컬 이음 — 「하고 싶다」 · 「싶어 견디다」(규칙 2-16 f)."""
     r = krwrap.split_reason(a, b)
     if r and _OLD_RULES and _is_new_reason(r, b):
         r = None
+    if r == "관형사형 고아" and a.rstrip(".,!?…") in ("건",) and not _NO_GEON:  # 「것은」 줄임 — 관형형이 아니라 명사+조사(「이야기할 수 있는 건 / 바바라님뿐인데」)
+        return None
     if r or not a or not b:
         return r
     a2, b2 = a.rstrip(".,!?…"), b.lstrip("「『")
@@ -221,6 +226,8 @@ def _wb(text: str):
 
 def _noncut(w: str) -> bool:
     """쪽 경계를 두면 안 되는 어절 — 관형어(관형형 ㄴ·ㄹ 받침·「의」)·목적어(을/를)·주어/주제어(이/가/은/는) 뒤. 절 경계·부사어(에서·에게서·로 …) 뒤는 된다."""
+    if w[-1:] in ".!?…":  # 문장 끝(「~한 거라고.」)은 절 경계다 — 쪽을 끊어도 된다
+        return False
     w = w.rstrip(".,!?…」』")
     if w.endswith("라고"):  # 인용 「~라고」 는 뒤의 서술어(적힌·말하는)에 걸린다 — 절 경계로 안 친다
         return True
@@ -317,7 +324,7 @@ def rebalance(text: str, src: str = "", lead=None) -> str:
 def refit_tail(text: str, names=None) -> str:
     """마지막 두 쪽의 줄을 다시 감아 마지막 쪽이 한 어절로 남지 않게 한다(마스터 10-26 ① 창 분배 — 관형어·목적어·주어 뒤 쪽 끊기는 안 된다).
     쪽 경계는 문장 끝·절 경계·부사어 뒤에만, 줄 끝은 보조용언 등이 갈리지 않는 자리에만 둔다. 마땅한 감기가 없으면 그대로 둔다."""
-    if "<1e>" in text.rsplit("<05>", 2)[-1] or text.count("<05>") < 1:
+    if text.count("<05>") < 1:
         return text
     closer = "<05>" if text.endswith("<05>") else ""  # 끝이 쪽 넘김으로 닫힌 문안 — 마지막 쪽은 그 앞 쪽
     pages = text[: len(text) - len(closer)].split("<05>")
@@ -326,6 +333,10 @@ def refit_tail(text: str, names=None) -> str:
     pre = ""
     if len(pages) == 2 and pages[0].startswith("<04>\n"):  # 화자 머리 뒷부분(이어 쓰기 조각 앞)은 폭에 안 센다
         pre, pages[0] = "<04>\n", pages[0][5:]
+    elif len(pages) == 2 and (hm := re.match(r"<1e>[^\n]*?<04>\n", pages[0])):  # 화자 머리 줄(이름 변수가 든 것 포함)은 폭에 안 센다
+        pre, pages[0] = hm.group(0), pages[0][hm.end() :]
+    elif "<1e>" in "".join(pages[-2:]):
+        return text
     P, Q = pages[-2].split("\n"), pages[-1].split("\n")
     if len(Q) != 1 or " " in Q[0].strip():
         return text
@@ -399,16 +410,75 @@ def regress_net(old: str, new: str) -> list:
 
 def _base(text, names=None, lead=None):
     """원판 조판(규칙 끔) — 퇴행 판정의 기준."""
-    global CLAUSE, LINE_CLAUSE, SOFTNL
-    saved = (CLAUSE, LINE_CLAUSE, SOFTNL)
+    global CLAUSE, LINE_CLAUSE, SOFTNL, _NO_GEON
+    saved = (CLAUSE, LINE_CLAUSE, SOFTNL, _NO_GEON)
     try:
         CLAUSE = LINE_CLAUSE = SOFTNL = 0
+        _NO_GEON = True  # 원판 조판 기준 — 「건·게·걸」 이음 예외도 끈다(퇴행 판정이 새 예외까지 기준으로 삼지 않게)
         return _typeset_glue(text, names, lead)
     finally:
-        CLAUSE, LINE_CLAUSE, SOFTNL = saved
+        CLAUSE, LINE_CLAUSE, SOFTNL, _NO_GEON = saved
+
+
+_NO_CARRY = False  # 본용언+보조용언 붙임(2-6)을 끈 조판 — 조판 여유가 없을 때만 쓴다(규칙 2-17, 마스터 11-05)
+LEANS: list = []  # 붙임을 포기해 원문 창 수를 지킨 문안(진단용 — `check_layout` 이 퇴행 판정에서 빼고 한도로 센다)
 
 
 def typeset(text, names=None, lead=None):
+    """붙임(2-6 본용언+보조용언)을 지키느라 쪽이 늘면 붙임을 끈 조판으로 돌린다 — 원문 한 창을 조판 규칙으로 둘로 가르지 않는다
+    (글은 줄이지 않고 줄 배치만 바꾼다. 규칙 2-17: 「2-6 붙임은 조판 여유가 있을 때만 지킨다」, 마스터 11-05)."""
+    global _NO_CARRY
+    r = _typeset_rules(text, names, lead)
+    if lead or _NO_CARRY or _NO_GEON or _OLD_RULES:
+        return r
+    _NO_CARRY = True
+    try:
+        lean = _typeset_rules(text, names, lead)
+    finally:
+        _NO_CARRY = False
+    if lean.count("<05>") < r.count("<05>"):
+        LEANS.append(text)
+        r = lean
+    return _sentence_break(r, text)
+
+
+_SENT_LINE_END = re.compile(r"[.!?…~」』]+\)?$")
+
+
+def _flat(s: str) -> str:
+    return re.sub(r"\s|<[^>]*>", "", s)
+
+
+def _sentence_break(out: str, text: str) -> str:
+    """조판기가 낸 쪽 경계가 문장 한가운데면 꼬리 문장을 다음 쪽 머리로 옮겨 문장 경계에서 나눈다(규칙 2-17: 창이 늘면 문장 경계에서 — 마스터 11-05).
+    원문이 가른 쪽 경계는 안 건드린다. 쪽 끝 줄들이 앞 문장 끝 줄 뒤에 통째로 이어진 꼬리이고, 옮긴 뒤 다음 쪽이 3줄을 안 넘을 때만."""
+    pages = out.split("<05>")
+    if len(pages) < 2:
+        return out
+    src_cum, n = set(), 0
+    for p in text.removesuffix("<05>").split("<05>"):
+        n += len(_flat(p))
+        src_cum.add(n)
+    cum, moved = 0, False
+    for i in range(len(pages) - 1):
+        cum += len(_flat(pages[i]))
+        if cum in src_cum or "<" in pages[i + 1][:1]:
+            continue
+        a, b = pages[i].split("\n"), pages[i + 1].split("\n")
+        if _SENT_LINE_END.search(a[-1].rstrip()) or any("<" in x or "{" in x for x in a[1:] + b):
+            continue  # 쪽이 문장 끝으로 끝났다 · 변수·토큰이 든 쪽은 폭을 몰라 건드리지 않는다
+        k = next((j for j in range(len(a) - 2, -1, -1) if _SENT_LINE_END.search(a[j].rstrip())), None)
+        if k is None or k < 0:
+            continue
+        tail = a[k + 1 :]
+        if len(tail) + len(b) > PAGE_ROWS or not "".join(a[: k + 1]).strip():
+            continue
+        pages[i], pages[i + 1] = "\n".join(a[: k + 1]), "\n".join(tail + b)
+        moved = True
+    return "<05>".join(pages) if moved else out
+
+
+def _typeset_rules(text, names=None, lead=None):
     """공용 묶음 규칙(10-28/29 보강)은 「지키면 좋은 것」이다 — 지키느라 이 문안의 쪽·줄이 늘면 그 문안은 보강 전 규칙으로 되돌린다
     (쪽이 늘어 문장 한가운데서 끊기는 쪽이 더 나쁘다, 규칙 2-16 · 마스터 10-29)."""
     out = _typeset_final(text, names, lead)
@@ -422,7 +492,63 @@ def typeset(text, names=None, lead=None):
         _OLD_RULES = False
     if old != out and (out.count("<05>") > old.count("<05>") or out.count("\n") > old.count("\n")):
         FALLBACKS.append(text)
-        return old
+        return _keep_windows(old, text, names, lead)
+    return _fresh_sentence(_keep_windows(out, text, names, lead), lead)
+
+
+_SENT_END = re.compile(r"[.!?…~」』]+\)?(?= |$)")
+
+
+def _fresh_sentence(out: str, lead) -> str:
+    """한 줄에 나올 수 있는 문장은 한 줄로(규칙 2-10, 마스터 10-10) — 줄 가운데서 시작해 다음 줄로 넘어가는 문장이 한 줄(50단위)에 들어가면
+    새 줄에서 시작한다. 쪽·줄 수는 안 바뀐다(다음 줄에 앞머리를 합쳐 한 줄에 들어갈 때만). 이름·호출 변수나 다른 토큰이 든 줄, 앞 구간에 이어 붙는 구간은 폭을 몰라 건드리지 않는다."""
+    if lead or "<E" in out or "{" in out or "<10" in out:
+        return out
+    pages = out.split("<05>")
+    for pi, pg in enumerate(pages):
+        pre = ""
+        m = re.match(r"(?:<1e>[^\n]*?<04>\n)", pg)
+        if m:
+            pre, pg = pg[: m.end()], pg[m.end() :]
+        ls = pg.split("\n")
+        for i in range(len(ls) - 1):
+            a, b = ls[i], ls[i + 1]
+            if "<" in a or "<" in b or not a.strip() or not b.strip():
+                continue
+            ends = list(_SENT_END.finditer(a))
+            if not ends or ends[-1].end() >= len(a.rstrip()):
+                continue  # 줄이 문장 끝으로 끝났거나 문장 끝이 없다
+            head = a[ends[-1].end() :].lstrip()
+            mm = _SENT_END.search(b)
+            if not head or not mm:
+                continue
+            if sum(width(c) for c in head + " " + b[: mm.end()]) > LINE_UNITS:
+                continue
+            nb = head + " " + b
+            if sum(width(c) for c in nb) > LINE_UNITS:
+                continue
+            ls[i], ls[i + 1] = a[: ends[-1].end()], nb
+        pages[pi] = pre + "\n".join(ls)
+    return "<05>".join(pages)
+
+
+def _sig(t: str) -> list:
+    return [re.sub(r"[\s]|<[^>]*>", "", p) for p in t.split("<05>")]
+
+
+def _keep_windows(out, text, names, lead):
+    """창(쪽)마다 원문 창 내용을 그대로 둔다 — 창 사이 낱말 재분배는 마지막 창 고아 어절을 풀 때만 쓴다(규칙 2-17, 마스터 10-31).
+    「건」 이음 예외는 예외를 끈 조판이 마지막 창 고아일 때만 쓴다(아니면 옛 조판 그대로)."""
+    global _NO_GEON
+    if _NO_GEON:
+        return out
+    _NO_GEON = True
+    try:
+        prev = typeset(text, names, lead)
+    finally:
+        _NO_GEON = False
+    if prev != out and not _orphan(prev):  # 이어 쓰기 구간은 한 줄 채움 차이가 뒤 구간의 쪽 경계까지 옮기므로 줄 단위 차이도 되돌린다
+        return prev
     return out
 
 
@@ -718,7 +844,7 @@ def _typeset(text: str, names: dict | None, lead: tuple[int, int] | None, skip: 
             carry: list = []
             if plain:  # 본용언+보조용언 등 — 앞 낱말(들)을 함께 다음 줄로(`사` / `오라고` → `사 오라고`, `해 줄 거야`)
                 k, first = len(linewords), plain
-                while k > 1 and linewords[k - 1][3] and _split_reason(linewords[k - 1][3], first):
+                while k > 1 and not _NO_CARRY and linewords[k - 1][3] and _split_reason(linewords[k - 1][3], first):
                     k -= 1
                     first = linewords[k][3]
                 if k < len(linewords) and sum(x[2] + 2 for x in linewords[k:]) + ww <= LINE_UNITS:

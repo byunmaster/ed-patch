@@ -15,7 +15,7 @@ ROOT=$(git rev-parse --show-toplevel)
 COMMON=$(git rev-parse --path-format=absolute --git-common-dir)
 MAIN=$(dirname "$COMMON")
 G=$ROOT/games/sfc-ed2
-ROM=$G/work/build/sfc-ed2/"Dragon Slayer - Eiyuu Densetsu 2 (KR).sfc"
+ROM=$G/work/build/${BUILD:-sfc-ed2}/"Dragon Slayer - Eiyuu Densetsu 2 (KR).sfc"
 ST=$G/work/derived/headless/S_dialog.bin
 OFF=${OFF:-}
 [ -n "${IN_SRM:-}" ] && : "${OFF:=300}" || : "${OFF:=2800}"

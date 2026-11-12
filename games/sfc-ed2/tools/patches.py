@@ -334,6 +334,17 @@ PATCHES += [
     (WRAP_STUB, b"\xff" * len(_WRAP), _WRAP),
 ]
 
+# 필드 HUD 지명 박스 가운데 맞춤(마스터 11-04 「hud지명칸도 가능하면 가운데도」 · 11-05 승인) — HUD 그리기 `$C0:C0D6` 이 지명 표 `$CB:30E9`(16비트 포인터 64 · 뱅크는 `$A8=CB` 즉치)에서 문자열을 골라
+# 고정 위치(`ldx #$15` = 타일 21 = x 168px)에 줄 왼쪽 끝부터 찍는다. 같은 표를 세이브·로드 목록 줄(`$CB:6A34` 복사 루프 — 첫 `$20` 에서 끊는다)도 읽어서 표에 앞 공백을 넣을 수 없다 —
+# HUD 읽기 셋(`lda $CB:30E9,x` · `lda $CB:30EA,x` · `lda #$CB`)만 가운데 맞춘 새 표(`$D8:F900`: 포인터 64 × 2B + 문자열)로 돌리고 세이브 줄은 옛 표 그대로 둔다. 새 표는 빌드가 쓴다(`build.hud_names_table`).
+HUD_NAMES = 0xD8F900
+HUD_NAMES_END = 0xD8FFFF
+PATCHES += [
+    (0xC0C0E3, bytes.fromhex("BFE930CB"), bytes.fromhex("BF00F9D8")),  # lda $CB:30E9,x → lda $D8:F900,x
+    (0xC0C0EA, bytes.fromhex("BFEA30CB"), bytes.fromhex("BF01F9D8")),  # lda $CB:30EA,x → lda $D8:F901,x
+    (0xC0C0F1, bytes([0xA9, 0xCB]), bytes([0xA9, 0xD8])),  # lda #$CB(→ $A8 뱅크) → lda #$D8
+]
+
 # 디버그 입구(마스터 10-24 — 제품 롬에 넣는다): 열쇠 Start+A+B 1초 · 켜진 뒤 L+R+Select 명령. 설명은 `debug_patch.py`.
 PATCHES += debug_patch.patches()
 
