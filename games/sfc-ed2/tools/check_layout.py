@@ -29,6 +29,7 @@ KEYS = ["orphan", "midpage", "lonepunct", "leadspace", "overwide", "compound", "
 
 
 SRC: dict = {}
+ARGS: dict = {}  # 보강 규칙을 포기한 문안(`typeset.FALLBACKS`)의 퇴행 판정을 옛 규칙으로 다시 하려는 재료
 RULESOFF: dict = {}  # 같은 선행 폭에서 규칙을 끈 조판 — 퇴행 판정의 기준(가드와 같다)
 
 
@@ -47,10 +48,11 @@ def typeset_all(glue: bool = True) -> dict[str, str]:
             continue
         text = build.resolve_josa(v["kr"], names)
         tw = {**names, **e1w, **build.call_texts(text, a, seg_map, sg)}
-        pv = T.worse(T.worse(end.get(a), jl.get(key)), build.call_lead(src, a, seg_map, names, tw))
+        pv = build.lead_state(src, a, key, seg_map, names, tw, end, jl)
         SRC[key] = text
-        RULESOFF[key] = T._base(text, tw, pv)
-        res[key] = T.typeset(text, tw, pv)
+        ARGS[key] = (text, src, b, seg_map, names, tw, pv)
+        RULESOFF[key] = build.typeset_seg(text, src, b, seg_map, names, tw, pv, T._base)
+        res[key] = build.typeset_seg(text, src, b, seg_map, names, tw, pv)
         if pv:
             SRC[key] += "<05>"  # 이어 쓰기 구간은 분배 대상이 아니다
         end[b] = T.chain_state(res[key], pv, tw)
@@ -101,7 +103,19 @@ def main() -> None:
     res = typeset_all(glue=not OLD)
     m = measure(res)
     if not OLD:
-        m["regress"] = [f"{k} {r}" for k, t in res.items() if k in RULESOFF for r in T.regress_net(RULESOFF[k], t)]
+        m["regress"] = []
+        for k, t in res.items():
+            if k not in RULESOFF:
+                continue
+            bad = T.regress_net(RULESOFF[k], t)
+            if bad:  # 쪽·줄이 늘어 보강 규칙을 포기한 문안(typeset.typeset)은 보강 전 규칙으로 판정한다
+                T._OLD_RULES = True
+                try:
+                    if build.typeset_seg(*ARGS[k]) == t:
+                        bad = T.regress_net(RULESOFF[k], t)
+                finally:
+                    T._OLD_RULES = False
+            m["regress"] += [f"{k} {r}" for r in bad]
     m.setdefault("regress", [])
     cnt = {k: len(v) for k, v in m.items()}
     if "--list" in sys.argv:

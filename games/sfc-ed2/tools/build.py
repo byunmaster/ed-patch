@@ -302,6 +302,40 @@ def call_lead(src: bytes, a: int, seg_map: dict, names: dict, tw: dict) -> tuple
     return st if st != (0, 0) else None
 
 
+def trail_call_width(src: bytes, b: int, seg_map: dict, names: dict, tw: dict) -> int:
+    """구간 끝(`b`) 바로 뒤가 호출(`$10 lo hi`)이면 부른 조각의 폭(없으면 0) — 마지막 낱말이 이름과 한 덩어리로 줄을 넘기는지 가늠한다."""
+    if b + 3 > len(src) or src[b] != 0x10:
+        return 0
+    bank = (common.off2snes(b) >> 16) & 0xFF
+    tgt = segs.seg_id(common.snes2off((bank << 16) | src[b + 1] | src[b + 2] << 8))
+    v = seg_map.get(tgt)
+    if not v:
+        return 0
+    return typeset.end_state(resolve_josa(v["kr"], names), tw)[0]
+
+
+def lead_state(src: bytes, a: int, key: str, seg_map: dict, names: dict, tw: dict, typeset_end: dict, jump_lead: dict):
+    """구간 `a` 가 이어 쓰는 줄 상태(줄 폭, 쪽 줄 수) — 바로 앞 구간 끝 · 점프로 들어오는 공유 꼬리 · 부른 조각(이름)에서 가장 빡빡한 쪽.
+    부른 조각 앞의 같은 줄 글자도 센다 — 「당신들은 아까 ⟨프레이아⟩라고」 가 한 줄 50단위를 넘어도 몰랐다(10-28). `check_layout`·`sim_pagebreak` 도 이걸 쓴다."""
+    cl = call_lead(src, a, seg_map, names, tw)
+    pre = typeset_end.get(a - 3) if a >= 3 and src[a - 3] == 0x10 else None
+    if cl and pre:
+        cl = (min(pre[0] + cl[0], typeset.LINE_UNITS - 2), pre[1])
+    return typeset.worse(typeset.worse(typeset_end.get(a), jump_lead.get(key)), cl)
+
+
+def typeset_seg(text: str, src: bytes, b: int, seg_map: dict, names: dict, tw: dict, pv, fn=None):
+    """대사 구간 조판 — 구간 바로 뒤가 호출(이름 「프레이아」)이면 그 폭이 마지막 낱말에 붙어 같은 줄에 나가므로 자리표시 글자를 붙여 재고 뗀다."""
+    tr = trail_call_width(src, b, seg_map, names, tw)
+    if tr and text and not text.endswith(("\n", ">")):
+        ph = "가" * (tr // 3) + ("a" if tr % 3 == 2 else "")
+        body = text.rstrip(" ")
+        sp = text[len(body) :]
+        out = (fn or typeset.typeset)(body + ph, tw, pv)
+        return (out[: -len(ph)] if out.endswith(ph) else out) + sp
+    return (fn or typeset.typeset)(text, tw, pv)
+
+
 def call_texts(text: str, seg_off: int, seg_map: dict, sg: dict) -> dict[str, str]:
     """이 구간이 부르는 조각(`<10 lo hi>`)의 한국어 — 같은 뱅크 안 주소다. 조판기가 폭을 세는 데 쓴다."""
     out = {}
@@ -790,10 +824,10 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             continue
         if 0xC2 <= (common.off2snes(a) >> 16) <= 0xCB and not v.get("raw"):  # $C2~$CB 대사 — 대사창 규격으로 조판(`raw: true` 면 그대로)
             tw = {**names, **e1w, **call_texts(text, a, seg_map, sg)}
-            pv = typeset.worse(typeset.worse(typeset_end.get(a), jump_lead.get(key)), call_lead(src, a, seg_map, names, tw))  # 바로 앞 구간이 이 자리에서 이어지거나(이름 변수 뒤 조각) 점프로 들어오면(공유 꼬리) 그 줄의 남은 폭에서 시작한다
+            pv = lead_state(src, a, key, seg_map, names, tw, typeset_end, jump_lead)  # 바로 앞 구간이 이 자리에서 이어지거나(이름 변수 뒤 조각) 점프로 들어오면(공유 꼬리) 그 줄의 남은 폭에서 시작한다
             pre05 = sum(1 for o, _ln in script.tokens(src, a, b) if o < b and src[o] == 0x05)  # 원문 구간이 이미 가진 쪽 넘김 — 그보다 늘어난 몫이 재배치(번역자가 소스에 더한 것 + 조판기가 넘침에서 넣은 것)
             typeset.RULE = f"쪽:{key}" not in off_keys and "쪽:*" not in off_keys
-            text = typeset.typeset(text, tw, pv)
+            text = typeset_seg(text, src, b, seg_map, names, tw, pv)
             typeset.RULE = True
             if text.count("<05>") > pre05:
                 rec("쪽 넘김", key, common.off2snes(a), None, f"원문 구간보다 쪽 넘김이 {text.count('<05>') - pre05}개 늘었다(번역이 소스에 더한 것 + 쪽 3줄이 넘쳐 조판기가 넣은 것)", text.count("<05>") - pre05, f"ED_RELOC_OFF=쪽:{key} → 문장 단위 규칙만 끔(넘침 쪽 넘김은 남음)")
@@ -824,6 +858,12 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
                     for lo, hi, bk in sites:
                         rom[lo], rom[hi], rom[bk] = new & 0xFF, (new >> 8) & 0xFF, new >> 16
                         writes += [(lo, lo + 1), (hi, hi + 1), (bk, bk + 1)]
+                    # 앞 메시지의 끝에서 이 자리로 **흘러 들어오는** 길(전투 문구 「…{0a}は」)이 남는다 — 옛 바이트를 그대로 두면 일본어 글자가 찍힌다(10-28 D437AC·D470AC).
+                    # 끝 공백을 뺀 번역이 원문 자리에 들면 그걸 제자리에도 써 둔다(포인터 길은 공백 포함 번역을 그대로 쓴다)
+                    fb = data.rstrip(b" ")
+                    if len(fb) <= b - a:
+                        rom[a:b] = fb + bytes([NOOP]) * (b - a - len(fb))
+                        writes.append((a, b))
                     stats["seg_reloc"] = stats.get("seg_reloc", 0) + 1
                     continue
                 raise SystemExit(f"구간 {key}: 원문 {b - a}B 라 트램펄린을 못 둔다 — 번역 {len(data)}B 를 {b - a}B 안으로 줄여야 한다")
@@ -872,7 +912,9 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         ent.insert(after + 1, bytes([newstr & 0xFF, (newstr >> 8) & 0xFF, newstr >> 16]))
         kd = kd[: after + 1] + bytes([1]) + kd[after + 1 :]
         nl, nk = tail.put(b"".join(ent)), tail.put(kd)
-        rec("옮김", f"listsplit{key}", la, nl, "인물 소개 쪽에 줄을 더한다 — 포인터 목록과 줄 종류 표를 새로 만들어 꼬리에 두고 읽는 코드 즉치를 돌린다", len(ent) * 3 + len(kd) + 4)
+        # 새 문자열 · 포인터 목록 · 줄 종류 표는 꼬리에 연달아 놓인다 — 장부는 셋을 한 덩이(문자열 자리부터)로 적어야 `check_extension` 이 장부 밖 쓰기로 안 본다
+        assert newstr < nl < nk and newstr + len(kr.encode(v["kr"], alloc)) + 1 == nl and nl + len(ent) * 3 == nk
+        rec("옮김", f"listsplit{key}", la, newstr, "인물 소개 쪽에 줄을 더한다 — 새 줄 문자열 · 포인터 목록 · 줄 종류 표를 꼬리에 연달아 두고 읽는 코드 즉치를 돌린다", nk + len(kd) - newstr)
         for off, val in ((pcode + 1, nl & 0xFF), (pcode + 6, (nl >> 8) & 0xFF), (pcode + 11, nl >> 16)):
             rom[off] = val
             writes.append((off, off + 1))

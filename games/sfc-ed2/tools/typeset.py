@@ -112,9 +112,26 @@ _CONJ = {"그리고", "하지만", "그러나", "그래서", "게다가", "그�
 MIN_LEFT = 20  # 줄·쪽을 끊고 앞에 남는 줄이 이보다 짧으면(낱말 하나 정도) 그 자리에서는 끊지 않는다
 
 
+_OLD_RULES = False  # 켜면 공용 krwrap 10-28/29 보강(관형형+의존명사 · 관용구 · 이름+호칭 조사꼴 · 「-아 다오」)을 끈다 — `typeset()` 의 쪽·줄 늘어남 판정 기준
+_OLD_TITLES = ("군", "양", "씨", "경", "공", "님", "전하", "폐하", "각하")
+
+
+def _is_new_reason(r: str, b: str) -> bool:
+    w = b.rstrip(".,!?…~")
+    if r == "관용구":
+        return True
+    if r == "관형형+의존명사":
+        return w.startswith(("자", "리", "데", "법", "대로", "참", "척", "체", "탓", "김", "셈", "모양"))
+    if r == "이름+호칭":
+        return w not in _OLD_TITLES
+    return r == "본용언+보조용언" and w.startswith(("다오", "달라", "달란"))
+
+
 def _split_reason(a: str, b: str):
     """공용 판정(`krwrap.split_reason`) + 이 게임의 로컬 이음 — 「하고 싶다」 · 「싶어 견디다」(규칙 2-16 f)."""
     r = krwrap.split_reason(a, b)
+    if r and _OLD_RULES and _is_new_reason(r, b):
+        r = None
     if r or not a or not b:
         return r
     a2, b2 = a.rstrip(".,!?…"), b.lstrip("「『")
@@ -392,6 +409,27 @@ def _base(text, names=None, lead=None):
 
 
 def typeset(text, names=None, lead=None):
+    """공용 묶음 규칙(10-28/29 보강)은 「지키면 좋은 것」이다 — 지키느라 이 문안의 쪽·줄이 늘면 그 문안은 보강 전 규칙으로 되돌린다
+    (쪽이 늘어 문장 한가운데서 끊기는 쪽이 더 나쁘다, 규칙 2-16 · 마스터 10-29)."""
+    out = _typeset_final(text, names, lead)
+    global _OLD_RULES
+    if _OLD_RULES:
+        return out
+    _OLD_RULES = True
+    try:
+        old = _typeset_final(text, names, lead)
+    finally:
+        _OLD_RULES = False
+    if old != out and (out.count("<05>") > old.count("<05>") or out.count("\n") > old.count("\n")):
+        FALLBACKS.append(text)
+        return old
+    return out
+
+
+FALLBACKS: list = []  # 보강 규칙을 포기하고 보강 전 조판으로 돌린 문안(진단용)
+
+
+def _typeset_final(text, names=None, lead=None):
     out = _typeset_guard(text, names, lead)
     if REBALANCE:
         base = None

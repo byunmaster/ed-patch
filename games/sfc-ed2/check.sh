@@ -48,6 +48,12 @@ echo "== sfc-ed2 =="
 # 5e. 조판 지표 래칫(규칙 2-16 a~e) — 쪽 끝 고아 · 문장 중간 한 낱말 쪽 · 고아 부호 · 첫 칸 공백/넘침 · 굳은 명사구 갈림이 기준선보다 늘면 운다
 "$PY" "$T/check_layout.py" | grep -q "지표 악화 0"
 
+# 5f. 조판 지문 — 공용 krwrap 이 바뀌어 이 게임 줄바꿈이 조용히 달라지면 운다(롬에 굽는 조판기 결과를 구역별 sha1 로). 문안·규칙을 의도적으로 바꿨을 때만 `typeset_fingerprint.py --game sfc-ed2 --freeze`(자동 갱신 금지)
+"$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game sfc-ed2
+
+# 5g. 마스터 판정 문안 — `master_rulings.json` 의 금지·필수 꼴이 문안 지도에 지켜지나(검수·재조판이 판정을 되돌리지 못하게 — ss-ed3 「로그 씨」 세 번 재발 10-29, 이 게임 란도 「정리해 버리고 있잖아!」 되돌림 10-30). 판정을 받으면 거기 한 줄을 더한다
+"$PY" "$T/check_master_rulings.py"
+
 # 6. 글리프표 — 1,284자 길이 불변식(한 글자라도 빠지면 이후 색인이 전부 밀린다)
 "$PY" "$T/glyphmap.py" | grep -q "글리프표 1284자"
 

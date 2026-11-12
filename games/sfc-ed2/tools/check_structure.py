@@ -89,8 +89,10 @@ def follow(rom: bytes, src: bytes, a: int, b: int, sites=None) -> dict:
         return False
 
     sites = [t for t in (sites or []) if t[0] < t[1] < t[2] <= t[0] + 16]  # `A9 lo 8D A6 00 · A9 hi 8D A7 00 · A9 bank 8D A8 00` 꼴이 아닌 우연한 일치는 뺀다
-    if sites and bytes(rom[a:b]) == bytes(src[a:b]):  # 4바이트 미만 구간 — 원문 자리는 그대로(죽은 자리)이고 즉치 포인터가 새 자리로 갔다
-        ptrs = {rom[lo] | rom[hi] << 8 | rom[bk] << 16 for lo, hi, bk in sites}
+    ptrs = {rom[lo] | rom[hi] << 8 | rom[bk] << 16 for lo, hi, bk in sites}
+    moved = len(ptrs) == 1 and next(iter(ptrs)) != (common.off2snes(a) & 0xFFFFFF)
+    # 4바이트 미만 구간 — 즉치 포인터가 새 자리로 갔다. 원문 자리는 죽은 자리(원문 그대로)이거나, 앞 메시지에서 **흘러 들어오는** 길용으로 제자리에도 번역을 써 둔 자리(10-28 「…{0a}は」)
+    if sites and (bytes(rom[a:b]) == bytes(src[a:b]) or moved):
         if len(ptrs) != 1:
             res["why"] = "즉치 포인터 사이트들이 서로 다른 곳을 가리킨다"
             return res
@@ -194,7 +196,7 @@ def diff_seq(orig: list[int], built: list[int]) -> tuple[bool, int]:
 
 
 # 번역이 원문에 없던 화자 머리 `<1e>이름<04>` 를 붙인 구간(check_rules.CTL_EXEMPT 와 같은 목록) — `$1E`·`$04` 는 색 코드(`$18~$1F` 점프표 핸들러)라 글자 앞뒤에 놓여도 흐름을 안 바꾼다
-HEADER_ADDED = {"$C5521A", "$CB74B3"}
+HEADER_ADDED = {"$C5521A"}
 ALLOWED["화자 머리 추가"] = (
     "원문에 없는 `<1e>이름<04>`(색 코드 쌍)를 구간 앞에 붙인다",
     "말하는 사람이 원문 구간에서 안 드러나 번역에서 밝힌다",
