@@ -67,6 +67,8 @@ import textenc
 #    새로 쓸 이유가 없다. 모양만 한국식으로 바꾼다(`PUNCT`). 여기 EXTRA 는 원본에 **없는** 것만.
 EXTRA = " "  # ⚠ 말줄임표는 마침표 셋(`...`) — 원본도 「・・・」 셋이다
 PUNCT = {",": 0x01, ".": 0x02, "?": 0x04, "!": 0x05}  # 우리 부호 → 원본 코드(모양만 다시 굽는다)
+# `&` `%` 는 원판 전각 글리프(＆ 0x1b · ％ 0x1a)를 그대로 쓴다(마스터 11-14 — 반각 부호는 원판 모양을 살린다). 굽지 않고 자리도 안 받는다 · 12px 전각이라 `typeset.WIDTHS` 에 없다
+ORIG_FULL = {"&": 0x1B, "%": 0x1A}
 PUNCT_ED3 = {"…": 0x03}  # ED3: 말줄임 「…」 = 원본 `・`(코드 3) 자리를 바닥 점 셋으로 다시 굽는다(`font.ellipsis_glyph`, 마스터 10-08)
 
 
@@ -256,7 +258,7 @@ def needed_chars(disc):
     import uitext
 
     # ⚠ PUNCT(`. , ? !`)는 원본 부호 자리를 다시 구워 쓴다 — 자리를 받으면 낭비다.
-    have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values()) | set(PUNCT) | set(punct(disc))
+    have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values()) | set(PUNCT) | set(punct(disc)) | set(ORIG_FULL)
     freq = collections.Counter()
     for lines in script_canon.load_effective(disc)[0].values():
         for row in lines.values():
@@ -329,6 +331,7 @@ def encode(text, disc, table=None):
     rev = {v: k for k, v in textenc.charmap(disc).items()}
     for code, ch in textenc.CONTROL.items():
         rev.setdefault(ch, code)
+    rev.update(ORIG_FULL)
     rev.update(punct(disc))  # 한국식 마침표·쉼표(+ ED3 말줄임) → 원본 코드
     # 실행파일 글(주문·귀중품 설명)의 0x0001 은 **개행**이다 — 스캐너가 「\n」으로 읽으니 되돌린다.
     # ⚠ 그래서 그 창에서는 쉼표(→0x01)도 줄을 바꾼다. 설명문엔 쉼표를 쓰지 않는다.

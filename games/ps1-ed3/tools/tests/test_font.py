@@ -136,7 +136,7 @@ class TestEllipsis(unittest.TestCase):
         """🔴 말줄임은 「…」 전각 한 글자, 점 셋은 마침표와 같은 바닥 행(마스터 10-08)."""
         g = np.asarray(font.hangul_glyph("…"))
         rows = [r for r in range(g.shape[0]) if g[r].any()]
-        dot = np.asarray(font.hangul_glyph("."))
+        dot = np.asarray(font._period_bits())  # Galmuri 마침표 — 말줄임의 점 모양 원천(`.` 글리프는 11-14 에 원판 `！` 점 높이로 따로 바뀌었다)
         period_rows = [r for r in range(dot.shape[0]) if dot[r].any()]
         self.assertEqual(
             rows, period_rows
@@ -151,3 +151,18 @@ class TestEllipsis(unittest.TestCase):
 
         self.assertEqual(hangul_map.encode("…", "ed3", {}), [3])
         self.assertEqual(typeset.width_cells("…", "ed3"), 1.0)  # 반각(0.5)이 아니다
+
+
+class TestHalfPunct(unittest.TestCase):
+    def test_half_punct_fits_half_cell_and_matches_original_ink(self):
+        """🔴 반각 부호(마스터 11-14): 잉크가 반 칸(6열) 안이고, `.` 는 원판 `！` 점 높이(9행)·2열, `(` `)` 는 좌우 대칭이다."""
+        for ch in font.HALF_PUNCT:
+            g = np.asarray(font.hangul_glyph(ch))
+            self.assertEqual(g.shape, (12, 12))
+            self.assertTrue(g.any(), ch)
+            self.assertFalse(g[:, 6:].any(), ch)
+        dot = np.asarray(font.hangul_glyph("."))
+        self.assertEqual([r for r in range(12) if dot[r].any()], [9])
+        self.assertEqual(int(dot.sum()), 2)
+        o, c = np.asarray(font.hangul_glyph("(")), np.asarray(font.hangul_glyph(")"))
+        self.assertTrue((o[:, :6] == c[:, :6][:, ::-1]).all())

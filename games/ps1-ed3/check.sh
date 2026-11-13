@@ -116,6 +116,8 @@ run 0 "$PY" scripts/check/master_rulings.py --game ps1-ed3
 run 0 "$PY" "$G/tools/check_var_spacing.py"
 echo "  ── 말투 경보(래칫 — 반말 줄 속 듣는 이 -시- · 원문 대비 길이 급감, 11-13) · 「그대」 금지는 master_rulings"
 run 0 "$PY" "$G/tools/check_register_alarms.py" --disc ed3
+echo "  ── 문장부호 전수(1-1·1-3·2-12 — 전각 ！？ · ・ · 띄어 쓴 … · 원문 점 n→… round(n/3) · ！？ 순서, 11-13)"
+run 0 "$PY" "$G/tools/check_punct.py"
 echo "  ── 구운 조판 전수 (첫 칸 공백 · 고아 부호 · 빈 줄 · 부호 앞뒤 공백 · 낱말 속 접힘 · 넘침 — 마스터 10-31)"
 run 0 "$PY" "$G/tools/check_baked_layout.py"
 
