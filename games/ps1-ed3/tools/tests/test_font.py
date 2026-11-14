@@ -136,7 +136,7 @@ class TestEllipsis(unittest.TestCase):
         """🔴 말줄임은 「…」 전각 한 글자, 점 셋은 마침표와 같은 바닥 행(마스터 10-08)."""
         g = np.asarray(font.hangul_glyph("…"))
         rows = [r for r in range(g.shape[0]) if g[r].any()]
-        dot = np.asarray(font._period_bits())  # Galmuri 마침표 — 말줄임의 점 모양 원천(`.` 글리프는 11-14 에 원판 `！` 점 높이로 따로 바뀌었다)
+        dot = np.asarray(font.hangul_glyph("."))  # 대사 마침표 2×2 — 말줄임의 점이 이 잉크와 같은 모양이다(마스터 11-16)
         period_rows = [r for r in range(dot.shape[0]) if dot[r].any()]
         self.assertEqual(
             rows, period_rows
@@ -144,6 +144,9 @@ class TestEllipsis(unittest.TestCase):
         self.assertGreaterEqual(min(rows), 9)
         self.assertEqual(int(g.sum()), 3 * int(dot.sum()))  # 점 셋
         self.assertEqual(font.ELLIPSIS_CODE["ed3"], 3)
+        self.assertEqual(rows, [9])
+        first = g[9:10, 1:3]  # 점 하나 = 마침표 잉크(2×1)와 픽셀 단위로 같다
+        self.assertTrue((first == dot[9:10, 2:4]).all() and first.all())
 
     def test_ellipsis_encodes_to_the_reshaped_code_and_is_full_width(self):
         import hangul_map
@@ -162,7 +165,10 @@ class TestHalfPunct(unittest.TestCase):
             self.assertTrue(g.any(), ch)
             self.assertFalse(g[:, 6:].any(), ch)
         dot = np.asarray(font.hangul_glyph("."))
-        self.assertEqual([r for r in range(12) if dot[r].any()], [9])
+        self.assertEqual([r for r in range(12) if dot[r].any()], [9])  # 원판 ？！ 점과 같다(2×1, 9행)
         self.assertEqual(int(dot.sum()), 2)
+        exe = font.exe_bytes("ed3")[0]
+        orig = np.asarray(font.read_glyph(exe, 5))  # 원판 ！ — 점 행은 마침표와 같은 행·같은 가로폭
+        self.assertEqual(int(orig[9].sum()), int(dot[9].sum()))
         o, c = np.asarray(font.hangul_glyph("(")), np.asarray(font.hangul_glyph(")"))
         self.assertTrue((o[:, :6] == c[:, :6][:, ::-1]).all())

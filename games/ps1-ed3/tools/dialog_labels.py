@@ -34,38 +34,38 @@ def member_index(disc):
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--index", required=True)
-    ap.add_argument("--cue", required=True)
-    ap.add_argument("--disc", default="ed3")
-    a = ap.parse_args()
-    idx = member_index(a.disc)
+def labeler(cue, disc="ed3"):
+    """(맵 이름, 시퀀스 바이트, 오프셋) → [줄열쇠] — 하네스가 주입한 시퀀스가 어느 번역 줄인지(굽은 이미지 기준)."""
+    idx = member_index(disc)
     cache = {}
-    binp = os.path.splitext(a.cue)[0] + ".bin"
+    binp = os.path.splitext(cue)[0] + ".bin"
     tree = common.iso_tree(binp)[0]
 
     def segs_of(arch, nm):
         k = (arch, nm)
         if k not in cache:
             lba, size = tree[arch]
-            data = common.read_lba(a.disc, lba, size, path=binp)
+            data = common.read_lba(disc, lba, size, path=binp)
             _, ents = common.arc_parse(data)
             off, sz = next((o, s) for n, o, s in ents if n == nm)
             info = scriptmap.parse(data[off : off + sz])
             cache[k] = {s: i for i, (s, _c) in enumerate(info["segments"])}, info["base"]
         return cache[k]
 
-    print("맵\t번호\t줄열쇠\t첫조각")
-    for ln in pathlib.Path(a.index).read_text(encoding="utf-8").splitlines()[1:]:
-        c = ln.split("\t")
-        name, k, seq, off = (
-            c[0],
-            c[1],
-            bytes.fromhex(c[3]),
-            int(c[2]) - (2 if c[3].startswith("12") else 0),
-        )
-        keys = []
+    def member_bytes(name):
+        """그 맵 멤버의 굽은 바이트(첫 일치)."""
+        for arch, nm, stem, d in idx.get(name, []):
+            lba, size = tree[arch]
+            data = common.read_lba(disc, lba, size, path=binp)
+            _, ents = common.arc_parse(data)
+            off, sz = next((o, s) for n, o, s in ents if n == nm)
+            return data[off : off + sz]
+        return None
+
+    keys_for_member_bytes = member_bytes
+
+    def keys_for(name, seq, off):
+        keys, first = [], ""
         for arch, nm, stem, d in idx.get(name, []):
             starts, base = segs_of(arch, nm)
             keys = []
@@ -85,6 +85,29 @@ def main():
             if keys:
                 first = d["lines"].get(keys[0].split("#")[1], {}).get("kr", "")
                 break
+        return keys, first
+
+    keys_for.member_bytes = member_bytes
+    return keys_for
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--index", required=True)
+    ap.add_argument("--cue", required=True)
+    ap.add_argument("--disc", default="ed3")
+    a = ap.parse_args()
+    keys_for = labeler(a.cue, a.disc)
+    print("맵\t번호\t줄열쇠\t첫조각")
+    for ln in pathlib.Path(a.index).read_text(encoding="utf-8").splitlines()[1:]:
+        c = ln.split("\t")
+        name, k, seq, off = (
+            c[0],
+            c[1],
+            bytes.fromhex(c[3]),
+            int(c[2]) - (2 if c[3].startswith("12") else 0),
+        )
+        keys, first = keys_for(name, seq, off)
         print(
             f"{name}\t{k}\t{';'.join(keys) or '?'}\t{first.replace(chr(10), '/')[:40] if keys else ''}"
         )
