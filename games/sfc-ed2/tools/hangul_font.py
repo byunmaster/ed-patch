@@ -44,8 +44,22 @@ YOFF_OVERRIDE = {0x2026: 0}
 SHIFT_X = 1
 
 
+def _ellipsis12() -> bytes:
+    """「…」 — 점 셋을 이 기종 마침표(반각 「.」 = 2×2 네모, patches.HALF_GLYPHS)와 같은 모양·크기로, 바닥(잉크 9~10행)에 앉힌다(번역 규칙 1-3, 마스터 11-15 「… 도 마침표 모양으로」 → 「전 기종」).
+    점 간격 4(갈무리와 같음)·칸 안 좌우 여백 1 씩 — 점만 2×2 가 된다."""
+    rows = [0] * 12
+    for y in (9, 10):
+        rows[y] = (0b11 << 9) | (0b11 << 5) | (0b11 << 1)  # 열 1~2 · 5~6 · 9~10 (칸 0~11 에서 좌우 여백 1 씩)
+    out = bytearray()
+    for k in range(0, 12, 2):
+        out += ((rows[k] << 12) | rows[k + 1]).to_bytes(3, "big")
+    return bytes(out)
+
+
 def glyph12(ch: str) -> bytes:
     """글자 하나 → 18바이트 글리프(11×11 잉크, 왼쪽 위 — BBX 오프셋대로 앉힌다: 아랫줄 = 기준선)."""
+    if ch == "…":
+        return _ellipsis12()
     g = _bdf().get(ord(ch))
     if g is None:
         raise KeyError(f"갈무리에 없는 글자: {ch!r}")

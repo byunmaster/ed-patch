@@ -1043,7 +1043,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         if i >= n0 or font_out:
             ft[i * 18 : (i + 1) * 18] = hangul_font.glyph12(c)
     # 원판 전각 숫자(색인 16~25)를 1px 위로 — 한글 잉크는 y 18~28, 원판 숫자는 19~29 라 장 제목 띠에서 숫자만 1px 아래였다(마스터 11-10). 0행은 비어 있어 잘림 없음.
-    for i in range(16, 26):
+    for i in [*range(16, 26), *range(26, 52)]:  # 전각 숫자 ０~９ + 영문 대문자 Ａ~Ｚ(원판 잉크 1~11 → 0~10, 마스터 11-15 기준선 검사)
         if i < n0 or font_out:
             rows = []
             for k in range(0, 18, 3):
@@ -1053,6 +1053,14 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             rows = rows[1:] + [0]
             for j in range(6):
                 ft[i * 18 + 3 * j : i * 18 + 3 * j + 3] = ((rows[2 * j] << 12) | rows[2 * j + 1]).to_bytes(3, "big")
+    # 반각 글리프(원판 `! ?` · 숫자 · 영문 대문자 · 우리가 그린 `, .`)를 1줄 위로 — 한글 잉크 아랫줄은 10(Galmuri 기준선)인데 원판 반각은 11(가나 기준)이라 한 줄에 섞이면 부호·숫자만 1px 아래였다
+    # (마스터 11-15 「갈무리 폰트와 원문 부호가 1px 차이」 — PCE I 에서 시작, 전 기종 기준선 검사). 모양·폭 그대로, 위쪽 0행이 비어 있어 잘림 없음. 소문자는 이미 10 이라 그대로.
+    for c in [0x21, 0x22, 0x2C, 0x2E, *range(0x30, 0x3A), *range(0x41, 0x5B)]:
+        go = common.snes2off(patches.HALF_BASE) + (c - 0x20) * 16
+        g = bytes(rom[go : go + 16])
+        assert g[0] == 0, f"반각 글리프 {c:#x} 첫 줄이 비어 있지 않다"
+        rom[go : go + 16] = g[1:] + b"\x00"
+        writes.append((go, go + 16))
     if font_out and 2 not in alloc.values():
         # 색인 2 = 일본어 「。」 — 「정말 고마워」 조각 뒤처럼 구간 밖 2바이트 코드로 남는 자리가 있어 화면에 그대로 나간다(마스터 규칙: 마침표는 반각 「.」). 모양을 「.」로 바꾼다
         ft[2 * 18 : 3 * 18] = hangul_font.glyph12(".")

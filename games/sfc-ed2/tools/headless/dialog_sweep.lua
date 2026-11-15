@@ -56,6 +56,7 @@ local ui=0         -- 지금 단위(1..#UNITS)
 local RA=nil       -- 첫 호출의 복귀 주소(= 호출 지점 + 4) — 단위 끝 판정
 local state="boot"
 local need_write=false
+local PRE=os.getenv("SW_PRE")  -- 대본 앞에 붙일 바이트(hex) — 비어 있으면 안 쓴다
 local VARNAME=os.getenv("SW_VARNAME")  -- 이름 변수 버퍼 `$1201`(토큰 `0e` 가 찍는 아이템 이름)에 넣을 대표 이름(hex) — 비어 있으면 변수로 시작하는 단위는 글자가 안 찍힌다(원판 롬도 같다)
 local FLAGS=os.getenv("SW_FLAGS")  -- 호출 단위의 분기를 맞추는 플래그(hex 번호[=0], 쉼표) — 번호 n 은 WRAM $0167+(n>>3) 의 비트 n&7
 local function setflags()
@@ -69,6 +70,11 @@ local function setflags()
 end
 local function setptr()
   if ui>=1 and ui<=#UNITS then local a=UNITS[ui]; wr(0xA6,a&255); wr(0xA7,(a>>8)&255); wr(0xA8,(a>>16)&255); need_write=false
+    if PRE then -- 앞 조각(이름 변수 찍기 등) 뒤에 단위로 뛰는 가짜 대본을 WRAM $7F:E000 에 두고 거기서 읽는다 — 이름 뒤에 붙는 조각(`{*이/가}` 로 시작하는 줄)을 실제 이름과 함께 본다
+      local k=0; for h in PRE:gmatch("%x%x") do wr(0x1E000+k,tonumber(h,16)); k=k+1 end
+      wr(0x1E000+k,0x17); wr(0x1E001+k,a&255); wr(0x1E002+k,(a>>8)&255); wr(0x1E003+k,(a>>16)&255)
+      wr(0xA6,0x00); wr(0xA7,0xE0); wr(0xA8,0x7F)
+    end
     setflags()
     if VARNAME then local k=0; for h in VARNAME:gmatch("%x%x") do wr(0x1201+k,tonumber(h,16)); k=k+1 end end
   end
@@ -108,7 +114,7 @@ emu.addMemoryCallback(function()
   if need_write then
     need_write=false
     local a=UNITS[ui]
-    wr(0xA6,a&255); wr(0xA7,(a>>8)&255); wr(0xA8,(a>>16)&255)
+    if not PRE then wr(0xA6,a&255); wr(0xA7,(a>>8)&255); wr(0xA8,(a>>16)&255) end
   end
   uf=uf+1
   local function finish(why)
