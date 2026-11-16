@@ -41,6 +41,8 @@ from shared.text import krwrap
 
 SCRIPT = os.path.join(C.GAME_DIR, "script")
 BASELINE = os.path.join(SCRIPT, "linebreak_baseline.json")
+WINDOW_RESTORE = os.path.join(SCRIPT, "window_restore_2_17.json")  # 규칙 2-17 「원문 창 우선」으로 갈라 2-16 지표에서 뺀 블록
+ORIG_PAGES = os.path.join(SCRIPT, "linebreak_orig_pages.json")  # 원판 쪽 나눔을 따른 블록 — h2 에서 뺀다(규칙 2-6)
 GLUE = "\ue000"  # reflow_script 와 같은 자리표시 — 띄어 쓴 정본 이름 속 공백(폭은 반각 공백)
 WIDTH = T.WIN_COLS
 MIN_LEFT = 6.5  # 줄을 끊고 앞에 남는 줄이 이보다 좁으면(낱말 하나 정도) 그 자리에서는 끊지 않는다(전각 칸 — 줄 폭의 약 40%)
@@ -91,7 +93,22 @@ def _extra_bond(prev, nxt):
         and nxt.startswith(("달리", "같이", "함께", "더불", "마찬가지"))
     ):
         return "-와/과 달리·같이·함께"
+    #   관형형 + 의존명사(「들을 땐」 · 「끝날 때까지」 · 「있는 한」 · 「없는 한」) — 줄이 의존명사 앞에서 갈리면 뜻이 바뀌거나(「있는 한 병사」) 토막으로 읽힌다(10-28 검수)
+    if len(p) >= 2 and _DEP_N.match(nxt) and (p[-1] in "는은" or _adnominal(p)):
+        return "관형형+의존명사"
+    #   수·단위 · 「~년 전」 — 숫자와 단위, 햇수와 「전」 을 가르지 않는다
+    if (re.search(r"(?:\d+|[몇백천만억])$", p) and nxt[:1] in "년개명살번일월시분초원") or (p.endswith("년") and nxt.startswith("전")):
+        return "수+단위"
+    #   🔴 이름·직함 뒤 호칭은 앞 말에 붙여 읽는다(10-28 문안 검수 「라프↵씨를」 · 「쥬리오↵군에게」 · 「죠리나↵왕비」 16곳) — 호칭이 줄 머리에 오면 따로 선 낱말로 읽힌다
+    if _TITLE.match(nxt.rstrip(".,!?…」』)")) and not END_RE.search(prev) and prev.rstrip(".,!?…」』)")[-1] not in "은는이가을를의에도로와과만서고며면니다요죠까나네데지자게어아해라러든께야걸들":
+        return "이름+호칭"
     return None
+
+
+_DEP_N = re.compile(r"^(?:때|땐|한|뿐|만큼|대로|듯|데|바)(?:까지만?|는|도|가)?[.,!?…」』)]*$")
+_JOSA_T = r"(?:은|는|이|가|을|를|께|께서|도|만|의|와|과|에게|한테|께는|이라는|이란|이라고)"
+#   짧은 호칭(씨·님·군·양·공)은 맨몸으로도, 긴 직함(할머니 집 처럼 뒤 명사가 따를 수 있는 말)은 조사가 붙었을 때만 묶는다
+_TITLE = re.compile(rf"^(?:(?:씨|님|군|양|공){_JOSA_T}?|(?:왕비|할아버지|할머니|아저씨|선생님){_JOSA_T})$")
 
 
 def bonded(prev, nxt):
@@ -411,6 +428,9 @@ def scan(text, nms=()):
             a, b = rows[ri], rows[ri + 1]
             if END_RE.search(a):
                 continue
+            #   괄호 속말은 원문이 **한 덩이 = 한 줄**이다(10-28 검수) — 괄호가 닫히고 다음 괄호가 열리는 줄바꿈은 일부러 낸 것이라 손 개행이 아니다
+            if a.endswith(")") and b.startswith("("):
+                continue
             wa, wb = _words(a), _words(b)
             if not wa or not wb:
                 continue
@@ -475,15 +495,53 @@ def measure():
     blk = {k: 0 for k in KINDS}
     ex = {k: [] for k in KINDS}
     n = 0
+    with open(ORIG_PAGES, encoding="utf-8") as fh:
+        orig_h2 = set(json.load(fh)["h2"])
+    exempt = _restore_keys()
     for key, v in blocks():
         n += 1
+        if key in exempt:  # 2-17: 원문 창이 문장 한복판에서 갈리면 우리도 거기서 가른다 — 지표(쪽 끝 한 어절 등)는 허용분
+            continue
         r = scan(v, nms)
+        if key in orig_h2:
+            r["h2"] = []
         for k in KINDS:
             if r[k]:
                 blk[k] += 1
                 tot[k] += len(r[k])
                 ex[k].append((key, r[k][0]))
     return n, tot, blk, ex
+
+
+def _restore_keys():
+    if not os.path.exists(WINDOW_RESTORE):
+        return set()
+    with open(WINDOW_RESTORE, encoding="utf-8") as fh:
+        return set(json.load(fh)["blocks"])
+
+
+def fewer_windows():
+    """규칙 2-17 「적음」 축 — 원문(`work/derived/map_jp`)보다 창(`\\f` 구간)이 적은 블록 키. 원문이 없으면 None(못 쟀다)."""
+    jp_dir = os.path.join(C.OUT_DIR, "map_jp")
+    if not os.path.isdir(jp_dir):
+        return None
+    out = []
+    for f in sorted(glob.glob(os.path.join(SCRIPT, "MAP*.json"))):
+        n = os.path.basename(f)
+        jp_path = os.path.join(jp_dir, n)
+        if not os.path.exists(jp_path):
+            continue
+        with open(jp_path, encoding="utf-8") as fh:
+            jb = json.load(fh)["blocks"]
+        with open(f, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        for i, j in enumerate(jb):
+            k = doc.get(str(i))
+            if not isinstance(k, str) or not j["text"]:
+                continue
+            if k.count("\f") < j["text"].count("\f"):
+                out.append(f"{n[:-5]}#{i}")
+    return out
 
 
 def _load_base():
@@ -557,6 +615,16 @@ def main():
             fh.write("\n")
         print(f"  기준선 → {new}")
         return
+    fw = fewer_windows()
+    if fw is None:
+        print("  ⓘ 창 수 「적음」 은 못 쟀다 — work/derived/map_jp 가 없다")
+    else:
+        print(f"  창 수 「적음」(원문보다 창이 적은 블록, 규칙 2-17) {len(fw)}")
+        for key in fw[: max(a.show, 5)]:
+            print(f"    적음 {key}")
+        if a.check and fw:
+            print("  ❌ 원문보다 창이 적은 블록이 있다 — 원문 창대로 가른다(규칙 2-17)")
+            sys.exit(1)
     if a.check:
         if not os.path.exists(BASELINE):
             print("  ❌ 기준선이 없다 — --freeze 로 만든다")

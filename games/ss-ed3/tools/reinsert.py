@@ -208,6 +208,21 @@ def patch_blocks(data, stem, table):
             if len(raw) > NAME_MAX:
                 bad.append((key, f"맵 이름이 {NAME_MAX}B 를 넘는다({len(raw)}B)"))
                 continue
+            #   🔴 **이름 뒤에 짧은 ASCII 표지**(`02`·`NUT` — 이름 NUL 바로 뒤에 NUL 종료로 붙는다)가 있는 맵 넷(016·026·028·049)은 그 표지를 **통째로 뒤로 민다**
+            #   (마스터 10-29 지명 띄어쓰기 — 「정적의 숲」 9B 가 원문 8B 칸을 넘는다). 이름이 14B 까지 가는 맵(042)엔 표지 칸이 없으므로 표지는 이름 자리 뒤의 순차 문자열이다.
+            t0 = blk["off"] + budget + 1
+            k = 0
+            while 0x20 < data[t0 + k] < 0x7F:
+                k += 1
+            if k and data[t0 + k] == 0:
+                tok = bytes(data[t0 : t0 + k])
+                new_end = blk["off"] + len(raw) + 1 + k + 1
+                if new_end > blk["off"] + NAME_MAX + 1 + k + 1 or any(data[t0 + k + 1 : new_end]) or any(data[blk["off"] + budget : t0]):
+                    bad.append((key, "맵 이름 뒤 표지를 밀 자리가 없다"))
+                    continue
+                out[blk["off"] : new_end] = raw + b"\x00" + tok + b"\x00"
+                done += 1
+                continue
             if any(data[blk["off"] + budget : blk["off"] + NAME_MAX + 1]):
                 bad.append((key, "맵 이름 뒤가 비어 있지 않다 — 늘려 쓸 수 없다"))
                 continue

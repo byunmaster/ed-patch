@@ -69,6 +69,44 @@ def check(text, width=T.WIN_COLS, fold=True):
     return hits
 
 
+def worst_case(sysd):
+    """`[(영역, 열쇠, 문안, 폭)]` — `%s`·`%d` 를 최장값으로 채운 시스템·전투 문구."""
+    import glossary_src as G
+
+    cats = G.categories()
+
+    def longest(*names):
+        pool = [v for c in names for v in cats.get(c, {}).values() if isinstance(v, str)]
+        return max(pool, key=lambda s: float(T.cols(s)))
+
+    item, move = (
+        longest("item"),
+        longest("spell", "skill"),
+    )  # 아이템 이름 최장 · 마법·기술 이름 최장
+    who = "크리스"  # 일행 이름(둘 — 최장 3자)
+    out = []
+    for sec in ("message", "notice", "battle"):
+        for v in sysd.get(sec, {}).values():
+            if isinstance(v, str) and ("%s" in v or "%d" in v):
+                full = v.replace(
+                    "\x1f", "\n"
+                )  # `\x1f` = 조사 훅 접기 자리(어절 앞에서 줄이 접힌다)
+                full = full.replace("은(는)", "은").replace(
+                    "을(를)", "을"
+                )  # 조사 훅이 한 글자로 고른다
+                full = full.replace(
+                    "%d", "99999"
+                )  # 소지금·경험치 다섯 자리(경험치는 여섯 자리까지 — 아래 따로)
+                if "경험치" in v:
+                    full = full.replace("99999", "999999", 1)
+                if "익혔다" in v or "레벨" in v:  # 첫 %s 는 일행 이름
+                    full = full.replace("%s", who, 1)
+                full = full.replace("%s", move if ("익혔다" in v or "전수" in v) else item)
+                w = 26 if sec == "notice" else T.WIN_COLS
+                out.append(("최장값 대입", f"{sec}:{v}", full, w))
+    return out
+
+
 def blocks():
     """`[(영역, 열쇠, 문안, 폭)]`."""
     out = []
@@ -92,6 +130,8 @@ def blocks():
                 out.append(("시스템", f"{sec}:{v}", v, w))
     for jp, v in sysd.get("battle", {}).items():
         out.append(("전투", f"battle:{v}", v, T.WIN_COLS))
+    #   🔴 `%s`·`%d` 최장값 대입(11-05 — 값을 안 채우면 실제 화면에서 넘치는 걸 못 본다): `%d` 는 6자리 · `%s` 는 정본 이름 중 칸수 최장.
+    out += worst_case(sysd)
     mv = _json(os.path.join(SCRIPT, "movie.json"))
     for k, v in mv.items():
         if k.startswith("M") and isinstance(v, list):
@@ -103,7 +143,9 @@ def blocks():
             continue
         for j, h in enumerate(v.get("hooks", []) + v.get("items", [])):
             if h.get("lines"):
-                out.append(("음성 자막", f"{k}#{j}", "\n".join(h["lines"]), VS.MAX_COLS))  # 자막 글자 버퍼는 18칸(대사창 17 보다 한 칸 넓다)
+                out.append(
+                    ("음성 자막", f"{k}#{j}", "\n".join(h["lines"]), VS.MAX_COLS)
+                )  # 자막 글자 버퍼는 18칸(대사창 17 보다 한 칸 넓다)
     return out
 
 
@@ -137,7 +179,15 @@ def main():
         table.setdefault(area, {}).setdefault(rule, 0)
         table[area][rule] += 1
     print("  영역          ①    ②    ③    ④")
-    for area in ("씬 대사", "씬 나레이션", "시스템", "전투", "무비 자막", "음성 자막"):
+    for area in (
+        "씬 대사",
+        "씬 나레이션",
+        "시스템",
+        "전투",
+        "최장값 대입",
+        "무비 자막",
+        "음성 자막",
+    ):
         t = table.get(area, {})
         print(f"  {area:<10} " + " ".join(f"{t.get(r, 0):>4}" for r in "①②③④"))
     ok = load_accept()

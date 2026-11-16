@@ -50,7 +50,7 @@ run 0 "$PY" "$G/tools/common.py"
 # 🔴 **`tail` 로 자르지 않는다** — 이 검사의 첫 줄이 통과/실패 헤드라인이라, 자르면
 #   실패해도 헤드라인 없이 상세 줄만 보여 사람이 놓친다(ss-ed1+2 `check.sh` 실측 함정).
 echo "  ── 조판 지문 (공용이 조사·화면 문안을 흔들었나)"
-warn 0 "$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game ss-ed3
+run 0 "$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game ss-ed3
 
 # 🔴 **덤프 라운드트립** — 경계가 한 칸이라도 밀리면 재삽입이 옆 바이트를 먹는다.
 #    두 디스크 다 본다(같은 한 벌이라는 계약을 텍스트 층에서도 다시 확인하는 셈이다).
@@ -190,6 +190,22 @@ run 3 "$PY" "$G/tools/check_no_loss.py"
 #    구운 재배치는 `relocations.tsv`(장부)에 전부 있어야 한다 — 낡으면 `check_structure.py --ledger` 로 다시 쓴다.
 echo "  ── 구조 대조 (원본 ↔ 구운 맵의 제어 열 · 재배치 장부)"
 run 6 "$PY" "$G/tools/check_structure.py"
+
+# 🔴 시스템 문자열 제어 문자 대조(마스터 10-29 「대사 색 코드 누락 점검」 — pce-ed1 에서 색 전환 옵코드가 한 번도 안 나갔다). 대사 본문 제어는 위 구조 대조가 센다.
+echo "  ── 시스템 문자열 제어 문자 (원문 키 ↔ 우리 값)"
+run 0 "$PY" "$G/tools/check_ctl_sys.py"
+
+# 🔴 마스터 판정 문안(10-29 — 「로그 씨」가 세 번 되살아났다): 판정으로 정한 금지·필수 꼴은 `master_rulings.json`, 판정을 받으면 거기 한 줄을 더한다.
+echo "  ── 조판 축 일람 · 양성 대조 · 부호 뒤 공백 (마스터 10-31)"
+run 0 "$PY" "$G/tools/check_typeset_axes.py" --check
+
+echo "  ── 규칙 2-8 가운데 맞춤 · 2-10 한 줄 문장 · 2-13 쉼표 (정적 점검 11-03)"
+run 0 "$PY" "$G/tools/check_center.py" --check
+run 0 "$PY" "$G/tools/check_oneline.py" --check
+run 0 "$PY" "$G/tools/check_commas.py" --check
+
+echo "  ── 마스터 판정 문안 (되돌림 금지)"
+run 0 "$PY" scripts/check/master_rulings.py --game ss-ed3
 
 if [ "$fail" -ne 0 ]; then
   echo "  ❌ [ss-ed3] 게이트 실패"

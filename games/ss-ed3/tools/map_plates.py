@@ -16,7 +16,8 @@
 ## 한글 판
   · 한글은 원판처럼 양끝 맞춤이되 **간격 상한 22**(`KR_MAX_PITCH`) — 두세 자 이름이 60px 벌어지지 않게 가운데로 모은다(마스터 미리보기 판정 대상).
   · 문안은 **정본**(`shared/canon/nouns/ed3.json` 의 `place`)에서 읽는다 — 이 파일엔 원문 열쇠 목록(`ORDER`)뿐이다(자기 표 0).
-  · 월드맵 패널 칸은 원판처럼 **붙여 쓴다**(마스터 10-09, `docs/naming.md`) — 정본 값에서 공백을 뺀다.
+  · 지명판도 **띄어 쓴다**(마스터 10-29 — 10-09 「원판처럼 붙여 쓴다」를 대체. 「일본어 원문은 원래 띄어쓰기가 없어 한국어로는 띄어 쓰는 게 맞다」) — 정본 값 그대로,
+    공백은 글자 반 칸 너비의 틈이다(`SPACE_W`).
   · 글꼴은 **Galmuri11**(갈무리 계열 — 인게임 대사·장 끝 지명과 같은 격자, 한글 12px 칸 `DX=1`)이다.
   · 글자 바탕은 **그 판의 바탕 무늬를 되살려** 원문 획만 걷어 낸다(획 칸을 같은 행의 이웃 바탕 색으로 메운다).
 """
@@ -51,6 +52,7 @@ CELL_LEFT_FIRST, CELL_LEFT_LAST = 4, 65
 DX = 1  # 인게임 한글 칸과 같은 한 열 들여쓰기(`build_font.DX`)
 DY = -3
 INK_FILL = 1  # 한글 획 색인(원판의 밝은 획)
+SPACE_W = 0.5  # 띄어쓰기 틈 — 글자 한 칸의 절반(마스터 10-29 지명판도 띄어 쓴다)
 KR_MAX_PITCH = 22  # 한글 판의 글자 간격 상한 — 원판 네 자 판(`ラグーナ` 등)의 간격이 20 이다
 
 #   판 순서의 원문 이름 — **열쇠 목록**이다(값은 정본). 판을 한 장씩 읽어 적었고 `--check` 가 원판 잉크와 대조한다.
@@ -64,9 +66,9 @@ assert len(ORDER) == N
 
 
 def korean(jp):
-    """정본 `place` 값에서 공백을 뺀 꼴 — 없으면 `None`(후보로 올린다)."""
+    """정본 `place` 값 그대로(공백 포함) — 없으면 `None`(후보로 올린다)."""
     v = CN.nouns("ed3")["categories"]["place"].get(jp)
-    return v.replace(" ", "") if isinstance(v, str) else None
+    return v if isinstance(v, str) else None
 
 
 def read(data):
@@ -105,6 +107,26 @@ def layout(n, max_pitch=None):
     return [round(first + i * pitch) for i in range(n)]
 
 
+def layout_text(text, max_pitch=None):
+    """`text` 의 글자(공백 제외)마다 칸 왼쪽 열 — 양끝 맞춤이되 공백은 `SPACE_W` 칸 틈으로 센다."""
+    glyphs = [c for c in text]
+    w = [SPACE_W if c == " " else 1.0 for c in glyphs]
+    units = sum(w[:-1])
+    if units == 0:
+        return {i: (CELL_LEFT_FIRST + CELL_LEFT_LAST) // 2 for i, c in enumerate(glyphs) if c != " "}
+    span = CELL_LEFT_LAST - CELL_LEFT_FIRST
+    pitch = span / units
+    if max_pitch is not None and pitch > max_pitch:
+        pitch = max_pitch
+    first = CELL_LEFT_FIRST + (span - pitch * units) / 2
+    out, cum = {}, 0.0
+    for i, c in enumerate(glyphs):
+        if c != " ":
+            out[i] = round(first + pitch * cum)
+        cum += w[i]
+    return out
+
+
 def _inner(a):
     m = np.zeros(a.shape, bool)
     m[TEXT_ROWS[0] : TEXT_ROWS[1], TEXT_COLS[0] : TEXT_COLS[1]] = True
@@ -136,7 +158,8 @@ def render_kr(a, text):
     """원판 판 `a` 의 바탕 위에 `text` 를 양끝 맞춤으로 그린다."""
     b = clean(a)
     bdf = fonts.galmuri()
-    for ch, x0 in zip(text, layout(len(text), KR_MAX_PITCH), strict=True):
+    for i, x0 in layout_text(text, KR_MAX_PITCH).items():
+        ch = text[i]
         bits = bdf.bits(ch, dy=DY, rows=F.ROWS, width=F.CELL)
         for y in range(F.ROWS):
             for x in range(F.CELL - DX):

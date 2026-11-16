@@ -212,6 +212,25 @@ def key_wanted(i):
     return False
 
 
+def _moved(stem):
+    """`{블록 번호: 새 좌표}` — 재배치 장부의 「스텁(옮김)」 줄(그 맵 것)."""
+    out = {}
+    with open(os.path.join(C.GAME_DIR, "relocations.tsv"), encoding="utf-8") as f:
+        for ln in f:
+            c = ln.rstrip("\n").split("\t")
+            if len(c) > 4 and c[0] == stem and c[2] == "스텁(옮김)":
+                out[int(c[1])] = int(c[4], 16)
+    return out
+
+
+def _moved_block(got, at, orig_blk):
+    """옮긴 블록의 새 자리 — `머리 2B + 몸 + 종결 1B + 00 + 복귀 점프(FD 00 …)` 꼴(MAP002#45 실측). 못 찾으면 원래 블록."""
+    m = re.compile(rb"([\x00-\x1f])\x00\xfd\x00\x00", re.S).search(got, at + 2)
+    if m is None:
+        return orig_blk
+    return {"off": at + 2, "head": got[at : at + 2].hex(), "body": got[at + 2 : m.start(1)], "term": got[m.start(1)]}
+
+
 def run_map(h, base, img, files, orig, stem, outdir, limit, idxf, deadline):
     """🔴 **이식 방식**(10-19, 기본): 기준 맵(MAP001)을 그대로 두고 **이름표 표만** 그 맵 것으로 갈아 끼운 뒤, 맵 안 0 런에 블록을 이식해 띄운다.
 
@@ -222,6 +241,11 @@ def run_map(h, base, img, files, orig, stem, outdir, limit, idxf, deadline):
     got = B.read_extent(img, lba, size)
     src = orig[name]
     blocks = M.blocks(src)
+    #   🔴 옮긴 블록(장부 「스텁(옮김)」)은 원래 자리에 점프 스텁만 있다 — 그 자리를 이식하면 빈 창이 뜬다(10-31 실측: MAP026#859 24쪽).
+    #     새 좌표의 블록(머리 `FF 00` 바로 뒤가 몸)을 우리 이미지에서 찾아 그것을 띄운다.
+    moved = {} if ORIG else _moved(stem)  # 원판 이미지에는 옮긴 블록이 없다
+    if moved:
+        blocks = [_moved_block(got, moved[i], blk) if i in moved else blk for i, blk in enumerate(blocks)]
     g = GOOD["data"]
     h_t = struct.unpack(">37I", got[0x10 : 0x10 + 148])
     h_g = struct.unpack(">37I", g[0x10 : 0x10 + 148])
@@ -250,24 +274,41 @@ def run_map(h, base, img, files, orig, stem, outdir, limit, idxf, deadline):
         pre = SETUP if blk["head"] == "ff00" else SETUP + OPEN
         h.poke(LWRAM + zr, pre + got[o - 2 : e + 1] + TAIL)
         h.poke(PC, (LWRAM + zr).to_bytes(4, "big"))
-        pages, shown, inks = 0, False, []
+        pages, shown, inks, prev_win = 0, False, [], None
         for _ in range(MAX_PAGES):
             if not stable(h):
                 break
             if region_diff(base_win[150:240], h.frame[150:240]) < 300 and region_diff(base_win[0:90], h.frame[0:90]) < 300:
                 break
             shown = True
+            if prev_win is not None and region_diff(prev_win, h.frame[150:240]) == 0:
+                break  # 🔴 `c` 를 눌러도 화면이 안 바뀐다 — 닫히지 않는 창(옮긴 블록·창 없는 조각)이다. 같은 쪽을 또 찍지 않는다(10-31)
+            prev_win = h.frame[150:240].copy()
             pages += 1
             inks.append(ink(h.frame[150:240]))
             crop = Image.fromarray(h.frame[150:240]).convert("P", palette=Image.ADAPTIVE, colors=48)
             crop.save(os.path.join(outdir, stem, f"{key}_p{pages}.png"), optimize=True)
             shots.append(f"{key}_p{pages}")
+            if inks[-1] < 6 and region_diff(base_win[0:90], h.frame[0:90]) >= 300:  # 아래 창이 비었는데 위쪽이 바뀌었다 — 위 창 대사다(10-30)
+                Image.fromarray(h.frame[0:90]).convert("P", palette=Image.ADAPTIVE, colors=48).save(
+                    os.path.join(outdir, stem, f"{key}_p{pages}_top.png"), optimize=True
+                )
             h.press("c", 4, 22)
-            if int.from_bytes(h.peek(PC, 4), "big") == 0:
-                break
+            #   🔴 PC 가 0 으로 돌아와도 안 끊는다 — 엔진이 글을 다 읽어 둔 채 쪽만 넘기고 있을 수 있다(첫 판은 여기서 끊어 둘째 쪽부터 5,500 블록을 놓쳤다, 10-31).
+            #   끝은 「창이 사라졌다」(위 base_win 대조)와 「같은 쪽이 반복된다」로 안다.
+        tail_blank = False
+        if pages > 1 and inks and inks[-1] < 6:  # 마지막 쪽을 넘기면 창이 닫히며 빈 화면이 한 번 찍힌다 — 쪽이 아니다(10-31)
+            tail_blank = True
+            for suf in ("", "_top"):
+                fp = os.path.join(outdir, stem, f"{key}_p{pages}{suf}.png")
+                if os.path.exists(fp):
+                    os.remove(fp)
+            shots.pop()
+            inks.pop()
+            pages -= 1
         idxf.write(
             json.dumps(
-                {"map": stem, "key": i, "head": blk["head"], "pages": pages, "expect": len(M_PAGES(blk)), "shown": shown,
+                {"map": stem, "key": i, "head": blk["head"], "pages": pages, "expect": len(M_PAGES(blk)), "shown": shown, "tail_blank": tail_blank,
                  "ink": inks, "blank_pages": sum(1 for x in inks if x < 6), "var_start": var_start(blk["body"])}
             )
             + "\n"
