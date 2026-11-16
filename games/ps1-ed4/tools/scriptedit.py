@@ -14,6 +14,7 @@
 ⚠ 연산 `0F` 가 홀수 주소에 있어야 한다(색인 u16 이 짝수) — 덧붙이는 코드도 **첫 연산을 홀수 주소**에 둔다.
 """
 
+import itertools
 import os
 import struct
 import sys
@@ -75,39 +76,31 @@ def append_code(mem, code):
 
 
 def blocks(mem):
-    """[{p0, e, sites:[(q, 조각 색인, 흐름 바이트)]}] — **대사 블록**(VM 연산 `0F` + 메시지 언어 스트림 `0F <색인> <흐름>…00`).
+    """[{p0, e, sites:[(q, 조각 색인, 흐름 바이트)]}] — **단순한 대사 블록**(VM 연산 `0F` + `0F <색인> <흐름>` 줄들 + `00`). 쪽 늘리기(`rewrite_message`)가 옮길 수 있는 꼴만.
 
     🔴 메시지는 **VM 연산 `0F`** 가 시작하고(핸들러 `0x80045be8` — 창을 열고 `0x8003c98c` 메시지 해석기에 커서를 넘긴다), 그 뒤 바이트는 **메시지 언어**다
-    (해석기 점프표 `0x800103d0`, 16개): `0F`(+정렬 패딩+u16 색인) = 문자열 출력 · `01` 줄바꿈 · `02` 키 대기 후 쪽 넘김 · `00` 끝 · 나머지(`03`~`0E`)는 색·대기 등.
+    (해석기 점프표 `0x800103d0`, 16개): `0F`(+정렬 패딩+u16 색인) = 문자열 출력 · `01` 줄바꿈 · `02` 키 대기 후 쪽 넘김 · `00` 끝 · 나머지는 피연산자 없는 한 바이트 연산(색·대기·이름 삽입).
     ⇒ 블록 안엔 VM 점프가 없다(`02` 는 쪽 넘김이지 점프가 아니다). 블록을 **통째로** 옮겨야 한다.
-    `p0` = 블록 시작(VM `0F`), `e` = 끝(`00` 다음 바이트 = 다음 VM 연산).
+    `p0` = 블록 시작(VM `0F`), `e` = 끝(`00` 다음 바이트 = 다음 VM 연산). 출력 사이가 정확히 흐름 바이트(`01`·`02`) 하나뿐인 스트림만 돌려준다 — 이름 삽입 같은 연산이 낀 블록은 다시 쓸 수 없다.
     """
-    ptrs = sm.parse(mem)["pointers"]
-    out, cur = [], None
-    for q, v in ptrs:
-        flow = mem[q + 2]
-        if (
-            cur is not None
-            and q - cur["sites"][-1][0] == 4
-            and cur["sites"][-1][2] in (1, 2)
-            and mem[q - 1] == TEXT
+    import typeset
+
+    out = []
+    for st in typeset.message_streams(mem):
+        if st["kind"] != "A":
+            continue
+        qs = [q for q, _ in st["prints"]]
+        if mem[qs[-1] + 2] != 0 or st["end"] != qs[-1] + 3:
+            continue
+        if any(
+            b - a != 4 or mem[a + 2] not in (1, 2) or mem[b - 1] != TEXT
+            for a, b in itertools.pairwise(qs)
         ):
-            cur["sites"].append((q, v, flow))
-        else:
-            if cur is not None:
-                out.append(cur)
-            if mem[q - 1] == TEXT and mem[q - 2] == TEXT:
-                p0 = q - 2  # `0F`(VM) `0F`(메시지) <색인>
-            elif mem[q - 2] == TEXT and mem[q - 3] == TEXT:
-                p0 = q - 3  # `0F`(VM) `0F`(메시지) <패딩> <색인>
-            else:
-                cur = None
-                continue
-            cur = {"p0": p0, "sites": [(q, v, flow)]}
-        cur["e"] = q + 3  # 마지막 흐름 다음(아직 `00` 이 아닐 수 있다 — 아래에서 거른다)
-    if cur is not None:
-        out.append(cur)
-    return [b for b in out if mem[b["sites"][-1][0] + 2] not in (1, 2)]  # 끝 바이트로 닫힌 블록만
+            continue
+        out.append(
+            {"p0": st["p0"], "sites": [(q, v, mem[q + 2]) for q, v in st["prints"]], "e": st["end"]}
+        )
+    return out
 
 
 def block_of(mem, seg):

@@ -59,5 +59,16 @@ rm -rf "$G/work/build/test-gate-same" "$G/work/build/test-gate-resize"
 echo "  ── 화면 일본어 잔존 (대본, 기준선 래칫)"
 run 0 "$PY" "$G/tools/check_jp_left.py"
 
+echo "  ── UI 문안 정본 (원문 지문 · 고정 길이)"
+run 0 "$PY" "$G/tools/uitext.py" check
+echo "  ── 대본 번역 정본 (원문 지문 · 쪽 한도)"
+run 0 "$PY" "$G/tools/script_kr.py" check
+
+echo "  ── 그림 글(오프닝·엔딩·스태프롤) — 줄이 그림 안 · 압축 뒤 크기가 원 멤버 한도 안"
+run 0 "$PY" "$G/tools/narration.py" check "$G/work/review/narration"
+
+echo "  ── 고유명사 정본 ↔ 원본 (정본에만 있는 항목 · 한 표기가 원문 둘)"
+run 0 "$PY" "$G/tools/check_canon_nouns.py"
+
 [ "$fail" -eq 0 ] && echo "  ✅ 통과" || echo "  🔴 실패"
 exit "$fail"

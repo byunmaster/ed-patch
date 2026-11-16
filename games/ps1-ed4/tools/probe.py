@@ -1,6 +1,6 @@
 """재삽입 시험 빌드 — **가짜 한글 몇 줄**을 프롤로그(첫 대사창)에 넣어 굽는다. 번역문이 아니다(글리프 자리 정본의 글자로 지은 무의미한 열).
 
-    ED_BUILD_TAG=test-probe python3 tools/probe.py [--mode same|resize]
+    ED_BUILD_TAG=test-probe python3 tools/probe.py [--mode same|resize|half]
 
 🔴 시험 빌드는 꼬리표가 `test-` 로 시작해야 한다(마스터 10-15 — 마스터 목록에 안 나오게). 아니면 거부한다.
 대상: `/O/SC400.DAT!..\\BIN\\OP00000.BIN` 조각 4·5(프롤로그 첫 대사 둘).
@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build
 import common
 import font
+import halfwidth
 import hangul
 import reinsert
 import textenc
@@ -26,13 +27,17 @@ from shared.ps1 import gmf_arc
 KEY = ("/O/SC400.DAT", "..\\BIN\\OP00000.BIN")
 TEXTS = {
     "same": {4: "아니 어서 입도 시스템", 5: "보레 시스 방금"},
+    "half": {
+        4: "아니 12.5 어서, 입도 시스템!",
+        5: "보레 시스 (45) 방금 정시: 데터? 공격 레벨 99 아니 어서",
+    },
     "resize": {4: "아니 어서", 5: "입도 시스템 보레 시스 방금 정시 데터 공격 레벨 아니 어서"},
 }
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=("same", "resize"), default="same")
+    ap.add_argument("--mode", choices=("same", "resize", "half"), default="same")
     a = ap.parse_args()
     if not common.BUILD_TAG.startswith("test-"):
         raise SystemExit(
@@ -46,6 +51,8 @@ def main():
 
     def exe_edit(exe):
         hangul.bake(exe, table, used)
+        if a.mode == "half":  # 반각 합성 훅(동굴 시험 — 죽은 함수 동적 확인 전엔 시험 빌드에만)
+            halfwidth.patch_exe(exe, hangul.half_codes())
 
     out, rep = build.build(
         {"script": per, "exe": exe_edit}, kind=f"probe-{a.mode}", suffix=" (TEST)"
@@ -72,7 +79,7 @@ def main():
     if [new[i] for i in others] != [old[i] for i in others]:
         raise SystemExit("🔴 안 건드린 조각이 바뀌었다")
     for ch in set(used) - {" "}:
-        want = font.hangul_glyph(ch)
+        want = font.half_glyph(ch) if ch in hangul.load_half() else font.hangul_glyph(ch)
         got = font.read_glyph(exe, table[ch])[:, : want.shape[1]]
         if (got != want[: got.shape[0]]).any() or font.read_glyph(exe, table[ch])[
             :, want.shape[1] :

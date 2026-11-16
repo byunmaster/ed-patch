@@ -13,11 +13,26 @@ import textenc
 class TestMap(unittest.TestCase):
     def test_정본_무결성(self):
         t = hangul.load()
-        self.assertEqual(len(t), 58)
-        self.assertEqual(len(set(t.values())), 58)
-        kana = textenc.kana_map()
-        self.assertFalse(set(t.values()) & set(kana), "한글 자리가 카나 블록을 덮는다")
+        self.assertGreaterEqual(
+            len(t), 58 + len(hangul.load_half())
+        )  # 한글 58(최초 정본) + 반각 + 번역이 늘린 것(추가만)
+        self.assertEqual(t["니"], 816)  # 이미 배정한 자리는 안 옮긴다
+        self.assertEqual(len(set(t.values())), len(t))
+        # 🔴 기호·부호 블록(0~62)과 arena(표 풀 이전용)는 안 덮는다. 가나·한자 자리는 덮는다 — 번역이 끝나면 아무도 안 읽고, 번역 도중엔 덜 쓰이는 것부터 채운다(slots.py).
+        self.assertFalse(
+            {c for c in t.values() if c < textenc.KANA_BASE}, "한글 자리가 기호 블록을 덮는다"
+        )
         self.assertTrue(all(0 <= c < font.font_slots() for c in t.values()))
+
+    def test_반각_글리프는_왼쪽_6px_안에만_잉크가_있다(self):
+        """훅은 반 칸 글자가 오른쪽 칸으로 안 샌다고 가정한다 — 어기면 옆 글자를 지운다."""
+        half = hangul.load_half()
+        for ch in half:
+            g = font.half_glyph(ch)
+            self.assertEqual(g.shape, (12, 12))
+            self.assertFalse(g[:, 6:].any(), ch)
+            self.assertTrue(g.any(), ch)
+        self.assertIn(610, hangul.half_codes())
 
     def test_인코딩(self):
         t = {"가": 1900, " ": 610}

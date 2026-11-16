@@ -30,16 +30,16 @@ ASSETS = {
 }
 
 
-def member(base, data=None):
-    data = data or common.read_file(ARC)
+def member(base, data=None, arc=ARC):
+    data = data or common.read_file(arc)
     for n, o, s in gmf_arc.arc_parse(data)[1]:
         if n.split("\\")[-1] == base:
             return n, data[o : o + s]
-    raise SystemExit(f"{ARC} 에 {base} 가 없다")
+    raise SystemExit(f"{arc} 에 {base} 가 없다")
 
 
-def load(base):
-    n, blk = member(base)
+def load(base, arc=ARC):
+    n, blk = member(base, arc=arc)
     raw = tiz.decompress(blk)
     return n, blk, raw, tim.parse(raw)
 
@@ -94,9 +94,9 @@ def export(outdir):
     return lines
 
 
-def check(png, base, quiet=False):
+def check(png, base, quiet=False, arc=ARC):
     """(통과?, 메시지, 새 멤버 바이트|None)."""
-    _n, blk, raw, t = load(base)
+    _n, blk, raw, t = load(base, arc)
     img = Image.open(png).convert("RGBA")
     w, h = int(tim.width(t)), t["h"]
     if img.size != (w, h):
@@ -115,6 +115,18 @@ def check(png, base, quiet=False):
         f" ({'여유 ' + format(len(blk) - len(blk2), ',') if ok else '초과 ' + format(len(blk2) - len(blk), ',')}B)"
     )
     return ok, msg, blk2 if ok else None
+
+
+def member_edits():
+    """`build.build` 의 `edits["members"]` 몫 — 마스터가 그린 타이틀 그림(`assets/title/<이름>_ko.png`)을 검산해 {(아카이브, 멤버): 새 TIZ}. 못 넘으면 멈춘다."""
+    out = {}
+    for base in ("C_857.TIZ", "C_847.TIZ", "C_848.TIZ"):
+        png = os.path.join(common.ROOT, "assets", "title", base.split(".")[0] + "_ko.png")
+        ok, msg, blk = check(png, base)
+        if not ok:
+            raise SystemExit(f"🔴 {msg}")
+        out[(ARC, member(base)[0])] = blk
+    return out
 
 
 def main(argv):

@@ -59,7 +59,10 @@ class TestEquivalenceWithEd3(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("ed3_textenc_ref", path)
         ref = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(ref)
-        self.assertEqual(ref.charmap("ed4"), textenc.charmap())
+        # 우리 정본은 ED3 쪽 사본의 **상위집합**이다(10-24: 미해독 한자 323 을 더했다) — 사본이 아는 건 같아야 한다
+        ours = textenc.charmap()
+        theirs = ref.charmap("ed4")
+        self.assertEqual({c: ch for c, ch in theirs.items() if ours.get(c) != ch}, {})
 
 
 if __name__ == "__main__":

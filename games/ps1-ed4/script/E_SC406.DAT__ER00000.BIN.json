@@ -1,0 +1,21 @@
+{
+ "archive": "/E/SC406.DAT",
+ "member": "..\\BIN\\ER00000.BIN",
+ "segments": {
+  "0": {
+   "jp": "2ff57fa65e",
+   "kr": "동",
+   "auto": 1
+  },
+  "1": {
+   "jp": "e0fcacb5ae",
+   "kr": "서",
+   "auto": 1
+  },
+  "2": {
+   "jp": "7d5dcd98ce",
+   "kr": "북",
+   "auto": 1
+  }
+ }
+}

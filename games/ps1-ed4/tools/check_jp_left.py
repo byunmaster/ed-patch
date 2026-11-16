@@ -10,6 +10,7 @@
 """
 
 import argparse
+import glob
 import json
 import os
 import sys
@@ -41,10 +42,26 @@ def screen_map():
     return m
 
 
+def original_codes():
+    """{(아카이브, 멤버): [조각 코드열…]} — 원본 대본 덤프(`derived/script`). 바뀐 조각과 안 바뀐 조각을 가르는 기준이다."""
+    out = {}
+    for p in glob.glob(os.path.join(common.OUT_DIR, "script", "*.json")):
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+        out[(d["archive"], d["member"])] = [s["codes"] for s in d["segments"]]
+    return out
+
+
 def scan(image=None):
-    """{segments: 가나·한자가 든 조각 수, chars: 그 글자 수, total: 전체 조각 수}"""
+    """{segments: 가나·한자가 든 조각 수, chars: 그 글자 수, total: 전체 조각 수}
+
+    🔴 **안 바뀐 조각은 원본 코드표로, 바뀐 조각은 한글 자리를 덮은 표로 읽는다** — 한글이 앉은 자리는 원래 한자 코드라 바뀐 조각을 원본 표로 읽으면 한글을 한자로 세고,
+    안 바뀐 조각을 덮은 표로 읽으면 (한글 자리로 뺏긴 코드의) 일본어를 한글로 세어 **남은 일본어가 줄어 보인다**(10-24 번역 시작 때 기준선이 배정 수를 따라 흘렀다).
+    """
     seg = chars = total = 0
+    cm_raw = textenc.charmap()
     cm = screen_map()
+    orig = original_codes()
     with common.open_disc(image) as d:
         for path, lba, size in d.files():
             if "/SC" not in path or not path.endswith(common.ARCHIVE_EXT) or size < 64:
@@ -57,13 +74,39 @@ def scan(image=None):
             for nm, off, sz in ents:
                 if "\\BIN\\" not in nm or not nm.endswith(".BIN") or sz < 8:
                     continue
-                for _, codes in scriptmap.parse(data[off : off + sz])["segments"]:
+                base = orig.get((path, nm))
+                for k, (_, codes) in enumerate(scriptmap.parse(data[off : off + sz])["segments"]):
                     total += 1
-                    n = sum(1 for c in codes if c in cm and is_jp(cm[c]))
+                    same = base is not None and k < len(base) and list(codes) == base[k]
+                    m = cm_raw if same else cm
+                    n = sum(1 for c in codes if c in m and is_jp(m[c]))
                     if n:
                         seg += 1
                         chars += n
     return {"segments": seg, "chars": chars, "total": total}
+
+
+# 일본어가 남아도 되는 UI 자리 — **사유가 있는 예외만**(마스터 10-24 「일본어 0」). 시작·끝 오프셋(끝 미포함)과 사유.
+UI_EXCEPT = [
+    (0x72350, 0x7268A, "글리프 코드표 — 글자가 아니라 코드 대응표(화면에 안 그려진다)"),
+    (0x7226A, 0x722C4, "숫자+가타카나 퍼즐 메모 — 한국어 퍼즐 설계 마스터 판단 대기(status.md)"),
+]
+
+
+def ui_left():
+    """([(오프셋, 원문)…] 예외 밖 미번역 UI 자리, [(오프셋, 사유)…] 예외) — 가나·한자가 든 자리만. `ui_ed4.json` + 정본 고유명사로 번역이 앉은 자리는 뺀다."""
+    import uitext
+
+    exe = bytes(common.read_file(common.EXE_PATH))
+    ss = uitext.sites(exe)
+    have = uitext.rows_for(ss)
+    left, exc = [], []
+    for off, s in sorted(ss.items()):
+        if off in have or not any(is_jp(c) for c in s["jp"]):
+            continue
+        why = next((w for a, b, w in UI_EXCEPT if a <= off < b), None)
+        (exc if why else left).append((off, why or s["jp"]))
+    return left, exc
 
 
 def main():
@@ -72,6 +115,8 @@ def main():
     ap.add_argument("--freeze", action="store_true")
     a = ap.parse_args()
     got = scan(a.image)
+    left, exc = ui_left()
+    got["ui"] = len(left)
     if a.freeze:
         with open(BASELINE, "w", encoding="utf-8") as f:
             json.dump(got, f, indent=1)
@@ -85,7 +130,10 @@ def main():
     if got["total"] != base["total"]:
         print(f"🔴 조각 총수가 다르다 {got['total']} (기준선 {base['total']}) — 구조가 바뀌었다")
         return 1
-    up = got["segments"] > base["segments"] or got["chars"] > base["chars"]
+    up = got["segments"] > base["segments"] or got["chars"] > base["chars"] or got["ui"] > base.get("ui", 10**9)
+    print(f"UI 일본어 잔존 — 예외 밖 {len(left)}자리 · 사유 있는 예외 {len(exc)}자리" + (" 🔴" if left else ""))
+    for off, jp in left[:20]:
+        print(f"  0x{off:06X} {len(jp)}자")
     print(
         f"화면 일본어 잔존 — 조각 {got['segments']:,}/{got['total']:,} · 글자 {got['chars']:,} "
         f"(기준선 {base['segments']:,} · {base['chars']:,})" + (" 🔴 늘었다" if up else "")

@@ -23,6 +23,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
+import discgrow
 import typeset
 from dump import SCRIPT_MEMBER
 
@@ -89,7 +90,6 @@ def apply_script_edits(edits, members, report, member_edits=None):
     for path, _nm in member_edits or {}:
         by_arc.setdefault(path, {})
     out = {}
-    fs = common.iso_files()
     for path, per_member in sorted(by_arc.items()):
         data = common.read_file(path)
         repl = {}
@@ -125,17 +125,19 @@ def apply_script_edits(edits, members, report, member_edits=None):
         try:
             packed, plan = gmf_arc.repack(data, repl)
         except gmf_arc.PackError as e:
-            raise SystemExit(f"🔴 {path}: 재배치 실패 — {e}") from e
+            # 슬랙을 넘으면 이미지 끝으로 옮긴다(`discgrow`) — 다른 사유(멤버 없음 · 오프셋 단위)는 그대로 멈춘다
+            if "섹터가 늘어난다" not in str(e):
+                raise SystemExit(f"🔴 {path}: 재배치 실패 — {e}") from e
+            try:
+                packed, plan = discgrow.repack_grow(data, repl)
+            except gmf_arc.PackError as e2:
+                raise SystemExit(f"🔴 {path}: 재배치 실패 — {e2}") from e2
         report["repacked"] = report.get("repacked", 0) + (1 if plan["grow"] else 0)
-        if len(packed) != fs[path][1] and common.sectors(len(packed)) != common.sectors(
-            fs[path][1]
-        ):
-            raise SystemExit(f"🔴 {path}: 섹터 수가 바뀐다")
         out[path] = packed
     return out
 
 
-def verify_image(built, fs, arcs, exe_changed, dirpos, resized):
+def verify_image(built, fs, arcs, exe_changed, dirpos, resized, moves):
     """🔴 구운 이미지를 **다시 읽어** 검산한다 — 「썼다」와 「다시 읽힌다」는 다르다."""
     common._FILES.pop(built, None)
     tree = common.iso_files(built)
@@ -144,27 +146,35 @@ def verify_image(built, fs, arcs, exe_changed, dirpos, resized):
             f"🔴 이미지 검산: 파일 목록이 달라졌다 — {sorted(set(tree) ^ set(fs))[:5]}"
         )
     for path, (lba, size) in fs.items():
-        want = resized.get(path, size)
-        if tree[path] != (lba, want):
-            raise SystemExit(f"🔴 이미지 검산: {path} 이 {tree[path]} (기대 {(lba, want)})")
+        want = (moves[path], len(arcs[path])) if path in moves else (lba, resized.get(path, size))
+        if tree[path] != want:
+            raise SystemExit(f"🔴 이미지 검산: {path} 이 {tree[path]} (기대 {want})")
     allowed = set()
     if exe_changed:
         lba, size = fs[common.EXE_PATH]
         allowed |= set(range(lba, lba + common.sectors(size)))
     for path in arcs:
+        if path in moves:
+            continue  # 옮긴 아카이브는 옛 자리를 안 건드린다 — 새 자리는 이미지 끝(아래에서 따로 검산)
         lba, size = fs[path]
         allowed |= set(range(lba, lba + common.sectors(max(size, resized.get(path, size)))))
-    allowed |= {dirpos[p][0] for p in resized}
+    allowed |= {dirpos[p][0] for p in resized} | {dirpos[p][0] for p in moves}
+    if moves:
+        allowed.add(16)  # PVD — 볼륨 크기
     changed = set()
     sz = common.SECTOR
+    tail = sum(common.sectors(len(arcs[p])) for p in moves) * sz  # 이미지 끝에 덧붙인 바이트
+    if os.path.getsize(built) != os.path.getsize(common.orig_bin()) + tail:
+        raise SystemExit("🔴 이미지 검산: 이미지 길이가 (원본 + 덧붙인 섹터)와 다르다")
     with open(common.orig_bin(), "rb") as fo, open(built, "rb") as fb:
         lba = 0
         while True:
             a1, b1 = fo.read(sz * 256), fb.read(sz * 256)
-            if not a1 and not b1:
+            if not a1:
                 break
-            if len(a1) != len(b1):
-                raise SystemExit("🔴 이미지 검산: 이미지 길이가 달라졌다")
+            if len(a1) != len(b1) and len(b1) < len(a1):
+                raise SystemExit("🔴 이미지 검산: 이미지가 원본보다 짧다")
+            b1 = b1[: len(a1)]
             if a1 != b1:
                 for k in range(len(a1) // sz):
                     if a1[k * sz : (k + 1) * sz] != b1[k * sz : (k + 1) * sz]:
@@ -175,7 +185,7 @@ def verify_image(built, fs, arcs, exe_changed, dirpos, resized):
         raise SystemExit(f"🔴 이미지 검산: 선언 안 된 섹터 {len(stray)}곳이 바뀌었다 — {stray[:8]}")
     with common.open_disc(built) as d:
         for path, data in arcs.items():
-            lba, _ = fs[path]
+            lba = moves[path] if path in moves else fs[path][0]
             if d.read_extent(lba, len(data)) != data:
                 raise SystemExit(f"🔴 이미지 검산: {path} 을 되읽은 것이 쓴 것과 다르다")
     return len(changed)
@@ -213,6 +223,7 @@ def build(edits=None, *, kind="identity", suffix=""):
     tmp = out + ".part"
     shutil.copyfile(common.orig_bin(), tmp)
     dirpos = common.dir_records()
+    moves = discgrow.plan_moves(fs, arcs)
     resized = {}
     n = 0
     try:
@@ -220,6 +231,8 @@ def build(edits=None, *, kind="identity", suffix=""):
             if exe_changed:
                 n += common.write_user_data(f, exe_lba, bytes(exe), label="실행파일")
             for path, data in sorted(arcs.items()):
+                if path in moves:
+                    continue
                 lba, osize = fs[path]
                 n += common.write_user_data(f, lba, data, label=path)
                 if (
@@ -229,11 +242,15 @@ def build(edits=None, *, kind="identity", suffix=""):
                         f, *dirpos[path], len(data), label=f"{path} 디렉터리 레코드"
                     )
                     resized[path] = len(data)
+            if moves:  # 슬랙을 넘은 아카이브 — 이미지 끝에 덧붙이고 디렉터리·PVD 를 고친다
+                f.seek(0, 2)
+                appended, fixed = discgrow.apply(f, moves, arcs, fs, dirpos)
+                n += appended + fixed
     except Exception:
         os.replace(tmp, out + ".failed")  # 🔴 실패한 빌드는 산출물을 무효화한다
         raise
     try:
-        changed = verify_image(tmp, fs, arcs, exe_changed, dirpos, resized)
+        changed = verify_image(tmp, fs, arcs, exe_changed, dirpos, resized, moves)
         if not edits and changed:
             raise SystemExit(f"🔴 무변경 왕복인데 섹터 {changed}개가 바뀌었다")
     except BaseException:
@@ -244,7 +261,9 @@ def build(edits=None, *, kind="identity", suffix=""):
 
     mode2.write_cue(common.build_cue(suffix), os.path.basename(out))
     common.write_manifest(out, kind)
-    report.update(written_sectors=n, changed_sectors=changed, resized=len(resized))
+    report.update(
+        written_sectors=n, changed_sectors=changed, resized=len(resized), moved=len(moves)
+    )
     return out, report
 
 

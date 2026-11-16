@@ -101,6 +101,76 @@ class TestPageLimit(unittest.TestCase):
         self.assertEqual(typeset.over_limit_pages(m, {0: 0, 1: 24}), [])
 
 
+class TestLineLimits(unittest.TestCase):
+    def test_줄_한도_둘_글리프와_픽셀(self):
+        text = "아니 어서 입도 시스템 보레 시스 방금 정시 데터 공격 레벨 12.5 아니 어서 입도"
+        for row in typeset.rows(text):
+            self.assertLessEqual(len(row), typeset.COLS)
+            self.assertLessEqual(typeset.px_width(row), typeset.LINE_PX)
+
+    def test_반각은_6px(self):
+        self.assertEqual(typeset.px_width("가 1."), 12 + 6 + 6 + 6)
+
+    def test_공백은_안_지운다(self):
+        self.assertEqual(typeset.STRIP_AFTER, "")
+
+
+def stream_member(after):
+    """표 규격 합성 멤버 — VM `0F` 뒤에 출력 하나씩, 출력 `i` 뒤에 `after[i]` 바이트열(마지막은 `00` 으로 닫는다)."""
+    buf = bytearray(b"\x0f")  # 오프셋 2 = VM 블록 시작
+    for i, ops in enumerate(after):
+        buf.append(0x0F)
+        if (2 + len(buf)) & 1:
+            buf.append(0)
+        buf += struct.pack("<H", i) + ops
+    n = len(after)
+    body = bytes(buf) + b"\x00" * (len(buf) & 1)
+    base = 2 + len(body)
+    pool, tbl = bytearray(), []
+    for i in range(n):
+        tbl.append(n * 2 + len(pool))
+        pool += struct.pack("<2H", 0x40 + i, 0xFFFF)
+    return struct.pack("<H", base) + body + struct.pack(f"<{n}H", *tbl) + bytes(pool)
+
+
+class TestPageSegments(unittest.TestCase):
+    def test_줄이_조각보다_적으면_조각마다_한_줄_뒤는_빈_조각(self):
+        out = typeset.page_segments(
+            ["시스템 보레 방금 정시", "데이터 공격 레벨 아니 어서 입도 시스템"], 4
+        )
+        self.assertEqual(len(out), 4)
+        self.assertTrue(all(len(x) <= typeset.COLS for x in out))
+        self.assertEqual(out[3], "")
+
+    def test_줄이_조각보다_많으면_남는_줄은_마지막_조각에_패딩으로(self):
+        out = typeset.page_segments([LONG], 1)
+        self.assertEqual(len(out), 1)
+        self.assertGreater(len(out[0]), typeset.COLS)
+        self.assertEqual(typeset.rows(out[0].replace(" " * 3, " ")) is not None, True)
+
+
+class TestRigid(unittest.TestCase):
+    def test_끼움_연산이_있으면_토막을_가르고_둘_다_rigid(self):
+        # 0 -06(이름 삽입)-> 1 -01-> 2 -0106(줄바꿈 뒤 이름 삽입)-> 3 -00
+        m = stream_member([b"\x06", b"\x01", b"\x01\x06", b"\x00"])
+        w = typeset.windows(m)
+        self.assertEqual([list(r) for r in w[0]], [[0], [1, 2], [3]])
+        self.assertEqual([r.rigid for r in w[0]], [True, True, True])
+
+    def test_01_02_뿐이면_합칠_수_있다(self):
+        m = stream_member([b"\x01", b"\x02", b"\x00"])
+        w = typeset.windows(m)
+        self.assertEqual([list(r) for r in w[0]], [[0, 1], [2]])
+        self.assertFalse(any(r.rigid for r in w[0]))
+
+    def test_rigid_는_조각마다_한_줄이다(self):
+        self.assertEqual(
+            typeset.rigid_segments(["어빈은 ", "을(를) 얻었다."]), ["어빈은 ", "을(를) 얻었다."]
+        )
+        with self.assertRaises(typeset.TypesetError):
+            typeset.rigid_segments([LONG])
+
+
 class TestWindows(unittest.TestCase):
     def test_01은_같은_쪽_02는_쪽_넘김_그_밖은_메시지_끝(self):
         # 줄 0 -01-> 1 -02-> 2 -00(끝)-> 3 -01-> 4 -00
