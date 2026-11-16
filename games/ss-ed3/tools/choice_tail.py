@@ -45,6 +45,18 @@ def _is_sign(data, text_off, head):
     )
 
 
+def _is_gosub(data, text_off, blk):
+    """GOSUB 줄 꼴인가 — `FF 00` 머리 + 글(끝 `0F`) + `00` + `FD 01 <주소>`(서브루틴 호출) 또는 `FD 02`(복귀). MAP000 시험 대사(#17~#20)."""
+    end = text_off + len(blk["body"])
+    return (
+        blk["head"] == "ff00"
+        and data[text_off - 2 : text_off] == b"\xff\x00"
+        and data[end : end + 2] == b"\x00\xfd"
+        and data[end + 2] in (1, 2)
+        and data[end - 1] == 0x0F
+    )
+
+
 _CARD_B_HEAD = bytes.fromhex("ff0019ff") + b"\x0d" * 6  # 장 카드(세로 줄바꿈형) 머리 — 글 앞 10B
 BAND_HEAD = 8  # 띠 제목 머리 — `FF 37 xx xx FF 87 00 00`
 
@@ -88,6 +100,8 @@ def _session_start(data, blocks, key):
         s -= 4  # `FF 00 09 0E` + 화자 머리 — 덮는 6B 가 머리 2 + 09 0E + 화자 머리 2 라 글은 안 덮는다
     elif data[s : s + 2] != b"\xff\x00" and data[s - 2 : s] == b"\xff\x00":
         s -= 2  # `FF 00` + 화자 머리 — 덮는 6B 가 글 앞 2B 까지 간다
+    elif data[s : s + 2] != b"\xff\x00" and data[s - 3 : s] == b"\xff\x00\x0a":
+        s -= 3  # `FF 00 0A` + 화자 머리 — 덮는 6B 가 글 앞 1B 까지 간다(MAP084 #44, 11-12: 머리가 홀수 주소여도 `FF 00` 은 짝수다)
     assert data[s : s + 2] == b"\xff\x00", (
         f"세션 첫 블록 {j} 앞이 FF 00 이 아니다: {data[s : s + 2].hex()}"
     )
@@ -122,7 +136,11 @@ def _is_speaker(data, blocks, key):
         k = int(key)
         return k + 1 < len(blocks) and _linked(data, blk, blocks[k + 1])
     # 세션 한복판이거나, `FF 00` + 화자 머리로 열리는 세션의 첫 블록
-    return _linked(data, blocks[int(key) - 1], blk) or data[blk["off"] - 4 : blk["off"] - 2] == b"\xff\x00"
+    return (
+        _linked(data, blocks[int(key) - 1], blk)
+        or data[blk["off"] - 4 : blk["off"] - 2] == b"\xff\x00"
+        or data[blk["off"] - 5 : blk["off"] - 3] == b"\xff\x00" and data[blk["off"] - 3] == 0x0A
+    )
 
 
 def _session_end(data, blocks, key, stem):
@@ -152,7 +170,7 @@ def covers(src, stem):
     out = {}
     for k in wides:
         blk = blocks[int(k)]
-        if _is_sign(src, blk["off"], blk["head"]):
+        if _is_sign(src, blk["off"], blk["head"]) or _is_gosub(src, blk["off"], blk):
             out[k] = COVER
         elif _card_kind(src, blocks, k) == "A":
             out[str(_session_start(src, blocks, k)[0])] = COVER
@@ -350,9 +368,25 @@ def patch(data, stem, table, orig):
             out.extend(body)
             out[s : s + BAND_HEAD] = GOTO + struct.pack(">I", BASE + tail) + b"\xff\xff"
             continue
+        elif _is_gosub(data, text_off, blk):
+            # GOSUB 줄 — `FF 00` 머리부터 6B(머리 2 + 글 앞 4)를 트램펄린으로 덮고, 꼬리에 머리 + 진짜 문안 + `00` 을 두고 `FD 01`(호출) 앞으로 돌아온다.
+            # 호출·복귀(`FD 01 · FD 02`)는 원래 자리에 그대로 남는다. 덮은 글 앞 4B 는 `covers` 가 되풀이 검사에 알린다(간판류와 같다).
+            s = text_off - 2
+            assert s % 2 == 0, f"{stem}#{key}: 머리 {s:#x} 가 홀수 주소다"
+            assert len(blk["body"]) >= COVER, f"{stem}#{key}: 글이 {COVER}B 미만이라 트램펄린이 덮을 수 없다"
+            text_end = text_off + len(blk["body"])
+            raw = H.encode_kr(wides[key], table)
+            if (2 + len(raw) + 1) % 2:
+                raw += b" "
+            tail = len(out) + len(out) % 2
+            body = bytes(data[s:text_off]) + raw + b"\x00" + GOTO + struct.pack(">I", BASE + text_end + 1)
+            out.extend(b"\x00" * (tail - len(out)))
+            out.extend(body)
+            out[s : s + TRAMP] = GOTO + struct.pack(">I", BASE + tail)
+            continue
         else:
             raise SystemExit(
-                f"{stem}#{key}: `_wide` 가 지원하는 꼴(선택지 항목 · FF 02 + FF 00 머리 대사 · FE 00 + FF FF + FF 00 대사 · 장 카드 · 띠 제목)이 아니다"
+                f"{stem}#{key}: `_wide` 가 지원하는 꼴(선택지 항목 · FF 02 + FF 00 머리 대사 · FE 00 + FF FF + FF 00 대사 · 장 카드 · 띠 제목 · GOSUB 줄)이 아니다"
             )
         last = data[s + TRAMP - 1]  # 지킬 바이트
         tail = len(out)

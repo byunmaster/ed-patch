@@ -65,9 +65,13 @@ BOOKH = GCLK + GCLK_LEN  # 서책 반각 전진 스텁(`patch_book_half` — 코
 BOOKH_ROOM = 64
 VCHK = BOOKH + BOOKH_ROOM  # 확인용 롬(`voicecheck`) 스텁 — 제품 빌드엔 안 쓴다(예약 칸이 비어 있을 뿐)
 VCHK_ROOM = 256
-B_END = VCHK + VCHK_ROOM
+NAMEJ = VCHK + VCHK_ROOM  # 이름 뒤 조각 조사 훅(`patch_josa_hook.name_routine` — 코드 + 상수 + 표지 8B)
+NAMEJ_ROOM = 640
+NTBL = NAMEJ + NAMEJ_ROOM  # 조사 훅 종성 표(606B — 본 판 + 내린 판 슬롯). 종전 `0x06076170`(490B)은 트램펄린 자리와 부딪혀 옮겼다
+NTBL_ROOM = 704
+B_END = NTBL + NTBL_ROOM
 assert B_END <= run_end(RUN_B), (B_END, run_end(RUN_B))
-assert all(x % 4 == 0 for x in (CRED, JOSA, SUB, WRAP3, WRAP2, GCLK, RELOC, BOOKH, VCHK))
+assert all(x % 4 == 0 for x in (CRED, JOSA, SUB, WRAP3, WRAP2, GCLK, RELOC, BOOKH, VCHK, NAMEJ, NTBL))
 
 #   ── 쓰기 길 — 패치 함수는 `/0.BIN` 바이트를 돌려주므로 폰트 쪽 쓰기는 여기 모았다가 빌드가 폰트에 얹는다
 SIDE = []  # [(주소, bytes)]
