@@ -26,6 +26,9 @@ NOT_INSERT = re.compile(
 TOKEN = re.compile(r"\{[^}]*\}")
 
 
+ERASED = re.compile(r"(\{\?ff\})+")  # 지운 옛 사본(orig_erase.json)을 짝 표가 읽은 꼴
+
+
 def scan(lines: list[str]) -> tuple[list[int], list[str]]:
     """짝 표 줄들 → (분모 넷, 위반 목록). 테스트가 양성 대조로 부른다."""
     n = [0, 0, 0, 0]
@@ -35,7 +38,7 @@ def scan(lines: list[str]) -> tuple[list[int], list[str]]:
         if len(f) < 3:
             continue
         jp, kr = f[1], f[2]
-        if (f[3:4] and f[3] in SKIP_MARK) or not jp.strip() or not kr.strip() or KANA.search(kr):
+        if (f[3:4] and f[3] in SKIP_MARK) or not jp.strip() or not kr.strip() or KANA.search(kr) or ERASED.fullmatch(kr.strip()):  # ERASED = 빌드가 지운 옛 사본(0xFF) — 읽히지 않는 자리라 짝에서 뺀다
             continue
         n[0] += 1
         for m in TOKEN.finditer(kr):

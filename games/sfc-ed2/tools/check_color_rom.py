@@ -34,14 +34,17 @@ def collect(jp: bytes, kb: bytes) -> tuple[int, list[str]]:
             continue
         a = common.off2snes(o)
         try:
-            tj, tk = dj.walk(o), dk.walk(romdump.kr_start(jp, kb, o))
+            ks = romdump.kr_start(jp, kb, o)
+            if kb[ks] == 0xFF:  # 빌드가 지운 옛 사본(orig_erase.json) — 읽히지 않는 자리
+                continue
+            tj, tk = dj.walk(o), dk.walk(ks)
         except Exception:
             continue
         sj, sk = seq(tj), seq(tk)
         if not sj and not sk:
             continue
         n += 1
-        if sj != sk and (a & 0xFFFFFF) not in {0xC5521A}:
+        if sj != sk and (a & 0xFFFFFF) not in {0xC5521A, 0xD31FC0}:  # D31FC0 = 그래픽 자료를 글자로 걸은 쓰레기 읽기 — 지나서 만나는 옛 사본 지움(0xFF)에서 한글 쪽만 일찍 끝나 갈린다(11-17)
             bad.append(f"${a:06X} 원판 {' '.join(sj)} ≠ 한글 {' '.join(sk)}")
     return n, bad
 

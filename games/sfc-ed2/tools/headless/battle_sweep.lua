@@ -1,6 +1,7 @@
 -- sfc-ed2 전 몬스터 전투 일괄 시험 — Mesen2 Lua(헤드리스 --testRunner). 제품 롬 그대로 쓴다(롬 패치 없음).
 -- 환경변수: SW_OUT(출력 폴더) SW_JOBS("idx:seed,idx:seed,…") SW_FRAMES(전투 프레임 상한) SW_MODE("act"=행동 다 보기 | "hp1")
 local OUT=os.getenv("SW_OUT") or "out"
+if os.getenv("SW_WATCH") then dofile(os.getenv("SW_WATCHLUA")) end   -- 원판 사본 읽힘 감시(watch.lua)
 local JOBS={}
 for idx,seed in string.gmatch(os.getenv("SW_JOBS") or "0:1", "(%d+):(%d+)") do JOBS[#JOBS+1]={tonumber(idx),tonumber(seed)} end
 local FRAMES=tonumber(os.getenv("SW_FRAMES") or "6000")

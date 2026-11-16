@@ -2,6 +2,7 @@
 -- 환경변수: SW_OUT · SW_STATE · SW_ENTRY · SW_SCRIPT("시작:길이:버튼+버튼,…", 입구 기준 프레임) · SW_SHOTS("프레임,…") · SW_MAXF · SW_GOLD(hex 2바이트 LE, 있으면 `$0xxx` 금화에 씀 — SW_GOLDADDR)
 -- 가게 루틴은 `$1302~` 등 표 주소를 즉치로 세팅하고 `jsl $C0:ED0D`(가게 UI) → `jml $C1:8F15`(메시지 끝)로 돈다.
 local OUT=os.getenv("SW_OUT") or "out"
+if os.getenv("SW_WATCH") then dofile(os.getenv("SW_WATCHLUA")) end   -- 원판 사본 읽힘 감시(watch.lua)
 local WR=emu.memType.snesWorkRam
 local f=0
 local LOG=io.open(OUT.."/log.txt","a")

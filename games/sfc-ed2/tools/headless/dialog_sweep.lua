@@ -1,6 +1,7 @@
 -- sfc-ed2 대사 직접 호출 일괄((b) 방식) — 필드 첫 메시지 호출 지점의 상태를 열고, 단위마다 $A6~$A8 포인터만 바꿔 같은 메시지 루틴으로 찍는다.
 -- 환경변수: SW_OUT · SW_STATE(필드 첫 A6E8 입구 상태 파일, 없으면 부팅해서 만든다 SW_MKSTATE) · SW_LIST("SNES주소 hex" 줄 파일) · SW_MAXF(단위당 프레임 상한)
 local OUT=os.getenv("SW_OUT") or "out"
+if os.getenv("SW_WATCH") then dofile(os.getenv("SW_WATCHLUA")) end   -- 원판 사본 읽힘 감시(watch.lua)
 local WR=emu.memType.snesWorkRam
 local SM=emu.memType.snesMemory
 local f=0

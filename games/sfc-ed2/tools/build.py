@@ -1069,6 +1069,13 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         writes.append((patches.FONT_OUT, patches.FONT_OUT + len(ft)))
         assert patches.FONT_OUT >= common.ROM_SIZE
 
+    # 옛 사본 지움(마스터 11-17, PCE I 사본 사고) — 번역한 문안의 원판 바이트가 포인터가 떠난 뒤에도 남은 자리를 0xFF 로. 범위는 `check_orig_copies.py --write-erase` 가 만든 textmap/orig_erase.json.
+    # 사전조건: 지금 롬 바이트가 원판과 같아야 한다(다르면 번역·패치가 쓴 자리 — 지우면 안 된다).
+    for sp in kr.load("orig_erase").get("spans", []) if font_out else []:  # 글리프 세는 첫 판(font_out=False)은 건너뛴다 — 지우면 옛 일본어 글리프가 안 쓰이는 것으로 세어 글리프 재활용 배정이 통째로 달라진다
+        eo = common.snes2off(int(sp["a"].lstrip("$"), 16))
+        assert bytes(rom[eo : eo + sp["n"]]) == bytes(src[eo : eo + sp["n"]]), f"옛 사본 {sp['a']} 가 원판과 다르다 — 쓰인 자리다"
+        rom[eo : eo + sp["n"]] = b"\xff" * sp["n"]
+        writes.append((eo, eo + sp["n"]))
     fix_checksum(rom)
     stats["glyphs"] = len(alloc)
     stats["ledger"] = list(LEDGER)
