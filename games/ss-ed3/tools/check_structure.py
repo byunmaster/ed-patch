@@ -55,6 +55,9 @@ def tokens(span):
         elif b in (0xFD, 0xFE, 0xFF) and i + 1 < n:
             out.append(bytes(span[i : i + 2]))  # 옵코드 낱말(`FF xx` · `FD xx` · `FE xx`) — 글 첫 바이트가 아니다(`script_ops` 디스패처)
             i += 2
+        elif 0xA1 <= b <= 0xDF:
+            #   🔴 단바이트 글자(반각 가나 영역 `A1~DF` — 우리 한글 배정이 쓴다)는 한 바이트다. 예전엔 `>= 0x80` 이 둘을 한 쌍으로 읽어 **뒤따르는 제어 바이트(`0F` 쪽 대기)를 삼켰다**(11-07).
+            i += 1
         elif b >= 0x80:
             i += 2
         elif 0x20 <= b <= 0x7E:
@@ -256,6 +259,9 @@ def compare_map(stem, orig, built, allow):
         st["nl"] += b_soft[0x0D] - o_soft[0x0D]
         st["pg"] += b_soft[0x0F] - o_soft[0x0F]
         st["fill"] += b_soft[0x1A]
+        if b_soft[0x0F] < o_soft[0x0F]:
+            #   🔴 쪽·키 대기(`0F`)가 줄면 상점·여관·민가 메시지에서 ▽ 없이 흘러가고 키를 덜 받아 진행이 어긋난다(pce-ed1 기능 투어 11-07) — 늘어나는 건 조판 몫, 줄면 실패.
+            bad.append((stem, a, f"블록 {k} 의 쪽 대기(0F)가 줄었다", (o_soft[0x0F], b_soft[0x0F])))
         if b_soft != o_soft:
             st["blocks_soft_changed"] += 1
             if b_soft[0x0D] != o_soft[0x0D]:

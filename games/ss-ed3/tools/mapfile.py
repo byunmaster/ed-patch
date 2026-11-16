@@ -222,6 +222,35 @@ def blocks(b):
     for blk in out:
         if suspect_head(blk):
             _reclaim_head(b, blk)
+    return _forced(b, out)
+
+
+#   🔴 **디버그 시험 맵(MAP000)의 남은 시험 대사** — 끝 바이트가 `07`(액터 옵코드)이거나 본문에 `04`·`05` 이름 주입이 끼어 위 스캔의 `TERM_OK` 에서
+#   떨어진 다섯 덩이(관리자 11-06: 디버그 메뉴가 제품에 있어 MAP000 시험 맵이 플레이어 화면에 뜬다). `TERM_OK` 를 넓히면 **다른 맵의 블록 번호가 흔들리므로**
+#   이 파일(크기 + sha1)에만 정해진 구간을 블록으로 더한다 — `(시작, 끝, 끝 바이트)`. 다른 파일은 바이트 하나 안 바뀐다.
+_FORCED = {
+    (14812, "5aea975c55efca59a933ad2b81155b0112450d41"): [
+        (0x3621, 0x364D, 0x07),
+        (0x3710, 0x3751, 0x07),
+        (0x3756, 0x375F, 0x07),
+        (0x3794, 0x37AF, 0x07),
+        (0x37C5, 0x37D4, 0x16),
+    ]
+}
+
+
+def _forced(b, out):
+    spans = None
+    if len(b) == 14812:
+        import hashlib
+
+        spans = _FORCED.get((len(b), hashlib.sha1(bytes(b)).hexdigest()))
+    if not spans:
+        return out
+    for a, e, t in spans:
+        assert b[e] == t, (hex(a), hex(e), b[e])
+        out.append({"off": a, "head": bytes(b[max(0, a - 2) : a]).hex(), "body": bytes(b[a:e]), "term": t})
+    out.sort(key=lambda x: x["off"])
     return out
 
 

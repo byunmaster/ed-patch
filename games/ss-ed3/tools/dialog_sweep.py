@@ -399,8 +399,16 @@ BOOT = [  # 타이틀 → 이어하기 → 슬롯 1(쥬리오 집) → 엄마 �
 ]  # fmt: skip
 
 
-def boot(h):
-    for s in BOOT:
+# 🔴 `--bkr` 를 주면 **그 세이브의 첫 슬롯으로 이어하기** 한 한가한 필드를 기준으로 삼는다(11-07). 기본 BOOT 는 기준 세이브가 없으면 첫 장면 대사 한복판에
+#    서서 **전 블록이 「shown false」** 로 나온다(MAP048 191블록 전부 안 뜸 — 같은 롬 키의 이어하기 필드로 풀렸다).
+BOOT_CONTINUE = [
+    ("run", 3000), ("press", "start", 10, 200), ("press", "c", 6, 400), ("press", "c", 6, 200),
+    ("press", "c", 6, 200), ("press", "c", 6, 900),
+]  # fmt: skip
+
+
+def boot(h, continue_save=False):
+    for s in BOOT_CONTINUE if continue_save else BOOT:
         if s[0] == "run":
             h.run(s[1])
         else:
@@ -426,7 +434,7 @@ def main():
         files = {n: (l, s) for n, l, s, *_ in build.patched(1)}
     key = rom_key(img, files)
     if statep == "-":  # 상태 파일이 없으면 부팅 열로 만든다 — 만든 롬의 열쇠를 옆에 적는다
-        boot(h)
+        boot(h, continue_save=bool(bkr))
         h.save(os.path.join(outdir, "base.state"))
         with open(os.path.join(outdir, "base.state.rom"), "w") as f:
             f.write(key + "\n")

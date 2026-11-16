@@ -63,9 +63,11 @@ GCLK = RELOC + RELOC_LEN  # 전역 프레임 시계(16B, 쓴다)
 GCLK_LEN = 16
 BOOKH = GCLK + GCLK_LEN  # 서책 반각 전진 스텁(`patch_book_half` — 코드 + 풀)
 BOOKH_ROOM = 64
-B_END = BOOKH + BOOKH_ROOM
+VCHK = BOOKH + BOOKH_ROOM  # 확인용 롬(`voicecheck`) 스텁 — 제품 빌드엔 안 쓴다(예약 칸이 비어 있을 뿐)
+VCHK_ROOM = 256
+B_END = VCHK + VCHK_ROOM
 assert B_END <= run_end(RUN_B), (B_END, run_end(RUN_B))
-assert all(x % 4 == 0 for x in (CRED, JOSA, SUB, WRAP3, WRAP2, GCLK, RELOC, BOOKH))
+assert all(x % 4 == 0 for x in (CRED, JOSA, SUB, WRAP3, WRAP2, GCLK, RELOC, BOOKH, VCHK))
 
 #   ── 쓰기 길 — 패치 함수는 `/0.BIN` 바이트를 돌려주므로 폰트 쪽 쓰기는 여기 모았다가 빌드가 폰트에 얹는다
 SIDE = []  # [(주소, bytes)]

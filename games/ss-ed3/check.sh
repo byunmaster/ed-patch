@@ -140,6 +140,8 @@ run 2 "$PY" "$G/tools/check_linebreak.py" --check --f backup/ss-ed3-pre-2-16-tex
 echo "  ── 「…」 뒤 붙임 · 「～.」 (공통 번역 규칙 2-11 · 1-7)"
 # 🔴 게이트다 — 「…」 뒤에 말이 이어지면 반각 공백, 물결표 뒤 마침표 금지(마스터 10-12). `--apply` 가 공백을 넣는다.
 run 2 "$PY" "$G/tools/check_ellipsis_space.py"
+echo "  ── 빈 줄 개행 금지 (공통 번역 규칙 2-18)"
+run 0 "$PY" "$G/tools/check_blank_lines.py"
 
 echo "  ── 문안에 PUA(U+E000~F8FF) 문자가 섞였나 (다른 기종 문안 이식 사고)"
 run 2 "$PY" "$G/tools/check_pua.py"
@@ -191,6 +193,11 @@ run 3 "$PY" "$G/tools/check_no_loss.py"
 echo "  ── 구조 대조 (원본 ↔ 구운 맵의 제어 열 · 재배치 장부)"
 run 6 "$PY" "$G/tools/check_structure.py"
 
+# 🔴 원판 대비 **바뀐 파일 전수 감사**(11-08, SFC II 「이미지 전체 포인터 패턴 치환」 프리징 계기) — 선언(`changed_files_allow.json`) 밖 파일이 바뀌면 실패.
+#    이 게임의 빌드는 파일 이름별 패처라 전체 검색·치환이 없고, 결과 쪽에서도 한 번 더 확인한다.
+echo "  ── 원판 대비 바뀐 파일 감사 (선언 밖 변경 없음)"
+run 0 "$PY" "$G/tools/check_changed_files.py"
+
 # 🔴 시스템 문자열 제어 문자 대조(마스터 10-29 「대사 색 코드 누락 점검」 — pce-ed1 에서 색 전환 옵코드가 한 번도 안 나갔다). 대사 본문 제어는 위 구조 대조가 센다.
 echo "  ── 시스템 문자열 제어 문자 (원문 키 ↔ 우리 값)"
 run 0 "$PY" "$G/tools/check_ctl_sys.py"
@@ -203,6 +210,9 @@ echo "  ── 규칙 2-8 가운데 맞춤 · 2-10 한 줄 문장 · 2-13 쉼표
 run 0 "$PY" "$G/tools/check_center.py" --check
 run 0 "$PY" "$G/tools/check_oneline.py" --check
 run 0 "$PY" "$G/tools/check_commas.py" --check
+
+echo "  ── 화면 일본어 전체 훑기 (굽은 이미지 전 파일 · 정본 밖 가나 런, 관리자 11-05)"
+run 0 "$PY" "$G/tools/check_jp_scan.py" --check
 
 echo "  ── 마스터 판정 문안 (되돌림 금지)"
 run 0 "$PY" scripts/check/master_rulings.py --game ss-ed3

@@ -44,6 +44,7 @@ import reinsert_param as RP
 import reinsert_sys as RS
 import relocate as RL
 import subtitle_stub as SS
+import voicecheck as VCK
 import dev_options as DEV
 import voice_credits as VC
 import voice_sub as VS
@@ -197,6 +198,10 @@ def patched(disc, lay=None):
                 #     프레임 태스크의 호출 주소를 바꾼다(`subtitle_stub` 「크레딧 자막」).
                 new = SS.patch(new, table_fn=lambda ctab: VC.blob(ctab))
                 cnt["voice_stub"] = 1
+            #   🔴 확인용 롬 — `ED_VOICECHECK=1` 일 때만(제품 빌드는 한 바이트도 안 바뀐다). 맵 입장 때 그 맵의 V## 장면을 시작한다(`voicecheck.py`).
+            if os.environ.get("ED_VOICECHECK"):
+                new = VCK.patch(new)
+                cnt["voicecheck"] = 1
         return b, new, cnt, bad
 
     with C.open_disc(disc) as d:
