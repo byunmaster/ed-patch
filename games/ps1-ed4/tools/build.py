@@ -22,6 +22,7 @@ import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import choice
 import common
 import discgrow
 import typeset
@@ -113,6 +114,9 @@ def apply_script_edits(edits, members, report, member_edits=None):
                         f"🔴 {path}!{nm}: 줄이 사라질 쪽 {len(bad)}곳(한 쪽 3줄 한도) — 쪽 {bad[0][0]} 의 조각 {bad[0][1]}"
                     )
             newmem, _ = scriptmap.rebuild(mem, segs, event_data=True)
+            if scriptmap.layout(mem) == scriptmap.LAYOUT_TABLE:  # 선택지 창 열 — 한국어가 원문보다 길면 넓힌다(`choice.py`)
+                newmem, clog = choice.patch_cols(newmem, scriptmap.parse_table(newmem)["base"], segs)
+                report["choice_cols"] = report.get("choice_cols", 0) + len(clog)
             repl[nm] = newmem
             report["members"] = report.get("members", 0) + 1
             report["grown"] = report.get("grown", 0) + max(0, len(newmem) - len(mem))

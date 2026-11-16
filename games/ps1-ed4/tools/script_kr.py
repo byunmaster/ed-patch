@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
 import josa_build
 import reinsert
+import rigidflow
 import textenc
 import typeset
 
@@ -193,11 +194,14 @@ def page_plan(mem, rows, *, table=None):
                 if getattr(pg, "rigid", False) or any(rows.get(i, {}).get("fix") for i in pg):
                     new = typeset.rigid_segments(josa_build.rigid(texts))
                 else:
-                    new = typeset.page_segments(josa_build.flex(texts), len(pg))
+                    new = typeset.page_segments(josa_build.flex(texts), len(pg), rules=not typeset.is_listish(texts))
             except typeset.TypesetError as e:
                 notes.append(f"m{mi}.{pi} 조각 {pg}: {e}")
                 continue
             for i, t in zip(pg, new, strict=True):
+                # 🔴 줄바꿈이 끝 공백을 깎는다 — 표지판 방향 글자(「북 」)처럼 뒤에 다른 글이 이어 붙는 한 줄 조각은 되살린다
+                if t and rows[i]["kr"].endswith(" ") and not t.endswith(" ") and len(t) < typeset.COLS:
+                    t += " "
                 out[i] = t
     # 🔴 쪽 밖 조각(메시지 스트림이 안 가리키는 것 — 머리 쌍 목록 등 다른 경로로 그려진다): 창 폭을 모르니 **원문 길이 안**에서 그대로 넣는다
     seen = {i for msg in typeset.windows(mem) for pg in msg for i in pg}
@@ -213,6 +217,8 @@ def page_plan(mem, rows, *, table=None):
             )
             continue
         out[i] = kr
+    if typeset.RULES_216:
+        rigidflow.reflow(mem, out, rows)  # 규칙 2-16 c — rigid 토막 안 줄 끊는 자리
     return out, notes
 
 
@@ -237,11 +243,23 @@ def edits(members, *, table=None):
     return per, notes
 
 
+def fit_problems(per, notes):
+    """(정본 조각 수, 조판된 조각 수, [사유]) — 🔴 **조판 탈락은 조용히 지나가면 안 된다**(CLAUDE.md 빌드 규율 「화면에 나가는 바이트를 게이트로 본다」).
+    못 넣은 쪽(`notes`)이 있거나, 정본(`script/`)의 번역 조각 수보다 실제로 조판된 수가 적으면 사유가 된다 — 탈락한 쪽은 원문(일본어)이 그대로 화면에 나간다.
+    기대값은 정본에서 센다(손으로 박은 숫자가 아니다)."""
+    want = sum(len(rows) for rows in load_all().values())
+    got = sum(len(v) for v in per.values())
+    bad = [f"못 넣은 쪽: {n}" for n in notes]
+    if got != want:
+        bad.append(f"조판된 조각 {got} ≠ 정본 번역 조각 {want} — {want - got}개가 조용히 탈락했다")
+    return want, got, bad
+
+
 def used_chars():
     out = set()
     for rows in load_all().values():
         for row in rows.values():
-            out.update(row["kr"])
+            out.update(row["kr"].translate(reinsert.KAGI))
     out.update(josa_build.EXTRA_CHARS)  # 조사 훅 표지·조사 글리프
     return "".join(sorted(c for c in out if c.strip()))
 
@@ -430,6 +448,17 @@ def main(argv):
     if cmd == "todo":
         common.verify_source()
         return todo(argv[2] if len(argv) > 2 else "")
+    if cmd == "fit":  # 쪽 한도 게이트 — 빌드 없이 조판만 돌린다
+        common.verify_source()
+        import build
+        import hangul
+
+        per, notes = edits(build.identity_gate({}), table=hangul.load())
+        want, got, bad = fit_problems(per, notes)
+        print(f"대본 조판 — 정본 {want} · 조판 {got} · 못 넣은 쪽 {len(notes)}")
+        for b in bad[:20]:
+            print("  🔴", b)
+        return 1 if bad else 0
     if cmd == "check":
         n, m, bad = check()
         print(f"대본 번역 — 조각 {n} · 멤버 {m}")

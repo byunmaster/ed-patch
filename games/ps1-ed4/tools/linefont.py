@@ -48,7 +48,10 @@ def _text(txt, name):
             continue
         if not f.has(ch):
             raise ValueError(f"글리프 없음: {ch!r} ({name})")
-        cols.append(f.bits(ch, dy=cell, rows=cell * 3, width=cell + 8)[:, :wide].astype(bool))
+        g = f.bits(ch, dy=cell, rows=cell * 3, width=cell + 8)[:, :wide].astype(bool)
+        if ch == ",":  # 🔴 쉼표 꼬리가 온점 행보다 한 행 아래로 나와 줄 사이 빈 행으로 샌다(마스터 10-25 「대지에 사람이 위쪽 점」) — 꼬리가 바닥(온점) 행에 오게 한 행 올린다
+            g = np.roll(g, -1, axis=0)
+        cols.append(g)
     return np.concatenate(cols, axis=1) if cols else np.zeros((cell * 3, 1), bool)
 
 

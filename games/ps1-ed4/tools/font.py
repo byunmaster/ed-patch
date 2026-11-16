@@ -79,10 +79,55 @@ def ellipsis_glyph(dy=fonts.GALMURI11_DY):
 HALF_W = 6  # 반각 칸 폭(px) — 훅(`halfwidth.py`)이 잉크가 왼쪽 6px 안에 든다고 가정한다
 
 
+# 「」·『』 반각(마스터 도안 B·B2판 10-26, 다시 그리지 않는다) — 12×12 한 판에 여는 쪽(0~5열)·닫는 쪽(6~11열). 대사의 「」『』 는 인코딩 때 이 사설 글자로 바뀐다.
+KAGI_HALF = {"\ue020": (0, 0), "\ue021": (0, 6), "\ue022": (1, 0), "\ue023": (1, 6)}  # 글자 → (도안 번호, 시작 열)
+KAGI_ROWS = ((
+    "####........",
+    "#...........",
+    "#...........",
+    "#...........",
+    "#........#..",
+    "#........#..",
+    "#........#..",
+    ".........#..",
+    ".........#..",
+    ".........#..",
+    "......####..",
+    "............",
+), (  # 『』 반각(마스터 도안 B2판 v2 10-27 — 가로 5칸)
+    "#####.......",
+    "#...#.......",
+    "#.###.......",
+    "#.#.........",
+    "#.#.....###.",
+    "#.#.....#.#.",
+    "###.....#.#.",
+    "........#.#.",
+    "......###.#.",
+    "......#...#.",
+    "......#####.",
+    "............",
+))
+
+
+def kagi_glyph(ch):
+    """「」 반각 → (12,12) 0/1. 도안의 해당 6열을 왼쪽 6px 에 둔다."""
+    import numpy as np
+
+    k, x0 = KAGI_HALF[ch]
+    out = np.zeros((ROWS, CELL), dtype=np.uint8)
+    for y, row in enumerate(KAGI_ROWS[k]):
+        for x in range(HALF_W):
+            out[y, x] = row[x0 + x] == "#"
+    return out
+
+
 def half_glyph(ch):
     """반각 한 글자 → (12,12) 0/1. Galmuri11 **Condensed**(잉크 ≤5px)로 뽑아 왼쪽 6px 에 둔다 — 보통 Galmuri11 의 숫자는 7px 라 6px 칸에 안 든다."""
     import numpy as np
 
+    if ch in KAGI_HALF:
+        return kagi_glyph(ch)
     bits = fonts.galmuri("Galmuri11-Condensed").bits(
         ch, dy=fonts.GALMURI11_DY, rows=ROWS, width=HALF_W
     )

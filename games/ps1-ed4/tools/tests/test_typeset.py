@@ -4,6 +4,7 @@ import struct
 import unittest
 
 import _path  # noqa: F401
+import choice
 import typeset
 
 from shared.ps1 import gmf_script as sm
@@ -181,3 +182,92 @@ class TestWindows(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBreakChoice(unittest.TestCase):
+    """줄 끊는 자리 고르기 — 같은 줄 수 안에서 문장 끝 > 쉼표 > 연결어미, 쪽 수 불변."""
+
+    def test_문장_끝에서_끊는다(self):
+        # 가짜 문장 — 탐욕 줄바꿈이면 「…할 / 일은」 처럼 문장 한복판이 갈린다
+        t = "가나다라마바사 아자차카타파하. 거너더러머버서어 저처커터퍼 허고노도 모보소오."
+        r = typeset.rows(t)
+        self.assertEqual(r[0].split(" ")[-1][-1], ".")
+
+    def test_줄_수는_늘지_않는다(self):
+        t = "가나다라마바사 아자차카타파하. 거너더러머버서어 저처커터퍼 허고노도 모보소오. " * 2
+        orig = typeset._refine
+        try:
+            typeset._refine = lambda text, out, cols: out
+            base = typeset.rows(t)
+        finally:
+            typeset._refine = orig
+        self.assertEqual(len(typeset.rows(t)), len(base))
+
+    def test_감탄사_쉼표_뒤는_안_끊는다(self):
+        self.assertGreater(typeset._break_cost("", "오,", "가나다"), typeset.COST_PLAIN)
+
+
+class TestChoiceCols(unittest.TestCase):
+    """선택지 창 열 — 가장 긴 선택지 + 1칸으로 넓힌다(줄이지 않는다)."""
+
+    def _mem(self, cols, idxs):
+        # 앞 패딩 + `3B a 열 줄` + 선택지 `0F 색인 흐름`(색인은 짝수 자리)
+        b = bytearray(b"\x00\x00" + bytes([choice.OP, 4, cols, len(idxs), 0]))
+        for i in idxs:
+            b += bytes([choice.TEXT]) + struct.pack("<H", i) + b"\x01"
+        b += b"\x00" * 4
+        return bytes(b)
+
+    def test_넓힌다(self):
+        mem = self._mem(4, [0, 1])
+        found = choice.scan(mem, len(mem), 2)
+        self.assertEqual([(f[1], f[2], f[3]) for f in found], [(4, 2, [0, 1])])
+        out, log = choice.patch_cols(mem, len(mem), [[1] * 5, [1] * 3])
+        self.assertEqual(out[found[0][0] + 2], 6)
+        self.assertEqual(log[0][1:], (4, 6))
+
+    def test_줄이지_않는다(self):
+        mem = self._mem(8, [0, 1])
+        out, log = choice.patch_cols(mem, len(mem), [[1] * 3, [1] * 2])
+        self.assertEqual(out, mem)
+        self.assertEqual(log, [])
+
+
+class TestRule216(unittest.TestCase):
+    """규칙 2-16 — 절째 내리기 · 쪽 끝 한 어절 고아 · 띄어 쓴 고유명사 한 줄 · 보조용언 자리 쪽 끊기."""
+
+    def test_절째_내린다(self):
+        # 「…테니까 아저씨를」에서 끊으면 절(아저씨를 찾아 주세요.)이 갈린다 → 절째 다음 줄로
+        out = typeset._rules(["사례는 얀크 아저씨가 낼 테니까 아저씨를", "찾아 주세요."], 24)
+        self.assertEqual(out, ["사례는 얀크 아저씨가 낼 테니까", "아저씨를 찾아 주세요."])
+
+    def test_쪽_끝_한_어절_고아는_앞_낱말을_내린다(self):
+        lines = ["가나다라마바사 아자차카타파", "하나둘셋넷다섯 여섯일곱여덟", "아홉열", "마지막줄입니다"]
+        out = typeset._rules(["가나다라마바사 아자차카타파", "하나둘셋넷다섯 여섯일곱여덟", "마바사 아홉"] + ["끝."], 24)
+        self.assertEqual(len(out), 4)
+        self.assertNotEqual(out[2].count(" "), 0)
+        del lines
+
+    def test_띄어_쓴_고유명사는_안_가른다(self):
+        self.assertIn(1, typeset._glued(["한", "마검", "크발을", "들었다"]) | {1})
+        self.assertEqual(typeset._glued(["마검", "크발을", "들었다"]), {1})
+
+    def test_보조용언_자리_쪽_끊기_금지(self):
+        l1 = ["가나다라마바사 아자차카타파하", "거너더러머버서어 저처커터퍼허", "고노도로모보소아 이것 읽어", "주세요 부탁이에요."]
+        out = typeset._rules(l1, 24)
+        self.assertFalse(out[2].endswith("읽어"))
+
+
+class TestRegressions(unittest.TestCase):
+    def test_새_나쁜_끊김을_센다(self):
+        # 「이런 / 물건이」 — 관형사 고아가 새로 생긴 꼴
+        self.assertGreaterEqual(typeset.regressions(["어떤 사람이 있다는", "소문이다."], ["어떤", "사람이 있다는 소문이다."]), 1)
+
+    def test_같은_끊김이면_0(self):
+        a = ["가나다라마바 사아자차카", "타파하."]
+        self.assertEqual(typeset.regressions(a, list(a)), 0)
+
+    def test_문장이_새로_갈리면_센다(self):
+        old = ["그건 좋다. 가나다 라마바.", "사아자."]
+        new = ["그건 좋다. 가나다", "라마바. 사아자."]
+        self.assertGreaterEqual(typeset.regressions(old, new), 1)

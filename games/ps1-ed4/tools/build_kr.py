@@ -84,6 +84,10 @@ def main():
     if bad_rb:
         raise SystemExit("🔴 되읽기:\n  " + "\n  ".join(bad_rb[:8]))
     nseg = sum(len(v) for v in per.values())
+    want, _got, fit_bad = script_kr.fit_problems(per, notes)
+    if fit_bad:  # 🔴 조판 탈락 — 빌드는 구워졌어도 산출물을 무효화한다(탈락한 쪽은 일본어가 그대로 나간다)
+        os.replace(out, out + ".failed")
+        raise SystemExit("🔴 대본 조판 탈락 — 산출물을 *.failed 로 바꿨다:\n  " + "\n  ".join(fit_bad[:10]) + f"\n  (정본 {want})")
     n, total, bad = uitext.check()
     for note in notes[:10]:
         print("  ⚠", note)

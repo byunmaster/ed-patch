@@ -63,6 +63,31 @@ echo "  ── UI 문안 정본 (원문 지문 · 고정 길이)"
 run 0 "$PY" "$G/tools/uitext.py" check
 echo "  ── 대본 번역 정본 (원문 지문 · 쪽 한도)"
 run 0 "$PY" "$G/tools/script_kr.py" check
+echo "  ── 마스터 판정 문안 (금지·필수 꼴 — 검수·재조판이 판정을 되돌리지 못하게, 공용 판정기 + tools/rulings_corpus.py)"
+run 0 "$PY" scripts/check/master_rulings.py --game ps1-ed4
+echo "  ── 대본 조판 탈락 (정본 번역 조각 수 = 조판된 수 · 못 넣은 쪽 0 — 탈락한 쪽은 일본어가 그대로 나간다)"
+run 0 "$PY" "$G/tools/script_kr.py" fit
+echo "  ── 제어 코드 대조 (원판 대본의 색·이름 삽입·흐름 연산이 제품 바이트에 그대로 · 수 그리기는 부분열 · 양성 대조)"
+run 0 "$PY" "$G/tools/check_ctrl_codes.py"
+echo "  ── 삽입 칸 앞 띄어쓰기 (이름·아이템·수가 끼는 자리 바로 앞 조각이 공백 없이 한글로 끝나면 「차서스톤」으로 나간다 · 양성 대조)"
+run 0 "$PY" "$G/tools/check_spacing.py"
+echo "  ── 조판 결과 전수 (첫 칸 공백 · 고아 부호 · 빈 줄 · 부호 앞뒤 공백 · …뒤 공백 · ?… 순서 · 낱말 속 접힘 · 넘침 · 한 줄 문장 갈림 2-10 · 쉼표 2-13 남김 래칫 · 양성 대조)"
+run 0 "$PY" "$G/tools/check_typeset.py"
+echo "  ── 가운데 맞춤 (규칙 2-8 — 그림 글 줄 가운데 오차 · 아이템 메시지 창 좌우 여백, 줄 끝 부호는 폭에서 뺀다 · 양성 대조)"
+run 0 "$PY" "$G/tools/check_center.py"
+
+echo "  ── 줄·쪽 나눔 지표 (규칙 2-16 — 쪽 끝 고아 · 보조용언 쪽 끊기 · 절 쪼갬, 기준선 래칫)"
+run 0 "$PY" "$G/tools/linemetrics.py" check
+
+echo "  ── 조판 지문 (대본 조판 24474 조각을 멤버별 sha1 — 공용 krwrap 이 이 게임 줄바꿈을 조용히 바꾸면 실패한다, 마스터 10-29 N4)"
+# 🔴 실패로 친다 — 문안을 의도적으로 바꿨으면 `typeset_fingerprint.py --game ps1-ed4 --freeze`, **안 바꿨는데 떴으면 `shared/` 를 의심한다.**
+# ⚠ 파이프로 걸러 보면 종료 코드를 먹는다 — 출력을 먼저 받고 종료 코드를 따로 본다.
+_fp=$("$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game ps1-ed4 2>&1) && _fprc=0 || _fprc=$?
+printf '%s\n' "$_fp" | sed 's/^/   /'
+if [ "$_fprc" -ne 0 ]; then
+  echo "   🔴 조판 지문이 바뀌었다"
+  fail=1
+fi
 
 echo "  ── 그림 글(오프닝·엔딩·스태프롤) — 줄이 그림 안 · 압축 뒤 크기가 원 멤버 한도 안"
 run 0 "$PY" "$G/tools/narration.py" check "$G/work/review/narration"

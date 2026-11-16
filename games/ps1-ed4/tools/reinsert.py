@@ -18,6 +18,7 @@ import hangul
 from shared.ps1 import gmf_script as scriptmap
 
 SPACE = " "
+KAGI = str.maketrans("「」『』", "\ue020\ue021\ue022\ue023")  # 대사의 「」『』 → 반각 글리프(마스터 10-26). UI 의 전각 부호는 그대로
 
 
 def member_segments(mem):
@@ -27,7 +28,7 @@ def member_segments(mem):
 
 def codes_for(text, table=None, *, same_size_as=None):
     """문안 → 코드열. `same_size_as`(원본 코드열)를 주면 **같은 길이**로 맞춘다 — 모자라면 공백으로 채우고 넘치면 실패."""
-    codes = hangul.encode(text, table)
+    codes = hangul.encode(text.translate(KAGI), table)
     if same_size_as is not None:
         n = len(same_size_as)
         if len(codes) > n:
