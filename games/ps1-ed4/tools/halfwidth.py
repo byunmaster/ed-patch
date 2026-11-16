@@ -414,6 +414,65 @@ ITEM_MSG_PATCH = [  # (주소, 원판 명령, 새 명령) — `addiu a0/a2,zero,
     (0x800265DC, 0x24040054, 0x24040030),  # 창 B 재시도
     (0x800265B4, 0x2406000A, 0x24060010),  # 창 B 열 10 → 16
 ]
+# 알선소 의뢰 게시판(연산 0x62) 창 배치 — 목록 창 열 8 은 한글 제목(96~114px)을 자른다(「데이지 양의 의」). 목록 10열(최장 108px+6)로 넓히고
+# 상세 창은 14열·줄 8 로 줄여 화면 폭 320 을 나눠 쓴다(원판도 목록·상세가 11px 겹치는 배치). 보상 「0 Rose」는 숫자 x(칸)·라벨 x(칸)를 같이 2칸 당긴다.
+# 스위치 `ED_BOARD_FIT=1` 일 때만 얹는다(마스터 미리보기 OK 뒤 기본값을 켠다, 11-06) — 시험 RAM 으로 화면 확인(`tools/op_probe.py`, 캡처 「디버그 이동」).
+BOARD_PATCH = [  # (주소, 원판 명령, 새 명령)
+    (0x80050408, 0x34068008, 0x3406800A),  # 목록 창 열 8 → 10 (ori a2,zero,0x8000|열)
+    (0x80050448, 0x34068008, 0x3406800A),
+    (0x800504C0, 0x24064010, 0x2406400E),  # 상세 창 열 16 → 14 (addiu a2,zero,0x4000|열)
+    (0x80050500, 0x24064010, 0x2406400E),
+    (0x8004FDEC, 0x24064010, 0x2406400E),
+    (0x8004FE2C, 0x24064010, 0x2406400E),
+    (0x800504C8, 0x24070006, 0x24070008),  # 상세 창 줄 6 → 8 (의뢰문이 14열에서 6줄까지 늘고, 보상 줄은 y 6 고정)
+    (0x80050508, 0x24070006, 0x24070008),
+    (0x8004FDF4, 0x24070006, 0x24070008),
+    (0x8004FE34, 0x24070006, 0x24070008),
+    (0x8003FB04, 0x2405000A, 0x24050008),  # 보상 숫자 x 10 → 8 (칸)
+    (0x8003FB58, 0x2442000D, 0x2442000B),  # 보상 라벨 「Rose」 x 13 → 11 (칸)
+]
+
+
+# 알선소 목록 창 제목 칸 넓히기(마스터 11-06 「① 기술 먼저」) — 제목 25건이 96~108px 인데 목록 창 열 8 은 글자 90px 까지라 잘린다(「데이지 양의 의」).
+# 목록 창만 열 8→10(글자 114px)으로 넓히고, 목록 위로 덮는 상세 창(16열 4줄 배치 그대로)을 오른쪽으로 12px 옮겨 겹침을 늘리지 않는다
+# (상세 창 오른쪽 끝 x=317 → 329, 화면 폭 320 바깥 여백 15px 안). 상세 창 x 는 네 군데(addiu a0 두 · lui 두 — 호출부마다 즉치)다.
+# 기본 켬(마스터 「의뢰제목 칸 늘리기로 해야겠다」 11-07) — `ED_BOARD_TITLE=0` 이면 끈다.
+TITLE_PATCH = [  # (주소, 원판 명령, 새 명령)
+    (0x80050408, 0x34068008, 0x3406800A),  # 목록 창 열 8 → 10
+    (0x80050448, 0x34068008, 0x3406800A),
+    (0x8004FCE4, 0x2404013D, 0x24040149),  # 상세 창 x 317 → 329 (네 호출부)
+    (0x8004FE10, 0x3C12013D, 0x3C120149),
+    (0x800504B8, 0x2404013D, 0x24040149),
+    (0x800504E4, 0x3C13013D, 0x3C130149),
+]
+
+
+# EXE 목록·메뉴 창 폭 맞춤(마스터 11-06 「가장 긴 항목에 맞춰서 가로길이 조절」) — 열 수가 상수인 창을 최장 항목 px 에 맞춘다(표: docs/window-fit.md).
+# 기본 켬(마스터 미리보기 OK 11-07) — `ED_WIN_FIT=0` 이면 끈다. 열 = 올림((최장 px+6)/12) — `choice.need_cols_for_px` 와 같은 공식(엔진 자르기 6px).
+WIN_PATCH = [  # (주소, 원판 명령, 새 명령)
+    (0x80025824, 0x2406000B, 0x24060009),  # 도구 목록 창 열 11 → 9 (최장 「오르마즈드의 역린」 102px)
+    (0x8003770C, 0x2406000A, 0x24060009),  # 전투 도구 목록 창(0x80037710) 열 10 → 9 (이름만 그린다 — wintrace 로 확인, 최장 102px). 전투 마법 목록(0x800378A4, 108px)은 10열 그대로
+]
+
+
+def win_fit_enabled():
+    import os
+
+    return os.environ.get("ED_WIN_FIT") != "0"
+
+
+def board_title_enabled():
+    import os
+
+    return os.environ.get("ED_BOARD_TITLE") != "0"
+
+
+def board_fit_enabled():
+    import os
+
+    return os.environ.get("ED_BOARD_FIT") == "1"
+
+
 ITEM_WORDS = {ITEM_COPY_LUI: 0x3C028001, ITEM_COPY_ADD: 0x24460238, ITEM_SITE_A: 0x27B50060, ITEM_SITE_B: 0x27A50060}
 
 
@@ -837,6 +896,45 @@ def patch_item(exe, blob, hx_end):
         if got != want:
             raise SystemExit(f"🔴 아이템 메시지 창 {a:#x} 가 원판이 아니다({got:#010x}≠{want:#010x})")
         exe[_off(a) : _off(a) + 4] = new.to_bytes(4, "little")
+    # 장비 후보 목록 창(0x800275E4, 8열×8줄 — `move a3,a2` 로 줄 수를 열 수에서 따온다)은 글자 90px 까지만 그려 102px 이름(「명갑옷 프레아데스」 등)의 끝 글자가 잘린다
+    # → 열 9 로 넓히고 줄 수는 8 로 못 박는다(11-07 덫+RAM 이름 교체로 화면 확인). 결함 수정이라 스위치 없이 넣는다.
+    # 정보상 소재지 창(0x80049FEC, 7열)도 같은 부류 — 지명 최장 96px(「전망 좋은 오두막」)이 그리기 폭 78px 를 넘어 「전망 좋은」에서 잘린다(RAM 지명 표 바꿔치기로 화면 확인) → 열 11(값 줄이 라벨보다 안쪽으로 들여 그려져 9열로도 끝 글자가 잘렸다)
+    for a_, want, new in (
+        (0x800275E0, 0x24060008, 0x24060009),
+        (0x800275E8, 0x00C03821, 0x24070008),
+        (0x80049FE8, 0x24060007, 0x2406000B),
+    ):
+        got = int.from_bytes(exe[_off(a_) : _off(a_) + 4], "little")
+        if got != want:
+            raise SystemExit(f"🔴 장비 후보 창 {a_:#x} 가 원판이 아니다({got:#010x}≠{want:#010x})")
+        exe[_off(a_) : _off(a_) + 4] = new.to_bytes(4, "little")
+    # 수량 창 단위 글자 — 스택에 [글리프 코드, 0xFFFF] 로 만드는 「個」(코드 654)가 한글 재배정으로 「됩」이 됐다(마스터 「1됩」) → 「개」 코드로
+    from hangul import load as _hl
+
+    unit = _hl()["개"]
+    for a_, want, new in ((0x8003F760, 0x2402028E, 0x24020000 | unit),):
+        got = int.from_bytes(exe[_off(a_) : _off(a_) + 4], "little")
+        if got != want:
+            raise SystemExit(f"🔴 수량 창 단위 {a_:#x} 가 원판이 아니다({got:#010x}≠{want:#010x})")
+        exe[_off(a_) : _off(a_) + 4] = new.to_bytes(4, "little")
+    if win_fit_enabled():
+        for a, want, new in WIN_PATCH:
+            got = int.from_bytes(exe[_off(a) : _off(a) + 4], "little")
+            if got != want:
+                raise SystemExit(f"🔴 목록 창 {a:#x} 가 원판이 아니다({got:#010x}≠{want:#010x})")
+            exe[_off(a) : _off(a) + 4] = new.to_bytes(4, "little")
+    if board_title_enabled():
+        for a, want, new in TITLE_PATCH:
+            got = int.from_bytes(exe[_off(a) : _off(a) + 4], "little")
+            if got != want:
+                raise SystemExit(f"🔴 게시판 제목 창 {a:#x} 가 원판이 아니다({got:#010x}≠{want:#010x})")
+            exe[_off(a) : _off(a) + 4] = new.to_bytes(4, "little")
+    if board_fit_enabled():
+        for a, want, new in BOARD_PATCH:
+            got = int.from_bytes(exe[_off(a) : _off(a) + 4], "little")
+            if got != want:
+                raise SystemExit(f"🔴 게시판 창 {a:#x} 가 원판이 아니다({got:#010x}≠{want:#010x})")
+            exe[_off(a) : _off(a) + 4] = new.to_bytes(4, "little")
     # 복사 원본 — `lui v0,hi` / `addiu a2,v0,lo`(부호 보정)
     ahi = ((ITEM_STRUCT >> 16) + (1 if (ITEM_STRUCT & 0xFFFF) >= 0x8000 else 0)) & 0xFFFF
     exe[_off(ITEM_COPY_LUI) : _off(ITEM_COPY_LUI) + 4] = (0x3C020000 | ahi).to_bytes(4, "little")

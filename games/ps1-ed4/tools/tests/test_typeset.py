@@ -208,7 +208,7 @@ class TestBreakChoice(unittest.TestCase):
 
 
 class TestChoiceCols(unittest.TestCase):
-    """선택지 창 열 — 가장 긴 선택지 + 1칸으로 넓힌다(줄이지 않는다)."""
+    """선택지 창 열 — 가장 긴 선택지의 실제 폭(+엔진 자르기 18px)에 맞춘다."""
 
     def _mem(self, cols, idxs):
         # 앞 패딩 + `3B a 열 줄` + 선택지 `0F 색인 흐름`(색인은 짝수 자리)
@@ -222,15 +222,37 @@ class TestChoiceCols(unittest.TestCase):
         mem = self._mem(4, [0, 1])
         found = choice.scan(mem, len(mem), 2)
         self.assertEqual([(f[1], f[2], f[3]) for f in found], [(4, 2, [0, 1])])
-        out, log = choice.patch_cols(mem, len(mem), [[1] * 5, [1] * 3])
-        self.assertEqual(out[found[0][0] + 2], 6)
+        out, log = choice.patch_cols(mem, len(mem), [[1] * 5, [1] * 3], fit=True)
+        self.assertEqual(out[found[0][0] + 2], 6)  # (60+6)/12 올림
         self.assertEqual(log[0][1:], (4, 6))
 
-    def test_줄이지_않는다(self):
+    def test_줄인다(self):
         mem = self._mem(8, [0, 1])
-        out, log = choice.patch_cols(mem, len(mem), [[1] * 3, [1] * 2])
-        self.assertEqual(out, mem)
-        self.assertEqual(log, [])
+        out, log = choice.patch_cols(mem, len(mem), [[1] * 3, [1] * 2], fit=True)
+        self.assertEqual(out[choice.scan(mem, len(mem), 2)[0][0] + 2], 4)  # (36+6)/12 올림
+        self.assertEqual(log[0][1:], (8, 4))
+
+    def test_게이트_좁음_넓음을_잡는다(self):
+        segs = [[1] * 5, [1] * 3]
+        m0 = self._mem(4, [0, 1])
+        ok, _ = choice.patch_cols(m0, len(m0), segs, fit=True)
+        self.assertEqual(choice.verify(ok, len(ok), segs), [])
+        narrow = self._mem(4, [0, 1])
+        self.assertTrue(choice.verify(narrow, len(narrow), segs))
+        wide = bytearray(ok)
+        wide[choice.scan(ok, len(ok), 2)[0][0] + 2] = 15
+        self.assertTrue(choice.verify(bytes(wide), len(wide), segs))
+
+    def test_옛_규칙은_넓히기만_한다(self):
+        wide = self._mem(8, [0, 1])
+        self.assertEqual(choice.patch_cols(wide, len(wide), [[1] * 3, [1] * 2], fit=False)[0], wide)
+        narrow = self._mem(4, [0, 1])
+        _, log = choice.patch_cols(narrow, len(narrow), [[1] * 5, [1] * 3], fit=False)
+        self.assertEqual(log[0][1:], (4, 6))  # 코드 수 5 + 여백 1
+
+    def test_반각은_절반으로_센다(self):
+        self.assertEqual(choice.need_cols([1, 1, 7, 1, 1], frozenset({7})), 5)  # 12*4+6+6=60 → 5
+        self.assertEqual(choice.need_cols([1] * 40), choice.MAX_COLS)
 
 
 class TestRule216(unittest.TestCase):

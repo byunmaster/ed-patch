@@ -27,6 +27,9 @@ def source_text():
     cm = textenc.charmap()
     exe = bytes(common.read_file(common.EXE_PATH))
     ui = {s["jp"] for s in uitext.sites(exe).values()}
+    # 글자표에 없는 코드(痺·霧·鈴…)가 든 표 조각은 `sites` 가 못 읽는다 — 정본 참조(canon)로 번역한 조각은 그 원문을 이름으로 센다
+    with open(os.path.join(common.ROOT, "ui_frag_ed4.json"), encoding="utf-8") as f:
+        ui |= {r["canon"] for r in json.load(f).values() if isinstance(r, dict) and r.get("canon")}
     seg = []
     with common.open_disc(None) as d:
         for path, lba, size in d.files():

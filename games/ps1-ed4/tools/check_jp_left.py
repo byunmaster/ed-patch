@@ -145,6 +145,65 @@ EXE_DEAD = [
 ]
 
 
+# 🔴 짧은 조각 구멍(11-06) — 「は」 한 글자짜리 「예」 칸이 안 번역된 채 게시판 예/아니오 창에 깨진 네모로 떴다: ① 길이 3 미만이라 `exe_left` 가 안 세고 ② 「は」 코드가 한글 자리로 재배정돼 가나로 안 셈.
+# 그래서 **원본과 같은 바이트로 남은** 조각 중 원본 글(JP 글자표)이 가나뿐인 1~2글자를 센다(제어코드 <0x20 은 뺌 · `ー`·`・` 구분 부호는 가나로 안 침).
+# 아래는 사유가 있는 예외 — 데이터 구조체 속 우연한 코드이거나, 표식 시험(11-06: 그 자리를 한글 글리프로 덮고 상점·여관·게시판 흐름을 돌려도 화면에 안 나옴)으로 화면 밖임을 본 것.
+EXE_SHORT_OK = {
+    0xBC8: "「ロゼ」 — 구분 코드(0xFFFF)로 둘러싸인 구조 자리, 표식 시험에서 안 나옴(통화 표시는 영문 Rose 가 다른 자리에서 그림)",
+    0x6D16E: "데이터 구조체(0xA0 반복 값) 속 우연한 코드 — 문자열 아님",
+    0x6D236: "데이터 구조체(0xA0 반복 값) 속 우연한 코드 — 문자열 아님",
+    0x6E860: "문안 표 앞 제어 구조체 속 코드 — 표식 시험에서 안 나옴",
+    0x6ECBA: "데이터 표(0x6ECxx) 속 우연한 코드",
+    0x6ECBE: "데이터 표(0x6ECxx) 속 우연한 코드",
+}
+
+
+EXE_SHORT_RANGES = [
+    (
+        0x6E800,
+        0x6F600,
+        "수치·능력 데이터 표(문자열 아님 — 「８。?・８。?」 꼴 구조) 속 우연한 코드",
+    ),
+]
+
+
+def exe_short_left(image):
+    """[(오프셋, 원문)…] 원본과 같은 바이트로 남은 1~2글자 가나 조각(예외 장부 밖)."""
+    import struct
+
+    cm = textenc.charmap()
+    orig = bytes(common.read_file(common.EXE_PATH))
+    with common.open_disc(image) as d:
+        prod = None
+        for path, lba, size in d.files():
+            if path.endswith("SLPS_015.40"):
+                prod = d.read_extent(lba, size)
+    term = {0, 0x8000, 0x8002, 0xFFFF}
+    out = []
+    for a0, a1 in EXE_TEXT_AREAS:
+        s = a0
+        for o in range(a0, a1, 2):
+            if struct.unpack_from("<H", orig, o)[0] not in term:
+                continue
+            seg = struct.unpack_from(f"<{(o - s) // 2}H", orig, s) if o > s else ()
+            off, s = s, o + 2
+            rest = [c for c in seg if c >= 0x20]
+            if not 1 <= len(rest) <= 2 or prod[off:o] != orig[off:o]:
+                continue
+            if any(a <= off < b for a, b in EXE_SKIP) or any(a <= off < b for a, b, _w in EXE_DEAD):
+                continue
+            txt = "".join(cm.get(c, "?") for c in rest)
+            if all("\u3040" <= ch <= "\u30ff" and ch not in "ー・" for ch in txt):
+                # 조각 머리가 아니라 본문 첫 코드 위치를 보고한다
+                off2 = off + 2 * (len(seg) - len(rest))
+                if off2 in EXE_SHORT_OK or off in EXE_SHORT_OK:
+                    continue
+                if any(a <= off2 < b for a, b, _w in EXE_SHORT_RANGES):
+                    continue
+                out.append((off2, txt))
+    return out
+
+
 def exe_left(image):
     """[(오프셋, 원문)…] 제품 실행파일 텍스트 영역에서 한글 자리가 아닌 **가나**가 든 조각 — 일본어로 남은 것.
 
@@ -179,6 +238,47 @@ def exe_left(image):
     return out
 
 
+def table_left(image):
+    """[(표 주소, 항목, 조각, 원문)…] — 표가 가리키는 조각 중 **원판 그대로(안 바뀐)** 일본어(가나·한자·글자표에 없는 코드)가 든 것.
+
+    `exe_left` 는 종결이 `0xFFFF` 인 3~40자 문자열만 보고(`0x8002` 종결 목록 조각·번역 인벤토리 밖 조각을 못 본다) — 11-07 에 마법 설명·몬스터 이름·알선 문구 등 34곳이 그 사각에서
+    일본어로 나가던 것을 찾았다. 여기선 표 항목마다 원판·제품의 같은 자리 조각을 짝지어 **바뀌지 않았고 일본어가 든** 조각을 센다.
+    """
+    import struct
+
+    import exetab
+    import uitext
+
+    cm = textenc.charmap()
+
+    def jp(c):
+        ch = cm.get(c)
+        return ch is None or "\u3040" <= ch <= "\u30ff" or "\u4e00" <= ch <= "\u9fff"
+
+    orig = bytes(common.read_file(common.EXE_PATH))
+    new = bytes(common.read_file(common.EXE_PATH, image=image))
+    exe = bytearray(orig)
+    uitext.apply(exe, hangul.load())  # 옮긴 표 주소(RELOC)를 채운다
+    out = []
+    for t in exetab.scan_tables(orig, cm):
+        tbl, base, cnt = t["table"], t["base"], t["n"]
+        d = uitext.RELOC.get(tbl, tbl)
+        nb = d if tbl in uitext.RELOC else base
+        eo = struct.unpack_from(f"<{cnt}H", orig, tbl)
+        en = struct.unpack_from(f"<{cnt}H", new, d)
+        so, sn = {base + x for x in eo}, {nb + x for x in en}
+        for i in range(cnt):
+            try:
+                po = exetab.unit_at(orig, base + eo[i], so)
+                pn = exetab.unit_at(new, nb + en[i], sn)
+            except exetab.ExeTextError:
+                continue
+            for j, (off, codes, _t) in enumerate(po):
+                if j < len(pn) and pn[j][1] == codes and any(jp(c) for c in codes):
+                    out.append((tbl, i, j, "".join(cm.get(c, "?") for c in codes)))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--image")
@@ -199,6 +299,10 @@ def main():
     got["ui"] = len(left)
     exe_rows = exe_left(image)
     got["exe"] = len(exe_rows)
+    short_rows = exe_short_left(image)
+    got["exe_short"] = len(short_rows)
+    table_rows = table_left(image)
+    got["table"] = len(table_rows)
     if a.freeze:
         with open(BASELINE, "w", encoding="utf-8") as f:
             json.dump(got, f, indent=1)
@@ -217,6 +321,8 @@ def main():
         or got["chars"] > base["chars"]
         or got["ui"] > base.get("ui", 10**9)
         or got["exe"] > base.get("exe", 10**9)
+        or got["exe_short"] > base.get("exe_short", 10**9)
+        or got["table"] > base.get("table", 10**9)
     )
     print(
         f"UI 일본어 잔존 — 예외 밖 {len(left)}자리 · 사유 있는 예외 {len(exc)}자리"
@@ -235,10 +341,24 @@ def main():
     if got["exe"] > base.get("exe", 10**9):
         for off, jp in exe_rows[:20]:
             print(f"  0x{off:06X} {len(jp)}자")
+    print(
+        f"실행파일 짧은 조각(1~2글자) 일본어 — {got['exe_short']} (기준선 {base.get('exe_short', '없음')}) · 사유 있는 예외 {len(EXE_SHORT_OK) + len(EXE_SHORT_RANGES)}"
+        + (" 🔴" if got["exe_short"] > base.get("exe_short", 10**9) else "")
+    )
+    for off, jp in short_rows[:20]:
+        print(f"  0x{off:06X} 「{jp}」")
+    print(
+        f"표가 가리키는 안 바뀐 일본어 조각 — {got['table']} (기준선 {base.get('table', '없음')})"
+        + (" 🔴 늘었다" if got["table"] > base.get("table", 10**9) else "")
+    )
+    if got["table"] > base.get("table", 10**9):
+        for tbl, i, j, jp in table_rows[:30]:
+            print(f"  표 0x{tbl:X} 항목 {i}.{j} 「{jp}」")
     if not up and (
         got["segments"] < base["segments"]
         or got["chars"] < base["chars"]
         or got["exe"] < base.get("exe", 10**9)
+        or got["table"] < base.get("table", 10**9)
     ):
         print("  ↓ 줄었다 — `--freeze` 로 기준선을 내린다(래칫)")
     return 1 if up else 0

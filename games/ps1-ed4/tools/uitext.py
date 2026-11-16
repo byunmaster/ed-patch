@@ -223,7 +223,53 @@ def _pad(table):
 
 ITEM_TBL = 0x000A38  # 🔴 아이템 메뉴 구조체 — 스택에 복사해 읽는 자료라 제자리·arena 로 못 옮긴다 → 둘째 동굴로 통째로(`halfwidth.patch_hx`, 사용처 패치)
 ITEM_BLOB = bytearray()  # 새 구조체 바이트(표 u16 N개 + 단위들) — 둘째 동굴 `ITEM_STRUCT` 에 쓴다
+ARENA_FREE = []  # [(시작, 끝)] — `apply` 가 끝난 뒤 글리프 arena 두 조각에 남은 빈자리(파일 오프셋). 게시판 4줄 안이 새 문자열을 둔다
+STRTBL = 0x72B88  # 의뢰 문자열 포인터 표(607 항목)
+
+
+def _board4_dead():
+    """게시판 4줄 안이 새 문자열로 덮은 옛 본문 문자열의 원본 오프셋(스위치가 꺼져 있으면 빈 집합)."""
+    import board4
+
+    return board4.dead_offsets() if board4.enabled() else set()
+
+
+def _reserve(tbl):
+    """표 뒤에 비워 둘 항목 수 — 게시판 4줄 안(`board4`)이 새 색인 구간을 덧붙일 자리."""
+    if tbl != STRTBL:
+        return 0
+    import board4
+
+    return board4.RESERVE if board4.enabled() else 0
+
+
 RELOC = {}  # {원래 표 주소: 새 표 주소(파일 오프셋)} — 마지막 `apply` 에서 arena 로 옮긴 표들(되읽기가 쓴다)
+
+
+def _poison_old(exe, orig, by_table, table):
+    """옮긴 표마다 옛 색인 배열의 **안 바뀐** 칸(= 다른 표 단위가 안 앉은 칸)을 독약으로: 한 앵커(연속 두 칸)에 「글자 하나 + 종결」 문자열을 두고, 나머지 칸 오프셋이 그 앵커를 가리키게 한다."""
+    import common
+
+    if not common.BUILD_TAG.startswith("test-"):
+        raise SystemExit("🔴 ED_POISON_OLD 는 test- 꼬리표 빌드에서만")
+    glyph = table.get("독") or table.get("구")
+    left = 0
+    for (tbl, base, cnt), _m in by_table.items():
+        if tbl not in RELOC:
+            continue
+        free = [i for i in range(cnt) if bytes(exe[tbl + 2 * i : tbl + 2 * i + 2]) == orig[tbl + 2 * i : tbl + 2 * i + 2]]
+        anchor = next((i for i in free if i + 1 in set(free) and tbl + 2 * i - base >= 0), None)
+        if anchor is None:
+            print(f"독약: 표 0x{tbl:X} 앵커 자리 없음(안 바뀐 칸 {len(free)})")
+            continue
+        off = tbl + 2 * anchor - base
+        struct.pack_into("<2H", exe, tbl + 2 * anchor, glyph, 0xFFFF)
+        for i in free:
+            if i not in (anchor, anchor + 1):
+                struct.pack_into("<H", exe, tbl + 2 * i, off)
+                left += 1
+        print(f"독약: 표 0x{tbl:X} 칸 {len(free)}/{cnt} 앵커 {anchor}")
+    return left
 
 
 def apply(exe, table=None):
@@ -303,7 +349,7 @@ def apply(exe, table=None):
                 seg = segs[k]
                 try:
                     out, end, _moved = exetab.relocate_units(
-                        bytes(exe), tbl, base, cnt, m, cursors[k], pad_code=pad
+                        bytes(exe), tbl, base, cnt, m, cursors[k], pad_code=pad, reserve=_reserve(tbl)
                     )
                 except exetab.ExeTextError as e2:
                     last = e2
@@ -320,6 +366,9 @@ def apply(exe, table=None):
             dead_segs.append([tbl, tbl + 2 * cnt, tbl + (tbl & 1)])  # 옛 표 = 죽은 배열 — 뒤 표의 뺀 단위가 쓴다
         exe[:] = out
         n += len(m)
+    ARENA_FREE[:] = [(cursors[k], segs[k][1]) for k in (0, 1)]
+    if os.environ.get("ED_POISON_OLD") == "1":  # 🔴 시험 전용(`test-` 꼬리표만) — 옮긴 표의 옛 u16 색인 배열 중 안 건드린 칸을 「독약」으로 채운다: 옛 표를 읽는 코드가 남았으면 화면에 눈에 띄는 글자가 뜬다
+        _poison_old(exe, orig, by_table, table)
     for off, (codes, s) in fixed.items():
         # 🔴 남는 칸은 종결 **앞**을 안 보이는 채움 글자로 — 종결 뒤를 0 으로 채우면 순차 스캔 목록이 구조가 달라져 끊긴다(ED3 실측)
         words = [*codes, *([pad] * (len(s["codes"]) - len(codes))), s["term"]]
@@ -365,7 +414,10 @@ def moved(orig, new, key):
     n_ents = struct.unpack_from(f"<{cnt}H", new, ntbl)
     n_starts = {ntbl + x for x in n_ents}
     out = {}
+    dead = _board4_dead()
     for u in exetab.units(orig, tbl, base, cnt):
+        if dead and any(o in dead for o, _c, _t in u["pieces"]):
+            continue  # 게시판 4줄 안이 다시 쓴 옛 본문 자리 — 되읽기 대상이 아니다(새 문자열은 board4 가 검산)
         i = next(i for i, x in enumerate(o_ents) if base + x == u["start"])
         pieces = exetab.unit_at(new, ntbl + n_ents[i], n_starts)
         if len(pieces) != len(u["pieces"]):
@@ -386,6 +438,8 @@ def readback(orig, new, table=None):
         s = ss[off]
         want = kr_codes(row["kr"], table)
         at = off
+        if off in _board4_dead():
+            continue
         if s["table"] is not None:
             if s["table"] not in maps:
                 maps[s["table"]] = moved(orig, new, s["table"])

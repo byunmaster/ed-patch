@@ -469,7 +469,7 @@ def find_base_refs(data, ram, window=16):
         if (w >> 26) != 0xF or (w & 0xFFFF) != hi:
             continue
         rt = (w >> 16) & 31
-        use = None
+        uses = []
         others = 0
         for k in range(1, window + 1):
             if i + k >= n:
@@ -477,16 +477,17 @@ def find_base_refs(data, ram, window=16):
             v = _w(data, i + k)
             op, rs, rd_t = v >> 26, (v >> 21) & 31, (v >> 16) & 31
             reads = rs == rt or (op == 0 and ((v >> 16) & 31) == rt)
-            if use is None and op in (9, 0xD) and rs == rt and (v & 0xFFFF) == lo:
-                use = {"lui": i, "use": i + k, "rt": rt, "rd": rd_t, "op": op}
-                continue
+            if op in (9, 0xD) and rs == rt and (v & 0xFFFF) == lo:
+                # 🔴 같은 `lui` 뒤 **여러 번** 쓰일 수 있다 — 분기 앞뒤 두 길(`bne` 지연 슬롯의 `lui` + 두 `addiu`)이면 둘째를 놓쳐 옛 표를 읽는다(11-07 실측, 0x8004A0A0·0x8004A388)
+                uses.append({"lui": i, "use": i + k, "rt": rt, "rd": rd_t, "op": op})
+                continue  # 분기 뒤 길은 줄 순서로 이어지지 않는다 — rt 가 덮일 때까지 같은 상수 사용을 다 모은다
             if reads:
                 others += 1
             if rd_t == rt and op in (9, 0xD, 0xF, 0x23, 0x21, 0x25, 0x24, 0x20) and not reads:
                 break  # rt 가 덮였다
-        if use:
-            use["shared"] = others > 0
-            out.append(use)
+        for u in uses:
+            u["shared"] = others > 0 or len(uses) > 1
+            out.append(u)
     return out
 
 
@@ -519,7 +520,9 @@ def _unit_bytes(u, edits):
     return out
 
 
-def relocate_units(data, tbl, base, n, edits, dest_off, pad_code=None, units_off=None, force_all=False, patch_refs=True):
+def relocate_units(
+    data, tbl, base, n, edits, dest_off, pad_code=None, units_off=None, force_all=False, patch_refs=True, reserve=0
+):
     """표를 `dest_off`(파일 오프셋)로 옮긴다 — **넘치는 칸에서 필요한 만큼의 단위만** 새 자리로 빼고 나머지는 제자리에서 다시 싼다.
 
     새 표 = `dest_off` 에 u16 N개(오프셋은 새 기준 = 새 표 시작 기준), 바로 뒤에 새 자리로 뺀 단위들. 안 넘치는 칸은 제자리 재구축(`rebuild_units` 와 같다)이고
@@ -535,7 +538,7 @@ def relocate_units(data, tbl, base, n, edits, dest_off, pad_code=None, units_off
     new_base = dest_off
     ram_new = dest_off - ADDR_BASE_OFF + 0x80010000
     out = bytearray(data)
-    cur = dest_off + 2 * n if units_off is None else units_off  # 🔴 `units_off` — 뺀 단위들을 표와 다른 자리(표 기준 u16 안)에 둔다(10-25: 먼저 옮긴 표의 죽은 u16 배열)
+    cur = dest_off + 2 * (n + reserve) if units_off is None else units_off  # `reserve` — 표 뒤에 비워 두는 항목 수(게시판 4줄 안이 새 색인을 덧붙인다)  # 🔴 `units_off` — 뺀 단위들을 표와 다른 자리(표 기준 u16 안)에 둔다(10-25: 먼저 옮긴 표의 죽은 u16 배열)
     placed = {}
     moved = 0
     for lo, hi, us in unit_chunks(data, tbl, base, n):
@@ -590,4 +593,10 @@ def relocate_units(data, tbl, base, n, edits, dest_off, pad_code=None, units_off
     struct.pack_into(f"<{n}H", out, dest_off, *vals)
     if not patch_refs:
         return bytes(out), cur, moved
-    return patch_base_refs(bytes(out), refs, ram_new), cur, moved
+    res = patch_base_refs(bytes(out), refs, ram_new)
+    left = find_base_refs(res, ram_old) if ram_new != ram_old else []
+    if left:  # 🔴 게이트 — 옛 표 기준 상수가 코드에 남으면 그 길은 죽은 배열(다른 표의 단위가 앉는다)을 읽는다(11-07: 분기 뒤 둘째 `addiu` 둘을 놓쳤다)
+        raise ExeTextError(
+            f"표 0x{tbl:X}: 옛 기준 상수가 코드에 남았다 {[hex(x['use'] * 4 - 0x800 + 0x80010000) for x in left[:4]]}"
+        )
+    return res, cur, moved

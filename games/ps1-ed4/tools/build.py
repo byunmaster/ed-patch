@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import choice
 import common
 import discgrow
+import hangul
 import typeset
 from dump import SCRIPT_MEMBER
 
@@ -115,8 +116,15 @@ def apply_script_edits(edits, members, report, member_edits=None):
                     )
             newmem, _ = scriptmap.rebuild(mem, segs, event_data=True)
             if scriptmap.layout(mem) == scriptmap.LAYOUT_TABLE:  # 선택지 창 열 — 한국어가 원문보다 길면 넓힌다(`choice.py`)
-                newmem, clog = choice.patch_cols(newmem, scriptmap.parse_table(newmem)["base"], segs)
+                newmem, clog = choice.patch_cols(newmem, scriptmap.parse_table(newmem)["base"], segs, frozenset(hangul.half_codes()))
                 report["choice_cols"] = report.get("choice_cols", 0) + len(clog)
+                badc = (
+                    choice.verify(newmem, scriptmap.parse_table(newmem)["base"], segs, frozenset(hangul.half_codes()))
+                    if choice.fit_enabled()
+                    else []
+                )
+                if badc:  # 🔴 선택지 창 폭 ≠ 가장 긴 항목 폭 — 잘리거나 커서 상자가 멀리 간다(마스터 11-06)
+                    raise SystemExit(f"🔴 {path}!{nm}: 선택지 창 폭 결함 {badc[:3]}")
             repl[nm] = newmem
             report["members"] = report.get("members", 0) + 1
             report["grown"] = report.get("grown", 0) + max(0, len(newmem) - len(mem))

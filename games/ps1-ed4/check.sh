@@ -75,6 +75,8 @@ echo "  ── 조판 결과 전수 (첫 칸 공백 · 고아 부호 · 빈 줄 
 run 0 "$PY" "$G/tools/check_typeset.py"
 echo "  ── 가운데 맞춤 (규칙 2-8 — 그림 글 줄 가운데 오차 · 아이템 메시지 창 좌우 여백, 줄 끝 부호는 폭에서 뺀다 · 양성 대조)"
 run 0 "$PY" "$G/tools/check_center.py"
+echo "  ── 게시판 의뢰문 줄 폭 (상세 창 192px — 줄이 넘으면 엔진이 글자 단위로 접어 보상 줄을 덮는다 · 판정 대기 목록 래칫)"
+run 0 "$PY" "$G/tools/check_board_rows.py"
 
 echo "  ── 줄·쪽 나눔 지표 (규칙 2-16 — 쪽 끝 고아 · 보조용언 쪽 끊기 · 절 쪼갬, 기준선 래칫)"
 run 0 "$PY" "$G/tools/linemetrics.py" check
@@ -94,6 +96,14 @@ run 0 "$PY" "$G/tools/narration.py" check "$G/work/review/narration"
 
 echo "  ── 고유명사 정본 ↔ 원본 (정본에만 있는 항목 · 한 표기가 원문 둘)"
 run 0 "$PY" "$G/tools/check_canon_nouns.py"
+
+if [ "${ED_BOARD_4LINE:-}" != "0" ]; then
+  echo "  ── 게시판 본문 4줄 안(기본 켬) — 구운 롬을 읽어 정본과 대조"
+  run 0 "$PY" "$G/tools/board4.py" --verify
+fi
+
+echo "  ── 화자 호칭 정본(shared/canon/ed4.json speaker) ↔ 대본"
+run 0 "$PY" "$G/tools/check_canon_speaker.py"
 
 [ "$fail" -eq 0 ] && echo "  ✅ 통과" || echo "  🔴 실패"
 exit "$fail"
