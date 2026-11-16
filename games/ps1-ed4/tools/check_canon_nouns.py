@@ -60,9 +60,12 @@ def main():
     n = sum(len(v) for v in cats.values())
     if os.path.isdir(os.path.join(common.ROOT, "..", "..", "originals", "jp", "ps1-ed4")):
         ui, seg = source_text()
+        with open(os.path.join(common.ROOT, "ui_frag_ed4.json"), encoding="utf-8") as f:
+            frag_keys = {v["canon"] for v in json.load(f)["rows"].values() if "canon" in v}
         blob = "\n".join(seg) + "\n" + "\n".join(ui)
         for kind, d in sorted(cats.items()):
-            ghost = [jp for jp in d if jp not in blob]
+            # 실행파일 속 알 수 없는 한자 코드라 글로 못 읽는 이름은 ui_frag 가 원본 바이트 지문(stamp)으로 잇는다 — 그 canon 열쇠는 원본에 있는 것으로 친다
+            ghost = [jp for jp in d if jp not in blob and jp not in frag_keys]
             if ghost:
                 fail.append(f"{kind}: 원본(실행파일 표·씬 대본)에 안 나오는 항목 {len(ghost)} — {' · '.join(ghost)}")
         known = set().union(*[set(d) for d in cats.values()])

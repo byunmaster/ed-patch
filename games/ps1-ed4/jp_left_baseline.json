@@ -1,5 +1,7 @@
 {
- "segments": 24438,
- "chars": 284144,
- "total": 24499
+ "segments": 0,
+ "chars": 0,
+ "total": 24499,
+ "ui": 0,
+ "exe": 0
 }

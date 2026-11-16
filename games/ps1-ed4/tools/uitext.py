@@ -197,6 +197,23 @@ def plan(exe, table=None):
                 fixed[off] = (codes, s)
         else:
             by_table.setdefault(s["table"], {})[off] = codes
+    grow = {o: r for o, r in frags().items() if r.get("grow")}
+    if grow:  # 🔴 칸 문제는 기술 먼저(관리자 11-05): 표 단위에 든 조각은 칸 예산 안에서 늘린다 — 줄인 꼴로 피하지 않는다
+        cm = textenc.charmap()
+        where = {}
+        for t in exetab.scan_tables(exe, cm):
+            key = (t["table"], t["base"], t["n"])
+            for _lo, _hi, us in exetab.unit_chunks(exe, t["table"], t["base"], t["n"]):
+                for u in us:
+                    for off, codes, _t in u["pieces"]:
+                        where[off] = (key, codes)
+        for off, row in sorted(grow.items()):
+            if off not in where:
+                bad.append(f"0x{off:06X}: 늘릴 조각(grow)이 표 단위에 없다")
+            elif stamp(where[off][1]) != row["jp"]:
+                bad.append(f"0x{off:06X}: 늘릴 조각(grow)의 원문 지문이 다르다")
+            else:
+                by_table.setdefault(where[off][0], {})[off] = kr_codes(row["kr"], table)
     return by_table, fixed, bad
 
 
@@ -219,8 +236,9 @@ def apply(exe, table=None):
 
     table = table or hangul.load()
     slots.assert_arena_free(table)
+    orig = bytes(exe)  # 🔴 자리 조사(`plan`)는 **조각을 쓰기 전** 바이트로 한다 — 조각을 쓴 뒤엔 제어코드(「、」)가 낀 일본어 줄이 한글로 바뀌어 낱말 구역 조사(`dump.survey`)가 새 구역을 라벨 없이 찾는다(11-05)
     nfr = apply_frags(exe, table)  # 🔴 표 재구축 전에 — 표 안 단위에 낀 조각이라 재구축·옮기기가 새 바이트를 그대로 싣는다
-    by_table, fixed, bad = plan(bytes(exe), table)
+    by_table, fixed, bad = plan(orig, table)
     if bad:
         raise SystemExit("🔴 UI 문안 정본이 안 맞는다:\n  " + "\n  ".join(bad[:8]))
     pad = _pad(table)
@@ -406,7 +424,50 @@ FRAG_PATH = os.path.join(common.ROOT, "ui_frag_ed4.json")
 def frags():
     """{오프셋: {"jp"(지문), "n"(칸 수), "kr"}} — 표에 안 잡히는 조각(`ui_frag_ed4.json`)."""
     with open(FRAG_PATH, encoding="utf-8") as f:
-        return {int(k, 16): v for k, v in json.load(f)["rows"].items()}
+        rows = {int(k, 16): v for k, v in json.load(f)["rows"].items()}
+    for off, v in rows.items():
+        if v.get("canon"):  # 🔴 이름은 정본에서 읽는다(게임 폴더에 JP→KR 표를 두지 않는다) — 행에는 원문 열쇠만 둔다
+            from shared import canon
+
+            kr = canon.lookup(v["canon"], v.get("cat", "item"), "ed4")
+            if not kr:
+                raise SystemExit(f"🔴 조각 0x{off:06X}: 정본(ed4)에 「{v['canon']}」 가 없다")
+            v["kr"] = kr
+    return rows
+
+
+def put_frag_many(mapping, grow=()):
+    """{원본 오프셋: 한글} — 표에 안 잡히는 조각(`ui_frag_ed4.json`)에 한꺼번에 올린다. 칸 수·지문은 원본에서 계산하고 넘치면 실패한다.
+
+    조각 = 원본에서 오프셋부터 0xFFFF 까지의 코드열(제어코드 0x01(「、」) 포함 — 수확 목록이 이걸 낀 문장을 놓친다, 11-05).
+    """
+    exe = bytes(common.read_file(common.EXE_PATH))
+    with open(FRAG_PATH, encoding="utf-8") as f:
+        d = json.load(f)
+    rows = d["rows"]
+    table = hangul.load()
+    over = []
+    for off, kr in mapping.items():
+        codes = []
+        p = off
+        while True:
+            w = struct.unpack_from("<H", exe, p)[0]
+            p += 2
+            if w in (0x0000, 0x8000, 0x8002, 0xFFFF) or len(codes) > 200:  # 종결 워드 — 0 은 같은 줄 조각의 끝(목록 단위의 조각 경계)
+                break
+            codes.append(w)
+        new = kr_codes(kr, table)
+        if len(new) > len(codes) and off not in grow:
+            over.append(f"0x{off:06X}: {len(new)} > {len(codes)} — 「{kr}」")
+            continue
+        rows[f"0x{off:06X}"] = {"jp": stamp(codes), "n": len(codes), "kr": kr, **({"grow": True} if off in grow else {})}
+    if over:
+        raise SystemExit("🔴 칸이 모자란다:\n  " + "\n  ".join(over))
+    d["rows"] = dict(sorted(rows.items(), key=lambda kv: int(kv[0], 16)))
+    with open(FRAG_PATH, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=1)
+        f.write("\n")
+    return len(mapping)
 
 
 def apply_frags(exe, table=None):
@@ -415,6 +476,8 @@ def apply_frags(exe, table=None):
     pad = _pad(table)
     n = 0
     for off, row in frags().items():
+        if row.get("grow"):  # 표 단위가 다시 싼다(`plan` — 칸 예산 안에서 길이가 자유다)
+            continue
         got = list(struct.unpack_from(f"<{row['n']}H", exe, off))
         if stamp(got) != row["jp"]:
             raise SystemExit(f"🔴 조각 0x{off:06X} 가 원판이 아니다")

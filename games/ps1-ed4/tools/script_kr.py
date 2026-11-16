@@ -194,7 +194,19 @@ def page_plan(mem, rows, *, table=None):
                 if getattr(pg, "rigid", False) or any(rows.get(i, {}).get("fix") for i in pg):
                     new = typeset.rigid_segments(josa_build.rigid(texts))
                 else:
-                    new = typeset.page_segments(josa_build.flex(texts), len(pg), rules=not typeset.is_listish(texts))
+                    flex = josa_build.flex(texts)
+                    rules = not typeset.is_listish(texts)
+                    new = typeset.page_segments(flex, len(pg), rules=rules)
+                    # 🔴 2-17: 원문이 둘 이상의 창이었는데 한국어가 짧아 한 창으로 합쳐졌으면 **창마다 따로 조판**한다(원문 창 내용을 창 사이로 옮기지 않는다)
+                    orig_groups = typeset.engine_page_groups([len(segs[i]) for i in pg])
+                    if len(orig_groups) > 1 and not any(rows.get(i, {}).get("merge") for i in pg) and len(typeset.engine_page_groups([len(x) for x in new])) < len(orig_groups):
+                        alt = []
+                        for g in orig_groups:
+                            gt = [flex[k] for k in g]
+                            part = typeset.page_segments(gt, len(g), rules=rules) if any(t.strip() for t in gt) else [""] * len(g)
+                            alt += part  # 앞 창 뒤에 빈 조각이 남으면 엔진이 빈 줄을 그려 다음 조각이 새 창으로 넘어간다
+                        if len(typeset.engine_page_groups([len(x) for x in alt])) >= len(typeset.engine_page_groups([len(x) for x in new])):
+                            new = alt
             except typeset.TypesetError as e:
                 notes.append(f"m{mi}.{pi} 조각 {pg}: {e}")
                 continue

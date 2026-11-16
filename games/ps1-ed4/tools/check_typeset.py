@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", ".."))
 import build
 import glob
 import linemetrics
+import reinsert
 import script_kr
 import typeset
 
@@ -111,10 +112,11 @@ def measure():
     rows_all = script_kr.load_all()
     found = []
     pages = 0
-    resid = {"문장 갈림 남김(끼움·공유 조각)": 0, "문장 갈림 남김(쪽 3줄 한도)": 0, "줄 끝 쉼표": 0}
+    resid = {"문장 갈림 남김(끼움·공유 조각)": 0, "문장 갈림 남김(쪽 3줄 한도)": 0, "문장 갈림 남김(원문 창 경계 2-17)": 0, "줄 끝 쉼표": 0}
     for key, rows in rows_all.items():
         mem = members[key]
         texts, _ = script_kr.page_plan(mem, rows)
+        segs = reinsert.member_segments(mem)
         for msg in typeset.windows(mem):
             for pg in msg:
                 if not pg or any(i not in texts for i in pg if rows.get(i, {}).get("kr")):
@@ -133,6 +135,9 @@ def measure():
                     if getattr(pg, "rigid", False) or any(PUA.search(x) for x in body):
                         resid["문장 갈림 남김(끼움·공유 조각)"] += len(bad)
                     elif typeset._sentence_lines(body, typeset.COLS, len(pg)) != body:
+                        if len(typeset.engine_page_groups([len(segs[i]) for i in pg])) > 1:
+                            resid["문장 갈림 남김(원문 창 경계 2-17)"] += len(bad)  # 원판이 그 자리에서 창을 넘긴다 — 2-17 이 2-10 보다 앞선다(마스터 11-05)
+                            continue
                         found.append(("한 줄 문장 갈림(2-10)", key[1], pg[0], " / ".join(body)))
                     else:
                         resid["문장 갈림 남김(쪽 3줄 한도)"] += len(bad)

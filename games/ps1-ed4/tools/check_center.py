@@ -24,6 +24,8 @@ import typeset
 
 PAD = 8  # 창 안쪽 여백(px) — 창 폭 = 열×12 + 16
 TRIM = ".,…"
+# 🔴 엔진이 창 열 수로 **그릴 수 있는 글자 수도 정한다**(11-05 헤드리스 실측 — 코드 명령을 꽂아): 열 13 → 반각 칸 23 · 14 → 25 · 15 → 27, 곧 `열×12px − 18px` 까지만 그린다(창 폭은 안 모자라도 끝이 잘린다).
+ENGINE_CLIP_PX = 18
 
 # 창 둘: (이름, x 주소들, 열 주소들, 문안 UI 오프셋, 원판 가운데 x)
 WINDOWS = (
@@ -52,7 +54,7 @@ def best_diff(txt, ncols=range(4, 30), lead_max=3):
     for c in ncols:
         for lead in range(lead_max + 1):
             t = " " * lead + base
-            if text_px(t) > c * typeset.CELL_PX:
+            if text_px(t) > c * typeset.CELL_PX - ENGINE_CLIP_PX:
                 continue
             l, r = margins(t, c)
             d = abs(l - r)
@@ -82,8 +84,10 @@ def check_window(name, cols, x, txt, cen):
     width = cols * typeset.CELL_PX + 2 * PAD
     if x + width / 2 != cen:
         bad.append(f"창 {name}: 가운데 {x + width / 2} ≠ 원판 {cen}")
-    if text_px(txt) > cols * typeset.CELL_PX:
-        bad.append(f"창 {name}: 글 {text_px(txt)}px 가 창 안쪽 {cols * typeset.CELL_PX}px 를 넘는다")
+    if text_px(txt) > cols * typeset.CELL_PX - ENGINE_CLIP_PX:
+        bad.append(
+            f"창 {name}: 글 {text_px(txt)}px 가 엔진이 그리는 폭 {cols * typeset.CELL_PX - ENGINE_CLIP_PX}px 를 넘는다(끝이 잘린다)"
+        )
     l, r = margins(txt, cols)
     d, bd = abs(l - r), best_diff(txt)
     if bd is not None and d > bd:
@@ -132,7 +136,15 @@ def selftest():
     assert check_window("T", 2, 100, "가나다", 100 + (2 * 12 + 16) / 2)[0]
     assert check_window("T", 3, 100, "가나다", 999)[0]
     assert check_window("T", 9, 100, "가나다", 100 + (9 * 12 + 16) / 2)[0]
-    assert not check_window("T", 3, 100, "가나다", 100 + (3 * 12 + 16) / 2)[0]
+    # 최선 조합(열·앞 공백)은 통과해야 한다
+    for c in range(4, 30):
+        for lead in range(4):
+            t = " " * lead + "가나다"
+            if text_px(t) <= c * 12 - ENGINE_CLIP_PX and abs(
+                margins(t, c)[0] - margins(t, c)[1]
+            ) == best_diff("가나다"):
+                assert not check_window("T", c, 100, t, 100 + (c * 12 + 16) / 2)[0]
+                return
 
 
 def main():
@@ -144,7 +156,10 @@ def main():
         bad += b
     nb, n = narration_defects()
     bad += [f"{b} 슬롯 {k} 「{t}」 가운데 오차 {o:+.1f}px" for b, k, t, o in nb]
-    print(f"가운데 맞춤 전수 — 그림 글 {n}줄 · 창 {len(WINDOWS)}곳 · 양성 대조 ✓ · " + (f"결함 {len(bad)}" if bad else "결함 0"))
+    print(
+        f"가운데 맞춤 전수 — 그림 글 {n}줄 · 창 {len(WINDOWS)}곳 · 양성 대조 ✓ · "
+        + (f"결함 {len(bad)}" if bad else "결함 0")
+    )
     for s in bad:
         print("  ✗", s)
     return 1 if bad else 0

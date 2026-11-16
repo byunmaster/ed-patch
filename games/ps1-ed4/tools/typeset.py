@@ -781,6 +781,30 @@ def rows_of(n_codes, cols=COLS):
     return -(-n_codes // cols) if n_codes else 0
 
 
+def engine_page_groups(seg_lens, *, cols=COLS, page_lines=PAGE_LINES):
+    """[[조각 순번…]…] — `01` 로 이어진 조각을 엔진이 3줄마다 넘기는 **창(쪽)** 으로 가른다(`seg_lens` = 조각 순서대로 코드 수, 빈 조각은 줄 0).
+
+    번역 규칙 2-17 — 원문 창의 내용을 창 사이로 옮기지 않는다. 원문이 4줄로 이어 쓴 대사는 엔진이 셋째 줄 뒤에서 창을 넘겨 **넷째 줄이 둘째 창**에 앉는데, 한국어가 짧아 석 줄에 끝나면 둘째 창이 사라진다.
+    """
+    groups, row, cur = [], 0, []
+    last = max((k for k, n in enumerate(seg_lens) if n), default=-1)
+    for k, n in enumerate(seg_lens):
+        r = rows_of(n, cols)
+        if k > last:  # 빈 꼬리는 아무것도 안 그린다(실측)
+            cur.append(k)
+            continue
+        r = max(1, r)  # 꼬리 앞의 빈 조각은 **빈 줄**이다 — 줄바꿈(`01`)만 그린다
+        if row >= page_lines or row + r > page_lines:
+            if cur:
+                groups.append(cur)
+            cur, row = [], 0
+        cur.append(k)
+        row += r
+    if cur:
+        groups.append(cur)
+    return groups
+
+
 def over_limit_pages(mem, seg_lens, *, cols=COLS, page_lines=PAGE_LINES):
     """[(쪽의 조각 색인, 걸린 조각)] — **줄이 사라질 수 있는 쪽**. `seg_lens` = 조각 색인 → 코드 수(편집 반영본).
 
