@@ -200,6 +200,8 @@ else echo "   ✅ 실빌드 — $(sha1sum "$_bin" | cut -c1-12) · $(( $(wc -c <
   # 🔴 구운 이미지 일본어 잔존(마스터 11-05 0.1.0 「화면 일본어 0」) — `check_jp_left` 는 정본(`script/`·`ui_*`·낱말)만 읽어 **이미지에 원문이 남았는지**를 못 본다.
   #    이미지에서 출발해 원본과 같은 5코드↑ 런을 센다(기준선 `image_residue_baseline.json` — 알려진 8곳). 늘면 실패.
   "$PY" "$G/tools/check_image_residue.py" --built "$_bin" || fail=1
+  # 🔴 원문 사본(PCE I 사고, 관리자 11-17) — 대본 멤버 **밖**(다른 파일·덩어리)에 원판 대사 바이트가 그대로 남았나. 이미지 전체를 5코드 창으로 맞댄다(기준선 `image_copies_baseline.json` — 0).
+  "$PY" "$G/tools/check_image_copies.py" --built "$_bin" || fail=1
   #    선택지 창 폭(마스터 11-06) — 이미지의 `3B` 열이 가장 긴 항목 폭에 맞는가.
   "$PY" "$G/tools/check_choice_cols.py" --built "$_bin" || fail=1
   "$PY" "$G/tools/check_free_refs.py" --built "$_bin" || fail=1
