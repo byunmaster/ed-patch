@@ -47,6 +47,38 @@ echo "== pce-ed1 =="
 # 4-d2. 부호 규칙 — 공통 번역 규칙 2-11(… 뒤 공백)·1-7(～ 뒤 마침표 금지)
 "$PY" "$T/typeset_check.py" --punct
 
+# 4-d3. 줄·쪽 나눔 지표 — 공통 번역 규칙 2-16(a 쪽 끝 한 어절 고아 · b 문장 중간 한 낱말로 끝나는 쪽 · c 손 개행 · d 절째 내리면 들어가는데 쪼갠 줄 · e 띄어 쓴 이름이 갈림). 기준선(linebreak_baseline.json)보다 늘면 실패
+"$PY" "$T/linebreak_metrics.py" --check
+
+# 4-d4. 글자색 옵코드 대조 — 원문의 색 켜기(1D)·되돌림(04)이 우리 조립에 같은 순서로 있나(10-30 마스터 QA — 켜기만 내고 끄기를 안 내서 해설 초록이 뒤 대사까지 번졌다)
+"$PY" "$T/check_style_ops.py"
+
+# 4-d5. 원문 `01`(메시지 밖 줄바꿈)이 앞에 있는 화자 없는 창의 첫 쪽 줄 수 ≤ 원판 최대 — 「빈 줄 + 4줄」 넘침 방지(10-30)
+"$PY" "$T/check_ext_newline.py"
+
+# 4-d6. 낫표 인용(『』·「」)이 원판 한 창이면 우리도 한 창 — 번역 문안에 원판의 쪽 나눔이 빠져 인용이 두 창에 걸치던 것(10-30)
+"$PY" "$T/check_quote_pages.py"
+
+# 4-d7. 쪽 대기 종료 쌍 — 원문 메시지가 `05 06`·`05 07` 로 끝나면 우리 조립도 같은 쌍으로 끝나나(11-07 기능 투어: 상점 구매 확인이 키 대기 없이 지나갔다 — 번역문 끝 `\f` 없음 → 종료 앞 `05` 누락, 273 메시지)
+"$PY" "$T/check_page_waits.py"
+
+# 4-d6a. 창 수 「적음」 — 우리 창 수 < 원문 창 수(번역이 원문 두 창을 한 창에 합친 것, 규칙 2-17·마스터 11-05). 「많음」(원문 한 창을 둘로)은 fit_one_scan 몫. 양성 대조가 먼저 돈다
+"$PY" "$T/check_window_count.py"
+"$PY" "$T/check_window_many.py"  # 창 수 「많음」 — 풀지 못한 메시지 기준선 래칫(script/window_many_baseline.json)
+"$PY" "$T/check_script_jumps.py"  # 스크립트 0F 가 메시지 한가운데로 드는 곳 — 래칫(기준선 script/jump_baseline.json)
+
+# 4-d6b. 조판 전수(굽는 바이트) — 공통 번역 규칙 2-1~2-17·4-6 을 `translate.compose` 조립 바이트를 디코드한 쪽·줄에서 센다(씬 전 대사 · 전투 문구 · 시스템 조립 문장). 양성 대조(축마다 틀린 쪽 + 실제 글리프 표 종단)가
+#       먼저 돈다 — 검출기가 죽으면 0 이 나오므로 실패. 기준선 `typeset_baked_baseline.json` 보다 늘면 실패(11-02)
+"$PY" "$T/check_baked_typeset.py"
+
+# 4-d7. 마스터 판정 문안 잠금 — 검수·재번역이 판정을 되돌리지 못하게(master_rulings.json, 10-30 ss-ed3 「로그 씨」 세 번째 재발에서 전 게임 전수 대조)
+"$PY" "$T/check_master_rulings.py"
+# 4-d7a. 말투·분량 경보 래칫(11-13) — 반말 줄에 듣는 이 높임 「-시-」 섞임 · 원문 대비 길이 급감(그대 금지는 master_rulings 가 건다). 새 경보는 검토해 고치거나 기준선에
+"$PY" "$T/check_register_alerts.py"
+"$PY" "$T/check_jp_punct.py"
+# 4-d7b. 문장부호 전수(11-13) — ASCII/일본식 점·전각 ！？·ASCII ~·～.·… … …·문장 앞 … 뒤 공백·… 길이=round(원문 점/3). 음성 자막 줄은 고치지 않고 보류 목록(punct_voice_pending.json)만 — 새로 생기면 실패. 양성 대조 자가 시험
+"$PY" "$T/check_punct.py"
+
 # 4-e. 자기 표 0 — 게임 폴더에 일본어 열쇠→한글 값 표가 새로 생기지 않았나(사전·정본에서 읽는다, 마스터 10-08)
 "$PY" "$T/check_own_tables.py"
 
@@ -56,9 +88,23 @@ echo "== pce-ed1 =="
 # 6. 빌드 — 코드 패치 사전조건 · 시스템 문구 자리 · 컨테이너 재조립 · 무변경 대조 · 되읽기
 "$PY" "$T/build.py"
 
+# 6-0. 낀 옵코드 점프 17곳 — 구운 롬의 블록을 실제로 풀어 점프를 따라 읽은 글이 정상 흐름의 꼬리와 같은가(정본 모델로는 롬 바이트에서만 깨지는 꼴을 놓친다, 11-06)
+"$PY" "$T/jump_readout.py"
+
 # 6-a. 재배치 장부 — 빌드가 한 재배치(꼬리 이음·채움·스텁·이사 …)를 구조 대조(build.py → structure.py, 위반 = 빌드 실패)로 잡아 낸 장부와 커밋된
 #       games/pce-ed1/relocations.tsv 를 비교한다. 장부에 없는 (블록, 종류)가 새로 생기면 실패(마스터 10-22 — 재배치 사고를 정적으로 막는다)
 "$PY" "$T/check_relocations.py"
+
+# 6-a2. 컨테이너 밖 씬 블록 사본 — 원판 트랙에는 씬 블록 LZ 사본이 컨테이너 밖(맵 레코드 구역 등)에도 있고, 빌드가 그걸 안 고치면 그 길에서 미번역 장면이 뜬다(11-17 마스터: 2장 씬 54 — rel 1141).
+#        기준선(`script/orphan_blocks_baseline.json`)은 **고칠 대상 목록**이다 — 새 사본이 생기면 실패, 고치면 목록을 줄이고(--freeze) 끝나면 --strict 로 올린다
+"$PY" "$T/check_orphan_blocks.py"
+
+# 5-b. 바뀐 바이트 감사(밤샘 11, 11-08) — 원판 대비 바뀐 섹터를 구역별로 세어 기준선(`changed_bytes_baseline.json`)에 없던 구역이 바뀌거나 구역 변경이 10% 넘게 불어나면 실패.
+#      의도한 변경이면 `check_changed_bytes.py --freeze` + devlog.
+"$PY" "$T/check_changed_bytes.py"
+
+# 5-c. 음성 자막(비모달 ON) 쪽 시각 감사(11-08) — 제품 명세를 22씬 전부 뽑아 0.5초 미만 표시 쪽·앞 쪽보다 먼저 시작하는 쪽·마스터 열림 시각을 못 지키는 쪽이 있으면 실패.
+"$PY" "$T/check_on_pages.py"
 
 # 6-b. 롬 전체 잔존 일본어 — 디스크를 직접 훑어 빌드가 안 바꾼 일본어 런(4자 이상)이 기준선(`script/coverage_baseline.json`) 밖에 생기면 실패(10-18).
 #      기준선의 부류별 수는 `coverage_scan.py` 출력 — 「화면 문장 후보 — 미판정」 15런은 번역 대상일 수 있다

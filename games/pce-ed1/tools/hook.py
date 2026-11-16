@@ -65,10 +65,29 @@ WORDCK_BANK = font.GLYPH_BANK0 + font.GLYPH_NBANKS - 1
 #   MPR2($4000, 본 프로그램 0x68) 는 코드뿐이라 거기 건다 — 혹시 포인터가 `$4000~$5FFF` 면 판정을 건너뛴다.
 WORDCK_MPR = 2
 # 마지막 글리프 뱅크 끝 코드 자리(`font.CODE_SLOTS`) 앞쪽 = 반 칸 전진(`entry`), 그 뒤 = 어절 줄바꿈(`wordck`) — MPR2 창 기준
-CODE_ADDR = (WORDCK_MPR << 13) + font.BANK_GLYPH_END - font.CODE_BYTES
-ENTRY_ADDR = CODE_ADDR
-ENTRY_ROOM = 509  # 칸 분류(`pre`) · 반 칸 전진 · 부호 되감기(`post`)
-WORDCK_ADDR = ENTRY_ADDR + ENTRY_ROOM
+# 🔴 **렌더러 입구 코드(`entry` · 반각 표 · 조사 선처리)는 MPR4($8000)에 걸고 SEI 없이 돈다**(10-28 — 서브창이 열릴 때 화면 아래가 한 프레임 깨지던 흔들림).
+#   예전엔 MPR2 에 걸고 SEI 였는데, 인터럽트 핸들러(RCR·VBlank, 본 프로그램 0x68 = MPR2)가 그 창을 쓰므로 SEI 를 뺄 수 없었고, 그 SEI 안에서 글리프 풀기(~5,000 사이클)와
+#   엔진 그리기 호출이 돌아 하단 HUD 가르기 래스터 인터럽트가 약 10줄 늦었다. 이 구간은 글 포인터를 읽지 않고(F9/F8 만 본다) 핸들러도 `$8000` 대를 안 쓰므로(핸들러는 `$4000`·`$6000` 대와 RAM 만)
+#   MPR4 에 걸면 인터럽트를 열어 둘 수 있다. 어절 줄바꿈(`wordck`, 글 포인터를 앞질러 읽는다)은 그대로 MPR2+SEI(짧다).
+ENTRY_MPR = 4
+CODE_ADDR = (WORDCK_MPR << 13) + font.BANK_GLYPH_END - font.CODE_BYTES  # MPR2 기준 코드 구역 시작(어절 줄바꿈 쪽)
+ENTRY_ADDR = (ENTRY_MPR << 13) + font.BANK_GLYPH_END - font.CODE_BYTES  # 같은 바이트를 MPR4 기준으로 어셈블한 입구
+ENTRY_ROOM = 522  # 칸 분류(`pre`) · 반 칸 전진 · 부호 되감기(`post`) · 조각 복사 호출(`frag`, X=2)
+# 🔴 **시스템 문구 조각 보관소**(4-17 확대 — 선언한 빈 공간 풀이 모자라 옮겨 실을 자리가 없었다).
+#   엔진의 `0F`(포인터 갈아 끼우기) 처리부 `$6A41`(뱅크 0x6C — `JMP $66FB`)을 `JSR FRAGSH` 로 돌린다. 새 포인터의 상위 바이트가 `FRAG_MARK_HI` 면
+#   그 자리는 **뱅크 0x70 FF 패딩의 보관소**(논리 `$7C00~`, 포인터는 `$5C00~` 꼴 — `$4000~$5FFF` 는 코드 창이라 글 포인터가 갈 일이 없다)이고,
+#   스텁이 MPR3 에 0x70 을 잠깐 걸어(SEI) 조각을 RAM 버퍼 `FRAG_BUF` 로 복사한 뒤 포인터를 버퍼로 바꾼다. 버퍼는 RAM(MPR1)이라 창 구성과 무관하다.
+FRAG_BANK = 0x70
+FRAG_OFF = 0x1D00  # 뱅크 0x70 안 — 복사 루틴(논리 `$6000 + FRAG_OFF`, MPR3 기준) · 11-16 0x1B50 → 0x1D00: 디버그 아이템 목록 코드가 길어져 `$7B6C` 까지 차고 보관소(`STORE_OFF`, `$7C00~$7CFF`) 바로 뒤로
+FRAG_ADDR = 0x6000 + FRAG_OFF
+STORE_OFF = 0x1C00  # 보관소(256B) — 마커 포인터 = `0x4000 + off`(상위 `FRAG_MARK_HI`), 읽는 자리 = `0x6000 + off`
+STORE_SIZE = 0x100
+FRAG_MARK_HI = 0x5C
+FRAG_BUF = 0x3E60  # 복사 버퍼(`FRAG_LEN`B) — 디버그 줄 버퍼(`$3E40~$3E5F`) 바로 뒤, LZ 링(`$3F00`) 앞
+FRAG_LEN = 40  # 보관 조각 최대 길이(복사는 늘 이만큼 읽는다 — 끝맺음은 조각 안의 종료·점프 옵코드)
+FRAG_SITE = 0x6A41  # 뱅크 0x6C — `JMP $66FB`(`0F` 처리부의 마지막 3B)
+FRAG_RET = 0x66FA  # `$66FB` 는 슬롯 `$26` 에서 `$14~$17` 을 다시 적재하고 글 가져오기로 간다 — RTS 로 가려면 −1
+WORDCK_ADDR = CODE_ADDR + ENTRY_ROOM
 WORDCK_ROOM = font.CODE_BYTES - ENTRY_ROOM
 LINE_COLS_ZP = 0x99  # 줄 폭(칸) — `$6D95` 가 비교하는 그 값(로그·필드 창 13)
 # 부호 넷(4px, glyph_order.json 로 유도) — 줄 끝에 매단다(고아로 새 줄 첫 칸에 혼자 안 남긴다)
@@ -106,6 +125,7 @@ OPS = {
     ("LDA", "absy"): 0xB9,
     ("LDX", "abs"): 0xAE,
     ("LDY", "imm"): 0xA0,
+    ("LDY", "zp"): 0xA4,
     ("LDX", "imm"): 0xA2,
     ("STX", "zp"): 0x86,
     ("LDX", "zp"): 0xA6,
@@ -292,7 +312,9 @@ def tick_routine() -> bytes:
         to_done(0xD0)
     b(0x20, 0, 0)  # JSR tick
     done = len(code)
-    b(0x4C, *IRQ_ORIG.to_bytes(2, "little"))
+    import debugkey  # SELECT+RUN 1초 디버그 키 — 원래 대상(`$57A5`)을 부른 뒤 글리프 뱅크 꼬리의 틱을 부른다(그 틱이 RTS 로 핸들러에 돌아간다)
+
+    b(*debugkey.entry())  # 디버그 키 틱을 부른 뒤 원래 대상으로 JMP
     for i in br:
         code[i] = done - (i + 1)
     return bytes(code)
@@ -348,7 +370,10 @@ def _tick_layout() -> tuple[tuple[int, int], int]:
     """(서명 `LDA` 피연산자 둘, `JSR tick` 피연산자)의 주소."""
     n = len(tick_routine())
     sig0 = TICK_ADDR + 8 + len(PLAY_BLK) + 3 + 2 + 2 + 3 + 2 + 1  # 앞 부분 길이 + LDA 옵코드 1
-    return (sig0, sig0 + 7), TICK_ADDR + n - 3 - 2
+    import debugkey
+
+    tail = len(debugkey.entry())  # 디버그 키 진입(끝이 JMP 원래 대상) — `JSR tick` 피연산자는 그 앞 2B
+    return (sig0, sig0 + 7), TICK_ADDR + n - tail - 2
 
 
 TICK_SIG_OP, TICK_CALL_OP = _tick_layout()  # 블록 쪽 초기화가 RAM 에서 채우는 피연산자 자리: 서명 `LDA` 둘 · `JSR tick`
@@ -393,8 +418,10 @@ def _main_asm() -> "Asm":
     a.label("bios")
     a.op("JMP", "abs", EXT_ADDR)  # 우리 범위 밖 — LAST 를 적고 BIOS 로(`hook_ext`)
     a.label("ours")
+    # 🔴 SEI 를 뺐다(10-30 — 마스터 「흔들림은 시스템메뉴·전투·대사에서도 종종」): 글자마다 MPR3 에 글리프 뱅크를 걸고 풀기(최대 ~5,000 사이클 ≈ 11줄)를 SEI 안에서 돌아
+    #    하단 HUD 가르기 인터럽트(RCR)가 늦어 한 프레임씩 화면이 밀렸다. 같은 입력의 비교(세계 시험 14회 메뉴 열기 1,972프레임): SEI 있음 22프레임 깨짐 · 없음 0 —
+    #    나머지 1,950프레임은 픽셀 동일, 음성·BGM 이벤트 220샷도 픽셀 동일. 인터럽트 핸들러는 MPR3 를 쓸 때 스스로 저장·복원한다(`$57D7`).
     a.op("PHP")
-    a.op("SEI")
     a.op("PHX")
     a.op("PHY")
     a.op("CMP", "imm", font.JOSA_LEAD)
@@ -695,25 +722,29 @@ def unpack_code() -> bytes:
 
 
 # 🔴 반각 영숫자 표(마지막 글리프 뱅크 꼬리 — 풀기 루틴 바로 뒤 빈 자리): 리드 블록 시작 4B · 비트 마스크 8B · 비트맵 112B(리드마다 28B).
-HALF_TAB_ADDR = (WORDCK_MPR << 13) + font.BANK_GLYPH_END + len(unpack_asm().bytes())
+HALF_TAB_ADDR = (ENTRY_MPR << 13) + font.BANK_GLYPH_END + len(unpack_asm().bytes())
 HALF_OFFTAB = HALF_TAB_ADDR
 HALF_BITM = HALF_OFFTAB + 4
 HALF_BITMAP = HALF_BITM + 8
 HALF_NARR = HALF_BITMAP + 4 * 28  # 4px 전진 글리프 코드 쌍 셋(i·l·I) — 모자라면 0 쌍
 HALF_TAB_LEN = 4 + 8 + 4 * 28 + 6
-HALF_WIDE = "mwMW"  # 잉크가 9px 라 8px 전진 두 조각에 안 든다 — 반각으로 안 그리고 평소 12px 칸으로 둔다
+HALF_WIDE = "mwMWABCDEFHIJKLNOPQRSTUVXYZ"  # G 는 뺀다 — 「Gold」 의 G 는 원판 BIOS 꼴을 7px 로 접은 도안(`font.GOLD_ORIG`)이라 8px 칸에 든다(11-06 마스터 「Gold 가 어색」)  # 잉크가 9px 라 8px 전진 두 조각에 안 든다 — 반각으로 안 그리고 평소 12px 칸으로 둔다
 HALF_NARROW = "ilI"  # 잉크가 3px 이하 — 4px 전진 한 조각
-assert HALF_TAB_ADDR + HALF_TAB_LEN <= (WORDCK_MPR << 13) + 0x2000
+assert HALF_TAB_ADDR + HALF_TAB_LEN <= (ENTRY_MPR << 13) + 0x2000
 
 
 def half_tables() -> bytes:
     """리드 F0~F3 의 글리프 번호 → 「ASCII 영숫자」 비트맵. 정본 순서가 곧 글리프 번호다(`font._order_canon`)."""
     bm = bytearray(4 * 28)
     for i, ch in enumerate(font._order_canon()):
-        if ch.isascii() and ch.isalnum() and ch not in HALF_WIDE:
+        if (ch.isascii() and ch.isalnum() and ch not in HALF_WIDE) or ch in "?'" or ch in font.LIGATURES.values():  # 합자 「‼」「⁉」 = 4px 부호 둘(잉크 8px) — 12px 로 가면 뒤에 4px 빈칸이 남았다(10-27 씬 203 「!!』」)
             lead, tr = divmod(i, font.PER_LEAD)
             assert lead < 4, i
             bm[lead * 28 + tr // 8] |= 0x80 >> (tr % 8)
+    for k in range(len(font.KAGI)):  # 「」 — 반각 영숫자와 같은 8px 전진(고정 칸)
+        lead, tr = divmod(font.DYN0 + font.KAGI_SLOT0 + k, font.PER_LEAD)
+        assert lead == 3
+        bm[lead * 28 + tr // 8] |= 0x80 >> (tr % 8)
     narr = b""
     for ch in HALF_NARROW:
         if ch in font._order_canon():
@@ -728,14 +759,86 @@ def half_tables() -> bytes:
 JOSA_PRE_ADDR = HALF_TAB_ADDR + HALF_TAB_LEN
 
 
+DIGIT_OFF = 0x1E00  # 뱅크 0x70 FF 패딩(보관소·조각 복사 루틴 뒤) — 오프셋. 논리 주소는 MPR3 기준 `0x6000 + DIGIT_OFF`
+DIGIT_ADDR = 0x6000 + DIGIT_OFF
+DIGIT_GATE_MAX = 24  # 주문 이름 끝 글자(우리 코드 2B) 허용 목록 칸 수 — 모자라면 빌드가 멈춘다
+
+
 def _josa_pre_asm() -> "Asm":
+    """`pre` 가 「조사 토큰」 갈래로 넘기는 자리(`JMP JOSA_PRE_ADDR`) — 글리프 뱅크 꼬리엔 15B 스텁만 두고 본체는 뱅크 0x70(`_digit_asm`)에 있다.
+
+    MPR3 에 뱅크 0x70 을 잠깐 걸어 `DIGIT_ADDR` 를 `JSR` 로 부르고 돌려놓는다(`frag` 와 같은 방식). 남는 자리가 2B 뿐이라 원래 조사 선처리(37B)도 본체로 옮겼다.
+    """
     a = Asm(JOSA_PRE_ADDR)
+    a.op("SEI")  # 인터럽트 핸들러가 MPR3 을 스스로 저장·복원하지만, 이 창이 바뀐 동안엔 막는다(glue 의 PLP 가 되돌린다)
+    a.op("TMA", "tma", 3)
+    a.op("PHA")
+    a.op("LDA", "imm", FRAG_BANK)
+    a.op("TAM", "tam", 3)
+    a.op("JSR", "abs", DIGIT_ADDR)
+    a.op("PLA")
+    a.op("TAM", "tam", 3)
+    a.op("RTS")
+    return a
+
+
+def _digit_asm(gate: list[bytes] | None = None) -> "Asm":
+    """뱅크 0x70 의 본체(논리 `DIGIT_ADDR`, MPR3 기준) — 두 가지 일:
+
+    ① **엔진이 붙이는 SJIS 전각 숫자**(리드 82 · 트레일 4F~58 — 주문 단계 「오비스３」「레스１」)를 우리 반각 숫자 글리프 코드로 바꿔 `chkh`(반각 판정)로 보낸다 —
+       BIOS 전각 글꼴이 12px 칸에 얇게 찍혀 앞뒤가 벌어지던 것(마스터 11-16 「오비스3」)을 고친다. 바꾸고 나면 그리기·LAST(조사)가 우리 숫자로 이어진다.
+       🔴 **직전 글자(LAST)가 주문 이름 끝 글자일 때만** 바꾼다(허용 목록 `gate`) — 장 제목 「제１장」·도감 「ＨＰ２０００」·파일 고르기 「１：」 같은
+       **의도한 전각 숫자**는 그대로 BIOS 로 간다.
+    ② 그 밖은 원래 `josa_pre` 그대로(`으로/로` 무받침이면 안 그린다).
+    """
+    gate = gate or []
+    assert len(gate) <= DIGIT_GATE_MAX, len(gate)
+    chkh = _entry_asm().labels["chkh"]
+    dig = [font.code_of(font._order_canon().index(str(d))) for d in range(10)]
+    a = Asm(DIGIT_ADDR)
     a.op("LDA", "zp", 0xF9)
+    a.op("CMP", "imm", 0x82)
+    a.op("BNE", "rel", "old")
+    a.op("LDA", "zp", 0xF8)
+    a.op("SEC")
+    a.op("SBC", "imm", 0x4F)
+    a.op("CMP", "imm", 10)
+    a.op("BCS", "rel", "out")
+    a.op("PHX")
+    a.op("LDX", "imm", 0)
+    a.label("gl")
+    a.op("LDA", "absx", "gate")
+    a.op("BEQ", "rel", "no")
+    a.op("CMP", "abs", LAST_ADDR)
+    a.op("BNE", "rel", "gn")
+    a.op("LDA", "absx", "gate_t")
+    a.op("CMP", "abs", LAST_ADDR + 1)
+    a.op("BEQ", "rel", "hit")
+    a.label("gn")
+    a.op("INX")
+    a.op("INX")
+    a.op("BRA", "rel", "gl")
+    a.label("no")
+    a.op("PLX")
+    a.label("out")
+    a.op("RTS")
+    a.label("hit")
+    a.op("LDA", "zp", 0xF8)
+    a.op("SEC")
+    a.op("SBC", "imm", 0x4F)
+    a.op("TAX")
+    a.op("LDA", "absx", "dig_hi")
+    a.op("STA", "zp", 0xF9)
+    a.op("LDA", "absx", "dig_lo")
+    a.op("STA", "zp", 0xF8)
+    a.op("PLX")
+    a.op("JMP", "abs", chkh)  # 반각 판정 — 끝의 RTS 가 스텁으로 돌아간다
+    a.label("old")  # ── 원래 josa_pre ──
     a.op("CMP", "imm", font.JOSA_LEAD)
-    a.op("BNE", "rel", "ret")
+    a.op("BNE", "rel", "out")
     a.op("LDA", "zp", 0xF8)
     a.op("CMP", "imm", font.TRAIL0 + 4)
-    a.op("BNE", "rel", "ret")
+    a.op("BNE", "rel", "out")
     a.op("PHX")
     a.op("PHY")
     a.op("LDA", "abs", LAST_ADDR)
@@ -743,21 +846,35 @@ def _josa_pre_asm() -> "Asm":
     a.op("BCC", "rel", "eat")
     a.op("JSR", "abs", MAIN_LABELS["josa_has"])
     a.op("LDA", "abs", HASBAT_ADDR)
-    a.op("BNE", "rel", "out")
+    a.op("BNE", "rel", "done")
     a.label("eat")
     a.op("LDA", "imm", KIND_EATEN)
     a.op("STA", "abs", KIND_ADDR)
-    a.label("out")
+    a.label("done")
     a.op("PLY")
     a.op("PLX")
-    a.label("ret")
     a.op("RTS")
+    # 자료: 허용 목록(리드 칸 · 트레일 칸 따로 — `absx` 로 같은 X 를 쓴다. X 는 2씩 늘어 두 칸이 한 칸 걸러 겹친다 → 쌍 인터리브)
+    a.label("gate")
+    pairs = [bytes(g) for g in gate] + [b"\0\0"] * (DIGIT_GATE_MAX - len(gate)) + [b"\0\0"]
+    a.data(b"".join(pairs))
+    a.label("dig_hi")
+    a.data(bytes(c[0] for c in dig))
+    a.label("dig_lo")
+    a.data(bytes(c[1] for c in dig))
+    a.labels["gate_t"] = a.labels["gate"] + 1
     return a
+
+
+def digit_routine(gate: list[bytes] | None = None) -> bytes:
+    b = _digit_asm(gate).bytes()
+    assert DIGIT_OFF + len(b) <= 0x2000, len(b)
+    return b
 
 
 def josa_pre() -> bytes:
     b = _josa_pre_asm().bytes()
-    assert JOSA_PRE_ADDR + len(b) <= (WORDCK_MPR << 13) + 0x2000, len(b)
+    assert JOSA_PRE_ADDR + len(b) <= (ENTRY_MPR << 13) + 0x2000, len(b)
     return b
 
 
@@ -772,12 +889,23 @@ def finish_banks(glyph_bank: bytes) -> bytes:
     at = len(gb) - 0x2000 + font.BANK_GLYPH_END - font.CODE_BYTES
     assert not gb[at : at + font.CODE_BYTES].strip(b"\0"), "글리프가 마지막 뱅크 코드 자리를 덮는다"
     gb[at : at + font.CODE_BYTES] = hook_entry() + wordck()
-    tab = len(gb) - 0x2000 + (HALF_TAB_ADDR - (WORDCK_MPR << 13))
+    tab = len(gb) - 0x2000 + (HALF_TAB_ADDR - (ENTRY_MPR << 13))
     assert not gb[tab : tab + HALF_TAB_LEN].strip(b"\0"), "반각 영숫자 표 자리가 비어 있지 않다"
     gb[tab : tab + HALF_TAB_LEN] = half_tables()
     jp = josa_pre()
     assert not gb[tab + HALF_TAB_LEN : tab + HALF_TAB_LEN + len(jp)].strip(b"\0"), "조사 선처리 자리가 비어 있지 않다"
     gb[tab + HALF_TAB_LEN : tab + HALF_TAB_LEN + len(jp)] = jp
+    import splitload  # 씬 열기 짝 교체 루틴 — 글리프 뱅크 0 꼬리의 빈 자리(풀기 루틴 뒤)
+
+    sc = splitload.code()
+    assert not gb[splitload.BANK_OFF : splitload.BANK_OFF + len(sc)].strip(b"\0"), "짝 교체 루틴 자리가 비어 있지 않다"
+    gb[splitload.BANK_OFF : splitload.BANK_OFF + len(sc)] = sc
+    import debugkey  # SELECT+RUN 1초 디버그 키 — 글리프 뱅크 1 꼬리 빈 자리
+
+    dk = debugkey.code()
+    at = 0x2000 + debugkey.OFF
+    assert not gb[at : at + len(dk)].strip(b"\0"), "디버그 키 루틴 자리가 비어 있지 않다"
+    gb[at : at + len(dk)] = dk
     return bytes(gb)
 
 
@@ -803,12 +931,26 @@ def _wordck_asm() -> "Asm":
     a.op("BNE", "rel", "nsp")
     a.label("issp")
     a.op("INC", "abs", "prevsp")
-    a.op("BRA", "rel", "out")
+    a.label("o2")  # 짧은 분기 중계(`out` 이 멀다)
+    a.op("JMP", "abs", "out")
     a.label("nsp")
+    # 🔴 문장 끝 부호(「!」「.」) 자신은 검사하지 않고, 다음 글자를 공백 뒤처럼 어절 첫 글자로 본다(`prevsp`) — 이어 쓰기 문구(종단 `0A`,
+    #    개행 없음)는 앞 문구 끝 부호 바로 뒤에 다음 문구(이름)가 붙어 공백이 없다: 이름이 줄 끝에서 「세리오/스는」으로 갈렸다(11-06).
+    a.op("LDA", "zp", 0xF8)
+    a.op("CMP", "imm", 0x24)  # 「!」(리드 F0 트레일)
+    a.op("BEQ", "rel", "hg")
+    a.op("CMP", "imm", 0x27)  # 「.」
+    a.op("BNE", "rel", "n1")
+    a.label("hg")
+    a.op("LDA", "zp", 0xF9)
+    a.op("CMP", "imm", font.LEAD0)
+    a.op("BNE", "rel", "n1")
+    a.op("BRA", "rel", "issp")  # 공백과 같은 갈래 — 다음 글자가 어절 첫 글자
+    a.label("n1")
     a.op("TXA")
-    a.op("BEQ", "rel", "out")  # 어절 첫 글자가 아니다
+    a.op("BEQ", "rel", "o2")  # 어절 첫 글자가 아니다
     a.op("LDA", "abs", 0x38BB)
-    a.op("BEQ", "rel", "out")  # 줄 머리
+    a.op("BEQ", "rel", "o2")  # 줄 머리
     a.op("STZ", "abs", "cnt")  # 지금 글자 뒤로 몇 칸 — 마지막 글자 열 = 열 + cnt
     a.op("LDA", "zp", 0x14)
     a.op("STA", "zp", 0xEC)
@@ -837,9 +979,8 @@ def _wordck_asm() -> "Asm":
     a.op("INY")
     a.op("LDA", "izpy", 0xEC)
     a.op("DEY")
-    for _lead, trail in HANG_PUNCT:  # 매다는 부호는 줄 밖에 걸리니 길이에 안 센다
-        a.op("CMP", "imm", trail)
-        a.op("BEQ", "rel", "skip")
+    # 11-08 마스터 「전투중 창 초과하면 초과된 부분이 계속 남아」 — 매다는 부호(`!` `.` …)도 어절 길이에 센다: 어절 끝 부호가 칸 13(오른쪽 틀 칸)에 걸리면
+    #   어절째 새 줄로 넘긴다(틀 칸은 안 지워져 잔상이 남는다 — 몬스터 이름이 변수라 칸이 정해지지 않는 전투 로그에서 드러났다). 이 줄이 있던 자리: HANG_PUNCT 비교 후 skip.
     a.label("cnt1")
     a.op("INC", "abs", "cnt")
     a.label("skip")
@@ -957,10 +1098,8 @@ def _narrow_codes():
 
 _NC = _narrow_codes()
 NARROW_LOW = 0x28  # 트레일 < 0x28 = 「! , - .」 (정본 앞 다섯 칸 중 앞 넷 — `/` 는 안 그려지는 조사 토큰 글자)
-NARROW_Q = _NC["?"][1]
 NARROW_DOT = _NC["·"]  # 가운뎃점은 정본 뒤쪽(다른 리드)이라 코드 한 쌍으로 비교한다
 assert all(_NC[ch][0] == font.LEAD0 and _NC[ch][1] < NARROW_LOW for ch in "!,."), _NC
-assert _NC["?"][0] == font.LEAD0 and NARROW_Q >= NARROW_LOW
 assert NARROW_DOT[0] < font.VARIANT_LEAD0
 
 
@@ -983,16 +1122,15 @@ def _narrow_asm() -> "Asm":
     a.data(b"\x00")
     a.label("phase")  # 반각 영숫자 두 번째 그리기의 몫(0 = 부호 · 1 = 왼쪽 4px · 2 = 오른쪽 4px)
     a.data(b"\x00")
-    a.label("glue")  # X = 0(pre) / 1(post) — A 는 못 쓴다(MPR 복원), X 는 지킨다
+    a.label("glue")  # X = 0(pre) / 1(post) — A 는 못 쓴다(MPR 복원), X 는 지킨다. 🔴 MPR4 · SEI 없음(위 `ENTRY_MPR` 주석)
     a.op("PHP")
-    a.op("SEI")
-    a.op("TMA", "tma", WORDCK_MPR)
+    a.op("TMA", "tma", ENTRY_MPR)
     a.op("PHA")
     a.op("LDA", "imm", WORDCK_BANK)
-    a.op("TAM", "tam", WORDCK_MPR)
+    a.op("TAM", "tam", ENTRY_MPR)
     a.op("JSR", "abs", ENTRY_ADDR)
     a.op("PLA")
-    a.op("TAM", "tam", WORDCK_MPR)
+    a.op("TAM", "tam", ENTRY_MPR)
     a.op("PLP")
     a.op("RTS")
     a.label("entry")
@@ -1011,6 +1149,9 @@ def _narrow_asm() -> "Asm":
     a.op("JSR", "abs", "glue")  # post
     a.label("ret")
     a.op("RTS")
+    a.label("fragsh")  # `$6A41` 의 `JSR` 대상 — X=2 로 glue → entry(frag). 스택의 복귀 주소는 frag 가 `$66FA` 로 바꾼다
+    a.op("LDX", "imm", 2)
+    a.op("JMP", "abs", "glue")
     a.label("rstz")  # `STZ $38BB` 의 자리(3B)에 `JSR` — 칸 수와 나머지를 같이 0 으로
     a.op("STZ", "abs", ENG_COL_COUNT)
     a.op("STZ", "abs", "rem")
@@ -1024,7 +1165,52 @@ KIND_ADDR = NARROW_LABELS["kind"]
 PHASE_ADDR = NARROW_LABELS["phase"]
 GLUE_ADDR = NARROW_LABELS["glue"]
 NARROW_ENTRY = NARROW_LABELS["entry"]  # `$7047` 의 새 JSR 대상
+FRAGSH_ADDR = NARROW_LABELS["fragsh"]  # `$6A41` 의 새 JSR 대상
 RSTZ_ADDR = NARROW_LABELS["rstz"]  # `$6AEA`·`$6B73` 의 새 JSR 대상
+
+
+def _frag_asm() -> "Asm":
+    """뱅크 0x70 의 조각 복사 루틴(논리 `FRAG_ADDR`, MPR3 기준). glue → entry(X=2) 가 MPR3 에 0x70 을 걸고 `JSR` 로 부른다.
+
+    스택(얕은 쪽 → 깊은 쪽): 복귀(entry) 2 · MPR3 1 · 복귀(glue) 2 · MPR4 1 · P 1 · 복귀(`$6A41` 호출부) 2 — 그래서 호출부 복귀 주소는 S+8·S+9 다.
+    그걸 `$66FA` 로 바꿔 끼워 RTS 가 곧장 `$66FB` 로 가게 한다(원래 `JMP $66FB` 였던 자리 — 레지스터는 거기서 전부 다시 적재된다).
+    조각 포인터면(`$2FE7,X` 상위 = `FRAG_MARK_HI`) 보관소 `$7C00~` 에서 `FRAG_LEN`B 를 RAM 버퍼로 옮기고 포인터를 버퍼로 바꾼다.
+    `$14/$15` 는 `$66FB` 가 슬롯 배열에서 다시 적재하므로 빌려 쓴다. 슬롯은 `$26`(= `$66FB` 가 읽는 그 값).
+    """
+    a = Asm(FRAG_ADDR)
+    a.op("TSX")
+    a.op("LDA", "imm", FRAG_RET & 0xFF)
+    a.op("STA", "absx", 0x2108)
+    a.op("LDA", "imm", FRAG_RET >> 8)
+    a.op("STA", "absx", 0x2109)
+    a.op("LDX", "zp", 0x26)
+    a.op("LDA", "absx", 0x2FE7)
+    a.op("CMP", "imm", FRAG_MARK_HI)
+    a.op("BNE", "rel", "done")
+    a.op("LDA", "absx", 0x2F95)
+    a.op("STA", "zp", 0x14)
+    a.op("LDA", "imm", (FRAG_MARK_HI + 0x20))  # 마커 `$5Cxx` + `$2000` = 보관소 읽는 자리 `$7Cxx`
+    a.op("STA", "zp", 0x15)
+    a.op("LDY", "imm", FRAG_LEN - 1)
+    a.label("lp")
+    a.op("LDA", "izpy", 0x14)
+    a.op("STA", "absy", FRAG_BUF)
+    a.op("DEY")
+    a.op("BPL", "rel", "lp")
+    a.op("LDA", "imm", FRAG_BUF & 0xFF)
+    a.op("STA", "absx", 0x2F95)
+    a.op("LDA", "imm", FRAG_BUF >> 8)
+    a.op("STA", "absx", 0x2FE7)
+    a.label("done")
+    a.op("RTS")
+    return a
+
+
+def frag_routine() -> bytes:
+    return _frag_asm().bytes()
+
+
+assert FRAG_MARK_HI == (0x4000 + STORE_OFF) >> 8 and STORE_SIZE == 0x100  # 보관소 한 페이지 — 상위 바이트 하나로 마커 판정
 
 
 def _entry_asm() -> "Asm":
@@ -1057,16 +1243,14 @@ def _entry_asm() -> "Asm":
     a.op("LDA", "zp", 0xF8)
     a.op("CMP", "imm", NARROW_LOW)
     a.op("BCC", "rel", "ispunct")
-    a.op("CMP", "imm", NARROW_Q)
-    a.op("BEQ", "rel", "ispunct")
-    a.op("JMP", "abs", "chkh")  # 그 밖의 우리 글리프 — 반각 영숫자인지 본다
+    a.op("BRA", "rel", "chkh")  # 그 밖의 우리 글리프 — 반각 영숫자인지 본다
     a.label("notf0")  # 가운뎃점 — 리드가 다르다
     a.op("CMP", "imm", NARROW_DOT[0])
     a.op("BNE", "rel", "tryvar")
     a.op("LDA", "zp", 0xF8)
     a.op("CMP", "imm", NARROW_DOT[1])
     a.op("BEQ", "rel", "ispunct")
-    a.op("JMP", "abs", "chkh")
+    a.op("BRA", "rel", "chkh")
     a.label("tryvar")
     a.op("AND", "imm", 0xFC)
     a.op("CMP", "imm", font.VARIANT_LEAD0)
@@ -1145,6 +1329,18 @@ def _entry_asm() -> "Asm":
     a.op("RTS")
     # ── post ──
     a.label("post")
+    a.op("CPX", "imm", 2)  # X=2 — `0F` 조각 복사(`FRAGSH` → glue)
+    a.op("BNE", "rel", "post1")
+    a.op("SEI")  # 짧다(복사 ≤40B). 돌아갈 때 glue 의 PLP 가 인터럽트 상태를 되돌린다
+    a.op("TMA", "tma", 3)
+    a.op("PHA")
+    a.op("LDA", "imm", FRAG_BANK)
+    a.op("TAM", "tam", 3)
+    a.op("JSR", "abs", FRAG_ADDR)
+    a.op("PLA")
+    a.op("TAM", "tam", 3)
+    a.op("RTS")
+    a.label("post1")
     a.op("LDA", "abs", KIND_ADDR)
     a.op("CMP", "imm", KIND_EATEN)
     a.op("BNE", "rel", "p1")
@@ -1435,7 +1631,24 @@ def _mul24(a: "Asm") -> None:
     a.op("STA", "zp", 0xED)
 
 
-def init_stub() -> bytes:
+ERASER_ADDR = 0x2180  # 스택 쪽(`$2100~$21FF`) 아래쪽 — 진입 직후 스택 깊이는 몇 바이트라 닿지 않는다. 지우개가 끝나면 쓰레기가 남아도 스택이라 무해하다
+ENTRY_JSR_OPERAND = 0x4010  # 뱅크 0x68 +0x10 — 진입 `JSR $5798` 의 피연산자(우리가 스텁 주소로 바꿔 둔 자리)
+
+
+def _eraser(n: int) -> bytes:
+    """스텁이 끝날 때 **자기 자리 n 바이트를 원판 디스크 바이트(0)로 되돌리고** 진입 `JSR` 피연산자를 원판 값(`$5798`)으로 되돌린 뒤 `JMP $5798`.
+    🔴 뱅크 0x69 +0x1852~ 는 **원판이 로드 때 RAM 변수로 쓰는 구간**이다(11-07 읽기·쓰기 BP 실측: `$73CA` 가 쓰고 `$770C` 가 `$787E` 를 폴링) —
+    코드가 거기 남아 있으면 안 된다. 스텁은 부팅 때 한 번만 돌고, 이 지우개가 스택 쪽 RAM(`ERASER_ADDR`)에서 돈다(자기 자리를 지우므로 밖에서 돌아야 한다)."""
+    assert 1 <= n <= 128  # `DEX/BPL` 루프 — X 가 127 이하여야 한다
+    lo, hi = STUB_ADDR & 0xFF, STUB_ADDR >> 8
+    b = bytes([0xA2, n - 1, 0x9E, lo, hi, 0xCA, 0x10, 0xFA])  # LDX #n-1 / STZ $STUB,X / DEX / BPL
+    b += bytes([0xA9, ORIG_INIT & 0xFF, 0x8D, ENTRY_JSR_OPERAND & 0xFF, ENTRY_JSR_OPERAND >> 8])  # LDA #$98 / STA $4010
+    b += bytes([0xA9, ORIG_INIT >> 8, 0x8D, (ENTRY_JSR_OPERAND + 1) & 0xFF, (ENTRY_JSR_OPERAND + 1) >> 8])  # LDA #$57 / STA $4011
+    b += bytes([0x4C, ORIG_INIT & 0xFF, ORIG_INIT >> 8])  # JMP $5798
+    return b
+
+
+def _init_stub_body(data_addr: int) -> Asm:
     a = Asm(STUB_ADDR)
     a.op("TMA", "tma", 5)
     a.op("PHA")
@@ -1455,18 +1668,30 @@ def init_stub() -> bytes:
     a.op("LDA", "imm", 0x7F)
     a.op("TAM", "tam", 5)
     a.tii(0xA000, HOOK_ADDR, PAYLOAD_LEN)
-    a.op(
-        "STZ", "abs", 0x22BC
-    )  # ⚠ 옛 자동 넘김 표시 자리 — 지금은 안 쓴다(`narration_gates.AUTO_FLAG` 는 뱅크 0x68 `$5FFD`). `$22BC~` 는
-    #   BIOS 가 쓰는 자리라(devlog 10-06) 이 0 쓰기는 다음 라운드에 뺀다 — 동작은 이번에 안 바꾼다(status 「다음 라운드」)
+    # (옛 `STZ $22BC`(자동 넘김 표시 자리)는 10-24 에 뺐다 — `$22BC~` 는 BIOS 가 쓰는 자리이고 플래그는 뱅크 0x68 `$5FFD` 다)
     a.op("STZ", "abs", 0xA000)
     a.tii(0xA000, 0xA001, 0x1FFF)
     a.op("PLA")
     a.op("TAM", "tam", 6)
     a.op("PLA")
     a.op("TAM", "tam", 5)
-    a.op("JMP", "abs", ORIG_INIT)
-    return a.bytes()
+    # 지우개를 스택 쪽 RAM 으로 복사하고 그리로 간다 — 지우개가 이 자리(스텁 전체)를 원판 바이트(0)로 되돌린다
+    a.tii(data_addr, ERASER_ADDR, ERASER_LEN)
+    a.op("JMP", "abs", ERASER_ADDR)
+    return a
+
+
+ERASER_LEN = len(_eraser(1))
+
+
+def init_stub() -> bytes:
+    """스텁 = 코드 + 지우개 자료. 지우개가 코드+자료 전체 길이를 0 으로 되돌린다(길이 ≤ 128)."""
+    code_len = len(_init_stub_body(0).bytes())
+    total = code_len + ERASER_LEN
+    a = _init_stub_body(STUB_ADDR + code_len)
+    body = a.bytes()
+    assert len(body) == code_len
+    return body + _eraser(total)
 
 
 if __name__ == "__main__":

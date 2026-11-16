@@ -39,7 +39,7 @@ class DynError(Exception):
 
 def forced_chars() -> set[str]:
     """늘 상주해야 하는 글자 — 대사 본문 밖에서도 쓰이는 것(이름·UI·시스템·전투·조사·숫자·합자) + 씬 0(입장 배너 지명표)."""
-    return (
+    chars = (
         translate.name_chars()
         | translate.body_chars(0)
         | sysbuild.all_glyph_chars()
@@ -48,6 +48,7 @@ def forced_chars() -> set[str]:
         | set(font.LIGATURES.values())
         | set(font.DIGIT_CHARS)
     )
+    return {font.FULLWIDTH_BIOS.get(c, c) for c in chars}  # 전각 영문은 ASCII 대문자 글리프 별칭(`font.build_table`)
 
 
 def body_scene_ids() -> list[int]:
@@ -68,8 +69,8 @@ def block_table(table: dict[str, bytes], scene_id: int) -> tuple[dict[str, bytes
     if scene_id == 0:
         return table, []
     dyn = sorted(ch for ch in translate.body_chars(scene_id) if ch not in table)
-    if len(dyn) > font.DYN_SLOTS:
-        raise DynError(f"씬 {scene_id}: 동적 글자 {len(dyn)}자 > {font.DYN_SLOTS}칸 — {''.join(dyn)}")
+    if len(dyn) > font.DYN_RESERVE_FROM:  # 칸 16~23 은 코드 자리(font.DYN_RESERVE_FROM)
+        raise DynError(f"씬 {scene_id}: 동적 글자 {len(dyn)}자 > {font.DYN_RESERVE_FROM}칸(뒤 {font.DYN_SLOTS - font.DYN_RESERVE_FROM}칸은 코드 자리) — {''.join(dyn)}")
     t = dict(table)
     for k, ch in enumerate(dyn):
         t[ch] = font.code_of(font.DYN0 + k)

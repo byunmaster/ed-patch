@@ -83,3 +83,34 @@ class VoiceFrom(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DraftLoad(unittest.TestCase):
+    """`draft` 항목(받아쓰기 자동 초안)은 기본 `load()` 에서 빠지고 `load(drafts=True)` 에만 든다 — 제품은 정식만(11-01 voice_draft)."""
+
+    def test_load_skips_drafts(self):
+        import json
+        import tempfile
+
+        spec0 = V.SPEC
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                V.SPEC = Path(d) / "voice_sched.json"
+                V.SPEC.write_text(
+                    json.dumps(
+                        {
+                            "scenes": {
+                                "98": {"voice_gate": 2, "msgs": [{"key": "a", "ends": [1.0]}]},
+                                "41": {"voice_gate": 0, "draft": {"match": 0.8}, "msgs": [{"key": "b", "ends": [2.0]}]},
+                                "151": [{"voice_gate": 0, "draft": {"match": 0.6}, "msgs": []}, {"voice_gate": 1, "draft": {"match": 0.6}, "msgs": []}],
+                            }
+                        }
+                    ),
+                    "utf-8",
+                )
+                self.assertEqual(sorted(V.load()), ["98"])
+                self.assertEqual(sorted(V.load(drafts=True)), ["151", "41", "98"])
+                self.assertEqual(V.scene_ids(), {98})
+                self.assertEqual(V.scene_ids(drafts=True), {41, 98, 151})
+        finally:
+            V.SPEC = spec0

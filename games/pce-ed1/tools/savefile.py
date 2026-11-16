@@ -247,6 +247,28 @@ def put_gear(vals: dict[int, int]) -> None:
             vals[rec + 0x19 + i] = item
 
 
+# 이야기 진행 깃발($C100~$C10F, 16B) — 장(0 시작)마다 **실제 진행 세이브**에서 뽑은 값.
+# 🔴 왜: goto 는 슬롯 1 의 템플릿(1장 시작 깃발 `b9 08 00…`)을 그대로 두고 장·지역·워프만 바꿨다. 2장 이후 씬으로 점프한 세이브가 「1장 시작」 깃발을 들고 있으면
+#   필드 → 마을 출입 스크립트가 **1장 쪽 씬**(네리아항구 = 씬 45, rel 1268 — 1장 컨테이너)으로 들여보내는데 구역 컨테이너는 2장(rel 1284)이라 씬 id 를 못 찾고 멈춘다
+#   (한글판은 splitload `BRA hang`, 원판은 BIOS 루프 — 둘 다 같은 입력에서 멈춘다, 11-08 실측. 깃발 C100~C10F 만 실제 값으로 바꾸면 씬 46 으로 정상 출입, 40전환 무발생).
+# 출처: 장2 = gate-1024/1024-resume-ch2-neria 슬롯 3(씬 46 네리아항구, 마스터 플레이). 장1 말(씬 40)은 `b958ff5f00002f1c…` — 장2 값이 그 상위 집합이다.
+# ⚠ 한계: 장3 이후는 실제 진행 세이브가 없다 → 장2 값(누적 깃발이라 하위 집합)을 최소로 둔다. 더 늦은 장의 실제 세이브가 생기면 여기에 장별로 추가한다.
+STORY_FLAGS = {
+    1: bytes.fromhex("b958ff5f3f01af1d1f00240000000000"),
+}
+STORY_FLAGS_AT = 0xC100
+
+
+def put_story_flags(vals: dict[int, int]) -> None:
+    """장(`vals[CHAPTER]`)에 맞는 이야기 깃발 — 그 장 이하에서 가장 늦은 값. 1장(0)은 템플릿 그대로."""
+    ch = vals[CHAPTER]
+    keys = [k for k in STORY_FLAGS if k <= ch]
+    if not keys:
+        return
+    for i, b in enumerate(STORY_FLAGS[max(keys)]):
+        vals[STORY_FLAGS_AT + i] = b
+
+
 def chapter_of(rel: int, track: bytes | None = None) -> int:
     """컨테이너 rel → 장(0~5): 뱅크 0x6A `$6BE8` 장 포인터 + `$6BF4` 3B 표(rec = rel − 34).
 
@@ -290,6 +312,7 @@ def main() -> None:
     )
     g.add_argument("--sonia", action="store_true", help="레코드 2(로) 를 소니아로")
     g.add_argument("--gear", action="store_true", help="넷 다 최상 장비(BEST_GEAR)")
+    g.add_argument("--keep-flags", action="store_true", help="이야기 깃발($C100~$C10F)을 템플릿 그대로 둔다(옛 동작 — 2장 이후 점프가 필드→마을 출입에서 멈출 수 있다)")
     g.add_argument(
         "--keep-desc",
         action="store_true",
@@ -335,6 +358,8 @@ def main() -> None:
     if not a.keep_desc:
         apply_desc(vals, wp["desc"])
         vals[CHAPTER] = chapter_of(wp["from"][0])
+        if not a.keep_flags:
+            put_story_flags(vals)
     if a.sonia:
         put_sonia(vals)
     if a.party:

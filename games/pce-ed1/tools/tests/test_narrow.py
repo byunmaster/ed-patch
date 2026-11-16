@@ -30,7 +30,7 @@ class MiniCPU:
         self.stack: list[int] = []
         self.traps: dict[int, callable] = {}
         self.calls: list[tuple] = []
-        self.mpr = {2: 0x68}  # MPR2 에 걸린 뱅크 — 켜고 끈 흔적을 본다
+        self.mpr = {2: 0x68, 3: 0x6C, 4: 0x6D}  # MPR2·MPR4 에 걸린 뱅크 — 켜고 끈 흔적을 본다(렌더러 입구는 MPR4)
         self.mpr_log: list[int] = []
         self.pc = 0
 
@@ -97,6 +97,10 @@ class MiniCPU:
                 self.a = 0
             elif op == 0xC9:
                 v = self.fetch(1)
+                self.c = int(self.a >= v)
+                self.setnz(self.a - v)
+            elif op == 0xCD:  # CMP abs
+                v = self.rd(self.fetch(2))
                 self.c = int(self.a >= v)
                 self.setnz(self.a - v)
             elif op == 0xE9:  # SBC
@@ -300,6 +304,7 @@ def machine(lead, trail, toggle_after_draw=1, flag=0, rem=0, col=5, toggle=1):
             hook.ENTRY_ADDR: hook.hook_entry(),
             hook.HALF_TAB_ADDR: hook.half_tables(),
             hook.JOSA_PRE_ADDR: hook.josa_pre(),
+            hook.DIGIT_ADDR: hook.digit_routine([bytes(code_of('스'))]),  # 뱅크 0x70 본체(MPR3 로 걸리는 걸 모형은 평평하게 본다)
         }
     )
     cpu.m[0x2000 + 0xF9] = lead
@@ -359,10 +364,10 @@ class Layout(unittest.TestCase):
         self.assertLess(top, font.VARIANT_LEAD0)
 
     def test_narrow_codes_match_the_glyph_canon(self):
-        for ch in ".,!?":
+        for ch in ".,!":  # 「?」 는 11-06 원판 도안으로 바뀌며 8px 전진 갈래(반각 영숫자 표)로 옮겼다
             c = code_of(ch)
             self.assertEqual(c[0], font.LEAD0, ch)
-            self.assertTrue(c[1] < hook.NARROW_LOW or c[1] == hook.NARROW_Q, ch)
+            self.assertTrue(c[1] < hook.NARROW_LOW, ch)
 
 
 class JosaEuro(unittest.TestCase):
@@ -407,6 +412,38 @@ class JosaEuro(unittest.TestCase):
         self.assertEqual(cpu.pc, RET_IN + 1)
 
 
+class SpellDigit(unittest.TestCase):
+    """엔진이 주문 이름 뒤에 붙이는 SJIS 전각 단계 숫자(82 4F~58)는 **직전 글자가 주문 이름 끝 글자일 때만** 우리 반각 숫자로 바뀐다(11-16)."""
+
+    def run_digit(self, last_ch, d):
+        cpu, _seen = machine(0x82, 0x4F + d)
+        c = code_of(last_ch)
+        cpu.m[hook.LAST_ADDR], cpu.m[hook.LAST_ADDR + 1] = c
+        run(cpu)
+        return cpu
+
+    def test_주문_뒤_숫자는_반각_글리프로(self):
+        for d in range(10):
+            cpu = self.run_digit("스", d)
+            want = code_of(str(d))
+            self.assertEqual((cpu.m[0x2000 + 0xF9], cpu.m[0x2000 + 0xF8]), tuple(want), d)
+
+    def test_반각_갈래를_탄다(self):
+        cpu = self.run_digit("스", 3)
+        self.assertEqual(cpu.m[hook.KIND_ADDR], hook.KIND_HALF)
+
+    def test_다른_글자_뒤_전각_숫자는_그대로(self):
+        cpu = self.run_digit("제", 3)  # 「제３장」
+        self.assertEqual((cpu.m[0x2000 + 0xF9], cpu.m[0x2000 + 0xF8]), (0x82, 0x52))
+        self.assertEqual(cpu.m[hook.KIND_ADDR], 0)
+
+    def test_숫자가_아닌_전각은_그대로(self):
+        cpu, _seen = machine(0x82, 0x60)  # 전각 Ａ
+        cpu.m[hook.LAST_ADDR], cpu.m[hook.LAST_ADDR + 1] = code_of("스")
+        run(cpu)
+        self.assertEqual((cpu.m[0x2000 + 0xF9], cpu.m[0x2000 + 0xF8]), (0x82, 0x60))
+
+
 class Stub(unittest.TestCase):
     def test_plain_glyph_untouched(self):
         for code in (
@@ -428,7 +465,7 @@ class Stub(unittest.TestCase):
                 cpu.stack, [RET_CALLER >> 8, RET_CALLER & 0xFF], code
             )  # `$704A` 로 이어진다
             self.assertEqual(cpu.pc, RET_IN + 1)
-            self.assertEqual(cpu.mpr[2], 0x68, "MPR2 를 되돌린다")
+            self.assertEqual((cpu.mpr[2], cpu.mpr[4]), (0x68, 0x6D), "MPR2·MPR4 를 되돌린다")
 
     def test_variant_draws_base_glyph_then_advances(self):
         for v, base in ((0xF4, 0xF0), (0xF5, 0xF1), (0xF7, 0xF3)):
@@ -567,7 +604,7 @@ class Punct(unittest.TestCase):
 class HalfAlnum(unittest.TestCase):
     """반각 영숫자(kind 5) — 글리프를 반각 부호 갈래로 **두 번**(왼쪽 4px · 오른쪽 4px) 그려 8px 전진한다."""
 
-    CH = "0A"  # 숫자 · 영문(정본에 든 ASCII 영숫자)
+    CH = "0?"  # 숫자 · 「?」(정본에 든 8px 전진 글자)
 
     def test_bitmap_marks_exactly_the_ascii_alnum_glyphs(self):
         tab = hook.half_tables()
@@ -576,7 +613,7 @@ class HalfAlnum(unittest.TestCase):
         for i, ch in enumerate(canon):
             lead, tr = divmod(i, font.PER_LEAD)
             bit = bm[lead * 28 + tr // 8] & (0x80 >> (tr % 8))
-            self.assertEqual(bool(bit), ch.isascii() and ch.isalnum() and ch not in "mwMW", (i, ch))
+            self.assertEqual(bool(bit), (ch.isascii() and ch.isalnum() and ch not in hook.HALF_WIDE) or ch in "?\'" or ch in font.LIGATURES.values(), (i, ch))  # 「?」「'」 도 8px · 대문자는 원판 도안이 넓어 12px
 
     def test_from_a_boundary_two_pieces(self):
         for ch in self.CH:

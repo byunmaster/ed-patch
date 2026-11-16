@@ -36,7 +36,7 @@ def _norm_jp(s: str) -> str:
 
 
 def _norm_kr(s: str) -> str:
-    return re.sub(r"\{[0-9A-F]+\}|\s|·", "", s)  # 가운뎃점 — 끊어 읽는 연출(「세·리·오·스…」)
+    return re.sub(r"\{[0-9A-F]+\}|\s|·|…", "", s)  # 가운뎃점·말줄임 — 끊어 읽는 연출(「세·리·오·스…」)
 
 
 KATA = "ァ-ヶー"
@@ -108,6 +108,9 @@ def missing(rows=None, tbl=None) -> list[tuple[str, str, set[str], str]]:
         k = _norm_kr(kr)
         for name in names:
             if not _find(name, j):
+                continue
+            # 더 긴 정본 이름의 한 토막(「大盗賊 ゲイル」 속 「盗賊」)이 그 이름 앞머리와 붙어 나왔으면 긴 이름의 일부다 — 원문이 「大盗賊の、⏎ゲイル」 처럼 쉼표로 끊으면 긴 이름이 안 맞아 짧은 이름만 걸린다(11-07 177 「대도 게일」)
+            if any(len(n) > len(name) and name in n and n[: n.index(name) + len(name)] in j and n.index(name) > 0 for n in names):
                 continue
             j = j.replace(name, "\0")
             if not any(_norm_kr(c) in k for c in tbl[name]):

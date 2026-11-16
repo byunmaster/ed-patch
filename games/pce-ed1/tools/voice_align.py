@@ -53,8 +53,12 @@ def rec_chars(words: list[dict]) -> list[tuple[str, float]]:
 
 
 def load_block(sid: int) -> bytes:
+    import common
     import containers
 
+    dumps = sorted(common.OUT_DIR.glob(f"text/*_{sid:03d}.bin"))  # 덤프가 있으면 트랙 전체 훑기 없이(씬마다 수 초)
+    if dumps:
+        return dumps[0].read_bytes()
     for c in containers.scan():
         for b in c["blocks"]:
             if b["id"] == sid:
@@ -62,12 +66,11 @@ def load_block(sid: int) -> bytes:
     raise SystemExit(f"씬 {sid} 블록을 못 찾았다")
 
 
-def main() -> int:
+def align(sid: int, rel: int, keys: list[str], msgs: dict | None = None) -> dict:
+    """메시지 열쇠 순서(음성이 읽는 순서) → {"match": 일치율, "msgs": [{"key", "ends"}…]} — 쪽 끝 시각 초안(`voice_sched.json` 재료)."""
     import voice_sched as VS
 
-    sid, rel = int(sys.argv[1]), int(sys.argv[2])
-    keys = sys.argv[3:]
-    msgs = {m.key: m for m in M.parse(load_block(sid))}
+    msgs = msgs or {m.key: m for m in M.parse(load_block(sid))}
     words = json.loads((REVIEW / f"words_r{rel}.json").read_text("utf-8"))
     rc = rec_chars(words)
     rec_str = "".join(c for c, _ in rc)
@@ -141,7 +144,12 @@ def main() -> int:
             fixed.append(round(e, 2))
             last_end = e
         out.append({"key": k, "ends": fixed})
-    json.dump({"match": round(ratio, 2), "msgs": out}, sys.stdout, ensure_ascii=False, indent=1)
+    return {"match": round(ratio, 2), "msgs": out}
+
+
+def main() -> int:
+    sid, rel = int(sys.argv[1]), int(sys.argv[2])
+    json.dump(align(sid, rel, sys.argv[3:]), sys.stdout, ensure_ascii=False, indent=1)
     print()
     return 0
 

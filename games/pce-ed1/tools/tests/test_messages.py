@@ -83,3 +83,21 @@ class Scn000EntryBanner(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BlankFirstRow(unittest.TestCase):
+    """🔴 화자 없는 새 창 앞에 메시지 **밖**으로 선 `01` — 창의 첫 행을 비운다(마스터 10-31 gon 009). `translate.blank_row_patches` 가 그 바이트만
+    잡아 옵코드 `18`(인터프리터 점프표 `$6808 RTS`, 아무 일 안 함)로 바꾸고, 화자 머리 뒤 `04 01`(이름 줄 끝)은 두는지 — 합성 블록으로."""
+
+    def test_leading_nl_before_fresh_window_is_neutralised(self):
+        import translate as T
+
+        for before in (b"\x07", b"\x00", b"\x00\x05"):  # 문장 끝 · 끝 뒤 페이지 지우기(씬 32 꼴) — 05 홀로는 앞 메시지 안의 쪽 넘김이라 같은 메시지다
+            with self.subTest(before=before.hex()):
+                d = b"\x1f" + SJ("兵士") + b"\x04" + SJ("かきくけこ") + before + b"\x01" + SJ("あいうえお") + b"\x00"
+                p = T.blank_row_patches(d)
+                self.assertEqual(p, [(d.index(before) + len(before), b"\x01", bytes([T.NOP_OP]))])
+        d = b"\x1f" + SJ("兵士") + b"\x04\x01" + SJ("あいうえお") + b"\x00"  # 화자 머리 뒤 줄바꿈 — 그대로
+        self.assertEqual(T.blank_row_patches(d), [])
+        d = SJ("かきくけこ") + b"\x10\x00\xa0\x01" + SJ("あいうえお") + b"\x00"  # 이어 쓰는 창(호출 뒤) — 그대로
+        self.assertEqual(T.blank_row_patches(d), [])

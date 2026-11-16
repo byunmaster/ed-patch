@@ -20,7 +20,7 @@ import typeset_check as T
 KNOWN_SYSTEM: set[str] = set()
 # 값 뒤에 붙는 조각(「민첩성이 」+ 수치 + 「 내려갔다!」) — 앞 공백은 런타임 수치와 띄우는 자리다(10-07, 블록 바이트로
 #   `07 22` 수치 출력 뒤에 오는 것을 확인). 검사기는 조각 하나만 봐서 ③ 으로 센다.
-KNOWN_BATTLE: set[str] = {"d5d3859767b7d32d", "84bdae195eaef1c0"}
+KNOWN_BATTLE: set[str] = set()  # 11-10: 수치 뒤 조각의 앞 공백은 검사기가 수치를 앞에 붙여 본다(`typeset_check.battle_rows`) — 예외 없음
 
 
 class Typeset(unittest.TestCase):
@@ -71,9 +71,9 @@ class Typeset(unittest.TestCase):
         raw = {1: "가{1F}{22}{04}{0F0200}죽은글", 2: " 올랐다."}.get
         self.assertEqual(T.clean(T.follow(raw, 1, {"1F}{22}{04": "9999"})), "가9999 올랐다.")
 
-    def test_scene_compose_no_newline_after_full_line(self):
-        """씬 대사의 ②(빈 줄)는 검사기가 아니라 **빌드(translate.compose)가 막는다** — 꽉 찬 13칸 줄 뒤엔
-        `01` 을 안 넣는다(인터프리터가 스스로 넘긴다). 검사기는 그 보장을 믿고 씬의 ②를 건너뛰므로 여기서 못 박는다."""
+    def test_scene_compose_newline_after_full_line(self):
+        """꽉 찬 13칸 줄 뒤에도 명시 개행 `01` 을 낸다(11-05 PCE 실화면 헤드리스 시험 — 한글·부호로 끝나는 13칸 줄, 셋째 줄이 꽉 찬 쪽 넘김 모두 빈 줄·틀 칸 잔상 없음,
+        `.local/work/inbox/pce-ed1/fullnl-test/`). 종전엔 안 넣었다(PS1 에서는 빈 줄이 됨) — 그때 꽉 찬 줄 끝 어절이 다음 줄과 붙어 어절째 내려가는 결함이 났다."""
         import font
         import messages as M
         import translate
@@ -83,7 +83,7 @@ class Typeset(unittest.TestCase):
         out = translate.compose(m, {"t": "가" * 13 + " 나다"}, tbl, {})
         full = font.encode("가" * 13, tbl)
         self.assertTrue(out.startswith(full))
-        self.assertNotEqual(out[len(full)], 0x01, out.hex(" "))
+        self.assertEqual(out[len(full)], 0x01, out.hex(" "))
 
     def test_silence_page_is_not_orphan_punct(self):
         """부호뿐인 한 줄짜리 쪽(침묵)은 통과, 글과 한 쪽에 든 부호 줄은 계속 ①."""

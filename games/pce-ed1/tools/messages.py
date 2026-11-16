@@ -17,6 +17,7 @@ JP 원문은 `work/derived/messages/` 에만 쓴다(커밋 안 함, 루트 「�
 """
 
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -95,6 +96,8 @@ class Message:
         True  # 자기 종료 바이트로 끝나나(아니면 재삽입 때 `0F` 로 다음 자리에 잇는다)
     )
     refs: list = field(default_factory=list)
+    cont: int | None = None  # 이은 꼬리가 종료 없이 끝나면 흐름이 이어질 자리(꼬리 본체 메시지의 끝 오프셋) — 종료 없는 메시지를 재삽입할 때 `0F` 가 여기로 간다
+    key_fixed: str | None = None  # 화자 머리를 나중에 단 메시지(`translate.with_added_speakers`)가 원래 열쇠를 지키는 칸
 
     @property
     def jp(self) -> str:
@@ -110,6 +113,8 @@ class Message:
 
     @property
     def key(self) -> str:
+        if self.key_fixed:
+            return self.key_fixed
         sp = self.speaker or (f"@{self.common}" if self.common is not None else "")
         return jp_key("{c}" + sp + "{c}" + self.jp.replace("\f", ""))
 
@@ -202,7 +207,54 @@ def parse(block: bytes) -> list[Message]:
             continue
         msgs.append(msg)
         covered = msg.end
-    return _split_pinned(block, msgs)
+    return _merge_jump_tails(block, _split_pinned(block, msgs, _op_jump_targets(block, msgs)))
+
+
+# 11-06 범위 — 마스터 지시 「낀 옵코드 8곳」(씬 21·25·29·113·122·129·196·201)의 꼬리 본체(host) 열쇠만. 같은 모양이 9곳 더 있다(씬 46·58·72·76·163·192~195 —
+# 씬 46 은 조각이 코드 영역 쓰레기로 갈려 별건) — 각 번역을 조각 경계로 나눠야 하므로 관리자 확인 뒤 넓힌다(status 「남은 일」).
+OP_JUMP_HOSTS = frozenset({"36472f0bd5a2e6b9", "52c514e43cebcf8a", "ac91018fb53c6726", "0bdb5ee2ac250f0c", "1c5220649f57c61d", "83d0165e26f36a49", "8fe0bb856220d4ee", "957c9d910b8d299c", "67483b3b25bb99c0", "b3e5ea81f3e93f9c", "38d5c2b36012c53c", "67e5c66cc6b3e0e0", "520af25023badc4a", "a9482a192a21eda1", "e37e9838b6e2c49d"})
+OP3 = (0x11, 0x12, 0x14)  # 글 없는 3B 스크립트 옵코드(`op lo hi`) — 메시지 끝과 `0F` 사이에 끼는 것들
+
+
+def _op_jump_targets(block: bytes, msgs: list[Message]) -> dict[int, list[int]]:
+    """🔴 **옵코드가 낀 공유 꼬리 점프**(11-06 「낀 옵코드」) — 종료 없는 메시지 뒤에 3B 옵코드(`11|12|14 lo hi`) 하나를 건너 `0F lo hi` 가 있으면,
+    그 목적지는 진짜 스크립트 점프다(`references()` 는 `0F` 피연산자를 소음이라 빼므로 따로 모은다). 목적지가 다른 메시지 한가운데면
+    `_split_pinned` 가 그 자리에서 조각내 — 꼬리가 제 메시지·제 열쇠를 갖고 번역이 그 경계를 따른다(바로 붙은 `0F` 는 `_merge_jump_tails` 몫).
+    {목적지 오프셋: [`0F` 위치]}."""
+    out: dict[int, list[int]] = {}
+    for m in msgs:
+        e = m.end
+        if m.terminated or e + 5 >= len(block) or block[e] not in OP3 or block[e + 3] != JUMP or any(isinstance(t, str) for t in m.tokens):
+            continue  # ⚠ 앞 메시지에 글이 있으면(글 + 옵코드 + 점프) 꼬리 이음과 다른 문제다 — 여기서 안 다룬다(상태 문서)
+        w = (block[e + 4] | block[e + 5] << 8) - BASE
+        host = next((t for t in msgs if t.start < w < t.end), None)
+        if host is not None and host.key in OP_JUMP_HOSTS:
+            out.setdefault(w, []).append(e + 3)
+    return out
+
+
+def _merge_jump_tails(block: bytes, msgs: list[Message]) -> list[Message]:
+    """🔴 **공유 꼬리 점프를 한 메시지로 이어 읽는다**(11-06, 씬 46 「お金が、少しなくなっ」+`0F`→「荷物が荒らされ|ている…」 한가운데).
+    종료 없는 메시지 바로 뒤에 `0F lo hi` 가 있고 그 목적지가 **다른 메시지 한가운데(글자 경계)**면, 원판은 그 꼬리를 공유해
+    한 문장이 된다 — 한국어는 어순이 달라 꼬리를 글자째 공유할 수 없어 번역이 이어붙이면 「없어졌있습니다.」 로 깨진다(`references()` 가
+    스크립트 `0F` 를 소음으로 빼 몰랐다). 그래서 그 메시지를 **꼬리까지 이은 하나의 메시지**(원천 + `0F` 3B 자리, 토큰 = 원천 + 꼬리)로 읽는다:
+    번역은 이은 문장 전체를 쓰고(갈래마다 완결 문장), 꼬리의 종료 옵코드가 그 메시지의 종료가 되며, 점프 3B 는 자리만 남는다(도달 불가).
+    목적지 메시지(꼬리의 본체)는 그대로 둔다 — 다른 길로 오는 흐름이 쓴다."""
+    out: list[Message] = []
+    for m in msgs:
+        if not m.terminated and m.end + 2 < len(block) and block[m.end] == JUMP:
+            w = (block[m.end + 1] | block[m.end + 2] << 8) - BASE
+            host = next((t for t in msgs if t.start < w < t.end), None)
+            tail = _parse_from(block, w) if host is not None else None
+            if tail is not None and tail.end == host.end and tail.speaker is None and tail.common is None:
+                toks = list(m.tokens)
+                tt = list(tail.tokens)
+                if toks and tt and isinstance(toks[-1], str) and isinstance(tt[0], str):
+                    toks[-1] += tt.pop(0)  # 같은 글줄이 이어진다
+                out.append(Message(m.start, m.end + 3, m.speaker, m.common, toks + tt, tail.complex, m.pinned, tail.terminated, m.refs, None if tail.terminated else host.end))
+                continue
+        out.append(m)
+    return out
 
 
 def _word(block: bytes, i: int) -> int | None:
@@ -325,7 +377,7 @@ def references(block: bytes) -> dict[int, list[int]]:
     return refs
 
 
-def _split_pinned(block: bytes, msgs: list[Message]) -> list[Message]:
+def _split_pinned(block: bytes, msgs: list[Message], extra: dict[int, list[int]] | None = None) -> list[Message]:
     """안쪽을 가리키는 참조가 있는 메시지를 **참조 자리에서 조각낸다**(마스터 10-11 「구조문제 해결」).
 
     · 참조 자리가 토큰 경계가 아니면(2바이트 글자 한가운데) 우연 일치다 — 참조로 안 친다.
@@ -334,6 +386,8 @@ def _split_pinned(block: bytes, msgs: list[Message]) -> list[Message]:
       아니라 원본 바이트 그대로 둔다. 갈린 메시지마다 열쇠가 따로라 번역 정본도 조각별로 쓴다.
     """
     refs = references(block)
+    for o, ats in (extra or {}).items():
+        refs.setdefault(o, []).extend(ats)
     out: list[Message] = []
     for m in msgs:
         cuts = sorted(o for o in refs if m.start < o < m.end)
@@ -391,12 +445,38 @@ def load_translations(scene_id: int) -> dict[str, dict]:
             # 입장 배너(scn000) — 지명은 **사전(place)이 정본**이고 여기는 원문 지명 + 가운데맞춤 공백(`lead`·`tail`)뿐이다
             import canon  # shared/
 
-            kr = canon.lookup(v["jp"], "place", "ed1")
+            # 🔴 배너는 정본 **일반 꼴**(띄어쓰기, 성·섬 붙임 — 마스터 11-09)이다: `place_general`, 없으면 HUD 꼴. 안의 공백은 반 칸(4px) 공백 표시로 바꾼다(전각 12px 아님)
+            kr = canon.place_general(v["jp"], "ed1")
             if kr is None:
                 raise KeyError(f"scn{scene_id:03d} 열쇠 {k}: 사전(place)에 {v['jp']!r} 가 없다")
+            import center_plan as _cp
+
+            kr = kr.replace(" ", _cp.HALF_MARK)
             v = {**v, "t": v.get("lead", "") + kr + v.get("tail", "")}
+        if scene_id == 0 and v.get("raw") and v.get("t"):
+            # 🔴 입장 배너 가운데(마스터 11-08 「배너도 전부 가운데」): 앞 공백을 전각 12px + 반 칸 4px 조합으로 다시 계산해 쏠림을 ≤2px 로(center_plan.banner_lead). 뒤 공백은 안 쓴다
+            import center_plan
+
+            name = v["t"].strip(" ")
+            if name and "\n" not in name and len(name) <= 12:
+                v = {**v, "t": center_plan.banner_form(name)[0]}
         out[k] = v
+    ov = _test_text_override().get(str(scene_id))
+    if ov:
+        for k, t in ov.items():
+            out[k] = {**out.get(k, {}), "t": t}
     return out
+
+
+def _test_text_override() -> dict:
+    """🧪 시험 전용 — `ED_TEST_TEXT`(JSON 파일 경로 · {"씬": {"열쇠": "문안"}})로 번역 문안을 덮어쓴다. 시험 꼬리표(test-*)에서만."""
+    path = os.environ.get("ED_TEST_TEXT")
+    if not path:
+        return {}
+    import common
+
+    assert common.BUILD_TAG.startswith("test-"), "ED_TEST_TEXT 는 시험 빌드(ED_BUILD_TAG=test-*)에서만"
+    return json.loads(Path(path).read_text("utf-8"))
 
 
 def load_speaker_overrides() -> dict[str, str]:
@@ -471,10 +551,10 @@ def splice(block: bytes, edits: list[tuple[Message, bytes]]) -> bytes:
         #   옵코드 자리(m.end)에 잇는다. 그 옵코드부터 실행이 그대로 이어진다.
         room = m.end - m.start
         if not m.terminated:
-            if len(new) == room:  # 자리를 딱 채우면 뒤 바이트가 곧 이어진다 — 점프가 필요 없다
+            if len(new) == room and m.cont is None:  # 자리를 딱 채우면 뒤 바이트가 곧 이어진다 — 점프가 필요 없다
                 out[m.start : m.end] = new
                 continue
-            nxt = BASE + m.end
+            nxt = BASE + (m.end if m.cont is None else m.cont)
             new = new + bytes([JUMP, nxt & 0xFF, nxt >> 8])
         if len(new) <= room:
             out[m.start : m.start + len(new)] = new
@@ -554,3 +634,16 @@ if __name__ == "__main__":
 
     common.verify_originals()
     print(dump_all(containers.scan()))
+
+
+def speaker_kind(m, sid: int | None = None) -> bool | str:
+    """대사창 조판 모드 — 화자 머리(`1F 이름 04` · `09 nn`)가 없으면 False, 있고 머리 바로 뒤 개행(`01`)으로 글이 둘째 줄부터면 `"nl"`(첫 글 줄 13칸 — 단 쪽 수가 구조 계약인 씬(`typeset.contract_scenes`)은 True), 있고 글이 이름 곁에서 시작하면 True(첫 줄 10칸)."""
+    if m.speaker is None and m.common is None:
+        return False
+    if sid is None:  # 씬을 모르면 종전(10칸) — 호출부가 씬을 줘야 넓은 첫 줄을 쓴다
+        return True
+    import typeset
+
+    if sid in typeset.contract_scenes():  # 음성 시각표·게이트 쪽 수가 구조 계약인 씬은 창 수가 바뀌면 싱크가 어긋난다 — 창 수가 같을 때만 넓은 첫 줄(`"nl="`)
+        return "nl="
+    return "nl" if m.tokens and m.tokens[0] == ("op", 1) else True

@@ -811,5 +811,23 @@ class OpenPairs(unittest.TestCase):
         )
 
 
+
+class TestScanFlat(unittest.TestCase):
+    def test_scan_msg_skips_glyph_second_bytes(self):
+        """🔴 글리프 코드는 2바이트 — 둘째 바이트가 05·00 이어도 쪽·끝이 아니다(씬 34: 4쪽이 7쪽으로 읽혔다, 10-30)."""
+        msg = bytes([0xF1, 0x05, 0xF1, 0x00, 0x05, 0xF2, 0x07, 0x00])  # 글자 · 글자 · 쪽 넘김 · 글자 · 종료
+        end, cuts = N.scan_msg(msg)
+        self.assertEqual((end, cuts), (7, [4]))
+        _hdr, pages, term = N.split_pages(msg)
+        self.assertEqual((len(pages), term), (2, b"\x00"))
+
+    def test_flat_msg_follows_tail_jump(self):
+        """꼬리 이음(`0F 주소`)이 든 메시지는 점프를 따라가 한 줄로 편다 — 뒤 바이트(다른 메시지)를 읽지 않는다."""
+        block = bytearray(0x40)
+        tail = 0x30
+        block[0:6] = bytes([0xF1, 0x24, 0x0F, tail & 0xFF, (N.BASE + tail) >> 8, 0xAA])
+        block[0x30:0x34] = bytes([0x05, 0xF2, 0x24, 0x00])
+        self.assertEqual(N.flat_msg(bytes(block), 0), bytes([0xF1, 0x24, 0x05, 0xF2, 0x24, 0x00]))
+
 if __name__ == "__main__":
     unittest.main()

@@ -186,8 +186,9 @@ def kr_names(extra: dict[str, str] | None = None) -> tuple[dict[str, str], list[
         hit = idx.get(_norm(jp))
         if hit is None and jp and jp[-1] in "ＡＢＣＤ♀♂":
             base = idx.get(_norm(jp[:-1]))
-            # 마스터 10-10 최종: 개체 구분 Ａ~Ｄ 는 ASCII 반각(전투 문장 일관성 — 렌더러 반각 영숫자 갈래가 8px 로 그린다)
-            tail = jp[-1] if os.environ.get("ED_LATIN") == "orig" else (chr(ord(jp[-1]) - 0xFEE0) if jp[-1] in "ＡＢＣＤ" else jp[-1])
+            # 마스터 11-08: 개체 구분 Ａ~Ｄ 는 **원판 전각**(12px) — 10-10 의 ASCII 반각 판정을 대체(「C에게」가 너무 붙어 「O에게」처럼 보였다.
+            # 원판 이름 170개가 전부 전각이고 계산상 전각도 넘침 0). ED_LATIN=ascii 로 옛 반각(시험용).
+            tail = chr(ord(jp[-1]) - 0xFEE0) if (os.environ.get("ED_LATIN") == "ascii" and jp[-1] in "ＡＢＣＤ") else jp[-1]
             hit = None if base is None else base + tail
         if hit is None:
             missing.append(jp)
@@ -596,6 +597,7 @@ def code_refs(data: bytes) -> set[int]:
     return out
 
 
+REL_BRANCH = frozenset({0x10, 0x30, 0x50, 0x70, 0x80, 0x90, 0xB0, 0xD0, 0xF0})  # 6502 상대 분기 옵코드(BPL BMI BVC BVS BRA BCC BCS BNE BEQ)
 BRANCH_OPS = frozenset(range(0x0F, 0x16))
 """주소 2바이트를 데리고 다니는 옵코드 — 0F 점프 · 10 호출 · 11/12 조건 · 13/14 플래그 · 15 기계어.
 
@@ -629,6 +631,17 @@ def text_runs(data: bytes, start: int) -> list[tuple[int, int, int | None]]:
     operands = branch_operands(data)
     while i < n - 1:
         if i in operands:  # 분기 주소는 글자가 아니다 — 머리로 삼으면 점프를 덮어쓴다
+            i += 1
+            continue
+        if i >= 2 and data[i - 2] in (0x4C, 0x20) and 0x40 <= data[i] <= 0x9F:
+            # 🔴 블록 속 **기계어** `JMP/JSR $엔진주소` 의 주소 윗바이트가 유효한 전각 리드(`87 60` = JMP $872D + RTS)면
+            #    뒤따르는 문구와 한 런으로 붙어 **점프 주소를 우리 문안이 덮어쓴다**(실측 10-24: 3장 블록 15·17·18 이
+            #    JMP $F22D 로 가서 전투가 멎었다 — 원판은 정상). 원판 전투 블록 100개 중 이 꼴은 이 셋뿐이다.
+            i += 1
+            continue
+        if i >= 1 and data[i - 1] in REL_BRANCH and data[i + 1] == 0x60:
+            # 🔴 같은 부류 — 기계어 상대 분기 `D0 E9`(BNE) 의 거리 바이트가 전각 리드(`E9`)이고 바로 뒤가 `60`(RTS)이면
+            #    `E9 60`(饒)이 문구 머리로 읽혀 **분기를 우리 문안이 덮어쓴다**(실측 10-24: 1장 블록 10 — 화면 모드가 깨진 채 전투가 못 끝났다).
             i += 1
             continue
         if not is_char(data, i):

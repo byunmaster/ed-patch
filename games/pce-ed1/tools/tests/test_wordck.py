@@ -72,6 +72,8 @@ class CPU:
                     assert hi is None, "스택이 안 맞는다"
                     return
                 self.pc = (hi << 8 | lo) + 1
+            elif op == 0x4C:  # JMP abs
+                self.pc = w()
             elif op == 0x20:
                 t = w()
                 ret = self.pc - 1
@@ -197,9 +199,11 @@ class WordCk(unittest.TestCase):
     def test_line_head(self):
         self.assertEqual(self.call(CH, chars(20), 0)[0], 0)
 
-    def test_hanging_punct_not_counted(self):
-        # 열 9 + 4글자 + 마침표 — 마침표는 줄 밖에 매달리니 13칸으로 본다
-        self.assertEqual(self.call(CH, chars(3) + bytes(DOT), 9)[0], 0)
+    def test_hanging_punct_counted(self):
+        # 11-08(마스터 「전투중 창 초과」): 매다는 부호도 어절 길이에 센다 — 열 9 + 4글자 + 마침표 = 마침표가 칸 13(틀 칸)에 걸리니 어절째 새 줄
+        self.assertEqual(self.call(CH, chars(3) + bytes(DOT), 9)[0], 1)
+        # 열 8 이면 마침표가 칸 12 — 들어간다
+        self.assertEqual(self.call(CH, chars(3) + bytes(DOT), 8)[0], 0)
 
     def test_stops_at_control(self):
         # 01(개행) 뒤 글자는 다른 줄이다
@@ -290,6 +294,46 @@ class WordCk(unittest.TestCase):
     def test_flag_clear_on_word_wrap(self):
         # 어절로 넘긴 글자는 공백이 아니다 — flag 0(칸을 먹는다)
         self.assertEqual(self.call(CH, chars(5), 12), (1, 0))
+
+    # 🔴 이음(종단 `0A`, 개행 없음) — 앞 문구 끝 부호 바로 뒤에 다음 문구가 붙는다(공백 없음). 부호 뒤 첫 글자도 어절 첫 글자다(11-06).
+    BANG = (font.LEAD0, 0x24)
+    PERIOD = (font.LEAD0, 0x27)
+
+    def test_sentence_punct_marks_next_glyph_as_word_start(self):
+        m = self.m
+        for punct in (self.PERIOD, self.BANG):
+            m[self.labels["prevsp"]] = 0
+            # 부호 자신: 검사 없음(보류 0 · flag 0), 다음 글자를 어절 첫 글자로 표시
+            self.assertEqual(self.call(punct, chars(3), 12, prev_space=False), (0, 0))
+            self.assertEqual(m[self.labels["prevsp"]], 1)
+
+    def test_name_straddling_after_sentence_end(self):
+        # 「…없었다.」 뒤 이름 삽입(「세리오스」 + 06 + 「는」): 부호 → 이름 첫 글자. 열 10 + 이름 3 + 조사 1 = 14 → 새 줄 / 열 9 이면 들어간다
+        m = self.m
+        self.call(self.PERIOD, b"", 9, prev_space=False)
+        self.assertEqual(self.call(CH, chars(2) + b"\x06", 10, prev_space=bool(m[self.labels["prevsp"]]), inject=chars(1))[0], 1)
+        self.call(self.PERIOD, b"", 8, prev_space=False)
+        self.assertEqual(self.call(CH, chars(2) + b"\x06", 9, prev_space=bool(m[self.labels["prevsp"]]), inject=chars(1))[0], 0)
+
+    def test_plain_glyph_after_sentence_end_wraps_by_word(self):
+        # 이름 삽입이 아닌 이음(도구 이름·일반 문구)도 같다 — 열 10 + 4글자
+        m = self.m
+        self.call(self.BANG, b"", 9, prev_space=False)
+        self.assertEqual(self.call(CH, chars(3) + bytes(HS), 10, prev_space=bool(m[self.labels["prevsp"]]))[0], 1)
+
+    def test_sentence_punct_at_col13_hangs(self):
+        # 줄 끝 칸 13 에 오는 부호는 매달린다 — 어절 검사로 새 줄에 홀로 떨어지면 안 된다
+        self.assertEqual(self.call(self.PERIOD, b"", 13, prev_space=True)[0], 0)
+        self.assertEqual(self.call(self.BANG, b"", 13, prev_space=False)[0], 0)
+
+    def test_same_trail_other_lead_is_not_punct(self):
+        # 트레일 0x27 이어도 리드가 F0 이 아니면 부호가 아니다
+        m = self.m
+        self.assertEqual(self.call((font.LEAD0 + 1, 0x27), chars(3), 5, prev_space=False), (0, 0))
+        self.assertEqual(m[self.labels["prevsp"]], 0)
+
+    # ⚠ 알려진 한계: 개행 보류가 선 **줄 머리**에 문장 끝 부호가 오면 flag=1 이라 `eat` 이 그 부호의 칸 전진을 건너뛴다(공백과 같은 갈래라서).
+    #   부호로 시작하는 줄은 우리 문안에 없다(전수 확인 — 전투·시스템 문구 줄 머리는 늘 글자·이름) — 코드 자리(+2B)가 모자라 안 막았다.
 
     def test_fits_tail(self):
         self.assertLessEqual(len(hook._wordck_asm().bytes()), hook.WORDCK_ROOM)

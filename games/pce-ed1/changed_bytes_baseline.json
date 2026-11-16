@@ -1,0 +1,228 @@
+{
+ "total": {
+  "sectors": 641,
+  "bytes": 1255194
+ },
+ "regions": {
+  "IPL·시스템 카드 앞": {
+   "sectors": 7,
+   "bytes": 4102
+  },
+  "그 밖 rel 0~": {
+   "sectors": 76,
+   "bytes": 125996
+  },
+  "그 밖 rel 512~": {
+   "sectors": 28,
+   "bytes": 23222
+  },
+  "본 프로그램 뱅크 0x68": {
+   "sectors": 3,
+   "bytes": 415
+  },
+  "본 프로그램 뱅크 0x69": {
+   "sectors": 1,
+   "bytes": 361
+  },
+  "본 프로그램 뱅크 0x6A": {
+   "sectors": 1,
+   "bytes": 202
+  },
+  "본 프로그램 뱅크 0x6B": {
+   "sectors": 1,
+   "bytes": 688
+  },
+  "본 프로그램 뱅크 0x6C": {
+   "sectors": 3,
+   "bytes": 440
+  },
+  "본 프로그램 뱅크 0x6D": {
+   "sectors": 4,
+   "bytes": 4186
+  },
+  "본 프로그램 뱅크 0x6E": {
+   "sectors": 1,
+   "bytes": 156
+  },
+  "본 프로그램 뱅크 0x6F": {
+   "sectors": 2,
+   "bytes": 298
+  },
+  "본 프로그램 뱅크 0x70": {
+   "sectors": 3,
+   "bytes": 1969
+  },
+  "본 프로그램 뱅크 0x74": {
+   "sectors": 3,
+   "bytes": 3165
+  },
+  "본 프로그램 뱅크 0x77": {
+   "sectors": 2,
+   "bytes": 1549
+  },
+  "본 프로그램 뱅크 0x78": {
+   "sectors": 3,
+   "bytes": 1583
+  },
+  "본 프로그램 뱅크 0x7B": {
+   "sectors": 1,
+   "bytes": 901
+  },
+  "본 프로그램 뱅크 0x7C": {
+   "sectors": 4,
+   "bytes": 7923
+  },
+  "본 프로그램 뱅크 0x7D": {
+   "sectors": 4,
+   "bytes": 7752
+  },
+  "본 프로그램 뱅크 0x7F": {
+   "sectors": 1,
+   "bytes": 1040
+  },
+  "씬 컨테이너 rel 1252": {
+   "sectors": 16,
+   "bytes": 35017
+  },
+  "씬 컨테이너 rel 1268": {
+   "sectors": 15,
+   "bytes": 34025
+  },
+  "씬 컨테이너 rel 1284": {
+   "sectors": 16,
+   "bytes": 35643
+  },
+  "씬 컨테이너 rel 1316": {
+   "sectors": 9,
+   "bytes": 20115
+  },
+  "씬 컨테이너 rel 1332": {
+   "sectors": 16,
+   "bytes": 35447
+  },
+  "씬 컨테이너 rel 1348": {
+   "sectors": 16,
+   "bytes": 36482
+  },
+  "씬 컨테이너 rel 1364": {
+   "sectors": 15,
+   "bytes": 34267
+  },
+  "씬 컨테이너 rel 1380": {
+   "sectors": 10,
+   "bytes": 22851
+  },
+  "씬 컨테이너 rel 1396": {
+   "sectors": 16,
+   "bytes": 36575
+  },
+  "씬 컨테이너 rel 1412": {
+   "sectors": 16,
+   "bytes": 35832
+  },
+  "씬 컨테이너 rel 1428": {
+   "sectors": 9,
+   "bytes": 20371
+  },
+  "씬 컨테이너 rel 1444": {
+   "sectors": 14,
+   "bytes": 30521
+  },
+  "씬 컨테이너 rel 1460": {
+   "sectors": 13,
+   "bytes": 29322
+  },
+  "씬 컨테이너 rel 1476": {
+   "sectors": 14,
+   "bytes": 30538
+  },
+  "씬 컨테이너 rel 1492": {
+   "sectors": 13,
+   "bytes": 28848
+  },
+  "씬 컨테이너 rel 1508": {
+   "sectors": 10,
+   "bytes": 21748
+  },
+  "씬 컨테이너 rel 1524": {
+   "sectors": 15,
+   "bytes": 34220
+  },
+  "씬 컨테이너 rel 1540": {
+   "sectors": 13,
+   "bytes": 28728
+  },
+  "씬 컨테이너 rel 1556": {
+   "sectors": 11,
+   "bytes": 24408
+  },
+  "씬 컨테이너 rel 1572": {
+   "sectors": 15,
+   "bytes": 33394
+  },
+  "씬 컨테이너 rel 1588": {
+   "sectors": 10,
+   "bytes": 22457
+  },
+  "씬 컨테이너 rel 1620": {
+   "sectors": 10,
+   "bytes": 22691
+  },
+  "씬 컨테이너(이사) rel 9780": {
+   "sectors": 9,
+   "bytes": 18387
+  },
+  "씬 컨테이너(이사) rel 9796": {
+   "sectors": 13,
+   "bytes": 26342
+  },
+  "씬 컨테이너(이사) rel 9812": {
+   "sectors": 15,
+   "bytes": 31513
+  },
+  "씬 컨테이너(이사) rel 9828": {
+   "sectors": 16,
+   "bytes": 34756
+  },
+  "씬 컨테이너(이사) rel 9844": {
+   "sectors": 16,
+   "bytes": 31896
+  },
+  "씬 컨테이너(이사) rel 9860": {
+   "sectors": 16,
+   "bytes": 33717
+  },
+  "씬 컨테이너(이사) rel 9876": {
+   "sectors": 15,
+   "bytes": 30666
+  },
+  "씬 컨테이너(이사) rel 9892": {
+   "sectors": 16,
+   "bytes": 33378
+  },
+  "씬 컨테이너(이사) rel 9908": {
+   "sectors": 14,
+   "bytes": 28498
+  },
+  "씬 컨테이너(이사) rel 9924": {
+   "sectors": 15,
+   "bytes": 30749
+  },
+  "씬 컨테이너(이사) rel 9940": {
+   "sectors": 16,
+   "bytes": 33847
+  },
+  "씬 컨테이너(이사) rel 9956": {
+   "sectors": 16,
+   "bytes": 31682
+  },
+  "씬 컨테이너(이사) rel 9972": {
+   "sectors": 16,
+   "bytes": 34582
+  },
+  "씬 컨테이너(이사) rel 9988": {
+   "sectors": 8,
+   "bytes": 15733
+  }
+ }
+}

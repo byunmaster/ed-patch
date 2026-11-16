@@ -17,7 +17,8 @@ import messages as M
 HEAD_OPS = (0x4C, 0x20)  # 블록 머리 점프(JMP · JSR) — glyphdyn.HEAD_OPS 와 같다
 SHOW = 0x5B5B  # 메시지 띄우기(JSR) — ($10) = 메시지 시작
 BANK = 0x2000
-MARK = 0x3FF8  # 번호표 RAM(2B) — 비어 있는지는 단조 증가로 실측
+MARK = int(os.environ.get("ED_VIEWER_MARK", "0x3FF8"), 0)  # 번호표 RAM(2B) — 비어 있는지는 단조 증가로 실측. 씬에 따라 게임이 덮어쓰면(씬 54 등) 시험 빌드에서 다른 칸으로 옮긴다
+CLOSE = 0x5B0E  # 창 닫기·화면 갱신(narration_gates.CLOSE_WINDOW 와 같은 곳)
 SPEED = 0xC051  # 글자 찍는 속도 바이트(policy.md 「나레이션」) — 3 = 즉시
 
 
@@ -52,12 +53,13 @@ def stub(at: int, addrs: list[int], head: int) -> bytes:
     (예전 펼친 꼴은 메시지당 21B 라 전 씬 빌드가 이사 자리를 넘겼다 — rel 10067+12 > 10072). 메시지는 255개 미만이어야 한다."""
     n = len(addrs)
     assert 0 < n < 256, n
-    lo_at = at + 58  # 코드 길이(아래 assert)
+    lo_at = at + 64  # 코드 길이(아래 assert)
     hi_at = lo_at + n
     code = bytearray()
     code += bytes([0x20, head & 0xFF, head >> 8])  # JSR 원래 머리(초기화) — 맵이 그려진 뒤에 띄운다
     code += bytes([0xA9, int(os.environ.get("ED_VIEWER_SPEED", "3")), 0x8D, SPEED & 0xFF, SPEED >> 8])  # 메시지 속도 = 3(즉시 찍기, $5B8A 표) — 중간 프레임이 없다. 장면 초기화 뒤에 써야 덮이지 않는다
     code += bytes([0xA9, 0x00, 0x8D, MARK & 0xFF, MARK >> 8, 0x8D, (MARK + 1) & 0xFF, (MARK + 1) >> 8])  # MARK=0
+    code += bytes([0x20, CLOSE & 0xFF, CLOSE >> 8])  # 첫 메시지 앞에도 창 닫기 — 머리 초기화가 남긴 창(앞 쪽 글)이 카드에 이어 붙지 않게(실화면 4장 대조, 11-08)
     loop = len(code)
     code += bytes([0xAE, MARK & 0xFF, MARK >> 8])  # LDX MARK
     code += bytes([0xBD, lo_at & 0xFF, lo_at >> 8, 0x85, 0x10])  # LDA lo,X STA $10
@@ -77,12 +79,13 @@ def stub(at: int, addrs: list[int], head: int) -> bytes:
     code += bytes([0xD0, (w2 - (len(code) + 2)) & 0xFF])  # BNE w2
     code += bytes([0x3A])  # DEC A (HuC6280)
     code += bytes([0xD0, (w3 - (len(code) + 2)) & 0xFF])  # BNE w3(LDY 자리)
+    code += bytes([0x20, CLOSE & 0xFF, CLOSE >> 8])  # JSR 창 닫기(대화 끝 꼬리, narration_gates.CLOSE_WINDOW) — 다음 메시지가 새 창으로 열려 앞 창과 겹치지 않는다(11-07 겹침 수정)
     code += bytes([0xEE, MARK & 0xFF, MARK >> 8])  # INC MARK
     code += bytes([0xAD, MARK & 0xFF, MARK >> 8, 0xC9, n])  # LDA MARK CMP #n
     rel = loop - (len(code) + 2)
     code += bytes([0xD0, rel & 0xFF])  # BNE loop
     code += bytes([0x60])  # RTS
-    assert len(code) == 58, len(code)
+    assert len(code) == 64, len(code)
     return bytes(code) + bytes(a & 0xFF for a in addrs) + bytes(a >> 8 for a in addrs)
 
 

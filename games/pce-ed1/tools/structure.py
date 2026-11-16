@@ -144,6 +144,15 @@ def _walk(buf: bytes, i: int, limit: int, base_len: int, where: str, viol: list[
     return "end", i, None
 
 
+_ADDED_SPEAKER_SCENES = (45, 46, 47)
+
+
+def _added_keys(sid: int) -> set:
+    import translate
+
+    return translate.ADD_SMUGGLER_SPEAKER.get(sid, set())
+
+
 def _opening_ok(orig_msg: M.Message, new: bytes, where: str, viol: list[str]) -> None:
     """열개가 원본과 같은 종류인가 — 화자(1F … 04) / 공용(09 nn) / 없음."""
     if orig_msg.speaker is not None:
@@ -175,7 +184,10 @@ def _check_translate(rec: BlockRec, before: bytes, after: bytes, viol: list[str]
             viol.append(
                 f"{where}: 종료 바이트(+{m.end - 1:#06x})가 다른 코드의 점프 목표인데 {after[m.end - 1]:02X} 로 바뀌었다(원본 {before[m.end - 1]:02X}) — 그리로 오는 흐름이 뒤 글자를 읽는다"
             )
-        _opening_ok(m, seg, where, viol)
+        if rec.sid in _ADDED_SPEAKER_SCENES and m.key in _added_keys(rec.sid) and seg[:1] == b"\x1f":
+            pass  # 🔴 마스터 11-11 로 일부러 단 밀매상 화자 머리(translate.ADD_SMUGGLER_SPEAKER) — 열개 종류 대조 면제
+        else:
+            _opening_ok(m, seg, where, viol)
         kind, end, info = _walk(after, m.start, m.end, L, where, viol)
         if kind == "bad":
             continue
@@ -198,7 +210,7 @@ def _check_translate(rec: BlockRec, before: bytes, after: bytes, viol: list[str]
                 pad = after[end : m.end]
                 if any(pad):
                     viol.append(f"{where}: 점프 뒤 남는 칸에 0 이 아닌 바이트가 있다({pad.hex()[:24]})")
-            elif tgt == m.end and not m.terminated:
+            elif tgt == (m.cont if m.cont is not None else m.end) and not m.terminated:  # 이은 꼬리(`cont`)는 꼬리 본체의 끝으로 복귀
                 kinds["복귀 점프"].append((m.start, tgt))
                 pad = after[end : m.end]
                 if any(pad):
@@ -262,7 +274,7 @@ def _follow_tail(after: bytes, tgt: int, L: int, m: M.Message, where: str, viol:
                 viol.append(f"{where}: 종료 없던 조각의 꼬리가 종료 바이트로 끝났다")
             return
         if kind == "jump":
-            if info == m.end and not m.terminated:
+            if info == (m.cont if m.cont is not None else m.end) and not m.terminated:
                 return
             if info >= L:
                 i = info  # 꼬리 안에서 또 점프(조각 연결)
@@ -497,7 +509,8 @@ def verify_battle(recs: list):
 # 단위 = `sysstrings.read_sysmsg` (앞 옵코드 `lead` + 본문 + 뒤 옵코드 `tail`). 우리가 쓴 흐름을 **읽는 쪽(씬 인터프리터)처럼** 따라가며 — 글자는 지나고 `0F` 점프는
 # 따라가고(원래 꼬리에 있던 `0F` 는 옵코드로 센다) — 만나는 옵코드가 원본의 `lead + tail` 과 **같은 값·같은 차례**인지 본다. 짧아져 다음 단위로 흐르는 조각의
 # `0F 다음주소`, 옮겨 싣기(`spill` — 다른 단위의 남는 칸·선언한 빈 공간)가 모두 이 읽기로 따라진다. 낯선 옵코드가 먼저 나오면 위반.
-_SYS_WINDOWS = ((0x8000, 0x6D), (0xC000, 0x74))
+# `$4000` 창 = 뱅크 0x70 조각 보관소 마커(`0F` 스텁이 RAM 으로 복사해 읽는다 — `hook._frag_asm`, 오프셋 = 주소 − 0x4000)
+_SYS_WINDOWS = ((0x8000, 0x6D), (0xC000, 0x74), (0x4000, 0x70))
 
 
 def _sys_read(banks: dict, addr: int, n: int) -> bytes:
@@ -587,7 +600,7 @@ def analyze_label_separators(orig_bank: bytes, new_bank: bytes, lo: int, hi: int
     return viol
 
 
-def iso_banks(iso, banks=(0x6D, 0x74)) -> dict:
+def iso_banks(iso, banks=(0x6D, 0x74, 0x70)) -> dict:
     """구운 이미지에서 본 프로그램 뱅크(rel 34 + (뱅크−0x68)×4, 4섹터)를 읽는다."""
     import common
 

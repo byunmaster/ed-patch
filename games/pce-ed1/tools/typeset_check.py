@@ -150,7 +150,7 @@ def wrap(s):
                 for c in para[j:]:
                     if c == " ":
                         break
-                    n += c not in HANG
+                    n += 1  # 11-08: 매다는 부호도 어절 길이에 센다(`hook` wordck 과 같다)
                 brk = col + n > WIDTH
             if brk:
                 mid = prev != " " and ch != " " and prev not in PUNCT and ch not in PUNCT
@@ -160,7 +160,7 @@ def wrap(s):
                 if ch == " ":
                     continue  # 줄 머리 공백은 안 그린다(`flag`) — 화면엔 없는 것과 같다
             cur += ch
-            px += 4 if ch in typeset.NARROW else 12
+            px += typeset.adv(ch)
         lines.append(cur)
     return lines, cuts
 
@@ -296,7 +296,7 @@ def run():
     return rows
 
 
-VALUE = "9999"  # 수치는 4자리(마스터 09-27)
+VALUE = typeset.NUMCH * 4  # 수치는 4자리(마스터 09-27) — 한 자리 8px(typeset.NUMCH, 11-04 캡처 실측)
 
 
 def scene_rows():
@@ -316,7 +316,8 @@ def scene_rows():
             if "\n" in t:  # 하드 개행 창(장 끝 카드) — 줄을 손으로 맞춘 것이라 안 본다
                 continue
             src = font.expand_packed(t)
-            pgs = typeset.pages(src, speaker=True)  # 글 소실은 typeset.pages 가 스스로 assert 한다
+            typeset.set_scene(int(p.stem[3:]))
+            pgs = typeset.pages(src, speaker="nl")  # 글 소실은 typeset.pages 가 스스로 assert 한다
             for pg in pgs:
                 probs = [
                     x
@@ -328,14 +329,15 @@ def scene_rows():
     return rows
 
 
-def battle_rows():
-    """전투 문구 — 가장 긴 몬스터 이름·수치 4자리를 끼워 13칸으로(행위자가 앞에 붙는 조각은 이름을 앞에)."""
+def battle_rows(mon=None, include_ok=False):
+    """전투 문구 — 가장 긴 몬스터 이름·수치 4자리를 끼워 13칸으로(행위자가 앞에 붙는 조각은 이름을 앞에).
+    `mon` 을 주면 그 이름으로(전수용), `include_ok` 면 문제 없는 줄도 낸다(`(키, 줄, [])`) — 11-08: 「부호가 틀 칸에 걸리는지」 H13 이 문제 있는 줄만 훑어 구멍이 있었다."""
     import re
 
     import battle
 
     names, _missing = battle.kr_names()
-    mon = max(names.values(), key=len)
+    mon = mon or max(names.values(), key=len)
     msgs = json.loads((common.GAME_DIR / "script" / "sys" / "battle.json").read_text("utf-8"))[
         "messages"
     ]
@@ -344,6 +346,8 @@ def battle_rows():
         t = v
         if re.match(r"(은/는|을/를|이/가|의|에게|에)", t):
             t = mon + t
+        if t.startswith(" "):  # 값(수치) 뒤에 붙는 조각(「 내려갔다!」) — 앞 공백은 런타임 수치와 낱말을 띄운다(수치 뒤라 줄 첫 칸이 아니고, 넘긴 줄 첫 공백은 후킹이 먹는다)
+            t = VALUE + t
         t = t.replace("{01}", "\n")
         t = re.sub(r"\{(22|1F2204)\}", VALUE, t)
         t = re.sub(r"\{02\}", ACTOR, t)
@@ -352,7 +356,7 @@ def battle_rows():
         lines, cuts = wrap(t)
         assert_no_loss(t, lines)
         probs = problems(lines, cuts)
-        if probs:
+        if probs or include_ok:
             rows.append((k, lines, probs))
     return rows, len(msgs), mon
 
@@ -377,8 +381,8 @@ def punct_rows():
         elif isinstance(o, str):
             for rx, name in ((ell, "2-11 … 뒤 공백"), (tilde, "1-7 ～ 뒤 마침표"), (qe, "2-12 ?!… 순서")):
                 for m in rx.finditer(o):
-                    if rx is ell and re.search(r"(^|[\n\f「『(])$", o[: m.start()]):
-                        continue  # 마스터 10-13: 문장 맨 앞 `…` 는 뒤를 붙인다(앞말 뒤 말줄임만 띄운다)
+                    if rx is ell and re.search(r"(^|[\n\f「『(]|[.!?。] )$", o[: m.start()]):
+                        continue  # 마스터 10-13: 문장 맨 앞 `…` 는 뒤를 붙인다(앞말 뒤 말줄임만 띄운다) — 문장 끝 부호 + 공백 뒤(문장 가운데 시작)도 문장 맨 앞이다(11-06 씬 110)
                     if rx is ell:  # 예외(마스터 10-13): 같은 소리를 되풀이하는 의성어(흑…흑…흑…)는 붙인다
                         pre = re.search(r"([가-힣]+)$", o[: m.start()])
                         if pre and o.startswith(pre.group(1), m.end()):

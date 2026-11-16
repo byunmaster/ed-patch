@@ -19,13 +19,14 @@ import typeset
 
 
 def _scene(n: int) -> str:
+    typeset.set_scene(n)
     h = hashlib.sha1()
     for k, v in sorted(M.load_translations(n).items()):
         t = v.get("t", "")
         if not t or v.get("raw") or "\n" in t:
             continue
         h.update(f"{k}\x00".encode())
-        for pg in typeset.pages(font.expand_packed(t), speaker=True):
+        for pg in typeset.pages(font.expand_packed(t), speaker=True, four=True):
             h.update(("\x01".join(pg) + "\x02").encode())
     return h.hexdigest()[:12]
 
