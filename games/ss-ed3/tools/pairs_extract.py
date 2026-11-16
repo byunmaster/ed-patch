@@ -395,7 +395,7 @@ def name_splits(rows):
 def main():
     out = sys.argv[1]
     os.makedirs(out, exist_ok=True)
-    rev = N.reverse(H.load(), H.load_low())
+    rev = {k: H.LIGA_BACK.get(v, v) for k, v in N.reverse(H.load(), H.load_low(), H.load_liga()).items()}
     img = build.out_paths(1)[0]
     files = {n: (l, s) for n, l, s, *_ in build.patched(1)}
     rows = []

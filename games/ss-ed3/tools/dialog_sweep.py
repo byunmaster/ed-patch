@@ -197,7 +197,19 @@ def prepare(h, base, got, blocks):
 
 
 NAMES = int(os.environ.get("SWEEP_NAMES", "0x400"), 0)  # 이름표 표를 옮길 길이(이름 칸 32B × 32 — 머리 인자가 32 이상인 블록은 기준 맵 값을 읽는다)
-KEYS = os.environ.get("SWEEP_KEYS")  # "224-233" — 그 번호 구간만 찍는다(시험용)
+KEYS = os.environ.get("SWEEP_KEYS")  # "224-233,443,884" — 그 번호(구간·쉼표 목록)만 찍는다(시험용)
+ORIG = bool(os.environ.get("SWEEP_ORIG"))  # 1 이면 **원판 이미지**(JP 디스크 1)의 글을 찍는다 — 판정용 「원판 짝」 촬영
+
+
+def key_wanted(i):
+    """`SWEEP_KEYS` 가 없으면 전부, 있으면 구간·목록에 든 번호만."""
+    if not KEYS:
+        return True
+    for part in KEYS.split(","):
+        lo, _, hi = part.partition("-")
+        if int(lo) <= i <= int(hi or lo):
+            return True
+    return False
 
 
 def run_map(h, base, img, files, orig, stem, outdir, limit, idxf, deadline):
@@ -229,7 +241,7 @@ def run_map(h, base, img, files, orig, stem, outdir, limit, idxf, deadline):
     for i, blk in enumerate(blocks[:limit]):
         if time.time() > deadline:
             return done
-        if KEYS and not (int(KEYS.split("-")[0]) <= i <= int(KEYS.split("-")[-1])):
+        if not key_wanted(i):
             continue
         key = f"{i:04d}"
         h.restore(snap)
@@ -364,8 +376,13 @@ def main():
     core = os.path.join(H.CACHE, "beetle-saturn", "src", "mednafen_saturn_libretro.so")
     bkr = opt("--bkr")
     h = H.Harness(core, cue, outdir, bkr=bkr)
-    img = build.out_paths(1)[0]
-    files = {n: (l, s) for n, l, s, *_ in build.patched(1)}
+    if ORIG:
+        img = C.DISC_BIN[1]
+        with C.open_disc(1) as d0:
+            files = {n: (l, s) for n, l, s in d0.files()}
+    else:
+        img = build.out_paths(1)[0]
+        files = {n: (l, s) for n, l, s, *_ in build.patched(1)}
     key = rom_key(img, files)
     if statep == "-":  # 상태 파일이 없으면 부팅 열로 만든다 — 만든 롬의 열쇠를 옆에 적는다
         boot(h)

@@ -23,7 +23,7 @@ import font as F
 
 BASE = 0x06004000
 MENU = (0x06016420, 0x06019200)  # 메뉴 본체·처리기 — 원판 그대로여야 한다
-MAPS = ("hangul_map.json", "lowered_map.json", "book_map.json", "credits_map.json")
+MAPS = ("hangul_map.json", "lowered_map.json", "book_map.json", "credits_map.json", "liga_map.json")
 
 
 def allowed_spans(b0):

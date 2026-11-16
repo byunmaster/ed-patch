@@ -286,6 +286,22 @@ def bake_cred(out):
     return n
 
 
+def bake_liga(out, asc):
+    """합자 글리프(`⁉` = `!?`)를 굽는다 — **같은 ASCII.FON 의 `!`·`?`**(여백 조정·내림 반영 판)를 12px 칸 하나에 붙여 앉힌다. `(구운 칸 수)`.
+
+    `!` 는 열 2 의 1px 막대, `?` 는 열 1~5 — `?` 칸을 4 열 오른쪽에 두면 `!`(열 2)와 `?`(열 5~9) 사이 틈이 2px 이고 잉크 8 열(2~9)이 12px 칸 가운데에 앉는다.
+    ASCII 도 한글과 같은 12 행이라 행은 그대로 옮긴다(기준선 일치)."""
+    table = H.load_liga()
+    n = 0
+    for _ch, idx in table.items():
+        grid = np.zeros((F.ROWS, F.CELL), np.uint8)
+        grid[:, 0:8] |= F.ascii_unpack(asc, ord("!"))
+        grid[:, 4:12] |= F.ascii_unpack(asc, ord("?"))
+        out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = F.pack18(grid)
+        n += 1
+    return n
+
+
 def build(disc=1):
     """`(새 폰트 bytes, 못 찾은 글자)` — 원본과 크기가 같다."""
     base, _ = F.load(disc)
@@ -317,6 +333,7 @@ def build(disc=1):
     bake_cred(out)
     bake_label_strips(out, base)
     bake_ellipsis(out)
+    bake_liga(out, build_ascii(disc)[0])
     assert len(out) == len(base), (len(out), len(base))
     return bytes(out), missing
 

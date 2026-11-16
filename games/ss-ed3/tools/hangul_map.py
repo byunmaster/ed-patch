@@ -56,6 +56,11 @@ BOOK_PATH = os.path.join(C.GAME_DIR, "book_map.json")
 #     크레딧 때만 바꿔 끼울 수 없다). 그리는 쪽은 글자 폭 10 으로 부른다(`subtitle_stub.draw_line9`).
 #   ⚠ 이것도 정본이다(`--freeze-cred`). 빈 슬롯이 밀리면 이미 넣은 문안이 딴 글자가 된다.
 CRED_PATH = os.path.join(C.GAME_DIR, "credits_map.json")
+#   🔴 **합자 글리프** — 대사의 `!?`(원문 `！？`) 둘을 전각 칸 하나에 **붙여 그린** 글자(`⁉` U+2049). ASCII `!` 는 1px 막대(열 2)라 `!?` 사이 잉크 틈이 4px 라 벌어져 보인다
+#   (마스터 10-07 「`?!` 는 붙어 보였다」 · 10-24 판정 B). 같은 2B·같은 12px 폭이라 길이·조판이 그대로다. 재삽입이 대사 블록을 인코딩할 때만 `!?` → `⁉` 로 바꾸고
+#   (`reinsert.patch_blocks`), 되풀이 검사·짝 표는 거꾸로 `!?` 로 푼다(`LIGA_BACK`). 정본(append-only)은 `liga_map.json` — 그림은 `build_font.bake_liga`.
+LIGA_PATH = os.path.join(C.GAME_DIR, "liga_map.json")
+LIGA_BACK = {"⁉": "!?"}  # 합자 글자 → 풀어 쓴 꼴
 CRED_SRC = os.path.join(C.GAME_DIR, "script", "voice_credits.json")
 
 
@@ -169,6 +174,7 @@ def freeze_book(free):
     """책 전용 배정을 박는다 — 본 배정·내려앉은 배정이 쓰고 **남은** 빈 슬롯에서."""
     chars = book_chars()
     taken = set(load().values()) | set(load_low().values())
+    taken |= set(load_liga().values())
     rest = [i for i in sorted(free) if i not in taken]
     if len(rest) < len(chars):
         raise SystemExit(f"빈 슬롯이 모자란다: {len(rest)} < {len(chars)}")
@@ -226,6 +232,7 @@ def freeze_cred(free, force=False):
         with open(BOOK_PATH, encoding="utf-8") as f:
             taken |= set(json.load(f)["slots"])
     taken |= set(have.values())
+    taken |= set(load_liga().values())
     rest = [i for i in sorted(free) if i not in taken]
     new = [c for c in chars if c not in have]
     if len(rest) < len(new):
@@ -247,6 +254,51 @@ def freeze_cred(free, force=False):
         )
     print(f"✅ 크레딧 전용 배정 {len(keys)}자(새로 {len(new)}) → {CRED_PATH}")
     print(f"   남은 빈 슬롯 {len(rest) - len(new):,}")
+
+
+def load_liga():
+    """합자 글리프 배정 `{글자: 슬롯}`. 파일이 없으면 빈 표 — **없어도 빌드는 돈다**(`!?` 가 ASCII 로 나간다)."""
+    if not os.path.exists(LIGA_PATH):
+        return {}
+    with open(LIGA_PATH, encoding="utf-8") as f:
+        doc = json.load(f)
+    return {ch: i for ch, i in zip(doc["chars"], doc["slots"], strict=True)}
+
+
+def freeze_liga(free):
+    """합자 글리프 배정을 박는다 — 본·내려앉은·책·크레딧 배정이 안 쓰는 첫 빈 슬롯. **이미 박힌 자리는 그대로**(append-only)."""
+    have = load_liga()
+    taken = set(load().values()) | set(load_low().values()) | set(have.values())
+    for path, key in ((BOOK_PATH, "slots"),):
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                taken |= set(json.load(f)[key])
+    if os.path.exists(CRED_PATH):
+        taken |= set(load_cred().values())
+    rest = [i for i in sorted(free) if i not in taken]
+    new = [c for c in LIGA_BACK if c not in have]
+    if len(rest) < len(new):
+        raise SystemExit(f"빈 슬롯이 모자란다: {len(rest)} < {len(new)}")
+    table = dict(have)
+    table.update(zip(new, rest[: len(new)], strict=True))
+    keys = list(table)
+    with open(LIGA_PATH, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "_doc": "합자 글리프 배정(`⁉` = `!?`). 🔴 파생물이 아니라 정본이다 — 자세한 건 tools/hangul_map.py 의 LIGA_PATH 주석",
+                "chars": keys,
+                "slots": [table[c] for c in keys],
+            },
+            f,
+            ensure_ascii=False,
+            indent=1,
+        )
+    print(f"✅ 합자 배정 {len(keys)}자(새로 {len(new)}: {''.join(new)}) → {LIGA_PATH}")
+
+
+def liga_text(text):
+    """대사 문안의 `!?` 를 합자 글자로 — 배정이 없으면 그대로."""
+    return text.replace("!?", "⁉") if load_liga() else text
 
 
 def encode_kr(text, table=None):
@@ -294,6 +346,7 @@ def freeze_low(free):
             taken |= set(json.load(f)["slots"])
     if os.path.exists(CRED_PATH):
         taken |= set(load_cred().values())
+    taken |= set(load_liga().values())
     rest = [i for i in sorted(free) if i not in taken]
     new = [c for c in chars if c not in have]
     if len(rest) < len(new):
@@ -328,6 +381,7 @@ def main():
     ap.add_argument("--freeze-low", action="store_true", help="자르는 창 전용 배정을 박는다")
     ap.add_argument("--freeze-book", action="store_true", help="책 화면 전용 배정을 박는다")
     ap.add_argument("--freeze-cred", action="store_true", help="크레딧 자막 전용 배정을 박는다")
+    ap.add_argument("--freeze-liga", action="store_true", help="합자 글리프(`⁉`) 배정을 박는다")
     a = ap.parse_args()
     used = F.used_indices()
     free = F.free_slots(used)
@@ -337,6 +391,8 @@ def main():
         return freeze_book(free)
     if a.freeze_cred:
         return freeze_cred(free)
+    if a.freeze_liga:
+        return freeze_liga(free)
     table = assign(free)
     syl = list(table)
     print(f"음절 {len(syl):,}  쓰는 글리프 {len(used):,}  빈 슬롯 {len(free):,}")

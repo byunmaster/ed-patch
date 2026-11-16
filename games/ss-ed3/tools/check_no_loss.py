@@ -50,7 +50,7 @@ def reverse(*tables):
     out = {}
     for t in tables:
         for ch, idx in t.items():
-            out[bytes(sjis.sjis_of_index(idx))] = ch
+            out[bytes(sjis.sjis_of_index(idx))] = H.LIGA_BACK.get(ch, ch)  # 합자 글자는 풀어 쓴 `!?` 로
     return out
 
 
@@ -259,7 +259,7 @@ def check_sys(img, files):
 
 
 def main():
-    rev_desc = reverse(H.load(), H.load_low())
+    rev_desc = reverse(H.load(), H.load_low(), H.load_liga())
     total, fails = 0, []
     for disc in (1, 2):
         img = build.out_paths(disc)[0]

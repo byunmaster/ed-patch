@@ -46,6 +46,16 @@ def _is_sign(data, text_off, head):
 
 
 _CARD_B_HEAD = bytes.fromhex("ff0019ff") + b"\x0d" * 6  # 장 카드(세로 줄바꿈형) 머리 — 글 앞 10B
+BAND_HEAD = 8  # 띠 제목 머리 — `FF 37 xx xx FF 87 00 00`
+
+
+def _is_band(data, text_off):
+    """띠 제목 꼴인가 — 글 앞 8B 가 `FF 37 xx xx FF 87 00 00` (MAP076#58 「순례의 아침」)."""
+    return (
+        data[text_off - 8 : text_off - 6] == b"\xff\x37"
+        and data[text_off - 4 : text_off] == b"\xff\x87\x00\x00"
+    )
+
 
 
 def _card_kind(data, blocks, key):
@@ -315,9 +325,34 @@ def patch(data, stem, table, orig):
             out.extend(body)
             out[s : s + TRAMP] = GOTO + struct.pack(">I", BASE + tail)
             continue
+        elif _is_band(data, text_off):
+            # 띠 제목(「순례의 아침」 MAP076#58) — `FF 37 xx xx` + `FF 87 00 00`(띠 열기) + 글 + `00 09`. 띠 처리기는 인자(2B)만 먹고 글은 **글 모드 흐름**이 읽으므로
+            # 글 앞 8B(`FF 37` 인자 포함 옵코드 둘)를 통째로 트램펄린(`FD 00` + 주소 4B + `FF FF` 무동작)으로 덮고, 꼬리에 그 8B + 진짜 문안 + `00 09` 를 둔 뒤
+            # 종결 뒤로 돌아온다(장 카드 B·C 와 같은 길 — 글 바이트는 칸 안에 그대로 남아 되풀이 검사가 같다).
+            s = text_off - BAND_HEAD
+            assert s % 2 == 0, f"{stem}#{key}: 띠 머리 {s:#x} 가 홀수 주소다"
+            text_end = text_off + len(blk["body"])
+            end_ops = b"\x00\x09"
+            assert bytes(data[text_end : text_end + 2]) == end_ops, f"{stem}#{key}: 띠 글 뒤가 00 09 가 아니다"
+            assert (text_end + 2) % 2 == 0, f"{stem}#{key}: 복귀 주소가 홀수다"
+            raw = H.encode_kr(wides[key], table)
+            if (BAND_HEAD + len(raw) + len(end_ops)) % 2:
+                raw += b" "
+            tail = len(out) + len(out) % 2
+            body = (
+                bytes(data[s:text_off])
+                + raw
+                + end_ops
+                + GOTO
+                + struct.pack(">I", BASE + text_end + len(end_ops))
+            )
+            out.extend(b"\x00" * (tail - len(out)))
+            out.extend(body)
+            out[s : s + BAND_HEAD] = GOTO + struct.pack(">I", BASE + tail) + b"\xff\xff"
+            continue
         else:
             raise SystemExit(
-                f"{stem}#{key}: `_wide` 가 지원하는 꼴(선택지 항목 · FF 02 + FF 00 머리 대사 · FE 00 + FF FF + FF 00 대사)이 아니다"
+                f"{stem}#{key}: `_wide` 가 지원하는 꼴(선택지 항목 · FF 02 + FF 00 머리 대사 · FE 00 + FF FF + FF 00 대사 · 장 카드 · 띠 제목)이 아니다"
             )
         last = data[s + TRAMP - 1]  # 지킬 바이트
         tail = len(out)
