@@ -59,6 +59,9 @@ ls "$BUILD_TAG_DIR"/*.bin >/dev/null 2>&1 || { echo "❌ 빌드 산출물이 없
 # 5e5. 🔴 옛 칸 참조 검사(11-07) — 번역이 옮겨 0 으로 지운 문안 칸을 `lea d(pc)` 가 아직 가리키면 실패. 쓰기·읽기 짝이 한쪽만 옮겨진 결함(049-2 도구점 팔기 분기 — 「삽니다」 뒤 목록이 빔, 15모듈 30곳).
 "$PY" "$T/stale_refs.py" "$BUILD_TAG_DIR"/ed2-kr.bin
 
+# 5e5b. 🔴 원판 텍스트 사본 검사(11-17, pce-ed1 2장 장면 일본어 사고) — 번역한 덩어리의 원판 바이트 사본이 롬 **전체**(고친 자리 밖)에 남았나. ① 원판 압축 블록의 다른 자리 사본 ② 원문 일본어 글줄의 제품 롬 원바이트·비번역 LZ 묶음 잔존 ③ 원판 블록 통째 잔존. 있으면 실패(허용은 textmap/dup_text_baseline.json, 사유 포함).
+"$PY" "$T/dup_text_scan.py" "$BUILD_TAG_DIR"/ed2-kr.bin
+
 # 5e6. 🔴 표 토큰 대조(11-07) — 표 문자열의 제어 토큰(`FE xx`) 열이 원판과 같은가. 파티 이름 0번의 시작 `FE0C` 중복(빌더가 한 번 더 씀)을 잡는다.
 "$PY" "$T/table_tokens.py" "$BUILD_TAG_DIR"/ed2-kr.bin
 
