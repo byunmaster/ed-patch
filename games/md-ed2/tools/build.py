@@ -241,8 +241,11 @@ def _fill(w: float) -> str:
     return "가" * min(-int(-w // 1), int(WIDTH))
 
 
+SUFFIX_BREAK = False  # 직전 typeset 이 「뒤에 이어질 호출 조각+어절」 때문에 마지막 줄 뒤에서 줄을 갈랐나(11-11)
+
+
 def typeset(
-    text: str, lead: str = "", prefix_w: float = 0.0, brk: bool = False
+    text: str, lead: str = "", prefix_w: float = 0.0, brk: bool = False, suffix_w: float = 0.0
 ) -> list[list[str]]:
     """자유 문안 → 페이지(줄 목록). `\f` 는 강제 페이지.
 
@@ -258,6 +261,30 @@ def typeset(
     `brk` 는 앞 글이 문장 부호로 끝나 **거기서 갈려도 되는** 경우다 — 붙은 글자 사이엔 조판기가 끊을 자리가 없어,
     앞 글(`…로군.`)과 다음 글이 붙은 채 17.5칸을 넘으면 어디서도 못 갈랐다. 가짜 공백을 끼워 끊을 자리를 주고, 안 갈리면 떼어 낸다.
     """
+    global SUFFIX_BREAK
+    SUFFIX_BREAK = False
+    if suffix_w > 0 and text.endswith(" ") and prefix_w <= 0:
+        # 뒤에 호출 조각 + 붙은 어절(폭 suffix_w)이 같은 줄에 이어진다(`…라는 건 `+`프래드`+`들이었던 거야.`) — 그 폭만큼 붙은 글자를
+        # 공백 뒤에 달아 감싸, 덩이 안에서 줄을 다시 짠다(줄·쪽 수가 안 늘 때만). 마지막 줄이 그 글자뿐이면 거기서 줄이 갈린 것이다.
+        fil = "가" * min(-int(-suffix_w // 1), int(WIDTH))
+        body = normalize(text).strip()
+        n_base = len(layout.wrap_pages(body, width=WIDTH, lines_per_page=LINES, strip_after=""))
+        pg = layout.wrap_pages(body + " " + fil, width=WIDTH, lines_per_page=LINES, strip_after="")
+        if len(pg) == n_base and pg and pg[-1] and pg[-1][-1].endswith(fil) and "\f" not in text:
+            last = pg[-1][-1]
+            if last.strip() == fil and len(pg[-1]) > 1:
+                pg[-1].pop()
+                brk_here = True
+            else:
+                pg[-1][-1] = last[: -len(fil)].rstrip()
+                brk_here = False
+            if all(ln.strip() for p_ in pg for ln in p_):  # 빈 줄이 끼면(조판기가 첫 줄을 비운 꼴) 옛 길로
+                SUFFIX_BREAK = brk_here
+                if lead:
+                    pg[0][0] = lead + pg[0][0]
+                layout.record(text, lead, prefix_w, pg)
+                return pg
+        SUFFIX_BREAK = False
     raw = text
     text = normalize(text)
     pages = []
@@ -372,10 +399,16 @@ def build_stream(
     pending_text: list[str] = []
     # 같은 줄에 이미 쓰인 폭(10-23) — 줄바꿈·쪽 넘김·이름 칸 뒤로 0. 호출한 조각(`frags`: 원본 오프셋 → 정본 문안)의 글도 센다.
     line = {"w": 0.0, "name": False, "last": "", "n": 0}  # n = 쪽 안 줄 번호(0 부터)
+    pend_suffix = [0.0]  # 지금 덩이 뒤에 바로 이어질 호출 조각 + 붙은 어절의 폭(11-11)
 
-    def break_before(tgt: int):
-        """이어질 조각의 첫 줄이 이 줄에 안 들어가면(앞 글이 끊을 자리에서 끝났을 때) 그 앞에서 줄을 가른다(10-23)."""
+    def break_before(tgt: int, extra: float = 0.0):
+        """이어질 조각의 첫 줄이 이 줄에 안 들어가면(앞 글이 끊을 자리에서 끝났을 때) 그 앞에서 줄을 가른다(10-23).
+
+        `extra` = 호출 조각 **바로 뒤에 붙는 어절**의 폭(11-11) — `프래드`+`들이었던`·`몬스터`+`가`처럼 조각과 한 어절을 이루는 뒤 글이다.
+        조각만 재면 들어가는데 뒤 어절까지 붙으면 넘쳐, 끊을 자리 없는 어절이 런타임 줄넘김에 맡겨졌다(PS1 I·II 의 「대로」 홀로 줄 꼴)."""
         fw = _first_line_w(frags.get(tgt, "")) if frags else 0.0
+        if fw and extra and not re.search(r"<0[135]>|\f", frags.get(tgt, "")):
+            fw += extra
         if (
             fw
             and out
@@ -384,11 +417,14 @@ def build_stream(
             and line["w"] > 0
             and line["w"] + fw > WIDTH
             and line["last"] in _BRK_AFTER
-            and line["n"] < LINES - 1
         ):
-            out.append(scene.Token(0, b"\x01", "ctl", 0x01))
+            if line["n"] < LINES - 1:
+                out.append(scene.Token(0, b"\x01", "ctl", 0x01))
+                line["n"] += 1
+            else:  # 쪽이 이미 찼다 — 꼬리를 새 쪽(창)으로 시작한다(줄이 모자라 어느 줄에도 못 끼운다, 11-11)
+                out.append(scene.Token(0, b"\x05", "ctl", 0x05))
+                line["n"] = 0
             line["w"], line["last"] = 0.0, ""
-            line["n"] += 1
             BREAKS_ADDED.append(tgt)
 
     def flush_text(trail: bool = True):
@@ -434,7 +470,9 @@ def build_stream(
                         out.append(scene.Token(0, b"\x01", "ctl", 0x01))
                     out.append(scene.Token(0, cs.encode(ln), "text"))
             return
-        pages = typeset(body, lead, line["w"], line["last"] in _BRK_AFTER)
+        pages = typeset(body, lead, line["w"], line["last"] in _BRK_AFTER, pend_suffix[0])
+        sfx_brk = SUFFIX_BREAK
+        pend_suffix[0] = 0.0
         # 🔴 조판기는 덩이의 앞뒤 공백을 지운다 — 태그(이름 호출 등) **앞** 공백이 사라져 「이런아트라스님」이 됐다
         # (2026-10-12 화면). 뒤 공백은 덩이 뒤에 태그가 이어질 때만 되살린다.
         if trail and body[-1:] == " " and pages:
@@ -454,11 +492,25 @@ def build_stream(
                 if ln:
                     out.append(scene.Token(0, cs.encode(ln), "text"))
                 pre += layout.tw(ln)
-        line["w"] = pre + (0.5 if trail and body[-1:] == " " and pages else 0.0)
+        line["w"] = pre  # 뒤 공백은 위에서 마지막 줄에 붙였으니 pre 에 이미 들었다(옛 +0.5 는 이중 계산이라 17.5 에 꼭 맞는 줄을 가짜로 넘쳤다고 봤다, 11-11)
         last_ln = pages[-1][-1] if pages and pages[-1] else ""
         line["last"] = last_ln[-1:] if last_ln else (line["last"] if pre else "")
+        if sfx_brk:  # 뒤 호출 조각이 새 줄에서 시작한다
+            out.append(scene.Token(0, b"\x01", "ctl", 0x01))
+            line["w"], line["last"] = 0.0, ""
+            line["n"] += 1
+            BREAKS_ADDED.append(-1)
 
-    for kind, val in textmap.parse_ours(ours):
+    items = list(textmap.parse_ours(ours))
+
+    def _next_word_w(i: int) -> float:
+        """i 번째 항목(호출) 바로 뒤 글의 첫 어절 폭 — 공백으로 시작하면 이어지는 어절이 없다."""
+        if i + 1 < len(items) and items[i + 1][0] == "text":
+            w0 = normalize(items[i + 1][1]).split(" ")[0]
+            return layout.tw(w0)
+        return 0.0
+
+    for idx, (kind, val) in enumerate(items):
         if kind == "text":
             pending_text.append(val)
         elif kind == "page":
@@ -484,8 +536,13 @@ def build_stream(
                         f"정본의 참조 <{code:02x}:{tgt:04x}> 가 원본 스트림에 없다 @{st.start:#x}"
                     )
                 refs.remove(m)
+                if code == 0x10 and frags and not line["name"]:
+                    fr = frags.get(tgt, "")
+                    if fr and not re.search(r"<0[1357]>|\f|<1e>", fr):
+                        pend_suffix[0] = _frag_width(fr) + _next_word_w(idx)
                 flush_text()
-                break_before(tgt)
+                pend_suffix[0] = 0.0
+                break_before(tgt, _next_word_w(idx) if code == 0x10 else 0.0)
                 out.append(m)
                 if code == 0x10 and frags and not line["name"]:
                     line["w"] += _frag_width(frags.get(tgt, ""))
@@ -1005,7 +1062,42 @@ def repoint_shared_heads(new: bytes, mod, rep_keys) -> tuple[bytes, int]:
         RL.add("포인터", ins + 2, cand, "머리 워드를 런타임에 쓰는 lea 를 바깥 복사본으로 돌렸다(안쪽·바깥 복사본이 갈라진 상점 표)", RL.EVID_VM, "되돌리기 수단 없음 — 되돌리면 쓰는 쪽과 읽는 쪽이 갈라져 NOP 워드를 읽는다(상점 메뉴 오작동)")
         n += 1
     n += _repoint_code_leas(out, mod, pair, set(rep_keys))
+    n += _restore_orphan_head_slots(out, mod, pair, set(rep_keys))
     return bytes(out), n
+
+
+def _orphan_head(mod, i: int) -> bool:
+    """`i` 가 바깥 스트림 없는 상점 표 머리의 안쪽 스트림 I(`[포인터 워드 ×3] 4E71 …` 의 `4E71`)인가 — 그 자리는 상점 모듈이 런타임에 **재고 포인터를 써 넣는 표의 넷째 워드**다."""
+    data = mod.data
+    if i < 6 or i not in mod.streams or bytes(data[i : i + 2]) != b"\x4e\x71":
+        return False
+    if any(o < i < s_.end for o, s_ in mod.streams.items()):
+        return False
+    ws = [struct.unpack(">H", data[i - 6 + 2 * j : i - 4 + 2 * j])[0] for j in range(3)]
+    return ws[0] == i + 2 and all(0x100 < w < len(data) for w in ws)
+
+
+def _restore_orphan_head_slots(out: bytearray, mod, pair: dict[int, int], rep_keys: set[int]) -> int:
+    """🔴 바깥 스트림(O)이 없는 상점 표 머리 — `[포인터 워드 ×3] 4E71` 의 **4E71 자리**를 지킨다(밀매상 074-3·075-0·075-1·075-2 · 087-1, 11-11 실측).
+
+    표 머리가 스트림이 아니라 앞 스트림 꼬리 뒤 자료로 놓인 모듈은 안쪽 스트림 I(`4E71` 로 시작)만 스트림이다 — I 가 번역으로 옮겨지면 그 자리는 0 으로 지워져 표의 넷째 워드가
+    `0000` 이 되고, 표를 읽는 서비스가 그 워드를 불러 「삽니다」 뒤 목록이 안 뜬다(075-2 를 실화면으로: 원판 모듈은 목록이 뜨고 구운 모듈은 안 뜸). 머리 워드 자리를 `4E71` 로 되돌려 두고(런타임에 쓰는 `lea` 는 옛 자리 그대로 — 재고 포인터가 이 워드에 써진다),
+    워드 0(원판 I 글 시작 = 슬롯 + 2)을 옮겨진 I 의 새 글 시작으로 돌린다. 바깥 스트림이 있는 일반 머리는 `fix_head_words` 몫이라 건드리지 않는다."""
+    n = 0
+    data = mod.data
+    for i, st in mod.streams.items():
+        if i not in rep_keys or i not in pair or not _orphan_head(mod, i):
+            continue
+        if bytes(out[i : i + 2]) == b"\x4e\x71" or bytes(out[i : i + 2]) != b"\x00\x00":
+            continue  # 이미 맞거나, 다른 글이 앉았다(그럼 손대지 않고 아래 검사가 잡는다)
+        out[i : i + 2] = b"\x4e\x71"
+        out[i - 6 : i - 4] = struct.pack(">H", pair[i] + 2)
+        for ins, rs in mod.roots.items():  # 머리 워드를 쓰는 lea — 원판 변위 그대로(옮겨진 I 가 아니라 이 슬롯에 써야 표가 읽는다)
+            if rs == i:
+                out[ins + 2 : ins + 4] = data[ins + 2 : ins + 4]
+        RL.add("포인터", i, i, "바깥 스트림 없는 상점 표 머리의 머리 워드 자리를 4E71 로 되돌리고 워드 0 을 옮겨진 안쪽 스트림 글 시작으로 돌렸다", RL.EVID_VM, "되돌리기 수단 없음 — 되돌리면 표의 넷째 워드가 0000 이 되어 「삽니다」 뒤 목록이 안 뜬다(밀매상 상점)")
+        n += 1
+    return n
 
 
 def _repoint_code_leas(out: bytearray, mod, pair: dict[int, int], rep_keys: set[int]) -> int:
@@ -1023,6 +1115,8 @@ def _repoint_code_leas(out: bytearray, mod, pair: dict[int, int], rep_keys: set[
         t = p + 2 + struct.unpack(">h", data[p + 2 : p + 4])[0]
         if t not in mod.streams or t not in pair or t not in rep_keys:
             continue
+        if _orphan_head(mod, t):
+            continue  # 표의 넷째 워드(재고 포인터 쓰기) — 옛 자리 그대로 둔다(_restore_orphan_head_slots 가 자리를 지킨다)
         outer = next((o for o, st in mod.streams.items() if o < t < st.end), None)
         if outer is not None:  # (b) 머리 워드 안쪽 복사본
             if outer not in pair:

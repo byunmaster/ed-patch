@@ -35,6 +35,10 @@ ALLOW = {
         "새 스트림이 0F 스텁으로 옮겨 간 꼬리(번역으로 길어진 본문을 모듈 꼬리로 옮김) — 스텁을 따라가 이어 맞댄다",
         "0F=goto: ED2 스트림 VM 의 goto 핸들러($A2xx, scene.parse_stream GOTO) 가 2B 상대 변위로 점프",
     ),
+    "orphan-head": (
+        "바깥 스트림 없는 상점 표 머리의 안쪽 스트림 I(`[포인터 워드 ×3] 4E71 …`) — 옛 자리는 표의 넷째 워드(런타임에 재고 포인터를 쓴다)로 남고 글은 옮겨졌다. 슬롯 4E71·워드 0 이 옮겨진 I(`4E71` 로 시작)의 글 시작을 가리키는지만 본다",
+        "build._restore_orphan_head_slots · 밀매상 074-3·075-0·075-1·075-2 · 087-1 — 머리 워드를 쓰는 lea(0x218·0x21E 자리)가 옛 슬롯을 가리킨 채 남는다(원판 변위 그대로)",
+    ),
     "shop-head": (
         "상점 표 머리(`[포인터 워드 ×N] 4E71 …`) — 앞 워드가 자료라 파서가 제어로 읽는다. 별도 게이트가 워드·4E71 을 본다(대조에서 뺀다)",
         "build.verify_head_tables(상점 표 머리 검사, 머리 워드 자리 4E71 과 포인터 워드가 새 자리를 가리키는지) · build.repoint_shared_heads(lea 변위)",
@@ -160,6 +164,20 @@ def compare_module(om: bytes, nm: bytes, tag: str):
         head = b"".join(x.raw for x in st.tokens)[:14]
         if b"\x4e\x71" in head[:14] and st.tokens[0].kind != "text":
             allow["shop-head"] += 1
+            continue
+        if (
+            s >= 6
+            and om[s : s + 2] == b"\x4e\x71"
+            and int.from_bytes(om[s - 6 : s - 4], "big") == s + 2
+            and not any(o_ < s < e_.end for o_, e_ in omod.streams.items())
+        ):
+            # 바깥 스트림 없는 상점 표 머리의 I — 슬롯(4E71)이 옛 자리에 남고 워드 0 은 옮겨진 I 의 글 시작(+2)을 가리킨다
+            w0 = int.from_bytes(nm[s - 6 : s - 4], "big")
+            # I 가 제자리면(n == s) 슬롯·워드 0 이 원판 그대로다 — 옮겨졌을 때만 워드 0 이 새 글 시작(+2)을 가리켜야 한다
+            if nm[s : s + 2] != b"\x4e\x71" or (n != s and (w0 == s + 2 or nm[w0 - 2 : w0] != b"\x4e\x71")):
+                bad.append((tag, s, n, 0, [("orphan-head", om[s - 6 : s + 2].hex())], [("orphan-head", nm[s - 6 : s + 2].hex())]))
+            allow["orphan-head"] += 1
+            cmp_n += 1
             continue
         if s in toggled and not any(r != toggled[s] and omod.roots[r] == s for r in omod.roots):
             if nm[n : n + 1] != om[s : s + 1]:

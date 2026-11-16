@@ -73,6 +73,8 @@ ls "$BUILD_TAG_DIR"/*.bin >/dev/null 2>&1 || { echo "❌ 빌드 산출물이 없
 
 # 5j. 🔴 마스터 판정 문안(10-30) — 판정으로 정한 금지·필수·부재 꼴은 `master_rulings.json`, 판정을 받으면 거기 한 줄을 더한다. 검수·재조판이 판정을 되돌리면 실패. 판정기는 공용(`scripts/check/master_rulings.py`), 게임은 말뭉치 어댑터 `tools/rulings_corpus.py` 뿐.
 "$PY" "$ROOT/scripts/check/master_rulings.py" --game md-ed2
+# 5k. 말투 경보(11-13) — 반말 줄 「-시-」 섞임 · 원문 대비 길이 급감. 기준선 밖 새 줄만 실패, 양성 대조 포함.
+"$PY" "$ROOT/games/md-ed2/tools/check_register_alarm.py" || { echo "❌ 말투 경보 실패"; exit 1; }
 
 # 5f. 이어 붙는 조각의 줄 폭 — 호출 조각·<03>·goto 꼬리로 한 줄에 이어 쓰이는 글이 17.5칸을 넘는 줄(기준선 래칫 · 분모 0 실패, 10-23)
 "$PY" "$T/check_join_width.py" "$BUILD_TAG_DIR"/ed2-kr.bin
