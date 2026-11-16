@@ -207,25 +207,20 @@ def _period_dot() -> tuple[list[list[int]], int]:
 
 
 def ellipsis_dots(cell: int) -> list[list[int]]:
-    """말줄임표 — **점 크기·가로 간격은 갈무리11 원본 그대로, 세로 위치만** 마침표의
-    바닥(원작 켑트 글리프의 잉크 맨 아래 행)으로 내린다(마스터 확정 2026-09-17 —
-    "크기는 그대로 위치만 아래로". 점 모양을 마침표 크기로 다시 그리는 안은 접었다).
-
-    갈무리11 자체 `…` 글리프는 칸 가운데(일본식)에 있다 — 그 잉크를 통째로 세로로만
-    밀어 **잉크의 맨 아래 행 = 마침표(리소스1, 원작) 잉크의 맨 아래 행**이 되게 한다.
-    """
+    """말줄임표 — **점을 그 기종 마침표와 같은 모양·크기(2×2 네모점)로 다시 그린다**(번역 규칙 1-3, 마스터 11-15 「… 도 마침표
+    모양으로」→「전 기종」 — 9-17 「크기는 그대로」 판정을 대체). 점 셋의 가로 자리는 갈무리11 자체 「…」 점 그대로, 세로는
+    마침표와 같은 행(`PERIOD_ROWS` — 글자 바닥 = 한글 잉크 바닥, 기준선 검사 11-15)에 얹는다."""
     native = _load_bdf(BDF, cell, top=GLYPH_TOP, left=GLYPH_LEFT)["…"]
     native_bottom = max((y for y, row in enumerate(native) if any(row)), default=None)
-    _dot, y0 = _period_dot()
-    period_bottom = y0 + len(_dot) - 1
     if native_bottom is None:
         return native
-    shift = period_bottom - native_bottom
+    xs = [x for x, v in enumerate(native[native_bottom]) if v]
     out = [[0] * cell for _ in range(cell)]
-    for y, row in enumerate(native):
-        ny = y + shift
-        if 0 <= ny < cell:
-            out[ny] = row[:]
+    for x in xs:
+        for y in PERIOD_ROWS:
+            for dx in (0, 1):
+                if y < cell and x + dx < cell:
+                    out[y][x + dx] = 1
     return out
 
 
@@ -499,6 +494,7 @@ PAREN_R_FILL = ["".join(reversed(r)) for r in PAREN_L_FILL]
 # 3×4 다이아몬드)·우리 손그림 쉼표가 큰 건 실수가 아니라 **일본식 조판 관례**였다(부호를
 # 덩어리로 크게 그린다). 한글 획 하나(테두리 포함 3px)와 비슷한 크기인 갈무리11 자체 부호로
 # 바꾸는 쪽으로 정했다 — 8×14 칸(리소스1 규격, top=1·left=1, 대사창과 같은 오프셋)에 얹은 그대로.
+PERIOD_ROWS = (11, 12)  # 마침표 점 행 — 원판 `!` 점과 같은 행(11~12). 원판 라틴·숫자는 한글보다 1px 아래가 원판 꼴이라 그대로 둔다(마스터 11-16 「원본으로 가되」 — 11-15 의 1행 올림을 되돌렸다: 올리며 윗행이 잘렸다)
 PERIOD_FILL_GALMURI = ["........"] * 11 + ["..##...."] * 2 + ["........"]  # 11-13 마스터 「권장으로」: 2×2 점(원판 반각 `!` 점과 같은 크기·자리)
 COMMA_FILL_GALMURI = ["........"] * 11 + ["..##...."] * 2 + [".#......"]  # 같은 점 + 왼쪽 아래 꼬리 1px
 # MD_PUNCT_SRC=original 로 되돌릴 수 있는 손잡이는 남긴다(비교·회귀용) — 정본은 galmuri.

@@ -33,13 +33,18 @@ def _hangul_pairs() -> set[bytes]:
     return {v.to_bytes(2, "big") for v in d.values() if isinstance(v, int)}
 
 
+def _is_fw_latin(b: bytes) -> bool:
+    """전각 숫자·영문(0x824F~0x8258 · 0x8260~0x829A) — 원판 꼴을 따른 「게일 ３세」 같은 화자 이름의 숫자는 한자가 아니다(마스터 11-16)."""
+    return len(b) == 2 and b[0] == 0x82 and (0x4F <= b[1] <= 0x58 or 0x60 <= b[1] <= 0x9A)
+
+
 def _is_korean(name: bytes, pairs: set[bytes]) -> bool:
     """화자 이름 바이트가 전부 우리 한글 코드(+ 반각 공백)인가 — 한글 코드는 SJIS 한자 선두 범위(0x8A~)에 앉아 정규식만으론 못 가른다."""
     i = 0
     while i < len(name):
         if name[i] == 0x20:
             i += 1
-        elif name[i : i + 2] in pairs:
+        elif name[i : i + 2] in pairs or _is_fw_latin(name[i : i + 2]):
             i += 2
         else:
             return False
