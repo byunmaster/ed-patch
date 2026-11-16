@@ -2,6 +2,7 @@
 
     python3 tools/ps1_sync.py            # 건수·사유만(쓰지 않는다) + 목록을 .local/work/inbox/md-ed2/ps1-sync-*.tsv 로
     python3 tools/ps1_sync.py --apply    # script/*.json 의 `ours` 를 고친다
+    python3 tools/ps1_sync.py --grade [--apply]   # 등급(존대/반말)이 원문과 맞는 PS1 문안만 당긴다(아래 등급 게이트)
 
 · 단위 = 한 쪽(`\\f` · 원문 `05`): 원문 쪽의 정규화 문장열(`dialog.norm`)이 PS1 한 블록 안의 이어진 문장열과 같고, 우리 쪽 쪽 수가 원문과 같을 때(스트림 단위로 확인).
 · 화자: 같거나 우리 쪽이 이름표 없음(NPC 무표) → 맞춘다. 같은 인물의 표기 차(`ALIAS`)도 맞춘다. 실제로 다른 인물이면 그대로 두고 목록으로 남긴다.
@@ -23,6 +24,7 @@ import dialog
 import scene
 import textmap
 
+GRADE = "--grade" in sys.argv
 TAG = re.compile(r"<[^>]*>")
 SPK = re.compile(r"<1e>(.*?)<04>")
 HEAD = re.compile(r"^(?:<1e>.*?<04>|<09[0-9a-f]{2}>|<01>)+")
@@ -50,6 +52,55 @@ PARTY_TAG = re.compile(r"<(09[0-9a-f]{2})>")
 
 # 정본 충돌 — PS1 문안이 정본 이름과 다르다(「レジスタンスたち」→정본 「레지스탕스들」, PS1 은 「레지스탕스가」). 정본이 이긴다(관리자 10-18).
 CANON_CONFLICT = {"087-1:0eb0#0"}
+
+
+# ── 등급 게이트(마스터 11-15 D11 · 규칙 4-12「자동 복사는 원문 등급이 같을 때만」) ──
+# `--grade`: 같은 원문 쪽이라도 PS1 문안의 **등급(존대/반말)** 이 원문 등급과 맞고 우리 쪽과 갈릴 때만 당긴다. 하게·하오는 반말 쪽(4-7②).
+# PS1 이 원문 등급과 어긋나면 당기지 않고 「등급PS1어긋남」 목록, 원문 등급이 애매하면(중단형·체언 종결 등 4-21 ④) 「등급판정불가」.
+JP_POLITE = re.compile(
+    r"(です|ます|ません|でした|ました|ください|くださいませ|くださいな|ませ|ましょう|でしょう|ございます|ございません|ございました"
+    r"|ですか|ますか|でしょうか|ですね|ますね|ですよ|ますよ|ですわ|ますわ|ですの|ですな|ますな|ですかな|ですが|ますが|ですから|ますから)"
+    r"[ねよわかなぞの]*[。！？!?…・\s]*$"
+)
+JP_PLAIN_TAIL = re.compile(r"[、てでがとをはもにへ]$")
+JP_HONOR = re.compile(r"(ご|お|どうぞ|ようこそ|なさる|いらっしゃる|おいで|ござい|くだされ|なされ)")
+KR_POLITE = re.compile(
+    r"(습니다|ㅂ니다|입니다|니다|니까|세요|십시오|시오|시지요|시죠|해요|에요|예요|어요|아요|지요|죠|네요|군요|래요|는데요|거든요|까요|을게요|드릴게요"
+    r"|옵니다|옵니까|십쇼|옵쇼|습죠|입죠|합죠|다요|요)$"
+)
+
+
+def jp_class(s: str) -> str:
+    t = re.sub(r"[\s]+", "", s).strip("。！？!?…・ ")
+    if JP_POLITE.search(re.sub(r"[\s]+", "", s)):
+        return "polite"
+    if len(t) <= 5 or JP_PLAIN_TAIL.search(t):
+        return "ambig"
+    return "plain"
+
+
+def kr_polite(s: str) -> bool:
+    return bool(KR_POLITE.search(re.sub(r"[\s.!?…~,]+$", "", s.strip())))
+
+
+def grade_gate(jp_sents: list[str], md_sents: list[str], ps_sents: list[str]) -> str:
+    """'맞춤'(당긴다) · '같음'(등급이 안 갈린다) · 'PS1어긋남' · '판정불가'."""
+    if not (len(jp_sents) == len(md_sents) == len(ps_sents)):
+        return "판정불가"
+    diff, ps_ok, amb = False, True, False
+    for j, m, p in zip(jp_sents, md_sents, ps_sents, strict=True):
+        c, mp, pp = jp_class(j), kr_polite(m), kr_polite(p)
+        if mp != pp:
+            diff = True
+            if c == "ambig":
+                amb = True
+            elif c == "polite" and not pp or c == "plain" and pp and not JP_HONOR.search(j):
+                ps_ok = False
+    if not diff:
+        return "같음"
+    if amb:
+        return "판정불가"
+    return "맞춤" if ps_ok else "PS1어긋남"
 
 
 def same_speaker(md: str, ps1: str) -> bool:
@@ -151,6 +202,16 @@ def plan():
                     stat["화자 다름(다른 인물)"] += 1
                     rows.append(("화자다름", *row))
                     continue
+                if GRADE:
+                    g = grade_gate(
+                        dialog.split_jp(TAG.sub("", SPK.sub("", jpg))),
+                        dialog.split_kr(TAG.sub("", body)),
+                        bl[bi][4][p : p + len(ks_)],
+                    )
+                    if g != "맞춤":
+                        stat[f"등급 {g}"] += 1
+                        rows.append((f"등급{g}", *row))
+                        continue
                 stat["맞춤"] += 1
                 rows.append(("맞춤", *row))
                 new_pages[-1] = head_s + kr + tail_s
@@ -224,7 +285,17 @@ def main() -> None:
         print("  칸부족:", [f"{b:03d}-{k}:{x}" for b, k, x, _e in dropped])
     out = common.ROOT.parents[2] / ".local" / "work" / "inbox" / "md-ed2"
     out.mkdir(parents=True, exist_ok=True)
-    for kind in ("맞춤", "화자다름", "태그있음", "문장수다름", "반말규칙", "정본충돌"):
+    for kind in (
+        "맞춤",
+        "화자다름",
+        "태그있음",
+        "문장수다름",
+        "반말규칙",
+        "정본충돌",
+        "등급같음",
+        "등급PS1어긋남",
+        "등급판정불가",
+    ):
         (out / f"ps1-sync-{kind}.tsv").write_text(
             "구분\t자리\t화자(MD)\t화자(PS1)\t우리\tPS1\tPS1 출처\n"
             + "\n".join("\t".join(r) for r in rows if r[0] == kind)
