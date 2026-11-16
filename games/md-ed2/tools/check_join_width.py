@@ -15,10 +15,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+import layout
 import pairdump
 import scene
 import scene_sweep
-from text import krwrap
 
 WIDTH = 17.5
 BASELINE = Path(__file__).resolve().parents[1] / "textmap" / "join_width_baseline.json"
@@ -41,7 +41,7 @@ def walk(b: bytes, start: int, cur: list, depth: int = 0) -> list[tuple[float, s
             if t.kind == "text":
                 if not cur[2]:
                     s = pairdump.decode_text(t.raw, True)
-                    cur[0] += krwrap.text_width(s)
+                    cur[0] += layout.tw(s)
                     cur[1] += s
             elif t.kind == "end":
                 ended = True
@@ -54,7 +54,7 @@ def walk(b: bytes, start: int, cur: list, depth: int = 0) -> list[tuple[float, s
                     cur[2] = True
                 elif c == 0x04:
                     cur[2] = False
-                elif c in (1, 5):
+                elif c in (1, 3, 5):  # 03(키 대기)은 줄바꿈을 겸한다 — 뒤에 01 이 없는 원판 꼴(10-31, 03+01 이 빈 줄을 만든 실측 001-3:0367)
                     lines.append((cur[0], cur[1]))
                     cur[:] = [0.0, "", False]
                 elif c in VARS:

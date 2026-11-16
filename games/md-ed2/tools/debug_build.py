@@ -24,7 +24,7 @@ INIT_NEW = bytes.fromhex("13fc006200ff01b2")  # move.b #$62,$FF01B2
 CMP_AT = 0x127BA  # cmpi.b #$63,$FF01B2  (0C39 0063 00FF 01B2)
 CMP_OLD = bytes.fromhex("0c39006300ff01b2")
 CMP_NEW = bytes.fromhex("0c39006200ff01b2")
-PATCHES = (("debug-init", INIT_AT, INIT_OLD, INIT_NEW), ("debug-combo", CMP_AT, CMP_OLD, CMP_NEW))
+PATCHES = (("debug-init", INIT_AT, INIT_OLD, INIT_NEW),)  # 숨은 조합 비교(0x127BA)는 제품 롬이 이제 늘 연다 — `debug_key.py`
 
 
 DEBUG_TAG = "debug"  # 마스터용 꼬리표 — 파일서버 목록에 나온다

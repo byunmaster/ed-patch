@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import reloc_ledger as RL  # noqa: E402
+import reloc_ledger as RL
 
 LOAD = 0xFF6650  # 모듈 로드 주소
 MODULE_MAX = 0x4000  # 0xFFA650 이 다음 버퍼(엔진 참조 3곳) — 미확정, 실측 최대 모듈 11,562B
@@ -485,7 +485,12 @@ def parse_module(
     # 3단계: 절대 오프셋 워드 표 — 상점 대사처럼 `05 06 w w w w` 꼴(워드마다 모듈 안 문안 시작)로 남은 문안을 가리킨다(코드가 base 0 으로 읽는다).
     # 연속 둘 이상이 전부 문안 시작이고 하나라도 아직 모르는 스트림이면 표로 받는다 — 코드 워드와 우연히 맞을 일이 없게 연속 조건을 건다.
     cov = cover(streams.values())
-    p = 0
+    # 맵 모듈 머리(워드 표 + NPC 항목, `[0]=0x12` · 항목 끝 `[3]`)는 절대 표가 아니다 — 홀수 위치에서 우연히 이어진 두 바이트 쌍(`06 10`·`07 00`)이
+    # 문안 시작으로 읽혀 NPC 항목의 조건 바이트가 고쳐졌다(060-3 `0x17`, 11-08 모듈 변경 바이트 감사가 찾았다)
+    hdr_end = struct.unpack(">H", b[6:8])[0] if len(b) >= 8 and struct.unpack(">H", b[:2])[0] == 0x12 else 0
+    if not 0x12 <= hdr_end <= min(len(b), 0x400):
+        hdr_end = 0
+    p = hdr_end
     while p + 2 <= len(b):
         if cov[p] or cov[p + 1]:
             p += 1
@@ -643,6 +648,10 @@ def _emit_tokens(tokens: list[Token], base: int, pos: dict[int, int]) -> bytes:
         raw = bytearray(t.raw)
         tgt = pos.get(t.target, t.target) if t.ref in (GOTO, CALL) else t.target
         here = base + len(out)
+        if t.ref in (GOTO, CALL) and t.code not in (0xF5, 0xFB) and t.target == t.argpos:
+            # 자기 인자 자리를 가리키는 호출(`10 00 00` — 인자 첫 바이트 00 이 곧 빈 스트림) — 절대 주소로 두면 스트림이 줄어든 만큼
+            # 남의 글 한가운데(한글화한 앞 글이 짧아지면 2바이트 문자의 둘째 바이트)로 떨어진다(055-3:0x1853, 11-06). 상대 0 을 지킨다.
+            tgt = here + 1
         if t.code in (0xF5, 0xFB):
             raw[2:4] = struct.pack(">h", tgt - (here + 2))
         else:
@@ -1321,9 +1330,10 @@ if __name__ == "__main__":
     print(f"  태그 미도달 모듈 {len(worst)} · 항등 재조립 실패 {len(reasm_fail)} {reasm_fail}")
     # ⚠ 분모는 첫 조사(2026-10-12) 실측이다.
     got = (len(mods), tot["streams"], tot["hit"], tot["tags"], tot["badref"], tot["orphans"])
-    if got != (356, 5886, 2083, 2083, 0, 4):
+    # 5886→5855(11-08): 머리 영역 가짜 표(홀수 위치 바이트 쌍)가 낳던 가짜 스트림 31개가 빠졌다 — 번역·빌드 바이트는 060-3 머리 2바이트 말고 같다
+    if got != (356, 5855, 2083, 2083, 0, 4):
         raise SystemExit(
-            f"씬 모듈 분모가 갈렸다 {got} (기대 356모듈 · 5886 스트림 · 2083/2083 · 실패 0 · 고아 4)"
+            f"씬 모듈 분모가 갈렸다 {got} (기대 356모듈 · 5855 스트림 · 2083/2083 · 실패 0 · 고아 4)"
         )
     if reasm_fail:
         raise SystemExit(f"항등 재조립 실패 수가 갈렸다 (기대 0): {reasm_fail}")

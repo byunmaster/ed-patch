@@ -54,7 +54,7 @@ def boot(c: "headless.Core") -> bytes:
     c.press("c", 15, 300)
     c.run(300)
     for k in range(4):  # 파티 공격력 1(몬스터가 죽지 않게)
-        c.poke(0x1DCC + 0x40 * k, b"\x00\x01")
+        c.poke(0x1DCC + 0x40 * k, b"\x03\xe7" if KILL else b"\x00\x01")
     c.poke(0x3474, bytes.fromhex("00FFFF80"))
     c.poke(0x2076, bytes.fromhex("00FFFF80"))
     c.poke(0xFF80, bytes.fromhex("000000000000FF0000000000"))
@@ -104,9 +104,10 @@ def names(bl, n: int) -> str:
                 s += "?"
                 i += 2
         outs.append(s)
-    return "/".join(outs)
+    return "/".join(outs).replace("\t", " ").replace("\n", " ")  # 이름 칸이 깨진 블록(59·62)의 탭이 표 열을 밀었다
 
 
+KILL = False  # 사건 훅(몬스터가 쓰러질 때 등) 시험 — 파티 공격력을 올리고 몬스터 HP 고정을 끈다(기본은 몬스터가 안 죽게)
 PARTY_NAME = None  # --names a|b: 파티 레코드 넷의 이름을 받침 없는/있는 이름으로(조사 확인) — a=「란도플로라스」 b=「란도플로신」
 NAMES_AB = {"a": "란도플로라스", "b": "란도플로신"}
 
@@ -139,6 +140,8 @@ def run_block(
     start: int,
     force: int = 1,
     const: int | None = None,
+    forced: tuple[bytes, int, list[int]] | None = None,
+    ctx: tuple[bytes, list[tuple[int, bytes]]] | None = None,
 ):
     c.load_state(armed)
     poke_names(c)
@@ -148,21 +151,40 @@ def run_block(
     c.poke(0x1AFF, bytes([bid >> 8]))
     c.poke(0x3606, bytes([bid & 255]))
     c.poke(0xFF1A11, bytes([seed]))
-    c.poke(0xFF1A16, b"\x01")  # 몬스터 HP 고정 켬(후크 `MONON`)
+    c.poke(0xFF1A16, b"\x00" if KILL else b"\x01")  # 몬스터 HP 고정 켬(후크 `MONON`)
     c.hold("right")
     c.run(30)
     c.hold("")
     last = c.ram(CAP, 2)
     idle = 0
     k = start
+    poked = forced is None
     for f in range(frames):
         c.run(1)
+        if not poked and f % 2 == 0:
+            # 강제 렌더(md-ed1 의 등장 슬롯 덮기를 ED2 용으로 바꾼 것 — ED2 는 자료 A+4 슬롯이 대부분 FFFF 라 등장문이 코드 `lea` 로 불린다):
+            # 블록이 램에 올라오면 **앞서 닿는 문안의 `lea` 변위**를 목표 스트림으로 돌려, 그 자리에서 목표가 찍히게 한다(값 칸은 안 채워짐)
+            ram = c.ram(0xFF0000, 0x10000)
+            at = ram.find(forced[0][:24])
+            if at >= 0:
+                for lp in forced[2]:  # 몬스터 행동 문안은 고르는 기술마다 다른 `lea` 로 불린다 — 전부 목표로 돌려 어느 행동이 나와도 목표가 찍히게 한다
+                    disp = (forced[1] - (lp + 2)) & 0xFFFF
+                    c.poke(0xFF0000 + at + lp + 2, disp.to_bytes(2, "big"))
+                poked = True
+        if ctx is not None and f % 2 == 0:
+            # 문맥 재현(battle_ctx): 블록이 램에 올라오면 목표 조각을 부르는 길의 분기·진입 워드를 고쳐 쓴다 — 실제 행동 루틴이 실제 창에서 돈다
+            ram = c.ram(0xFF0000, 0x10000)
+            at = ram.find(ctx[0][:24])
+            if at >= 0:
+                for o, bs in ctx[1]:
+                    c.poke(0xFF0000 + at + o, bs)
+                ctx = None
         if (
             const is not None and f % 2 == 0
         ):  # 난수표 `$FF3480`(55B)을 한 값으로 — 행동 선택이 (값×기술 수)>>8 로 고정된다(md-ed1 gpgx_battle 방식)
             c.poke(0xFF3480, bytes([const]) * 55)
         if (
-            f % 2 == 0 and k > start
+            f % 2 == 0 and k > start and not KILL
         ):  # 몬스터가 한 방에 죽지 않게 매 두 프레임 HP 를 채운다(후크의 갱신은 렌더러 호출 때뿐이다)
             hp = c.ram(0x1EC0, 0x180)
             for m in range(4):
@@ -212,11 +234,48 @@ def sheet(paths: list[Path], dst: Path, cols: int = 3):
     out.save(dst)
 
 
+def forced_main(c, armed, bl, idl, out: Path, src: Path, sel: list[int]) -> None:
+    """표의 미도달 오프셋마다 전투를 띄워 등장 슬롯을 덮고 첫 화면들을 `bNN/f<오프셋>_KK.png` 로 남긴다. 결과표 forced.tsv(블록 | 오프셋 | 캡처 수 | 후크가 본 문구)."""
+    # 이름 칸에 탭 바이트가 든 블록(59·62)은 열이 밀린다 — 뒤에서 센다(앞 열은 블록 번호뿐, 미도달 오프셋은 끝에서 둘째)
+    rows = [ln.split("\t") for ln in src.read_text(encoding="utf-8", errors="replace").split("\n")[1:] if ln.count("\t") >= 6]
+    rows = [[r[0], "", "", "", "", r[-2]] for r in rows]
+    tsv = out / "forced.tsv"
+    if not tsv.exists():
+        tsv.write_text("블록\t오프셋\t캡처 수\t후크가 봄\n", encoding="utf-8")
+    done = {tuple(x.split("\t")[:2]) for x in tsv.read_text(encoding="utf-8").splitlines()[1:]}
+    for r in rows:
+        n = int(r[0])
+        if sel and n not in sel or r[5] == "-":
+            continue
+        refs = dict(block_streams(None, bl, n))
+        ent = battle.refs(bl[n][1])
+        anchor = [lp for o in sorted(ent) for lp in ent[o]["lea"]]
+        if not anchor:
+            with tsv.open("a", encoding="utf-8") as f:
+                for ot in r[5].split(","):
+                    f.write(f"{n}\t{ot}\t0\t앵커 lea 없음\n")
+            continue
+        for ot in r[5].split(","):
+            if (str(n), ot) in done:
+                continue
+            o = int(ot, 16)
+            keys: set[int] = set()
+            shots: list[Path] = []
+            run_block(c, armed, n, idl[n], out, 700, 0, keys, shots, 0, 1, None, (bl[n][1], o, anchor))
+            seen = "예" if refs.get(o) in keys else "아니오"
+            for j, pth in enumerate(shots):
+                pth.rename(pth.with_name(f"f{o:04x}_{j + 1:02d}.png"))
+            with tsv.open("a", encoding="utf-8") as f:
+                f.write(f"{n}\t{ot}\t{len(shots)}\t{seen}\n")
+            print(n, ot, len(shots), seen, flush=True)
+
+
 def main() -> None:
     args = [a for a in sys.argv[1:]]
     out = headless._common_dir() / ".local" / "work" / "inbox" / "md-ed2" / "battle-all-hl"
     frames, retries = 4000, 8
     sel = []
+    FORCED_FROM = None
     i = 0
     while i < len(args):
         if args[i] == "--out":
@@ -227,6 +286,9 @@ def main() -> None:
             i += 2
         elif args[i] == "--retries":
             retries = int(args[i + 1])
+            i += 2
+        elif args[i] == "--forced":  # 표(table.tsv)의 미도달 오프셋을 하나씩 강제 렌더
+            FORCED_FROM = Path(args[i + 1])
             i += 2
         elif args[i] == "--names":
             global PARTY_NAME
@@ -241,6 +303,9 @@ def main() -> None:
     idl = ids()
     c = headless.Core(str(ROM))
     armed = boot(c)
+    if FORCED_FROM is not None:
+        forced_main(c, armed, bl, idl, out, FORCED_FROM, sel)
+        return
     todo = sel or list(range(1, 99)) + [0]
     tsv = out / "table.tsv"
     if not tsv.exists():

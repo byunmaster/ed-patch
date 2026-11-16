@@ -26,7 +26,7 @@ from shared import canon
 
 HUD_CENTER, CARD_CENTER = 90, 102  # px (ED1 실측 — 원본 다섯 장 카드·네 HUD 제목)
 HUD_W = 30  # HUD 제목 바이트
-GAP = "  "  # 번호–제목 반각 2칸
+GAP = "  "  # 번호–제목 반각 2칸 — 마스터 11-03 확정(1칸·3칸 아님, 테스트가 잠금)
 END_WORD = "끝"  # 「完」 — 정본 카드 문안(ed2 system)의 끝 자리
 # 장 제목 열쇠(원문) → (HUD 스트림 자리, 카드 스트림 자리 또는 None)
 STREAMS = {

@@ -39,6 +39,8 @@ FAMILIES = [
     ("ending-b", (0x34FA4,), (0x34FF8, 0x35116)),  # 엔딩 프레이아 8 — 뒤는 코드
     ("ending-c", (0x3512E,), (0x35136, 0x3516C)),  # 엔딩 마지막 한 화면 + 공용 지우기(0x3516A)
 ]
+# 옛 영역을 지울 때 이 주소부터는 남긴다 — 오프닝 영역 뒤 118B 는 제품의 디버그 진입키 후크(`debug_key.py`)가 쓴다(자막은 꼬리로 옮겨 가 이 칸은 비어 있다)
+CLEAR_UNTIL = {"opening": 0x17D04}
 # 표 머리 → 그 표를 부르는 `lea $표,a3` 의 32비트 피연산자 자리
 RELOCATE = {
     "opening": [(0x178C2, 0x16770)],
@@ -87,8 +89,10 @@ def widen_digits(ours: str) -> str:
     for m in re.finditer(r"<fe([0-9a-f]{2})>|<[^>]*>|(\d+)|[^<\d]+|<", ours):
         if m.group(1):
             cur = int(m.group(1), 16)
-        if m.group(2):
-            out.append(f"<fe{cur + 2 * DIGIT_EXTRA:02x}>{m.group(2)}<fe{cur:02x}>")
+        if m.group(2):  # 숫자는 원작 반각 글꼴(리소스 1, `<fd00>`)로 — 마스터 10-27 「원본 그대로」(1-8)
+            out.append(
+                f"{NARROW_OFF}<fe{cur + 2 * DIGIT_EXTRA:02x}>{m.group(2)}<fe{cur:02x}>{NARROW_ON}"
+            )
         else:
             out.append(m.group(0))
     return "".join(out)
@@ -248,7 +252,7 @@ def font5_chars(textmap: dict) -> set[str]:
     out: set[str] = set()
     for e in textmap.values():
         if FONT_TAG in e.get("ours", ""):
-            out.update(re.sub(r"<[^>]*>", "", e["ours"]))
+            out.update(c for c in re.sub(r"<[^>]*>", "", e["ours"]) if not c.isdigit())  # 숫자는 리소스 1
     return out
 
 
@@ -319,6 +323,7 @@ def plan(
         for base, ptr in tables:
             writes.append((f"captions-ptr:{base:06x}", ptr, struct.pack(">I", moved[base])))
         _lo, _hi = next((a, h) for n, _b, (a, h) in FAMILIES if n == name)
+        _hi = min(_hi, CLEAR_UNTIL.get(name, _hi))
         writes.append((f"captions:{name}", _lo, b"\x00" * (_hi - _lo)))  # 옛 영역 지우기
         cur = text_at + len(areas[name])
         cur += cur & 1
@@ -382,7 +387,7 @@ def allowed(d: bytes, at: int, size: int) -> dict[str, tuple[int, int]]:
     """쓰기 라벨 — 옛 영역(0 지우기) · 꼬리 칸(블롭·옮긴 표) · 표 포인터 피연산자."""
     out: dict[str, tuple[int, int]] = {}
     for name, bases, (lo, hi) in FAMILIES:
-        out[f"captions:{name}"] = (lo, hi)
+        out[f"captions:{name}"] = (lo, min(hi, CLEAR_UNTIL.get(name, hi)))
         out[f"captions-tail:{name}"] = (at, at + size)
         for base in bases:
             out[f"captions-table:{base:06x}"] = (at, at + size)

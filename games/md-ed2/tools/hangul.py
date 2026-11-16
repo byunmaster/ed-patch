@@ -403,6 +403,8 @@ class Charset:
     def encode_char(self, ch: str) -> bytes:
         if ch in self.hangul:
             return struct.pack(">H", self.hangul[ch])
+        if ch in KAGI_HALF:
+            return bytes([KAGI_HALF[ch]])  # 반각 「」 (리소스 1)
         if 0x20 <= ord(ch) < 0x7F:
             if ord(ch) not in self.half:
                 raise SystemExit(
@@ -501,9 +503,27 @@ PERIOD_FILL_GALMURI = ["........"] * 11 + ["..#....."] + ["........"] * 2
 COMMA_FILL_GALMURI = ["........"] * 11 + ["..#....."] + [".#......"] + ["........"]
 # MD_PUNCT_SRC=original 로 되돌릴 수 있는 손잡이는 남긴다(비교·회귀용) — 정본은 galmuri.
 PUNCT_SRC = _os.environ.get("MD_PUNCT_SRC", "galmuri")
+# 낫표 「」『』 도 반각(마스터 도안 C·C2판 10-26, MD I·II 공통 — md-ed1 과 같은 코드 자리) — 리소스 1 의 안 쓰는 ASCII 자리 0x7B·0x7D·0x5C·0x5E 를 빌린다.
+# 도안은 쌍마다 16×14 한 장(여는 쪽 = 0~7열 · 닫는 쪽 = 8~15열), 채움만 — 테두리는 `ring` 이 만든다. 정본: assets/kagi_half_C.txt · kagi2_half_C.txt
+# 줄 폭 0.5슬롯은 `layout.cw`. 진행 6px.
+KAGI_HALF = {"「": 0x7B, "」": 0x7D, "『": 0x5C, "』": 0x5E}
+KAGI_DOTS = common.GAME_DIR / "assets" / "kagi_half_C.txt"
+KAGI2_DOTS = common.GAME_DIR / "assets" / "kagi2_half_C.txt"
+
+
+def _kagi_fills(path=KAGI_DOTS) -> tuple[list[str], list[str]]:
+    rows = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip() and set(ln.strip()) <= {".", "#"}]
+    assert len(rows) == 14 and all(len(r) == 16 for r in rows), "낫표 도안은 16×14"
+    return [r[:8] for r in rows], [r[8:] for r in rows]
+
+
 EXTRA_R1 = {
     0x28: PAREN_L_FILL,
     0x29: PAREN_R_FILL,
+    0x7B: lambda: _kagi_fills()[0],
+    0x7D: lambda: _kagi_fills()[1],
+    0x5C: lambda: _kagi_fills(KAGI2_DOTS)[0],
+    0x5E: lambda: _kagi_fills(KAGI2_DOTS)[1],
     0x2C: (lambda: COMMA_FILL_GALMURI if PUNCT_SRC == "galmuri" else COMMA_FILL),
 }
 # 🔴 마침표는 EXTRA_R1(없는 글자 추가) 이 아니라 OVERRIDE_R1(있는 글자를 갈아 끼움) 이다 —

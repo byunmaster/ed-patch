@@ -12,6 +12,7 @@
 """
 
 import json
+import re
 import sys
 import unicodedata
 from pathlib import Path
@@ -169,6 +170,9 @@ def names(orig: bytes | None = None) -> dict:
                     v is None and cat in CANON_TABLES
                 ):  # 「何もない → 없음」 — 정본 battle 범주(범주 ui 에 없다)
                     v, src = from_canon(jp, "battle"), "canon"
+            if v is None and cat == "item" and re.fullmatch("[Ａ-Ｚ０-９]+の書", jp):
+                # 개발용 자리표시 주문책(ＭＧ１４の書 …) — 정본에 없다. 이름은 전각 라틴 그대로 두고 접미만 정본 「○○의 책」 꼴로(번역 아님, 접미 규칙) — 코드 조립(`build` 0x3630)과 같은 꼴
+                v, src = jp[:-2] + "의 책", "placeholder"
             if v is None:
                 tbl[str(i)] = {"jp": jp, "ours": "", "src": ""}
                 continue

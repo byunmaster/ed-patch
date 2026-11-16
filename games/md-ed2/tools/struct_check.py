@@ -90,7 +90,9 @@ def cols(tokens, nm_resolve=None):
         c = t.code
         if c in LAYOUT:
             continue
-        if t.ref in (scene.GOTO, scene.CALL, scene.CODE, scene.CELL):
+        if t.ref == scene.CALL and t.code not in (0xF5, 0xFB) and t.target == t.argpos:
+            out.append(("ctl", c, bytes(t.raw)))  # 자기 인자 자리를 부르는 빈 호출(`10 00 00`) — 상대 0 이 같아야지 절대 목표가 같을 일이 아니다
+        elif t.ref in (scene.GOTO, scene.CALL, scene.CODE, scene.CELL):
             out.append(("ref", c, t.target))
         else:
             out.append(("ctl", c, bytes(t.raw)))
@@ -441,6 +443,74 @@ def selftest(orig: bytes, kr: bytes) -> bool:
     return False
 
 
+def table_pad_problems(o: bytes, n: bytes) -> list[str]:
+    """고정 폭 표·00 묶음·파티 이름 칸이 원판의 빈 칸·구분자·종결을 지키나 — 원판과 바이트로 대조한다(sfc-ed2 가 군 이름의 길이 0 패딩을 빠뜨려
+    빈 슬롯이 다음 군 이름을 읽은 부류, 10-24). 빈 칸↔채운 칸 뒤집힘 · 구분자 · 06 뒤 꼬리(0)."""
+    import tables
+
+    out = []
+    for name, start, w, sep, cnt, _al in tables.TABLES:
+        p = start
+        for i in range(cnt):
+            if n[p + w] != sep:
+                out.append(f"{name}[{i}] 구분자 {n[p + w]:02x} ≠ 원판 {sep:02x}")
+            if (o[p : p + w].strip(b" \x00") == b"") != (n[p : p + w].strip(b" \x00") == b""):
+                out.append(f"{name}[{i}] 빈 칸↔채운 칸이 뒤집혔다")
+            p += w + 1
+    for name, start, cnt in tables.ZGROUPS:
+        po = pn = start
+        for i in range(cnt):
+            eo, en = o.index(0, po), n.index(0, pn)
+            if (eo == po) != (en == pn):
+                out.append(f"{name}[{i}] 빈 문자열↔채운 문자열이 뒤집혔다")
+            po, pn = eo + 1, en + 1
+    for name, start, stride, cnt, _cap in tables.SLOTS:
+        for i in range(cnt):
+            q = start + i * stride
+            lo, ln = o.index(6, q) - q, n.index(6, q) - q
+            if ln < lo and n[q + ln + 1 : q + lo + 1] != bytes(lo - ln):
+                out.append(f"{name}[{i}] 짧아진 이름의 원판 꼬리가 0 이 아니다")
+    return out
+
+
+# 레코드 구역 뒤쪽이 레코드가 아니라 메시지 스트림인 블록 — 앞 N 개만 레코드다(블록 82: 0x4C~ 는 이름 자리처럼 보이는 글 스트림, 번역이 바꾼다)
+REAL_RECORDS = {82: 1}
+
+
+def record_pad_problems(a: bytes, b: bytes, n: int) -> list[str]:
+    """전투 블록 하나(원판 a · 새 b)의 레코드 — 수 · 머리(이름 칸 밖) · 빈 슬롯 비트7 · 짧아진 이름 꼬리 0."""
+    import battle
+
+    ra, rb = battle.records(a), battle.records(b)
+    if len(ra) != len(rb):
+        return [f"블록 {n} 레코드 수 {len(ra)}→{len(rb)}"]
+    out = []
+    for r1, r2 in list(zip(ra, rb))[: REAL_RECORDS.get(n, len(ra))]:
+        s = r1["start"]
+        hs = [(s, s + battle.NAME_AT)]
+        if r1["name_at"] < s + battle.NAME_AT:  # 짧은 레코드 꼴(머리 안 이름) — 이름 칸만 뺀다
+            hs = [(s, r1["name_at"]), (r1["name_at"] + len(r1["name"]) + 1, s + battle.NAME_AT)]
+        for x, y in hs:
+            if a[x:y] != b[x:y]:
+                out.append(f"블록 {n} 레코드 {s:#x} 머리가 바뀌었다")
+        at = s + battle.NAME_AT
+        if (a[at] & 0x80) != (b[at] & 0x80):
+            out.append(f"블록 {n} 레코드 {s:#x} 빈 슬롯 표지(비트7)가 뒤집혔다")
+        lo, ln = len(r1["name"]), len(r2["name"])
+        if ln < lo and b[r2["name_at"] + ln + 1 : r2["name_at"] + lo + 1] != bytes(lo - ln):
+            out.append(f"블록 {n} 레코드 {s:#x} 짧아진 이름의 원판 꼬리가 0 이 아니다")
+    return out
+
+
+def pad_problems(orig: bytes, kr: bytes) -> list[str]:
+    import battle
+
+    out = table_pad_problems(orig, kr)
+    for i, (x, y) in enumerate(zip(battle.blocks(orig), battle.blocks(kr))):
+        out += record_pad_problems(x[1], y[1], i)
+    return out
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     path = Path(args[0]) if args else common.BUILD_DIR / common.BUILD_TAG / "ed2-kr.bin"
@@ -479,6 +549,11 @@ def main():
         print(f"  전투 블록 대조 {bc}/{bt} (짝 없음 {bu}) · 어긋남 {len(bbad)}")
         allow.update(bal)
         bad += bbad
+    pads = pad_problems(common.rom(), kr)
+    print(f"  빈 칸·패딩·종결 대조(표·전투 레코드) — 어긋남 {len(pads)}")
+    for m in pads[:20]:
+        print(f"  ✗ {m}")
+    ledger_bad = ledger_bad or bool(pads)
     print(f"구조 대조 [md-ed2] — 대조 스트림 {tot[0]}/{tot[1]} (짝 못 지음 {tot[2]}) · 어긋남 {len(bad)} · 자체 시험(종결 코드 한 바이트) 통과")
     for kind, n in sorted(allow.items()):
         why, evid = ALLOW[kind]

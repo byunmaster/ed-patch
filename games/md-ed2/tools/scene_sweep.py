@@ -116,7 +116,7 @@ def say(c, addr: int, outdir: Path, tag: str, maxf: int = 1500) -> tuple[int, st
         f += 1
         c.run(1)
         if (
-            shots == 0 and f < 400
+            f < 400 or shots
         ):  # 한 프레임씩 — 「멈춤」은 글이 뜨자마자 창이 닫힐 수 있다(글이 있던 마지막 화면을 남긴다)
             now = c.frame[R]
             if int((np.abs(now.astype(int) - base.astype(int)).sum(axis=2) > 0).sum()) > 200:
@@ -125,11 +125,12 @@ def say(c, addr: int, outdir: Path, tag: str, maxf: int = 1500) -> tuple[int, st
                 if cand is None or ink >= cand_ink:
                     cand, cand_ink = c.frame.copy(), ink
         if not c.ram(BUSY, 1)[0]:
-            if shots == 0 and cand is not None:
+            if cand is not None and cand_ink > 0:
+                # 키를 눌러 넘긴 뒤 글이 뜨자마자 닫힌 마지막 쪽(쪽 지움 `\\f` 로 시작하는 이음 조각 — 첫 화면은 ▼ 뿐인 빈 창이라 뒤 글이 안 찍혔다, 10-30)
                 from PIL import Image
 
-                Image.fromarray(cand).save(str(outdir / f"{tag}_01.png"))
-                return 1, "끝(키 대기 없이 닫힘)"
+                Image.fromarray(cand).save(str(outdir / f"{tag}_{shots + 1:02d}.png"))
+                return shots + 1, "끝(키 대기 없이 닫힘)"
             return shots, "끝"
         if f % 90 == 89:  # 90프레임마다: 글이 다 찍혔을 시간 — 달라졌으면 캡처하고 확인 키로 넘긴다
             cur = c.frame[R].copy()
@@ -151,6 +152,8 @@ def say(c, addr: int, outdir: Path, tag: str, maxf: int = 1500) -> tuple[int, st
             c.hold("c")
             c.run(5)
             c.hold("")
+            cand, cand_ink = None, -1
+            base = c.frame[R].copy()
     return shots, "시간초과"
 
 

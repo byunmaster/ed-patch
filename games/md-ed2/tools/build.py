@@ -30,6 +30,7 @@ import chapters
 import common
 import ctl_toggle_scan
 import debug_build
+import debug_key
 import dict_names
 import field_hud
 import gfxtext
@@ -38,6 +39,7 @@ import hangul
 import hud_status
 import josa
 import kana_gate
+import layout
 import lz
 import places
 import punctwrap
@@ -103,6 +105,11 @@ class Rom:
         "font0-glyphs": (0x1A62CE + hangul.SHIFT, 0x1BA1FA + hangul.SHIFT),
         "font1-header": hangul.FONT1_HDR,
         "spell-digit": (spell_digit.AT, spell_digit.AT + len(spell_digit.NEW)),
+        "book-suffix-a": (0x363E, 0x3640),
+        "book-suffix-b": (0x3642, 0x3644),
+        "nth-a": (0x2C662, 0x2C664),
+        "nth-b": (0x2C666, 0x2C668),
+        "nth-c": (0x2C668, 0x2C66C),
         "hud-status": (hud_status.BASE, hud_status.BASE + hud_status.N * hud_status.STRIDE),
         "font2-glyphs": hangul.FONT2_GLYPHS,
         "font4-header": hangul.FONT4_HDR,
@@ -114,6 +121,7 @@ class Rom:
         **gfxtext.allowed(),
         **places.allowed(),
         **debug_build.allowed(),
+        **debug_key.allowed(),
         "field-hud-space-tramp": (
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE,
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE,
@@ -231,6 +239,7 @@ def typeset(
     `brk` 는 앞 글이 문장 부호로 끝나 **거기서 갈려도 되는** 경우다 — 붙은 글자 사이엔 조판기가 끊을 자리가 없어,
     앞 글(`…로군.`)과 다음 글이 붙은 채 17.5칸을 넘으면 어디서도 못 갈랐다. 가짜 공백을 끼워 끊을 자리를 주고, 안 갈리면 떼어 낸다.
     """
+    raw = text
     text = normalize(text)
     pages = []
     filler = _fill(prefix_w) if prefix_w > 0 else ""
@@ -240,7 +249,7 @@ def typeset(
         if not chunk:
             continue
         if filler and not pages:
-            pages += krwrap.wrap_pages(
+            pages += layout.wrap_pages(
                 filler + sep + lead + chunk, width=WIDTH, lines_per_page=LINES, strip_after=""
             )
             if not pages[0][0].startswith(filler):
@@ -251,10 +260,10 @@ def typeset(
                 pages[0][0] = filler + sep  # 갈렸다 — 뗀 뒤 첫 줄은 빈 줄
             continue
         # 앞 공백(lead)이 첫 줄에 붙으므로 **그 쪽 줄 폭을 공백만큼 줄여** 감싼다 — 붙인 뒤 17.5칸을 넘던 일(「<이름> 왕자 뒤를…」)
-        w = WIDTH - krwrap.text_width(lead) if lead and not pages else WIDTH
-        pages += krwrap.wrap_pages(chunk, width=w, lines_per_page=LINES, strip_after="")
+        w = WIDTH - layout.tw(lead) if lead and not pages else WIDTH
+        pages += layout.wrap_pages(chunk, width=w, lines_per_page=LINES, strip_after="")
     if filler and pages:
-        if any(krwrap.text_width(ln.rstrip()) > WIDTH for ln in pages[0]):
+        if any(layout.tw(ln.rstrip()) > WIDTH for ln in pages[0]):
             # 앞 글과 붙은 어절이 끊을 자리 없이 넘친다(`프래드`+`였지.`) — 정적으로 못 가른다. 옛 조판으로 두고 런타임 어절 줄넘김에 맡긴다
             PREFIX_UNFIT.append(text[:24])
             return typeset(text, lead)
@@ -265,8 +274,9 @@ def typeset(
         if len(pg) > LINES:
             raise SystemExit(f"페이지가 {LINES}줄을 넘는다: {pg}")
         for ln in pg:
-            if krwrap.text_width(ln) > WIDTH:
+            if layout.tw(ln) > WIDTH:
                 raise SystemExit(f"줄이 {WIDTH}칸을 넘는다: {ln!r}")
+    layout.record(raw, lead, prefix_w, pages)
     return pages
 
 
@@ -278,7 +288,7 @@ def _frag_width(ours: str) -> float:
     ours = re.sub(r"<1e>.*?<04>", "", ours)
     t = re.sub(r"<[0-9a-f:|]*>", lambda m: "\n" if m.group(0) in ("<01>", "<05>") else "", ours)
     t = t.split("\f")[-1].split("\n")[-1]
-    return krwrap.text_width(normalize(t))
+    return layout.tw(normalize(t))
 
 
 _BRK_AFTER = frozenset(".!?…,)」』 ")
@@ -300,7 +310,7 @@ def _first_line_w(ours: str) -> float:
     t = normalize(m.group(1)).strip() if m else ""
     if not t:
         return 0.0
-    return krwrap.text_width(krwrap.wrap_pages(t, width=WIDTH, lines_per_page=LINES, strip_after="")[0][0])
+    return layout.tw(krwrap.wrap_pages(t, width=WIDTH, lines_per_page=LINES, strip_after="", cell_width=layout.cw)[0][0])
 
 
 def build_stream(
@@ -384,7 +394,7 @@ def build_stream(
             pending_text.clear()
             out.append(scene.Token(0, cs.encode(body.replace("\n", " ")), "text"))
             if not line["name"]:
-                line["w"] += krwrap.text_width(body.replace("\n", " "))
+                line["w"] += layout.tw(body.replace("\n", " "))
             return
         # 🔴 덩이 가장자리의 `\n` 은 조판기가 **조용히 버린다**(10-19 qa: 「배를 타시겠습니까?」 뒤 줄바꿈이 사라져 다음 글이 붙었다) —
         # 제어코드·덩이 끝 앞뒤 줄바꿈은 `<01>` 태그로 쓴다. (덩이 가운데 `\n` 은 공백이다.)
@@ -424,7 +434,7 @@ def build_stream(
                     line["n"] += 1
                 if ln:
                     out.append(scene.Token(0, cs.encode(ln), "text"))
-                pre += krwrap.text_width(ln)
+                pre += layout.tw(ln)
         line["w"] = pre + (0.5 if trail and body[-1:] == " " and pages else 0.0)
         last_ln = pages[-1][-1] if pages and pages[-1] else ""
         line["last"] = last_ln[-1:] if last_ln else (line["last"] if pre else "")
@@ -467,9 +477,11 @@ def build_stream(
             else:
                 flush_text()
                 out.append(scene.Token(0, raw, "ctl", code))
-                if code in (0x01, 0x05):
+                if code in (0x01, 0x03, 0x05):
+                    # 03(키 대기)은 **줄바꿈을 겸한다** — 안 세면 뒤 글이 앞 줄 폭을 그대로 물려받아, 앞 줄이 꽉 찼을 때 첫 줄이 빈 줄로 나가고
+                    # (63곳, 10-31 전수 검사) 화면에 빈 줄이 하나 끼었다. 원판은 `03` 뒤에 `01` 이 없다
                     line["w"], line["last"] = 0.0, ""
-                    line["n"] = line["n"] + 1 if code == 0x01 else 0
+                    line["n"] = line["n"] + 1 if code in (0x01, 0x03) else 0
                 elif code == 0x1E:
                     line["name"] = True
                 elif code == 0x04:
@@ -510,7 +522,8 @@ def build_tables(orig: bytes, names: dict, cs: hangul.Charset) -> list[tuple[str
                 if len(enc) > tables.SLOT_CAP[name]:
                     over.append(f"{name}[{i}] {ours!r} {len(enc)}B > {tables.SLOT_CAP[name]}B")
                     continue
-                out.append((f"table:{name}", pos, enc + b"\x06"))
+                # 짧아지면 원판 꼬리(06 뒤 일본어 조각)를 0 으로 — 전투 이름과 같다. 이름 길이는 원본 본문 길이(raw)다
+                out.append((f"table:{name}", pos, enc + b"\x06" + bytes(max(0, len(raw) - len(enc)))))
                 continue
             w = len(raw)
             if len(enc) > w:
@@ -645,6 +658,7 @@ def collect_chars(
         banners.chars()
     )  # 입장 배너 지명 사전(모듈 데이터라 문안 스트림이 아니다) — 늘 굽는다
     chars.update(field_hud.chars())  # 필드 HUD 뒷말·방위(문안을 안 거친다) — 늘 굽는다
+    chars.update("번째")  # 저장 확인 창 「N번째」(0x2C660 즉치 워드)
     chars.update(halfspace.chars())  # 「의␣」 — 아이템 칸 14B 에 반각 공백을 녹인 합성 글자
     return chars
 
@@ -934,6 +948,10 @@ def verify_head_tables(new: bytes, mod, rep) -> int:
     return n
 
 
+NTH_AT = 0x2C660  # 저장·불러오기·삭제 확인 창 「N番目の」 — 즉치 워드 셋
+BOOK_AT = 0x363C  # 주문책 이름 조립 — `move.w #$82CC,(a2)+ · move.w #$8F91,(a2)+ · move.b #6,(a2)+`
+
+
 def repoint_shared_heads(new: bytes, mod, rep_keys) -> tuple[bytes, int]:
     """🔴 머리 워드를 런타임에 쓰는 `lea`(원판 `4E71` 자리 — 상점 표 「…더는 못 가지실 것 같군요」 류)를 **바깥 복사본**으로 돌린다.
 
@@ -959,7 +977,42 @@ def repoint_shared_heads(new: bytes, mod, rep_keys) -> tuple[bytes, int]:
         out[ins + 2 : ins + 4] = struct.pack(">h", cand - (ins + 2))
         RL.add("포인터", ins + 2, cand, "머리 워드를 런타임에 쓰는 lea 를 바깥 복사본으로 돌렸다(안쪽·바깥 복사본이 갈라진 상점 표)", RL.EVID_VM, "되돌리기 수단 없음 — 되돌리면 쓰는 쪽과 읽는 쪽이 갈라져 NOP 워드를 읽는다(상점 메뉴 오작동)")
         n += 1
+    n += _repoint_code_leas(out, mod, pair, set(rep_keys))
     return bytes(out), n
+
+
+def _repoint_code_leas(out: bytearray, mod, pair: dict[int, int], rep_keys: set[int]) -> int:
+    """🔴 뿌리(`mod.roots`)로 안 잡힌 `lea d(pc),aN`(코드인데 파서가 글 스트림으로 덮은 자리 — 예: 049-2 0x2d2·0x30c)도 **같은 대상을 쓰고 읽는 짝**이라 같이 옮긴다.
+
+    상점 표(O)를 읽는 `lea a3` 와 머리 워드(I)를 쓰는 `lea a6` 가 한 모듈에 두 벌(구매 전용 · 팔기 분기)인데 뿌리 탐색이 한 벌만 잡아, 다른 한 벌은 지워진 옛 표(0 으로 채움)를
+    가리킨 채 남았다 — 「삽니다」 뒤 목록이 비고 머리 워드는 쓰레기통에 쓴다(2026-11-07 049-2 에서 실화면 확인, PCE II 퀵메뉴와 같은 부류: 쓰기·읽기 한쪽만 옮김).
+    대상이 (a) 옮겨진 스트림의 시작이면 그 새 시작으로, (b) 상점 표 머리(`4E71` 안쪽 스트림 I)면 바깥 복사본 + (I−O) 으로 돌린다. 명령 자리 바이트는 원판과 같아야 한다."""
+    n = 0
+    data = mod.data
+    for p in range(0, len(data) - 3, 2):
+        w = (data[p] << 8) | data[p + 1]
+        if (w & 0xF1FF) != 0x41FA or p in mod.roots or bytes(out[p : p + 4]) != bytes(data[p : p + 4]):
+            continue
+        t = p + 2 + struct.unpack(">h", data[p + 2 : p + 4])[0]
+        if t not in mod.streams or t not in pair or t not in rep_keys:
+            continue
+        outer = next((o for o, st in mod.streams.items() if o < t < st.end), None)
+        if outer is not None:  # (b) 머리 워드 안쪽 복사본
+            if outer not in pair:
+                continue
+            cand = pair[outer] + (t - outer)
+            if bytes(out[cand : cand + 2]) != b"\x4e\x71":
+                continue
+        else:  # (a) 옮겨진 스트림의 시작
+            cand = pair[t]
+        if cand == t or not (0 <= cand < len(out)):
+            continue
+        if abs(cand - (p + 2)) > 0x7FFF:
+            continue
+        out[p + 2 : p + 4] = struct.pack(">h", cand - (p + 2))
+        RL.add("포인터", p + 2, cand, "뿌리로 안 잡힌 lea(파서가 글 스트림으로 덮은 코드)를 옮겨진 대상의 새 자리로 돌렸다(쓰기·읽기 짝)", RL.EVID_VM, "되돌리기 수단 없음 — 되돌리면 읽기만 옛 자리(0 으로 지움)에 남는다(상점 목록이 빈다)")
+        n += 1
+    return n
 
 
 def main(check_only: bool = False) -> None:
@@ -1017,6 +1070,7 @@ def main(check_only: bool = False) -> None:
                 raise SystemExit(f"블록 {blk}-{k}: 스트림 {key} 가 없다")
             if textmap.jp_key(st) != ent["jp"]:
                 raise SystemExit(f"블록 {blk}-{k} 스트림 {key}: 원문 해시가 갈렸다")
+            layout.CTX = f"{blk:03d}-{k}:{key}"  # 지표·재촬영용 — 이 스트림의 조판 호출이 어느 정본 열쇠인지
             rep[off] = build_stream(
                 st, ent["ours"], cs, raw_text=bool(ent.get("raw")), frags=frags
             )
@@ -1201,6 +1255,25 @@ def main(check_only: bool = False) -> None:
             hud_chars.update(re.sub(r"<[^>]*>", "", e.get("ours", "")))
     for label, pos, body in hangul.resource4(cs, hud_chars):  # HUD 이름 12×12
         rom.write(label, pos, body)
+    # 🔴 주문책 이름 조립(0x3630) — 주문 이름 버퍼 8B 뒤에 코드가 즉치 워드 둘로 「の書」를 붙인다(원판 `34FC 82CC · 34FC 8F91`). 문안·이름 표에 없어
+    # 세리스 도구점(060-2) 목록·구매 문구가 「레스 ⎵⎵ 말이군요」(일본어 접미 글리프가 한글 글꼴에 없어 빈칸)였다(11-07, SFC II 「の書」 부류). 「의␣」(합성 1자) + 「책」으로 바꾼다.
+    if orig[BOOK_AT : BOOK_AT + 12] != bytes.fromhex("34fc82cc34fc8f9114fc0006"):
+        raise SystemExit("주문책 이름 조립 자리(0x363C)가 원판과 다르다")
+    book = encode_tagged(halfspace.PUA + "책", cs)
+    if len(book) != 4:
+        raise SystemExit(f"「의␣책」 인코딩이 4B 가 아니다: {book.hex()}")
+    rom.write("book-suffix-a", BOOK_AT + 2, book[:2])
+    rom.write("book-suffix-b", BOOK_AT + 6, book[2:])
+    # 🔴 저장·불러오기·삭제 확인 창(0x2C658) — 「１番目の」+이름 뒤에 확인 문안이 붙는다. 즉치 워드 셋(`34FC 94D4 · 34FC 96DA · 34FC 82CC` = 番 目 の)이 일본어로 나갔다.
+    # 「번」「째」 + 반각 공백(`14FC 0020` = move.b #$20,(a2)+ — 같은 4B)으로 바꾼다. 숫자는 전각 「１」 그대로(앞 명령).
+    if orig[NTH_AT : NTH_AT + 12] != bytes.fromhex("34fc94d434fc96da34fc82cc"):
+        raise SystemExit("「N番目の」 조립 자리(0x2C660)가 원판과 다르다")
+    nth = encode_tagged("번째", cs)
+    if len(nth) != 4:
+        raise SystemExit(f"「번째」 인코딩이 4B 가 아니다: {nth.hex()}")
+    rom.write("nth-a", NTH_AT + 2, nth[:2])
+    rom.write("nth-b", NTH_AT + 6, nth[2:])
+    rom.write("nth-c", NTH_AT + 8, bytes.fromhex("14fc0020"))
     spell_digit.check(orig)  # 주문 레벨 숫자를 반각으로(「레지나1을」)
     for label, pos, body in spell_digit.plan():
         rom.write(label, pos, body)
@@ -1261,6 +1334,8 @@ def main(check_only: bool = False) -> None:
     rom.write("scene-ref", SCENE_REF, struct.pack(">I", SCENE_TABLE_AT))
     debug_build.check_tag()
     ndbg = debug_build.apply(rom)
+    debug_key.apply(rom)  # 제품 롬에도 늘 들어간다 — 필드에서 Start+A+B 1초(마스터 10-24)
+    RL.add("코드 패치", debug_key.ENTRY, debug_key.HOOK_AT, "VBlank 의 패드 갱신 호출(`jsr $AFEE`, 6B)을 디버그 진입키 후크 호출로 — Start+A+B 1초에 `$FF01B2` 디버그 레벨을 넘긴다", RL.EVID_PATCH, RL.UNDO_PATCH, key="디버그키")
     if ndbg:
         print(
             f"  ⚠ 디버그 스위치 켜짐({debug_build.ENV}=1) — 시험·마스터 디버그 전용, 패치 {ndbg}곳(제품 롬 아님)"
@@ -1310,6 +1385,7 @@ def main(check_only: bool = False) -> None:
         stale.unlink()
     out = out_dir / debug_build.rom_name()
     out.write_bytes(bytes(rom.buf))
+    layout.dump(out_dir / "layout_metrics.json")  # 줄·쪽 나눔 지표(2-16) — check_layout.py 가 읽는다
     RL.write_tsv(out_dir / "relocations.build.tsv", RL.rows())  # 재배치 장부(빌드가 실제로 한 것) — struct_check --ledger 가 커밋 장부와 맞댄다
     print(f"  {out} — 쓰기 {len(rom.log)}건 · sha1 {common.sha1_of_bytes(bytes(rom.buf))[:8]}…")
 
