@@ -94,12 +94,22 @@ RELOC_AT = (
 )  # 폰트 RAM 코드 예약 칸 B(`codearea`) — 종전엔 죽은 디버그 메뉴 구역(`0x06018A10`)이었다
 RELOC_LEN = CA.RELOC_LEN
 RELOCATABLE = {
-    "/0.BIN": ("戦闘に勝った！\x00",)
+    "/0.BIN": (
+        "戦闘に勝った！\x00",
+        #   11-15 정본 4-17(원문 ました → 존댓말) 반영 — 「~습니다」 가 제자리 예산(19~26B)을 2~4B 넘는다. 줄이지 않고(2-17·2-19) 옮긴다.
+    )
+}
+#   둘째 훑기(파서가 못 본 자리 — 바이트열 찾기)에서 옮길 키 — 키는 종결 바이트까지 적은 원문 그대로(`\r` 은 진짜 줄바꿈 문자)
+RELOCATABLE_FIND = {
+    "/0.BIN": ("%sは\r%sを授かりました。\x10", "%sを授かりました。\x10", "%sを\r売りました。\x0f")
 }  # 화면에 나가는 문구라 원문을 살리려고 옮기는 것들(키 = JP 원문 + 종결자)
 
 
-def _relocate(out, s, raw, base):
-    """문자열 `s` 를 `RELOC_AT` 로 옮기고 그 포인터 하나를 바꾼다. 못 하면 `None`(사유)."""
+def _relocate(out, s, raw, base, slot=0):
+    """문자열 `s` 를 `RELOC_AT + slot*RELOC_LEN` 칸으로 옮기고 그 포인터 하나를 바꾼다. 못 하면 `None`(사유)."""
+    if slot >= CA.RELOC_SLOTS:
+        return f"옮길 칸이 모자란다({CA.RELOC_SLOTS}칸)"
+    at = RELOC_AT + slot * RELOC_LEN
     if len(raw) + 1 > RELOC_LEN:
         return f"옮길 칸({RELOC_LEN}B)보다 길다({len(raw) + 1}B)"
     if base is None:
@@ -108,8 +118,8 @@ def _relocate(out, s, raw, base):
     refs = [i for i in range(0, len(out) - 3, 4) if out[i : i + 4] == old]
     if len(refs) != 1:
         return f"포인터가 {len(refs)}개다(하나여야 한다)"
-    CA.put(out, base, RELOC_AT, raw + b"\x00" * (RELOC_LEN - len(raw)))
-    out[refs[0] : refs[0] + 4] = RELOC_AT.to_bytes(4, "big")
+    CA.put(out, base, at, raw + b"\x00" * (RELOC_LEN - len(raw)))
+    out[refs[0] : refs[0] + 4] = at.to_bytes(4, "big")
     return None
 
 
@@ -168,6 +178,7 @@ def patch(data, name, tbl):
     low, chapters = H.load_low(), chapter_keys()
     strs = S.strings(data, S.load_base(name))
     packed = set()
+    moved = 0  # 옮긴 문자열 수 = 다음 옮김 칸 번호
     if name == "/0.BIN":
         packed, n, why = _repack_chapters(
             out, strs, tbl, S.load_base(name), lambda jp: encoder(jp, low, chapters)
@@ -184,8 +195,9 @@ def patch(data, name, tbl):
         b = budget(data, s)
         if len(raw) > b:
             if jp + "\x00" in RELOCATABLE.get(name, ()):
-                why = _relocate(out, s, raw, S.load_base(name))
+                why = _relocate(out, s, raw, S.load_base(name), moved)
                 if why is None:
+                    moved += 1
                     out[s["off"] : s["off"] + b + 1] = b"\x00" * (b + 1)  # 원자리는 비운다
                     done += 1
                     continue
@@ -208,6 +220,7 @@ def patch(data, name, tbl):
     #   🔴 **긴 것부터 넣는다.** 짧은 항목이 먼저 들어가면 그것을 품는 **긴 문자열이
     #     더는 안 걸린다** — 실측 2026-08-31: `売りました。` 가 먼저 박혀
     #     `%sを<0D>売りました。` 가 못 붙었고, 화면에 **「약초を 팔았습니다.」** 로 나왔다.
+    to_clear = []
     for jp, kr in sorted(tbl.items(), key=lambda kv: -len(kv[0])):
         #   🔴 **`seen` 으로 거르면 안 된다.** 앞 단계가 그 문자열을 **한 자리에서** 바꿨다고
         #     해서 다른 자리까지 바뀐 게 아니다 — 같은 이름이 표 여럿에 들어 있다.
@@ -224,6 +237,9 @@ def patch(data, name, tbl):
         raw = encoder(jp, low, chapters)(kr)
         at = out.find(pat)
         while at >= 0:
+            if any(c0 <= at < c0 + cs for c0, cs in to_clear):  # 이미 옮긴 긴 문구의 꼬리 — 따로 문자열이 아니다
+                at = out.find(pat, at + 1)
+                continue
             pad = 0
             while at + len(pat) + pad < len(out) and out[at + len(pat) + pad] == 0:
                 pad += 1
@@ -234,10 +250,22 @@ def patch(data, name, tbl):
                 #   문안이 그보다 길 때 파일이 늘어난다(실측: 3B 늘어 단언이 울었다).
                 out[at : at + span] = raw + b"\x00" * (span - len(raw))
                 done += 1
+            elif jp in RELOCATABLE_FIND.get(name, ()):
+                why = _relocate(out, {"off": at}, raw, S.load_base(name), moved)
+                if why is None:
+                    moved += 1
+                    #   🔴 원자리는 **루프가 끝난 뒤** 비운다 — 짧은 문구(`%sを授かりました。`)가 긴 문구(`%sは\r%sを授かりました。`)의 **꼬리를 같이 쓴다**
+                    #   (원판 바이트가 겹친다). 비우기를 루프 뒤로 미루고, 옮긴 자리 안에서 다시 찾은 짧은 쪽은 건너뛴다(위).
+                    to_clear.append((at, span))
+                    done += 1
+                else:
+                    bad.append((jp, f"예산 {room}B 를 {len(raw) - room}B 넘고 옮길 수도 없다: {why}"))
             else:
                 bad.append((jp, f"예산 {room}B 를 {len(raw) - room}B 넘는다"))
             at = out.find(pat, at + span)
 
+    for at, span in to_clear:
+        out[at : at + span] = b"\x00" * span
     assert len(out) == len(data), (len(out), len(data))
     return bytes(out), done, bad
 

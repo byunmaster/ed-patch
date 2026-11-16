@@ -196,13 +196,20 @@ def prepare(h, base, got, blocks):
     return got, "중화 실패 — " + " · ".join(notes)
 
 
-NAMES = int(os.environ.get("SWEEP_NAMES", "0x400"), 0)  # 이름표 표를 옮길 길이(이름 칸 32B × 32 — 머리 인자가 32 이상인 블록은 기준 맵 값을 읽는다)
+NAMES = int(os.environ.get("SWEEP_NAMES", "0x800"), 0)  # 이름표 표를 옮길 길이(이름 칸 32B × 64 — 11-15 에 32칸(0x400)이면 색인 32↑ 화자(0233 이상)의 이름 줄이 기준 맵 값으로 엉뚱하게 떴다)
 KEYS = os.environ.get("SWEEP_KEYS")  # "224-233,443,884" — 그 번호(구간·쉼표 목록)만 찍는다(시험용)
+KEYS_BY_MAP = None
+if os.environ.get("SWEEP_KEYS_FILE"):
+    import json as _json
+
+    KEYS_BY_MAP = {k: set(v) for k, v in _json.load(open(os.environ["SWEEP_KEYS_FILE"], encoding="utf-8")).items()}
 ORIG = bool(os.environ.get("SWEEP_ORIG"))  # 1 이면 **원판 이미지**(JP 디스크 1)의 글을 찍는다 — 판정용 「원판 짝」 촬영
 
 
-def key_wanted(i):
-    """`SWEEP_KEYS` 가 없으면 전부, 있으면 구간·목록에 든 번호만."""
+def key_wanted(i, stem=None):
+    """`SWEEP_KEYS` 가 없으면 전부, 있으면 구간·목록에 든 번호만. `SWEEP_KEYS_FILE`(JSON `{맵: [번호…]}`)이 있으면 맵마다 그 목록(바뀐 블록만 찍을 때)."""
+    if KEYS_BY_MAP is not None:
+        return i in KEYS_BY_MAP.get(stem, ())
     if not KEYS:
         return True
     for part in KEYS.split(","):
@@ -265,7 +272,7 @@ def run_map(h, base, img, files, orig, stem, outdir, limit, idxf, deadline):
     for i, blk in enumerate(blocks[:limit]):
         if time.time() > deadline:
             return done
-        if not key_wanted(i):
+        if not key_wanted(i, stem):
             continue
         key = f"{i:04d}"
         h.restore(snap)

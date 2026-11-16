@@ -138,7 +138,11 @@ def _is_speaker(data, blocks, key):
     if blk["head"] == "ff00":
         #   `FF 00` 머리 블록이 글 세션의 **첫 블록**(뒤 블록과 `0E` 로 이어짐)이면 그 머리가 곧 세션 머리다 — MAP022 #363(10-22)
         k = int(key)
-        return k + 1 < len(blocks) and _linked(data, blk, blocks[k + 1])
+        if k + 1 < len(blocks) and _linked(data, blk, blocks[k + 1]):
+            return True
+        #   혼자 한 세션 — `FF 00` 머리 + 글 한 블록 + `0E 00 09`(글 모드를 닫고 다음 옵코드로)로 끝난다(MAP028 #121, 11-14). 덮는 6B 는 머리 2 + 글 앞 4B 라 위와 같다.
+        e = blk["off"] + len(blk["body"])
+        return data[blk["off"] - 2 : blk["off"]] == b"\xff\x00" and data[e] == 0x0E and data[e + 1 : e + 3] == b"\x00\x09"
     # 세션 한복판이거나, `FF 00` + 화자 머리로 열리는 세션의 첫 블록
     return (
         _linked(data, blocks[int(key) - 1], blk)

@@ -14,7 +14,7 @@ class Reloc(unittest.TestCase):
         self.assertEqual(RS.RELOC_AT, SS.RELOC)  # 두 곳이 갈리면 크레딧 코드가 문자열을 덮는다
 
     def test_slot_sits_before_gclk(self):
-        self.assertLessEqual(RS.RELOC_AT + RS.RELOC_LEN, SS.GCLK)
+        self.assertLessEqual(RS.RELOC_AT + RS.RELOC_LEN * RS.CA.RELOC_SLOTS, SS.GCLK)
 
     def test_relocates_and_repoints_a_single_reference(self):
         base = 0x06004000
