@@ -41,6 +41,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 import common as C
+import font as F
 
 from shared import fonts
 
@@ -68,11 +69,42 @@ TAIL_PUNCT = ".,?!…"
 ELLIPSIS_DROP = 5
 
 
+#   「」『』 는 게임 대사와 같은 반각 도안(`font.kagi_glyph`)을 쓴다 — 전진 6px(반 칸), 마스터 10-27 「다 반각이 낫네」.
+#   앞 6열이 글자라 전진을 6 으로 두면 닫는 쪽(」)이 앞 글자에 붙고 뜨지 않는다.
+KAGI_ADV = 6
+
+
+def _kagi_bits(ch):
+    """반각 낫표 → `(LINE_H, CELL)` 0/1 배열. 게임 칸(12행)과 같은 행 높이에 앉는다."""
+    import numpy as np
+
+    g = np.unpackbits(np.frombuffer(F.kagi_glyph(ch), dtype=np.uint8)).reshape(F.ASCII_ROWS, 8)
+    b = np.zeros((LINE_H, CELL), dtype=np.uint8)
+    b[: g.shape[0], :8] = g
+    return b
+
+
 def _adv(ch):
-    """그 글자가 먹는 가로 자리 — 갈무리11 실측(라틴 8 · 한글 12)."""
+    """그 글자가 먹는 가로 자리 — 갈무리11 실측(라틴 8 · 한글 12 · 낫표 6)."""
+    if ch in F.KAGI_CODE:
+        return KAGI_ADV
     if ch.isdigit() and ord(ch) < 0x80:
         return ADV_LATIN + DIGIT_EXTRA
     return ADV_LATIN if ord(ch) < 0x1100 else CELL
+
+
+#   🔴 갈무리 `.` 은 8px 칸 왼쪽에 앉아(잉크 2px) 뒤에 5px 빈칸이 남는다 — 그 뒤에 닫는 낫표(칸 열 1~4)가 오면 「운명입니다.   」 로
+#   떠 보인다(모의에서 마스터가 짚음). 게임 반각 `.`(전진 6)과 같은 간격이 되도록 2px 당긴다.
+KAGI_TIGHT = 2
+
+
+def _advs(line):
+    """줄의 글자별 전진 — 닫는 낫표 앞 라틴 문장부호는 `KAGI_TIGHT` 만큼 줄인다."""
+    a = [_adv(c) for c in line]
+    for i in range(1, len(line)):
+        if line[i] in "」』" and line[i - 1] in ".,?!":
+            a[i - 1] -= KAGI_TIGHT
+    return a
 
 
 def _draw(text, trim=False):
@@ -84,18 +116,19 @@ def _draw(text, trim=False):
     out = np.zeros((H, W), dtype=np.uint8)
     top0 = H - BOTTOM - LINE_H * len(rows)
     for r, line in enumerate(rows):
-        wpx = sum(_adv(c) for c in (line.rstrip(TAIL_PUNCT) if trim else line))
+        wpx = sum(_advs(line)[: len(line.rstrip(TAIL_PUNCT) if trim else line)])
+        advs = _advs(line)
         x = (W - wpx) // 2
         y = top0 + r * LINE_H
-        for c in line:
+        for c, adv in zip(line, advs):
             if c != " ":
-                b = bdf.bits(c, dy=DY, rows=LINE_H, width=CELL)
+                b = _kagi_bits(c) if c in F.KAGI_CODE else bdf.bits(c, dy=DY, rows=LINE_H, width=CELL)
                 if c == "…":
                     b = np.roll(b, ELLIPSIS_DROP, 0)
                 h, w = b.shape
                 if 0 <= y and y + h <= H and 0 <= x and x + w <= W:
                     out[y : y + h, x : x + w] |= b
-            x += _adv(c)
+            x += adv
     return out
 
 
@@ -145,6 +178,8 @@ def enc_key(name, size):
         h.update(f"dig{DIGIT_EXTRA}|".encode())
     if name in CENTER_V2:
         h.update(b"ctr2|")
+    if any(c in F.KAGI_CODE for x in lines(name) for c in x[-1]):
+        h.update(f"kagi{KAGI_ADV}{KAGI_TIGHT}|".encode())
     if any("…" in x[-1] for x in lines(name)):
         h.update(f"ell{ELLIPSIS_DROP}|".encode())
     h.update(ffmpeg_ver().encode())

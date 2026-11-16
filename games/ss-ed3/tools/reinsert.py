@@ -234,7 +234,7 @@ def patch_blocks(data, stem, table):
             bad.append((key, why))
             continue
         #   `!?` 는 합자 글리프 한 글자(같은 2B) — 배정(`liga_map.json`)이 있을 때만(`hangul_map.LIGA_PATH`)
-        raw = H.encode_kr(H.liga_text(fitted), {**enc, **H.load_liga()})
+        raw = H.encode_kr(H.liga_text(fitted), {**enc, **H.load_liga()}, kagi=True)
         if fill:
             if len(raw) + fill != budget:
                 bad.append((key, f"채움 계산이 어긋났다 {len(raw)}+{fill} != {budget}"))

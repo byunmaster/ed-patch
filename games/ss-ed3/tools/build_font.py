@@ -106,8 +106,6 @@ ASCII_DY = 1
 #     아래 두 행이 비어 있으니 **2 행 내려 2~11 행**에 앉히면 한글과 밑이 맞는다.
 #   ⚠ HUD 의 `70 Pia / 0 Goa` 는 게임이 자기 `ASCII.FON` 으로 직접 그린다(실측: 행 3~11 =
 #     `ASCII_DY` 가 먹은 자리) — 여기 안 걸린다.
-DIGIT_DY = 1  # (옛 값 — 전각 숫자를 갈무리에서 뽑으면서 쓰지 않는다)
-DIGIT_DX = 3  # 갈무리 숫자(폭 7)를 12px 칸 가운데에 — 열 3~9
 FULLWIDTH_DIGITS = tuple(range(0x824F, 0x8259))  # ０~９
 
 
@@ -117,14 +115,6 @@ def digit_slots():
     out = [i for i in range(F.GLYPHS) if F.sjis_of_index(i) in want]
     assert len(out) == 10, out
     return out
-
-
-def shift_down12(g, dy):
-    """`KANJI12` 글리프(12행 × 12비트 밀착)를 아래로 `dy` 행 민다."""
-    grid = np.zeros((F.ROWS, F.CELL), dtype=np.uint8)
-    src = F.unpack(g + bytes(F.STRIDE), 0)
-    grid[dy:] = src[: F.ROWS - dy]
-    return F.pack18(grid)
 
 
 def shift_down(g, rows, stride, dy):
@@ -173,7 +163,9 @@ def bake_ellipsis(out):
 
     idx = F.jis_index("…")
     g = F.unpack(bytes(out), idx).copy()
-    assert g[: F.ROWS - ELLIPSIS_DROP].any() and not g[F.ROWS - ELLIPSIS_DROP :].any(), "원판 점이 가운데에 있어야 한다"
+    assert g[: F.ROWS - ELLIPSIS_DROP].any() and not g[F.ROWS - ELLIPSIS_DROP :].any(), (
+        "원판 점이 가운데에 있어야 한다"
+    )
     g = np.roll(g, ELLIPSIS_DROP, 0)
     out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = F.pack18(g)
     return 1
@@ -286,6 +278,15 @@ def bake_cred(out):
     return n
 
 
+#   서책 반각 「」 · ' — 마스터 시안 B(10-27 「새턴3은 B가 낫다」): 대사 도안 그대로 1px 획. 6열 도안을 12 칸의 왼쪽 6 열에 앉힌다
+#   (책 화면이 3 열씩 (c0+c1, c1+c2) 두 칸으로 줄여 4 열이 되고, `patch_book_half` 가 전진을 4px 로 줄인다). 정본 `inbox/ss-ed3/book-kagi-draft.txt`.
+BOOKQ = {
+    "｢": ["####..", "#.....", "#.....", "#....."] + ["......"] * 8,
+    "｣": ["......"] * 4 + ["....#."] * 6 + [".####."] + ["......"],
+    "＇": ["......"] + ["..#..."] * 3 + ["......"] * 8,
+}
+
+
 def bake_liga(out, asc):
     """합자 글리프(`⁉` = `!?`)를 굽는다 — **같은 ASCII.FON 의 `!`·`?`**(여백 조정·내림 반영 판)를 12px 칸 하나에 붙여 앉힌다. `(구운 칸 수)`.
 
@@ -293,10 +294,14 @@ def bake_liga(out, asc):
     ASCII 도 한글과 같은 12 행이라 행은 그대로 옮긴다(기준선 일치)."""
     table = H.load_liga()
     n = 0
-    for _ch, idx in table.items():
+    for ch, idx in table.items():
         grid = np.zeros((F.ROWS, F.CELL), np.uint8)
-        grid[:, 0:8] |= F.ascii_unpack(asc, ord("!"))
-        grid[:, 4:12] |= F.ascii_unpack(asc, ord("?"))
+        if ch in BOOKQ:
+            for r, row in enumerate(BOOKQ[ch]):
+                grid[r, :6] = [1 if x == "#" else 0 for x in row]
+        else:
+            grid[:, 0:8] |= F.ascii_unpack(asc, ord("!"))
+            grid[:, 4:12] |= F.ascii_unpack(asc, ord("?"))
         out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = F.pack18(grid)
         n += 1
     return n
@@ -314,20 +319,8 @@ def build(disc=1):
         g = shift_right(glyphs[ch], F.CELL, F.ROWS, F.STRIDE)
         assert len(g) == F.STRIDE, (ch, len(g))
         out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = g
-    for idx in digit_slots():
-        out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = shift_down12(
-            bytes(out[idx * F.STRIDE : (idx + 1) * F.STRIDE]), DIGIT_DY
-        )
-    #   🔴 **전각 숫자는 한글과 같은 갈무리에서 뽑는다**(마스터 10-06 「전각은 갈무리 기반으로」) — 한글(0~10 행)과 같은 높이·같은 획이다.
-    #   갈무리 숫자는 폭 7(열 0~6)이라 12px 칸 가운데(`DIGIT_DX`=3 → 열 3~9)에 앉힌다. ASCII 숫자만 마스터 도안(폭 6 고정)이다.
-    dg, dmiss = fonts.convert_chars(
-        list("0123456789"), dy=DY, rows=F.ROWS, packer=fonts.pack18, width=F.CELL
-    )
-    assert not dmiss, dmiss
-    for ch, idx in zip("0123456789", digit_slots(), strict=True):
-        out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = shift_right(
-            dg[ch], F.CELL, F.ROWS, F.STRIDE, DIGIT_DX
-        )
+    #   🔴 **전각 숫자 `０`~`９`(KANJI12)는 원판 그대로 둔다**(마스터 10-27 「ss3 은 원본 그대로 쓰면 될듯」 — 규칙 1-8 라틴·숫자 글꼴 고르기). 종전엔 갈무리에서 뽑아
+    #   열 3~9 에 앉혔다(10-06). 대사 숫자는 반각 ASCII 라 `ASCII.FON` 원판이고(`patch_ui_center.DIGIT_BR`), 이 열은 장 제목 · 서책 · 음성 자막의 전각 숫자가 쓴다.
     bake_low(out)
     bake_book(out)
     bake_cred(out)
@@ -356,7 +349,14 @@ def build_ascii(disc=1):
                 g, F.ASCII_ROWS, F.ASCII_STRIDE, ASCII_DY
             )
         out = bytes(buf)
-    return out, n
+    #   🔴 대사 「」 반각(마스터 도안 B판) — **내리지 않는다**(도안이 전각 「」 와 같은 행 0~10 에 앉는다). 빈 코드 자리라 덮는 게 없다.
+    buf = bytearray(out)
+    for ch, code in F.KAGI_CODE.items():
+        assert not buf[code * F.ASCII_STRIDE : (code + 1) * F.ASCII_STRIDE].strip(b"\x00"), hex(
+            code
+        )
+        buf[code * F.ASCII_STRIDE : (code + 1) * F.ASCII_STRIDE] = F.kagi_glyph(ch)
+    return bytes(buf), n
 
 
 def main():

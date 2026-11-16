@@ -9,8 +9,12 @@ NAMES = ["칸드 마스터"]
 
 
 class ReflowPage(unittest.TestCase):
-    def test_short_sentences_share_a_line(self):
-        self.assertEqual(R.reflow_page("잘했다!\n역시 내 아들이야.", NAMES), "잘했다! 역시 내 아들이야.")
+    def test_sentence_end_break_is_left_alone(self):
+        # 2-16: 규칙에 걸리는 곳이 없으면 줄 맞춤 취향으로 안 흔든다
+        self.assertEqual(R.reflow_page("잘했다!\n역시 내 아들이야.", NAMES), "잘했다!\n역시 내 아들이야.")
+
+    def test_soft_break_is_joined(self):
+        self.assertEqual(R.reflow_page("역시 내가\n키운 아들이야.", NAMES), "역시 내가 키운 아들이야.")
 
     def test_name_with_space_stays_on_one_line(self):
         out = R.reflow_page("그분이 바로\n칸드 마스터 님이시다. 정말로 대단하신 분이지.", NAMES)

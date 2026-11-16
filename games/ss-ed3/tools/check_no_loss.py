@@ -26,6 +26,7 @@ import check_build_discs as B
 import check_sys_coverage as SC
 import choice_tail as CT
 import common as C
+import font as F
 import hangul_map as H
 import mapfile as M
 import param as P
@@ -54,6 +55,9 @@ def reverse(*tables):
     return out
 
 
+KAGI_BACK = {v: k for k, v in F.KAGI_CODE.items()}
+
+
 def decode(body, rev):
     """이미지 바이트 → 글자열. 배정 슬롯은 한글로, 나머지는 `mapfile.text_of` 그대로."""
     out, i = [], 0
@@ -72,6 +76,11 @@ def decode(body, rev):
         #     `<20>`·`<2E>` 로 적는다(첫 판이 이것 때문에 3 만 건을 소실로 셌다)
         if 0x20 <= body[i] < 0x7F:
             out.append(chr(body[i]))
+            i += 1
+            continue
+        #   대사 「」 는 반각 한 바이트다(`font.KAGI_CODE`)
+        if body[i] in KAGI_BACK:
+            out.append(KAGI_BACK[body[i]])
             i += 1
             continue
         #   나머지(제어·SJIS)는 원래 디코더에 맡긴다

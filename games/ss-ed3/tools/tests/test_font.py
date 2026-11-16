@@ -47,6 +47,11 @@ class TestIndex(unittest.TestCase):
             i = F.jis_index(ch)
             self.assertEqual(F.sjis_of_index(i), ch.encode("shift_jis"), ch)
 
+    def test_sjis_제2수준_구(self):
+        #   63 구 이상은 첫 바이트가 0xE0 부터다(옛 식은 0xC1 로 틀려 책 미리보기가 높은 슬롯 글자를 못 찾았다, 10-27)
+        self.assertEqual(F.sjis_of_index(6255), bytes.fromhex("e273"))
+        self.assertEqual(F.sjis_of_index(62 * 94), bytes.fromhex("e040"))
+
     def test_한자_구역_시작(self):
         self.assertEqual(F.jis_index("亜"), (F.KANJI_KU - 1) * 94)
 

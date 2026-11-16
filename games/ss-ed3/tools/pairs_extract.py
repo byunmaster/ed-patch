@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build
 import check_build_discs as B
 import check_no_loss as N
+import codearea as CA
 import common as C
 import hangul_map as H
 import json
@@ -181,23 +182,30 @@ def sys_rows(files, img, rev, rows):
         base = ST.load_base(f)
         targets = ST.ptr_targets(orig, base) if base is not None else {}
         seen = set()
+        #   🔴 옮긴 문자열(`reinsert_sys.RELOCATABLE`)의 새 자리는 **폰트 RAM 코드 예약 칸**(`codearea.RELOC`)이다 — `/0.BIN` 밖이라
+        #   파일 안 오프셋 검사로는 새 포인터를 버리고 원자리 NUL 을 읽어 한글 칸이 비었다. 제품 폰트 바이트에서 푼다.
+        fon = B.read_extent(img, *files["/SYSTEM/KANJI12.FON"]) if "/SYSTEM/KANJI12.FON" in files else b""
         for s in ST.strings(orig, base):
             off = s["off"]
-            new = off
+            new, buf = off, got
             slots = targets.get(off) or []
             for at in slots:
                 v = int.from_bytes(got[at : at + 4], "big") - base
                 if v != off and 0 <= v < len(got):
                     new = v
                     break
+                fv = v + base - CA.FON_BASE
+                if CA.in_font(v + base, 1) and fon and 0 <= fv < len(fon):
+                    new, buf = fv, fon
+                    break
             if (new, off) in seen:
                 continue
             seen.add((new, off))
             jp = show(ST.text_of(s["raw"]).replace("<10>", "") if False else ST.text_of(s["raw"]))
             jp = re.sub(r"(\{ctl:10\})+$", "", jp)
-            kr = _dec(_cstr(got, new), rev)
+            kr = _dec(_cstr(buf, new), rev)
             #   🔴 원판 문자열 자리를 **패치 코드가 덮은** 경우(디버그 메뉴 구역 — 훅·스텁이 쓴다, 화면에 안 나오는 죽은 메뉴)는 글이 아니다 — 칸을 비운다
-            if _cstr(got, new) != s["raw"] and not HANGUL.search(kr) and not re.search(r"[A-Za-z]{3}", kr):
+            if _cstr(buf, new) != s["raw"] and not HANGUL.search(kr) and not re.search(r"[A-Za-z]{3}", kr):
                 kr = ""  # 원판과 다른데 한글도 영문도 아니다 — 코드 바이트다
             rows.append((f"SYS:{f}+{off:#x}", jp, kr, mark(jp, kr, len(slots))))
 

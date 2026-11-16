@@ -131,6 +131,12 @@ run 4 "$PY" "$G/tools/center_narration.py" --check
 echo "  ── 조판 여섯 규칙 (전 영역 · 대장 밖 새 위반)"
 run 2 "$PY" "$G/tools/check_typeset6.py" --check
 
+echo "  ── 줄·쪽 나눔 지표 a~e·h·h2 (공통 번역 규칙 2-16 — 기준선보다 늘면 실패)"
+# 🔴 게이트다 — 쪽 끝 고아(a)·덩어리를 가르는 쪽 끝(b)·문장 중간 손 개행(c)·절째 내리면 들어가는데 쪼갠 줄(d). 줄이면 --freeze 로 내린다.
+run 2 "$PY" "$G/tools/check_linebreak.py" --check
+# 🔴 퇴행 f — 2-16 이전 문안(backup/ss-ed3-pre-2-16-text) 대비 나빠진 자리 **래칫 0**(관리자 10-27). 기준 ref 가 없는 저장소에선 「못 쟀다」로 알린다.
+run 2 "$PY" "$G/tools/check_linebreak.py" --check --f backup/ss-ed3-pre-2-16-text
+
 echo "  ── 「…」 뒤 붙임 · 「～.」 (공통 번역 규칙 2-11 · 1-7)"
 # 🔴 게이트다 — 「…」 뒤에 말이 이어지면 반각 공백, 물결표 뒤 마침표 금지(마스터 10-12). `--apply` 가 공백을 넣는다.
 run 2 "$PY" "$G/tools/check_ellipsis_space.py"

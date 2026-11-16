@@ -31,6 +31,7 @@ import common as C
 import hangul_map as H
 import map_plates as MP
 import movie_hardsub as MV
+import patch_book_half as PBH
 import patch_josa_hook as JOSA
 import patch_notice_x as NX
 import patch_ui_center as UIC
@@ -173,6 +174,9 @@ def patched(disc, lay=None):
         #     `/0.BIN` 만 고치고 있어 여태 일본어로 남아 있었다.
         #   ⓘ `reinsert_sys` 의 **원바이트 폴백**이 `LOAD_BASE` 없는 파일도 받는다.
         b = d.read_extent(lba, size)
+        if name == "/BOOKPRG.BIN":
+            #   서책 반각 「」 · ' — 글자 전진 4px 스텁(`patch_book_half`). 이 파일엔 시스템 문구가 없다.
+            return b, PBH.patch(b), {"book_half": 1}, []
         new, k, bad = RS.patch(b, name, systbl)
         cnt = {"sys": k}
         if name == "/0.BIN":
@@ -202,7 +206,7 @@ def patched(disc, lay=None):
         sysres = {}
         if systbl:
             for name, lba, size in files:
-                if name in ("/0.BIN", "/RLTPRG.BIN", "/BLACK.BIN"):
+                if name in ("/0.BIN", "/RLTPRG.BIN", "/BLACK.BIN", "/BOOKPRG.BIN"):
                     sysres[name] = patch_sys(d, name, lba, size)
         fonb = bytearray(fon)
         CA.apply(fonb)
@@ -284,7 +288,9 @@ def patched(disc, lay=None):
                 #   ⚠ 한 파일에 **설명문과 이름 표**가 같이 있다 — 둘을 이어서 넣는다.
                 #     이름 표가 빠져 있어 장비창에 일본어가 떴다(2026-08-27 유저 실측).
                 b = d.read_extent(lba, size)
-                src = DEV.patch_param(b)  # 개발용: 환경변수로 켤 때만(ED_DEV_ISABEL_HP) — 이름이 일본어일 때(번역 전)에 찾는다
+                src = DEV.patch_param(
+                    b
+                )  # 개발용: 환경변수로 켤 때만(ED_DEV_ISABEL_HP) — 이름이 일본어일 때(번역 전)에 찾는다
                 new, k, bad = (src, 0, []) if not desctbl else RD.patch(src, table, desctbl)
                 new, k2, bad2 = RP.patch(new, None, paramtbl)
                 bad = bad + bad2

@@ -60,7 +60,12 @@ CRED_PATH = os.path.join(C.GAME_DIR, "credits_map.json")
 #   (마스터 10-07 「`?!` 는 붙어 보였다」 · 10-24 판정 B). 같은 2B·같은 12px 폭이라 길이·조판이 그대로다. 재삽입이 대사 블록을 인코딩할 때만 `!?` → `⁉` 로 바꾸고
 #   (`reinsert.patch_blocks`), 되풀이 검사·짝 표는 거꾸로 `!?` 로 푼다(`LIGA_BACK`). 정본(append-only)은 `liga_map.json` — 그림은 `build_font.bake_liga`.
 LIGA_PATH = os.path.join(C.GAME_DIR, "liga_map.json")
-LIGA_BACK = {"⁉": "!?"}  # 합자 글자 → 풀어 쓴 꼴
+LIGA_BACK = {
+    "⁉": "!?",
+    "＇": "'",
+    "｢": "「",
+    "｣": "」",
+}  # 특수 글리프 → 풀어 쓴 꼴(`＇` = 서책의 방향 없는 따옴표 — 마스터 시안 B 10-27)
 CRED_SRC = os.path.join(C.GAME_DIR, "script", "voice_credits.json")
 
 
@@ -159,8 +164,8 @@ def book_chars():
 
 
 def load_book():
-    """책 화면 전용 배정을 **본 배정 위에 얹은** 표. 파일이 없으면 본 배정 그대로."""
-    table = load()
+    """책 화면 전용 배정을 **본 배정 위에 얹은** 표(+ 특수 글리프 `＇`). 파일이 없으면 본 배정 그대로."""
+    table = {**load(), **load_liga()}
     if not os.path.exists(BOOK_PATH):
         return table
     with open(BOOK_PATH, encoding="utf-8") as f:
@@ -301,7 +306,7 @@ def liga_text(text):
     return text.replace("!?", "⁉") if load_liga() else text
 
 
-def encode_kr(text, table=None):
+def encode_kr(text, table=None, kagi=False):
     """문안 → 게임 바이트열. 한글은 슬롯 SJIS 로, 나머지는 그대로 SJIS 로.
 
     🔴 **제어코드는 `mapfile.encode_text` 가 처리한다** — 여기서 직접 인코딩하면
@@ -313,6 +318,9 @@ def encode_kr(text, table=None):
     table = table if table is not None else load()
 
     def one(ch):
+        #   대사(MAP 블록)만 「」 를 반각 한 바이트로 낸다(`font.KAGI_CODE`) — 서책·자막·시스템 문자열은 전각 그대로.
+        if kagi and ch in F.KAGI_CODE:
+            return bytes((F.KAGI_CODE[ch],))
         #   ⚠ **표를 한글 밖에도 본다** — 챕터 줄은 전각 숫자까지 대체 슬롯으로 간다.
         #     기본 표에는 한글밖에 없으니 여기서 달라지는 건 대체 표를 준 자리뿐이다.
         if ch in table:

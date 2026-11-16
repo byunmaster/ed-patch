@@ -61,9 +61,11 @@ RELOC = WRAP2 + WRAP2_ROOM  # 예산이 모자라 옮긴 시스템 문자열 칸
 RELOC_LEN = 32
 GCLK = RELOC + RELOC_LEN  # 전역 프레임 시계(16B, 쓴다)
 GCLK_LEN = 16
-B_END = GCLK + GCLK_LEN
+BOOKH = GCLK + GCLK_LEN  # 서책 반각 전진 스텁(`patch_book_half` — 코드 + 풀)
+BOOKH_ROOM = 64
+B_END = BOOKH + BOOKH_ROOM
 assert B_END <= run_end(RUN_B), (B_END, run_end(RUN_B))
-assert all(x % 4 == 0 for x in (CRED, JOSA, SUB, WRAP3, WRAP2, GCLK, RELOC))
+assert all(x % 4 == 0 for x in (CRED, JOSA, SUB, WRAP3, WRAP2, GCLK, RELOC, BOOKH))
 
 #   ── 쓰기 길 — 패치 함수는 `/0.BIN` 바이트를 돌려주므로 폰트 쪽 쓰기는 여기 모았다가 빌드가 폰트에 얹는다
 SIDE = []  # [(주소, bytes)]
