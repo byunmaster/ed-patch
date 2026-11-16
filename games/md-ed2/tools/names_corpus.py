@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import archives
+import chapters
 import common
 import dict_names
 import halfspace
@@ -56,6 +57,7 @@ def _t(s):
     · 줄바꿈 `<01>` → 줄바꿈 · 나머지 제어태그(끝·쪽·참조·피치 …)는 뗀다."""
     if not isinstance(s, str):
         return s
+    s = chapters.band_plain(s)  # 장 제목 띠의 합성 글자(PUA)는 원래 한글로
 
     def sub(m):
         c = m.group(1)

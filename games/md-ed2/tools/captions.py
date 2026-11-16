@@ -41,6 +41,8 @@ FAMILIES = [
 ]
 # 옛 영역을 지울 때 이 주소부터는 남긴다 — 오프닝 영역 뒤 118B 는 제품의 디버그 진입키 후크(`debug_key.py`)가 쓴다(자막은 꼬리로 옮겨 가 이 칸은 비어 있다)
 CLEAR_UNTIL = {"opening": 0x17D04}
+# 엔딩 옛 영역 둘은 마을 HUD 전용 지명 표(`places.town_plan`)가 쓴다 — 지우기는 거기서 0 으로 채우며 같이 한다
+TOWN_CARVE = {"ending-a": (0x34E86, 0x34F8C), "ending-b": (0x34FF8, 0x35116)}
 # 표 머리 → 그 표를 부르는 `lea $표,a3` 의 32비트 피연산자 자리
 RELOCATE = {
     "opening": [(0x178C2, 0x16770)],
@@ -324,7 +326,8 @@ def plan(
             writes.append((f"captions-ptr:{base:06x}", ptr, struct.pack(">I", moved[base])))
         _lo, _hi = next((a, h) for n, _b, (a, h) in FAMILIES if n == name)
         _hi = min(_hi, CLEAR_UNTIL.get(name, _hi))
-        writes.append((f"captions:{name}", _lo, b"\x00" * (_hi - _lo)))  # 옛 영역 지우기
+        if name not in TOWN_CARVE:
+            writes.append((f"captions:{name}", _lo, b"\x00" * (_hi - _lo)))  # 옛 영역 지우기
         cur = text_at + len(areas[name])
         cur += cur & 1
     if cur - tail_at > tail_size:

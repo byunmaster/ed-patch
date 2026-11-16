@@ -25,6 +25,21 @@ SPACE_TRAMP_LEN = 14  # movea(2)+lea(6)+jmp(6) — 공백은 이제 콘덴스드
 ALIGN_SITE = 0x230A8  # subq.b #2,d1(원본) — 가운데 정렬 앞 공백 계산의 상수. 즉값 1바이트만 바꾼다
 ALIGN_PATCH = b"\x53\x01\xe2\x09"  # subq.b #1,d1(="K=1") + lsr.b #1,d1(원본 그대로)
 
+# 월드맵 「X 입구·부근·방위」 둘째 루틴(0x22930~)의 이름 복사(0x22892, 불리는 곳은 이 루틴의 둘뿐)는 **앞 공백을 전부 건너뛰고** 접미(콘덴스드 22px)를 붙여
+# 늘 왼쪽 정렬이었다(11-08 실측: 「루디아 입구」 왼 4px · 오른 30px). 레코드의 앞 공백은 이름만 기준으로 가운데 맞춘 값이라, **앞 공백 WORLD_SKIP 칸만 건너뛰고
+# 나머지는 그대로 복사**하게 한다 — 접미 폭(≈22px ≈ 반각 3.5칸)의 반만큼 왼쪽으로 당겨 이름+접미가 칸 가운데에 온다. 다른 호출자 없음(bsr 둘뿐).
+WORLD_SITE = 0x228B0  # cmpi.b #6,(a1) 부터 복사 루프 직전(0x228C6)까지 22B — 원래는 06 이 아닌 공백을 끝까지 건너뛰는 루프
+WORLD_SITE_LEN = 22
+WORLD_RESUME = 0x228C6  # move.b (a1)+,d0 — 복사 루프(첫 글자부터)
+WORLD_RESERVE = 0xD0  # 트램펄린 칸 전체(build.FIELD_HUD_RESERVE) — 공백 트램펄린 14B + 월드 트램펄린 84B + 방위 붙임 트램펄린
+
+# 월드 HUD 방위 둘(북동·남서 …) 붙여 쓰기(마스터 11-09 「북동 남서 등 방향은 띄어쓰기 없이 붙여써야해」) — 둘째 루틴의 마지막 복사(4B, 0x22AD8)가 방위 둘을 다 남긴 경우
+# (플래그 d1 의 남북 비트 0·1 · 동서 비트 2·3 이 둘 다 서 있음)에만 둘째 글자(동·서)를 **앞 공백이 짧은 변형 글리프**로 바꾼다 — 첫째 글자 칸에 구운 앞 공백 6px(이름과의 띄움)가
+# 둘째 칸에도 있어 「북 동」으로 벌어졌었다. 하나뿐일 땐 원래 글리프(앞 공백 6px)를 그대로 쓴다.
+JOIN_SITE = 0x22AD8
+JOIN_SITE_LEN = 24  # move.b d(a2),d(a3) × 4
+JOIN_RESUME = 0x22AF0  # move.b #6,0(a3) — 종결자
+JOIN_LEAD_PX = 2  # 변형 글리프 앞 공백 — 콘덴스드 전진 8px 에서 첫째 칸(6+8)이 14, 둘째 칸이 12 피치 뒤 시작이라 2px 이면 글자 사이 간격이 8px 전진과 같다
 # (자리, 글자) — 즉값 이동/비교 명령의 피연산자 2B. 전부 같은 함수(`$1EC20`) 안. `글자`는
 # PUA 코드를 찾는 키(아래 DIR_PUA)일 뿐, 실제로 이 글자 하나짜리 코드를 굽지는 않는다.
 DIRECTIONS = [
@@ -53,10 +68,12 @@ CONDENSED_BDF = common.ROOT / "shared" / "fonts" / "Galmuri11-Condensed.bdf"
 CONDENSED_ADVANCE = 8  # 콘덴스드 한글 1자 전진폭(BDF DWIDTH 실측, 전부 8)
 SPACE_PX = 6  # 압축분 앞 공백(마스터 확정 2026-09-28 — 8px/꼬리0 은 우측여유 1px라 반려, 최종 6px)
 CELL = hangul.CELL  # 14
+DIR_LEAD_PX = SPACE_PX - 1  # 방위 글자 앞 공백 — 방위 하나일 때 이름+방위가 칸에서 왼 +1~+2px 쏠려(실측 31개) 1px 당긴다(마스터 11-09 「최대한 가운데」, 방위 둘은 둘째 글자가 제자리라 글자 사이만 1px 벌어진다)
 PITCH = 12
 
 PUA_SUFFIX = {"부근": ["", ""], "입구": ["", ""]}
 PUA_DIR = {"동": "", "서": "", "남": "", "북": ""}
+PUA_DIR2 = {"동": "", "서": ""}  # 방위 둘일 때 둘째 글자(앞 공백 짧음)
 
 _cbdf_cache: dict | None = None
 
@@ -142,6 +159,15 @@ def _slice_single(strip: list[list[int]]) -> list[list[int]]:
     return g
 
 
+# 월드 HUD 길 A(위치 키 표, 접미 「입구」 22px 고정)에 오는 긴 이름 둘 — 보통 글자(12px)로는 이름+접미가 칸(90px)을 넘어 「구」가 잘린다(원판 가나는 들어간다).
+# **이름을 접미와 같은 콘덴스드 8px 글자로 그린다**(마스터 11-09 「2 고쳐서 캡쳐로 보여줘」). 같은 레코드를 쓰는 마을 HUD 에서도 콘덴스드로 보인다(월드·마을이 레코드를 공유).
+# 슬라이스 하나가 코드 하나(12px 피치) — 6글자 × 8px = 48px → 4코드.
+CONDENSED_NAMES = {
+    "사피아의호수": [chr(0xE100 + i) for i in range(4)],
+    "그로스토스성": [chr(0xE110 + i) for i in range(4)],
+}
+CONDENSED_LEAD = 3  # 앞 공백 칸(마을 HUD 칸 90px 에서 이름 48px 이 가운데 — 반각 3칸 ≈ 19px)
+
 _registered = False
 
 
@@ -159,7 +185,15 @@ def _ensure_custom_glyphs() -> None:
         for pua, g in zip(puas, slices, strict=True):
             hangul.CUSTOM_GLYPHS[pua] = g
     for ch, pua in PUA_DIR.items():
-        hangul.CUSTOM_GLYPHS[pua] = _slice_single(_condensed_strip(ch, SPACE_PX))
+        hangul.CUSTOM_GLYPHS[pua] = _slice_single(_condensed_strip(ch, DIR_LEAD_PX))
+    for ch, pua in PUA_DIR2.items():
+        hangul.CUSTOM_GLYPHS[pua] = _slice_single(_condensed_strip(ch, JOIN_LEAD_PX))
+    for name, puas in CONDENSED_NAMES.items():
+        slices = _slice_multi(_condensed_strip(name, 0))
+        if len(slices) != len(puas):
+            raise SystemExit(f"콘덴스드 이름 「{name}」 슬라이스 수가 예상과 다르다: {len(slices)} ≠ {len(puas)}")
+        for pua, g in zip(puas, slices, strict=True):
+            hangul.CUSTOM_GLYPHS[pua] = g
     _registered = True
 
 
@@ -171,6 +205,111 @@ def space_tramp(at: int) -> bytes:
     b += struct.pack(">H", 0x4EF9) + struct.pack(">I", SPACE_RESUME)  # jmp $1EC72.l
     assert len(b) == SPACE_TRAMP_LEN, len(b)
     return bytes(b)
+
+
+def world_tramp() -> bytes:
+    """접미 폭별 앞 공백 건너뛰기 — 월드 HUD 둘째 루틴이 접미를 붙이기 **전에** 이름을 복사하므로, 접미를 정하는 같은 RAM 값
+    (`$FF344A` 거리 · `$FF344C`/`$FF344E` 두 축 거리, 0x22A3C~0x22AEA 가 읽는 그대로)으로 접미 종류를 미리 가른다.
+
+    · 입구·부근(거리 < 5) · 첫째 호출 자리(0x2297C 바로 뒤 = 특수 지명, 늘 입구) → 콘덴스드 22px → 2칸 건너뜀
+    · 방위 한 개(`c>>1 >= e` 또는 `e>>1 >= c`, 코드가 한 방위를 지우는 조건 그대로) → 14px → 1칸
+    · 방위 둘 → 28px → 2칸
+    건너뛴 칸 수 = 앞 공백 (레코드 값은 이름만 기준) 에서 뺀다 — 접미 폭의 반만큼 당겨 이름+접미가 칸 가운데로. d1 은 저장한다(복귀 뒤 쓴다)."""
+    code = bytearray()
+    labels: dict[str, int] = {}
+    fix: list[tuple[int, str]] = []
+
+    def op(*words: int) -> None:
+        for w in words:
+            code.extend(struct.pack(">H", w))
+
+    def br(op_hi: int, label: str) -> None:  # 8비트 변위 분기 — 자리만 잡고 나중에 채운다
+        fix.append((len(code), label))
+        code.extend(bytes([op_hi, 0]))
+
+    op(0x48E7, 0x4000)  # movem.l d1,-(a7)
+    op(0x7001)  # moveq #1,d0 — 기본 2칸(dbra 횟수 = 칸 수 − 1)
+    op(0x0CAF, 0x0002, 0x2980, 0x000C)  # cmpi.l #첫째 호출 복귀 주소,12(a7) — 복귀 주소는 0x22892 의 d0/a1 저장 8B + d1 저장 4B 위
+    br(0x67, "do")  # beq.s do
+    op(0x3239, 0x00FF, 0x344A)  # move.w $FF344A.l,d1
+    op(0x0C41, 0x0005)  # cmpi.w #5,d1
+    br(0x65, "do")  # bcs.s do — 입구·부근
+    op(0x3239, 0x00FF, 0x344C, 0xE249)  # move.w $FF344C.l,d1 ; lsr.w #1,d1
+    op(0xB279, 0x00FF, 0x344E)  # cmp.w $FF344E.l,d1
+    br(0x64, "one")  # bcc.s one
+    op(0x3239, 0x00FF, 0x344E, 0xE249)  # move.w $FF344E.l,d1 ; lsr.w #1,d1
+    op(0xB279, 0x00FF, 0x344C)  # cmp.w $FF344C.l,d1
+    br(0x65, "do")  # bcs.s do — 방위 둘
+    labels["one"] = len(code)
+    op(0x7000)  # moveq #0,d0 — 방위 하나: 1칸
+    labels["do"] = len(code)
+    op(0x0C11, 0x0020)  # cmpi.b #$20,(a1)
+    br(0x66, "go")  # bne.s go
+    op(0x5289)  # addq.l #1,a1
+    fix.append((len(code), "do"))
+    code.extend(struct.pack(">H", 0x51C8) + b"\0\0")  # dbra d0,do (변위는 아래서)
+    labels["go"] = len(code)
+    op(0x4CDF, 0x0002)  # movem.l (a7)+,d1
+    op(0x4EF9)
+    code.extend(struct.pack(">I", WORLD_RESUME))
+    out = bytearray(code)
+    for pos, lab in fix:
+        tgt = labels[lab]
+        if out[pos] == 0x51:  # dbra — 워드 변위(확장 워드 주소 기준)
+            out[pos + 2 : pos + 4] = struct.pack(">h", tgt - (pos + 2))
+        else:
+            d = tgt - (pos + 2)
+            assert 0 <= d < 128 or -128 <= d < 0, (lab, d)
+            out[pos + 1] = d & 0xFF
+    return bytes(out)
+
+
+def join_tramp(cs) -> bytes:
+    """방위 붙임 트램펄린 — 원래 4B 복사(a2 → -4(a3))를 하고, 방위가 둘 다 남았으면 둘째(동·서) 코드를 앞 공백 짧은 변형으로 바꾼 뒤 종결자 자리로 간다."""
+    out = bytearray()
+    fix: list[tuple[int, str]] = []
+    labels: dict[str, int] = {}
+
+    def w(*ws: int) -> None:
+        for x in ws:
+            out.extend(struct.pack(">H", x))
+
+    def bs(op: int, lab: str) -> None:
+        fix.append((len(out), lab))
+        out.extend(bytes([op, 0]))
+
+    for k in range(4):  # move.b (a2)+,-4+k(a3)
+        w(0x175A, (0x10000 - 4 + k) & 0xFFFF)
+    w(0x0801, 0)  # btst #0,d1
+    bs(0x66, "ns")  # bne.s — 남북 비트 있음
+    w(0x0801, 1)  # btst #1,d1
+    bs(0x67, "done")  # beq.s — 남북 없음 → 하나뿐
+    labels["ns"] = len(out)
+    w(0x0801, 2)  # btst #2,d1
+    bs(0x66, "both")
+    w(0x0801, 3)  # btst #3,d1
+    bs(0x67, "done")
+    labels["both"] = len(out)
+    for ch in ("동", "서"):
+        c0, c1 = cs.encode_char(PUA_DIR[ch])[:2]
+        a0, a1 = cs.encode_char(PUA_DIR2[ch])[:2]
+        nxt = f"n{ch}"
+        w(0x0C2B, c0, 0xFFFE)  # cmpi.b #hi,-2(a3)
+        bs(0x66, nxt)
+        w(0x0C2B, c1, 0xFFFF)  # cmpi.b #lo,-1(a3)
+        bs(0x66, nxt)
+        w(0x177C, a0, 0xFFFE)  # move.b #hi',-2(a3)
+        w(0x177C, a1, 0xFFFF)  # move.b #lo',-1(a3)
+        bs(0x60, "done")
+        labels[nxt] = len(out)
+    labels["done"] = len(out)
+    w(0x4EF9)
+    out.extend(struct.pack(">I", JOIN_RESUME))
+    for pos, lab in fix:
+        d = labels[lab] - (pos + 2)
+        assert 0 <= d < 128, (lab, d)
+        out[pos + 1] = d
+    return bytes(out)
 
 
 def plan(cs, tramp_at: int) -> list[tuple[str, int, bytes]]:
@@ -191,6 +330,31 @@ def plan(cs, tramp_at: int) -> list[tuple[str, int, bytes]]:
         )
     )
     out.append(("field-hud-align", ALIGN_SITE, ALIGN_PATCH))
+    wt = tramp_at + SPACE_TRAMP_LEN
+    code = world_tramp()
+    assert SPACE_TRAMP_LEN + len(code) <= WORLD_RESERVE, (SPACE_TRAMP_LEN, len(code))
+    out.append(("field-hud-world-tramp", wt, code))
+    jt = wt + len(code)
+    jc = join_tramp(cs)
+    assert SPACE_TRAMP_LEN + len(code) + len(jc) <= WORLD_RESERVE, (len(code), len(jc))
+    out.append(("field-hud-join-tramp", jt, jc))
+    out.append(
+        (
+            "field-hud-join-site",
+            JOIN_SITE,
+            struct.pack(">H", 0x4EF9)
+            + struct.pack(">I", jt)
+            + b"\x4e\x71" * ((JOIN_SITE_LEN - 6) // 2),
+        )
+    )
+    site = struct.pack(">H", 0x4EF9) + struct.pack(">I", wt)
+    out.append(
+        (
+            "field-hud-world-site",
+            WORLD_SITE,
+            site + b"\x4e\x71" * ((WORLD_SITE_LEN - len(site)) // 2),
+        )
+    )
     return out
 
 
@@ -199,7 +363,7 @@ def chars() -> set[str]:
     실제로 굽는 건 합성 글리프(PUA)뿐이다 — `_ensure_custom_glyphs()`가 비트맵을 채워야
     `needs_glyph()`가 코드를 배정할 게 있다."""
     _ensure_custom_glyphs()
-    return {p for puas in PUA_SUFFIX.values() for p in puas} | set(PUA_DIR.values())
+    return {p for puas in PUA_SUFFIX.values() for p in puas} | set(PUA_DIR.values()) | set(PUA_DIR2.values()) | {p for v in CONDENSED_NAMES.values() for p in v}
 
 
 ORIG = {

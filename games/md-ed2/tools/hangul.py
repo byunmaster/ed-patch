@@ -682,8 +682,10 @@ def resource5(
     source: str = "galmuri14",
     narrow_adv: int = 8,
     digit_extra: int = 0,
+    place_at: int | None = None,
 ) -> list[tuple[str, int, bytes]]:
-    """빈 리소스 5 에 **자막 전용 글꼴**을 만든다 — (라벨, 자리, 바이트). `after` = 리소스 1 이 쓴 자리 뒤.
+    """(`place_at` 을 주면 표·글리프를 그 자리(헤더 기준 상대 32비트 오프셋이라 어디든 된다)에 연달아 둔다 — 표 0 구역 밖으로 빼서 합성 글자 자리를 만든다.)
+    빈 리소스 5 에 **자막 전용 글꼴**을 만든다 — (라벨, 자리, 바이트). `after` = 리소스 1 이 쓴 자리 뒤.
 
     자막은 피치 14(원문 그대로 한 줄 16칸)라 **Galmuri14 14×14** 가 제자리다 — 대사창이 피치 12 라
     Galmuri11 을 쓰는 것이지 자막까지 그럴 이유가 없다(유저 2026-09-06).
@@ -751,18 +753,26 @@ def resource5(
                     f"반각 글리프 {by_code[c]!r} 잉크가 {max(wide) + 1}열 — 전진 {adv}px 에 안 들어간다(겹침)"
                 )
         glyphs += _pack_w(fill, cell) + _pack_w(ring(fill), cell)
-    if tbl_at + len(table) > r0["table_end"]:
-        raise SystemExit("리소스 5 표를 둘 자리가 없다(표 0 구역 초과)")
+    if place_at is not None:
+        tbl_at = place_at
+        gl_at = place_at + len(table)
+        gl_at += gl_at & 1
+    elif tbl_at + len(table) > r0["table_end"]:
+        over = tbl_at + len(table) - r0["table_end"]
+        raise SystemExit(
+            f"리소스 5 표를 둘 자리가 없다(표 0 구역 초과) — {over}B(= {-(-over // 2)}자) 모자란다 · 리소스 5 {len(codes)}자"
+        )
     end = r0["glyphs"] + r0["entries"] * r0["stride"]
-    if gl_at + 4 + len(glyphs) > end:
+    if place_at is None and gl_at + 4 + len(glyphs) > end:
         raise SystemExit(f"리소스 5 글리프가 글꼴 구역을 넘는다 ({len(codes)}자)")
     h = FONT5_HDR[0]
     desc = bytes([0x01, cell, cell, nbytes])  # 두 면 · cell×cell
     header = struct.pack(">III", tbl_at - h, tbl_at + len(table) - 4 - h, gl_at - h - 8)
+    lt, lg = ("font5-table", "font5-glyphs") if place_at is not None else ("font0-table", "font0-glyphs")
     return [
         ("font5-header", h, header),
-        ("font0-table", tbl_at, table),
-        ("font0-glyphs", gl_at, desc + bytes(glyphs)),
+        (lt, tbl_at, table),
+        (lg, gl_at, desc + bytes(glyphs)),
     ]
 
 

@@ -101,8 +101,8 @@ def suffix_of(s: str) -> str:
 
 
 def suffix_kr(s: str) -> str:
-    """접미 Ａ~Ｄ 반각 + ″ 는 한 글자 그대로(NFKC 가 ′′ 두 글자로 펴 이름 칸이 1B 넘친다 — 붉은 슬러그Ｂ″)."""
-    return unicodedata.normalize("NFKC", suffix_of(s)).replace("′′", "″")
+    """접미는 **원판 그대로 전각 Ａ~Ｄ**(+ ′ ″ 한 글자) — 마스터 11-08 「원본 ABCD 로」(옛 규칙 1-6 은 반각 변환이었다)."""
+    return suffix_of(s).replace("A", "Ａ").replace("B", "Ｂ").replace("C", "Ｃ").replace("D", "Ｄ")
 
 
 def _stream(b: bytes, tgt: int):
@@ -584,7 +584,7 @@ def patch_boss_block(
 
 # 마지막 레코드(D 칸)는 레코드 구역이 4B 짧은 블록에서 잘려 이름 칸이 짧다(구역 1 끝 = 구역 2 시작이라 12B 뿐 — 정상 블록은 16B).
 # 「炎の騎士Ｄ」→「불꽃의 기사D」 12B + 06 이 안 들어간다. 줄이지 않고 **레코드 구역 끝에 4B 를 끼워 넣어** 정상 블록 꼴(16B)로 만든다(`grow_records`).
-GROW_RECORDS = {(11, "炎の騎士Ｄ"): 4}
+GROW_RECORDS = {(11, "炎の騎士Ｄ"): 4, (17, "砂もぐらＤ"): 2, (78, "くぐつ戦士Ｄ"): 2}  # 전각 접미(11-08) — 마지막 이름 칸이 1B 모자란 둘
 
 
 def grow_records(b: bytes, k: int) -> bytes:

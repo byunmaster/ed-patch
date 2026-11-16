@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import archives
 import common
 import dict_names
+import hangul
 
 from shared import canon
 
@@ -62,6 +63,70 @@ def kr(jp: str) -> str | None:
     return base + suf[m.group(2)] if base else None
 
 
+# 성·섬은 앞말에 붙인다(마스터 11-09 「성은 보통 붙여써도」) — 나머지 접미는 띄운다
+GLUED = {"성", "섬"}
+
+
+def kr_general(jp: str) -> str | None:
+    """배너 원문 → **일반 꼴**(낱말 경계마다 한 칸, 마스터 11-09 「입장배너도 가능하다면 띄어쓰기」). 정본 `canon.place_general`
+    (전체 원문 → 없으면 앞말 일반 꼴 + 접미). HUD·워프 꼴(`kr`, 붙임)은 그대로다."""
+    g = canon.place_general(jp, "ed2")
+    if g:
+        return g
+    suf = _suffix()
+    m = re.match("^(.+?)(" + "|".join(map(re.escape, suf)) + ")$", jp)
+    if not m:
+        return kr(jp)
+    base = canon.place_general(m.group(1), "ed2") or dict_names.from_dict(m.group(1), ("place",))
+    if not base:
+        return kr(jp)
+    s = suf[m.group(2)]
+    return base + ("" if s in GLUED else " ") + s
+
+
+# ── 갈무리14 합성 글자(MD I 배너와 같은 방식, 마스터 11-09 「md2입장배너가 md1입장배너보다 폰트도 작은것 같고」) ──
+# 표 0 한글(갈무리11 잉크 11행)로 그리면 16px 피치 안에서 작고 성기게 보인다. 배너 음절만 갈무리14(14×14 칸을 꽉 채움)로 구운 합성 글자(PUA U+E200~)로 쓴다 —
+# 대사창·HUD 는 원래 코드를 그대로 써서 영향이 없고, 배너 레코드에 들어가는 **코드값만** 바뀐다(음절당 2B 그대로라 칸 계산·가운데 정렬 불변).
+GALMURI14 = common.ROOT / "shared" / "fonts" / "Galmuri14.bdf"
+_PUA_BASE = 0xE200
+_pua_for: dict[str, str] | None = None
+
+
+def _all_names() -> list[str]:
+    d = common.rom()
+    mods = {(b, k): m for b, k, m in archives.modules(d)}
+    out = []
+    for (b, k), spots in BY_MODULE.items():
+        for off, n in spots:
+            out += [v for jp in entries(mods[(b, k)], off, n) if (v := kr_general(jp))]
+    return out
+
+
+def _pua_map() -> dict[str, str]:
+    global _pua_for
+    if _pua_for is None:
+        uniq = sorted({c for v in _all_names() for c in v if c != " "})
+        _pua_for = {c: chr(_PUA_BASE + i) for i, c in enumerate(uniq)}
+    return _pua_for
+
+
+def pua_text(v: str) -> str:
+    m = _pua_map()
+    return "".join(m.get(c, c) for c in v)
+
+
+def _ensure_custom_glyphs() -> None:
+    # top=0 — 갈무리14 는 이미 14행을 꽉 채운다(top=1 을 얹으면 바닥 행이 칸 밖으로 잘린다, MD I 실측)
+    bdf = hangul._load_bdf(GALMURI14, hangul.CELL, top=0, left=0)
+    for ch, pua in _pua_map().items():
+        if pua in hangul.CUSTOM_GLYPHS:
+            continue
+        g = bdf.get(ch)
+        if g is None:
+            raise SystemExit(f"갈무리14 에 없는 글자: {ch!r}")
+        hangul.CUSTOM_GLYPHS[pua] = hangul.extend_jamo_arms(g)
+
+
 def entries(mod: bytes, off: int, n: int) -> list[str]:
     return [
         mod[off + STRIDE * i : off + STRIDE * i + ENTRY].decode("cp932").strip() for i in range(n)
@@ -74,6 +139,10 @@ def check_shape(mod: bytes, off: int, n: int) -> None:
             raise SystemExit(f"배너 표 {off:#x}[{i}]: 구분자가 07 이 아니다")
 
 
+# 홀수 칸에서 오른쪽을 한 칸 더 두는 이름 — 11-09 갈무리14 배너 실측(`center-all/banner-all.tsv`)에서 왼쪽 올림이 좌−우 +11px(오른쪽 올림 −5px 가 가깝다)였던 둘. 나머지 홀수 칸은 +7(반대쪽은 −9)이라 왼쪽 올림 그대로.
+RIGHT_HEAVY = frozenset({"베르가 광산", "왕가의 묘"})
+
+
 def patch(key: tuple[int, int], mod: bytes, encode) -> bytes:
     """모듈 바이트 → 배너 표를 우리 표기로 바꾼 같은 길이의 바이트. 못 채운 항목은 원문 그대로 둔다."""
     spots = BY_MODULE.get(key)
@@ -84,15 +153,20 @@ def patch(key: tuple[int, int], mod: bytes, encode) -> bytes:
     for off, n in spots:
         check_shape(mod, off, n)
         for i, jp in enumerate(entries(mod, off, n)):
-            v = kr(jp)
+            v = kr_general(jp)
             if not v:
                 continue
-            enc = encode(v)
+            enc = encode(pua_text(v))
             if len(enc) > ENTRY:
                 over.append(f"{key}@{off:#x}[{i}] {v!r} {len(enc)}B > {ENTRY}B")
                 continue
             pad = ENTRY - len(enc)
-            body = b" " * (pad // 2) + enc + b" " * (pad - pad // 2)
+            # 🔴 「최대한 가운데」(마스터 11-09): 홀수 칸이면 가운데에 **가까운** 쪽 — 반각 한 칸 ≈ 8px, 글자 바탕 여백으로 좌−우가 평균 −3px 라
+            # 왼쪽을 한 칸 더 두면 +5 · 오른쪽을 더 두면 −11 이다(갈무리11 실측 — 갈무리14 로 바꾼 뒤 +7 · −9) → 왼쪽 올림. 짝수 칸은 그대로 대칭.
+            if v in RIGHT_HEAVY:  # 갈무리14 로 바꾼 뒤 실측: 왼쪽 올림이 +11 이라 오른쪽 올림(−5)이 더 가깝다
+                body = b" " * (pad // 2) + enc + b" " * ((pad + 1) // 2)
+            else:
+                body = b" " * ((pad + 1) // 2) + enc + b" " * (pad // 2)
             at = off + STRIDE * i
             out[at : at + ENTRY] = body
     if over:
@@ -113,17 +187,9 @@ def verify(key: tuple[int, int], new: bytes, orig: bytes, encode) -> int:
 
 
 def chars(d: bytes | None = None) -> set[str]:
-    """배너가 쓰는 글자 — `collect_chars()` 가 늘 굽는다."""
-    d = d if d is not None else common.rom()
-    mods = {(b, k): m for b, k, m in archives.modules(d)}
-    out: set[str] = set()
-    for (b, k), spots in BY_MODULE.items():
-        for off, n in spots:
-            for jp in entries(mods[(b, k)], off, n):
-                v = kr(jp)
-                if v:
-                    out.update(v)
-    return out
+    """배너가 쓰는 글자 — `collect_chars()` 가 늘 굽는다(갈무리14 합성 글자 + 표기 원문 한글: 같은 글자를 HUD 지명도 쓴다)."""
+    _ensure_custom_glyphs()
+    return set(_pua_map().values())
 
 
 if __name__ == "__main__":

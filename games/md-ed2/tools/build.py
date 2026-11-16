@@ -61,7 +61,7 @@ TAIL_HI = common.FREE_TAIL[1]
 # 아카이브를 다시 눌러 16KB 를 비우므로 훅이 들어간다.
 JOSA_RESERVE = 0x400  # 조사 훅 기계어+표(글리프 표가 한글 코드 수에 비례 — 대사 번역으로 코드 900자 넘김) — 으로/로·과/와 포함
 WRAP_RESERVE = 0x260  # 어절 줄넘김 본체 540B(이름 속 틈 검사 포함) + 반각 「의␣」·「′」 되감기 50B
-FIELD_HUD_RESERVE = 0x20  # 필드 HUD 트램펄린(이식 전 — 자리만 잡아 둔다)
+FIELD_HUD_RESERVE = 0xD0  # 필드 HUD 트램펄린 — 공백 14B + 월드맵 앞 공백 건너뛰기(접미 폭별) 84B + 방위 붙임 106B
 CAPTION_RESERVE = 0xA00  # 오프닝·엔딩 자막 표+문안(captions.RELOCATE)이 앉는 꼬리 칸
 SYSMSG_TAIL = sysmsg.TAIL_SIZE  # 시스템 메시지 중 꼬리로 옮기는 스트림(RELOCATE)의 칸
 # 🔴 씬 크기 표(블록당 BE16×4, 712B)를 **꼬리로 옮긴다** — 원래 자리(0x19DC3C)는 전투 아카이브 바로 뒤라, 전투 문안이 늘면 그 712B 가
@@ -79,6 +79,10 @@ ARCHIVE_END = (
     - SCENE_TABLE_SIZE
     - BATTLE_TAIL_RESERVE
 )  # 이 앞까지 아카이브가 쓴다
+# 자막 글꼴(리소스 5) 표·글리프를 **글꼴 구역(표 0 의 원래 자리) 밖 — 대본 아카이브 꼬리**로 옮긴다: 합성 글자(배너 갈무리14 60자 · 장 띠 21자 …)가 표 0 항목을 먹어
+# 구역이 모자라서(표 0 구역 초과 140B). 헤더 오프셋이 헤더 기준 상대 32비트라 어디든 된다. 아카이브는 이만큼 줄어든다(여유 ≈26KB 중).
+R5_RESERVE = 0x3200
+R5_AT = ARCHIVE_END - R5_RESERVE
 SCENE_TABLE_AT = ARCHIVE_END
 # 전투 아카이브 — 색인(0x18BF76, 99×4)은 제자리지만 **블록은 색인 상대 오프셋이라 어디든 앉는다**. 원래 자리(끝 0x19D96E 뒤는 다른 표라 못 쓴다 —
 # 첫 시도에서 그 718B 를 「여유」로 보고 덮어 새 게임이 까만 화면에서 멈췄다)에 먼저 채우고 넘치는 블록은 꼬리 예약 칸에 앉힌다.
@@ -93,7 +97,9 @@ class Rom:
     """쓰기 통로 하나 — 허용 구간(라벨) 밖은 거부."""
 
     ALLOWED: ClassVar[dict[str, tuple[int, int]]] = {
-        "script-archive": (ARCHIVE_BASE, ARCHIVE_END),
+        "script-archive": (ARCHIVE_BASE, R5_AT),
+        "font5-table": (R5_AT, ARCHIVE_END),
+        "font5-glyphs": (R5_AT, ARCHIVE_END),
         "scene-sizes": (SCENE_TABLE_AT, SCENE_TABLE_AT + SCENE_TABLE_SIZE),
         "scene-ref": (SCENE_REF, SCENE_REF + 4),
         "checksum": (0x18E, 0x190),
@@ -125,6 +131,19 @@ class Rom:
         "field-hud-space-tramp": (
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE,
             TAIL_HI - JOSA_RESERVE - WRAP_RESERVE,
+        ),
+        "field-hud-world-tramp": (
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE,
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE,
+        ),
+        "field-hud-join-tramp": (
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE - FIELD_HUD_RESERVE,
+            TAIL_HI - JOSA_RESERVE - WRAP_RESERVE,
+        ),
+        "field-hud-join-site": (field_hud.JOIN_SITE, field_hud.JOIN_SITE + field_hud.JOIN_SITE_LEN),
+        "field-hud-world-site": (
+            field_hud.WORLD_SITE,
+            field_hud.WORLD_SITE + field_hud.WORLD_SITE_LEN,
         ),
         "field-hud-space-site": (field_hud.SPACE_SITE, field_hud.SPACE_SITE + 6),
         "field-hud-align": (field_hud.ALIGN_SITE, field_hud.ALIGN_SITE + 4),
@@ -532,6 +551,12 @@ def build_tables(orig: bytes, names: dict, cs: hangul.Charset) -> list[tuple[str
             n = w - len(enc)
             if align == "right":
                 body = b" " * n + enc
+            elif align == "center" and name == "chapter":  # 서장 HUD 제목 — 1~4장·종장과 같은 띠 중심(`chapters.HUD_CENTER`)
+                enc = encode_tagged(chapters.centered(chapters.band_pua(ours), chapters.HUD_CENTER), cs)
+                if len(enc) > w:
+                    over.append(f"{name}[{i}] {ours!r} 가운데 맞춤 {len(enc)}B > {w}B")
+                    continue
+                body = enc + b" " * (w - len(enc))
             elif align == "center":
                 # 🔴 `center` 를 안 다뤄 장 제목·지명이 **왼쪽에 붙어** 있었다(2026-09-06).
                 # 원본이 앞뒤로 공백을 나눠 넣은 자리다 — 남는 칸은 뒤에 준다(반각 6px 단위).
@@ -657,7 +682,9 @@ def collect_chars(
     chars.update(
         banners.chars()
     )  # 입장 배너 지명 사전(모듈 데이터라 문안 스트림이 아니다) — 늘 굽는다
+    chars.update(chapters.band_chars())  # 장 제목 띠 한글(1px 아래 합성 글자) — 늘 굽는다
     chars.update(field_hud.chars())  # 필드 HUD 뒷말·방위(문안을 안 거친다) — 늘 굽는다
+    chars.update(places.town_chars())  # 마을 HUD 전용 한 열 민 지명 글자
     chars.update("번째")  # 저장 확인 창 「N번째」(0x2C660 즉치 워드)
     chars.update(halfspace.chars())  # 「의␣」 — 아이템 칸 14B 에 반각 공백을 녹인 합성 글자
     return chars
@@ -1161,7 +1188,7 @@ def main(check_only: bool = False) -> None:
         orig
     )  # 다른 아카이브를 다시 눌러 만든 빈 칸 — 대본 블록이 앉는다
     sindex, main_blocks, placed = pack_script(blocks, rp_free)
-    room = ARCHIVE_END - ARCHIVE_BASE
+    room = R5_AT - ARCHIVE_BASE
     used = len(sindex) + len(main_blocks)
     if used > room:
         raise SystemExit(
@@ -1243,7 +1270,10 @@ def main(check_only: bool = False) -> None:
             source=captions.FONT_SRC,
             narrow_adv=captions.FONT_PITCH // 2,
             digit_extra=captions.DIGIT_EXTRA,
+            place_at=R5_AT,
         ):
+            if label != "font5-header" and pos + len(body) > ARCHIVE_END:
+                raise SystemExit(f"자막 글꼴(리소스 5)이 예약 칸 {R5_RESERVE:#x}B 를 넘는다 — R5_RESERVE 를 늘린다")
             rom.write(label, pos, body)
     for label, pos, body in cap_writes:
         rom.write(label, pos, body)

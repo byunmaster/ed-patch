@@ -7,7 +7,7 @@
  첫칸공백  줄이 공백으로 시작(2-5)            고아부호  줄 머리가 닫는 부호·마침표 따위(2-3)      빈줄   빈 줄 · 꽉 찬 줄 뒤 개행(2-4)
  부호뒤    `, . ! ?` 바로 뒤 한글(2-1)         접힘     줄 머리가 조사 조각(낱말 속 접힘, 2-6)         넘침   줄 폭 > 17.5 슬롯
  꼬리한어절 단위의 마지막 쪽이 한 어절(2-16 ③)  쪽끝고아  쪽 끝 줄이 한 어절(2-16 ③)                    줄수치우침 쪽 줄 수 차 ≥ 2(2-16 ③)
- 가운데어긋남 가운데 맞춤 자리의 좌우 여백 차 > 6px(2-8)  가운데반칸  차가 정확히 6px = 반각 한 칸(바이트 단위 한계, 2-8)
+ 가운데어긋남 가운데 맞춤 자리의 좌우 여백 차 > 6px(2-8)  가운데반칸  차가 정확히 6px = 반각 한 칸(바이트 단위 한계, 2-8)  가운데최근접 앞 공백을 한 칸 옮기면 가운데에 더 가까워지는 줄(배너·장 제목·장 카드·서장 — 개정 2-8 마스터 11-09 「최대한 가운데, 같을 때만 왼쪽」, HUD 지명은 칸 단위로 못 재서 실측 시트로 본다)
  창적음   한글 창(쪽) 수가 원문보다 적다 — 원문 두 창을 한 창으로 합친 곳(2-17, pce-ed2·ps1-ed4 에서 발견)
  창많음   한글 창(쪽) 수가 원문보다 많다 — 원문 창 구분을 못 지킨 곳(2-17, 마스터 11-06 게이트 승격·래칫; 3줄 창에 안 들어가 쪽이 넘치는 곳은 기준선에 사유와 함께 남는다)
  한줄문장  한 줄에 통째로 드는 문장이 두 줄에 걸침(2-10)   쉼표뺄것  접속부사 뒤 · 줄 끝 짧은 연결어미 뒤 쉼표(2-13)  쉼표애매  앞 절이 짧은(≤8음절) 줄 안 연결어미 뒤 쉼표(2-13 — 판정 대기)
@@ -34,7 +34,7 @@ PAGE = {0x05}
 VAR_W = 4.0
 KEYS = (
     "첫칸공백", "고아부호", "빈줄", "부호뒤", "접힘", "넘침", "색낱말속", "꼬리한어절", "쪽끝고아", "쪽끝한어절", "줄수치우침",
-    "가운데어긋남", "가운데반칸", "한줄문장", "쉼표뺄것", "쉼표애매", "전투넘침", "창적음", "창많음",
+    "가운데어긋남", "가운데반칸", "가운데최근접", "한줄문장", "쉼표뺄것", "쉼표애매", "전투넘침", "창적음", "창많음",
 )
 ORPHAN_HEAD = re.compile(r"^[.,!?~)」』]")
 BOUND = re.compile(r"^(?:[은는을를에의도만과와로께]|에서|에게|까지|부터|처럼|보다|한테|으로)(?=[ ]|$|[.,!?…」])")
@@ -211,7 +211,7 @@ def color_mid(tokens, decode) -> int:
     return n
 
 
-def margin_diff(s: str, box_px: int) -> int | None:
+def margin_diff(s: str, box_px: int, signed: bool = False) -> int | None:
     """가운데 맞춤 줄의 좌우 여백 차(px) — 글자 폭은 전각 12 · 반각(공백·ASCII) 6, 줄 끝 부호(. , …)는 폭에서 뺀다(2-8). 글이 없으면 None."""
     core = s.strip(" ")
     if not core:
@@ -219,7 +219,8 @@ def margin_diff(s: str, box_px: int) -> int | None:
     core = core.rstrip(".,…")
     lead = (len(s) - len(s.lstrip(" "))) * 6
     px = sum(6 if ord(c) < 0x80 else 12 for c in core)
-    return abs(lead - (box_px - lead - px))
+    d = lead - (box_px - lead - px)
+    return d if signed else abs(d)
 
 
 def center_rows(rom: bytes, dec):
@@ -231,19 +232,35 @@ def center_rows(rom: bytes, dec):
         for off, n in spots:
             for i in range(n):
                 at = off + banners.STRIDE * i
-                d = margin_diff(dec(mods[(b, k)][at : at + banners.ENTRY]), banners.ENTRY * 6)
-                if d is not None:
-                    rows.append((f"배너 {b}-{k}@{off:#x}[{i}]", d))
+                t = dec(mods[(b, k)][at : at + banners.ENTRY])
+                if t.strip():
+                    # 배너 글꼴은 반각 한 칸 ≈ 8px · 글자 바탕 여백으로 대칭 칸이 평균 −3px(실측 11-09) — 칸 수로 실제 좌−우를 잰다
+                    pl, pr = len(t) - len(t.lstrip(" ")), len(t) - len(t.rstrip(" "))
+                    right_heavy = t.strip() in {banners.pua_text(n) for n in banners.RIGHT_HEAVY}
+                    sg = BANNER_UNIT * (pl - pr) + (BANNER_BIAS_RIGHT if right_heavy else BANNER_BIAS)
+                    rows.append((f"배너 {b}-{k}@{off:#x}[{i}]", abs(sg), sg, BANNER_UNIT, True))
     for i, (_p, raw) in enumerate(places.records(rom)):
         s = dec(raw)
         if s.strip() and sum(1 if ord(c) < 0x80 else 2 for c in s.strip()) <= places.CENTER:
-            rows.append((f"지명 {i}", margin_diff(s + " " * (places.CENTER - sum(1 if ord(c) < 0x80 else 2 for c in s)), places.CENTER * 6)))
+            rows.append((f"지명 {i}", margin_diff(s + " " * (places.CENTER - sum(1 if ord(c) < 0x80 else 2 for c in s)), places.CENTER * 6), None, 6, False))
     for key, (_hud, card) in chapters.STREAMS.items():  # 장 제목은 빌더가 만드는 문안 그대로 잰다(스트림은 재배치돼 원래 자리에 없다)
-        rows.append((f"장HUD {key}", margin_diff(chapters.hud(key), chapters.HUD_W * 6)))
+        h = chapters.hud(key)
+        rows.append((f"장HUD {key}", margin_diff(h, chapters.HUD_CENTER * 2), margin_diff(h, chapters.HUD_CENTER * 2, True), 6, False))
         if card is not None:
-            rows.append((f"장카드 {key}", margin_diff(chapters.card_first_line(key), chapters.CARD_CENTER * 2)))
-    rows.append(("서장 HUD", margin_diff(dec(rom[0x3A194 : 0x3A194 + 30]), 30 * 6)))
-    return [(t, d) for t, d in rows if d is not None]
+            c = chapters.card_first_line(key)
+            rows.append((f"장카드 {key}", margin_diff(c, chapters.CARD_CENTER * 2), margin_diff(c, chapters.CARD_CENTER * 2, True), 6, False))
+    t0 = dec(rom[0x3A194 : 0x3A194 + 30])
+    rows.append(("서장 HUD", margin_diff(t0, chapters.HUD_CENTER * 2), margin_diff(t0, chapters.HUD_CENTER * 2, True), 6, False))
+    return [r for r in rows if r[1] is not None]
+
+
+# 갈무리14 배너 재측정(11-09): 대칭 칸 −2~−4(평균 −3)·왼쪽 올림 홀수 칸 +7·오른쪽 올림 둘(`banners.RIGHT_HEAVY`) −5 — 홀수 칸은 +7 쪽을 맞추려 편향 −1(대칭 칸은 −3 이라 판정이 같다)
+BANNER_UNIT, BANNER_BIAS, BANNER_BIAS_RIGHT = 8, -1, 3
+
+
+def not_nearest(sg: int, unit: int) -> bool:
+    """「최대한 가운데」(규칙 2-8, 마스터 11-09) — 앞 공백을 한 칸 줄이거나 늘렸을 때(좌−우가 `2*unit` 움직인다) 더 가까운 자리가 있나. 같은 거리면 왼쪽(좌−우가 작은 쪽)이 맞다."""
+    return any(abs(c) < abs(sg) or (abs(c) == abs(sg) and c < sg) for c in (sg - 2 * unit, sg + 2 * unit))
 
 
 def window_count(pages) -> int:
@@ -252,8 +269,21 @@ def window_count(pages) -> int:
 
 
 def blank_count(pages) -> int:
-    """쪽 첫머리·가운데의 빈 줄 수(쪽 끝 빈 줄은 units 가 이미 뗐다)."""
-    return sum(1 for pg in pages for li, ln in enumerate(pg) if ln.strip() == "" and (li or len(pg) > 1))
+    """화면에 빈 줄을 만드는 줄 수(규칙 2-18, 마스터 11-08 — 화면 기준). **쪽 머리의 `<01>` 하나는 엔진이 빈 줄로 안 낸다**(석비 옛·새 롬 같은 화면, 실측)
+    — 그 하나는 세지 않는다. 쪽 머리에 둘 이상 · 쪽 가운데의 빈 줄은 센다(쪽 끝 빈 줄은 units 가 이미 뗐다)."""
+    n = 0
+    for pg in pages:
+        for li, ln in enumerate(pg):
+            if ln.strip() != "" or (li == 0 and len(pg) == 1):
+                continue
+            if li == 0 and len(pg) > 1 and pg[1].strip() != "":
+                continue  # 쪽 머리 빈 줄 하나(바로 뒤에 글줄)
+            n += 1
+    return n
+
+
+# 원판 구조라 남기는 곳 — 전투 등장 문구는 `02`(몬스터 이름 줄) 아홉 개가 줄을 이루고, 몬스터가 적으면 빈 줄로 보인다(변수 자리, 글이 아니다)
+STRUCT_BLANK = {"전투095:03ba": 2}
 
 
 def selftest() -> bool:
@@ -303,11 +333,18 @@ def selftest() -> bool:
     if window_count([["가나", "다"], ["라"]]) != 2 or window_count([["가"], [" "], []]) != 1:
         print("  ✗ 자체 시험: 창 수(창적음)를 잘못 셌다")
         ok = False
-    if blank_count([["가나다", "", "라마바"]]) != 1:
+    if (
+        blank_count([["가나다", "", "라마바"]]) != 1
+        or blank_count([["", "가나다"]]) != 0  # 쪽 머리 빈 줄 하나는 화면에 안 난다
+        or blank_count([["", "", "가나다"]]) != 2
+    ):
         print("  ✗ 자체 시험: 빈줄을 못 셌다")
         ok = False
     if sum(got([["안녕하세요, 왕자님.", "오늘은 날씨가 좋군요."]]).values()):
         print("  ✗ 자체 시험: 멀쩡한 쪽을 잡았다")
+        ok = False
+    if not (not_nearest(-11, 8) and not not_nearest(5, 8) and not_nearest(6, 6) and not not_nearest(-6, 6) and not not_nearest(-3, 8)):
+        print("  ✗ 자체 시험: 가운데최근접 판정이 틀렸다")
         ok = False
     return ok
 
@@ -325,10 +362,10 @@ def main() -> int:
         if not any("가" <= ch <= "힣" for t in toks if t.kind == "text" for ch in dec(bytes(t.raw))):
             continue
         nb_old = sum(blank_count(p) for p in units(atoks, lambda r: "가" * len(r)))  # 원판은 한글이 아니라 글자 수만 본다
-        nb_new = sum(blank_count(p) for p in units(toks, dec))
-        if nb_new > nb_old:
-            cnt["빈줄"] += nb_new - nb_old
-            rows.append(("빈줄", tag, f"원판 {nb_old} → 롬 {nb_new}"))
+        nb_new = sum(blank_count(p) for p in units(toks, dec)) - STRUCT_BLANK.get(tag, 0)
+        if nb_new > 0:  # 절대 기준(규칙 2-18): 원문이 비워도 우리 문안은 빈 줄이 없다 — 원판과 견주지 않는다
+            cnt["빈줄"] += nb_new
+            rows.append(("빈줄", tag, f"화면 빈 줄 {nb_new} (원판 {nb_old})"))
         pg_old = sum(window_count(pages) for pages in units(atoks, lambda r: "가" * len(r)))
         pg_new = sum(window_count(pages) for pages in units(toks, dec))
         if pg_new < pg_old:
@@ -345,7 +382,12 @@ def main() -> int:
         for pages in units(toks, dec):
             nunit += 1
             audit_unit(pages, lambda k, w, tag=tag: (cnt.update([k]), rows.append((k, tag, w))), tag)
-    for site, d in center_rows(rom_bytes, dec):  # 가운데 맞춤 자리 — 여백 차 6px 가 바이트(반각 한 칸) 단위 한계다
+    for site, d, sg, unit, banner in center_rows(rom_bytes, dec):
+        if sg is not None and not_nearest(sg, unit):
+            cnt["가운데최근접"] += 1
+            rows.append(("가운데최근접", site, f"좌−우 {sg}px — 한 칸 옮기면 더 가깝다"))  # 지명 HUD 는 sg=None(박스 안 잉크 여백이 칸 수로 안 나온다 — 실측 시트로 본다)
+        if banner:
+            continue
         if d > 6:
             cnt["가운데어긋남"] += 1
             rows.append(("가운데어긋남", site, f"{d}px"))
