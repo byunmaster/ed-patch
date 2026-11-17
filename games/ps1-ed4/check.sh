@@ -58,6 +58,8 @@ rm -rf "$G/work/build/test-gate-same" "$G/work/build/test-gate-resize"
 
 echo "  ── 화면 일본어 잔존 (대본, 기준선 래칫)"
 run 0 "$PY" "$G/tools/check_jp_left.py"
+echo "  ── 원판 사본 잔존 (제품 이미지 전체에서 번역한 원판 덩어리의 원판 바이트 — 0 이어야 한다)"
+run 0 "$PY" "$G/tools/check_stray_copies.py"
 
 echo "  ── UI 문안 정본 (원문 지문 · 고정 길이)"
 run 0 "$PY" "$G/tools/uitext.py" check
@@ -81,6 +83,8 @@ echo "  ── 말투 게이트 (규칙 4-16 ③④ — 대사 「그대」 0 ·
 run 0 "$PY" "$G/tools/check_speech.py"
 echo "  ── 문장부호 게이트 (규칙 1-1·1-3·1-7·2-12 — ... · ・・ · 띄운 … 반복 · 전각 ！？ · ~ · ～. · ?… 0 · 원문 점 n→… round(n/3) 래칫 · 양성 대조)"
 run 0 "$PY" "$G/tools/check_punct.py"
+echo "  ── 대사 숫자 꼴 (마스터 11-16 — 원판이 수 그리기(반각)로 낸 자리는 ASCII · 전각 코드로 박은 자리는 전각 · 원판에 숫자 없는 자리 래칫)"
+run 0 "$PY" "$G/tools/check_digit_form.py"
 echo "  ── 가운데 맞춤 (규칙 2-8 — 그림 글 줄 가운데 오차 · 아이템 메시지 창 좌우 여백, 줄 끝 부호는 폭에서 뺀다 · 양성 대조)"
 run 0 "$PY" "$G/tools/check_center.py"
 echo "  ── 게시판 의뢰문 줄 폭 (상세 창 192px — 줄이 넘으면 엔진이 글자 단위로 접어 보상 줄을 덮는다 · 판정 대기 목록 래칫)"

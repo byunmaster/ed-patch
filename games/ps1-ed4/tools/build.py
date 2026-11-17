@@ -16,6 +16,7 @@
 - **결정성** — 같은 입력이면 같은 바이트(`check_determinism.py` 가 두 번 구워 sha 를 맞댄다).
 """
 
+import glob
 import os
 import re
 import shutil
@@ -208,6 +209,9 @@ def build(edits=None, *, kind="identity", suffix=""):
     edits = edits or {}
     common.verify_source()
     common.declare_immutable()
+    # 지난 실패 표식(`*.failed`)은 시작할 때 치운다 — 이번 빌드가 성공해도 낡은 표식이 남아 pull-build 가 칸을 「실패」로 막았다(11-16 실측: 정상 bin 11-16 · .failed 11-15). 이번에도 실패하면 아래에서 다시 만든다.
+    for _p in glob.glob(os.path.join(common.BUILD_DIR, "*.failed")):
+        os.remove(_p)
     report = {}
     members = identity_gate(report)
     fs = common.iso_files()
