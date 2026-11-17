@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 import common
 import debug_patch
+import debug_qa
 import hangul_font
 import hud_tiles
 import kr
@@ -566,6 +567,9 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         chars |= ptrs16_canon_chars(src, key, v)
     for v in names.values():
         chars |= kr.chars_of(v)
+    if debug_qa.ENABLED:  # QA 디버그 문구(제품 롬엔 없다 — ED_DEBUG_QA=1 일 때만)
+        for t in list(debug_qa.TEXTS.values()) + [debug_qa.item_text(i) for i in range(1, 100)]:
+            chars |= kr.chars_of(t)
     chars |= kr.JOSA_CHARS
     for c in kr.JOSA_CHARS:
         chars[c] += 10**6  # 조사 훅이 부르는 글자는 절대 밀려나면 안 된다
@@ -1068,6 +1072,9 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         rom[patches.FONT_OUT : patches.FONT_OUT + len(ft)] = ft
         writes.append((patches.FONT_OUT, patches.FONT_OUT + len(ft)))
         assert patches.FONT_OUT >= common.ROM_SIZE
+
+    if debug_qa.ENABLED:
+        debug_qa.build(rom, src, writes, far, lambda t: kr.encode(t, alloc))
 
     # 옛 사본 지움(마스터 11-17, PCE I 사본 사고) — 번역한 문안의 원판 바이트가 포인터가 떠난 뒤에도 남은 자리를 0xFF 로. 범위는 `check_orig_copies.py --write-erase` 가 만든 textmap/orig_erase.json.
     # 사전조건: 지금 롬 바이트가 원판과 같아야 한다(다르면 번역·패치가 쓴 자리 — 지우면 안 된다).
