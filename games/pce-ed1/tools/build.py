@@ -558,7 +558,7 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
                 "party suffix data たち→들",
                 *_main(0x6C, 0x08C9),
                 b"\x20\x82\xbd\x82\xbf\x06",
-                deul + b"\x06\x06\x06\x06",
+                b"\x04" + deul + b"\x06\x06\x06",  # 색 끝 `04` 를 앞에 — 이름만 노랗고 「들」은 기본색(마스터 11-17 상자 「세리오스들」)
             )
         )
         p.append(
@@ -848,6 +848,90 @@ def _write_split(f, rel, entries, orig, free_pool, moves, intended, split_intend
     return (rel_p, n_p, rel_s, n_s) if swapped else (rel_s, n_s, rel_p, n_p)
 
 
+RING_PAIRS: set[tuple[int, int]] = set()  # 조각 고리의 방향 간선(앞 rel → 뒤 rel) — `verify_split` 이 한 방향만 본다
+NSEC_NEW: dict[int, int] = {}  # 제자리에 둔 채 참조표 섹터 수만 낮출 컨테이너(rel → 섹터) — 이사(`moves`)가 아니다
+
+
+def _write_parts(f, rel, entries, orig, free_pool, moves, intended, split_intended, touched, split_gone, limit):
+    """🔴 ⓣ(마스터 11-17) — 컨테이너를 **`limit` 섹터(3뱅크) 이하 조각 k 개**로 나눠 쓴다. 한글판 캐시가 14칸이라 원판이 14칸을 정상 상태로 쓰는 2장 구역은 여유가 0 이어서,
+    구역 적재 4뱅크 → 3뱅크로 한 뱅크를 돌려받는다. 공통 블록(0·1·4·5)은 조각마다 사본, 나머지 블록은 id 순으로 채운다. 첫 조각은 제자리(참조표 섹터 수만 낮춘다 — `NSEC_NEW`),
+    나머지는 풀로. 조각은 디렉터리 끝 가짜 항목으로 **고리**(0→1→…→k−1→0)를 이룬다(`splitload` 교체 횟수 상한 `MAX_HOPS`). 반환: 고리 간선 목록(`split_pairs` 에 더한다)."""
+    ids = [i for i, _ in entries]
+    com = [i for i in ids if i in splitload.COMMON_IDS]
+    rest = sorted(i for i in ids if i not in com)
+    cap = limit * common.USER
+    base = len(assemble(entries, orig, f"rel {rel} base", ids=set(com), partner=True))
+    pk = {i: len(assemble(entries, orig, f"rel {rel} pk", ids=set(com) | {i}, partner=True)) - base for i in rest}
+    def pack(group):
+        """`group`(id 순)을 조각당 cap 이하가 되게 — 조각 수가 가장 적은 균형 채움(id 순 인접)."""
+        if not group:
+            return []
+        for k in range(1, len(group) + 1):
+            target = -(-sum(pk[i] for i in group) // k)
+            cand, cur, cur_len = [], [], base
+            for i in group:
+                if cur and (cur_len + pk[i] > cap or (cur_len + pk[i] > target + base and len(cand) < k - 1)):
+                    cand.append(cur)
+                    cur, cur_len = [], base
+                cur.append(i)
+                cur_len += pk[i]
+            cand.append(cur)
+            if len(cand) == k and all(base + sum(pk[i] for i in c) <= cap for c in cand):
+                return cand
+        raise BuildError(f"컨테이너 rel {rel}: {limit}섹터 이하 조각으로 못 나눈다")
+
+    # 🔴 안 B 자막 씬(코드 영역이 든 조각은 4뱅크)은 한 곳에 모은다 — 코드 영역이 없는 조각은 3뱅크라 구역 적재가 한 뱅크 가볍다. 자막 없는 조각이 앞(제자리 · 참조표 쪽)
+    g_set = {i for i in rest if (rel, i) in GWIN_DONE and i in gwin_rt.SCENE_PARTS}
+    parts = pack([i for i in rest if i not in g_set]) + pack([i for i in rest if i in g_set])
+    if len(parts) < 2:
+        raise BuildError(f"컨테이너 rel {rel}: 조각 둘이 안 된다")
+    datas = []
+    cs = gwin_rt.code_sector(splitload.slot_sectors(rel))
+    for pi, pids in enumerate(parts):
+        d = assemble(entries, orig, f"rel {rel} part{pi}", ids=set(com) | set(pids), partner=True)
+        if len(d) > cap:
+            raise BuildError(f"컨테이너 rel {rel}: 조각 {pi} 가 {len(d)}B > {cap}B")
+        tail = _gwin_tail(set(com) | set(pids), rel)
+        if tail:  # 안 B 자막 씬이 든 조각 — 코드 영역은 그 조각의 마지막(4번째) 뱅크라 이 조각만 4뱅크다(데이터는 3뱅크 안, 코드 영역이 뒤에 붙는다)
+            d = _with_tail(d, tail, f"rel {rel} part{pi}", strict=False, code_sector=cs)
+            if d is None:
+                raise BuildError(f"컨테이너 rel {rel}: 조각 {pi} 의 데이터가 안 B 코드 영역 앞 {cs}섹터에 안 든다")
+        datas.append(d)
+    ns = [-(-len(d) // common.USER) for d in datas]
+    slot = splitload.slot_sectors(rel)
+    rels = [rel] + [free_pool.alloc(n) for n in ns[1:]]
+    k = len(parts)
+    ids_of = [set(com) | set(p) for p in parts]
+    for pi in range(k):
+        j = (pi + 1) % k
+        datas[pi] = set_partner(datas[pi], rels[j] - containers.REC_BASE, ns[j])
+    for pi in range(k):
+        n_w = slot if pi == 0 else ns[pi]  # 제자리 조각은 칸 끝까지 0 으로 채워 쓴다(옛 일본어 꼬리가 남지 않게)
+        buf = datas[pi] + b"\0" * (n_w * common.USER - len(datas[pi]))
+        lba = common.T2_SECTOR + rels[pi]
+        mode1.write_user_data(f, lba, buf, label=f"split part rel {rels[pi]}", expect=orig if pi == 0 else b"\0" * len(buf))
+        touched.append((lba, n_w))
+    NSEC_NEW[rel] = ns[0]
+    blk = dict(entries)
+    for key in [kk for kk in intended if kk[0] == rel]:
+        b = intended.pop(key)
+        for pi in range(k):
+            if key[1] in ids_of[pi]:
+                (intended if pi == 0 else split_intended)[(rels[pi], key[1])] = b
+    for pi in range(1, k):
+        for i in ids_of[pi]:
+            split_intended.setdefault((rels[pi], i), blk[i])
+    moved_out = set().union(*ids_of[1:]) - ids_of[0]
+    split_gone.update((rel, i) for i in moved_out)
+    print(f"    조각 {k}개: " + " · ".join(f"rel {rels[pi]}({ns[pi]}섹터) {sorted(set(parts[pi]))}" for pi in range(k)))
+    edges = []
+    for pi in range(k):
+        j = (pi + 1) % k
+        edges.append((rels[pi], ns[pi], rels[j], ns[j]))
+        RING_PAIRS.add((rels[pi], rels[j]))
+    return edges
+
+
 def apply_edits(block: bytes, edits: list[tuple[bytes, bytes]], where: str) -> bytes:
     b = block
     for find, rep in edits:
@@ -1032,7 +1116,8 @@ def _build(edits_path, iso: Path, cue: Path):
                     if int(lo) <= b["id"] <= int(hi) and (not only or str(b["id"]) in only) and (not viewer_swap or dir_id in viewer_swap):  # 바꿔 넣기 빌드는 바꿔 넣은 블록에만 스텁(전 씬에 달면 컨테이너가 터진다)
                         viewer_idx.append(viewer.index(b["id"], b["data"]))
                         _s = blk
-                        blk = viewer.patch_block(blk, b["data"], b["id"])
+                        _item = font.encode(os.environ["ED_VIEWER_ITEM"], btab, half_space=True) if os.environ.get("ED_VIEWER_ITEM") else b""
+                        blk = viewer.patch_block(blk, b["data"], b["id"], item=_item)
                         rec.add("viewer", _s, blk)
                 if dyn:  # 동적 글리프 — 머리 점프를 꼬리 스텁으로(블록 열림 훅)
                     _s = blk
@@ -1061,6 +1146,14 @@ def _build(edits_path, iso: Path, cue: Path):
                 data = data + b"\0" * max(0, splitload.LIMIT_SECTORS * common.USER + 1 - len(data))  # 나누기로 보낸다(코드 영역은 _write_split 가 붙인다)
             slot = slot_of[rel] * common.USER
             n_total = -(-len(data) // common.USER)
+            if rel in splitload.PART_RELS and want("split"):  # 🔴 ⓣ — 구역 적재를 3뱅크 이하로(2장 컨테이너, 한 뱅크를 캐시에 돌려준다)
+                if n_total > splitload.PART_SECTORS:
+                    edges = _write_parts(f, rel, entries, orig, free_pool, moves, intended, split_intended, touched, split_gone, splitload.PART_SECTORS)
+                    split_pairs.extend(edges)
+                    print(f"  컨테이너 rel {rel}: {len(entries)}블록 · 다시 깖 · 총량 {len(data)}B = {n_total}섹터 > {splitload.PART_SECTORS} → 조각 {len(edges)}개 고리")
+                    continue
+                if n_total < slot_of[rel]:  # 안 나뉘어도 참조표 섹터 수를 실제 크기로(제자리)
+                    NSEC_NEW[rel] = n_total
             if n_total > splitload.LIMIT_SECTORS or rel in splitload.FORCE_Y or rel in splitload.FORCE_SEP:  # 🔴 5뱅크(17섹터↑) 컨테이너 — 캐시 칸이 모자라 자원이 조용히 안 올라온다(10-24)
                 if rel in splitload.SPLIT_RELS and want("split"):
                     split_pairs.append(_write_split(f, rel, entries, orig, free_pool, moves, intended, split_intended, touched, split_gone))
@@ -1095,8 +1188,9 @@ def _build(edits_path, iso: Path, cue: Path):
             moved = sum(1 for a, b in zip(data, orig, strict=False) if a != b)
             where = f"→ rel {at_rel}({n_sec}섹터, 총량 {need}B/{slot}B) 이사" if at_rel != rel else "제자리"
             print(f"  컨테이너 rel {rel}: {len(entries)}블록 · 다시 깖 · {where} · 바뀐 바이트 {moved}/{slot}")
-        if moves:
-            print("  " + patch_ref_table(f, refs, moves, touched))
+        ref_moves = {**{r: (r, n) for r, n in NSEC_NEW.items() if r not in moves}, **moves}
+        if ref_moves:
+            print("  " + patch_ref_table(f, refs, ref_moves, touched))
         apply_glyph_payload(f, glyph_bank, table, touched, split_pairs)
         if split_pairs:  # 씬 열기 탐색 루프를 짝 교체 루틴 호출로 바꾼다(사이트 21B)
             old, new = splitload.site_patch()
@@ -1116,7 +1210,7 @@ def _build(edits_path, iso: Path, cue: Path):
         print(f"  나레이션 게이트 자막 {n_gates}곳 · 음성 장면 시각표 게이트 {n_sched}곳 · 대사창 모양 자막 {n_gwin}곳(컨테이너마다 다시 셈)")
     print(f"  덮어쓰기 없음 (쓰기 구간 {ledger.verify(iso)})")
     verify_immutable(iso, touched)
-    verify_readback(iso, intended, found, moves, [p[2] for p in split_pairs if p[2] >= FreePool.START], split_gone)
+    verify_readback(iso, intended, found, moves, [p[2] for p in split_pairs if p[2] >= FreePool.START], split_gone, NSEC_NEW)
     verify_split(iso, split_intended, split_pairs)
     if want("scn"):
         led, viol, summ = structure.verify_all(recs, sum(len(c["blocks"]) for c in found), moves)
@@ -1211,7 +1305,7 @@ def verify_split(iso: Path, split_intended, pairs):
                     raise BuildError(f"나누기 되읽기: rel {r} id {id_} 이 의도와 다르다")
     # 짝 정보 항목 — 서로를 가리키고(rec·섹터수), 짝 쪽도 컨테이너로 읽히며 4뱅크 안인가
     for ra, na, rb, nb in pairs:
-        for r, other, n_o in ((ra, rb, nb), (rb, ra, na)):
+        for r, other, n_o in (((ra, rb, nb),) if (ra, rb) in RING_PAIRS else ((ra, rb, nb), (rb, ra, na))):
             buf = b"".join(sec(r + k) for k in range(2))
             ents, dend = containers.parse_dir(buf[: common.USER])
             pe = [e for e in ents if e[0] == containers.PARTNER_ID]
@@ -1226,7 +1320,7 @@ def verify_split(iso: Path, split_intended, pairs):
     print(f"  나누기 되읽기 OK — 컨테이너 쌍 {len(pairs)} · " + " · ".join(f"{ra}({na}섹터)↔{rb}({nb}섹터)" for ra, na, rb, nb in pairs))
 
 
-def verify_readback(iso: Path, intended, found_orig, moves=None, extra_rels=(), gone=frozenset()):
+def verify_readback(iso: Path, intended, found_orig, moves=None, extra_rels=(), gone=frozenset(), nsec_new=None):
     data = iso.read_bytes()
     track = b"".join(
         data[
@@ -1250,7 +1344,8 @@ def verify_readback(iso: Path, intended, found_orig, moves=None, extra_rels=(), 
         out_refs.append((containers.REC_BASE + (e[0] | e[1] << 8), e[2]))
     in_refs = containers.referenced()
     for (r0, n0), (r1, n1) in zip(in_refs, out_refs, strict=True):
-        if (r1, n1) != moves.get(r0, (r0, n0)):
+        want_ref = moves.get(r0) or ((r0, (nsec_new or {})[r0]) if r0 in (nsec_new or {}) else (r0, n0))
+        if (r1, n1) != want_ref:
             raise BuildError(f"되읽기: 참조표 {(r0, n0)} → {(r1, n1)} 가 의도와 다르다")
     scanned = {c["rel"] for c in got}
     if {r for r, _ in out_refs} - scanned:

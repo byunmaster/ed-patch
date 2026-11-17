@@ -1,6 +1,6 @@
-"""파티 호칭 접미 루틴(`hook.party_suffix`) 검산 — 쓰이는 옵코드 아홉만 도는 최소 인터프리터.
+"""파티 호칭 접미 루틴(`hook.party_suffix`) 검산 — 쓰이는 옵코드만 도는 최소 인터프리터.
 
-혼자(동료 레코드 셋의 비트 7 이 다 섬)면 복사 시작 X=2 · 길이 1(종결 `06` 뿐), 한 명이라도 파티에 있으면 X=0 · 길이 3(「들」+종결).
+혼자(동료 레코드 셋의 비트 7 이 다 섬)면 복사 시작 X=4 · 길이 1(종결 `06` 뿐), 한 명이라도 파티에 있으면 X=0 · 길이 4(색 끝 `04`+「들」+종결).
 """
 
 import sys
@@ -27,18 +27,20 @@ def run(code: bytes, mem: dict[int, int]) -> tuple[int, int]:
             c = a >> 7
             a = (a << 1) & 0xFF
             i += 1
-        elif op == 0x62:  # CLA
-            a = 0
+        elif op == 0x82:  # CLX
+            x = 0
             i += 1
-        elif op == 0x2A:  # ROL A
-            a, c = ((a << 1) | c) & 0xFF, a >> 7
+        elif op == 0x4A:  # LSR A
+            a >>= 1
             i += 1
         elif op == 0xAA:  # TAX
             x = a
             i += 1
-        elif op == 0x49:  # EOR #imm
-            a ^= code[i + 1]
+        elif op == 0xA9:  # LDA #imm
+            a = code[i + 1]
             i += 2
+        elif op == 0x90:  # BCC rel (앞으로만)
+            i += 2 + (0 if c else code[i + 1])
         elif op == 0x85:  # STA zp ($21 만)
             assert code[i + 1] == 0x21
             z21 = a
@@ -51,16 +53,16 @@ def run(code: bytes, mem: dict[int, int]) -> tuple[int, int]:
 
 class PartySuffix(unittest.TestCase):
     def test_바이트(self):
-        self.assertEqual(hook.party_suffix().hex(), "ad40c32d80c32dc0c30a622a0aaa4903852160")
+        self.assertEqual(hook.party_suffix().hex(), "ad40c32d80c32dc0c30a82a9049003aa4a4a852160")
 
     def test_혼자와_파티(self):
         code = hook.party_suffix()
         out = {0xC340: 0x81, 0xC380: 0x82, 0xC3C0: 0x82}
-        self.assertEqual(run(code, out), (2, 1))  # 혼자 — 종결만
+        self.assertEqual(run(code, out), (4, 1))  # 혼자 — 종결만
         for who in (0xC340, 0xC380, 0xC3C0):
             out = {0xC340: 0x81, 0xC380: 0x82, 0xC3C0: 0x82}
             out[who] = 0x01  # 비트 7 이 내려가면 파티원이다
-            self.assertEqual(run(code, out), (0, 3), hex(who))  # 「들」+종결
+            self.assertEqual(run(code, out), (0, 4), hex(who))  # 색 끝+「들」+종결
 
     def test_들어갈_자리(self):
         self.assertLessEqual(hook.PARTY_ADDR + len(hook.party_suffix()), hook.HOOK_ADDR + hook.PAYLOAD_LEN)

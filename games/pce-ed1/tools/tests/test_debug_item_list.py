@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cpu65
 import debug_item as DI
 import debug_item_list as L
+import debug_warp as W
 import huc6280_dis as D
 
 NAME_CONV, FULLCHK, ADD, DBGDRAW = 0x864B, 0x9B41, 0x9B5F, 0x6541
@@ -30,6 +31,10 @@ class Sim:
         self.org, self.b, self.entry, self.entry_w = blob()
         mem = bytearray(0x10000)
         mem[self.org : self.org + len(self.b)] = self.b
+        worg, wblob, _p, _d = (
+            W.assemble()
+        )  # 「W」 라벨 빨강 루틴(`wdraw`)이 W 코드 뭉치에 있다 — I 닫기가 부른다
+        mem[worg : worg + len(wblob)] = wblob
         for a in (L.WAIT, L.DRAW, L.TILE_RESET, L.SOUND):
             mem[a] = 0x60
         self.m = mem
@@ -46,7 +51,11 @@ class Sim:
 
         def step():
             pc = c.pc
-            if mem[pc] in (0x62, 0xC2, 0x82):  # CLA · CLY · CLX(HuC6280 — 시뮬레이터에 없다, 플래그 안 건드림)
+            if mem[pc] in (
+                0x62,
+                0xC2,
+                0x82,
+            ):  # CLA · CLY · CLX(HuC6280 — 시뮬레이터에 없다, 플래그 안 건드림)
                 setattr(c, {0x62: "a", 0xC2: "y", 0x82: "x"}[mem[pc]], 0)
                 c.pc += 1
                 return None
@@ -60,7 +69,9 @@ class Sim:
                 bat = mem[0x12] | mem[0x13] << 8
                 tile = mem[L.TILE_NO] | mem[L.TILE_NO + 1] << 8
                 self.draws.append((mem[L.ROW], mem[0x8A], bat, bytes(mem[src : src + 15]), tile))
-                for ci in range(11):  # 글자 여섯 칸은 타일 번호가 차례로 늘고(칸당 2, 둘째 줄 +1) 나머지 다섯은 빈 칸(`$9240`)
+                for ci in range(
+                    11
+                ):  # 글자 여섯 칸은 타일 번호가 차례로 늘고(칸당 2, 둘째 줄 +1) 나머지 다섯은 빈 칸(`$9240`)
                     for tr in range(2):
                         w = (0x8000 | (tile + 2 * ci + tr)) if ci < 6 else 0x9240
                         self.cpu.vram[(bat + 0x40 * tr + ci) & 0x7FFF] = w
@@ -82,7 +93,9 @@ class Sim:
                     mem[L.PLACE_N] = len(self.places)
                 elif addr == L.PLACE_NAME:
                     n = mem[0xF8]
-                    mem[L.PLACE_BUF : L.PLACE_BUF + 14] = b"\x81\x40" + bytes([0xF1, n]) + b"\x06\x00" + b"\x00" * 8
+                    mem[L.PLACE_BUF : L.PLACE_BUF + 14] = (
+                        b"\x81\x40" + bytes([0xF1, n]) + b"\x06\x00" + b"\x00" * 8
+                    )
                 elif addr == FULLCHK:
                     c.c = int(self.full)
                 elif addr == ADD:
@@ -108,7 +121,23 @@ class DecodeTest(unittest.TestCase):
         end = labels["BLANK"] - org
         starts, branches = set(), []
         i = 0
-        sizes = {"imp": 0, "imm": 1, "zp": 1, "zpx": 1, "zpy": 1, "abs": 2, "abx": 2, "aby": 2, "ind": 2, "ain": 2, "inx": 1, "iny": 1, "rel": 1, "zpi": 1, "bbr": 2}
+        sizes = {
+            "imp": 0,
+            "imm": 1,
+            "zp": 1,
+            "zpx": 1,
+            "zpy": 1,
+            "abs": 2,
+            "abx": 2,
+            "aby": 2,
+            "ind": 2,
+            "ain": 2,
+            "inx": 1,
+            "iny": 1,
+            "rel": 1,
+            "zpi": 1,
+            "bbr": 2,
+        }
         while i < end:
             starts.add(org + i)
             mn, mode = D.ops[b[i]]
@@ -129,7 +158,9 @@ class DecodeTest(unittest.TestCase):
         """제목 아래 7줄 한 쪽 — 쪽 맨 앞(1·8·15…)부터, 좌우 ±7(끝에 붙음), 위·아래 ±1(돌아 감김)."""
         up, down, left, right = 0x10, 0x40, 0x80, 0x20
         s = Sim([]).run()
-        rows = [d for d in s.draws[1:] if d[1] == 7]  # 보통(흰색 7) 그리기 일곱 번(제목 뒤) — 줄마다 하늘색(5) 그리기가 하나씩 더 있다
+        rows = [
+            d for d in s.draws[1:] if d[1] == 7
+        ]  # 보통(흰색 7) 그리기 일곱 번(제목 뒤) — 줄마다 하늘색(5) 그리기가 하나씩 더 있다
         self.assertEqual(s.draws[0][2], L.TITLE_BAT)
         self.assertEqual(s.draws[0][1], 6)  # 제목은 노란색(6)
         self.assertEqual([r[0] for r in rows], list(range(7)))
@@ -175,9 +206,13 @@ class DecodeTest(unittest.TestCase):
         row1_first = s0.cpu.vram[L.BAT_LIST + 0x80]
         row0_after = s.cpu.vram[L.BAT_LIST]
         row1_after = s.cpu.vram[L.BAT_LIST + 0x80]
-        self.assertEqual(row0_first - row0_after, 12)  # 하늘색 → 보통: 타일 번호가 줄 타일 수(12)만큼 앞으로
+        self.assertEqual(
+            row0_first - row0_after, 12
+        )  # 하늘색 → 보통: 타일 번호가 줄 타일 수(12)만큼 앞으로
         self.assertEqual(row1_after - row1_first, 12)  # 보통 → 하늘색
-        self.assertEqual(s.cpu.vram[L.BAT_LIST + 6] if False else s.cpu.vram[L.BAT_LIST + 8], 0x9240)  # 빈 칸은 그대로
+        self.assertEqual(
+            s.cpu.vram[L.BAT_LIST + 6] if False else s.cpu.vram[L.BAT_LIST + 8], 0x9240
+        )  # 빈 칸은 그대로
         self.assertEqual(s.sounds, [L.CUE_MOVE, L.CUE_CANCEL])
         s = Sim([down] * 7).run()  # 쪽 넘김 — 다시 그린다
         self.assertEqual(s.resets, 2)
@@ -201,7 +236,9 @@ class DecodeTest(unittest.TestCase):
         s = Sim([0x10, 0x01], mode="w").run()  # 처음에서 위 → 마지막
         self.assertEqual(s.m[0xF8], 48)
         names = Sim([], mode="w").run().draws[1:5]
-        self.assertEqual(names[0][3][:4], bytes([0xF1, 1, 0x81, 0x40]))  # 앞 `81 40` 을 뗐다 — 글자부터 · 남은 칸은 `81 40`
+        self.assertEqual(
+            names[0][3][:4], bytes([0xF1, 1, 0x81, 0x40])
+        )  # 앞 `81 40` 을 뗐다 — 글자부터 · 남은 칸은 `81 40`
         s = Sim([], mode="w", places=()).run()  # 갈 곳이 없으면 곧 취소
         self.assertEqual(s.cpu.c, 1)
 
@@ -210,7 +247,10 @@ class DecodeTest(unittest.TestCase):
         _o, _b, _e, entry_w = blob()
         code, list_at, open_at = L.stub_code(entry_w)
         for keyed in (True, False):
-            for name, at, orig in (("open", open_at, L.WIN_OPEN_ORIG), ("list", list_at, L.LIST_BUILDER)):
+            for name, at, orig in (
+                ("open", open_at, L.WIN_OPEN_ORIG),
+                ("list", list_at, L.LIST_BUILDER),
+            ):
                 mem = bytearray(0x10000)
                 mem[L.STUB_AT : L.STUB_AT + len(code)] = code
                 mem[orig] = 0x60
@@ -227,7 +267,10 @@ class DecodeTest(unittest.TestCase):
                     return step0()
 
                 cpu.step = step
-                if name == "list" and keyed:  # 먼 호출 인자 3B 를 건너뛰게 FAR 자리에서 스택의 돌아갈 주소만 3 올린다
+                if (
+                    name == "list" and keyed
+                ):  # 먼 호출 인자 3B 를 건너뛰게 FAR 자리에서 스택의 돌아갈 주소만 3 올린다
+
                     def step2(cpu=cpu, seen=seen, step0=step0):
                         seen.append(cpu.pc)
                         if cpu.pc == L.FAR:

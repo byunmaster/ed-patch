@@ -491,6 +491,8 @@ for step in json.load(open(SCRIPT)):
         b = C.create_string_buffer(n)
         core.retro_serialize(b, n)
         open(step[1], "wb").write(b.raw)
+    elif op == "bram":  # BRAM(저장 파일 영역) 통째 덤프 — 게임 안 SAVE 뒤 깃발 차분용
+        open(step[1], "wb").write(C.string_at(core.retro_get_memory_data(0), core.retro_get_memory_size(0)))
     elif op == "load":
         d = open(step[1], "rb").read()
         core.retro_unserialize(d, len(d))

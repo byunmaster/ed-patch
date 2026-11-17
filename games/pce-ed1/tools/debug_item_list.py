@@ -24,18 +24,38 @@ DBG_DRAW = W.DBG_DRAW
 ROW, ITEM = W.ROW, W.ITEM
 TOP = W.TOP
 BATV = 0x3E63  # (lo, hi) 줄 BAT 주소 — `BUF` 곁 빈 RAM (W 모드 암호와 같은 바이트지만 암호는 빌더가 돌 때 이미 풀린다)
-MODE, NCNT, POS, OLD, TL = 0x3E66, 0x3E67, 0x3E68, 0x3E69, 0x3E6B  # 엔진 상태 — 모드(0=I,1=W) · 개수 · 위치 · 옛 위치 · 임시
+MODE, NCNT, POS, OLD, TL = (
+    0x3E66,
+    0x3E67,
+    0x3E68,
+    0x3E69,
+    0x3E6B,
+)  # 엔진 상태 — 모드(0=I,1=W) · 개수 · 위치 · 옛 위치 · 임시
 TILE_NO = 0x38BD  # 글자 타일 번호 배정(낮은 바이트) — 그리기 루틴이 글자마다 늘린다(원판 `$5B9C`/`$73BD` 가 되돌린다)
 DELT = 0x3E90  # 줄마다 「보통 줄 타일 → 고른 줄(하늘색) 타일」 번호 차이 7B (`FRAG_BUF` `$3E60~$3E87` 뒤 빈 RAM)
-DLO, DHI, TMP2, PALV, CNT = 0x3E98, 0x3E99, 0x3E9A, 0x3E6C, 0x3E6D  # BAT 칸에 더할 16비트 값 · 그리기 전 타일 번호 · 이번에 쓸 글자색 · 타일 줄 수
-CUE_MOVE, CUE_OK, CUE_CANCEL = 0x14, 0x15, 0x16  # 원판 커서 메뉴(뱅크 0x6D `$82F0~`)의 효과음: 위·아래 · I · II
+DLO, DHI, TMP2, PALV, CNT = (
+    0x3E98,
+    0x3E99,
+    0x3E9A,
+    0x3E6C,
+    0x3E6D,
+)  # BAT 칸에 더할 16비트 값 · 그리기 전 타일 번호 · 이번에 쓸 글자색 · 타일 줄 수
+CUE_MOVE, CUE_OK, CUE_CANCEL = (
+    0x14,
+    0x15,
+    0x16,
+)  # 원판 커서 메뉴(뱅크 0x6D `$82F0~`)의 효과음: 위·아래 · I · II
 TITLE_BAT = 0x0107  # 제목 줄 BAT 주소(원판 「디버그」 글자 자리)
 BAT_LIST = 0x0187  # 제목 아래 첫 줄 — 줄마다 +0x80(타일 두 줄)
 assert BAT_LIST & 0x80  # 줄 주소 계산(`rowaddr`)이 낮은 바이트 넘침을 전제한다
 LIST_ROWS = 7
 PAGE = 7  # 좌우 = 한 쪽씩
 CELLS = 11  # 이름 칸 = 88px = 타일 11칸(`debug_item.justify`)
-SEL_PAL, NORM_PAL, TITLE_PAL = 5, 7, 6  # 글자색(`$8A`): 고른 줄 5(하늘색) · 보통 줄 7(흰색 — 디버그 메뉴 줄과 같다) · 제목 6(노란색 — 원판 「디버그」 제목과 같다)
+SEL_PAL, NORM_PAL, TITLE_PAL = (
+    5,
+    7,
+    6,
+)  # 글자색(`$8A`): 고른 줄 5(하늘색) · 보통 줄 7(흰색 — 디버그 메뉴 줄과 같다) · 제목 6(노란색 — 원판 「디버그」 제목과 같다)
 IDX = 0x37AC  # 고른 아이템 번호(원판 I 가 쓰던 바이트)
 ITEMS = 116  # 아이템 1~116
 NAME_BUF = debug_item.BUF  # $CFF1
@@ -63,7 +83,9 @@ def titles(table: dict) -> tuple[bytes, bytes]:
     return out[0], out[1]
 
 
-def code(org: int, ttl: tuple[bytes, bytes] = DUMMY_TITLES, tadr: tuple[int, int] = (0, 0)) -> hook.Asm:
+def code(
+    org: int, ttl: tuple[bytes, bytes] = DUMMY_TITLES, tadr: tuple[int, int] = (0, 0)
+) -> hook.Asm:
     a = hook.Asm(org)
     op = a.op
 
@@ -179,7 +201,9 @@ def code(org: int, ttl: tuple[bytes, bytes] = DUMMY_TITLES, tadr: tuple[int, int
     op("LDA", "imm", CUE_MOVE)
     op("JSR", "abs", SOUND)
     op("JMP", "abs", "redraw")
-    a.label("same")  # 두 줄만 — 줄마다 미리 그려 둔 하늘색 타일 쪽으로 BAT 칸만 한 번에 바꾼다(타일을 지웠다 다시 쓰지 않아 중간 모습이 안 보인다)
+    a.label(
+        "same"
+    )  # 두 줄만 — 줄마다 미리 그려 둔 하늘색 타일 쪽으로 BAT 칸만 한 번에 바꾼다(타일을 지웠다 다시 쓰지 않아 중간 모습이 안 보인다)
     op("LDA", "abs", POS)
     op("CMP", "abs", OLD)
     op("BEQ", "rel", "same_d")
@@ -236,6 +260,7 @@ def code(org: int, ttl: tuple[bytes, bytes] = DUMMY_TITLES, tadr: tuple[int, int
     op("RTS")
     a.label("ix_i")
     far(DBG_DRAW)
+    op("JSR", "abs", W.wdraw_addr())  # 「W」 라벨 빨강(씬 41) 복원
     op("JSR", "abs", WAIT)
     op("RTS")
     # ── 쪽 맨 앞 = 위치 − 위치 % 7 → A
@@ -334,7 +359,9 @@ def code(org: int, ttl: tuple[bytes, bytes] = DUMMY_TITLES, tadr: tuple[int, int
     op("JSR", "abs", TILE_RESET)
     op("LDA", "imm", TITLE_PAL)
     op("STA", "zp", 0x8A)
-    op("LDY", "imm", len(ttl[0]) - 1)  # 제목 글자를 RAM 으로 — 그리는 루틴이 다른 뱅크를 켜서 이 뱅크의 글자를 못 읽는다
+    op(
+        "LDY", "imm", len(ttl[0]) - 1
+    )  # 제목 글자를 RAM 으로 — 그리는 루틴이 다른 뱅크를 켜서 이 뱅크의 글자를 못 읽는다
     op("LDA", "abs", MODE)
     op("BNE", "rel", "dr_tw")
     a.label("dr_ti")
@@ -361,7 +388,9 @@ def code(org: int, ttl: tuple[bytes, bytes] = DUMMY_TITLES, tadr: tuple[int, int
     op("STA", "abs", BATV + 1)
     op("JSR", "abs", DRAW)
     op("STZ", "abs", ROW)
-    a.label("dr_row")  # 줄마다 보통 타일(흰색)과 하늘색 타일 두 벌을 미리 그린다 — 고른 줄 바꿈은 BAT 만 바꿔 한 번에
+    a.label(
+        "dr_row"
+    )  # 줄마다 보통 타일(흰색)과 하늘색 타일 두 벌을 미리 그린다 — 고른 줄 바꿈은 BAT 만 바꿔 한 번에
     op("LDA", "imm", NORM_PAL)
     op("STA", "abs", PALV)
     op("LDA", "abs", TILE_NO)
@@ -411,7 +440,9 @@ def code(org: int, ttl: tuple[bytes, bytes] = DUMMY_TITLES, tadr: tuple[int, int
     op("STA", "zp", 0xF8)
     far(PLACE_NAME, 4)
     op("CLY")
-    a.label("nz")  # 앞 공백(`20` 한 바이트 · `81 40` 한 쌍)을 건너뛴다 — 날개 목록은 이름을 12B 칸 가운데에 놓지만(앞에 `81 40`·`F8 24`, 뒤에 `06 00`) 여기선 왼쪽 정렬
+    a.label(
+        "nz"
+    )  # 앞 공백(`20` 한 바이트 · `81 40` 한 쌍)을 건너뛴다 — 날개 목록은 이름을 12B 칸 가운데에 놓지만(앞에 `81 40`·`F8 24`, 뒤에 `06 00`) 여기선 왼쪽 정렬
     op("CPY", "imm", 12)
     op("BCS", "rel", "nz_d")
     op("LDA", "absy", PLACE_BUF)
@@ -524,8 +555,8 @@ WIN_OPEN_ORIG = 0x5CD5
 
 def stub_code(entry_w: int) -> tuple[bytes, int, int]:
     """뱅크 0x6F 꼬리 스텁 둘 + 공용 판정 → (바이트, 목록 스텁 주소, 창 열기 스텁 주소). W 모드 암호가 있을 때만 우리 쪽, 아니면 원래 날개 경로.
-      · 목록 스텁(`$92F1` 의 `JSR $855B` 자리) — 우리 목록(먼 호출 n=8) / 원래 `$855B`
-      · 창 열기 스텁(`$92EE` 의 `JSR $5CD5` 자리) — W 에선 건너뛴다(`$5CD5` 는 숨은 BAT 칸 4줄×8칸을 화면 왼쪽 위(1줄 3칸)로 복사해, 우리 창(디버그 창 안) 왼쪽 위 모서리를 지도 조각으로 덮었다 — 마스터 11-16)"""
+    · 목록 스텁(`$92F1` 의 `JSR $855B` 자리) — 우리 목록(먼 호출 n=8) / 원래 `$855B`
+    · 창 열기 스텁(`$92EE` 의 `JSR $5CD5` 자리) — W 에선 건너뛴다(`$5CD5` 는 숨은 BAT 칸 4줄×8칸을 화면 왼쪽 위(1줄 3칸)로 복사해, 우리 창(디버그 창 안) 왼쪽 위 모서리를 지도 조각으로 덮었다 — 마스터 11-16)"""
     a = hook.Asm(STUB_AT)
     op = a.op
     a.label("ismode")  # Z=1 이면 W 모드
@@ -573,13 +604,35 @@ def patches(table: dict | None = None):
     stub, list_at, open_at = stub_code(entry_w)
     assert STUB_AT - 0x8000 + len(stub) <= 0x2000, "훅 구역을 넘는다"
     put("debug W list stub", W.HOOK_BANK, STUB_AT - 0x8000, b"\xff" * len(stub), stub)
-    put("debug W list stub site", W.HOOK_BANK, STUB_SITE_OFF, STUB_SITE_OLD, b"\x20" + list_at.to_bytes(2, "little"))
-    put("debug W open stub site", W.HOOK_BANK, OPEN_SITE_OFF, OPEN_SITE_OLD, b"\x20" + open_at.to_bytes(2, "little"))
+    put(
+        "debug W list stub site",
+        W.HOOK_BANK,
+        STUB_SITE_OFF,
+        STUB_SITE_OLD,
+        b"\x20" + list_at.to_bytes(2, "little"),
+    )
+    put(
+        "debug W open stub site",
+        W.HOOK_BANK,
+        OPEN_SITE_OFF,
+        OPEN_SITE_OLD,
+        b"\x20" + open_at.to_bytes(2, "little"),
+    )
     rel6e = 34 + (0x6E - 0x68) * 4
-    out.append(("debug item list entry", rel6e + ENTRY_ARG_OFF // common.USER, ENTRY_ARG_OFF % common.USER, ORIG_ENTRY.to_bytes(2, "little"), entry.to_bytes(2, "little")))
+    out.append(
+        (
+            "debug item list entry",
+            rel6e + ENTRY_ARG_OFF // common.USER,
+            ENTRY_ARG_OFF % common.USER,
+            ORIG_ENTRY.to_bytes(2, "little"),
+            entry.to_bytes(2, "little"),
+        )
+    )
     return out
 
 
 if __name__ == "__main__":
     org, blob, entry, entry_w = assemble()
-    print(f"목록 코드 {len(blob)}B @0x70:${org:04X}~${org + len(blob):04X} · 진입 I ${entry:04X} · W ${entry_w:04X}")
+    print(
+        f"목록 코드 {len(blob)}B @0x70:${org:04X}~${org + len(blob):04X} · 진입 I ${entry:04X} · W ${entry_w:04X}"
+    )

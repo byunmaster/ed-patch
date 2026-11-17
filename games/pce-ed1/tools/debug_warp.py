@@ -20,13 +20,20 @@ import hook
 BANK_CODE = 0x70
 POOL_SECTORS = 1
 
-CH, IDX = 0x37AD, 0x37AC  # 디버그 화면 상태 바이트 곁(`$37A5~$37AB` 는 화면이 지우고, `$37AC` 는 아이템 고르기가 쓴다)
+CH, IDX = (
+    0x37AD,
+    0x37AC,
+)  # 디버그 화면 상태 바이트 곁(`$37A5~$37AB` 는 화면이 지우고, `$37AC` 는 아이템 고르기가 쓴다)
 PAD = 0x222D  # 새로 눌린 단추(비트 0 = I · 1 = II · 2 = SELECT · 4 = 위 · 5 = 오른쪽 · 6 = 아래 · 7 = 왼쪽)
 BUF = 0x3E40  # 줄 버퍼(32B 안) — 아랫줄은 18B+종결자라 아이템 이름 버퍼(`$CFF1`, 15B)에 쓰면 `$D000~` 로 넘친다. 베이스 RAM `$3E40`(스텁 `$3E00~$3E1F` · 디스크립터 `$3F00` 사이)
 DRAW = 0x5BB1
 WAIT = 0x5BCD
 TILE_RESET = 0x5B9C
-TOP, ROW, ITEM = 0x3E60, 0x3E61, 0x3E62  # 목록창 — 맨 윗줄 항목 · 그리는 줄 · 지금 그리는 항목(`BUF` 곁 빈 RAM)
+TOP, ROW, ITEM = (
+    0x3E60,
+    0x3E61,
+    0x3E62,
+)  # 목록창 — 맨 윗줄 항목 · 그리는 줄 · 지금 그리는 항목(`BUF` 곁 빈 RAM)
 BAT_LIST = 0x0107  # 목록창 첫 줄(디버그 창의 제목 줄 — 줄마다 +0x80)
 LIST_ROWS = 8
 FAR = 0x4FD8  # 먼 호출(`JSR $4FD8 / 뱅크 번호(0x68+n) / lo hi`) — 돌아오면 뱅크를 되돌린다
@@ -35,12 +42,20 @@ BAT_NAME = 0x0387  # (옛) W 줄 이름 칸
 BAT_INFO = 0x0407  # 「I」 줄 자리
 STUB_AT = 0x3E00  # 워프 직전 RAM 스텁 · 디스크립터 사본(`$3F00`)
 DESC_AT = 0x3F00
+HOOK_DRAW_OFF = 0x04D4  # 뱅크 0x6E — 디버그 창 처음 그리기(`$64D4`)
 ORIG_E = 0x621B  # 원래 E 행(EP +100) 처리 — 뱅크 0x70
 
 TABLE_W = 0x0535 + 2 * 4  # 뱅크 0x6E 디버그 행 표 W 칸
 STUB_E_ARG = 0x062A  # 뱅크 0x6E `$662A` — E 행 스텁 `JSR $4FD8 / 08 / <lo hi> / RTS` 의 호출 대상
 E_STUB = 0x6626
 ROW_W = 4
+ROW_E = 3
+BLOCK_SCENE = 41  # 베르가 사령관 처치 뒤 맵(`$C009` = 씬 번호) — 원판 날개도 여기서 멈춘다(11-17: 입구·마을 맵 둘 다, 월드맵은 `$C009`=0 이라 정상). W 를 막는다
+SCENE_VAR = 0xC009
+CUE_DENY = 0x27  # 원판 아이템 메뉴가 사용 못 하는 아이템을 골랐을 때(`$84DE` `LDA #$27 / JSR $57B1`)
+SOUND = 0x57B1
+RED = 2  # 글자색(`$8A`) 빨강 — 사용 불가 아이템과 같은 색
+BAT_W = 0x0388  # 디버그 창 「W」 라벨 BAT(라벨 줄 `$0188` + 줄당 0x80 × 4 — 옛 W 줄 이름 칸 `BAT_NAME` 0x0387 과 한 칸 차이)
 
 
 POOL_SECTORS = 0  # 옛 디스크립터 풀 섹터는 걷어냈다(`build` 가 트랙 끝 예약에 쓴다)
@@ -62,7 +77,15 @@ MASK_AT = HOOK_ORG + HOOK_CODE_ROOM  # 비트 마스크 8B(01 02 04 … 80)
 TABLE_AT = MASK_AT + 8  # 장 × 8B — 비트 idx 가 서 있으면 그 장에서 도착하는 곳
 # 장(`$6B`: 0=1장 … 5=종장)별로 날개 목록에서 골라 이동했을 때 실제로 도착하는 장소 번호 — 헤드리스 전수 실측(devlog 11-16). 그 밖은 목적지 맵이 그 장의 컨테이너에 없어 검은 화면이 된다(원판 날개도 같다).
 REACH = {
-    0: (1, 2, 3, 4, 5, 38, 48),  # 엘아스타 · 루디아 · 크루즈마을 · 베르가광산 · 네리아항구 · 루디아성문 · 곶의동굴
+    0: (
+        1,
+        2,
+        3,
+        4,
+        5,
+        38,
+        48,
+    ),  # 엘아스타 · 루디아 · 크루즈마을 · 베르가광산 · 네리아항구 · 루디아성문 · 곶의동굴
     1: (1, 2, 3, 4, 5, 6, 7, 8, 9, 32, 33, 34, 35, 38, 48, 49),
     2: (1, 10, 11, 12, 13, 14, 15, 33, 34, 35, 36, 37, 48, 49),
     3: (1, 48),  # 4장은 엘아스타·곶의동굴뿐(두 지역 세이브로 확인)
@@ -154,24 +177,71 @@ def hook_site_new() -> bytes:
     return b"\x20" + HOOK_ORG.to_bytes(2, "little") + b"\xea"
 
 
-def code(org: int, addr=None) -> "hook.Asm":
-    """분기기 — W 행이면 날개 목록, 아니면 원래 E 행 처리."""
+def code(org: int, wd: int | None = None) -> "hook.Asm":
+    """분기기 — W 행이면 날개 목록, 아니면 원래 E 행 처리. `wd` = 라벨 그리기(`wdraw`) 주소(앞으로 점프라 두 번 조립)."""
+    if wd is None:
+        wd = code(org, org).labels["wdraw"]
     a = hook.Asm(org)
     op = a.op
     a.label("disp")
     op("LDA", "abs", 0x37A5)
     op("CMP", "imm", ROW_W)
     op("BEQ", "rel", "wmain")
+    op("CMP", "imm", ROW_E)
+    op("BNE", "rel", "redraw")
     op("JMP", "abs", ORIG_E)
+    # 🔴 P·M·I 행 — 원판은 값을 뒤집은 뒤 `$64E0` 의 `JSR $6541`(창 다시 그리기)로 돌아온다(마스터 11-18 「P M 이 ON 으로 안 바뀌네」). 그 자리를 스텁(`$6626`)으로 바꿨으니 여기서 창 다시 그리기 + 「W」 빨강을 한다.
+    a.label("redraw")
+    a.out += bytes([0x20, FAR & 0xFF, FAR >> 8, 6, DBG_DRAW & 0xFF, DBG_DRAW >> 8])
+    op("JSR", "abs", wd)
+    op("RTS")
     a.label("wmain")
+    op("LDA", "abs", SCENE_VAR)  # 이 맵에선 원판 워프가 멈춘다 — 무반응(라벨은 빨강)
+    op("CMP", "imm", BLOCK_SCENE)
+    op("BNE", "rel", "wgo")
+    op("LDA", "imm", CUE_DENY)  # 사용 불가 아이템을 골랐을 때와 같은 효과음(원판 `$84DE` — 뱅크 0x6F)
+    op("JSR", "abs", SOUND)
+    op("RTS")
+    a.label("wgo")
     op("LDA", "imm", WMODE_KEY[0])
     op("STA", "abs", WMODE)
     op("LDA", "imm", WMODE_KEY[1])
     op("STA", "abs", WMODE + 1)
     a.out += bytes([0x20, FAR & 0xFF, FAR >> 8, WING_FAR_N, WING_USE & 0xFF, WING_USE >> 8])
     op("STZ", "abs", WMODE)  # 취소로 돌아왔다 — 표시를 푼다(워프하면 여기 안 온다)
-    a.out += bytes([0x20, FAR & 0xFF, FAR >> 8, 6, DBG_DRAW & 0xFF, DBG_DRAW >> 8])  # 디버그 창 전체를 다시 그린다
+    a.out += bytes(
+        [0x20, FAR & 0xFF, FAR >> 8, 6, DBG_DRAW & 0xFF, DBG_DRAW >> 8]
+    )  # 디버그 창 전체를 다시 그린다
+    op("JSR", "abs", wd)
     op("JSR", "abs", WAIT)
+    op("RTS")
+    # ── 「W」 라벨 빨강 — 막힌 맵(씬 41)에서만 디버그 창 맨 끝에 한 글자를 다시 그린다. 창을 그린 직후(`$64D4` 훅 · W 취소 · I 닫기)마다 부른다.
+    a.label("wdraw")
+    op("LDA", "abs", SCENE_VAR)
+    op("CMP", "imm", BLOCK_SCENE)
+    op("BNE", "rel", "wd_end")
+    op(
+        "LDA", "imm", 0x82
+    )  # 원판 라벨은 전각 「Ｗ」(SJIS 8276) — 뱅크 0x77 +0x1FE3 의 줄 문자열(Ｐ Ｍ Ｇ Ｅ Ｗ Ｉ, 줄 사이 00)
+    op("STA", "abs", BUF)
+    op("LDA", "imm", 0x76)
+    op("STA", "abs", BUF + 1)
+    op("LDA", "imm", 0x06)
+    op("STA", "abs", BUF + 2)
+    op("LDA", "imm", RED)
+    op("STA", "zp", 0x8A)
+    op("LDA", "imm", BUF & 0xFF)
+    op("STA", "zp", 0x10)
+    op("LDA", "imm", BUF >> 8)
+    op("STA", "zp", 0x11)
+    op("LDA", "imm", BAT_W & 0xFF)
+    op("STA", "zp", 0x12)
+    op("LDA", "imm", BAT_W >> 8)
+    op("STA", "zp", 0x13)
+    op("JSR", "abs", DRAW)
+    op("LDA", "imm", 7)
+    op("STA", "zp", 0x8A)
+    a.label("wd_end")
     op("RTS")
     return a
 
@@ -183,6 +253,11 @@ def assemble(pool_rel: int = 0):
     blob = a.bytes()
     assert org + len(blob) <= 0x8000, hex(org + len(blob))
     return org, blob, b"", a.labels["disp"]
+
+
+def wdraw_addr() -> int:
+    """「W」 라벨 빨강 루틴의 논리 주소(뱅크 0x70) — `debug_item_list` 가 I 닫기에서 부른다."""
+    return code(layout()).labels["wdraw"]
 
 
 def layout():
@@ -201,6 +276,7 @@ def patches(pool_rel: int = 0):
     import common
 
     org, blob, _pool, disp = assemble()
+    rel6e = 34 + (0x6E - 0x68) * 4
     out = []
 
     def put(label, bank, off, old, new):
@@ -219,12 +295,39 @@ def patches(pool_rel: int = 0):
     hc = hc + b"\xff" * (HOOK_CODE_ROOM - len(hc)) + bytes(1 << i for i in range(8)) + reach_table()
     put("debug warp wing-list hook code", HOOK_BANK, HOOK_ORG - 0x8000, b"\xff" * len(hc), hc)
     put("debug warp wing-list hook site", HOOK_BANK, HOOK_SITE_OFF, HOOK_SITE_OLD, hook_site_new())
-    rel6e = 34 + (0x6E - 0x68) * 4
-    out.append(("debug warp row table W", rel6e + TABLE_W // common.USER, TABLE_W % common.USER, (0x6534).to_bytes(2, "little"), E_STUB.to_bytes(2, "little")))
-    out.append(("debug warp E stub target", rel6e + STUB_E_ARG // common.USER, STUB_E_ARG % common.USER, ORIG_E.to_bytes(2, "little"), disp.to_bytes(2, "little")))
+    # 디버그 창을 그리는 자리(`$64D4` — 처음 열 때와 P·M·I 행을 누른 뒤 `$64E0` 로 되돌아올 때 같은 자리) — 원래 `STZ $37A8~AB` 넷 + `JSR $6541`(15B): STZ 는 그대로 두고 `JSR` 만 스텁(`$6626` → `disp` → 창 그리기 + 라벨 빨강)으로
+    out.append(
+        (
+            "debug warp label draw hook",
+            rel6e + HOOK_DRAW_OFF // common.USER,
+            HOOK_DRAW_OFF % common.USER,
+            bytes.fromhex("9ca8379ca9379caa379cab37204165"),
+            bytes.fromhex("9ca8379ca9379caa379cab37") + bytes([0x20, E_STUB & 0xFF, E_STUB >> 8]),  # STZ 넷은 그대로 · 마지막 `JSR $6541` → `JSR $6626`(스텁 → `disp` 가 다시 그리기 + 「W」 빨강). 되돌아오는 `$64E0` 도 같은 자리라 P·M·I 행이 다시 그려진다
+        )
+    )
+    out.append(
+        (
+            "debug warp row table W",
+            rel6e + TABLE_W // common.USER,
+            TABLE_W % common.USER,
+            (0x6534).to_bytes(2, "little"),
+            E_STUB.to_bytes(2, "little"),
+        )
+    )
+    out.append(
+        (
+            "debug warp E stub target",
+            rel6e + STUB_E_ARG // common.USER,
+            STUB_E_ARG % common.USER,
+            ORIG_E.to_bytes(2, "little"),
+            disp.to_bytes(2, "little"),
+        )
+    )
     return out
 
 
 if __name__ == "__main__":
     org, blob, _pool, disp = assemble()
-    print(f"W 핸들러 {len(blob)}B @0x70:${org:04X} · 분기기 ${disp:04X} · 훅 {len(hook_code())}B @0x6F:${HOOK_ORG:04X}")
+    print(
+        f"W 핸들러 {len(blob)}B @0x70:${org:04X} · 분기기 ${disp:04X} · 훅 {len(hook_code())}B @0x6F:${HOOK_ORG:04X}"
+    )

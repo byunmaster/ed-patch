@@ -453,6 +453,14 @@ def load_translations(scene_id: int) -> dict[str, dict]:
 
             kr = kr.replace(" ", _cp.HALF_MARK)
             v = {**v, "t": v.get("lead", "") + kr + v.get("tail", "")}
+        if scene_id != 0 and v.get("raw") and v.get("jp") and "lead" in v and v.get("t"):
+            # 🔴 씬 안 입장 배너 사본(씬 3·4 — 마스터 11-18 「루디아」만 뜨고 「마을」 누락): 이 자리는 원문 글자 수만큼만 담긴다 — 넘치면 꼬리 점프(`0F`)로 이어지는데
+            #    배너 그리기가 점프를 안 따라가 뒤 글자가 빠진다. 원문 코드 수(`len(jp)`) 안에서 가운데를 다시 계산한다(월드맵 표(씬 0)는 7칸 고정).
+            import center_plan
+
+            name = v["t"].strip(" ")
+            if name and "\n" not in name and "\u3000" not in name:  # 전각 공백이 든 손배치 칸은 그대로
+                v = {**v, "t": center_plan.banner_form(name, cap=len(v["jp"]))[0]}
         if scene_id == 0 and v.get("raw") and v.get("t"):
             # 🔴 입장 배너 가운데(마스터 11-08 「배너도 전부 가운데」): 앞 공백을 전각 12px + 반 칸 4px 조합으로 다시 계산해 쏠림을 ≤2px 로(center_plan.banner_lead). 뒤 공백은 안 쓴다
             import center_plan
@@ -646,4 +654,5 @@ def speaker_kind(m, sid: int | None = None) -> bool | str:
 
     if sid in typeset.contract_scenes():  # 음성 시각표·게이트 쪽 수가 구조 계약인 씬은 창 수가 바뀌면 싱크가 어긋난다 — 창 수가 같을 때만 넓은 첫 줄(`"nl="`)
         return "nl="
-    return "nl" if m.tokens and m.tokens[0] == ("op", 1) else True
+    # 🔴 나중에 단 화자 머리(`key_fixed` — 밀매상, 마스터 11-18 「화자명 개행없이 대사나옴」)는 이름 줄 끝에 개행을 낸다(`translate.compose`) — 글이 둘째 줄부터
+    return "nl" if (m.tokens and m.tokens[0] == ("op", 1)) or m.key_fixed else True

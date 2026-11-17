@@ -88,6 +88,28 @@ def orphans(prod: bytes) -> list[dict]:
     return sorted(rows, key=lambda r: (r["rel"], r["off"]))
 
 
+def stale_places(prod: bytes) -> list[dict]:
+    """이사한 컨테이너의 옛 자리 — 컨테이너를 트랙 끝 빈 구간으로 옮기면(`build.patch_ref_table`) 참조표만 새 자리를 가리키고 옛 자리는 원판(일본어) 그대로 남는다.
+    번역이 있는 블록(`script/scnNNN.json` 에 줄이 있다)이 제품 롬의 **같은 컨테이너 자리**에서 원판과 같으면 옛 자리가 원판으로 남은 것이다. 다른 경로가 옛 자리를 읽으면 미번역 장면이 뜬다(11-17: 블록 0 의 입장 배너 · 1300·1604)."""
+    fo = containers.scan(common.track_data())
+    fp = containers.scan(prod)
+    prod_blocks = {(c["rel"], b["id"]): b["data"] for c in fp for b in c["blocks"]}
+    rows = []
+    for c in fo:
+        same = []
+        for b in c["blocks"]:
+            if prod_blocks.get((c["rel"], b["id"])) != b["data"]:
+                continue
+            f = common.GAME_DIR / "script" / f"scn{b['id']:03d}.json"
+            if not f.exists():
+                continue
+            if any(v.get("t") or v.get("jp") for v in json.loads(f.read_text()).get("messages", {}).values()):
+                same.append(b["id"])
+        if same:
+            rows.append({"rel": c["rel"], "ids": same})
+    return rows
+
+
 def key(r) -> str:
     return f"{r['id']}@{r['rel']}:{r['off']}"
 
@@ -97,12 +119,17 @@ def main() -> int:
     if not iso.exists():
         print(f"✘ {iso} 가 없다 — 빌드가 먼저 돌아야 한다")
         return 1
-    rows = orphans(read_track(iso))
+    prod = read_track(iso)
+    rows = orphans(prod)
     keys = sorted(key(r) for r in rows)
+    stale = stale_places(prod)
+    keys += sorted(f"old:{r['rel']}" for r in stale)
     if "--list" in sys.argv:
         for r in rows:
             print(f"  씬 블록 {r['id']:>3}  rel {r['rel']}:{r['off']}  ({r['packed']}B · 컨테이너 {r['from']} 에서 온 사본)")
-        print(f"  남은 사본 {len(rows)}")
+        for r in stale:
+            print(f"  옛 자리 컨테이너 rel {r['rel']} — 번역 있는 블록 {len(r['ids'])}개가 원판 그대로({r['ids']})")
+        print(f"  남은 사본 {len(rows)} · 옛 자리 {len(stale)}")
         return 0
     if "--freeze" in sys.argv:
         BASELINE.write_text(json.dumps(keys, indent=1) + "\n")

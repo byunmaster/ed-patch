@@ -37,6 +37,9 @@ import typeset
 import typeset_check as TC
 
 BASELINE = common.GAME_DIR / "typeset_baked_baseline.json"
+# 이음이 아닌 메시지 — 저장 순서로 앞 메시지(`…있었습니다.` + `0D`) 바로 뒤지만 **별개 갈래의 새 창**이다: 빈 보물상자 「(이름)은 보물상자를 다시 한번…」(씬 21·25·29 — 상자 열기 메시지 뒤 `0D` 다음에 이어 저장된 빈 상자 분기).
+#   첫 칸 공백을 두면 「세리오스들 은」으로 이름과 조사가 떨어진다(마스터 11-17) — 이음 검사의 오탐이라 이 셋만 뺀다.
+FRESH_AFTER_0D = {(21, "9fadde3af66697df"), (25, "9fadde3af66697df"), (29, "9fadde3af66697df")}
 AXES = ("2-1", "2-2", "2-3", "2-4", "2-5", "2-6", "2-7", "2-11", "2-12", "2-17", "4-6", "H13", "2-NL")
 SENT_END = set(".!?…~」』")
 OPLEN = {**M.TEXT_OPS, **M.OTHER_OPS}
@@ -89,7 +92,10 @@ def decode(by: bytes, inv: dict[bytes, str]):
             i += 2
             continue
         if c == 0x1F:
-            in_head = True
+            if cur or pages:  # 본문 중간의 이름 색 런(`1F 이름 04`, 씬 34 OFF 끝 쪽 화자) — 머리가 아니라 그 쪽의 글자다(줄 수에 든다), 색 켜기·끄기 짝도 맞춘다
+                pon += 1
+            else:
+                in_head = True
             i += 1
             continue
         if c == 0x04:
@@ -298,7 +304,7 @@ def scene_rows() -> dict[str, list[tuple[str, str]]]:
                 nmsg += 1
                 # 2-1(이음) — 앞 메시지가 종료 없이 이어지는데 부호로 끝났고 이 메시지가 공백·개행 없이 글자로 시작 — 같은 줄에 「다.뭘」 로 붙는다(화면 전수 표본, 11-02)
                 first = pages[0][0]
-                if prev_open and not gap_break and prev_tail and prev_tail in PUN and not head and first and first[0] not in " \n" and (first[0].isalnum() or "가" <= first[0] <= "힣"):
+                if prev_open and (sid, m.key) not in FRESH_AFTER_0D and not gap_break and prev_tail and prev_tail in PUN and not head and first and first[0] not in " \n" and (first[0].isalnum() or "가" <= first[0] <= "힣"):
                     hits["2-1"].append((f"scn{sid:03d}:{m.key[:8]}", f"이음 ⟨…{prev_tail}|{first[:8]}⟩"))
                 tail_txt = pages[-1][0].rstrip(" ")
                 end_op = by.rstrip(b"\x00\x06\x07")[-1:]  # 쪽 넘김(05·03)·줄바꿈(01)으로 끝나면 다음 메시지는 새 쪽·새 줄 — 이음이 아니다

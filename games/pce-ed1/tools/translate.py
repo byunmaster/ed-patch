@@ -143,7 +143,12 @@ ITEM_LEAD_KEYS = {"13b66243f5a5d657", "18707d602e09b9d0", "307c3a628f63c549", "3
 # 🔴 장 끝 카드 앞 문장(씬 19 「…해방되었습니다.」, 종료 `06 08` 뒤에 제목 메시지가 같은 창에 이어진다) — 줄이 덜 찬 채 끝나면 제목이 문장 줄 뒤에 붙는다(11-15 재촬영).
 #    원문은 줄이 꽉 차서 제목이 다음 줄로 갔을 뿐이라 우연이다. 끝에 개행(`01`)을 내 제목이 늘 제 줄에서 시작하게 한다. 꽉 찬 줄 뒤엔 인터프리터가 스스로 넘기므로 안 낸다.
 CARD_LEAD_KEYS = {"c535c4fa26f502cf"}
+# 보물상자 「(품목)이/가 들어 있었습니다.」 — 긴 품목 이름 뒤에서 「이」가 줄 끝에 못 들어가 다음 줄로 가면, 우리가 낸 개행이 「이」와 「들어」를 또 갈랐다(마스터 11-17 「들어 있었습니다. 는 윗줄에 이어져야」).
+# 개행 없이 한 줄로 두면 엔진이 이름 폭대로 접는다 — 「…깃털 / 이 들어 있었습니다.」
+FREE_FLOW_KEYS = {"307c3a628f63c549"}
 JOIN_KEYS = {"9ccdf127e26e6daf", "b27d8c0c4008c32f"}  # 씬 63 의 「소니아가」(82841ed9…)는 156px 꽉 찬 줄이라 따로 둔다(종전 두 줄)
+# 한 창(OFF) 안에서 쪽마다 화자가 갈리는 메시지 — {(씬, 열쇠): {쪽 번호(0부터): 화자}}. 음성 자막(ON)의 `voice_sched` `page_speakers` 와 같은 사실(씬 34 끝 쪽 「오오오오!!」 = 레지스탕스들, 마스터 11-17)
+PAGE_SPEAKER = {(34, "71be6cb377aba2e5"): {3: "레지스탕스들"}}
 JOIN_NAME = "류난"
 NAME_LONGEST = "세리오스"  # 파티 다섯 중 최장(`typeset_check.ACTOR` 와 같은 값 — 정본 사전 person 「セリオス」)
 
@@ -155,7 +160,7 @@ def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str,
         out += b"\x1f" + font.encode(name, table, msg=True) + b"\x04"  # 화자명도 대사창 — 공백 반각
     elif m.common is not None:
         out += bytes([0x09, m.common])
-    lead_nl = bool(m.tokens) and m.tokens[0] == ("op", NL)
+    lead_nl = (bool(m.tokens) and m.tokens[0] == ("op", NL)) or bool(m.key_fixed and m.speaker is not None)  # 나중에 단 화자 머리(밀매상)도 이름 줄 끝에 개행(마스터 11-18)
     # 🔴 **첫 줄을 비우는 머리 개행은 안 낸다**(마스터 10-31 「첫줄을 굳이 비워놔야할 이유도 없는것 같아서 우리는 첫줄부터」 — 원문 2줄 서술이 가운데 느낌을 내던 꼴이
     #    우리 3줄에선 빈 줄만 남았다, gon 009). 앞 메시지가 찍던 줄 끝에 **이어 붙는** 메시지(`lead_px`)의 머리 개행은 줄바꿈이라 그대로 낸다.
     if lead_nl and (lead_px or m.speaker is not None or m.common is not None):  # 화자 머리 뒤 개행은 「이름 줄 끝」이라 그대로(007 기준 화면: 이름 밑에 바로 글)
@@ -191,6 +196,8 @@ def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str,
         jm = _JOSA_LEAD.match(src) if not lead_px else None
         if jm:
             lead_px = ITEM_LEAD_PX if m.key in ITEM_LEAD_KEYS else typeset.px(JOIN_NAME if m.key in JOIN_KEYS else NAME_LONGEST)
+            if m.key in FREE_FLOW_KEYS:
+                lead_px = 0  # 앞 폭을 안 주고 한 줄로 짠다 — 줄넘김은 엔진(`wordck`)이 이름 폭대로 한다
             src = _JOSA_MARK + src[jm.end() :]
         pgs = typeset.pages(
             font.expand_packed(src),
@@ -202,7 +209,7 @@ def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str,
         )
         if jm:
             pgs = [pg if isinstance(pg, typeset.Card) else [ln.replace(_JOSA_MARK, jm.group(0)) for ln in pg] for pg in pgs]
-            if len(pgs[0]) > 1 and not isinstance(pgs[0], typeset.Card) and m.key not in JOIN_KEYS:
+            if len(pgs[0]) > 1 and not isinstance(pgs[0], typeset.Card) and m.key not in JOIN_KEYS and m.key not in FREE_FLOW_KEYS:
                 # 한 줄에 안 들어가면 **이름+조사 뒤에서** 끊고 나머지를 새 줄부터 짠다(「세리오스는 / 보물상자를 열었다.」 — 끝 낱말 하나만 외톨이로 내려가는 것보다 낫다, 마스터 11-04 요청 예시)
                 alt = typeset.pages(font.expand_packed(src[1:].lstrip(" ")), speaker=False, four=True)
                 if len(alt[0]) + 1 <= 4:
@@ -217,6 +224,9 @@ def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str,
                     if pc in resets:
                         out.append(0x04)
                 out.append(PAGE)
+                spk_pg = PAGE_SPEAKER.get((typeset._SCENE, m.key), {}).get(i)
+                if spk_pg:  # 한 창 안에서 쪽마다 화자가 갈리는 메시지 — 그 쪽 머리에 인라인 이름 색 런(`1F 이름 04`, sysmsg 「{1F}자그리스{04}」 와 같은 꼴)+줄바꿈. 쪽·창 수는 그대로
+                    out += b"\x1f" + font.encode(spk_pg, table, msg=True) + b"\x04" + bytes([NL])
                 # 🔴 글자색 옵코드(`1D` 등)는 쪽 첫머리에 온다 — 원문 쪽 번호 k 의 옵코드는 번역의 k 번째 `\f` 조각이 시작하는 쪽에 낸다
                 out += bytes(op for k, op in style if k and bounds[min(k, len(bounds) - 1)] == i)
             verbatim = isinstance(pg, typeset.Card)  # 쪽마다 — 한 문안 안에 카드 쪽과 줄 계획 쪽이 섞일 수 있다
@@ -413,7 +423,65 @@ def translate_block(scene_id: int, block: bytes, table: dict[str, bytes]) -> tup
         raise TranslateError(
             f"scn {scene_id}: 정본 열쇠 {sorted(missing)} 가 블록에 없다(원문이 바뀌었나)"
         )
-    return apply_orphans(scene_id, block, M.splice(block, edits), table, speakers), len(edits)
+    new_block = remap_page_jumps(scene_id, block, M.splice(block, edits), msgs, trs)
+    return apply_orphans(scene_id, block, new_block, table, speakers), len(edits)
+
+
+def _walk_pages(buf: bytes, start: int, k: int, follow_jump: bool) -> int | None:
+    """`start` 에서 토큰을 따라 걸어 k 번째 쪽 옵코드(`03`·`05`) 바로 뒤 오프셋을 낸다. `follow_jump` 면 `0F` 로 따라간다(우리가 splice 로 놓은 꼬리 점프). 못 찾으면 None."""
+    i, pages, hops = start, 0, 0
+    while 0 <= i < len(buf):
+        v = buf[i]
+        if M.is_lead(v):
+            i += 2
+            continue
+        if v == M.JUMP and follow_jump and hops < 4:
+            i = (buf[i + 1] | buf[i + 2] << 8) - M.BASE
+            hops += 1
+            continue
+        if v in M.TERM:
+            return None
+        i += M.TEXT_OPS.get(v, M.OTHER_OPS.get(v, 1))
+        if v in PAGE_OPS:
+            pages += 1
+            if pages == k:
+                return i
+    return None
+
+
+def remap_page_jumps(scene_id: int, orig: bytes, new: bytes, msgs: list, trs: dict) -> bytes:
+    """🔴 **쪽 머리로 들어가는 스크립트 점프를 새 쪽 머리로 옮긴다**(마스터 11-18 씬 50 「남자」 첫 대사가 「라고요,」부터 — 다치지 않은 갈래의 `0F` 가 원판 메시지 둘째 쪽(`05` 바로 뒤)으로 들어오는데
+    한국어 메시지는 쪽 길이가 달라 그 오프셋이 글자 한가운데로 떨어졌다). 메시지 **밖**(코드 자리)의 `0F lo hi` 가 번역된 메시지의 k 번째 쪽 머리(앞 바이트 `05`·`03`)를 가리키면, 새 바이트에서 k 번째 쪽 머리를 걸어 찾아
+    피연산자를 고친다. 쪽 수가 모자라면 빌드를 죽인다(창 수 계약). 쪽 머리가 아닌 중간 진입(문장 꼬리 공유 등)은 여기서 안 다룬다 — `check_script_jumps` 기준선."""
+    inmsg = bytearray(len(orig))
+    for m in msgs:
+        inmsg[m.start : m.end] = b"\x01" * (m.end - m.start)
+    out = bytearray(new)
+    for j in range(len(orig) - 2):
+        if orig[j] != M.JUMP or inmsg[j] or inmsg[j + 1]:
+            continue
+        w = (orig[j + 1] | orig[j + 2] << 8) - M.BASE
+        host = next((t for t in msgs if t.start < w < t.end), None)
+        if host is None or orig[w - 1] not in PAGE_OPS or host.key not in trs or M._parse_from(orig, w) is None:
+            continue
+        # 원판에서 host.start → w 사이 쪽 옵코드 수 k(w 직전의 것까지)
+        i, k = host.start, 0
+        while i < w:
+            v = orig[i]
+            if M.is_lead(v):
+                i += 2
+                continue
+            i += M.TEXT_OPS.get(v, M.OTHER_OPS.get(v, 1))
+            if v in PAGE_OPS:
+                k += 1
+        if i != w:
+            continue  # 토큰 경계가 아니다 — 우연 일치
+        t = _walk_pages(new, host.start, k, True)
+        if t is None:
+            raise TranslateError(f"scn {scene_id}: 점프 +{j:#06x} 가 메시지 {host.key} 의 {k}번째 쪽 머리로 들어가는데 번역에 그 쪽이 없다(쪽 수 계약)")
+        addr = M.BASE + t
+        out[j + 1], out[j + 2] = addr & 0xFF, addr >> 8
+    return bytes(out)
 
 
 # 🔴 **메시지 밖에 서 있는 조각** — `messages.parse` 는 두 글자 미만의 가나·한 글자 화자 머리를 메시지로 안 잡아 번역이 닿지 않고 일본어가 그대로 남았다
@@ -439,6 +507,8 @@ def _orphan_patches() -> dict[int, list[tuple[int, bytes, bytes]]]:
 
 
 ORPHAN_SPEAKERS = ("男", "女", "娘")
+# 씬 20 「男」/「兵士」 — 조건 갈래(`0F d4 af` 가 男 쪽을 건너뛴다). 男 은 한글이 4B 라 꼬리로 빼고 끝 점프(`0F d8 af` = 04 자리)를 같이 옮긴다, 兵士 는 같은 길이
+BRANCH_SPEAKER_SITES = {20: [(0xFCF, "男", b"\x0f\xd8\xaf"), (0xFD4, "兵士", b"")]}
 # 🔴 밀매상(「やみの商人」) 머리 없는 메시지에 화자 머리를 단다(마스터 11-11 「첫대사는 화자명이 나와야할것 같네」) — 씬 45·46·47 의 같은 밀매상 메시지 중
 #    원판에 머리가 없고 **자기 창을 여는** 것(더는 못 가짐 · 없음)에 `1F 이름 04`. 🔴 못 찾음(4쪽 설명 — 엔진이 찍은 아이템 이름에 이어지는 조각)·작별(「없음」 창에 이어 붙는 조각)은 창 한가운데라 머리를 달면 이름이 중간에 박힌다(마스터 캡처 11-11: 「없습니다요.또 들러 주십쇼.」가 한 창). 이름은 speakers.json(정본 「밀매상」)에서 읽는다.
 ADD_SMUGGLER_SPEAKER = {
@@ -494,6 +564,7 @@ def apply_orphans(
 ) -> bytes:
     """`orig` = 번역 전 블록(주소 기준 · 메시지 칸 판별), `block` = splice 결과(제자리 + 끝에 이은 꼬리)."""
     patches = list(_orphan_patches().get(scene_id, []))
+    own_exit: set[int] = set()  # 새 바이트가 이미 제 출구 점프로 끝나는 꼬리(복귀 점프를 또 붙이지 않는다)
     spans = [(m.start, m.end) for m in M.parse(orig)]
     for i in range(len(orig) - 3):
         if orig[i] == 0x1F and orig[i + 3] == 0x04 and not any(a <= i < b for a, b in spans):
@@ -503,6 +574,14 @@ def apply_orphans(
                 continue
             if nm in ORPHAN_SPEAKERS and nm in speakers:
                 patches.append((i, orig[i : i + 4], b"\x1f" + font.encode(speakers[nm], table) + b"\x04"))
+    for off, jp, tail in BRANCH_SPEAKER_SITES.get(scene_id, []):  # 갈래로 갈린 화자 머리(`1F 12 xx 00 0F .. 男 0F .. 兵士 04`) — 갈래마다 이름을 한글로(마스터 11-17 「여긴 아예 화자명이 한자네」)
+        if tail:  # 꼬리로 빼는 쪽 — 점프 3B 만 덮을 수 있게 앞 3B 를 옛 자리로 두고 나머지(옛 점프 인자, 이제 죽은 바이트)는 0 으로 채운다. 바뀐 구간이 兵士 자리까지 이어져 구조 대조가 꼬리 복귀 점프를 「원래 조각 바로 뒤」로 본다
+            old = jp.encode("cp932") + tail
+            patches.append((off, old[:3], font.encode(speakers[jp], table) + tail))
+            own_exit.add(off)
+            patches.append((off + 3, old[3:], b"\x00" * len(old[3:])))
+        else:
+            patches.append((off, jp.encode("cp932"), font.encode(speakers[jp], table)))
     for off in PUNCT_SITES.get(scene_id, []):
         old = bytes(orig[off : off + 2])
         if old not in PUNCT_MAP:
@@ -527,6 +606,6 @@ def apply_orphans(
             raise TranslateError(f"scn {scene_id} +{off:#06x}: 자리 {len(old)}B 라 점프(3B)를 못 둔다")
         at = M.BASE + len(out)  # 끝에 이은 꼬리: 새 바이트 + 원래 자리 뒤로 되돌아가는 점프
         back = M.BASE + off + len(old)
-        out += new + bytes([0x0F, back & 0xFF, back >> 8])
+        out += new + (b"" if off in own_exit else bytes([0x0F, back & 0xFF, back >> 8]))
         out[off : off + 3] = bytes([0x0F, at & 0xFF, at >> 8])
     return bytes(out)

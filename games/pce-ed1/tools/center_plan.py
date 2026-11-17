@@ -59,13 +59,13 @@ JOIN_MARK = "\u200a"  # 글자 바로 뒤 반 칸(4px)을 **그 글자의 변형
 HALF_MARK = "\u2002"  # 정본 문안 속 「반 칸 공백(4px, 대사창 반각 코드)」 표시 — translate.compose(raw)가 `HALF_SPACE` 바이트로 푼다
 
 
-def banner_lead(name: str, max_px: int = 96) -> tuple[str, float]:
+def banner_lead(name: str, max_px: int = 96, cap: int = 7) -> tuple[str, float]:
     """입장 배너 앞 공백 문자열(전각 12px × k + 반 칸 4px × h)과 쏠림 — 4px 단위라 쏠림 ≤2px(마스터 11-08 「배너도 전부 가운데」)."""
     w = _w(name)
     best = None
     for k in range(0, 4):
         for h in range(0, 4):
-            if 12 * k + 4 * h + w > max_px or k + h + len(name.replace(JOIN_MARK, "")) > 7:  # 7칸(14B) 고정 표 — 글자 코드 7개 안
+            if 12 * k + 4 * h + w > max_px or k + h + len(name.replace(JOIN_MARK, "")) > cap:  # 7칸(14B) 고정 표 — 글자 코드 7개 안(`cap`: 씬 안 사본은 원문 코드 수)
                 continue
             shift = 12 * k + 4 * h + w / 2 - BANNER_C
             key = (round(abs(shift), 3), shift, k + h, k)  # 규칙 2-8 11-09 개정: 가운데에 가장 가까운 쪽 · 같을 때만 왼쪽
@@ -75,13 +75,16 @@ def banner_lead(name: str, max_px: int = 96) -> tuple[str, float]:
 
 
 
-def banner_form(name: str) -> tuple[str, float]:
+def banner_form(name: str, cap: int = 7) -> tuple[str, float]:
     """배너 최종 문안(앞 공백 포함)과 쏠림. 이름 안 반 칸 공백은 먼저 공백 코드(`HALF_MARK`)로 두고, 그래도 쏠림이 한 단위(4px)를 넘으면(6글자+공백이라 7코드를 다 써 앞 공백을 못 넣는 이름) 그 공백을
     앞 글자의 변형 코드(`JOIN_MARK`, 글자 칸 + 4px)로 바꿔 코드 한 개를 아껴 앞 공백을 넣는다 — 폭은 같다(마스터 11-09: 공백은 반각 4px, 위치로 맞춘다)."""
-    lead, sh = banner_lead(name)
+    if len(name.replace(JOIN_MARK, "")) > cap and HALF_MARK in name:  # 원문 코드 수(`cap`)를 넘으면 반 칸 공백을 변형 코드로 합쳐 한 코드를 아낀다
+        name = name.replace(HALF_MARK, JOIN_MARK)
+    assert len(name.replace(JOIN_MARK, "")) <= cap, (name, cap)
+    lead, sh = banner_lead(name, cap=cap)
     if HALF_MARK in name and abs(sh) > 4:
         joined = name.replace(HALF_MARK, JOIN_MARK)
-        lead2, sh2 = banner_lead(joined)
+        lead2, sh2 = banner_lead(joined, cap=cap)
         if abs(sh2) < abs(sh):
             return lead2 + joined, sh2
     return lead + name, sh

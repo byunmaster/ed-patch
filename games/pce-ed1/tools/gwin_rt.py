@@ -2342,6 +2342,10 @@ def _on_flow_spec_(sid: int, k: int = 0) -> dict:
                 start = max(prev, ov.get("starts", {}).get(it["key"], 0.0) if i == 0 else prev)
             start = max(prev_end, start - LEAD) if pages else start  # 리드 — 미리 읽기·쓰기 틱이 도는 동안 미리 시작한다(앞 쪽이 끝난 뒤부터)
             spk = (sp.get(it["speaker"], it["speaker"]) if it.get("speaker") else sp.get(m.speaker, m.speaker) if m.speaker else VED.speaker_override(blk, it["key"]) or common_speaker(m.common) if m.common is not None else called_name(blk, m, msgs, sp)) if i == 0 else None  # 이름은 첫 쪽만(이어지는 쪽은 4줄·이름 없음)
+            if spk and pg and pg[0].strip() == spk:  # 🔴 본문 첫 줄이 화자 이름 그대로면 뺀다(마스터 11-18 씬 57 「유혈의 동굴 주인 가르고」 — 원판은 이름 줄이 메시지 안에 박혀 있어 이름 행과 겹쳤다)
+                pg = pg[1:]
+            if str(i) in it.get("page_speakers", {}):  # 한 메시지 안에서 쪽마다 화자가 갈리는 자막(씬 34 끝 쪽 「오오오오!!」 = 레지스탕스들, 마스터 11-17) — 시각표 msgs 항목의 `page_speakers` {쪽 번호(0부터): 화자}
+                spk = sp.get(it["page_speakers"][str(i)], it["page_speakers"][str(i)])
             if len(pg) >= 2 and gwin.make_window(spk, "\n".join(pg))[0].__len__() // 8 > BANK_TILES:  # 🔴 타일 칸(133)을 넘는 쪽(씬 196 첫 쪽 134, 11-05) — 자막 쪽만 둘로 쪼갠다(원문 창·OFF 흐름은 그대로). 이름 줄은 앞 쪽, 끝 시각은 반반
                 h = len(pg) // 2
                 mid = round(start + (end - start) / 2, 2)

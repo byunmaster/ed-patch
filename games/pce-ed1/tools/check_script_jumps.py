@@ -46,6 +46,21 @@ def scan(hosts_off: bool = False) -> list[str]:
                 host = next((t for t in msgs if t.start < w < t.end), None)
                 if host is not None:
                     out.append(f"scn{sid:03d}:{q}->{w}({host.key[:8]})")
+            # ③ 메시지 **밖**(코드 자리)의 `0F` 가 메시지 한가운데로 든다(11-18 씬 50 「라고요,」). 쪽 머리(앞 바이트 `05`·`03`)로 드는 것은 `translate.remap_page_jumps` 가 새 쪽 머리로 옮기니
+            #    처리된 것이고(양성 대조에선 센다), 그 밖(문장 꼬리·줄 머리 등)은 기준선이다 — 코드 데이터 속 `0F` 우연 일치가 섞여 있을 수 있어 하나씩 본다.
+            inmsg = bytearray(len(b))
+            for m in msgs:
+                inmsg[m.start : m.end] = b"\x01" * (m.end - m.start)
+            for j in range(len(b) - 2):
+                if b[j] != M.JUMP or inmsg[j] or inmsg[j + 1]:
+                    continue
+                w = (b[j + 1] | b[j + 2] << 8) - M.BASE
+                host = next((t for t in msgs if t.start < w < t.end), None)
+                if host is None or M._parse_from(b, w) is None:
+                    continue
+                if not hosts_off and b[w - 1] in (0x03, 0x05):
+                    continue  # 쪽 머리 — 빌드가 옮긴다
+                out.append(f"scn{sid:03d}:{j}->{w}({host.key[:8]})")
         return sorted(set(out))
     finally:
         M.OP_JUMP_HOSTS = saved

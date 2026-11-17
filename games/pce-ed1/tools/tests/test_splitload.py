@@ -244,25 +244,45 @@ class SplitLoadTest(unittest.TestCase):
             self.assertEqual(c.run(ib), 0)
             self.assertEqual(len(c.log), 6)
 
-    def test_missing_id_tries_other_side_once_then_fails(self):
+    def test_missing_id_walks_the_ring_then_fails(self):
         c = self.cpu(9812)
         self.assertEqual(c.run(200), 1)  # C=1 = 실패(사이트가 제자리에서 돈다)
-        self.assertEqual(c.log, [("release", 9812), ("load", 9823)])  # 반대쪽을 한 번만 찾았다
+        self.assertEqual(c.log, [("release", 9812), ("load", 9823), ("release", 9823), ("load", 9812)])  # 고리를 돌아(교체 최대 MAX_HOPS=2) 못 찾으면 실패
+
+    def test_three_part_ring(self):
+        """ⓣ(11-17) 조각이 셋 — A→B→C→A 고리. 어느 조각에서 시작해도 둘째 교체 안에 찾고, 없는 id 는 둘 교체 뒤 실패."""
+        partner = {9000: (9020, 11), 9020: (9040, 11), 9040: (9000, 11)}
+        cont = {9000: [0, 1, 4, 10], 9020: [0, 1, 4, 20], 9040: [0, 1, 4, 30]}
+        for start, ident, expect in (
+            (9000, 30, [("release", 9000), ("load", 9020), ("release", 9020), ("load", 9040)]),
+            (9000, 20, [("release", 9000), ("load", 9020)]),
+            (9040, 20, [("release", 9040), ("load", 9000), ("release", 9000), ("load", 9020)]),
+            (9020, 10, [("release", 9020), ("load", 9040), ("release", 9040), ("load", 9000)]),
+        ):
+            c = Cpu(cont, partner)
+            c.load_container(start)
+            self.assertEqual(c.run(ident), 0, (start, ident))
+            self.assertEqual(c.log, expect)
+            self.assertEqual(c.mem[c.flag], 0)
+        c = Cpu(cont, partner)
+        c.load_container(9000)
+        self.assertEqual(c.run(99), 1)
+        self.assertEqual(len([e for e in c.log if e[0] == "load"]), splitload.MAX_HOPS)
 
     def test_music_restart_only_when_track_command_pending(self):
         """🔴 11-11 짝을 읽으면 CD-DA 가 멈춘다 — 곡 명령 `$4B`<`$10` · 재생 모드 `$4C`=0 이면 곡 루틴을 다시 부른다(원판 순서: 구역 전환이 곡을 건 뒤 씬 열기)."""
         c = self.cpu(9812)
         c.mem[0x4B], c.mem[0x4C] = 0x0A, 0
         c.run(200)
-        self.assertEqual(c.log, [("release", 9812), ("load", 9823), ("music",)])
+        self.assertEqual(c.log, [("release", 9812), ("load", 9823), ("music",), ("release", 9823), ("load", 9812), ("music",)])
         c = self.cpu(9812)
         c.mem[0x4B], c.mem[0x4C] = 0x0A, 1  # 재생 모드가 아니다
         c.run(200)
-        self.assertEqual(c.log, [("release", 9812), ("load", 9823)])
+        self.assertEqual(c.log, [("release", 9812), ("load", 9823), ("release", 9823), ("load", 9812)])
         c = self.cpu(9812)
         c.mem[0x4B], c.mem[0x4C] = 0x81, 0  # 멈춤·페이드 명령
         c.run(200)
-        self.assertEqual(c.log, [("release", 9812), ("load", 9823)])
+        self.assertEqual(c.log, [("release", 9812), ("load", 9823), ("release", 9823), ("load", 9812)])
 
     def test_unpaired_container_fails_without_touching_cache(self):
         c = Cpu({1300: [0, 1, 4, 7]}, {})
