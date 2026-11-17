@@ -65,10 +65,10 @@ def split_glyph(ch):
 
 
 def ellipsis_glyph(dy=fonts.GALMURI11_DY):
-    """「…」 — Galmuri11 `.`(마침표, 바닥 행)를 4px 간격으로 셋 찍은 전각 칸 글리프."""
+    """「…」 — 우리 마침표(`half_glyph(".")` — 2px 점, 바닥 행)를 4px 간격으로 셋 찍은 전각 칸 글리프."""
     import numpy as np
 
-    g = np.asarray(fonts.galmuri("Galmuri11").bits(".", dy=dy, rows=ROWS, width=HANGUL_W), dtype=np.uint8)
+    g = np.asarray(half_glyph("."), dtype=np.uint8)  # 마침표와 같은 모양·크기의 점(마스터 11-15 「…의 점을 마침표와 같게」, 번역 규칙 1-3)
     out = np.zeros_like(g)
     for k in range(3):
         sh = k * ELLIPSIS_DOT_STEP
@@ -122,12 +122,76 @@ def kagi_glyph(ch):
     return out
 
 
+# 반각 부호 — 원판 전각 글리프의 잉크를 그대로 쓰고 좌우 빈 칸만 덜어 6px 칸에 둔다(마스터 11-13 「원본 부호 모양 살리기」·11-14 확정).
+# ( 원판 코드: ! 7 · ? 6 · ( 12 · ) 13 · : 5 · " 11 ). 정렬 `auto` = 잉크 쪽 여백을 따라가고, `left` = 왼쪽 맞춤.
+HALF_FROM_ORIG = {"!": (7, "auto"), "?": (6, "auto"), "(": (12, "auto"), ")": (13, "auto"), ":": (5, "auto"), '"': (11, "left")}
+
+# 원판에 없거나 한국식으로 다시 그린 것(1px 획, 몸통 1~9행). `.` = 원판 「?」「!」 의 점과 같은 꼴(2×1px · 9행 — 마스터 11-16 「원판의 ? ! 에 맞춰서 마침표를 그리는게 맞다」, 원판 코드 6·7 실측),
+# `,` = 같은 점 머리 + 왼쪽 아래 꼬리(꼬리 그대로), `…`(ellipsis_glyph)는 이 `.` 를 석 점 복사,
+# `-` = 원판 － 를 5px 로(6px 칸에 7px 이 안 든다), `' ; + / *` 는 원판 결로 새로 그린 도안.
+HALF_HAND = {
+    ".": ["", "", "", "", "", "", "", "", "", ".##"],
+    ",": ["", "", "", "", "", "", "", "", "", ".##", ".#"],
+    "'": ["..##", "...#", "..#."],
+    "-": ["", "", "", "", "", "#####"],
+    ";": ["", "", "..##", "", "", "", "", ".##", ".#", "#"],
+    "+": ["", "", "", "..#", "..#", "#####", "..#", "..#"],
+    "/": ["", ".....#", ".....#", "....#.", "...#..", "..#...", ".#....", "#.....", "#....."],
+    "*": ["", "", "..#", "#.#.#", ".###.", "#.#.#", "..#"],
+}
+
+_ORIG_EXE = []
+
+
+def _orig_glyph(code):
+    if not _ORIG_EXE:
+        import common  # 「원본이 어땠는가」는 originals 에서 읽는다(제자리 갱신본을 다시 읽으면 비멱등)
+
+        _ORIG_EXE.append(bytes(common.read_file(common.EXE_PATH)))
+    return read_glyph(_ORIG_EXE[0], code)
+
+
+def _trim_place(g, mode):
+    """잉크의 좌우 빈 칸을 덜어 6px 칸 안에 놓는다."""
+    import numpy as np
+
+    xs = np.where(g.any(axis=0))[0]
+    lo, hi = int(xs.min()), int(xs.max())
+    w = hi - lo + 1
+    if w > HALF_W:
+        raise ValueError(f"반각 칸(6px)보다 넓다: {w}px")
+    lm, rm = lo, CELL - 1 - hi
+    if w == HALF_W:
+        nl = 0
+    elif mode == "left":
+        nl = min(lm, HALF_W - w)
+    elif lm < rm - 1:
+        nl = min(lm, HALF_W - w)
+    elif rm < lm - 1:
+        nl = max(0, HALF_W - w - rm)
+    else:
+        nl = (HALF_W - w) // 2
+    out = np.zeros((ROWS, CELL), dtype=np.uint8)
+    out[:, nl : nl + w] = g[:, lo : hi + 1]
+    return out
+
+
 def half_glyph(ch):
-    """반각 한 글자 → (12,12) 0/1. Galmuri11 **Condensed**(잉크 ≤5px)로 뽑아 왼쪽 6px 에 둔다 — 보통 Galmuri11 의 숫자는 7px 라 6px 칸에 안 든다."""
+    """반각 한 글자 → (12,12) 0/1, 잉크는 왼쪽 6px 안. 부호는 원판 잉크/손 도안, 그 밖(숫자·영문)은 Galmuri11 **Condensed**(잉크 ≤5px — 보통 Galmuri11 의 숫자는 7px 라 6px 칸에 안 든다)."""
     import numpy as np
 
     if ch in KAGI_HALF:
         return kagi_glyph(ch)
+    if ch in HALF_FROM_ORIG:
+        code, mode = HALF_FROM_ORIG[ch]
+        return _trim_place(np.asarray(_orig_glyph(code), dtype=np.uint8), mode)
+    if ch in HALF_HAND:
+        out = np.zeros((ROWS, CELL), dtype=np.uint8)
+        for y, row in enumerate(HALF_HAND[ch]):
+            for x, c in enumerate(row):
+                if c == "#":
+                    out[y, x] = 1
+        return out
     bits = fonts.galmuri("Galmuri11-Condensed").bits(
         ch, dy=fonts.GALMURI11_DY, rows=ROWS, width=HALF_W
     )

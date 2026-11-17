@@ -231,6 +231,11 @@ def page_plan(mem, rows, *, table=None):
         out[i] = kr
     if typeset.RULES_216:
         rigidflow.reflow(mem, out, rows)  # 규칙 2-16 c — rigid 토막 안 줄 끊는 자리
+    # 🔴 끼움 앞 줄 채우기(행 `"pad": N`, 마스터 11-15 — 끼움 값이 가장 길 때 엔진이 24코드에서 낱말 한복판을 접는다): 끼움 바로 앞 조각 끝에 공백 N 을 붙여 그 줄을 24코드까지
+    # 채운다 → 이름·아이템이 다음 줄 머리에서 시작한다(어절 경계). 문안은 그대로이고 N 은 `24 - 줄 앞 글자 수`(조각 앞 같은 줄 조각 포함)라 정본에는 공백이 안 든다.
+    for i, row in rows.items():
+        if row.get("pad") and i in out:
+            out[i] = out[i] + " " * row["pad"]
     return out, notes
 
 
