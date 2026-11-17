@@ -46,6 +46,18 @@ def exe_edit(exe):
         if int.from_bytes(exe[o3 : o3 + 4], "little") != 0x2406000B:
             raise SystemExit(f"🔴 세이브/로드 창 열 수 자리 {a:#x} 가 원판이 아니다")
         exe[o3 : o3 + 4] = (0x2406000E).to_bytes(4, "little")
+    # 세이브/로드 정보 창의 검·지팡이 아이콘과 무술·마법 레벨 숫자 — 열 번호가 11열 창 기준(6·7·9·10)으로 박혀 있어 14열로 넓힌 뒤 왼쪽에 몰렸다(마스터 11-11 「원본처럼 우측」).
+    # 시간 칸(오른쪽 4열)과 같은 만큼 +3 열 옮긴다(9·10·12·13). 함수 0x8001E678 — 아이콘 `0x80018A60(창, 열, 행, 아이콘, 0)` · 숫자 `0x80017FF0(창, 열, 행, 값, 2, 0)`
+    for a, want, new_c in (
+        (0x8001E920, 0x24050006, 0x24050009),
+        (0x8001E94C, 0x24050007, 0x2405000A),
+        (0x8001E96C, 0x24050009, 0x2405000C),
+        (0x8001E984, 0x2405000A, 0x2405000D),
+    ):
+        o4 = halfwidth._off(a)
+        if int.from_bytes(exe[o4 : o4 + 4], "little") != want:
+            raise SystemExit(f"🔴 세이브/로드 아이콘·레벨 열 자리 {a:#x} 가 원판이 아니다")
+        exe[o4 : o4 + 4] = new_c.to_bytes(4, "little")
     o = halfwidth._off(0x80029098)
     if int.from_bytes(exe[o : o + 4], "little") != 0x24060007:
         raise SystemExit("🔴 시스템 창 열 수 자리가 원판이 아니다")

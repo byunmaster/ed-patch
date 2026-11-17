@@ -18,11 +18,13 @@ import common
 import dump
 import script_kr
 import textenc
+import uitext
 
 from shared.ps1 import gmf_script as scriptmap
 
 TITLE = "ed4"  # 작품 정본 — shared/canon/nouns/ed4.json
 DIALOG = "dialog"
+SLOT = "slot"
 
 
 def pairs():
@@ -37,3 +39,13 @@ def pairs():
             jp = textenc.decode(codes)
             if jp.strip():
                 yield f"scn:{key}[{i}]", jp, kr_rows.get(i, {}).get("kr"), DIALOG
+    # 실행파일 속 UI·시스템·전투·메뉴 글(고정 칸 문안) — `uitext.sites` 가 원문을, `rows_for` 가 우리 줄(정본 이름 + 우리가 쓴 문안)을 준다
+    exe = bytes(common.read_file(common.EXE_PATH))
+    ss = uitext.sites(exe)
+    kr_ui = uitext.rows_for(ss)
+    for off, s in sorted(ss.items()):
+        if s["jp"].strip():
+            yield f"ui:0x{off:06X}", s["jp"], kr_ui.get(off, {}).get("kr"), SLOT
+    for off, v in sorted(uitext.frags().items()):  # 표에 안 잡히는 조각 — 원문 열쇠(canon)가 있는 것만 원문을 안다
+        if v.get("canon"):
+            yield f"frag:0x{off:06X}", v["canon"], v.get("kr"), SLOT

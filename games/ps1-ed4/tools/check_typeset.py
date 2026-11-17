@@ -6,6 +6,7 @@
   첫 칸 공백(2-5)   줄(24칸 단위) 머리가 공백인데 줄에 글이 있다
   고아 부호(2-3)    줄 머리가 닫는·끝 부호(`. , ! ? ) 」 』`)다 — 앞 줄에서 떨어져 나온 부호
   빈 줄 개행(2-4)   쪽 한복판에 글자 없는 줄(꽉 찬 줄 뒤 개행·빈 조각)
+  머리 빈 줄(2-18)  쪽(창) 첫 줄이 비고 아래에 글이 있다 — 창은 첫 줄부터 쓴다(마스터 11-08)
   부호 뒤 공백(2-1) `, . ! ?` 바로 뒤에 한글·영문이 붙음(숫자 소수점·`?!` 겹침 제외)
   부호 앞 공백(2-2) · ?…·!… 순서(2-12) · …뒤 공백(2-11, 음절 끊기·인용 조사 예외)
   넘침(2-7)         `typeset.over_limit_pages` — 줄이 사라질 수 있는 쪽
@@ -60,6 +61,8 @@ def line_defects(lines):
             if 0 < n < len(body) - 1 or (n < len(body) - 1 and any(x.strip() for x in body[n + 1 :])):
                 if any(x.strip() for x in body[:n]) and any(x.strip() for x in body[n + 1 :]):
                     out.append(("빈 줄", ln))
+            if not any(x.strip() for x in body[:n]) and any(x.strip() for x in body[n + 1 :]):  # 2-18 창·쪽 머리의 빈 줄(마스터 11-08)
+                out.append(("머리 빈 줄(2-18)", ln))
             continue
         if ln[0] == " ":
             out.append(("첫 칸 공백", ln))
@@ -177,6 +180,8 @@ def selftest():
     assert ("첫 칸 공백", " 가나") in line_defects([" 가나"])
     assert any(a == "고아 부호" for a, _ in line_defects(["가나다라", ". 마바"]))
     assert any(a == "빈 줄" for a, _ in line_defects(["가나", "   ", "다라"]))
+    assert any(a.startswith("머리 빈 줄") for a, _ in line_defects(["", "가나다"]))  # 2-18
+    assert not any(a.startswith("머리 빈 줄") for a, _ in line_defects(["가나다", ""]))
     assert any(a == "부호 뒤 공백" for a, _ in line_defects(["가나,다라"]))
     assert not line_defects(["가나, 다라.", "마바 1.5배"])
     assert any(a == "부호 앞 공백" for a, _ in line_defects(["가나 ."]))

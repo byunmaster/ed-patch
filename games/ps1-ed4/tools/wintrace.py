@@ -75,6 +75,10 @@ _DRAW_EXTRA = """
     sh $t4, 26($t2)
     sh $t5, 28($t2)
     sh $t6, 30($t2)
+    lhu $t3, 0x26($a0)
+    sh $t3, 80($t2)
+    lhu $t3, 0x28($a0)
+    sh $t3, 82($t2)
 """
 
 
