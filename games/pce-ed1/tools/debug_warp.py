@@ -70,7 +70,7 @@ HOOK_SITE_OLD = bytes.fromhex("f00aa5fe")
 HOOK_SKIP_TO = 0x862D  # 꺼진 장소를 건너뛰는 자리(`INC $FE` 증가부)
 LAST_IDX = 0x3F
 PLACES = 50  # 지명 표 항목 수(idx 0 = 빈 칸)
-HOOK_CODE_ROOM = 98  # 훅 코드 자리(바이트, 코드 길이와 같게 — 뒤 훅 구역 꼬리를 W 목록 스텁에 내주려고 6B 줄였다) — 뒤에 마스크·표
+HOOK_CODE_ROOM = 100  # 훅 코드 자리(바이트, 코드 길이와 같게 — 뒤 훅 구역 꼬리를 W 목록 스텁에 내주려고 6B 줄였다) — 뒤에 마스크·표
 TMP = 0x3E65  # 훅 작업 바이트(`WMODE` 곁 빈 RAM)
 CHAPTER = 0x6B  # 지금 불러 둔 장(0~5 — 장 교체 루틴이 `$6C7B` 에서 세운다. `$C1B6`(세이브 장 번호)는 불러 온 직후엔 0 이라 못 쓴다)
 MASK_AT = HOOK_ORG + HOOK_CODE_ROOM  # 비트 마스크 8B(01 02 04 … 80)
@@ -148,11 +148,12 @@ def hook_code() -> bytes:
     op("PLY")
     op("PLX")
     op("BRA", "rel", "yes")
-    a.label("no")  # 이 장에서 못 가는 곳 — 건너뜀(저장한 플래그는 버리고 무조건)
+    a.label("no")  # 이 장 표에 없는 곳 — 원판 날개가 보여 주는 것(방문 비트가 서 있음)이면 그대로 올린다(마스터 11-18 「3장 날개에는 앞 장 방문 마을이 다 나온다」)
     op("PLY")
     op("PLX")
-    op("PLA")
-    op("BRA", "rel", "skip")
+    op("PLP")  # 호출 시점 플래그 복원 — Z=1 이면 방문 비트가 꺼진 것
+    op("BEQ", "rel", "skip")
+    op("BRA", "rel", "cont")
     a.label("yes")
     op("PLA")  # 켜진 것으로 본다(저장한 플래그 버림)
     op("BRA", "rel", "cont")

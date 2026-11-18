@@ -475,6 +475,12 @@ def analyze_battle_block(key: str, O: bytes, N: bytes, load_addr: int):
     for r in battle.records(O):
         for i in range(r["off"] + battle.NAME_OFF, min(r["off"] + battle.REC, L)):
             ok[i] = 1
+    for vm in battle.VOICE_GATE.finditer(O):  # 보스 전투 음성 분기(11-18) — 정해진 고쳐 쓰기와 바이트까지 같아야 한다
+        want = battle.voice_rewrite(vm)
+        if N[vm.start() : vm.end()] != want:
+            viol.append(f"{key}: 전투 음성 분기(+{vm.start():#x})가 정해진 꼴이 아니다")
+        for i in range(vm.start(), vm.end()):
+            ok[i] = 1
     bad = [i for i in range(min(L, len(N))) if O[i] != N[i] and not ok[i]]
     if bad:
         viol.append(f"{key}: 문구 단위·이름칸 밖 바이트가 바뀌었다(+{bad[0]:#x} 외 {len(bad) - 1}곳)")

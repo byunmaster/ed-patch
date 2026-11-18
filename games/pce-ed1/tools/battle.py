@@ -202,6 +202,40 @@ STRUCT_RECS: list[tuple[int, int, bytes, bytes]] = []  # (컨테이너 rel, 블�
 
 
 # 이름 칸도 `msg=True` 로 쓴다(10-21): 안 그러면 이름 안의 공백이 전각(12px)으로 나가 「큰  독개구리A에게」처럼 벌어진다 — 문구 안의 같은 이름(「큰 독개구리의 무리가」)은 반각(4px)이라 둘이 어긋났다.
+# 🔴 보스 전투 음성(11-18 마스터 「사이레스 쓰면 바로 아크담 음성이 나와」 — 자막 없이 빈 창): 전투 스크립트의 나레이션 분기가
+#   `LDA $C04C · BNE on · [OFF: 메시지 표시] · BRA end · on: JSR $5F4A · JSR $5815 +4B(음성) · LDX·LDY · JSR $5BD7(타이머) · 음성 정리` 꼴이라
+#   나레이션 ON 이면 음성만 내고 메시지(자막)를 건너뛴다(rel 170 블록0 아크담 · 186 블록1 · 194 블록3). 마스터 10-05 「나레이션과 무관하게 자막」 —
+#   같은 48B 안에서 「ON 이면 저장+음성 시작 → **메시지 표시(키 대기)** → ON 이면 음성 정리+복원」 으로 다시 짠다(타이머 대기 없음 — 읽는 동안 음성이 나간다).
+VOICE_GATE = re.compile(
+    rb"\xad\x4c\xc0\xd0\x0d(\xa9.\x85\x10\xa9.\x85\x11\x20\x76\x5b)\x80\x1e\x20\x4a\x5f\x20\x15\x58(....)\xa2.\xa0.\x20\xd7\x5b"
+    rb"(\xa9\xff\x85\x6c\x20\x6b\x58\x20\x9d\x58\x20\x5e\x5f)",
+    re.DOTALL,
+)
+VOICE_SITES = {(170, 0), (186, 1), (194, 3)}
+
+
+def voice_rewrite(m: "re.Match[bytes]") -> bytes:
+    """`VOICE_GATE` 한 곳의 고쳐 쓴 바이트(같은 길이, 남는 칸은 NOP)."""
+    msg, inline, stop = m.group(1), m.group(2), m.group(3)
+    out = (
+        b"\xad\x4c\xc0\xf0\x0a\x20\x4a\x5f\x20\x15\x58" + inline  # ON 이면 저장 + 음성 시작
+        + msg  # 메시지(자막) — 나레이션과 무관
+        + b"\xad\x4c\xc0\xf0\x0d" + stop  # ON 이면 음성 정리 + 복원
+    )
+    return out + b"\xea" * (m.end() - m.start() - len(out))
+
+
+def voice_subtitle(data: bytearray, rel: int, bi: int, errors: list[str]) -> int:
+    """보스 전투 음성 분기를 자막 우선으로 고쳐 쓴다. 고친 곳 수."""
+    n = 0
+    for m in list(VOICE_GATE.finditer(bytes(data))):
+        data[m.start() : m.end()] = voice_rewrite(m)
+        n += 1
+    if (rel, bi) in VOICE_SITES and n != 1:
+        errors.append(f"전투 음성 분기 rel{rel} blk{bi}: 기대 1곳, 찾은 {n}")
+    return n
+
+
 def patch_blocks(
     rel: int, kr: dict[str, str], table, errors: list[str]
 ) -> tuple[list[dict], int, int]:
@@ -258,6 +292,7 @@ def patch_blocks(
             # 새 이름 종단 뒤 원문 가나 꼬리는 0 으로(안 읽히는 찌꺼기가 압축을 먹는다 — 컨테이너 칸이 빠듯하다)
             data[off : off + room] = enc + bytes(room - len(enc))
             hit += 1
+        voice_subtitle(data, rel, bi, errors)
         moved: list[dict] = []
         nmsg += patch_msgs(data, msgs, table, errors, f"rel{rel} blk", moved, f"{rel}:{bi}")
         check_moved(bytes(data), moved, errors, f"rel{rel} blk")

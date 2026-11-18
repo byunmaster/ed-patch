@@ -288,7 +288,8 @@ def scene_rows() -> dict[str, list[tuple[str, str]]]:
                 gap = b["data"][prev[2] : m.start] if prev else b""
                 # 🔴 00 = 문장 끝(키 대기 후 창 닫기) — 다음 메시지는 새 창이라 이음이 아니다(11-06 씬 76 「 침대를…」 첫 칸 공백)
                 gap = gap.rstrip(bytes(T.STYLE_OPS))  # 🔴 11-11 틈 끝의 글자색 켜기(`1D` 등)는 흐름이 아니다 — 떼고 본다(씬 18 「 병사는…」: 틈 `0C 26 04 00 1D` = 창 닫기 뒤 색 켜기라 새 창 첫 칸인데 마지막 바이트만 봐 놓쳤다)
-                gap_break = bool(gap) and ((len(gap) <= 8 and gap[-1] in (0x05, 0x03, 0x01, 0x00)) or (b"\x0f" in gap and not re.match(r"^ (은/는|을/를|이/가|와/과|으로/로)", (trs.get(m.key) or {}).get("t", ""))))  # 점프(0F)가 낀 틈은 흐름이 끊긴다 — 이름 변수 뒤 조사 조각(「 은/는 …」)은 예외(변수가 앞에서 찍힌다)  # 메시지 바로 앞의 마지막 옵코드가 쪽 넘김·줄바꿈 — 글이 새 쪽·새 줄에서 시작한다
+                gap_break = bool(gap) and ((len(gap) <= 8 and (gap[-1] in (0x05, 0x03, 0x01, 0x00) or (gap[-1] in (0x04, 0x06, 0x07) and 0x05 in gap)))  # `0C nn 05 04 06` = 쪽 넘김 뒤 표시 모드 복원·끝 — 새 쪽(씬 69 「…완성되었습니다.」 뒤 「석비에는」, 11-18)
+                                                   or (b"\x0f" in gap and not re.match(r"^ (은/는|을/를|이/가|와/과|으로/로)", (trs.get(m.key) or {}).get("t", ""))))  # 점프(0F)가 낀 틈은 흐름이 끊긴다 — 이름 변수 뒤 조사 조각(「 은/는 …」)은 예외(변수가 앞에서 찍힌다)  # 메시지 바로 앞의 마지막 옵코드가 쪽 넘김·줄바꿈 — 글이 새 쪽·새 줄에서 시작한다
                 tr = trs.get(m.key)
                 if tr is None or tr.get("raw"):
                     prev = None
@@ -318,7 +319,7 @@ def scene_rows() -> dict[str, list[tuple[str, str]]]:
                         hits[ax].append((tag, f"쪽{pi + 1} ⟨{text.replace(chr(10), '|')[:40]}⟩"))
                 # 2-NL(11-11) — 원문이 끝 개행(`01`)으로 끝나는 열린 메시지는 우리 조립도 `01` 로 끝나야 한다: 꽉 찬 13칸 줄 뒤에서 `01` 을 빼면 다음 메시지가 같은 줄에 붙어
                 #   `wordck` 가 「…요.」+「또」를 한 어절로 아랫줄에 내린다(씬 45·46·47 밀매상 「없습니다요.또 들러 주십쇼.」)
-                if not m.terminated and m.tokens and m.tokens[-1] == ("op", 0x01) and not tr.get("raw") and by[-1:] != b"\x01" and pages[-1][0].strip():
+                if not m.terminated and m.tokens and m.tokens[-1] == ("op", 0x01) and not tr.get("raw") and by[-1:] not in (b"\x01", b"\x05") and pages[-1][0].strip():  # 쪽 넘김(05)으로 끝나도 다음 메시지는 새 쪽 — 줄이 안 붙는다(11-18 씬 69 게일 합류)
                     hits["2-NL"].append((tag, f"끝 개행 없음 ⟨…{pages[-1][0][-14:]!r}⟩".replace("\n", "|")))
                 if unclosed(m, pages):
                     hits["4-6"].append((tag, f"켜기 {sum(p[1] for p in pages)} 끄기 {sum(p[2] for p in pages)} ⟨{pages[-1][0][:30]!r}⟩".replace("\n", "|")))
