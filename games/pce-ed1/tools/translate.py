@@ -394,6 +394,9 @@ def with_added_speakers(scene_id: int, msgs: list) -> list:
     return [dataclasses.replace(m, key_fixed=m.key, speaker=SMUGGLER_JP) if m.key in keys and m.speaker is None and m.common is None else m for m in msgs]
 
 
+SHARED_FLOW_KEYS = {"cd3848e2f5850f53"}  # 밀매상 「뭘 원하십니까요?」 — 앞 폭 없이 한 줄(아래 translate_block 주석)
+
+
 def translate_block(scene_id: int, block: bytes, table: dict[str, bytes]) -> tuple[bytes, int]:
     """번역이 있는 메시지를 합성해 splice. (새 블록, 넣은 메시지 수)."""
     trs = M.load_translations(scene_id)
@@ -418,15 +421,69 @@ def translate_block(scene_id: int, block: bytes, table: dict[str, bytes]) -> tup
             raise TranslateError(
                 f"scn {scene_id} 열쇠 {m.key}: pinned(안쪽 참조) — 자리 규칙으로 못 넣는다"
             )
-        edits.append((m, compose(m, tr, table, speakers, lead_px=leads.get(m.key, 0))))
+        # 🔴 두 흐름이 공유하는 질문(마스터 11-18 「밀매상 뭘 원하십니까요? 한 줄로」): 「뭘 원하십니까요?」는 「더는 못 가지시는 모양입죠.」 뒤에 이어 붙는 길(앞 줄 폭
+        #    120px)과 인사 쪽 지움 뒤 새 창으로 오는 길이 같은 메시지를 쓴다. 앞 폭을 주고 짜면 머리 개행이 박혀 새 창에서 「뭘 / 원하십니까요?」 두 줄이 된다.
+        #    앞 폭 없이 한 줄로 짜 두고 이어 붙는 길의 줄넘김은 엔진 어절 검사(`wordck`)에 맡긴다.
+        lp = 0 if m.key in SHARED_FLOW_KEYS else leads.get(m.key, 0)
+        edits.append((m, compose(m, tr, table, speakers, lead_px=lp)))
         seen.add(m.key)
     missing = set(trs) - seen
     if missing:
         raise TranslateError(
             f"scn {scene_id}: 정본 열쇠 {sorted(missing)} 가 블록에 없다(원문이 바뀌었나)"
         )
+    edits = merge_sell_thanks(scene_id, block, edits)
     new_block = remap_page_jumps(scene_id, block, M.splice(block, edits), msgs, trs)
     return apply_orphans(scene_id, block, new_block, table, speakers), len(edits)
+
+
+_SELL_STRUCT = re.compile(rb"\xa9(.)\x85\xfa\xa9(.)\x85\xfb\x20\xd8\x4f\x06\x27\x9e", re.S)
+
+
+def sell_structs(block: bytes) -> list[tuple[int, int]]:
+    """판매 목록 호출(far `$9E27`)의 구조체가 든 (질문 포인터, 감사 포인터) 블록 오프셋 목록.
+
+    구조체 8B = 질문·확인·거절·감사 메시지 포인터 넷(논리 `$A000`+오프셋)."""
+    out = []
+    for m in _SELL_STRUCT.finditer(block):
+        off = (m.group(2)[0] << 8 | m.group(1)[0]) - 0xA000
+        if 0 <= off <= len(block) - 8:
+            out.append((block[off] | block[off + 1] << 8, block[off + 6] | block[off + 7] << 8))
+    return [(q - 0xA000, t - 0xA000) for q, t in out]
+
+
+def merge_sell_thanks(scene_id: int, block: bytes, edits: list) -> list:
+    """🔴 판매 감사(「정말 감사합니다.」) 메시지 끝에 질문(「어느 것을 판매하시겠습니까?」)을 줄 바꿔 이어 쓴다 (마스터 11-18 「판매 뒤 감사가 바로 지워지고 질문이 나온다 — 감사를 유지한 채
+    아래줄에 질문」, 원판도 같은 동작).
+
+    원인(devlog 11-19 후속2): 감사 뒤 엔진(뱅크 0x6F `$9F31 JMP $9E4B`)이 목록 위젯을 다시 열어 질문 메시지를 보이고, 메시지 첫 바이트 `08`(창 다시 그리기)이 감사를 지운다.
+    엔진 쪽은 `$9F31` 을 헤더 표시 뒤(`$9E58`)로 돌려 질문을 건너뛰고(`build.code_patches` 「sell thanks keep」), 여기서 감사 메시지 끝에 질문 본문을 이어 쓴다.
+    감사 메시지가 `01 07` 로 끝나는 꼴(원판 공통)만 다룬다 — 컴포즈가 끝 `01` 을 떨구므로 직접 낸다. 못 맞추면 죽는다(질문이 사라지는 씬을 만들지 않는다)."""
+    pairs = sell_structs(block)
+    if not pairs:
+        return edits
+    by_start = {m.start: i for i, (m, _) in enumerate(edits)}
+
+    def idx(ptr: int, what: str) -> int:
+        st = ptr + 1 if block[ptr] == 0x08 else ptr  # `08` 로 시작하는 메시지는 본문이 한 바이트 뒤(parse 가 `08` 을 앞 옵코드로 뗀다)
+        if st not in by_start:
+            raise TranslateError(f"scn {scene_id}: 판매 {what} 메시지(@{ptr:#x})가 번역 목록에 없다")
+        return by_start[st]
+
+    out = list(edits)
+    for qptr, tptr in pairs:
+        qi, ti = idx(qptr, "질문"), idx(tptr, "감사")
+        qm, qb = out[qi]
+        tm, tb = out[ti]
+        if qm.speaker is not None or qm.common is not None or qb[:1] in (b"\x1f", b"\x09"):
+            raise TranslateError(f"scn {scene_id}: 판매 질문에 화자·공통 머리가 있다 — 감사에 이을 수 없다")
+        if tb[-1:] != b"\x07" or tb[-2:-1] in (bytes([PAGE]), b"\x03") or not tm.terminated:
+            raise TranslateError(f"scn {scene_id}: 판매 감사 끝이 `07` 단독이 아니다 — {tb[-4:].hex()}")
+        if tm.key == qm.key:
+            continue
+        out[ti] = (tm, tb[:-1] + bytes([NL]) + qb)
+    return out
+
 
 
 def _walk_pages(buf: bytes, start: int, k: int, follow_jump: bool) -> int | None:
@@ -561,6 +618,23 @@ def blank_row_patches(orig: bytes) -> list[tuple[int, bytes, bytes]]:
     return out
 
 
+# 🔴 동료 합류 효과음(마스터 11-19 「게일 재합류 효과음 넣자. 모든 파티합류 메세지에 효과음 누락된 부분 더 있으면 추가」): 원판은 합류 메시지(「…が仲間になりました。」) 바로 뒤에
+#    `0C 26`(효과음 옵코드) 을 두는데 씬 69 게일 재합류(「…が仲間に加わりました。」)만 없다. 원판과 달라지는 개선 — 그 메시지 뒤 3B 옵코드(`14 9C 00` 플래그 세트) 앞에 `0C 26` 을 낀다.
+JOIN_SFX_KEYS = {"b27d8c0c4008c32f"}  # 씬 69 게일 재합류. 나머지 합류(씬 18·32·41·63)는 원판에 이미 있다(11-19 전 씬 표)
+JOIN_SFX = b"\x0c\x26"
+
+
+def join_sfx_patches(orig: bytes) -> list[tuple[int, bytes, bytes]]:
+    out = []
+    for m in M.parse(orig):
+        if m.key in JOIN_SFX_KEYS and orig[m.end] != 0x0C:
+            if orig[m.end] != 0x14:
+                raise TranslateError(f"합류 메시지 {m.key} 뒤가 `14`(플래그 세트)가 아니다({orig[m.end]:#04x}) — 원문이 바뀌었나")
+            old = bytes(orig[m.end : m.end + 3])
+            out.append((m.end, old, JOIN_SFX + old))
+    return out
+
+
 def apply_orphans(
     scene_id: int, orig: bytes, block: bytes, table: dict[str, bytes], speakers: dict[str, str]
 ) -> bytes:
@@ -593,6 +667,7 @@ def apply_orphans(
         patches.append((off, old, new))
     if BLANK_ROW_FIX:
         patches += blank_row_patches(orig)
+    patches += join_sfx_patches(orig)
     if not patches:
         return block
     out = bytearray(block)

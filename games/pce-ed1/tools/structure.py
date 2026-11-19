@@ -114,7 +114,7 @@ def diff_ranges(a: bytes, b: bytes) -> list[tuple[int, int]]:
     return out
 
 
-def _walk(buf: bytes, i: int, limit: int, base_len: int, where: str, viol: list[str], slot_ops: bool = False):
+def _walk(buf: bytes, i: int, limit: int, base_len: int, where: str, viol: list[str], slot_ops: bool = False, outer_ops: bool = False):
     """`i` 에서 메시지 본문을 읽는다. 돌려주는 값 = (끝 종류, 끝 위치, 점프 목적지 또는 종료 바이트).
     끝 종류: `term`(종료 바이트) · `jump`(0F) · `end`(limit 도달 — 종료도 점프도 없이 자리를 채움). 본문에 낯선 옵코드가 있으면 위반."""
     while i < min(limit, len(buf)):
@@ -139,10 +139,15 @@ def _walk(buf: bytes, i: int, limit: int, base_len: int, where: str, viol: list[
         if slot_ops and b in SLOT_OPS:  # 슬롯 옆 조사 조각(`0B … 0E`) — 이름 삽입 옵코드(1B 짜리)
             i += 1
             continue
+        if outer_ops and b in OUTER_OPS:  # 메시지 밖 조각 패치(합류 효과음 `0C nn` + 원래 뒤따르던 플래그 세트 `14 lo hi`) — `translate.join_sfx_patches`
+            i += OUTER_OPS[b]
+            continue
         viol.append(f"{where}: 본문에 낯선 옵코드 {b:02X} (+{i:#x})")
         return "bad", i, None
     return "end", i, None
 
+
+OUTER_OPS = {0x0C: 2, 0x14: 3}  # 효과음 · 플래그 세트 — 메시지 밖 꼬리 조각에서만 허용(`_walk(outer_ops=True)`)
 
 _ADDED_SPEAKER_SCENES = (45, 46, 47)
 
@@ -242,7 +247,7 @@ def _check_translate(rec: BlockRec, before: bytes, after: bytes, viol: list[str]
                 else:
                     kinds["조각 이음"].append((a, tgt))
                     # 꼬리 조각 — 새 바이트 + `0F` 복귀. 복귀 목적지 = 원래 조각 바로 뒤(바뀐 3B 뒤 ~ 원본 조각 길이 ≤ 4B)
-                    kind, end, info = _walk(after, tgt, len(after), L, where, viol, slot_ops=True)
+                    kind, end, info = _walk(after, tgt, len(after), L, where, viol, slot_ops=True, outer_ops=True)
                     if kind != "jump" or not (b <= info <= b + 4):
                         viol.append(f"{where}: 조각 꼬리가 원래 자리 뒤({b:#x}~{b + 4:#x})로 되돌아가지 않는다")
                     else:
@@ -477,8 +482,25 @@ def analyze_battle_block(key: str, O: bytes, N: bytes, load_addr: int):
             ok[i] = 1
     for vm in battle.VOICE_GATE.finditer(O):  # 보스 전투 음성 분기(11-18) — 정해진 고쳐 쓰기와 바이트까지 같아야 한다
         want = battle.voice_rewrite(vm)
-        if N[vm.start() : vm.end()] != want:
-            viol.append(f"{key}: 전투 음성 분기(+{vm.start():#x})가 정해진 꼴이 아니다")
+        got = N[vm.start() : vm.end()]
+        if got != want:
+            # 편집기 시각이 있는 곳(11-19) — 스텁 호출 둘(`JSR s1` · `JSR s2`)을 낀 꼴 + 블록 꼬리의 스텁·표가 정해진 바이트여야 한다
+            rel_ = key.split(":")[0]
+            tm = battle.voice_timing(int(rel_)) if rel_.isdigit() else None
+            s1 = int.from_bytes(got[16:18], "little") if len(got) >= 18 else 0
+            ok_timed = False
+            if tm is not None and s1:
+                tail = battle.voice_tail(int(rel_), s1)
+                ok_timed = (
+                    tail is not None
+                    and got == battle.voice_rewrite(vm, (s1, tail[2]))
+                    and N.endswith(tail[0])
+                    and battle.LOAD_ADDR + len(N) - len(tail[0]) == s1
+                )
+            if ok_timed:
+                claimed.append((s1 - load_addr, len(N)))  # 꼬리의 스텁·표는 게이트의 `JSR` 둘이 가리킨다
+            else:
+                viol.append(f"{key}: 전투 음성 분기(+{vm.start():#x})가 정해진 꼴이 아니다")
         for i in range(vm.start(), vm.end()):
             ok[i] = 1
     bad = [i for i in range(min(L, len(N))) if O[i] != N[i] and not ok[i]]

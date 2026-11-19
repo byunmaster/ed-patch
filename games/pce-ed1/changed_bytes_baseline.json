@@ -1,7 +1,7 @@
 {
  "total": {
-  "sectors": 673,
-  "bytes": 1321514
+  "sectors": 677,
+  "bytes": 1326776
  },
  "regions": {
   "IPL·시스템 카드 앞": {
@@ -10,7 +10,11 @@
   },
   "그 밖 rel 0~": {
    "sectors": 76,
-   "bytes": 125996
+   "bytes": 126114
+  },
+  "그 밖 rel 1024~": {
+   "sectors": 4,
+   "bytes": 5395
   },
   "그 밖 rel 512~": {
    "sectors": 28,
@@ -18,7 +22,7 @@
   },
   "그 밖 rel 9728~": {
    "sectors": 36,
-   "bytes": 74141
+   "bytes": 74112
   },
   "본 프로그램 뱅크 0x68": {
    "sectors": 3,
@@ -30,7 +34,7 @@
   },
   "본 프로그램 뱅크 0x6A": {
    "sectors": 1,
-   "bytes": 219
+   "bytes": 224
   },
   "본 프로그램 뱅크 0x6B": {
    "sectors": 1,
@@ -42,19 +46,19 @@
   },
   "본 프로그램 뱅크 0x6D": {
    "sectors": 4,
-   "bytes": 4186
+   "bytes": 4198
   },
   "본 프로그램 뱅크 0x6E": {
    "sectors": 1,
-   "bytes": 211
+   "bytes": 186
   },
   "본 프로그램 뱅크 0x6F": {
    "sectors": 3,
-   "bytes": 580
+   "bytes": 584
   },
   "본 프로그램 뱅크 0x70": {
    "sectors": 3,
-   "bytes": 2557
+   "bytes": 2684
   },
   "본 프로그램 뱅크 0x74": {
    "sectors": 3,
@@ -78,7 +82,7 @@
   },
   "본 프로그램 뱅크 0x7D": {
    "sectors": 4,
-   "bytes": 7753
+   "bytes": 7755
   },
   "본 프로그램 뱅크 0x7F": {
    "sectors": 1,
@@ -90,15 +94,15 @@
   },
   "씬 컨테이너 rel 1268": {
    "sectors": 15,
-   "bytes": 34025
+   "bytes": 34022
   },
   "씬 컨테이너 rel 1284": {
    "sectors": 16,
-   "bytes": 35366
+   "bytes": 35386
   },
   "씬 컨테이너 rel 1316": {
    "sectors": 9,
-   "bytes": 19860
+   "bytes": 20086
   },
   "씬 컨테이너 rel 1332": {
    "sectors": 16,
@@ -106,35 +110,35 @@
   },
   "씬 컨테이너 rel 1348": {
    "sectors": 16,
-   "bytes": 36371
+   "bytes": 36338
   },
   "씬 컨테이너 rel 1364": {
    "sectors": 15,
-   "bytes": 34260
+   "bytes": 34257
   },
   "씬 컨테이너 rel 1380": {
    "sectors": 10,
-   "bytes": 22856
+   "bytes": 22849
   },
   "씬 컨테이너 rel 1396": {
    "sectors": 16,
-   "bytes": 36575
+   "bytes": 36558
   },
   "씬 컨테이너 rel 1412": {
    "sectors": 16,
-   "bytes": 35823
+   "bytes": 35808
   },
   "씬 컨테이너 rel 1428": {
    "sectors": 9,
-   "bytes": 20371
+   "bytes": 20349
   },
   "씬 컨테이너 rel 1444": {
    "sectors": 14,
-   "bytes": 30534
+   "bytes": 30541
   },
   "씬 컨테이너 rel 1460": {
    "sectors": 13,
-   "bytes": 29313
+   "bytes": 29277
   },
   "씬 컨테이너 rel 1476": {
    "sectors": 14,
@@ -142,27 +146,27 @@
   },
   "씬 컨테이너 rel 1492": {
    "sectors": 13,
-   "bytes": 27972
+   "bytes": 27988
   },
   "씬 컨테이너 rel 1508": {
    "sectors": 10,
-   "bytes": 21748
+   "bytes": 21747
   },
   "씬 컨테이너 rel 1524": {
    "sectors": 15,
-   "bytes": 34220
+   "bytes": 34243
   },
   "씬 컨테이너 rel 1540": {
    "sectors": 13,
-   "bytes": 28728
+   "bytes": 28725
   },
   "씬 컨테이너 rel 1556": {
    "sectors": 11,
-   "bytes": 24408
+   "bytes": 24397
   },
   "씬 컨테이너 rel 1572": {
    "sectors": 15,
-   "bytes": 33394
+   "bytes": 33378
   },
   "씬 컨테이너 rel 1588": {
    "sectors": 10,
@@ -174,59 +178,59 @@
   },
   "씬 컨테이너(이사) rel 9780": {
    "sectors": 9,
-   "bytes": 18409
+   "bytes": 18378
   },
   "씬 컨테이너(이사) rel 9796": {
    "sectors": 13,
-   "bytes": 26341
+   "bytes": 26339
   },
   "씬 컨테이너(이사) rel 9812": {
    "sectors": 15,
-   "bytes": 31477
+   "bytes": 31445
   },
   "씬 컨테이너(이사) rel 9828": {
    "sectors": 12,
-   "bytes": 24800
+   "bytes": 24755
   },
   "씬 컨테이너(이사) rel 9844": {
    "sectors": 16,
-   "bytes": 34639
+   "bytes": 34603
   },
   "씬 컨테이너(이사) rel 9860": {
    "sectors": 12,
-   "bytes": 22668
+   "bytes": 22629
   },
   "씬 컨테이너(이사) rel 9876": {
    "sectors": 16,
-   "bytes": 35608
+   "bytes": 35553
   },
   "씬 컨테이너(이사) rel 9892": {
    "sectors": 11,
-   "bytes": 23323
+   "bytes": 23294
   },
   "씬 컨테이너(이사) rel 9908": {
    "sectors": 15,
-   "bytes": 30659
+   "bytes": 30625
   },
   "씬 컨테이너(이사) rel 9924": {
    "sectors": 16,
-   "bytes": 33369
+   "bytes": 33327
   },
   "씬 컨테이너(이사) rel 9940": {
    "sectors": 15,
-   "bytes": 30817
+   "bytes": 30803
   },
   "씬 컨테이너(이사) rel 9956": {
    "sectors": 14,
-   "bytes": 28303
+   "bytes": 28249
   },
   "씬 컨테이너(이사) rel 9972": {
    "sectors": 16,
-   "bytes": 35627
+   "bytes": 35609
   },
   "씬 컨테이너(이사) rel 9988": {
    "sectors": 16,
-   "bytes": 32605
+   "bytes": 32564
   }
  }
 }

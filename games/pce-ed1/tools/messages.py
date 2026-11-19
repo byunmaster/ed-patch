@@ -29,6 +29,7 @@ import common
 from text.line_key import key as jp_key
 
 BASE = 0xA000  # 씬 블록의 논리 주소(인터프리터가 읽는 창)
+PAD = b""  # splice 가 처음부터 블록 뒤에 붙여 두는 바이트 — 씬 54 이미지(원판 블록 + 코드 오버레이 뒤에 꼬리를 놓는다, tools/zone_image.py). 평소엔 비어 있다
 TERM = {0x00, 0x06, 0x07}
 TEXT_OPS = {
     0x01: 1,
@@ -460,7 +461,10 @@ def load_translations(scene_id: int) -> dict[str, dict]:
 
             name = v["t"].strip(" ")
             if name and "\n" not in name and "\u3000" not in name:  # 전각 공백이 든 손배치 칸은 그대로
-                v = {**v, "t": center_plan.banner_form(name, cap=len(v["jp"]))[0]}
+                # 씬 4 는 월드맵 배너 표(씬 0)의 사본이라 항목마다 앞·뒤 전각 공백 포함 7칸이 있다(원판 바이트 `81 40 이름 81 40 07`) — 11-18 마스터
+                # 「배타고 들어올 때 입장배너 중앙정렬안됨」: cap=len(jp)(5)로 계산해 앞 공백이 0 이 돼 네리아 항구가 왼쪽에 붙었다. 씬 3 의 루디아
+                # 사본은 원문 글자 수만 담긴 한 항목이라 len(jp) 그대로.
+                v = {**v, "t": center_plan.banner_form(name, cap=7 if scene_id == 4 else len(v["jp"]))[0]}
         if scene_id == 0 and v.get("raw") and v.get("t"):
             # 🔴 입장 배너 가운데(마스터 11-08 「배너도 전부 가운데」): 앞 공백을 전각 12px + 반 칸 4px 조합으로 다시 계산해 쏠림을 ≤2px 로(center_plan.banner_lead). 뒤 공백은 안 쓴다
             import center_plan
@@ -548,7 +552,7 @@ def protected_terminators(block: bytes) -> set[int]:
 
 def splice(block: bytes, edits: list[tuple[Message, bytes]]) -> bytes:
     """메시지들을 제자리에 쓰고, 넘치면 `0F` 로 블록 끝에 잇는다. 기존 주소는 하나도 안 움직인다."""
-    out = bytearray(block)
+    out = bytearray(block) + PAD
     guarded = protected_terminators(block)  # 다른 코드가 점프해 오는 종료 바이트(`0F 1E A6` → 옛 메시지의 `00`)
     for m, new in edits:
         if m.pinned:

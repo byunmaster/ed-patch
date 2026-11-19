@@ -445,7 +445,9 @@ def apply(f, table, touched) -> dict:
                 f"label 「{r['jp']}」→「{kr}」 남는 {rest}B 가 홀수 — 전각 공백으로 못 채운다"
             )
             continue
-        new = enc + b"\x81\x40" * (rest // 2)
+        # 🔴 채움은 **반각 공백 코드**(`F8 24`, 4px) — 전각 공백(12px)이면 우리 글이 원문보다 짧을 때 채움이 원문 폭을 넘어 창 오른쪽 테두리 칸을 덮는다
+        #   (11-18 마스터 mc4 패배 선택 창 「마지막 들른 마을로」: 8자+반각 둘 104px + 채움 12px = 116px → 원판 14타일을 넘어 15타일 — 테두리 끊김. 원판 대조로 확정).
+        new = enc + font.HALF_SPACE * (rest // 2)
         _write(
             f,
             0x6D,

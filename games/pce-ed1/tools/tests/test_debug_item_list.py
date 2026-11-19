@@ -177,14 +177,22 @@ class DecodeTest(unittest.TestCase):
         self.assertEqual((s.m[L.POS], s.m[L.TOP]), (115, 112))
         s = Sim([right]).run()
         self.assertEqual(s.m[L.POS], 7)
-        s = Sim([left]).run()
-        self.assertEqual(s.m[L.POS], 0)
+        s = Sim([left]).run()  # 11-18 좌우 루프: 첫 쪽 ← = 마지막 쪽(같은 줄 0 → 112)
+        self.assertEqual(s.m[L.POS], 112)
         s = Sim([right] * 16).run()
         self.assertEqual(s.m[L.POS], 112)
-        s = Sim([right] * 17).run()
-        self.assertEqual(s.m[L.POS], 115)
+        s = Sim([right] * 17).run()  # 마지막 쪽 → = 첫 쪽(같은 줄 0)
+        self.assertEqual(s.m[L.POS], 0)
         s = Sim([right] * 17 + [left]).run()
-        self.assertEqual(s.m[L.POS], 108)
+        self.assertEqual(s.m[L.POS], 112)
+        s = Sim([down] * 3 + [left]).run()  # 첫 쪽 3번 줄 ← = 마지막 쪽 3번 줄(115)
+        self.assertEqual(s.m[L.POS], 115)
+        s = Sim([down] * 5 + [left]).run()  # 마지막 쪽이 4줄뿐이라 5번 줄은 끝 줄(115)로 보정
+        self.assertEqual(s.m[L.POS], 115)
+        s = Sim([up, right]).run()  # 마지막 항목(115, 줄 3)에서 → = 첫 쪽 3번 줄
+        self.assertEqual(s.m[L.POS], 3)
+        s = Sim([down] * 5 + [right] * 15).run()  # 끝 앞 쪽(105~111) 5번 줄 → 다음 쪽이 짧아도 끝에 붙지 않고 줄 보정은 그 쪽 안에서
+        self.assertIn(s.m[L.POS], (110, 115))
         s = Sim([up, down]).run()
         self.assertEqual(s.m[L.POS], 0)
 

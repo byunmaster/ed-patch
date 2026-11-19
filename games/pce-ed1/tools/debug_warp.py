@@ -306,6 +306,18 @@ def patches(pool_rel: int = 0):
             bytes.fromhex("9ca8379ca9379caa379cab37") + bytes([0x20, E_STUB & 0xFF, E_STUB >> 8]),  # STZ 넷은 그대로 · 마지막 `JSR $6541` → `JSR $6626`(스텁 → `disp` 가 다시 그리기 + 「W」 빨강). 되돌아오는 `$64E0` 도 같은 자리라 P·M·I 행이 다시 그려진다
         )
     )
+    # 🔴 P·M 값(`$37A6`·`$37A7`)을 창을 열 때마다 지우지 않는다(마스터 11-18 「P M ON 으로 바꿔놓고 닫았다가 다시 열면 OFF 표시인데 기능은 ON… 열 때 항상 최신 상태가 나와야 해」). 원판 입구(`$64CB`)는
+    #   `STZ $37A5~$37AB` 로 행 번호(`$37A5`)와 값 둘·화면 상태를 지운다 — 값 둘(`STZ $37A6`·`STZ $37A7`, 각 3B)만 NOP 으로 두면 다시 열었을 때 표시가 실제 값(`$37A6/7`)을 그대로 읽는다.
+    #   표시와 효과가 같은 한 바이트라 어긋날 일이 없다(토글은 `EOR` 로 그 바이트를 뒤집는다).
+    out.append(
+        (
+            "debug P/M keep value",
+            rel6e + 0x04CE // common.USER,
+            0x04CE % common.USER,
+            bytes.fromhex("9ca6379ca737"),
+            b"\xea" * 6,
+        )
+    )
     out.append(
         (
             "debug warp row table W",

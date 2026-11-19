@@ -50,9 +50,11 @@ import debug_item_list
 import debug_warp
 import hud_half
 import list_strip
+import defeat_strip
 import debugkey
 import staffroll
 import splitload
+import zone_image
 import sysbuild
 import translate
 import viewer
@@ -410,6 +412,11 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         assert len(ls) <= list_strip.CODE_LEN, len(ls)
         p.append(("list strip code", *_main(list_strip.BANK, list_strip.OFF_ORG), b"\xff" * len(ls), ls))
         p.append(("list strip site", *_main(list_strip.SITE_BANK, list_strip.SITE_OFF), list_strip.SITE_OLD, list_strip.site_new()))
+        # 패배 귀환 확인창 앞 공백 걷기(마스터 11-18) — 메시지 머리 `10 7D C0` 앞에 지명 버퍼를 제자리에서 걷는 기계어 호출을 낀다(`defeat_strip.py`) — 글 시작은 3B 뒤(`sysstrings.read_inline`)
+        ds = defeat_strip.code()
+        assert len(ds) <= defeat_strip.CODE_LEN, len(ds)
+        p.append(("defeat strip code", *_main(defeat_strip.BANK, defeat_strip.OFF), b"\xff" * len(ds), ds))
+        p.append(("defeat strip head", *_main(defeat_strip.BANK, defeat_strip.MSG_OFF), defeat_strip.HEAD_OLD, defeat_strip.HEAD_NEW))
     if want("dbgkey"):
         # 4-c. 필드에서 SELECT+RUN 1초 → 「기타 → 디버그」(마스터 10-24 「다른 기종 스타일도」) — `debugkey.py`(틱 훅은 후킹 틱 트램펄린 끝, 글리프 뱅크 1 꼬리 코드)
         old_k, new_k = debugkey.menu_site()
@@ -642,10 +649,52 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
                     b"\x20" + hook.BLINK_ADDR.to_bytes(2, "little"),
                 )
             )
+    if want("scn"):
+        # 🔴 판매 감사 유지(마스터 11-18) — 감사 뒤 `JMP $9E4B`(목록 위젯 진입: 질문 메시지를 다시 보임 → 첫 바이트 `08` 창 다시 그리기가 감사를 지운다)를
+        #    질문을 보인 **뒤** 지점 `$9E58` 로 돌린다. 질문은 `translate.merge_sell_thanks` 가 감사 메시지 끝에 이어 써 두었다. 판매 구조체 호출이 있는 모든 씬이 합쳐졌는지는 같은 함수가 죽어서 지킨다.
+        p.append(("sell thanks keep JMP $9E4B→$9E58", *_main(0x6F, 0x1F32), b"\x4b\x9e", b"\x58\x9e"))
     if os.environ.get("ED_BATTLE_DBG"):  # 🔴 디버그 전용 — 전투 일괄 촬영(10-20): 조우 번호를 카드 RAM `$C05F` 가 아니라 워크 RAM `$3FFA` 에서 읽는다(하네스가 poke 한다)
         assert common.BUILD_TAG.startswith("test-"), "ED_BATTLE_DBG 는 시험 빌드(ED_BUILD_TAG=test-*)에서만"
         p.append(("battle debug LDA $C05F→$3FFA", 94, 1564, b"\x5f\xc0", b"\xfa\x3f"))
     return p
+
+
+ZONE54: list[bytes] = []  # 씬 54 번역 이미지(지도 구역 묶음 스트림 — tools/zone_image.py). 컨테이너 단계에서 채우고 apply_zone 이 쓴다
+
+
+def _scene54_image(bdata: bytes, rel: int, table: dict[str, bytes], edits, blocked: set[int]) -> bytes:
+    """씬 54 이미지 = 컨테이너 블록과 같은 단계(번역 → 편집 → 동적 글리프)를 오버레이 뒤에 꼬리를 놓게 돌린 것. 다른 단계(나레이션·시각표·대사창)가 걸린 씬이면 죽는다."""
+    if zone_image.SCENE in blocked:
+        raise BuildError("씬 54 에 나레이션·시각표·대사창 단계가 걸렸다 — 지도 구역 이미지(zone_image)가 그 단계를 안 돈다")
+    btab, dyn = glyphdyn.block_table(table, zone_image.SCENE)
+    with zone_image.pad():
+        blk, _n = translate.translate_block(zone_image.SCENE, bdata, btab)
+    if len(blk) <= zone_image.ORIG_LEN:
+        raise BuildError("씬 54 이미지가 원판 길이 이하 — 번역이 안 닿았다")
+    if (rel, zone_image.SCENE) in edits:
+        blk = apply_edits(blk, edits[(rel, zone_image.SCENE)], f"rel {rel} id {zone_image.SCENE} (이미지)")
+    if dyn:
+        blk = glyphdyn.attach(blk, dyn)
+    return blk
+
+
+def apply_zone(f, image: bytes, touched: list[tuple[int, int]]) -> str:
+    """씬 54 이미지를 지도 구역 묶음 스트림 자리(1141:1772~)에 쓰고 구역 섹터 수 표를 9 → 10 으로."""
+    from shared.disc import mode1
+
+    packed, writes = zone_image.compose(image)
+    for rel, off, old, new in writes:
+        lba = common.T2_SECTOR + rel
+        mode1.write_at(f, lba, common.USER, off, new, label=f"scene54 zone stream rel {rel}:{off}", expect=old)
+        touched.append((lba, 1))
+    rel, off = zone_image.COUNT_TABLE
+    lba = common.T2_SECTOR + rel
+    mode1.write_at(
+        f, lba, common.USER, off, bytes([zone_image.ZONE_SECTORS_NEW]), label="scene54 zone sectors 9→10",
+        expect=bytes([zone_image.ZONE_SECTORS_OLD]),
+    )
+    touched.append((lba, 1))
+    return f"씬 54 지도 구역 이미지 {len(image)}B → 압축 {len(packed)}B(원판 4359B) · 묶음 {zone_image.ZONE_SECTORS_NEW}섹터"
 
 
 def apply_code_patches(
@@ -1046,6 +1095,7 @@ def _build(edits_path, iso: Path, cue: Path):
         if gwin_env != GWIN_PRODUCT:
             assert common.BUILD_TAG.startswith("test-"), "ED_GWIN_ON 은 시험 빌드(ED_BUILD_TAG=test-*)에서만"
         GWIN_DONE.clear()
+        ZONE54.clear()
         n_msgs = 0
         n_dyn = 0
         n_dyn_blocks = 0
@@ -1125,6 +1175,15 @@ def _build(edits_path, iso: Path, cue: Path):
                     n_dyn += len(dyn)
                     n_dyn_blocks += 1
                     rec.add("dyn", _s, blk)
+                if b["id"] == zone_image.SCENE and dir_id == b["id"] and b["id"] in translated_ids and rel == zone_image.CONTAINER_REL:
+                    _img = _scene54_image(
+                        b["data"], rel, table, edits,
+                        ({b["id"]} if (b["id"] in narr_ids or b["id"] in sched_ids or gwin_here or str(b["id"]) in gwin_rt.build_specs()) else set()),
+                    )
+                    _s = blk
+                    blk = zone_image.patch_count(blk, len(_img))  # 초기화 루프 복사 길이 — 컨테이너 블록과 이미지가 같아야 한다(루프가 자기 코드를 덮어쓴다)
+                    rec.add("edits", _s, blk)
+                    ZONE54[:] = [zone_image.patch_count(_img, len(_img))]
                 if blk != b["data"] or dir_id != b["id"]:
                     if rec.final != blk and dir_id == b["id"]:
                         raise BuildError(f"rel {rel} id {b['id']}: 단계 기록(structure)이 최종 블록과 다르다 — 기록 안 하는 단계가 블록을 바꿨다")
@@ -1192,6 +1251,8 @@ def _build(edits_path, iso: Path, cue: Path):
         if ref_moves:
             print("  " + patch_ref_table(f, refs, ref_moves, touched))
         apply_glyph_payload(f, glyph_bank, table, touched, split_pairs)
+        if ZONE54:
+            print("  " + apply_zone(f, ZONE54[0], touched))
         if split_pairs:  # 씬 열기 탐색 루프를 짝 교체 루틴 호출로 바꾼다(사이트 21B)
             old, new = splitload.site_patch()
             lbl, srel, soff = "scene-open split site", *_main(*splitload.SITE_REL_OFF)

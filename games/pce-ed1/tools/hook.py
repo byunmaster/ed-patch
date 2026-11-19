@@ -726,10 +726,10 @@ HALF_TAB_ADDR = (ENTRY_MPR << 13) + font.BANK_GLYPH_END + len(unpack_asm().bytes
 HALF_OFFTAB = HALF_TAB_ADDR
 HALF_BITM = HALF_OFFTAB + 4
 HALF_BITMAP = HALF_BITM + 8
-HALF_NARR = HALF_BITMAP + 4 * 28  # 4px 전진 글리프 코드 쌍 셋(i·l·I) — 모자라면 0 쌍
-HALF_TAB_LEN = 4 + 8 + 4 * 28 + 6
+HALF_NARR = HALF_BITMAP + 4 * 28  # 4px 전진 글리프 코드 쌍 넷(i·l·I·') — 모자라면 0 쌍
+HALF_TAB_LEN = 4 + 8 + 4 * 28 + 8
 HALF_WIDE = "mwMWABCDEFHIJKLNOPQRSTUVXYZ"  # G 는 뺀다 — 「Gold」 의 G 는 원판 BIOS 꼴을 7px 로 접은 도안(`font.GOLD_ORIG`)이라 8px 칸에 든다(11-06 마스터 「Gold 가 어색」)  # 잉크가 9px 라 8px 전진 두 조각에 안 든다 — 반각으로 안 그리고 평소 12px 칸으로 둔다
-HALF_NARROW = "ilI"  # 잉크가 3px 이하 — 4px 전진 한 조각
+HALF_NARROW = "ilI'"  # 잉크가 3px 이하 — 4px 전진 한 조각(`'` = 곧은 따옴표 도트, 열 1~2)
 assert HALF_TAB_ADDR + HALF_TAB_LEN <= (ENTRY_MPR << 13) + 0x2000
 
 
@@ -737,7 +737,7 @@ def half_tables() -> bytes:
     """리드 F0~F3 의 글리프 번호 → 「ASCII 영숫자」 비트맵. 정본 순서가 곧 글리프 번호다(`font._order_canon`)."""
     bm = bytearray(4 * 28)
     for i, ch in enumerate(font._order_canon()):
-        if (ch.isascii() and ch.isalnum() and ch not in HALF_WIDE) or ch in "?'" or ch in font.LIGATURES.values():  # 합자 「‼」「⁉」 = 4px 부호 둘(잉크 8px) — 12px 로 가면 뒤에 4px 빈칸이 남았다(10-27 씬 203 「!!』」)
+        if (ch.isascii() and ch.isalnum() and ch not in HALF_WIDE) or ch in "?'\"" or ch in font.LIGATURES.values():  # 합자 「‼」「⁉」 = 4px 부호 둘(잉크 8px) — 12px 로 가면 뒤에 4px 빈칸이 남았다(10-27 씬 203 「!!』」)
             lead, tr = divmod(i, font.PER_LEAD)
             assert lead < 4, i
             bm[lead * 28 + tr // 8] |= 0x80 >> (tr % 8)
@@ -749,7 +749,7 @@ def half_tables() -> bytes:
     for ch in HALF_NARROW:
         if ch in font._order_canon():
             narr += font.code_of(font._order_canon().index(ch))
-    narr = narr.ljust(6, b"\0")
+    narr = narr.ljust(8, b"\0")
     return bytes([0, 28, 56, 84]) + bytes(0x80 >> i for i in range(8)) + bytes(bm) + narr
 
 
@@ -1305,7 +1305,7 @@ def _entry_asm() -> "Asm":
     a.op("LDA", "absy", HALF_BITMAP)
     a.op("AND", "absx", HALF_BITM)
     a.op("BEQ", "rel", "chk_out")
-    a.op("LDX", "imm", 4)  # 좁은 영문(i·l·I — 잉크 3px 이하)은 4px 전진 한 조각이다 — 코드 쌍 셋을 훑는다
+    a.op("LDX", "imm", 6)  # 좁은 영문(i·l·I·' — 잉크 3px 이하)은 4px 전진 한 조각이다 — 코드 쌍 넷을 훑는다
     a.label("nl")
     a.op("LDA", "absx", HALF_NARR)
     a.op("CMP", "zp", 0xF9)

@@ -533,6 +533,91 @@ def greet_rows(rows: list[dict], clips: list[dict]) -> None:
     rows.sort(key=lambda r: (r["clip"] != "", r["scene"], r["clip"], r["idx"]))
 
 
+def battle_voice_pages(rel: int, bi: int) -> dict:
+    """보스 전투 음성 한 곳(`battle.VOICE_SITES`) — 음성 위치(디스크 rel·섹터) · 원판 타이머(프레임) · 자막 쪽 목록(전투 문구 조각 하나가 한 쪽 — 끝 옵코드 `03`·`05` 로 이어지는 조각들)."""
+    import battle
+
+    blk = battle.parse(rel)[bi]["data"]
+    m = battle.VOICE_GATE.search(blk)
+    inline = m.group(2)
+    t = re.search(rb"\xa2(.)\xa0(.)", blk[m.end(2) : m.end(2) + 5], re.DOTALL)
+    msg = re.search(rb"\xa9(.)\x85\x10\xa9(.)\x85\x11", m.group(1), re.DOTALL)
+    off = (msg.group(1)[0] | msg.group(2)[0] << 8) - 0xC400
+    kr = battle._msgs()
+    pages = []
+    for u in battle.msg_units(blk):
+        if u["off"] < off:
+            continue
+        end = u["off"] + len(u["body"])
+        tail = blk[end : end + 2]
+        pages.append(kr.get(battle.msg_key(u["body"]), "").replace("{01}", " "))
+        if tail[:1] not in (b"\x03", b"\x05") or (tail[:1] == b"\x05" and tail[1:2] in (b"\x06", b"\x07", b"\x00")):
+            break
+    return {
+        "rel": voice.VOICE_BASE + (inline[0] | inline[1] << 8),
+        "sectors": inline[2] | inline[3] << 8,
+        "frames": t.group(1)[0] | t.group(2)[0] << 8,
+        "pages": pages,
+    }
+
+
+def battle_rows(rows: list[dict], clips: list[dict]) -> None:
+    """보스 전투 음성 3곳(아크담 rel 170 · rel 186 · rel 194) — 편집기 토막. 초기 시각은 원판 대기(타이머) 시간을 쪽 글자 수에 비례해 나눈 값 — 마스터가 편집기에서 싱크를 맞춘다.
+    시각은 음성 시작 기준이고 `tkey`(`btl<rel>`) 로 `script/voice_timing.json` 에 쓰인다(전투 대사 엔진 자동 넘김이 읽는다)."""
+    import battle
+
+    for rel, bi in sorted(battle.VOICE_SITES):
+        info = battle_voice_pages(rel, bi)
+        total = float(info["frames"]) / 60.0
+        weight = [max(1, len(p.replace(" ", ""))) for p in info["pages"]]
+        t0 = 0.0
+        clip = f"btl{rel:03d}"
+        for i, (text, w) in enumerate(zip(info["pages"], weight, strict=True)):
+            t1 = total if i == len(weight) - 1 else round(t0 + total * w / sum(weight), 2)
+            rows.append(
+                {
+                    "scene": -2,
+                    "gate": bi,
+                    "clip": clip,
+                    "idx": i + 1,
+                    "key": f"{clip}_{i}",
+                    "page": 1,
+                    "jp": "",
+                    "kr": text,
+                    "stt": "",
+                    "speaker_name": "",
+                    "t_start": t0,
+                    "t_end": t1,
+                    "video": f"{clip}.mp4",
+                    "open_delay": 0.0,
+                    "open_delay_measured": True,
+                    "tkey": clip,
+                    "tpage": i,
+                    "tbase": 0.0,
+                    "battle": True,
+                }
+            )
+            t0 = t1
+        clips.append(
+            {
+                "clip": clip,
+                "scene": -2,
+                "gate": bi,
+                "rel": info["rel"],
+                "sectors": info["sectors"],
+                "voice_sec": round(info["sectors"] * G.SEC_PER_SECTOR, 2),
+                "subtitle_end_sec": total,
+                "open_delay": 0.0,
+                "open_delay_measured": True,
+                "rows": len(info["pages"]),
+                "open_run": False,
+                "stt": [],
+                "wav": f"voice/{clip}.wav",
+                "battle": True,
+            }
+        )
+
+
 def syscard_rows(rows: list[dict], clips: list[dict]) -> None:
     """구형 시스템 카드 안내 화면(`syscard_screen`) 음성 자막 — 음성 시작 기준 시각. 화자·시각은 마스터가 편집기에서 지정했다(10-21) — `S.SUB_SPEAKERS`."""
     import syscard_screen as S
@@ -844,6 +929,7 @@ def main() -> int:
     out = a.out or main_tree() / ".local" / "work" / "inbox" / "pce-ed1" / "voice-editor"
     out.mkdir(parents=True, exist_ok=True)
     rows, clips = build()
+    battle_rows(rows, clips)
     annotate_audit(rows, clips)
     for r_ in rows:  # 소리 기준 시각 덮어쓰기(감사 후보 시각보다 뒤 — 마스터 청취가 우선)
         ov = EXTRA_TIMES.get((r_["scene"], 0), {}).get(r_["key"][:6]) if r_["clip"].endswith("_x0") else None

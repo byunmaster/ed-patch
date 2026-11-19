@@ -226,12 +226,14 @@ def main() -> int:
         only = next((x.split("=", 1)[1].split(",") for x in sys.argv if x.startswith("--only=")), None)  # 예: --only=scn018_s0,scn098_s0,scn224_x0 — 그 토막만
         docs = [d for d in docs if only is None or d.get("clip") in only]
         return 0 if apply_sched(docs, dry) is not None else 1
-    base = {(r["clip"], r["idx"]): r for r in D.build()[0]}
+    rows0, clips0 = D.build()
+    D.battle_rows(rows0, clips0)  # 보스 전투 음성 행(btl*)은 `build()` 가 아니라 편집기 내보내기(`main`)에서만 붙는다 — 여기서도 붙여야 db 시각이 기본 행에 얹힌다
+    base = {(r["clip"], r["idx"]): r for r in rows0}
     edited = merge_docs(json.loads(Path(a[0]).read_text("utf-8")), base)
     by_msg: dict[tuple[int, str], list[dict]] = {}
     timing = []
     for r in edited:
-        if not r.get("greet"):  # 장면 2 인사 쪽(greet0·1)은 합성 열쇠라 원문 대조표에 없다 — 문안은 `GREET_PAGES`, 시각만 아래 `timing_items` 가 쓴다
+        if not (r.get("greet") or r.get("battle")):  # 전투 음성 쪽(btl)은 문안이 전투 문구 정본이라 시각만(`timing_items`) — 장면 2 인사 쪽(greet0·1)은 합성 열쇠라 원문 대조표에 없다 — 문안은 `GREET_PAGES`, 시각만 아래 `timing_items` 가 쓴다
             by_msg.setdefault((r["scene"], r["key"], r["clip"]), []).append(r)
         b = base.get((r["clip"], r["idx"]))
         if b and (r.get("t_start") != b["t_start"] or r.get("t_end") != b["t_end"]):

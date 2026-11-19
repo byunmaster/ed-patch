@@ -39,7 +39,16 @@ BANK6D_TAIL = Span(
 
 # 뱅크 0x74 끝 — FF 채움 346B(+0x1EA6~). 근거(2026-10-07): 부팅 → 파일 로드 → 필드 → 전투 → 맵 전환(루디아) →
 # 메뉴·도구 사용 동안 물리 쓰기 BP(0xE9EA6~0xE9FFF) 0회 · RAM 값 FF 그대로(devlog 10-07 (3)).
-BANK74_TAIL = Span(0x74, 0x1EA6, 0x15A, 0xFF, "뱅크 끝 FF 346B — 쓰기 BP 한 바퀴(10-07)", 0xC000)
+import defeat_strip  # noqa: E402 — 앞쪽 `defeat_strip.CODE_LEN` B 는 패배 귀환 확인창 앞 공백 걷기 루틴 자리
+
+BANK74_TAIL = Span(
+    0x74,
+    0x1EA6 + defeat_strip.CODE_LEN,
+    0x15A - defeat_strip.CODE_LEN,
+    0xFF,
+    "뱅크 끝 FF 346B 중 앞 defeat_strip 자리를 뺀 나머지 — 쓰기 BP 한 바퀴(10-07)",
+    0xC000,
+)
 
 # 뱅크 0x70 FF 패딩의 **조각 보관소**(4-17 확대 — 위 두 창 풀이 약 50B 모자랐다). 엔진이 글을 읽는 동안 이 뱅크는 창에 없으므로 `0F` 로 곧장 못 간다 —
 # `hook` 의 `0F` 스텁이 MPR3 에 잠깐 걸어 RAM 버퍼로 복사한다(포인터 `$5C00~`). 읽는 쪽은 이 스텁뿐이다.

@@ -214,26 +214,106 @@ VOICE_GATE = re.compile(
 VOICE_SITES = {(170, 0), (186, 1), (194, 3)}
 
 
-def voice_rewrite(m: "re.Match[bytes]") -> bytes:
-    """`VOICE_GATE` 한 곳의 고쳐 쓴 바이트(같은 길이, 남는 칸은 NOP)."""
+SCHED_ENTRY = 0x9F3C  # 상주부(`narration_gates._resident_asm`) `sched` — 전역 시각표 자동 넘김. 테스트가 같은 값임을 본다
+AUTO_FLAG_ADDR = 0x5FFD  # 자막 모드 표시(`narration_gates.AUTO_FLAG`) — 안전하게 끄는 데 쓴다
+WAIT_FRAMES = 0x5BD7  # 「X+Y×256 프레임 기다려라」 코루틴 대기
+STOP_TAIL = b"\x20\x5e\x5f"  # 음성 정리 끝 `JSR $5F5E`
+
+
+def voice_timing(rel: int) -> tuple[int, list[int]] | None:
+    """보스 전투 음성 한 곳의 편집기 시각(`script/voice_timing.json` 의 `btl<rel>`) → (첫 쪽 열림 프레임, 쪽마다 닫힘 프레임 — 음성 시작에서 잰다). 없으면 None."""
+    import narration_gates as G
+
+    items = G.timing_overrides().get(f"btl{rel}")
+    if not items:
+        return None
+    openf = 0
+    closes: list[int] = []
+    for i, it in enumerate(items):
+        if isinstance(it, list):
+            if i == 0 and it[0] is not None:
+                openf = round(float(it[0]) * 60)
+            it = it[1]
+        closes.append(round(float(it) * 60))
+    return openf, closes
+
+
+def voice_rewrite(m: "re.Match[bytes]", stubs: tuple[int, int] | None = None) -> bytes:
+    """`VOICE_GATE` 한 곳의 고쳐 쓴 바이트(같은 길이, 남는 칸은 NOP).
+
+    `stubs=(s1, s2)` 가 있으면(편집기 시각이 있는 곳) 음성 시작 바로 뒤 `JSR s1`(전역 시각표 시작 + 첫 쪽 열림 대기)과 음성 정리 끝 `JSR $5F5E` → `JSR s2`(자막 모드 끄기)를 끼운다
+    — 쪽 자동 넘김·음성 중 키 막기는 대사 엔진이 이미 갖고 있다(나레이션 ON 자막 모드, `narration_gates.auto_hook`)."""
     msg, inline, stop = m.group(1), m.group(2), m.group(3)
-    out = (
-        b"\xad\x4c\xc0\xf0\x0a\x20\x4a\x5f\x20\x15\x58" + inline  # ON 이면 저장 + 음성 시작
-        + msg  # 메시지(자막) — 나레이션과 무관
-        + b"\xad\x4c\xc0\xf0\x0d" + stop  # ON 이면 음성 정리 + 복원
-    )
+    if stubs is None:
+        out = (
+            b"\xad\x4c\xc0\xf0\x0a\x20\x4a\x5f\x20\x15\x58" + inline  # ON 이면 저장 + 음성 시작
+            + msg  # 메시지(자막) — 나레이션과 무관
+            + b"\xad\x4c\xc0\xf0\x0d" + stop  # ON 이면 음성 정리 + 복원
+        )
+    else:
+        assert stop.endswith(STOP_TAIL), stop.hex()
+        s1, s2 = stubs
+        out = (
+            b"\xad\x4c\xc0\xf0\x0d\x20\x4a\x5f\x20\x15\x58" + inline + b"\x20" + s1.to_bytes(2, "little")
+            + msg
+            + b"\xad\x4c\xc0\xf0\x0d" + stop[: -len(STOP_TAIL)] + b"\x20" + s2.to_bytes(2, "little")
+        )
     return out + b"\xea" * (m.end() - m.start() - len(out))
 
 
+def voice_tail(rel: int, base: int) -> tuple[bytes, int, int] | None:
+    """블록 꼬리에 붙일 스텁·표 — (바이트, s1, s2) · `base` = 꼬리가 놓일 주소. 시각이 없으면 None.
+    s1: 인터럽트 막고 MPR4 에 상주부 뱅크 0x6B → `sched`(A·X = 표 주소) → 복원 → 첫 쪽 열림까지 대기(`$5BD7`).
+    s2: 자막 모드 표시 끄기(표를 다 못 쓴 경우의 안전) → 원래 `$5F5E`. 표 = 쪽 수 + 쪽마다 닫힘 프레임(16비트)."""
+    t = voice_timing(rel)
+    if t is None:
+        return None
+    openf, closes = t
+    s1 = base
+    wait = bytes([0xA2, openf & 255, 0xA0, openf >> 8, 0x4C, *WAIT_FRAMES.to_bytes(2, "little")]) if openf else b"\x60"
+    n_s1 = 20 + len(wait)
+    s2 = s1 + n_s1
+    tbl = s2 + 6
+    stub1 = bytes([0x08, 0x78, 0x43, 0x10, 0x48, 0xA9, 0x6B, 0x53, 0x10, 0xA9, tbl & 255, 0xA2, tbl >> 8, 0x20, *SCHED_ENTRY.to_bytes(2, "little"), 0x68, 0x53, 0x10, 0x28]) + wait
+    stub2 = bytes([0x9C, *AUTO_FLAG_ADDR.to_bytes(2, "little"), 0x4C, *STOP_TAIL[1:]])
+    table = bytes([len(closes)]) + b"".join(c.to_bytes(2, "little") for c in closes)
+    assert len(stub1) == n_s1 and len(stub2) == 6
+    return stub1 + stub2 + table, s1, s2
+
+
+GATE_TIMED = re.compile(rb"\xad\x4c\xc0\xf0\x0d\x20\x4a\x5f\x20\x15\x58.{4}\x20\x00\x00", re.DOTALL)  # 시각이 있는 곳의 자리표시(`JSR $0000`) 포함 꼴
+
+
 def voice_subtitle(data: bytearray, rel: int, bi: int, errors: list[str]) -> int:
-    """보스 전투 음성 분기를 자막 우선으로 고쳐 쓴다. 고친 곳 수."""
+    """보스 전투 음성 분기를 자막 우선으로 고쳐 쓴다. 고친 곳 수. 편집기 시각이 있으면 스텁 호출 자리(`JSR $0000`)를 둔다 — 꼬리 주소는 `voice_finish` 가 채운다."""
     n = 0
+    timed = voice_timing(rel) is not None and (rel, bi) in VOICE_SITES
     for m in list(VOICE_GATE.finditer(bytes(data))):
-        data[m.start() : m.end()] = voice_rewrite(m)
+        data[m.start() : m.end()] = voice_rewrite(m, (0, 0) if timed else None)
         n += 1
     if (rel, bi) in VOICE_SITES and n != 1:
         errors.append(f"전투 음성 분기 rel{rel} blk{bi}: 기대 1곳, 찾은 {n}")
     return n
+
+
+def voice_finish(data: bytearray, rel: int, bi: int, errors: list[str]) -> None:
+    """메시지 옮기기가 끝난 뒤 — 블록 꼬리에 스텁·표를 붙이고 호출 자리(`JSR $0000` 둘)에 주소를 채운다."""
+    if (rel, bi) not in VOICE_SITES or voice_timing(rel) is None:
+        return
+    m = GATE_TIMED.search(bytes(data))
+    if m is None:
+        errors.append(f"전투 음성 스텁 자리 rel{rel} blk{bi}: 못 찾음")
+        return
+    tail, s1, s2 = voice_tail(rel, LOAD_ADDR + len(data))
+    g = m.start()
+    # 호출 자리 둘: 음성 시작 뒤 JSR(= 패턴 끝 3B) · 음성 정리 끝 JSR(그 뒤 `LDA $C04C·BEQ` 의 stop 끝) — 둘째는 `20 00 00` 을 게이트 끝에서 찾는다
+    data[m.end() - 2 : m.end()] = s1.to_bytes(2, "little")
+    k = bytes(data).find(b"\x20\x00\x00", m.end())
+    if k < 0 or k - g > 64:
+        errors.append(f"전투 음성 스텁 자리 rel{rel} blk{bi}: 둘째 호출 자리 없음")
+        return
+    data[k + 1 : k + 3] = s2.to_bytes(2, "little")
+    data += tail
 
 
 def patch_blocks(
@@ -296,6 +376,7 @@ def patch_blocks(
         moved: list[dict] = []
         nmsg += patch_msgs(data, msgs, table, errors, f"rel{rel} blk", moved, f"{rel}:{bi}")
         check_moved(bytes(data), moved, errors, f"rel{rel} blk")
+        voice_finish(data, rel, bi, errors)
         MOVED_COUNT[0] += len(moved)
         STRUCT_RECS.append((rel, bi, bytes(b["data"]), bytes(data)))
         b["data"] = bytes(data)

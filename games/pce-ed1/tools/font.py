@@ -263,8 +263,25 @@ def _bios(ch: str) -> bytes:
 FULLWIDTH_BIOS = {"Ａ": "A", "Ｂ": "B", "Ｃ": "C", "Ｄ": "D", "Ｅ": "E", "Ｈ": "H", "Ｍ": "M", "Ｐ": "P", "Ｕ": "U"}
 
 
+# 🔴 **따옴표 `'` `"` — 방향 없는 곧은 도트**(마스터 11-18 「따옴표가 한방향이라 어색하고 첫번째 작은따옴표는 여백까지 있어서」, 번역 규칙 1-2). 종전 `'` 는 원판 BIOS 의
+#   비스듬한 쉼표꼴(잉크 왼쪽 2px)을 8px 전진으로 그려 뒤 6px 이 비었고 `"` 는 12px 전진이었다. 이제 `'` = 4px 전진(잉크 열 1~2 — 앞뒤 1px 씩, `hook.HALF_NARROW`),
+#   `"` = 8px 전진(곧은 획 둘, 열 1~2·5~6 — 앞뒤 1px 씩, 반각 영숫자 표). 윗줄 4행에 앉는다(마침표는 아랫줄 · 따옴표는 윗줄).
+QUOTE_ROWS = {
+    "'": ["..##", "..##", "..##", "..##"],
+    '"': ["..##..##", "..##..##", "..##..##", "..##..##"],
+}
+
+
+def _quote(ch: str) -> bytes:
+    rows = [int(r.replace("#", "1").replace(".", "0").ljust(12, "0"), 2) << 4 for r in QUOTE_ROWS[ch]]
+    rows += [0] * (12 - len(rows))
+    return b"".join(v.to_bytes(2, "big") for v in rows)
+
+
 def glyph(ch: str) -> bytes:
     """한 글자 → 24B. 세로는 **베이스라인에 맞추고**(BDF `yo`) 가로는 왼쪽 정렬. 문장부호·숫자·영문은 원판 BIOS 도안(`bios_glyphs`)."""
+    if ch in QUOTE_ROWS:
+        return _quote(ch)
     if ch in GOLD_ORIG:
         return _gold_orig(ch)
     if ch in BIOS12:
