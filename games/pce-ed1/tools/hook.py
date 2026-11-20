@@ -89,6 +89,15 @@ FRAG_SITE = 0x6A41  # 뱅크 0x6C — `JMP $66FB`(`0F` 처리부의 마지막 3B
 FRAG_RET = 0x66FA  # `$66FB` 는 슬롯 `$26` 에서 `$14~$17` 을 다시 적재하고 글 가져오기로 간다 — RTS 로 가려면 −1
 WORDCK_ADDR = CODE_ADDR + ENTRY_ROOM
 WORDCK_ROOM = font.CODE_BYTES - ENTRY_ROOM
+# 🔴 11-20 마스터 「가로하면 이 한줄은 여전히 침범하는 거 아냐? 근본적인 해결이 아닌 것 같은데」 — 정확 모델(나머지 `rem` 보정, 매다는 부호로 끝난 어절은 보정 없음)이
+#   글리프 뱅크 꼬리 방(198B)에 안 든다(+8B). **wordck 통째로 뱅크 0x73 꼬리(winmask·musicresume 뒤)로 옮기고 MPR7(`$E000`)에 잠깐 건다**:
+#   `mark` 가 SEI 로 부르는 동안 인터럽트가 없으니 BIOS 창(MPR7)을 비워도 된다(BIOS 호출 없음 · NMI 없음 · 호출부는 RAM(MPR1)이라 영향 없음).
+#   글리프 뱅크를 MPR2 에 걸 일도 없어졌다(옛 가드 「우리 창 `$4000~$5FFF` 포인터」는 본 프로그램 코드를 읽는 것을 막으려 그대로 둔다).
+WCK_MPR = 7
+WCK_BANK = 0x73
+WCK_BANK_OFF = 0x1E59  # 뱅크 0x73 안 오프셋 = musicresume.OFF + CODE_LEN (tests/test_wordck 이 맞춤을 검사)
+WCK_ADDR = (WCK_MPR << 13) + WCK_BANK_OFF  # MPR7 기준 논리 주소
+WCK_ROOM = 0x2000 - WCK_BANK_OFF
 LINE_COLS_ZP = 0x99  # 줄 폭(칸) — `$6D95` 가 비교하는 그 값(로그·필드 창 13)
 # 부호 넷(4px, glyph_order.json 로 유도) — 줄 끝에 매단다(고아로 새 줄 첫 칸에 혼자 안 남긴다)
 HANG_PUNCT = ((font.LEAD0, 0x24), (font.LEAD0, 0x25), (font.LEAD0, 0x27), (font.LEAD0, 0x2E))
@@ -601,7 +610,7 @@ def _wrap_asm() -> "Asm":
 
     · `orphan`(→$6D9C 대신): 다음 글자가 부호 넷 중 하나면 **개행 보류 플래그를 안 세운다** —
       이번 글자는 이번 줄에 그대로 그려진다(줄 끝에 매달린다). 아니면 원래대로 `$6AB5` 호출.
-    · `mark`(→$6723 대신): 글리프 뱅크를 MPR2 에 잠깐 걸어(SEI — 그 창의 본 프로그램을 인터럽트가 못 부르게) `wordck`(어절 줄바꿈 판정 + `flag`
+    · `mark`(→$6723 대신): 뱅크 0x73(어절 판정 루틴 자리)을 MPR7 에 잠깐 걸어(SEI — BIOS 창이 비는 동안 인터럽트가 못 들어오게) `wordck`(어절 줄바꿈 판정 + `flag`
       기록)를 부르고 원래 `$6AB9` 로 넘어간다. `$6AB9` 가 보류 플래그를 지우므로 「이번 글자에서
       개행이 일어나는가」는 **호출 전**에만 알 수 있다 — 그래서 `flag` 를 거기서 적는다.
     · `eat`(→$6730 대신): 방금 개행이 일어났고 이번 글자가 공백이면(위 `flag`) **칸 전진을
@@ -625,13 +634,13 @@ def _wrap_asm() -> "Asm":
     a.label("mark")  # 어절 판정 + `flag` 기록(글리프 뱅크) → 원래 `$6AB9`
     a.op("PHP")
     a.op("SEI")
-    a.op("TMA", "tma", WORDCK_MPR)
+    a.op("TMA", "tma", WCK_MPR)
     a.op("PHA")
-    a.op("LDA", "imm", WORDCK_BANK)
-    a.op("TAM", "tam", WORDCK_MPR)
-    a.op("JSR", "abs", WORDCK_ADDR)
+    a.op("LDA", "imm", WCK_BANK)
+    a.op("TAM", "tam", WCK_MPR)
+    a.op("JSR", "abs", WCK_ADDR)
     a.op("PLA")
-    a.op("TAM", "tam", WORDCK_MPR)
+    a.op("TAM", "tam", WCK_MPR)
     a.op("PLP")
     a.op("JMP", "abs", ORIG_DO_WRAP)
     a.label("eat")
@@ -899,7 +908,7 @@ def finish_banks(glyph_bank: bytes) -> bytes:
         gb[at : at + len(code)] = code
     at = len(gb) - 0x2000 + font.BANK_GLYPH_END - font.CODE_BYTES
     assert not gb[at : at + font.CODE_BYTES].strip(b"\0"), "글리프가 마지막 뱅크 코드 자리를 덮는다"
-    gb[at : at + font.CODE_BYTES] = hook_entry() + wordck()
+    gb[at : at + font.CODE_BYTES] = hook_entry() + wordck_glyph_slot()
     tab = len(gb) - 0x2000 + (HALF_TAB_ADDR - (ENTRY_MPR << 13))
     assert not gb[tab : tab + HALF_TAB_LEN].strip(b"\0"), "반각 영숫자 표 자리가 비어 있지 않다"
     gb[tab : tab + HALF_TAB_LEN] = half_tables()
@@ -920,14 +929,16 @@ def finish_banks(glyph_bank: bytes) -> bytes:
     return bytes(gb)
 
 
-def _wordck_asm() -> "Asm":
-    """어절 첫 글자에서 「열 + 어절 길이 > 13」이면 개행 보류(`$CF15`)를 세운다. X·Y 를 지킨다.
+def _wordck_asm(org: int | None = None) -> "Asm":
+    """어절 첫 글자에서 「시작 폭 + 어절 폭 > 줄 폭」이면 개행 보류(`$CF15`)를 세운다. X·Y 를 지킨다.
 
-    지금 글자 = `$F9:$F8`, 열 = `$38BB`(이 글자가 들어갈 칸), 다음 바이트 = `($14),Y`.
-    길이는 글자(≥$24, 2B) 수 — 공백(`81 40`)·제어(<$24)에서 끝난다. 단 이름·도구 삽입 중(`$90` 비트1)에
-    `06` 을 만나면 삽입 전 자리(`$93/$94`)로 돌아가 이어 잰다(「캐리온크롤러A는」처럼 조사가 뒤에 붙는다).
+    지금 글자 = `$F9:$F8`, 열 = `$38BB`(+ 나머지 `rem` = 4px 단위), 다음 바이트 = `($14),Y`.
+    🔴 11-20 정확 모델: 폭을 **4px 눈금**으로 센다 — 보통 글자 3 · 매다는 부호(`! , . ·`) 1 · `?` 2(`wu`). 시작 눈금 = 열×3 + rem/4,
+    들어가는 조건 = 시작 + 어절 눈금 ≤ 줄 폭(칸)×3. 칸 수만 세던 옛 모델은 반각 공백·부호 나머지(4·8px)가 빠져 어절 끝이 틀 칸(156px)을 덮었다.
+    어절은 공백(`81 40`·반각 공백 `F8`)·제어(<$24)에서 끝난다. 단 이름·도구 삽입 중(`$90` 비트1)에 `06` 을 만나면 삽입 전 자리(`$93/$94`)로
+    돌아가 이어 잰다(「캐리온크롤러A는」처럼 조사가 뒤에 붙는다).
     """
-    a = Asm(WORDCK_ADDR)
+    a = Asm(WCK_ADDR if org is None else org)
     a.op("PHY")
     a.op("PHX")
     a.op("LDX", "abs", "prevsp")  # 직전 글자가 공백이었나
@@ -962,7 +973,10 @@ def _wordck_asm() -> "Asm":
     a.op("BEQ", "rel", "o2")  # 어절 첫 글자가 아니다
     a.op("LDA", "abs", 0x38BB)
     a.op("BEQ", "rel", "o2")  # 줄 머리
-    a.op("STZ", "abs", "cnt")  # 지금 글자 뒤로 몇 칸 — 마지막 글자 열 = 열 + cnt
+    a.op("LDA", "zp", 0xF9)  # `cnt` = 어절 눈금 — 지금 글자부터 센다
+    a.op("LDX", "zp", 0xF8)
+    a.op("JSR", "abs", "wu")
+    a.op("STA", "abs", "cnt")
     a.op("LDA", "zp", 0x14)
     a.op("STA", "zp", 0xEC)
     a.op("LDA", "zp", 0x15)
@@ -970,40 +984,37 @@ def _wordck_asm() -> "Asm":
     a.op("JSR", "abs", "guard")
     a.op("LDA", "zp", 0x90)
     a.op("AND", "imm", 2)
-    a.op("TAX")  # X = 삽입 중인가
+    a.op("STA", "abs", "ins")  # 삽입 중인가
     a.label("lp")
     a.op("LDA", "izpy", 0xEC)
     a.op("CMP", "imm", 0x24)
     a.op("BCC", "rel", "ctl")
     a.op("CMP", "imm", font.HALF_SPACE[0])  # 반각 공백도 어절 끝
     a.op("BEQ", "rel", "done")
+    a.op("STA", "abs", "tl")  # 리드
+    a.op("INY")
+    a.op("LDA", "izpy", 0xEC)
+    a.op("DEY")
+    a.op("TAX")  # X = 트레일
+    a.op("LDA", "abs", "tl")
     a.op("CMP", "imm", SPACE_CODE[0])
     a.op("BNE", "rel", "ch")
-    a.op("INY")
-    a.op("LDA", "izpy", 0xEC)
-    a.op("DEY")
-    a.op("CMP", "imm", SPACE_CODE[1])
-    a.op("BEQ", "rel", "done")
-    a.label("ch")  # A = 리드(공백 갈래에서 왔으면 트레일 $40 — 리드 F0 과 안 겹친다)
-    a.op("CMP", "imm", font.LEAD0)
-    a.op("BNE", "rel", "cnt1")
-    a.op("INY")
-    a.op("LDA", "izpy", 0xEC)
-    a.op("DEY")
-    # 11-08 마스터 「전투중 창 초과하면 초과된 부분이 계속 남아」 — 매다는 부호(`!` `.` …)도 어절 길이에 센다: 어절 끝 부호가 칸 13(오른쪽 틀 칸)에 걸리면
-    #   어절째 새 줄로 넘긴다(틀 칸은 안 지워져 잔상이 남는다 — 몬스터 이름이 변수라 칸이 정해지지 않는 전투 로그에서 드러났다). 이 줄이 있던 자리: HANG_PUNCT 비교 후 skip.
-    a.label("cnt1")
-    a.op("INC", "abs", "cnt")
-    a.label("skip")
+    a.op("CPX", "imm", SPACE_CODE[1])
+    a.op("BEQ", "rel", "done")  # 전각 공백도 어절 끝
+    a.label("ch")
+    a.op("JSR", "abs", "wu")
+    a.op("CLC")
+    a.op("ADC", "abs", "cnt")
+    a.op("STA", "abs", "cnt")
     a.op("INY")
     a.op("INY")
     a.op("BRA", "rel", "lp")  # 끝은 늘 제어 코드(00·01·04 …)라 멈춘다
     a.label("ctl")
     a.op("CMP", "imm", 6)
     a.op("BNE", "rel", "j0")
-    a.op("TXA")
+    a.op("LDA", "abs", "ins")
     a.op("BEQ", "rel", "done")
-    a.op("LDX", "imm", 0)
+    a.op("STZ", "abs", "ins")
     a.op("LDA", "zp", 0x93)
     a.op("STA", "zp", 0xEC)
     a.op("LDA", "zp", 0x94)
@@ -1013,19 +1024,53 @@ def _wordck_asm() -> "Asm":
     a.op("LDY", "imm", 0)
     a.op("BRA", "rel", "lp")
     a.label("done")
+    # 시작 눈금 = 열×3 + rem/4, 들어가는 조건 = 시작 + 어절 ≤ 줄 폭×3
     a.op("LDA", "abs", 0x38BB)
+    a.op("ASL")
+    a.op("CLC")
+    a.op("ADC", "abs", 0x38BB)  # 열×3
+    a.op("STA", "abs", "tl")
+    a.op("LDA", "abs", NARROW_ADDR)  # `rem`(0·4·8px) — 후킹 껍데기(`_narrow_asm`)의 첫 바이트
+    a.op("LSR")
+    a.op("LSR")
+    a.op("CLC")
+    a.op("ADC", "abs", "tl")
     a.op("CLC")
     a.op("ADC", "abs", "cnt")
-    a.op(
-        "CMP", "zp", LINE_COLS_ZP
-    )  # 창마다의 줄 폭(로그·필드 13) — 마지막 글자 열 < 폭이면 들어간다
-    a.op("BCC", "rel", "out")
+    a.op("STA", "abs", "tl")  # 이 어절 끝 눈금
+    a.op("LDA", "zp", LINE_COLS_ZP)
+    a.op("ASL")
+    a.op("CLC")
+    a.op("ADC", "zp", LINE_COLS_ZP)  # 줄 폭×3
+    a.op("CMP", "abs", "tl")
+    a.op("BCS", "rel", "out")  # 줄 폭 ≥ 끝 눈금 — 들어간다
     a.op("INC", "abs", 0xCF15)  # 이 글자부터 새 줄
     a.label("out")
     # `flag`(RAM) = 「이 글자에서 개행이 일어나고 이 글자가 공백」 — `eat` 이 칸 전진을 건너뛴다.
     #   `$6AB9` 가 `$CF15` 를 지우므로 호출 전인 여기서만 알 수 있다.
     a.op("LDA", "abs", 0xCF15)
-    a.op("BEQ", "rel", "st")
+    a.op("BNE", "rel", "pend")
+    # 🔴 11-21 줄 첫 칸 공백 근본(마스터 「 하하하하,」 해적섬 · 오델로 · 정적 검사가 0 이라던 사이에 실화면에서 여러 번 나왔다): 개행 보류가 없어도 **줄 머리(칸 0 · 나머지 0)에 오는 공백**이면
+    #   `flag` 를 세워 안 먹는다(`eat`/`pre` 가 칸 전진을 건너뛴다) — 문안·경로(점프·쪽 넘김·이음)와 무관하게 줄 머리 공백은 그려지지 않는다. 공백만(「!」「.」 이 같은 갈래 `prevsp` 를 타므로 코드로 다시 가른다).
+    a.op("LDA", "abs", 0x38BB)
+    a.op("BNE", "rel", "zero")
+    a.op("LDA", "abs", NARROW_ADDR)  # `rem`
+    a.op("BNE", "rel", "zero")
+    a.op("LDA", "zp", 0xF9)
+    a.op("CMP", "imm", font.HALF_SPACE[0])
+    a.op("BEQ", "rel", "headsp")
+    a.op("CMP", "imm", SPACE_CODE[0])
+    a.op("BNE", "rel", "zero")
+    a.op("LDA", "zp", 0xF8)
+    a.op("CMP", "imm", SPACE_CODE[1])
+    a.op("BNE", "rel", "zero")
+    a.label("headsp")
+    a.op("LDA", "imm", 1)
+    a.op("BRA", "rel", "st")
+    a.label("zero")
+    a.op("LDA", "imm", 0)
+    a.op("BRA", "rel", "st")
+    a.label("pend")
     a.op("LDA", "abs", "prevsp")
     a.label("st")
     a.op("STA", "abs", WRAP_ADDR)
@@ -1056,16 +1101,44 @@ def _wordck_asm() -> "Asm":
     a.op("PLA")
     a.op("STA", "zp", 0xEC)
     a.op("BRA", "rel", "rp")
-    for v in ("prevsp", "cnt"):
+    # wu — A = 리드 · X = 트레일 → A = 글자 폭 눈금(4px): 보통 3 · `! , .`(F0 트레일 < `NARROW_LOW`)와 `·`(F3 34) 1 · `?`(F0 2E) 2. Y 를 지킨다.
+    a.label("wu")
+    a.op("CMP", "imm", font.LEAD0)
+    a.op("BNE", "rel", "w3")
+    a.op("CPX", "imm", NARROW_LOW)
+    a.op("BCC", "rel", "w1")
+    a.op("CPX", "imm", _NC["?"][1] if "?" in _NC else 0x2E)
+    a.op("BEQ", "rel", "w2")
+    a.label("w3")
+    a.op("CMP", "imm", _NC["·"][0])
+    a.op("BNE", "rel", "w3b")
+    a.op("CPX", "imm", _NC["·"][1])
+    a.op("BEQ", "rel", "w1")
+    a.label("w3b")
+    a.op("LDA", "imm", 3)
+    a.op("RTS")
+    a.label("w1")
+    a.op("LDA", "imm", 1)
+    a.op("RTS")
+    a.label("w2")
+    a.op("LDA", "imm", 2)
+    a.op("RTS")
+    for v in ("prevsp", "cnt", "tl", "ins"):
         a.label(v)
         a.data(b"\x00")
     return a
 
 
 def wordck() -> bytes:
+    """뱅크 0x73 꼬리(MPR7 `WCK_ADDR`)에 싣는 어절 판정 루틴 바이트."""
     b = _wordck_asm().bytes()
-    assert len(b) <= WORDCK_ROOM, (len(b), WORDCK_ROOM)
-    return b + b"\0" * (WORDCK_ROOM - len(b))
+    assert len(b) <= WCK_ROOM, (len(b), WCK_ROOM)
+    return b
+
+
+def wordck_glyph_slot() -> bytes:
+    """글리프 뱅크 꼬리의 옛 wordck 자리 — 루틴이 뱅크 0x73 으로 옮겨 갔으니 0(원판 디스크 바이트와 같다)."""
+    return b"\0" * WORDCK_ROOM
 
 
 def hook_wrap_fix() -> bytes:

@@ -40,6 +40,7 @@ BASELINE = common.GAME_DIR / "typeset_baked_baseline.json"
 # 이음이 아닌 메시지 — 저장 순서로 앞 메시지(`…있었습니다.` + `0D`) 바로 뒤지만 **별개 갈래의 새 창**이다: 빈 보물상자 「(이름)은 보물상자를 다시 한번…」(씬 21·25·29 — 상자 열기 메시지 뒤 `0D` 다음에 이어 저장된 빈 상자 분기).
 #   첫 칸 공백을 두면 「세리오스들 은」으로 이름과 조사가 떨어진다(마스터 11-17) — 이음 검사의 오탐이라 이 셋만 뺀다.
 FRESH_AFTER_0D = {(21, "9fadde3af66697df"), (25, "9fadde3af66697df"), (29, "9fadde3af66697df")}
+PROB_AXIS = {"①": "2-3", "②": "2-4", "③": "2-5", "④": "2-6", "⑤": "H13"}  # ⑤ 폭 초과(11-20) = 오른쪽 틀 칸 침범 — H13 과 같은 부류
 AXES = ("2-1", "2-2", "2-3", "2-4", "2-5", "2-6", "2-7", "2-11", "2-12", "2-17", "4-6", "H13", "2-NL")
 SENT_END = set(".!?…~」』")
 OPLEN = {**M.TEXT_OPS, **M.OTHER_OPS}
@@ -152,7 +153,7 @@ def page_axes(text: str, *, cap: int, on: int = 0, off: int = 0, joined: bool = 
     nonblank = [x for x in lines if x]
     silence = len(nonblank) == 1 and all(c in TC.PUNCT for c in nonblank[0])
     for p in TC.problems(lines, cuts):
-        hit.add({"①": "2-3", "②": "2-4", "③": "2-5", "④": "2-6"}[p[0]])
+        hit.add(PROB_AXIS[p[0]])
     if silence:
         hit.discard("2-3")
         hit.discard("2-4")
@@ -316,6 +317,8 @@ def scene_rows() -> dict[str, list[tuple[str, str]]]:
                 for pi, (text, pon, poff) in enumerate(pages):
                     cap = 3 if (head and pi == 0) else 4
                     frag = pi == 0 and not head and bool(m.tokens) and isinstance(m.tokens[0], str) and not gap_break  # 원문이 글로 시작(이름 변수 뒤 이음 조각 「…말씀이군요」) **이고 바로 앞 메시지와의 사이 옵코드에 쪽 넘김·줄바꿈이 없을 때만** 첫 공백이 이음이다(코드가 변수를 찍고 이어 가는 흐름은 정적으로 못 보니 그 밖은 이음으로 본다)(11-04: 앞 쪽이 끝나 새 창이 열리는데도 면제해 씬 18 「 그리고 제가」 의 첫 칸 공백을 놓쳤다)
+                    if pi == 0 and m.key in T.SPELL_PROMPT_KEYS:
+                        text = text.lstrip("\n")  # 🔴 마스터 11-21 판정 「주문 안내는 윗 두 줄을 비우고 셋째 줄」 — 머리 빈 줄은 의도다(`translate.SPELL_PROMPT_KEYS`, 이 두 열쇠만)
                     for ax in page_axes(text, cap=cap, on=pon, off=poff, joined=frag, lead=(T.JOIN_NAME if m.key in T.JOIN_KEYS else TC.ACTOR) if (pi == 0 and JOSA_LEAD.match(tr.get("t", ""))) else ""):
                         hits[ax].append((tag, f"쪽{pi + 1} ⟨{text.replace(chr(10), '|')[:40]}⟩"))
                 # 2-NL(11-11) — 원문이 끝 개행(`01`)으로 끝나는 열린 메시지는 우리 조립도 `01` 로 끝나야 한다: 꽉 찬 13칸 줄 뒤에서 `01` 을 빼면 다음 메시지가 같은 줄에 붙어
@@ -338,7 +341,7 @@ def battle_system_rows(hits: dict) -> None:
         for p in probs:
             if p.startswith("③") and lines and lines[0].startswith(" ") and p.endswith("1줄"):
                 continue  # 이름 변수 뒤에 이어 붙는 조각(` 내려갔다!`) — 첫 공백은 이음이다
-            hits[{"①": "2-3", "②": "2-4", "③": "2-5", "④": "2-6"}[p[0]]].append((f"전투:{k[:8]}", "|".join(lines)))
+            hits[PROB_AXIS[p[0]]].append((f"전투:{k[:8]}", "|".join(lines)))
     sy = TC.run() or []
     # 변수 폭 훑기 — 수치 1~4자리(자리마다 8px) × 파티 이름 전부. 가장 긴 값만 재면 짧은 값에서 부호가 틀 칸에 걸리는 걸 놓친다(11-04 「최대 ＨＰ가 16포인트 올랐다.」)
     glos = TC.sysbuild.glossary()
@@ -370,7 +373,7 @@ def battle_system_rows(hits: dict) -> None:
     TC.ACTOR, TC.VALUE = keep
     for c, lines, probs in sy:
         for p in probs:
-            hits[{"①": "2-3", "②": "2-4", "③": "2-5", "④": "2-6"}[p[0]]].append((f"시스템:{c.name}", "|".join(lines)))
+            hits[PROB_AXIS[p[0]]].append((f"시스템:{c.name}", "|".join(lines)))
     # 부호 축(문자열 단위) — 전투·시스템·씬 정본 밖 모든 script/sys 문자열
     n = 0
     for f in sorted((common.GAME_DIR / "script" / "sys").glob("*.json")):

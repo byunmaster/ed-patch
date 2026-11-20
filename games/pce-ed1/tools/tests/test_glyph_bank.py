@@ -253,7 +253,7 @@ class GlyphBank(unittest.TestCase):
 
     def test_code_fits_tails(self):
         self.assertLessEqual(len(hook.unpack_code()), hook.UNPACK_ROOM)
-        self.assertLessEqual(len(hook._wordck_asm().bytes()), hook.WORDCK_ROOM)
+        self.assertLessEqual(len(hook._wordck_asm().bytes()), hook.WCK_ROOM)  # 어절 판정은 뱅크 0x73 꼬리(11-20)
         self.assertLessEqual(len(hook._entry_asm().bytes()), hook.ENTRY_ROOM)
         self.assertEqual(hook.UNPACK_ADDR - WIN + hook.UNPACK_ROOM, BANK)
         # 마지막 뱅크 글리프 끝 칸들이 코드 자리 — 풀기 루틴 바로 앞에서 끝난다

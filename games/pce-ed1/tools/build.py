@@ -423,6 +423,8 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         # 음악 이어 재생(마스터 11-20 「음악 겹침·중단」, 관리자 승인 (b)·②) — 짝 컨테이너 교체(CD_READ 가 CD-DA 를 멈춤) 직전 CD 위치를 저장하고 교체 뒤 그 위치부터 잇는다(`musicresume.py`). 같은 뱅크 0x73 꼬리, winmask 바로 뒤
         mr = musicresume.code().ljust(musicresume.CODE_LEN, b"\0")
         p.append(("music resume", *_main(musicresume.BANK, musicresume.OFF), b"\xff" * len(mr), mr))
+        wc = hook.wordck()  # 어절 판정 루틴 — 뱅크 0x73 꼬리(musicresume 뒤), `mark` 가 MPR7 에 걸어 부른다
+        p.append(("wordck bank", *_main(hook.WCK_BANK, hook.WCK_BANK_OFF), b"\xff" * len(wc), wc))
         p.append(
             (
                 "load stops cd",
@@ -690,10 +692,15 @@ def _scene54_image(bdata: bytes, rel: int, table: dict[str, bytes], edits, block
     if zone_image.SCENE in blocked:
         raise BuildError("씬 54 에 나레이션·시각표·대사창 단계가 걸렸다 — 지도 구역 이미지(zone_image)가 그 단계를 안 돈다")
     btab, dyn = glyphdyn.block_table(table, zone_image.SCENE)
-    with zone_image.pad():
+    with zone_image.pad(btab):
         blk, _n = translate.translate_block(zone_image.SCENE, bdata, btab)
     if len(blk) <= zone_image.ORIG_LEN:
         raise BuildError("씬 54 이미지가 원판 길이 이하 — 번역이 안 닿았다")
+    import overlay_text
+
+    left = overlay_text.jp_left(blk[zone_image.BLOCK_LEN : zone_image.ORIG_LEN])
+    if left:  # 코드 오버레이 안 인라인 일본어(오델로 노인 혼잣말) — 블록 밖이라 다른 게이트가 못 본다(11-21)
+        raise BuildError(f"씬 54 이미지 코드 오버레이에 일본어가 남았다 — script/ov054.json 에 없는 문자열: {left[:5]}")
     if (rel, zone_image.SCENE) in edits:
         blk = apply_edits(blk, edits[(rel, zone_image.SCENE)], f"rel {rel} id {zone_image.SCENE} (이미지)")
     if dyn:

@@ -127,6 +127,31 @@ class CPU:
                 r = self.a + m[w()] + self.c
                 self.c = int(r > 0xFF)
                 self.a = nz(r)
+            elif op == 0xE0:  # CPX imm
+                v = b()
+                self.c = int(self.x >= v)
+                nz(self.x - v)
+            elif op == 0x38:  # SEC (미사용이어도 무해)
+                self.c = 1
+            elif op == 0xA6:  # LDX zp
+                self.x = nz(m[ZP + b()])
+            elif op == 0x0A:  # ASL A
+                r = self.a << 1
+                self.c = int(r > 0xFF)
+                self.a = nz(r)
+            elif op == 0x4A:  # LSR A
+                self.c = self.a & 1
+                self.a = nz(self.a >> 1)
+            elif op == 0x65:  # ADC zp
+                r = self.a + m[ZP + b()] + self.c
+                self.c = int(r > 0xFF)
+                self.a = nz(r)
+            elif op == 0xCD:  # CMP abs
+                v = m[w()]
+                self.c = int(self.a >= v)
+                nz(self.a - v)
+            elif op == 0xB0:  # BCS
+                br(self.c)
             elif op == 0xD0:
                 br(not self.z)
             elif op == 0xF0:
@@ -147,7 +172,7 @@ class WordCk(unittest.TestCase):
     def setUp(self):
         self.m = bytearray(0x10000)
         code = hook.wordck()
-        self.m[hook.WORDCK_ADDR : hook.WORDCK_ADDR + len(code)] = code
+        self.m[hook.WCK_ADDR : hook.WCK_ADDR + len(code)] = code
         self.labels = hook._wordck_asm().labels
 
     def call(self, cur, rest, col, prev_space=True, inject=None):
@@ -168,9 +193,24 @@ class WordCk(unittest.TestCase):
             m[ZP + 0x93], m[ZP + 0x94] = INJ & 0xFF, INJ >> 8
         cpu = CPU(m)
         cpu.x, cpu.y = 0x48, 0
-        cpu.run(hook.WORDCK_ADDR)
+        cpu.run(hook.WCK_ADDR)
         self.assertEqual((cpu.x, cpu.y), (0x48, 0), "X·Y 를 지켜야 한다")
         return m[PEND], m[hook.WRAP_ADDR]
+
+    def test_line_head_space_is_eaten(self):
+        # 11-21 줄 첫 칸 공백 근본 — 개행 보류가 없어도 줄 머리(칸 0)의 공백은 flag(안 먹음)
+        self.assertEqual(self.call(SP, chars(2), 0, prev_space=False)[1], 1)
+        self.assertEqual(self.call(font.HALF_SPACE, chars(2), 0, prev_space=False)[1], 1)
+
+    def test_mid_line_space_and_head_punct_kept(self):
+        self.assertEqual(self.call(SP, chars(2), 3, prev_space=False)[1], 0)
+        self.assertEqual(self.call(font.HALF_SPACE, chars(2), 3, prev_space=False)[1], 0)
+        self.assertEqual(self.call(DOT, chars(2), 0, prev_space=False)[1], 0)  # 부호는 공백 갈래 prevsp 를 타도 안 먹는다
+        self.assertEqual(self.call(CH, chars(2), 0, prev_space=False)[1], 0)
+
+    def test_head_space_not_eaten_after_hanging_punct(self):
+        self.m[hook.NARROW_ADDR] = 4  # 줄 머리 매다는 부호가 4px 를 써서 칸 0 · 나머지 4
+        self.assertEqual(self.call(SP, chars(2), 0, prev_space=False)[1], 0)
 
     def test_word_fits(self):
         # 열 9 + 4글자 = 13칸 — 이 줄에 들어간다
@@ -190,8 +230,31 @@ class WordCk(unittest.TestCase):
         m[BUF : BUF + 8] = chars(3) + bytes(SP)
         m[ZP + 0x14], m[ZP + 0x15] = BUF & 0xFF, BUF >> 8
         m[ZP + 0x90] = 0
-        CPU(m).run(hook.WORDCK_ADDR)
+        CPU(m).run(hook.WCK_ADDR)
         self.assertEqual(m[PEND], 0)
+
+    def test_remainder_counts_in_quarter_cells(self):
+        # 🔴 11-20 정확 모델: 폭을 4px 눈금으로 센다(시작 = 열×3 + rem/4, 어절 = 보통 3 · 부호 1 · `?` 2, 들어가는 조건 ≤ 줄 폭×3 = 39).
+        #   열 9 + 글자 4(= 12눈금): 나머지 0 → 27 + 12 = 39 들어감 · 나머지 4px → 28 + 12 = 40 새 줄 · 나머지 8px → 41 새 줄.
+        rest = chars(3) + bytes(SP)
+        self.m[hook.NARROW_ADDR] = 0
+        self.assertEqual(self.call(CH, rest, 9)[0], 0)
+        for rem in (4, 8):
+            self.m[hook.NARROW_ADDR] = rem
+            self.assertEqual(self.call(CH, rest, 9)[0], 1, rem)
+
+    def test_punct_counts_one_quarter(self):
+        # 매다는 부호(`! , .`)는 4px(1눈금) — 부호가 낀 어절을 칸 수로 세면 틀 칸을 안 덮는데도 넘어갔다(「않으시겠습니까!!』…」)
+        for trail in hook.HANG_PUNCT:
+            self.m[hook.NARROW_ADDR] = 4
+            # 열 9(27) + rem 1 = 28, 어절: 글자 2(6) + 부호(1 · `?` 는 2) + 공백 → 35~36 ≤ 39 → 들어간다
+            self.assertEqual(self.call(CH, chars(2) + bytes(trail) + bytes(SP), 9)[0], 0, trail)
+        # 같은 길이 어절이 부호 없이 글자 셋이면 28 + 3 + 3×3 = 40 → 새 줄
+        self.m[hook.NARROW_ADDR] = 4
+        self.assertEqual(self.call(CH, chars(3) + bytes(SP), 9)[0], 1)
+        # 어절이 글자 하나여도 나머지 8px 에 열 12 면 36 + 2 + 3 = 41 → 새 줄
+        self.m[hook.NARROW_ADDR] = 8
+        self.assertEqual(self.call(CH, bytes(SP), 12)[0], 1)
 
     def test_not_word_start(self):
         self.assertEqual(self.call(CH, chars(9), 12, prev_space=False)[0], 0)
@@ -227,7 +290,7 @@ class WordCk(unittest.TestCase):
         m[ZP + 0x90] = 0
         cpu = CPU(m)
         cpu.x, cpu.y = 0x48, 0
-        cpu.run(hook.WORDCK_ADDR)
+        cpu.run(hook.WCK_ADDR)
         self.assertEqual(m[PEND], 0)
         self.assertEqual((cpu.x, cpu.y), (0x48, 0))
 
@@ -270,7 +333,7 @@ class WordCk(unittest.TestCase):
         m[ZP + 0x14], m[ZP + 0x15] = BUF & 0xFF, BUF >> 8
         m[ZP + 0x90] = 0
         m[ZP + hook.LINE_COLS_ZP] = 13
-        CPU(m).run(hook.WORDCK_ADDR)
+        CPU(m).run(hook.WCK_ADDR)
         self.assertEqual(m[hook.WRAP_ADDR], 1)
 
     def test_space_sets_prevsp_and_flag(self):
@@ -288,7 +351,7 @@ class WordCk(unittest.TestCase):
         m[BUF] = 0
         m[ZP + 0x14], m[ZP + 0x15] = BUF & 0xFF, BUF >> 8
         cpu = CPU(m)
-        cpu.run(hook.WORDCK_ADDR)
+        cpu.run(hook.WCK_ADDR)
         self.assertEqual(m[hook.WRAP_ADDR], 1)
 
     def test_flag_clear_on_word_wrap(self):
@@ -335,11 +398,15 @@ class WordCk(unittest.TestCase):
     # ⚠ 알려진 한계: 개행 보류가 선 **줄 머리**에 문장 끝 부호가 오면 flag=1 이라 `eat` 이 그 부호의 칸 전진을 건너뛴다(공백과 같은 갈래라서).
     #   부호로 시작하는 줄은 우리 문안에 없다(전수 확인 — 전투·시스템 문구 줄 머리는 늘 글자·이름) — 코드 자리(+2B)가 모자라 안 막았다.
 
-    def test_fits_tail(self):
-        self.assertLessEqual(len(hook._wordck_asm().bytes()), hook.WORDCK_ROOM)
-        self.assertEqual(
-            hook.WORDCK_ADDR + hook.WORDCK_ROOM, (hook.WORDCK_MPR << 13) + font.BANK_GLYPH_END
-        )
+    def test_fits_bank73_tail(self):
+        # 뱅크 0x73 꼬리 — musicresume 바로 뒤에서 시작해 뱅크 끝(벡터 `$FFF6` 앞)에 안 닿는다
+        import musicresume
+
+        self.assertEqual(hook.WCK_BANK_OFF, musicresume.OFF + musicresume.CODE_LEN)
+        self.assertEqual(hook.WCK_BANK, musicresume.BANK)
+        self.assertLessEqual(len(hook._wordck_asm().bytes()), hook.WCK_ROOM)
+        self.assertLess(hook.WCK_ADDR + len(hook._wordck_asm().bytes()), 0xFFF6)
+        self.assertEqual(hook.WCK_ADDR >> 13, hook.WCK_MPR)
 
 
 if __name__ == "__main__":

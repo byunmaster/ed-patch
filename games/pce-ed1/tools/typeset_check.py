@@ -146,12 +146,14 @@ def wrap(s):
             if col >= WIDTH and ch not in HANG:
                 brk = True
             elif prev == " " and ch != " " and col > 0:
-                n = 0
+                # 🔴 11-20 정확 모델(`hook._wordck_asm`): 폭을 4px 눈금으로 센다 — 보통 글자 3 · 매다는 부호(`! , . ·`) 1 · `?` 2.
+                #   시작 눈금 = px // 4, 들어가는 조건 = 시작 + 어절 눈금 ≤ 줄 폭(칸) × 3. (옛 모델은 칸 수만 세어 반각 공백·부호 나머지(4·8px)가 빠졌다)
+                units = 0
                 for c in para[j:]:
                     if c == " ":
                         break
-                    n += 1  # 11-08: 매다는 부호도 어절 길이에 센다(`hook` wordck 과 같다)
-                brk = col + n > WIDTH
+                    units += 1 if c in ".,!·" else 2 if c == "?" else 3
+                brk = px // 4 + units > WIDTH * 3
             if brk:
                 mid = prev != " " and ch != " " and prev not in PUNCT and ch not in PUNCT
                 lines.append(cur)
@@ -184,6 +186,10 @@ def problems(lines, cuts=()):
             out.append(f"② 빈 줄 {i + 1}줄")
         if ln.startswith(" "):
             out.append(f"③ 줄 첫 칸 공백 {i + 1}줄")
+        body = ln.rstrip("".join(HANG))  # 줄 끝에 매다는 부호는 폭에서 뺀다(칸 13 에 얹히는 설계 — `wrap` 의 `orphan`·H13)
+        w = sum(typeset.adv(ch) for ch in body)
+        if w > WIDTH * 12:  # 🔴 11-20 마스터 「조판 오른쪽 테두리 깨짐」 — 칸 수만 보면 반각 공백 나머지(4·8px)가 빠져 글자 끝이 틀 칸(156px)을 넘는 줄이 통과했다
+            out.append(f"⑤ 폭 초과 {i + 1}줄 {w}px > {WIDTH * 12}px")
     for i, mid in cuts:
         if mid:
             out.append(

@@ -9,6 +9,11 @@
   · `savepos` — 교체(CD_READ) **직전**(첫 교체): BIOS `CD_SUBQ`(`$E01E`, 10B 를 `($FA)` 로 받는다)로 오디오 상태·절대 MSF 를 읽는다. 재생 중이면 위치가 든 곡 표 항목(엔진 `$691A~$697A`, 16곡)을
     찾아 끝 MSF·모드를 같이 저장한다. 방금 곡 명령을 건 직후(`$4B` < `$10`, `$4C` = 0)면 **그 곡의 범위 안일 때만** 믿는다(서브코드가 아직 옛 곡 위치일 수 있다) — 아니면 저장 안 함.
   · `replay` — 교체를 마친 뒤: 저장이 있으면 **그 위치부터** 곡 끝까지 `CD_PLAY`(`$E012`). 없으면 종전대로(곡 명령이 남아 있으면 엔진 `$6856` 으로 처음부터).
+  🔴 `$76`(11-21 — 마스터 「루디아 겹침 여전 · 계단 오르내릴 때 처음부터」): 엔진은 컨테이너를 CD 로 읽을 때마다(뱅크 0x68 `$5716`) CD 곡 상태 `$76` 을 `FF`(안 흐름)로 지운다 —
+  읽기가 CD-DA 를 죽이니 원판에선 맞는 말이다. 우리는 교체 뒤 CD 를 되살리는데 `$76` 은 `FF` 로 남았다. 그래서 ① 다음 씬 입장(`$6425`)의 「같은 곡이면 그대로」 판정
+  (`($76 & $1F) == 곡`)이 늘 거짓 → SEARCH+PLAY 로 처음부터(계단마다), ② 성 → 마을(PSG) 입장(`$6466`)이 `$76` 비트7 을 보고 CD 페이드(명령 0x80)를 건너뜀 → 되살린 성 곡이
+  마을 곡 위에 그대로(겹침). 실측: 마스터 상태 mc3.005539(마을 씬 12 · `$76` = FF · CD 재생 중 · 페이더 명령 0) · mc3/4/5.213701(씬 16 · `$76` = FF · 곡 머리 3~14초).
+  고침: `savepos` 가 `$76` 을 떠 두고 `replay` 가 CD 를 되살린 뒤 되돌린다 — 교체가 엔진에 안 보인다.
   호출은 전부 먼 호출(`JSR $4FD8` + 뱅크 인자 + 주소) → 이 뱅크가 `$8000`(MPR4)에 걸리고 MPR3 은 0x72 라 엔진 표(뱅크 0x69)는 MPR3 을 잠깐 0x69 로 건다.
 """
 
@@ -33,6 +38,7 @@ ENG_SAME_SONG = 0x6856  # 엔진 「같은 곡」 루틴(처음부터)
 TBL_START = (0x691A, 0x692A, 0x693A)  # 곡별 시작 MSF(F8·F9·FA)
 TBL_END = (0x694A, 0x695A, 0x696A, 0x697A)  # 곡별 끝 MSF 3B + 모드(FC·FD·FE·FF)
 NSONG = 0x10
+ENG_CD_STATE = 0x76  # 엔진 영 페이지 — CD 곡 상태(하위 5비트 곡 · 비트7 재생 예약 · 비트6 PSG 밑에서 페이드됨 · `FF` = 안 흐름)
 STATUS_PLAYING = 0x00  # CD_SUBQ 버퍼 +0 = 오디오 상태(0 = 재생 중 · 2 = 일시정지 · 3 = 정지 — mednafen `DoNEC_PCE_READSUBQ`)
 
 
@@ -40,6 +46,9 @@ def _asm(buf_addr: int = 0) -> "hook.Asm":
     a = hook.Asm(ORG)
     # ── savepos ─────────────────────────────────────────────
     a.label("savepos")
+    # 🔴 엔진 CD 곡 상태 — 컨테이너 로드(`$5716`)가 `FF` 로 지우기 전에 떠 둔다(아래 `rp_rest`)
+    a.op("LDA", "zp", ENG_CD_STATE)
+    a.op("STA", "abs", "s76")
     a.op("STZ", "abs", "valid")
     a.op("TMA", "tma", 3)
     a.op("PHA")
@@ -145,14 +154,14 @@ def _asm(buf_addr: int = 0) -> "hook.Asm":
     a.op("LDA", "abs", "end3")
     a.op("STA", "zp", 0xFF)  # A = 끝 모드 그대로 부른다(엔진도 마지막 `LDA $FF` 직후)
     a.op("JSR", "abs", CD_PLAY)
-    a.op("BRA", "rel", "rp_out")
+    a.op("BRA", "rel", "rp_rest")
     # 저장이 없으면 종전대로 — 곡 명령이 남아 있을 때만 엔진 같은 곡 루틴(처음부터)
     a.label("rp_old")
     a.op("LDA", "zp", 0x4B)
     a.op("CMP", "imm", NSONG)
-    a.op("BCS", "rel", "rp_out")
+    a.op("BCS", "rel", "rp_pend")
     a.op("LDA", "zp", 0x4C)
-    a.op("BNE", "rel", "rp_out")
+    a.op("BNE", "rel", "rp_pend")
     a.op("TMA", "tma", 3)
     a.op("PHA")  # 원래 MPR3(0x72 — 먼 호출이 건 값)
     a.op("LDA", "imm", ENG_BANK)
@@ -160,6 +169,15 @@ def _asm(buf_addr: int = 0) -> "hook.Asm":
     a.op("JSR", "abs", ENG_SAME_SONG)
     a.op("PLA")
     a.op("TAM", "tam", 3)
+    a.op("BRA", "rel", "rp_rest")
+    # CD 를 못 되살렸다(교체 전에도 안 흐르고 있었다) — 엔진 상태는 로드가 둔 `FF`(안 흐름) 그대로가 맞다. 단 「재생 예약」(비트7)이 걸려 있었으면 되돌린다(엔진이 곧 PLAY 를 건다)
+    a.label("rp_pend")
+    a.op("LDA", "abs", "s76")
+    a.op("BPL", "rel", "rp_out")
+    # 🔴 11-21 엔진 CD 곡 상태(`$76`)를 교체 전 값으로 — CD 를 되살렸으니 엔진도 「그 곡이 흐르는 중」으로 알아야 한다(머리말 「`$76`」)
+    a.label("rp_rest")
+    a.op("LDA", "abs", "s76")
+    a.op("STA", "zp", ENG_CD_STATE)
     a.label("rp_out")
     a.op("PLA")
     a.op("STA", "zp", 0x13)
@@ -196,6 +214,8 @@ def _asm(buf_addr: int = 0) -> "hook.Asm":
     a.data(b"\0")
     a.label("buf9")
     a.data(b"\0")
+    a.label("s76")
+    a.data(b"\xff")
     return a
 
 

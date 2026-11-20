@@ -60,6 +60,13 @@ def scan(hosts_off: bool = False) -> list[str]:
                     continue
                 if not hosts_off and b[w - 1] in (0x03, 0x05):
                     continue  # 쪽 머리 — 빌드가 옮긴다
+                if not hosts_off:
+                    import translate as _T
+
+                    pre = b[host.start : w]
+                    oh = _T._head_len(b, host.start)
+                    if (oh and len(pre) == oh) or (not oh and len(pre) == 2 and M.is_lead(pre[0])):
+                        continue  # 화자 머리 바로 뒤 · 첫 글자 바로 뒤 진입 — `translate.remap_page_jumps` 가 새 메시지 쪽으로 옮긴다(11-21)
                 out.append(f"scn{sid:03d}:{j}->{w}({host.key[:8]})")
         return sorted(set(out))
     finally:

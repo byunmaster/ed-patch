@@ -34,6 +34,10 @@ def body_chars(scene_id: int) -> set[str]:
     out: set[str] = set()
     for e in M.load_translations(scene_id).values():
         out |= {ch for ch in font.expand_packed(e["t"]) if font.needs_glyph(ch)}
+    if scene_id == 54:  # 코드 오버레이 안 인라인 대사(오델로 노인 혼잣말, `overlay_text`) — 블록 밖이라 열쇠 체계에 없지만 같은 글자표를 쓴다
+        import overlay_text
+
+        out |= overlay_text.chars()
     return out
 
 
@@ -133,6 +137,16 @@ def _page_end_resets(m: M.Message) -> set[int]:
 SPEAKER_FIX: dict[str, str] = {}  # 🔴 비어 있다(11-06 마스터 「여긴 입구의 병사가 맞아」) — 씬 41 「뭐, 뭐라고!?」(4bc93adb…)의 원판 머리 「入口の兵士」는 맞는 화자라 로우로 바꾸지 않는다. 11-05 에 로우로 둔 것은 되돌렸다. 로우로 고칠 줄은 #6 「뭐야 너, 이분을…」 하나(머리 `09 02` = 파티 둘째 칸 — 정상 진행에서 로우)이고 그건 문안·머리 바이트로 이미 맞다
 # 앞 메시지 끝 글(「…나는 」)에 **이름 변수**가 이어 찍히는 메시지(`voice_sched.inline_name`) — 화자 창이 아니라 앞 줄 끝에서 이어 쓰는 줄이다(씬 41 「나는 〈게일〉이라고 하는데…」, 마스터 11-05).
 # 일반화하면 다른 씬 지문이 움직여 열쇠로 명시한다.
+# 🔴 줄을 손으로 정하는 메시지(마스터 11-21 해적섬 게임 「지금까지의 상품은 / n승이니까 ○○○인데, / 받지 않고 계속 도전할래?」) — 문안(`t`)은 평문 그대로 두고(조판 검사·글자 집합은 `t` 를 본다) 조립만 이 줄 목록으로 낸다.
+# 빈 줄 문자열은 「그 줄 끝 개행」이다(뒤에 게임 코드가 숫자를 찍는다). 열쇠는 원문 메시지(씬 102 「今のところ」 · 「だけど/もらわないで頑張るかい？」).
+HARD_LINES = {
+    "535a74c51eff64f6": ["지금까지의 상품은"],
+    "aecdc1afc48bba4a": ["인데,", "받지 않고 계속 도전할래?"],
+    "3d6e5a6f6d00dc60": ["운이 좋군.", "당신이 이겼다."],
+    "784c9b510aa4135f": ["하하하하, 당신이 졌다."],
+}
+# 끝 옵코드가 없어 뒤 메시지·게임 코드가 같은 줄에 이어 찍는 메시지 — 끝에 개행 하나(「지금까지의 상품은」 뒤 숫자, 이김·짐 뒤 다음 줄). 해적섬 게임(마스터 11-21)
+HARD_TRAIL_NL = {"535a74c51eff64f6", "3d6e5a6f6d00dc60", "784c9b510aa4135f"}
 INLINE_LEAD = {"9223868c8171327f"}
 _JOSA_LEAD = re.compile(r"(은/는|을/를|이/가|와/과|으로/로)")
 _JOSA_MARK = "\uE0F0"  # 조사 토큰을 한 글자로 재기 위한 자리표시(12px)
@@ -174,8 +188,16 @@ def _inline_head_reset(m: M.Message, out: bytes) -> bytes:
     return out[:k] + b"\x04" + out[k:]
 
 
+# 🔴 주문 배우기 안내(「어느 주문을 원하는가?」 — 노부부 집·네리아·루디아 현자 등 전 주문 스승 자리, 원문 열쇠 둘)는 **윗 두 줄을 비우고 셋째 줄**에 낸다(마스터 11-21 「주문 개수가 적어도 가리는 것보단 보이는 게 나을듯」
+# — 주문 목록 팝업이 창 윗부분 오른쪽을 덮어 첫 줄이 가렸다, 네리아만 셋째 줄이라 한 가지로 맞춘다). 머리 공백(`' 어느…'` — 자리마다 달랐다)은 떼고 개행 둘로 줄을 맞춘다.
+SPELL_PROMPT_KEYS = {"5dc5675b267d9e15", "7e3f4be7d6105e86"}
+
+
 def _compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str, str], lead_px: int = 0) -> bytes:
     out = bytearray()
+    if m.key in SPELL_PROMPT_KEYS and m.speaker is None:
+        tr = {**tr, "t": tr["t"].lstrip(" ")}
+        out += bytes([NL, NL])
     if m.speaker is not None:
         name = SPEAKER_FIX[m.key] if m.key in SPEAKER_FIX else speakers.get(m.speaker, m.speaker)
         out += b"\x1f" + font.encode(name, table, msg=True) + b"\x04"  # 화자명도 대사창 — 공백 반각
@@ -228,6 +250,8 @@ def _compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str
             keep_windows=typeset.keep_windows(typeset._SCENE),
             _bounds=bounds,
         )
+        if m.key in HARD_LINES:
+            pgs = [list(HARD_LINES[m.key])]
         if jm:
             pgs = [pg if isinstance(pg, typeset.Card) else [ln.replace(_JOSA_MARK, jm.group(0)) for ln in pg] for pg in pgs]
             if len(pgs[0]) > 1 and not isinstance(pgs[0], typeset.Card) and m.key not in JOIN_KEYS and m.key not in FREE_FLOW_KEYS:
@@ -265,6 +289,8 @@ def _compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str
             out += font.encode(" " * (len(core) - len(core.rstrip(" "))), table, msg=True)
     # 🔴 색을 켠 메시지(`1D`)는 끝 옵코드 줄(`04` 색 되돌림 · `05`/`03` 쪽 · 종료)을 원문 순서 그대로 낸다 — 안 내면 해설의 초록이 뒤 대사까지 번진다(마스터 10-30
     #    「이후까지 대사가 초록」)·끝의 `05 1D`(다음 메시지가 쓸 색)도 사라진다. 색을 안 켠 메시지는 종전 그대로(아래).
+    if m.key in HARD_TRAIL_NL:
+        out.append(NL)
     tail = []
     for t in reversed(m.tokens):
         if not isinstance(t, tuple):
@@ -303,6 +329,23 @@ def _compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str
     ):  # 다음 글자(12px)가 아직 들어가는 줄 — 156px 꽉 찬 줄은 다음 글자에서 인터프리터가 스스로 넘긴다(gon 004 실측: 「…습니다.왕」 156px 까지 붙었다)
         # 🔴 **원문은 이름+글이 틀을 꽉 채운 한 줄이라 인터프리터가 스스로 넘겼는데 우리 줄은 짧다** — 종료 없이 이어지는 메시지(씬 6 장비 셋 「王家のつるぎを装備しました。」 14칸)는
         #    다음 메시지의 이름이 우리 줄 끝에 붙어 「…습니다.왕 / 가의 갑옷을…」로 접혔다(마스터 10-31 gon 004, 규칙 2-1·2-6). 원문이 암묵으로 넘긴 자리를 `01` 로 낸다(하드 개행은 문안에 못 둔다 — 게이트).
+        out.append(NL)
+    elif (
+        m.speaker is not None
+        and not tr.get("raw")
+        and m.tokens
+        and m.tokens[0] == ("op", NL)
+        and not any(t == ("op", NL) for t in m.tokens[1:])
+        and len(m.jp.lstrip("\n")) >= typeset.FULL
+        and m.jp.rstrip("\n")[-1:] in "。？！"  # 문장이 끝난 줄만 — 「私の名は、」처럼 뒤에 변수(이름)가 이어지는 조각은 개행하면 안 된다
+        and pgs
+        and pgs[-1]
+        and not isinstance(pgs[-1], typeset.Card)
+        and _line_px(pgs[-1][-1]) <= typeset.FULL * 12 - 12
+    ):
+        # 🔴 11-21 마스터 「노인 화자명이 개행되어야 해」(씬 80 「할머니 / 잘 오셨습니다.노인 / 흥…」): 이름이 **따로 한 줄**(머리 개행)인 메시지의 본문 한 줄이 원문에서 틀을 꽉 채워(14자 「よく、おいでくださいました。」)
+        #    인터프리터가 다음 글자(다음 메시지의 화자 이름)에서 스스로 넘겼는데, 우리 줄은 짧아 이름이 같은 줄 끝에 붙었다. 위 갈래는 머리 개행이 있는 메시지를 「하드 개행 있음」으로 제외해 못 탔다 — 본문 안 개행(머리 개행 뒤)이 없고
+        #    원문 본문이 꽉 찬 줄일 때 같은 자리를 `01` 로 낸다.
         out.append(NL)
     return _restore_reset(bytes(out), tail)
 
@@ -451,9 +494,40 @@ def translate_block(scene_id: int, block: bytes, table: dict[str, bytes]) -> tup
         raise TranslateError(
             f"scn {scene_id}: 정본 열쇠 {sorted(missing)} 가 블록에 없다(원문이 바뀌었나)"
         )
+    edits = header_nl_pass(edits)
     edits = merge_sell_thanks(scene_id, block, edits)
     new_block = remap_page_jumps(scene_id, block, M.splice(block, edits), msgs, trs)
     return apply_orphans(scene_id, block, new_block, table, speakers), len(edits)
+
+
+def is_header_start(b: bytes) -> bool:
+    """메시지가 **화자 머리**(이름 변수 `09 nn` 또는 이름 색 런 `1F …04`) + 줄바꿈(`01`)으로 시작하나 — 이름이 따로 한 줄을 차지하는 꼴. 줄바꿈이 안 뒤따르는 `09`·`1F` 는 문장 속 인라인 이름이다."""
+    if len(b) >= 3 and b[0] == 0x09 and b[2] == NL:
+        return True
+    if b[:1] == b"\x1f":
+        k = b.find(b"\x04")
+        return k > 0 and b[k + 1 : k + 2] == bytes([NL])
+    return False
+
+
+def open_before_header(edits: list[tuple["M.Message", bytes]]) -> list[int]:
+    """앞 메시지가 **열린 채**(끝 옵코드·개행 없이 글로 끝남) 이어지는데 다음 메시지가 화자 머리로 시작하는 쌍의 앞 메시지 색인 — 그러면 이름이 앞 글 줄 끝(열≠0)에 붙는다(마스터 11-21
+    「그만둬!!세리오스」 · 「잘 오셨습니다.노인」). 원판은 이 자리를 꽉 찬 줄의 자동 줄넘김에 기댔다 — 우리 줄은 짧아 안 넘어간다."""
+    out = []
+    for i in range(1, len(edits)):
+        pm, pb = edits[i - 1]
+        m, b = edits[i]
+        if not pb or not is_header_start(b) or pm.terminated or m.start - pm.end > 2 or m.start < pm.end:
+            continue
+        if pb[-1] >= 0x20:  # 끝이 글(두 바이트 글리프·ASCII 부호·반각 공백) — 개행·쪽·종료·색 되돌림 옵코드(<0x20)가 아니다
+            out.append(i - 1)
+    return out
+
+
+def header_nl_pass(edits: list[tuple["M.Message", bytes]]) -> list[tuple["M.Message", bytes]]:
+    """`open_before_header` 쌍의 앞 메시지 끝에 줄바꿈 하나(근본 — 조건식으로 꽉 찬 줄을 가려내는 땜질 대신 모든 화자 머리 앞을 새 줄로)."""
+    fix = set(open_before_header(edits))
+    return [(m, b + bytes([NL]) if i in fix else b) for i, (m, b) in enumerate(edits)]
 
 
 _SELL_STRUCT = re.compile(rb"\xa9(.)\x85\xfa\xa9(.)\x85\xfb\x20\xd8\x4f\x06\x27\x9e", re.S)
@@ -527,6 +601,17 @@ def _walk_pages(buf: bytes, start: int, k: int, follow_jump: bool) -> int | None
     return None
 
 
+def _head_len(b: bytes, start: int) -> int:
+    """`start` 의 메시지가 화자 머리(`09 nn 01` · `1F …04 01`)로 시작하면 머리(개행 포함) 길이, 아니면 0."""
+    if b[start : start + 1] == b"\x09" and b[start + 2 : start + 3] == bytes([NL]):
+        return 3
+    if b[start : start + 1] == b"\x1f":
+        k = b.find(b"\x04", start)
+        if k > 0 and b[k + 1 : k + 2] == bytes([NL]):
+            return k + 2 - start
+    return 0
+
+
 def remap_page_jumps(scene_id: int, orig: bytes, new: bytes, msgs: list, trs: dict) -> bytes:
     """🔴 **쪽 머리로 들어가는 스크립트 점프를 새 쪽 머리로 옮긴다**(마스터 11-18 씬 50 「남자」 첫 대사가 「라고요,」부터 — 다치지 않은 갈래의 `0F` 가 원판 메시지 둘째 쪽(`05` 바로 뒤)으로 들어오는데
     한국어 메시지는 쪽 길이가 달라 그 오프셋이 글자 한가운데로 떨어졌다). 메시지 **밖**(코드 자리)의 `0F lo hi` 가 번역된 메시지의 k 번째 쪽 머리(앞 바이트 `05`·`03`)를 가리키면, 새 바이트에서 k 번째 쪽 머리를 걸어 찾아
@@ -540,6 +625,21 @@ def remap_page_jumps(scene_id: int, orig: bytes, new: bytes, msgs: list, trs: di
             continue
         w = (orig[j + 1] | orig[j + 2] << 8) - M.BASE
         host = next((t for t in msgs if t.start < w < t.end), None)
+        if host is not None and host.key in trs and M._parse_from(orig, w) is not None and orig[w - 1] not in PAGE_OPS:
+            # 🔴 11-21 「쪽 첫 어절 앞 1~2글자가 없다」(마스터 「하루라도→라도」·「방금→금」): 스크립트 점프가 메시지 **머리 바로 뒤**(화자 머리 + 개행 뒤 · 첫 한 글자 뒤)로 들어오는데
+            #    우리 머리·글이 원문과 길이가 달라 그 오프셋이 글자 한가운데로 떨어졌다. 머리 뒤 진입은 우리 머리 뒤로, 첫 글자 뒤 진입은 우리 메시지 머리로 옮긴다.
+            pre = orig[host.start : w]
+            oh = _head_len(orig, host.start)
+            if oh and len(pre) == oh:
+                nh = _head_len(new, host.start)
+                if nh:
+                    addr = M.BASE + host.start + nh
+                    out[j + 1], out[j + 2] = addr & 0xFF, addr >> 8
+                continue
+            if len(pre) == 2 and not oh and M.is_lead(pre[0]):
+                addr = M.BASE + host.start
+                out[j + 1], out[j + 2] = addr & 0xFF, addr >> 8
+                continue
         if host is None or orig[w - 1] not in PAGE_OPS or host.key not in trs or M._parse_from(orig, w) is None:
             continue
         # 원판에서 host.start → w 사이 쪽 옵코드 수 k(w 직전의 것까지)

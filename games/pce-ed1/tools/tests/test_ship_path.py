@@ -49,6 +49,8 @@ class ShipPath(unittest.TestCase):
                     continue  # 앞 줄 폭을 따로 주는 경로(이어쓰기 lead — `continuation_leads`)는 조판기 단독 호출과 입력이 다르다
                 if T._JOSA_LEAD.match(v["t"].lstrip(" ")) or m.key in T.INLINE_LEAD or m.key in T.ITEM_LEAD_KEYS:
                     continue  # 이름 변수 뒤 조사 조각 — 앞 이름 폭(lead)을 따로 준다
+                if m.key in T.HARD_LINES:
+                    continue  # 줄을 손으로 정한 메시지(해적섬 게임 — `HARD_LINES`) — 조판기 줄 계획이 아니라 지정한 줄이 롬 줄이다
                 if (sid, m.key) in T.PAGE_SPEAKER:
                     continue  # 쪽 머리에 인라인 이름 줄을 더 내는 메시지(씬 34 OFF 끝 쪽) — 롬 줄이 조판기 줄보다 한 줄 많은 게 의도다
                 src = font.expand_packed(v["t"].lstrip(" "))
@@ -111,6 +113,8 @@ class ShipPathLeadExceptions(unittest.TestCase):
                 if not v or v.get("raw") or not v.get("t"):
                     continue
                 txt = v["t"].lstrip(" ")
+                if m.key in T.HARD_LINES:
+                    continue  # 줄을 손으로 정한 메시지(해적섬 게임) — 지정 줄이 곧 롬 줄이다(줄 폭은 아래 시험이 못 본다 → 손으로 px 확인)
                 if m.key in T.FREE_FLOW_KEYS:
                     continue  # 개행을 안 내고 엔진이 이름 폭대로 접게 둔 문구(상자 「이/가 들어 있었습니다」) — 줄 계획이 곧 런타임이 아니다(시험 롬 실화면 11-17)
                 if m.key in leads:

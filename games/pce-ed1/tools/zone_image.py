@@ -51,10 +51,16 @@ def overlay() -> bytes:
 
 
 class pad:
-    """`with zone_image.pad():` 안에서 `messages.splice` 가 오버레이만큼 띄우고 꼬리를 놓는다."""
+    """`with zone_image.pad(table):` 안에서 `messages.splice` 가 오버레이만큼 띄우고 꼬리를 놓는다. `table`(블록 전용 글자표)을 주면 오버레이 안 인라인 대사를 번역해 넣는다(`overlay_text`)."""
+
+    def __init__(self, table=None):
+        self.table = table
 
     def __enter__(self):
-        M.PAD = overlay()
+        import overlay_text
+
+        ov = overlay()
+        M.PAD = overlay_text.apply(ov, self.table) if self.table is not None else ov
         return self
 
     def __exit__(self, *a):

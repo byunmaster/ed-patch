@@ -429,6 +429,9 @@ def _line_of(flat: list[str]) -> list[int]:
     return [i for i, ln in enumerate(flat) for _w in ln.split(" ")]
 
 
+_DEP_NOUN_HEAD = re.compile(r"^(거|것|중|수|줄|데|때문|뿐|만큼|터|리|바|채|적|듯|양|척|지|뒤|때|동안|따름|김|셈|참|쪽)(이|가|은|는|을|를|의|에|에서|로|으로|도|만|까지|라|라고|지요|죠|인|입니다|이다|이에요|예요|인데|이라|이니|인가|처럼)?[,.!?…]*$")  # 관형형 뒤 의존명사 — 줄머리로 가면 꾸밈말과 갈린다
+
+
 def modifier_end(w: str) -> bool:
     """관형형 꾸밈말로 끝나는 어절인가(「유일한」「쉰」「있을」) — 줄·쪽 끝에 새로 오면 꾸밈받는 말과 갈린다. 조사 은/는/이/가 … 로 끝나는 체언은 아니다(「는」은 주어 뒤라 같이 막는다)."""
     if w.endswith(",") or len(w) < 2:
@@ -469,7 +472,9 @@ def regressions(before: list[str], after: list[str]) -> int:
 
     def bad(i: int) -> bool:
         w = wa[i - 1]
-        return not ends_sentence(w) and (_bonded(w, wa[i]) or modifier_end(w))
+        # 🔴 11-21 마스터 지정 「자신의 장원이 있는｜낫슈 마을로」: 한 줄이 세 어절 이상인 관형절로 끝나면 꾸밈말 고아가 아니라 절 하나가 줄을 이룬 것이다(한 어절 꾸밈말만 고아로 센다)
+        # (11-21 관리자: 뒤가 의존명사(거·중·수·것…)면 관형절이 길어도 붙임 — 완화는 뒤가 자립명사일 때만)
+        return not ends_sentence(w) and (_bonded(w, wa[i]) or (modifier_end(w) and (_DEP_NOUN_HEAD.match(wa[i]) is not None or sum(1 for x in la if x == la[i - 1]) < 3)))
 
     # 새로 생긴 이음 갈림은 없어진 갈림과 자리를 바꾼 것이어도 센다(「수⏎있다」→「마실⏎수」는 나쁨에서 나쁨 — 관리자 10-26)
     n = sum(1 for i in b1 - b0 if bad(i))
@@ -754,10 +759,25 @@ def bkind(word: str) -> int:
 _TITLE_RE = re.compile(r"^(공작|왕자|왕비|왕|공주|공|경|백작|장군|대장|선장|사제|신부|씨|님|폐하|전하|할아범|국왕|박사|선생|도령|마스터)(님|께서|께|의|은|는|이|가|을|를|도|에게|과|와|으로|로)?[,.!?…]*$")
 
 
+# 🔴 11-21 마스터 「와 / 계십니다」 · 「자신의 장원이 / 있는」류 31곳 일괄 판정 — 공용 `krwrap.split_reason` 이 못 잡는 보조용언(계시다·드리다·버리다·주다 …)과
+# 의존명사 뒤 있다·없다, 예정 어미(테니·텐데·걸세)가 줄 머리로 밀리는 갈림을 이음으로 본다(공용 규칙은 동결 — 이 게임 쪽 규칙).
+_PLACE_HEAD = re.compile(r"^(마을|항구|성|탑|동굴|왕국|광산|요새)(은|는|이|가|을|를|에|에서|로|으로|의|과|와|도|만|까지)?[,.!?…]*$")  # 띄어 쓴 지명(「낫슈 마을」·「네리아 항구」)이 줄 사이에서 갈리지 않게
+_AUX_HEAD = re.compile(r"^(테니|텐데|걸세|계시|드려|드립|드릴|드리겠|버려|버렸|버리겠|계십|계셔|주겠|주시|주었|주지|주세|주신)")
+_DEP_PREV = re.compile(r"(적이|것이|수가|리가|줄이|바가|적도|수도|것도|뿐이|따름이|말씀이|필요가)$")
+_EXIST_HEAD = re.compile(r"^(있|없)")
+
+
 def _bonded(prev_word: str, next_word: str) -> bool:
+    # 🔴 11-21 마스터 지정 「프라토 국왕께서｜와 계십니다」: 공용은 「…께서｜와」를 본용언+보조용언으로 읽지만, 주격·목적격 조사로 끝난 어절 뒤 「와」는 동사 줄기(오다)라 「와 계십니다」가 한 덩이다 — 그 앞에서 끊는 게 맞다
+    if next_word == "와" and prev_word.endswith(("께서", "이", "가", "은", "는", "을", "를")):
+        return False
     if krwrap.split_reason(prev_word, next_word):
         return True
     p, n = prev_word.rstrip(",.!?…"), next_word
+    if prev_word[-1:] not in SENT_END and _AUX_HEAD.match(n):
+        return True
+    if prev_word[-1:] not in SENT_END and _PLACE_HEAD.match(n) and len(p) >= 2 and p[-1] not in "은는이가을를의에도로와과만" and not krwrap.split_reason(p, n):
+        return True
     if prev_word[-1:] in SENT_END:
         return False
     if _TITLE_RE.match(n) and p[-1:] not in _JOSA:  # 이름+칭호가 갈림(제스톤｜공작의)

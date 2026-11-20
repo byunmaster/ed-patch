@@ -38,9 +38,14 @@ class Typeset(unittest.TestCase):
         lines, cuts = T.wrap("가" * 10 + " 나다라마")  # 124px = 열 10
         self.assertEqual(lines, ["가" * 10 + " ", "나다라마"])
         self.assertEqual(T.problems(lines, cuts), [])
-        lines, _ = T.wrap(
-            "가" * 9 + " 나다라마"
-        )  # 112px = 열 9 + 4 = 13칸 — 들어간다(공백이 반각이라)
+        lines, _ = T.wrap("가" * 8 + " 나다라마")  # 100px = 열 8 + 4px — 어절이 148px 에서 끝난다(공백이 반각이라 들어간다)
+        self.assertEqual(len(lines), 1)
+        # 🔴 11-20 정확 모델: 열 9 + 4px 에 4글자는 160px — 나머지(4px)가 있어 어절째 넘긴다(칸 수만 보던 때는 통과해 오른쪽 틀 칸을 덮었다)
+        lines, cuts = T.wrap("가" * 9 + " 나다라마")
+        self.assertEqual(lines, ["가" * 9 + " ", "나다라마"])
+        self.assertEqual(T.problems(lines, cuts), [])
+        # 매다는 부호로 끝나는 어절은 보정 없음 — 같은 자리에서도 들어간다
+        lines, _ = T.wrap("가" * 9 + " 나다라.")
         self.assertEqual(len(lines), 1)
 
     def test_half_spaces_add_up_to_columns(self):
@@ -49,8 +54,8 @@ class Typeset(unittest.TestCase):
         self.assertEqual(lines, ["가" * 12 + "   ", "나"])
         lines, _ = T.wrap(
             "가" * 12 + "  나"
-        )  # 공백 둘 = 8px — 열 12 그대로, 글자가 이 줄 마지막 칸에 들어간다
-        self.assertEqual(lines, ["가" * 12 + "  나"])
+        )  # 공백 둘 = 8px — 열은 12 그대로지만 글자가 152~164px 로 틀 칸(156px)을 덮는다 → 새 줄(11-20 — 칸 수만 보던 때는 한 줄로 통과)
+        self.assertEqual(lines, ["가" * 12 + "  ", "나"])
 
     def test_wrap_hangs_punct_and_eats_space(self):
         lines, cuts = T.wrap("가" * 13 + ". 나")
@@ -58,7 +63,7 @@ class Typeset(unittest.TestCase):
             lines, ["가" * 13 + ".", "나"]
         )  # 부호는 매달고, 넘긴 줄 첫 공백은 칸을 안 먹는다
         self.assertEqual(T.problems(lines, cuts), [])
-        lines, _ = T.wrap("가" * 9 + " 나다라.")  # 매다는 부호는 어절 길이에 안 센다 — 13칸
+        lines, _ = T.wrap("가" * 8 + " 나다라.")  # 열 8 + 4px 에 4글자(부호 포함) — 들어간다
         self.assertEqual(len(lines), 1)
 
     def test_no_loss_invariant_catches_dropped_tail(self):
