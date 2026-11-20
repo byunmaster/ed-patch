@@ -1,0 +1,218 @@
+"""음악 이어 재생(마스터 11-20 「음악 겹침·중단」 — 관리자 승인 (b)·②) — 뱅크 0x73 꼬리.
+
+🔴 왜: 컨테이너 짝 교체(`splitload` — 한 구역 컨테이너가 4뱅크를 넘어 쪼갠 씬)는 CD_READ 라 CD-DA 를 멈춘다. 종전엔 교체를 마친 뒤 엔진의 같은 곡 루틴(`$6856`)을
+다시 불러 **곡을 처음부터** 다시 틀었고, 그것도 곡 명령(`$4B` < `$10`·`$4C` = 0)이 남아 있을 때만이었다.
+실측 11-20: ① 씬 57 입장 — 스크립트 PLAY 직후 CD_READ ×2, 둘째 PLAY 호출 스택이 `splitload`. ② 루디아 마을 안 이동(곡이 16초 흐른 뒤) — 교체 READ 뒤 **PLAY 가 아예 없다**:
+`$4B` 가 곡 번호가 아니라 엔진이 바꿔 둔 값(0x11 · `$4C` = 1)이라 다시 걸기 조건이 거짓 → 곡이 그냥 멎는다(마스터 「음악 중단」). 원판은 컨테이너가 하나라 교체가 없어 CD 호출 0.
+
+동작(곡 명령 변수에 기대지 않고 **CD 위치로** 판단한다):
+  · `savepos` — 교체(CD_READ) **직전**(첫 교체): BIOS `CD_SUBQ`(`$E01E`, 10B 를 `($FA)` 로 받는다)로 오디오 상태·절대 MSF 를 읽는다. 재생 중이면 위치가 든 곡 표 항목(엔진 `$691A~$697A`, 16곡)을
+    찾아 끝 MSF·모드를 같이 저장한다. 방금 곡 명령을 건 직후(`$4B` < `$10`, `$4C` = 0)면 **그 곡의 범위 안일 때만** 믿는다(서브코드가 아직 옛 곡 위치일 수 있다) — 아니면 저장 안 함.
+  · `replay` — 교체를 마친 뒤: 저장이 있으면 **그 위치부터** 곡 끝까지 `CD_PLAY`(`$E012`). 없으면 종전대로(곡 명령이 남아 있으면 엔진 `$6856` 으로 처음부터).
+  호출은 전부 먼 호출(`JSR $4FD8` + 뱅크 인자 + 주소) → 이 뱅크가 `$8000`(MPR4)에 걸리고 MPR3 은 0x72 라 엔진 표(뱅크 0x69)는 MPR3 을 잠깐 0x69 로 건다.
+"""
+
+import hook
+import winmask
+
+BANK = 0x73
+WINDOW = 0x8000
+ORG = winmask.TBL + winmask.TOTAL_LEN  # winmask 끝 바로 뒤
+OFF = ORG - WINDOW
+CODE_LEN = 320  # 코드 + 변수 길이 이상(꼬리 안: winmask 와 합쳐 1280B 이하)
+
+CD_SUBQ = 0xE01E
+CD_PLAY = 0xE012
+CD_PAUSE = 0xE018
+LOAD_TAIL_A = 0x7D55  # 원판 LOAD 성공 꼬리 첫 호출(뱅크 0x69)
+LOAD_TAIL_B = 0x4240  # 둘째 호출(상주 구역)
+LOAD_SITE = 0x1D3D  # 뱅크 0x69 +0x1D3D(논리 `$7D3D`) — `20 55 7D 20 40 42` 6B 를 먼 호출로 바꾼다
+LOAD_SITE_ORIG = bytes.fromhex("2055 7d20 4042".replace(" ", ""))
+ENG_BANK = 0x69
+ENG_SAME_SONG = 0x6856  # 엔진 「같은 곡」 루틴(처음부터)
+TBL_START = (0x691A, 0x692A, 0x693A)  # 곡별 시작 MSF(F8·F9·FA)
+TBL_END = (0x694A, 0x695A, 0x696A, 0x697A)  # 곡별 끝 MSF 3B + 모드(FC·FD·FE·FF)
+NSONG = 0x10
+STATUS_PLAYING = 0x00  # CD_SUBQ 버퍼 +0 = 오디오 상태(0 = 재생 중 · 2 = 일시정지 · 3 = 정지 — mednafen `DoNEC_PCE_READSUBQ`)
+
+
+def _asm(buf_addr: int = 0) -> "hook.Asm":
+    a = hook.Asm(ORG)
+    # ── savepos ─────────────────────────────────────────────
+    a.label("savepos")
+    a.op("STZ", "abs", "valid")
+    a.op("TMA", "tma", 3)
+    a.op("PHA")
+    a.op("LDA", "imm", ENG_BANK)
+    a.op("TAM", "tam", 3)  # `$6000` 창 = 엔진 뱅크 0x69(곡 표)
+    a.op("LDA", "imm", buf_addr & 0xFF)  # 버퍼 주소 = 이 뱅크의 변수(`$8000` 창)
+    a.op(
+        "STA", "zp", 0xFA
+    )  # 🔴 BIOS `CD_SUBQ`(`$EFBF`)는 10B 를 `($FA)` 로 받는다(`$EA3B` 데이터 인 루프 — `$F8/$F9` 는 길이)
+    a.op("LDA", "imm", buf_addr >> 8)
+    a.op("STA", "zp", 0xFB)
+    a.op("JSR", "abs", CD_SUBQ)
+    a.op("LDA", "abs", "buf")
+    a.op("CMP", "imm", STATUS_PLAYING)
+    a.op("BNE", "rel", "sp_out")
+    # 방금 곡 명령을 건 직후면 그 곡의 범위만 믿는다
+    a.op("LDA", "zp", 0x4B)
+    a.op("CMP", "imm", NSONG)
+    a.op("BCS", "rel", "scan")
+    a.op("LDA", "zp", 0x4C)
+    a.op("BNE", "rel", "scan")
+    a.op("LDX", "zp", 0x4B)
+    a.op("JSR", "abs", "chk")
+    a.op("BCC", "rel", "take")
+    a.op("BRA", "rel", "sp_out")
+    a.label("scan")
+    a.op("LDX", "imm", 0)
+    a.label("scan_lp")
+    a.op("JSR", "abs", "chk")
+    a.op("BCC", "rel", "take")
+    a.op("INX")
+    a.op("CPX", "imm", NSONG)
+    a.op("BNE", "rel", "scan_lp")
+    a.op("BRA", "rel", "sp_out")
+    a.label("take")
+    for src, dst in (("buf7", "msf0"), ("buf8", "msf1"), ("buf9", "msf2")):
+        a.op("LDA", "abs", src)
+        a.op("STA", "abs", dst)
+    for i in range(4):
+        a.op("LDA", "absx", TBL_END[i])
+        a.op("STA", "abs", f"end{i}")
+    a.op("INC", "abs", "valid")
+    a.label("sp_out")
+    a.op("PLA")
+    a.op("TAM", "tam", 3)
+    a.op("RTS")
+    # chk — 곡 X 의 [시작, 끝) 안에 버퍼의 절대 MSF 가 드나. 안이면 C=0, 밖이면 C=1(BCD 분·초·프레임 사전식 비교)
+    a.label("chk")
+    a.op("LDA", "abs", "buf7")
+    a.op("CMP", "absx", TBL_START[0])
+    a.op("BCC", "rel", "chk_no")
+    a.op("BNE", "rel", "chk_hi")
+    a.op("LDA", "abs", "buf8")
+    a.op("CMP", "absx", TBL_START[1])
+    a.op("BCC", "rel", "chk_no")
+    a.op("BNE", "rel", "chk_hi")
+    a.op("LDA", "abs", "buf9")
+    a.op("CMP", "absx", TBL_START[2])
+    a.op("BCC", "rel", "chk_no")
+    a.label("chk_hi")
+    a.op("LDA", "abs", "buf7")
+    a.op("CMP", "absx", TBL_END[0])
+    a.op("BCC", "rel", "chk_yes")
+    a.op("BNE", "rel", "chk_no")
+    a.op("LDA", "abs", "buf8")
+    a.op("CMP", "absx", TBL_END[1])
+    a.op("BCC", "rel", "chk_yes")
+    a.op("BNE", "rel", "chk_no")
+    a.op("LDA", "abs", "buf9")
+    a.op("CMP", "absx", TBL_END[2])
+    a.op("BCS", "rel", "chk_no")
+    a.label("chk_yes")
+    a.op("CLC")
+    a.op("RTS")
+    a.label("chk_no")
+    a.op("SEC")
+    a.op("RTS")
+    # ── replay ──────────────────────────────────────────────
+    a.label("replay")
+    a.op("PHX")
+    a.op("PHY")
+    a.op("LDA", "zp", 0x12)
+    a.op("PHA")
+    a.op("LDA", "zp", 0x13)
+    a.op("PHA")
+    a.op("LDA", "abs", "valid")
+    a.op("BEQ", "rel", "rp_old")
+    a.op("STZ", "abs", "valid")
+    a.op("LDA", "abs", "msf0")
+    a.op("STA", "zp", 0xF8)
+    a.op("LDA", "abs", "msf1")
+    a.op("STA", "zp", 0xF9)
+    a.op("LDA", "abs", "msf2")
+    a.op("STA", "zp", 0xFA)
+    a.op("LDA", "imm", 0x40)  # 시작 모드 = MSF(엔진 `$68A4` 와 같다)
+    a.op("STA", "zp", 0xFB)
+    a.op("LDA", "abs", "end0")
+    a.op("STA", "zp", 0xFC)
+    a.op("LDA", "abs", "end1")
+    a.op("STA", "zp", 0xFD)
+    a.op("LDA", "abs", "end2")
+    a.op("STA", "zp", 0xFE)
+    a.op("LDA", "abs", "end3")
+    a.op("STA", "zp", 0xFF)  # A = 끝 모드 그대로 부른다(엔진도 마지막 `LDA $FF` 직후)
+    a.op("JSR", "abs", CD_PLAY)
+    a.op("BRA", "rel", "rp_out")
+    # 저장이 없으면 종전대로 — 곡 명령이 남아 있을 때만 엔진 같은 곡 루틴(처음부터)
+    a.label("rp_old")
+    a.op("LDA", "zp", 0x4B)
+    a.op("CMP", "imm", NSONG)
+    a.op("BCS", "rel", "rp_out")
+    a.op("LDA", "zp", 0x4C)
+    a.op("BNE", "rel", "rp_out")
+    a.op("TMA", "tma", 3)
+    a.op("PHA")  # 원래 MPR3(0x72 — 먼 호출이 건 값)
+    a.op("LDA", "imm", ENG_BANK)
+    a.op("TAM", "tam", 3)
+    a.op("JSR", "abs", ENG_SAME_SONG)
+    a.op("PLA")
+    a.op("TAM", "tam", 3)
+    a.label("rp_out")
+    a.op("PLA")
+    a.op("STA", "zp", 0x13)
+    a.op("PLA")
+    a.op("STA", "zp", 0x12)
+    a.op("PLY")
+    a.op("PLX")
+    a.op("RTS")
+    # ── loadhook — 원판 LOAD 함수(뱅크 0x69 `$7D2E`)의 성공 꼬리 `JSR $7D55 · JSR $4240` 자리 ──────────
+    # 원판은 게임 안 LOAD 때 CD 를 멈추지 않는다(실측 11-20: 슬롯 2 동굴 → 슬롯 3 마을 LOAD 에서 CD 호출 0건, 동굴 CD 곡이 그대로 흐르는 채 마을 PSG 곡이 켜진다 — 원판도 겹침).
+    # 새 장면이 CD 곡을 쓰면 스크립트가 LOAD 뒤에 다시 건다(슬롯 3→2 실측: LOAD 뒤 SEARCH+PLAY). 여기서 먼저 멈추면 PSG 장면에 옛 CD 곡이 안 남는다.
+    a.label("loadhook")
+    a.op("JSR", "abs", CD_PAUSE)
+    a.op("TMA", "tma", 3)
+    a.op("PHA")
+    a.op("LDA", "imm", ENG_BANK)
+    a.op("TAM", "tam", 3)  # 원래 호출은 뱅크 0x69 가 `$6000` 에 걸린 채 불렀다
+    a.op("JSR", "abs", LOAD_TAIL_A)
+    a.op("JSR", "abs", LOAD_TAIL_B)
+    a.op("PLA")
+    a.op("TAM", "tam", 3)
+    a.op("RTS")
+    # ── 변수 ───────────────────────────────────────────────
+    for nm in ("valid", "msf0", "msf1", "msf2", "end0", "end1", "end2", "end3"):
+        a.label(nm)
+        a.data(b"\0")
+    a.label("buf")
+    a.data(b"\0")
+    a.label("buf1")
+    a.data(b"\0\0\0\0\0\0")
+    a.label("buf7")
+    a.data(b"\0")
+    a.label("buf8")
+    a.data(b"\0")
+    a.label("buf9")
+    a.data(b"\0")
+    return a
+
+
+def _final() -> "hook.Asm":
+    return _asm(_asm().labels["buf"])
+
+
+def far_addr(name: str) -> int:
+    return _final().labels[name]
+
+
+def far_call(name: str) -> bytes:
+    """먼 호출 6B(`JSR $4FD8` + 인자 뱅크 + 주소)."""
+    return b"\x20\xd8\x4f" + bytes([BANK - 0x68 - 1]) + far_addr(name).to_bytes(2, "little")
+
+
+def code() -> bytes:
+    b = _final().bytes()
+    assert len(b) <= CODE_LEN, (len(b), CODE_LEN)
+    return b

@@ -1,7 +1,7 @@
 {
  "total": {
-  "sectors": 677,
-  "bytes": 1326776
+  "sectors": 679,
+  "bytes": 1329148
  },
  "regions": {
   "IPL·시스템 카드 앞": {
@@ -22,19 +22,19 @@
   },
   "그 밖 rel 9728~": {
    "sectors": 36,
-   "bytes": 74112
+   "bytes": 74273
   },
   "본 프로그램 뱅크 0x68": {
    "sectors": 3,
    "bytes": 415
   },
   "본 프로그램 뱅크 0x69": {
-   "sectors": 1,
-   "bytes": 361
+   "sectors": 2,
+   "bytes": 447
   },
   "본 프로그램 뱅크 0x6A": {
    "sectors": 1,
-   "bytes": 224
+   "bytes": 223
   },
   "본 프로그램 뱅크 0x6B": {
    "sectors": 1,
@@ -54,11 +54,15 @@
   },
   "본 프로그램 뱅크 0x6F": {
    "sectors": 3,
-   "bytes": 584
+   "bytes": 585
   },
   "본 프로그램 뱅크 0x70": {
    "sectors": 3,
    "bytes": 2684
+  },
+  "본 프로그램 뱅크 0x73": {
+   "sectors": 1,
+   "bytes": 526
   },
   "본 프로그램 뱅크 0x74": {
    "sectors": 3,
@@ -78,11 +82,11 @@
   },
   "본 프로그램 뱅크 0x7C": {
    "sectors": 4,
-   "bytes": 7928
+   "bytes": 7956
   },
   "본 프로그램 뱅크 0x7D": {
    "sectors": 4,
-   "bytes": 7755
+   "bytes": 7764
   },
   "본 프로그램 뱅크 0x7F": {
    "sectors": 1,
@@ -90,19 +94,19 @@
   },
   "씬 컨테이너 rel 1252": {
    "sectors": 16,
-   "bytes": 35017
+   "bytes": 35058
   },
   "씬 컨테이너 rel 1268": {
    "sectors": 15,
-   "bytes": 34022
+   "bytes": 34054
   },
   "씬 컨테이너 rel 1284": {
    "sectors": 16,
-   "bytes": 35386
+   "bytes": 35374
   },
   "씬 컨테이너 rel 1316": {
    "sectors": 9,
-   "bytes": 20086
+   "bytes": 20150
   },
   "씬 컨테이너 rel 1332": {
    "sectors": 16,
@@ -110,51 +114,51 @@
   },
   "씬 컨테이너 rel 1348": {
    "sectors": 16,
-   "bytes": 36338
+   "bytes": 36375
   },
   "씬 컨테이너 rel 1364": {
    "sectors": 15,
-   "bytes": 34257
+   "bytes": 34266
   },
   "씬 컨테이너 rel 1380": {
    "sectors": 10,
-   "bytes": 22849
+   "bytes": 22868
   },
   "씬 컨테이너 rel 1396": {
    "sectors": 16,
-   "bytes": 36558
+   "bytes": 36561
   },
   "씬 컨테이너 rel 1412": {
    "sectors": 16,
-   "bytes": 35808
+   "bytes": 35834
   },
   "씬 컨테이너 rel 1428": {
    "sectors": 9,
-   "bytes": 20349
+   "bytes": 20370
   },
   "씬 컨테이너 rel 1444": {
    "sectors": 14,
-   "bytes": 30541
+   "bytes": 30540
   },
   "씬 컨테이너 rel 1460": {
    "sectors": 13,
-   "bytes": 29277
+   "bytes": 29371
   },
   "씬 컨테이너 rel 1476": {
    "sectors": 14,
-   "bytes": 30538
+   "bytes": 30535
   },
   "씬 컨테이너 rel 1492": {
    "sectors": 13,
-   "bytes": 27988
+   "bytes": 27990
   },
   "씬 컨테이너 rel 1508": {
    "sectors": 10,
-   "bytes": 21747
+   "bytes": 21751
   },
   "씬 컨테이너 rel 1524": {
    "sectors": 15,
-   "bytes": 34243
+   "bytes": 34261
   },
   "씬 컨테이너 rel 1540": {
    "sectors": 13,
@@ -162,11 +166,11 @@
   },
   "씬 컨테이너 rel 1556": {
    "sectors": 11,
-   "bytes": 24397
+   "bytes": 24441
   },
   "씬 컨테이너 rel 1572": {
    "sectors": 15,
-   "bytes": 33378
+   "bytes": 33411
   },
   "씬 컨테이너 rel 1588": {
    "sectors": 10,
@@ -178,27 +182,27 @@
   },
   "씬 컨테이너(이사) rel 9780": {
    "sectors": 9,
-   "bytes": 18378
+   "bytes": 18461
   },
   "씬 컨테이너(이사) rel 9796": {
    "sectors": 13,
-   "bytes": 26339
+   "bytes": 26412
   },
   "씬 컨테이너(이사) rel 9812": {
    "sectors": 15,
-   "bytes": 31445
+   "bytes": 31528
   },
   "씬 컨테이너(이사) rel 9828": {
    "sectors": 12,
-   "bytes": 24755
+   "bytes": 24839
   },
   "씬 컨테이너(이사) rel 9844": {
    "sectors": 16,
-   "bytes": 34603
+   "bytes": 34674
   },
   "씬 컨테이너(이사) rel 9860": {
    "sectors": 12,
-   "bytes": 22629
+   "bytes": 22827
   },
   "씬 컨테이너(이사) rel 9876": {
    "sectors": 16,
@@ -206,31 +210,31 @@
   },
   "씬 컨테이너(이사) rel 9892": {
    "sectors": 11,
-   "bytes": 23294
+   "bytes": 23359
   },
   "씬 컨테이너(이사) rel 9908": {
    "sectors": 15,
-   "bytes": 30625
+   "bytes": 30703
   },
   "씬 컨테이너(이사) rel 9924": {
    "sectors": 16,
-   "bytes": 33327
+   "bytes": 33429
   },
   "씬 컨테이너(이사) rel 9940": {
    "sectors": 15,
-   "bytes": 30803
+   "bytes": 30869
   },
   "씬 컨테이너(이사) rel 9956": {
    "sectors": 14,
-   "bytes": 28249
+   "bytes": 28362
   },
   "씬 컨테이너(이사) rel 9972": {
    "sectors": 16,
-   "bytes": 35609
+   "bytes": 35634
   },
   "씬 컨테이너(이사) rel 9988": {
    "sectors": 16,
-   "bytes": 32564
+   "bytes": 32654
   }
  }
 }

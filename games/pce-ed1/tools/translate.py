@@ -156,6 +156,25 @@ NAME_LONGEST = "세리오스"  # 파티 다섯 중 최장(`typeset_check.ACTOR` 
 
 
 def compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str, str], lead_px: int = 0) -> bytes:
+    """메시지 합성 — `_compose` 가 낸 바이트에, 인라인 이름 머리(`1F` 가 메시지 앞 틈에 있고 원문이 `이름 04 01 본문` 으로 시작)의 색 되돌림을 보탠다."""
+    return _inline_head_reset(m, _compose(m, tr, table, speakers, lead_px))
+
+
+def _inline_head_reset(m: M.Message, out: bytes) -> bytes:
+    """🔴 마스터 11-20 「대사가 노란색」(2장 숲의 초가집 할머니, 씬 54·55): 화자 이름이 **글로** 박힌 머리(`06 1F 이름 04 01 본문` — `1F` 는 메시지 앞 틈, 이름이 정본 화자 목록에 없어 파서가
+    화자로 안 잡는다)는 원문 `04`(색 되돌림)가 이름 바로 뒤 토큰이라, 번역(「이름\n본문」)을 합성하면 사라져 이름 색(노랑)이 본문 끝까지 번졌다. 이름 줄 끝(첫 `01` 앞)에 `04` 를 되살린다."""
+    t = m.tokens
+    if m.speaker is not None or len(t) < 3:
+        return out
+    if not (isinstance(t[0], str) and t[1] == ("op", 0x04) and t[2] == ("op", NL)):
+        return out
+    k = out.find(bytes([NL]))
+    if k < 0 or 0x04 in out[:k]:
+        return out
+    return out[:k] + b"\x04" + out[k:]
+
+
+def _compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str, str], lead_px: int = 0) -> bytes:
     out = bytearray()
     if m.speaker is not None:
         name = SPEAKER_FIX[m.key] if m.key in SPEAKER_FIX else speakers.get(m.speaker, m.speaker)

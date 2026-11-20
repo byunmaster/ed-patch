@@ -180,6 +180,13 @@ class CPU:
             self.y = 0
         elif op == 0xA0:
             self.y = imm()
+        elif op == 0xA2:
+            self.x = imm()
+        elif op == 0x86:
+            self.wr(self.zp(imm()), self.x)
+        elif op == 0x11:  # ORA (zp),Y
+            z = self.zp(imm())
+            self.a = self.setz(self.a | self.rd((self.rd(z) | self.rd(z + 1) << 8) + self.y))
         elif op == 0x9C:
             self.wr(abs_(), 0)
         elif op == 0xAA:

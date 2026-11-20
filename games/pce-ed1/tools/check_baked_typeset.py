@@ -299,6 +299,7 @@ def scene_rows() -> dict[str, list[tuple[str, str]]]:
                     continue
                 seen.add((sid, m.key))
                 if "\n" in tr.get("t", "") and m.speaker is None and m.common is None:
+                    prev = None  # 🔴 11-20: 건너뛴 메시지가 사이에 끼면 그 앞 메시지는 이음 후보가 아니다(씬 54 오델로 「자네 차례일세」: 사이의 할머니 메시지(`00` 종료)를 건너뛰고 한참 앞 메시지를 「앞」으로 봐 첫 공백을 이음으로 오인)
                     continue  # 장 끝 카드 — 손으로 맞춘 줄
                 by = T.compose(m, tr, btab, speakers)
                 head, pages = decode(by, inv)

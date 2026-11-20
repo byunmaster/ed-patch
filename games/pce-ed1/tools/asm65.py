@@ -24,6 +24,7 @@ OPC = {
     ("INX", "imp"): 0xE8, ("INY", "imp"): 0xC8, ("DEX", "imp"): 0xCA, ("DEY", "imp"): 0x88,
     ("ASL", "imp"): 0x0A, ("ASL", "zp"): 0x06, ("ASL", "abs"): 0x0E, ("LSR", "imp"): 0x4A, ("LSR", "zp"): 0x46, ("LSR", "abs"): 0x4E,
     ("ROL", "imp"): 0x2A, ("ROL", "zp"): 0x26, ("ROL", "abs"): 0x2E, ("ROR", "imp"): 0x6A, ("ROR", "zp"): 0x66, ("ROR", "abs"): 0x6E,
+    ("ASL", "absx"): 0x1E, ("ROR", "absx"): 0x7E,
     ("BIT", "imm"): 0x89, ("BIT", "zp"): 0x24, ("BIT", "abs"): 0x2C,
     ("JMP", "abs"): 0x4C, ("JMP", "indx"): 0x7C, ("JSR", "abs"): 0x20, ("RTS", "imp"): 0x60,
     ("BCC", "rel"): 0x90, ("BCS", "rel"): 0xB0, ("BEQ", "rel"): 0xF0, ("BNE", "rel"): 0xD0, ("BMI", "rel"): 0x30, ("BPL", "rel"): 0x10, ("BRA", "rel"): 0x80,

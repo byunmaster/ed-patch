@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import hook
+import musicresume
 import splitload
 
 REV = {v: k for k, v in hook.OPS.items()}
@@ -28,6 +29,7 @@ class Cpu:
         self.flag = lay["flag"]
         self.containers = containers
         self.log = []  # ("release", rel) · ("load", rel)
+        self.mus = []  # 음악 이어 재생 호출 — "save"(첫 교체 직전) · "replay"(교체 뒤)
         self.loaded: dict[int, int] = {}  # 핸들 → rel
         self.next_handle = 0
         self.slot_of = {}  # 핸들 → 칸
@@ -90,9 +92,7 @@ class Cpu:
             if mn == "LDA":
                 if mode == "imm":
                     self.a = arg
-                elif mode == "zp":
-                    self.a = m[arg]
-                elif mode == "abs":
+                elif mode == "zp" or mode == "abs":
                     self.a = m[arg]
                 elif mode == "izp":
                     self.a = m[m[arg] | m[arg + 1] << 8]
@@ -171,6 +171,13 @@ class Cpu:
                 self.setflags(self.a)
             elif mn == "CLX":
                 self.x = 0
+            elif mn == "PHX":
+                self.stack.append(self.x)
+            elif mn == "PHY":
+                self.stack.append(self.y)
+            elif mn == "PLX":
+                self.x = self.stack.pop()
+                self.setflags(self.x)
             elif mn == "PHA":
                 self.stack.append(self.a)
             elif mn == "PLA":
@@ -189,8 +196,9 @@ class Cpu:
                     h = self.load_container(rel)
                     self.y = h
                     self.c = 0
-                elif arg == 0x4FD8:  # 먼 호출(곡 다시 걸기: 뱅크 0x69 `$6856`) — 뒤 인라인 3B 를 건너뛴다
-                    self.log.append(("music",))
+                elif arg == 0x4FD8:  # 먼 호출(뱅크 0x73 `musicresume` — 교체 직전 `savepos` · 교체 뒤 `replay`) — 뒤 인라인 3B(뱅크 인자·주소)를 건너뛴다
+                    addr = self.mem[nxt + 1] | self.mem[nxt + 2] << 8
+                    self.mus.append("save" if addr == musicresume.far_addr("savepos") else "replay")
                     nxt += 3
                 else:
                     raise AssertionError(hex(arg))
@@ -270,19 +278,32 @@ class SplitLoadTest(unittest.TestCase):
         self.assertEqual(len([e for e in c.log if e[0] == "load"]), splitload.MAX_HOPS)
 
     def test_music_restart_only_when_track_command_pending(self):
-        """🔴 11-11 짝을 읽으면 CD-DA 가 멈춘다 — 곡 명령 `$4B`<`$10` · 재생 모드 `$4C`=0 이면 곡 루틴을 다시 부른다(원판 순서: 구역 전환이 곡을 건 뒤 씬 열기)."""
+        """🔴 11-11 짝을 읽으면 CD-DA 가 멈춘다 — 곡 명령 `$4B`<`$10` · 재생 모드 `$4C`=0 이면 곡 루틴을 다시 부른다(원판 순서: 구역 전환이 곡을 건 뒤 씬 열기).
+        🔴 11-19 **짝 읽기를 다 마치고 찾은 뒤 한 번만**(종전: 읽을 때마다 걸어 조각 셋 고리에서 한 전환에 곡이 셋 시작 — 마스터 「멈춤·겹침」)."""
+        # 🔴 11-20 곡 조건(`$4B` < `$10` · `$4C` = 0)·위치 저장·이어 걸기는 뱅크 0x73 `musicresume` 이 한다 — 여기선 호출 순서(교체 직전 저장 한 번 · 교체를 다 마친 뒤 이어 걸기 한 번)만 본다
+        one = [("release", 9812), ("load", 9823)]
         c = self.cpu(9812)
         c.mem[0x4B], c.mem[0x4C] = 0x0A, 0
-        c.run(200)
-        self.assertEqual(c.log, [("release", 9812), ("load", 9823), ("music",), ("release", 9823), ("load", 9812), ("music",)])
+        c.mem[0x12], c.mem[0x13] = 0, 0
+        self.assertEqual(c.run(80), 0)  # 짝에서 찾음 — 교체 하나
+        self.assertEqual(c.log, one)
+        self.assertEqual(c.mus, ["save", "replay"])
         c = self.cpu(9812)
-        c.mem[0x4B], c.mem[0x4C] = 0x0A, 1  # 재생 모드가 아니다
-        c.run(200)
-        self.assertEqual(c.log, [("release", 9812), ("load", 9823), ("release", 9823), ("load", 9812)])
+        self.assertEqual(c.run(73), 0)  # 현 컨테이너에서 바로 찾음 — 교체가 없으면 곡을 안 건드린다
+        self.assertEqual(c.log, [])
+        self.assertEqual(c.mus, [])
         c = self.cpu(9812)
-        c.mem[0x4B], c.mem[0x4C] = 0x81, 0  # 멈춤·페이드 명령
-        c.run(200)
+        self.assertEqual(c.run(200), 1)  # 못 찾음(실패) — 교체는 했으나 이어 걸기는 없다(찾은 뒤에만)
         self.assertEqual(c.log, [("release", 9812), ("load", 9823), ("release", 9823), ("load", 9812)])
+        self.assertEqual(c.mus, ["save"])  # 저장은 첫 교체에서 한 번만
+        partner = {9000: (9020, 11), 9020: (9040, 11), 9040: (9000, 11)}
+        cont = {9000: [0, 1, 4, 10], 9020: [0, 1, 4, 20], 9040: [0, 1, 4, 30]}
+        c = Cpu(cont, partner)
+        c.load_container(9000)
+        c.mem[0x4B], c.mem[0x4C] = 0x0A, 0
+        self.assertEqual(c.run(30), 0)  # 조각 셋 — 읽기 둘, 저장은 첫 교체 앞 한 번 · 이어 걸기는 마지막 읽기 뒤 한 번
+        self.assertEqual(c.log, [("release", 9000), ("load", 9020), ("release", 9020), ("load", 9040)])
+        self.assertEqual(c.mus, ["save", "replay"])
 
     def test_unpaired_container_fails_without_touching_cache(self):
         c = Cpu({1300: [0, 1, 4, 7]}, {})

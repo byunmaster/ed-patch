@@ -50,6 +50,8 @@ import debug_item_list
 import debug_warp
 import hud_half
 import list_strip
+import musicresume
+import winmask
 import defeat_strip
 import debugkey
 import staffroll
@@ -412,6 +414,27 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         assert len(ls) <= list_strip.CODE_LEN, len(ls)
         p.append(("list strip code", *_main(list_strip.BANK, list_strip.OFF_ORG), b"\xff" * len(ls), ls))
         p.append(("list strip site", *_main(list_strip.SITE_BANK, list_strip.SITE_OFF), list_strip.SITE_OLD, list_strip.site_new()))
+        # 창 맨 위 장치(마스터 11-19 「창이 떠 있으면 창 영역은 늘 맨 위」, 씬 57 횃불 어둠 원이 자막을 덮던 것의 일반화) — 상주 창 사각형 표 + 등록 루틴 + SAT 스텁을 뱅크 0x73 꼬리에,
+        #   게임 SAT 루프의 속성 쓰기 8B 를 스텁 먼 호출로(`winmask.py`). 표 초기값 0(전 슬롯 꺼짐)
+        wm = winmask.table_init() + winmask.reg_code().ljust(winmask.REG_LEN, b"\0") + winmask.stub_code().ljust(winmask.STUB_LEN, b"\0")
+        assert len(wm) == winmask.TOTAL_LEN, len(wm)
+        assert len(winmask.stub_code()) <= winmask.STUB_LEN and len(winmask.reg_code()) <= winmask.REG_LEN
+        p.append(("window mask table+regs+stub", *_main(winmask.BANK, winmask.TAIL_OFF), b"\xff" * len(wm), wm))
+        # 음악 이어 재생(마스터 11-20 「음악 겹침·중단」, 관리자 승인 (b)·②) — 짝 컨테이너 교체(CD_READ 가 CD-DA 를 멈춤) 직전 CD 위치를 저장하고 교체 뒤 그 위치부터 잇는다(`musicresume.py`). 같은 뱅크 0x73 꼬리, winmask 바로 뒤
+        mr = musicresume.code().ljust(musicresume.CODE_LEN, b"\0")
+        p.append(("music resume", *_main(musicresume.BANK, musicresume.OFF), b"\xff" * len(mr), mr))
+        p.append(
+            (
+                "load stops cd",
+                *_main(musicresume.ENG_BANK, musicresume.LOAD_SITE),
+                musicresume.LOAD_SITE_ORIG,
+                musicresume.far_call("loadhook"),
+            )
+        )
+        fh_bank, fh_off, fh_old, fh_new = winmask.frame_hook_patch()  # 사이트는 원판 그대로 두고 프레임 후크가 창 있을 때만 스텁 먼 호출로 갈아 끼운다
+        p.append(("window mask frame hook", *_main(fh_bank, fh_off), fh_old, fh_new))
+        for nm, bk, off, was, now in winmask.engine_patches():
+            p.append((f"window mask hook {nm}", *_main(bk, off), was, now))
         # 패배 귀환 확인창 앞 공백 걷기(마스터 11-18) — 메시지 머리 `10 7D C0` 앞에 지명 버퍼를 제자리에서 걷는 기계어 호출을 낀다(`defeat_strip.py`) — 글 시작은 3B 뒤(`sysstrings.read_inline`)
         ds = defeat_strip.code()
         assert len(ds) <= defeat_strip.CODE_LEN, len(ds)

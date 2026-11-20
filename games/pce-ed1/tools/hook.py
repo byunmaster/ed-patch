@@ -120,6 +120,7 @@ OPS = {
     ("CMP", "imm"): 0xC9,
     ("CMP", "zp"): 0xC5,
     ("CPY", "imm"): 0xC0,
+    ("CPY", "zp"): 0xC4,
     ("BEQ", "rel"): 0xF0,
     ("BRA", "rel"): 0x80,
     ("LDA", "absy"): 0xB9,
@@ -198,10 +199,13 @@ OPS = {
     ("STZ", "absx"): 0x9E,
     ("ST0", "imm"): 0x03,
     ("ORA", "absy"): 0x19,
+    ("ORA", "izpy"): 0x11,
     ("STA", "absy"): 0x99,
     ("CLX", "imp"): 0x82,
     ("AND", "absx"): 0x3D,
     ("SBC", "zp"): 0xE5,
+    ("ASL", "absx"): 0x1E,
+    ("ROR", "absx"): 0x7E,
 }
 
 
@@ -647,26 +651,35 @@ def unpack_asm() -> "Asm":
     자리 = 짝×3,960 + (트레일−0x24)×18. 두 행 = 3B: hiA · (loA | hiB>>4) · (hiB<<4 | loB>>4) — `font.pack`.
     """
     a = Asm(UNPACK_ADDR)
-    a.op("LDX", "zp", 0xEC)  # 트레일 — $24 까지 세어 내려가며 18 씩 더한다(곱셈 대신, 최대 219번)
-    a.op("STZ", "zp", 0xEC)
-    a.op("LDY", "imm", GLYPH_WINDOW_HI)
+    # 🔴 11-19 가속: 옛 코드는 트레일에서 $24 까지 세어 내리며 18 씩 더했다(최대 219번 × 약 30사이클 ≈ 평균 3,000 사이클) — 확정 프레임에서 엔진 글자 3개가 지움을 빔 쪽으로 밀어
+    #    버리기 직후 한 프레임 조각이 났다(devlog 「⑦ 버리기 — 타이밍」). t = 트레일 − $24 → t×18 = (t×8 + t)×2 로 곱한다(약 130 사이클). 결과 바이트는 같다(전 순번 단위 테스트).
+    # 🔴 트레일×18 에서 $24×18 을 빼는 일은 시작 주소에 미리 녹인다(짝 시작 − 648) — SEC·SBC 가 없다. 트레일 ≤ $FF 라 ×18 은 16비트 안.
+    base0 = (GLYPH_WINDOW_HI << 8) - font.TRAIL0 * font.PACKED_BYTES
+    base1 = base0 + font.GROUP_BYTES
+    a.op("LDA", "zp", 0xEC)  # A = 트레일 — C(리드 짝)·A 는 아래 `BCC` 를 지나도 그대로(LDX·LDY 는 C 를 안 건드린다)
+    a.op("LDX", "imm", base0 & 0xFF)  # X·Y = 짝 시작 주소 − 648 의 lo·hi
+    a.op("LDY", "imm", base0 >> 8)
     a.op("BCC", "rel", "even")
-    a.op("LDA", "imm", font.GROUP_BYTES & 0xFF)
-    a.op("STA", "zp", 0xEC)
-    a.op("LDY", "imm", GLYPH_WINDOW_HI + (font.GROUP_BYTES >> 8))
+    a.op("LDX", "imm", base1 & 0xFF)
+    a.op("LDY", "imm", base1 >> 8)
     a.label("even")
-    a.op("STY", "zp", 0xED)
-    a.label("mul")
-    a.op("CPX", "imm", font.TRAIL0)
-    a.op("BEQ", "rel", "go")
-    a.op("DEX")
-    a.op("LDA", "zp", 0xEC)
-    a.op("CLC")
-    a.op("ADC", "imm", font.PACKED_BYTES)
-    a.op("STA", "zp", 0xEC)
-    a.op("BCC", "rel", "mul")
+    a.op("STA", "zp", 0xEC)  # t = 트레일
+    a.op("STZ", "zp", 0xED)
+    for _ in range(3):  # t×8 (A = lo · $ED = hi). 마지막 ROL 뒤 C 는 늘 0 — $ED < 128 이라 0 을 내보낸다(CLC 생략)
+        a.op("ASL")
+        a.op("ROL", "zp", 0xED)
+    a.op("ADC", "zp", 0xEC)  # t×9
+    a.op("BCC", "rel", "m9")
     a.op("INC", "zp", 0xED)
-    a.op("BRA", "rel", "mul")
+    a.label("m9")
+    a.op("ASL")  # t×18
+    a.op("ROL", "zp", 0xED)
+    a.op("STX", "zp", 0xEC)  # + 짝 시작(창 주소) — C = 0
+    a.op("ADC", "zp", 0xEC)
+    a.op("STA", "zp", 0xEC)
+    a.op("TYA")
+    a.op("ADC", "zp", 0xED)
+    a.op("STA", "zp", 0xED)
     a.label("go")
     a.op("CLY")
     a.label("lp")
@@ -681,12 +694,12 @@ def unpack_asm() -> "Asm":
     a.op("PLA")
     for _ in range(4):
         a.op("ASL")
-    a.op("STA", "abs", "tmp")
+    a.op("STA", "izpy", 0xFA)  # hiB 의 윗 반(다음 바이트의 윗 반과 합친다 — 임시 바이트 없이 출력 칸에 먼저 놓는다)
     a.op("JSR", "abs", "rd")
     a.op("PHA")
     for _ in range(4):
         a.op("LSR")
-    a.op("ORA", "abs", "tmp")
+    a.op("ORA", "izpy", 0xFA)
     a.op("STA", "izpy", 0xFA)  # hiB
     a.op("INY")
     a.op("PLA")
@@ -710,8 +723,6 @@ def unpack_asm() -> "Asm":
     a.op("INC", "zp", 0xED)
     a.label("rd_ret")
     a.op("RTS")
-    a.label("tmp")
-    a.data(b"\x00")
     return a
 
 

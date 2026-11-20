@@ -25,6 +25,7 @@ import font
 import messages as M
 import narration_gates as N
 import typeset
+import winmask
 
 SPEC = common.GAME_DIR / "script" / "voice_gwin.json"
 BASE = M.BASE
@@ -1701,6 +1702,21 @@ def program_b(org: int, sid: int = 0, code_bank: int = CODE_SECTOR // 4) -> tupl
         op("STA", "abs", "vis")
     op("LDA", "imm", 1)
     op("STA", "abs", "wopen")
+    # 창 맨 위 장치(`winmask.py`) — 창 사각형 표의 대사 슬롯을 켠다: 창과 겹친 스프라이트(횃불 어둠 원 등)가 창 타일 뒤로 간다. 틱(IRQ) 코드라 먼 호출 대신 MPR3 에 뱅크 0x73 을 잠깐 건다
+    op("TMA", "tma", winmask.TICK_MPR)
+    op("PHA")
+    op("PHX")
+    op("LDA", "imm", winmask.BANK)
+    op("TAM", "tam", winmask.TICK_MPR)
+    op("LDX", "imm", winmask.SLOT_B - 1)
+    L("wmopen")
+    op("LDA", "absx", winmask.rects_addr(TOP) + winmask.TICK_SHIFT)
+    op("STA", "absx", winmask.slot_addr(winmask.SLOT_DLG) + winmask.TICK_SHIFT)
+    op("DEX")
+    op("BPL", "rel", "wmopen")
+    op("PLX")
+    op("PLA")
+    op("TAM", "tam", winmask.TICK_MPR)
     L("showinit")
     op("LDA", "imm", "<win")
     op("LDX", "imm", ">win")
@@ -1917,6 +1933,15 @@ def program_b(org: int, sid: int = 0, code_bank: int = CODE_SECTOR // 4) -> tupl
     op("STA", "abs", "ph")
     L("clrinit")  # 지우기 — 밑그림을 한 틱에 통째로 되돌린다(읽기 없이, 고리 순서)
     op("STZ", "abs", "wopen")
+    op("PHA")  # 창 맨 위 장치 — 대사 슬롯을 끈다(MPR3 에 뱅크 0x73 을 잠깐 건다)
+    op("TMA", "tma", winmask.TICK_MPR)
+    op("PHA")
+    op("LDA", "imm", winmask.BANK)
+    op("TAM", "tam", winmask.TICK_MPR)
+    op("STZ", "abs", winmask.slot_addr(winmask.SLOT_DLG) + winmask.TICK_SHIFT)
+    op("PLA")
+    op("TAM", "tam", winmask.TICK_MPR)
+    op("PLA")
     if RASTER:
         op("LDA", "abs", "rcon")
         op("BEQ", "rel", "rcoff")

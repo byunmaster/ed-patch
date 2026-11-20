@@ -26,6 +26,7 @@ import common
 import containers
 import font
 import hook
+import musicresume
 
 SPLIT_RELS = (1508, 1380, 1348, 1396, 1252, 1268, 1620, 1540, 1284, 1332, 1364, 1444, 1476, 1524, 1572, 1588) + (  # 나눌 컨테이너(원본 rel) — 16섹터 안에 안 들어가는 것(build 게이트가 알려 준다). 1252 = 씬 6 · 1268 = 씬 18 비모달 자막 안 B(10-31) — 16섹터 안이면 안 나눈다(제품은 안 나뉜다)
     tuple(int(x) for x in os.environ.get("ED_SPLIT_EXTRA", "").split(",") if x) if common.BUILD_TAG.startswith("test-") else ()
@@ -84,6 +85,10 @@ def _asm():
     a.op("DEY")
     a.op("LDA", "izpy", 0x12)
     a.op("PHA")
+    a.op("LDA", "abs", "flag")  # 첫 교체(flag = 0)에서만 — 둘째 교체부터는 첫 CD_READ 가 이미 곡을 멈췄다
+    a.op("BNE", "rel", "nosave")
+    a.data(musicresume.far_call("savepos"))
+    a.label("nosave")
     a.op("INC", "abs", "flag")  # 교체 횟수 +1
     a.op("LDA", "zp", 0x61)
     a.op("JSR", "abs", 0x5597)  # 현 컨테이너를 내린다(구역 전환 `$6BE3` 과 같다)
@@ -102,16 +107,6 @@ def _asm():
     a.op("STZ", "zp", 0x12)
     a.op("LDA", "imm", 0xA0)
     a.op("STA", "zp", 0x13)
-    # 🔴 11-11 음악 다시 걸기 — 짝을 읽는 CD_READ 는 CD-DA 재생을 멈춘다. 원판은 씬 열기 안에서 컨테이너를 읽지 않아(구역 전환 때만 읽고, 그 뒤 스크립트가 곡을 건다) 음악이
-    #   이어지는데, 우리는 구역 전환이 곡을 건 **뒤** 씬 열기에서 짝을 읽어 곡이 끊겼다(씬 3·9·16·18, 마스터 「루디아 입장하면 음악이 멈춰」 — 하네스 실측: CD_PLAY 직후 CD_READ).
-    #   곡 명령 바이트 `$4B` < `$10`(곡 번호 — 80 이상은 멈춤·페이드)이고 `$4C` = 0(재생 모드)이면 같은 곡 루틴(뱅크 0x69 `$6856`)을 다시 부른다.
-    a.op("LDA", "zp", 0x4B)
-    a.op("CMP", "imm", 0x10)
-    a.op("BCS", "rel", "nomus")
-    a.op("LDA", "zp", 0x4C)
-    a.op("BNE", "rel", "nomus")
-    a.data(b"\x20\xd8\x4f\x01\x56\x68")  # JSR $4FD8(먼 호출) · 뱅크 0x69 · $6856
-    a.label("nomus")
     a.label("check")
     a.label("scan")
     a.op("LDA", "izp", 0x12)
@@ -127,6 +122,14 @@ def _asm():
     a.op("INC", "zp", 0x13)
     a.op("BRA", "rel", "scan")
     a.label("ok")
+    # 🔴 11-19 음악 다시 걸기는 **짝 읽기를 다 마치고 찾은 뒤 한 번만** — 종전엔 짝을 올릴 때마다 걸어 조각 고리(짝의 짝)에서 한 전환에 곡이 셋 시작했다(마스터 「멈춤·겹침」, 원판은 구역 안 전환에 CD 호출 0회,
+    #   devlog 「⑨ 음악 계단 표」). 짝 읽기 CD_READ 는 CD-DA 를 멈춘다(11-11 「루디아 입장하면 음악이 멈춰」 — 하네스 실측: CD_PLAY 직후 CD_READ). 곡 명령 바이트 `$4B` < `$10`(곡 번호 — 80 이상은 멈춤·페이드)이고
+    #   `$4C` = 0(재생 모드)이면 같은 곡 루틴(뱅크 0x69 `$6856`)을 다시 부른다. 교체가 있었을 때만(`flag` ≠ 0). 호출자가 찾은 항목 포인터(`$12/$13`)와 레지스터를 쓰므로 지키고 부른다.
+    #   🔴 11-20 이어 재생: 다시 걸기는 **처음부터가 아니라 교체 직전 CD 위치부터**(`musicresume.py` — 교체 전 `savepos` · 교체 뒤 `replay`). 곡 조건 검사·레지스터 보존도 그쪽이 한다.
+    a.op("LDA", "abs", "flag")
+    a.op("BEQ", "rel", "nomus")
+    a.data(musicresume.far_call("replay"))
+    a.label("nomus")
     a.op("STZ", "abs", "flag")
     # 🔴 틱 트램펄린 설치(`narration_gates.inst` 와 같은 일) — 씬이 열릴 때마다 「아직 원본이면」 건다. 부팅 때 걸어도 메인 프로그램이 곧 다시 올라와 지워지고,
     #   나레이션 `inst` 는 게이트 있는 씬에서만 불려 일반 필드에는 틱이 없었다 — SELECT+RUN 디버그 키(`debugkey`)가 필드에서도 틱을 필요로 한다.
