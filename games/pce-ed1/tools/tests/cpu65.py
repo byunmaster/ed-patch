@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import asm65
 
 DEC = {v: k for k, v in asm65.OPC.items()}
+DEC.update({0x82: ("CLX", "imp"), 0x62: ("CLA", "imp"), 0xC2: ("CLY", "imp"), 0x22: ("SAX", "imp"), 0xEA: ("NOP", "imp")})  # 어셈블러 표엔 없지만 원판 루틴(곱셈 `$5962` 등)을 그대로 돌릴 때 만난다
 
 
 class CPU:
@@ -39,6 +40,9 @@ class CPU:
     def wr(self, a: int, v: int):
         a &= 0xFFFF
         v &= 0xFF
+        if a == 0x0000:  # 레지스터 선택(`ST0` 과 같은 일 — `STA $0000`)
+            self.sel = v
+            return
         if a == 0x0002 or a == 0x0003:
             if self.sel == 2:
                 if a == 0x0002:
@@ -149,6 +153,12 @@ class CPU:
             self.wr(self.ea(mode), self.y)
         elif mn == "STZ":
             self.wr(self.ea(mode), 0)
+        elif mn == "CLA":  # HuC6280 — 플래그를 안 건드린다
+            self.a = 0
+        elif mn == "CLX":
+            self.x = 0
+        elif mn == "CLY":
+            self.y = 0
         elif mn == "ADC":
             self.adc(self.val(mode))
         elif mn == "SBC":
@@ -261,6 +271,14 @@ class CPU:
             self.a = self.nz(self.y)
         elif mn == "TSX":
             self.x = self.nz(self.sp)
+        elif mn == "CLA":
+            self.a = 0  # 깃발은 안 건드린다
+        elif mn == "CLY":
+            self.y = 0
+        elif mn == "SAX":
+            self.a, self.x = self.x, self.a
+        elif mn == "NOP":
+            pass
         elif mn == "ST0":
             self.sel = self.fetch()
         elif mn == "ST1":

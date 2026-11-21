@@ -540,6 +540,10 @@ def patch_msgs(
         if not _tokens_ok(TOKEN.findall(kr), jp_tok):
             errors.append(f"{where} +{u['off']:04X} 「{kr}」 제어코드가 원문과 다르다 {jp_tok}")
             continue
+        if u["term"] == 0x0A and kr[-1:] in (".", "!", "?"):
+            # 마스터 11-20 「왔다!게일에게」 — 0A 종단은 뒤 문구가 같은 줄에 바로 붙는다(원판도 같음). 문장 끝 부호 뒤에 공백 하나를 둔다
+            #   (줄 끝 13칸이면 런타임 어절 줄바꿈이 그 공백에서 접고 먹는다).
+            kr += " "
         enc = encode_tokens(kr, table, msg=True)
         if u["term"] is not None:
             enc += bytes([u["term"]])

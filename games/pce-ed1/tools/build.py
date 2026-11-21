@@ -15,6 +15,7 @@
 import argparse
 from collections import Counter
 import contextlib
+import itertools
 import json
 import os
 import shutil
@@ -42,8 +43,11 @@ import voice_sched
 import omake_art
 import omake_font
 import structure
+import sysstrings
 import syscard_screen
 import opening_sub
+import pricefast
+import resthide
 import credits_kr
 import debug_item
 import debug_item_list
@@ -51,6 +55,7 @@ import debug_warp
 import hud_half
 import list_strip
 import musicresume
+import sprmask
 import winmask
 import defeat_strip
 import debugkey
@@ -324,7 +329,8 @@ ONLY: set[str] | None = None
 `band`(장 제목 띠, rel 210) · `hud`(HUD 이름판·あと·상태 글자, rel 54·55) · `box`(빈 슬롯 상자 msg1, 뱅크 0x7B 재배치) ·
 `glyph`(글리프 뱅크 적재) · `payload`(후킹 루틴 + 표를 `hook.HOOK_ADDR`=$2300 에 싣기) ·
 `narr`(나레이션 게이트 자막 — 게이트 + 블록 꼬리 스텁, `narration_gates.patch_block`)
-— 뒤 둘은 `font` 안에서 다시 뺄 수 있다.
+— 뒤 둘은 `font` 안에서 다시 뺄 수 있다. · `price`(아이템 값 ×10 고리 — 「버린다」 뚫림, `pricefast`) ·
+`resthide`(서 있는 동안 HUD 이름판 스프라이트 숨김 — 한 줄 16개 한계로 인물이 잘리는 것, `resthide`)
 🔴 **이게 소프트락을 가르는 유일한 도구다** — 증상이 나면 하나씩 끄며 A/B 한다.
 ⚠ `font` 를 끄면 글리프가 없어 한글 자리가 통째로 안 그려진다(파일 선택에서 멈춘다) —
 `font,hook` 은 늘 켜 두고 나머지를 끈다."""
@@ -437,6 +443,13 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         p.append(("window mask frame hook", *_main(fh_bank, fh_off), fh_old, fh_new))
         for nm, bk, off, was, now in winmask.engine_patches():
             p.append((f"window mask hook {nm}", *_main(bk, off), was, now))
+        # 잘린 그림 사본(마스터 11-20 판정 「진행」 — 횃불 어둠 원이 창에 걸치면 조각째 뒤로 가 원이 평평해지던 것) — 걸친 조각마다 창 쪽 픽셀만 지운 패턴 사본을 VRAM 풀에 구워
+        #   SAT 스텁이 그 패턴으로 바꿔 끼운다(`sprmask.py`). 코드 = 뱅크 0x70 FF 패딩 세 토막 · 상태 116B = 뱅크 0x73 맨 꼬리(어절 판정 뒤). 스텁·프레임 후크 쪽 이음은 `winmask`
+        sprmask.check_descriptors(b"".join(common.user_sector(_main(winmask.SITE_BANK, 0)[0] + k) for k in range(4)))
+        for (nm, _s0, s1), (off, blob) in zip(sprmask.SEGS, sprmask.segments(), strict=True):
+            assert off + len(blob) <= s1, (nm, len(blob))
+            p.append((f"sprite mask code {nm}", *_main(sprmask.CODE_BANK, off), b"\xff" * len(blob), blob))
+        p.append(("sprite mask data", *_main(sprmask.DATA_BANK, sprmask.DATA_OFF), b"\xff" * sprmask.DATA_LEN, sprmask.data_init()))
         # 패배 귀환 확인창 앞 공백 걷기(마스터 11-18) — 메시지 머리 `10 7D C0` 앞에 지명 버퍼를 제자리에서 걷는 기계어 호출을 낀다(`defeat_strip.py`) — 글 시작은 3B 뒤(`sysstrings.read_inline`)
         ds = defeat_strip.code()
         assert len(ds) <= defeat_strip.CODE_LEN, len(ds)
@@ -678,9 +691,24 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         # 🔴 판매 감사 유지(마스터 11-18) — 감사 뒤 `JMP $9E4B`(목록 위젯 진입: 질문 메시지를 다시 보임 → 첫 바이트 `08` 창 다시 그리기가 감사를 지운다)를
         #    질문을 보인 **뒤** 지점 `$9E58` 로 돌린다. 질문은 `translate.merge_sell_thanks` 가 감사 메시지 끝에 이어 써 두었다. 판매 구조체 호출이 있는 모든 씬이 합쳐졌는지는 같은 함수가 죽어서 지킨다.
         p.append(("sell thanks keep JMP $9E4B→$9E58", *_main(0x6F, 0x1F32), b"\x4b\x9e", b"\x58\x9e"))
+    if want("price"):
+        # 🔴 「버린다」 확인 직후 한 프레임 뚫림(마스터 11-20 — 비싼 아이템만) — 아이템 값 ×10 고리(뱅크 0x6F `$86AE`, 51B)를 시프트·덧셈 꼴로 바꾼다. 원판 고리는 지수 1 마다
+        #    범용 곱셈 둘(약 1,135 사이클)을 돌고 확인 프레임에 두 번 불려, 지수 ≥ 3 이면 창 다시 그리기가 주사선보다 늦었다(`pricefast` 머리말). 표의 모든 값이 같게 나오는지 원판 표로 지킨다.
+        pricefast.check_items([bytes.fromhex(x["tail"]) for x in sysstrings.read_fixed("items")])
+        p.append(("item price x10 loop", *_main(pricefast.BANK, pricefast.OFF), pricefast.OLD, pricefast.code()))
+    if want("resthide"):
+        # 서 있는 동안 HUD 이름판 스프라이트(SAT 0~8)를 숨긴다(마스터 11-21 「레지스탕스짤림」) — 이름판 9칸 + 막대가 줄마다 칸을 먹어 인물이 늘어선 줄이 16개를 넘던 것.
+        #    맵이 멈춘 지 8프레임 뒤에만 숨기고(BG 판이 같은 그림) 스크롤이 시작되는 프레임엔 손대지 않는다. SAT 함수 꼬리 6B → 뱅크 0x70 FF 패딩의 본체 먼 호출(`resthide` 머리말)
+        for nm, bk, off, was, now in resthide.patches():
+            p.append((f"rest hide {nm}", *_main(bk, off), was, now))
     if os.environ.get("ED_BATTLE_DBG"):  # 🔴 디버그 전용 — 전투 일괄 촬영(10-20): 조우 번호를 카드 RAM `$C05F` 가 아니라 워크 RAM `$3FFA` 에서 읽는다(하네스가 poke 한다)
         assert common.BUILD_TAG.startswith("test-"), "ED_BATTLE_DBG 는 시험 빌드(ED_BUILD_TAG=test-*)에서만"
         p.append(("battle debug LDA $C05F→$3FFA", 94, 1564, b"\x5f\xc0", b"\xfa\x3f"))
+    # 패치끼리 겹치면 안 된다 — FF 패딩을 나눠 쓰는 장치가 늘어(뱅크 0x70·0x73 꼬리) 한쪽이 자라면 이웃을 덮는다. 쓰기 사전조건(기대 바이트)은 순서에 따라 이걸 못 잡는다
+    spans = sorted((rel * common.USER + off, rel * common.USER + off + len(new), lab) for lab, rel, off, _old, new in p)
+    for (_a0, a1, la), (b0, _b1, lb) in itertools.pairwise(spans):
+        if b0 < a1:
+            raise BuildError(f"코드 패치가 겹친다: {la!r} ↔ {lb!r} ({a1 - b0}B)")
     return p
 
 
@@ -961,7 +989,12 @@ def _write_parts(f, rel, entries, orig, free_pool, moves, intended, split_intend
 
     # 🔴 안 B 자막 씬(코드 영역이 든 조각은 4뱅크)은 한 곳에 모은다 — 코드 영역이 없는 조각은 3뱅크라 구역 적재가 한 뱅크 가볍다. 자막 없는 조각이 앞(제자리 · 참조표 쪽)
     g_set = {i for i in rest if (rel, i) in GWIN_DONE and i in gwin_rt.SCENE_PARTS}
-    parts = pack([i for i in rest if i not in g_set]) + pack([i for i in rest if i in g_set])
+    if rel in splitload.PART_FIXED:  # 🔴 11-22 계단으로 이어진 씬 묶음을 한 조각으로(성 안 계단 교체 0) — 조각 구성을 지정
+        parts = [sorted(g) for g in splitload.PART_FIXED[rel]]
+        if sorted(i for g in parts for i in g) != rest:
+            raise BuildError(f"컨테이너 rel {rel}: PART_FIXED 가 컨테이너 씬 {rest} 과 어긋난다 — {parts}")
+    else:
+        parts = pack([i for i in rest if i not in g_set]) + pack([i for i in rest if i in g_set])
     if len(parts) < 2:
         raise BuildError(f"컨테이너 rel {rel}: 조각 둘이 안 된다")
     datas = []

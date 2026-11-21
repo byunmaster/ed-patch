@@ -477,6 +477,8 @@ def apply(f, table, touched) -> dict:
             # 문안 끝 공백으로 이어 붙인다(칸이 모자라면 런타임 어절 줄바꿈이 접는다).
             tail_toks.pop()
             kr = JOIN_NEXT_LINE[r["addr"]]
+        if tail_toks == ["0A"] and kr[-1:] in (".", "!", "?"):
+            kr += " "  # 0A 종단은 뒤 조각이 같은 줄에 붙는다 — 문장 끝 부호 뒤 공백(마스터 11-20 「왔다!통한의 일격」)
         tail = b"".join(bytes.fromhex(t) for t in tail_toks)
         body = encode_tokens(kr, table, msg=True)
         new = lead + body + tail

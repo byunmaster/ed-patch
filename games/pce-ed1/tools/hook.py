@@ -95,7 +95,7 @@ WORDCK_ROOM = font.CODE_BYTES - ENTRY_ROOM
 #   글리프 뱅크를 MPR2 에 걸 일도 없어졌다(옛 가드 「우리 창 `$4000~$5FFF` 포인터」는 본 프로그램 코드를 읽는 것을 막으려 그대로 둔다).
 WCK_MPR = 7
 WCK_BANK = 0x73
-WCK_BANK_OFF = 0x1E59  # 뱅크 0x73 안 오프셋 = musicresume.OFF + CODE_LEN (tests/test_wordck 이 맞춤을 검사)
+WCK_BANK_OFF = 0x1E5A  # 뱅크 0x73 안 오프셋 = musicresume.OFF + CODE_LEN (tests/test_wordck 이 맞춤을 검사)
 WCK_ADDR = (WCK_MPR << 13) + WCK_BANK_OFF  # MPR7 기준 논리 주소
 WCK_ROOM = 0x2000 - WCK_BANK_OFF
 LINE_COLS_ZP = 0x99  # 줄 폭(칸) — `$6D95` 가 비교하는 그 값(로그·필드 창 13)
@@ -1068,7 +1068,7 @@ def _wordck_asm(org: int | None = None) -> "Asm":
     a.op("LDA", "imm", 1)
     a.op("BRA", "rel", "st")
     a.label("zero")
-    a.op("LDA", "imm", 0)
+    a.op("CLA")  # LDA #0 보다 1B 짧다(11-22)
     a.op("BRA", "rel", "st")
     a.label("pend")
     a.op("LDA", "abs", "prevsp")

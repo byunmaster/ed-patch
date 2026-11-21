@@ -36,6 +36,8 @@ class MusicResume(unittest.TestCase):
         code = mr.code()
         off = mr.far_addr("loadhook") - mr.ORG
         self.assertEqual(code[off : off + 3], b"\x20\x18\xe0")  # JSR $E018(CD_PAUSE) 로 시작
+        # 🔴 11-22: 멈춘 뒤 엔진 곡 상태 `$76` 을 `FF` 로 — 같은 곡 장면을 다시 LOAD 해도 엔진이 다시 튼다(LDA #$FF · STA $76)
+        self.assertEqual(code[off + 3 : off + 7], bytes([0xA9, 0xFF, 0x85, mr.ENG_CD_STATE]))
 
     def test_buffer_is_ten_contiguous_bytes_and_passed_in_fa_fb(self):
         lab = mr._final().labels

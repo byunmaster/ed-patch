@@ -56,7 +56,7 @@ class WarpHookTest(unittest.TestCase):
             return bool(t[ch * 8 + (i >> 3)] & (1 << (i & 7)))
 
         self.assertTrue(has(0, 5))
-        self.assertEqual([i for i in range(64) if has(3, i)], [1, 48])
+        self.assertEqual([i for i in range(64) if has(3, i)], [1, 48, 53, 56])
         for ch in range(6):
             for i in (0, *range(28, 32), *range(39, 48)):
                 self.assertFalse(has(ch, i), (ch, i))
@@ -64,6 +64,62 @@ class WarpHookTest(unittest.TestCase):
             self.assertTrue(
                 has(ch, 48)
             )  # 곶의동굴은 어느 장에서나 도착(어둡다 — 횃불을 쓰면 밝아진다. 원판도 같다)
+
+    def test_reach_table_dungeons_11_21(self):
+        """번호 50~63(구엔의탑…바니스성) — 11-21 실측: 2장은 구엔의탑(50)·시련의동굴(51), 종장은 바니스성(63)까지. 1장엔 하나도 없다."""
+        t = W.reach_table()
+
+        def has(ch, i):
+            return bool(t[ch * 8 + (i >> 3)] & (1 << (i & 7)))
+
+        self.assertTrue(has(1, 50) and has(1, 51))  # 2장(`$6B`=1)
+        self.assertFalse(any(has(0, i) for i in range(50, 64)))  # 1장
+        self.assertTrue(has(5, 63))  # 종장 바니스성
+        self.assertFalse(has(4, 63))  # 5장엔 없다
+        for ch in range(6):
+            self.assertFalse(has(ch, 54), ch)  # 용의알 — 마스터 판정(날개에 등록되는 지명이 아니다)
+            self.assertFalse(has(ch, 55), ch)  # 바람의탑 — 어느 장에서도 도착 안 함
+        self.assertEqual([i for i in range(50, 64) if has(1, i)], [50, 51])  # 2장
+        self.assertEqual([i for i in range(50, 64) if has(2, i)], [52, 53])  # 3장
+        self.assertEqual([i for i in range(50, 64) if has(4, i)], [52, 57, 58])  # 5장
+        self.assertEqual([i for i in range(50, 64) if has(5, i)], [52, 57, 58, 59, 60, 61, 62, 63])  # 종장
+
+    def _hook(self, chapter, idx, flag_off, wmode=True):
+        """훅을 한 번 부른다 — (올렸나, W 모드가 남았나). 호출 시점 Z=1 이면 방문 비트가 꺼진 것(원래 `BEQ` 가 보던 값)."""
+        W_ORG = W.HOOK_ORG
+        hc = W.hook_code()
+        mem = bytearray(0x10000)
+        mem[W_ORG : W_ORG + len(hc)] = hc
+        mem[W.MASK_AT : W.MASK_AT + 8] = bytes(1 << i for i in range(8))
+        t = W.reach_table()
+        mem[W.TABLE_AT : W.TABLE_AT + len(t)] = t
+        mem[W.CHAPTER] = chapter
+        mem[0xFE] = idx
+        if wmode:
+            mem[W.WMODE], mem[W.WMODE + 1] = W.WMODE_KEY
+        c = cpu65.CPU(mem)
+        c.sp = 0xF0
+        c.z = 1 if flag_off else 0
+        sentinel = 0xFFFF
+        c.push((sentinel - 1) >> 8)
+        c.push((sentinel - 1) & 0xFF)
+        c.pc = W_ORG
+        for _ in range(2000):
+            if c.pc in (sentinel, W.HOOK_SKIP_TO):
+                break
+            c.step()
+        self.assertIn(c.pc, (sentinel, W.HOOK_SKIP_TO))
+        return c.pc == sentinel, bool(mem[W.WMODE])
+
+    def test_hook_decisions(self):
+        """장 표에 있으면 방문 깃발이 꺼져 있어도 올리고, 없으면 깃발을 따른다. idx 63 도 장 표로 판정하며 W 모드를 푼다."""
+        self.assertEqual(self._hook(1, 50, flag_off=True), (True, True))  # 2장 구엔의탑 — 깃발 꺼짐에도 올림
+        self.assertEqual(self._hook(0, 50, flag_off=True), (False, True))  # 1장 — 표 밖 + 깃발 꺼짐 → 건너뜀
+        self.assertEqual(self._hook(0, 50, flag_off=False), (True, True))  # 1장 — 표 밖이라도 방문했으면(앞 장 마을과 같게)
+        self.assertEqual(self._hook(5, 63, flag_off=True), (True, False))  # 종장 바니스성 — 표 안, 모드 풀림
+        self.assertEqual(self._hook(4, 63, flag_off=True), (False, False))  # 5장 — 표 밖 + 깃발 꺼짐
+        self.assertEqual(self._hook(1, 1, flag_off=True), (True, True))  # 엘아스타
+        self.assertEqual(self._hook(1, 63, flag_off=False, wmode=False), (True, False))  # W 모드 아님 — 원래 깃발 그대로
 
     def test_hook_reads_chapter_zero_page(self):
         """장 = 영 페이지 `$6B`(`LDA zp`) — `$C1B6` 는 이어하기 직후 0 이라 못 쓴다."""

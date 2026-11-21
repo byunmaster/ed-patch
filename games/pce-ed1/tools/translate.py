@@ -190,12 +190,17 @@ def _inline_head_reset(m: M.Message, out: bytes) -> bytes:
 
 # 🔴 주문 배우기 안내(「어느 주문을 원하는가?」 — 노부부 집·네리아·루디아 현자 등 전 주문 스승 자리, 원문 열쇠 둘)는 **윗 두 줄을 비우고 셋째 줄**에 낸다(마스터 11-21 「주문 개수가 적어도 가리는 것보단 보이는 게 나을듯」
 # — 주문 목록 팝업이 창 윗부분 오른쪽을 덮어 첫 줄이 가렸다, 네리아만 셋째 줄이라 한 가지로 맞춘다). 머리 공백(`' 어느…'` — 자리마다 달랐다)은 떼고 개행 둘로 줄을 맞춘다.
-SPELL_PROMPT_KEYS = {"5dc5675b267d9e15", "7e3f4be7d6105e86"}
+SPELL_PROMPT_JP = "どの呪文"  # 🔴 11-22 열쇠 목록(원문 열쇠 둘)은 「적을까」 열쇠(2222290e — 3장 요르도 항구 현자, 마스터 「3줄에 표기 규칙이 적용되지 않은 것 같네」)를 놓쳤다 — 원문 머리가 「どの呪文」(어느 주문)인 화자 없는 메시지 전부로 자동 판정한다(새 문구도 안 빠진다)
+
+
+def is_spell_prompt(m: "M.Message") -> bool:
+    """주문 목록 팝업과 함께 뜨는 안내(「어느 주문을 …?」) — 윗 두 줄을 비우고 셋째 줄."""
+    return m.speaker is None and m.common is None and m.jp.startswith(SPELL_PROMPT_JP)
 
 
 def _compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str, str], lead_px: int = 0) -> bytes:
     out = bytearray()
-    if m.key in SPELL_PROMPT_KEYS and m.speaker is None:
+    if is_spell_prompt(m):
         tr = {**tr, "t": tr["t"].lstrip(" ")}
         out += bytes([NL, NL])
     if m.speaker is not None:
@@ -720,6 +725,10 @@ def blank_row_patches(orig: bytes) -> list[tuple[int, bytes, bytes]]:
             and m.start >= 2
             and orig[m.start - 1] == NL
             and orig[m.start - 2] in BLANK_ROW_BEFORE
+            # 🔴 11-22 마스터 「3장 요르도항구의 어부가 돌아오지 않아」 — 씬 106 스엘 어부의 `14 07 01`(**이야기 깃발 0x0107 세트**)의 피연산자 `07 01` 을
+            #    「종료 `07` + 개행 `01`」로 오인해 `01` 을 `18` 로 바꿨다(깃발이 0x1807 로 세워져 요르도 어부 귀환 조건이 영영 안 섰다). 3바이트 옵코드(`10~15`)의
+            #    피연산자 꼬리면 건드리지 않는다.
+            and not (m.start >= 3 and 0x10 <= orig[m.start - 3] <= 0x15)
         ):
             out.append((m.start - 1, bytes([NL]), bytes([NOP_OP])))
         # 동료 합류 「{이름}이 동료가 되었습니다」(씬 41 게일, 마스터 11-08 「게일 동료 빈 줄은 원본도 마찬가지인데 의미 없는 빈 줄은 제거」):

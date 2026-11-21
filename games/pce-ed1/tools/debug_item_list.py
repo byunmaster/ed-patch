@@ -14,6 +14,7 @@
 import debug_item
 import debug_warp as W
 import hook
+import sprmask
 
 PAD = W.PAD
 WAIT = W.WAIT
@@ -578,7 +579,7 @@ def assemble(ttl: tuple[bytes, bytes] = DUMMY_TITLES) -> tuple[int, bytes, int, 
     a = code(org, ttl)
     a = code(org, ttl, (a.labels["TW"], a.labels["TI"]))
     blob = a.bytes()
-    assert org + len(blob) <= 0x7B00, hex(org + len(blob))  # 보관소(`$7C00~`) 앞
+    assert org + len(blob) <= sprmask.DEBUG_LIST_LIMIT, hex(org + len(blob))  # 뒤는 이름판 숨김 본체(`resthide`, `$790B~`) · 잘린 그림 사본 코드(`sprmask` 토막 a, `$7980~`) · 보관소(`$7C00~`)
     return org, blob, a.labels["entry"], a.labels["entry_w"]
 
 

@@ -89,6 +89,8 @@ class CPU:
                 self.x = nz(b())
             elif op == 0xA0:
                 self.y = nz(b())
+            elif op == 0x62:  # CLA(HuC6280 — 플래그 안 건드림)
+                self.a = 0
             elif op == 0x9C:
                 m[w()] = 0
             elif op == 0xA5:

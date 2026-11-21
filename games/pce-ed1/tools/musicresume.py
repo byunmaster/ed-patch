@@ -24,7 +24,7 @@ BANK = 0x73
 WINDOW = 0x8000
 ORG = winmask.TBL + winmask.TOTAL_LEN  # winmask 끝 바로 뒤
 OFF = ORG - WINDOW
-CODE_LEN = 320  # 코드 + 변수 길이 이상(꼬리 안: winmask 와 합쳐 1280B 이하)
+CODE_LEN = 321  # 코드 + 변수 길이 이상(꼬리 안: winmask 와 합쳐 1280B 이하)
 
 CD_SUBQ = 0xE01E
 CD_PLAY = 0xE012
@@ -75,7 +75,7 @@ def _asm(buf_addr: int = 0) -> "hook.Asm":
     a.op("BCC", "rel", "take")
     a.op("BRA", "rel", "sp_out")
     a.label("scan")
-    a.op("LDX", "imm", 0)
+    a.op("CLX")  # LDX #0 보다 1B 짧다(11-22 — 뱅크 0x73 은 4B 가 모자라 `$76` 무효화를 넣느라 짠다)
     a.label("scan_lp")
     a.op("JSR", "abs", "chk")
     a.op("BCC", "rel", "take")
@@ -191,6 +191,9 @@ def _asm(buf_addr: int = 0) -> "hook.Asm":
     # 새 장면이 CD 곡을 쓰면 스크립트가 LOAD 뒤에 다시 건다(슬롯 3→2 실측: LOAD 뒤 SEARCH+PLAY). 여기서 먼저 멈추면 PSG 장면에 옛 CD 곡이 안 남는다.
     a.label("loadhook")
     a.op("JSR", "abs", CD_PAUSE)
+    # 🔴 CD 를 멈췄으니 엔진의 「곡 흐르는 중」 상태도 무효로 — 안 그러면 같은 슬롯·같은 곡을 다시 LOAD 했을 때 엔진이 「이미 흐름」으로 보고 다시 안 틀어 침묵한다(마스터 11-20 「2번세이브 로드 후 다시 2번세이브를 로드하면 음악이 끊긴다」, 실측: `$76` 이 07 인 채 CD_PAUSE 만 돎)
+    a.op("LDA", "imm", 0xFF)
+    a.op("STA", "zp", ENG_CD_STATE)
     a.op("TMA", "tma", 3)
     a.op("PHA")
     a.op("LDA", "imm", ENG_BANK)
