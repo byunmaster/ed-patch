@@ -184,6 +184,43 @@ if BRAM:
     C.memmove(mp, d, min(d.__len__(), core.retro_get_memory_size(0)))
 frames = 0
 
+# PCE_COV=<파일> — 커버리지 계측(`cov_shim.c`): 뱅크 0x68~0x87 의 바이트마다 명령 첫 바이트(1)·그 밖 읽기(2)·쓰기(4)·피연산자(8) 를 모아 끝날 때 파일에 OR 로 쌓는다(256KB + 뱅크별 논리 쪽 32B + MPR 조합).
+# 코어의 처리기 표(HuCPU+0x8C0 읽기 · +0x10C0 쓰기)를 심 것으로 갈고 빠른 쪽 표(+0xC0)를 비워 명령 인출도 처리기를 지나게 한다 — 오프셋은 이 빌드(.local/cache/libretro 의 .so) 실측이라 코어를 다시 지으면 `nm` 으로 다시 잰다.
+COV = None
+if os.environ.get("PCE_COV"):
+    _base = C.cast(core.retro_run, C.c_void_p).value - 0x7D670
+    _cpu = _base + 0x543500
+    COV = C.CDLL(os.path.join(HERE, "cov_shim.so"))
+    C.c_void_p.in_dll(COV, "g_sys").value = C.c_void_p.from_address(_base + 0x53A388).value
+    C.c_void_p.in_dll(COV, "g_cd").value = C.c_void_p.from_address(_base + 0x539B40).value
+    C.c_void_p.in_dll(COV, "g_cpu").value = _cpu
+    C.c_void_p.in_dll(COV, "g_opsite").value = _base + 0x80D4B  # RunSub 의 명령 첫 바이트 인출 뒤 되돌아오는 자리
+    _rd, _wr = C.cast(COV.cov_read, C.c_void_p).value, C.cast(COV.cov_write, C.c_void_p).value
+    for _b in range(0x68, 0x88):
+        assert C.c_void_p.from_address(_cpu + 0x8C0 + 8 * _b).value in (_base + 0x8C420, _base + 0x8C460), hex(_b)
+        C.c_void_p.from_address(_cpu + 0x8C0 + 8 * _b).value = _rd
+        C.c_void_p.from_address(_cpu + 0x10C0 + 8 * _b).value = _wr
+        C.c_void_p.from_address(_cpu + 0xC0 + 8 * _b).value = None
+    C.CFUNCTYPE(None, C.c_void_p)(_base + 0x80180)(_cpu)  # HuC6280::FlushMPRCache — 빠른 쪽 포인터를 새 표로 다시 계산
+
+
+def cov_dump():
+    path = os.environ["PCE_COV"]
+    cov = np.frombuffer(C.string_at(C.addressof((C.c_uint8 * 0x40000).in_dll(COV, "cov")), 0x40000), dtype=np.uint8).copy()
+    pages = np.frombuffer(C.string_at(C.addressof((C.c_uint8 * 0x20).in_dll(COV, "pages")), 0x20), dtype=np.uint8).copy()
+    if os.path.exists(path):
+        old = np.fromfile(path, dtype=np.uint8)
+        cov |= old[:0x40000]
+        pages |= old[0x40000:0x40020]
+    np.concatenate([cov, pages]).tofile(path)
+    nm = bytes((C.c_uint8 * 0x20).in_dll(COV, "nmpr"))
+    mp = bytes((C.c_uint8 * (0x20 * 32 * 8)).in_dll(COV, "mprs"))
+    with open(path + ".mpr", "a") as f:
+        for b in range(0x20):
+            for k in range(nm[b]):
+                f.write(f"{0x68 + b:02x}\t{mp[(b * 32 + k) * 8 : (b * 32 + k) * 8 + 8].hex()}\n")
+    print("cov op", int((cov & 1).astype(bool).sum()), "operand", int((cov & 8).astype(bool).sum()), "read", int((cov & 2).astype(bool).sum()), "write", int((cov & 4).astype(bool).sum()), "any", int((cov != 0).sum()), flush=True)
+
 
 TRACE = None  # battle 의 dense — 전투 시작 기준 프레임 번호가 [lo, hi) 면 <접두>_d/ 에 저장. 관찰·I 누름 구간도 빠짐없이
 
@@ -496,4 +533,6 @@ for step in json.load(open(SCRIPT)):
     elif op == "load":
         d = open(step[1], "rb").read()
         core.retro_unserialize(d, len(d))
+if COV is not None:
+    cov_dump()
 print("done", frames)

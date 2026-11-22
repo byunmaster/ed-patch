@@ -1516,6 +1516,23 @@
   },
   {
    "clip": "scn151_s0",
+   "key": "cf1b8ccf5ceeb1e5",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "x0 토막 행을 s0 로 옮김(11-23) · 일치 28/28자(100%)",
+   "cand_start": 0.29,
+   "cand_end": 7.53,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "cf1b8ccf5ceeb1e5",
+   "page": 2,
+   "voice_match": "없음",
+   "why": "해설 쪽은 #1 음성에 없다 — 엔진 해설(녹색)이 #1 끝난 뒤 뜬다(마스터 11-23 「흰색 해설자막이 #1 음성 끝나기도 전에」). x0 행을 s0 로 옮김 · 일치 0/32자"
+  },
+  {
+   "clip": "scn151_s0",
    "key": "25907cfbb0858973",
    "page": 1,
    "voice_match": "있음",

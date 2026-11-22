@@ -55,7 +55,7 @@ assert M + 32 == D + DATA_LEN == 0x9FF6  # 벡터 사본 6B 와 그 뒤 4B(`+1FF
 
 POOL_CELL = 0xA0
 POOL_N = 32
-BUDGET = 32  # 프레임당 굽는 셀 수 상한(가장 큰 조각 = 8셀이 한 프레임에 들어가야 한다). 11-22 8→32(풀 전체): 계획은 서 있을 때만 돌아 한 프레임 길어져도(≈45k 명령, 프레임 1.5개) 걷기엔 영향이 없고, 음성 자막 창이 뜰 때 사본이 한 프레임에 다 구워져 깜빡임이 짧아진다(마스터 02)
+BUDGET = 8  # 프레임당 굽는 셀 수 상한(가장 큰 조각 = 8셀이 한 프레임에 들어가야 한다)
 RING_KIND0, RING_KINDS = 0x78, 10  # 횃불 밝기 $C01E(7~39) >> 2 + 0x78 — 0x78~0x7A 는 조각 넷짜리 가장 작은 원
 
 # 조각 모양(색인 = 폭 32 | 높이 코드 << 1)
@@ -216,7 +216,6 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
     # ── sigchk: 어둠 원 첫 조각에서 프레임당 한 번. X·Y 보존. 서명이 같으면 그대로, 다르면 비우고 PEND=1, 같은 서명이 이어지면 계획 시작 ──
     L("sigchk")
     op("PHX")
-    op("PHY")
     op("TXA")  # FLAG = 개체 번호 + 1 — 스텁이 「이 개체를 이번 프레임에 봤나」로 쓴다
     op("INC")
     op("STA", "abs", FLAG)
@@ -233,13 +232,12 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
     op("BNE", "rel", "sg_na")
     op("JSR", "abs", "eg_arm")
     L("sg_na")
-    op("LDY", "imm", 0)  # Y ≠ 0 이면 바로 시작 — 서명이 비어 있던 첫 프레임(창이 다 꺼졌다 처음 뜰 때: 프레임 후크가 SIG+5 를 0 으로 둔다)도 포함
-    op("LDX", "abs", SIG + 5)
-    op("BNE", "rel", "sg_n0")
-    op("INY")
-    L("sg_n0")
-    op("PHA")  # 창 상태는 맨 끝에 본다 — 좌표·서술자가 그대로인데 창만 바뀐 때(음성 자막 창이 뜰 때)는 한 프레임 기다리지 않고 바로 계획을 시작한다(11-22 마스터 02: 가르고 음성 시작 때 원 왼쪽 띠가 3~4프레임 깜빡)
     op("LDX", "imm", 0)
+    op("CMP", "abs", SIG + 6)
+    op("BEQ", "rel", "sg_c0")
+    op("STA", "abs", SIG + 6)
+    op("INX")
+    L("sg_c0")
     for i, zp in enumerate((0x2E, 0x2F, 0x30, 0x31, 0xFA, 0xFB)):
         op("LDA", "zp", zp)
         op("CMP", "abs", SIG + i)
@@ -247,18 +245,8 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
         op("STA", "abs", SIG + i)
         op("INX")
         L(f"sg_c{i + 1}")
-    op("PLA")
-    op("CMP", "abs", SIG + 6)
-    op("BEQ", "rel", "sg_w3")
-    op("STA", "abs", SIG + 6)
-    op("CPX", "imm", 0)
-    op("BNE", "rel", "sg_w4")
-    op("INY")  # 창만 바뀜 — 바로 시작
-    op("BRA", "rel", "sg_w4")
-    L("sg_w3")
     op("CPX", "imm", 0)
     op("BEQ", "rel", "sg_same")
-    L("sg_w4")
     op("LDX", "imm", 31)
     L("sg_clr")
     op("STZ", "absx", PRES)
@@ -269,8 +257,8 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
     op("STZ", "abs", PCUR)
     op("LDA", "imm", 1)
     op("STA", "abs", PEND)
-    op("CPY", "imm", 0)
-    op("BEQ", "rel", "sg_done")  # 좌표·서술자가 바뀜 — 한 프레임 기다린다(걷는 동안은 계획 안 함). 창만 바뀜이면 아래 sg_same 으로 이어져 바로 시작
+    op("PLX")
+    op("RTS")
     L("sg_same")
     op("LDA", "abs", PEND)
     op("BEQ", "rel", "sg_done")
@@ -280,7 +268,6 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
     op("LDA", "imm", 1)
     op("STA", "abs", PY)
     L("sg_done")
-    op("PLY")
     op("PLX")
     op("RTS")
 
@@ -746,7 +733,7 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
     op("BNE", "rel", "ce_ch")
     op("RTS")
 
-    a.seg("d")  # 11-22 b 칸(서명 검사)이 모자라 여유 있는 d 로 옮겼다
+    a.seg("b")
     L("clamp")  # A = clamp(A − T1, 0, 16)
     op("SEC")
     op("SBC", "zp", T1)

@@ -115,11 +115,7 @@ class WarpHookTest(unittest.TestCase):
         """장 표에 있으면 방문 깃발이 꺼져 있어도 올리고, 없으면 깃발을 따른다. idx 63 도 장 표로 판정하며 W 모드를 푼다."""
         self.assertEqual(self._hook(1, 50, flag_off=True), (True, True))  # 2장 구엔의탑 — 깃발 꺼짐에도 올림
         self.assertEqual(self._hook(0, 50, flag_off=True), (False, True))  # 1장 — 표 밖 + 깃발 꺼짐 → 건너뜀
-        self.assertEqual(self._hook(0, 50, flag_off=False), (False, True))  # 1장 — 표 밖 던전은 방문했어도 건너뜀(11-22: 도착 못 하는 곳 — 빈 틀에서 멈춘다)
-        self.assertEqual(self._hook(3, 28, flag_off=False), (False, True))  # 4장 노부부의집(28) — 표 밖 + 방문 깃발 → 건너뜀(11-22)
-        self.assertEqual(self._hook(3, 29, flag_off=False), (False, True))  # 오레아의집(29)
-        self.assertEqual(self._hook(3, 14, flag_off=False), (True, True))  # 4장 세리스(14) — 마을은 앞 장 방문 마을이 그대로(마스터 11-18)
-        self.assertEqual(self._hook(3, 27, flag_off=False), (True, True))  # 마을 번호 마지막(27)
+        self.assertEqual(self._hook(0, 50, flag_off=False), (True, True))  # 1장 — 표 밖이라도 방문했으면(앞 장 마을과 같게)
         self.assertEqual(self._hook(5, 63, flag_off=True), (True, False))  # 종장 바니스성 — 표 안, 모드 풀림
         self.assertEqual(self._hook(4, 63, flag_off=True), (False, False))  # 5장 — 표 밖 + 깃발 꺼짐
         self.assertEqual(self._hook(1, 1, flag_off=True), (True, True))  # 엘아스타
@@ -225,6 +221,31 @@ class BlockedSceneTest(unittest.TestCase):
         )  # W 모드 암호를 세우지 않고 돌아온다(날개 목록으로 안 간다)
         self.assertEqual(drawn, [])
         self.assertEqual(self.cues, [W.CUE_DENY])  # 사용 불가 아이템과 같은 효과음(0x27)
+
+
+class EAddTest(unittest.TestCase):
+    """E 행 EP 올림 — 상수 둘만 바뀌고(길이 같음), 24비트 올림 사슬로 +1000 이 된다."""
+
+    def _add(self, ep):
+        # 원판 사슬 꼴: LDY #$0C / LDA ($10),Y / CLC / <9B> / STA ($10),Y / BCC +2 / (상위 INC 는 흉내: INY·LDA·INC·STA) / RTS
+        prog = bytes([0xA0, 0x0C, 0xB1, 0x10, 0x18]) + W.e_add_new() + bytes([0x91, 0x10, 0x90, 0x06, 0xC8, 0xB1, 0x10, 0x1A, 0x91, 0x10, 0x60])
+        mem = bytearray(0x10000)
+        mem[0x4000 : 0x4000 + len(prog)] = prog
+        mem[0x10], mem[0x11] = 0x00, 0xC3
+        mem[0xC30C : 0xC30F] = ep.to_bytes(3, "little")
+        c = cpu65.CPU(mem)
+        c.sp = 0xF0
+        c.run(0x4000, ret=0xFFFF)
+        return int.from_bytes(mem[0xC30C : 0xC30F], "little")
+
+    def test_same_length_only_two_constants(self):
+        new = W.e_add_new()
+        self.assertEqual(len(new), len(W.E_ADD_OLD))
+        self.assertEqual([i for i in range(len(new)) if new[i] != W.E_ADD_OLD[i]], [1, 8])
+
+    def test_adds_1000_with_carries(self):
+        for ep in (0, 1, 24, 255, 0xFF00, 0xFFFF, 0x01FFFF, 123456):
+            self.assertEqual(self._add(ep), ep + 1000, ep)
 
 
 if __name__ == "__main__":

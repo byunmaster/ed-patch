@@ -297,6 +297,8 @@ def scene_rows() -> dict[str, list[tuple[str, str]]]:
             btab, _ = glyphdyn.block_table(table, sid)
             inv = inverse(btab)
             typeset.set_scene(sid)
+            sp_msgs = T.with_added_speakers(sid, M.parse(b["data"]))
+            sp_leads = T.continuation_leads(b["data"], sp_msgs, trs, speakers) if any(T.is_spell_prompt(x) for x in sp_msgs) else {}  # 빌드(`translate_block`)가 주문 안내에 주는 앞 폭
             prev = None  # (앞 메시지 열기 여부, 앞 메시지 마지막 쪽 끝 글자)
             for m in M.parse(b["data"]):
                 prev_open, prev_tail = prev[:2] if prev else (False, "")
@@ -307,6 +309,7 @@ def scene_rows() -> dict[str, list[tuple[str, str]]]:
                 gap_break = bool(gap) and ((len(gap) <= 8 and (gap[-1] in (0x05, 0x03, 0x01, 0x00) or (gap[-1] in (0x04, 0x06, 0x07) and 0x05 in gap)))  # `0C nn 05 04 06` = 쪽 넘김 뒤 표시 모드 복원·끝 — 새 쪽(씬 69 「…완성되었습니다.」 뒤 「석비에는」, 11-18)
                                                    or (b"\x0f" in gap and not re.match(r"^ (은/는|을/를|이/가|와/과|으로/로)", (trs.get(m.key) or {}).get("t", ""))))  # 점프(0F)가 낀 틈은 흐름이 끊긴다 — 이름 변수 뒤 조사 조각(「 은/는 …」)은 예외(변수가 앞에서 찍힌다)  # 메시지 바로 앞의 마지막 옵코드가 쪽 넘김·줄바꿈 — 글이 새 쪽·새 줄에서 시작한다
                 tr = trs.get(m.key)
+                gap_break = gap_break or (len(gap) <= 8 and 0x00 in gap)  # 11-23: 앞 메시지 뒤 틈에 `00`(창 닫기)이 있으면(`0C 26 00 0B` 꼴 포함) 그 뒤 옵코드(`0B` 이름 등)가 끼어도 새 창이다(씬 198 「…있었습니다.」+`00 0B`+「은/는 석비에…」)
                 if tr is None or tr.get("raw"):
                     prev = None
                     continue
@@ -317,7 +320,7 @@ def scene_rows() -> dict[str, list[tuple[str, str]]]:
                 if "\n" in tr.get("t", "") and m.speaker is None and m.common is None:
                     prev = None  # 🔴 11-20: 건너뛴 메시지가 사이에 끼면 그 앞 메시지는 이음 후보가 아니다(씬 54 오델로 「자네 차례일세」: 사이의 할머니 메시지(`00` 종료)를 건너뛰고 한참 앞 메시지를 「앞」으로 봐 첫 공백을 이음으로 오인)
                     continue  # 장 끝 카드 — 손으로 맞춘 줄
-                by = T.compose(m, tr, btab, speakers)
+                by = T.compose(m, T.with_var_space(b["data"], m, tr), btab, speakers)  # 11-23: 빌드(`translate_block`)와 같은 꼴 — 이름·공유 문자열 호출 앞 공백까지
                 head, pages = decode(by, inv)
                 nmsg += 1
                 # 2-1(이음) — 앞 메시지가 종료 없이 이어지는데 부호로 끝났고 이 메시지가 공백·개행 없이 글자로 시작 — 같은 줄에 「다.뭘」 로 붙는다(화면 전수 표본, 11-02)
@@ -336,9 +339,13 @@ def scene_rows() -> dict[str, list[tuple[str, str]]]:
                         # 🔴 11-22 「실제 시작 줄」을 잰다 — 개행은 「다음 글자 전에 줄바꿈」 표시라 연속 둘은 한 줄만 넘어간다(`NL NL` 은 둘째 줄 — 마스터 「루드라 현자도 3번째 줄에 안 나오네」).
                         # 메시지는 창 맨 윗줄(행 0)에서 시작하고(앞 메시지에 이어지는 갈래도 `0D` 뒤 새 메시지), 글자(공백 포함)가 찍힐 때 대기 중인 개행이 한 줄을 만든다.
                         row = start_row(text)
-                        if row != 2:
-                            hits["SP3"].append((tag, f"주문 안내가 셋째 줄(행 2)에서 시작하지 않음 — 행 {row} ⟨{text[:30]!r}⟩"))
-                        text = text.lstrip("\n ") if row == 2 else text.lstrip("\n")  # 머리 빈 줄·공백 글자는 의도 — 본문만 남겨 다른 축을 본다
+                        if row != 3:
+                            hits["SP3"].append((tag, f"주문 안내가 마지막 줄(행 3)에서 시작하지 않음 — 행 {row} ⟨{text[:30]!r}⟩"))
+                        text = text.lstrip("\n ") if row == 3 else text.lstrip("\n")  # 머리 빈 줄·공백 글자는 의도 — 본문만 남겨 다른 축을 본다
+                        # 🔴 11-22 밤: **빌드가 주는 앞 폭 그대로** 다시 짜서 본다 — 이 검사기는 앞 폭 없이 조립해 「어느 / 주문을 …」 두 줄(앞 폭 100·112px 12씬)을 못 봤다(빌드와 검사기의 조립 인자가 달랐다).
+                        built = decode(T.compose(m, tr, btab, speakers, lead_px=sp_leads.get(m.key, 0)), inv)[1][0][0]
+                        if "\n" in built.lstrip("\n ") or start_row(built) != 3:
+                            hits["SP3"].append((tag, f"주문 안내가 빌드 조립(앞 폭 {sp_leads.get(m.key, 0)}px)에서 마지막 줄 한 줄이 아님 ⟨{built!r}⟩"))
                     for ax in page_axes(text, cap=cap, on=pon, off=poff, joined=frag, lead=(T.JOIN_NAME if m.key in T.JOIN_KEYS else TC.ACTOR) if (pi == 0 and JOSA_LEAD.match(tr.get("t", ""))) else ""):
                         hits[ax].append((tag, f"쪽{pi + 1} ⟨{text.replace(chr(10), '|')[:40]}⟩"))
                 # 2-NL(11-11) — 원문이 끝 개행(`01`)으로 끝나는 열린 메시지는 우리 조립도 `01` 로 끝나야 한다: 꽉 찬 13칸 줄 뒤에서 `01` 을 빼면 다음 메시지가 같은 줄에 붙어

@@ -194,7 +194,7 @@ SPELL_PROMPT_JP = "どの呪文"  # 🔴 11-22 열쇠 목록(원문 열쇠 둘)�
 
 
 def is_spell_prompt(m: "M.Message") -> bool:
-    """주문 목록 팝업과 함께 뜨는 안내(「어느 주문을 …?」) — 윗 두 줄을 비우고 셋째 줄."""
+    """주문 목록 팝업과 함께 뜨는 안내(「어느 주문을 …?」) — 윗 세 줄을 비우고 넷째(마지막) 줄."""
     return m.speaker is None and m.common is None and m.jp.startswith(SPELL_PROMPT_JP)
 
 
@@ -204,7 +204,12 @@ def _compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str
         tr = {**tr, "t": tr["t"].lstrip(" ")}
         # 🔴 11-22 개행(`01`)은 「다음 글자 전에 줄바꿈」 표시라 **연속 둘은 한 줄만** 넘어간다(09-25 devlog 실측) — `NL NL` 머리는 첫 줄만 비워 안내가 둘째 줄에 떴다
         #    (마스터 11-22 「루드라 현자도 3번째 줄에 안 나오네」, 31곳 전부 같은 원인 — 앞 메시지에 이어지는 갈래든 새 창이든 시작 줄은 0). 둘째 줄에 공백 글자를 하나 찍어 두 번째 개행이 먹게 한다.
-        out += bytes([NL]) + font.HALF_SPACE + bytes([NL])
+        # 🔴 11-23 마스터 「현자 문구가 주문 7개면 3번째줄도 좀 가리겠네. 아예 다 마지막줄로」(5장 7개 — 목록 창이 셋째 줄까지 덮는다) — 안내는 4줄 창의 **마지막(넷째) 줄**.
+        out += bytes([NL]) + font.HALF_SPACE + bytes([NL]) + font.HALF_SPACE + bytes([NL])
+        # 🔴 11-22 밤 회귀(마스터 「어느 / 주문을 적을까?」 두 줄 — 루디아·요르도·리젤·바즈눈): 위 머리가 안내를 **새 줄 맨 앞**에 놓는데도 앞 메시지가 쓴 폭(`lead_px` — `0D 08` 이음 갈래)을
+        #    그대로 조판기에 줘서, 앞 폭 100·112px 인 12씬은 「어느」 뒤에서 끊겼다(136·140px 인 6씬은 통째로 밀리며 개행이 겹쳐 우연히 한 줄, 0 인 10씬은 정상).
+        #    머리가 줄을 새로 여니 앞 폭은 0 이다 — 31곳이 같은 바이트 꼴(머리 + 한 줄)이 된다.
+        lead_px = 0
     if m.speaker is not None:
         name = SPEAKER_FIX[m.key] if m.key in SPEAKER_FIX else speakers.get(m.speaker, m.speaker)
         out += b"\x1f" + font.encode(name, table, msg=True) + b"\x04"  # 화자명도 대사창 — 공백 반각
@@ -471,13 +476,26 @@ VAR_OPS = (0x09, 0x10)  # 메시지 바로 뒤에서 이름 변수(`09 nn`)나 �
 
 def needs_var_space(block: bytes, m: "M.Message", text: str) -> bool:
     """🔴 11-22 마스터 「아무리에리온님 그래도」 — 종료 없이 이어지는 메시지가 한글로 끝나고 바로 뒤에서 이름·품목 이름이 찍히면(조사가 앞에 붙는 꼴이 아니라 뒤에 붙는다) 한국어는 사이에 공백이 있어야 한다.
-    원문은 일본어라 공백이 없다. 전수(11-22): 씬 106·115·123·159·181·190·220 의 18 메시지."""
+    원문은 일본어라 공백이 없다. 전수(11-22): 씬 106·115·123·159·181·190·220 의 18 메시지.
+    11-23 마스터 「,드래곤 의」(씬 159) — 쉼표 끝도 같다(마침표·물음표·느낌표 끝은 꽉 찬 줄에서 줄이 넘쳐 안 넣는다 — 씬 99·100·109·147·179 6곳 실측)(`,드래곤` 이 붙어 나왔다). 짝으로 뒤 조각(「 의 천은」·「 이/가」)의 머리 공백은 정본에서 뺐다."""
     import re as _re
 
     if m.terminated or m.end >= len(block) or block[m.end] not in VAR_OPS:
         return False
     t = text.rstrip("\x0c")
-    return bool(t) and bool(_re.match(r"[가-힣A-Za-z0-9]", t[-1])) and not text.endswith("\x0c")
+    if not t or text.endswith("\x0c"):
+        return False
+    if _re.match(r"[가-힣A-Za-z0-9,…]", t[-1]):
+        return True
+    # 문장 끝 부호(. ! ?) 뒤에 바로 이름이 찍혀도 한국어는 띄운다(「같아.에리온님은」, 씬 132·181). 단 마지막 줄이 꽉 차 공백이 줄을 넘치면(씬 99·100·109·147·179 6곳 실측)
+    # 종전(공백 없음)을 둔다 — 줄·쪽 수가 늘면 안 낸다.
+    if t[-1] in ".!?":
+        import font as _font
+
+        spk = m.speaker is not None or m.common is not None
+        last = typeset.pages(_font.expand_packed(t), speaker=spk, four=True)[-1][-1]
+        return typeset.px(last) + typeset.SPACE_PX <= typeset.FULL * 12 - typeset.SPACE_PX  # 꽉 찬 줄(칸 13 에 닿으면 인터프리터가 스스로 넘긴다)은 여유 한 눈금
+    return False
 
 
 def with_var_space(block: bytes, m: "M.Message", tr: dict) -> dict:

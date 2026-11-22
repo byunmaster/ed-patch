@@ -28,6 +28,9 @@ PENDING = GAME / "punct_voice_pending.json"
 # 마스터 판정 문안 잠금(`master_rulings.json`)이 문안을 고정한 줄 — 원문 점 손실(P14 `…`)을 알고도 둔다
 LOCKED_LOSS = {("15", "b8e57cd08fa125de"): "병사대장 첫 줄 — 「세리오스 왕자님이시군요? 오시기를 기다리고 있었습니다.」 다른 기종과 같은 잠금 문안(원문 끝 `・・・`)"}
 
+# 공유 문자열이 이름이 아니라 감탄·호칭 조각인 줄(씬 64 복권집 「아,」「아니, 세리오스 왕자님!!」 — 호출 앞뒤 문장이 이어 읽는다, 11-23 마스터 판정 대기)
+NAME_TAIL_OK = {("64", "610a59bf3ed725d9"), ("64", "cf0b5c633fc66905")}
+
 SKIP_FILES = {
     "broken_fragments.json",
     "coverage_baseline.json",
@@ -51,6 +54,8 @@ RULES = [
     ("P9 문장 맨 앞 … 뒤 공백", re.compile(r"(?:^|[\n\f「『(]|[.!?] )… ")),
     ("P11 … 곁에 . ,", re.compile(r"…[.,]")),
     ("P12 그 밖의 점 글자", re.compile(r"[·∙•⋯‥․]")),
+    ("G1 숫자·단위 뒤 Gold 붙임(규칙 1-5 「영문 낱말 단위는 띄운다」, 마스터 11-23 「7만Gold」)", re.compile(r"[0-9만천억]Gold")),
+    ("G2 1만 이상 금액을 아라비아 0 꼴로 씀(마스터 11-23 — 1만 이상은 「N만 Gold」)", re.compile(r"(?<![0-9])[0-9]{5,}\s?Gold")),
 ]
 
 
@@ -107,6 +112,11 @@ def end_rule(t: str, j: str) -> bool:
     return False
 
 
+def name_tail_rule(t: str, j: str) -> bool:
+    """N1 — 공유 이름 문자열(원문이 부호·개행 없는 짧은 낱말 — 「アグニージャ」)의 번역이 부호·공백으로 끝남. 호출한 문장마다 따라 붙어 「아그니쟈?라는」으로 읽힌다(마스터 11-23 종장 — 끝의 `?` 가 뒤 조사 훅의 받침 판정도 깨 「를」이 가나로 찍혔다)."""
+    return 0 < len(j) <= 10 and not re.search(r"[\u3002\u3001\uff01\uff1f\n\f\u30fb]", j) and bool(re.search(r"[?!.,…]$", t.strip()))
+
+
 def selftest() -> None:
     must = {
         "P1": "좋아..",
@@ -120,11 +130,14 @@ def selftest() -> None:
         "P9": "좋다. … 응?",
         "P11": "그래….",
         "P12": "그래·",
+        "G1": "7만Gold나",
+        "G2": "50000 Gold를",
     }
     for k, s in must.items():
         assert any(n.startswith(k + " ") for n in text_rules(s)), f"양성 대조 실패 {k}: {s!r}"
     for ok in (
         "좋아…",
+        "7만 Gold나",
         "…그랬다",
         "꼬꼬댁～!?",
         "그래, 알았어!? 응?",
@@ -209,6 +222,8 @@ def scan() -> tuple[list[str], list[str]]:
                     hit += [f"P14 원문 부호 `{x}` 를 번역이 뺌" for x in lost_rule(t, sn_k)]
                 if end_rule(t, sn_k):
                     hit.append("P15 원문 마침표 쪽을 번역이 부호 없이 끝냄")
+                if name_tail_rule(t, sn_k) and (sn, k) not in NAME_TAIL_OK:
+                    hit.append("N1 공유 이름 문자열 끝 부호")
                 if order_rule(t, sn_k):
                     hit.append("P13 !?·?! 순서가 원문과 반대")
             for n in hit:

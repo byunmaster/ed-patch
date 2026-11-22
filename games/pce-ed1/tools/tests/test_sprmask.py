@@ -74,9 +74,9 @@ class SprMask(unittest.TestCase):
         c, wins = _machine(desc, bx, by, menu, dlg, seed)
         ref_v = list(c.vram)
         want = sprmask.ref_plan(desc, bx, by, wins, ref_v)
-        _sig(c)  # 첫 프레임 — 서명이 비어 있었다(창이 처음 뜬다, 11-22): 기다리지 않고 바로 계획 시작
-        self.assertEqual((c.m[sprmask.PEND], c.m[sprmask.PCUR], c.m[sprmask.PY]), (0, desc[0], 1))
-        _sig(c)  # 둘째 프레임 — 같은 서명: 그대로
+        _sig(c)  # 첫 프레임 — 서명이 바뀌었다: 비우고 PEND
+        self.assertEqual((c.m[sprmask.PEND], c.m[sprmask.PCUR]), (1, 0))
+        _sig(c)  # 둘째 프레임 — 같은 서명: 계획 시작
         self.assertEqual((c.m[sprmask.PEND], c.m[sprmask.PCUR], c.m[sprmask.PY]), (0, desc[0], 1))
         frames, worst = _plan_all(c)
         got = list(c.m[sprmask.PRES : sprmask.PRES + 32])
@@ -125,12 +125,12 @@ class SprMask(unittest.TestCase):
         self.assertGreaterEqual(got[1], 0x80)
 
     def test_budget_spreads_over_frames_same_result(self):
-        # 8셀짜리(32×64) 조각 넷 = 32셀 → 예산 32셀이면 한 프레임(결과는 참조와 같다) — 예산을 바꾸면 이 시험의 프레임 수가 따라 바뀐다
+        # 8셀짜리(32×64) 조각 넷 = 32셀 → 프레임당 8셀이라 넷으로 갈린다, 결과는 참조(예산 없음)와 같다
         desc = bytes([4]) + b"".join(bytes([dx, 0, 80, 0, 0x31]) for dx in (0, 32, 64, 96))
         got, frames, worst = self._case(desc, 40, 150, False, "bottom")
-        self.assertEqual(frames, -(-32 // sprmask.BUDGET))
+        self.assertEqual(frames, 4)
         self.assertTrue(all(v >= 0x80 for v in got[1:5]), got[:6])
-        self.assertLess(worst, 1500 * sprmask.BUDGET)  # 한 프레임 비용(명령 수) — 셀 굽기 ≈ 1,400 명령/셀
+        self.assertLess(worst, 12000)  # 한 프레임 비용(명령 수) — 8셀 굽기 ≈ 1,400 명령/셀
 
     def test_pool_exhausted_falls_back(self):
         # 8셀 조각 다섯 — 풀(32칸)은 넷까지: 다섯째는 0(옛 판정으로 폴백)
@@ -156,38 +156,16 @@ class SprMask(unittest.TestCase):
             _sig(c)
             self.assertEqual(bytes(c.m[sprmask.PRES : sprmask.PRES + 32]), bytes(32), hex(poke))
             self.assertEqual(bytes(c.m[sprmask.G : sprmask.G + 4]), bytes(4))
-            if poke >= 0x8000:  # 창만 바뀜(11-22) — 한 프레임 기다리지 않고 바로 계획 시작(PEND 0 · PY 1)
-                self.assertEqual((c.m[sprmask.PEND], c.m[sprmask.PY]), (0, 1))
-            else:
-                self.assertEqual((c.m[sprmask.PEND], c.m[sprmask.PCUR]), (1, 0))
+            self.assertEqual((c.m[sprmask.PEND], c.m[sprmask.PCUR]), (1, 0))
             c.m[sprmask.PRES + 1] = 0x99
             c.m[sprmask.G] = 1
             c.m[sprmask.PEND] = 0  # (다음 바꿈도 「바뀜」 길로 가는지 따로 보려고 지운다)
-
-    def test_window_only_change_starts_plan_at_once(self):
-        # 11-22 마스터 02 — 좌표·서술자는 그대로인데 창만 바뀌면(음성 자막 창이 뜰 때) 한 프레임 기다리지 않고 바로 계획을 시작한다
-        desc = bytes([1, 0, 0, 80, 0, 0x11])
-        c, _ = _machine(desc, 40, 170, False, None, 3)
-        _sig(c), _sig(c)  # 서명 안정(창 없음)
-        c.m[sprmask.FLAG] = 0
-        c.m[winmask.slot_addr(winmask.SLOT_DLG)] = 1  # 아래 대사 창이 켜진다
-        for j, v in enumerate(winmask.DLG_BOTTOM):
-            c.m[winmask.slot_addr(winmask.SLOT_DLG, 1 + j)] = v
-        _sig(c)
-        self.assertEqual((c.m[sprmask.PEND], c.m[sprmask.PCUR], c.m[sprmask.PY]), (0, 1, 1))
-        # 좌표가 같이 바뀌면(걷는 중) 옛대로 기다린다
-        c.m[0x2E] ^= 1
-        c.m[winmask.slot_addr(winmask.SLOT_MENU)] = 1
-        _sig(c)
-        self.assertEqual((c.m[sprmask.PEND], c.m[sprmask.PCUR]), (1, 0))
 
     def test_moving_never_starts_plan(self):
         # 걷는 동안(프레임마다 좌표가 바뀐다)은 계획이 시작되지 않는다 — PCUR 가 0 인 채
         desc = bytes([1, 0, 0, 80, 0, 0x11])
         c, _ = _machine(desc, 40, 170, False, "bottom", 4)
-        _sig(c)  # 첫 서명(창이 막 떴다 — 바로 시작)
-        c.m[sprmask.PCUR] = 0
-        for f in range(1, 11):
+        for f in range(10):
             c.m[0x2E] = 40 + f
             _sig(c)
             self.assertEqual((c.m[sprmask.PCUR], c.m[sprmask.PEND]), (0, 1))

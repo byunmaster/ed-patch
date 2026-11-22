@@ -43,7 +43,19 @@ BAT_INFO = 0x0407  # 「I」 줄 자리
 STUB_AT = 0x3E00  # 워프 직전 RAM 스텁 · 디스크립터 사본(`$3F00`)
 DESC_AT = 0x3F00
 HOOK_DRAW_OFF = 0x04D4  # 뱅크 0x6E — 디버그 창 처음 그리기(`$64D4`)
-ORIG_E = 0x621B  # 원래 E 행(EP +100) 처리 — 뱅크 0x70
+ORIG_E = 0x621B  # 원래 E 행(EP +1000) 처리 — 뱅크 0x70
+
+# E 행 한 번에 올리는 EP(마스터 11-22 「100씩 … 레벨이 어느정도 올라가면 너무 적은듯해. 1000정도로」) — 원판 `$6235~$6258`: 파티 넷(`$C300 + 0x40·n`)의 EP 24비트(`+0x0C~+0x0E`)에
+#   `CLC / ADC #$64`(하위) · `ADC #$00`(중위) · 올림이면 상위 `INC`, 상위가 넘치면 셋 다 `$FF`(16,777,215 에서 멈춤). 상수 둘만 바꾸면 올림·멈춤 사슬은 그대로다.
+E_ADD = 1000
+E_ADD_OFF = 0x023A  # 뱅크 0x70 오프셋 — `ADC #lo / STA ($10),Y / INY / LDA ($10),Y / ADC #hi`(9B)
+E_ADD_OLD = bytes.fromhex("6964" "9110" "c8" "b110" "6900")
+
+
+def e_add_new() -> bytes:
+    assert 0 < E_ADD <= 0xFFFF
+    return bytes([0x69, E_ADD & 0xFF]) + E_ADD_OLD[2:7] + bytes([0x69, E_ADD >> 8])
+
 
 TABLE_W = 0x0535 + 2 * 4  # 뱅크 0x6E 디버그 행 표 W 칸
 STUB_E_ARG = 0x062A  # 뱅크 0x6E `$662A` — E 행 스텁 `JSR $4FD8 / 08 / <lo hi> / RTS` 의 호출 대상
@@ -69,9 +81,8 @@ HOOK_SITE_OFF = 0x0621  # 뱅크 0x6F 오프셋 — `BEQ $862D; LDA $FE`(`F0 0A 
 HOOK_SITE_OLD = bytes.fromhex("f00aa5fe")
 HOOK_SKIP_TO = 0x862D  # 꺼진 장소를 건너뛰는 자리(`INC $FE` 증가부)
 LAST_IDX = 0x3F
-FIRST_NONTOWN = 28  # 지명 번호 1~27 = 마을, 28~ = 집·숲·던전(날개 목록 번호 = 지명 표 색인 + 1)
 PLACES = 64  # 날개 목록 번호 범위(idx 0 = 빈 칸 · 마지막 0x3F) — 11-21 전엔 50 이었다(지명 표 항목 수). 50~63(구엔의탑·시련의동굴·왕가의묘·국경의동굴·용의알·바람의탑·방풍의동굴·늑대의입·수정의탑·폐광·니르기드·기라의길·바젤의탑·바니스성)도 장 표로 거른다
-HOOK_CODE_ROOM = 103  # 훅 코드 자리(바이트, 코드 길이와 같게 — 뒤 훅 구역 꼬리를 W 목록 스텁에 내주려고 6B 줄였다) — 뒤에 마스크·표
+HOOK_CODE_ROOM = 100  # 훅 코드 자리(바이트, 코드 길이와 같게 — 뒤 훅 구역 꼬리를 W 목록 스텁에 내주려고 6B 줄였다) — 뒤에 마스크·표
 TMP = 0x3E65  # 훅 작업 바이트(`WMODE` 곁 빈 RAM)
 CHAPTER = 0x6B  # 지금 불러 둔 장(0~5 — 장 교체 루틴이 `$6C7B` 에서 세운다. `$C1B6`(세이브 장 번호)는 불러 온 직후엔 0 이라 못 쓴다)
 MASK_AT = HOOK_ORG + HOOK_CODE_ROOM  # 비트 마스크 8B(01 02 04 … 80)
@@ -124,6 +135,8 @@ def hook_code() -> bytes:
     a.label("w1")
     op("LDA", "zp", 0xFE)
     op("BEQ", "rel", "plain")
+    op("CMP", "imm", PLACES)
+    op("BCS", "rel", "plain")
     # 장별 도착 표 — 지금 장(`$C1B6`)에서 도착하는 곳만 켜진 것으로 본다(없는 곳은 방문 깃발과 무관하게 건너뜀)
     op("PHX")
     op("PHY")
@@ -150,18 +163,11 @@ def hook_code() -> bytes:
     op("PLX")
     op("BRA", "rel", "yes")
     a.label("no")  # 이 장 표에 없는 곳 — 원판 날개가 보여 주는 것(방문 비트가 서 있음)이면 그대로 올린다(마스터 11-18 「3장 날개에는 앞 장 방문 마을이 다 나온다」)
-    #   단 **마을이 아닌 곳**(번호 ≥ 28: 노부부의집 · 오레아의집 · 숲의 외딴집 · 던전)은 이 장 표에 없으면 방문 깃발이 서 있어도 건너뛴다 — 도착 못 하는 곳(맵 자료가 이 장 컨테이너에 없다)이라 고르면 빈 틀에서 멈춘다(11-22).
     op("PLY")
     op("PLX")
-    op("LDA", "zp", 0xFE)
-    op("CMP", "imm", FIRST_NONTOWN)
-    op("BCS", "rel", "never")
     op("PLP")  # 호출 시점 플래그 복원 — Z=1 이면 방문 비트가 꺼진 것
     op("BEQ", "rel", "skip")
     op("BRA", "rel", "cont")
-    a.label("never")
-    op("PLP")
-    op("BRA", "rel", "skip")
     a.label("yes")
     op("PLA")  # 켜진 것으로 본다(저장한 플래그 버림)
     op("BRA", "rel", "cont")
@@ -342,6 +348,16 @@ def patches(pool_rel: int = 0):
             STUB_E_ARG % common.USER,
             ORIG_E.to_bytes(2, "little"),
             disp.to_bytes(2, "little"),
+        )
+    )
+    rel70 = 34 + (BANK_CODE - 0x68) * 4
+    out.append(
+        (
+            "debug E add 1000",
+            rel70 + E_ADD_OFF // common.USER,
+            E_ADD_OFF % common.USER,
+            E_ADD_OLD,
+            e_add_new(),
         )
     )
     return out

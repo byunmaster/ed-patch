@@ -122,7 +122,7 @@ AUTO_FLAG, AUTO_TL, AUTO_TH = (
     0x5FFF,
 )  # 훅 뒤 3B — 자막 모드 · 지금 쪽 마감(프레임 카운터 값, 하위·상위)
 # 자막 모드 자동 넘김의 넘김 효과음 끄기(마스터 10-17): 엔진 뱅크 0x6C 의 호출 셋(`JSR $67EC`)을 `hook.quiet_routine` 으로 돌린다(거름 루틴은 후킹 페이로드에 산다).
-QUIET_SITES = (0x6BFF, 0x6C3C, 0x6D3F)
+QUIET_SITES = (0x6BC9, 0x6BFF, 0x6C3C, 0x6D3F)  # 0x6BC9 = 11-23 추가(마스터 「아크담 전투(2) 자막 자동재생인데 클릭음」 — 엔진 안 `JSR $67EC` 넷 중 하나가 빠져 있었다, 원판 전수 스캔)
 
 
 PAD = 0xCF1A  # 버튼 트리거

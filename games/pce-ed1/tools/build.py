@@ -980,7 +980,7 @@ def _write_parts(f, rel, entries, orig, free_pool, moves, intended, split_intend
     cap = limit * common.USER
     base = len(assemble(entries, orig, f"rel {rel} base", ids=set(com), partner=True))
     pk = {i: len(assemble(entries, orig, f"rel {rel} pk", ids=set(com) | {i}, partner=True)) - base for i in rest}
-    def pack(group):
+    def pack(group, cap=cap):
         """`group`(id 순)을 조각당 cap 이하가 되게 — 조각 수가 가장 적은 균형 채움(id 순 인접)."""
         if not group:
             return []
@@ -1000,16 +1000,17 @@ def _write_parts(f, rel, entries, orig, free_pool, moves, intended, split_intend
 
     # 🔴 안 B 자막 씬(코드 영역이 든 조각은 4뱅크)은 한 곳에 모은다 — 코드 영역이 없는 조각은 3뱅크라 구역 적재가 한 뱅크 가볍다. 자막 없는 조각이 앞(제자리 · 참조표 쪽)
     g_set = {i for i in rest if (rel, i) in GWIN_DONE and i in gwin_rt.SCENE_PARTS}
+    cs_g = (gwin_rt.code_sector(splitload.TAIL_BANKS[rel] * 4) * common.USER) if rel in splitload.TAIL_BANKS else cap  # 코드 영역이 든 조각의 데이터 상한
     if rel in splitload.PART_FIXED:  # 🔴 11-22 계단으로 이어진 씬 묶음을 한 조각으로(성 안 계단 교체 0) — 조각 구성을 지정
         parts = [sorted(g) for g in splitload.PART_FIXED[rel]]
         if sorted(i for g in parts for i in g) != rest:
             raise BuildError(f"컨테이너 rel {rel}: PART_FIXED 가 컨테이너 씬 {rest} 과 어긋난다 — {parts}")
     else:
-        parts = pack([i for i in rest if i not in g_set]) + pack([i for i in rest if i in g_set])
+        parts = pack([i for i in rest if i not in g_set]) + pack([i for i in rest if i in g_set], cs_g)
     if len(parts) < 2:
         raise BuildError(f"컨테이너 rel {rel}: 조각 둘이 안 된다")
     datas = []
-    cs = gwin_rt.code_sector(splitload.slot_sectors(rel))
+    cs = gwin_rt.code_sector(splitload.TAIL_BANKS[rel] * 4 if rel in splitload.TAIL_BANKS else splitload.slot_sectors(rel))  # 11-23: 자막 코드 영역이 든 조각도 3뱅크(랄파요새 워프 — 4뱅크면 캐시 15칸)
     for pi, pids in enumerate(parts):
         d = assemble(entries, orig, f"rel {rel} part{pi}", ids=set(com) | set(pids), partner=True)
         if len(d) > cap:

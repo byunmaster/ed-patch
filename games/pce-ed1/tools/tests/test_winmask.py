@@ -272,16 +272,17 @@ class WinMask(unittest.TestCase):
         return out, c, cost
 
     def test_ring_piece_gets_copy_after_two_frames(self):
-        # 16×16 셋: 아래 창 위 모서리에 걸침(사본) · 창 안 통째(뒤) · 창 밖(앞). 첫 프레임은 옛 판정(걸치면 통째로 뒤), 둘째부터 사본(11-22: 서명이 비어 있던 첫 프레임은 기다리지 않고 바로 시작 — 옛 「셋째부터」)
+        # 16×16 셋: 아래 창 위 모서리에 걸침(사본) · 창 안 통째(뒤) · 창 밖(앞). 첫 두 프레임은 옛 판정(걸치면 통째로 뒤), 셋째부터 사본
         desc = bytes([3, 0, 0, 80, 0, 0x00, 0, 40, 82, 0, 0x08, 0, 0xC0, 84, 0, 0x80])
         out, c, cost = self._ring_frames(desc, 100, 170, 5)
         old = [(80, 0x0005), (82, 0x0805), (84, 0x8085)]  # 걸친 조각·안쪽 조각은 우선순위 꺼짐 · 밖은 그대로
         self.assertEqual(out[0], old)
+        self.assertEqual(out[1], old)
         pres = list(c.m[sprmask.PRES : sprmask.PRES + 4])
         self.assertEqual(pres[1:3], [1, 2])
         self.assertGreaterEqual(pres[3], 0x80)
         new = [(0x100 | pres[3] & 0x7F, 0x0085), (82, 0x0805), (84, 0x8085)]  # 사본은 앞(우선순위 켬) + 패턴만 사본 · 속성 높은 바이트(뒤집기)는 그대로
-        for f in (1, 2, 3, 4):
+        for f in (2, 3, 4):
             self.assertEqual(out[f], new, f)
         self.assertEqual(c.m[sprmask.PCUR], 0)
         self.assertLess(cost[4], 80)  # 다 구운 뒤 프레임 후크는 계획자를 안 부른다(정지 중 비용 0)
@@ -333,7 +334,7 @@ class WinMask(unittest.TestCase):
         self.assertEqual(c.m[sprmask.PCUR], 0)
 
     def test_ring_window_change_rebuilds(self):
-        # 창 상태가 바뀌면(메뉴가 뜬다) 사본을 버리고 다시 굽는다 — 그 사이 한 프레임은 옛 판정(11-22: 창만 바뀌면 바로 시작 — 옛 두 프레임)
+        # 창 상태가 바뀌면(메뉴가 뜬다) 사본을 버리고 다시 굽는다 — 그 사이 두 프레임은 옛 판정
         desc = bytes([1, 0, 0, 80, 0, 0x00])
         out, c, _ = self._ring_frames(desc, 100, 170, 4)
         self.assertEqual(out[3][0][0] & 0x100, 0x100)
@@ -345,7 +346,7 @@ class WinMask(unittest.TestCase):
             c.run(winmask.labels()["frame_hook"])
             c.m[0xFA], c.m[0xFB], c.m[0x33] = 0x00, 0xA4, 1
             got.append(call_stub(c, 3)[0])
-        self.assertEqual([g & 0x100 for g in got], [0, 0x100, 0x100, 0x100])
+        self.assertEqual([g & 0x100 for g in got], [0, 0, 0x100, 0x100])
 
 
 if __name__ == "__main__":

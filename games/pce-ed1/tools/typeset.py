@@ -107,7 +107,137 @@ def cols(line: str) -> int:
     return px(line) // 12
 
 
+REFINE = os.environ.get("ED_REFINE", "1") != "0"  # 11-23 줄 나눔 보정(문장 끝 우선 · 더듬는 반복 묶음) — 끄는 건 「전」 값을 재는 때뿐
+_SENT_END_RX = re.compile(r"[.!?…~]+$|[.!?]」$")
+
+
+def _early_breaks(pg: list[str]) -> int:
+    """문장이 아직 안 끝난 줄 끝(다음 줄에서 이어짐)인데 그 문장의 끝까지가 이 줄에 들어갔을 자리 수 — 마스터 11-23 「정말 도움이 / 됐어.」(문장 끝 우선)."""
+    n = 0
+    for i in range(len(pg) - 1):
+        a = pg[i]
+        if _SENT_END_RX.search(a):
+            continue
+        acc = a
+        for w in " ".join(pg[i + 1 :]).split(" "):
+            acc += " " + w
+            if _SENT_END_RX.search(w):
+                if px(acc) <= FULL * 12:
+                    n += 1
+                break
+    return n
+
+
+def _stutters(pg: list[str]) -> int:
+    """더듬는 반복(「빛, / 빛의」 · 「이, / 이건」)이 줄 사이에서 갈린 수 — 줄 끝 「X,」 + 다음 줄 머리가 X 로 시작(마스터 11-23)."""
+    n = 0
+    for a, b in itertools.pairwise(pg):
+        w = a.rsplit(" ", 1)[-1]
+        if len(w) >= 2 and w.endswith(",") and b.startswith(w[:-1]) and not b.startswith(w):
+            n += 1
+        elif len(w) >= 2 and w.endswith(",") and b[:1] == w[:1] and len(w) <= 3:
+            n += 1
+    return n
+
+
+def _refine(pg: list[str], first_speaker: bool) -> list[str]:
+    """문장 끝 우선 + 더듬는 반복 묶음 — 줄 수가 늘지 않고 공용 점수(`_score`)가 나빠지지 않을 때만 받는다."""
+    best = list(pg)
+    base = _score([best], first_speaker)
+    if base is None:
+        return pg
+    for _ in range(3):
+        cands = []
+        # (가) 문장 끝까지 한 줄에 — 줄 i 에 뒤 낱말을 끌어올리고 나머지는 이어 채운다
+        for i in range(len(best) - 1):
+            a = best[i]
+            if _SENT_END_RX.search(a):
+                continue
+            words = " ".join(best[i + 1 :]).split(" ")
+            acc = a
+            take = 0
+            for w in words:
+                acc += " " + w
+                take += 1
+                if _SENT_END_RX.search(w):
+                    break
+            else:
+                continue
+            if px(acc) > (round(FIRST_WITH_SPEAKER * 12) if (first_speaker and i == 0) else FULL * 12):
+                continue
+            rest = words[take:]
+            tail = []
+            if rest:
+                for pgx in polish(_wrap_chunk(" ".join(rest), False, WIDTH, FIRST_WITH_SPEAKER), False):
+                    tail += pgx
+            cands.append(best[:i] + [acc] + tail)
+        # (나) 더듬는 반복 — 「X,」 를 다음 줄로 내리거나 다음 줄 첫 낱말을 올린다
+        for i in range(len(best) - 1):
+            w = best[i].rsplit(" ", 1)[-1]
+            if len(w) >= 2 and w.endswith(",") and best[i + 1][:1] == w[:1]:
+                head = best[i][: -len(w)].rstrip()
+                if head:
+                    cands.append(best[:i] + [head, w + " " + best[i + 1]] + best[i + 2 :])
+                nw = best[i + 1].split(" ", 1)
+                rest = nw[1] if len(nw) > 1 else ""
+                cands.append(best[:i] + [best[i] + " " + nw[0]] + ([rest] if rest else []) + best[i + 2 :])
+        nxt = None
+        cur = (_early_breaks(best), _stutters(best))
+        for c in cands:
+            if len(c) > len(best) or any(not ln for ln in c):
+                continue
+            sc = _score([c], first_speaker)
+            if sc is None or sc > base:
+                continue
+            f = (_early_breaks(c), _stutters(c))
+            if f < cur and (nxt is None or (f, sc) < nxt[0]):
+                nxt = ((f, sc), c)
+        if nxt is None:
+            break
+        best, base = nxt[1], nxt[0][1]
+    return best
+
+
+MANUAL = None  # 마스터가 줄 나눔을 직접 정한 쪽 — {쪽 평문(줄을 공백으로 이은 것): [줄…]} (`script/manual_lines.json`)
+
+
+def _manual_lines() -> dict[str, list[str]]:
+    global MANUAL
+    if MANUAL is None:
+        import json
+
+        import common
+
+        f = common.GAME_DIR / "script" / "manual_lines.json"
+        MANUAL = {" ".join(pg): pg for pg in json.loads(f.read_text("utf-8")).get("pages", [])} if f.exists() else {}
+    return MANUAL
+
+
 def pages(text: str, *, speaker: bool | str, lead_px: int = 0, _bounds: list | None = None, four: bool = False, keep_windows: bool = False) -> list[list[str]]:
+    """조판 결과에서 마스터가 줄 나눔을 직접 정한 쪽(`script/manual_lines.json`, 11-23 씬 168 s2 #6·#11 「개행 수정」)만 그 줄로 바꾼다 — 쪽 평문이 같고 줄이 폭에 들 때만.
+    음성 자막(ON)과 대사창(OFF)이 같은 함수를 쓰므로 같은 줄 나눔이 반영된다. 첫 줄은 화자 곁(`speaker is True`)이면 10칸, 아니면 13칸."""
+    out = _pages_outer(text, speaker=speaker, lead_px=lead_px, _bounds=_bounds, four=four, keep_windows=keep_windows)
+    if REFINE and not lead_px:
+        out = [_refine(pg, speaker is True and i == 0) if not isinstance(pg, Card) and len(pg) >= 2 else pg for i, pg in enumerate(out)]
+    man = _manual_lines()
+    if not man or lead_px:
+        return out
+    res = []
+    for i, pg in enumerate(out):
+        flat = " ".join(pg) if not isinstance(pg, Card) else None
+        hand = man.get(flat) if flat is not None else None
+        if flat is not None and hand is None:  # 대사창(OFF)은 앞 문장 한 줄이 같은 쪽에 붙는다(「자, 수다는 여기까지다.」 + 마스터 쪽) — 앞이 한 줄에 들면 앞 줄 + 마스터 줄
+            for k, v in man.items():
+                if flat.endswith(" " + k) and px(flat[: -len(k) - 1]) <= FULL * 12 and len(v) + 1 <= LINES + (1 if four else 0) and (i > 0 or not speaker):
+                    hand = [flat[: -len(k) - 1], *v]
+                    break
+        if hand is not None and len(hand) <= (LINES if (i == 0 and speaker) else LINES + (1 if four else 0)) and all(px(x) <= FULL * 12 for x in hand) and not (i == 0 and speaker is True and px(hand[0]) > FIRST_WITH_SPEAKER * 12):
+            pg = list(hand)
+        res.append(pg)
+    return res
+
+
+def _pages_outer(text: str, *, speaker: bool | str, lead_px: int = 0, _bounds: list | None = None, four: bool = False, keep_windows: bool = False) -> list[list[str]]:
     """`speaker == "nl"` — 화자 머리 바로 뒤 개행(`01`)으로 글이 **둘째 줄부터** 시작하는 창(이름이 윗줄): 첫 글 줄도 13칸이다(엔진 규칙, 마스터 11-05 씬 41 줄 나눔·관리자 「일반 규칙으로」).
     머리 뒤에 글이 바로 이어지는 창(`True`)은 이름 곁이라 첫 줄 10칸. `messages.speaker_kind(m)` 이 둘을 가른다."""
     global FIRST_WITH_SPEAKER, FULL_LINE_NL
