@@ -303,8 +303,7 @@ def machine(lead, trail, toggle_after_draw=1, flag=0, rem=0, col=5, toggle=1):
             hook.NARROW_ADDR: hook.hook_narrow(),
             hook.ENTRY_ADDR: hook.hook_entry(),
             hook.HALF_TAB_ADDR: hook.half_tables(),
-            hook.JOSA_PRE_ADDR: hook.josa_pre(),
-            hook.DIGIT_ADDR: hook.digit_routine([bytes(code_of('스'))]),  # 뱅크 0x70 본체(MPR3 로 걸리는 걸 모형은 평평하게 본다)
+            hook.DIGIT_ADDR: hook.digit_routine([bytes(code_of('스'))]),  # 글리프 뱅크 꼬리(입구 코드 바로 뒤 — 같은 MPR4 창)
         }
     )
     cpu.m[0x2000 + 0xF9] = lead

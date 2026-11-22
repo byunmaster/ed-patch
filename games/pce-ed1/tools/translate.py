@@ -202,7 +202,9 @@ def _compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str
     out = bytearray()
     if is_spell_prompt(m):
         tr = {**tr, "t": tr["t"].lstrip(" ")}
-        out += bytes([NL, NL])
+        # 🔴 11-22 개행(`01`)은 「다음 글자 전에 줄바꿈」 표시라 **연속 둘은 한 줄만** 넘어간다(09-25 devlog 실측) — `NL NL` 머리는 첫 줄만 비워 안내가 둘째 줄에 떴다
+        #    (마스터 11-22 「루드라 현자도 3번째 줄에 안 나오네」, 31곳 전부 같은 원인 — 앞 메시지에 이어지는 갈래든 새 창이든 시작 줄은 0). 둘째 줄에 공백 글자를 하나 찍어 두 번째 개행이 먹게 한다.
+        out += bytes([NL]) + font.HALF_SPACE + bytes([NL])
     if m.speaker is not None:
         name = SPEAKER_FIX[m.key] if m.key in SPEAKER_FIX else speakers.get(m.speaker, m.speaker)
         out += b"\x1f" + font.encode(name, table, msg=True) + b"\x04"  # 화자명도 대사창 — 공백 반각
@@ -464,6 +466,27 @@ def with_added_speakers(scene_id: int, msgs: list) -> list:
 SHARED_FLOW_KEYS = {"cd3848e2f5850f53"}  # 밀매상 「뭘 원하십니까요?」 — 앞 폭 없이 한 줄(아래 translate_block 주석)
 
 
+VAR_OPS = (0x09, 0x10)  # 메시지 바로 뒤에서 이름 변수(`09 nn`)나 이름 문자열 호출(`10 주소`)이 이어 찍히는 옵코드
+
+
+def needs_var_space(block: bytes, m: "M.Message", text: str) -> bool:
+    """🔴 11-22 마스터 「아무리에리온님 그래도」 — 종료 없이 이어지는 메시지가 한글로 끝나고 바로 뒤에서 이름·품목 이름이 찍히면(조사가 앞에 붙는 꼴이 아니라 뒤에 붙는다) 한국어는 사이에 공백이 있어야 한다.
+    원문은 일본어라 공백이 없다. 전수(11-22): 씬 106·115·123·159·181·190·220 의 18 메시지."""
+    import re as _re
+
+    if m.terminated or m.end >= len(block) or block[m.end] not in VAR_OPS:
+        return False
+    t = text.rstrip("\x0c")
+    return bool(t) and bool(_re.match(r"[가-힣A-Za-z0-9]", t[-1])) and not text.endswith("\x0c")
+
+
+def with_var_space(block: bytes, m: "M.Message", tr: dict) -> dict:
+    t = tr.get("t", "")
+    if t and not tr.get("raw") and needs_var_space(block, m, t):
+        return {**tr, "t": t + " "}
+    return tr
+
+
 def translate_block(scene_id: int, block: bytes, table: dict[str, bytes]) -> tuple[bytes, int]:
     """번역이 있는 메시지를 합성해 splice. (새 블록, 넣은 메시지 수)."""
     trs = M.load_translations(scene_id)
@@ -492,6 +515,7 @@ def translate_block(scene_id: int, block: bytes, table: dict[str, bytes]) -> tup
         #    120px)과 인사 쪽 지움 뒤 새 창으로 오는 길이 같은 메시지를 쓴다. 앞 폭을 주고 짜면 머리 개행이 박혀 새 창에서 「뭘 / 원하십니까요?」 두 줄이 된다.
         #    앞 폭 없이 한 줄로 짜 두고 이어 붙는 길의 줄넘김은 엔진 어절 검사(`wordck`)에 맡긴다.
         lp = 0 if m.key in SHARED_FLOW_KEYS else leads.get(m.key, 0)
+        tr = with_var_space(block, m, tr)
         edits.append((m, compose(m, tr, table, speakers, lead_px=lp)))
         seen.add(m.key)
     missing = set(trs) - seen

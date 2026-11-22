@@ -15,7 +15,7 @@
   (VDC 가 패턴 번호의 그 비트를 버린다) 조각 모양마다 필요한 칸 모양(`NEED`)과 정렬(`ALIGN`)이 다르다. 16×64 조각의 셀은 c, c+2, c+4, c+6 이다(연속 4칸이 아님).
 · **VRAM 복사**: 틱(IRQ) 쪽이 MAWR 를 바꿀 수 있어 4워드씩 SEI 로 묶고 덩이마다 MARR·MAWR 를 다시 쓴다. `$F7`(VDC 선택 그림자)=2 로 두고, 끝나면 프레임 후크가 원래 값(0)으로 돌린다.
 
-코드는 뱅크 0x70(`$6000` 창 — 프레임 후크·스텁이 MPR3 에 잠깐 건다, 먼 호출 트램펄린이 돌아갈 때 MPR3·4 를 되돌린다), 데이터는 뱅크 0x73 맨 끝 116B(`$8000` 창).
+코드는 뱅크 0x70(`$6000` 창 — 프레임 후크·스텁이 MPR3 에 잠깐 건다, 먼 호출 트램펄린이 돌아갈 때 MPR3·4 를 되돌린다), 데이터는 뱅크 0x73 끝 116B(`$8000` 창 — 맨 끝 10B 는 인터럽트 벡터 사본 자리라 그 앞).
 파이썬 참조 구현(`ref_*`)이 같은 일을 하고, 시험(`tests/test_sprmask.py`)이 시뮬레이터로 돌린 결과와 바이트로 대조한다.
 """
 
@@ -28,16 +28,16 @@ CODE_BANK = 0x70
 CODE_WINDOW = 0x6000
 # 뱅크 0x70 의 FF 패딩은 세 토막으로 남아 있다(이름 · 시작 · 끝 — 뱅크 안 오프셋). 이웃이 자라 넘어오면 빌드가 멈춘다(`build.code_patches` 끝의 겹침 검사)
 SEGS = (
-    ("a", 0x1980, 0x1C00),  # 디버그 목록 코드(끝 +190A, 상한 = `RESTHIDE_OFF` — `debug_item_list`) · 이름판 숨김 본체(+190B) 뒤 ~ 조각 보관소(+1C00) 앞: 계획자·표
-    ("b", 0x1D40, 0x1E00),  # 조각 복사 루틴(+1D00, 50B) 뒤 ~ 단계 숫자 루틴(+1E00) 앞: 서명 검사
-    ("c", 0x1EC0, 0x2000),  # 단계 숫자 루틴(끝 +1EA7) 뒤 ~ 뱅크 끝: 셀 굽기
+    ("a", 0x1980, 0x1C00),  # 디버그 목록 코드(끝 +190A, 상한 = 이 시작값 — `debug_item_list`) 뒤 ~ 조각 보관소(+1C00) 앞: 계획자·표
+    ("b", 0x1D40, 0x1E00),  # 조각 복사 루틴(+1D00, 50B) 뒤 ~ +1E00: 서명 검사
+    ("c", 0x1EC0, 0x2000),  # 옛 단계 숫자 루틴(끝 +1EA7) 뒤 ~ 뱅크 끝: 셀 굽기
+    ("d", 0x1E00, 0x1EC0),  # 옛 단계 숫자 루틴 자리(11-22 글리프 뱅크 꼬리로 나가 빈 FF 192B): 엔진 가림 스프라이트 루틴 후크 둘
 )
-RESTHIDE_OFF = 0x190B  # 디버그 목록 코드 끝(+190A) ~ 토막 a 앞 117B: 서 있을 때 이름판 숨김 본체(`resthide` — 표·서명 검사·주소 세우기는 토막 a·b 뒤와 숫자 루틴 뒤 자투리)
-DEBUG_LIST_LIMIT = CODE_WINDOW + RESTHIDE_OFF
+DEBUG_LIST_LIMIT = CODE_WINDOW + SEGS[0][1]
 
 DATA_BANK = 0x73
-DATA_OFF = 0x1F8C  # 뱅크 0x73 맨 끝 116B(어절 판정 루틴 뒤) — 이미지에서 0 으로 구워 둔다
-DATA_LEN = 0x2000 - DATA_OFF
+DATA_OFF = 0x1F82  # 뱅크 0x73 끝 116B(어절 판정 루틴 뒤 ~ `+1FF6` 인터럽트 벡터 사본(`hook.WCK_VEC_OFF`, 11-22) 앞) — 이미지에서 0 으로 구워 둔다
+DATA_LEN = 116
 D = 0x8000 + DATA_OFF
 PRES = D  # 32
 SIG = D + 32  # 7: 기준 x(2) · 기준 y(2) · 서술자 포인터(2) · 창 상태
@@ -51,11 +51,11 @@ R = D + 55  # 8: 지울 사각형 둘 × [r0, r1, c0, c1](조각 패턴 좌표)
 IDX, BUD, CA, CB, RA, RB, SRC0, DST0 = (D + 63 + i for i in range(8))
 SLO, SHI, DLO, DHI, CH, OI, NB, CMLO, CMHI, RI = (D + 71 + i for i in range(10))
 M = D + 84  # 32: 행마다 남길 비트(낮은 바이트 16 + 높은 바이트 16)
-assert M + 32 == D + DATA_LEN == 0xA000
+assert M + 32 == D + DATA_LEN == 0x9FF6  # 벡터 사본 6B 와 그 뒤 4B(`+1FFC~+1FFF`, 빈 FF)는 안 쓴다
 
 POOL_CELL = 0xA0
 POOL_N = 32
-BUDGET = 8  # 프레임당 굽는 셀 수 상한(가장 큰 조각 = 8셀이 한 프레임에 들어가야 한다)
+BUDGET = 32  # 프레임당 굽는 셀 수 상한(가장 큰 조각 = 8셀이 한 프레임에 들어가야 한다). 11-22 8→32(풀 전체): 계획은 서 있을 때만 돌아 한 프레임 길어져도(≈45k 명령, 프레임 1.5개) 걷기엔 영향이 없고, 음성 자막 창이 뜰 때 사본이 한 프레임에 다 구워져 깜빡임이 짧아진다(마스터 02)
 RING_KIND0, RING_KINDS = 0x78, 10  # 횃불 밝기 $C01E(7~39) >> 2 + 0x78 — 0x78~0x7A 는 조각 넷짜리 가장 작은 원
 
 # 조각 모양(색인 = 폭 32 | 높이 코드 << 1)
@@ -74,6 +74,21 @@ DLG_BOTTOM_Y0 = 44  # `winmask.DLG_BOTTOM[0]` — 대사 슬롯의 y0 이 이 �
 U = bytes([0xFF] * 8 + [0xFF, 0x7F, 0x3F, 0x1F, 0x0F, 0x07, 0x03, 0x01, 0x00] + [0x00] * 8)
 
 VLO, VHI = 0x0002, 0x0003
+
+# ── 엔진 가림 스프라이트 루틴(같은 뱅크 0x70 `$6000` — SAT 루프가 조각마다 먼 호출 `$4F9F` 로 부른다) ──
+# 메뉴가 열려 있으면(`$37B9`) 조각 밑 맵 셀을 16px 블록(셀 2×2)마다 훑어 창 셀이 든 블록에 가림 스프라이트를 한 장씩 깐다 → 한 줄 16장 한도를 넘겨 뒤 스프라이트가 빠진다
+# (마스터 11-20 「시스템메뉴 열때 … 살짝 사각형」 둘 — 메뉴 열 옆 8×8 구멍(한 줄 17장) · 화면 위 띠 바로 밑 12×5(한 줄 20장)). 후크 둘로 **필요 없는 가림 장만** 뺀다:
+#  · `eg_bits`(늘 건다): 블록 비트를 적는 자리(`$6120 LDA $0E · STA $612E,X`). 화면 위 띠(SAT y < 96) 셀 몫을 뺀다 — 띠에는 스프라이트가 애초에 안 보인다(메뉴를 닫은 화면에 가림 장이 0 인데도 안 보인다)
+#  · `eg_gate`(메뉴 열이 떠 있는 동안만 — `sigchk` 가 자리를 갈아 끼우고, 열이 걷히면 스스로 원판 명령으로 되돌린다): `$6028 LDA $37B9`. 그 조각이 **잘린 그림 사본**(PRES 비트 7)으로 나가면
+#    창 쪽 픽셀이 이미 지워져 있으니 가림 장이 필요 없다. 부 메뉴(슬롯 표에 없는 창)·대사·목록이 떠 있으면 원판대로 — 사본은 메뉴 열·대사 창만 안다
+ENG_BITS_OFF = 0x0120
+ENG_BITS_OLD = bytes.fromhex("a50e9d2e61")
+ENG_GATE_OFF = 0x0028
+ENG_GATE_OLD = bytes.fromhex("adb937")  # `LDA $37B9` — 이미지에는 원판 그대로 둔다(런타임에만 `JSR eg_gate` 로)
+ENG_MENU_FLAG = 0x37B9
+ENG_KIND = 0x3509  # 개체 종류(X = 개체 번호)
+ENG_BITS, ENG_Y, ENG_CNT = 0x612E, 0xFE, 0x33  # 블록 비트 표 · 블록 y(SAT) · 남은 조각 수
+VIEW_TOP = 96  # 맵 창 맨 윗줄(SAT y) — 그 위는 화면 위 띠
 
 
 # ── 파이썬 참조 ──
@@ -192,7 +207,7 @@ class _Segs:
         self.cur.op(mn, mode, arg)
 
 
-def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_dlg: int) -> _Segs:
+def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_dlg: int, slot_mode_rest: tuple[int, ...] = ()) -> _Segs:
     a = _Segs(ext)
     op, L = a.op, a.L
     a.seg("b")
@@ -201,6 +216,7 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
     # ── sigchk: 어둠 원 첫 조각에서 프레임당 한 번. X·Y 보존. 서명이 같으면 그대로, 다르면 비우고 PEND=1, 같은 서명이 이어지면 계획 시작 ──
     L("sigchk")
     op("PHX")
+    op("PHY")
     op("TXA")  # FLAG = 개체 번호 + 1 — 스텁이 「이 개체를 이번 프레임에 봤나」로 쓴다
     op("INC")
     op("STA", "abs", FLAG)
@@ -213,12 +229,17 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
     op("BEQ", "rel", "sg_w2")
     op("ORA", "imm", 0x40)
     L("sg_w2")
+    op("CMP", "imm", 0x40)  # 메뉴 열만 떠 있다 → 엔진 가림 루틴 머리를 `eg_gate` 로(이미 걸려 있어도 같은 바이트를 다시 쓴다). A 보존
+    op("BNE", "rel", "sg_na")
+    op("JSR", "abs", "eg_arm")
+    L("sg_na")
+    op("LDY", "imm", 0)  # Y ≠ 0 이면 바로 시작 — 서명이 비어 있던 첫 프레임(창이 다 꺼졌다 처음 뜰 때: 프레임 후크가 SIG+5 를 0 으로 둔다)도 포함
+    op("LDX", "abs", SIG + 5)
+    op("BNE", "rel", "sg_n0")
+    op("INY")
+    L("sg_n0")
+    op("PHA")  # 창 상태는 맨 끝에 본다 — 좌표·서술자가 그대로인데 창만 바뀐 때(음성 자막 창이 뜰 때)는 한 프레임 기다리지 않고 바로 계획을 시작한다(11-22 마스터 02: 가르고 음성 시작 때 원 왼쪽 띠가 3~4프레임 깜빡)
     op("LDX", "imm", 0)
-    op("CMP", "abs", SIG + 6)
-    op("BEQ", "rel", "sg_c0")
-    op("STA", "abs", SIG + 6)
-    op("INX")
-    L("sg_c0")
     for i, zp in enumerate((0x2E, 0x2F, 0x30, 0x31, 0xFA, 0xFB)):
         op("LDA", "zp", zp)
         op("CMP", "abs", SIG + i)
@@ -226,8 +247,18 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
         op("STA", "abs", SIG + i)
         op("INX")
         L(f"sg_c{i + 1}")
+    op("PLA")
+    op("CMP", "abs", SIG + 6)
+    op("BEQ", "rel", "sg_w3")
+    op("STA", "abs", SIG + 6)
+    op("CPX", "imm", 0)
+    op("BNE", "rel", "sg_w4")
+    op("INY")  # 창만 바뀜 — 바로 시작
+    op("BRA", "rel", "sg_w4")
+    L("sg_w3")
     op("CPX", "imm", 0)
     op("BEQ", "rel", "sg_same")
+    L("sg_w4")
     op("LDX", "imm", 31)
     L("sg_clr")
     op("STZ", "absx", PRES)
@@ -238,8 +269,8 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
     op("STZ", "abs", PCUR)
     op("LDA", "imm", 1)
     op("STA", "abs", PEND)
-    op("PLX")
-    op("RTS")
+    op("CPY", "imm", 0)
+    op("BEQ", "rel", "sg_done")  # 좌표·서술자가 바뀜 — 한 프레임 기다린다(걷는 동안은 계획 안 함). 창만 바뀜이면 아래 sg_same 으로 이어져 바로 시작
     L("sg_same")
     op("LDA", "abs", PEND)
     op("BEQ", "rel", "sg_done")
@@ -249,7 +280,84 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
     op("LDA", "imm", 1)
     op("STA", "abs", PY)
     L("sg_done")
+    op("PLY")
     op("PLX")
+    op("RTS")
+
+    # ── 엔진 가림 루틴 후크(머리말 「엔진 가림 스프라이트 루틴」) ──
+    a.seg("d")
+    site = CODE_WINDOW + ENG_GATE_OFF
+    L("eg_bits")  # `LDA $0E · STA $612E,X` 대신(JSR + NOP 둘). Y 는 이 뒤에 안 쓰인다(`$6125 INX · RTS` → `PLY`)
+    op("LDA", "zp", ENG_Y)
+    op("CMP", "imm", VIEW_TOP)
+    op("LDA", "zp", 0x0E)  # (LDA 는 C 를 안 건드린다)
+    op("BCS", "rel", "eb_st")
+    op("AND", "imm", 0x0C)  # 블록 윗줄 셀(비트 0·1)이 띠 안 — 아랫줄 셀(비트 2·3)만 남긴다
+    op("LDY", "zp", ENG_Y)
+    op("CPY", "imm", VIEW_TOP - 8)
+    op("BCS", "rel", "eb_st")
+    op("LDA", "imm", 0)  # 아랫줄도 띠 안
+    L("eb_st")
+    op("STA", "absx", ENG_BITS)
+    op("RTS")
+    L("eg_gate")  # `LDA $37B9` 대신 — Z=1 이면 엔진이 이 조각에 가림 장을 안 깐다. X(개체)·Y 보존
+    op("LDA", "abs", ENG_MENU_FLAG)
+    op("BEQ", "rel", "eg_out")
+    op("LDA", "absx", ENG_KIND)
+    op("SEC")
+    op("SBC", "imm", RING_KIND0)
+    op("CMP", "imm", RING_KINDS)
+    op("BCS", "rel", "eg_yes")  # 어둠 원이 아니다 — 원판대로
+    op("TMA", "mpr", 4)
+    op("PHA")
+    op("LDA", "imm", DATA_BANK)
+    op("TAM", "mpr", 4)
+    op("STZ", "zp", 0x0E)  # 임시(엔진은 `$6106` 에서 STZ 한 뒤에야 쓴다)
+    op("LDA", "abs", slot_mode_menu)
+    op("BNE", "rel", "eg_on")
+    for i, b in enumerate(ENG_GATE_OLD):  # 메뉴 열이 걷혔다(부 메뉴) — 자리를 원판 명령으로 되돌린다(그 뒤로는 비용 0)
+        op("LDA", "imm", b)
+        op("STA", "abs", site + i)
+    op("BRA", "rel", "eg_rs")
+    L("eg_on")
+    if slot_mode_rest:  # 목록·대사·기타 창이 같이 떠 있다 — 원판대로
+        op("LDA", "abs", slot_mode_rest[0])
+        for s in slot_mode_rest[1:]:
+            op("ORA", "abs", s)
+        op("BNE", "rel", "eg_rs")
+    op("TXA")  # 이번 프레임에 이 개체의 서명을 아직 안 봤으면 지금 본다(스텁보다 먼저 불린다 — 묵은 PRES 를 안 믿으려고). 스텁은 FLAG 를 보고 건너뛴다
+    op("INC")
+    op("CMP", "abs", FLAG)
+    op("BEQ", "rel", "eg_seen")
+    op("JSR", "abs", "sigchk")
+    op("BRA", "rel", "eg_look")
+    L("eg_seen")
+    op("LDA", "abs", SIG + 5)  # 프레임 후크가 서명을 못 쓰게 해 뒀다(창이 다 꺼졌던 프레임) — PRES 가 묵었다
+    op("BEQ", "rel", "eg_rs")
+    L("eg_look")
+    op("PHX")
+    op("LDX", "zp", ENG_CNT)
+    op("LDA", "absx", PRES)
+    op("PLX")
+    op("STA", "zp", 0x0E)
+    L("eg_rs")
+    op("PLA")
+    op("TAM", "mpr", 4)
+    op("LDA", "zp", 0x0E)
+    op("BMI", "rel", "eg_no")  # 사본으로 나간다 — 가림 장 없이
+    L("eg_yes")
+    op("LDA", "imm", 1)
+    op("RTS")
+    L("eg_no")
+    op("LDA", "imm", 0)
+    L("eg_out")
+    op("RTS")
+    L("eg_arm")  # A 보존
+    op("PHA")
+    for i, b in enumerate(b"\x20" + (ext.get("eg_gate", 0)).to_bytes(2, "little")):
+        op("LDA", "imm", b)
+        op("STA", "abs", site + i)
+    op("PLA")
     op("RTS")
 
     # ── plan: 프레임 머리(PCUR ≠ 0 일 때만 불린다). MPR4 = 뱅크 0x73 · MPR5 = 뱅크 0x69(서술자) ──
@@ -638,7 +746,7 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
     op("BNE", "rel", "ce_ch")
     op("RTS")
 
-    a.seg("b")
+    a.seg("d")  # 11-22 b 칸(서명 검사)이 모자라 여유 있는 d 로 옮겼다
     L("clamp")  # A = clamp(A − T1, 0, 16)
     op("SEC")
     op("SBC", "zp", T1)
@@ -672,7 +780,9 @@ def _asm(ext: dict[str, int], slot_mode_menu: int, slot_mode_dlg: int, slot_y0_d
 def _built() -> tuple[dict[str, bytes], dict[str, int]]:
     import winmask
 
-    slots = (winmask.slot_addr(winmask.SLOT_MENU), winmask.slot_addr(winmask.SLOT_DLG), winmask.slot_addr(winmask.SLOT_DLG, 1))
+    assert winmask.BANK == DATA_BANK  # `eg_gate` 가 MPR4 에 이 뱅크 하나만 걸고 슬롯 표와 PRES 를 다 읽는다
+    rest = tuple(winmask.slot_addr(k) for k in range(winmask.NSLOT) if k not in (winmask.SLOT_MENU, winmask.SLOT_DLG))
+    slots = (winmask.slot_addr(winmask.SLOT_MENU), winmask.slot_addr(winmask.SLOT_DLG), winmask.slot_addr(winmask.SLOT_DLG, 1), rest + (winmask.slot_addr(winmask.SLOT_DLG),))
     ext: dict[str, int] = {}
     for _ in range(2):
         a = _asm(ext, *slots)
@@ -691,6 +801,12 @@ def segments() -> list[tuple[int, bytes]]:
 
 def labels() -> dict[str, int]:
     return _built()[1]
+
+
+def engine_patches() -> list[tuple[str, int, int, bytes, bytes]]:
+    """(이름, 뱅크, 뱅크 안 오프셋, 원판, 새) — 엔진 가림 루틴의 블록 비트 자리를 `eg_bits` 로. 머리(`$6028`)는 원판 그대로(같은 바이트를 써서 원판 값만 확인한다 — 런타임에 `sigchk` 가 갈아 끼운다)."""
+    bits = b"\x20" + labels()["eg_bits"].to_bytes(2, "little") + b"\xea\xea"
+    return [("bits", CODE_BANK, ENG_BITS_OFF, ENG_BITS_OLD, bits), ("gate", CODE_BANK, ENG_GATE_OFF, ENG_GATE_OLD, ENG_GATE_OLD)]
 
 
 def data_init() -> bytes:

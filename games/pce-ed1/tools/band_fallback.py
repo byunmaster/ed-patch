@@ -45,8 +45,7 @@ def _cd_read(a: hook.Asm, rel: int) -> None:
     a.op("JSR", "abs", CD_READ)
 
 
-def code() -> tuple[bytes, int]:
-    """(코드 바이트, 띠 그룹 풀기 입구 주소) — 로드 입구는 `LOAD_ORG`."""
+def _asm() -> tuple[hook.Asm, int]:
     a = hook.Asm(LOAD_ORG)
     # ── 띠 로드: 원래 호출 + 실패 때 글리프 뱅크 1 을 빌려 읽는다
     a.op("JSR", "abs", LOADER)
@@ -85,6 +84,7 @@ def code() -> tuple[bytes, int]:
     a.op("PLX")
     a.op("CPX", "imm", BORROW_SLOT)
     a.op("BNE", "rel", "done")
+    a.label("restore")  # 글리프 뱅크 1 앞 섹터 되돌리기 — `transient_fallback` 도 여기로 뛴다(`restore_at`)
     a.op("LDY", "imm", 8)
     a.label("retry")
     a.op("PHY")
@@ -99,7 +99,19 @@ def code() -> tuple[bytes, int]:
     a.op("BNE", "rel", "retry")
     a.label("done")
     a.op("RTS")
+    return a, free_at
+
+
+def code() -> tuple[bytes, int]:
+    """(코드 바이트, 띠 그룹 풀기 입구 주소) — 로드 입구는 `LOAD_ORG`."""
+    a, free_at = _asm()
     return a.bytes(), free_at
+
+
+def restore_at() -> int:
+    """글리프 뱅크 1 앞 섹터를 디스크에서 되돌리는 고리의 주소(8번 재시도 뒤 RTS · A·X·Y 를 쓴다 · MPR6 은 되돌린다)."""
+    a, _ = _asm()
+    return a.labels["restore"]
 
 
 if __name__ == "__main__":

@@ -470,7 +470,7 @@ def build_table(chars) -> tuple[dict[str, bytes], bytes]:
     배정은 **정본 순서**를 따른다(`_order_canon`). 정본에 없는 글자가 있으면 **빌드가 죽는다** —
     `python3 tools/freeze_glyphs.py` 로 뒤에 덧붙이고 커밋한다(코드가 안 밀린다).
     """
-    need = (set(chars) - set(KAGI)) | set(JOSA_CHARS) | set(LIGATURES.values()) | set(DIGIT_CHARS)
+    need = (set(chars) - set(KAGI)) | set(JOSA_CHARS) | set(DIGIT_CHARS)  # 합자(‼ ⁉)는 11-06 부터 안 쓰여 정본 순서에서 뺐다(11-22)
     need = {FULLWIDTH_BIOS.get(c, c) for c in need}  # 전각 영문은 ASCII 대문자 글리프로(별칭은 아래)
     canon = _order_canon()
     missing = sorted(need - set(canon))
@@ -550,8 +550,8 @@ def encode(
     for m in JOSA_TOKEN.finditer(text):
         out += encode(text[pos : m.start()], table, half_space, msg) if m.start() > pos else b""
         pair = m.group()
-        if pair == "이랑/랑":  # 「으로/로」와 같은 꼴(둘째 글자를 문안이 든다)인데 무받침 선처리(`hook.josa_pre`)는 `으로/로` 만 안다 — 무받침에서 「랑랑」이 나온다
-            raise ValueError("조사 「이랑/랑」 은 안 쓴다 — 무받침 뒤에서 「랑」이 겹친다(hook.josa_pre 는 으로/로 전용)")
+        if pair == "이랑/랑":  # 「으로/로」와 같은 꼴(둘째 글자를 문안이 든다)인데 무받침 선처리(`hook._digit_asm`)는 `으로/로` 만 안다 — 무받침에서 「랑랑」이 나온다
+            raise ValueError("조사 「이랑/랑」 은 안 쓴다 — 무받침 뒤에서 「랑」이 겹친다(hook._digit_asm 의 조사 선처리는 으로/로 전용)")
         out += josa_code(pair)
         rest = pair.split("/")[0][1:]  # 받침용의 둘째 글자(으로→로, 이랑→랑)
         if rest:

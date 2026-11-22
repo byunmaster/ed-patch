@@ -45,7 +45,6 @@ def forced_chars() -> set[str]:
         | sysbuild.all_glyph_chars()
         | battle.glyph_chars()
         | set(font.JOSA_CHARS)
-        | set(font.LIGATURES.values())
         | set(font.DIGIT_CHARS)
     )
     return {font.FULLWIDTH_BIOS.get(c, c) for c in chars}  # 전각 영문은 ASCII 대문자 글리프 별칭(`font.build_table`)

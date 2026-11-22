@@ -47,15 +47,16 @@ import sysstrings
 import syscard_screen
 import opening_sub
 import pricefast
-import resthide
 import credits_kr
 import debug_item
 import debug_item_list
 import debug_warp
+import earlyfree
 import hud_half
 import list_strip
 import musicresume
 import sprmask
+import transient_fallback
 import winmask
 import defeat_strip
 import debugkey
@@ -329,8 +330,7 @@ ONLY: set[str] | None = None
 `band`(장 제목 띠, rel 210) · `hud`(HUD 이름판·あと·상태 글자, rel 54·55) · `box`(빈 슬롯 상자 msg1, 뱅크 0x7B 재배치) ·
 `glyph`(글리프 뱅크 적재) · `payload`(후킹 루틴 + 표를 `hook.HOOK_ADDR`=$2300 에 싣기) ·
 `narr`(나레이션 게이트 자막 — 게이트 + 블록 꼬리 스텁, `narration_gates.patch_block`)
-— 뒤 둘은 `font` 안에서 다시 뺄 수 있다. · `price`(아이템 값 ×10 고리 — 「버린다」 뚫림, `pricefast`) ·
-`resthide`(서 있는 동안 HUD 이름판 스프라이트 숨김 — 한 줄 16개 한계로 인물이 잘리는 것, `resthide`)
+— 뒤 둘은 `font` 안에서 다시 뺄 수 있다. · `price`(아이템 값 ×10 고리 — 「버린다」 뚫림, `pricefast`)
 🔴 **이게 소프트락을 가르는 유일한 도구다** — 증상이 나면 하나씩 끄며 A/B 한다.
 ⚠ `font` 를 끄면 글리프가 없어 한글 자리가 통째로 안 그려진다(파일 선택에서 멈춘다) —
 `font,hook` 은 늘 켜 두고 나머지를 끈다."""
@@ -378,6 +378,15 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         p.append(("band fallback code", *_main(0x70, band_fallback.LOAD_ORG - 0x6000), b"\xff" * len(bf_code), bf_code))
         p.append(("band load call", *_main(0x70, band_fallback.CALL_SITE - 0x6000), b"\x20\xd8\x56", b"\x20" + band_fallback.LOAD_ORG.to_bytes(2, "little")))
         p.append(("band free call", *_main(0x70, band_fallback.FREE_SITE - 0x6000), b"\x20\x97\x55", b"\x20" + bf_free.to_bytes(2, "little")))
+        # 3-c. 🔴 지역이 바뀌는 씬 전환에서 옛 씬 컨테이너를 새 지역 묶음보다 먼저 내린다(11-22 마스터 「세이브파일 1,3번 왔다갔다 하다보면 … 전투프리징」) — 원판 순서(묶음 올림 → 컨테이너 내림)는
+        #      전환 순간 15뱅크까지 써서 한글판 14칸에 묶음 B 가 조용히 안 올라온다(`earlyfree` 머리말). 글리프 뱅크가 칸을 쓰는 빌드에서만 건다(`cache` 그룹)
+        ef = earlyfree.code()
+        p.append(("early free code", *_main(earlyfree.BANK, earlyfree.OFF), b"\xff" * len(ef), ef))
+        p.append(("early free site", *_main(earlyfree.SITE_BANK, earlyfree.SITE_OFF), earlyfree.SITE_OLD, earlyfree.site_new()))
+        tf = transient_fallback.code()
+        p.append(("transient fallback code", *_main(transient_fallback.BANK, transient_fallback.OFF), b"\xff" * len(tf), tf))
+        for tf_name, tf_off, tf_old, tf_new in transient_fallback.sites():
+            p.append((f"transient fallback site {tf_name}", *_main(transient_fallback.SITE_BANK, tf_off), tf_old, tf_new))
     if want("debug") and os.environ.get("ED_DEBUG_MENU"):  # 🔴 시험 빌드 전용(배포 기준 「디버그는 기본 꺼짐, 키 입력으로만」 — 마스터 10-28): 제품은 항목이 숨고 SELECT+RUN 1초 키(`dbgkey`)로만 열린다
         assert common.BUILD_TAG.startswith("test-"), "ED_DEBUG_MENU 는 시험 빌드(ED_BUILD_TAG=test-*)에서만"
         # 4-b. 🔴 원판 「기타」 메뉴의 5번째 항목(디버그)은 시스템 카드 ROM 바이트(`LDA $FFF5; CMP #$38`)가 `$38` 이 아니면 숨는다 —
@@ -431,6 +440,10 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         p.append(("music resume", *_main(musicresume.BANK, musicresume.OFF), b"\xff" * len(mr), mr))
         wc = hook.wordck()  # 어절 판정 루틴 — 뱅크 0x73 꼬리(musicresume 뒤), `mark` 가 MPR7 에 걸어 부른다
         p.append(("wordck bank", *_main(hook.WCK_BANK, hook.WCK_BANK_OFF), b"\xff" * len(wc), wc))
+        # 🔴 11-22 wordck 는 인터럽트를 연 채 돈다 — 뱅크 0x73 이 MPR7 에 걸린 동안의 인터럽트 벡터(IRQ2·IRQ1·타이머) 사본. RAM 의 `hook.wck_irq_a` 로 보낸다
+        wv = hook.wck_vectors()
+        assert hook.WCK_BANK_OFF + len(wc) <= hook.WCK_VEC_OFF
+        p.append(("wordck irq vectors", *_main(hook.WCK_BANK, hook.WCK_VEC_OFF), b"\xff" * len(wv), wv))
         p.append(
             (
                 "load stops cd",
@@ -444,12 +457,15 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         for nm, bk, off, was, now in winmask.engine_patches():
             p.append((f"window mask hook {nm}", *_main(bk, off), was, now))
         # 잘린 그림 사본(마스터 11-20 판정 「진행」 — 횃불 어둠 원이 창에 걸치면 조각째 뒤로 가 원이 평평해지던 것) — 걸친 조각마다 창 쪽 픽셀만 지운 패턴 사본을 VRAM 풀에 구워
-        #   SAT 스텁이 그 패턴으로 바꿔 끼운다(`sprmask.py`). 코드 = 뱅크 0x70 FF 패딩 세 토막 · 상태 116B = 뱅크 0x73 맨 꼬리(어절 판정 뒤). 스텁·프레임 후크 쪽 이음은 `winmask`
+        #   SAT 스텁이 그 패턴으로 바꿔 끼운다(`sprmask.py`). 코드 = 뱅크 0x70 FF 패딩 세 토막 · 상태 116B = 뱅크 0x73 꼬리(어절 판정 뒤 ~ 벡터 사본 앞). 스텁·프레임 후크 쪽 이음은 `winmask`
         sprmask.check_descriptors(b"".join(common.user_sector(_main(winmask.SITE_BANK, 0)[0] + k) for k in range(4)))
         for (nm, _s0, s1), (off, blob) in zip(sprmask.SEGS, sprmask.segments(), strict=True):
             assert off + len(blob) <= s1, (nm, len(blob))
             p.append((f"sprite mask code {nm}", *_main(sprmask.CODE_BANK, off), b"\xff" * len(blob), blob))
         p.append(("sprite mask data", *_main(sprmask.DATA_BANK, sprmask.DATA_OFF), b"\xff" * sprmask.DATA_LEN, sprmask.data_init()))
+        # 메뉴 옆·위 띠 밑 작은 네모(마스터 11-20 「시스템메뉴 열때 … 살짝 사각형이 보이네」 둘) — 엔진이 조각마다 까는 가림 스프라이트 중 필요 없는 장을 빼 한 줄 16장 한도 안으로(`sprmask.py` 머리말 「엔진 가림 스프라이트 루틴」)
+        for nm, bk, off, was, now in sprmask.engine_patches():
+            p.append((f"sprite mask engine {nm}", *_main(bk, off), was, now))
         # 패배 귀환 확인창 앞 공백 걷기(마스터 11-18) — 메시지 머리 `10 7D C0` 앞에 지명 버퍼를 제자리에서 걷는 기계어 호출을 낀다(`defeat_strip.py`) — 글 시작은 3B 뒤(`sysstrings.read_inline`)
         ds = defeat_strip.code()
         assert len(ds) <= defeat_strip.CODE_LEN, len(ds)
@@ -545,9 +561,7 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         #       읽는 쪽은 이 스텁뿐이다(`hook._frag_asm`). 보관소 조각 쓰기는 `sysbuild` 몫.
         fr = hook.frag_routine()
         p.append(("frag copy routine @70", *_main(hook.FRAG_BANK, hook.FRAG_OFF), b"\xff" * len(fr), fr))
-        # 4-2c. 🔴 엔진이 주문 이름 뒤에 붙이는 SJIS 전각 단계 숫자(「오비스３」)를 반각 글리프로(마스터 11-16) — 본체는 뱅크 0x70 FF 패딩, 글리프 뱅크 꼬리엔 스텁만.
-        dg = hook.digit_routine([bytes(font.code_of(_order_index(ch))) for ch in sysbuild.spell_gate_chars()])
-        p.append(("spell stage digit narrow @70", *_main(hook.FRAG_BANK, hook.DIGIT_OFF), b"\xff" * len(dg), dg))
+        # 4-2c. 엔진이 주문 이름 뒤에 붙이는 SJIS 전각 단계 숫자(「오비스３」)를 반각 글리프로(마스터 11-16) — 루틴은 글리프 뱅크 꼬리(`apply_glyph_payload` 의 `finish_banks`, 11-22 뱅크 0x70 에서 옮김).
         p.append(
             (
                 f"0F handler JMP $66FB -> JSR fragsh @{hook.FRAG_SITE:04X}",
@@ -696,11 +710,6 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         #    범용 곱셈 둘(약 1,135 사이클)을 돌고 확인 프레임에 두 번 불려, 지수 ≥ 3 이면 창 다시 그리기가 주사선보다 늦었다(`pricefast` 머리말). 표의 모든 값이 같게 나오는지 원판 표로 지킨다.
         pricefast.check_items([bytes.fromhex(x["tail"]) for x in sysstrings.read_fixed("items")])
         p.append(("item price x10 loop", *_main(pricefast.BANK, pricefast.OFF), pricefast.OLD, pricefast.code()))
-    if want("resthide"):
-        # 서 있는 동안 HUD 이름판 스프라이트(SAT 0~8)를 숨긴다(마스터 11-21 「레지스탕스짤림」) — 이름판 9칸 + 막대가 줄마다 칸을 먹어 인물이 늘어선 줄이 16개를 넘던 것.
-        #    맵이 멈춘 지 8프레임 뒤에만 숨기고(BG 판이 같은 그림) 스크롤이 시작되는 프레임엔 손대지 않는다. SAT 함수 꼬리 6B → 뱅크 0x70 FF 패딩의 본체 먼 호출(`resthide` 머리말)
-        for nm, bk, off, was, now in resthide.patches():
-            p.append((f"rest hide {nm}", *_main(bk, off), was, now))
     if os.environ.get("ED_BATTLE_DBG"):  # 🔴 디버그 전용 — 전투 일괄 촬영(10-20): 조우 번호를 카드 RAM `$C05F` 가 아니라 워크 RAM `$3FFA` 에서 읽는다(하네스가 poke 한다)
         assert common.BUILD_TAG.startswith("test-"), "ED_BATTLE_DBG 는 시험 빌드(ED_BUILD_TAG=test-*)에서만"
         p.append(("battle debug LDA $C05F→$3FFA", 94, 1564, b"\x5f\xc0", b"\xfa\x3f"))
@@ -775,9 +784,10 @@ def apply_glyph_payload(
         return
     if want("glyph"):  # 진단용으로 뺄 수 있다 — 뱅크 0x7C~0x7D 를 0 인 채로 두는 A/B
         lba = common.T2_SECTOR + 114
-        # 뱅크 꼬리 = 코드: 뱅크마다 풀기 루틴(`hook.unpack_asm`, 18B → 24B) · 마지막 뱅크 맨 끝은 어절
-        #   줄바꿈 루틴(`hook.wordck`, `$6723` 경로가 MPR2 에 걸어 부른다). 글리프는 `BANK_GLYPH_END` 앞까지만.
-        glyph_bank = hook.finish_banks(glyph_bank)
+        # 뱅크 꼬리 = 코드: 뱅크마다 풀기 루틴(`hook.unpack_asm`, 18B → 24B) · 마지막 뱅크 맨 끝은 렌더러 입구(`hook._entry_asm`) +
+        #   단계 숫자·조사 선처리(`hook._digit_asm`) — 둘 다 MPR4 창 · SEI 없음. 글리프는 `BANK_GLYPH_END` 앞까지만.
+        gate = [bytes(font.code_of(_order_index(ch))) for ch in sysbuild.spell_gate_chars()]  # 단계 숫자 반각화 허용 목록(주문 이름 끝 글자)
+        glyph_bank = hook.finish_banks(glyph_bank, gate)
         mode1.write_user_data(
             f, lba, glyph_bank, label="glyph banks", expect=b"\0" * len(glyph_bank)
         )
@@ -835,6 +845,7 @@ def _tail_cap_split(entries, orig, rel, com, rest, slot, o_banks, cap_banks):
     others = [i for i in rest if i not in g_ids]
     has_gwin = any((rel, i) in GWIN_DONE and i in gwin_rt.SCENE_PARTS for i in g_ids)
     cs_y = gwin_rt.code_sector(cap_banks * 4) if has_gwin else cap_banks * 4  # 자막 코드가 없으면 코드 영역을 비우지 않는다(FORCE_Y 만, 11-06)
+    x_cap = min(slot, splitload.X_CAP_BANKS.get(rel, 99) * 4)  # 제자리 쪽 상한 — 보통은 원판 칸(`slot`), `X_CAP_BANKS` 면 그 뱅크 수(캐시 15칸 씬 보호)
     cs_x = gwin_rt.code_sector(slot)
     base = len(assemble(entries, orig, f"rel {rel} base", ids=set(com), partner=True))
     pk = {i: len(assemble(entries, orig, f"rel {rel} pk", ids=set(com) | {i}, partner=True)) - base for i in rest}
@@ -845,7 +856,7 @@ def _tail_cap_split(entries, orig, rel, com, rest, slot, o_banks, cap_banks):
             ys = g_ids | set(sub)
             est_y = base + sum(pk[i] for i in ys)
             est_x = base + sum(pk[i] for i in rest if i not in ys)
-            if est_y > cs_y * common.USER or est_x > slot * common.USER:
+            if est_y > cs_y * common.USER or est_x > x_cap * common.USER:
                 continue
             cands.append((est_y, sorted(ys)))
     cands.sort()
@@ -857,7 +868,7 @@ def _tail_cap_split(entries, orig, rel, com, rest, slot, o_banks, cap_banks):
         if dy is None or dx is None:
             continue
         nx, ny = -(-len(dx) // common.USER), -(-len(dy) // common.USER)
-        if nx <= slot and ny <= cap_banks * 4:
+        if nx <= x_cap and ny <= cap_banks * 4:
             return (ny, 0, True, True, dx, dy, x_ids, y_ids, nx, ny)
     raise BuildError(f"컨테이너 rel {rel}: 자막 코드 쪽을 {cap_banks}뱅크 안에 넣는 가름이 없다")
 
@@ -917,13 +928,13 @@ def _write_split(f, rel, entries, orig, free_pool, moves, intended, split_intend
     if in_place:
         (d_s, n_s, s_ids), (d_p, n_p, p_ids) = ((dx, nx, x_ids), (dy, ny, y_ids)) if stay_is_x else ((dy, ny, y_ids), (dx, nx, x_ids))
         rel_s, rel_p = rel, free_pool.alloc(n_p)
-        n_s = slot  # 제자리 쪽은 칸 끝까지 0 으로 채워 쓴다(참조표가 말하는 섹터 수)
+        n_s = min(slot, splitload.X_CAP_BANKS.get(rel, 99) * 4)  # 제자리 쪽은 칸 끝까지 0 으로 채워 쓴다(참조표가 말하는 섹터 수) — `X_CAP_BANKS` 면 그 뱅크 수만큼으로 낮춘다(캐시 15칸 씬 보호)
     else:
         (d_s, n_s, s_ids), (d_p, n_p, p_ids) = (dx, nx, x_ids), (dy, ny, y_ids)
         rel_s, rel_p = free_pool.alloc(n_s), free_pool.alloc(n_p)
     d_s = set_partner(d_s, rel_p - containers.REC_BASE, n_p)
     d_p = set_partner(d_p, rel_s - containers.REC_BASE, n_s)
-    for at, data, n, ids_, expect in ((rel_s, d_s, n_s, s_ids, orig if in_place else None), (rel_p, d_p, n_p, p_ids, None)):
+    for at, data, n, ids_, expect in ((rel_s, d_s, n_s, s_ids, orig[: n_s * common.USER] if in_place else None), (rel_p, d_p, n_p, p_ids, None)):
         buf = data + b"\0" * (n * common.USER - len(data))
         lba = common.T2_SECTOR + at
         mode1.write_user_data(f, lba, buf, label=f"split container rel {at}", expect=expect if expect is not None else b"\0" * len(buf))

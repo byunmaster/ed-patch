@@ -41,12 +41,11 @@ class Kagi(unittest.TestCase):
             at = font.glyph_at(n)
             self.assertEqual(bank[at : at + font.PACKED_BYTES], font.pack(font.glyph(ch)))
 
-    def test_ligatures_advance_8px_too(self):
-        bm = hook.half_tables()
+    def test_ligatures_not_baked(self):
+        # 11-22: 합자(‼ ⁉)는 11-06 부터 안 쓰여(`font.ligate` 가 원문 그대로) 정본 순서에서 뺐다 — 죽은 글리프를 굽지 않는다
         canon = font._order_canon()
         for ch in font.LIGATURES.values():
-            lead, tr = divmod(canon.index(ch), font.PER_LEAD)
-            self.assertTrue(bm[12 + lead * 28 + tr // 8] & (0x80 >> (tr % 8)), ch)
+            self.assertNotIn(ch, canon, ch)
 
     def test_exclaim_is_pce2_shape_shifted_left_two(self):
         g = font.glyph("‼")

@@ -74,6 +74,10 @@ def classify(o: bytes, n: bytes, a: int, b: int) -> str:
     # D — 한 글자 화자 머리(1F 이름 04) 앞 2~3바이트
     if o[a] == 0x1F and b - a == 2 and b + 1 < len(o) and o[b + 1] == 0x04:
         return "D"
+    # D2 — 같은 머리(1F 이름 04) 안에서 이름칸 꼬리 주소의 가운데 바이트가 우연히 원본과 같아 런이 둘로 갈라진 경우(11-22 씬 160: 주문 안내가 2B 늘어 꼬리 배치가 밀렸다)
+    for h in range(max(0, a - 2), a + 1):
+        if o[h] == 0x1F and h + 3 < len(o) and o[h + 3] == 0x04 and b <= h + 2:
+            return "D"
     # E — 줄 첫 빈 행 제거: `01`→`18`
     if a == b and o[a] == T.NL and n[a] == T.NOP_OP and a >= 3 and o[a - 1] in T.BLANK_ROW_BEFORE and o[a - 2] not in FLAG_OPS:  # 🔴 `1x 07 01`(깃발 피연산자)는 빈 행이 아니다
         return "E"

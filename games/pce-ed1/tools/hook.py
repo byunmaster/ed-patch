@@ -91,13 +91,19 @@ WORDCK_ADDR = CODE_ADDR + ENTRY_ROOM
 WORDCK_ROOM = font.CODE_BYTES - ENTRY_ROOM
 # 🔴 11-20 마스터 「가로하면 이 한줄은 여전히 침범하는 거 아냐? 근본적인 해결이 아닌 것 같은데」 — 정확 모델(나머지 `rem` 보정, 매다는 부호로 끝난 어절은 보정 없음)이
 #   글리프 뱅크 꼬리 방(198B)에 안 든다(+8B). **wordck 통째로 뱅크 0x73 꼬리(winmask·musicresume 뒤)로 옮기고 MPR7(`$E000`)에 잠깐 건다**:
-#   `mark` 가 SEI 로 부르는 동안 인터럽트가 없으니 BIOS 창(MPR7)을 비워도 된다(BIOS 호출 없음 · NMI 없음 · 호출부는 RAM(MPR1)이라 영향 없음).
+#   BIOS 창(MPR7)을 비우는 동안 BIOS 호출은 없고 NMI 도 없다 · 호출부는 RAM(MPR1)이라 영향 없음.
+# 🔴 11-22 SEI 를 뺐다(마스터 「4줄짜리 대사에서 키입력으로 대사를 빨리 표시하면 간헐적으로 화면 흔들림」) — 옛 `mark` 는 wordck 를 통째로 SEI 안에서 돌렸고(긴 어절 ≈ 890사이클),
+#   그게 하단 띠 래스터 인터럽트(줄 0xBF → `$5938`)에 걸치면 띠가 한 줄 밀린 프레임이 나왔다(허용 지연 ≈ 390사이클 · 실측 지연 785).
+#   이제 인터럽트를 연 채 돌고, **뱅크 0x73 끝의 벡터 사본**(`$FFF6~$FFFB` 자리 = IRQ2·IRQ1·타이머)이 RAM 의 `wck_irq_a` 로 보낸다:
+#   BIOS 를 MPR7 에 되걸고 → 인터럽트를 한 번 열어 진짜 벡터로 처리하게 하고 → 뱅크 0x73 을 다시 걸고 RTI(끼어든 자리로). 더하는 지연 ≈ 24사이클.
 #   글리프 뱅크를 MPR2 에 걸 일도 없어졌다(옛 가드 「우리 창 `$4000~$5FFF` 포인터」는 본 프로그램 코드를 읽는 것을 막으려 그대로 둔다).
 WCK_MPR = 7
 WCK_BANK = 0x73
-WCK_BANK_OFF = 0x1E5A  # 뱅크 0x73 안 오프셋 = musicresume.OFF + CODE_LEN (tests/test_wordck 이 맞춤을 검사)
+WCK_BANK_OFF = 0x1E4F  # 뱅크 0x73 안 오프셋 = musicresume.OFF + CODE_LEN (tests/test_wordck 이 맞춤을 검사)
 WCK_ADDR = (WCK_MPR << 13) + WCK_BANK_OFF  # MPR7 기준 논리 주소
 WCK_ROOM = 0x2000 - WCK_BANK_OFF
+WCK_VEC_OFF = 0x1FF6  # 뱅크 0x73 안 오프셋 — MPR7 에 걸리면 `$FFF6`(IRQ2/BRK) · `$FFF8`(IRQ1 = VDC) · `$FFFA`(타이머)
+WCK_IRQ_LEN = 8  # `wck_irq_a` — 주 루틴 끝과 틱 트램펄린(`TICK_ADDR`) 사이 빈 8B
 LINE_COLS_ZP = 0x99  # 줄 폭(칸) — `$6D95` 가 비교하는 그 값(로그·필드 창 13)
 # 부호 넷(4px, glyph_order.json 로 유도) — 줄 끝에 매단다(고아로 새 줄 첫 칸에 혼자 안 남긴다)
 HANG_PUNCT = ((font.LEAD0, 0x24), (font.LEAD0, 0x25), (font.LEAD0, 0x27), (font.LEAD0, 0x2E))
@@ -186,6 +192,8 @@ OPS = {
     ("PHP", "imp"): 0x08,
     ("PLP", "imp"): 0x28,
     ("SEI", "imp"): 0x78,
+    ("CLI", "imp"): 0x58,
+    ("RTI", "imp"): 0x40,
     ("PHX", "imp"): 0xDA,
     ("PLX", "imp"): 0xFA,
     ("PHY", "imp"): 0x5A,
@@ -278,6 +286,7 @@ class Asm:
 #   ⚠ 디스크에서 바꾸면 이 페이로드가 옮겨지기 전 IRQ 가 BRK 로 죽는다 — **런타임에 상주부가 RAM 에서 바꿔 끼운다**(`narration_gates` `inst`).
 #   자리는 후킹 루틴 자리(384B) 끝의 0 패딩(루틴은 245B).
 TICK_ADDR = HOOK_ADDR + 0x100  # 루틴 끝(`$23F5`) 뒤 빈 자리 — 아래 트램펄린 40B
+WCK_IRQ_ADDR = TICK_ADDR - WCK_IRQ_LEN  # `wck_irq_a`(8B = `WCK_IRQ_LEN`) — 주 루틴 끝(`$23F7`)과 틱 사이
 FRAMECNT = HOOK_ADDR + 0x174  # 16비트(하위·상위)
 VOICE_ARM = FRAMECNT + 3  # ≠ 0 이면 틱이 ADPCM 재생 시작(`$180C` 비트3)을 기다린다 — 보이면 0 으로 내리고 그 프레임을 `PLAYSTART` 에 적는다(마스터 10-13: 소리 시작은 환경마다 다르다)
 PLAYSTART = FRAMECNT + 4  # 16비트 — 음성 재생이 실제로 시작된 프레임 카운터 값(안 보였으면 호출 때 값 그대로)
@@ -394,8 +403,11 @@ TICK_SIG_OP, TICK_CALL_OP = _tick_layout()  # 블록 쪽 초기화가 RAM 에서
 
 def hook_routine() -> bytes:
     b = _main_asm().bytes()
-    assert len(b) <= TICK_ADDR - HOOK_ADDR, len(b)
+    assert len(b) <= WCK_IRQ_ADDR - HOOK_ADDR, len(b)
     pad = bytearray(JOSA_OFF_ADDR - HOOK_ADDR - len(b))
+    wi = wck_irq_a()
+    at = WCK_IRQ_ADDR - HOOK_ADDR - len(b)
+    pad[at : at + len(wi)] = wi
     t = tick_routine()
     at = TICK_ADDR - HOOK_ADDR - len(b)
     pad[at : at + len(t)] = t
@@ -610,8 +622,10 @@ def _wrap_asm() -> "Asm":
 
     · `orphan`(→$6D9C 대신): 다음 글자가 부호 넷 중 하나면 **개행 보류 플래그를 안 세운다** —
       이번 글자는 이번 줄에 그대로 그려진다(줄 끝에 매달린다). 아니면 원래대로 `$6AB5` 호출.
-    · `mark`(→$6723 대신): 뱅크 0x73(어절 판정 루틴 자리)을 MPR7 에 잠깐 걸어(SEI — BIOS 창이 비는 동안 인터럽트가 못 들어오게) `wordck`(어절 줄바꿈 판정 + `flag`
-      기록)를 부르고 원래 `$6AB9` 로 넘어간다. `$6AB9` 가 보류 플래그를 지우므로 「이번 글자에서
+    · `mark`(→$6723 대신): 뱅크 0x73(어절 판정 루틴 자리)을 MPR7 에 잠깐 걸어 `wordck`(어절 줄바꿈 판정 + `flag`
+      기록)를 부르고 원래 `$6AB9` 로 넘어간다. 인터럽트는 열어 둔다 — 그동안 들어온 인터럽트는 뱅크 0x73 끝 벡터 사본 → `wck_irq_a`(RAM) → 아래 `irq_b` 가
+      BIOS 를 되걸어 처리시킨다(11-22, `WCK_VEC_OFF` 머리 주석). MPR7 은 늘 뱅크 0(BIOS)이라 저장 없이 0 으로 되돌린다 — `wordck` 가 A = 0 으로 돌아온다.
+      `$6AB9` 는 첫 명령이 `LDA $CF15` 라 A·플래그를 안 본다(원판 디스어셈블). `$6AB9` 가 보류 플래그를 지우므로 「이번 글자에서
       개행이 일어나는가」는 **호출 전**에만 알 수 있다 — 그래서 `flag` 를 거기서 적는다.
     · `eat`(→$6730 대신): 방금 개행이 일어났고 이번 글자가 공백이면(위 `flag`) **칸 전진을
       건너뛴다** — 공백은 원래대로 그려지지만(안 그려도 잉크가 없어 상관없다) 칸을 안 먹으므로
@@ -631,17 +645,11 @@ def _wrap_asm() -> "Asm":
         a.op("BEQ", "rel", "ret")
     a.label("orphan_normal")
     a.op("JMP", "abs", ORIG_SET_PENDING)
-    a.label("mark")  # 어절 판정 + `flag` 기록(글리프 뱅크) → 원래 `$6AB9`
-    a.op("PHP")
-    a.op("SEI")
-    a.op("TMA", "tma", WCK_MPR)
-    a.op("PHA")
+    a.label("mark")  # 어절 판정 + `flag` 기록(뱅크 0x73) → 원래 `$6AB9`
     a.op("LDA", "imm", WCK_BANK)
     a.op("TAM", "tam", WCK_MPR)
-    a.op("JSR", "abs", WCK_ADDR)
-    a.op("PLA")
-    a.op("TAM", "tam", WCK_MPR)
-    a.op("PLP")
+    a.op("JSR", "abs", WCK_ADDR)  # A = 0 으로 돌아온다
+    a.op("TAM", "tam", WCK_MPR)  # BIOS(뱅크 0)
     a.op("JMP", "abs", ORIG_DO_WRAP)
     a.label("eat")
     a.op("LDA", "abs", "flag")
@@ -650,7 +658,36 @@ def _wrap_asm() -> "Asm":
     a.op("RTS")  # 먹는다 — 칸 전진을 건너뛴다(부호 매달기도 여기로 돌아간다)
     a.label("eat_normal")
     a.op("JMP", "abs", ORIG_ADV_COL)
+    # wordck 중 인터럽트의 뒷절반(`wck_irq_a` 가 BIOS 를 되걸고 CLI · JMP 여기) — 밀려 있던 인터럽트는 이 `SEI` 앞(또는 JMP 앞)에서 진짜 벡터로 처리된다.
+    a.label("irq_b")
+    a.op("SEI")
+    a.op("LDA", "imm", WCK_BANK)
+    a.op("TAM", "tam", WCK_MPR)
+    a.op("PLA")
+    a.op("RTI")
     return a
+
+
+def wck_irq_a() -> bytes:
+    """wordck(뱅크 0x73 이 MPR7 에 걸린 동안) 중 인터럽트의 앞절반 — 뱅크 0x73 끝 벡터 사본이 여기(RAM, 늘 보인다)를 가리킨다.
+
+    A 를 쌓고 BIOS(뱅크 0)를 MPR7 에 되건 뒤 `CLI` — 6280 은 CLI 다음 한 명령(JMP) 뒤에 인터럽트를 받는다(mednafen `LastCycle` 표본도 같다). 그 인터럽트는
+    진짜 BIOS 벡터로 가서 평소대로 처리되고 `irq_b` 로 돌아온다 → SEI · 뱅크 0x73 되걸기 · PLA · RTI(wordck 의 끼어든 자리, I = 0 복원).
+    """
+    a = Asm(WCK_IRQ_ADDR)
+    a.op("PHA")
+    a.op("CLA")
+    a.op("TAM", "tam", WCK_MPR)
+    a.op("CLI")
+    a.op("JMP", "abs", WRAP_LABELS["irq_b"])
+    b = a.bytes()
+    assert len(b) == WCK_IRQ_LEN, len(b)
+    return b
+
+
+def wck_vectors() -> bytes:
+    """뱅크 0x73 `WCK_VEC_OFF` 에 싣는 6B — IRQ2 · IRQ1 · 타이머 벡터 셋 다 `wck_irq_a`."""
+    return WCK_IRQ_ADDR.to_bytes(2, "little") * 3
 
 
 def unpack_asm() -> "Asm":
@@ -775,35 +812,17 @@ def half_tables() -> bytes:
 
 # 🔴 `으로/로` 무받침 — **그리지도 전진하지도 않는다**(10-21 「나이프로로는」). 문안은 「{으로/로}로」 꼴이고(`font.encode` 가 둘째 글자 「로」를 보통 글자로 낸다)
 #   토큰은 받침 있으면 「으」, 없으면 **아무것도 안 낸다**(KIND_EATEN — 반각 공백 먹기와 같은 갈래: 칸 수도 안 센다). 판정은 EX_GETFNT 대체 루틴의 `josa_has`
-#   를 그대로 부른다. 직전 글자가 우리 글자가 아니면(원문 SJIS) 무받침으로 본다. 자리는 반각 영숫자 표 뒤 꼬리(39B).
-JOSA_PRE_ADDR = HALF_TAB_ADDR + HALF_TAB_LEN
-
-
-DIGIT_OFF = 0x1E00  # 뱅크 0x70 FF 패딩(보관소·조각 복사 루틴 뒤) — 오프셋. 논리 주소는 MPR3 기준 `0x6000 + DIGIT_OFF`
-DIGIT_ADDR = 0x6000 + DIGIT_OFF
+#   를 그대로 부른다. 직전 글자가 우리 글자가 아니면(원문 SJIS) 무받침으로 본다.
+# 🔴 11-22 자리 = **글리프 뱅크 꼬리의 옛 wordck 자리**(`ENTRY_ADDR + ENTRY_ROOM`, 198B — wordck 는 11-20 에 뱅크 0x73 으로 나갔다) · MPR4 창 · **SEI 없음**.
+#   예전엔 본체가 뱅크 0x70(MPR3 에 잠깐 걸고 SEI)에 있었다: `pre` 는 우리 글리프가 아닌 글자(원문 SJIS) 전부를 이 갈래로 보내는데, 전각 숫자면 허용 목록 24칸을
+#   SEI 안에서 다 훑어(약 430 사이클 ≈ 주사선 한 줄) 필드 시작 래스터 인터럽트(`$5914`)가 한 줄 늦었다 — 디버그 아이템 목록의 「ＨＰ２０００」 쪽에서 화면이 한 줄
+#   흔들렸다(마스터 11-20 · mednafen 실측: `$5914` 도달 VDC 줄 66 → 67, 트레이스에서 인터럽트가 glue 의 PLP 직후에야 받아들여짐).
+DIGIT_ADDR = ENTRY_ADDR + ENTRY_ROOM  # MPR4 기준 — `pre` 가 `JMP` 로 넘긴다(끝의 RTS 가 glue 로 돌아간다)
 DIGIT_GATE_MAX = 24  # 주문 이름 끝 글자(우리 코드 2B) 허용 목록 칸 수 — 모자라면 빌드가 멈춘다
 
 
-def _josa_pre_asm() -> "Asm":
-    """`pre` 가 「조사 토큰」 갈래로 넘기는 자리(`JMP JOSA_PRE_ADDR`) — 글리프 뱅크 꼬리엔 15B 스텁만 두고 본체는 뱅크 0x70(`_digit_asm`)에 있다.
-
-    MPR3 에 뱅크 0x70 을 잠깐 걸어 `DIGIT_ADDR` 를 `JSR` 로 부르고 돌려놓는다(`frag` 와 같은 방식). 남는 자리가 2B 뿐이라 원래 조사 선처리(37B)도 본체로 옮겼다.
-    """
-    a = Asm(JOSA_PRE_ADDR)
-    a.op("SEI")  # 인터럽트 핸들러가 MPR3 을 스스로 저장·복원하지만, 이 창이 바뀐 동안엔 막는다(glue 의 PLP 가 되돌린다)
-    a.op("TMA", "tma", 3)
-    a.op("PHA")
-    a.op("LDA", "imm", FRAG_BANK)
-    a.op("TAM", "tam", 3)
-    a.op("JSR", "abs", DIGIT_ADDR)
-    a.op("PLA")
-    a.op("TAM", "tam", 3)
-    a.op("RTS")
-    return a
-
-
 def _digit_asm(gate: list[bytes] | None = None) -> "Asm":
-    """뱅크 0x70 의 본체(논리 `DIGIT_ADDR`, MPR3 기준) — 두 가지 일:
+    """`pre` 가 「우리 글리프가 아닌 글자」 갈래로 넘기는 자리(논리 `DIGIT_ADDR`, MPR4 기준 — 글리프 뱅크 꼬리) — 두 가지 일:
 
     ① **엔진이 붙이는 SJIS 전각 숫자**(리드 82 · 트레일 4F~58 — 주문 단계 「오비스３」「레스１」)를 우리 반각 숫자 글리프 코드로 바꿔 `chkh`(반각 판정)로 보낸다 —
        BIOS 전각 글꼴이 12px 칸에 얇게 찍혀 앞뒤가 벌어지던 것(마스터 11-16 「오비스3」)을 고친다. 바꾸고 나면 그리기·LAST(조사)가 우리 숫자로 이어진다.
@@ -852,7 +871,7 @@ def _digit_asm(gate: list[bytes] | None = None) -> "Asm":
     a.op("LDA", "absx", "dig_lo")
     a.op("STA", "zp", 0xF8)
     a.op("PLX")
-    a.op("JMP", "abs", chkh)  # 반각 판정 — 끝의 RTS 가 스텁으로 돌아간다
+    a.op("JMP", "abs", chkh)  # 반각 판정 — 끝의 RTS 가 glue 로 돌아간다
     a.label("old")  # ── 원래 josa_pre ──
     a.op("CMP", "imm", font.JOSA_LEAD)
     a.op("BNE", "rel", "out")
@@ -887,19 +906,14 @@ def _digit_asm(gate: list[bytes] | None = None) -> "Asm":
 
 
 def digit_routine(gate: list[bytes] | None = None) -> bytes:
+    """글리프 뱅크 꼬리의 옛 wordck 자리(`WORDCK_ROOM`B)를 채우는 바이트 — 루틴 + 0 채움."""
     b = _digit_asm(gate).bytes()
-    assert DIGIT_OFF + len(b) <= 0x2000, len(b)
-    return b
+    assert len(b) <= WORDCK_ROOM, (len(b), WORDCK_ROOM)
+    return b + b"\0" * (WORDCK_ROOM - len(b))
 
 
-def josa_pre() -> bytes:
-    b = _josa_pre_asm().bytes()
-    assert JOSA_PRE_ADDR + len(b) <= (ENTRY_MPR << 13) + 0x2000, len(b)
-    return b
-
-
-def finish_banks(glyph_bank: bytes) -> bytes:
-    """글리프 뱅크에 코드를 얹는다 — 뱅크마다 꼬리에 풀기 루틴, 마지막 뱅크 글리프 끝 `CODE_SLOTS` 칸에 반 칸 전진 + 어절 줄바꿈."""
+def finish_banks(glyph_bank: bytes, gate: list[bytes] | None = None) -> bytes:
+    """글리프 뱅크에 코드를 얹는다 — 뱅크마다 꼬리에 풀기 루틴, 마지막 뱅크 글리프 끝 `CODE_SLOTS` 칸에 반 칸 전진 + 단계 숫자·조사 선처리(`gate` = 주문 이름 끝 글자 허용 목록)."""
     gb = bytearray(glyph_bank)
     code = unpack_code()
     for k in range(font.GLYPH_NBANKS):
@@ -908,13 +922,10 @@ def finish_banks(glyph_bank: bytes) -> bytes:
         gb[at : at + len(code)] = code
     at = len(gb) - 0x2000 + font.BANK_GLYPH_END - font.CODE_BYTES
     assert not gb[at : at + font.CODE_BYTES].strip(b"\0"), "글리프가 마지막 뱅크 코드 자리를 덮는다"
-    gb[at : at + font.CODE_BYTES] = hook_entry() + wordck_glyph_slot()
+    gb[at : at + font.CODE_BYTES] = hook_entry() + digit_routine(gate)
     tab = len(gb) - 0x2000 + (HALF_TAB_ADDR - (ENTRY_MPR << 13))
     assert not gb[tab : tab + HALF_TAB_LEN].strip(b"\0"), "반각 영숫자 표 자리가 비어 있지 않다"
     gb[tab : tab + HALF_TAB_LEN] = half_tables()
-    jp = josa_pre()
-    assert not gb[tab + HALF_TAB_LEN : tab + HALF_TAB_LEN + len(jp)].strip(b"\0"), "조사 선처리 자리가 비어 있지 않다"
-    gb[tab + HALF_TAB_LEN : tab + HALF_TAB_LEN + len(jp)] = jp
     import splitload  # 씬 열기 짝 교체 루틴 — 글리프 뱅크 0 꼬리의 빈 자리(풀기 루틴 뒤)
 
     sc = splitload.code()
@@ -1076,6 +1087,7 @@ def _wordck_asm(org: int | None = None) -> "Asm":
     a.op("STA", "abs", WRAP_ADDR)
     a.op("PLX")
     a.op("PLY")
+    a.op("CLA")  # `mark` 가 이 0 으로 MPR7 을 BIOS 로 되돌린다(RAM 쪽 1B 를 아낀다 — 11-22)
     a.op("RTS")
     a.label("guard")  # 포인터가 우리 창(`$4000~$5FFF`)이면 못 읽는다 — 판정 없이 나간다
     a.op("LDA", "zp", 0xED)
@@ -1134,11 +1146,6 @@ def wordck() -> bytes:
     b = _wordck_asm().bytes()
     assert len(b) <= WCK_ROOM, (len(b), WCK_ROOM)
     return b
-
-
-def wordck_glyph_slot() -> bytes:
-    """글리프 뱅크 꼬리의 옛 wordck 자리 — 루틴이 뱅크 0x73 으로 옮겨 갔으니 0(원판 디스크 바이트와 같다)."""
-    return b"\0" * WORDCK_ROOM
 
 
 def hook_wrap_fix() -> bytes:
@@ -1341,7 +1348,7 @@ def _entry_asm() -> "Asm":
     a.op("BEQ", "rel", "isvar")
     a.op("CMP", "imm", font.LEAD0)
     a.op("BEQ", "rel", "chkh")  # 리드 F1~F3 — 우리 글리프
-    a.op("JMP", "abs", JOSA_PRE_ADDR)  # 조사 토큰 — `으로/로` 무받침이면 안 그린다
+    a.op("JMP", "abs", DIGIT_ADDR)  # 우리 글리프가 아니다(원문 SJIS · 조사 토큰) — 단계 숫자 반각화 · `으로/로` 무받침이면 안 그린다(같은 창, SEI 없음)
     a.label("isvar")
     a.op("LDA", "zp", 0xF9)
     a.op("SBC", "imm", font.VARIANT_LEAD0 - font.LEAD0)  # CMP 가 같아서 캐리 1
@@ -1692,7 +1699,7 @@ def _bit(a: "Asm", table_addr: int, tag: str) -> None:
     a.op("AND", "imm", 1)
 
 
-MAIN_LABELS = _main_asm().labels  # EX_GETFNT 대체(조사 포함) 루틴의 라벨 — `pre` 가 `josa_pre` 로 뛴다
+MAIN_LABELS = _main_asm().labels  # EX_GETFNT 대체(조사 포함) 루틴의 라벨 — 조사 선처리(`_digit_asm`)가 `josa_has` 를 부른다
 
 
 def _mul24(a: "Asm") -> None:

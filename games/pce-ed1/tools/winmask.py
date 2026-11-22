@@ -34,13 +34,13 @@ TBL = WINDOW + TAIL_OFF
 TMP = TBL + NSLOT * SLOT_B  # 임시 tY·tX·tW·tH·d4
 TBL_LEN = NSLOT * SLOT_B + 5
 REG_ORG = TBL + TBL_LEN
-REG_LEN = 232  # 사이트 8B 둘 + 등록 루틴들 + 프레임 후크 + d4·htab 길이 이상
+REG_LEN = 221  # 사이트 8B 둘 + 등록 루틴들 + 프레임 후크 + d4·htab 길이 이상(실제 220B — 11-22 뱅크 끝 인터럽트 벡터 사본 6B + 그 뒤 못 쓰는 4B + 어절 판정 1B 를 내느라 232 에서 조였다)
 STUB_BANK = BANK
 STUB_ORG = REG_ORG + REG_LEN
 STUB_OFF = STUB_ORG - WINDOW
 STUB_LEN = 280  # 스텁 길이 이상
 TOTAL_LEN = TBL_LEN + REG_LEN + STUB_LEN  # 뱅크 0x73 꼬리에서 쓰는 몫
-assert TOTAL_LEN == 537  # 🔴 뒤에 `musicresume`(→ 어절 판정 → `sprmask` 데이터)가 바로 붙는다 — 몫을 늘리면 이웃이 다 밀린다
+assert TOTAL_LEN == 526  # 🔴 뒤에 `musicresume`(→ 어절 판정 → `sprmask` 데이터)가 바로 붙는다 — 몫을 늘리면 이웃이 다 밀린다
 
 SITE_BANK = 0x69
 # 조각마다 패턴 번호를 쓰는 머리(`$6567`): `LDA ($FA),Y · STA $0002 · INY · LDA ($FA),Y`(8B) — 여기서 스텁으로 넘어가 패턴·속성 네 바이트를 스텁이 다 쓰고 `$6587`(조각 루프 끝)로 건너뛴다.

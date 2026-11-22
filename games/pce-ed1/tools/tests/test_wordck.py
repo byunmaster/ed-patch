@@ -197,6 +197,7 @@ class WordCk(unittest.TestCase):
         cpu.x, cpu.y = 0x48, 0
         cpu.run(hook.WCK_ADDR)
         self.assertEqual((cpu.x, cpu.y), (0x48, 0), "X·Y 를 지켜야 한다")
+        self.assertEqual(cpu.a, 0, "A = 0 으로 돌아와야 한다 — `mark` 가 그 값으로 MPR7 을 BIOS 로 되돌린다")
         return m[PEND], m[hook.WRAP_ADDR]
 
     def test_line_head_space_is_eaten(self):
@@ -409,6 +410,77 @@ class WordCk(unittest.TestCase):
         self.assertLessEqual(len(hook._wordck_asm().bytes()), hook.WCK_ROOM)
         self.assertLess(hook.WCK_ADDR + len(hook._wordck_asm().bytes()), 0xFFF6)
         self.assertEqual(hook.WCK_ADDR >> 13, hook.WCK_MPR)
+
+    # ── 11-22 인터럽트를 연 채 도는 wordck — 벡터 사본 → `wck_irq_a`(RAM) → `irq_b` ──
+    def test_mark_runs_without_sei_and_restores_bios(self):
+        # `mark` = LDA #뱅크 · TAM #$80 · JSR wordck · TAM #$80(A = 0) · JMP $6AB9 — SEI·PHP 없음(긴 어절이 하단 띠 래스터 인터럽트를 늦췄다)
+        b = hook._wrap_asm().bytes()
+        at = hook.MARK_ADDR - hook.WRAP_ADDR
+        self.assertEqual(
+            b[at : at + 12],
+            bytes([0xA9, hook.WCK_BANK, 0x53, 0x80, 0x20, *hook.WCK_ADDR.to_bytes(2, "little"), 0x53, 0x80, 0x4C])
+            + hook.ORIG_DO_WRAP.to_bytes(2, "little"),
+        )
+        self.assertEqual(hook.WRAP_LABELS["eat"], hook.MARK_ADDR + 12)
+
+    def test_irq_vector_copies_point_to_ram_entry(self):
+        v = hook.wck_vectors()
+        self.assertEqual(len(v), 6)
+        self.assertEqual({v[i] | v[i + 1] << 8 for i in (0, 2, 4)}, {hook.WCK_IRQ_ADDR})
+        self.assertEqual((hook.WCK_MPR << 13) + hook.WCK_VEC_OFF, 0xFFF6)  # IRQ2 · IRQ1($FFF8) · 타이머($FFFA)
+        self.assertLessEqual(hook.WCK_BANK_OFF + len(hook.wordck()), hook.WCK_VEC_OFF)
+        self.assertLess(hook.WCK_IRQ_ADDR, 0x4000)  # 늘 보이는 RAM(MPR1)
+        self.assertGreaterEqual(hook.WCK_IRQ_ADDR, 0x2000)
+
+    def test_irq_entry_remaps_bios_opens_window_and_returns(self):
+        """끼어든 인터럽트 흉내 — 뱅크 0x73 이 MPR7 에 걸린 채 벡터 사본으로 들어와, BIOS 를 되건 창에서 「진짜」 인터럽트를 한 번 받고, 뱅크 0x73 을 되건 뒤 RTI."""
+        ram = bytearray(0x10000)
+        r = hook.hook_routine()
+        ram[hook.HOOK_ADDR : hook.HOOK_ADDR + len(r)] = r
+        w = hook._wrap_asm().bytes()
+        ram[hook.WRAP_ADDR : hook.WRAP_ADDR + len(w)] = w
+        self.assertEqual(bytes(ram[hook.WCK_IRQ_ADDR : hook.WCK_IRQ_ADDR + hook.WCK_IRQ_LEN]), hook.wck_irq_a())
+        pc, a, mpr7, iflag, stack, log = hook.WCK_IRQ_ADDR, 0x5A, hook.WCK_BANK, 1, ["P", "PCL", "PCH"], []
+        cli_at = None  # CLI 다음 한 명령 뒤에 밀린 인터럽트를 받는다
+        for _ in range(40):
+            op = ram[pc]
+            if op == 0x48:
+                stack.append(a)
+                pc += 1
+            elif op == 0x68:
+                a = stack.pop()
+                pc += 1
+            elif op == 0x62:
+                a = 0
+                pc += 1
+            elif op == 0xA9:
+                a = ram[pc + 1]
+                pc += 2
+            elif op == 0x53:
+                self.assertEqual(ram[pc + 1], 1 << hook.WCK_MPR)
+                mpr7 = a
+                pc += 2
+            elif op == 0x58:
+                iflag, cli_at = 0, pc
+                pc += 1
+            elif op == 0x78:
+                iflag = 1
+                pc += 1
+            elif op == 0x4C:
+                pc = ram[pc + 1] | ram[pc + 2] << 8
+                if cli_at is not None:  # 진짜 인터럽트 — BIOS 가 걸려 있어야 하고, 돌아오면 그대로 잇는다
+                    self.assertEqual((mpr7, iflag), (0, 0))
+                    log.append("irq")
+                    cli_at = None
+            elif op == 0x40:
+                break
+            else:
+                self.fail(f"모르는 옵코드 {op:02X} @ {pc:04X}")
+        else:
+            self.fail("RTI 에 안 닿는다")
+        self.assertEqual(log, ["irq"])
+        self.assertEqual((a, mpr7, iflag, stack), (0x5A, hook.WCK_BANK, 1, ["P", "PCL", "PCH"]))
+        self.assertLess(pc, hook.NARROW_ADDR)  # `irq_b` 는 줄바꿈 품질 블록 안
 
 
 if __name__ == "__main__":
