@@ -179,6 +179,12 @@ def kr_names(extra: dict[str, str] | None = None) -> tuple[dict[str, str], list[
             idx.setdefault(_norm(k), v)
     for k, v in canon.table("speaker", "ed1").items():
         idx.setdefault(_norm(k), v)
+    # 🔴 `원문@4칸` = PCE 몬스터 이름 칸(화자 머리·로그가 8B = 4글자에서 자른다)용 줄인 꼴(마스터 11-23 「PCE 만 붙여쓰기」, 정본 033223d88) — 있으면 풀 꼴을 덮는다.
+    for cat in ("monster", "person"):
+        for k, v in g[cat].items():
+            base, _, slot = k.partition("@")
+            if slot == "4칸":
+                idx[_norm(base)] = v
     for k, v in (extra or {}).items():
         idx[_norm(k)] = v
     out, missing = {}, []

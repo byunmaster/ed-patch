@@ -94,10 +94,35 @@ def _seg_of(sc, sid: int, clip: str) -> dict:
     return sc[0]
 
 
+def set_pos(seg: dict, it: dict, i: int, pos, npg: int = 1) -> int:
+    """편집기 행의 창 위치(`pos` = "top"|"bottom", 마스터 11-23 「줄별 위/아래」)를 시각표 항목 `it` 의 쪽 i(0부터)에 적는다 — **행 값이 시각표 기본값(토막 `pos`)을 이긴다.**
+    항목 `pos` 꼴은 `gwin_rt.msg_top` 과 같다: 전 쪽이 토막 기본값이면 안 적고 · 전 쪽이 같으면 문자열 · 갈리면 쪽별 목록(같은 값으로 끝나는 꼬리는 줄인다).
+    `npg` = 그 메시지의 쪽 수(목록을 펼 때 뒤쪽이 남의 값을 물려받지 않게). 바뀌었으면 1."""
+    if pos not in ("top", "bottom"):
+        return 0
+    base = seg.get("pos") or "bottom"
+    cur = it.get("pos")
+    lst = list(cur) if isinstance(cur, list) and cur else [cur or base]
+    lst += [lst[-1]] * (max(npg, i + 1) - len(lst))
+    if lst[i] == pos:
+        return 0
+    lst[i] = pos
+    while len(lst) > 1 and lst[-1] == lst[-2]:
+        lst.pop()
+    if len(lst) > 1:
+        it["pos"] = lst
+    elif lst[0] == base:
+        it.pop("pos", None)
+    else:
+        it["pos"] = lst[0]
+    return 1
+
+
 def apply_sched(docs: list[dict], dry: bool = False) -> int:
     """편집기 db 문서(`{clip, idx, ts, te, spk}`)를 **전역 시각표**(`script/voice_sched.json`) 행에 반영한다 — 씬 18·98·224 같은 시각표 장면(행 `sched`).
     · `te` → 그 쪽의 `ends` · 첫 쪽 `ts` → `on_overlay.starts[열쇠]`(비모달 자막이 그 시각에 연다 — 쪽 사이 시작은 앞 쪽 끝이라 둘째 쪽부터의 `ts` 는 따로 안 쓴다, 다르면 알린다)
     · `spk`(첫 쪽) 가 행 기본 화자와 다르면 메시지 `speaker`. `kr` 은 건드리지 않는다(문안은 자료 그대로 — 마스터 11-03).
+    · `pos`("top"|"bottom", 11-23) → 그 쪽의 창 위치(`set_pos` — 메시지 `pos` · 추가 행은 `on_extra` 항목 `pos`). 행 값이 토막 기본값을 이긴다.
     값이 없는(`te` 안 고친) 쪽은 시각표의 옛 끝을 둔다."""
     spec = json.loads(VS.SPEC.read_text("utf-8"))
     by = {(d["clip"], d["idx"]): d for d in docs if d.get("clip") is not None}
@@ -113,20 +138,29 @@ def apply_sched(docs: list[dict], dry: bool = False) -> int:
         pidx = ADDED_MAP.get(f"{d['clip']}-{d['idx']}", d["idx"])  # 🔴 편집기 추가 행 열쇠(`토막-idx`) ↔ 제품 추가 행 번호 — idx 로 곧장 짝지으면 같은 번호의 다른 행을 덮어쓴다(11-11 46 s1: DB 1000 「로, 로우」가 제품 x1000 「예.」를 덮음). 대응표 `script/editor_added_map.json`
         cur = next((x for x in seg.setdefault("on_extra", []) if x["idx"] == pidx), None)
         new_ex = {"idx": pidx, "id": f"x{pidx}", "text": " ".join((d.get("kr") or "").split()), "speaker": d.get("spk") or "", "start": float(d["ts"]), "end": float(d["te"])}
+        epos = d.get("pos") if d.get("pos") in ("top", "bottom") else (cur or {}).get("pos")
+        if epos and epos != (seg.get("pos") or "bottom"):  # 토막 기본값과 같으면 안 적는다
+            new_ex["pos"] = epos
         if cur is None:
             seg["on_extra"].append(new_ex)
             n += 1
         elif cur != new_ex:
+            cur.pop("pos", None)
             cur.update(new_ex)
             n += 1
     ALL_ROWS = D.build()[0]
     rows = [r for r in ALL_ROWS if r.get("sched") and r["idx"] < 1000 and (r["clip"], r["idx"]) in by]
+
+    def nrows(clip: str, x: dict, tail: bool = True) -> int:  # 그 메시지의 자막 쪽 수 — 편집기 행 수(`tail`: 이어쓰기 뒷 조각 행 포함)
+        return sum(1 for y in ALL_ROWS if y["clip"] == clip and y["idx"] < 1000 and y["key"] in (x["key"], x.get("split") if tail else None))
+
     for r in rows:
         d = by[(r["clip"], r["idx"])]
         sc = spec["scenes"][str(r["scene"])]
         seg = _seg_of(sc, r["scene"], r["clip"])
         host = next((x for x in seg["msgs"] if x.get("split") == r["key"]), None)
         if host is not None:  # 이어쓰기 조각 행(`split_b`) — 시각표의 `on_overlay.ends[호스트][1]`(ON 뒷 조각 끝). 호스트 메시지의 OFF 창 끝(`ends`)도 같이
+            n += set_pos(seg, host, nrows(r["clip"], host, tail=False) + r["page"] - 1, d.get("pos"), nrows(r["clip"], host))  # 뒷 조각 쪽은 호스트 메시지 쪽 목록에서 앞 조각 다음이다
             e2 = seg.setdefault("on_overlay", {}).setdefault("ends", {}).setdefault(host["key"], [None, None])
             if d.get("te") is not None and e2[1] != float(d["te"]):
                 e2[1] = float(d["te"])
@@ -138,6 +172,7 @@ def apply_sched(docs: list[dict], dry: bool = False) -> int:
             print(f"  ⚠ {r['clip']}#{r['idx']}: 시각표 토막에 메시지 {r['key'][:8]} 없음 — 건너뜀")
             continue
         pg = r["page"] - 1
+        n += set_pos(seg, it, pg, d.get("pos"), nrows(r["clip"], it))
         if it.get("split") and pg == 0:  # 앞 조각 행 — 끝 시각은 ON 전용(`on_overlay.ends[열쇠][0]`), OFF 창 끝은 뒷 조각 행이 쥔다
             e2 = seg.setdefault("on_overlay", {}).setdefault("ends", {}).setdefault(it["key"], [None, it["ends"][-1]])
             if d.get("te") is not None and e2[0] != float(d["te"]):

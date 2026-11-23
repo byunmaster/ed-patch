@@ -249,6 +249,83 @@ class TestRtB(unittest.TestCase):
         self.assertNotIn((5, 1), seen, phases)  # 쪽 0→1 은 바로 이었다
         print("틱 기계:", phases)
 
+    def test_pos_switch(self):
+        """창 위치는 쪽마다다(11-23, 마스터 「줄별 위/아래」) — 쪽 넷: 0 아래 · 1 위(0 에 바로 이어짐) · 2 위(이어짐) · 3 아래(간격 뒤).
+        · 쪽 서술 바이트 4·5 가 그 쪽의 창 첫 행·분할 줄 · 위치가 바뀌는 이음(0→1)은 이어지는 쪽이어도 **닫고 다시 연다**(같은 위치 1→2 는 종전대로 바로 잇는다)
+        · 창 행(rowb)이 쪽 위치를 따르고 옛 자리는 밑그림으로 돌아간다 · 래스터 핸들러: 아래 = rc1 하나(줄 112), 위 = rc1(32) + rc2(112) — 닫을 때 건 만큼만 뺀다
+        · 창 사각형 표(winmask)의 대사 슬롯이 그 위치 사각형이다."""
+        import winmask
+
+        table, bank0 = _ctx()
+        btab, dyn = glyphdyn.block_table(table, 6)
+        bank = bytearray(bank0)
+        for k, ch in enumerate(dyn):
+            at = font.glyph_at(font.DYN0 + k)
+            bank[at : at + font.PACKED_BYTES] = font.pack(font.glyph(ch))
+        texts = [("라이아스", "수많은 몬스터들이\n이 마을로 몰려왔습니다."), (None, "어서 이 갑옷을\n몸에 걸치시옵소서."), ("세리오스", "할아범들은\n어찌하려고?"), (None, "할아범!\n죽지 마라!!")]
+        starts_ends = [(1.0, 3.0), (3.0, 5.0), (5.0, 7.0), (10.0, 12.0)]
+        tops = [False, True, True, False]
+        spec = {"pages": [{"speaker": s, "text": t, "start": a, "end": b, "top": tp} for (s, t), (a, b), tp in zip(texts, starts_ends, tops, strict=True)]}
+        mem, lab, cpu = sim_setup({SIM_SID: spec}, SIM_SID, btab, bank)
+        d0 = lab[f"desc{SIM_SID}"]
+        self.assertEqual([tuple(mem[d0 + R.DESC * k + 4 : d0 + R.DESC * k + 6]) for k in range(4)], [(11, 112), (1, 32), (1, 32), (11, 112)])
+        for v in ("ph", "pg", "row", "qg", "rs", "ready0", "ready1", "last", "b0", "b1", "reopen", "wopen"):
+            mem[lab[v]] = 0
+        mem[R.SCROLL_Y] = R.SCROLL_Y0
+        LOG, CNT = 0x0400, 0x04F0  # 엔진 분할 더하기/빼기 흉내 — 더하기: 줄(A)을 적고 X = 항목 번호 · 빼기: 항목(X)을 적는다
+        mem[0x43B4 : 0x43B4 + 10] = bytes([0xAE, CNT & 0xFF, CNT >> 8, 0x9D, LOG & 0xFF, LOG >> 8, 0xEE, CNT & 0xFF, CNT >> 8, 0x60])
+        mem[0x43FE : 0x43FE + 11] = bytes([0x8A, 0xAE, (CNT + 1) & 0xFF, CNT >> 8, 0x9D, (LOG + 0x40) & 0xFF, LOG >> 8, 0xEE, (CNT + 1) & 0xFF, CNT >> 8, 0x60])
+        ysel = []  # 창 사각형 복사 고리(`wmopen`)에 들어설 때의 원본 색인 Y — 아래 = SLOT_B-1(표 앞 반), 위 = 2·SLOT_B-1(뒤 반). 흉내 메모리는 글리프 뱅크가 같은 창을 덮어 바이트로는 못 본다
+        cpu.run(lab["getdesc"])
+        _step, _n = cpu.step, [0]
+
+        def _tickstep():
+            _step()
+            _n[0] += 1
+            if _n[0] % 400 == 0:
+                mem[R.FRAMECNT] = (mem[R.FRAMECNT] + 1) & 0xFF
+
+        cpu.step = _tickstep
+        cpu.run(lab["pre0"])
+
+        def _watch():
+            if cpu.pc == lab["wmopen"] and cpu.x == winmask.SLOT_B - 1:
+                ysel.append(cpu.y)
+            _step()
+
+        cpu.step = _watch
+        seen, shown, phases = {}, {}, []
+        adds = lambda: list(mem[LOG : LOG + mem[CNT]])
+        rems = lambda: list(mem[LOG + 0x40 : LOG + 0x40 + mem[CNT + 1]])
+        tl = lambda row: cpu.vram[row * 64 + gwin.COL0]
+        for f in range(1, int(13 * R.FPS)):
+            mem[R.FRAMECNT], mem[R.FRAMECNT + 1] = f & 0xFF, f >> 8
+            cpu.run(lab["tickr"])
+            ph, pg = mem[lab["ph"]], mem[lab["pg"]]
+            rb = mem[lab["rowb"]]
+            ours = [(cpu.vram[(rb + r) * 64 + gwin.COL0 + k] & 0xF000) == gwin.PAL for r in range(gwin.H) for k in range(gwin.W)]
+            self.assertIn(sum(ours), (0, len(ours)), (f, ph, pg, sum(ours)))
+            if (ph, pg) not in seen:
+                seen[(ph, pg)] = f
+                phases.append((f, ph, pg))
+            if ph == 4 and pg not in shown:
+                shown[pg] = f
+                row, other = (R.POS_ROW[tops[pg]], R.POS_ROW[not tops[pg]])
+                self.assertEqual(rb, row, (pg, phases))
+                self.assertEqual((tl(row), tl(other)), (gwin.PAL | gwin.FRAME["tl"], 0), f"쪽 {pg}: 창은 제 자리에만")
+                self.assertEqual(mem[lab["rcon"]], 2 if tops[pg] else 1, pg)
+                self.assertEqual((adds(), rems()), {0: ([112], []), 1: ([112, 32, 112], [0]), 2: ([112, 32, 112], [0]), 3: ([112, 32, 112, 112], [0, 1, 2])}[pg], pg)
+        self.assertEqual(mem[lab["ph"]], 6, phases)
+        self.assertEqual(rems(), [0, 1, 2, 3], "건 핸들러를 다 뺐다")
+        self.assertEqual(ysel, [winmask.SLOT_B - 1 if not t else 2 * winmask.SLOT_B - 1 for t in tops], "창 사각형: 쪽을 보일 때마다 그 쪽 위치 것")
+        self.assertEqual((tl(1), tl(11)), (0, 0), "끝나면 두 자리 다 밑그림")
+        self.assertIn((5, 1), seen, phases)  # 0(아래) → 1(위): 이어지는 쪽이어도 닫고 다시 연다
+        self.assertNotIn((5, 2), seen, phases)  # 1 → 2(같은 위): 바로 잇는다
+        self.assertIn((5, 3), seen, phases)  # 간격
+        for pg, (a, _b) in enumerate(starts_ends):
+            self.assertTrue(0 <= shown[pg] - R.frames(a) <= 8, (pg, shown[pg] - R.frames(a), phases))
+        print("위치 전환 틱 기계:", phases)
+
     def test_scene6_block_fits(self):
         """씬 6 전 쪽을 안 B 로 붙인 블록이 한계(0x1A00) 안이고 코드 영역이 2섹터 안. 줄 코드는 거의 다 블록 안 번역 메시지에서 찾는다 — 꼬리 이음(`0F` 점프)으로 갈린 줄만 복사(10-31 실측 1줄)."""
         import common

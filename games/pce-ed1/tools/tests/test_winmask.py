@@ -163,9 +163,10 @@ class WinMask(unittest.TestCase):
     def test_dlg_rects_match_old_stub_thresholds(self):
         # 옛 어둠 스텁: 아래 창 y+높이 ≥ 178(SAT) · 위 창 100 ≤ y+높이, y < 183 — 4px 단위 사각형이 그 근처(±3px)여야 한다
         y0, y1, _, _ = winmask.DLG_BOTTOM
-        self.assertTrue(abs(y0 * 4 - 177) <= 4)
+        self.assertEqual(y0, 45)  # 창 윗 경계 줄 134 — 그 위 줄 130~133 에 발이 걸친 인물은 겹침 아님(11-23)
         y0, y1, _, _ = winmask.DLG_TOP
-        self.assertTrue(abs(y0 * 4 - 100) <= 4 and abs(y1 * 4 - 183) <= 4)
+        self.assertTrue(abs(y0 * 4 - 100) <= 4)
+        self.assertEqual(y1, 44)  # 🔴 창 끝(183)이 아니라 176 — 창 아래 줄 130~133 에 머리가 걸친 파티가 통째로 BG 뒤로 가 사라졌다(11-23 씬 168)
 
     def test_cursor_kinds_never_masked(self):
         # 마스터 11-20 「커서 반토막」 — 커서(종류 0x63~0x67)는 창 안에 통째로 들어 있어도 가리지 않는다. X=3 슬롯의 종류가 `$3509+3`

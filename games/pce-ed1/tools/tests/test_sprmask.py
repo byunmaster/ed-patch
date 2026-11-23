@@ -102,7 +102,7 @@ class SprMask(unittest.TestCase):
         self.assertTrue(all(k > 50 for k in kinds), kinds)  # 세 부류가 다 충분히 나왔나(분모 확인)
 
     def test_single_piece_shapes_and_flips(self):
-        # 조각 하나가 아래 창 왼쪽 위 모서리(48, 176)에 걸친다 — 모양 여덟 × 뒤집기 넷 × 걸치는 정도
+        # 조각 하나가 아래 창 왼쪽 위 모서리(48, 180)에 걸친다 — 모양 여덟 × 뒤집기 넷 × 걸치는 정도
         for s in range(8):
             ah0 = (s & 1) | (s >> 1) << 4
             w, h = sprmask.WTAB[s], sprmask.HTAB[s]
@@ -110,7 +110,7 @@ class SprMask(unittest.TestCase):
                 for ox in (1, w // 2, w - 1):
                     for oy in (1, h // 2, h - 1):
                         desc = bytes([1, 0, 0, 40 * 2, 0, ah0 | flip])
-                        got, _, _ = self._case(desc, 48 - ox, 176 - oy, False, "bottom")
+                        got, _, _ = self._case(desc, 48 - ox, 180 - oy, False, "bottom")
                         self.assertGreaterEqual(got[1], 0x80, (s, flip, ox, oy))
 
     def test_fully_inside_and_outside(self):

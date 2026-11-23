@@ -9,7 +9,6 @@
   · 코드·데이터는 전부 씬 블록 꼬리(RAM)에 산다 — 자기 수정(TIA/TAI 피연산자)도 거기서 한다.
 """
 
-import contextlib
 import json
 import os
 import re
@@ -34,9 +33,9 @@ CLOCK_F, CLOCK_S = 0xC1B2, 0xC1B3  # 플레이 시계: 초 안 프레임 · 초(
 P_SEL, P_LO, P_HI = 0x0000, 0x0002, 0x0003  # VDC 포트(ST0 = 레지스터 선택)
 ROW_BYTES = gwin.W * 2  # 창 한 행 = 22단어 = 44B
 RA0 = gwin.ROW0 * 64 + gwin.COL0  # 창 왼쪽 위의 BAT 단어 주소(707)
-TOP = False  # 창 위치 — False = 아래(BAT 행 11, 화면 줄 134~213) · True = 위(행 1, 줄 54~133). `use_pos` 가 씬마다 바꾼다
+POS_ROW = {False: gwin.ROW0, True: 1}  # 창 위치(쪽마다, 11-23) — False = 아래(BAT 행 11, 화면 줄 134~213) · True = 위(행 1, 줄 54~133). 쪽 서술 바이트 4 로 굽고 런타임 `wrow` 가 든다
 TILE_WORD = gwin.TILE0 * 16  # 글자 타일의 VRAM 단어 주소
-DESC = 10  # 쪽 서술: 시작 프레임(2) · 끝 프레임(2) · 타일 수(1)+0 · 타일 압축본 주소(2) · 창 단어 주소(2)
+DESC = 10  # 쪽 서술: 시작 프레임(2) · 끝 프레임(2) · 타일 수(1)+0 · 타일 압축본 주소(2) · 창 단어 주소(2). 안 B(RT)는 바이트 4 = 창 첫 BAT 행(`POS_ROW`) · 5 = 창 윗줄 분할 줄(`POS_RC`) · 6·7 = 줄 표 주소 · 8·9 = 0
 OPS = dict(hook.OPS)
 OPS.update({k: v for k, v in asm65.OPC.items() if k[1] not in ("mpr", "blk")})  # 렌더러(안 B)가 쓰는 시프트·색인 명령까지
 OPS.update({("CLI", "imp"): 0x58, ("CMP", "absy"): 0xD9, ("DEC", "abs"): 0xCE, ("LDX", "abs"): 0xAE, ("JMP", "indx"): 0x7C, ("TMA", "tma"): 0x43, ("STA", "absy"): 0x99})
@@ -126,32 +125,11 @@ RC_F7 = os.environ.get("ED_GWIN_RC_F7", "0") == "1"  # 진단(기각) — `$F7` 
 RC_Y = RC_RING + 64  # $3988 🔴 핸들러가 읽는 창 첫 행 BAT y(rowb×8)의 **RAM 거울** — 블록 변수 `rowb` 를 IRQ 에서 읽으면 작업 7 이 맵 버퍼 뱅크를 MPR5 에 건 사이에 쓰레기를 읽는다(rcf0: 다시 그리는 프레임마다 창이 16px 위로)
 PRE_SYNC = os.environ.get("ED_GWIN_PRE_SYNC", "1") == "1"  # 첫 쪽 미리 그리기를 VBlank 에 맞춘다(래스터 분할 지연 방지, 11-04)
 PRE_N = int(os.environ.get("ED_GWIN_PRE_N", "4"))  # 프레임마다 도는 틱 분량 수
-RC2 = os.environ.get("ED_GWIN_RC2", "0") == "1"  # 창 아랫줄 핸들러(rc2) 등록 — 11-02 부터 기본 꺼짐(창이 HUD 분할 앞에서 끝난다). 진단용
-RC_BOT = int(os.environ.get("ED_GWIN_RC_BOT", str(RC_TOP + gwin.H * 8)))  # 199 — 창 아랫줄 핸들러 줄(시험: ED_GWIN_RC_BOT 로 한 줄씩 옮겨 본다, 11-02 Gold 위 흰 줄)
+WIN_LINES = gwin.H * 8  # 창 높이(줄) — 위 창의 아랫줄 핸들러(rc2)는 창 윗줄 분할 줄 + 80 에 건다. 아래 창은 rc2 를 안 건다(11-02: 창 끝 213 이 HUD 분할 214 앞이라 엔진이 스스로 되돌린다)
+POS_RC = {False: RC_TOP, True: 32 + POS_ROW[True] * 8 - 1 - 7}  # 창 윗줄 분할 줄(rc1) — 아래 112 · 위 32. 쪽 서술 바이트 5 로 굽고 런타임 `wrc` 가 든다
 # 🔴 창 아래(줄 200~)는 맵이 아니라 **엔진 HUD 분할(줄 191, `$5938`)이 BYR 를 `$56/$57`(=215) 로 바꿔 그리는 아래 틀·Gold 줄**이다(11-02 마스터 「화면 하단이 잘린다」).
 #   엔진은 스크롤이 바뀔 때마다 `$6083`(뱅크 0x6A)이 ZP `$56/$57` 을 `$594C/$594E`(그 핸들러의 ST1/ST2 즉치)에 베낀다. rc1 이 그 즉치를 창 행으로 덮으니 rc2 는 맵 y(V+168)가 아니라
 #   **`$56 + (200 − 192)`** 로 되돌려야 하고, 창을 닫을 때 `$594C/$594E` 를 `$56/$57` 로 되돌려야 한다(안 돌리면 엔진이 `$6083` 을 다시 돌릴 때까지 틀이 없다 — 「거의 사라지고 중간중간 복구」).
-
-
-@contextlib.contextmanager
-def pos_ctx(top: bool):
-    """`use_pos` 를 구간으로 — 끝나면 이전 위치로 되돌린다(중첩 가능: `patch_block` 안에서 `register_scene`)."""
-    prev = TOP
-    use_pos(top)
-    try:
-        yield
-    finally:
-        use_pos(prev)
-
-
-def use_pos(top: bool) -> None:
-    """씬의 창 위치(위/아래)에 맞춰 위치에 묶인 모듈 상수를 다시 정한다 — 굽기(`program_b`·`register_scene`·`patch_block`·`container_tail`) 앞에서 부른다."""
-    global TOP, RA0, RC_TOP, RC_BOT
-    TOP = bool(top)
-    gwin.set_row0(1 if TOP else 11)
-    RA0 = gwin.ROW0 * 64 + gwin.COL0
-    RC_TOP = int(os.environ.get("ED_GWIN_RC_TOP", str(32 + gwin.ROW0 * 8 - 1 - 7)))
-    RC_BOT = int(os.environ.get("ED_GWIN_RC_BOT", str(RC_TOP + gwin.H * 8)))
 
 
 HUD_SPLIT = 191  # 엔진 HUD 분할 줄(핸들러 `$5938`, 다음 줄 192 부터 BYR = `$56`)
@@ -652,7 +630,7 @@ def program(org: int, npages: int) -> tuple[Mini, dict[str, int]]:
     for v in ("ph", "pg", "row"):
         op("STZ", "abs", v)
     op("JSR", "abs", "getdesc")
-    for k, (site, ex) in enumerate(((hook.TICK_SIG_OP[0], "sig"), (hook.TICK_SIG_OP[1], "sig+1"), (hook.TICK_CALL_OP, "tick"))):
+    for site, ex in ((hook.TICK_SIG_OP[0], "sig"), (hook.TICK_SIG_OP[1], "sig+1"), (hook.TICK_CALL_OP, "tick")):
         op("LDA", "imm", "<" + ex)
         op("STA", "abs", site)
         op("LDA", "imm", ">" + ex)
@@ -1499,31 +1477,23 @@ def program_b(org: int, sid: int = 0, code_bank: int = CODE_SECTOR // 4) -> tupl
         op("JMP", "abs", 0x40A6)
         while c.pc - c.labels["rc1"] < 32:  # rc1 칸 32B(ring 사본 배치용)
             c.raw(b"\xea")  # NOP
-        L("rc2")  # 창 아랫줄(199): BYR ← `$56` + (200 − 192) — HUD 분할이 보였을 y(아래 틀·Gold 줄). 11-02 전엔 V + 168(맵)이라 틀이 사라졌다
+        L("rc2")  # 🔴 **위 창 전용** 아랫줄 핸들러(창 윗줄 분할 줄 + 80) — 창이 위(줄 54~133)면 그 아래는 맵이다: 창 윗줄에 쓴 타일 정렬값(RC_Y = rowb×8)에서 창 높이만큼 간 값에
+        #   스크롤의 서브타일 위상(V & 7)을 더해 엔진이 보였을 BYR 로 되돌린다(BAT 가 64행이라 BYR 9비트로 더하면 맵 밖(검정)으로 간다 — 첫 시험 test-top: 엔진 그림자 V 로 셈하니 창 아래가 검었다).
+        #   아래 창(줄 134~213)엔 안 건다 — 창 끝이 엔진 HUD 분할(214) 바로 앞이라 엔진이 스스로 되돌린다(11-02). 그래서 원본은 위치와 무관하게 한 벌이고 `shown` 이 `wrow` 로 등록 여부만 가른다(11-23 쪽별 위치)
         if RC_MODE == "noop":
             op("JMP", "abs", 0x40A6)
         op("JSR", "abs", 0x4455)
         op("ST0", "imm", 8)
-        if TOP:  # 창이 위(줄 54~133)면 그 아래는 맵이다 — 창 윗줄에 쓴 타일 정렬값(RC_Y = rowb×8)에서 창 높이(RC_BOT − RC_TOP)만큼 간 값에 스크롤의 서브타일 위상(V & 7)을 더해 엔진이 보였을 BYR 로 되돌린다
-            #   (BAT 가 64행이라 BYR 9비트로 더하면 맵 밖(검정)으로 간다 — 첫 시험 test-top: 엔진 그림자 V 로 셈하니 창 아래가 검었다)
-            op("LDA", "abs", SCROLL_Y)
-            op("AND", "imm", 7)
-            op("CLC")
-            op("ADC", "abs", RC_Y)
-            op("CLC")
-            op("ADC", "imm", RC_BOT - RC_TOP)
-            op("STA", "abs", 0x0002)
-            op("LDA", "imm", 0)
-            op("ADC", "imm", 0)
-            op("STA", "abs", 0x0003)
-        else:
-            op("LDA", "zp", HUD_BYR_ZP)
-            op("CLC")
-            op("ADC", "imm", RC_BOT + 1 - (HUD_SPLIT + 1))
-            op("STA", "abs", 0x0002)
-            op("LDA", "zp", HUD_BYR_ZP + 1)
-            op("ADC", "imm", 0)
-            op("STA", "abs", 0x0003)
+        op("LDA", "abs", SCROLL_Y)
+        op("AND", "imm", 7)
+        op("CLC")
+        op("ADC", "abs", RC_Y)
+        op("CLC")
+        op("ADC", "imm", WIN_LINES)
+        op("STA", "abs", 0x0002)
+        op("LDA", "imm", 0)
+        op("ADC", "imm", 0)
+        op("STA", "abs", 0x0003)
         if RC_F7:
             op("LDA", "imm", 2)
             op("STA", "zp", 0xF7)
@@ -1601,7 +1571,7 @@ def program_b(org: int, sid: int = 0, code_bank: int = CODE_SECTOR // 4) -> tupl
         op("CMP", "abs", "pfc")
         op("BEQ", "rel", "pre1w")
         op("STA", "abs", "pfc")
-    for k in range(PRE_N if PRE_SYNC else 1):
+    for _ in range(PRE_N if PRE_SYNC else 1):
         op("PHP")
         op("SEI")
         op("JSR", "abs", "prep")
@@ -1650,6 +1620,10 @@ def program_b(org: int, sid: int = 0, code_bank: int = CODE_SECTOR // 4) -> tupl
     op("BNE", "rel", "p0go")
     op("RTS")
     L("p0go")
+    op("LDA", "abs", "d+4")  # 🔴 이 쪽의 창 위치(11-23 쪽별 pos) — 첫 BAT 행(`wrow`: 아래 11 · 위 1)과 창 윗줄 분할 줄(`wrc`: 112 · 32). 여는 길(처음·간격 뒤·위치 전환 뒤)은 전부 여기를 지난다
+    op("STA", "abs", "wrow")
+    op("LDA", "abs", "d+5")
+    op("STA", "abs", "wrc")
     op("JSR", "abs", "latch")  # 창 행 = ROW0 + (BYR − 184)/8 — 엔진 창과 같은 자리(마스터 006: 스크롤이 다르면 창이 뜬다)
     op("JSR", "abs", "mkblank")
     op("LDA", "abs", "pg")
@@ -1675,7 +1649,7 @@ def program_b(org: int, sid: int = 0, code_bank: int = CODE_SECTOR // 4) -> tupl
             c.raw(bytes([0x73]))
             c.fix.append((len(c.out), "rc1", "abs"))
             c.raw(b"\0\0" + RC_RING.to_bytes(2, "little") + (64).to_bytes(2, "little"))
-        op("LDA", "imm", RC_TOP)
+        op("LDA", "abs", "wrc")
         if RC_MODE == "ring":
             op("LDX", "imm", RC_RING & 0xFF)
             op("LDY", "imm", RC_RING >> 8)
@@ -1684,18 +1658,23 @@ def program_b(org: int, sid: int = 0, code_bank: int = CODE_SECTOR // 4) -> tupl
             op("LDY", "imm", ">rc1")
         op("JSR", "abs", 0x43B4)  # 분할 더하기 → X = 항목
         op("STX", "abs", "rce1")
-        if RC2 or TOP:  # (11-02 기본 꺼짐) 창 아랫줄 핸들러 — 창 끝(213)이 HUD 분할(214) 앞이라 엔진이 스스로 되돌린다
-            op("LDA", "imm", RC_BOT)
-            if RC_MODE == "ring":
-                op("LDX", "imm", (RC_RING + 32) & 0xFF)
-                op("LDY", "imm", (RC_RING + 32) >> 8)
-            else:
-                op("LDX", "imm", "<rc2")
-                op("LDY", "imm", ">rc2")
-            op("JSR", "abs", 0x43B4)
-            op("STX", "abs", "rce2")
-        op("LDA", "imm", 1)
+        op("LDA", "imm", 1)  # rcon: 1 = rc1 만(아래 창) · 2 = rc1 + rc2(위 창) — `clrinit` 이 건 것만 뺀다
         op("STA", "abs", "rcon")
+        op("LDA", "abs", "wrow")
+        op("CMP", "imm", POS_ROW[False])
+        op("BEQ", "rel", "rcskip")  # 아래 창 — 창 끝(213)이 HUD 분할(214) 앞이라 엔진이 스스로 되돌린다(11-02)
+        op("LDA", "abs", "wrc")  # 위 창 — 창 아랫줄(윗줄 분할 줄 + 80)에 rc2 를 걸어 창 아래 맵의 BYR 를 되돌린다
+        op("CLC")
+        op("ADC", "imm", WIN_LINES)
+        if RC_MODE == "ring":
+            op("LDX", "imm", (RC_RING + 32) & 0xFF)
+            op("LDY", "imm", (RC_RING + 32) >> 8)
+        else:
+            op("LDX", "imm", "<rc2")
+            op("LDY", "imm", ">rc2")
+        op("JSR", "abs", 0x43B4)
+        op("STX", "abs", "rce2")
+        op("INC", "abs", "rcon")
         L("rcskip")
     if T7_SKIP:
         op("LDA", "imm", 1)
@@ -1708,12 +1687,21 @@ def program_b(org: int, sid: int = 0, code_bank: int = CODE_SECTOR // 4) -> tupl
     op("PHX")
     op("LDA", "imm", winmask.BANK)
     op("TAM", "tam", winmask.TICK_MPR)
+    op("PHY")
+    op("LDY", "imm", winmask.SLOT_B - 1)  # 사각형 표는 아래·위가 잇달아 있다(`dlg_rects` + 0 / + SLOT_B) — 이 쪽 위치(`wrow` — 코드 뱅크(MPR4) 변수라 MPR3 을 바꾼 뒤에도 읽힌다)로 고른다
+    op("LDA", "abs", "wrow")
+    op("CMP", "imm", POS_ROW[False])
+    op("BEQ", "rel", "wmsel")
+    op("LDY", "imm", 2 * winmask.SLOT_B - 1)
+    L("wmsel")
     op("LDX", "imm", winmask.SLOT_B - 1)
     L("wmopen")
-    op("LDA", "absx", winmask.rects_addr(TOP) + winmask.TICK_SHIFT)
+    op("LDA", "absy", winmask.rects_addr(False) + winmask.TICK_SHIFT)
     op("STA", "absx", winmask.slot_addr(winmask.SLOT_DLG) + winmask.TICK_SHIFT)
+    op("DEY")
     op("DEX")
     op("BPL", "rel", "wmopen")
+    op("PLY")
     op("PLX")
     op("PLA")
     op("TAM", "tam", winmask.TICK_MPR)
@@ -1906,6 +1894,9 @@ def program_b(org: int, sid: int = 0, code_bank: int = CODE_SECTOR // 4) -> tupl
     op("CMP", "abs", "npg")
     op("BEQ", "rel", "p4last")
     op("JSR", "abs", "getdesc")
+    op("LDA", "abs", "d+4")  # 🔴 다음 쪽의 창 위치가 지금과 다르면(위↔아래, 11-23) 이어 붙이지 않는다 — 닫아서(`clrinit`: 마스크 끔 · 분할 핸들러 빼기 · 밑그림 되돌림) 다시 연다(`p0go` 가 새 위치를 잡고 `shown` 이 거울값·핸들러를 새로 건다)
+    op("CMP", "abs", "wrow")
+    op("BNE", "rel", "p4gap")
     op("LDA", "abs", "d")  # 다음 시작 − 이 끝 > GAP_FRAMES 이면 간격 — 창을 닫았다 다시 연다
     op("SEC")
     op("SBC", "abs", "pe")
@@ -1947,9 +1938,12 @@ def program_b(org: int, sid: int = 0, code_bank: int = CODE_SECTOR // 4) -> tupl
         op("BEQ", "rel", "rcoff")
         op("LDX", "abs", "rce1")
         op("JSR", "abs", 0x43FE)  # 분할 빼기
-        if RC2 or TOP:
-            op("LDX", "abs", "rce2")
-            op("JSR", "abs", 0x43FE)
+        op("LDA", "abs", "rcon")
+        op("CMP", "imm", 2)  # 위 창만 rc2 를 걸었다(`shown`)
+        op("BNE", "rel", "rcoff1")
+        op("LDX", "abs", "rce2")
+        op("JSR", "abs", 0x43FE)
+        L("rcoff1")
         op("STZ", "abs", "rcon")
         L("rcoff")
     op("JSR", "abs", "ringrows")
@@ -2037,7 +2031,7 @@ def program_b(org: int, sid: int = 0, code_bank: int = CODE_SECTOR // 4) -> tupl
         op("CMP", "imm", 0x80)
         op("ROR")
     op("CLC")
-    op("ADC", "imm", gwin.ROW0)
+    op("ADC", "abs", "wrow")  # 이 쪽의 창 첫 행(아래 11 · 위 1, `p0go`)
     op("AND", "imm", 31)
     op("STA", "abs", "rowb")
     op("RTS")
@@ -2086,7 +2080,7 @@ def program_b(org: int, sid: int = 0, code_bank: int = CODE_SECTOR // 4) -> tupl
     # ── 변수 · 표 · 서술표 ──
     for v in ("pg", "qg", "qb", "qb2", "fl", "fh", "b0", "b1", "row", "cnt", "nt", "tmp", "dirty", "ra", "ra1", "sp", "sp1", "dp", "dp1", "vw", "vw1", "tsp", "tsp1",
               "rs", "ncol", "rn", "gl", "gt", "ad", "px", "gcnt", "o0", "o1", "w0", "w1", "bk", "sv", "sh", "shc", "rhi", "rlo", "a1", "a2", "a3",
-              "li", "tnl", "tnh", "rp", "rp1", "last", "pli", "pn", "ptl", "pth", "ready0", "ready1", "byr0", "reopen", "pmask", "wopen", "pren", "pfc"):
+              "li", "tnl", "tnh", "rp", "rp1", "last", "pli", "pn", "ptl", "pth", "ready0", "ready1", "byr0", "reopen", "pmask", "wopen", "pren", "pfc", "wrow", "wrc"):
         L(v)
         c.raw(b"\0")
     L("pe")
@@ -2178,13 +2172,14 @@ def _extra_key(sid: int, idx: int) -> int:
 SCENE_PARTS: dict[int, dict] = {}  # 씬 id → 씬별 표 재료(`register_scene`) — `container_tail` 이 컨테이너 4번째 뱅크에 모아 붙인다
 
 
+def page_top(spec: dict, pg: dict) -> bool:
+    """쪽의 창 위치 — True = 위. 쪽의 `top` 이 명세의 `top`(토막 기본값)을 이긴다."""
+    return bool(pg.get("top", spec.get("top", False)))
+
+
 def register_scene(sid: int, spec: dict, blk: bytes, btab: dict[str, bytes]) -> None:
-    """씬의 안 B 표 재료를 등록한다 — 쪽(시작·끝 프레임) · 줄(코드 · 기둥 수 · 화자 줄 플래그 · 블록 안 주소 또는 None) · 전진표."""
-    with pos_ctx(spec.get("top", False)):
-        _register_scene(sid, spec, blk, btab)
-
-
-def _register_scene(sid: int, spec: dict, blk: bytes, btab: dict[str, bytes]) -> None:
+    """씬의 안 B 표 재료를 등록한다 — 쪽(시작·끝 프레임 · 창 위치) · 줄(코드 · 기둥 수 · 화자 줄 플래그 · 블록 안 주소 또는 None) · 전진표.
+    창 위치는 **쪽마다**다(11-23, 마스터 「줄별 위/아래」) — 쪽의 `top`(없으면 명세의 `top`, 없으면 아래). 한 씬·한 컨테이너에 위·아래가 섞여도 된다(코드는 한 벌, 위치는 쪽 서술이 든다)."""
     pages = spec["pages"]
     plines = _check_spec(spec, btab)
     lines = []
@@ -2194,20 +2189,12 @@ def _register_scene(sid: int, spec: dict, blk: bytes, btab: dict[str, bytes]) ->
             at = blk.find(codes)
             rows.append((codes, ncol | (0x80 if li == 0 and pg.get("speaker") else 0), BASE + at if at >= 0 else None))
         lines.append(rows)
-    SCENE_PARTS[sid] = {"top": bool(spec.get("top", False)), "frames": [(frames(pg["start"]), frames(pg["end"])) for pg in pages], "lines": lines, "advtab": rt_advtab(plines, btab)}
+    SCENE_PARTS[sid] = {"tops": [page_top(spec, pg) for pg in pages], "frames": [(frames(pg["start"]), frames(pg["end"])) for pg in pages], "lines": lines, "advtab": rt_advtab(plines, btab)}
 
 
 def container_tail(sids: list[int]) -> tuple[bytes, dict[str, int]]:
     """컨테이너 4번째 뱅크 바이트 — 공용 렌더러 + 고정 영역 원본 + 씬별 표(전진표 · 서술표 · 줄 표 · 블록에 없는 줄 코드) + 디렉터리. (바이트, 라벨)."""
     sids = sorted({k for sid in sids for k in [sid, *SCENE_EXTRA.get(sid, [])]})  # 씬 + 그 씬의 둘째 이후 음성 호출 열쇠
-    tops = {SCENE_PARTS[sid]["top"] for sid in sids}
-    if len(tops) > 1:
-        raise GwinError(f"한 컨테이너에 창 위치가 다른 씬이 섞였다(씬 {sorted(sids)}) — 코드 영역은 컨테이너마다 한 벌")
-    with pos_ctx(tops.pop() if tops else False):
-        return _container_tail(sids)
-
-
-def _container_tail(sids: list[int]) -> tuple[bytes, dict[str, int]]:
     _a, _f, c, lab = program_b(BASE, 0)
     for sid in sorted(sids):
         p = SCENE_PARTS[sid]
@@ -2217,7 +2204,7 @@ def _container_tail(sids: list[int]) -> tuple[bytes, dict[str, int]]:
         tabs, extra, descs = bytearray(), bytearray(), bytearray()
         c.L(f"desc{sid}")
         base = c.pc + DESC * len(p["lines"])
-        for (st, en), rows in zip(p["frames"], p["lines"], strict=True):
+        for (st, en), top, rows in zip(p["frames"], p["tops"], p["lines"], strict=True):
             t_at = base + len(tabs)
             for codes, flag, addr in rows:
                 if addr is None:
@@ -2225,7 +2212,7 @@ def _container_tail(sids: list[int]) -> tuple[bytes, dict[str, int]]:
                     extra += codes
                 tabs += bytes([flag, len(codes) // 2]) + addr.to_bytes(2, "little")
             tabs.append(0)
-            descs += st.to_bytes(2, "little") + en.to_bytes(2, "little") + b"\0\0" + t_at.to_bytes(2, "little") + b"\0\0"
+            descs += st.to_bytes(2, "little") + en.to_bytes(2, "little") + bytes([POS_ROW[top], POS_RC[top]]) + t_at.to_bytes(2, "little") + b"\0\0"  # 바이트 4·5 = 이 쪽의 창 첫 행 · 창 윗줄 분할 줄(`p0go` 가 `wrow`·`wrc` 로)
         assert len(tabs) == tabs_len
         c.raw(bytes(descs) + bytes(tabs) + bytes(extra))
     c.L("dir")
@@ -2342,6 +2329,20 @@ def _on_flow_spec_(sid: int, k: int = 0) -> dict:
             parts = VS2.tail_join(blk, lst, next(k for k, x in enumerate(lst) if x.key == it["key"]), tr, parts=True)
             pgs = typeset.pages(font.expand_packed(parts[0][1]), speaker="nl=", four=True, keep_windows=typeset.keep_windows(sid)) + typeset.pages(font.expand_packed(parts[1][1]), speaker=False, four=True, keep_windows=typeset.keep_windows(sid))
         ends = VS.fit_ends(ov.get("ends", {}).get(it["key"], it["ends"]), len(pgs))  # 원문 창 기준으로 합쳐 쪽이 줄었으면 끝 시각도 합친다
+        abs_idx = [i for i in range(len(pgs)) if (it["key"], i + 1) in absent]
+        if len(pgs) > len(ends) and len(pgs) - len(abs_idx) == len(ends):
+            # 🔴 넘친 쪽이 전부 「음성에 없는 쪽」이면(씬 151 실피 첫 메시지 — 2쪽째는 나레이션 줄) 시각표 구간을 쪽 수로 나누지 않는다 —
+            #   나누면 소리 나는 쪽이 절반(2.0~4.85초)만 떠 편집기 te 7.7초보다 일찍 닫힌다(11-23 실측). 없는 쪽은 앞 쪽 끝 시각을 그대로(시간 구간 0).
+            it_end = iter(ends)
+            last = 0.0
+            fixed = []
+            for i in range(len(pgs)):
+                if i in abs_idx:
+                    fixed.append(last)
+                else:
+                    last = next(it_end)
+                    fixed.append(last)
+            ends = fixed
         if len(pgs) > len(ends):  # 줄 수 초과로 조판이 쪽을 더 가른다 — 막지 않고 그대로 굽는다(마스터 11-03 「칸 초과가 어떻게 나오는지도 봐야지」). 시각표의 마지막 쪽 구간(앞 쪽 끝~끝)을 넘친 쪽 수로 균등 나눈다
             ON_OVERFLOW.append((sid, it["key"], len(pgs), len(ends)))
             k = len(pgs) - len(ends) + 1
@@ -2356,7 +2357,7 @@ def _on_flow_spec_(sid: int, k: int = 0) -> dict:
                 if os.environ.get("ED_GWIN_ABSENT") == "flash":  # 비교용(시험) — 쪽 끝 시각을 앞 쪽에 붙여 즉시 넘김: 시작 = 끝 = 앞 쪽 끝(한 틱 번쩍)
                     start = max(prev_end, prev)
                     spk = None
-                    pages.append({"speaker": spk, "text": "\n".join(pg), "start": round(start, 2), "end": round(start + 0.1, 2)})
+                    pages.append({"speaker": spk, "text": "\n".join(pg), "start": round(start, 2), "end": round(start + 0.1, 2), "top": msg_top(seg, it, i)})
                     prev = prev_end = round(start + 0.1, 2)
                     continue
                 prev = end  # 뺀 쪽의 시간 구간은 비운다 — 다음 쪽은 시각표의 자기 시작(이 쪽 끝)에서 연다
@@ -2374,12 +2375,12 @@ def _on_flow_spec_(sid: int, k: int = 0) -> dict:
             if len(pg) >= 2 and gwin.make_window(spk, "\n".join(pg))[0].__len__() // 8 > BANK_TILES:  # 🔴 타일 칸(133)을 넘는 쪽(씬 196 첫 쪽 134, 11-05) — 자막 쪽만 둘로 쪼갠다(원문 창·OFF 흐름은 그대로). 이름 줄은 앞 쪽, 끝 시각은 반반
                 h = len(pg) // 2
                 mid = round(start + (end - start) / 2, 2)
-                pages.append({"speaker": spk, "text": "\n".join(pg[:h]), "start": round(start, 2), "end": mid})
-                pages.append({"speaker": None, "text": "\n".join(pg[h:]), "start": mid, "end": end})
+                pages.append({"speaker": spk, "text": "\n".join(pg[:h]), "start": round(start, 2), "end": mid, "top": msg_top(seg, it, i)})
+                pages.append({"speaker": None, "text": "\n".join(pg[h:]), "start": mid, "end": end, "top": msg_top(seg, it, i)})
                 ON_WIDE_SPLIT.append((sid, it["key"], i + 1))
                 prev = prev_end = end
                 continue
-            pages.append({"speaker": spk, "text": "\n".join(pg), "start": round(start, 2), "end": end})
+            pages.append({"speaker": spk, "text": "\n".join(pg), "start": round(start, 2), "end": end, "top": msg_top(seg, it, i)})
             prev = prev_end = end
     for ex in seg.get("on_extra", []):  # 🔴 원문 메시지에 없는 자막 쪽(마스터 편집기 추가 행 idx≥1000 — 한 메시지 안에서 화자가 갈리거나 원문 자막이 빠진 자리). 모달 표(`ends`)엔 안 들어가고 비모달 쪽 목록에만 시각 순서로 끼인다
         epgs = typeset.pages(font.expand_packed(ex["text"]), speaker="nl=", four=True, keep_windows=typeset.keep_windows(sid))
@@ -2388,16 +2389,28 @@ def _on_flow_spec_(sid: int, k: int = 0) -> dict:
         e_end = min(ex["end"], pages[at]["start"]) if at < len(pages) else ex["end"]  # 다음 쪽의 리드(`LEAD`)가 앞당겨 열리면 그 앞에서 닫는다
         if at and pages[at - 1]["end"] > ex["start"]:  # 마스터 시각이 앞 쪽과 겹치면 앞 쪽을 이 쪽 시작에서 닫는다(한 화면에 창 하나)
             pages[at - 1]["end"] = ex["start"]
-        pages.insert(at, {"speaker": sp.get(ex["speaker"], ex["speaker"]), "text": "\n".join(epgs[0]), "start": ex["start"], "end": e_end})
+        pages.insert(at, {"speaker": sp.get(ex["speaker"], ex["speaker"]), "text": "\n".join(epgs[0]), "start": ex["start"], "end": e_end, "top": msg_top(seg, ex, 0)})
     if os.environ.get("ED_GWIN_ON_SLICE"):  # 시제품: 쪽 자료가 씬 블록(8KB)에 다 안 든다 — 일부 쪽만(예 `3:7`)
         a, _, b = os.environ["ED_GWIN_ON_SLICE"].partition(":")
         pages = pages[int(a) : int(b)]
-    spec = {"pages": pages, "top": seg.get("pos") == "top"}
+    spec = {"pages": pages}  # 창 위치는 쪽마다(`top`) — 토막 `pos` 는 기본값으로 `msg_top` 이 이미 녹였다
     if (seg.get("voice_gate") is None or k) and seg.get("voice_at"):  # 게이트 밖 음성 호출(ALWAYS 류 — 씬 224 아그니쟈 독백): 호출 자리(블록 오프셋)를 바로
         spec["voice_at"] = int(seg["voice_at"], 16)
     else:
         spec["voice_call_gate"] = seg.get("voice_from", seg["voice_gate"])  # 원판 ON 에서 음성을 트는 게이트(씬 18 은 앞 게이트 — `voice_sched` 의 voice_from)
     return spec
+
+
+def msg_top(seg: dict, it: dict, i: int) -> bool:
+    """시각표 메시지(또는 추가 행) `it` 의 자막 쪽 i(0부터)의 창 위치 — True = 위(11-23 마스터 「줄별 위/아래」).
+    우선순위: 항목의 `pos`(문자열 = 그 메시지 전 쪽 · 목록 = 쪽마다, 모자란 뒤쪽은 마지막 값) > 토막 `pos` > 아래. 편집기 행의 `pos` 는 `voice_editor_apply.apply_sched` 가 여기(항목 `pos`)에 적는다."""
+    v = it.get("pos")
+    if isinstance(v, list):
+        v = v[min(i, len(v) - 1)] if v else None
+    v = v or seg.get("pos") or "bottom"
+    if v not in ("top", "bottom"):
+        raise GwinError(f"창 위치 값이 top/bottom 이 아니다: {v!r} (항목 {it.get('key') or it.get('id')})")
+    return v == "top"
 
 
 def check_engine_contracts() -> None:
@@ -2415,8 +2428,7 @@ def patch_block(sid: int, blk: bytes, spec: dict | None = None, btab: dict[str, 
     spec = spec or load().get(str(sid))
     if not spec:
         return blk, 0
-    with pos_ctx(spec.get("top", False)):
-        out, n = _patch_block(sid, blk, spec, btab, code_bank)
+    out, n = _patch_block(sid, blk, spec, btab, code_bank)
     ds = os.environ.get("ED_DEBUG_START")
     if ds and n and str(sid) in ds.split(","):  # 🔴 디버그 전용(시험 빌드) — 씬 블록 머리 점프를 첫 음성 호출 자리(스텁 호출)로 돌려 로드하면 음성·자막이 바로 시작된다(마스터 싱크 확인용, 「디버그 시작」)
         assert common.BUILD_TAG.startswith(("test-", "pce-ed1-voicecheck")), "ED_DEBUG_START 는 시험 빌드(ED_BUILD_TAG=test-* · 마스터 싱크 확인용 pce-ed1-voicecheck)에서만"
