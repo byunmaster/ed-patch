@@ -146,7 +146,8 @@ HARD_LINES = {
     "784c9b510aa4135f": ["하하하하, 당신이 졌다."],
 }
 # 끝 옵코드가 없어 뒤 메시지·게임 코드가 같은 줄에 이어 찍는 메시지 — 끝에 개행 하나(「지금까지의 상품은」 뒤 숫자, 이김·짐 뒤 다음 줄). 해적섬 게임(마스터 11-21)
-HARD_TRAIL_NL = {"535a74c51eff64f6", "3d6e5a6f6d00dc60", "784c9b510aa4135f"}
+# 🔴 11-23 `e5533926e9c6ea87`(씬 161 배 시간) — 원문은 두 문장을 한 줄에 잇고 둘째 문장으로 점프가 든다(`messages.MID_JUMP_HOSTS`). 첫 문장 끝에 개행을 내 둘째가 어느 길로 들든 줄머리에서 시작한다
+HARD_TRAIL_NL = {"535a74c51eff64f6", "3d6e5a6f6d00dc60", "784c9b510aa4135f", "e5533926e9c6ea87"}
 INLINE_LEAD = {"9223868c8171327f"}
 _JOSA_LEAD = re.compile(r"(은/는|을/를|이/가|와/과|으로/로)")
 _JOSA_MARK = "\uE0F0"  # 조사 토큰을 한 글자로 재기 위한 자리표시(12px)
@@ -248,11 +249,14 @@ def _compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str
         src = tr["t"].lstrip(" ")
         # 🔴 **이름 변수 뒤에 이어지는 조사 조각**(「 은/는 보물상자를 열었다.」 — 앞 이름은 인터프리터가 찍는다)은 이름 폭을 모르면 줄이 13칸을 넘는다
         #    (11-04 마스터 「세리오스는 보물상자를 열었다.」 마침표가 틀 칸에 걸림). 파티 최장 이름 폭을 앞 줄 폭(`lead_px`)으로 주고, 조사 토큰은 한 글자(12px)로 잰다.
-        jm = _JOSA_LEAD.match(src) if not lead_px else None
+        jm = _JOSA_LEAD.match(src)
+        had_lead = bool(lead_px)  # 앞 메시지가 이미 쓴 폭을 아는 이음(`continuation_leads`) — 조사만 한 글자로 잰다
         if jm:
-            lead_px = ITEM_LEAD_PX if m.key in ITEM_LEAD_KEYS else typeset.px(JOIN_NAME if m.key in JOIN_KEYS else NAME_LONGEST)
-            if m.key in FREE_FLOW_KEYS:
-                lead_px = 0  # 앞 폭을 안 주고 한 줄로 짠다 — 줄넘김은 엔진(`wordck`)이 이름 폭대로 한다
+            if not had_lead:
+                lead_px = ITEM_LEAD_PX if m.key in ITEM_LEAD_KEYS else typeset.px(JOIN_NAME if m.key in JOIN_KEYS else NAME_LONGEST)
+                if m.key in FREE_FLOW_KEYS:
+                    lead_px = 0  # 앞 폭을 안 주고 한 줄로 짠다 — 줄넘김은 엔진(`wordck`)이 이름 폭대로 한다
+            # 🔴 11-23 마스터 「드래곤⏎이 알을」(씬 159) — 앞 줄 폭을 아는 이음에서도 「이/가」는 런타임에 한 글자(12px)다. 석 자(36px)로 재면 「이」가 들어갈 자리에서 머리 개행이 박혀 이름과 갈렸다.
             src = _JOSA_MARK + src[jm.end() :]
         pgs = typeset.pages(
             font.expand_packed(src),
@@ -266,7 +270,7 @@ def _compose(m: M.Message, tr: dict, table: dict[str, bytes], speakers: dict[str
             pgs = [list(HARD_LINES[m.key])]
         if jm:
             pgs = [pg if isinstance(pg, typeset.Card) else [ln.replace(_JOSA_MARK, jm.group(0)) for ln in pg] for pg in pgs]
-            if len(pgs[0]) > 1 and not isinstance(pgs[0], typeset.Card) and m.key not in JOIN_KEYS and m.key not in FREE_FLOW_KEYS:
+            if not had_lead and len(pgs[0]) > 1 and not isinstance(pgs[0], typeset.Card) and m.key not in JOIN_KEYS and m.key not in FREE_FLOW_KEYS:
                 # 한 줄에 안 들어가면 **이름+조사 뒤에서** 끊고 나머지를 새 줄부터 짠다(「세리오스는 / 보물상자를 열었다.」 — 끝 낱말 하나만 외톨이로 내려가는 것보다 낫다, 마스터 11-04 요청 예시)
                 alt = typeset.pages(font.expand_packed(src[1:].lstrip(" ")), speaker=False, four=True)
                 if len(alt[0]) + 1 <= 4:

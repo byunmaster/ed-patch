@@ -21,7 +21,7 @@ class DynGlyph(unittest.TestCase):
     def test_스텁은_정확히_복사하고_다_돌려놓는다(self):
         dyn = ["굉", "꼴", "랍"]
         blk = G.attach(fake_block(), dyn)
-        self.assertEqual(len(blk), 64 + G.STUB_LEN + 3 * 18 + 6)
+        self.assertEqual(len(blk), 64 + G.stub_len(1) + 3 * 18 + 6)
         win, has, rieul, end, depth = G.simulate(blk)
         self.assertEqual(end, 0xA010)  # 원래 점프 목적지로 이어진다
         self.assertEqual(depth, 0)  # 스택 균형
@@ -38,6 +38,30 @@ class DynGlyph(unittest.TestCase):
         self.assertEqual(blk[0], 0x20)
         _, _, _, end, depth = G.simulate(blk)
         self.assertEqual((end, depth), (0x5D32, 0))
+
+    def test_머리_진입_둘_다_같은_글리프를_깔고_제_목적지로_간다(self):
+        """🔴 맵 진입 이벤트(`+3`)는 프레임 틱(`+0`)보다 먼저 불린다 — 둘째 점프를 안 돌리면 진입 대사가 앞 씬 글리프로 찍힌다(11-23 씬 196)."""
+        b = bytearray(fake_block(target=0xA010))
+        b[3] = 0x4C
+        b[4:6] = (0xA020).to_bytes(2, "little")
+        blk = G.attach(bytes(b), ["굉", "꼴"])
+        self.assertEqual(len(blk), 64 + G.stub_len(2) + 2 * 18 + 6)
+        r0, r3 = G.simulate(blk, 0), G.simulate(blk, 3)
+        self.assertEqual((r0[3], r0[4], r3[3], r3[4]), (0xA010, 0, 0xA020, 0))
+        self.assertEqual(r0[:3], r3[:3])
+        self.assertTrue(any(r3[0]))
+        # 양성 대조 — 둘째 점프를 원래 목적지로 되돌린 블록(옛 꼴)은 `+3` 진입이 스텁을 안 탄다(흉내가 블록 본문의 모르는 옵코드에서 죽는다)
+        old = bytearray(blk)
+        old[4:6] = (0xA020).to_bytes(2, "little")
+        with self.assertRaises(AssertionError):
+            G.simulate(bytes(old), 3)
+
+    def test_둘째가_점프가_아니면_첫_점프만_돌린다(self):
+        b = bytearray(fake_block(target=0xA010))
+        b[3] = 0xA9
+        blk = G.attach(bytes(b), ["굉"])
+        self.assertEqual(blk[3:6], bytes(b[3:6]))
+        self.assertEqual(G.head_entries(blk), [0])
 
     def test_동적이_없으면_블록은_그대로(self):
         b = fake_block()

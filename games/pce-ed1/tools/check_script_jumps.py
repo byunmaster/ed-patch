@@ -4,7 +4,7 @@
 원판은 문장 꼬리를 여러 길이 공유한다(`…が、少しなくなっ` + `0F` → 다른 메시지의 `ている`). 번역은 그 메시지를 통째로 바꾸니 점프가
 한국어 글자 한가운데로 떨어져 깨진 글·멈춤이 난다. 처리하는 길 둘 — ① 점프 바로 앞이 글이면 꼬리까지 이은 한 메시지
 (`messages._merge_jump_tails`) ② 글 없는 메시지 + 3B 옵코드 뒤의 점프면 꼬리 자리에서 조각내(`messages._op_jump_targets`, 목적지 호스트를
-`OP_JUMP_HOSTS` 에 올린 것만). 이 게이트는 **둘 다 못 잡은 점프**(파서 결과 기준)가 기준선(`script/jump_baseline.json`)보다
+`OP_JUMP_HOSTS` 에 올린 것만) ③ 메시지 밖 스크립트 점프가 문장 경계로 들면 같은 식으로 조각내(`MID_JUMP_HOSTS`, 11-23 씬 187 「본비질」). 이 게이트는 **둘 다 못 잡은 점프**(파서 결과 기준)가 기준선(`script/jump_baseline.json`)보다
 늘면 실패한다. 줄면 `--freeze` 로 내린다. 양성 대조: 처리 안 된 꼴(호스트 목록을 비운 파서)이 실제로 걸리는지 먼저 돈다.
 
     python3 games/pce-ed1/tools/check_script_jumps.py [--freeze]
@@ -26,9 +26,9 @@ BASE_FILE = Path(__file__).resolve().parent.parent / "script" / "jump_baseline.j
 
 def scan(hosts_off: bool = False) -> list[str]:
     """처리 안 된 중간 진입 점프 — 「씬:점프위치→목적지(호스트 열쇠)」."""
-    saved = M.OP_JUMP_HOSTS
+    saved = (M.OP_JUMP_HOSTS, M.MID_JUMP_HOSTS)
     if hosts_off:
-        M.OP_JUMP_HOSTS = frozenset()
+        M.OP_JUMP_HOSTS = M.MID_JUMP_HOSTS = frozenset()
     try:
         out = []
         for f in sorted(glob.glob(str(common.OUT_DIR / "text" / "*.bin"))):
@@ -70,7 +70,7 @@ def scan(hosts_off: bool = False) -> list[str]:
                 out.append(f"scn{sid:03d}:{j}->{w}({host.key[:8]})")
         return sorted(set(out))
     finally:
-        M.OP_JUMP_HOSTS = saved
+        M.OP_JUMP_HOSTS, M.MID_JUMP_HOSTS = saved
 
 
 def main() -> int:

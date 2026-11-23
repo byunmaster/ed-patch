@@ -6,7 +6,7 @@
 구운 롬의 같은 씬 블록과 대조해, 같은 자리 바이트가 달라진 구간(run)을 갈래로 나눠 셈한다:
 
   A 점프 피연산자(`0F lo hi`)      — `remap_page_jumps` 가 새 쪽 머리로 옮긴다
-  B 블록 머리 진입 점프(+1..2)      — `glyphdyn`/`splitload` 가 꼬리로 보낸다
+  B 블록 머리 진입 점프(+1..2 · +4..5) — `glyphdyn`/`splitload` 가 꼬리로 보낸다(둘째 = 맵 진입 이벤트 `$A003`, 11-23)
   C `JSR $5815` 훅 자리            — 나레이션 게이트·시각표·대사창 단계가 코드를 갈아 낀다
   D 한 글자 화자 머리(男·女·娘)     — 이름칸을 꼬리로 뺀다
   E 줄 첫 빈 행 제거(`01`→`18`)     — 앞 바이트가 종료·쪽 옵코드일 때만
@@ -58,7 +58,7 @@ def classify(o: bytes, n: bytes, a: int, b: int) -> str:
     if b - a <= 1 and ((a >= 1 and o[a - 1] == M.JUMP) or (a >= 2 and o[a - 2] == M.JUMP)):
         return "A"
     # B — 블록 머리 진입 점프
-    if a in (1, 2) and o[0] == 0x4C:
+    if (a in (1, 2) and o[0] == 0x4C) or (a in (4, 5) and b <= 5 and o[0] == 0x4C and o[3] == 0x4C):
         return "B"
     # C — JSR $5815 훅
     if (a >= 1 and o[a - 1] == 0x20 and o[a : a + 2] == b"\x15\x58") or o[max(0, a - 3) : b + 1].find(b"\x20\x15\x58") >= 0:

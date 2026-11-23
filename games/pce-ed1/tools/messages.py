@@ -215,6 +215,11 @@ def parse(block: bytes) -> list[Message]:
 # 씬 46 은 조각이 코드 영역 쓰레기로 갈려 별건) — 각 번역을 조각 경계로 나눠야 하므로 관리자 확인 뒤 넓힌다(status 「남은 일」).
 OP_JUMP_HOSTS = frozenset({"36472f0bd5a2e6b9", "52c514e43cebcf8a", "ac91018fb53c6726", "0bdb5ee2ac250f0c", "1c5220649f57c61d", "83d0165e26f36a49", "8fe0bb856220d4ee", "957c9d910b8d299c", "67483b3b25bb99c0", "b3e5ea81f3e93f9c", "38d5c2b36012c53c", "67e5c66cc6b3e0e0", "520af25023badc4a", "a9482a192a21eda1", "e37e9838b6e2c49d"})
 OP3 = (0x11, 0x12, 0x14)  # 글 없는 3B 스크립트 옵코드(`op lo hi`) — 메시지 끝과 `0F` 사이에 끼는 것들
+# 🔴 11-23 「본비질」(씬 187 — 깃발 0x1ef 가 서면 `12 ef 01 0f <주소>` 가 다음 메시지의 **둘째 문장**으로 든다. 번역은 메시지를 통째로 바꾸니
+# 점프가 한국어 글자 한가운데로 떨어져 깨진 글이 찍혔다). 메시지 **밖** 스크립트 `0F` 가 아래 호스트의 토큰 경계로 들면 거기서 조각낸다 —
+# 꼬리가 제 메시지·제 열쇠를 갖고 원래 자리에서 시작하니 점프가 안 어긋난다. 정본(`script/scnNNN.json`)은 조각별로 쓴다(앞 조각 + 뒤 조각이
+# 한 문장으로 읽히고, 뒤 조각만으로도 읽혀야 한다). 호스트 = 씬 187(·186 — 같은 열쇠, 거긴 쪽 머리로 든다)·185·190·162·161·174. 같은 열쇠가 다른 씬에 있어도 그 씬에 드는 점프가 없으면 안 갈린다.
+MID_JUMP_HOSTS = frozenset({"3c808147e84089c1", "eb657f30a44a1d0c", "d0ac17a96381f349", "5355641cdc58cd73", "fa81d45e71211445", "b423f255bfa76f98"})
 
 
 def _op_jump_targets(block: bytes, msgs: list[Message]) -> dict[int, list[int]]:
@@ -231,6 +236,18 @@ def _op_jump_targets(block: bytes, msgs: list[Message]) -> dict[int, list[int]]:
         host = next((t for t in msgs if t.start < w < t.end), None)
         if host is not None and host.key in OP_JUMP_HOSTS:
             out.setdefault(w, []).append(e + 3)
+    if MID_JUMP_HOSTS:  # 메시지 밖 스크립트 `0F` → 호스트 한가운데(11-23). 토큰 경계가 아니면 `_split_pinned` 가 우연으로 버린다
+        hosts = [t for t in msgs if t.key in MID_JUMP_HOSTS]
+        if hosts:
+            inmsg = bytearray(len(block))
+            for m in msgs:
+                inmsg[m.start : m.end] = b"\x01" * (m.end - m.start)
+            for j in range(len(block) - 2):
+                if block[j] != JUMP or inmsg[j] or inmsg[j + 1]:
+                    continue
+                w = (block[j + 1] | block[j + 2] << 8) - BASE
+                if any(t.start < w < t.end for t in hosts) and j not in out.get(w, ()):
+                    out.setdefault(w, []).append(j)
     return out
 
 

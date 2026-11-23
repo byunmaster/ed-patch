@@ -90,7 +90,7 @@ NUMCH = "\uE0F1"  # 인터프리터가 찍는 수치(`1F 22 04` 등)의 한 자�
 
 def adv(ch: str) -> int:
     """글자 하나의 전진 px — 공백·반각 부호 4 · 「」·수치 자리 8 · 나머지 12."""
-    return SPACE_PX if ch in NARROW else 8 if ch in KAGI or ch == NUMCH or ch == "?" else 12
+    return SPACE_PX if ch in NARROW or ch == TIE else 8 if ch in KAGI or ch == NUMCH or ch == "?" else 12
 
 
 def cell(ch: str) -> float:
@@ -107,7 +107,7 @@ def cols(line: str) -> int:
     return px(line) // 12
 
 
-REFINE = os.environ.get("ED_REFINE", "1") != "0"  # 11-23 줄 나눔 보정(문장 끝 우선 · 더듬는 반복 묶음) — 끄는 건 「전」 값을 재는 때뿐
+REFINE = os.environ.get("ED_REFINE", "0") == "1"  # 11-23 줄 나눔 보정(문장 끝 우선 · 더듬는 반복 묶음) — 끄는 건 「전」 값을 재는 때뿐
 _SENT_END_RX = re.compile(r"[.!?…~]+$|[.!?]」$")
 
 
@@ -213,10 +213,20 @@ def _manual_lines() -> dict[str, list[str]]:
     return MANUAL
 
 
+TIE = "\uE0F2"  # 「1500만 Gold」 사이 공백 자리표시 — 어절 안(줄바꿈 후보 아님)이고 폭은 공백(4px). 조판이 끝나면 보통 공백으로 되돌린다(`pages`)
+_TIE_RX = re.compile(r"([0-9][만천억]?) (Gold)")
+
+
+def _tie(text: str) -> str:
+    """금액 숫자와 단위 Gold 는 한 덩이(마스터 11-22 「1000만 Gold」 한 줄) — 사이 공백을 `TIE` 로 바꿔 조판기가 줄 사이에서 못 가르게 한다."""
+    return _TIE_RX.sub(lambda m: m.group(1) + TIE + m.group(2), text)
+
+
 def pages(text: str, *, speaker: bool | str, lead_px: int = 0, _bounds: list | None = None, four: bool = False, keep_windows: bool = False) -> list[list[str]]:
     """조판 결과에서 마스터가 줄 나눔을 직접 정한 쪽(`script/manual_lines.json`, 11-23 씬 168 s2 #6·#11 「개행 수정」)만 그 줄로 바꾼다 — 쪽 평문이 같고 줄이 폭에 들 때만.
     음성 자막(ON)과 대사창(OFF)이 같은 함수를 쓰므로 같은 줄 나눔이 반영된다. 첫 줄은 화자 곁(`speaker is True`)이면 10칸, 아니면 13칸."""
-    out = _pages_outer(text, speaker=speaker, lead_px=lead_px, _bounds=_bounds, four=four, keep_windows=keep_windows)
+    out = _pages_outer(_tie(text), speaker=speaker, lead_px=lead_px, _bounds=_bounds, four=four, keep_windows=keep_windows)
+    out = [pg if isinstance(pg, Card) else [x.replace(TIE, " ") for x in pg] for pg in out]
     if REFINE and not lead_px:
         out = [_refine(pg, speaker is True and i == 0) if not isinstance(pg, Card) and len(pg) >= 2 else pg for i, pg in enumerate(out)]
     man = _manual_lines()
@@ -793,6 +803,7 @@ def _lead_runtime_ok(page: list[str], lead_px: int) -> bool:
 
     filler = "가" * (lead_px // 12) + " " * ((lead_px % 12) // SPACE_PX)
     got, _ = typeset_check.wrap(filler + emit_stream(page))
+    page = [x.replace(TIE, " ") for x in page]
     want = [filler + page[0], *page[1:]] if lead_px else list(page)
     return [x.strip(" ") for x in got if x.strip(" ")] == [x.strip(" ") for x in want if x.strip(" ")]
 
@@ -830,7 +841,7 @@ def emit_stream(page: list[str]) -> str:
     for i, ln in enumerate(page):
         if i and (FULL_LINE_NL or cols(page[i - 1]) < FULL):
             out += "\n"
-        out += ln
+        out += ln.replace(TIE, " ")  # 런타임은 보통 공백이다 — 줄 안 공백이면 한 줄에 든다
     return out
 
 
@@ -842,7 +853,7 @@ def runtime_ok(page: list[str]) -> bool:
     import typeset_check
 
     got, _cuts = typeset_check.wrap(emit_stream(page))
-    return [x.strip(" ") for x in got if x.strip(" ")] == [x.strip(" ") for x in page if x.strip(" ")]
+    return [x.strip(" ") for x in got if x.strip(" ")] == [x.replace(TIE, " ").strip(" ") for x in page if x.strip(" ")]
 
 
 def _fused_boundary(pg: list[list[str]]) -> bool:

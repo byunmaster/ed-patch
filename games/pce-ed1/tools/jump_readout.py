@@ -275,6 +275,62 @@ def audit_all(track_found) -> tuple[int, int, list[str]]:
     return n_head, n_join, bad
 
 
+def audit_mid(track_found) -> tuple[int, list[str]]:
+    """③ 메시지 **밖** 스크립트 `0F` 가 호스트 한가운데(문장 경계)로 드는 곳(`messages.MID_JUMP_HOSTS`, 11-23 씬 187 「본비질」) — 구운 롬에서 그 점프를
+    따라 읽은 글이 **뒤 조각의 번역 정본**으로 시작하고 모르는 코드가 없어야 한다(점프가 한국어 글자 한가운데로 떨어지면 여기서 걸린다)."""
+    import json
+
+    bad: list[str] = []
+    n = 0
+    saved = M.MID_JUMP_HOSTS
+    for f in sorted(glob.glob(str(common.OUT_DIR / "text" / "*.bin"))):
+        sid = int(re.search(r"_(\d+)\.bin$", f).group(1))
+        b = Path(f).read_bytes()
+        M.MID_JUMP_HOSTS = frozenset()
+        try:
+            hosts = [t for t in M.parse(b) if t.key in saved]
+        finally:
+            M.MID_JUMP_HOSTS = saved
+        if not hosts:
+            continue
+        msgs = M.parse(b)
+        inmsg = bytearray(len(b))
+        for m in msgs:
+            inmsg[m.start : m.end] = b"\x01" * (m.end - m.start)
+        nb = _blocks(track_found, sid, b)
+        tr = json.loads((common.GAME_DIR / "script" / f"scn{sid:03d}.json").read_text("utf-8"))["messages"]
+        inv = None
+        for j in range(len(b) - 2):
+            if b[j] != M.JUMP or inmsg[j] or inmsg[j + 1]:
+                continue
+            w = (b[j + 1] | b[j + 2] << 8) - M.BASE
+            if not any(h.start < w < h.end for h in hosts):
+                continue
+            frag = next((m for m in msgs if m.start == w), None)
+            if frag is None and b[w] in (0x00, 0x06, 0x07) and any(h.end == w + 1 for h in hosts):
+                continue  # 호스트의 종료 옵코드로 드는 점프(씬 190) — 글이 없어 어긋날 것이 없다(종료는 조각 밖 제자리 바이트)
+            if frag is None:
+                bad.append(f"씬 {sid} 점프 {j}→{w}: 호스트가 그 자리에서 안 갈렸다(토큰 경계가 아니다)")
+                continue
+            t = (tr.get(frag.key) or {}).get("t")
+            if t is None:
+                continue  # 글 없는 조각(종료 옵코드만) — 제자리 바이트라 어긋날 글이 없다
+            if nb is None:
+                bad.append(f"씬 {sid}: 구운 이미지에 번역된 블록이 없다")
+                break
+            if nb[j : j + 3] != b[j : j + 3]:
+                bad.append(f"씬 {sid} 점프 {j}→{w}: 롬의 점프 바이트가 원판과 다르다")
+                continue
+            inv = inv or inverse_table(sid)
+            r, _j, u = read(nb, j, inv)
+            got = re.sub(r"<[^>]*>|〔[^〕]*〕|[\s¶]", "", r)
+            want = re.sub(r"[\s\f]", "", font.ligate(t))
+            n += 1
+            if u or not want or not got.startswith(want):
+                bad.append(f"씬 {sid} 중간 진입 {j}→{w}({frag.key[:8]}): 롬에서 읽은 글이 뒤 조각 정본과 다르다 — {got[:30]!r} ≠ {want[:30]!r}")
+    return n, bad
+
+
 def table(rows: list[dict]) -> str:
     esc = lambda s: s.replace("\n", "⏎").replace("|", "∣")  # noqa: E731
     out = ["# 낀 옵코드 점프 — 구운 롬 실제 디코드(원판 이어 읽기 대조)\n", "| 씬 | 점프 | 원판 ① | 원판 ② | 롬 ① | 롬 ② | 판정 |", "|---|---|---|---|---|---|---|"]
@@ -289,9 +345,13 @@ def main() -> int:
         print("구운 이미지가 없다 —", iso)
         return 1
     rows, bad = run(iso)
-    n_head, n_join, bad2 = audit_all(containers.scan(built_track(iso)))
-    bad += bad2
-    print(f"머리뿐인 메시지 화자 머리 한글 {n_head}곳 · 이은 메시지 롬 대조 {n_join}곳")
+    found = containers.scan(built_track(iso))
+    n_head, n_join, bad2 = audit_all(found)
+    n_mid, bad3 = audit_mid(found)
+    bad += bad2 + bad3
+    if n_mid < len(M.MID_JUMP_HOSTS):  # 분모 — 호스트마다 적어도 한 점프를 실제로 읽었어야 한다(0곳 통과는 통과가 아니다)
+        bad.append(f"중간 진입 롬 대조가 {n_mid}곳뿐 — 호스트 {len(M.MID_JUMP_HOSTS)}개보다 적다(검사가 헛돈다)")
+    print(f"머리뿐인 메시지 화자 머리 한글 {n_head}곳 · 이은 메시지 롬 대조 {n_join}곳 · 중간 진입 롬 대조 {n_mid}곳")
     if "--table" in sys.argv:
         Path(sys.argv[sys.argv.index("--table") + 1]).write_text(table(rows))
     print(f"낀 옵코드 점프 롬 되읽기 — {len(rows)}곳 · 어긋남 {len(bad)}")

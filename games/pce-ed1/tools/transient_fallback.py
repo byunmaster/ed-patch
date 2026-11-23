@@ -20,7 +20,7 @@
   ⚠ 띠가 슬롯 15 를 빌려 띄워 둔 동안(장 제목) 이 길이 또 빌리면 띠 그림이 덮인다 — 띠가 떠 있는 동안에는 씬이 안 바뀌어 겹치지 않는다.
 
 먼 호출(`$4FD8`)은 A·Y·플래그를 들고 나고 X 를 안 건드리며 MPR3·4 만 되돌린다 — 그래서 스텁이 돌려준 A 를 사이트의 남은 명령이 그대로 받는다.
-자리: 뱅크 0x70 `+0x190A`(디버그 목록 코드 끝) ~ `+0x1950`(`earlyfree`) 70B.
+자리: 뱅크 0x70 `+0x190A`(디버그 목록 코드 끝) ~ `+0x194F`(`earlyfree`) 69B.
 """
 
 import sys
@@ -33,7 +33,7 @@ import hook
 
 BANK = 0x70
 OFF = 0x190A
-ROOM = earlyfree.OFF - OFF  # 70B
+ROOM = earlyfree.OFF - OFF  # 69B
 ORG = 0x6000 + OFF
 SITE_BANK = 0x6A
 FAR = earlyfree.FAR
