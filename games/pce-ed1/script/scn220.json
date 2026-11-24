@@ -1,6 +1,9 @@
 {
  "_doc": "scn 220 번역 정본 — 열쇠는 messages.py key, 원문 대조는 work/derived/messages/scn220.json",
  "messages": {
+  "c614950350f6f005": {
+   "t": "은/는"
+  },
   "307c3a628f63c549": {
    "t": "이/가 들어 있었습니다."
   },

@@ -290,7 +290,9 @@ def _cast_ko(jp: str) -> str:
     raise KeyError(jp)
 
 
-BR_CHARS = "()"  # 전각 괄호는 자체 글리프로 — 보통/굵은 글씨 줄 모두 12px 칸 안에서 괄호 잉크를 **안쪽 가장자리**에 붙인다(반각처럼 글자에 붙는다, 마스터 10-16 「괄호는 반각」)
+# 🔴 마스터 11-25 「스태프롤 괄호는 원본 괄호 그대로 써도 될듯」 — 기본은 원판 BIOS 전각 괄호(자체 글리프 없음).
+# 옛 자체 글리프(10-16 「괄호는 반각」 — 12px 칸 안에서 괄호 잉크를 안쪽 가장자리에 붙인 꼴)는 비교용으로 ED_STAFF_BR_OWN=1
+BR_CHARS = "()" if os.environ.get("ED_STAFF_BR_OWN") else ""
 BR_MAP = str.maketrans({"（": "(", "）": ")"})
 
 

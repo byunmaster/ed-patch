@@ -124,6 +124,9 @@ def main() -> int:
         print("원본 파생물이 없어 건너뛴다")
         return 0
     bad = missing(rows)
+    exc_p = common.GAME_DIR / "glossary_exceptions.json"  # 마스터 승인(`approved`)이 있는 줄만 예외 — 정본은 워커가 못 고친다
+    exc = {k for k, v in json.loads(exc_p.read_text("utf-8")).items() if isinstance(v, dict) and v.get("approved")} if exc_p.exists() else set()
+    bad = [b for b in bad if b[0] not in exc]
     print(f"사전 대조 — 정본 이름 {len(canon()):,} · 우리 줄 {len(rows):,}")
     for where, name, want, kr in bad:
         print(f"  🔴 {where}  {name} → {'/'.join(sorted(want))}  ⟨{kr}⟩")

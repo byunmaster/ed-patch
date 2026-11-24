@@ -217,9 +217,27 @@ TIE = "\uE0F2"  # 「1500만 Gold」 사이 공백 자리표시 — 어절 안(�
 _TIE_RX = re.compile(r"([0-9][만천억]?) (Gold)")
 
 
+_NAME_RX = None
+
+
+def _name_rx():
+    """공백 든 고유명사(`script/tie_names.json` — 정본 공백 이름 + 대사에서 띄어 쓰인 꼴 + 울프 빌) 한 정규식(긴 이름부터, 마스터 11-25)."""
+    global _NAME_RX
+    if _NAME_RX is None:
+        import json
+
+        f = Path(__file__).resolve().parent.parent / "script" / "tie_names.json"
+        names = sorted(json.loads(f.read_text("utf-8"))["names"], key=lambda n: (-len(n), n)) if f.exists() else []
+        _NAME_RX = re.compile("|".join(re.escape(n) for n in names)) if names else re.compile(r"(?!x)x")
+    return _NAME_RX
+
+
 def _tie(text: str) -> str:
-    """금액 숫자와 단위 Gold 는 한 덩이(마스터 11-22 「1000만 Gold」 한 줄) — 사이 공백을 `TIE` 로 바꿔 조판기가 줄 사이에서 못 가르게 한다."""
-    return _TIE_RX.sub(lambda m: m.group(1) + TIE + m.group(2), text)
+    """금액 숫자와 단위 Gold 는 한 덩이(마스터 11-22 「1000만 Gold」 한 줄) · **공백 든 고유명사**는 한 낱말(11-25 「울프 빌」) — 사이 공백을 `TIE` 로 바꿔 조판기가 줄 사이에서 못 가르게 한다."""
+    text = _TIE_RX.sub(lambda m: m.group(1) + TIE + m.group(2), text)
+    for _ in range(2):  # 겹치는 이름(「대도 게일」+「게일 3세」)은 둘째 판에서 마저 묶는다
+        text = _name_rx().sub(lambda m: m.group(0).replace(" ", TIE), text)
+    return text
 
 
 def pages(text: str, *, speaker: bool | str, lead_px: int = 0, _bounds: list | None = None, four: bool = False, keep_windows: bool = False) -> list[list[str]]:
@@ -232,6 +250,20 @@ def pages(text: str, *, speaker: bool | str, lead_px: int = 0, _bounds: list | N
     man = _manual_lines()
     if not man or lead_px:
         return out
+    # 🔴 자연 조판이 쪽을 둘 이상으로 가른 문안을 마스터가 한 쪽으로 나눈 경우(11-25 씬 203 랄프 「울프 빌」 3줄=1쪽) — 이어진 쪽들의 평문이 마스터 쪽과 같으면 그 쪽들을 마스터 줄 하나로 합친다
+    # (원문 창 수와 맞추는 방향이라 창 수 계약을 깨지 않는다 — 계약 씬은 `check_window_count` 가 원문 창 수 이상인지 본다)
+    for i in range(len(out)):
+        for j in range(i + 2, min(len(out), i + 3) + 1):
+            span = out[i:j]
+            if any(isinstance(x, Card) for x in span):
+                continue
+            hand = man.get(" ".join(" ".join(x) for x in span))
+            if hand is not None and len(hand) <= LINES and all(px(x) <= FULL * 12 for x in hand) and not (i == 0 and speaker is True and px(hand[0]) > FIRST_WITH_SPEAKER * 12):
+                out = [*out[:i], list(hand), *out[j:]]
+                break
+        else:
+            continue
+        break
     res = []
     for i, pg in enumerate(out):
         flat = " ".join(pg) if not isinstance(pg, Card) else None

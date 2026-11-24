@@ -56,6 +56,7 @@ OTHER_OPS = {
 }
 JUMP = 0x0F
 SJIS_RUN = re.compile(rb"(?:[\x81-\x9f\xe0-\xea][\x40-\xfc]){2,}")
+NAME_JOSA = frozenset("をのはがにとでもへや")  # 공유 이름 호출 뒤 한 글자 조사 후보
 KANA = re.compile(r"[ぁ-んァ-ヶー、。！？]")
 
 
@@ -196,6 +197,18 @@ def parse(block: bytes) -> list[Message]:
         if block[i] == 0x09 and block[i + 1] < 0x40:
             nxt = i + 3 if block[i + 2] == 0x01 else i + 2
             if nxt in cands:
+                cands.add(i)
+    # 🔴 11-24·25 이름·아이템 호출 뒤 **한 글자 조사**(「아그니쟈＋を」 씬 181 · 「고대 무기의 책＋を」 씬 208 · 「[리더]＋は」 씬 56·133·220 …): 런이 한 글자라 위 필터(두 글자 이상)에
+    #    안 걸려 메시지가 못 됐고, 원판 가나 조사가 우리 글리프로 엉뚱하게 그려졌다(마스터 11-24 「아그니쟈 뒤에 일본어」 · 11-25 「고대 무기의 책 + 가나 한 글자」). 11-24 판은 호출 `10 lo hi`
+    #    뒤만 봐서 아이템 호출(`0e`)·화자 호출(`09 nn`) 뒤를 놓쳤다 — 이제 **호출 꼴과 무관하게** 「앞뒤가 글자가 아닌 바이트인 조사 한 글자」를 메시지 머리로 연다.
+    for i in range(1, len(block) - 3):
+        if i in operands or (i + 1) in operands:
+            continue
+        # 앞뒤가 글자가 아닌 바이트(옵코드)이고, 가운데가 조사 한 글자(2B 전각)
+        after_op = not is_lead(block[i - 1]) and block[i - 1] not in (0x1F, 0x04)
+        after_call = i >= 3 and block[i - 3] == 0x10 and block[i - 1] >= 0x80  # `10 lo hi`(hi ≥ 0x80) 이름 호출 바로 뒤
+        if is_lead(block[i]) and (after_op or after_call) and not is_lead(block[i + 2]) and (block[i + 2] in TERM or block[i + 2] in (0x01, 0x04, 0x05, 0x0E)):  # 0x20(색 옵코드)가 따르는 씬 195 「は」는 슬롯이 3B 라 꼬리 점프가 안 들어간다(구조 대조 위반) — 남긴다(알려진 한계)
+            if _decode_pair(block[i : i + 2]) in NAME_JOSA:
                 cands.add(i)
     msgs: list[Message] = []
     covered = 0
