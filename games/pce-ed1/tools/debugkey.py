@@ -32,6 +32,7 @@ REQ = 0x247B
 PAD = 0x2228
 PAD2 = 0x2232
 HOLD = 60
+SELECT_ENTRY_MASK = 0xFF  # 🔴 마스터 11-26 「시스템메뉴에 디버그가 생겼으니 셀렉트키로 호출하던 건 제거」 — `AND #$0F` 결과는 0xFF 일 수 없어 SELECT 길게 누름이 더는 안 센다(원판 SELECT 동작). 옛 값 0x04 = SELECT 만
 
 MENU_SITE_OFF = 0x0000  # 뱅크 0x6E(주메뉴) 안 오프셋 — `$6000`
 MENU_SITE_OLD = bytes.fromhex("adb3c18dae37adb4c18daf37adb5c18db037")  # LDA $C1B3 STA $37AE … ×3
@@ -50,7 +51,7 @@ def _asm():
     # ── 누르는 중(아직 안 지핌): SELECT 만 눌렸으면 센다
     a.op("LDA", "abs", PAD)
     a.op("AND", "imm", 0x0F)  # 방향키는 무시 — I·II·SELECT·RUN 만 본다
-    a.op("CMP", "imm", 0x04)  # SELECT 만(RUN 이 섞이면 원판 소프트 리셋 조합 — 10-28 마스터 「enter 먼저 누르고 left shift 면 리셋」)
+    a.op("CMP", "imm", SELECT_ENTRY_MASK)  # SELECT 만(RUN 이 섞이면 원판 소프트 리셋 조합 — 10-28 마스터 「enter 먼저 누르고 left shift 면 리셋」)
     a.op("BNE", "rel", "clr")
     a.op("INC", "abs", CNT)
     a.op("RTS")

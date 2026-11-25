@@ -154,7 +154,21 @@ def _stub(org: int):
     op("STA", "abs", 0xC00D)
     op("JSR", "abs", 0x6425)
     op("RTS")
-    a.label("count")  # `$A0D4` 의 `LDA #$01 / STA $C011` 자리 — 저장한 수가 있으면 되돌리고 몬스터 숨김을 푼다
+    a.label("count")  # `$A0D4` 의 `LDA #$01 / STA $C011` 자리 — 용 개체가 화면 밖으로 떠나 사라진 뒤: 타일·팔레트를 되돌리고 저장한 수·몬스터 숨김도 푼다
+    op("LDA", "abs", SAVE_FLAG)
+    op("BEQ", "rel", "cnt")
+    op("STZ", "abs", SAVE_FLAG)
+    op("LDA", "abs", SAVE)
+    op("STA", "abs", LIST_SLOT)
+    _pal_io(a, write_from=PAL_SHADOW)  # 팔레트 10 복원 — 엔진의 RAM 그림자(`$29A9`)에서
+    for z in (0x10, 0x11, 0x12, 0x13, 0xFE, 0xFF):
+        op("LDA", "zp", z)
+        op("PHA")
+    op("JSR", "abs", LOADER)  # 몬스터 세트 타일을 다시 올린다
+    for z in (0xFF, 0xFE, 0x13, 0x12, 0x11, 0x10):
+        op("PLA")
+        op("STA", "zp", z)
+    a.label("cnt")
     op("LDA", "abs", COUNT_SAVE)
     op("BEQ", "rel", "c0")
     _hide_loop(a, hide=False)
@@ -167,15 +181,8 @@ def _stub(org: int):
     op("STA", "abs", 0xC011)
     op("RTS")
     a.label("land")
-    op("STZ", "abs", 0xC200)  # 원래 자리의 두 명령
+    op("STZ", "abs", 0xC200)  # 원래 자리의 두 명령 — 타일·팔레트 복원은 용이 떠난 뒤(`count`)로 미룬다(떠나는 용이 몬스터 모양으로 보이던 것, 마스터 11-26)
     op("STZ", "abs", 0xC012)
-    op("LDA", "abs", SAVE_FLAG)
-    op("BEQ", "rel", "ldone")
-    op("STZ", "abs", SAVE_FLAG)
-    op("LDA", "abs", SAVE)
-    op("STA", "abs", LIST_SLOT)
-    _pal_io(a, write_from=PAL_SHADOW)  # 팔레트 10 복원 — 엔진의 RAM 그림자(`$29A9`, 3장·4장·1장 모두 같은 자리)에서
-    a.label("ldone")
     op("RTS")
     return a
 

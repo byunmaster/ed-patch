@@ -23,6 +23,7 @@ CODE_LEN = ROWS_LEN if ROW_NAMES else 0  # freespace 가 비켜 줄 길이
 LABEL_ADDR = 0x8000 + LABEL_OFF
 PAIR_ADDR = 0x96BD
 GOLD_ADD = 10000
+FLIP_ONOFF = False  # 마스터 11-26 「원판동작으로 되돌려놓자. 기본값도 OFF라 헷갈려」 — P·M 표시 뒤집기를 걷었다(원판: 기본 OFF, ON = 효과 켜짐). 설계만 남김
 GOLD_BANK, GOLD_OFF = 0x77, 0x1FF5
 GOLD_OLD = (1000).to_bytes(4, "little")
 # 뱅크 0x6E 코드 — 포인터를 싣는 immediate 바이트(`LDA #lo / STA $10 / LDA #hi / STA $11` 의 즉치 자리)
@@ -79,7 +80,7 @@ def patches(table):
         put("debug label row ptr", 0x6E, PTR_LABEL, bytes([0xA9, 0xE3, 0x85, 0x10, 0xA9, 0xBF]), bytes([0xA9, LABEL_ADDR & 0xFF, 0x85, 0x10, 0xA9, LABEL_ADDR >> 8]))
     if ROW_NAMES:
         put("debug label start col", 0x6E, PTR_BAT_LO, bytes([0x88]), bytes([0x87]))
-    for nm, off in (("P", PTR_P), ("M", PTR_M)):
+    for nm, off in (("P", PTR_P), ("M", PTR_M)) if FLIP_ONOFF else ():
         put(f"debug {nm} value ptr", 0x6E, off, bytes([0xA9, 0xB6, 0x85, 0xFE, 0xA9, 0x96]), bytes([0xA9, PAIR_ADDR & 0xFF, 0x85, 0xFE, 0xA9, PAIR_ADDR >> 8]))
     put("debug gold add", GOLD_BANK, GOLD_OFF, GOLD_OLD, GOLD_ADD.to_bytes(4, "little"))
     if VALUE_GAP != VALUE_GAP_OLD:
