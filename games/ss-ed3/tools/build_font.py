@@ -167,6 +167,14 @@ def bake_ellipsis(out):
         "원판 점이 가운데에 있어야 한다"
     )
     g = np.roll(g, ELLIPSIS_DROP, 0)
+    #   🔴 **점은 원판 「?」「!」 의 점에 맞춘다**(마스터 11-16 「원판의 ? ! 에 맞춰서 마침표를 그리는게 맞을 것 같은데」, 규칙 1-3 — 11-16 의 「전 기종 2×2」를 대체).
+    #     원판 롬 실화면 실측: `？！` 의 점은 **1×1**, 가나 바닥 행에 앉는다(`baseline-1115/orig`). 그래서 마침표 `.`(`bake_punct`)도 1×1 이고, 「…」 점 셋도 같은 1×1 —
+    #     원판 2×2 점의 **아랫행·왼열만** 남긴다(바닥 행·점 간격 4px 그대로, 화면에서 마침표와 같은 행).
+    low = [r for r in range(F.ROWS) if g[r].any()][-1]
+    cols = [c for c in range(F.CELL) if g[low, c] and not (c and g[low, c - 1])]
+    g[:] = 0
+    for c in cols:
+        g[low, c] = 1
     out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = F.pack18(g)
     return 1
 
@@ -358,12 +366,16 @@ def bake_punct(asc, kanji):
     for ch, (fw, left) in PUNCT_FW.items():
         seg, left = punct_glyph(kanji, fw, left)
         grid = [[0] * 6 for _ in range(F.ASCII_ROWS)]
-        for r in range(F.ASCII_ROWS):
+        dy = 1 if ch == "," else 0  # 쉼표: 머리를 마침표 점(1×1, 행 9)과 같게 — 꼬리(2행)는 그대로 한 행 내려간다
+        for r in range(F.ASCII_ROWS - dy):
             for c in range(seg.shape[1]):
-                grid[r][left + c] = int(seg[r, c])
+                grid[r + dy][left + c] = int(seg[r, c])
+        if ch == ",":
+            grid[8] = [0] * 6
+            grid[9][left + 1] = 0
         new[ch] = grid
     grid = [[0] * 6 for _ in range(F.ASCII_ROWS)]
-    grid[9][1] = 1
+    grid[9][1] = 1  # 🔴 마침표 = 원판 `？！` 의 점과 같은 1×1(마스터 11-16, 원판 롬 실화면 실측) — 행 9 는 `？` 점과 같은 행(= 한글 세로획 끝 화면 행)
     new["."] = grid
     grid = [[0] * 6 for _ in range(F.ASCII_ROWS)]
     for c in range(4):
