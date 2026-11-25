@@ -58,8 +58,7 @@ games/<게임>/       게임별 코드베이스 — tools/ docs/ patches/ textma
                     check.sh = **그 게임의 커밋 전 게이트**(scripts/check.sh 가 부른다)
                     typeset_fingerprint.json = 그 게임의 조판 지문(값은 게임 것)
                     게임 목록은 위 트랙 표. 게임 브랜치는 `game/<게임>`, 작업은 워크트리(`.claude/worktrees/<게임>`)
-shared/             플랫폼 공용 라이브러리 — `text/`(한글 조판 krwrap · 조사 · KSC 스캔 ·
-                    맞춤법) · `canon/`(정본 — 고유명사 `nouns/` + 공통 문안, 게임이 보는 입구 하나) ·
+shared/             플랫폼 공용 라이브러리 — `text/`(한글 조판 krwrap · 조사 · KSC 스캔) · `canon/`(정본 — 고유명사 `nouns/` + 공통 문안, 게임이 보는 입구 하나) ·
                     `glossary/`(옛 입구, 한 라운드 다리) · `lore/`(공략집 사실 사전) · `fonts/`(Galmuri BDF)
                     ⚠ ISO9660·SJIS 스캔은 **여기 없다** — 게임의 `tools/common.py` 몫이다
                     (플랫폼마다 섹터 규격이 달라 아직 둘째 소비자가 없다)
@@ -529,7 +528,7 @@ first-parent 104 중 머지는 **5**뿐이라, 트렁크가 「타이틀이 닫�
 
 - **YAGNI — 두 번째 소비자가 생길 때 추상화한다.** `tools/status.py`는 개념상 공용이지만
   데이터 원천이 우리 배정 파이프라인이라 `shared/`로 안 올렸다. 지금 올리면 쓰는 데
-  하나에 인터페이스만 는다. 반대로 `shared/text/spellcheck.py`는 **ED3 스캔이라는 두 번째
+  하나에 인터페이스만 는다. 반대로 `shared/text/ksc_scan.py`는 **ps1-ed3 정발 대조 코퍼스라는 두 번째
   소비자가 실재해서** 올렸다. 기준은 "언젠가 쓸 것 같다"가 아니라 **지금 둘째가 있는가**.
 - **KISS — 구조와 싸우기 전에 구조를 따르는 안을 먼저 본다.** 정발 26문장을 PS1 오프닝
   구조에 우겨넣느라 스크립트 배열을 다시 쓰다 세 번 깨졌다. PS1 줄 구조를 저본으로
