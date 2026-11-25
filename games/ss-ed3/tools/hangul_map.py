@@ -321,6 +321,9 @@ def encode_kr(text, table=None, kagi=False):
         #   대사(MAP 블록)만 「」 를 반각 한 바이트로 낸다(`font.KAGI_CODE`) — 서책·자막·시스템 문자열은 전각 그대로.
         if kagi and ch in F.KAGI_CODE:
             return bytes((F.KAGI_CODE[ch],))
+        #   🔴 대사의 `&` `%` 는 **원판 전각 글리프** 그대로(마스터 11-13 「앰퍼샌드랑 퍼센트는 전각 원본그대로」) — 반각 ASCII 자리가 아니라 전각 SJIS 로 낸다.
+        if kagi and ch in "&%":
+            return {"&": "＆", "%": "％"}[ch].encode("shift_jis")
         #   ⚠ **표를 한글 밖에도 본다** — 챕터 줄은 전각 숫자까지 대체 슬롯으로 간다.
         #     기본 표에는 한글밖에 없으니 여기서 달라지는 건 대체 표를 준 자리뿐이다.
         if ch in table:

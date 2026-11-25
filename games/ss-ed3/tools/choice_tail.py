@@ -86,6 +86,10 @@ def _card_kind(data, blocks, key):
     return None
 
 
+#   `FF 00 09 xx` — xx = 0E(MAP084 등) · 0A(MAP015 #331, 11-13 쉼표 복원 — `FF 00 0A` 변형의 4B 판) · 00(MAP012 #258)
+_FF00_09 = (b"\xff\x00\x09\x0e", b"\xff\x00\x09\x0a", b"\xff\x00\x09\x00")
+
+
 def _session_start(data, blocks, key):
     """`0E` 로 이어진 글 세션의 첫 블록 색인과 그 머리(`FF 00`) 주소 `s`."""
     j = int(key)
@@ -96,8 +100,8 @@ def _session_start(data, blocks, key):
         else:
             break
     s = blocks[j]["off"] - 2
-    if data[s : s + 2] != b"\xff\x00" and data[s - 4 : s] == b"\xff\x00\x09\x0e":
-        s -= 4  # `FF 00 09 0E` + 화자 머리 — 덮는 6B 가 머리 2 + 09 0E + 화자 머리 2 라 글은 안 덮는다
+    if data[s : s + 2] != b"\xff\x00" and data[s - 4 : s] in _FF00_09:
+        s -= 4  # `FF 00 09 xx` + 화자 머리 — 덮는 6B 가 머리 2 + 09 xx + 화자 머리 2 라 글은 안 덮는다(xx 는 몰라도 바이트 그대로 복사)
     elif data[s : s + 2] != b"\xff\x00" and data[s - 2 : s] == b"\xff\x00":
         s -= 2  # `FF 00` + 화자 머리 — 덮는 6B 가 글 앞 2B 까지 간다
     elif data[s : s + 2] != b"\xff\x00" and data[s - 3 : s] == b"\xff\x00\x0a":
@@ -140,6 +144,7 @@ def _is_speaker(data, blocks, key):
         _linked(data, blocks[int(key) - 1], blk)
         or data[blk["off"] - 4 : blk["off"] - 2] == b"\xff\x00"
         or data[blk["off"] - 5 : blk["off"] - 3] == b"\xff\x00" and data[blk["off"] - 3] == 0x0A
+        or data[blk["off"] - 6 : blk["off"] - 2] in _FF00_09
     )
 
 

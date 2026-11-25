@@ -97,11 +97,12 @@ def visible(s):
 #     **전각 숫자(`０`~`９`, 문안에 일부러 적은 것)는 여전히 1.0** — 장 제목·표지판 열 맞춤 등 17 곳.
 #   🔴 대사의 `「」` 는 반각 한 바이트(0.5 칸 · 1B) — `font.KAGI_CODE`. 마스터 도안 B판 10-26.
 KAGI = "「」『』"
+FULL_ASCII = "&%"  # 대사에서 원판 전각 글리프로 나가는 ASCII(마스터 11-13) — 2B · 1칸
 
 
 def char_cols(c):
     """그 글자가 먹는 슬롯 — 반각(ASCII) 0.5 · 전각 1.0."""
-    return 0.5 if ord(c) < 0x80 or c in KAGI else 1.0
+    return 0.5 if (ord(c) < 0x80 and c not in FULL_ASCII) or c in KAGI else 1.0
 
 
 def cols(s):
@@ -379,7 +380,7 @@ def body_bytes(text):
             n += 1
             i += 1
         else:
-            n += 1 if ord(text[i]) < 0x80 or text[i] in KAGI else 2
+            n += 1 if (ord(text[i]) < 0x80 and text[i] not in FULL_ASCII) or text[i] in KAGI else 2
             i += 1
     return n
 

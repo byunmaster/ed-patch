@@ -331,6 +331,49 @@ def build(disc=1):
     return bytes(out), missing
 
 
+#   🔴 반각 부호 새 모양(마스터 11-13 「다 권장으로 하고 캡쳐로 확인하자」) — 원판 **전각** 글리프(`KANJI12`)의 잉크 열만 잘라 6px 칸에 앉힌다(획 모양·행 그대로, 비례 축소 없음).
+#   `.` 는 한국식 1px 점(행 9 — 원판 `！` 아래 점과 같은 굵기·높이), `-` 는 1px 가로획(원판에 전각 `－` 가 없다). 행은 전각 그대로라 `ASCII_DY` 를 먹이지 않는다.
+#   값 = (전각 글자, 왼쪽 여백 열). 정본 그림: `.local/work/inbox/ss-ed3/glyph-1113/compare.png`.
+PUNCT_FW = {"!": ("！", 2), "?": ("？", 0), ":": ("：", 1), ";": ("；", 1), "(": ("（", 2), ")": ("）", 0), "[": ("［", 2), "]": ("］", 0), "'": ("’", 1), "|": ("｜", 2), ",": ("，", 1)}  # fmt: skip
+
+
+def punct_glyph(kanji, fw, left):
+    g = F.unpack(kanji, F.jis_index(fw))
+    cols = [c for c in range(F.CELL) if g[:, c].any()]
+    seg = g[:, cols[0] : cols[-1] + 1]
+    assert left + seg.shape[1] <= F.ASCII_ADV, (fw, left, seg.shape)
+    return seg, left
+
+
+def pack_ascii_rows(rows6):
+    out = bytearray()
+    for r in rows6:
+        out.append(int("".join("1" if x else "0" for x in r) + "00", 2))
+    return bytes(out)
+
+
+def bake_punct(asc, kanji):
+    buf = bytearray(asc)
+    new = {}
+    for ch, (fw, left) in PUNCT_FW.items():
+        seg, left = punct_glyph(kanji, fw, left)
+        grid = [[0] * 6 for _ in range(F.ASCII_ROWS)]
+        for r in range(F.ASCII_ROWS):
+            for c in range(seg.shape[1]):
+                grid[r][left + c] = int(seg[r, c])
+        new[ch] = grid
+    grid = [[0] * 6 for _ in range(F.ASCII_ROWS)]
+    grid[9][1] = 1
+    new["."] = grid
+    grid = [[0] * 6 for _ in range(F.ASCII_ROWS)]
+    for c in range(4):
+        grid[6][c] = 1
+    new["-"] = grid
+    for ch, grid in new.items():
+        buf[ord(ch) * F.ASCII_STRIDE : (ord(ch) + 1) * F.ASCII_STRIDE] = pack_ascii_rows(grid)
+    return buf
+
+
 def build_ascii(disc=1):
     """`(새 ASCII.FON bytes, 민 글자 수)` — 여백 조정 + **한글 기준선에 맞춰 2 행 내림**."""
     _, asc = F.load(disc)
@@ -349,6 +392,7 @@ def build_ascii(disc=1):
                 g, F.ASCII_ROWS, F.ASCII_STRIDE, ASCII_DY
             )
         out = bytes(buf)
+    out = bytes(bake_punct(out, F.load(disc)[0]))
     #   🔴 대사 「」 반각(마스터 도안 B판) — **내리지 않는다**(도안이 전각 「」 와 같은 행 0~10 에 앉는다). 빈 코드 자리라 덮는 게 없다.
     buf = bytearray(out)
     for ch, code in F.KAGI_CODE.items():

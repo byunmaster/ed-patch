@@ -19,7 +19,7 @@ import build
 import common as C
 import font as F
 
-ASCII_OK = [{"I", "l", "|"}]  # 원판부터 같은 꼴
+ASCII_OK = [{"I", "l", "|"}, {"I", "l"}]  # 원판부터 같은 꼴(`|` 는 11-13 에 원판 전각 `｜` 모양으로 바뀌어 `I`·`l` 만 남는다)
 FULL = "、。，．・：；？！…ー～「」『』（）‘’“”"
 
 

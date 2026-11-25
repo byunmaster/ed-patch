@@ -43,6 +43,8 @@ KNOWN = {}
 
 def glyphs(s):
     """견줄 꼴 — 공백·개행·페이지를 뺀 글자열(전각 공백 포함)."""
+    #   대사 `&` `%` 는 전각 `＆` `％` 글리프로 나간다(마스터 11-13) — 같은 글자로 견준다
+    s = s.replace("＆", "&").replace("％", "%")
     return "".join(ch for ch in s if not ch.isspace() and ch != "　")
 
 
