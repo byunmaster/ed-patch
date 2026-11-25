@@ -27,7 +27,10 @@ def exe_edit(exe):
     uitext.apply(exe, table)
     if board4.enabled():  # 게시판 본문 4줄 안(스위치 ED_BOARD_4LINE=1) — 빈 줄 제거 + 의뢰별 슬롯 늘리기
         board4.apply(exe, table)
-    hangul.bake(exe, table, uitext.used_chars() + script_kr.used_chars())
+    qa = os.environ.get("ED_DEBUG_QA") == "1"  # QA 디버그 빌드(마스터 11-18) — 꼬리표 `qa-debug`, 제품 빌드는 이 갈래를 안 탄다
+    if qa:
+        import qa_patch
+    hangul.bake(exe, table, uitext.used_chars() + script_kr.used_chars() + (qa_patch.chars() if qa else ""))
     # 시스템 하위 메뉴 창(필드 메뉴 → 시스템)의 열 수 7 → 6 (`0x80029098 addiu a2,zero,7` — 이 창을 만드는 유일한 호출). 글자는 「메시지 속도」 5.5칸이 최대(마스터 10-25 「6칸으로 줄이자」)
     # 전리품(「n 피스카를 얻었다.」) 창 둘 — 열 수 9 → 14·x 0x5e → 0x40(가운데 유지). 원문 길이(「ピスカを得た」)에 맞춘 상수라 번역이 길면 「다.」가 잘린다(마스터 10-25)
     for a, want, new_w in (
@@ -82,6 +85,8 @@ def exe_edit(exe):
         halfwidth.patch_exe(
             exe, hangul.half_codes(), josa=None if os.environ.get("ED_NO_JOSA") == "1" else josa, item_blob=bytes(uitext.ITEM_BLOB)
         )
+    if qa:
+        qa_patch.apply(exe)
 
 
 def main():
