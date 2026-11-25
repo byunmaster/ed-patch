@@ -34,8 +34,9 @@ from . import nouns as load
 Hit = collections.namedtuple("Hit", "where category jp canon ok")
 Report = collections.namedtuple(
     "Report",
-    "units translated hits mismatches pending skipped_keys unlabeled spacing spacing_checked",
-    defaults=((), 0),
+    "units translated hits mismatches pending skipped_keys unlabeled spacing spacing_checked"
+    " glued slot_split",
+    defaults=((), 0, (), ()),
 )
 
 MIN_KEY = 2
@@ -97,12 +98,14 @@ KIND_WORDS = (
     "방",
 )
 ATTACHED_KINDS = ("성", "섬")
+# 사전에 한 낱말로 오른 말은 종류 말로 끝나도 띄우지 않는다(맞춤법 우선, 11-15 「갈림길」 — 이름 검사가 「갈림 길」을 요구해 ps1-ed3 게이트가 막음).
+LEXICAL = ("갈림길",)
 DIALOG, SLOT = "dialog", "slot"
 
 
 def dialog_place(kr):
     """지명 칸 꼴 → 대사 꼴. 이미 띄었거나 규칙에 안 걸리면 그대로."""
-    if not kr or " " in kr or "　" in kr or kr.endswith(ATTACHED_KINDS):
+    if not kr or " " in kr or "　" in kr or kr.endswith(ATTACHED_KINDS) or kr in LEXICAL:
         return kr
     i = kr.rfind("의", 1, len(kr) - 1)
     if i > 0:
@@ -113,6 +116,31 @@ def dialog_place(kr):
     return kr
 
 
+# 원문 쉼표 — 이름 **사이**에 끼어도 같은 이름이다(`大盗賊の、⏎ゲイルさま`, pce-ed1 11-08). 지우고 잰다.
+#   안 지우면 긴 열쇠(`大盗賊のゲイル` → 대도 게일)가 안 맞고 짧은 열쇠(`盗賊` → 도둑)만 맞아,
+#   우리 줄 「대도둑」 속 「도둑」으로 **거짓 통과**했다(마스터 11-08 「정본이 있는데도 … 심각한 거 아니야?」).
+#   ⚠ 지운 자리는 낱말 경계로 남긴다 — `ゲイル、ソニア` 의 두 이름이 한 가타카나 낱말로 붙지 않게.
+_JP_COMMA = "、，"
+_DROP_COMMA = str.maketrans({c: None for c in _JP_COMMA})
+
+
+def _flat_jp(t):
+    return _flat(t).translate(_DROP_COMMA)
+
+
+def _comma_cuts(t):
+    """`_flat_jp` 로 지운 쉼표의 자리(지운 뒤 글자 위치)."""
+    cuts, n = set(), 0
+    for ch in _norm(t).translate(_HALF):
+        if ch.isspace():
+            continue
+        if ch in _JP_COMMA:
+            cuts.add(n)
+        else:
+            n += 1
+    return cuts
+
+
 def _spaced(t):
     """대사 비교용 — 공백·전각 공백·줄바꿈을 모두 반각 공백 하나로(줄바꿈은 띄어쓰기 자리에서 난다)."""
     return " ".join(t.split()).translate(_HALF)
@@ -121,7 +149,7 @@ def _spaced(t):
 def _key(t):
     """열쇠 정규화 — 장음 부호를 맞추고 공백을 지운다(원문 쪽과 같은 규칙이어야 맞는다).
     ⚠ 원문만 공백을 지우면 `やさしそうな おばあさん` 같은 띈 열쇠가 영영 안 맞는다."""
-    return _flat(_norm(t))
+    return _flat_jp(_norm(t))
 
 
 def _is_letter(c):
@@ -132,18 +160,19 @@ def _is_letter(c):
 _PARTICLE = set("のをはがにともでへや")
 
 
-def _standalone(s, i, j):
+def _standalone(s, i, j, cuts=()):
     """라벨이 **낱말 하나로** 서 있나 — 앞은 구분자, 뒤는 구분자·끝 또는 「조사 한 글자 + 구분자·끝」.
 
     일본어는 조사가 붙어 쓰인다 — `、すばやさの４つ` 의 라벨은 살리고(md 실측), 대사 속
     `はいどうぞ`·`そのため`·`いいえまだ`·`守るもの` 는 뒤에 낱말이 이어지니 뺀다(ss-ed1+2 실측 42건,
     2026-10-07). 앞 경계만 보던 때는 이 넷이 다 라벨로 잡혔다.
     """
-    if i > 0 and _is_letter(s[i - 1]):
+    # `cuts` = 지운 쉼표 자리(`_flat_jp`) — 그 자리는 구분자다
+    if i > 0 and i not in cuts and _is_letter(s[i - 1]):
         return False
-    if j == len(s) or not _is_letter(s[j]):
+    if j == len(s) or j in cuts or not _is_letter(s[j]):
         return True
-    return s[j] in _PARTICLE and (j + 1 == len(s) or not _is_letter(s[j + 1]))
+    return s[j] in _PARTICLE and (j + 1 == len(s) or j + 1 in cuts or not _is_letter(s[j + 1]))
 
 
 def _kata_only(k):
@@ -221,14 +250,17 @@ def find(jp_text, keys):
     짧은 열쇠가 긴 이름 속에서 따로 잡히지 않게 한다(`ルディア` 가 `ルディア城` 안에서 또
     잡히면 한 이름이 둘로 센다).
     """
-    s = _flat(_norm(jp_text))
+    s = _flat_jp(_norm(jp_text))
     # 줄바꿈·공백 자리(지운 뒤 글자 위치) — 히라가나만으로 된 열쇠(가나 별칭 `てした`)는 그걸 못 넘는다:
     #   `けっして　したごころ`(전각 공백 = 일본어 원문의 낱말 구분)가 `てした` 로 잡혔다(sfc 실측 10-08). 한자·가타카나 이름은 원문이 줄 중간에서
     #   끊기도 해(`붉은⏎슬라임`) 그대로 넘게 둔다.
-    breaks, n = set(), 0
-    for ch in _norm(jp_text):
+    breaks, commas, n = set(), set(), 0
+    for ch in _norm(jp_text).translate(_HALF):
         if ch.isspace():
             breaks.add(n)  # 줄바꿈 · 전각 공백(일본어 원문의 낱말 구분) · 공백
+        elif ch in _JP_COMMA:
+            breaks.add(n)
+            commas.add(n)  # 지운 쉼표 자리 — 가타카나 낱말 경계로 친다
         else:
             n += 1
     taken = [False] * len(s)
@@ -238,7 +270,8 @@ def find(jp_text, keys):
         while i != -1:
             j = i + len(k)
             inside = _kata_only(k) and (
-                (i > 0 and s[i - 1] in _KATA) or (j < len(s) and s[j] in _KATA)
+                (i > 0 and i not in commas and s[i - 1] in _KATA)
+                or (j < len(s) and j not in commas and s[j] in _KATA)
             )
             # 열쇠 자체가 띈 말(`やさしい おばば`)이면 그 띄어쓰기는 넘어도 된다
             if _hira_only(k) and any(b in breaks for b in range(i + 1, j)):
@@ -252,6 +285,25 @@ def find(jp_text, keys):
                     taken[t] = True
             i = s.find(k, i + 1)
     return sorted(out)
+
+
+def _glued(kr, want):
+    """정본 이름이 우리 줄에 **어절 머리가 아닌 자리**에만 있나 — 앞에 한글이 붙어 더 긴 낱말 속이다
+    (`대도둑` 속 `도둑`). 한 번이라도 어절 머리(또는 띄어 쓴 이름 통째)로 나오면 붙은 게 아니다."""
+    words = _spaced(kr).split()
+    seen = False
+    for c in want:
+        head = _flat(c)
+        if not head:
+            continue
+        for w in words:
+            if head in w:
+                if w.startswith(head) or not ("\uac00" <= w[w.index(head) - 1] <= "\ud7a3"):
+                    return False
+                seen = True
+        if " " in _spaced(c) and _spaced(c) in _spaced(kr):
+            return False
+    return seen
 
 
 def audit(pairs, title="eiyuu", data=None):
@@ -268,7 +320,10 @@ def audit(pairs, title="eiyuu", data=None):
     slot_forms = _slot_forms(data)
     pend = _pending(data)
     units = translated = 0
-    hits, pending, spacing = [], [], []
+    hits, pending, spacing, glued = [], [], [], []
+    slot_kr = collections.defaultdict(
+        set
+    )  # 칸 원문 → 우리 표기들(화자 이름창 등 — 같은 원문이 갈리면 알림)
     spacing_checked = 0  # 띄어쓰기를 잰 대사 속 이름 수 — 0 건이 「안 쟀다」와 갈리게 분모를 낸다
     unlabeled = 0
     for item in pairs:
@@ -280,9 +335,12 @@ def audit(pairs, title="eiyuu", data=None):
         translated += 1
         if kind is None:
             unlabeled += 1
+        if kind == SLOT and jp and kr:
+            slot_kr[_flat_jp(_norm(jp))].add(_spaced(kr))
         flat = _flat(kr)
         spaced = _spaced(kr)
-        s = _flat(_norm(jp))
+        s = _flat_jp(_norm(jp))
+        cuts = _comma_cuts(jp)
         speaker = set(_speaker_only(data))
         for i, k in find(jp, keys):
             cat, canon_jp, canon = keys[k]
@@ -299,7 +357,7 @@ def audit(pairs, title="eiyuu", data=None):
                 continue
             if cat in LABEL_CATS and kind == DIALOG:
                 continue
-            if cat in LABEL_CATS and not _standalone(s, i, i + len(k)):
+            if cat in LABEL_CATS and not _standalone(s, i, i + len(k), cuts):
                 continue
             # 「~の町長」·「~の村長」은 직함(시장·촌장)이지 지명이 아니다 — `マスクーンの町` 가 `町長` 속에서
             #   잡혔다(ss-ed1+2·PS1 실측 2026-10-07)
@@ -314,7 +372,12 @@ def audit(pairs, title="eiyuu", data=None):
                 # 대사 속 지명은 **띄어쓰기까지** 본다(대사 꼴) — 칸 꼴로 붙여 쓰면 어긋남
                 # 사전 `_dialog_as_is` — 규칙대로 띄우면 안 되는 한 낱말(`天儀室` 천의실, 마스터 10-07)
                 as_is = canon_jp in data.get("_dialog_as_is", {}).get("keys", ())
-                want = set(canon) if as_is else {dialog_place(c) for c in canon}
+                # 정본 일반 꼴(`_place_general`, 마스터 11-09)이 있으면 그것이 정답 — 규칙은 없을 때만
+                general = data.get("_place_general", {}).get(canon_jp)
+                if general:
+                    want = {general}
+                else:
+                    want = set(canon) if as_is else {dialog_place(c) for c in canon}
                 ok = any(_spaced(w) in spaced for w in want)
                 hits.append(Hit(where, "place@대사", canon_jp, "/".join(sorted(want)), ok))
             else:
@@ -323,6 +386,10 @@ def audit(pairs, title="eiyuu", data=None):
                 #   정본 값의 끝 부호만 다른 줄은 어긋남이 아니다(새턴 「삼켰다」 · PCE 「삼켰다.」)
                 ok = any(_flat(c) in flat or _flat(c).rstrip(".!?！？。") in flat for c in want)
                 hits.append(Hit(where, cat, canon_jp, "/".join(sorted(want)), ok))
+                # 앞에 한글이 붙은 이름(알림) — 정본 값이 우리 줄에 있긴 한데 **더 긴 낱말 속**이다(`대도둑` 속 `도둑`,
+                #   `대도적 게일` 속 `게일`은 아님 — 띄어 있다). 짧은 열쇠가 긴 이름의 일부로 통과하는 거짓 통과를 드러낸다.
+                if ok and cat == "person" and _glued(kr, want):
+                    glued.append(Hit(where, cat, canon_jp, "/".join(sorted(want)), ok))
                 # 대사 속 이름의 **띄어쓰기**(알림만 — 실패로 치지 않는다, 10-21 sfc-ed2 「장갑 슬라임」) —
                 #   위 비교는 공백을 지워 「붙여 쓸 이름을 띄운」 줄을 못 잡는다. 줄바꿈만 지우고(이름 속 줄바꿈은
                 #   같은 표기) 정본 꼴 그대로 있는지 본다. 정본이 띄운 이름은 거꾸로 붙여 쓴 줄을 잡는다.
@@ -342,6 +409,17 @@ def audit(pairs, title="eiyuu", data=None):
             if k in pend or _key(canon_jp) in pend:
                 pending.append(hits[-1])
     mism = [h for h in hits if not h.ok]
+    split = tuple(sorted((jp, tuple(sorted(v))) for jp, v in slot_kr.items() if len(v) > 1))
     return Report(
-        units, translated, hits, mism, pending, skipped, unlabeled, spacing, spacing_checked
+        units,
+        translated,
+        hits,
+        mism,
+        pending,
+        skipped,
+        unlabeled,
+        spacing,
+        spacing_checked,
+        glued,
+        split,
     )

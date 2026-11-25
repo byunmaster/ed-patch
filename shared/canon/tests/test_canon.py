@@ -170,7 +170,7 @@ def test_name_slot_is_name_shaped():
 
 
 def test_chapter_card_inside_block_is_measured():
-    """블록 속 장 카드 「第N章 제목」 도 잰다 — 제목은 정본 값, 번호는 전각(번역 규칙 1-4, 10-10·10-11)."""
+    """블록 속 장 카드 「第N章 제목」 도 잰다 — 제목은 정본 값, 번호 폭은 기종 원판 꼴이라 접어서 잰다(번역 규칙 1-5, 11-16)."""
     fake = {"categories": {"chapter": {"タビダチ": "여행"}}}
     canon._CACHE["fake5"] = fake
     try:
@@ -186,7 +186,26 @@ def test_chapter_card_inside_block_is_measured():
     finally:
         canon._CACHE.pop("fake5", None)
     assert sorted(h.where for h in r.hits) == ["half", "ok", "title"]
-    assert sorted(h.where for h in r.mismatches) == ["half", "title"]
+    assert sorted(h.where for h in r.mismatches) == ["title"]
+
+
+def test_phrase_width_is_folded():
+    """숫자·로마자 폭은 정본이 정하지 않는다 — 정본 「최대 ＨＰ가」에 원판 반각 게임의 「최대 HP가」도 맞다(11-16)."""
+    fake = {"categories": {"system": {"最大HPが{n}上がった。": "최대 ＨＰ가 {n} 올랐다."}}}
+    canon._CACHE["fake7"] = fake
+    try:
+        r = canon.audit(
+            [
+                ("half", "最大HPが3上がった。", "최대 HP가 3 올랐다.", "dialog"),
+                ("full", "最大ＨＰが３上がった。", "최대 ＨＰ가 ３ 올랐다.", "dialog"),
+                ("bad", "最大HPが3上がった。", "최대 MP가 3 올랐다.", "dialog"),
+            ],
+            "fake7",
+        )
+    finally:
+        canon._CACHE.pop("fake7", None)
+    assert sorted(h.where for h in r.hits) == ["bad", "full", "half"]
+    assert [h.where for h in r.mismatches] == ["bad"]
 
 
 def test_number_slot_accepts_format_code():

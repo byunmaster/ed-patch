@@ -131,8 +131,14 @@ def wrap(
     widow_cell: float = 1.0,
     strip_before: str = "",
     strip_after: str = "",
+    max_lines: int | None = None,
 ) -> list[str]:
     """text를 width(전각 셀 기준) 이하 줄들로 나눈다. 어절(공백) 단위.
+
+    - max_lines: 이 문단이 쓸 수 있는 줄 수(그 쪽에 남은 줄). 주면, 균형 배분 뒤에도 덩어리가
+      갈리고(`split_reason`) 줄이 남을 때 **한 줄 더 써서** 갈림을 줄인다(마스터 10-29 「줄 수 고정
+      풀기」 — `막았다는 얘기다만 세리오스 / 공은` → 3줄). 공백 하나가 줄바꿈이 될 뿐이라 바이트는
+      그대로다. 안 주면(None) 종전 동작 그대로 — 쪽 여유는 호출부(게임 조판기)만 안다.
 
     - no_head: 이 문자로 줄이 시작하지 않게 함(앞 줄에 붙임).
     - no_tail: 이 문자로 줄이 끝나지 않게 함(다음 어절을 끌어옴).
@@ -173,6 +179,10 @@ def wrap(
     bal = _balance(words, len(lines), width, cell_width, no_head, no_tail)
     if bal is not None:
         lines = bal
+    if max_lines is not None and len(lines) < max_lines and _n_splits(lines):
+        more = _balance(words, len(lines) + 1, width, cell_width, no_head, no_tail)
+        if more is not None and _n_splits(more) < _n_splits(lines):
+            lines = more
 
     # 위도우 방지: 마지막 줄이 짧은 한 어절만이면 앞 줄에서 하나 내림
     if avoid_widow and len(lines) >= 2:
@@ -181,6 +191,11 @@ def wrap(
             lines[-1] = [prev.pop()] + last
 
     return [_strip_spacing(" ".join(wds), strip_after) for wds in lines]
+
+
+def _n_splits(lines) -> int:
+    """줄 경계에서 갈리는 덩어리 수(`split_reason`)."""
+    return sum(1 for a, b in zip(lines, lines[1:]) if a and b and splits_unit(a[-1], b[0]))
 
 
 def _balance(words, n_lines, width, cell_width, no_head, no_tail):
@@ -470,8 +485,14 @@ def wrap_pages(
     merge_frag: float = 3.0,
     protect_hard: bool = False,
     det_orphan: bool = False,
+    unsplit_fill: bool = False,
 ) -> list[list[str]]:
     """wrap_hard + 문장 단위 페이지네이션 — 대화창 고아문장 방지의 메인 진입점.
+
+    unsplit_fill=True면, 쪽을 다 짠 뒤 **줄이 남는 쪽**에서 덩어리가 갈려 있으면 그 쪽을
+    `wrap(max_lines=lines_per_page)` 로 다시 짜 갈림을 줄인다(마스터 10-29 판정 N3). 쪽 수·쪽 경계는
+    그대로고 공백↔줄바꿈만 옮긴다. ⚠ 쪽 안의 하드 개행(원문·작성자 지정)은 공백으로 풀리므로
+    그런 쪽이 있는 호출부는 켜지 않는다. 기본 False = 종전 동작.
 
     protect_hard=True면 아래 "문장 단위 조판" 리플로우를 건너뛴다 — 원문 하드개행을
     가독성 위해 공백으로 되돌리는 기능이, **의도적 개행 override**를 지워버리기 때문
@@ -546,6 +567,15 @@ def wrap_pages(
         _pull_auxiliary(pages, width, cell_width)
         _pull_tail_orphans(pages, width, cell_width)
         _merge_lone_lines(pages, width, cell_width)
+        if unsplit_fill:
+            for i, pg in enumerate(pages):
+                cur = [ln.split() for ln in pg]
+                if len(pg) >= lines_per_page or not _n_splits(cur):
+                    continue
+                re_ = wrap(" ".join(pg), width, cell_width=cell_width, no_head=no_head,
+                           no_tail=no_tail, widow_cell=widow_cell, max_lines=lines_per_page)
+                if len(re_) <= lines_per_page and _n_splits([x.split() for x in re_]) < _n_splits(cur):
+                    pages[i] = re_
     return [[_strip_spacing(ln, strip_after) for ln in pg] for pg in pages]
 
 
@@ -703,11 +733,19 @@ def _is_infinitive(word: str) -> bool:
 # 「것」의 준말(건·걸·거·게)도 의존명사다 — `쓰러뜨린 / 건` · `있을 / 거야` · `중요한 / 걸`, 서술격·보조사 꼬리
 #   (`줄이야` · `뿐일세` · `때까지`)도 받는다(sfc-ed2 style 10-21, 마스터 「이어지는 어절은 한줄에」).
 _BOUND_NOUN = re.compile(
-    r"(수|것|줄|때|뿐|적|바|터|듯|채|편|만큼|나름|건|걸|거|게)"
+    r"(수|것|줄|때|뿐|적|바|터|듯|채|편|쪽|만큼|나름|건|걸|거|게"
+    # 사람·이치·곳·방식 의존명사 — `괘씸한 / 자는` · `그럴 / 리가` · `시키는 / 대로`(마스터 10-29 pce-ed1 화면,
+    # ss-ed1+2 2-16 잔여 10-28). 앞이 관형형(ㄴ/ㄹ 받침)일 때만 보는 조건은 그대로라 자립명사 「자(尺)」 등은 안 문다.
+    r"|자|리|데|법|대로|참|척|체|탓|김|셈|모양)"
     r"(이|가|은|는|을|를|에|의|도|만|과|와|로|으로|이다|입니다|야|이야|일세|이지|이라|이라도|까지|부터|밖에|조차|라도"
     r"|다|지|죠|요|예요|에요|란|냐|니|인가|인데|인지|이에요|이로군|이었다|이었어|일까|이겠지|쯤|였지|였다|였어|였네|였군|이었지|까|까요|이고|이며|이니)?[.,!?…]*$"
 )
 
+
+_TITLE_TAIL = re.compile(
+    r"(군|양|씨|경|공|님|전하|폐하|각하)"
+    r"(은|는|이|가|을|를|의|도|과|와|만|께|께서|에게|한테|이여|이시여|이야|이지|이군|이었던가|이랬던가|이었지|이랑)[.,!?…]*"
+)
 
 _TIME_BOUND = re.compile(r"(전|후|뒤|동안|사이|무렵)(에|엔|에는|까지|부터)?[.,!?…]*$")
 
@@ -775,6 +813,13 @@ def split_reason(prev_word: str, next_word: str) -> str | None:
         return None
     if _is_infinitive(prev_word) and next_word.rstrip(".,!?…") in _AUX_ALL:
         return "본용언+보조용언"
+    # 「-아/어 다오·달라」 — `구하러 가 / 다오`(ss-ed1+2 10-28). 「달다」 활용은 보조용언 목록에 없다.
+    if _is_infinitive(prev_word) and next_word.rstrip(".,!?…~").startswith(("다오", "달라", "달란")):
+        return "본용언+보조용언"
+    # 준말 보조용언은 뒤 어미가 끝없이 붙는다 — `해 / 둬야겠구나` · `찾아 / 줘야지` · `먹어 / 봐야`(ss-ed3 2-16 재검
+    # 10-26). 준말 머리(줘·둬·봐·놔·드려·버려)는 자립 낱말 머리로 거의 안 쓰여 머리 일치로 본다.
+    if _is_infinitive(prev_word) and next_word.startswith(("줘", "둬", "봐", "놔", "드려", "버려")):
+        return "본용언+보조용언"
     # `-도록 하다` · `-고 싶어 하다` — `드리도록 / 하겠습니다` · `싶어 / 하는데`(ss-ed1+2 style 10-21)
     if prev_word.endswith(("도록", "싶어")) and next_word[:1] == "하":
         return "-도록/-어 하다"
@@ -797,8 +842,43 @@ def split_reason(prev_word: str, next_word: str) -> str | None:
         and next_word[:1] in ("못", "않", "마", "말")
     ):
         return "-지 못하다/않다"
+    # 보조 구문 — `오게 / 된` · `혼인하기로 / 되어` · `싶다고 / 해서` · `떨어지지 / 뭐야`(2-16 재검 10-26,
+    # sfc-ed1·pce-ed1 표본). 앞 어미와 뒤 어간 머리가 둘 다 맞을 때만 본다.
+    w = next_word.rstrip(".,!?…~")
+    if len(prev_word) >= 2 and prev_word.endswith("게") and w[:1] in ("되", "됐", "돼", "될", "된", "됩"):
+        return "-게 되다"
+    # 이름+호칭 — `아트라스 / 군,`(ps1-ed1+2 2-16 재검 10-26). 홀로 선 호칭 어절이 줄 첫머리에 오지 않게.
+    if w in ("군", "양", "씨", "경", "공", "님", "전하", "폐하", "각하") and "가" <= prev_word[-1:] <= "힣":
+        return "이름+호칭"
+    # 호칭에 조사·서술격이 붙은 꼴도 같다 — `세리오스 / 공은` · `아트라스 / 군이랬던가?`(ss-ed1+2 2-16 잔여 10-28).
+    # ⚠ 앞이 조사로 끝나면 이름이 아니다 — `나는 / 공을`(공=ball)을 안 묻게 흔한 조사 꼬리를 거른다.
+    if (
+        _TITLE_TAIL.fullmatch(w)
+        and "가" <= prev_word[-1:] <= "힣"
+        and prev_word not in _DET_ORPHAN + _ADV_ORPHAN
+        and not prev_word.endswith(("는", "을", "를", "에", "도", "로", "의", "과", "와", "게", "서", "고", "면"))
+    ):
+        return "이름+호칭"
+    # 관용구 「입 밖에 내다」 — `입 / 밖에`(ss-ed1+2 10-28).
+    if prev_word == "입" and w.startswith("밖"):
+        return "관용구"
+    # 사동 「-게 하다」 — `짓게 / 하고 있습니다`(sfc-ed2 2-16 재검 10-26).
+    if len(prev_word) >= 2 and prev_word.endswith("게") and w[:1] in ("하", "했", "해", "할", "한", "합"):
+        return "-게 하다"
+    if prev_word.endswith("기로") and w[:1] in ("하", "했", "해", "할", "한", "합", "되", "됐", "돼", "될", "된"):
+        return "-기로 하다/되다"
+    if prev_word.endswith(("다고", "라고", "자고", "냐고", "려고")) and w[:1] in ("하", "했", "해", "할", "한", "합"):
+        return "-다고 하다"
+    # `하면 / 되나요` — 「-면 되다」(ss-ed3 2-16 재검 10-26). 「되」로 시작하는 낱말이 뒤일 때만.
+    if len(prev_word) >= 2 and prev_word.endswith("면") and w[:1] in ("되", "돼", "됩", "된", "될", "됐"):
+        return "-면 되다"
+    if prev_word.endswith("지도") and w[:1] in ("모", "몰"):
+        return "-ㄹ지도 모르다"
+    if len(prev_word) >= 2 and prev_word.endswith("지") and w in ("뭐야", "뭐예요", "뭐니", "뭐냐", "뭡니까", "뭐"):
+        return "-지 뭐야"
     # 의존명사 「수」+있다/없다 — `구할 수 / 있는`(ps1-ed1+2 style 10-21). 「수」 홀로 선 어절일 때만.
-    if prev_word == "수" and next_word[:1] in ("있", "없"):
+    # 보조사가 붙은 꼴도 같다 — `있을 수는 / 없어`(sfc-ed2 2-16 재검 10-26).
+    if prev_word in ("수", "수는", "수도", "수가", "수조차", "수밖에") and next_word[:1] in ("있", "없"):
         return "수+있다/없다"
     if prev_word in _DET_ORPHAN + _ADV_ORPHAN:
         return "관형사·부사 고아"

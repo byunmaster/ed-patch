@@ -27,7 +27,7 @@ import re
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _CACHE = {}
-TITLES = ("ed1", "ed2", "ed3")
+TITLES = ("ed1", "ed2", "ed3", "ed4")
 LABELS = ("ui", "speaker", "chapter")  # 줄(칸) 전체로 재는 범주 — chapter = 장 제목(마스터 10-08)
 PHRASES = ("system", "battle")  # 문장 속 조각으로 재는 범주
 
@@ -35,7 +35,7 @@ PHRASES = ("system", "battle")  # 문장 속 조각으로 재는 범주
 # 작품 → 고유명사 파일. ED1·ED2 는 같은 세계라 한 벌(`eiyuu`)을 같이 쓴다 — 편마다 두면 한쪽만 고쳐진다
 #   (PS1 v1.0.0 에 옛 몬스터 이름 15종이 나간 게 그 꼴이었다, 10-07).
 # ⚠ ED4 고유명사(`nouns/ed4.json`)는 ps1-ed3+4 의 자기 표를 그대로 옮겨 둔 것이다(10-08, 게임 폴더에 표 금지) —
-#   ED4 는 ED3 뒤라 아직 검토 전이고 공통 문안 파일(`ed4.json`)도 없다.
+#   공통 문안 파일(`ed4.json`)은 11-06 에 열었다(마스터 「ED4 전용·정발값」 — 화자 호칭 셋부터).
 WORLD = {"ed1": "eiyuu", "ed2": "eiyuu", "eiyuu": "eiyuu", "ed3": "ed3", "ed4": "ed4"}
 
 
@@ -100,6 +100,14 @@ def lookup(jp, category=None, title="ed1"):
     return None
 
 
+def place_general(jp, title="ed1"):
+    """지명 일반 꼴(띄어쓰기 — 대사·입장 배너). 없으면 HUD 꼴. 정본 `_place_general`(마스터 11-09)."""
+    n = nouns(title) if WORLD.get(title) else {}
+    jp = aliases(title).get(jp, jp)  # 같은 원문의 다른 표기(가나↔한자)도 정본 열쇠로(pce-ed1 11-09: ジャグリの廃坑)
+    g = n.get("_place_general", {}).get(jp)
+    return g if g else lookup(jp, "place", title)
+
+
 def aliases(title="ed1"):
     """같은 원문의 다른 표기(가나↔한자 등) → 정본 열쇠. 고유명사 별칭 + 문안 별칭."""
     out = dict(nouns(title).get("_aliases", {})) if WORLD.get(title) else {}
@@ -143,7 +151,7 @@ def diff_labels(mine, category="ui", title="ed1"):
         key = k if k in canon_ else alias.get(k)
         if key is None or key not in canon_:
             unmatched.append(jp)
-        elif canon_[key] != ours:
+        elif canon_[key].translate(_HALF) != (ours or "").translate(_HALF):
             diff.append((jp, canon_[key], ours))
     return LabelCheck(diff, unmatched)
 
@@ -230,8 +238,17 @@ def _end_family(key):
     return "(?:[。．.]+)?$"
 
 
+# 전각 숫자·로마자 → 반각 — 숫자·영문 폭은 기종마다 원판 꼴을 따른다(번역 규칙 1-5, 마스터 11-16 「원판이 반각쓴곳은
+#   반각, 전각쓴곳은 전각」). 정본은 글자만 정하고 폭은 정하지 않는다 — 잴 때 접는다(names.py `_HALF` 와 같은 표).
+_HALF = str.maketrans(
+    {chr(0xFF10 + i): chr(0x30 + i) for i in range(10)}
+    | {chr(0xFF21 + i): chr(0x41 + i) for i in range(26)}
+    | {chr(0xFF41 + i): chr(0x61 + i) for i in range(26)}
+)
+
+
 def _flat(s):
-    return re.sub(r"\s+", "", s or "")
+    return re.sub(r"\s+", "", s or "").translate(_HALF)
 
 
 def audit(pairs, title):
@@ -377,12 +394,11 @@ def audit(pairs, title):
                 mism.append(h)
             break  # 한 줄엔 가장 긴 열쇠 하나만 — 「しかも {name}も一緒だ!!」 줄을 짧은 「{name}も一緒だ!!」 가 또 재지 않게
     # 장 카드 — 「第N章  제목」 이 블록 한가운데(카드·띠·HUD 줄)에 있어도 잰다. chapter 는 칸(줄 전체) 범주라 블록에
-    #   든 카드 제목은 분모 밖이었다(ss-ed1+2 카드 아홉이 정본과 갈린 채 통과, 10-10). 제목은 정본 값, 번호는 전각
-    #   「제１장」(번역 규칙 1-4)이어야 한다. 제목 열쇠가 정본에 없으면(자리표 제목 등) 재지 않는다.
+    #   든 카드 제목은 분모 밖이었다(ss-ed1+2 카드 아홉이 정본과 갈린 채 통과, 10-10). 제목은 정본 값, 번호 폭은
+    #   기종 원판 꼴(번역 규칙 1-5, 11-16 — 폭은 접어서 잰다). 제목 열쇠가 정본에 없으면(자리표 제목 등) 재지 않는다.
     chap = cats.get("chapter", {})
     if chap:
         card = re.compile(r"第\s*([０-９0-9]+)\s*章[ \t　]*([^\n]+)")
-        fw = str.maketrans("0123456789", "０１２３４５６７８９")
         carded = set()
         card_hits, card_mism = [], []
         for item in pairs:
@@ -394,12 +410,17 @@ def audit(pairs, title):
                 v = chap.get(title)
                 if v is None:
                     continue
-                num = m.group(1).translate(fw)
+                num = m.group(1).translate(_HALF)
                 # 번호 바로 뒤 제목이 그 줄 끝까지 정본 값이어야 한다 — 「여행길」 이 「여행」 에 걸리지 않게
                 kre = re.compile(
-                    r"제" + num + r"장[ \t　]*" + _kr_pattern(v) + r"[ \t　]*(?:\n|$)", re.M
+                    r"제"
+                    + num
+                    + r"장[ \t　]*"
+                    + _kr_pattern(v.translate(_HALF))
+                    + r"[ \t　]*(?:\n|$)",
+                    re.MULTILINE,
                 )
-                ok = bool(kre.search(kr))
+                ok = bool(kre.search(kr.translate(_HALF)))
                 h = Hit(where, "chapter", m.group(0), f"제{num}장  {v}", ok)
                 carded.add(where)
                 card_hits.append(h)

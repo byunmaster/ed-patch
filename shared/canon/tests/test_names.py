@@ -297,3 +297,55 @@ def test_closed_mine_is_spaced_in_dialog():
     from canon.names import dialog_place
 
     assert dialog_place("쟈그리폐광") == "쟈그리 폐광"
+
+
+def test_comma_between_name_parts_still_matches_long_key():
+    """`大盗賊の、⏎ゲイル` — 쉼표·줄바꿈이 끼어도 긴 열쇠로 잰다(짧은 `盗賊`→도둑 거짓 통과, 11-08)."""
+    data = {
+        "categories": {"person": {"大盗賊 ゲイル": "대도 게일", "盗賊": "도둑", "ゲイル": "게일"}},
+        "_aliases": {"大盗賊のゲイル": "大盗賊 ゲイル"},
+    }
+    bad = audit([("a", "この大盗賊の、\nゲイルさまに", "이 대도둑 게일님을", "dialog")], data=data)
+    assert [h.jp for h in bad.mismatches] == ["大盗賊 ゲイル"]
+    good = audit([("a", "この大盗賊の、\nゲイルさまに", "이 대도 게일님을", "dialog")], data=data)
+    assert not good.mismatches
+
+
+def test_comma_keeps_katakana_word_boundary():
+    data = {"categories": {"person": {"ゲイル": "게일", "ソニア": "소니아"}}}
+    r = audit([("a", "ゲイル、ソニア", "게일, 소니아", "dialog")], data=data)
+    assert len(r.hits) == 2 and not r.mismatches
+
+
+def test_glued_and_slot_split_alerts():
+    data = {"categories": {"person": {"盗賊": "도둑", "ゲイル": "게일"}}}
+    r = audit(
+        [
+            ("a", "盗賊だ", "대도둑이다", "dialog"),
+            ("b", "ゲイル", "대도 게일", "slot"),
+            ("c", "ゲイル", "대도적 게일", "slot"),
+        ],
+        data=data,
+    )
+    assert [h.where for h in r.glued] == ["a"]
+    assert r.slot_split == (("ゲイル", ("대도 게일", "대도적 게일")),)
+
+
+def test_place_general_is_canon_and_dialog_uses_it():
+    import canon
+
+    # 정본 두 꼴 — HUD(붙임) · 일반(띄움), 마스터 11-09
+    assert canon.lookup("岬の洞窟", "place", "ed1") == "곶의동굴"
+    assert canon.place_general("岬の洞窟", "ed1") == "곶의 동굴"
+    assert canon.place_general("エルアスタ", "ed1") == "엘아스타"
+    # 대사 검사는 일반 꼴을 정답으로 잰다
+    ok = audit([("t:1", "岬の洞窟へ行こう", "곶의 동굴로 가자", "dialog")], title="eiyuu")
+    assert [h.jp for h in ok.mismatches] == []
+    bad = audit([("t:2", "岬の洞窟へ行こう", "곶의동굴로 가자", "dialog")], title="eiyuu")
+    assert [h.jp for h in bad.mismatches] == ["岬の洞窟"]
+
+
+def test_place_general_resolves_alias():
+    import canon
+
+    assert canon.place_general("ジャグリの廃坑", "ed1") == canon.place_general("ジャグリのはいこう", "ed1") == "쟈그리 폐광"

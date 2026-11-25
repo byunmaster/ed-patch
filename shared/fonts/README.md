@@ -1,6 +1,6 @@
 # shared/fonts
 
-한글화 공용 폰트 에셋. 모두 SIL OFL 1.1 — 패치 임베딩·재배포 허용 (라이선스 파일 동봉).
+한글화 공용 폰트 에셋. Galmuri·Neo둥근모·고운바탕은 SIL OFL 1.1, 미래로는 MIT(예약 글꼴 이름 — 이름을 바꿔 재배포하지 않는다) — 패치 임베딩·재배포 허용 (라이선스 파일 동봉).
 
 | 폰트                        | 격자   | 파일             | 출처                                | 용도                        |
 | --------------------------- | ------ | ---------------- | ----------------------------------- | --------------------------- |
@@ -8,10 +8,12 @@
 | Galmuri11-Condensed         | **8×11** | `Galmuri11-Condensed.bdf` | 〃                          | **SFC 8×16 반각 한글 칸** — 완성형 11,172자 전부 전진폭 8(잉크 ≤7px), 실측 2026-09-06 |
 | Galmuri7 / 9 / 14 / Mono    | 7~14px | `Galmuri*.bdf`   | 〃                                  | 다른 셀 크기 예비           |
 | Neo둥근모                   | 16×16  | `neodgm.ttf`     | <https://github.com/neodgm/neodgm>  | **새턴 16×16 셀 확정**      |
+| 미래로(MiraeroNormal)       | 24px   | `MiraeroNormal-24.bdf` | <https://github.com/hurss/fonts> (MIT, Reserved Font Name) | (10-24 까지 PS1 ED3 장 끝 띠 — 고운바탕으로 교체) |
+| 고운바탕 Bold               | TTF    | `GowunBatang-Bold.ttf` | <https://github.com/google/fonts/tree/main/ofl/gowunbatang> (OFL) | **PS1 ED3 장 끝 띠 제목**(마스터 10-24 「고운바탕 볼드가 나아보이네」) |
 
 - Galmuri는 **BDF**(비트맵 원본)를 사용 — 변환기(`games/ps1-ed1+2/tools/hangul_font.py`)가
   도트를 무손실 파싱한다. TTF/WOFF가 필요하면 출처 릴리스에서 받을 것.
-- 릴리스 크레딧에 폰트 저작자 표기 필수: Galmuri © quiple (OFL), Neo둥근모 © Eunbin Jeong (OFL).
+- 릴리스 크레딧에 폰트 저작자 표기 필수: Galmuri © quiple (OFL), Neo둥근모 © Eunbin Jeong (OFL), 미래로 © Damheo Lee (MIT), 고운바탕 © Yanghee Ryu (OFL).
 
 ## ⚠ 폰트는 「예쁜가」가 아니라 **셀에 맞게 설계됐는가**로 고른다
 
