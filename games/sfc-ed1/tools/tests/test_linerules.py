@@ -27,7 +27,7 @@ class LineRules(unittest.TestCase):
         self.assertEqual(typeset.soften("{D0:81}\n아니"), "{D0:81}\n아니")  # 파티 화자 표지 줄
 
     def test_장_제목_카드는_손대지_않는다(self):
-        kr = "<FF>제１장\n왕자의 여행\n클리어<FF>"
+        kr = "<FF>제１장\n왕자의 여행\n                끝<FF>"
         self.assertEqual(wrap(kr), kr)
 
     def test_절째_내린다(self):
@@ -110,7 +110,7 @@ class LineRules(unittest.TestCase):
         a, b = linemetrics.orphan_pages("가나다 라마바 사아자\n차카\n타<FF>")
         self.assertEqual((len(a), len(b)), (1, 1))
         self.assertEqual(len(linemetrics.orphan_pages("가나다 라마바\n끝났다.<FF>")[1]), 0)
-        self.assertEqual(len(linemetrics.orphan_pages("제１장\n부제 있음\n클리어<FF>")[0]), 0)
+        self.assertEqual(len(linemetrics.orphan_pages("제１장\n부제 있음\n                끝<FF>")[0]), 0)
 
     def test_한_줄에_들어가는_문장은_새_줄에서_시작한다(self):
         # 2-10 — 「…올랐다. MP가 / 5포인트 올랐다.」 → 문장을 새 줄에. 줄 수는 안 늘고 글자는 그대로

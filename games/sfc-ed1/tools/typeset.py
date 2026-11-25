@@ -208,7 +208,7 @@ _SOFT_RE = re.compile(r"(?<=[^" + re.escape(_SENT_END) + r">\n :,;])(?<!\{D0:8[0
 
 def soften(kr: str) -> str:
     """① 문장 중간의 손 개행은 공백으로 읽는다 — 번역 원고의 줄 맞춤 개행이 「이야기할⏎수 있는」 같은 토막을 만든다.
-    문장 끝·쪽 넘김·화자 머리(`<E3>이름⏎<E1>`) 뒤 개행과 제어 코드 앞뒤 개행은 둔다. 장 제목 카드(「제Ｎ장⏎제목⏎클리어」)도 둔다."""
+    문장 끝·쪽 넘김·화자 머리(`<E3>이름⏎<E1>`) 뒤 개행과 제어 코드 앞뒤 개행은 둔다. 장 제목 카드(「제Ｎ장⏎제목⏎끝」)도 둔다."""
     return _SOFT_RE.sub(lambda m: m.group(0) if _keep_nl(kr, m.start()) else " ", kr)
 
 
@@ -225,16 +225,17 @@ def _keep_nl(kr: str, i: int) -> bool:
     return bool(m and bclass(m.group(1), n.group(1) if n else "") >= 1)
 
 
-_CARD = re.compile(r"제[０-９0-9]+장|클리어")
+_CARD_END = re.compile(r"\n {8,}끝")  # 장 끝 카드의 마지막 줄(들여쓴 「끝」 — 마스터 11-09, 원판 クリアー)
+_CARD = re.compile(r"제[０-９0-9]+장|(?<=\n) {8,}끝")
 
 
 def _in_card(kr: str, i: int) -> bool:
-    """개행 i 가 장 제목 카드(「제Ｎ장 ⏎ 제목 ⏎ 클리어」·「… 전설 ⏎ 클리어」) 줄 사이인가 — 카드는 줄이 연출이다(`<EF>` 없이 앞 조각에서 열린 경우)."""
+    """개행 i 가 장 제목 카드(「제Ｎ장 ⏎ 제목 ⏎ 끝」·「… 전설 ⏎ 끝」) 줄 사이인가 — 카드는 줄이 연출이다(`<EF>` 없이 앞 조각에서 열린 경우)."""
     a = kr.rfind("\n", 0, i)
     b = kr.find("\n", i + 1)
     prev = kr[a + 1 : i]
     nxt = kr[i + 1 : b if b >= 0 else len(kr)]
-    return bool(re.search(r"제[０-９0-9]+장\s*$", prev) or re.match(r"[^\n]*\n? *클리어", nxt) or re.match(r" *클리어", nxt) or prev.endswith("클리어"))
+    return bool(re.search(r"제[０-９0-9]+장\s*$", prev) or re.match(r"[^\n]*\n? {8,}끝", nxt) or re.match(r" {8,}끝", nxt) or re.search(r"\n {8,}끝$", prev))
 
 
 def bclass(word: str, nxt: str = "") -> int:
@@ -507,7 +508,7 @@ def _window_pairs(parts: list[str]):
         if inn != ip + 2 or parts[ip + 1] != "<FF>" or ffn[ip + 1] in PROTECT_FF:
             continue
         pc, nc = parts[ip], parts[inn]
-        if any(x in pc + nc for x in ("<E2>", "클리어")) or "<E3>" in nc or _TAGLINE.match(nc.lstrip("\n").split("\n")[0].strip() or "x"):
+        if "<E2>" in pc + nc or _CARD_END.search(pc + nc) or "<E3>" in nc or _TAGLINE.match(nc.lstrip("\n").split("\n")[0].strip() or "x"):
             continue
         yield ip, inn, a == len(idx) - 1
 
@@ -616,7 +617,7 @@ def _dp_page(kr: str, dm: dict[str, str], maxlen: dict[str, int], bar: int) -> s
     """줄 나눔 전수 탐색 — 어절 열(`_DP_MAXWORDS` 이하)의 모든 개행 배치 가운데 객관 결함 점수(`_obj`)가 `bar` 보다 낮고 나쁨 점수(`_cost`)가 가장 낮은 것을 낸다. 탐욕 조판이 닿지 못하는 자리(사전 토큰을 펼쳐 보니
     [명사+의+명사]·고아·관형사 고아를 피하는 배치가 있는 쪽)를 구한다. 글자는 그대로 — 공백↔개행만 바뀐다. 줄 폭 ≤136px · 창 높이 ≤4줄.
     제어 코드가 줄 가운데 끼거나 토큰만으로 된 줄이 있거나 화자 표지·장 제목 카드·이름 상자 쪽이면 안 한다(None)."""
-    if "<E2>" in kr or "클리어" in kr or "\n\n" in kr:
+    if "<E2>" in kr or _CARD_END.search(kr) or "\n\n" in kr:
         return None
     m = _DP_HEAD.fullmatch(kr)
     head, body = m.group(1), m.group(2)
@@ -867,11 +868,11 @@ _CTRL_TOK = re.compile(r"<[^>]*>")
 
 def page_rows(res: str) -> list[list[list[str]]]:
     """조판 결과 → 쪽 목록(쪽 = 줄 목록, 줄 = 어절 목록). 화자 머리·제어 코드·빈 줄·파티 화자 표지 줄을 뺀다.
-    장 제목 카드(「클리어」 쪽)와 이름 상자 조각(`<E2>`)은 줄이 연출·구조라 뺀다."""
+    장 제목 카드(「끝」 쪽)와 이름 상자 조각(`<E2>`)은 줄이 연출·구조라 뺀다."""
     res = expand_static(_HEADER.sub("", res))  # 사전 토큰은 펼쳐서 어절·줄 수를 센다(엔진은 사전 문자열을 일반 글자처럼 찍는다)
     pages = []
     for p in _PAGE_SPLIT.split(res):
-        if p in ("<FF>", "<EF>", "<FE>", "<E0>") or "<E2>" in p or "클리어" in p:
+        if p in ("<FF>", "<EF>", "<FE>", "<E0>") or "<E2>" in p or _CARD_END.search(p):
             continue
         lines = [ln.split() for ln in _CTRL_TOK.sub("", p).split("\n") if ln.split() and not _TAGLINE.fullmatch(ln.strip())]
         if lines:
@@ -951,7 +952,7 @@ def _fix_orphans(res: str, kr: str, dm: dict[str, str], maxlen: dict[str, int]) 
         lines = body.split("\n")
         real = [k for k, ln in enumerate(lines) if re.sub(r"<[^>]*>", "", ln).strip()]
         real = [k for k in real if not _TAGLINE.fullmatch(lines[k].strip())]  # 파티 화자 표지 줄은 본문이 아니다
-        if len(real) >= 2 and "클리어" not in ch:  # 장 제목 카드는 줄이 연출이다
+        if len(real) >= 2 and not _CARD_END.search(ch):  # 장 제목 카드는 줄이 연출이다
             lk, pk = real[-1], real[-2]
             last, pl = lines[lk], lines[pk]
             lt = expand_static(re.sub(r"<[^>]*>", "", last).strip())  # 사전 문장 토큰 한 어절(`{D5:29}`=「나타났다.」)도 고아다

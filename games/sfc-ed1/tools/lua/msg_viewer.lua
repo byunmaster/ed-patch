@@ -108,6 +108,9 @@ local function call(id)
     emu.write(o, ADDR & 255, emu.memType.snesPrgRom); emu.write(o + 1, (ADDR >> 8) & 255, emu.memType.snesPrgRom); emu.write(o + 2, (ADDR >> 16) & 255, emu.memType.snesPrgRom)
   end
   if FIELD then wr(0x11FB, 0) end
+  if os.getenv("MV_POKE") then -- 런타임 치환 값을 미리 쓴다(「0F3F=00,0F40=AD,0F45=27」 — 행위자·대상·도구·주문·수; 11-15 어절 개행 훅 검증)
+    for a, v in os.getenv("MV_POKE"):gmatch("(%x+)=(%x+)") do wr(tonumber(a, 16), tonumber(v, 16)) end
+  end
   if SPEED then wr(0x1239, (rd(0x1239) & 0xF3) | ((SPEED & 3) << 2)) end
   wr(0x060B, id & 255); wr(0x060C, id >> 8)
   local st = emu.getState()

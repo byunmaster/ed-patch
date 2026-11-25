@@ -12,6 +12,7 @@
 """
 
 import argparse
+import json
 import re
 import sys
 
@@ -41,6 +42,11 @@ def _fragments(res: str) -> list[list[str]]:
     return out
 
 
+def _card_head(lines: list[str], i: int) -> bool:
+    """장 클리어 카드의 윗 두 줄(장 번호 · 장 제목)인가 — 한두 줄 뒤에 「끝」 줄이 온다."""
+    return any(j < len(lines) and lines[j].strip() == "끝" for j in (i + 1, i + 2)) and bool(lines[i].strip())
+
+
 def axes_of(res: str, jp: str = "") -> dict[str, list[str]]:
     """글 한 조각의 축별 위반 — {축: [예…]}. 조판이 낸 줄(`res`)만 본다(런타임 칸 배열 시뮬레이션은 `layout` 쪽에서 센다)."""
     found: dict[str, list[str]] = {k: [] for k in ("첫칸공백", "고아부호", "빈줄", "부호뒤공백", "부호앞공백")}
@@ -48,7 +54,7 @@ def axes_of(res: str, jp: str = "") -> dict[str, list[str]]:
     punct_ok = bool(re.search(r"(^|\n)[！？!?、。…]", jp))  # 원판도 부호만 있는 줄(놀람 한 마디)
     for lines in _fragments(res):
         for i, ln in enumerate(lines):
-            if ln.startswith(" ") and not (indent_ok and ln.startswith("  ")):
+            if ln.startswith(" ") and not (indent_ok and ln.startswith("  ")) and ln.strip() != "끝" and not _card_head(lines, i):  # 장 클리어 카드의 「끝」 줄은 전 장 창 가운데(마스터 11-08 장 끝 가운데정렬) — 원판 들여쓰기와 무관
                 found["첫칸공백"].append(ln[:16])
             if ln and ln[0] in ".,!?" and not (punct_ok and not re.search(r"[가-힣A-Za-z0-9X]", ln)):
                 found["고아부호"].append(ln[:16])
@@ -190,18 +196,41 @@ def center_axes(res: str, jp: str) -> list[str]:
     """2-8 가운데 정렬 — 원판에서 가운데 맞춘 줄(장 클리어 카드 등)은 우리 글도 **실제 픽셀 폭**으로 가운데여야 한다(줄 끝 `.` `,` `…` 는 폭에서 뺌, 좌우 여백 차 1px 이하).
     원판 줄과 우리 들여쓴 줄을 차례로 짝지어 맞춘 자리(창 폭 · 윗줄 폭)대로 잰다. 우리 쪽에 들여쓴 줄이 모자라도 위반이다."""
     want = _centered_jp(jp)
-    if not want:
-        return []
+    # 장 클리어 카드의 「끝」 줄은 원판이 왼쪽이었어도(장1·3) 전 장 **창 한 줄 폭 안 가운데**다 — 윗 두 줄(장 번호·제목)도 같다(마스터 11-08 「장 끝 제목 가운데정렬」) — 원판 대조와 별개로 직접 잰다
+    cards = []
+    for part in _BREAKS_KR.split(res.replace("<@>", "")):
+        L = typeset._CTRL_TOK.sub("", part).split("\n")
+        centers = []  # 카드 세 줄의 잉크 중심 x — 줄 사이 차 ≤ 2px(눈으로 한 축, 마스터 11-09)
+        for i, ln in enumerate(L):
+            if ln.strip() == "끝" or _card_head(L, i):
+                head = ln.strip() != "끝"  # 윗 두 줄은 반각 공백(4px) 단위라 오차 4px 까지(좌우 차)
+                left = typeset.px(ln[: len(ln) - len(ln.lstrip(" "))])
+                if head and i == 0:
+                    left -= typeset.px(" ")  # 훅이 쪽 첫 줄의 첫 공백 하나는 건너뛴다(`hook_vwf.vr_sp` — 둘째부터 그린다)
+                w = _ink_px(typeset.expand_static(ln.lstrip(" ")))
+                # 2-8 개정(마스터 11-09): 가능한 위치(반각 공백 4px 단위) 중 가장 가까운 것, 같을 때만 왼쪽. 한 칸 옮기면 좌우 차가 8px 변하므로
+                # 가장 가까운 위치는 −4 ≤ 차 ≤ 3 (차 = 좌 − 우 − 1: 모델은 실화면보다 우측 잉크 여백 1px 가 적게 잡힌다 — 실화면 대조로 보정)
+                d = left - (typeset.LINE_PX - left - w) - 1
+                if not -4 <= d <= 3:
+                    cards.append(f"장 끝 카드 좌 {left}px · 우 {typeset.LINE_PX - left - w}px — {ln.strip()[:8]}")
+                centers.append(left + w / 2)
+        # 마스터 11-09 「sfc 장끝은 아까를 유지하자. 공백인 반각이 맞아」 — 장1~4 제목 줄은 낱말 사이 한 칸(반각)이라 중심이 정확히 2px 왼쪽(좌49/우54)이다: 허용 폭 2px 가 그 값
+        if len(centers) >= 2 and max(centers) - min(centers) > 2:
+            cards.append(f"장 끝 카드 줄 사이 중심 차 {max(centers) - min(centers):.1f}px(> 2) — {[round(x, 1) for x in centers]}")
+    if not want or any("끝" == x.strip() for part in _BREAKS_KR.split(res.replace("<@>", "")) for x in typeset._CTRL_TOK.sub("", part).split("\n")):
+        return cards  # 장 끝 카드는 위에서 다 쟀다(원판 짝 대조는 카드 밖 가운데 줄 몫)
     mine = []
     for part in _BREAKS_KR.split(res.replace("<@>", "")):
         lines = typeset._CTRL_TOK.sub("", part).split("\n")
         for i, ln in enumerate(lines):
             if ln.startswith("  ") and "{" not in ln and ln.strip():
                 mine.append((ln, lines[i - 1] if i else ""))
-    out = []
+    out = list(cards)
     if len(mine) < len(want):
         out.append(f"가운데 줄 소실 원판 {len(want)} ↔ 우리 {len(mine)}")
     for (kind, _i), (ln, prev) in zip(want, mine, strict=False):
+        if ln.strip() == "끝":
+            continue  # 위 cards 로 이미 쟀다
         field = typeset.LINE_PX if kind == "f" or not prev.strip() or "{" in prev else typeset.px(prev.rstrip(_END_PUNCT_W + " "))
         left = typeset.px(ln[: len(ln) - len(ln.lstrip(" "))])
         w = _ink_px(ln.lstrip(" "))
@@ -382,11 +411,13 @@ CELL_PX = 8  # 지명 칸 폭(8px 고정)
 
 
 def place_center_axes(names: list[str]) -> list[str]:
-    """2-8 지명 입장 배너·HUD 지명(같은 표) — 10칸 안 가운데 정렬. 앞뒤 빈칸 차이는 한 칸(= 반 칸 4px 쏠림)까지만 허용(칸 단위 한계)."""
+    """2-8 지명 입장 배너·HUD 지명(같은 표) — 10칸 안 가운데 정렬. 앞 빈칸 ≤ 뒤 빈칸(남는 칸은 오른쪽, 마스터 11-08), 차이는 한 칸(= 반 칸 4px 쏠림)까지만 허용(칸 단위 한계)."""
     out = []
     for kr in names:
         left, right = places.pad_cells(kr)
-        if left < 0 or abs(right - left) * CELL_PX // 2 > CELL_PX // 2:
+        if places.half_phase(kr):  # 반 칸(4px) 시작으로 합성 — 정확히 가운데(앞 8·pad+4px = 뒤)
+            continue
+        if left < 0 or (left > right and not places.ODD_TO_FRONT) or abs(right - left) * CELL_PX // 2 > CELL_PX // 2:
             out.append(f"{kr} — 앞 {left}칸 · 뒤 {right}칸 (쏠림 {abs(right - left) * CELL_PX // 2}px)")
     return out
 
@@ -464,7 +495,15 @@ def measure() -> tuple[dict[str, dict[str, int]], dict[str, list[str]]]:
                 add(reg, "넘침", f"{it['id']} {m}")
     for x in place_center_axes(places.texts()):
         add("지명", "가운데", x)
-    INFO["지명 반 칸 쏠림(4px, 홀수 차)"] = [kr for kr in places.texts() if (lambda lr: lr[0] != lr[1])(places.pad_cells(kr))]
+    # 2-18 빈 줄 개행 — 창 대사는 SFC 엔진이 겹친 개행·쪽 첫머리 개행으로 빈 줄을 **못 만든다**(layout ② 가 0 으로 잡는다). 빈 줄이 실제로 그려지는 곳은
+    # 오프닝·엔딩 크롤(다른 엔진, 원판도 문단 사이·첫머리에 둔다)뿐 — 이유 있는 빈 줄이라 정보로만 센다(마스터 판정 대기).
+    INFO["크롤 빈 줄(원판 문단 구분·첫머리 — 2-18 예외 후보)"] = [
+        h
+        for h, v in json.loads((common.ROOT / "games" / "sfc-ed1" / "textmap" / "segments.json").read_text()).items()
+        if isinstance(v, dict) and typeset.CRAWL[0] <= int(v["addr"], 16) <= typeset.CRAWL[1]
+        and ("\n\n" in v["kr"] or v["kr"].startswith("\n"))
+    ]
+    INFO["지명 반 칸 쏠림(4px, 홀수 차)"] = [kr for kr in places.texts() if not places.half_phase(kr) and places.pad_cells(kr)[0] != places.pad_cells(kr)[1]]
     return cnt, ex
 
 

@@ -69,7 +69,8 @@ def _ellipsis_low() -> list[int]:
     """한국식 말줄임표 — 점 셋을 **마침표 높이**(12행)에. 글꼴의 「…」는 일본식으로 글자 가운데(8행)에
     떠 있다(마스터 폰 실기 지적 2026-09-26). 반각 8칸 전용."""
     rows = [0] * CELL
-    rows[12] = 0b01010100 << (CELL_W - 8)
+    # 점은 마침표와 같은 2×2 네모점(마스터 11-16 「전 기종 2×2」, 규칙 1-3): 점 셋(열 0-1·3-4·6-7), 행 12·13 — 바닥은 그대로
+    rows[12] = rows[13] = 0b11011011 << (CELL_W - 8)
     return rows
 
 
@@ -100,6 +101,24 @@ _KAGI = [0x00, 0x00, 0xF0, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x01, 0x01, 0x01,
 # 『』 반각(마스터 도안 F판 10-26 — `board/kagi/F2-double-sfc-ed1.txt`, 「」 와 같은 꼴: 『 = 0~3열 · 』 = 4~7열을 왼쪽으로 당김). 지금 문안엔 없다 — 쓰이면 한글 뱅크 글리프로 실린다(진행 5px = `hook.glyph_rows`)
 _DKAGI = [0x00, 0x00, 0xF0, 0x90, 0xB0, 0xA0, 0xA0, 0xA7, 0xE5, 0x05, 0x05, 0x0D, 0x09, 0x0F, 0x00, 0x00]
 GLYPH_OVERRIDES = {"『": lambda: [r & 0xF0 for r in _DKAGI], "』": lambda: [(r & 0x0F) << 4 for r in _DKAGI], "「": lambda: [r & 0xF0 for r in _KAGI], "」": lambda: [(r & 0x0F) << 4 for r in _KAGI], "…": _ellipsis_low, "D": lambda: render_latin_orig("D"), "Ｅ": lambda: render_latin_orig("E"), "Ｈ": lambda: render_latin_orig("H"), "Ｍ": lambda: render_latin_orig("M"), "Ｐ": lambda: render_latin_orig("P"), "J": lambda: _orig_logo(6), "K": lambda: _orig_logo(7), "．": _orig_dot}
+
+
+def _prows(*spec):
+    out = [0] * 16
+    for y, v in spec:
+        out[y] = v
+    return out
+
+
+# 🔴 마침표·쉼표 도안(마스터 11-13 B안 → 11-16 「전 기종 2×2」, 규칙 1-3·1-9). 점 = 2px 폭 · 2행 네모(행 12·13, 원판 `?` 아래 점과 같은 행·굵기), 쉼표는 같은 점 + 왼쪽 아래 꼬리(행 14).
+# 두 곳이 같은 값을 쓴다: 시트 타일 $83·$84 에 굽는 `build.punct_bake` 와, **대사창(가변 폭 훅)이 그림을 합성하는 `hook.rawtab`(= `render`)** —
+# 대사창은 시트 타일이 아니라 후자를 찍으므로 둘을 맞추지 않으면 화면의 마침표가 도안과 달라진다(11-15 오진: 시트만 재서 2×2 라 했으나 화면은 1px 였다).
+PUNCT_ROWS = {
+    ".": _prows((12, 0b01100000), (13, 0b01100000)),
+    ",": _prows((12, 0b01100000), (13, 0b01100000), (14, 0b11000000)),
+}
+GLYPH_OVERRIDES["."] = lambda: list(PUNCT_ROWS["."])
+GLYPH_OVERRIDES[","] = lambda: list(PUNCT_ROWS[","])
 
 
 def render(ch: str, font) -> list[int]:
@@ -226,6 +245,12 @@ FULLWIDTH_LATIN = {}  # 전각 ＥＰ·ＨＰ·ＭＰ 는 원판 반각으로 �
 
 
 def render_latin_orig(ch: str) -> list[int]:
+    """원판 반각 영문·숫자 그림을 한글 바닥선에 맞춰 1px 올린 꼴(8×16, 1bpp 16행)."""
+    rows = _render_latin_orig(ch)
+    return rows[1:] + [0]  # 한글 바닥선에 맞춰 1px 올림(마스터 11-16 「sfc1 은 변경안2」) — 원판 그림 그대로, 위치만
+
+
+def _render_latin_orig(ch: str) -> list[int]:
     """원판 시트의 반각 영문·숫자 그림(8×16, 1bpp 16행). 전각 ＥＰＭＨ 는 같은 반각 글자 그림. 시트에 없는 글자는 ValueError."""
     import encode
     import text

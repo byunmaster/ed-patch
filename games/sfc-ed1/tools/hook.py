@@ -379,6 +379,28 @@ def name_width_tables() -> tuple[bytes, bytes]:
     return bytes(mon), bytes(pty)
 
 
+def spell_width_table() -> bytes:
+    """주문 번호(`$0F45` 하위 5비트, 32칸)별 표기 폭(px) — 엔진 `{DB}` 가 읽는 원본 표 `$03:EEDD` 를 사전 D4 의 한글 표기에 이은 것(`dicts.bake_runtime` 과 같은
+    대응). 어절 개행이 읽는다(`vwf_wrapchk` `wk_db`). 빈 칸은 0."""
+    import namesrc
+
+    rom = common.rom_bytes()
+    dm = namesrc.dict_map()
+    d4 = {bytes(b): j for j, b in enumerate(text.dict_entries(0xD4))}
+    base = common.snes2off(0x03EEDD)
+    out = bytearray(32)
+    for i in range(32):
+        p = rom[base + 2 * i] | (rom[base + 2 * i + 1] << 8)
+        if p < 0x8000:
+            continue
+        so = common.snes2off((0x03EEDD & 0xFF0000) | p)
+        j = d4.get(bytes(rom[so : rom.index(b"\xff", so)]))
+        kr = dm.get(f"D4:{j:02X}", {}).get("kr") if j is not None else None
+        if kr:
+            out[i] = min(255, sum(4 if c in " .,?!" else 8 for c in kr))
+    return bytes(out)
+
+
 def dict_width_tables() -> list[bytes]:
     """사전 토큰 `$D0`~`$D5` 의 표기 폭(px) 표 여섯 — 색인 하위 7비트로 읽는다(어절 개행 어림). 표기 없는 자리는 16."""
     import namesrc
@@ -400,12 +422,11 @@ def dict_width_tables() -> list[bytes]:
 
 
 def check_crawl_digit_gap() -> None:
-    """크롤(오프닝·엔딩) 반각 숫자 게이트 — 「잉크 열 < 진행 폭」. 같으면 숫자 사이가 0px 라 「10여」가 「100」처럼 읽힌다(마스터 10-13)."""
+    """크롤(오프닝·엔딩) 숫자 게이트 — 「잉크 열 < 진행 폭」. 같으면 숫자 사이가 0px 라 「10여」가 「100」처럼 읽힌다(마스터 10-13). 11-16 부터 크롤도 원판 숫자 그림(`numtab`) + 8px."""
     import hangul_font
 
-    font = hangul_font.load_font()
     for c in "0123456789":
-        rows = hangul_font.render(c, font)
+        rows = hangul_font.render_latin_orig(c)
         cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
         ink = max(cols) + 1
         if ink >= hook_vwf.CRAWL_DIGIT_ADV:
@@ -452,7 +473,7 @@ def build_payload(
     slots: list[int],
     vram: list[int],
     item_table: int = 0x3E8000,
-    place_tables: tuple[int, int] = (0x3E8000, 0x3E8000),
+    place_tables: tuple[int, int, int] = (0x3E8000, 0x3E8000, 0x3E8000),
     spell_table: int = 0x3E8000,
     vwf: bool | None = None,
     xfrom: int | None = None,
@@ -948,7 +969,7 @@ def build_payload(
         (
             "placecopy_c",
             "pc",
-            place_tables[1],
+            place_tables[2],
             CELLS + 6,
         ),  # 로드 메뉴 슬롯 줄 — `$030B` 부터(번호·레벨 뒤)
         ("spellcopy", "sc", spell_table, CELLS),  # 필드 주문 목록
@@ -1993,6 +2014,8 @@ def build_payload(
         for i, tb in enumerate(dict_width_tables()):
             a.label(f"tw_d{i}")
             a.raw(tb)
+        a.label("tw_sp")
+        a.raw(spell_width_table())
         ntab, nadv = num_glyph_table()
         a.label("numtab")
         a.raw(ntab)
@@ -2026,7 +2049,7 @@ def apply(
     rep: list[str | None],
     slots: list[int],
     item_table: int = 0x3E8000,
-    place_tables: tuple[int, int] | None = None,
+    place_tables: tuple[int, int, int] | None = None,
     spell_table: int = 0x3E8000,
     xfrom: int | None = None,
 ) -> dict:
@@ -2045,7 +2068,7 @@ def apply(
         slots,
         [tiles.vram_word(tile[c]) for c in slots],
         item_table,
-        place_tables or (0x3E8000, 0x3E8000),
+        place_tables or (0x3E8000, 0x3E8000, 0x3E8000),
         spell_table,
         xfrom=xfrom,
     )

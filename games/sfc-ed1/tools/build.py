@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import text  # noqa: I001  (common 보다 먼저 — shared/text 와 이름이 겹친다)
 import battle_ui
 import common
+import hangul_font
 import dicts
 import hook
 import namesrc
@@ -164,51 +165,42 @@ def _widen_row(row: list[int], extra: int) -> list[int]:
 # 시트는 인게임·오프닝이 같은 것을 올리므로(`$1E:E6B3`·`$1E:F175`) 한 번에 둘 다 닿는다.
 # 글리프는 칸 왼쪽에 붙으므로 뒤따르는 공백 한 칸을 인코더가 뺀다(`encode.encode`) — 「부호 공백은 반각」.
 PUNCT_CODES = {".": 0x83, ",": 0x84}  # `!` `?` 는 원판 글자판 그대로(마스터 11-06 — 원판에 같은 글자가 있는 것만 원판으로)
-# 🔴 쉼표는 글꼴(Galmuri11-Condensed)이 주는 그대로 쓰지 않는다(마스터 지적 2026-09-20 —
-# 직선 한 획짜리라 일본식 「、」에 가깝게 보인다). **마스터가 직접 찍은 도안**(온점과
-# 같은 무게 — 온점이 행 12 한 칸짜리 점이라, 쉼표도 그 옆 대각선 2픽셀로) —
-# `dot-editor-tool.md` 관례대로 이게 정본이다.
-PUNCT_COMMA_OVERRIDE = [
-    0b00000000,  # 0
-    0b00000000,  # 1
-    0b00000000,  # 2
-    0b00000000,  # 3
-    0b00000000,  # 4
-    0b00000000,  # 5
-    0b00000000,  # 6
-    0b00000000,  # 7
-    0b00000000,  # 8
-    0b00000000,  # 9
-    0b00000000,  # 10
-    0b00000000,  # 11
-    0b01000000,  # 12 — 온점과 같은 행·같은 칸(.#)
-    0b10000000,  # 13 — 그 아래 왼쪽으로 한 칸(#.)
-    0b00000000,  # 14
-    0b00000000,  # 15
-]
+# 🔴 마침표·쉼표는 **마스터 확정 도안**이다(마스터 11-13 「한국식 · 다 권장으로」, 규칙 1-9) — 글꼴이 주는 꼴을
+# 쓰지 않는다. 점은 원판 `?` 아래 점과 같은 행(12·13)·같은 굵기(2px 폭, B안), 쉼표는 같은 점 + 왼쪽 아래 꼬리(행 14).
+# 글리프는 칸 왼쪽 4열에 두고 진행 폭 4px 는 그대로(VWF·조판기 값 불변).
+PUNCT_ROWS = hangul_font.PUNCT_ROWS  # 도안은 hangul_font 에 둔다 — 시트 굽기(punct_bake)와 대사창 합성(hook.rawtab)이 같은 값을 쓴다
+
+
+NUMUP_CODES = list(range(10)) + [0xC3, 0xC4, 0x8F, 0x8E, 0x89, 0x8B, 0x87, 0x8D, 0x88, 0x8A, 0x0C, 0x0F]  # 1px 올릴 원판 시트 타일: 숫자 + 영문 대문자 A B C D E G H L M P + `!`(0C) `?`(0F) — 합성표(`render_latin_orig`)가 `!` `?` 도 올리므로 시트 타일도 같은 높이여야 한다(전투 로그 「!」 만 처졌다, 마스터 11-16). HUD 8×8 타일은 그대로
 
 
 def punct_tiles(rom: bytes) -> list[int]:
     import tiles
 
     ct = tiles.code_tile(rom)
-    return [t for c in PUNCT_CODES.values() for t in (ct[c], ct[c] + 0x10)]
+    codes = list(PUNCT_CODES.values()) + NUMUP_CODES
+    return [t for c in codes for t in (ct[c], ct[c] + 0x10)]
 
 
 def punct_bake(out: bytearray, rom: bytes) -> dict:
-    import hangul_font
     import tiles
 
     ct = tiles.code_tile(rom)
     sheet = common.snes2off(text.FONT_SHEET)
-    font = hangul_font.load_font()
     done = {}
     for ch, code in PUNCT_CODES.items():
-        rows = PUNCT_COMMA_OVERRIDE if ch == "," else hangul_font.render(ch, font)
+        rows = PUNCT_ROWS[ch]
         t = ct[code]
         out[sheet + 8 * t : sheet + 8 * t + 8] = bytes(rows[:8])
         out[sheet + 8 * (t + 0x10) : sheet + 8 * (t + 0x10) + 8] = bytes(rows[8:])
         done[ch] = t
+    if True:  # 시트 숫자·영문 타일을 1px 위로 — 칸 시작 글자가 시트 타일 그대로 나오는 길(합성표 `render_latin_orig` 와 같은 높이)
+        for code in NUMUP_CODES:
+            t = ct[code]
+            g = bytes(out[sheet + 8 * t : sheet + 8 * t + 8]) + bytes(out[sheet + 8 * (t + 0x10) : sheet + 8 * (t + 0x10) + 8])
+            g = g[1:] + b"\x00"
+            out[sheet + 8 * t : sheet + 8 * t + 8] = g[:8]
+            out[sheet + 8 * (t + 0x10) : sheet + 8 * (t + 0x10) + 8] = g[8:]
     return done
 
 
@@ -992,7 +984,7 @@ def kr_items(
     texts += credits.texts()  # 엔딩 스태프롤 — 표 밖 문안이라 여기서 따로 넣는다
     import places
 
-    texts += places.texts()  # 지명(HUD·로드 메뉴) — 표 밖 문안
+    texts += places.glyph_texts()  # 지명(HUD·로드 메뉴) — 표 밖 문안
     texts.append(
         hook.josa_chars()
     )  # 런타임 조사 16형태 — 훅이 색인으로 집는다(문안에 없어도 필요하다)
@@ -1712,7 +1704,7 @@ def build_kr(
             _base + crawl_slots(out, rom, _base),
             xfrom=len(_base),
             item_table=dk["tables"][0xD2],
-            place_tables=(dk["지명"]["a"], dk["지명"]["b"]),
+            place_tables=(dk["지명"]["a"], dk["지명"]["b"], dk["지명"]["c"]),
             spell_table=dk["런타임 치환"]["주문 표 주소"],
         )
         led.snap(out, "렌더러 훅")
