@@ -101,8 +101,8 @@ def suffix_of(s: str) -> str:
 
 
 def suffix_kr(s: str) -> str:
-    """접미 Ａ~Ｄ 반각 + ″ 는 한 글자 그대로(NFKC 가 ′′ 두 글자로 펴 이름 칸이 1B 넘친다 — 붉은 슬러그Ｂ″)."""
-    return unicodedata.normalize("NFKC", suffix_of(s)).replace("′′", "″")
+    """접미는 **원판 그대로 전각 Ａ~Ｄ**(+ ′ ″ 한 글자) — 마스터 11-08 「원본 ABCD 로」(옛 규칙 1-6 은 반각 변환이었다)."""
+    return suffix_of(s).replace("A", "Ａ").replace("B", "Ｂ").replace("C", "Ｃ").replace("D", "Ｄ")
 
 
 def _stream(b: bytes, tgt: int):
@@ -464,6 +464,55 @@ def letter_hide_sites(b: bytes) -> list[tuple[int, int, int]]:
     return out
 
 
+# 🔴 분열·소환 코드가 **접미(A·B·C·D…)를 쓰는 자리**도 원문 이름 길이로 박혀 있다(sfc-ed2 가 같은 꼴을 잡은 것과 같은 부류, 10-24):
+# 템플릿 몬스터(레코드 `tmpl`)의 이름 칸 +P 에 접미 바이트를 읽고(`move.b abs,d0`·`lea abs,a3`·`cmpi`) 분열마다 `addq.b #1`
+# 로 올려 새 몬스터 이름 칸(`move.b d0,$D(a2)`)에 쓴다. 원문은 전각 글자(2B)의 뒤 바이트(0x60~0x63 = Ａ~Ｄ)가 +P=이름 길이−1 이다.
+# 우리 이름은 길이가 달라 +P 가 종결 06 을 덮거나 칸 밖이라 접미가 안 붙었다(화면 일본어 게이트·전투 완료 시험이 못 본다).
+# ⇒ 자리(+P)를 **우리 접미 자리**(이름 길이−1)로, 값을 전각 뒤 바이트 → ASCII 로(0x60→0x41), 한계 비교도 같이 옮긴다.
+# 항목 = (종류, 블록 안 오프셋, 원본 바이트 hex) — 종류: addr(abs.l 의 하위 워드) · imm(즉값 바이트) · disp(a2 변위 워드) · cmp(한계 즉값)
+SUFFIX_SITES: dict[int, tuple[int, list[tuple[str, int, str]]]] = {
+    24: (3, [("imm", 0x5BF, "60"), ("addr", 0x5C2, "1f75")]),
+    35: (
+        3,
+        [("addr", 0x1C0, "1fb5"), ("cmp", 0x1CB, "66"), ("addr", 0x3BA, "1fb5"), ("disp", 0x3CE, "0039"), ("imm", 0x451, "63"), ("addr", 0x454, "1fb5")],
+    ),
+    40: (3, [("addr", 0x28C, "1fba"), ("addr", 0x338, "1fba"), ("disp", 0x34C, "003e"), ("addr", 0x5B4, "1fba")]),
+    48: (
+        3,
+        [("addr", 0x18A, "1fb7"), ("cmp", 0x195, "66"), ("addr", 0x2F8, "1fb7"), ("disp", 0x30C, "003b"), ("imm", 0x673, "62"), ("addr", 0x676, "1fb7")],
+    ),
+    53: (
+        3,
+        [("addr", 0x2BA, "1fb3"), ("cmp", 0x2C5, "68"), ("addr", 0x43A, "1fb3"), ("disp", 0x44E, "0037"), ("imm", 0x581, "63"), ("addr", 0x584, "1fb3")],
+    ),
+}
+# 블록 62(카자즘) — 소환 둘의 이름 칸에 전각 Ａ·Ｂ 워드를 이름 뒤(+10)에 쓴다. 18B(`move.w #$8260,d2` · `move.w d2,A5` · `addq` · `move.w d2,A6`)를
+# 「즉값 워드 쓰기 둘 + nop」으로 다시 짠다 — 워드 = (접미 ASCII, 종결 06).
+SUFFIX_62 = (0x27C, 18, 0, "343c826033c200ff1f36524233c200ff1f76")  # (자리, 길이, 템플릿 레코드, 원본 hex)
+
+
+def suffix_new(kind: str, old: bytes, p_o: int, p_k: int, sfx: int) -> bytes:
+    """접미 자리 한 곳의 새 바이트. `p_o`/`p_k` = 원문/우리 접미 자리(이름 칸 안 오프셋), `sfx` = 우리 템플릿 이름의 끝 글자."""
+    if kind == "addr":
+        return struct.pack(">H", struct.unpack(">H", old)[0] - p_o + p_k)
+    if kind == "disp":
+        return struct.pack(">H", struct.unpack(">H", old)[0] - p_o + p_k)
+    if kind == "imm":  # 전각 뒤 바이트 → ASCII (같은 글자 순서: 0x60 = Ａ → 0x41)
+        return bytes([old[0] - 0x60 + 0x41])
+    if kind == "cmp":
+        return bytes([old[0] - 0x60 + 0x41])
+    raise ValueError(kind)
+
+
+def suffix_62(a5_base: int, a6_base: int, p_k: int) -> bytes:
+    """블록 62 의 18B 재조립 — 즉값 워드 쓰기 둘(`33fc` + 워드 + 절대 주소) + nop."""
+    out = b"".join(
+        b"\x33\xfc" + struct.pack(">H", (0x41 + k) << 8 | 0x06) + b"\x00\xff" + struct.pack(">H", (base + p_k) & 0xFFFF)
+        for k, base in enumerate((a5_base, a6_base))
+    )
+    return out + b"\x4e\x71"
+
+
 BOSS_BLOCK = 82  # 고드윈 2세 — 「ダメージを与えられない」 변형 문구(무기 장비 / 맨손)
 BOSS_STREAMS = (
     0xA0C,
@@ -535,7 +584,7 @@ def patch_boss_block(
 
 # 마지막 레코드(D 칸)는 레코드 구역이 4B 짧은 블록에서 잘려 이름 칸이 짧다(구역 1 끝 = 구역 2 시작이라 12B 뿐 — 정상 블록은 16B).
 # 「炎の騎士Ｄ」→「불꽃의 기사D」 12B + 06 이 안 들어간다. 줄이지 않고 **레코드 구역 끝에 4B 를 끼워 넣어** 정상 블록 꼴(16B)로 만든다(`grow_records`).
-GROW_RECORDS = {(11, "炎の騎士Ｄ"): 4}
+GROW_RECORDS = {(11, "炎の騎士Ｄ"): 4, (17, "砂もぐらＤ"): 2, (78, "くぐつ戦士Ｄ"): 2}  # 전각 접미(11-08) — 마지막 이름 칸이 1B 모자란 둘
 
 
 def grow_records(b: bytes, k: int) -> bytes:
@@ -548,14 +597,16 @@ def grow_records(b: bytes, k: int) -> bytes:
     hits = []
     for i in range(12, len(b) - 1, 2):
         v = struct.unpack(">H", b[i : i + 2])[0]
-        if v in targets:
+        # 구역 2·3 의 표(행동 포인터 묶음 `0166 0298 029a 029c` ×몬스터 수)는 스트림 시작이 아닌 자료(0x298~)도 가리킨다 — 구역 2~3(t[4] 앞) 안의 워드는 값이 블록 안이면 전부 오프셋이다.
+        # 안 밀면 행동 표가 4B 앞을 가리켜 전투가 시작되자마자 68000 예외로 죽는다(블록 11 · 시험 10-24)
+        if (t1 <= i < t[4] and t1 <= v <= len(b)) or v in targets:
             if i < t1:
                 raise SystemExit(
                     f"grow_records: 레코드 구역 안 {i:#x} 에 오프셋 후보 {v:#x} — 사람이 확인한다"
                 )
             hits.append(i)
-    if len(hits) > 6:
-        raise SystemExit(f"grow_records: 오프셋 워드 후보 {len(hits)} > 6 — 사람이 확인한다")
+    if len([i for i in hits if i >= t[4]]) > 6:
+        raise SystemExit(f"grow_records: 구역 4 이후 오프셋 워드 후보 {len(hits)} > 6 — 사람이 확인한다")
     for i in hits:
         v = struct.unpack(">H", b[i : i + 2])[0]
         out[i + k : i + k + 2] = struct.pack(">H", v + k)
@@ -604,6 +655,35 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         if new_addr != 0xFF1DBC + (slot + ACTOR0) * ACTOR_REC + ACTOR_NAME + off:
             out[ins + 6 : ins + 8] = struct.pack(">H", new_addr & 0xFFFF)
             RL.add("포인터", ins + 6, new_addr & 0xFFFF, "알파벳 숨김 쓰기 주소를 한글 이름 길이 기준으로 다시 잰다", RL.EVID_BATTLE, RL.UNDO_NONE, key=f"전투{n:03d}")
+            changed = True
+    # 분열·소환 접미 상수 — 템플릿 레코드의 우리 이름 길이 기준으로
+    if n in SUFFIX_SITES and by_slot:
+        t, sites = SUFFIX_SITES[n]
+        r = by_slot.get(t)
+        if r is not None:
+            jp = r["name"].decode("cp932", "replace")
+            if base_name(jp) in monsters:
+                enc = encode(kr_name(jp, monsters))
+                p_o, p_k = len(r["name"]) - 1, len(enc) - 1
+                for kind, at, old_hex in sites:
+                    old = bytes.fromhex(old_hex)
+                    if bytes(b[at : at + len(old)]) != old:
+                        raise SystemExit(f"블록 {n} 접미 자리 {at:#x}: 원본 바이트가 기대({old_hex})와 다르다")
+                    new = suffix_new(kind, old, p_o, p_k, enc[-1])
+                    out[at : at + len(new)] = new
+                    RL.add("코드 패치", at, new.hex(), f"분열·소환 접미 자리({kind}) 를 한글 이름 길이 기준으로 — 원문은 이름 길이 상수", RL.EVID_PATCH, RL.UNDO_PATCH, key=f"전투{n:03d}")
+                changed = True
+    if n == 62 and by_slot:
+        at, ln, t, old_hex = SUFFIX_62
+        r = by_slot.get(t)
+        if r is not None and base_name(r["name"].decode("cp932", "replace")) in monsters:
+            if bytes(b[at : at + ln]) != bytes.fromhex(old_hex):
+                raise SystemExit(f"블록 62 접미 자리 {at:#x}: 원본 바이트가 기대와 다르다")
+            enc = encode(kr_name(r["name"].decode("cp932", "replace"), monsters))
+            base5 = 0xFF1DBC + 5 * ACTOR_REC + ACTOR_NAME
+            new = suffix_62(base5, base5 + ACTOR_REC, len(enc))
+            out[at : at + ln] = new
+            RL.add("코드 패치", at, new.hex(), "소환 둘의 접미 워드 쓰기를 한글 이름 뒤(ASCII 글자 + 종결 06)로 다시 짠다", RL.EVID_PATCH, RL.UNDO_PATCH, key="전투062")
             changed = True
     moves = []
     jump_at: dict[int, int] = {}  # 제자리엔 goto 스텁만 두고 본문을 끝에 놓은 스트림 → 본문 자리

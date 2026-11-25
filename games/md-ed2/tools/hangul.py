@@ -207,25 +207,20 @@ def _period_dot() -> tuple[list[list[int]], int]:
 
 
 def ellipsis_dots(cell: int) -> list[list[int]]:
-    """말줄임표 — **점 크기·가로 간격은 갈무리11 원본 그대로, 세로 위치만** 마침표의
-    바닥(원작 켑트 글리프의 잉크 맨 아래 행)으로 내린다(마스터 확정 2026-09-17 —
-    "크기는 그대로 위치만 아래로". 점 모양을 마침표 크기로 다시 그리는 안은 접었다).
-
-    갈무리11 자체 `…` 글리프는 칸 가운데(일본식)에 있다 — 그 잉크를 통째로 세로로만
-    밀어 **잉크의 맨 아래 행 = 마침표(리소스1, 원작) 잉크의 맨 아래 행**이 되게 한다.
-    """
+    """말줄임표 — **점을 그 기종 마침표와 같은 모양·크기(2×2 네모점)로 다시 그린다**(번역 규칙 1-3, 마스터 11-15 「… 도 마침표
+    모양으로」→「전 기종」 — 9-17 「크기는 그대로」 판정을 대체). 점 셋의 가로 자리는 갈무리11 자체 「…」 점 그대로, 세로는
+    마침표와 같은 행(`PERIOD_ROWS` — 글자 바닥 = 한글 잉크 바닥, 기준선 검사 11-15)에 얹는다."""
     native = _load_bdf(BDF, cell, top=GLYPH_TOP, left=GLYPH_LEFT)["…"]
     native_bottom = max((y for y, row in enumerate(native) if any(row)), default=None)
-    _dot, y0 = _period_dot()
-    period_bottom = y0 + len(_dot) - 1
     if native_bottom is None:
         return native
-    shift = period_bottom - native_bottom
+    xs = [x for x, v in enumerate(native[native_bottom]) if v]
     out = [[0] * cell for _ in range(cell)]
-    for y, row in enumerate(native):
-        ny = y + shift
-        if 0 <= ny < cell:
-            out[ny] = row[:]
+    for x in xs:
+        for y in PERIOD_ROWS:
+            for dx in (0, 1):
+                if y < cell and x + dx < cell:
+                    out[y][x + dx] = 1
     return out
 
 
@@ -403,6 +398,8 @@ class Charset:
     def encode_char(self, ch: str) -> bytes:
         if ch in self.hangul:
             return struct.pack(">H", self.hangul[ch])
+        if ch in KAGI_HALF:
+            return bytes([KAGI_HALF[ch]])  # 반각 「」 (리소스 1)
         if 0x20 <= ord(ch) < 0x7F:
             if ord(ch) not in self.half:
                 raise SystemExit(
@@ -497,13 +494,32 @@ PAREN_R_FILL = ["".join(reversed(r)) for r in PAREN_L_FILL]
 # 3×4 다이아몬드)·우리 손그림 쉼표가 큰 건 실수가 아니라 **일본식 조판 관례**였다(부호를
 # 덩어리로 크게 그린다). 한글 획 하나(테두리 포함 3px)와 비슷한 크기인 갈무리11 자체 부호로
 # 바꾸는 쪽으로 정했다 — 8×14 칸(리소스1 규격, top=1·left=1, 대사창과 같은 오프셋)에 얹은 그대로.
-PERIOD_FILL_GALMURI = ["........"] * 11 + ["..#....."] + ["........"] * 2
-COMMA_FILL_GALMURI = ["........"] * 11 + ["..#....."] + [".#......"] + ["........"]
+PERIOD_ROWS = (11, 12)  # 마침표 점 행 — 원판 `!` 점과 같은 행(11~12). 원판 라틴·숫자는 한글보다 1px 아래가 원판 꼴이라 그대로 둔다(마스터 11-16 「원본으로 가되」 — 11-15 의 1행 올림을 되돌렸다: 올리며 윗행이 잘렸다)
+PERIOD_FILL_GALMURI = ["........"] * 11 + ["..##...."] * 2 + ["........"]  # 11-13 마스터 「권장으로」: 2×2 점(원판 반각 `!` 점과 같은 크기·자리)
+COMMA_FILL_GALMURI = ["........"] * 11 + ["..##...."] * 2 + [".#......"]  # 같은 점 + 왼쪽 아래 꼬리 1px
 # MD_PUNCT_SRC=original 로 되돌릴 수 있는 손잡이는 남긴다(비교·회귀용) — 정본은 galmuri.
 PUNCT_SRC = _os.environ.get("MD_PUNCT_SRC", "galmuri")
+# 낫표 「」『』 도 반각(마스터 도안 C·C2판 10-26, MD I·II 공통 — md-ed1 과 같은 코드 자리) — 리소스 1 의 안 쓰는 ASCII 자리 0x7B·0x7D·0x5C·0x5E 를 빌린다.
+# 도안은 쌍마다 16×14 한 장(여는 쪽 = 0~7열 · 닫는 쪽 = 8~15열), 채움만 — 테두리는 `ring` 이 만든다. 정본: assets/kagi_half_C.txt · kagi2_half_C.txt
+# 줄 폭 0.5슬롯은 `layout.cw`. 진행 6px.
+KAGI_HALF = {"「": 0x7B, "」": 0x7D, "『": 0x5C, "』": 0x5E}
+KAGI_DOTS = common.GAME_DIR / "assets" / "kagi_half_C.txt"
+KAGI2_DOTS = common.GAME_DIR / "assets" / "kagi2_half_C.txt"
+
+
+def _kagi_fills(path=KAGI_DOTS) -> tuple[list[str], list[str]]:
+    rows = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip() and set(ln.strip()) <= {".", "#"}]
+    assert len(rows) == 14 and all(len(r) == 16 for r in rows), "낫표 도안은 16×14"
+    return [r[:8] for r in rows], [r[8:] for r in rows]
+
+
 EXTRA_R1 = {
     0x28: PAREN_L_FILL,
     0x29: PAREN_R_FILL,
+    0x7B: lambda: _kagi_fills()[0],
+    0x7D: lambda: _kagi_fills()[1],
+    0x5C: lambda: _kagi_fills(KAGI2_DOTS)[0],
+    0x5E: lambda: _kagi_fills(KAGI2_DOTS)[1],
     0x2C: (lambda: COMMA_FILL_GALMURI if PUNCT_SRC == "galmuri" else COMMA_FILL),
 }
 # 🔴 마침표는 EXTRA_R1(없는 글자 추가) 이 아니라 OVERRIDE_R1(있는 글자를 갈아 끼움) 이다 —
@@ -662,8 +678,10 @@ def resource5(
     source: str = "galmuri14",
     narrow_adv: int = 8,
     digit_extra: int = 0,
+    place_at: int | None = None,
 ) -> list[tuple[str, int, bytes]]:
-    """빈 리소스 5 에 **자막 전용 글꼴**을 만든다 — (라벨, 자리, 바이트). `after` = 리소스 1 이 쓴 자리 뒤.
+    """(`place_at` 을 주면 표·글리프를 그 자리(헤더 기준 상대 32비트 오프셋이라 어디든 된다)에 연달아 둔다 — 표 0 구역 밖으로 빼서 합성 글자 자리를 만든다.)
+    빈 리소스 5 에 **자막 전용 글꼴**을 만든다 — (라벨, 자리, 바이트). `after` = 리소스 1 이 쓴 자리 뒤.
 
     자막은 피치 14(원문 그대로 한 줄 16칸)라 **Galmuri14 14×14** 가 제자리다 — 대사창이 피치 12 라
     Galmuri11 을 쓰는 것이지 자막까지 그럴 이유가 없다(유저 2026-09-06).
@@ -731,18 +749,26 @@ def resource5(
                     f"반각 글리프 {by_code[c]!r} 잉크가 {max(wide) + 1}열 — 전진 {adv}px 에 안 들어간다(겹침)"
                 )
         glyphs += _pack_w(fill, cell) + _pack_w(ring(fill), cell)
-    if tbl_at + len(table) > r0["table_end"]:
-        raise SystemExit("리소스 5 표를 둘 자리가 없다(표 0 구역 초과)")
+    if place_at is not None:
+        tbl_at = place_at
+        gl_at = place_at + len(table)
+        gl_at += gl_at & 1
+    elif tbl_at + len(table) > r0["table_end"]:
+        over = tbl_at + len(table) - r0["table_end"]
+        raise SystemExit(
+            f"리소스 5 표를 둘 자리가 없다(표 0 구역 초과) — {over}B(= {-(-over // 2)}자) 모자란다 · 리소스 5 {len(codes)}자"
+        )
     end = r0["glyphs"] + r0["entries"] * r0["stride"]
-    if gl_at + 4 + len(glyphs) > end:
+    if place_at is None and gl_at + 4 + len(glyphs) > end:
         raise SystemExit(f"리소스 5 글리프가 글꼴 구역을 넘는다 ({len(codes)}자)")
     h = FONT5_HDR[0]
     desc = bytes([0x01, cell, cell, nbytes])  # 두 면 · cell×cell
     header = struct.pack(">III", tbl_at - h, tbl_at + len(table) - 4 - h, gl_at - h - 8)
+    lt, lg = ("font5-table", "font5-glyphs") if place_at is not None else ("font0-table", "font0-glyphs")
     return [
         ("font5-header", h, header),
-        ("font0-table", tbl_at, table),
-        ("font0-glyphs", gl_at, desc + bytes(glyphs)),
+        (lt, tbl_at, table),
+        (lg, gl_at, desc + bytes(glyphs)),
     ]
 
 

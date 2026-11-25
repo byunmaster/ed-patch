@@ -70,6 +70,43 @@ class StructCheck(unittest.TestCase):
         st = scene.parse_stream(KANA + b"\x01" + KANA + b"\x05" + b"\x06", 0)
         self.assertEqual(SC.cols(st.tokens), [("end", 6)])
 
+def fake_block(names: list[bytes]) -> bytearray:
+    """레코드 둘(0x0C 부터 0x40 간격, 이름 +0x30 에 06 종결)만 있는 가짜 전투 블록."""
+    end = 0x0C + 0x40 * len(names)
+    b = bytearray(end + 4)
+    b[0:12] = (0x0C).to_bytes(2, "big") + end.to_bytes(2, "big") + bytes(8)
+    for i, nm in enumerate(names):
+        at = 0x0C + 0x40 * i + 0x30
+        b[at : at + len(nm) + 1] = nm + b"\x06"
+    return b
+
+
+class PadCheck(unittest.TestCase):
+    def test_same_and_shorter_zeroed_pass(self):
+        a = fake_block([KANA, KANA])
+        b = bytearray(a)
+        at = 0x0C + 0x30
+        b[at : at + 7] = b"\x82\xa0\x06" + bytes(4)  # 짧아지고 원판 꼬리를 0 으로 — 통과
+        self.assertEqual(SC.record_pad_problems(bytes(a), bytes(a), 0), [])
+        self.assertEqual(SC.record_pad_problems(bytes(a), bytes(b), 0), [])
+
+    def test_stale_tail_fails(self):
+        a = fake_block([KANA, KANA])
+        b = bytearray(a)
+        at = 0x0C + 0x30
+        b[at : at + 3] = b"\x82\xa0\x06"  # 원판 꼬리(い う)가 남았다
+        self.assertEqual(len(SC.record_pad_problems(bytes(a), bytes(b), 0)), 1)
+
+    def test_empty_slot_flip_and_head_change_fail(self):
+        a = fake_block([KANA, b"\x82\xa0"])
+        a[0x0C + 0x40 + 0x30] |= 0x80  # 빈 슬롯
+        b = bytearray(a)
+        b[0x0C + 0x40 + 0x30] &= 0x7F  # 채운 칸으로 뒤집힘 — 빈 슬롯이 다음 이름을 읽는 부류
+        self.assertEqual(len(SC.record_pad_problems(bytes(a), bytes(b), 0)), 1)
+        c = bytearray(a)
+        c[0x0C + 5] = 1
+        self.assertEqual(len(SC.record_pad_problems(bytes(a), bytes(c), 0)), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

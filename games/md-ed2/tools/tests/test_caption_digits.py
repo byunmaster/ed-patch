@@ -7,10 +7,11 @@ import captions
 
 
 class DigitWiden(unittest.TestCase):
-    def test_digit_runs_get_wider_pitch_only(self):
+    def test_digit_runs_get_wider_pitch_and_original_font(self):
         out = captions.widen_digits("<fe0e>왕자는 6살. 15살<fd80>")
         w = f"<fe{14 + 2 * captions.DIGIT_EXTRA:02x}>"
-        self.assertEqual(out, f"<fe0e>왕자는 {w}6<fe0e>살. {w}15<fe0e>살<fd80>")
+        o, n = captions.NARROW_OFF, captions.NARROW_ON  # 숫자만 원작 반각 글꼴(리소스 1)
+        self.assertEqual(out, f"<fe0e>왕자는 {o}{w}6<fe0e>{n}살. {o}{w}15<fe0e>{n}살<fd80>")
 
     def test_tag_digits_untouched(self):
         self.assertEqual(captions.widen_digits("<fd85><fe0e>안녕"), "<fd85><fe0e>안녕")

@@ -35,6 +35,10 @@ ALLOW = {
         "새 스트림이 0F 스텁으로 옮겨 간 꼬리(번역으로 길어진 본문을 모듈 꼬리로 옮김) — 스텁을 따라가 이어 맞댄다",
         "0F=goto: ED2 스트림 VM 의 goto 핸들러($A2xx, scene.parse_stream GOTO) 가 2B 상대 변위로 점프",
     ),
+    "orphan-head": (
+        "바깥 스트림 없는 상점 표 머리의 안쪽 스트림 I(`[포인터 워드 ×3] 4E71 …`) — 옛 자리는 표의 넷째 워드(런타임에 재고 포인터를 쓴다)로 남고 글은 옮겨졌다. 슬롯 4E71·워드 0 이 옮겨진 I(`4E71` 로 시작)의 글 시작을 가리키는지만 본다",
+        "build._restore_orphan_head_slots · 밀매상 074-3·075-0·075-1·075-2 · 087-1 — 머리 워드를 쓰는 lea(0x218·0x21E 자리)가 옛 슬롯을 가리킨 채 남는다(원판 변위 그대로)",
+    ),
     "shop-head": (
         "상점 표 머리(`[포인터 워드 ×N] 4E71 …`) — 앞 워드가 자료라 파서가 제어로 읽는다. 별도 게이트가 워드·4E71 을 본다(대조에서 뺀다)",
         "build.verify_head_tables(상점 표 머리 검사, 머리 워드 자리 4E71 과 포인터 워드가 새 자리를 가리키는지) · build.repoint_shared_heads(lea 변위)",
@@ -90,7 +94,9 @@ def cols(tokens, nm_resolve=None):
         c = t.code
         if c in LAYOUT:
             continue
-        if t.ref in (scene.GOTO, scene.CALL, scene.CODE, scene.CELL):
+        if t.ref == scene.CALL and t.code not in (0xF5, 0xFB) and t.target == t.argpos:
+            out.append(("ctl", c, bytes(t.raw)))  # 자기 인자 자리를 부르는 빈 호출(`10 00 00`) — 상대 0 이 같아야지 절대 목표가 같을 일이 아니다
+        elif t.ref in (scene.GOTO, scene.CALL, scene.CODE, scene.CELL):
             out.append(("ref", c, t.target))
         else:
             out.append(("ctl", c, bytes(t.raw)))
@@ -158,6 +164,20 @@ def compare_module(om: bytes, nm: bytes, tag: str):
         head = b"".join(x.raw for x in st.tokens)[:14]
         if b"\x4e\x71" in head[:14] and st.tokens[0].kind != "text":
             allow["shop-head"] += 1
+            continue
+        if (
+            s >= 6
+            and om[s : s + 2] == b"\x4e\x71"
+            and int.from_bytes(om[s - 6 : s - 4], "big") == s + 2
+            and not any(o_ < s < e_.end for o_, e_ in omod.streams.items())
+        ):
+            # 바깥 스트림 없는 상점 표 머리의 I — 슬롯(4E71)이 옛 자리에 남고 워드 0 은 옮겨진 I 의 글 시작(+2)을 가리킨다
+            w0 = int.from_bytes(nm[s - 6 : s - 4], "big")
+            # I 가 제자리면(n == s) 슬롯·워드 0 이 원판 그대로다 — 옮겨졌을 때만 워드 0 이 새 글 시작(+2)을 가리켜야 한다
+            if nm[s : s + 2] != b"\x4e\x71" or (n != s and (w0 == s + 2 or nm[w0 - 2 : w0] != b"\x4e\x71")):
+                bad.append((tag, s, n, 0, [("orphan-head", om[s - 6 : s + 2].hex())], [("orphan-head", nm[s - 6 : s + 2].hex())]))
+            allow["orphan-head"] += 1
+            cmp_n += 1
             continue
         if s in toggled and not any(r != toggled[s] and omod.roots[r] == s for r in omod.roots):
             if nm[n : n + 1] != om[s : s + 1]:
@@ -441,6 +461,74 @@ def selftest(orig: bytes, kr: bytes) -> bool:
     return False
 
 
+def table_pad_problems(o: bytes, n: bytes) -> list[str]:
+    """고정 폭 표·00 묶음·파티 이름 칸이 원판의 빈 칸·구분자·종결을 지키나 — 원판과 바이트로 대조한다(sfc-ed2 가 군 이름의 길이 0 패딩을 빠뜨려
+    빈 슬롯이 다음 군 이름을 읽은 부류, 10-24). 빈 칸↔채운 칸 뒤집힘 · 구분자 · 06 뒤 꼬리(0)."""
+    import tables
+
+    out = []
+    for name, start, w, sep, cnt, _al in tables.TABLES:
+        p = start
+        for i in range(cnt):
+            if n[p + w] != sep:
+                out.append(f"{name}[{i}] 구분자 {n[p + w]:02x} ≠ 원판 {sep:02x}")
+            if (o[p : p + w].strip(b" \x00") == b"") != (n[p : p + w].strip(b" \x00") == b""):
+                out.append(f"{name}[{i}] 빈 칸↔채운 칸이 뒤집혔다")
+            p += w + 1
+    for name, start, cnt in tables.ZGROUPS:
+        po = pn = start
+        for i in range(cnt):
+            eo, en = o.index(0, po), n.index(0, pn)
+            if (eo == po) != (en == pn):
+                out.append(f"{name}[{i}] 빈 문자열↔채운 문자열이 뒤집혔다")
+            po, pn = eo + 1, en + 1
+    for name, start, stride, cnt, _cap in tables.SLOTS:
+        for i in range(cnt):
+            q = start + i * stride
+            lo, ln = o.index(6, q) - q, n.index(6, q) - q
+            if ln < lo and n[q + ln + 1 : q + lo + 1] != bytes(lo - ln):
+                out.append(f"{name}[{i}] 짧아진 이름의 원판 꼬리가 0 이 아니다")
+    return out
+
+
+# 레코드 구역 뒤쪽이 레코드가 아니라 메시지 스트림인 블록 — 앞 N 개만 레코드다(블록 82: 0x4C~ 는 이름 자리처럼 보이는 글 스트림, 번역이 바꾼다)
+REAL_RECORDS = {82: 1}
+
+
+def record_pad_problems(a: bytes, b: bytes, n: int) -> list[str]:
+    """전투 블록 하나(원판 a · 새 b)의 레코드 — 수 · 머리(이름 칸 밖) · 빈 슬롯 비트7 · 짧아진 이름 꼬리 0."""
+    import battle
+
+    ra, rb = battle.records(a), battle.records(b)
+    if len(ra) != len(rb):
+        return [f"블록 {n} 레코드 수 {len(ra)}→{len(rb)}"]
+    out = []
+    for r1, r2 in list(zip(ra, rb))[: REAL_RECORDS.get(n, len(ra))]:
+        s = r1["start"]
+        hs = [(s, s + battle.NAME_AT)]
+        if r1["name_at"] < s + battle.NAME_AT:  # 짧은 레코드 꼴(머리 안 이름) — 이름 칸만 뺀다
+            hs = [(s, r1["name_at"]), (r1["name_at"] + len(r1["name"]) + 1, s + battle.NAME_AT)]
+        for x, y in hs:
+            if a[x:y] != b[x:y]:
+                out.append(f"블록 {n} 레코드 {s:#x} 머리가 바뀌었다")
+        at = s + battle.NAME_AT
+        if (a[at] & 0x80) != (b[at] & 0x80):
+            out.append(f"블록 {n} 레코드 {s:#x} 빈 슬롯 표지(비트7)가 뒤집혔다")
+        lo, ln = len(r1["name"]), len(r2["name"])
+        if ln < lo and b[r2["name_at"] + ln + 1 : r2["name_at"] + lo + 1] != bytes(lo - ln):
+            out.append(f"블록 {n} 레코드 {s:#x} 짧아진 이름의 원판 꼬리가 0 이 아니다")
+    return out
+
+
+def pad_problems(orig: bytes, kr: bytes) -> list[str]:
+    import battle
+
+    out = table_pad_problems(orig, kr)
+    for i, (x, y) in enumerate(zip(battle.blocks(orig), battle.blocks(kr))):
+        out += record_pad_problems(x[1], y[1], i)
+    return out
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     path = Path(args[0]) if args else common.BUILD_DIR / common.BUILD_TAG / "ed2-kr.bin"
@@ -479,6 +567,11 @@ def main():
         print(f"  전투 블록 대조 {bc}/{bt} (짝 없음 {bu}) · 어긋남 {len(bbad)}")
         allow.update(bal)
         bad += bbad
+    pads = pad_problems(common.rom(), kr)
+    print(f"  빈 칸·패딩·종결 대조(표·전투 레코드) — 어긋남 {len(pads)}")
+    for m in pads[:20]:
+        print(f"  ✗ {m}")
+    ledger_bad = ledger_bad or bool(pads)
     print(f"구조 대조 [md-ed2] — 대조 스트림 {tot[0]}/{tot[1]} (짝 못 지음 {tot[2]}) · 어긋남 {len(bad)} · 자체 시험(종결 코드 한 바이트) 통과")
     for kind, n in sorted(allow.items()):
         why, evid = ALLOW[kind]
