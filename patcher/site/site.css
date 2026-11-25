@@ -72,6 +72,7 @@
   .chip, .tag { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 999px; font: 600 13px/20px var(--text-f); white-space: nowrap; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); }
   .tag.plat { background: var(--accent-weak); border-color: transparent; color: var(--accent); }
   .chip.released { background: var(--ok-weak); color: var(--ok); border-color: transparent; }
+  .tag.ver { background: var(--ok-weak); color: var(--ok); border-color: transparent; font-variant-numeric: tabular-nums; }   /* 배포 판 버전(마스터 10-23) */
   .chip.preparing { background: var(--warn-weak); color: var(--warn); border-color: transparent; }
   .chip.kr, .chip.fix { background: var(--surface); }
   .tags { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -90,11 +91,11 @@
   .group > h2 { margin: 0 0 6px; font: 800 24px/1.3 var(--text-f); display: flex; align-items: baseline; gap: 10px; }
   .group > h2 small, .stage > summary h3 small { font: 600 14px/1 var(--text-f); color: var(--muted); }
   .group > .grid { margin-top: 16px; }
-  /* 상태 묶음(한글패치 안) — 접히는 머리(summary). 펼침 표시는 오른쪽 화살표 */
+  /* 상태 묶음(한글패치 안) — 접히는 머리(summary). 접힘 = 아래 화살표(아래로 펼쳐짐), 펼침 = 위 화살표(마스터 11-17) */
   .stage > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
   .stage > summary::-webkit-details-marker { display: none; }
   .stage > summary::after { content: ""; width: 9px; height: 9px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .15s; margin-right: 6px; }
-  .stage:not([open]) > summary::after { transform: rotate(-45deg); }
+  .stage[open] > summary::after { transform: rotate(-135deg); }
   .stage > summary:hover::after { border-color: var(--accent); }
   .stage > summary h3 { margin: 0; font: 700 17px/1.4 var(--text-f); display: flex; align-items: baseline; gap: 8px; }
   .stage > .grid { margin: 18px 0 8px; }
@@ -108,7 +109,10 @@
      320×224 · 350×240 · 560×240 …)이지만 TV 에선 모두 4:3 이었다 — 잘라 내지 않고 펴서 통째로 보인다. */
   .cover:not(.empty) { background: var(--scr); }
   .cover img { width: 100%; height: 100%; object-fit: fill; image-rendering: pixelated; }
-  .cover.wide img { object-fit: contain; }   /* 이미 16:9 로 늘어난 녹화본 — 비율을 지킨다 */
+  .cover.wide img { object-fit: contain; }
+  .cover.trim img { object-fit: cover; }   /* 검은 테두리를 잘라 구운 표지 — 칸을 채운다 */   /* 이미 16:9 로 늘어난 녹화본 — 비율을 지킨다 */
+  .cover.art { background: var(--surface-2); }
+  .cover.art img { object-fit: contain; image-rendering: auto; }   /* 상자 그림 — 사진이라 비율·보간을 지킨다 */
   .cover.empty span { font: 700 18px/1.4 var(--text-f); color: var(--muted); text-align: center; padding: 0 8px; }
   .card.undecided { opacity: .55; }   /* 할지 정하지 않은 작품은 카드 전체를 흐리게 */
   .card .body { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; flex: 1; }
@@ -195,8 +199,8 @@
   .verlist small { margin-left: 8px; color: var(--muted); font-size: .85em; white-space: nowrap; }
   .verlist details summary { cursor: pointer; list-style: none; }
   .verlist details summary::-webkit-details-marker { display: none; }
-  .verlist details summary::before { content: "▸"; margin-right: 6px; color: var(--muted); display: inline-block; transition: transform .15s; }
-  .verlist details[open] summary::before { transform: rotate(90deg); }
+  .verlist details summary::before { content: "▸"; margin-right: 6px; color: var(--muted); display: inline-block; transform: rotate(90deg); transition: transform .15s; }
+  .verlist details[open] summary::before { transform: rotate(-90deg); }
   @media (prefers-reduced-motion: reduce) { .verlist details summary::before { transition: none; } }
   .verlist details summary:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; border-radius: 4px; }
   .relnotes { margin: 6px 0 2px; padding-left: 18px; list-style: circle; font-size: .92em; }

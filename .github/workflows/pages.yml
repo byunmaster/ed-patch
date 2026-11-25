@@ -48,11 +48,7 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -r patcher/requirements.txt
       - run: sh scripts/fetch_galmuri.sh
-      - name: 커버(타이틀 화면) 받기 — 릴리스 site-covers 의 PNG, 없으면 건너뜀
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release download site-covers -R "$GITHUB_REPOSITORY" -p '*.png' -D covers || true
-      - run: SITE_COVERS=covers python patcher/site/build_site.py --out _site
+      - run: python patcher/site/build_site.py --out _site
       - name: 릴리스 첨부 패치 받기
         env:
           GH_TOKEN: ${{ github.token }}
