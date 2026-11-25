@@ -20,6 +20,10 @@ TEXTMAP = common.GAME_DIR / "textmap"
 FIRST_FREE = 1284
 LAST_SLOT = 0x7EF  # 0x7F0~0x7F3 은 가짜 조사 글리프(런타임 조사 훅)
 FULLWIDTH_SPACE = "　"
+KAGI = {"「": 0x5B, "」": 0x5D, "『": 0x5C, "』": 0x5E}  # 낫표는 반각 칸(8px) — 마스터 도안 E·E2판(10-26), 글리프는 patches.KAGI_PIC·KAGI2_PIC
+
+# 전각 영문·숫자는 번역 글꼴(갈무리)이 아니라 원판 글리프 그대로 쓴다 — 마스터 10-27(규칙 1-8 글꼴 고르기: sfc 는 원본). 원판 전각 표: 숫자 0~9 = 색인 16~25 · A~Z = 26~51
+ORIG_LATIN = {**{chr(0xFF10 + i): 16 + i for i in range(10)}, **{chr(0xFF21 + i): 26 + i for i in range(26)}, "～": 7}  # ～ 는 원판 전각 글리프(색인 7) — 마스터 11-06 「원판에 같은 글자가 있는 것만 원판으로」
 
 HALF_OK = set(" !?-.,0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")  # 반각 글꼴에 실제 모양이 있는 ASCII
 JOSA_PAIRS = (("은", "는"), ("이", "가"), ("을", "를"), ("과", "와"))  # 런타임 조사 쌍(받침 있음, 없음) — patches.JOSA_BASE+k
@@ -38,7 +42,7 @@ def chars_of(text: str) -> set[str]:
     out = set(JOSA_CHARS) if _RUN.search(text) else set()
     for m in _TOK.finditer(text):
         c = m.group(5)
-        if c is not None and c != "\n" and not (0x20 <= ord(c) <= 0x7E):
+        if c is not None and c != "\n" and c not in KAGI and not (0x20 <= ord(c) <= 0x7E):
             out.add(c)
     return out
 
@@ -59,7 +63,7 @@ def allocate(chars, slots=None, lenient=False) -> dict[str, int]:
     """글자 → 글리프 색인. slots = 쓸 수 있는 색인 목록(오름차순) — 기본은 일본어와 안 겹치는 빈 자리. 글자는 코드 포인트 순(결정적).
     lenient 면 자리가 모자랄 때 덜 쓰이는 글자를 공백(0)으로 두고 DROPPED 에 적는다(번역이 끝나 일본어 자리가 풀리기 전의 중간 빌드)."""
     freq = chars if isinstance(chars, dict) else {}
-    cs = sorted(set(chars) - {FULLWIDTH_SPACE})
+    cs = sorted(set(chars) - {FULLWIDTH_SPACE} - set(ORIG_LATIN))
     slots = list(slots) if slots is not None else list(range(FIRST_FREE, LAST_SLOT + 1))
     # 코드 하위 바이트가 `06` 인 슬롯은 쓰지 않는다 — 목록 창의 이름 출력기(`$C0:D9FB`·`$C0:DD18`)가 `06` 을 끝 토큰으로 읽고 앞 바이트가 `$80` 일 때만 글자의 일부로 본다(「길모아의 무지개」 가 `83 06` 에서 잘렸다)
     slots = [i for i in slots if i & 0xFF != 0x06]
@@ -73,6 +77,7 @@ def allocate(chars, slots=None, lenient=False) -> dict[str, int]:
     alloc = {c: slots[i] for i, c in enumerate(cs)}
     for c in DROPPED:
         alloc[c] = 0
+    alloc.update({c: ORIG_LATIN[c] for c in chars if c in ORIG_LATIN})
     alloc[FULLWIDTH_SPACE] = 0  # 원본 글리프 0 = 전각 공백
     return alloc
 
@@ -100,6 +105,8 @@ def encode(text: str, alloc: dict[str, int]) -> bytes:
             c = m.group(5)
             if c == "\n":
                 out.append(0x01)
+            elif c in KAGI:
+                out.append(KAGI[c])
             elif 0x20 <= ord(c) <= 0x7E:
                 if c not in HALF_OK:
                     raise SystemExit(f"반각 글리프가 없는 ASCII {c!r} — 전각 글자를 쓰거나 반각 글꼴(patches.HALF_GLYPHS)에 그린다")

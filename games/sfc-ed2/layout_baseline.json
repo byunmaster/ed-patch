@@ -1,0 +1,16 @@
+{
+ "orphan": 2,
+ "midpage": 7,
+ "lonepunct": 2,
+ "leadspace": 0,
+ "overwide": 0,
+ "compound": 13,
+ "regress": 0,
+ "balance": 0,
+ "lean": 44,
+ "fewer": 0,
+ "joined": 0,
+ "more": 193,
+ "emptywin": 0,
+ "blankline": 2
+}

@@ -2,6 +2,7 @@
 -- 메시지 하나 뒤 엔딩이 입력 없이 흘러 스태프롤까지 간다. 화면이 EN_STABLE 프레임 안 변하면 찍고, 스크롤처럼 계속 변하는 구간은 EN_FORCE 프레임마다 찍는다.
 -- 환경변수: SW_OUT · EN_AT(타이틀에서 쓰는 프레임) · EN_MAXF(끝 프레임) · EN_STABLE · EN_FORCE
 local OUT=os.getenv("SW_OUT") or "out"
+if os.getenv("SW_WATCH") then dofile(os.getenv("SW_WATCHLUA")) end   -- 원판 사본 읽힘 감시(watch.lua)
 local WR=emu.memType.snesWorkRam
 local AT=tonumber(os.getenv("EN_AT") or "900")
 local MAXF=tonumber(os.getenv("EN_MAXF") or "45000")

@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
+import debug_patch
 
 # 글꼴 이전 — 전각 글리프표를 `$D8:0000` 으로 옮긴다(원본은 `$D6:81D1`, 반각 글꼴 앞이라 1,284자뿐).
 # 소비자는 `$C0:9F56` 한 곳: `adc #$81D1`(기준) · `mvn $00,$D6`(소스 뱅크) — 둘을 고친다. 길이 `$12` 는 그대로.
@@ -175,6 +176,47 @@ for _code, (_row, _pic) in HALF_GLYPHS.items():
         _data[_row + _i] = int(_line.replace("#", "1").replace(".", "0"), 2)
     PATCHES.append((HALF_BASE + (_code - 0x20) * 16, bytes(16), bytes(_data)))
 
+# 낫표 「」 — 반각 칸 둘(`$5B`=「 · `$5D`=」, 원판이 안 쓰는 빈 글리프). 마스터 도안 E판(10-26): 16×16 한 장을 반으로 갈라 왼쪽 8열=「, 오른쪽 8열=」. 잉크만(윤곽은 출력 루틴이 만든다).
+KAGI_PIC = [
+    "................",
+    "................",
+    "................",
+    "...####.........",
+    "...#............",
+    "...#............",
+    "...#............",
+    "...#........#...",
+    "...#........#...",
+    "...#........#...",
+    "............#...",
+    "............#...",
+    "............#...",
+    ".........####...",
+    "................",
+    "................",
+]
+KAGI2_PIC = [  # 겹낫표 『』 — 마스터 도안 E2판(10-26), `$5C`=『 · `$5E`=』
+    "................",
+    "................",
+    "................",
+    "...#####........",
+    "...#...#........",
+    "...#.###........",
+    "...#.#..........",
+    "...#.#.....###..",
+    "...#.#.....#.#..",
+    "...###.....#.#..",
+    "...........#.#..",
+    ".........###.#..",
+    ".........#...#..",
+    ".........#####..",
+    "................",
+    "................",
+]
+for _code, _half, _pic in ((0x5B, 0, KAGI_PIC), (0x5D, 8, KAGI_PIC), (0x5C, 0, KAGI2_PIC), (0x5E, 8, KAGI2_PIC)):
+    _data = bytes(int(_l[_half : _half + 8].replace("#", "1").replace(".", "0"), 2) for _l in _pic)
+    PATCHES.append((HALF_BASE + (_code - 0x20) * 16, bytes(16), _data))
+
 # 아이템 이름 15B — 이름 버퍼 `$1201~$120F`(15B, 끝 토큰 `06` 은 `$120F`)에 한 바이트짜리 반각 공백 때문에 15B 가 된 이름(성스러운 지팡이 …)이 안 든다.
 # 이름 표를 16B 칸 새 표로 옮기고(빌드가 `ITEM_TABLE` 을 쓴다) 칸 안에 끝 토큰을 직접 둔다: 복사 15B(`$C1:3365`) · 곱셈 칸 16(`$C1:334D`) · `$120F=06` 쓰기 삭제(5B nop).
 # 15B 를 꽉 채운 이름은 `06` 이 없으므로 소비자 둘(`$C0:DA00` 줄 버퍼 16B · `$C0:DD1D` 17B)의 「끝 토큰 검사」를 스텁으로 바꿔 **색인 14 에서도 멈추게** 한다.
@@ -204,6 +246,25 @@ PATCHES += [
     # 줄 끝에 반각 공백을 둔 원본은 안 보이던 결함이고, 정본 표기 15B 이름(92px = 11타일 + 4px)은 마지막 글자 절반이 잘린다. 끝에서 `$1358` 을 하나 올려 그 타일도 내보낸다.
     (0xC09454, bytes.fromhex("AD9F118D9C11"), bytes([0x22, FLUSH_STUB & 0xFF, (FLUSH_STUB >> 8) & 0xFF, FLUSH_STUB >> 16, 0xEA, 0xEA])),
     (FLUSH_STUB, b"\xff" * len(_FLUSH), _FLUSH),
+]
+
+# UI 출력기(`$C0:9395`)의 제어코드 `$14` = **4px 빈 칸**(마스터 11-08, HUD 지명 앞 패딩 4px 단위 — 반각 8·전각 12 만으로는 4px 가 안 나온다).
+# 원판은 `$01~$17` 을 그냥 건너뛴다(`$C0:941D` `iny · jmp $93EA`) — 여기를 스텁으로 돌려 `$14` 만 처리한다. 글자를 그리지 않고 위상(`$1323`)만 넘긴다:
+#   위상 0 → 1 : 현재 타일에서 4px 앞으로(타일 번호·완성 타일 수 그대로)
+#   위상 1 → 0 : 반쯤 찬 타일을 마저 채워 닫는다(`$1358`+1 · `$1324`+1 을 3 으로 감는다 — 반각 글자의 위상 1 경로와 같다). 타일 내용은 이미 `$C0:A42D` 가 `$1358` 칸에 써 두었다.
+SKIP4_CODE = 0x14
+SKIP4_STUB = 0xC0FCC0
+_SKIP4 = bytes.fromhex(
+    "C914" "D022"  # cmp #$14 · bne skip
+    "AD2313" "D007"  # lda $1323 · bne ph1
+    "A901" "8D2313" "8016"  # lda #1 · sta $1323 · bra skip
+    "9C2313" "EE5813" "EE2413"  # ph1: stz $1323 · inc $1358 · inc $1324
+    "AD2413" "C903" "9006" "38" "E903" "8D2413"  # lda $1324 · cmp #3 · bcc skip · sec · sbc #3 · sta $1324
+    "C8" "4CEA93"  # skip: iny · jmp $93EA
+)
+PATCHES += [
+    (0xC0941D, bytes.fromhex("C84CEA93"), bytes([0x4C, SKIP4_STUB & 0xFF, (SKIP4_STUB >> 8) & 0xFF, 0xEA])),
+    (SKIP4_STUB, b"\xff" * len(_SKIP4), _SKIP4),
     # 목록·장비 창 셋(`$C0:D916` 4줄 · `$C0:DA7E` 7줄 · `$C0:DF23` 필드 사용)의 폭을 한 칸 넓힌다 — 이름 12타일이 오른쪽 테두리에 안 겹치게
     (0xC0D918, bytes([0x0B]), bytes([0x0C])),
     (0xC0DA80, bytes([0x0B]), bytes([0x0C])),
@@ -214,6 +275,38 @@ PATCHES += [
     (0xC0D835, bytes.fromhex("A9208D0F12"), b"\xea" * 5),
     (0xC0D87A, bytes.fromhex("A9208D0F12"), b"\xea" * 5),
     (0xC0D8BF, bytes.fromhex("A9208D0F12"), b"\xea" * 5),
+    # 🔴 가게 목록(`$C0:DCB7~DD88`)의 이름 칸 채우기 — 이름 뒤를 `80 00`(2B) 쌍으로 채워 색인 `$11` 에 닿으면(`cpy #$11 · beq`) 끝낸다. 원판 이름은 전부 짝수 바이트라 색인이 홀수로 떨어지지만,
+    # 우리 이름은 반각 공백이 있으면 홀수 바이트(끝 토큰 `06` 도 홀수 칸)라 색인이 짝수로 떨어져 **`$11` 에 영원히 못 닿고 무한 루프**(가게를 열면 멈춘다 — 10-24 가게 화면 시험에서 발견).
+    # `beq` → `bcs`(`$11` 이상이면 끝): 짝수일 땐 한 쌍을 더 써 색인 `$11`(다음 칸 가격 자리 — 뒤에서 가격 숫자가 덮어쓴다)까지 쓰고 끝난다.
+    (0xC0DD37, bytes([0xF0]), bytes([0xB0])),
+    # 🔴 전투 AI 가 이름 버퍼(`$063B`·`$067B`·`$06BB`·`$06FB`, 칸 0x40)에 쓰는 자리는 **원문 이름 길이**(가나 2B 씩)를 박아 둔다 — 「이름만(접미 떼고)」 `06` 을 끝에 쓰거나 접미 글자(`80 1A`)를 이어 붙인다.
+    # 우리 이름은 길이가 다르고(붉은 슬라임 11B = 원문 10B + 1) 접미가 반각 ASCII(1B)라 끝 토큰이 글자 코드 가운데(`84 24` → `84 06`)에 박혀 「임」 자리가 쓰지 않는 슬롯 `$0406` 의 깨진 글자로 찍혔다(10-24 붉은 슬라임 글줄 겹침).
+    # 군2(붉은 슬라임 — 본문 10B→11B): `$D4:3179`(접미 뗀 이름 끝 `$0645`→`$0646`) · `$D4:2F12`(접미 `80 1A`(2B) → ASCII `A` 한 자를 `$0646` 에) — 뒤의 `lda #$06 / sta $0647` 은 그대로 맞다.
+    # 군24(木人 4B→8B, ビルタラ 8B→6B): `$D4:54F5`(`$063F`→`$0643`) · `$D4:5501`(`$06C3`→`$06C1`).
+    (0xD42F12, bytes.fromhex("A2801A8E4506"), bytes.fromhex("A9418D4606EA")),
+    (0xD43179, bytes.fromhex("8D4506"), bytes.fromhex("8D4606")),
+    (0xD454F5, bytes.fromhex("8D3F06"), bytes.fromhex("8D4306")),
+    (0xD45501, bytes.fromhex("8DC306"), bytes.fromhex("8DC106")),
+    # 같은 부류를 군 → AI 스크립트 표(`$D4:2AFD`, 3B × 99 — 군 번호 순)로 찾아 맞췄다(10-24, 실행 없이 정적으로):
+    # · 군9 `$D4:3C17`(파워앵글 접미 뗀 이름 끝 +14 → +8) · 군36 `$D4:6E66`(독덩굴 +8 → +6) · 군62 `$D4:A617`(카자줌 접미 `80 1A` 둘 → ASCII `A` 를 +6, 끝 +7) · 군71 `$D4:B6CD`(+10 → +6)
+    # · 소환 군 넷 — 이름 버퍼 4번째(`$06FB`)의 접미 글자를 「다음 글자 카운터」로 읽고(`lda`) 올리고(`inc`) 처음 값을 심는다(`lda #글자 / sta`). 원문은 접미 글자 둘째 바이트(`80 1A`의 `1A`), 우리는 반각 ASCII 한 바이트라 자리가 다르다:
+    #   군52(단키 본문 4B → `$06FF`) · 군35(강철개미 8B → `$0703`) · 군47(데·옥토 8B → `$0703`) · 군40(블램나독 8B → `$0703` — 원문도 ASCII 접미라 글자 값은 그대로)
+    (0xD43C17, bytes.fromhex("8D8906"), bytes.fromhex("8D8306")),
+    (0xD46E66, bytes.fromhex("8D8306"), bytes.fromhex("8D8106")),
+    (0xD4A617, bytes.fromhex("A9808D4506A91A8D4606A9068D4706"), bytes.fromhex("A9418D4106A9068D4206EAEAEAEAEA")),
+    (0xD4B6CD, bytes.fromhex("8D4506"), bytes.fromhex("8D4106")),
+    (0xD48D0D, bytes.fromhex("AD0207"), bytes.fromhex("ADFF06")),
+    (0xD48D16, bytes.fromhex("EE0207"), bytes.fromhex("EEFF06")),
+    (0xD48D4A, bytes.fromhex("A91D8D0207"), bytes.fromhex("A9448DFF06")),
+    (0xD46C98, bytes.fromhex("AD0407"), bytes.fromhex("AD0307")),
+    (0xD46CA1, bytes.fromhex("EE0407"), bytes.fromhex("EE0307")),
+    (0xD46CD5, bytes.fromhex("A91D8D0407"), bytes.fromhex("A9448D0307")),
+    (0xD47602, bytes.fromhex("AD0907"), bytes.fromhex("AD0307")),
+    (0xD4760C, bytes.fromhex("8D0907"), bytes.fromhex("8D0307")),
+    (0xD476C3, bytes.fromhex("8D0907"), bytes.fromhex("8D0307")),
+    (0xD4822A, bytes.fromhex("AD0607"), bytes.fromhex("AD0307")),
+    (0xD48233, bytes.fromhex("EE0607"), bytes.fromhex("EE0307")),
+    (0xD484EC, bytes.fromhex("A91C8D0607"), bytes.fromhex("A9438D0307")),
     (ITEM_STUB_A, b"\xff" * len(_STUB_A), _STUB_A),
     (ITEM_STUB_B, b"\xff" * len(_STUB_B), _STUB_B),
 ]
@@ -260,7 +353,66 @@ PATCHES += [
     (WRAP_STUB, b"\xff" * len(_WRAP), _WRAP),
 ]
 
+# 필드 HUD 지명 박스 가운데 맞춤(마스터 11-04 「hud지명칸도 가능하면 가운데도」 · 11-05 승인) — HUD 그리기 `$C0:C0D6` 이 지명 표 `$CB:30E9`(16비트 포인터 64 · 뱅크는 `$A8=CB` 즉치)에서 문자열을 골라
+# 고정 위치(`ldx #$15` = 타일 21 = x 168px)에 줄 왼쪽 끝부터 찍는다. 같은 표를 세이브·로드 목록 줄(`$CB:6A34` 복사 루프 — 첫 `$20` 에서 끊는다)도 읽어서 표에 앞 공백을 넣을 수 없다 —
+# HUD 읽기 셋(`lda $CB:30E9,x` · `lda $CB:30EA,x` · `lda #$CB`)만 가운데 맞춘 새 표(`$D8:F900`: 포인터 64 × 2B + 문자열)로 돌리고 세이브 줄은 옛 표 그대로 둔다. 새 표는 빌드가 쓴다(`build.hud_names_table`).
+HUD_NAMES = 0xD8F900
+HUD_NAMES_END = 0xD8FFFF
+PATCHES += [
+    (0xC0C0E3, bytes.fromhex("BFE930CB"), bytes.fromhex("BF00F9D8")),  # lda $CB:30E9,x → lda $D8:F900,x
+    (0xC0C0EA, bytes.fromhex("BFEA30CB"), bytes.fromhex("BF01F9D8")),  # lda $CB:30EA,x → lda $D8:F901,x
+    (0xC0C0F1, bytes([0xA9, 0xCB]), bytes([0xA9, 0xD8])),  # lda #$CB(→ $A8 뱅크) → lda #$D8
+]
+
+# 디버그 입구(마스터 10-24 — 제품 롬에 넣는다): 열쇠 Start+A+B 1초 · 켜진 뒤 L+R+Select 명령. 설명은 `debug_patch.py`.
+PATCHES += debug_patch.patches()
+
 EXCEPT = [(common.snes2off(a), common.snes2off(a) + len(n)) for a, _o, n in PATCHES]
 FONT_OUT = common.snes2off(FONT_BANK << 16)
 
+# ── 몬스터 접미 A~D 를 원판 꼴(전각 2B `80 1A~1D`)로 되돌리는 시험(마스터 11-08, `ED_FULLSUF=1`) ───────────────────────────────────────────
+# 전투 AI 스크립트가 이름 버퍼(`$063B`·`$067B`·`$06BB`·`$06FB`, 칸 0x40)에 쓰는 자리는 **원문 이름 길이**(Lj) 기준 오프셋이 박혀 있고, 전각 접미(2B)를 원판 코드 꼴 그대로 쓴다.
+# 우리 이름 본문 길이(Lk)가 Lj 와 다르니 그 operand 에 Lk−Lj 만 더하면 원판 코드가 그대로 맞는다(반각 접미 1B 로 바꿔 쓰던 패치가 필요 없다). 원판 접미가 ASCII 인 군(9 의 칸1·2 · 40)은 반각 패치 그대로.
+NAME_BUF = (0x063B, 0x067B, 0x06BB, 0x06FB)
+FULLSUF_DROP = {0xD42F12, 0xD43179, 0xD454F5, 0xD45501, 0xD46E66, 0xD4A617, 0xD4B6CD, 0xD48D0D, 0xD48D16, 0xD48D4A, 0xD46C98, 0xD46CA1, 0xD46CD5, 0xD4822A, 0xD48233, 0xD484EC}  # 전각 꼴에서 대체되는 반각 패치 자리
 
+
+def _w16(b: bytearray, at: int, delta: int = 0, value: int | None = None) -> None:
+    v = value if value is not None else (b[at] | b[at + 1] << 8) + delta
+    b[at], b[at + 1] = v & 0xFF, v >> 8
+
+
+def apply_fullsuf(rom: bytearray, src: bytes, lk: dict) -> list:
+    """원판(`src`) 바이트를 확인하고 전각 접미 꼴 패치를 `rom` 에 쓴다. `lk[(군, 칸)]` = 우리 이름 본문(접미 뗀) 바이트. 쓴 구간(파일 오프셋)을 돌려 준다."""
+    ranges: list = []
+
+    def put(addr: int, orig_hex: str, edits: list) -> None:
+        o = common.snes2off(addr)
+        want = bytes.fromhex(orig_hex)
+        if bytes(src[o : o + len(want)]) != want:
+            raise SystemExit(f"전각 접미 패치 자리가 원본과 다르다: {common.fmt(addr)} {bytes(src[o : o + len(want)]).hex()} ≠ {orig_hex}")
+        b = bytearray(want)
+        for at, delta, value in edits:
+            _w16(b, at, delta, value)
+        rom[o : o + len(b)] = b
+        ranges.append((o, o + len(b)))
+
+    d2 = lk[(2, 0)] - 10
+    put(0xD42F12, "A2801A8E4506", [(4, d2, None)])  # 군2 칸0 접미 `ldx #$1A80 / stx` 자리
+    put(0xD42F1A, "8D4706", [(1, d2, None)])  # 끝 `06`
+    put(0xD43179, "8D4506", [(1, d2, None)])  # 접미 뗀 이름 끝 `06`
+    # 군2 분열 표지(`゛`·`゜`) — 이름 본문+접미(원문 12B) 뒤에 박는다: 우리 본문+접미 = 12 + d2
+    put(0xD42FEC, "A9809D4705A90E9D4805A9069D4905", [(3, d2, None), (8, d2, None), (13, d2, None)])
+    put(0xD43011, "A9809D8705A90F9D8805A9069D8905", [(3, d2, None), (8, d2, None), (13, d2, None)])
+    for a, g, s, lj, o in ((0xD454F5, 24, 0, 4, "8D3F06"), (0xD45501, 24, 2, 8, "8DC306"), (0xD46E66, 36, 1, 8, "8D8306"), (0xD4B6CD, 71, 0, 10, "8D4506")):
+        put(a, o, [(1, lk[(g, s)] - lj, None)])  # 접미 뗀 이름 끝 `06`
+    d62 = lk[(62, 0)] - 10
+    put(0xD4A617, "A9808D4506A91A8D4606A9068D4706", [(3, d62, None), (8, d62, None), (13, d62, None)])  # 군62 칸0 접미 둘 + 끝
+    put(0xD4A637, "8D8606", [(1, lk[(62, 1)] - 10, None)])  # 칸1 접미 둘째 바이트
+    # 소환 군 — 접미 둘째 바이트를 「다음 글자 카운터」로 읽고·올리고·심는다: 주소 = `$06FB` + Lk + 1 (군52·35·47 의 코드 넷씩)
+    for g, sites in ((52, (("AD", 0xD48CAE), ("AD", 0xD48D0D), ("EE", 0xD48D16), ("8D", 0xD48D4C))), (35, (("AD", 0xD46C10), ("AD", 0xD46C98), ("EE", 0xD46CA1), ("8D", 0xD46CD7))), (47, (("AD", 0xD481C1), ("AD", 0xD4822A), ("EE", 0xD48233), ("8D", 0xD484EE)))):
+        new = NAME_BUF[3] + lk[(g, 3)] + 1
+        for opc, a in sites:
+            cur = {52: 0x0702, 35: 0x0704, 47: 0x0706}[g]
+            put(a, f"{opc}{cur & 255:02X}{cur >> 8:02X}", [(1, 0, new)])
+    return ranges

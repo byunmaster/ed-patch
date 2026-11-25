@@ -26,6 +26,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 import common
+import debug_patch
+import debug_qa
 import hangul_font
 import hud_tiles
 import kr
@@ -45,6 +47,11 @@ IMMUTABLE = [(0, common.ROM_SIZE)]
 EXCEPT = [(CHK_OFF, CHK_OFF + 4)] + patches.EXCEPT
 NOOP = 0x16  # 대사 제어코드 `$16` = 핸들러가 `rts` 뿐인 빈 토큰(남는 자리 채움)
 TRAMP = patches.TRAMP_CODE
+
+# 구간 머리에 붙은 문자열 포인터 표의 바이트 수 — 가게 대사(「어느 걸 파시겠습니까요?」 따위)는 [포인터 3~4개 + 문자열들] 꼴이고, 표 머리 주소를 코드가 `lda #lo/hi/bank` 로 읽는다.
+# 번역이 짧으면 제자리라 표가 그대로지만 길면 구간 머리를 트램펄린으로 덮어 표가 날아간다(`$C49552`·`$C5BF71`·`$C6AAA0`) — 그래서 이 구간은 **표 뒤(진짜 시작)** 에서 시작한다.
+# 나머지 표 구간(`$C2D63E`·`$C494E1`·`$C5A640`·`$C5BFC1`)은 번역 글에 표 바이트(`<hh …>`)를 그대로 싣는다(제자리에 들어가 표가 보존된다).
+TABLE_PREFIX = {"$C49552": 8, "$C5BF71": 6, "$C6AAA0": 6}
 
 # 확장 뱅크 배치: `$D8` = 글꼴(0x0000~0x8FFF) + 꼬리(0xA000~: 창 블록·사전) · `$D9~$DF` = 대사 번역문
 TAIL_START = (patches.FONT_BANK << 16) | 0xA000
@@ -150,8 +157,13 @@ def fix_checksum(rom: bytearray) -> None:
     rom[CHK_OFF + 2 : CHK_OFF + 4] = s.to_bytes(2, "little")
 
 
+FULLSUF = os.environ.get("ED_FULLSUF", "1") != "0"  # 몬스터 접미 A~D 를 원판 전각 2B 코드로(patches.apply_fullsuf, 마스터 11-08) — `ED_FULLSUF=0` 이면 옛 반각 접미
+
+
 def apply_patches(rom: bytearray) -> None:
     for addr, old, new in patches.PATCHES:
+        if FULLSUF and addr in patches.FULLSUF_DROP:  # 전각 접미 꼴에서는 원판 코드를 operand 만 바꿔 쓴다(patches.apply_fullsuf)
+            continue
         o = common.snes2off(addr)
         if bytes(rom[o : o + len(old)]) != old:
             raise SystemExit(f"패치 자리가 원본과 다르다: {common.fmt(addr)} {bytes(rom[o : o + len(old)]).hex()} ≠ {old.hex()}")
@@ -283,6 +295,53 @@ def jump_leads(src: bytes, seg_map: dict, sg: dict, names: dict, e1w: dict) -> d
     return out
 
 
+def call_lead(src: bytes, a: int, seg_map: dict, names: dict, tw: dict) -> tuple[int, int] | None:
+    """구간 바로 앞이 호출(`$10 lo hi`)이면 부른 조각(이름 「아트라스」·「왕자님」)이 이 줄에 먼저 나간다 — 그 폭만큼 이 구간 첫 줄이 이미 차 있다(안 세면 엔진이 낱말 가운데서 끊는다 — 마스터 10-25 「여행을」 홀로 한 줄)."""
+    if a < 3 or src[a - 3] != 0x10:
+        return None
+    bank = (common.off2snes(a) >> 16) & 0xFF
+    tgt = segs.seg_id(common.snes2off((bank << 16) | src[a - 2] | src[a - 1] << 8))
+    v = seg_map.get(tgt)
+    if not v:
+        return None
+    st = typeset.end_state(resolve_josa(v["kr"], names), tw)
+    return st if st != (0, 0) else None
+
+
+def trail_call_width(src: bytes, b: int, seg_map: dict, names: dict, tw: dict) -> int:
+    """구간 끝(`b`) 바로 뒤가 호출(`$10 lo hi`)이면 부른 조각의 폭(없으면 0) — 마지막 낱말이 이름과 한 덩어리로 줄을 넘기는지 가늠한다."""
+    if b + 3 > len(src) or src[b] != 0x10:
+        return 0
+    bank = (common.off2snes(b) >> 16) & 0xFF
+    tgt = segs.seg_id(common.snes2off((bank << 16) | src[b + 1] | src[b + 2] << 8))
+    v = seg_map.get(tgt)
+    if not v:
+        return 0
+    return typeset.end_state(resolve_josa(v["kr"], names), tw)[0]
+
+
+def lead_state(src: bytes, a: int, key: str, seg_map: dict, names: dict, tw: dict, typeset_end: dict, jump_lead: dict):
+    """구간 `a` 가 이어 쓰는 줄 상태(줄 폭, 쪽 줄 수) — 바로 앞 구간 끝 · 점프로 들어오는 공유 꼬리 · 부른 조각(이름)에서 가장 빡빡한 쪽.
+    부른 조각 앞의 같은 줄 글자도 센다 — 「당신들은 아까 ⟨프레이아⟩라고」 가 한 줄 50단위를 넘어도 몰랐다(10-28). `check_layout`·`sim_pagebreak` 도 이걸 쓴다."""
+    cl = call_lead(src, a, seg_map, names, tw)
+    pre = typeset_end.get(a - 3) if a >= 3 and src[a - 3] == 0x10 else None
+    if cl and pre:
+        cl = (min(pre[0] + cl[0], typeset.LINE_UNITS - 2), pre[1])
+    return typeset.worse(typeset.worse(typeset_end.get(a), jump_lead.get(key)), cl)
+
+
+def typeset_seg(text: str, src: bytes, b: int, seg_map: dict, names: dict, tw: dict, pv, fn=None):
+    """대사 구간 조판 — 구간 바로 뒤가 호출(이름 「프레이아」)이면 그 폭이 마지막 낱말에 붙어 같은 줄에 나가므로 자리표시 글자를 붙여 재고 뗀다."""
+    tr = trail_call_width(src, b, seg_map, names, tw)
+    if tr and text and not text.endswith(("\n", ">")):
+        ph = "가" * (tr // 3) + ("a" if tr % 3 == 2 else "")
+        body = text.rstrip(" ")
+        sp = text[len(body) :]
+        out = (fn or typeset.typeset)(body + ph, tw, pv)
+        return (out[: -len(ph)] if out.endswith(ph) else out) + sp
+    return typeset.no_empty_window(text, tw, pv, fn)
+
+
 def call_texts(text: str, seg_off: int, seg_map: dict, sg: dict) -> dict[str, str]:
     """이 구간이 부르는 조각(`<10 lo hi>`)의 한국어 — 같은 뱅크 안 주소다. 조판기가 폭을 세는 데 쓴다."""
     out = {}
@@ -322,6 +381,74 @@ def collect_texts(src: bytes) -> tuple[dict, dict, dict]:
     return seg_map, ui_map, dict_map
 
 
+PLACE_TABLE = "$CB30E9"  # 지역명 표(HUD 위치 표시 · 세이브 줄) — 16비트 포인터 64
+COND_CHARS = "큐베라프로스"  # HUD 55 콘덴스드 글자 — 반각 코드 0x3A.. 에 차례로(원판이 안 쓰는 빈 글리프)
+HUD_COND_ID = 55
+HUD_BOX_PX = 72  # 필드 HUD 지명 박스 안쪽 폭 — 타일 21~29(x 168~240), 글자는 x 168 부터 찍힌다(캡처 실측 11-05)
+
+
+def hud_lead(px: int) -> bytes:
+    """가운데 맞춤 앞 패딩 — 4px 빈 칸(`$14`, patches.SKIP4) c개 + 반각 공백(`$20` 8px) a개 + 전각 공백(`$8000` 12px) b개.
+    마스터 11-09(규칙 2-8 「최대한 가운데」): (박스 폭−글자 폭−1)/2 에 **가장 가까운** 패딩(4px 단위), 거리가 같을 때만 왼쪽 여백이 짧은 쪽.
+    글자가 박스보다 넓으면(길 이름 「큐베라～프로스」) 패딩 없음."""
+    want = (HUD_BOX_PX - px - 1) / 2  # 획이 칸 오른쪽 끝에서 1px 비어 있다(실화면 64칸 실측 11-08: 보정 없으면 24곳이 오른쪽으로 2.5px 쏠림)
+    if want <= 0:
+        return b""
+    cands = [(4 * c + 8 * a + 12 * b, c + a + b, c, a, b) for c in range(2) for a in range(10) for b in range(7)]
+    # 마스터 11-09 「최대한 가운데」: 가능한 패딩 중 want 에 가장 가까운 것, 같은 거리면 왼쪽 여백이 짧은 쪽
+    _, _, c, a, b = min(cands, key=lambda x: (abs(x[0] - want), x[0], x[1]))
+    return b"\x80\x00" * b + b"\x20" * a + bytes([patches.SKIP4_CODE]) * c
+
+
+def hud_names_table(cores: dict[int, bytes], count: int) -> bytes:
+    """HUD 전용 지명 표 `$D8:F900` — 16비트 포인터 `count`개(뱅크는 `$D8`) + 앞 패딩을 붙인 문자열(끝 `$00`). 세이브 줄은 옛 표(`$CB:30E9`)를 그대로 읽는다."""
+    base = patches.HUD_NAMES & 0xFFFF
+    body = bytearray()
+    ptrs = []
+    for i in range(count):
+        ptrs.append(base + 2 * count + len(body))
+        c = cores[i]
+        lead = hud_lead(ui.px_width(c))
+        used = ui.px_width(lead + c) if lead else ui.px_width(c)
+        # 뒤 공백으로 박스 끝까지 지운다 — 원판 지명도 뒤에 `$20` 을 달아 앞 지명의 남은 타일을 덮는다(11-06 「네리아r」 찌꺼기: 짧은 이름 뒤 칸이 안 지워짐)
+        body += lead + c + b"\x20" * max(0, (HUD_BOX_PX - used) // 8) + b"\x00"
+    table = b"".join(p.to_bytes(2, "little") for p in ptrs) + bytes(body)
+    assert (patches.HUD_NAMES & 0xFFFF) + len(table) - 1 <= (patches.HUD_NAMES_END & 0xFFFF), "HUD 지명 표가 $D8:FFFF 를 넘는다"
+    return table
+
+
+def ptrs16_entry(src: bytes, base: int, w: int, v: dict) -> bytes:
+    """16비트 포인터 표 항목의 원문 바이트(끝 토큰 앞까지). `term` 이 있으면 그 토큰(몬스터 일람 = 07)까지 — 글리프 둘째 바이트가 07 일 수 있어 토큰 단위로 걷는다."""
+    a = common.snes2off(((base >> 16) << 16) | w)
+    e = a
+    term = v.get("term", 0)
+    while src[e] != term:
+        e += script.token_len(src, e) if term else 1
+    return bytes(src[a:e])
+
+
+def viewer_name(canon, jp: str):
+    """몬스터 일람 이름 → 정본. 접미 A~D·숫자(「ガード1」)는 이름 뒤에 그대로 붙인다."""
+    base, suf = monsters.split_name(jp)
+    k = _mon_lookup(canon, base)
+    if k:
+        return k + suf
+    m = re.match(r"^(.+?)([0-9１-９])$", jp)
+    if m:
+        k = _mon_lookup(canon, m.group(1))
+        if k:
+            return k + m.group(2)
+    return None
+
+
+def ptrs16_text(src: bytes, jpb: bytes, v: dict, canon):
+    """항목 하나의 한국어 — 일람(`mon`)은 사전 참조를 펼친 이름을 정본으로, 그 밖은 지역명 규칙(정본 범주 조회)."""
+    if v.get("mon"):
+        return viewer_name(canon, monsters.decode(jpb, src))
+    jpn = ui.row_text(src, jpb).rstrip(" 　")
+    return canon.lookup(jpn, v.get("cat"), "ed2") if jpn else ""
+
+
 def ptrs16_canon_chars(src: bytes, key: str, v: dict) -> set[str]:
     import canon
 
@@ -332,12 +459,7 @@ def ptrs16_canon_chars(src: bytes, key: str, v: dict) -> set[str]:
         if str(i) in v.get("over", {}):
             continue
         w = src[o + 2 * i] | src[o + 2 * i + 1] << 8
-        a = common.snes2off(((base >> 16) << 16) | w)
-        e = a
-        while src[e] != 0:
-            e += 1
-        jpn = ui.row_text(src, src[a:e]).rstrip(" 　")
-        t = canon.lookup(jpn, v.get("cat"), "ed2") if jpn else None
+        t = ptrs16_text(src, ptrs16_entry(src, base, w, v), v, canon)
         if t:
             out |= kr.chars_of(t)
     return out
@@ -406,7 +528,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
     del LEDGER[:]
     off_keys = _off_keys()
     apply_patches(rom)
-    for nm, ad, ln, why in (("STUB", patches.STUB_ADDR, len(patches.STUB), "`$17` 트램펄린 핸들러(대사 구간을 확장 뱅크로 옮기는 24비트 점프)"), ("LOADER_STUB", patches.LOADER_STUB_ADDR, len(patches.LOADER_STUB), "창 블록 로더를 24비트 복사 루프로 돌림(블록을 확장 뱅크로 옮기려고)"), ("JOSA_STUB1", patches.JOSA_STUB1, 0x60, "조사 훅 — 전각 글리프 가져오기에 걸린다"), ("JOSA_STUB2", patches.JOSA_STUB2, 0x40, "조사 훅 — 반각 글리프에 걸린다")):
+    for nm, ad, ln, why in (("STUB", patches.STUB_ADDR, len(patches.STUB), "`$17` 트램펄린 핸들러(대사 구간을 확장 뱅크로 옮기는 24비트 점프)"), ("LOADER_STUB", patches.LOADER_STUB_ADDR, len(patches.LOADER_STUB), "창 블록 로더를 24비트 복사 루프로 돌림(블록을 확장 뱅크로 옮기려고)"), ("JOSA_STUB1", patches.JOSA_STUB1, 0x60, "조사 훅 — 전각 글리프 가져오기에 걸린다"), ("JOSA_STUB2", patches.JOSA_STUB2, 0x40, "조사 훅 — 반각 글리프에 걸린다"), ("DEBUG_INPUT", debug_patch.CMD_STUB, len(debug_patch.stub()), "디버그 입구 — 입력 루프(`$C1:E306`)에서 L+R+Select 1초(열쇠)와 켜진 뒤의 명령 조합을 읽는다")):
         rec("스텁", f"patch:{nm}", ad, ad, why, ln, "되돌리기 수단 없음(코드 패치 — 끄면 이 스텁을 부르는 옮김 블록 전부가 죽는다)")
     seg_map, ui_map, dict_map = collect_texts(src)
     names = dict_names(src, dict_map)
@@ -445,6 +567,9 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         chars |= ptrs16_canon_chars(src, key, v)
     for v in names.values():
         chars |= kr.chars_of(v)
+    if debug_qa.ENABLED:  # QA 디버그 문구(제품 롬엔 없다 — ED_DEBUG_QA=1 일 때만)
+        for t in list(debug_qa.TEXTS.values()) + [debug_qa.item_text(i) for i in range(1, 100)]:
+            chars |= kr.chars_of(t)
     chars |= kr.JOSA_CHARS
     for c in kr.JOSA_CHARS:
         chars[c] += 10**6  # 조사 훅이 부르는 글자는 절대 밀려나면 안 된다
@@ -504,6 +629,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
     # 3a. 16비트 포인터 표(같은 뱅크 안 문자열) — 지역명 등. 번역은 정본(canon)에서 읽고, 정본에 없는 건 textmap 의 over 가 채운다
     local = Local(rom, src, writes)
     missing = []
+    hud_cores: dict[int, bytes] = {}
     for key, v in sorted(kr.load("ptrs16").items()):
         base = int(key.lstrip("$"), 16)
         bank = base >> 16
@@ -515,12 +641,10 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         jps = []
         for i in range(v["count"]):
             w = src[o + 2 * i] | src[o + 2 * i + 1] << 8
-            a = common.snes2off((bank << 16) | w)
-            e = a
-            while src[e] != 0:
-                e += 1
-            jps.append(src[a:e])
-            pad_px = max(pad_px, ui.px_width(src[a:e]))
+            jpb = ptrs16_entry(src, base, w, v)
+            jps.append(jpb)
+            if not v.get("mon"):
+                pad_px = max(pad_px, ui.px_width(jpb))
         for i, jpb in enumerate(jps):
             over = v.get("over", {}).get(str(i))
             jp = segs.notation(src, 0, 0) if False else None
@@ -529,21 +653,39 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             else:
                 import canon
 
-                jpn = ui.row_text(src, jpb).rstrip(" 　")
-                text = canon.lookup(jpn, v.get("cat"), "ed2") if jpn else ""
+                text = ptrs16_text(src, jpb, v, canon)
                 if text is None:
-                    missing.append((key, i, jpn))
+                    missing.append((key, i, monsters.decode(jpb, src) if v.get("mon") else ui.row_text(src, jpb).rstrip(" 　")))
                     continue  # 정본에 없다 — 원문을 둔다(관리자에게 후보로 올린다)
             data = kr.encode(text, alloc)
             px = ui.px_width(data)
+            if key == PLACE_TABLE:
+                hud_cores[i] = data
             dead.append((common.snes2off((bank << 16) | (src[o + 2 * i] | src[o + 2 * i + 1] << 8)), common.snes2off((bank << 16) | (src[o + 2 * i] | src[o + 2 * i + 1] << 8)) + len(jpb) + 1))
-            data += b" " * max(0, (pad_px - px) // 8)
-            addr = local.put(bank, data + b"\x00")
+            if not v.get("mon"):
+                data += b" " * max(0, (pad_px - px) // 8)
+            addr = local.put(bank, data + bytes([v.get("term", 0)]))
             rom[o + 2 * i : o + 2 * i + 2] = bytes([addr & 0xFF, (addr >> 8) & 0xFF])
             writes.append((o + 2 * i, o + 2 * i + 2))
             rec("포인터", f"ptrs16{key}[{i}]", (bank << 16) | (src[o + 2 * i] | src[o + 2 * i + 1] << 8), (bank << 16) | addr, "지역명 표 항목을 뱅크 빈 자리로 옮긴다 — 16비트 포인터 표 항목만 돌린다", len(data) + 1)
             stats["ptrs16"] = stats.get("ptrs16", 0) + 1
     stats["missing"] = missing
+    if hud_cores:
+        # HUD 55 「큐베라～프로스」: 12px 글자로는 84px 라 박스(72px)에서 「스」가 잘린다 → 갈무리 콘덴스드 반각 글리프(빈 코드 0x3A~0x3F, 8px)로 60px. 「～」 는 원판 전각 그대로(마스터 11-10)
+        cond = {ch: 0x3A + k for k, ch in enumerate(COND_CHARS)}
+        assert hud_cores[HUD_COND_ID] == kr.encode("큐베라～프로스", alloc), "HUD 55 문안이 바뀌었다"
+        tilde = kr.encode("～", alloc)
+        hud_cores[HUD_COND_ID] = bytes(cond[c] for c in "큐베라") + tilde + bytes(cond[c] for c in "프로스")
+        for ch, code in cond.items():
+            go = common.snes2off(patches.HALF_BASE) + (code - 0x20) * 16
+            assert not any(src[go : go + 16]), f"반각 코드 {code:#x} 가 비어 있지 않다"
+            rom[go : go + 16] = hangul_font.cond_half(ch)
+            writes.append((go, go + 16))
+        table = hud_names_table(hud_cores, kr.load("ptrs16")[PLACE_TABLE]["count"])
+        o = common.snes2off(patches.HUD_NAMES)
+        rom[o : o + len(table)] = table
+        writes.append((o, o + len(table)))
+        stats["hud_names"] = len(hud_cores)
 
     # 3d. 고정폭 레코드 표(records) — 아이템·주문 이름. 원문 이름은 레코드에서 읽어 정본(canon)으로 번역하고, 오른쪽 정렬로 채운다
     for key, v in sorted(kr.load("records").items()):
@@ -599,6 +741,23 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
                     rom[o : o + 1] = bytes([val])
                     writes.append((o, o + 1))
 
+    # 3d1. 주문책 이름 접미 — 아이템 번호 `$80~` 의 이름은 코드(`$C1:32DF~32F4`)가 주문 이름 8B 뒤에 「の書」 5B 를 롬 `$C1:3436` 에서
+    # 베껴 붙여 만든다(대사·표 어디에도 없어 「레스の書를 받았습니다」로 샜다, 11-07). 접미를 한국어 「의 책」+끝 토큰으로 새 자리에 두고
+    # `lda $C1:342E,x`(x=8 부터) 의 기점과 반복 끝(5B→6B)을 돌린다.
+    _c = common.snes2off(0xC132EA)
+    _e = common.snes2off(0xC132F2)
+    if src[_c : _c + 4] != bytes.fromhex("BF2E34C1") or src[_e : _e + 2] != bytes.fromhex("E00D"):
+        raise SystemExit("주문책 접미 읽기 코드가 예상과 다르다 — `$C1:32EA` 점검")
+    _suf = kr.encode("의 책", alloc)
+    if len(_suf) > 5:
+        raise SystemExit(f"주문책 접미 「의 책」 {len(_suf)}B > 5B")
+    _suf = _suf + b"\x06" * (6 - len(_suf))
+    _sa = local.put(ITEM_TABLE_BANK, _suf) - 8
+    for _o, _v in ((_c + 1, bytes([_sa & 0xFF, (_sa >> 8) & 0xFF, ITEM_TABLE_BANK])), (_e + 1, b"\x0e")):
+        rom[_o : _o + len(_v)] = _v
+        writes.append((_o, _o + len(_v)))
+    rec("포인터", "spellbook-suffix", 0xC13436, (ITEM_TABLE_BANK << 16) | (_sa + 8), "주문책 이름 접미 「の書」(코드가 `$C1:3436` 에서 5B 를 베낀다)를 「의 책」으로 새 자리에 두고 읽는 코드 즉치 기점·반복 끝(5→6B)을 돌린다", len(_suf))
+
     # 3d2. HUD 그림 타일 — 인물 이름(아트라스 …)·「あと」 라벨: 갈무리7 8×8 타일을 롬 타일 세트에 굽고 이름 표(`$C0:B525`)를 다시 쓴다
     import canon
 
@@ -626,25 +785,45 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         t = common.snes2off(monsters.TABLE)
         if mon.get("h") != segs.src_hash(src, t, t + 2 * monsters.GROUPS):
             raise SystemExit("몬스터 포인터 표 원문 해시 불일치")
+        lk: dict = {}
         for gi, (w, ss) in enumerate(monsters.groups(src)):
             new = bytearray()
             for si, sb in enumerate(ss):
                 over = mon.get("over", {}).get(f"{gi}:{si}")
+                # 이름 뒤에 제어 토큰 꼬리(`0C …` — 군33 넷째 「ガードD」 뒤 `0C 80 7E 80`)가 붙은 원문은 꼬리를 그대로 두고 앞만 번역한다(꼬리가 끼면 접미 판별이 깨져 일본어가 남았다 — 10-24)
+                cut = next((o for o, _ln in script.tokens(sb, 0, len(sb)) if sb[o] == 0x0C), None)
+                ntail = bytes(sb[cut:]) if cut is not None else b""
+                sb = bytes(sb[:cut]) if cut is not None else sb
                 jp = monsters.decode(sb, src)
                 base, suf = monsters.split_name(jp)
                 krn = over if over is not None else _mon_lookup(canon, base)
                 if krn:
-                    body = kr.encode(krn + suf, alloc)
+                    lk[(gi, si)] = len(kr.encode(krn, alloc))
+                tail2 = sb[:-2] if len(sb) >= 4 and sb[-2] == 0x80 and sb[-1] in (0x0E, 0x0F) else sb  # 슬라임 분열 표지(`゛`·`゜`)는 런타임이 박는다 — 앞 접미 글자만 본다
+                full = FULLSUF and suf and len(tail2) >= 2 and tail2[-2] == 0x80 and 0x1A <= tail2[-1] <= 0x1D  # 원판 접미가 전각 코드(`80 1A~1D`)인 이름만
+                if krn and full:
+                    body = kr.encode(krn, alloc) + bytes([0x80, tail2[-1]]) + ntail
+                    if gi == 2 and len(body) != 13:
+                        raise SystemExit(f"군2 {si}번 이름 {len(body)}B ≠ 13B — 전각 접미 꼴의 분열 표지 자리(patches.apply_fullsuf)를 다시 본다")
+                elif krn:
+                    body = kr.encode(krn + suf, alloc) + ntail
+                    if gi == 2 and not FULLSUF and len(body) != 12:  # 분열 표지 코드(`$D4:2FEC`·`$D4:3011`)가 이름 버퍼 +12 에 박는다 — 이름이 12B 가 아니면 표지가 이름 속에 들어간다
+                        raise SystemExit(f"군2 {si}번 이름 {len(body)}B ≠ 12B — 슬라임 분열 표지 자리(patches.py)를 다시 본다")
                 else:
-                    body = sb  # 정본에 없다 — 원문 그대로(관리자에게 후보로)
+                    body = sb + ntail  # 정본에 없다 — 원문 그대로(관리자에게 후보로)
                     stats.setdefault("missing", []).append(("monster", f"{gi}:{si}", base))
                 new += bytes([len(body)]) + body
+            new += b"\x00" * (4 - len(ss))  # 원판은 4마리 미만 군에 길이 0 칸을 채워 둔다 — 빈 슬롯의 이름 복사(`$C1:6570`)가 거기서 멈춘다. 빼면 다음 군의 이름이 빈 슬롯에 복사돼 군82 전투가 멈춘다(10-24)
             dead.append((common.snes2off(0xCB0000 | w), common.snes2off(0xCB0000 | w) + sum(1 + len(sb) for sb in ss)))
             addr = local.put(0xCB, bytes(new))
             rom[t + 2 * gi : t + 2 * gi + 2] = bytes([addr & 0xFF, addr >> 8])
             writes.append((t + 2 * gi, t + 2 * gi + 2))
             rec("포인터", f"monster{gi}", 0xCB0000 | w, 0xCB0000 | addr, "몬스터 이름 군을 뱅크 빈 자리로 옮긴다 — 군 포인터 표 항목만 돌린다", len(new))
             stats["monsters"] = stats.get("monsters", 0) + 1
+        if FULLSUF:
+            _fs = patches.apply_fullsuf(rom, src, lk)
+            writes += _fs
+            stats["fullsuf_sites"] = len(_fs)
 
     # 3b. 고정 길이 칸(cells) — 코드가 `mvn` 으로 줄 버퍼에 복사하는 값 상수(OFF·速い…): 같은 길이로 제자리 치환(길이가 달라지면 죽는다)
     for key, v in sorted(kr.load("cells").items()):
@@ -699,6 +878,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
     e1w = e1_texts(src, seg_map)
     sg = {segs.seg_id(a): (a, b) for a, b in segs.segments(src)}
     typeset_end: dict[int, tuple[int, int]] = {}  # 구간 끝 오프셋 → 끝난 자리(줄 폭, 쪽 줄 수) — 바로 이어지는 다음 구간의 시작 자리
+    typeset.GLUE_PAIRS = typeset.compound_pairs(resolve_josa(v["kr"], names) for v in seg_map.values())  # 굳은 명사구는 줄 사이에서 안 갈린다(규칙 2-16 e) — 줄·쪽 수가 안 늘 때만
     jump_lead = jump_leads(src, seg_map, sg, names, e1w)  # 점프·호출로 이어 붙는 조각(공유 꼬리)이 앞 조각 줄에서 이어 쓰는 자리 — 가장 빡빡한 호출자 기준
     for key, v in sorted(seg_map.items()):
         if key not in sg:
@@ -708,6 +888,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             raise SystemExit(f"구간 {key}: 원문 해시 불일치({v.get('h')} ≠ {segs.src_hash(src, a, b)}) — textmap 이 낡았다")
         if key in off_keys or "*" in off_keys:  # 되돌리기 스위치(ED_RELOC_OFF) — 이 구간은 원문 바이트 그대로 둔다
             continue
+        a += TABLE_PREFIX.get(key, 0)  # 앞 N바이트는 문자열 포인터 표 — 가게 코드가 표 머리 주소를 즉치로 써서 읽는다. 번역이 표를 덮으면(트램펄린 머리 4B) 포인터가 깨진다
         text = resolve_josa(v["kr"], names)
         dead.append((a, b))
         rv = f"ED_RELOC_OFF={key} → 원문 유지(일본어 노출)"
@@ -715,7 +896,7 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             # $D7(오프닝·엔딩) — UI 출력기($C0:9395)는 트램펄린($17)을 몰라 **문자열을 옮기고 포인터를 고친다**
             data = kr.encode(text, alloc) + b"\x00"
             old = common.off2snes(a)
-            refs = relocate.refs24(src, old, (a, b)) + [x for t in relocate.a6_sites(src, old) for x in ()]
+            refs = relocate.refs24(src, old, (a, b), {0xD7})  # 포인터 표는 $D7 안에 있다 — 다른 뱅크의 같은 세 바이트는 음악·팔레트·이벤트 표의 우연 일치(11-07 $D6:3189 BGM)
             sites = relocate.a6_sites(src, old)
             if not refs and not sites and len(data) - 1 <= b - a:  # 가리키는 포인터를 못 찾는 문자열(표 머리 앞 제어 토큰에 묻힌 첫 줄 등) — 제자리에 공백으로 채워 넣는다
                 rom[a:b] = data[:-1] + b" " * (b - a - len(data) + 1)
@@ -737,10 +918,10 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
             continue
         if 0xC2 <= (common.off2snes(a) >> 16) <= 0xCB and not v.get("raw"):  # $C2~$CB 대사 — 대사창 규격으로 조판(`raw: true` 면 그대로)
             tw = {**names, **e1w, **call_texts(text, a, seg_map, sg)}
-            pv = typeset.worse(typeset_end.get(a), jump_lead.get(key))  # 바로 앞 구간이 이 자리에서 이어지거나(이름 변수 뒤 조각) 점프로 들어오면(공유 꼬리) 그 줄의 남은 폭에서 시작한다
+            pv = lead_state(src, a, key, seg_map, names, tw, typeset_end, jump_lead)  # 바로 앞 구간이 이 자리에서 이어지거나(이름 변수 뒤 조각) 점프로 들어오면(공유 꼬리) 그 줄의 남은 폭에서 시작한다
             pre05 = sum(1 for o, _ln in script.tokens(src, a, b) if o < b and src[o] == 0x05)  # 원문 구간이 이미 가진 쪽 넘김 — 그보다 늘어난 몫이 재배치(번역자가 소스에 더한 것 + 조판기가 넘침에서 넣은 것)
             typeset.RULE = f"쪽:{key}" not in off_keys and "쪽:*" not in off_keys
-            text = typeset.typeset(text, tw, pv)
+            text = typeset_seg(text, src, b, seg_map, names, tw, pv)
             typeset.RULE = True
             if text.count("<05>") > pre05:
                 rec("쪽 넘김", key, common.off2snes(a), None, f"원문 구간보다 쪽 넘김이 {text.count('<05>') - pre05}개 늘었다(번역이 소스에 더한 것 + 쪽 3줄이 넘쳐 조판기가 넣은 것)", text.count("<05>") - pre05, f"ED_RELOC_OFF=쪽:{key} → 문장 단위 규칙만 끔(넘침 쪽 넘김은 남음)")
@@ -771,6 +952,12 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
                     for lo, hi, bk in sites:
                         rom[lo], rom[hi], rom[bk] = new & 0xFF, (new >> 8) & 0xFF, new >> 16
                         writes += [(lo, lo + 1), (hi, hi + 1), (bk, bk + 1)]
+                    # 앞 메시지의 끝에서 이 자리로 **흘러 들어오는** 길(전투 문구 「…{0a}は」)이 남는다 — 옛 바이트를 그대로 두면 일본어 글자가 찍힌다(10-28 D437AC·D470AC).
+                    # 끝 공백을 뺀 번역이 원문 자리에 들면 그걸 제자리에도 써 둔다(포인터 길은 공백 포함 번역을 그대로 쓴다)
+                    fb = data.rstrip(b" ")
+                    if len(fb) <= b - a:
+                        rom[a:b] = fb + bytes([NOOP]) * (b - a - len(fb))
+                        writes.append((a, b))
                     stats["seg_reloc"] = stats.get("seg_reloc", 0) + 1
                     continue
                 raise SystemExit(f"구간 {key}: 원문 {b - a}B 라 트램펄린을 못 둔다 — 번역 {len(data)}B 를 {b - a}B 안으로 줄여야 한다")
@@ -819,7 +1006,9 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         ent.insert(after + 1, bytes([newstr & 0xFF, (newstr >> 8) & 0xFF, newstr >> 16]))
         kd = kd[: after + 1] + bytes([1]) + kd[after + 1 :]
         nl, nk = tail.put(b"".join(ent)), tail.put(kd)
-        rec("옮김", f"listsplit{key}", la, nl, "인물 소개 쪽에 줄을 더한다 — 포인터 목록과 줄 종류 표를 새로 만들어 꼬리에 두고 읽는 코드 즉치를 돌린다", len(ent) * 3 + len(kd) + 4)
+        # 새 문자열 · 포인터 목록 · 줄 종류 표는 꼬리에 연달아 놓인다 — 장부는 셋을 한 덩이(문자열 자리부터)로 적어야 `check_extension` 이 장부 밖 쓰기로 안 본다
+        assert newstr < nl < nk and newstr + len(kr.encode(v["kr"], alloc)) + 1 == nl and nl + len(ent) * 3 == nk
+        rec("옮김", f"listsplit{key}", la, newstr, "인물 소개 쪽에 줄을 더한다 — 새 줄 문자열 · 포인터 목록 · 줄 종류 표를 꼬리에 연달아 두고 읽는 코드 즉치를 돌린다", nk + len(kd) - newstr)
         for off, val in ((pcode + 1, nl & 0xFF), (pcode + 6, (nl >> 8) & 0xFF), (pcode + 11, nl >> 16)):
             rom[off] = val
             writes.append((off, off + 1))
@@ -853,8 +1042,29 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         top = max(alloc.values())
         ft += b"\x00" * ((top + 1 - n0) * 18) if top + 1 > n0 else b""
     for c, i in alloc.items():
+        if c in kr.ORIG_LATIN:
+            continue  # 원판 전각 영문·숫자 글리프 그대로
         if i >= n0 or font_out:
             ft[i * 18 : (i + 1) * 18] = hangul_font.glyph12(c)
+    # 원판 전각 숫자(색인 16~25)를 1px 위로 — 한글 잉크는 y 18~28, 원판 숫자는 19~29 라 장 제목 띠에서 숫자만 1px 아래였다(마스터 11-10). 0행은 비어 있어 잘림 없음.
+    for i in [*range(16, 26), *range(26, 52)]:  # 전각 숫자 ０~９ + 영문 대문자 Ａ~Ｚ(원판 잉크 1~11 → 0~10, 마스터 11-15 기준선 검사)
+        if i < n0 or font_out:
+            rows = []
+            for k in range(0, 18, 3):
+                v = int.from_bytes(ft[i * 18 + k : i * 18 + k + 3], "big")
+                rows += [(v >> 12) & 0xFFF, v & 0xFFF]
+            assert rows[0] == 0, f"숫자 글리프 {i} 첫 줄이 비어 있지 않다"
+            rows = rows[1:] + [0]
+            for j in range(6):
+                ft[i * 18 + 3 * j : i * 18 + 3 * j + 3] = ((rows[2 * j] << 12) | rows[2 * j + 1]).to_bytes(3, "big")
+    # 반각 글리프(원판 `! ?` · 숫자 · 영문 대문자 · 우리가 그린 `, .`)를 1줄 위로 — 한글 잉크 아랫줄은 10(Galmuri 기준선)인데 원판 반각은 11(가나 기준)이라 한 줄에 섞이면 부호·숫자만 1px 아래였다
+    # (마스터 11-15 「갈무리 폰트와 원문 부호가 1px 차이」 — PCE I 에서 시작, 전 기종 기준선 검사). 모양·폭 그대로, 위쪽 0행이 비어 있어 잘림 없음. 소문자는 이미 10 이라 그대로.
+    for c in [0x21, 0x22, 0x2C, 0x2E, *range(0x30, 0x3A), *range(0x41, 0x5B)]:
+        go = common.snes2off(patches.HALF_BASE) + (c - 0x20) * 16
+        g = bytes(rom[go : go + 16])
+        assert g[0] == 0, f"반각 글리프 {c:#x} 첫 줄이 비어 있지 않다"
+        rom[go : go + 16] = g[1:] + b"\x00"
+        writes.append((go, go + 16))
     if font_out and 2 not in alloc.values():
         # 색인 2 = 일본어 「。」 — 「정말 고마워」 조각 뒤처럼 구간 밖 2바이트 코드로 남는 자리가 있어 화면에 그대로 나간다(마스터 규칙: 마침표는 반각 「.」). 모양을 「.」로 바꾼다
         ft[2 * 18 : 3 * 18] = hangul_font.glyph12(".")
@@ -863,6 +1073,16 @@ def _build(slots, dead: list, font_out: bool = True, lenient: bool = False) -> t
         writes.append((patches.FONT_OUT, patches.FONT_OUT + len(ft)))
         assert patches.FONT_OUT >= common.ROM_SIZE
 
+    if debug_qa.ENABLED:
+        debug_qa.build(rom, src, writes, far, lambda t: kr.encode(t, alloc))
+
+    # 옛 사본 지움(마스터 11-17, PCE I 사본 사고) — 번역한 문안의 원판 바이트가 포인터가 떠난 뒤에도 남은 자리를 0xFF 로. 범위는 `check_orig_copies.py --write-erase` 가 만든 textmap/orig_erase.json.
+    # 사전조건: 지금 롬 바이트가 원판과 같아야 한다(다르면 번역·패치가 쓴 자리 — 지우면 안 된다).
+    for sp in kr.load("orig_erase").get("spans", []) if font_out else []:  # 글리프 세는 첫 판(font_out=False)은 건너뛴다 — 지우면 옛 일본어 글리프가 안 쓰이는 것으로 세어 글리프 재활용 배정이 통째로 달라진다
+        eo = common.snes2off(int(sp["a"].lstrip("$"), 16))
+        assert bytes(rom[eo : eo + sp["n"]]) == bytes(src[eo : eo + sp["n"]]), f"옛 사본 {sp['a']} 가 원판과 다르다 — 쓰인 자리다"
+        rom[eo : eo + sp["n"]] = b"\xff" * sp["n"]
+        writes.append((eo, eo + sp["n"]))
     fix_checksum(rom)
     stats["glyphs"] = len(alloc)
     stats["ledger"] = list(LEDGER)
@@ -916,8 +1136,8 @@ def _protected() -> set[int]:
     out = {0}
     for i, ch in enumerate(glyphmap.TABLE):
         o = ord(ch)
-        if not (0x3041 <= o <= 0x30FF or 0x4E00 <= o <= 0x9FFF):
-            out.add(i)
+        if not (0x3041 <= o <= 0x30FF or 0x4E00 <= o <= 0x9FFF) or o in (0x309B, 0x309C):
+            out.add(i)  # ゛·゜(색인 14·15)는 슬라임 분열 표지로 코드(`$D4:2FF1`·`$D4:3016`)가 직접 박는다 — 원판 모양이 「A′」·「A″」 틱이라 한글(「·」·「…」)로 재활용하면 「A·」·「A…」 로 보인다(마스터 10-25)
     return out
 
 
@@ -1131,10 +1351,7 @@ def main() -> None:
     a = ap.parse_args()
     a.strict = not a.lenient
     common.verify_originals()
-    if os.environ.get("ED_DEBUG") == "1" and not (common.BUILD_TAG.startswith("test-") or common.BUILD_TAG == "debug"):  # 제품 칸을 지우기 전에 막는다
-        raise SystemExit("ED_DEBUG=1 은 꼬리표 test-* 또는 debug(마스터용)에서만 — ED_BUILD_TAG=debug 를 준다")
-    # 디버그 롬은 파일명을 달리한다 — 에뮬 세이브(.srm)가 롬 이름으로 갈려서, 같은 이름이면 제품 세이브에 매직 코드 아이템이 섞인다
-    name = OUT_NAME.replace(".sfc", " (DEBUG).sfc") if os.environ.get("ED_DEBUG") == "1" else OUT_NAME
+    name = OUT_NAME
     out = common.BUILD_DIR / common.BUILD_TAG / name
     out.parent.mkdir(parents=True, exist_ok=True)
     failed = out.with_name(out.name + ".failed")
@@ -1145,22 +1362,16 @@ def main() -> None:
         rom, writes, stats = build()
         if a.twice and common.sha1_of(build()[0]) != common.sha1_of(rom):
             raise SystemExit("비결정적 — 같은 입력에서 sha1 이 갈렸다")
+        relocate.check_sites()
         check_immutable(rom, writes)
         screen_gate(a.strict, stats)
         residual_jp_gate(common.rom_bytes(), rom, a.strict)
         pointer_target_gate(common.rom_bytes(), rom, a.strict)
-        if os.environ.get("ED_DEBUG") == "1":  # 시험 빌드 전용 — 제품 롬(스위치 없음)은 바이트 하나도 안 바뀐다
-            import debug_patch
-
-            r = bytearray(debug_patch.apply(rom))
-            fix_checksum(r)
-            rom = bytes(r)
-            print("  ⚠ ED_DEBUG=1 — 디버그 입력 훅이 든 시험 롬이다(배포·제품 아님)")
     except BaseException:
         failed.write_bytes(rom)
         raise
     out.write_bytes(rom)
-    if not _off_keys() and os.environ.get("ED_DEBUG") != "1":
+    if not _off_keys():
         LEDGER_PATH.write_text(ledger_text(stats["ledger"]), encoding="utf-8")
         from collections import Counter
 

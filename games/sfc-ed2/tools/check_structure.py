@@ -89,8 +89,10 @@ def follow(rom: bytes, src: bytes, a: int, b: int, sites=None) -> dict:
         return False
 
     sites = [t for t in (sites or []) if t[0] < t[1] < t[2] <= t[0] + 16]  # `A9 lo 8D A6 00 · A9 hi 8D A7 00 · A9 bank 8D A8 00` 꼴이 아닌 우연한 일치는 뺀다
-    if sites and bytes(rom[a:b]) == bytes(src[a:b]):  # 4바이트 미만 구간 — 원문 자리는 그대로(죽은 자리)이고 즉치 포인터가 새 자리로 갔다
-        ptrs = {rom[lo] | rom[hi] << 8 | rom[bk] << 16 for lo, hi, bk in sites}
+    ptrs = {rom[lo] | rom[hi] << 8 | rom[bk] << 16 for lo, hi, bk in sites}
+    moved = len(ptrs) == 1 and next(iter(ptrs)) != (common.off2snes(a) & 0xFFFFFF)
+    # 4바이트 미만 구간 — 즉치 포인터가 새 자리로 갔다. 원문 자리는 죽은 자리(원문 그대로)이거나, 앞 메시지에서 **흘러 들어오는** 길용으로 제자리에도 번역을 써 둔 자리(10-28 「…{0a}は」)
+    if sites and (bytes(rom[a:b]) == bytes(src[a:b]) or moved):
         if len(ptrs) != 1:
             res["why"] = "즉치 포인터 사이트들이 서로 다른 곳을 가리킨다"
             return res
@@ -194,7 +196,8 @@ def diff_seq(orig: list[int], built: list[int]) -> tuple[bool, int]:
 
 
 # 번역이 원문에 없던 화자 머리 `<1e>이름<04>` 를 붙인 구간(check_rules.CTL_EXEMPT 와 같은 목록) — `$1E`·`$04` 는 색 코드(`$18~$1F` 점프표 핸들러)라 글자 앞뒤에 놓여도 흐름을 안 바꾼다
-HEADER_ADDED = {"$C5521A", "$CB74B3"}
+HEADER_ADDED = {"$C5521A"}
+UI_SEGS = {"$C0EBDC"}  # 필드 HUD 가 지명 번호·상태에 따라 대신 그리는 UI 문자열(names_corpus.SLOT_SEGS 와 같은 자리)
 ALLOWED["화자 머리 추가"] = (
     "원문에 없는 `<1e>이름<04>`(색 코드 쌍)를 구간 앞에 붙인다",
     "말하는 사람이 원문 구간에서 안 드러나 번역에서 밝힌다",
@@ -202,10 +205,28 @@ ALLOWED["화자 머리 추가"] = (
 )
 
 
+def _ui_clean(body: bytes) -> bool:
+    """UI 문자열 바이트 열 — 전각(`$80~$87`+1B 짝) · 반각 `$20~$7F` · `$14`(4px) · `$16` · 끝 `$00` 만."""
+    i = 0
+    while i < len(body):
+        x = body[i]
+        if 0x80 <= x < 0x88:
+            i += 2
+            continue
+        if not (x in (0x14, 0x16, 0x00) or 0x20 <= x < 0x80):
+            return False
+        i += 1
+    return True
+
+
 def check_segment(src: bytes, rom: bytes, a: int, b: int, sites=None, key: str = "", translated: bool = True) -> dict:
     if not translated:  # 원문 유지(번역 안 한 구간) — 바이트가 그대로여야 한다
         ok = bytes(rom[a:b]) == bytes(src[a:b])
         return {"a": a, "b": b, "kind": "원문 유지", "ok": ok, "why": "" if ok else "번역 안 한 구간인데 바이트가 바뀌었다", "added05": 0, "pad": 0, "header": 0}
+    if key in UI_SEGS:  # UI 출력기(`$C0:9395`) 문자열 — 대사 토큰 규칙을 안 따른다(`$14` 는 대사에선 조건 코드라 토큰 따라가기가 뒤 글자를 삼킨다). 원문에 제어 코드가 없고 번역이 글자·`$14`(4px 빈 칸)·`$16`·끝 `$00` 뿐인지 본다
+        body = bytes(rom[a:b])
+        ok = not ctrl_seq(src, [(o, ln) for o, ln in script.tokens(src, a, b) if o < b]) and _ui_clean(body)
+        return {"a": a, "b": b, "kind": "제자리", "ok": ok, "why": "" if ok else "UI 문자열에 글자·`$14` 밖의 코드가 있다", "added05": 0, "pad": 0, "header": 0}
     f = follow(rom, src, a, b, sites)
     row = {"a": a, "b": b, "kind": f["kind"], "ok": False, "why": f["why"], "added05": 0, "pad": 0, "header": 0}
     if not f["ok"]:
@@ -236,7 +257,7 @@ FALSE_TOKENS = {
 ALLOWED["가짜 토큰(코드 바이트)"] = ("코드 영역이 대사 단위로 잘못 읽힌 점프 토큰을 구조 대조에서 뺀다", "스캐너가 코드 바이트를 글자 구간으로 읽었다", "해당 주소 앞뒤가 코드(디스어셈블 확인)이고 번역 구간이 아니다")
 
 
-def check_outside(src: bytes, rom: bytes, units, spans) -> tuple[int, list]:
+def check_outside(src: bytes, rom: bytes, units, spans, code_patches=()) -> tuple[int, list]:
     """구간 밖 구조 토큰이 원본과 같은가 + 점프·호출 목적지가 다시 쓴 구간의 한가운데가 아닌가."""
     import bisect
 
@@ -254,6 +275,8 @@ def check_outside(src: bytes, rom: bytes, units, spans) -> tuple[int, list]:
                 break
             sp = inside(o)
             if sp is not None:
+                continue
+            if any(o < pe and ps < o + ln for ps, pe in code_patches):  # 코드 패치(`patches.PATCHES`)가 일부러 바꾼 자리 — 단위 찾기가 코드 조각을 대사로 잘못 센 자리(전투 AI 등)
                 continue
             n += 1
             if rom[o : o + ln] != src[o : o + ln]:
@@ -326,8 +349,8 @@ def check_extension(rom: bytes, ledger: list[dict]) -> list[str]:
     for r in ledger:
         if r["new"] != r["orig"] or r["kind"] in ("스텁",):
             cover.append((common.snes2off(r["new"]), common.snes2off(r["new"]) + r["n_new"]))
-    # 고정 영역 — 글꼴 표(`$D8:0000~9FFF`)·조사 표(`$D8:F000~F83F`): 대사 재배치가 아니라 글리프·조사 훅 자료다(구조와 무관)
-    fixed = [(patches.FONT_OUT, patches.FONT_OUT + 0xA000), (common.snes2off(patches.JOSA_TABLE), common.snes2off(patches.JOSA_PAIRS) + 0x40)]
+    # 고정 영역 — 글꼴 표(`$D8:0000~9FFF`)·조사 표(`$D8:F000~F83F`)·HUD 지명 표(`$D8:F900~`, 가운데 맞춤 — patches.HUD_NAMES): 대사 재배치가 아니라 글리프·조사 훅·HUD 자료다(구조와 무관)
+    fixed = [(patches.FONT_OUT, patches.FONT_OUT + 0xA000), (common.snes2off(patches.JOSA_TABLE), common.snes2off(patches.JOSA_PAIRS) + 0x40), (common.snes2off(patches.HUD_NAMES), common.snes2off(patches.HUD_NAMES_END) + 1)]
     regions = [(common.ROM_SIZE, len(rom))] + [(((bank - 0xC0) << 16) + a, ((bank - 0xC0) << 16) + b + 1) for bank, rs in build.LOCAL_FREE.items() for a, b in rs]
     bad = []
     for lo, hi in regions:
@@ -369,10 +392,16 @@ def run(rom: bytes, src: bytes | None = None, table: Path | None = None) -> dict
         if (common.off2snes(a) >> 16) == 0xD7:  # 오프닝·엔딩 문자열 — 포인터 표 항목을 돌리는 별도 길(장부 「포인터」)이라 여기선 제외
             rows.append({"a": a, "b": b, "kind": "D7(범위 밖)", "ok": True, "why": "", "added05": 0, "pad": 0, "header": 0})
             continue
-        rows.append(check_segment(src, rom, a, b, a6.get(a), key, key in seg_map))
-    rewritten = [(a, b) for a, b in spans if segs.seg_id(a) in seg_map]
+        pl = build.TABLE_PREFIX.get(key, 0)  # 머리의 문자열 포인터 표(번역이 안 덮는다) — 구간은 표 뒤에서 시작한다
+        r = check_segment(src, rom, a + pl, b, a6.get(a), key, key in seg_map)
+        r["a"] = a  # 장부 열쇠(구간 id)는 원래 시작 주소
+        rows.append(r)
+    rewritten = [(a + build.TABLE_PREFIX.get(segs.seg_id(a), 0), b) for a, b in spans if segs.seg_id(a) in seg_map]
     units = [(u0, u1) for u0, u1 in _s.all_units(src) if not segs.excluded(u0) and (common.off2snes(u0) >> 16) not in (0xC0, 0xC1, 0xD7)]
-    n_out, bad_out = check_outside(src, rom, units, rewritten)
+    import patches as _p
+
+    code_patches = [(common.snes2off(a_), common.snes2off(a_) + len(old)) for a_, old, _new in _p.PATCHES]
+    n_out, bad_out = check_outside(src, rom, units, rewritten, code_patches)
     kinds = Counter()
     for r in rows:
         if r["ok"] and r["kind"] != "제자리":

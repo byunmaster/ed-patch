@@ -7,6 +7,7 @@
 """
 
 import argparse
+import bisect
 import hashlib
 import re
 import sys
@@ -18,10 +19,12 @@ import font
 import glyphmap
 import hangul_font
 import kr
+import monsters
 import patches
 import relocate
 import script
 import segs
+import ui
 
 TRAMP = patches.TRAMP_CODE
 JOSA = {k: p for k, p in enumerate(kr.JOSA_PAIRS)}
@@ -66,6 +69,7 @@ class Dec:
         self.kr = is_kr
         self.g = gmap or {}
         self.dicts = {k: common.snes2off(v) for k, v in script.DICTS_BY_NAME.items()}
+        self.colors = False  # True 면 색 코드(`$04`·`$18~$1F`)를 `\x01hh` 표식으로 남긴다(check_color_rom 전용)
         self.vis: set[int] = set()  # walk 가 지나간 토큰 시작(파일 오프셋) — 단위 시작에서 닿지 않는 메시지(코드가 포인터로 부르는 것)를 가르는 데 쓴다
 
     def glyph(self, code: int) -> str:
@@ -85,12 +89,13 @@ class Dec:
         p = common.snes2off(self.d[o] | self.d[o + 1] << 8 | self.d[o + 2] << 16)
         return self.walk(p, depth + 1, sub=True)
 
-    def walk(self, o: int, depth: int = 0, sub: bool = False, limit: int = 100000) -> str:
+    def walk(self, o: int, depth: int = 0, sub: bool = False, limit: int = 100000, end: int | None = None) -> str:
+        """`end` 가 있으면 고정 길이 칸(그 오프셋에서 멈춘다 · 칸 구분 `$1F` 는 `｜`)."""
         self.capped = False
         seen_goto = set()  # 점프 순환 감지 — 같은 목적지로 두 번 가면 되돌이(이벤트 루프)라 끊는다
         d, out, opened = self.d, [], False
         steps = 0
-        while steps < limit and o < len(d):
+        while steps < limit and o < (end if end is not None else len(d)):
             steps += 1
             self.vis.add(o)
             b = d[o]
@@ -109,6 +114,8 @@ class Dec:
                 o += 1
                 continue
             ln = script.token_len(d, o)
+            if self.colors and (b == 0x04 or 0x18 <= b <= 0x1F):
+                out.append("\x01%02x" % b)
             if ln is None:
                 out.append("{?%02x}" % b)
                 break
@@ -156,6 +163,8 @@ class Dec:
                 out.append("{조건%02x}" % b)
             elif 0xF0 <= b <= 0xF9:
                 out.append("{F%x}" % (b & 15))
+            elif b == 0x1F and end is not None:
+                out.append("｜")
             elif b in (0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1F, 0x03, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x15):
                 if b not in (0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1F):
                     out.append("{%02x}" % b)
@@ -166,8 +175,81 @@ class Dec:
         return "".join(out)
 
 
+JA = re.compile("[ぁ-んァ-ヶ一-龥]")
+
+
+def nojp(tj: str, mark: str) -> str:
+    """원문에 가나·한자가 없는데 글자(숫자·영문·기호)는 있는 행에 `일본어 글자 없음` 을 덧붙인다 — 일본어 글자 기준 필터에서 빠지기 쉬운 행."""
+    if tj.strip("↵⏎ 　〔〕｜") and not JA.search(tj):
+        return f"{mark}·일본어 글자 없음" if mark else "일본어 글자 없음"
+    return mark
+
+
 def esc(s: str) -> str:
     return s.replace("\t", " ").replace("\n", " ")
+
+
+def extra_rows(jp: bytes, kb: bytes, dj: "Dec", dk: "Dec", rows: list[str]) -> dict[str, int]:
+    """대사 단위 목록 밖의 고정 자리 — UI 창 블록(`창:`) · 고정 길이 칸(`칸:`) · 레코드 표(`레코드:`) · 16비트 포인터 표(`표:`) · 몬스터 이름 군(`군:`).
+    일본어 글자가 없는 원문(숫자·기호·공백뿐인 칸)도 뺀 것 없이 넣는다(검수에서 「원문 칸이 비었다」와 「애초에 글자가 없다」를 가르려고)."""
+    cnt = {"창": 0, "칸": 0, "레코드": 0, "표": 0, "군": 0}
+
+    def put(num: str, tj: str, tk: str, mark: str) -> None:
+        blank = lambda t: not t.strip("↵⏎ 　〔〕｜")
+        flag = "·둘 다 빔" if blank(tj) and blank(tk) else "·원판만" if blank(tk) else "·한글만" if blank(tj) else ""
+        rows.append(f"{num}\t{esc(tj)}\t{esc(tk)}\t{nojp(tj, mark + flag)}")
+        cnt[mark] += 1
+
+    # UI 창 블록 — 한글 롬은 옮겼을 수 있어 블록을 가리키는 즉치 포인터(코드 위치는 같다)로 새 자리를 찾는다
+    kn = {o: a for o, a in ui.ptr_sites(kb)}
+    new_of = {}
+    for o, a in ui.ptr_sites(jp):
+        new_of.setdefault(a, kn.get(o, a))
+    for a in sorted(new_of):
+        bj, bk = ui.parse(jp, a), ui.parse(kb, new_of[a])
+        oj, ok = common.snes2off(a) + 5, common.snes2off(new_of[a]) + 5
+        n = max(bj["rows"], len(kr.load("ui").get(f"${a:06X}", {}).get("rows", [])))
+        for i in range(n):
+            tj = dj.walk(oj + i * bj["stride"], end=oj + (i + 1) * bj["stride"])
+            tk = dk.walk(ok + i * bk["stride"], end=ok + (i + 1) * bk["stride"])
+            put(f"창:{a:06X}:{i}", tj, tk, "창")
+    # 고정 길이 칸
+    for key, v in kr.load("cells").items():
+        o_ = common.snes2off(int(key.lstrip("$"), 16))
+        put(f"칸:{key.lstrip('$')}", dj.walk(o_, end=o_ + v["n"]), dk.walk(o_, end=o_ + v["n"]), "칸")
+    # 레코드 표 — 아이템 이름 표는 한글 롬에서 16B 칸 새 표로 옮겨졌다(코드의 `ldx #` 즉치 셋이 가리킨다)
+    for key, v in kr.load("records").items():
+        base, st = common.snes2off(int(key.lstrip("$"), 16)), v["stride"]
+        kb0, kst = base, st
+        if key == "$C1772D":
+            ta = kb[common.snes2off(0xC13320)] | kb[common.snes2off(0xC13325)] << 8 | kb[common.snes2off(0xC1332A)] << 16
+            if ta >> 16 == 0xD4:
+                kb0, kst = common.snes2off(ta), 16
+        for i in range(v["count"]):
+            put(f"레코드:{key.lstrip('$')}:{i}", dj.walk(base + i * st, end=base + (i + 1) * st), dk.walk(kb0 + i * kst, end=kb0 + (i + 1) * kst), "레코드")
+    # 16비트 포인터 표(지역명 · 몬스터 일람)
+    for key, v in kr.load("ptrs16").items():
+        base = int(key.lstrip("$"), 16)
+        t = common.snes2off(base)
+        for i in range(v["count"]):
+            wj, wk = jp[t + 2 * i] | jp[t + 2 * i + 1] << 8, kb[t + 2 * i] | kb[t + 2 * i + 1] << 8
+            put(f"표:{key.lstrip('$')}:{i}", dj.walk(common.snes2off((base >> 16 << 16) | wj)), dk.walk(common.snes2off((base >> 16 << 16) | wk)), "표")
+    # 몬스터 이름 군(길이 접두 문자열) — 한글 롬은 군을 새 자리로 옮기고 포인터 표만 고쳤다
+    tt = common.snes2off(monsters.TABLE)
+    for gi, (_w, ss) in enumerate(monsters.groups(jp)):
+        wk = kb[tt + 2 * gi] | kb[tt + 2 * gi + 1] << 8
+        o_, ks = common.snes2off(0xCB0000 | wk), []
+        while len(ks) < 4 and kb[o_] and kb[o_] <= 40:
+            ks.append((o_ + 1, kb[o_]))
+            o_ += 1 + kb[o_]
+        wj = jp[tt + 2 * gi] | jp[tt + 2 * gi + 1] << 8
+        oj = common.snes2off(0xCB0000 | wj)
+        for si in range(max(len(ss), len(ks))):
+            tj = dj.walk(oj + 1, end=oj + 1 + len(ss[si])) if si < len(ss) else ""
+            oj += 1 + len(ss[si]) if si < len(ss) else 0
+            tk = dk.walk(ks[si][0], end=ks[si][0] + ks[si][1]) if si < len(ks) else ""
+            put(f"군:{gi}:{si}", tj, tk, "군")
+    return cnt
 
 
 def kr_start(jp: bytes, kb: bytes, o: int) -> int:
@@ -234,7 +316,7 @@ def main() -> None:
         if getattr(dj, "capped", False) or getattr(dk, "capped", False) or "{…상한}" in tj + tk:
             capped += 1
         cnt[mark] += 1
-        rows.append(f"{common.off2snes(o):06X}\t{esc(tj)}\t{esc(tk)}\t{mark}")
+        rows.append(f"{common.off2snes(o):06X}\t{esc(tj)}\t{esc(tk)}\t{nojp(tj, mark)}")
     # 단위 시작에서 닿지 않는 메시지 — 코드가 포인터로 직접 부르는 것(예: 술집 주인 꾸중 뒤 대사). 단위 목록에는 없지만 화면엔 나온다
     nd = 0
     for tbl, n_, _jpt in script.dict_entries(jp):  # 방문 표시용 — 사전 항목도 한 번 지난다
@@ -257,18 +339,28 @@ def main() -> None:
         if not tj.strip("↵⏎ 　〔〕"):
             continue
         mk = "단독 시작" if tk.strip("↵⏎ 　〔〕") else "원판만 단독 시작"
-        rows.append(f"{common.off2snes(s0):06X}\t{esc(tj)}\t{esc(tk)}\t{mk}")
+        rows.append(f"{common.off2snes(s0):06X}\t{esc(tj)}\t{esc(tk)}\t{nojp(tj, mk)}")
         solo += 1
-    # 제자리 치환 문자열(spans) 중 위 행에 자기 주소로 안 나오는 `$D7` — 포인터 표 머리와 붙은 단위(`$D7:E10E`)는 표 바이트를 글자로 읽다 끊겨 한글 쪽이 비므로 따로 행을 둔다
+    # 제자리 치환 문자열(spans) 중 위 행에 자기 주소로 안 나오는 것 — 포인터 표 머리와 붙은 `$D7` 단위(`$D7:E10E`)는 표 바이트를 글자로 읽다 끊겨 한글 쪽이 비고,
+    # 장 제목(`$C0:BD76~`)·고정 칸 문자열은 단위 목록 밖이라 행이 없다. 이미 단위 안에 든 것은 그 행이 보여 주므로 뺀다
     have = {r.split("\t", 1)[0] for r in rows}
+    ustart = sorted(s_ for s_, _e in units)
+    ends = {s_: e_ for s_, e_ in units}
+
+    def in_unit(o_: int) -> bool:
+        i = bisect.bisect_right(ustart, o_) - 1
+        return i >= 0 and o_ < ends[ustart[i]]
+
     nsp = 0
-    for key in kr.load("spans"):
+    for key, v in kr.load("spans").items():
         ad = int(key.lstrip("$"), 16)
-        if (ad >> 16) != 0xD7 or f"{ad:06X}" in have:
-            continue
         o_ = common.snes2off(ad)
-        rows.append(f"{ad:06X}\t{esc(dj.walk(o_))}\t{esc(dk.walk(kr_start(jp, kb, o_)))}\t문자열")
+        if f"{ad:06X}" in have or ((ad >> 16) != 0xD7 and in_unit(o_)):
+            continue
+        k_ = kr_start(jp, kb, o_)
+        rows.append(f"{ad:06X}\t{esc(dj.walk(o_, end=o_ + v['n']))}\t{esc(dk.walk(k_, end=k_ + v['n']))}\t{nojp(dj.walk(o_, end=o_ + v['n']), '문자열')}")
         nsp += 1
+    nx = extra_rows(jp, kb, dj, dk, rows)
     nd = 0
     for tbl, n_, _jpt in script.dict_entries(jp):  # 사전 항목(이름 `$E0` · 문장 끝맺음 `$E1`)도 짝으로
         try:
@@ -280,14 +372,15 @@ def main() -> None:
         except Exception:
             tk = "{해독 실패}"
         mk = "" if tj.strip() and tk.strip() else "둘 다 빔"
-        rows.append(f"{tbl}:{n_}\t{esc(tj)}\t{esc(tk)}\t{mk}")
+        rows.append(f"{tbl}:{n_}\t{esc(tj)}\t{esc(tk)}\t{nojp(tj, mk)}")
         nd += 1
     (out / "pairs.tsv").write_text("번호\t원판\t한글\t표시\n" + "\n".join(rows) + "\n", encoding="utf-8")
     sj, sk = hashlib.sha1(jp).hexdigest(), hashlib.sha1(kb).hexdigest()
     (out / "manifest.md").write_text(
         f"""# sfc-ed2 롬 대사집 짝 표 — manifest
 - 원판 롬 sha1 `{sj}` · 한글 롬 sha1 `{sk}`
-- 분모: 대사 단위 {len(units):,}(`script.all_units`) + 단위 시작에서 닿지 않는 단독 시작 메시지 {solo}(표시 `단독 시작`) + 제자리 치환 문자열 {nsp}(표시 `문자열`) + 사전 항목 {nd}(`E0:n`·`E1:n`) — 전투 문구·시스템 메시지(`$C0/$C1`·`$D4/$D5`)는 같은 단위 목록 안에 있다. UI 창 블록·고정폭 칸·고정 표(이름·아이템·주문 표)는 이 표에 아직 없다
+- 분모: 대사 단위 {len(units):,}(`script.all_units`) + 단위 시작에서 닿지 않는 단독 시작 메시지 {solo}(표시 `단독 시작`) + 제자리 치환 문자열 {nsp}(표시 `문자열`) + 사전 항목 {nd}(`E0:n`·`E1:n`) + 단위 목록 밖 고정 자리 {sum(nx.values())}(UI 창 줄 `창:` {nx['창']} · 고정 길이 칸 `칸:` {nx['칸']} · 레코드 표 `레코드:` {nx['레코드']} · 포인터 표 `표:` {nx['표']} · 몬스터 군 `군:` {nx['군']}) — 전투 문구·시스템 메시지(`$C0/$C1`·`$D4/$D5`)는 같은 단위 목록 안에 있다. 오프닝·엔딩·스태프롤(`$D7`)은 단위·`문자열` 행에 든다. 표시 뒤 `·일본어 글자 없음` = 원문에 가나·한자가 없는 칸
+- 행 합계 {len(rows):,} · 표시에 `일본어 글자 없음` 이 붙은 행 {sum(r.endswith('일본어 글자 없음') for r in rows)}
 - 길이 상한(10만 토큰)에 걸린 행 {capped}(0 이어야 한다 — 잘린 행은 끝에 `{{…상한}}`)
 - 표시별: 원판만 {cnt['원판만']} · 한글만 {cnt['한글만']} · 둘 다 빔 {cnt['둘 다 빔']} · 포인터 공유 {cnt['포인터 공유']} · 원문 바이트 그대로 {cnt['원문 바이트 그대로']} · 그래픽·표 데이터 {cnt['그래픽·표 데이터']} · 표시 없음(정상 짝) {cnt['']}
 - 방법: 롬 바이트를 토큰 문법(`script.py`)으로 읽는다. 한글 롬은 트램펄린(`$17`)·같은 뱅크 점프(`$0F`)를 따라가고, 글리프 번호→글자는 롬의 글리프 표 비트맵을 글꼴 원천과 맞춰 되짚는다. 호출(`$10`)·사전(`$E0/$E1`)은 펼친다(`$E0` 이름은 `{{…}}`).

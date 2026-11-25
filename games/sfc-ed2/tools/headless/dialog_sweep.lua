@@ -1,6 +1,7 @@
 -- sfc-ed2 대사 직접 호출 일괄((b) 방식) — 필드 첫 메시지 호출 지점의 상태를 열고, 단위마다 $A6~$A8 포인터만 바꿔 같은 메시지 루틴으로 찍는다.
 -- 환경변수: SW_OUT · SW_STATE(필드 첫 A6E8 입구 상태 파일, 없으면 부팅해서 만든다 SW_MKSTATE) · SW_LIST("SNES주소 hex" 줄 파일) · SW_MAXF(단위당 프레임 상한)
 local OUT=os.getenv("SW_OUT") or "out"
+if os.getenv("SW_WATCH") then dofile(os.getenv("SW_WATCHLUA")) end   -- 원판 사본 읽힘 감시(watch.lua)
 local WR=emu.memType.snesWorkRam
 local SM=emu.memType.snesMemory
 local f=0
@@ -40,7 +41,7 @@ local function bandhash()
       local v=b[o+x+1] or 0
       if x<=200 then h=(h*33+v)%4294967296 end
       local r,g,bb=(v>>16)&255,(v>>8)&255,v&255
-      if (r>=200 and g>=200 and bb>=200) or (math.abs(r-182)<=8 and math.abs(g-147)<=8 and math.abs(bb-92)<=8) then tx=tx+1 end  -- 글자 잉크: 흰색 · 황갈색(색 글자 창)  -- 밝은 글자(흰·회색·황갈색 — 창마다 글자 색이 다르다). 초록 지도·하늘색 틀은 뺀다
+      if (r>=200 and g>=200 and bb>=200) or (math.abs(r-182)<=8 and math.abs(g-147)<=8 and math.abs(bb-92)<=8) or (math.abs(r-222)<=8 and math.abs(g-41)<=8 and math.abs(bb-82)<=8) or (math.abs(r-24)<=8 and math.abs(g-198)<=8 and math.abs(bb-24)<=8) or (math.abs(r-206)<=8 and math.abs(g-181)<=8 and math.abs(bb-49)<=8) then tx=tx+1 end  -- 글자 잉크: 흰색 · 황갈색(색 글자 창)  -- 밝은 글자(흰·회색·황갈색 — 창마다 글자 색이 다르다). 초록 지도·하늘색 틀은 뺀다
     end
   end
   for y=190,199 do local o=y*256
@@ -56,9 +57,26 @@ local ui=0         -- 지금 단위(1..#UNITS)
 local RA=nil       -- 첫 호출의 복귀 주소(= 호출 지점 + 4) — 단위 끝 판정
 local state="boot"
 local need_write=false
+local PRE=os.getenv("SW_PRE")  -- 대본 앞에 붙일 바이트(hex) — 비어 있으면 안 쓴다
 local VARNAME=os.getenv("SW_VARNAME")  -- 이름 변수 버퍼 `$1201`(토큰 `0e` 가 찍는 아이템 이름)에 넣을 대표 이름(hex) — 비어 있으면 변수로 시작하는 단위는 글자가 안 찍힌다(원판 롬도 같다)
+local FLAGS=os.getenv("SW_FLAGS")  -- 호출 단위의 분기를 맞추는 플래그(hex 번호[=0], 쉼표) — 번호 n 은 WRAM $0167+(n>>3) 의 비트 n&7
+local function setflags()
+  if not FLAGS then return end
+  for tok in FLAGS:gmatch("[^,]+") do
+    local n,v=tok:match("(%x+)=?(%d?)"); n=tonumber(n,16)
+    local a=0x167+(n>>3); local m=1<<(n&7); local c=rd(a)
+    if v=="0" then c=c&(~m&255) else c=c|m end
+    wr(a,c)
+  end
+end
 local function setptr()
   if ui>=1 and ui<=#UNITS then local a=UNITS[ui]; wr(0xA6,a&255); wr(0xA7,(a>>8)&255); wr(0xA8,(a>>16)&255); need_write=false
+    if PRE then -- 앞 조각(이름 변수 찍기 등) 뒤에 단위로 뛰는 가짜 대본을 WRAM $7F:E000 에 두고 거기서 읽는다 — 이름 뒤에 붙는 조각(`{*이/가}` 로 시작하는 줄)을 실제 이름과 함께 본다
+      local k=0; for h in PRE:gmatch("%x%x") do wr(0x1E000+k,tonumber(h,16)); k=k+1 end
+      wr(0x1E000+k,0x17); wr(0x1E001+k,a&255); wr(0x1E002+k,(a>>8)&255); wr(0x1E003+k,(a>>16)&255)
+      wr(0xA6,0x00); wr(0xA7,0xE0); wr(0xA8,0x7F)
+    end
+    setflags()
     if VARNAME then local k=0; for h in VARNAME:gmatch("%x%x") do wr(0x1201+k,tonumber(h,16)); k=k+1 end end
   end
 end
@@ -97,7 +115,7 @@ emu.addMemoryCallback(function()
   if need_write then
     need_write=false
     local a=UNITS[ui]
-    wr(0xA6,a&255); wr(0xA7,(a>>8)&255); wr(0xA8,(a>>16)&255)
+    if not PRE then wr(0xA6,a&255); wr(0xA7,(a>>8)&255); wr(0xA8,(a>>16)&255) end
   end
   uf=uf+1
   local function finish(why)

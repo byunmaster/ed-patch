@@ -111,7 +111,7 @@ def battle(a) -> None:
     for k in range(0, len(jobs), a.jpp):
         od = out / f"c{a.cbase + k // a.jpp:03d}"
         od.mkdir(parents=True, exist_ok=True)
-        env = {"SW_OUT": str(od), "SW_STATE": str(st), "SW_FRAMES": str(a.frames), "SW_JOBS": ",".join(f"{i}:{s}" for i, s in jobs[k : k + a.jpp])}
+        env = {"SW_OUT": str(od), "SW_STATE": str(st), "SW_FRAMES": str(a.frames), "SW_JOBS": ",".join(f"{i}:{s}" for i, s in jobs[k : k + a.jpp]), **({"SW_WIN": "1", "SW_NOSHOT": "1", "SW_FORCE": "0", **({"SW_WINKILL": "1"} if a.kill else {})} if a.win else {})}
         tasks.append((HERE / "battle_sweep.lua", env))
     pool(tasks, rom, a.procs)
     print("끝:", out)
@@ -146,7 +146,7 @@ def dialog(a) -> None:
         od.mkdir(parents=True, exist_ok=True)
         lst = od / "list.txt"
         lst.write_text("\n".join(f"{u:06X} {caps[u]}" for u in units[k : k + a.per]) + "\n")
-        tasks.append((HERE / "dialog_sweep.lua", {"SW_OUT": str(od), "SW_STATE": str(st), "SW_LIST": str(lst), "SW_MAXF": str(a.maxf), **({"SW_VARNAME": a.varname} if a.varname else {})}))
+        tasks.append((HERE / "dialog_sweep.lua", {"SW_OUT": str(od), "SW_STATE": str(st), "SW_LIST": str(lst), "SW_MAXF": str(a.maxf), **({"SW_VARNAME": a.varname} if a.varname else {}), **({"SW_PRE": a.pre} if a.pre else {})}))
     pool(tasks, rom, a.procs)
     print("끝:", out)
 
@@ -184,6 +184,8 @@ def main() -> None:
     p.add_argument("--tag", default="run")
     p.add_argument("--out", default="")
     p.add_argument("--cbase", type=int, default=0)
+    p.add_argument("--kill", action="store_true", help="--win 과 함께: 적 칸을 죽음 표시(0x80)로 직접 쓴다 — 적 HP 를 1 로 해도 아군이 행동하지 않아 안 끝나는 군(군7 등, 원판도 같다)의 승리·복귀 처리를 본다")
+    p.add_argument("--win", action="store_true", help="완료 시험 — 적 HP 1·촬영 없음(멈춘 작업만 한 장)·난수 강제 끔. `END …reentry` = 필드 복귀, `END …timeout` = 멈춤")
     p = sub.add_parser("dialog")
     p.add_argument("--rom", default=str(DEFAULT_ROM))
     p.add_argument("--limit", type=int, default=0)
@@ -192,6 +194,7 @@ def main() -> None:
     p.add_argument("--maxf", type=int, default=3000)
     p.add_argument("--only", default="", help="단위 주소 목록 파일(한 줄에 hex 하나) — 이 단위들만 찍는다")
     p.add_argument("--cbase", type=int, default=9000, help="--only 일 때 청크 번호 시작(회차마다 다르게)")
+    p.add_argument("--pre", default="", help="대본 앞에 붙일 바이트(hex, 예: 0e = 이름 변수 찍기) — 뒤에 단위로 뛰는 가짜 대본을 WRAM 에 둔다")
     p.add_argument("--varname", default="", help="이름 변수 버퍼($1201)에 넣을 대표 아이템 이름(hex 바이트, 끝 토큰 06 포함)")
     p.add_argument("--out", default="", help="산출 폴더(메인 트리 .local/work/inbox/... 에 직접 둘 때)")
     p.add_argument("--procs", type=int, default=4)
