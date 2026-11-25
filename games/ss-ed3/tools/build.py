@@ -34,6 +34,7 @@ import movie_hardsub as MV
 import patch_book_half as PBH
 import patch_josa_hook as JOSA
 import patch_notice_x as NX
+import patch_qa_debug as QAD
 import patch_ui_center as UIC
 import reinsert as R
 import reinsert_battle as RBT
@@ -192,6 +193,11 @@ def patched(disc, lay=None):
             #   안내 화면 줄을 줄마다 화면 정중앙에 — 그리기 호출의 x 즉값을 줄마다 다시 쓴다(`patch_notice_x`).
             new = NX.patch(new)
             cnt["notice_x"] = 1
+            #   🔴 QA 전용 디버그 개조 — `ED_DEBUG_QA=1` 일 때만(꼬리표 qa-*). 꺼져 있으면 입력 그대로.
+            new_qa = QAD.patch(new)
+            if new_qa is not new:
+                new = new_qa
+                cnt["qa_debug"] = 1
             #   🔴 **음성 자막 렌더러** — 컷신 위에 우리 창을 그리는 스텁과 훅.
             if voicetbl:
                 #   🔴 크레딧 자막(V20)도 이 파일에 든다 — 코드·표를 폰트 RAM 코드 예약 칸에 얹고
