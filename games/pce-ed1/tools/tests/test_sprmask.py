@@ -110,12 +110,12 @@ class SprMask(unittest.TestCase):
                 for ox in (1, w // 2, w - 1):
                     for oy in (1, h // 2, h - 1):
                         desc = bytes([1, 0, 0, 40 * 2, 0, ah0 | flip])
-                        got, _, _ = self._case(desc, 48 - ox, 180 - oy, False, "bottom")
+                        got, _, _ = self._case(desc, 48 - ox, 192 - oy, False, "bottom")
                         self.assertGreaterEqual(got[1], 0x80, (s, flip, ox, oy))
 
     def test_fully_inside_and_outside(self):
         desc = bytes([2, 0, 0, 80, 0, 0x11, 100, 0, 80, 0, 0x11])  # 32×32 둘 — 하나는 창 안, 하나는 오른쪽 밖(x 가 255 를 넘는다)
-        got, _, _ = self._case(desc, 160, 190, False, "bottom")
+        got, _, _ = self._case(desc, 160, 202, False, "bottom")
         self.assertEqual((got[2], got[1]), (2, 1))
 
     def test_menu_and_dialogue_two_rects(self):

@@ -163,10 +163,10 @@ class WinMask(unittest.TestCase):
     def test_dlg_rects_match_old_stub_thresholds(self):
         # 옛 어둠 스텁: 아래 창 y+높이 ≥ 178(SAT) · 위 창 100 ≤ y+높이, y < 183 — 4px 단위 사각형이 그 근처(±3px)여야 한다
         y0, y1, _, _ = winmask.DLG_BOTTOM
-        self.assertEqual(y0, 45)  # 창 윗 경계 줄 134 — 그 위 줄 130~133 에 발이 걸친 인물은 겹침 아님(11-23)
+        self.assertEqual(y0, 48)  # 창 윗 경계 줄 134 — 그 위 줄 130~133 에 발이 걸친 인물은 겹침 아님(11-23)
         y0, y1, _, _ = winmask.DLG_TOP
         self.assertTrue(abs(y0 * 4 - 100) <= 4)
-        self.assertEqual(y1, 44)  # 🔴 창 끝(183)이 아니라 176 — 창 아래 줄 130~133 에 머리가 걸친 파티가 통째로 BG 뒤로 가 사라졌다(11-23 씬 168)
+        self.assertEqual(y1, 41)  # 🔴 창 끝(183)이 아니라 176 — 창 아래 줄 130~133 에 머리가 걸친 파티가 통째로 BG 뒤로 가 사라졌다(11-23 씬 168)
 
     def test_cursor_kinds_never_masked(self):
         # 마스터 11-20 「커서 반토막」 — 커서(종류 0x63~0x67)는 창 안에 통째로 들어 있어도 가리지 않는다. X=3 슬롯의 종류가 `$3509+3`
@@ -275,7 +275,7 @@ class WinMask(unittest.TestCase):
     def test_ring_piece_gets_copy_after_two_frames(self):
         # 16×16 셋: 아래 창 위 모서리에 걸침(사본) · 창 안 통째(뒤) · 창 밖(앞). 첫 두 프레임은 옛 판정(걸치면 통째로 뒤), 셋째부터 사본
         desc = bytes([3, 0, 0, 80, 0, 0x00, 0, 40, 82, 0, 0x08, 0, 0xC0, 84, 0, 0x80])
-        out, c, cost = self._ring_frames(desc, 100, 170, 5)
+        out, c, cost = self._ring_frames(desc, 100, 182, 5)
         old = [(80, 0x0005), (82, 0x0805), (84, 0x8085)]  # 걸친 조각·안쪽 조각은 우선순위 꺼짐 · 밖은 그대로
         self.assertEqual(out[0], old)
         self.assertEqual(out[1], old)
@@ -287,17 +287,17 @@ class WinMask(unittest.TestCase):
             self.assertEqual(out[f], new, f)
         self.assertEqual(c.m[sprmask.PCUR], 0)
         self.assertLess(cost[4], 80)  # 다 구운 뒤 프레임 후크는 계획자를 안 부른다(정지 중 비용 0)
-        # 사본 셀 = 원본 셀 40 에서 창 쪽(y ≥ 176 → 조각 안 6줄째부터)을 지운 것
+        # 사본 셀 = 원본 셀 40 에서 창 쪽(y ≥ 192 → 조각 안 11줄째부터 — 11-25 겹침 허용 12px 로 창 윗 경계가 176 → 192, 시험 좌표도 +12)을 지운 것
         cell = (0x100 | pres[3] & 0x7F) >> 1
         want = list(c.vram)
-        sprmask.ref_plan(desc, 100, 170, [sprmask.WIN_BOTTOM], want)
+        sprmask.ref_plan(desc, 100, 182, [sprmask.WIN_BOTTOM], want)
         self.assertEqual(c.vram[cell * 64 : cell * 64 + 64], want[cell * 64 : cell * 64 + 64])
         self.assertNotEqual(c.vram[cell * 64 : cell * 64 + 64], c.vram[40 * 64 : 40 * 64 + 64])
 
     def test_ring_without_priority_bit_keeps_behind(self):
         # 개체 우선순위 비트가 꺼져 있으면(`$3559` 비트 7 = 0) 사본도 「앞」 조각도 뒤 그대로 — 스텁이 켜지 않는다
         desc = bytes([2, 0, 0, 80, 0, 0x00, 0, 0xC0, 84, 0, 0x00])
-        out, _c, _ = self._ring_frames(desc, 100, 170, 4, f9=0x00)
+        out, _c, _ = self._ring_frames(desc, 100, 182, 4, f9=0x00)
         self.assertTrue(all(attr & 0x80 == 0 for row in out for _, attr in row), out)
         self.assertEqual(out[3][0][0] & 0x100, 0x100)
 
@@ -306,7 +306,7 @@ class WinMask(unittest.TestCase):
         desc = bytes([1, 0, 0, 80, 0, 0x00])
         m_out = []
         for bx in (100, 101, 102, 103):
-            out, _c, _ = self._ring_frames(desc, bx, 170, 1)
+            out, _c, _ = self._ring_frames(desc, bx, 182, 1)
             m_out.append(out[0][0])
         self.assertTrue(all(v == (80, 0x0005) for v in m_out), m_out)
 
@@ -325,9 +325,9 @@ class WinMask(unittest.TestCase):
             c.run(winmask.labels()["frame_hook"])
             for ent, bx in ((3, 100), (9, 60)):
                 m[0x3509 + ent], m[0x3559 + ent], m[0x36E9 + ent] = 0x7B, 0x80, 0x05
-                m[0x2E], m[0x2F], m[0x30], m[0x31] = bx, 0, 170, 0
+                m[0x2E], m[0x2F], m[0x30], m[0x31] = bx, 0, 182, 0
                 m[0xFA], m[0xFB], m[0x33] = 0x00, 0xA4, 1
-                m[0xFC], m[0xFD], m[0xFE], m[0xFF] = bx, 0, 170, 0
+                m[0xFC], m[0xFD], m[0xFE], m[0xFF] = bx, 0, 182, 0
                 c.sel, c.mawr, m[0xF9] = 2, SAT0, 0
                 c.x, c.y = ent, 3
                 c.run(winmask.labels()["stub"])
@@ -337,7 +337,7 @@ class WinMask(unittest.TestCase):
     def test_ring_window_change_rebuilds(self):
         # 창 상태가 바뀌면(메뉴가 뜬다) 사본을 버리고 다시 굽는다 — 그 사이 두 프레임은 옛 판정
         desc = bytes([1, 0, 0, 80, 0, 0x00])
-        out, c, _ = self._ring_frames(desc, 100, 170, 4)
+        out, c, _ = self._ring_frames(desc, 100, 182, 4)
         self.assertEqual(out[3][0][0] & 0x100, 0x100)
         c.m[winmask.slot_addr(winmask.SLOT_MENU)] = 2
         for j, v in enumerate(winmask.MENU_RECT):

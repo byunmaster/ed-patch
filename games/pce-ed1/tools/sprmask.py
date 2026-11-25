@@ -66,10 +66,10 @@ ALIGN = (0, 1, 2, 3, 2, 3, 6, 7)
 CNT = tuple(n.bit_count() for n in NEED)
 # 창 픽셀 사각형 [x0, x1, y0, y1) — SAT 좌표 실측(스크린샷 줄 + 46 · x + 14), y 는 32 를 뺀 값(8비트에 담으려고)
 YBIAS = 32
-WIN_BOTTOM = (48, 224, 180 - YBIAS, 256 - YBIAS)
-WIN_TOP = (48, 224, 96 - YBIAS, 176 - YBIAS)
+WIN_BOTTOM = (48, 224, 192 - YBIAS, 256 - YBIAS)
+WIN_TOP = (48, 224, 96 - YBIAS, 164 - YBIAS)
 WIN_MENU = (48, 112, 96 - YBIAS, 224 - YBIAS)
-DLG_BOTTOM_Y0 = 45  # `winmask.DLG_BOTTOM[0]` — 대사 슬롯의 y0 이 이 값이면 아래 창
+DLG_BOTTOM_Y0 = 48  # `winmask.DLG_BOTTOM[0]` — 대사 슬롯의 y0 이 이 값이면 아래 창
 # 0xFFFF >> k 의 낮은 바이트 = U[k] · 높은 바이트 = U[k + 8]
 U = bytes([0xFF] * 8 + [0xFF, 0x7F, 0x3F, 0x1F, 0x0F, 0x07, 0x03, 0x01, 0x00] + [0x00] * 8)
 
