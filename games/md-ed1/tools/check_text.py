@@ -79,6 +79,24 @@ def _entries() -> list[tuple[str, str, str, str]]:
     return out
 
 
+# 1-1·1-3·1-7·2-12 보강(마스터 11-13 문장부호 전수) — 위 목록이 못 잡던 꼴: 한 글자 합자 ⁉‼⁈ · ASCII `~` · 일본식 점 `・・・`·`･･･` ·
+# 띄워 쓴 `… …`(원문 「· · ·」 오역 → `…` 하나) · `?.`·`!.` 겹침. 줄·쪽·제어코드로 갈린 `…` 는 띄운 반복이 아니다.
+def extra_punct(ours: str) -> list[str]:
+    flat = re.sub(r"<[^>]*>", "\n", ours)
+    out = []
+    if re.search(r"[⁉‼⁈⁇]", flat):
+        out.append("한 글자 합자 ⁉‼ → 반각 `!?` 두 글자(1-1)")
+    if "~" in flat:
+        out.append("ASCII `~` → 전각 `～`(1-7)")
+    if re.search(r"[・･]{2,}|[・･]…", flat):
+        out.append("일본식 점 `・・・`·`･･･` → 전각 「…」(1-3)")
+    if re.search(r"…[ ]+…", flat):
+        out.append("띄운 `… …` 반복 → 「…」 하나(1-3)")
+    if re.search(r"[?!]\.", flat):
+        out.append("`?.`·`!.` 겹침(2-12)")
+    return out
+
+
 def main(verbose: bool = False) -> None:
     ents = _entries()
     monsters = battle.monsters(common.rom())
@@ -138,6 +156,8 @@ def main(verbose: bool = False) -> None:
             puncts.append(f"{src}[{key}]: 영문 대문자 약어 → 전각(1-4 보강) — {text[:30]!r}")
         if "..." in text:
             puncts.append(f"{src}[{key}]: `...` → 전각 「…」 — {text[:30]!r}")
+        for why in extra_punct(ours):
+            puncts.append(f"{src}[{key}]: {why} — {text[:30]!r}")
     print(
         f"  문안 검사 — 항목 {len(ents)} · 원문 잔존 {len(leaks)} · 부호 {len(puncts)} · 이름 자리 {len(terms)}"
     )

@@ -114,6 +114,10 @@ echo "== md-ed1 =="
 # 6b4-3b. 마스터 판정 문안 — 정한 문안이 검수·재조판에 되돌려지지 않게(ss-ed3 10-29 「로그 씨」·「폐하」 되돌림, 10-30 전수 대조). 판정을 받으면 master_rulings.json 에 한 줄.
 "$PY" "$ROOT/scripts/check/master_rulings.py" --game md-ed1
 
+# 6b4-3c. 말투 경보(마스터 11-13 밤샘) — 반말 문장에 듣는 이 높임 「-시-」 가 섞인 꼴 · 원문 대비 한글 길이 급감. 기준선(register_baseline.json)보다
+#         늘면 실패한다. 양성 대조 tests/test_register.py
+"$PY" "$T/check_register.py" --check
+
 # 6b4-4. PS1 덧붙임 — 원문에 없는 이웃 문장이 PS1 재사용으로 딸려 오지 않았나(크레아 왕비 「워프2 주문을 외웠다」·병사
 #        「썩 저리 물러가라」·여관 「그럼 편히 쉬십시오」, style 검수 2026-10-20). 원문은 원판 롬에서 런타임으로 읽는다.
 "$PY" "$T/check_ps1_extra.py" --check
