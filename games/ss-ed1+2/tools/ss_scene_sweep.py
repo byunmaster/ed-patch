@@ -446,6 +446,9 @@ def play_id(h, snap, i, outdir, tag, maxpolls=900):
             name = f"{tag}_p{len(shots) + 1}.png"
             Image.fromarray(h.frame).save(os.path.join(outdir, name))
             shots.append(name)
+            for k in range(int(os.environ.get("SWEEP_EXTRA", "0"))):  # 깜박이는 ▽ 커서가 보이는 프레임을 위해 몇 프레임 더 남긴다(장 끝 카드 「끝」–커서 대조)
+                h.run(5)
+                Image.fromarray(h.frame).save(os.path.join(outdir, name.replace(".png", f"_x{k}.png")))
             if RECHECK:  # 60프레임 더 두고 글자가 그대로인지 — 도중 프레임이었다면 더 그려진다
                 m1 = win_text_mask(h.frame)
                 h.run(60)
@@ -591,8 +594,12 @@ def main():
         for off_s, hx in json.loads(os.environ.get("SWEEP_PATCH", "{}")).get(f"{TAG}SCN{sc:02d}", {}).items():
             o, bb = int(off_s, 16), bytes.fromhex(hx)
             d = d[:o] + bb + d[o + len(bb) :]
-        if a.game == "ed1":
+        if a.game == "ed1" and os.environ.get("SWEEP_ED_FN"):
+            fns = [int(os.environ["SWEEP_ED_FN"], 16)]  # 본체(ED.BIN) 자체의 번호→스크립트 함수 — 장 끝 카드(코드 100n+2, ED.BIN 0x06070E50)
+        elif a.game == "ed1":
             fns = ed1_text_fns(d, ed_targets)
+        elif os.environ.get("SWEEP_ED_FN"):
+            fns = [int(os.environ["SWEEP_ED_FN"], 16)]  # ED2 본체 자체의 함수 — 장 끝 카드(ED2.BIN 0x0604B43C, 코드−101 로 갈림)
         else:
             fn = text_fn(d)
             fns = [fn] if fn else []
@@ -637,7 +644,7 @@ def main():
                         break
                     ok, script = read_script(h, snap, fn, i)
                     nbad = 0 if ok else nbad + 1
-                    if not ok or not script or (a.game == "ed1" and not valid_script(script)):
+                    if not ok or not script or (a.game == "ed1" and not os.environ.get("SWEEP_ED_FN") and not valid_script(script)):
                         if os.environ.get("SWEEP_DEBUG") and script:
                             print(f"  (거름) m{mi} id{i:03d} {script[:24].hex()}", flush=True)
                         continue

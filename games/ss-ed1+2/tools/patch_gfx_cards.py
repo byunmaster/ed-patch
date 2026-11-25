@@ -22,7 +22,6 @@
     1행 잉크 y 4~18 · 2행 잉크 y 21~35 · 가운데 x 96 · 최대 폭 168 (`終章` 줄이 163)
 """
 
-import json
 import os
 import sys
 
@@ -172,7 +171,9 @@ def draw(bg, pal, line1, line2):
         # ⚠ 안티에일리어스를 살린다 — 문턱으로 자르면 16px 획이 계단진다(원본도 AA 다).
         ImageDraw.Draw(im).text(
             (
-                CENTER_X - (bb[2] - bb[0]) // 2 - bb[0],
+                CENTER_X
+                - (bb[2] - bb[0] + 1) // 2
+                - bb[0],  # 홀수 폭이면 남는 1px 은 오른쪽 여백으로(왼 ≤ 오, 규칙 2-8)
                 y0 + ((y1 - y0 + 1) - (bb[3] - bb[1])) // 2 - bb[1],
             ),
             text,
@@ -180,6 +181,12 @@ def draw(bg, pal, line1, line2):
             font=f,
         )
         a = np.asarray(im)
+        # 규칙 2-8(마스터 11-09) — 가운데가 안 맞으면 왼쪽으로: **강한 잉크**(검사기와 같은 잣대, 덮임 ≥ 0.85)의 좌·우 여백에서 왼쪽이 더 크면 그 반(올림)만큼 왼으로 민다.
+        strong = np.where((a >= 217).any(axis=0))[0]
+        if len(strong):
+            lm, rm = int(strong.min()), w - 1 - int(strong.max())
+            if lm > rm:
+                a = np.roll(a, -((lm - rm + 1) // 2), axis=1)
         al = (a.astype(np.float32) / 255)[..., None]
         rgb = rgb * (1 - al) + WHITE * al
         m = a > 0

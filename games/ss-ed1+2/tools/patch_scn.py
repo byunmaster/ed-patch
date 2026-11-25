@@ -73,6 +73,10 @@ _ROOT = os.path.dirname(os.path.dirname(common.GAME_DIR))
 LINE_DICT = os.path.join(_ROOT, "games", "ps1-ed1+2", "line_dict.json")
 LINE_DICT_REF = "game/ps1-ed1+2:games/ps1-ed1+2/line_dict.json"
 # 「どうも ありがとう」 · 「また来てくれよ」 · 「どれを買うんだ？」 · 「〈품목〉だね。…」 · 「ちょっと待ってくれ」
+# 임시 — PS1 저본 수정이 main 에 들어오면 걷는다(위 호출 자리 주석 참고). 「~에서」 앞 지명만 정본 꼴로.
+JAGRI_MINE_1109 = {
+    "6a6f291b7c0c79e2": "도르가스는 쟈그리 폐광에서 이 지하에 있는 유적까지 굴을 파서 숨어들려 하고 있다. 이걸 봐.",
+}
 SHOP_1018 = {
     "29507f69cbcab430": "정말 고마워요.",  # 해요체 가게(ED2SCN27) — 합쇼체 가게(ED1SCN16)는 scn_at 로 「정말 감사합니다.」(PS1 역할군 목록 E, 마스터 10-20)
     "c29f621c8e7746c2": "또 와 줘.",
@@ -92,6 +96,11 @@ FMT = re.compile(r"%[csd]")
 #    그 사이 값은 6B 하나뿐이다. 그래서 8B 를 경계로 둔다 — 넘으면 **다른 구간**이다.
 #    ⚠ 이걸 안 가르면 구간이 파일 전체가 되어 **코드까지 덮어쓴다**(첫 시도가 그랬다).
 MAX_GAP = 8
+
+
+POISON = (
+    int(os.environ["ED_POISON"], 0) if os.environ.get("ED_POISON") else None
+)  # 시험 전용 — 위 rebuild 참조
 
 
 def contract(text):
@@ -280,7 +289,11 @@ def reloc_off(path, e):
         _RELOC_OFF = set()
         if os.path.exists(src):
             with open(src, encoding="utf-8") as f:
-                _RELOC_OFF = {ln.split("#", 1)[0].strip() + "#" + ln.split("#", 1)[1].split()[0] for ln in f if ln.strip() and not ln.lstrip().startswith("#") and "#" in ln}
+                _RELOC_OFF = {
+                    ln.split("#", 1)[0].strip() + "#" + ln.split("#", 1)[1].split()[0]
+                    for ln in f
+                    if ln.strip() and not ln.lstrip().startswith("#") and "#" in ln
+                }
     return bool(path) and f"{os.path.basename(path)[:-4]}#{e.get('entry_id')}" in _RELOC_OFF
 
 
@@ -296,7 +309,7 @@ def _needs_pack(run, canon, d, skip_offs, built, sites, path=None):
         kr = canon_of(canon, jp, (sites or {}).get(off), path=path, off=off)
         if kr is None or contract(kr) != contract(jp):
             continue
-        if len(_encode(kr)) + 1 > span:
+        if len(_enc(kr, jp, path)) + 1 > span:
             return True
     return False
 
@@ -352,23 +365,31 @@ def rebuild(
         if kr is not None:
             if contract(kr) != contract(jp):
                 skipped.append((off, "구조 계약이 다르다", jp[:18], e, None))
-            elif len(_encode(kr)) > n:
+            elif len(_enc(kr, jp, path)) > n:
                 # 🔴 한계는 칸(span)이 아니라 **원문 바이트 수(n)** 다 — 칸 꼬리에는 다음
                 #    블록의 시작 마커(`0x09`)가 들어 있어 그만큼은 못 쓴다. `span-1` 로
                 #    쟀다가 꼬리가 2B 인 자리에서 1B 넘쳤다(실측 ED1SCN12 0x4854).
                 # ⚠ 인코딩을 **여기서 들고 나간다** — 확장 영역으로 이주할 쪽이 다시
                 #   조판·인코딩하면 두 곳에서 갈릴 수 있다(같은 문안을 두 번 만들지 않는다).
-                enc = _encode(kr)
+                enc = _enc(kr, jp, path)
                 if reloc_off(path, e):
                     # 장부 스위치 — 옮기지 않는다(번역을 못 넣고 원문이 남는다)
-                    skipped.append((off, f"장부 스위치로 이주를 껐다 — 칸을 넘는다 {len(enc)}B > {n}B", jp[:18], e, None))
+                    skipped.append(
+                        (
+                            off,
+                            f"장부 스위치로 이주를 껐다 — 칸을 넘는다 {len(enc)}B > {n}B",
+                            jp[:18],
+                            e,
+                            None,
+                        )
+                    )
                 else:
                     skipped.append((off, f"칸을 넘는다 {len(enc)}B > {n}B", jp[:18], e, enc))
             elif packed and _movable(off, n, e, table) and not reloc_off(path, e):
                 # 구간을 다시 깐다 — 자리는 `migrate` 가 정하고 여기선 원본을 남긴다
-                skipped.append((off, "구간을 다시 깐다", jp[:18], e, _encode(kr)))
+                skipped.append((off, "구간을 다시 깐다", jp[:18], e, _enc(kr, jp, path)))
             else:
-                use = _encode(kr)
+                use = _enc(kr, jp, path)
                 if done is not None:
                     done.append(off)
         # 🔴 **남이 이미 쓴 자리엔 안 넣는다** — 본체 둘은 시스템 메시지·표·고유명사·자막이
@@ -396,7 +417,13 @@ def rebuild(
         if spans is not None:
             spans[off] = span
         tail = d[off + n : off + span]
-        blob += use + b"\x00" * (span - len(use) - len(tail)) + tail
+        pad = span - len(use) - len(tail)
+        if POISON is not None and use is not raw and pad > 1:
+            # 독약 빌드(시험용, `ED_POISON=<바이트>`) — 종단 NUL 뒤 남는 칸을 눈에 띄는 값으로 채운다. 하네스 투어가 일반 빌드와
+            # 달라지면 그 바이트를 읽는 코드가 있다는 뜻이다(PCE II 퀵메뉴 부류). 일반 빌드는 영향 없음.
+            blob += use + b"\x00" + bytes([POISON]) * (pad - 1) + tail
+        else:
+            blob += use + b"\x00" * pad + tail
     assert len(blob) == room, f"구간 0x{start:X}: {len(blob)}B ≠ {room}B"
     return bytes(blob), moves, skipped
 
@@ -425,7 +452,13 @@ def all_texts(mm=None):
             continue
         sites = sites_for(path)
         for e in got[1]:
-            kr = canon_of(canon, e.get("text", ""), sites.get(int(e["file_offset"], 16)), path=path, off=int(e["file_offset"], 16))
+            kr = canon_of(
+                canon,
+                e.get("text", ""),
+                sites.get(int(e["file_offset"], 16)),
+                path=path,
+                off=int(e["file_offset"], 16),
+            )
             if kr:
                 out.append(kr)
     if close:
@@ -455,27 +488,130 @@ def silence_dots(text, key=None):
     return text
 
 
-_CONNECT = re.compile(r"(는데|지만|(?<=[다네지세니련])만),")
+# 🔴 후보는 **넓게** 뽑고 어미 조건은 코드에서 건다(manager 10-24 — 좁은 열거 `는데|지만` 은 「~듯한데,」「~얘긴데,」 같은 꼴을 놓쳤다, md-ed2 실측).
+#    `데,` = 앞 글자가 ㄴ 받침(한데·은데·는데·던데·텐데·인데·그런데) · `만,` = 앞이 서술 어미(다·네·지·세·니·련 — 「다만,」 포함, 「가만,」 은 제외) · `지만,` 은 그대로.
+#    🔴 문장 첫머리 접속부사(「다만,」「그런데,」「근데,」「헌데,」 + 「하지만,」)의 쉼표는 규칙 2-13 경계 사례 ③ 「접속부사 뒤는 뺌」 대로 뺀다(manager 10-24 정정 — 처음엔 보호했으나 기록이 없었다).
+# 🔴 규칙 2-13 ⑪(마스터 11-03) — 짧은 연결 어미 `-고,` `-며,` `-서,` 도 ⑨ 와 같은 잣대. 감탄 `아이고,` · 되묻는 `뭐라고,` `뭔고,` · 응답 `그렇고말고,` 와
+#    관용 쉼 `~지 말고,` 는 연결 어미가 아니라 남긴다.
+_CONNECT = re.compile(
+    r"(?<=[가-힣])(데|지만|만|(?<!아이)(?<!뭐라)(?<!뭔)(?<!말)고|며|(?<=[아어여해라러])서),"
+)
 _BOUNDARY = re.compile(r"\{p\}|\{n\}|%c|[\n.!?…]")
 
 
-def comma_rule(text):
-    """🔴 규칙 2-13 ⑨(마스터 10-18) — `~는데,` `~지만,` `~만,` 뒤 쉼표는 **앞 절이 11음절 이하면 뺀다**(12음절 이상이면 남긴다).
+# 읽는 소리 계수(마스터 10-24 「권장대로」, 번역 규칙 2-13 ⑨ — 숫자 끝 조사 규칙과 같은 잣대): 숫자·영문도 읽는 대로 센다(`10 Gold` = 십 골드 3음절), 공백·부호는 안 센다.
+_SINO = "영일이삼사오육칠팔구"
+_READ_LATIN = {
+    "Gold": 2,
+    "G": 1,
+    "HP": 4,
+    "MP": 2,
+    "EP": 2,
+}  # 클 때만 읽는 말 — 골드 · 에이치피 · 엠피 · 이피(앞 절에 실제로 나오는 것만 둔다)
+_DIGITS = re.compile(r"[0-9０-９]+")
+_LATIN = re.compile(r"[A-Za-zＡ-Ｚａ-ｚ]+")
 
-    앞 절 = 같은 문장의 처음(개행·창 넘김·문장부호 뒤)부터 그 어미까지의 한글 음절. 연결어미 `만` 은 앞이 서술 어미(다·네·지·세·니·련)일 때만
-    본다 — `가만,` `다만,` 같은 부사는 건드리지 않는다. PS1 이 같은 규칙으로 저본을 고쳐 머지되면 이 함수는 할 일이 없다(쉼표가 이미 없다).
+
+def sino_syllables(n):
+    """정수 → 한자어 수사로 읽을 때의 음절 수 — 10=십(1) · 200=이백(2) · 10000=만(1) · 150=백오십(3) · 4=사(1). 십·백·천·만 앞의 「일」은 안 읽는다."""
+    if n == 0:
+        return 1  # 영
+    count = 0
+    for unit, size in ((10000, "만"), (1000, "천"), (100, "백"), (10, "십")):
+        q, n = divmod(n, unit)
+        if q:
+            count += (sino_syllables(q) if unit == 10000 and q > 1 else (0 if q == 1 else 1)) + 1
+    return count + (1 if n else 0)
+
+
+def read_syllables(text):
+    """읽는 소리대로의 음절 수 — 한글 한 글자 = 1 · 숫자열 = 한자어 수사 · 영문은 `_READ_LATIN` 표(없는 낱말은 글자마다 1). 공백·부호·그 밖은 0."""
+    import unicodedata
+
+    t = unicodedata.normalize("NFKC", text)
+    total = len(re.findall(r"[가-힣]", t))
+    for m in _DIGITS.finditer(t):
+        total += sino_syllables(int(m.group()))
+    for m in _LATIN.finditer(t):
+        total += _READ_LATIN.get(m.group(), len(m.group()))
+    return total
+
+
+def _is_connective(m, text):
+    """`_CONNECT` 후보가 진짜 연결어미 뒤 쉼표인가 — `데`(ㄴ 받침 뒤) · `만`(서술 어미 + 앞에 한글) · `지만`."""
+    kind, i = m.group(1), m.start()
+    if kind == "데":
+        return (ord(text[i - 1]) - 0xAC00) % 28 == 4
+    if kind == "만":
+        return (
+            text[i - 1] in "다네지세니련"
+        )  # 「가만,」 은 가 가 서술 어미가 아니라 밖. 문장 첫머리 접속부사 「다만,」 은 규칙 2-13 ③(접속부사 뒤는 뺌)대로 포함
+    return True
+
+
+# 🔴 규칙 2-13 ⑩(마스터 11-03) — 문장 앞 접속 `그럼,` 은 뺀다. 부르는 말 앞(`그럼, 왕자님.`) · 작별 인사(`그럼, 몸조리 잘하세요.`) · 맞장구 되풀이
+#    (`그럼 그럼,`)는 남긴다.
+_THEN = re.compile(
+    r"(?<![가-힣])(?<!그럼 )그럼,(?= )(?!\s*(?:[가-힣]+(?:님|씨)[.!?]|몸조리|편히 쉬))"
+)
+
+
+# 🔴 규칙 2-13 ⑪ 대구(마스터 11-05 「대구는 살리지」 · 11-06 「대구는 쉼표넣자」) — 같은 꼴의 두 절이 맞서는 대구(`치안도 좋고, 세금도 싸고,`)는 짧아도 쉼표를 남긴다.
+#    판별: 앞 절에 `~도` 어절이 있고, 쉼표 뒤 절 첫머리(어절 둘 안)에도 `~도` 어절이 있다.
+_PAR_HEAD = re.compile(r"[가-힣0-9]도(?= )")
+_PAR_TAIL = re.compile(r"(?:[^ ,.!?]+ ){0,2}[^ ,.!?]*[가-힣0-9]도(?=[ ,.!?])")
+
+
+def _parallel(head, tail):
+    return bool(_PAR_HEAD.search(head) and _PAR_TAIL.match(tail.lstrip(" ")))
+
+
+# 🔴 규칙 4-15(마스터 11-07) — 상점 주인의 존댓말 물음 「사시겠습니까?」·「파시겠습니까?」는 「구매하시겠습니까?」·「판매하시겠습니까?」.
+#    **지금 문안이 그 꼴인 줄만**(앞말이 붙은 줄 포함) 바꾼다. 「…습니까요」·「…어요」 같은 사투리·해요체와 밀매상·반말 장사꾼은 꼴이 달라
+#    저절로 빠지고, 꼴이 같아도 고유 말투인 줄(재해 방지 부적 노점 · 밀매상 밀조주)은 아래 표에 낱말로 건다. 메뉴 라벨(삽니다/팝니다)은 규칙 밖.
+SHOP_VERB_EXEMPT = ("부적", "밀조주")
+_SHOP_BUY = re.compile(r"(?<![가-힣])사시겠습니까\?")
+_SHOP_SELL = re.compile(r"(?<![가-힣])파시겠습니까\?")
+
+
+def shop_verb_rule(text):
+    if not text or any(w in text for w in SHOP_VERB_EXEMPT):
+        return text
+    return _SHOP_SELL.sub("판매하시겠습니까?", _SHOP_BUY.sub("구매하시겠습니까?", text))
+
+
+def comma_rule(text):
+    """🔴 규칙 2-13 ⑨(마스터 10-18) — `~는데,` `~지만,` `~만,` 뒤 쉼표는 **앞 절이 11음절 이하면 뺀다**(12음절 이상이면 남긴다)
+
+    앞 절 = 같은 문장의 처음(개행·창 넘김·문장부호 뒤)부터 그 어미까지. **음절은 읽는 소리대로 센다**(`read_syllables` — 숫자·영문도 읽는 대로, 마스터 10-24 「권장대로」).
+    연결어미 `만` 은 앞이 서술 어미(다·네·지·세·니·련)일 때만(`가만,` `다만,` 같은 부사는 건드리지 않는다). PS1 이 같은 규칙으로 저본을 고쳐 머지되면 이 함수는 할 일이 없다.
+    ⚠ 이름 자리(`\x1a`·`%s`)는 읽을 수 없어 0 으로 센다 — 이름이 낀 절은 실제보다 짧게 잡힌다(알려진 한계).
     """
     out, last = [], 0
     for m in _CONNECT.finditer(text):
+        if not _is_connective(m, text):
+            continue
         cut = 0
         for b in _BOUNDARY.finditer(text, 0, m.start()):
             cut = b.end()
-        syl = len(re.findall(r"[가-힣]", text[cut : m.end() - 1]))
-        if syl <= 11:
+        if read_syllables(text[cut : m.end() - 1]) <= 11 and not _parallel(
+            text[cut : m.end() - 1], text[m.end() :]
+        ):
             out.append(text[last : m.end() - 1])  # 쉼표만 뺀다
             last = m.end()
     out.append(text[last:])
-    return "".join(out)
+    return _THEN.sub("그럼", _lead_adverb_comma("".join(out)))
+
+
+# 🔴 규칙 2-13 「뺀다」 — 문장 맨 앞 부사어 뒤 쉼표(`처음에는,` ✗ — 마스터 10-14). 부사어 + 보조사(`에는` `에서는` `으로는` `로는`) 와 문장 부사 「실은」「사실은」.
+#    문장 맨 앞(문두 · 개행 · 창 전환 · 문장 끝 부호 뒤)일 때만 — 문장 가운데 부르는 말·나열 앞뒤 쉼표는 남기는 부류라 안 건드린다.
+_LEAD_ADVERB = re.compile(
+    r"(?:^|(?<=[\n%])|(?<=[.!?…] ))((?:[가-힣]+(?:에서는|에는|으로는|로는|에게는|한테는)|실은|사실은)),(?=[ \n%])"
+)
+
+
+def _lead_adverb_comma(text):
+    return _LEAD_ADVERB.sub(r"\1", text)
 
 
 def load_canon(quiet=False):
@@ -511,6 +647,11 @@ def load_canon(quiet=False):
     for k, v in SHOP_1018.items():
         if k in got:
             got[k] = v
+    # 🔴 임시 덮어쓰기(마스터 11-09 「쟈그리 폐광으로 하자. 쟈그리의 폐광은 이제 없어야할듯」) — 정본 값과 같게.
+    #    PS1 저본(ED1SCN6:568) 수정이 main 에 들어오면 이 표를 걷는다.
+    for k, v in JAGRI_MINE_1109.items():
+        if k in got:
+            got[k] = v
     # 🔴 **새턴 전용 문안을 덮어 얹는다** — PS1 사전이 영영 못 채우는 자리다(781블록:
     #    이식판이 갈린 문안 763 + 저작권 분류로 막힌 19). 겹치면 우리 것이 이긴다.
     # ⚠ **정본 이름과 통째로 같은 블록**은 사전을 안 거친다 — 아이템·지명이 한 블록으로
@@ -522,7 +663,7 @@ def load_canon(quiet=False):
     got.update(add)
     ours = load_ours()
     got.update(ours)
-    got = {k: comma_rule(silence_dots(v, k)) for k, v in got.items()}
+    got = {k: comma_rule(shop_verb_rule(silence_dots(v, k))) for k, v in got.items()}
     if not quiet:
         print(
             f"  저본 {len(got):,}원문 — {where} + 정본 이름 {len(add):,} + 새턴 전용 {len(ours):,}"
@@ -686,7 +827,11 @@ def _scn_at(path, off):
     if _SCN_AT is None:
         try:
             with open(SCN_AT_JSON, encoding="utf-8") as f:
-                _SCN_AT = {k: {int(o, 16): v for o, v in d.items()} for k, d in json.load(f).items() if not k.startswith("_")}
+                _SCN_AT = {
+                    k: {int(o, 16): v for o, v in d.items()}
+                    for k, d in json.load(f).items()
+                    if not k.startswith("_")
+                }
         except OSError:
             _SCN_AT = {}
     return _SCN_AT.get(path, {}).get(off) if path and off is not None else None
@@ -706,7 +851,10 @@ def canon_of(canon, jp, site=None, why=None, path=None, off=None):
     #    결과를 보려면 모두 path 를 줘야 한다.**
     egg = _scn_at(path, off)
     if egg is not None:
-        canon = {**canon, line_key(jp): egg}
+        canon = {
+            **canon,
+            line_key(jp): comma_rule(shop_verb_rule(egg)),
+        }  # 🔴 자리별 문안도 쉼표 규칙 2-13 ⑨ 를 거친다(사전 로드 때만 걸면 scn_at 자리가 빠진다 — ED2SCN28#6 「듯한데,」)
     chain = bool(path and DIALOG_RE.match(path))
     ctl = None
     if chain and not site:  # 주입 쌍 블록은 `%c` 수가 달라 인자를 못 맞춘다
@@ -734,7 +882,20 @@ _HDR = re.compile(r"%c[^%\n]+%c\n")  # 화자 머리 `%c이름%c` + 개행 — �
 _SENT_END = (".", "!", "?", "…", "다", "요", "죠", "네", "군")
 
 
-_CLAUSE_END = ("만", "는데", "지만", "며", "니까", "라서", "으며", "으나", "한데", "인데", "에는", "고도")
+_CLAUSE_END = (
+    "만",
+    "는데",
+    "지만",
+    "며",
+    "니까",
+    "라서",
+    "으며",
+    "으나",
+    "한데",
+    "인데",
+    "에는",
+    "고도",
+)
 
 
 def best_cut(lines, lo, hi, hdr=frozenset()):
@@ -758,7 +919,9 @@ def best_cut(lines, lo, hi, hdr=frozenset()):
             sc += 3
         rem = n - c
         sc += 2 if rem >= 2 else -2
-        sc += 0.7 * c  # 앞 쪽을 더 채운다 — 문장 끝(+4)이 이르게 잡혀 앞 쪽이 두 줄로 남는 일을 막는다(qa r6 SCN12 「지날 수 없는데」 뒤)
+        sc += (
+            0.7 * c
+        )  # 앞 쪽을 더 채운다 — 문장 끝(+4)이 이르게 잡혀 앞 쪽이 두 줄로 남는 일을 막는다(qa r6 SCN12 「지날 수 없는데」 뒤)
         if best_s is None or sc >= best_s:
             best, best_s = c, sc
     return best
@@ -772,6 +935,63 @@ def _row_w(line):
     from typeset_scn import width
 
     return width(re.sub(r"%c|\x01\d+\x02", "", line))
+
+
+def _dense_lines(lines, limit, tri_w):
+    """🔴 2-17(마스터 11-05 「원문칸은 최대한 유지」) — 쪽이 한도를 넘어 갈라지기 전에, **글은 그대로 두고 어절 줄만 촘촘히** 다시 짜서
+    한 쪽에 들어가면 그 줄들을 돌려준다(안 들어가면 None). 화자 머리 행(`\\x01N\\x02`)은 그대로 첫 행이다. 줄 앞 들여쓰기·빈 줄이 든 쪽은 안 건드린다
+    (손으로 짠 서명·문단 — 재배치하면 뜻이 바뀐다). 꽉 찬 쪽의 마지막 줄은 ▽ 칸(`tri_w`)을 넘지 않아야 한다."""
+    from typeset_scn import COLS, width
+
+    head = [lines[0]] if lines and lines[0].startswith("\x01") else []
+    body = lines[len(head) :]
+    if not body or any((not ln) or ln[0] in " \t" or "\x01" in ln or "\t" in ln for ln in body):
+        return None
+    words = [w for w in " ".join(body).split(" ") if w]
+    wd = [width(w) for w in words]
+    # 문장 경계(어절이 문장 끝 부호로 끝남)로 문장을 묶고, 한 줄에 들어가는 문장은 줄 안에서 안 쪼개게 벌점을 준다(2-10)
+    sid, k = [], 0
+    for w in words:
+        sid.append(k)
+        if w.rstrip("」』\"'").endswith(_SENT_END_PUNCT):
+            k += 1
+    sw = {}
+    for i, g in enumerate(sid):
+        sw[g] = sw.get(g, 0.0) + wd[i] + 0.5
+    n = len(words)
+    room = limit - len(head)
+    INF = 10**9
+    # best[r][i] = 앞 i 어절을 r 줄에 담는 최소 벌점(줄바꿈이 문장 한가운데 · 한 줄에 들어가는 문장을 가르면 크게)
+    best = [[(INF, None)] * (n + 1) for _ in range(room + 1)]
+    best[0][0] = (0, None)
+    for r in range(1, room + 1):
+        for j in range(1, n + 1):
+            w_ = -0.5
+            for i in range(j - 1, -1, -1):
+                w_ += wd[i] + 0.5
+                if w_ > COLS and i != j - 1:
+                    break
+                prev = best[r - 1][i][0]
+                if prev >= INF:
+                    continue
+                pen = 0
+                if j < n and sid[j - 1] == sid[j]:  # 이 줄 끝에서 문장이 갈린다
+                    pen = 10 if sw[sid[j - 1]] - 0.5 <= COLS else 1
+                if best[r][j][0] > prev + pen:
+                    best[r][j] = (prev + pen, i)
+    for r in sorted(
+        (r for r in range(1, room + 1) if best[r][n][0] < INF), key=lambda x: (best[x][n][0], x)
+    ):
+        out, j, q = [], n, r
+        while q > 0:
+            i = best[q][j][1]
+            out.append(" ".join(words[i:j]))
+            j, q = i, q - 1
+        out.reverse()
+        cap = limit if (tri_w is None or width(out[-1]) <= tri_w) else limit - 1
+        if len(head) + len(out) <= cap:
+            return head + out
+    return None
 
 
 def auto_split(kr, limit, tri_w=None):
@@ -801,6 +1021,12 @@ def auto_split(kr, limit, tri_w=None):
 
         if len(lines) <= cap_of(lines):
             out.append(part)
+            continue
+        dense = _dense_lines(
+            lines, limit, tri_w
+        )  # 2-17 — 글 그대로 줄만 촘촘히 다시 짜면 원문 창 하나에 들어가나
+        if dense is not None:
+            out.append("\n".join(dense) + tail)
             continue
         pages = []
         while len(lines) > cap_of(lines):
@@ -834,8 +1060,15 @@ def page_split(jp, kr, path):
     cuts = (_KEY_CONT or {}).get("pages", {}).get(game, {}).get(line_key(jp))
     if cuts and "\x08" not in kr:
         lines = kr.split("\n")
-        if len(lines) > 1 and re.fullmatch(r"%c[^%\n]+%c", lines[0]) and 1 in cuts and 0 not in cuts:
-            cuts = [0 if c == 1 else c for c in cuts]  # 화자 머리 뒤에서는 못 가른다(안 갈리고 본문이 창 아래로 넘친다) — 머리 앞에서
+        if (
+            len(lines) > 1
+            and re.fullmatch(r"%c[^%\n]+%c", lines[0])
+            and 1 in cuts
+            and 0 not in cuts
+        ):
+            cuts = [
+                0 if c == 1 else c for c in cuts
+            ]  # 화자 머리 뒤에서는 못 가른다(안 갈리고 본문이 창 아래로 넘친다) — 머리 앞에서
         out = []
         for i, ln in enumerate(lines):
             out.append(("\x08" + ln) if (i in cuts and i > 0) else ln)
@@ -867,7 +1100,9 @@ def key_cont_fix(jp, kr, path, ctl=None):
     커서 폭은 대사 보기 실측에서 뽑은 정본(`script/key_cont.json` — `derive_key_cont.py`)이 든다. 첫 어절이 안 들어가면
     블록 머리에 개행, 첫 줄 일부만 들어가면 어절 경계에서 개행 — **글은 안 바뀐다.** 열쇠가 없거나 마크업이 첫 줄에 있으면 손대지 않는다."""
     global _KEY_CONT
-    if _KEY_CONT is None:  # 🔴 표 적재가 먼저다 — `kr=None` 표 적재 호출(`_scn_chains` · `_scn_cuts`)이 조기 반환에 막혀 조용히 빈 표를 돌려주던 약점(10-23)
+    if (
+        _KEY_CONT is None
+    ):  # 🔴 표 적재가 먼저다 — `kr=None` 표 적재 호출(`_scn_chains` · `_scn_cuts`)이 조기 반환에 막혀 조용히 빈 표를 돌려주던 약점(10-23)
         try:
             with open(KEY_CONT_JSON, encoding="utf-8") as f:
                 _KEY_CONT = json.load(f)
@@ -887,11 +1122,15 @@ def key_cont_fix(jp, kr, path, ctl=None):
         키 대기는 빈 칸을 안 그린다(실측) — 앞 글 바로 뒤에 이어 그려 「좋아.그럼」으로 붙는다. 읽히게 앞에 공백 하나(0.5)를 둔다.
         첫 어절이 안 들어가면 머리에 개행, 첫 줄 일부만 들어가면 어절 경계에서 개행(글은 안 바뀐다). 남은 칸이 없으면 개행
         (「…충분하다.가 / 자!!」 — 마지막 반 칸에 한 글자만 붙어 낱말이 끊겼다, 2026-10-19 qa r6)."""
-        seg = re.match(r"(?:[^\n%]|%c)*", rest).group()  # `%c`(색·쪽 표지)는 폭이 없다 — 한 줄 전체로 잰다
+        seg = re.match(
+            r"(?:[^\n%]|%c)*", rest
+        ).group()  # `%c`(색·쪽 표지)는 폭이 없다 — 한 줄 전체로 잰다
         plain = seg.replace("%c", "")
         if not plain.strip() or seg.startswith((" ", "\n")) or cursor >= COLS or cursor <= 0:
             return rest  # 이미 줄 끝이면 엔진이 새 줄로 접는다 · 커서가 줄 맨 앞이면 이을 앞 글이 없다(「 그렇게 많이는」 줄머리 공백, qa r8)
-        sp = "" if plain.startswith(("은(는)", "이(가)", "을(를)", "와(과)")) else " "  # 이름 뒤 조사 병기는 이름에 바로 붙는다
+        sp = (
+            "" if plain.startswith(("은(는)", "이(가)", "을(를)", "와(과)")) else " "
+        )  # 이름 뒤 조사 병기는 이름에 바로 붙는다
         avail = COLS - cursor - len(sp) * 0.5
         if avail <= 0:
             return "\n" + rest
@@ -909,7 +1148,9 @@ def key_cont_fix(jp, kr, path, ctl=None):
             return "\n" + rest
         moved, tail = " ".join(words[fit:]), rest[len(seg) :]
         nl = re.match(r"\n([^\n% ][^\n%]*)", tail)
-        if nl and width(moved.replace("%c", "") + " " + nl.group(1)) <= COLS:  # 옮긴 어절을 다음 줄에 합쳐 짧은 토막 줄을 안 만든다
+        if (
+            nl and width(moved.replace("%c", "") + " " + nl.group(1)) <= COLS
+        ):  # 옮긴 어절을 다음 줄에 합쳐 짧은 토막 줄을 안 만든다
             moved, tail = moved + " " + nl.group(1), tail[nl.end() :]
         return sp + " ".join(words[:fit]) + "\n" + moved + tail
 
@@ -917,7 +1158,12 @@ def key_cont_fix(jp, kr, path, ctl=None):
     if w0 is not None:
         # 블록 머리 — 맨 앞 `%c` 가 색 켜기(1·2·3)면 그 뒤 글이 앞 블록 줄에 이어진다(화자 머리가 아닌 경우)
         lead = ""
-        if kr.startswith("%c") and not re.match(r"%c[^%\n]+%c\n", kr) and ctl and ctl[0] in (1, 2, 3):
+        if (
+            kr.startswith("%c")
+            and not re.match(r"%c[^%\n]+%c\n", kr)
+            and ctl
+            and ctl[0] in (1, 2, 3)
+        ):
             lead, kr = "%c", kr[2:]
         if not kr.startswith(("%", "\n")):
             kr = lead + cont(w0, kr)
@@ -964,6 +1210,34 @@ def _encode(kr, plan=None):
     from font import to_bytes
 
     return to_bytes(kr, plan if plan is not None else _PLAN)
+
+
+_NAME_JPS = None
+
+
+def _name_jps():
+    """이름 표(아이템·주문·몬스터)의 원문 이름 집합 — 본체 안 씬 블록 중 **표 이름과 같은 원문**을 가려낸다."""
+    global _NAME_JPS
+    if _NAME_JPS is None:
+        import patch_ui
+
+        _f, mm = common.open_image()
+        try:
+            _NAME_JPS = {jp for t in patch_ui.name_rows(mm) for _a, jp, _kr, _p in t["recs"]}
+        finally:
+            mm.close()
+            _f.close()
+    return _NAME_JPS
+
+
+def _enc(kr, jp, path):
+    """`_encode` + 🔴 **이름 표 이름은 안쪽 공백을 줄바꿈 금지 코드로**(번역 규칙 2-6, `font.glue_name`) — 본체 안 씬 블록이
+    이름 표를 다시 깔기도 한다(ED2 아이템 40칸이 이 길로 `0x20` 꼴로 되돌아갔다, 마스터 10-31 점검)."""
+    if path in ("/ED.BIN", "/ED2.BIN") and jp in _name_jps():
+        from font import glue_name
+
+        kr = glue_name(kr)
+    return _encode(kr)
 
 
 # 🔴 **본체 파일 안의 0런은 자리로 쓰지 않는다** — 계측으로는 안전을 증명할 수 없다.
@@ -1053,7 +1327,13 @@ def protected_tails(d, base, entries):
     """
     import bisect
 
-    spans = sorted((int(e["file_offset"], 16), int(e["file_offset"], 16) + len(bytes.fromhex(e["raw_hex"])) + 1) for e in entries)
+    spans = sorted(
+        (
+            int(e["file_offset"], 16),
+            int(e["file_offset"], 16) + len(bytes.fromhex(e["raw_hex"])) + 1,
+        )
+        for e in entries
+    )
     starts = [a for a, _ in spans]
     out = []
     for q in range(0, len(d) - 3, 2):
@@ -1182,7 +1462,7 @@ def _untouched(holes, built, d):
     return [h for h in out if h[1] > 0]
 
 
-def migrate(over, base, tail_at, tail_end, spare=(), spans=None, built=None, d=None, owned=()):
+def migrate(over, base, tail_at, tail_end, spare=(), spans=None, built=None, d=None, owned=(), wipes=None):
     """칸을 넘는 블록을 옮긴다 → `([(오프셋, 바이트)], [(ptr, 새 주소)], 남은 것)`.
 
     🔴 **원본 칸을 앞으로 당기지 않는다.** PS1 이 쓴 2단계다 — 참조만 새 주소로 돌린다.
@@ -1211,8 +1491,10 @@ def migrate(over, base, tail_at, tail_end, spare=(), spans=None, built=None, d=N
     #      풀이 줄면 남는 것은 늘기만 하므로(단조) 반드시 멈춘다.
     blocked = set()
     for _ in range(len(over) + 1):
+        if wipes is not None:
+            wipes.clear()
         puts, ptrs, left = _place(
-            over, base, tail_at, tail_end, spare, blocked, spans or {}, built, d, owned
+            over, base, tail_at, tail_end, spare, blocked, spans or {}, built, d, owned, wipes
         )
         now = {o for o, _jp in left}
         if now == blocked:
@@ -1221,7 +1503,7 @@ def migrate(over, base, tail_at, tail_end, spare=(), spans=None, built=None, d=N
     return puts, ptrs, left
 
 
-def _place(over, base, tail_at, tail_end, spare, blocked, spans, built=None, d=None, owned=()):
+def _place(over, base, tail_at, tail_end, spare, blocked, spans, built=None, d=None, owned=(), wipes=None):
     """`migrate` 의 한 회차 — `blocked` 의 칸은 풀에 안 넣는다."""
     # 풀 = [꼬리] + [비워질 칸] + [짧아져 남은 칸 뒷부분]. 칸은 자기 글자 자리만 낸다.
     free = [[tail_at, tail_end - tail_at]] if tail_end > tail_at else []
@@ -1276,6 +1558,19 @@ def _place(over, base, tail_at, tail_end, spare, blocked, spans, built=None, d=N
             ro, rn = ro + 1, rn - 1
         if rn >= 2:  # 남는 조각은 다시 풀로
             free.append([ro, rn])
+    # 🔴 **비워 놓고 아무도 안 깐 자리는 채움값(00)으로 지운다**(manager 11-09) — 안 지우면 옛 원문의 꼬리가 화면 밖 죽은 칸에 남아
+    #    배치가 바뀔 때마다 「이미지 잔존 일본어」 덩이가 늘고 준다(쟈그리 폐광 덮어쓰기로 풀 배치가 움직이자 ED1SCN32 한 덩이가 드러났다).
+    #    비운 칸(위 `free.append([off, …])`)과 겹치는 남은 조각만 지운다 — 남이 쓴 자리·훅 풀·측정된 빈 곳은 건드리지 않는다.
+    vac = [
+        (off, spans.get(off, len(bytes.fromhex(e["raw_hex"]))))
+        for off, _why, _jp, e, _enc in over
+        if len(bytes.fromhex(e["raw_hex"])) >= VACATE_MIN and off not in blocked
+    ]
+    for a, n in free:
+        for vo, vn in vac:
+            lo, hi = max(a, vo), min(a + n, vo + vn)
+            if hi > lo and wipes is not None:
+                wipes.append((lo, b"\x00" * (hi - lo)))
     puts.sort()
     return puts, ptrs, left
 
@@ -1453,7 +1748,8 @@ def main():
             matched += sum(
                 1
                 for o, _n, e in run
-                if o not in mine and canon_of(canon, e.get("text", ""), isites.get(o), path=path, off=o)
+                if o not in mine
+                and canon_of(canon, e.get("text", ""), isites.get(o), path=path, off=o)
             )
             blob, moves, dropped = rebuild(
                 run, canon, d, mine, built, spare, isites, done, spans, path
@@ -1470,15 +1766,28 @@ def main():
             # 자리가 안 바뀐 포인터는 쓸 이유가 없다
             plans.append((start, blob, [(p, a) for p, a in moves if _moved(entries, p, a)], orig))
         pinned += sum(1 for e in entries if not e.get("ptr_at"))
+        wipes = []
         puts, mptrs, left = (
             migrate(
-                over, _base, size, bsize, list(spare) + _measured_free(path) + _hook_pool(path), spans, built, d,
-                _merge_ranges(list(common.ledger_owned(lba, bsize, os.path.basename(sys.argv[0]))) + protected_tails(d, _base, entries)),
+                over,
+                _base,
+                size,
+                bsize,
+                list(spare) + _measured_free(path) + _hook_pool(path),
+                spans,
+                built,
+                d,
+                _merge_ranges(
+                    list(common.ledger_owned(lba, bsize, os.path.basename(sys.argv[0])))
+                    + protected_tails(d, _base, entries)
+                ),
+                wipes,
             )
             if canon
             else ([], [], over)
         )
         moved += len(puts)
+        puts = sorted(puts + wipes)  # 안 깐 비운 칸의 00 지우기(`_place` 주석) — 이주 수에는 안 센다
         nofit += len(left)
         # 🔴 **얼마나 모자라나**를 같이 센다 — 자리를 늘릴지 판단하는 값이다.
         #    ⚠ 여기서 재야 한다. 밖에서 `migrate` 를 다시 부르면 꼬리 확장분을 안 넘겨
@@ -1499,7 +1808,9 @@ def main():
                 codes.extend((int(a, 16), int(w[1], 16)) for a, w in site["words"].items())
             for at, old_w, new_w in CTL_PATCHES.get(path, {}).get(o, ()):
                 # 🔴 사전조건 — 원본 그 자리가 정말 기대한 명령어인가(체크리스트 2)
-                assert int.from_bytes(d[at : at + 2], "big") == old_w, f"{path} 0x{at:X} 가 원본이 아니다"
+                assert int.from_bytes(d[at : at + 2], "big") == old_w, (
+                    f"{path} 0x{at:X} 가 원본이 아니다"
+                )
                 codes.append((at, new_w))
         injected += len(codes) // 2
         if apply:

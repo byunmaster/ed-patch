@@ -67,7 +67,7 @@ class PinnedInPlace(unittest.TestCase):
 
     def test_table_is_four_byte_strided(self):
         """표라는 근거 — 여섯이 4B(앞 둘은 8B) 간격으로 붙어 있다."""
-        pin = patch_ui.PINNED_INPLACE["/ED.BIN"]
+        pin = tuple(a for a in patch_ui.PINNED_INPLACE["/ED.BIN"] if a >= 0x44BC8)  # 아래쪽 둘(0x2BFE8·0x36E84)은 「 1글자 문자열 핀 — 표가 아니다
         self.assertEqual(len(pin), 6)
         self.assertEqual(pin, tuple(sorted(pin)))
         self.assertEqual([b - a for a, b in itertools.pairwise(pin)], [8, 8, 4, 4, 4])
@@ -110,14 +110,14 @@ class TablesAreNotRelocated(unittest.TestCase):
 
 
 class PlaceFields(unittest.TestCase):
-    """🔴 지명 칸은 전각 짝수 — 종류 말은 붙이고 뒷말 앞에만 전각 공백(판정 (나) 2026-09-27)."""
+    """🔴 지명 칸은 전각 짝수 — 종류 말은 붙이고 뒷말 앞에만 공백 — 11-09 부터 반각."""
 
     def test_kind_word_stays_attached(self):
         self.assertEqual(patch_ui._fit_place("크루즈마을", 14, False, "t"), "크루즈마을")
 
-    def test_suffix_space_is_wide_and_only_if_it_fits(self):
-        self.assertEqual(patch_ui._fit_place("크루즈마을", 14, True, "t"), "크루즈마을　")
-        self.assertEqual(patch_ui._fit_place("그로스토스성", 14, True, "t"), "그로스토스성")
+    def test_suffix_space_is_half_and_only_if_it_fits(self):
+        self.assertEqual(patch_ui._fit_place("크루즈마을", 14, True, "t"), "크루즈마을 ")  # 접미 앞 공백은 반각(마스터 11-09)
+        self.assertEqual(patch_ui._fit_place("그로스토스성채", 14, True, "t"), "그로스토스성채")
 
     def test_gate_sees_half_width_and_odd_length(self):
         from check_place_fields import _walk

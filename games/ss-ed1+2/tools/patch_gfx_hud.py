@@ -322,20 +322,19 @@ def box_bytes(px, d, off, stride=ATO_STRIDE):
     return bytes(buf)
 
 
-def draw_status(old, kr, bdf):
-    """10×10 칸에 한 글자. 색은 **그 칸이 쓰던 두 값**에서 유도한다.
+STATUS_BG = {FRAME: 0, STAT: 39}  # 배경은 파일마다 하나 — FRAME 0(투명) · STAT 39(패널 남색)
 
-    ⚠ 배경을 0 으로 못 박지 않는다 — `/FRAME.DAT` 은 0(투명)인데 `/STAT.DAT` 은
-      39(패널 남색)다.
-    🔴 **개수로 가르지 않는다.** 이 라벨들은 잉크와 배경이 **정확히 50:50** 이라
-       `argmax`/`argmin` 이 같은 값을 골라 **글자가 배경색으로 그려진다**(2026-08-26
-       실측 — 화면이 통째로 비었다). **테두리**로 가른다: 글자는 10×10 칸 안에 들어가
-       테두리를 안 물므로, 테두리에서 많은 쪽이 배경이다.
+
+def draw_status(old, kr, bdf, bg):
+    """10×10 칸에 한 글자. **배경은 파일별 상수**(`STATUS_BG`), 잉크는 그 칸이 쓰던 나머지 한 값(148 빨강 / 146 노랑).
+
+    🔴 **배경을 화소에서 유도하지 않는다**(2026-11-06 마스터 「묵,잠,혼,반은 배경과 폰트 색상이 반전」). 이전엔 「10×10 테두리에서 많은 쪽이 배경」이라고
+       유도했는데, 원판 한자 黙·眠·乱·跳 는 획이 테두리까지 차(획 53~58%) **잉크를 배경으로 골라 한글이 반전돼** 그려졌다(독·주·수는 획이 성겨 정상).
+       그 앞의 `argmax` 는 잉크·배경이 50:50 이라 같은 값을 골랐다 — 둘 다 「화소 개수·테두리로 배경을 가린다」가 틀린 길이다. 배경은 파일이 정한다.
     """
     vals = np.unique(old)
     assert len(vals) == 2, f"상태 라벨 색이 둘이 아니다: {vals.tolist()}"
-    edge = np.concatenate([old[0], old[-1], old[1:-1, 0], old[1:-1, -1]])
-    bg = int(np.bincount(edge).argmax())
+    assert bg in vals.tolist(), f"원판 칸에 배경값 {bg} 이 없다: {vals.tolist()}"
     colr = int(vals[0] if int(vals[0]) != bg else vals[1])
     assert colr != bg, f"잉크와 배경이 같다: {vals.tolist()}"
     n = STATUS_BOX
@@ -453,7 +452,7 @@ def main():
         for path, off in ((FRAME, fo), (STAT, so)):
             stride = STATUS_STRIDE[path]
             old_s = box(raw[path], off, STATUS_BOX, STATUS_BOX, stride)
-            new_s, n = draw_status(old_s, kr, bdf)
+            new_s, n = draw_status(old_s, kr, bdf, STATUS_BG[path])
             stat.append((path, off, stride, new_s))
             if path == FRAME:
                 shown.append(new_s)

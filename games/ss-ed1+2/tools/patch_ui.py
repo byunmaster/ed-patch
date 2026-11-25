@@ -174,9 +174,11 @@ def _pad_to(kr, target):
 #    이주(sys_pack)가 이 문자열을 옮기면 기준 포인터가 새 자리로 따라가 **표 36칸을 통째로 엉뚱한 곳에서 읽는다** —
 #    실화면: 월드맵 마을 팝업이 「엘아스타」 대신 「%c%s%c에게」 템플릿을 그렸다(2026-10-08, JP 원본 같은 지점은 「エルアスタ」).
 #    ⇒ **제자리에만 쓴다**(핀). 칸 16B 에 「엘아스타마을」 12B+널이 든다.
+# 🔴 **「(별도 1글자 문자열) 4곳 — 「…」의 주문은 봉인되어 있다 앞의 낫표**(마스터 10-27 「」 반각). 1B+널 이라 제자리에 들어가고, 풀에 맡기면 가장 작은
+#    조각(이름 표 꼬리의 2B)에 앉아 표 패딩 검사(`check_table_padding` C)가 운다.
 PINNED_INPLACE = {
-    "/ED.BIN": (0x44BC8, 0x44BD0, 0x44BD8, 0x44BDC, 0x44BE0, 0x44BE4),
-    "/ED2.BIN": (0x69CE2,),
+    "/ED.BIN": (0x44BC8, 0x44BD0, 0x44BD8, 0x44BDC, 0x44BE0, 0x44BE4, 0x2BFE8, 0x36E84),
+    "/ED2.BIN": (0x69CE2, 0x12680, 0x14718),
 }
 
 SUFFIXED_TABLE = "지명"
@@ -232,6 +234,12 @@ def _place_lookup(jp, cat):
 #   마을 진입마다 도는 자리라 관리자 판단으로 **상수 하나로 닫는 쪽**을 택했다(devlog 09-27).
 #   ⚠ `ED2.BIN` 은 이미 다른 값(14)을 쓴다 — 박스 크기를 확인 안 했으니 이번엔 건드리지
 #   않는다(`ED.BIN`=ED1 만).
+# 🔴 **가운데 = 가능한 위치 중 가장 가까운 것, 같을 때만 왼쪽**(번역 규칙 2-8, 마스터 11-09). 배너 전용 표(꼬리 전각공백 없음)로 바뀌며 필드폭 17→15(꼬리 공백 2B 몫 환원), 시작 x 는 실렌더로 최근접을 골랐다.
+BANNER_FIELD_NEW = 15
+BANNER_X_NEW = 62
+HUD_FIELD_OFF = 0x516A1  # `/ED.BIN` 파일 오프셋 — `add #16,r1`(RAM 0x060796A0)의 즉치 바이트
+HUD_FIELD_NEW = 17
+ED2_BANNER_X_NEW = 62
 BANNER_FIELD_OFF = 0x52D85  # `/ED.BIN` 파일 오프셋 — `add #12,r1`(RAM 0x0607AD84)의 즉치 바이트
 
 # 🔴 **마스터 미세조정**(2026-09-27 「약간 왼쪽으로 치우치게」) — 위 필드폭은 6px 단위라
@@ -248,25 +256,302 @@ BANNER_XBASE_OFF = 0x52DCB  # `/ED.BIN` 파일 오프셋 — `mov #63,r4`(RAM 0x
 BANNER_YBASE_OFF = 0x52DC7  # `/ED.BIN` 파일 오프셋 — `mov #61,r5`(RAM 0x0607ADC6)의 즉치 바이트
 
 
+# 🔴 **입장 배너 전용 이름 표**(마스터 11-09 「입장배너도 가능하다면 띄어쓰기」· 정본 일반 꼴 `canon.place_general` — 성·섬은 붙임). 배너 호출부는 HUD·워프와
+#   **리터럴이 따로**다 — ED1 `ED.BIN` 0x5B7E8(= 지명 표 − 14B, 한 군데) · ED2 `ED2.BIN` 의 긴꼴 표 리터럴 0x06091CD2(= 표 − 32B) 여덟 군데(그림 함수 `0x06058D78` 호출부).
+#   → 전용 표를 시스템 메시지 자리 풀에 깔고(`sys_pack(extra=…)` — 구조가 우리 것인 풀) **그 리터럴만** 새 표로 돌린다. HUD·워프는 옛 표(붙임) 그대로.
+#   표 앞 `lead` 바이트는 원 호출부가 기준 포인터를 「한 칸 앞」으로 두는 규약이라 맞춘 더미다(`check_place_fields.table_base_refs` 의 같은 주의).
+BANNER_TABLES = {
+    "/ED.BIN": dict(key="ED", tab="지명", stride=14, lead=14, title="ed1", ptrs=(0x5B7E8,)),
+}
+# 🔴 **ED2 입장 배너 띄어쓰기는 런타임 끼움**(11-09) — 긴꼴 표(36칸×16B)는 워프 목록과 같이 쓰고 워프는 붙여 써야 해서(마스터), 표를 복제하지 않는다
+#   (연속 576B 자리도 없다 — 풀 최대 조각 344B). 대신 **배너 그리기 함수(`ED2.BIN` 0x06058D78)가 부르는 strlen 리터럴(0x30DFC)을 작은 루틴으로 돌린다**:
+#   이름 포인터가 긴꼴 표 칸이면 **칸의 마지막 바이트(15번 — 이름 널 뒤라 워프·검사기가 안 본다)** 에 적힌 위치에 전각 공백을 끼운 사본을
+#   함수 프레임 앞 32B(쓰이지 않는다)에 만들고, 이름 포인터(r9)·r4 를 그 사본으로 돌려 원래 strlen 으로 넘어간다. 아니면(헤더 이름 등) 그대로 넘긴다.
+BANNER_HOOKS = {  # 파일 → 종류 → (풀 리터럴 파일 오프셋, 원래 가리키던 주소)
+    "/ED.BIN": dict(strlen=(0x52DE4, 0x06095DB8), draw=(0x52DEC, 0x0607D160)),
+    "/ED2.BIN": dict(strlen=(0x30DFC, 0x0607B340), draw=(0x30E04, 0x06064554)),
+}
+BANNER_HOOK_ROWS = {  # 호출부 표 — ED1 은 호출부 리터럴(전용 표 포인터)을 따라 읽고, ED2 는 긴꼴 표 자리(제자리)
+    "/ED.BIN": dict(deref=0x060837E8, plus=14, stride=14, n=48),
+    "/ED2.BIN": dict(abs=0x06091CF2, stride=16, n=36),
+}
+ED2_LONG_TBL = 0x06091CF2  # 긴꼴 표 시작(= 호출부 리터럴 0x06091CD2 + 0x20)
+ED2_LONG_N = 36
+
+
+def _asm(ops, lits):
+    """아주 작은 SH-2 어셈블러 — ops: ("w",값) · ("label",이름) · ("br",옵코드,라벨) · ("lit",이름,레지스터) · ("bsr",) · ("data",이름) ; lits: {이름: 16비트}.
+    ⚠ 위치 독립이어야 한다(놓일 주소는 풀이 정한다, 짝수만 보장) — 분기는 상대, 상수는 mov.w 즉치. → (바이트, {라벨: 오프셋})"""
+    L, pos = {}, 0
+    for o in ops:
+        if o[0] == "label":
+            L[o[1]] = pos
+        else:
+            pos += 2
+    body = pos
+    litat = {k: body + 2 * i for i, k in enumerate(lits)}
+    out, pos = bytearray(), 0
+    for o in ops:
+        if o[0] == "label":
+            continue
+        if o[0] == "w":
+            out += o[1].to_bytes(2, "big")
+        elif o[0] == "br":
+            d = (L[o[2]] - (pos + 4)) // 2
+            assert -128 <= d < 128 if o[1] != 0xA0 else -2048 <= d < 2048
+            out += (((o[1] << 8) | (d & 0xFF)) if o[1] != 0xA0 else (0xA000 | (d & 0xFFF))).to_bytes(2, "big")
+        elif o[0] == "lit":
+            d = (litat[o[1]] - (pos + 4)) // 2
+            assert 0 <= d < 256
+            out += ((0x9000 | (o[2] << 8)) | d).to_bytes(2, "big")
+        else:
+            raise AssertionError(o)
+        pos += 2
+    for v in lits.values():
+        out += (v & 0xFFFF).to_bytes(2, "big")
+    return bytes(out), L
+
+
+def _hi_lo(v):
+    """mov.w 부호 확장 → (상위 16, 하위 16) — 하위가 음수가 되면 상위를 1 올린다."""
+    hi = (v + 0x8000) >> 16
+    return hi, v - (hi << 16)
+
+
+def banner_hook_codes(path, data):
+    """배너 이름 끼움·가운데 보정 루틴 둘 → (`strlen` 자리 루틴 + 칸별 [끼울 위치, x 보정] 표, `draw` 자리 루틴).
+
+    그리기 함수(ED1 0x0607AD60 · ED2 0x06058D78)의 프레임(r14, 앞 32B 는 안 쓰인다)을 쓴다 — r14+31 = x 보정 바이트, r14+0.. = 끼운 이름 사본.
+    ① strlen 루틴: 이름 포인터(r4)가 호출부 표 칸이면 그 칸의 [위치, 보정]을 읽어 보정을 r14+31 에 두고, 위치가 있으면 반각 공백(1B)을 끼운 사본으로 r9·r4 를 돌린 뒤 원래 strlen 으로.
+    ② draw 루틴: x(r4) 에 r14+31 을 더해 원래 그리기로. 표 밖 이름(씬 헤더 등)은 보정 0 · 사본 없음."""
+    cfg = BANNER_HOOK_ROWS[path]
+    s_lit, s_orig = BANNER_HOOKS[path]["strlen"]
+    _d_lit, d_orig = BANNER_HOOKS[path]["draw"]
+    ops, lits = [], {}
+
+    def w(x):
+        ops.append(("w", x))
+
+    def label(n):
+        ops.append(("label", n))
+
+    def br(op, n):
+        ops.append(("br", op, n))
+
+    def litw(r, n, v):
+        ops.append(("lit", n, r))
+        lits[n] = v & 0xFFFF
+
+    w(0x61E3)  # mov r14,r1
+    w(0x711F)  # add #31,r1
+    w(0xE000)  # mov #0,r0
+    w(0x2100)  # mov.b r0,@r1      보정 0 으로 시작
+    w(0x072A)  # sts pr,r7
+    w(0xB000)  # bsr L0 (바로 다음 — pr = L0)
+    w(0x0009)  # nop
+    label("L0")
+    w(0x032A)  # sts pr,r3         r3 = L0 (위치 독립 기준)
+    w(0x472A)  # lds r7,pr
+    base = cfg.get("abs") or cfg["deref"]
+    hi, lo = _hi_lo(base)
+    litw(1, "TH", hi)
+    w(0x4128)  # shll16 r1
+    litw(2, "TL", lo)
+    w(0x312C)  # add r2,r1
+    if "deref" in cfg:
+        w(0x6112)  # mov.l @r1,r1     호출부 리터럴(전용 표 포인터)
+        w(0x7100 | cfg["plus"])  # add #plus,r1   칸 앞 더미를 건너 표 시작
+    w(0x6243)  # mov r4,r2
+    w(0x3218)  # sub r1,r2         r2 = r4 − 표
+    litw(5, "LIM", cfg["n"] * cfg["stride"])
+    w(0x3252)  # cmp/hs r5,r2
+    br(0x89, "PASS")  # bt (표 밖)
+    w(0xE600)  # mov #0,r6
+    w(0xE500 | cfg["stride"])  # mov #stride,r5
+    label("LP")
+    w(0x3252)  # cmp/hs r5,r2
+    br(0x8B, "DONE")  # bf
+    w(0x3258)  # sub r5,r2
+    w(0x7601)  # add #1,r6
+    br(0xA0, "LP")  # bra LP
+    w(0x0009)  # nop
+    label("DONE")
+    w(0x2228)  # tst r2,r2
+    br(0x8B, "PASS")  # bf (칸 시작이 아니면 그대로)
+    litw(1, "DOFF", 0)  # 자리표 — 아래서 채운다(데이터 오프셋 − L0)
+    w(0x313C)  # add r3,r1         r1 = 데이터 표
+    w(0x6063)  # mov r6,r0
+    w(0x4000)  # shll r0           2·색인
+    w(0x021C)  # mov.b @(r0,r1),r2 끼울 위치
+    w(0x7001)  # add #1,r0
+    w(0x001C)  # mov.b @(r0,r1),r0 x 보정
+    w(0x61E3)  # mov r14,r1
+    w(0x711F)  # add #31,r1
+    w(0x2100)  # mov.b r0,@r1
+    w(0x2228)  # tst r2,r2
+    br(0x89, "PASS")  # bt (끼움 없음)
+    w(0x6323)  # mov r2,r3
+    w(0x65E3)  # mov r14,r5
+    label("L1")
+    w(0x6244)  # mov.b @r4+,r2
+    w(0x2520)  # mov.b r2,@r5
+    w(0x7501)  # add #1,r5
+    w(0x4310)  # dt r3
+    br(0x8B, "L1")  # bf
+    w(0xE220)  # mov #0x20,r2      반각 공백 1B
+    w(0x2520)
+    w(0x7501)
+    label("L2")
+    w(0x6244)
+    w(0x2520)
+    w(0x7501)
+    w(0x2228)  # tst r2,r2
+    br(0x8B, "L2")  # bf
+    w(0x69E3)  # mov r14,r9
+    w(0x64E3)  # mov r14,r4
+    label("PASS")
+    hi, lo = _hi_lo(s_orig)
+    litw(1, "SH", hi)
+    w(0x4128)
+    litw(2, "SL", lo)
+    w(0x312C)
+    w(0x412B)  # jmp @r1
+    w(0x0009)  # nop
+    # DOFF 확정: 데이터 = 코드·상수 바로 뒤. L0 오프셋은 11번째 슬롯 직후(첫 일곱 + 라벨).
+    code, L = _asm(ops, lits)
+    dat_off = len(code)
+    doff = dat_off - L["L0"]
+    lits["DOFF"] = doff
+    code, L = _asm(ops, lits)
+    assert len(code) == dat_off and len(data) == 2 * cfg["n"]
+    a = code + bytes(data)
+    # ② draw
+    ops2, lits2 = [], {}
+    for x in (0x61E3, 0x711F, 0x6010, 0x340C):  # mov r14,r1 · add #31,r1 · mov.b @r1,r0 · add r0,r4
+        ops2.append(("w", x))
+    hi, lo = _hi_lo(d_orig)
+    ops2 += [("lit", "H", 1), ("w", 0x4128), ("lit", "L", 2), ("w", 0x312C), ("w", 0x412B), ("w", 0x0009)]
+    lits2 = {"H": hi, "L": lo}
+    b, _ = _asm(ops2, lits2)
+    return a, b
+
+
+def ed2_banner_space_pos(rs):
+    """긴꼴 표 칸마다 끼울 바이트 위치(0 = 없음) — 정본 일반 꼴(띄움)에서 반각 공백의 자리. → {색인: 위치}"""
+    out = {}
+    for k, n, i, _at, _st, jp, kr in rs:
+        if k != "ED2" or n != "지명 긴꼴" or not kr:
+            continue
+        nm = banner_name(jp.strip(WIDE_SP + " "), kr.strip(WIDE_SP + " "), "ed2")
+        cs = [c for c, ch in enumerate(nm) if ch == " "]
+        assert len(cs) <= 1, (i, nm)
+        out[i] = 2 * cs[0] if cs else 0  # 공백 앞은 전부 전각(2B)
+    return out
+
+
+def banner_dx():
+    """배너 x 보정(칸별 −1/0/+1px) — 실화면 측정(`ss_banner_call.py --write-dx`)으로 만든 정본 `script/banner_dx.json`. 없으면 0."""
+    p = os.path.join(common.GAME_DIR, "script", "banner_dx.json")
+    if not os.path.exists(p):
+        return {"ED1": [0] * 48, "ED2": [0] * 36}
+    with open(p, encoding="utf-8") as f:
+        d = json.load(f)
+    assert len(d["ED1"]) == 48 and len(d["ED2"]) == 36 and all(-6 <= x <= 6 for x in d["ED1"] + d["ED2"])
+    return d
+
+
+def banner_hook_blobs(rs):
+    """`[(경로, 바이트, [리터럴 파일 오프셋], 0)]` — 경로마다 strlen 루틴(+칸별 표)·draw 루틴."""
+    dx = banner_dx()
+    pos = ed2_banner_space_pos(rs)
+    out = []
+    for path, key, n in (("/ED.BIN", "ED1", 48), ("/ED2.BIN", "ED2", 36)):
+        assert common.extract(path)[BANNER_HOOKS[path]["strlen"][0] :][:4] == BANNER_HOOKS[path]["strlen"][1].to_bytes(4, "big")
+        assert common.extract(path)[BANNER_HOOKS[path]["draw"][0] :][:4] == BANNER_HOOKS[path]["draw"][1].to_bytes(4, "big")
+        data = bytearray()
+        for i in range(n):
+            data += bytes([(pos.get(i, 0) if key == "ED2" else 0) & 0xFF, dx[key][i] & 0xFF])
+        a, b = banner_hook_codes(path, bytes(data))
+        out.append((path, a, [BANNER_HOOKS[path]["strlen"][0]], 0))
+        out.append((path, b, [BANNER_HOOKS[path]["draw"][0]], 0))
+    return out
+
+
+def banner_name(jp, kr, title):
+    """배너 이름 — 정본 일반 꼴(띄움, `canon.place_general`) → 반각 공백. 칸 폭이 모자라면 호출부가 붙인 꼴로 물러선다."""
+    g = shared_canon.place_general(jp, title)
+    assert g, f"정본 place_general 에 없는 지명: {jp!r}"
+    return g  # 띄움은 반각 공백(마스터 11-09 「입장배너도 반각공백」) — 배너 전용 표·끼움 루틴만 쓴다(HUD·워프 꼴과 무관)
+
+
+def banner_extra(rs, plan):
+    """`sys_pack` 에 얹을 배너 표 → `[(경로, 표 바이트, [리터럴 파일 오프셋], 앞 더미 바이트)]` — 포인터 값 = 표 시작 − 더미(그 앞 칸은 읽히지 않는다)."""
+    out = []
+    for path, c in BANNER_TABLES.items():
+        rows_ = sorted((i, jp, kr) for k, n, i, _at, _st, jp, kr in rs if k == c["key"] and n == c["tab"])
+        blob = bytearray()
+        for i, jp, kr in rows_:
+            assert i * c["stride"] == len(blob), f"{path} 배너 표 {i}번 칸이 건너뛰었다"
+            if not kr:
+                blob += b"\x00" * c["stride"]
+                continue
+            nm = banner_name(jp.strip(WIDE_SP + " "), kr.strip(WIDE_SP + " "), c["title"])
+            try:
+                blob += encode(nm, c["stride"], plan)
+            except AssertionError:
+                nm = kr.strip(WIDE_SP + " ")  # 칸에 안 들면 붙인 꼴
+                blob += encode(nm, c["stride"], plan)
+        out.append((path, bytes(blob), list(c["ptrs"]), c["lead"]))
+    return out + banner_hook_blobs(rs)
+
+
+# 🔴 **ED2 배너 시작 x**(마스터 11-08 「딱 가운데가 아니면 왼쪽 여백을 더 짧게」, 번역 규칙 2-8) — ED2 도 같은 그리기 함수(`ED2.BIN` 0x06058D78, ED1 의 0x0607AD60 과
+#   같은 꼴)이고 이름이 길이로 가운데 놓이지만 글자 잉크가 오른쪽으로 1px 치우쳐(실화면 호출 측정 — 긴꼴 30곳 좌 = 우+1·3곳 좌 = 우) **왼쪽이 오른쪽보다 1px 크다**.
+#   시작 x 를 ED1 과 같게 2px 앞당긴다(63→61): 좌 14·우 17 꼴, 왼 ≤ 오 · 차 3px(`tools/ss_banner_call.py` 로 재 본다).
+ED2_BANNER_XBASE_OFF = 0x30DE3  # `/ED2.BIN` 파일 오프셋 — `mov #63,r4`(RAM 0x06058DE2)의 즉치 바이트
+
+
 def patch_banner_field(f, files):
+    lba2, size2 = files["/ED2.BIN"]
+    common.write_at(
+        f,
+        lba2,
+        size2,
+        ED2_BANNER_XBASE_OFF,
+        bytes([ED2_BANNER_X_NEW]),
+        expect=bytes([63]),
+        label=f"ED2.BIN 입장배너 시작x(63→{ED2_BANNER_X_NEW}px)",
+    )
     lba, size = files["/ED.BIN"]
+    # 🔴 HUD 지명 상자(`0x0607968C`)의 왼쪽 패딩 `add #16,r1`(RAM 0x060796A0) → 17. 왼쪽 반각 칸 수 = (폭 − 길이)/2 를 0 쪽으로 버리는데, 접미 앞 반각 공백(마스터 11-09)으로
+    #   길이가 홀수가 되면 한 칸(6px) 모자라게 놓여 좌−우 −9px 였다. 폭 17 은 **홀수 길이만** 바꾼다(짝수 길이는 (17−2k)/2 = (16−2k)/2 — 지명 칸은 전각 짝수라 안 변한다).
+    #   오른쪽 패딩(`add #16,r2`)은 그대로라 합은 16 칸으로 같다. 좌−우 −9 → +3(한 칸 = 12px 이동, 최근접).
+    common.write_at(
+        f,
+        lba,
+        size,
+        HUD_FIELD_OFF,
+        bytes([HUD_FIELD_NEW]),
+        expect=bytes([16]),
+        label=f"ED.BIN HUD 지명 왼쪽 패딩 폭(16→{HUD_FIELD_NEW}, 홀수 길이용)",
+    )
     common.write_at(
         f,
         lba,
         size,
         BANNER_FIELD_OFF,
-        bytes([17]),
+        bytes([BANNER_FIELD_NEW]),
         expect=bytes([12]),
-        label="ED.BIN 입장배너 필드폭(12→17)",
+        label=f"ED.BIN 입장배너 필드폭(12→{BANNER_FIELD_NEW})",
     )
     common.write_at(
         f,
         lba,
         size,
         BANNER_XBASE_OFF,
-        bytes([61]),
+        bytes([BANNER_X_NEW]),
         expect=bytes([63]),
-        label="ED.BIN 입장배너 시작x(63→61px)",
+        label=f"ED.BIN 입장배너 시작x(63→{BANNER_X_NEW}px)",
     )
     common.write_at(
         f,
@@ -282,11 +567,11 @@ def patch_banner_field(f, files):
 def _fit_place(kr, room, suffixed, where):
     """지명 한 칸 → 칸(`room` = 널 포함 바이트)에 드는 꼴.
 
-    `suffixed`(「…부근」 표)면 뒤에 접미가 붙으므로 끝에 전각 공백을 하나 붙인다 —
-    화면에서 확인된 「크루즈마을　입구」 꼴. 안 들면 붙여 쓴다.
+    `suffixed`(「…부근」 표)면 뒤에 접미가 붙으므로 끝에 **반각 공백**을 하나 붙인다(마스터 11-09 「방향접미 앞 공백 반각」 —
+    종전 전각). 안 들면 붙여 쓴다. 홀수 길이가 되는 칸은 이 접미 표뿐이다(`check_place_fields` 가 이 한 칸만 허용한다).
     """
-    if suffixed and rec_len(kr + WIDE_SP) <= room:
-        return kr + WIDE_SP
+    if suffixed and rec_len(kr + " ") <= room:
+        return kr + " "
     return kr
 
 
@@ -457,7 +742,12 @@ def ellipsis_glyph():
     rows = [g["…"][r * 2 : r * 2 + 2] for r in range(11)]
     assert sum(1 for r in rows if any(r)) == 1, "…의 점이 한 행이 아니다 — 모양이 바뀌었다"
     src = next(i for i, r in enumerate(rows) if any(r))
-    rows[10], rows[src] = rows[src], b"\x00\x00"
+    # 🔴 마스터 11-15 「…의 점을 그 기종 마침표와 같은 모양·크기로」(규칙 1-3) — 반각 `.`(bake_ascii)은 1×2px 점이 8·9행(원판 ！ 점과 같다).
+    #    옛 꼴(점 1px · 10행)은 마침표보다 작고 한 줄 낮았다 → 같은 점 열마다 8·9행에 세로 2px 로 놓는다(위치는 열 그대로).
+    # 🔴 마스터 11-16 「원판 ?! 점에 맞춰 마침표를」 — 점 하나는 마침표와 같은 1×2px(원판 ！ 점), 열은 원래 「…」 그대로.
+    dots = rows[src]
+    rows = [b"\x00\x00"] * 11
+    rows[8] = rows[9] = dots
     return b"".join(rows)
 
 
@@ -619,18 +909,72 @@ def _half(t):
     return n
 
 
+CARD_END_SPACES = 14  # 「끝」 앞 반각 공백 수 — 커서(▽) 가운데에 가장 가까운 자리(`_card_text` 주석)
+
+
 def _card_text(jp, ch, title):
     """원본 꼴을 따라 우리 카드 문자열을 짓는다 — 여백만 다시 잰다."""
     head, _, rest = jp.partition("\n")
     lead = len(head) - len(head.lstrip("\t "))
     pre = head[:lead]  # `\t` 와 앞 여백
-    tab = "\t" if pre.startswith("\t") else ""
+    tab = ""  # 🔴 선두 `\t` 는 안 쓴다 — 탭 카드는 코드가 시작+1 을 가리켜 탭이 죽은 1B 였는데, 그 리터럴을 시작으로 돌려(`card_ptr_fixes`) 그 자리를 카드 글 첫 바이트로 쓴다
     jp_body = head[lead:]
     kr_body = f"{ch}　{title}"
-    pad1 = max(0, (lead - len(tab)) + (_half(jp_body) - _half(kr_body)) // 2)
-    line2 = rest.split("\n")[-1]  # `      完%c`
-    n2 = len(line2) - len(line2.lstrip(" "))
-    return f"{tab}{' ' * pad1}{kr_body}\n\n{' ' * n2}끝%c"
+    pad1 = max(0, lead + (_half(jp_body) - _half(kr_body)) // 2 - (1 if pre.startswith(chr(9)) else 0))  # 원문 앞 여백 = 탭 1B + 반각 공백들 — 탭 자리까지 공백으로 센다 ⇒ 같은 위치
+    # 🔴 「끝」은 아래 커서(▽)에 맞춘다(마스터 11-09 「장끝카드는 끝을 커서에 맞추면 될거같네」) — 원문 완(完) 줄의 공백 수(13·14 로 갈렸다)가 아니라 **커서 기준 고정 수**다.
+    #   실화면(대화창 경로로 카드 번호를 띄워 잼): 커서 잉크 중심 x=108(ED1·ED2 같다), 반각 공백 6px 이라 14칸이면 끝 중심 110(+2px) · 13칸이면 104(−4px) — 최근접 14.
+    return f"{tab}{' ' * pad1}{kr_body}\n\n{' ' * CARD_END_SPACES}끝%c"
+
+
+def fit_card(card, limit):
+    """카드 문자열이 **원문 칸(JP 바이트)** 을 넘으면 덜어 낸다 — 메뉴 경로(`card_rows`)와 씬 경로(`typeset_scn._chapter_card`)가 **같은 결과**를 내야 한다(둘이 갈리면
+    같은 칸에 두 글이 겹쳐 구조 대조가 「칸 뒤 채움에 설명 안 되는 바이트」로 운다, 11-09).
+
+    🔴 「끝」 줄을 커서 기준 14칸으로 고정하면(`CARD_END_SPACES`) 원문 칸을 1B 넘는 카드(종장)가 있다 — 첫 줄 가운데맞춤 여백에서 반각 한 칸씩 덜어 칸 안에 넣는다(제목이 반 칸
+    왼쪽으로 갈 뿐이다). ⚠ 선두 `\t` 는 못 덜어 낸다: 탭 있는 카드는 코드가 **탭 다음 바이트**를 가리키고(포인터 풀에 카드 시작 주소가 없다 — 제４·５장만 시작을 가리킨다) 탭 자리는 죽은 1B 다.
+    그걸 지웠더니 포인터가 한 칸 밀려 구조 대조(`check_structure` 「칸 뒤 채움에 설명 안 되는 바이트」)가 울었다(11-09)."""
+
+    def nbytes(t):
+        return sum(2 if "\x80" <= c else 1 for c in t.replace("%c", "XX"))
+
+    while nbytes(card) > limit:
+        head = card.split("\n")[0]
+        lead = len(head) - len(head.lstrip("\t"))  # 선두 탭은 건드리지 않는다
+        k = head.find(" ", lead)
+        if k < 0 or head[lead:].lstrip(" ") == head[lead:]:
+            break  # 덜어 낼 첫 줄 여백이 없다
+        card = card[:k] + card[k + 1 :]
+    return card
+
+
+def card_ptr_fixes(cards):
+    """탭으로 시작하는 카드의 **포인터 리터럴을 시작(+0)으로 돌린다** → `[(경로, 리터럴 파일 오프셋, 옛 4B, 새 4B)]`.
+
+    원판은 탭 카드(`\\t` 로 시작)를 시작+1(탭 다음)로 가리킨다 — 탭은 화면에 안 그려지는 죽은 1B 다(제４·５장만 시작을 가리킨다). 그 리터럴을 시작으로 옮기면 탭 자리를 카드 글
+    첫 바이트(반각 공백)로 쓸 수 있다(`_card_text`) — 「끝」 줄을 커서 기준 14칸으로 맞추고도 원문 칸을 안 넘는다(종장). 리터럴은 카드마다 **정확히 하나**여야 한다(아니면 멈춘다)."""
+    out = []
+    for path, _lba, _size, at, _span, jp, _kr in cards:
+        if not isinstance(jp, str) or not jp.startswith("\t"):  # 문구 행(`msgs`)은 앞 바이트열이라 거른다
+            continue
+        if path != "/ED.BIN":
+            continue  # ED2 카드는 씬 경로(`patch_scn`)가 이주시켜 포인터를 새 사본으로 돌린다(최종 이미지 실측) — 여기서 안 건드린다
+        base = ptr_base(path)
+        orig = common.extract(path)
+        old = (base + at + 1).to_bytes(4, "big")
+        hits = [q for q in range(0, len(orig) - 3, 4) if orig[q : q + 4] == old]
+        assert len(hits) == 1, f"{path} 0x{at:06x}: 탭 카드 포인터 리터럴이 하나가 아니다 {[hex(h) for h in hits]}"
+        out.append((path, hits[0], old, (base + at).to_bytes(4, "big")))
+    return out
+
+
+def card_ptr_fix_offsets():
+    """`{(경로, 리터럴 파일 오프셋)}` — 선언한 탭 카드 포인터 리터럴(`card_ptr_fixes`). 게이트(`check_ptr_align` · `check_stale_refs`)가 「일부러 돌린 곳」으로 안다."""
+    f, mm = common.open_image()
+    try:
+        return {(path, q) for path, q, _o, _n in card_ptr_fixes(card_rows(mm, load_canon()[0]))}
+    finally:
+        mm.close()
+        f.close()
 
 
 def card_rows(mm, cards):
@@ -663,7 +1007,8 @@ def card_rows(mm, cards):
                 while nxt < len(d) and d[nxt] == 0:
                     nxt += 1
                 seen.add(hit)
-                out.append((path, lba, size, i, nxt - i, t, _card_text(t, *want[hit])))
+                kr_card = fit_card(_card_text(t, *want[hit]), nxt - i - 1)  # 칸 = 본문 + NUL + 뒤 0 패딩(`nxt - i`) — NUL 몫 1B 를 뺀다
+                out.append((path, lba, size, i, nxt - i, t, kr_card))
             i = j
     # ⚠ 정본 열둘은 **장 목록**이다 — 문자열 카드는 열뿐이고 ED2 의 序章·終章 은 그림 판으로만
     #   있다(`patch_gfx_cards.py`). 그래서 「정본에 있는데 디스크에 없다」는 실패가 아니다.
@@ -874,6 +1219,23 @@ def _ptrs_to(d, at, base=NAME_PTR_BASE):
         i = j + 1
 
 
+_SPACED = None
+
+
+def spaced_names():
+    """이름 표 정본(아이템·주문·몬스터)에서 띄어 쓴 이름 — 긴 것부터. 시스템 메시지가 이름을 문장 안에 품은 자리를 묶는 데 쓴다."""
+    global _SPACED
+    if _SPACED is None:
+        names = {v for cat in ("item", "monster") for v in table(cat, "eiyuu").values() if " " in v}
+        _SPACED = sorted(names, key=lambda n: (-len(n), n))
+    return _SPACED
+
+
+def sys_bytes(kr, plan):
+    """시스템 메시지 바이트 — 🔴 문장 안 띄어 쓴 이름은 줄바꿈 금지 코드로(번역 규칙 2-6, `font.glue_in_text`)."""
+    return to_bytes(font.glue_in_text(kr, spaced_names()), plan)
+
+
 def name_pack(t, plan):
     """표 하나 → `(새 바이트, {포인터 오프셋: 새 값})`. 안 넣는 칸은 원문을 그대로 옮긴다."""
     import patch_scn
@@ -883,7 +1245,7 @@ def name_pack(t, plan):
     buf, moves = bytearray(), {}
     for _at, jp, kr, ptrs in t["recs"]:
         new_at = t["off"] + len(buf)
-        body = to_bytes(kr, plan) if kr else jp.encode("cp932")
+        body = to_bytes(font.glue_name(kr), plan) if kr else jp.encode("cp932")
         # 🔴 남이 포인터로 들어오는 꼬리(빈 문자열 자리, 마스터 10-22)는 **원판 그대로** 둔다 — 겹치면 그 뒤로 건너뛴다
         for a_, b_ in prot:
             if new_at < b_ and new_at + len(body) + 2 > a_:
@@ -913,6 +1275,11 @@ def name_pack(t, plan):
 #    (루트 CLAUDE.md 「저작권」). 그래서 **자리도 손으로 안 적는다** — 파일의 문자열을
 #    훑어 해시로 붙인다. 배치가 바뀌어도 따라온다.
 # ⚠ 이름 표(`NAME_TABLES`) 범위는 건너뛴다 — 거기는 `name_rows` 몫이다.
+
+
+def _is_ed1_file(path):
+    """ED1 쪽 파일 — `ED.BIN` · `ED1SCN*` · `ED1INIT` (ED2 는 `ED2.BIN` · `ED2SCN*` · `ED2MON*`)."""
+    return path == "/ED.BIN" or path.startswith("/BIN/ED1")
 
 
 def sys_key(jp):
@@ -978,6 +1345,9 @@ def sys_rows(mm):
     with open(SYS_CANON, encoding="utf-8") as f:
         doc = json.load(f)
     canon, exact = {**_canon_sys_lines(), **doc["lines"]}, set(doc.get("exact", []))
+    # 🔴 **작품별 값** — ED1·ED2 가 같은 원문(같은 열쇠)을 공유해도 정본이 작품마다 따로 정한 문구(`system.json` `by_game.ED1`)는 ED1 쪽 파일에서만 그 값을 쓴다
+    #    (11-08: 「は目が覚めた。」 정본 ed1 「잠에서 깨어났다」 · ed2 「깨어났다」 — 한 열쇠라 ED1 전투 2곳이 ed2 값이었다).
+    by_game = doc.get("by_game", {}).get("ED1", {})
     skip = {}
     for key, off, n, _a, _w in NAME_TABLES:
         skip.setdefault(dump_ui.FILES[key], []).append((off, n))
@@ -1091,6 +1461,12 @@ def sys_rows(mm):
                     if sys_key(jp) in exact and _jp_bytes(pre):
                         i = j  # 통짜인 자리에서만 쓴다 — 위 독스트링
                         continue
+                    # 🔴 **한 글자 접미 조각(`Ｂ`~`Ｈ` → 반각, 마스터 10-24 J3=B)은 「포인터가 가리키는 칸」에서만 바꾼다.** 포인터 없는 `Ｂ` 가
+                    #    이웃 바이트 끝(데이터)에 접미로 걸린 자리가 둘 있었다(ED.BIN 0x7FD63 · ED2.BIN 0x65323) — 문자열이 아니라 자료라 건드리면 깨진다.
+                    if len(jp) == 1 and "Ａ" <= jp <= "Ｚ" and not ptrs:
+                        seen.add(sys_key(jp))
+                        i = j
+                        continue
                     _no_jp_prefix(path, base, pre, jp)
                     seen.add(sys_key(jp))
                     out.append(
@@ -1101,7 +1477,7 @@ def sys_rows(mm):
                             base,
                             nxt - base,
                             d[base : i + k],
-                            canon[sys_key(jp)],
+                            by_game.get(sys_key(jp), canon[sys_key(jp)]) if _is_ed1_file(path) else canon[sys_key(jp)],
                             ptrs,
                             jp,
                         )
@@ -1186,7 +1562,7 @@ def _tails():
     return _TAILS
 
 
-def sys_pack(sysm, ntabs, plan):
+def sys_pack(sysm, ntabs, plan, extra=()):
     """시스템 메시지를 **자리 풀에 다시 깐다** → `{파일: ({오프셋: 바이트}, {포인터: 값})}`.
 
     🔴 **제자리로는 안 들어간다.** 조사를 병기하면(`은(는)`) 일본어 두 글자가 여덟 바이트가
@@ -1266,7 +1642,7 @@ def sys_pack(sysm, ntabs, plan):
         for _p, _l, _s, at, span, pre, kr, ptrs, _jp in recs:
             if ptrs and at not in pin:
                 continue
-            blob = pre + to_bytes(kr, plan)
+            blob = pre + sys_bytes(kr, plan)
             blob += b"\x00"
             assert len(blob) <= span, (
                 f"{path} 0x{at:X}: 포인터가 없어 못 옮기는데 {len(blob)}B > {span}B — "
@@ -1283,7 +1659,8 @@ def sys_pack(sysm, ntabs, plan):
             ]
             free.sort(key=lambda b: -b[1])
         want = sorted(
-            (r for r in recs if r[7] and r[3] not in pin),
+            [r for r in recs if r[7] and r[3] not in pin]
+            + [(path, 0, 0, 0, 0, blob_, "", ptrs_, lead_) for p_, blob_, ptrs_, lead_ in extra if p_ == path],
             key=lambda r: -(len(r[5]) + rec_len(r[6]) + 1),
         )
         # ⚠ **몬스터 파일은 자리가 빠듯하다.** 그 파일들은 꽉 차 있어 기존 0런이 사실상
@@ -1295,7 +1672,7 @@ def sys_pack(sysm, ntabs, plan):
         #   ⚠ 문안을 줄여 맞추지 않는다 — PS1 도 `이(가) 나타났다.` 라, 여기서만 줄이면
         #     **두 이식판의 표기가 갈린다**(2026-08-27 확인).
         for _p, _l, _s, _at, _span, pre, kr, ptrs, _jp in want:
-            blob = pre + to_bytes(kr, plan)
+            blob = pre + sys_bytes(kr, plan)
             blob += b"\x00"
             # 🔴 **짝수 주소에만 놓는다**(2026-08-28). 이 게임의 어떤 화면은 두 바이트를
             #    한 글자로 **고정**해 읽는다(HUD 지명). 홀수 자리에 놓으면 그 화면에서만
@@ -1315,13 +1692,20 @@ def sys_pack(sysm, ntabs, plan):
             body[blk][o - blk : o - blk + len(blob)] = blob
             new_at = o + len(pre)  # 포인터는 **앞 바이트 다음**을 가리킨다(원본과 같게)
             for q in ptrs:
-                moves[q] = ptr_base(path) + (o if len(pre) == 0 else new_at - len(pre))
+                moves[q] = ptr_base(path) + (o if len(pre) == 0 else new_at - len(pre)) - (_jp if isinstance(_jp, int) else 0)
             rest_o, rest_n = o + len(blob), n - len(blob)
             if rest_o & 1:  # 남는 조각도 짝수에서 시작하게
                 rest_o, rest_n = rest_o + 1, rest_n - 1
             if rest_n >= 2:
                 free.append((rest_o, rest_n))
                 free.sort(key=lambda b: -b[1])
+        # 독약 빌드(시험용, `ED_POOL_POISON=<바이트>`) — 문안을 다 깔고 **남은 풀 조각**을 눈에 띄는 값으로 채운다. 입장 배너 전용 표·끼움 루틴처럼
+        #   비운 자리에 새로 놓는 것이 「그 자리를 아무도 안 읽는다」는 전제에 서므로, 그 전제를 하네스 대조(독약 빌드 ≡ 정상 빌드 화면)로 확인한다.
+        if os.environ.get("ED_POOL_POISON"):
+            pz = int(os.environ["ED_POOL_POISON"], 0)
+            for o, n in free:
+                blk = max(a for a, _n in pool if a <= o)
+                body[blk][o - blk : o - blk + n] = bytes([pz]) * n
         out[path] = ({a: bytes(b) for a, b in body.items()}, moves)
     return out
 
@@ -1457,15 +1841,107 @@ def bake_ascii(chars):
     for ch in chars:
         bits = bdf.bits(ch, dy=-3, rows=11, width=8)
         assert bits.any(), f"Galmuri11 에 없는 반각 글자 {ch!r}"
-        if ch == ",":
-            # 🔴 **쉼표는 꼬리가 11행 밖으로 잘려 마침표와 똑같아진다**(2026-10-20 qa r5 「붉은 슬라임A. 붉은 슬라임B」 — 쉼표 3,983곳 전부 마침표로 그려졌다).
-            #    Galmuri11 쉼표는 점(10행)+꼬리(11행)인데 `dy=-3` 으로 11행에 맞추면 꼬리 행이 없다. 한 행 올려 점 9행·꼬리 10행으로 직접 둔다.
+        if ch in ".,":
+            # 마스터 11-13 「마침표·쉼표 한국식」 — 원판 ！ 아래 점(1×2)과 같은 점, 쉼표는 왼쪽 아래 꼬리.
+            #   (옛 쉼표가 마침표와 같아진 사고 10-20 qa r5 — 꼬리를 11행 안(10행)에 직접 둔다.)
             bits[:] = 0
-            bits[9, 1] = 1
-            bits[10, 0] = 1
+            # 🔴 마스터 11-16 「원판의 ? ! 에 맞춰서 마침표를」(규칙 1-3, 2×2 안을 대체) — 원판 ！ 아래 점은 1×2px(8·9행, 원판 ？ 점은 9행 1px).
+            #    마침표는 그 점(1×2·8·9행) 그대로, 쉼표는 같은 점을 머리로 두고 왼쪽 아래 꼬리 한 점.
+            if ch == ".":
+                bits[8, 1] = bits[9, 1] = 1
+            else:
+                bits[8, 2] = bits[9, 2] = 1
+                bits[10, 1] = 1
         out[ch] = np.packbits(bits, axis=1).tobytes()
         assert len(out[ch]) == ASCII_STRIDE
     return out
+
+
+# ── 반각 영문·숫자 — 번역 글꼴(GalmuriMono11) 마스터 10-27 (규칙 1-8 「원판 글꼴과 번역 글꼴을 화면으로 비교」 → 번역 글꼴)
+# PS1 I·II 와 같은 글꼴이다(`ps1-ed1+2/tools/patch_ascii_galmuri.py` — 이름이 `common` 으로 부딪혀 임포트할 수 없어 굽는 규칙만 옮겼다).
+# 반각 진행 6px 칸에 들어가는 GalmuriMono11(전진 6 · 잉크 5 · 높이 10). 소문자 내림(g j p q y)은 2행이라 11행 칸을 넘어 줄기 한 행을 덜어 낸다.
+# 🔴 **0 은 빗금 없이, 폭도 줄이지 않는다**(규칙 1-8, 마스터 10-26) — Mono11 의 빗금 0 대신 대문자 O 꼴을 쓴다(PS1 다음 판과 같은 꼴).
+LATIN_CODES = (*range(0x30, 0x3A), *range(0x41, 0x5B), *range(0x61, 0x7B))
+LATIN_ORIG_SHA1 = "9fb763ffc94daf95e70016e350481b83c87b32c7"  # 원판 11ASCII 62자 연결 지문 — 이중 적용·주소 어긋남을 막는다
+
+
+def bake_latin():
+    """`{코드: 11B}` — A–Z a–z 0–9 를 GalmuriMono11 로 (8×11 · 행당 1B · MSB=왼쪽, 잉크는 열 0~4)."""
+    from fonts import load_bdf
+
+    font_, asc = load_bdf(os.path.join(common.ROOT, "shared", "fonts", "GalmuriMono11.bdf"))
+    out = {}
+    for code in LATIN_CODES:
+        w, h, xo, yo, rows = font_[code]
+        nbits = ((w + 7) // 8) * 8
+        top = asc - (yo + h) - 3
+        grid = [0] * 15
+        for r, v in enumerate(rows):
+            if 0 <= top + r < len(grid):
+                grid[top + r] = ((v >> (nbits - 8)) if nbits >= 8 else (v << (8 - nbits))) >> xo & 0xFF
+        used = [r for r in range(len(grid)) if grid[r]]
+        if used and used[-1] >= ASCII_STRIDE:
+            cand = [r for r in (8, 9, 10) if grid[r] == grid[r + 1] or grid[r] == grid[r - 1]]
+            del grid[cand[0] if cand else 9]
+            grid.append(0)
+        assert not any(grid[ASCII_STRIDE:]), f"0x{code:02X} 11행 초과"
+        assert all(b & 0x07 == 0 for b in grid[:ASCII_STRIDE]), f"0x{code:02X} 열 5~7 잉크"
+        out[code] = bytes(grid[:ASCII_STRIDE])
+    out[0x30] = out[0x4F]  # 0 = 빗금 없는 꼴
+    return out
+
+
+# ── 방향 없는 따옴표 `"` `'` — 마스터 도안 시안 A(10-28, 규칙 1-2 「방향 없는 반각 " ' 한 글자로 열고 닫는다」, 분열 몬스터 A' A" 도 같은 글자).
+# 8×11 칸에 열 0~5 만 쓰고(진행 6px) 위 3행만 잉크 — 한글 꼭대기(0행)에 맞춘다. 원판은 `"` 칸이 비어 있었고 `'` 는 왼쪽으로 기운 작은 점이었다.
+QUOTE_GRID = {
+    '"': (".#.#....", ".#.#....", ".#.#...."),
+    "'": ("..#.....", "..#.....", "..#....."),
+}
+
+
+def quote_glyph(ch):
+    rows = list(QUOTE_GRID[ch]) + ["........"] * (ASCII_STRIDE - len(QUOTE_GRID[ch]))
+    return bytes(int(r.replace(".", "0").replace("#", "1"), 2) for r in rows)
+
+
+# 「」 반각 마스터 도안 A판(10-26, 정본 — 다시 그리지 않는다). 12×11: 「 = 0~5열 · 」 = 6~11열, 진행 6px.
+KAGI_GRID = (
+    "####........",
+    "#...........",
+    "#...........",
+    "#...........",
+    "#........#..",
+    "#........#..",
+    "#........#..",
+    ".........#..",
+    ".........#..",
+    ".........#..",
+    "......####..",
+)
+
+
+# 『』 A2판 v2(10-27, 마스터 「가로 1칸 길게」 — 같은 규격)
+KAGI2_GRID = (
+    "#####.......",
+    "#...#.......",
+    "#.###.......",
+    "#.#.........",
+    "#.#.....###.",
+    "#.#.....#.#.",
+    "###.....#.#.",
+    "........#.#.",
+    "......###.#.",
+    "......#...#.",
+    "......#####.",
+)
+KAGI_CHARS = "「」『』"
+
+
+def kagi_glyph(ch):
+    """「 『 → 도안 0~5열, 」 』 → 6~11열을 8×11 칸 왼쪽(0~5열)에 놓은 11B."""
+    grid = KAGI_GRID if ch in "「」" else KAGI2_GRID
+    c0 = 0 if ch in "「『" else 6
+    return bytes(int(row[c0 : c0 + 6].replace(".", "0").replace("#", "1").ljust(8, "0"), 2) for row in grid)
 
 
 def bake_half_quotes(chars):
@@ -1477,6 +1953,9 @@ def bake_half_quotes(chars):
     bdf = galmuri()
     out = {}
     for ch in chars:
+        if ch in KAGI_CHARS:
+            out[ch] = kagi_glyph(ch)
+            continue
         bits = bdf.bits(ch, dy=-3, rows=11, width=8)
         assert bits.any(), f"Galmuri11 에 없는 따옴표 {ch!r}"
         cols = np.where(bits.any(axis=0))[0]
@@ -1695,6 +2174,10 @@ def main():
             body = head + to_bytes(kr, plan)
             bycard.setdefault((path, lba, size), {})[at] = body + b"\x00" * (span - len(body))
         csec = 0
+        for path, q, _old, new in card_ptr_fixes(cards):  # 탭 카드 포인터 리터럴 +1 → +0
+            key_ = next((k for k in bycard if k[0] == path), None)
+            assert key_, f"{path}: 카드 쓰기 칸이 없다"
+            bycard[key_][q] = new
         for (path, lba, size), patch in bycard.items():
             _r, _b, nsec = write_file(f, path, lba, size, patch, f"{path} 챕터 카드")
             csec += nsec
@@ -1720,7 +2203,7 @@ def main():
 
         # ── 시스템 메시지 — 자리 풀에 다시 깐다(제자리로는 29자리가 넘친다)
         ssec = 0
-        for path, (body, moves) in sys_pack(sysm, ntabs, plan).items():
+        for path, (body, moves) in sys_pack(sysm, ntabs, plan, extra=banner_extra(rs, plan)).items():
             lba, size = files[path]
             _r, _b, a = write_file(f, path, lba, size, body, f"{path} 시스템 메시지")
             pt = {at: v.to_bytes(4, "big") for at, v in moves.items()}
@@ -1736,6 +2219,8 @@ def main():
             [r[6] for r in rs] + [r[6] for r in scn] + [r[6] for r in cards + msgs + sysm] + names,
             common.extract(FON_ASCII),
         )
+        gaps = [c for c in gaps if c not in QUOTE_GRID]  # `"` 는 아래 도안 A 로 굽는다 — Galmuri 로 먼저 굽지 않는다
+        assert not {ord(c) for c in gaps} & set(font.HALF_QUOTES.values()), f"반각 구멍 {gaps!r} 이 반각 따옴표·「」 코드와 겹친다"
         if gaps:
             alba, asize = files[FON_ASCII]
             for ch, g in bake_ascii(gaps).items():
@@ -1743,6 +2228,35 @@ def main():
                     f, alba, asize, ord(ch) * ASCII_STRIDE, g, label=f"{FON_ASCII} {ch!r}"
                 )
             print(f"  반각 폰트 {FON_ASCII}: 원본에 없던 {''.join(gaps)!r} 구움")
+
+        # ── 반각 영문·숫자 — 번역 글꼴(GalmuriMono11, 0 은 빗금 없이). 62자 전부 굽는다(어느 글자가 어디 쓰일지 가리지 않는다)
+        alba, asize = files[FON_ASCII]
+        cur = b"".join(bytes(common.extract(FON_ASCII)[c * ASCII_STRIDE :][:ASCII_STRIDE]) for c in LATIN_CODES)
+        assert hashlib.sha1(cur).hexdigest() == LATIN_ORIG_SHA1, "11ASCII 영문·숫자가 원판과 다르다 — 다른 패치가 먼저 건드렸다"
+        for code, g in bake_latin().items():
+            common.write_at(f, alba, asize, code * ASCII_STRIDE, g, label=f"{FON_ASCII} 영문·숫자 {chr(code)!r}", expect=bytes(cur[LATIN_CODES.index(code) * ASCII_STRIDE :][:ASCII_STRIDE]))
+        print(f"  반각 폰트 {FON_ASCII}: 영문·숫자 {len(LATIN_CODES)}자 번역 글꼴(Mono11·0 빗금 없음)")
+
+        # ── 물음표 `?` — 마스터 11-13 A안: 원판 전각 ？ 의 잉크(열 3~7, 5폭)를 왼쪽에 붙이고 오른쪽 1px 비움(반각 진행 6px)
+        alba, asize = files[FON_ASCII]
+        orig_ascii = common.extract(FON_ASCII)
+        okj = common.extract(FON)
+        gi = font.jis_index("？") if hasattr(font, "jis_index") else None
+        qg = bytes(
+            ((int.from_bytes(okj[gi * font.GLYPH_STRIDE + r * 2 :][:2], "big") >> 7) & 0x3F) << 2 & 0xFF
+            for r in range(ASCII_STRIDE)
+        )
+        off = ord("?") * ASCII_STRIDE
+        common.write_at(f, alba, asize, off, qg, label=f"{FON_ASCII} 물음표 '?'", expect=bytes(orig_ascii[off : off + ASCII_STRIDE]))
+        print(f"  반각 폰트 {FON_ASCII}: 물음표 A안(전각 ？ 잉크)")
+
+        # ── 방향 없는 따옴표 `"` `'` — 도안 A(코드 0x22·0x27). `'` 는 원판 칸을 덮는다(원판이 그대로인지 확인하고)
+        alba, asize = files[FON_ASCII]
+        orig_ascii = common.extract(FON_ASCII)
+        for ch in QUOTE_GRID:
+            off = ord(ch) * ASCII_STRIDE
+            common.write_at(f, alba, asize, off, quote_glyph(ch), label=f"{FON_ASCII} 따옴표 {ch!r}", expect=bytes(orig_ascii[off : off + ASCII_STRIDE]))
+        print(f"  반각 폰트 {FON_ASCII}: 방향 없는 따옴표 \" ' 도안 A")
 
         # ── 반각 곡선 따옴표 — 쓰이는 것만 굽는다(코드는 `font.HALF_QUOTES`, 원판에서 비어 있고 안 쓰이는 칸이어야 한다)
         used_q = sorted({c for kr in all_krs for c in (kr or "") if c in font.HALF_QUOTES})
@@ -1823,7 +2337,7 @@ def decode(b, inv):
         n = 2 if (0x81 <= b[j] <= 0x9F or 0xE0 <= b[j] <= 0xFC) else 1
         w = b[j : j + n]
         q = {v: k for k, v in font.HALF_QUOTES.items()}.get(w[0]) if len(w) == 1 else None  # 반각 곡선 따옴표 코드
-        out.append(inv.get(w) or q or w.decode("cp932", "replace"))
+        out.append(" " if w == bytes([font.NB_CODE]) else inv.get(w) or q or w.decode("cp932", "replace"))
         j += n
     return "".join(out)
 
@@ -1864,6 +2378,11 @@ def verify(dst, rs, scn, cards, plan, files):
         got = decode(rec[: rec.find(b"\x00")], inv)
         if got != kr:
             bad.append(f"{path} 0x{at:06x} {got!r} ≠ {kr!r}")
+    for path, q, _old, new in card_ptr_fixes(cards):
+        if path not in cache:
+            cache[path] = common.read_extent(mm2, *files[path])
+        if cache[path][q : q + 4] != new:
+            bad.append(f"{path} 탭 카드 포인터 리터럴 0x{q:X} 가 시작을 안 가리킨다")
     for ch, (_s, idx) in plan.items():
         o = idx * font.GLYPH_STRIDE
         if fon[o : o + font.GLYPH_STRIDE] != glyphs[ch]:

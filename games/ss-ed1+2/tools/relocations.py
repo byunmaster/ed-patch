@@ -99,6 +99,9 @@ def _scan_all():
     fo, mo = common.open_image(common.ORIG_BIN)
     fb, mb = common.open_image(dst)
     orig = {n: (lba, s) for n, lba, s in common.iso_files(mo)}
+    import patch_ui
+
+    card_fix_all = patch_ui.card_ptr_fix_offsets()  # 탭 카드 포인터 리터럴 — 이주가 아니라 일부러 시작으로 돌린 것(`check_structure`)
     out = []
     for name, lba, size in common.iso_files(mb):
         if name not in orig or size > 3_000_000 or not P.SCN_RE.match(name):
@@ -109,7 +112,7 @@ def _scan_all():
         base, entries = got
         o = common.read_extent(mo, *orig[name])
         b = common.read_extent(mb, lba, size)
-        st, bad, moved, pages = S.scan_file(o, b, base, entries, None)
+        st, bad, moved, pages = S.scan_file(o, b, base, entries, None, {q for (p_, q) in card_fix_all if p_ == name})
         out.append((name, len(o), st, moved, pages, entries, base, o, b))
     return out
 

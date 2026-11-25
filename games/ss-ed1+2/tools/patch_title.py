@@ -311,6 +311,10 @@ def sjis_index(code):
     return (ku - 1) * 94 + (ten - 1)
 
 
+# 한글 섞인 줄에서 한 행 올리는 원판 전각 글자(영문·숫자·전각 하이픈) — 위 `Composer.tiles`
+FW_LATIN_UP = frozenset("ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ０１２３４５６７８９－")
+
+
 class Composer:
     """줄 → 16px 조각들. 원본 `KANJI.FON` 글리프(전각 로마자·「」 …)는 원본 그대로 쓴다."""
 
@@ -355,6 +359,19 @@ class Composer:
         import numpy as np
 
         units = [self.unit(c) for c in text]
+        if any("가" <= c <= "힣" for c in text):
+            # 🔴 한글이 섞인 줄의 **원판 전각 영문·숫자**는 한 행 올린다(마스터 11-16 「바이오스 전각과 줄 안 맞는 케이스」) —
+            #    원판 KANJI.FON 의 전각 로마자는 잉크 2~14행인데 NeoDGM 한글은 1~13행이라 같은 줄에서 한 픽셀 아래로 내려앉았다.
+            #    모양·폭은 그대로, 행만 이동. 영문만 든 줄(원문 그대로인 줄)은 원판 픽셀 대조가 있으니 건드리지 않는다.
+            import numpy as np
+
+            def up(ch, u):
+                if ch in FW_LATIN_UP:
+                    w, b = u
+                    return (w, np.vstack([b[1:], np.zeros((1, b.shape[1]), b.dtype)]))
+                return u
+
+            units = [up(c, u) for c, u in zip(text, units)]
         total = sum(w for w, _ in units)
         cap = width * 16
         assert total <= cap, f"폭 초과 {total}>{cap}px: {text!r}"
@@ -375,6 +392,7 @@ class Composer:
         else:
             x = (cap - (total - trail)) // 2 if left is None else min(left * 16, cap - total)
         x = max(0, min(x, cap - total))
+        self.last_place = (x, total, trail, cap)  # 정렬 게이트가 읽는다 — 실제로 놓인 자리
         canvas = np.zeros((16, cap), np.uint8)
         for w, b in units:
             canvas[:, x : x + w] |= b
@@ -384,6 +402,22 @@ class Composer:
             t = canvas[:, k * 16 : k * 16 + 16]
             out.append(_pack(t) if t.any() else None)
         return out
+
+
+def row_left(name, idx, line, t, width):
+    """한 줄의 가로 맞춤 — `None`(가운데) · `("right", 오른쪽 끝 px)` · 왼쪽 칸 수. `idx` 는 화면 순서 인덱스.
+
+    `main` 과 정렬 게이트(`check_center`)가 같은 결정을 쓴다 — 게이트가 따로 판정을 지으면 둘이 갈린다."""
+    mode, left = align_of(t, width)
+    if mode == "center" or (name, idx) in FORCE_CENTER:
+        left = None  # 줄마다 **비례 폭으로 다시 재서** 가운데(마스터 10-08)
+    if (name, idx) in ALIGN_RIGHT:
+        left = ("right", ALIGN_RIGHT[(name, idx)])
+    # 🔴 **원문 그대로인 스태프롤 줄은 위치도 원판 칸 맞춤이다**(마스터 10-27 「원문인 라인은 위치도 원본으로」) — 회사·이름 로마자는
+    #    한글로 바꾸지 않았으니 줄을 다시 가운데로 놓지 않는다(홀수 글자 줄이 반 칸 어긋났다). 한글이 섞인 줄은 위 규칙 그대로.
+    if "스태프롤" in name and widen(line) == t.strip("　").replace(" ", "　"):
+        left = len(t) - len(t.lstrip("　"))
+    return left
 
 
 def known_codes(smap, comp, lines):
@@ -632,11 +666,7 @@ def main():
         #   그대로 색인하면 화면에 **결말부터** 나온다 — 2026-08-21 에 실제로 그렇게 나왔다.
         #   ⚠ 증상이 「깨짐」이 아니라 「순서가 이상함」이라 캡처를 대충 보면 넘어간다.
         line = kr[name][len(kr[name]) - 1 - i]
-        mode, left = align_of(t, width)
-        if mode == "center" or (name, len(kr[name]) - 1 - i) in FORCE_CENTER:
-            left = None  # 줄마다 **비례 폭으로 다시 재서** 가운데(마스터 10-08)
-        if (name, len(kr[name]) - 1 - i) in ALIGN_RIGHT:
-            left = ("right", ALIGN_RIGHT[(name, len(kr[name]) - 1 - i)])
+        left = row_left(name, len(kr[name]) - 1 - i, line, t, width)
         jobs.append((p, comp.tiles(line, width, left), nb, name, line))
     known = known_codes(smap, comp, [j[4] for j in jobs])
     needed = [g for _p, tl, _n, _a, _l in jobs for g in tl if g is not None]

@@ -72,7 +72,13 @@ def main():
         g = bytes(asc[code * 11 : code * 11 + 11])
         if any(g):
             half.setdefault(g, []).append((ch, g != bytes(orig_asc[code * 11 : code * 11 + 11])))
-    same = [chs for chs in half.values() if len(chs) > 1 and any(baked for _c, baked in chs)]
+    # ⚠ 예외 하나 — 숫자 0 과 영문 O(번역 글꼴, 규칙 1-8): 「0 은 빗금 없이 폭도 줄이지 않는다, O 와 같은 꼴이어도 된다」(마스터 10-26 「0과 O는 동시에 쓰일일이 없을테니」).
+    #   **정확히 이 쌍만** 눈감는다 — 다른 쌍이 0·O 와 같아지면(셋 이상 묶음 포함) 그대로 실패한다.
+    same = [
+        chs
+        for chs in half.values()
+        if len(chs) > 1 and any(baked for _c, baked in chs) and sorted(c for c, _b in chs) != ["0", "O"]
+    ]
     for chs in same:
         bad[chs[0][0]] = f"{''.join(c for c, _b in chs)!r} 가 같은 비트맵 — 화면에서 구별이 안 된다(반각 글리프 굽기)"
     print(f"  빈 글리프 [씬 문안 글자 {len(seen):,}종 · 반각 {sum(len(v) for v in half.values())}종] — 빈 칸으로 나가는 글자 {len(bad) - len(same)} · 같은 비트맵 쌍 {len(same)}")

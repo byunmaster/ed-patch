@@ -54,7 +54,7 @@ def _decode(b, inv):
                 out.append(f"<{two.hex()}>")
             i += 2
         else:
-            out.append(chr(b[i]))
+            out.append(" " if b[i] == font.NB_CODE else chr(b[i]))  # 이름 안 줄바꿈 금지 공백(`font.glue_name`)
             i += 1
     return "".join(out)
 

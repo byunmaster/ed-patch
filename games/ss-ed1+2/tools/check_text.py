@@ -210,7 +210,9 @@ def axis_style(rows):
     for path, off, _jp, kr in rows:
         body = MARKUP.sub("", kr)
         # ＥＰ·ＭＰ·ＨＰ 는 전각이 규칙이다(번역 규칙 1-4, 10-08) — 반각으로 쓴 쪽이 어긋남
-        if FULLW.search(re.sub("[ＥＭＨ]Ｐ", "", body)):
+        # ＲＡＭ 도 전각이다(라틴 낱말 판정, 마스터 10-27 — 본체·카트리지ＲＡＭ)
+        # 장 끝 카드의 번호(`제１장`)도 전각이다 — 정본 값이고 ED1 카드(`patch_ui.card_rows`)와 한 꼴이다(검수 10-28)
+        if FULLW.search(re.sub("[ＥＭＨ]Ｐ|ＲＡＭ|^\\s*제[０-９]장", "", body)):
             bad.append((path, off, "전각 영숫자", body[:40]))
         if re.search(r"(?<![A-Za-z])(?:EP|MP|HP)(?![A-Za-z])", body):
             bad.append((path, off, "ＥＰ·ＭＰ·ＨＰ 반각", body[:40]))

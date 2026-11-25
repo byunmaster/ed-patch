@@ -4,9 +4,12 @@
 
 🔴 ① **배경/잉크가 50:50 이면 개수로 못 가른다.** 상태 라벨 10×10 은 잉크와 배경이
    **정확히 반반**이라 `argmax`/`argmin` 이 같은 값을 골라 **글자가 배경색으로 그려진다**
-   — 칸이 통째로 빈다(2026-08-26 실측). `draw_status()` 는 **테두리**로 배경을 정한다.
+   — 칸이 통째로 빈다(2026-08-26 실측). (그 뒤 「테두리 다수결」로 갈랐다가 ③ 이 났다 — 지금은 파일이 배경을 정한다.)
 🔴 ② **배경은 0 이 아닐 수 있다.** 같은 그림이 `/FRAME.DAT`(배경 0) 과 `/STAT.DAT`
    (배경 39) 에 따로 있다. 0 으로 못 박으면 STAT 사본에서 조용히 반전된다.
+
+🔴 ③ **원판 글자가 테두리까지 차면 테두리 다수결이 잉크를 배경으로 고른다**(2026-11-06 마스터 「묵,잠,혼,반은 배경과 폰트 색상이 반전」) — 黙·眠·乱·跳 가
+   10×10 테두리를 잉크로 채워 한글이 반전돼 그려졌다. 배경은 화소가 아니라 **파일별 상수**(`STATUS_BG`)다.
 
 ⚠ 폰트가 필요해서 글리프는 가짜로 넣는다 — 여기서 보는 건 **색을 고르는 규칙**이지
   글자 모양이 아니다.
@@ -55,7 +58,7 @@ class DrawStatus(unittest.TestCase):
                 self.assertEqual(
                     sorted({int(v) for v in np.unique(old)}), sorted({bg, ink}), "시험 자료 오류"
                 )
-                new, changed = H.draw_status(old, "수", FakeBdf())
+                new, changed = H.draw_status(old, "수", FakeBdf(), bg)
                 vals = {int(v) for v in np.unique(new)}
                 self.assertIn(bg, vals, "배경이 사라졌다")
                 self.assertIn(ink, vals, "잉크가 배경색으로 그려졌다 — 칸이 빈다")
@@ -63,9 +66,21 @@ class DrawStatus(unittest.TestCase):
 
     def test_background_is_not_hardcoded_zero(self):
         """🔴 `/STAT.DAT` 은 배경이 39 다 — 0 으로 못 박으면 반전된다."""
-        new, _ = H.draw_status(block(39, 146), "수", FakeBdf())
+        new, _ = H.draw_status(block(39, 146), "수", FakeBdf(), H.STATUS_BG[H.STAT])
         self.assertEqual(int(new[0, 0]), 39, "테두리가 배경(39)이 아니다")
         self.assertNotIn(0, {int(v) for v in np.unique(new)}, "쓰지도 않는 0 이 들어갔다")
+
+
+class DenseGlyph(unittest.TestCase):
+    def test_ink_on_border_does_not_flip(self):
+        """🔴 ③ 테두리가 거의 잉크인 원판 칸(黙 같은 꽉 찬 한자)에서도 배경은 파일 상수다."""
+        for path in (H.FRAME, H.STAT):
+            bg, ink = H.STATUS_BG[path], 148
+            old = np.full((H.STATUS_BOX, H.STATUS_BOX), ink, np.uint8)
+            old[3:7, 3:7] = bg  # 테두리는 전부 잉크, 안쪽만 배경 — 다수결이면 잉크가 배경이 된다
+            new, _ = H.draw_status(old, "묵", FakeBdf(), bg)
+            self.assertEqual(int(new[0, 0]), bg, f"{path}: 모서리가 배경이 아니다 — 반전")
+            self.assertEqual(int(new[0, 9]), bg)
 
 
 class StatusTable(unittest.TestCase):

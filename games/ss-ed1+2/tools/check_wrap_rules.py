@@ -36,7 +36,6 @@
 """
 
 import collections
-import json
 import os
 import re
 import sys
@@ -64,6 +63,8 @@ RULES = (
     "말줄임 붙임",
     "물결 마침표",
     "부호 겹침 순서",
+    "부호 뒤 붙임",
+    "부호 뒤 붙임(PS1 몫)",
     "말줄임 붙임(PS1 몫)",
     "물결 마침표(PS1 몫)",
     "부호 겹침 순서(PS1 몫)",
@@ -88,6 +89,8 @@ def _repeated_sound(s, at):
 
 _MARK_ELLIPSIS = re.compile(r"[?!？！]…")  # 2-12 — `…!?` ✓ · `!?…` ✗ (마스터 10-13)
 _TILDE_DOT = re.compile(r"～[.。]")
+# 번역 규칙 2-1 — `,` `.` `!` `?` 다음엔 반각 공백. 숫자 사이 점(`3.5`)·줄 끝·닫는 부호 앞은 제외한다.
+_PUNCT_GLUED = re.compile(r"(?<![0-9A-Za-z])[,.!?](?=[가-힣A-Za-z])")
 # 문장 맨 앞 「…」(마스터 10-13) — 뒤를 붙인다(`…그런 것처럼`). 말줄임(앞말 뒤 「…」)만 띄운다.
 _INIT_HEAD = re.compile(r"(?:\n|%c|\{c\}|[.!?] )$")
 
@@ -115,6 +118,8 @@ def prose_marks(s):
             out["말줄임 붙임"].append(s[max(0, m.start() - 6) : m.end() + 6])
     for m in _MARK_ELLIPSIS.finditer(s):
         out["부호 겹침 순서"].append(s[max(0, m.start() - 6) : m.end() + 4])
+    for m in _PUNCT_GLUED.finditer(s):
+        out["부호 뒤 붙임"].append(s[max(0, m.start() - 6) : m.end() + 6])
     for m in _TILDE_DOT.finditer(s):
         out["물결 마침표"].append(s[max(0, m.start() - 6) : m.end() + 4])
     return out
@@ -131,7 +136,8 @@ def scan_lines(src, ls, ends):
     """
     bad = collections.defaultdict(list)
     for i, ln in enumerate(ls):
-        if i and ln.startswith(" "):
+        # 공백 둘 이상으로 시작하는 줄은 원문이 손으로 들여 쓴 정렬 줄이다(장 끝 카드의 `끝` · 서명 줄) — 조판기가 만드는 줄머리 공백은 하나(키 대기 이음 `cont` 의 구분 공백)뿐이다
+        if i and ln.startswith(" ") and not ln.startswith("  "):
             bad["줄머리 공백"].append(ln)
         # ⚠ 문장이 말줄임표로 **시작**하는 줄(`…좋으련만. / …어라?`)은 고아 부호가 아니다 —
         #   앞 줄이 문장 끝으로 끝났으면 센다에서 뺀다(PS1 조판도 같다).
@@ -172,7 +178,11 @@ def scan_scene():
         sites = patch_scn.sites_for(path)
         for e in entries:
             built = patch_scn.canon_of(
-                canon, e.get("text", ""), sites.get(int(e["file_offset"], 16)), path=path, off=int(e["file_offset"], 16)
+                canon,
+                e.get("text", ""),
+                sites.get(int(e["file_offset"], 16)),
+                path=path,
+                off=int(e["file_offset"], 16),
             )
             if not built:
                 continue
@@ -228,8 +238,7 @@ def _msg_units(s):
 
 def scan_message():
     """`(조각 수, {규칙: [표본]})` — 메시지 창 (`script/system.json`)."""
-    with open(os.path.join(common.GAME_DIR, "script", "system.json"), encoding="utf-8") as f:
-        lines = json.load(f)["lines"]
+    lines = common.sys_lines()
     out = collections.defaultdict(list)
     # 🔴 **조립되는 로그 문장은 조각이 아니라 이은 꼴로도 잰다**(마스터 판정 2026-09-27 — 로그성 메시지는
     #    강제 개행 없이 넘칠 때만 어절 단위). 행위자 조각이 개행으로 끝나던 때는 조각마다 재면 됐는데,
@@ -317,6 +326,7 @@ def main():
     _REPORT_ONLY = (
         "긴 어절(불가피)",
         "%s 도중 절단",
+        "부호 뒤 붙임(PS1 몫)",
         "말줄임 붙임(PS1 몫)",
         "물결 마침표(PS1 몫)",
         "부호 겹침 순서(PS1 몫)",

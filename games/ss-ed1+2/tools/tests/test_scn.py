@@ -301,7 +301,8 @@ class Scn(unittest.TestCase):
         self.assertEqual(S.comma_rule(long_), long_)
         self.assertEqual(S.comma_rule("가만, 기다려."), "가만, 기다려.")  # 부사 `가만` 은 안 본다
         # 문장 경계 뒤에서 다시 센다
-        self.assertEqual(S.comma_rule("아주 길게 오랫동안 이야기했다. 그런데, 좋다."), "아주 길게 오랫동안 이야기했다. 그런데, 좋다.")
+        # 접속부사 「그런데,」 는 규칙 2-13 ③(접속부사 뒤는 뺌) 대로 쉼표를 뺀다 — 처음 이 줄이 「남김」을 적었던 건 마스터 판정이 아니라 합성 예문이었다(당시 정규식이 `는데` 만 걸어 우연히 안 걸렸다)
+        self.assertEqual(S.comma_rule("아주 길게 오랫동안 이야기했다. 그런데, 좋다."), "아주 길게 오랫동안 이야기했다. 그런데 좋다.")
         self.assertEqual(S.comma_rule("아주 길게 오랫동안 이야기했다.{p}가는데, 왔다."), "아주 길게 오랫동안 이야기했다.{p}가는데 왔다.")
 
     def test_migrate_is_deterministic(self):
@@ -513,7 +514,8 @@ class AutoSplit(unittest.TestCase):
     def test_header_plus_five_lines_is_split_at_a_sentence_end(self):
         import patch_scn as S
 
-        kr = "%c남자%c\n가나다.\n라마바.\n사아자.\n차카타.\n파하."
+        L = "가나다라마바사아자차카타하."  # 한 줄을 꽉 채우는 문장 — 촘촘히 다시 짜도 안 들어간다(2-17)
+        kr = f"%c남자%c\n{L}\n{L}\n{L}\n{L}\n파하."
         got = S.auto_split(kr, 5)
         self.assertEqual(got.replace("\x08", "\n"), kr)  # 글은 그대로
         self.assertIn("\x08", got)
@@ -548,9 +550,32 @@ class AutoSplit(unittest.TestCase):
 
         short = "%c남자%c\n가나다.\n라마바.\n사아자.\n차카타.\n파하."  # 머리 + 5줄 = 6행, 마지막 줄 짧음
         self.assertNotIn("\x08", S.auto_split(short, 6, 7.5))
-        long_last = "%c남자%c\n가나다.\n라마바.\n사아자.\n차카타.\n파하파하파하파하파하."  # 마지막 줄 5.5칸이면 통과, 더 길면 가른다
-        long_last = long_last.replace("파하파하파하파하파하.", "파하파하파하파하파하파하파하파하.")
+        L = "가나다라마바사아자차카타하."
+        long_last = f"%c남자%c\n{L}\n{L}\n{L}\n{L}\n파하파하파하파하."  # 마지막 줄이 ▽ 칸을 넘으면 가른다
         self.assertIn("\x08", S.auto_split(long_last, 6, 7.5))
+        self.assertNotIn("\x08", S.auto_split(f"%c남자%c\n{L}\n{L}\n{L}\n{L}\n파하.", 6, 7.5))
+
+    def test_dense_repack_keeps_the_original_window(self):
+        """2-17 — 줄을 촘촘히 다시 짜면 한 쪽에 들어가는 글은 쪽을 가르지 않고 줄만 다시 짠다(글은 그대로)."""
+        import patch_scn as S
+
+        kr = "%c남자%c\n가나다.\n라마바.\n사아자.\n차카타.\n파하."
+        got = S.auto_split(kr, 5)
+        self.assertNotIn("\x08", got)
+        self.assertEqual(got.replace("\n", " ").replace("%c남자%c ", ""), "가나다. 라마바. 사아자. 차카타. 파하.")
+
+
+class ShopVerbRule(unittest.TestCase):
+    """규칙 4-15 — 상점 주인 존댓말 「사시겠습니까?」·「파시겠습니까?」만 구매·판매로 바꾼다."""
+
+    def test_buy_sell(self):
+        self.assertEqual(S.shop_verb_rule("어느 것을 사시겠습니까?%c"), "어느 것을 구매하시겠습니까?%c")
+        self.assertEqual(S.shop_verb_rule("어느 것을 파시겠습니까?%c"), "어느 것을 판매하시겠습니까?%c")
+        self.assertEqual(S.shop_verb_rule("사이레스를\n사시겠습니까?"), "사이레스를\n구매하시겠습니까?")
+
+    def test_other_speech_and_exempt_untouched(self):
+        for t in ("어느 걸 사시겠습니까요?", "표를 사시겠어요?", "재해 방지 부적을 사시겠습니까?", "밀조주를 사시겠습니까?", "삽니다"):
+            self.assertEqual(S.shop_verb_rule(t), t)
 
 
 if __name__ == "__main__":
