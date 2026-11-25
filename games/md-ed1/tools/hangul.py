@@ -235,6 +235,24 @@ def ellipsis_dots(cell: int) -> list[list[int]]:
     return out
 
 
+def ellipsis_period_dots() -> list[list[int]]:
+    """대사창 「…」 — 전각 한 글자·점은 바닥 그대로, **점 하나를 이 기종 마침표(리소스 1 `.`)와 같은 모양·크기**로
+    (마스터 11-15 「전 기종」 — 번역 규칙 1-3). 점 x 위치(칸 가운데 셋)는 갈무리11 자체 「…」 그대로, 모양은 `PERIOD_FILL_GALMURI`
+    의 잉크(2×2, 행 11~12)를 그대로 쓴다 — 마침표와 같은 행이라 바닥도 같다."""
+    native = _load_bdf(BDF, CELL, top=GLYPH_TOP, left=GLYPH_LEFT)["…"]
+    cols = sorted({x for row in native for x, v in enumerate(row) if v})
+    xs = [x for i, x in enumerate(cols) if i == 0 or x - cols[i - 1] > 1]  # 점 하나의 왼쪽 열(붙은 열은 한 점)
+    pr = [i for i, r in enumerate(PERIOD_FILL_GALMURI) if "#" in r]
+    pw = max(r.count("#") for r in PERIOD_FILL_GALMURI)
+    g = [[0] * CELL for _ in range(CELL)]
+    for y in pr:
+        for x in xs:
+            for dx in range(pw):
+                if x + dx < CELL:
+                    g[y][x + dx] = 1
+    return g
+
+
 def ellipsis_full(cell: int = 16) -> list[list[int]]:
     """전각 칸을 채우는 말줄임표 — **네오둥근모 마침표(2×2 정사각 점)** 셋을 칸에 고르게 늘어놓는다
     (마스터 확정 2026-10-08). 네오둥근모 자기 「…」 는 반각 칸에 1px 점 셋이라 전각 글자 옆에서 작아 보였다.
@@ -259,8 +277,7 @@ def glyph_fill(ch: str) -> list[list[int]]:
     if ch in CUSTOM_GLYPHS:
         return CUSTOM_GLYPHS[ch]
     if ch == "…":
-        g = ellipsis_dots(CELL)
-        return [[0] * CELL for _ in range(DIALOG_DY)] + g[: CELL - DIALOG_DY] if DIALOG_DY else g
+        return ellipsis_period_dots()
     g = _load_bdf(top=GLYPH_TOP + DIALOG_DY, left=GLYPH_LEFT).get(ch)
     if g is None:
         raise KeyError(f"Galmuri14 에 없는 글자: {ch!r}")

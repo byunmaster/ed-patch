@@ -140,6 +140,8 @@ def main(verbose: bool = False) -> None:
             puncts.append(f"{src}[{key}]: 「～」 뒤 온점(1-7) — {text[:30]!r}")
         # RETURN 은 반각 원판 꼴(마스터 10-27 규칙 1-8) — 약어 전각 검사에서 뺀다
         # 2-1·2-2·1-4(마스터 10-08): 부호 뒤 무공백 · 부호 앞 공백 · ASCII HP/MP/EP — 이름·아이템 자리(<02> 등)는 글자로, 줄·쪽 제어는 줄바꿈으로 놓고 본다
+        # 예외(마스터 11-16 「md1 hp는 원본대로」): 레벨업 「최대 HP가 n이 됐다」 두 곳은 원판이 반각 HP — 원판 꼴 유지
+        hp_orig = src == "sysmsg" and key in ("007484", "0074a2")
         flat = re.sub(
             r"<(?:02|0b|0e|09\d\d|1e|e[bc][0-9a-f]{2})>",
             "⟦N⟧",
@@ -150,9 +152,9 @@ def main(verbose: bool = False) -> None:
             puncts.append(f"{src}[{key}]: 부호 뒤 공백 없음(2-1) — {text[:30]!r}")
         if re.search(r" [,.!?]", flat):
             puncts.append(f"{src}[{key}]: 부호 앞 공백(2-2) — {text[:30]!r}")
-        if re.search(r"(?<![A-Za-z])(?:EP|MP|HP)(?![a-z])", flat) and not src.startswith("names"):
+        if re.search(r"(?<![A-Za-z])(?:EP|MP|HP)(?![a-z])", flat) and not src.startswith("names") and not hp_orig:
             puncts.append(f"{src}[{key}]: ASCII HP/MP/EP → 전각(1-4) — {text[:30]!r}")
-        if re.search(r"(?<![A-Za-z])(?!RETURN(?![A-Za-z]))[A-Z]{2,}(?![A-Za-z])", flat) and not src.startswith("names"):
+        if re.search(r"(?<![A-Za-z])(?!RETURN(?![A-Za-z]))[A-Z]{2,}(?![A-Za-z])", flat) and not src.startswith("names") and not hp_orig:
             puncts.append(f"{src}[{key}]: 영문 대문자 약어 → 전각(1-4 보강) — {text[:30]!r}")
         if "..." in text:
             puncts.append(f"{src}[{key}]: `...` → 전각 「…」 — {text[:30]!r}")
