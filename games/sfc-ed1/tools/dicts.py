@@ -154,7 +154,8 @@ RUNTIME_SITES = {0x02E0F5: 0xD0, 0x02E106: 0xD3, 0x02E119: 0xD2, 0x02E134: 0xD3}
 SPELL_SITE = 0x02E14F
 SPELL_TABLE = 0x03EEDD
 SPELL_N = 32
-# 지명 — `$02:A793`(HUD 지명 표, `places.TABLES["a"]`)을 그대로 가리킨다. 한글 표는 `places.bake` 가 만든다.
+# 지명 — 원본 `{DD}` 는 `$02:A793`(HUD 지명 표, `places.TABLES["a"]`)을 읽는다. 한글 표는 `places.bake` 가 만들고, **우리는 대사용으로 패딩 없는 표 c 를 가리킨다**
+# (a 는 HUD 가운데 정렬용 앞 빈칸·반 칸 합성 글리프가 붙어 대사에서 「␣␣지명␣의」 — 마스터 11-22 03 패배 확인 창).
 PLACE_SITE = 0x02E0D2
 PLACE_ORIG = 0x02A793
 RUNTIME_ALL = [*RUNTIME_SITES, SPELL_SITE, PLACE_SITE]

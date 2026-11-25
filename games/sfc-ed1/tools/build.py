@@ -1699,7 +1699,7 @@ def build_kr(
         dk["지명"] = places.bake(out, rom, _idx, dk["크레딧"]["next"])
         # 런타임 치환(`{D6}~`)의 표 여섯 — 지명 표가 있어야 해서 맨 끝
         dk["런타임 치환"] = dicts.bake_runtime(
-            out, rom, dk["tables"], dk["지명"]["a"], dk["지명"]["next"]
+            out, rom, dk["tables"], dk["지명"]["c"], dk["지명"]["next"]  # `{DD}` 대사 속 지명은 앞 빈칸·반 칸 합성이 없는 표(c) — HUD 용 가운데 정렬 표(a)를 읽으면 「␣␣지명␣의」(마스터 11-22 03)
         )
         led.snap(out, "사전·전투 UI 이관")
         _base = dynamic_slots(out, rom, poc["resident_codes"])
