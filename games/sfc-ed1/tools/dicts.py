@@ -52,7 +52,7 @@ SETUP = {
 }
 IMM = (1, 6, 11)  # 루틴 안에서 lo · hi · bank 즉치의 자리
 # 원판에 없는 새 항목(원문 칸이 없다 — `dict.json` 의 해당 색인이 한글 정본). D2 의 「맨손」: 무기 번호 0(「없음」)일 때 2150 의 `{D9}` 자리에 쓴다.
-EXTRA_N = {0xD2: 1}
+EXTRA_N = {0xD0: 1, 0xD2: 1}  # D0:59 「저」 — {D0:4F} 「나」 의 존대 짝(분기 목표 자리에서 `textmap.TOKEN_ALIAS` 로 4F 를 대신한다, 마스터 10-29 Q7)
 BARE_HAND = 0x77  # D2:77
 BARE_SITE = 0x01F4B1  # `STA $0F42`(3B) — 반격 무효 문구(2150)에 쓸 무기 번호를 적는 자리
 BARE_SITE_ORIG = bytes([0x8D, 0x42, 0x0F])

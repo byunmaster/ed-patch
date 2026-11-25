@@ -164,9 +164,17 @@ def segments(items: list[script.Item], res, extra_targets: set[int] = frozenset(
                 jp_parts.append(text.decode(bytes([x.code]) + x.args, res))
                 toks.append(token_of(x))
         jp_parts.append(text.decode(bytes(run), res))
+        # 쪽 넘김(`FF`) 가운데 **바로 뒤가 점프·분기 목표**인 것의 차례(0부터) — 그 경계는 다른 길이 곧장 들어오는 자리라 조판이 줄을 넘나들게 옮기면 안 된다
+        ff_targets, nff = [], 0
+        for j, x in enumerate(cur):
+            if x.kind == "ctrl" and x.code == 0xFF:
+                if j + 1 < len(cur) and cur[j + 1].off in targets:
+                    ff_targets.append(nff)
+                nff += 1
         out.append(
             {
                 "id": hashlib.sha1(raw).hexdigest()[:12],
+                "ff_targets": ff_targets,
                 "seg": len(out),
                 "addr": f"{common.off2snes(cur[0].off):06X}",
                 "n_items": len(cur),

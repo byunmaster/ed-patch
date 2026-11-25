@@ -16,6 +16,8 @@
 CRAWL_DIGIT_ADV = 5  # 오프닝·엔딩(크롤) 반각 숫자 진행 폭(px) — 잉크 4열 + 간격 1px(md-ed1 방식, 한글 간격은 그대로)
 BUF = 0x7EE100  # 슬롯별 합성 버퍼 — 16B(1bpp, 위 타일 8행 + 아래 타일 8행) × 슬롯
 HALF_CODES = (0x10, 0x83, 0x84, 0x0C, 0x0F)  # 공백 · `.` · `,` · `!` · `?`
+KAGI_CODES = (0x85, 0x86)  # 「 · 」 — 반각 글리프(칸 왼쪽 4열)를 5px 진행으로(마스터 도안 F판 10-26)
+KAGI_ADV = 5
 # 같은 몬스터가 여럿일 때 엔진이 이름 뒤에 붙이는 A~D(`$02:E0CE` 표) — 마스터 10-09 「ABCD 도 반각」: 우리 글꼴 4px 합성으로
 LETTER_CODES = (0xC3, 0xC4, 0x8F, 0x8E, 0x8B, 0x8C, 0x8D)  # A·B·C·D(같은 몬스터)와 G·O·L(「GOLD」)
 
@@ -1187,6 +1189,9 @@ def emit(a, k):
     for code in HALF_CODES[1:]:
         a.cmp(imm=code)
         a.beq(label="vr_h1")
+    for code in KAGI_CODES:
+        a.cmp(imm=code)
+        a.beq(label="vr_k1")
     for code in LETTER_CODES:  # 원판 영문 — 잉크+2 진행(`rawvalid` 에 실린 폭)으로 합성(마스터 10-11 「원판」)
         a.cmp(imm=code)
         a.beq(label="vr_lt1")
@@ -1203,6 +1208,8 @@ def emit(a, k):
     a.rts()
     a.label("vr_h1")  # `beq` 가 멀어 가까운 징검다리를 둔다
     a.jmp(addr="vr_half", mode="abs")
+    a.label("vr_k1")
+    a.jmp(addr="vr_kagi", mode="abs")
     a.label("vr_lt1")
     a.jsr(addr="vwf_ldg_r", mode="abs")
     lm("lda", V_VR)  # 진행 폭 = 잉크+1 — `rawvalid` 가 A~D 에서는 폭을 든다
@@ -1278,6 +1285,12 @@ def emit(a, k):
     a.lda(imm=0x04)
     lm("sta", V_VW)
     a.jsr(addr="vwf_edge", mode="abs")  # 반각도 줄 끝 칸에서 걸치면 다음 줄로
+    a.jmp(addr="vwf_put", mode="abs")
+    a.label("vr_kagi")  # 「」 — 반각 글리프, 5px 진행
+    a.jsr(addr="vwf_ldg_r", mode="abs")
+    a.lda(imm=KAGI_ADV)
+    lm("sta", V_VW)
+    a.jsr(addr="vwf_edge", mode="abs")
     a.jmp(addr="vwf_put", mode="abs")
     a.label("vr_skip")
     a.sec()

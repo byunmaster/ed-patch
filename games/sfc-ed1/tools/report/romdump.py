@@ -217,6 +217,49 @@ def has_text(s: str) -> bool:
     return bool(t.strip())
 
 
+def extra_rows(jp: Rom, kr: Rom, kb: bytes) -> list[tuple[str, str, str, str]]:
+    """번호표 밖 행 — 오프닝·엔딩 크롤 조각(`C<원판 SNES 주소>`)과 엔딩 스태프롤(`E00~E84`).
+
+    크롤: 번역 정본(`segments.json`)의 크롤 범위 조각을 원판 오프셋 → `place_map.json` 로 새 롬 오프셋을 찾아 둘 다 롬에서 읽는다.
+    번호표 목표인 조각(8000번대)과 앞 행의 원문에 통째로 든 조각(이어 읽기 흐름)은 뺀다.
+    스태프롤: 원판 `$06:FB55` 850B · 한글은 크롤 포인터 패치(`$1E:F23D`)가 가리키는 850칸, 10칸 = 1줄(credits.py).
+    """
+    import typeset
+
+    pm = json.loads((common.OUT_DIR / "place_map.json").read_text(encoding="utf-8"))
+    segs = json.loads((common.GAME_DIR / "textmap" / "segments.json").read_text(encoding="utf-8"))
+    crawl = []
+    for v in segs.values():
+        a = int(v["addr"], 16)
+        if typeset.CRAWL[0] <= a <= typeset.CRAWL[1]:
+            crawl.append(a)
+    out, seen = [], []
+    for a in sorted(crawl):
+        oj = common.snes2off(a)
+        if oj in jp.anchors:
+            continue
+        j = walk(jp, oj)
+        if any(j in sj for sj in seen):
+            continue
+        seen.append(j)
+        out.append((f"C{a:06X}", j, walk(kr, int(pm[f"{oj:06X}"], 16)), "크롤(번호표 밖)"))
+    so = common.snes2off(0x1EF23D)
+    ko = common.snes2off((kb[so + 7] << 16) | kb[so + 1] | (kb[so + 2] << 8))
+    lo = common.snes2off(0x1EF32A)
+    n = kb[lo + 1] | (kb[lo + 2] << 8)
+    jo = common.snes2off(0x06FB55)
+    jr = ["".join(jp.item(jo + 10 * r + c)[0] for c in range(10)) for r in range(85)]
+    kc, i = [], ko
+    while i < ko + n:
+        s, i, *_ = kr.item(i)
+        kc.append(s)
+    if len(kc) != 850:
+        raise SystemExit(f"스태프롤 칸 수가 850 이 아니다: {len(kc)}")
+    for r in range(85):
+        out.append((f"E{r:02d}", jr[r].rstrip(), "".join(kc[r * 10 : r * 10 + 10]).rstrip(), "스태프롤(번호표 밖)"))
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     root = common.GAME_DIR.parents[1]
@@ -260,6 +303,7 @@ def main() -> int:
             for m in marks:
                 cnt[m] += 1
             rows.append((f"{base[name] + i:04X}", js, ks, ",".join(marks)))
+    rows += extra_rows(jp, kr, kb)
     a.out.mkdir(parents=True, exist_ok=True)
 
     def cell(s: str) -> str:
@@ -275,6 +319,7 @@ def main() -> int:
         "kr_rom": str(a.kr.name),
         "kr_sha1": hashlib.sha1(kb).hexdigest(),
         "total": total,
+        "extra": len(rows) - total,
         "표시별": cnt,
     }
     (a.out / "romdump.json").write_text(json.dumps(info, ensure_ascii=False, indent=1), encoding="utf-8")

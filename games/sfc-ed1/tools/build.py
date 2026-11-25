@@ -30,6 +30,7 @@ import dicts
 import hook
 import namesrc
 import script
+import textmap
 
 OUT_NAME = {  # 경로별로 갈라 쓴다(patcher-checklist.md 3-B ② — 「어느 경로가 만들었나」를 파일명에도)
     "kr": "Dragon Slayer - Eiyuu Densetsu (KR).sfc",  # build_kr() — 이게 굴리는 이미지
@@ -740,6 +741,9 @@ def mutable_ranges() -> list[tuple[int, int]]:
         o2 = common.snes2off(a + 0x100)
         r.append((o2, o2 + 16))
     r += hook.patch_ranges()
+    import debugkey
+
+    r += debugkey.patch_ranges()
     if common.DEBUG:
         import debugpatch
 
@@ -930,11 +934,20 @@ def fallthrough_pairs(
         a, e = slices[si][1], slices[si][2]
         return bank(items[a].off) != bank(items[e - 1].off + items[e - 1].size - 1)
 
+    def both_crawl(si: int) -> bool:
+        """🔴 오프닝·엔딩 크롤은 `$E0` 다음 바이트를 **그대로 이어 읽는다**(다른 엔진 — `$F9` 절대 호출을 모른다). 이웃이 포인터를 받아도 흘러내림으로 묶는다 —
+        아니면 `jump_after` 가 `F9 목표 · FE` 를 심어, 크롤이 그 주소 바이트(「셀▮.」)를 글자로 찍는다(10-28 마스터 제보, 10-20 부터 있던 결함)."""
+        import typeset
+
+        lo, hi = typeset.CRAWL
+        a0, a1 = common.off2snes(items[slices[si][1]].off), common.off2snes(items[slices[si + 1][1]].off)
+        return lo <= a0 <= hi and lo <= a1 <= hi
+
     return [
         si
         for si in range(len(slices) - 1)
         if items[slices[si][2] - 1].code == 0xE0
-        and items[slices[si + 1][1]].off not in refs
+        and (items[slices[si + 1][1]].off not in refs or both_crawl(si))
         and bank(items[slices[si][1]].off) == bank(items[slices[si + 1][1]].off)
         and not spans(si)
         and not spans(si + 1)
@@ -1101,7 +1114,7 @@ def kr_items(
                 fake_off -= 1
             elif kind == "dict":
                 tok, bts = v
-                src = dict_pool.get(tok)
+                src = dict_pool.get(textmap.TOKEN_ALIAS.get(tok, tok))
                 it = src.pop(0) if src else None
                 seg_of[len(new)] = si
                 new.append(script.Item(it.off if it else fake_off, "raw", -1, bts))
@@ -1703,6 +1716,9 @@ def build_kr(
             spell_table=dk["런타임 치환"]["주문 표 주소"],
         )
         led.snap(out, "렌더러 훅")
+        import debugkey
+
+        dk["디버그 진입키"] = debugkey.apply(out, rom)  # 제품 롬 — 필드 L+R 1초(마스터 10-24)
         if common.DEBUG:  # 🔴 시험 빌드 전용 — 제품 롬(ED_DEBUG 없음)은 이 줄을 안 지난다
             import debugpatch
 

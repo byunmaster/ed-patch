@@ -55,6 +55,10 @@ class Result:
     fd_relays: set = field(default_factory=set)  # (원문 FD 오프셋, 구운 FD 위치)
     built_visited: set = field(default_factory=set)
     unparsed: int = 0  # 원문 항목 열 밖(네이티브 코드 등)으로 간 짝 — 같은 자리여야 한다
+    color_ctrl: int = 0  # 색 제어(E1 · E2 · E3)를 원판 ↔ 구운 롬에서 짝지어 대조한 수
+    color_runs: int = 0  # 강조색 사전 항목(`$D0 8x`)이 든 글 덩이 수(원문 기준)
+    color_dict_o: int = 0  # 그 항목의 원문 수
+    color_dict_b: int = 0  # 구운 롬 수
 
 
 def _adv(o: int, n: int) -> int:
@@ -162,10 +166,34 @@ def lockstep(
                 if has_o != has_b:
                     err("글 덩이가 한쪽에만 있다", o, b, name, "글 덩이")
                     break
+                # 🔴 강조색 이름(`$D0 8x` — 항목을 강조색으로 찍는다)은 글 덩이 속 사전 항목이라 제어 열 대조에 안 잡힌다 —
+                #    번역문이 이 토큰을 빼거나 8x 비트를 떨구면 색이 조용히 사라진다(pce-ed1 에서 색 전환 35메시지가 그렇게 샜다, 10-29)
+                n_o = n_b = 0
+                xo = o
+                while True:
+                    j = by_off.get(xo)
+                    if j is None or items[j].kind == "ctrl":
+                        break
+                    if items[j].kind == "dict" and items[j].code == 0xD0 and items[j].args[0] >= 0x80:
+                        n_o += 1
+                    xo += items[j].size
+                xb = b
+                while xb < bb:
+                    if built[xb] == 0xD0 and built[xb + 1] >= 0x80:
+                        n_b += 1
+                    xb += built_text_len(built, xb, leads)
+                if n_o:
+                    res.color_runs += 1
+                res.color_dict_o += n_o
+                res.color_dict_b += n_b
+                if n_o != n_b:
+                    err(f"강조색 사전 항목($D0 8x) 수가 다르다 원문 {n_o} 구운 {n_b}", o, b, name, "강조색")
                 o, b = _adv(o, oo - o), bb
                 continue
             res.ctrl += 1
             c = it.code
+            if c in (0xE1, 0xE2, 0xE3):
+                res.color_ctrl += 1
             if built[b] != c:
                 err(f"제어 코드가 다르다 원문 {c:02X} 구운 {built[b]:02X}", o, b, name, "제어 코드")
                 break
@@ -452,7 +480,8 @@ def summarize(w: dict, ledger: list[list[str]], gaps: list[str]) -> str:
         kinds[r[1]] = kinds.get(r[1], 0) + 1
     total = len(w["slices"])
     return (
-        f"구조 대조: 시작점 {w['n_starts']}(표) + {w['n_extra']}(2차) · 걸은 짝 {res.pairs:,} · 대조 항목 {res.items:,}(제어 {res.ctrl:,}) · "
+        f"구조 대조: 시작점 {w['n_starts']}(표) + {w['n_extra']}(2차) · 걸은 짝 {res.pairs:,} · 대조 항목 {res.items:,}(제어 {res.ctrl:,} · 그중 색 {res.color_ctrl:,}) · "
+        f"강조색 이름 {res.color_dict_o}↔{res.color_dict_b}({res.color_runs}덩이) · "
         f"조각 커버 {w['cover_any']}/{total}(전부 걸음 {w['cover_full']}) · 어긋남 {len(res.errors)} · 장부 밖 재배치 {len(gaps)} · "
         f"장부 {len(ledger)}행(" + " ".join(f"{k} {v}" for k, v in sorted(kinds.items())) + ")"
     )

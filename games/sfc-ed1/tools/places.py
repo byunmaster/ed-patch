@@ -36,10 +36,17 @@ def _orig(rom: bytes, base: int, i: int) -> str:
     return text.decode(rom[so : rom.index(b"\xff", so)], text.resolver(rom)).strip("　")
 
 
+def pad_cells(kr: str) -> tuple[int, int]:
+    """10칸 안의 (앞 빈칸, 뒤 빈칸) — 가운데 정렬(번역 규칙 2-8, 마스터 11-04). 칸은 8px 고정이라 짝수 차이는 정확히 가운데,
+    홀수 차이는 한 칸이 남아 **반 칸(4px) 쏠린다** — 칸 단위의 한계로 규칙이 허용한다."""
+    pad = (CELLS - len(kr)) // 2
+    return pad, CELLS - len(kr) - pad
+
+
 def _encode(kr: str, rep_index: dict[str, int]) -> bytes:
     if len(kr) > CELLS:
         raise SystemExit(f"지명 {kr!r} 이 {CELLS}칸을 넘는다")
-    pad = (CELLS - len(kr)) // 2
+    pad = pad_cells(kr)[0]
     b = bytearray([encode.KR_TABLE[" "]] * pad)
     for ch in kr:
         if encode.is_glyph(ch):

@@ -294,7 +294,7 @@ def glyph_rows(ch: str | None, font) -> tuple[list[int], int]:
         return [0] * 16, 8
     rows = hangul_font.render(ch, font)
     # 정본 전각 ＥＰ·ＨＰ·ＭＰ 는 Condensed 전각 글리프 그대로(마스터 10-10 「mp hp ep 콘덴스드 전각」 · 10-11 PS1 에서도 「전각으로 두는 게 일관」) — 영문·숫자의 원판 전환에서 제외
-    return rows, 8
+    return rows, (5 if ch in "『』" else 8)  # 『』 반각 — 진행 5px(「」 와 같다, `hook_vwf.KAGI_ADV`)
 
 
 def glyph_widths(rep: list[str | None]) -> bytes:
@@ -433,7 +433,7 @@ def raw_glyph_tables() -> tuple[bytes, bytes]:
     import hangul_font
 
     font = hangul_font.load_font()
-    letters = set("ABCDGOL")  # 같은 몬스터 A~D · 「GOLD」의 G·O·L(D 는 A~D 와 같다) — 원판 시트 그림, 진행 폭 = 잉크+2(숫자와 같은 규칙). 크롤의 다른 글자는 본문 Condensed 그대로
+    letters = set("ABCDGOLM")  # 같은 몬스터 A~D · 「GOLD」의 G·O·L(D 는 A~D 와 같다) · 「1000M」의 M(마스터 10-27 「라틴은 원본 글꼴」) — 원판 시트 그림, 진행 폭 = 잉크+2(숫자와 같은 규칙). 크롤의 다른 글자는 본문 Condensed 그대로
 
     def ink_adv(ch: str) -> int:
         rows = hangul_font.render_latin_orig(ch)

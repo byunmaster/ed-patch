@@ -9,6 +9,7 @@
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -23,11 +24,21 @@ def data_fragments() -> set[str]:
     return set(json.loads(p.read_text(encoding="utf-8"))["ids"]) if p.exists() else set()
 
 
+_KANA_HAN = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
+
+
+def has_jp_text(jp: str) -> bool:
+    """제어 코드 `<..>` · 사전 이름 `{..}` 를 뺀 글에 가나·한자가 있나 — 없으면(제어만 · 공백 · 숫자 · 말줄임) 번역할 일본어가 아니다."""
+    return bool(_KANA_HAN.search(re.sub(r"<[^>]*>|\{[^}]*\}", "", jp)))
+
+
 def main() -> int:
     tot: dict[str, int] = {}
     left: dict[str, list[str]] = {}
     warn: list[str] = []  # 근거 있는 데이터 파편(경고 — 통과)
     dead = data_fragments()
+    segs = json.loads((common.GAME_DIR / "textmap" / "segments.json").read_text(encoding="utf-8"))
+    notext: list[str] = []
     for where, jp, kr, _kind in names_corpus.screen_pairs():
         area = where.split(":")[0]
         tot[area] = tot.get(area, 0) + 1
@@ -35,17 +46,24 @@ def main() -> int:
             if area == "seg" and where.split(":")[1].split("@")[0] in dead:
                 warn.append(where)
                 continue
+            if area == "seg" and (segs.get(where.split(":")[1].split("@")[0]) or {}).get("kr"):
+                continue  # 번역 정본에 문안이 있다(글자가 없는 문안 — 색·호출만 남긴 조각)
+            if area == "seg" and not has_jp_text(jp):
+                notext.append(where)  # 글 없는 조각(분기·호출만 · 공백 · 숫자 · 말줄임) — 화면에 일본어가 나갈 수 없다
+                continue
             left.setdefault(area, []).append(f"{where} {jp[:14]!r}")
     bad = 0
     for area in sorted(tot):
         n = len(left.get(area, []))
         w = len(warn) if area == "seg" else 0
+        nt = len(notext) if area == "seg" else 0
         slot = area != "seg"
         # 🔴 근거 있는 데이터 파편(textmap/data_fragments.json)은 「경고」로 따로 센다 — 검사에는 걸리지만 통과(마스터 10-11).
         #    목록 밖 잔존은 종전처럼 일본어 잔존으로 센다(문장은 번역 중이라 알리기만 · 칸은 실패)
         print(
-            f"  {area:6s} 번역 {tot[area] - n - w:,}/{tot[area]:,} · 일본어 잔존 {n}"
+            f"  {area:6s} 번역 {tot[area] - n - w - nt:,}/{tot[area]:,} · 일본어 잔존 {n}"
             + (f" · ⚠ 경고(화면에 안 나오는 데이터 파편) {w}" if w else "")
+            + (f" · 글 없는 조각 {nt}" if nt else "")
             + (" ⛔" if slot and n else "")
         )
         if slot and n:

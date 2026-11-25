@@ -10,6 +10,7 @@ local SEED = tonumber(os.getenv("BT_SEED") or "0")
 local SEEDV = tonumber(os.getenv("BT_RSEED") or "-1")
 local FORCE = tonumber(os.getenv("BT_FORCE") or "-1")
 local TRACE = os.getenv("BT_TRACE") == "1"
+local KILL = os.getenv("BT_KILL") == "1" -- 전투 완료 시험: 적 방어를 안 올리고 메시지 캡처도 안 한다(파티 무적 + 자동 A 연타로 승리까지 가는지만 본다)
 local DUMPAT = tonumber(os.getenv("BT_DUMPAT") or "")
 local QUEUE, qi = {}, 1 -- BT_Q "0x2000,0x2001-0x2010": 전투가 내는 메시지 번호를 이 목록의 번호로 바꿔 부른다(실제 전투 문맥 — 행동자·대상·글리프) · BT_QFROM 시작 프레임
 for a, b in string.gmatch(os.getenv("BT_Q") or "", "(%w+)%-?(%w*)") do
@@ -25,13 +26,27 @@ end
 local rd, wr, wr16, log, shot = L.rd, L.wr, L.wr16, L.log, L.shot
 local S0, job, bf, state, started = nil, 0, 0, "boot", false
 local seen, insp, presscnt, rk = {}, nil, 0, 0
+local PEND = {}
+if os.getenv("BT_DEATH") == "1" then -- 진단: 적 기록(`$107C`~ 8칸×50B)에 게임이 쓰는 바이트 — 쓰러질 때 바뀌는 상태 비트를 찾는다
+  emu.addMemoryCallback(function(addr, val)
+    if state ~= "run" then return end
+    local o = addr - 0x107C
+    local st = emu.getState()
+    log(string.format("EW bf%d k=%d off=%d val=%02X pc=%02X:%04X", bf, o // 50, o % 50, val, st["cpu.k"], st["cpu.pc"]))
+  end, emu.callbackType.write, 0x107C, 0x107C + 8 * 50 - 1, emu.cpuType.snes)
+end
+local HPFLOOR = tonumber(os.getenv("BT_HPFLOOR") or "1") -- 완료 시험이 적 HP 를 내리는 값(기본 1, 0 이면 맞기 전에 죽은 칸으로)
+local ANIM = -999 -- 마지막으로 HP 굴림 애니메이션(`$00:9BE2`: [$23] 의 HP 를 `$1B02` 씩 목표 `$1B00` 까지 올리거나 내림)이 돈 프레임.
+-- 🔴 그 도는 동안 HP 를 1 로 덮으면 굴림이 매번 처음부터라 영영 안 끝난다(보스 자가 회복 장면 — 10-24 완료 시험이 「멈춤」으로 오인했던 것)
+emu.addMemoryCallback(function() ANIM = bf end, emu.callbackType.exec, 0x009BE2, 0x009BE2, emu.cpuType.snes)
+local DIRS = os.getenv("BT_DIRS") == "1"
 local want_reload = false
 local function boost()
   for i = 0, 3 do -- 파티 기록 39바이트: HP·최대·MP·최대
     local b = 0x13E5 + i * 39
     wr16(b, 9999); wr16(b + 2, 9999); wr16(b + 4, 99); wr16(b + 6, 99)
   end
-  if started and bf >= 150 then -- 적 기록 50바이트(`$107C`~): +0 종류 · +1 HP · +13 방어 필드를 크게(실측: 12 오프셋이 먹는다)
+  if started and bf >= 150 and not KILL then -- 적 기록 50바이트(`$107C`~): +0 종류 · +1 HP · +13 방어 필드를 크게(실측: 12 오프셋이 먹는다)
     for k = 0, 7 do
       local b = 0x107D + k * 50
       if (rd(b) | rd(b + 1) << 8) > 0 then wr16(b + 12, 0x3000) end
@@ -51,7 +66,9 @@ emu.addMemoryCallback(function()
     S0 = emu.createSavestate(); log("S0 f=" .. L.f); start_job()
   elseif state == "run" and started and bf > SEED + 60 then
     shot(string.format("%s/shots/c%03d_end.png", L.OUT, JOBS[job]))
-    log(string.format("END job=%d bf=%d", job, bf))
+    local ehp = 0
+    for k = 0, 7 do ehp = ehp + (rd(0x107D + k * 50) | rd(0x107E + k * 50) << 8) end
+    log(string.format("END job=%d bf=%d enemy_hp=%d", job, bf, ehp)) -- 적 HP 합이 0 이어야 승리로 닫힌 것
     state = "between"; start_job(); emu.loadSavestate(S0) -- ⚠ loadSavestate 는 콜백을 끊으니 마지막에
     return
   end
@@ -66,6 +83,9 @@ end, emu.callbackType.exec, 0x008B3D, 0x008B3D, emu.cpuType.snes)
 emu.addMemoryCallback(function()
   if want_reload then want_reload = false; start_job(); emu.loadSavestate(S0) end
 end, emu.callbackType.exec, 0x00AABF, 0x00AABF, emu.cpuType.snes)
+if os.getenv("BT_HITALL") == "1" then -- 완료 시험: 백분율 판정(`$00:952A` → `$0949`: 0 성공)을 늘 성공으로 — 회피 높은 보스에게도 파티 공격이 맞는다
+  emu.addMemoryCallback(function() if state == "run" and started then wr(0x0949, 0) end end, emu.callbackType.exec, 0x009579, 0x009579, emu.cpuType.snes)
+end
 if FORCE >= 0 then -- 난수: `$00:957B`(나머지 N → `$0950`) · `$00:952A`(백분율 → `$0949` 0=성공/FF=실패) 반환을 순번으로
   emu.addMemoryCallback(function()
     if state ~= "run" or not started then return end
@@ -111,6 +131,11 @@ if os.getenv("BT_PROBE") then
 end
 L.on_message(function(id)
   if state ~= "run" then return end
+  if KILL then -- 완료 시험: 번호만 남긴다(멈춘 자리 진단). BT_MSHOT=1 이면 번호마다 처음 한 번 60프레임 뒤 화면도(진단 전용)
+    log(string.format("M j%d bf%d id=%04X", job, bf, id))
+    if os.getenv("BT_MSHOT") == "1" and not seen["s" .. id] then seen["s" .. id] = true; PEND[#PEND + 1] = { bf + 60, id } end
+    return
+  end
   if qi <= #QUEUE and bf >= QFROM and not insp then -- 주입: 이 입구에서 번호를 덮어쓰면 그대로 그 메시지가 열린다
     id = QUEUE[qi]; qi = qi + 1; wr(0x060B, id & 255); wr(0x060C, id >> 8)
     log(string.format("Q j%d bf%d id=%04X", job, bf, id))
@@ -149,6 +174,45 @@ emu.addEventCallback(function()
     local st = emu.getState()
     for k, v in pairs(st) do if string.find(k, "oam") or string.find(k, "obj") or string.find(k, "Obj") or string.find(k, "layers%[") then log("PPU " .. k .. "=" .. tostring(v)) end end
   end
+  if KILL and os.getenv("BT_NOIMM") == "1" and bf >= 100 then -- 완료 시험: 적 기록 +17 의 0x08·0x20 비트(`$01:A75B`·`$A78D` 가 읽는 면역류 — 이게 서면 일반 공격이 「맞지 않았다」가 된다)를 끈다
+    for k = 0, 7 do
+      local b = 0x107C + k * 50 + 17
+      local v = rd(b); if v & 0x28 ~= 0 then wr(b, v & 0xD7) end
+    end
+  end
+  if KILL and os.getenv("BT_DEAD") == "1" and bf >= 200 and bf % 20 == 0 then -- 완료 시험(승리 후처리만 본다): 적 기록 +17 의 0x80(쓰러짐 — 일반 몬스터가 죽을 때 `$01:A477` 이 켜는 비트)과 HP 0 을 직접 쓴다
+    for k = 0, 7 do
+      local b = 0x107C + k * 50
+      if rd(b) ~= 0xFF and (rd(b + 17) & 0x80) == 0 then wr(b + 17, rd(b + 17) | 0x80); wr16(b + 1, 0) end
+    end
+  end
+  for i = #PEND, 1, -1 do
+    if bf >= PEND[i][1] then shot(string.format("%s/shots/q%04X.png", L.OUT, PEND[i][2])); table.remove(PEND, i) end
+  end
+  if KILL and os.getenv("BT_HPTRACE") == "1" and bf >= 150 and bf <= 1500 and bf % 10 == 0 then -- 진단: 적 기록 처음 두 칸 50바이트 전부
+    local t = {}
+    for k = 0, 1 do
+      local c = {}
+      for i = 0, 49 do c[#c + 1] = string.format("%02X", rd(0x107C + k * 50 + i)) end
+      t[#t + 1] = table.concat(c)
+    end
+    log(string.format("REC bf%d %s", bf, table.concat(t, " ")))
+  end
+  if KILL and os.getenv("BT_PC") == "1" and bf % 50 == 0 and bf >= 1000 then local st = emu.getState(); local sp = st["cpu.sp"]; local t = {}
+    for i = 1, 24 do t[#t + 1] = string.format("%02X", emu.read(sp + i, emu.memType.snesMemory, false)) end
+    log(string.format("PC bf%d %02X:%04X sp=%04X stack=%s", bf, st["cpu.k"], st["cpu.pc"], sp, table.concat(t))) end
+  if KILL and bf >= 150 and bf % 20 == 10 and bf - ANIM > 30 then -- 완료 시험: 적 HP 를 1 로(한 대만 맞으면 쓰러진다) — 파티 화력과 무관하게 승리 처리 경로까지 가 보게 한다. 보스가 중간에 HP 를 되채워도(단계 전환) 다시 1 로
+    for k = 0, 7 do
+      local b = 0x107D + k * 50
+      if (rd(b) | rd(b + 1) << 8) > HPFLOOR then wr16(b, HPFLOOR) end
+    end
+  end
+  if KILL and bf % 600 == 0 then -- 완료 시험 진단: 적·파티 HP 를 600프레임마다
+    local e, p = {}, {}
+    for k = 0, 7 do e[#e + 1] = rd(0x107D + k * 50) | rd(0x107E + k * 50) << 8 end
+    for i = 0, 3 do p[#p + 1] = rd(0x13E5 + i * 39) | rd(0x13E6 + i * 39) << 8 end
+    log(string.format("HP j%d bf%d enemy=%s party=%s", job, bf, table.concat(e, ","), table.concat(p, ",")))
+  end
   if bf == 100 then -- 이 편성의 몬스터 종류(사전 D3 번호)
     local t = {}
     for k = 0, 7 do
@@ -176,14 +240,18 @@ emu.addEventCallback(function()
     shot(string.format("%s/shots/c%03d_timeout.png", L.OUT, JOBS[job]))
     log(string.format("TIMEOUT job=%d", job)); state = "between"; want_reload = true
   end
-  if L.f > 600000 then log("FRAMELIMIT"); emu.stop(2) end
+  if L.f > (KILL and 3000000 or 600000) then log("FRAMELIMIT"); emu.stop(2) end
 end, emu.eventType.endFrame)
 emu.addEventCallback(function()
   local b = {}
   if S0 == nil then L.boot_input(b)
   elseif state == "run" and started and bf > SEED + 60 then
     if insp and presscnt > 0 then b.a = true; presscnt = presscnt - 1
-    elseif not insp and (bf // 4) % 2 == 0 then b.a = true end -- 자동 A 연타(새 메시지를 보는 동안은 멈춘다)
+    elseif not insp and (bf // 4) % 2 == 0 then b.a = true -- 자동 A 연타(새 메시지를 보는 동안은 멈춘다)
+    elseif KILL and DIRS and (bf // 4) % 2 == 1 then -- 완료 시험: 표적 커서를 돌린다(0번 칸이 죽어 있으면 A 만으론 영영 못 맞힌다) — 오른쪽/아래를 번갈아
+      local ph = (bf // 64) % 3
+      if ph == 1 then b.right = true elseif ph == 2 then b.down = true end
+    end
   end
   emu.setInput(b, 0)
 end, emu.eventType.inputPolled)

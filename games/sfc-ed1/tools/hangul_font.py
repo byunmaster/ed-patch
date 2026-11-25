@@ -95,7 +95,11 @@ def _orig_dot() -> list[int]:
 
 
 # 스태프롤 「J.D.K.」 는 원판 그림 그대로(D 도 시트 글자 — 스태프롤은 D 를 글리프로 내서 Condensed 가 나왔다, 실화면으로 확인)(마스터 10-19 「원판 그대로」): J·K·점은 원판 로고 블록·HUD 타일을 읽어 글리프로 쓴다(전각 점 「．」 = 8px 칸 점)
-GLYPH_OVERRIDES = {"…": _ellipsis_low, "D": lambda: render_latin_orig("D"), "J": lambda: _orig_logo(6), "K": lambda: _orig_logo(7), "．": _orig_dot}
+# 「」 반각(마스터 도안 F판 v2 10-27 원판 꼴 — `board/kagi/F-sfc-ed1.txt`, 8×16 한 장에 「 = 0~3열 · 」 = 4~7열). 둘 다 칸 왼쪽 4열에 둔다(진행 폭 5px — `hook_vwf.KAGI_ADV`)
+_KAGI = [0x00, 0x00, 0xF0, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x01, 0x01, 0x01, 0x01, 0x0F, 0x00, 0x00]
+# 『』 반각(마스터 도안 F판 10-26 — `board/kagi/F2-double-sfc-ed1.txt`, 「」 와 같은 꼴: 『 = 0~3열 · 』 = 4~7열을 왼쪽으로 당김). 지금 문안엔 없다 — 쓰이면 한글 뱅크 글리프로 실린다(진행 5px = `hook.glyph_rows`)
+_DKAGI = [0x00, 0x00, 0xF0, 0x90, 0xB0, 0xA0, 0xA0, 0xA7, 0xE5, 0x05, 0x05, 0x0D, 0x09, 0x0F, 0x00, 0x00]
+GLYPH_OVERRIDES = {"『": lambda: [r & 0xF0 for r in _DKAGI], "』": lambda: [(r & 0x0F) << 4 for r in _DKAGI], "「": lambda: [r & 0xF0 for r in _KAGI], "」": lambda: [(r & 0x0F) << 4 for r in _KAGI], "…": _ellipsis_low, "D": lambda: render_latin_orig("D"), "Ｅ": lambda: render_latin_orig("E"), "Ｈ": lambda: render_latin_orig("H"), "Ｍ": lambda: render_latin_orig("M"), "Ｐ": lambda: render_latin_orig("P"), "J": lambda: _orig_logo(6), "K": lambda: _orig_logo(7), "．": _orig_dot}
 
 
 def render(ch: str, font) -> list[int]:

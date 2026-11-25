@@ -61,6 +61,10 @@ DICT_CATEGORY = {
 }
 
 
+# 번역문이 원문 사전 토큰 대신 쓸 수 있는 짝 — 원문 토큰의 자리(분기 목표)를 이어받는다. {D0:59} 「저」 = {D0:4F} 「나」 의 존대 짝(Q7)
+TOKEN_ALIAS = {"{D0:59}": "{D0:4F}"}
+
+
 def check_tokens(kr: str, tokens: list[str], extra_pages: int = 0) -> str | None:
     """번역문의 토큰 계약. **제어 토큰(`<..>`, `<@>` 포함)은 전부 같은 순서로** 있어야 한다 — 빠지면 분기·페이지가
     사라진다. **사전·치환 토큰(`{..}`)은 빼도 되고 어순을 바꿔도 된다**(글자만 찍는다 — 「キャリオンク{ロー}ラー」처럼
@@ -82,7 +86,7 @@ def check_tokens(kr: str, tokens: list[str], extra_pages: int = 0) -> str | None
     if ctrl_got != ctrl_exp and (g != e or any(ctrl_got.count(c) < ctrl_exp.count(c) for c in color)):
         return f"제어 토큰이 다르다: 기대 {ctrl_exp} 실제 {ctrl_got}"
     dict_exp = [t for t in tokens if t.startswith("{")]
-    for t in (t for t in got if t.startswith("{")):
+    for t in (TOKEN_ALIAS.get(t, t) for t in got if t.startswith("{")):
         if t in dict_exp:
             dict_exp.remove(t)
         else:
