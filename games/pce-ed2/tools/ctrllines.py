@@ -210,7 +210,7 @@ def _with_marks(items: list, marks: list[tuple[int, bytes]], jp_n: int, tab) -> 
     import dialogue
     import font
 
-    texts = [(font.mark_josa(v).replace("!!", "\x00") if k == "t" else v) for k, v in items]
+    texts = [(font.mark_josa(v) if k == "t" else v) for k, v in items]
     ink_idx: list[tuple[int, int]] = []  # (조각, 글자 위치) — 글자로 세는 칸들
     in_name = False  # `16` 뒤 다음 제어까지는 화자 이름 칸 — 글자로 안 센다(타이밍 제어가 이름 한복판에 끼면 이름이 깨진다)
     for ti, (kind, _v) in enumerate(items):

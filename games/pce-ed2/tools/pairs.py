@@ -25,7 +25,6 @@ import common
 import font
 import hook
 import jptext
-import narrow_font
 import package
 import pceview
 import systext
@@ -156,9 +155,6 @@ def decode(raw: bytes, kg: KoGlyphs | None, local: list[str] | None, sys_ctx: bo
             i += 2
         elif ko and a == 0x60:
             out.append(" ")
-            i += 1
-        elif ko and a == narrow_font.LIG_CODE:  # 반각 글꼴 표의 `!!` 합자 코드(마스터 11-06 (다)안 A1)
-            out.append("!!")
             i += 1
         elif ko and 0x20 <= a < 0x7F:
             out.append(chr(a))

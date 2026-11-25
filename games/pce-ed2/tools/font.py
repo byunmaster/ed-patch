@@ -15,7 +15,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
-import narrow_font
 
 FONT_BDF = common.ROOT / "shared" / "fonts" / "Galmuri11.bdf"
 GLYPH_BYTES = 24
@@ -265,12 +264,10 @@ class GlyphTable:
         return order_
 
     def enc(self, text: str, space: int = 0x60) -> bytes:
-        text = mark_josa(text).replace("!!", "\x00")  # 「!!」 는 원판의 겹느낌표 글자(`81 62`, 12px 한 칸)로 — ASCII `!` 둘은 8px 칸이라 사이가 벌어진다(10-13)
+        text = mark_josa(text)  # 「!!」 도 반각 `!` 두 글자(마스터 11-14 규칙 1-1 개정 — 합자 글리프 폐지)
         out = bytearray()
         for ch in text:
-            if ch == "\x00":
-                out.append(narrow_font.LIG_CODE)  # `!!` — 원판 합자 도안을 8px 칸에(반각 글꼴 표 새 코드, 마스터 11-06 (다)안 A1)
-            elif ch in JOSA_MARK:  # 동적 조사 — 훅이 앞 글자의 받침으로 고른다
+            if ch in JOSA_MARK:  # 동적 조사 — 훅이 앞 글자의 받침으로 고른다
                 k = JOSA_MARK.index(ch)
                 if self.map is None:
                     self.chars.update(JOSA_CHARS)  # 두 꼴 다 정적 풀에 있어야 한다

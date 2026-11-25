@@ -35,7 +35,7 @@ class Battle(unittest.TestCase):
         out = msgs.special(GOLD, tab)
         self.assertIsNotNone(out)
         self.assertIn(b"GOLD", out)
-        self.assertEqual(sorted(tab.chars), sorted("를얻었다"))
+        self.assertEqual(sorted(tab.chars), sorted("를얻었습니다"))  # 정본 「Gold를 얻었습니다.」(원문 ました — 4-17 확대 11-15)
         self.assertTrue(out.endswith(b"\x12\r"))
 
     def test_모르는_줄은_안_건드린다(self):

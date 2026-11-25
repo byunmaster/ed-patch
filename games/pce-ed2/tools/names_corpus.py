@@ -147,7 +147,7 @@ def _pairs_lines():
                     spk, txt = cand[i]
                     if spk:
                         spk = _spk_spaced(line, spk)
-                    out.append((dwhere, jp, ((spk + " ") if spk else "") + txt.replace("\f", " "), "dialog"))
+                    out.append((dwhere, jp, ((spk + " ") if spk else "") + txt.replace("\f", " ").replace("§", " | "), "dialog"))  # 화자 바뀜(§)은 말투 흔적 검사가 문장 경계로 읽는 「|」 로 — 두 화자의 말을 한 문장으로 합쳐 읽지 않게(검사용 · 빌드 산출은 그대로)
                     continue
                 skel, _c, _h = ctrllines.parse(line)
                 t = ctab.get(ctrllines.key_of(skel))
