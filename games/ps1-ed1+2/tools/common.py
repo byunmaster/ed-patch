@@ -310,6 +310,9 @@ IMMUTABLE = {
         ("OPEN1 표시 스크립트 커맨드", 0x145A0, 0x147BC, "script"),
     ],
 }
+if os.environ.get("ED_HOTFIX") == "1":
+    # 핫픽스: OPEN1 안 「ED2 오프닝 내레이션」(OPEN1 은 안 읽는 남의 몫 사본)은 `patch_erase_copies` 가 지운다 — 무변경 선언에서 뺀다.
+    IMMUTABLE[(69, 96256)] = [r for r in IMMUTABLE[(69, 96256)] if r[0] != "OPEN1 ED2 오프닝 내레이션"]
 TEXT_PTR = range(0x80010000, 0x80011000)  # "script" 모드에서 정당히 바뀌는 슬롯
 
 

@@ -339,6 +339,10 @@ def main():
     import patch_scn_hud_copy as _pshc
 
     _pshc.apply()
+    # 원판 대사 사본 지우기(핫픽스 전용, 마스터 11-17) — 모든 텍스트 패치가 끝난 **뒤** 최종 이미지에서 찾는다.
+    import patch_erase_copies as _pec
+
+    _pec.apply()
     for stem in INTERMEDIATES + STALE:
         rm(stem)
     check_immutable()
