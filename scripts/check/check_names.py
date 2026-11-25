@@ -19,6 +19,7 @@ import argparse
 import importlib.util
 import json
 import os
+import pickle
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -35,7 +36,38 @@ def _adapter(game):
     spec = importlib.util.spec_from_file_location(f"names_corpus_{game}", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod
+    return cached(mod, game)
+
+
+class _CachedPairs:
+    """게이트 한 번 안에서 어댑터 `pairs()` 를 **한 번만** 돌린다(11-26 전체 점검 — 공용 검사 다섯이 같은
+    말뭉치를 프로세스마다 다시 만들어 PS1 III 는 이름·정본 검사만 각 9분이 들었다). 칸은 `scripts/check.sh` 가
+    `CHECK_PAIRS_CACHE` 로 만들어 끝나면 지운다 — 칸이 없으면(검사기를 혼자 돌릴 때) 원래대로 매번 만든다."""
+
+    def __init__(self, mod, game, cache_dir):
+        self._mod, self._path = mod, os.path.join(cache_dir, f"{game}.pairs.pkl")
+
+    def __getattr__(self, name):
+        return getattr(self._mod, name)
+
+    def pairs(self):
+        if os.path.exists(self._path):
+            with open(self._path, "rb") as f:
+                return pickle.load(f)
+        rows = list(self._mod.pairs())
+        try:  # 어댑터 고유 클래스처럼 피클이 안 되는 값이면 그냥 넘긴다(캐시는 빠르게 하는 것일 뿐)
+            tmp = self._path + ".tmp"
+            with open(tmp, "wb") as f:
+                pickle.dump(rows, f)
+            os.replace(tmp, self._path)
+        except (pickle.PicklingError, TypeError, AttributeError, OSError) as e:
+            print(f"  (말뭉치 캐시 생략: {type(e).__name__})", file=sys.stderr)
+        return rows
+
+
+def cached(mod, game):
+    d = os.environ.get("CHECK_PAIRS_CACHE")
+    return _CachedPairs(mod, game, d) if (mod is not None and d and os.path.isdir(d)) else mod
 
 
 def _is_kr(game):
@@ -78,7 +110,9 @@ def main(argv=None):
     r = audit(mod.pairs(), title=title)
     if not r.units:
         # 줄 0 = 어댑터가 문안을 못 읽었다(파생물 없는 트리 등) — 「어긋남 0」으로 찍히면 거짓 초록이다(11-08 실측)
-        print(f"⚠ 이름 검사 [{a.game}] — 어댑터가 낸 줄이 0 이다 · **안 쟀다**(파생물·원본 링크 확인)")
+        print(
+            f"⚠ 이름 검사 [{a.game}] — 어댑터가 낸 줄이 0 이다 · **안 쟀다**(파생물·원본 링크 확인)"
+        )
         return 2
     approved, unsigned = _exceptions(a.game)
     left = [h for h in r.mismatches if f"{h.where}|{h.jp}" not in approved]

@@ -25,6 +25,12 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PY="$ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY=python3
 
+# 공용 검사(이름·정본·인사·맞춤법 규칙·말투 흔적)가 같은 말뭉치(names_corpus.pairs())를 한 번만 만들게 —
+# 프로세스마다 다시 만들어 PS1 III 는 이름·정본 검사만 각 9분이었다(11-26 전체 점검). 끝나면 지운다.
+CHECK_PAIRS_CACHE=$(mktemp -d 2>/dev/null || true)
+export CHECK_PAIRS_CACHE
+trap '[ -n "$CHECK_PAIRS_CACHE" ] && rm -rf "$CHECK_PAIRS_CACHE"' EXIT
+
 # 어느 게임인가 — 정본은 `scripts/check/which_game.sh` 다(테스트도 같은 답을 써야 한다).
 GAMES=$(sh "$ROOT/scripts/check/which_game.sh" "$@")
 # 그 목록을 **어떻게** 정했나 — `--all`·이름 지정(explicit) / 게임 브랜치(branch) /

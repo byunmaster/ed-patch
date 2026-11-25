@@ -60,7 +60,9 @@ def _adapter(game, root):
     spec = importlib.util.spec_from_file_location(f"names_corpus_{game}", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod
+    from check_names import cached  # 같은 게이트 안 말뭉치 한 번(check_names._CachedPairs)
+
+    return cached(mod, game)
 
 
 def sentences(text):
