@@ -244,7 +244,9 @@ def restore_full_place_names():
             )
             kb = H.encode_kr(kr) + b"\x00"
             assert len(kb) <= slot, f"058 지명 복원 {label} {kr!r} {len(kb)}B > 슬롯 {slot}B"
+            tail = buf[off + 13]  # 핫픽스 — 슬롯 꼬리 바이트(입장 배너 공백 위치, patch_ed1_banner)는 보존한다(제품은 0)
             buf[off : off + slot] = kb.ljust(slot, b"\x00")
+            buf[off + 13] = tail
             write_user_data(f, lba, bytes(buf), label=f"{label} 지명 복원({kr})")
             n += 1
     # ED2.EXE — HUD 판(0x9A1F0)·워프 목적지 표(0x9A478) 사본. 둘 다 꼬리 여유가
@@ -257,6 +259,8 @@ def restore_full_place_names():
     with open(img, "r+b") as f:
         buf = bytearray(extract(ED2_LBA, ED2_SIZE, path=img))
         for off, orig, slot in ed2_targets:
+            if off == 0x9A1F0 and os.environ.get("ED_HOTFIX") == "1":
+                continue  # 핫픽스 — 이 칸은 입장 배너 표 안이라 이미 「늑대의 입」(띄움 꼴, patch_ed2_sys.banner_general)이 쓰여 있다
             assert buf[off : off + len(orig)] == orig, (
                 f"058 지명 복원 ED2.EXE @0x{off:X} 불일치: {bytes(buf[off : off + len(orig)]).hex()} != {orig.hex()}"
             )
@@ -265,6 +269,24 @@ def restore_full_place_names():
             buf[off : off + slot] = kb.ljust(slot, b"\x00")
             n += 1
         write_user_data(f, ED2_LBA, bytes(buf), label="ED2.EXE 지명 복원(늑대의입)")
+    if os.environ.get("ED_HOTFIX") == "1":  # 핫픽스 시험 경로 — 입장 배너만 띄움 꼴(HUD·워프는 붙임 그대로, patch_ed1_banner 머리말). 몬스터 이름 재packing 뒤라 여기서 쓴다
+        import canon
+
+        import patch_ed1_banner as BAN
+
+        spaces = []
+        for (_jp, kr), slot_jp in zip(PLACES, PLACE_SLOTS):
+            gen = canon.place_general(slot_jp, "ed1")
+            assert gen.replace(" ", "") == kr, f"배너 일반 꼴이 붙임 꼴과 글자가 다르다: {gen!r} vs {kr!r}"
+            assert gen.count(" ") <= 1, f"배너 공백은 하나까지: {gen!r}"
+            spaces.append(len(H.encode_kr(gen.split(" ")[0])) if " " in gen else None)
+        with open(img, "r+b") as f:
+            buf = bytearray(extract(ED_LBA, ED_SIZE, path=img))
+            orig_ed = bytes(buf)
+            nb = BAN.apply(buf, spaces)  # 동굴 시작 오프셋
+            assert BAN.cave_referenced(bytes(orig_ed), nb) == 0, "동굴 자리를 가리키는 참조가 있다"
+            write_user_data(f, ED_LBA, bytes(buf), label="ED1 입장 배너 띄움(동굴)")
+        print(f"  ED1 입장 배너 띄움: 동굴 @0x{nb:X}, 공백 끼움 {sum(x is not None for x in spaces)}/{len(spaces)}")
     print(f"  058 지명 정본 복원 {n}곳(늑대입→늑대의입, 칸 넉넉한 자리만)")
 
 
@@ -681,6 +703,101 @@ def relocate_nothing(ed):
     )
 
 
+def _msg_refs(ed, lo, hi):
+    """RAM 구간 [lo,hi) 를 가리키는 참조를 전수로 모은다 — (종류, 위치[, lui 위치]).
+
+    · `word`  : 데이터의 u32 포인터(4정렬)
+    · `pair`  : `lui rt` + (뒤 8워드 안의) `addiu/ori rd,rt` 한 쌍 — 지연 슬롯·간격 허용, 레지스터가 덮이면 거기서 끝
+    · 적재·저장(lw/sw/lb …) 쌍도 같은 풀이로 센다(imm 가 주소 하위)
+    같은 `lui` 를 다른 명령이 또 쓰면(공유 lui) 옮길 수 없으니 호출자가 멈춘다."""
+    import struct
+
+    n = len(ed) // 4
+    w = struct.unpack("<%dI" % n, bytes(ed[: n * 4]))
+    refs = []
+    for k, x in enumerate(w):
+        if lo <= x < hi:
+            refs.append(("word", k * 4, None))
+    for k, y in enumerate(w):
+        if y >> 26 != 0x0F:
+            continue
+        rt = (y >> 16) & 31
+        hi16 = y & 0xFFFF
+        for d in range(1, 9):
+            if k + d >= n:
+                break
+            x = w[k + d]
+            op = x >> 26
+            if op in (9, 13, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x28, 0x29, 0x2A, 0x2B, 0x2E) and ((x >> 21) & 31) == rt:
+                imm = x & 0xFFFF
+                a = (hi16 << 16) + (imm if op == 13 else (imm - 0x10000 if imm >= 0x8000 else imm))
+                if lo <= (a & 0xFFFFFFFF) < hi:
+                    refs.append(("pair", (k + d) * 4, k * 4))
+            # rt 가 덮이면 창을 닫는다(addu/lui/lw 의 목적지가 rt)
+            if (op == 0x0F and ((x >> 16) & 31) == rt) or (op in (9, 13, 0x23) and ((x >> 16) & 31) == rt and ((x >> 21) & 31) != rt):
+                break
+    return refs
+
+
+def relocate_msg(ed, i, slot, kb):
+    """메시지 슬롯 `ed[i:i+slot]` 을 안전한 0 런으로 옮긴다 — 참조 전수 수집 · 공유 lui 금지 · 구간 안쪽 참조 금지 · 쓰기 전 검증."""
+    import struct
+
+    from patch_hang_punct import free_run
+
+    ram = 0x80010000 + i - 0x800
+    refs = _msg_refs(ed, ram, ram + slot)
+    assert refs, f"재배치: 0x{i:X} 를 가리키는 참조가 없다 — 죽은 슬롯이라 옮길 필요가 없다(원문 확인)"
+    # 구간 안쪽(시작점이 아닌) 참조는 부분 문자열 슬롯이다 — 옮기면 깨진다
+    inner = []
+    for kind, pos, lpos in refs:
+        if kind == "word":
+            a = struct.unpack_from("<I", ed, pos)[0]
+        else:
+            y = struct.unpack_from("<I", ed, lpos)[0]
+            x = struct.unpack_from("<I", ed, pos)[0]
+            imm = x & 0xFFFF
+            a = ((y & 0xFFFF) << 16) + (imm if (x >> 26) == 13 else (imm - 0x10000 if imm >= 0x8000 else imm))
+        if a != ram:
+            inner.append((kind, pos, hex(a)))
+    assert not inner, f"재배치: 슬롯 안쪽을 가리키는 참조 {inner[:3]} — 부분 문자열 슬롯은 옮기지 않는다"
+    # 공유 lui — 같은 lui 를 쓰는 다른 쌍이 있으면 hi 를 못 바꾼다
+    luis = [lpos for kind, _p, lpos in refs if kind == "pair"]
+    assert len(set(luis)) == len(luis), "재배치: 한 lui 를 여러 쌍이 공유한다 — 손으로 보라"
+    for lpos in luis:
+        y = struct.unpack_from("<I", ed, lpos)[0]
+        rt = (y >> 16) & 31
+        users = 0
+        for d in range(1, 9):
+            x = struct.unpack_from("<I", ed, lpos + 4 * d)[0]
+            if (x >> 26) in (9, 13, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x28, 0x29, 0x2A, 0x2B, 0x2E) and ((x >> 21) & 31) == rt:
+                users += 1
+            if (x >> 26) == 0x0F and ((x >> 16) & 31) == rt:
+                break
+        assert users == 1, f"재배치: lui @0x{lpos:X} 의 소비자가 {users} — 손으로 보라"
+    # 새 자리
+    dst, avail = free_run(ed, (0x0BF5DC, 0x0C105C, 0x09AF74, 0x09C9F4), len(kb) + 1)  # 조사 훅 고정 자리를 피한다
+    assert all(b == 0 for b in ed[dst : dst + len(kb) + 1]), "재배치 자리가 0이 아니다"
+    nram = 0x80010000 + dst - 0x800
+    ed[dst : dst + len(kb)] = kb
+    ed[dst + len(kb)] = 0
+    hi16, lo16 = nram >> 16, nram & 0xFFFF
+    if lo16 & 0x8000:
+        hi16 += 1
+    for kind, pos, lpos in refs:
+        if kind == "word":
+            struct.pack_into("<I", ed, pos, nram)
+        else:
+            y = struct.unpack_from("<I", ed, lpos)[0]
+            x = struct.unpack_from("<I", ed, pos)[0]
+            struct.pack_into("<I", ed, lpos, (y & 0xFFFF0000) | hi16)
+            struct.pack_into("<I", ed, pos, (x & 0xFFFF0000) | lo16)
+    assert not _msg_refs(ed, ram, ram + slot), "재배치 뒤에도 옛 자리를 가리키는 참조가 남았다"
+    # 옛 슬롯은 죽었다 — 원문(일본어)이 남지 않게 지운다
+    ed[i : i + slot] = b"\x00" * slot
+    print(f"  재배치 0x{i:X} → 0x{dst:X} (참조 {len(refs)}곳: 워드 {sum(r[0] == 'word' for r in refs)} · 쌍 {len(luis)})")
+
+
 def patch_msgs(ed):
     """ED.EXE 전역에서 MSGS의 JP 원문 전 사본을 슬롯 실측 내로 치환."""
     import re
@@ -699,8 +816,11 @@ def patch_msgs(ed):
                 a += 1
             avail = a - i
             if len(kb) + 1 > avail:
-                skipped += 1
-                print(f"  메시지 슬롯 부족 0x{i:X} {kr[:12]!r}… {len(kb) + 1}>{avail}")
+                # 🔴 슬롯이 모자라면 문안을 줄이지 않고 **안전한 0 런으로 옮긴다**(2-17·마스터 10-07·11-15 「칸 문제는 기술 먼저」).
+                #    참조(lui+addiu 쌍·포인터 워드)를 전수로 모아 새 자리로 다시 박는다 — 못 하면 멈춘다(조용한 일본어 잔존 금지).
+                print(f"  메시지 슬롯 부족 0x{i:X} {kr[:12]!r}… {len(kb) + 1}>{avail} → 재배치")
+                relocate_msg(ed, i, e - i, kb)
+                n += 1
                 continue
             ed[i:a] = kb.ljust(avail, b"\x00")
             n += 1
@@ -739,6 +859,10 @@ def justify(kr, target, avail):
 # JP 원문은 리포에 없음 — 빌드 시 ED.EXE에서 읽어 sha1 키로 조회한다. 슬롯은 다음
 # 문자열 전 0런까지, KR이 넘치면 assert(확장 필요 시 relocate_nothing식 도너로 전환).
 EVENT_OFFS = [0xC058, 0xC090, 0xC0C0, 0xC118, 0xC170]
+# 🔴 핫픽스 경로 — 월드맵 나레이션 첫 창(0xC058, 칸 56B)을 새턴·MD 문안(「돌아가려 했다」)으로 쓰면 57B 라 한 칸(2B)이 모자란다
+# (11-08 마스터 「같은의미면 문안은 통일」). 바로 뒤 둘째 창(0xC090, 칸 48B · 한글 42B)에 여유가 있어 시작을 2B 뒤로 밀고
+# 그 창을 가리키는 `lui`+`addiu` 참조를 같이 옮긴다(`patch_items.redirect` — 참조 0건이면 멈춤). 제품 롬은 불변.
+EVENT_SHIFT = {0xC090: 2} if os.environ.get("ED_HOTFIX") == "1" else {}
 
 
 def patch_event_msgs(ed):
@@ -756,14 +880,29 @@ def patch_event_msgs(ed):
 
     ev = jp_map("event")
     n = 0
+    if EVENT_SHIFT:  # 뒤 창을 밀고 참조를 옮긴다 — 아래 루프는 밀린 시작·앞 창의 늘어난 칸을 쓴다
+        import patch_items as PI
+
+        PI.redirect(ed, {PI.ram_of(o): PI.ram_of(o + d) for o, d in EVENT_SHIFT.items()})
+    prev_ext = {}
+    for o, d in EVENT_SHIFT.items():
+        prev = max(x for x in EVENT_OFFS if x < o)
+        prev_ext[prev] = d
+    # 원본 JP·끝 위치는 **쓰기 전에** 전부 읽어 둔다 — 앞 창이 늘면서 뒤 창 머리 바이트를 덮는다
+    orig = {}
     for off in EVENT_OFFS:
         j = ed.index(0, off)
-        jp = ed[off:j].decode("shift_jis")
-        if jp not in ev:
-            continue  # 번역 없으면 JP 유지
         e = j
         while ed[e] == 0:
             e += 1
+        orig[off] = (j, e, ed[off:j].decode("shift_jis"))
+    for off in EVENT_OFFS:
+        shift = EVENT_SHIFT.get(off, 0)
+        j, e, jp = orig[off]
+        if jp not in ev:
+            continue  # 번역 없으면 JP 유지
+        e += prev_ext.get(off, 0)  # 뒤 창이 밀린 만큼 이 창의 칸이 는다
+        off0, off = off, off + shift  # 밀린 창은 새 시작에 쓴다(원본 JP 는 위에서 읽었다)
         val = ev[jp].replace("엘아스터", "엘아스타")  # 표기 통일(대사 트랙과 동일 판정)
         head = b""
         if val.startswith("\x1e"):  # 정발 화자 헤더(\x1e이름\x04) → %c이름%c
@@ -844,7 +983,6 @@ def main():
         assert len(b) < PLACES_STRIDE, f"지명 초과 {kr!r} {len(b)}B"
         ed[off : off + PLACES_STRIDE] = b.ljust(PLACES_STRIDE, b"\x00")
     print(f"지명 재삽입 {len(PLACES)}개 (0x{PLACES_BASE:X}~)")
-
     # HUD 상태이상 라벨
     for i, (jp, kr) in enumerate(STATUS_LABELS):
         off = STATUS_BASE + i * STATUS_STRIDE

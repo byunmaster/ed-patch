@@ -193,7 +193,7 @@ def test_expect_bytes_matches():
     assert _with_image(go) == 1
 
 
-# ── 검출기 판정 (`spellcheck_render`) ──────────────────────────────────────
+# ── 검출기 판정 ──────────────────────────────────────
 # ⚠ `check_variants`·`proposal` 테스트는 그 도구와 함께 걷어냈다(2026-08-12) —
 #   정발 배정을 그만두고 번역 정본(`script/`)으로 옮기면서 물음 자체가 없어졌다.
 # ── 글리프 계획 세대 결박 (`hangul_map` · `hangul_font`) ───────────────────
@@ -1874,3 +1874,23 @@ def test_name_echo_allows_explicit_name_segment():
     assert not E.echoes("마리", "마리{p}의 ＨＰ가{p}회복되었다.")  # 이름 조각을 제 조각에 둠 — 정상
     assert E.echoes("마리", "마리의 ＨＰ가{p}회복되었다.")  # 한 조각에 섞임 — 겹침
 
+
+
+def test_wrap_keeps_split_word_ellipsis_together():
+    """낱말을 끊어 읽는 말줄임(「동…료…」)은 한 줄 — 공용 split_sentences 가 `…` 뒤 한글을 문장 경계로 봐
+    음절마다 줄이 갈렸다(ED2SCN3:775, 마스터 11-14 — 2-19: 문안이 아니라 조판을 고친다). 공백 있는 말줄임은 그대로 갈린다."""
+    assert R.wrap_page("동료지. 동…료…") == [["동료지.", "동…료…"]]
+    assert R.wrap_page("마… 말이야") == [["마…", "말이야"]]
+    assert all("" not in ln for pg in R.wrap_page("부… 부탁… 드립…니다…") for ln in pg)
+
+
+def test_log_register_sentence_level():
+    """`check_log_register` 는 주입 표지 없는 지문(「상자에는 ◯가 있었다」·「샀다」)도 **문장마다** 원문 등급과 대조한다(페이블 4차 — 마지막 문장만 보던 구멍)."""
+    import check_log_register as C
+
+    pairs = [("宝箱の中には%cエリクサー%cが入っていました。", "상자에는\\ue003{p}가 있었다."), ("%c%s%cを 買いました。", "을(를) 샀다.")]
+    for j, k in pairs:
+        js, ks = C._jp_sents(j), C._kr_sents(k)
+        assert [(C.jp_class(a), C.kr_class(b)) for a, b in zip(js, ks)] == [("P", "L")]
+    js = C._jp_sents("全て逃げ出した。解放されました。")
+    assert [C.jp_class(x) for x in js] == ["L", "P"]

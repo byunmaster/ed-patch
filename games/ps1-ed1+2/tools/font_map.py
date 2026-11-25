@@ -193,7 +193,7 @@ def verify_ellipsis(exe, game="ED1"):
     )
 
 
-def ellipsis_baseline_glyph(exe, game="ED1"):
+def ellipsis_baseline_glyph(exe, game="ED1", square=False):
     """원본 `…` 를 **세로로만** 내려 전각 온점(`．`)과 같은 줄에 앉힌 22바이트 글리프.
 
     ⚠ 높이를 상수로 박지 않는다 — 두 실행파일이 각자 폰트를 들고 있어서
@@ -208,4 +208,7 @@ def ellipsis_baseline_glyph(exe, game="ED1"):
         if w:
             assert 0 <= r + shift < GLYPH_ROWS, f"내릴 자리가 없다 (행 {r}+{shift})"
             out[r + shift] = w
+    if square:  # 마스터 11-16 — 원판 ？！ 의 점(2×1, 9행)과 같게: 바닥 행 하나만 남기고 점 폭을 2px 로
+        bot = max(r for r, w in enumerate(out) if w)
+        out = [(w | (w >> 1)) if r == bot else 0 for r, w in enumerate(out)]
     return b"".join(bytes([(w >> 8) & 0xFF, w & 0xFF]) for w in out)

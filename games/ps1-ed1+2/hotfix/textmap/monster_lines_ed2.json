@@ -1,0 +1,4 @@
+{
+ "_doc": "핫픽스 시험 경로 — ED_HOTFIX=1 일 때만 monster_lines_ed2 위에 덮는다(키=원문, dict_tables.monster_lines_ed2). 제품 롬은 안 바뀐다.",
+ "自分自身%cに": "자신%c에게 "
+}

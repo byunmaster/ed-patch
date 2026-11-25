@@ -1,36 +1,12 @@
 #!/usr/bin/env python3
-"""**시스템·행동 로그가 평어체인가**를 최종 바이트 기준으로 잡는다.
+"""**시스템·행동 로그의 문체가 원문 등급과 같은가**를 최종 바이트 기준으로 잡는다(번역 규칙 4-17 — 마스터 11-15).
 
-🔴 **방향이 뒤집혔다(마스터 확정 2026-10-03 「전부 평어」).** 아래 서술(09-05~06)은 「원문이 정중이니
-우리도 정중」 시절의 것이다. 지금은 **원문이 정중(`〜ました`)이어도 시스템·행동 로그는 평어체**로 간다
-(전투 로그가 평어라 한 화면에서 섞여 보인다는 마스터 QA). 그래서 이 검사기는 같은 부류(런타임 주입
-`%s` 블록 · 전투·아이템 코퍼스)에서 **정중 평서(`〜습니다`)가 남으면** 잡는다. 화면에 나가는 바이트를
-본다는 이점(정형 블록 조립기 · textmap)은 그대로다 — `check_log_register` 가 정본만 보는 구멍을 메운다.
+🔴 **방향이 다시 돌아왔다.** 09-05~06 「원문이 정중이니 우리도 정중」 → 10-03 「전부 평어」(평어가 남지 않게 정중을 잡았다) →
+**11-15 「전투로그 등도 원문방향으로」**: 원문 끝이 `〜ました/ます` 인데 우리가 평서(`~었다`)면, 원문이 `〜た` 인데 우리가 존대(`~습니다`)면 잡는다.
+화면에 나가는 바이트(정형 블록 조립기·textmap 포함)를 보고, 핫픽스 시험 경로(`ED_HOTFIX=1`) 값으로 잰다 — 제품(v1.2.0)은 잠겨 있다.
 
-**왜(2026-09-05~06).** 이번 주에만 원문과 갈린 자리를 넷 찾았고 **전부 유저 QA 로만** 나왔다:
-보물상자 정형 문구(`열었다`) · 아이템 획득(`얻었다`) · 포기(`포기했다`) · 전투 승패
-(`승리했다`·`패했다`). 원문은 넷 다 `〜ました` 다.
-
-기존 `check_log_register` 는 **정본(`script/*.json`)만** 봤다. 그런데 정형 블록은
-`stock_build` 가 JP 원문 매칭으로 **정본을 안 타고** 조립하고, 전투·아이템 문구는 아예
-`textmap/` 에 있다. ⇒ 정본을 정중으로 고쳐도 화면은 평어체였고 검사기는 통과했다.
-**그래서 이 검사기는 화면에 나가는 바이트를 본다**(patcher-checklist 「화면에 나가는
-바이트를 게이트로 본다」).
-
-## 무엇을 비교하나
-
-원문이 **정중**(`ました`·`ます`·`ません`·`です`)으로 끝나는데 우리가 **평어체**(`~었다`
-·`~했다` …)로 끝나면 잡는다.
-
-🔴 **NPC 대사는 대상이 아니다.** 한국어 말투는 인물·관계가 정하지 원문 종결어미가 정하지
-않는다(`ですます` 로 말하는 병사가 한국어로 반말일 수 있다). **화자 이름표가 없는
-블록**(시스템·해설·행동 로그)만 본다 — 거기서는 원문 종결이 곧 우리 종결이어야 한다.
-
-⚠ **ED2 는 보고만 한다** — 인게임 QA 를 아직 안 돌아 문안이 흔들릴 수 있다. 지금 못 고치는 걸
-실패로 치면 게이트가 늘 빨간불이 되고, 늘 빨간불인 검사는 아무도 안 본다.
-
-⚠ `--textmap` 은 **원본 이미지를 훑는다**(전투·아이템 코퍼스는 JP 를 저장하지 않는다 —
-저작권). 느리고 원본이 필요하니 **게이트에 안 넣는다.** 손으로 돌린다.
+화자 이름표가 없는 `%s` 주입 블록(시스템·행동 로그)과 전투·아이템 코퍼스만 본다(NPC 대사는 인물이 정한다).
+`--textmap` 은 원본 이미지를 훑는다(느림·게이트 밖).
 
   python3 tools/check_register_vs_jp.py             # 씬 전수 (게이트)
   python3 tools/check_register_vs_jp.py --textmap   # 전투·아이템 코퍼스 (원본 필요, 느림)
@@ -43,11 +19,13 @@ import sys
 from contextlib import redirect_stdout
 
 os.environ.setdefault("LOCK_BYPASS", "1")
+os.environ.setdefault("ED_HOTFIX", "1")  # 핫픽스 시험 경로 값으로 잰다(import 전에 정해야 한다)
 
 import reinsert_kr_pilot as R
 from reinsert_kr_pilot import SCN_FILES
 
 POLITE_JP = re.compile(r"(ました|ます|ません|でした|です)[。！？\s]*$")
+PLAIN_JP = re.compile(r"(?<!まし)(?<!でし)(た|だ)[。！？\s]*$")
 PLAIN_KR = re.compile(r"(었다|았다|였다|했다|한다|된다|이다)[.!?…\s]*$")
 # 10-03: 우리 쪽이 **정중 평서**로 끝나면 결함이다(물음 `〜습니까?`는 도구점 주인의 말이라 뺀다).
 POLITE_KR = re.compile(r"습니다[.!?…\s]*$")
@@ -96,7 +74,7 @@ def scan_scenes():
             kt = re.sub(r"%[csd]", "", k).strip()
             if not jt or not kt:
                 continue
-            if POLITE_KR.search(kt):
+            if (POLITE_JP.search(jt) and PLAIN_KR.search(kt)) or (PLAIN_JP.search(jt) and POLITE_KR.search(kt)):
                 out.append((name, eid, jt.replace("\n", " ")[-26:], kt.replace("\n", " ")[-30:]))
     return out
 
@@ -122,6 +100,9 @@ def scan_textmap():
                     x.get("ours", "") for x in e.get("parts", []) or [] if isinstance(x, dict)
                 )
             )
+            hp = p.parent.parent / "hotfix" / "textmap" / f"{cls}.json"  # 핫픽스 시험 경로 값이 나가는 문안이다
+            if hp.exists():
+                val = json.loads(hp.read_text(encoding="utf-8")).get(e["k"], val)
             if val:
                 keys[e["k"]] = (cls, val)
     src = glob.glob(
@@ -150,7 +131,8 @@ def scan_textmap():
         # 전투·아이템 코퍼스에는 NPC 대사(가이드·가드·왕비)가 섞여 있다 — 승패·획득·해방 같은
         # **시스템 결과 문구**만 본다(10-03).
         result = re.search(r"승리했|패했|Gold|얻었|포기했|찾았|익혔", txt)
-        if POLITE_KR.search(txt) and result:
+        jtail = j.replace("\x00", "").strip()
+        if result and ((POLITE_JP.search(jtail) and PLAIN_KR.search(txt)) or (PLAIN_JP.search(jtail) and POLITE_KR.search(txt))):
             out.append((cls, k, j.strip()[-26:], ours.strip()[-30:]))
     return out
 
@@ -158,19 +140,19 @@ def scan_textmap():
 def main():
     if "--textmap" in sys.argv:
         bad = scan_textmap()
-        print(f"  {'❌' if bad else '✅'} 전투·아이템 코퍼스 — 정중 평서가 남음: {len(bad)}")
+        print(f"  {'❌' if bad else '✅'} 전투·아이템 코퍼스 — 원문 등급과 다른 줄: {len(bad)}")
         for c, _k, j, o in bad:
             print(f"       [{c}] {j!r} → {o!r}")
         return 1 if bad else 0
     rows = scan_scenes()
     if rows:
         print(
-            f"  ❌ 로그 부류에 정중 평서가 남았다(평어체여야 한다): {len(rows)}곳 (화자 없는 블록만 셌다)"
+            f"  ❌ 로그 부류 문체가 원문 등급과 다르다(4-17 — 원문 ました→존댓말 · 원문 た→평서): {len(rows)}곳 (화자 없는 블록만 셌다)"
         )
         for n, e, j, k in rows[:20]:
             print(f"       {n}:{e}  JP …{j}  KR …{k}")
     else:
-        print("  ✅ 로그 부류(런타임 주입 블록)가 전부 평어체다 (ED1·ED2)")
+        print("  ✅ 로그 부류(런타임 주입 블록)가 전부 원문 등급이다 (ED1·ED2)")
     return 1 if rows else 0
 
 

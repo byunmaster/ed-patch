@@ -281,6 +281,9 @@ def main():
     # ⚠ `reinsert_kr_pilot._hang_merge` 와 **한 몸**이다 — 하나만 켜면 되레 나빠진다.
     run("patch_hang_punct.py")
     run("patch_gfx_title.py")  # START.DAT 타이틀 로고·버튼 TIM (FINAL 제자리 갱신)
+    # QA 디버그(`ED_DEBUG_QA=1`, 마스터 11-18) — 제품·핫픽스 롬에는 안 들어간다(스위치 없으면 아무것도 안 쓴다).
+    if os.environ.get("ED_DEBUG_QA") == "1":
+        run("patch_debug_qa.py")
     # 동영상 EXE — 넷이 내레이션을 한 벌씩 다 들고 각자 자기 몫만 튼다(읽기 BP 실측).
     # 그래서 파일마다 **자기 슬라이스만** 넣는다. END1·END2 는 세이브가 있어야 확인이 되므로
     # 인게임 검증 뒤에 붙인다.
@@ -307,6 +310,10 @@ def main():
     import patch_ascii_galmuri as _pag
 
     _pag.apply()
+    import patch_kagi_half as _pkh
+
+    _pkh.apply()  # 시험 전용 — ED_KAGI_HALF=1 일 때만(제품 빌드는 건너뛴다)
+    _pkh.apply_quote()  # 시험 전용 — ED_QUOTE_S=1 일 때만
     # 058ⓑ ④ — 글리프가 구워진 뒤에야 반각 문자열이 화면에 정상으로 나간다.
     _psu.apply_halfwidth_hud_slots()
     # 073 — 같은 이유로 글리프가 구워진 뒤에. `patch_scn_headers`(위, 사피아호수 전각)가
@@ -335,6 +342,10 @@ def main():
     import patch_scn_hud_copy as _pshc
 
     _pshc.apply()
+    # 원판 대사 사본 지우기(핫픽스 전용, 마스터 11-17) — 모든 텍스트 패치가 끝난 **뒤** 최종 이미지에서 찾는다.
+    import patch_erase_copies as _pec
+
+    _pec.apply()
     for stem in INTERMEDIATES + STALE:
         rm(stem)
     check_immutable()

@@ -267,9 +267,33 @@ def scan_between_games():
         print(f"      ⚠ 편마다 우세 표기가 다른 낱말 {split} — 정본을 정해 양쪽을 맞춘다")
 
 
+# 🔴 **화자 칸(`s`)의 금지 표기** — 이름창은 원문 블록에 이름창이 없어 우리가 얹는 경우가 있어(NAME_PLATE) 원문 낱말을 기준으로
+# 도는 위 대사 축이 못 본다(11-08 ED2SCN2 「대도적 게일」 4블록 — 정본 `大盗賊 ゲイル`=「대도 게일」, 마스터 「ed2도 대도 게일이 맞아」).
+# 정본이 아닌 화자 표기를 **금지어**로 적는다(제품 정본 `script/` 와 핫픽스 덮어쓰기 `hotfix/script/` 둘 다 본다).
+SPEAKER_BAN = {
+    "대도적 게일": ("대도 게일", "정본 大盗賊 ゲイル=대도 게일(마스터 ED1 「대도 게일로 통일」 · ED2 「ed2도 대도 게일이 맞아」 11-07)"),
+    "대도둑 게일": ("대도 게일", "같은 이름의 이형"),
+}
+
+
+def scan_speakers(verbose=False):
+    bad = 0
+    for sub in ("script", "hotfix/script"):
+        for path in sorted(glob.glob(os.path.join(common.ROOT, sub, "ED*.json"))):
+            with open(path, encoding="utf-8") as f:
+                d = json.load(f)
+            for k, v in d.items():
+                if isinstance(v, dict) and v.get("s") in SPEAKER_BAN:
+                    right, why = SPEAKER_BAN[v["s"]]
+                    bad += 1
+                    print(f"  ⚠ 화자 {os.path.basename(path)[:-5]}:{k} 「{v['s']}」 → 「{right}」 ({why})")
+    print(f"  화자 칸 금지 표기 — 어긋남 {bad}")
+    return bad
+
+
 if __name__ == "__main__":
     v = "-v" in sys.argv
-    bad = scan_dialog(v) + scan_ui(v) + scan_item_tables()
+    bad = scan_dialog(v) + scan_ui(v) + scan_item_tables() + scan_speakers(v)
     scan_between_games()
     print(f"\n{'✅ 용어가 한 표기다' if not bad else f'⚠ 용어가 갈린 곳 {bad}'}")
     sys.exit(1 if bad else 0)

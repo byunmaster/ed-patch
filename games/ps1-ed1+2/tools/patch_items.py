@@ -27,6 +27,7 @@ import struct
 import battle_text as BT
 import dict_tables as D
 import hangul_map as H
+import patch_kagi_half as KAGI_HALF
 from common import BUILD_DIR, MIPS_ADDIU, MIPS_ORI, extract, iter_lui_pairs, write_user_data
 from derive_text import jp_map
 
@@ -101,7 +102,7 @@ def enc(kr):
     """한글=한자슬롯, 숫자/공백=SJIS 반각."""
     out = b""
     for ch in kr:
-        out += H.encode_kr(ch) if "가" <= ch <= "힣" else ch.encode("shift_jis")
+        out += H.encode_kr(ch) if "가" <= ch <= "힣" else KAGI_HALF.sjis(ch)
     return out
 
 

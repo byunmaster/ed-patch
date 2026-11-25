@@ -20,6 +20,24 @@ PY="$ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY=python3
 T="$G/tools"
 
+# 🔴 핫픽스 대본(hotfix/script)이 있으면 **핫픽스를 덮은 빌드도 돈다**(11-12). 아래 빌드는 제품 태그라 오버레이를 안 읽는다 —
+#   핫픽스 문안이 제어문자 센티널을 잃어 `fmt_drop` 으로 탈락해도(실측 11-12 ED1SCN4 도구점) 여기선 초록이었고, 핫픽스 롬을
+#   굽는 순간에야 터졌다. 시험 꼬리표(`test-`)로 굽고(⚠ **제품 빌드보다 먼저** — 빌드가 `work/derived` 의 장부·중간물을 덮어써서, 핫픽스 빌드가 나중이면 아래 구조·되읽기 게이트가 제품 이미지를 핫픽스 상태의 중간물과 대조해 운다 11-12) 통과하면 칸을 지운다(실패 산출물은 `*.failed` 로 남아 원인을 본다).
+if ls "$G"/hotfix/script/*.json >/dev/null 2>&1; then
+  echo "  ── 핫픽스 덮은 빌드 (ED_HOTFIX=1 — 탈락 · 센티널 유실 · 구조 계약)"
+  HFLOG=$(mktemp)
+  if ED_HOTFIX=1 ED_BUILD_TAG=test-hotfix-gate "$PY" "$T/build.py" >"$HFLOG" 2>&1; then
+    rm -rf "$G/work/build/test-hotfix-gate"
+    echo "     ✅ 통과"
+  else
+    echo "  ❌ 핫픽스 덮은 빌드 실패 — ED_HOTFIX=1 ED_BUILD_TAG=test-hotfix-gate python3 games/ps1-ed1+2/tools/build.py — 끝 12줄:"
+    grep -v '^[[:space:]]*$' "$HFLOG" | tail -12 | sed 's/^/        /'
+    rm -f "$HFLOG"
+    exit 1
+  fi
+  rm -f "$HFLOG"
+fi
+
 echo "  ── 빌드 (구조 계약 · 무변경 구간 · 일본어 잔존 · 인자 센티널)"
 "$PY" "$T/build.py" >/dev/null || { echo "  ❌ 빌드 실패 — python3 games/ps1-ed1+2/tools/build.py"; exit 1; }
 echo "     ✅ 통과"
@@ -47,13 +65,19 @@ gate_fail() {
 #   창 틀이 갉힌다). 계측을 스크래치로 날리면 다음 사람이 또 잰다 — 늘 도는 축으로 남긴다.
 # 🔴 2026-09-27: check_typeset_rules(씬 조판 ①~④) · check_prewrap_rules(런타임 줄넘김 ①~④·⑦·⑧,
 #   ~90초 — 빌드 EXE 의 prewrap 을 통째로 실행한다) 추가. 둘 다 만들어 놓고 게이트에 안 물려 있었다.
+# 🔴 2026-10-29: check_exe_ctrl_tokens 추가(마스터 「대사 색상코드 누락 점검」, pce-ed1 에서 색 전환 옵코드 누락 35메시지) — 실행파일 문자열의
+#   %c(색 인자 자리)·%s·%d·제어 바이트 열을 원판과 짝지어 대조한다. 씬 블록은 아래 check_scn_structure 가 같은 일을 한다.
 # 🔴 2026-10-22: check_scn_structure 추가(마스터 「재배치사고 막는 정적검사」) — 원본↔최종 이미지의 대사 블록을 글자 빼고
 #   제어 코드 열로 짝지어 비교 + 포인터 착지 + 빈틈 + 재배치 장부(relocations.tsv) 일치. ss-ed3 에서 채움 바이트가
 #   다음 블록 호출을 막아 첫 장면 대사가 빠진 사고(10-21)가 문안·조판 게이트로는 안 잡혀서다.
-for t in check_own_tables check_ed2_sys_corpus check_ptr_target_coverage check_scn_structure check_tail_cut check_terms check_spellings check_forbidden check_proper_nouns check_battle_wrap check_battle_grid_wrap check_punct check_ellipsis check_name_echo check_onomatopoeia check_pointer_tables check_iso_layout check_readback check_movie_coverage check_card_centering check_window_nl check_log_register check_register_vs_jp check_jp_left check_scn_jp_left check_shop_verbs check_variants check_leader_variants check_window_frame check_scene_buf check_pointer_audit check_glyph_pairs check_jp_left_overlay check_hardcoded_ko check_ed2_stale_strcat check_battle_number_space check_typeset_rules check_prewrap_rules; do
+for t in check_own_tables check_ed2_sys_corpus check_ptr_target_coverage check_scn_structure check_exe_ctrl_tokens check_orig_breaks check_baked_typeset check_tail_cut check_register_alerts check_punct_marks check_terms check_spellings check_forbidden check_proper_nouns check_battle_wrap check_battle_grid_wrap check_punct check_ellipsis check_name_echo check_onomatopoeia check_pointer_tables check_iso_layout check_readback check_movie_coverage check_card_centering check_window_nl check_log_register check_register_vs_jp check_jp_left check_scn_jp_left check_shop_verbs check_variants check_leader_variants check_window_frame check_scene_buf check_pointer_audit check_glyph_pairs check_jp_left_overlay check_hardcoded_ko check_ed2_stale_strcat check_battle_number_space check_typeset_rules check_prewrap_rules check_exe_data_tables check_blank_lines check_join_blocks check_hud_banner_centering check_card_lean check_orig_copies; do
   out=$("$PY" "$T/$t.py" 2>&1) || gate_fail "$t" "$out"
   echo "$out" | tail -3 | sed 's/^/     /'
 done
+
+# 마스터 판정 문안 잠금(10-30) — 공용 판정기(`scripts/check/master_rulings.py`) + 이 게임 말뭉치 어댑터(`tools/rulings_corpus.py`)
+out=$("$PY" "$ROOT/scripts/check/master_rulings.py" --game ps1-ed1+2 2>&1) || gate_fail master_rulings "$out"
+echo "$out" | tail -3 | sed 's/^/     /'
 
 # 일본어 잔존 — ⚠ 탈락 없이도 원문이 남는 길이 **둘** 있다. ① 색 구간(`%c…%c`)을 못 채우면
 # 그 구간이 원문 그대로 나간다(ED2 49블록 실측). ② **정본에 항목조차 없는 블록** — 순회가
@@ -119,6 +143,10 @@ echo "$out" | sed 's/^/     /'
 # 아니다 — 폭 초과는 문안을 줄여야 하고, 하드개행 보호 블록은 사람이 다시 놓아야 한다).
 # 늘어나는지만 매 커밋 본다.
 "$PY" "$T/check_line_breaks.py" 2>&1 | tail -1 | sed 's/^/     /'
+
+# 줄·쪽 나눔 지표(번역 규칙 2-16) — **래칫 게이트**: a·b·c·d 가 기준선(page_split_baseline.json)보다 늘면 실패.
+out=$("$PY" "$T/check_page_split.py" 2>&1) || gate_fail check_page_split "$out"
+echo "$out" | grep "줄·쪽 나눔 지표" | sed 's/^/     /'
 
 if [ -n "$SCN" ]; then
   # shellcheck disable=SC2086

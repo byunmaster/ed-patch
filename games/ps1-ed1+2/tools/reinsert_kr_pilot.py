@@ -27,6 +27,7 @@ import shutil
 import sys
 
 import hangul_map
+import patch_kagi_half as KAGI_HALF
 from patch_hangul_glyph_table import QUOTE_CODES
 from common import (
     BUILD_DIR,
@@ -54,6 +55,11 @@ from text.krwrap import wrap_pages as kr_wrap_pages
 # 실행 중 os.environ 을 다시 보면, 도중에 import 되는 도구가 켠 우회에 빌드 검증이 조용히
 # 꺼진다 — 실제로 그렇게 됐다(2026-08-04, `lock_lines` import 만으로 검증 무력화).
 LOCK_BYPASS = os.environ.get("LOCK_BYPASS") == "1"
+
+# 🔴 **핫픽스 시험 경로** — `ED_HOTFIX=1` 일 때만 `hotfix/script/<씬>.json`(제품 정본 위에 덧씌우는 문안)을 읽는다.
+# 기본(끔)은 제품 바이트가 그대로다 — 배포(v1.2.1) 적용 여부는 마스터 판단이다.
+HOTFIX = os.environ.get("ED_HOTFIX") == "1"
+HOTFIX_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hotfix")
 
 ED_LBA, ED_SIZE = 257, 1021952  # ED.EXE (폰트 탑재 대상)
 ED2_LBA, ED2_SIZE = 756, 872448  # ED2.EXE — **폰트를 따로 들고 있다**(font_map.FONT_BASE)
@@ -227,6 +233,10 @@ def encode_ext(text):
             out += MC + PS + MC
         elif ch == " ":
             out.append(0x20)
+        elif ch in KAGI_HALF.CODES and KAGI_HALF.ENABLED:  # 시험 전용(ED_KAGI_HALF=1)
+            out.append(KAGI_HALF.CODES[ch])
+        elif KAGI_HALF.QUOTE_S and ch in KAGI_HALF.QUOTE_S_MAP:  # 시험 전용(ED_QUOTE_S=1) — 방향 없는 " '
+            out.append(KAGI_HALF.QUOTE_S_MAP[ch])
         elif ch in QUOTE_CODES:
             # 반각 여닫는 따옴표 “ ” — 전용 글리프 코드(patch_hangul_glyph_table)
             out.append(QUOTE_CODES[ch])
@@ -750,6 +760,10 @@ def spell_fix(t, game=None, *, punct=True):
     for a, b in replace:  # 단순 오타/맞춤법 리터럴 치환
         if not punct and b.startswith(a) and not b[len(a) :].strip(".!?…"):
             continue  # 부호만 덧붙이는 규칙
+        if HOTFIX and t.strip() == a and b.replace(" ", "") == a and " " in b:  # 띄어쓰기만 바꾸는 교정이고 블록 전체가 그 낱말
+            # 🔴 핫픽스 경로 — 블록 전체가 지명 하나(칸/HUD 플레이트)면 「칸 붙임·대화 띄움」 규칙상 붙임이 정본이다
+            #   (11-08: 곶의동굴·시련의동굴 HUD 플레이트가 이 교정으로 띄움이 돼 ED2.EXE 표(붙임)와 갈렸다). 대사 속 지명은 그대로 띄운다.
+            continue
         t = t.replace(a, b)
     return t
 
@@ -1003,6 +1017,8 @@ def cell_w(ch):
         return (NAME_SLOTS if ch == JOSA_NAME else ITEM_SLOTS) + 1
     if ch == NOBREAK_SP:
         return 0.5  # 보통 공백과 같은 폭(조판 후 공백으로 되돌린다)
+    if KAGI_HALF.ENABLED and ch in KAGI_HALF.CODES:
+        return 0.5  # 시험 전용 — 반각 「」
     return 0.5 if ch == " " or ch in HALF_PUNCT or ch in QUOTE_CODES or (ch.isascii() and ch.isalnum()) else 1.0
 
 
@@ -1125,7 +1141,9 @@ def bake_ellipsis(exe, game):
 
     font_map.verify_ellipsis(exe, game)  # 덮기 전에 그 자리가 정말 `…` 인지 모양으로 검산
     o = font_map.ku1_glyph_ed_offset(font_map.ELLIPSIS_SJIS, game)
-    exe[o : o + font_map.GLYPH_STRIDE] = font_map.ellipsis_baseline_glyph(exe, game)
+    exe[o : o + font_map.GLYPH_STRIDE] = font_map.ellipsis_baseline_glyph(
+        exe, game, square=HOTFIX
+    )
 
 
 # 매달 수 있는 꼬리 부호 — **반각 1열**이라 29열에 앉는다(`patch_hang_punct.py`).
@@ -1203,6 +1221,10 @@ def _hang_merge(pages, width, protect):
     return out
 
 
+STUTTER_MARK = "\ue00a"  # 낱말 속 말줄임 자리표시(조판 중에만) — 종결부호가 아니라 문장 경계로 안 읽힌다
+_STUTTER_ELL = re.compile("(?<=[가-힣])…(?=[가-힣])")
+
+
 def wrap_page(text, width=WRAP, target=None, max_lines=None):
     """공통 줄바꿈 유틸(shared/text/krwrap.wrap_pages): 원문 {n} 줄바꿈을 존중하고
     폭(WRAP) 넘는 줄만 재줄바꿈 + 금칙 + 짧은조각 병합, 창(3줄)은 문장 그룹 단위로
@@ -1220,6 +1242,10 @@ def wrap_page(text, width=WRAP, target=None, max_lines=None):
     #    (실측 1곳: `텐데… !?` 가 공백을 단 채 화면까지 나갔다).
     #    ⚠ `shared/` 는 main 몫이라 여기서 못 고친다 — **의존을 끊는다.** 사본을 만들지 않고
     #    같은 함수를 부르므로 규칙이 두 곳에 생기지는 않는다.
+    # 낱말을 끊어 읽는 말줄임(「동…료…」 — 한글 사이 공백 없는 `…`)은 한 덩어리다. 공용 `split_sentences` 가
+    # `…` 뒤 한글을 문장 경계로 봐서 음절마다 줄이 갈린다(ED2SCN3:775 — 마스터 11-14, 2-19: 문안 말고 조판을 고친다).
+    # `shared/` 는 main 몫이라 여기서 종결부호가 아닌 자리표시 글자로 바꿨다가 되돌린다.
+    text = _STUTTER_ELL.sub(STUTTER_MARK, text)
     text = _kr_strip_before(text, ".,!?")
     text = _bind_num_unit(text, width)
     text, folded = _fold_josa(text)  # 병기 → 1슬롯(런타임 훅 해결 후 폭)
@@ -1242,7 +1268,7 @@ def wrap_page(text, width=WRAP, target=None, max_lines=None):
         ),
         folded,
     )
-    return [[ln.replace(NOBREAK_SP, " ") for ln in pg] for pg in pages]
+    return [[ln.replace(NOBREAK_SP, " ").replace(STUTTER_MARK, "…") for ln in pg] for pg in pages]
 
 
 # ── 원본 템플릿 채우기 ──────────────────────────────────────────────────────
@@ -1667,7 +1693,8 @@ def stock_build(raw):
     # 🔴 **평어체로 되돌렸다**(마스터 10-03 「전부 평어」 — 09-03 정중 판정을 번복). DOS 소스가 정중이라
     # 여기서 `to_plain` 으로 종결어미를 바꾼다(문안은 DOS 파생 그대로, 어미만). 화면에서만 드러나는
     # 자리다 — `check_log_register` 는 `script/*.json` 만 보므로 이 경로를 못 본다(09-05 사고와 같다).
-    a, b2, re1, re2 = (to_plain(x) for x in (a, b2, re1, re2))
+    if not HOTFIX:  # 제품(v1.2.0)은 평어체 그대로 — 핫픽스 시험 경로는 원문 등급(원문 ました → 존댓말, 번역 규칙 4-17 확장, 마스터 11-15)
+        a, b2, re1, re2 = (to_plain(x) for x in (a, b2, re1, re2))
     # 🔴 문안 길이가 한계다 — 10-03 에 정본 블록과 같게 「보물상자 안에는 … 들어 있었다」로 늘려 봤더니 정형 블록이
     #   `size` 로 탈락해 일본어가 나갔다(ED2SCN13 13건·ED1SCN6 10건 실측). 그래서 **짧은 쪽(상자에는 … 있었다)이 표준**이고
     #   정본 블록(`script/*.json`)을 이쪽으로 맞춘다.
@@ -1690,13 +1717,25 @@ def stock_build(raw):
         # (세리오스·아트라스)도 29열에 꼬리 온점이 앉아 한 줄에 들어가고(드로어 훅이 29열 줄 뒤 개행의 빈 줄을 막는다),
         # 짧은 이름은 더 여유롭다. 이름 뒤 병기가 줄 경계에서 안 쪼개지는 것도 이쪽이 더 안전하다.
         first_line = JOSA_NAME + " " + first
+        if HOTFIX and " " in first:
+            # 존댓말(「열었습니다」)은 두 글자 길어 첫 줄이 29열을 넘는다 — 문안을 줄이지 않고 **조판으로 푼다**(2-19, 마스터 11-15):
+            # 이름+「보물상자를」 / 「열었습니다.」 두 줄(낱말 속에서 안 꺾인다). 평어(제품)는 한 줄 그대로.
+            _l, _, _r = first.rpartition(" ")
+            first_line = JOSA_NAME + " " + _l + "\n" + _r
         # 둘째 줄도 조판기에 맡기지 않는다(마스터 10-05) — 조병기 원자(`이(가)`)를 세 글자로 쳐서 「상자에는 레스의 잎이 /
         # 있었다.」로 한 줄에 들어갈 문장을 둘로 갈랐다. 한 줄로 내보내고 길어지면(긴 아이템 이름) 엔진 prewrap 이
         # 어절에서 꺾는다. 문안은 표준 「상자에는 ⟨아이템⟩이(가) 있었다.」 하나다(「들어 있었다」는 칸이 모자라고
         # 길어서 한 줄에 안 들어간다).
         second_line = rest.strip() + " " + JOSA_ITEM + " " + b2.replace("들어 있었", "있었")
         blk = bytearray()
-        for i, ln in enumerate([first_line, second_line]):
+        if HOTFIX:
+            # 존대 둘째 줄은 이름 뒤 어절 경계에서 접는다 — 「상자에는 ⟨이름⟩이(가)」 / 「있었습니다.」(이름이 8음절까지 가도 27열 이내). 엔진은 낱말 속에서
+            # 꺾으므로(캡처 11-15) 줄바꿈을 우리가 박는다. 평어(제품)는 한 줄 그대로.
+            _sl, _, _sr = second_line.rpartition(" ")
+            second_lines = [_sl, _sr]
+        else:
+            second_lines = [second_line]
+        for i, ln in enumerate([*first_line.split("\n"), *second_lines]):
             if i:
                 blk += b"\x0a"
             for part in re.split(f"([{JOSA_NAME}{JOSA_ITEM}])", ln):
@@ -3071,7 +3110,24 @@ def _load_script():
         if name.endswith(".json"):
             with open(os.path.join(SCRIPT_DIR, name), encoding="utf-8") as f:
                 out[name[:-5]] = json.load(f)
+    if HOTFIX:  # 시험 경로 — 제품 정본 위에 핫픽스 문안을 덮는다(블록 단위)
+        hdir = os.path.join(HOTFIX_DIR, "script")
+        for name in sorted(os.listdir(hdir)) if os.path.isdir(hdir) else ():
+            if name.endswith(".json"):
+                with open(os.path.join(hdir, name), encoding="utf-8") as f:
+                    for eid, v in json.load(f).items():
+                        if not eid.startswith("_"):
+                            out.setdefault(name[:-5], {})[eid] = v
     return out
+
+
+def hotfix_eids(scn):
+    """핫픽스가 덮는 블록 번호(문자열→int) — 확정 락이 이 블록의 문안 변경을 위반으로 세지 않게 한다."""
+    p = os.path.join(HOTFIX_DIR, "script", f"{scn}.json")
+    if not (HOTFIX and os.path.exists(p)):
+        return set()
+    with open(p, encoding="utf-8") as f:
+        return {int(k) for k in json.load(f) if not k.startswith("_")}
 
 
 # 배정 시대의 필드 — 정본 문안이 있으면 **전부 무효**다(문안이 이미 완성형이니까).
@@ -3807,6 +3863,9 @@ def load_translations(align_name, scn_name):
         from lock_lines import verify as _lock_verify
 
         bad = _lock_verify(scn_name, out)
+        if HOTFIX:  # 핫픽스가 일부러 바꾼 블록은 락 위반이 아니다(제품 정본은 그대로 잠겨 있다)
+            hf = hotfix_eids(scn_name)
+            bad = [b for b in bad if b[0] not in hf]
     if bad:
         head = " · ".join(f"jp{e}({a}→{b})" for e, a, b in bad[:8])
         raise SystemExit(
