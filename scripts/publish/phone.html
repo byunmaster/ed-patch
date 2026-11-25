@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>영웅전설 빌드함</title>
+<!--
+  폰 QA(마스터 2026-11-09 「저번에 스팀덱용 테스트플레이어 만들었던것 처럼 안드로이드로도」 → (가)).
+  게임은 안드로이드 RetroArch 로 돌리고, 이 페이지는 받기(빌드·BIOS·세이브)와 올리기(캡처·메모)만 한다.
+  서버 API 는 스팀덱 앱(scripts/deck/edqa.py)과 같은 것을 쓴다 — 캡처는 같은 수신함
+  `.local/work/inbox/<게임>/deck/<꼬리표>/NNN.png·.txt` 로 가서 워커가 그대로 읽는다.
+  ⚠ 서버는 PNG 만 받는다 — 갤러리 그림이 JPEG 등이어도 여기서 캔버스로 PNG 로 바꿔 보낸다.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #f3f2ee; --surface: #ffffff; --ink: #1f2328; --muted: #6a6f76; --line: #dcdad3;
+  --accent: #b5561c; --accent-soft: #f6e6da; --build: #1f6f5c; --build-soft: #dcefe8;
+  --save: #4b5a8a; --save-soft: #e3e7f4; --warn: #9a3412;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171a; --surface: #1d2024; --ink: #e7e5df; --muted: #9aa0a7; --line: #2f3338;
+    --accent: #e08a4f; --accent-soft: #3a2a1f; --build: #6cc3a8; --build-soft: #1c332c;
+    --save: #9fb0e6; --save-soft: #232a40; --warn: #f0a070;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171a; --surface: #1d2024; --ink: #e7e5df; --muted: #9aa0a7; --line: #2f3338;
+  --accent: #e08a4f; --accent-soft: #3a2a1f; --build: #6cc3a8; --build-soft: #1c332c;
+  --save: #9fb0e6; --save-soft: #232a40; --warn: #f0a070;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.55 "IBM Plex Sans KR", system-ui, sans-serif; }
+main { max-width: 640px; margin: 0 auto; padding: 16px 16px 48px; display: grid; gap: 14px; }
+h1 { font-size: 20px; margin: 4px 0 0; }
+.sub { color: var(--muted); font-size: 13px; margin: 0; }
+section { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 10px; }
+h2 { font-size: 15px; margin: 0; display: flex; gap: 8px; align-items: baseline; }
+h2 .n { font: 500 12px "IBM Plex Mono", monospace; color: var(--accent); }
+label { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
+select, textarea, input[type=file] { font: inherit; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px; width: 100%; }
+textarea { min-height: 84px; resize: vertical; }
+.row { display: flex; gap: 8px; align-items: center; justify-content: space-between;
+  padding: 10px 0; border-top: 1px solid var(--line); }
+.row:first-child { border-top: 0; }
+.row .name { font: 500 13px "IBM Plex Mono", monospace; word-break: break-all; }
+.row .meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+a.btn, button { font: 600 14px "IBM Plex Sans KR", sans-serif; border: 0; border-radius: 8px;
+  padding: 10px 14px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+a.btn { background: var(--build-soft); color: var(--build); }
+a.btn.save { background: var(--save-soft); color: var(--save); }
+button.go { background: var(--accent); color: #fff; width: 100%; padding: 13px; }
+button.del { background: transparent; color: var(--muted); padding: 6px 8px; font-weight: 400; }
+button:disabled { opacity: .5; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.guide { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+.guide b { color: var(--accent); }
+.guide ol { margin: 6px 0 0; padding-left: 18px; }
+.note { color: var(--warn); font-size: 13px; }
+.shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.shot { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--bg); }
+.shot img { width: 100%; display: block; image-rendering: pixelated; }
+.shot .cap { padding: 6px 8px; font-size: 12px; display: flex; justify-content: space-between; gap: 6px; }
+.shot .memo { padding: 0 8px 8px; font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+#status { font-size: 13px; min-height: 1.4em; }
+code { font: 12px "IBM Plex Mono", monospace; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>영웅전설 빌드함</h1>
+    <p class="sub">브라우저에서 바로 실행하거나, 받아서 RetroArch·PCE.emu 로 돌립니다. 올린 캡처는 워커 수신함으로 바로 갑니다. <a href="/old.html">예전 폴더 목록</a></p>
+  </div>
+
+  <section>
+    <h2><span class="n">1</span>게임·빌드</h2>
+    <label>게임 <select id="game"></select></label>
+    <label>빌드(꼬리표) <select id="tag"></select></label>
+    <div id="guide" class="guide"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span>실행·받기</h2>
+    <div id="play"></div>
+    <p class="sub">아래 파일을 <b>모두</b> 같은 폴더에 받은 뒤 RetroArch 「콘텐츠 불러오기」에서 <code>.cue</code>(카트리지는 롬 파일)를 고르세요.</p>
+    <div id="files"></div>
+  </section>
+
+  <section id="biosSec" hidden>
+    <h2><span class="n">3</span>BIOS</h2>
+    <p class="sub">RetroArch 의 <code>system</code> 폴더(설정 → 디렉터리 → 시스템/BIOS)에 넣습니다. 한 번만 하면 됩니다.</p>
+    <div id="bios"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">4</span>세이브</h2>
+    <p class="sub" id="saveNote"></p>
+    <div id="saves"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">5</span>캡처·메모 올리기</h2>
+    <label>그림(여러 장 가능 — RetroArch 스크린샷이나 폰 화면 캡처) <input id="pick" type="file" accept="image/*" multiple></label>
+    <label>메모(한 번에 올리는 그림 모두에 붙습니다 — 비워도 됩니다) <textarea id="memo" placeholder="예: 레벨업 배분 확인 창 위쪽 빈 틀"></textarea></label>
+    <button id="send" class="go">올리기</button>
+    <div id="status"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">6</span>이 빌드에 올린 것</h2>
+    <div id="shots" class="shots"></div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const enc = s => encodeURIComponent(s);
+const CORE = {
+  pce: { core: "PCE.emu 앱(권장) 또는 RetroArch Beetle PCE", bios: "pce", rename: { "Syscard3.pce": "syscard3.pce" },
+         need: "syscard3.pce 하나면 됩니다(아래에서 받기 — PCE.emu 는 옵션의 System Card 경로에서 이 파일을 고르고, RetroArch 는 system 폴더에)." },
+  ps1: { core: "PCSX ReARMed (폰에서 가볍습니다 · BIOS 없이도 돌지만 넣는 게 낫습니다)", bios: "psx",
+         rename: { "SCPH5500.BIN": "scph5500.bin" }, need: "일본판은 scph5500.bin." },
+  ss:  { core: "Beetle Saturn (무겁습니다 — 느리면 Yaba Sanshiro 앱)", bios: "saturn",
+         rename: { "SEGA_101 BIOS.bin": "sega_101.bin" }, need: "일본판은 sega_101.bin." },
+  sfc: { core: "Snes9x", need: "" },
+  md:  { core: "Genesis Plus GX", need: "" },
+};
+const PLAT_NAME = { ps1: "PS1", ss: "새턴", pce: "PCE", sfc: "SFC", md: "MD", dos: "DOS", pc98: "PC-98" };
+let DATA = null;
+const mb = n => n >= 1 << 20 ? (n / 1048576).toFixed(1) + " MB" : (n / 1024).toFixed(0) + " KB";
+const when = t => new Date(t * 1000).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const remember = (k, v) => { try { v === undefined ? (v = localStorage.getItem(k)) : localStorage.setItem(k, v); } catch (e) {} return v; };
+
+async function load() {
+  DATA = await (await fetch("/api/builds", { cache: "no-store" })).json();
+  const g = $("game");
+  g.innerHTML = DATA.games.map(x => `<option value="${x.game}">${PLAT_NAME[x.platform] || x.platform} · ${x.game}</option>`).join("");
+  const last = remember("phone.game");
+  if (last && DATA.games.some(x => x.game === last)) g.value = last;
+  pickGame();
+}
+function game() { return DATA.games.find(x => x.game === $("game").value); }
+function build() { const g = game(); return g && g.builds.find(b => b.tag === $("tag").value); }
+function romStem() {
+  const b = build(); if (!b) return "";
+  const f = b.files.find(x => /\.cue$/i.test(x.name)) || b.files.find(x => /\.(sfc|smc|md|gen|bin|iso)$/i.test(x.name));
+  return f ? f.name.replace(/\.[^.]+$/, "") : "";
+}
+function pickGame() {
+  const g = game(); if (!g) return;
+  remember("phone.game", g.game);
+  $("tag").innerHTML = g.builds.map(b => `<option>${b.tag}</option>`).join("");
+  const lastTag = remember("phone.tag." + g.game);
+  if (lastTag && g.builds.some(b => b.tag === lastTag)) $("tag").value = lastTag;
+  const c = CORE[g.platform] || { core: "—", need: "" };
+  $("guide").innerHTML = `<b>RetroArch 코어</b>: ${c.core}` + (c.need ? `<br><b>BIOS</b>: ${c.need}` : "") +
+    `<ol><li>빌드 파일을 모두 받기</li>${c.bios ? "<li>BIOS 를 system 폴더에(처음 한 번)</li>" : ""}<li>세이브가 필요하면 saves 폴더에</li><li>플레이하다 이상하면 스크린샷 → 5번에서 올리기</li></ol>`;
+  pickTag();
+  showBios(g.platform);
+  showSaves();
+}
+function pickTag() {
+  const g = game(), b = build(); if (!b) return;
+  remember("phone.tag." + g.game, b.tag);
+  showPlay(g, b);
+  $("files").innerHTML = b.files.filter(f => !/\.(src|failed)$/i.test(f.name)).map(f =>
+    `<div class="row"><div><div class="name">${f.name}</div><div class="meta">${mb(f.size)} · ${when(f.mtime)}${f.sha1 ? " · sha1 " + f.sha1.slice(0, 8) : ""}</div></div>
+     <a class="btn" href="/${enc(g.game)}/${enc(b.tag)}/${enc(f.name)}" download>받기</a></div>`).join("") || `<p class="sub">파일 없음</p>`;
+  showSaves();
+  showShots();
+}
+const DISC_CORE = { pce: ["pce", "/bios/pce/syscard3.pce"], ps1: ["psx", "/bios/psx/scph5500.bin"], ss: ["segaSaturn", "/bios/saturn/saturn_bios.bin"] };
+async function showPlay(g, b) {
+  // 브라우저 바로 실행(EmulatorJS, run.html) — 카트리지는 롬 그대로, 디스크는 서버가 cue+bin 을 zip 하나로 준다.
+  //   ⚠ 디스크는 처음 한 번 zip 을 만드느라 늦게 뜬다(수백 MB). 세이브는 카트리지만 자동으로 넣는다.
+  let url = "";
+  const cart = b.files.find(f => /\.(sfc|smc)$/i.test(f.name)) || (g.platform === "md" && b.files.find(f => /\.bin$/i.test(f.name)));
+  if (cart) {
+    const name = g.platform === "md" ? cart.name.replace(/\.bin$/i, ".md") : cart.name;
+    const rom = `/${enc(g.game)}/${enc(b.tag)}/${enc(name)}`;
+    const srm = `/${enc(g.game)}/${enc(b.tag)}/${enc(cart.name.replace(/\.[^.]+$/, ".srm"))}`;
+    let save = "";
+    try { if ((await fetch(srm, { method: "HEAD", cache: "no-store" })).ok) save = "&save=" + enc(srm); } catch (e) {}
+    url = `/run.html?rom=${enc(rom)}${save}`;
+  } else if (DISC_CORE[g.platform] && b.files.some(f => /\.cue$/i.test(f.name))) {
+    const [core, bios] = DISC_CORE[g.platform];
+    url = `/run.html?rom=${enc(`/api/zip/${enc(g.game)}/${enc(b.tag)}.zip`)}&core=${core}&bios=${enc(bios)}`;
+  }
+  $("play").innerHTML = url
+    ? `<a class="btn" style="display:block;text-align:center;padding:13px;background:var(--accent);color:#fff" href="${url}">▶ 브라우저에서 바로 실행</a>` +
+      (cart ? "" : `<p class="sub" style="margin:6px 0 0">디스크 게임은 처음 한 번 묶느라 늦게 뜹니다. 세이브는 실행 화면 메뉴의 세이브 불러오기로 넣으세요.</p>`)
+    : `<p class="sub">이 기종은 바로 실행이 아직 없습니다 — 아래에서 받아 여세요.</p>`;
+}
+async function showBios(plat) {
+  const c = CORE[plat];
+  if (!c || !c.bios) { $("biosSec").hidden = true; return; }
+  $("biosSec").hidden = false;
+  const r = await (await fetch("/api/bios/" + c.bios, { cache: "no-store" })).json();
+  const want = c.rename || {};
+  const files = r.files.filter(f => /\.(bin|pce)$/i.test(f.name) && !/emucap|orig/i.test(f.name));
+  files.sort((a, b) => (want[b.name] ? 1 : 0) - (want[a.name] ? 1 : 0));
+  $("bios").innerHTML = files.map(f => {
+    const as = want[f.name];
+    return `<div class="row"><div><div class="name">${f.name}</div><div class="meta">${mb(f.size)}${as ? " · 필요한 것" : ""}</div></div>
+      <a class="btn${as ? "" : " save"}" href="/bios/${c.bios}/${enc(f.name)}" download="${as || f.name}">${as ? "「" + as + "」로 받기" : "받기"}</a></div>`;
+  }).join("");
+}
+async function showSaves() {
+  const g = game(); if (!g) return;
+  const r = await (await fetch("/api/saves/" + enc(g.game), { cache: "no-store" })).json();
+  const stem = romStem(), pce = g.platform === "pce";
+  // PCE.emu(안드로이드, Mednafen 기반): 세이브 이름 = <콘텐츠 이름>[.<MD5>].sav — 옵션 「Save Filename Type」을
+  // 「No MD5」로 두면 <cue 이름>.sav 하나로 맞는다(EmuFramework MDFNUtils.hh savePathMDFN). RetroArch 는 <롬 이름>.srm.
+  // PCE.emu 기본(「Save Filename Type」 Default) 이름은 <cue 이름>.<MD5>.sav — 마스터 11-09 「해시값이 포함되어야해」.
+  // MD5 는 PCE.emu 가 디스크에서 계산한 값이라 서버가 모른다 → 게임별로 한 번 적어 두면 기억한다(PCE.emu 가 만든 .sav 이름에서 복사).
+  const known = { "pce-ed2": "18a155143556eb05e3c2eb956e2baa5d" };
+  const h = pce ? (remember("phone.pcehash." + g.game) || known[g.game] || "") : "";
+  const as = pce ? (h ? `${stem}.${h}.sav` : stem + ".sav") : stem + ".srm";
+  const label = pce ? "PCE.emu 이름으로 받기" : "RetroArch 이름으로 받기";
+  $("saves").innerHTML = r.files.length ? r.files.slice().sort((a, b) => b.mtime - a.mtime).map(f => {
+    const href = `/${enc(g.game)}/saves/${enc(f.name)}`;
+    const extra = pce && stem ? `<a class="btn" href="${href}" download="${stem}.srm">RetroArch</a>` : "";
+    return `<div class="row"><div><div class="name">${f.name}</div><div class="meta">${mb(f.size)} · ${when(f.mtime)}</div></div>
+     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><a class="btn save" href="${href}" download="${stem ? as : f.name}">${stem ? label : "받기"}</a>${extra}</div></div>`;
+  }).join("") : `<p class="sub">이 게임 세이브 칸이 비어 있습니다.</p>`;
+  $("saveNote").innerHTML = pce
+    ? `PCE.emu 세이브 이름은 <code>${stem || "롬이름"}.<i>해시</i>.sav</code> — 해시(PCE.emu 가 만든 .sav 이름 가운데 32자리):<input id="pcehash" value="${h}" placeholder="32자리" style="font:12px IBM Plex Mono,monospace;width:100%;margin:4px 0;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)">받은 파일을 PCE.emu 세이브 폴더(기본은 게임 파일과 같은 폴더)에, 게임을 끈 상태에서 넣으세요.`
+    : "「RetroArch 이름으로 받기」는 롬 이름 + <code>.srm</code> 으로 받습니다 — RetroArch <code>saves</code> 폴더에(게임을 끈 상태에서).";
+  const hi = $("pcehash");
+  if (hi) hi.onchange = () => {
+    const v = hi.value.trim().toLowerCase();
+    if (!v || /^[0-9a-f]{32}$/.test(v)) { remember("phone.pcehash." + g.game, v); showSaves(); } else hi.value = h;
+  };
+}
+async function showShots() {
+  const g = game(), b = build(); if (!b) return;
+  const r = await (await fetch("/api/qa/" + enc(g.game), { cache: "no-store" })).json();
+  const t = (r.tags || []).find(x => x.tag === b.tag);
+  $("shots").innerHTML = t ? t.items.slice().reverse().map(it =>
+    `<div class="shot"><a href="/${enc(g.game)}/qa/${enc(b.tag)}/${it.n}.png" target="_blank"><img loading="lazy" src="/${enc(g.game)}/qa/${enc(b.tag)}/${it.n}.png?v=${it.mtime}" alt="캡처 ${it.n}"></a>
+     <div class="cap"><span>${it.n}</span><button class="del" data-n="${it.n}">지우기</button></div>
+     ${it.memo ? `<div class="memo"></div>` : ""}</div>`).join("") : `<p class="sub">아직 없음</p>`;
+  if (t) t.items.slice().reverse().forEach((it, i) => {
+    const m = $("shots").children[i].querySelector(".memo"); if (m) m.textContent = it.memo;
+  });
+}
+async function toPng(file) {
+  if (file.type === "image/png") return file;
+  const bmp = await createImageBitmap(file);
+  const c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height;
+  c.getContext("2d").drawImage(bmp, 0, 0);
+  return await new Promise(ok => c.toBlob(ok, "image/png"));
+}
+$("send").onclick = async () => {
+  const g = game(), b = build(), files = [...$("pick").files];
+  if (!b) return;
+  if (!files.length) { $("status").textContent = "그림을 먼저 고르세요."; return; }
+  $("send").disabled = true;
+  const memo = $("memo").value.trim();
+  let ok = 0;
+  try {
+    for (const f of files) {
+      $("status").textContent = `올리는 중 ${ok + 1}/${files.length}…`;
+      const png = await toPng(f);
+      const r = await fetch(`/api/qa/${enc(g.game)}/${enc(b.tag)}/new.png`, { method: "PUT", body: png });
+      if (!r.ok) throw new Error("그림 " + r.status);
+      const n = decodeURIComponent(r.headers.get("X-Saved-As") || "");
+      if (memo && n) {
+        const m = await fetch(`/api/qa/${enc(g.game)}/${enc(b.tag)}/${n}.txt`, { method: "PUT", body: memo });
+        if (!m.ok) throw new Error("메모 " + m.status);
+      }
+      ok++;
+    }
+    $("status").textContent = `올렸습니다 — ${ok}장.`;
+    $("pick").value = ""; $("memo").value = "";
+  } catch (e) {
+    $("status").textContent = `${ok}장 올리고 멈췄습니다(${e.message}). 다시 눌러 주세요.`;
+  }
+  $("send").disabled = false;
+  showShots();
+};
+$("shots").addEventListener("click", async e => {
+  const n = e.target.dataset && e.target.dataset.n; if (!n) return;
+  if (!confirm(n + " 번을 지울까요? (휴지통으로 옮깁니다)")) return;
+  await fetch(`/api/qa/${enc(game().game)}/${enc(build().tag)}/${n}`, { method: "DELETE" });
+  showShots();
+});
+$("game").onchange = pickGame;
+$("tag").onchange = pickTag;
+load().catch(e => { $("status").textContent = "목록을 못 읽었습니다: " + e.message; });
+</script>
+</body>
+</html>

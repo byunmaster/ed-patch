@@ -111,11 +111,17 @@ for g in $GAMES; do
   sp_out=$("$PY" "$ROOT/scripts/check/check_spell_rules.py" --game "$g" 2>&1) || sp_rc=$?
   printf '%s\n' "$sp_out" | sed 's/^/  /'
   [ "$sp_rc" -eq 0 ] || fail=1
+  # 말투 흔적 — 「저/여러분」+반말 · 「요」만 뗀 꼴(죄송해·안녕히 계셔·~습지·Gold이야)(페이블 검수 11-14).
+  # 🟡 지금은 알림 — 높음 적용이 끝나 0 이 되면 --strict 로 실패로 올린다. 어댑터 없음(rc 2)도 알림.
+  rg_out=$("$PY" "$ROOT/scripts/check/check_register_marks.py" --game "$g" 2>&1) || true
+  printf '%s\n' "$rg_out" | grep -v '^names_corpus' | sed 's/^/  /'
   # 저작권 — 긴 일본어 덩이(원문 문장)가 기준선보다 늘면 실패(래칫, 10-09 저작권 정리 라운드)
   cr_rc=0
   cr_out=$("$PY" "$ROOT/scripts/check/check_copyright.py" --game "$g" 2>&1) || cr_rc=$?
   printf '%s\n' "$cr_out" | sed 's/^/  /'
   [ "$cr_rc" -eq 0 ] || fail=1
+  # 배포 파일 신선도 — dist 가 제품 롬보다 낡으면 알림(막지 않음, 마스터 11-06 「낡은 롬 막는 장치」)
+  "$PY" "$ROOT/scripts/check/check_stale_dist.py" --game "$g" 2>&1 | sed 's/^/  /' || true
 done
 echo "── 저작권(공용)"
 cr_rc=0

@@ -60,11 +60,16 @@ body { display: flex; flex-direction: column; }
 <script>
 // 롬 확장자 → EmulatorJS 코어 이름. 여기 없는 기종은 실행 버튼이 안 뜬다(index.html 도 이 표를 본다).
 const CORES = { sfc: "snes", smc: "snes", md: "segaMD", gen: "segaMD", smd: "segaMD" };
+// 디스크 기종(마스터 11-09 「ps1 ss pce도 웹플레이어 세팅해두자」) — 서버가 cue+bin 을 zip 하나로 준다
+//   (`/api/zip/<게임>/<꼬리표>.zip`). 코어는 `core=` 로, BIOS 는 `bios=`(EJS_biosUrl)로 받는다.
+const DISC = { pce: "pce", psx: "psx", segaSaturn: "segaSaturn" };
 const q = new URLSearchParams(location.search);
 const rom = q.get("rom");
 const save = q.get("save");
+const bios = q.get("bios");
 const msg = document.getElementById("msg");
 const ext = (rom || "").split(".").pop().toLowerCase();
+if (q.get("core") && DISC[q.get("core")]) CORES[ext] = DISC[q.get("core")];
 
 if (!rom || !CORES[ext]) {
   msg.textContent = "이 파일은 아직 바로 실행을 못 합니다 — 목록에서 받아서 여세요.";
@@ -90,6 +95,7 @@ if (!rom || !CORES[ext]) {
   window.EJS_gameUrl = `${rom}?v=${ver}`;
   window.EJS_gameName = name.replace(/\.[^.]+$/, "");
   window.EJS_pathtodata = "https://cdn.emulatorjs.org/stable/data/";
+  if (bios) window.EJS_biosUrl = bios;
   window.EJS_startOnLoaded = true;
   // 🔴 롬 캐시를 끈다 — EmulatorJS 는 롬을 「파일 이름 + 크기」로 브라우저에 캐시해서, 같은 이름·같은
   //   크기로 새로 구운 빌드(SFC 는 늘 2MB)를 받아도 **옛 롬을 그대로 돌린다**(09-25 마스터 실기: 새 빌드를

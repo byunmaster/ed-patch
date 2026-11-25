@@ -35,7 +35,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import mednafen_cfg  # noqa: E402
+import mednafen_cfg
 
 # SDL 스캔코드
 KEY = {
@@ -82,18 +82,17 @@ LAYOUT = {
     },
     "md.input.port1.gamepad6": {**DPAD, "x": "q", "y": "w", "z": "e", "a": "a", "b": "s", "c": "d"},
     "md.input.port1.gamepad": {**DPAD, "a": "a", "b": "s", "c": "d"},
-    # 🔴 다이아몬드를 45도 돌려 2×2 에 얹는다 — Y 왼쪽 · X 위 · B 아래 · A 오른쪽이
-    #    q Y / w X / a B / s A 로 간다(유저 정정 2026-09-07).
-    #    ⚠ 종전엔 반대로 돌아가 `s=B`(취소)였다 — **이 파일이 스스로 적어 둔
-    #      「확인은 어느 기종에서나 s」를 어기고 있었다.** SFC 확인은 A 다.
+    # 🔴 SFC 는 아랫줄 a·s·d = Y·B·A, 윗줄 w = X, 어깨 q·e = L·R (마스터 2026-11-22
+    #    「A=Y, S=B, D=A, W=X, Q=L, E=R」 — 09-07 의 2×2 다이아몬드 배치를 대체).
+    #    다른 기종처럼 아랫줄 셋에 주 버튼을 두고 L·R 을 손 가까운 q·e 로 올렸다.
     "snes.input.port1.gamepad": {
         **DPAD,
-        "y": "q",
+        "y": "a",
+        "b": "s",
+        "a": "d",
         "x": "w",
-        "b": "a",
-        "a": "s",
-        "l": "z",
-        "r": "c",
+        "l": "q",
+        "r": "e",
     },
     # PCE 6버튼(Avenue Pad 6)은 아랫줄이 왼쪽부터 **III II I** 다 — 그대로 얹는다
     # (유저 정정 2026-09-07). 2버튼 게임은 아랫줄의 오른쪽 둘(s=II · d=I)만 쓴다.
@@ -220,7 +219,10 @@ def main() -> int:
     ap.add_argument("--check", action="store_true", help="바꾸지 않고 현재 값만 본다")
     ap.add_argument("--quiet", action="store_true", help="바뀐 게 있을 때만 말한다")
     args = ap.parse_args()
-    return mednafen_cfg.run(settings(), label="키 배치", check=args.check, quiet=args.quiet)
+    # 패드 바인딩은 지킨다 — 키보드 몫만 정본이다(mednafen_cfg.keep_pads)
+    return mednafen_cfg.run(
+        settings(), label="키 배치", check=args.check, quiet=args.quiet, pads=True
+    )
 
 
 if __name__ == "__main__":

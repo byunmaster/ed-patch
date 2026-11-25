@@ -16,6 +16,10 @@
 #     --no-keys  키 배치 맞추기를 건너뛴다(기본은 맞춘다 — mednafen_keys.py)
 #     --no-video 영상 규격 맞추기를 건너뛴다(기본은 맞춘다 — mednafen_video.py).
 #     --card F   구형 시스템 카드로(PCE CD) — F 는 mednafen firmware 안 파일, `old` = syscard2.pce
+#     --save     시험 세이브를 **골라 끼운다**(md·pce·sfc·ps1·ss) — `~/save/<게임>/` 아래 폴더(voice-pre/ ·
+#                scene-pre/ · shop-1107/ 등)의 `.sav`(ps1 은 `.0.mcr`(+같은 이름 `.1.mcr`) · ss 는 `.bkr`)를 목록으로 보여 준다. `--save=bundle02` 처럼 이름 일부를 주면 바로.
+#                ⚠ 이번 실행 동안만이다 — 끝나면 원래 세이브로 되돌리고 **dev 로 올리지 않는다**
+#                   (시험 세이브가 마스터 진행분을 덮지 않게, 마스터 11-06 「일일이 다운받기 번거로우니」).
 #     --size N   창 크기 1 매우 작음 · 2 작음(기본) · 3 보통 · 4 큼
 #                mednafen 은 설정으로, np2kai 는 `NP2KAI_WIN_SIZE` 로 받는다.
 #                ⚠ 실행 중에는 **⌥- / ⌥+**(한 단계씩) · **⌥1~4**(바로 지정).
@@ -67,10 +71,10 @@ REPO=$(cd "$HERE/.." && pwd)
 # 캡처는 세 실행기 모두 **메인 트리 `.local/work/capture/<게임>/`** 로 모은다(마스터 10-06 「저장 경로 일원화」).
 #   워크트리에서 띄워도 메인 트리로 간다(.local 은 워크트리에 안 따라온다 — git-common-dir 로 찾는다).
 #   `.local/cache` 가 아니라 바로 아래라 **지우는 칸이 아니다** — 찍은 것은 사람이 모은 자료다.
+_cd=$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || true)
+case "$_cd" in "") MAIN_ROOT=$REPO ;; /*) MAIN_ROOT=$(cd "$_cd/.." && pwd) ;; *) MAIN_ROOT=$(cd "$REPO/$_cd/.." && pwd) ;; esac
 capture_dir() {   # $1 = 게임 칸 이름 → 만들어서 절대경로를 찍는다
-  _cd=$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || true)
-  case "$_cd" in "") _root=$REPO ;; /*) _root=$(cd "$_cd/.." && pwd) ;; *) _root=$(cd "$REPO/$_cd/.." && pwd) ;; esac
-  mkdir -p "$_root/.local/work/capture/$1" && printf '%s' "$_root/.local/work/capture/$1"
+  mkdir -p "$MAIN_ROOT/.local/work/capture/$1" && printf '%s' "$MAIN_ROOT/.local/work/capture/$1"
   return 0
 }
 HELPERS="$HERE/emu"                   # 실행기 본체·기전은 여기 모여 있다
@@ -190,6 +194,10 @@ row_game() {
   if [ "$3" = 1 ]; then printf '\033[36m❯ %-12s %s\033[0m\n' "$2" "$_r"
   else                  printf '  %-12s \033[2m%s\033[0m\n' "$2" "$_r"; fi
 }
+row_rel() {                      # 상대경로를 그대로(시험 세이브 목록)
+  if [ "$3" = 1 ]; then printf '\033[36m❯ %s\033[0m\n' "$2"
+  else                  printf '  %s\n' "$2"; fi
+}
 row_file() {
   if [ "$3" = 1 ]; then printf '\033[36m❯ %s\033[0m\n' "$(basename "$2")"
   else                  printf '  %s\n' "$(basename "$2")"; fi
@@ -306,7 +314,7 @@ build_dirs() {
 #   「어느 빌드를 보고 있나」가 이 레포에서 하루를 태우는 축이라 고르는 자리에서 보여야 한다.
 #   ⚠ CD 이미지는 수백 MB 라 한 번 재는 데 한두 초 — (경로·크기·시각)으로 캐시한다
 #     (`.local/cache/emu-sha1.tsv`). 목록은 다시 그릴 때마다 줄을 부르므로 **캐시만 읽는다.**
-SHA_CACHE="$REPO/.local/cache/emu-sha1.tsv"
+SHA_CACHE="$MAIN_ROOT/.local/cache/emu-sha1.tsv"   # 워크트리에서 돌려도 메인 트리 칸으로(10-25 — 워크트리 안 .local 이 게이트를 막았다)
 _img_file() {
   _f=$1
   case "$_f" in
@@ -353,7 +361,7 @@ case "${1:-}" in
   *) GAME=$1; shift ;;
 esac
 
-ORIG=0; SYNC=1; KEYS=1; VIDEO=1; IMAGE=; EXTRA=""; CARD=
+ORIG=0; SYNC=1; KEYS=1; VIDEO=1; IMAGE=; EXTRA=""; CARD=; SAVE_PICK=
 # ⚠ `-설정 값` 꼴의 **값**은 이미지로 읽지 않는다 — `-pce.cdbios syscard2.pce` 의 값이
 #   `*.pce` 에 걸려 「이미지 없음」으로 죽었다(마스터 10-22). 그래서 for 가 아니라 while 로
 #   돌며 실행기 옵션 바로 뒤 인자는 값으로 넘긴다(`--size` 의 shift 도 이제 실제로 먹는다).
@@ -366,6 +374,8 @@ while [ $# -gt 0 ]; do
     --no-video) VIDEO=0 ;;
     --size) shift; VIDEO_SIZE="${1:-2}" ;;
     --size=*) VIDEO_SIZE="${a#*=}" ;;
+    --save) SAVE_PICK='?' ;;
+    --save=*) SAVE_PICK="${a#*=}" ;;
     # 구형 시스템 카드로 띄운다(PCE CD — 카드 버전 안내 화면 확인용, 마스터 10-22).
     # 값은 mednafen firmware 폴더 안 파일 이름이다. `old` 는 syscard2.pce 의 줄임.
     --card) shift; _c=${1:-old}; [ "$_c" = old ] && _c=syscard2.pce
@@ -658,7 +668,52 @@ fi
 #   🔴 **다른 기종도 같다**(마스터 2026-09-27 — md 가 롬을 갈 때마다 세이브가 안 보였다).
 #     md·pce·sfc·ps1 은 `save_unhash.py` 가 같은 규칙으로 **해시 없는 한 벌**로 모은다.
 #     세션이 새 md5 이름으로 사본을 떠 두면(종전 관례) 그것도 후보로 집어 온다.
-if [ "$MOD" = ss ]; then
+# ── 시험 세이브 끼우기(--save) ────────────────────────────────────────────────
+#   mednafen 은 해시 없는 `<이미지이름>.sav` 를 먼저 읽는다(아래 save_unhash 머리말) — 그 자리에
+#   고른 세이브를 잠시 놓고, 끝나면(finish) 원래 파일로 되돌린다. dev 로는 안 올린다.
+SAVE_SWAP=
+SAVE_EXT=sav
+if [ -n "$SAVE_PICK" ]; then
+  case "$MOD" in
+    md|pce|snes) SAVE_EXT=sav ;;
+    psx) SAVE_EXT=0.mcr ;;   # 메모리카드 1번 — 같은 폴더에 같은 이름의 .1.mcr 가 있으면 2번도 끼운다
+    ss) SAVE_EXT=bkr ;;      # 백업 RAM — 해시 없는 `<이미지이름>.bkr` 자리에 놓는다(ss_gameid 머리말)
+    *) echo "⚠ --save 는 md·pce·sfc·ps1·ss 만 된다(지금 $MOD) — 무시한다" >&2; SAVE_PICK= ;;
+  esac
+fi
+# 바꿔 끼운 자리(줄마다 하나) — 끝나면 지우고 `.emu-keep` 를 제자리로 돌린다
+_swap_in() {  # $1=고른 원본 · $2=놓을 자리
+  rm -f "$2.emu-keep"
+  [ -e "$2" ] && mv "$2" "$2.emu-keep"
+  cp "$1" "$2"
+  SAVE_SWAP="${SAVE_SWAP}${SAVE_SWAP:+
+}$2"
+}
+if [ -n "$SAVE_PICK" ]; then
+  _list=$(cd "$SAVEDIR" && find . -mindepth 2 -type f -name "*.$SAVE_EXT" \
+            ! -path '*/old/*' ! -path '*/orig/*' ! -path '*.bak/*' ! -path './state/*' | sed 's#^\./##' | sort)
+  [ -n "$_list" ] || { echo "⛔ 시험 세이브가 없다 — $SAVEDIR 아래 폴더에 .$SAVE_EXT 가 없다(dev 의 ~/save/$GAME/<폴더>/)" >&2; exit 1; }
+  if [ "$SAVE_PICK" = '?' ]; then
+    OLDIFS=$IFS; IFS='
+'
+    # shellcheck disable=SC2086
+    _pick=$(choose "시험 세이브" row_rel $_list) || { IFS=$OLDIFS; exit 1; }
+    IFS=$OLDIFS
+  else
+    _pick=$(printf '%s\n' "$_list" | grep -F -- "$SAVE_PICK" | head -1 || true)
+    [ -n "$_pick" ] || { echo "⛔ '$SAVE_PICK' 가 든 시험 세이브가 없다. 후보:" >&2; printf '     %s\n' $_list >&2; exit 1; }
+  fi
+  _stem=$(basename "${IMAGE%.*}")
+  _swap_in "$SAVEDIR/$_pick" "$SAVEDIR/$_stem.$SAVE_EXT"
+  if [ "$MOD" = psx ]; then
+    _c1="$SAVEDIR/${_pick%.0.mcr}.1.mcr"
+    [ -e "$_c1" ] && _swap_in "$_c1" "$SAVEDIR/$_stem.1.mcr"
+  fi
+  echo "  🧪 시험 세이브: $_pick  (이번 실행만 — 끝나면 원래 세이브로 되돌리고 dev 로 안 올린다)"
+fi
+if [ -n "$SAVE_SWAP" ]; then
+  :   # 고른 세이브를 그대로 쓴다 — 해시 이름 정리(fit)가 더 새 해시 세이브로 바꿔 놓지 않게 건너뛴다
+elif [ "$MOD" = ss ]; then
   "$PY_BIN" "$HELPERS/ss_gameid.py" --fit "$SAVEDIR" "$IMAGE" || true
 else
   "$PY_BIN" "$HELPERS/save_unhash.py" --fit "$SAVEDIR" "$IMAGE" || true
@@ -712,7 +767,7 @@ if ! _has_mod "$MEDNAFEN_BIN" "$MOD"; then
   echo "   고치기: sh scripts/emu/mednafen-build.sh" >&2
   exit 1
 fi
-if [ "$SYNC" != 1 ]; then
+if [ "$SYNC" != 1 ] && [ -z "$SAVE_SWAP" ]; then
   # shellcheck disable=SC2086
   exec "$MEDNAFEN_BIN" -force_module "$MOD" -filesys.path_sav "$SAVEREL" -filesys.path_snap "$SNAPDIR" $EXTRA "$IMAGE"
 fi
@@ -741,6 +796,15 @@ PUSHED=0
 finish() {
   [ "$PUSHED" = 1 ] && return 0
   PUSHED=1
+  if [ -n "$SAVE_SWAP" ]; then    # 시험 세이브는 버리고 원래 것을 제자리로 — 올리지 않는다
+    printf '%s\n' "$SAVE_SWAP" | while IFS= read -r _s; do
+      rm -f "$_s"
+      [ -e "$_s.emu-keep" ] && mv "$_s.emu-keep" "$_s"
+    done
+    echo "  🧪 시험 세이브를 걷고 원래 세이브로 되돌렸다(dev 로는 안 올림)"
+    [ "$SYNC" = 1 ] && push_states
+    return 0
+  fi
   # 글로브는 **여기서 리터럴로** 편다(전개 결과는 단어분리를 안 타 파일명의 공백·`&` 가 산다
   # — `sync-saves.sh` 헤더 참조).
   ( cd "$SAVEDIR" && set -- * && sh "$SYNCSH" push "$GAME" "$SAVEDIR" "$@" ) || true

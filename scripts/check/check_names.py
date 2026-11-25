@@ -76,6 +76,10 @@ def main(argv=None):
 
     title = getattr(mod, "TITLE", "eiyuu")  # 작품 사전 — ED3 는 "ed3"
     r = audit(mod.pairs(), title=title)
+    if not r.units:
+        # 줄 0 = 어댑터가 문안을 못 읽었다(파생물 없는 트리 등) — 「어긋남 0」으로 찍히면 거짓 초록이다(11-08 실측)
+        print(f"⚠ 이름 검사 [{a.game}] — 어댑터가 낸 줄이 0 이다 · **안 쟀다**(파생물·원본 링크 확인)")
+        return 2
     approved, unsigned = _exceptions(a.game)
     left = [h for h in r.mismatches if f"{h.where}|{h.jp}" not in approved]
     excused = len(r.mismatches) - len(left)
@@ -101,6 +105,15 @@ def main(argv=None):
     if r.spacing:
         for h in r.spacing if a.list else r.spacing[:5]:
             print(f"    ␣ {h.where}  {h.jp} → 정본 「{h.canon}」 을 띄어 썼다")
+    # 알림 둘(11-08 「대도둑·대도적」 — 정본이 있는데 남아 있었다): 실패로 치지 않고 늘 센다
+    print(
+        f"  긴 낱말 속 이름 {len(r.glued)} · 같은 칸 원문인데 표기 갈림 {len(r.slot_split)}"
+        + (" (알림 — 하나씩 보고 고칠 것은 고친다)" if r.glued or r.slot_split else "")
+    )
+    for h in r.glued if a.list else r.glued[:5]:
+        print(f"    ⊂ {h.where}  {h.jp} → 정본 「{h.canon}」 이 더 긴 낱말 속에만 있다")
+    for jp, krs in r.slot_split if a.list else r.slot_split[:5]:
+        print(f"    ≠ {jp} → {' / '.join(krs)}")
     for h in r.pending[:5]:
         print(f"  ⏳ {h.where}  {h.jp} — 사전 확인 대기(_pending) 이름이 화면에 쓰인다")
     return 1 if left else 0
