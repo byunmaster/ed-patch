@@ -70,7 +70,7 @@ class RoundTrip(unittest.TestCase):
 
 
 class Ring512(unittest.TestCase):
-    """642 전용 512B 링 변형(표식 `7C` + 니블 = 길이 3비트·인덱스 9번째 비트)."""
+    """642 전용 512B 링 변형(표식 `7C` + 길이 니블 4비트 + 인덱스 9번째 비트 별도 비트열)."""
 
     def test_표식은_정상_256_스트림의_첫_바이트가_될_수_없다(self):
         rnd = random.Random(11)

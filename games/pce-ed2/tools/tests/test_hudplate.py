@@ -64,5 +64,15 @@ class Encode(unittest.TestCase):
         self.assertEqual(hudlz.decode(enc + bytes(8), 0, 40)[0], data)
 
 
+class Shift(unittest.TestCase):
+    def test_왼쪽으로_한_칸_옮기고_테두리_열은_비어_있다(self):
+        d = hudplate.load_dots()
+        s = hudplate.shifted(d)
+        for r in range(8):
+            self.assertEqual(s[r][:15], d[r][1:])
+            self.assertEqual(s[r][15], 0)
+            self.assertEqual(s[r][0], d[r][1])  # 원래 1열 점이 0열로 가면 테두리를 건드린다 — 도트판 1열은 비어 있어야 한다
+
+
 if __name__ == "__main__":
     unittest.main()

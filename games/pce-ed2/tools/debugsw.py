@@ -1,7 +1,7 @@
 """디버그 메뉴 살리기(마스터 10-21 판정 19 A, 「디버그모드는 일단 살려보고 싶긴해」) — 원판에 숨어 있는 개발자 메뉴(WARP·LVL·GOLD·ITEM·MAGIC·PATH·ENTRY·MASK·ENCNT·SPOT·ABC·VISUAL)를
-제품 롬에서 **숨김 제스처**로만 연다. 평소 플레이에는 영향이 없다(RUN 만 누르면 원판과 같다 — 원판에서 필드의 RUN 은 뗄 때까지 기다리는 개발자 키였다).
+제품 롬에서 **숨김 제스처**로만 연다. 평소 플레이 영향은 하나 — 퀵메뉴(SELECT)가 누를 때가 아니라 **뗄 때** 열린다(1초 판정 때문). RUN 만 누르면 원판과 같다 — 원판에서 필드의 RUN 은 뗄 때까지 기다리는 개발자 키였다.
 
-열기: 필드에서 **RUN 을 누른 채 I 와 II 를 같이 누른다**(세 버튼 동시). 닫기는 메뉴의 방식(II).
+열기: 필드에서 **SELECT 를 약 1초 길게 누른다**(11-07 마스터 「셀렉트 길게」 — 옛 RUN+I+II 를 대체). SELECT 를 짧게 누르면 퀵메뉴(뗄 때 열린다). 닫기는 메뉴의 방식(II).
 
 설계가 마스터 제안(「부팅 때 I+II 로 `$86` bit7 을 세우고 필드에서 RUN+II」)과 다른 까닭(10-22 실측): `$86` bit7 은 **이어하기 때 세이브에서 복원되는 RAM 블록 안에 있어** 부팅 스위치로 세워도 이어하기 직후 3B 로 덮인다
 (새 게임에서만 0xBB 가 유지됐다). 그래서 지속하는 플래그에 기대지 않고 **열 때의 패드로 직접 판정**한다 — 한 번의 제스처로 열리고, 세이브·이어하기·전투 복귀와 무관하게 늘 같다.
@@ -12,7 +12,7 @@
    `$2228` 의 RUN(bit3)이 눌려 있으면 `JMP $690D`(디버그 창), 아니면 `JMP $6905`(원래 일반 전투 설정 창). 즉 전투 중 **RUN 을 쥔 채 II** 가 디버그 전투 설정 창이다.
    마스터 10-22 판정 Q5 「2」: 한때 이 창 코드(`$690D`~`$6969` 93B)와 문자열 36B 를 글리프 풀로 돌려줬던 것을 **원래대로 되돌렸다**(1282 멈춤 75/102 · 1538 글리프 자리 빠듯함을 감수).
    게이트(`$86` bit7)는 안 서지만(필드 고속 이동 등 다른 게이트도 안 선다) 메뉴의 토글은 `$86` 의 다른 비트를 쓰므로 그대로 된다.
-시험 빌드(`ED_DEBUG=1`)도 같은 제스처다(하네스는 `hold('run+i+ii')`).
+시험 빌드(`ED_DEBUG=1`)도 같은 제스처다(하네스는 `hold('select')` 70프레임).
 ④ 메뉴 문자열(뱅크 0x69 `$7549`~, 영어 라벨 그대로)에서 **저장 데이터를 바꾸는 다섯 항목**(WARP·LVL·GOLD·ITEM·MAGIC) 뒤에 `!`(마스터 판정 19 A). 글자 수를 안 바꾸고 맞췄다 — 줄 끝 여백(LVL ·
    PATH · MASK · SPOT)과 「C ATRB」 사이 공백이 4바이트라 `!` 네 개(WARP · GOLD · ITEM · MAGIC)와 맞바꾼다(LVL 은 자기 여백 자리에 `!`). 창 설명 `18 82 86 8c 8d` 의 셋째 인자가 너비(칸 수 = 인자 − 0x81, 실측: 0x8c → 11칸 · 0x8d → 12칸에서 줄이 꺾였다)라
    「 ITEM! MAGIC!」(13칸)을 담으려 `8c` → `8e`(13칸)로 넓힌다 — 인자를 안 고치면 「MAGIC!」 의 `C!` 가 다음 줄로 꺾여 메뉴가 밀린다(10-22 실화면 두 번).
@@ -24,10 +24,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import layout
 
-STUB_BANK, STUB_OFF, STUB_LEN = 0x68, 0x1FEE, 18  # 뱅크 0x68 고정 뱅크의 0xFF 18B(원본부터)
+STUB_BANK, STUB_OFF, STUB_LEN = (
+    0x68,
+    0x14A3,
+    32,
+)  # 뱅크 0x68 고정 뱅크 — 글리프 풀 영 칸 앞(`layout.GAME_SCRATCH` 바로 뒤)에서 32B 를 뗀다. 본체 25B + 진입 초기화 7B
 STUB_ADDR = 0x4000 + STUB_OFF
-KEY = (0x6A, 0x09E)  # `$609E` TST #$04,$26E5
+COUNTER = 0xEC  # 영 페이지 — 글리프 훅의 스크래치(`$EC`)와 같은 자리지만 훅은 글을 그리는 동안만 쓴다. 진입 때마다 0 으로 비우니 남은 값이 안 샌다
+HOLD_FRAMES = 60  # 1초(마스터 10-24 「1초 유지로 우연 입력을 거른다」)
+KEY = (0x6A, 0x09E)  # `$609E` TST #$04,$26E5 — RUN 을 쥐는 동안의 개발자 SELECT 검사. 11-07: 이 검사를 죽인다(둘째 바이트 04 → 00 이라 늘 0) — 안 그러면 RUN+SELECT 가 1초 보호 없이 메뉴를 연다
 KEY_ORIG = bytes.fromhex("9304e526")
+SEL_JMP = (0x6A, 0x063)  # `$6062 JMP $60CD`(필드에서 SELECT 새로 누름 → 퀵메뉴)의 피연산자 — 새 본체로 돌린다
+SEL_JMP_ORIG = bytes.fromhex("cd60")
+QUICK = 0x60CD  # 퀵메뉴 입구
 MENU_GATE = (0x6A, 0x0AD)  # `$60AD` BBR7 $86,$609B
 MENU_GATE_ORIG = bytes.fromhex("7f86eb")
 BATTLE_GATE = (0x6F, 0x902)  # `$6902` BBS7 $86,$690D
@@ -35,27 +44,70 @@ BATTLE_GATE_ORIG = bytes.fromhex("ff8608")
 BATTLE_STUB = (0x6F, 0x1F3A, 13)  # 뱅크 0x6F 끝 0xFF 패딩 198B 의 앞쪽(layout.PADDING)
 BATTLE_STUB_ADDR = 0x6000 + BATTLE_STUB[1]
 BATTLE_WINDOW, BATTLE_NORMAL = 0x690D, 0x6905  # 디버그 전투 설정 창 · 원래 일반 창
-OPEN, KEEP_WAIT = 0x60AD, 0x60A4  # 메뉴 입구 · 원래 다음 줄(RUN 을 쥐는 동안 기다림)
+OPEN = 0x60AD  # 메뉴 입구
 
 
 def stub() -> bytes:
-    """`TST #$01,$2228; BEQ no; TST #$02,$2228; BEQ no; JMP $60AD; no: JMP $60A4` — 18B."""
-    code = bytes.fromhex("93012822" "f009" "93022822" "f003") + bytes([0x4C, OPEN & 0xFF, OPEN >> 8]) + bytes([0x4C, KEEP_WAIT & 0xFF, KEEP_WAIT >> 8])
-    assert len(code) == STUB_LEN, len(code)
+    """필드에서 SELECT 를 새로 누르면 들어온다(11-07 마스터 「셀렉트 길게」). 프레임마다 기다리며 **SELECT 만** 쥐어져 있나(`$2228 == $04`) 본다 —
+    60프레임(1초) 이어지면 디버그 메뉴 입구(`$60AD`), 그 전에 떼거나 다른 버튼(방향 등)이 섞이면 퀵메뉴(`$60CD` — 원래 SELECT 를 누를 때 열리던 것, 이제 뗄 때 열린다).
+    `STZ $EC; loop: JSR $571E; LDA $2228; CMP #$04; BNE quick; INC $EC; LDA $EC; CMP #60; BCC loop; SMB4 $80; STZ $EC; JMP $60AD; quick: STZ $EC; JMP $60CD` — 32B"""
+    code = bytes(
+        [0x64, COUNTER]
+        + [0x20, 0x1E, 0x57]  # JSR $571E — 한 프레임 기다림(RUN 개발 루프 `$609B` 와 같다)
+        + [0xAD, 0x28, 0x22, 0xC9, 0x04]  # LDA $2228; CMP #$04 — SELECT 만
+        + [0xD0, 0x0F]  # BNE quick
+        + [0xE6, COUNTER, 0xA5, COUNTER, 0xC9, HOLD_FRAMES]
+        + [0x90, 0xEE]  # BCC loop
+        + [0xC7, 0x80]  # SMB4 $80 — 메뉴 열림(필드 정지) 플래그. 원판 RUN 개발 루프(`$6099 SMB4 $80`)·퀵메뉴(`$60CD`)가 둘 다 세운다. 우리 입구가 이걸 빠뜨려 디버그 메뉴 뒤에서 적이 움직였다(마스터 11-09)
+        + [0x64, COUNTER, 0x4C, OPEN & 0xFF, OPEN >> 8]
+        + [0x64, COUNTER, 0x4C, QUICK & 0xFF, QUICK >> 8]
+    )
+    assert len(code) == 32, len(code)
     return code
 
 
 def battle_stub() -> bytes:
     """`LDA $2228; AND #$08; BEQ no; JMP $690D; no: JMP $6905` — 13B(RUN 을 쥐면 디버그 창)."""
-    code = bytes.fromhex("ad282229" "08f003") + bytes([0x4C, BATTLE_WINDOW & 0xFF, BATTLE_WINDOW >> 8, 0x4C, BATTLE_NORMAL & 0xFF, BATTLE_NORMAL >> 8])
+    code = bytes.fromhex("ad28222908f003") + bytes(
+        [
+            0x4C,
+            BATTLE_WINDOW & 0xFF,
+            BATTLE_WINDOW >> 8,
+            0x4C,
+            BATTLE_NORMAL & 0xFF,
+            BATTLE_NORMAL >> 8,
+        ]
+    )
     assert len(code) == BATTLE_STUB[2], len(code)
     return code
 
 
 MENU_WIDTH = (0x69, 0x1546)  # 창 설명 `18 82 86 8c 8d` 의 셋째 인자(너비) — 0x8c(11칸) → 0x8e(13칸)
 MENU_TEXT = (0x69, 0x1549)  # `05` 바로 뒤 — 항목 줄들
-ROWS_OLD = [b"WARP", b"LVL \x01 GOLD", b"ITEM\x01 MAGIC", b"PATH ", b"ENTRY", b"MASK ", b"ENCNT", b"SPOT ", b"A\x01 B\x01 C ATRB", b"VISUAL"]
-ROWS_NEW = [b"WARP!", b"LVL!\x01 GOLD!", b"ITEM!\x01 MAGIC!", b"PATH", b"ENTRY", b"MASK", b"ENCNT", b"SPOT", b"A\x01 B\x01 CATRB", b"VISUAL"]
+ROWS_OLD = [
+    b"WARP",
+    b"LVL \x01 GOLD",
+    b"ITEM\x01 MAGIC",
+    b"PATH ",
+    b"ENTRY",
+    b"MASK ",
+    b"ENCNT",
+    b"SPOT ",
+    b"A\x01 B\x01 C ATRB",
+    b"VISUAL",
+]
+ROWS_NEW = [
+    b"WARP!",
+    b"LVL!\x01 GOLD!",
+    b"ITEM!\x01 MAGIC!",
+    b"PATH",
+    b"ENTRY",
+    b"MASK",
+    b"ENCNT",
+    b"SPOT",
+    b"A\x01 B\x01 CATRB",
+    b"VISUAL",
+]
 
 
 def menu_text(rows: list[bytes]) -> bytes:
@@ -68,19 +120,36 @@ def reserve(prog: layout.Prog) -> None:
 
 
 def install(prog: layout.Prog) -> None:
-    assert set(prog.o(STUB_BANK, STUB_OFF, STUB_LEN)) == {0xFF}, "새 본체 자리가 비어 있지 않다"
-    for (b, o), orig in ((KEY, KEY_ORIG), (MENU_GATE, MENU_GATE_ORIG), (BATTLE_GATE, BATTLE_GATE_ORIG)):
-        assert prog.o(b, o, len(orig)) == orig, f"디버그 자리 원본 바이트가 기대와 다르다 {b:02X}+{o:04X}"
-    prog.put(STUB_BANK, STUB_OFF, stub(), "디버그 제스처 본체(RUN+I+II)")
-    prog.put(KEY[0], KEY[1], bytes([0x4C, STUB_ADDR & 0xFF, STUB_ADDR >> 8, 0xEA]), "디버그 열기 — SELECT 검사를 제스처 본체로(JMP $5FEE)")
-    prog.put(MENU_GATE[0], MENU_GATE[1], bytes([0xEA, 0xEA, 0xEA]), "디버그 메뉴 입구의 개발기 게이트 검사 해제")
+    assert set(prog.o(STUB_BANK, STUB_OFF, STUB_LEN)) == {0}, "새 본체 자리가 영 칸이 아니다"
+    for (b, o), orig in (
+        (KEY, KEY_ORIG),
+        (MENU_GATE, MENU_GATE_ORIG),
+        (BATTLE_GATE, BATTLE_GATE_ORIG),
+    ):
+        assert prog.o(b, o, len(orig)) == orig, (
+            f"디버그 자리 원본 바이트가 기대와 다르다 {b:02X}+{o:04X}"
+        )
+    assert prog.o(*SEL_JMP, 2) == SEL_JMP_ORIG, "필드 SELECT 분기 원본 바이트가 기대와 다르다"
+    prog.put(STUB_BANK, STUB_OFF, stub(), "디버그 제스처 본체(필드 SELECT 1초) — 짧으면 퀵메뉴")
+    prog.put(SEL_JMP[0], SEL_JMP[1], bytes([STUB_ADDR & 0xFF, STUB_ADDR >> 8]), "필드 SELECT 새로 누름 → 제스처 본체로")
+    prog.put(KEY[0], KEY[1] + 1, b"\x00", "RUN 개발 루프의 SELECT 검사 무력화(1초 보호 없는 열기 차단)")
+    prog.put(
+        MENU_GATE[0],
+        MENU_GATE[1],
+        bytes([0xEA, 0xEA, 0xEA]),
+        "디버그 메뉴 입구의 개발기 게이트 검사 해제",
+    )
     assert set(prog.o(*BATTLE_STUB)) == {0xFF}, "전투 설정 본체 자리가 비어 있지 않다"
     prog.put(BATTLE_STUB[0], BATTLE_STUB[1], battle_stub(), "디버그 전투 설정 창 본체(RUN+II)")
-    prog.put(BATTLE_GATE[0], BATTLE_GATE[1], bytes([0x4C, BATTLE_STUB_ADDR & 0xFF, BATTLE_STUB_ADDR >> 8]), "디버그 전투 설정 창 분기 — 개발기 게이트 대신 RUN 쥠으로(JMP $7F3A)")
+    prog.put(
+        BATTLE_GATE[0],
+        BATTLE_GATE[1],
+        bytes([0x4C, BATTLE_STUB_ADDR & 0xFF, BATTLE_STUB_ADDR >> 8]),
+        "디버그 전투 설정 창 분기 — 개발기 게이트 대신 RUN 쥠으로(JMP $7F3A)",
+    )
     old, new = menu_text(ROWS_OLD), menu_text(ROWS_NEW)
     assert len(old) == len(new), (len(old), len(new))
     assert prog.o(MENU_TEXT[0], MENU_TEXT[1], len(old)) == old, "디버그 메뉴 문자열이 기대와 다르다"
     assert prog.o(MENU_WIDTH[0], MENU_WIDTH[1], 1) == b"\x8c"
     prog.put(MENU_TEXT[0], MENU_TEXT[1], new, "디버그 메뉴 — 저장을 바꾸는 다섯 항목 뒤 `!`")
     prog.put(MENU_WIDTH[0], MENU_WIDTH[1], b"\x8e", "디버그 메뉴 창 너비 11→13칸")
-

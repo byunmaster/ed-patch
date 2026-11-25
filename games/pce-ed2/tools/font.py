@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
+import narrow_font
 
 FONT_BDF = common.ROOT / "shared" / "fonts" / "Galmuri11.bdf"
 GLYPH_BYTES = 24
@@ -79,8 +80,10 @@ def glyph(ch: str) -> bytes:
     return b"".join(v.to_bytes(2, "big") for v in out)
 
 
-NARROW = set(".,!?0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")  # 엔진이 ASCII 단일 바이트를 8px 반각으로 그린다(`$6448` +2) — 규칙 1-1·1-5·1-6
+NARROW = set(".,!?0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-'\"():")  # 엔진이 ASCII 단일 바이트를 8px 반각으로 그린다(`$6448` +2) — 규칙 1-1·1-5·1-6
 SPACE_PX, NARROW_PX, CELL_PX = 4, 8, 12
+# 전각 라틴 대문자·숫자는 번역 글꼴(Galmuri) 풀 글리프가 아니라 **원판 글자**(SJIS 두 바이트 — 엔진이 BIOS 글꼴로 그린다, 12px)로 낸다 — 규칙 1-8(마스터 10-27 「pce2 는 원본 그대로」)
+ORIG_FULL = {chr(c + 0xFEE0) for c in [*range(0x30, 0x3A), *range(0x41, 0x5B)]}
 
 
 def adv(ch: str) -> int:
@@ -88,10 +91,66 @@ def adv(ch: str) -> int:
     return SPACE_PX if ch == " " else NARROW_PX if ch in NARROW else CELL_PX
 
 
+# 🔴 대사 「」『』 반각(마스터 도안 D·D2판 10-26 — PCE I·II 공통): 16×12 도안의 왼쪽 8열 = 「, 오른쪽 8열 = 」. 글리프 칸(12px) 왼쪽 8열에 앉히고 해석기가 진행을 8px 로 준다(`kagi.py`).
+KAGI = "「」『』"  # 도안 두 장 — D판(「」) · D2판(『』)
+KAGI_PX = 8
+KAGI_ART = (
+    "..####..........",
+    "..#.............",
+    "..#.............",
+    "..#.............",
+    "..#.............",
+    "..#.........#...",
+    "..#.........#...",
+    "............#...",
+    "............#...",
+    "............#...",
+    "............#...",
+    ".........####...",
+)
+KAGI_ART2 = (
+    "..#####.........",
+    "..#...#.........",
+    "..#.###.........",
+    "..#.#...........",
+    "..#.#...........",
+    "..#.#.....###...",
+    "..###.....#.#...",
+    "..........#.#...",
+    "..........#.#...",
+    "........###.#...",
+    "........#...#...",
+    "........#####...",
+)
+
+
+def _kagi_glyph(k: int) -> bytes:
+    out = []
+    k, art = k % 2, (KAGI_ART, KAGI_ART2)[k // 2]
+    for r in art:
+        v = 0
+        for c, ch in enumerate(r[k * 8 : k * 8 + 8]):
+            if ch == "#":
+                v |= 0x8000 >> c
+        out.append(v.to_bytes(2, "big"))
+    return b"".join(out)
+
+
+def pool_glyph(ch: str) -> bytes:
+    """글리프 풀(대사·틀 줄을 해석기가 그리는 글자)에 구울 비트맵 — 「」 만 도안 D판, 나머지는 `glyph`."""
+    return _kagi_glyph(KAGI.index(ch)) if ch in KAGI else glyph(ch)
+
+
+def adv_dlg(ch: str) -> int:
+    """대사창(해석기) 전진 폭 px — `adv` 에 「」 8px 를 더한다."""
+    return KAGI_PX if ch in KAGI else adv(ch)
+
+
 JOSA_LEAD = LEAD0 + MAX_LEADS  # F9 — 동적 조사 토큰(트레일 = TRAIL0 + 종류). 앞 글자의 받침으로 훅이 고른다
 JOSA = [("은", "는"), ("이", "가"), ("을", "를"), ("과", "와")]  # (받침 있음, 없음)
 JOSA_PAIRS = ["은(는)", "이(가)", "을(를)", "과(와)"]
 JOSA_CHARS = "".join(a + b for a, b in JOSA)
+FLAG_DOWN = 0x04  # 저장은 한 행 위로 올려 두고 풀 때 한 행 내려 그린다 — 도안 D판 」 의 가로줄이 행 11 이라(묶음은 행 11 이 늘 빈다) 「」 만
 FLAG_BATCHIM = 0x02  # 묶음 마지막 바이트의 남는 비트 — 이 글자는 받침이 있다(훅이 LASTB 로 기억한다)
 
 
@@ -130,12 +189,17 @@ def mark_josa(text: str) -> str:
 
 def flags(ch: str) -> int:
     """글자의 훅용 플래그 — 받침 있는 한글이면 FLAG_BATCHIM."""
+    if ch in "」』":
+        return FLAG_DOWN
     return FLAG_BATCHIM if "가" <= ch <= "힣" and (ord(ch) - 0xAC00) % 28 else 0
 
 
 def pack(g24: bytes, flag: int = 0) -> bytes:
     """24B(행당 2B, 아래 4비트 0) → 16B. 글리프는 11×11(행 11·열 11 은 늘 빈다 — 11px 원천 글꼴) —
     앞 11B = 행 0~10 의 위 8비트(열 0~7), 뒤 5B = 행 0~10 의 아래 3비트(열 8~10)를 행 순서대로 이은 33비트 + 0 채움."""
+    if flag & FLAG_DOWN:
+        assert not any(g24[:2]), "FLAG_DOWN 글리프는 행 0 이 비어야 한다"
+        g24 = g24[2:] + b"\0\0"
     rows = [int.from_bytes(g24[2 * r : 2 * r + 2], "big") >> 4 for r in range(12)]  # 행당 12비트(열 0 = 최상위)
     assert rows[11] == 0, "행 11 은 비어야 한다(11×11 묶음)"
     assert all(v & 1 == 0 for v in rows), "열 11 은 비어야 한다(11×11 묶음)"
@@ -156,6 +220,8 @@ def unpack(p16: bytes) -> bytes:
         low3 = bits >> (3 * (10 - r)) & 7
         out += bytes([p16[r], low3 << 5])
     out += b"\0\0"
+    if p16[15] & FLAG_DOWN:
+        out = bytearray(b"\0\0") + out[:22]
     return bytes(out)
 
 
@@ -203,7 +269,7 @@ class GlyphTable:
         out = bytearray()
         for ch in text:
             if ch == "\x00":
-                out += b"\x81\x62"
+                out.append(narrow_font.LIG_CODE)  # `!!` — 원판 합자 도안을 8px 칸에(반각 글꼴 표 새 코드, 마스터 11-06 (다)안 A1)
             elif ch in JOSA_MARK:  # 동적 조사 — 훅이 앞 글자의 받침으로 고른다
                 k = JOSA_MARK.index(ch)
                 if self.map is None:
@@ -211,6 +277,8 @@ class GlyphTable:
                 out += bytes([JOSA_LEAD, TRAIL0 + k])
             elif ch == " ":
                 out.append(space)
+            elif ch in ORIG_FULL:
+                out += ch.encode("cp932")
             elif ch in NARROW:  # 반각 — 글리프 코드가 아니라 ASCII 한 바이트(엔진이 8px 로 그린다)
                 out.append(ord(ch))
             elif ch == "\n":

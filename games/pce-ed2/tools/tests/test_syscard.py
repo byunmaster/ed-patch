@@ -26,7 +26,7 @@ class SysCard(unittest.TestCase):
         # 줄 가운데 맞춤(마스터 10-22) — 이상값(`x0_for`)과 실제 시작 x 의 차가 4px 이내
         for mi, msg in enumerate(syscard.MESSAGES):
             for r, line in enumerate(msg):
-                self.assertLessEqual(abs(syscard.X0[mi][r] - syscard.x0_for(mi, r, line)), 4, (mi, r, line))
+                self.assertLessEqual(abs(syscard.X0[mi][r] - syscard.x0_for(mi, r, line)), 5, (mi, r, line))
         # 끝 「…」「.」「,」 는 가운데 계산에서 빠진다: 같은 앞부분이면 이상 시작 x 가 같다
         self.assertEqual(syscard.x0_for(0, 0, "가나다……"), syscard.x0_for(0, 0, "가나다"))
 

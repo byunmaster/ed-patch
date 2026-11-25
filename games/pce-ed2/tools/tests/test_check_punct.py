@@ -51,7 +51,7 @@ class Rules(unittest.TestCase):
         dialogue._load = lambda: ({"S": {"1": {"t": "황제\ue003폐하"}, "2": {"t": "\ue003말이군"}}}, None)
         try:
             self.assertEqual(dialogue.ps1_text([("S", 1)]), "황제 폐하")
-            self.assertEqual(dialogue.ps1_text([("S", 2)]), "말이군")
+            self.assertEqual(dialogue.ps1_text([("S", 2)]), " 말이군")  # 머리 붙임 공백은 살린다(변수 뒤 「약초 말이군요」, 10-28)
         finally:
             dialogue._load = orig
 

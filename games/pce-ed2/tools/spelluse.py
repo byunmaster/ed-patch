@@ -14,7 +14,10 @@ from PIL import Image
 
 
 def setup(e, levels: int, magic_pages: int) -> None:
-    e.press("run+ii", 10, 30)
+    e.hold("select")
+    e.run(70)  # 진입키는 1초(60프레임) 이어서
+    e.hold(None)
+    e.run(30)
     e.press("down", 5, 15)  # LVL
     for _ in range(levels):
         e.press("i", 5, 40)

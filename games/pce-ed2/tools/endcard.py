@@ -22,7 +22,7 @@ def _card_value(jp: str) -> str | None:
         return None
     for k, v in canon.table("battle", "ed2").items():
         if k.startswith(f"第{m.group(1)}章") and k.endswith("完") and (m.group(2) in k or "{name}" in k):
-            return v
+            return chapter.chapter_gap(v)
     return None
 
 
@@ -33,10 +33,20 @@ def edit_line(line: bytes, tab) -> bytes | None:
         return None
     tail = b"\x12" if line.endswith(b"\x12") else b""
     rows = val.split("\n")
-    wid = max(sum(4 if c == " " else 12 for c in r) for r in rows)  # 카드 한 덩이의 폭(px) — 덩이째 가운데로 민다
-    left = max(0, (168 - wid) // 2) // 4 * 4
-    pad = chapter._pad(left)
-    return b"\x0d".join((pad + tab.enc(r, space=0x60)) if r.strip() else b"" for r in rows) + tail
+    out = []
+    for r in rows:
+        body = r.strip(" ")
+        if not body:
+            out.append(b"")
+            continue
+        out.append(chapter._pad(_row_left(body)) + tab.enc(body, space=0x60))
+    return b"\x0d".join(out) + tail
+
+
+def _row_left(body: str) -> int:
+    """카드 한 줄의 앞 여백(px, 4 의 배수) — 줄마다 따로 가운데(창 안쪽 169px, 글 시작 +1): 잉크 쏠림 |2·pad + 잉크폭 − 167| 이 가장 작은 칸. 원래는 가장 긴 줄(제목) 기준으로 덩이째 밀어 짧은 제3장 카드의 「끝」이 오른쪽으로 18px 쏠렸다(마스터 11-08 「장 끝제목 가운데」 실화면)."""
+    ink = sum(4 if c == " " else 12 for c in body) - 1
+    return min(range(0, 168, 4), key=lambda p: (abs(2 * p + ink - 167), p))  # 가장 가까운 칸, 같을 때만 왼쪽(마스터 11-09 2-8 개정)
 
 
 def edit_chunk(d: bytes, tab) -> bytes:

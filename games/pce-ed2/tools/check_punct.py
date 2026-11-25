@@ -64,10 +64,20 @@ def comma_suspects(t: str) -> list[str]:
     return [n for n, rx in COMMA_PAT.items() if rx.search(t)]
 
 
+HEADED: dict[str, str] = {}  # 자리 → "first"(첫 덩이만 화자 머리 쪽) · "all"(구간마다 머리) — corpus 가 채운다(조판 검사가 빌드와 같은 쪽 종류로 짜게)
+
+
+def headed(where: str, si: int, ci: int) -> bool:
+    """문안 조각(`§` 로 가른 si 번째 · `\\f` 로 가른 ci 번째)이 화자 머리 쪽인가."""
+    k = HEADED.get(where)
+    return ci == 0 and (k == "all" or (k == "first" and si == 0))
+
+
 def corpus():
     """(자리, 종류, 문안, 원문 점 수|None) — 종류: dlg(대사) · tmpl(제어 틀) · sub(자막)."""
     import common
     import ctrllines
+    import dialog
     import dialogue
     import jptext
     import package
@@ -80,6 +90,10 @@ def corpus():
             d = package.decode_chunk(pkg, a, b)[0]
             lines = d.split(b"\x00")
             for li, _p, _spk, txt in dialogue.candidates(rel, a, d):
+                if isinstance(_p, dialog.Seg):
+                    HEADED[f"{rel}:{a}:{li}"] = "all"
+                elif _spk is not None:
+                    HEADED[f"{rel}:{a}:{li}"] = "first"
                 src = re.sub(r"\{[^}]*\}", "", jptext.decode(lines[li]))
                 dots = sum(3 if c == "…" else 1 for c in src if c in "･・…")
                 yield f"{rel}:{a}:{li}", "dlg", txt, dots
@@ -109,14 +123,14 @@ def main() -> int:
             if dot_violation(t, dots or 0):
                 bad.append((where, "1-3 … 개수(원문 점 수와 다름)", t))
             try:
-                pages = typeset.pages(t.replace("§", "\f"))
+                pages = typeset.pages(t.replace("§", "\f"), headed=headed(where, 0, 0))
             except Exception as e:  # noqa: BLE001
                 bad.append((where, "조판 실패", str(e)[:60]))
                 continue
             for p in pages:
                 lines += len(p)
-                if len(p) > typeset.LINES:
-                    bad.append((where, "2-4 쪽이 3줄 초과", t))
+                if len(p) > typeset.LINES_HEADLESS:
+                    bad.append((where, "2-4 쪽이 창 줄 수 초과", t))
                 for ln in p:
                     if not ln.strip():
                         bad.append((where, "2-4 빈 줄", t))

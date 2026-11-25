@@ -81,9 +81,19 @@ def original() -> tuple[bytes, bytes]:
     return dec, sec[OFF:end]
 
 
+LEFT_SHIFT = 1  # 마스터 11-08 「남다가 왼쪽으로 1px 이동해야 HP, MP와 시작지점이 맞을 것 같네」 — ed1 의 도트판은 그대로 두고 ed2 만 옮긴다
+
+
+def shifted(dots: list[list[int]], n: int = LEFT_SHIFT) -> list[list[int]]:
+    """도트판을 왼쪽으로 n 칸 옮긴다(0열은 판 테두리라 비어 있어야 하므로 남는 오른쪽 끝은 0)."""
+    out = [r[n:] + [0] * n for r in dots]
+    assert not any(r[0] for r in out), "옮긴 뒤 0열(테두리)에 점이 닿았다"
+    return out
+
+
 def new_stream(dots: list[list[int]] | None = None) -> bytes:
     dec, _comp = original()
-    t38, t39 = label_tiles(dec[TILE_L * 32 : (TILE_R + 1) * 32], dots or load_dots())
+    t38, t39 = label_tiles(dec[TILE_L * 32 : (TILE_R + 1) * 32], dots or shifted(load_dots()))
     new = bytearray(dec)
     new[TILE_L * 32 : TILE_L * 32 + 32] = t38
     new[TILE_R * 32 : TILE_R * 32 + 32] = t39

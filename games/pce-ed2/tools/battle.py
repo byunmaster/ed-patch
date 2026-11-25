@@ -34,21 +34,29 @@ def is_battle_chunk(d: bytes) -> bool:
     return sum(1 for ln in lines if ln.startswith(b"\x1b")) >= 2
 
 
-def appear_text(line: bytes) -> str | None:
-    """나타남 줄의 한국어 글(정본 몬스터 이름 + 「이(가) 나타났다.」) — 정본에 없으면 None. 이름 검사 어댑터도 쓴다."""
+def appear_parts(line: bytes) -> tuple[str, str] | None:
+    """나타남 줄의 한국어 글을 (첫 이름, 나머지)로 — 첫 이름만 색 제어(`16`…`14`)로 감쌀 때 쓴다(4-6). 정본에 없으면 None."""
     jp = re.sub(r"\{[^}]*\}", "", _plain(line)).replace("\n", "").replace("\u3000", "")
     m = re.match(rf"^(.+?){APPEAR}", jp)
     if not m:
         return None
     names = m.group(1).split("と")
-    krs = [canon.lookup(n, "monster", "ed2") for n in names]
+    _al = canon.aliases("ed2")  # 정본 별칭(표기 흔들림 — 11-09 毒かづら · レッドラッド)
+    krs = [canon.lookup(_al.get(n, n), "monster", "ed2") for n in names]
     tail = canon.lookup("{name}が現れた。", "battle", "ed2")
     if None in krs or not tail or not tail.startswith("{name}이(가)"):
         return None
     text = krs[0]
     for prev, nxt in zip(krs, krs[1:], strict=False):
         text = text + josa.josa(prev, "과/와") + " " + nxt  # 이름 사이 띄움(qa 10-20 「지팡이술사와다그니아가」)
-    return text + josa.josa(krs[-1], "이/가") + tail[len("{name}이(가)") :]
+    text = text + josa.josa(krs[-1], "이/가") + tail[len("{name}이(가)") :]
+    return krs[0], text[len(krs[0]) :]
+
+
+def appear_text(line: bytes) -> str | None:
+    """나타남 줄의 한국어 글(정본 몬스터 이름 + 「이(가) 나타났다.」) — 정본에 없으면 None. 이름 검사 어댑터도 쓴다."""
+    p = appear_parts(line)
+    return None if p is None else p[0] + p[1]
 
 
 def _appear(line: bytes, tab, missing: set) -> bytes:
@@ -58,11 +66,20 @@ def _appear(line: bytes, tab, missing: set) -> bytes:
         return line
     trail = b"".join(b for kind, b in toks[glyph_at[-1] + 1 :] if kind == "ctrl")
     jp = re.sub(r"\{[^}]*\}", "", _plain(line)).replace("\n", "").replace("\u3000", "")
-    text = appear_text(line)
+    parts = appear_parts(line)
+    text = None if parts is None else parts[0] + parts[1]
     if text is None:
         if re.match(rf"^(.+?){APPEAR}", jp):
             missing.add(jp)
         return line
+    lead, i = b"", 0  # 글 앞의 제어(대사 해석 — `16` 은 인자 없는 색 시작이다. 본 프로그램 시스템 문자열 해석(`systext.tokens`)은 `16` 을 4바이트로 읽는다)
+    while i < len(line) and line[i] < 0x20:
+        n = 1 + jptext.ARGS.get(line[i], 0)
+        if line[i] not in (0x0E, 0x0F):
+            lead += line[i : i + n]
+        i += n
+    if b"\x16" in lead:  # 원판이 첫 이름을 색(`16`)으로 칠한 줄(보스 「레이시아가 나타났다」) — 색 제어는 원판 그대로(4-6): 시작(`16`)을 내고 이름 뒤에 원판의 `1A`(이름 버퍼 출력 — 색을 닫는다. 화자 머리 「{16}병사{1A}」 와 같은 꼴)를 그대로 둔다
+        return lead + tab.enc(parts[0]) + b"\x1a" + tab.enc(parts[1]) + trail
     return tab.enc(text) + trail  # 줄은 엔진이 어절 단위로 넘긴다(`wrap.py` 훅, 마스터 10-18) — 빌드는 개행을 박지 않는다
 
 

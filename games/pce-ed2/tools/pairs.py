@@ -25,6 +25,7 @@ import common
 import font
 import hook
 import jptext
+import narrow_font
 import package
 import pceview
 import systext
@@ -69,7 +70,7 @@ class KoGlyphs:
         self.bm: dict[bytes, str] = {}
         for ch in cands:
             try:
-                self.bm.setdefault(font.pack(font.glyph(ch), font.flags(ch)), ch)
+                self.bm.setdefault(font.pack(font.pool_glyph(ch), font.flags(ch)), ch)
             except Exception:
                 pass
         self.static = [self.bm.get(p, "") for p in pool]
@@ -155,6 +156,9 @@ def decode(raw: bytes, kg: KoGlyphs | None, local: list[str] | None, sys_ctx: bo
             i += 2
         elif ko and a == 0x60:
             out.append(" ")
+            i += 1
+        elif ko and a == narrow_font.LIG_CODE:  # 반각 글꼴 표의 `!!` 합자 코드(마스터 11-06 (다)안 A1)
+            out.append("!!")
             i += 1
         elif ko and 0x20 <= a < 0x7F:
             out.append(chr(a))
@@ -323,6 +327,92 @@ def code_rows(iso: str, kg: KoGlyphs):
         yield f"C{sp.rel}:{sp.old:04X}", decode(_cstr(po, sp.old), None, None, True), decode(_cstr(pf, new), kg, local, True), False
 
 
+# ── 그림 글자 · 음성 자막 ────────────────────────────────────────────────────────
+GRAPHIC = [  # 문자열 포인터 체계 밖 — 그림(타일·도트)으로 구운 글자. (번호, 원판 글, 한글 글)
+    ("G:HUD:경험치 남음 라벨", "アト", "남다"),
+    ("G:카드안내:간판 보드 1", "満員", "만실"),
+    ("G:카드안내:간판 보드 2", "宿", "여관"),
+    ("G:카드안내:말풍선", "な", "헉"),
+]
+CDDA = common.GAME_DIR / "work" / "review" / "cdda"  # 받아쓰기(일본어 포함 — 커밋 안 함)
+VOICE_MISSING: list[str] = []
+
+
+def _sub_text(t: str) -> str:
+    return t.replace("\n", "↵").replace("|", "⏎")
+
+
+def graphic_rows(iso: str, kg: KoGlyphs):
+    """그림 글자 — 시스템 카드·백업 안내 4문(패키지 20 평문 SJIS ↔ `syscard.MESSAGES`)과 간판·말풍선·HUD 라벨."""
+    import syscard
+
+    po = bytes(common.track_data(syscard.PKG_REL, syscard.PKG_SECTORS))
+    for i, (off, ln) in enumerate(zip(syscard.MSG_OFF, syscard.MSG_LEN, strict=True)):
+        raw = po[off : off + ln].split(b"\xff\xff")[0]
+        o = raw.decode("cp932", errors="replace").replace("\u3000", "　")
+        yield f"G:카드안내:{i + 1}", o, "↵".join(syscard.MESSAGES[i]), False
+    for num, o, k in GRAPHIC:
+        yield num, o, k, False
+
+
+def voice_rows(iso: str, kg: KoGlyphs):
+    """음성 자막 — 오프닝(트랙 21)·대관식(트랙 23). 원문 = 음성 받아쓰기(원판에 글 자체는 없다), 한글 = 자막 자료(`opening_sub.json`·`ending_sub.json`).
+    받아쓰기 한 토막에 시간이 겹치는 자막을 묶어 한 줄로 싣는다(자막 쪽 넘김 `|` → ⏎ · 줄바꿈 → ↵). 어느 토막에도 안 겹치는 자막은 `한글만`, 자막이 안 겹친 토막은 `원판만`."""
+    import json
+
+    # 오프닝: 토막 = t21_words.json 의 단어 구간
+    try:
+        words = json.loads((CDDA / "t21_words.json").read_text(encoding="utf-8"))
+    except OSError:
+        words = None
+    subs = json.loads((common.GAME_DIR / "data" / "opening_sub.json").read_text(encoding="utf-8"))["subs"]
+    if words is None:
+        VOICE_MISSING.append("오프닝(work/review/cdda/t21_words.json 없음)")
+        for i, s in enumerate(subs):
+            yield f"V:open:{i + 1:02d}", "", _sub_text(s["text"]), False
+    else:
+        asg: dict[int, list[int]] = {}
+        orphan = []
+        for i, s in enumerate(subs):
+            best, bo = None, 0.0
+            for j, w in enumerate(words):
+                ov = min(s["t1"], w["t1"]) - max(s["t0"], w["t0"])
+                if ov > bo:
+                    best, bo = j, ov
+            if best is None:
+                orphan.append(i)
+            else:
+                asg.setdefault(best, []).append(i)
+        items = [(words[j]["t0"], f"V:open:w{j + 1:02d}", words[j]["w"], " ⏎ ".join(_sub_text(subs[i]["text"]) for i in asg.get(j, []))) for j in range(len(words))]
+        items += [(subs[i]["t0"], f"V:open:s{i + 1:02d}", "", _sub_text(subs[i]["text"])) for i in orphan]
+        for _t, num, o, k in sorted(items):
+            yield num, o, k, False
+    # 대관식: 토막 = 받아쓰기 초벌 표(`t23_draft.tsv`)의 seq
+    esubs = json.loads((common.GAME_DIR / "data" / "ending_sub.json").read_text(encoding="utf-8"))["subs"]
+    try:
+        draft = [ln.split("\t") for ln in (CDDA / "t23_draft.tsv").read_text(encoding="utf-8").splitlines()[1:]]
+        segs = []
+        for r in draft:
+            m = re.match(r"(\d+)\??\s*$", r[0])
+            t0 = re.match(r"([\d.]+)", r[1])
+            if m and t0 and r[3].strip():
+                segs.append((float(t0.group(1)), int(m.group(1)), r[3].strip()))
+    except OSError:
+        segs = None
+    if not segs:
+        VOICE_MISSING.append("대관식(work/review/cdda/t23_draft.tsv 없음)")
+        for i, s in enumerate(esubs):
+            yield f"V:end:{i + 1:02d}", "", _sub_text(s["text"]), False
+    else:
+        segs.sort()
+        kos: dict[int, list[str]] = {}
+        for s in esubs:
+            idx = max((j for j, g in enumerate(segs) if g[0] <= s["t0"] + 1.5), default=0)
+            kos.setdefault(idx, []).append(_sub_text(s["text"]))
+        for j, (t0, seq, jp) in enumerate(segs):
+            yield f"V:end:{seq:02d}@{t0}", jp, " ⏎ ".join(kos.get(j, [])), False
+
+
 # ── 표 ───────────────────────────────────────────────────────────────────────────
 def mark(o: str, k: str, shared: bool) -> str:
     bo, bk = blank(o), blank(k)
@@ -347,7 +437,7 @@ def build(iso: str, out: Path) -> dict:
     same = pages_diff = 0  # 참고 — 표시 넷에 안 드는 것(양쪽 글이 같다 · ⏎ 수가 다르다)
     with open(out / "pairs.tsv", "w", encoding="utf-8") as f:
         f.write("번호\t원판\t한글\t표시\n")
-        for kind, gen in (("패키지 줄", package_rows(iso, kg)), ("프로그램 리터럴", literal_rows(iso, kg)), ("프로그램 표", table_rows(iso, kg)), ("코드 문자열", code_rows(iso, kg))):
+        for kind, gen in (("패키지 줄", package_rows(iso, kg)), ("프로그램 리터럴", literal_rows(iso, kg)), ("프로그램 표", table_rows(iso, kg)), ("코드 문자열", code_rows(iso, kg)), ("그림 글자", graphic_rows(iso, kg)), ("음성 자막", voice_rows(iso, kg))):
             for num, o, k, shared in gen:
                 mk = mark(o, k, shared)
                 f.write(f"{num}\t{o.replace(chr(9), ' ')}\t{k.replace(chr(9), ' ')}\t{mk}\n")
@@ -396,8 +486,8 @@ MANIFEST = """# 원판·한글 짝 표 — manifest (마스터 10-20)
 - 본편 밖 패키지(배틀 테스트 6 · 판정 불가 12 · 다른 타이틀 잔재 49 — `residual_gate`)와 대사가 아닌 꼬리 덩이({skipped_n}개: {skipped})는 싣지 않는다.
 - 줄 수가 다른 덩이 {mismatch_n}개{mismatch}. 줄 번호는 그대로 맞대어 모자란 쪽이 비게 둔다.
 - 죽은 디버그 문구(전투 디버그 출력, 호출자 0)는 한글 이미지에서 자리를 글리프 풀로 돌려줬으므로 뺐다({dead_n}곳).
-- 이미지 안 **그림 글자·자체 글리프 후킹 문구**는 문자열 포인터 체계가 아니라 싣지 않았다 — 시스템 카드·백업 안내 4문(패키지 20) · 간판·말풍선 그림 · HUD 판 라벨.
-- **자막**(오프닝 나레이션 · 대관식 성우 대사)은 원판에 글이 없고 한글 쪽도 스프라이트 셀·ADPCM 자료로 구워 문자열로 되읽히지 않는다 — 한글만 있는 줄이라 표에 없다.
+- **그림 글자**(`G:`)는 문자열 포인터 체계가 아니라 타일·도트로 구운 글자라 손으로 짝지었다 — 시스템 카드·백업 안내 4문(원판 쪽은 패키지 20 의 평문 SJIS, 한글 쪽은 `syscard.MESSAGES`), 간판 「満員」「宿」·말풍선 「な」(`cardart`), HUD 「アト」 라벨(`hudplate`). **실제 이미지 픽셀은 되읽지 않았다** — 도구 자료의 글이다. 아직 못 실은 그림 글자: 타이틀·제작사 로고 따위 원판 그림.
+- **음성 자막**(`V:`) — 원판에 글이 없고 한글은 스프라이트 셀·ADPCM 자료로 구워 이미지에서 되읽히지 않는다. 그래서 원문 = **음성 받아쓰기**(`work/review/cdda/` — 일본어 포함이라 커밋 안 함), 한글 = 자막 자료(`data/opening_sub.json` · `ending_sub.json`)이고 **이미지의 바이트가 아니다**. 받아쓰기 토막(오프닝 `t21_words.json` 단어 구간 · 대관식 초벌 표 `t23_draft.tsv` seq)에 시간이 겹치는 자막을 묶어 한 줄로 싣는다(자막 쪽 넘김 → ⏎ · 줄바꿈 → ↵). 번호 `V:open:wNN` = 받아쓰기 토막 · `V:open:sNN` = 어느 토막에도 안 겹친 자막(`한글만`) · `V:end:seq@시각`. 받아쓰기는 무음 구간 잡음(「ご視聴ありがとうございました」 등)·이름 오청이 섞여 있다 — 원문이 아니라 **참고**다.
 - 쪽 넘김은 `13` 만 ⏎ 로 적는다(자동 넘김 `12` 는 `{{12}}` 그대로).
 - 변수 자리는 종류를 가르지 않는다 — `1B` 는 수일 때도 `{{name}}` 으로 적힌다(전투 덩이에선 이름 버퍼 출력이다).
 - 한글 줄 판별은 바이트(리드 `F0~F9`)로 한다 — 번역이 안 돼 일본어가 남은 줄은 원판과 같은 글자로 보인다(`참고` 의 같은 줄).

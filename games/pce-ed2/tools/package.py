@@ -56,8 +56,34 @@ def chunks(pkg: bytes) -> list[tuple[int, int]]:
     return list(zip(starts, ends, strict=True))
 
 
+# 디버그 마을(패키지 rel 258)은 마지막 덩이(3430)가 표의 끝 표시 없이 0xFF 채움으로 끝난다. 영 런 어림으로는 끝이 35589 로 나와
+# 실제 압축 열(4848 에서 끝 — 그 뒤는 0xFF 채움 9,232B)을 지나친다 — 그 한 덩이만 실측한 끝을 쓴다(11-09, 줄 25 개를 풀면 압축 위치가 4848).
+LAST_END_FIX = {(3430, 262144): 4848}
+
+
+def true_end(pkg: bytes, start: int, span: int = 70000) -> int | None:
+    """끝 표시가 없는 패키지의 마지막 덩이 — LZ 토큰을 따라가다 **토큰 경계가 처음으로 0xFF 8바이트 앞에 닿는 곳**(디버그 마을·배틀 테스트 마을, 11-09).
+    그 뒤 0xFF 채움을 압축 열로 계속 읽으면 앞 글을 되참조한 쓰레기 줄이 나온다."""
+    for _b, pos, _w, _r in lz.walk(pkg, start, auto512=True):
+        if pos - start > span:
+            break
+        if pkg[pos : pos + 8] == b"\xff" * 8:
+            return pos
+    return None
+
+
 def _last_end(pkg: bytes, start: int) -> int:
     """마지막 덩이의 끝 — 뒤에 이어지는 영(0) 32바이트 런 직전(패딩)."""
+    fix = LAST_END_FIX.get((start, len(pkg)))
+    if fix is not None and pkg[fix : fix + 8] == b"\xff" * 8:
+        return fix
+    if pkg[start : start + 8] != SENTINEL:  # 끝 표시 덩이가 아니라 글 덩이가 마지막이다 — 토큰을 따라가 진짜 끝을 찾는다
+        try:
+            e = true_end(pkg, start)
+        except (IndexError, ValueError):
+            e = None
+        if e is not None:
+            return e
     m = pkg.find(bytes(32), start)
     return len(pkg) if m < 0 else m
 

@@ -96,6 +96,8 @@ OPS = {
     ("TSX", "imp"): 0xBA,
     ("ASL", "absx"): 0x1E,
     ("ROL", "absx"): 0x3E,
+    ("DEC", "abs"): 0xCE,
+    ("INC", "abs"): 0xEE,
 }
 
 

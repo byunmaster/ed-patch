@@ -33,7 +33,7 @@ import jptext
 import package
 import pceview
 
-COS = {0x0D, 0x0E, 0x0F, 0x08, 0x06, 0x04, 0x10, 0x11}  # 열에서 빠지는 제어(줄바꿈 · 모드 · 강조 감싸기 · 속도 · 멈춤)
+COS = {0x0D, 0x0E, 0x0F, 0x08, 0x09, 0x06, 0x04, 0x10, 0x11}  # (09 = 08 의 짝 — 왼쪽 4px, 칸에 꽉 찬 지명 줄의 시작 앞당김) 열에서 빠지는 제어(줄바꿈 · 모드 · 강조 감싸기 · 속도 · 멈춤)
 PAGE = 0x13
 NAME_END = 0x1A
 NAME_BEG = 0x16
@@ -62,7 +62,8 @@ def tokens(line: bytes) -> list[tuple]:
 
 
 def skeleton(toks: list[tuple], drop=()) -> list[tuple]:
-    return [(t[1], t[2]) for t in toks if t[0] == "c" and t[1] not in COS and t[1] not in drop]
+    # `1D xx` 의 인자 xx 는 항목 이름 뒤에 찍히는 일본어 조사 가나(だ·で·は …)라 우리 줄은 빈 칸으로 바꾼다 — 열에서는 `1D` 만 센다(마스쿤 도구점 실화면 11-05)
+    return [(t[1], b"" if t[1] == 0x1D else t[2]) for t in toks if t[0] == "c" and t[1] not in COS and t[1] not in drop]
 
 
 BLANK = {b"\x20", b"\x60", b"\xa0", b"\x81\x40"}  # 여백 글자(전각·반각 공백 · 칸 맞춤)

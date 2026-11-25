@@ -61,8 +61,8 @@ SPECS = (
     # 「{이름}が共鳴している」 — 정본에 없는 문장(후보)
     Spec(514, 0xCC, 0x135, 18, "4ecdd74481b6", 0x262, (NAME, "이(가) 공명하고 있다.", END)),
     # 최종 보스: 연속 공격 뒤 합계 피해 — 「{이름}に合計{n}のダメージ」 · 「{이름}に{n}のダメージ｜」(정본 「에게 {n}의 피해!!」)
-    # 정본 조각 조합: 「{name}에게 합계」 + 「{n}의 피해」(끝 부호는 원문대로 — 첫 문장은 없고 둘째는 !!)
-    Spec(2690, 0xD9, 0xDC, 21, "6a9872a10a4f", 0x1D0, (NAME, C("{name}に合計"), " ", C("{n}のダメージ!!", "!!"), END)),
+    # 정본 조각 조합: 「{name}에게 합계 」(정본이 끝 공백을 가진다, 10-24) + 「{n}의 피해」(끝 부호는 원문대로 — 첫 문장은 없고 둘째는 !!)
+    Spec(2690, 0xD9, 0xDC, 21, "6a9872a10a4f", 0x1D0, (NAME, C("{name}に合計"), C("{n}のダメージ!!", "!!"), END)),
     Spec(2690, 0x155, 0x158, 19, "fc1904e82227", 0x1E6, (NAME, C("に{n}のダメージ。"), END)),
 )
 BASE = 0x6000
@@ -89,10 +89,10 @@ def _bytes(sp: Spec, tab) -> bytes:
     return b"".join(tab.enc(p) if isinstance(p, str) else p for p in _flat(sp))
 
 
-def apply(rel: int, pkg: bytes, new: bytearray, tab) -> None:
+def apply(rel: int, pkg: bytes, new: bytearray, tab, specs=None) -> None:
     """`new`(재배치한 패키지 바이트)의 코드 영역에 한국어 문자열을 쓰고 포인터를 돌린다. 원문 바이트가 다르거나 자리가 모자라면 오류."""
     used: dict[int, int] = {}
-    for sp in SPECS:
+    for sp in SPECS if specs is None else specs:
         if sp.rel != rel:
             continue
         old = pkg[sp.old : sp.old + sp.n]

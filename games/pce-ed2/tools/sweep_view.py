@@ -65,7 +65,7 @@ def has_pause(body: bytes) -> bool:
     return False
 
 
-def groups(final_iso: str, batch: int, only: set[int] | None, tail13: bool = False, pause_only: bool = False, extra: set[tuple[int, int, int]] | None = None):
+def groups(final_iso: str, batch: int, only: set[int] | None, tail13: bool = False, pause_only: bool = False, extra: set[tuple[int, int, int]] | None = None, strip_lead: bool = False):
     cache: dict[int, bytes] = {}
     for rel, start in sorted(set(dialogue._chunks_with_work()) | {(r_, s_) for r_, s_, _l in (extra or ())}):
         if only and rel not in only:
@@ -99,6 +99,9 @@ def groups(final_iso: str, batch: int, only: set[int] | None, tail13: bool = Fal
             body = b"".join(lines[j] for j in sel)
             if pause_only and not has_pause(body):
                 continue
+            if strip_lead:
+                while body[:1] == b"\x13":
+                    body = body[1:]  # 앞 줄에 이어지는 줄(첫 글자가 쪽 넘김 `13`)은 단독으로 띄우면 빈 쪽 하나가 먼저 떠 쪽 넘김 대기에서 안 찍힌다 — 맨 앞 `13` 을 뗀다
             if tail13 and body[-1:] not in (b"\x12", b"\x13"):
                 body += b"\x13"  # 촬영용 쪽 대기 — 끝 제어 없는 줄은 창이 바로 닫혀 못 찍는다
             data = lz.encode_opt(b"\x00" * pceview.SKIP + body + b"\x00" * 64)  # 도착 장면이 줄 번호 78 부터 부른다 — 빈 줄 78개를 앞에 둔다
@@ -117,6 +120,7 @@ def main() -> int:
     ap.add_argument("--pause", action="store_true", help="글 중간 멈춤(`11`)이 있는 줄만, 끝에 쪽 대기 `13` 을 덧붙여(멈춤 뒤 이어지는 글이 창이 닫히기 전에 찍히게)")
     ap.add_argument("--force", nargs="*", help="`rel:덩이:줄` 을 번역 범위 밖이어도(틀 줄 등) 만들어 찍는다")
     ap.add_argument("--keys", nargs="*", help="`rel:덩이:줄` 만 찍는다(고친 줄 재촬영)")
+    ap.add_argument("--strip-lead", action="store_true", help="줄 맨 앞 쪽 넘김 `13` 을 뗀다(앞 줄에 이어지는 줄을 단독으로 찍을 때)")
     ap.add_argument("--only", type=int, nargs="*")
     ap.add_argument("--allow-stale", action="store_true", help="롬 소스 지문이 지금 소스와 달라도 찍는다")
     a = ap.parse_args()
@@ -136,7 +140,7 @@ def main() -> int:
     retry = None
     if a.retry:
         retry = {l.split("\t")[1] + "\t" + l.split("\t")[2] for l in open(a.retry) if l.rstrip("\n").endswith("못 찍음")}
-    for gid, key, sel, data, gl, npg in groups(a.iso, a.batch, set(a.only) if a.only else None, tail13=bool(a.retry) or a.pause, pause_only=a.pause, extra={tuple(int(x) for x in k.split(":")) for k in (a.force or [])}):
+    for gid, key, sel, data, gl, npg in groups(a.iso, a.batch, set(a.only) if a.only else None, tail13=bool(a.retry) or a.pause, pause_only=a.pause, strip_lead=a.strip_lead, extra={tuple(int(x) for x in k.split(":")) for k in (a.force or [])}):
         if gid in done:
             continue
         if a.keys and not any(f"{key}:{j}" in a.keys for j in sel):

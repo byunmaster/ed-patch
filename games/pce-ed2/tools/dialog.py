@@ -128,12 +128,20 @@ def parse_frame(line: bytes) -> Frame | None:
     sp = s_ids[0] if s_ids else None
     j = lambda a, b: b"".join(x for _k, x in toks[a:b])  # noqa: E731
     marks, n, end = [], 0, False
-    for k, b in toks[first : last + 1]:
+    body = toks[first : last + 1]
+    skip = -1
+    for ti, (k, b) in enumerate(body):
+        if ti == skip:
+            continue
         if k == "t":
             if b not in (b"\xa0", b"`"):  # 여백(12px)·반각 공백은 글자로 안 센다
                 n += 1
                 end = b in _SENT_END
         elif k == "c" and b[0] in (0x10, 0x11):
+            if b[0] == 0x11 and ti + 1 < len(body) and body[ti + 1][0] == "t" and len(body[ti + 1][1]) == 1 and 0x30 <= body[ti + 1][1][0] <= 0x39:
+                # 멈춤 `11 nn nn` 바로 뒤 ASCII 숫자 한 글자(`11 31 32 30` 의 `30`)는 원판이 찍는 보이지 않는 글자다 — 멈춤에 붙여 보존한다(11-07 실험: 인자는 둘뿐, 이 글자는 한 글자 시간)
+                b = b + body[ti + 1][1]
+                skip = ti + 1
             marks.append((n, b, end))  # 셋째 = 이 멈춤 바로 앞 글자가 문장 끝 부호인가
     if sp is None:
         return Frame(j(0, first), None, b"", j(last + 1, len(toks)), tuple(marks), n)

@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import asm
 import font
 import layout
+import narrowhan
 
 SEAM_BANK, SEAM_OFF = 0x6C, 0x00D3  # `$60D2: JSR $60EA` 의 피연산자(2B)
 SEAM_OLD = bytes([0xEA, 0x60])
@@ -160,6 +161,9 @@ def _routine(nruns: int) -> asm.Asm:
     a.op("LDA", "absx", 0x2105)
     a.op("AND", "imm", font.FLAG_BATCHIM)
     a.op("STA", "abs", "LASTB")  # 방금 그린 글자의 받침 플래그 — 다음 조사 토큰이 쓴다
+    a.op("LDA", "absx", 0x2105)
+    a.op("AND", "imm", font.FLAG_DOWN)
+    a.op("STA", "zp", 0xEC)  # 한 행 내려 그릴 글자(「」 의 」) — 레지스터가 밀리기 전에 읽어 둔다($EC 는 복사 뒤라 비었다)
     a.op("LDY", "imm", 1)
     a.label("row")  # 행마다 위 3비트 → 출력 홀수 바이트(비트 7~5), 레지스터를 3비트 왼쪽으로
     a.op("LDA", "absx", 0x2101)
@@ -175,9 +179,22 @@ def _routine(nruns: int) -> asm.Asm:
     a.op("INY")
     a.op("CPY", "imm", 23)
     a.op("BCC", "rel", "row")
+    a.op("LDA", "zp", 0xEC)
+    a.op("BNE", "rel", "down")
     a.op("CLA")
     a.op("STA", "abs", GLYPH_BUF + 22)  # 행 11 은 비어 있다
     a.op("STA", "abs", GLYPH_BUF + 23)
+    a.op("BRA", "rel", "popped")
+    a.label("down")  # 행 0~10 → 1~11, 행 0 은 비운다
+    a.op("LDX", "imm", 21)
+    a.label("dn")
+    a.op("LDA", "absx", GLYPH_BUF)
+    a.op("STA", "absx", GLYPH_BUF + 2)
+    a.op("DEX")
+    a.op("BPL", "rel", "dn")
+    a.op("STZ", "abs", GLYPH_BUF)
+    a.op("STZ", "abs", GLYPH_BUF + 1)
+    a.label("popped")
     for _ in range(5):
         a.op("PLA")  # 스택의 40비트 레지스터 버리기
     a.op("PLX")
@@ -276,7 +293,18 @@ def _routine(nruns: int) -> asm.Asm:
     a.labels["BANKS_LOC"] = a.labels["BANKS"] + nruns
     a.labels["ADLO_LOC"] = a.labels["ADLO"] + nruns
     a.labels["ADHI_LOC"] = a.labels["ADHI"] + nruns
-    a.label("ascii")  # ASCII 한 글자(`$F9`)를 그리기 직전 — 받침 플래그를 맞춘다: 영문·부호 = 없음, 숫자 = 읽는 소리(영·일·삼·육·칠·팔은 있음). 레지스터는 지킨다
+    a.label("ascii")  # 좁은 글꼴 한글(`06` 모드 목록, 리드 FA — 디버그 마을) 이면 도안을 패키지 표에서, 아니면 아래 ASCII 흐름
+    a.op("PHA")  # 호출자의 A 를 지킨다(원래 ASCII 흐름이 그렇다)
+    a.op("LDA", "zp", 0xF9)
+    a.op("CMP", "imm", narrowhan.LEAD)
+    a.op("BEQ", "rel", "anar")
+    a.op("PLA")
+    a.op("BRA", "rel", "anorm")
+    a.label("anar")  # 좁은 글꼴 한글 — 도안만 채우고 호출자로(C=0)
+    a.op("PLA")
+    a.op("JMP", "abs", "narrowh")
+    a.label("anorm")
+    a.label("ascii0")  # ASCII 한 글자(`$F9`)를 그리기 직전 — 받침 플래그를 맞춘다: 영문·부호 = 없음, 숫자 = 읽는 소리(영·일·삼·육·칠·팔은 있음). 레지스터는 지킨다
     a.op("PHA")
     a.op("PHX")
     a.op("LDA", "zp", 0xF9)
@@ -294,6 +322,50 @@ def _routine(nruns: int) -> asm.Asm:
     a.op("PLX")
     a.op("PLA")
     a.op("JMP", "abs", ASCII_DRAW)
+    a.label("narrowh")  # 번호 = $F8 - TRAIL0 → 패키지 표(뱅크 PKG_BASE+1, 창 $8000 + 번호×16)의 12B 를 $309B 에 8×12 행(짝수 바이트 = 도안, 홀수 = 0)으로
+    a.op("LDA", "zp", 0xF8)
+    a.op("SEC")
+    a.op("SBC", "imm", narrowhan.TRAIL0)
+    a.op("STA", "zp", 0xEC)
+    a.op("STZ", "zp", 0xED)
+    for _ in range(4):
+        a.op("ASL", "zp", 0xEC)
+        a.op("ROL", "zp", 0xED)
+    a.op("CLC")
+    a.op("LDA", "zp", 0xED)
+    a.op("ADC", "imm", WINDOW >> 8)
+    a.op("STA", "zp", 0xED)
+    a.op("PHP")
+    a.op("SEI")
+    a.op("TMA", "tma", WINDOW_MPR)
+    a.op("PHA")
+    a.op("LDA", "zp", PKG_BASE)
+    a.op("CLC")
+    a.op("ADC", "imm", narrowhan.TABLE_OFF >> 13)
+    a.op("TAM", "tam", WINDOW_MPR)
+    a.op("LDY", "imm", 11)
+    a.label("ncp")
+    a.op("LDA", "izpy", 0xEC)
+    a.op("STA", "absy", "GBUF")
+    a.op("DEY")
+    a.op("BPL", "rel", "ncp")
+    a.op("PLA")
+    a.op("TAM", "tam", WINDOW_MPR)
+    a.op("PLP")
+    a.op("LDY", "imm", 0)
+    a.op("LDX", "imm", 0)
+    a.label("nex")
+    a.op("LDA", "absy", "GBUF")
+    a.op("STA", "absx", GLYPH_BUF)
+    a.op("CLA")
+    a.op("STA", "absx", GLYPH_BUF + 1)
+    a.op("INX")
+    a.op("INX")
+    a.op("INY")
+    a.op("CPY", "imm", 12)
+    a.op("BCC", "rel", "nex")
+    a.op("CLC")
+    a.op("RTS")
     a.label("GBUF")  # 글리프 16B 사본(RAM)
     a.data(bytes(16))
     a.label("DIGB")  # 숫자 0~9 의 받침 플래그
