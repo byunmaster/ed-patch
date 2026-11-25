@@ -229,6 +229,9 @@ step "쉼표" "$T/check_comma.py"
 step "가운데 맞춤" "$T/check_center.py"
 echo "  ── 동적 조사 훅 (SH-2 디스어셈블 검산 + 참조 되읽기)"
 step "조사 훅" "$T/patch_josa_hook.py" --apply
+# 🔴 QA 전용 디버그 빌드 — `ED_DEBUG_QA=1 ED_BUILD_TAG=qa-debug` 일 때만 돈다(아니면 스스로 건너뜀 · 제품 롬 불변).
+echo "  ── QA 디버그 (조건부 — 제품 빌드는 건너뜀)"
+step "QA 디버그" "$T/patch_debug_qa.py" --apply
 
 # 조판 지문 — ⚠ **게이트가 아니라 보고다**(문안을 바꾸면 당연히 바뀐다).
 # 새턴이 `shared/` 에 닿는 면은 셋이다 — `glossary`(이름) · `text.line_key`(저본 열쇠) ·
