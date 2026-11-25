@@ -53,7 +53,7 @@ def reverse(*tables):
     out = {}
     for t in tables:
         for ch, idx in t.items():
-            out[bytes(sjis.sjis_of_index(idx))] = H.LIGA_BACK.get(ch, ch)  # 합자 글자는 풀어 쓴 `!?` 로
+            out[bytes(sjis.sjis_of_index(idx))] = ch if ch == "⁉" else H.LIGA_BACK.get(ch, ch)  # 특수 글리프는 풀어 쓴 꼴로 — 단 `!?` 합자 `⁉` 는 풀지 않는다(쓰이면 원문 `!?` 와 어긋나 잡힌다, 마스터 11-17)
     return out
 
 

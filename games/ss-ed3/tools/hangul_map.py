@@ -302,8 +302,9 @@ def freeze_liga(free):
 
 
 def liga_text(text):
-    """대사 문안의 `!?` 를 합자 글자로 — 배정이 없으면 그대로."""
-    return text.replace("!?", "⁉") if load_liga() else text
+    """대사 문안을 인코딩 꼴로 — 🔴 `!?` 는 **합자로 바꾸지 않는다**(마스터 11-13 「합자 없게」 · 11-17 「새턴3 은 변경안으로」: 반각 두 글자).
+    합자가 문안 층 밖(인코딩 → KANJI12 글리프)에서 일어나 `check_punct` 가 못 잡았다 — `check_no_loss` 가 이제 `⁉` 를 풀지 않고 견준다."""
+    return text
 
 
 def encode_kr(text, table=None, kagi=False):

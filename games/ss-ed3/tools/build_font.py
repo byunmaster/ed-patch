@@ -175,6 +175,8 @@ def bake_ellipsis(out):
     g[:] = 0
     for c in cols:
         g[low, c] = 1
+    for c in cols:  # 점은 갈무리 `!` 의 점과 같은 1×2(바닥 행 + 윗행) — 마스터 11-17 「새턴3 은 변경안으로」
+        g[low - 1, c] = 1
     out[idx * F.STRIDE : (idx + 1) * F.STRIDE] = F.pack18(g)
     return 1
 
@@ -303,6 +305,8 @@ def bake_liga(out, asc):
     table = H.load_liga()
     n = 0
     for ch, idx in table.items():
+        if ch == "⁉":  # `!?` 합자는 안 쓴다(마스터 11-13 · 11-17 — 반각 두 글자). 배정 슬롯은 정본이라 남기되 굽지 않는다
+            continue
         grid = np.zeros((F.ROWS, F.CELL), np.uint8)
         if ch in BOOKQ:
             for r, row in enumerate(BOOKQ[ch]):
@@ -381,6 +385,21 @@ def bake_punct(asc, kanji):
     for c in range(4):
         grid[6][c] = 1
     new["-"] = grid
+    #   🔴 갈무리 반각 부호(마스터 11-17 「새턴3 은 변경안으로」) — 한 행 내림 · 칸 가운데(+1열) · 점은 `!` 의 점(1×2)과 같게
+    gb = fonts.galmuri()
+    for ch in "?!":
+        bits = gb.bits(ch, dy=-2, rows=F.ASCII_ROWS, width=6)
+        new[ch] = [[0] + [int(v) for v in r[:5]] for r in bits]
+    dot = [r for r in range(F.ASCII_ROWS) if new["!"][r][2]][-2:]  # `!` 점의 행(10·11)
+    g = [[0] * 6 for _ in range(F.ASCII_ROWS)]
+    for r in dot:
+        g[r][2] = 1
+    new["."] = g
+    g = [[0] * 6 for _ in range(F.ASCII_ROWS)]
+    for r in (dot[0] - 1, dot[0]):  # 쉼표 머리 1×2 — 꼬리를 둘 행이 칸 밑에 없어 한 행 올린다
+        g[r][2] = 1
+    g[dot[1]][1] = 1
+    new[","] = g
     for ch, grid in new.items():
         buf[ord(ch) * F.ASCII_STRIDE : (ord(ch) + 1) * F.ASCII_STRIDE] = pack_ascii_rows(grid)
     return buf
