@@ -2,7 +2,7 @@
 
 트랙 **kr** (일본 원판 한글 번역). 루트 규칙은 `../../CLAUDE.md`, 이 파일엔 이 게임 것만 둔다. 원본 `originals/jp/ps1-ed4` (SLPS-01540).
 
-**지금은 기반 단계다**(마스터 10-24 — 번역 판단 없는 정적 기반만). 현황·남은 일은 `docs/status.md`, 겪은 일은 `docs/devlog.md`.
+**0.1.0 선공개 라운드**: 대본 번역은 끝났고(24,474/24,499 조각) 검수·말투·조판을 다듬는 중이며, 출시 전 마스터 확인을 받는다. 현황·남은 일은 `docs/status.md`, 겪은 일은 `docs/devlog.md`.
 
 - **ED3 와 같은 GMF 엔진**이지만 **이 폴더가 독립 코드베이스**다 — 공용(`shared/disc` · `shared/ps1`: MODE2 섹터 쓰기·GMF 아카이브·TIZ·TIM) 위에 얇게 선다. ps1-ed3 의 도구는 읽기만 하고 import 하지 않는다
   (ED3 쪽 ED4 몫 — `charmap_ed4` · `hangul_map_ed4` · `script/ed4` · `DISCS["ed4"]` — 은 ED3 전환 때 지운다. 지식이 두 곳에 있는 동안은 이 폴더의 `charmap.json`·`hangul_map.json` 이 ED4 정본이다).
