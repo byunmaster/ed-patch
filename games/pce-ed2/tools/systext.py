@@ -44,6 +44,10 @@ ARGS = {
 CATS = ("ui", "item", "spell", "place", "person", "monster", "speaker", "battle", "system")
 
 # 문맥 — 같은 원문이 칸마다 다른 값인 것(정본 열쇠 `원문@문맥`). 문자열 주소(뱅크, 오프셋)로 건다.
+# 앞 조각(「<시전자>は」 = 이름 + 동적 조사)에 이어 그려지는 대상 이름 조각 — 일본어는 붙여 쓰지만 한국어는 조사와 대상 이름 사이를 띄운다.
+# 원판 `70+1889`(「<대상>に↵」, 주문 사용 문구 둘째 조각). 마스터 QA 「는신디에게」(11-23).
+LEAD_SPACE = {(0x70, 0x1889)}
+
 CONTEXT = {
     (0x6A, 0x030C): "파티메뉴",
     (0x6A, 0x0392): "파티메뉴",
@@ -445,6 +449,8 @@ def plan(prog: layout.Prog, tab, report: dict | None = None) -> None:
                     newb = alt
                 else:
                     newb = b"\x0d".join(rendered)
+        if (bank, off) in LEAD_SPACE:
+            newb = tab.enc(" ", space=SPACE) + newb
         tail = tails.get((bank, off))
         if tail is not None:  # 꼬리 문자열(「…{14}に」 의 「に」)도 번역해 앞 문자열의 끝에 겹치게 한다 — 안 겹치면 둘 다 원문으로 둔다
             import msgs

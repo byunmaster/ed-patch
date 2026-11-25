@@ -270,7 +270,7 @@ def glyph_of(tok: str) -> bytes:
     """토큰 → 24B 글리프. 겹부호는 앞 글자 잉크 폭 + 1칸 뒤에 둘째를 겹쳐 그린다. 숫자는 좁은 숫자(`DIGIT5`)."""
     if len(tok) == 2 and tok[0] == "P" and tok[1] in NARROW_ORDER:  # 8px 전진 코드가 그리는 도안(잉크 열 0~)
         if tok[1].isdigit():
-            return b"".join(v.to_bytes(2, "big") for v in _digit_rows(tok[1], 0))
+            return b"".join(v.to_bytes(2, "big") for v in _digit_rows(tok[1], 1))  # 잉크 열 1~5 — 앞 공백과 뒤 글자 사이를 고르게(열 0 이면 「2 세」 로 뒤가 벌어졌다, 11-23)
         return b"".join(v.to_bytes(2, "big") for v in narrow_rows(tok[1]))
     if len(tok) == 2 and tok[1] == "～" and tok[0].isdigit():  # 숫자(열 0~4) + 좁은 물결(열 6~10)
         wave = [0] * 12

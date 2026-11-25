@@ -335,6 +335,9 @@ def color_lead_sp_findings(k: str) -> int:
     return len(COLOR_LEAD_SP.findall(k))
 
 
+CONT_FRAGMENTS = {"S70:1889"}  # 주문 사용 문구 둘째 조각(「<대상>에게↵」) — 앞 조각 「<시전자>{josa}」 에 이어 그린다. `systext.LEAD_SPACE` 와 짝.
+
+
 def analyze(iso: str):
     kg = pairs.KoGlyphs(iso)
     tot = {a: [0, 0] for a in AXES}  # [고칠 것, 원판 동일]
@@ -351,6 +354,8 @@ def analyze(iso: str):
             fk, fo = findings(k), findings(o, True)
             fk.update(color_findings(o, k))
             fk.update(center_findings(o, k))
+            if key in CONT_FRAGMENTS:  # 앞 조각에 이어 그려지는 문자열 — 첫 공백은 앞 조각의 조사와 이름 사이 띄움(「는 신디에게」)이라 첫 칸 공백이 아니다
+                fk["first_space"] = 0
             fk["one_line"] = one_line_findings(k)
             fk["reward_nl"] = reward_findings(o, k)
             fk["comma_conn"] = comma_findings(k)

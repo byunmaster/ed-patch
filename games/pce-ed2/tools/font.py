@@ -145,12 +145,48 @@ KAGI_ART2 = (
 )
 
 
+KAGI_OPEN_SHIFT = 2  # 여는 「 『 잉크를 칸 왼쪽으로 옮긴 열 수(모양은 그대로, 위치만 — 마스터 11-23 「pce1 처럼 여는 낫표를 왼쪽으로, pce2 도 동일하게」). 닫는 」 』 는 그대로
+
+
+KAGI_MASTER_FILE = Path(__file__).resolve().parents[1] / "data" / "kagi_master.txt"
+
+
+def _master_cells() -> dict[str, list[str]] | None:
+    """마스터 도안(8×12 네 칸) — `data/kagi_master.txt` 가 있으면 그대로 쓴다(KAGI_OPEN_SHIFT 방식 대신).
+    꼴: 글자(「 」 『 』) 한 줄 + 12행(각 8글자, `#`/`.`) 을 네 번, 빈 줄은 무시. 틀리면 예외 — 조용히 옛 방식으로 안 간다."""
+    if not KAGI_MASTER_FILE.exists():
+        return None
+    out: dict[str, list[str]] = {}
+    lines = [ln.strip() for ln in KAGI_MASTER_FILE.read_text(encoding="utf-8").splitlines() if ln.strip() and not ln.startswith("//")]
+    i = 0
+    while i < len(lines):
+        ch, rows = lines[i], lines[i + 1 : i + 13]
+        assert ch in KAGI and ch not in out and len(rows) == 12, f"낫표 도안 꼴 오류: {ch!r}"
+        assert all(len(r) == 8 and set(r) <= {"#", "."} for r in rows), f"{ch} 행은 8열 #/. 여야 한다"
+        out[ch] = rows
+        i += 13
+    assert set(out) == set(KAGI), f"네 칸이 다 있어야 한다: {sorted(out)}"
+    return out
+
+
+def kagi_rows(ch: str) -> list[str]:
+    """한 낫표 글자의 8×12 도안 — 마스터 파일 우선, 없으면 16×12 도안 반쪽(+여는 쪽 SHIFT)."""
+    m = _master_cells()
+    if m:
+        return m[ch]
+    k = KAGI.index(ch)
+    art = (KAGI_ART, KAGI_ART2)[k // 2]
+    rows = [r[(k % 2) * 8 : (k % 2) * 8 + 8] for r in art]
+    if k % 2 == 0:
+        rows = [r[KAGI_OPEN_SHIFT:] + "." * KAGI_OPEN_SHIFT for r in rows]
+    return rows
+
+
 def _kagi_glyph(k: int) -> bytes:
     out = []
-    k, art = k % 2, (KAGI_ART, KAGI_ART2)[k // 2]
-    for r in art:
+    for r in kagi_rows(KAGI[k]):
         v = 0
-        for c, ch in enumerate(r[k * 8 : k * 8 + 8]):
+        for c, ch in enumerate(r):
             if ch == "#":
                 v |= 0x8000 >> c
         out.append(v.to_bytes(2, "big"))
@@ -210,7 +246,7 @@ def mark_josa(text: str) -> str:
 
 def flags(ch: str) -> int:
     """글자의 훅용 플래그 — 받침 있는 한글이면 FLAG_BATCHIM."""
-    if ch in "」』":
+    if ch in "」』" and any(pool_glyph(ch)[22:24]):  # 옛 도안(D판)은 가로줄이 행 11 이라 한 행 내려 그린다 — 마스터 11-25 도안은 행 0~10 안이라 플래그 없이 그대로
         return FLAG_DOWN
     return FLAG_BATCHIM if "가" <= ch <= "힣" and (ord(ch) - 0xAC00) % 28 else 0
 

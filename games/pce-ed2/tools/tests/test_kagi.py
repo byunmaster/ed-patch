@@ -16,22 +16,35 @@ CODES = [bytes([0xF1, 0x30]), bytes([0xF2, 0x31]), bytes([0xF3, 0x32]), bytes([0
 
 class Kagi(unittest.TestCase):
     def test_글리프가_도안과_같다(self):
-        for ch, k in (("「", 0), ("」", 1), ("『", 2), ("』", 3)):
+        for ch in font.KAGI:
             g = font.pool_glyph(ch)
-            for r, row in enumerate((font.KAGI_ART, font.KAGI_ART2)[k // 2]):
+            for r, row in enumerate(font.kagi_rows(ch)):
                 v = int.from_bytes(g[2 * r : 2 * r + 2], "big")
                 want = "".join("#" if v & (0x8000 >> c) else "." for c in range(8))
-                self.assertEqual(want, row[(k % 2) * 8 : (k % 2) * 8 + 8], f"{ch} 행 {r}")
+                self.assertEqual(want, row, f"{ch} 행 {r}")
+
+    def test_옛_방식_도안_반쪽(self):
+        if font.KAGI_MASTER_FILE.exists():
+            self.skipTest("마스터 도안 파일이 있다")
+        for k, ch in enumerate(font.KAGI):
+            art = (font.KAGI_ART, font.KAGI_ART2)[k // 2]
+            for r, row in enumerate(art):
+                a = row[(k % 2) * 8 : (k % 2) * 8 + 8]
+                if k % 2 == 0:
+                    a = a[font.KAGI_OPEN_SHIFT :] + "." * font.KAGI_OPEN_SHIFT
+                self.assertEqual(font.kagi_rows(ch)[r], a)
 
     def test_내림_플래그_묶기_풀기(self):
         for ch in "」』":
             g = font.pool_glyph(ch)
-            self.assertTrue(any(g[22:24]), "행 11 에 가로줄이 있다")
+            self.assertEqual(font.flags(ch) == font.FLAG_DOWN, any(g[22:24]), "행 11 에 잉크가 있을 때만 내림 플래그")
             self.assertEqual(font.unpack(font.pack(g, font.flags(ch))), g)
         for ch in "「『":
             g = font.pool_glyph(ch)
             self.assertEqual(font.unpack(font.pack(g, font.flags(ch))), g)
         self.assertEqual(font.flags("「"), 0)
+        if font.KAGI_MASTER_FILE.exists():
+            self.assertTrue(all(not any(font.pool_glyph(c)[22:24]) for c in font.KAGI), "마스터 도안은 행 0~10 안")
 
     def test_훅이_내림_플래그를_따른다(self):
         gl = synthetic(10)
