@@ -45,14 +45,15 @@ def _load_bdf():
 
 # 🔴 **「…」는 한국식 바닥(글자 아랫줄)에 점 셋**(번역 규칙 1-3, 마스터 10-08·10-22 「…이 일본식이야」). 갈무리의 「…」 는 12행 칸의 5행(한가운데)에 찍혀 있어
 #   마침표(10행)와 높이가 달랐다 — 마침표와 같은 행에 점 셋(열 1·5·9, pce-ed1 `font._ellipsis_floor` 와 같은 꼴). 오프닝·엔딩 자막(`opening_sub.render_line`)은 이미 이 꼴이다.
-ELLIPSIS_FLOOR_ROW = 10
-ELLIPSIS_FLOOR_COLS = (1, 5, 9)
+ELLIPSIS_FLOOR_ROWS = (9, 10)  # 점 크기·모양은 마침표(`narrow_font` 「.」: 바닥 2×2 네모점)와 같게(마스터 11-15 「전 기종」, 번역 규칙 1-3)
+ELLIPSIS_FLOOR_COLS = (1, 5, 9)  # 각 점의 왼쪽 열(2px 폭)
 
 
 def _ellipsis_floor() -> bytes:
     rows = [0] * 12
-    for c in ELLIPSIS_FLOOR_COLS:
-        rows[ELLIPSIS_FLOOR_ROW] |= 0x8000 >> c
+    for r in ELLIPSIS_FLOOR_ROWS:
+        for c in ELLIPSIS_FLOOR_COLS:
+            rows[r] |= (0x8000 >> c) | (0x8000 >> (c + 1))
     return b"".join(v.to_bytes(2, "big") for v in rows)
 
 
@@ -60,6 +61,19 @@ def glyph(ch: str) -> bytes:
     """한 글자 → 24B. 세로는 베이스라인에 맞추고 가로는 왼쪽 정렬."""
     if ch == "…":
         return _ellipsis_floor()
+    if ch in FULL_POOL:  # 원판 BIOS 도안 그대로, 한 행 올림(BIOS 1~11행 → 0~10행)
+        return _bios_full(ch)
+    return glyph_bdf(ch)
+
+
+def _bios_full(ch: str) -> bytes:
+    rows = [0] * 12
+    for i, bits in enumerate(BIOS_FULL[ch]):
+        rows[i] = sum(0x8000 >> c for c, b in enumerate(bits) if b == "#")
+    return b"".join(v.to_bytes(2, "big") for v in rows)
+
+
+def glyph_bdf(ch: str) -> bytes:
     g = _load_bdf().get(ord(ch))
     if g is None:
         raise KeyError(f"글꼴에 없는 글자: {ch!r} (U+{ord(ch):04X})")
@@ -82,7 +96,15 @@ def glyph(ch: str) -> bytes:
 NARROW = set(".,!?0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-'\"():")  # 엔진이 ASCII 단일 바이트를 8px 반각으로 그린다(`$6448` +2) — 규칙 1-1·1-5·1-6
 SPACE_PX, NARROW_PX, CELL_PX = 4, 8, 12
 # 전각 라틴 대문자·숫자는 번역 글꼴(Galmuri) 풀 글리프가 아니라 **원판 글자**(SJIS 두 바이트 — 엔진이 BIOS 글꼴로 그린다, 12px)로 낸다 — 규칙 1-8(마스터 10-27 「pce2 는 원본 그대로」)
-ORIG_FULL = {chr(c + 0xFEE0) for c in [*range(0x30, 0x3A), *range(0x41, 0x5B)]}
+# 단 제품 화면에 나오는 ＥＰ·ＨＰ 의 `Ｅ Ｈ Ｐ` 는 우리 풀 글리프로 낸다(마스터 11-16): 모양은 **원판 BIOS 전각 도안 그대로**(갈무리 11행·12px 칸)이고, BIOS 도안이 한글(0~10행)보다 1행 아래(1~11행)라
+# **한 행 올려** 0~10행에 놓는다(`BIOS_FULL` = 올린 뒤 행 0~10). 디버그 메뉴의 Ｏ·Ｄ·숫자는 원판 그대로.
+BIOS_FULL = {
+    "Ｅ": ("##########..", ".#.......#..", ".#..........", ".#..........", ".#......#...", ".########...", ".#......#...", ".#..........", ".#..........", ".#.......#..", "##########.."),
+    "Ｐ": (".#######....", "..#.....#...", "..#......#..", "..#......#..", "..#.....#...", "..######....", "..#.........", "..#.........", "..#.........", "..#.........", ".###........"),
+    "Ｈ": ("###....###..", ".#......#...", ".#......#...", ".#......#...", ".#......#...", ".########...", ".#......#...", ".#......#...", ".#......#...", ".#......#...", "###....###.."),
+}
+FULL_POOL = frozenset("ＥＨＰ")
+ORIG_FULL = {chr(c + 0xFEE0) for c in [*range(0x30, 0x3A), *range(0x41, 0x5B)]} - FULL_POOL
 
 
 def adv(ch: str) -> int:

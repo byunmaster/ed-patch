@@ -64,17 +64,20 @@ def normalize(raw: bytes, system: bool = False) -> bytes:
 
 
 def blank_item_particle(line: bytes) -> bytes:
-    """`1D xx`(항목 이름 + 조사 가나 xx 한 글자 — 6B=だ · 6E=で · CA=は …) 뒤에 우리 공백 `60` 이 곧바로 오면, 원문 가나가 화면에 찍히지 않게 xx 를 빈 칸(`60` 전각 공백)으로 바꾸고 우리 공백은 뺀다
-    (상점 구입 줄 「폭약だ 말이군요」 — 11-05 마스쿤 도구점 실화면). 뒤에 한국어 조사 훅(`F9`)이 오는 꼴(`1D CA F9 …`)은 건드리지 않는다."""
+    """`1D xx`(항목 이름 + 조사 가나 xx 한 글자 — 6B=だ · 6E=で · CA=は · A6=を …) 뒤에 우리 글이 오면, 원문 가나가 화면에 찍히지 않게 xx 를 빈 칸(`60`)으로 바꾼다.
+    · 우리 공백(`60`)이 곧바로 오면 그 공백이 빈 칸을 겸한다 — `1D xx 60` → `1D 60` (상점 구입 줄 「폭약だ 말이군요」, 11-05 마스쿤 도구점 실화면).
+    · 그 밖의 꼴도 같다 — 한국어 조사 훅(`F9`)이 오는 판매 줄 「천 옷は은」(마스터 11-17)·줍기 줄 「…を를」 포함. 시험 빌드 실화면(test-fix1): 항목 이름 뒤 `60` 은
+      훅의 받침 기억을 지우지 않고(조사가 이름 쪽을 따른다) 틈은 반 칸쯤이다(`A0` 은 한 칸 틈이라 안 쓴다).
+    이미 `60` 이면 그대로 둔다."""
     out = bytearray()
     i = 0
     while i < len(line):
         a = line[i]
         if a < 0x20:
             n = 1 + jptext.ARGS.get(a, 0)
-            if a == 0x1D and line[i + 1 : i + 2] and line[i + 2 : i + 3] == b"\x60":
+            if a == 0x1D and i + 1 < len(line) and line[i + 1] != 0x60:
                 out += b"\x1d\x60"
-                i += 3
+                i += 3 if line[i + 2 : i + 3] == b"\x60" else 2
                 continue
             out += line[i : i + n]
             i += n
@@ -359,10 +362,10 @@ def edit_chunk(orig: bytes, cur: bytes, tab, stats=None) -> bytes:
 def review(out_path: Path, built_tag: str | None = None) -> int:
     """원본 일본어가 **지금 빌드에도 그대로 남은** 줄을 뼈대별로 모아 검토표로 쓴다 — 원문 포함이라 work/review 에만 둔다.
     `built_tag` = 비교할 빌드 꼬리표(`work/build/<꼬리표>/ed2.iso`, 기본 제품 `common.BUILD_TAG`)."""
-    import package
     from collections import defaultdict
 
     import dialogue
+    import package
 
     t = table()
     tag = built_tag or common.BUILD_TAG
@@ -428,11 +431,11 @@ def system_strings():
 
 def verify() -> int:
     """`data/ctrl_lines.tsv` 의 모든 틀을 원본 줄에 대 본다 — 열쇠가 어느 원본 줄에도 안 맞으면(낡은 틀) · 틀이 어느 사본에서든 오류면 실패(종료 코드 1)."""
-    import package
     from collections import defaultdict
 
     import dialogue
     import font
+    import package
 
     t = table()
     tab = font.GlyphTable()

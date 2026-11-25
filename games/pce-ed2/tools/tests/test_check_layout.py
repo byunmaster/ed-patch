@@ -73,9 +73,9 @@ class Colors(unittest.TestCase):
 
     def test_reward(self):
         o = "↵ＥＰ\u3000{15 85}{name}ポイント獲得↵"
-        self.assertEqual(cl.reward_findings(o, "↵ＥＰ{15 85}{name} 포인트 획득↵"), 0)
-        self.assertEqual(cl.reward_findings(o, "↵ＥＰ {15 85}{name} 포인트 획득↵"), 1)  # 수 앞 공백
-        self.assertEqual(cl.reward_findings(o, "ＥＰ{15 85}{name} 포인트 획득↵"), 1)  # 앞 개행 없음
+        self.assertEqual(cl.reward_findings(o, "↵ＥＰ {15 85}{name} 포인트 획득↵"), 0)
+        self.assertEqual(cl.reward_findings(o, "↵ＥＰ{15 85}{name} 포인트 획득↵"), 1)  # ＥＰ 뒤 공백 없음(원판은 있다)
+        self.assertEqual(cl.reward_findings(o, "ＥＰ {15 85}{name} 포인트 획득↵"), 1)  # 앞 개행 없음
 
     def test_chapter_gap(self):
         self.assertEqual(cl.chapter_gap_findings("제３장\u3000용의 알"), 0)

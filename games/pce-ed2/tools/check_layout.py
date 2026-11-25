@@ -182,13 +182,13 @@ def one_line_findings(k: str) -> int:
 
 
 def reward_findings(o: str, k: str) -> int:
-    """전투 보상 줄 — 앞뒤 개행이 원판과 같고 「ＥＰ」 뒤에 공백이 없는가(pce-ed2 2-9)."""
+    """전투 보상 줄 — 앞뒤 개행이 원판과 같고 「ＥＰ」 뒤에 공백이 있는가(원판 꼴, 마스터 11-17)."""
     if not (REWARD.search(k) and "{name}" in k and REWARD_JP.search(o)):
         return 0
     lead = lambda s: bare(s)[:1] == "↵"  # noqa: E731
     trail = lambda s: bare(s)[-1:] == "↵"  # noqa: E731
     bad = lead(o) != lead(k) or trail(o) != trail(k)
-    bad = bad or bool(re.search("ＥＰ[ \u3000]", k))
+    bad = bad or not re.search("ＥＰ[ \u3000]\\S", k)  # 마스터 11-17: ＥＰ 와 수 사이에 공백(원판 꼴)
     return int(bad)
 
 

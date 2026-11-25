@@ -778,5 +778,7 @@ def edit_menu_chunk(d: bytes, tab, miss: set) -> bytes:
         if any(p is None for p in parts):
             out.append(line)
             continue
-        out.append(b"\x0d".join(render(p, tab) for p in parts))
+        # 원판 「はい」 줄은 `01` 뒤에 `08`(반 칸 들여쓰기 — 두 글자 「はい」를 「いいえ」 가운데에 맞춘다)가 있다. 한글 「예」(한 글자)는 그 들여쓰기로 「아니요」보다 오른쪽에서 시작해
+        # 어긋나 보였다 — 왼쪽 맞춤으로 `08` 을 뺀다(마스터 11-17 · PCE I 도 왼쪽 맞춤).
+        out.append(b"\x0d".join(render(p, tab).replace(b"\x01\x08", b"\x01", 1) for p in parts))
     return b"".join(x + b"\x00" for x in out)

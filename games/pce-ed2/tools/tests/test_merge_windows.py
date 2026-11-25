@@ -38,7 +38,10 @@ class BlankParticleTest(unittest.TestCase):
         import ctrllines
 
         self.assertEqual(ctrllines.blank_item_particle(bytes.fromhex("0d1d6b60f14c")), bytes.fromhex("0d1d60f14c"))  # 1D 6B(だ) 60 → 1D 60
-        self.assertEqual(ctrllines.blank_item_particle(bytes.fromhex("0c1dcaf924")), bytes.fromhex("0c1dcaf924"))  # 조사 훅이 오는 꼴은 그대로
+        self.assertEqual(ctrllines.blank_item_particle(bytes.fromhex("0c1dcaf924")), bytes.fromhex("0c1d60f924"))  # 조사 훅이 오는 꼴도 가나 자리를 빈 칸(60)으로
+        self.assertEqual(ctrllines.blank_item_particle(bytes.fromhex("0c1dcafff924")), bytes.fromhex("0c1d60fff924"))  # 사이에 채움(FF)이 껴도
+        self.assertEqual(ctrllines.blank_item_particle(bytes.fromhex("0d1da60d")), bytes.fromhex("0d1d600d"))  # 줄 끝·글 앞은 공백(60)
+        self.assertEqual(ctrllines.blank_item_particle(bytes.fromhex("1d601d6b0d")), bytes.fromhex("1d601d600d"))  # 이미 60 이면 그대로
         self.assertEqual(ctrllines.blank_item_particle(bytes.fromhex("f21d601d6b60")), bytes.fromhex("f21d601d6b60")[:0] + bytes.fromhex("f21d60") + bytes.fromhex("1d60"))  # 2바이트 글자 안의 1D 는 제어가 아니다
 
 

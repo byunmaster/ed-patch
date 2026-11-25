@@ -126,7 +126,7 @@ def _lookup(jp: str) -> str | None:
 
 
 # 패널 지명 칸(필드 우측 위 틀) — 실측(11-04, 헤드리스 캡처 343×243 1:1): 틀 안쪽 x 227~315(89px, 가운데 271), 글 시작 기준 x 234
-FULLWIDTH_LETTER = os.environ.get("ED_FWLETTER", "1") != "0"  # 끄는 스위치(시험용 ED_FWLETTER=0) — 몬스터 구별 문자 전각(원판) — False 면 ASCII 반각(규칙 1-6 옛 판)
+FULLWIDTH_LETTER = os.environ.get("ED_FWLETTER", "0") == "1"  # 몬스터 구별 문자 — 기본은 원판대로 ASCII 반각 A(원판 이름 줄 바이트 `06 41 04`, 화면도 8px, 마스터 11-16 「pce2 원본대로」 — 원판 실화면 대조). 시험용 ED_FWLETTER=1 이면 전각 Ａ(옛 11-08 판)
 PANEL_INNER_L, PANEL_INNER_R, PANEL_ORIGIN = 227, 315, 234
 LEAD_PX = {0x08: 4, 0x09: -4}  # 머리 제어 `08` 하나 = 오른쪽으로 4px(실측 — `08 08 60` 줄의 글이 `60` 줄보다 8px 오른쪽) · `09` = 왼쪽으로 4px(핸들러 `$6891`: DEC $73 · DEC $71 — `08` 의 짝)
 

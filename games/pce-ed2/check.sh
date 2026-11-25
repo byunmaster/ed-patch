@@ -44,6 +44,14 @@ echo "== pce-ed2 =="
 # 5-1f. 연출 멈춤 개수(11-07, 관리자 지시) — 원판 줄마다 `11 nn nn` 개수가 제품 줄과 같은가(빌드 산출물 대조). 번역·조판이 원판 멈춤을 조용히 지우면 운다. 기준선(data/pause_count_baseline.tsv) 래칫.
 "$PY" "$T/check_pauses.py" "$ROOT/games/pce-ed2/work/build/test-pce-ed2-trim/ed2.iso"
 
+# 5-1h. 원판 사본 잔존(11-17, 마스터 「이런 케이스가 다른 기종·게임에도?」 — pce-ed1 에서 원판에 대사 블록 사본이 고친 자리 밖에 따로 있어 정상 진행이 그 사본을 읽었다)
+#        고친 덩어리(평문·압축 모두)의 원판 바이트를 **이미지 전체**에서 찾아, 제품에 원판 그대로 남은 사본이 알려진 목록(`data/orig_copies_known.tsv`) 밖에 있으면 실패.
+"$PY" "$T/check_orig_copies.py" "$ROOT/games/pce-ed2/work/build/test-pce-ed2-trim/ed2.iso" --gate
+
+# 5-1i. 항목 토큰이 그리는 원문 가나 잔존(11-17 — 상점 판매 줄 「천 옷は은」): 번역한 줄의 `1D xx`(항목 이름 + 조사 가나)가 빈 칸(`60`)이 아니면 실패.
+#        잔존 게이트(5-1 · residual)는 가나 4자↑ 연속·원문 글리프 줄을 보므로 제어 토큰이 그리는 가나 한 글자는 못 본다.
+"$PY" "$T/check_item_kana.py" "$ROOT/games/pce-ed2/work/build/test-pce-ed2-trim/ed2.iso" --gate
+
 # 5-1g. 패턴 치환 자리 전수(11-07 관리자 공지 — SFC II 프리징: 패턴 검색→치환이 우연히 같은 바이트의 자료까지 고침) — 리터럴·표 즉치·장면 패키지 호출이 전부 실제 명령 경계인가(기준선 래칫).
 #        짝으로 빌드가 「쓴 섹터 안 바뀐 바이트 전수 = 쓰기 장부 안」(`build.verify_declared_bytes`)을 본다.
 "$PY" "$T/pattern_audit.py"

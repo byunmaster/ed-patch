@@ -299,6 +299,21 @@ GLYPHS = {
 }
 
 
+# 세로 기준선(마스터 11-15 「원문 부호가 1px 내려와 있다」 → 전 기종 검사): 번역 글꼴(갈무리) 한글 잉크는 12칸 셀의 0~10행인데, 원판 BIOS 모양을 따른 이 표의 숫자·`!`·`?`(와
+# 원판 표의 대문자 A~Z)는 1~11행이라 같은 줄에서 한글보다 1px 아래였다(실화면 실측). 폭·모양은 그대로 두고 **한 행 위로**만 올린다(0행이 빈 글리프만).
+RAISE = tuple("0123456789!?")
+UPPER = tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+
+def _raise_rows(rows):
+    assert not any("#" in c for c in rows[0]), "0행이 비어 있어야 한 행 올릴 수 있다"
+    return (*rows[1:], "." * 8)
+
+
+for _ch in RAISE:
+    GLYPHS[_ch] = _raise_rows(GLYPHS[_ch])
+
+
 def glyph_bytes(rows) -> bytes:
     assert len(rows) == 12 and all(len(r) == 8 for r in rows)
     return bytes(int(r.replace(".", "0").replace("#", "1"), 2) for r in rows)
@@ -312,6 +327,12 @@ def install(prog) -> int:
         i = codes.index(ord(ch))
         prog.put(BANK, GLYPH_OFF + 12 * i, glyph_bytes(GLYPHS[ch]), f"narrow font glyph {ch}")
         n += 1
+    for i, c in enumerate(codes):  # 원판 도안을 한 행 위로(바이트 값만 옮긴다 — 모양·폭 그대로). 목록엔 `I` 칸이 없고 `U` 코드가 두 칸이라 칸 번호로 돈다
+        if chr(c) in UPPER:
+            g = prog.o(BANK, GLYPH_OFF + 12 * i, 12)
+            assert g[0] == 0, chr(c)
+            prog.put(BANK, GLYPH_OFF + 12 * i, g[1:] + b"\x00", f"narrow font glyph slot {i} {chr(c)} (baseline up)")
+            n += 1
     for (ch, code), kana in zip(NEW.items(), SLOT_KANA, strict=True):
         i = codes.index(kana)
         prog.put(BANK, CODES_OFF + i, bytes([code]), f"narrow font code {ch}")
