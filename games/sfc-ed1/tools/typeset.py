@@ -56,6 +56,8 @@ KAGI = set("「」『』")  # 반각 글리프 · 5px 진행(hook_vwf.KAGI_ADV �
 def pxw(ch: str) -> int:
     if VWF and ch in KAGI:
         return 5
+    if VWF and ch == "…":
+        return 9  # 점 글리프 셋(encode.DOT, 진행 3px)
     return 4 if (VWF and ch in HALF) else 8
 
 

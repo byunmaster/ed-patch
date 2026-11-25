@@ -100,7 +100,14 @@ def _orig_dot() -> list[int]:
 _KAGI = [0x00, 0x00, 0xF0, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x01, 0x01, 0x01, 0x01, 0x0F, 0x00, 0x00]
 # 『』 반각(마스터 도안 F판 10-26 — `board/kagi/F2-double-sfc-ed1.txt`, 「」 와 같은 꼴: 『 = 0~3열 · 』 = 4~7열을 왼쪽으로 당김). 지금 문안엔 없다 — 쓰이면 한글 뱅크 글리프로 실린다(진행 5px = `hook.glyph_rows`)
 _DKAGI = [0x00, 0x00, 0xF0, 0x90, 0xB0, 0xA0, 0xA0, 0xA7, 0xE5, 0x05, 0x05, 0x0D, 0x09, 0x0F, 0x00, 0x00]
-GLYPH_OVERRIDES = {"『": lambda: [r & 0xF0 for r in _DKAGI], "』": lambda: [(r & 0x0F) << 4 for r in _DKAGI], "「": lambda: [r & 0xF0 for r in _KAGI], "」": lambda: [(r & 0x0F) << 4 for r in _KAGI], "…": _ellipsis_low, "D": lambda: render_latin_orig("D"), "Ｅ": lambda: render_latin_orig("E"), "Ｈ": lambda: render_latin_orig("H"), "Ｍ": lambda: render_latin_orig("M"), "Ｐ": lambda: render_latin_orig("P"), "J": lambda: _orig_logo(6), "K": lambda: _orig_logo(7), "．": _orig_dot}
+def _dot() -> list[int]:
+    """점 하나 — 「…」 의 점과 같은 2×2(행 12·13), 칸 왼쪽 2열. 진행 3px(`hook.glyph_rows`)."""
+    rows = [0] * CELL
+    rows[12] = rows[13] = 0b11000000 << (CELL_W - 8)
+    return rows
+
+
+GLYPH_OVERRIDES = {"\ue0f0": _dot, "『": lambda: [r & 0xF0 for r in _DKAGI], "』": lambda: [(r & 0x0F) << 4 for r in _DKAGI], "「": lambda: [r & 0xF0 for r in _KAGI], "」": lambda: [(r & 0x0F) << 4 for r in _KAGI], "…": _ellipsis_low, "D": lambda: render_latin_orig("D"), "Ｅ": lambda: render_latin_orig("E"), "Ｈ": lambda: render_latin_orig("H"), "Ｍ": lambda: render_latin_orig("M"), "Ｐ": lambda: render_latin_orig("P"), "J": lambda: _orig_logo(6), "K": lambda: _orig_logo(7), "．": _orig_dot}
 
 
 def _prows(*spec):

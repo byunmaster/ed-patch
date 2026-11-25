@@ -294,6 +294,8 @@ def glyph_rows(ch: str | None, font) -> tuple[list[int], int]:
         return [0] * 16, 8
     rows = hangul_font.render(ch, font)
     # 정본 전각 ＥＰ·ＨＰ·ＭＰ 는 Condensed 전각 글리프 그대로(마스터 10-10 「mp hp ep 콘덴스드 전각」 · 10-11 PS1 에서도 「전각으로 두는 게 일관」) — 영문·숫자의 원판 전환에서 제외
+    if ch == encode.DOT:
+        return rows, 3  # 점 글리프 — 「…」 한 글자 = 이 셋(9px, 점 사이 틈 1px 균일)
     return rows, (5 if ch in "『』" else 8)  # 『』 반각 — 진행 5px(「」 와 같다, `hook_vwf.KAGI_ADV`)
 
 

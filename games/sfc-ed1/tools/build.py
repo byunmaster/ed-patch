@@ -992,6 +992,8 @@ def kr_items(
     texts.append(
         hook.josa_chars()
     )  # 런타임 조사 16형태 — 훅이 색인으로 집는다(문안에 없어도 필요하다)
+    if common.VWF:
+        texts.append(encode.DOT)  # VWF 대사의 「…」 는 점 글리프 셋으로 나간다(encode.DOT)
     rep = encode.repertoire(texts)
     rep_index = encode.index_map(rep)
     new: list[script.Item] = []

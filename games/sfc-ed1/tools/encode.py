@@ -100,6 +100,9 @@ GLYPH_SYMBOLS = set("…~～()·『』【】〜―ＥＰＨＭ１２３４５") 
 CREDIT_GLYPHS = set("JDK．")  # 「．」 = 전각 점 — 스태프롤 「J.D.K.」 의 원판 8px 점(hangul_font 에서 원판 그림을 읽는다)
 
 
+DOT = "\ue0f0"  # 점 하나(2×2, 진행 3px) — VWF 대사에서 「…」 한 글자를 이 셋으로 낸다: 점 사이 틈이 글자 경계와 같은 1px 로 균일(마스터 11-22 「점은 다 동일해야」)
+
+
 def is_glyph(ch: str) -> bool:
     return ("가" <= ch <= "힣") or ch in GLYPH_SYMBOLS or "\ue000" <= ch <= "\ue0ff"  # PUA = 반 칸 공백을 미리 합성한 칸 글리프(`battle_ui.halfspace`)
 
@@ -228,7 +231,11 @@ def encode(
         # 글자열
         prev_ch = ""
         for ch in piece:
-            if is_glyph(ch):
+            if ch == "…" and vwf and DOT in rep_index:  # 점 셋 = 진행 3px 점 글리프 셋(틈 균일)
+                buf += glyph_code(rep_index[DOT]) * 3
+                prev_word += ch
+                prev_runtime = False
+            elif is_glyph(ch):
                 if ch not in rep_index:
                     raise ValueError(f"글리프 없음: {ch!r}")
                 buf += glyph_code(rep_index[ch])
@@ -270,7 +277,7 @@ def decode_kr(b: bytes, rep: list[str], vwf: bool | None = None) -> str:
     if vwf is None:
         vwf = common.VWF
     if vwf:  # 가변 폭 엔진용 문안은 공백을 그대로 냈다 — 되살릴 게 없다
-        return "".join(out)
+        return "".join(out).replace(DOT * 3, "…")  # 점 글리프 셋 = 「…」
     # 인코더가 뺀 「부호 뒤 공백」을 되살린다 — 뒤에 글자가 이어질 때만(줄 끝·닫는 괄호·제어 앞은 원래 없다)
     res = []
     for k, tok in enumerate(out):

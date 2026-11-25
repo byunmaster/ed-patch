@@ -86,7 +86,14 @@ local ANIM = -999 -- 마지막으로 HP 굴림 애니메이션(`$00:9BE2`: [$23]
 emu.addMemoryCallback(function() ANIM = bf end, emu.callbackType.exec, 0x009BE2, 0x009BE2, emu.cpuType.snes)
 local DIRS = os.getenv("BT_DIRS") == "1"
 local want_reload = false
+-- 조사용(11-22): BT_PREPOKE="02E0E1:0F49=7" — 그 롬 주소를 **실행하기 직전** WRAM 한 칸에 값을 쓴다(읽는 자리에서만 값을 바꿔, 그 앞뒤 코드가 다시 쓰는 변수도 속인다)
+for pc, ad, v in string.gmatch(os.getenv("BT_PREPOKE") or "", "(%x+):(%x+)=(%x+)") do
+  local pca = tonumber(pc, 16)
+  emu.addMemoryCallback(function() wr(tonumber(ad, 16), tonumber(v, 16)) end, emu.callbackType.exec, pca, pca, emu.cpuType.snes)
+end
 local function boost()
+  for ad, v in string.gmatch(os.getenv("BT_POKE") or "", "(%x+)=(%x+)") do wr(tonumber(ad, 16), tonumber(v, 16)) end -- 조사용: 매 프레임 WRAM 쓰기 "1231=7,..."
+  if os.getenv("BT_NOBOOST") == "1" then return end -- 패배 시험(11-22): 파티·적 보정 없이 자연 전투(강한 편성에 지게)
   for i = 0, 3 do -- 파티 기록 39바이트: HP·최대·MP·최대
     local b = 0x13E5 + i * 39
     wr16(b, 9999); wr16(b + 2, 9999); wr16(b + 4, 99); wr16(b + 6, 99)
