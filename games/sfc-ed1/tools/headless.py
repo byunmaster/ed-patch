@@ -69,7 +69,7 @@ def check_rom_fresh(rom: Path) -> dict:
         raise SystemExit(
             f"낡은 롬이다 — 이 롬을 구운 뒤 빌드 입력(tools/*.py · textmap · shared/text)이 바뀌었다(롬 {sha[:8]}). 다시 구운 뒤 찍어라"
         )
-    return {"sha1": sha, "slot": str(slot.relative_to(common.ROOT)), "input_fingerprint": now}
+    return {"sha1": sha, "slot": str((common.BUILD_DIR / slot.name).relative_to(common.ROOT)), "input_fingerprint": now}
 
 
 def run(rom: Path, lua: str, out: Path, env: dict[str, str], timeout: int = 7200, rom_info: dict | None = None) -> int:
@@ -88,6 +88,8 @@ def run(rom: Path, lua: str, out: Path, env: dict[str, str], timeout: int = 7200
         "--debug.scriptWindow.allowIoOsAccess=true", "--preferences.singleInstance=false",
         "--snes.port1.type=SnesController", "--donotSaveSettings", f"--timeout={timeout}",
     ]  # fmt: skip
+    if os.environ.get("HL_ZERO_RAM"):  # 전원 켤 때 WRAM 을 0 으로 — 기본은 무작위라 부팅 입력이 실행마다 어긋난다(디버그 진입키 검증 10-24)
+        cmd.append("--snes.ramPowerOnState=AllZeros")
     return subprocess.run(
         cmd,
         env=e,

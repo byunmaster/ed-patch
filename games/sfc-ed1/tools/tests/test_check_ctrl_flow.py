@@ -76,6 +76,12 @@ class Lockstep(unittest.TestCase):
         b[B2 + 7] = 0xFF  # E0 → FF
         self.assertTrue(walk(make_orig(), b).errors)
 
+    def test_쪽_대기를_빠뜨리면_운다(self):
+        """PCE I 기능 투어 11-07 — 끝의 「쪽 대기 + 종료」(`E0 E4`)에서 대기가 빠지면 상점 확인 문구가 ▽ 없이 흘러간다."""
+        b = make_built()
+        b[B2 + 7] = 0xE4  # E0 E4 → E4 E4
+        self.assertTrue(walk(make_orig(), b).errors)
+
     def test_종결_앞_채움_바이트가_끼면_운다(self):
         """ss-ed3 10-21 사고의 꼴 — 대사 끝에 FF FF 를 넣으면 제어 열이 달라진다."""
         b = make_built()

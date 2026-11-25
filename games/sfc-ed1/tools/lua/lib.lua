@@ -38,4 +38,37 @@ function L.on_message(cb)
   emu.addMemoryCallback(function() cb(L.rd(0x060B) | (L.rd(0x060C) << 8)) end, emu.callbackType.exec, 0x02DCD3, 0x02DCD3, emu.cpuType.snes)
 end
 emu.addEventCallback(function() L.f = L.f + 1 end, emu.eventType.endFrame)
+-- WR_POKE="프레임:주소=값,…"(WRAM 오프셋 16진, 값 16진): 그 프레임에 쓴다 — QA 디버그 상태 바이트(`$1F51`)를 하네스에서 켠다
+for f, a, v in string.gmatch(os.getenv("WR_POKE") or "", "(%d+):(%x+)=(%x+)") do
+  local ff, aa, vv = tonumber(f), tonumber(a, 16), tonumber(v, 16)
+  emu.addEventCallback(function() if L.f == ff then L.wr(aa, vv) end end, emu.eventType.endFrame)
+end
+-- 숨은 독자 점검(HR_RANGES="이름:시작-끝,…" — 16진 CPU 주소): 롬 읽기 콜백으로 구간별 읽은 횟수와 읽은 명령 주소(PC)를 센다.
+-- 지우거나 옮긴 원판 문안 칸을 코드가 피연산자로 읽는지 보는 도구(마스터 제안 아님·관리자 11-07). 이름이 `ctl` 로 시작하면 양성 대조(읽혀야 한다).
+local HR = {}
+for nm, a, b in string.gmatch(os.getenv("HR_RANGES") or "", "([%w_]+):(%x+)%-(%x+)") do
+  local lo, hi = tonumber(a, 16), tonumber(b, 16)
+  local r = { name = nm, n = 0, pcs = {} , np = 0}
+  HR[#HR + 1] = r
+  for _, mir in ipairs({ 0, 0x800000 }) do
+    emu.addMemoryCallback(function(addr)
+      r.n = r.n + 1
+      if r.np < 40 then
+        local st = emu.getState()
+        local pc = ((st["cpu.k"] or 0) << 16) | (st["cpu.pc"] or 0)
+        local k = string.format("%06X@%06X", pc, addr)
+        if not r.pcs[k] then r.pcs[k] = true; r.np = r.np + 1; L.log(string.format("HR %s pc=%06X addr=%06X f=%d", nm, pc, addr, L.f)) end
+      end
+    end, emu.callbackType.read, lo + mir, hi + mir, emu.cpuType.snes)
+  end
+end
+if #HR > 0 then
+  emu.addEventCallback(function()
+    if L.f % 600 == 0 then
+      local t = {}
+      for _, r in ipairs(HR) do t[#t + 1] = r.name .. "=" .. r.n end
+      L.log("HRSUM f=" .. L.f .. " " .. table.concat(t, " "))
+    end
+  end, emu.eventType.endFrame)
+end
 return L

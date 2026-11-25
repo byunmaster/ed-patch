@@ -17,7 +17,7 @@ import dicts
 import encode
 import namesrc
 
-TABLES = {"a": (0x02A793, 160), "b": (0x02A8B1, 149)}  # (원본 포인터 표, 항목 수)
+TABLES = {"a": (0x02A793, 160), "b": (0x02A8B1, 149), "c": (0x02A8B1, 149)}  # c = 로드 슬롯 목록 전용(앞 빈칸·반 칸 합성 없이 왼쪽 맞춤)  # (원본 포인터 표, 항목 수)
 CELLS = 10
 
 
@@ -29,6 +29,19 @@ def texts() -> list[str]:
     return list(names().values())
 
 
+def qa_names() -> list[str]:
+    """QA 디버그 빌드 전용 지명 칸(`$95`~, 표 a) — 제품 롬에서는 빈 목록(바이트 불변)."""
+    if not common.DEBUG_QA:
+        return []
+    import qadebug
+
+    return qadebug.qa_names()
+
+
+def glyph_texts() -> list[str]:
+    return [cells(kr) for kr in names().values()] + texts() + [cells(q) for q in qa_names()] + qa_names()  # 슬롯 목록(c)은 합성 없이 낱글자라 원문도 올린다 — 글리프표 원천 — 합성 칸(사설 영역)까지 올려야 한다
+
+
 def _orig(rom: bytes, base: int, i: int) -> str:
     o = common.snes2off(base) + 2 * i
     p = rom[o] | rom[o + 1] << 8
@@ -36,12 +49,41 @@ def _orig(rom: bytes, base: int, i: int) -> str:
     return text.decode(rom[so : rom.index(b"\xff", so)], text.resolver(rom)).strip("　")
 
 
-def _encode(kr: str, rep_index: dict[str, int]) -> bytes:
+# 홀수로 남는 칸을 어느 쪽에 둘지의 스위치 — False: 오른쪽(왼 ≤ 오, 글자 덩이 중심 −6px, 마스터 11-08),
+# True: 앞(+2px, 가까운 쪽 — 마스터 답이 「가까운 쪽」이면 이것 한 줄. 게이트 place_center_axes 도 이 값을 따른다).
+ODD_TO_FRONT = False
+# 홀수 칸 차이일 때 글자 덩이를 **반 칸(4px) 시작**으로 합성해 정확히 가운데에 앉힌다(sfc-ed2 와 같은 취지, 마스터 11-08).
+# 4px 공백을 앞에 두고 8px 칸으로 다시 끊은 걸친 칸은 사설 영역 글리프(`battle_ui.halfspace`)로 올린다. True 면 위 스위치는 무시.
+HALF_PHASE = True
+
+
+def half_phase(kr: str) -> bool:
+    return HALF_PHASE and (CELLS - len(kr)) % 2 == 1
+
+
+def cells(kr: str) -> str:
+    """칸에 실제로 굽는 문자열(앞 빈칸 포함) — 반 칸 시작이면 합성 글리프가 섞인다."""
+    pad = pad_cells(kr)[0]
+    if not half_phase(kr):
+        return " " * pad + kr
+    import battle_ui
+
+    return battle_ui.halfspace(" " * (2 * pad + 1) + kr)
+
+
+def pad_cells(kr: str) -> tuple[int, int]:
+    """10칸 안의 (앞 빈칸, 뒤 빈칸) — 가운데 정렬(번역 규칙 2-8, 마스터 11-08 「HUD·입장 배너 가운데정렬」).
+    칸은 8px 고정이라 짝수 차이는 정확히 가운데, 홀수 차이는 **남는 한 칸을 오른쪽(뒤)에 둔다** — 왼쪽 여백 ≤ 오른쪽 여백
+    (마스터 11-08 「딱 가운데가 아니라면 왼쪽 여백을 더 짧게, 왼쪽으로 조금 더 치우치게」; 앞 칸 올림은 폐기)."""
+    pad = (CELLS - len(kr) + (1 if ODD_TO_FRONT and not HALF_PHASE else 0)) // 2
+    return pad, CELLS - len(kr) - pad
+
+
+def _encode(kr: str, rep_index: dict[str, int], plain: bool = False) -> bytes:
     if len(kr) > CELLS:
         raise SystemExit(f"지명 {kr!r} 이 {CELLS}칸을 넘는다")
-    pad = (CELLS - len(kr)) // 2
-    b = bytearray([encode.KR_TABLE[" "]] * pad)
-    for ch in kr:
+    b = bytearray()
+    for ch in kr if plain else cells(kr):
         if encode.is_glyph(ch):
             b += encode.glyph_code(rep_index[ch])
         elif ch in encode.KR_TABLE:
@@ -58,18 +100,24 @@ def bake(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dic
     info: dict = {}
     cur = org
     tables = {}
-    for key, (_base, n) in TABLES.items():
+    nn = {k: (max(n, 0x95 + len(qa_names())) if k in ("a", "b") and qa_names() else n) for k, (_b, n) in TABLES.items()}
+    for key in TABLES:
         tables[key] = cur
-        cur += 2 * n
+        cur += 2 * nn[key]
     strings: dict[bytes, int] = {}
     missing = set()
-    for key, (base, n) in TABLES.items():
-        for i in range(n):
-            jp = _orig(rom, base, i)
-            if jp not in kr:
-                missing.add(jp)
-                continue
-            b = _encode(kr[jp], rep_index)
+    for key, (base, _n) in TABLES.items():
+        for i in range(nn[key]):
+            qi = i - 0x95
+            if key in ("a", "b") and 0 <= qi < len(qa_names()):  # QA 디버그 빌드 — 표 a·b 의 `$95`~ 를 QA 항목 이름으로(메뉴 B 가 쓰는 창은 표 b)
+                text_kr = qa_names()[qi]
+            else:
+                jp = _orig(rom, base, i)
+                if jp not in kr:
+                    missing.add(jp)
+                    continue
+                text_kr = kr[jp]
+            b = _encode(text_kr, rep_index, plain=key == "c")
             if b not in strings:
                 strings[b] = cur
                 so = common.snes2off((dicts.BANK << 16) | cur)

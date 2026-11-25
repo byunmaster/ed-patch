@@ -79,12 +79,38 @@ local FIELD = os.getenv("MV_FIELD") == "1"
 -- MV_ADDR=<새 롬 SNES 주소 hex>(`tools/msg_addr.py` 가 번역 정본 주소에서 구한다): 번호표에 없는 씬 본문(표 목표)을 부른다 — 메인 표의 MV_ADDR_ID(기본 0x0001) 항목을 그 주소로 **RAM 쪽에서** 덮어쓰고 그 번호를 부른다(롬 파일은 안 바뀐다)
 local ADDR = tonumber(os.getenv("MV_ADDR") or "")
 local ADDR_ID = tonumber(os.getenv("MV_ADDR_ID") or "1")
+-- MV_ADDRS=<파일>: 한 번 부팅으로 여러 단위를 찍는다 — 파일 한 줄 = `<이름> <새 롬 SNES 주소 hex>`. 번호 1.. 를 줄 순서로 매기고 메인 표 그 항목을 **RAM 쪽에서** 그 주소로 덮어쓴 뒤 부른다
+--   (MV_IDS 는 무시). 산출 `shots/v<번호>_<쪽>.png` · log 의 `U <번호> <이름>` 줄이 번호↔이름표다. sfc-ed2 `dialog_sweep.lua` 와 같은 발상(포인터만 바꿔 같은 메시지 루틴으로 찍기).
+local ADDRS = {}
+if os.getenv("MV_ADDRS") then
+  for line in io.lines(os.getenv("MV_ADDRS")) do
+    local nm, ad, fl = line:match("^(%S+)%s+(%x+)%s*(%S*)")
+    if nm then ADDRS[#ADDRS + 1] = { nm, tonumber(ad, 16), fl == "c" } end -- 셋째 칸 `c` = 호출 맥락을 붙인다(`<FE>` 로 끝나는 덩이 — 아래 call)
+  end
+  IDS = {}
+  for i = 1, #ADDRS do IDS[i] = i end
+end
 local function call(id)
+  if ADDRS[id] then
+    local o = 0x38000 + 3 * id
+    local ad = ADDRS[id][2]
+    if ADDRS[id][3] then -- 호출 맥락: 빈 롬 자리(`$3F:F000~`)에 `F9 <대상> E0`(절대 호출 → 끝)을 쓰고 그걸 부른다 — 대상의 `<FE>`(복귀)가 이 조각으로 돌아와 깨끗이 끝난다
+      local so = 0x1FF000 + 8 * (id % 256)
+      emu.write(so, 0xF9, emu.memType.snesPrgRom); emu.write(so + 1, ad & 255, emu.memType.snesPrgRom); emu.write(so + 2, (ad >> 8) & 255, emu.memType.snesPrgRom)
+      emu.write(so + 3, (ad >> 16) & 255, emu.memType.snesPrgRom); emu.write(so + 4, 0xE0, emu.memType.snesPrgRom)
+      ad = 0x3FF000 + 8 * (id % 256)
+    end
+    emu.write(o, ad & 255, emu.memType.snesPrgRom); emu.write(o + 1, (ad >> 8) & 255, emu.memType.snesPrgRom); emu.write(o + 2, (ad >> 16) & 255, emu.memType.snesPrgRom)
+    log(string.format("U %d %s", id, ADDRS[id][1]))
+  end
   if ADDR then
     local o = 0x38000 + 3 * ADDR_ID -- 메인 표 `$07:8000` = 파일 0x38000
     emu.write(o, ADDR & 255, emu.memType.snesPrgRom); emu.write(o + 1, (ADDR >> 8) & 255, emu.memType.snesPrgRom); emu.write(o + 2, (ADDR >> 16) & 255, emu.memType.snesPrgRom)
   end
   if FIELD then wr(0x11FB, 0) end
+  if os.getenv("MV_POKE") then -- 런타임 치환 값을 미리 쓴다(「0F3F=00,0F40=AD,0F45=27」 — 행위자·대상·도구·주문·수; 11-15 어절 개행 훅 검증)
+    for a, v in os.getenv("MV_POKE"):gmatch("(%x+)=(%x+)") do wr(tonumber(a, 16), tonumber(v, 16)) end
+  end
   if SPEED then wr(0x1239, (rd(0x1239) & 0xF3) | ((SPEED & 3) << 2)) end
   wr(0x060B, id & 255); wr(0x060C, id >> 8)
   local st = emu.getState()

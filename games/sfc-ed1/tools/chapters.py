@@ -119,10 +119,18 @@ def _metrics(txt: str, f, digit: set | None = None) -> tuple[set, int, int]:
 
 
 def fit(txt: str, f, digit: set | None = None) -> tuple[set, int, int]:
-    """(흰 획, 시작 x, 끝 x) — 136px 를 넘으면 멈춘다(종장은 압축 꼴로 135)."""
+    """(흰 획, 시작 x, 끝 x) — 136px 를 넘으면 멈춘다(종장은 압축 꼴로 135).
+    가운데 정렬(마스터 11-08 「장 제목도 전기종 가운데정렬」): 흰 획의 가로 폭(잉크)을 136px 띠 안에서 가운데로 민다 — 그래픽 칸이라
+    픽셀 단위로 된다. **남는 픽셀이 홀수면 오른쪽이 한 픽셀 더 넓다**(왼쪽 내림). 꽉 찬 제목(제5장·종장)은 왼쪽 1px 로 당겨 왼쪽 여백 ≤ 오른쪽."""
     white, x0, x = _metrics(txt, f, digit)
     if x > WIDTH:
         raise SystemExit(f"제목이 {WIDTH}px 에 안 들어간다: {txt!r}")
+    lo = min(px for px, _ in white)
+    hi = max(px for px, _ in white)
+    shift = (WIDTH - (hi - lo + 1)) // 2 - lo  # 왼쪽 여백 ≤ 오른쪽(마스터 11-09 2-8 개정) — 꽉 찬 제목은 음수로 왼쪽 1px
+    if shift:
+        white = {(px + shift, py) for px, py in white}
+        x0, x = x0 + shift, min(WIDTH, x + shift)
     return white, x0, x
 
 

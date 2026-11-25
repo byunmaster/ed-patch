@@ -294,7 +294,9 @@ def glyph_rows(ch: str | None, font) -> tuple[list[int], int]:
         return [0] * 16, 8
     rows = hangul_font.render(ch, font)
     # 정본 전각 ＥＰ·ＨＰ·ＭＰ 는 Condensed 전각 글리프 그대로(마스터 10-10 「mp hp ep 콘덴스드 전각」 · 10-11 PS1 에서도 「전각으로 두는 게 일관」) — 영문·숫자의 원판 전환에서 제외
-    return rows, 8
+    if ch == encode.DOT:
+        return rows, 3  # 점 글리프 — 「…」 한 글자 = 이 셋(9px, 점 사이 틈 1px 균일)
+    return rows, (5 if ch in "『』" else 8)  # 『』 반각 — 진행 5px(「」 와 같다, `hook_vwf.KAGI_ADV`)
 
 
 def glyph_widths(rep: list[str | None]) -> bytes:
@@ -379,6 +381,28 @@ def name_width_tables() -> tuple[bytes, bytes]:
     return bytes(mon), bytes(pty)
 
 
+def spell_width_table() -> bytes:
+    """주문 번호(`$0F45` 하위 5비트, 32칸)별 표기 폭(px) — 엔진 `{DB}` 가 읽는 원본 표 `$03:EEDD` 를 사전 D4 의 한글 표기에 이은 것(`dicts.bake_runtime` 과 같은
+    대응). 어절 개행이 읽는다(`vwf_wrapchk` `wk_db`). 빈 칸은 0."""
+    import namesrc
+
+    rom = common.rom_bytes()
+    dm = namesrc.dict_map()
+    d4 = {bytes(b): j for j, b in enumerate(text.dict_entries(0xD4))}
+    base = common.snes2off(0x03EEDD)
+    out = bytearray(32)
+    for i in range(32):
+        p = rom[base + 2 * i] | (rom[base + 2 * i + 1] << 8)
+        if p < 0x8000:
+            continue
+        so = common.snes2off((0x03EEDD & 0xFF0000) | p)
+        j = d4.get(bytes(rom[so : rom.index(b"\xff", so)]))
+        kr = dm.get(f"D4:{j:02X}", {}).get("kr") if j is not None else None
+        if kr:
+            out[i] = min(255, sum(4 if c in " .,?!" else 8 for c in kr))
+    return bytes(out)
+
+
 def dict_width_tables() -> list[bytes]:
     """사전 토큰 `$D0`~`$D5` 의 표기 폭(px) 표 여섯 — 색인 하위 7비트로 읽는다(어절 개행 어림). 표기 없는 자리는 16."""
     import namesrc
@@ -400,12 +424,11 @@ def dict_width_tables() -> list[bytes]:
 
 
 def check_crawl_digit_gap() -> None:
-    """크롤(오프닝·엔딩) 반각 숫자 게이트 — 「잉크 열 < 진행 폭」. 같으면 숫자 사이가 0px 라 「10여」가 「100」처럼 읽힌다(마스터 10-13)."""
+    """크롤(오프닝·엔딩) 숫자 게이트 — 「잉크 열 < 진행 폭」. 같으면 숫자 사이가 0px 라 「10여」가 「100」처럼 읽힌다(마스터 10-13). 11-16 부터 크롤도 원판 숫자 그림(`numtab`) + 8px."""
     import hangul_font
 
-    font = hangul_font.load_font()
     for c in "0123456789":
-        rows = hangul_font.render(c, font)
+        rows = hangul_font.render_latin_orig(c)
         cols = [x for x in range(8) if any(r >> (7 - x) & 1 for r in rows)]
         ink = max(cols) + 1
         if ink >= hook_vwf.CRAWL_DIGIT_ADV:
@@ -433,7 +456,7 @@ def raw_glyph_tables() -> tuple[bytes, bytes]:
     import hangul_font
 
     font = hangul_font.load_font()
-    letters = set("ABCDGOL")  # 같은 몬스터 A~D · 「GOLD」의 G·O·L(D 는 A~D 와 같다) — 원판 시트 그림, 진행 폭 = 잉크+2(숫자와 같은 규칙). 크롤의 다른 글자는 본문 Condensed 그대로
+    letters = set("ABCDGOLM!?")  # `!` `?` 도 원판 시트 그림(마스터 11-06 — 칸 중간 합성이 Condensed 글꼴 그림으로 가늘게 나왔다) ·  같은 몬스터 A~D · 「GOLD」의 G·O·L(D 는 A~D 와 같다) · 「1000M」의 M(마스터 10-27 「라틴은 원본 글꼴」) — 원판 시트 그림, 진행 폭 = 잉크+2(숫자와 같은 규칙). 크롤의 다른 글자는 본문 Condensed 그대로
 
     def ink_adv(ch: str) -> int:
         rows = hangul_font.render_latin_orig(ch)
@@ -452,7 +475,7 @@ def build_payload(
     slots: list[int],
     vram: list[int],
     item_table: int = 0x3E8000,
-    place_tables: tuple[int, int] = (0x3E8000, 0x3E8000),
+    place_tables: tuple[int, int, int] = (0x3E8000, 0x3E8000, 0x3E8000),
     spell_table: int = 0x3E8000,
     vwf: bool | None = None,
     xfrom: int | None = None,
@@ -507,8 +530,13 @@ def build_payload(
         #    (앞 줄 글자가 뒷 글자 그림으로 바뀜 — 빠른 속도에서 앞 쪽이 화면에 남아 보호가 필요한 경로라 쪽 사이 직전 대사 순서에 따라 **가끔** 터졌다).
         #    앞 쪽 보호는 포기할 수 있어도(앞 쪽 끝 글자가 잠깐 깨질 뿐) 지금 쪽은 못 포기한다 — 한 바퀴 실패하면 모드 1 로 다시 돈다.
         "V_LM": vb + 116,
+        # 🔴 목록 줄 이름 글자 보호(2026-11-07 상점 「?」): 목록 창(아이템·주문 이름)은 칸 배열을 질문 창이 덮은 뒤에도 화면에 남는데, 그 칸은 `vwf_live`(지금 칸 배열 + 앞 창 사본)에
+        #    안 들어 다음 글자(질문 끝 「?」)가 그 슬롯을 재사용해 이름 첫 글자가 「?」로 보인다(원판은 정적 글꼴이라 안 일어난다). 이름 복사(`namecopy`·`spellcopy`)가 잡은 글자 코드를
+        #    최근 48개 링에 남기고 `vwf_live` 가 모드 0 에서 같이 지킨다 — 닫는 시점을 몰라도 링이라 알아서 비켜 간다(고정 칸과 달리 풀을 영구히 안 먹는다).
+        "V_LIST": vb + 117,  # 48B 링: 최근 목록 이름 글자의 슬롯 코드
+        "V_LIDX": vb + 165,  # 링 쓰기 위치(0~47)
     }
-    var_end = vb + 117
+    var_end = vb + 166
     if var_end - VAR >= 741:
         raise SystemExit(f"WRAM 무손상 구간(741B)을 넘는다: {var_end - VAR}B (슬롯 {nslot}개)")
     assert len(vram) == nslot
@@ -943,7 +971,7 @@ def build_payload(
         (
             "placecopy_c",
             "pc",
-            place_tables[1],
+            place_tables[2],
             CELLS + 6,
         ),  # 로드 메뉴 슬롯 줄 — `$030B` 부터(번호·레벨 뒤)
         ("spellcopy", "sc", spell_table, CELLS),  # 필드 주문 목록
@@ -1013,6 +1041,24 @@ def build_payload(
             a.sep(imm=0x20)
             a.lda(imm=0x01)
             a.op("sta", addr=pin, mode="longx")
+            a.pla()
+        if vwf and pre in ("nc", "sc"):  # 목록 줄 이름 — 잡은 글자 코드를 링에 남긴다(`vwf_live` 가 지킨다)
+            a.pha()
+            a.op("lda", addr=kv["V_LIDX"], mode="long")
+            a.rep(imm=0x20)
+            a.op("and", imm=0x00FF, m16=True)
+            a.tax()
+            a.sep(imm=0x20)
+            a.pla()
+            a.op("sta", addr=kv["V_LIST"], mode="longx")
+            a.pha()
+            a.op("lda", addr=kv["V_LIDX"], mode="long")
+            a.inc()
+            a.cmp(imm=48)
+            a.bcc(label=f"{pre}_lok")
+            a.lda(imm=0x00)
+            a.label(f"{pre}_lok")
+            a.op("sta", addr=kv["V_LIDX"], mode="long")
             a.pla()
         a.ply()
         a.plx()
@@ -1633,7 +1679,9 @@ def build_payload(
     a.plb()
     a.op("lda", addr=V_MAGIC, mode="long")
     a.cmp(imm=MAGIC)
-    a.beq(label="d_go")
+    a.bne(label="d_init")  # 초기화 덩이가 길어져 `beq d_go` 가 안 닿는다 — 같은 뜻으로 뒤집어 `jmp`
+    a.jmp(addr="d_go", mode="abs")
+    a.label("d_init")
     a.lda(imm=0x00)
     for v in (V_HEAD, V_TAIL, V_NEXT, V_PEND_N, V_OVERFLOW):
         a.op("sta", addr=v, mode="long")
@@ -1654,6 +1702,16 @@ def build_payload(
     a.inx()
     a.cpx(imm=nslot, m16=True)
     a.bne(label="d_pinclr")
+    if vwf:
+        a.lda(imm=0xFF)  # 목록 링 비움(슬롯 코드로 안 쓰이는 값)
+        a.ldx(imm=0x0000, m16=True)
+        a.label("d_listclr")
+        a.op("sta", addr=kv["V_LIST"], mode="longx")
+        a.inx()
+        a.cpx(imm=48, m16=True)
+        a.bne(label="d_listclr")
+        a.lda(imm=0x00)
+        a.op("sta", addr=kv["V_LIDX"], mode="long")
     if vwf:
         a.lda(imm=0x00)
         for v in ("V_VX", "V_VX_HI", "V_VS", "V_VD", "V_VO", "V_PS", "V_WM", "V_CUR", "V_MXD", "V_PALD", "V_WK"):
@@ -1958,6 +2016,8 @@ def build_payload(
         for i, tb in enumerate(dict_width_tables()):
             a.label(f"tw_d{i}")
             a.raw(tb)
+        a.label("tw_sp")
+        a.raw(spell_width_table())
         ntab, nadv = num_glyph_table()
         a.label("numtab")
         a.raw(ntab)
@@ -1991,7 +2051,7 @@ def apply(
     rep: list[str | None],
     slots: list[int],
     item_table: int = 0x3E8000,
-    place_tables: tuple[int, int] | None = None,
+    place_tables: tuple[int, int, int] | None = None,
     spell_table: int = 0x3E8000,
     xfrom: int | None = None,
 ) -> dict:
@@ -2010,7 +2070,7 @@ def apply(
         slots,
         [tiles.vram_word(tile[c]) for c in slots],
         item_table,
-        place_tables or (0x3E8000, 0x3E8000),
+        place_tables or (0x3E8000, 0x3E8000, 0x3E8000),
         spell_table,
         xfrom=xfrom,
     )

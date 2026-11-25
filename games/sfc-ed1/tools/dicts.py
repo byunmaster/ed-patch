@@ -52,7 +52,7 @@ SETUP = {
 }
 IMM = (1, 6, 11)  # 루틴 안에서 lo · hi · bank 즉치의 자리
 # 원판에 없는 새 항목(원문 칸이 없다 — `dict.json` 의 해당 색인이 한글 정본). D2 의 「맨손」: 무기 번호 0(「없음」)일 때 2150 의 `{D9}` 자리에 쓴다.
-EXTRA_N = {0xD2: 1}
+EXTRA_N = {0xD0: 1, 0xD2: 1}  # D0:59 「저」 — {D0:4F} 「나」 의 존대 짝(분기 목표 자리에서 `textmap.TOKEN_ALIAS` 로 4F 를 대신한다, 마스터 10-29 Q7)
 BARE_HAND = 0x77  # D2:77
 BARE_SITE = 0x01F4B1  # `STA $0F42`(3B) — 반격 무효 문구(2150)에 쓸 무기 번호를 적는 자리
 BARE_SITE_ORIG = bytes([0x8D, 0x42, 0x0F])
@@ -154,7 +154,8 @@ RUNTIME_SITES = {0x02E0F5: 0xD0, 0x02E106: 0xD3, 0x02E119: 0xD2, 0x02E134: 0xD3}
 SPELL_SITE = 0x02E14F
 SPELL_TABLE = 0x03EEDD
 SPELL_N = 32
-# 지명 — `$02:A793`(HUD 지명 표, `places.TABLES["a"]`)을 그대로 가리킨다. 한글 표는 `places.bake` 가 만든다.
+# 지명 — 원본 `{DD}` 는 `$02:A793`(HUD 지명 표, `places.TABLES["a"]`)을 읽는다. 한글 표는 `places.bake` 가 만들고, **우리는 대사용으로 패딩 없는 표 c 를 가리킨다**
+# (a 는 HUD 가운데 정렬용 앞 빈칸·반 칸 합성 글리프가 붙어 대사에서 「␣␣지명␣의」 — 마스터 11-22 03 패배 확인 창).
 PLACE_SITE = 0x02E0D2
 PLACE_ORIG = 0x02A793
 RUNTIME_ALL = [*RUNTIME_SITES, SPELL_SITE, PLACE_SITE]

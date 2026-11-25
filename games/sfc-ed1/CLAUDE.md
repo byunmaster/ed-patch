@@ -12,7 +12,7 @@
   (`Galmuri11-Condensed`)을 새로 그려 **한 자 = 한 칸**으로 간다 — 한 줄 17자가 원문과 같은
   밀도로 유지된다(2칸/16×16 안은 기각). 글꼴 자리·코드 공간 병목은 **동적 글리프 로딩**
   (`tools/hook.py`)으로 풀었다.
-- **대본은 롬에 평문**이다(압축 없음). 3바이트 포인터 표 4벌(3,339 + 433 + 343 + 19건)이
+- **대본은 롬에 평문**이다(압축 없음). 3바이트 포인터 표 4벌(본문 2,906 + 90 + 343 + 19건 — 정확한 수는 `text.py --check` 출력이 정본)이
   $05·$07~$0B·$1E 뱅크의 문안을 가리킨다. 사전 치환(`$D0 xx` 인명 · `$D1` 지명 · `$D2` 아이템 ·
   `$D3` 몬스터 · `$D5` 시스템 문장)이 많아 **문장 안에 이름이 코드로 박혀 있다** — 조사 처리는
   런타임 훅이 필요하다(PS1 의 동적 조사 훅과 같은 문제).
@@ -45,7 +45,7 @@
 ```bash
 python3 games/sfc-ed1/tools/common.py           # 원본 지문 + 내부 헤더
 python3 games/sfc-ed1/tools/text.py --check     # 포인터 표 4벌 · 사전 6벌 · 글자 수 · 문자표 불변식
-python3 games/sfc-ed1/tools/text.py --dump      # work/derived/text/ 에 대본(11,271 조각)·사전 덤프
+python3 games/sfc-ed1/tools/text.py --dump      # work/derived/text/ 에 대본(번역 조각 3,102 — `textmap/segments.json`)·사전 덤프
 python3 games/sfc-ed1/tools/text.py --msg 5     # 메시지 하나 풀어 보기
 python3 games/sfc-ed1/tools/script.py --roundtrip   # 라벨 모델 왕복(본체 153KB 바이트 동일)
 python3 games/sfc-ed1/tools/dis65816.py 0x0298E0 0x029960  # 65816 디스어셈블 — 막히면 롬을 편다(조사용)

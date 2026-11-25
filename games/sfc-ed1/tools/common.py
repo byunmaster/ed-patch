@@ -28,10 +28,12 @@ REVIEW_DIR = WORK / "review"
 # 공백·`. , ? !` 가 4px 로 그려진다. 꺼진 경로(`ED_VWF=0`)는 시험·대조용으로 남기고 **다른 빌드 칸**(`<꼬리표>-novwf`)에 굽는다.
 VWF = os.environ.get("ED_VWF") != "0"
 # 🔴 시험 빌드 전용 디버그 진입(`debugpatch.py`) — `ED_DEBUG=1` 이면 꼬리표가 `test-debug` 로 **강제**된다(제품 칸을 못 덮는다).
-DEBUG = os.environ.get("ED_DEBUG") == "1"
+# 🔴 QA 전용 디버그(`qadebug.py`, 마스터 11-18) — `ED_DEBUG_QA=1` 이면 DEBUG 가 같이 켜지고 꼬리표 `qa-debug` 를 받는다(제품 칸은 못 덮는다).
+DEBUG_QA = os.environ.get("ED_DEBUG_QA") == "1"
+DEBUG = os.environ.get("ED_DEBUG") == "1" or DEBUG_QA
 # 꼬리표는 `test-*`(시험) 또는 `debug`(마스터용 디버그 빌드)만 받는다 — 그 밖의 값·미지정은 `test-debug` 로 강제한다(제품 칸 `<브랜치>` 를 못 덮는다).
-_DEBUG_TAGS_OK = lambda t: bool(t) and (t == "debug" or t.startswith("test-"))  # noqa: E731
-_DEBUG_TAG = os.environ.get("ED_BUILD_TAG") if _DEBUG_TAGS_OK(os.environ.get("ED_BUILD_TAG")) else "test-debug"
+_DEBUG_TAGS_OK = lambda t: bool(t) and (t in ("debug", "qa-debug") or t.startswith("test-"))  # noqa: E731
+_DEBUG_TAG = os.environ.get("ED_BUILD_TAG") if _DEBUG_TAGS_OK(os.environ.get("ED_BUILD_TAG")) else ("qa-debug" if DEBUG_QA else "test-debug")
 BUILD_TAG = (_DEBUG_TAG if DEBUG else build_tag()) + ("" if VWF else "-novwf")
 BUILD_DIR = WORK / "build"
 DIST_DIR = WORK / "dist"
