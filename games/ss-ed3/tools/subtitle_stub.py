@@ -26,22 +26,21 @@
 """
 
 import argparse
+import os
 import struct
+import sys
 
-#   🔴 자리는 **디버그 메뉴 코드**(`0x0601641C~0x0601A20C`, 15,856B)다 — 2026-09-05.
-#     문자열 구역(332B)이 꽉 차서 옮겼다. 이 구역은 **입구가 하나**다: `0x06008B26` 이
-#     `0x0601641C`(디버그 메뉴 본체)를 부르는데, 그 앞 `0x06008B1C` 가 **디버그 플래그
-#     `0x060793a8`**(타이틀에서 패드 `0x0888` 조합으로만 1 이 된다 — `0x0603CDD4`)을 보고
-#     0 이면 건너뛴다. 리터럴·bsr 전수 스캔으로 다른 입구가 없음을 확인했고(부품 표
-#     `0x06079634`·`0x06079764`·`0x060797e0` 은 전부 이 구역 안에서만 읽는다), 컷신·대화
-#     6,000 프레임에 exec BP 를 걸어 한 번도 안 걸렸다.
-#     ⇒ `patch()` 가 **그 분기를 무조건 건너뛰게**(bt→bra) 바꿔 구역을 완전히 죽인 뒤 쓴다.
-#     🔴 `0x0601A20C` 부터는 산 데이터(각도 표, `0x06005870` 등이 읽는다) — 넘지 않는다.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import codearea as CA
+
+#   🔴 자리(10-24 이후): 폰트 RAM 의 **코드 예약 칸**이다(`codearea.py`) — 종전엔 죽은 디버그 메뉴 코드 구역(`0x0601641C~0x0601A20C`)에 얹었는데
+#     메뉴를 되살리면서 원판 바이트로 돌려놓았다. 예전 사정(2026-09-05): 이 구역은 입구가 하나(`0x06008B26` → `0x0601641C`)이고 그 앞
+#     `0x06008B1C` 가 디버그 플래그 `0x060793a8` 을 본다. 메뉴 입구 패치(`DEBUG_GATE`)는 이제 **메뉴를 열어 주는 쪽**이다(아래 `patch`).
 #   ⚠ `0x06076110` 은 **빈칸이 아니다** — 엔진 BSS 다(`gbr+0x1c` 가 그 주소를 들고 있고
 #   세이브스테이트엔 0x20 간격 항목이 들어 있었다). 2026-09-04 실측.
-STUB = 0x06018C00  # 디버그 메뉴 처리기 표(`0x06079764`)의 첫 항목 — 여기부터 처리기 코드
-STUB_END = 0x0601A20C  # 산 데이터 시작
-DEBUG_GATE = 0x06008B1C  # `bt 0x6008bc4`(8952) → `bra`(A052): 디버그 메뉴 입구를 막는다
+STUB = CA.SUB  # 음성 자막 스텁(코드 + 변수 표)
+STUB_END = CA.SUB + CA.SUB_ROOM
+DEBUG_GATE = 0x06008B1C  # `bt 0x6008bc4`(8952) — 디버그 플래그 0 이면 메뉴 건너뜀 → NOP(0009): 필드 X+Y+Z 로 열린다
 HOOK = 0x060101BA  # 창 갱신 함수(0x06010070)의 공통 에필로그
 TAB = 0x25C00000  # VDP1 명령 표 (CMDSRCA 계산에만 쓴다 — 표엔 직접 안 쓴다)
 EMIT = 0x0606B838  # 엔진 스프라이트 등록: emit(r4=명령 30B, r5=Z). 아래 `skip_draw` 주석
@@ -113,8 +112,8 @@ V_CTAB, V_CSTART = 28, 32  # u32
 VAR_LEN = 36
 #   🔴 전역 프레임 시계 — 크레딧 태스크(`_credits_code`, 필드·크레딧 공통 VBlank 태스크)가 **매 프레임 +1** 한다.
 #     위치는 고정이다(대사창 스텁이 `mov.l` 로 읽는다) — 크레딧 코드 구역 끝(`STUB − 0x1D0`)에 둔다.
-GCLK = 0x06018A30
-RELOC = 0x06018A10  # 예산이 모자란 시스템 문자열을 **옮겨 두는 칸**(32B) — 정본은 `reinsert_sys.RELOC_AT`(같은 값, 테스트가 묶는다)
+GCLK = CA.GCLK
+RELOC = CA.RELOC  # 예산이 모자란 시스템 문자열을 **옮겨 두는 칸**(32B) — 정본은 `reinsert_sys.RELOC_AT`(같은 값, 테스트가 묶는다)
 
 
 class Asm:
@@ -787,7 +786,7 @@ def build():
 #     글자 = `<프레임 0> <x s16> <y s16>` + 이름 `\0`(비움) + 줄들 — **대사창 글자와 같은 꼴**이라
 #     `voice_sub.entry` 의 줄 인코딩을 그대로 쓴다. x·y 는 VDP1 로컬 좌표(원점 = 화면 가운데).
 #   ⚠ 글자는 **테두리 없이** 글자 스프라이트 하나만 등록한다(대사창이 아니다 — 마스터 09-30).
-CRED = 0x06016420  # 죽은 디버그 메뉴 구역 안(`0x0601641C` 부터) — 스텁(`STUB`) 앞
+CRED = CA.CRED  # 폰트 RAM 코드 예약 칸 A(`codearea`)
 TASK_LIT = 0x06047924  # 태스크 `0x06047908` 이 부르는 함수 주소 리터럴
 TASK_ORIG = 0x0604BD10
 TVMD = 0x25F80000  # VDP2 화면 모드 — 하위 3 비트 2 = 640 폭(고해상도)
@@ -1137,10 +1136,10 @@ def build_credits(draw_line, table=b""):
     )
     assert len(out) == ctab - CRED
     out += table
-    assert CRED + len(out) <= RELOC, (
+    assert CRED + len(out) <= CA.CRED_END, (
         len(out),
-        RELOC - CRED,
-    )  # 끝 0x1F0B 는 재배치 문자열 칸(`reinsert_sys.RELOC_LEN`) · `GCLK`(16B) · `patch_ui_center.WRAP`·`WRAP2`·`WRAP3` 자리
+        CA.CRED_END - CRED,
+    )  # 칸 A 끝(`codearea.CRED_END`)
     return bytes(out), {
         "ctab": ctab,
         "var": var,
@@ -1158,34 +1157,66 @@ BASE = 0x06004000  # `/0.BIN` 적재 주소
 STUB_ORIG = bytes.fromhex("2f862f962fa62fb6")
 HOOK_ORIG = bytes.fromhex("6fe34f266ef66df66cf6")
 GATE_ORIG = bytes.fromhex("8952")
-GATE_NEW = bytes.fromhex("a052")  # 같은 변위, 무조건 분기
+GATE_NEW = bytes.fromhex("0009")  # nop — 플래그 검사를 건너뛴다(메뉴가 열린다)
+
+
+def tramp_code(target, orig):
+    """트램펄린 40B — 준비 표지가 맞으면 `target` 으로, 아니면 `orig` 로 뛴다(레지스터는 r1·r2 만 쓴다 — 태스크는 인자가 없다)."""
+    t = CA.TRAMP
+    assert t % 4 == 0
+    words = [
+        0xD105,  # mov.l @(5,pc),r1   표지 주소
+        0x6112,  # mov.l @r1,r1
+        0xD205,  # mov.l @(5,pc),r2   표지 값
+        0x3210,  # cmp/eq r1,r2
+        0x8B02,  # bf not_ready
+        0xD205,  # mov.l @(5,pc),r2   target
+        0x422B,  # jmp @r2
+        0x0009,  # nop
+        0xD204,  # not_ready: mov.l @(4,pc),r2   orig
+        0x422B,  # jmp @r2
+        0x0009,  # nop
+        0x0009,  # (정렬)
+    ]
+    body = b"".join(struct.pack(">H", w) for w in words)
+    assert len(body) == 0x18
+    #   🔴 표지는 **캐시를 건너뛰는 별칭**(`| 0x20000000`)으로 읽는다 — 폰트는 CD→DMA 로 RAM 에 올라오는데 DMA 쓰기는 SH-2 캐시를 무효화하지 않는다.
+    #     캐시 줄에 부팅 초기의 0 이 남아 있으면 프레임마다 같은 줄을 읽는 이 트램펄린은 표지가 영영 안 보일 수 있다(실기에서만 — 에뮬은 이 점이 느슨하다).
+    pool = struct.pack(">IIII", CA.READY_ADDR | 0x20000000, CA.READY_MAGIC, target, orig)
+    out = body + pool
+    assert len(out) <= CA.TRAMP_ROOM
+    return out
 
 
 def patch(data, table_fn=None):
-    """`/0.BIN` 에 스텁 + 훅을 넣는다 → 새 bytes. 크기 불변.
+    """`/0.BIN` 에 훅·메뉴 입구를 넣고 스텁·표는 폰트 RAM 코드 예약 칸에 쓴다(`codearea.SIDE` → 빌드가 폰트에 얹는다) → 새 bytes. 크기 불변.
 
-    스텁은 디버그 메뉴 코드 자리에 들어가므로 **그 메뉴의 입구(`DEBUG_GATE`)를 먼저 막는다** —
-    타이틀 조합키로 켜지는 개발용 메뉴라 게임엔 없어도 된다.
+    🔴 디버그 메뉴 입구(`DEBUG_GATE`): 원판은 타이틀 조합키로 켠 플래그가 있어야 필드 `X+Y+Z` 로 열렸다. 플래그를 켜지 않고(필드·이벤트 루프 5곳의
+    용도 미확인 분기가 같이 켜진다) **플래그 검사만 NOP** 한다 — 필드에서 `X+Y+Z` 면 열린다(마스터 10-24 「제품에 넣자」).
     `table_fn(ctab)` 이 있으면 **크레딧 자막**(V20)도 넣는다 — 표를 `ctab` 자리 기준으로 만들어 돌려준다.
     """
     out = bytearray(data)
     stub, hook, where = build()
 
-    def put(addr, blob, expect):
-        off = addr - BASE
-        assert 0 <= off and off + len(blob) <= len(out), hex(addr)
-        assert out[off : off + len(expect)] == expect, f"{addr:#x} 가 예상과 다르다"
-        out[off : off + len(blob)] = blob
+    def put(addr, blob, expect=None):
+        if expect is not None and not CA.in_font(addr):
+            off = addr - BASE
+            assert out[off : off + len(expect)] == expect, f"{addr:#x} 가 예상과 다르다"
+        CA.put(out, BASE, addr, blob)
 
     put(DEBUG_GATE, GATE_NEW, GATE_ORIG)
-    put(STUB, stub, STUB_ORIG)
+    put(STUB, stub)
     put(HOOK, hook, HOOK_ORIG)
     if table_fn is not None:
         _, ca = build_credits(where["draw_line9"])
         blob, ca = build_credits(where["draw_line9"], table_fn(ca["ctab"]))
-        put(CRED, blob, b"")
-        put(GCLK, b"\x00" * 16, b"")  # 전역 프레임 시계 — 0 으로 시작(원래 디버그 메뉴 코드 바이트가 있던 자리)
-        put(TASK_LIT, struct.pack(">I", CRED), struct.pack(">I", TASK_ORIG))
+        put(CRED, blob)
+        put(GCLK, b"\x00" * CA.GCLK_LEN)  # 전역 프레임 시계 — 0 으로 시작
+        #   🔴 프레임 태스크는 **부팅 중 폰트가 다 올라오기 전에도** 돈다 — 직접 CRED 로 뛰면 먹통이다. 0.BIN 안 트램펄린이 준비 표지(`codearea.READY_*`)를 보고
+        #     준비됐으면 CRED 로, 아니면 원래 함수(`TASK_ORIG`)로 보낸다.
+        put(CA.TRAMP, tramp_code(CRED, TASK_ORIG), b"\x00" * CA.TRAMP_ROOM)
+        put(CA.READY_ADDR, struct.pack(">I", CA.READY_MAGIC))
+        put(TASK_LIT, struct.pack(">I", CA.TRAMP), struct.pack(">I", TASK_ORIG))
         #   등록은 메인 스레드에서 — 크레딧 글자 함수 에필로그 12B 를 `mov.l @(1,pc),r8 · jmp @r8 · nop · nop · 주소` 로
         put(HOOK2, struct.pack(">HHHHI", 0xD801, 0x482B, 0x0009, 0x0009, ca["cemit"]), HOOK2_ORIG)
         #   글자 하나를 등록하는 `emit` 호출의 풀 리터럴 → `cwrap`(XA 최솟값을 모은다)

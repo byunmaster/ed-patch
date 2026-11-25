@@ -17,13 +17,13 @@
 (유저 확정 2026-08-24).
 """
 
-import json
 import os
 import re
-from itertools import pairwise
 import sys
+from itertools import pairwise
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import codearea as CA
 import common as C
 import hangul_map as H
 import strtab as S
@@ -89,8 +89,10 @@ def split_lead(text):
 #   제자리 확장이 안 되는 것 — 그 문자열을 가리키는 **포인터가 하나뿐**이면 죽은 디버그 메뉴 구역의 칸으로 옮기고 포인터만 바꾼다
 #   (원자리는 NUL 로 비운다). 칸은 `subtitle_stub.RELOC`(32B) — 크레딧 코드 구역이 그 앞에서 끝나게 단언이 지킨다.
 #   ⚠ 포인터가 하나가 아니면 멈춘다 — 다른 데서 읽는 포인터를 놓치면 **옛 자리를 읽어 빈 문자열**이 나온다.
-RELOC_AT = 0x06018A10
-RELOC_LEN = 32
+RELOC_AT = (
+    CA.RELOC
+)  # 폰트 RAM 코드 예약 칸 B(`codearea`) — 종전엔 죽은 디버그 메뉴 구역(`0x06018A10`)이었다
+RELOC_LEN = CA.RELOC_LEN
 RELOCATABLE = {
     "/0.BIN": ("戦闘に勝った！\x00",)
 }  # 화면에 나가는 문구라 원문을 살리려고 옮기는 것들(키 = JP 원문 + 종결자)
@@ -106,8 +108,7 @@ def _relocate(out, s, raw, base):
     refs = [i for i in range(0, len(out) - 3, 4) if out[i : i + 4] == old]
     if len(refs) != 1:
         return f"포인터가 {len(refs)}개다(하나여야 한다)"
-    at = RELOC_AT - base
-    out[at : at + RELOC_LEN] = raw + b"\x00" * (RELOC_LEN - len(raw))
+    CA.put(out, base, RELOC_AT, raw + b"\x00" * (RELOC_LEN - len(raw)))
     out[refs[0] : refs[0] + 4] = RELOC_AT.to_bytes(4, "big")
     return None
 

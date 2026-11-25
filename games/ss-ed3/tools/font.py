@@ -25,6 +25,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import codearea as CA
 import common as C
 
 FON_KANJI = "/SYSTEM/KANJI12.FON"
@@ -159,7 +160,8 @@ def free_slots(used=None):
     """
     used = used if used is not None else used_indices()
     lo = (KANJI_KU - 1) * 94
-    return [i for i in range(lo, GLYPHS) if i not in used]
+    #   🔴 코드 예약 칸(`codearea.RESERVED_SLOTS` — 우리 스텁·표가 사는 폰트 RAM)은 글리프 후보에서 뺀다. 새 배정을 얼릴 때 거기 앉지 않게 하는 장치다.
+    return [i for i in range(lo, GLYPHS) if i not in used and i not in CA.RESERVED_SLOTS]
 
 
 def main():

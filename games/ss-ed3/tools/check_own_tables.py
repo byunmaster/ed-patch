@@ -9,6 +9,8 @@
 예외(사유를 여기 적는다 — 늘릴 때마다 「이게 사전·정본에 있어야 하나」를 묻는다):
   · `tools/kana_kr.py` — 가타카나 **음절 → 한글** 후보 표(`ア`→아). 이름 표가 아니라 사전 후보를 만드는 도구의 음차 규칙이다.
   · 스태프롤 — 게임마다 제작진이 달라 게임 폴더에 둔다(마스터 10-08). 이 게임은 자막 시계 JSON(`voice_credits.json`)이라 열쇠가 JP 가 아니다.
+  · `script/system_keys.json` 절 `debug` — 디버그 메뉴 라벨 61줄의 한글 값(5열). **게임 고유라 정본 대상이 아니다**(마스터 10-24 「디버그는 게임 고유라 정본
+    안올려도 될듯」 — 스태프롤과 같은 예외). 다른 절의 5열 한글 값은 여전히 실패다(`_rows5`).
 """
 
 import ast
@@ -38,6 +40,19 @@ def _json_hits(o, path=""):
     elif isinstance(o, list):
         for i, v in enumerate(o):
             yield from _json_hits(v, f"{path}[{i}]")
+
+
+DEBUG_SECTION = ("script/system_keys.json", "debug")  # 마스터 승인 예외 — 위 docstring
+
+
+def _rows5(doc):
+    """`system_keys.json` 에서 5열(한글 값)을 가진 줄 수 — 예외 절 `debug` 는 뺀다."""
+    for sec, rows in doc.items():
+        if sec == DEBUG_SECTION[1] or not isinstance(rows, list):
+            continue
+        n = sum(1 for r in rows if isinstance(r, list) and len(r) > 4 and KO.search(str(r[4])))
+        if n:
+            yield f"/{sec}", n
 
 
 def _py_hits(tree):
@@ -71,6 +86,9 @@ def main():
                 continue
         for where, n in _json_hits(doc):
             bad.append((rel, where, n))
+        if rel == DEBUG_SECTION[0]:
+            for where, n in _rows5(doc):
+                bad.append((rel, where, n))
     for p in sorted(glob.glob(os.path.join(root, "tools", "**", "*.py"), recursive=True)):
         rel = os.path.relpath(p, root)
         if rel in ALLOW or rel.startswith(os.path.join("tools", "tests") + os.sep):
@@ -87,7 +105,7 @@ def main():
             print(f"  ❌ {rel} {where} — 가나/한자 열쇠 → 한글 값 {n}쌍")
         print(f"\n🔴 게임 폴더에 자기 표 {len(bad)} 곳 — 사전(`shared/canon/nouns`)·정본(`shared/canon`)에서 읽게 한다(없으면 관리자에게 후보로)")
         return 1
-    print(f"✅ 자기 표 0 (예외 {len(ALLOW)}: {', '.join(ALLOW)})")
+    print(f"✅ 자기 표 0 (예외 {len(ALLOW)}: {', '.join(ALLOW)} · system_keys.json 절 debug)")
     return 0
 
 

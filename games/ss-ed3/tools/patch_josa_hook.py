@@ -56,6 +56,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
+import codearea as CA
 import hangul_map as H
 
 from shared.text.josa import batchim
@@ -700,13 +701,13 @@ def routine(free, tbl_addr, dbg=None, prefix_w=0, tbuf=0):
 #   🔴 **점프 테이블 값은 부호 16비트**다(`mov.w @(r0,r1),r1` 로 읽어 더한다) — 그래서
 #     테이블 바탕에서 ±32KB 안에 있어야 한다. 스텁은 그 범위 밖이라 **트램펄린**을 둔다.
 #   ⚠ 자리마다 근거가 다르다. 위험이 큰 쪽에 **데이터**를, 작은 쪽에 **코드**를 놓았다:
-#     · 스텁     — **개발실 디버그 메뉴 문자열**(`debug`·`Dump Monster`·`本００`…).
-#                  새턴판엔 개발실이 없다(devlog 2026-08-29, 대사 전수 파서로 확인).
-#                  설령 열려도 **글자만 깨진다** — 코드가 아니라 문자열이다.
+#     · 스텁     — (10-24 이후) 폰트 RAM 의 **코드 예약 칸**(`codearea`). 종전엔 개발실 디버그 메뉴 문자열 자리였는데
+#                  그 메뉴를 되살리느라 비웠다(원판 바이트 복원).
 #     · 종성 표   — 실행 중 RAM 에서 0 임을 확인한 자리. 만약 게임이 여기를 쓰면
 #                  **조사만 틀리고 안 죽는다**(표를 못 읽으면 병기 그대로 두는 쪽으로 떨어진다).
-STUB = 0x06016080  # 240B — 디버그 문자열 (0x06016080~0x06016333, 691B)
-STUB_ROOM = 0x0601_6333 - 0x0601_6080
+#     ⚠ 10-24: 스텁은 더 이상 디버그 문자열 자리에 없다 — 그 구역은 디버그 메뉴가 되살아나 원판 바이트로 돌아갔고, 스텁은 폰트 RAM 의 코드 예약 칸으로 옮겼다(`codearea.py`).
+STUB = CA.JOSA  # 코드 + 접기 버퍼 (`codearea.JOSA_ROOM` B)
+STUB_ROOM = CA.JOSA_ROOM
 TBL = 0x06076170  # 490B
 TBL_ROOM = 864
 
@@ -744,18 +745,19 @@ def patch(data, prefix_w=13):
     assert LIT_OFF + 36 + FOLD_BUF <= STUB_ROOM
 
     def put(addr, blob, room, expect=None):
-        off = addr - BASE
-        assert 0 <= off and off + len(blob) <= len(out), hex(addr)
         assert len(blob) <= room, f"{addr:#x}: {len(blob)}B > {room}B"
-        cur = bytes(out[off : off + len(blob)])
-        #   ⚠ **원본이 예상과 다르면 멈춘다** — 자리를 잘못 짚으면 조용히 딴 걸 덮는다.
-        if expect == "zero":
-            assert cur == bytes(len(blob)), f"{addr:#x} 가 0 이 아니다"
-        elif expect:
-            assert out[off : off + len(expect)] == expect, f"{addr:#x} 가 예상과 다르다"
-        out[off : off + len(blob)] = blob
+        if not CA.in_font(addr):
+            off = addr - BASE
+            assert 0 <= off and off + len(blob) <= len(out), hex(addr)
+            cur = bytes(out[off : off + len(blob)])
+            #   ⚠ **원본이 예상과 다르면 멈춘다** — 자리를 잘못 짚으면 조용히 딴 걸 덮는다.
+            if expect == "zero":
+                assert cur == bytes(len(blob)), f"{addr:#x} 가 0 이 아니다"
+            elif expect:
+                assert out[off : off + len(expect)] == expect, f"{addr:#x} 가 예상과 다르다"
+        CA.put(out, BASE, addr, blob)
 
-    put(STUB, code, STUB_ROOM, b"debug\x00")
+    put(STUB, code, STUB_ROOM)
     put(TBL, bits, TBL_ROOM, "zero")
 
     #   ── 훅 — 밀어낸 12B 를 「스텁으로 점프 + 상수」로 덮는다

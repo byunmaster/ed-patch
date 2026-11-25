@@ -23,9 +23,12 @@ class Reloc(unittest.TestCase):
         ref = 0x8000
         out[ref : ref + 4] = (base + 0x100).to_bytes(4, "big")
         raw = "전투에서 승리했다!".encode("euc-kr")
+        RS.CA.reset()
         self.assertIsNone(RS._relocate(out, s, raw, base))
-        at = RS.RELOC_AT - base
-        self.assertEqual(bytes(out[at : at + len(raw) + 1]), raw + b"\x00")
+        #   칸은 폰트 RAM 코드 예약 칸이라 쓰기는 `codearea.SIDE` 로 간다(빌드가 폰트에 얹는다)
+        ((addr, blob),) = RS.CA.SIDE
+        self.assertEqual(addr, RS.RELOC_AT)
+        self.assertEqual(blob[: len(raw) + 1], raw + b"\x00")
         self.assertEqual(int.from_bytes(out[ref : ref + 4], "big"), RS.RELOC_AT)
 
     def test_refuses_when_pointer_count_is_not_one(self):

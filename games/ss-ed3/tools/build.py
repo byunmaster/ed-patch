@@ -26,8 +26,10 @@ sys.path.insert(
 )
 import book_cover as BCV
 import build_font
+import codearea as CA
 import common as C
 import hangul_map as H
+import map_plates as MP
 import movie_hardsub as MV
 import patch_josa_hook as JOSA
 import patch_notice_x as NX
@@ -160,12 +162,55 @@ def patched(disc, lay=None):
     #     파일마다 따로 내면 둘째 쓰기의 사전조건(원본 바이트)이 어긋난다.
     dirsec = {}
 
+    def patch_sys(d, name, lba, size):
+        """`/0.BIN` · 미니게임 실행 파일의 시스템 문구·훅·스텁 — `(원본, 새것, {갈래: 수}, bad)`.
+
+        🔴 폰트(`KANJI12.FON`)보다 **먼저** 돈다 — 스텁·표가 폰트 RAM 의 코드 예약 칸(`codearea`)에 앉으므로
+        폰트를 내보내기 전에 그 쓰기를 알아야 한다."""
+        #   🔴 **미니게임 실행 파일에도 화면 문구가 있다**(실측 2026-08-28) —
+        #     `/RLTPRG.BIN`(룰렛) 「当たったー/どんなもんだい！！」 ·
+        #     `/BLACK.BIN`(블랙잭) 「ブラックジャックを終了しますか？」.
+        #     `/0.BIN` 만 고치고 있어 여태 일본어로 남아 있었다.
+        #   ⓘ `reinsert_sys` 의 **원바이트 폴백**이 `LOAD_BASE` 없는 파일도 받는다.
+        b = d.read_extent(lba, size)
+        new, k, bad = RS.patch(b, name, systbl)
+        cnt = {"sys": k}
+        if name == "/0.BIN":
+            #   🔴 **동적 조사 훅** — 문안에 넣은 병기(`을(를)`)를 표시 직전에
+            #     하나로 줄인다. `%s` 에 꽂히는 건 아이템·인물 이름이라 빌드 때
+            #     앞말을 모른다. 훅이 안 돌면 병기 그대로 보인다(안 틀린다).
+            new, hk = JOSA.patch(new, JOSA.fold_prefix_w())
+            cnt["josa"] = hk
+            #   전투 위쪽 배너(기술명·승리 문구) 글자를 세로 가운데로 — 상수 하나(`patch_ui_center`).
+            new = UIC.patch(new)
+            cnt["ui_center"] = 1
+            #   안내 화면 줄을 줄마다 화면 정중앙에 — 그리기 호출의 x 즉값을 줄마다 다시 쓴다(`patch_notice_x`).
+            new = NX.patch(new)
+            cnt["notice_x"] = 1
+            #   🔴 **음성 자막 렌더러** — 컷신 위에 우리 창을 그리는 스텁과 훅.
+            if voicetbl:
+                #   🔴 크레딧 자막(V20)도 이 파일에 든다 — 코드·표를 폰트 RAM 코드 예약 칸에 얹고
+                #     프레임 태스크의 호출 주소를 바꾼다(`subtitle_stub` 「크레딧 자막」).
+                new = SS.patch(new, table_fn=lambda ctab: VC.blob(ctab))
+                cnt["voice_stub"] = 1
+        return b, new, cnt, bad
+
     with C.open_disc(disc) as d:
         files = d.files()
+        #   🔴 코드 예약 칸에 앉는 스텁·표는 폰트 바이트에 얹는다 — 그래서 시스템 파일이 먼저다(`patch_sys`).
+        CA.reset()
+        sysres = {}
+        if systbl:
+            for name, lba, size in files:
+                if name in ("/0.BIN", "/RLTPRG.BIN", "/BLACK.BIN"):
+                    sysres[name] = patch_sys(d, name, lba, size)
+        fonb = bytearray(fon)
+        CA.apply(fonb)
+        fon = bytes(fonb)
         for name, lba, size in files:
             if name == "/SYSTEM/KANJI12.FON":
                 assert len(fon) == size, (len(fon), size)
-                yield name, lba, size, None, fon, {}
+                yield name, lba, size, None, fon, {"code_area": len(CA.SIDE)}
             elif name == "/SYSTEM/ASCII.FON":
                 assert len(asc) == size, (len(asc), size)
                 yield name, lba, size, None, asc, {"ascii": npad}
@@ -198,34 +243,8 @@ def patched(disc, lay=None):
                     sec[1] = RL.move_record(sec[1], dro, lba, size, new_lba, len(new))
                     cnt["moved"] = 1
                     lba, size, b = new_lba, len(new), b"\x00" * len(new)
-            elif name in ("/0.BIN", "/RLTPRG.BIN", "/BLACK.BIN") and systbl:
-                #   🔴 **미니게임 실행 파일에도 화면 문구가 있다**(실측 2026-08-28) —
-                #     `/RLTPRG.BIN`(룰렛) 「当たったー/どんなもんだい！！」 ·
-                #     `/BLACK.BIN`(블랙잭) 「ブラックジャックを終了しますか？」.
-                #     `/0.BIN` 만 고치고 있어 여태 일본어로 남아 있었다.
-                #   ⓘ `reinsert_sys` 의 **원바이트 폴백**이 `LOAD_BASE` 없는 파일도 받는다.
-                b = d.read_extent(lba, size)
-                new, k, bad = RS.patch(b, name, systbl)
-                cnt = {"sys": k}
-                if name == "/0.BIN":
-                    #   🔴 **동적 조사 훅** — 문안에 넣은 병기(`을(를)`)를 표시 직전에
-                    #     하나로 줄인다. `%s` 에 꽂히는 건 아이템·인물 이름이라 빌드 때
-                    #     앞말을 모른다. 훅이 안 돌면 병기 그대로 보인다(안 틀린다).
-                    new, hk = JOSA.patch(new, JOSA.fold_prefix_w())
-                    cnt["josa"] = hk
-                    #   전투 위쪽 배너(기술명·승리 문구) 글자를 세로 가운데로 — 상수 하나(`patch_ui_center`).
-                    new = UIC.patch(new)
-                    cnt["ui_center"] = 1
-                    #   안내 화면 줄을 줄마다 화면 정중앙에 — 그리기 호출의 x 즉값을 줄마다 다시 쓴다(`patch_notice_x`).
-                    new = NX.patch(new)
-                    cnt["notice_x"] = 1
-                    #   🔴 **음성 자막 렌더러** — 컷신 위에 우리 창을 그리는 스텁과 훅.
-                    #     조사 스텁 뒤 같은 문자열 구역을 쓰므로 그 다음에 넣는다.
-                    if voicetbl:
-                        #   🔴 크레딧 자막(V20)도 이 파일에 든다 — 스텁 앞 죽은 구역에 코드·표를 얹고
-                        #     프레임 태스크의 호출 주소를 바꾼다(`subtitle_stub` 「크레딧 자막」).
-                        new = SS.patch(new, table_fn=lambda ctab: VC.blob(ctab))
-                        cnt["voice_stub"] = 1
+            elif name in sysres:
+                b, new, cnt, bad = sysres[name]
             elif name == RBT.PATH:
                 #   🔴 **HP 창 이름은 문자열이 아니라 그림이다** — `status.spr` 안의
                 #     프리렌더 이름판 아틀라스를 다시 그린다(`reinsert_battle`).
@@ -256,6 +275,11 @@ def patched(disc, lay=None):
                 b = d.read_extent(lba, size)
                 new, _ = RG.apply(b)
                 bad, cnt = [], {"gfx": 1 if new != b else 0}
+            elif name == MP.PATH:
+                #   🔴 **디버그 맵 선택 화면의 지명판 34장은 그림이다**(`map_plates.py`) — 길이 불변으로 다시 그린다.
+                b = d.read_extent(lba, size)
+                new, k = MP.patch(b)
+                bad, cnt = [], {"plates": k}
             elif name == "/SYSTEM/PARAM.BIN":
                 #   ⚠ 한 파일에 **설명문과 이름 표**가 같이 있다 — 둘을 이어서 넣는다.
                 #     이름 표가 빠져 있어 장비창에 일본어가 떴다(2026-08-27 유저 실측).

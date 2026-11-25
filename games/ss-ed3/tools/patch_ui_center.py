@@ -17,6 +17,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import codearea as CA
 import common as C
 
 BASE = 0x06004000  # `/0.BIN` 적재 주소
@@ -43,7 +44,6 @@ BORDER_Y_ORIG = bytes.fromhex("7189")  # −119
 #   테두리에 눌렸다**(캡처 다섯 장을 픽셀로 쟀다 — 마지막 줄만 10행). 에뮬에서 껍데기를 얹고 걷어 비교해 확정했다(설정 창 41–51 → 42–52).
 #   ⇒ 이제 이 두 리터럴은 **원본 그대로 둔다**(아래 `patch` 가 그 사실을 단언한다). 저장 목록만 따로 내리려면 호출한 목록이 어느 것인지
 #   가를 값이 필요한데 아직 못 찾았다 — 찾기 전엔 건드리지 않는다.
-WRAP = 0x06018BF0  # 옛 목록 껍데기 자리 — 지금은 비어 있고, `WRAP2` 가 쓸 수 있는 끝(상한)을 재는 기준으로만 남는다
 DRAW = 0x060417AC
 LIST_LITS = (0x060284B4, 0x06028550)  # 풀에서 `DRAW` 를 가리키는 리터럴 둘
 
@@ -53,16 +53,16 @@ LIST_LITS = (0x060284B4, 0x06028550)  # 풀에서 `DRAW` 를 가리키는 리터
 #   적혀 있다(세이브에 코드가 그대로 적힌다 — 본 배정은 못 바꾼다). ⇒ 배너가 글자를 그리기 직전에 문자열 안의
 #   파티 이름 글자만 **본 → 내려앉은 코드**로 바꿔 주는 껍데기(`WRAP2`)를 건다(제자리 변환이라 여러 번 불려도 같다).
 BANNER_LIT = 0x06010044  # 배너 글자 그리기 호출의 풀 리터럴(`DRAW`)
-WRAP2 = 0x06018AC0
-WRAP2_ROOM = WRAP - WRAP2  # 코드 + 풀 + 표가 들어갈 자리
+WRAP2 = (
+    CA.WRAP2
+)  # 폰트 RAM 코드 예약 칸 B(`codearea`) — 종전엔 죽은 디버그 메뉴 구역(`0x06018AC0`)이었다
+WRAP2_ROOM = CA.WRAP2_ROOM  # 코드 + 풀 + 표가 들어갈 자리
 
 
 def _person_pairs():
     """파티·인물 이름 글자의 `(본 코드 2B + 내려앉은 코드 2B)` 쌍 — 내려앉은 판이 따로 있는 글자만."""
-    import json
 
     import hangul_map as H
-
     import system_src as SYS
 
     names = SYS.sections()["person"].values()
@@ -159,8 +159,8 @@ WAIT_LITS = (
     0x060420F0,
 )  # 풀에서 `WAIT` 를 가리키는 리터럴 둘(0x060420A0 · 0x060420D8 이 읽는다)
 WINS = 0x06095AB0
-WRAP3 = 0x06018A40
-WRAP3_ROOM = WRAP2 - WRAP3
+WRAP3 = CA.WRAP3
+WRAP3_ROOM = CA.WRAP3_ROOM
 
 
 def wrap3_code():
@@ -256,16 +256,13 @@ def patch(data):
     assert out[o : o + 4] == DRAW.to_bytes(4, "big"), f"{BANNER_LIT:#x} 가 예상과 다르다"
     out[o : o + 4] = WRAP2.to_bytes(4, "big")
     blob = wrap2_code()
-    o = WRAP2 - BASE
-    out[o : o + len(blob)] = blob
+    CA.put(out, BASE, WRAP2, blob)
     for lit in WAIT_LITS:
         o = lit - BASE
         assert out[o : o + 4] == WAIT.to_bytes(4, "big"), f"{lit:#x} 가 예상과 다르다"
         out[o : o + 4] = WRAP3.to_bytes(4, "big")
     blob = wrap3_code()
-    o = WRAP3 - BASE
-    assert not any(out[o : o + len(blob)]) or True
-    out[o : o + len(blob)] = blob
+    CA.put(out, BASE, WRAP3, blob)
     return bytes(out)
 
 
