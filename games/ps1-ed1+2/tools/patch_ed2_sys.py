@@ -117,6 +117,12 @@ NAMES_ED2 = {**D.monster(), **D.item()}  # カース 는 아이템(커스)·몬�
 # 그래서 옮긴 뒤 `patch_items.redirect` 가 참조를 전부 갱신할 수 있다.
 REPACK = ((0x800, 0xF44, "ED2 이름"),)
 
+# 🔴 **이름 구획 안의 비문자열 표** — `0xE6C~0xE7A` 의 u16×7 표(100·250·500·1000·2500·5000·10000, 이벤트 함수 0x80020cf0 이 14B 를 지역 배열로
+# 복사한다). `repack_names` 가 구획을 통째로 다시 채워서 `d`(0x64)를 이름으로 오인해 옮기고 나머지를 0 으로 지웠다 —
+# 이 표를 읽는 코드의 참조는 옮긴 `d` 로 돌려졌고 값은 문자열 조각이 됐다(정적 확인 11-07, 핫픽스 시험 경로에서만 고친다).
+# 정적 검색: 원판 대비 바뀐 EXE 구간 중 원문이 문자열이 아닌 바이트를 낀 것 — 이 표 하나뿐(ED.EXE 는 같은 표가 제자리에 있다).
+HOTFIX_KEEP = ((0xE6C, 0xE7A, bytes.fromhex("6400fa00f401e803c409881310" "27")),) if os.environ.get("ED_HOTFIX") == "1" else ()
+
 # ── 옮기면 안 되는 표 — 제자리에서만 채운다 ─────────────────────────────────
 # 🔴 **시나리오 아이템 칸(`0xD4870~0xD4950`)은 재packing 하면 안 된다**(2026-08-16 실측).
 # 한동안 `REPACK` 두 번째 구획으로 넣어 뒀는데, 그러면 **ED2 맵 배경이 통째로 검게** 나갔다
@@ -286,6 +292,16 @@ def ed1_canon():
     return out
 
 
+BANNER_LO, BANNER_HI = 0x9A030, 0x9A280  # 입장 배너 표(16B 긴꼴) — 월드맵에서 마을·동굴에 다가갈 때 뜨는 팝업
+
+
+def banner_general(jp):
+    """입장 배너 띄움 꼴 — 정본 일반 꼴(`canon.place_general`, 성·섬 붙임, 마스터 11-09)을 그대로 읽는다. 정본에 없으면 None(→ 붙임 꼴 그대로)."""
+    import canon
+
+    return canon.place_general(jp, "ed2") if canon.place_general(jp, "ed2") else None
+
+
 def plan():
     """[(오프셋, JP, KR, 슬롯B)] — 쓸 것 전부. 슬롯 초과는 여기서 걸러 보고한다."""
 
@@ -321,6 +337,8 @@ def plan():
                 i = end + 1
                 continue
             kr = by_off.get(i) or canon.get(jp)
+            if os.environ.get("ED_HOTFIX") == "1" and BANNER_LO <= i < BANNER_HI:  # 핫픽스 시험 경로 — 입장 배너만 띄움 꼴(HUD·워프는 붙임 그대로)
+                kr = banner_general(jp) or kr
             if kr:
                 # 쓸 수 있는 공간 = **다음 문자열 시작까지**(널 패딩 포함).
                 # ⚠ 널 종단 다음부터 세야 한다. 처음에 `i + 1` 에서 시작했더니 문자열
@@ -398,8 +416,17 @@ def repack_names(buf, canon):
     n = 0
     for lo, hi, label in REPACK:
         names = _walk(buf, lo, hi)
+        keeps = [(a, b, bytes(buf[a:b])) for a, b, want in HOTFIX_KEEP if lo <= a < hi]
+        for a, b, want in HOTFIX_KEEP:
+            assert bytes(buf[a:b]) == want, f"비문자열 표 원본 불일치 @0x{a:X}"
+        names = [(off, jp) for off, jp in names if not any(a <= off < b for a, b, _ in keeps)]
         assert_not_strided(names, label)
-        reserved = _reserved_in(buf, lo, hi, names)
+        if HOTFIX_KEEP:  # 핫픽스 경로 — 이름도 예약도 아닌데 0 이 아닌 바이트(=표·데이터)가 구획에 남아 있으면 재packing 이 지운다 → 멈춘다
+            covered = {k for off, _jp in names for k in range(off, buf.find(b"\x00", off))}
+            covered |= {k for a, b, _ in keeps for k in range(a, b)}
+            stray = [k for k in range(lo, hi) if buf[k] and k not in covered]
+            assert not stray, f"{label}: 이름이 아닌 데이터 바이트 {len(stray)}곳을 재packing 이 지운다 @0x{stray[0]:X}"
+        reserved = sorted(set(_reserved_in(buf, lo, hi, names)) | {k for a, b, _ in keeps for k in range(a, b)})
         moved, cur, packed = {}, lo, bytearray()
         for off, jp in names:
             kr = canon.get(jp)
@@ -415,6 +442,8 @@ def repack_names(buf, canon):
             packed += kb
             cur += len(kb)
         buf[lo:hi] = packed.ljust(hi - lo, b"\x00")
+        for a, b, orig in keeps:  # 표는 제자리 그대로(참조도 안 돌린다 — 이름이 아니라서 moved 에 없다)
+            buf[a:b] = orig
         PI.redirect(buf, moved)
         print(f"  {label}: {len(names)}개 재packing ({len(packed)}/{hi - lo}B)")
         n += len(names)

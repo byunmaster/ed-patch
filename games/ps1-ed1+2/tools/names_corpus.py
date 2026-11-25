@@ -125,6 +125,13 @@ def _scene_pairs():
             continue
         with open(path, encoding="utf-8") as f:
             script = json.load(f)
+        hp = os.path.join(_GAME, "hotfix", "script", f"{scn}.json")
+        hot = set()
+        if os.path.exists(hp):  # 핫픽스 시험 경로 — 나가는 문안(블록 단위 통째 교체). 그린 바이트(제품)가 아니라 이 문안으로 잰다
+            with open(hp, encoding="utf-8") as f:
+                over = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+            script.update(over)
+            hot = set(over)
         rows = []
         for eid, jp, cand in _blocks(R, scn):
             text = jp.decode("cp932", errors="replace")
@@ -137,7 +144,9 @@ def _scene_pairs():
             t = ent.get("t") if isinstance(ent, dict) else None
             if t is None:
                 ours_body, our_plates = None, []  # 번역 없는 블록(표·제어) — 분모에만 든다
-            elif cand is not None:
+            elif cand is not None and (str(eid) not in hot or "\ue003" in t):
+                # (핫픽스 덮개라도 아이템 이름이 방출 바이트에 박히는 꼴 — `\ue003` 인라인 주입 — 은 `t` 에 이름이 없어서 제품 렌더로 이름을 잰다.
+                #  덮개는 문체만 바꾸고 이름 자리는 그대로다.)
                 # 🔴 화면에 나가는 바이트가 기준이다 — 이름이 런타임 인자가 아니라 **방출 바이트에 박히는**
                 #   꼴(`%c윌 통행증%c을 받았습니다`)은 script 의 `t` 에 이름이 없어서 `t` 만 보면 빠진다.
                 shown = R.render_bytes(cand)

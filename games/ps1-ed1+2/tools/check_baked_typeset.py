@@ -17,7 +17,7 @@
     가운데 맞춤 2-8(오프닝·엔딩 가운데 줄 — 줄 끝 `.` `,` `…` 를 뺀 잉크 폭의 좌우 여백 차) ·
     한 줄 문장 2-10(29열에 드는 문장이 줄을 넘어 갈라진 곳 — 앞 문장 뒤에서 시작해 갈라지면 `mid`, 줄머리에서 시작했는데 갈라지면 `hard`) ·
     쉼표 2-13(「뺀다」 부류 중 규칙 예시와 꼴이 같은 것 — 접속부사 뒤 · 문장 첫머리 주제(`은·는`) 뒤 · 부사어(`에는` …) 뒤 ·
-    `~는데·~지만·~만` 앞 절이 11음절 이하). 애매한 부류(`~고·~며` 연결 · 쪽 끝 · 줄 끝)는 센 수만 낸다.
+    `~는데·~지만·~만` 앞 절이 11음절 이하 · ⑩ 문장 앞 `그럼,` · ⑪ `~고·~며·~서` 앞 절 11음절 이하 — 마스터 11-03). 애매한 부류(`~고·~며` 연결 · 쪽 끝 · 줄 끝)는 센 수만 낸다.
     28열을 못 넘는 줄바꿈 한계(29열 문장)는 2-17 로 허용 — 센 뒤 따로 둔다.
 
   `원판 같은 꼴` — 같은 자리 원판(일본어) 쪽이 같은 모양이면(창 줄 수 치우침) 우리가 만든 게 아니라 원문 구조를 따른 것이라 센 뒤
@@ -158,6 +158,9 @@ def comma_axes(sent):
         w = tok[:-1]
         if i == 0 and w in CONJ:
             out.append(("접속부사 뒤", sent))
+        elif w == "그럼" and (i == 0 or toks[i - 1] in ("%s", "%d")):  # ⑩ 문장 앞 접속 — 이름판 변수 뒤도 문장 머리다
+            if sent not in KEEP_GEUREOM:
+                out.append(("문장 앞 그럼 ⑩", sent))
         elif i <= 1 and re.search(r"(에는|에서는|으로는|로는|에게는|한테는|에서|에도)$", w):
             out.append(("부사어 뒤", sent))
         elif i <= 2 and len(w) >= 2 and w[-1] in "은는" and i + 1 < len(toks):
@@ -167,18 +170,34 @@ def comma_axes(sent):
             if not re.search(r"[0-9A-Za-z%{]", clause) and sum("가" <= c <= "힣" for c in clause) <= 11:
                 out.append(("짧은 앞절 ~는데·~지만·~만", sent))
         elif (
-            re.search(r"(고|며|면서)$", w)
-            and not re.search(r"(라고|자고|시고|말고)$", w)  # 인용·권유·관용(`~라고,` `~자고,` `그러지 마시고,` `~지 말고,`)은 남기는 부류
+            re.search(r"(고|며|면서|서)$", w)
+            and not re.search(r"(라고|자고|시고|말고|에서|에게서|그래서)$", w)  # 인용·권유·관용(`~라고,` `~자고,` `그러지 마시고,` `~지 말고,`)은 남기는 부류
             and i > start
             and not re.search(r"[0-9A-Za-z%{]", " ".join(toks[start : i + 1]))
-            and sum("가" <= c <= "힣" for c in " ".join(toks[start : i + 1])) <= 8
+            and sum("가" <= c <= "힣" for c in " ".join(toks[start : i + 1])) <= 11
         ):
-            if not sent.startswith("어때 지고,"):  # `지고` 는 사람 이름(부르는 말 — 남기는 부류)
-                out.append(("짧은 연결 ~고·~며(8음절 이하)", sent))
+            if not sent.startswith("어때 지고,") and not sent.startswith(KEEP_DAEGU):  # `지고` 는 사람 이름(부르는 말 — 남기는 부류) · 대구는 쉼표를 남긴다
+                out.append(("짧은 연결 ~고·~며·~서(11음절 이하) ⑪", sent))
         start = i + 1
     return out
 
 
+# ⑪ 대구 — 같은 꼴 두 절이 맞서거나 나란한 문장은 짧아도 쉼표를 남긴다(마스터 11-06 「대구는 쉼표넣자」). 문장 머리로 가린다
+KEEP_DAEGU = (
+    "있지 게일, 병사들도 다쳐 버렸고, ",
+    "광산도 그럭저럭 복구됐고, ",
+    "문이 부서져 있고, ",
+    "어디 보자, 어제가 목걸이고, ",
+    "가이드도 예쁘고, ",
+    "이제는 치안도 좋고, ",
+    "무기는 우리에게 맡기고, ",
+    "바람의 탑은 가라앉고, ",
+    "술도 마음껏 마실 수 있었고, ",
+    "어째서 우리는 고생만 하고, ",
+)
+
+# ⑩ 「그럼,」 중 남기는 부류 — 부르는 말 앞 · 작별 인사(문장 전체로 적는다)
+KEEP_GEUREOM = frozenset({"그럼, 왕자님.", "그럼, 편히 쉬십시오.", "그럼, 몸조리 잘하세요."})
 COMMA_INFO = {"연결어미쉼표": 0, "쪽끝쉼표": 0, "줄끝쉼표": 0}
 
 
@@ -214,6 +233,10 @@ def scene_block(scn, eid, raw, cand, hits, flags, speaker=""):
         for kind, st, wd in oneline_split(lines, plate=not speaker):
             if wd > FRAME - 1:
                 flags.append(("한줄문장 28열 한계 2-17", scn, eid, st))  # 줄바꿈 한계(29열) — 문안을 줄이지 않고 갈림을 허용
+            elif "이(가)" in st and "있었습니다" in st:
+                # 보물상자 존대 둘째 줄: 「상자에는 ⟨아이템⟩이(가) 있었습니다.」 — 아이템 이름이 런타임에 들어가 가장 긴 이름(8음절=16열)이면
+                # 29열을 넘는다. 이름이 짧아도 「있었습니다.」(11열)까지 한 줄이면 대부분 넘어, **이름 뒤에서 어절 경계로 접는다**(2-19).
+                flags.append(("한줄문장 28열 한계 2-17", scn, eid, st))
             elif f"{scn}:{eid}" in KEEP_ONELINE:
                 flags.append(("한줄문장 구조 막힘", scn, eid, st))
             else:
@@ -313,10 +336,13 @@ def selftest_new():
         ("비가 오는데, 가자.", "짧은 앞절 ~는데·~지만·~만"),
     ):
         assert [c for c, _ in comma_axes(txt)] == [cls], (txt, comma_axes(txt))
-    assert [c for c, _ in comma_axes("문이 부서져 있고, 안에는 몬스터가 돌아다닌다.")] == ["짧은 연결 ~고·~며(8음절 이하)"]
+    assert [c for c, _ in comma_axes("창이 깨져 있고, 안에는 몬스터가 돌아다닌다.")] == ["짧은 연결 ~고·~며·~서(11음절 이하) ⑪"]
+    assert not comma_axes("문이 부서져 있고, 안에는 몬스터가 돌아다닌다.")  # 대구 예외
+    assert [c for c, _ in comma_axes("그럼, 가시지요.")] == ["문장 앞 그럼 ⑩"]
+    assert [c for c, _ in comma_axes("진척이 없어서, 난처합니다.")] == ["짧은 연결 ~고·~며·~서(11음절 이하) ⑪"]
     for ok in ("아트라스, 가자.", "그래, 좋아.", "가만, 그게 뭐였더라.", "하룻밤에 10 Gold입니다만, 괜찮으십니까?",
                "이 근방 드래곤은 알을 낳지 않는데, 우리가 낳을 참이라네.", "그러지 마시고, 비싸게 사 드릴 테니…",
-               "마스쿤 마을을 몬스터에게서 해방시키고, 다시 평화를 되찾았습니다.", "란도, 플로라, 아트라스를 불러라."):  # fmt: skip
+               "그럼, 왕자님.", "그럼, 편히 쉬십시오.", "마스쿤 마을을 몬스터에게서 해방시키고, 다시 평화를 되찾았습니다.", "란도, 플로라, 아트라스를 불러라."):  # fmt: skip
         assert not comma_axes(ok), (ok, comma_axes(ok))
     assert center_ink_diff("그리고 세월은 흘렀다…") == 0 and center_ink_diff("그것은 실로") == 0
     assert center_ink_diff("!＿앞으로 우리들의,") is None

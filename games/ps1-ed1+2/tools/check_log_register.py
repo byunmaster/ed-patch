@@ -1,85 +1,121 @@
 #!/usr/bin/env python3
-"""**시스템·행동 로그의 문체**를 부류 단위로 지킨다 — **평어체**(마스터 확정 2026-10-03).
+"""**시스템·행동 로그의 문체가 원문 등급과 같은가**(번역 규칙 4-17 — 마스터 11-15 「전투로그 등도 원문방향으로」).
 
-🔴 **09-03 의 「원문이 정중이니 정중」을 10-03 에 뒤집었다 — 단 주입 표지(흰색) 로그만이다.**
-**초록 해설과 NPC 대사는 정중 그대로다**(마스터 10-03 「NPC 대사는 로그가 아니라 대화」·「초록색 해설은 존댓말 유지」).
-표지 없는 서술은 색이 콜사이트 인자라 문안으로 못 가린다 — 평어로 올리지 않았다(아래 서술은 당시 것). 종장 QA 에서 마스터가 「전투 로그는
-반말(`기절해 버렸다`)인데 보물상자·승패·획득은 존댓말이라 한 화면에서 섞여 보인다」고 짚었고
-「전부 평어」로 판정했다. 원문은 이 부류에서 정중(`〜ました`) 맞다 — 그래서 아래 수치는 그대로
-「원문이 정중임」의 근거로 남기되, **우리 문체는 평어**다(원문 우선의 예외 — 일관성). 이 검사기의
-방향이 반대로 뒤집혔다: 이제 **정중이 남으면 실패**다.
+런타임 주입 표지(`\\x1a` 이름 · `\\x17` 아이템)를 쓰는 블록이 곧 시스템·행동 로그다(화자 이름표가 없다). 이 부류는
+**원문 끝이 「ました/ます」면 존댓말(「열었습니다」), 「た」면 평서**다. 어긋나면 실패 — 핫픽스 덮개(`hotfix/script`)를 겹친
+문안으로 잰다(제품 정본 v1.2.0 은 잠겨 있다).
 
-(이하 09-03 당시 서술 — 부류를 데이터로 가른다는 방법은 그대로 유효하다.)
+🔴 경위 — 09-03 「원문 정중이니 정중」 → 10-03 「로그는 전부 평어」(마스터) → **11-15 「원문 방향」**(4-17 확장)으로 되돌았다.
+10-03 판정이 만든 「평어 통일」 검사는 이 검사의 앞 판이다(정중이 남으면 실패 — 방향이 반대였다).
 
-**왜(2026-09-03).** 유저가 빛의 검 창 다섯을 인게임에서 보고 「끼워 넣었다는 정중이
-아니네?」로 잡았다. 같은 순간에 뜨는 넷(`받았습니다`·`완성되었습니다`·`넣었습니다`)과
-하나만 어긋나 있었다. 원인은 문안이 아니라 **판정을 블록 단위로 한 것**이다 —
-원문을 한 블록씩 보면 흔들려 보이는데, **부류로 묶어 세면 규칙이 있다.**
+읽을 수 없는 원문(이름 플레이트 조각이 섞인 블록)은 건너뛰고 몇 건인지 알린다.
 
-    보물상자 부류   원문 정중 44 · 평서 0   (「평서 6」은 NPC 대사와 `ませんでした`
-                                             오분류였다 — 08-31 의 97:11 은 오염된 값)
-    획득·건넴 안내  원문 정중 117 · 평서 2  (둘 다 NPC 대사가 걸린 오탐)
-    이름 색(참고)   대사 1,012 색 · 로그 117 무색 (무색 117 중 113이 이 부류)
-
-⇒ **부류를 원문에서 읽으면 「원문 충실」과 「일관성」이 대립하지 않는다.** 이 검사기는
-그 부류가 다시 흐르는 걸 막는다 — 이 축은 이미 08-29↔09-01 로 한 번 진동했다.
-
-부류는 추측이 아니라 **데이터에 있는 것**으로 가른다 — 런타임 주입 표지(`\\x1a` 이름 ·
-`\\x17` 아이템)를 쓰는 블록이 곧 시스템·행동 로그다(화자 이름표가 없다).
-
-🔴 **ED2 도 실패로 친다**(2026-09-06). 예전엔 보고만 했는데 그 이유가 「정발 유래라 재작성
-대기」였고 **그 전제가 이미 끝났다**(자체 번역 100%). ED2 로그 69블록을 ED1 과 같은 규칙으로
-맞춰 **양쪽 다 0** 이 된 지금, 게이트로 거는 게 맞다 — 인게임 QA 로 문안이 움직여도 이 규칙은
-안 움직인다.
-
-⚠ 원문이 이 부류에서 평서인 예외 셋(`ED1SCN3:1120` · `ED1SCN4:741·749`)은 **부류 다수에
-맞춰 정중으로 올렸다**(유저 확정 2026-09-03). 원문을 따르는 규칙에서 물러선 유일한 자리라
-블록 주석에 근거를 남겼다.
-
-  python3 tools/check_log_register.py          # ED1·ED2 실패
-  python3 tools/check_log_register.py --ed2    # ED2 목록까지
+  python3 tools/check_log_register.py
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / "script"
+os.environ.setdefault("LOCK_BYPASS", "1")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+ROOT = Path(__file__).resolve().parents[1]
 INJECT = ("\x1a", "\x17")  # 런타임 주입 표지 = 시스템·행동 로그
-POLITE = re.compile(r"(습니다|십시오|세요|십니다|습니까)[.!?…]?$")
-# 평어로 올릴 대상은 평서(`〜습니다`)뿐이다 — `〜시겠습니까?` 같은 물음은 도구점 주인의 말이다
-# (화자가 있으면 그 사람 말투 — policy 「창에 뜬다고 다 시스템 메시지가 아니다」).
-STATEMENT = re.compile(r"습니다[.!?…]?$")
-PLAIN = re.compile(r"(었다|았다|했다|였다|된다|한다|이다)[.!?…]?$")
+POLITE_KR = re.compile(r"(습니다|십시오|세요|십니다)[.!?…]?$")
+PLAIN_KR = re.compile(r"(었다|았다|했다|였다|렸다|쳤다|된다|한다|이다|냈다)[.!?…]?$")
+
+
+SYS_JP = re.compile(r"宝箱|手に入れ|渡し|買い|売り|取り上げ|受け取|もらい|拾い|見つけ|あきらめ|設置|セット|閉め|開け|解放|勝利|敗れ|覚え|習得|仲間|装備")  # 시스템·행동 로그 낱말(주입 표지가 없는 지문 포함)
+
+
+def _jp_sents(j):
+    b = re.sub(r"%[cdsx]", "", j.replace("\x00", "").replace("\n", ""))
+    return [x.strip("　 ･…") for x in re.split(r"[。！？!?]", b) if x.strip("　 ･…")]
+
+
+def jp_class(sent):
+    if re.search(r"(ました|ません|ませんでした|ます|です|でした)$", sent):
+        return "P"
+    if re.search(r"(た|だ|る|い|う|く|ぐ|す|つ|ぬ|ぶ|む)$", sent) and not re.search(r"ご|お[一-龥]|ください|ませ|なさ", sent):
+        return "L"
+    return None
+
+
+def jp_tail(j):
+    ss = _jp_sents(j)
+    return jp_class(ss[-1]) if ss else None
+
+
+def kr_class(sent):
+    t = re.sub(r"\{[pn]\}|%c|\ue003|\x1b|\x1a|\x17", "", sent).rstrip().rstrip("}pn{").rstrip()
+    if POLITE_KR.search(t):
+        return "P"
+    if PLAIN_KR.search(t):
+        return "L"
+    m = re.search(r"([\uac00-\ud7a3])다[.!?…]*$", t)
+    if m and (ord(m.group(1)) - 0xAC00) % 28 == 20:  # ㅆ 받침 + 다 = 과거 평서(샀다·냈다·잃었다 …)
+        return "L"
+    return None
+
+
+def kr_tail(t):
+    return kr_class(t)
+
+
+def _kr_sents(t):
+    parts = re.split(r"(?<=[.!?…])(?:\s+|\{p\}|\{n\}|\n)", t)
+    return [x for x in parts if x and x.strip()]
 
 
 def scan(track):
-    bad, total = [], 0
-    for p in sorted(SCRIPT.glob(f"{track}SCN*.json")):
-        for k, v in json.loads(p.read_text(encoding="utf-8")).items():
-            if not isinstance(v, dict):
+    from check_window_nl import SCN_COUNT, raws_of
+
+    bad, total, unread = [], 0, 0
+    for n in range(1, SCN_COUNT[track] + 1):
+        scn = f"{track}SCN{n}"
+        base = json.loads((ROOT / "script" / f"{scn}.json").read_text(encoding="utf-8"))
+        hp = ROOT / "hotfix" / "script" / f"{scn}.json"
+        hot = json.loads(hp.read_text(encoding="utf-8")) if hp.exists() else {}
+        raws = raws_of(scn)
+        for k, v in base.items():
+            if not isinstance(v, dict) or not k.isdigit():
                 continue
-            t = v.get("t") or ""
-            if not any(m in t for m in INJECT):
+            e = hot.get(k)
+            t = e["t"] if isinstance(e, dict) and "t" in e else (v.get("t") or "")
+            sx = e.get("s") if isinstance(e, dict) and "s" in e else v.get("s")
+            raw = raws.get(int(k))
+            j = raw.decode("cp932", errors="replace") if raw else ""
+            # 범위: 런타임 주입 표지 블록 + **화자 없고** 시스템·행동 낱말이 든 지문 블록(표지 없는 「상자에는 ◯가 있었다」·「샀다」류)
+            is_log = any(m in t for m in INJECT) or (not sx and SYS_JP.search(j) and not re.match(r"%c[^%]+%c\n", j))
+            if not is_log:
                 continue
             total += 1
-            tail = t.rstrip().rstrip("}pn{").rstrip()
-            if STATEMENT.search(tail):
-                bad.append((p.stem, k, t[:60]))
-    return total, bad
+            if not raw or any(c in j for c in "\x14\x16\x17\x18\x19") or ("%s" not in j and "%c" not in j and not SYS_JP.search(j)):
+                unread += 1
+                continue
+            js, ks = _jp_sents(j), _kr_sents(t)
+            pairs = list(zip(js, ks)) if len(js) == len(ks) else [(js[-1], ks[-1])] if js and ks else []
+            for js_, ks_ in pairs:
+                a, b = jp_class(js_), kr_class(ks_)
+                if a and b and a != b:
+                    bad.append((scn, k, a, b, ks_[:40]))
+                    break
+    return total, unread, bad
 
 
 def main():
-    t1, bad1 = scan("ED1")
-    t2, bad2 = scan("ED2")
+    t1, u1, bad1 = scan("ED1")
+    t2, u2, bad2 = scan("ED2")
     bad = bad1 + bad2
     if bad:
-        print(f"  ❌ 로그 부류 {len(bad)}곳이 정중체 — 이 부류는 평어체다(마스터 10-03)")
-        for s, k, t in bad[:20]:
-            print(f"       {s}:{k}  {t!r}")
+        print(f"  ❌ 로그 부류 {len(bad)}곳이 원문 등급과 다르다(4-17 — 원문 ました→존댓말 · 원문 た→평서)")
+        for s, k, a, b, t in bad[:20]:
+            print(f"       {s}:{k}  원문 {a} · 우리 {b}  {t!r}")
     else:
-        print(f"  ✅ 로그 부류 문체 고름 — ED1 {t1} · ED2 {t2}블록 전부 평어")
+        print(f"  ✅ 로그 부류 문체 = 원문 등급 — ED1 {t1} · ED2 {t2}블록(읽을 수 없는 원문 {u1 + u2} 제외)")
     return 1 if bad else 0
 
 

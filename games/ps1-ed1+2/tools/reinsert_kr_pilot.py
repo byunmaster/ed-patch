@@ -760,6 +760,10 @@ def spell_fix(t, game=None, *, punct=True):
     for a, b in replace:  # 단순 오타/맞춤법 리터럴 치환
         if not punct and b.startswith(a) and not b[len(a) :].strip(".!?…"):
             continue  # 부호만 덧붙이는 규칙
+        if HOTFIX and t.strip() == a and b.replace(" ", "") == a and " " in b:  # 띄어쓰기만 바꾸는 교정이고 블록 전체가 그 낱말
+            # 🔴 핫픽스 경로 — 블록 전체가 지명 하나(칸/HUD 플레이트)면 「칸 붙임·대화 띄움」 규칙상 붙임이 정본이다
+            #   (11-08: 곶의동굴·시련의동굴 HUD 플레이트가 이 교정으로 띄움이 돼 ED2.EXE 표(붙임)와 갈렸다). 대사 속 지명은 그대로 띄운다.
+            continue
         t = t.replace(a, b)
     return t
 
@@ -1137,7 +1141,9 @@ def bake_ellipsis(exe, game):
 
     font_map.verify_ellipsis(exe, game)  # 덮기 전에 그 자리가 정말 `…` 인지 모양으로 검산
     o = font_map.ku1_glyph_ed_offset(font_map.ELLIPSIS_SJIS, game)
-    exe[o : o + font_map.GLYPH_STRIDE] = font_map.ellipsis_baseline_glyph(exe, game)
+    exe[o : o + font_map.GLYPH_STRIDE] = font_map.ellipsis_baseline_glyph(
+        exe, game, square=HOTFIX
+    )
 
 
 # 매달 수 있는 꼬리 부호 — **반각 1열**이라 29열에 앉는다(`patch_hang_punct.py`).
@@ -1215,6 +1221,10 @@ def _hang_merge(pages, width, protect):
     return out
 
 
+STUTTER_MARK = "\ue00a"  # 낱말 속 말줄임 자리표시(조판 중에만) — 종결부호가 아니라 문장 경계로 안 읽힌다
+_STUTTER_ELL = re.compile("(?<=[가-힣])…(?=[가-힣])")
+
+
 def wrap_page(text, width=WRAP, target=None, max_lines=None):
     """공통 줄바꿈 유틸(shared/text/krwrap.wrap_pages): 원문 {n} 줄바꿈을 존중하고
     폭(WRAP) 넘는 줄만 재줄바꿈 + 금칙 + 짧은조각 병합, 창(3줄)은 문장 그룹 단위로
@@ -1232,6 +1242,10 @@ def wrap_page(text, width=WRAP, target=None, max_lines=None):
     #    (실측 1곳: `텐데… !?` 가 공백을 단 채 화면까지 나갔다).
     #    ⚠ `shared/` 는 main 몫이라 여기서 못 고친다 — **의존을 끊는다.** 사본을 만들지 않고
     #    같은 함수를 부르므로 규칙이 두 곳에 생기지는 않는다.
+    # 낱말을 끊어 읽는 말줄임(「동…료…」 — 한글 사이 공백 없는 `…`)은 한 덩어리다. 공용 `split_sentences` 가
+    # `…` 뒤 한글을 문장 경계로 봐서 음절마다 줄이 갈린다(ED2SCN3:775 — 마스터 11-14, 2-19: 문안 말고 조판을 고친다).
+    # `shared/` 는 main 몫이라 여기서 종결부호가 아닌 자리표시 글자로 바꿨다가 되돌린다.
+    text = _STUTTER_ELL.sub(STUTTER_MARK, text)
     text = _kr_strip_before(text, ".,!?")
     text = _bind_num_unit(text, width)
     text, folded = _fold_josa(text)  # 병기 → 1슬롯(런타임 훅 해결 후 폭)
@@ -1254,7 +1268,7 @@ def wrap_page(text, width=WRAP, target=None, max_lines=None):
         ),
         folded,
     )
-    return [[ln.replace(NOBREAK_SP, " ") for ln in pg] for pg in pages]
+    return [[ln.replace(NOBREAK_SP, " ").replace(STUTTER_MARK, "…") for ln in pg] for pg in pages]
 
 
 # ── 원본 템플릿 채우기 ──────────────────────────────────────────────────────
@@ -1679,7 +1693,8 @@ def stock_build(raw):
     # 🔴 **평어체로 되돌렸다**(마스터 10-03 「전부 평어」 — 09-03 정중 판정을 번복). DOS 소스가 정중이라
     # 여기서 `to_plain` 으로 종결어미를 바꾼다(문안은 DOS 파생 그대로, 어미만). 화면에서만 드러나는
     # 자리다 — `check_log_register` 는 `script/*.json` 만 보므로 이 경로를 못 본다(09-05 사고와 같다).
-    a, b2, re1, re2 = (to_plain(x) for x in (a, b2, re1, re2))
+    if not HOTFIX:  # 제품(v1.2.0)은 평어체 그대로 — 핫픽스 시험 경로는 원문 등급(원문 ました → 존댓말, 번역 규칙 4-17 확장, 마스터 11-15)
+        a, b2, re1, re2 = (to_plain(x) for x in (a, b2, re1, re2))
     # 🔴 문안 길이가 한계다 — 10-03 에 정본 블록과 같게 「보물상자 안에는 … 들어 있었다」로 늘려 봤더니 정형 블록이
     #   `size` 로 탈락해 일본어가 나갔다(ED2SCN13 13건·ED1SCN6 10건 실측). 그래서 **짧은 쪽(상자에는 … 있었다)이 표준**이고
     #   정본 블록(`script/*.json`)을 이쪽으로 맞춘다.
@@ -1702,13 +1717,25 @@ def stock_build(raw):
         # (세리오스·아트라스)도 29열에 꼬리 온점이 앉아 한 줄에 들어가고(드로어 훅이 29열 줄 뒤 개행의 빈 줄을 막는다),
         # 짧은 이름은 더 여유롭다. 이름 뒤 병기가 줄 경계에서 안 쪼개지는 것도 이쪽이 더 안전하다.
         first_line = JOSA_NAME + " " + first
+        if HOTFIX and " " in first:
+            # 존댓말(「열었습니다」)은 두 글자 길어 첫 줄이 29열을 넘는다 — 문안을 줄이지 않고 **조판으로 푼다**(2-19, 마스터 11-15):
+            # 이름+「보물상자를」 / 「열었습니다.」 두 줄(낱말 속에서 안 꺾인다). 평어(제품)는 한 줄 그대로.
+            _l, _, _r = first.rpartition(" ")
+            first_line = JOSA_NAME + " " + _l + "\n" + _r
         # 둘째 줄도 조판기에 맡기지 않는다(마스터 10-05) — 조병기 원자(`이(가)`)를 세 글자로 쳐서 「상자에는 레스의 잎이 /
         # 있었다.」로 한 줄에 들어갈 문장을 둘로 갈랐다. 한 줄로 내보내고 길어지면(긴 아이템 이름) 엔진 prewrap 이
         # 어절에서 꺾는다. 문안은 표준 「상자에는 ⟨아이템⟩이(가) 있었다.」 하나다(「들어 있었다」는 칸이 모자라고
         # 길어서 한 줄에 안 들어간다).
         second_line = rest.strip() + " " + JOSA_ITEM + " " + b2.replace("들어 있었", "있었")
         blk = bytearray()
-        for i, ln in enumerate([first_line, second_line]):
+        if HOTFIX:
+            # 존대 둘째 줄은 이름 뒤 어절 경계에서 접는다 — 「상자에는 ⟨이름⟩이(가)」 / 「있었습니다.」(이름이 8음절까지 가도 27열 이내). 엔진은 낱말 속에서
+            # 꺾으므로(캡처 11-15) 줄바꿈을 우리가 박는다. 평어(제품)는 한 줄 그대로.
+            _sl, _, _sr = second_line.rpartition(" ")
+            second_lines = [_sl, _sr]
+        else:
+            second_lines = [second_line]
+        for i, ln in enumerate([*first_line.split("\n"), *second_lines]):
             if i:
                 blk += b"\x0a"
             for part in re.split(f"([{JOSA_NAME}{JOSA_ITEM}])", ln):

@@ -87,7 +87,76 @@ def apply():
             write_user_data(f, lba, bytes(buf), label=f"반각 영문·숫자 갈무리({exe})")
         print(f"  {exe}: 반각 영문·숫자 {len(CODES)}자 구움")
         total += len(CODES)
-    return total
+    return total + apply_qmark() + apply_dots()
+
+
+# 반각 「?」 — 원판 전각 「？」 잉크(6px 폭, 열 2~7)를 왼쪽으로 2칸 당겨 열 0~5 에 놓는다(마스터 11-13 —
+# 「?」 만 새 안, 마침표·쉼표·「!」 등은 원판 반각 그대로). 원판 반각 「?」 는 5px 라 전각 꼴보다 가늘었다.
+# 잉크가 6px 전진폭을 꽉 채우므로 뒤 글자와 자간이 없다 — 마스터가 PNG 로 고른 꼴이다.
+QMARK = 0x3F
+QMARK_ORIG = bytes([0x00, 0x70, 0x88, 0x88, 0x10, 0x20, 0x20, 0x00, 0x20, 0x20, 0x00])
+QMARK_NEW = bytes([0x00, 0x78, 0x84, 0x84, 0x08, 0x10, 0x20, 0x20, 0x00, 0x30, 0x00])
+
+
+def apply_qmark():
+    """핫픽스 시험 경로(`ED_HOTFIX=1`) 전용 — 제품 롬은 v1.2.0 그대로 둔다(다른 핫픽스 변경과 같은 규약)."""
+    if os.environ.get("ED_HOTFIX") != "1":
+        return 0
+    n = 0
+    for exe, (lba, size, base) in EXES.items():
+        buf = bytearray(extract(lba, size, path=IMG))
+        off = base + _idx(QMARK) * 11
+        cur = bytes(buf[off : off + 11])
+        if cur == QMARK_NEW:
+            print(f"  {exe}: 반각 ? 이미 전각 꼴")
+            continue
+        assert cur == QMARK_ORIG, (
+            f"{exe} 반각 ? 원본 불일치 — 다른 패치가 먼저 건드렸거나 주소 어긋남"
+        )
+        buf[off : off + 11] = QMARK_NEW
+        with open(IMG, "r+b") as f:
+            write_user_data(f, lba, bytes(buf), label=f"반각 ? 전각 꼴({exe})")
+        print(f"  {exe}: 반각 ? 구움")
+        n += 1
+    return n
+
+
+# 마침표 「.」·쉼표 「,」 — 마스터 11-16 「원판 ? ! 의 점에 맞춰 마침표를 그린다」(번역 규칙 1-3, 전 기종): 원판 전각 ？！ 의 점은
+# 가로 2px × 세로 1px 이고 9행에 앉는다(실측 — `font_map.dot_of_ku1`). 마침표가 같은 점(2×1, 9행)이 되고 쉼표는 머리만 같은 점으로
+# 한다(꼬리 10행 왼쪽 1px 은 그대로). 말줄임 「…」 점 셋도 같다(`font_map.ellipsis_baseline_glyph(square=True)`).
+DOTS = {
+    0x2E: (
+        bytes([0, 0, 0, 0, 0, 0, 0, 0, 0x80, 0x80, 0]),
+        bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 0xC0, 0]),
+    ),
+    0x2C: (
+        bytes([0, 0, 0, 0, 0, 0, 0, 0, 0xC0, 0x40, 0x80]),
+        bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 0xC0, 0x80]),
+    ),
+}
+
+
+def apply_dots():
+    """핫픽스 시험 경로(`ED_HOTFIX=1`) 전용 — 제품 롬은 v1.2.0 그대로(반각 ? 와 같은 규약)."""
+    if os.environ.get("ED_HOTFIX") != "1":
+        return 0
+    n = 0
+    for exe, (lba, size, base) in EXES.items():
+        buf = bytearray(extract(lba, size, path=IMG))
+        for code, (orig, new) in DOTS.items():
+            off = base + _idx(code) * 11
+            cur = bytes(buf[off : off + 11])
+            if cur == new:
+                continue
+            assert cur == orig, (
+                f"{exe} 0x{code:02X} 원본 불일치 — 다른 패치가 먼저 건드렸거나 주소 어긋남"
+            )
+            buf[off : off + 11] = new
+            n += 1
+        with open(IMG, "r+b") as f:
+            write_user_data(f, lba, bytes(buf), label=f"마침표·쉼표 2x2({exe})")
+        print(f"  {exe}: 마침표·쉼표 2×2")
+    return n
 
 
 def preview(text):

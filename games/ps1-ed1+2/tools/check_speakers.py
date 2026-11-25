@@ -72,6 +72,16 @@ def _script(scn):
         return json.load(f)
 
 
+def _overlay(scn):
+    """핫픽스 덮개(`hotfix/script/<씬>.json`) — 이름창 정본 검사는 덮개의 `s` 도 본다(마스터 11-14: 핫픽스가 v1.2.1 이름판).
+    제품 정본·확정 락은 건드리지 않는다."""
+    p = os.path.join(os.path.dirname(SCRIPT_DIR), "hotfix", "script", f"{scn}.json")
+    if os.path.exists(p):
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
 def candidates(scn):
     """[(블록, 우리 화자, JP 이름, 정발 대응, 다른 인물인가)]"""
     d = _script(scn)
@@ -190,7 +200,8 @@ def scan_canon(verbose=False):
         for _s, eid, jp, _c, _t in R.iter_candidates((scn,)):
             k = str(eid)
             ent = d.get(k) or {}
-            ours = (ent.get("s") or "").strip()
+            ov = _overlay(scn).get(k)
+            ours = ((ov.get("s") if isinstance(ov, dict) and "s" in ov else ent.get("s")) or "").strip()
             if not ours or ent.get("sx") or not R.jp_has_header(jp) or R.jp_header_is_fmt(jp):
                 continue
             try:
