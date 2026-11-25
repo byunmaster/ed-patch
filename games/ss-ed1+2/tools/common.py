@@ -341,3 +341,16 @@ def write_at(f, lba, size, offset, data, *, label, expect=None):
     buf[head : head + len(data)] = data
     _ledger(lba * USER_SIZE + offset, len(data), label, data, offset)  # `o` = 파일 내 오프셋 — 절대 위치는 단계 중간의 재배치(LBA 이동)로 달라진다
     return write_user_data(f, s_lba, bytes(buf), label=label)
+
+
+def sys_lines():
+    """`script/system.json` 의 문안 `{열쇠: KR}` — **작품별 값(`by_game.ED1`)을 `열쇠@ED1` 로 덧붙인다.**
+    검사기가 ED1 파일에만 들어가는 값도 같은 규칙으로 재도록 한다(11-08: 기본 값만 읽으면 ED1 값이 검사 밖에 있었다)."""
+    import json
+
+    with open(os.path.join(GAME_DIR, "script", "system.json"), encoding="utf-8") as f:
+        doc = json.load(f)
+    out = dict(doc["lines"])
+    for g, kv in doc.get("by_game", {}).items():
+        out.update({f"{k}@{g}": v for k, v in kv.items()})
+    return out

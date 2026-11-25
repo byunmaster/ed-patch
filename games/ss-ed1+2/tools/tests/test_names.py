@@ -111,7 +111,7 @@ class MonsterCellSuffix(unittest.TestCase):
         import patch_mon_names as M
 
         self.assertEqual(M.split_mark("赤スライムA'", self.MON), ("붉은슬라임", "A'"))
-        self.assertEqual(M.split_mark("赤スライムＡ''", self.MON), ("붉은슬라임", "A''"))
+        self.assertEqual(M.split_mark("赤スライムＡ''", self.MON), ("붉은슬라임", 'A"'))
         self.assertEqual(M.split_mark("赤スライム'", self.MON), ("붉은슬라임", "'"))
 
     def test_whole_name_wins_over_suffix(self):

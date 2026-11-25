@@ -167,7 +167,7 @@ def tail_entry_changed(orig, built, base, entries):
     return out
 
 
-def scan_file(orig, built, base, entries, moved_ok=None):
+def scan_file(orig, built, base, entries, moved_ok=None, card_fix=frozenset()):
     """한 파일 → `(통계, 문제 목록, 이주 목록, 쪽 넘김 목록)`.
 
     `moved_ok`: 장부가 허용한 이주 블록 키 집합(`None` 이면 장부 대조를 안 한다).
@@ -189,6 +189,7 @@ def scan_file(orig, built, base, entries, moved_ok=None):
     grow = []  # 제자리인데 원문보다 길어 이웃 칸을 이어 쓴 블록 — 이웃이 전부 이주했을 때만 허용
     # 1차: 각 블록의 최종 목표
     info = []
+    extra_live = []
     for idx, e in enumerate(ents):
         off, raw = offs[idx], raws[idx]
         n = len(raw)
@@ -204,6 +205,10 @@ def scan_file(orig, built, base, entries, moved_ok=None):
             bad.append((key, f"한 블록의 포인터들이 서로 다른 목표를 가리킨다 {sorted(hex(x) for x in tg)}"))
             continue
         t = tg.pop() if tg else off
+        # 탭 카드(`patch_ui.card_ptr_fixes`)는 포인터를 시작(= 항목 시작 −1, 죽은 탭 자리)으로 일부러 돌렸다 — 항목 시작에서 읽는 걸로 본다(이주가 아니다)
+        if t == off - 1 and card_fix and any(q in card_fix for q in ptrs):
+            t = off
+            extra_live.append((off - 1, off))  # 죽은 탭 자리는 이제 카드 글 첫 바이트다 — 앞 칸의 꼬리 검사가 설명 안 되는 바이트로 세지 않게 한다
         if not ptrs:
             st["핀"] += 1
         if not (0 <= t < size):
@@ -230,7 +235,7 @@ def scan_file(orig, built, base, entries, moved_ok=None):
     live = [(t, t + len(blk) + 1, key) for x in info if x for (_i, key, _o, _n, t, blk) in [x]]
     for a, b, x, y in overlaps(live):
         bad.append((a, f"{b} 와 최종 구간이 겹친다 @{x:#x}<{y:#x}"))
-    live2 = [(a, b) for a, b, _k in live]
+    live2 = [(a, b) for a, b, _k in live] + extra_live
     for x in info:
         if not x:
             continue
@@ -301,6 +306,9 @@ def main():
     tot, problems, notes = {}, [], []
     files = 0
     allowed = None
+    import patch_ui
+
+    card_fix_all = patch_ui.card_ptr_fix_offsets()
     try:
         import relocations as R
 
@@ -317,7 +325,7 @@ def main():
         o = common.read_extent(mo, *orig[name])
         b = common.read_extent(mb, lba, size)
         ok = None if allowed is None else {k for f_, k in allowed if f_ == name}
-        st, bad, _moved, _pages = scan_file(o, b, base, entries, ok)
+        st, bad, _moved, _pages = scan_file(o, b, base, entries, ok, {q for (p_, q) in card_fix_all if p_ == name})
         files += 1
         for k, v in st.items():
             if not k.startswith("_"):

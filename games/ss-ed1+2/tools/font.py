@@ -18,6 +18,7 @@ PS1 과 같은 수법인데, 새턴은 대상이 EXE 가 아니라 파일 하나
 import glob
 import json
 import os
+import re
 
 import common
 
@@ -179,8 +180,41 @@ def main():
 # 🔴 곡선 따옴표 ‘ ’ “ ” 는 **반각**이다(번역 규칙 1-2, 마스터 2026-10-19 「쌍따옴표는 반각으로」). 11KANJI.FON 의 전각 칸은 비어 있고(JIS 1구 38~41점)
 #    11ASCII.FON 에도 글리프가 없어, 원판 반각 폰트에서 비어 있고 어디에도 안 쓰이는 코드 넷(`` ` `` `{` `|` `}`)에 Galmuri11 글리프를 굽는다
 #    (`patch_ui.bake_half_quotes` — 여는 쪽은 칸 오른쪽 끝·닫는 쪽은 왼쪽 끝에 잉크를 붙인다). 문안은 곡선 따옴표 그대로, 바이트만 1B 코드다.
-HALF_QUOTES = {"‘": 0x60, "’": 0x7B, "“": 0x7C, "”": 0x7D}
+#    『 』 도 같다(도안 A2판, 코드 `@`·`^`).
+#    「 」 도 같은 길로 반각이다(마스터 10-26 도안 A판 — 12×11 칸에 「 0~5열 · 」 6~11열, 진행 6px; `patch_ui.KAGI_GRID`). 코드 `[`(0x5B)·`]`(0x5D) — 원판 칸이 비어 있다.
+HALF_QUOTES = {"‘": 0x60, "’": 0x7B, "“": 0x7C, "”": 0x7D, "「": 0x5B, "」": 0x5D, "『": 0x40, "』": 0x5E}
 HALF_QUOTE_OPENING = ("‘", "“")
+
+# 🔴 **띄어 쓴 품명·주문·몬스터 이름은 줄 끝에서 갈리면 안 된다**(번역 규칙 2-6, 마스터 10-31 — ED1 전투 「레스의 / 잎을 사용했다」).
+#    전투 줄은 엔진이 이름을 끼운 **뒤에** 기계어(`patch_msgwrap`)가 `0x20` 에서만 끊는다. 이름 표에는 이름 안 공백을
+#    **글자 취급되는 빈 반각 코드**(`=` 0x3D — 원판 11ASCII.FON 에서 비어 있고 어디에도 안 쓰인다)로 적어 그 자리를 끊는 자리에서 뺀다.
+#    ⚠ `0x7F` 는 안 된다 — 메뉴 드로어가 SJIS 선행 바이트처럼 읽어 흰 네모로 그리고 이름이 잘렸다(10-31 아이템 목록 촬영).
+#    그려지는 모양은 반각 공백과 같다. 문안(정본)은 보통 공백이고, 이름 표를 쓰는 곳(`glue_name`)만 바꾼다.
+NBSP = "\u00a0"
+NB_CODE = 0x3D  # `=` — 원판 11ASCII 에서 비고 문안 어디에도 안 쓰인다
+
+
+def glue_in_text(kr, names):
+    """문안 안에 든 띄어 쓴 이름(`names` — 긴 것부터)의 공백을 `NBSP` 로 — 전투 메시지가 이름을 문장에 직접 품은 자리
+    (`붉은 슬라임은 분열해서 …`)도 줄 끝에서 갈리지 않게."""
+    for n in names:
+        if n in kr:
+            kr = kr.replace(n, glue_name(n))
+    if "%c" in kr:  # 이름 가운데 색 표지가 낀 조각(`붉은 슬라%c%c임A`) — 원판이 이름을 색 구간으로 쪼개 놓았다
+        for n in names:
+            if " " in n:
+                kr = _glue_split(kr, n)
+    return kr
+
+
+def _glue_split(kr, name):
+    pat = re.compile("(?:%c)*".join(re.escape(c) for c in name))
+    return pat.sub(lambda m: m.group(0).replace(" ", NBSP), kr)
+
+
+def glue_name(kr):
+    """이름 표·몬스터 이름에 쓸 꼴 — 공백을 줄바꿈 금지 반각 코드(`NBSP`)로."""
+    return kr.replace(" ", NBSP)
 
 
 def to_bytes(kr, plan):
@@ -190,7 +224,14 @@ def to_bytes(kr, plan):
        SJIS 코드**로 적는다(`hangul_map_11kanji.json`, 이 게임의 근간).
     """
     return b"".join(
-        bytes([HALF_QUOTES[c]]) if c in HALF_QUOTES else plan[c][0] if plan and c in plan else c.encode("cp932") for c in kr
+        bytes([HALF_QUOTES[c]])
+        if c in HALF_QUOTES
+        else bytes([NB_CODE])
+        if c == NBSP
+        else plan[c][0]
+        if plan and c in plan
+        else c.encode("cp932")
+        for c in kr
     )
 
 
@@ -202,7 +243,7 @@ def byte_len(kr):
     """
     n = 0
     for ch in kr:
-        if ch in HALF_QUOTES:
+        if ch in HALF_QUOTES or ch == NBSP:
             n += 1
             continue
         try:

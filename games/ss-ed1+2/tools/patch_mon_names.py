@@ -48,6 +48,7 @@ sys.path.insert(
 
 import common
 import dump_scn
+import font
 from canon import table
 from names import HALF, MARKS, PRIME, bare, split_mark  # noqa: F401
 from patch_ui import slot_plan
@@ -167,7 +168,8 @@ def main():
         # 긴 것부터 (first-fit decreasing) — 작은 것부터면 큰 게 갈 데가 없어진다
         writes, ptrmoves = [], {}
         for t, jp, kr in sorted(rows, key=lambda r: -len(encode(r[2], plan))):
-            blob = encode(kr, plan) + b"\x00"
+            # 🔴 띄어 쓴 이름은 줄 끝에서 안 갈리게 안쪽 공백을 줄바꿈 금지 반각 코드로 적는다(`font.glue_name`, 규칙 2-6)
+            blob = encode(font.glue_name(kr), plan) + b"\x00"
             # 🔴 **짝수 주소에만 놓는다**(2026-08-28) — 두 바이트를 한 글자로 고정해 읽는
             #    화면이 있어(HUD) 홀수 자리는 거기서만 통째로 밀려 깨진다. 같은 사고를
             #    `patch_ui`·`patch_scn` 에서 먼저 밟았다.
@@ -269,6 +271,10 @@ def left_over(dst, files, mon):
 def _decode(b, inv):
     out, i = "", 0
     while i < len(b):
+        if b[i] == font.NB_CODE:  # 이름 안 줄바꿈 금지 공백(`font.glue_name`)
+            out += " "
+            i += 1
+            continue
         two = b[i : i + 2]
         if len(two) == 2 and two in inv:
             out += inv[two]

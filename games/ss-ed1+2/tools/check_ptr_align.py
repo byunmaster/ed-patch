@@ -32,7 +32,7 @@ import patch_scn
 import patch_ui
 
 
-def odd_targets(mm, files, path):
+def odd_targets(mm, files, path, card_fix=frozenset()):
     """`[(포인터 오프셋, 새 대상)]` — 옮겨졌는데 **홀수** 자리를 가리키는 것."""
     base = patch_ui.ptr_base(path)
     if base is None:
@@ -48,6 +48,10 @@ def odd_targets(mm, files, path):
         if not (base <= ov < base + len(orig) and base <= bv < base + len(built)):
             continue
         if (bv - base) % 2:
+            # 🔴 탭 카드 포인터(`patch_ui.card_ptr_fixes`)는 **일부러 홀수 시작**을 가리킨다 — 카드는 `ED.BIN 0x06070E50`(ED2 `0x0604B43C`)이 바이트 단위로 버퍼에 복사해
+            #   대화창 글줄로 읽는다(두 바이트 고정으로 읽는 화면이 아니다 — 실화면 10장 전후 대조로 확인, 11-10). 선언한 리터럴만 면제한다.
+            if (path, q) in card_fix:
+                continue
             out.append((q, bv - base))
     return out
 
@@ -59,11 +63,12 @@ def main():
         raise SystemExit(f"먼저 빌드한다 — {dst} 가 없다")
     _f, mm = common.open_image(dst)
     files = {p: (lba, s) for p, lba, s in common.iso_files(mm)}
+    card_fix = patch_ui.card_ptr_fix_offsets()
     bad, n = [], 0
     for path in files:
         if path not in ("/ED.BIN", "/ED2.BIN") and not patch_scn.SCN_RE.match(path):
             continue
-        hits = odd_targets(mm, files, path)
+        hits = odd_targets(mm, files, path, card_fix)
         n += 1
         bad += [(path, q, a) for q, a in hits]
     mm.close()

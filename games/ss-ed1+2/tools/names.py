@@ -54,6 +54,7 @@ def split_mark(jp, table):
     body, prime = jp, ""
     while len(body) > 1 and body[-1] in PRIME:
         body, prime = body[:-1], HALF[body[-1]] + prime
+    prime = prime.replace("''", '"')  # 🔴 분열 이중 표지 `''` 는 쌍따옴표 한 글자로 낸다(마스터 10-28 「' \" 로 나오게」 — 두 글자는 너무 떨어져 보인다)
     if body in table:  # 접미 없이 프라임만 붙는 꼴
         return table[body], prime
     if len(body) > 1 and body[-1] in MARKS and body[:-1] in table:

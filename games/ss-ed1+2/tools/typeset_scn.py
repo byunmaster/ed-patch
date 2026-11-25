@@ -58,6 +58,7 @@
 """
 
 import itertools
+import json
 import os
 import re
 import sys
@@ -74,6 +75,7 @@ sys.path.insert(
 )
 
 import common
+import linerules
 import canon as shared_canon
 from font import HALF_QUOTES  # 반각으로 그려지는 곡선 따옴표 — 폭 0.5
 from canon import table
@@ -481,7 +483,8 @@ def _lay(texts, marks, pieces, at, names, sp):
         #    보인다 — 계약도 맞고 창에도 든다. 그런데 그건 **원문을 소리 없이 버리는 것**이다.
         if not piece.strip() and texts[free[0]].strip():
             return None
-        out[free[0]] = _lead_nl(texts[free[0]]) + piece + _tail_nl(texts, free[0])
+        # 🔴 저본 조각이 이미 개행으로 끝나면(`값은{n}` · `에{n}`) 원문 개행을 또 살리지 않는다 — 둘이 겹쳐 `//` 빈 줄이 하나 더 생겼다(상점 값 문구 전량 · 촛대 문구, 검수 10-28)
+        out[free[0]] = _lead_nl(texts[free[0]]) + piece + ("" if piece.endswith("\n") else _tail_nl(texts, free[0]))
     return out
 
 
@@ -524,7 +527,7 @@ _HALFW = {
     c: c - 0xFEE0
     for c in list(range(0xFF21, 0xFF3B)) + list(range(0xFF41, 0xFF5B)) + list(range(0xFF10, 0xFF1A))
 }
-_STAT_RE = re.compile(r"(?:(?<![A-Za-z])|(?<=%c))(?:EP|MP|HP)(?![A-Za-z])")  # `%cEP` 의 c 는 마크업이다  # 반각으로 바뀐 뒤의 꼴 — 다시 전각으로
+_STAT_RE = re.compile(r"(?:(?<![A-Za-z])|(?<=%c))(?:EP|MP|HP|RAM)(?![A-Za-z])")  # `%cEP` 의 c 는 마크업이다  # 반각으로 바뀐 뒤의 꼴 — 다시 전각으로
 _FULLW = {c: c + 0xFEE0 for c in range(0x41, 0x5B)}
 _LEFTOVER = re.compile(r"\{[a-z]+\}|[\x00-\x09\x0b-\x1f\x7f]")
 
@@ -541,6 +544,7 @@ def to_saturn(kr):
     # 🔴 **ASCII 물결 `~` 는 새턴 11ASCII.FON 에 글리프가 없다**(0x7E = 11바이트 전부 0 — 2026-10-19 qa 「살려 줘~ 내가」가 빈칸).
     #    원판 폰트가 가진 전각 `～`(0x8160, 가는 물결)로 바꾼다 — 규칙 1-2(～ 전각 유지)와도 맞다.
     kr = kr.replace("~", "～")
+    # 🔴 ＲＡＭ 도 전각이다(라틴 낱말 판정 — 마스터 10-27 「RAM 전각」, 규칙 1-8).
     # 🔴 ＥＰ·ＭＰ·ＨＰ 는 **전각을 지킨다**(번역 규칙 1-4, 마스터 10-08 — PS1 정본과 같게, 「알파벳 전부 반각」의 예외. 10-18 관리자 판정)
     kr = _STAT_RE.sub(lambda m: m.group(0).translate(_FULLW), kr.translate(_HALFW))
     return None if _LEFTOVER.search(kr) else kr
@@ -557,7 +561,145 @@ def soften_breaks(jp, kr):
     return re.sub(r"(?<!\n)\n(?!\n)", " ", kr)
 
 
+SOFTNL = os.environ.get("ED_SOFTNL", "1") == "1"  # 번역 규칙 2-16 ① — 문장 중간 손 개행은 공백으로 읽는다 (이야기 씬 대사 창만)
+LINE_CLAUSE = os.environ.get("ED_LINECLAUSE", "1") == "1"  # 2-16 ② — 이 줄에서 시작한 절이 다음 줄에 통째로 들어가면 절째 내린다 (이야기 씬 대사 창만)
+
+
+def layout_input(jp, kr, chain=True):
+    """조판기(`_typeset`)에 들어가는 문안 — 지표 검사기(`check_linepage`)가 같은 길로 잰다."""
+    if SOFTNL and chain and kr:
+        kr = linerules.soften_hand(kr)
+    return space_places(soften_breaks(jp, kr))
+
+
+def _flat_pages(built):
+    """조판된 블록의 쪽(`\\x08`·글줄) 안 줄 목록들 — 런타임 인자는 가장 긴 값으로 편다."""
+    segs, groups = line_groups(built)
+    pages = []
+    for g in groups:
+        for pg in "%c".join(segs[i] for i in g).split("\x08"):
+            ls = [ln for ln in measure(pg).split("\n") if ln.strip()]
+            if ls:
+                pages.append(ls)
+    return pages
+
+
+def regress(off, on):
+    """2-16 f — 규칙을 끈 조판(`off`)보다 켠 조판(`on`)이 나빠진 곳의 표본: ① 새로 생긴 끊김이 `krwrap.split_reason`(보조용언·의존명사·관형사 고아)에 걸린다
+    ② 전에는 한 줄이던 문장이 갈렸다. 없으면 빈 목록. 조판기(`typeset`)가 걸리면 규칙을 끈 쪽을 쓰고, 지표 검사기(`check_linepage`)가 같은 술어로 센다."""
+    import collections
+
+    from text import krwrap
+
+    bad = []
+    pa, pb = _flat_pages(off), _flat_pages(on)
+
+    def words(ln):
+        return [w for w in ln.replace(_NB, " ").split(" ") if w]
+
+    def breaks(pages):
+        c = collections.Counter()
+        for ls in pages:
+            for x, y in itertools.pairwise(ls):
+                wx, wy = words(x), words(y)
+                if wx and wy:
+                    c[(wx[-1], wy[0])] += 1
+        return c
+
+    for (a, b), _n in (breaks(pb) - breaks(pa)).items():
+        if krwrap.split_reason(a, b):
+            bad.append(f"새 끊김 {a} / {b}")
+
+    def whole(pages):
+        out = set()
+        for ls in pages:
+            cur = []
+            for li, ln in enumerate(ls):
+                for w in words(ln):
+                    cur.append((w, li))
+                    if linerules.bkind(w) == 3:
+                        if len({x[1] for x in cur}) == 1:
+                            out.add(tuple(x[0] for x in cur))
+                        cur = []
+        return out
+
+    def split(pages):
+        out = set()
+        for ls in pages:
+            cur = []
+            for li, ln in enumerate(ls):
+                for w in words(ln):
+                    cur.append((w, li))
+                    if linerules.bkind(w) == 3:
+                        if len({x[1] for x in cur}) > 1:
+                            out.add(tuple(x[0] for x in cur))
+                        cur = []
+        return out
+
+    for sent in whole(pa) & split(pb):
+        bad.append("한 줄 문장이 갈림 " + " ".join(sent))
+
+    def ends_on_clause(pages):
+        """쪽 마지막이 아닌 줄 가운데 줄 끝이 절 경계(문장 끝·쉼표·연결어미)인 줄의 수."""
+        return sum(1 for ls in pages for ln in ls[:-1] if words(ln) and linerules.bkind(words(ln)[-1]))
+
+    lost = ends_on_clause(pa) - ends_on_clause(pb)
+    if lost > 0:
+        bad.append(f"절 경계로 끝나던 줄이 {lost}줄 줄었다")
+    return bad
+
+
+_CARD_KR = re.compile(r"(제[０-９]+장)\s+(\S.*?)\n\n\s*끝")
+
+
+def _chapter_card(jp, kr):
+    """장 끝 카드(`第N章 제목\n\n 完`) — 정본 값(`제１장`·전각 번호·여백)을 `patch_ui._card_text` 와 같은 꼴로 짓는다.
+
+    🔴 조판기를 태우면 전각 번호가 반각으로(`제1장`) 접히고 가운데맞춤 여백이 사라진다 — ED1 카드(`patch_ui.card_rows` 가 짓는다)와 갈렸다(검수 10-28,
+       ED2 열린 나락 등 넷). 그 카드들은 `ED2.BIN` 에 있으면서 씬 경로(이주)로도 지어져, 카드 쪽 꼴을 못 받고 있었다."""
+    if not kr or "章" not in jp or "完" not in jp:
+        return None
+    m = _CARD_KR.fullmatch(kr.strip())
+    if not m:
+        return None
+    import patch_ui
+
+    card = patch_ui._card_text(jp, m.group(1), m.group(2))
+
+    # 🔴 원문 칸(JP 바이트)을 넘으면 씬 쪽(`patch_scn`)이 그 카드를 이주시켜 `/ED.BIN` 의 얼마 안 되는 빈 자리를 먹는다(ED1 카드 한 장이 1B 넘쳐 라이아스 문장 둘이
+    #    일본어로 남았다, 검수 10-28) — 메뉴 경로와 같은 규칙으로 덜어 낸다(`patch_ui.fit_card`).
+
+    def nbytes(t_):
+        return sum(2 if "\x80" <= c else 1 for c in t_.replace("%c", "XX"))
+
+    return patch_ui.fit_card(card, nbytes(jp))
+
+
+_HARD_ACTIVE = False  # `_typeset_once` 가 켠다 — 손 개행(U+2029) 든 블록은 `ps1_layout` 이 protect_hard 로 접는다
+_N3_OK = True  # 줄 수 고정 풀기(`ps1_layout`)를 걸어도 되는 블록인가 — `typeset` 가 블록마다 정한다
+_CHAIN_KEYS = None
+
+
+def _chain_keys():
+    """이은 쪽(체인)에 든 블록 열쇠 — 한 쪽에 여럿이 같이 앉아 한 줄 더 쓰면 쪽 행 수 한도(▽ 칸)를 넘는다."""
+    global _CHAIN_KEYS
+    if _CHAIN_KEYS is None:
+        with open(os.path.join(common.GAME_DIR, "script", "key_cont.json"), encoding="utf-8") as f:
+            ch = json.load(f).get("chains", {})
+        _CHAIN_KEYS = {k for g in ch.values() for c in g for k in c}
+    return _CHAIN_KEYS
+
+
 def typeset(jp, kr, names, why=None, chain=False, ctl=None):
+    global _N3_OK
+    _N3_OK = line_key(jp or "") not in _chain_keys()
+    try:
+        return _typeset_guarded(jp, kr, names, why, chain, ctl)
+    finally:
+        _N3_OK = True
+
+
+def _typeset_guarded(jp, kr, names, why=None, chain=False, ctl=None):
     """`(우리 블록, 못 한 이유)` — 원문 마크업을 그대로 두고 텍스트만 간다.
 
     ⚠ 마지막에 **금칙 밀어내기**를 건다(`nudge`) — 엔진이 접은 뒤 부호가 줄머리에
@@ -566,11 +708,83 @@ def typeset(jp, kr, names, why=None, chain=False, ctl=None):
       실패 사유(둘째 반환값)와는 다른 것이다.
     ⚠ `chain=True` 면 이어 쓰는 블록의 줄 끝 개행을 더한다(`chain_break`) — **이야기 씬 대사 창에만**
       쓴다(`patch_scn.canon_of(path=…)`). 전투 메시지·백업 RAM 안내 창은 줄 넘김이 달라 안 건드린다.
+    🔴 2-16 규칙(손 개행 공백 읽기 · 절째 내리기 · 명사구 묶기)은 이야기 씬 대사 창에만 걸고, 규칙을 끈 조판보다 **나빠진 곳**(`regress` — 새로 생긴
+      보조용언·의존명사 고아 끊김, 한 줄이던 문장의 갈림)이 있으면 그 블록은 규칙을 끈 조판을 쓴다 (마스터 10-26 f 지표).
     """
-    built, bad = _typeset(jp, space_places(soften_breaks(jp, kr)), names)
-    if built is None:
-        return None, bad
-    out = "%c".join(nudge(seg, why) for seg in wrap_block(built).split("%c"))
+    card = _chapter_card(jp, kr)
+    if card is not None:
+        return card, None
+    got = _typeset_once(jp, kr, names, why, chain, ctl)
+    global SOFTNL, LINE_CLAUSE
+    if chain and (SOFTNL or LINE_CLAUSE) and got[0] is not None:
+        saved = (SOFTNL, LINE_CLAUSE)
+        SOFTNL = LINE_CLAUSE = False
+        try:
+            base = _typeset_once(jp, kr, names, None, chain, ctl)
+        finally:
+            SOFTNL, LINE_CLAUSE = saved
+        if base[0] is not None and base[0] != got[0] and regress(base[0], got[0]):
+            return base
+    if chain and got[0] is not None and linerules.SENT_FIRST:
+        # 2-10 은 「가능하면」이다(마스터 11-05) — 문장마다 새 줄을 시작하느라 원문 한 창이 우리 두 창이 되면(5행 한도 넘침)
+        # 짧은 대답·감탄을 다음 문장과 한 줄에 붙여 창 수를 되돌린다(앞 줄 가드를 다시 켠 조판).
+        linerules.SENT_FIRST = False
+        try:
+            alt = _typeset_once(jp, kr, names, None, chain, ctl)
+        finally:
+            linerules.SENT_FIRST = True
+        if alt[0] is not None and alt[0] != got[0] and _page_need(alt[0]) < _page_need(got[0]):
+            return alt
+    return got
+
+
+def _page_need(built):
+    """조판된 블록이 먹는 창 수 — 쪽(`\\x08`)마다 5행 한도로 올림."""
+    return sum(-(-len(ls) // ROWS) for ls in _flat_pages(built))
+
+
+_SIGN_JP = re.compile(r"(.*?)\n {2,}[^\s%][^\n%]*((?:%[csd])*)", re.S)
+_SIGN_KR = re.compile(r"(.*?)\n( {2,}[^\s][^\n]*)", re.S)
+
+
+def _typeset_once(jp, kr, names, why, chain, ctl):
+    # 🔴 원문이 마지막 줄을 들여 써 둔 서명(`        大盗賊 ゲイル』`)은 본문과 따로 둔다 — 조판기가 줄을 다시 짜며 들여쓰기를 먹어 본문 끝에 붙었다
+    #    (「말지어다 대도 게일」, 검수 10-28). 서명 줄만 떼어 본문을 조판하고 꼴 그대로 도로 붙인다.
+    mj, mk = _SIGN_JP.fullmatch(jp or ""), _SIGN_KR.fullmatch(kr or "")
+    if mj and mk:
+        body_jp = mj.group(1) + mj.group(2)
+        built, bad = _typeset_once(body_jp, mk.group(1), names, why, chain, ctl)
+        if built is None:
+            return built, bad
+        tail = mj.group(2)
+        if tail and not built.endswith(tail):
+            return None, "서명 줄을 떼면 끝 마크업이 어긋난다"
+        return built[: len(built) - len(tail)] + "\n" + mk.group(2) + tail, None
+    # 🔴 **하드 개행 표식 U+2028** (`scn_at` 한 자리 예외 전용 — 마스터 승인 자리에만): 조판기는 문장 중간 개행을 공백으로 풀어 다시 접는다
+    #    (손 개행 완화 · `ps1_layout` 의 문장 단위 접기). 그래서 표식을 공백으로 두고 조판한 뒤 **그 자리(앞 어절·뒤 어절 사이)만** 개행으로 되돌린다.
+    #    ED1SCN32 0x2864 「%d Gold를↵건네시겠습니까?」 — 골드가 7~8자리면 한 줄에 안 들어가 엔진이 어절 중간(「…습니」/「까?」)에서 접는다.
+    hard = re.search(r"(\S+)\u2028(\S+)", kr or "")
+    if hard:
+        kr = kr.replace("\u2028", " ")
+    # 🔴 **PS1 핫픽스 손 개행(U+2029)은 하드 개행이다**(마스터 11-14 「PS1 과 동일」). PS1 은 핫픽스 문안의 `\n` 을 `HARD_NL` 로 바꿔 `protect_hard` 로 접는다 —
+    #    문장 끝에 박은 손 개행이 krwrap 의 문장 재배치·꼬리 고아 당김에 안 지워진다(「뭐라고, 세리오스 왕자라고?」/「네놈이?」). 새턴은 이 표식을
+    #    개행으로 바꿔 두고 `ps1_layout` 이 `protect_hard` 로 접게 한다(`_HARD_ACTIVE`). 표식 없는 블록은 종전 그대로다.
+    li = layout_input(jp, kr, chain)
+    global _HARD_ACTIVE
+    _HARD_ACTIVE = "\u2029" in li
+    li = li.replace("\u2029", "\n")
+    try:
+        built, bad = _typeset(jp, li, names)
+        if built is None:
+            return None, bad
+        out = "%c".join(nudge(seg, why) for seg in wrap_block(built, clause=chain).split("%c"))
+    finally:
+        _HARD_ACTIVE = False
+    if hard:
+        a, b = hard.group(1), hard.group(2)
+        out, n = re.subn(re.escape(a) + r"[ \n]+" + re.escape(b), lambda m: a + "\n" + b, out, count=1)
+        if n != 1:
+            return None, "하드 개행 자리를 못 찾았다"
     out = chain_break(jp, out) if chain else out
     return (ctl_newline(jp, out, ctl) if ctl else out), None
 
@@ -641,6 +855,25 @@ def _last_width(text):
 _PROSE = re.compile(r"[ぁ-ん、。！？]")  # 가나 히라가나·문장부호가 있으면 이어 쓰는 **문장**이다(이름·아이템 한 덩이가 아니다)
 
 
+_NAME_TABLE = None
+
+
+def _is_name_block(jp):
+    """블록 전체가 정본 이름(지명·사람·몬스터·아이템)인가 — 짧고 문장부호가 없을 때만 따진다(문장마다 이름표를 접어 보면 느리다)."""
+    global _NAME_TABLE
+    if len(jp) > 12 or any(c in jp for c in "、。！？ %"):
+        return False
+    if _NAME_TABLE is None:
+        _NAME_TABLE = _names()
+    from names import lookup
+
+    if lookup(jp, _NAME_TABLE) is not None:
+        return True
+    # 🔴 칸이 원문에 접미를 구운 지명(ED2 「지명 긴꼴」 `マスクーンの町` — 정본 `ui` 가 든다)도 이름 블록이다. 사전(`place`)에 열쇠가 없어
+    #    놓치면 끝에 `\n` 이 붙어 HUD 지명 버퍼가 한 글자 길어진다(10-24 「クルスの村」 168자리와 같은 결함, 검수 10-28).
+    return jp.endswith(("の町", "の村")) and (shared_canon.lookup(jp, "ui", "ed2") or shared_canon.lookup(jp, "ui", "ed1")) is not None
+
+
 def chain_break(jp, built):
     """이어 쓰는 블록(끝에 `%c`·개행이 없다)의 끝에 개행을 더한다 — 다음 블록이 같은 줄 꼬리에 붙지 않게.
 
@@ -657,6 +890,11 @@ def chain_break(jp, built):
     if jp and jp.endswith("\n") and not built.endswith(("%c", "\n")):
         return built if _last_width(built) > COLS else built + "\n"
     if not jp or jp.endswith(("%c", "\n")) or built.endswith(("%c", "\n", " ")):
+        return built
+    # 🔴 **정본 이름과 통째로 같은 블록은 문장이 아니다**(2026-10-24 마을 안 HUD 지명 — 「クルスの村」 같은 지명에 조사 `の` 가 든다고 `_PROSE` 가
+    #    문장으로 읽어 끝에 `\n` 을 붙였고, 이 블록은 엔진이 HUD 이름 버퍼로 11바이트를 복사하는 **헤더 이름**이라 `\n`(0x0A)이 이름 길이를 11 로 만들어
+    #    가운데 정렬이 반 칸 왼쪽으로 쏠리고 끝에 글자(0x0A 를 전각 첫 바이트로 읽은 쓰레기)가 찍혔다. 원판은 이름 + NUL 이다. 168자리.)
+    if _is_name_block(jp):
         return built
     if jp.endswith(("%s", "%d")) or built.endswith(("%s", "%d")) or not _PROSE.search(jp):
         return built
@@ -811,7 +1049,7 @@ def line_groups(built):
     return segs, groups
 
 
-def wrap_block(built):
+def wrap_block(built, clause=False):
     """블록 전체 줄바꿈 — 글줄 단위(`line_groups`)로 **PS1 과 같은 조판**(`ps1_layout`)을 걸고,
     새턴 제약을 못 지키면 어절 단위 탐욕(`wordwrap`)으로 물러선다."""
     segs, groups = line_groups(built)
@@ -821,7 +1059,12 @@ def wrap_block(built):
         # 🔴 글줄 끝 개행은 보존한다 — 조판기는 줄을 다시 짜며 끝 개행을 먹는다(다음 `%c` 화자 이름이 앞 줄 끝에 붙던 자리)
         tail = "\n" if t.endswith("\n") and not t.endswith("\n\n") and t.strip("\n") else ""
         t = t.rstrip("\n") if tail else t
-        out.append((ps1_layout(t) or wordwrap(t)) + tail)
+        laid = ps1_layout(t, clause=clause)
+        if laid is None:
+            laid = wordwrap(t)
+            if clause and LINE_CLAUSE:
+                laid = _clause_text(laid)
+        out.append(laid + tail)
     return "%c".join(out)
 
 
@@ -836,6 +1079,8 @@ def wrap_block(built):
 #   글자를 다음 줄로 꺾으므로 조판만으로는 못 한다(부호만 줄머리로 떨어진다).
 # ⚠ 붙임 규칙 둘(`_KEEP`·`_NUM_UNIT`)은 PS1 `keep_together`·`_bind_num_unit` 과 **같은 규칙**이다 —
 #   정본이 게임 쪽에 둘로 갈려 있다. `shared/` 로 올릴 후보(관리자에게 넘김, 4-D).
+_ELL = "\ue018"  # 음절 끊어 말하는 `…`(앞뒤가 한글, 2-11 예외 「세…리…오…」) 자리표 — 종결부호로 안 보게 해 문장·줄이 안 갈린다. 조판 뒤 `…` 로 되돌린다(`_unsent`)
+_SYL_ELL = re.compile(r"(?<![가-힣])([가-힣])…(?=[가-힣]…)")  # 홀로 선 음절 둘(번역 규칙 2-11 예외 — `check_wrap_rules._SYLLABLE_SPLIT` 과 같은 꼴)
 _NB = "\ue014"  # 붙임 공백 자리표 — 조판 뒤 공백으로 되돌린다(화면에 안 나간다)
 _SENT = {"%s": "\ue010", "%S": "\ue011", "%d": "\ue012", "%c": "\ue013"}  # %S = 주어 파티원
 _JOSA_PH = dict(zip(JOSA, ("\ue015", "\ue016", "\ue017")))  # 병기 자리표 — 접은 한 칸
@@ -904,7 +1149,18 @@ def _keep():
 _KEEP = None
 
 
-def ps1_layout(seg, cols=float(COLS)):
+def _n_cuts(lines):
+    """줄 경계에서 갈리는 덩어리 수 — `krwrap.split_reason` 이 가르면 안 된다고 보는 자리."""
+    from text import krwrap
+
+    return sum(
+        1
+        for a, b in zip(lines, lines[1:])
+        if a.split() and b.split() and krwrap.splits_unit(a.split()[-1], b.split()[0])
+    )
+
+
+def ps1_layout(seg, cols=float(COLS), clause=False):
     """글줄 하나를 PS1 과 같게 조판한다. 새턴 제약을 못 지키면 None.
 
     `cols` — 줄 폭. 런타임 인자가 든 줄이 14.5 로 걸치면 한 칸 좁혀(13.5) 다시 돈다(아래).
@@ -925,6 +1181,7 @@ def ps1_layout(seg, cols=float(COLS)):
     for n in _keep():
         t = t.replace(n, n.replace(" ", _NB))
     t = _NUM_UNIT.sub(_NB, t)
+    t = _SYL_ELL.sub("\\1" + _ELL, t)
     pages = krwrap.wrap_pages(
         t,
         cols,
@@ -934,14 +1191,23 @@ def ps1_layout(seg, cols=float(COLS)):
         strip_before=".,!?",
         strip_after="",
         det_orphan=True,
+        protect_hard=_HARD_ACTIVE,
     )
     ls = _hang_merge([ln for pg in pages for ln in pg])
+    # 줄 수 고정 풀기(마스터 10-29): 쪽에 줄이 남으면 한 줄 더 써서 덩어리 갈림(`split_reason`)을 없앤다. 본문 2줄 → 3줄만 —
+    # 이름 행을 더해도 5행 한도 안이라 쪽 수·창 수가 안 늘고, 안 쪼개진 줄만(원문 개행 없음) 건드린다.
+    if _N3_OK and len(pages) == 1 and len(ls) == 2 and "\n" not in body.strip("\n"):
+        more = krwrap.wrap(t, cols, cell_width=_cell, strip_before=".,!?", strip_after="", max_lines=3)
+        if len(more) == 3 and _n_cuts(more) < _n_cuts(ls):
+            ls = more  # 걸침 병합(`_hang_merge`)은 안 건다 — 한 줄 늘린 뜻이 사라진다
+    if clause and LINE_CLAUSE:
+        ls = clause_down(ls)  # 줄 폭은 진짜 한계(14.0) — 되짚는 재시도(13.5)의 좁힌 폭을 따라가면 14.0 딱 맞는 절을 못 내린다
     hung = [_hung(ln) for ln in ls]
     # 🔴 런타임 인자(`%s`·`%d`)가 든 줄은 **걸친 줄로 치지 않는다**(2026-10-17). 걸친 줄은 개행을 안 넣고 엔진이 14.5 에서
     #    스스로 넘기길 기대하는데, 인자는 **가장 긴 값**으로 잰 폭이라 실제 이름이 짧으면 줄이 안 차서 다음 문장이
     #    「열었다.상자」 처럼 공백 없이 붙는다. 그런 줄은 이 배치를 버리고 어절 단위 개행(`wordwrap`)으로 간다.
     if any(h and any(c in ln for c in ("\ue010", "\ue011", "\ue012")) for h, ln in zip(hung, ls, strict=True)):
-        return ps1_layout(seg, cols - 0.5) if cols == float(COLS) else None
+        return ps1_layout(seg, cols - 0.5, clause) if cols == float(COLS) else None
     if len(ls) > WIN_ROWS or any(
         sum(map(_cell, ln)) > COLS and not h for ln, h in zip(ls, hung, strict=True)
     ):
@@ -951,7 +1217,7 @@ def ps1_layout(seg, cols=float(COLS)):
     #    29열 창(전투 로그) 몫이고 씬 창은 14.0 에서 시작하는 글자를 꺾는다 — 위 모듈 주석이 이미 「조판만으론 못
     #    한다」고 적은 자리다. 그런 줄이 있으면 한 칸 좁혀(13.5) 다시 돌고, 그래도 안 되면 어절 단위 개행(`wordwrap`)으로 간다.
     if any(hung):
-        return ps1_layout(seg, cols - 0.5) if cols == float(COLS) else None
+        return ps1_layout(seg, cols - 0.5, clause) if cols == float(COLS) else None
     # 매단 줄 뒤엔 개행도 공백도 안 넣는다 — 엔진이 부호를 그린 뒤 스스로 넘긴다
     last = len(ls) - 1
     new = "".join(
@@ -970,7 +1236,141 @@ def ps1_layout(seg, cols=float(COLS)):
     return new
 
 
+def _clause_text(t):
+    """어절 단위 물러서기(`wordwrap`)로 짠 글줄에도 절째 내리기를 건다 — 마크업·빈 줄·탭이 없는 평문만, 엔진 접기와 같은 줄이 되는 때만 받는다."""
+    if "%" in t or "\x08" in t or "\n\n" in t or "\t" in t:
+        return t
+    lead = t[: len(t) - len(t.lstrip("\n"))]
+    ls = t[len(lead) :].split("\n")
+    new = [ln.replace(_NB, " ") for ln in clause_down(ls)]
+    if new == ls:
+        return t
+    out = lead + "\n".join(new)
+    m = lines(measure(out))
+    return out if m[len(lead) :] == new and len(m) <= WIN_ROWS and _strip_ws(out) == _strip_ws(t) else t
+
+
+def _phrases():
+    """대사 전량(문안 사전 + 자리별 문안)에서 두 번 이상 나온 [명사+명사] 구."""
+    if linerules._PHRASES is None:
+        import patch_scn
+
+        texts = list(patch_scn.load_canon(quiet=True).values())
+        linerules.phrases([t for t in texts if isinstance(t, str)])
+    return linerules._PHRASES
+
+
+def _noun_split(ws, i, plain):
+    """줄 `i` 끝 어절이 다음 줄 첫 어절과 굳은 [명사+명사] 구면 끝 어절을 내릴 자리(kk), 아니면 None."""
+    if len(ws[i]) < 2 or not ws[i + 1]:
+        return None
+    wa, wb = plain(ws[i][-1]), plain(ws[i + 1][0])
+    if not linerules.noun_noun(wa, wb) or (wa, linerules.stem(wb)) not in _phrases():
+        return None
+    kk = len(ws[i]) - 1
+    return kk if linerules.wsum(ws[i][:kk], _wf) >= linerules.MIN_LEFT else None
+
+
+def glue_line(ln):
+    """띄어 쓴 고유명사 · 금액과 단위를 붙임 공백(`_NB`)으로 묶는다 — 줄 사이에서 안 갈린다. 되돌릴 땐 `_NB` → 공백."""
+    for n in _keep():
+        if n in ln:
+            ln = ln.replace(n, n.replace(" ", _NB))
+    return _NUM_UNIT.sub(_NB, ln)
+
+
+def _wf(w):
+    return sum(map(_cell, w))
+
+
+GROW_LINES = 4  # 절째 내리기가 줄을 더해도 되는 한도 — ED2 쪽 한도(이름 + 본문 4줄)
+
+
+def clause_down(ls, cols=float(COLS), stats=None):
+    """2-16 ② — 줄이 넘쳐 끊긴 자리에서 그 줄에서 시작한 절이 다음 줄에 통째로 들어가면 절째 내린다 (판정은 `linerules.clause_split`).
+
+    줄 수를 늘리지 않는다 — 내려 보낸 절 때문에 넘치는 꼬리 어절은 다음 줄 머리로 밀고(문장 끝에서 끝난 줄은 그 너머로 안 민다), 마지막 줄이 넘치거나
+    새 경계가 본용언+보조용언(`krwrap.split_reason`)·줄머리 금칙을 만들면 그 자리는 그대로 둔다.
+    `stats` 에 dict 를 주면 `moved`(내린 자리) · `kept`(내리고 싶었으나 못 한 자리 — 계측용)를 센다 (`check_linepage`)."""
+    from text import krwrap
+
+    ls = [glue_line(ln) for ln in ls]  # 띄어 쓴 고유명사는 한 어절(2-16 ④) — 이미 붙임 공백이 든 줄은 그대로다
+
+    def plain(w):
+        return _unsent(w.replace(_NB, " "))
+
+    def try_down(ws, i, kk, grow=True):
+        grown = False
+        new = [list(r) for r in ws]
+        carry = new[i][kk:]
+        new[i] = new[i][:kk]
+        new[i + 1] = carry + new[i + 1]
+        j, last = i + 1, i + 1
+        while j < len(new):
+            pushed = False
+            while linerules.wsum(new[j], _wf) > cols:
+                if L_END(ws[j]) and j + 1 < len(new):  # 문장 끝에서 끝난 줄 너머로는 못 민다
+                    return None
+                if j + 1 >= len(new):  # 마지막 줄이 넘치면 줄을 하나 더한다 — 단 한 어절만 달랑 남는 꼬리 줄은 안 만든다
+                    if not grow or len(new) >= GROW_LINES or len(new[j]) < 3:
+                        return None
+                    new.append([])
+                    ws = ws + [[]]
+                    grown = True
+                if j == i + 1 and len(new[j]) <= len(carry):  # 내려온 절은 가르지 않는다
+                    return None
+                new[j + 1] = [new[j].pop()] + new[j + 1]
+                pushed = True
+            if not pushed:
+                break
+            j += 1
+            last = j
+        if grown and len(new[-1]) < 2:
+            return None  # 한 어절 꼬리 줄
+        for a in range(i, last):  # 새 경계 점검 — 바뀐 줄 사이
+            lw, nw = new[a][-1], new[a + 1][0]
+            if nw[:1] in HEAD_BAN or krwrap.split_reason(plain(lw), plain(nw)):
+                return None
+        return new
+
+    def L_END(row):
+        return bool(row) and linerules.bkind(plain(row[-1])) == 3
+
+    kept: set = set()
+    for _ in range(4 * len(ls) + 1):
+        kept.clear()
+        ws = [ln.split(" ") for ln in ls]
+        for i in range(len(ls) - 1):
+            if not ls[i] or not ls[i + 1]:
+                continue
+            nxt = [w for row in ws[i + 1 :] for w in row]
+            nn = _noun_split(ws, i, plain)
+            if nn is not None:
+                got = try_down(ws, i, nn, grow=False)  # 줄 수가 안 늘 때만 묶는다
+                if got is not None:
+                    ls = [" ".join(r) for r in got]
+                    if stats is not None:
+                        stats["noun"] = stats.get("noun", 0) + 1
+                    break
+            kk = linerules.clause_split(ws[i], nxt, _wf, cols, lambda a, b: bool(krwrap.split_reason(plain(a), plain(b))))
+            if kk is None:
+                continue
+            got = try_down(ws, i, kk)
+            if got is not None:
+                ls = [" ".join(r) for r in got]
+                if stats is not None:
+                    stats["moved"] = stats.get("moved", 0) + 1
+                break
+            kept.add((i, tuple(ws[i])))
+        else:
+            if stats is not None:
+                stats["kept"] = stats.get("kept", 0) + len(kept)
+            return ls
+    return ls
+
+
 def _unsent(t):
+    t = t.replace(_ELL, "…")
     for k, v in _SENT.items():
         t = t.replace(v, "%s" if k == "%S" else k)
     for k, v in _JOSA_PH.items():

@@ -32,11 +32,16 @@ class TestCaptionHalf(unittest.TestCase):
         self.assertEqual(rows, dot_rows)
         self.assertGreaterEqual(min(rows), 10)
 
-    def test_본편_말줄임표_글리프는_아랫줄_한_행이다(self):
+    def test_본편_말줄임표_점은_반각_온점과_같은_모양_같은_행이다(self):
+        """마스터 11-15(규칙 1-3) — 점 크기·모양이 마침표와 같다(세로 2px · 8·9행)."""
         g = U.ellipsis_glyph()
         rows = [g[r * 2 : r * 2 + 2] for r in range(11)]
         ink = [i for i, r in enumerate(rows) if any(r)]
-        self.assertEqual(ink, [10])  # 온점과 같은 마지막 행
+        period = U.bake_ascii(".")["."]
+        period_rows = [i for i, b in enumerate(period) if b]
+        self.assertEqual(ink, period_rows)  # 온점과 같은 행(8·9)
+        self.assertEqual(rows[8], rows[9])  # 점 하나가 세로 2px
+        self.assertEqual(period[8], 0b01000000)  # 원판 ！ 점과 같은 1×2(열 1) — 마스터 11-16 「원판 ?! 에 맞춰」
 
     def test_반각_진행은_공백_부호_8px_나머지_16px(self):
         from PIL import ImageFont
