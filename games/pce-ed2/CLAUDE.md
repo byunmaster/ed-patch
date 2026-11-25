@@ -3,7 +3,7 @@
 **트랙: [kr]** — 일본 원판(HCD2033, Hudson) 한글 번역 패치. 공용 규칙은 루트 [`CLAUDE.md`](../../CLAUDE.md), 진행 현황은
 [`docs/status.md`](docs/status.md). **자매 게임 [`games/pce-ed1/`](../pce-ed1/CLAUDE.md) 이 같은 플랫폼의 선행 작업이다** —
 BIOS 글꼴 후킹 · 컨테이너 · 음성 자막 기전 · 조판 · 게이트를 먼저 읽는다(거기 함정이 다 적혀 있다).
-🔴 대사 문안을 쓰거나 검수하기 전에 스킬 `rpg-translate` 와 루트 `docs/translation-rules.md` 를 연다(정책 문서는 번역 라운드에서 만든다).
+🔴 대사 문안을 쓰거나 검수하기 전에 스킬 `rpg-translate` 와 루트 `docs/translation-rules.md` 를 연다(이 게임엔 따로 정책 문서가 없다 — 공통 규칙집이 정본이고, 마스터 판정으로 잠근 문안은 `master_rulings.json`).
 
 ## 이 게임이 ED1 과 다른 점 (2026-10-12 조사)
 
