@@ -18,6 +18,8 @@ def fake():
     b[P.BANNER_LIT - P.BASE : P.BANNER_LIT - P.BASE + 4] = P.DRAW.to_bytes(4, "big")
     for lit in P.WAIT_LITS:
         b[lit - P.BASE : lit - P.BASE + 4] = P.WAIT.to_bytes(4, "big")
+    for lit, real in P.DLG_UP_LITS:
+        b[lit - P.BASE : lit - P.BASE + 4] = real.to_bytes(4, "big")
     return bytes(b)
 
 
@@ -61,6 +63,16 @@ class UiCenter(unittest.TestCase):
         self.assertLessEqual(P.WRAP3 + len(code), P.WRAP2)  # 이웃(WRAP2)을 안 덮는다
         self.assertIn(P.WAIT.to_bytes(4, "big"), code)  # 원래 대기 루틴으로 점프한다
         self.assertIn(P.WINS.to_bytes(4, "big"), code)
+
+    def test_dialogue_glyph_calls_go_through_the_one_row_up_shells(self):
+        # 대사 글자 그리기의 반각 글리프 호출 둘만 껍데기로 돈다(목록·HUD·가격창의 DRAW 풀은 그대로) — 마스터 11-16
+        P.CA.reset()
+        new = P.patch(fake())
+        blob, where = P.dlg_up_code()
+        for lit, real in P.DLG_UP_LITS:
+            self.assertEqual(new[lit - P.BASE : lit - P.BASE + 4], where[real].to_bytes(4, "big"))
+        self.assertEqual(blob[:2], bytes.fromhex("3468"))  # `sub r6,r4` — 목적지를 한 줄 위로
+        self.assertEqual(blob[12:14], bytes.fromhex("3468"))  # 둘째 껍데기도 같다
 
     def test_refuses_a_different_build(self):
         bad = bytearray(fake())

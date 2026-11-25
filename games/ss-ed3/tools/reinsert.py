@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -50,7 +51,31 @@ def load_script(stem):
     script.update(d.get("_wide", {}))
     #   인라인 아이템 코드 뒤 병기 조사는 빌드 때 하나로 줄인다(`inline_josa.py`) — 칸 안에 **물리적으로** 들어가는 문안이다
     script = {k: IJ.resolve(v) if isinstance(v, str) else v for k, v in script.items()}
+    if os.environ.get("ED_ORIG_FORM"):  # 시험 롬 전용 — 원판이 전각 영문인 블록은 영문을 전각으로(제품 불변)
+        script = _orig_form(stem, script)
     return script, d.get("_jp", {})
+
+
+_FWL = re.compile(r"[Ａ-Ｚａ-ｚ]")
+
+
+def _orig_form(stem, script):
+    """원판 블록에 전각 영문이 있으면 우리 문안의 ASCII 영문도 전각으로 — `Ａ−14` 꼴(마스터 11-16 「전부 원판 꼴」 시험)."""
+    pj = os.path.join(C.OUT_DIR, "map_jp", f"{stem}.json")
+    if not os.path.exists(pj):
+        return script
+    with open(pj, encoding="utf-8") as f:
+        jp = json.load(f)["blocks"]
+    out = dict(script)
+    for k, v in script.items():
+        if not (isinstance(v, str) and str(k).isdigit() and int(k) < len(jp)):
+            continue
+        if not _FWL.search(jp[int(k)].get("text", "")):
+            continue
+        t = re.sub(r"(?<=[A-Za-z])-", "\u2212", v)
+        t = re.sub(r"[A-Za-z]", lambda m: chr(ord(m.group()) + 0xFEE0), t)
+        out[k] = t
+    return out
 
 
 def wide(stem):

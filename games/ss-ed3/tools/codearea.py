@@ -70,9 +70,11 @@ NAMEJ = VCHK + VCHK_ROOM  # 이름 뒤 조각 조사 훅(`patch_josa_hook.name_r
 NAMEJ_ROOM = 640
 NTBL = NAMEJ + NAMEJ_ROOM  # 조사 훅 종성 표(606B — 본 판 + 내린 판 슬롯). 종전 `0x06076170`(490B)은 트램펄린 자리와 부딪혀 옮겼다
 NTBL_ROOM = 704
-B_END = NTBL + NTBL_ROOM
+ASH = NTBL + NTBL_ROOM  # 대사창 반각 글리프를 한 행 올리는 껍데기 둘(`patch_ui_center`, 시험 롬 전용 — 켜지 않으면 안 쓴다)
+ASH_ROOM = 64
+B_END = ASH + ASH_ROOM
 assert B_END <= run_end(RUN_B), (B_END, run_end(RUN_B))
-assert all(x % 4 == 0 for x in (CRED, JOSA, SUB, WRAP3, WRAP2, GCLK, RELOC, BOOKH, VCHK, NAMEJ, NTBL))
+assert all(x % 4 == 0 for x in (CRED, JOSA, SUB, WRAP3, WRAP2, GCLK, RELOC, BOOKH, VCHK, NAMEJ, NTBL, ASH))
 
 #   ── 쓰기 길 — 패치 함수는 `/0.BIN` 바이트를 돌려주므로 폰트 쪽 쓰기는 여기 모았다가 빌드가 폰트에 얹는다
 SIDE = []  # [(주소, bytes)]

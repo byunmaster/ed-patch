@@ -237,6 +237,35 @@ def wrap3_code():
     return code
 
 
+#   🔴 **대사창 반각 글리프를 한 행 올린다**(제품 반영 — 마스터 11-16 「ssed3은 변경안으로 하는거야」, 「1px 만 올려서 가운데정렬 되는 것처럼」: 숫자·대문자가 한글 위아래 1px 가운데). 마침표 `.` 와 `?!` 점은 같은 행(9)이라 같이 올라가도 서로 어긋나지 않는다(1-3).
+#   대사 글자 그리기(`0x06041420`)가 반각 한 자를 `0x06041258`(본) · `0x06041334`(그림자)로 찍는 풀 리터럴 둘(`0x060414A8` · `0x060414A4`)을
+#   껍데기로 돌려 `r4 -= r6`(목적지를 한 줄 위로 — r6 = 창 비트맵 줄 바이트 수)한 뒤 원래 루틴으로 뛴다.
+#   목록·HUD·가격창은 `DRAW`(0x060417AC)가 다른 풀로 부르므로 안 움직인다(트레이스 확인 — 같은 글리프 루틴이지만 부르는 자리가 다르다).
+DLG_UP_LITS = ((0x060414A8, 0x06041258), (0x060414A4, 0x06041334))  # (풀 리터럴 자리, 원래 루틴)
+ASH = CA.ASH
+ASH_ROOM = CA.ASH_ROOM
+
+
+def dlg_up_code():
+    """`ASH` 에 둘 바이트 — 껍데기 둘(`sub r6,r4` + `jmp 원래 루틴`)과 풀. 반환 `(바이트, {원래 루틴: 껍데기 주소})`."""
+    import subtitle_stub as SS
+
+    blob = b""
+    where = {}
+    for _lit, real in DLG_UP_LITS:
+        at = ASH + len(blob)
+        a = SS.Asm(at)
+        a.sub(4, 6)  # sub r6,r4 — 목적지 한 줄 위
+        a.movl_pc(0, "T")
+        a.jmp(0)
+        a.nop()
+        code, _ = a.resolve({"T": real})
+        blob += code
+        where[real] = at
+    assert len(blob) <= ASH_ROOM, (len(blob), ASH_ROOM)
+    return blob, where
+
+
 def patch(data):
     """`/0.BIN` bytes → 새 bytes(크기 불변). 원본 바이트가 다르면 멈춘다."""
     out = bytearray(data)
@@ -248,7 +277,8 @@ def patch(data):
     out[off : off + 2] = TEXT_Y_NEW
     off = DIGIT_BR - BASE
     assert out[off : off + 2] == DIGIT_BR_ORIG, f"{DIGIT_BR:#x} 가 예상과 다르다"
-    out[off : off + 2] = DIGIT_BR_NEW
+    if not os.environ.get("ED_ORIG_FORM"):  # 시험 롬 전용 — 켜면 대사 숫자 전각 변환(원판)을 걷지 않는다
+        out[off : off + 2] = DIGIT_BR_NEW
     for lit in LIST_LITS:  # 목록 그리기 호출은 건드리지 않는다 — 위 🔴
         o = lit - BASE
         assert out[o : o + 4] == DRAW.to_bytes(4, "big"), f"{lit:#x} 가 예상과 다르다"
@@ -263,6 +293,13 @@ def patch(data):
         out[o : o + 4] = WRAP3.to_bytes(4, "big")
     blob = wrap3_code()
     CA.put(out, BASE, WRAP3, blob)
+    if True:  # 항상 켠다(위 🔴)
+        blob, where = dlg_up_code()
+        CA.put(out, BASE, ASH, blob)
+        for lit, real in DLG_UP_LITS:
+            o = lit - BASE
+            assert out[o : o + 4] == real.to_bytes(4, "big"), f"{lit:#x} 가 예상과 다르다"
+            out[o : o + 4] = where[real].to_bytes(4, "big")
     return bytes(out)
 
 
