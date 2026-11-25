@@ -78,6 +78,46 @@ SSD 가 **89% · 6.4G** 까지 차서 옮겼다 — 결과 **58% · 24G**.
   `find -name`·`comm` 이 **못 찾는다** — 「HDD 에 없다」로 오판했다가 NFC 정규화로 뒤집혔다
   (3.9G 가 「없음」에서 「있음」으로 바뀌었다).
 
+### ✅ 빌드 칸도 HDD 로 (2026-10-25, dev)
+
+SSD 가 **99% · 0.4G** 까지 차서 게이트가 `No space left` 로 막혔다(시험 이미지 500MB 를 굽다가). 빌드 산출물(이미지
+한 장 240~770MB × 게임 11)을 HDD 로 뺐다 — 마스터 「영웅전설 원본도 있지만 각종 관련 자료들 모아두는 폴더라 여기에
+사용하는게 좋을듯」.
+
+```
+HDD 자리   /mnt/originals/_build/<게임>/        (원본 폴더와 같은 마운트, 쓰기 가능 — 실측 132MB/s)
+워크트리   games/<게임>/work/build  →  /mnt/originals/_build/<게임>   (심볼릭 링크 — 도구·경로는 그대로)
+```
+
+- 경로를 링크로 잇기 때문에 `BUILD_DIR`·`pull-build.sh`·`clean-build.sh`·파일서버는 안 고친다(셋 다 링크를 푼다).
+- ⚠ 옮기는 동안 그 이미지를 연 에뮬레이터가 있으면 먼저 끈다(PID 로). 옮긴 뒤 **빌드 한 번 + 실행 한 번**으로 확인.
+- `derived/`·`review/` 는 SSD 에 둔다 — 빌드마다 소파일 수백 개를 읽는 자리다(위 「디스크는 SSD 다」).
+
+같은 날 마스터 「saves도 여기로 사용해도 될듯. state 저장하면 용량 많이 차지하니까」 · 「용량이 큰 캐시같은것도 보관이 필요하면
+활용해도 될것같고」로 넷을 더 옮겼다 — 전부 **복사 → sha1 전수 대조 → 원래 자리를 링크로** 바꿨다(경로는 그대로라 도구는 안 고친다).
+
+| 원래 자리(지금은 링크) | HDD | 무엇 |
+| --- | --- | --- |
+| `.local/keep/guide` | `/mnt/originals/_guide` | 소장 공략집 — 마스터가 그 폴더를 직접 정리한다 |
+| `/root/save` | `/mnt/originals/_save` | 마스터 세이브 전달함(파일서버가 보여 준다) |
+| `.local/keep/saves` | `/mnt/originals/_save_keep` | 세이브 보관소 — 전달함과 섞이지 않게 옆 폴더(파일서버가 `_save` 아래를 게임 목록으로 읽는다) |
+| `~/.cache/huggingface` | `/mnt/originals/_cache/huggingface` | 받아쓰기·의미 정렬 모델(5.1G) |
+
+- `/mnt/originals/_cover` 는 마스터가 모으는 표지 그림이다(배포 페이지 카드 그림 후보).
+- ⚠ emucap 홈(`~/.local/share/emucap`, 3.7G — 세션 사본·스테이트)은 아직 SSD 다. 옮기려면 **도는 에뮬레이터를 전부 끄고** 해야 한다.
+
+### 바깥에서 `ssh dev` — 호스트가 Tailscale 서브넷 라우터다 (2026-11-04)
+
+맥이 집 밖 망이면 `192.168.45.0/24` 로 가는 길은 Tailscale 뿐이다(`route get 192.168.45.104` → `utun`). 호스트 `daon` 이
+그 서브넷을 광고하고(`AdvertiseRoutes`) **IP 포워딩으로 `vmbr0` 의 컨테이너에 넘긴다**.
+⚠ 11-04 보안 패치 재시작 뒤 **호스트는 붙는데 컨테이너만 시간 초과** — 광고는 멀쩡했고 `net.ipv4.ip_forward = 0` 이었다
+(실행 중에만 켜 두고 파일에 안 남겼던 것). 컨테이너 쪽(sshd·고정 IP·방화벽)은 정상이고 22번에 패킷이 아예 안 왔다.
+호스트에서 파일로 남겨 고쳤다:
+
+```bash
+echo 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/99-tailscale.conf && sysctl -p /etc/sysctl.d/99-tailscale.conf
+```
+
 ## ② 패키지
 
 ```bash
