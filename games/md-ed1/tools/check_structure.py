@@ -29,8 +29,16 @@ import archives
 import common
 import scene
 
-BASELINE = common.GAME_DIR / "structure_baseline.json"  # 아직 고치지 않은(보고된) 어긋남 — 전투·시스템 메시지 — 새 것만 실패, 고치면 --freeze 로 내린다
-FREE = {0x01, 0x05, 0x03, 0xEB, 0xEC}  # 조판·번역이 개수·자리를 바꾸는 제어 코드 — 모듈 docstring 의 ALLOW
+BASELINE = (
+    common.GAME_DIR / "structure_baseline.json"
+)  # 아직 고치지 않은(보고된) 어긋남 — 전투·시스템 메시지 — 새 것만 실패, 고치면 --freeze 로 내린다
+FREE = {
+    0x01,
+    0x05,
+    0x03,
+    0xEB,
+    0xEC,
+}  # 조판·번역이 개수·자리를 바꾸는 제어 코드 — 모듈 docstring 의 ALLOW
 
 
 def ctl_seq(tokens: list) -> list[tuple]:
@@ -60,6 +68,76 @@ def ctl_seq(tokens: list) -> list[tuple]:
     return out
 
 
+# 글자색 코드 — 렌더러 핸들러 표(`$A018`)에서 `bsr $A4A2`(색 쓰기)를 부르는 18~1F(1E 는 화자 이름표 색 6) + 04(이전 색 복원).
+# pce-ed1 이 번역 조립기가 색 전환을 처음부터 안 내 35메시지가 엉뚱한 색이 된 사고(마스터 10-29) — 이 게임은 위 `ctl_seq` 가 이미 개수·순서를
+# 막지만 **자리**(바로 뒤가 글자인가 코드인가)는 안 봐서 따로 센다.
+COLOR = {0x04, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F}
+
+
+def color_sig(tokens: list) -> list[tuple]:
+    """색 코드마다 (코드, 바로 뒤 — 글자 'T' / 다른 코드 번호 / 끝). 01·05·03·EB·EC 는 건너뛴다(조판·조사 훅이 자리를 바꾼다)."""
+    toks = [
+        t
+        for t in tokens
+        if not (t.kind == "ctl" and t.code in FREE) and not (t.kind == "text" and not t.raw)
+    ]
+    out = []
+    for i, t in enumerate(toks):
+        if t.kind == "ctl" and t.code in COLOR:
+            nx = toks[i + 1] if i + 1 < len(toks) else None
+            out.append(
+                (
+                    t.code,
+                    "T"
+                    if nx is None or nx.kind == "text"
+                    else nx.code
+                    if nx.kind == "ctl"
+                    else nx.kind,
+                )
+            )
+    return out
+
+
+BREAKS = {0x01, 0x05, 0x03}
+
+
+def wait_count(tokens: list) -> int:
+    """쪽 넘김(05)·시간 이음(03) 개수 — 조판이 쪽을 더할 수는 있어도 원문의 쪽 나눔을 없애면 두 문장이 한 쪽에 붙는다(pce-ed1 10-30 「왕자!?자, 잠시」)."""
+    return sum(1 for t in tokens if t.kind == "ctl" and t.code in (0x05, 0x03))
+
+
+def joint_break(a: list, b: list) -> bool | None:
+    """끝 코드 06 으로 이어 읽는 앞·뒤 스트림 사이에 줄·쪽 나눔이 있나 — 앞 스트림 끝(끝 코드 앞)의 나눔 코드 열 또는 뒤 스트림 머리의 나눔 코드 열.
+    둘 다 글이 있는 06 이음만 센다(None = 해당 없음 — 한쪽이 빈 스트림이면 끼워 넣는 값 자리)."""
+    ta = [t for t in a if not (t.kind == "text" and not t.raw)]
+    tb = [t for t in b if not (t.kind == "text" and not t.raw)]
+    if not ta or ta[-1].kind != "end" or ta[-1].code != 0x06 or not has_text(a) or not has_text(b):
+        return None
+    ta = ta[:-1]
+    return bool(ta and ta[-1].kind == "ctl" and ta[-1].code in BREAKS) or bool(
+        tb and tb[0].kind == "ctl" and tb[0].code in BREAKS
+    )
+
+
+def edge_breaks(tokens: list) -> tuple[bool, bool]:
+    """(글 앞이 줄바꿈 01 인가, 끝 코드 앞이 줄바꿈 01 인가) — 전투·시스템 메시지용(끝 코드는 가림). 줄바꿈이 사라지면 다음 메시지가 같은 줄에 붙는다."""
+    t = [x for x in tokens if not (x.kind == "text" and not x.raw)]
+    while t and t[-1].kind in ("end", "eof"):
+        t = t[:-1]
+    is1 = lambda x: x.kind == "ctl" and x.code == 0x01  # noqa: E731
+    return bool(t) and is1(t[0]), bool(t) and is1(t[-1])
+
+
+def end_wait(tokens: list) -> bool:
+    """끝 코드 바로 앞이 쪽 대기(05)인가 — 상점·여관 확인 문구의 끝 대기(PCE I 가 놓친 부류)."""
+    return (
+        len(tokens) >= 2
+        and tokens[-1].kind == "end"
+        and tokens[-2].kind == "ctl"
+        and tokens[-2].code == 0x05
+    )
+
+
 def has_text(tokens: list) -> bool:
     return any(t.kind == "text" and t.raw for t in tokens)
 
@@ -80,26 +158,48 @@ def targets_of(tokens: list) -> list[tuple]:
 # 의도적으로 다른 꼴(스트림 단위 면제) — 블록 → {원본 스트림 시작: 근거}. 이 목록에 없는 차이는 전부 실패.
 EXEMPT: dict[int, dict[int, str]] = {
     # 배우 이름 레코드 — 스트림처럼 읽히지만 `ff nn` 이름 코드 바이트를 `actor_names.new_block`(build.py) 이 같은 길이로 한글 코드로 바꾼 자료다.
-    161: {0x954: "배우 이름 레코드(actor_names.BLOCK) — 이름 코드 바이트를 같은 길이로 교체, 흐름 코드 없음"},
+    161: {
+        0x954: "배우 이름 레코드(actor_names.BLOCK) — 이름 코드 바이트를 같은 길이로 교체, 흐름 코드 없음"
+    },
+    # 규칙 2-18(마스터 11-08 「이어지면 빈 줄 제거, 첫 대사면 화자 넣기」): 선택 창 뒤 새 창의 주인 대답이 원판엔 이름 없이 빈 첫 줄(`01`)로 시작 — 같은 블록 술집 주인 줄과 같은 표기로 이름(1e…04)을 넣었다
+    185: {0xE9F: "술집 주인 이름 삽입(규칙 2-18) — 제어 열에 1e·04 가 늘었다"},
+    186: {0xCE0: "술집 주인 이름 삽입(규칙 2-18) — 제어 열에 1e·04 가 늘었다"},
 }
 
 
 def compare_module(orig_b: bytes, new_b: bytes, block: int = -1) -> tuple[list[str], dict]:
     """한 블록 — (어긋남 목록, 통계)."""
     errs: list[str] = []
-    stat = {"streams": 0, "paired": 0, "adj": 0, "pad": 0, "moved": 0, "copies": 0, "pg_orig": 0, "pg_new": 0, "zeroed": 0}
+    stat = {
+        "streams": 0,
+        "paired": 0,
+        "adj": 0,
+        "pad": 0,
+        "moved": 0,
+        "copies": 0,
+        "pg_orig": 0,
+        "pg_new": 0,
+        "zeroed": 0,
+        "color": 0,
+        "break": 0,
+        "joint": 0,
+    }
     orig = scene.parse_module(orig_b)
     stat["streams"] = len(orig.streams)
     if new_b == orig_b:
         stat["paired"] = len(orig.streams)
         return errs, stat
     new = scene.parse_module(new_b, orig)
-    pair: dict[int, int] = {}  # 원본 스트림 → 새 스트림(참조·표·뿌리로 대응이 선 것 — 꼬리 복사본은 여기 안 든다)
+    pair: dict[
+        int, int
+    ] = {}  # 원본 스트림 → 새 스트림(참조·표·뿌리로 대응이 선 것 — 꼬리 복사본은 여기 안 든다)
     seen: set[tuple[int, int]] = set()
     first: dict[int, int] = {}  # 원본 스트림 → 처음 대응된 새 스트림(복사본 말고 주 사본)
     work: list[tuple[int, int, str]] = []
 
-    extra: dict[int, scene.Stream] = {}  # 모듈 파서가 못 찾은 익명 꼬리 복사본 — 이어 읽기 자리에서 직접 읽는다
+    extra: dict[
+        int, scene.Stream
+    ] = {}  # 모듈 파서가 못 찾은 익명 꼬리 복사본 — 이어 읽기 자리에서 직접 읽는다
 
     def stream_at(n: int):
         if n in new.streams:
@@ -118,7 +218,9 @@ def compare_module(orig_b: bytes, new_b: bytes, block: int = -1) -> tuple[list[s
             return
         if not tail:
             if o in pair and pair[o] != n:
-                errs.append(f"{why}: 원본 스트림 {o:#x} 가 새 자리 둘로 갈렸다 {pair[o]:#x} / {n:#x}")
+                errs.append(
+                    f"{why}: 원본 스트림 {o:#x} 가 새 자리 둘로 갈렸다 {pair[o]:#x} / {n:#x}"
+                )
                 return
             pair[o] = n
         if (o, n) in seen:
@@ -145,15 +247,52 @@ def compare_module(orig_b: bytes, new_b: bytes, block: int = -1) -> tuple[list[s
         if o in EXEMPT.get(block, {}):
             return
         a, b = ctl_seq(so.tokens), ctl_seq(sn.tokens)
-        if has_text(so.tokens) != has_text(sn.tokens):  # 글이 사라졌거나 끼어든 빈 스트림(끝 코드만 있는 06 하나 — 41:0xb72)
-            errs.append(f"스트림 {o:#x}→{n:#x} ({why}) 글 유무가 다르다: 원본 {has_text(so.tokens)} / 빌드 {has_text(sn.tokens)}")
+        if has_text(so.tokens) != has_text(
+            sn.tokens
+        ):  # 글이 사라졌거나 끼어든 빈 스트림(끝 코드만 있는 06 하나 — 41:0xb72)
+            errs.append(
+                f"스트림 {o:#x}→{n:#x} ({why}) 글 유무가 다르다: 원본 {has_text(so.tokens)} / 빌드 {has_text(sn.tokens)}"
+            )
             return
         if a != b:
-            k = next((i for i, (x, y) in enumerate(zip(a, b, strict=False)) if x != y), min(len(a), len(b)))
+            k = next(
+                (i for i, (x, y) in enumerate(zip(a, b, strict=False)) if x != y),
+                min(len(a), len(b)),
+            )
             errs.append(
                 f"스트림 {o:#x}→{n:#x} ({why}) 제어 열이 다르다 @{k}: 원본 {a[k : k + 3]} / 빌드 {b[k : k + 3]}"
             )
             return
+        ca, cb = color_sig(so.tokens), color_sig(sn.tokens)
+        stat["color"] += len(ca)
+        if ca != cb:
+            errs.append(
+                f"스트림 {o:#x}→{n:#x} ({why}) 글자색 코드의 개수·자리가 다르다: 원본 {ca[:4]} / 빌드 {cb[:4]}"
+            )
+            return
+        stat["break"] += 1
+        wa, wb = wait_count(so.tokens), wait_count(sn.tokens)
+        if wb < wa:
+            errs.append(
+                f"스트림 {o:#x}→{n:#x} ({why}) 쪽 넘김·대기(05·03)가 원본보다 적다: 원본 {wa} / 빌드 {wb} — 두 문장이 한 쪽에 붙는다"
+            )
+            return
+        if end_wait(so.tokens) and not end_wait(
+            sn.tokens
+        ):  # 끝 직전 쪽 대기(05) — 개수 합은 다른 쪽 05 로 메워져 위 검사를 지난다(PCE I 11-07)
+            errs.append(
+                f"스트림 {o:#x}→{n:#x} ({why}) 끝 직전 쪽 대기(05)가 빠졌다 — 끝 확인 키 한 번이 사라져 ▽ 없이 흘러간다"
+            )
+            return
+        so_n = scene._successor(orig, o)
+        if so_n is not None and so_n in orig.streams and sn.end in new.streams:
+            jo = joint_break(so.tokens, orig.streams[so_n].tokens)
+            stat["joint"] += jo is not None
+            if jo and not joint_break(sn.tokens, new.streams[sn.end].tokens):
+                errs.append(
+                    f"스트림 {o:#x}→{n:#x} ({why}) 06 이음 자리의 줄·쪽 나눔이 빠졌다 — 뒤 메시지가 같은 줄에 붙는다"
+                )
+                return
         ro = [t for t in so.tokens if t.kind == "ctl" and t.ref and t.code not in FREE]
         rn = [t for t in sn.tokens if t.kind == "ctl" and t.ref and t.code not in FREE]
         for x, y in zip(ro, rn, strict=True):
@@ -166,7 +305,9 @@ def compare_module(orig_b: bytes, new_b: bytes, block: int = -1) -> tuple[list[s
                 errs.append(
                     f"스트림 {o:#x} 의 <{x.code:02x}> {x.ref} 착지가 움직였다 {x.target:#x} → {y.target:#x}"
                 )
-        so_t = scene._successor(orig, o)  # 조건 분기 꼬리 · 끝 코드 사슬 — 새 모듈에서도 **바로 뒤**여야 한다(복사본이어도 됨)
+        so_t = scene._successor(
+            orig, o
+        )  # 조건 분기 꼬리 · 끝 코드 사슬 — 새 모듈에서도 **바로 뒤**여야 한다(복사본이어도 됨)
         if so_t is not None:
             stat["adj"] += 1
             add(so_t, sn.end, f"{o:#x} 바로 뒤 {so_t:#x}", tail=True)
@@ -197,10 +338,17 @@ def compare_module(orig_b: bytes, new_b: bytes, block: int = -1) -> tuple[list[s
         1 for o in first for t in orig.streams[o].tokens if t.kind == "ctl" and t.code == 0x05
     )
     stat["pg_new"] = sum(
-        1 for n in first.values() for t in (stream_at(n).tokens if stream_at(n) else []) if t.kind == "ctl" and t.code == 0x05
+        1
+        for n in first.values()
+        for t in (stream_at(n).tokens if stream_at(n) else [])
+        if t.kind == "ctl" and t.code == 0x05
     )
     stat["zeroed"] = sum(
-        len(t.raw) for o, n in pair.items() if o != n for t in orig.streams[o].tokens if new_b[t.off : t.off + len(t.raw)] == b"\x00" * len(t.raw)
+        len(t.raw)
+        for o, n in pair.items()
+        if o != n
+        for t in orig.streams[o].tokens
+        if new_b[t.off : t.off + len(t.raw)] == b"\x00" * len(t.raw)
     )
     # 채움 — 덧붙은 구간(원본 길이 뒤)에 스트림이 안 덮은 바이트
     cov = bytearray(len(new_b))
@@ -227,16 +375,24 @@ def compare_module(orig_b: bytes, new_b: bytes, block: int = -1) -> tuple[list[s
 
 # 글자가 없어도(또는 달라도) 되는 의도적 차이 — 이 목록에 없으면 실패.
 EXEMPT_TEXT: dict[tuple[str, int], str] = {
-    ("시스템", 0x36A1): "원문 꼬리 「ました。」 — 한국어는 앞 스트림이 문장을 끝내 꼬리를 `<00>` 한 코드로 비웠다(textmap/sysmsg.json 036a1)",
+    (
+        "시스템",
+        0x36A1,
+    ): "원문 꼬리 「ました。」 — 한국어는 앞 스트림이 문장을 끝내 꼬리를 `<00>` 한 코드로 비웠다(textmap/sysmsg.json 036a1)",
 }
-CAPTION_FREE = {0x1E, 0x1F}  # 자막 — 들여쓰기 span(1E 공백 1F)을 번역은 평범한 공백으로 쓴다(captions.dlg_layout, 화면 확인 10-13)
+CAPTION_FREE = {
+    0x1E,
+    0x1F,
+}  # 자막 — 들여쓰기 span(1E 공백 1F)을 번역은 평범한 공백으로 쓴다(captions.dlg_layout, 화면 확인 10-13)
 
 
 def _norm(tokens: list, extra_free: set[int] | None = None, drop_hi: bool = False) -> list:
     seq = ctl_seq(tokens)
     out = []
     for x in seq:
-        if isinstance(x[0], int) and (extra_free and x[0] in extra_free or drop_hi and x[0] >= 0xF0):
+        if isinstance(x[0], int) and (
+            extra_free and x[0] in extra_free or drop_hi and x[0] >= 0xF0
+        ):
             continue
         out.append(x)
     return out
@@ -246,7 +402,9 @@ def _text_len(tokens: list) -> int:
     return sum(len(t.raw) for t in tokens if t.kind == "text")
 
 
-def _same(so, sn, cat: str, key: int, orig, new, drop_goto_target=None, caption: bool = False) -> str | None:
+def _same(
+    so, sn, cat: str, key: int, orig, new, drop_goto_target=None, caption: bool = False
+) -> str | None:
     """스트림 한 쌍 — 어긋나면 이유 문자열."""
     a = _norm(so.tokens, CAPTION_FREE if caption else None, caption)
     b = _norm(sn.tokens, CAPTION_FREE if caption else None, caption)
@@ -263,6 +421,14 @@ def _same(so, sn, cat: str, key: int, orig, new, drop_goto_target=None, caption:
         if hook and not tb and _text_len(so.tokens) <= 4:
             return None  # 원문의 조사 한 조각(「は」)을 조사 훅(EB·EC)이 대신 낸다 — tools/josa.py
         return f"글 유무가 다르다: 원본 {ta} / 빌드 {tb}"
+    if wait_count(sn.tokens) < wait_count(so.tokens):
+        return f"쪽 넘김·대기(05·03)가 원본보다 적다: 원본 {wait_count(so.tokens)} / 빌드 {wait_count(sn.tokens)} — 두 문장이 한 쪽에 붙는다"
+    if ta and tb:
+        ea, eb = edge_breaks(so.tokens), edge_breaks(sn.tokens)
+        if ea[0] and not eb[0]:
+            return "원본은 줄바꿈으로 시작하는데 빌드는 아니다 — 앞 메시지 끝에 붙는다"
+        if ea[1] and not eb[1]:
+            return "원본은 줄바꿈으로 끝나는데 빌드는 아니다 — 다음 메시지가 같은 줄에 붙는다"
     return None
 
 
@@ -281,7 +447,11 @@ def _must_adjoin(so, succ_has_ref: bool, six: bool = True) -> bool:
     (그냥 반환: 게임이 수치를 찍고 이어 읽는다 — sysmsg 흐름 게이트와 같은 규칙). 전투는 다음 스트림이 자기 lea 를 가지면(보스 대사 줄 사이 따위)
     이웃일 뿐이라 six=False."""
     last = so.tokens[-1] if so.tokens else None
-    return last is not None and last.kind == "end" and ((six and last.code == 0x06) or (last.code in scene.FLOW and not succ_has_ref))
+    return (
+        last is not None
+        and last.kind == "end"
+        and ((six and last.code == 0x06) or (last.code in scene.FLOW and not succ_has_ref))
+    )
 
 
 def compare_battle(orig_rom: bytes, new_rom: bytes) -> tuple[list[str], int, int, int]:
@@ -289,7 +459,9 @@ def compare_battle(orig_rom: bytes, new_rom: bytes) -> tuple[list[str], int, int
 
     errs: list[str] = []
     total = ok = unmapped = 0
-    for b, ((_, jb, _), (_, kb, _)) in enumerate(zip(battle.blocks(orig_rom), battle.blocks(new_rom), strict=True)):
+    for b, ((_, jb, _), (_, kb, _)) in enumerate(
+        zip(battle.blocks(orig_rom), battle.blocks(new_rom), strict=True)
+    ):
         jr = battle.refs(jb)
         new_start: dict[int, int | None] = {}
         for tgt, e in jr.items():
@@ -304,10 +476,16 @@ def compare_battle(orig_rom: bytes, new_rom: bytes) -> tuple[list[str], int, int
         for tgt in sorted(jr):
             total += 1
             if new_start[tgt] is None:
-                prev = [p for p, e in jr.items() if e["stream"].end == tgt and new_start.get(p) is not None]
+                prev = [
+                    p
+                    for p, e in jr.items()
+                    if e["stream"].end == tgt and new_start.get(p) is not None
+                ]
                 if prev:
                     try:
-                        new_start[tgt] = scene.parse_stream(kb, _follow_stub(jb, kb, new_start[prev[0]])).end
+                        new_start[tgt] = scene.parse_stream(
+                            kb, _follow_stub(jb, kb, new_start[prev[0]])
+                        ).end
                     except (ValueError, IndexError):
                         new_start[tgt] = None
             ns = new_start[tgt]
@@ -323,7 +501,11 @@ def compare_battle(orig_rom: bytes, new_rom: bytes) -> tuple[list[str], int, int
                 continue
             gt = None
             if so.tokens and so.tokens[-1].kind == "ctl" and so.tokens[-1].ref == scene.GOTO:
-                gt = jr[so.tokens[-1].target]["stream"] if so.tokens[-1].target in jr else scene.parse_stream(jb, so.tokens[-1].target)
+                gt = (
+                    jr[so.tokens[-1].target]["stream"]
+                    if so.tokens[-1].target in jr
+                    else scene.parse_stream(jb, so.tokens[-1].target)
+                )
             why = _same(so, sn, "전투", tgt + b * 0x100000, jb, kb, gt)
             if why:
                 errs.append(f"전투 블록 {b} 스트림 {tgt:#x}→{ns:#x}: {why}")
@@ -331,15 +513,21 @@ def compare_battle(orig_rom: bytes, new_rom: bytes) -> tuple[list[str], int, int
             ok += 1
             # 끝 코드 사슬 — 다음 스트림이 바로 붙어야 하는 자리
             succ = so.end
-            if succ in jr and _must_adjoin(so, bool(jr[succ]["lea"] or jr[succ]["words"]), six=False):
+            if succ in jr and _must_adjoin(
+                so, bool(jr[succ]["lea"] or jr[succ]["words"]), six=False
+            ):
                 try:
                     nx = scene.parse_stream(kb, _follow_stub(jb, kb, sn.end))
                 except (ValueError, IndexError):
-                    errs.append(f"전투 블록 {b} 스트림 {tgt:#x}: 끝 코드 뒤 {sn.end:#x} 가 안 풀린다")
+                    errs.append(
+                        f"전투 블록 {b} 스트림 {tgt:#x}: 끝 코드 뒤 {sn.end:#x} 가 안 풀린다"
+                    )
                     continue
                 w2 = _same(jr[succ]["stream"], nx, "전투", succ + b * 0x100000, jb, kb)
                 if w2:
-                    errs.append(f"전투 블록 {b} 스트림 {tgt:#x} 바로 뒤 {succ:#x}→{sn.end:#x}: {w2}")
+                    errs.append(
+                        f"전투 블록 {b} 스트림 {tgt:#x} 바로 뒤 {succ:#x}→{sn.end:#x}: {w2}"
+                    )
     return errs, ok, total, unmapped
 
 
@@ -361,7 +549,9 @@ def compare_sysmsg(orig_rom: bytes, new_rom: bytes) -> tuple[list[str], int, int
     for t, e in S.items():
         vals = {nref(k, ins) for k, ins in e["refs"]}
         if len(vals) > 1:
-            errs.append(f"시스템 {t:#x}: 참조가 서로 다른 새 자리로 갈렸다 {sorted(hex(v) for v in vals)}")
+            errs.append(
+                f"시스템 {t:#x}: 참조가 서로 다른 새 자리로 갈렸다 {sorted(hex(v) for v in vals)}"
+            )
         if vals:
             image[t] = _follow_stub(orig_rom, new_rom, min(vals))
     # 남이 들어오는 바이트 — 다른 문안 한복판(접미 공유)으로 들어오는 목표의 진입 바이트가 스텁·글자로 덮이지 않았나(pce-ed1 10-22)
@@ -371,7 +561,9 @@ def compare_sysmsg(orig_rom: bytes, new_rom: bytes) -> tuple[list[str], int, int
         if t in image:
             first_new = min({nref(k, ins) for k, ins in S[t]["refs"]})
             if new_rom[first_new] == 0x0F and orig_rom[t] != 0x0F:
-                errs.append(f"시스템 {t:#x}: 다른 문안 한복판으로 들어오는 목표인데 새 {first_new:#x} 의 진입 바이트가 점프 스텁이다")
+                errs.append(
+                    f"시스템 {t:#x}: 다른 문안 한복판으로 들어오는 목표인데 새 {first_new:#x} 의 진입 바이트가 점프 스텁이다"
+                )
     ok = 0
     seen: set[tuple[int, int]] = set()
     work = list(image.items())
@@ -400,7 +592,9 @@ def compare_sysmsg(orig_rom: bytes, new_rom: bytes) -> tuple[list[str], int, int
         succ = so.end
         if succ in S and _must_adjoin(so, bool(S[succ]["refs"])):
             if succ in image and image[succ] != sn.end:
-                errs.append(f"시스템 {t:#x} 바로 뒤 {succ:#x}: 끝 코드 뒤에 바로 이어지지 않는다(새 끝 {sn.end:#x} ≠ 새 {succ:#x} 자리 {image[succ]:#x})")
+                errs.append(
+                    f"시스템 {t:#x} 바로 뒤 {succ:#x}: 끝 코드 뒤에 바로 이어지지 않는다(새 끝 {sn.end:#x} ≠ 새 {succ:#x} 자리 {image[succ]:#x})"
+                )
             else:
                 work.append((succ, sn.end))
     mapped = {t for t, _ in seen}
@@ -411,7 +605,11 @@ def compare_captions(orig_rom: bytes, new_rom: bytes) -> tuple[list[str], int, i
     import captions
 
     errs: list[str] = []
-    newbase = {b: int.from_bytes(new_rom[p : p + 4], "big") for ptrs in captions.RELOCATE.values() for b, p in ptrs}
+    newbase = {
+        b: int.from_bytes(new_rom[p : p + 4], "big")
+        for ptrs in captions.RELOCATE.values()
+        for b, p in ptrs
+    }
     total = ok = 0
     for name, bases, _area in captions.FAMILIES:
         for base in bases:
@@ -426,7 +624,9 @@ def compare_captions(orig_rom: bytes, new_rom: bytes) -> tuple[list[str], int, i
                     errs.append(f"자막 {name} 표 {base:#x}: 오프코드가 갈렸다 {op} → {op2}")
                 elif op != 0:
                     if arg != arg2:
-                        errs.append(f"자막 {name} 표 {base:#x}: 오프코드 {op} 의 인자가 갈렸다 {arg} → {arg2}")
+                        errs.append(
+                            f"자막 {name} 표 {base:#x}: 오프코드 {op} 의 인자가 갈렸다 {arg} → {arg2}"
+                        )
                     else:
                         ok += 1
                 else:
@@ -450,7 +650,23 @@ def run(orig_rom: bytes, new_rom: bytes) -> tuple[int, int, list[str], dict, lis
     ob, nb = archives.blocks(orig_rom, base), archives.blocks(new_rom, base)
     errs: list[str] = []
     tot = dict.fromkeys(
-        ("streams", "paired", "adj", "pad", "same", "blocks", "moved", "copies", "pg_orig", "pg_new", "zeroed"), 0
+        (
+            "streams",
+            "paired",
+            "adj",
+            "pad",
+            "same",
+            "blocks",
+            "moved",
+            "copies",
+            "pg_orig",
+            "pg_new",
+            "zeroed",
+            "color",
+            "break",
+            "joint",
+        ),
+        0,
     )
     per: list[tuple[int, dict]] = []
     for n, ((_, a, _), (_, b, _)) in enumerate(zip(ob, nb, strict=True)):
@@ -467,14 +683,18 @@ def run(orig_rom: bytes, new_rom: bytes) -> tuple[int, int, list[str], dict, lis
 
 def main() -> int:
     args = [x for x in sys.argv[1:] if not x.startswith("-")]
-    new_path = Path(args[0]) if args else common.BUILD_DIR / common.BUILD_TAG.replace("/", "_") / "ed1-kr.bin"
+    new_path = (
+        Path(args[0])
+        if args
+        else common.BUILD_DIR / common.BUILD_TAG.replace("/", "_") / "ed1-kr.bin"
+    )
     if not new_path.exists():
         print(f"  구조 대조 — 빌드 롬이 없다({new_path}) — 안 쟀다")
         return 0
     blocks, streams, errs, tot, _per = run(common.rom(), new_path.read_bytes())
     print(
         f"  구조 대조 [대본] — 블록 {blocks}(원본 그대로 {tot['same']}) · 스트림 {tot['paired']}/{streams} 쌍 대조 · "
-        f"사슬 이음 {tot['adj']} · 채움 구멍 {tot['pad']} · 어긋남 {len(errs)}"
+        f"사슬 이음 {tot['adj']} · 글자색 코드 {tot['color']}개 자리 대조 · 쪽 나눔 {tot['break']}쌍 · 06 이음 {tot['joint']}곳 줄·쪽 나눔 대조 · 채움 구멍 {tot['pad']} · 어긋남 {len(errs)}"
     )
     for e in errs[:40]:
         print("   ✗", e)
@@ -484,7 +704,11 @@ def main() -> int:
 
     base = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else []
     allerr: list[str] = []
-    for label, fn in (("전투", compare_battle), ("시스템 메시지", compare_sysmsg), ("자막", compare_captions)):
+    for label, fn in (
+        ("전투", compare_battle),
+        ("시스템 메시지", compare_sysmsg),
+        ("자막", compare_captions),
+    ):
         e, ok, total, unm = fn(orig_rom, new_rom)
         known = [x for x in e if x in base]
         new_e = [x for x in e if x not in base]
@@ -497,7 +721,9 @@ def main() -> int:
         allerr += e
         bad += len(new_e)
     if "--freeze" in sys.argv:
-        BASELINE.write_text(json.dumps(sorted(allerr), ensure_ascii=False, indent=1), encoding="utf-8")
+        BASELINE.write_text(
+            json.dumps(sorted(allerr), ensure_ascii=False, indent=1), encoding="utf-8"
+        )
         print(f"  구조 대조 기준선 갱신 — {len(allerr)}건")
     stale = [x for x in base if x not in allerr]
     if stale:

@@ -23,8 +23,12 @@ def module(stream_a: bytes, stream_b: bytes, extra: bytes = b"") -> bytes:
     a_at = head_len
     b_at = a_at + len(stream_a)
     head = (
-        LEA + struct.pack(">h", a_at - 2) + MSG
-        + LEA + struct.pack(">h", b_at - (ent + 2)) + MSG
+        LEA
+        + struct.pack(">h", a_at - 2)
+        + MSG
+        + LEA
+        + struct.pack(">h", b_at - (ent + 2))
+        + MSG
         + b"\x4e\x75"
     )
     assert len(head) == head_len
@@ -38,6 +42,27 @@ B = b"\x82\xa4\x82\xa6\x00"  # う え <00>
 class CheckStructure(unittest.TestCase):
     def errs(self, orig: bytes, new: bytes):
         return cs.compare_module(orig, new)[0]
+
+    def test_end_page_wait_moved_inward_fails(self):
+        """끝 직전 쪽 대기(05)를 안쪽으로 옮기면(05 개수는 그대로) 끝 확인 키가 사라진다 — PCE I 가 상점·여관에서 물린 부류(11-07)."""
+        b_end = b"\x82\xa4\x05\x00"  # う <05> <00> — 끝 직전 05
+        mod = scene.parse_module(module(A, b_end))
+        sb = sorted(mod.streams)[1]
+        moved = [
+            scene.Token(0, b"\x05", "ctl", 0x05),  # 05 를 앞으로(개수 같음)
+            scene.Token(0, b"\x82\xa4", "text"),
+            scene.Token(0, b"\x00", "end", 0x00),
+        ]
+        new = scene.reassemble(mod, {sb: moved})
+        errs = self.errs(module(A, b_end), new)
+        self.assertTrue(any("끝 직전 쪽 대기" in e for e in errs), errs)
+        keep = [
+            scene.Token(0, b"\x82\xa4\x82\xa4", "text"),
+            scene.Token(0, b"\x05", "ctl", 0x05),
+            scene.Token(0, b"\x00", "end", 0x00),
+        ]
+        ok = scene.reassemble(mod, {sb: keep})
+        self.assertEqual(self.errs(module(A, b_end), ok), [])
 
     def test_same_is_clean(self):
         m = module(A, B)
@@ -67,6 +92,57 @@ class CheckStructure(unittest.TestCase):
     def test_text_dropped_from_chained_stream_is_caught(self):
         bad = module(A, b"\x00")  # B 의 글이 사라졌다
         self.assertTrue(self.errs(module(A, B), bad))
+
+
+class ColorCodes(unittest.TestCase):
+    """글자색 코드(18~1F · 04) — pce-ed1 10-29 사고(번역이 색 전환을 안 냄)가 이 게임에선 안 나는지 일부러 망가뜨려 본다."""
+
+    C = b"\x82\xa0\x1c\x82\xa2\x04\x82\xa4\x06"  # あ <1c> い <04> う <06>
+
+    def errs(self, orig: bytes, new: bytes):
+        return cs.compare_module(orig, new)[0]
+
+    def test_same_is_clean(self):
+        m = module(self.C, B)
+        self.assertEqual(self.errs(m, m), [])
+
+    def test_dropped_color_is_caught(self):
+        bad = module(b"\x82\xa0\x82\xa2\x04\x82\xa4\x06", B)  # <1c> 빠짐
+        self.assertTrue(self.errs(module(self.C, B), bad))
+
+    def test_moved_color_is_caught(self):
+        # <1c> 가 글자 앞에서 <04> 바로 앞으로 — 개수·순서는 같고 자리만 다르다
+        bad = module(b"\x82\xa0\x82\xa2\x1c\x04\x82\xa4\x06", B)
+        self.assertTrue(self.errs(module(self.C, B), bad))
+
+
+class PageAndLineBreaks(unittest.TestCase):
+    """쪽·줄 나눔 누락 — pce-ed1 10-30 「왕자!?자, 잠시」(메시지 끝 개행·쪽 나눔이 빠져 두 문장이 한 줄에 붙음)이 이 게임에선 안 나는지 일부러 망가뜨려 본다."""
+
+    def errs(self, orig: bytes, new: bytes):
+        return cs.compare_module(orig, new)[0]
+
+    def test_dropped_page_break_is_caught(self):
+        good = module(b"\x82\xa0\x05\x82\xa2\x06", B)  # あ <05> い <06>
+        bad = module(b"\x82\xa0\x82\xa2\x06", B)
+        self.assertEqual(self.errs(good, good), [])
+        self.assertTrue(self.errs(good, bad))
+
+    def test_added_page_break_is_allowed(self):
+        one = module(b"\x82\xa0\x82\xa2\x06", B)
+        two = module(b"\x82\xa0\x05\x82\xa2\x06", B)
+        self.assertEqual(self.errs(one, two), [])
+
+    def test_edge_breaks(self):
+        t = scene.parse_stream(b"\x82\xa0\x01\x07", 0)
+        u = scene.parse_stream(b"\x82\xa0\x07", 0)
+        self.assertEqual(cs.edge_breaks(t.tokens), (False, True))
+        self.assertEqual(cs.edge_breaks(u.tokens), (False, False))
+
+    def test_lost_trailing_newline_is_caught_in_messages(self):
+        so = scene.parse_stream(b"\x82\xa0\x01\x07", 0)
+        sn = scene.parse_stream(b"\x82\xa0\x07", 0)
+        self.assertTrue(cs._same(so, sn, "시스템", 0, b"", b""))
 
 
 class StubAndHookRules(unittest.TestCase):
@@ -102,9 +178,15 @@ class StubAndHookRules(unittest.TestCase):
         end07 = scene.parse_stream(b"\x82\xa0\x07", 0)
         self.assertTrue(cs._must_adjoin(end06, True))  # 06 은 값을 찍고 이어 읽는다
         self.assertTrue(cs._must_adjoin(end07, False))  # 참조 없는 사슬 꼬리
-        self.assertFalse(cs._must_adjoin(end07, True))  # 07 뒤 스트림이 자기 참조를 가지면 이웃일 뿐
-        self.assertFalse(cs._must_adjoin(end06, True, six=False))  # 전투: 06 뒤라도 다음 줄이 자기 lea 를 가지면 이웃일 뿐
-        self.assertTrue(cs._must_adjoin(end06, False, six=False))  # 참조 없는 꼬리는 06 이든 어디든 바로 붙어야 한다
+        self.assertFalse(
+            cs._must_adjoin(end07, True)
+        )  # 07 뒤 스트림이 자기 참조를 가지면 이웃일 뿐
+        self.assertFalse(
+            cs._must_adjoin(end06, True, six=False)
+        )  # 전투: 06 뒤라도 다음 줄이 자기 lea 를 가지면 이웃일 뿐
+        self.assertTrue(
+            cs._must_adjoin(end06, False, six=False)
+        )  # 참조 없는 꼬리는 06 이든 어디든 바로 붙어야 한다
 
 
 class SharedTailEntry(unittest.TestCase):
@@ -117,7 +199,15 @@ class SharedTailEntry(unittest.TestCase):
         head_len = 2 * ent + 2
         a = b"\x82\xa0\x01\x82\xa2" + tail
         b_at = head_len + 5
-        head = LEA + struct.pack(">h", head_len - 2) + MSG + LEA + struct.pack(">h", b_at - (ent + 2)) + MSG + b"\x4e\x75"
+        head = (
+            LEA
+            + struct.pack(">h", head_len - 2)
+            + MSG
+            + LEA
+            + struct.pack(">h", b_at - (ent + 2))
+            + MSG
+            + b"\x4e\x75"
+        )
         return head + a
 
     def test_untouched_is_clean(self):
@@ -126,7 +216,9 @@ class SharedTailEntry(unittest.TestCase):
 
     def test_stub_over_shared_terminator_is_caught(self):
         orig = self.mod(b"\x00\x00\x00")
-        bad = self.mod(b"\x0f\x00\x10")  # A 가 넘쳐 제자리 끝에 둔 goto 스텁이 B 가 들어오는 종료 바이트 `00` 을 덮었다
+        bad = self.mod(
+            b"\x0f\x00\x10"
+        )  # A 가 넘쳐 제자리 끝에 둔 goto 스텁이 B 가 들어오는 종료 바이트 `00` 을 덮었다
         self.assertTrue(cs.compare_module(orig, bad)[0])
 
 

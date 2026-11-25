@@ -48,6 +48,14 @@ class ResidualJp(unittest.TestCase):
         block = b"\x00" + sj("メタルスチームが現れた") + b"\x00"
         self.assertEqual(c.find_runs(block, KR, c.MIN_RUN_BLOCK), [(1, 11)])
 
+    def test_three_kana_name_is_caught_by_full_sweep(self):
+        """12자 문턱 밑의 이름(소니아 파티 레코드 꼴: 가나 3자 + 06)을 「전체 훑기」가 잡는다 — 한자 섞인 짧은 잡음은 안 센다."""
+        block = b"\x00" * 4 + sj("ソニア") + b"\x06" + b"\x00" * 4
+        self.assertEqual(c.kana_runs(block, KR, c.MIN_KANA_BLOCK), [(4, 3)])
+        self.assertEqual(c.find_runs(block, KR, c.MIN_RUN_BLOCK), [])  # 옛 문턱(5자)은 놓친다
+        self.assertEqual(c.unknown_kana([("script:141", 4, 3)]), [("script:141", 4, 3)])
+        self.assertEqual(c.kana_runs(b"\x00" + sj("法蹠") + b"\x00", KR, 2), [])
+
 
 if __name__ == "__main__":
     unittest.main()

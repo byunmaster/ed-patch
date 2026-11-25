@@ -76,6 +76,12 @@ NAME_FN_BACK = 0xA954
 NAME_MON_PATCH = 0x23486
 NAME_MON_BACK = 0x2348C
 NAME_MON_ORIG = b"\x26\x79\x00\xff\x34\x70"  # movea.l $FF3470.l,a3
+# 🔴 셋째 경로(10-31 sweep-1031: 「브로우콩는」·「웨어랫는」 — 블록 26·57) — 블록 코드가 행동 줄을 낼 때 `a5=$458` 핸들러(`$2373C`)가 부르는
+# `$1FDE` 가 배우 레코드(a1)+0x30 의 이름을 임시 버퍼에 복사해 그린다. 이 경로도 LASTNAME 을 안 써서 낡은 값(세리오스 = 무받침)을 읽었다.
+# `$1FF2`(`lea $30(a1),a1` + `lea $FFFE82.l,a2` = 10B)를 트램펄린으로 바꿔 레코드 byte0 을 LASTNAME 에 적고 두 명령을 되풀이한 뒤 `$1FFC` 로 간다.
+NAME_ACT_PATCH = 0x1FF2
+NAME_ACT_BACK = 0x1FFC
+NAME_ACT_ORIG = b"\x43\xe9\x00\x30\x45\xf9\x00\xff\xfe\x82"  # lea $30(a1),a1 · lea $FFFE82.l,a2
 
 # p → (받침 없음, 받침 있음)
 PAIRS = [("는", "은"), ("가", "이"), ("를", "을"), ("와", "과")]
@@ -371,6 +377,15 @@ def _asm(at: int, tbl_at: int | None, base: int, n: int, eu: int, ro: int) -> by
     l(LASTNAME)  # move.b (a3),LASTNAME.l    레코드 byte0 = 배우 번호
     w(0x4EF9)
     l(NAME_MON_BACK)  # jmp $2348C.l
+    act_tramp = len(b)
+    w(0x13D1)
+    l(LASTNAME)  # move.b (a1),LASTNAME.l    레코드 byte0 = 배우 번호
+    w(0x43E9, 0x0030)  # lea $30(a1),a1       (덮어쓴 원본 명령 ①)
+    w(0x45F9)
+    l(0x00FFFE82)  # lea $FFFE82.l,a2        (덮어쓴 원본 명령 ②)
+    w(0x4EF9)
+    l(NAME_ACT_BACK)  # jmp $1FFC.l
+    _asm.act_tramp = act_tramp
     _asm.item_entry = item_entry
     _asm.name_tramp = name_tramp
     _asm.mon_tramp = mon_tramp
@@ -384,6 +399,7 @@ def plan(rom: bytes, cs, at: int) -> list[tuple[str, int, bytes]]:
     out = [("josa-code", at, body + tbl)]
     out.append(("josa-name-hook", NAME_FN_PATCH, b"\x4e\xf9" + struct.pack(">I", at + _asm.name_tramp)))
     out.append(("josa-mon-hook", NAME_MON_PATCH, b"\x4e\xf9" + struct.pack(">I", at + _asm.mon_tramp)))
+    out.append(("josa-act-hook", NAME_ACT_PATCH, b"\x4e\xf9" + struct.pack(">I", at + _asm.act_tramp)))
     tramp = b"\x4e\xf9" + struct.pack(">I", at) + b"\x4e\xf9" + struct.pack(">I", item_entry)
     out.append(("josa-tramp", DEAD_HANDLER, tramp))
     for i, off in ((IDX_ACTOR, DEAD_HANDLER), (IDX_ITEM, DEAD_HANDLER + 6)):
@@ -429,6 +445,8 @@ def check(d: bytes) -> None:
         raise SystemExit("$A94E 가 andi.l #$ff,d0 가 아니다 — 이름 트램펄린 자리가 바뀌었다")
     if d[NAME_MON_PATCH : NAME_MON_PATCH + 6] != NAME_MON_ORIG:
         raise SystemExit("$23486 이 movea.l $FF3470.l,a3 가 아니다 — 몬스터 이름 트램펄린 자리가 바뀌었다")
+    if d[NAME_ACT_PATCH : NAME_ACT_PATCH + 10] != NAME_ACT_ORIG:
+        raise SystemExit("$1FF2 가 lea $30(a1),a1 · lea $FFFE82.l,a2 가 아니다 — 행동 배우 이름 트램펄린 자리가 바뀌었다")
     cs = hangul.Charset(d, set(JOSA_CHARS))
     body, tbl = code(0x1F0000, cs)
     print(

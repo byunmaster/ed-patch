@@ -149,6 +149,10 @@ def main():
     ap.add_argument("--save", default="/root/save/md-ed1/md-ed1-slots.sav")
     ap.add_argument("--state")
     ap.add_argument(
+        "--poke",
+        help="워프가 예외 화면으로 죽는 이벤트 모드 씬(048·123·084 등) — 씬 1 이 도는 상태에서 그 씬 모듈 바이트를 램 0xFF6650 에 직접 얹는다(쉼표로 씬 번호)",
+    )
+    ap.add_argument(
         "--msg-speed",
         type=int,
         help="시스템 메뉴 메시지속도 바이트($FF1B05: 0 빠름 · 1 보통 · 2 느림 · 3 멈춤)",
@@ -193,10 +197,17 @@ def main():
             continue
         g.load_state(base)
         _s, mb, _e = archives.blocks(rom, archives.ARCHIVES["script"][0])[n]
-        okw = warp(g, tab[n], expect=mb[:32])
-        if a.msg_speed is not None:  # 워프(SAVE→LOAD)가 세이브의 설정값으로 되돌리므로 워프 뒤에 다시 쓴다
+        if a.poke and str(n) in a.poke.split(","):
+            g.poke(MODULE_BASE - 0xFF0000, mb)
+            okw, cur = True, n
+        else:
+            okw = warp(g, tab[n], expect=mb[:32])
+        if (
+            a.msg_speed is not None
+        ):  # 워프(SAVE→LOAD)가 세이브의 설정값으로 되돌리므로 워프 뒤에 다시 쓴다
             g.poke(0x1B05, bytes([a.msg_speed]))
-        cur = int.from_bytes(g.ram(0x343C, 2), "big")
+        if not (a.poke and str(n) in a.poke.split(",")):
+            cur = int.from_bytes(g.ram(0x343C, 2), "big")
         if not okw or cur != n:
             index[str(n)] = {"done": True, "note": f"워프 실패(씬 {cur})", "streams": []}
             print(

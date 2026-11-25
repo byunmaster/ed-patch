@@ -27,6 +27,7 @@ import common
 
 KNOWN_JSON = common.GAME_DIR / "textmap" / "josa_sites.json"
 PAIRED = {"eb": "02", "ec": "0e"}
+GAP_0E = {"/0075ee", "/00760f"}  # 키 앞 한 바이트가 `0e` 인 시스템 메시지 꼬리 — 아래 `ok` 주석
 BYUNGI = re.compile(r"은\(는\)|이\(가\)|을\(를\)|과\(와\)|와\(과\)|으로\(로\)|\(으\)로")
 HOOK = re.compile(r"<(eb|ec)([0-9a-f]{2})>")
 LITERAL = re.compile(r"<(02|0e|0b)>(은|는|이|가|을|를|과|와)(?![\w(])")
@@ -86,6 +87,10 @@ def scan() -> tuple[list[str], list[str]]:
             # 리더 이름을 **코드가** 그린 뒤 스트림 머리에 오는 `<ebf_>`(도망 단수 0x24a7e — 코드가 `<0b>` 를 그린 뒤 스트림을 부른다, 10-09)
             ok = ok or (kind == "eb" and pp >> 4 in (0, 0xE, 0xF) and re.fullmatch(r"(<[0-9a-f]+>)*", before))
             # ↑ 스트림 머리의 `<eb00>`/`<ebf0>` — 코드가 배우·리더 이름을 그린 뒤 부르는 「は」 스트림(원문이 조사로 시작, 10-10)
+            # 스트림 앞 한 바이트가 `0e`(아이템 이름 그리기)인 자리 — 원본 「{item}の中には{값}{item}が入っていました」의 둘째 이름이다.
+            # 앞 스트림이 `06` 으로 끝난 바로 뒤 한 바이트(0x75ed·0x760e)라 스트림 키(0x75ee·0x760f)에는 안 든다 — 한글 롬에서도
+            # 묶음이 그대로 두므로(`0e ec 01 20 …`) 같은 버퍼를 읽는다. ours 에 `<0e>` 를 또 쓰면 이름이 두 번 나온다(10-28 롬 바이트로 확인)
+            ok = ok or (kind == "ec" and name == "sysmsg.json" and path in GAP_0E)
             if not ok:
                 tail = before[-6:]
                 errs.append(f"{name}{path}: <{kind}…> 앞이 <{PAIRED[kind]}> 가 아니다 (…{tail})")

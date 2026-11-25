@@ -30,11 +30,15 @@ KNOWN = [
     ("rom", 0x0B8D94, 0x0B8D94 + 2 * 13, "그래픽 타일 반복 바이트(같은 글자가 이어지는 잡음)"),
     (
         "rom",
-        0x1A5E72,
+        0x1A5E72 - 2 * 40,
         0x1A5E72 + 2 * 263,
+        # 앞쪽 여유 — 문안이 한글 글자를 덜 쓰면 그 코드 자리가 한자로 읽혀 표의 머리 쪽이 길어진다(10-29: 263→266자)
         "글꼴 문자 코드표(SJIS 한자 순서 나열 — 글리프 순번표지 문안이 아니다)",
     ),
     ("rom", 0x1A623C, 0x1A623C + 2 * 73, "글꼴 문자 코드표(SJIS 가나 순서 나열)"),
+    # 원본 대본 아카이브 자리(0x1356A0~0x1917E4) — 새 압축 블록이 앞에서부터 채우고 남는 뒤쪽은 원본 압축 바이트 그대로 죽어 있다(참조 없음, 블록 표가 안 가리킴).
+    # 살아 있는 블록의 일본어는 푼 블록 검사(MIN_RUN_BLOCK·MIN_KANA_BLOCK)가 따로 잰다 — 압축 바이트 리터럴이 우연히 가나로 읽힌 것(4-15 로 아카이브가 짧아져 드러남, 11-07).
+    ("rom", 0x1356A0, 0x1917E4, "원본 대본 압축 블록 잔재(죽은 자리) — 살아 있는 블록은 푼 바이트로 따로 검사"),
 ]
 
 
@@ -88,6 +92,58 @@ def scan(rom: bytes, ko: set[int]) -> list[tuple[str, int, int]]:
     return found
 
 
+# ── 「전체 훑기」 축(관리자 11-05 — ps1-ed4 가 찾은 구멍: 12자 문턱이 짧은 이름·낱말을 놓친다. 소니아 파티 레코드가 이 문턱 밑으로 한 달 남아 있었다) ──
+# 가나만(한자는 코드 바이트가 우연히 읽혀 잡음이 많다) 본체 3자↑ · 블록 2자↑. 알려진 잡음은 근거와 함께 둔다.
+MIN_KANA_BODY = 3
+MIN_KANA_BLOCK = 2
+KNOWN_KANA = [  # (구역, 시작, 끝, 근거)
+    ("rom", 0x0AA10, 0x0AA10 + 2 * 4, "그래픽/코드 바이트 우연(っっッッ) — 문안 주변이 아니다"),
+    ("rom", 0x0D8530, 0x0D8550, "그래픽 타일 바이트 우연(イベム·トディ) — gfx_b 영역"),
+    ("rom", 0x1A623C, 0x1A623C + 2 * 73, "글꼴 문자 코드표(SJIS 가나 순서 나열)"),
+    ("rom", 0x1356A0, 0x1917E4, "원본 대본 압축 블록 잔재(죽은 자리) — 위 KNOWN 과 같은 근거"),
+]
+
+
+def _kana(a: int, b: int, ko: set[int]) -> bool:
+    if ((a << 8) | b) in ko:
+        return False
+    try:
+        return 0x3041 <= ord(bytes([a, b]).decode("cp932")) <= 0x30FF
+    except (UnicodeDecodeError, TypeError):
+        return False
+
+
+def kana_runs(data: bytes, ko: set[int], min_run: int) -> list[tuple[int, int]]:
+    out, i, n = [], 0, len(data)
+    while i < n - 1:
+        if _lead(data[i]) and _kana(data[i], data[i + 1], ko):
+            j = i
+            while j < n - 1 and _lead(data[j]) and _kana(data[j], data[j + 1], ko):
+                j += 2
+            if (j - i) // 2 >= min_run:
+                out.append((i, (j - i) // 2))
+            i = j
+        else:
+            i += 1
+    return out
+
+
+def scan_kana(rom: bytes, ko: set[int]) -> list[tuple[str, int, int]]:
+    found = [("rom", o, n) for o, n in kana_runs(rom, ko, MIN_KANA_BODY)]
+    for name in TEXT_ARCHIVES:
+        for k, (_s, b, _e) in enumerate(archives.blocks(rom, archives.ARCHIVES[name][0])):
+            found += [(f"{name}:{k}", o, n) for o, n in kana_runs(b, ko, MIN_KANA_BLOCK)]
+    return found
+
+
+def unknown_kana(found: list[tuple[str, int, int]]) -> list[tuple[str, int, int]]:
+    return [
+        (w, o, n)
+        for w, o, n in found
+        if not any(kw == w and s <= o and o + 2 * n <= e for kw, s, e, _ in KNOWN_KANA)
+    ]
+
+
 def unknown(found: list[tuple[str, int, int]]) -> list[tuple[str, int, int]]:
     out = []
     for where, off, n in found:
@@ -113,6 +169,14 @@ def main() -> int:
         for w, o, n in found:
             print(f"  {w} 0x{o:X} {n}자{'' if (w, o, n) not in bad else '  ← 새 런'}")
     print(f"  롬 전체 잔존 일본어 {len(found)}런 (알려진 {len(found) - len(bad)} · 새 {len(bad)})")
+    kana = scan_kana(rom, hangul_codes())
+    kbad = unknown_kana(kana)
+    print(
+        f"  전체 훑기(가나 본체 {MIN_KANA_BODY}자↑ · 블록 {MIN_KANA_BLOCK}자↑) {len(kana)}런 (알려진 {len(kana) - len(kbad)} · 새 {len(kbad)})"
+    )
+    for w, o, n in kbad:
+        print(f"  ❌ 새 가나 런: {w} 0x{o:X} {n}자")
+        bad.append((w, o, n))
     if bad:
         for w, o, n in bad:
             print(f"  ❌ 새 런: {w} 0x{o:X} {n}자")

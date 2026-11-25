@@ -27,5 +27,25 @@ class ValueGap(unittest.TestCase):
         self.assertTrue(run("{name}의 눈에 들어가고 말았다!!\n민첩성이 {n} 포인트 내려갔다!!"))
 
 
+class SlotGlue(unittest.TestCase):
+    """변수 칸 앞 공백 — pce-ed1 10-30 「상자에는{아이템}이」 부류."""
+
+    @staticmethod
+    def glue(ours: str):
+        return g.check_glue([("scene:test", "", ours, "dialog")])[1]
+
+    def test_space_before_slot_passes(self):
+        self.assertEqual(self.glue("상자에는 <0e>이 들어 있었다."), [])
+        self.assertEqual(self.glue("<0b>는 <0e>를 얻었다."), [])
+
+    def test_glued_slot_is_caught(self):
+        self.assertTrue(self.glue("상자에는<0e>이 들어 있었다."))
+        self.assertTrue(self.glue("보물{name}을 얻었다."))
+
+    def test_josa_after_slot_and_opening_quote_pass(self):
+        self.assertEqual(self.glue("<02>의 주문"), [])
+        self.assertEqual(self.glue("이름은 「<02>」다."), [])
+
+
 if __name__ == "__main__":
     unittest.main()

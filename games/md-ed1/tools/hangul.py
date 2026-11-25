@@ -12,6 +12,7 @@
 """
 
 import json
+import re
 import struct
 import sys
 from pathlib import Path
@@ -24,6 +25,7 @@ import font
 #   Galmuri11(11×11, 1px 획)이 12px 피치에 딱 맞는다. 원본 굵기(2px 획)에 가까운 건 Galmuri11-Bold 인데
 #   글자끼리 닿는다 — 유저가 고르면 여기 한 줄만 바꾼다(work/emu 미리보기 `--preview`).
 BDF = common.ROOT / "shared" / "fonts" / "Galmuri11.bdf"
+BDF_BOLD = common.ROOT / "shared" / "fonts" / "Galmuri11-Bold.bdf"
 CODE_BASE = 0x8A40
 KEEP_MAX = 0x829A  # 표 0 에서 그대로 두는 원본 항목(기호·숫자·영문)의 마지막 코드
 CELL = 14
@@ -316,6 +318,23 @@ def needs_glyph(ch: str, keep_codes: list[int]) -> bool:
 
 CODES_JSON = common.GAME_DIR / "textmap" / "hangul_codes.json"
 
+# 🔴 HUD 장 제목 띠 전용 한글(마스터 11-09 「숫자는 그대로 두고 한글만 한 칸 내리면」): 띠 글자 중 한글만 한 행 아래로 그린 글리프를
+# **코드 +0x5800**(리드 0x8A~0x9F → 0xE2~0xF7) 자리에 따로 굽고, 그리기 직전 스텁(`build._title_stub`)이 한글 코드를 그쪽으로 바꾼다.
+# 대사창·카드 줄은 그대로 원래 코드를 쓴다. 띠에 오를 수 있는 글자 = 장 제목 스트림(HUD 제목 셀이 같은 문자열을 복사한다) 여섯의 한글.
+LOW_OFF = 0x5800
+LOW_ROWS = 1  # 내리는 행 수(실화면 보고 조정)
+BAND_STREAMS = (("015", "0584"), ("020", "03ea"), ("034", "04cc"), ("041", "03e4"), ("075", "0672"), ("082", "0d64"))
+
+
+def band_chars() -> set[str]:
+    out: set[str] = set()
+    for n, k in BAND_STREAMS:
+        d = json.loads((common.GAME_DIR / "script" / f"{n}.json").read_text(encoding="utf-8"))
+        line = re.sub(r"<[^>]*>", "", d["streams"][k]["ours"]).split("\n", 1)[0]
+        out |= {c for c in line if "가" <= c <= "힣"}
+    return out
+
+
 
 def _code_at(i: int) -> int:
     seconds = [b for b in range(0x40, 0xFD) if b != 0x7F]
@@ -385,7 +404,8 @@ class Charset:
         keep = [c for c in font.codes(rom, r0) if c <= KEEP_MAX]
         self.keep_codes = keep
         self.hangul = codes_for({c for c in chars if needs_glyph(c, keep)})
-        self.entries = sorted(keep + list(self.hangul.values()))
+        self.low = {self.hangul[c] + LOW_OFF: c for c in band_chars() if c in self.hangul}
+        self.entries = sorted(keep + list(self.hangul.values()) + list(self.low))
         if len(self.entries) > r0["entries"]:
             raise SystemExit(
                 f"표 0 이 넘친다: 원본 기호 {len(keep)} + 한글 {len(self.hangul)} > {r0['entries']} — 방침 (a) 로 간다"
@@ -397,9 +417,12 @@ class Charset:
         # 🔴 표에 없는 반각을 쓰면 **화면에서 조용히 빈칸**이 된다(괄호로 물렸다, 2026-09-06).
         self.half = set(font.codes(rom, r1)) | set(EXTRA_R1)
 
-    def encode_char(self, ch: str) -> bytes:
+    def encode_char(self, ch: str, kagi: bool = True) -> bytes:
+        """`kagi=False` = 「」 를 전각 SJIS 로 낸다(자막 — 리소스 5 는 반각 칸이 따로라 리소스 1 도안을 못 쓴다)."""
         if ch in self.hangul:
             return struct.pack(">H", self.hangul[ch])
+        if kagi and ch in KAGI_HALF:
+            return bytes([KAGI_HALF[ch]])  # 반각(리소스 1) 홑낫표 — 마스터 도안 C판 10-26
         if ch in QUOTES_HALF:
             return bytes([QUOTES_HALF[ch]])  # 반각(리소스 1) 따옴표 — 번역 규칙 1-2
         if 0x20 <= ord(ch) < 0x7F:
@@ -429,7 +452,12 @@ class Charset:
         table = b"".join(struct.pack(">H", c) for c in self.entries)
         glyphs = bytearray()
         for c in self.entries:
-            if c in by_code:
+            if c in self.low:
+                # 띠 한글은 갈무리11 **Bold**(마스터 11-10 「볼드가 원본 느낌 · 숫자가 두꺼우니」) — 띠 코드(+LOW_OFF)만, 대사·카드는 보통 굵기 그대로
+                f = _load_bdf(BDF_BOLD, top=GLYPH_TOP, left=GLYPH_LEFT)[self.low[c]]
+                f = [[0] * len(f[0]) for _ in range(LOW_ROWS)] + f[: len(f) - LOW_ROWS]
+                glyphs += pack(f) + pack(ring(f))
+            elif c in by_code:
                 f = glyph_fill(by_code[c])
                 glyphs += pack(f) + pack(ring(f))
             else:
@@ -501,15 +529,17 @@ COMMA_FILL_GALMURI = ["........"] * 11 + ["..#....."] + [".#......"] + [".......
 # MD_PUNCT_SRC=original 로 되돌릴 수 있는 손잡이는 남긴다(비교·회귀용) — 정본은 galmuri.
 PUNCT_SRC = _os.environ.get("MD_PUNCT_SRC", "galmuri")
 # 따옴표 “ ” 는 반각(마스터 10-19, 번역 규칙 1-2) — 리소스 1 의 안 쓰는 ASCII 자리(`·~)를 빌려 글리프를 넣고
-# 문안의 “ ” 를 그 바이트로 낸다. 잉크는 여는 쪽은 오른쪽, 닫는 쪽은 왼쪽(뒤·앞 글자에 붙도록).
+# 문안의 “ ” 를 그 바이트로 낸다. (10-19 판은 여는 쪽 오른쪽·닫는 쪽 왼쪽 잉크 — 10-28 에 방향 없는 한 도안으로 바뀜)
 QUOTES_HALF = {"“": 0x60, "”": 0x7E}
+# 방향 없는 반각 " — 여닫이 같은 도안(마스터 10-28 규칙 1-2 「방향 없는 반각 한 글자」, 곧은 1px 획 둘: 그림자 때문에 1px 이 낫다).
+# 두 코드(0x60·0x7E)는 세이브·문안 호환상 그대로 두고 글리프만 같게 한다.
 QUOTE_OPEN_FILL = [
     "........",
     "........",
-    "...#..#.",
     "..#..#..",
-    "..##.##.",
-    "..##.##.",
+    "..#..#..",
+    "..#..#..",
+    "..#..#..",
     "........",
     "........",
     "........",
@@ -519,23 +549,28 @@ QUOTE_OPEN_FILL = [
     "........",
     "........",
 ]
-QUOTE_CLOSE_FILL = [
-    "........",
-    "........",
-    ".##.##..",
-    ".##.##..",
-    "..#..#..",
-    ".#..#...",
-    "........",
-    "........",
-    "........",
-    "........",
-    "........",
-    "........",
-    "........",
-    "........",
-]
+QUOTE_CLOSE_FILL = QUOTE_OPEN_FILL
+# 낫표 「」『』 도 반각(마스터 도안 C·C2판 10-26, MD I·II 공통) — 리소스 1 의 안 쓰는 ASCII 자리 0x7B·0x7D·0x5C·0x5E 를 빌린다.
+# 도안은 쌍마다 16×14 한 장(여는 쪽 = 0~7열 · 닫는 쪽 = 8~15열), 채움만 — 테두리는 ring 이 만든다. 정본: assets/kagi_half_C.txt
+KAGI_HALF = {"「": 0x7B, "」": 0x7D, "『": 0x5C, "』": 0x5E}  # 겹낫표 『』 = 도안 C2판(마스터 10-26)
+KAGI_DOTS = common.GAME_DIR / "assets" / "kagi_half_C.txt"
+KAGI2_DOTS = common.GAME_DIR / "assets" / "kagi2_half_C.txt"
+# 자막(리소스 5)용 — 그림자 없는 화면이라 가로 1px 넓힌 v7·v5(마스터 10-27). 대사창은 위 v6·v4 그대로
+KAGI_CAP_DOTS = common.GAME_DIR / "assets" / "kagi_cap_C.txt"
+KAGI2_CAP_DOTS = common.GAME_DIR / "assets" / "kagi2_cap_C.txt"
+
+
+def _kagi_fills(path=KAGI_DOTS) -> tuple[list[str], list[str]]:
+    rows = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip() and set(ln.strip()) <= {".", "#"}]
+    assert len(rows) == 14 and all(len(r) == 16 for r in rows), "낫표 도안은 16×14"
+    return [r[:8] for r in rows], [r[8:] for r in rows]
+
+
 EXTRA_R1 = {
+    0x7B: lambda: _kagi_fills()[0],
+    0x7D: lambda: _kagi_fills()[1],
+    0x5C: lambda: _kagi_fills(KAGI2_DOTS)[0],
+    0x5E: lambda: _kagi_fills(KAGI2_DOTS)[1],
     0x28: PAREN_L_FILL,
     QUOTES_HALF["“"]: QUOTE_OPEN_FILL,
     QUOTES_HALF["”"]: QUOTE_CLOSE_FILL,
@@ -544,7 +579,80 @@ EXTRA_R1 = {
 }
 # 🔴 마침표는 EXTRA_R1(없는 글자 추가) 이 아니라 OVERRIDE_R1(있는 글자를 갈아 끼움) 이다 —
 # 원작이 이미 갖고 있던 켑트 코드라 "추가"가 아니라 "교체"다. `resource1()` 이 갈라 처리한다.
-OVERRIDE_R1 = {0x2E: PERIOD_FILL_GALMURI} if PUNCT_SRC == "galmuri" else {}
+# 🔴 몬스터 이름 접미 A~D(반각 영문)는 원판 글리프가 앞 한글과 **간격 0** 으로 붙었다(A 는 0~6열 · B·D 는 0열부터 · C 는 1~6열이고 뒤 한글과 붙음)
+# 「버스트하운드A」의 끝 글자와 겹쳐 보였다(10-30 전수 촬영 007 · 원판 「ド B」는 반각 가나 여백으로 떨어져 있다). 영문 칸은 7열 보폭이고 한글은
+# 앞뒤 여백이 없으므로 글자를 **1~5열(양옆 1열 여백)** 에 넣어 앞뒤와 1px 씩 뗀다. 획은 원판 굵기(2열) — 마스터 10-31 「일단 원본 굵기로 가자」
+# (처음 그린 1열 획은 가늘어 걷었다). 보폭은 그대로라 이름 칸·줄 폭은 안 변한다.
+BEARING_R1 = {
+    0x41: [
+        "........",
+        "..###...",
+        ".#####..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".#####..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        "........",
+    ],
+    0x42: [
+        "........",
+        ".####...",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".####...",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".####...",
+        "........",
+    ],
+    0x43: [
+        "........",
+        "..###...",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.....",
+        ".##.....",
+        ".##.....",
+        ".##.....",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        "..###...",
+        "........",
+    ],
+    0x44: [
+        "........",
+        ".####...",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".##.##..",
+        ".####...",
+        "........",
+    ],
+}
+OVERRIDE_R1 = {
+    **({0x2E: PERIOD_FILL_GALMURI} if PUNCT_SRC == "galmuri" else {}),
+    **BEARING_R1,
+}
 FONT1_HDR = (0x1A54DE, 0x1A54EA)
 
 
@@ -710,6 +818,7 @@ def resource5(
     cell: int = 14,
     source: str = "galmuri14",
     tail_end: int = 0,
+    kagi: bool = True,
 ) -> list[tuple[str, int, bytes]]:
     """빈 리소스 5 에 **자막 전용 글꼴**을 만든다 — (라벨, 자리, 바이트). `after` = 리소스 1 이 쓴 자리 뒤.
 
@@ -722,7 +831,7 @@ def resource5(
     r0 = font.resources(rom)[0]
     by_code: dict[int, str] = {}
     for ch in chars:
-        enc = cs.encode_char(ch)
+        enc = cs.encode_char(ch, kagi=kagi)  # kagi: 「」『』 는 대사와 같은 반각 코드(마스터 10-27)
         if len(enc) == 2:
             by_code[int.from_bytes(enc, "big")] = ch
         elif source in ("neodgm", "galmuri14", "galmuri11bold", "galmuri11") and ch != "\n":
@@ -760,6 +869,13 @@ def resource5(
         def src(ch):
             if ch == "…":
                 return ellipsis_dots(cell)
+            if kagi and ch in KAGI_HALF:  # 대사 도안(8×14 채움)을 칸 왼쪽 위에 그대로 — 대사 글리프와 같은 오프셋
+                half = _kagi_fills(KAGI2_CAP_DOTS if ch in "『』" else KAGI_CAP_DOTS)[0 if ch in "「『" else 1]
+                out = [[0] * cell for _ in range(cell)]
+                for y, row in enumerate(half):
+                    for x, c in enumerate(row):
+                        out[y][x] = 1 if c == "#" else 0
+                return out
             return extend_jamo_arms(_load_bdf(_path, cell, _top, _left)[ch])
 
     tbl_at, gl_at = after
