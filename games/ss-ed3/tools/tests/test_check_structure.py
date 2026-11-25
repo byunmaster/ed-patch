@@ -81,3 +81,10 @@ class JumpTargets(unittest.TestCase):
     def test_clean_build_passes(self):
         orig, _ = self.maps()
         self.assertEqual(S.target_damage(orig, bytearray(orig), []), [])
+
+
+class Tokens(unittest.TestCase):
+    def test_single_byte_glyph_does_not_swallow_page_wait(self):
+        """한글 배정의 단바이트 글자(`A1~DF`) 바로 뒤 `0F` 가 쪽 대기로 세어져야 한다(11-07 삼킴 사고)."""
+        _tok, soft = S.tokens(b"\xa5\x0f" + _sjis("あ") + b"\x0f")
+        self.assertEqual(soft[0x0F], 2)

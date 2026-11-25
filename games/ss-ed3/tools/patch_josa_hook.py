@@ -56,6 +56,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
+import codearea as CA
 import hangul_map as H
 
 from shared.text.josa import batchim
@@ -109,11 +110,14 @@ def bit_table():
     """슬롯 번호 → 종성 1 비트. 표는 최소~최대 슬롯을 덮는다(바이트마다 LSB 먼저)."""
     global SLOT0, NBITS
     t = H.load()
-    syl = {k: v for k, v in t.items() if len(k) == 1 and "가" <= k <= "힣"}
-    SLOT0, hi = min(syl.values()), max(syl.values())
+    #   🔴 **내린 판(`lowered_map`) 슬롯도 든다**(11-10) — 아이템 이름은 한 행 내린 판으로 나가서 끝 글자가 다른 슬롯이다
+    #     (`적` 본 4567 · 내린 5711). 본 판만 보면 「신앙의 부적」이 받침 없음으로 떨어졌다.
+    pairs = [(k, v) for k, v in t.items() if len(k) == 1 and "가" <= k <= "힣"]
+    pairs += [(k, v) for k, v in H.load_low().items() if len(k) == 1 and "가" <= k <= "힣"]
+    SLOT0, hi = min(v for _, v in pairs), max(v for _, v in pairs)
     NBITS = hi - SLOT0 + 1
     bits = bytearray((NBITS + 7) // 8)
-    for ch, slot in syl.items():
+    for ch, slot in pairs:
         if batchim(ch):
             i = slot - SLOT0
             bits[i >> 3] |= 1 << (i & 7)
@@ -355,35 +359,12 @@ class Asm:
         return b"".join(struct.pack(">H", x) for x in self.w)
 
 
-def routine(free, tbl_addr, dbg=None, prefix_w=0, tbuf=0):
-    """`%s` 처리기 안에서 **밀어낸 6 명령**을 실행하고, 병기를 줄인 뒤 되돌아간다.
+def _batchim_block(a, lit):
+    """이름 문자열(`r6`)의 끝소리 → **`r1` = 받침 있음(1/0)**. 판정 못 하면 `out` 으로 뛴다(호출자가 `out` 라벨을 둔다).
 
-    진입 시점(훅 자리 `0x06065E5C`): `r1 = 0x204` · `r13`·`r14` 유효 · `r0` 자유.
-    밀어낸 코드가 끝나면 **`r12` 에 인자 문자열 포인터**가 들어온다 — 그걸 그대로 쓴다.
-
-    ⚠ `r12`·`r13`·`r14` 는 안 건드린다(원본이 그 위에서 돈다). 나머지는 스택으로 살린다.
-    ⓘ 쌍(을/를·은/는·이/가)인지까지는 안 본다 — 바로 뒤가 `(`…`)` 인 여섯 바이트 꼴은
-      우리 병기 말고 나올 데가 없다.
+    조사 훅(`routine`)과 이름 뒤 조각 훅(`name_routine`)이 **같은 코드를 쓴다** — 읽는 소리 표(숫자)·종성 표가 한 곳이다.
+    상수 자리: `lit+0` SLOT0 · `+4` NBITS · `+8` 표 주소 · `+24` DIGIT_BITS.
     """
-    LIT = LIT_OFF  # 상수 자리 (코드가 이 앞에 들어간다)
-    a = Asm(free)
-    lit = free + LIT
-
-    # ── 밀어낸 6 명령 (0x06065E5C~0x06065E67) 그대로
-    a.movll(13, 0)  # mov.l @r13,r0
-    a.add(14, 1)  # add   r14,r1
-    a.addi(4, 0)  # add   #4,r0
-    a.movls(0, 13)  # mov.l r0,@r13
-    a.movll(1, 13)  # mov.l @r1,r13
-    a.movl_disp_l(1, 13, 12)  # mov.l @(4,r13),r12   ← 인자 문자열
-
-    for r in (1, 2, 3, 4, 5, 6, 7):
-        a.pushr(r)
-
-    a.mov(12, 6)
-    a.tst(6, 6)
-    a.bt("outj")
-
     #   ── 마지막 **글자**를 앞에서부터 훑어 찾는다
     #     🔴 「뒤 2 바이트」로 잡으면 안 된다 — 이름이 **반각으로 끝날 수 있다**
     #       (실측 2026-08-31: 「검사교본 1」 → 마지막이 `1`(0x31)이라 슬롯이 음수가 되어
@@ -515,6 +496,38 @@ def routine(free, tbl_addr, dbg=None, prefix_w=0, tbuf=0):
     a.label("gotbit")
     a.movi(1, 3)
     a.and_(3, 1)
+
+
+def routine(free, tbl_addr, dbg=None, prefix_w=0, tbuf=0):
+    """`%s` 처리기 안에서 **밀어낸 6 명령**을 실행하고, 병기를 줄인 뒤 되돌아간다.
+
+    진입 시점(훅 자리 `0x06065E5C`): `r1 = 0x204` · `r13`·`r14` 유효 · `r0` 자유.
+    밀어낸 코드가 끝나면 **`r12` 에 인자 문자열 포인터**가 들어온다 — 그걸 그대로 쓴다.
+
+    ⚠ `r12`·`r13`·`r14` 는 안 건드린다(원본이 그 위에서 돈다). 나머지는 스택으로 살린다.
+    ⓘ 쌍(을/를·은/는·이/가)인지까지는 안 본다 — 바로 뒤가 `(`…`)` 인 여섯 바이트 꼴은
+      우리 병기 말고 나올 데가 없다.
+    """
+    LIT = LIT_OFF  # 상수 자리 (코드가 이 앞에 들어간다)
+    a = Asm(free)
+    lit = free + LIT
+
+    # ── 밀어낸 6 명령 (0x06065E5C~0x06065E67) 그대로
+    a.movll(13, 0)  # mov.l @r13,r0
+    a.add(14, 1)  # add   r14,r1
+    a.addi(4, 0)  # add   #4,r0
+    a.movls(0, 13)  # mov.l r0,@r13
+    a.movll(1, 13)  # mov.l @r1,r13
+    a.movl_disp_l(1, 13, 12)  # mov.l @(4,r13),r12   ← 인자 문자열
+
+    for r in (1, 2, 3, 4, 5, 6, 7):
+        a.pushr(r)
+
+    a.mov(12, 6)
+    a.tst(6, 6)
+    a.bt("outj")
+
+    _batchim_block(a, lit)
 
     #   ── 서식 포인터 r2 = *(r14+0x1cc)
     #     ⚠ **이미 지정자 다음을 가리킨다**(= 병기 첫 바이트). `+1` 을 붙였다가
@@ -696,19 +709,122 @@ def routine(free, tbl_addr, dbg=None, prefix_w=0, tbuf=0):
     )
 
 
+#   ══ 이름 뒤 조각 조사 — 「〔이름〕이라니/라니」 (마스터 11-10 「기술로 살린다」) ═══════════════════════════════════
+#   🔴 **이름이 `%s` 가 아니라 제어 `08` 로 꽂히는 문구**(도구상 「호오, 〔이름〕이라니 보는 눈이…」)는 앞 훅이 못 본다 —
+#     `08` 은 「이름 칸(`0x06041E30` 상수가 가리키는 문자열)을 부르고 돌아오는」 호출이고(`0x06041C50` 처리기 — 스크립트 포인터를
+#     스택에 얹고 이름 칸으로 간다), 뒤 조각은 별 블록이다. ⇒ 처리기 머리 12B 를 밀어내 스텁으로 뛰고, 스텁이 **돌아올 자리(= `08`
+#     바로 뒤 스크립트)에 「이라니」 표지가 있으면** 이름 끝소리로 그 자리를 **제자리에서 고쳐 쓴다**:
+#         받침 있음 → `이 라 니`            받침 없음 → `0B 0B 라 니`   (`0B` = 엔진이 건너뛰는 제어 — 표 `0x060419C4` 의 칸 11)
+#     매번 두 꼴 중 어느 쪽이든 표지로 알아보고 다시 쓰므로(멱등) 같은 맵에서 다른 품목을 연달아 사도 맞다. 표지가 아니면
+#     손대지 않는다 — 다른 `08` 문구(「…인가요?」 등)는 **바이트 하나 안 바뀐다**. 판정 못 하면(빈 이름·범위 밖) 그대로 둔다.
+NAME_HOOK = 0x06041C50  # `08` 처리기 머리 — 6 명령(12B)
+NAME_HOOK_RET = 0x06041C5C  # 밀어낸 6 명령 다음(`add r10,r1`)
+NAME_LIT = 0x06041E30  # `08` 처리기가 읽는 상수 — 그 값이 이름 칸 주소
+NAME_LIT_OFF = 0x180
+NAME_HOOK_ORIG = bytes.fromhex("61c171ff2c11611d410852a1")  # mov.w @r12,r1 · add #-1,r1 · mov.w r1,@r12 · extu.w r1,r1 · shll2 r1 · mov.l @(4,r10),r2
+
+
+def name_marker():
+    """`(라니 4B, 이 2B, 0B0B 2B)` — 표지 바이트."""
+    return H.encode_kr("라니"), H.encode_kr("이"), b"\x0b\x0b"
+
+
+def name_routine(free, tbl_addr, displaced):
+    """`08` 처리기 머리에서 뛰어든 스텁. `displaced` = 밀어낸 12B(원본 6 명령). 끝나면 `NAME_HOOK_RET` 으로 간다."""
+    assert len(displaced) == 12
+    LIT = NAME_LIT_OFF
+    a = Asm(free)
+    lit = free + LIT
+    for i in range(0, 12, 2):  # 밀어낸 6 명령 그대로(PC 상대 없음 — 확인됨)
+        a._e((displaced[i] << 8) | displaced[i + 1])
+    for r in (1, 2, 3, 4, 5, 6, 7):
+        a.pushr(r)
+    a.mov(2, 4)  # r4 = 돌아올 자리(스크립트)
+    a.movl_pc(0, lit + 12)
+    a.movll(0, 6)  # r6 = 이름 칸 주소(= 상수 값)
+    a.tst(6, 6)
+    a.bt("oj0")
+    a.movl_pc(5, lit + 20)  # r5 = 표지 표 `[라 니][이][0B 0B]`
+    #   ── 「라니」 4B 가 맞나
+    for i in range(4):
+        a.movb_ld(i + 2, 4)
+        a.mov(0, 3)
+        a.movb_ld(i, 5)
+        a.cmpeq(3, 0)
+        a.bf("oj0")
+    #   ── 앞 2B 가 「이」 또는 `0B 0B` 인가
+    a.movb_ld(0, 4)
+    a.mov(0, 3)
+    a.movb_ld(4, 5)
+    a.cmpeq(3, 0)
+    a.bf("a1")
+    a.movb_ld(1, 4)
+    a.mov(0, 3)
+    a.movb_ld(5, 5)
+    a.cmpeq(3, 0)
+    a.bt("ok")
+    a.bra("out")
+    a.nop()
+    a.label("oj0")
+    a.bra("out")
+    a.nop()
+    a.label("a1")
+    a.movb_ld(6, 5)
+    a.cmpeq(3, 0)
+    a.bf("oj0")
+    a.movb_ld(1, 4)
+    a.mov(0, 3)
+    a.movb_ld(7, 5)
+    a.cmpeq(3, 0)
+    a.bf("oj0")
+    a.label("ok")
+    _batchim_block(a, lit)
+    a.movl_pc(5, lit + 20)  # 블록이 r5 를 썼다 — 표 주소 다시
+    #   ── r1 = 받침 있음? → 「이」 / `0B 0B`
+    a.tst(1, 1)
+    a.bf("hasb")
+    a.movb_ld(6, 5)
+    a.movb_st(0, 4)
+    a.movb_ld(7, 5)
+    a.movb_st(1, 4)
+    a.bra("out")
+    a.nop()
+    a.label("hasb")
+    a.movb_ld(4, 5)
+    a.movb_st(0, 4)
+    a.movb_ld(5, 5)
+    a.movb_st(1, 4)
+    a.bra("out")
+    a.nop()
+    a.label("out")
+    for r in (7, 6, 5, 4, 3, 2, 1):
+        a.popr(r)
+    a.movl_pc(0, lit + 16)
+    a.jmp(0)
+    a.nop()
+    code = a.bytes()
+    assert len(code) <= LIT, f"코드가 상수 자리를 넘었다 ({len(code)}B > {LIT}B)"
+    code += b"\x00" * (LIT - len(code))
+    rani, i_, nop2 = name_marker()
+    table = rani + i_ + nop2
+    return code + struct.pack(
+        ">IIIIIIII", SLOT0, NBITS, tbl_addr, NAME_LIT, NAME_HOOK_RET, lit + 32, DIGIT_BITS, 0
+    ) + table
+
+
 # ── 자리 (실측으로 고른 셋) ─────────────────────────────────────────────────
 #   🔴 **점프 테이블 값은 부호 16비트**다(`mov.w @(r0,r1),r1` 로 읽어 더한다) — 그래서
 #     테이블 바탕에서 ±32KB 안에 있어야 한다. 스텁은 그 범위 밖이라 **트램펄린**을 둔다.
 #   ⚠ 자리마다 근거가 다르다. 위험이 큰 쪽에 **데이터**를, 작은 쪽에 **코드**를 놓았다:
-#     · 스텁     — **개발실 디버그 메뉴 문자열**(`debug`·`Dump Monster`·`本００`…).
-#                  새턴판엔 개발실이 없다(devlog 2026-08-29, 대사 전수 파서로 확인).
-#                  설령 열려도 **글자만 깨진다** — 코드가 아니라 문자열이다.
+#     · 스텁     — (10-24 이후) 폰트 RAM 의 **코드 예약 칸**(`codearea`). 종전엔 개발실 디버그 메뉴 문자열 자리였는데
+#                  그 메뉴를 되살리느라 비웠다(원판 바이트 복원).
 #     · 종성 표   — 실행 중 RAM 에서 0 임을 확인한 자리. 만약 게임이 여기를 쓰면
 #                  **조사만 틀리고 안 죽는다**(표를 못 읽으면 병기 그대로 두는 쪽으로 떨어진다).
-STUB = 0x06016080  # 240B — 디버그 문자열 (0x06016080~0x06016333, 691B)
-STUB_ROOM = 0x0601_6333 - 0x0601_6080
-TBL = 0x06076170  # 490B
-TBL_ROOM = 864
+#     ⚠ 10-24: 스텁은 더 이상 디버그 문자열 자리에 없다 — 그 구역은 디버그 메뉴가 되살아나 원판 바이트로 돌아갔고, 스텁은 폰트 RAM 의 코드 예약 칸으로 옮겼다(`codearea.py`).
+STUB = CA.JOSA  # 코드 + 접기 버퍼 (`codearea.JOSA_ROOM` B)
+STUB_ROOM = CA.JOSA_ROOM
+TBL = CA.NTBL  # 606B(본 판 + 내린 판) — 11-10 에 0.BIN `0x06076170`(490B)에서 코드 예약 칸으로 옮겼다(트램펄린 자리와 부딪힘)
+TBL_ROOM = CA.NTBL_ROOM
 
 
 def fold_prefix_w():
@@ -744,18 +860,19 @@ def patch(data, prefix_w=13):
     assert LIT_OFF + 36 + FOLD_BUF <= STUB_ROOM
 
     def put(addr, blob, room, expect=None):
-        off = addr - BASE
-        assert 0 <= off and off + len(blob) <= len(out), hex(addr)
         assert len(blob) <= room, f"{addr:#x}: {len(blob)}B > {room}B"
-        cur = bytes(out[off : off + len(blob)])
-        #   ⚠ **원본이 예상과 다르면 멈춘다** — 자리를 잘못 짚으면 조용히 딴 걸 덮는다.
-        if expect == "zero":
-            assert cur == bytes(len(blob)), f"{addr:#x} 가 0 이 아니다"
-        elif expect:
-            assert out[off : off + len(expect)] == expect, f"{addr:#x} 가 예상과 다르다"
-        out[off : off + len(blob)] = blob
+        if not CA.in_font(addr):
+            off = addr - BASE
+            assert 0 <= off and off + len(blob) <= len(out), hex(addr)
+            cur = bytes(out[off : off + len(blob)])
+            #   ⚠ **원본이 예상과 다르면 멈춘다** — 자리를 잘못 짚으면 조용히 딴 걸 덮는다.
+            if expect == "zero":
+                assert cur == bytes(len(blob)), f"{addr:#x} 가 0 이 아니다"
+            elif expect:
+                assert out[off : off + len(expect)] == expect, f"{addr:#x} 가 예상과 다르다"
+        CA.put(out, BASE, addr, blob)
 
-    put(STUB, code, STUB_ROOM, b"debug\x00")
+    put(STUB, code, STUB_ROOM)
     put(TBL, bits, TBL_ROOM, "zero")
 
     #   ── 훅 — 밀어낸 12B 를 「스텁으로 점프 + 상수」로 덮는다
@@ -771,8 +888,20 @@ def patch(data, prefix_w=13):
     assert len(hook) == HOOK_LEN, len(hook)
     put(HOOK, hook, HOOK_LEN, HOOK_ORIG)
 
+    #   ── 이름 뒤 조각 조사 — `08` 처리기 머리를 스텁으로 (`name_routine`)
+    name_code = name_routine(CA.NAMEJ, TBL, NAME_HOOK_ORIG)
+    put(CA.NAMEJ, name_code, CA.NAMEJ_ROOM)
+    a = Asm(NAME_HOOK)
+    a.movl_pc(0, NAME_HOOK + 8)
+    a.jmp(0)
+    a.nop()
+    a.nop()
+    nhook = a.bytes() + struct.pack(">I", CA.NAMEJ)
+    assert len(nhook) == 12, len(nhook)
+    put(NAME_HOOK, nhook, 12, NAME_HOOK_ORIG)
+
     assert len(out) == len(data)
-    return bytes(out), 3
+    return bytes(out), 4
 
 
 def main():

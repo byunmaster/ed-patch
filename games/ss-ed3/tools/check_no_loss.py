@@ -26,6 +26,7 @@ import check_build_discs as B
 import check_sys_coverage as SC
 import choice_tail as CT
 import common as C
+import font as F
 import hangul_map as H
 import mapfile as M
 import param as P
@@ -42,6 +43,8 @@ KNOWN = {}
 
 def glyphs(s):
     """견줄 꼴 — 공백·개행·페이지를 뺀 글자열(전각 공백 포함)."""
+    #   대사 `&` `%` 는 전각 `＆` `％` 글리프로 나간다(마스터 11-13) — 같은 글자로 견준다
+    s = s.replace("＆", "&").replace("％", "%")
     return "".join(ch for ch in s if not ch.isspace() and ch != "　")
 
 
@@ -50,8 +53,11 @@ def reverse(*tables):
     out = {}
     for t in tables:
         for ch, idx in t.items():
-            out[bytes(sjis.sjis_of_index(idx))] = ch
+            out[bytes(sjis.sjis_of_index(idx))] = ch if ch == "⁉" else H.LIGA_BACK.get(ch, ch)  # 특수 글리프는 풀어 쓴 꼴로 — 단 `!?` 합자 `⁉` 는 풀지 않는다(쓰이면 원문 `!?` 와 어긋나 잡힌다, 마스터 11-17)
     return out
+
+
+KAGI_BACK = {v: k for k, v in F.KAGI_CODE.items()}
 
 
 def decode(body, rev):
@@ -72,6 +78,11 @@ def decode(body, rev):
         #     `<20>`·`<2E>` 로 적는다(첫 판이 이것 때문에 3 만 건을 소실로 셌다)
         if 0x20 <= body[i] < 0x7F:
             out.append(chr(body[i]))
+            i += 1
+            continue
+        #   대사 「」 는 반각 한 바이트다(`font.KAGI_CODE`)
+        if body[i] in KAGI_BACK:
+            out.append(KAGI_BACK[body[i]])
             i += 1
             continue
         #   나머지(제어·SJIS)는 원래 디코더에 맡긴다
@@ -259,7 +270,7 @@ def check_sys(img, files):
 
 
 def main():
-    rev_desc = reverse(H.load(), H.load_low())
+    rev_desc = reverse(H.load(), H.load_low(), H.load_liga())
     total, fails = 0, []
     for disc in (1, 2):
         img = build.out_paths(disc)[0]

@@ -55,6 +55,9 @@ def tokens(span):
         elif b in (0xFD, 0xFE, 0xFF) and i + 1 < n:
             out.append(bytes(span[i : i + 2]))  # 옵코드 낱말(`FF xx` · `FD xx` · `FE xx`) — 글 첫 바이트가 아니다(`script_ops` 디스패처)
             i += 2
+        elif 0xA1 <= b <= 0xDF:
+            #   🔴 단바이트 글자(반각 가나 영역 `A1~DF` — 우리 한글 배정이 쓴다)는 한 바이트다. 예전엔 `>= 0x80` 이 둘을 한 쌍으로 읽어 **뒤따르는 제어 바이트(`0F` 쪽 대기)를 삼켰다**(11-07).
+            i += 1
         elif b >= 0x80:
             i += 2
         elif 0x20 <= b <= 0x7E:
@@ -136,7 +139,7 @@ def target_damage(orig, built, tramps):
 def compare_map(stem, orig, built, allow):
     """`(어긋남 목록, 장부 행, 통계)`."""
     bad, rows = [], []
-    st = {"blocks": 0, "gap_bytes": 0, "moved": 0, "nl": 0, "pg": 0, "fill": 0, "blocks_soft_changed": 0, "voice_body": 0, "name_ext": 0, "total": 0}
+    st = {"blocks": 0, "gap_bytes": 0, "moved": 0, "nl": 0, "pg": 0, "fill": 0, "blocks_soft_changed": 0, "voice_body": 0, "name_ext": 0, "total": 0, "ctl": 0}
     blks = M.blocks(orig)
     st["total"] = len(blks)
     tr = trampolines(orig, built)
@@ -199,7 +202,29 @@ def compare_map(stem, orig, built, allow):
             segs = [(a, b)]
         for x, y in segs:
             if x in name_ends:
-                #   이름 칸 늘려 쓰기 — NUL 종료 문자열이고 칸 뒤가 **0 으로 비어 있는 만큼만**(`reinsert.patch_blocks`) 쓴다
+                #   🔴 이름 NUL 바로 뒤에 짧은 ASCII 표지(`02`·`NUT`)가 붙은 맵은 이름이 늘면 표지를 **통째로 뒤로 민다**(`reinsert.patch_blocks` — 마스터 10-29 지명 띄어쓰기).
+                #   표지 바이트가 그대로 **한 덩이로** 밀렸고 나머지가 0 일 때만 통과한다.
+                k = 0
+                while x + 1 + k < y and 0x20 < orig[x + 1 + k] < 0x7F:
+                    k += 1
+                if orig[x] == 0 and k and orig[x + 1 + k] == 0:
+                    tok = orig[x + 1 : x + 1 + k]
+                    end = min(y, x + 1 + k + 1 + R.NAME_MAX)
+                    shifted = [
+                        d
+                        for d in range(1, R.NAME_MAX)
+                        if built[x + 1 + d : x + 1 + d + k] == tok
+                        and built[x + 1 + d + k] == 0
+                        and built[x + d] == 0
+                        and not any(built[x + 1 + d + k + 1 : end])
+                    ]
+                    if shifted:
+                        st["name_ext"] += shifted[0]
+                        nk = next((i for i in nameblk if blks[i]["off"] + len(blks[i]["body"]) == x), None)
+                        rows.append((stem, nk, "이름 칸", f"{x:#x}", f"표지 +{shifted[0]}B", "이름 NUL 뒤 표지를 통째로 뒤로 밂"))
+                        x = end
+                        if x >= y:
+                            continue
                 z = 0
                 while x + z < y and orig[x + z] == 0:
                     z += 1
@@ -228,11 +253,15 @@ def compare_map(stem, orig, built, allow):
                 b_tok.pop()
             while o_tok and o_tok[-1] == b"\x00":
                 o_tok.pop()
+        st["ctl"] += len(o_tok)
         if o_tok != b_tok:
             bad.append((stem, a, f"블록 {k} 의 제어 열이 다르다", (o_tok[:6], b_tok[:6])))
         st["nl"] += b_soft[0x0D] - o_soft[0x0D]
         st["pg"] += b_soft[0x0F] - o_soft[0x0F]
         st["fill"] += b_soft[0x1A]
+        if b_soft[0x0F] < o_soft[0x0F]:
+            #   🔴 쪽·키 대기(`0F`)가 줄면 상점·여관·민가 메시지에서 ▽ 없이 흘러가고 키를 덜 받아 진행이 어긋난다(pce-ed1 기능 투어 11-07) — 늘어나는 건 조판 몫, 줄면 실패.
+            bad.append((stem, a, f"블록 {k} 의 쪽 대기(0F)가 줄었다", (o_soft[0x0F], b_soft[0x0F])))
         if b_soft != o_soft:
             st["blocks_soft_changed"] += 1
             if b_soft[0x0D] != o_soft[0x0D]:
@@ -292,7 +321,7 @@ def main():
     allow = json.load(open(ALLOW, encoding="utf-8")) if os.path.exists(ALLOW) else {}
     o, n = load_pair(a.image)
     bad_all, rows_all = [], []
-    tot = {"maps": 0, "blocks": 0, "gap_bytes": 0, "moved": 0, "nl": 0, "pg": 0, "fill": 0, "blocks_soft_changed": 0, "voice_body": 0, "name_ext": 0, "total": 0}
+    tot = {"maps": 0, "blocks": 0, "gap_bytes": 0, "moved": 0, "nl": 0, "pg": 0, "fill": 0, "blocks_soft_changed": 0, "voice_body": 0, "name_ext": 0, "total": 0, "ctl": 0}
     want = set(a.maps.split(",")) if a.maps else None
     for nm, lba, size in o.files():
         ok, stem = C.is_map_file(nm)
@@ -319,6 +348,9 @@ def main():
         if r[2] not in allow.get("rules", {}):
             bad_all.append((r[0], 0, f"허용 목록에 없는 재배치 종류 「{r[2]}」", r[1]))
     print(f"대조 맵 {tot['maps']} · 블록 {tot['blocks']}/{tot['total']}(나머지는 옮긴 구간 — 몸을 따라가 대조) · 틈 {tot['gap_bytes']}B · 옮김 {tot['moved']} · 어긋남 {len(bad_all)}")
+    #   🔴 색 전환 같은 제어 코드가 **한 번도 안 나가는** 조립(pce-ed1 10-29)을 막는다 — 분모를 찍는다(분모 없는 0 은 결론이 아니다).
+    #   이 엔진의 대사 본문엔 색 옵코드가 없고(`01 xx` 주입 · `02 xx` 화자 · `FD/FE/FF xx` 만 센다) 블록 밖 옵코드는 틈 바이트 비교가 본다.
+    print(f"  제어 토큰(글 바이트 밖 `01`·`02`·`FD/FE/FF` 낱말) {tot['ctl']}개 대조 — 어긋나면 위 「제어 열이 다르다」로 실패")
     print(f"  조판 증감 — 개행 {tot['nl']:+d} · 쪽 넘김 {tot['pg']:+d} · 1A {tot['fill']}B · 제어가 바뀐 블록 {tot['blocks_soft_changed']}")
     print("  장부 종류별 — " + " · ".join(f"{k} {v}" for k, v in sorted(kinds.items())))
     for b in bad_all[:30]:

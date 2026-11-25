@@ -63,7 +63,7 @@ class CreditsTable(unittest.TestCase):
 
     def test_fits_the_dead_region(self):
         blob, _ = SS.build_credits(SS.build()[2]["draw_line9"], self.t)
-        self.assertLessEqual(SS.CRED + len(blob), SS.STUB)
+        self.assertLessEqual(SS.CRED + len(blob), SS.CA.CRED_END)
 
     def test_no_line_overflows_the_buffer(self):
         for s in self.doc["subs"]:
@@ -90,23 +90,30 @@ class CreditsCode(unittest.TestCase):
 
     def test_patch_redirects_the_task_literal(self):
         base = SS.BASE
-        data = bytearray(0x60000)
+        data = bytearray(0x80000)
         data[SS.DEBUG_GATE - base : SS.DEBUG_GATE - base + 2] = SS.GATE_ORIG
-        data[SS.STUB - base : SS.STUB - base + 8] = SS.STUB_ORIG
         data[SS.HOOK - base : SS.HOOK - base + 10] = SS.HOOK_ORIG
         data[SS.TASK_LIT - base : SS.TASK_LIT - base + 4] = struct.pack(">I", SS.TASK_ORIG)
         data[SS.HOOK2 - base : SS.HOOK2 - base + 12] = SS.HOOK2_ORIG
         data[SS.EMIT_LIT - base : SS.EMIT_LIT - base + 4] = struct.pack(">I", SS.EMIT)
+        SS.CA.reset()
         out = SS.patch(bytes(data), table_fn=lambda c: b"\x00\x00\x00\x00")
         got = struct.unpack(">I", out[SS.TASK_LIT - base : SS.TASK_LIT - base + 4])[0]
-        self.assertEqual(got, SS.CRED)
+        self.assertEqual(
+            got, SS.CA.TRAMP
+        )  # 직접 CRED 가 아니라 트램펄린(부팅 중 폰트가 덜 올라온 때를 거른다)
+        t = out[SS.CA.TRAMP - base : SS.CA.TRAMP - base + 0x28]
+        self.assertEqual(struct.unpack(">IIII", t[0x18:])[2:], (SS.CRED, SS.TASK_ORIG))
+        self.assertEqual(
+            struct.unpack(">I", t[0x18:0x1C])[0], SS.CA.READY_ADDR | 0x20000000
+        )  # 캐시를 건너뛰는 별칭으로 읽는다
         # 메인 스레드 등록 루틴 — 크레딧 글자 함수 에필로그가 우리 `cemit` 으로 점프한다
         h = out[SS.HOOK2 - base : SS.HOOK2 - base + 12]
         self.assertEqual(h[:8], bytes.fromhex("d801482b00090009"))
-        self.assertTrue(SS.CRED <= struct.unpack(">I", h[8:])[0] < SS.STUB)
+        self.assertTrue(SS.CRED <= struct.unpack(">I", h[8:])[0] < SS.CA.CRED_END)
         # 글자 등록 호출은 `cwrap`(XA 최솟값 수집)을 거친다
         lit = struct.unpack(">I", out[SS.EMIT_LIT - base : SS.EMIT_LIT - base + 4])[0]
-        self.assertTrue(SS.CRED <= lit < SS.STUB)
+        self.assertTrue(SS.CRED <= lit < SS.CA.CRED_END)
         # 예상과 다르면(다른 빌드) 조용히 덮지 않고 멈춘다
         data[SS.TASK_LIT - base : SS.TASK_LIT - base + 4] = b"\x00\x00\x00\x00"
         with self.assertRaises(AssertionError):

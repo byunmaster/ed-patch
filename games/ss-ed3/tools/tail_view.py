@@ -65,7 +65,8 @@ def main():
         pre = D.SETUP
         if os.environ.get("TAIL_LAST"):
             #   멀티 쪽 세션은 이 하네스에서 첫 쪽 뒤에 멈춘다(원본도 같다) — 마지막 화자 블록(`0E 09 00 02 xx` 뒤)만 띄운다
-            i = body.rindex(b"\x0e\x09\x00\x02")
+            i = max(body.rfind(b"\x0e\x09\x00\x02"), body.rfind(b"\x0e\x09\x0e\x02"))  # `0E 09 0E 02 xx` 변형(MAP029 #282, 11-15)
+            assert i >= 0, "마지막 화자 블록 앞 0E 09 .. 02 를 못 찾았다"
             body, pre = body[i + 3 :], D.SETUP + D.OPEN
         h.poke(D.LWRAM + zr, pre + body + D.TAIL)
         h.poke(D.PC, (D.LWRAM + zr).to_bytes(4, "big"))
@@ -77,6 +78,8 @@ def main():
                 break
             pages += 1
             Image.fromarray(h.frame[150:240]).save(os.path.join(outdir, f"{stem}_{key}_p{pages}.png"))
+            if os.environ.get("TAIL_FULL"):  # 전체화면 해설·위쪽 창 대사는 아래 창 크롭에 안 잡힌다(11-15)
+                Image.fromarray(h.frame).save(os.path.join(outdir, f"{stem}_{key}_p{pages}_full.png"))
             h.press("c", 4, 22)
             pc = int.from_bytes(h.peek(D.PC, 4), "big")
             print("  쪽", pages, "PC", hex(pc), flush=True)

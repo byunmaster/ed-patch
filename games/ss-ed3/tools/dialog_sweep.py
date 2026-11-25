@@ -196,8 +196,46 @@ def prepare(h, base, got, blocks):
     return got, "중화 실패 — " + " · ".join(notes)
 
 
-NAMES = int(os.environ.get("SWEEP_NAMES", "0x400"), 0)  # 이름표 표를 옮길 길이(이름 칸 32B × 32 — 머리 인자가 32 이상인 블록은 기준 맵 값을 읽는다)
-KEYS = os.environ.get("SWEEP_KEYS")  # "224-233" — 그 번호 구간만 찍는다(시험용)
+NAMES = int(os.environ.get("SWEEP_NAMES", "0x800"), 0)  # 이름표 표를 옮길 길이(이름 칸 32B × 64 — 11-15 에 32칸(0x400)이면 색인 32↑ 화자(0233 이상)의 이름 줄이 기준 맵 값으로 엉뚱하게 떴다)
+KEYS = os.environ.get("SWEEP_KEYS")  # "224-233,443,884" — 그 번호(구간·쉼표 목록)만 찍는다(시험용)
+KEYS_BY_MAP = None
+if os.environ.get("SWEEP_KEYS_FILE"):
+    import json as _json
+
+    KEYS_BY_MAP = {k: set(v) for k, v in _json.load(open(os.environ["SWEEP_KEYS_FILE"], encoding="utf-8")).items()}
+ORIG = bool(os.environ.get("SWEEP_ORIG"))  # 1 이면 **원판 이미지**(JP 디스크 1)의 글을 찍는다 — 판정용 「원판 짝」 촬영
+
+
+def key_wanted(i, stem=None):
+    """`SWEEP_KEYS` 가 없으면 전부, 있으면 구간·목록에 든 번호만. `SWEEP_KEYS_FILE`(JSON `{맵: [번호…]}`)이 있으면 맵마다 그 목록(바뀐 블록만 찍을 때)."""
+    if KEYS_BY_MAP is not None:
+        return i in KEYS_BY_MAP.get(stem, ())
+    if not KEYS:
+        return True
+    for part in KEYS.split(","):
+        lo, _, hi = part.partition("-")
+        if int(lo) <= i <= int(hi or lo):
+            return True
+    return False
+
+
+def _moved(stem):
+    """`{블록 번호: 새 좌표}` — 재배치 장부의 「스텁(옮김)」 줄(그 맵 것)."""
+    out = {}
+    with open(os.path.join(C.GAME_DIR, "relocations.tsv"), encoding="utf-8") as f:
+        for ln in f:
+            c = ln.rstrip("\n").split("\t")
+            if len(c) > 4 and c[0] == stem and c[2] == "스텁(옮김)":
+                out[int(c[1])] = int(c[4], 16)
+    return out
+
+
+def _moved_block(got, at, orig_blk):
+    """옮긴 블록의 새 자리 — `머리 2B + 몸 + 종결 1B + 00 + 복귀 점프(FD 00 …)` 꼴(MAP002#45 실측). 못 찾으면 원래 블록."""
+    m = re.compile(rb"([\x00-\x1f])\x00\xfd\x00\x00", re.S).search(got, at + 2)
+    if m is None:
+        return orig_blk
+    return {"off": at + 2, "head": got[at : at + 2].hex(), "body": got[at + 2 : m.start(1)], "term": got[m.start(1)]}
 
 
 def run_map(h, base, img, files, orig, stem, outdir, limit, idxf, deadline):
@@ -210,6 +248,11 @@ def run_map(h, base, img, files, orig, stem, outdir, limit, idxf, deadline):
     got = B.read_extent(img, lba, size)
     src = orig[name]
     blocks = M.blocks(src)
+    #   🔴 옮긴 블록(장부 「스텁(옮김)」)은 원래 자리에 점프 스텁만 있다 — 그 자리를 이식하면 빈 창이 뜬다(10-31 실측: MAP026#859 24쪽).
+    #     새 좌표의 블록(머리 `FF 00` 바로 뒤가 몸)을 우리 이미지에서 찾아 그것을 띄운다.
+    moved = {} if ORIG else _moved(stem)  # 원판 이미지에는 옮긴 블록이 없다
+    if moved:
+        blocks = [_moved_block(got, moved[i], blk) if i in moved else blk for i, blk in enumerate(blocks)]
     g = GOOD["data"]
     h_t = struct.unpack(">37I", got[0x10 : 0x10 + 148])
     h_g = struct.unpack(">37I", g[0x10 : 0x10 + 148])
@@ -229,7 +272,7 @@ def run_map(h, base, img, files, orig, stem, outdir, limit, idxf, deadline):
     for i, blk in enumerate(blocks[:limit]):
         if time.time() > deadline:
             return done
-        if KEYS and not (int(KEYS.split("-")[0]) <= i <= int(KEYS.split("-")[-1])):
+        if not key_wanted(i, stem):
             continue
         key = f"{i:04d}"
         h.restore(snap)
@@ -238,24 +281,41 @@ def run_map(h, base, img, files, orig, stem, outdir, limit, idxf, deadline):
         pre = SETUP if blk["head"] == "ff00" else SETUP + OPEN
         h.poke(LWRAM + zr, pre + got[o - 2 : e + 1] + TAIL)
         h.poke(PC, (LWRAM + zr).to_bytes(4, "big"))
-        pages, shown, inks = 0, False, []
+        pages, shown, inks, prev_win = 0, False, [], None
         for _ in range(MAX_PAGES):
             if not stable(h):
                 break
             if region_diff(base_win[150:240], h.frame[150:240]) < 300 and region_diff(base_win[0:90], h.frame[0:90]) < 300:
                 break
             shown = True
+            if prev_win is not None and region_diff(prev_win, h.frame[150:240]) == 0:
+                break  # 🔴 `c` 를 눌러도 화면이 안 바뀐다 — 닫히지 않는 창(옮긴 블록·창 없는 조각)이다. 같은 쪽을 또 찍지 않는다(10-31)
+            prev_win = h.frame[150:240].copy()
             pages += 1
             inks.append(ink(h.frame[150:240]))
             crop = Image.fromarray(h.frame[150:240]).convert("P", palette=Image.ADAPTIVE, colors=48)
             crop.save(os.path.join(outdir, stem, f"{key}_p{pages}.png"), optimize=True)
             shots.append(f"{key}_p{pages}")
+            if inks[-1] < 6 and region_diff(base_win[0:90], h.frame[0:90]) >= 300:  # 아래 창이 비었는데 위쪽이 바뀌었다 — 위 창 대사다(10-30)
+                Image.fromarray(h.frame[0:90]).convert("P", palette=Image.ADAPTIVE, colors=48).save(
+                    os.path.join(outdir, stem, f"{key}_p{pages}_top.png"), optimize=True
+                )
             h.press("c", 4, 22)
-            if int.from_bytes(h.peek(PC, 4), "big") == 0:
-                break
+            #   🔴 PC 가 0 으로 돌아와도 안 끊는다 — 엔진이 글을 다 읽어 둔 채 쪽만 넘기고 있을 수 있다(첫 판은 여기서 끊어 둘째 쪽부터 5,500 블록을 놓쳤다, 10-31).
+            #   끝은 「창이 사라졌다」(위 base_win 대조)와 「같은 쪽이 반복된다」로 안다.
+        tail_blank = False
+        if pages > 1 and inks and inks[-1] < 6:  # 마지막 쪽을 넘기면 창이 닫히며 빈 화면이 한 번 찍힌다 — 쪽이 아니다(10-31)
+            tail_blank = True
+            for suf in ("", "_top"):
+                fp = os.path.join(outdir, stem, f"{key}_p{pages}{suf}.png")
+                if os.path.exists(fp):
+                    os.remove(fp)
+            shots.pop()
+            inks.pop()
+            pages -= 1
         idxf.write(
             json.dumps(
-                {"map": stem, "key": i, "head": blk["head"], "pages": pages, "expect": len(M_PAGES(blk)), "shown": shown,
+                {"map": stem, "key": i, "head": blk["head"], "pages": pages, "expect": len(M_PAGES(blk)), "shown": shown, "tail_blank": tail_blank,
                  "ink": inks, "blank_pages": sum(1 for x in inks if x < 6), "var_start": var_start(blk["body"])}
             )
             + "\n"
@@ -346,8 +406,16 @@ BOOT = [  # 타이틀 → 이어하기 → 슬롯 1(쥬리오 집) → 엄마 �
 ]  # fmt: skip
 
 
-def boot(h):
-    for s in BOOT:
+# 🔴 `--bkr` 를 주면 **그 세이브의 첫 슬롯으로 이어하기** 한 한가한 필드를 기준으로 삼는다(11-07). 기본 BOOT 는 기준 세이브가 없으면 첫 장면 대사 한복판에
+#    서서 **전 블록이 「shown false」** 로 나온다(MAP048 191블록 전부 안 뜸 — 같은 롬 키의 이어하기 필드로 풀렸다).
+BOOT_CONTINUE = [
+    ("run", 3000), ("press", "start", 10, 200), ("press", "c", 6, 400), ("press", "c", 6, 200),
+    ("press", "c", 6, 200), ("press", "c", 6, 900),
+]  # fmt: skip
+
+
+def boot(h, continue_save=False):
+    for s in BOOT_CONTINUE if continue_save else BOOT:
         if s[0] == "run":
             h.run(s[1])
         else:
@@ -364,11 +432,16 @@ def main():
     core = os.path.join(H.CACHE, "beetle-saturn", "src", "mednafen_saturn_libretro.so")
     bkr = opt("--bkr")
     h = H.Harness(core, cue, outdir, bkr=bkr)
-    img = build.out_paths(1)[0]
-    files = {n: (l, s) for n, l, s, *_ in build.patched(1)}
+    if ORIG:
+        img = C.DISC_BIN[1]
+        with C.open_disc(1) as d0:
+            files = {n: (l, s) for n, l, s in d0.files()}
+    else:
+        img = build.out_paths(1)[0]
+        files = {n: (l, s) for n, l, s, *_ in build.patched(1)}
     key = rom_key(img, files)
     if statep == "-":  # 상태 파일이 없으면 부팅 열로 만든다 — 만든 롬의 열쇠를 옆에 적는다
-        boot(h)
+        boot(h, continue_save=bool(bkr))
         h.save(os.path.join(outdir, "base.state"))
         with open(os.path.join(outdir, "base.state.rom"), "w") as f:
             f.write(key + "\n")

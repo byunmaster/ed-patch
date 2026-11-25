@@ -170,8 +170,8 @@ def entry(h, table=None):
     if lines and pos(h) == "top":
         expr |= POS_TOP
     out = struct.pack(">HHH", frames, fid, expr)
-    out += H.encode_kr(who, table) + b"\x00"
-    out += b"".join(H.encode_kr(t, table) + b"\x00" for t in lines) + b"\x00"
+    out += H.encode_kr(who, table, kagi=True) + b"\x00"
+    out += b"".join(H.encode_kr(t, table, kagi=True) + b"\x00" for t in lines) + b"\x00"
     return out + b"\x00" * (len(out) % 2)
 
 

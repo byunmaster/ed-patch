@@ -15,8 +15,9 @@
 2. **일치** — 두 장에 다 있는 파일이 서로 같은가. 게임 데이터가 한 벌이라(`check_discs`)
    패치 결과도 한 벌이어야 한다.
 
-⚠ **이미지가 없으면 건너뛴다.** 원본만 링크하고 아직 안 구운 트리에서 늘 빨간불이 되면
-아무도 안 본다(루트 CLAUDE.md 「게이트는 지금 고칠 수 있는 것만 실패로 친다」).
+🔴 **이미지가 없으면 실패다**(11-12). 빌드가 「예산 NB 에 못 맞춘다」로 실패해 산출물이 무효화(`.failed`)됐는데
+이 검사가 「건너뛴다」로 초록을 내 같은 실패를 세 번 못 보고 넘어갔다 — 빌드 성공을 확인하지 않은 채 커밋할 수 있었다.
+이 게이트(`check.sh`)는 원본이 링크된 트리에서만 돌고 커밋 직전에 부르므로, 이미지가 없다는 건 「고칠 수 있는 것」이다.
 
     python3 games/ss-ed3/tools/check_build_discs.py
 """
@@ -68,7 +69,10 @@ def main():
     for disc in C.DISCS:
         _path, got = survey(disc)
         if got is None:
-            print(f"   disc{disc} — 이미지가 없다 (건너뛴다)")
+            failed = os.path.exists(build.out_paths(disc)[0] + ".failed")
+            print(f"   🔴 disc{disc} — 이미지가 없다" + (" (`.failed` 가 있다 — 빌드가 실패했다)" if failed else " (먼저 빌드)"))
+            if failed:  # 한 장만 굽는 확인 절차(`--disc`)는 정상 — `.failed` 가 있을 때만 실패
+                stale.append((disc, ["빌드 실패(.failed)"]))
             continue
         n_img += 1
         per_disc[disc] = got
@@ -82,8 +86,8 @@ def main():
             print(f"   disc{disc} ✅ 지금 소스의 것 (패치 파일 {len(got)})")
 
     if n_img == 0:
-        print("   ⓘ 구운 이미지가 없다 — 이 검사는 건너뛴다")
-        return 0
+        print("   🔴 구운 이미지가 하나도 없다 — 빌드부터")
+        return 1
 
     #   두 장 대조 — 게임 데이터가 한 벌이니 패치 결과도 한 벌이어야 한다.
     if len(per_disc) == 2:

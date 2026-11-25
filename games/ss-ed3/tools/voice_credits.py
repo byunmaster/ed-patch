@@ -235,7 +235,7 @@ def main():
     _, w = SS.build_credits(SS.build()[2]["draw_line"])
     t = blob(w["ctab"], doc)
     n = len(doc["subs"])
-    span = SS.STUB - w["ctab"]
+    span = SS.CA.CRED_END - w["ctab"]
     print(
         f"항목 {n} · 표 {len(t)}B (남는 자리 {span - len(t)}B) · 크레딧 코드 @ {SS.CRED:#x} · 표 @ {w['ctab']:#x}"
     )

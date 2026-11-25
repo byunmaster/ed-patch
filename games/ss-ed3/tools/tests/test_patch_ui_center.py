@@ -18,12 +18,15 @@ def fake():
     b[P.BANNER_LIT - P.BASE : P.BANNER_LIT - P.BASE + 4] = P.DRAW.to_bytes(4, "big")
     for lit in P.WAIT_LITS:
         b[lit - P.BASE : lit - P.BASE + 4] = P.WAIT.to_bytes(4, "big")
+    for lit, real in P.DLG_UP_LITS:
+        b[lit - P.BASE : lit - P.BASE + 4] = real.to_bytes(4, "big")
     return bytes(b)
 
 
 class UiCenter(unittest.TestCase):
     def test_moves_the_banner_text_up_and_wraps_the_list_draws(self):
         old = fake()
+        P.CA.reset()
         new = P.patch(old)
         diff = {i for i in range(len(old)) if old[i] != new[i]}
         self.assertIn(P.TEXT_Y - P.BASE + 1, diff)
@@ -41,6 +44,7 @@ class UiCenter(unittest.TestCase):
         self.assertEqual(int.from_bytes(P.TEXT_Y_NEW[1:], "big") - 256, -117)
 
     def test_digit_branch_becomes_unconditional_halfwidth(self):
+        P.CA.reset()
         new = P.patch(fake())
         self.assertEqual(new[P.DIGIT_BR - P.BASE : P.DIGIT_BR - P.BASE + 2], P.DIGIT_BR_NEW)
         # bra disp12: 0x06041D7E + 4 + 2×0x0C = 0x06041D9A (반각 경로 — 원래 `bt/s` 의 목표와 같다)
@@ -48,14 +52,27 @@ class UiCenter(unittest.TestCase):
         self.assertEqual(P.DIGIT_BR + 4 + 2 * P.DIGIT_BR_ORIG[1], 0x06041D9A)
 
     def test_wait_routine_goes_through_the_cursor_wrapper(self):
+        P.CA.reset()
         new = P.patch(fake())
         for lit in P.WAIT_LITS:  # `▼` 대기 루틴 호출 둘이 껍데기로 돈다
             self.assertEqual(new[lit - P.BASE : lit - P.BASE + 4], P.WRAP3.to_bytes(4, "big"))
         code = P.wrap3_code()
-        self.assertEqual(new[P.WRAP3 - P.BASE : P.WRAP3 - P.BASE + len(code)], code)
+        self.assertIn(
+            (P.WRAP3, code), P.CA.SIDE
+        )  # 껍데기는 폰트 RAM 코드 예약 칸으로 간다(`codearea.SIDE`)
         self.assertLessEqual(P.WRAP3 + len(code), P.WRAP2)  # 이웃(WRAP2)을 안 덮는다
         self.assertIn(P.WAIT.to_bytes(4, "big"), code)  # 원래 대기 루틴으로 점프한다
         self.assertIn(P.WINS.to_bytes(4, "big"), code)
+
+    def test_dialogue_glyph_calls_go_through_the_one_row_up_shells(self):
+        # 대사 글자 그리기의 반각 글리프 호출 둘만 껍데기로 돈다(목록·HUD·가격창의 DRAW 풀은 그대로) — 마스터 11-16
+        P.CA.reset()
+        new = P.patch(fake())
+        blob, where = P.dlg_up_code()
+        for lit, real in P.DLG_UP_LITS:
+            self.assertEqual(new[lit - P.BASE : lit - P.BASE + 4], where[real].to_bytes(4, "big"))
+        self.assertEqual(blob[:2], bytes.fromhex("3468"))  # `sub r6,r4` — 목적지를 한 줄 위로
+        self.assertEqual(blob[12:14], bytes.fromhex("3468"))  # 둘째 껍데기도 같다
 
     def test_refuses_a_different_build(self):
         bad = bytearray(fake())

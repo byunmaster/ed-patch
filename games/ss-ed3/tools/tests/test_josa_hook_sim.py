@@ -101,6 +101,9 @@ class Sim:
         elif hi == 0x2:
             if lo == 0:
                 self.wb(r[n], r[m])
+            elif lo == 1:
+                self.wb(r[n], r[m] >> 8)
+                self.wb(r[n] + 1, r[m])
             elif lo == 2:
                 self.wl(r[n], r[m])
             elif lo == 6:
@@ -140,6 +143,8 @@ class Sim:
         elif hi == 0x4:
             if d8 == 0x18:
                 r[n] = (r[n] << 8) & M32
+            elif d8 == 0x08:
+                r[n] = (r[n] << 2) & M32
             elif d8 == 0x01:
                 self.t = r[n] & 1
                 r[n] >>= 1
@@ -329,3 +334,100 @@ class FullwidthDigit(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NameJosaStub(unittest.TestCase):
+    """`08`(이름 호출) 뒤 「이라니」 표지 — 이름 끝소리로 제자리 고침(`patch_josa_hook.name_routine`)."""
+
+    SCRIPT = 0x0C600000
+    NAMEBUF = 0x0C610000
+    ENGINE = 0x0C700000  # r10
+    R12 = 0x0C720000
+    LITADDR = J.NAME_LIT
+
+    def run_once(self, sim, name_kr, script):
+        rani, i_, nop2 = J.name_marker()
+        sim.load(self.NAMEBUF, H.encode_kr(name_kr) + b"\x00")
+        sim.load(self.SCRIPT, script)
+        sim.wl(self.LITADDR, self.NAMEBUF)
+        sim.r[10] = self.ENGINE
+        sim.r[12] = self.R12
+        sim.wl(sim.r[12], 1)  # 스택 깊이 단어(상위 2B 가 값) — 임의
+        sim.wb(self.R12, 0)
+        sim.wb(self.R12 + 1, 3)
+        sim.wl(self.ENGINE + 4, self.SCRIPT)  # 스크립트 포인터(08 바이트를 읽고 난 뒤)
+        sim.r[15] = 0x0C0F0000
+        sim.wl(J.NAME_LIT, self.NAMEBUF)
+        sim.run(J.CA.NAMEJ, 0xDEAD0000)
+        return bytes(sim.rb(self.SCRIPT + i) for i in range(len(script)))
+
+    def sim(self):
+        J.bit_table()
+        sim = Sim()
+        orig = J.NAME_HOOK_ORIG
+        code = J.name_routine(J.CA.NAMEJ, TBL, orig)
+        sim.load(J.CA.NAMEJ, code)
+        sim.load(TBL, J.bit_table())
+        sim.wl(J.CA.NAMEJ + J.NAME_LIT_OFF + 16, 0xDEAD0000)  # 복귀 상수를 가짜로 — 도착을 잡는다
+        return sim
+
+    def forms(self):
+        rani, i_, nop2 = J.name_marker()
+        return i_ + rani, nop2 + rani  # (받침 있음 꼴, 받침 없음 꼴)
+
+    def test_vowel_batchim_digit(self):
+        sim = self.sim()
+        hasb, nob = self.forms()
+        tail = b"\x0d" + H.encode_kr("보는") + b"\x00"
+        #   모음 끝 → 라니 · 받침 끝 → 이라니 · 멱등(다시 돌려도 맞다) · 두 꼴 어디서 시작해도 같다
+        for name, want in (
+            ("약초", nob),
+            ("해독약", hasb),
+            ("약초", nob),
+            ("해독약", hasb),
+            ("단검", hasb),
+            ("구슬", hasb),
+            ("행운의 반지", nob),
+            ("행운의 반지2", nob),  # 2 → 이 → 받침 없음
+            ("행운의 반지1", hasb),  # 1 → 일 → 받침 있음
+            ("검사교본 3", hasb),
+        ):
+            for start in (hasb, nob):
+                got = self.run_once(sim, name, start + tail)
+                self.assertEqual(got, want + tail, (name, start.hex()))
+
+    def test_lowered_names(self):
+        """아이템 이름은 **내린 판** 슬롯으로 나간다(실화면 11-10: 「신앙의 부적」이 라니로 떨어졌다)."""
+        sim = self.sim()
+        hasb, nob = self.forms()
+        tail = b"\x0d" + H.encode_kr("보는") + b"\x00"
+        low = {**H.load(), **H.load_low()}
+        low_enc = lambda t: H.encode_kr(t, low)  # noqa: E731
+        for name, want in (("신앙의 부적", hasb), ("약초", nob), ("해독약", hasb), ("행운의 반지2", nob)):
+            sim.load(self.NAMEBUF, low_enc(name) + b"\x00")
+            for start in (hasb, nob):
+                sim.load(self.SCRIPT, start + tail)
+                sim.wl(self.LITADDR, self.NAMEBUF)
+                sim.r[10] = self.ENGINE
+                sim.r[12] = self.R12
+                sim.wb(self.R12, 0)
+                sim.wb(self.R12 + 1, 3)
+                sim.wl(self.ENGINE + 4, self.SCRIPT)
+                sim.r[15] = 0x0C0F0000
+                sim.run(J.CA.NAMEJ, 0xDEAD0000)
+                got = bytes(sim.rb(self.SCRIPT + i) for i in range(len(want + tail)))
+                self.assertEqual(got, want + tail, (name, start.hex()))
+
+    def test_non_marker_untouched(self):
+        sim = self.sim()
+        other = H.encode_kr("인가요?") + b"\x0d\x00"
+        got = self.run_once(sim, "약초", other)
+        self.assertEqual(got, other)
+        other2 = H.encode_kr("이라고") + b"\x00"  # 앞 두 글자가 비슷해도 「라니」가 아니면 그대로
+        self.assertEqual(self.run_once(sim, "약초", other2), other2)
+
+    def test_empty_name_untouched(self):
+        sim = self.sim()
+        hasb, nob = self.forms()
+        got = self.run_once(sim, "", hasb + b"\x00")
+        self.assertEqual(got, hasb + b"\x00")

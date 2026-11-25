@@ -45,7 +45,38 @@ def _is_sign(data, text_off, head):
     )
 
 
+def _is_gosub(data, text_off, blk):
+    """GOSUB 줄 꼴인가 — `FF 00` 머리 + 글(끝 `0F`) + `00` + `FD 01 <주소>`(서브루틴 호출) 또는 `FD 02`(복귀). MAP000 시험 대사(#17~#20)."""
+    end = text_off + len(blk["body"])
+    return (
+        blk["head"] == "ff00"
+        and data[text_off - 2 : text_off] == b"\xff\x00"
+        and data[end : end + 2] == b"\x00\xfd"
+        and data[end + 2] in (1, 2)
+        and data[end - 1] == 0x0F
+    )
+
+
 _CARD_B_HEAD = bytes.fromhex("ff0019ff") + b"\x0d" * 6  # 장 카드(세로 줄바꿈형) 머리 — 글 앞 10B
+_CARD_B_HEAD5 = bytes.fromhex("ff0019ff") + b"\x0d" * 5  # 개행 5 변형(MAP022 #502 장 끝 해설, 11-15) — 글 앞 9B
+
+
+def _card_head(data, off):
+    """카드 머리 바이트열(개행 6 · 5 변형) 또는 `None`."""
+    for h in (_CARD_B_HEAD, _CARD_B_HEAD5):
+        if data[off - len(h) : off] == h:
+            return h
+    return None
+BAND_HEAD = 8  # 띠 제목 머리 — `FF 37 xx xx FF 87 00 00`
+
+
+def _is_band(data, text_off):
+    """띠 제목 꼴인가 — 글 앞 8B 가 `FF 37 xx xx FF 87 00 00` (MAP076#58 「순례의 아침」)."""
+    return (
+        data[text_off - 8 : text_off - 6] == b"\xff\x37"
+        and data[text_off - 4 : text_off] == b"\xff\x87\x00\x00"
+    )
+
 
 
 def _card_kind(data, blocks, key):
@@ -56,12 +87,16 @@ def _card_kind(data, blocks, key):
     end = off + len(blk["body"])
     if blk["head"] == "420e" and data[end : end + 2] == b"\x10\x00":
         return "A"
-    if data[off - 10 : off] == _CARD_B_HEAD:
+    if _card_head(data, off) is not None:
         if data[end : end + 2] == b"\x00\x09":
             return "B"
         if data[end] == 0:
             return "C"
     return None
+
+
+#   `FF 00 09 xx` — xx = 0E(MAP084 등) · 0A(MAP015 #331, 11-13 쉼표 복원 — `FF 00 0A` 변형의 4B 판) · 00(MAP012 #258)
+_FF00_09 = (b"\xff\x00\x09\x0e", b"\xff\x00\x09\x0a", b"\xff\x00\x09\x00")
 
 
 def _session_start(data, blocks, key):
@@ -74,10 +109,12 @@ def _session_start(data, blocks, key):
         else:
             break
     s = blocks[j]["off"] - 2
-    if data[s : s + 2] != b"\xff\x00" and data[s - 4 : s] == b"\xff\x00\x09\x0e":
-        s -= 4  # `FF 00 09 0E` + 화자 머리 — 덮는 6B 가 머리 2 + 09 0E + 화자 머리 2 라 글은 안 덮는다
+    if data[s : s + 2] != b"\xff\x00" and data[s - 4 : s] in _FF00_09:
+        s -= 4  # `FF 00 09 xx` + 화자 머리 — 덮는 6B 가 머리 2 + 09 xx + 화자 머리 2 라 글은 안 덮는다(xx 는 몰라도 바이트 그대로 복사)
     elif data[s : s + 2] != b"\xff\x00" and data[s - 2 : s] == b"\xff\x00":
         s -= 2  # `FF 00` + 화자 머리 — 덮는 6B 가 글 앞 2B 까지 간다
+    elif data[s : s + 2] != b"\xff\x00" and data[s - 3 : s] == b"\xff\x00\x0a":
+        s -= 3  # `FF 00 0A` + 화자 머리 — 덮는 6B 가 글 앞 1B 까지 간다(MAP084 #44, 11-12: 머리가 홀수 주소여도 `FF 00` 은 짝수다)
     assert data[s : s + 2] == b"\xff\x00", (
         f"세션 첫 블록 {j} 앞이 FF 00 이 아니다: {data[s : s + 2].hex()}"
     )
@@ -110,9 +147,23 @@ def _is_speaker(data, blocks, key):
     if blk["head"] == "ff00":
         #   `FF 00` 머리 블록이 글 세션의 **첫 블록**(뒤 블록과 `0E` 로 이어짐)이면 그 머리가 곧 세션 머리다 — MAP022 #363(10-22)
         k = int(key)
-        return k + 1 < len(blocks) and _linked(data, blk, blocks[k + 1])
+        if k + 1 < len(blocks) and _linked(data, blk, blocks[k + 1]):
+            return True
+        #   혼자 한 세션 — `FF 00` 머리 + 글 한 블록 + `0E 00 09`(글 모드를 닫고 다음 옵코드로)로 끝난다(MAP028 #121, 11-14). 덮는 6B 는 머리 2 + 글 앞 4B 라 위와 같다.
+        e = blk["off"] + len(blk["body"])
+        return (
+            data[blk["off"] - 2 : blk["off"]] == b"\xff\x00"
+            and data[e] == 0x0E
+            and data[e + 1] == 0x00
+            and data[e + 2] in (0x09, 0xFF)  # `0E 00 09`(MAP028 #121) · `0E 00 FF`(다음 옵코드 — MAP011 #258 · MAP023 #488, 11-15)
+        )
     # 세션 한복판이거나, `FF 00` + 화자 머리로 열리는 세션의 첫 블록
-    return _linked(data, blocks[int(key) - 1], blk) or data[blk["off"] - 4 : blk["off"] - 2] == b"\xff\x00"
+    return (
+        _linked(data, blocks[int(key) - 1], blk)
+        or data[blk["off"] - 4 : blk["off"] - 2] == b"\xff\x00"
+        or data[blk["off"] - 5 : blk["off"] - 3] == b"\xff\x00" and data[blk["off"] - 3] == 0x0A
+        or data[blk["off"] - 6 : blk["off"] - 2] in _FF00_09
+    )
 
 
 def _session_end(data, blocks, key, stem):
@@ -124,7 +175,11 @@ def _session_end(data, blocks, key, stem):
             return end + 2
         if data[end] == 0x0E and data[end + 1 : end + 3] == b"\x00\x09":
             return end + 3  # `0E 00 09` — 글 모드를 `00` 으로 닫고 다음 옵코드로
-        if data[end] not in (0x0E, 0x0F):
+        if data[end] == 0x0E and data[end + 1] == 0x00 and data[end + 2] == 0xFF:
+            return end + 2  # `0E 00 FF ..` — 같은 꼴, 다음 옵코드가 `FF xx` 라 `00` 까지가 글 세션이다(11-15)
+        if data[end : end + 2] == b"\x00\x09":
+            return end + 1  # `00 09` — 글 모드를 닫고 `09`(MAP029 #282 조각, 11-15) — `10 00` 끝과 같은 자리에서 돌아온다
+        if data[end] not in (0x0E, 0x0F, 0x08, 0x19, 0x06):  # `08`·`06`(가격 등 인라인 코드 — MAP037 #222 → 223 → 224) · `19`(+`0F` — MAP014 #78) 도 글이 이어지는 끝 바이트(11-15)
             raise SystemExit(
                 f"{stem}#{key}: 세션 끝(10 00)을 못 찾았다 — 블록 {j} 뒤 {data[end : end + 2].hex()}"
             )
@@ -142,7 +197,7 @@ def covers(src, stem):
     out = {}
     for k in wides:
         blk = blocks[int(k)]
-        if _is_sign(src, blk["off"], blk["head"]):
+        if _is_sign(src, blk["off"], blk["head"]) or _is_gosub(src, blk["off"], blk):
             out[k] = COVER
         elif _card_kind(src, blocks, k) == "A":
             out[str(_session_start(src, blocks, k)[0])] = COVER
@@ -264,13 +319,14 @@ def patch(data, stem, table, orig):
         elif _card_kind(data, blocks, key) in ("B", "C"):
             # 장 카드 B·C — `FF 00 19 FF` + 개행 6 + 글 + 종결(B `00 09` · C `00`). 머리(`FF 00`)부터 6B 를 트램펄린으로 덮고(글은 안 덮는다),
             # 꼬리에 머리 10B + 진짜 문안 + `00 09` 를 두고 종결 뒤 옵코드로 돌아온다.
-            s = text_off - len(_CARD_B_HEAD)
+            head = _card_head(data, text_off)
+            s = text_off - len(head)
             assert s % 2 == 0, f"{stem}#{key}: 카드 머리 {s:#x} 가 홀수 주소다"
             text_end = text_off + len(blk["body"])
             end_ops = b"\x00\x09" if data[text_end + 1] == 0x09 else b"\x00"
             assert (text_end + len(end_ops)) % 2 == 0, f"{stem}#{key}: 복귀 주소가 홀수다"
             raw = H.encode_kr(wides[key], table)
-            if (len(_CARD_B_HEAD) + len(raw) + len(end_ops)) % 2:
+            if (len(head) + len(raw) + len(end_ops)) % 2:
                 raw += b" "
             tail = len(out) + len(out) % 2
             body = (
@@ -315,9 +371,50 @@ def patch(data, stem, table, orig):
             out.extend(body)
             out[s : s + TRAMP] = GOTO + struct.pack(">I", BASE + tail)
             continue
+        elif _is_band(data, text_off):
+            # 띠 제목(「순례의 아침」 MAP076#58) — `FF 37 xx xx` + `FF 87 00 00`(띠 열기) + 글 + `00 09`. 띠 처리기는 인자(2B)만 먹고 글은 **글 모드 흐름**이 읽으므로
+            # 글 앞 8B(`FF 37` 인자 포함 옵코드 둘)를 통째로 트램펄린(`FD 00` + 주소 4B + `FF FF` 무동작)으로 덮고, 꼬리에 그 8B + 진짜 문안 + `00 09` 를 둔 뒤
+            # 종결 뒤로 돌아온다(장 카드 B·C 와 같은 길 — 글 바이트는 칸 안에 그대로 남아 되풀이 검사가 같다).
+            s = text_off - BAND_HEAD
+            assert s % 2 == 0, f"{stem}#{key}: 띠 머리 {s:#x} 가 홀수 주소다"
+            text_end = text_off + len(blk["body"])
+            end_ops = b"\x00\x09"
+            assert bytes(data[text_end : text_end + 2]) == end_ops, f"{stem}#{key}: 띠 글 뒤가 00 09 가 아니다"
+            assert (text_end + 2) % 2 == 0, f"{stem}#{key}: 복귀 주소가 홀수다"
+            raw = H.encode_kr(wides[key], table)
+            if (BAND_HEAD + len(raw) + len(end_ops)) % 2:
+                raw += b" "
+            tail = len(out) + len(out) % 2
+            body = (
+                bytes(data[s:text_off])
+                + raw
+                + end_ops
+                + GOTO
+                + struct.pack(">I", BASE + text_end + len(end_ops))
+            )
+            out.extend(b"\x00" * (tail - len(out)))
+            out.extend(body)
+            out[s : s + BAND_HEAD] = GOTO + struct.pack(">I", BASE + tail) + b"\xff\xff"
+            continue
+        elif _is_gosub(data, text_off, blk):
+            # GOSUB 줄 — `FF 00` 머리부터 6B(머리 2 + 글 앞 4)를 트램펄린으로 덮고, 꼬리에 머리 + 진짜 문안 + `00` 을 두고 `FD 01`(호출) 앞으로 돌아온다.
+            # 호출·복귀(`FD 01 · FD 02`)는 원래 자리에 그대로 남는다. 덮은 글 앞 4B 는 `covers` 가 되풀이 검사에 알린다(간판류와 같다).
+            s = text_off - 2
+            assert s % 2 == 0, f"{stem}#{key}: 머리 {s:#x} 가 홀수 주소다"
+            assert len(blk["body"]) >= COVER, f"{stem}#{key}: 글이 {COVER}B 미만이라 트램펄린이 덮을 수 없다"
+            text_end = text_off + len(blk["body"])
+            raw = H.encode_kr(wides[key], table)
+            if (2 + len(raw) + 1) % 2:
+                raw += b" "
+            tail = len(out) + len(out) % 2
+            body = bytes(data[s:text_off]) + raw + b"\x00" + GOTO + struct.pack(">I", BASE + text_end + 1)
+            out.extend(b"\x00" * (tail - len(out)))
+            out.extend(body)
+            out[s : s + TRAMP] = GOTO + struct.pack(">I", BASE + tail)
+            continue
         else:
             raise SystemExit(
-                f"{stem}#{key}: `_wide` 가 지원하는 꼴(선택지 항목 · FF 02 + FF 00 머리 대사 · FE 00 + FF FF + FF 00 대사)이 아니다"
+                f"{stem}#{key}: `_wide` 가 지원하는 꼴(선택지 항목 · FF 02 + FF 00 머리 대사 · FE 00 + FF FF + FF 00 대사 · 장 카드 · 띠 제목 · GOSUB 줄)이 아니다"
             )
         last = data[s + TRAMP - 1]  # 지킬 바이트
         tail = len(out)

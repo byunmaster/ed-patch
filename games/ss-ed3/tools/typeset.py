@@ -95,9 +95,14 @@ def visible(s):
 #   🔴 **ASCII 숫자는 이제 반각으로 그려진다**(마스터 10-09 「대사 숫자 반각으로 해」 — 대사 창 글자 루틴의 숫자→전각 변환을 걷었다,
 #     `patch_ui_center.DIGIT_BR`). 종전엔 반각으로 써도 전각 글리프로 그려져(2026-09-01 실측) 숫자만 1.0 으로 셌다.
 #     **전각 숫자(`０`~`９`, 문안에 일부러 적은 것)는 여전히 1.0** — 장 제목·표지판 열 맞춤 등 17 곳.
+#   🔴 대사의 `「」` 는 반각 한 바이트(0.5 칸 · 1B) — `font.KAGI_CODE`. 마스터 도안 B판 10-26.
+KAGI = "「」『』"
+FULL_ASCII = "&%"  # 대사에서 원판 전각 글리프로 나가는 ASCII(마스터 11-13) — 2B · 1칸
+
+
 def char_cols(c):
     """그 글자가 먹는 슬롯 — 반각(ASCII) 0.5 · 전각 1.0."""
-    return 0.5 if ord(c) < 0x80 else 1.0
+    return 0.5 if (ord(c) < 0x80 and c not in FULL_ASCII) or c in KAGI else 1.0
 
 
 def cols(s):
@@ -375,7 +380,7 @@ def body_bytes(text):
             n += 1
             i += 1
         else:
-            n += 1 if ord(text[i]) < 0x80 else 2
+            n += 1 if (ord(text[i]) < 0x80 and text[i] not in FULL_ASCII) or text[i] in KAGI else 2
             i += 1
     return n
 

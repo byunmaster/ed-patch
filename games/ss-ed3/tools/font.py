@@ -25,6 +25,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import codearea as CA
 import common as C
 
 FON_KANJI = "/SYSTEM/KANJI12.FON"
@@ -44,6 +45,50 @@ ASCII_ROWS = 12
 ASCII_CELL = 8  # 셀 폭(비트) — 그리는 자리는 앞 6칸뿐이다
 ASCII_ADV = 6  # 실제 advance
 ASCII_GLYPHS = 341
+
+#   🔴 **대사의 「」 는 반각 한 바이트다**(마스터 도안 B판 10-26 → 새턴 III 전용판 10-27 — 12×12 칸에 「 = 0~5열 · 」 = 6~11열, advance 6px).
+#   `ASCII.FON` 의 빈 코드 둘(반각 가나 자리 0xA2·0xA3 — 원판 문안이 안 쓴다)에 구운다. 폭 0.5 칸 · 1B.
+#   ⚠ 대사(MAP 블록)·음성 자막(10-27)만이다 — 서책·동영상 자막은 전각 `「」` 그대로다(서책 화면은 본문을 2바이트씩 읽어 반각이 못 들어간다).
+KAGI_CODE = {"「": 0xA2, "」": 0xA3, "『": 0xA4, "』": 0xA5}
+KAGI_DOT = (  # 새턴 III 전용 도안(10-27: 닫는 쪽만 오른쪽 1px) — 정본 `board/kagi/Bs-ss-ed3.txt`. 앞 6열이 「, 뒤 6열이 」
+    "####........",
+    "#...........",
+    "#...........",
+    "#...........",
+    "#.........#.",
+    "#.........#.",
+    "#.........#.",
+    "..........#.",
+    "..........#.",
+    "..........#.",
+    ".......####.",
+    "............",
+)
+
+KAGI_DOT_DOUBLE = (  # 『』 새턴 III 전용(가로 5칸) — 정본 `board/kagi/B2s-double-ss-ed3.txt`
+    "#####.......",
+    "#...#.......",
+    "#.###.......",
+    "#.#.........",
+    "#.#......###",
+    "#.#......#.#",
+    "###......#.#",
+    ".........#.#",
+    ".......###.#",
+    ".......#...#",
+    ".......#####",
+    "............",
+)
+
+
+def kagi_glyph(ch):
+    """`「」『』` → ASCII.FON 12B(8×12, 열 0~5 에 도안 6열). 비트는 왼쪽부터 — 원본 반각과 같다."""
+    c0 = 0 if ch in "「『" else 6
+    out = bytearray()
+    for row in KAGI_DOT_DOUBLE if ch in "『』" else KAGI_DOT:
+        part = row[c0 : c0 + 6] + "00"
+        out.append(int("".join("1" if x == "#" else "0" for x in part), 2))
+    return bytes(out)
 
 
 def ascii_unpack(asc, code):
@@ -78,7 +123,7 @@ def sjis_of_index(idx):
     ku, ten = divmod(idx, 94)
     ku += 1
     ten += 1
-    c1 = 0x81 + (ku - 1) // 2 if ku <= 62 else 0xC1 + (ku - 63) // 2
+    c1 = 0x81 + (ku - 1) // 2 if ku <= 62 else 0xE0 + (ku - 63) // 2
     c2 = (ten + 0x3F + (1 if ten >= 64 else 0)) if ku % 2 else (ten + 0x9E)
     return bytes((c1, c2))
 
@@ -159,7 +204,8 @@ def free_slots(used=None):
     """
     used = used if used is not None else used_indices()
     lo = (KANJI_KU - 1) * 94
-    return [i for i in range(lo, GLYPHS) if i not in used]
+    #   🔴 코드 예약 칸(`codearea.RESERVED_SLOTS` — 우리 스텁·표가 사는 폰트 RAM)은 글리프 후보에서 뺀다. 새 배정을 얼릴 때 거기 앉지 않게 하는 장치다.
+    return [i for i in range(lo, GLYPHS) if i not in used and i not in CA.RESERVED_SLOTS]
 
 
 def main():

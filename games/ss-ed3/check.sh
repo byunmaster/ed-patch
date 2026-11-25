@@ -50,7 +50,7 @@ run 0 "$PY" "$G/tools/common.py"
 # 🔴 **`tail` 로 자르지 않는다** — 이 검사의 첫 줄이 통과/실패 헤드라인이라, 자르면
 #   실패해도 헤드라인 없이 상세 줄만 보여 사람이 놓친다(ss-ed1+2 `check.sh` 실측 함정).
 echo "  ── 조판 지문 (공용이 조사·화면 문안을 흔들었나)"
-warn 0 "$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game ss-ed3
+run 0 "$PY" "$ROOT/scripts/check/typeset_fingerprint.py" --game ss-ed3
 
 # 🔴 **덤프 라운드트립** — 경계가 한 칸이라도 밀리면 재삽입이 옆 바이트를 먹는다.
 #    두 디스크 다 본다(같은 한 벌이라는 계약을 텍스트 층에서도 다시 확인하는 셈이다).
@@ -60,6 +60,12 @@ run 0 "$PY" "$G/tools/stamp_script.py" --check
 echo "  ── 말투 (한 블록 안에서 높임과 반말이 섞였나)"
 # ⚠ 경고지 실패가 아니다 — 한 블록 안에서 말 상대가 바뀌는 자리가 실제로 있다
 warn 3 "$PY" "$G/tools/check_speech.py"
+
+echo "  ── 말투 안전망 (「그대」 금지 = 실패 · 반말 문장 「-시-」·원문 대비 길이 급감 = 경보 · 양성 대조 포함)"
+run 12 "$PY" "$G/tools/check_tone_guard.py"
+
+echo "  ── 문장부호 (`...`·`・`·`… …` 잔존 · 전각 ！？ · ASCII ~ · `?.` · `?…` 순서 · 양성 대조 포함)"
+run 4 "$PY" "$G/tools/check_punct.py"
 
 echo "  ── 화자 이름이 본문에서 또 나가나 (F4 이름창 메아리)"
 # 🔴 게이트다 — 이름창이 제 줄에 이름을 찍는데 번역이 본문에 이름표 꼴을 옮겨 쓰면 화면에 이름이 두 번 나간다
@@ -131,9 +137,17 @@ run 4 "$PY" "$G/tools/center_narration.py" --check
 echo "  ── 조판 여섯 규칙 (전 영역 · 대장 밖 새 위반)"
 run 2 "$PY" "$G/tools/check_typeset6.py" --check
 
+echo "  ── 줄·쪽 나눔 지표 a~e·h·h2 (공통 번역 규칙 2-16 — 기준선보다 늘면 실패)"
+# 🔴 게이트다 — 쪽 끝 고아(a)·덩어리를 가르는 쪽 끝(b)·문장 중간 손 개행(c)·절째 내리면 들어가는데 쪼갠 줄(d). 줄이면 --freeze 로 내린다.
+run 2 "$PY" "$G/tools/check_linebreak.py" --check
+# 🔴 퇴행 f — 2-16 이전 문안(backup/ss-ed3-pre-2-16-text) 대비 나빠진 자리 **래칫 0**(관리자 10-27). 기준 ref 가 없는 저장소에선 「못 쟀다」로 알린다.
+run 2 "$PY" "$G/tools/check_linebreak.py" --check --f backup/ss-ed3-pre-2-16-text
+
 echo "  ── 「…」 뒤 붙임 · 「～.」 (공통 번역 규칙 2-11 · 1-7)"
 # 🔴 게이트다 — 「…」 뒤에 말이 이어지면 반각 공백, 물결표 뒤 마침표 금지(마스터 10-12). `--apply` 가 공백을 넣는다.
 run 2 "$PY" "$G/tools/check_ellipsis_space.py"
+echo "  ── 빈 줄 개행 금지 (공통 번역 규칙 2-18)"
+run 0 "$PY" "$G/tools/check_blank_lines.py"
 
 echo "  ── 문안에 PUA(U+E000~F8FF) 문자가 섞였나 (다른 기종 문안 이식 사고)"
 run 2 "$PY" "$G/tools/check_pua.py"
@@ -166,6 +180,11 @@ warn 0 "$PY" "$G/tools/check_save_compat.py"
 echo "  ── 구워 둔 이미지가 지금 소스의 것인가 (두 장 대조)"
 run 0 "$PY" "$G/tools/check_build_discs.py"
 
+# 🔴 게이트다 — **코드 예약 칸**(10-24). 우리 스텁·표는 `KANJI12.FON` 의 안 쓰는 글리프 칸(LWRAM)에 산다 — 글리프 배정이 거기 앉거나(코드가 글자로 읽힌다)
+#    디버그 메뉴 구역(`/0.BIN` `0x06016420~`)에 우리 코드가 다시 들어오면(메뉴가 조용히 깨진다) 운다. 정본은 `tools/codearea.py`.
+echo "  ── 코드 예약 칸 (폰트 칸 코드 · 글리프 배정 겹침 · 디버그 메뉴 구역 원판 그대로)"
+run 3 "$PY" "$G/tools/check_codearea.py"
+
 # 🔴 게이트다 — **글 소실 없음** 불변식. 위 검사기들은 「넣으려던 문안」을 보고, 이건
 #    「이미지에 들어간 것」을 되풀어 본다(공백·개행 제외 글자열이 script/ 와 같은가).
 #    ps1-ed3+4 가 대사 꼬리를 폭 한도로 잘라 버리는데 검사기가 0 건이던 사고(09-27)의 짝.
@@ -179,6 +198,35 @@ run 3 "$PY" "$G/tools/check_no_loss.py"
 #    구운 재배치는 `relocations.tsv`(장부)에 전부 있어야 한다 — 낡으면 `check_structure.py --ledger` 로 다시 쓴다.
 echo "  ── 구조 대조 (원본 ↔ 구운 맵의 제어 열 · 재배치 장부)"
 run 6 "$PY" "$G/tools/check_structure.py"
+
+# 🔴 원판 대비 **바뀐 파일 전수 감사**(11-08, SFC II 「이미지 전체 포인터 패턴 치환」 프리징 계기) — 선언(`changed_files_allow.json`) 밖 파일이 바뀌면 실패.
+#    이 게임의 빌드는 파일 이름별 패처라 전체 검색·치환이 없고, 결과 쪽에서도 한 번 더 확인한다.
+echo "  ── 원판 대비 바뀐 파일 감사 (선언 밖 변경 없음)"
+run 0 "$PY" "$G/tools/check_changed_files.py"
+
+# 🔴 **원판 사본 잔존 감사**(11-17, PCE I 「원판에 대사 블록 사본이 고친 자리 밖에 따로 있어 정상 진행이 그걸 읽었다」 계기) — 우리가 번역해 바꾼 원판 글(SJIS 덩이 · 바뀐 바이트 구간)이
+#    구운 이미지의 **다른 자리에 원판 그대로** 남았나를 이미지 전체에서 찾는다(분모 = 이미지 전체). 선언(`orig_copies_allow.json`) 밖이면 실패.
+echo "  ── 원판 사본 잔존 감사 (원판 글이 이미지 다른 자리에 남지 않음)"
+run 0 "$PY" "$G/tools/check_orig_copies.py"
+
+# 🔴 시스템 문자열 제어 문자 대조(마스터 10-29 「대사 색 코드 누락 점검」 — pce-ed1 에서 색 전환 옵코드가 한 번도 안 나갔다). 대사 본문 제어는 위 구조 대조가 센다.
+echo "  ── 시스템 문자열 제어 문자 (원문 키 ↔ 우리 값)"
+run 0 "$PY" "$G/tools/check_ctl_sys.py"
+
+# 🔴 마스터 판정 문안(10-29 — 「로그 씨」가 세 번 되살아났다): 판정으로 정한 금지·필수 꼴은 `master_rulings.json`, 판정을 받으면 거기 한 줄을 더한다.
+echo "  ── 조판 축 일람 · 양성 대조 · 부호 뒤 공백 (마스터 10-31)"
+run 0 "$PY" "$G/tools/check_typeset_axes.py" --check
+
+echo "  ── 규칙 2-8 가운데 맞춤 · 2-10 한 줄 문장 · 2-13 쉼표 (정적 점검 11-03)"
+run 0 "$PY" "$G/tools/check_center.py" --check
+run 0 "$PY" "$G/tools/check_oneline.py" --check
+run 0 "$PY" "$G/tools/check_commas.py" --check
+
+echo "  ── 화면 일본어 전체 훑기 (굽은 이미지 전 파일 · 정본 밖 가나 런, 관리자 11-05)"
+run 0 "$PY" "$G/tools/check_jp_scan.py" --check
+
+echo "  ── 마스터 판정 문안 (되돌림 금지)"
+run 0 "$PY" scripts/check/master_rulings.py --game ss-ed3
 
 if [ "$fail" -ne 0 ]; then
   echo "  ❌ [ss-ed3] 게이트 실패"

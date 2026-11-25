@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -50,7 +51,31 @@ def load_script(stem):
     script.update(d.get("_wide", {}))
     #   인라인 아이템 코드 뒤 병기 조사는 빌드 때 하나로 줄인다(`inline_josa.py`) — 칸 안에 **물리적으로** 들어가는 문안이다
     script = {k: IJ.resolve(v) if isinstance(v, str) else v for k, v in script.items()}
+    if os.environ.get("ED_ORIG_FORM"):  # 시험 롬 전용 — 원판이 전각 영문인 블록은 영문을 전각으로(제품 불변)
+        script = _orig_form(stem, script)
     return script, d.get("_jp", {})
+
+
+_FWL = re.compile(r"[Ａ-Ｚａ-ｚ]")
+
+
+def _orig_form(stem, script):
+    """원판 블록에 전각 영문이 있으면 우리 문안의 ASCII 영문도 전각으로 — `Ａ−14` 꼴(마스터 11-16 「전부 원판 꼴」 시험)."""
+    pj = os.path.join(C.OUT_DIR, "map_jp", f"{stem}.json")
+    if not os.path.exists(pj):
+        return script
+    with open(pj, encoding="utf-8") as f:
+        jp = json.load(f)["blocks"]
+    out = dict(script)
+    for k, v in script.items():
+        if not (isinstance(v, str) and str(k).isdigit() and int(k) < len(jp)):
+            continue
+        if not _FWL.search(jp[int(k)].get("text", "")):
+            continue
+        t = re.sub(r"(?<=[A-Za-z])-", "\u2212", v)
+        t = re.sub(r"[A-Za-z]", lambda m: chr(ord(m.group()) + 0xFEE0), t)
+        out[k] = t
+    return out
 
 
 def wide(stem):
@@ -208,6 +233,21 @@ def patch_blocks(data, stem, table):
             if len(raw) > NAME_MAX:
                 bad.append((key, f"맵 이름이 {NAME_MAX}B 를 넘는다({len(raw)}B)"))
                 continue
+            #   🔴 **이름 뒤에 짧은 ASCII 표지**(`02`·`NUT` — 이름 NUL 바로 뒤에 NUL 종료로 붙는다)가 있는 맵 넷(016·026·028·049)은 그 표지를 **통째로 뒤로 민다**
+            #   (마스터 10-29 지명 띄어쓰기 — 「정적의 숲」 9B 가 원문 8B 칸을 넘는다). 이름이 14B 까지 가는 맵(042)엔 표지 칸이 없으므로 표지는 이름 자리 뒤의 순차 문자열이다.
+            t0 = blk["off"] + budget + 1
+            k = 0
+            while 0x20 < data[t0 + k] < 0x7F:
+                k += 1
+            if k and data[t0 + k] == 0:
+                tok = bytes(data[t0 : t0 + k])
+                new_end = blk["off"] + len(raw) + 1 + k + 1
+                if new_end > blk["off"] + NAME_MAX + 1 + k + 1 or any(data[t0 + k + 1 : new_end]) or any(data[blk["off"] + budget : t0]):
+                    bad.append((key, "맵 이름 뒤 표지를 밀 자리가 없다"))
+                    continue
+                out[blk["off"] : new_end] = raw + b"\x00" + tok + b"\x00"
+                done += 1
+                continue
             if any(data[blk["off"] + budget : blk["off"] + NAME_MAX + 1]):
                 bad.append((key, "맵 이름 뒤가 비어 있지 않다 — 늘려 쓸 수 없다"))
                 continue
@@ -233,7 +273,8 @@ def patch_blocks(data, stem, table):
         if fitted is None:
             bad.append((key, why))
             continue
-        raw = H.encode_kr(fitted, enc)
+        #   `!?` 는 합자 글리프 한 글자(같은 2B) — 배정(`liga_map.json`)이 있을 때만(`hangul_map.LIGA_PATH`)
+        raw = H.encode_kr(H.liga_text(fitted), {**enc, **H.load_liga()}, kagi=True)
         if fill:
             if len(raw) + fill != budget:
                 bad.append((key, f"채움 계산이 어긋났다 {len(raw)}+{fill} != {budget}"))
