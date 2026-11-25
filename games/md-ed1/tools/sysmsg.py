@@ -27,8 +27,8 @@ CODE_END = 0x40000
 LZ = [(0x085E52, 0x09D86E), (0x0CAB04, 0x0D85B4), (0x0D8814, 0x12261C), (0x1293E0, 0x134DDC)]
 MAP_JSON = common.GAME_DIR / "textmap" / "sysmsg.json"
 EXPECT = (
-    166,
-    68,
+    167,
+    70,
 )  # 스트림 · 묶음 (2026-09-06 — 워드 표 0x73bc · 고정 스트림 19 · _textlike 0x80 고침
 #     · 09-26 묶음 안 참조 3 — 0x7402·0x2ba62·0x325a6 · 09-27 짧은 가나 조각 3 — 0x24a68·0x2b272·0x324dd)
 EXCLUDE = {0x1ED0C, 0x32E2A}  # '付近入口H鄲 $Kr' — cp932 로 우연히 풀리는 코드. 눈으로 확인해 뺀다
@@ -65,6 +65,7 @@ PINNED = {
     0x324BB,
     0x324C2,
     0x324E2,  # 미니게임 전투 문구
+    0x325BE,  # 🔴 「１<06>」 — 코드(0x3198c `move.w $325be.l`)가 이 **워드(전각 ０ 기준 코드)** 를 읽어 연승 수를 전각 숫자로 만든다. 참조 명령이 아니라 묶음이 삼켜 한글 코드가 앉았다(11-07)
 }
 
 
@@ -251,12 +252,18 @@ def clusters(strs: dict[int, dict]) -> list[list[int]]:
 #   0x7634 = 「…의 방어력이 <06>」(원문 「の防御力が」 — 「이」가 빠져 있었다). 칸 12B 에 13B 라, 앞 0x762a 「 뺏었다!」
 #   (원판 10B 칸을 우리 문안 9B 로 쓰고 남은 1B — 원판에선 그 자리가 스트림 끝 0A)에서 1B 를 빌려 0x7633 에서 시작한다. 들어오는 길은 호출식(0x758a·0x75c6 의 `10 call`)
 #   뿐이고 둘 다 같은 묶음(0x73fe)이라 `_emit` 이 allpos 로 새 자리를 따라간다. 앞 묶음 안 참조는 없다(refs 비어 있음).
-BORROW = {0x7634: 0x7633}
+BORROW = {0x7634: 0x7633, 0x24B09: 0x24B0C}
+# 뒤 묶음에 칸을 **빌려줘** 앞 묶음의 끝이 늘어난다(BORROW 의 hi 쪽) — 뒤 묶음의 시작이 그만큼 밀린다. 값 = 새 시작 자리.
+#   0x24B0A = 「<아이템>을 지녔다.」 묶음(남는 칸 4B). 앞 묶음 0x24ab8~ 의 「전투에서 패했습니다.」(규칙 4-17 11-15, 원문 敗れました)로 81B 에
+#   83B 라 넘쳤다 — 문안·띄어쓰기는 줄이지 않고(2-19) 묶음 뒤 00 패딩 1B(0x24b09) + 이 묶음 앞 2B 를 빌려 쓴다. 들어오는 길은 참조뿐이라 시작이 밀려도
+#   `_emit`·참조 재기록이 새 자리를 따라간다.
+LEND = {0x24B0A: 0x24B0C}
 
 
 def span(strs: dict[int, dict], cl: list[int]) -> tuple[int, int]:
     lo, hi = cl[0], max(strs[t]["stream"].end for t in cl)
     lo = BORROW.get(lo, lo)
+    lo = LEND.get(lo, lo)
     hi = BORROW.get(hi, hi)
     return lo, hi
 

@@ -116,24 +116,36 @@ ENTRY_JP = [
 ]
 # 원문 접미 → 한국어 접미 — 칸은 **원문대로**(마스터 10-07): 원문에 の町·の城 가 있으면 붙이고 없으면 맨이름.
 # 지명 접미 규칙 — 정본 ui 의 `원문@지명칸` 열쇠(마스터 10-08). 게임 폴더에 표를 두지 않는다.
-SUFFIX_KR = {k.split("@")[0]: v for k, v in dict_names.canon.table("ui", "ed1").items() if k.endswith("@지명칸")}
+SUFFIX_KR = {
+    k.split("@")[0]: v
+    for k, v in dict_names.canon.table("ui", "ed1").items()
+    if k.endswith("@지명칸")
+}
 _SUFFIX = re.compile("^(.+?)(" + "|".join(SUFFIX_KR) + ")$")
 
 
-def banner_kr(jp: str) -> str:
-    """배너 칸 원문 → 한글. 사전 place 에 통째로 있으면 그 값, 없으면 「사전 이름 + 원문 접미」(붙여쓰기)."""
+def banner_kr(jp: str, general: bool = False) -> str:
+    """배너 칸 원문 → 한글. `general`(입장 배너)이면 정본 일반 꼴(띄어쓰기 — `canon.place_general`, 마스터 11-09 「입장배너도 가능하다면 띄어쓰기」),
+    아니면 HUD·워프 꼴(붙임). 정본 키가 없는 「이름+원문 접미」는 이름 일반 꼴 + 접미를 **성·섬은 붙이고 나머지는 한 칸 띄워** 잇는다(마스터 11-09 「성은 보통 붙여써도」)."""
     jp = re.sub(r"<[^>]*>", "", jp)
+    if general:
+        g = dict_names.canon.place_general(jp, "ed1")
+        if g:
+            return g
     v = dict_names.from_dict(jp, ("place",))
     if v:
+        # 원문 맨이름은 맨이름 그대로(마스터 11-09 「원본도 라스타반이니 라스타반으로」 — 접미를 지어 붙이지 않는다).
         return v
     m = _SUFFIX.match(jp)
     base = dict_names.from_dict(m.group(1), ("place",)) if m else None
     if not base:
         raise SystemExit(f"블록 91 배너 {jp!r}: 사전 place 에 없다 — 사전 후보로 올린다")
-    return base + SUFFIX_KR[m.group(2)]
+    suf = SUFFIX_KR[m.group(2)]
+    sep = " " if general and suf not in ("성", "섬") else ""
+    return base + sep + suf
 
 
-ENTRIES = [(i, banner_kr(jp), extra, jp) for i, extra, jp in ENTRY_JP]
+ENTRIES = [(i, banner_kr(jp, general=True), extra, jp) for i, extra, jp in ENTRY_JP]
 
 
 # ── 갈무리14 전용 합성 글리프 (마스터 확정 2026-09-28 — "입장배너 폰트크기 키울 수 있나") ──
@@ -151,8 +163,11 @@ def _pua_map() -> dict[str, str]:
     global _pua_for
     if _pua_for is None:
         uniq = sorted(
-            set("".join(kr for _, kr, _extra, _jp in ENTRIES))
-            | {ch for tbl in DEST.values() for _jp, kr in tbl for ch in kr}
+            (
+                set("".join(kr for _, kr, _extra, _jp in ENTRIES))
+                | {ch for tbl in DEST.values() for _jp, kr in tbl for ch in kr}
+            )
+            - {" "}
         )
         _pua_for = {ch: chr(_PUA_BASE + i) for i, ch in enumerate(uniq)}
     return _pua_for
@@ -180,12 +195,49 @@ def chars() -> set[str]:
     return set(_pua_map().values())
 
 
-def _pad(body: bytes, total: int = ENTRY_LEN) -> bytes:
-    pad = total - len(body)
-    if pad < 0 or pad % 2:
-        raise SystemExit(f"칸 초과 또는 홀수 나머지: body={len(body)}B, 칸={total}B")
-    left = pad // 2
-    return b" " * left + body + b" " * (pad - left)
+# 입장 배너(블록 91) — 칸(14B, 바이트당 7.5px)의 중심이 **틀 중심보다 8px 왼쪽**이다(원판 캡처 실측 2026-11-05 — 「エルアスタの町」 글 중심
+# 190.5px · 틀 중심 198.5px, 한글판 대칭 패딩도 191px 로 같은 자리). 규칙 2-8(마스터 11-04 「원판도 그렇긴 한데 한글은 가운데」)에 따라 글을
+# 한 바이트(7.5px)만큼 오른쪽으로 민다 → 틀 중심과 0.5px 차. 틀 위치(엔진)는 그대로.
+# 🔴 11-10 정정(마스터·관리자 실측): 「틀 중심 198.5」는 보이는 파란 상자의 중심이 아니었다 — 실화면 파란 안쪽 상자는 x 132..251(테두리 금색 129..254) 중심 **192.0px** 이고
+# 한글판 글 중심은 191(대칭)~199(+1B)였다. 위치는 **보이는 상자 안쪽 중심(192) 대비 실제 잉크 최근접**(동점 왼쪽)으로 — 후보 칸을 넣어 잉크를 잰 값(46줄)과 모델 `_left_pad_px(…, BANNER_INK_PX)` 가 전부 일치한다.
+# 짝수 본문(니르기드성·라스타반·루디아성·쟈그리 폐광)은 +7px 오른쪽이던 것이 −1px 로 한 바이트 왼쪽으로 온다. 블록 92·93 은 틀(안쪽 100..219) 중심 160 = 칸 중심이라 `DEST_INK_PX`.
+BANNER_INK_PX = 1.0
+
+
+def _body_len(kr: str) -> int:
+    """배너 본문 바이트 — 음절 2B · 낱말 사이 반각 공백 1B."""
+    return sum(1 if c == " " else 2 for c in kr)
+
+
+def _left_pad(body_len: int, total: int = ENTRY_LEN, shift: int = 0) -> int:
+    """왼쪽 공백 바이트 — 가능한 위치 중 가운데에 가장 가까운 것, 같은 거리면 왼쪽(마스터 11-09 「최대한 가운데」, 규칙 2-8).
+    홀수 여백(띄어 쓴 본문)은 반 바이트가 남아 둘이 같은 거리 → 왼쪽(내림)."""
+    pad = total - body_len
+    if pad < 0:
+        raise SystemExit(f"칸 초과: body={body_len}B, 칸={total}B")
+    return min(pad, pad // 2 + shift)
+
+
+DEST_INK_PX = 0.5  # 목적지 배너 — 칸 중심 대비 글(잉크) 중심의 실측 편향 보정(블록 93 실화면)
+
+
+def _left_pad_px(body_len: int, total: int = ENTRY_LEN, target_px: float = 0.0) -> int:
+    """왼쪽 공백 바이트 — **잉크 중심**이 칸 중심 + `target_px` 에 가장 가까운 위치, 같으면 왼쪽(규칙 2-8 개정 11-09:
+    「오른쪽 조금 vs 왼쪽 많이면 오른쪽 조금」). 한 바이트 = 7.5px, 좌우 차 한 바이트 = 3.75px."""
+    pad = total - body_len
+    if pad < 0:
+        raise SystemExit(f"칸 초과: body={body_len}B, 칸={total}B")
+    return min(range(pad + 1), key=lambda L: (abs((2 * L - pad) * 3.75 - target_px), L))
+
+
+def _pad_dest(body: bytes) -> bytes:
+    left = _left_pad_px(len(body), ENTRY_LEN, DEST_INK_PX)
+    return b" " * left + body + b" " * (ENTRY_LEN - len(body) - left)
+
+
+def _pad(body: bytes, total: int = ENTRY_LEN, shift: int = 0) -> bytes:
+    left = _left_pad(len(body), total, shift)
+    return b" " * left + body + b" " * (total - len(body) - left)
 
 
 def new_block(orig_data: bytes, cs) -> bytes:
@@ -199,8 +251,17 @@ def new_block(orig_data: bytes, cs) -> bytes:
     out = bytearray(orig_data)
     pos = TABLE_OFF
     for _i, kr, extra, _jp in ENTRIES:
-        body = b"".join(cs.encode_char(pua[ch]) for ch in kr)
-        rec = _pad(body + extra)
+        body = b"".join(b" " if ch == " " else cs.encode_char(pua[ch]) for ch in kr)
+        if extra:
+            # 꼬리(원본 보존 바이트)는 화면에 안 그려지는 글리프(「ι」 자리)라 가운데는 **보이는 글만**으로 맞춘다(11-08 실화면: 꼬리까지 가운데로 잡으면 글이 8px 왼쪽).
+            left = _left_pad_px(len(body), ENTRY_LEN, BANNER_INK_PX)
+            right = ENTRY_LEN - left - len(body) - len(extra)
+            if right < 0:
+                raise SystemExit(f"꼬리 칸 초과: body={len(body)}B extra={len(extra)}B")
+            rec = b" " * left + body + extra + b" " * right
+        else:
+            left = _left_pad_px(len(body), ENTRY_LEN, BANNER_INK_PX)
+            rec = b" " * left + body + b" " * (ENTRY_LEN - len(body) - left)
         out[pos : pos + ENTRY_LEN] = rec
         pos += STRIDE
     return bytes(out)
@@ -226,7 +287,7 @@ DEST_JP = {
         "フィーンの砦",
     ],
 }
-DEST = {blk: [(jp, banner_kr(jp)) for jp in jps] for blk, jps in DEST_JP.items()}
+DEST = {blk: [(jp, banner_kr(jp, general=True)) for jp in jps] for blk, jps in DEST_JP.items()}
 
 
 def _orig_cell(jp: str) -> bytes:
@@ -252,8 +313,10 @@ def new_dest_block(blk: int, orig_data: bytes, cs) -> bytes:
     out = bytearray(orig_data)
     pua = _pua_map()
     for i, (_jp, kr) in enumerate(DEST[blk]):
-        body = b"".join(cs.encode_char(pua[ch]) for ch in kr)
-        out[at + i * STRIDE : at + i * STRIDE + ENTRY_LEN] = _pad(body)
+        body = b"".join(b" " if ch == " " else cs.encode_char(pua[ch]) for ch in kr)
+        out[at + i * STRIDE : at + i * STRIDE + ENTRY_LEN] = _pad_dest(
+            body
+        )  # 블록 93 실화면 실측(11-09): 틀 중심 = 칸 중심(160px, 91 의 −8px 보정 없음) · 글은 잉크 중심 최근접
     return bytes(out)
 
 
@@ -268,7 +331,9 @@ def check() -> None:
     print(f"  대본 블록 {BLOCK} 지명 표 — 앵커 일치, 항목 {len(ENTRIES)}개")
     for blk in DEST_JP:
         _dest_start(bl[blk][1], blk)
-    print(f"  대본 블록 {'·'.join(map(str, DEST_JP))} 목적지 표 — 앵커 일치, 항목 {sum(len(v) for v in DEST_JP.values())}개")
+    print(
+        f"  대본 블록 {'·'.join(map(str, DEST_JP))} 목적지 표 — 앵커 일치, 항목 {sum(len(v) for v in DEST_JP.values())}개"
+    )
 
 
 if __name__ == "__main__":

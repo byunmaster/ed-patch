@@ -46,6 +46,10 @@ FONT_TAG = "<fd85>"
 # 네오둥근모면 **반각(ASCII)도 리소스 5** 로 그린다 — 머리에 `<fd05>`(반각 글꼴 5), 끝에 `<fd00>`(반각 글꼴 되돌림).
 # 반각 글리프는 리소스 1(대사창과 공유, 원판 꼴) 뿐이라 부호가 1~2px 점이었다(마스터 2026-10-08). 전진은 피치/2 그대로.
 NARROW_ON, NARROW_OFF = "<fd05>", "<fd00>"
+# 자막의 「」『』 도 대사와 같은 반각 도안(리소스 1 코드 → 리소스 5 에 같은 도안, 마스터 10-27 「씬과 동일한 폰트면 반각」).
+# 전진 6px 는 피치 태그 `<fe0c>` 로 감싸 얻는다(`narrow_kagi`). 폭 검사는 `KAGI_PX`.
+KAGI_CHARS = "「」『』"
+KAGI_PX = 6
 FONT_CELL = int(os.environ.get("MD_CAPTION_CELL", "16"))
 # 후보 비교용 — 정본은 상수, `MD_CAPTION_FONT` 로 한 번씩 바꿔 구워 본다(실험 전용, 배포 빌드는 상수를 고친다).
 FONT_SRC = os.environ.get("MD_CAPTION_FONT", "galmuri11")
@@ -58,12 +62,30 @@ def font_tags(ours: str) -> str:
     if FONT_SRC in ("galmuri11bold", "galmuri11"):  # 원판 실측 가로 피치 약 14px — 오프닝도 `<fe10>`(16) → `<fe0e>`(14)
         ours = ours.replace("<fe10>", "<fe0e>")
     ours = ours.replace(FONT_TAG, FONT_TAG + NARROW_ON, 1).replace("<fd80>", "<fd80>" + NARROW_OFF, 1)
-    return widen_digits(ours)
+    ours = widen_digits(ours)
+    return narrow_kagi(ours)
 
 
 # 반각 숫자는 잉크 7열이 전진 7(피치 14/2)에 꽉 차 다음 글자 테두리(칸 0열)가 숫자 오른쪽 끝을 먹는다 —
 # 「10여」의 「0」이 「C」로 보였다(마스터 실기 10-13). 숫자 덩이만 피치를 +2 로 감싸 **전진 +1px** (한글·부호는 불변).
 DIGIT_EXTRA = 2  # +1 은 「10여」가 아직 붙어 보였다(마스터 10-13 실기 캡처, 공통 규칙 1-5) — 잉크 7열 뒤 **빈 열 2**(전진 9)
+
+
+def narrow_kagi(ours: str) -> str:
+    """낫표를 피치 12(`<fe0c>`)로 감싸 전진 6px(반각 = 피치/2). 숫자 덩이와 같은 방식."""
+    import re
+
+    cur = 16
+    out = []
+    for m in re.finditer(r"<fe([0-9a-f]{2})>|<[^>]*>|[「」『』]|[^<「」『』]+|<", ours):
+        if m.group(1):
+            cur = int(m.group(1), 16)
+        if m.group(0) in KAGI_CHARS:
+            out.append(f"<fe0c>{m.group(0)}<fe{cur:02x}>")
+        else:
+            # 이어 쓰는 줄의 들여쓰기 = 윗줄 머리(전각 이름 + 6px 낫표 = 14k+6px)에 맞춘다 — 공백은 7px 라 마지막 한 칸을 6px 로
+            out.append(re.sub(r"(?<=\n)( *) (?=[^ \n])", lambda w: f"{w.group(1)}<fe0c> <fe{cur:02x}>", m.group(0)))
+    return "".join(out)
 
 
 def widen_digits(ours: str) -> str:
@@ -76,7 +98,8 @@ def widen_digits(ours: str) -> str:
         if m.group(1):
             cur = int(m.group(1), 16)
         if m.group(2):
-            out.append(f"<fe{cur + 2 * DIGIT_EXTRA:02x}>{m.group(2)}<fe{cur:02x}>")
+            # 숫자는 원본 글꼴(리소스 1) — 마스터 10-27 규칙 1-8 「md 는 원본 그대로」. 잠깐 반각 글꼴 5 를 끈다
+            out.append(f"{NARROW_OFF}<fe{cur + 2 * DIGIT_EXTRA:02x}>{m.group(2)}<fe{cur:02x}>{NARROW_ON}")
         else:
             out.append(m.group(0))
     return "".join(out)
@@ -276,7 +299,7 @@ def seed(d: bytes) -> None:
 def cells(s: str) -> float:
     """화면 칸 — 이 렌더러는 **1바이트로 싣는 글자(ASCII)가 반각**이다. `krwrap.text_width` 는 `. , ! ?` 를
     전각으로 세지만(다른 기종 규칙) 여기선 반각 글리프(리소스 1)로 나간다(2026-09-26 실측: 「…지배한다.」 188px)."""
-    return sum(0.5 if ord(c) < 0x80 else 1 for c in s)
+    return sum(0.5 if ord(c) < 0x80 or c in KAGI_CHARS else 1 for c in s)
 
 
 def _width_errors(k: str, ours: str, fam: str | None = None) -> list[str]:
@@ -295,7 +318,10 @@ def _width_errors(k: str, ours: str, fam: str | None = None) -> list[str]:
         ln = ln.rstrip()
         if not ln:
             continue
-        start = sum((pitch / 2 + (DIGIT_EXTRA if c.isdigit() else 0)) if ord(c) < 0x80 else pitch for c in ln[:-1])
+        start = -1 * (ln != ln.lstrip(" ")) + sum(
+            KAGI_PX if c in KAGI_CHARS else (pitch / 2 + (DIGIT_EXTRA if c.isdigit() else 0)) if ord(c) < 0x80 else pitch
+            for c in ln[:-1]
+        )
         # 피치 14(자막)는 punctwrap 가 모든 글자 +8px(피치 16·그 밖은 끝 부호만 +4)
         lim = win - 26 + (8 if pitch == 14 else 4 if ln[-1] in ".,!?" else 0)
         if start > lim:

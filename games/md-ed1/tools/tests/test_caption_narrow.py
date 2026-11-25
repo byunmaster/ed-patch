@@ -25,7 +25,7 @@ class FontTags(unittest.TestCase):
 class DigitWiden(unittest.TestCase):
     def test_digit_runs_get_wider_pitch_only(self):
         out = captions.widen_digits("<fe0e>왕자는 6살. 16살<fd80>")
-        self.assertEqual(out, "<fe0e>왕자는 <fe12>6<fe0e>살. <fe12>16<fe0e>살<fd80>")
+        self.assertEqual(out, "<fe0e>왕자는 <fd00><fe12>6<fe0e><fd05>살. <fd00><fe12>16<fe0e><fd05>살<fd80>")
 
     def test_tag_digits_untouched(self):
         self.assertEqual(captions.widen_digits("<fd85><fe0e>안녕"), "<fd85><fe0e>안녕")

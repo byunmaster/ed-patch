@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
 import dict_names
 import halfspace
+import hangul
 
 LIMIT = 210  # 메시지 창 한 줄(px)
 FULL, HALF = 12, 6
@@ -41,7 +42,7 @@ T = common.GAME_DIR / "textmap"
 
 def width(s: str) -> int:
     return sum(
-        FULL + halfspace.EXTRA_PX if c in halfspace.PUAS else HALF if ord(c) < 0x80 else FULL
+        FULL + halfspace.EXTRA_PX if c in halfspace.PUAS else HALF if ord(c) < 0x80 or c in hangul.KAGI_HALF else FULL
         for c in s
     )
 

@@ -73,6 +73,34 @@ def _msg(where: str, v: str, ours: str) -> str:
     return f"{where}: 값 앞뒤 공백이 정본 「{v}」 와 다르다 — 「…{ours[max(0, i - 6) : i + 12]}…」"
 
 
+# 엔진이 끼워 넣는 칸(이름 02·0B·09xx · 품목 0E · 조립 이름 `{…}`) 바로 앞 글자 — 공백이어야 어절이 갈린다. 여는 낫표·괄호만 붙는다.
+# 칸 뒤 조사는 붙는 게 맞아 안 본다(`<0e>입니까요`). 10-30 pce-ed1 「상자에는{아이템}이」 부류가 이 게임에선 안 나는지 센다.
+_SLOT = re.compile(
+    r"(?:<(?:02|0b|0e|09[0-9a-f]{2})>|\{(?!n\})[^}]*\})"
+)  # `{n}` 은 이음 자리(06)라 뺀다 — 위 check 몫
+_OPEN = set("「『（([“\"'")
+
+
+def check_glue(pairs) -> tuple[int, list[str]]:
+    errs, n = [], 0
+    for where, _jp, ours, _kind in pairs:
+        if not ours:
+            continue
+        s = ours.replace("\n", " ")
+        for m in _SLOT.finditer(s):
+            n += 1
+            i = m.start()
+            if i == 0:
+                continue
+            prev = s[i - 1]
+            if not (
+                prev.isalnum() or prev in "%)"
+            ):  # 공백·여는 부호·제어 코드·문장 끝 부호(다음 문장 머리)는 어절 붙음이 아니다
+                continue
+            errs.append(f"{where}: 변수 칸 앞에 공백이 없다 — 「…{s[max(0, i - 8) : i + 8]}…」")
+    return n, errs
+
+
 def main() -> int:
     n, errs = check(
         [p for p in names_corpus.pairs() if str(p[0]).startswith(("battlej:", "sysmsgj:"))]
@@ -80,7 +108,11 @@ def main() -> int:
     print(f"  값 이음 공백 검사 [md-ed1] — 이은 줄 {n} · 어긋남 {len(errs)}")
     for e in errs[:30]:
         print("   ✗", e)
-    return 1 if errs else 0
+    gn, gerrs = check_glue(names_corpus.pairs())
+    print(f"  변수 칸 앞 공백 검사 [md-ed1] — 칸 {gn} · 붙은 곳 {len(gerrs)}")
+    for e in gerrs[:30]:
+        print("   ✗", e)
+    return 1 if errs or gerrs else 0
 
 
 if __name__ == "__main__":

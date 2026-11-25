@@ -301,6 +301,7 @@ class Module:
     forced: dict[int, int] = field(default_factory=dict)  # 낡은 변위를 고친 lea(뿌리 규칙 밖) → 대상
     pool_ins: int | None = None  # 문안 풀의 첫 스트림을 가리키는 lea
     orphans: list[int] = field(default_factory=list)  # 참조 없이 앞 스트림 끝에서 이어 읽히는 스트림(ORPHANS)
+    stale_shift: int = 0  # 낡은 변위를 고친 블록의 밀림(STALE_SHIFT) — 뿌리가 아닌 lea(쓰기 짝)도 같은 만큼 읽는다
 
 
 def looks_like_text(st: Stream) -> bool:
@@ -432,9 +433,12 @@ def parse_module(b: bytes, hint: Module | None = None) -> Module:
     """`hint` = 원본 모듈 — 재조립한 새 바이트를 다시 읽을 때 원본이 찾은 **표 자리**(entries)를 알려 준다
     (새 바이트에선 표가 문안 바로 앞에 붙어 있지 않아 위치만으로는 못 찾는다)."""
     sha = hashlib.sha1(b).hexdigest()
+    stale = 0
     if (shift := STALE_SHIFT.get(sha)) is not None:
+        stale = shift
         b, pool, forced = fix_stale(b, shift)
     elif hint is not None and hint.forced:
+        stale = hint.stale_shift
         # 재조립한 새 바이트 — 원본이 고친 lea 자리를 그대로 뿌리로 읽고, 풀은 첫 lea 에서 다시 걷는다
         forced = {ins: ins + 2 + struct.unpack(">h", b[ins + 2 : ins + 4])[0] for ins in hint.forced}
         pool = _walk_pool(b, forced[hint.pool_ins])[0]
@@ -554,6 +558,7 @@ def parse_module(b: bytes, hint: Module | None = None) -> Module:
         forced,
         min(forced, key=lambda i: forced[i]) if forced and hint is None else (hint.pool_ins if hint else None),
         orphans,
+        stale,
     )
 
 
@@ -681,6 +686,22 @@ def reassemble(
         for st in mod.streams.values():
             for t in st.tokens:
                 b[t.off : t.off + len(t.raw)] = b"\x00" * len(t.raw)
+    if zero_dead:
+        # 🔴 코드가 `lea/pea d16(pc)` 로 **스트림 안쪽**(시작이 아닌 바이트)을 가리키면 그 바이트는 문안이 아니라 자료다 — 씬 20 의 문 서술자
+        # (`lea $43A(pc),a3` + 서비스 0x836F 가 34바이트를 `$FF208C` 로 복사)는 첫 바이트가 옛 스트림의 끝 코드 06 과 겹쳐 있어, 0 으로 지우면
+        # 서술자 [0] 이 06→00 으로 바뀐다(11-07 MD I 점검). 안쪽 참조 목표부터 그 토큰 끝까지는 지우지 않는다.
+        for p in range(0, len(mod.data) - 3, 2):
+            w = (mod.data[p] << 8) | mod.data[p + 1]
+            if (w & 0xF1FF) != 0x41FA and w != 0x487A:
+                continue
+            d = (mod.data[p + 2] << 8) | mod.data[p + 3]
+            t = p + 2 + (d - 0x10000 if d & 0x8000 else d)
+            if p in mod.roots or t in mod.streams or not 0 <= t < len(mod.data) or not covered[t]:
+                continue
+            for st in mod.streams.values():
+                for tk in st.tokens:
+                    if tk.kind != "text" and tk.off <= t < tk.off + len(tk.raw):  # 글자 안쪽은 숨은 텍스트 게이트가 우는 옛 문안을 남기므로 제외(씬 161 의 쓰기-읽기 짝은 별도 건)
+                        b[t : tk.off + len(tk.raw)] = mod.data[t : tk.off + len(tk.raw)]
     if len(b) & 1:
         b.append(0)
     order = sorted(mod.streams)
@@ -762,6 +783,22 @@ def reassemble(
         if not -0x8000 <= disp < 0x8000:
             raise ValueError(f"lea 변위 범위 초과 @{ins:#x}")
         b[ins + 2 : ins + 4] = struct.pack(">h", disp)
+    # 4b. 낡은 변위 블록(씬 161)의 **뿌리가 아닌 lea** — 글자 사이에 쓰는 짝(`lea $C77(pc),a6; move.b d0,(a6)`). 원판은 읽기(뿌리)와 쓰기가 같은 만큼
+    # 밀려 있었으니(+10) 쓰기도 읽기처럼 새 스트림의 같은 상대 자리로 옮긴다 — 안 옮기면 읽기만 새 자리, 쓰기는 지워진 옛 자리(11-07 MD II 알림 꼴).
+    if mod.stale_shift:
+        for p in range(0, len(mod.data) - 3, 2):
+            w = (mod.data[p] << 8) | mod.data[p + 1]
+            if (w & 0xF1FF) != 0x41FA or p in mod.roots:
+                continue
+            d = (mod.data[p + 2] << 8) | mod.data[p + 3]
+            tt = p + 2 + (d - 0x10000 if d & 0x8000 else d) + mod.stale_shift
+            for s0, st in mod.streams.items():
+                if s0 < tt < st.end and s0 in pos and tt - s0 < sum(len(t.raw) for t in st.tokens):
+                    disp = pos[s0] + (tt - s0) - (p + 2)
+                    if not -0x8000 <= disp < 0x8000:
+                        raise ValueError(f"lea 변위 범위 초과 @{p:#x}")
+                    b[p + 2 : p + 4] = struct.pack(">h", disp)
+                    break
     return bytes(b)
 
 

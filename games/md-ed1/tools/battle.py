@@ -322,7 +322,29 @@ def monsters(d: bytes) -> dict:
         v = _glossary(k)
         if v:
             out[k] = {"ours": v}
+    _fill_ascii_suffix(d, out)
     return out
+
+
+_ASCII_SFX: set[str] = set()  # 전각 접미가 이름 칸(레코드 cap · 빈 슬롯 원본 길이)에 안 드는 몬스터(원문 기본 이름)
+
+
+def _fill_ascii_suffix(d: bytes, mons: dict) -> None:
+    _ASCII_SFX.clear()
+    for _s, b, _e in blocks(d):
+        cells = [(r["name"], r["cap"]) for r in records(b)] + [
+            (x["name"], len(x["name"])) for x in dead_names(b)
+        ]
+        for nm, cap in cells:
+            jp = nm.decode("cp932", "replace")
+            sfx = suffix_of(jp)
+            if not sfx or sfx in "ABCD" or unicodedata.normalize("NFKC", sfx) not in FULLWIDTH_LETTER:
+                continue
+            base = base_name(jp)
+            ent = mons.get(base)
+            kr = ent["ours"] if ent else _glossary(base) or ""
+            if kr and _bytes_len(kr) + 2 > cap:
+                _ASCII_SFX.add(base)
 
 
 def seed(d: bytes) -> None:
@@ -352,8 +374,16 @@ def _nfkc(s: str) -> str:
     return unicodedata.normalize("NFKC", s).replace(" ", "")
 
 
-def kr_name(jp: str, monsters: dict) -> str:
-    """레코드/문안의 JP 이름 → 한글 (반각·전각을 같은 키로, 정본에 없으면 용어집). 접미 Ａ~Ｄ 는 반각으로."""
+def _bytes_len(s: str) -> int:
+    """엔진 글자 코드 바이트 수 — 한글·전각은 2B, ASCII 는 1B."""
+    return sum(2 if ord(c) > 0x7F else 1 for c in s)
+
+
+FULLWIDTH_LETTER = {c: chr(0xFF21 + i) for i, c in enumerate("ABCD")}  # A→Ａ …
+
+
+def kr_base(jp: str, monsters: dict) -> str:
+    """JP 이름 → 한글 기본 이름(접미 제외)."""
     base = base_name(jp)
     ent = monsters.get(base)
     if ent is None:
@@ -362,7 +392,28 @@ def kr_name(jp: str, monsters: dict) -> str:
     kr = ent.get("ours", "") if ent else (_glossary(base) or "")
     if not kr:
         raise SystemExit(f"battle: 몬스터 이름 정본이 없다 {base!r}")
-    return kr + unicodedata.normalize("NFKC", suffix_of(jp))
+    return kr
+
+
+def suffix_used(jp: str, monsters: dict) -> str:
+    """이름 끝 접미 — **원판과 같은 글리프**(마스터 11-08 「원본 ABCD로」): 원문이 전각 Ａ~Ｄ 면 전각, 반각 ASCII A~D 면(반각 가나 이름) 반각.
+    이름 칸 15B 에 전각 둘이 안 드는 이름(자이언트에이프 14B+2B)만 반각으로 둔다(이름 시작을 앞당기는 길은 엔진 읽기 자리가 많아 보류)."""
+    sfx = suffix_of(jp)
+    if not sfx:
+        return ""
+    if sfx in "ABCD":
+        return sfx  # 원문 반각 — 그대로
+    letter = unicodedata.normalize("NFKC", sfx)
+    if letter not in FULLWIDTH_LETTER:
+        return letter  # ♀♂ 등
+    if base_name(jp) in _ASCII_SFX:
+        return letter
+    return sfx  # 원문 전각
+
+
+def kr_name(jp: str, monsters: dict) -> str:
+    """레코드/문안의 JP 이름 → 한글 (반각·전각을 같은 키로, 정본에 없으면 용어집). 접미 Ａ~Ｄ 는 원판처럼 전각(칸이 모자란 이름만 반각)."""
+    return kr_base(jp, monsters) + suffix_used(jp, monsters)
 
 
 def expand_names(text: str, monsters: dict) -> str:
@@ -401,6 +452,40 @@ def letter_hide_sites(b: bytes) -> list[tuple[int, int, int]]:
         if not 0 <= a < ACTOR_REC * 24:
             continue
         out.append((m.start(), (a - ACTOR_NAME) // ACTOR_REC - ACTOR0, (a - ACTOR_NAME) % ACTOR_REC))
+    return out
+
+
+# 소환 알파벳 쓰기 — 「동료를 불렀다」 블록(22·48·53)이 빈 슬롯(플래그 0x80) 이름의 **끝 알파벳**을 소환 횟수로 바꾼다:
+# `addi.b #imm,d0`(imm = 전각 Ａ 둘째 바이트 0x60 + 오프셋) → `move.b d0,disp(a2)`(0x1540 + 변위 워드). 변위 = 빈 슬롯 레코드
+# 시작 + disp 가 **원문 이름 마지막 바이트**다. 우리 이름은 길이가 다르고 알파벳이 ASCII(Ａ=0x41)라, 그대로 두면
+# ① 짧은 이름(블록 22 「카스A」 5B)은 알파벳이 06 뒤에 써져 소환된 것도 「A」로 남고 ② 12B 이름(블록 48)은 0x60+ 값(「`」·a·b)이 찍힌다
+# (sfc-ed2 가 같은 부류를 찾아 알려 줬다 10-24). ⇒ 변위를 우리 알파벳 자리로, imm 을 0x1F 낮춰 ASCII 알파벳으로 맞춘다.
+# 원문에서도 마지막 바이트를 안 가리키는 자리(블록 53: 빈 슬롯 이름 10B 인데 +0xB)는 원판과 같게 둔다.
+SUMMON_LETTER = re.compile(rb"\x06\x00\x00([\x5f-\x68])(?:(?!\x06\x00\x00).){0,32}?\x15\x40\x00([\x30-\x3f])", re.S)
+ASCII_FROM_FULLWIDTH = 0x1F  # 전각 Ａ 둘째 바이트 0x60 → ASCII Ａ 0x41
+
+
+def dead_slot_starts(b: bytes) -> list[int]:
+    t = sections(b)
+    out, p = [], REC0
+    while p + NAME_AT < t[1]:
+        if b[p] & 0x80:
+            out.append(p)
+        p += REC_STEP
+    return out
+
+
+def summon_letter_sites(b: bytes) -> list[tuple[int, int, int, int, dict]]:
+    """[(addi 자리, imm, move 자리, disp, 빈 슬롯 이름 dict)] — 쓰는 자리가 빈 슬롯 이름의 마지막 바이트인 것만."""
+    deads = dead_names(b)
+    starts = dead_slot_starts(b)
+    out = []
+    for m in SUMMON_LETTER.finditer(b, sections(b)[3]):
+        imm, disp = m.group(1)[0], m.group(2)[0]
+        for p in starts:
+            for d in deads:
+                if p + disp == d["name_at"] + len(d["name"]) - 1 and p <= d["name_at"] < p + REC_STEP:
+                    out.append((m.start(), imm, m.end() - 4, disp, d))
     return out
 
 
@@ -448,11 +533,26 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
         if len(base_name(jp).encode("cp932")) != off or not base_name(jp) in monsters:
             continue
         enc = encode(kr_name(jp, monsters))
-        new_off = len(enc) - len(encode(unicodedata.normalize("NFKC", suffix_of(jp))))
+        new_off = len(enc) - len(encode(suffix_used(jp, monsters)))
         new_addr = 0xFF1DBC + (slot + ACTOR0) * ACTOR_REC + ACTOR_NAME + new_off
         if new_addr != 0xFF1DBC + (slot + ACTOR0) * ACTOR_REC + ACTOR_NAME + off:
             out[ins + 6 : ins + 8] = struct.pack(">H", new_addr & 0xFFFF)
             changed = True
+    # 소환 알파벳 쓰기의 자리·값을 우리 이름 기준으로(위 SUMMON_LETTER 설명)
+    for addi, imm, mv, disp, d in summon_letter_sites(b):
+        jp = d["name"].decode("cp932", "replace")
+        if base_name(jp) not in monsters:
+            continue
+        enc = encode(kr_name(jp, monsters))
+        full = len(enc) >= 2 and enc[-2] == 0x82 and 0x60 <= enc[-1] <= 0x63  # 원판 글리프(전각 Ａ~Ｄ) — 둘째 바이트를 쓴다
+        if not (full or (len(enc) >= 1 and 0x41 <= enc[-1] <= 0x44)):
+            errs.append(f"블록 {n} 소환 슬롯 이름 {jp!r} 의 끝이 알파벳이 아니다")
+            continue
+        start = REC0 + ((d["name_at"] - REC0) // REC_STEP) * REC_STEP
+        new_disp = d["name_at"] + len(enc) - 1 - start
+        out[addi + 3] = imm if full else imm - ASCII_FROM_FULLWIDTH
+        out[mv + 3] = new_disp
+        changed = True
     moves = []
     jumps = []  # 참조를 몰라 못 옮기는 스트림 — 제자리엔 goto 만 두고 본문은 블록 끝으로(sysmsg.TAIL_JUMP 와 같은 기전)
     rs = refs(b)
@@ -616,6 +716,26 @@ def plan_block(b: bytes, n: int, textmap: dict, monsters: dict, encode) -> bytes
                     out[at + 1 : at + 3] = struct.pack(">h", disp)
                     changed = True
             at += len(t.raw)
+    # 🔴 몬스터 슬롯 넷(`REC0`+k·0x40, k=0..3)의 **+3 바이트** — 전투 시작 때 게임이 슬롯 넷의 +3 에서 최솟값을 구해 모든 슬롯에서 뺀다
+    # (`$2105C`: 최소인 슬롯은 0 이 된다). 기록 영역(`t[1]` 까지)에 문안 스트림이 끼어 있는 블록(108·109 등 보스)은 **그 스트림의 글자 바이트가
+    # 가짜 슬롯의 +3** 이라, 스트림을 끝으로 옮기며 원자리를 0 으로 채우거나 제자리에 새 문안(제어 바이트 04 등)을 쓰면 최솟값이 0·4 로 내려가
+    # 진짜 슬롯의 +3(0x10)이 0 으로 안 내려간다. 그러면 그림 타일 번호 계산(`$23B62`: +3≠0 이면 `$FF346C` 자료의 타일 수/0xA0 을 더한다)이 갈려
+    # 아그니쟈 그림이 줄무늬로 깨졌다(10-24 mednafen 에서 재현). ⇒ 비워 둔 원자리는 원문 바이트로 되돌리고, 그래도 정규화한 값이 원판과 다르면
+    # **진짜 슬롯의 +3 을 같은 만큼 옮긴다**(정규화 = 값 − 최솟값 이라 같은 만큼 옮기면 같다).
+    slots = [REC0 + k * REC_STEP + 3 for k in range(4) if REC0 + k * REC_STEP + 3 < len(b)]
+    for q in slots:
+        if out[q] == 0 and b[q] != 0:  # 비워 둔 원자리만(제자리에 새 문안을 쓴 자리는 우리 글자 바이트 — 그대로)
+            out[q] = b[q]
+            changed = True
+    real = [q for q in slots if not b[q - 3] & 0x80]  # 진짜 슬롯(플래그 bit7 없음)
+    fake = [q for q in slots if q not in real]
+    if real and fake:
+        mo, mk = min(b[q] for q in slots), min(out[q] for q in slots)
+        if any(b[q] - mo != out[q] - mk for q in real):
+            delta = min(out[q] for q in fake) - mo
+            for q in real:
+                out[q] = b[q] + delta
+            changed = True
     if errs:
         raise SystemExit("\n".join(errs))
     return bytes(out) if changed else None
@@ -708,6 +828,46 @@ def verify_mid_writes(orig: bytes, new: bytes) -> int:
                     f"(@{t:#x} = {kb[t : t + 1].hex()}) — 블록 코드가 문안 글자를 덮어쓴다"
                 )
     return n_sites
+
+
+def verify_summon_letters(orig: bytes, new: bytes) -> int:
+    """게이트 — 소환 알파벳 쓰기가 우리 롬에서 **우리 빈 슬롯 이름의 ASCII 알파벳 자리**를 가리키고 값이 A·B·C·D 로 이어지는가. → 검사한 자리 수."""
+    n_sites = 0
+    for n, ((_s, jb, _e), (_s2, kb, _e2)) in enumerate(zip(blocks(orig), blocks(new), strict=True)):
+        for addi, imm, mv, disp, d in summon_letter_sites(jb):
+            n_sites += 1
+            start = REC0 + ((d["name_at"] - REC0) // REC_STEP) * REC_STEP
+            at = d["name_at"]  # 이름은 제자리 — 새 이름은 같은 자리에서 06 또는 00 까지
+            end = min(i for i in range(at, at + 17) if kb[i] in (0x06, 0x00))
+            nm = kb[at:end]
+            last = at + len(nm) - 1
+            if start + kb[mv + 3] != last:
+                raise SystemExit(
+                    f"블록 {n} 소환 알파벳 쓰기 {mv:#x} 가 이름 끝({last - start:#x})이 아니라 {kb[mv + 3]:#x} 를 가리킨다"
+                )
+            full = len(nm) >= 2 and nm[-2] == 0x82 and 0x60 <= nm[-1] <= 0x63
+            ok = kb[addi + 3] == imm if full else (kb[addi + 3] == imm - ASCII_FROM_FULLWIDTH and 0x41 <= nm[-1] <= 0x44)
+            if not ok:
+                raise SystemExit(f"블록 {n} 소환 알파벳 값이 알파벳으로 이어지지 않는다 ({kb[addi + 3]:#x})")
+    return n_sites
+
+
+def verify_slot_plus3(orig: bytes, new: bytes) -> int:
+    """게이트 — 진짜 몬스터 슬롯의 +3 을 게임이 정규화(값 − 슬롯 넷의 최솟값)한 결과가 원판과 같은가(위 plan_block 주석). → 검사한 블록 수."""
+    n_ok = 0
+    for n, ((_s, jb, _e), (_s2, kb, _e2)) in enumerate(zip(blocks(orig), blocks(new), strict=True)):
+        qs = [REC0 + k * REC_STEP + 3 for k in range(4) if REC0 + k * REC_STEP + 3 < len(jb)]
+        mo, mk = min(jb[q] for q in qs), min(kb[q] for q in qs)
+        for q in qs:
+            if jb[q - 3] & 0x80:
+                continue  # 가짜(안 쓰는) 슬롯
+            if jb[q] - mo != kb[q] - mk:
+                raise SystemExit(
+                    f"블록 {n} 슬롯 +3({q:#x}) 정규화 값이 원판 {jb[q] - mo:#x} → {kb[q] - mk:#x} — 보스 그림 타일 계산이 틀어진다 "
+                    f"[원판 {[hex(jb[x]) for x in qs]} / 새 {[hex(kb[x]) for x in qs]}]"
+                )
+        n_ok += 1
+    return n_ok
 
 
 if __name__ == "__main__":

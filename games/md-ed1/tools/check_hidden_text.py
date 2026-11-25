@@ -31,7 +31,10 @@ import scene
 # (블록 번호, 오프셋 범위) — field_names.py 가 이 범위를 직접 패치한다(scene.py 는 여전히 못 본다).
 KNOWN = {
     ("script", field_names.BLOCK): [
-        (field_names.TABLE_OFF, field_names.TABLE_OFF + len(field_names.ENTRIES) * field_names.STRIDE)
+        (
+            field_names.TABLE_OFF,
+            field_names.TABLE_OFF + len(field_names.ENTRIES) * field_names.STRIDE,
+        )
     ],
 }
 
@@ -63,8 +66,16 @@ def hangul_codes() -> set[int]:
     return set(json.loads(hangul.CODES_JSON.read_text(encoding="utf-8")).values())
 
 
+def _fullwidth_latin(c: int) -> bool:
+    """전각 숫자·영문(SJIS 0x824F~0x8258 · 0x8260~0x8279 · 0x8281~0x829A) — 일본어가 아니라 우리가 쓴 ＨＰ·ＲＥＴＵＲＮ 류다."""
+    return 0x824F <= c <= 0x8258 or 0x8260 <= c <= 0x8279 or 0x8281 <= c <= 0x829A
+
+
 def _is_japanese(run: bytes, kr: set[int]) -> bool:
-    return any(int.from_bytes(run[i : i + 2], "big") not in kr for i in range(0, len(run) - 1, 2))
+    return any(
+        (c := int.from_bytes(run[i : i + 2], "big")) not in kr and not _fullwidth_latin(c)
+        for i in range(0, len(run) - 1, 2)
+    )
 
 
 def _find_hidden(
@@ -101,7 +112,9 @@ def scan(rom: bytes, orig: bytes) -> dict[tuple[str, int], list[tuple[int, int]]
     ob = archives.blocks(orig, base)
     for n, (_s, data, _e) in enumerate(archives.blocks(rom, base)):
         known = KNOWN.get(("script", n), [])
-        hidden = _find_hidden(data, _script_covered(data, None if rom is orig else ob[n][1]), known, kr)
+        hidden = _find_hidden(
+            data, _script_covered(data, None if rom is orig else ob[n][1]), known, kr
+        )
         if hidden:
             found[("script", n)] = hidden
 
@@ -119,7 +132,9 @@ def check() -> None:
     rom = built if built is not None else orig
     base0 = archives.ARCHIVES["script"][0]
     found = scan(rom, orig)
-    print(f"  숨은 텍스트 잰 대상 — {'구운 빌드 롬' if built is not None else '⚠ 빌드 없음 → 원본 롬(번역 전 수치)'}")
+    print(
+        f"  숨은 텍스트 잰 대상 — {'구운 빌드 롬' if built is not None else '⚠ 빌드 없음 → 원본 롬(번역 전 수치)'}"
+    )
     if found:
         total = sum(len(h) for h in found.values())
         script_n = sum(1 for arch, _n in found if arch == "script")
@@ -134,23 +149,27 @@ def check() -> None:
         from shared.canon import names as _G
 
         keys, _ = _G._keys(_G.load("eiyuu"))
-        blocks = {
-            ("script", n): b for n, (_s, b, _e) in enumerate(archives.blocks(rom, base0))
-        } | {("battle", n): b for n, (_s, b, _e) in enumerate(battle.blocks(rom))}
+        blocks = {("script", n): b for n, (_s, b, _e) in enumerate(archives.blocks(rom, base0))} | {
+            ("battle", n): b for n, (_s, b, _e) in enumerate(battle.blocks(rom))
+        }
         with_names = sum(
             1
             for key, runs in found.items()
             for s, e in runs
             if _G.find(blocks[key][s:e].decode("cp932", "replace"), keys)
         )
-        print(f"    └ 사전 이름이 든 숨은 런 {with_names}건 — 미추출 장면 대사(대사 라운드가 채우면 이름 검사 분모에 든다)")
+        print(
+            f"    └ 사전 이름이 든 숨은 런 {with_names}건 — 미추출 장면 대사(대사 라운드가 채우면 이름 검사 분모에 든다)"
+        )
     else:
         print("  숨은 텍스트 스캔 — script/battle 전부 깨끗함(추출 도구가 못 보는 자리 없음)")
     # 🔴 구운 롬에서는 **실패로 친다**(10-18, sfc-ed1 발견 — 번역 단위 목록 밖을 포인터가 가리켜 대사 101개가 일본어로 남았다).
     # 스트림 발견(`lea_roots`·`table_roots`)과 독립인 **바이트 센서스**라, 목록 밖 목표를 따로 세지 않아도 목록 밖 글자는 여기서 잡힌다.
     # 원본(빌드 없음)은 번역 전 수치라 실패로 안 친다.
     if built is not None and found:
-        raise SystemExit("  ❌ 구운 롬에 추출 범위 밖 SJIS 텍스트가 남았다 — 스트림 발견이 못 본 대사/표(위 건수)")
+        raise SystemExit(
+            "  ❌ 구운 롬에 추출 범위 밖 SJIS 텍스트가 남았다 — 스트림 발견이 못 본 대사/표(위 건수)"
+        )
 
 
 if __name__ == "__main__":

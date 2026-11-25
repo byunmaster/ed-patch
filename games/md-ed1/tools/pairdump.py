@@ -17,7 +17,7 @@ import common
 import scene
 
 COND = {0x11, 0x12, 0xF2, 0xF8}
-KRQ = {0x60: "“", 0x7E: "”"}  # 반각 따옴표 — hangul.QUOTES_HALF
+KRQ = {0x60: "“", 0x7E: "”", 0x7B: "「", 0x7D: "」", 0x5C: "『", 0x5E: "』"}  # 반각 따옴표 — hangul.QUOTES_HALF
 
 
 def _inv() -> dict[int, str]:

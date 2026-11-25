@@ -32,11 +32,13 @@ import field_names
 import gfxtext
 import halfspace
 import hangul
+import hud_status
 import josa
+import linebreak
 import lz
+import party_template
 import punctwrap
 import scene
-import hud_status
 import spell_digit
 import sysmsg
 import tables
@@ -82,8 +84,11 @@ BATTLE_LO, BATTLE_HI = 0x0CAB04, 0x0D85B4  # 전투 아카이브 LZ 구간(첫 �
 # 시험 빌드 전용 디버그 플래그(`$FF01B2`=0x62) — 부팅 `0x1085C` 의 지워진 A+B+C 검사 자리(14B:
 # move.w d0,d1 · andi.w #$70 · cmpi.w #$70 · bne.w +2)를 `move.b #$62,$FF01B2` + nop 둘로 바꾼다.
 # 앞 두 줄(패드 읽기 `jsr $A64`)은 그대로 둔다. 분석은 docs/status.md 「디버그 모드 분석」.
-DEBUG_BUILD = os.environ.get("ED_DEBUG") == "1"
-DEBUG_TAGS_OK = ("test-", "debug")  # 꼬리표 `debug` = 마스터용(인게임 QA), `test-*` = 시험
+# ED_DEBUG_QA=1 — 마스터 QA 디버그 빌드(마스터 11-18 「내 qa용으로」, 꼬리표 `qa-debug` — 마스터 파일서버 목록에 보인다).
+# 원판이 죽여 둔 디버그 기능(고속 이동·벽 통과·「경험치UP」)을 먼저 살리고 그 위에 편의 기능을 얹는다. 제품 롬은 한 바이트도 안 바뀐다.
+QA_BUILD = os.environ.get("ED_DEBUG_QA") == "1"
+DEBUG_BUILD = os.environ.get("ED_DEBUG") == "1" or QA_BUILD
+DEBUG_TAGS_OK = ("test-", "debug", "qa-debug")  # 꼬리표 `debug` = 마스터용(인게임 QA), `qa-debug` = QA 디버그, `test-*` = 시험
 DEBUG_OUT_NAME = "ed1-kr-DEBUG.bin"  # 🔴 제품 파일명(ed1-kr.bin)과 달라야 emucap SRAM 이름도 갈린다
 DEBUG_HDR_AT = 0x150  # 헤더 「해외판 이름」 칸(원판은 공백) — 에뮬 창·목록에 (DEBUG) 가 보이게
 DEBUG_HDR = b"DRAGON SLAYER (DEBUG)".ljust(32)
@@ -95,14 +100,303 @@ DEBUG_SKIP_SITE = 0x22FD8
 DEBUG_SKIP_STUB_AT = (
     ARCHIVE_TOP - 0x60
 )  # 꼬리 아카이브 구간 끝 쪽의 빈 자리(ARCHIVE_TOP = 글꼴 꼬리 시작)
-DEBUG_SKIP_STUB = bytes.fromhex(
-    "0c390062 00ff01b2 6610"  # cmpi.b #$62,$FF01B2 / bne.s 평소
-    "08390006 00ff1855 6706"  # btst #6,$FF1855(A 버튼) / beq.s 평소
-    "4ef900022fe4"  # jmp $22FE4 — 조우 없이 카운터 감소로
-    "0c390000 00ff3609 6606"  # 평소: cmpi.b #0,$FF3609 / bne.s 계속
-    "4ef900022ff2"  # jmp $22FF2 — 조우
-    "4ef900022fe4"  # 계속: jmp $22FE4
+def _asm(prog: list) -> bytes:
+    """작은 조립기 — 항목은 바이트열 · ("b", 조건바이트, 라벨)(워드 변위 분기 4B) · ("r", 명령바이트, 라벨) · ("L", 라벨)."""
+    pos, labels = 0, {}
+    for it in prog:
+        if isinstance(it, bytes):
+            pos += len(it)
+        elif it[0] == "L":
+            labels[it[1]] = pos
+        elif it[0] == "r":
+            pos += len(it[1]) + 2
+        else:
+            pos += 4
+    out, pos = b"", 0
+    for it in prog:
+        if isinstance(it, bytes):
+            out += it
+            pos += len(it)
+        elif it[0] == "b":
+            out += bytes([it[1], 0]) + (labels[it[2]] - (pos + 2)).to_bytes(2, "big", signed=True)
+            pos += 4
+        elif it[0] == "r":  # 명령 바이트 + 워드 변위(확장 워드 자리 기준 — bra.w·dbra·lea (d16,pc) 공통)
+            out += it[1] + (labels[it[2]] - (pos + len(it[1]))).to_bytes(2, "big", signed=True)
+            pos += len(it[1]) + 2
+    return out
+
+
+# QA 디버그 빌드 상시 토글 램(`$FFC680` 대). 🔴 **맵 이동(문·워프)이 `$FF3640` 위쪽 작업 램을 통째로 0 으로 민다**(실측 11-18: 0xA5 를 심고 워프 — `$FFC100` 대·`$FFE800` 대 전부 0, 살아남은 건 `$FF0000~3640` 게임 변수와 `$FFC650~C6CF`) — 처음 쓴 `$FFC101~3` 은 문을 지나면 토글이 풀렸다. `$FFC681` 조우 끄기 · `$FFC682` 이동 보조(고속 이동+벽 통과) · `$FFC683` 핫키 래치 · `$FFC684` 워프 칸
+QA_ENC = 0xFFC681
+QA_MOVE = 0xFFC682
+QA_LATCH = 0xFFC683
+QA_ITEMPOS = 0xFFC685  # 아이템 목록 위치(핫키 오른쪽)
+_ENC = QA_ENC.to_bytes(4, "big")
+_MOVE = QA_MOVE.to_bytes(4, "big")
+_LATCH = QA_LATCH.to_bytes(4, "big")
+DEBUG_SKIP_STUB = _asm(
+    [
+        bytes.fromhex("0c390062 00ff01b2".replace(" ", "")),  # cmpi.b #$62,$FF01B2
+        ("b", 0x66, "normal"),  # bne 평소
+        bytes.fromhex("4a39") + _ENC,  # tst.b $FFB311 — 조우 끄기 토글
+        ("b", 0x66, "skip"),  # bne 건너뜀
+        bytes.fromhex("08390006 00ff1855".replace(" ", "")),  # btst #6,$FF1855(A 버튼 — 원판식 일시 끄기)
+        ("b", 0x67, "normal"),  # beq 평소
+        ("L", "skip"),
+        bytes.fromhex("4ef900022fe4"),  # jmp $22FE4 — 조우 없이 카운터 감소로
+        ("L", "normal"),
+        bytes.fromhex("0c390000 00ff3609".replace(" ", "")),  # cmpi.b #0,$FF3609
+        ("b", 0x66, "cont"),  # bne 계속
+        bytes.fromhex("4ef900022ff2"),  # jmp $22FF2 — 조우
+        ("L", "cont"),
+        bytes.fromhex("4ef900022fe4"),  # jmp $22FE4
+    ]
 )
+# 🔴 QA 핫키(QA 빌드 전용 — VBlank 머리에서 매 프레임): **A+C 를 함께 쥐고 방향키 하나**(B 가 섞이면 필드 메뉴가 열려 루프가 멈춘다 — 실측)(Start 없음 · 정확히 그 조합일 때만, 한 번 누를 때 한 번 — 래치).
+#   위=소지금 +10000(상한 999999) · 아래=조우 끄기 토글 · 왼쪽=이동 보조 토글(고속 이동 + 벽 통과 상시) · 오른쪽=소모품 세트를 가방 빈 칸에.
+# 토글·실행은 소리(`$FF2024=0x1B`)로 알린다. 램은 `QA_ENC`·`QA_MOVE`·`QA_LATCH`.
+QA_HOTKEY_AT = ARCHIVE_TOP - 0x500
+_SND = bytes.fromhex("13fc001b00ff2024")  # move.b #$1b,$FF2024
+# 가방에 채우는 소모품 세트(아이템 id — 이름표 `0x338BE`, 15B): 에릭서 ×2 · 레스의 뿌리 · 비스의 열매 · 레스의 잎 · 약 · 해독초 · 워프의 날개 · 워프의 깃털 · 횃불
+_QA_CONS = [0x55, 0x55, 0x52, 0x41, 0x40, 0x48, 0x42, 0x4E, 0x4C, 0x43]
+# 순서 = 소모품 세트 먼저, 그다음 나머지 id(0x01~0x75, 원판 이름표 117칸) 오름차순 — 누를 때마다 빈 칸을 채우며 이어 가고 끝에서 처음으로 돈다
+# 최강 장비 먼저(마스터 11-22 「최강장비를 얻을수있거나」): 빛의 검 · 다이아의 검 · 바스타드의 검 · 그라디우스 · 다이아의 지팡이 · 궁극의 지팡이 · 다이아의 갑옷 · 배틀 슈트 · 궁극의 로브 · 다이아의 방패 · 고대의 방패
+_QA_BEST = [0x1F, 0x1D, 0x71, 0x70, 0x1C, 0x73, 0x30, 0x31, 0x72, 0x3E, 0x3F]
+_QA_FIRST = _QA_BEST + _QA_CONS
+QA_ITEMS = bytes(_QA_FIRST + [i for i in range(1, 0x76) if i not in _QA_FIRST] + [0, 0])  # 끝 0 + 짝수 맞춤(뒤 스텁이 홀수 주소면 주소 오류)
+
+
+def _qa_hotkey() -> bytes:
+    return _asm(
+        [
+            bytes.fromhex("48e7f000"),  # movem.l d0-d3,-(a7)
+            bytes.fromhex("103900ff0058"),  # move.b $FF0058,d0 — raw 패드
+            bytes.fromhex("1200"),  # move.b d0,d1
+            bytes.fromhex("020100f0"),  # andi.b #$F0,d1
+            bytes.fromhex("0c010060"),  # cmpi.b #$60,d1 — A+C 만(Start·B 없음 — B 는 필드 메뉴가 열린다)
+            ("b", 0x66, "rel"),
+            bytes.fromhex("0200000f"),  # andi.b #$0F,d0 — 방향
+            ("b", 0x67, "done"),  # 방향 없음 — 아무 일 없다
+            bytes.fromhex("4a39") + _LATCH,  # tst.b latch
+            ("b", 0x66, "done"),
+            bytes.fromhex("13fc0001") + _LATCH,  # move.b #1,latch
+            bytes.fromhex("0c000001"),
+            ("b", 0x67, "up"),
+            bytes.fromhex("0c000002"),
+            ("b", 0x67, "down"),
+            bytes.fromhex("0c000004"),
+            ("b", 0x67, "left"),
+            bytes.fromhex("0c000008"),
+            ("b", 0x67, "items"),
+            ("b", 0x60, "done"),
+            ("L", "rel"),
+            bytes.fromhex("4239") + _LATCH,  # clr.b latch
+            ("b", 0x60, "done"),
+            ("L", "up"),  # 소지금 +10000
+            bytes.fromhex("223900ff1b2c"),  # move.l $FF1B2C.l,d1 — 소지금(롱, 메뉴 G 칸이 읽는 값 — 실화면 확인)
+            bytes.fromhex("068100002710"),  # addi.l #10000,d1
+            bytes.fromhex("0c81000f423f"),  # cmpi.l #999999,d1
+            ("b", 0x63, "gold"),  # bls
+            bytes.fromhex("223c000f423f"),  # move.l #999999,d1
+            ("L", "gold"),
+            bytes.fromhex("23c100ff1b2c"),  # move.l d1,$FF1B2C.l
+            ("b", 0x60, "snd"),
+            ("L", "down"),
+            bytes.fromhex("0a390001") + _ENC,  # eori.b #1,$FFB311
+            ("b", 0x60, "snd"),
+            ("L", "left"),
+            bytes.fromhex("0a390001") + _MOVE,  # eori.b #1,$FFB312
+            ("b", 0x60, "snd"),
+            ("L", "items"),  # 아이템 목록을 가방($FF1B10, 28칸)의 빈 칸(0)에 이어서 채운다 — 칸이 차면 거기서 멈추고 다음 누름이 이어 받는다
+            bytes.fromhex("41f900ff1b10"),  # lea $FF1B10.l,a0
+            ("r", bytes.fromhex("43fa"), "list"),  # lea list(pc),a1
+            bytes.fromhex("7600"),  # moveq #0,d3
+            bytes.fromhex("1639") + QA_ITEMPOS.to_bytes(4, "big"),  # move.b pos,d3
+            bytes.fromhex("741b"),  # moveq #27,d2
+            ("L", "nextid"),
+            bytes.fromhex("12313000"),  # move.b (a1,d3.w),d1
+            ("b", 0x67, "wrap"),  # 0 = 목록 끝
+            ("L", "findslot"),
+            bytes.fromhex("4a18"),  # tst.b (a0)+
+            ("b", 0x67, "put"),
+            ("r", bytes.fromhex("51ca"), "findslot"),  # dbra d2,findslot
+            ("b", 0x60, "save"),  # 가방이 찼다 — 이 id 는 다음 누름이
+            ("L", "put"),
+            bytes.fromhex("1141ffff"),  # move.b d1,-1(a0)
+            bytes.fromhex("5203"),  # addq.b #1,d3
+            ("r", bytes.fromhex("51ca"), "nextid"),  # dbra d2,nextid — 🔴 놓은 칸도 센다(안 세면 가방 뒤 `$FF1B2C` 소지금까지 칸으로 읽어 덮어쓴다 — 실측)
+            ("b", 0x60, "save"),
+            ("L", "wrap"),
+            bytes.fromhex("7600"),  # moveq #0,d3 — 한 바퀴
+            ("L", "save"),
+            bytes.fromhex("13c3") + QA_ITEMPOS.to_bytes(4, "big"),  # move.b d3,pos
+            ("L", "snd"),
+            _SND,
+            ("L", "done"),
+            bytes.fromhex("4cdf000f"),  # movem.l (a7)+,d0-d3
+            bytes.fromhex("4e75"),  # rts
+            ("L", "list"),
+            QA_ITEMS,  # 끝은 0
+        ]
+    )
+
+
+QA_HOTKEY = _qa_hotkey()
+QA_SPEED_AT = QA_HOTKEY_AT + len(QA_HOTKEY)
+# 고속 이동(`0x16DF2`: move.w $FF1854,d0 / btst #5,d0 / beq.w $16E24, 14B) — 이동 보조 토글이 켜지면 C 를 누른 것으로 본다
+QA_SPEED_SITE = 0x16DF2
+QA_SPEED_OLD = bytes.fromhex("303900ff185408000005 67000026".replace(" ", ""))
+QA_SPEED = _asm(
+    [
+        bytes.fromhex("303900ff1854"),  # move.w $FF1854,d0
+        bytes.fromhex("4a39") + _MOVE,  # tst.b $FFB312
+        ("b", 0x67, "n"),
+        bytes.fromhex("00400020"),  # ori.w #$20,d0 — C 를 누른 것으로
+        ("L", "n"),
+        bytes.fromhex("08000005"),  # btst #5,d0
+        ("b", 0x66, "go"),
+        bytes.fromhex("4ef900016e24"),  # jmp $16E24
+        ("L", "go"),
+        bytes.fromhex("4ef900016e00"),  # jmp $16E00
+    ]
+)
+QA_WALL_AT = QA_SPEED_AT + len(QA_SPEED)
+# 벽 통과(`0x18CDA`: move.w $FF1854,d7 / btst #5,d7 / bne.w $18CF8, 14B) — 같은 토글
+QA_WALL_SITE = 0x18CDA
+QA_WALL_OLD = bytes.fromhex("3e3900ff185408070005 66000012".replace(" ", ""))
+QA_WALL = _asm(
+    [
+        bytes.fromhex("3e3900ff1854"),  # move.w $FF1854,d7
+        bytes.fromhex("4a39") + _MOVE,
+        ("b", 0x66, "pass"),
+        bytes.fromhex("08070005"),  # btst #5,d7
+        ("b", 0x66, "pass"),
+        bytes.fromhex("4ef900018ce8"),  # jmp $18CE8
+        ("L", "pass"),
+        bytes.fromhex("4ef900018cf8"),  # jmp $18CF8
+    ]
+)
+# 「경험치UP」 한 번에 +10 레벨(상한 99) — 원판은 +1(`0x27350` 의 `bsr.w $2735A`). 같은 자리에서 jmp 로 빠져나가 한 번에 최대 10번 레벨업 루틴을 부르고, 경험치를 새 레벨 문턱으로 다시 쓴다.
+QA_LV_AT = QA_WALL_AT + len(QA_WALL)
+QA_LV_SITE = 0x27350
+QA_LV_OLD = bytes.fromhex("61000008 4cdf7fff".replace(" ", ""))
+QA_LV = _asm(
+    [
+        bytes.fromhex("7e09"),  # moveq #9,d7
+        ("L", "lp"),
+        bytes.fromhex("0c2a00630003"),  # cmpi.b #99,3(a2)
+        ("b", 0x64, "fin"),  # bcc
+        bytes.fromhex("4eb90002735a"),  # jsr $2735A.l — 레벨 +1(능력치 포함)
+        ("r", bytes.fromhex("51cf"), "lp"),  # dbra d7,lp
+        ("L", "fin"),
+        bytes.fromhex("102a0003"),  # move.b 3(a2),d0
+        bytes.fromhex("4eb9000040e2"),  # jsr $40E2.l
+        bytes.fromhex("2540000c"),  # move.l d0,$C(a2) — 경험치 = 새 레벨 문턱
+        bytes.fromhex("4cdf7fff"),  # movem.l (a7)+,d0-d7/a0-a6
+        bytes.fromhex("4e75"),  # rts
+    ]
+)
+QA_LV_PATCH = bytes.fromhex("4ef9") + QA_LV_AT.to_bytes(4, "big")
+assert QA_SPEED_AT % 2 == 0 and QA_WALL_AT % 2 == 0 and QA_LV_AT % 2 == 0, (hex(QA_SPEED_AT), hex(QA_WALL_AT))
+assert QA_LV_AT + len(QA_LV) <= ARCHIVE_TOP - 0x280, hex(QA_LV_AT + len(QA_LV))
+# 🔴 QA 워프(조건 없이) — 시스템 메뉴 「워프」 줄(`0x26E00`: 행 상태 검사 → 주문 시전 → `$FF1853` 비트 2 면 메뉴 닫기)을 통째로 우리 스텁으로 돌린다.
+# 줄을 고를 때마다 목적지 표를 다음 칸으로(기본 +1 · 방향 위=+10 · 왼쪽=−1 · 아래=−10 을 쥐고 고르면) 순회하며, 문 서비스(`$FF208C` 문 서술자 34B +
+# `$FF1853` 비트 2 — `gpgx_mapmove.go` 와 같은 길)로 그 씬의 첫 문 도착 좌표에 들어간다. 표 = 씬 번호 순, 칸 = 맵 id(워드)·도착 x·도착 y.
+# 목적지 = 다른 씬 모듈에서 그 맵 id 로 들어오는 문 서술자를 빌드가 원판 대본에서 뽑은 것(결정적: 씬 번호 순 첫 항목). 현재 칸은 `$FFC684`.
+QA_WARP_AT = ARCHIVE_TOP - 0xE00
+QA_WARP_IDX = 0xFFC684
+WARP_SITE = 0x26E00
+WARP_OLD_LEN = 0x26
+WARP_OLD = bytes.fromhex("7209610000506500feb0610000806500fea8")  # 앞 18B 만 대조(뒤는 같은 줄 분기)
+
+
+def _qa_warp_table() -> bytes:
+    """(맵 id.w, x.b, y.b) × 씬 수 — 씬 순서(=번호)대로, 그 씬으로 들어오는 첫 문 서술자의 도착 좌표. 들어오는 문이 없는 씬은 건너뛴다."""
+    rom0 = common.rom()
+    ids = struct.unpack(">225H", rom0[0x134DDC : 0x134DDC + 450])
+    where = {v: i for i, v in enumerate(ids)}
+    first: dict[int, tuple[int, int]] = {}
+    for sc in range(225):
+        b = (common.OUT_DIR / f"text/script/{sc:03d}.bin").read_bytes()
+        for o in range(0, len(b) - 34, 2):
+            w = struct.unpack(">H", b[o + 0xC : o + 0xE])[0]
+            if (
+                w in where
+                and b[o] < 8
+                and 0 < b[o + 1] < 0x80
+                and 0 < b[o + 2] < 0x80
+                and b[o + 0x1B] == 0xFF
+                and where[w] not in first
+            ):
+                first[where[w]] = (b[o + 1], b[o + 2])
+    return b"".join(struct.pack(">HBB", ids[k], *first[k]) for k in sorted(first))
+
+
+def _qa_warp(n: int) -> bytes:
+    tmpl = (common.OUT_DIR / "text/script/156.bin").read_bytes()[0xEA : 0xEA + 34]
+    return _asm(
+        [
+            bytes.fromhex("48e7f0e0"),  # movem.l d0-d3/a0-a2,-(a7)
+            bytes.fromhex("103900ff0058"),  # move.b $FF0058,d0 — 쥔 방향
+            bytes.fromhex("7201"),  # moveq #1,d1
+            bytes.fromhex("08000000"),  # btst #0,d0 (위)
+            ("b", 0x67, "n1"),
+            bytes.fromhex("720a"),  # moveq #10,d1
+            ("b", 0x60, "step"),
+            ("L", "n1"),
+            bytes.fromhex("08000002"),  # btst #2,d0 (왼쪽)
+            ("b", 0x67, "n2"),
+            bytes.fromhex("72ff"),  # moveq #-1,d1
+            ("b", 0x60, "step"),
+            ("L", "n2"),
+            bytes.fromhex("08000001"),  # btst #1,d0 (아래)
+            ("b", 0x67, "step"),
+            bytes.fromhex("72f6"),  # moveq #-10,d1
+            ("L", "step"),
+            bytes.fromhex("7400"),  # moveq #0,d2
+            bytes.fromhex("1439") + QA_WARP_IDX.to_bytes(4, "big"),  # move.b idx,d2
+            bytes.fromhex("d441"),  # add.w d1,d2
+            ("b", 0x6C, "nn"),  # bge
+            bytes.fromhex("0642") + n.to_bytes(2, "big"),  # addi.w #N,d2
+            ("L", "nn"),
+            bytes.fromhex("0c42") + n.to_bytes(2, "big"),  # cmpi.w #N,d2
+            ("b", 0x6D, "ok"),  # blt
+            bytes.fromhex("0442") + n.to_bytes(2, "big"),  # subi.w #N,d2
+            ("L", "ok"),
+            bytes.fromhex("13c2") + QA_WARP_IDX.to_bytes(4, "big"),  # move.b d2,idx
+            bytes.fromhex("43f900ff208c"),  # lea $FF208C.l,a1
+            ("r", bytes.fromhex("45fa"), "tmpl"),  # lea tmpl(pc),a2
+            bytes.fromhex("7621"),  # moveq #33,d3
+            ("L", "cp"),
+            bytes.fromhex("12da"),  # move.b (a2)+,(a1)+
+            ("r", bytes.fromhex("51cb"), "cp"),  # dbra d3,cp
+            ("r", bytes.fromhex("41fa"), "tab"),  # lea tab(pc),a0
+            bytes.fromhex("e54a"),  # lsl.w #2,d2
+            bytes.fromhex("d0c2"),  # adda.w d2,a0
+            bytes.fromhex("33d800ff2098"),  # move.w (a0)+,$FF2098.l — 맵 id
+            bytes.fromhex("13d800ff208d"),  # move.b (a0)+,$FF208D.l — 도착 x
+            bytes.fromhex("13d000ff208e"),  # move.b (a0),$FF208E.l — 도착 y
+            bytes.fromhex("00390004 00ff1853".replace(" ", "")),  # ori.b #4,$FF1853 — 맵 이동 요청
+            _SND,
+            bytes.fromhex("4cdf070f"),  # movem.l (a7)+,d0-d3/a0-a2
+            bytes.fromhex("4e75"),  # rts
+            ("L", "tmpl"),
+            tmpl,
+            ("L", "tab"),
+        ]
+    )
+
+
+QA_WARP_TAB = _qa_warp_table() if QA_BUILD else b""
+QA_WARP = _qa_warp(len(QA_WARP_TAB) // 4) if QA_BUILD else b""
+if QA_BUILD:
+    QA_WARP_AT_TAB = QA_WARP_AT + len(QA_WARP)
+    assert QA_WARP_AT % 2 == 0 and len(QA_WARP) % 2 == 0, (hex(QA_WARP_AT), len(QA_WARP))
+    assert QA_WARP_AT + len(QA_WARP) + len(QA_WARP_TAB) <= ARCHIVE_TOP - 0x500
+    _wj = bytes.fromhex("4eb9") + QA_WARP_AT.to_bytes(4, "big") + bytes.fromhex("103c00ff") + bytes.fromhex("6000") + (0x26E4C - (WARP_SITE + 0xC)).to_bytes(2, "big")
+    QA_WARP_PATCH = _wj + bytes.fromhex("4e71") * ((WARP_OLD_LEN - len(_wj)) // 2)
+QA_JMP = lambda at: bytes.fromhex("4ef9") + at.to_bytes(4, "big") + bytes.fromhex("4e71") * 4  # noqa: E731
+
 # 대사 보기(디버그 롬만) — 램 우편함 `$FFE800`(스트림 램 주소 .l)·`$FFE804`(창 종류 a5 .w)에 값을 쓰면, 필드 메인 루프의 입력 읽기
 # (`$16B0: jsr $A64` — 4프레임마다 불린다)에서 엔진 메시지 함수(`movea.l $200.w,a6 / jsr (a6)` — 씬 모듈이 NPC 대사를 부르는
 # 그 꼴)를 불러 대사를 창에 띄운다. 끝나면 `$FFE806` 에 1 을 쓴다(하네스가 읽는다). 걸어가 말 걸기 없이 씬 모듈 안 모든 스트림을
@@ -146,6 +440,251 @@ DEBUG_SKIP_PATCH = (
 )  # 6B + nop×3 = 12B
 
 
+# 🔴 디버그 진입키(제품 롬 — 마스터 11-07 「스타트 a b 원판대로 하자. md 1 도 이렇게 맞추자」, md-ed2 와 같은 키): **Start+A+B 를 약 1초(VBlank 60회) 함께**
+# 쥐면 `$FF01B2` 가 0↔0x62 로 토글된다(켜짐 = 원판에 죽어 있던 C+방향 고속 이동·C 벽 통과). 같은 키로 다시 1초 = 끄기. (옛 키: A→A+C 1초.)
+# 훅은 패드 갱신 호출 `jsr $9042`(`0xB772` VBlank · `0xBA56` 일시정지 루프, 각 6B)를 스텁 호출로 — 스텁이 그 호출을 먼저 하고 raw 패드 바이트 `$FF0058`
+# (Start 0x80·A 0x40·C 0x20·B 0x10·방향 0x0F; 필드 입력 `$FF1854` 는 Start 가 빠져 있다)가 **정확히 0xD0**(Start+A+B 만)인 VBlank 를 센다.
+# ⚠ 일시정지 루프는 한 프레임에 수십 번 이 호출을 돈다 — 그래서 **VBlank 진입(`0xB614`)에 틱 바이트(`$FFB302`)를 올리는 훅**을 따로 두고, 스텁은 틱이 바뀐 호출만 센다.
+# 셋 중 하나라도 떼거나 C·방향이 섞이면 0 으로. 60 에 이르면 한 번 토글(소리 `$FF2024=0x1B`)하고 뗄 때까지 안 센다(`$FFB301` 은 원판이 안 쓰는 0 구간).
+# ⚠ Start 를 먼저 쥐면 일시정지(필드에서 2프레임 만에 열림)가 열린다 — VBlank 는 일시정지 중에도 돌아 세기는 계속된다(켜진 뒤 Start 로 풀면 된다).
+KEY_SITE = 0xB772
+KEY_SITE2 = 0xBA56  # 같은 패드 갱신 호출의 둘째 자리(다른 루프) — 둘 다 스텁으로
+KEY_SITE_OLD = bytes.fromhex("4eb900009042")
+KEY_POLLS = 60
+KEY_AT = ARCHIVE_TOP - 0x240  # 앞쪽 0xFF 빈 자리(스텁 둘이 0x100 안에 든다)
+
+
+def _key_stub() -> bytes:
+    """Start+A+B 유지 검사 스텁. 항목은 바이트열 또는 ("b", 코드, 라벨)·("L", 라벨) — 짧은 분기(.s)만 쓴다."""
+    prog: list = [
+        bytes.fromhex("4eb900009042"),  # jsr $9042.l — 덮어쓴 원래 호출(패드 갱신)
+        bytes.fromhex("48e7c000"),  # movem.l d0-d1,-(a7)
+        bytes.fromhex("103900ffb302"),  # move.b tick,d0 — VBlank 훅이 올리는 틱
+        bytes.fromhex("b03900ffb303"),  # cmp.b last,d0
+        ("b", 0x67, "chkv"),  # beq.s chkv
+        bytes.fromhex("13c000ffb303"),  # move.b d0,last
+        ("b", 0x60, "newf"),  # bra.s newf — 새 프레임
+        ("L", "chkv"),
+        # 일시정지 루프는 VBlank 훅이 안 돈다(실측) — V 카운터가 줄어드는(감기는) 호출을 새 프레임으로 센다
+        bytes.fromhex("303900c00008"),  # move.w $C00008.l,d0 (HV 카운터)
+        bytes.fromhex("e048"),  # lsr.w #8,d0
+        bytes.fromhex("123900ffb304"),  # move.b $FFB304.l,d1
+        bytes.fromhex("13c000ffb304"),  # move.b d0,$FFB304.l
+        bytes.fromhex("b001"),  # cmp.b d1,d0
+        ("b", 0x64, "done"),  # bcc.s done — 줄지 않았다
+        ("L", "newf"),
+        bytes.fromhex("103900ff0058"),  # move.b $FF0058.l,d0 — raw 패드(held)
+        bytes.fromhex("0c0000d0"),  # cmpi.b #$D0,d0 — Start+A+B 만
+        ("b", 0x66, "reset"),  # bne.s reset
+        bytes.fromhex("0c39") + bytes([0, KEY_POLLS]) + bytes.fromhex("00ffb301"),  # cmpi.b #N,count
+        ("b", 0x67, "done"),  # beq.s done — 이미 토글했다
+        bytes.fromhex("523900ffb301"),  # addq.b #1,count
+        bytes.fromhex("0c39") + bytes([0, KEY_POLLS]) + bytes.fromhex("00ffb301"),  # cmpi.b #N,count
+        ("b", 0x66, "done"),  # bne.s done
+        bytes.fromhex("0a39006200ff01b2"),  # eori.b #$62,$FF01B2 — 토글
+        bytes.fromhex("13fc001b00ff2024"),  # move.b #$1b,$FF2024 — 소리
+        ("b", 0x60, "done"),  # bra.s done
+        ("L", "reset"),
+        bytes.fromhex("423900ffb301"),  # clr.b count
+        ("L", "done"),
+        bytes.fromhex("4cdf0003"),  # movem.l (a7)+,d0-d1
+        bytes.fromhex("4e75"),  # rts
+    ]
+    pos, labels = 0, {}
+    for it in prog:
+        if isinstance(it, bytes):
+            pos += len(it)
+        elif it[0] == "L":
+            labels[it[1]] = pos
+        else:
+            pos += 2
+    out, pos = b"", 0
+    for it in prog:
+        if isinstance(it, bytes):
+            out += it
+            pos += len(it)
+        elif it[0] == "b":
+            d = labels[it[2]] - (pos + 2)
+            assert 0 < d < 128
+            out += bytes([it[1], d])
+            pos += 2
+    return out
+
+
+KEY_STUB = _key_stub()
+VBL_SITE = 0xB614  # VBlank 핸들러 머리 12B(`movem.l d0-d7/a0-a6,-(a7)` + `ori.b #1,$FF00E7`) — 틱을 올리고 같은 둘을 하고 0xB620 으로
+VBL_OLD = bytes.fromhex("48e7fffe00390001 00ff00e7".replace(" ", ""))
+VBL_AT = KEY_AT + len(KEY_STUB)
+VBL_STUB = (
+    bytes.fromhex("523900ffb302")  # addq.b #1,tick
+    + bytes.fromhex("48e7fffe")  # movem.l d0-d7/a0-a6,-(a7)
+    + bytes.fromhex("00390001 00ff00e7".replace(" ", ""))  # ori.b #1,$FF00E7.l
+    + bytes.fromhex("4ef9")
+    + (0xB620).to_bytes(4, "big")  # jmp $B620
+)
+# QA 빌드: VBlank 머리 스텁이 끝의 `jmp $B620` 앞에서 QA 핫키를 부른다(필드 입력 루프 `0x16B0` 은 씬 32 같은 야외에서 안 불려 핫키가 먹통이었다 — 실측)
+VBL_STUB_QA = VBL_STUB[:-6] + bytes.fromhex("4eb9") + QA_HOTKEY_AT.to_bytes(4, "big") + VBL_STUB[-6:]
+VBL_PATCH = bytes.fromhex("4ef9") + VBL_AT.to_bytes(4, "big") + bytes.fromhex("4e71") * 3  # 6B + nop×3 = 12B
+assert len(KEY_STUB) + len(VBL_STUB) + 6 <= 0x100, len(KEY_STUB) + len(VBL_STUB)
+KEY_PATCH = bytes.fromhex("4eb9") + KEY_AT.to_bytes(4, "big")  # jsr 스텁 (6B)
+# 필드 메뉴 주문 목록 줄(`$27640` 줄 만들기) — 주문 이름 버퍼(`$FF3450`)에서 **앞 공백을 건너뛰고 (10 − 공백 수)바이트를 그대로 복사**한다.
+# 원판은 「이름 + 전각 레벨 2B」 길이가 늘 이 수와 같아 06 이 안 걸렸다. 우리 레벨 숫자(`spell_digit`)는 반각 1B + 06 이라 복사가 **06 까지 삼켜**
+# 줄이 거기서 끝나 오른쪽 「10MP」 소모량이 통째로 사라졌다(10-24 짝 캡처 `burn-1024/menu-qa3/`에서 발견). ⇒ 복사 루프(`$276E0`, 6B)를
+# 06 에서 멈추는 스텁 호출로 바꾼다(줄은 미리 공백으로 채워져 있어 나머지는 공백 그대로).
+SPELL_LIST_SITE = 0x276E0
+SPELL_LIST_OLD = bytes.fromhex("16dd538466fa")  # move.b (a5)+,(a3)+ / subq.l #1,d4 / bne.b
+SPELL_LIST_AT = ARCHIVE_TOP - 0x180
+SPELL_LIST_STUB = bytes.fromhex(
+    "2f00"  # move.l d0,-(a7)
+    "101d"  # 루프: move.b (a5)+,d0
+    "0c000006"  # cmpi.b #6,d0
+    "6706"  # beq.b 끝
+    "16c0"  # move.b d0,(a3)+
+    "5384"  # subq.l #1,d4
+    "66f2"  # bne.b 루프
+    "201f"  # 끝: move.l (a7)+,d0
+    "4e75"  # rts
+)
+SPELL_LIST_PATCH = bytes.fromhex("4eb9") + SPELL_LIST_AT.to_bytes(4, "big")  # jsr 스텁 (6B)
+# 시스템 메뉴 여섯째 행 「경험치UP」 숨기기 — `0x26CDA` 의 `cmpi.b #$62,$FF01B2 / bne.w` 를 무조건 건너뛰기로(원판에서도 확인 키가 무한 루프로 굳는다)
+# 🔴 코드가 **즉치 워드**로 화면 글자를 붙이는 곳(11-07 MD II 알림 — 연속 2자 텍스트 스캔·문안 참조 어디에도 안 걸린다):
+#  (1) 0x32BE 주문서 이름 「<주문 이름 8B>の書<06>」 — `34FC 82CC · 34FC 8F91 · 14BC 0006`(12B) → 「의 책<06>」(정본 「~의 책」, 공백 한 칸이 필요해 `24FC`(long 즉치)
+#      + `34FC`(06 까지 한 워드) + NOP 로 같은 12B 에 넣는다. a2 는 짝수 자리에서 시작해 쓰기 폭이 모두 짝수 자리다)
+#  (2) 0x262B8 저장 확인문 「N番目の」 — 번호 뒤 `番 目 の` 즉치 셋 → 「번째」+반각 공백(`14FC 0020` = move.b — 워드 0020 은 00 이 문자열 끝이라 못 쓴다)
+SPELLBOOK_SITE = 0x32BE
+SPELLBOOK_OLD = bytes.fromhex("34fc82cc34fc8f9114fc0006")
+SPELLBOOK_PATCH = bytes.fromhex("24fc8c5d208c" + "34fc9d06" + "4e71")
+SLOTNO_SITE = 0x262B8
+SLOTNO_OLD = bytes.fromhex("34fc94d434fc96da34fc82cc")
+SLOTNO_PATCH = bytes.fromhex("34fc8b8434fc8f8114fc0020")
+MENU_ROW_SITE = 0x26CDA
+EXPUP_SITE = 0x27258  # 경험치 목록 창을 그리는 `jsr $2A4C6.l` (6B)
+EXPUP_OLD = bytes.fromhex("4eb90002a4c6")
+EXPUP_AT = ARCHIVE_TOP - 0x280
+EXPUP_STUB = bytes.fromhex("423900ff1af3") + bytes.fromhex("4ef90002a4c6")  # clr.b $FF1AF3.l · jmp $2A4C6.l(꼬리 호출 — 원래 jsr 의 복귀를 그대로 쓴다)
+EXPUP_PATCH = bytes.fromhex("4eb9") + EXPUP_AT.to_bytes(4, "big")
+MENU_ROW_PATCH = bytes.fromhex("60000022")  # bra.w $26CFE
+
+# 🔴 HUD 장 제목 가운데(마스터 11-08 「장 제목 전 기종 가운데」 — 원판도 틀보다 약 18px 왼쪽이었다): 제목 문자열(`$FF1B3C`, 30B 칸 — 세이브·카드 줄과 같은 바이트라 데이터로는 못 옮긴다)을
+# **그리기 직전에** 가운데로 다시 놓는다. 그리기 호출(`0x2550E: bsr.w $2A654` + `rts`, 6B)을 스텁으로 — 스텁은 앞뒤 공백을 떼고(공백=0x20 1B=6px, 한글·전각 2B=12px)
+# 글 폭(len B)의 가운데가 글 영역 가운데(틀 224px − 좌우 8px = 208px → 칸 안 104px = 17.33B)에 오도록 앞 공백 s' = (35−len)/2 B 로 스택 버퍼 30B 에 다시 쓴 뒤 같은 그리기를 부른다.
+# 칸(30B)을 넘지 않게 s'+len ≤ 30 으로 자른다. 세이브에 든 옛 문자열도 같은 길이라 그대로 가운데로 온다.
+# HUD 지명 칸(72px)의 글 가운데는 박스 안(227~316px) 가운데보다 5.5px 왼쪽이다 — 칸 원점이 박스 왼쪽 + 4px(실화면 엘아스타 글리프 150/150 일치로 x=231 확정, 11-08).
+# 앞 공백을 한 바이트(6px) 늘려 오른쪽으로 민다(칸 안 여백은 모든 항목이 좌우 ≥1B 라 들어간다) → 쏠림 +0.5px.
+PLACE_SHIFT_B = 1
+TITLE_SITE = 0x2550E
+TITLE_OLD = bytes.fromhex("61005144" "4e75")
+TITLE_AT = ARCHIVE_TOP - 0x168  # 스텁이 띠 한글 내림 루프로 164B 가 돼 8B 앞당겼다(뒤는 DEBUG_VIEW_AT = -0xC0)
+
+
+def _title_stub() -> bytes:
+    prog: list = [
+        bytes.fromhex("48e7f0b0"),  # movem.l d0-d3/a0/a2/a3,-(a7)
+        bytes.fromhex("204b"),  # movea.l a3,a0 (원본 문자열)
+        bytes.fromhex("4fefffdc"),  # lea -36(a7),a7 (버퍼)
+        bytes.fromhex("244f"),  # movea.l a7,a2
+        bytes.fromhex("701d"),  # moveq #29,d0
+        ("L", "fill"),
+        bytes.fromhex("14fc0020"),  # move.b #$20,(a2)+
+        ("d", 0x51C8, "fill"),  # dbra d0,fill
+        bytes.fromhex("421a421a"),  # clr.b (a2)+ x2 (끝 표식)
+        bytes.fromhex("7200"),  # moveq #0,d1 (첫 비공백)
+        ("L", "ls"),
+        bytes.fromhex("0c3000201000"),  # cmpi.b #$20,(a0,d1.w)
+        ("b", 0x66, "lf"),  # bne.s lf
+        bytes.fromhex("5241"),  # addq.w #1,d1
+        bytes.fromhex("0c41001e"),  # cmpi.w #30,d1
+        ("b", 0x66, "ls"),  # bne.s ls
+        ("L", "lf"),
+        bytes.fromhex("741e"),  # moveq #30,d2 (끝 다음)
+        ("L", "le"),
+        bytes.fromhex("b441"),  # cmp.w d1,d2
+        ("b", 0x67, "ef"),  # beq.s ef
+        bytes.fromhex("0c30002020ff"),  # cmpi.b #$20,-1(a0,d2.w)
+        ("b", 0x66, "ef"),  # bne.s ef
+        bytes.fromhex("5342"),  # subq.w #1,d2
+        ("b", 0x60, "le"),  # bra.s le
+        ("L", "ef"),
+        bytes.fromhex("3602"),  # move.w d2,d3
+        bytes.fromhex("9641"),  # sub.w d1,d3 (len)
+        ("b", 0x67, "go"),  # beq.s go — 빈 제목
+        bytes.fromhex("7023"),  # moveq #35,d0 — (35−길이)>>1: 실화면 잉크 최근접(11-10: 34 는 홀수 길이 제목이 −4.5px 왼쪽으로 쏠렸다 — 1~4장 띠 반각 2칸 복원 뒤 재측정)
+        bytes.fromhex("9043"),  # sub.w d3,d0
+        bytes.fromhex("e240"),  # asr.w #1,d0
+        ("b", 0x6C, "pos"),  # bge.s pos
+        bytes.fromhex("7000"),  # moveq #0,d0
+        ("L", "pos"),
+        bytes.fromhex("3400"),  # move.w d0,d2
+        bytes.fromhex("d443"),  # add.w d3,d2
+        bytes.fromhex("0c42001e"),  # cmpi.w #30,d2
+        ("b", 0x6F, "fit"),  # ble.s fit
+        bytes.fromhex("701e"),  # moveq #30,d0
+        bytes.fromhex("9043"),  # sub.w d3,d0
+        ("L", "fit"),
+        bytes.fromhex("45f70000"),  # lea 0(a7,d0.w),a2
+        bytes.fromhex("d0c1"),  # adda.w d1,a0
+        bytes.fromhex("5343"),  # subq.w #1,d3
+        ("L", "cp"),
+        bytes.fromhex("14d8"),  # move.b (a0)+,(a2)+
+        ("d", 0x51CB, "cp"),  # dbra d3,cp
+        ("L", "go"),
+        # 🔴 띠 전용 한글 — 한글(코드 0x8A~0x9F 리드)만 코드 +0x5800 로 바꿔 **한 행 내린 띠 글리프**를 그린다(숫자는 그대로, 마스터 11-09 「숫자는 그대로 두고
+        # 한글만 한 칸 내리면」). 버퍼(30B)를 훑으며 리드가 0x81 이상이면 뒤 바이트를 건너뛴다.
+        bytes.fromhex("244f"),  # movea.l a7,a2
+        bytes.fromhex("41ea001e"),  # lea 30(a2),a0 (끝)
+        ("L", "lp"),
+        bytes.fromhex("b5c8"),  # cmpa.l a0,a2
+        ("b", 0x64, "lx"),  # bcc.s lx
+        bytes.fromhex("121a"),  # move.b (a2)+,d1
+        bytes.fromhex("0c010081"),  # cmpi.b #$81,d1
+        ("b", 0x65, "lp"),  # bcs.s lp (반각)
+        bytes.fromhex("524a"),  # addq.l #1,a2 (뒤 바이트 건너뜀)
+        bytes.fromhex("0c01008a"),  # cmpi.b #$8A,d1
+        ("b", 0x65, "lp"),  # bcs.s lp
+        bytes.fromhex("0c01009f"),  # cmpi.b #$9F,d1
+        ("b", 0x62, "lp"),  # bhi.s lp
+        bytes.fromhex("062a0058fffe"),  # addi.b #$58,-2(a2)
+        ("b", 0x60, "lp"),  # bra.s lp
+        ("L", "lx"),
+        bytes.fromhex("264f"),  # movea.l a7,a3
+        bytes.fromhex("4eb90002a654"),  # jsr $2A654.l
+        bytes.fromhex("4fef0024"),  # lea 36(a7),a7
+        bytes.fromhex("4cdf0d0f"),  # movem.l (a7)+,d0-d3/a0/a2/a3
+        bytes.fromhex("4e75"),  # rts
+    ]
+    pos, labels = 0, {}
+    for it in prog:
+        if isinstance(it, bytes):
+            pos += len(it)
+        elif it[0] == "L":
+            labels[it[1]] = pos
+        elif it[0] == "b":
+            pos += 2
+        else:
+            pos += 4
+    out, pos = b"", 0
+    for it in prog:
+        if isinstance(it, bytes):
+            out += it
+            pos += len(it)
+        elif it[0] == "b":
+            d = labels[it[2]] - (pos + 2)
+            assert -128 <= d < 128 and d != 0, (it, d)
+            out += bytes([it[1], d & 0xFF])
+            pos += 2
+        elif it[0] == "d":
+            d = labels[it[2]] - (pos + 2)
+            assert -32768 <= d < 0
+            out += it[1].to_bytes(2, "big") + (d & 0xFFFF).to_bytes(2, "big")
+            pos += 4
+    return out
+
+
+TITLE_STUB = _title_stub()
+assert len(TITLE_STUB) <= 0xA8, len(TITLE_STUB)
+TITLE_PATCH = bytes.fromhex("4ef9") + TITLE_AT.to_bytes(4, "big")  # jmp 스텁 (6B — bsr.w + rts 자리)
+
+
 class Rom:
     """쓰기 통로 하나 — 허용 구간(라벨) 밖은 거부."""
 
@@ -160,6 +699,7 @@ class Rom:
         "josa-tramp": (josa.DEAD_HANDLER, josa.DEAD_HANDLER + 12),
         "josa-name-hook": (josa.NAME_FN_PATCH, josa.NAME_FN_PATCH + 6),
         "josa-mon-hook": (josa.NAME_MON_PATCH, josa.NAME_MON_PATCH + 6),
+        "josa-act-hook": (josa.NAME_ACT_PATCH, josa.NAME_ACT_PATCH + 6),
         "wrap-code": (TAIL_HI - JOSA_RESERVE - WRAP_RESERVE, TAIL_HI - JOSA_RESERVE),
         "wrap-tramp": (wordwrap.TRAMP, wordwrap.TRAMP + 6),
         "half-code": (
@@ -290,6 +830,9 @@ NOBREAK_SP = "\ue003"
 NOBREAK_NAMES = ("노예 상인",)
 
 
+LB_RULES = os.environ.get("ED_LB", "1") != "0"  # 규칙 2-16 후처리 — 지표 「전」 값을 재려고 끌 수 있다
+
+
 def typeset(text: str, lead: str = "") -> list[list[str]]:
     """자유 문안 → 페이지(줄 목록). `\\f` 는 강제 페이지.
 
@@ -299,6 +842,8 @@ def typeset(text: str, lead: str = "") -> list[list[str]]:
     (2026-09-07 초벌 시험에서 잡았다). ⚠ 폭 검사는 **붙인 뒤**에 한다.
     """
     text = normalize(text)
+    if LB_RULES and not text.lstrip().startswith("「"):  # 2-16 ① 문장 중간 손 개행은 공백으로 읽는다(문장 끝 개행은 아래 문장 단위 조판이 지킨다). 「…」로 연 표지판·비문 꼴은 손 개행을 둔다
+        text = re.sub(r"(?<![.?!…」)])\n+(?=\S)", " ", text)
     for nm in NOBREAK_NAMES:
         text = text.replace(nm, nm.replace(" ", NOBREAK_SP))
     pages = []
@@ -306,15 +851,18 @@ def typeset(text: str, lead: str = "") -> list[list[str]]:
         chunk = chunk.strip()
         if not chunk:
             continue
-        pages += krwrap.wrap_pages(chunk, width=WIDTH, lines_per_page=LINES, strip_after="")
-    pages = [[ln.replace(NOBREAK_SP, " ") for ln in pg] for pg in pages]
+        part = krwrap.wrap_pages(chunk, width=WIDTH, lines_per_page=LINES, strip_after="", cell_width=linebreak.cell_width)
+        part = [[ln.replace(NOBREAK_SP, " ") for ln in pg] for pg in part]
+        if LB_RULES:  # 2-16 절째 내림 · 쪽 끝 고아 · 창 고르기(tools/linebreak.py) — 덩이(`\f` 사이) 단위
+            part = linebreak.improve_pages(part, WIDTH)
+        pages += part
     if lead and pages and pages[0]:
         pages[0][0] = lead + pages[0][0]
     for pg in pages:
         if len(pg) > LINES:
             raise SystemExit(f"페이지가 {LINES}줄을 넘는다: {pg}")
         for ln in pg:
-            if krwrap.text_width(ln) > WIDTH:
+            if krwrap.text_width(ln, linebreak.cell_width) > WIDTH:
                 raise SystemExit(f"줄이 {WIDTH}칸을 넘는다: {ln!r}")
     return pages
 
@@ -366,6 +914,20 @@ def build_stream(
     # None = 모른다(이름·수치 삽입 뒤 등 — 그땐 지금까지처럼 줄 머리로 짠다). `lines` = 이 쪽에서 쓴 줄 수.
     st_join = {"cur": 0.0, "lines": 1}
 
+    def trim_seam_space():
+        # 이음새 공백(위 `want`)은 뒤 글이 같은 줄에 이어질 때만 쓴다 — 뒤 글이 넘쳐 줄·쪽이 바뀌면 앞 줄 끝에 남아
+        # 폭만 먹는다(「디나 공주라고? ⏎ 그 여자라면」, 10-28 검수 줄 끝 공백 38행). 줄을 가르는 자리에서 되돌려 지운다.
+        for i in range(len(out) - 1, -1, -1):
+            t = out[i]
+            if t.kind == "ctl" and t.code == 0x03:
+                continue
+            if t.kind == "text" and t.raw.endswith(b" "):
+                if len(t.raw) > 1:
+                    out[i] = scene.Token(t.off, t.raw[:-1], "text")
+                else:
+                    del out[i]
+            return
+
     def flush_text(at_end: bool = False, join: bool = False, brk: bool = False):
         if not pending_text:
             return
@@ -386,7 +948,7 @@ def build_stream(
         pages = typeset(body, lead)
         cur = st_join["cur"]
         lead_break = False
-        if cur and pages and cur + krwrap.text_width(pages[0][0]) > WIDTH:
+        if cur and pages and cur + krwrap.text_width(pages[0][0], linebreak.cell_width) > WIDTH:
             pages, lead_break = typeset_after(body, lead, cur, st_join["lines"])
         if lead and not pages and not at_end:
             # 조각이 공백 하나뿐이면(`<ebf0> <0e>…` — 「일행은 」과 품목 이름 사이) 조판기가 빈 쪽으로 보고 버려
@@ -405,15 +967,17 @@ def build_stream(
             and pages
             and pages[-1]
             and not pages[-1][-1].endswith(" ")
-            and krwrap.text_width(pages[-1][-1] + " ") <= WIDTH
+            and krwrap.text_width(pages[-1][-1] + " ", linebreak.cell_width) <= WIDTH
         ):
             pages[-1][-1] += " "
         pending_text.clear()
         if lead_break == "page" and out and out[-1].kind == "ctl" and out[-1].code == 0x03:
+            trim_seam_space()
             out[-1] = scene.Token(0, b"\x05", "ctl", 0x05)
             JOIN_PAGED.append(WHERE)
             st_join.update(cur=0.0, lines=1)
         elif lead_break:
+            trim_seam_space()
             out.append(scene.Token(0, b"\x01", "ctl", 0x01))
             st_join["lines"] += 1
             st_join["cur"] = 0.0
@@ -429,11 +993,25 @@ def build_stream(
                     st_join["cur"] = 0.0
                 out.append(scene.Token(0, cs.encode(ln), "text"))
                 if st_join["cur"] is not None:
-                    st_join["cur"] += krwrap.text_width(ln)
+                    st_join["cur"] += krwrap.text_width(ln, linebreak.cell_width)
 
-    for kind, val in textmap.parse_ours(ours):
+    parts = textmap.parse_ours(ours)
+    for pi_, (kind, val) in enumerate(parts):
         if kind == "text":
             pending_text.append(val)
+        elif (
+            LB_RULES
+            and kind == "ctl"
+            and val[0] == 0x01
+            and val[1] is None
+            and pending_text
+            and pi_ + 1 < len(parts)
+            and parts[pi_ + 1][0] == "text"
+            and not st_join.get("prev") in (0x04, 0x09)
+            and not linebreak.sentence_end(("".join(pending_text).split(" ") or [""])[-1])
+            and "".join(pending_text).strip()
+        ):
+            pending_text.append(" ")  # 규칙 2-16 ① 문장 중간 손 개행은 공백으로 읽는다
         elif kind == "page":
             # 🔴 예전엔 `\f` 를 본문에 이어 붙여 조판기에 맡겼는데, **뒤에 제어코드가 오면**
             # 조판기가 빈 쪽으로 보고 버려 `<05>` 가 통째로 사라졌다(2026-09-07 실측: 퍼거슨 대화에서
@@ -475,7 +1053,40 @@ def build_stream(
         )
     if end is not None and not (out and out[-1].kind == "end"):
         out.append(scene.Token(0, end.raw, "end", end.code))
+    if not raw_text:
+        strip_dead_seam_space(out)
     return out
+
+
+def strip_dead_seam_space(out: list[scene.Token]) -> None:
+    """뒤에 같은 줄로 이어질 글이 없는 이음새 공백을 지운다 — 글 조각 끝 공백 뒤에 효과음(`0C`)·참조만 있고 그 다음이
+    줄·쪽 넘김·이름표(`09nn`)·끝(되돌림 끝 `06` 은 호출한 쪽 글과 이어지므로 제외)이면 그 공백은 쓸 데가 없다(10-30 전수 촬영: 「혹시 아십니까? 」 줄 끝 공백 —
+    화면엔 안 보이나 폭만 먹는다). 참조 뒤가 글이면 호출 대상이 이어 찍을 수 있어 그대로 둔다."""
+    for i in range(len(out) - 1, -1, -1):
+        t = out[i]
+        if t.kind != "text" or not t.raw.endswith(b" "):
+            continue
+        j = i + 1
+        while j < len(out) and (out[j].ref or (out[j].kind == "ctl" and out[j].code == 0x0C)):
+            j += 1
+        nxt = out[j] if j < len(out) else None
+        # `09nn` 은 이름표(바로 뒤 `<01>`)일 수도, 문장 속 파티 이름(뒤에 글이 이어진다 — 「나는 <0903>이라고」)일 수도 있다.
+        # 뒤에 글이 이어지면 그 공백은 이름 앞 띄어쓰기다 — 지우면 「나는게일이라고」로 붙는다(변수 줄 조판 검사로 잡음).
+        after = out[j + 1] if j + 1 < len(out) else None
+        inline_name = (
+            nxt is not None
+            and nxt.kind == "ctl"
+            and nxt.code == 0x09
+            and not (after is not None and after.kind == "ctl" and after.code in (0x01, 0x05))
+        )
+        if not inline_name and (
+            (nxt is not None and nxt.kind == "end" and nxt.code != 0x06)
+            or (nxt is not None and nxt.kind == "ctl" and nxt.code in (0x01, 0x05, 0x04, 0x09))
+        ):
+            if len(t.raw) > 1:
+                out[i] = scene.Token(t.off, t.raw[:-1], "text")
+            else:
+                del out[i]
 
 
 def encode_tagged(s: str, cs: hangul.Charset) -> bytes:
@@ -516,7 +1127,8 @@ def build_tables(orig: bytes, names: dict, cs: hangul.Charset) -> list[tuple[str
             elif align == "center":
                 # 🔴 `center` 를 안 다뤄 장 제목·지명이 **왼쪽에 붙어** 있었다(2026-09-06).
                 # 원본이 앞뒤로 공백을 나눠 넣은 자리다 — 남는 칸은 뒤에 준다(반각 6px 단위).
-                body = b" " * (n // 2) + enc + b" " * (n - n // 2)
+                lead = n // 2 + (PLACE_SHIFT_B if name in ("place_a", "place_b") else 0)
+                body = b" " * lead + enc + b" " * (n - lead)
             else:
                 body = enc + b" " * n
             out.append((f"table:{name}", pos, body))
@@ -566,6 +1178,7 @@ def collect_chars(tm: dict) -> set[str]:
     chars.update(josa.chars())  # 조사 훅이 그리는 글자(는은가이를을와과으로) — 늘 굽는다
     chars.update(halfspace.chars())  # 「의␣」 — 아이템 칸 14B 에 반각 공백을 녹인 합성 글자
     chars.update(field_names.chars())  # 대본 블록 91 지명 표(문안 스트림 밖) — 늘 굽는다
+    chars.update(party_template.chars())  # 블록 141 파티 합류 레코드(소니아) — 늘 굽는다
     chars.update(actor_names.chars())  # 블록 161 배우 이름 레코드(문안 스트림 밖) — 늘 굽는다
     return chars
 
@@ -638,6 +1251,10 @@ def main(check_only: bool = False) -> None:
     new_blocks[field_names.BLOCK] = field_names.new_block(fn_base, cs)
     for dn in field_names.DEST_JP:  # 블록 92·93 목적지 표(같은 14B 칸 꼴)
         new_blocks[dn] = field_names.new_dest_block(dn, new_blocks.get(dn, bl[dn][1]), cs)
+    # 블록 141 파티 합류 레코드(소니아) — 같은 길이로 덮는다
+    new_blocks[party_template.BLOCK] = party_template.new_block(
+        new_blocks.get(party_template.BLOCK, bl[party_template.BLOCK][1]), cs
+    )
     # 블록 161 배우 이름 레코드 둘 — 같은 길이로 덮는다
     new_blocks[actor_names.BLOCK] = actor_names.new_block(
         new_blocks.get(actor_names.BLOCK, bl[actor_names.BLOCK][1]), cs
@@ -662,18 +1279,24 @@ def main(check_only: bool = False) -> None:
     rom = Rom(orig)
     # 1. 대본 아카이브 — 블록을 원 자리부터 차례로, 넘치면 꼬리로
     cur, region = SCRIPT_LO, "script"
+    script_end = None
     table = bytearray(orig[base : base + 225 * 4])
     for n, (s, _b, e) in enumerate(bl):
         packed = lz.encode(new_blocks[n]) if n in new_blocks else orig[s:e]
         packed = packed + (b"\x00" if len(packed) & 1 else b"")
         if region == "script" and cur + len(packed) > SCRIPT_HI:
-            cur, region = TAIL_LO, "tail"
+            script_end, cur, region = cur, TAIL_LO, "tail"
         if region == "tail" and cur + len(packed) > ARCHIVE_TOP:
             raise SystemExit("대본 아카이브가 꼬리 빈 공간도 넘는다")
         rom.write(region, cur, packed)
         table[n * 4 : n * 4 + 4] = struct.pack(">I", cur - base)
         cur += len(packed)
     rom.write("script-table", base, bytes(table))
+    # 새 블록이 앞에서부터 채우고 남은 뒤쪽은 원판 압축 바이트가 죽은 채 남는다 — 통째 블록 하나가 남아 일본어 사본이 된다
+    # (check_orphan_copies.py, 마스터 11-17 전 게임 점검). 참조가 없는 줄 알지만 「읽히는 길이 없다」는 증명이 아니라 지워 둔다.
+    s_end = cur if script_end is None else script_end
+    if s_end < SCRIPT_HI:
+        rom.write("script", s_end, b"\xff" * (SCRIPT_HI - s_end))
     # 1b. 전투 아카이브 — 같은 규칙, 꼬리는 대본과 이어 쓴다
     bbase = battle.ARCHIVE
     bbl = battle.blocks(orig)
@@ -689,6 +1312,8 @@ def main(check_only: bool = False) -> None:
         rom.write(bregion, bcur, packed)
         btable[n * 4 : n * 4 + 4] = struct.pack(">I", bcur - bbase)
         bcur += len(packed)
+    if bregion == "battle" and bcur < BATTLE_HI:  # 전투 아카이브도 같다 — 남는 뒤쪽 원판 블록을 지운다
+        rom.write("battle", bcur, b"\xff" * (BATTLE_HI - bcur))
     if bregion == "tail":
         cur, region = bcur, "tail"
     rom.write("battle-table", bbase, bytes(btable))
@@ -722,6 +1347,7 @@ def main(check_only: bool = False) -> None:
     for grp in ("party_rec", "party_name"):
         for e in names.get(grp, {}).values():
             hud_chars.update(re.sub(r"<[^>]*>", "", e.get("ours", "")))
+    hud_chars.update(party_template.chars())  # 소니아(블록 141 레코드)도 HUD 이름칸에 그려진다
     for label, pos, body in hangul.resource4(cs, hud_chars):  # HUD 이름 12×12
         rom.write(label, pos, body)
     # 2b-3. 주문 레벨 숫자를 반각으로(「레지나1을」) — 이름 버퍼 빌더의 14B
@@ -769,8 +1395,56 @@ def main(check_only: bool = False) -> None:
     # 3c. 오프닝 자막 · 엔딩 문안 영역 + 표
     for label, pos, body in cap_writes:
         rom.write(label, pos, body)
+    # 3c2. 디버그 진입키(A→A+C 1초) + 「경험치UP」 행 숨김 — 제품 롬에 들어간다(마스터 10-24)
+    rom.allowed["debug-key-stub"] = (KEY_AT, KEY_AT + len(KEY_STUB))
+    rom.write("debug-key-stub", KEY_AT, KEY_STUB)
+    if bytes(rom.buf[VBL_SITE : VBL_SITE + 12]) != VBL_OLD:
+        raise SystemExit("디버그 진입키 VBlank 자리(0xB614)의 원본 명령이 다르다")
+    _vbl = VBL_STUB_QA if QA_BUILD else VBL_STUB
+    rom.allowed["debug-key-vbl-stub"] = (VBL_AT, VBL_AT + len(_vbl))
+    rom.write("debug-key-vbl-stub", VBL_AT, _vbl)
+    rom.allowed["debug-key-vbl-site"] = (VBL_SITE, VBL_SITE + len(VBL_PATCH))
+    rom.write("debug-key-vbl-site", VBL_SITE, VBL_PATCH)
+    if bytes(rom.buf[KEY_SITE : KEY_SITE + 6]) != KEY_SITE_OLD:
+        raise SystemExit("디버그 진입키 자리(0xB772, VBlank 패드 갱신 호출)의 원본 명령이 다르다")
+    rom.allowed["debug-key-site"] = (KEY_SITE, KEY_SITE + len(KEY_PATCH))
+    rom.write("debug-key-site", KEY_SITE, KEY_PATCH)
+    if bytes(rom.buf[KEY_SITE2 : KEY_SITE2 + 6]) != KEY_SITE_OLD:
+        raise SystemExit("디버그 진입키 둘째 자리(0xBA56)의 원본 명령이 다르다")
+    rom.allowed["debug-key-site2"] = (KEY_SITE2, KEY_SITE2 + len(KEY_PATCH))
+    rom.write("debug-key-site2", KEY_SITE2, KEY_PATCH)
+    if bytes(rom.buf[SPELL_LIST_SITE : SPELL_LIST_SITE + 6]) != SPELL_LIST_OLD:
+        raise SystemExit("주문 목록 줄 복사 루프(0x276E0)의 원본 명령이 다르다")
+    rom.allowed["spell-list-stub"] = (SPELL_LIST_AT, SPELL_LIST_AT + len(SPELL_LIST_STUB))
+    rom.write("spell-list-stub", SPELL_LIST_AT, SPELL_LIST_STUB)
+    rom.allowed["spell-list-site"] = (SPELL_LIST_SITE, SPELL_LIST_SITE + len(SPELL_LIST_PATCH))
+    rom.write("spell-list-site", SPELL_LIST_SITE, SPELL_LIST_PATCH)
+    # 「경험치UP」 여섯째 줄은 원판 코드(0x26CDA)가 `$FF01B2`==0x62(디버그 켬)일 때만 더한다 — 숨기던 건너뛰기를 걷었다(마스터 11-07 「다 살려두자」).
+    # 원판 고장 원인: 경험치 목록 창이 열릴 때 커서 줄 변수 `$FF1AF3`(앞 메뉴에서 쓰던 5)가 안 지워져 인물 번호 5 = 빈 슬롯을 읽고 무한 루프 → 창을 그리기 전에 0 으로.
+    if bytes(rom.buf[EXPUP_SITE : EXPUP_SITE + 6]) != EXPUP_OLD:
+        raise SystemExit("경험치UP 목록 창 호출(0x27258)의 원본 명령이 다르다")
+    rom.allowed["expup-stub"] = (EXPUP_AT, EXPUP_AT + len(EXPUP_STUB))
+    rom.write("expup-stub", EXPUP_AT, EXPUP_STUB)
+    rom.allowed["expup-site"] = (EXPUP_SITE, EXPUP_SITE + len(EXPUP_PATCH))
+    rom.write("expup-site", EXPUP_SITE, EXPUP_PATCH)
+    if bytes(rom.buf[TITLE_SITE : TITLE_SITE + 6]) != TITLE_OLD:
+        raise SystemExit("HUD 장 제목 그리기 호출(0x2550E)의 원본 명령이 다르다")
+    rom.allowed["title-center-stub"] = (TITLE_AT, TITLE_AT + len(TITLE_STUB))
+    rom.write("title-center-stub", TITLE_AT, TITLE_STUB)
+    rom.allowed["title-center-site"] = (TITLE_SITE, TITLE_SITE + len(TITLE_PATCH))
+    rom.write("title-center-site", TITLE_SITE, TITLE_PATCH)
+    for lbl, site, old, new in (
+        ("spellbook-suffix", SPELLBOOK_SITE, SPELLBOOK_OLD, SPELLBOOK_PATCH),
+        ("slot-number-suffix", SLOTNO_SITE, SLOTNO_OLD, SLOTNO_PATCH),
+    ):
+        if bytes(rom.buf[site : site + len(old)]) != old:
+            raise SystemExit(f"{lbl}: {site:#x} 의 원본 명령이 다르다")
+        rom.allowed[lbl] = (site, site + len(new))
+        rom.write(lbl, site, new)
     # 3d. 🔴 시험 빌드 전용 디버그 스위치(ED_DEBUG=1, 꼬리표 test-*) — 제품 롬에는 한 바이트도 안 닿는다
     if DEBUG_BUILD:
+        if QA_BUILD and common.BUILD_TAG != "qa-debug":
+            raise SystemExit("ED_DEBUG_QA=1 은 꼬리표 qa-debug 에서만 된다 — 예: ED_BUILD_TAG=qa-debug")
         if not common.BUILD_TAG.startswith(DEBUG_TAGS_OK):
             raise SystemExit(
                 "ED_DEBUG=1 은 디버그 전용 꼬리표(debug · test-*)에서만 된다 — 예: ED_BUILD_TAG=debug"
@@ -788,6 +1462,38 @@ def main(check_only: bool = False) -> None:
         rom.write("debug-view-stub", DEBUG_VIEW_AT, DEBUG_VIEW_STUB)
         rom.allowed["debug-view-site"] = (DEBUG_VIEW_SITE, DEBUG_VIEW_SITE + len(DEBUG_VIEW_PATCH))
         rom.write("debug-view-site", DEBUG_VIEW_SITE, DEBUG_VIEW_PATCH)
+        if QA_BUILD:
+            for lbl, at, body in (
+                ("qa-hotkey", QA_HOTKEY_AT, QA_HOTKEY),
+                ("qa-speed", QA_SPEED_AT, QA_SPEED),
+                ("qa-wall", QA_WALL_AT, QA_WALL),
+                ("qa-lv", QA_LV_AT, QA_LV),
+            ):
+                if set(rom.buf[at : at + len(body)]) != {0xFF}:
+                    raise SystemExit(f"{lbl}: 꼬리 빈 자리({at:#x})가 비어 있지 않다")
+                rom.allowed[lbl] = (at, at + len(body))
+                rom.write(lbl, at, body)
+            if bytes(rom.buf[QA_LV_SITE : QA_LV_SITE + 8]) != QA_LV_OLD:
+                raise SystemExit("qa-lv-site: 0x27350 의 원본 명령이 다르다")
+            rom.allowed["qa-lv-site"] = (QA_LV_SITE, QA_LV_SITE + 6)
+            rom.write("qa-lv-site", QA_LV_SITE, QA_LV_PATCH)
+            _wb = QA_WARP + QA_WARP_TAB
+            if set(rom.buf[QA_WARP_AT : QA_WARP_AT + len(_wb)]) != {0xFF}:
+                raise SystemExit("qa-warp: 꼬리 빈 자리가 비어 있지 않다")
+            rom.allowed["qa-warp"] = (QA_WARP_AT, QA_WARP_AT + len(_wb))
+            rom.write("qa-warp", QA_WARP_AT, _wb)
+            if bytes(rom.buf[WARP_SITE : WARP_SITE + len(WARP_OLD)]) != WARP_OLD:
+                raise SystemExit("qa-warp-site: 0x26E00 의 원본 명령이 다르다")
+            rom.allowed["qa-warp-site"] = (WARP_SITE, WARP_SITE + WARP_OLD_LEN)
+            rom.write("qa-warp-site", WARP_SITE, QA_WARP_PATCH)
+            for lbl, site, old, at in (
+                ("qa-speed-site", QA_SPEED_SITE, QA_SPEED_OLD, QA_SPEED_AT),
+                ("qa-wall-site", QA_WALL_SITE, QA_WALL_OLD, QA_WALL_AT),
+            ):
+                if bytes(rom.buf[site : site + len(old)]) != old:
+                    raise SystemExit(f"{lbl}: {site:#x} 의 원본 명령이 다르다")
+                rom.allowed[lbl] = (site, site + 14)
+                rom.write(lbl, site, QA_JMP(at))
         rom.allowed["debug-header"] = (DEBUG_HDR_AT, DEBUG_HDR_AT + len(DEBUG_HDR))
         rom.write("debug-header", DEBUG_HDR_AT, DEBUG_HDR)
         print(
@@ -810,6 +1516,10 @@ def main(check_only: bool = False) -> None:
     print(f"  전투 블록 코드의 문안 한복판 쓰기 {nwr}곳 — 전부 우리 롬에서도 같은 제어 바이트를 가리킨다")
     ncall = battle.verify_calls(orig, bytes(rom.buf))
     print(f"  전투 스트림 call·goto {ncall}개 — 전부 원판과 같은 골격의 스트림을 가리킨다")
+    nslot = battle.verify_slot_plus3(orig, bytes(rom.buf))
+    print(f"  전투 블록 {nslot}개 — 진짜 슬롯의 +3 정규화 값(−최솟값)이 전부 원판과 같다(그림 타일 계산)")
+    nsum = battle.verify_summon_letters(orig, bytes(rom.buf))
+    print(f"  전투 소환 알파벳 쓰기 {nsum}곳 — 전부 우리 빈 슬롯 이름의 ASCII 알파벳 자리를 가리킨다")
     rom.verify_immutable()
     out_dir = common.BUILD_DIR / common.BUILD_TAG.replace("/", "_")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -819,6 +1529,11 @@ def main(check_only: bool = False) -> None:
         stale.unlink()
     out = out_dir / (DEBUG_OUT_NAME if DEBUG_BUILD else "ed1-kr.bin")
     out.write_bytes(bytes(rom.buf))
+    # 쓰기 기록 — `check_diff_audit` 가 「원판과 다른 바이트 ⊆ 실제로 쓴 구간」을 본다(11-07). 빌드 칸이 아니라 derived 에 둔다(파일서버 목록에 안 나오게)
+    common.OUT_DIR.mkdir(parents=True, exist_ok=True)
+    (common.OUT_DIR / ("write_log_debug.json" if DEBUG_BUILD else "write_log.json")).write_text(
+        json.dumps([[lb, at, len(d)] for lb, at, d in rom.log]), encoding="utf-8"
+    )
     used = cur - SCRIPT_LO if region == "script" else (SCRIPT_HI - SCRIPT_LO) + (cur - TAIL_LO)
     print(
         f"  {out} — 바뀐 블록 {len(new_blocks)} · 아카이브 {used:,}B ({region}) · 쓰기 {len(rom.log)}건"
