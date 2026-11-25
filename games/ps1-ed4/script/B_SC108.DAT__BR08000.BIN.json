@@ -1,0 +1,16 @@
+{
+ "archive": "/B/SC108.DAT",
+ "member": "..\\BIN\\BR08000.BIN",
+ "segments": {
+  "0": {
+   "jp": "2ff57fa65e",
+   "kr": "동 ",
+   "auto": 1
+  },
+  "1": {
+   "jp": "2c3b43acc6",
+   "kr": "남 ",
+   "auto": 1
+  }
+ }
+}
