@@ -19,9 +19,10 @@ class Rules(unittest.TestCase):
         self.assertIn("전각 부호", c.violations("뭐？"))
         self.assertIn("1-3 점 연속·가운뎃점", c.violations(".............."))  # 점만으로 된 침묵 대사는 …×round(n/3)
         self.assertIn("1-3 점 연속·가운뎃점", c.violations("・・・"))
+        self.assertIn("1-3 점 연속·가운뎃점", c.violations("가·나"))  # 가운뎃점은 「동·료」 한 꼴만(마스터 11-14)
 
     def test_통과하는_꼴(self):
-        for t in ("…그랬다.", "세…리…오…스…", "그대도… 잊었다", "1.5배", "안녕, 친구.", "뭐…?", "첫째.¶둘째."):
+        for t in ("…그랬다.", "세…리…오…스…", "그대도… 잊었다", "1.5배", "안녕, 친구.", "뭐…?", "첫째.¶둘째.", "동료지. 동·료."):
             self.assertEqual(c.violations(t), [], t)
 
     def test_쪽_표지를_넘어_붙지_않는다(self):
@@ -51,9 +52,21 @@ class Rules(unittest.TestCase):
         dialogue._load = lambda: ({"S": {"1": {"t": "황제\ue003폐하"}, "2": {"t": "\ue003말이군"}}}, None)
         try:
             self.assertEqual(dialogue.ps1_text([("S", 1)]), "황제 폐하")
-            self.assertEqual(dialogue.ps1_text([("S", 2)]), "말이군")
+            self.assertEqual(dialogue.ps1_text([("S", 2)]), " 말이군")  # 머리 붙임 공백은 살린다(변수 뒤 「약초 말이군요」, 10-28)
         finally:
             dialogue._load = orig
+
+
+class Rules1113(unittest.TestCase):
+    """마스터 11-13 문장부호 전수 — 추가 규칙의 양성·음성 대조."""
+
+    def test_positive(self):
+        for t in ("좋아~", "정말‼", "그래… … 그래", "뭐?.", "안돼!."):
+            self.assertTrue(c.violations(t), t)
+
+    def test_negative(self):
+        for t in ("좋아～", "정말?!", "그래… 그래", "…그랬어.", "뭐?", "소니아…!? 어째서…"):
+            self.assertEqual(c.violations(t), [], t)
 
 
 if __name__ == "__main__":

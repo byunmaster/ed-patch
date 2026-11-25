@@ -329,7 +329,7 @@ def special(raw: bytes, tab) -> bytes | None:
         if kr and len(kr.split()) == 2:
             a, b = kr.split()
             head = m.group(1)[:-1]  # 끝의 `06`(스타일) 제거 — 글자를 좁은 숫자 글꼴로 그려 한글이 깨진다(10-13 화면)
-            head = head.replace(b"EP`", tab.enc("ＥＰ"), 1)  # ＥＰ 는 전각, 뒤 반각 공백은 뺀다(마스터 10-13 「ＥＰ1 포인트 획득」 — 규칙 1-4 · 2-9)
+            head = head.replace(b"EP", tab.enc("ＥＰ"), 1)  # ＥＰ 는 전각, 뒤 반각 공백(`60`)은 원판대로 둔다(마스터 11-17 「원본은 EP 1 인데 번역은 EP1 붙어있어」 — 10-13 「ＥＰ1」 판정 번복)
             return head + tab.enc(" ") + tab.enc(a) + m.group(3) + tab.enc(b) + m.group(5)  # 「EP n 포인트 획득」 — 수와 단위를 띄운다(규칙 1-5 · 2-9)
     m = _GOLD.match(raw)
     if m and jptext.decode(m.group(3)) == "手に入れました":

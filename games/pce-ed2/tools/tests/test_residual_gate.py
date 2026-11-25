@@ -81,5 +81,35 @@ class Detects(unittest.TestCase):
         self.assertGreater(len(now), 1000)  # 원본엔 일본어 줄이 수천 줄 있다
 
 
+class RawRuns(unittest.TestCase):
+    """메시지 표 없는 평문 스크립트·라벨(패키지 31~35·40~69)의 일본어 런 세기 — 원본 없이."""
+
+    def test_가나_런을_센다(self):
+        jp = "ひらがなのぶんしょう".encode("cp932")
+        self.assertEqual(g.raw_runs(b"\x00" * 8 + jp + b"\x00\x01" + jp + b"\x00"), 2)
+
+    def test_짧은_우연_일치는_안_센다(self):
+        self.assertEqual(
+            g.raw_runs("あいう".encode("cp932") + b"\x00"), 0
+        )  # 3자 — 글리프 표 바이트가 우연히 걸리는 길이
+
+    def test_창_밖은_안_본다(self):
+        jp = "ひらがなのぶんしょう".encode("cp932")
+        self.assertEqual(g.raw_runs(bytes(g.RAW_WINDOW) + jp), 0)
+
+    def test_알려진_수_파일_꼴(self):
+        for n, c in g.raw_known().items():
+            self.assertIn(n, g.RAW_PKGS)
+            self.assertGreater(c, 0)
+
+
+class DropNarrowHan(unittest.TestCase):
+    def test_한글_글리프_둘째_바이트_FA_는_다음_바이트를_지우지_않는다(self):
+        """글리프 코드 F2FA 의 둘째 바이트 FA 를 좁은 한글 리드로 오인해 뒤 `F0` 을 지우면 다음 글자가 SJIS 가나로 읽혀 잔존 오판(11-10 770:22:9)."""
+        b = bytes.fromhex("f2fa f0bc f254".replace(" ", ""))
+        self.assertEqual(g._drop_narrow_han(b), b)
+        self.assertEqual(g._drop_narrow_han(bytes.fromhex("fa24 f0bc".replace(" ", ""))), bytes.fromhex("f0bc"))  # 좁은 한글은 걷힌다
+
+
 if __name__ == "__main__":
     unittest.main()

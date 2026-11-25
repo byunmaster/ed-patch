@@ -37,7 +37,10 @@ def spell_list_open(e) -> bool:
 
 def setup(e, levels: int, pages: list[int]) -> None:
     """디버그 메뉴: LVL 로 레벨을 올리고(MP) ITEM 쪽을 소지품에 넣은 뒤 게임 메뉴까지 연다(`spelluse.setup` 와 같은 순서)."""
-    e.press("run+ii", 10, 30)
+    e.hold("select")
+    e.run(70)  # 진입키는 1초(60프레임) 이어서
+    e.hold(None)
+    e.run(30)
     e.press("down", 5, 15)  # LVL
     for _ in range(levels):
         e.press("i", 5, 40)

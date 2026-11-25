@@ -15,6 +15,7 @@
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -22,15 +23,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import battle
+import battlecode
 import chapter
 import codestr
 import common
 import ctrllines
 import debugmode
+import debugqa
 import debugsw
 import dialogue
 import endcard
 import ending
+import kanma
 import ending_sub
 import cardart
 import syscard
@@ -43,14 +47,23 @@ import labels
 import layout
 import lz
 import opening_sub
+import overwrite_audit
+import os as _os
 import package
+import quickmenu
+import cursorfix
+import cursorw
+import hangpunct
+import narrowhan
 import repack
 import residual_gate
 import systext
 import wrap
 import longline
 import lzring
+import kagi
 import narrow
+import narrow_font
 
 from shared.disc import mode1
 
@@ -127,6 +140,9 @@ def load_edits(path: Path):
     return json.loads(path.read_text())
 
 
+DEBUG_EXTRA = (3586, 3714)  # 배틀 테스트 마을 28·29(rel = 번호×128+2)
+
+
 def family_rels() -> list[int]:
     """장 제목 덩이를 가진 패키지의 rel(앞 사본). 머리표(`4c ×3`) 섹터를 훑어 첫 덩이가 장 제목 꼴인 것만."""
     out = []
@@ -153,6 +169,13 @@ def family_rels() -> list[int]:
             )
             continue
         out.append(rel)
+    for rel in DEBUG_EXTRA:  # 배틀 테스트 마을 28·29 — 장 제목 덩이가 없어 위 조건에 안 걸리지만 제품 디버그에서 닿는다(11-09). 글 덩이 구간이 맞으면 같은 파이프라인에 태운다
+        pkg = bytes(common.track_data(rel, PKG_SECTORS))
+        try:
+            repack.text_region(pkg)
+        except repack.RepackError:
+            continue
+        out.append(rel)
     return out
 
 
@@ -173,7 +196,9 @@ def _place_table(new: bytearray, local: list[str], T: int, limit: int) -> None:
     if ts < sent + 8:  # 끝 표시 8바이트(0xFF)는 남긴다
         raise TableFit(f"지역 글리프 {len(local)}자({n}B)가 꼬리 {limit - sent}B 에 안 들어간다")
     for k, ch in enumerate(local):
-        new[ts + k * font.PACKED_BYTES : ts + (k + 1) * font.PACKED_BYTES] = font.pack(font.glyph(ch), font.flags(ch))
+        new[ts + k * font.PACKED_BYTES : ts + (k + 1) * font.PACKED_BYTES] = font.pack(
+            font.pool_glyph(ch), font.flags(ch)
+        )
     bank, off = ts >> 13, ts & 0x1FFF
     new[T], new[T + 1] = off & 0xFF, (bank << 5) | (off >> 8)
 
@@ -189,7 +214,7 @@ def _plan_one(rel, raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None,
     orig_decoded = dict(decoded)
     for a, d in orig_decoded.items():
         if chapter.is_chapter_chunk(d):  # 장 제목 띠(장 카드)
-            decoded[a] = chapter.edit(d, tab)
+            decoded[a] = chapter.blank(d) if rel in chapter.BLANK_RELS else chapter.edit(d, tab)  # 디버그·배틀 테스트 마을은 띠에 마을 제목 줄이 뜬다 — 장 제목 줄은 빈 칸으로(11-10)
         elif systext.is_menu_chunk(d):  # 상점·예/아니오 메뉴 덩이
             decoded[a] = systext.edit_menu_chunk(d, tab, MISSING_LABELS)
         else:  # 지명 라벨(패널 지명 · 왕국·도시 목록) — 정본에 없는 문구는 MISSING_LABELS 에 모은다
@@ -198,17 +223,36 @@ def _plan_one(rel, raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None,
             decoded[a] = battle.edit_chunk(decoded[a], tab, MISSING_LABELS)
         if not chapter.is_chapter_chunk(d):  # 장 끝 카드(정본 문안)
             decoded[a] = endcard.edit_chunk(decoded[a], tab)
-            if EDIT_ANY_LABELS:  # 전투 덩이의 몬스터 이름 등 — 용량 때문에 링 창 확대(status A안) 전까지 끈다
-                decoded[a] = labels.edit_any_lines(decoded[a], tab, MISSING_LABELS, dialogue.covered(rel, a))
+            if (
+                EDIT_ANY_LABELS
+            ):  # 전투 덩이의 몬스터 이름 등 — 용량 때문에 링 창 확대(status A안) 전까지 끈다
+                decoded[a] = labels.edit_any_lines(
+                    decoded[a], tab, MISSING_LABELS, dialogue.covered(rel, a)
+                )
         if dialogue_allowed is not None and not chapter.is_chapter_chunk(d):
             decoded[a] = dialogue.edit_chunk(rel, a, decoded[a], tab, dialogue_allowed | set(local))
-        if not chapter.is_chapter_chunk(d):  # 제어(이름·항목·수·쪽 넘김)가 낀 줄 — 틀 번역(수령·상점·보물상자·화자 머리줄 …)
+        if not chapter.is_chapter_chunk(
+            d
+        ):  # 제어(이름·항목·수·쪽 넘김)가 낀 줄 — 틀 번역(수령·상점·보물상자·화자 머리줄 …)
             decoded[a] = ctrllines.edit_chunk(d, decoded[a], tab, dialogue.STATS)
+        if (
+            not chapter.is_chapter_chunk(d) and not systext.is_menu_chunk(d)
+        ):  # 패널 지명 칸(첫 줄) 가운데 맞춤 — 라벨·대사 정본 어느 쪽이 글을 냈든 여백만 다시 정한다(마스터 11-04)
+            decoded[a] = labels.recenter_chunk(d, decoded[a], tab)
+        if not chapter.is_chapter_chunk(d) and not systext.is_menu_chunk(
+            d
+        ):  # 항목 이름 뒤 원문 조사 가나(`1D xx`)가 화면에 찍히지 않게(마스쿤 도구점 실화면 11-05)
+            decoded[a] = b"\x00".join(
+                ctrllines.blank_item_particle(y) if y != x else y
+                for x, y in zip(d.split(b"\x00"), decoded[a].split(b"\x00"))
+            )
     for e in (x for x in raw if x["pkg"] == rel):  # PoC 찾아 바꾸기
         find = bytes.fromhex(e["find_hex"])
         hits = [(a, d.count(find)) for a, d in decoded.items() if find in d]
         if len(hits) != 1 or hits[0][1] != 1:
-            raise BuildError(f"패키지 {rel}: 찾는 바이트가 정확히 한 번이 아니다 {hits} — {find.hex()}")
+            raise BuildError(
+                f"패키지 {rel}: 찾는 바이트가 정확히 한 번이 아니다 {hits} — {find.hex()}"
+            )
         a = hits[0][0]
         rep = bytes.fromhex(e["replace_hex"]) if "replace_hex" in e else tab.enc(e["replace_text"])
         decoded[a] = decoded[a].replace(find, rep)
@@ -217,17 +261,39 @@ def _plan_one(rel, raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None,
         new, place = repack.repack(pkg, changed, ring512=rel in lzring.PKGS)
     except repack.RepackError as ex:
         raise BuildError(f"패키지 {rel}: {ex}") from ex
-    if dialogue_allowed is not None and any(sp.rel == rel for sp in codestr.SPECS):  # 코드 영역의 일본어 문장(메시지 표 밖) — 0xFF 패딩으로 옮기고 포인터를 돌린다
+    if dialogue_allowed is not None and any(
+        sp.rel == rel for sp in codestr.SPECS + battlecode.SPECS
+    ):  # 코드 영역의 일본어 문장(메시지 표 밖) — 0xFF 패딩으로 옮기고 포인터를 돌린다(배틀 테스트 씬 16·17 문장도 같은 길 — 11-09 패키지째 번역하며 따로 쓰던 `battlecode.apply` 와 겹쳐 합쳤다)
         nb = bytearray(new)
         try:
-            codestr.apply(rel, pkg, nb, tab)
-        except (ValueError, KeyError) as ex:  # KeyError = 글자가 풀 밖 — package_chars 에 넣었으니 일어나면 안 된다
+            codestr.apply(rel, pkg, nb, tab, codestr.SPECS + battlecode.SPECS)
+        except (
+            ValueError,
+            KeyError,
+        ) as ex:  # KeyError = 글자가 풀 밖 — package_chars 에 넣었으니 일어나면 안 된다
             raise BuildError(f"패키지 {rel}: 코드 문자열 — {ex}") from ex
         new = bytes(nb)
     if local:
         nb = bytearray(new)
         T0, _tb = package.msg_table(pkg)
         _place_table(nb, local, T0, repack.text_region(pkg)[1])
+        new = bytes(nb)
+    if rel == narrowhan.REL:  # 디버그 마을 — 좁은 글꼴 한글 도안 표를 패키지의 0xFF 채움 안(뱅크 경계)에 둔다
+        tbl = narrowhan.table()
+        off = narrowhan.TABLE_OFF
+        nb = bytearray(new)
+        assert set(nb[off : off + len(tbl)]) <= {0xFF}, "좁은 한글 도안 자리가 0xFF 채움이 아니다"
+        nb[off : off + len(tbl)] = tbl
+        cursorw.apply(nb, cursorw.STEPS)  # 목록 커서 틀 폭 단계 — 한국어 이름이 틀 안에 들게(마스터 11-22)
+        new = bytes(nb)
+    elif rel in {2 + 128 * sc for sc in narrowhan.BT_LOC}:  # 배틀 테스트 마을(장면 16~19) — 같은 좁은 목록이라 도안 표 사본(그 마을 글자만)을 꼬리 0xFF 안에(마스터 11-22 「전투시험 깨짐」)
+        tbl = narrowhan.bt_table()
+        off = narrowhan.BT_LOC[(rel - 2) // 128]
+        nb = bytearray(new)
+        assert set(nb[off : off + len(tbl)]) <= {0xFF}, f"패키지 {rel}: 좁은 한글 도안 자리(0x{off:X})가 0xFF 채움이 아니다"
+        assert (off & 0x1FFF) + len(tbl) <= 0x2000, "도안 표가 뱅크 경계를 넘는다"
+        nb[off : off + len(tbl)] = tbl
+        cursorw.apply_bt(nb, rel)  # 목록 커서 틀 폭(원판 26px 는 앞 두 글자만 덮는다)
         new = bytes(nb)
     return pkg, new, place, changed
 
@@ -236,9 +302,13 @@ def _pkg_caps(raw, tab: font.GlyphTable) -> dict[int, int]:
     """패키지마다 **전부 번역했을 때** 꼬리에 남는 자리로 담을 수 있는 지역 글리프 수 — 정적 풀을 누구에게 먼저 줄지 정하는 눈금이다."""
     allc = set().union(*dialogue.package_chars().values()) if dialogue.package_chars() else set()
     tmp = font.GlyphTable()
-    tmp.map = {c: i for i, c in enumerate(sorted(set(tab.chars) | allc))}  # 길이만 맞으면 되는 가짜 번호 — 압축률이 조금 다를 수 있다
+    tmp.map = {
+        c: i for i, c in enumerate(sorted(set(tab.chars) | allc))
+    }  # 길이만 맞으면 되는 가짜 번호 — 압축률이 조금 다를 수 있다
     caps = {}
-    dialogue.KEEP_MARKS = False  # 용량 눈금은 타이밍 제어 없이 잰다(타이밍은 패키지별로 나중에 살릴 수 있을 만큼만)
+    dialogue.KEEP_MARKS = (
+        False  # 용량 눈금은 타이밍 제어 없이 잰다(타이밍은 패키지별로 나중에 살릴 수 있을 만큼만)
+    )
     for rel in sorted(dialogue.package_chars()):
         try:
             pkg, new, _pl, _ch = _plan_one(rel, raw, tmp, set(tmp.map), [])
@@ -265,8 +335,12 @@ def _missing_chars(rel, static: set[str]):
             continue
         d = package.decode_chunk(pkg, a, b)[0]
         for _li, _p, spk, txt in dialogue.candidates(rel, a, d):
-            cnt.update(set(c for c in "".join(txt + (spk or "")) if c not in " \u3000\n\f§") - static)
-    for c in codestr.chars_by_pkg().get(rel, set()) - static:  # 코드 영역 문장의 글자는 줄 하나가 아니라 필수다 — 맨 앞에
+            cnt.update(
+                set(c for c in "".join(txt + (spk or "")) if c not in " \u3000\n\f§") - static
+            )
+    for c in (
+        codestr.chars_by_pkg().get(rel, set()) - static
+    ):  # 코드 영역 문장의 글자는 줄 하나가 아니라 필수다 — 맨 앞에
         cnt[c] += 10_000
     return [c for c, _n in sorted(cnt.items(), key=lambda kv: (-kv[1], kv[0]))]
 
@@ -293,8 +367,13 @@ def _search_local(rel, raw, tab: font.GlyphTable, static: set[str]):
 
 POOL_MARGIN = 3  # 정적 풀 용량에서 덜어 두는 글자 수 — 수집 단계 이후 늘어나는 글자(시스템 배치 · 전투 줄)의 여유
 import os as _os
-EDIT_ANY_LABELS = _os.environ.get("ED_ANY_LABELS") != "0"  # 전투 덩이 몬스터 이름 라벨 등 — 용량이 모자라 꺼 뒀으나 11×11 묶음 풀 이후 들어간다(10-16 실측). 끄려면 ED_ANY_LABELS=0
-MARKS_PARTIAL: list[tuple[int, int]] = []  # (패키지, 살린 줄 수) — 공간이 모자라 연출 타이밍 제어를 일부만 살린 패키지
+
+EDIT_ANY_LABELS = (
+    _os.environ.get("ED_ANY_LABELS") != "0"
+)  # 전투 덩이 몬스터 이름 라벨 등 — 용량이 모자라 꺼 뒀으나 11×11 묶음 풀 이후 들어간다(10-16 실측). 끄려면 ED_ANY_LABELS=0
+MARKS_PARTIAL: list[
+    tuple[int, int]
+] = []  # (패키지, 살린 줄 수) — 공간이 모자라 연출 타이밍 제어를 일부만 살린 패키지
 
 
 def _plan_with_local(rel, raw, tab: font.GlyphTable, static: set[str]):
@@ -325,7 +404,9 @@ def _plan_with_local(rel, raw, tab: font.GlyphTable, static: set[str]):
     return a
 
 
-def plan_packages(raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None = None, local: bool = False) -> dict:
+def plan_packages(
+    raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None = None, local: bool = False
+) -> dict:
     """패키지마다 새 바이트를 계획한다. 수집 단계(`tab.map is None`)에선 글자만 모은다. 반환 {rel: (원본, 새, 배치, 바뀐 덩이)}.
     `local` = 확정 단계에서 패키지별 지역 글리프 표를 이분 탐색으로 정한다(정적 풀은 `tab.map`)."""
     rels = sorted(set(family_rels()) | {e["pkg"] for e in raw})
@@ -344,7 +425,9 @@ def plan_packages(raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None =
         else:
             out[rel] = _plan_one(rel, raw, tab, dialogue_allowed, [])
     if local:
-        print(f"  연출 타이밍 제어를 일부만 살린 패키지(공간 부족, 패키지·살린 줄 수): {MARKS_PARTIAL}")
+        print(
+            f"  연출 타이밍 제어를 일부만 살린 패키지(공간 부족, 패키지·살린 줄 수): {MARKS_PARTIAL}"
+        )
         dialogue.STATS.clear()
         dialogue.STATS.update(totals)
         dialogue.UNFIT.clear()
@@ -368,7 +451,9 @@ def apply_pkg_edits(w: Writer, plan: dict) -> dict:
     return intended
 
 
-def plan_program(tab: font.GlyphTable, glyph24: list[bytes] | None, chars: list[str] | None = None) -> layout.Prog:
+def plan_program(
+    tab: font.GlyphTable, glyph24: list[bytes] | None, chars: list[str] | None = None
+) -> layout.Prog:
     """본 프로그램 패치 계획 — 후킹 자리 예약 → 시스템 문구 배치 → (확정 단계에서) 글리프 풀. 수집 단계는 글리프 풀을 안 앉힌다."""
     prog = layout.Prog()
     systext.reclaim_dead(prog)  # 죽은 전투 디버그 문구 271B → 글리프 풀
@@ -377,15 +462,25 @@ def plan_program(tab: font.GlyphTable, glyph24: list[bytes] | None, chars: list[
     longline.reserve(prog)
     lzring.reserve(prog)
     narrow.reserve(prog)
+    hangpunct.reserve(prog)
+    kagi.reserve(prog)
     debugsw.reserve(prog)
+    narrow_font.install(
+        prog
+    )  # 반각 글꼴 표 — 문장부호·숫자를 원판 BIOS 모양으로(마스터 11-06 (다)안)
     systext.MISSING.clear()
     systext.OVERFLOW.clear()
     systext.plan(prog, tab)
+    cursorfix.fix(prog)  # 선택 커서 틀 오른쪽 끝 +4px — 띄어쓰기 품은 이름 88px(11-07)
+    quickmenu.fix(prog)  # 퀵메뉴 사용 가능 표 읽기 — 새 문자열 줄 머리로(11-07)
+    quickmenu.widen(prog)  # 퀵메뉴 커서·창 폭(11-22)
     if glyph24 is not None:
         flags = [font.flags(c) for c in chars] if chars else None
         josa_idx = [tab.map[c] for pair in font.JOSA for c in pair] if tab.map else None
         seen_bm: dict[bytes, str] = {}
-        for ch_, g_ in zip(chars or [], glyph24, strict=False):  # 구운 글리프끼리 같은 비트맵이면 실패(ss-ed1+2 10-20: 쉼표가 마침표와 같은 비트맵으로 구워져 3,983곳이 전부 마침표였다)
+        for ch_, g_ in zip(
+            chars or [], glyph24, strict=False
+        ):  # 구운 글리프끼리 같은 비트맵이면 실패(ss-ed1+2 10-20: 쉼표가 마침표와 같은 비트맵으로 구워져 3,983곳이 전부 마침표였다)
             if g_ in seen_bm:
                 raise BuildError(f"구운 글리프끼리 같은 비트맵: 「{seen_bm[g_]}」 = 「{ch_}」")
             seen_bm[g_] = ch_
@@ -394,7 +489,13 @@ def plan_program(tab: font.GlyphTable, glyph24: list[bytes] | None, chars: list[
         longline.install(prog)
         lzring.install(prog)  # 642 전용 512B 링 복호 변형(표식 덩이만 — 나머지는 원판 경로)
         narrow.install(prog)
-        debugsw.install(prog)  # 디버그 메뉴 숨김 제스처(필드에서 RUN+I+II) — 제품 롬에 들어간다(마스터 10-21 판정 19 A)
+        hangpunct.install(prog)  # 줄 끝 매다는 부호(. , ! ?)는 엔진 꺾음에서 4px 로 센다(마스터 11-22)
+        kagi.install(prog, kagi.codes_for(chars))
+        debugsw.install(
+            prog
+        )  # 디버그 메뉴 숨김 제스처(필드에서 SELECT 1초) — 제품 롬에 들어간다(마스터 10-21 판정 19 A)
+        if debugqa.enabled():  # QA 전용 보강(ED_DEBUG_QA=1 + qa-debug/test-* 꼬리표) — 제품 롬 불변
+            debugqa.install(prog)
     return prog
 
 
@@ -423,6 +524,29 @@ def write_review() -> None:
 def apply_program(w: Writer, prog: layout.Prog, glyph24: list[bytes]) -> None:
     for lin, new, old, label in prog.spans():
         w.put(lin, new, old, f"prog {label}")
+    rows = overwrite_audit.classify(prog)
+    (common.REVIEW_DIR / "overwrite_audit.tsv").write_text(
+        "\n".join(
+            f"{r['bank']:02X}+{r['off']:04X}\t{r['len']}\t{r['kind']}\t{r['label']}" for r in rows
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with open(common.REVIEW_DIR / "overwrite_audit.tsv", "a", encoding="utf-8") as fa:
+        fa.writelines(f"{b:02X}+{o:04X}\t{n}\tVAC\t비운 칸\n" for b, o, n in prog.vacated)
+    bad = overwrite_audit.unregistered(rows)
+    if bad and _os.environ.get("ED_AUDIT_WARN"):  # 허용 목록을 만드는 중(11-06) — 시험 빌드에서만
+        print(
+            f"  ⚠ 원본 코드를 덮는 쓰기 {len(bad)}곳(등록 없음) — work/review/overwrite_audit.tsv"
+        )
+    elif bad:
+        raise BuildError(
+            "원본 코드를 덮는 프로그램 쓰기가 등록 없이 있다(overwrite_allow.json): "
+            + "; ".join(
+                f"{r['bank']:02X}+{r['off']:04X}×{r['len']} {r['kind']} 「{r['label']}」"
+                for r in bad[:8]
+            )
+        )
     print(
         f"  본 프로그램 쓰기 {len(prog.spans())}곳 · 글리프 풀 {len(glyph24)}자 · 남은 자유 공간 {sum(r[2] for r in prog.runs_left())}B"
     )
@@ -444,7 +568,9 @@ def verify_readback(iso: Path, intended: dict, prog: layout.Prog) -> None:
         for r in [rel] + ([rel + MIRROR] if MIRROR_SPAN[0] <= rel < MIRROR_SPAN[1] else []):
             got = track(r, PKG_SECTORS)
             if got != want:
-                raise BuildError(f"되읽기: rel {r} 패키지가 의도와 다르다")
+                bad = [i for i in range(min(len(got), len(want))) if got[i] != want[i]]
+                (common.REVIEW_DIR / f"readback_{r}_want.bin").write_bytes(want)
+                raise BuildError(f"되읽기: rel {r} 패키지가 의도와 다르다 — 다른 바이트 {len(bad)}곳 (오프셋 {bad[:6]}, 읽은 {[got[i] for i in bad[:6]]} 의도 {[want[i] for i in bad[:6]]}, 길이 {len(got)}/{len(want)})")
             for start, d in chunks.items():
                 back, _ = lz.decode(got, start, len(d), auto512=True)
                 if back != d:
@@ -489,30 +615,85 @@ def verify_immutable(iso: Path, touched: set[int], limit_sectors: int | None) ->
     print(f"  무변경 대조 OK (허용 {len(touched)}섹터 밖 동일, 대조 {n}섹터)")
 
 
+def verify_declared_bytes(iso: Path, w: "Writer") -> None:
+    """**바뀐 바이트 전수**(11-07 관리자 공지 — 패턴 치환이 우연히 같은 바이트의 자료까지 고쳐 제품만 멈춘 부류): 쓴 섹터 안이라도 원본과 다른 바이트는 **선언한 쓰기 구간(쓰기 장부) 안**이어야 한다.
+    구간 밖에서 바뀐 바이트가 있으면 누가 썼는지 모르는 변경이다 — 사유가 없으니 결함."""
+    import bisect
+
+    merged: list[list[int]] = []
+    for lo, hi in sorted((lin, lin + len(data)) for lin, data, _l in w.spans):
+        if merged and lo <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], hi)
+        else:
+            merged.append([lo, hi])
+    starts = [m[0] for m in merged]
+
+    def inside(pos: int) -> bool:
+        i = bisect.bisect_right(starts, pos) - 1
+        return i >= 0 and pos < merged[i][1]
+
+    bad = []
+    with open(common.ORIG_ISO, "rb") as a, open(iso, "rb") as b:
+        for lba in sorted(w.touched):
+            for f in (a, b):
+                f.seek(lba * common.RAW + common.USER_OFF)
+            x, y = a.read(common.USER), b.read(common.USER)
+            if x == y:
+                continue
+            base = (lba - common.T2_SECTOR) * common.USER
+            for i in range(len(y)):
+                if x[i] != y[i] and not inside(base + i):
+                    bad.append(base + i)
+    if bad:
+        raise BuildError(f"선언한 쓰기 구간 밖에서 원본과 다른 바이트 {len(bad)}개 (선형 {bad[:8]} …)")
+    print(f"  바뀐 바이트 전수 OK (쓴 {len(w.touched)}섹터 안 모든 변경이 쓰기 장부 안)")
+
+
 def build(edits_path: Path | None, trim: bool, dialogue_on: bool = True) -> Path:
     common.verify_originals()
     # 🔴 잘라 낸 에뮬용(트랙 1~2)은 배포용 칸에 두지 않는다 — 오디오 트랙이 빠진 이미지가 파일서버로 나가 BGM 이 안 났다(10-12)
-    out_dir = common.BUILD_DIR / (common.BUILD_TAG + ("-trim" if trim else ""))
+    # 칸 이름이 `test-` 로 시작해야 마스터 목록(파일서버·덱 앱)에 안 나온다(10-15 규약, 10-30 마스터 「pce-ed2-trim 어떤 빌드야」)
+    tag = common.BUILD_TAG
+    if trim and not tag.startswith("test-"):
+        tag = "test-" + tag
+    out_dir = common.BUILD_DIR / (tag + ("-trim" if trim else ""))
     out_dir.mkdir(parents=True, exist_ok=True)
-    iso = out_dir / f"{common.ROM_STEM}.iso"
-    cue = out_dir / f"{common.ROM_STEM}.cue"
-    for p in (iso, cue, out_dir / f"{common.ROM_STEM}.iso.failed"):
+    # 🔴 빌드 도중 제품 칸을 덮지 않는다(마스터 11-22 「다 일본어로 나와」 — 빌드가 원판 사본부터 깔고 패치하는 20분 동안 파일서버가 그 칸을 내줬다).
+    # 임시 칸(`test-partial-<꼬리표>` — `test-` 라 목록에 안 나온다)에 굽고, 성공한 뒤에만 **한 번에 바꿔치기**한다(같은 파일시스템 rename = 원자). 실패하면 제품 칸은 그대로(옛 이미지)이고 임시 칸에 `.failed` 가 남는다.
+    work_dir = common.BUILD_DIR / ("test-partial-" + out_dir.name)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    iso = work_dir / f"{common.ROM_STEM}.iso"
+    cue = work_dir / f"{common.ROM_STEM}.cue"
+    for p in (iso, cue, Path(str(iso) + ".src"), work_dir / f"{common.ROM_STEM}.iso.failed"):
         if p.exists():
             p.unlink()
     try:
         _build(edits_path, iso, cue, trim, dialogue_on)
     except Exception:
         if iso.exists():
-            iso.rename(out_dir / f"{common.ROM_STEM}.iso.failed")
+            iso.rename(work_dir / f"{common.ROM_STEM}.iso.failed")
         raise
-    return iso
+    final = out_dir / f"{common.ROM_STEM}.iso"
+    os.replace(cue, out_dir / f"{common.ROM_STEM}.cue")
+    src = Path(str(iso) + ".src")
+    if src.exists():
+        os.replace(src, Path(str(final) + ".src"))
+    os.replace(iso, final)
+    for leftover in work_dir.iterdir():
+        leftover.unlink()
+    work_dir.rmdir()
+    return final
 
 
 def check_full_layout(iso: Path, cue: Path) -> None:
     """전 트랙 이미지 계약 — 원본과 같은 크기 · 같은 트랙 구성(24트랙, 오디오 포함). 오디오 바이트는 무변경 대조(verify_immutable)가 지킨다."""
     if iso.stat().st_size != common.ORIG_ISO.stat().st_size:
-        raise BuildError(f"이미지 크기가 원본과 다르다: {iso.stat().st_size} ≠ {common.ORIG_ISO.stat().st_size}")
-    want = common.ORIG_CUE.read_text().replace(common.ORIG_ISO.name.upper(), f"{common.ROM_STEM}.iso")
+        raise BuildError(
+            f"이미지 크기가 원본과 다르다: {iso.stat().st_size} ≠ {common.ORIG_ISO.stat().st_size}"
+        )
+    want = common.ORIG_CUE.read_text().replace(
+        common.ORIG_ISO.name.upper(), f"{common.ROM_STEM}.iso"
+    )
     if cue.read_text() != want:
         raise BuildError("cue 가 원본 트랙 구성과 다르다")
     n = want.count("TRACK ")
@@ -531,19 +712,25 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
         )
     else:
         shutil.copyfile(common.ORIG_ISO, iso)
-        text = common.ORIG_CUE.read_text().replace(common.ORIG_ISO.name.upper(), f"{common.ROM_STEM}.iso")
+        text = common.ORIG_CUE.read_text().replace(
+            common.ORIG_ISO.name.upper(), f"{common.ROM_STEM}.iso"
+        )
         if f"{common.ROM_STEM}.iso" not in text:
             raise BuildError("cue 의 FILE 이름을 못 바꿨다")
         cue.write_text(text)
         check_full_layout(iso, cue)
     raw = load_edits(edits_path) if edits_path else []
+
     def attempt(margin: int):
         """한 번의 계획 — 정적 풀 여유 `margin` 으로 글자를 고르고 끝까지 계획한다. 풀이 넘치면 `hook.PoolOverflow`."""
         tab = font.GlyphTable()
         plan_packages(raw, tab)  # ① 수집 — 글자를 모은다(패키지 · 시스템 문구)
+        battlecode.collect(tab)  # 본편 밖(배틀 테스트 씬) 코드 문장의 글자도 정적 풀로
         prog0 = plan_program(tab, None)
         allowed = None
-        if dialogue_on:  # 대사 — 글리프 풀 예산 안에서 쓸 글자를 정하고, 그 글자만 쓰는 줄을 번역한다
+        if (
+            dialogue_on
+        ):  # 대사 — 글리프 풀 예산 안에서 쓸 글자를 정하고, 그 글자만 쓰는 줄을 번역한다
             cap = hook.pool_capacity(prog0) - margin
             caps = _pkg_caps(raw, tab)
             allowed = dialogue.choose(set(tab.chars), cap - len(tab.chars), caps)
@@ -552,8 +739,10 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
         dialogue.UNFIT.clear()
         MARKS_PARTIAL.clear()
         chars = tab.freeze()  # ② 번호 확정(코드포인트순, 결정적)
-        glyph24 = [font.glyph(ch) for ch in chars]
-        plan = plan_packages(raw, tab, set(tab.map), local=dialogue_on)  # ③ 같은 계획을 진짜 코드로 다시(+ 패키지별 지역 글리프)
+        glyph24 = [font.pool_glyph(ch) for ch in chars]
+        plan = plan_packages(
+            raw, tab, set(tab.map), local=dialogue_on
+        )  # ③ 같은 계획을 진짜 코드로 다시(+ 패키지별 지역 글리프)
         prog = plan_program(tab, glyph24, chars)
         return tab, plan, prog, glyph24, chars
 
@@ -578,9 +767,12 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
                 tab, plan, prog, glyph24, chars = tab2, plan2, prog2, glyph242, chars2
         print(f"  글리프 풀 여유 {margin} · 정적 글리프 {len(chars)}자")
     if dialogue_on:
-        print(f"  대사 줄: 번역 {dialogue.STATS['번역']} · 글리프 예산 밖(원문 유지) {dialogue.STATS['예산 밖']} · 18 인자 불가 {dialogue.STATS['18 인자 불가']} · 화자 정본 없음 {sum(1 for v in dialogue.UNFIT.values() if v.startswith('화자'))}")
+        print(
+            f"  대사 줄: 번역 {dialogue.STATS['번역']} · 글리프 예산 밖(원문 유지) {dialogue.STATS['예산 밖']} · 18 인자 불가 {dialogue.STATS['18 인자 불가']} · 화자 정본 없음 {sum(1 for v in dialogue.UNFIT.values() if v.startswith('화자'))}"
+        )
         (common.REVIEW_DIR / "dialogue_unfit.tsv").write_text(
-            "\n".join(f"{k}\t{v}" for k, v in sorted(dialogue.UNFIT.items())) + "\n", encoding="utf-8"
+            "\n".join(f"{k}\t{v}" for k, v in sorted(dialogue.UNFIT.items())) + "\n",
+            encoding="utf-8",
         )
     with open(iso, "r+b") as f:
         w = Writer(f)
@@ -589,31 +781,47 @@ def _build(edits_path, iso: Path, cue: Path, trim: bool, dialogue_on: bool = Tru
         opening_sub.apply(w)  # 오프닝 나레이션 자막(모듈 rel 4098 — 본 프로그램과 다른 이미지)
         ending_sub.apply(w)  # 대관식 성우 대사 자막(패키지 38 — ADPCM 셀 데이터 + 뱅크 0x86 코드)
         ending.apply(w)  # 엔딩 스태프롤(패키지 41) — 분야 라벨·엔딩 대사 번역 + 자체 글리프 후킹
+        kanma.apply(
+            w
+        )  # 章間 장 사이 데모(패키지 45·48·51·54·57) — 평문 스크립트 번역 + 자체 글리프 후킹
         syscard.apply(w)  # 시스템 카드·백업 RAM 안내문 넷(패키지 20) — 번역 + 자체 글리프 후킹
         cardart.apply(w)  # 그 화면의 그림 글자(간판 만실·여관 · 말풍선 헉 — 패키지 20 LZSS 덩이)
-        hudplate.apply(w)  # HUD 판 라벨 「アト」 → 「남다」(마스터 도트, pce-ed1 정본 그대로 — 판 타일 묶음 rel 186)
-        if syscardcheck.enabled():  # 마스터 확인용(꼬리표 syscard-check) — 새 게임이 카드 안내 화면으로 간다
+        hudplate.apply(
+            w
+        )  # HUD 판 라벨 「アト」 → 「남다」(마스터 도트, pce-ed1 정본 그대로 — 판 타일 묶음 rel 186)
+        if (
+            syscardcheck.enabled()
+        ):  # 마스터 확인용(꼬리표 syscard-check) — 새 게임이 카드 안내 화면으로 간다
             syscardcheck.apply(w)
-        if endtest.enabled():  # 엔딩 직행 시험 빌드(환경 변수 ED_ENDING_TEST=1 — 정본 빌드엔 안 들어간다)
+        if (
+            endtest.enabled()
+        ):  # 엔딩 직행 시험 빌드(환경 변수 ED_ENDING_TEST=1 — 정본 빌드엔 안 들어간다)
             endtest.apply(w)
         if debugmode.enabled():  # 디버그 빌드(ED_DEBUG=1 + test-* 꼬리표 — 제품 롬엔 안 들어간다)
             debugmode.apply(w)
     write_review()
     if systext.INTERIOR_WARN:
-        print(f"  ⚠ 문자열 안쪽 쓰기 짝을 못 찾음 {len(systext.INTERIOR_WARN)}곳: {systext.INTERIOR_WARN[:6]}")
+        print(
+            f"  ⚠ 문자열 안쪽 쓰기 짝을 못 찾음 {len(systext.INTERIOR_WARN)}곳: {systext.INTERIOR_WARN[:6]}"
+        )
     print(f"  덮어쓰기 없음 (쓰기 구간 {w.verify(iso)})")
     # 재배치 장부(`relocations.py`)의 프로그램 쪽 재료 — 쓰기 장부(라벨 · 선형 좌표 · 길이). 원문 바이트는 안 남긴다
     (common.REVIEW_DIR / "prog_writes.tsv").write_text(
-        "# 라벨\t선형 유저 바이트\t길이(B) — build.Writer.spans\n" + "".join(f"{lab}\t{lin}\t{len(data)}\n" for lin, data, lab in sorted(w.spans)), encoding="utf-8"
+        "# 라벨\t선형 유저 바이트\t길이(B) — build.Writer.spans\n"
+        + "".join(f"{lab}\t{lin}\t{len(data)}\n" for lin, data, lab in sorted(w.spans)),
+        encoding="utf-8",
     )
     verify_immutable(iso, w.touched, limit if trim else None)
+    verify_declared_bytes(iso, w)
     verify_readback(iso, intended, prog)
     bad = mode1.selftest(
         iso, lbas=(common.T2_SECTOR + 2, common.T2_SECTOR + 386, common.T2_SECTOR + 4098)
     )
     if bad:
         raise BuildError(f"EDC/ECC 자기검증 실패: {bad}")
-    if dialogue_on and not trim and not common.BUILD_TAG.startswith("test-"):  # 10-18 장면 패키지 전수 잔존 게이트(패키지 21 누락 재발 방지)
+    if (
+        dialogue_on and not trim and not common.BUILD_TAG.startswith("test-")
+    ):  # 10-18 장면 패키지 전수 잔존 게이트(패키지 21 누락 재발 방지)
         errs, now = residual_gate.evaluate(iso)
         if errs:
             raise BuildError("잔존 게이트: " + " / ".join(errs))
@@ -628,7 +836,11 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--edits", type=Path, help="PoC 편집 입력 JSON (work/ 아래, 커밋 안 함)")
     ap.add_argument("--trim", action="store_true", help="트랙 1~2 만(에뮬용)")
-    ap.add_argument("--no-dialogue", action="store_true", help="대사 번역을 뺀다(글리프 풀 예산 안에서 PS1 정본이 같은 줄만 번역한다)")
+    ap.add_argument(
+        "--no-dialogue",
+        action="store_true",
+        help="대사 번역을 뺀다(글리프 풀 예산 안에서 PS1 정본이 같은 줄만 번역한다)",
+    )
     a = ap.parse_args()
     build(a.edits, a.trim, not a.no_dialogue)
 

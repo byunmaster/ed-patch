@@ -13,8 +13,8 @@ ED1 의 `lz.py` 와 다른 점은 **길이를 읽는 자리**뿐이다(ED1 = 플
 출력 길이는 스트림에 없다 — 게임은 한 바이트씩 당긴다(줄 끝 `00` 을 세며 목표 줄까지).
 
 **512B 링 변형(642 전용, 마스터 10-22 「3은 일단 a」)**: 덩이 첫 바이트가 `7C`(표식 — 256B 스트림은 첫 토큰이 늘 리터럴이라 최상위 비트가 1 이어서 겹치지 않는다)이면
-뒤는 512B 링(뱅크 0x87 `$EE00~$EFFF`) 스트림이다. 같은 플래그·니블 포장인데 되참조 니블 4비트를 **길이 3비트(+2 → 2~9) + 링 인덱스 9번째 비트**로 쪼갠다
-(바이트로 8비트 + 니블 1비트 = 9비트 인덱스). 쓰기 인덱스는 같은 `0xEF` 에서 시작하고 링은 비우지 않는다(인코더가 쓴 적 없는 칸을 가리키지 않는다).
+뒤는 512B 링(뱅크 0x87 `$EE00~$EFFF`) 스트림이다. 같은 플래그·니블 포장인데 **링 인덱스 9번째 비트**를 별도 비트열로 뺀다(되참조 8번마다 바이트 하나, MSB 부터 — 길이는 원판처럼 니블 4비트 2~17).
+(11-10 개정: 처음엔 니블을 길이 3비트 + 인덱스 1비트로 쪼갰으나 길이가 2~9 로 줄어 642 에서 이득이 2.5% 뿐이었다. 1024B 링 안은 길이 비트가 더 줄어 손해라 접었고 — 9번째 비트를 따로 두면 되참조 1개 14비트로 642 −5.8%.) 쓰기 인덱스는 같은 `0xEF` 에서 시작하고 링은 비우지 않는다(인코더가 쓴 적 없는 칸을 가리키지 않는다).
 디코더 변형은 `lzring.py`(프로그램 쪽 루틴).
 
 검증: 에뮬 체크포인트 다섯(링 256B · 쓰기 인덱스 · 포인터 · 니블 토글)이 이 디코더 상태와 바이트까지 일치
@@ -26,7 +26,7 @@ WIDX0 = 0xEF
 MIN_LEN = 2
 MAX_LEN = 17
 RING2 = 512  # 512B 링 변형
-MAX_LEN2 = 9  # 길이 3비트 + 2
+MAX_LEN2 = 17  # 길이 니블 4비트 + 2 (인덱스 9번째 비트는 별도 비트열)
 MARK2 = 0x7C  # 덩이 첫 바이트 표식 — 최상위 비트가 0 이라 정상 스트림(첫 토큰이 리터럴 → 최상위 1)과 겹치지 않고, 원판 80개 패키지의 메시지 표가 가리키는 어느 덩이도 이 값으로 시작하지 않는다(10-22 전수)
 
 
@@ -72,12 +72,15 @@ def walk(src: bytes, pos: int, auto512: bool = False):
 
 
 def _walk512(src: bytes, pos: int):
-    """512B 링 변형 — 표식 뒤부터. 되참조 니블 = 길이(하위 3비트, +2) | 링 인덱스 9번째 비트(상위 1비트)."""
+    """512B 링 변형 — 표식 뒤부터. 되참조 = 인덱스 하위 바이트 + 길이 니블(4비트, +2) + 인덱스 9번째 비트(별도 비트열 — 되참조 8번마다 바이트 하나, MSB 부터).
+    읽는 순서: 인덱스 바이트 → (니블이 새 바이트를 요구하면 그 바이트) → (비트열이 비었으면 그 바이트)."""
     ring = bytearray(RING2)
     widx = WIDX0
     flags = 0
     cnt = 0
     nib = None
+    xb = 0
+    xc = 0
     while True:
         if cnt == 0:
             flags = src[pos]
@@ -101,8 +104,14 @@ def _walk512(src: bytes, pos: int):
                 n, nib = v >> 4, v & 15
             else:
                 n, nib = nib, None
-            ridx |= (n >> 3) << 8
-            for k in range((n & 7) + MIN_LEN):
+            if xc == 0:
+                xb = src[pos]
+                pos += 1
+                xc = 8
+            ridx |= ((xb >> 7) & 1) << 8
+            xb = (xb << 1) & 0xFF
+            xc -= 1
+            for k in range(n + MIN_LEN):
                 b = ring[(ridx + k) % RING2]
                 ring[widx % RING2] = b
                 widx += 1
@@ -238,7 +247,7 @@ def encode_opt(data: bytes) -> bytes:
         c, ch = cost[i + 1] + 9, ("L", data[i])
         for d, ln in cands[i]:
             for l in range(MIN_LEN, ln + 1):
-                v = cost[i + l] + 13
+                v = cost[i + l] + 14
                 if v < c:
                     c, ch = v, ("M", d, l)
         cost[i], choice[i] = c, ch
@@ -257,7 +266,7 @@ def encode_opt(data: bytes) -> bytes:
 
 
 def encode_opt512(data: bytes) -> bytes:
-    """512B 링 변형 최적 파싱 — 표식(`7C`) + 스트림. 창 512B · 길이 2~9 · 리터럴 9비트 / 되참조 13비트(256B 판과 같다 — 길이 비트를 줄여 인덱스 비트를 얻었다).
+    """512B 링 변형 최적 파싱 — 표식(`7C`) + 스트림. 창 512B · 길이 2~17 · 리터럴 9비트 / 되참조 14비트(256B 판 13비트 + 인덱스 9번째 비트 1).
     링은 비우지 않으므로 거리 d(1~512)는 이 덩이 안에서 이미 쓴 바이트만 가리킨다(`d <= i`)."""
     n = len(data)
     INF = 1 << 60
@@ -286,7 +295,7 @@ def encode_opt512(data: bytes) -> bytes:
         c, ch = cost[i + 1] + 9, ("L", data[i])
         for d, ln in cands[i]:
             for l in range(MIN_LEN, ln + 1):
-                v = cost[i + l] + 13
+                v = cost[i + l] + 14
                 if v < c:
                     c, ch = v, ("M", d, l)
         cost[i], choice[i] = c, ch
@@ -305,11 +314,13 @@ def encode_opt512(data: bytes) -> bytes:
 
 
 def _emit512(toks: list) -> bytes:
-    """토큰열 → 스트림. 니블 = (길이-2) | 인덱스 9번째 비트 << 3, 포장은 256B 판과 같다."""
+    """토큰열 → 스트림. 니블 = 길이-2, 인덱스 9번째 비트는 별도 비트열(되참조 8번마다 바이트 하나를 그 첫 되참조 자리에 끼운다 — 복호기 읽기 순서와 같다)."""
     out = bytearray()
     flag_pos = -1
     flag_cnt = 0
     nib_pos = -1
+    x_pos = -1
+    x_cnt = 0
     for t in toks:
         if flag_cnt == 0:
             flag_pos = len(out)
@@ -319,13 +330,19 @@ def _emit512(toks: list) -> bytes:
         if t[0] == "M":
             _k, ridx, ln = t
             out.append(ridx & 0xFF)
-            v = (ln - MIN_LEN) | (ridx >> 8) << 3
+            v = ln - MIN_LEN
             if nib_pos < 0:
                 nib_pos = len(out)
                 out.append(v << 4)
             else:
                 out[nib_pos] |= v
                 nib_pos = -1
+            if x_cnt == 0:
+                x_pos = len(out)
+                out.append(0)
+                x_cnt = 8
+            x_cnt -= 1
+            out[x_pos] |= (ridx >> 8) << x_cnt
         else:
             out[flag_pos] |= 1 << flag_cnt
             out.append(t[1])

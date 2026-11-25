@@ -63,6 +63,33 @@ def normalize(raw: bytes, system: bool = False) -> bytes:
     return bytes(out)
 
 
+def blank_item_particle(line: bytes) -> bytes:
+    """`1D xx`(항목 이름 + 조사 가나 xx 한 글자 — 6B=だ · 6E=で · CA=は · A6=を …) 뒤에 우리 글이 오면, 원문 가나가 화면에 찍히지 않게 xx 를 빈 칸(`60`)으로 바꾼다.
+    · 우리 공백(`60`)이 곧바로 오면 그 공백이 빈 칸을 겸한다 — `1D xx 60` → `1D 60` (상점 구입 줄 「폭약だ 말이군요」, 11-05 마스쿤 도구점 실화면).
+    · 그 밖의 꼴도 같다 — 한국어 조사 훅(`F9`)이 오는 판매 줄 「천 옷は은」(마스터 11-17)·줍기 줄 「…を를」 포함. 시험 빌드 실화면(test-fix1): 항목 이름 뒤 `60` 은
+      훅의 받침 기억을 지우지 않고(조사가 이름 쪽을 따른다) 틈은 반 칸쯤이다(`A0` 은 한 칸 틈이라 안 쓴다).
+    이미 `60` 이면 그대로 둔다."""
+    out = bytearray()
+    i = 0
+    while i < len(line):
+        a = line[i]
+        if a < 0x20:
+            n = 1 + jptext.ARGS.get(a, 0)
+            if a == 0x1D and i + 1 < len(line) and line[i + 1] != 0x60:
+                out += b"\x1d\x60"
+                i += 3 if line[i + 2 : i + 3] == b"\x60" else 2
+                continue
+            out += line[i : i + n]
+            i += n
+        elif 0x80 <= a <= 0x9F or a >= 0xE0:
+            out += line[i : i + 2]
+            i += 2
+        else:
+            out.append(a)
+            i += 1
+    return bytes(out)
+
+
 def parse(raw: bytes, system: bool = False):
     """정규화한 줄 → (뼈대 문자열, 제어 목록[N] = 바이트, 맨 앞 `10 nn`)."""
     raw = normalize(raw, system)
@@ -135,18 +162,153 @@ def strip_refs(tmpl: str) -> str:
     return _REF.sub(lambda m: bytes.fromhex(m.group(3)).decode("cp932") if m.group(3) else "", tmpl)
 
 
+def _jp_marks(raw: bytes, system: bool) -> tuple[list[tuple[int, bytes]], int]:
+    """원문 줄의 본문 한복판 연출 타이밍 제어 → ([(앞선 원문 글자 수, `10 nn`/`11 nn nn`)…], 원문 글자 수) — `dialog.parse_frame` 의 마크와 같은 셈이다
+    (여백 `A0` · 반각 공백 `60` 은 글자로 안 센다 · `18 a b c d` 는 글자 둘). 줄 머리의 `10 nn`(뼈대의 `head10`)은 뺀다. 시스템 문자열엔 없다."""
+    if system:
+        return [], 0
+    ARGS = jptext.ARGS
+    marks: list[tuple[int, bytes]] = []
+    n = 0
+    seen = False  # 머리 `10` 이전에 다른 게 나왔나
+    head10 = False
+    in_name = False  # `16` … `14` 사이(화자 이름 칸)는 글자로 안 센다
+    i = 0
+    while i < len(raw):
+        a = raw[i]
+        if a < 0x20:
+            k = 1 + ARGS.get(a, 0)
+            blob = raw[i : i + k]
+            if a == 0x16:
+                in_name = True
+                seen = True
+            elif a == 0x14:
+                in_name = False
+                seen = True
+            elif a == 0x18:
+                n += 2
+            elif a in (0x10, 0x11):
+                if a == 0x10 and not seen and not head10:
+                    head10 = True
+                else:
+                    if a == 0x11 and i + k < len(raw) and 0x30 <= raw[i + k] <= 0x39:  # 멈춤 바로 뒤 ASCII 숫자 한 글자(원판의 보이지 않는 글자) — 멈춤에 붙여 보존(11-07)
+                        blob = raw[i : i + k + 1]
+                        k += 1
+                    marks.append((n, blob))
+            elif a not in (0x0D, 0x0E, 0x0F):
+                seen = True
+                in_name = False  # 이름 칸은 `14` 말고 다른 제어(이름 자리표 따위)로도 끝난다
+            i += k
+        else:
+            seen = True
+            k = 2 if (0x80 <= a <= 0x9F or a >= 0xE0) else 1
+            if not in_name and raw[i : i + k] not in (b"\xa0", b"`"):
+                n += 1
+            i += k
+    return marks, n
+
+
+def _with_marks(items: list, marks: list[tuple[int, bytes]], jp_n: int, tab) -> bytes:
+    """틀의 글 조각 사이에 원문 타이밍 제어를 **구절 경계**에 되살린다 — 위치는 원문 글자 비율을 한글 글자 수에 옮기고 가장 가까운 어절·부호 경계로 당긴다(`dialogue._encode` 와 같은 잣대, ±6자)."""
+    import dialogue
+    import font
+
+    texts = [(font.mark_josa(v) if k == "t" else v) for k, v in items]
+    ink_idx: list[tuple[int, int]] = []  # (조각, 글자 위치) — 글자로 세는 칸들
+    in_name = False  # `16` 뒤 다음 제어까지는 화자 이름 칸 — 글자로 안 센다(타이밍 제어가 이름 한복판에 끼면 이름이 깨진다)
+    for ti, (kind, _v) in enumerate(items):
+        if kind == "t":
+            for ci, ch in enumerate(texts[ti]):
+                if not in_name and ch not in " \n\f" and ch not in font.JOSA_MARK:
+                    ink_idx.append((ti, ci))
+        else:
+            in_name = _v[:1] == b"\x16"
+    k = len(ink_idx)
+
+    def ch_at(p):
+        ti, ci = ink_idx[p]
+        return texts[ti][ci]
+
+    def bound(p):  # p = 「p 번째 글자 앞」 — 어절·부호 경계인가
+        if p <= 0 or p >= k:
+            return True
+        ti, ci = ink_idx[p]
+        pti, pci = ink_idx[p - 1]
+        prev = texts[pti][pci]
+        spaced = ti != pti or texts[ti][ci - 1] in " \n\f"
+        if not spaced and prev not in dialogue._BOUND:
+            return False
+        if prev in dialogue._PUNCT_RUN and ch_at(p) in dialogue._PUNCT_RUN:
+            return False
+        w, j = "", p - 1
+        while j >= 0:
+            w = ch_at(j) + w
+            if j == 0 or ink_idx[j - 1][0] != ink_idx[j][0] or ink_idx[j - 1][1] + 1 != ink_idx[j][1]:
+                break
+            j -= 1
+        return w not in dialogue._DET
+
+    at: dict[int, list[bytes]] = {}
+    taken: set[int] = set()
+    for n, b in marks:
+        if b[:1] == b"\x11" and len(b) == 3 and not 0x30 <= b[2] <= 0x39:
+            b = b[:2] + b"0"  # 멈춤 둘째 인자가 숫자가 아니면 엔진이 글자로 찍는다(dialogue._encode 와 같다)
+        t = 0 if jp_n <= 0 else max(0, min(k, round(n / jp_n * k)))
+        if n == 0 or k == 0:
+            best = 0
+        else:
+            best = min((q for q in range(max(0, t - 6), min(k, t + 6) + 1) if bound(q) and q not in taken), key=lambda q: (abs(q - t), q), default=t)
+        taken.add(best)
+        at.setdefault(best, []).append(b)
+    out = bytearray()
+    ink = 0
+    in_name2 = False
+    for ti, (kind, v) in enumerate(items):
+        if kind != "t":
+            out += v
+            in_name2 = v[:1] == b"\x16"
+            continue
+        run = ""
+        for ch in texts[ti]:
+            counted = not in_name2 and ch not in " \n\f" and ch not in font.JOSA_MARK
+            if counted and ink in at:
+                if run:
+                    out += tab.enc(run)
+                    run = ""
+                for b in at.pop(ink):
+                    out += b
+            run += ch
+            if counted:
+                ink += 1
+        if run:
+            out += tab.enc(run)
+    for q in sorted(at):  # 끝 위치 — 마지막 글자 뒤(조각 사이 제어는 그 뒤에 이미 나갔다)
+        for b in at[q]:
+            out += b
+    return bytes(out)
+
+
 def build(raw: bytes, tmpl: str, tab, system: bool = False) -> bytes:
     """틀 + 원문 제어 → 새 줄 바이트. 틀이 잘못이면 ValueError."""
     skel, ctrls, head10 = parse(raw, system)
+    padmode = tmpl.startswith("¦")  # 장 제목 띠 꼴 — 공백(전각·반각)을 그려서 지우는 `a0` 칸(12px)으로 낸다(앞 줄의 글을 덮어 지워야 하는 디버그 마을 제목 줄)
+    if padmode:
+        tmpl = tmpl[1:]
+    narrow = tmpl.startswith("⟦")  # 좁은 글꼴(`06` 모드 한글, 디버그 마을 목록) 틀 — 글자를 `narrowhan` 부호(리드 FA)로 낸다
+    if narrow:
+        import narrowhan
+
+        tmpl = tmpl[1:]
+    enc_text = narrowhan.enc if narrow else ((lambda v: b"\xa0".join(tab.enc(x) for x in v.split("\u3000"))) if padmode else tab.enc)
     tmpl = tmpl.replace("\u3000", "   ")  # 전각 공백(12px) = 반각 공백(4px) 셋 — 글리프가 아니라 공백 바이트
     used: set[int] = set()
-    out = bytearray(head10)
+    items: list[tuple[str, object]] = []  # ("t", 글) · ("b", 바이트)
     pos = 0
     for m in _REF.finditer(tmpl):
         if m.start() > pos:
-            out += tab.enc(tmpl[pos : m.start()])
+            items.append(("t", tmpl[pos : m.start()]))
         if m.group(3):
-            out += bytes.fromhex(m.group(3))
+            items.append(("b", bytes.fromhex(m.group(3))))
             pos = m.end()
             continue
         n = int(m.group(2))
@@ -154,13 +316,24 @@ def build(raw: bytes, tmpl: str, tab, system: bool = False) -> bytes:
             raise ValueError(f"제어 {n} 번이 없다(원문 제어 {len(ctrls)}개)")
         used.add(n)
         if m.group(1) == "@":
-            out += ctrls[n]
+            items.append(("b", ctrls[n]))
         pos = m.end()
     if pos < len(tmpl):
-        out += tab.enc(tmpl[pos:])
+        items.append(("t", tmpl[pos:]))
     for n, c in enumerate(ctrls):
         if n not in used and c[0] in STRUCT:
             raise ValueError(f"구조 제어 {n} 번({c.hex(' ')})을 틀이 가리키지 않았다 — 쓰려면 {{@{n}}}, 버리려면 {{!{n}}}")
+    marks, jp_n = _jp_marks(raw, system)
+    if marks:
+        import dialogue
+
+        if not dialogue.KEEP_MARKS:
+            marks = []
+    if marks:
+        return bytes(head10) + _with_marks(items, marks, jp_n, tab)
+    out = bytearray(head10)
+    for kind, v in items:
+        out += enc_text(v) if kind == "t" else v
     return bytes(out)
 
 
@@ -189,10 +362,10 @@ def edit_chunk(orig: bytes, cur: bytes, tab, stats=None) -> bytes:
 def review(out_path: Path, built_tag: str | None = None) -> int:
     """원본 일본어가 **지금 빌드에도 그대로 남은** 줄을 뼈대별로 모아 검토표로 쓴다 — 원문 포함이라 work/review 에만 둔다.
     `built_tag` = 비교할 빌드 꼬리표(`work/build/<꼬리표>/ed2.iso`, 기본 제품 `common.BUILD_TAG`)."""
-    import package
     from collections import defaultdict
 
     import dialogue
+    import package
 
     t = table()
     tag = built_tag or common.BUILD_TAG
@@ -258,17 +431,19 @@ def system_strings():
 
 def verify() -> int:
     """`data/ctrl_lines.tsv` 의 모든 틀을 원본 줄에 대 본다 — 열쇠가 어느 원본 줄에도 안 맞으면(낡은 틀) · 틀이 어느 사본에서든 오류면 실패(종료 코드 1)."""
-    import package
     from collections import defaultdict
 
     import dialogue
     import font
+    import package
 
     t = table()
     tab = font.GlyphTable()
     hits: dict[str, int] = defaultdict(int)
     errs = []
-    for rel in sorted(dialogue.package_chars()):
+    import residual_gate
+
+    for rel in sorted(set(dialogue.package_chars()) | set(residual_gate.DEBUG_RELS)):  # 디버그로 닿는 패키지(258·배틀 테스트 마을)도 틀이 닿는지 본다
         po = bytes(common.track_data(rel, 128))
         for a, b in package.chunks(po):
             if po[a : a + 8] == package.SENTINEL:

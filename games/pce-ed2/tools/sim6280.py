@@ -86,6 +86,10 @@ class Sim:
             p = self.zp(self.fetch())
             base = self.rd(p) | self.rd(p + 1) << 8
             self.a = self.nz(self.rd(base + self.y))
+        elif op == 0x91:  # STA (zp),Y
+            p = self.zp(self.fetch())
+            base = self.rd(p) | self.rd(p + 1) << 8
+            self.wr(base + self.y, self.a)
         elif op == 0x85:
             self.wr(zp(), self.a)
         elif op == 0x8D:
@@ -205,6 +209,10 @@ class Sim:
             self.push(self.x)
         elif op == 0xFA:
             self.x = self.nz(self.pull())
+        elif op == 0x5A:  # PHY
+            self.push(self.y)
+        elif op == 0x7A:  # PLY
+            self.y = self.nz(self.pull())
         elif op == 0x08:
             self.push(self.c | self.z << 1 | self.i << 2 | self.n << 7)
         elif op == 0x28:
@@ -281,6 +289,14 @@ class Sim:
             lo = self.pull()
             hi = self.pull()
             self.pc = (lo | hi << 8) + 1
+        elif op == 0xC6:  # DEC zp
+            zp = self.fetch()
+            self.wr(self.zp(zp), self.nz(self.rd(self.zp(zp)) - 1))
+        elif op == 0xBF:  # BBS3 zp,rel (kagi stub 검증용)
+            zp = self.fetch()
+            rel = self.fetch()
+            if self.rd(self.zp(zp)) & 0x08:
+                self.pc = (self.pc + (rel - 256 if rel > 127 else rel)) & 0xFFFF
         elif op == 0x43:  # TMA
             m = self.fetch()
             self.a = self.mpr[m.bit_length() - 1]

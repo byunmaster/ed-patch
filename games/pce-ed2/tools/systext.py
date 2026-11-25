@@ -28,6 +28,7 @@ import layout
 
 CELL_PX = 12
 NUM_SPACE = {"백업경고"}  # 수 끼움(`1B`) 앞 낱말 뒤에 공백을 두는 문맥
+NO_TAIL_PAD = {"확인문구"}  # 원문 폭 맞춤용 뒤 여백을 붙이지 않는 문맥
 STYLE_BREAKS = {"슬롯줄"}  # 글 덩이를 글꼴 지정(STYLE) 코드에서도 끊는 문맥
 PLACEHOLDER = "Ｘ"  # 데이터 선택 화면 장 라벨 「Ｘ章」 의 칸 채움
 SPACE_PX = 4
@@ -43,6 +44,10 @@ ARGS = {
 CATS = ("ui", "item", "spell", "place", "person", "monster", "speaker", "battle", "system")
 
 # 문맥 — 같은 원문이 칸마다 다른 값인 것(정본 열쇠 `원문@문맥`). 문자열 주소(뱅크, 오프셋)로 건다.
+# 앞 조각(「<시전자>は」 = 이름 + 동적 조사)에 이어 그려지는 대상 이름 조각 — 일본어는 붙여 쓰지만 한국어는 조사와 대상 이름 사이를 띄운다.
+# 원판 `70+1889`(「<대상>に↵」, 주문 사용 문구 둘째 조각). 마스터 QA 「는신디에게」(11-23).
+LEAD_SPACE = {(0x70, 0x1889)}
+
 CONTEXT = {
     (0x6A, 0x030C): "파티메뉴",
     (0x6A, 0x0392): "파티메뉴",
@@ -50,6 +55,7 @@ CONTEXT = {
     (0x6F, 0x0000): "전투설정",
     (0x6F, 0x0016): "전투설정",
     (0x6F, 0x003A): "전투커맨드",
+    (0x6F, 0x0195): "확인문구",  # 레벨업 능력치 배분 확인 「이걸로 괜찮습니까?」 — 좁은 틀(약 48px)에 끝만 보이는 원판 동작이라 뒤 여백을 두지 않는다(마스터 11-07 「뒤 여백을 빼서 「습니까?」가 보이게」)
     (0x73, 0x076F): "슬롯줄",  # 데이터 선택 화면 슬롯 줄 — 글 덩이 사이의 글꼴 지정(`04` `06`)을 지켜야 한다(덩이가 지정 코드를 삼키면 장 라벨 칸이 깨진다)
     (0x73, 0x08DD): "백업경고",  # 「あと{n}個…」 의 「あと」 = 남은 개수(경험치 표시의 「あと」 와 다르다)
 }
@@ -64,7 +70,7 @@ TABLES = [
     ("status", 0x71, 0x13CD, 0x13FB),
 ]
 
-NOPAD = {"items", "spells"}  # 이름 뒤 폭 맞춤 여백을 두지 않는 표 — 문장 속 `1A` 로도 쓰인다
+NOPAD = {"items", "spells", "names"}  # 이름 뒤 폭 맞춤 여백을 두지 않는 표 — 문장 속 `1A` 로도 쓰인다. `names`(아군 이름 `13 nn`) = 전투 로그 「신디␣␣␣␣에게」 처럼 두 글자 이름 뒤가 벌어졌다(마스터 11-22 일괄 확인)
 
 # 개발자 오류 문구(화면에 안 뜨는 길) — 뱅크 자리가 모자랄 때 글만 줄여 자리를 만든다(제어 앞뒤는 그대로, 전각 라틴이라 일본어 게이트와 무관).
 SHRINK = {(0x6F, 0x062F): "ＶＲＡＭ　ＥＲＲ！！"}
@@ -88,7 +94,36 @@ def _extra() -> dict[str, str]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+DEBUG_LABELS = {"逃げる": "도망", "勝利": "승리", "敗北": "패배"}  # 원판 개발자 전투 창 전용(진입 제스처는 숨김, 마스터 10-24 J1 「한글로」) — 「디버그 메뉴 라벨은 게임 고유」 예외. 창 글 폭 3칸
+
+
+DEBUG_LITERALS = {"の書": "의 책"}  # 원판 디버그 메뉴 뒤 조각(S71:0C82 — 앞 조각 「디버그 마을」은 정본 지명 조합) — 정본에 단독 항목이 없다. 「프람나의 책」 꼴(마법서 이름)과 같은 말(10-28 검수)
+
+
+FULL_SAVELOAD = {"SAVE", "LOAD", "ＳＡＶＥ", "ＬＯＡＤ"}  # 필드 메뉴 「기타」의 SAVE·LOAD — 원판 12px 칸(전각 ＳＡＶＥ·ＬＯＡＤ)
+HALF_KEEP = {"LOCAL"}  # 원문은 전각이지만 마스터가 반각을 고른 라틴 낱말(10-28 「LOCAL 반각」)
+_FW_LATIN = re.compile("[Ａ-Ｚａ-ｚ０-９]")
+
+
+def match_width(jp: str, ko: str | None) -> str | None:
+    """원판 문자열이 **전각 라틴**(ＳＡＶＥ · ＬＯＡＤ · ＢＧＭ …)이면 번역값의 ASCII 라틴 낱말도 전각으로 맞춘다(마스터 11-05 「pce2 SAVE/LOAD 는 원본도 전각」 — 정본이 반각 「SAVE」 를 내서 필드 메뉴 「기타」 가 반각으로 나왔다).
+    반각을 고른 낱말(`HALF_KEEP`)·한글이 섞인 값은 그대로 둔다."""
+    if not ko or not _FW_LATIN.search(jp) or ko.upper() in HALF_KEEP or not re.fullmatch(r"[A-Za-z0-9]+", ko):
+        return ko
+    return "".join(chr(ord(c) + 0xFEE0) for c in ko)
+
+
 def lookup(jp: str, ctx: str | None) -> str | None:
+    return match_width(jp, _lookup(jp, ctx))
+
+
+def _lookup(jp: str, ctx: str | None) -> str | None:
+    if jp in DEBUG_LITERALS:
+        return DEBUG_LITERALS[jp]
+    if ctx == "전투설정":  # 원판 개발자 창(RUN+II 3초) 두 문자열 전용 — 정본보다 먼저(칸이 3칸이라 「도망친다」 4칸은 줄이 넘쳐 위 줄이 밀려난다)
+        for v in _variants(jp):
+            if v in DEBUG_LABELS:
+                return DEBUG_LABELS[v]
     ex = _extra()
     for v in _variants(jp):
         if ctx and f"{v}@{ctx}" in ex:
@@ -187,20 +222,25 @@ def translate(raw: bytes, ctx: str | None, miss: set[str]) -> bytes | None:
         body = mode + b"".join(b for _kind, b in core)
         jp = jptext.decode(body).replace("{0E}", "").replace("{0F}", "")
         jp = re.sub(r"\{[0-9A-F ]+\}", "", jp).replace("　", "").replace("\n", "")
-        if not jp or (_is_latin(jp) and ctx != "onoff"):
+        if not jp or (_is_latin(jp) and ctx != "onoff" and jp not in FULL_SAVELOAD):  # SAVE·LOAD 는 라틴이라도 전각으로 바꾼다(아래)
             out.append(b"".join(b for _k, b in seg))
             i = j
             continue
         # 설정 값 표(ＯＮ·ＯＦＦ·ＣＤ·ＰＳＧ·ＥＰ)는 **전각**으로 그린다(마스터 10-13 「전각으로 나와야함」 · 규칙 1-4) — 원판은 ASCII 반각이다
         kr = jp if (_is_latin(jp) and ctx == "onoff") else lookup(jp, ctx)
+        if jp in FULL_SAVELOAD:  # 정본이 반각 「SAVE」「LOAD」 를 주므로(`kr is None` 가지에 안 닿는다) 여기서 원판 글자(전각)로 고정 — 11-08 마스터 「SAVE/LOAD 전각 처리 안됐네」
+            kr = "".join(chr(ord(c) + 0xFEE0) if ord(c) < 0x80 else c for c in jp)
+        if kr is None and re.fullmatch(r"[A-Z]{2,}", jp) and jp not in HALF_KEEP:  # 원판 필드 메뉴 「SAVE」「LOAD」(ASCII 바이트 + 모드 `01`) — 원판 화면은 12px 칸이고 우리 글꼴 후킹 뒤엔 8px 반각이 된다 → 전각(원판 글자)로 낸다(마스터 11-05)
+            kr = "".join(chr(ord(c) + 0xFEE0) for c in jp)
         if kr is None:
             miss.add(jp)
             return None
         # 가나 모드(`0E`/`0F`)는 한글 글리프에 무관하고, **켜 둔 채 한글을 그리면 첫 글자만 나온다**(실측 — 설정 창 머리) → 버린다
-        keep = lambda ts: [t for t in ts if not (t[0] == "ctrl" and t[1][0] in (0x0E, 0x0F))]
+        drop = (0x0E, 0x0F, 0x06) if ctx == "places" else (0x0E, 0x0F)  # 지명 표의 `06`(좁은 글꼴 방식)은 한글을 깨뜨린다(HUD 「———--」·워프 목록 「테크니카의방」 막대 글자 — 11-08)
+        keep = lambda ts: [t for t in ts if not (t[0] == "ctrl" and t[1][0] in drop)]
         if ctx in NUM_SPACE and j < len(toks) and toks[j][0] == "ctrl" and toks[j][1][0] == 0x1B and kr[-1] != " ":
             kr += " "  # 「앞으로{n}개」 — 수를 끼우는 코드(`1B`) 앞은 띄어 쓴다(원문 「あと{n}個」 는 안 띄움)
-        out.append(("KR", kr, _px(core), keep(pre), keep(post)))
+        out.append(("KR", kr, 0 if ctx in NO_TAIL_PAD else _px(core), keep(pre), keep(post)))
         changed = True
         i = j
     if not changed:
@@ -271,8 +311,8 @@ def table_sites(prog: layout.Prog, bank: int, base_off: int) -> list[tuple[int, 
 # 안 번역하고 두던 자리를 글리프 풀에 돌려준다(16글자) — 긴 대사 이어 풀기 루틴(`longline`)이 가져간 자리를 메운다.
 DEAD_DEBUG = (
     (0x70, 0x0B20, 0x0C2F - 0x0B20, bytes.fromhex("0c138282bf82e182"), bytes.fromhex("a4ba20d5")),
-    # 같은 죽은 기능의 출력 루틴 `$7AED`~`$7B2D`(진입 `STZ $3390`; 뒤의 인라인 문구 `$7B2E` 는 시스템 문구 계획이 쓰는 자리라 남긴다) — 호출자 0(전 뱅크 `$7AED`·`$7AF7` 피연산자 검색 · 전투 5회 BP 0 히트). `$7B4A` 는 `$630A` 가 쓰는 산 보조 루틴이라 남긴다.
-    (0x70, 0x1AED, 0x1B2E - 0x1AED, bytes.fromhex("9c9033"), bytes.fromhex("82b582")),
+    # ⚠ 11-06 `$7AED`~`$7B2D`(65B) 항목을 뺐다 — '호출자 0' 은 피연산자 검색뿐이었고 이 루틴은 **간접 호출되는 산 코드**다(필드에서 횃불·날개 사용 →
+    #   「しかし何も起こらなかった」 출력, `$7B2E`). 비우고 그 위에 한글을 얹어 횃불 사용 시 CPU 가 문자열을 코드로 실행해 프리징했다.
 )
 
 
@@ -324,6 +364,8 @@ def plan(prog: layout.Prog, tab, report: dict | None = None) -> None:
                 r = [("KR", x[1], 0, x[3], x[4]) if isinstance(x, tuple) else x for x in r]
             new.append(render(r, tab) if r is not None else e)
             stat["table"] += r is not None
+        # 원판의 빈 슬롯(길이 0 항목 — 아이템 표 38·71~73·76·77·102)은 번호로 읽히므로 자리·개수가 그대로여야 한다(sfc-ed2 전투 시험 10-24: 빈 슬롯을 빠뜨려 다음 항목을 읽었다)
+        assert len(new) == len(entries) and [k for k, x in enumerate(new) if not x] == [k for k, x in enumerate(entries) if not x], f"표 {name}: 항목 수·빈 슬롯 위치가 원본과 다르다"
         blob = b"\x00".join(new) + b"\x00"
         orig_blob = b"\x00".join(entries) + b"\x00"
         assert raw.startswith(orig_blob), f"표 {name} 항목 분할이 원본과 다르다"
@@ -407,6 +449,8 @@ def plan(prog: layout.Prog, tab, report: dict | None = None) -> None:
                     newb = alt
                 else:
                     newb = b"\x0d".join(rendered)
+        if (bank, off) in LEAD_SPACE:
+            newb = tab.enc(" ", space=SPACE) + newb
         tail = tails.get((bank, off))
         if tail is not None:  # 꼬리 문자열(「…{14}に」 의 「に」)도 번역해 앞 문자열의 끝에 겹치게 한다 — 안 겹치면 둘 다 원문으로 둔다
             import msgs
@@ -583,11 +627,12 @@ def _inside_operand(d: bytes, i: int) -> bool:
     """`d[i]` 가 앞 명령의 **피연산자 바이트**인가 — 가까운 확실한 명령 시작(`_boundaries`)에서 앞으로 해독해 `i` 를 건너뛰면 참.
     (10-16: 문자열 안쪽 쓰기 보정이 `99 EE E7 60`(= `STA $E7EE,Y · RTS`)의 `EE E7 60` 을 `INC $60E7` 로 오인해 **코드 두 바이트를 고쳐 써** 부팅 직후 폭주했다.)
     확실한 시작이 둘 미만이면 거짓(옛 동작)이다."""
-    key = id(d)
-    bl = _BOUND.get(key)
+    # ⚠ 11-06: 키가 `id(d)` 였다 — `prog.o()` 가 부를 때마다 새 bytes 를 만들고 앞 것이 해제되면 **같은 id 가 다른 뱅크 바이트에 재사용돼** 옛 뱅크의 경계 목록을 읽었다
+    # (같은 입력인데 빌드마다 「interior write 6F+1C06」 행이 생겼다 없어졌다 — 결정성 위반). 값(바이트)을 키로 쓴다.
+    bl = _BOUND.get(d)
     if bl is None:
         _BOUND.clear()
-        bl = _BOUND[key] = _boundaries(d)
+        bl = _BOUND[d] = _boundaries(d)
     import bisect
 
     k = bisect.bisect_right(bl, i) - 1
@@ -739,5 +784,7 @@ def edit_menu_chunk(d: bytes, tab, miss: set) -> bytes:
         if any(p is None for p in parts):
             out.append(line)
             continue
-        out.append(b"\x0d".join(render(p, tab) for p in parts))
+        # 원판 「はい」 줄은 `01` 뒤에 `08`(반 칸 들여쓰기 — 두 글자 「はい」를 「いいえ」 가운데에 맞춘다)가 있다. 한글 「예」(한 글자)는 그 들여쓰기로 「아니요」보다 오른쪽에서 시작해
+        # 어긋나 보였다 — 왼쪽 맞춤으로 `08` 을 뺀다(마스터 11-17 · PCE I 도 왼쪽 맞춤).
+        out.append(b"\x0d".join(render(p, tab).replace(b"\x01\x08", b"\x01", 1) for p in parts))
     return b"".join(x + b"\x00" for x in out)

@@ -27,14 +27,16 @@ class Battle(unittest.TestCase):
         self.assertIsNotNone(out)
         self.assertNotIn(b"\x06", out)  # 06 안에서 한글이 깨졌다(10-13 화면)
         self.assertTrue(out.startswith(b"\r") and out.endswith(b"\r"))
-        self.assertEqual(sorted(tab.chars), sorted("ＥＰ포인트획득"))
+        self.assertEqual(sorted(tab.chars), sorted("포인트획득ＥＰ"))  # ＥＰ 는 우리 풀 글리프(한글 바닥, 마스터 11-16 — 원판 SJIS 는 아랫선이 1px 위)
+        self.assertNotIn("ＥＰ".encode("cp932"), out)
+        self.assertIn(b"`\x15\x85\x1b", out)  # ＥＰ 와 수 사이 공백(`60`)은 원판대로(마스터 11-17)
 
     def test_GOLD_줄은_원문_GOLD_바이트를_둔다(self):
         tab = font.GlyphTable()
         out = msgs.special(GOLD, tab)
         self.assertIsNotNone(out)
         self.assertIn(b"GOLD", out)
-        self.assertEqual(sorted(tab.chars), sorted("를얻었다"))
+        self.assertEqual(sorted(tab.chars), sorted("를얻었습니다"))  # 정본 「Gold를 얻었습니다.」(원문 ました — 4-17 확대 11-15)
         self.assertTrue(out.endswith(b"\x12\r"))
 
     def test_모르는_줄은_안_건드린다(self):

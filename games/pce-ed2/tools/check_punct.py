@@ -2,6 +2,7 @@
 
  · 1-3 `…` 개수 — 원문 점 n 개는 `…` round(n/3) 개(최소 1). 긴 말줄임(`……`↑)은 원문 점 수와 대조한다
  · 1-7 `～.` 금지 · 2-1 부호 뒤 글자 붙임 금지 · 2-2 부호 앞 공백 금지
+ · 1-1 합자(⁉‼) 금지 · 1-3 `… …` 띄운 반복 금지 · 1-7 ASCII `~` 금지(→`～`) · `?.` `!.` 겹침 금지 (마스터 11-13 문장부호 전수)
  · 2-11 문장 맨 앞 `… ` 뒤 공백 금지(음절 끊어 말하기·의성어는 예외라 붙임이 정상) · 2-12 `?!…` 금지(`…?` `…!`)
  · 2-3/2-4/2-5 조판 전수 — 대사창에 앉힌 줄이 부호만으로 시작하거나(여는 `…` · 한 줄짜리 부호열은 제외) 빈 줄이거나 3줄을 넘으면 실패
  · 3-5 대사에 병기 조사(`은(는)` …)가 남으면 실패(제어 틀은 런타임 훅이 푸는 자리라 예외)
@@ -18,13 +19,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 
 GAME = Path(__file__).resolve().parents[1]
 RULES = {
-    "1-3 점 연속·가운뎃점": re.compile(r"\.{2,}|[・･·]"),
+    "1-3 점 연속·가운뎃점": re.compile(r"\.{2,}|[・･]|(?<!동)·|·(?!료)"),  # 「동·료」 는 원문 「な・か・ま」 가운뎃점을 살린 마스터 판정(11-14) — 그 한 꼴만 허용
     "1-7 `～.`": re.compile(r"～\."),
     "2-1 부호 뒤 글자 붙임": re.compile(r"(?<!\d)[,.!?](?=[가-힣A-Za-z])"),
     "2-2 부호 앞 공백": re.compile(r" +[,.!?]"),
     "2-12 부호+…": re.compile(r"[?!？！]+…"),
     "2-11 문장 앞 … 뒤 공백": re.compile(r"(?:^|(?<=[.!?]) )…+ (?=[가-힣A-Za-z0-9「“'(])"),
     "전각 부호": re.compile(r"[！？．，]"),
+    "1-1 합자 ⁉‼": re.compile(r"[⁉‼⁈⁇]"),
+    "1-3 띄운 … 반복": re.compile(r"…\s+…"),
+    "1-7 ASCII `~`": re.compile(r"~"),
+    "2-12 `?.` `!.` 겹침": re.compile(r"[?!]\."),
 }
 JOSA = re.compile(r"(은\(는\)|이\(가\)|을\(를\)|과\(와\)|으로\(로\))")
 ORPHAN = re.compile(r"^[\s.,!?～」』)]")
@@ -64,10 +69,20 @@ def comma_suspects(t: str) -> list[str]:
     return [n for n, rx in COMMA_PAT.items() if rx.search(t)]
 
 
+HEADED: dict[str, str] = {}  # 자리 → "first"(첫 덩이만 화자 머리 쪽) · "all"(구간마다 머리) — corpus 가 채운다(조판 검사가 빌드와 같은 쪽 종류로 짜게)
+
+
+def headed(where: str, si: int, ci: int) -> bool:
+    """문안 조각(`§` 로 가른 si 번째 · `\\f` 로 가른 ci 번째)이 화자 머리 쪽인가."""
+    k = HEADED.get(where)
+    return ci == 0 and (k == "all" or (k == "first" and si == 0))
+
+
 def corpus():
     """(자리, 종류, 문안, 원문 점 수|None) — 종류: dlg(대사) · tmpl(제어 틀) · sub(자막)."""
     import common
     import ctrllines
+    import dialog
     import dialogue
     import jptext
     import package
@@ -80,6 +95,10 @@ def corpus():
             d = package.decode_chunk(pkg, a, b)[0]
             lines = d.split(b"\x00")
             for li, _p, _spk, txt in dialogue.candidates(rel, a, d):
+                if isinstance(_p, dialog.Seg):
+                    HEADED[f"{rel}:{a}:{li}"] = "all"
+                elif _spk is not None:
+                    HEADED[f"{rel}:{a}:{li}"] = "first"
                 src = re.sub(r"\{[^}]*\}", "", jptext.decode(lines[li]))
                 dots = sum(3 if c == "…" else 1 for c in src if c in "･・…")
                 yield f"{rel}:{a}:{li}", "dlg", txt, dots
@@ -109,14 +128,14 @@ def main() -> int:
             if dot_violation(t, dots or 0):
                 bad.append((where, "1-3 … 개수(원문 점 수와 다름)", t))
             try:
-                pages = typeset.pages(t.replace("§", "\f"))
+                pages = typeset.pages(t.replace("§", "\f"), headed=headed(where, 0, 0))
             except Exception as e:  # noqa: BLE001
                 bad.append((where, "조판 실패", str(e)[:60]))
                 continue
             for p in pages:
                 lines += len(p)
-                if len(p) > typeset.LINES:
-                    bad.append((where, "2-4 쪽이 3줄 초과", t))
+                if len(p) > typeset.LINES_HEADLESS:
+                    bad.append((where, "2-4 쪽이 창 줄 수 초과", t))
                 for ln in p:
                     if not ln.strip():
                         bad.append((where, "2-4 빈 줄", t))

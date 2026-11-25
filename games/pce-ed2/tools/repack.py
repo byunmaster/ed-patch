@@ -27,6 +27,8 @@ def text_region(pkg: bytes) -> tuple[int, int, list[tuple[int, int]]]:
     ch = package.chunks(pkg)
     real = [(a, b) for a, b in ch if pkg[a : a + 8] != package.SENTINEL]
     sent = [a for a, b in ch if pkg[a : a + 8] == package.SENTINEL]
+    if not sent and real and pkg[real[-1][1] : real[-1][1] + 8] == bytes([FILL]) * 8:  # 표에 끝 표시 항목이 없어도 마지막 덩이 바로 뒤가 0xFF 채움이면 거기가 끝(디버그 마을 258)
+        sent = [real[-1][1]]
     if len(sent) != 1 or real[-1][1] != sent[0]:
         raise RepackError("끝 표시(0xFF 채움)가 마지막 덩이 바로 뒤에 하나여야 한다")
     end = sent[0]

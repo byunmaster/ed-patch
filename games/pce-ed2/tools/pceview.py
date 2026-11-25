@@ -60,7 +60,10 @@ def set_msg_stop(e: "pcehl.Emu") -> None:
 
 def warp_arrival(e: "pcehl.Emu", state_path: str) -> None:
     """디버그 메뉴 WARP → 엘아스타. 도착 대사가 시작되기 직전(몇 프레임)에 저장한다."""
-    e.press("run+i+ii", 10, 30)
+    e.hold("select")
+    e.run(70)  # 진입키는 1초(60프레임) 이어서 — 짧게 누르면 안 열린다
+    e.hold(None)
+    e.run(30)
     e.press("i", 5, 30)
     e.press("down", 5, 20)
     e.hold("i")

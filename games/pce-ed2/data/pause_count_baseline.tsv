@@ -1,0 +1,1 @@
+# 원판과 멈춤(`11 nn nn`) 개수가 다른 줄 — `rel:메시지:줄 <TAB> 원판→제품`. 줄면 `check_pauses.py --freeze`.

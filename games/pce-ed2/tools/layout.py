@@ -14,7 +14,9 @@ import common
 PROG_REL = 130
 BANK0 = 0x68
 BANK = 8192
-OVERLAY_BANK0 = 0x72  # 이 뱅크부터는 씬 패키지가 런타임에 덮어쓴다 — 빈 칸은 문자열 전용(글리프 풀 · 코드 금지)
+OVERLAY_BANK0 = (
+    0x72  # 이 뱅크부터는 씬 패키지가 런타임에 덮어쓴다 — 빈 칸은 문자열 전용(글리프 풀 · 코드 금지)
+)
 NBANKS = 12  # 뱅크 0x68~0x73 (0x72·0x73 = 세이브 선택 화면 등 — 글 문자열만 훑는다)
 
 # 원본의 0xFF 패딩(뱅크, 오프셋, 길이) — `tools/freespace` 스캔(2026-10-12)과 런타임(첫 마을) 대조로 확인했다.
@@ -28,13 +30,32 @@ PADDING = [
     (0x70, 0x1E1A, 486),
     (0x6F, 0x1F3A, 198),
     (0x6E, 0x1F3C, 196),
-    (0x73, 0x0A75, 5515),  # 데이터 선택 화면 오버레이(뱅크 0x73)의 꼬리 — 화면 문자열이 한국어로 길어질 때 같은 뱅크 안으로 옮긴다. 첫 마을에서는 씬 패키지가 이 뱅크를 덮어쓰므로 런타임 불변 대조는 못 한다(화면이 지난 뒤)
+    (
+        0x73,
+        0x0A75,
+        5515,
+    ),  # 데이터 선택 화면 오버레이(뱅크 0x73)의 꼬리 — 화면 문자열이 한국어로 길어질 때 같은 뱅크 안으로 옮긴다. 첫 마을에서는 씬 패키지가 이 뱅크를 덮어쓰므로 런타임 불변 대조는 못 한다(화면이 지난 뒤)
 ]
 
 
 # 원본의 0x00 칸(뱅크 0x68 은 `$4000` 에 늘 걸려 있어 어디서나 부를 수 있다) — 런타임 첫 마을에서도 0 으로 불변(257/257)이지만 **전투에서는 앞 16B(`+0x1463`~`+0x1472`)를 게임이 쓴다**
 # (10-20 실측 — 풀 글리프 첫 자 「흔」이 전투 로그에서만 깨졌다. 전투 1500프레임 뒤 풀 전 구간 대조: 이 16B 만 바뀜). 그래서 앞 16B 는 풀에서 뺀다.
-ZERO_PADDING = [(0x68, 0x1473, 241)]
+# ⚠ **이 0 칸 257B 는 게임의 「호출 스택 저장」 버퍼다**(10-24 정적+실측 — 승리 보상 줄 「ＥＰ」 의 Ｅ 가 깨져 찾았다). 뱅크 0x68 `$5406` 루틴(전투 뱅크 0x6F·0x70 의 `JMP $5406` 둘이 부른다)이
+# CPU 스택 내용을 `$5463,X`(X = `$5563` 에 든 포인터, 0 에서 시작)로 밀어 두었다가(`$544B` 푸시 · `$5457` 팝) 되돌린다 → **쓰는 자리는 `+0x1463` 부터 호출 깊이만큼**이고 포인터 바이트 `+0x1563` 도 변수다.
+# 10-20 에는 앞 16B 만 바뀐 것으로 잰 것이 이것이고(서장 슬라임 자동 전투 16B), 포인터 초기값이 0 일 때다. 512B 링 복호 코드의 끝 바이트(RTS `0x60`)가 `+0x1563` 에 앉아 있던 동안은 포인터가 0x60 에서 시작해
+# 풀 글리프 745(`+0x14C3`)를 덮었다(Ｅ 깨짐). 지금은 포인터 바이트를 비우고 버퍼 앞 `GAME_SCRATCH` 를 쓰지 않는다. 깊이는 실측 16B(자동 전투) — **여유를 넉넉히 64B**.
+# `Prog.put` 이 이 자리를 덮는 쓰기를 거절한다(회귀 방지 게이트, `tests/test_zero_padding_battle_scratch.py`).
+GAME_SCRATCH = [
+    (0x68, 0x1463, 64, "호출 스택 저장 버퍼 앞부분($5463~ — 깊이 실측 16B)"),
+    (0x68, 0x1563, 1, "스택 저장 포인터($5563)"),
+]
+ZERO_PADDING = [(0x68, 0x14A3, 192)]
+
+# 🔴 문자열 칸 **안쪽에 박힌 데이터 표**(뱅크, 오프셋, 길이, 사유) — 코드가 읽는 바이트라 옮긴 문자열의 빈 칸으로 돌려주거나 0xFF 로 비우거나 새 글을 앉히면 안 된다(제자리 보호 장치).
+# (11-07 퀵메뉴 사건: 뱅크 0x6A `+0x258` 문자열의 줄 머리 `01/04` 가 사용 가능 표를 겸했다 — 쓰는 코드만 새 문자열로 옮겨지고 읽는 코드는 옛 칸을 봤다 → `quickmenu.fix` 가 읽기도 옮긴다. 이 장치는 그 앞 판(제자리 보호)의 잔재이자 같은 부류의 방어선이다.)
+PINNED_DATA: list[
+    tuple[int, int, int, str]
+] = []  # 현재 없음 — 퀵메뉴 표는 `quickmenu.fix` 가 읽기까지 새 문자열에 맞춘다(11-07). 옮기면 안 되는 표가 새로 나오면 여기에 (뱅크, 오프셋, 길이, 사유)
 
 
 def linear(bank: int, off: int) -> int:
@@ -78,7 +99,41 @@ class Prog:
                 out[lo - off : hi - off] = data[lo - o : hi - o]
         return bytes(out)
 
+    @staticmethod
+    def _unpinned(bank: int, off: int, n: int) -> list[tuple[int, int]]:
+        """[off, off+n) 에서 `PINNED_DATA` 를 뺀 조각들 — (오프셋, 길이)."""
+        pieces = [(off, off + n)]
+        for pb, po, pn, _l in PINNED_DATA:
+            if pb != bank:
+                continue
+            nxt = []
+            for a, b in pieces:
+                if b <= po or a >= po + pn:
+                    nxt.append((a, b))
+                    continue
+                if a < po:
+                    nxt.append((a, po))
+                if b > po + pn:
+                    nxt.append((po + pn, b))
+            pieces = nxt
+        return [(a, b - a) for a, b in pieces]
+
     def put(self, bank: int, off: int, data: bytes, label: str) -> None:
+        for pb, po, pn, plab in PINNED_DATA:
+            if (
+                bank == pb
+                and po < off + len(data)
+                and off < po + pn
+                and data != self.o(bank, off, len(data))
+            ):
+                raise ValueError(
+                    f"코드가 읽는 데이터 표를 덮는다: 「{label}」 {bank:02X}+{off:04X} ↔ {plab} {pb:02X}+{po:04X}+{pn}"
+                )
+        for sb, so, sn, slab in GAME_SCRATCH:
+            if bank == sb and so < off + len(data) and off < so + sn:
+                raise ValueError(
+                    f"게임이 런타임에 쓰는 자리를 덮는다: 「{label}」 {bank:02X}+{off:04X} ↔ {slab} {sb:02X}+{so:04X}+{sn}"
+                )
         for (b, o), (d, lab) in self.writes.items():
             if b == bank and o < off + len(data) and off < o + len(d):
                 raise ValueError(
@@ -88,8 +143,9 @@ class Prog:
 
     def vacate(self, bank: int, off: int, n: int) -> None:
         """원래 있던 바이트를 비운다 — 자유 공간으로 돌려주고 마지막에 0xFF 로 채운다."""
-        self.vacated.append((bank, off, n))
-        self.free(bank, off, n)
+        for o2, n2 in self._unpinned(bank, off, n):  # 코드가 읽는 표(PINNED_DATA)는 비우지 않는다
+            self.vacated.append((bank, o2, n2))
+            self.free(bank, o2, n2)
 
     def free(self, bank: int, off: int, n: int) -> None:
         runs = self.free_runs.setdefault(bank, [])
@@ -168,7 +224,12 @@ class Prog:
 
     def runs_left(self) -> list[tuple[int, int, int]]:
         """글리프 풀이 앉을 수 있는 빈 칸 — 뱅크 0x72~ 는 뺀다(런타임에 씬 패키지가 덮어쓰는 뱅크라 글리프 표를 두면 깨진다. 문자열 전용 칸이다)."""
-        return [(b, r[0], r[1] - r[0]) for b, rs in sorted(self.free_runs.items()) if b < OVERLAY_BANK0 for r in rs]
+        return [
+            (b, r[0], r[1] - r[0])
+            for b, rs in sorted(self.free_runs.items())
+            if b < OVERLAY_BANK0
+            for r in rs
+        ]
 
     def spans(self) -> list[tuple[int, bytes, bytes, str]]:
         """디스크에 쓸 (선형 바이트, 새 바이트, 기대 원본, 라벨). 비운 칸 중 다른 쓰기가 안 덮은 곳은 0xFF 로 채운다."""
@@ -186,5 +247,22 @@ class Prog:
                 pos = max(pos, hi)
         out = []
         for (bank, off), (data, label) in sorted(w.items()):
+            for (
+                pb,
+                po,
+                pn,
+                plab,
+            ) in (
+                PINNED_DATA
+            ):  # 최종 쓰기 목록이 코드가 읽는 표를 바꾸지 않는다(11-07 — 마지막 방어선)
+                lo, hi = max(off, po), min(off + len(data), po + pn)
+                if (
+                    bank == pb
+                    and lo < hi
+                    and data[lo - off : hi - off] != self.o(bank, lo, hi - lo)
+                ):
+                    raise ValueError(
+                        f"코드가 읽는 데이터 표가 바뀐다: 「{label}」 {bank:02X}+{off:04X} ↔ {plab}"
+                    )
             out.append((linear(bank, off), data, self.o(bank, off, len(data)), label))
         return out

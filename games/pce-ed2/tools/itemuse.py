@@ -16,7 +16,10 @@ from PIL import Image
 
 
 def open_debug_item(e):
-    e.press("run+ii", 10, 30)
+    e.hold("select")
+    e.run(70)  # 진입키는 1초(60프레임) 이어서
+    e.hold(None)
+    e.run(30)
     e.press("down", 5, 15)
     e.press("down", 5, 15)
     e.press("i", 5, 30)

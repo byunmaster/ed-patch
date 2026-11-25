@@ -18,6 +18,7 @@ import battle
 import chapter
 import common
 import ctrllines
+import dialog
 import dialogue
 import jptext
 import labels
@@ -93,6 +94,20 @@ def _joined(out: list) -> list:
     return extra
 
 
+def _spk_spaced(line: bytes, spk: str) -> str:
+    """한 줄에 말이 여럿이면 화자 이름이 이름 칸 순서대로 붙어 온다(`dialogue.candidates` 가 빈틈 없이 잇는다 — 「사미모건」). 검사가 한 낱말로 읽어 「긴 낱말 속 이름」 알림을 내므로
+    **검사용으로만** 이름 사이를 띄운다(빌드 산출은 그대로)."""
+    seg = dialog.parse_segments(line)
+    if seg is None:
+        return spk
+    names = [
+        dialogue.speaker_kr(dialog.page_jp(it[1]).replace("{0E}", "").replace("{0F}", ""))
+        for it in seg.items
+        if it[0] == "s"
+    ]
+    return " ".join(names) if len(names) > 1 and "".join(n or "" for n in names) == spk else spk
+
+
 def pairs():
     out = _pairs_lines()
     return out + _joined(out)
@@ -130,7 +145,9 @@ def _pairs_lines():
                     continue
                 if i in cand:
                     spk, txt = cand[i]
-                    out.append((dwhere, jp, ((spk + " ") if spk else "") + txt.replace("\f", " "), "dialog"))
+                    if spk:
+                        spk = _spk_spaced(line, spk)
+                    out.append((dwhere, jp, ((spk + " ") if spk else "") + txt.replace("\f", " ").replace("§", " | "), "dialog"))  # 화자 바뀜(§)은 말투 흔적 검사가 문장 경계로 읽는 「|」 로 — 두 화자의 말을 한 문장으로 합쳐 읽지 않게(검사용 · 빌드 산출은 그대로)
                     continue
                 skel, _c, _h = ctrllines.parse(line)
                 t = ctab.get(ctrllines.key_of(skel))

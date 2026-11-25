@@ -29,7 +29,7 @@ def _nums(name: str) -> set[int]:
 PKGS = (DEFAULT_PKGS | _nums("ED_LZ512")) - _nums("ED_LZ256")
 
 INIT_BANK, INIT_OFF = 0x6E, 0x1FBB  # 뱅크 0x6E 의 0xFF 패딩 꼬리(긴 줄 루틴 뒤 69B)
-FETCH_BANK, FETCH_END = 0x68, 0x1473 + 241  # 뱅크 0x68 영(0) 패딩의 끝 — 앞쪽은 글리프 풀이 쓴다
+FETCH_BANK, FETCH_END = 0x68, 0x1563  # 뱅크 0x68 영(0) 칸 끝 — 마지막 바이트 `+0x1563` 은 게임의 스택 저장 포인터라 코드가 앉으면 안 된다(`layout.GAME_SCRATCH`). 앞쪽은 글리프 풀이 쓴다
 INIT_SEAM = 0x1D8E  # `$7D8E: JMP $5796`
 INIT_SEAM_OLD = bytes.fromhex("4c9657")
 FETCH_JMP = 0x1D9F  # `$7D9F: JMP $57AC` — 초기화가 목적지(+1, +2)를 고친다
@@ -51,12 +51,21 @@ def _fetch(org: int) -> longline._A:
     a.label("match")
     a.b(0xB2, 0x31, 0xE6, 0x31, 0xD0, 0x02, 0xE6, 0x32)  # 되참조 인덱스 하위 8비트
     a.abs_(0x8D, "RDLO")  # STA 읽기 하위
-    a.abs_(0x20, 0x5776)  # JSR $5776 — 니블
-    a.b(0x48)  # PHA
-    a.b(0x29, 0x07, 0x1A, 0x1A)  # AND #7; INC; INC — 길이
+    a.abs_(0x20, 0x5776)  # JSR $5776 — 니블(길이-2, 0~15)
+    a.b(0x1A, 0x1A)  # INC; INC — 길이
     a.abs_(0x8D, "CNT")  # STA 남은 길이
-    a.b(0x68, 0x4A, 0x4A, 0x4A)  # PLA; LSR ×3 — 인덱스 9번째 비트
-    a.b(0x09, RING_HI)  # ORA #$EE
+    a.abs_(0xAD, "XCN")  # LDA 비트열 남은 비트 수
+    a.rel(0xD0, "have")  # BNE have
+    a.b(0xB2, 0x31, 0xE6, 0x31, 0xD0, 0x02, 0xE6, 0x32)  # LDA ($31); INC $31; BNE +2; INC $32 — 비트열 새 바이트
+    a.abs_(0x8D, "XBY")  # STA 비트열
+    a.b(0xA9, 0x08)  # LDA #8
+    a.abs_(0x8D, "XCN")  # STA 남은 비트 수
+    a.label("have")
+    a.abs_(0xCE, "XCN")  # DEC 남은 비트 수
+    a.abs_(0xAD, "XBY")  # LDA 비트열
+    a.b(0x0A)  # ASL A — 최상위 비트 → C
+    a.abs_(0x8D, "XBY")  # STA 비트열
+    a.b(0xA9, RING_HI, 0x69, 0x00)  # LDA #$EE; ADC #0 — 쪽 ($EE + 인덱스 9번째 비트)
     a.abs_(0x8D, "RDHI")  # STA 읽기 상위
     a.label("copy")
     a.b(0xAD)  # LDA $EE00 (읽기)
@@ -88,6 +97,10 @@ def _fetch(org: int) -> longline._A:
     a.b(0x68)
     a.label("done")
     a.b(0x60)  # RTS
+    a.label("XCN")  # 인접 상태 둘 — 비트열 남은 비트 수 · 비트열 바이트 (코드 RAM 에 둔다, CNT 와 같은 자리 방식)
+    a.b(0x00)
+    a.label("XBY")
+    a.b(0x00)
     return a
 
 
@@ -106,6 +119,7 @@ def _init(org: int, fetch_org: int) -> longline._A:
     a.b(0xA9, RING_HI)
     a.abs_(0x8D, L["WRHI"])  # 쓰기 쪽 = $EE
     a.abs_(0x9C, L["CNT"])  # STZ 남은 길이
+    a.abs_(0x9C, L["XCN"])  # STZ 비트열 남은 비트 수 — 첫 되참조가 새 바이트를 읽는다
     a.b(0xA9, L["F"] & 0xFF, 0xA2, L["F"] >> 8)  # LDA #<F; LDX #>F
     a.rel(0x80, "set")
     a.label("normal")

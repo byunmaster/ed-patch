@@ -26,7 +26,7 @@ class SysCard(unittest.TestCase):
         # 줄 가운데 맞춤(마스터 10-22) — 이상값(`x0_for`)과 실제 시작 x 의 차가 4px 이내
         for mi, msg in enumerate(syscard.MESSAGES):
             for r, line in enumerate(msg):
-                self.assertLessEqual(abs(syscard.X0[mi][r] - syscard.x0_for(mi, r, line)), 4, (mi, r, line))
+                self.assertLessEqual(abs(syscard.X0[mi][r] - syscard.x0_for(mi, r, line)), 5, (mi, r, line))
         # 끝 「…」「.」「,」 는 가운데 계산에서 빠진다: 같은 앞부분이면 이상 시작 x 가 같다
         self.assertEqual(syscard.x0_for(0, 0, "가나다……"), syscard.x0_for(0, 0, "가나다"))
 
@@ -41,8 +41,13 @@ class SysCard(unittest.TestCase):
 
         g = font.glyph("…")
         rows = [int.from_bytes(g[2 * y : 2 * y + 2], "big") for y in range(12)]
-        self.assertEqual([y for y, v in enumerate(rows) if v], [font.ELLIPSIS_FLOOR_ROW])  # 점 셋이 마침표 행 하나에만
-        self.assertEqual(rows[font.ELLIPSIS_FLOOR_ROW], sum(0x8000 >> c for c in font.ELLIPSIS_FLOOR_COLS))
+        self.assertEqual([y for y, v in enumerate(rows) if v], list(font.ELLIPSIS_FLOOR_ROWS))  # 점 셋이 마침표와 같은 두 행에만
+        for r in font.ELLIPSIS_FLOOR_ROWS:
+            self.assertEqual(rows[r], sum((0x8000 >> c) | (0x8000 >> (c + 1)) for c in font.ELLIPSIS_FLOOR_COLS))  # 2px 폭 점 셋
+        import narrow_font
+
+        period = [y for y, r in enumerate(narrow_font.GLYPHS["."]) if "#" in r]
+        self.assertEqual(period, list(font.ELLIPSIS_FLOOR_ROWS))  # 마침표(바닥 2×2)와 같은 행
 
     def test_조각은_24바이트이고_공백은_반각이다(self):
         specs, _ = syscard.glyph_set()

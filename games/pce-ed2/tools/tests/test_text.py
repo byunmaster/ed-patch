@@ -42,9 +42,25 @@ class Chapter(unittest.TestCase):
                     px, k = px + chapter.SPACE_PX, k + 1
                 elif l[k] == chapter.PAD:
                     px, k = px + chapter.CELL_PX, k + 1
+                elif l[k] < 0x80:  # 반각 ASCII(쉼표 등) 8px 한 바이트
+                    px, k = px + 8, k + 1
                 else:
                     px, k = px + chapter.CELL_PX, k + 2
             self.assertEqual(px, chapter.BAND_PX)
+
+    def test_낱말_사이는_4px_번호_제목_사이는_12px(self):
+        """낱말 사이 `60`(4px 반각, 마스터 11-10) — 장 번호–제목 사이는 `a0`(12px, 규칙 2-8). `60` 이 줄 양 끝 말고 가운데 있는 건 낱말 사이뿐이다."""
+        orig = L0 + b"\x00" + L5 + b"\x00" + (L0 + b"\x00") * 4
+        t = font.GlyphTable()
+        sp = bytes([chapter.SPACE])
+        got = chapter.lines(orig, t)
+        for l in got:
+            core = l.strip(sp)
+            self.assertLessEqual(core.count(sp), 2)  # 가장 긴 제목(종장 「기도, 그리고 희망」)도 낱말 사이 둘
+            lead, trail = len(l) - len(l.lstrip(sp)), len(l) - len(l.rstrip(sp))
+            self.assertLessEqual(lead, 2)
+            self.assertLessEqual(trail, 2)
+        self.assertGreaterEqual(got[0].count(sp), 1)  # 서장 「평화로운 나날」
 
 
 if __name__ == "__main__":
