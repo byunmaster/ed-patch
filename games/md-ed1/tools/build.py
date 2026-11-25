@@ -985,18 +985,24 @@ def main(check_only: bool = False) -> None:
     rom = Rom(orig)
     # 1. 대본 아카이브 — 블록을 원 자리부터 차례로, 넘치면 꼬리로
     cur, region = SCRIPT_LO, "script"
+    script_end = None
     table = bytearray(orig[base : base + 225 * 4])
     for n, (s, _b, e) in enumerate(bl):
         packed = lz.encode(new_blocks[n]) if n in new_blocks else orig[s:e]
         packed = packed + (b"\x00" if len(packed) & 1 else b"")
         if region == "script" and cur + len(packed) > SCRIPT_HI:
-            cur, region = TAIL_LO, "tail"
+            script_end, cur, region = cur, TAIL_LO, "tail"
         if region == "tail" and cur + len(packed) > ARCHIVE_TOP:
             raise SystemExit("대본 아카이브가 꼬리 빈 공간도 넘는다")
         rom.write(region, cur, packed)
         table[n * 4 : n * 4 + 4] = struct.pack(">I", cur - base)
         cur += len(packed)
     rom.write("script-table", base, bytes(table))
+    # 새 블록이 앞에서부터 채우고 남은 뒤쪽은 원판 압축 바이트가 죽은 채 남는다 — 통째 블록 하나가 남아 일본어 사본이 된다
+    # (check_orphan_copies.py, 마스터 11-17 전 게임 점검). 참조가 없는 줄 알지만 「읽히는 길이 없다」는 증명이 아니라 지워 둔다.
+    s_end = cur if script_end is None else script_end
+    if s_end < SCRIPT_HI:
+        rom.write("script", s_end, b"\xff" * (SCRIPT_HI - s_end))
     # 1b. 전투 아카이브 — 같은 규칙, 꼬리는 대본과 이어 쓴다
     bbase = battle.ARCHIVE
     bbl = battle.blocks(orig)
@@ -1012,6 +1018,8 @@ def main(check_only: bool = False) -> None:
         rom.write(bregion, bcur, packed)
         btable[n * 4 : n * 4 + 4] = struct.pack(">I", bcur - bbase)
         bcur += len(packed)
+    if bregion == "battle" and bcur < BATTLE_HI:  # 전투 아카이브도 같다 — 남는 뒤쪽 원판 블록을 지운다
+        rom.write("battle", bcur, b"\xff" * (BATTLE_HI - bcur))
     if bregion == "tail":
         cur, region = bcur, "tail"
     rom.write("battle-table", bbase, bytes(btable))
