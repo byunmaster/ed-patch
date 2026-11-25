@@ -28,6 +28,7 @@ import codestr
 import common
 import ctrllines
 import debugmode
+import debugqa
 import debugsw
 import dialogue
 import endcard
@@ -477,6 +478,8 @@ def plan_program(
         debugsw.install(
             prog
         )  # 디버그 메뉴 숨김 제스처(필드에서 SELECT 1초) — 제품 롬에 들어간다(마스터 10-21 판정 19 A)
+        if debugqa.enabled():  # QA 전용 보강(ED_DEBUG_QA=1 + qa-debug/test-* 꼬리표) — 제품 롬 불변
+            debugqa.install(prog)
     return prog
 
 
