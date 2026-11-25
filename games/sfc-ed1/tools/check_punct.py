@@ -16,6 +16,7 @@ ELLIPSIS_INITIAL_SPACED = re.compile("… (?=[가-힣A-Za-z0-9])")  # 2-11 정�
 # 끊긴 조각이 한 낱말인지(붙임) 낱말이 바뀌는지(띄움)는 기계가 못 가리므로 홑음절 사슬은 통과시키고 문안이 정한다.
 QUESTION_ELLIPSIS = re.compile("[?!？！]…")  # 2-12: …는 물음표·느낌표 앞에 (…?  …!  …!?)
 TILDE_PERIOD = re.compile("～\\.")  # 1-7
+FULLWIDTH_BANG = re.compile("[！？]")  # 1-8: 느낌표·물음표는 원판 반각 `!` `?`(원판 글자판 8px) — 전각은 2바이트 글꼴 글리프로 그려져 가늘고 사이가 벌어진다(마스터 11-06)
 
 
 def _repeated_sound(text: str, i: int) -> bool:
@@ -53,6 +54,8 @@ def violations(text: str) -> list[str]:
             out.append(f"{rule} …{text[max(0, m.start() - 8) : m.end() + 6]!r}")
     for m in QUESTION_ELLIPSIS.finditer(text):
         out.append(f"2-12 {text[max(0, m.start() - 8) : m.end() + 6]!r}")
+    for m in FULLWIDTH_BANG.finditer(text):
+        out.append(f"1-8 전각 느낌표·물음표 {text[max(0, m.start() - 8) : m.end() + 6]!r}")
     for m in ELLIPSIS_INITIAL_SPACED.finditer(text):
         if _sentence_initial(text, m.start()):
             out.append(f"2-11 문장 첫 …{text[max(0, m.start() - 8) : m.end() + 6]!r}")

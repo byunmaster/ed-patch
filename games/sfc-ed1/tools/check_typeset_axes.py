@@ -354,6 +354,9 @@ def selftest() -> list[str]:
     miss += [f"{k}(거짓 양성)" for k, v in ok.items() if v]
     if not window_axes("가나 다라\n<FF>마바 사아\n<E0>", "가나\n<FF>다라 마바 사아\n<E0>", "a<PAGE>b<END>") or window_axes("가나 다라\n<FF>마바 사아\n<E0>", "가나 다라\n<FF>마바 사아\n<E0>", "a<PAGE>b<END>"):
         miss.append("창이동")
+    # 창 수 「적음」(원문 두 창을 한 창에 합침) — 구운 쪽이 원판보다 적어도, 원고보다 적어도 창수 축이 잡아야 한다(규칙 2-17, 관리자 11-05)
+    if not any("원판" in x for x in window_axes("가나\n<FF>다라\n<E0>", "가나 다라\n<E0>", "a<PAGE>b<END>")) or not any("원고" in x for x in window_axes("가나\n<FF>다라\n<E0>", "가나 다라\n<E0>", "a<E0>")):
+        miss.append("창수(적음)")
     if window_axes("가나 다라\n마바 사아\n자차 카타\n<FF>파하\n<E0>", "가나 다라\n마바 사아\n<FF>자차 카타\n파하\n<E0>", "a<PAGE>b<END>"):
         miss.append("창이동(고아 예외)")
     if not typeset.window_issues("가나 다라\n마바 사아\n<FF>파하.\n<E0>")[0]:

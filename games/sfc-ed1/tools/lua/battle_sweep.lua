@@ -35,6 +35,39 @@ if os.getenv("BT_DEATH") == "1" then -- 진단: 적 기록(`$107C`~ 8칸×50B)�
     log(string.format("EW bf%d k=%d off=%d val=%02X pc=%02X:%04X", bf, o // 50, o % 50, val, st["cpu.k"], st["cpu.pc"]))
   end, emu.callbackType.write, 0x107C, 0x107C + 8 * 50 - 1, emu.cpuType.snes)
 end
+local BTSCRIPT = nil
+if os.getenv("BT_SCRIPT") then
+  BTSCRIPT = {}
+  for f, keys, d in string.gmatch(os.getenv("BT_SCRIPT"), "(%d+):([%w+]+):(%d+)") do
+    local ks = {}
+    for k in string.gmatch(keys, "[^+]+") do ks[#ks + 1] = k end
+    BTSCRIPT[#BTSCRIPT + 1] = { tonumber(f), ks, tonumber(d) }
+  end
+end
+local BTSHOTS = {}
+for f in string.gmatch(os.getenv("BT_SHOTF") or "", "%d+") do BTSHOTS[tonumber(f)] = true end -- 조사용: 전투 프레임별 장
+-- 조사용: BT_PCS="01F4FB,1EEA76" — 그 주소를 실행하면 `PCHIT job pc bf` 를 남긴다(어느 편성이 엔딩 루틴 등으로 가는지)
+for hx in string.gmatch(os.getenv("BT_PCS") or "", "%x+") do
+  local a = tonumber(hx, 16)
+  emu.addMemoryCallback(function() log(string.format("PCHIT j%d combo=%d %06X bf=%d", job, JOBS[job] or -1, a, bf)) end, emu.callbackType.exec, a, a, emu.cpuType.snes)
+end
+-- 조사용: BT_PCJUMP="전투프레임:주소hex" — 그 프레임 뒤 첫 NMI 조이패드 읽기(`$00:AABF`)에서 PC 를 옮긴다(마지막 보스 AI 의 끝 단계 `$01:F4E4` 를 직접 불러 엔딩으로 간다)
+do
+  local jf, jpc = string.match(os.getenv("BT_PCJUMP") or "", "(%d+):(%x+)")
+  if jf then
+    local jumped = false
+    emu.addMemoryCallback(function()
+      if jumped or state ~= "run" or not started or bf < tonumber(jf) then return end
+      jumped = true
+      local st = emu.getState()
+      log(string.format("PCJUMP bf=%d from %02X:%04X", bf, st["cpu.k"], st["cpu.pc"]))
+      local pc = tonumber(jpc, 16)
+      st["cpu.k"] = (pc >> 16) & 0xFF; st["cpu.pc"] = pc & 0xFFFF
+      st["cpu.ps"] = (st["cpu.ps"] or 0) | 0x30
+      emu.setState(st)
+    end, emu.callbackType.exec, 0x00AABF, 0x00AABF, emu.cpuType.snes)
+  end
+end
 local HPFLOOR = tonumber(os.getenv("BT_HPFLOOR") or "1") -- 완료 시험이 적 HP 를 내리는 값(기본 1, 0 이면 맞기 전에 죽은 칸으로)
 local ANIM = -999 -- 마지막으로 HP 굴림 애니메이션(`$00:9BE2`: [$23] 의 HP 를 `$1B02` 씩 목표 `$1B00` 까지 올리거나 내림)이 돈 프레임.
 -- 🔴 그 도는 동안 HP 를 1 로 덮으면 굴림이 매번 처음부터라 영영 안 끝난다(보스 자가 회복 장면 — 10-24 완료 시험이 「멈춤」으로 오인했던 것)
@@ -139,8 +172,13 @@ L.on_message(function(id)
   if qi <= #QUEUE and bf >= QFROM and not insp then -- 주입: 이 입구에서 번호를 덮어쓰면 그대로 그 메시지가 열린다
     id = QUEUE[qi]; qi = qi + 1; wr(0x060B, id & 255); wr(0x060C, id >> 8)
     log(string.format("Q j%d bf%d id=%04X", job, bf, id))
+    for d in string.gmatch(os.getenv("BT_QSHOT") or "", "%d+") do PEND[#PEND + 1] = { bf + tonumber(d), id, "d" .. d } end -- 조사용: 주입 뒤 d 프레임에 장(글자가 찍히는 중 — `<E4>` 끝 메시지는 완료 지점 장이 빈다)
   end
   log(string.format("M j%d bf%d id=%04X", job, bf, id))
+  if os.getenv("BT_NSHOT") and not seen["n" .. id] then -- 조사용: 자연 흐름의 새 메시지마다 시작 뒤 d 프레임 장(주입 말고 실제 조우 메시지의 타자 중)
+    seen["n" .. id] = true
+    for d in string.gmatch(os.getenv("BT_NSHOT"), "%d+") do PEND[#PEND + 1] = { bf + tonumber(d), id, "n" .. d } end
+  end
   if TRACE then -- 조사용: 메시지 시작 때 칸 번호 `$173B`·`$1777`·`$1779/A` 와 칸 배열(`$0305` 68B)
     local c = {}
     for i = 0, 67 do c[#c + 1] = string.format("%02X", rd(0x0305 + i)) end
@@ -186,8 +224,9 @@ emu.addEventCallback(function()
       if rd(b) ~= 0xFF and (rd(b + 17) & 0x80) == 0 then wr(b + 17, rd(b + 17) | 0x80); wr16(b + 1, 0) end
     end
   end
+  if BTSHOTS[bf] then shot(string.format("%s/shots/f%03d_%05d.png", L.OUT, JOBS[job], bf)) end
   for i = #PEND, 1, -1 do
-    if bf >= PEND[i][1] then shot(string.format("%s/shots/q%04X.png", L.OUT, PEND[i][2])); table.remove(PEND, i) end
+    if bf >= PEND[i][1] then shot(string.format("%s/shots/q%04X%s.png", L.OUT, PEND[i][2], PEND[i][3] and ("_" .. PEND[i][3]) or "")); table.remove(PEND, i) end
   end
   if KILL and os.getenv("BT_HPTRACE") == "1" and bf >= 150 and bf <= 1500 and bf % 10 == 0 then -- 진단: 적 기록 처음 두 칸 50바이트 전부
     local t = {}
@@ -245,6 +284,10 @@ end, emu.eventType.endFrame)
 emu.addEventCallback(function()
   local b = {}
   if S0 == nil then L.boot_input(b)
+  elseif state == "run" and started and bf > SEED + 60 and BTSCRIPT then -- 조사용(BT_SCRIPT="전투프레임:버튼+버튼:길이;…"): 자동 A 대신 직접 입력(주문 선택 등 — 커맨드를 화면 읽어 가며 고른다)
+    for _, sc in ipairs(BTSCRIPT) do
+      if bf >= sc[1] and bf < sc[1] + sc[3] then for _, k in ipairs(sc[2]) do b[k] = true end end
+    end
   elseif state == "run" and started and bf > SEED + 60 then
     if insp and presscnt > 0 then b.a = true; presscnt = presscnt - 1
     elseif not insp and (bf // 4) % 2 == 0 then b.a = true -- 자동 A 연타(새 메시지를 보는 동안은 멈춘다)

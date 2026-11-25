@@ -84,8 +84,8 @@ local ADDR_ID = tonumber(os.getenv("MV_ADDR_ID") or "1")
 local ADDRS = {}
 if os.getenv("MV_ADDRS") then
   for line in io.lines(os.getenv("MV_ADDRS")) do
-    local nm, ad = line:match("^(%S+)%s+(%x+)")
-    if nm then ADDRS[#ADDRS + 1] = { nm, tonumber(ad, 16) } end
+    local nm, ad, fl = line:match("^(%S+)%s+(%x+)%s*(%S*)")
+    if nm then ADDRS[#ADDRS + 1] = { nm, tonumber(ad, 16), fl == "c" } end -- 셋째 칸 `c` = 호출 맥락을 붙인다(`<FE>` 로 끝나는 덩이 — 아래 call)
   end
   IDS = {}
   for i = 1, #ADDRS do IDS[i] = i end
@@ -94,6 +94,12 @@ local function call(id)
   if ADDRS[id] then
     local o = 0x38000 + 3 * id
     local ad = ADDRS[id][2]
+    if ADDRS[id][3] then -- 호출 맥락: 빈 롬 자리(`$3F:F000~`)에 `F9 <대상> E0`(절대 호출 → 끝)을 쓰고 그걸 부른다 — 대상의 `<FE>`(복귀)가 이 조각으로 돌아와 깨끗이 끝난다
+      local so = 0x1FF000 + 8 * (id % 256)
+      emu.write(so, 0xF9, emu.memType.snesPrgRom); emu.write(so + 1, ad & 255, emu.memType.snesPrgRom); emu.write(so + 2, (ad >> 8) & 255, emu.memType.snesPrgRom)
+      emu.write(so + 3, (ad >> 16) & 255, emu.memType.snesPrgRom); emu.write(so + 4, 0xE0, emu.memType.snesPrgRom)
+      ad = 0x3FF000 + 8 * (id % 256)
+    end
     emu.write(o, ad & 255, emu.memType.snesPrgRom); emu.write(o + 1, (ad >> 8) & 255, emu.memType.snesPrgRom); emu.write(o + 2, (ad >> 16) & 255, emu.memType.snesPrgRom)
     log(string.format("U %d %s", id, ADDRS[id][1]))
   end

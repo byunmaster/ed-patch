@@ -46,7 +46,7 @@ from shared.text.krwrap import split_reason  # 이어지는 어절 판정 정본
 COLS = 17
 LINE_PX = COLS * 8  # 한 줄 폭(px)
 VWF = common.VWF  # 가변 폭 엔진을 켠 빌드인가(꺼져 있으면 모든 글자 8px = 예전 칸 모델)
-HALF = set(" .,?!\u00a0")  # 4px 글자(VWF 일 때만) — hook_vwf.HALF_CODES 와 같다
+HALF = set(" .,\u00a0")  # 4px 글자(VWF 일 때만) — hook_vwf.HALF_CODES 와 같다
 NO_HEAD = set(".,!?…:;)」』")
 
 

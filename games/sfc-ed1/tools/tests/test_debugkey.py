@@ -19,7 +19,10 @@ LEN = {
     0xA9: 2,
     0x38: 1,
     0x6B: 1,
+    0x0D: 3,
     0x5C: 4,
+    0xEE: 3,
+    0x60: 1,
 }
 BRANCH = {0xD0, 0xF0, 0x90, 0xB0, 0x80}
 
@@ -35,33 +38,35 @@ def decode(b):
 
 class Tramp(unittest.TestCase):
     def test_분기가_명령_경계에_떨어진다(self):
-        ops = decode(d.TRAMP_BYTES)
-        starts = {i for i, _, _ in ops}
-        for i, op, arg in ops:
-            if op in BRANCH:
-                rel = arg[0] - 256 if arg[0] > 127 else arg[0]
-                self.assertIn(i + 2 + rel, starts)
+        for blob in (d.COUNT_BYTES, d.MENU_BYTES):
+            ops = decode(blob)
+            starts = {i for i, _, _ in ops}
+            for i, op, arg in ops:
+                if op in BRANCH:
+                    rel = arg[0] - 256 if arg[0] > 127 else arg[0]
+                    self.assertIn(i + 2 + rel, starts)
 
-    def test_다섯_바이트_자리를_JML_로_빼고_원래_명령을_대신한다(self):
-        self.assertEqual(d.SITE_ORIG, bytes([0xAD, 0x45, 0x11, 0x89, 0x2F]))  # lda $1145 / bit #$2F
-        t = d.TRAMP_BYTES
-        self.assertEqual(t[-9:-4], d.SITE_ORIG)  # 원래 명령을 대신 실행한 뒤
-        self.assertEqual(t[-4:], bytes([0x5C, 0x2C, 0x88, 0x00]))  # $00:882C 로 돌아간다
-        self.assertEqual(d.BACK, 0x00882C)
+    def test_창_루프_자리는_JSR_스텁이_원래_명령을_대신한다(self):
+        self.assertEqual(d.SITE_ORIG, bytes([0xAD, 0xFA, 0x05]))  # lda $05FA
+        self.assertEqual(d.MENU_BYTES[-4:], bytes([0xAD, 0xFA, 0x05, 0x60]))  # 원래 명령 + rts
+        self.assertEqual(d.SITE, 0x029B3F)
+
+    def test_조이패드_자리는_원래_두_명령을_대신하고_rtl_로_끝난다(self):
+        self.assertEqual(d.PAD_ORIG, bytes([0xAD, 0x19, 0x42, 0x8D, 0x18, 0x19]))  # lda $4219 / sta $1918
+        self.assertEqual(d.COUNT_BYTES[:6], d.PAD_ORIG)
+        self.assertEqual(d.COUNT_BYTES[-1], 0x6B)
 
     def test_메뉴_B_A_로_간다(self):
-        t = d.TRAMP_BYTES
-        jml = [(i, bytes(arg)) for i, op, arg in decode(t) if op == 0x5C]
+        jml = [(i, bytes(arg)) for i, op, arg in decode(d.MENU_BYTES) if op == 0x5C]
         targets = [a[0] | a[1] << 8 | a[2] << 16 for _, a in jml]
-        self.assertEqual(targets, [d.MENU_B, d.MENU_A, d.BACK])
+        self.assertEqual(targets, [d.MENU_B, d.MENU_A])
 
-    def test_세는_시간은_프레임_카운터이고_60프레임이다(self):
-        self.assertEqual((d.FRAME_CTR, d.FRAMES), (0x05EF, 60))
-        self.assertIn(bytes([0xC9, d.FRAMES]), d.TRAMP_BYTES)
+    def test_세는_시간은_NMI_프레임_60이다(self):
+        self.assertEqual(d.FRAMES, 60)
+        self.assertIn(bytes([0xC9, d.FRAMES]), d.COUNT_BYTES)
+        self.assertIn(bytes([0xC9, d.FRAMES]), d.MENU_BYTES)
 
-    def test_트램펄린이_뱅크_끝의_빈_자리에_든다(self):
-        self.assertLessEqual((d.TRAMP & 0xFFFF) + len(d.TRAMP_BYTES), 0x10000)
-
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_Select_와_L_R_정확히를_본다(self):
+        t = d.COUNT_BYTES
+        self.assertIn(bytes([0x29, 0x20]), t)  # Select
+        self.assertIn(bytes([0x29, 0xBF, 0xC9, 0x30]), t)  # X 를 빼고 L+R

@@ -40,6 +40,11 @@ class Punct(unittest.TestCase):
         for t in ("어떻게!!…", "소니아!?… 어째서", "뭐？…"):
             self.assertTrue(check_punct.violations(t), t)
 
+    def test_전각_느낌표_물음표_금지(self):
+        for t in ("뭐라고！", "정말？", "앗！？"):
+            self.assertTrue(check_punct.violations(t), t)
+        self.assertEqual(check_punct.violations("뭐라고!? 정말?!"), [])
+
     def test_물결표_마침표(self):
         self.assertEqual(len(check_punct.violations("불렀어～.")), 1)
         self.assertEqual(check_punct.violations("불렀어～"), [])

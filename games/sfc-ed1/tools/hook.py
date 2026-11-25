@@ -433,7 +433,7 @@ def raw_glyph_tables() -> tuple[bytes, bytes]:
     import hangul_font
 
     font = hangul_font.load_font()
-    letters = set("ABCDGOLM")  # 같은 몬스터 A~D · 「GOLD」의 G·O·L(D 는 A~D 와 같다) · 「1000M」의 M(마스터 10-27 「라틴은 원본 글꼴」) — 원판 시트 그림, 진행 폭 = 잉크+2(숫자와 같은 규칙). 크롤의 다른 글자는 본문 Condensed 그대로
+    letters = set("ABCDGOLM!?")  # `!` `?` 도 원판 시트 그림(마스터 11-06 — 칸 중간 합성이 Condensed 글꼴 그림으로 가늘게 나왔다) ·  같은 몬스터 A~D · 「GOLD」의 G·O·L(D 는 A~D 와 같다) · 「1000M」의 M(마스터 10-27 「라틴은 원본 글꼴」) — 원판 시트 그림, 진행 폭 = 잉크+2(숫자와 같은 규칙). 크롤의 다른 글자는 본문 Condensed 그대로
 
     def ink_adv(ch: str) -> int:
         rows = hangul_font.render_latin_orig(ch)
@@ -507,8 +507,13 @@ def build_payload(
         #    (앞 줄 글자가 뒷 글자 그림으로 바뀜 — 빠른 속도에서 앞 쪽이 화면에 남아 보호가 필요한 경로라 쪽 사이 직전 대사 순서에 따라 **가끔** 터졌다).
         #    앞 쪽 보호는 포기할 수 있어도(앞 쪽 끝 글자가 잠깐 깨질 뿐) 지금 쪽은 못 포기한다 — 한 바퀴 실패하면 모드 1 로 다시 돈다.
         "V_LM": vb + 116,
+        # 🔴 목록 줄 이름 글자 보호(2026-11-07 상점 「?」): 목록 창(아이템·주문 이름)은 칸 배열을 질문 창이 덮은 뒤에도 화면에 남는데, 그 칸은 `vwf_live`(지금 칸 배열 + 앞 창 사본)에
+        #    안 들어 다음 글자(질문 끝 「?」)가 그 슬롯을 재사용해 이름 첫 글자가 「?」로 보인다(원판은 정적 글꼴이라 안 일어난다). 이름 복사(`namecopy`·`spellcopy`)가 잡은 글자 코드를
+        #    최근 48개 링에 남기고 `vwf_live` 가 모드 0 에서 같이 지킨다 — 닫는 시점을 몰라도 링이라 알아서 비켜 간다(고정 칸과 달리 풀을 영구히 안 먹는다).
+        "V_LIST": vb + 117,  # 48B 링: 최근 목록 이름 글자의 슬롯 코드
+        "V_LIDX": vb + 165,  # 링 쓰기 위치(0~47)
     }
-    var_end = vb + 117
+    var_end = vb + 166
     if var_end - VAR >= 741:
         raise SystemExit(f"WRAM 무손상 구간(741B)을 넘는다: {var_end - VAR}B (슬롯 {nslot}개)")
     assert len(vram) == nslot
@@ -1013,6 +1018,24 @@ def build_payload(
             a.sep(imm=0x20)
             a.lda(imm=0x01)
             a.op("sta", addr=pin, mode="longx")
+            a.pla()
+        if vwf and pre in ("nc", "sc"):  # 목록 줄 이름 — 잡은 글자 코드를 링에 남긴다(`vwf_live` 가 지킨다)
+            a.pha()
+            a.op("lda", addr=kv["V_LIDX"], mode="long")
+            a.rep(imm=0x20)
+            a.op("and", imm=0x00FF, m16=True)
+            a.tax()
+            a.sep(imm=0x20)
+            a.pla()
+            a.op("sta", addr=kv["V_LIST"], mode="longx")
+            a.pha()
+            a.op("lda", addr=kv["V_LIDX"], mode="long")
+            a.inc()
+            a.cmp(imm=48)
+            a.bcc(label=f"{pre}_lok")
+            a.lda(imm=0x00)
+            a.label(f"{pre}_lok")
+            a.op("sta", addr=kv["V_LIDX"], mode="long")
             a.pla()
         a.ply()
         a.plx()
@@ -1633,7 +1656,9 @@ def build_payload(
     a.plb()
     a.op("lda", addr=V_MAGIC, mode="long")
     a.cmp(imm=MAGIC)
-    a.beq(label="d_go")
+    a.bne(label="d_init")  # 초기화 덩이가 길어져 `beq d_go` 가 안 닿는다 — 같은 뜻으로 뒤집어 `jmp`
+    a.jmp(addr="d_go", mode="abs")
+    a.label("d_init")
     a.lda(imm=0x00)
     for v in (V_HEAD, V_TAIL, V_NEXT, V_PEND_N, V_OVERFLOW):
         a.op("sta", addr=v, mode="long")
@@ -1654,6 +1679,16 @@ def build_payload(
     a.inx()
     a.cpx(imm=nslot, m16=True)
     a.bne(label="d_pinclr")
+    if vwf:
+        a.lda(imm=0xFF)  # 목록 링 비움(슬롯 코드로 안 쓰이는 값)
+        a.ldx(imm=0x0000, m16=True)
+        a.label("d_listclr")
+        a.op("sta", addr=kv["V_LIST"], mode="longx")
+        a.inx()
+        a.cpx(imm=48, m16=True)
+        a.bne(label="d_listclr")
+        a.lda(imm=0x00)
+        a.op("sta", addr=kv["V_LIDX"], mode="long")
     if vwf:
         a.lda(imm=0x00)
         for v in ("V_VX", "V_VX_HI", "V_VS", "V_VD", "V_VO", "V_PS", "V_WM", "V_CUR", "V_MXD", "V_PALD", "V_WK"):

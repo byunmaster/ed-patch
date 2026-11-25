@@ -15,7 +15,7 @@
 
 CRAWL_DIGIT_ADV = 5  # 오프닝·엔딩(크롤) 반각 숫자 진행 폭(px) — 잉크 4열 + 간격 1px(md-ed1 방식, 한글 간격은 그대로)
 BUF = 0x7EE100  # 슬롯별 합성 버퍼 — 16B(1bpp, 위 타일 8행 + 아래 타일 8행) × 슬롯
-HALF_CODES = (0x10, 0x83, 0x84, 0x0C, 0x0F)  # 공백 · `.` · `,` · `!` · `?`
+HALF_CODES = (0x10, 0x83, 0x84)  # 공백 · `.` · `,` — `!` `?` 는 원판 글자판 8px 그대로(마스터 11-06 「원판에 같은 글자가 있는 것은 원판으로」)
 KAGI_CODES = (0x85, 0x86)  # 「 · 」 — 반각 글리프(칸 왼쪽 4열)를 5px 진행으로(마스터 도안 F판 10-26)
 KAGI_ADV = 5
 # 같은 몬스터가 여럿일 때 엔진이 이름 뒤에 붙이는 A~D(`$02:E0CE` 표) — 마스터 10-09 「ABCD 도 반각」: 우리 글꼴 4px 합성으로
@@ -128,6 +128,13 @@ def emit(a, k):
     a.inx()
     a.cpx(imm=68, m16=True)
     a.bne(label="vl_p")
+    a.ldx(imm=0x0000, m16=True)
+    a.label("vl_r")
+    a.op("cmp", addr=k["V_LIST"], mode="longx")  # 목록 줄 이름 글자 링(질문 창이 칸 배열을 덮은 뒤에도 화면에 남는다)
+    a.beq(label="vl_y")
+    a.inx()
+    a.cpx(imm=48, m16=True)
+    a.bne(label="vl_r")
     a.label("vl_n")
     a.pla()
     a.clc()
@@ -1017,10 +1024,6 @@ def emit(a, k):
     a.cpx(imm=0x0083, m16=True)
     a.beq(label="wk_h")
     a.cpx(imm=0x0084, m16=True)
-    a.beq(label="wk_h")
-    a.cpx(imm=0x000C, m16=True)
-    a.beq(label="wk_h")
-    a.cpx(imm=0x000F, m16=True)
     a.beq(label="wk_h")
     addw(8)
     a.iny()
