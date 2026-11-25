@@ -15,16 +15,16 @@
 패치 파일에는 원본 게임 데이터가 포함되지 않습니다. 적용하려면 직접 소장한 원본이
 필요합니다.
 
-## 패치 현황 (2026-10-24)
+## 패치 현황 (2026-11-26)
 
 | 게임 | 트랙 | 기종 | 상태 |
 | ---- | ---- | ---- | ---- |
 | [영웅전설 I · II](games/ps1-ed1+2/) | kr | PlayStation | ✅ v1.2.0 배포 |
 | [영웅전설 III](games/ps1-ed3/) | kr | PlayStation | 🔧 작업 중 |
-| 영웅전설 IV | kr | PlayStation | 진행 예정 |
+| [영웅전설 IV](games/ps1-ed4/) | kr | PlayStation | 🔧 작업 중 |
 | [영웅전설 I · II](games/ss-ed1+2/) | kr | 세가새턴 | 🔧 작업 중 |
 | [영웅전설 III](games/ss-ed3/) | kr | 세가새턴 | 🔧 작업 중 |
-| [드래곤 슬레이어 영웅전설](games/pce-ed1/) | kr | PC엔진 CD | 🔧 작업 중 |
+| [드래곤 슬레이어 영웅전설](games/pce-ed1/) | kr | PC엔진 CD | ✅ v1.0.0 배포 |
 | [드래곤 슬레이어 영웅전설 II](games/pce-ed2/) | kr | PC엔진 CD | 🔧 작업 중 |
 | [드래곤 슬레이어 영웅전설](games/sfc-ed1/) | kr | 슈퍼 패미컴 | 🔧 작업 중 |
 | [드래곤 슬레이어 영웅전설 II](games/sfc-ed2/) | kr | 슈퍼 패미컴 | 🔧 작업 중 |

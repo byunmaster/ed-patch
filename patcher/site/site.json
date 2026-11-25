@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-24",
+  "updated": "2026-11-26",
   "report": "https://tally.so/r/rjxd05",
   "stages": [
     {
@@ -176,7 +176,7 @@
         },
         "P5": {
           "state": "partial",
-          "note": "화면 일본어 0 · 대본 구조 대조 452/452 어긋남 0 · 줄바꿈 조판 정적 점검 · 이어 붙는 조각 공백과 선택지 창 폭은 화면 확인이 남았다"
+          "note": "화면 일본어 0 · 대본 구조 대조 452/452 어긋남 0 · 줄바꿈 조판 정적 점검 · 이어 붙는 조각 공백과 선택지 창 폭은 화면 확인이 남았다 · 11-26 말투 원문 등급 재검수·QA 디버그 빌드"
         }
       },
       "art": "ps1 - Legend of Heroes III.png"
@@ -215,7 +215,7 @@
         },
         "P4": {
           "state": "done",
-          "note": "대사 24,474줄 번역"
+          "note": "대사 24,474줄 번역 · 11-26 말투 원문 등급 재검수·QA 디버그 빌드"
         }
       }
     },
@@ -257,7 +257,7 @@
         },
         "P6": {
           "state": "partial",
-          "note": "새 게임 첫 장면 연속 재생 ED1·ED2 확인 · 마스터 플레이 테스트는 남았다"
+          "note": "새 게임 첫 장면 연속 재생 ED1·ED2 확인 · 마스터 플레이 테스트는 남았다 · 11-26 말투 원문 등급 재검수·QA 디버그 빌드"
         }
       },
       "art": "saturn - Legend of Heroes I & II.png"
@@ -303,7 +303,7 @@
         },
         "P6": {
           "state": "partial",
-          "note": "첫 장면부터 이어 가며 확인 중, 선택지 창 폭·이음 블록 첫 줄은 인게임 확인이 남았다"
+          "note": "첫 장면부터 이어 가며 확인 중, 선택지 창 폭·이음 블록 첫 줄은 인게임 확인이 남았다 · 11-26 말투 원문 등급 재검수·QA 디버그 빌드"
         }
       },
       "art": "saturn - Legend of Heroes III.png"
@@ -314,8 +314,16 @@
       "title": "드래곤 슬레이어 영웅전설",
       "original": "ドラゴンスレイヤー英雄伝説",
       "track": "kr",
-      "status": "preparing",
-      "stage": "P5",
+      "status": "released",
+      "stage": "P7",
+      "version": "1.0.0",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "date": "2026-11-26",
+          "note": "첫 배포 — 드래곤 슬레이어 영웅전설 한글화"
+        }
+      ],
       "tags": {
         "platform": "PC엔진",
         "series": [
@@ -336,11 +344,36 @@
           "note": "씬 대사 번역 전량 · 원문 짝 전수 대조 · 존대 규칙 반영 (음성 자막 22토막은 다음 라운드)"
         },
         "P5": {
-          "state": "partial",
-          "note": "화면 일본어 0 · 줄바꿈 · 구조 대조(재배치 장부) 정적 점검 통과 · 이어 붙는 줄과 씬 6·18 음성 싱크는 인게임 확인이 남았다"
+          "state": "done",
+          "note": "화면 일본어 0 · 줄바꿈 · 구조 대조(재배치 장부) · 캐시 칸 게이트"
+        },
+        "P6": {
+          "state": "done",
+          "note": "마스터 플레이 테스트 엔딩까지(11-26) — 음성 자막 위치·겹침 · 낫표 · HUD 이름 · 문안 교정"
+        },
+        "P7": {
+          "state": "done",
+          "note": "v1.0.0 — xdelta·BPS·웹 패처"
         }
       },
-      "art": "pce - Dragon Slayer.png"
+      "art": "pce - Dragon Slayer.png",
+      "release": {
+        "version": "1.0.0",
+        "disc": "HCD1020",
+        "source": {
+          "file": "Dragon_Slayer_-_Eiyuu_Densetsu_(NTSC-J)_[HCD1020].iso",
+          "size": 658369488,
+          "crc32": "92FB6F78",
+          "md5": "ff0fa527df86787365e5bfec8f611923",
+          "sha1": "8a7ee4ca1b05410490c86c749b7fd80672ee1e6f",
+          "sha256": "61c8a32fa367f22095c74cbd3260312006755e7802adb77e477f4441654a8836"
+        },
+        "output": "Dragon Slayer - Eiyuu Densetsu (KR).iso",
+        "bps": "pce-ed1-kr-v1.0.0.bps",
+        "xdelta": "pce-ed1-kr-v1.0.0.xdelta",
+        "cue": "FILE \"{bin}\" BINARY\r\n  TRACK 01 AUDIO\r\n    INDEX 01 00:00:00\r\n  TRACK 02 MODE1/2352\r\n    PREGAP 00:03:00\r\n    INDEX 01 00:44:65\r\n  TRACK 03 AUDIO\r\n    PREGAP 00:02:00\r\n    INDEX 01 02:59:12\r\n  TRACK 04 AUDIO\r\n    INDEX 01 07:11:66\r\n  TRACK 05 AUDIO\r\n    INDEX 01 11:00:09\r\n  TRACK 06 AUDIO\r\n    INDEX 01 14:52:05\r\n  TRACK 07 AUDIO\r\n    INDEX 01 17:52:05\r\n  TRACK 08 AUDIO\r\n    INDEX 01 20:51:66\r\n  TRACK 09 AUDIO\r\n    INDEX 01 23:48:12\r\n  TRACK 10 AUDIO\r\n    INDEX 01 24:33:12\r\n  TRACK 11 AUDIO\r\n    INDEX 01 27:36:11\r\n  TRACK 12 AUDIO\r\n    INDEX 01 30:17:71\r\n  TRACK 13 AUDIO\r\n    INDEX 01 33:13:27\r\n  TRACK 14 AUDIO\r\n    INDEX 01 33:24:04\r\n  TRACK 15 AUDIO\r\n    INDEX 01 36:19:57\r\n  TRACK 16 AUDIO\r\n    INDEX 01 40:28:17\r\n  TRACK 17 AUDIO\r\n    INDEX 01 41:35:11\r\n  TRACK 18 AUDIO\r\n    INDEX 01 46:34:59\r\n  TRACK 19 AUDIO\r\n    INDEX 01 49:19:16\r\n  TRACK 20 AUDIO\r\n    INDEX 01 50:40:36\r\n  TRACK 21 AUDIO\r\n    INDEX 01 57:39:58\r\n  TRACK 22 MODE1/2352\r\n    PREGAP 00:03:00\r\n    INDEX 01 61:49:11\r\n",
+        "output_sha1": "14e2d7df68b86c4f1c13085b300d5e79754ab6ad"
+      }
     },
     {
       "id": "pce-ed2",
@@ -380,6 +413,10 @@
         "P5": {
           "state": "partial",
           "note": "구조 대조·잔존 일본어·이음 첫 줄 폭·선택지 창은 정적 점검 · 일부 화면 확인이 남았다"
+        },
+        "P6": {
+          "state": "partial",
+          "note": "마스터 플레이 테스트 다음 라운드(11-27~) · 줄 끝 부호 조판 보정 남음"
         }
       },
       "art": "pce - Dragon Slayer II.png"
@@ -413,7 +450,7 @@
         },
         "P5": {
           "state": "partial",
-          "note": "화면 일본어 0·구조 대조(점프·호출 목표 3,071곳 바뀜 0)·선택지·메뉴 칸 넘침 0은 정적 확인 · 이어지는 대사 첫 줄 폭은 일부만 정적으로 측정 · 인게임 검수는 남았다"
+          "note": "화면 일본어 0·구조 대조(점프·호출 목표 3,071곳 바뀜 0)·선택지·메뉴 칸 넘침 0은 정적 확인 · 이어지는 대사 첫 줄 폭은 일부만 정적으로 측정 · 인게임 검수는 남았다 · 11-26 말투 원문 등급 재검수·QA 디버그 빌드"
         }
       },
       "art": "sfc - Dragon Slayer.png"
@@ -455,7 +492,7 @@
         },
         "P5": {
           "state": "partial",
-          "note": "구조 대조(제어 코드 열·재배치 장부)·줄바꿈·이어 쓰기 첫 줄 폭 정적 점검 통과 · 공유 꼬리 3곳(화면 미확인)과 상점 화면·세이브 호환이 남았다"
+          "note": "구조 대조(제어 코드 열·재배치 장부)·줄바꿈·이어 쓰기 첫 줄 폭 정적 점검 통과 · 공유 꼬리 3곳(화면 미확인)과 상점 화면·세이브 호환이 남았다 · 11-26 말투 원문 등급 재검수·QA 디버그 빌드"
         }
       },
       "art": "sfc - Dragon Slayer II.png"
@@ -493,7 +530,7 @@
         },
         "P5": {
           "state": "partial",
-          "note": "줄바꿈·구조 대조·이음 첫 줄 폭 정적 점검 끝 · 이벤트 모드 씬 일부와 사슬 연속 재생은 화면 확인이 남았다"
+          "note": "줄바꿈·구조 대조·이음 첫 줄 폭 정적 점검 끝 · 이벤트 모드 씬 일부와 사슬 연속 재생은 화면 확인이 남았다 · 11-26 말투 원문 등급 재검수·QA 디버그 빌드"
         }
       },
       "art": "md - Dragon Slayer.png"
@@ -527,7 +564,7 @@
         },
         "P5": {
           "state": "partial",
-          "note": "롬 전체 일본어 잔존·구조 대조·이음 첫 줄 폭 게이트 통과(정적) — 화면 확인은 대사 보기 촬영 표본뿐, 상점 일부·몇몇 조각은 정적 확인만 남았다"
+          "note": "롬 전체 일본어 잔존·구조 대조·이음 첫 줄 폭 게이트 통과(정적) — 화면 확인은 대사 보기 촬영 표본뿐, 상점 일부·몇몇 조각은 정적 확인만 남았다 · 11-26 말투 원문 등급 재검수·QA 디버그 빌드"
         }
       },
       "art": "md - Dragon Slayer II.png"
