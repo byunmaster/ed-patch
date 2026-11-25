@@ -17,7 +17,7 @@ import check_punct
 import linemetrics
 import typeset
 
-FIT = lambda ln: typeset.px(ln) <= typeset.WIDTH * 12 and not typeset.engine_wraps(ln)  # noqa: E731
+FIT = lambda ln: typeset.fit_px(ln) <= typeset.WIDTH * 12 and not typeset.engine_wraps(ln)  # noqa: E731
 BASE = Path(__file__).resolve().parents[1] / "linebreak_baseline.json"
 
 

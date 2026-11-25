@@ -1,5 +1,6 @@
 """좁은 글꼴 한글(디버그 마을 목록) — 부호화·도안·후킹 루틴 모양."""
 
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -39,7 +40,8 @@ class NarrowHan(unittest.TestCase):
         self.assertIn("TMA #$10", n)
         self.assertIn("TAM #$10", n)
         self.assertIn(f"SBC #${narrowhan.TRAIL0:02X}", n)
-        self.assertIn(f"ADC #${narrowhan.TABLE_OFF >> 13:02X}", n)  # 패키지 첫 뱅크 + 1
+        self.assertIn("LDA $26F3", n)  # 장면 번호로 표 위치를 고른다(디버그 마을 2 · 배틀 테스트 마을 16~19)
+        self.assertGreaterEqual(len(re.findall(r"ADC \$[0-9A-F]{4},X", n)), 2)  # 뱅크 오프셋 표 · 쪽 오프셋 표(장면 색인)
         self.assertIn("RTS", n)
 
 

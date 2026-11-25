@@ -331,9 +331,12 @@ def _routine(nruns: int) -> asm.Asm:
     for _ in range(4):
         a.op("ASL", "zp", 0xEC)
         a.op("ROL", "zp", 0xED)
+    a.op("LDA", "abs", 0x26F3)  # 현재 장면 — 표 위치(뱅크 · 쪽)를 장면별 표(NBANK/NPAGE)에서 고른다(디버그 마을 2 · 배틀 테스트 마을 16~19)
+    a.op("TAX")
     a.op("CLC")
     a.op("LDA", "zp", 0xED)
     a.op("ADC", "imm", WINDOW >> 8)
+    a.op("ADC", "absx", "NPAGE")
     a.op("STA", "zp", 0xED)
     a.op("PHP")
     a.op("SEI")
@@ -341,7 +344,7 @@ def _routine(nruns: int) -> asm.Asm:
     a.op("PHA")
     a.op("LDA", "zp", PKG_BASE)
     a.op("CLC")
-    a.op("ADC", "imm", narrowhan.TABLE_OFF >> 13)
+    a.op("ADC", "absx", "NBANK")
     a.op("TAM", "tam", WINDOW_MPR)
     a.op("LDY", "imm", 11)
     a.label("ncp")
@@ -366,6 +369,13 @@ def _routine(nruns: int) -> asm.Asm:
     a.op("BCC", "rel", "nex")
     a.op("CLC")
     a.op("RTS")
+    nb, npg = bytearray(0x14), bytearray(0x14)  # 장면(`$26F3`) → 표의 뱅크 오프셋 · 쪽(256B) 오프셋
+    for sc, off in [(narrowhan.SCENE_MAIN, narrowhan.TABLE_OFF), *narrowhan.BT_LOC.items()]:
+        nb[sc], npg[sc] = off >> 13, (off & 0x1FFF) >> 8
+    a.label("NBANK")
+    a.data(bytes(nb))
+    a.label("NPAGE")
+    a.data(bytes(npg))
     a.label("GBUF")  # 글리프 16B 사본(RAM)
     a.data(bytes(16))
     a.label("DIGB")  # 숫자 0~9 의 받침 플래그

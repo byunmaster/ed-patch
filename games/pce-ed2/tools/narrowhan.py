@@ -19,21 +19,32 @@ TRAIL0 = 0x24
 REL = 258  # 디버그 마을 패키지
 TABLE_OFF = 0x2000  # 패키지 안(앞 덩이 · 지역 글리프 표 사이의 0xFF 채움) — 뱅크 경계라 창 `$8000` + 번호×16
 STRIDE = 16
+# 배틀 테스트 마을(패키지 2050·2178·2306·2434 = 장면 16~19)도 같은 좁은 목록을 쓴다(마스터 11-22 「전투시험에서 깨짐」) — 도안 표 사본을 각 패키지의
+# 0xFF 꼬리에 둔다. 그 마을의 글자(`BT_MEMO`)를 **앞 번호**로 매겨 사본은 앞 `bt_count()` 개만 담는다. 장면 번호(`$26F3`)로 표 위치를 고른다.
+BT_MEMO = "배틀 테스트"
+BT_LOC = {16: 0x6900, 17: 0x6800, 18: 0x5100, 19: 0x5400}  # 장면 → 패키지 안 표 위치(`뱅크 경계 안`, 256B 정렬)
+SCENE_MAIN = 2  # 디버그 마을
 MARK = "⟦"
 _TSV = common.GAME_DIR / "data" / "ctrl_lines.tsv"
 _chars: list[str] | None = None
+_bt_n = 0
 
 
 def chars() -> list[str]:
     """좁은 글꼴로 내는 한글(코드포인트순) — 번호가 이 순서다."""
     global _chars
     if _chars is None:
-        s = set()
+        s, bt = set(), set()
         for ln in _TSV.read_text(encoding="utf-8").splitlines():
             f = ln.split("\t")
             if len(f) >= 2 and f[1].startswith(MARK):
-                s |= set(re.findall(r"[가-힣]", f[1]))
-        _chars = sorted(s)
+                cs = set(re.findall(r"[가-힣]", f[1]))
+                s |= cs
+                if len(f) >= 3 and BT_MEMO in f[2]:
+                    bt |= cs
+        _chars = sorted(bt) + sorted(s - bt)
+        global _bt_n
+        _bt_n = len(bt)
         assert len(_chars) < 200, "좁은 한글 번호가 한 리드(200)를 넘는다"
     return _chars
 
@@ -46,6 +57,8 @@ def enc(text: str) -> bytes:
             out.append(0x0D)  # 줄바꿈(원판 제어)
         elif ch == " ":
             out.append(0x60)  # 공백 4px
+        elif ch.isascii() and (ch.isdigit() or ch.isupper()):  # ASCII 대문자·숫자 한 바이트(8px). 소문자(0x60~)는 `06` 모드에서 가나 도안으로 읽혀 깨진다(「Uty」 → 「Iボボ」, 11-23 실측) — 소문자는 아래 전각 통과  # ASCII 숫자 한 바이트 — 배틀 테스트 마을 격자 줄은 메시지 길이가 255B 를 넘으면 엔진이 깨진 글을 읽는다(「長い!」, 마스터 11-22). 원판도 ASCII 숫자
+            out.append(ord(ch))
         elif ch == "　":
             out += b"\x60\x60\x60"
         elif ch in cs:
@@ -63,6 +76,16 @@ def rows(ch: str) -> bytes:
     f = fonts.galmuri("Galmuri11-Condensed")
     b = f.bits(ch, dx=0, dy=-3, rows=12, width=8)
     return bytes(int("".join(str(int(x)) for x in r), 2) for r in b)
+
+
+def bt_count() -> int:
+    chars()
+    return _bt_n
+
+
+def bt_table() -> bytes:
+    """배틀 테스트 마을용 도안 표 — 앞 `bt_count()` 글자(번호 0부터)만."""
+    return table()[: bt_count() * STRIDE]
 
 
 def table() -> bytes:

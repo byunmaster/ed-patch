@@ -66,12 +66,22 @@ def spaced(text: str) -> str:
 LIMIT_PX = 14 * 12
 
 
+HANG = "., !?".replace(" ", "")  # 줄 끝 매다는 부호 — 엔진 꺾음 판정에서 폭 4px 로만 센다(마스터 11-22 「마침표는 판정에서 빼고 오른쪽을 살짝 침범하는 건 허용」, PCE I 과 같은 집합). `tools/hangpunct.py`
+HANG_PX = 4
+
+
+def fit_px(line: str) -> int:
+    """줄 폭 px — 줄 끝 매다는 부호는 시작 x + 4px 까지만 센다(실제 전진은 8px 라 오른쪽 틀을 최대 4px 침범)."""
+    w = px(line)
+    return w - (adv(line[-1]) - HANG_PX) if line and line[-1] in HANG and adv(line[-1]) > HANG_PX else w
+
+
 def engine_wraps(line: str) -> bool:
     """엔진은 글자마다 「이 글자 시작 x + 12px(반각도 한 칸으로 셈) > 168px」이면 줄을 꺾는다 — 실측(10-19 `가`×14 + `.` · `가`×12 + 공백 + `가` + `.` 가 `.` 만 다음 줄로 떨어졌다).
-    그려지는 폭은 반각 8px 이라 조판기(합계 px)는 통과시키는 줄이 있다 — 줄 끝 부호가 168px 에 딱 닿는 경우."""
+    11-22: 매다는 부호(`. , ! ?`)는 시작 x + 4px 로만 잰다(`hangpunct.py` 가 엔진 판정을 그렇게 고친다)."""
     x = 0
     for c in line:
-        if c != " " and x + font.CELL_PX > LIMIT_PX:
+        if c != " " and x + (HANG_PX if c in HANG else font.CELL_PX) > LIMIT_PX:
             return True
         x += adv(c)
     return False
@@ -107,7 +117,7 @@ def _lay_n(chunk: str, w: float, lines: int) -> list[list[str]]:
     if os.environ.get("ED_LINERULE") == "0" or "\n" in chunk:  # ED_LINERULE=0 — 규칙 끄기(「전」 지표 계측용)
         return base
     words = chunk.split()
-    fit = lambda ln: px(ln) <= w * 12 and not engine_wraps(ln)  # noqa: E731
+    fit = lambda ln: fit_px(ln) <= w * 12 and not engine_wraps(ln)  # noqa: E731
     cand = base
     mine = linemetrics.repage(words, fit, base)
     if (
@@ -119,6 +129,8 @@ def _lay_n(chunk: str, w: float, lines: int) -> list[list[str]]:
         and linemetrics.count(linemetrics.chunk_metrics(mine)) < linemetrics.count(linemetrics.chunk_metrics(base))
     ):
         cand = mine
+    cand = linemetrics.fix_tail_orphans(cand, fit)  # 쪽 끝 한 어절 줄(a)은 앞 줄 끝 어절을 내려 두 어절로
+    base = linemetrics.fix_tail_orphans(base, fit)
     return _spread(chunk, words, fit, base, cand)
 
 
@@ -150,8 +162,11 @@ def _lay_kinds(chunk: str, w: float, headed: bool) -> list[list[str]]:
 
 def _flags(chunk: str, pgs: list[list[str]], w: float) -> tuple[bool, bool]:
     """(쪽 끝 한 어절 고아가 있나 · 창 수를 안 늘리고 고르게 나눌 수 있는데 안 나눴나) — 2-16 지표 a · h2."""
-    fit = lambda ln: px(ln) <= w * 12 and not engine_wraps(ln)  # noqa: E731
-    spread = linemetrics.window_stats(pgs)[1] and bool(linemetrics.rebalance(chunk.split(), fit, pgs))
+    fit = lambda ln: fit_px(ln) <= w * 12 and not engine_wraps(ln)  # noqa: E731
+    try:
+        spread = linemetrics.window_stats(pgs)[1] and bool(linemetrics.rebalance(chunk.split(), fit, pgs))
+    except IndexError:  # 제어 틀(디버그 목록 따위 — 줄이 하드 개행이고 어절 수가 조판 줄과 안 맞는 글)은 창 분배를 따지지 않는다
+        spread = False
     return bool(linemetrics.chunk_metrics(pgs).get("a")), spread
 
 
@@ -200,8 +215,10 @@ def _pages(text: str, headed: bool) -> list[list[str]]:
             if any(engine_wraps(line) for p in pgs for line in p):
                 pgs = first  # 어떻게 짜도 닿는 줄(끊을 데 없는 긴 낱말) — 처음 조판을 둔다
         out.extend(pgs)
+    # 원문 창(`\f` 가름)의 끝 줄이 한 어절로 끝나면 그 창 안에서 앞 줄 끝 어절을 내린다(2-16 ③ — 창 사이로 내용을 옮기지 않으니 2-17 과 안 부딪힌다. 11-22 종장 크루즈 가이드 「본선은 곧 다도해로 / 들어서겠습니다.」)
+    out = linemetrics.fix_tail_orphans(out, lambda ln: fit_px(ln) <= WIDTH * 12 and not engine_wraps(ln))
     for p in out:
         for line in p:
-            assert px(line) <= 14 * 12, (line, px(line))
+            assert fit_px(line) <= 14 * 12, (line, px(line))
     assert ink(text) == ink("".join(x for p in out for x in p)), ("조판이 글을 잃었다", text)
     return out

@@ -15,6 +15,7 @@
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -51,6 +52,8 @@ import os as _os
 import package
 import quickmenu
 import cursorfix
+import cursorw
+import hangpunct
 import narrowhan
 import repack
 import residual_gate
@@ -281,6 +284,16 @@ def _plan_one(rel, raw, tab: font.GlyphTable, dialogue_allowed: set[str] | None,
         nb = bytearray(new)
         assert set(nb[off : off + len(tbl)]) <= {0xFF}, "좁은 한글 도안 자리가 0xFF 채움이 아니다"
         nb[off : off + len(tbl)] = tbl
+        cursorw.apply(nb, cursorw.STEPS)  # 목록 커서 틀 폭 단계 — 한국어 이름이 틀 안에 들게(마스터 11-22)
+        new = bytes(nb)
+    elif rel in {2 + 128 * sc for sc in narrowhan.BT_LOC}:  # 배틀 테스트 마을(장면 16~19) — 같은 좁은 목록이라 도안 표 사본(그 마을 글자만)을 꼬리 0xFF 안에(마스터 11-22 「전투시험 깨짐」)
+        tbl = narrowhan.bt_table()
+        off = narrowhan.BT_LOC[(rel - 2) // 128]
+        nb = bytearray(new)
+        assert set(nb[off : off + len(tbl)]) <= {0xFF}, f"패키지 {rel}: 좁은 한글 도안 자리(0x{off:X})가 0xFF 채움이 아니다"
+        assert (off & 0x1FFF) + len(tbl) <= 0x2000, "도안 표가 뱅크 경계를 넘는다"
+        nb[off : off + len(tbl)] = tbl
+        cursorw.apply_bt(nb, rel)  # 목록 커서 틀 폭(원판 26px 는 앞 두 글자만 덮는다)
         new = bytes(nb)
     return pkg, new, place, changed
 
@@ -449,6 +462,7 @@ def plan_program(
     longline.reserve(prog)
     lzring.reserve(prog)
     narrow.reserve(prog)
+    hangpunct.reserve(prog)
     kagi.reserve(prog)
     debugsw.reserve(prog)
     narrow_font.install(
@@ -459,6 +473,7 @@ def plan_program(
     systext.plan(prog, tab)
     cursorfix.fix(prog)  # 선택 커서 틀 오른쪽 끝 +4px — 띄어쓰기 품은 이름 88px(11-07)
     quickmenu.fix(prog)  # 퀵메뉴 사용 가능 표 읽기 — 새 문자열 줄 머리로(11-07)
+    quickmenu.widen(prog)  # 퀵메뉴 커서·창 폭(11-22)
     if glyph24 is not None:
         flags = [font.flags(c) for c in chars] if chars else None
         josa_idx = [tab.map[c] for pair in font.JOSA for c in pair] if tab.map else None
@@ -474,6 +489,7 @@ def plan_program(
         longline.install(prog)
         lzring.install(prog)  # 642 전용 512B 링 복호 변형(표식 덩이만 — 나머지는 원판 경로)
         narrow.install(prog)
+        hangpunct.install(prog)  # 줄 끝 매다는 부호(. , ! ?)는 엔진 꺾음에서 4px 로 센다(마스터 11-22)
         kagi.install(prog, kagi.codes_for(chars))
         debugsw.install(
             prog
@@ -642,18 +658,31 @@ def build(edits_path: Path | None, trim: bool, dialogue_on: bool = True) -> Path
         tag = "test-" + tag
     out_dir = common.BUILD_DIR / (tag + ("-trim" if trim else ""))
     out_dir.mkdir(parents=True, exist_ok=True)
-    iso = out_dir / f"{common.ROM_STEM}.iso"
-    cue = out_dir / f"{common.ROM_STEM}.cue"
-    for p in (iso, cue, out_dir / f"{common.ROM_STEM}.iso.failed"):
+    # 🔴 빌드 도중 제품 칸을 덮지 않는다(마스터 11-22 「다 일본어로 나와」 — 빌드가 원판 사본부터 깔고 패치하는 20분 동안 파일서버가 그 칸을 내줬다).
+    # 임시 칸(`test-partial-<꼬리표>` — `test-` 라 목록에 안 나온다)에 굽고, 성공한 뒤에만 **한 번에 바꿔치기**한다(같은 파일시스템 rename = 원자). 실패하면 제품 칸은 그대로(옛 이미지)이고 임시 칸에 `.failed` 가 남는다.
+    work_dir = common.BUILD_DIR / ("test-partial-" + out_dir.name)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    iso = work_dir / f"{common.ROM_STEM}.iso"
+    cue = work_dir / f"{common.ROM_STEM}.cue"
+    for p in (iso, cue, Path(str(iso) + ".src"), work_dir / f"{common.ROM_STEM}.iso.failed"):
         if p.exists():
             p.unlink()
     try:
         _build(edits_path, iso, cue, trim, dialogue_on)
     except Exception:
         if iso.exists():
-            iso.rename(out_dir / f"{common.ROM_STEM}.iso.failed")
+            iso.rename(work_dir / f"{common.ROM_STEM}.iso.failed")
         raise
-    return iso
+    final = out_dir / f"{common.ROM_STEM}.iso"
+    os.replace(cue, out_dir / f"{common.ROM_STEM}.cue")
+    src = Path(str(iso) + ".src")
+    if src.exists():
+        os.replace(src, Path(str(final) + ".src"))
+    os.replace(iso, final)
+    for leftover in work_dir.iterdir():
+        leftover.unlink()
+    work_dir.rmdir()
+    return final
 
 
 def check_full_layout(iso: Path, cue: Path) -> None:

@@ -90,7 +90,7 @@ def seg_findings(s: str, c: dict[str, int], orig: bool = False) -> None:
                 c["first_space"] += 1
             if t.lstrip()[:1] and t.lstrip()[:1] in LEAD_PUNCT:
                 c["orphan_punct"] += 1
-            if "{" not in raw and len(p) > 1 and typeset.px(t) > 14 * 12:  # 한 줄짜리 전투 알림은 창이 넓다(원판 같은 꼴) — 줄바꿈이 있는 대사만 잰다
+            if "{" not in raw and len(p) > 1 and typeset.fit_px(t) > 14 * 12:  # 한 줄짜리 전투 알림은 창이 넓다(원판 같은 꼴) — 줄바꿈이 있는 대사만 잰다
                 c["overflow"] += 1
         lines = [t for t in texts if t.strip()]
         if pi < len(pgs) - 1 and len(lines) >= 2 and len(lines[-1].split()) == 1 and lines[-1][-1] not in SENT_END:

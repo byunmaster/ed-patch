@@ -68,6 +68,9 @@ echo "== pce-ed2 =="
 # 6-0a. 화자 이름 반복(11-18, pce-ed1 부류) — 화자 머리 바로 뒤 본문이 같은 이름으로 시작하는데 원판은 아닌 줄(「카자즘 크하하하」 1282:67:1 — 원문은 웃음소리뿐).
 "$PY" "$T/check_name_repeat.py" --iso "$ROOT/games/pce-ed2/work/build/test-pce-ed2-trim/ed2.iso"
 
+# 6-0b. 막간(章間) 자막 줄 폭·줄 수·줄 경계(이름+직함 · 숫자+단위 · 「이름 N세」 를 가르면 실패 — 마스터 11-22 「막간도 줄바꿈 검수」)
+"$PY" -c "import sys; sys.path.insert(0, '$T'); sys.path.insert(0, '$ROOT/shared'); import kanma; e = kanma.check_ko(); print('  막간 자막 [pce-ed2] — 줄 폭·줄 수·붙임 쌍 어긋남', len(e)); [print('   ', x) for x in e]; sys.exit(1 if e else 0)"
+
 # 6-0. 말투 경보(11-13) — 대사 「그대」 금지(4-16) · 원문 대비 길이 급감 · 반말 줄 「-시-」 혼입(참고). 음성 자막은 안 본다.
 "$PY" "$T/check_speech.py"
 

@@ -132,14 +132,34 @@ DIGRAPHS = (
     "?!",
     "??",
 )  # 한 칸(12px)에 두 부호 — 한 글자 한 칸 엔진이라 `! !` 로 벌어지는 걸 막는다
-NOSPACE_AFTER = ".,!?"  # 이 부호 바로 뒤 공백은 만들지 않는다 — 부호 칸(12px, 점이 왼쪽)이 이미 다음 글자와 틈을 낸다
+NOSPACE_AFTER = ".,!?"  # 이 부호 칸(12px, 점이 왼쪽) 바로 뒤 공백은 만들지 않는다 — 칸이 이미 다음 글자와 틈을 낸다(공백이 따라 붙는 부호는 아래 `ds` 로 먼저 묶인다)
+# 부호+공백(마스터 11-22 「마침표·쉼표는 반각」 — 규칙 2-8): 「. 」 를 12px 칸+공백 대신 **8px**(부호 4 + 반각 공백 4)만 나아가는 한 코드로 낸다(`punct_code`).
+NARROW_PUNCT = {".": 0, ",": 1, "!": 2}  # 부호 → 도안 번호(`NARROW_ORDER` 색인)
+NARROW_ORDER = [".", ",", "!", *"0123456789"]  # 8px 전진 도안(부호 + 한 자리 숫자 — 숫자는 칸 오른쪽에 붙이던 6px 공백이 「게일 3세」 를 벌렸다, 마스터 11-22)
+NARROW_CODE = 0x1B  # 해석기 표의 빈 칸(0x19~0x1E 무동작)에 거는 제어 — 뒤따르는 한 바이트(0x20 + `NARROW_ORDER` 색인)
+
+
+_CTRL_RE = re.compile(r"\{[0-9a-fA-F]{2}\}|\{[wf][0-9a-fA-F]{2}\}")
+
+
+def _ds_space(text: str, j: int) -> int | None:
+    """부호 바로 뒤(제어 표기 몇 개를 건너뛰고) 공백 하나 + 그 뒤 글이 이어지면 그 공백의 색인."""
+    while (m := _CTRL_RE.match(text, j)) is not None:
+        j = m.end()
+    if text[j : j + 1] == " " and j + 1 < len(text) and text[j + 1] not in " /":
+        return j
+    return None
 
 
 def tokenize(text: str) -> list[tuple]:
-    """표기 → 토큰: ("nl",) · ("w", nn) · ("f", nn) · ("raw", nn) · ("sp",) · ("g", 글자 또는 겹부호)."""
+    """표기 → 토큰: ("nl",) · ("w", nn) · ("f", nn) · ("raw", nn) · ("sp",) · ("ds", 부호) · ("g", 글자 또는 겹부호)."""
     out: list[tuple] = []
+    skip: set[int] = set()
     i = 0
     while i < len(text):
+        if i in skip:
+            i += 1
+            continue
         c = text[i]
         if c == "/":
             out.append(("nl",))
@@ -160,7 +180,7 @@ def tokenize(text: str) -> list[tuple]:
             else:
                 raise ValueError(f"알 수 없는 표기: {text[i : i + 8]!r}")
         elif c == " ":
-            prev = out[-1] if out else None
+            prev = next((t for t in reversed(out) if t[0] not in ("w", "f")), None)  # 대기(`{wNN}`)·얼굴(`{fNN}`)은 폭이 없다 — 부호 칸과 공백 사이에 끼어도 부호 뒤 공백이다(마스터 11-22 「마침표 뒤 여백이 커 보인다」: 「좋아.{w32} 그럼」에서 공백이 한 번 더 붙던 것)
             if prev and prev[0] == "g" and prev[1][-1] in NOSPACE_AFTER:
                 i += 1  # 부호 뒤 공백은 부호 칸이 맡는다
             else:
@@ -175,6 +195,13 @@ def tokenize(text: str) -> list[tuple]:
         elif text[i : i + 2] in DIGRAPHS or (c.isdigit() and text[i + 1 : i + 2].isdigit()):
             out.append(("g", text[i : i + 2]))  # 겹부호 · 두 자리 숫자 — 한 칸에 둘
             i += 2
+        elif c in NARROW_PUNCT and (j := _ds_space(text, i + 1)) is not None:
+            out.append(("ds", c))  # 부호 + 공백 한 코드(8px) — 사이에 낀 대기·얼굴 제어는 공백 뒤로 옮긴다(공백은 안 보이니 순서만 같다). 뒤가 줄 끝이면 12px 칸 그대로
+            skip.add(j)
+            i += 1
+        elif c.isdigit():
+            out.append(("dg", c))  # 한 자리 숫자 — 도안 왼쪽 붙임 + 8px 전진(두 자리·물결은 위 분기)
+            i += 1
         else:
             out.append(("g", c))
             i += 1
@@ -192,6 +219,10 @@ def encode_text(text: str, g: "Glyphs") -> bytes:
             out += bytes([0x15, t[1]])
         elif t[0] == "raw":
             out.append(t[1])
+        elif t[0] == "ds":
+            out += bytes([NARROW_CODE, 0x20 + NARROW_PUNCT[t[1]]])  # 부호+공백(8px 전진) — 해석기 개조(`punct_code`)
+        elif t[0] == "dg":
+            out += bytes([NARROW_CODE, 0x20 + 3 + int(t[1])])  # 한 자리 숫자(8px 전진)
         elif t[0] == "sp":
             out += bytes([HALF_CODE])  # 반각 공백(4px) — 해석기 개조(`half_space_code`)
         else:
@@ -225,8 +256,22 @@ def _digit_rows(d: str, left: int) -> list[int]:
     return rows + [0]
 
 
+def narrow_rows(ch: str) -> list[int]:
+    """좁은 부호 도안 — 글꼴 부호의 잉크를 열 0 에 붙인 12행(16비트 행). 잉크 폭 ≤ 3 (4px 전진 안에 들어야 한다)."""
+    g = font.glyph(ch)
+    rows = [int.from_bytes(g[2 * r : 2 * r + 2], "big") for r in range(12)]
+    cols = [c for c in range(12) for v in rows if (v >> (15 - c)) & 1]
+    c0, c1 = min(cols), max(cols)
+    assert c1 - c0 <= 2, f"좁은 부호 {ch!r} 잉크 폭 {c1 - c0 + 1} > 3"
+    return [(v << c0) & 0xFFF0 for v in rows]
+
+
 def glyph_of(tok: str) -> bytes:
     """토큰 → 24B 글리프. 겹부호는 앞 글자 잉크 폭 + 1칸 뒤에 둘째를 겹쳐 그린다. 숫자는 좁은 숫자(`DIGIT5`)."""
+    if len(tok) == 2 and tok[0] == "P" and tok[1] in NARROW_ORDER:  # 8px 전진 코드가 그리는 도안(잉크 열 0~)
+        if tok[1].isdigit():
+            return b"".join(v.to_bytes(2, "big") for v in _digit_rows(tok[1], 0))
+        return b"".join(v.to_bytes(2, "big") for v in narrow_rows(tok[1]))
     if len(tok) == 2 and tok[1] == "～" and tok[0].isdigit():  # 숫자(열 0~4) + 좁은 물결(열 6~10)
         wave = [0] * 12
         for r, row in zip((5, 6, 7), TILDE5, strict=True):
@@ -349,6 +394,70 @@ def half_space_code(org: int) -> bytes:
     a.op("PLX")
     a.op("RTS")
     return a.bytes()
+
+
+def punct_code(org: int, codes: list[bytes]) -> tuple[bytes, int]:
+    """8px 전진 루틴(부호+공백 · 한 자리 숫자) — 제어 `NARROW_CODE` 뒤 한 바이트가 `NARROW_ORDER` 색인(해석기의 다음 바이트 읽기 `JSR $57A5`)이다. 12px 칸으로 도안(잉크는 칸 왼쪽 5px 안)을 그리고(`JSR $5BA1`) 위상별로 상태를 맞춘다.
+    상태 = (BAT 포인터 `$74/$75` · 패턴 포인터 `$76/$77` · 위상 `$33E6`) — 위상 1 = 타일 안 4px(`half_space_code` 가 쓰는 불변식): 4px 전진은 위상 0→1 에 BAT−1 · 패턴−0x20, 위상 1→0 에 패턴+0x20.
+      · 위상 0 에서 12px 를 그리면 (타일 j+1 안 4px · 위상 1) — 8px 전진은 한 타일 + 위상 0 이므로 BAT−1 · 위상 0 (패턴은 그대로)
+      · 위상 1 에서 12px 를 그리면 (타일 j+2 경계 · 위상 0) — 8px 전진은 (타일 j+1 안 4px · 위상 1) 이므로 패턴−0x20 · 위상 1 (BAT 는 그대로)
+    열 수(`$33E7`)는 반각 공백처럼 되돌린다. 도안은 한 가지 — 위상 1 이면 앞 타일에 합쳐지고, 위상 0 이면 타일 j 에 그대로 놓인다. X(스크립트 칸)·Y 를 지킨다.
+    반환 = (바이트, 진입점 주소) — 해석기 표 `$57DF + 2×NARROW_CODE` 에 진입점을 건다."""
+    a = asm.Asm(org)
+    a.label("entry")
+    a.op("PHX")
+    a.op("PHY")
+    a.op("JSR", "abs", 0x57A5)  # A = 다음 스크립트 바이트(0x20 + 도안 색인 — 0x00~0x1F 는 정적 도구가 제어·끝 표지로 읽는다)
+    a.op("SEC")
+    a.op("SBC", "imm", 0x20)
+    a.op("TAY")
+    a.op("LDA", "absy", "THI")
+    a.op("STA", "zp", 0xF9)
+    a.op("LDA", "absy", "TLO")
+    a.op("STA", "zp", 0xF8)
+    a.label("common")
+    a.op("LDA", "abs", 0x33E6)
+    a.op("BNE", "rel", "ph1")
+    a.op("JSR", "abs", 0x5BA1)  # 위상 0 → 그린 뒤 BAT−1 · 위상 0
+    a.op("DEC", "abs", 0x33E7)
+    a.op("LDA", "zp", 0x74)
+    a.op("BNE", "rel", "n74")
+    a.op("DEC", "zp", 0x75)
+    a.label("n74")
+    a.op("DEC", "zp", 0x74)
+    a.op("STZ", "abs", 0x33E6)
+    a.op("BRA", "rel", "done")
+    a.label("ph1")  # 위상 1 → 그린 뒤 패턴−0x20 · 위상 1
+    a.op("JSR", "abs", 0x5BA1)
+    a.op("DEC", "abs", 0x33E7)
+    a.op("SEC")
+    a.op("LDA", "zp", 0x76)
+    a.op("SBC", "imm", 0x20)
+    a.op("STA", "zp", 0x76)
+    a.op("LDA", "zp", 0x77)
+    a.op("SBC", "imm", 0x00)
+    a.op("STA", "zp", 0x77)
+    a.op("CMP", "imm", 0x70)
+    a.op("BCS", "rel", "p1")
+    a.op("CLC")
+    a.op("LDA", "zp", 0x76)
+    a.op("ADC", "imm", 0xB0)
+    a.op("STA", "zp", 0x76)
+    a.op("LDA", "zp", 0x77)
+    a.op("ADC", "imm", 0x0E)
+    a.op("STA", "zp", 0x77)
+    a.label("p1")
+    a.op("LDA", "imm", 0x01)
+    a.op("STA", "abs", 0x33E6)
+    a.label("done")
+    a.op("PLY")
+    a.op("PLX")
+    a.op("RTS")
+    a.label("THI")
+    a.data(bytes(c[0] for c in codes))
+    a.label("TLO")
+    a.data(bytes(c[1] for c in codes))
+    return a.bytes(), a.labels["entry"]
 
 
 def hook_code(org: int, a_addr: int, n_a: int, b_adj: int, gbuf: int, b_bank: int = 0) -> bytes:
@@ -512,6 +621,7 @@ def plan(pkg: bytes, n: int) -> dict:
     g = Glyphs()
     msgs, missing = build_script(pkg, n, ko, g)
     script = b"".join(msgs)
+    pcodes = [g.code("P" + ch) for ch in NARROW_ORDER]  # 8px 전진 도안(부호·숫자) — 글리프 표에 항상 넣는다
     chars = g.chars()
     table = b"".join(font.pack(glyph_of(c)) for c in chars)
     regs = sorted(free_regions(pkg, n), key=lambda r: r[0])
@@ -534,6 +644,8 @@ def plan(pkg: bytes, n: int) -> dict:
     h_off = take(hook_len, "후킹")
     half = half_space_code(0)
     sp_off = take(len(half), "반각 공백 루틴")
+    pn_len = len(punct_code(0, [b"\0\0"] * len(NARROW_ORDER))[0])
+    pn_off = take(pn_len, "좁은 부호 루틴")
     gbuf = BASE + h_off + hook_len - GBUF_LEN
     total = len(table)
     big = max((l for _a, l in regs), default=0)
@@ -563,7 +675,9 @@ def plan(pkg: bytes, n: int) -> dict:
         b_bank,
     ) + bytes(GBUF_LEN)
     assert len(hook) == hook_len
-    spans = [(s_off, script, "스크립트"), (h_off, hook, "후킹"), (sp_off, half_space_code(BASE + sp_off), "반각 공백 루틴"), (HALF_TABLE_OFF, (BASE + sp_off).to_bytes(2, "little"), "해석기 표 반각 공백")]
+    pn_bytes, pn_entry = punct_code(BASE + pn_off, pcodes)
+    spans = [(s_off, script, "스크립트"), (h_off, hook, "후킹"), (sp_off, half_space_code(BASE + sp_off), "반각 공백 루틴"), (HALF_TABLE_OFF, (BASE + sp_off).to_bytes(2, "little"), "해석기 표 반각 공백"), (pn_off, pn_bytes, "좁은 부호 루틴")]
+    spans.append((0x17DF + 2 * NARROW_CODE, pn_entry.to_bytes(2, "little"), "해석기 표 좁은 부호"))
     if total:
         spans.append((a_off, table[: n_a * GLYPH_B], "글리프 표 앞"))
         if b_off:
@@ -657,6 +771,8 @@ def check_ko() -> list[str]:
                 rows.append(0)
             elif t[0] == "sp":
                 rows[-1] += SPACE_PX
+            elif t[0] in ("ds", "dg"):
+                rows[-1] += 2 * SPACE_PX
             elif t[0] == "g":
                 rows[-1] += CELL_PX
         if text.startswith("/"):
@@ -667,4 +783,7 @@ def check_ko() -> list[str]:
         for r, c in enumerate(rows):
             if c > MAX_CELLS * CELL_PX:
                 errs.append(f"{k}: {r + 1}째 줄 {c}px (한도 {MAX_CELLS * CELL_PX})")
+    import kanma_wrap  # 줄 경계가 이름+직함 · 숫자+단위 · 「이름 N세」 를 가르면 실패(마스터 11-22 막간 줄바꿈 검수)
+
+    errs += [f"줄바꿈이 붙임 쌍을 가른다 {v}" for v in kanma_wrap.violations()]
     return errs

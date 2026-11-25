@@ -542,7 +542,7 @@ def _build_seg(seg: dialog.Seg, txt: str, tab) -> bytes:
             enc = _encode(pgs, marks, jn, tab)
             if glue and not prev_sp and b"\x0d" not in lead and b"\x13" not in lead and re.match(r"[가-힣A-Za-z0-9]", blk.lstrip("\n ")[:1] or " "):  # 머리 제어에 줄바꿈·쪽 넘김이 있으면 새 줄 첫머리라 공백을 넣지 않는다
                 enc = tab.enc(" ") + enc
-            glue = blk.rstrip().endswith("…")
+            glue = bool(re.search(r"[….!?]$", blk.rstrip()))  # 문장 끝 부호(… . ! ?) 뒤에 같은 줄로 이어지는 덩이 — 마스터 11-22 「!! 뒤에 공백이 누락」
             if _jp.endswith("\u3000") and not enc.endswith(b"\x60"):  # 원문 조각이 전각 공백으로 끝나면(뒤에 이름 변수가 이어 붙는 줄) 우리도 공백으로 끝낸다
                 enc += b"\x60"
             out += lead.replace(b"\x0e", b"").replace(b"\x0f", b"") + enc + tail
@@ -590,6 +590,14 @@ def edit_chunk(rel: int, chunk: int, decoded: bytes, tab, allowed: set[str] | No
             head = head[: k + 1] + tab.enc(txt[:2]) + head[k + 5 :]
             txt = txt[2:]
         lead_sp = txt.startswith(" ")  # 변수 뒤 첫 공백 — 조판기가 머리 공백을 지우니 따로 낸다
+        if (  # 원문이 전각 공백으로 시작하는 이음 줄(앞 메시지에 같은 줄로 이어 붙는다 — 「왕자님!!」+「　お待ちなさい」) — 우리도 공백으로 시작해야 「왕자님!!기다리십시오」 가 안 붙는다(마스터 11-22)
+            not lead_sp
+            and p.speaker is None
+            and 0x18 not in head
+            and re.sub(r"\{[^}]*\}", "", jptext.decode(lines[li])).startswith("\u3000")
+            and re.match(r"[가-힣A-Za-z0-9]", txt[:1] or " ")
+        ):
+            lead_sp = True
         tgt = windows(jptext.decode(lines[li]))
         # 앞 줄이 화자 머리뿐(`16 이름 14 0D`)이면 이 줄의 첫 쪽에 이름 줄이 같이 뜬다 — 본문 3줄(원판은 이 자리에 4줄이 한 번도 없다. 11-06 642:22:6 이름이 밀려 올라갔다)
         headed = p.speaker is not None or (li > 0 and HEAD_ONLY.match(jptext.decode(lines[li - 1])) is not None)

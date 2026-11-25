@@ -83,7 +83,35 @@ def local_glue(a: str, b: str) -> str | None:
         return "-리라 여기다"  # 「알아들으리라 / 여겨」
     if a.endswith(("는데", "은데", "인데")) and b.startswith("말이"):
         return "-는데 말이야"  # 「했는데 / 말이야,」
+    # 🔴 11-22 마스터 「또 / 하나의 목적」 · PCE I 11-21 줄머리 규칙 — 공용 `split_reason` 이 못 잡는 부류(게임 쪽 규칙, 공용 동결)
+    if a.rstrip(",") in ADV_BEFORE_NUM and _NUM_HEAD.match(b):
+        return "꾸밈말 + 수 관형어"  # 「그리고 여행에는 또 / 하나의 목적」
+    if a in ("한", "두", "세", "네") and b[:1] in "번명개마":
+        return "수 관형사 + 단위"  # 「일 년에 한 / 번뿐」
+    if a[-1:] not in ".!?…」』" and _AUX_HEAD.match(b):
+        return "예정 어미·보조용언 줄머리"  # 「합류할 / 테니」 · 「찾아 / 주시다니」
+    if _DEP_PREV.search(a.rstrip(",")) and _EXIST_HEAD.match(b):
+        return "의존명사 + 있다·없다"
+    if _DEP_NOUN.match(b) and _adnominal(a):
+        return "관형형 + 의존명사"  # 「믿고 있었던 / 만큼」 · 「들어갈 / 수 있었던」
     return None
+
+
+_DEP_NOUN = re.compile(r"^(거|것|수|줄|뿐|만큼|따름|바|터|리|채|듯|양|척|셈)(이|가|은|는|을|를|의|에|에서|로|으로|도|만|까지|라|라고|지요|죠|인|입니다|이다|이에요|예요|인데|이라|이니|인가|처럼)?[,.!?…]*$")
+
+
+def _adnominal(w: str) -> bool:
+    """관형형 어미(ㄴ·ㄹ 받침 — 은/는/던/을 따위)로 끝나는 어절인가."""
+    w = w.rstrip(",")
+    c = w[-1:]
+    return bool(c) and "가" <= c <= "힣" and (ord(c) - 0xAC00) % 28 in (4, 8)
+
+
+ADV_BEFORE_NUM = {"또", "단", "딱", "겨우", "오직", "꼭"}
+_NUM_HEAD = re.compile(r"^(하나|한\s*번|한\s*가지|두|세|네)")
+_AUX_HEAD = re.compile(r"^(테니|텐데|걸세|계시|드려|드립|드릴|드리겠|버려|버렸|버리겠|계십|계셔|주겠|주시|주었|주지|주세|주신)")
+_DEP_PREV = re.compile(r"(적이|것이|수가|리가|줄이|바가|적도|수도|것도|뿐이|따름이|말씀이|필요가)$")
+_EXIST_HEAD = re.compile(r"^(있|없)")
 
 
 def glued(a: str, b: str) -> bool:
@@ -135,12 +163,14 @@ def _words(line: str) -> list[str]:
 
 def chunk_metrics(pgs: list[list[str]]) -> dict[str, list[str]]:
     """한 구간(손 쪽 표지 `\\f` 로 갈린 한 덩이)의 쪽 목록 → 지표별 어긴 자리 설명. 마지막 쪽 아래는 쪽 경계가 아니라 건너뛴다."""
-    out: dict[str, list[str]] = {"a": [], "b": [], "d": [], "e": []}
+    out: dict[str, list[str]] = {"a": [], "b": [], "d": [], "e": [], "g": []}
     flat = [(pi, ln) for pi, pg in enumerate(pgs) for ln in pg]
     for (pi, x), (_pj, y) in zip(flat, flat[1:]):
         wx, wy = _words(x), _words(y)
         if len(wx) >= 2 and wy and fixed_phrase(wx[-1], wy[0]):
             out["e"].append(f"p{pi}: {x} / {y}")
+        if len(wx) >= 2 and wy and local_glue(wx[-1], wy[0]):  # 게임 쪽 줄머리 규칙(꾸밈말+수·예정 어미·보조용언 — 11-22)
+            out["g"].append(f"p{pi}: {x} / {y}")
     for pi, pg in enumerate(pgs):
         for li in range(len(pg) - 1):
             kk = clause_fits(_words(pg[li]), _words(pg[li + 1]))
@@ -259,7 +289,35 @@ def repage(words: list[str], fit, base: list[list[str]]) -> list[list[str]]:
             break
         pb |= {trial[0]}
         best = trial[1]
-    return best
+    return fix_tail_orphans(best, fit)
+
+
+def fix_tail_orphans(pgs: list[list[str]], fit) -> list[list[str]]:
+    """쪽 끝 줄이 한 어절(a)이면 앞 줄 끝 어절을 내려 두 어절로 만든다 — 「본선은 곧 다도해로 / 들어서겠습니다.」 → 「본선은 곧 / 다도해로 들어서겠습니다.」(마스터 11-22 줄 끝 매다는 부호 허용으로 새로 생긴 고아).
+    앞 줄이 한 어절만 남거나 이음(`glued`)을 가르거나 내린 줄이 창에 안 들어가면 그대로 둔다. 마지막 쪽은 안 건드린다(쪽 끝이 아니다)."""
+    out = [list(p) for p in pgs]
+    for pi in range(len(out) - 1):
+        pg = out[pi]
+        if len(pg) < 2:
+            continue
+        last = _words(pg[-1])
+        prev = _words(pg[-2])
+        if len(last) != 1 or len(prev) < 3 or prev[-1][-1:] in _END:
+            continue
+        for k in (1, 2):  # 어절 하나를 내리고, 이음에 걸리면 이음 쌍째(둘)
+            if len(prev) - k < 1:
+                break
+            moved = prev[-k:]
+            if glued(prev[-k - 1], moved[0]) and k == 1:
+                continue
+            if glued(prev[-k - 1], moved[0]) or glued(moved[-1], last[0]):
+                continue
+            new_last = " ".join(moved) + " " + last[0]
+            if fit(new_last):
+                pg[-2] = " ".join(prev[:-k])
+                pg[-1] = new_last
+                break
+    return out
 
 
 def _flat(pgs: list[list[str]]) -> tuple[list[str], set[int]]:

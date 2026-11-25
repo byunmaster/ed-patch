@@ -36,7 +36,7 @@ def _kanma_colors(m: bytes) -> list[tuple]:
     while i < len(m):
         a = m[i]
         if a < 0x20:
-            n = 1 + (1 if a in (0x0C, 0x15) else 0)
+            n = 1 + (1 if a in (0x0C, 0x15, kanma.NARROW_CODE) else 0)  # `NARROW_CODE`(8px 전진 부호·숫자) 뒤 한 바이트는 도안 색인
             if a in (0x14, 0x15, 0x17, 0x18):
                 out.append(tuple(m[i : i + n]))
             i += n
