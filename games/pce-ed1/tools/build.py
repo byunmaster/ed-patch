@@ -50,7 +50,9 @@ import pricefast
 import credits_kr
 import debug_item
 import debug_item_list
+import debug_labels
 import debug_warp
+import flute_tiles
 import earlyfree
 import hud_half
 import list_strip
@@ -340,6 +342,11 @@ def want(g: str) -> bool:
     return ONLY is None or g in ONLY
 
 
+def _flute_on() -> bool:
+    """용의 피리 접근 용 타일(`flute_tiles`, ⑥ — 마스터 11-25 「1~5장 용의피리 드래곤조형」). 끄기 `ED_FLUTE=0`."""
+    return want("flute") and os.environ.get("ED_FLUTE", "1") != "0"
+
+
 def _order_index(ch: str) -> int:
     """글리프 정본 순서에서의 번호 — 코드는 세이브에 남으므로 정본만 본다."""
     return font._order_canon().index(ch)
@@ -387,12 +394,14 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         p.append(("transient fallback code", *_main(transient_fallback.BANK, transient_fallback.OFF), b"\xff" * len(tf), tf))
         for tf_name, tf_off, tf_old, tf_new in transient_fallback.sites():
             p.append((f"transient fallback site {tf_name}", *_main(transient_fallback.SITE_BANK, tf_off), tf_old, tf_new))
-    if want("debug") and os.environ.get("ED_DEBUG_MENU"):  # 🔴 시험 빌드 전용(배포 기준 「디버그는 기본 꺼짐, 키 입력으로만」 — 마스터 10-28): 제품은 항목이 숨고 SELECT+RUN 1초 키(`dbgkey`)로만 열린다
-        assert common.BUILD_TAG.startswith("test-"), "ED_DEBUG_MENU 는 시험 빌드(ED_BUILD_TAG=test-*)에서만"
+    if want("debug") and os.environ.get("ED_DEBUG_MENU", "1") != "0":  # 🔴 11-25 마스터 「디버그를 시스템메뉴 기타에 추가(전투설정 아래에)」 — 제품에도 켠다(10-28 「기본 꺼짐, 키 입력으로만」 번복). 끄려면 ED_DEBUG_MENU=0. SELECT 길게(`dbgkey`)는 그대로
         # 4-b. 🔴 원판 「기타」 메뉴의 5번째 항목(디버그)은 시스템 카드 ROM 바이트(`LDA $FFF5; CMP #$38`)가 `$38` 이 아니면 숨는다 —
         #      시중 카드(v1.0~3.0)는 `$80` 이라 늘 숨었다. `BNE +3`(`D0 03`) 을 NOP 둘로 바꿔 늘 보이게 한다(10-24 — devlog). 뱅크 0x6E +0x209.
         #      새 기능을 만들지 않는다 — 원판에 남은 메뉴를 여는 것뿐이다(진입은 공식 경로 「기타 → 디버그」).
         p.append(("debug menu always on (BNE→NOP)", *_main(0x6E, 0x0209), b"\xd0\x03", b"\xea\xea"))
+    if _flute_on():
+        p.append(flute_tiles.hide_patch(_main))  # 1장 월드맵 접근 용 숨김 제외(시작 포인터 한 바이트)
+        p.append(flute_tiles.stub_patch(_main))  # 접근 시작·내림 스텁 — 뱅크 0x76 꼬리 `$BC00~`
     if want("dbgkey"):
         # 4-e. 디버그 「I」 지급 효과음 — 원판 상점이 아이템을 더한 직후 부르는 `LDA #$23 / JSR $57B1`(소리 드라이버 입구)을 지급 뒤에 끼운다(마스터 10-28 「얻어질때 효과음이라도」).
         #      자리: 이름 변환 호출 뒤의 중복 `LDA $37AC / STA $F8`(5B — `$864B` 가 `$F8` 을 되돌려 놓으므로 불필요)를 빼고 그 5B 를 지급 호출 **뒤**로 옮겨 쓴다(14B 그대로).
@@ -418,6 +427,7 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         p.extend(debug_warp.patches(debug_warp.pool_rel()))
         # 4-f. 디버그 「I」(아이템 고르기) 를 워프와 같은 목록창으로(마스터 11-11 「디버그 아이템도 워프처럼 바꾸자」) — 뱅크 0x70 워프 코드 뒤. `debug_item_list` 머리말.
         p.extend(debug_item_list.patches(table))
+        p.extend(debug_labels.patches(table))  # 4-g. 디버그 행 이름(PATH·MONSTER·GOLD·EXP·WARP·ITEM) · P·M 표시 뒤집기(ON 평소) · Gold +10000(마스터 11-25)
     if want("sys"):
         # HUD 지명 칸 4px 단위 가운데(마스터 11-08 「hud는 1번으로」) — 이름 렌더러(뱅크 0x6D `$92BE`)의 시작 열을 표시(`F8 24`)가 있으면 +1(8px)로 둔다(`hud_half.py`)
         hh = hud_half.code()
@@ -1188,7 +1198,7 @@ def _build(edits_path, iso: Path, cue: Path):
                     _swap_src.setdefault(_b["id"], _b["data"])
         for rel, c in sorted(by_rel.items()) if want("scn") else []:
             hit = {k for k in edits if k[0] == rel} or {b["id"] for b in c["blocks"]} & (
-                translated_ids | narr_ids | {int(x) for x in gwin_rt.build_specs()} | sched_ids | gwin_on | viewer_swap_hosts
+                translated_ids | narr_ids | {int(x) for x in gwin_rt.build_specs()} | sched_ids | gwin_on | viewer_swap_hosts | ({0} if _flute_on() else set())
             )
             if not hit:
                 continue
@@ -1210,6 +1220,10 @@ def _build(edits_path, iso: Path, cue: Path):
                 if (rel, b["id"]) in edits:
                     blk = apply_edits(blk, edits[(rel, b["id"])], f"rel {rel} id {b['id']}")
                     rec.add("edits", _s, blk)
+                    _s = blk
+                if b["id"] == 0 and dir_id == 0 and _flute_on():  # 용의 피리 접근 용 타일(`flute_tiles` — 월드맵 객체 블록 0, 24개 컨테이너 모두 같다)
+                    blk = flute_tiles.patch_block0(blk)
+                    rec.add("flute", _s, blk)
                     _s = blk
                 gwin_here = b["id"] in gwin_sel and (gwin_sel[b["id"]] is None or rel in gwin_sel[b["id"]])  # 이 사본에 안 B 를 넣는가 — 넣으면 게이트·시각표는 안 건다
                 if b["id"] in narr_ids and not gwin_here:

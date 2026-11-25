@@ -30,8 +30,9 @@ class Span:
 # + 쓰기 BP 를 건 채 한 바퀴(devlog 09-26 (8)).
 import hud_half  # noqa: E402 — 앞쪽 `hud_half.CODE_LEN` B 는 HUD 이름 렌더러 꼬리 코드 자리
 import list_strip  # noqa: E402 — 그 뒤 `list_strip.CODE_LEN` B 는 날개 목록 앞 공백 걷기 루틴 자리
+import debug_labels  # noqa: E402 — 그 뒤 `debug_labels.CODE_LEN` B 는 디버그 화면 행 이름·ON/OFF 쌍 자리(11-25)
 
-_FRONT = hud_half.CODE_LEN + list_strip.CODE_LEN
+_FRONT = hud_half.CODE_LEN + list_strip.CODE_LEN + debug_labels.CODE_LEN
 
 BANK6D_TAIL = Span(
     0x6D, 0x1F20 + _FRONT, 0xE0 - _FRONT, 0xFF, "뱅크 끝 FF 224B 중 앞 hud_half·list_strip 자리를 뺀 나머지 — 덤프 넷 + 쓰기 BP 한 바퀴"
