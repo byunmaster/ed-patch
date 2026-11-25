@@ -740,6 +740,10 @@ def mutable_ranges() -> list[tuple[int, int]]:
         import debugpatch
 
         r += debugpatch.patch_ranges()
+    if common.DEBUG_QA:
+        import qadebug
+
+        r += qadebug.patch_ranges()
     b = common.snes2off(NAME_BOX)  # 파티 이름 상자(구워진 타일맵)
     r.append((b, b + NAME_STRIDE * NAME_COUNT))
     b = common.snes2off(HUD_ATO)  # HUD E 줄 머리 「あと」 타일 두 장
@@ -1715,6 +1719,10 @@ def build_kr(
             import debugpatch
 
             dk["디버그 진입"] = debugpatch.apply(out, rom)
+        if common.DEBUG_QA:  # 🔴 QA 전용(마스터 11-18) — ED_DEBUG_QA=1 빌드에만
+            import qadebug
+
+            dk["QA 디버그"] = qadebug.apply(out, rom)
 
     if with_hook:
         dicts.verify(out, k["rep"])  # 🔑 **체인이 다 끝난 롬**에서 게임의 포인터를 따라 되읽는다

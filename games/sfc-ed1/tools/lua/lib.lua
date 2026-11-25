@@ -38,6 +38,11 @@ function L.on_message(cb)
   emu.addMemoryCallback(function() cb(L.rd(0x060B) | (L.rd(0x060C) << 8)) end, emu.callbackType.exec, 0x02DCD3, 0x02DCD3, emu.cpuType.snes)
 end
 emu.addEventCallback(function() L.f = L.f + 1 end, emu.eventType.endFrame)
+-- WR_POKE="프레임:주소=값,…"(WRAM 오프셋 16진, 값 16진): 그 프레임에 쓴다 — QA 디버그 상태 바이트(`$1F51`)를 하네스에서 켠다
+for f, a, v in string.gmatch(os.getenv("WR_POKE") or "", "(%d+):(%x+)=(%x+)") do
+  local ff, aa, vv = tonumber(f), tonumber(a, 16), tonumber(v, 16)
+  emu.addEventCallback(function() if L.f == ff then L.wr(aa, vv) end end, emu.eventType.endFrame)
+end
 -- 숨은 독자 점검(HR_RANGES="이름:시작-끝,…" — 16진 CPU 주소): 롬 읽기 콜백으로 구간별 읽은 횟수와 읽은 명령 주소(PC)를 센다.
 -- 지우거나 옮긴 원판 문안 칸을 코드가 피연산자로 읽는지 보는 도구(마스터 제안 아님·관리자 11-07). 이름이 `ctl` 로 시작하면 양성 대조(읽혀야 한다).
 local HR = {}

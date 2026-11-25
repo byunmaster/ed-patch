@@ -35,6 +35,18 @@ if os.getenv("BT_DEATH") == "1" then -- 진단: 적 기록(`$107C`~ 8칸×50B)�
     log(string.format("EW bf%d k=%d off=%d val=%02X pc=%02X:%04X", bf, o // 50, o % 50, val, st["cpu.k"], st["cpu.pc"]))
   end, emu.callbackType.write, 0x107C, 0x107C + 8 * 50 - 1, emu.cpuType.snes)
 end
+if os.getenv("BT_WW") then -- 진단(QA 디버그 11-18): WRAM 오프셋 구간 "lo-hi"(16진)에 게임이 쓰는 값을 PC 와 함께 남긴다(돈·EP 자리 찾기)
+  local lo, hi = os.getenv("BT_WW"):match("(%x+)%-(%x+)")
+  local f0, f1 = tonumber(os.getenv("BT_WWF0") or "0"), tonumber(os.getenv("BT_WWF1") or "99999999") -- 프레임 창
+  emu.addMemoryCallback(function(addr, val)
+    if L.f < f0 or L.f > f1 then return end
+    local st = emu.getState()
+    log(string.format("WW f%d %04X=%02X pc=%02X:%04X", L.f, addr, val, st["cpu.k"], st["cpu.pc"]))
+  end, emu.callbackType.write, tonumber(lo, 16), tonumber(hi, 16), emu.cpuType.snes, emu.memType.snesWorkRam)
+end
+local SHOTF = {} -- BT_SHOTF="프레임,…": 그 전역 프레임(L.f)에 화면을 찍는다(진단)
+for f in string.gmatch(os.getenv("BT_SHOTF") or "", "%d+") do SHOTF[tonumber(f)] = true end
+emu.addEventCallback(function() if SHOTF[L.f] then L.shot(L.OUT .. "/shots/g" .. L.f .. ".png") end end, emu.eventType.endFrame)
 local BTSCRIPT = nil
 if os.getenv("BT_SCRIPT") then
   BTSCRIPT = {}

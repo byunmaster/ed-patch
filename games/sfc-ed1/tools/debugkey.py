@@ -57,7 +57,7 @@ def _count() -> bytes:
             "AD 19 42",  # lda $4219      (원래)
             "8D 18 19",  # sta $1918      (원래)
             "0D 1B 42",  # ora $421B      (게임이 05FB 를 만드는 것과 같게 — 두 패드 OR)
-            "29 20",  # and #$20       Select
+            *(["29 6F"] if common.DEBUG_QA else ["29 20"]),  # and #$20 Select — QA 빌드는 Select 없이 Y·방향만 눌러도 센다(마스터 11-22, Start·Select 는 원판 저장·로드 키)
             "F0 @clr",
             "AD FA 05",  # lda $05FA      A·X·L·R
             "29 BF",  # and #$BF       X 는 뺀다(L+R 이나 L+R+X)
@@ -76,6 +76,22 @@ def _count() -> bytes:
     )
 
 
+def _qa_entry() -> list[str]:
+    if not common.DEBUG_QA:
+        return []
+    import qadebug
+
+    q = qadebug.menu_entry()
+    return [
+        "AD FB 05",
+        "29 4F",  # QA 키(Y 경험치·Y+위 소지금·위 아이템·좌우 아이템 번호·아래 조우 끄기·Y+아래 속도·X+방향 워프 — Start·Select 는 원판 저장·로드 단축키라 안 쓴다)?
+        "F0 @nq",
+        f"22 {q & 0xFF:02X} {q >> 8 & 0xFF:02X} {q >> 16:02X}",  # jsl QA 메뉴 — 끝나면 돌아온다
+        "80 @ret",
+        "@nq",
+    ]
+
+
 def _menu() -> bytes:
     """커서 창 루프가 매 반복 키를 읽는 자리 — 60 프레임을 센 뒤면 메뉴로 간다(X 를 같이 눌렀으면 A, 아니면 B). 아니면 원래 `lda $05FA` 를 대신한다."""
     c = f"{COUNTER & 0xFF:02X} {COUNTER >> 8:02X}"
@@ -85,6 +101,7 @@ def _menu() -> bytes:
             f"C9 {FRAMES:02X}",
             "90 @ret",  # < 60 : 평소대로
             f"9C {c}",
+            *_qa_entry(),  # QA 빌드 전용 — QA 키(Y·방향)가 눌려 있으면 QA 메뉴(돌아온다, X+방향 워프라 X 검사보다 먼저). 제품 롬은 빈 목록
             "AD FA 05",
             "29 40",  # X ?
             "D0 @a",

@@ -29,8 +29,17 @@ def texts() -> list[str]:
     return list(names().values())
 
 
+def qa_names() -> list[str]:
+    """QA 디버그 빌드 전용 지명 칸(`$95`~, 표 a) — 제품 롬에서는 빈 목록(바이트 불변)."""
+    if not common.DEBUG_QA:
+        return []
+    import qadebug
+
+    return qadebug.qa_names()
+
+
 def glyph_texts() -> list[str]:
-    return [cells(kr) for kr in names().values()] + texts()  # 슬롯 목록(c)은 합성 없이 낱글자라 원문도 올린다 — 글리프표 원천 — 합성 칸(사설 영역)까지 올려야 한다
+    return [cells(kr) for kr in names().values()] + texts() + [cells(q) for q in qa_names()] + qa_names()  # 슬롯 목록(c)은 합성 없이 낱글자라 원문도 올린다 — 글리프표 원천 — 합성 칸(사설 영역)까지 올려야 한다
 
 
 def _orig(rom: bytes, base: int, i: int) -> str:
@@ -91,18 +100,24 @@ def bake(out: bytearray, rom: bytes, rep_index: dict[str, int], org: int) -> dic
     info: dict = {}
     cur = org
     tables = {}
-    for key, (_base, n) in TABLES.items():
+    nn = {k: (max(n, 0x95 + len(qa_names())) if k in ("a", "b") and qa_names() else n) for k, (_b, n) in TABLES.items()}
+    for key in TABLES:
         tables[key] = cur
-        cur += 2 * n
+        cur += 2 * nn[key]
     strings: dict[bytes, int] = {}
     missing = set()
-    for key, (base, n) in TABLES.items():
-        for i in range(n):
-            jp = _orig(rom, base, i)
-            if jp not in kr:
-                missing.add(jp)
-                continue
-            b = _encode(kr[jp], rep_index, plain=key == "c")
+    for key, (base, _n) in TABLES.items():
+        for i in range(nn[key]):
+            qi = i - 0x95
+            if key in ("a", "b") and 0 <= qi < len(qa_names()):  # QA 디버그 빌드 — 표 a·b 의 `$95`~ 를 QA 항목 이름으로(메뉴 B 가 쓰는 창은 표 b)
+                text_kr = qa_names()[qi]
+            else:
+                jp = _orig(rom, base, i)
+                if jp not in kr:
+                    missing.add(jp)
+                    continue
+                text_kr = kr[jp]
+            b = _encode(text_kr, rep_index, plain=key == "c")
             if b not in strings:
                 strings[b] = cur
                 so = common.snes2off((dicts.BANK << 16) | cur)
