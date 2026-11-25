@@ -204,7 +204,7 @@ def scan_agreement():
 
 def scan_screen():
     """②③ 화면에 실리는 문안만 본다(주입은 배정된 자리에서만 일어난다). 한 번만 훑는다."""
-    from spellcheck_render import _scn_layout
+    from patch_sys_ui import _scn_layout
 
     bare, waste = collections.Counter(), collections.Counter()
     bw, ww = {}, {}

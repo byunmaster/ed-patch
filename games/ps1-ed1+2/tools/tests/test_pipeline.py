@@ -193,7 +193,7 @@ def test_expect_bytes_matches():
     assert _with_image(go) == 1
 
 
-# ── 검출기 판정 (`spellcheck_render`) ──────────────────────────────────────
+# ── 검출기 판정 ──────────────────────────────────────
 # ⚠ `check_variants`·`proposal` 테스트는 그 도구와 함께 걷어냈다(2026-08-12) —
 #   정발 배정을 그만두고 번역 정본(`script/`)으로 옮기면서 물음 자체가 없어졌다.
 # ── 글리프 계획 세대 결박 (`hangul_map` · `hangul_font`) ───────────────────
