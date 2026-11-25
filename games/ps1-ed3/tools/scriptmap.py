@@ -282,6 +282,60 @@ def window_chains(mem, info=None):
     return out
 
 
+def window_pages(mem, info=None):
+    """[[조각 번호…]] — `window_chains` 와 같되 창 안의 **쪽 나눔(op 02)** 에서 쪽마다 끊는다(쪽 하나 = 재조판 단위).
+
+    `window_chains` 는 `0F 90 V (01 90 W)* 00` 만 봐서 쪽(02)이 낀 창을 통째로 건너뛰었다 — 쪽마다 보이는 줄 수가 갈리는데도.
+    머리 인자(`0F 03 …`)·변수(04~07)가 낀 창은 여기서도 뺀다(변수 글은 런타임에 이어 붙고, 머리 인자의 뜻은 아직 모른다).
+    순수 01/02 창이면 쪽이 하나일 때 `window_chains` 와 같은 열을 같은 순서로 낸다."""
+    if info is None:
+        if layout(mem) != LAYOUT_POOL:
+            return []
+        info = parse(mem)
+    idx = {s: i for i, (s, _c) in enumerate(info["segments"])}
+    base = info["base"]
+    sites = info["pointers"]
+    at_of = {q: v for q, v in sites}
+    out, used = [], set()
+    for q, v in sites:
+        if q in used:
+            continue
+        i = q - 1
+        if mem[i] != PTR_OP:
+            i -= 1  # 맞춤 패드
+        if i < 1 or mem[i] != PTR_OP or mem[i - 1] != 0x0F:
+            continue
+        pages, cq, ok = [[]], q, True
+        got = []
+        while True:
+            t = base + (at_of[cq] & ~1)
+            if t not in idx:
+                ok = False
+                break
+            pages[-1].append(idx[t])
+            got.append(cq)
+            j = cq + 2
+            ops = []
+            while j < len(mem) and mem[j] in (1, 2):
+                ops.append(mem[j])
+                j += 1
+            nq = j + 1 + ((j + 1) & 1)
+            if ops and j < len(mem) and mem[j] == PTR_OP and nq in at_of:
+                if len(ops) != 1:
+                    ok = False  # 겹친 opcode(줄+쪽 …) — 의미를 모른다
+                    break
+                if ops[0] == 2:
+                    pages.append([])
+                cq = nq
+                continue
+            break
+        if not ok or mem[cq + 2 : cq + 3] != b"\x00":
+            continue
+        used.update(got)
+        out.extend(pages)
+    return out
+
+
 def parse(mem):
     """{base, pointers, segments, targets} — 규격을 판정해 알맞은 파서로 보낸다."""
     if layout(mem) == LAYOUT_TABLE:

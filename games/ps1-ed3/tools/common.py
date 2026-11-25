@@ -47,6 +47,8 @@ def _argv_disc():
 
 # 🔴 시험 빌드 전용 디버그 스위치(`debugpatch.py`) — `ED_DEBUG=1` + 꼬리표 `test-*` 또는 마스터용 `debug`. 제품·일반 시험 빌드는 이 값을 안 본다(바이트 불변).
 DEBUG = os.environ.get("ED_DEBUG") == "1"
+# 🔴 QA 전용 디버그 빌드(`qa_debugpatch.py`, 마스터 11-18) — `ED_DEBUG_QA=1` + 꼬리표 `qa-debug`(test- 가 아니다: 마스터 파일서버 목록에 보여야 한다). 제품 칸 `ps1-ed3` 은 못 덮는다.
+DEBUG_QA = os.environ.get("ED_DEBUG_QA") == "1"
 
 
 def _build_tag():
@@ -55,10 +57,14 @@ def _build_tag():
     이 트리는 브랜치가 `game/ps1-ed3` 라 브랜치에서 유도하면 두 이미지가 한 칸 이름(`ps1-ed3-4`)을 나눠 쓴다 — 이미지가 다르다.
     `ED_BUILD_TAG` 로 덮어쓴다(조사용 칸은 `ps1-ed3-probe` 꼴).
     """
-    tag = os.environ.get("ED_BUILD_TAG") or ("test-debug" if DEBUG else f"ps1-{_argv_disc()}")
+    tag = os.environ.get("ED_BUILD_TAG") or ("qa-debug" if DEBUG_QA else "test-debug" if DEBUG else f"ps1-{_argv_disc()}")
     tag = "".join(c if (c.isalnum() or c in "-_.") else "-" for c in tag) or "local"
     if DEBUG and not (tag.startswith("test-") or tag == "debug"):  # 🔴 디버그 빌드가 제품 칸(`ps1-ed3`)·다른 칸을 못 덮게 꼬리표를 막는다
         raise SystemExit("🔴 ED_DEBUG=1 은 시험 빌드 전용이다 — 꼬리표는 test-* 또는 debug 여야 한다(기본 test-debug, ED_BUILD_TAG 로 바꿀 때도)")
+    if DEBUG_QA and tag != "qa-debug":
+        raise SystemExit("🔴 ED_DEBUG_QA=1 은 꼬리표 qa-debug 로만 굽는다(제품 칸을 못 덮게)")
+    if tag == "qa-debug" and not DEBUG_QA:
+        raise SystemExit("🔴 꼬리표 qa-debug 는 ED_DEBUG_QA=1 일 때만 쓴다")
     return tag
 
 

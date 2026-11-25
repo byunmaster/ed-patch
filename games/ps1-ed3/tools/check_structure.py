@@ -37,7 +37,10 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import chapter_end
+import choice_cols
 import common
+import place_labels
 import scriptmap
 
 DISC = "ed3"
@@ -45,6 +48,8 @@ TERM = 0xFFFF
 NUM_MARK = 0xEEEE
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEDGER = os.path.join(HERE, "relocations.tsv")
+PL_KEYS = place_labels.member_keys()  # 장 끝 지명 라벨 시트·AM3(`place_labels.py`)
+CE_KEYS = chapter_end.member_keys()  # 장 끝 띠 시트·ANM(`chapter_end.py`) — 의도한 그림 교체
 ARCS = lambda files: sorted(p for p in files if p.startswith("/SCE") and p.endswith(".DAT"))
 
 EVIDENCE = {
@@ -111,6 +116,17 @@ def compare_member(x, y, kr_dec, allow_hi):
     touched = set()
     for at in resolved:
         touched.update((at, at + 1))
+    # 선택지 창 열 바이트(`3B` 연산 둘째 바이트, `choice_cols.py`)는 의도한 변경이다 — `choice_cols` 가 구운 글로 계산한 값과 **정확히 같을 때만** 허용한다
+    ysegs = real_segments(y, base)
+    for cp, _c, _r, ids in choice_cols.scan(x, i):
+        if cp + 2 >= base or x[cp + 2] == y[cp + 2] or max(ids) >= len(ysegs):
+            continue
+        try:
+            px = max(choice_cols.item_px(kr_dec(ysegs[k][1])) for k in ids)
+        except Exception:  # noqa: BLE001 — 읽을 수 없으면 허용하지 않는다(아래 bad 로 잡힌다)
+            continue
+        if y[cp + 2] == 2 * choice_cols.need_cols(px):
+            touched.add(cp + 2)
     bad = [k for k in range(2, base) if k not in touched and x[k] != y[k]]
     if bad:
         errs.append(f"스크립트 바이트 {len(bad)}곳이 포인터 자리가 아닌데 바뀜 (첫 {bad[0]:#x})")
@@ -214,6 +230,14 @@ def main():
             is_script = n.upper().startswith("..\\DATA\\") and n.upper().endswith(".BIN")
             if mx == my:
                 st["같음"] += 1
+            elif key in PL_KEYS:
+                st["지명 라벨 교체"] += 1
+                errors += place_labels.member_problems(key, mx, my)
+                continue
+            elif key in CE_KEYS:
+                st["장 끝 띠 그림 교체"] += 1
+                errors += chapter_end.member_problems(key, mx, my)
+                continue
             elif not is_script:
                 errors.append(f"{key}: 대본이 아닌 멤버가 바뀜")
                 continue

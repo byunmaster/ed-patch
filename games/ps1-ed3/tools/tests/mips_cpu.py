@@ -48,6 +48,8 @@ class Cpu:
                     regs[rd] = (regs[rt] << sa) & 0xFFFFFFFF
                 elif fn == 2:
                     regs[rd] = regs[rt] >> sa
+                elif fn == 3:
+                    regs[rd] = (s32(regs[rt]) >> sa) & 0xFFFFFFFF
                 elif fn == 8:
                     nxt = ("jr", regs[rs])
                 elif fn == 0x10:
@@ -70,9 +72,9 @@ class Cpu:
                     }[fn]
                 else:
                     raise AssertionError(f"해석기 미지원 R {fn:#x}")
-            elif op in (4, 5):
+            elif op in (4, 5, 6):
                 a, b = regs[rs], regs[rt]
-                take = (a == b) if op == 4 else (a != b)
+                take = (a == b) if op == 4 else (a != b) if op == 5 else (s32(a) <= 0)
                 nxt = ("br", pc + 4 + (sx16(imm) << 2)) if take else ("no", 0)
             elif op in (2, 3):
                 if op == 3:

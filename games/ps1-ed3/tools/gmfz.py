@@ -49,6 +49,13 @@ def decompress(blk, *, strict=True):
             k = (op & 0x7F) + 1
             out += comp[i : i + k]
             i += k
+        elif op & 0x40:
+            # 🔴 쌍 반복 — 다음 **두 바이트**를 (op & 0x3F) + 1 번 되풀이한다(10-24, 장 끝 띠 시트 `C_203` 에서 발견:
+            #    `41 48 0e` → 48 0e 48 0e). 이걸 모르면 이 토큰 뒤가 통째로 밀려 「줄이 밀린 그림」·「짧게 풀림」이 된다.
+            if i + 1 >= n:
+                break
+            out += comp[i : i + 2] * ((op & 0x3F) + 1)
+            i += 2
         else:
             if i >= n:
                 break
@@ -67,42 +74,117 @@ def decompress(blk, *, strict=True):
     return bytes(out[:want]), short
 
 
+def _tokens(data):
+    """데이터 → 토큰 목록 — ("L", 바이트열) 리터럴 · ("R", 횟수, 바이트) 반복 · ("P", 횟수, 두 바이트) 쌍 반복."""
+    toks = []
+    lit = bytearray()
+    i = 0
+    n = len(data)
+
+    def flush():
+        nonlocal lit
+        while lit:
+            k = min(len(lit), 64)  # 🔴 리터럴도 최대 64 — 원본 1,814멤버가 64 를 안 넘는다
+            toks.append(("L", bytes(lit[:k])))
+            lit = lit[k:]
+
+    while i < n:
+        j = i
+        while j < n and data[j] == data[i] and j - i < 64:  # 🔴 반복 런은 최대 64 — op 0x40~0x7F 는 쌍 반복(`decompress`)이다
+            j += 1
+        r1 = j - i
+        k = 1
+        if i + 1 < n:
+            while k < 64 and i + 2 * k + 2 <= n and data[i + 2 * k : i + 2 * k + 2] == data[i : i + 2]:
+                k += 1
+        if k >= 2 and 2 * k > r1:  # 쌍 반복이 더 많이 덮는다(맵 워드 같은 16비트 자료)
+            flush()
+            toks.append(("P", k, bytes(data[i : i + 2])))
+            i += 2 * k
+        elif r1 >= 2:  # 원본 압축기와 같게 — 2개도 반복 런(원본 11,014건)
+            flush()
+            toks.append(("R", r1, data[i]))
+            i = j
+        else:
+            lit += data[i : i + 1]
+            i += 1
+    flush()
+    return toks
+
+
+def _emit(toks):
+    out = bytearray()
+    for t in toks:
+        if t[0] == "L":
+            out.append(0x80 | (len(t[1]) - 1))
+            out += t[1]
+        elif t[0] == "R":
+            out.append(t[1] - 1)
+            out.append(t[2])
+        else:
+            out.append(0x40 | (t[1] - 1))
+            out += t[2]
+    return bytes(out)
+
+
 def compress(data):
     """되감기 — 리터럴 런과 반복 런으로 나눈다.
 
     ⚠ 원본과 **바이트 동일한** 압축을 목표로 하지 않는다(원 압축기의 선택을 모른다).
        빌드는 「풀면 같은가」로 검증한다 — `decompress(wrap(x))[0] == x`.
     """
-    out = bytearray()
-    i = 0
-    n = len(data)
-    lit = bytearray()
+    return _emit(_tokens(data))
 
-    def flush():
-        nonlocal lit, out
-        while lit:
-            k = min(len(lit), 128)
-            out.append(0x80 | (k - 1))
-            out += lit[:k]
-            lit = lit[k:]
 
-    while i < n:
-        j = i
-        while j < n and data[j] == data[i] and j - i < 128:
-            j += 1
-        run = j - i
-        if run >= 3:  # 런 2개는 리터럴이 더 짧거나 같다
-            flush()
-            out.append(run - 1)
-            out.append(data[i])
-            i = j
-        else:
-            lit += data[i : i + 1]
-            i += 1
-    flush()
-    return bytes(out)
+def compress_to(data, length):
+    """스트림 길이를 **정확히** `length` 로 — 토큰을 쪼개 늘린다(리터럴 둘로 +1, 반복 둘로 +2).
+
+    🔴 게임은 아카이브 멤버의 **끝까지** 스트림을 읽는다(10-24 실측 — 원본 7장 시트 모두 스트림이 멤버 길이와 정확히 같다).
+       짧게 압축해 0 으로 채우면 꼬리 0 이 `00 00`(반복 런)으로 읽혀 버퍼가 넘치고 맵이 검게 뜬다.
+       그래서 멤버 길이를 줄일 수 없으면(`arcpack` 은 크기를 그대로 둔다) 스트림을 길이에 맞춘다.
+    """
+    toks = _tokens(data)
+    need = length - len(_emit(toks))
+    if need < 0:
+        raise GmfzError(f"압축 {length - need}B 가 멤버 {length}B 보다 크다")
+    while need > 0:
+        k = next((i for i, t in enumerate(toks) if t[0] == "L" and len(t[1]) >= 2), None)
+        if k is not None:
+            t = toks[k][1]
+            toks[k : k + 1] = [("L", t[:1]), ("L", t[1:])]
+            need -= 1
+            continue
+        k = next((i for i, t in enumerate(toks) if t[0] == "R" and t[1] == 2), None)
+        if k is not None:  # 반복 2 → 리터럴 2 (+1)
+            toks[k] = ("L", bytes([toks[k][2]]) * 2)
+            need -= 1
+            continue
+        k = next((i for i, t in enumerate(toks) if t[0] == "R" and t[1] >= 2), None)
+        if k is not None and need >= 2:
+            _, n, b = toks[k]
+            toks[k : k + 1] = [("R", 1, b), ("R", n - 1, b)]
+            need -= 2
+            continue
+        k = next((i for i, t in enumerate(toks) if t[0] == "P" and t[1] >= 2), None)
+        if k is not None and need >= 3:
+            _, n, b = toks[k]
+            toks[k : k + 1] = [("P", 1, b), ("P", n - 1, b)]
+            need -= 3
+            continue
+        raise GmfzError("토큰을 더 쪼갤 수 없다")
+    return _emit(toks)
 
 
 def wrap(data, kind=0):
     """압축 + 헤더."""
     return bytes([MAGIC, kind]) + b"\x01\x03" + struct.pack("<I", len(data) - 1) + compress(data)
+
+
+def wrap_to(data, member_len, kind=0):
+    """헤더 + 스트림 = 멤버 길이 `member_len` 정확히."""
+    return (
+        bytes([MAGIC, kind])
+        + b"\x01\x03"
+        + struct.pack("<I", len(data) - 1)
+        + compress_to(data, member_len - 8)
+    )

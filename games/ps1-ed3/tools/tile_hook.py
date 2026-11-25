@@ -21,15 +21,15 @@ OFF_POS, OFF_ZADV, OFF_CURP, OFF_IDX, OFF_LAST = 0, 2, 4, 10, 8  # CURP 는 4B(4
 OFF_RA, OFF_V0, OFF_V1, OFF_A0, OFF_A2 = 12, 16, 20, 24, 28
 OFF_OUTA, OFF_SPB = 32, 52  # 합성 버퍼 18B(+2)
 OFF_HALF = 72  # 반 칸(6px) 글자 코드 u16 목록, 0 종결(최대 44칸 = 88B — 공백·괄호·부호 + 반각 ASCII(숫자·영문·&%'-) 마스터 10-12)
-OFF_MK = 160  # 조사 표지 5 × 8B
-OFF_LC, OFF_LIM = 200, 202  # 직전에 그린 글자의 열(메시지 창의 커서 점프를 알아챈다) · 줄 끝 판정 한계 px((열−1)×12)
-OFF_BL = 204  # 받침표 u16 목록, 0 종결
+OFF_MK = 160  # 조사 표지 6 × 8B
+OFF_LC, OFF_LIM = 208, 210  # 직전에 그린 글자의 열(메시지 창의 커서 점프를 알아챈다) · 줄 끝 판정 한계 px((열−1)×12)
+OFF_BL = 212  # 받침표 u16 목록, 0 종결
 HALF_SLOTS = 44
 MSG_WINDOWS = ((10, 3, 0), (17, 1, 0), (6, 4, 0), (14, 4, 0), (20, 4, 0))  # 개별 목록 (열, 행, 줄 앞 밀기 px) — 10×3 퇴각 확인 · 17×1 「대열…」 메시지(`engine_patch.LINEUP_COLS`) · 6×4 전투 square **+ 시스템 설정 창**(둘 다 창 열 6 으로 줄인 뒤 — 커서 줄 반각 `cursor_hook` 과 같은 목록) · 14×4 세이브/로드 데이터 창(제목 가운데 정렬, 마스터 10-11) · 20×4 「…괜찮습니까?」 확인 창(물음표 반각). 🔴 시스템 설정 창이 7×4 일 땐 넣지 않았다(필드 메뉴 `0x80033CDC` 계열). 열·행이 유일한 창만 센다(14×4·20×4 는 창 생성 호출이 하나씩, 실측 10-11).
 MSG_GENERIC = ((1, 3), (5, 18))  # 일반 규칙: 행 1~3 · 열 5~18 인 작은 창 + **전투 화면 영역(창 y)** — 전투 메시지 창(출현은 열이 이름 길이+4·행이 몬스터 종류 수로 **가변**이라 목록으로 못 센다: 승리·패배 10×1 · 레벨업 18×2 · 경험치·전리품 13×2 …). 열 3·4 팝업·행 4 이상(square 6×4·필드 메뉴 7×4)은 제외.
 MSG_Y = (-48, -12)  # 창 표의 y 는 화면 가운데(120) 기준 상대값(= y−120): 전투 메시지 창(y 72~108)만. 전투 밖 1·2행 창(`0x80024040` y150 · `0x80028C20` y12)은 원판 그대로 — 용도를 모르는 창을 안 바꾼다(관리자 10-10)
-MSG_OFF = 0x1C0  # 메시지 창 갈래 코드를 두는 자료 자리 안 위치(패널 스텁 `PANEL_CODE_OFF` 뒤) — 죽은 함수 자리가 모자라 밖으로 뺐다
-N_MARK = 5
+MSG_OFF = 0x1C8  # 메시지 창 갈래 코드를 두는 자료 자리 안 위치(패널 스텁 `PANEL_CODE_OFF`+192B 바로 뒤) — 죽은 함수 자리가 모자라 밖으로 뺐다(11-11 패널 스텁이 12B 늘어 0x1BC→0x1C8)
+N_MARK = 6
 DJUMP_ADDR = 0x8008A428 + 368 - 60  # R2 맨 끝 60B(`cursor_hook.R2`+`R2_LEN`−60) — 대사창 칸 연속성 서브루틴(`djump_words`)
 DJUMP_LEN = 60
 
@@ -222,7 +222,11 @@ def hooks_b(disc, n_blist, with_josa=True):
     dlg:
       mfhi  t5                              # col
       addiu t2, t9, {OFF_OUTA}              # (mfhi 결과를 바로 읽지 않게 끼운 명령)
-      subu  t0, t0, t5                      # t0 = 이 줄 첫 칸의 슬롯 번호
+      or    t3, t8, t5                      # 코드 0 이고 열 0 = 줄 머리 내어쓰기 빈 칸(수첩 「」 항목 둘째 줄 등, 원판 자료)
+      bne   t3, zero, dsk
+      subu  t0, t0, t5                      # (지연 슬롯) t0 = 이 줄 첫 칸의 슬롯 번호
+      li    t1, 6                           # 반 칸 — 뒤 글자가 윗줄 「 다음 글자와 맞는다(마스터 11-09 「반각공백으로 윗줄과 라인」). 줄 안의 코드 0 은 원판대로 한 칸
+    dsk:
       li    t6, 276                         # 줄 끝 한계 (열 − 1) × 12
       sh    t6, {OFF_LIM}(t9)
       jal   {DJUMP_ADDR:#x}                 # 칸 연속성 판정(R2 꼬리 서브루틴) — t6 = 1 이면 위치·타일 초기화(줄 첫 칸 · 칸이 건너뛰었다)
@@ -385,32 +389,38 @@ def hooks_b(disc, n_blist, with_josa=True):
       li    t5, 0
       j     setr
       nop
+    out_plain:
+      lui   a1, {fbh:#x}
+      j     rest
+      addiu a1, a1, {fbl}                   # (지연 슬롯)
     out:
-      lw    ra, {OFF_RA}(t9)
-      lw    v0, {OFF_V0}(t9)
-      lw    v1, {OFF_V1}(t9)
       lw    a0, {OFF_A0}(t9)
-      lw    a2, {OFF_A2}(t9)
       addiu a1, t9, {OFF_OUTA}              # 소스 = 합성 버퍼 (엔진이 a1 + a0 를 읽는다)
       subu  a1, a1, a0
-      jr    ra
-      nop
-    out_plain:
+    rest:                                   # 두 갈래가 같이 쓰는 복구(a1 은 건드리지 않는다) — 11-09 내어쓰기 반 칸 3워드를 이 중복에서 벌었다
       lw    ra, {OFF_RA}(t9)
       lw    v0, {OFF_V0}(t9)
       lw    v1, {OFF_V1}(t9)
       lw    a0, {OFF_A0}(t9)
       lw    a2, {OFF_A2}(t9)
-      lui   a1, {fbh:#x}
       jr    ra
-      addiu a1, a1, {fbl}
+      nop
 """
     words, labels = E.asm(src, p["dead"])
     E.verify(words, p["dead"])
     return words, labels
 
 
-def msg_stub(disc, labels):
+LIST_COLS = (8, 11)  # 목록·이름 창 열 8~11 — 상점 구매(0x35)·판매(0x36) · 도구(11)·장비(10) · 소지품 고르기(11) · 전투 마법(8×8)·전투 도구(8×3) (`cursor_hook.LIST_COLS` 와 같다. 마스터 11-09 「띄어쓰기는 반각」은 창 종류와 무관)
+
+
+def msg_len(disc):
+    """메시지 갈래 스텁의 워드 수(표 포함) — 라벨 주소는 길이에 안 든다. 공백 코드 값은 길이에 안 든다(`li` 한 워드)."""
+    _, labels = hooks_b(disc, 0)
+    return len(msg_stub(disc, labels, 1)[0])
+
+
+def msg_stub(disc, labels, space=None):
     """([워드], 시작 주소) — 전투 메시지 창(`MSG_WINDOWS`: 레벨업·경험치·전리품·승리·패배)의 갈래. 훅 `found:` 에서 `j` 로 들어온다.
 
     그 창이 아니면 `out_plain`(원판 그대로). 맞으면 열 `col` 을 구하고, **엔진이 커서를 옮겼으면**(열이 직전 글자 + 1 이 아니면 — 이름 뒤 폭 표 · 숫자 자리)
@@ -421,35 +431,54 @@ def msg_stub(disc, labels):
     base = p["data"] + MSG_OFF
     op = labels["out_plain"]
     chk = ["      lhu   t5, 8(t4)                       # 행", "      nop"]
-    for n, (c, r, bias) in enumerate(MSG_WINDOWS):
-        chk += [
-            f"      li    t2, {c}",
-            f"      bne   t3, t2, msg_n{n}",
-            "      nop",
-            f"      li    t2, {r}",
-            f"      bne   t5, t2, msg_n{n}",
-            f"      li    v1, {bias}                          # (지연 슬롯) 줄 앞 밀기",
-            "      j     msg_ok",
-            "      nop",
-            f"    msg_n{n}:",
-        ]
+    assert all(bias == 0 for _c, _r, bias in MSG_WINDOWS), "줄 앞 밀기(bias)는 모든 창이 0 — 표·코드에서 걷어 자리를 아꼈다"
+    chk += [  # 개별 목록(열|행<<8 u16 · 0 종결)을 코드 뒤 표에서 훑는다 — 코드 자리를 아끼려 풀어 쓰지 않는다
+        "      sll   t7, t5, 8",
+        "      or    t7, t7, t3                      # 열쇠 = 열 | 행 << 8",
+        "      lui   t2, @TH@",
+        "      ori   t2, t2, @TL@",
+        "    msg_l:",
+        "      lhu   t6, 0(t2)",
+        "      addiu t2, t2, 2                       # (로드 지연 자리)",
+        "      beq   t6, zero, msg_ld",
+        "      nop",
+        "      bne   t6, t7, msg_l",
+        "      nop",
+        "      j     msg_ok",
+        "      nop",
+        "    msg_ld:",
+    ]
     (r0, r1), (c0, c1) = MSG_GENERIC
     chk += [
         f"      addiu t2, t5, -{r0}",
         f"      sltiu t2, t2, {r1 - r0 + 1}",
-        f"      beq   t2, zero, {op:#x}                  # 행이 1~2 가 아니면 원판 그대로",
+        "      beq   t2, zero, msg_lst               # 행이 1~3 이 아니면 목록 창 판정으로",
         "      nop",
         f"      addiu t2, t3, -{c0}",
         f"      sltiu t2, t2, {c1 - c0 + 1}",
-        f"      beq   t2, zero, {op:#x}                  # 열이 5~18 이 아니면 원판 그대로",
+        "      beq   t2, zero, msg_lst               # 열이 5~18 이 아니면 목록 창 판정으로",
         "      lh    t2, 4(t4)                       # (지연 슬롯) 창 y(화면 가운데 기준)",
         "      nop",
         f"      addiu t2, t2, {-MSG_Y[0]}",
         f"      sltiu t2, t2, {MSG_Y[1] - MSG_Y[0] + 1}",
-        f"      beq   t2, zero, {op:#x}                  # 전투 화면 영역이 아니면 원판 그대로",
-        "      li    v1, 0",
-        "    msg_ok:",
+        "      bne   t2, zero, msg_ok                # 전투 화면 영역이면 메시지 창",
+        "      nop",
+        "    msg_lst:                                # 목록 창(열 8~11) — 공백만 반 칸(마스터 11-09 「띄어쓰기는 반각」)",
     ]
+    if space is not None:
+        lo, hi = LIST_COLS
+        chk += [
+            f"      addiu t2, t3, -{lo}",
+            f"      sltiu t2, t2, {hi - lo + 1}",
+            f"      beq   t2, zero, {op:#x}                  # 목록 창이 아니면 원판 그대로",
+            f"      li    t2, {space}                     # (지연 슬롯)",
+            "      bne   t8, t2, msg_ok",
+            "      li    t1, 12                          # (지연 슬롯) 공백이 아니면 전각 폭",
+            "      li    t1, 6                           # 공백 — 반 칸",
+        ]
+    else:
+        chk += [f"      j     {op:#x}", "      nop"]
+    chk += ["    msg_ok:"]
     msg_checks = "\n".join(chk) + "\n"
     src = f"""
 {msg_checks}      mfhi  t5                              # col
@@ -468,14 +497,23 @@ def msg_stub(disc, labels):
       sll   t6, t5, 3
       sll   t7, t5, 2
       addu  t6, t6, t7                      # 열 × 12
-      addu  t6, t6, v1                      # + 줄 앞 밀기(가운데 정렬)
       sh    t6, {OFF_POS}(t9)
       j     {labels['rst']:#x}
       nop
 """
-    words, _ = E.asm(src, base)
+    def fill(tab):
+        return src.replace("@TH@", f"{tab >> 16:#x}").replace("@TL@", f"{tab & 0xFFFF:#x}")
+
+    n_code = len(E.asm(fill(0x80000000), base)[0])
+    tab = base + 4 * n_code
+    words, _ = E.asm(fill(tab), base)
+    assert len(words) == n_code
     E.verify(words, base)
-    return words, base
+    import struct
+
+    raw = b"".join(struct.pack("<H", c | (r << 8)) for c, r, _bias in MSG_WINDOWS) + b"\0\0"
+    raw += b"\0" * (-len(raw) % 4)
+    return list(words) + list(struct.unpack(f"<{len(raw) // 4}I", raw)), base
 
 
 # ── 월드맵 장소 패널 가운데 정렬(마스터 10-09 「반각 가능하면 해 봐」) ───────────────────────────────
@@ -483,71 +521,94 @@ def msg_stub(disc, labels):
 # 글자마다 x 를 12px 씩 늘리고, **제어 코드(최상위 비트)** 를 만나면 줄을 바꾼다. 원판은 들여쓰기를 0 코드(12px 빈 글자)로 해 가운데를 흉내 냈는데, 줄의 칸 수(바이트)가 고정이라
 # 한글 글자 수가 갈리면 반 칸(6px)을 못 맞춘다. 그래서 **엔진이 줄마다 가운데를 계산**하게 한다: 줄 시작 x = 칸 왼쪽 + 36 − 6×(그 줄의 글자 수) (칸 폭 72px, 0 코드는 글자로 안 센다).
 # 0 코드는 이제 폭 0 이다(원판 일본어 줄도 같은 규칙으로 가운데). 세 군데를 바꾼다(PANEL_SITES) — 줄 시작(첫 줄 · 줄바꿈 뒤)과 글자 후 x 전진.
-PANEL_CODE_OFF = 0x100  # 자료 자리 안, 상태·표(OFF_BL…) 뒤
+PANEL_CODE_OFF = 0x108  # 자료 자리 안, 상태·표(OFF_BL…) 뒤
 
 
-def panel_stubs(disc):
-    """([워드], 시작 주소, {라벨: 주소}) — 패널 정렬 스텁 셋(줄 시작 · 줄바꿈 뒤 줄 시작 · x 전진)."""
+PANEL_INIT_ADDR = 0x8008A2A4  # 첫 줄 진입 스텁 둘(8B)을 둘 자리 — 커서 줄 훅 R1(`cursor_hook.R1`, 428B 검증 구간) 꼬리의 안 쓰는 16B 첫머리(= R1 + 412). `engine_patch.apply_panel` 이 겹침을 검산한다
+PANEL_ROW_PX = (
+    72  # 패널 칸 폭 — 줄 폭이 이를 넘으면 글자 간격 11px(마스터 11-11 「6글자 초과에 대해서만」)
+)
+
+
+def panel_stubs(disc, space):
+    """([워드], 시작 주소, {라벨: 주소}, [첫 줄 진입 워드]) — 패널 정렬 스텁(줄 시작 · 줄바꿈 뒤 줄 시작 · x 전진).
+
+    줄의 **실제 폭**을 재서 가운데 맞춘다: 공백(`space` 코드)은 6px · 나머지 글자는 12px · 0 코드(들여쓰기)는 폭 0.
+    폭이 칸(72px)을 넘으면 그 줄만 글자 **간격을 11px** 로 줄여(글자 수만큼 1px 씩 — 공백은 6px 그대로) 칸 안에 넣고, 그 간격을
+    `fp+0x24`(원판이 줄바꿈 때 줄 시작 x 를 읽던 자리 — 우리 스텁은 안 쓴다)에 줄마다 둔다. 글자 후 전진(`stub_adv`)이 그 값을 읽는다.
+    첫 줄 진입 스텁 `stub_init`(2워드)은 자리가 모자라 R1 꼬리(`PANEL_INIT_ADDR`)에 따로 둔다.
+    함수 안에 t 레지스터 사용이 없어(전수 확인) t0~t9 를 자유롭게 쓴다."""
+    assert 0 < space < 0x7FFF, space
     p = E.PATCH[disc]
     base = p["data"] + PANEL_CODE_OFF
-    src = """
-    stub_init:                              # 첫 줄 — idx 0
-      j     stub_calc
-      move  t0, zero                        # (지연 슬롯)
+    src = f"""
     stub_line:                              # 줄바꿈 뒤 — idx = fp+0x22 + 1
       lh    t0, 0x22(fp)
       nop
       addiu t0, t0, 1
     stub_calc:
       lw    t1, 0x60(fp)                    # 문자열
-      move  t2, zero                        # 글자 수
+      addiu t6, zero, {space}               # 공백 코드
+      addiu t2, zero, -{PANEL_ROW_PX}       # 줄 폭 − 칸 폭
+      move  t7, zero                        # 공백 아닌 글자 수
     sc_loop:
       sll   t3, t0, 1
       addu  t3, t3, t1
       lhu   t4, 0(t3)
-      nop
+      addiu t0, t0, 1                       # (지연 슬롯) 다음 칸
       andi  t5, t4, 0x8000
       bne   t5, zero, sc_done               # 제어 코드 = 줄 끝
+      addiu t3, zero, 12                    # (지연 슬롯)
+      beq   t4, zero, sc_loop               # 0 = 들여쓰기 빈 글자 — 안 센다
       nop
-      beq   t4, zero, sc_skip               # 0 = 들여쓰기 빈 글자 — 안 센다
-      nop
-      addiu t2, t2, 1
-    sc_skip:
+      bne   t4, t6, sc_add
+      addiu t7, t7, 1                       # (지연 슬롯) 글자 수 + 1
+      addiu t3, zero, 6                     # 공백 = 반 칸 폭
+      addiu t7, t7, -1                      # 공백은 글자 수에서 뺀다
+    sc_add:
       j     sc_loop
-      addiu t0, t0, 1                       # (지연 슬롯)
+      addu  t2, t2, t3                      # (지연 슬롯)
     sc_done:
-      sll   t3, t2, 1
-      addu  t3, t3, t2                      # 3×n
-      sll   t3, t3, 1                       # 6×n
-      lw    t6, 0x34(fp)                    # 창 핸들
-      nop
+      addiu t8, zero, 12
+      blez  t2, sc_ok                       # 폭 ≤ 칸 — 12px 그대로
+      lw    t6, 0x34(fp)                    # (지연 슬롯) 창 핸들
+      addiu t8, zero, 11                    # 넘으면 이 줄만 11px
+      subu  t2, t2, t7                      # 폭에서 글자 수만큼
+    sc_ok:
+      sra   t3, t2, 1                       # (폭 − 72) / 2
       lhu   t6, 2(t6)                       # 칸 왼쪽 x
-      nop
-      addiu t6, t6, 36                      # + 36(= 72px 칸의 절반)
-      subu  t6, t6, t3
-      sh    t6, 0x10(fp)                    # 이 줄의 x
-      sh    t6, 0x24(fp)                    # 줄 시작 x(줄바꿈 때 쓰는 자리)
+      sh    t8, 0x24(fp)                    # 이 줄의 글자 간격
+      subu  t6, t6, t3                      # 왼쪽 + 36 − 폭/2
       jr    ra
-      nop
-    stub_adv:                               # 글자 하나 뒤 x 전진 — 0 코드는 폭 0, 나머지는 12
+      sh    t6, 0x10(fp)                    # (지연 슬롯) 이 줄의 x
+    stub_adv:                               # 글자 하나 뒤 x 전진 — 0 코드는 폭 0, 공백은 6, 나머지는 줄 간격
       lw    t0, 0x60(fp)
       lh    t1, 0x22(fp)
-      nop
+      addiu t3, zero, {space}
       sll   t1, t1, 1
       addu  t0, t0, t1
       lhu   t2, 0(t0)
-      nop
+      lhu   t1, 0x24(fp)
       beq   t2, zero, sa_store              # 0 코드 — v0(= 옛 x) 그대로
       nop
-      addiu v0, v0, 12
-    sa_store:
-      sh    v0, 0x10(fp)
-      jr    ra
+      bne   t2, t3, sa_add
       nop
+      addiu t1, zero, 6
+    sa_add:
+      addu  v0, v0, t1
+    sa_store:
+      jr    ra
+      sh    v0, 0x10(fp)                    # (지연 슬롯)
 """
     words, labels = E.asm(src, base)
     E.verify(words, base)
-    return words, base, labels
+    assert 4 * len(words) <= MSG_OFF - PANEL_CODE_OFF, (
+        f"패널 스텁 {4 * len(words)}B 가 자리({MSG_OFF - PANEL_CODE_OFF}B)를 넘는다"
+    )
+    init, _ = E.asm(f"stub_init:\n  j {labels['stub_calc']:#x}\n  move t0, zero", PANEL_INIT_ADDR)
+    E.verify(init, PANEL_INIT_ADDR)
+    labels = dict(labels, stub_init=PANEL_INIT_ADDR)
+    return words, base, labels, init
 
 
 # 고칠 자리(원본 워드 대조) — 줄 시작(첫 줄) · 줄바꿈 뒤 · x 전진. (자리, 원본 워드들, 스텁 라벨)

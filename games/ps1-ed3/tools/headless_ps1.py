@@ -11,13 +11,31 @@ import subprocess
 import numpy as np
 from PIL import Image
 
-
-BTN = {"b": 0, "y": 1, "select": 2, "start": 3, "up": 4, "down": 5, "left": 6, "right": 7, "a": 8, "x": 9, "l1": 10, "r1": 11, "l2": 12, "r2": 13}
+BTN = {
+    "b": 0,
+    "y": 1,
+    "select": 2,
+    "start": 3,
+    "up": 4,
+    "down": 5,
+    "left": 6,
+    "right": 7,
+    "a": 8,
+    "x": 9,
+    "l1": 10,
+    "r1": 11,
+    "l2": 12,
+    "r2": 13,
+}
 ALIAS = {"cross": "b", "circle": "a", "square": "y", "triangle": "x"}  # PS1 → libretro 이름
 
 
 def _cache():
-    top = os.path.dirname(subprocess.check_output(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], text=True).strip())
+    top = os.path.dirname(
+        subprocess.check_output(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], text=True
+        ).strip()
+    )
     return os.path.join(top, ".local", "cache", "rearmed")
 
 
@@ -26,7 +44,12 @@ class Var(C.Structure):
 
 
 class GameInfo(C.Structure):
-    _fields_ = [("path", C.c_char_p), ("data", C.c_void_p), ("size", C.c_size_t), ("meta", C.c_char_p)]
+    _fields_ = [
+        ("path", C.c_char_p),
+        ("data", C.c_void_p),
+        ("size", C.c_size_t),
+        ("meta", C.c_char_p),
+    ]
 
 
 class Emu:
@@ -48,8 +71,12 @@ class Emu:
         poll_t = C.CFUNCTYPE(None)
         inp_t = C.CFUNCTYPE(C.c_int16, C.c_uint, C.c_uint, C.c_uint, C.c_uint)
         self._cbs = [
-            env_t(self._env), vid_t(self._vid), aud_t(lambda d, n: n), aus_t(lambda left, right: None),
-            poll_t(lambda: None), inp_t(lambda p, dev, i, id_: 1 if (p == 0 and dev == 1 and id_ in self.held) else 0),
+            env_t(self._env),
+            vid_t(self._vid),
+            aud_t(lambda d, n: n),
+            aus_t(lambda left, right: None),
+            poll_t(lambda: None),
+            inp_t(lambda p, dev, i, id_: 1 if (p == 0 and dev == 1 and id_ in self.held) else 0),
         ]
         c = self.core
         c.retro_set_environment(self._cbs[0])
@@ -67,7 +94,8 @@ class Emu:
         c.retro_run()
         if card:
             mp, ms = c.retro_get_memory_data(0), c.retro_get_memory_size(0)
-            data = open(card, "rb").read()
+            with open(card, "rb") as f:
+                data = f.read()
             C.memmove(mp, data, min(len(data), ms))
         self.ram = c.retro_get_memory_data(2)
 
@@ -84,6 +112,10 @@ class Emu:
         if cmd == 15:
             v = C.cast(data, C.POINTER(Var))[0]
             vals = {b"pcsx_rearmed_memcard1": b"libretro", b"pcsx_rearmed_memcard2": b"disabled"}
+            if os.environ.get(
+                "HEADLESS_DRC"
+            ):  # 동적 변환 끄기(인터프리터) — 이미 돈 코드에 심은 덫을 믿으려면 필수(11-07, 「헤드리스 JIT 덫」)
+                vals[b"pcsx_rearmed_drc"] = os.environ["HEADLESS_DRC"].encode()
             if v.key in vals:
                 p = C.c_char_p(vals[v.key])
                 self._keep.append(p)
@@ -104,7 +136,11 @@ class Emu:
         buf = C.string_at(data, pitch * h)
         if self.fmt == 2:
             a = np.frombuffer(buf, dtype="<u2").reshape(h, pitch // 2)[:, :w].astype(np.uint32)
-            r, g, b = ((a >> 11) & 31) * 255 // 31, ((a >> 5) & 63) * 255 // 63, (a & 31) * 255 // 31
+            r, g, b = (
+                ((a >> 11) & 31) * 255 // 31,
+                ((a >> 5) & 63) * 255 // 63,
+                (a & 31) * 255 // 31,
+            )
             self.frame = np.dstack([r, g, b]).astype(np.uint8)
         else:
             a = np.frombuffer(buf, dtype=np.uint8).reshape(h, pitch)[:, : w * 4].reshape(h, w, 4)

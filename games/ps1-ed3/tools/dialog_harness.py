@@ -130,10 +130,14 @@ def windows(emu, size=0x6000):
     """[(창 번호 n, 주입 바이트, 정렬 d)] — 램의 맵 블록에서 **대사 창(`0F 90 V (01 90 W)* 00`)만** 꺼낸다. `scriptmap.window_chains` 와 같은 알고리즘이라
     번호 n 이 짝 표(`pair_table`)의 창 번호와 같다. 포인터 목표가 조각 시작이 아닌 가짜(데이터 `0F 90 00 20` …)는 걸러진다 — 옛 `sequences` 는
     그런 가짜를 대사로 찍어 글자판 쓰레기(노이즈) 창을 냈고 진짜 창을 놓치기도 했다(FT4300: 창 39 ↔ 옛 32, 10-20)."""
+    blk = emu.u32(BASE)
+    return windows_of_mem(emu.peek(blk, size), blk, size)
+
+
+def windows_of_mem(mem, blk, size=0x6000):
+    """`windows` 의 본체 — 램이 아니라 **굽은 이미지의 멤버 바이트**로도 돈다(`dialog_reshoot --changed`: 바뀐 줄이 든 창을 정적으로 골라 그 창만 주입)."""
     import scriptmap
 
-    blk = emu.u32(BASE)
-    mem = emu.peek(blk, size)
     tb = int.from_bytes(mem[:2], "little")
     if not 2 < tb <= size - 4:
         return []
@@ -258,12 +262,26 @@ def main():
     ap.add_argument("--max-seq", type=int, default=0)
     ap.add_argument("--chapter-ends", action="store_true", help="장 끝 항해 연출 7편(`*V0` 맵)을 150프레임 간격 8장씩 캡처한다")
     ap.add_argument("--state", help="새 게임 시작 상태 파일(없으면 만든다)")
+    ap.add_argument("--changed", help="JSON {멤버: [줄 번호]} — 이 줄이 든 시퀀스만 캡처한다(바뀐 줄만 보기)")
     a = ap.parse_args()
     table = {n: ch for n, ch, _p, _a in warp_table.table("ed3")}
     if a.chapter_ends:
         return chapter_ends(a)
     maps = a.maps.split(",") if a.maps else [n for n, ch, _p, _a in warp_table.table("ed3") if ch and ch[0] == a.chapter]
     assert maps, "--maps 또는 --chapter 가 필요하다"
+    keep = None
+    if a.changed:
+        import json
+
+        import dialog_labels
+
+        want = {m: set(v) for m, v in json.load(open(a.changed, encoding="utf-8")).items()}
+        keys_for = dialog_labels.labeler(a.cue)
+
+        def keep(name, off, s):
+            ks, _ = keys_for(name, s, off - (2 if s.hex().startswith("12") else 0))
+            return any(int(k.split("#")[1]) in want.get(k.split("#")[0].split("_", 1)[1], ()) for k in ks)
+
     emu = H.Emu(a.cue)
     boot(emu, a.state, a.cue)
     cur = 0
@@ -284,6 +302,8 @@ def main():
         emu.save(snap)
         # 입장 이벤트 전(LOADED)·후 두 번 읽어 **더 많은 쪽**을 쓴다 — 이벤트가 길면 뒤쪽이 0 이 되고(SETTLE=300), 로드가 느린 맵은 앞쪽이 아직 옛 블록이다(MR4300 실측)
         seqs = max(LOADED.get("seqs") or [], sequences(emu), key=len)
+        if keep:
+            seqs = [(off, s) for off, s in seqs if keep(name, off, s)]
         if a.max_seq:
             seqs = seqs[: a.max_seq]
         paths = []

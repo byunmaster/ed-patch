@@ -32,6 +32,21 @@ class TestGmfz(unittest.TestCase):
         out, _ = gmfz.decompress(block(b"\x02\xab", 3))
         self.assertEqual(out, b"\xab\xab\xab")
 
+    def test_pair_repeat_run(self):
+        """`op & 0x40` = 두 바이트를 (op & 0x3F)+1 번 — 장 끝 띠 시트 `C_203` 에서 발견(10-24).
+        이 토큰을 모르면 그 뒤가 통째로 밀려 「짧게 풀림·줄 밀림」이 된다(전 멤버 106개가 그랬다)."""
+        out, short = gmfz.decompress(block(b"\x41\x48\x0e", 4))  # 48 0e 48 0e
+        self.assertEqual(out, b"\x48\x0e\x48\x0e")
+        self.assertEqual(short, 0)
+        out, _ = gmfz.decompress(block(b"\x40\x01\x02\x80\x03", 3))  # 01 02 | 리터럴 03
+        self.assertEqual(out, b"\x01\x02\x03")
+
+    def test_real_stream_around_pair_run(self):
+        """`C_203.TI3` 실측 조각 — `84 1b ff 01 10 41` 뒤 `41 48 0e 80 1b 01 0e 01 48` 이 `48 0e 48 0e 1b 0e 0e 48 48` 로 풀린다."""
+        comp = bytes.fromhex("841bff011041" "41480e" "801b" "010e" "0148")
+        out, _ = gmfz.decompress(block(comp, 5 + 4 + 1 + 2 + 2))
+        self.assertEqual(out[-9:], bytes([0x48, 0x0E, 0x48, 0x0E, 0x1B, 0x0E, 0x0E, 0x48, 0x48]))
+
     def test_tim_prefix(self):
         """실측 스트림 앞부분 — TIM 헤더가 정확히 나와야 한다."""
         # `..\\MAP\\B_000.TI3` 의 실제 스트림 앞 19바이트
@@ -71,6 +86,50 @@ class TestGmfz(unittest.TestCase):
             back, short = gmfz.decompress(gmfz.wrap(data))
             self.assertEqual(back, data)
             self.assertEqual(short, 0)
+
+    def test_compress_caps_literal_and_run_at_64(self):
+        """원본 1,814멤버는 리터럴·런이 64 를 넘지 않는다 — 128 리터럴은 게임이 못 풀어 맵이 검게 떴다(10-24)."""
+        import random
+
+        rng = random.Random(1)
+        data = bytes(rng.randrange(256) for _ in range(1000)) + b"\x07" * 300
+        comp = gmfz.wrap(data)[8:]
+        i = 0
+        while i < len(comp):
+            op = comp[i]
+            i += 1
+            if op & 0x80:
+                self.assertLess(op & 0x7F, 64)
+                i += (op & 0x7F) + 1
+            elif op & 0x40:
+                i += 2  # 쌍 반복(횟수 6비트라 늘 ≤ 64)
+            else:
+                self.assertLess(op, 64)
+                i += 1
+
+    def test_compress_to_exact_length(self):
+        """멤버 길이에 스트림을 정확히 맞춘다 — 꼬리 0 채움은 게임이 반복 런으로 읽는다(10-24 맵 검정)."""
+        import random
+
+        rng = random.Random(2)
+        data = bytes(rng.randrange(4) for _ in range(3000))
+        base = len(gmfz.wrap(data))
+        for extra in (0, 1, 7, 50, 400):
+            blob = gmfz.wrap_to(data, base + extra)
+            self.assertEqual(len(blob), base + extra)
+            back, short = gmfz.decompress(blob)
+            self.assertEqual((back, short), (data, 0))
+        with self.assertRaises(gmfz.GmfzError):
+            gmfz.wrap_to(data, base - 1)
+
+    def test_pair_runs_roundtrip_and_compress(self):
+        """16비트 자료(맵 워드)는 쌍 반복으로 작게 압축되고 되풀면 같다."""
+        data = (b"\x06\x1a" * 200 + b"\x86\x93" * 3 + bytes(range(40)) + b"\x42\x1e" * 70) * 3
+        blob = gmfz.wrap(data)
+        self.assertLess(len(blob), len(data) // 8)
+        self.assertEqual(gmfz.decompress(blob), (data, 0))
+        for extra in (0, 1, 2, 3, 9):
+            self.assertEqual(gmfz.decompress(gmfz.wrap_to(data, len(blob) + extra)), (data, 0))
 
     def test_not_a_block(self):
         self.assertIsNone(gmfz.parse_header(b"\x00" * 16))

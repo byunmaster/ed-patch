@@ -90,6 +90,48 @@ class TestEnginePatch(unittest.TestCase):
         self.assertIsNone(engine_patch.apply(bytearray(16), "ed4", {" ": 1}))
 
 
+class TestLineupCenter(unittest.TestCase):
+    """대열 메시지 창 — 열 15→17 과 x 50→38 (원판 중심 140 을 지킨다)."""
+
+    def test_center_kept(self):
+        _a, _o, new = engine_patch.LINEUP_X["ed3"]
+        x = new & 0xFFFF
+        self.assertEqual(x + engine_patch.LINEUP_COLS * 12 // 2, 50 + 15 * 12 // 2)
+
+    def test_encoding_disassembles(self):
+        import capstone
+
+        md = capstone.Cs(capstone.CS_ARCH_MIPS, capstone.CS_MODE_MIPS32 | capstone.CS_MODE_LITTLE_ENDIAN)
+        (ins,) = list(md.disasm(struct.pack("<I", engine_patch.LINEUP_X["ed3"][2]), 0x80070B78))
+        self.assertEqual((ins.mnemonic, ins.op_str.replace(" ", "")), ("addiu", "$a0,$zero,0x26"))
+
+
+class TestItemselWindow(unittest.TestCase):
+    """소지품 고르기 창 열 8→11 — 한글 아이템 이름(최장 9)이 칸을 넘지 않게."""
+
+    def test_encoding_disassembles(self):
+        import capstone
+
+        md = capstone.Cs(capstone.CS_ARCH_MIPS, capstone.CS_MODE_MIPS32 | capstone.CS_MODE_LITTLE_ENDIAN)
+        word = struct.pack("<I", 0x24060000 | engine_patch.ITEMSEL_COLS)
+        (ins,) = list(md.disasm(word, 0x800741B0))
+        self.assertEqual((ins.mnemonic, ins.op_str.replace(" ", "")), ("addiu", "$a2,$zero,0xb"))
+
+    def test_precondition_stops_on_foreign_bytes(self):
+        exe = bytearray(engine_patch._off(0x800741B0) + 8)
+        with self.assertRaises(SystemExit):
+            engine_patch.apply_itemsel_window(exe, "ed3")
+
+    def test_invlist_sites_encode_cols(self):
+        import capstone
+
+        md = capstone.Cs(capstone.CS_ARCH_MIPS, capstone.CS_MODE_MIPS32 | capstone.CS_MODE_LITTLE_ENDIAN)
+        for addr, orig, cols, _what in engine_patch.INVLIST_WINDOWS["ed3"]:
+            self.assertEqual(orig, 0x24060008)
+            (ins,) = list(md.disasm(struct.pack("<I", 0x24060000 | cols), addr))
+            self.assertEqual(ins.mnemonic, "addiu")
+
+
 if __name__ == "__main__":
     unittest.main()
 

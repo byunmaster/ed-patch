@@ -67,6 +67,8 @@ import textenc
 #    새로 쓸 이유가 없다. 모양만 한국식으로 바꾼다(`PUNCT`). 여기 EXTRA 는 원본에 **없는** 것만.
 EXTRA = " "  # ⚠ 말줄임표는 마침표 셋(`...`) — 원본도 「・・・」 셋이다
 PUNCT = {",": 0x01, ".": 0x02, "?": 0x04, "!": 0x05}  # 우리 부호 → 원본 코드(모양만 다시 굽는다)
+# `&` `%` 는 원판 전각 글리프(＆ 0x1b · ％ 0x1a)를 그대로 쓴다(마스터 11-14 — 반각 부호는 원판 모양을 살린다). 굽지 않고 자리도 안 받는다 · 12px 전각이라 `typeset.WIDTHS` 에 없다
+ORIG_FULL = {"&": 0x1B, "%": 0x1A}
 PUNCT_ED3 = {"…": 0x03}  # ED3: 말줄임 「…」 = 원본 `・`(코드 3) 자리를 바닥 점 셋으로 다시 굽는다(`font.ellipsis_glyph`, 마스터 10-08)
 
 
@@ -135,7 +137,43 @@ def used_codes(disc, after_patch=True):
 
     done = {off for off, row in uitext.load(disc).items() if row.get("kr")} if after_patch else set()
     used |= exe_used_codes(exe_strings(exe, disc, words), done)
+    if after_patch:
+        used |= kr_charmap_codes(disc)
     return used
+
+
+def kr_charmap_codes(disc):
+    """{코드} — **우리 한국어 문안이 코드표 글자(Ⅰ·Ⅱ·Ⅲ·전각 영문·숫자…)로 그대로 쥐는** 코드.
+
+    🔴 이 코드들은 원본 자리에 그 글자 그림이 있다. 한글에 내주면 같은 코드가 화면에서 한글로 그려진다
+       (10-28 검수: 「민첩의 반지Ⅰ」→「민첩의 반지이」 — Ⅰ·Ⅱ 자리(0x719·0x71A)를 「이」「부」가 차지했다).
+       원본 문자열이 물러나도 우리 문안이 같은 글자를 쓰면 자리는 계속 쓰인다.
+    """
+    import collections
+
+    import glossary
+    import script as script_canon
+    import uitext
+
+    cm = textenc.charmap(disc)
+    inv = {ch: c for c, ch in cm.items()}
+    hang = set(textenc.CONTROL.values())
+    seen = collections.Counter()
+    for lines in script_canon.load_effective(disc)[0].values():
+        for row in lines.values():
+            seen.update(row["kr"])
+    for row in uitext.load(disc).values():
+        seen.update(uitext.RAW_TOKEN.sub("", row["kr"]))
+    for kr in glossary.flat(disc).values():
+        seen.update(kr)
+    out = set()
+    for ch in seen:
+        if ch in hang or ch not in inv:
+            continue
+        if "\uac00" <= ch <= "\ud7a3":  # 한글 음절은 코드표에 있어도(한자 자리 재사용) 자리를 새로 받는다
+            continue
+        out.add(inv[ch])
+    return out
 
 
 def exe_strings(exe, disc, words):
@@ -220,7 +258,7 @@ def needed_chars(disc):
     import uitext
 
     # ⚠ PUNCT(`. , ? !`)는 원본 부호 자리를 다시 구워 쓴다 — 자리를 받으면 낭비다.
-    have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values()) | set(PUNCT) | set(punct(disc))
+    have = set(textenc.charmap(disc).values()) | set(textenc.CONTROL.values()) | set(PUNCT) | set(punct(disc)) | set(ORIG_FULL)
     freq = collections.Counter()
     for lines in script_canon.load_effective(disc)[0].values():
         for row in lines.values():
@@ -235,6 +273,8 @@ def needed_chars(disc):
     import josa_rt
 
     out = list(EXTRA)
+    out += [ch for ch in font.KAGI if ch not in have]  # 대사 「」 반 칸 글리프(font.KAGI)
+    out += [ch for ch in font.SERIES_GLYPHS if ch not in have]  # 목록 창 「검사교본 1」·「사피 제N권」 반 칸 틈 글리프(font.SERIES_GLYPHS)
     # 런타임 조사: 표지(굽지 않는다 — 코드만 받는다)와 조사 글자는 대사에 안 나와도 자리가 있어야 한다.
     out += [ch for ch in josa_rt.runtime_glyphs() if ch not in have and ch not in out]
     for src in (freq, ui):
@@ -291,6 +331,7 @@ def encode(text, disc, table=None):
     rev = {v: k for k, v in textenc.charmap(disc).items()}
     for code, ch in textenc.CONTROL.items():
         rev.setdefault(ch, code)
+    rev.update(ORIG_FULL)
     rev.update(punct(disc))  # 한국식 마침표·쉼표(+ ED3 말줄임) → 원본 코드
     # 실행파일 글(주문·귀중품 설명)의 0x0001 은 **개행**이다 — 스캐너가 「\n」으로 읽으니 되돌린다.
     # ⚠ 그래서 그 창에서는 쉼표(→0x01)도 줄을 바꾼다. 설명문엔 쉼표를 쓰지 않는다.

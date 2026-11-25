@@ -130,6 +130,9 @@ GLYPHS = [
     "록",
     "없",
     "습",  # 기록이 없습니다. (이·니·다 는 위에서 재사용)
+    "데",
+    "터",
+    "가",  # 데이터가 없습니다.(10-25 — 기·록 은 이제 안 쓰이나 코드 자리는 그대로 둔다)
 ]
 CODE_BASE = 0x889F
 CODE = {ch: CODE_BASE + i for i, ch in enumerate(GLYPHS)}
@@ -179,15 +182,28 @@ for _off, (_budget, _data) in STRINGS.items():
 
 
 # SLPS_012.01 안 문자열(RAM 주소) — 「データがありません」 한 줄(@6 색 + 전각 공백 + 9칸 + @%x).
-# 원문 9칸과 같은 9칸으로 쓴다(길이 고정): 「기록이 없습니다.」 — ED3.EXE 쪽 문안과 같다.
+# 「데이터가 없습니다.」(10-25 마스터 — ED4·세이브 창과 같게)는 10칸이라 원문 9칸(26B)보다 2B 길다 — 문자열 뒤 **0 패딩 2B**(다음 문자열은 4B 경계
+# 0x80010C04)가 비어 있어 제자리에서 28B 로 늘린다(그리는 쪽은 널 종결 루프 — 길이 상수 없음). 패딩이 0 인지 `apply` 가 단언한다.
 SLPS_DATA_STR = 0x80010BE8
 SLPS_DATA_ORIG = b"@6\x81\x40" + "データがありません".encode("cp932") + b"@%x\x00"
+SLPS_DATA_ROOM = 28  # 원문 26B + 뒤 패딩 2B
+# 🔴 「10칸 한도」의 정체(11-11 조사, 헤드리스 변형 시험): 줄 버퍼(0x20B)의 **첫 바이트가 그 줄 글 길이 상한**이다 — 「없음」 줄은 `0x8001C658 addiu v0,zero,0x18`(24B)이고
+#    원문 `@6`+공백+9칸+`@%x`(= `@7`) 이 딱 24B 라 끝까지 읽혔다. 11칸이면 26B 라 끝의 색 복원 `@7` 이 잘려 주황이 번졌다(11-07 사고). 상한을 0x1C(28B)로 올리면
+#    공백+「데이터가 없습니다.」(10칸)+복원이 들어간다(버퍼는 줄당 32B — 글 26B + NUL 로 안 넘친다).
+ROW_TYPE_ADDR = 0x8001C658
+ROW_TYPE_ORIG = 0x24020018  # addiu v0, zero, 0x18
+ROW_TYPE_NEW = 0x2402001C
 
 
 def slps_data_string():
-    text = b"".join(_c(ch) if ch != "." else _fullwidth(".") for ch in "기록이 없습니다.")
-    assert len(text) == 18
-    return b"@6\x81\x40" + text + b"@%x\x00"
+    text = b"".join(_c(ch) if ch != "." else _fullwidth(".") for ch in "데이터가 없습니다.")
+    assert len(text) == 20
+    # 🔴 앞 전각 공백을 **뺀다**(11-07 마스터 「다른 페이지 갔다 오면 세이브가 주황색」) — 그리는 쪽이 한 줄을 **10칸**까지만 처리하고 그 뒤의 `@%x`(색 복원 토큰)를
+    #    안 읽는다. 원문은 공백+9칸=10칸이라 끝까지 읽혔는데 공백+10칸(11칸)이 되자 복원이 빠져, 「없음」 줄의 주황(@6)이 다음에 그린 기존 세이브 줄까지 번졌다
+    #    (헤드리스 재현: 원판은 흰색 유지 · 공백 뺀 10칸 문안은 흰색 유지, 실측).
+    out = b"@6" + SP.to_bytes(2, "big") + text + b"@%x\x00"  # 11-11 마스터 「원본대로」 — 원판은 앞 한 칸 들여 시작한다(길이 한도는 아래 ROW_TYPE_ADDR 로 넓혔다)
+    assert len(out) <= SLPS_DATA_ROOM
+    return out.ljust(SLPS_DATA_ROOM, b"\0")
 
 
 REG = {
@@ -535,10 +551,15 @@ def apply(disc, base_arcs=None):
     parts, _entry = build_payload(glyphs)
 
     poke(HOOK_ADDR, build_hook_patch())
-    # 「データがありません」 → 「기록이 없습니다.」 (길이 고정 — 원문과 검산)
+    # 「データがありません」 → 「데이터가 없습니다.」 (패딩 2B 를 먹는다 — 원문과 검산)
     off = T_HEADER + (SLPS_DATA_STR - T_ADDR)
     assert bytes(exe[off : off + len(SLPS_DATA_ORIG)]) == SLPS_DATA_ORIG, "SLPS 문자열이 달라졌다"
     if MODE != "base":
+        roff = T_HEADER + (ROW_TYPE_ADDR - T_ADDR)
+        assert struct.unpack_from("<I", exe, roff)[0] == ROW_TYPE_ORIG, "없음 줄 길이 상한 명령이 달라졌다"
+        struct.pack_into("<I", exe, roff, ROW_TYPE_NEW)
+        pad = bytes(exe[off + len(SLPS_DATA_ORIG) : off + SLPS_DATA_ROOM])
+        assert pad == b"\0" * (SLPS_DATA_ROOM - len(SLPS_DATA_ORIG)), f"SLPS 문자열 뒤 패딩이 비어 있지 않다 — {pad.hex()}"
         poke(SLPS_DATA_STR, slps_data_string())
     for ram, _jp, kr in places:
         if kr is not None:

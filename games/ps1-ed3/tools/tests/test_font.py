@@ -109,17 +109,44 @@ class TestDiscLayout(unittest.TestCase):
         self.assertNotEqual(font.LAYOUT["ed3"], font.LAYOUT["ed4"])
 
 
+class TestHudDots(unittest.TestCase):
+    """대사 속 숫자·Goa/Pia 글자는 원판 소지금 창 글꼴(폭 5px + 여백 1px = 6px 전진) — 반각 칸에 겹치지 않는다(마스터 10-25)."""
+
+    def test_set_and_geometry(self):
+        self.assertEqual(set(font.HUD_DOTS), set("0123456789GoaPi"))
+        for ch, rows in font.HUD_DOTS.items():
+            self.assertEqual(len(rows), 10, ch)
+            self.assertTrue(all(len(r) == 5 for r in rows), ch)
+            g = np.asarray(font.glyph_bits(ch))
+            self.assertEqual(g.shape, (font.ROWS, font.HANGUL_W), ch)
+            self.assertFalse(g[:, 5:].any(), f"{ch}: 6px 전진 안(0~4열)에 앉아야 한다")
+            self.assertFalse(
+                g[0].any() or g[11].any(), f"{ch}: 위 한 행·아래 한 행은 비어야 한다(바닥선 10행)"
+            )
+            self.assertTrue(g[1:11].any(), ch)
+
+    def test_other_ascii_keep_galmuri(self):
+        """희귀 영문(A·I·z …)은 그대로 Galmuri — 이 글꼴 세트에 안 든다."""
+        for ch in "AIzCRBYKLDOSJ":
+            self.assertNotIn(ch, font.HUD_DOTS)
+
+
 class TestEllipsis(unittest.TestCase):
     def test_ellipsis_is_three_bottom_dots_in_one_cell(self):
         """🔴 말줄임은 「…」 전각 한 글자, 점 셋은 마침표와 같은 바닥 행(마스터 10-08)."""
         g = np.asarray(font.hangul_glyph("…"))
         rows = [r for r in range(g.shape[0]) if g[r].any()]
-        dot = np.asarray(font.hangul_glyph("."))
+        dot = np.asarray(font.hangul_glyph("."))  # 대사 마침표 2×2 — 말줄임의 점이 이 잉크와 같은 모양이다(마스터 11-16)
         period_rows = [r for r in range(dot.shape[0]) if dot[r].any()]
-        self.assertEqual(rows, period_rows)  # 마침표와 같은 높이(바닥) — Galmuri 의 가운데 행(5)이 아니다
+        self.assertEqual(
+            rows, period_rows
+        )  # 마침표와 같은 높이(바닥) — Galmuri 의 가운데 행(5)이 아니다
         self.assertGreaterEqual(min(rows), 9)
         self.assertEqual(int(g.sum()), 3 * int(dot.sum()))  # 점 셋
         self.assertEqual(font.ELLIPSIS_CODE["ed3"], 3)
+        self.assertEqual(rows, [9])
+        first = g[9:10, 1:3]  # 점 하나 = 마침표 잉크(2×1)와 픽셀 단위로 같다
+        self.assertTrue((first == dot[9:10, 2:4]).all() and first.all())
 
     def test_ellipsis_encodes_to_the_reshaped_code_and_is_full_width(self):
         import hangul_map
@@ -127,3 +154,21 @@ class TestEllipsis(unittest.TestCase):
 
         self.assertEqual(hangul_map.encode("…", "ed3", {}), [3])
         self.assertEqual(typeset.width_cells("…", "ed3"), 1.0)  # 반각(0.5)이 아니다
+
+
+class TestHalfPunct(unittest.TestCase):
+    def test_half_punct_fits_half_cell_and_matches_original_ink(self):
+        """🔴 반각 부호(마스터 11-14): 잉크가 반 칸(6열) 안이고, `.` 는 원판 `！` 점 높이(9행)·2열, `(` `)` 는 좌우 대칭이다."""
+        for ch in font.HALF_PUNCT:
+            g = np.asarray(font.hangul_glyph(ch))
+            self.assertEqual(g.shape, (12, 12))
+            self.assertTrue(g.any(), ch)
+            self.assertFalse(g[:, 6:].any(), ch)
+        dot = np.asarray(font.hangul_glyph("."))
+        self.assertEqual([r for r in range(12) if dot[r].any()], [9])  # 원판 ？！ 점과 같다(2×1, 9행)
+        self.assertEqual(int(dot.sum()), 2)
+        exe = font.exe_bytes("ed3")[0]
+        orig = np.asarray(font.read_glyph(exe, 5))  # 원판 ！ — 점 행은 마침표와 같은 행·같은 가로폭
+        self.assertEqual(int(orig[9].sum()), int(dot[9].sum()))
+        o, c = np.asarray(font.hangul_glyph("(")), np.asarray(font.hangul_glyph(")"))
+        self.assertTrue((o[:, :6] == c[:, :6][:, ::-1]).all())

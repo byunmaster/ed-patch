@@ -27,6 +27,7 @@ MARKERS = [
     ("", "을", "를", 0),
     ("", "과", "와", 0),
     ("", "으", None, 3),
+    ("", "이", None, 1),  # 서술격 「(이)」 — 받침이 있으면(ㄹ 포함) 「이」를 그리고 없으면 안 그림(「포션(이)네요」 → 포션이네요 · 「Pia(이)네요」 → Pia네요)
 ]
 MARKER_CHARS = {m[0] for m in MARKERS}
 PAIR_MARKER = {"은/는": 0, "이/가": 1, "을/를": 2, "과/와": 3, "와/과": 3}
@@ -42,6 +43,7 @@ _PAIRS = {
 }
 _TOKEN = re.compile("|".join(re.escape(k) for k in sorted(_PAIRS, key=len, reverse=True)))
 _EU_RO = re.compile(r"^(?:\(으\)로|으\(로\)|으로\(로\))")
+_COPULA = re.compile(r"^\(이\)")
 
 # 숫자는 **읽는 소리**의 받침이다(1 일 · 2 이 · 3 삼 · 4 사 · 5 오 · 6 육 · 7 칠 · 8 팔 · 9 구 · 0 영/십/백/천/만) — 마스터 09-26.
 DIGIT_BATCHIM = {"0": 1, "1": 2, "2": 0, "3": 1, "4": 0, "5": 0, "6": 1, "7": 2, "8": 2, "9": 0}  # 0 없음 · 1 받침 · 2 ㄹ
@@ -66,6 +68,8 @@ def convert(kr):
     m = _EU_RO.match(kr)
     if m:
         head, rest = MARKERS[4][0] + "로", kr[m.end() :]
+    elif _COPULA.match(kr):
+        head, rest = MARKERS[5][0], kr[3:]
     else:
         m = _TOKEN.match(kr)
         if m:

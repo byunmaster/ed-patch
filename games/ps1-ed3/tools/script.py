@@ -79,7 +79,17 @@ def member_floors(segs):
         if head and ("\n" in jp or jp.rstrip().endswith(("。", "？", "！"))):
             head = False
         out[i] = NAME_FLOOR if head else w
+        out[i] = max(out[i], _width_floor().get(hashlib.sha1(jp.encode("utf-8")).hexdigest()[:8], 0))
     return out
+
+
+def _width_floor():
+    """{원문 지문: 칸} — `width_floor.json`(짧은 원문 멤버인데 창이 넓은 자리)."""
+    path = os.path.join(common.ROOT, "width_floor.json")
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as f:
+        return {k: v for k, v in json.load(f).items() if not k.startswith("_")}
 
 
 def members(disc):

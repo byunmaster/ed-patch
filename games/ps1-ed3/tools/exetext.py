@@ -40,6 +40,8 @@ import textenc
 
 TERM_ZERO = 0x0000
 TERM_FFFF = 0xFFFF
+# ED3 아이템 표(0x96F36)의 「이름+0+접미」 한 문자열 13개 — 사피 제1~9권(#107~114·118) · 검사교본 1~3(#115~117). 원판 문자열 시작(파일 오프셋)
+SERIES_ENTRIES = frozenset(0x97592 + 0x12 * i for i in range(13))
 PREFIX = 6  # 차분 앞부분 이만큼으로 후보를 좁힌다
 
 
@@ -346,6 +348,23 @@ def panel_structure_problems(orig, new, start, end):
     return bad
 
 
+def panel_width_problems(data, start, end, space, row_px):
+    """패널 줄 중 **화면 폭이 칸을 넘는 줄** — `[사유…]`. 폭 = 공백 6 · 글자 12 · 0 코드 0 이고, 칸을 넘으면 그 줄만 글자 간격 11px(공백 6 그대로, `tile_hook.panel_stubs`)로 센다.
+    그래도 넘으면 글자가 박스 밖으로 나간다(게이트)."""
+    bad = []
+    for unit in panel_units(data, start, end):
+        for off, n in unit:
+            ws = [w for w in struct.unpack_from(f"<{n}H", data, off) if w]
+            w12 = sum(6 if w == space else 12 for w in ws)
+            if w12 > row_px:
+                w11 = w12 - sum(1 for w in ws if w != space)
+                if w11 > row_px:
+                    bad.append(
+                        f"0x{off:X} 줄 {len(ws)}코드 폭 {w12}px → 간격 11px {w11}px > {row_px}px"
+                    )
+    return bad
+
+
 PANEL_TABLE = {"ed3": (0x9B6FC, 133)}  # 장소 표 — u16 항목 = 표 시작 기준 오프셋(문자열 목록 시작)
 
 
@@ -359,6 +378,48 @@ def panel_inserts(data, disc, lines_need):
             if need > n:
                 out.append((off + 2 * n, need - n))
     return out
+
+
+def panel_strip_leads(exe, disc):
+    """패널 풀 모든 줄의 **앞 0(들여쓰기 칸)을 걷어** 영역 끝 0 꼬리로 돌린다. 반환 = 되찾은 워드 수.
+
+    엔진 스텁(`tile_hook.panel_stubs`)이 줄을 글자 수로 가운데 맞추고 0 코드 폭을 0 으로 보므로 앞 0 은 화면에 아무 영향이 없는데 풀 자리만 먹는다(11-11 조사 — 131곳 262B).
+    제어 코드 열(≥0x8000)은 그대로이고, 장소 표 항목(문자열 목록 시작 오프셋)을 줄어든 만큼 고친다. 줄 안 0·꼬리 0 은 건드리지 않는다."""
+    start, end = PANEL[disc]
+    tab, n_ent = PANEL_TABLE[disc]
+    old = bytes(exe[start:end])
+    words = struct.unpack(f"<{len(old) // 2}H", old)
+    new, pos = [], []  # pos[i] = 옛 워드 i 가 새 풀에서 놓이는 워드 번호
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if w >= 0x8000:
+            pos.append(len(new))
+            new.append(w)
+            i += 1
+            continue
+        j = i
+        while j < len(words) and words[j] < 0x8000:
+            j += 1
+        k = i
+        while j < len(words) and k < j - 1 and words[k] == 0:  # 영역 끝 꼬리 0 은 줄이 아니다 — 그대로  # 글자가 하나도 없는 줄(전부 0)은 한 칸을 남긴다
+            k += 1
+        for q in range(i, k):
+            pos.append(len(new))
+        for q in range(k, j):
+            pos.append(len(new))
+            new.append(words[q])
+        i = j
+    freed = len(words) - len(new)
+    new += [0] * freed
+    pos.append(len(words) - freed)  # 끝 경계
+    exe[start:end] = struct.pack(f"<{len(new)}H", *new)
+    for e in range(n_ent):
+        v = struct.unpack_from("<H", exe, tab + 2 * e)[0]
+        o = tab + v - start
+        assert o % 2 == 0 and 0 <= o // 2 < len(pos), f"패널 표 {e}번이 풀 밖을 가리킨다"
+        struct.pack_into("<H", exe, tab + 2 * e, start + 2 * pos[o // 2] - tab)
+    return freed
 
 
 def panel_relayout(exe, disc, inserts):
@@ -584,8 +645,11 @@ def rebuild(data, tbl, base, n, new_codes, cm=None, pad_code=None):
             pool += term_bytes
             tail_pad[last_x] = extra_words
         out[lo : lo + len(pool)] = pool
+        # 🔴 종결이 0x0000 인 문자열은 뒤 빈틈 문자열(「サフィー」+0+「第２巻」 꼴)로 **이어 읽힌다** — 남는 자리를 FFFF 로 채우면 이름이
+        #    거기서 끝나 권 번호가 잘린다(10-28 검수: 사피 아홉 권이 모두 「사피」). 그 종결(0)로 채워 이어 읽히게 둔다.
+        fill = TERM_ZERO if starts and terms[starts[-1] - base] == TERM_ZERO else TERM_FFFF
         for i in range(lo + len(pool), hi, 2):  # 그래도 남는 자리는 종결로 채운다
-            struct.pack_into("<H", out, i, TERM_FFFF)
+            struct.pack_into("<H", out, i, fill)
         slack += hi - lo - len(pool)
     if max(remap.values()) > 0xFFFF:
         raise ExeTextError("오프셋이 u16 을 넘었다")

@@ -17,6 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common
+import font
 import josa_rt
 import script as script_canon
 import scriptmap
@@ -29,23 +30,53 @@ NO_LINE_START = tuple(".,!?)」』…~、。！？")
 def line_problems(text):
     """한 줄바꿈 결과의 규칙 위반 사유들."""
     out = []
-    if ".." in text:  # 🔴 말줄임은 「…」 전각 한 글자다(마스터 10-08) — 점 연속은 둘이든 셋이든 규칙 밖(번역 규칙 1-3: 점 n 개 → 「…」 round(n/3) 개, 최소 1 — 점 둘 55줄이 10-18 재검수에서 나왔다)
+    if (
+        ".." in text
+    ):  # 🔴 말줄임은 「…」 전각 한 글자다(마스터 10-08) — 점 연속은 둘이든 셋이든 규칙 밖(번역 규칙 1-3: 점 n 개 → 「…」 round(n/3) 개, 최소 1 — 점 둘 55줄이 10-18 재검수에서 나왔다)
         out.append(f"말줄임이 `..` 이다(「…」 로): {text[:16]!r}")
-    if "~" in text:  # 물결표는 전각(〜) — 반각 `~` 는 글리프가 반 칸 모양이라 뒤 부호와 틈이 벌어진다(마스터 10-12 「어이~ !」)
+    if (
+        "~" in text
+    ):  # 물결표는 전각(〜) — 반각 `~` 는 글리프가 반 칸 모양이라 뒤 부호와 틈이 벌어진다(마스터 10-12 「어이~ !」)
         out.append(f"반각 물결표 `~` (전각 〜 로): {text[:16]!r}")
-    if re.search(r"\d(Pia|Goa)", re.sub("\ufffd[0-9a-f]{3,4}", "", text)):  # 숫자와 단위 사이는 반각 공백(「5 Pia」 — ED1·2 「0 Gold」와 같게, 마스터 10-13)
+    if re.search(
+        r"\d(Pia|Goa)", re.sub("\ufffd[0-9a-f]{3,4}", "", text)
+    ):  # 숫자와 단위 사이는 반각 공백(「5 Pia」 — ED1·2 「0 Gold」와 같게, 마스터 10-13)
         out.append(f"숫자와 Pia/Goa 사이 공백 없음: {text[:16]!r}")
-    if re.search(r"[～~〜][.。．]", text.replace("\n", "")):  # 🔴 물결표 뒤 마침표는 문법에 안 맞는다(번역 규칙 1-7, 마스터 10-12) — 「불렀어～.」 → 「불렀어～」
+    # 🔴 한 낱말 안에서 글꼴이 섞이면 안 된다(마스터 10-25) — 숫자 0~9 와 G o a P i 는 원판 소지금 창 글꼴(font.HUD_DOTS), 나머지 영문은 Galmuri 라
+    #    「3rd」「Goal」 처럼 한 낱말에 둘이 있으면 글자마다 모양·폭이 다르다. 숫자만(「300」)·HUD 글자만(「Goa」「Pia」「5Pia」)은 통일이라 통과.
+    for w in re.findall(r"[A-Za-z0-9]+", re.sub("\ufffd[0-9a-f]{3,4}", " ", text)):
+        if any(c in font.HUD_DOTS for c in w) and any(c not in font.HUD_DOTS for c in w):
+            out.append(f"한 낱말에 글꼴이 섞임(숫자·Goa/Pia 글꼴 + Galmuri 영문): {w!r}")
+    if re.search(
+        r"[～~〜][.。．]", text.replace("\n", "")
+    ):  # 🔴 물결표 뒤 마침표는 문법에 안 맞는다(번역 규칙 1-7, 마스터 10-12) — 「불렀어～.」 → 「불렀어～」
         out.append(f"물결표(～) 뒤에 마침표: {text[:16]!r}")
     # 예외(2-11, 마스터 10-12): 한 낱말을 음절마다 끊어 말하는 꼴(「세…리…오…스…」)은 붙인다 — 한 글자+「…」 가 둘 이상 이어진 덩이 · 같은 소리를 되풀이하는 의성어(「흑…흑…흑…」) · 「…」 뒤 여는 괄호는 붙인다(마스터 10-13)
     t_flat = text.replace("\n", " ")
-    if re.search(r"(?:^|[.!?」] )…+ [가-힣A-Za-z0-9「『]", t_flat):  # 문장 맨 앞 「…」 는 뒤를 붙인다(번역 규칙 2-11 정정, 마스터 10-13 — 말줄임이 아니라 앞에 오는 「…」)
+    if re.search(
+        r"(?:^|[.!?」] )…+ [가-힣A-Za-z0-9「『]", t_flat
+    ):  # 문장 맨 앞 「…」 는 뒤를 붙인다(번역 규칙 2-11 정정, 마스터 10-13 — 말줄임이 아니라 앞에 오는 「…」)
         out.append(f"문장 맨 앞 「…」 뒤에 공백: {text[:16]!r}")
-    if re.search(r"…+[가-힣A-Za-z0-9「『]", re.sub(r"(?:^|(?<=[.!?」] ))…+", "", re.sub(r"(?<![가-힣])(?:[가-힣]…){2,}[가-힣]?|(?<![가-힣])([가-힣]+…)(?:\1)+", "", text))):  # 🔴 「…」 뒤에 말이 이어지면 반각 공백(번역 규칙 2-11, 마스터 10-12) — 「그대도…잊었다」 → 「그대도… 잊었다」
+    if re.search(
+        r"…+[가-힣A-Za-z0-9「『]",
+        re.sub(
+            r"(?:^|(?<=[.!?」] ))…+",
+            "",
+            re.sub(
+                r"(?<![가-힣])(?:[가-힣]…){2,}[가-힣]?|(?<![가-힣])([가-힣]+…)(?:\1)+", "", text
+            ),
+        ),
+    ):  # 🔴 「…」 뒤에 말이 이어지면 반각 공백(번역 규칙 2-11, 마스터 10-12) — 「그대도…잊었다」 → 「그대도… 잊었다」
         out.append(f"「…」 뒤에 공백 없이 글자가 붙었다: {text[:16]!r}")
-    if re.search(r"[?!？！]…", text.replace("\n", "")):  # 물음표·느낌표와 「…」 가 겹치면 「…」 가 앞(번역 규칙 2-12, 마스터 10-13) — 「…?」「…!」「…!?」
+    if re.search(
+        r"[?!？！]…", text.replace("\n", "")
+    ):  # 물음표·느낌표와 「…」 가 겹치면 「…」 가 앞(번역 규칙 2-12, 마스터 10-13) — 「…?」「…!」「…!?」
         out.append(f"「…」 는 ?·! 앞에(「…!?」): {text[:16]!r}")
-    for ln in text.split("\n")[1:]:  # 첫 줄은 문장의 시작이다(「...내일부터인데」 말줄임으로 시작해도 정상) — 줄바꿈 뒤 줄만 본다
+    for ln in text.split(
+        "\n"
+    )[
+        1:
+    ]:  # 첫 줄은 문장의 시작이다(「...내일부터인데」 말줄임으로 시작해도 정상) — 줄바꿈 뒤 줄만 본다
         if ln[:1] in NO_LINE_START and ln[:1]:
             out.append(f"줄 머리에 부호 {ln[:1]!r}: {ln[:12]!r}")
     return out
@@ -101,7 +132,9 @@ def check(disc):
                 bad += [f"ui:{off}: {m}" for m in line_problems(kr)]
                 for ln in kr.split("\n"):
                     if typeset.width_cells(ln, disc) > typeset.LIMITS[disc]["width"]:
-                        bad.append(f"ui:{off}: 줄이 {typeset.width_cells(ln, disc):g}칸 — {ln[:12]!r}")
+                        bad.append(
+                            f"ui:{off}: 줄이 {typeset.width_cells(ln, disc):g}칸 — {ln[:12]!r}"
+                        )
     return bad, n, n_ui
 
 
