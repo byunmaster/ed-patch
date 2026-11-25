@@ -63,6 +63,55 @@ DRAW_ROWS = 15
 # 셀(16×15)에 잉크 13행이 여유 있게 들어가고, 예산은 행 사전 코덱이 열어 줬다
 # (옛 행-그대로 코덱으로는 5,472B 로 탈락했다 — `compress_font_dict` 주석).
 NEODGM_TTF = os.path.join(hangul_font.REPO_ROOT, "shared", "fonts", "neodgm.ttf")
+
+# ── 스태프롤 라틴을 원판 표기로 (시험 경로, 마스터 10-27 「GMF·W-FROM·Corporation 도 원본 표기」) ──────────
+# `ED_STAFF_ORIG_LATIN=1` 일 때만. 원판 엔딩은 라틴을 SJIS 전각(区3)으로 쓰고 글리프는 PS1 BIOS 한자폰트
+# (0xBFC66000, 16×15) 것이다 — 그 글리프를 BIOS 이미지에서 떠 와 그대로 쓴다. 제품 롬은 이 값이 꺼져 있다.
+STAFF_ORIG_LATIN = os.environ.get("ED_STAFF_ORIG_LATIN") == "1"
+BIOS_FONT_OFF = 0x66000
+STAFF_ORIG = {  # 스태프롤 키 → 원판 표기(전각 区3). 키는 END_STAFF.json 의 것.
+    "2d5e244b43": "（주）Ｗ－ＦＲＯＭ",
+    "b9e95f78c6": "마쓰에 가쓰미（ＵＡＩ）",
+    "dff695622e": "Ｊｕｎ Ｈｉｒａｂａｙａｓｈｉ",
+    "a4559efd64": "Ｔａｋｅｓｈｉ Ｋｕｄｏ",
+    "5dd9b66ceb": "ＳＡＬ Ｌａｂｏｒａｔｏｒｙ",  # 원판 전각공백 0x8140 은 advance 2(반각) — 반각 공백 슬롯으로
+    "6b322416c7": "　　　　　　Ｃｏｒｐｏｒａｔｉｏｎ",  # 원판 ＿(0x8151, 잉크 없음)는 전각 advance — 전각 공백으로
+    "78c63158c5": "　　　　　　　　　Ｃｏ．，Ｌｔｄ．",
+    "e9b4ee606e": "~ＣＲＥＤＩＴＳ",
+    "06ade692aa": "<ＣＲＥＤＩＴＳ",
+}
+
+
+def _bios_index(ch):
+    """전각 라틴·부호의 BIOS 한자폰트 색인(표는 정의된 글자만 이어 붙인 꼴 — 区3 는 Ａ=157 부터 연속)."""
+    c = ord(ch)
+    if "Ａ" <= ch <= "Ｚ":
+        return 157 + c - 0xFF21
+    if "ａ" <= ch <= "ｚ":
+        return 183 + c - 0xFF41
+    return {"，": 3, "．": 4, "－": 60, "（": 41, "）": 42}.get(ch)
+
+
+def _bios_latin_bits(ch):
+    i = _bios_index(ch) if len(ch) == 1 else None
+    if i is None:
+        return None
+    with open(_bios_path(), "rb") as f:
+        f.seek(BIOS_FONT_OFF + i * 30)
+        g = f.read(30)
+    return np.unpackbits(np.frombuffer(g, dtype=np.uint8).reshape(15, 2), axis=1)
+
+
+def _bios_path():
+    """메인 트리 `.local/keep/bios/psx/` 의 일본판 BIOS — 워크트리에는 `.local/` 이 안 따라온다(git common dir 로 거슬러 찾는다)."""
+    import subprocess
+
+    base = os.path.dirname(
+        subprocess.check_output(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], text=True, cwd=os.path.dirname(__file__)
+        ).strip()
+    )
+    return os.path.join(base, ".local", "keep", "bios", "psx", "SCPH1001.BIN")
 GALMURI_BDF = hangul_font.GALMURI11_BDF.replace("Galmuri11", "Galmuri9")  # 압축 비교용으로만 남긴다
 # Galmuri9 dy=1 → 잉크 3~11행(위3/아래3 여백, 무잘림). 압축 3584B로 안전영역에 여유.
 GALMURI_DY = 1
@@ -256,6 +305,8 @@ def gen_glyphs(chars, narrow_singles=frozenset()):
         bits = (np.array(im) >= 128).astype(np.uint8)
         if ch == "…":
             bits = _ellipsis_bits(ft)
+        if STAFF_ORIG_LATIN and (b := _bios_latin_bits(ch)) is not None:
+            bits = b
         # 숫자가 든 두 글자 셀은 잉크를 **왼쪽으로 1px** 민다 — 규칙 1-5(마스터 10-13): 오프닝·엔딩 자막의
         # 숫자는 뒤 글자와 눈에 보이는 틈을 둔다. `10` 은 잉크가 1~14px 라 뒤 글자(`여`)와 틈이 2px 뿐이어서
         # 「10여」 가 붙어 보였다. 왼쪽 끝 열이 비어 있을 때만 민다(잉크를 잘라먹지 않는다).
@@ -465,9 +516,35 @@ def index_to_sjis(idx):
     return H.kuten_to_sjis(ku, ten)
 
 
+LOW_X = None  # 전각 소문자 슬롯 블록의 첫 SJIS(원판 advance 3 구간 시작) — STAFF_ORIG_LATIN 일 때만
+
+
+def _is_low(ch):
+    return len(ch) == 1 and "ａ" <= ch <= "ｚ" and ch != "ｉ"  # ｉ 는 원판 advance 2(반각 슬롯)
+
+
+def slot_order(slot):
+    """슬롯 순서대로 글자(빈 자리는 None) — 폰트 배열 순서와 같다."""
+    by_idx = {idx: ch for ch, (_, idx) in slot.items()}
+    return [by_idx.get(JIS_KANJI1_INDEX + i) for i in range(max(by_idx) - JIS_KANJI1_INDEX + 1)]
+
+
 def build_slots(syllables):
     """음절 → 연속 한자슬롯 매핑. 인덱스 1410부터 순차 배정 → 폰트 컴팩트."""
+    global LOW_X
     slot = {}
+    if STAFF_ORIG_LATIN and any(_is_low(c) for c in syllables):
+        rest = sorted(c for c in syllables if not _is_low(c))
+        lows = sorted(c for c in syllables if _is_low(c))
+        for i, ch in enumerate(rest):
+            slot[ch] = (index_to_sjis(JIS_KANJI1_INDEX + i), JIS_KANJI1_INDEX + i)
+        start = -(-(JIS_KANJI1_INDEX + len(rest)) // 94) * 94  # 줄(구) 첫머리 — 블록이 0x7F 틈을 안 건넌다
+        assert len(lows) < 60
+        for i, ch in enumerate(lows):
+            slot[ch] = (index_to_sjis(start + i), start + i)
+        LOW_X = slot[lows[0]][0]
+        assert slot[lows[-1]][0] - LOW_X < 26, "소문자 슬롯이 advance 3 구간(26칸)을 넘는다"
+        return slot
     for i, ch in enumerate(sorted(syllables)):
         idx = JIS_KANJI1_INDEX + i  # 1410, 1411, ...
         sjis = index_to_sjis(idx)
@@ -706,6 +783,8 @@ def patch_game(name):
     if g.get("blocks") and os.path.exists(STAFF):
         with open(STAFF, encoding="utf-8") as f:
             staff = json.load(f)
+    if STAFF_ORIG_LATIN and staff:  # 스태프롤이 있는 파일(END1·END2)만 — OPEN1·OPEN2 폰트는 안 바뀐다
+        staff = {**staff, **STAFF_ORIG}
     syl = set()
     for _, kr in LINES + far_lines:  # ⚠ 구획 밖 줄의 글자도 폰트에 있어야 한다
         syl.update(render_units(norm(kr)))
@@ -723,12 +802,15 @@ def patch_game(name):
     #   벌어진다(2026-09-16 실측 「겨우 6 살이었다.」).
     lone_pairable = sorted(c for c in syl if len(c) == 1 and c in PAIRABLE)
     narrow_candidates = list(NARROW) + lone_pairable
+    if STAFF_ORIG_LATIN:  # 원판 좁은 글자 5종은 전각공백·ｆｉｊｌ — 스태프롤에 쓰이는 ｉ 를 넣는다
+        narrow_candidates = [*" .,", "ｉ", *"()!?", *lone_pairable]
     narrow = [c for c in narrow_candidates if c in slot][:5]
 
     # 1) 폰트를 네이티브 30B로 생성 → 행-마스크 압축 → 안전 0영역에 임베드.
     #    (raw 5730B는 안전영역 초과 → 압축본 ~3986B만 파일에 둔다. 스텁이 자유 RAM에 푼다.)
     glyphs = gen_glyphs(sorted(syl), narrow_singles=frozenset(narrow))  # 30B/글리프(15행)
-    raw = [glyphs[ch][:GLYPH] for ch in sorted(syl)]
+    raw = [glyphs[ch][:GLYPH] if ch else bytes(GLYPH) for ch in slot_order(slot)]
+    n = len(raw)  # 슬롯 사이에 빈 자리가 낄 수 있다(STAFF_ORIG_LATIN)
     comp, NDICT = compress_font_dict(raw)
     assert len(comp) <= COMP_FONT_MAX, (
         f"압축폰트 {len(comp)}B > 안전 {COMP_FONT_MAX}B"
@@ -996,6 +1078,24 @@ def patch_game(name):
             assert ins >> 26 == 0x0D, f"ori 아님 @0x{base + k * step:X}: {ins:08X}"
             w32(op, a, (ins & 0xFFFF0000) | c)
     print(f"반각 처리: {''.join(narrow)!r} → advance {ADV_NARROW}유닛 (전각 {ADV_WIDE})")
+
+    # 4c) 전각 소문자(원판 0x8281~0x829A)는 원판 엔진이 advance 3(12px)으로 센다 — 폭측정·표시 둘 다
+    #     `addiu v0,v0,0x7d7f`(= −0x8281) 뒤 `sltiu 0x1a`. 우리 슬롯은 한자 구간이라 이 구간 밖이므로,
+    #     STAFF_ORIG_LATIN 일 때만 그 상수를 소문자 슬롯 블록 시작(LOW_X)으로 바꾼다.
+    if STAFF_ORIG_LATIN and LOW_X is not None:
+        # 폭측정 `addiu v0,v0,imm`(0x24427D7F) · 표시 `addiu v0,s5,imm`(0x26A27D7F) — 둘 다 뒤에 `sltiu v0,v0,0x1a`
+        hits = []
+        for i in range(0x800, len(op) - 0x20, 4):
+            w = struct.unpack("<I", op[i : i + 4])[0]
+            if w in (0x24427D7F, 0x26A27D7F):
+                assert any(
+                    struct.unpack("<I", op[i + k : i + k + 4])[0] == 0x2C42001A for k in (8, 12, 16)
+                ), f"sltiu 0x1a 가 안 따른다 @{i:X}"
+                hits.append((i, w))
+        assert len(hits) == 2, f"소문자 구간 상수 위치 {len(hits)}곳(기대 2)"
+        for i, w in hits:
+            w32(op, i, (w & 0xFFFF0000) | ((-LOW_X) & 0xFFFF))
+        print(f"전각 소문자 advance 3 구간 → 슬롯 0x{LOW_X:04X}~ ({len(hits)}곳)")
 
     # ⚠ 폭측정·표시 **양쪽 다** 같은 값이어야 한다 — 어긋나면 중앙정렬이 밀려 글자가
     #   화면 밖으로 잘린다. 그래서 `ADV_WIDE` 하나에서 끌어온다.

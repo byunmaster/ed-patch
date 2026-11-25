@@ -66,4 +66,8 @@ def monster_lines_ed2():
         canon.update(canon_table(cat, "ed2"))
     out = {k: canon[k] for k in raw.get("_canon_keys", [])}
     out.update({k: v for k, v in raw.items() if not k.startswith("_")})
+    hp = os.path.join(here, "hotfix", "textmap", "monster_lines_ed2.json")
+    if os.environ.get("ED_HOTFIX") == "1" and os.path.exists(hp):  # 핫픽스 시험 경로 — 제품 롬은 안 바뀐다
+        with open(hp, encoding="utf-8") as f:
+            out.update({k: v for k, v in json.load(f).items() if not k.startswith("_")})
     return out

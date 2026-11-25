@@ -143,6 +143,12 @@ def derive(cls):
     """textmap/<cls>.json → OrderedDict(k → 최종 문자열). sha 가드로 원본 무결성 검증."""
     tm = load_textmap(cls)
     cache, out = {}, {}
+    hotfix = {}
+    if os.environ.get("ED_HOTFIX") == "1":
+        hp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hotfix", "textmap", f"{cls}.json")
+        if os.path.exists(hp):
+            with open(hp, encoding="utf-8") as f:
+                hotfix = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
 
     def piece(s):
         """{src} 한 조각 → 문자열. `ours` 키면 우리 문안 그대로."""
@@ -178,10 +184,11 @@ def derive(cls):
         val = _PUNCT_SP.sub("", val)
         if "canon" not in e:  # 정본에서 읽는 값은 정본이 바뀌면 따라온다(가드 없음)
             assert _guard(val) == e["sha"], f"{cls}:{e['k']} 파생 불일치 — 원본/textmap 확인"
-        out[e["k"]] = val
-    os.makedirs(DERIVED_DIR, exist_ok=True)
-    with open(os.path.join(DERIVED_DIR, f"{cls}.json"), "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, indent=0)
+        out[e["k"]] = hotfix.get(e["k"], val)  # 핫픽스 시험 경로(ED_HOTFIX=1) — 가드는 제품 파생값으로 이미 통과했다
+    if not hotfix:  # 핫픽스 값은 파생 산출물(work/derived/text)에 남기지 않는다
+        os.makedirs(DERIVED_DIR, exist_ok=True)
+        with open(os.path.join(DERIVED_DIR, f"{cls}.json"), "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=0)
     return out
 
 

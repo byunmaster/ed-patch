@@ -27,6 +27,7 @@ import shutil
 import sys
 
 import hangul_map
+import patch_kagi_half as KAGI_HALF
 from patch_hangul_glyph_table import QUOTE_CODES
 from common import (
     BUILD_DIR,
@@ -54,6 +55,11 @@ from text.krwrap import wrap_pages as kr_wrap_pages
 # 실행 중 os.environ 을 다시 보면, 도중에 import 되는 도구가 켠 우회에 빌드 검증이 조용히
 # 꺼진다 — 실제로 그렇게 됐다(2026-08-04, `lock_lines` import 만으로 검증 무력화).
 LOCK_BYPASS = os.environ.get("LOCK_BYPASS") == "1"
+
+# 🔴 **핫픽스 시험 경로** — `ED_HOTFIX=1` 일 때만 `hotfix/script/<씬>.json`(제품 정본 위에 덧씌우는 문안)을 읽는다.
+# 기본(끔)은 제품 바이트가 그대로다 — 배포(v1.2.1) 적용 여부는 마스터 판단이다.
+HOTFIX = os.environ.get("ED_HOTFIX") == "1"
+HOTFIX_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hotfix")
 
 ED_LBA, ED_SIZE = 257, 1021952  # ED.EXE (폰트 탑재 대상)
 ED2_LBA, ED2_SIZE = 756, 872448  # ED2.EXE — **폰트를 따로 들고 있다**(font_map.FONT_BASE)
@@ -227,6 +233,10 @@ def encode_ext(text):
             out += MC + PS + MC
         elif ch == " ":
             out.append(0x20)
+        elif ch in KAGI_HALF.CODES and KAGI_HALF.ENABLED:  # 시험 전용(ED_KAGI_HALF=1)
+            out.append(KAGI_HALF.CODES[ch])
+        elif KAGI_HALF.QUOTE_S and ch in KAGI_HALF.QUOTE_S_MAP:  # 시험 전용(ED_QUOTE_S=1) — 방향 없는 " '
+            out.append(KAGI_HALF.QUOTE_S_MAP[ch])
         elif ch in QUOTE_CODES:
             # 반각 여닫는 따옴표 “ ” — 전용 글리프 코드(patch_hangul_glyph_table)
             out.append(QUOTE_CODES[ch])
@@ -1003,6 +1013,8 @@ def cell_w(ch):
         return (NAME_SLOTS if ch == JOSA_NAME else ITEM_SLOTS) + 1
     if ch == NOBREAK_SP:
         return 0.5  # 보통 공백과 같은 폭(조판 후 공백으로 되돌린다)
+    if KAGI_HALF.ENABLED and ch in KAGI_HALF.CODES:
+        return 0.5  # 시험 전용 — 반각 「」
     return 0.5 if ch == " " or ch in HALF_PUNCT or ch in QUOTE_CODES or (ch.isascii() and ch.isalnum()) else 1.0
 
 
@@ -3071,7 +3083,24 @@ def _load_script():
         if name.endswith(".json"):
             with open(os.path.join(SCRIPT_DIR, name), encoding="utf-8") as f:
                 out[name[:-5]] = json.load(f)
+    if HOTFIX:  # 시험 경로 — 제품 정본 위에 핫픽스 문안을 덮는다(블록 단위)
+        hdir = os.path.join(HOTFIX_DIR, "script")
+        for name in sorted(os.listdir(hdir)) if os.path.isdir(hdir) else ():
+            if name.endswith(".json"):
+                with open(os.path.join(hdir, name), encoding="utf-8") as f:
+                    for eid, v in json.load(f).items():
+                        if not eid.startswith("_"):
+                            out.setdefault(name[:-5], {})[eid] = v
     return out
+
+
+def hotfix_eids(scn):
+    """핫픽스가 덮는 블록 번호(문자열→int) — 확정 락이 이 블록의 문안 변경을 위반으로 세지 않게 한다."""
+    p = os.path.join(HOTFIX_DIR, "script", f"{scn}.json")
+    if not (HOTFIX and os.path.exists(p)):
+        return set()
+    with open(p, encoding="utf-8") as f:
+        return {int(k) for k in json.load(f) if not k.startswith("_")}
 
 
 # 배정 시대의 필드 — 정본 문안이 있으면 **전부 무효**다(문안이 이미 완성형이니까).
@@ -3807,6 +3836,9 @@ def load_translations(align_name, scn_name):
         from lock_lines import verify as _lock_verify
 
         bad = _lock_verify(scn_name, out)
+        if HOTFIX:  # 핫픽스가 일부러 바꾼 블록은 락 위반이 아니다(제품 정본은 그대로 잠겨 있다)
+            hf = hotfix_eids(scn_name)
+            bad = [b for b in bad if b[0] not in hf]
     if bad:
         head = " · ".join(f"jp{e}({a}→{b})" for e, a, b in bad[:8])
         raise SystemExit(

@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCK_BYPASS", "1")
 
 import hangul_map as H
+import patch_kagi_half as KAGI_HALF
 from battle_text import B
 from common import BUILD_DIR, extract, write_user_data
 from derive_text import jp_map
@@ -63,7 +64,7 @@ def _enc(kr):
         elif ch == "\n":
             out.append(0x0A)
         else:
-            out += ch.encode("shift_jis")
+            out += KAGI_HALF.sjis(ch)
     return bytes(out)
 
 

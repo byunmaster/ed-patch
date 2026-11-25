@@ -307,6 +307,10 @@ def main():
     import patch_ascii_galmuri as _pag
 
     _pag.apply()
+    import patch_kagi_half as _pkh
+
+    _pkh.apply()  # 시험 전용 — ED_KAGI_HALF=1 일 때만(제품 빌드는 건너뛴다)
+    _pkh.apply_quote()  # 시험 전용 — ED_QUOTE_S=1 일 때만
     # 058ⓑ ④ — 글리프가 구워진 뒤에야 반각 문자열이 화면에 정상으로 나간다.
     _psu.apply_halfwidth_hud_slots()
     # 073 — 같은 이유로 글리프가 구워진 뒤에. `patch_scn_headers`(위, 사피아호수 전각)가

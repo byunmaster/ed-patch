@@ -32,6 +32,7 @@ import re
 
 import dict_tables as D
 import hangul_map as H
+import patch_kagi_half as KAGI_HALF
 import patch_sys_ui as P
 from common import BUILD_DIR, extract, write_user_data
 
@@ -212,7 +213,7 @@ def _enc(kr):
     """
     out = bytearray()
     for ch in kr:
-        out += H.encode_kr(ch) if "가" <= ch <= "힣" else ch.encode("shift_jis")
+        out += H.encode_kr(ch) if "가" <= ch <= "힣" else KAGI_HALF.sjis(ch)
     return bytes(out)
 
 
