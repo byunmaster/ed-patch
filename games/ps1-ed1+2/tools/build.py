@@ -281,6 +281,9 @@ def main():
     # ⚠ `reinsert_kr_pilot._hang_merge` 와 **한 몸**이다 — 하나만 켜면 되레 나빠진다.
     run("patch_hang_punct.py")
     run("patch_gfx_title.py")  # START.DAT 타이틀 로고·버튼 TIM (FINAL 제자리 갱신)
+    # QA 디버그(`ED_DEBUG_QA=1`, 마스터 11-18) — 제품·핫픽스 롬에는 안 들어간다(스위치 없으면 아무것도 안 쓴다).
+    if os.environ.get("ED_DEBUG_QA") == "1":
+        run("patch_debug_qa.py")
     # 동영상 EXE — 넷이 내레이션을 한 벌씩 다 들고 각자 자기 몫만 튼다(읽기 BP 실측).
     # 그래서 파일마다 **자기 슬라이스만** 넣는다. END1·END2 는 세이브가 있어야 확인이 되므로
     # 인게임 검증 뒤에 붙인다.
