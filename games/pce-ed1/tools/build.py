@@ -400,7 +400,8 @@ def code_patches(table: dict[str, bytes] | None = None) -> list[tuple[str, int, 
         #      새 기능을 만들지 않는다 — 원판에 남은 메뉴를 여는 것뿐이다(진입은 공식 경로 「기타 → 디버그」).
         p.append(("debug menu always on (BNE→NOP)", *_main(0x6E, 0x0209), b"\xd0\x03", b"\xea\xea"))
     if _flute_on():
-        p.append(flute_tiles.hide_patch(_main))  # 1장 월드맵 접근 용 숨김 제외(시작 포인터 한 바이트)
+        if os.environ.get("ED_FLUTE_HIDE") == "1":  # 🔴 11-26 마스터 「처음 시작했는데 발견의 피리를 안 썼는데 몬스터가 보여」 — 이 한 바이트(숨김 루프 둘째 칸 건너뛰기)가 평상시 둘째 칸의 필드 몬스터까지 숨김에서 뺐다. 기본 끔(원판 바이트)
+            p.append(flute_tiles.hide_patch(_main))
         p.append(flute_tiles.stub_patch(_main))  # 접근 시작·내림 스텁 — 뱅크 0x76 꼬리 `$BC00~`
     if want("dbgkey"):
         # 4-e. 디버그 「I」 지급 효과음 — 원판 상점이 아이템을 더한 직후 부르는 `LDA #$23 / JSR $57B1`(소리 드라이버 입구)을 지급 뒤에 끼운다(마스터 10-28 「얻어질때 효과음이라도」).

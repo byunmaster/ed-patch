@@ -296,9 +296,14 @@ BR_CHARS = "()" if os.environ.get("ED_STAFF_BR_OWN") else ""
 BR_MAP = str.maketrans({"（": "(", "）": ")"})
 
 
+STAFF_DY = int(os.environ.get("ED_STAFF_DY", "1"))  # 한글 글리프를 아래로 내리는 행 수(마스터 11-26 「1px만 내려보자」 — MIT 스튜디오 세로 중심, 기본 1) — 한글 잉크가 행 0~10 이라 1까지 잘림 없음
+
+
 def _glyph(ch: str) -> bytes:
     """글리프 표 한 글자 24B — 괄호는 기본 글꼴의 3px 괄호를 칸의 안쪽(여는 괄호 = 오른쪽 끝, 닫는 괄호 = 왼쪽 끝)으로 민다."""
     g = font.glyph(ch)
+    if STAFF_DY and _is_hangul(ch):
+        g = bytes(2 * STAFF_DY) + g[: 24 - 2 * STAFF_DY]
     if ch not in BR_CHARS:
         return g
     shift = 8 if ch == "(" else 1

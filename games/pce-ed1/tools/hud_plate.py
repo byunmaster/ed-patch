@@ -327,10 +327,10 @@ def lv_lower(a, col0):
 
 # ── 한글 그리기 ─────────────────────────────────────────────────────────────
 
-NAME_FONT = (
-    "Galmuri9"  # ⏳ 판정 대기 9-⑴ — 원문 글자 9~10px 에 가깝다(갈무리11 안은 판을 꽉 채운다)
-)
-NAME_BASE = 13  # 아랫선 행(원문 잉크 4~14 안)
+NAME_FONT = "Galmuri11"  # 마스터 11-26 「C(12px 간격)로」 — 원문 가나 잉크 높이 10~11px 에 맞춘다(전엔 갈무리9, 9px)
+NAME_BASE = 14  # 아랫선 행(원문 잉크 4~14 안)
+NAME_GAP = 2  # 글자 사이 기본 틈 — 마스터 「세리오스만 2px 정도 줄일 수 있을 것 같은데」: 이름이 판(열 3~47)에 안 들어가면 한 칸씩 줄인다
+NAME_COLS = 45  # 열 3~47
 # 원문 첫 잉크 열은 4 — 갈무리11 「세리오스」(잉크 42 + 사이 3 = 45px)가 47열 안에 들도록 한 칸 당긴다
 NAME_X = 3
 STATUS_FONT = "Galmuri11"
@@ -351,7 +351,12 @@ def draw_plate(orig, text):
     """이름판 48×16: 틀(행0·열0 = 14)과 바탕(1)을 두고 글자만 새로."""
     col = ink_color(orig, {1, 14})
     out = blank_like(orig, 1, {14})
-    set_text(out, text, NAME_FONT, NAME_X, NAME_BASE, col)
+    ws = sum(ink(NAME_FONT, c).shape[1] for c in text)
+    gap = NAME_GAP
+    while gap > 0 and ws + gap * (len(text) - 1) > NAME_COLS:
+        gap -= 1
+    assert ws + gap * (len(text) - 1) <= NAME_COLS, (text, ws)
+    set_text(out, text, NAME_FONT, NAME_X, NAME_BASE, col, gap=gap)
     return out
 
 

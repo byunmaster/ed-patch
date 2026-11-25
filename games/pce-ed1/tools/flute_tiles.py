@@ -7,6 +7,10 @@
 종장은 월드맵 진입 때 `$C144` 비트0 이면 `LDA #$4C / STA $C019`(`$6A+0x10DA`) — 자원 0x4C = rel 0x68A = 탑승 용 타일 섹터 맨 앞 두 칸 = 흰 용.
 그래서 종장만 용이 용으로 보이고 1~5장은 몬스터 모양(또는 잡음)이다.
 
+── 11-26 (2) 접근 숨김 제외 한 바이트(`hide_patch`)는 기본 끔(`ED_FLUTE_HIDE=1` 일 때만): 1장 새로 시작 필드에서 발견의 피리 전인데 몬스터가 보였다 — 평상시 둘째 칸(`$C208`)에도 필드 몬스터가 들어가 숨김에서 빠졌다. 발견의 피리 사용 전엔 접근 용이 안 보이는 건 원판 동작(디버그 아이템이라 감수). ──
+
+── 11-26 마스터 「용의 피리는 디버그 아이템 — 원판 동작으로」: 용 그림·팔레트(떠난 뒤 복원)와 접근 용 숨김 제외 한 바이트만 남기고, 비행 중 몬스터 숨김·엔티티 수 복원·내린 뒤 음악 복원은 걷었다(착륙은 원판대로 곡 7·몬스터 지움). ──
+
 ── 고침 ──
 · 피리를 불어 접근 이동을 시작하는 루틴(`$B59B~` — `$C01A`≠0, 둘째 칸 위치 = 플레이어 ± `$F1/$0F` 칸, `JSR $6F7D` 로 이동 스크립트 `$B601`)의 끝(`$B5F4`)에서 `$C019` 를 0x4C 로 바꿔 로더(`$69C7` — 플레이어 칸 갱신 없이 목록만 읽는 꼬리)를 부른다 → 용 타일이 0x7C00 에 올라온다.
   원래 값은 `$247C`(+ 표시 `$247D`)에 두고, 이미 0x4C(종장)면 아무것도 안 한다.
@@ -15,7 +19,7 @@
 · 🔴 코드는 **뱅크 0x76 꼬리 `$BC00~`**(`STUB_OFF` — 블록이 풀리는 고정 뱅크, 원본 FF 1041B)에 둔다: 블록 0 은 풀린 블록 한계 6656B 에 번역분(6624B)이 이미 닿아 꼬리에 못 붙이고,
   먼 호출(`$4FD8`)은 MPR3·4 를 갈아 치워 `$81A8`·`$69C7` 을 못 부른다. 이 자리는 씬이 열려 있는 내내 MPR5 로 보여 그냥 `JSR` 이 된다(블록 길이 ≤ 6656 < 0x1C00 이라 풀 때 안 덮인다,
   `$BA00~$BBEF` 는 구역 작업표). 블록 0 은 24개 컨테이너에 바이트까지 같고 자리 둘만 같은 길이로 바꾼다. `$247C/D` 는 훅 페이로드 안 빈 칸(`$247A·B` 디버그 키 뒤 ~ `$2480` 조사표 앞).
-· 1장 접근 숨김(`$985B` 루프가 둘째 칸부터 종류 0x38~0x3F 를 타이머로 숨긴다)은 시작 포인터 한 바이트(`$9861 LDA #$08` → `#$10`, 둘째 칸 건너뛰기)로 접근 용만 뺀다
+· 접근 용 숨김 제외(마스터 11-26 정정: 조건은 「1장」이 아니라 **발견의 피리 사용 전**)(`$985B` 루프가 둘째 칸부터 종류 0x38~0x3F 를 타이머로 숨긴다)은 시작 포인터 한 바이트(`$9861 LDA #$08` → `#$10`, 둘째 칸 건너뛰기)로 접근 용만 뺀다
   — 발견의 피리 전 필드 몬스터 숨김(셋째 칸부터)은 그대로. 표 끝 한 칸을 더 읽지만 빈 칸이라 무해.
 """
 
@@ -33,6 +37,7 @@ DRAGON_RES = 0x4C  # 자원 번호 — rel 0x68A(탑승 용 타일 섹터)
 # 용 팔레트(종장 월드맵 실측 — 스프라이트 팔레트 10 = VCE 색 0x1A0~0x1AF, 마스터 11-25 「3장 분홍」): 접근 시작에 이걸 쓰고 내림에 원래 값(`SAVEPAL`)을 되돌린다
 PAL_IDX = 10
 DRAGON_PAL = (0x000, 0x0CD, 0x157, 0x1DF, 0x010, 0x068, 0x0B8, 0x168, 0x1F9, 0x084, 0x003, 0x0D8, 0x000, 0x000, 0x000, 0x1FF)
+SAVEPAL = BASE + STUB_OFF + 0x1A0  # 원래 팔레트 10 그림자 32B 보관(스텁 자리 뒤 RAM — 블록 영역이라 쓸 수 있다)
 DATA_OFF = 0x180  # 스텁 자리 안 자료 시작(뱅크 0x76 +0x1D00): 용 팔레트 32B
 VCE_ADDR_LO, VCE_ADDR_HI, VCE_DATA_LO, VCE_DATA_HI = 0x0402, 0x0403, 0x0404, 0x0405
 LOADER = 0x69C7  # 목록 읽기 꼬리(플레이어 칸 갱신 건너뜀) — 뱅크 0x6A, `JSR` 로 부른다(끝이 `JMP $6288` → RTS)
@@ -49,7 +54,7 @@ SITE_COUNT_OLD = bytes.fromhex("a901" "8d11c0")  # LDA #$01 / STA $C011 (5B, `$A
 MUSIC_SAVE = 0x247E  # 접근 시작 때의 `$C00D`(그 맵의 필드 곡 번호)
 SITE_LAND_OLD = bytes.fromhex("9c00c2" "9c12c0")  # STZ $C200 / STZ $C012 (6B, `$A2E9`)
 
-# 뱅크 0x6B(1장 월드맵 숨김 루프) — 시작 포인터 하위 바이트(`$9861 LDA #$08 / STA $10`)
+# 뱅크 0x6B(발견의 피리 사용 전 숨김 루프, `$CF2B == 0x18`) — 시작 포인터 하위 바이트(`$9861 LDA #$08 / STA $10`)
 HIDE_BANK, HIDE_OFF = 0x6B, 0x1862
 HIDE_OLD, HIDE_NEW = 0x08, 0x10
 
@@ -79,6 +84,19 @@ def _pal_io(a, read_to=None, write_from=None):
         op("LDA", "absx", write_from)
         op("STA", "abs", VCE_DATA_HI)
         op("INX")
+    op("CPX", "imm", 32)
+    op("BNE", "rel", lab)
+
+
+def _copy32(a, src, dst):
+    """32B 복사 — `LDX #0 / LDA src,X / STA dst,X / INX / CPX #32 / BNE`."""
+    op = a.op
+    lab = f"c{len(a.labels)}"
+    op("LDX", "imm", 0)
+    a.label(lab)
+    op("LDA", "absx", src)
+    op("STA", "absx", dst)
+    op("INX")
     op("CPX", "imm", 32)
     op("BNE", "rel", lab)
 
@@ -120,11 +138,11 @@ def _stub(org: int):
     op("STA", "abs", SAVE)
     op("LDA", "imm", 1)
     op("STA", "abs", SAVE_FLAG)
-    op("LDA", "abs", 0xC00D)  # 필드 곡 번호도 저장 — 내림 때 되튼다(원판은 종장 고정 7)
-    op("STA", "abs", MUSIC_SAVE)
     op("LDA", "imm", DRAGON_RES)
     op("STA", "abs", LIST_SLOT)
-    _pal_io(a, write_from=DRAGONPAL)  # 용 팔레트를 쓴다
+    _copy32(a, PAL_SHADOW, SAVEPAL)  # 원래 팔레트 10 그림자를 보관하고
+    _copy32(a, DRAGONPAL, PAL_SHADOW)  # 그림자에도 용 팔레트를 쓴다 — 엔진이 착륙·화면 갱신 때 그림자를 VCE 로 다시 올려 떠나는 용이 몬스터 색이 되던 것(마스터 11-26 「이상한 색상」)
+    _pal_io(a, write_from=DRAGONPAL)  # VCE 에도 쓴다
     for z in (0x10, 0x11, 0x12, 0x13, 0xFE, 0xFF):  # 로더(`$6288`)가 `$12/$13/$FE/$FF` 를 쓴다 — 블록 코드가 이어 쓰는 영 페이지를 지킨다
         op("LDA", "zp", z)
         op("PHA")
@@ -134,32 +152,20 @@ def _stub(org: int):
         op("STA", "zp", z)
     a.label("sdone")
     op("RTS")  # 호출 자리가 `JSR 이 루틴 / SEC / RTS` — 캐리는 자리에서 켠다
-    a.label("pre")  # 접근 시작 루틴(`$B5B2`)의 `JSR $8179`(엔티티 수를 `$A006`=2 로 줄이는 루틴) 앞 — 수를 저장하고 몬스터 칸(둘째 칸 뒤)을 숨긴 다음 원래 호출
-    op("LDA", "abs", 0xC011)
-    op("CMP", "imm", 3)
-    op("BCC", "rel", "nohide")
-    op("STA", "abs", COUNT_SAVE)
+    a.label("hide")  # 엔티티 셋째 칸부터 몬스터 계열을 숨긴다(비트6) — 접근 시작·착륙 뒤 양쪽에서 부른다(마스터 11-26 「해방 안 된 나라에서도 평화로운 상태로」)
     _hide_loop(a, hide=True)
-    a.label("nohide")
-    op("JMP", "abs", 0x8179)
-    a.label("music")  # 내림 자리의 10B 를 대신한다 — 저장값이 있으면(1~5장) 그 곡, 없으면(종장) 원래대로 7
-    op("LDA", "abs", SAVE_FLAG)
-    op("BEQ", "rel", "m7")
-    op("LDA", "abs", MUSIC_SAVE)
-    op("BRA", "rel", "mgo")
-    a.label("m7")
-    op("LDA", "imm", 7)
-    a.label("mgo")
-    op("STA", "zp", 0xF8)
-    op("STA", "abs", 0xC00D)
-    op("JSR", "abs", 0x6425)
     op("RTS")
+    a.label("pre")  # 접근 시작 루틴(`$B5B2`)의 `JSR $8179` 자리 — 몬스터를 숨긴 뒤 원래 호출
+    op("JSR", "abs", "hide")
+    op("JMP", "abs", 0x8179)
     a.label("count")  # `$A0D4` 의 `LDA #$01 / STA $C011` 자리 — 용 개체가 화면 밖으로 떠나 사라진 뒤: 타일·팔레트를 되돌리고 저장한 수·몬스터 숨김도 푼다
+    op("PHA")  # 호출 자리 `LDA #$01` 의 값(1)을 지킨다 — 끝에서 `STA $C011`
     op("LDA", "abs", SAVE_FLAG)
     op("BEQ", "rel", "cnt")
     op("STZ", "abs", SAVE_FLAG)
     op("LDA", "abs", SAVE)
     op("STA", "abs", LIST_SLOT)
+    _copy32(a, SAVEPAL, PAL_SHADOW)  # 보관한 원래 그림자를 되돌리고
     _pal_io(a, write_from=PAL_SHADOW)  # 팔레트 10 복원 — 엔진의 RAM 그림자(`$29A9`)에서
     for z in (0x10, 0x11, 0x12, 0x13, 0xFE, 0xFF):
         op("LDA", "zp", z)
@@ -169,19 +175,12 @@ def _stub(org: int):
         op("PLA")
         op("STA", "zp", z)
     a.label("cnt")
-    op("LDA", "abs", COUNT_SAVE)
-    op("BEQ", "rel", "c0")
-    _hide_loop(a, hide=False)
-    op("LDA", "abs", COUNT_SAVE)
-    op("STZ", "abs", COUNT_SAVE)
-    op("STA", "abs", 0xC011)
+    op("JSR", "abs", "hide")  # 내린 뒤에도 몬스터는 숨긴 채(다음 맵 적재 때 새로 정해진다)
+    op("PLA")
+    op("STA", "abs", 0xC011)  # 원래 자리의 `STA $C011` — 엔티티 수는 원판대로 1(몬스터 복원 없음)
     op("RTS")
-    a.label("c0")
-    op("LDA", "imm", 1)
-    op("STA", "abs", 0xC011)
-    op("RTS")
-    a.label("land")
-    op("STZ", "abs", 0xC200)  # 원래 자리의 두 명령 — 타일·팔레트 복원은 용이 떠난 뒤(`count`)로 미룬다(떠나는 용이 몬스터 모양으로 보이던 것, 마스터 11-26)
+    a.label("land")  # 내림 자리(`$A2E9`)의 두 명령을 그대로 부른다 — 원판 동작. 자리 바이트를 원판과 다르게 둬 블록 0 압축 크기를 바꾸지 않으려는 것이 아니라, 블록 0 이 든 컨테이너(rel 1428)가 압축 크기 몇 바이트 차로 칸을 넘어 이사하던 것을 피하려고 이전 모양을 유지한다
+    op("STZ", "abs", 0xC200)
     op("STZ", "abs", 0xC012)
     op("RTS")
     return a
@@ -196,35 +195,34 @@ def stub_code() -> tuple[bytes, int, int, int, int, int]:
     for w in DRAGON_PAL:
         code += w.to_bytes(2, "little")
     assert len(code) <= STUB_LEN_MAX, len(code)
-    return code, a.labels["start"], a.labels["land"], a.labels["music"], a.labels["count"], a.labels["pre"]
+    return code, a.labels["start"], a.labels["count"], a.labels["land"], a.labels["pre"]
 
 
 def patch_block0(blk: bytes) -> bytes:
     """블록 0 의 두 자리를 `JSR 스텁` 으로 바꾼다(같은 길이 — 블록은 안 자란다)."""
     ctx = SITE_START_CTX + SITE_START_OLD
-    for old, name in ((ctx, "접근 시작"), (SITE_LAND_OLD, "내림"), (SITE_MUSIC_OLD, "내림 음악"), (SITE_COUNT_OLD, "엔티티 수"), (SITE_PRE_OLD, "수 줄이기 앞")):
+    for old, name in ((ctx, "접근 시작"), (SITE_COUNT_OLD, "엔티티 수"), (SITE_LAND_OLD, "내림"), (SITE_PRE_OLD, "수 줄이기 앞")):
         if blk.count(old) != 1:
             raise ValueError(f"flute_tiles: 블록 0 의 {name} 자리가 {blk.count(old)}번 나온다(정확히 1번이어야)")
-    _code, start, land, music, count, pre = stub_code()
+    _code, start, count, land, pre = stub_code()
     jsr = lambda t: bytes([0x20, t & 0xFF, t >> 8])  # noqa: E731
     out = blk.replace(ctx, SITE_START_CTX + jsr(start) + b"\x38\x60")  # JSR 스텁 / SEC / RTS — 원래 자리와 같은 5B
     out = out.replace(SITE_PRE_OLD, jsr(pre))
-    out = out.replace(SITE_COUNT_OLD, jsr(count) + b"\xea\xea")
-    out = out.replace(SITE_MUSIC_OLD, jsr(music) + b"\xea" * (len(SITE_MUSIC_OLD) - 3))
+    out = out.replace(SITE_COUNT_OLD, SITE_COUNT_OLD[:2] + jsr(count))  # `LDA #$01` 은 그대로 두고 `STA $C011`(3B)만 JSR 로
     return out.replace(SITE_LAND_OLD, jsr(land) + b"\xea" * (len(SITE_LAND_OLD) - 3))
 
 
 def stub_patch(main_off):
     """뱅크 0x76 꼬리에 스텁 코드를 쓴다 — (라벨, rel, 오프셋, 기대 FF, 새 바이트)."""
-    code, _s, _l, _m, _c, _p = stub_code()
+    code, _s, _c, _l, _p = stub_code()
     return ("flute stub code", *main_off(STUB_BANK, STUB_OFF), b"\xff" * len(code), code)
 
 
 def hide_patch(main_off):
-    """1장 접근 숨김 — (라벨, rel, 오프셋, 기대, 새 바이트) 한 건. `main_off` = build 의 `_main` 함수."""
-    return ("flute 1장 접근 용 숨김 제외", *main_off(HIDE_BANK, HIDE_OFF), bytes([HIDE_OLD]), bytes([HIDE_NEW]))
+    """발견의 피리 사용 전에도 접근 용이 보이게(숨김 제외) — (라벨, rel, 오프셋, 기대, 새 바이트) 한 건. `main_off` = build 의 `_main` 함수."""
+    return ("flute 접근 용 숨김 제외(발견의 피리 사용 전)", *main_off(HIDE_BANK, HIDE_OFF), bytes([HIDE_OLD]), bytes([HIDE_NEW]))
 
 
 if __name__ == "__main__":
-    c, st, ld, mu, ct, pr = stub_code()
-    print(len(c), hex(st), hex(ld), hex(mu), hex(ct), hex(pr))
+    c, st, ct, ld, pr = stub_code()
+    print(len(c), hex(st), hex(ct), hex(ld), hex(pr))
