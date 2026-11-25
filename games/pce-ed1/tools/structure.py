@@ -114,7 +114,7 @@ def diff_ranges(a: bytes, b: bytes) -> list[tuple[int, int]]:
     return out
 
 
-def _walk(buf: bytes, i: int, limit: int, base_len: int, where: str, viol: list[str], slot_ops: bool = False):
+def _walk(buf: bytes, i: int, limit: int, base_len: int, where: str, viol: list[str], slot_ops: bool = False, outer_ops: bool = False):
     """`i` 에서 메시지 본문을 읽는다. 돌려주는 값 = (끝 종류, 끝 위치, 점프 목적지 또는 종료 바이트).
     끝 종류: `term`(종료 바이트) · `jump`(0F) · `end`(limit 도달 — 종료도 점프도 없이 자리를 채움). 본문에 낯선 옵코드가 있으면 위반."""
     while i < min(limit, len(buf)):
@@ -139,9 +139,23 @@ def _walk(buf: bytes, i: int, limit: int, base_len: int, where: str, viol: list[
         if slot_ops and b in SLOT_OPS:  # 슬롯 옆 조사 조각(`0B … 0E`) — 이름 삽입 옵코드(1B 짜리)
             i += 1
             continue
+        if outer_ops and b in OUTER_OPS:  # 메시지 밖 조각 패치(합류 효과음 `0C nn` + 원래 뒤따르던 플래그 세트 `14 lo hi`) — `translate.join_sfx_patches`
+            i += OUTER_OPS[b]
+            continue
         viol.append(f"{where}: 본문에 낯선 옵코드 {b:02X} (+{i:#x})")
         return "bad", i, None
     return "end", i, None
+
+
+OUTER_OPS = {0x0C: 2, 0x14: 3}  # 효과음 · 플래그 세트 — 메시지 밖 꼬리 조각에서만 허용(`_walk(outer_ops=True)`)
+
+_ADDED_SPEAKER_SCENES = (45, 46, 47)
+
+
+def _added_keys(sid: int) -> set:
+    import translate
+
+    return translate.ADD_SMUGGLER_SPEAKER.get(sid, set())
 
 
 def _opening_ok(orig_msg: M.Message, new: bytes, where: str, viol: list[str]) -> None:
@@ -175,7 +189,10 @@ def _check_translate(rec: BlockRec, before: bytes, after: bytes, viol: list[str]
             viol.append(
                 f"{where}: 종료 바이트(+{m.end - 1:#06x})가 다른 코드의 점프 목표인데 {after[m.end - 1]:02X} 로 바뀌었다(원본 {before[m.end - 1]:02X}) — 그리로 오는 흐름이 뒤 글자를 읽는다"
             )
-        _opening_ok(m, seg, where, viol)
+        if rec.sid in _ADDED_SPEAKER_SCENES and m.key in _added_keys(rec.sid) and seg[:1] == b"\x1f":
+            pass  # 🔴 마스터 11-11 로 일부러 단 밀매상 화자 머리(translate.ADD_SMUGGLER_SPEAKER) — 열개 종류 대조 면제
+        else:
+            _opening_ok(m, seg, where, viol)
         kind, end, info = _walk(after, m.start, m.end, L, where, viol)
         if kind == "bad":
             continue
@@ -198,7 +215,7 @@ def _check_translate(rec: BlockRec, before: bytes, after: bytes, viol: list[str]
                 pad = after[end : m.end]
                 if any(pad):
                     viol.append(f"{where}: 점프 뒤 남는 칸에 0 이 아닌 바이트가 있다({pad.hex()[:24]})")
-            elif tgt == m.end and not m.terminated:
+            elif tgt == (m.cont if m.cont is not None else m.end) and not m.terminated:  # 이은 꼬리(`cont`)는 꼬리 본체의 끝으로 복귀
                 kinds["복귀 점프"].append((m.start, tgt))
                 pad = after[end : m.end]
                 if any(pad):
@@ -230,7 +247,7 @@ def _check_translate(rec: BlockRec, before: bytes, after: bytes, viol: list[str]
                 else:
                     kinds["조각 이음"].append((a, tgt))
                     # 꼬리 조각 — 새 바이트 + `0F` 복귀. 복귀 목적지 = 원래 조각 바로 뒤(바뀐 3B 뒤 ~ 원본 조각 길이 ≤ 4B)
-                    kind, end, info = _walk(after, tgt, len(after), L, where, viol, slot_ops=True)
+                    kind, end, info = _walk(after, tgt, len(after), L, where, viol, slot_ops=True, outer_ops=True)
                     if kind != "jump" or not (b <= info <= b + 4):
                         viol.append(f"{where}: 조각 꼬리가 원래 자리 뒤({b:#x}~{b + 4:#x})로 되돌아가지 않는다")
                     else:
@@ -262,7 +279,7 @@ def _follow_tail(after: bytes, tgt: int, L: int, m: M.Message, where: str, viol:
                 viol.append(f"{where}: 종료 없던 조각의 꼬리가 종료 바이트로 끝났다")
             return
         if kind == "jump":
-            if info == m.end and not m.terminated:
+            if info == (m.cont if m.cont is not None else m.end) and not m.terminated:
                 return
             if info >= L:
                 i = info  # 꼬리 안에서 또 점프(조각 연결)
@@ -463,6 +480,29 @@ def analyze_battle_block(key: str, O: bytes, N: bytes, load_addr: int):
     for r in battle.records(O):
         for i in range(r["off"] + battle.NAME_OFF, min(r["off"] + battle.REC, L)):
             ok[i] = 1
+    for vm in battle.VOICE_GATE.finditer(O):  # 보스 전투 음성 분기(11-18) — 정해진 고쳐 쓰기와 바이트까지 같아야 한다
+        want = battle.voice_rewrite(vm)
+        got = N[vm.start() : vm.end()]
+        if got != want:
+            # 편집기 시각이 있는 곳(11-19) — 스텁 호출 둘(`JSR s1` · `JSR s2`)을 낀 꼴 + 블록 꼬리의 스텁·표가 정해진 바이트여야 한다
+            rel_ = key.split(":")[0]
+            tm = battle.voice_timing(int(rel_)) if rel_.isdigit() else None
+            s1 = int.from_bytes(got[16:18], "little") if len(got) >= 18 else 0
+            ok_timed = False
+            if tm is not None and s1:
+                tail = battle.voice_tail(int(rel_), s1)
+                ok_timed = (
+                    tail is not None
+                    and got == battle.voice_rewrite(vm, (s1, tail[2]))
+                    and N.endswith(tail[0])
+                    and battle.LOAD_ADDR + len(N) - len(tail[0]) == s1
+                )
+            if ok_timed:
+                claimed.append((s1 - load_addr, len(N)))  # 꼬리의 스텁·표는 게이트의 `JSR` 둘이 가리킨다
+            else:
+                viol.append(f"{key}: 전투 음성 분기(+{vm.start():#x})가 정해진 꼴이 아니다")
+        for i in range(vm.start(), vm.end()):
+            ok[i] = 1
     bad = [i for i in range(min(L, len(N))) if O[i] != N[i] and not ok[i]]
     if bad:
         viol.append(f"{key}: 문구 단위·이름칸 밖 바이트가 바뀌었다(+{bad[0]:#x} 외 {len(bad) - 1}곳)")
@@ -497,7 +537,8 @@ def verify_battle(recs: list):
 # 단위 = `sysstrings.read_sysmsg` (앞 옵코드 `lead` + 본문 + 뒤 옵코드 `tail`). 우리가 쓴 흐름을 **읽는 쪽(씬 인터프리터)처럼** 따라가며 — 글자는 지나고 `0F` 점프는
 # 따라가고(원래 꼬리에 있던 `0F` 는 옵코드로 센다) — 만나는 옵코드가 원본의 `lead + tail` 과 **같은 값·같은 차례**인지 본다. 짧아져 다음 단위로 흐르는 조각의
 # `0F 다음주소`, 옮겨 싣기(`spill` — 다른 단위의 남는 칸·선언한 빈 공간)가 모두 이 읽기로 따라진다. 낯선 옵코드가 먼저 나오면 위반.
-_SYS_WINDOWS = ((0x8000, 0x6D), (0xC000, 0x74))
+# `$4000` 창 = 뱅크 0x70 조각 보관소 마커(`0F` 스텁이 RAM 으로 복사해 읽는다 — `hook._frag_asm`, 오프셋 = 주소 − 0x4000)
+_SYS_WINDOWS = ((0x8000, 0x6D), (0xC000, 0x74), (0x4000, 0x70))
 
 
 def _sys_read(banks: dict, addr: int, n: int) -> bytes:
@@ -587,7 +628,7 @@ def analyze_label_separators(orig_bank: bytes, new_bank: bytes, lo: int, hi: int
     return viol
 
 
-def iso_banks(iso, banks=(0x6D, 0x74)) -> dict:
+def iso_banks(iso, banks=(0x6D, 0x74, 0x70)) -> dict:
     """구운 이미지에서 본 프로그램 뱅크(rel 34 + (뱅크−0x68)×4, 4섹터)를 읽는다."""
     import common
 

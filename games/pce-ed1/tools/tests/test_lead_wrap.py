@@ -40,3 +40,17 @@ class Lead(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TieGold(unittest.TestCase):
+    """금액 숫자와 단위 Gold 는 줄 사이에서 안 갈린다(마스터 11-22 「1000만 Gold」)."""
+
+    def test_number_and_gold_stay_together(self):
+        for sp in (False, True):
+            for t in ("아 정말로 1500만 Gold라고 했다니까 그게 뭐냐고", "1500만 Gold라고, 게일"):
+                flat = [ln for pg in T.pages(t, speaker=sp, four=True) for ln in pg]
+                self.assertTrue(any("1500만 Gold" in ln for ln in flat), flat)
+
+    def test_placeholder_never_leaks(self):
+        for pg in T.pages("천 값은 1000만 Gold까지 오른다고 해요.", speaker=False, four=True):
+            self.assertFalse(any(T.TIE in ln for ln in pg))

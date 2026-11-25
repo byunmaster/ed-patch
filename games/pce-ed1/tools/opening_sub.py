@@ -49,10 +49,11 @@ SCENES = Path(__file__).resolve().parent / "data" / "opening_scenes.json"
 # ── 조판(예행연습 영상 v13 과 같다) ────────────────────────────────────────
 W, H = 256, 232
 CELL, ADV_LATIN = 12, 8
+ADV_SPACE = 4  # 🔴 낱말 사이 공백은 반각(4px) — 공통 규칙 1-6(대사창 공백 반각, 마스터 10-07). 8px 면 전각처럼 벌어져 보였다(11-06 PCE II 와 같은 한 줄)
 LEFT_MARGIN, RIGHT_MARGIN = 20, 20
 TOP, LINE_H = 44, 18
 # 🔴 그림 위 상단 배치 자막의 시작 y(프레임 행) — 별하늘 도입부(TOP)보다 위(마스터 10-15 「자막 위에 있을 때 시작 위치도 좀 위로」). 별하늘은 화면 상하 가운데라 TOP 그대로.
-TOP_PIC = 16
+TOP_PIC = 20  # 마스터 11-06: 오프닝 자막 전체 4px 아래(PCE II 와 같이) — 위 여백 16→20
 # 🔴 **자막은 전 구간 상단 고정이다**(마스터 확정 2026-09-22 — 하단 배치를 거쳐 되돌렸다).
 #
 # 왜 하단을 버렸나 — 이 게임은 **장면마다 표시 행수가 다르다**(VDC 의 VDR 실측: 240 · 232 ·
@@ -80,7 +81,7 @@ SUB_MAX_ROWS = 3  # 그림 구간 자막의 최대 줄 수(이 이상은 대본�
 #   밑변이 올라가 자막도 같이 올라간다 — 실기에서 그게 보였다. 그래서 세 모드 전부 1배다.
 # 값 정하기: 가장 짧은 그림(208행)의 밑변이 프레임 238행이므로, 3줄 덩어리(50) 바닥을
 #   프레임 230 에 두면 어느 장면에서도 그림 안에 들어가고 화면에서 자리가 같다.
-BOT_LIFT = 40  # 하단 배치: 마지막 줄 위 y = BOT_BASE + BOT_LIFT. 두 줄 쪽 page_y 251 = 마지막 줄 잉크 아래 여백 16px(마스터 10-15 — ed2 대관식 기준을 16 으로 통일; 종전 36px 였다)
+BOT_LIFT = 44  # 마스터 11-06: 4px 아래(바닥 여백 16→12). 하단 배치: 마지막 줄 위 y = BOT_BASE + BOT_LIFT. 두 줄 쪽 page_y 255 = 마지막 줄 잉크 아래 여백 12px(마스터 10-15 — ed2 대관식 기준을 16 으로 통일; 종전 36px 였다)
 BOT_BASE = 64 + 180 + 49 - 64  # 프레임 180행에서 시작 → 바닥 230행 (page_y = 프레임+49)
 BOTTOM_SCREEN_MIN = 208  # 그림 아래 하단 배치 자막이 나오는 장면의 최소 화면 높이(화면 확인)
 TOP_SCREEN_MIN = 232  # 그림 위 상단 배치 자막이 나오는 장면의 최소 화면 높이(번역 규칙 2-14 위 여백 — 화면 확인 필요)
@@ -255,7 +256,12 @@ Asm.op = _op
 
 
 # ── 조판·렌더 ───────────────────────────────────────────────────────────
+_WRAP_SPACE: list[int] = []  # wrap() 가 줄 나눔을 잴 때만 쓴다(아래) — 비어 있으면 그리는 공백 폭
+
+
 def _adv(ch):
+    if ch == " ":
+        return _WRAP_SPACE[-1] if _WRAP_SPACE else ADV_SPACE
     return ADV_LATIN if ord(ch) < 0x1100 else CELL
 
 
@@ -281,6 +287,16 @@ def _fit_w(text):
 
 
 def wrap(text, max_w=None):
+    """줄 나눔은 **종전 공백 폭(8px)으로 잰다** — 4px 로 재면 한 줄로 합쳐지는 쪽이 생겨(씬 쪽 7: 두 줄 → 한 줄) 하단 자막 y 표(한 바이트)가 넘친다(269).
+    그리는 공백만 반각이고 줄 가운데 맞춤은 그린 폭으로 다시 잰다(11-06)."""
+    _WRAP_SPACE.append(ADV_LATIN)
+    try:
+        return _wrap(text, max_w)
+    finally:
+        _WRAP_SPACE.pop()
+
+
+def _wrap(text, max_w=None):
     wide = max_w is not None and max_w >= 32 * SPR_PER_PAIR  # 스프라이트 폭 가득 — 닿는 폭으로 잰다
     if max_w is None:
         max_w = WRAP_W if WRAP_W else W - LEFT_MARGIN - RIGHT_MARGIN

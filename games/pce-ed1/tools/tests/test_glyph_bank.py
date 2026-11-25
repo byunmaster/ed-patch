@@ -58,8 +58,10 @@ class CPU:
         def zp16(z):
             return m[ZP + z] | m[ZP + z + 1] << 8
 
+        self.steps = 0
         for _ in range(200000):
             op = b()
+            self.steps += 1
             if op == 0x48:
                 self.stack.append(self.a)
             elif op == 0x68:
@@ -87,6 +89,36 @@ class CPU:
                 m[w()] = self.a
             elif op == 0x0D:
                 self.a = nz(self.a | m[w()])
+            elif op == 0xA2:
+                self.x = nz(b())
+            elif op == 0x86:
+                m[ZP + b()] = self.x
+            elif op == 0x11:
+                z = zp16(b())
+                self.a = nz(self.a | m[z + self.y])
+            elif op == 0xAD:
+                self.a = nz(m[w()])
+            elif op == 0x8A:
+                self.a = nz(self.x)
+            elif op == 0x98:
+                self.a = nz(self.y)
+            elif op == 0x06:
+                z = ZP + b()
+                self.c = m[z] >> 7
+                m[z] = nz(m[z] << 1)
+            elif op == 0x26:
+                z = ZP + b()
+                c = self.c
+                self.c = m[z] >> 7
+                m[z] = nz((m[z] << 1) | c)
+            elif op == 0x65:
+                r = self.a + m[ZP + b()] + self.c
+                self.c = int(r > 0xFF)
+                self.a = nz(r)
+            elif op == 0x6D:
+                r = self.a + m[w()] + self.c
+                self.c = int(r > 0xFF)
+                self.a = nz(r)
             elif op == 0xB2:
                 self.a = nz(m[zp16(b())])
             elif op == 0x91:
@@ -194,6 +226,21 @@ class GlyphBank(unittest.TestCase):
         for idx in range(font.MAX_GLYPHS):
             self.assertEqual(self.fetch(idx), synth(idx), f"순번 {idx} 가 어긋난다")
 
+    def test_unpack_is_fast(self):
+        """🔴 11-19 가속 — 옛 루틴은 트레일 × 18 을 세어 내리며 더해 최대 ~2,000 명령(219번 × 8)이었다(버리기 확정 프레임 찢김의 몫). 곱셈으로 바꿔 어느 순번이든 상한 안이어야 한다."""
+        worst = 0
+        for idx in (0, 1, 219, 220, 439, 440, font.MAX_GLYPHS - 1):
+            code = font.code_of(idx)
+            g = code[0] - font.LEAD0
+            m = bytearray(0x10000)
+            m[WIN : WIN + BANK] = self.banks[(g >> 1) * BANK : ((g >> 1) + 1) * BANK]
+            m[ZP + 0xEC] = code[1]
+            m[ZP + 0xFA], m[ZP + 0xFB] = DST & 0xFF, DST >> 8
+            cpu = CPU(m)
+            cpu.run(hook.UNPACK_ADDR, g & 1)
+            worst = max(worst, cpu.steps)
+        self.assertLess(worst, 400, f"풀기 한 번 {worst} 명령")
+
     def test_no_glyph_straddles(self):
         for idx in range(font.MAX_GLYPHS):
             at = font.glyph_at(idx) % BANK
@@ -206,7 +253,7 @@ class GlyphBank(unittest.TestCase):
 
     def test_code_fits_tails(self):
         self.assertLessEqual(len(hook.unpack_code()), hook.UNPACK_ROOM)
-        self.assertLessEqual(len(hook._wordck_asm().bytes()), hook.WORDCK_ROOM)
+        self.assertLessEqual(len(hook._wordck_asm().bytes()), hook.WCK_ROOM)  # 어절 판정은 뱅크 0x73 꼬리(11-20)
         self.assertLessEqual(len(hook._entry_asm().bytes()), hook.ENTRY_ROOM)
         self.assertEqual(hook.UNPACK_ADDR - WIN + hook.UNPACK_ROOM, BANK)
         # 마지막 뱅크 글리프 끝 칸들이 코드 자리 — 풀기 루틴 바로 앞에서 끝난다

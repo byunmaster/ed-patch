@@ -62,6 +62,39 @@ class Pinned(unittest.TestCase):
         self.assertEqual(out[start + 3] | out[start + 4] << 8, M.BASE + start + 6)
 
 
+def block_with_script_jump(off: int):
+    """메시지 A(종료 없음) + `12 깃발 0F <호스트 + off>` + 호스트(두 문장) — 메시지 밖 스크립트 점프가 호스트 한가운데로 든다(씬 187 꼴)."""
+    head = b"\x4c\x03\xa0\x4c\x06\xa0\x60"
+    a = SJ("かぎをもらった。")
+    host = SJ("わすれるな。") + b"\x01" + SJ("はやくいけ。") + b"\x00"
+    start = len(head) + len(a) + 6
+    script = bytes([0x12, 0xEF, 0x01, M.JUMP]) + (M.BASE + start + off).to_bytes(2, "little")
+    return head + a + script + host, start
+
+
+class MidJump(unittest.TestCase):
+    def setUp(self):
+        self.saved = M.MID_JUMP_HOSTS
+        M.MID_JUMP_HOSTS = frozenset()
+
+    def tearDown(self):
+        M.MID_JUMP_HOSTS = self.saved
+
+    def test_호스트를_올리면_점프_목적지에서_조각난다(self):
+        blk, start = block_with_script_jump(13)  # 첫 문장 6자 + 개행 뒤 = 둘째 문장 머리
+        whole = [m for m in M.parse(blk) if m.start == start]
+        self.assertEqual(whole[0].jp, "わすれるな。\nはやくいけ。")  # 음성 대조 — 목록이 비면 안 갈린다(이 꼴로 번역하면 점프가 글자 한가운데로 든다)
+        M.MID_JUMP_HOSTS = frozenset({whole[0].key})
+        msgs = [m for m in M.parse(blk) if m.start >= start]
+        self.assertEqual([(m.start, m.jp, m.terminated) for m in msgs], [(start, "わすれるな。\n", False), (start + 13, "はやくいけ。", True)])
+
+    def test_글자_한가운데로_드는_점프는_우연이라_안_가른다(self):
+        blk, start = block_with_script_jump(14)  # 둘째 문장 첫 글자의 둘째 바이트
+        key = next(m.key for m in M.parse(blk) if m.start == start)
+        M.MID_JUMP_HOSTS = frozenset({key})
+        self.assertEqual([m.jp for m in M.parse(blk) if m.start >= start], ["わすれるな。\nはやくいけ。"])
+
+
 class TableTail(unittest.TestCase):
     def test_오름차순_주소_표_끝_워드가_글자로_딸려오지_않는다(self):
         # 표(주소 4워드, 마지막은 우연히 「藤」 93 A1) 뒤에 대본 — 본문은 `抵抗…` 만

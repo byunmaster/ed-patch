@@ -72,6 +72,8 @@ class CPU:
                     assert hi is None, "스택이 안 맞는다"
                     return
                 self.pc = (hi << 8 | lo) + 1
+            elif op == 0x4C:  # JMP abs
+                self.pc = w()
             elif op == 0x20:
                 t = w()
                 ret = self.pc - 1
@@ -87,6 +89,8 @@ class CPU:
                 self.x = nz(b())
             elif op == 0xA0:
                 self.y = nz(b())
+            elif op == 0x62:  # CLA(HuC6280 — 플래그 안 건드림)
+                self.a = 0
             elif op == 0x9C:
                 m[w()] = 0
             elif op == 0xA5:
@@ -125,6 +129,31 @@ class CPU:
                 r = self.a + m[w()] + self.c
                 self.c = int(r > 0xFF)
                 self.a = nz(r)
+            elif op == 0xE0:  # CPX imm
+                v = b()
+                self.c = int(self.x >= v)
+                nz(self.x - v)
+            elif op == 0x38:  # SEC (미사용이어도 무해)
+                self.c = 1
+            elif op == 0xA6:  # LDX zp
+                self.x = nz(m[ZP + b()])
+            elif op == 0x0A:  # ASL A
+                r = self.a << 1
+                self.c = int(r > 0xFF)
+                self.a = nz(r)
+            elif op == 0x4A:  # LSR A
+                self.c = self.a & 1
+                self.a = nz(self.a >> 1)
+            elif op == 0x65:  # ADC zp
+                r = self.a + m[ZP + b()] + self.c
+                self.c = int(r > 0xFF)
+                self.a = nz(r)
+            elif op == 0xCD:  # CMP abs
+                v = m[w()]
+                self.c = int(self.a >= v)
+                nz(self.a - v)
+            elif op == 0xB0:  # BCS
+                br(self.c)
             elif op == 0xD0:
                 br(not self.z)
             elif op == 0xF0:
@@ -145,7 +174,7 @@ class WordCk(unittest.TestCase):
     def setUp(self):
         self.m = bytearray(0x10000)
         code = hook.wordck()
-        self.m[hook.WORDCK_ADDR : hook.WORDCK_ADDR + len(code)] = code
+        self.m[hook.WCK_ADDR : hook.WCK_ADDR + len(code)] = code
         self.labels = hook._wordck_asm().labels
 
     def call(self, cur, rest, col, prev_space=True, inject=None):
@@ -166,9 +195,25 @@ class WordCk(unittest.TestCase):
             m[ZP + 0x93], m[ZP + 0x94] = INJ & 0xFF, INJ >> 8
         cpu = CPU(m)
         cpu.x, cpu.y = 0x48, 0
-        cpu.run(hook.WORDCK_ADDR)
+        cpu.run(hook.WCK_ADDR)
         self.assertEqual((cpu.x, cpu.y), (0x48, 0), "X·Y 를 지켜야 한다")
+        self.assertEqual(cpu.a, 0, "A = 0 으로 돌아와야 한다 — `mark` 가 그 값으로 MPR7 을 BIOS 로 되돌린다")
         return m[PEND], m[hook.WRAP_ADDR]
+
+    def test_line_head_space_is_eaten(self):
+        # 11-21 줄 첫 칸 공백 근본 — 개행 보류가 없어도 줄 머리(칸 0)의 공백은 flag(안 먹음)
+        self.assertEqual(self.call(SP, chars(2), 0, prev_space=False)[1], 1)
+        self.assertEqual(self.call(font.HALF_SPACE, chars(2), 0, prev_space=False)[1], 1)
+
+    def test_mid_line_space_and_head_punct_kept(self):
+        self.assertEqual(self.call(SP, chars(2), 3, prev_space=False)[1], 0)
+        self.assertEqual(self.call(font.HALF_SPACE, chars(2), 3, prev_space=False)[1], 0)
+        self.assertEqual(self.call(DOT, chars(2), 0, prev_space=False)[1], 0)  # 부호는 공백 갈래 prevsp 를 타도 안 먹는다
+        self.assertEqual(self.call(CH, chars(2), 0, prev_space=False)[1], 0)
+
+    def test_head_space_not_eaten_after_hanging_punct(self):
+        self.m[hook.NARROW_ADDR] = 4  # 줄 머리 매다는 부호가 4px 를 써서 칸 0 · 나머지 4
+        self.assertEqual(self.call(SP, chars(2), 0, prev_space=False)[1], 0)
 
     def test_word_fits(self):
         # 열 9 + 4글자 = 13칸 — 이 줄에 들어간다
@@ -188,8 +233,31 @@ class WordCk(unittest.TestCase):
         m[BUF : BUF + 8] = chars(3) + bytes(SP)
         m[ZP + 0x14], m[ZP + 0x15] = BUF & 0xFF, BUF >> 8
         m[ZP + 0x90] = 0
-        CPU(m).run(hook.WORDCK_ADDR)
+        CPU(m).run(hook.WCK_ADDR)
         self.assertEqual(m[PEND], 0)
+
+    def test_remainder_counts_in_quarter_cells(self):
+        # 🔴 11-20 정확 모델: 폭을 4px 눈금으로 센다(시작 = 열×3 + rem/4, 어절 = 보통 3 · 부호 1 · `?` 2, 들어가는 조건 ≤ 줄 폭×3 = 39).
+        #   열 9 + 글자 4(= 12눈금): 나머지 0 → 27 + 12 = 39 들어감 · 나머지 4px → 28 + 12 = 40 새 줄 · 나머지 8px → 41 새 줄.
+        rest = chars(3) + bytes(SP)
+        self.m[hook.NARROW_ADDR] = 0
+        self.assertEqual(self.call(CH, rest, 9)[0], 0)
+        for rem in (4, 8):
+            self.m[hook.NARROW_ADDR] = rem
+            self.assertEqual(self.call(CH, rest, 9)[0], 1, rem)
+
+    def test_punct_counts_one_quarter(self):
+        # 매다는 부호(`! , .`)는 4px(1눈금) — 부호가 낀 어절을 칸 수로 세면 틀 칸을 안 덮는데도 넘어갔다(「않으시겠습니까!!』…」)
+        for trail in hook.HANG_PUNCT:
+            self.m[hook.NARROW_ADDR] = 4
+            # 열 9(27) + rem 1 = 28, 어절: 글자 2(6) + 부호(1 · `?` 는 2) + 공백 → 35~36 ≤ 39 → 들어간다
+            self.assertEqual(self.call(CH, chars(2) + bytes(trail) + bytes(SP), 9)[0], 0, trail)
+        # 같은 길이 어절이 부호 없이 글자 셋이면 28 + 3 + 3×3 = 40 → 새 줄
+        self.m[hook.NARROW_ADDR] = 4
+        self.assertEqual(self.call(CH, chars(3) + bytes(SP), 9)[0], 1)
+        # 어절이 글자 하나여도 나머지 8px 에 열 12 면 36 + 2 + 3 = 41 → 새 줄
+        self.m[hook.NARROW_ADDR] = 8
+        self.assertEqual(self.call(CH, bytes(SP), 12)[0], 1)
 
     def test_not_word_start(self):
         self.assertEqual(self.call(CH, chars(9), 12, prev_space=False)[0], 0)
@@ -197,9 +265,11 @@ class WordCk(unittest.TestCase):
     def test_line_head(self):
         self.assertEqual(self.call(CH, chars(20), 0)[0], 0)
 
-    def test_hanging_punct_not_counted(self):
-        # 열 9 + 4글자 + 마침표 — 마침표는 줄 밖에 매달리니 13칸으로 본다
-        self.assertEqual(self.call(CH, chars(3) + bytes(DOT), 9)[0], 0)
+    def test_hanging_punct_counted(self):
+        # 11-08(마스터 「전투중 창 초과」): 매다는 부호도 어절 길이에 센다 — 열 9 + 4글자 + 마침표 = 마침표가 칸 13(틀 칸)에 걸리니 어절째 새 줄
+        self.assertEqual(self.call(CH, chars(3) + bytes(DOT), 9)[0], 1)
+        # 열 8 이면 마침표가 칸 12 — 들어간다
+        self.assertEqual(self.call(CH, chars(3) + bytes(DOT), 8)[0], 0)
 
     def test_stops_at_control(self):
         # 01(개행) 뒤 글자는 다른 줄이다
@@ -223,7 +293,7 @@ class WordCk(unittest.TestCase):
         m[ZP + 0x90] = 0
         cpu = CPU(m)
         cpu.x, cpu.y = 0x48, 0
-        cpu.run(hook.WORDCK_ADDR)
+        cpu.run(hook.WCK_ADDR)
         self.assertEqual(m[PEND], 0)
         self.assertEqual((cpu.x, cpu.y), (0x48, 0))
 
@@ -266,7 +336,7 @@ class WordCk(unittest.TestCase):
         m[ZP + 0x14], m[ZP + 0x15] = BUF & 0xFF, BUF >> 8
         m[ZP + 0x90] = 0
         m[ZP + hook.LINE_COLS_ZP] = 13
-        CPU(m).run(hook.WORDCK_ADDR)
+        CPU(m).run(hook.WCK_ADDR)
         self.assertEqual(m[hook.WRAP_ADDR], 1)
 
     def test_space_sets_prevsp_and_flag(self):
@@ -284,18 +354,133 @@ class WordCk(unittest.TestCase):
         m[BUF] = 0
         m[ZP + 0x14], m[ZP + 0x15] = BUF & 0xFF, BUF >> 8
         cpu = CPU(m)
-        cpu.run(hook.WORDCK_ADDR)
+        cpu.run(hook.WCK_ADDR)
         self.assertEqual(m[hook.WRAP_ADDR], 1)
 
     def test_flag_clear_on_word_wrap(self):
         # 어절로 넘긴 글자는 공백이 아니다 — flag 0(칸을 먹는다)
         self.assertEqual(self.call(CH, chars(5), 12), (1, 0))
 
-    def test_fits_tail(self):
-        self.assertLessEqual(len(hook._wordck_asm().bytes()), hook.WORDCK_ROOM)
+    # 🔴 이음(종단 `0A`, 개행 없음) — 앞 문구 끝 부호 바로 뒤에 다음 문구가 붙는다(공백 없음). 부호 뒤 첫 글자도 어절 첫 글자다(11-06).
+    BANG = (font.LEAD0, 0x24)
+    PERIOD = (font.LEAD0, 0x27)
+
+    def test_sentence_punct_marks_next_glyph_as_word_start(self):
+        m = self.m
+        for punct in (self.PERIOD, self.BANG):
+            m[self.labels["prevsp"]] = 0
+            # 부호 자신: 검사 없음(보류 0 · flag 0), 다음 글자를 어절 첫 글자로 표시
+            self.assertEqual(self.call(punct, chars(3), 12, prev_space=False), (0, 0))
+            self.assertEqual(m[self.labels["prevsp"]], 1)
+
+    def test_name_straddling_after_sentence_end(self):
+        # 「…없었다.」 뒤 이름 삽입(「세리오스」 + 06 + 「는」): 부호 → 이름 첫 글자. 열 10 + 이름 3 + 조사 1 = 14 → 새 줄 / 열 9 이면 들어간다
+        m = self.m
+        self.call(self.PERIOD, b"", 9, prev_space=False)
+        self.assertEqual(self.call(CH, chars(2) + b"\x06", 10, prev_space=bool(m[self.labels["prevsp"]]), inject=chars(1))[0], 1)
+        self.call(self.PERIOD, b"", 8, prev_space=False)
+        self.assertEqual(self.call(CH, chars(2) + b"\x06", 9, prev_space=bool(m[self.labels["prevsp"]]), inject=chars(1))[0], 0)
+
+    def test_plain_glyph_after_sentence_end_wraps_by_word(self):
+        # 이름 삽입이 아닌 이음(도구 이름·일반 문구)도 같다 — 열 10 + 4글자
+        m = self.m
+        self.call(self.BANG, b"", 9, prev_space=False)
+        self.assertEqual(self.call(CH, chars(3) + bytes(HS), 10, prev_space=bool(m[self.labels["prevsp"]]))[0], 1)
+
+    def test_sentence_punct_at_col13_hangs(self):
+        # 줄 끝 칸 13 에 오는 부호는 매달린다 — 어절 검사로 새 줄에 홀로 떨어지면 안 된다
+        self.assertEqual(self.call(self.PERIOD, b"", 13, prev_space=True)[0], 0)
+        self.assertEqual(self.call(self.BANG, b"", 13, prev_space=False)[0], 0)
+
+    def test_same_trail_other_lead_is_not_punct(self):
+        # 트레일 0x27 이어도 리드가 F0 이 아니면 부호가 아니다
+        m = self.m
+        self.assertEqual(self.call((font.LEAD0 + 1, 0x27), chars(3), 5, prev_space=False), (0, 0))
+        self.assertEqual(m[self.labels["prevsp"]], 0)
+
+    # ⚠ 알려진 한계: 개행 보류가 선 **줄 머리**에 문장 끝 부호가 오면 flag=1 이라 `eat` 이 그 부호의 칸 전진을 건너뛴다(공백과 같은 갈래라서).
+    #   부호로 시작하는 줄은 우리 문안에 없다(전수 확인 — 전투·시스템 문구 줄 머리는 늘 글자·이름) — 코드 자리(+2B)가 모자라 안 막았다.
+
+    def test_fits_bank73_tail(self):
+        # 뱅크 0x73 꼬리 — musicresume 바로 뒤에서 시작해 뱅크 끝(벡터 `$FFF6` 앞)에 안 닿는다
+        import musicresume
+
+        self.assertEqual(hook.WCK_BANK_OFF, musicresume.OFF + musicresume.CODE_LEN)
+        self.assertEqual(hook.WCK_BANK, musicresume.BANK)
+        self.assertLessEqual(len(hook._wordck_asm().bytes()), hook.WCK_ROOM)
+        self.assertLess(hook.WCK_ADDR + len(hook._wordck_asm().bytes()), 0xFFF6)
+        self.assertEqual(hook.WCK_ADDR >> 13, hook.WCK_MPR)
+
+    # ── 11-22 인터럽트를 연 채 도는 wordck — 벡터 사본 → `wck_irq_a`(RAM) → `irq_b` ──
+    def test_mark_runs_without_sei_and_restores_bios(self):
+        # `mark` = LDA #뱅크 · TAM #$80 · JSR wordck · TAM #$80(A = 0) · JMP $6AB9 — SEI·PHP 없음(긴 어절이 하단 띠 래스터 인터럽트를 늦췄다)
+        b = hook._wrap_asm().bytes()
+        at = hook.MARK_ADDR - hook.WRAP_ADDR
         self.assertEqual(
-            hook.WORDCK_ADDR + hook.WORDCK_ROOM, (hook.WORDCK_MPR << 13) + font.BANK_GLYPH_END
+            b[at : at + 12],
+            bytes([0xA9, hook.WCK_BANK, 0x53, 0x80, 0x20, *hook.WCK_ADDR.to_bytes(2, "little"), 0x53, 0x80, 0x4C])
+            + hook.ORIG_DO_WRAP.to_bytes(2, "little"),
         )
+        self.assertEqual(hook.WRAP_LABELS["eat"], hook.MARK_ADDR + 12)
+
+    def test_irq_vector_copies_point_to_ram_entry(self):
+        v = hook.wck_vectors()
+        self.assertEqual(len(v), 6)
+        self.assertEqual({v[i] | v[i + 1] << 8 for i in (0, 2, 4)}, {hook.WCK_IRQ_ADDR})
+        self.assertEqual((hook.WCK_MPR << 13) + hook.WCK_VEC_OFF, 0xFFF6)  # IRQ2 · IRQ1($FFF8) · 타이머($FFFA)
+        self.assertLessEqual(hook.WCK_BANK_OFF + len(hook.wordck()), hook.WCK_VEC_OFF)
+        self.assertLess(hook.WCK_IRQ_ADDR, 0x4000)  # 늘 보이는 RAM(MPR1)
+        self.assertGreaterEqual(hook.WCK_IRQ_ADDR, 0x2000)
+
+    def test_irq_entry_remaps_bios_opens_window_and_returns(self):
+        """끼어든 인터럽트 흉내 — 뱅크 0x73 이 MPR7 에 걸린 채 벡터 사본으로 들어와, BIOS 를 되건 창에서 「진짜」 인터럽트를 한 번 받고, 뱅크 0x73 을 되건 뒤 RTI."""
+        ram = bytearray(0x10000)
+        r = hook.hook_routine()
+        ram[hook.HOOK_ADDR : hook.HOOK_ADDR + len(r)] = r
+        w = hook._wrap_asm().bytes()
+        ram[hook.WRAP_ADDR : hook.WRAP_ADDR + len(w)] = w
+        self.assertEqual(bytes(ram[hook.WCK_IRQ_ADDR : hook.WCK_IRQ_ADDR + hook.WCK_IRQ_LEN]), hook.wck_irq_a())
+        pc, a, mpr7, iflag, stack, log = hook.WCK_IRQ_ADDR, 0x5A, hook.WCK_BANK, 1, ["P", "PCL", "PCH"], []
+        cli_at = None  # CLI 다음 한 명령 뒤에 밀린 인터럽트를 받는다
+        for _ in range(40):
+            op = ram[pc]
+            if op == 0x48:
+                stack.append(a)
+                pc += 1
+            elif op == 0x68:
+                a = stack.pop()
+                pc += 1
+            elif op == 0x62:
+                a = 0
+                pc += 1
+            elif op == 0xA9:
+                a = ram[pc + 1]
+                pc += 2
+            elif op == 0x53:
+                self.assertEqual(ram[pc + 1], 1 << hook.WCK_MPR)
+                mpr7 = a
+                pc += 2
+            elif op == 0x58:
+                iflag, cli_at = 0, pc
+                pc += 1
+            elif op == 0x78:
+                iflag = 1
+                pc += 1
+            elif op == 0x4C:
+                pc = ram[pc + 1] | ram[pc + 2] << 8
+                if cli_at is not None:  # 진짜 인터럽트 — BIOS 가 걸려 있어야 하고, 돌아오면 그대로 잇는다
+                    self.assertEqual((mpr7, iflag), (0, 0))
+                    log.append("irq")
+                    cli_at = None
+            elif op == 0x40:
+                break
+            else:
+                self.fail(f"모르는 옵코드 {op:02X} @ {pc:04X}")
+        else:
+            self.fail("RTI 에 안 닿는다")
+        self.assertEqual(log, ["irq"])
+        self.assertEqual((a, mpr7, iflag, stack), (0x5A, hook.WCK_BANK, 1, ["P", "PCL", "PCH"]))
+        self.assertLess(pc, hook.NARROW_ADDR)  # `irq_b` 는 줄바꿈 품질 블록 안
 
 
 if __name__ == "__main__":

@@ -190,6 +190,12 @@ def pack_chapter(text, space_px=SPACE_PX):
     194 → 182 타일로 줄어 **표 앞 공간에 그대로 들어간다**(꼬리 240B 를 안 건드린다).
     """
     bits = typeset(text, space_px=space_px)
+    # 11-08 마스터 「장 제목도 가운데정렬」 — 타일(8px) 단위 가운데는 잉크가 최대 7px 쏠린다(실측 −7.5px). 잉크 폭 기준으로 픽셀 단위 가운데에 놓는다
+    #   (띠 22칸 = 176px). 앞쪽을 0 열로 채워 잉크 중심을 띠 중심(88px)에 맞춘다.
+    cols = np.where(bits.any(axis=0))[0]
+    if len(cols):
+        left = max(0, (BAT_COLS * TILE - (cols.max() - cols.min() + 1)) // 2 - int(cols.min()))
+        bits = np.concatenate([np.zeros((bits.shape[0], left), dtype=bits.dtype), bits], axis=1)
     w = bits.shape[1]
     n = (w + TILE - 1) // TILE  # 한 행의 타일 수
     pad = np.zeros((BAT_ROWS * TILE, n * TILE), dtype=np.uint8)
@@ -213,7 +219,7 @@ def pack_chapter(text, space_px=SPACE_PX):
         uniq.append(blank)
     bidx = index[blank]
 
-    lead = max(0, (BAT_COLS - n) // 2)  # 22칸 안에서 가운데 (원문과 같은 방식)
+    lead = 0  # 가운데는 위에서 픽셀 단위로 맞췄다(앞쪽 0 열) — 타일 단위 가운데는 최대 7px 쏠린다
     bat = np.full((BAT_ROWS, BAT_COLS), bidx, dtype=int)
     for r in range(BAT_ROWS):
         for t in range(min(n, BAT_COLS - lead)):

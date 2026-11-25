@@ -28,13 +28,44 @@ class Span:
 
 # 뱅크 0x6D 끝 — FF 채움 224B. 근거(2026-09-26): 1장 필드·메뉴·종장 파티·HUD 수정본 네 덤프에서 FF 그대로
 # + 쓰기 BP 를 건 채 한 바퀴(devlog 09-26 (8)).
-BANK6D_TAIL = Span(0x6D, 0x1F20, 0xE0, 0xFF, "뱅크 끝 FF 224B — 덤프 넷 + 쓰기 BP 한 바퀴")
+import hud_half  # noqa: E402 — 앞쪽 `hud_half.CODE_LEN` B 는 HUD 이름 렌더러 꼬리 코드 자리
+import list_strip  # noqa: E402 — 그 뒤 `list_strip.CODE_LEN` B 는 날개 목록 앞 공백 걷기 루틴 자리
+import debug_labels  # noqa: E402 — 그 뒤 `debug_labels.CODE_LEN` B 는 디버그 화면 행 이름·ON/OFF 쌍 자리(11-25)
+
+_FRONT = hud_half.CODE_LEN + list_strip.CODE_LEN + debug_labels.CODE_LEN
+
+BANK6D_TAIL = Span(
+    0x6D, 0x1F20 + _FRONT, 0xE0 - _FRONT, 0xFF, "뱅크 끝 FF 224B 중 앞 hud_half·list_strip 자리를 뺀 나머지 — 덤프 넷 + 쓰기 BP 한 바퀴"
+)
 
 # 뱅크 0x74 끝 — FF 채움 346B(+0x1EA6~). 근거(2026-10-07): 부팅 → 파일 로드 → 필드 → 전투 → 맵 전환(루디아) →
 # 메뉴·도구 사용 동안 물리 쓰기 BP(0xE9EA6~0xE9FFF) 0회 · RAM 값 FF 그대로(devlog 10-07 (3)).
-BANK74_TAIL = Span(0x74, 0x1EA6, 0x15A, 0xFF, "뱅크 끝 FF 346B — 쓰기 BP 한 바퀴(10-07)", 0xC000)
+import defeat_strip  # noqa: E402 — 앞쪽 `defeat_strip.CODE_LEN` B 는 패배 귀환 확인창 앞 공백 걷기 루틴 자리
 
-SPANS = [BANK6D_TAIL, BANK74_TAIL]
+BANK74_TAIL = Span(
+    0x74,
+    0x1EA6 + defeat_strip.CODE_LEN,
+    0x15A - defeat_strip.CODE_LEN,
+    0xFF,
+    "뱅크 끝 FF 346B 중 앞 defeat_strip 자리를 뺀 나머지 — 쓰기 BP 한 바퀴(10-07)",
+    0xC000,
+)
+
+# 뱅크 0x70 FF 패딩의 **조각 보관소**(4-17 확대 — 위 두 창 풀이 약 50B 모자랐다). 엔진이 글을 읽는 동안 이 뱅크는 창에 없으므로 `0F` 로 곧장 못 간다 —
+# `hook` 의 `0F` 스텁이 MPR3 에 잠깐 걸어 RAM 버퍼로 복사한다(포인터 `$5C00~`). 읽는 쪽은 이 스텁뿐이다.
+# 근거: 같은 뱅크 FF 패딩(`$7B4A~` 1206B)에 띠 폴백·디버그 코드가 이미 산다(독약 시험 선례, devlog 11-08) + 이 자리의 독약 시험(아래 devlog).
+import hook  # noqa: E402
+
+BANK70_STORE = Span(
+    hook.FRAG_BANK,
+    hook.STORE_OFF,
+    hook.STORE_SIZE,
+    0xFF,
+    "뱅크 0x70 FF 패딩 256B — 독약 시험(표지 바이트로 채운 사본 vs 원본 화면·동작 동일)",
+    0x4000,  # `0F` 마커 포인터 = 0x4000 + off (실제 읽기는 스텁이 MPR3 로 `0x6000 + off`)
+)
+
+SPANS = [BANK6D_TAIL, BANK74_TAIL, BANK70_STORE]
 MEASURED_HUD_TAIL = 905  # 09-27 실측 범위의 시작(묶음 안 오프셋) — 물리 0xDAEB5~0xDAF20
 
 

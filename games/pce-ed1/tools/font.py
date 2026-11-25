@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
+from bios_glyphs import BIOS12
 
 FONT_BDF = common.ROOT / "shared" / "fonts" / "Galmuri11.bdf"
 GLYPH_BYTES = 24
@@ -48,7 +49,19 @@ MAX_GLYPHS = GLYPH_NBANKS * LEADS_PER_BANK * PER_LEAD - CODE_SLOTS  # 840
 #    이어져 있고 시작 번호가 8 의 배수라 받침·ㄹ 비트맵을 바이트째 덮는다.
 DYN_SLOTS = 24
 DYN0 = MAX_GLYPHS - DYN_SLOTS  # 816 — 이 번호 앞이 상주(정본 순서), 뒤가 동적
+DYN_RESERVE_FROM = 16  # 🔴 동적 칸 16~23 은 **코드 자리**다(씬 하나가 쓰는 동적 글자는 ≤ 16 — 빌드가 지킨다). 글리프 뱅크 1 의 이 구간(144B)에 디버그 키 코드가 산다(`debugkey`)
 RESIDENT_MAX = DYN0
+# 🔴 **「」『』 반각 글리프**(마스터 도안 — D판 10-26, 11-25 확정판 `KAGI_ROWS`) — 8px 전진(`hook` 반각 영숫자와 같은 갈래, 잉크 8px = 4px 조각 둘). 코드 자리(칸 16~23) 맨 뒤 둘(22·23)에
+#   **늘 상주**한다 — 동적 복사(≤16칸)가 안 건드리고, 반각 표 비트도 이 번호에 고정이다(`hook.half_tables`). 정본(`glyph_order.json`)에는 없다.
+KAGI = "「」『』"  # 홑낫표 · 겹낫표(D2판) — 같은 8px 전진
+KAGI_SLOT0 = DYN_SLOTS - len(KAGI)  # 20
+KAGI_ROWS = {  # 8×12 — 마스터 확정 도안 `.local/work/board/kagi_master_1125.txt`(11-25 「이렇게 쓰는게 깔끔할것 같네」) 32×12 를 8열씩 쪼갠 것 — 바이트 그대로(「 」 『 』 순). `glyph()` 가 BIOS12 보다 먼저 이 표를 쓴다
+    "「": ["#####...", "#.......", "#.......", "#.......", "#.......", "#.......", "#.......", "........", "........", "........", "........", "........"],
+    "」": ["........", "........", "........", "........", "....#...", "....#...", "....#...", "....#...", "....#...", "....#...", "#####...", "........"],
+    "『": ["######..", "#....#..", "#.####..", "#.#.....", "#.#.....", "#.#.....", "#.#.....", "###.....", "........", "........", "........", "........"],
+    "』": ["........", "........", "........", "...###..", "...#.#..", "...#.#..", "...#.#..", "...#.#..", "####.#..", "#....#..", "######..", "........"],
+}
+assert RESIDENT_MAX + 0 == DYN0 and KAGI_SLOT0 >= DYN_RESERVE_FROM
 assert DYN0 % 8 == 0 and DYN0 // PER_LEAD == (MAX_GLYPHS - 1) // PER_LEAD
 # 🔴 **반 칸(4px) 전진 변형 코드**(마스터 10-07) — 리드 F4~F7 = 「리드 F0~F3 의 같은 트레일 글자를 평소대로 그리고 +4px」.
 #    글리프 칸을 안 먹는다(글자는 그대로, 코드만 다르다). 글리프가 이 리드를 쓰기 시작하면(상한 넘김) 빌드가 멈춘다.
@@ -61,7 +74,7 @@ assert VARIANT_LEAD0 + VARIANT_LEADS <= 0xF8  # F8 은 반각 공백, F9 는 동
 #    그대로 쓴다 — 그래서 **다른 코드**다.
 HALF_SPACE = bytes([0xF8, 0x24])
 # 반각 부호 — 잉크가 왼쪽 4px 안인 글리프(마스터 도트 `?` 4px 포함). 대사창에서 12px 칸에 그린 뒤 8px 되감아 4px 만 간다.
-NARROW_PUNCT = ".,!?·"  # 마스터 10-07: … ～ 「」 는 전각 유지, 나머지 부호는 반각
+NARROW_PUNCT = ".,!·"  # 마스터 10-07: … ～ 「」 는 전각 유지, 나머지 부호는 반각
 # 🔴 리드 F9 는 **동적 조사** 전용으로 예약한다(글리프 배정에서 뺀다) — `F9 (0x24+종류)`.
 #    후킹 루틴이 **직전에 그린 글자**의 받침을 보고 두 글리프 중 하나를 낸다(status.md 12절).
 JOSA_LEAD = 0xF9
@@ -115,14 +128,17 @@ QUESTION_4PX_ROWS = [
 
 # 🔴 **「…」는 한국식 바닥(글자 아랫줄)에 점 셋**(마스터 10-08, 전 기종 공통 — 일본식 가운데 점 금지). 갈무리의 「…」 는 12행 칸의
 #   5행(한가운데)에 찍혀 있어 마침표(10행)와 높이가 달랐다 — 마침표와 같은 행에 점 셋(열 1·5·9). 오프닝·엔딩 자막(`opening_sub.render_line`)은 이미 이 꼴이다.
-ELLIPSIS_FLOOR_ROW = 10
+ELLIPSIS_FLOOR_ROW = 9  # 마침표 도안(바닥 2×2)의 윗행 — 원판 도안 1px 올림(아래 `_bios`) 뒤 마침표는 행 9~10
 ELLIPSIS_FLOOR_COLS = (1, 5, 9)
 
 
 def _ellipsis_floor() -> bytes:
+    # 점 하나 = 마침표(`.`, BIOS 도안)와 같은 2×2 네모점 — 마스터 11-15 「…」의 점을 그 기종 마침표와 같은 모양·크기로(규칙 1-3).
+    # 행은 마침표와 같다(`ELLIPSIS_FLOOR_ROW` = 점의 윗행, 아랫행은 +1).
     rows = [0] * (GLYPH_BYTES // 2)
     for c in ELLIPSIS_FLOOR_COLS:
-        rows[ELLIPSIS_FLOOR_ROW] |= 0x8000 >> c
+        for dr in (0, 1):
+            rows[ELLIPSIS_FLOOR_ROW + dr] |= 0xC000 >> c
     return b"".join(v.to_bytes(2, "big") for v in rows)
 
 
@@ -200,19 +216,83 @@ LIGATURE_STEP = 4  # 둘째 부호를 오른쪽으로 민 픽셀
 
 
 def ligate(text: str) -> str:
-    for a, b in LIGATURES.items():
-        text = text.replace(a, b)
+    """🔴 합자(‼ ⁉)는 더 안 쓴다 — 마스터 11-06 「문장부호는 원본 그대로」: `!!` 는 원판 「！」 둘(4px 전진씩), `!?` 는 「！」+「？」(4+8px)."""
     return text
 
 
+# 겹느낌표 ‼ = PCE II 원판 모양(특수 글리프 표 24B, 12행) 을 두 열 왼쪽으로 옮긴 꼴 — 잉크 열 0~1·5~6, 진행 8px(마스터 10-27 「pce c2로 하자」)
+EXCLAIM_ROWS = ["............"] + ["##...##....."] * 7 + ["............"] + ["##...##....."] * 2 + ["............"]
+
+
+def _exclaim() -> bytes:
+    return b"".join(sum(0x8000 >> c for c, x in enumerate(r) if x == "#").to_bytes(2, "big") for r in EXCLAIM_ROWS)
+
+
+def _kagi(ch: str) -> bytes:
+    out = []
+    for row in KAGI_ROWS[ch]:
+        assert len(row) == 8
+        out.append(sum(0x8000 >> c for c, x in enumerate(row) if x == "#"))
+    return b"".join(v.to_bytes(2, "big") for v in out)
+
+
+BIOS_LEFT = "!'·0123456789?einstuy."  # 11-24 마스터 「겹낫표·홑낫표 둘다 왼쪽으로 이동 안되어있네」 — 여는 낫표 「『 도 잉크를 칸 0열부터(원판 열 3 → 0, pce2 KAGI_OPEN_SHIFT 와 같은 자리). 닫는 」』 는 그대로. ※ KAGI_ROWS 는 죽은 자료(glyph 가 안 부른다)
+#  ↑ 아래 설명은 그대로: 4px·8px 전진 칸에 담는 글자 — 잉크 왼쪽 끝을 0열로 당긴다(나머지 — 대문자·`/`·`-`·낫표 — 는 원판 12px 칸의 자리 그대로)
+
+
+BIOS_NUDGE = {"1": 2}  # 잉크 폭이 3px 로 좁은 글자 — 왼쪽 끝 정렬 뒤 오른쪽으로 민 칸 수(줄기 열 1 → 3)
+
+
+def _bios(ch: str) -> bytes:
+    rows = [int(r.replace("#", "1").replace(".", "0"), 2) << 4 for r in BIOS12[ch]]
+    if ch in BIOS_LEFT:
+        lo = min(c for v in rows for c in range(16) if v & (0x8000 >> c))
+        rows = [(v << lo) & 0xFFF0 for v in rows]
+        if ch in BIOS_NUDGE:  # 8px 칸 안에서 가운데로(마스터 11-08 「숫자 1 이 왼쪽으로 쏠린 느낌」 — 원판 「150」 의 1 은 줄기가 칸 열 3, 우리 1 은 열 1 이라 3칸 왼쪽)
+            rows = [(v >> BIOS_NUDGE[ch]) & 0xFFF0 for v in rows]
+    if rows[0] == 0 and rows[11] and ch != "y":
+        # 🔴 원판 도안은 12행 칸의 행 1~11 에 앉는다(숫자·대문자·`!?`·`.` 은 아랫줄이 행 11) — 갈무리 한글은 행 0~10 이라
+        #   원판 글리프가 한글보다 1px 아래였다(마스터 11-15 「원문부호·숫자가 갈무리와 1px 차이」). 한글을 내리면 소문자(아랫줄 10)·Gold·`&%` 가
+        #   반대로 1px 떠서, 아랫줄이 11 인 쪽만 1행 올려 기준선을 10 으로 모은다. `y` 는 내려가는 꼬리(11)라 그대로.
+        rows = rows[1:] + [0]
+    return b"".join(v.to_bytes(2, "big") for v in rows)
+
+
+# 전각 영문(ＥＰ·ＨＰ·ＭＰ·개체 구분 Ａ~Ｄ) — 엔진 SJIS 경로(BIOS 12×12 글꼴)는 행 1~11 에 앉아 갈무리 한글(행 0~10)보다 1px 아래다(마스터 11-16 「EP 줄이
+# 안 맞는다」). ASCII 대문자 A·B·C·D·E·H·M·P·U 는 이미 같은 원판 도안(`_bios`, 12px·1px 올림)으로 상주해 있으니 **그 글리프 코드를 그대로 쓴다**(새 글리프 없음 —
+# 같은 비트맵 둘을 두면 `check_glyph_dups` 가 운다). `build_table` 이 전각 글자 → ASCII 코드 별칭을 표에 넣는다.
+FULLWIDTH_BIOS = {"Ａ": "A", "Ｂ": "B", "Ｃ": "C", "Ｄ": "D", "Ｅ": "E", "Ｈ": "H", "Ｍ": "M", "Ｐ": "P", "Ｕ": "U"}
+
+
+# 🔴 **따옴표 `'` `"` — 방향 없는 곧은 도트**(마스터 11-18 「따옴표가 한방향이라 어색하고 첫번째 작은따옴표는 여백까지 있어서」, 번역 규칙 1-2). 종전 `'` 는 원판 BIOS 의
+#   비스듬한 쉼표꼴(잉크 왼쪽 2px)을 8px 전진으로 그려 뒤 6px 이 비었고 `"` 는 12px 전진이었다. 이제 `'` = 4px 전진(잉크 열 1~2 — 앞뒤 1px 씩, `hook.HALF_NARROW`),
+#   `"` = 8px 전진(곧은 획 둘, 열 1~2·5~6 — 앞뒤 1px 씩, 반각 영숫자 표). 윗줄 4행에 앉는다(마침표는 아랫줄 · 따옴표는 윗줄).
+QUOTE_ROWS = {
+    "'": ["..##", "..##", "..##", "..##"],
+    '"': ["..##..##", "..##..##", "..##..##", "..##..##"],
+}
+
+
+def _quote(ch: str) -> bytes:
+    rows = [int(r.replace("#", "1").replace(".", "0").ljust(12, "0"), 2) << 4 for r in QUOTE_ROWS[ch]]
+    rows += [0] * (12 - len(rows))
+    return b"".join(v.to_bytes(2, "big") for v in rows)
+
+
 def glyph(ch: str) -> bytes:
-    """한 글자 → 24B. 세로는 **베이스라인에 맞추고**(BDF `yo`) 가로는 왼쪽 정렬."""
-    if ch == "?":
-        return _question_4px()
-    if ch == "…":
-        return _ellipsis_floor()
+    """한 글자 → 24B. 세로는 **베이스라인에 맞추고**(BDF `yo`) 가로는 왼쪽 정렬. 문장부호·숫자·영문은 원판 BIOS 도안(`bios_glyphs`)."""
+    if ch in KAGI_ROWS:  # 「」『』 — 마스터 도안(8×12, 8px 전진). 11-06 에 BIOS 도안으로 갔다가(분기가 사라져 표가 죽은 자료였다) 11-25 되살렸다
+        return _kagi(ch)
+    if ch in QUOTE_ROWS:
+        return _quote(ch)
     if ch in GOLD_ORIG:
         return _gold_orig(ch)
+    if ch in BIOS12:
+        return _bios(ch)
+    if ch == "‼":
+        return _exclaim()
+    if ch == "…":
+        return _ellipsis_floor()
     lig = next((k for k, v in LIGATURES.items() if v == ch), None)
     if lig is not None:
         a, b = (glyph(c) for c in lig)
@@ -251,12 +331,15 @@ def glyph(ch: str) -> bytes:
 # 종장 카드 「종장  그리고 영웅들의 전설」 15칸 → 13칸). 정본에선 `⟦…⟧` 로 적고 조판 전에 푼다.
 PACK_RE = re.compile("⟦(.*?)⟧")
 PACK_SPACE_PX = 6
-PACKED = {"종장  그리고 영웅들의 전설": 0xE000}  # 문안 → 전용 글자 첫 코드포인트(사용자 영역)
+PACKED = {"종장  그리고 영웅들의 전설": 0xE000, "끝": 0xE020}  # 문안 → 전용 글자 첫 코드포인트(사용자 영역)
+# 🔴 장 끝 카드 가운데(마스터 11-09 「왼쪽 여백 ≤ 오른쪽, 차 ≤ 한 단위」) — 4px 공백 단위로는 못 맞는 줄은 **잉크를 dx px 오른쪽으로 옮겨 구운** 전용 글자를 쓴다.
+#   「끝」 3px(−6 → 0), 종장 제목 2px(−7 → −3). 장 끝 카드 문안에서만 쓴다(`⟦끝⟧`) — 일반 「끝」 글리프는 그대로다.
+PACKED_DX = {"종장  그리고 영웅들의 전설": 2, "끝": 3}
 _packed_cache: dict[str, bytes] | None = None
 
 
 def _packed_cells(text: str) -> list[bytes]:
-    x, strip = 0, [0] * 12
+    x, strip = PACKED_DX.get(text, 0), [0] * 12
     placed = []
     for ch in text:
         if ch == " ":
@@ -265,11 +348,18 @@ def _packed_cells(text: str) -> list[bytes]:
         placed.append((x, glyph(ch)))
         x += 12
     ncell = (x + 11) // 12
+    if text in PACKED_DX:  # 옮겨 구운 글자는 **잉크가 닿는 칸까지만** — 마지막 글리프의 오른쪽 빈 열이 칸을 하나 더 만들지 않게(종장 13칸 유지)
+        right = 0
+        for gx, g in placed:
+            cols = [c for r in range(12) for c in range(12) if (int.from_bytes(g[2 * r : 2 * r + 2], "big") >> 4) >> (11 - c) & 1]
+            right = max(right, gx + max(cols) + 1)
+        ncell = (right + 11) // 12
     width = ncell * 12
     for gx, g in placed:
         for r in range(12):
             v = int.from_bytes(g[2 * r : 2 * r + 2], "big") >> 4  # 12비트, MSB = 왼쪽 픽셀
-            strip[r] |= v << (width - 12 - gx)
+            sh = width - 12 - gx
+            strip[r] |= (v << sh) if sh >= 0 else (v >> -sh)  # 칸 밖으로 나간 오른쪽 빈 열은 버린다(옮겨 구운 글자)
     cells = []
     for k in range(ncell):
         rows = [((strip[r] >> (width - 12 - 12 * k)) & 0xFFF) << 4 for r in range(12)]
@@ -383,7 +473,8 @@ def build_table(chars) -> tuple[dict[str, bytes], bytes]:
     배정은 **정본 순서**를 따른다(`_order_canon`). 정본에 없는 글자가 있으면 **빌드가 죽는다** —
     `python3 tools/freeze_glyphs.py` 로 뒤에 덧붙이고 커밋한다(코드가 안 밀린다).
     """
-    need = set(chars) | set(JOSA_CHARS) | set(LIGATURES.values()) | set(DIGIT_CHARS)
+    need = (set(chars) - set(KAGI)) | set(JOSA_CHARS) | set(DIGIT_CHARS)  # 합자(‼ ⁉)는 11-06 부터 안 쓰여 정본 순서에서 뺐다(11-22)
+    need = {FULLWIDTH_BIOS.get(c, c) for c in need}  # 전각 영문은 ASCII 대문자 글리프로(별칭은 아래)
     canon = _order_canon()
     missing = sorted(need - set(canon))
     if missing:
@@ -398,10 +489,17 @@ def build_table(chars) -> tuple[dict[str, bytes], bytes]:
             f"상주 글자 {len(order)}자 — 상한 {RESIDENT_MAX}(동적 {DYN_SLOTS}칸은 블록이 싣는다). 결정 B 재검토(status.md 8절)"
         )
     table = {ch: code_of(i) for i, ch in enumerate(order)}
+    for fw, asc in FULLWIDTH_BIOS.items():  # 전각 Ａ~Ｄ·Ｅ·Ｈ·Ｍ·Ｐ·Ｕ → ASCII 대문자와 같은 코드(12px 칸·1px 올린 원판 도안)
+        if asc in table:
+            table[fw] = table[asc]
     bank = bytearray(GLYPH_NBANKS * 0x2000)
     for i, ch in enumerate(order):
         at = glyph_at(i)
         bank[at : at + PACKED_BYTES] = pack(glyph(ch))
+    for k, ch in enumerate(KAGI):  # 「」 — 정본 밖 고정 칸
+        at = glyph_at(DYN0 + KAGI_SLOT0 + k)
+        bank[at : at + PACKED_BYTES] = pack(glyph(ch))
+        table[ch] = code_of(DYN0 + KAGI_SLOT0 + k)
     bank = bytes(bank)
     build_table.order = order  # 받침 표를 만들 때 쓴다
     return table, bank
@@ -409,8 +507,10 @@ def build_table(chars) -> tuple[dict[str, bytes], bytes]:
 
 def needs_glyph(ch: str) -> bool:
     """우리 글리프가 필요한 글자 — SJIS 전각 2바이트로 못 적는 것 전부(한글 · ASCII 부호·숫자·라틴)."""
-    if ch in (" ", "\n", "\f"):
+    if ch in (" ", "\n", "\f", "\u2002", "\u200a"):  # \u2002·\u200a = 입장 배너 반 칸 공백 표시(center_plan.HALF_MARK · JOIN_MARK) — 글리프가 아니다
         return False
+    if ch in FULLWIDTH_BIOS:
+        return True  # 전각 영문은 우리 글리프(1px 올림) — 엔진 SJIS 글꼴은 한글보다 1px 아래
     if ch == "…":
         return True  # 🔴 BIOS 글꼴의 「…」(SJIS 8163)은 가운데 점이다 — 한국식 바닥 꼴은 우리 글리프로(`_ellipsis_floor`, 마스터 10-08)
     if 0xE000 <= ord(ch) <= 0xF8FF:
@@ -453,8 +553,8 @@ def encode(
     for m in JOSA_TOKEN.finditer(text):
         out += encode(text[pos : m.start()], table, half_space, msg) if m.start() > pos else b""
         pair = m.group()
-        if pair == "이랑/랑":  # 「으로/로」와 같은 꼴(둘째 글자를 문안이 든다)인데 무받침 선처리(`hook.josa_pre`)는 `으로/로` 만 안다 — 무받침에서 「랑랑」이 나온다
-            raise ValueError("조사 「이랑/랑」 은 안 쓴다 — 무받침 뒤에서 「랑」이 겹친다(hook.josa_pre 는 으로/로 전용)")
+        if pair == "이랑/랑":  # 「으로/로」와 같은 꼴(둘째 글자를 문안이 든다)인데 무받침 선처리(`hook._digit_asm`)는 `으로/로` 만 안다 — 무받침에서 「랑랑」이 나온다
+            raise ValueError("조사 「이랑/랑」 은 안 쓴다 — 무받침 뒤에서 「랑」이 겹친다(hook._digit_asm 의 조사 선처리는 으로/로 전용)")
         out += josa_code(pair)
         rest = pair.split("/")[0][1:]  # 받침용의 둘째 글자(으로→로, 이랑→랑)
         if rest:

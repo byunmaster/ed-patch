@@ -320,7 +320,7 @@ def omake_rows(orig_track: bytes, ko_track: bytes) -> list[tuple]:
         sg = sig_bytes(seg, lambda ix: bytes(blk[ix * OF.STRIDE : ix * OF.STRIDE + font.GLYPH_BYTES]))
         t = by_sig.get(sg)
         if t is not None:
-            return t, True
+            return t.replace(OF.LIGATURE, "다."), True  # 도감 거북 괴물 줄끝 합자(U+E000)는 보이지 않는 글자라 「…떨어뜨린」으로 잘린 것처럼 보였다(10-28 검수 6505)
         if all(len(x) == 2 and x[0] >= 0x81 and x[0] < 0xF0 or len(x) == 1 and x[0] < 0x24 for x in sg if isinstance(x, bytes)) and not any(len(x) == 24 for x in sg):
             try:
                 return b"".join(sg).decode("cp932"), True
@@ -478,6 +478,32 @@ def battle_rows(orig_track: bytes, ko_track: bytes, gl: Glyphs) -> list[tuple]:
     return rows
 
 
+def sub_rows() -> list[tuple]:
+    """⑤ 원판에 글자가 **없는** 음성·자막 — 오프닝·엔딩 나레이션 자막(CD-DA) · 월드를 안 멈추는 대사창 모양 자막(`voice_gwin`) · 구형 카드 안내 화면 음성 자막(`syscard_screen`).
+    원판 칸은 「(음성 — 원판 글자 없음)」이고 한글 칸은 우리 자막 정본이다(구운 이미지의 글리프를 되읽는 게 아니라 정본 JSON·상수를 그대로 읽는다 — 이 자막들은 그림·전용 칸으로 구워져
+    이미지에서 글자로 되읽을 수 없다). 번호 `V:<종류>:<순번>`, 메모에 시각(초)·자리·화자."""
+    rows = []
+    none = "(음성 — 원판 글자 없음)"
+    script = HERE.parent / "script"
+    for kind, name in (("opening", "opening_sub.json"), ("ending", "ending_sub.json")):
+        d = json.load(open(script / name, encoding="utf-8"))
+        for i, ln in enumerate(d["lines"]):
+            t0, t1, text = ln[0], ln[1], ln[2]
+            pos = ln[3] if len(ln) > 3 else ""
+            rows.append((f"V:{kind}:{i:02d}", none, text.replace("\f", "⏎").replace("\n", "↵"), "음성(원판 글자 없음)", f"{t0}~{t1}초 {pos}".strip()))
+    d = json.load(open(script / "voice_gwin.json", encoding="utf-8"))
+    for sid, sc in d["scenes"].items():
+        for i, pg in enumerate(sc["pages"]):
+            rows.append((f"V:gwin:{sid}:{i:02d}", none, f"{{S:{pg.get('speaker', '')}}} {pg['text']}", "음성(원판 글자 없음)", f"{pg.get('start')}~{pg.get('end')}초"))
+    import syscard_screen as SS
+
+    rows.append(("V:syscard:fixed", "(원판 안내 문구 그림 — 시스템 카드 버전 안내)", SS.TEXT, "음성(원판 글자 없음)", "고정 문구"))
+    for i, (text, t0) in enumerate(SS.SUBS):
+        sp = SS.SUB_SPEAKERS[i] if i < len(SS.SUB_SPEAKERS) else ""
+        rows.append((f"V:syscard:{i:02d}", none, f"{{S:{sp}}} {text}" if sp else text, "음성(원판 글자 없음)", f"{t0}초~"))
+    return rows
+
+
 def _cell(x: str) -> str:
     """TSV 칸 — 탭·줄바꿈 계열(\\r \\x0b \\x0c \\x1c~\\x1e \\x85 U+2028/9)은 `{U+XXXX}` 로 적어 행이 쪼개지지 않게 한다."""
     return "".join("{U+%04X}" % ord(c) if c in "\t\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029" else c for c in x)
@@ -505,15 +531,28 @@ def main() -> int:
     rows = []
     stat = Counter()
     nblocks = nmiss = 0
+    # 🔴 둘로 나눈 컨테이너(`splitload`) — A 쪽은 참조표가 가리키고 B 쪽은 참조표 밖(트랙 끝, 짝 표로만)이다. 원본 컨테이너의 id 에
+    #    속하는 블록을 두 쪽에서 모아 짝짓는다(공통 블록 0·1·4·5 는 양쪽에 같은 사본).
+    refd = set(moved.values())
+    extra = [x for x in kc if x["rel"] not in refd and x["rel"] >= 9786]
     for c in oc:
         k = kmap.get(moved.get(c["rel"], c["rel"]))
-        if k is None or len(k["blocks"]) != len(c["blocks"]):
+        if k is None:
             nmiss += 1
             continue
-        for ob, kb in zip(c["blocks"], k["blocks"]):
-            if ob["id"] != kb["id"]:
-                nmiss += 1
-                continue
+        kb_by_id = {b["id"]: b for b in k["blocks"]}
+        if len(k["blocks"]) != len(c["blocks"]):
+            oids = {b["id"] for b in c["blocks"]}
+            for x in extra:
+                xids = {b["id"] for b in x["blocks"]}
+                if xids <= oids and xids - set(kb_by_id) :
+                    for b in x["blocks"]:
+                        kb_by_id.setdefault(b["id"], b)
+        if set(kb_by_id) != {b["id"] for b in c["blocks"]}:
+            nmiss += 1
+            continue
+        for ob in c["blocks"]:
+            kb = kb_by_id[ob["id"]]
             sid = ob["id"]
             nblocks += 1
             dyn = gl.dyn_of(kb["data"], len(ob["data"]))
@@ -559,7 +598,10 @@ def main() -> int:
     for r in battr:
         stat["전투 행"] += 1
         stat[r[3] or "(정상 짝)"] += 1
-    rows = rows + sysr + battr
+    subr = sub_rows()
+    for r in subr:
+        stat["음성 자막 행"] += 1
+    rows = rows + sysr + battr + subr
     with open(out / "pairs.tsv", "w", encoding="utf-8") as f:
         f.write("번호\t원판\t한글\t표시\t메모\n")
         for r in rows:
@@ -570,7 +612,7 @@ def main() -> int:
 
 - 한글 이미지: `{iso.name}` sha1 {sha(iso)} (꼬리표 {common.BUILD_TAG})
 - 원판 이미지: {common.ORIG_ISO.name if hasattr(common, "ORIG_ISO") else "originals/jp/pce-ed1"} (데이터 트랙, `common.track_data()`)
-- 분모: 씬 블록 {nblocks}개(컨테이너 {len(oc)}개 — 이사한 {sum(1 for a, b in moved.items() if a != b)}개는 참조표로 새 자리와 짝) · 씬 메시지 {len(rows) - len(sysr) - len(battr)}행 · 시스템 {len(sysr)}행 · 전투 {len(battr)}행 (합 {len(rows)}){" · 짝이 안 맞아 건너뛴 블록 %d" % nmiss if nmiss else ""}
+- 분모: 씬 블록 {nblocks}개(컨테이너 {len(oc)}개 — 이사한 {sum(1 for a, b in moved.items() if a != b)}개는 참조표로 새 자리와 짝) · 씬 메시지 {len(rows) - len(sysr) - len(battr) - len(subr)}행 · 음성·자막(원판 글자 없음) {len(subr)}행 · 시스템 {len(sysr)}행 · 전투 {len(battr)}행 (합 {len(rows)}){" · 짝이 안 맞아 건너뛴 블록 %d" % nmiss if nmiss else ""}
 - 표시별(표시 열): 원판만 {stat["원판만"]} · 한글만 {stat["한글만"]} · 둘 다 빔 {stat["둘 다 빔"]} · 포인터 공유 {stat["포인터 공유"]} · 표시 없음(정상 짝) {stat["(정상 짝)"]}
 - 메모 열: 번역 대상(우리 번역 정본에 원문 열쇠가 있는 메시지) {stat["번역 대상"]} · 번역 대상 아님 {stat["번역 대상 아님"]}(코드·표 안의 우연한 글자 덩이 · 비대사) · 🔴 번역 대상인데 원판 그대로 {stat["🔴 번역 대상인데 원판 그대로"]}
 
@@ -581,7 +623,7 @@ def main() -> int:
 - 번역이 넘쳐 덧붙인 꼬리로 잇는 `0F`(원판 길이 밖을 가리키는 점프)는 따라가 읽고, 원판에 원래 있던 분기·호출은 `{{0F 주소}}` · `{{HH 인자}}` 로 적는다.
 
 ## 한계
-- 판정 메모: 한글 칸에 일본어가 남은 행의 원인 분류와 실제 결함 후보는 `defects.md`.\n- 범위: ① 씬 대사 블록(번호 `rel:씬:시작`) ② 시스템 문구(번호 `S:<가족>:…` — 아이템 117 · 주문 29 · 파일 지명 52 · HUD 지명 50 · 화자 4 · 장 제목 · 메뉴 라벨 · 시스템 메시지 단위 · 부팅·파일 선택 화면 줄 · 필드 HUD · 오마케 목록) ③ 전투 컨테이너(번호 `B:<rel>:<블록>:<오프셋>` — 몬스터 이름(간접 `23 주소` 는 펼침)·전투 문구 단위) ④ 오마케 모듈(번호 `O:…` — 사운드 테스트 · 메뉴 · 몬스터 도감 88건; 전용 칸 글리프라 정본 문구를 같은 방식으로 구워 롬 칸 비트맵과 대조 — 글자 판독이 아님). **그림 글자**(엔딩 카드·오마케 간판·타이틀)와 오프닝·엔딩 자막·나레이션 자막(음성)은 이 표 밖이다.
+- 판정 메모: 한글 칸에 일본어가 남은 행의 원인 분류와 실제 결함 후보는 `defects.md`.\n- 범위: ① 씬 대사 블록(번호 `rel:씬:시작`) ② 시스템 문구(번호 `S:<가족>:…` — 아이템 117 · 주문 29 · 파일 지명 52 · HUD 지명 50 · 화자 4 · 장 제목 · 메뉴 라벨 · 시스템 메시지 단위 · 부팅·파일 선택 화면 줄 · 필드 HUD · 오마케 목록) ③ 전투 컨테이너(번호 `B:<rel>:<블록>:<오프셋>` — 몬스터 이름(간접 `23 주소` 는 펼침)·전투 문구 단위) ④ 오마케 모듈(번호 `O:…` — 사운드 테스트 · 메뉴 · 몬스터 도감 88건; 전용 칸 글리프라 정본 문구를 같은 방식으로 구워 롬 칸 비트맵과 대조 — 글자 판독이 아님). ⑤ 원판에 글자가 없는 음성·자막(번호 `V:…` — 오프닝·엔딩 자막 · 대사창 모양 자막 · 구형 카드 안내 화면; 정본에서 그대로 읽은 행이라 글리프 되읽기가 아니다). **그림 글자**(엔딩 카드·오마케 간판·타이틀)는 이 표 밖이다. 나레이션 게이트·음성 장면의 대사창 문구는 씬 메시지 행에 이미 든다.
 - 시스템·전투 행 중 `원판만` 은 한글 쪽 칸이 **비어 있는 것**이다 — 시스템 메시지(sysmsg) 단위 일부는 번역이 앞 단위에 합쳐 쓰고(제자리 + `0F` 로 같은 뱅크 안 다음 단위에 잇기) 뒤 단위를 비우므로 결함이 아닐 수 있다. 읽는 쪽이 보고 가른다.
 - 씬 메시지 목록은 `messages.parse` 의 휴리스틱이라 코드 안의 우연한 글자 덩이가 「메시지」로 잡힌 행이 있다(번역 대상 아님 표시). 반대로 파서가 놓친 메시지는 이 표에 없다.
 - 이름·수 자리(`{{HH 인자}}`)와 `{{S:화자}}` 는 코드 그대로 적는다 — 실제 화면 값(받침 있는/없는 이름 등)은 대사 보기 캡처의 몫이다.

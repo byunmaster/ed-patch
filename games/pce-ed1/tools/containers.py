@@ -20,6 +20,7 @@ import common
 import lz
 
 DIR_END = 0xFF
+PARTNER_ID = 0xFE  # 🔴 나눈 컨테이너의 디렉터리 끝(FF 앞) 가짜 항목 `[FE, 짝 rec lo, 짝 rec hi, 짝 섹터수, 0]` — 씬 열기 루틴(`splitload`)이 못 찾았을 때 읽는다. 실제 블록이 아니라 풀면 안 된다
 ENTRY = 5
 MAX_ENTRIES = 64
 MAX_BLOCK = 0x4000
@@ -67,6 +68,8 @@ def scan(track: bytes | None = None) -> list[dict]:
         blocks = []
         try:
             for id_, src, ln in ents:
+                if id_ == PARTNER_ID:  # 나눈 컨테이너의 짝 정보 항목 — 블록이 아니다
+                    continue
                 out, used = lz.decode(cont[src:], ln)
                 blocks.append({"id": id_, "src": src, "len": ln, "packed": used, "data": out})
         except (IndexError, ValueError):

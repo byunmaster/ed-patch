@@ -6,9 +6,11 @@
 나머지(블록 하나가 쓰는 드문 글자 ≤ 24)는 **그 블록이 열릴 때** 자기 비트맵을 동적 칸에 복사한다.
 
 동작(블록 열림 훅 — 게임 코드를 안 건드린다):
-  · 블록 머리(`$A000`)는 늘 점프 한 개(`4C`/`20`)고 씬이 열릴 때 게임이 거기서 시작한다(10-11 BP: MPR5=0x76 에서 PC=$A000 적중).
-    그 점프의 목적지를 블록 꼬리의 스텁으로 돌리고, 스텁은 복사를 마친 뒤 **원래 목적지로 `JMP`** 한다(`JSR` 머리여도 같다 —
-    돌아갈 주소는 이미 스택에 있다).
+  · 블록 머리는 **진입 점프 둘**이다 — `$A000`(`4C`/`20`, 프레임마다 엔진 `$6EB4 JMP $A000`)과 `$A003`(`4C`, 맵 진입 이벤트 —
+    엔진 `$7106`·`$7DED JSR $A003`). 🔴 맵이 열릴 때 **`$A003` 이 `$A000` 보다 먼저** 불린다 — `$A000` 만 돌리면 진입 이벤트가 띄우는
+    대사는 **앞 씬의 동적 글리프**로 찍힌다(11-23 씬 196 진입 대사 첫 글자가 씬 177 의 동적 칸 0 글자로 나왔다. 10-11 의
+    「머리는 점프 한 개」 전제가 틀렸다). 두 점프의 목적지를 블록 꼬리의 진입 스텁으로 돌리고, 진입 스텁은 복사 루틴을 부른 뒤
+    **원래 목적지로 `JMP`** 한다(`JSR` 머리여도 같다 — 돌아갈 주소는 이미 스택에 있다. `$A003` 이 `4C` 가 아닌 블록은 첫 점프만).
   · 스텁: `PHP · PHA · SEI`, MPR3 에 글리프 뱅크를 걸고(`TMA/TAM` — 기존 렌더러 훅과 같은 패턴) `TII` 로 비트맵(n×18B)을
     동적 칸에, 받침·ㄹ받침 비트(각 3B)를 워크 RAM 비트맵의 같은 자리에 덮는다. 레지스터·플래그·MPR3 는 그대로 돌려 놓는다.
   · 블록마다 동적 칸 배정이 다르다(같은 글자가 블록마다 다른 코드) — `block_table` 이 블록 전용 글자표를 낸다.
@@ -39,15 +41,15 @@ class DynError(Exception):
 
 def forced_chars() -> set[str]:
     """늘 상주해야 하는 글자 — 대사 본문 밖에서도 쓰이는 것(이름·UI·시스템·전투·조사·숫자·합자) + 씬 0(입장 배너 지명표)."""
-    return (
+    chars = (
         translate.name_chars()
         | translate.body_chars(0)
         | sysbuild.all_glyph_chars()
         | battle.glyph_chars()
         | set(font.JOSA_CHARS)
-        | set(font.LIGATURES.values())
         | set(font.DIGIT_CHARS)
     )
+    return {font.FULLWIDTH_BIOS.get(c, c) for c in chars}  # 전각 영문은 ASCII 대문자 글리프 별칭(`font.build_table`)
 
 
 def body_scene_ids() -> list[int]:
@@ -68,8 +70,8 @@ def block_table(table: dict[str, bytes], scene_id: int) -> tuple[dict[str, bytes
     if scene_id == 0:
         return table, []
     dyn = sorted(ch for ch in translate.body_chars(scene_id) if ch not in table)
-    if len(dyn) > font.DYN_SLOTS:
-        raise DynError(f"씬 {scene_id}: 동적 글자 {len(dyn)}자 > {font.DYN_SLOTS}칸 — {''.join(dyn)}")
+    if len(dyn) > font.DYN_RESERVE_FROM:  # 칸 16~23 은 코드 자리(font.DYN_RESERVE_FROM)
+        raise DynError(f"씬 {scene_id}: 동적 글자 {len(dyn)}자 > {font.DYN_RESERVE_FROM}칸(뒤 {font.DYN_SLOTS - font.DYN_RESERVE_FROM}칸은 코드 자리) — {''.join(dyn)}")
     t = dict(table)
     for k, ch in enumerate(dyn):
         t[ch] = font.code_of(font.DYN0 + k)
@@ -84,12 +86,19 @@ def _bits(dyn: list[str]) -> tuple[bytes, bytes]:
     return has[a : a + BIT_BYTES], rieul[a : a + BIT_BYTES]
 
 
-def stub_bytes(org: int, data_addr: int, n: int, orig_target: int) -> bytes:
-    """복사 스텁(HuC6280). `data_addr` = 글리프 n×18B · 받침 3B · ㄹ 3B 가 이어진 자료의 논리 주소."""
+ENTRY_LEN = 6  # 진입 스텁 하나 = `JSR 복사` + `JMP 원래 목적지`
+
+
+def stub_bytes(org: int, data_addr: int, n: int, targets: list[int]) -> bytes:
+    """진입 스텁(머리 점프마다 `JSR 복사 · JMP 원래 목적지`) + 복사 루틴(HuC6280). `data_addr` = 글리프 n×18B · 받침 3B · ㄹ 3B 가 이어진 자료의 논리 주소."""
     bank_off = font.glyph_at(font.DYN0)
     bank = font.GLYPH_BANK0 + bank_off // BANK
     dst = GLYPH_WINDOW + bank_off % BANK
     a = hook.Asm(org)
+    for t in targets:
+        a.op("JSR", "abs", org + ENTRY_LEN * len(targets))
+        a.op("JMP", "abs", t)
+    assert len(a.bytes()) == ENTRY_LEN * len(targets)
     a.op("PHP")
     a.op("PHA")
     a.op("SEI")
@@ -104,11 +113,17 @@ def stub_bytes(org: int, data_addr: int, n: int, orig_target: int) -> bytes:
     a.op("TAM", "tam", 3)
     a.op("PLA")
     a.op("PLP")
-    a.op("JMP", "abs", orig_target)
+    a.op("RTS")
     return a.bytes()
 
 
-STUB_LEN = len(stub_bytes(0, 0, 1, 0))
+def stub_len(entries: int) -> int:
+    return len(stub_bytes(0, 0, 1, [0] * entries))
+
+
+def head_entries(block: bytes) -> list[int]:
+    """머리 진입 점프의 블록 안 오프셋 — `+0`(`4C`/`20`) · `+3`(`4C` 일 때만)."""
+    return [0] + ([3] if block[0] == 0x4C and block[3] == 0x4C else [])
 
 
 def attach(block: bytes, dyn: list[str]) -> bytes:
@@ -117,33 +132,42 @@ def attach(block: bytes, dyn: list[str]) -> bytes:
         return block
     if block[0] not in HEAD_OPS:
         raise DynError(f"블록 머리가 점프가 아니다: {block[:3].hex()}")
-    orig = block[1] | block[2] << 8
+    ents = head_entries(block)
+    origs = [block[e + 1] | block[e + 2] << 8 for e in ents]
     stub_at = BASE + len(block)
-    data_at = stub_at + STUB_LEN
+    data_at = stub_at + stub_len(len(ents))
     data = bytearray()
     for ch in dyn:
         data += font.pack(font.glyph(ch))
     has, rieul = _bits(dyn)
     data += has + rieul
     out = bytearray(block)
-    out[1:3] = stub_at.to_bytes(2, "little")
-    out += stub_bytes(stub_at, data_at, len(dyn), orig) + data
+    for k, e in enumerate(ents):
+        out[e + 1 : e + 3] = (stub_at + ENTRY_LEN * k).to_bytes(2, "little")
+    out += stub_bytes(stub_at, data_at, len(dyn), origs) + data
     if len(out) > BANK:
-        raise DynError(f"블록이 {len(out)}B — 뱅크(8KB)를 넘는다(동적 글리프 {len(dyn)}자 · {STUB_LEN + len(data)}B 포함)")
-    return bytes(out)
+        raise DynError(f"블록이 {len(out)}B — 뱅크(8KB)를 넘는다(동적 글리프 {len(dyn)}자 · {stub_len(len(ents)) + len(data)}B 포함)")
+    out = bytes(out)
+    # 🔴 어느 진입으로 들어와도 같은 글리프가 깔리고 원래 목적지로 이어져야 한다(11-23 — `+3` 을 안 돌려 진입 이벤트 대사가 앞 씬 글리프로 찍혔다)
+    ref = simulate(out, 0)
+    for e, t in zip(ents, origs, strict=True):
+        got = simulate(out, e)
+        if got[:3] != ref[:3] or got[3:] != (t, 0):
+            raise DynError(f"머리 진입 +{e} 스텁이 글리프를 못 깔거나 원래 목적지({t:#06x})로 안 간다")
+    return out
 
 
-def simulate(block: bytes) -> tuple[bytearray, bytearray, bytearray, int, int]:
-    """꼬리 스텁을 **엄밀히 흉내**내 효과를 돌려준다 — (글리프 뱅크 창 바이트, 받침 비트, ㄹ 비트, 끝 PC, 스택 균형).
+def simulate(block: bytes, entry: int = 0) -> tuple[bytearray, bytearray, bytearray, int, int]:
+    """머리 진입 점프(`entry` = 블록 안 오프셋 0·3)가 가리키는 꼬리 스텁을 **엄밀히 흉내**내 효과를 돌려준다 — (글리프 뱅크 창 바이트, 받침 비트, ㄹ 비트, 끝 PC, 스택 균형).
 
-    HuC6280 중 스텁이 쓰는 열한 옵코드만 안다 — 다른 옵코드를 만나면 죽는다(손인코딩 검산 · patcher-checklist).
+    HuC6280 중 스텁이 쓰는 옵코드(열셋)만 안다 — 다른 옵코드를 만나면 죽는다(손인코딩 검산 · patcher-checklist).
     """
     win = bytearray(BANK)  # 글리프 뱅크(MPR3 에 걸렸을 때)
     has = bytearray(font.MAX_GLYPHS // 8 + 1)
     rieul = bytearray(font.MAX_GLYPHS // 8 + 1)
     mpr3 = 0x6A  # 아무 값 — 돌려놓는지 본다
-    pc = (block[1] | block[2] << 8) - BASE
-    stack: list[int] = []
+    pc = (block[entry + 1] | block[entry + 2] << 8) - BASE
+    stack: list = []
     a = 0x55
     mpr = mpr3
     bank = None
@@ -196,6 +220,14 @@ def simulate(block: bytes) -> tuple[bytearray, bytearray, bytearray, int, int]:
         elif op == 0x28:  # PLP
             assert stack.pop() == 0x100
             pc += 1
+        elif op == 0x20:  # JSR — 블록 꼬리 안(복사 루틴)으로만
+            tgt = rd(BASE + pc + 1) | rd(BASE + pc + 2) << 8
+            assert BASE + pc < tgt < BASE + len(block), f"스텁의 JSR 이 꼬리 밖을 부른다: {tgt:#06x}"
+            stack.append(("ret", pc + 3))
+            pc = tgt - BASE
+        elif op == 0x60:  # RTS
+            kind, pc = stack.pop()
+            assert kind == "ret"
         elif op == 0x4C:  # JMP — 끝
             end = rd(BASE + pc + 1) | rd(BASE + pc + 2) << 8
             assert a == 0x55, "A 를 못 돌려놨다"

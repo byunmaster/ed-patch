@@ -184,8 +184,73 @@ if BRAM:
     C.memmove(mp, d, min(d.__len__(), core.retro_get_memory_size(0)))
 frames = 0
 
+# PCE_COV=<파일> — 커버리지 계측(`cov_shim.c`): 뱅크 0x68~0x87 의 바이트마다 명령 첫 바이트(1)·그 밖 읽기(2)·쓰기(4)·피연산자(8) 를 모아 끝날 때 파일에 OR 로 쌓는다(256KB + 뱅크별 논리 쪽 32B + MPR 조합).
+# 코어의 처리기 표(HuCPU+0x8C0 읽기 · +0x10C0 쓰기)를 심 것으로 갈고 빠른 쪽 표(+0xC0)를 비워 명령 인출도 처리기를 지나게 한다 — 오프셋은 이 빌드(.local/cache/libretro 의 .so) 실측이라 코어를 다시 지으면 `nm` 으로 다시 잰다.
+COV = None
+if os.environ.get("PCE_COV"):
+    _base = C.cast(core.retro_run, C.c_void_p).value - 0x7D670
+    _cpu = _base + 0x543500
+    COV = C.CDLL(os.path.join(HERE, "cov_shim.so"))
+    C.c_void_p.in_dll(COV, "g_sys").value = C.c_void_p.from_address(_base + 0x53A388).value
+    C.c_void_p.in_dll(COV, "g_cd").value = C.c_void_p.from_address(_base + 0x539B40).value
+    C.c_void_p.in_dll(COV, "g_cpu").value = _cpu
+    C.c_void_p.in_dll(COV, "g_opsite").value = _base + 0x80D4B  # RunSub 의 명령 첫 바이트 인출 뒤 되돌아오는 자리
+    _rd, _wr = C.cast(COV.cov_read, C.c_void_p).value, C.cast(COV.cov_write, C.c_void_p).value
+    for _b in range(0x68, 0x88):
+        assert C.c_void_p.from_address(_cpu + 0x8C0 + 8 * _b).value in (_base + 0x8C420, _base + 0x8C460), hex(_b)
+        C.c_void_p.from_address(_cpu + 0x8C0 + 8 * _b).value = _rd
+        C.c_void_p.from_address(_cpu + 0x10C0 + 8 * _b).value = _wr
+        C.c_void_p.from_address(_cpu + 0xC0 + 8 * _b).value = None
+    C.CFUNCTYPE(None, C.c_void_p)(_base + 0x80180)(_cpu)  # HuC6280::FlushMPRCache — 빠른 쪽 포인터를 새 표로 다시 계산
+
+
+def cov_dump():
+    path = os.environ["PCE_COV"]
+    cov = np.frombuffer(C.string_at(C.addressof((C.c_uint8 * 0x40000).in_dll(COV, "cov")), 0x40000), dtype=np.uint8).copy()
+    pages = np.frombuffer(C.string_at(C.addressof((C.c_uint8 * 0x20).in_dll(COV, "pages")), 0x20), dtype=np.uint8).copy()
+    if os.path.exists(path):
+        old = np.fromfile(path, dtype=np.uint8)
+        cov |= old[:0x40000]
+        pages |= old[0x40000:0x40020]
+    np.concatenate([cov, pages]).tofile(path)
+    nm = bytes((C.c_uint8 * 0x20).in_dll(COV, "nmpr"))
+    mp = bytes((C.c_uint8 * (0x20 * 32 * 8)).in_dll(COV, "mprs"))
+    with open(path + ".mpr", "a") as f:
+        for b in range(0x20):
+            for k in range(nm[b]):
+                f.write(f"{0x68 + b:02x}\t{mp[(b * 32 + k) * 8 : (b * 32 + k) * 8 + 8].hex()}\n")
+    print("cov op", int((cov & 1).astype(bool).sum()), "operand", int((cov & 8).astype(bool).sum()), "read", int((cov & 2).astype(bool).sum()), "write", int((cov & 4).astype(bool).sum()), "any", int((cov != 0).sum()), flush=True)
+
 
 TRACE = None  # battle 의 dense — 전투 시작 기준 프레임 번호가 [lo, hi) 면 <접두>_d/ 에 저장. 관찰·I 누름 구간도 빠짐없이
+
+
+SHOTAT = set((os.environ.get("PCE_SHOTAT") or "").split(","))
+STATEAT = set((os.environ.get("PCE_STATEAT") or "").split(","))
+RAMAT = set((os.environ.get("PCE_RAMAT") or "").split(","))
+ADLOG = open(os.environ["PCE_ADLOG"], "w") if os.environ.get("PCE_ADLOG") else None  # 프레임마다 ADPCM 재생 상태(재생 중·읽기/쓰기 주소·남은 길이·마지막 명령)를 한 줄씩 — 음성 시작·정지 명령을 소리가 아니라 상태로 잰다
+_AD_VARS = ("Playing", "Addr", "ReadAddr", "WriteAddr", "LengthCount", "LastCmd", "SampleFreq", "HalfReached", "EndReached")
+_CD_VARS = ("CurrentPhase", "Signals", "cdda.PlayMode", "cdda.CDDAStatus", "read_sec", "SectorCount", "CDReadTimer")  # CD 드라이브 상태 — ADPCM 이 CD 를 쓰는 동안 다른 명령이 끼는지
+
+
+def adpcm_row():
+    n = core.retro_serialize_size()
+    b = C.create_string_buffer(n)
+    core.retro_serialize(b, n)
+    d = b.raw
+    row = []
+    for v in _AD_VARS:
+        k = ("ADPCM." + v).encode()
+        i = d.find(bytes([len(k)]) + k)
+        sz = int.from_bytes(d[i + 1 + len(k) : i + 5 + len(k)], "little")
+        row.append(str(int.from_bytes(d[i + 5 + len(k) : i + 5 + len(k) + sz], "little")))
+    if os.environ.get("PCE_ADLOG_CD"):
+        for v in _CD_VARS:
+            k = v.encode()
+            i = d.find(bytes([len(k)]) + k)
+            sz = int.from_bytes(d[i + 1 + len(k) : i + 5 + len(k)], "little")
+            row.append(str(int.from_bytes(d[i + 5 + len(k) : i + 5 + len(k) + sz], "little")))
+    return row
 
 
 def run(n):
@@ -193,6 +258,17 @@ def run(n):
     for _ in range(n):
         core.retro_run()
         frames += 1
+        if ADLOG:
+            ADLOG.write("\t".join([str(frames), *adpcm_row()]) + "\n")
+        if str(frames) in SHOTAT:  # PCE_SHOTAT="프레임,…" — 그 프레임의 화면을 `<출력>/at_<프레임>.png` 로
+            Image.fromarray(state["frame"]).save(os.path.join(OUT, f"at_{frames}.png"))
+        if str(frames) in STATEAT:  # PCE_STATEAT="프레임,…" — 그 프레임의 전체 상태(RAM·CD RAM·ADPCM RAM 포함)를 `<출력>/state_<프레임>.bin` 으로
+            n = core.retro_serialize_size()
+            b = C.create_string_buffer(n)
+            core.retro_serialize(b, n)
+            open(os.path.join(OUT, f"state_{frames}.bin"), "wb").write(b.raw)
+        if str(frames) in RAMAT:  # PCE_RAMAT="프레임,…" — 그 프레임의 워크 RAM 8KB 를 `<출력>/ram_<프레임>.bin` 으로
+            open(os.path.join(OUT, f"ram_{frames}.bin"), "wb").write(C.string_at(core.retro_get_memory_data(2), 0x2000))
         if TRACE and TRACE[2] <= frames - TRACE[1] < TRACE[3]:
             if os.environ.get("PCE_WATCH"):  # 「주소:길이,…」 — 프레임마다 워크 RAM 값을 `<접두>_w.tsv` 로(그림은 안 저장)
                 row = [str(frames - TRACE[1])]
@@ -213,6 +289,7 @@ def shot(name):
     Image.fromarray(state["frame"]).save(os.path.join(OUT, name + ".png"))
 
 
+MEMSTATE = {}
 for step in json.load(open(SCRIPT)):
     op = step[0]
     if op == "wait":
@@ -249,6 +326,14 @@ for step in json.load(open(SCRIPT)):
         for _ in range(step[3]):
             C.memmove(ram(step[1]), b, len(b))
             run(1)
+    elif op == "savemem":  # ["savemem", 이름] — 코어 전체 상태를 메모리에 보관(같은 프로세스 안 되돌아가기용 — 목록 전수 이동 시험)
+        n = core.retro_serialize_size()
+        b = C.create_string_buffer(n)
+        core.retro_serialize(b, n)
+        MEMSTATE[step[1]] = b.raw
+    elif op == "loadmem":  # ["loadmem", 이름]
+        raw = MEMSTATE[step[1]]
+        core.retro_unserialize(raw, len(raw))
     elif op == "peek":
         print(
             "peek", step[1], C.string_at(ram(step[1]), step[2]).hex(), "frame", frames, flush=True
@@ -272,7 +357,7 @@ for step in json.load(open(SCRIPT)):
             run(1)
             cur = state["frame"]
             # 🔴 창이 없거나 쪽 대기가 없는 메시지(상점 토막 등)는 위 안정 판정에 안 걸린다 — 번호가 바뀐 지 50프레임 뒤에도 그 번호로 찍힌 게 없으면 전체 화면을 한 장 찍는다(5열 = 1, 「창 근거 없음」)
-            mk_now = int.from_bytes(C.string_at(ram("$3FF8"), 2), "little")
+            mk_now = int.from_bytes(C.string_at(ram(os.environ.get("ED_VIEWER_MARK_NAME", "$3FF8")), 2), "little")
             if mk_now != fb_mk:
                 fb_mk, fb_at, fb_done, progress = mk_now, frames, mk_now in shot_marks, frames
             if frames - progress > 2000:  # 번호도 안 바뀌고 쪽도 안 찍힌 채 2000프레임 — 닫히지 않는 메시지. 호출부가 이 번호를 건너뛰고 다시 돈다
@@ -296,16 +381,18 @@ for step in json.load(open(SCRIPT)):
                 same = 0
             prev = win
             if same == 12 and win is not None and not same_win(win, last_shot):
-                ptr = C.string_at(ram("$3FF8"), 2).hex()
+                ptr = C.string_at(ram(os.environ.get("ED_VIEWER_MARK_NAME", "$3FF8")), 2).hex()
                 mk = int.from_bytes(bytes.fromhex(ptr), "little")
                 if mk < last_mk:  # 번호가 되감기면 스텁이 한 바퀴 돌고 다시 들어온 것 — 한 바퀴만 찍는다
                     break
                 run_mk = run_mk + 1 if mk == last_mk else 0
-                if run_mk >= 30:  # 같은 번호에서 30쪽이 넘게 이어지면 닫히지 않는 창·되풀이 — 이 번호만 더는 안 찍는다(호출부가 「반복」으로 적는다)
+                if run_mk >= int(os.environ.get("ED_VIEW_RUNMK", "30")):  # 번호표를 못 읽는 호스트(번호 0 고정)는 이 보호가 29장에서 끊는다 — 시험용으로 키운다(11-07)  # 같은 번호에서 30쪽이 넘게 이어지면 닫히지 않는 창·되풀이 — 이 번호만 더는 안 찍는다(호출부가 「반복」으로 적는다)
                     print("view loop mk", mk, flush=True)
                     break
                 last_mk = mk
                 shot_marks.add(mk)
+                if mk == fb_mk:  # 이 번호는 창에서 이미 찍었다 — 닫힌 뒤 빈 화면을 대체 샷으로 또 찍지 않는다(11-07, 창 닫기 스텁)
+                    fb_done = True
                 progress = frames
                 name = f"{prefix}{shown:04d}"
                 img = cur if crop is None else cur[crop[0] : crop[1]]
@@ -332,7 +419,7 @@ for step in json.load(open(SCRIPT)):
                 stall += 1
                 if stall in (60, 180, 300):  # 닫히지 않는 창 — 다른 버튼으로 풀리는지(II·RUN·I) 본다
                     b = {60: "ii", 180: "run", 300: "i"}[stall]
-                    print("stall", stall, "mk", C.string_at(ram("$3FF8"), 2).hex(), "press", b, flush=True)
+                    print("stall", stall, "mk", C.string_at(ram(os.environ.get("ED_VIEWER_MARK_NAME", "$3FF8")), 2).hex(), "press", b, flush=True)
                     state["held"] = {BTN[b]}
                     run(6)
                     state["held"] = set()
@@ -441,7 +528,11 @@ for step in json.load(open(SCRIPT)):
         b = C.create_string_buffer(n)
         core.retro_serialize(b, n)
         open(step[1], "wb").write(b.raw)
+    elif op == "bram":  # BRAM(저장 파일 영역) 통째 덤프 — 게임 안 SAVE 뒤 깃발 차분용
+        open(step[1], "wb").write(C.string_at(core.retro_get_memory_data(0), core.retro_get_memory_size(0)))
     elif op == "load":
         d = open(step[1], "rb").read()
         core.retro_unserialize(d, len(d))
+if COV is not None:
+    cov_dump()
 print("done", frames)

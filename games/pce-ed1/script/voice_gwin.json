@@ -6,7 +6,7 @@
       "expect": "0x6F7D",
       "pages": [
         {"speaker": "라이아스", "text": "안녕히 주무셨사옵니까, 세리오스님.", "start": 0.0, "end": 2.7},
-        {"speaker": "세리오스", "text": "좋은 아침이야, 할아범.", "start": 2.7, "end": 4.1}
+        {"speaker": "세리오스", "text": "잘 잤어, 할아범.", "start": 2.7, "end": 4.1}
       ]
     }
   }

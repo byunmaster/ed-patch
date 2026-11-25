@@ -147,8 +147,14 @@ class CPU:
                 continue
             elif op == 0x7C: pc = m[w + self.x] | m[w + self.x + 1] << 8; continue
             elif op == 0x43: self.a = self.nz(self.mpr5); ln = 2
+            elif op == 0x53: ln = 2  # TAM — 매핑은 모형에 없다(디버그 키 진입의 글리프 뱅크 걸기·복원)
+            elif op == 0x48: self.stack.append(self.a)
+            elif op == 0x68: self.a = self.nz(self.stack.pop())
             elif op == 0x20:
                 if w == R.INST:  # 카운터 트램펄린 꽂기 — 모형에선 할 일이 없다
+                    pc += 3
+                    continue
+                if 0x6000 <= w < 0x8000:  # 글리프 뱅크 1(MPR3)의 디버그 키 틱 — 이 모형의 시험 대상이 아니다
                     pc += 3
                     continue
                 self.stack.append(pc + 3)

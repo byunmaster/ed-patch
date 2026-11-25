@@ -36,7 +36,7 @@ def _norm_jp(s: str) -> str:
 
 
 def _norm_kr(s: str) -> str:
-    return re.sub(r"\{[0-9A-F]+\}|\s|·", "", s)  # 가운뎃점 — 끊어 읽는 연출(「세·리·오·스…」)
+    return re.sub(r"\{[0-9A-F]+\}|\s|·|…", "", s)  # 가운뎃점·말줄임 — 끊어 읽는 연출(「세·리·오·스…」)
 
 
 KATA = "ァ-ヶー"
@@ -109,6 +109,9 @@ def missing(rows=None, tbl=None) -> list[tuple[str, str, set[str], str]]:
         for name in names:
             if not _find(name, j):
                 continue
+            # 더 긴 정본 이름의 한 토막(「大盗賊 ゲイル」 속 「盗賊」)이 그 이름 앞머리와 붙어 나왔으면 긴 이름의 일부다 — 원문이 「大盗賊の、⏎ゲイル」 처럼 쉼표로 끊으면 긴 이름이 안 맞아 짧은 이름만 걸린다(11-07 177 「대도 게일」)
+            if any(len(n) > len(name) and name in n and n[: n.index(name) + len(name)] in j and n.index(name) > 0 for n in names):
+                continue
             j = j.replace(name, "\0")
             if not any(_norm_kr(c) in k for c in tbl[name]):
                 out.append((where, name, tbl[name], kr))
@@ -121,6 +124,9 @@ def main() -> int:
         print("원본 파생물이 없어 건너뛴다")
         return 0
     bad = missing(rows)
+    exc_p = common.GAME_DIR / "glossary_exceptions.json"  # 마스터 승인(`approved`)이 있는 줄만 예외 — 정본은 워커가 못 고친다
+    exc = {k for k, v in json.loads(exc_p.read_text("utf-8")).items() if isinstance(v, dict) and v.get("approved")} if exc_p.exists() else set()
+    bad = [b for b in bad if b[0] not in exc]
     print(f"사전 대조 — 정본 이름 {len(canon()):,} · 우리 줄 {len(rows):,}")
     for where, name, want, kr in bad:
         print(f"  🔴 {where}  {name} → {'/'.join(sorted(want))}  ⟨{kr}⟩")

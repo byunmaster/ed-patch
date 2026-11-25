@@ -11,6 +11,7 @@
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -19,6 +20,11 @@ import common
 import narration_gates as G
 import scene_apply as A
 import voice_editor_data as D
+import voice_sched as VS
+
+
+ADDED_MAP_PATH = Path(__file__).resolve().parent.parent / "script" / "editor_added_map.json"
+ADDED_MAP: dict[str, int] = json.loads(ADDED_MAP_PATH.read_text("utf-8")) if ADDED_MAP_PATH.exists() else {}  # {"scn046_s1-1000": 1001} — 편집기 DB 열쇠 → 제품 on_extra idx
 
 
 def merge_docs(edited: list[dict], base: dict) -> list[dict]:
@@ -29,7 +35,11 @@ def merge_docs(edited: list[dict], base: dict) -> list[dict]:
     rows = []
     for k, b in base.items():
         r = dict(b)
-        d = docs.get(k, {})
+        d = docs.get(k)
+        if d is None and b.get("dup_of"):  # 같은 음성을 쓰는 짝 토막의 같은 행(`dup_of` = 「기준토막-idx」) — 이쪽 편집이 따로 없으면 기준 행의 마스터 편집을 그대로(11-04 「s0 만 맞춰도 되게」)
+            sc, _, si = b["dup_of"].rpartition("-")
+            d = docs.get((sc, int(si)))
+        d = d or {}
         if d.get("ts") is not None:
             r["t_start"] = float(d["ts"])
         if d.get("te") is not None:
@@ -74,22 +84,204 @@ def timing_items(rows: list[dict], base: dict) -> dict[str, list]:
     return out
 
 
+def _seg_of(sc, sid: int, clip: str) -> dict:
+    """시각표 장면의 토막 — 편집기 토막 이름(`voice_editor_data.sched_rows` 와 같은 규칙: 옛 이름 표 → `scnNNN_sN`)으로 고른다."""
+    if not isinstance(sc, list):
+        return sc
+    for si, seg in enumerate(sc):
+        if D.LEGACY_CLIP.get((sid, seg.get("voice_gate")), f"scn{sid:03d}_s{si}") == clip:
+            return seg
+    return sc[0]
+
+
+def set_pos(seg: dict, it: dict, i: int, pos, npg: int = 1) -> int:
+    """편집기 행의 창 위치(`pos` = "top"|"bottom", 마스터 11-23 「줄별 위/아래」)를 시각표 항목 `it` 의 쪽 i(0부터)에 적는다 — **행 값이 시각표 기본값(토막 `pos`)을 이긴다.**
+    항목 `pos` 꼴은 `gwin_rt.msg_top` 과 같다: 전 쪽이 토막 기본값이면 안 적고 · 전 쪽이 같으면 문자열 · 갈리면 쪽별 목록(같은 값으로 끝나는 꼬리는 줄인다).
+    `npg` = 그 메시지의 쪽 수(목록을 펼 때 뒤쪽이 남의 값을 물려받지 않게). 바뀌었으면 1."""
+    if pos not in ("top", "bottom"):
+        return 0
+    base = seg.get("pos") or "bottom"
+    cur = it.get("pos")
+    lst = list(cur) if isinstance(cur, list) and cur else [cur or base]
+    lst += [lst[-1]] * (max(npg, i + 1) - len(lst))
+    if lst[i] == pos:
+        return 0
+    lst[i] = pos
+    while len(lst) > 1 and lst[-1] == lst[-2]:
+        lst.pop()
+    if len(lst) > 1:
+        it["pos"] = lst
+    elif lst[0] == base:
+        it.pop("pos", None)
+    else:
+        it["pos"] = lst[0]
+    return 1
+
+
+def apply_sched(docs: list[dict], dry: bool = False) -> int:
+    """편집기 db 문서(`{clip, idx, ts, te, spk}`)를 **전역 시각표**(`script/voice_sched.json`) 행에 반영한다 — 씬 18·98·224 같은 시각표 장면(행 `sched`).
+    · `te` → 그 쪽의 `ends` · 첫 쪽 `ts` → `on_overlay.starts[열쇠]`(비모달 자막이 그 시각에 연다 — 쪽 사이 시작은 앞 쪽 끝이라 둘째 쪽부터의 `ts` 는 따로 안 쓴다, 다르면 알린다)
+    · `spk`(첫 쪽) 가 행 기본 화자와 다르면 메시지 `speaker`. `kr` 은 건드리지 않는다(문안은 자료 그대로 — 마스터 11-03).
+    · `pos`("top"|"bottom", 11-23) → 그 쪽의 창 위치(`set_pos` — 메시지 `pos` · 추가 행은 `on_extra` 항목 `pos`). 행 값이 토막 기본값을 이긴다.
+    값이 없는(`te` 안 고친) 쪽은 시각표의 옛 끝을 둔다."""
+    spec = json.loads(VS.SPEC.read_text("utf-8"))
+    by = {(d["clip"], d["idx"]): d for d in docs if d.get("clip") is not None}
+    n = 0
+    for d in docs:  # 🔴 추가 행(idx≥1000 · `added`) — 원문 메시지에 없는 자막 쪽. 시각표 `on_extra` 에 두고 비모달 쪽 목록에만 끼운다(모달 표 `ends` 는 그대로)
+        mm = re.match(r"scn(\d+)_[sg]\d+$", d.get("clip") or "")
+        if not (d.get("added") and d.get("idx", 0) >= 1000 and mm):
+            continue
+        sc = spec["scenes"].get(str(int(mm.group(1))))
+        if sc is None:
+            continue
+        seg = _seg_of(sc, int(mm.group(1)), d["clip"])
+        pidx = ADDED_MAP.get(f"{d['clip']}-{d['idx']}", d["idx"])  # 🔴 편집기 추가 행 열쇠(`토막-idx`) ↔ 제품 추가 행 번호 — idx 로 곧장 짝지으면 같은 번호의 다른 행을 덮어쓴다(11-11 46 s1: DB 1000 「로, 로우」가 제품 x1000 「예.」를 덮음). 대응표 `script/editor_added_map.json`
+        cur = next((x for x in seg.setdefault("on_extra", []) if x["idx"] == pidx), None)
+        new_ex = {"idx": pidx, "id": f"x{pidx}", "text": " ".join((d.get("kr") or "").split()), "speaker": d.get("spk") or "", "start": float(d["ts"]), "end": float(d["te"])}
+        epos = d.get("pos") if d.get("pos") in ("top", "bottom") else (cur or {}).get("pos")
+        if epos and epos != (seg.get("pos") or "bottom"):  # 토막 기본값과 같으면 안 적는다
+            new_ex["pos"] = epos
+        if cur is None:
+            seg["on_extra"].append(new_ex)
+            n += 1
+        elif cur != new_ex:
+            cur.pop("pos", None)
+            cur.update(new_ex)
+            n += 1
+    ALL_ROWS = D.build()[0]
+    rows = [r for r in ALL_ROWS if r.get("sched") and r["idx"] < 1000 and (r["clip"], r["idx"]) in by]
+
+    def nrows(clip: str, x: dict, tail: bool = True) -> int:  # 그 메시지의 자막 쪽 수 — 편집기 행 수(`tail`: 이어쓰기 뒷 조각 행 포함)
+        return sum(1 for y in ALL_ROWS if y["clip"] == clip and y["idx"] < 1000 and y["key"] in (x["key"], x.get("split") if tail else None))
+
+    for r in rows:
+        d = by[(r["clip"], r["idx"])]
+        sc = spec["scenes"][str(r["scene"])]
+        seg = _seg_of(sc, r["scene"], r["clip"])
+        host = next((x for x in seg["msgs"] if x.get("split") == r["key"]), None)
+        if host is not None:  # 이어쓰기 조각 행(`split_b`) — 시각표의 `on_overlay.ends[호스트][1]`(ON 뒷 조각 끝). 호스트 메시지의 OFF 창 끝(`ends`)도 같이
+            n += set_pos(seg, host, nrows(r["clip"], host, tail=False) + r["page"] - 1, d.get("pos"), nrows(r["clip"], host))  # 뒷 조각 쪽은 호스트 메시지 쪽 목록에서 앞 조각 다음이다
+            e2 = seg.setdefault("on_overlay", {}).setdefault("ends", {}).setdefault(host["key"], [None, None])
+            if d.get("te") is not None and e2[1] != float(d["te"]):
+                e2[1] = float(d["te"])
+                host["ends"][-1] = float(d["te"])
+                n += 1
+            continue
+        it = next((x for x in seg["msgs"] if x["key"] == r["key"]), None)
+        if it is None:  # 시각표 토막에 없는 행(다른 토막으로 옮겨졌거나 이어쓰기 아님) — 건너뛰고 알린다
+            print(f"  ⚠ {r['clip']}#{r['idx']}: 시각표 토막에 메시지 {r['key'][:8]} 없음 — 건너뜀")
+            continue
+        pg = r["page"] - 1
+        n += set_pos(seg, it, pg, d.get("pos"), nrows(r["clip"], it))
+        if it.get("split") and pg == 0:  # 앞 조각 행 — 끝 시각은 ON 전용(`on_overlay.ends[열쇠][0]`), OFF 창 끝은 뒷 조각 행이 쥔다
+            e2 = seg.setdefault("on_overlay", {}).setdefault("ends", {}).setdefault(it["key"], [None, it["ends"][-1]])
+            if d.get("te") is not None and e2[0] != float(d["te"]):
+                e2[0] = float(d["te"])
+                n += 1
+            if d.get("ts") is not None:
+                prev_end = seg["msgs"][seg["msgs"].index(it) - 1]["ends"][-1] if seg["msgs"].index(it) else 0.0
+                st = seg.setdefault("on_overlay", {}).setdefault("starts", {})
+                if abs(float(d["ts"]) - prev_end) > 0.05 and st.get(it["key"]) != float(d["ts"]):
+                    st[it["key"]] = float(d["ts"])
+                    n += 1
+            continue
+        tgt = it["ends"]
+        if it.get("split_rows"):  # 쪽 나눔 행(11-11) — 편집기 쪽 수가 자막 쪽 수(시각표 `ends` 보다 많을 수 있다). ON 전용 끝 목록 `on_overlay.ends[열쇠]` 에 쪽마다 쓴다(OFF `ends` 는 그대로)
+            oe = seg.setdefault("on_overlay", {}).setdefault("ends", {})
+            if it["key"] not in oe:
+                oe[it["key"]] = [x["t_end"] for x in sorted((x for x in ALL_ROWS if x["clip"] == r["clip"] and x["key"] == r["key"]), key=lambda x: x["page"])]
+            tgt = oe[it["key"]]
+        if d.get("te") is not None and tgt[pg] != float(d["te"]):
+            tgt[pg] = float(d["te"])
+            n += 1
+        if d.get("ts") is not None:
+            if pg == 0:
+                mi = seg["msgs"].index(it)
+                prev_end = seg["msgs"][mi - 1]["ends"][-1] if mi else 0.0
+                st = seg.setdefault("on_overlay", {}).setdefault("starts", {})
+                if abs(float(d["ts"]) - prev_end) <= 0.05 and r["key"] not in st:
+                    pass  # 앞 메시지 끝에서 바로 이어 여는 값 — 따로 적지 않는다
+                elif st.get(r["key"]) != float(d["ts"]):
+                    st[r["key"]] = float(d["ts"])
+                    n += 1
+            else:
+                prev = tgt[pg - 1]
+                if abs(float(d["ts"]) - prev) > 0.05:
+                    print(f"  ⚠ {r['clip']}#{r['idx']}: 둘째 쪽 이후 시작 {d['ts']} ≠ 앞 쪽 끝 {prev} — 시각표는 앞 쪽 끝에서 이어 연다")
+        if pg == 0 and d.get("spk") not in (None, "") and d["spk"] != r.get("speaker_name") and it.get("speaker") != d["spk"]:
+            it["speaker"] = d["spk"]
+            n += 1
+    print(f"시각표 반영 {n}곳")
+    if n and not dry:
+        VS.SPEC.write_text(json.dumps(spec, ensure_ascii=False, indent=1) + "\n", "utf-8")
+    return n
+
+
+def apply_sync(clips: list[dict], dry: bool = False) -> list[str]:
+    """편집기 `clips/<clip>` 문서의 `sync: true`(마스터 「싱크 확인 끝」, 11-07) — 그 토막의 시각표를 **확정**으로 다룬다.
+    · 시각표 토막에서 `draft`(받아쓰기 자동 초안 표시)를 떼고 `synced`(날짜)를 단다 → `voice_sched.load()` 가 정식으로 보고 제품(OFF 흐름 + 시각표 `patch_block`)에 굽는다.
+    · 시각(`te`)은 먼저 `apply_sched`(편집기 `edits` 문서) 로 `ends` 에 반영해 둔다 — 이 함수는 확정 표시만 한다.
+    · 토막 이름은 `voice_editor_data` 규칙(`scnNNN_sN`·옛 이름 표)이고, 한 토막이 시각표 토막 하나다. 반환 = 확정으로 바뀐 토막 이름 목록(이미 정식이면 안 낸다).
+    `sync` 가 아닌(꺼진) 토막은 안 건드린다 — 확정을 되돌리는 일은 이 함수 몫이 아니다(수작업으로 `draft` 를 다시 단다)."""
+    import datetime
+
+    spec = json.loads(VS.SPEC.read_text("utf-8"))
+    done: list[str] = []
+    for c in clips:
+        if not c.get("sync"):
+            continue
+        mm = re.match(r"scn(\d+)_[sg]\d+$", c.get("clip") or "")
+        if not mm:
+            continue
+        sid = int(mm.group(1))
+        sc = spec["scenes"].get(str(sid))
+        if sc is None:
+            continue
+        seg = _seg_of(sc, sid, c["clip"])
+        if seg.pop("draft", None) is not None:
+            seg["synced"] = datetime.datetime.now(tz=datetime.UTC).date().isoformat()
+            done.append(c["clip"])
+    print(f"싱크 확정 {len(done)}토막: {' '.join(done)}")
+    if done and not dry:
+        VS.SPEC.write_text(json.dumps(spec, ensure_ascii=False, indent=1) + "\n", "utf-8")
+    return done
+
+
 def main() -> int:
     a = [x for x in sys.argv[1:] if not x.startswith("--")]
     dry = "--dry" in sys.argv
-    base = {(r["clip"], r["idx"]): r for r in D.build()[0]}
+    if "--sync" in sys.argv:  # 편집기 `clips/<clip>` 문서 덤프(json 목록 또는 폴더) — `sync: true` 토막을 확정으로(`draft` 를 뗀다). 시각은 `--sched` 로 먼저
+        src = Path(a[0])
+        clips = [json.loads(f.read_text("utf-8")) for f in sorted(src.glob("*.json"))] if src.is_dir() else json.loads(src.read_text("utf-8"))
+        apply_sync(clips, dry)
+        return 0
+    if "--sched" in sys.argv:  # 시각표 장면(18·98·224) — 편집기 db 문서 목록(json) 또는 `edits/*.json` 폴더
+        src = Path(a[0])
+        docs = [json.loads(f.read_text("utf-8")) for f in sorted(src.glob("*.json"))] if src.is_dir() else json.loads(src.read_text("utf-8"))
+        only = next((x.split("=", 1)[1].split(",") for x in sys.argv if x.startswith("--only=")), None)  # 예: --only=scn018_s0,scn098_s0,scn224_x0 — 그 토막만
+        docs = [d for d in docs if only is None or d.get("clip") in only]
+        return 0 if apply_sched(docs, dry) is not None else 1
+    rows0, clips0 = D.build()
+    D.battle_rows(rows0, clips0)  # 보스 전투 음성 행(btl*)은 `build()` 가 아니라 편집기 내보내기(`main`)에서만 붙는다 — 여기서도 붙여야 db 시각이 기본 행에 얹힌다
+    base = {(r["clip"], r["idx"]): r for r in rows0}
     edited = merge_docs(json.loads(Path(a[0]).read_text("utf-8")), base)
     by_msg: dict[tuple[int, str], list[dict]] = {}
     timing = []
     for r in edited:
-        by_msg.setdefault((r["scene"], r["key"], r["clip"]), []).append(r)
+        if not (r.get("greet") or r.get("battle")):  # 전투 음성 쪽(btl)은 문안이 전투 문구 정본이라 시각만(`timing_items`) — 장면 2 인사 쪽(greet0·1)은 합성 열쇠라 원문 대조표에 없다 — 문안은 `GREET_PAGES`, 시각만 아래 `timing_items` 가 쓴다
+            by_msg.setdefault((r["scene"], r["key"], r["clip"]), []).append(r)
         b = base.get((r["clip"], r["idx"]))
         if b and (r.get("t_start") != b["t_start"] or r.get("t_end") != b["t_end"]):
             timing.append({"clip": r["clip"], "idx": r["idx"], "key": r["key"], "t_start": [b["t_start"], r.get("t_start")], "t_end": [b["t_end"], r.get("t_end")]})
     bad = 0
     by_scene: dict[int, dict[str, str]] = {}
     seen: set[tuple[int, str]] = set()
+    import voice_sched as VS_
+
+    ontext = {(int(k), x) for k, v in json.loads(VS_.SPEC.read_text("utf-8"))["scenes"].items() for sg in (v if isinstance(v, list) else [v]) for x in sg.get("on_overlay", {}).get("text", {})}  # 비모달 전용 문안 — 모달(OFF) 번역을 건드리지 않는다
     for (sid, key, clip), rs in sorted(by_msg.items()):
+        if (sid, key) in ontext or any(r_.get("added") or r_["idx"] >= 1000 for r_ in rs):
+            continue
         rs.sort(key=lambda x: (x.get("page", 0), x.get("idx", 0)))
         orig = [b["kr"] for (c, i), b in sorted(base.items()) if b["key"] == key and b["scene"] == sid and c == clip]
         if (sid, key) in seen:  # 같은 메시지가 여러 토막에 걸리면 첫 토막 값만 쓴다 — 다른 토막이 다르게 고쳐졌으면 알린다
@@ -116,7 +308,10 @@ def main() -> int:
         doc = json.loads(p.read_text("utf-8"))
         ch = 0
         for k, t in new.items():
-            if doc["messages"].get(k, {}).get("t") != t:
+            cur = doc["messages"].get(k, {}).get("t", "")
+            if cur != t and cur.split("\n", 1)[-1] == t:  # 편집기 행엔 화자 머리줄이 없다(씬 57 「유혈의 동굴 주인 가르고\n…」) — 머리줄만 다른 건 같은 문안이라 머리줄을 지우지 않는다
+                continue
+            if cur != t:
                 doc["messages"][k] = {"t": t}
                 ch += 1
         print(f"scn{sid:03d}: 문안 {ch}건 바뀜")

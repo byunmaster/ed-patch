@@ -144,3 +144,17 @@ class Positional(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MachineCodeOperandTest(unittest.TestCase):
+    """블록 속 기계어 operand 가 전각 코드로 읽혀 문구 머리가 되면 안 된다(10-24: 3장 블록 15·17·18 `JMP $872D`+RTS, 1장 블록 10 `BNE $E9`+RTS)."""
+
+    def test_jmp_operand_before_rts_is_not_a_head(self):
+        d = bytes([0x4C, 0x2D, 0x87, 0x60]) + sj("カミナリグイの群れが現れた。") + bytes([0x07]) + b"\x00" * 4
+        heads = [s for s, _e, _t in B.text_runs(d, 0)]
+        self.assertEqual(heads, [4])  # 0x87 0x60(=2) 이 아니라 본문 첫 글자
+
+    def test_branch_distance_before_rts_is_not_a_head(self):
+        d = bytes([0xC6, 0xFC, 0xD0, 0xE9, 0x60]) + sj("カザスの群れが現れた。") + bytes([0x07]) + b"\x00" * 4
+        heads = [s for s, _e, _t in B.text_runs(d, 0)]
+        self.assertEqual(heads, [5])  # 0xE9 0x60(=3) 이 아니라 본문 첫 글자

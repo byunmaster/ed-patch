@@ -1,0 +1,2927 @@
+{
+ "_doc": "음성 감사(마스터 11-03) — 받아쓰기(Whisper 소형 word 시각 + 대형 교차)와 원문 읽기(가나) 대조. voice_match: 있음/일부/없음/불가. 없음 = 음성에 없는 줄(편집기·ON 자막에서 뺀다; OFF 창 문안은 그대로). 불가 = 웃음·짧은 외침·원문 짝 없음·환각 — 마스터 청취. cand_start/cand_end = 소리(음량 포락선) 실측 후보(시작 = 발화 시작 −0.2초, 끝 = 발화 끝 +0.5초), sync_conf = 받아쓰기 닻과 ±1초 일치. 원문 글자는 담지 않는다. 씬 2·6·17 은 마스터 확인 완료라 대상 밖(17 만 판정 기록).",
+ "rows": [
+  {
+   "clip": "scn017_x0",
+   "key": "391ff59b08864fbc",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 21/21자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "c4bea188a6d4ff7c",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 8/10자(80%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "853ff28ab24e2872",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 16/16자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "853ff28ab24e2872",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 17/17자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "699623cc56b059a6",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 17/17자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "8472fa25f14c7cef",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 8/8자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "8472fa25f14c7cef",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 14/14자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "20335ec86a712e81",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 17/17자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 20/20자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 21/21자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 3,
+   "voice_match": "불가",
+   "why": "웃음·감탄만(받아쓰기 불능)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 26/35자(74%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 5,
+   "voice_match": "있음",
+   "why": "일치 18/18자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 6,
+   "voice_match": "없음",
+   "why": "일치 0/27자(0%) · 앞뒤 일치 시각 60.0~57.2s 사이"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 7,
+   "voice_match": "없음",
+   "why": "일치 0/26자(0%) · 앞뒤 일치 시각 60.0~57.2s 사이"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 8,
+   "voice_match": "없음",
+   "why": "일치 0/34자(0%) · 앞뒤 일치 시각 60.0~57.2s 사이"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 9,
+   "voice_match": "있음",
+   "why": "일치 20/27자(74%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 10,
+   "voice_match": "있음",
+   "why": "일치 26/26자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 11,
+   "voice_match": "있음",
+   "why": "일치 40/40자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 12,
+   "voice_match": "없음",
+   "why": "일치 0/22자(0%) · 앞뒤 일치 시각 78.7~78.9s 사이"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 13,
+   "voice_match": "있음",
+   "why": "일치 40/40자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 14,
+   "voice_match": "있음",
+   "why": "일치 43/43자(100%)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 15,
+   "voice_match": "불가",
+   "why": "웃음·감탄만(받아쓰기 불능)"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 16,
+   "voice_match": "불가",
+   "why": "끝부분 환각 청크(말 끝 뒤 무음에서 환각) — 일치 0/5자(0%)"
+  },
+  {
+   "clip": "scn018_s0",
+   "key": "c951072766156bfd",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 16/17자(94%)",
+   "cand_start": 1.96,
+   "cand_end": 4.12,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn018_s0",
+   "key": "4da82c4e06ca3a7c",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 9/9자(100%)",
+   "cand_start": 4.12,
+   "cand_end": 5.23,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn018_s0",
+   "key": "14de5bc1750b8ace",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 21/21자(100%)",
+   "cand_start": 5.23,
+   "cand_end": 8.24,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn018_s0",
+   "key": "f23b9394edbae1e3",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 16/16자(100%)",
+   "cand_start": 8.24,
+   "cand_end": 9.89,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn018_s0",
+   "key": "5ea3b9fc4731fbe0",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 29/32자(91%)",
+   "cand_start": 11.32,
+   "cand_end": 15.84,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn018_s0",
+   "key": "5ea3b9fc4731fbe0",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 23/32자(72%)",
+   "cand_start": 16.79,
+   "cand_end": 19.89,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn020_g0",
+   "key": "3b6eb7852dc67361",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 30/30자(100%)",
+   "cand_start": 0.0,
+   "cand_end": 7.27,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn020_g1",
+   "key": "3957b5fab492ef9c",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 14/18자(78%)",
+   "cand_start": 1.93,
+   "cand_end": 6.4,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn020_g1",
+   "key": "3957b5fab492ef9c",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 46/46자(100%)",
+   "cand_start": 8.83,
+   "cand_end": 16.69,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn020_g1",
+   "key": "3957b5fab492ef9c",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 6/6자(100%)",
+   "cand_start": 17.19,
+   "cand_end": 19.06,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn032_s0",
+   "key": "a8157bd3992a647f",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 22/30자(73%)",
+   "cand_start": 1.94,
+   "cand_end": 6.11,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn032_s0",
+   "key": "5ffb5dbac2ea2c42",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 9/13자(69%)",
+   "cand_start": 6.11,
+   "cand_end": 8.28,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn032_s0",
+   "key": "4abc3d644217b8ec",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 27/27자(100%)",
+   "cand_start": 8.28,
+   "cand_end": 10.74,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn032_s0",
+   "key": "f0a09717ee1dab45",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 8/13자(62%)",
+   "cand_start": 10.74,
+   "cand_end": 13.86,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn032_s0",
+   "key": "162b21e903d9dac3",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 44/44자(100%)",
+   "cand_start": 13.86,
+   "cand_end": 18.97,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn032_s0",
+   "key": "162b21e903d9dac3",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 48/52자(92%)",
+   "cand_start": 19.74,
+   "cand_end": 25.86,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn032_x0",
+   "key": "a8157bd3992a647f",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 22/30자(73%)",
+   "cand_start": 1.94,
+   "cand_end": 6.11,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn032_x0",
+   "key": "5ffb5dbac2ea2c42",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 9/13자(69%)",
+   "cand_start": 6.11,
+   "cand_end": 8.28,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn032_x0",
+   "key": "4abc3d644217b8ec",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 27/27자(100%)",
+   "cand_start": 8.28,
+   "cand_end": 10.74,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn032_x0",
+   "key": "f0a09717ee1dab45",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 8/13자(62%)",
+   "cand_start": 10.74,
+   "cand_end": 13.86,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn032_x0",
+   "key": "162b21e903d9dac3",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 44/44자(100%)",
+   "cand_start": 13.86,
+   "cand_end": 18.97,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn032_x0",
+   "key": "162b21e903d9dac3",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 48/52자(92%)",
+   "cand_start": 19.74,
+   "cand_end": 25.86,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn034_g0",
+   "key": "9a979caa060cf626",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 5/7자(71%)",
+   "cand_start": 1.88,
+   "cand_end": 2.45,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn034_g0",
+   "key": "9a979caa060cf626",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 17/18자(94%)",
+   "cand_start": 2.45,
+   "cand_end": 3.44,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn034_g0",
+   "key": "9a979caa060cf626",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 38/38자(100%)",
+   "cand_start": 3.54,
+   "cand_end": 11.93,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn034_g0",
+   "key": "9a979caa060cf626",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 24/28자(86%)",
+   "cand_start": 12.73,
+   "cand_end": 16.83,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn034_g0",
+   "key": "71be6cb377aba2e5",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 23/38자(61%)",
+   "cand_start": 17.11,
+   "cand_end": 26.19,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn034_g0",
+   "key": "71be6cb377aba2e5",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 34/41자(83%)",
+   "cand_start": 26.33,
+   "cand_end": 31.53,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn034_g0",
+   "key": "71be6cb377aba2e5",
+   "page": 3,
+   "voice_match": "일부",
+   "why": "일치 2/9자(22%)",
+   "cand_start": 32.06,
+   "cand_end": 34.16,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn034_g0",
+   "key": "71be6cb377aba2e5",
+   "page": 4,
+   "voice_match": "불가",
+   "why": "웃음·감탄만(받아쓰기 불능)",
+   "cand_start": 34.19,
+   "cand_end": 35.81,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn040_g0",
+   "key": "ed5287f6452c70f9",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 9/11자(82%)",
+   "cand_start": 2.02,
+   "cand_end": 5.09,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn040_g0",
+   "key": "ed5287f6452c70f9",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 26/35자(74%)",
+   "cand_start": 5.37,
+   "cand_end": 11.05,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn040_g0",
+   "key": "ed5287f6452c70f9",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 12/18자(67%)",
+   "cand_start": 11.11,
+   "cand_end": 15.84,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn040_g0",
+   "key": "ed5287f6452c70f9",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 29/32자(91%)",
+   "cand_start": 15.84,
+   "cand_end": 20.9,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn040_g0",
+   "key": "ed5287f6452c70f9",
+   "page": 5,
+   "voice_match": "있음",
+   "why": "일치 13/20자(65%)",
+   "cand_start": 21.85,
+   "cand_end": 25.47,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "3e54fd5c3c1464ae",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 22/22자(100%)",
+   "cand_start": 0.13,
+   "cand_end": 5.17,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "2cfaecb4ac9bb5b8",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "일치 0/16자(0%) · 앞뒤 일치 시각 4.5~5.0s 사이"
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "2a32b603995ff966",
+   "page": 1,
+   "voice_match": "불가",
+   "why": "웃음·감탄만(받아쓰기 불능)",
+   "cand_start": 5.75,
+   "cand_end": 6.98,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "2a32b603995ff966",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 30/30자(100%)",
+   "cand_start": 6.98,
+   "cand_end": 9.27,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "24296484c09d308c",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 13/13자(100%)",
+   "cand_start": 9.58,
+   "cand_end": 10.6,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "4bc93adbd489f8ec",
+   "page": 1,
+   "voice_match": "불가",
+   "why": "짧은 줄·쪽 대응 불확실 — 받아쓰기로 못 가림 · 일치 0/5자(0%) · 앞뒤 일치 시각 10.2~12.6s 사이",
+   "cand_start": 10.6,
+   "cand_end": 11.85,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "07b51127ec06cb02",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 12/12자(100%)",
+   "cand_start": 11.85,
+   "cand_end": 13.66,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "07b51127ec06cb02",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 22/22자(100%)",
+   "cand_start": 13.66,
+   "cand_end": 16.24,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "f1f54f6e74fbdc37",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 18/18자(100%)",
+   "cand_start": 16.24,
+   "cand_end": 21.86,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "9223868c8171327f",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 15/15자(100%)",
+   "cand_start": 22.23,
+   "cand_end": 23.77,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "9223868c8171327f",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 7/7자(100%)",
+   "cand_start": 23.77,
+   "cand_end": 24.74,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "8f33a3167e9d5acb",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 29/29자(100%)",
+   "cand_start": 25.36,
+   "cand_end": 30.32,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "c864a3a966f0c04a",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 23/23자(100%)",
+   "cand_start": 30.39,
+   "cand_end": 33.18,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "c864a3a966f0c04a",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 26/26자(100%)",
+   "cand_start": 33.3,
+   "cand_end": 36.32,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "72e5cae51a8c43a6",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 32/32자(100%)",
+   "cand_start": 36.32,
+   "cand_end": 40.08,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "054d278ded404612",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 31/34자(91%)",
+   "cand_start": 40.08,
+   "cand_end": 45.87,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "054d278ded404612",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 33/39자(85%)",
+   "cand_start": 46.45,
+   "cand_end": 54.44,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "e2790614b9249797",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 20/29자(69%)",
+   "cand_start": 54.85,
+   "cand_end": 55.79,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "b0b2cf0ef3d1d5ea",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 26/26자(100%)",
+   "cand_start": 55.79,
+   "cand_end": 59.81,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "01d88460e90310ad",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 19/19자(100%)",
+   "cand_start": 59.99,
+   "cand_end": 64.95,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_s0",
+   "key": "9c8063ea5f8dae54",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 12/12자(100%)",
+   "cand_start": 65.19,
+   "cand_end": 67.55,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "3e54fd5c3c1464ae",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 22/22자(100%)",
+   "cand_start": 0.13,
+   "cand_end": 5.17,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "2a32b603995ff966",
+   "page": 1,
+   "voice_match": "불가",
+   "why": "웃음·감탄만(받아쓰기 불능)",
+   "cand_start": 5.75,
+   "cand_end": 6.98,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "2a32b603995ff966",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 30/30자(100%)",
+   "cand_start": 6.98,
+   "cand_end": 9.27,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "24296484c09d308c",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 13/13자(100%)",
+   "cand_start": 9.58,
+   "cand_end": 11.85,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "07b51127ec06cb02",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 12/12자(100%)",
+   "cand_start": 11.85,
+   "cand_end": 13.66,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "07b51127ec06cb02",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 22/22자(100%)",
+   "cand_start": 13.66,
+   "cand_end": 16.24,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "f1f54f6e74fbdc37",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 18/18자(100%)",
+   "cand_start": 16.24,
+   "cand_end": 21.86,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "9223868c8171327f",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 15/15자(100%)",
+   "cand_start": 22.23,
+   "cand_end": 23.77,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "9223868c8171327f",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 7/7자(100%)",
+   "cand_start": 23.77,
+   "cand_end": 24.74,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "8f33a3167e9d5acb",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 29/29자(100%)",
+   "cand_start": 25.36,
+   "cand_end": 30.32,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "c864a3a966f0c04a",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 23/23자(100%)",
+   "cand_start": 30.39,
+   "cand_end": 33.18,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "c864a3a966f0c04a",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 26/26자(100%)",
+   "cand_start": 33.3,
+   "cand_end": 36.32,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "72e5cae51a8c43a6",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 32/32자(100%)",
+   "cand_start": 36.32,
+   "cand_end": 40.08,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "054d278ded404612",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 31/34자(91%)",
+   "cand_start": 40.08,
+   "cand_end": 45.87,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "054d278ded404612",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 33/39자(85%)",
+   "cand_start": 46.45,
+   "cand_end": 54.44,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "e2790614b9249797",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 20/29자(69%)",
+   "cand_start": 54.85,
+   "cand_end": 55.79,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "b0b2cf0ef3d1d5ea",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 26/26자(100%)",
+   "cand_start": 55.79,
+   "cand_end": 59.81,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "01d88460e90310ad",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 19/19자(100%)",
+   "cand_start": 59.99,
+   "cand_end": 64.95,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn041_x0",
+   "key": "9c8063ea5f8dae54",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 12/12자(100%)",
+   "cand_start": 65.19,
+   "cand_end": 67.55,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn046_g0_0",
+   "key": "9cf0cb787f681d6c",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 19/19자(100%)",
+   "cand_start": 0.0,
+   "cand_end": 42.75,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn046_g0_1",
+   "key": "9cf0cb787f681d6c",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 19/19자(100%)",
+   "cand_start": 0.0,
+   "cand_end": 41.98,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn050_g0_0",
+   "key": "9bb472f5ddddac75",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 5/8자(62%)",
+   "cand_start": 0.0,
+   "cand_end": 44.54,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn050_g0_1",
+   "key": "9bb472f5ddddac75",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 5/8자(62%)",
+   "cand_start": 0.0,
+   "cand_end": 45.06,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn057_g0",
+   "key": "aa48138c9d330ae3",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 10/15자(67%)",
+   "cand_start": 2.08,
+   "cand_end": 3.43,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn057_g0",
+   "key": "aa48138c9d330ae3",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 18/23자(78%)",
+   "cand_start": 9.16,
+   "cand_end": 10.14,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn057_g0",
+   "key": "aa48138c9d330ae3",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 22/28자(79%)",
+   "cand_start": 16.21,
+   "cand_end": 25.3,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn062_g0",
+   "key": "7cf8e26484d58973",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 24/24자(100%)",
+   "cand_start": 0.0,
+   "cand_end": 15.62,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 19/22자(86%)",
+   "cand_start": 1.81,
+   "cand_end": 8.03,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 2,
+   "voice_match": "없음",
+   "why": "일치 0/12자(0%) · 앞뒤 일치 시각 5.4~7.9s 사이"
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 11/15자(73%)",
+   "cand_start": 8.16,
+   "cand_end": 9.99,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 33/33자(100%)",
+   "cand_start": 10.31,
+   "cand_end": 16.43,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 5,
+   "voice_match": "있음",
+   "why": "일치 30/30자(100%)",
+   "cand_start": 17.39,
+   "cand_end": 22.01,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 6,
+   "voice_match": "있음",
+   "why": "일치 35/45자(78%)",
+   "cand_start": 22.55,
+   "cand_end": 30.1,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 7,
+   "voice_match": "일부",
+   "why": "일치 22/40자(55%)",
+   "cand_start": 30.91,
+   "cand_end": 34.57,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 8,
+   "voice_match": "있음",
+   "why": "일치 19/19자(100%)",
+   "cand_start": 35.67,
+   "cand_end": 39.16,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 9,
+   "voice_match": "있음",
+   "why": "일치 10/14자(71%)",
+   "cand_start": 39.26,
+   "cand_end": 42.54,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 10,
+   "voice_match": "있음",
+   "why": "일치 4/4자(100%)",
+   "cand_start": 43.79,
+   "cand_end": 44.95,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 11,
+   "voice_match": "있음",
+   "why": "일치 39/45자(87%)",
+   "cand_start": 45.22,
+   "cand_end": 53.51,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 12,
+   "voice_match": "있음",
+   "why": "일치 22/22자(100%)",
+   "cand_start": 53.51,
+   "cand_end": 57.52,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 13,
+   "voice_match": "있음",
+   "why": "일치 14/14자(100%)",
+   "cand_start": 57.56,
+   "cand_end": 60.89,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 14,
+   "voice_match": "있음",
+   "why": "일치 22/28자(79%)",
+   "cand_start": 61.57,
+   "cand_end": 65.17,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 15,
+   "voice_match": "불가",
+   "why": "짧은 줄·쪽 대응 불확실 — 받아쓰기로 못 가림 · 일치 0/10자(0%) · 앞뒤 일치 시각 67.6~70.1s 사이",
+   "cand_start": 65.9,
+   "cand_end": 68.1,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn063_g0_0",
+   "key": "06b2652521e4a2af",
+   "page": 16,
+   "voice_match": "없음",
+   "why": "일치 0/27자(0%) · 앞뒤 일치 시각 67.6~70.1s 사이"
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "일치 0/22자(0%) · 앞뒤 일치 시각 0.0~2.1s 사이"
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 12/12자(100%)",
+   "cand_start": 1.73,
+   "cand_end": 4.27,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 15/15자(100%)",
+   "cand_start": 5.04,
+   "cand_end": 6.3,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 33/33자(100%)",
+   "cand_start": 6.42,
+   "cand_end": 14.7,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 5,
+   "voice_match": "있음",
+   "why": "일치 30/30자(100%)",
+   "cand_start": 15.61,
+   "cand_end": 19.91,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 6,
+   "voice_match": "있음",
+   "why": "일치 40/45자(89%)",
+   "cand_start": 20.81,
+   "cand_end": 28.36,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 7,
+   "voice_match": "일부",
+   "why": "일치 22/40자(55%)",
+   "cand_start": 29.07,
+   "cand_end": 33.02,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 8,
+   "voice_match": "있음",
+   "why": "일치 19/19자(100%)",
+   "cand_start": 33.76,
+   "cand_end": 37.66,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 9,
+   "voice_match": "있음",
+   "why": "일치 14/14자(100%)",
+   "cand_start": 38.32,
+   "cand_end": 40.29,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 10,
+   "voice_match": "있음",
+   "why": "일치 4/4자(100%)",
+   "cand_start": 41.07,
+   "cand_end": 43.2,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 11,
+   "voice_match": "있음",
+   "why": "일치 39/45자(87%)",
+   "cand_start": 44.06,
+   "cand_end": 52.84,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 12,
+   "voice_match": "있음",
+   "why": "일치 22/22자(100%)",
+   "cand_start": 52.9,
+   "cand_end": 55.72,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 13,
+   "voice_match": "있음",
+   "why": "일치 14/14자(100%)",
+   "cand_start": 55.85,
+   "cand_end": 58.31,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 14,
+   "voice_match": "있음",
+   "why": "일치 28/28자(100%)",
+   "cand_start": 59.8,
+   "cand_end": 63.41,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 15,
+   "voice_match": "불가",
+   "why": "짧은 줄·쪽 대응 불확실 — 받아쓰기로 못 가림 · 일치 0/10자(0%) · 앞뒤 일치 시각 65.8~68.4s 사이",
+   "cand_start": 63.71,
+   "cand_end": 66.33,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn063_g0_1",
+   "key": "06b2652521e4a2af",
+   "page": 16,
+   "voice_match": "없음",
+   "why": "일치 0/27자(0%) · 앞뒤 일치 시각 65.8~68.4s 사이"
+  },
+  {
+   "clip": "scn073_g0",
+   "key": "70b563c2eb656802",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 30/30자(100%)",
+   "cand_start": 2.95,
+   "cand_end": 6.73,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn073_g0",
+   "key": "70b563c2eb656802",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 46/47자(98%)",
+   "cand_start": 7.58,
+   "cand_end": 39.58,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn074_g0_0",
+   "key": "461500f2f791f5c2",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 30/30자(100%)",
+   "cand_start": 2.95,
+   "cand_end": 6.73,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn074_g0_0",
+   "key": "461500f2f791f5c2",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 46/47자(98%)",
+   "cand_start": 7.58,
+   "cand_end": 39.58,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn074_g0_1",
+   "key": "461500f2f791f5c2",
+   "page": 1,
+   "voice_match": "불가",
+   "why": "이 토막에 음성과 맞는 줄이 없음(말 없는 소리이거나 다른 대사) — 마스터 청취 · 일치 0/30자(0%) · 앞뒤 일치 시각 0.0~8.2s 사이",
+   "cand_start": 1.95,
+   "cand_end": 4.05,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn074_g0_1",
+   "key": "461500f2f791f5c2",
+   "page": 2,
+   "voice_match": "불가",
+   "why": "이 토막에 음성과 맞는 줄이 없음(말 없는 소리이거나 다른 대사) — 마스터 청취 · 일치 0/47자(0%) · 앞뒤 일치 시각 0.0~8.2s 사이",
+   "cand_start": 4.26,
+   "cand_end": 7.53,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn088_g0",
+   "key": "56f1062102d63eb3",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 13/18자(72%)",
+   "cand_start": 2.04,
+   "cand_end": 32.61,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn088_g1",
+   "key": "4918e7bcbea7b0ec",
+   "page": 1,
+   "voice_match": "불가",
+   "why": "끝부분 환각 청크(말 끝 뒤 무음에서 환각) — 일치 3/27자(11%)",
+   "cand_start": 25.37,
+   "cand_end": 37.67,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn098_s0",
+   "key": "7505808b9ee8f79f",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 18/26자(69%)",
+   "cand_start": 0.35,
+   "cand_end": 4.71,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn098_s0",
+   "key": "a91ecddb8a964eef",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 8/10자(80%)",
+   "cand_start": 4.85,
+   "cand_end": 7.37,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn098_s0",
+   "key": "a91ecddb8a964eef",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 31/31자(100%)",
+   "cand_start": 7.37,
+   "cand_end": 11.53,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn098_s0",
+   "key": "e1bbbfdf0516f259",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 7/8자(88%)",
+   "cand_start": 11.53,
+   "cand_end": 30.7,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn098_s0",
+   "key": "890b91f0eb2f56da",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 27/35자(77%)",
+   "cand_start": 30.73,
+   "cand_end": 39.32,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn098_s0",
+   "key": "890b91f0eb2f56da",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 28/36자(78%)",
+   "cand_start": 39.32,
+   "cand_end": 45.63,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn098_s0",
+   "key": "3e3e65b77e8eb592",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 27/27자(100%)",
+   "cand_start": 45.63,
+   "cand_end": 50.04,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn098_s0",
+   "key": "3e3e65b77e8eb592",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 30/30자(100%)",
+   "cand_start": 50.08,
+   "cand_end": 53.89,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn098_s0",
+   "key": "2d0083f8d6e1f27b",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 10/10자(100%)",
+   "cand_start": 53.89,
+   "cand_end": 57.35,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn098_s0",
+   "key": "2d0083f8d6e1f27b",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 26/28자(93%)",
+   "cand_start": 57.45,
+   "cand_end": 63.49,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn098_s0",
+   "key": "7b42d26a3aab5178",
+   "page": 1,
+   "voice_match": "일부",
+   "why": "일치 6/12자(50%)",
+   "cand_start": 63.96,
+   "cand_end": 65.28,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn098_s0",
+   "key": "702c1ad38b328b30",
+   "page": 1,
+   "voice_match": "일부",
+   "why": "일치 9/22자(41%)",
+   "cand_start": 65.28,
+   "cand_end": 70.86,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn100_g0",
+   "key": "6863120104548a4d",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 8/10자(80%)",
+   "cand_start": 2.46,
+   "cand_end": 12.74,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "cf1b8ccf5ceeb1e5",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "x0 토막 행을 s0 로 옮김(11-23) · 일치 28/28자(100%)",
+   "cand_start": 0.29,
+   "cand_end": 7.53,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "cf1b8ccf5ceeb1e5",
+   "page": 2,
+   "voice_match": "없음",
+   "why": "해설 쪽은 #1 음성에 없다 — 엔진 해설(녹색)이 #1 끝난 뒤 뜬다(마스터 11-23 「흰색 해설자막이 #1 음성 끝나기도 전에」). x0 행을 s0 로 옮김 · 일치 0/32자"
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "25907cfbb0858973",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 20/20자(100%)",
+   "cand_start": 19.94,
+   "cand_end": 25.12,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "25907cfbb0858973",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 24/32자(75%)",
+   "cand_start": 25.12,
+   "cand_end": 27.34,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "25907cfbb0858973",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 26/26자(100%)",
+   "cand_start": 27.34,
+   "cand_end": 29.05,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "25907cfbb0858973",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 36/38자(95%)",
+   "cand_start": 29.05,
+   "cand_end": 30.06,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "6cdf02facfe0a594",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "음성에 있음(음성 순서가 자막 순서와 다름) · 일치 12/19자(63%)"
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "aba1169297ee8197",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "음성에 있음(음성 순서가 자막 순서와 다름) · 일치 14/14자(100%)"
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "683e0501221997d1",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 8/13자(62%)",
+   "cand_start": 30.06,
+   "cand_end": 34.06,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "3b9878a7ea7f9e90",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 31/35자(89%)",
+   "cand_start": 34.6,
+   "cand_end": 37.33,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "3b9878a7ea7f9e90",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 29/30자(97%)",
+   "cand_start": 37.33,
+   "cand_end": 66.04,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "e3a118db2c8385e6",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 14/16자(88%)",
+   "cand_start": 66.19,
+   "cand_end": 67.48,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "efaa55b3a4526bb2",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 23/28자(82%)",
+   "cand_start": 67.48,
+   "cand_end": 69.75,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "29645f71959a7455",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 12/12자(100%)",
+   "cand_start": 69.75,
+   "cand_end": 71.49,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "9c371894a67dcd0b",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 18/24자(75%)",
+   "cand_start": 71.49,
+   "cand_end": 74.14,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "9c371894a67dcd0b",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 25/25자(100%)",
+   "cand_start": 74.65,
+   "cand_end": 79.03,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "9c371894a67dcd0b",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 32/38자(84%)",
+   "cand_start": 79.34,
+   "cand_end": 87.07,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "9c371894a67dcd0b",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 28/35자(80%)",
+   "cand_start": 87.37,
+   "cand_end": 94.03,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s0",
+   "key": "9c371894a67dcd0b",
+   "page": 5,
+   "voice_match": "있음",
+   "why": "일치 8/8자(100%)",
+   "cand_start": 94.03,
+   "cand_end": 96.2,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "6a9d3ae11bfd7a53",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 24/28자(86%)",
+   "cand_start": 3.87,
+   "cand_end": 8.55,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "ad3f44f78bff3d6c",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 16/16자(100%)",
+   "cand_start": 8.55,
+   "cand_end": 14.63,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "34679bbea2b32f7d",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 13/18자(72%)",
+   "cand_start": 14.63,
+   "cand_end": 23.49,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "bcd3c8c49e1742f0",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "음성에 있음(음성 순서가 자막 순서와 다름) · 일치 9/15자(60%)"
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "f6e2241890dc33c5",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "음성에 있음(음성 순서가 자막 순서와 다름) · 일치 11/13자(85%)"
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "f7d4445f7df28e70",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "음성에 있음(음성 순서가 자막 순서와 다름) · 일치 10/12자(83%)"
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "86b4bf8365052b77",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 16/18자(89%)",
+   "cand_start": 23.49,
+   "cand_end": 26.31,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "86b4bf8365052b77",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 28/33자(85%)",
+   "cand_start": 26.44,
+   "cand_end": 31.39,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "86b4bf8365052b77",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 24/24자(100%)",
+   "cand_start": 31.79,
+   "cand_end": 36.6,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "afe0221e4bd2db67",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 10/10자(100%)",
+   "cand_start": 36.6,
+   "cand_end": 39.54,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "04121bbf62bdddb5",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "마스터 청취 판정(11-07) — 나레이션(음성) 쪽에서 제외, OFF 에서만 나오는 줄(선택지 분기 변형)"
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "0892a1da36adf54f",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "마스터 청취 판정(11-07) — 나레이션(음성) 쪽에서 제외, OFF 에서만 나오는 줄(선택지 분기 변형)"
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "4518140d96538bdb",
+   "page": 1,
+   "voice_match": "일부",
+   "why": "일치 10/18자(56%)",
+   "cand_start": 39.54,
+   "cand_end": 41.82,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "4518140d96538bdb",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 35/35자(100%)",
+   "cand_start": 41.96,
+   "cand_end": 45.87,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "4518140d96538bdb",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 10/12자(83%)",
+   "cand_start": 45.87,
+   "cand_end": 48.08,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "db4ab11a3c9466f6",
+   "page": 1,
+   "voice_match": "일부",
+   "why": "일치 3/7자(43%)",
+   "cand_start": 48.34,
+   "cand_end": 49.3,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "bb08b0208906d342",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "마스터 청취 판정(11-07) — 나레이션(음성) 쪽에서 제외, OFF 에서만 나오는 줄(선택지 분기 변형)"
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "b7cb498e43c4ef3f",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "마스터 청취 판정(11-07) — 나레이션(음성) 쪽에서 제외, OFF 에서만 나오는 줄(선택지 분기 변형)"
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "9435d0e326784d45",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 8/8자(100%)",
+   "cand_start": 54.86,
+   "cand_end": 58.32,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "9435d0e326784d45",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 25/25자(100%)",
+   "cand_start": 58.7,
+   "cand_end": 62.07,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "9435d0e326784d45",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 24/25자(96%)",
+   "cand_start": 62.07,
+   "cand_end": 63.22,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "9435d0e326784d45",
+   "page": 4,
+   "voice_match": "없음",
+   "why": "마스터 청취 판정(11-07) — 나레이션(음성) 쪽에서 제외, OFF 에서만 나오는 줄(대사가 아님 — 「~주문을 외웠다」 서술)"
+  },
+  {
+   "clip": "scn151_s1",
+   "key": "9435d0e326784d45",
+   "page": 5,
+   "voice_match": "불가",
+   "why": "짧은 줄·쪽 대응 불확실 — 받아쓰기로 못 가림 · 일치 0/18자(0%) · 앞뒤 일치 시각 64.6~70.1s 사이",
+   "cand_start": 67.47,
+   "cand_end": 68.38,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "cf1b8ccf5ceeb1e5",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 28/28자(100%)",
+   "cand_start": 0.29,
+   "cand_end": 7.53,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "cf1b8ccf5ceeb1e5",
+   "page": 2,
+   "voice_match": "없음",
+   "why": "일치 0/32자(0%) · 앞뒤 일치 시각 6.4~11.8s 사이"
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "6cdf02facfe0a594",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 12/19자(63%)",
+   "cand_start": 11.56,
+   "cand_end": 17.02,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "aba1169297ee8197",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 14/14자(100%)",
+   "cand_start": 17.7,
+   "cand_end": 19.94,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "25907cfbb0858973",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 20/20자(100%)",
+   "cand_start": 19.94,
+   "cand_end": 25.12,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "25907cfbb0858973",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 24/32자(75%)",
+   "cand_start": 25.12,
+   "cand_end": 27.34,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "25907cfbb0858973",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 26/26자(100%)",
+   "cand_start": 27.34,
+   "cand_end": 29.05,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "25907cfbb0858973",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 36/38자(95%)",
+   "cand_start": 29.05,
+   "cand_end": 30.06,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "683e0501221997d1",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 8/13자(62%)",
+   "cand_start": 30.06,
+   "cand_end": 34.06,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "3b9878a7ea7f9e90",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 31/35자(89%)",
+   "cand_start": 34.6,
+   "cand_end": 37.33,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "3b9878a7ea7f9e90",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 29/30자(97%)",
+   "cand_start": 37.33,
+   "cand_end": 66.04,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "e3a118db2c8385e6",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 14/16자(88%)",
+   "cand_start": 66.19,
+   "cand_end": 67.48,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "efaa55b3a4526bb2",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 23/28자(82%)",
+   "cand_start": 67.48,
+   "cand_end": 69.75,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn151_x0",
+   "key": "29645f71959a7455",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 12/12자(100%)",
+   "cand_start": 69.75,
+   "cand_end": 96.2,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn155_g0",
+   "key": "c1652c0ab2e4a6b7",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 29/29자(100%)",
+   "cand_start": 1.87,
+   "cand_end": 5.17,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn155_g0",
+   "key": "c1652c0ab2e4a6b7",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 12/19자(63%)",
+   "cand_start": 6.38,
+   "cand_end": 9.2,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn155_g0",
+   "key": "c1652c0ab2e4a6b7",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 16/23자(70%)",
+   "cand_start": 11.32,
+   "cand_end": 12.28,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn155_g0",
+   "key": "c1652c0ab2e4a6b7",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 17/22자(77%)",
+   "cand_start": 16.72,
+   "cand_end": 18.64,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn168_g1",
+   "key": "03361710b7746a6d",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 31/35자(89%)",
+   "cand_start": 0.41,
+   "cand_end": 5.54,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn168_g2",
+   "key": "671882d4de1fce1c",
+   "page": 1,
+   "voice_match": "불가",
+   "why": "끝부분 환각 청크(말 끝 뒤 무음에서 환각) — 일치 0/28자(0%)",
+   "cand_start": 1.91,
+   "cand_end": 28.86,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn168_g3",
+   "key": "543867a49227f9c8",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 24/25자(96%)",
+   "cand_start": 0.49,
+   "cand_end": 1.43,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn168_g3",
+   "key": "543867a49227f9c8",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 15/15자(100%)",
+   "cand_start": 2.75,
+   "cand_end": 3.91,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn168_g3",
+   "key": "543867a49227f9c8",
+   "page": 3,
+   "voice_match": "불가",
+   "why": "웃음·감탄만(받아쓰기 불능)",
+   "cand_start": 4.39,
+   "cand_end": 5.42,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn168_g3",
+   "key": "543867a49227f9c8",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 22/28자(79%)",
+   "cand_start": 9.76,
+   "cand_end": 11.1,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn168_g3",
+   "key": "543867a49227f9c8",
+   "page": 5,
+   "voice_match": "있음",
+   "why": "일치 14/14자(100%)",
+   "cand_start": 22.89,
+   "cand_end": 25.01,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn168_g3",
+   "key": "543867a49227f9c8",
+   "page": 6,
+   "voice_match": "있음",
+   "why": "일치 24/31자(77%)",
+   "cand_start": 25.77,
+   "cand_end": 26.72,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn168_g3",
+   "key": "543867a49227f9c8",
+   "page": 7,
+   "voice_match": "있음",
+   "why": "일치 24/24자(100%)",
+   "cand_start": 31.11,
+   "cand_end": 31.69,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn168_g3",
+   "key": "543867a49227f9c8",
+   "page": 8,
+   "voice_match": "있음",
+   "why": "일치 24/30자(80%)",
+   "cand_start": 31.69,
+   "cand_end": 36.59,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn168_g3",
+   "key": "543867a49227f9c8",
+   "page": 9,
+   "voice_match": "있음",
+   "why": "일치 30/36자(83%)",
+   "cand_start": 36.63,
+   "cand_end": 47.41,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn168_g3",
+   "key": "543867a49227f9c8",
+   "page": 10,
+   "voice_match": "있음",
+   "why": "일치 11/13자(85%)",
+   "cand_start": 48.02,
+   "cand_end": 56.77,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn168_g3",
+   "key": "543867a49227f9c8",
+   "page": 11,
+   "voice_match": "있음",
+   "why": "일치 24/36자(67%)",
+   "cand_start": 57.2,
+   "cand_end": 59.37,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn168_g3",
+   "key": "970916f88f4595c6",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 8/12자(67%)",
+   "cand_start": 60.83,
+   "cand_end": 91.43,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn177_x0",
+   "key": "767b696414ae1c68",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 13/15자(87%)",
+   "cand_start": 10.47,
+   "cand_end": 14.15,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn177_x0",
+   "key": "038dfdf7a063ac4f",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 24/24자(100%)",
+   "cand_start": 14.15,
+   "cand_end": 17.75,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn177_x0",
+   "key": "38e93fc28e956299",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 23/23자(100%)",
+   "cand_start": 19.11,
+   "cand_end": 22.66,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn177_x0",
+   "key": "adfdfd0cd60a1f00",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 23/31자(74%)",
+   "cand_start": 23.08,
+   "cand_end": 27.96,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn177_x0",
+   "key": "91831600688d3adb",
+   "page": 1,
+   "voice_match": "일부",
+   "why": "일치 3/6자(50%)",
+   "cand_start": 27.96,
+   "cand_end": 29.67,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn177_x0",
+   "key": "dd75694a2612bff3",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 7/8자(88%)",
+   "cand_start": 30.04,
+   "cand_end": 33.42,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn177_x0",
+   "key": "295277178eb74fd3",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 27/32자(84%)",
+   "cand_start": 33.48,
+   "cand_end": 38.48,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn177_x0",
+   "key": "11b97787dad07ff7",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "음성에 있음(음성 순서가 자막 순서와 다름) · 일치 18/21자(86%)"
+  },
+  {
+   "clip": "scn177_x0",
+   "key": "a8abacfd8ae08006",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 25/25자(100%)",
+   "cand_start": 39.25,
+   "cand_end": 42.95,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn196_g0",
+   "key": "6086184c571962b7",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 39/41자(95%)",
+   "cand_start": 4.95,
+   "cand_end": 6.86,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn196_g0",
+   "key": "6086184c571962b7",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 51/58자(88%)",
+   "cand_start": 8.45,
+   "cand_end": 18.9,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn196_g0",
+   "key": "8fd6574dcd3167ed",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "마스터 청취 판정(11-07) — 음성에 없음 (「넌 여기서 기다려라」)"
+  },
+  {
+   "clip": "scn196_g0",
+   "key": "f5340d7cf3038425",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "마스터 청취 판정(11-07) — 음성에 없음 (g1 #1 과 중복)"
+  },
+  {
+   "clip": "scn196_g0",
+   "key": "f5340d7cf3038425",
+   "page": 2,
+   "voice_match": "없음",
+   "why": "음성 길이(19.7초) 밖 — 이 토막 음성에 없는 쪽(둘째 토막 음성에 있다) · 11-05 덮는 범위 감사"
+  },
+  {
+   "clip": "scn196_g1",
+   "key": "f5340d7cf3038425",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 23/23자(100%)",
+   "cand_start": 0.47,
+   "cand_end": 1.44,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn196_g1",
+   "key": "f5340d7cf3038425",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 17/17자(100%)",
+   "cand_start": 2.98,
+   "cand_end": 14.42,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn196_g1",
+   "key": "307c3a628f63c549",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "음성에 있음(음성 순서가 자막 순서와 다름) · 일치 6/9자(67%)"
+  },
+  {
+   "clip": "scn196_g1",
+   "key": "98aa12fec5332b12",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 15/15자(100%)",
+   "cand_start": 18.92,
+   "cand_end": 21.03,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn196_g1",
+   "key": "98aa12fec5332b12",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 22/23자(96%)",
+   "cand_start": 21.47,
+   "cand_end": 26.66,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn196_g1",
+   "key": "98aa12fec5332b12",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 29/33자(88%)",
+   "cand_start": 26.67,
+   "cand_end": 29.66,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn196_g1",
+   "key": "98aa12fec5332b12",
+   "page": 4,
+   "voice_match": "일부",
+   "why": "일치 2/7자(29%)",
+   "cand_start": 30.15,
+   "cand_end": 33.81,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn196_g1",
+   "key": "99850a602454f32b",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "음성에 있음(음성 순서가 자막 순서와 다름) · 일치 30/37자(81%)"
+  },
+  {
+   "clip": "scn196_g1",
+   "key": "8fd6574dcd3167ed",
+   "page": 1,
+   "voice_match": "불가",
+   "why": "짧은 줄·쪽 대응 불확실 — 받아쓰기로 못 가림 · 일치 0/4자(0%) · 앞뒤 일치 시각 17.1~40.2s 사이",
+   "cand_start": 34.37,
+   "cand_end": 35.58,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn198_g0",
+   "key": "fcfdd765c6bcfaab",
+   "page": 1,
+   "voice_match": "불가",
+   "why": "짧은 줄·쪽 대응 불확실 — 받아쓰기로 못 가림 · 일치 0/10자(0%) · 앞뒤 일치 시각 0.0~8.2s 사이",
+   "cand_start": 0.0,
+   "cand_end": 0.5,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn198_g0",
+   "key": "fcfdd765c6bcfaab",
+   "page": 2,
+   "voice_match": "불가",
+   "why": "이 토막에 음성과 맞는 줄이 없음(말 없는 소리이거나 다른 대사) — 마스터 청취 · 일치 0/28자(0%) · 앞뒤 일치 시각 0.0~8.2s 사이",
+   "cand_start": 0.0,
+   "cand_end": 4.17,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn201_g0",
+   "key": "a31c760bc24be5e9",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 9/9자(100%)",
+   "cand_start": 0.48,
+   "cand_end": 1.43,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn201_g0",
+   "key": "a31c760bc24be5e9",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 12/13자(92%)",
+   "cand_start": 4.95,
+   "cand_end": 47.32,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn203_g0",
+   "key": "c46bede54e3aa406",
+   "page": 1,
+   "voice_match": "불가",
+   "why": "짧은 줄·쪽 대응 불확실 — 받아쓰기로 못 가림 · 일치 0/5자(0%) · 앞뒤 일치 시각 0.0~11.1s 사이",
+   "cand_start": 0.43,
+   "cand_end": 1.82,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn203_g0",
+   "key": "78d713435dab03a6",
+   "page": 1,
+   "voice_match": "불가",
+   "why": "짧은 줄·쪽 대응 불확실 — 받아쓰기로 못 가림 · 일치 0/8자(0%) · 앞뒤 일치 시각 0.0~11.1s 사이",
+   "cand_start": 1.82,
+   "cand_end": 3.09,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn203_g0",
+   "key": "a89f7a3f507930a1",
+   "page": 1,
+   "voice_match": "불가",
+   "why": "짧은 줄·쪽 대응 불확실 — 받아쓰기로 못 가림 · 일치 0/9자(0%) · 앞뒤 일치 시각 0.0~11.1s 사이",
+   "cand_start": 4.5,
+   "cand_end": 5.91,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn203_g0",
+   "key": "fa916264d74357fb",
+   "page": 1,
+   "voice_match": "불가",
+   "why": "원문 짝 없음(이 메시지의 JP 가 머리뿐 — 대사 원문이 이음 메시지에 있음)",
+   "cand_start": 5.91,
+   "cand_end": 12.33,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn203_g0",
+   "key": "fa916264d74357fb",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 20/20자(100%)",
+   "cand_start": 13.04,
+   "cand_end": 16.05,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn203_g0",
+   "key": "fa916264d74357fb",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 20/22자(91%)",
+   "cand_start": 16.54,
+   "cand_end": 19.84,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn203_g0",
+   "key": "fa916264d74357fb",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 59/65자(91%)",
+   "cand_start": 21.04,
+   "cand_end": 37.37,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn203_g0",
+   "key": "fa916264d74357fb",
+   "page": 5,
+   "voice_match": "있음",
+   "why": "일치 54/54자(100%)",
+   "cand_start": 37.37,
+   "cand_end": 48.28,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn203_g0",
+   "key": "fa916264d74357fb",
+   "page": 6,
+   "voice_match": "있음",
+   "why": "일치 44/44자(100%)",
+   "cand_start": 48.79,
+   "cand_end": 55.28,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn203_g0",
+   "key": "fa916264d74357fb",
+   "page": 7,
+   "voice_match": "있음",
+   "why": "일치 52/56자(93%)",
+   "cand_start": 55.73,
+   "cand_end": 67.92,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn203_g0",
+   "key": "fa916264d74357fb",
+   "page": 8,
+   "voice_match": "있음",
+   "why": "일치 19/20자(95%)",
+   "cand_start": 68.48,
+   "cand_end": 69.43,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn203_g0",
+   "key": "2cdfad2862ea9379",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 21/22자(95%)",
+   "cand_start": 70.25,
+   "cand_end": 71.46,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn204_g0",
+   "key": "7dc2f653fa928038",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 21/23자(91%)",
+   "cand_start": 3.11,
+   "cand_end": 6.33,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn204_g0",
+   "key": "7dc2f653fa928038",
+   "page": 2,
+   "voice_match": "일부",
+   "why": "일치 9/18자(50%)",
+   "cand_start": 6.33,
+   "cand_end": 8.47,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn204_g0",
+   "key": "7dc2f653fa928038",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 32/35자(91%)",
+   "cand_start": 8.47,
+   "cand_end": 17.18,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn204_g0",
+   "key": "7dc2f653fa928038",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 13/19자(68%)",
+   "cand_start": 17.78,
+   "cand_end": 19.21,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn204_g0",
+   "key": "7dc2f653fa928038",
+   "page": 5,
+   "voice_match": "있음",
+   "why": "일치 5/7자(71%)",
+   "cand_start": 20.63,
+   "cand_end": 23.73,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn204_g0",
+   "key": "708be636d8b53a8f",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 25/32자(78%)",
+   "cand_start": 23.87,
+   "cand_end": 29.78,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "11111f3daeb8a691",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 21/22자(95%)",
+   "cand_start": 0.85,
+   "cand_end": 6.18,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "11111f3daeb8a691",
+   "page": 2,
+   "voice_match": "있음",
+   "why": "일치 31/34자(91%)",
+   "cand_start": 6.91,
+   "cand_end": 11.77,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "11111f3daeb8a691",
+   "page": 3,
+   "voice_match": "있음",
+   "why": "일치 42/51자(82%)",
+   "cand_start": 12.34,
+   "cand_end": 20.44,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "11111f3daeb8a691",
+   "page": 4,
+   "voice_match": "있음",
+   "why": "일치 32/32자(100%)",
+   "cand_start": 21.22,
+   "cand_end": 28.42,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "11111f3daeb8a691",
+   "page": 5,
+   "voice_match": "있음",
+   "why": "일치 18/18자(100%)",
+   "cand_start": 28.68,
+   "cand_end": 32.41,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "11111f3daeb8a691",
+   "page": 6,
+   "voice_match": "있음",
+   "why": "일치 39/40자(98%)",
+   "cand_start": 33.11,
+   "cand_end": 39.78,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "11111f3daeb8a691",
+   "page": 7,
+   "voice_match": "있음",
+   "why": "일치 54/54자(100%)",
+   "cand_start": 40.54,
+   "cand_end": 49.8,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "11111f3daeb8a691",
+   "page": 8,
+   "voice_match": "있음",
+   "why": "일치 21/26자(81%)",
+   "cand_start": 50.26,
+   "cand_end": 54.85,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "1cbfc1d9d3118e74",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 11/11자(100%)",
+   "cand_start": 54.85,
+   "cand_end": 56.25,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "3054da1d02b25e52",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 29/31자(94%)",
+   "cand_start": 56.25,
+   "cand_end": 61.94,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "1cc3029bb31a3ae0",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 4/4자(100%)",
+   "cand_start": 61.94,
+   "cand_end": 63.15,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "197d0250a5f3cd68",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "일치 17/22자(77%)",
+   "cand_start": 63.39,
+   "cand_end": 66.83,
+   "sync_conf": true
+  },
+  {
+   "clip": "scn224_x0",
+   "key": "197d0250a5f3cd68",
+   "page": 2,
+   "voice_match": "불가",
+   "why": "웃음·감탄만(받아쓰기 불능)",
+   "cand_start": 67.67,
+   "cand_end": 69.15,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn204_s0",
+   "key": "708be636d8b53a8f",
+   "page": 1,
+   "voice_match": "있음",
+   "why": "받아쓰기 25.5~29.9초 「まんまとワナに…宝石を奪い取って」 · 11-05 덮는 범위 감사",
+   "cand_start": 25.3,
+   "cand_end": 29.9,
+   "sync_conf": false
+  },
+  {
+   "clip": "scn046_s0",
+   "key": "1b1db1d006ceee34",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "상점 대사(道具屋 — 또 오세요·어느 주문·정말 감사합니다 등) — 이 음성에 없다. 시각표 초안이 OFF 흐름 순서에 같이 끼운 것 · 11-06 마스터 지적"
+  },
+  {
+   "clip": "scn046_s0",
+   "key": "5dc5675b267d9e15",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "상점 대사(道具屋 — 또 오세요·어느 주문·정말 감사합니다 등) — 이 음성에 없다. 시각표 초안이 OFF 흐름 순서에 같이 끼운 것 · 11-06 마스터 지적"
+  },
+  {
+   "clip": "scn046_s0",
+   "key": "b625e88c4b35f27b",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "상점 대사(道具屋 — 또 오세요·어느 주문·정말 감사합니다 등) — 이 음성에 없다. 시각표 초안이 OFF 흐름 순서에 같이 끼운 것 · 11-06 마스터 지적"
+  },
+  {
+   "clip": "scn046_s0",
+   "key": "cd3848e2f5850f53",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "상점 대사(道具屋 — 또 오세요·어느 주문·정말 감사합니다 등) — 이 음성에 없다. 시각표 초안이 OFF 흐름 순서에 같이 끼운 것 · 11-06 마스터 지적"
+  },
+  {
+   "clip": "scn046_s0",
+   "key": "dd79f2c608406c42",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "상점 대사(道具屋 — 또 오세요·어느 주문·정말 감사합니다 등) — 이 음성에 없다. 시각표 초안이 OFF 흐름 순서에 같이 끼운 것 · 11-06 마스터 지적"
+  },
+  {
+   "clip": "scn046_s1",
+   "key": "1b1db1d006ceee34",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "상점 대사(道具屋 — 또 오세요·어느 주문·정말 감사합니다 등) — 이 음성에 없다. 시각표 초안이 OFF 흐름 순서에 같이 끼운 것 · 11-06 마스터 지적"
+  },
+  {
+   "clip": "scn046_s1",
+   "key": "5dc5675b267d9e15",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "상점 대사(道具屋 — 또 오세요·어느 주문·정말 감사합니다 등) — 이 음성에 없다. 시각표 초안이 OFF 흐름 순서에 같이 끼운 것 · 11-06 마스터 지적"
+  },
+  {
+   "clip": "scn046_s1",
+   "key": "dd79f2c608406c42",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "상점 대사(道具屋 — 또 오세요·어느 주문·정말 감사합니다 등) — 이 음성에 없다. 시각표 초안이 OFF 흐름 순서에 같이 끼운 것 · 11-06 마스터 지적"
+  },
+  {
+   "clip": "scn046_s1",
+   "key": "b625e88c4b35f27b",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "상점 대사(道具屋 — 또 오세요·어느 주문·정말 감사합니다 등) — 이 음성에 없다. 시각표 초안이 OFF 흐름 순서에 같이 끼운 것 · 11-06 마스터 지적"
+  },
+  {
+   "clip": "scn046_s0",
+   "key": "8f23fe8576ec700e",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "s0(돈 갈래) 음성에 없다 — 「荷物が荒らされ…」는 s1(짐 갈래) 음성 · 11-06 마스터"
+  },
+  {
+   "clip": "scn050_s0",
+   "key": "d91fa4c91d342650",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "음성에 안 나옴(마스터 편집기 코멘트 「안나옴」 11-05) — s0 갈래가 아닌 줄"
+  },
+  {
+   "clip": "scn050_s1",
+   "key": "d91fa4c91d342650",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "음성에 안 나옴(마스터 편집기 코멘트 「안나옴」 11-05)"
+  },
+  {
+   "clip": "scn062_s0",
+   "key": "5189d45498f1ad93",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "마스터 편집기 코멘트 「없음」 11-05 — 이 줄은 음성에 없다"
+  },
+  {
+   "clip": "scn046_s1",
+   "key": "1ebf22885e4e6240",
+   "page": 1,
+   "voice_match": "없음",
+   "why": "창 순서 자리에선 음성이 없다 — 음성은 25.5초(마스터 편집기 코멘트 「뒤쪽대사임」 11-05). 같은 문안을 추가 행(on_extra idx 1001)으로 시각 순서에 끼운다"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 6,
+   "voice_match": "없음",
+   "why": "음성에 안 나온다 — 마스터 편집기가 이 쪽을 건너뛰고 앞뒤 쪽을 이었다(씬 17 x0 #13~15·#19, 11-05 청취). 원판 OFF 창 문안은 그대로"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 7,
+   "voice_match": "없음",
+   "why": "음성에 안 나온다 — 마스터 편집기가 이 쪽을 건너뛰고 앞뒤 쪽을 이었다(씬 17 x0 #13~15·#19, 11-05 청취). 원판 OFF 창 문안은 그대로"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 8,
+   "voice_match": "없음",
+   "why": "음성에 안 나온다 — 마스터 편집기가 이 쪽을 건너뛰고 앞뒤 쪽을 이었다(씬 17 x0 #13~15·#19, 11-05 청취). 원판 OFF 창 문안은 그대로"
+  },
+  {
+   "clip": "scn017_x0",
+   "key": "591d0abdb318200b",
+   "page": 12,
+   "voice_match": "없음",
+   "why": "음성에 안 나온다 — 마스터 편집기가 이 쪽을 건너뛰고 앞뒤 쪽을 이었다(씬 17 x0 #13~15·#19, 11-05 청취). 원판 OFF 창 문안은 그대로"
+  },
+  {
+   "clip": "scn088_s1",
+   "key": "58357f0eb19efb19",
+   "page": 3,
+   "voice_match": "없음",
+   "why": "음성 18~26초에 「헤르닐드에게 도움을…」 문장이 없다 — 「わしは…旅立つのだ」 바로 뒤 「貴様らとは、いずれまた…」(11-07 받아쓰기 대조, 마스터 지적)"
+  }
+ ]
+}

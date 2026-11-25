@@ -256,6 +256,10 @@ def read_inline():
     for key, (bank, off, room) in INLINE.items():
         b = bank_bytes(bank)
         seg = b[off : off + room]
+        if key == "return_prompt":  # 머리에 `15 루틴`(3B)을 끼워 글이 3B 뒤로 간다(`defeat_strip`) — 방 37 → 34, jp 는 원문 그대로
+            import defeat_strip
+
+            off, room = off + defeat_strip.TEXT_SHIFT, room - defeat_strip.TEXT_SHIFT
         out.append(
             {
                 "key": key,

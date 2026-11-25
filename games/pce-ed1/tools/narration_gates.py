@@ -46,6 +46,30 @@ MSG = re.compile(
 )
 
 TERM_BYTES = (0, 6, 7)  # 메시지 종료 바이트(messages.TERM)
+
+
+def _op_len(c: int) -> int:
+    """제어 옵코드(< 0x24)의 길이(옵코드 포함) — `messages.TEXT_OPS`·`OTHER_OPS` 와 같은 표."""
+    import messages as _M
+
+    return {**_M.TEXT_OPS, **_M.OTHER_OPS}.get(c, 1)
+
+
+def scan_msg(msg: bytes) -> tuple[int, list[int]]:
+    """메시지를 **글자 코드 단위로** 훑어 (종료 바이트 위치, 쪽 넘김 `05` 위치들). 🔴 글리프 코드는 2바이트(앞 ≥ 0x24)라 그 **둘째 바이트가 05·00·06·07 이어도 쪽·끝이 아니다** —
+    바이트 단위 스캔은 한글 코드 둘째 바이트에서 쪽·끝을 잘못 잘랐다(씬 34: 쪽 4개 메시지가 7쪽으로 읽혀 편집기 시각이 안 들어갔다, 10-30)."""
+    i, cuts = 0, []
+    while i < len(msg):
+        c = msg[i]
+        if c >= 0x24:
+            i += 2
+            continue
+        if c in TERM_BYTES:
+            return i, cuts
+        if c == 5:
+            cuts.append(i)
+        i += _op_len(c)
+    raise StopIteration("메시지 종료 바이트가 없다")
 TIMER_AT = re.compile(rb"\xa2(.)\xa0(.)\x20\xd7\x5b", re.DOTALL)  # LDX #lo · LDY #hi · JSR $5BD7
 SHOW_5B_TAILS = (b"\x20\x5b\x5b", b"\x4c\x06\x5b")  # 나머지(JSR $5B76 · JMP $5B0B)는 $5B76 꼴
 SHOW_76, SHOW_5B = 0x5B76, 0x5B5B  # 메시지 표시 — `$10/$11` = 메시지 주소
@@ -98,7 +122,7 @@ AUTO_FLAG, AUTO_TL, AUTO_TH = (
     0x5FFF,
 )  # 훅 뒤 3B — 자막 모드 · 지금 쪽 마감(프레임 카운터 값, 하위·상위)
 # 자막 모드 자동 넘김의 넘김 효과음 끄기(마스터 10-17): 엔진 뱅크 0x6C 의 호출 셋(`JSR $67EC`)을 `hook.quiet_routine` 으로 돌린다(거름 루틴은 후킹 페이로드에 산다).
-QUIET_SITES = (0x6BFF, 0x6C3C, 0x6D3F)
+QUIET_SITES = (0x6BC9, 0x6BFF, 0x6C3C, 0x6D3F)  # 0x6BC9 = 11-23 추가(마스터 「아크담 전투(2) 자막 자동재생인데 클릭음」 — 엔진 안 `JSR $67EC` 넷 중 하나가 빠져 있었다, 원판 전수 스캔)
 
 
 PAD = 0xCF1A  # 버튼 트리거
@@ -124,12 +148,12 @@ SUB_SPEED = 0
 SITES: dict[int, dict[int, str]] = {
     2: {0: "raias"},
     6: {0: "single_pre", 1: "single", 3: "single", 4: "skip"},
-    17: {0: "single", 1: "single"},
+    17: {0: "single", 1: "single", 3: "skip"},  # 게이트 3(음성 102초 — 메시지 일곱·쪽 스물셋)은 시각표 장면(11-06, 마스터 청취 시각)
     18: {0: "skip", 1: "single"},
     20: {0: "single", 1: "single"},
     32: {0: "skip"},
     34: {0: "single", 1: "single"},
-    40: {0: "single"},
+    40: {0: "skip"},  # 시각표 장면(11-06 — 한 게이트 음성에 메시지 셋·쪽 다섯: 9d46·1488·75fe)
     41: {0: "skip"},
     46: {0: "all"},
     50: {0: "all"},
@@ -146,7 +170,7 @@ SITES: dict[int, dict[int, str]] = {
     168: {1: "single_pre", 2: "single", 3: "single", 4: "single"},
     177: {0: "single", 1: "single", 2: "single", 3: "single"},
     196: {0: "single", 1: "last"},
-    198: {0: "last_page2"},
+    # 198: 마스터 11-07 「씬198은 효과음이라 자막은 다 제거해도 될듯」 — 음성 자막 게이트를 안 건다(대사창 두 줄은 평소 그대로)
     201: {0: "all"},
     203: {0: "single", 1: "single", 2: "single", 3: "single", 4: "single"},
     204: {0: "single", 1: "single"},
@@ -213,15 +237,52 @@ def norm_items(raw: list) -> list[Item]:
     return out
 
 
+def flat_msg(block: bytes, addr: int) -> bytes:
+    """`addr` 의 메시지를 **점프(`0F`)를 따라가며 한 줄로 편** 바이트(종료 바이트 포함). 🔴 번역이 원래 자리에 안 들어가면 꼬리를 블록 끝으로 이어(`꼬리 이음`) 메시지 중간에 `0F 주소` 가 있다 —
+    그 뒤 바이트를 그냥 읽으면 **다른 메시지**를 읽어 쪽 수·길이가 틀린다(씬 34: 4쪽 메시지가 7쪽으로 읽혔다, 10-30). 점프 목적지가 블록 밖이면 거기서 끊는다."""
+    out = bytearray()
+    i, seen = addr, set()
+    while i < len(block):
+        c = block[i]
+        if c >= 0x24:
+            out += block[i : i + 2]
+            i += 2
+            continue
+        if c in TERM_BYTES:
+            out.append(c)
+            return bytes(out)
+        if c == 0x0F and i + 2 < len(block):
+            tgt = (block[i + 1] | block[i + 2] << 8) - BASE
+            if not 0 <= tgt < len(block) or tgt in seen:
+                break
+            seen.add(tgt)
+            i = tgt
+            continue
+        n = _op_len(c)
+        out += block[i : i + n]
+        i += n
+    raise GateError("메시지 종료 바이트가 없다")
+
+
 def split_pages(msg: bytes) -> tuple[bytes, list[bytes], bytes]:
     """메시지 → (화자 머리 `1F 이름 04 [01]` 또는 빈 것, 쪽 본문들, 종료 바이트). 쪽은 `05` 로 나뉜다(`page_table` 과 같은 단순 스캔)."""
-    end = next(k for k, c in enumerate(msg) if c in TERM_BYTES)
+    end, cuts = scan_msg(msg)
     h = 0
     if msg[:1] == b"\x1f":
-        h = msg.index(4) + 1
-        if msg[h : h + 1] == b"\x01":
-            h += 1
-    return msg[:h], msg[h:end].split(b"\x05"), msg[end : end + 1]
+        k = 1
+        while k < end and msg[k] >= 0x24:  # 화자 이름 = 2바이트 코드들
+            k += 2
+        if k < end and msg[k] == 4:
+            h = k + 1
+            if msg[h : h + 1] == b"\x01":
+                h += 1
+    pages, a = [], h
+    for k in cuts:
+        if k >= h:
+            pages.append(msg[a:k])
+            a = k + 1
+    pages.append(msg[a:end])
+    return msg[:h], pages, msg[end : end + 1]
 
 
 def seg_message(msg: bytes, a: int, b: int) -> bytes:
@@ -333,7 +394,7 @@ def _emit_units(
     lead0 = 0
     prev_close = 0
     for ui, (load, addr, items) in enumerate(units):
-        n_pages = len(split_pages(bytes(out[addr : addr + 0x400]))[1])
+        n_pages = len(split_pages(flat_msg(out, addr))[1])
         if n_pages != len(items):
             raise GateError(f"scn{sid:03d}: 쪽 {n_pages}개인데 시각 {len(items)}개")
         _lead, segs, cl = plan_segments(items)
@@ -343,7 +404,7 @@ def _emit_units(
                 msg_at, ld = BASE + addr, load
             else:
                 msg_at = BASE + len(out)
-                seg = seg_message(bytes(out[addr : addr + 0x400]), a, b)
+                seg = seg_message(flat_msg(out, addr), a, b)
                 out += seg
                 ld = _with_msg(load, msg_at)
             base = 0 if absolute else open_f
@@ -861,11 +922,11 @@ def page_frames(
     `ends`(초)가 있으면 그 값(마지막 쪽 포함 — 그 값이 곧 창이 닫히는 때). 쪽은 `05`(쪽 넘김)로 나뉜다."""
     i = 0
     if page2:  # 상주부가 첫 쪽 넘김(05) 다음부터 띄운다
-        i = msg.index(b"\x05") + 1
+        i = scan_msg(msg)[1][0] + 1
     body = msg[i:]
-    end = next(k for k, c in enumerate(body) if c in TERM_BYTES)
+    end, cut_at = scan_msg(body)
     w = end + 1
-    cuts = [k + 1 for k, c in enumerate(body[:end]) if c == 5]
+    cuts = [k + 1 for k in cut_at]
     frames = [timer * c // w for c in cuts] + [timer]
     if ends is not None:
         if len(ends) != len(frames):
@@ -961,7 +1022,7 @@ def patch_block(sid: int, blk: bytes, table: dict[str, bytes] | None = None) -> 
                 if not items:  # 시각표가 없으면 글자 수 비례 닫힘(열림 = 앞 쪽 닫힘)
                     items = [
                         (None, f / FPS)
-                        for f in page_frames(bytes(out[addr : addr + 0x400]), timer, False, None)
+                        for f in page_frames(flat_msg(out, addr), timer, False, None)
                     ]
                 out[at : at + 7] = (
                     b"\x20"
@@ -976,7 +1037,7 @@ def patch_block(sid: int, blk: bytes, table: dict[str, bytes] | None = None) -> 
                 )
             continue
         tab = page_table(
-            bytes(out[addr : addr + 0x400]), timer, page2, [c for _o, c in items] if items else None
+            flat_msg(out, addr), timer, page2, [c for _o, c in items] if items else None
         )
         if len(out) + len(tab) > 0x2000:
             raise GateError(

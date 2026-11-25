@@ -290,13 +290,20 @@ def _cast_ko(jp: str) -> str:
     raise KeyError(jp)
 
 
-BR_CHARS = "()"  # 전각 괄호는 자체 글리프로 — 보통/굵은 글씨 줄 모두 12px 칸 안에서 괄호 잉크를 **안쪽 가장자리**에 붙인다(반각처럼 글자에 붙는다, 마스터 10-16 「괄호는 반각」)
+# 🔴 마스터 11-25 「스태프롤 괄호는 원본 괄호 그대로 써도 될듯」 — 기본은 원판 BIOS 전각 괄호(자체 글리프 없음).
+# 옛 자체 글리프(10-16 「괄호는 반각」 — 12px 칸 안에서 괄호 잉크를 안쪽 가장자리에 붙인 꼴)는 비교용으로 ED_STAFF_BR_OWN=1
+BR_CHARS = "()" if os.environ.get("ED_STAFF_BR_OWN") else ""
 BR_MAP = str.maketrans({"（": "(", "）": ")"})
+
+
+STAFF_DY = int(os.environ.get("ED_STAFF_DY", "1"))  # 한글 글리프를 아래로 내리는 행 수(마스터 11-26 「1px만 내려보자」 — MIT 스튜디오 세로 중심, 기본 1) — 한글 잉크가 행 0~10 이라 1까지 잘림 없음
 
 
 def _glyph(ch: str) -> bytes:
     """글리프 표 한 글자 24B — 괄호는 기본 글꼴의 3px 괄호를 칸의 안쪽(여는 괄호 = 오른쪽 끝, 닫는 괄호 = 왼쪽 끝)으로 민다."""
     g = font.glyph(ch)
+    if STAFF_DY and _is_hangul(ch):
+        g = bytes(2 * STAFF_DY) + g[: 24 - 2 * STAFF_DY]
     if ch not in BR_CHARS:
         return g
     shift = 8 if ch == "(" else 1

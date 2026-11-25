@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import common
 import font
 import freespace
+import hook
 import omake_font
 import sysstrings as S
 
@@ -313,6 +314,19 @@ def check_keys(errors: list[str]) -> dict[str, int]:
     return seen
 
 
+def spell_gate_chars() -> list[str]:
+    """주문 이름(마법 표 29칸) 우리 표기의 **끝 글자** 목록 — 엔진이 이름 뒤에 붙이는 SJIS 전각 단계 숫자(「오비스３」)를
+    반각 글리프로 바꾸는 허용 목록(`hook._digit_asm`). 이름·표는 정본·원본에서 읽는다(자기 표 없음)."""
+    names = _load("names.json")
+    gl = glossary()
+    out: list[str] = []
+    for r in S.read_fixed("spells"):
+        kr = fixed_kr("spells", r["jp"], names, gl) if r["jp"] else None
+        if kr and kr[-1] not in out and not kr[-1].isdigit():
+            out.append(kr[-1])
+    return out
+
+
 def apply(f, table, touched) -> dict:
     names = _load("names.json")
     gl = glossary()
@@ -343,6 +357,15 @@ def apply(f, table, touched) -> dict:
             elif fam == "places":
                 # HUD 이름칸: 「이름 06」 + 00 패딩. 12B 를 꽉 채우면 06 을 안 쓴다
                 # (렌더러 `$92A0` 가 06 까지 스캔하고, 없으면 12B 를 끝으로 본다)
+                # 🔴 HUD 지명 칸 가운데 맞춤(마스터 11-05 「hud지명칸도 가능하면 가운데」) — 앞 전각 공백(2B)을 12B 안에서 쏠림이 가장 작은 만큼(`center_plan`)
+                import center_plan
+
+                k, h, _shift = center_plan.best_lead_half(kr, center_plan.HUD_C, len(enc), w)
+                enc = font.encode(" " * k, table) + enc if k else enc
+                if h:  # 시작 열 +1(8px) — 맨 앞 `F8 24` 표시(hud_half.py 렌더러 꼬리가 읽고 건너뛴다)
+                    import hud_half
+
+                    enc = hud_half.MARK + enc
                 new = enc if len(enc) == w else enc + b"\x06" + b"\0" * (w - len(enc) - 1)
             else:
                 new = S._pad_right_align(enc, w, pad)
@@ -422,7 +445,9 @@ def apply(f, table, touched) -> dict:
                 f"label 「{r['jp']}」→「{kr}」 남는 {rest}B 가 홀수 — 전각 공백으로 못 채운다"
             )
             continue
-        new = enc + b"\x81\x40" * (rest // 2)
+        # 🔴 채움은 **반각 공백 코드**(`F8 24`, 4px) — 전각 공백(12px)이면 우리 글이 원문보다 짧을 때 채움이 원문 폭을 넘어 창 오른쪽 테두리 칸을 덮는다
+        #   (11-18 마스터 mc4 패배 선택 창 「마지막 들른 마을로」: 8자+반각 둘 104px + 채움 12px = 116px → 원판 14타일을 넘어 15타일 — 테두리 끊김. 원판 대조로 확정).
+        new = enc + font.HALF_SPACE * (rest // 2)
         _write(
             f,
             0x6D,
@@ -452,6 +477,8 @@ def apply(f, table, touched) -> dict:
             # 문안 끝 공백으로 이어 붙인다(칸이 모자라면 런타임 어절 줄바꿈이 접는다).
             tail_toks.pop()
             kr = JOIN_NEXT_LINE[r["addr"]]
+        if tail_toks == ["0A"] and kr[-1:] in (".", "!", "?"):
+            kr += " "  # 0A 종단은 뒤 조각이 같은 줄에 붙는다 — 문장 끝 부호 뒤 공백(마스터 11-20 「왔다!통한의 일격」)
         tail = b"".join(bytes.fromhex(t) for t in tail_toks)
         body = encode_tokens(kr, table, msg=True)
         new = lead + body + tail
@@ -524,6 +551,11 @@ def apply(f, table, touched) -> dict:
             stats["sysmsg_spill"] = stats.get("sysmsg_spill", 0) + 1
         else:
             got = pool.alloc((0x6D, 0x74), len(new))
+            if got is None and len(new) <= hook.FRAG_LEN:
+                # 🆕 4-17: 두 창 풀이 가득 차면 뱅크 0x70 보관소 — `0F` 스텁이 RAM 버퍼로 복사해 읽는다(`hook._frag_asm`)
+                got = pool.alloc((hook.FRAG_BANK,), len(new))
+                if got is not None:
+                    stats["sysmsg_store"] = stats.get("sysmsg_store", 0) + 1
             if got is None:
                 errors.append(
                     f"sysmsg {r['addr']:04X} 「{r['jp']}」 {len(new)}B — 옮겨 실을 빈자리가 없다"
