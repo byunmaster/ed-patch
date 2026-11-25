@@ -776,8 +776,18 @@ def strip_dead_seam_space(out: list[scene.Token]) -> None:
         while j < len(out) and (out[j].ref or (out[j].kind == "ctl" and out[j].code == 0x0C)):
             j += 1
         nxt = out[j] if j < len(out) else None
-        if (nxt is not None and nxt.kind == "end" and nxt.code != 0x06) or (
-            nxt is not None and nxt.kind == "ctl" and nxt.code in (0x01, 0x05, 0x04, 0x09)
+        # `09nn` 은 이름표(바로 뒤 `<01>`)일 수도, 문장 속 파티 이름(뒤에 글이 이어진다 — 「나는 <0903>이라고」)일 수도 있다.
+        # 뒤에 글이 이어지면 그 공백은 이름 앞 띄어쓰기다 — 지우면 「나는게일이라고」로 붙는다(변수 줄 조판 검사로 잡음).
+        after = out[j + 1] if j + 1 < len(out) else None
+        inline_name = (
+            nxt is not None
+            and nxt.kind == "ctl"
+            and nxt.code == 0x09
+            and not (after is not None and after.kind == "ctl" and after.code in (0x01, 0x05))
+        )
+        if not inline_name and (
+            (nxt is not None and nxt.kind == "end" and nxt.code != 0x06)
+            or (nxt is not None and nxt.kind == "ctl" and nxt.code in (0x01, 0x05, 0x04, 0x09))
         ):
             if len(t.raw) > 1:
                 out[i] = scene.Token(t.off, t.raw[:-1], "text")

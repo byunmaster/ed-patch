@@ -137,6 +137,11 @@ import os as _os
 
 GLYPH_TOP = int(_os.environ.get("MD_GLYPH_TOP", "1"))
 GLYPH_LEFT = int(_os.environ.get("MD_GLYPH_LEFT", "1"))
+# 🔴 세로 기준선(마스터 11-15 「원문 부호가 한글보다 1px 아래」 · baseline-1115) — 대사창 한글(리소스 0)의 글자 바닥을 **원판 기호·숫자·영문의
+# 바닥(행 12)** 에 맞춘다. 원판 글리프(! ? . , 숫자·라틴·【】 등)는 잉크가 1~12행이라 위로 올리면 **위 테두리가 칸 밖으로 잘린다**(위쪽 1px 잘린
+# 느낌, 2026-09-05) — 그래서 원판을 올리지 않고 한글을 내린다(갈무리11 한글 1~11행 → 2~12행, 테두리 1~13행이 칸 14행 안에 든다).
+# 띠 한글(`+LOW_OFF`)·합성 글리프(`CUSTOM_GLYPHS`: 지명 HUD·콘덴스드)·자막(리소스 5)은 **안 민다**. 0 으로 두면 옛 자리.
+DIALOG_DY = int(_os.environ.get("MD_DIALOG_DY", "1"))
 
 
 def extend_jamo_arms(grid: list[list[int]]) -> list[list[int]]:
@@ -254,8 +259,9 @@ def glyph_fill(ch: str) -> list[list[int]]:
     if ch in CUSTOM_GLYPHS:
         return CUSTOM_GLYPHS[ch]
     if ch == "…":
-        return ellipsis_dots(CELL)
-    g = _load_bdf(top=GLYPH_TOP, left=GLYPH_LEFT).get(ch)
+        g = ellipsis_dots(CELL)
+        return [[0] * CELL for _ in range(DIALOG_DY)] + g[: CELL - DIALOG_DY] if DIALOG_DY else g
+    g = _load_bdf(top=GLYPH_TOP + DIALOG_DY, left=GLYPH_LEFT).get(ch)
     if g is None:
         raise KeyError(f"Galmuri14 에 없는 글자: {ch!r}")
     return extend_jamo_arms(g)
