@@ -908,6 +908,10 @@ def main():
         import debugpatch
 
         debug_note = debugpatch.apply(exe, a.disc, os.environ.get("ED_DEBUG_MAP", ""))
+    if common.DEBUG_QA:  # 🔴 QA 전용 — 스위치 없이 구운 이미지는 이 줄을 안 지난다(꼬리표 qa-debug 는 common 이 강제)
+        import qa_debugpatch
+
+        debug_note = qa_debugpatch.apply(exe)
     exe_orig = bytes(exe)
     enc = lambda kr: hangul_map.encode(kr, a.disc, table)
     ui_put, ui_skip = uitext.apply(exe, a.disc, enc)
@@ -997,7 +1001,9 @@ def main():
         print(f"  타이틀 폰트: SLPS_012.01 BIOS 리다이렉트 · M01.DAT 문자열 {title_font_n}")
     if a.test:
         print("  🔴 **시험 빌드다** — 안 옮긴 문안은 엉뚱한 글자로 나온다. 배포물이 아니다.")
-    if debug_note:
+    if debug_note and common.DEBUG_QA:
+        print(f"  ⚠ QA 디버그 빌드 — {debug_note}. 제품 이미지가 아니다.")
+    elif debug_note:
         print(f"  ⚠ 디버그 빌드 — 새 게임이 {debug_note} 에서 시작한다(플레이어·파티 없음, 맵 구경 모드). 제품 이미지가 아니다.")
     if left:
         print(f"  ⬜ 아직 못 넣는 낱말 {len(left)} (표가 없는 구역 — 길이 고정)")
@@ -1071,6 +1077,14 @@ def main():
     except Exception:
         os.replace(tmp, out + ".failed")
         raise
+    if common.DEBUG_QA:
+        import qa_debugpatch
+
+        if qa_debugpatch.WARP_ON:  # 🔴 QA 전용 — EXE 를 이미지 끝으로 옮겨 적재 크기를 늘리고 워프 코드를 싣는다(qa_relocate.py 머리말)
+            import qa_relocate
+
+            r = qa_relocate.relocate(tmp, a.disc, qa_debugpatch.WARP_BLOB, qa_debugpatch.EXTRA)
+            print(f"  🔧 QA 재배치 — ED3.EXE → LBA {r[0]} · {r[1]:,}B · 이미지 {r[2]:,}섹터")
     os.replace(tmp, out)
     cue = common.build_cue(a.disc)
     if a.test:

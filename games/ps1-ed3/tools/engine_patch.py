@@ -142,9 +142,9 @@ def asm(text, base):
             w = _i(9 if v < 0 else 0xD, 0, _reg(a[0]), v)
         elif op == "lui":
             w = _i(0xF, 0, _reg(a[0]), int(a[1], 0))
-        elif op in ("ori", "andi", "slti", "sltiu"):
+        elif op in ("ori", "andi", "xori", "slti", "sltiu"):
             w = _i(
-                {"ori": 0xD, "andi": 0xC, "slti": 0xA, "sltiu": 0xB}[op],
+                {"ori": 0xD, "andi": 0xC, "xori": 0xE, "slti": 0xA, "sltiu": 0xB}[op],
                 _reg(a[1]),
                 _reg(a[0]),
                 int(a[2], 0),
