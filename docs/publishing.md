@@ -32,7 +32,7 @@
   에서 문안을 꺼내 왔는데, ⚠ **2026-08-18 자체 번역 전환으로 kr 트랙은 그 길을 안 쓴다**
   (ED1·ED2 EXE 문안의 정발 포인터는 0 이다). 포인터 방식은 [fix] 트랙과 옛 자료에만 남는다.
   → 점검은 **`ours` 쪽**을 본다: 우리 문안이 정발을 베끼지 않았나
-  (`games/ps1-ed1+2/tools/check_forbidden.py` — 게임 게이트에 물려 있다). 10-04 실측: PS1 대사
+  (`games/ps1-ed1+2/tools/check_forbidden.py` — **배포 전에 한 번**, 게이트에선 뺐다 11-26). 10-04 실측: PS1 대사
   20자↑ 일치 1.4% · 30자↑ 0줄.
 - JP 원문 키는 sha1 해시(`k`, `sha`)라 원문을 복원할 수 없다.
 - 단어 수준 명칭·라벨(아이템·몬스터·지명·메뉴)은 저작권 대상이 아니라 코드에 둬도 된다.
@@ -100,7 +100,7 @@ grep -rn '"from"' games/*/patches/*.json          # 0건이어야 한다
 sh scripts/patcher.sh build
 grep -c '"from"' .local/cache/patcher/index.html  # 0 이어야 한다
 
-# 3. 문안·코드·주석에 정발 문장이 박혀 있지 않은지 (게임 게이트가 돌린다)
+# 3. 문안·코드·주석에 정발 문장이 박혀 있지 않은지 (🔴 배포 전 필수 — 게이트에선 뺐다, 마스터 11-26)
 python3 games/ps1-ed1+2/tools/check_forbidden.py
 
 # 4. 추적되는 파일 중 게임 데이터가 섞였는지
