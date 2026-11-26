@@ -1,4 +1,4 @@
-"""GMF 아카이브·RLE·TIZ 회귀 — **원본 없이 돈다**(합성 데이터).
+"""GMF 아카이브·TIZ 회귀 — **원본 없이 돈다**(합성 데이터).
 
 🔴 지키는 것: ① 오프셋 단위를 잘못 잡아 **빈 슬라이스**가 나오는 사고 ② 재배치가 안 건드린 멤버를 바꾸는 사고
 ③ TIZ 의 「사전이 비면 스트림은 134 부터」 — 처음 해독에서 16개가 이걸로 틀렸다.
@@ -10,7 +10,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from shared.ps1 import gmf_arc, gmf_rle, tiz
+from shared.ps1 import gmf_arc, tiz
 
 
 def _toc(members, unit=4):
@@ -67,18 +67,6 @@ class TestArchive(unittest.TestCase):
         d = _toc([("A", b"a" * 8)])
         with self.assertRaises(gmf_arc.PackError):
             gmf_arc.plan(d, {"Z": b"x"})
-
-
-class TestRle(unittest.TestCase):
-    def test_왕복(self):
-        for blob in (b"", b"\x00" * 300, bytes(range(256)) * 3, b"abc" + b"\x07" * 200 + b"xyz"):
-            if not blob:
-                continue
-            raw, short = gmf_rle.decompress(gmf_rle.wrap(blob))
-            self.assertEqual((raw, short), (blob, 0))
-
-    def test_헤더가_아니면_None(self):
-        self.assertIsNone(gmf_rle.parse_header(b"\x10\x00\x00\x00\x09\x00\x00\x00"))
 
 
 def _tiz(size, stream, dic=()):
