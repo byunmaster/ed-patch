@@ -31,6 +31,11 @@ CHECK_PAIRS_CACHE=$(mktemp -d 2>/dev/null || true)
 export CHECK_PAIRS_CACHE
 trap '[ -n "$CHECK_PAIRS_CACHE" ] && rm -rf "$CHECK_PAIRS_CACHE"' EXIT
 
+# 단계별 걸린 시간 — 게이트가 어디서 느린지 다음 점검이 바로 보게(11-27 「무의미한 중복실행 없애자」).
+T0=$(date +%s)
+TT=$T0
+tick() { _n=$(date +%s); echo "  ⏱ $1 $((_n - TT))초"; TT=$_n; }
+
 # 어느 게임인가 — 정본은 `scripts/check/which_game.sh` 다(테스트도 같은 답을 써야 한다).
 GAMES=$(sh "$ROOT/scripts/check/which_game.sh" "$@")
 # 그 목록을 **어떻게** 정했나 — `--all`·이름 지정(explicit) / 게임 브랜치(branch) /
@@ -68,6 +73,7 @@ else
   }
   echo "  ✅ 통과"
 fi
+tick "테스트"
 
 fail=0
 if [ "$WHY" = "fallback" ]; then
@@ -94,33 +100,39 @@ for g in $GAMES; do
   fi
   echo "── [$g]"
   sh "$gate" || fail=1
+  tick "게임 게이트 [$g]"
   # 이름 검사 — 잣대는 공용 하나(shared/canon/names.py), 게임은 「원문 줄 · 우리 줄」 어댑터만(마스터 10-07).
   # 🔴 어댑터가 없으면(rc 2) **실패** — 번역 게임 일곱에 다 붙었다(10-07). 번역 트랙이 아니면 해당 없음(0).
   names_rc=0
   names_out=$("$PY" "$ROOT/scripts/check/check_names.py" --game "$g" 2>&1) || names_rc=$?
   printf '%s\n' "$names_out" | sed 's/^/  /'
   if [ "$names_rc" -ne 0 ]; then fail=1; fi
+  tick "이름(말뭉치 만들기 포함)"
   # 정본 검사 — 고유명사가 아닌 공통 문안(메뉴 라벨·화자 호칭·시스템·전투, shared/canon · 마스터 10-08).
   # 어댑터는 이름 검사와 같은 것. 실패는 게임이 전환을 마치고 어댑터에 CANON_GATE 를 켠 뒤부터다.
   canon_rc=0
   canon_out=$("$PY" "$ROOT/scripts/check/check_canon.py" --game "$g" 2>&1) || canon_rc=$?
   printf '%s\n' "$canon_out" | sed 's/^/  /'
   if [ "$canon_rc" -eq 1 ]; then fail=1; fi
+  tick "정본"
   # 인사 「これは」 직역 — 「이거 이거」·「이거 ○○ 왕자님」 이 우리 줄에 나가면 실패(rpg-translate 09-08 규칙,
   # 마스터 10-20 「이거 이거 는 제발 좀 안나오게 하자」). 어댑터는 이름 검사와 같은 것.
   greet_rc=0
   greet_out=$("$PY" "$ROOT/scripts/check/check_greeting.py" --game "$g" 2>&1) || greet_rc=$?
   printf '%s\n' "$greet_out" | sed 's/^/  /'
   [ "$greet_rc" -eq 0 ] || fail=1
+  tick "인사"
   # 맞춤법 규칙 — 「-옵시다」 같은 비문은 실패, 한 단어를 띄운 꼴은 알림(문맥 확인 — 마스터 10-23).
   sp_rc=0
   sp_out=$("$PY" "$ROOT/scripts/check/check_spell_rules.py" --game "$g" 2>&1) || sp_rc=$?
   printf '%s\n' "$sp_out" | sed 's/^/  /'
   [ "$sp_rc" -eq 0 ] || fail=1
+  tick "맞춤법 규칙"
   # 말투 흔적 — 「저/여러분」+반말 · 「요」만 뗀 꼴(죄송해·안녕히 계셔·~습지·Gold이야)(페이블 검수 11-14).
   # 🟡 지금은 알림 — 높음 적용이 끝나 0 이 되면 --strict 로 실패로 올린다. 어댑터 없음(rc 2)도 알림.
   rg_out=$("$PY" "$ROOT/scripts/check/check_register_marks.py" --game "$g" 2>&1) || true
   printf '%s\n' "$rg_out" | grep -v '^names_corpus' | sed 's/^/  /'
+  tick "말투 흔적"
   # 저작권 — 긴 일본어 덩이(원문 문장)가 기준선보다 늘면 실패(래칫, 10-09 저작권 정리 라운드)
   cr_rc=0
   cr_out=$("$PY" "$ROOT/scripts/check/check_copyright.py" --game "$g" 2>&1) || cr_rc=$?
@@ -128,6 +140,7 @@ for g in $GAMES; do
   [ "$cr_rc" -eq 0 ] || fail=1
   # 배포 파일 신선도 — dist 가 제품 롬보다 낡으면 알림(막지 않음, 마스터 11-06 「낡은 롬 막는 장치」)
   "$PY" "$ROOT/scripts/check/check_stale_dist.py" --game "$g" 2>&1 | sed 's/^/  /' || true
+  tick "저작권·배포 신선도"
 done
 echo "── 저작권(공용)"
 cr_rc=0
@@ -148,6 +161,9 @@ scope_rc=0
 scope_out=$("$PY" "$ROOT/scripts/check/check_shared_scope.py" 2>&1) || scope_rc=$?
 printf '%s\n' "$scope_out" | tail -8 | sed 's/^/  /'
 [ "$scope_rc" -eq 0 ] || fail=1
+
+tick "공용 저작권·브랜치 범위"
+echo "  ⏱ 전체 $(($(date +%s) - T0))초"
 
 [ "$fail" -eq 0 ] || { printf '\n⚠ 검사 중 실패가 있다 — 위 출력을 본다\n'; exit 1; }
 printf '\n✅ 커밋해도 되는 상태\n'
